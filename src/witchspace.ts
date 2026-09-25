@@ -4,8 +4,11 @@
  *
  * #195's D1 ratified the shape and this module does not restate its reasons: a
  * jump is a **transition that straddles the cut**, not a place. The entry plays
- * in the last part of §8's wind-up, in the old system; a whiteout covers the
- * frame `jumpWorldTo` replaces the world on; the exit plays in the new system.
+ * in the last part of §8's wind-up, in the old system; a cover hides the frame
+ * `jumpWorldTo` replaces the world on; the exit plays in the new system. D1
+ * named the cover a whiteout. The principal flew that on 2026-09-26 and asked
+ * for a colourful, swirling tunnel with volumetric mist instead, so the cover is
+ * the tunnel now and the white is a flash on the cut.
  * The game clock is untouched — nothing here reads or advances it.
  *
  * ## Why a state machine and not a reading of the charge
@@ -23,7 +26,7 @@
  * `t` is seconds from the cut: `-JUMP_CHARGE_S` when the wind-up begins, `0` on
  * the cut, positive through the exit. An entry that reaches zero **holds** there
  * rather than idling — the charge arms the jump and `takePendingJump` takes it at
- * the end of the frame, and the white has to still be up when it does.
+ * the end of the frame, and the cover has to still be up when it does.
  *
  * Nothing in this file imports Three.js. `witchspace-pass.ts` and
  * `arrival-rift.ts` draw what `witchspaceLook` says.
@@ -41,12 +44,21 @@ import { JUMP_CHARGE_S } from "./hyperspace";
 export const WITCHSPACE = Object.freeze({
 	/** The entry's length, the last part of the wind-up. */
 	entryS: 1.4,
-	/** How long before the cut the white starts to rise. */
-	whiteInS: 0.35,
-	/** How long after the cut the white holds before it fades. Covers the
-	 *  rebuild's first frames (#208's bakes are queued, not synchronous). */
-	whiteHoldS: 0.12,
-	/** The exit's screen-space length: white and streak are gone by here. */
+	/**
+	 * How long before the cut the tunnel starts to open. It opens from the
+	 * centre after the streak has taken hold, and fills the frame on the cut.
+	 */
+	tunnelInS: 0.9,
+	/**
+	 * How long after the cut the tunnel stays full before it collapses. **The
+	 * tunnel is the cover**: it hides the frame the world is replaced on and
+	 * the rebuild's first frames (#208's bakes are queued, not synchronous).
+	 */
+	tunnelHoldS: 0.15,
+	/** The flash on the cut: its peak, and how long it takes to rise and fall. */
+	flashPeak: 0.45,
+	flashS: 0.15,
+	/** The exit's screen-space length: tunnel, flash and streak are gone by here. */
 	exitS: 1.6,
 	/** The arrival rift's whole life, from the cut. */
 	riftS: 4,
@@ -55,7 +67,7 @@ export const WITCHSPACE = Object.freeze({
 	/**
 	 * The most one frame may advance the exit clock. `rebuildSystem()` is the
 	 * frame before the exit's first, and the frames after it can be long; a fade
-	 * on raw dt would clear during that stall and show the pop-in the white is
+	 * on raw dt would clear during that stall and show the pop-in the tunnel is
 	 * there to cover.
 	 */
 	maxExitDtS: 0.05,
@@ -73,7 +85,9 @@ export const WITCHSPACE = Object.freeze({
 export interface WitchspaceLook {
 	/** The radial streak across the frame. */
 	streak: number;
-	/** White over the whole frame. */
+	/** The swirling tunnel, opening from the centre: 1 fills the frame. */
+	tunnel: number;
+	/** A flash of white over the whole frame, on the cut. */
 	whiteout: number;
 	/** The world-anchored arrival object's strength. */
 	rift: number;
@@ -186,6 +200,7 @@ const smoothstep = (a: number, b: number, x: number) => {
 
 const NOTHING: WitchspaceLook = Object.freeze({
 	streak: 0,
+	tunnel: 0,
 	whiteout: 0,
 	rift: 0,
 });
@@ -197,22 +212,25 @@ export function witchspaceLook(state: WitchspaceState): WitchspaceLook {
 			return { ...NOTHING };
 		case "entry": {
 			const t = -state.leftS;
-			const u = clamp01((t + WITCHSPACE.entryS) / WITCHSPACE.entryS);
+			const { entryS, tunnelInS, flashPeak, flashS } = WITCHSPACE;
+			const u = clamp01((t + entryS) / entryS);
 			return {
 				// Quadratic: the streak is barely there for the first half and
 				// builds hard into the cut, which is what a drive spooling reads as.
 				streak: u * u,
-				whiteout: smoothstep(-WITCHSPACE.whiteInS, 0, t),
+				tunnel: smoothstep(-tunnelInS, 0, t),
+				whiteout: flashPeak * smoothstep(-flashS, 0, t),
 				rift: 0,
 			};
 		}
 		case "exit": {
 			const t = state.sinceS;
-			const { whiteHoldS, exitS, riftS } = WITCHSPACE;
+			const { tunnelHoldS, exitS, riftS, flashPeak, flashS } = WITCHSPACE;
 			return {
-				streak: 1 - smoothstep(0, exitS, t),
-				whiteout: 1 - smoothstep(whiteHoldS, exitS, t),
-				// Opens fast out of the white, lingers, and closes behind the ship.
+				streak: 1 - smoothstep(0, exitS * 0.6, t),
+				tunnel: 1 - smoothstep(tunnelHoldS, exitS, t),
+				whiteout: flashPeak * (1 - smoothstep(0, flashS, t)),
+				// Opens as the tunnel collapses, lingers, and closes behind the ship.
 				rift: smoothstep(0, 0.25, t) * (1 - smoothstep(riftS * 0.4, riftS, t)),
 			};
 		}
@@ -220,6 +238,7 @@ export function witchspaceLook(state: WitchspaceState): WitchspaceLook {
 			const k = 1 - smoothstep(0, WITCHSPACE.retractS, state.sinceS);
 			return {
 				streak: state.from.streak * k,
+				tunnel: state.from.tunnel * k,
 				whiteout: state.from.whiteout * k,
 				rift: state.from.rift * k,
 			};
@@ -232,7 +251,7 @@ export function witchspaceLook(state: WitchspaceState): WitchspaceLook {
  *
  * - `hum` when a wind-up begins: the low charge hum for its first `humS`.
  * - `sweep` on the step the entry crosses `sweepS` from the cut, so
- *   `hyperspace()`'s end lands on the whiteout.
+ *   `hyperspace()`'s end lands on the cut.
  * - `stop` when an entry ends without a jump. A sweep that played on after a
  *   cancel would announce a jump that did not happen.
  *

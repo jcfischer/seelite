@@ -7,6 +7,7 @@ import { describe, expect, test } from "bun:test";
 import {
 	WITCHSPACE_FRAGMENT,
 	WITCHSPACE_PASS_QUALITY,
+	WITCHSPACE_TUNNEL_FRAGMENT,
 	WitchspacePass,
 } from "../src/witchspace-pass";
 import { witchspaceAtPhase, witchspaceLook } from "../src/witchspace";
@@ -17,16 +18,26 @@ describe("the witchspace pass", () => {
 	});
 
 	test("enables for any lit look and disables again when it is dark", () => {
+		const tunnelOnly = new WitchspacePass("high");
+		tunnelOnly.apply({ streak: 0, tunnel: 0.1, whiteout: 0 }, 0, 1.6);
+		expect(tunnelOnly.enabled).toBe(true);
 		const pass = new WitchspacePass("high");
 		pass.apply(witchspaceLook(witchspaceAtPhase(-0.5)), -0.5, 1.6);
 		expect(pass.enabled).toBe(true);
 		pass.apply(witchspaceLook(witchspaceAtPhase(0.2)), 0.2, 1.6);
 		expect(pass.enabled).toBe(true);
-		pass.apply({ streak: 0, whiteout: 0 }, 0, 1.6);
+		pass.apply({ streak: 0, tunnel: 0, whiteout: 0 }, 0, 1.6);
 		expect(pass.enabled).toBe(false);
 	});
 
 	test("both sides of the quality key draw it, and low draws fewer samples", () => {
+		expect(WITCHSPACE_PASS_QUALITY.low.layers).toBeGreaterThan(0);
+		expect(WITCHSPACE_PASS_QUALITY.low.layers).toBeLessThan(
+			WITCHSPACE_PASS_QUALITY.high.layers,
+		);
+		expect(WITCHSPACE_PASS_QUALITY.low.octaves).toBeLessThanOrEqual(
+			WITCHSPACE_PASS_QUALITY.high.octaves,
+		);
 		expect(WITCHSPACE_PASS_QUALITY.low.samples).toBeGreaterThan(0);
 		expect(WITCHSPACE_PASS_QUALITY.low.samples).toBeLessThan(
 			WITCHSPACE_PASS_QUALITY.high.samples,
@@ -47,14 +58,35 @@ describe("the witchspace pass", () => {
 	});
 
 	test("each term branches on its own dial", () => {
-		expect(WITCHSPACE_FRAGMENT).toContain("if (uStreak > 0.0)");
+		expect(WITCHSPACE_FRAGMENT).toContain("if (uStreak > 0.0 && cover < 1.0)");
+		expect(WITCHSPACE_FRAGMENT).toContain("if (uTunnel > 0.0)");
+		// The tunnel is sampled only inside its opening.
+		expect(WITCHSPACE_FRAGMENT).toContain(
+			"if (cover > 0.0) c = mix(c, texture2D(tTunnel",
+		);
 		expect(WITCHSPACE_FRAGMENT).toContain("if (uWhiteout > 0.0) {");
 	});
 
-	test("the streak's lines are not read from the sky", () => {
-		// The lines come from a hash of the angle. The only texture read is the
-		// frame itself, which is what a zoom smears.
+	test("nothing it draws is read from the sky", () => {
+		// The streak's lines come from a hash of the angle and the tunnel from
+		// noise. The composite reads the frame, which is what a zoom smears, and
+		// the tunnel's own target; the tunnel reads no texture at all.
 		const reads = WITCHSPACE_FRAGMENT.match(/texture2D\((\w+)/g) ?? [];
-		expect(new Set(reads)).toEqual(new Set(["texture2D(tDiffuse"]));
+		expect(new Set(reads)).toEqual(
+			new Set(["texture2D(tDiffuse", "texture2D(tTunnel"]),
+		);
+		expect(WITCHSPACE_TUNNEL_FRAGMENT).not.toContain("texture2D");
+	});
+
+	test("the tunnel is drawn small on both sides of the key, and smaller on low", () => {
+		expect(WITCHSPACE_PASS_QUALITY.high.scale).toBeLessThan(1);
+		expect(WITCHSPACE_PASS_QUALITY.low.scale).toBeGreaterThan(0);
+		expect(WITCHSPACE_PASS_QUALITY.low.scale).toBeLessThanOrEqual(
+			WITCHSPACE_PASS_QUALITY.high.scale,
+		);
+		const pass = new WitchspacePass("high");
+		pass.setQuality("low");
+		expect(pass.scale).toBe(WITCHSPACE_PASS_QUALITY.low.scale);
+		expect(pass.layers).toBe(WITCHSPACE_PASS_QUALITY.low.layers);
 	});
 });

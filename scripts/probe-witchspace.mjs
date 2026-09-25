@@ -135,6 +135,7 @@ const jump = await page.evaluate(() => {
 			phase: r.phase,
 			enabled: r.pass.enabled,
 			streak: r.pass.streak,
+			tunnel: r.pass.tunnel,
 			whiteout: r.pass.whiteout,
 			rift: r.rift,
 		});
@@ -164,12 +165,12 @@ check(
 const lastOld = inOld.at(-1);
 check(
 	"the entry is lit and streaking on the old system's last frames",
-	lastOld?.enabled && lastOld.streak > 0.5 && lastOld.whiteout > 0.5,
+	lastOld?.enabled && lastOld.streak > 0.5 && lastOld.tunnel > 0.5,
 	JSON.stringify(lastOld),
 );
 check(
-	"the first frame in the new system is white, and the exit has begun",
-	arrived?.state === "exit" && arrived.whiteout > 0.9 && arrived.enabled,
+	"the first frame in the new system is under the tunnel, and the exit has begun",
+	arrived?.state === "exit" && arrived.tunnel === 1 && arrived.enabled,
 	JSON.stringify({ ...arrived, rift: undefined }),
 );
 check(
@@ -198,14 +199,14 @@ const lit = await page.evaluate(() => {
 	const w = window.__witch;
 	g.view = "cockpit";
 	g.holdWitchspace(0);
-	const white = w.capture();
+	const cut = w.capture();
 	g.holdWitchspace(-0.2);
 	const streak = w.capture();
 	g.holdWitchspace(-3);
 	const plain = w.capture();
-	// Chase, at a phase where the rift is open and the white has cleared.
+	// Chase, at a phase where the rift is open and the tunnel has collapsed.
 	g.view = "chase";
-	g.holdWitchspace(1.2);
+	g.holdWitchspace(1.6);
 	const withRift = w.capture();
 	// The control: the same frame with the rift off the camera's layer. Not
 	// `visible`, which `presentWitchspace` rewrites on every render.
@@ -221,17 +222,16 @@ const lit = await page.evaluate(() => {
 	g.view = "cockpit";
 	g.holdWitchspace(null);
 	return {
-		whiteLit: w.brighter(white, 200),
-		plainLit: w.brighter(plain, 200),
+		cutMoved: w.moved(cut, plain, 10),
 		streakMoved: w.moved(streak, plain, 10),
 		riftMoved,
 		riftReading: reading.rift,
 	};
 });
 check(
-	"held on the cut, the frame is white",
-	lit.whiteLit > 0.95 && lit.plainLit < 0.5,
-	`${(lit.whiteLit * 100).toFixed(1)}% bright against ${(lit.plainLit * 100).toFixed(1)}% unheld`,
+	"held on the cut, the tunnel covers the frame",
+	lit.cutMoved > 0.95,
+	`${(lit.cutMoved * 100).toFixed(1)}% of pixels moved past 10/255 against the unheld frame`,
 );
 check(
 	"held in the entry, the streak moves the frame",

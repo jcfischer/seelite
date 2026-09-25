@@ -570,8 +570,8 @@ advances by the wind-up, which is flown, and by nothing else — so a jump does
 not turn over #25's 30-minute market epoch and is not a way to wait a market
 out. Misjumps and witchspace ambushes are reserved to #8. What is *drawn* is a
 transition that straddles the cut (#195 D1, built by #532): the entry in the
-last part of the wind-up, a whiteout on the cut, and an exit with an **arrival
-rift** behind the ship. It is a look, not a place, and adds no clock.
+last part of the wind-up, a swirling tunnel that covers the cut, and an exit
+with an **arrival rift** behind the ship. It is a look, not a place, and adds no clock.
 _Avoid_: Hyperspace (as a place), jump space
 
 **Galactic frame**:

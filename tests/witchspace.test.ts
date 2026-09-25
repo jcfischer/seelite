@@ -3,7 +3,8 @@
  * schedule, and every way the effect can end.
  *
  * #195's D1 ratified the shape: entry in the last part of §8's wind-up, a
- * whiteout on the cut, an exit in the new system. What is tested here is that
+ * cover on the cut (a tunnel since the principal's first flight), an exit in the
+ * new system. What is tested here is that
  * the effect is a **state machine fed by events** and not a reading of
  * `JumpCharge.leftS`: `stepCharge` returns the idle charge on the step it fires
  * and `cancelCharge` returns the same idle charge, so a phase derived from the
@@ -43,7 +44,10 @@ function run(state: ReturnType<typeof idleWitchspace>, seconds: number) {
 }
 
 const dark = (look: WitchspaceLook) =>
-	look.streak === 0 && look.whiteout === 0 && look.rift === 0;
+	look.streak === 0 &&
+	look.tunnel === 0 &&
+	look.whiteout === 0 &&
+	look.rift === 0;
 
 describe("the phase", () => {
 	test("idle has no phase and draws nothing", () => {
@@ -63,7 +67,7 @@ describe("the phase", () => {
 		// an entry that ran past zero would show the exit in the old system.
 		const s = run(beginWitchspace(), JUMP_CHARGE_S + 0.5).state;
 		expect(witchspacePhase(s)).toBe(0);
-		expect(witchspaceLook(s).whiteout).toBe(1);
+		expect(witchspaceLook(s).tunnel).toBe(1);
 	});
 
 	test("the exit counts up from the cut, and ends idle", () => {
@@ -104,30 +108,42 @@ describe("the look", () => {
 		expect(WITCHSPACE.entryS).toBeLessThan(JUMP_CHARGE_S);
 	});
 
-	test("the streak rises through the entry and the frame is white on the cut", () => {
+	test("the streak takes hold first, and the tunnel opens after it", () => {
 		const a = witchspaceLook(witchspaceAtPhase(-1));
 		const b = witchspaceLook(witchspaceAtPhase(-0.2));
 		expect(a.streak).toBeGreaterThan(0);
+		expect(a.tunnel).toBeLessThan(a.streak);
 		expect(b.streak).toBeGreaterThan(a.streak);
-		expect(witchspaceLook(witchspaceAtPhase(0)).whiteout).toBe(1);
+		expect(b.tunnel).toBeGreaterThan(a.tunnel);
+		expect(witchspaceLook(witchspaceAtPhase(0)).tunnel).toBe(1);
 	});
 
-	test("the whiteout covers the frames around the cut, not only the one frame", () => {
+	test("the tunnel covers the frames around the cut, not only the one frame", () => {
 		// The rebuild's first frames are the ones worth covering (#208's bakes
-		// are queued), so the white holds for a moment either side.
-		expect(witchspaceLook(witchspaceAtPhase(-DT)).whiteout).toBeGreaterThan(
-			0.9,
-		);
-		expect(witchspaceLook(witchspaceAtPhase(DT)).whiteout).toBe(1);
+		// are queued), so the tunnel holds for a moment either side.
+		expect(witchspaceLook(witchspaceAtPhase(-DT)).tunnel).toBeGreaterThan(0.95);
+		expect(witchspaceLook(witchspaceAtPhase(DT)).tunnel).toBe(1);
+		expect(
+			witchspaceLook(witchspaceAtPhase(WITCHSPACE.tunnelHoldS)).tunnel,
+		).toBe(1);
 	});
 
-	test("the exit fades back to the new system", () => {
+	test("the flash is a moment on the cut, not the cover", () => {
+		const peak = witchspaceLook(witchspaceAtPhase(0)).whiteout;
+		expect(peak).toBeGreaterThan(0);
+		expect(peak).toBeLessThan(1);
+		expect(witchspaceLook(witchspaceAtPhase(-0.5)).whiteout).toBe(0);
+		expect(witchspaceLook(witchspaceAtPhase(0.5)).whiteout).toBe(0);
+	});
+
+	test("the exit collapses the tunnel back into the new system", () => {
 		const early = witchspaceLook(witchspaceAtPhase(0.3));
 		const late = witchspaceLook(witchspaceAtPhase(1));
-		expect(early.whiteout).toBeGreaterThan(late.whiteout);
-		expect(witchspaceLook(witchspaceAtPhase(WITCHSPACE.exitS)).whiteout).toBe(
-			0,
-		);
+		expect(early.tunnel).toBeGreaterThan(late.tunnel);
+		const done = witchspaceLook(witchspaceAtPhase(WITCHSPACE.exitS));
+		expect(done.tunnel).toBe(0);
+		expect(done.streak).toBe(0);
+		expect(done.whiteout).toBe(0);
 	});
 
 	test("the rift is drawn in the exit half and never in the entry half", () => {
@@ -226,10 +242,10 @@ describe("ending it early", () => {
 		expect(witchspaceCues(early, cancelled)).toEqual(["stop"]);
 	});
 
-	test("an abort at the cut — the jump refused after full white — retracts from white", () => {
+	test("an abort at the cut — the jump refused under the full tunnel — retracts from the tunnel", () => {
 		const atCut = run(beginWitchspace(), JUMP_CHARGE_S + 0.1).state;
 		const aborted = abortWitchspace(atCut);
-		expect(witchspaceLook(aborted).whiteout).toBe(1);
+		expect(witchspaceLook(aborted).tunnel).toBe(1);
 		expect(witchspaceCues(atCut, aborted)).toEqual(["stop"]);
 		expect(run(aborted, WITCHSPACE.retractS + DT).state.kind).toBe("idle");
 	});
@@ -249,14 +265,14 @@ describe("ending it early", () => {
 });
 
 describe("the exit clock", () => {
-	test("one long frame cannot clear the whiteout", () => {
+	test("one long frame cannot clear the cover", () => {
 		// `rebuildSystem()` rebuilds bodies, the environment and the sky; the
 		// frames after it can be long. A fade that advanced on raw dt would
-		// clear during the stall and show the pop-in the white is there to hide.
+		// clear during the stall and show the pop-in the tunnel is there to hide.
 		const s = jumpedWitchspace(witchspaceAtPhase(0));
 		const after = stepWitchspace(s, 0.5);
 		expect(witchspacePhase(after)).toBeCloseTo(WITCHSPACE.maxExitDtS, 9);
-		expect(witchspaceLook(after).whiteout).toBeGreaterThan(0.9);
+		expect(witchspaceLook(after).tunnel).toBe(1);
 	});
 
 	test("the arrival-only path plays the same exit as a jump", () => {

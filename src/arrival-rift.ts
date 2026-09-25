@@ -10,8 +10,8 @@
  *
  * At the arrival point, `standoffReaches` of the arriving hull's reach **behind**
  * it on its nose axis, facing along the nose — the ship has just come through
- * it. From the cockpit it is behind the pilot, which is what the screen-space
- * fade is for; from a chase camera, which sits behind the ship along its nose,
+ * it. From the cockpit it is behind the pilot, which is what the tunnel's
+ * collapse on screen is for; from a chase camera, which sits behind the ship along its nose,
  * the camera looks through it at the ship.
  *
  * The anchor is float64 world kilometres and is never written into the scene
@@ -31,6 +31,7 @@
  */
 import * as THREE from "three";
 import type { Vec3 } from "./vec3";
+import { WITCHSPACE_MIST_GLSL } from "./witchspace-mist";
 
 export const ARRIVAL_RIFT = Object.freeze({
 	/** Radius at full strength, in the arriving hull's reach. */
@@ -50,25 +51,34 @@ void main() {
 `;
 
 /**
- * A bright rim, a cold swirl inside it, and a clear centre so the ship coming
- * through it stays readable. Additive: it adds light and never darkens what is
- * behind it.
+ * The tunnel's own mist, seen end-on from outside: a vortex of the same
+ * palette turning into a clear throat, with a thin rim. Additive: it adds
+ * light and never darkens what is behind it. Three octaves and not the pass's
+ * four, because from outside the rift is a subject in the frame rather than
+ * the whole of it; it is drawn the same on both sides of #99's key.
  */
 const FRAGMENT = /* glsl */ `
+#define OCTAVES 3
 uniform float uStrength;
 uniform float uPhase;
 varying vec2 vUv;
+${WITCHSPACE_MIST_GLSL}
 void main() {
 	vec2 p = vUv * 2.0 - 1.0;
 	float r = length(p);
 	if (r > 1.0) discard;
 	float a = atan(p.y, p.x);
-	float rim = smoothstep(0.78, 0.95, r) * (1.0 - smoothstep(0.95, 1.0, r));
-	float swirl = 0.5 + 0.5 * sin(a * 7.0 + r * 14.0 - uPhase * 6.0);
-	float body = smoothstep(0.25, 0.9, r) * (1.0 - smoothstep(0.9, 1.0, r));
-	vec3 rimColour = vec3(0.9, 0.95, 1.6) * rim * 3.0;
-	vec3 swirlColour = vec3(0.35, 0.5, 1.4) * body * swirl * 0.9;
-	gl_FragColor = vec4((rimColour + swirlColour) * uStrength, 1.0);
+	// Wound tighter toward the throat, and turning with the phase.
+	float swirl = a + (1.0 - r) * 4.5 + uPhase * 1.6;
+	vec3 q = vec3(cos(swirl) * r * 2.2, sin(swirl) * r * 2.2, uPhase * 0.7 + r * 1.3);
+	float n = witchFbm(q * 1.4 + witchFbm(q) * 1.8);
+	// The throat is clear: from a chase camera the rift stands between the
+	// camera and the ship, and light there would wash the ship out.
+	float body = (1.0 - smoothstep(0.72, 1.0, r)) * smoothstep(0.25, 0.6, r);
+	float rim = smoothstep(0.82, 0.95, r) * (1.0 - smoothstep(0.95, 1.0, r));
+	vec3 tint = witchPalette(n * 1.5 + r * 0.9 + uPhase * 0.1);
+	vec3 col = tint * (0.1 + 1.1 * n * n) * body + tint * rim * 0.9;
+	gl_FragColor = vec4(col * uStrength, 1.0);
 }
 `;
 

@@ -247,7 +247,7 @@ export class AudioFX {
 	 * Witchspace entry: a rising sweep into nothing.
 	 *
 	 * #195's D3 places it: it starts `sweepS` before the cut so its top lands on
-	 * the whiteout (`witchspace.ts` owns the schedule). It goes through its own
+	 * the cut (`witchspace.ts` owns the schedule). It goes through its own
 	 * group so `stopWitchspace` can take it back — a sweep that played on after
 	 * a cancelled charge would announce a jump that did not happen.
 	 */

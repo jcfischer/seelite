@@ -145,7 +145,7 @@ export const LEVERS = Object.freeze({
 	372: "the Controls tab: every control as a folding tree of task groups",
 	381: "the rebind modal, and the tab's Settings and Commanders doors beside it",
 	431: "the derived sky: real neighbouring systems at true bearings, over the invented field behind them",
-	532: "the witchspace transition: the entry streak, the whiteout on the cut, the exit fade and the arrival rift",
+	532: "the witchspace transition: the entry streak, the tunnel over the cut, its collapse and the arrival rift",
 });
 
 /**
@@ -930,38 +930,38 @@ export const VIEWS = Object.freeze([
 	{
 		name: "witchspace-entry",
 		covers: [532],
-		what: "Cockpit, 1 s before the cut: the streak taking hold, the sweep started.",
+		what: "Cockpit, 1 s before the cut: the streak taking hold, the sweep started, the tunnel a glow at the centre.",
 		shot: { kind: "witchspace", phase: -1, view: "cockpit" },
 	},
 	{
 		name: "witchspace-entry-late",
 		covers: [532],
-		what: "Cockpit, 0.2 s before the cut: the streak at full, the white rising.",
-		shot: { kind: "witchspace", phase: -0.2, view: "cockpit" },
+		what: "Cockpit, 0.5 s before the cut: the tunnel opening from the centre through the streak.",
+		shot: { kind: "witchspace", phase: -0.5, view: "cockpit" },
 	},
 	{
 		name: "witchspace-cut",
 		covers: [532],
-		what: "Cockpit, on the cut, in the new system: the whiteout that covers the world being replaced.",
+		what: "Cockpit, on the cut, in the new system: the tunnel filling the frame that the world is replaced on, under the flash.",
 		shot: { kind: "witchspace", phase: 0, view: "cockpit" },
 	},
 	{
 		name: "witchspace-exit",
 		covers: [532],
-		what: "Cockpit, 0.3 s after the cut: the white starting to clear over the new system.",
-		shot: { kind: "witchspace", phase: 0.3, view: "cockpit" },
+		what: "Cockpit, 0.5 s after the cut: still in the tunnel, the swirl and the mist in full colour.",
+		shot: { kind: "witchspace", phase: 0.5, view: "cockpit" },
 	},
 	{
 		name: "witchspace-exit-late",
 		covers: [532],
-		what: "Cockpit, 1 s after the cut: the new system with the last of the fade.",
+		what: "Cockpit, 1 s after the cut: the tunnel collapsing into the centre, the new system around it.",
 		shot: { kind: "witchspace", phase: 1, view: "cockpit" },
 	},
 	{
 		name: "witchspace-rift-chase",
 		covers: [532],
-		what: "Chase, 1.2 s after the cut: the arrival rift open behind the ship, from outside.",
-		shot: { kind: "witchspace", phase: 1.2, view: "chase" },
+		what: "Chase, 1.6 s after the cut: the tunnel gone and the arrival rift open around the ship, from outside.",
+		shot: { kind: "witchspace", phase: 1.6, view: "chase" },
 	},
 	{
 		name: "witchspace-rift-closing",
