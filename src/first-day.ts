@@ -198,6 +198,10 @@ export function firstDayPrompt(
 		: "line up with the opening and fly in slowly";
 }
 
+/** A station is selected: what to press to go to it (playtest, 2026-09-25). */
+const selectedLine = (name: string, keys: FirstDayKeys): string =>
+	`${name} is selected. Press ${keys.forward} to face forward, ${keys.face} to turn toward it, then ${keys.cruise} to cruise.`;
+
 /**
  * Station control's line on the port console, or `null` (#408 D3).
  *
@@ -219,10 +223,10 @@ export function firstDayConsoleLine(
 			return `Deliver to ${whereTo(job)}: set a course on the Galaxy Map tab and jump.`;
 		if (target?.key !== job.reportAt)
 			return `Select ${job.reportName} on the Navigation list.`;
-		return `${job.reportName} is selected. Press ${keys.forward} to face forward, ${keys.face} to turn toward it, then ${keys.cruise} to cruise.`;
+		return selectedLine(job.reportName, keys);
 	}
 	if (!target?.key) return "Select a station on the Navigation list.";
-	return `${target.name} is selected. Press ${keys.forward} to face forward, ${keys.face} to turn toward it, then ${keys.cruise} to cruise.`;
+	return selectedLine(target.name, keys);
 }
 
 /**

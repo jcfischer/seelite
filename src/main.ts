@@ -600,7 +600,7 @@ import {
 	jumpPrompt,
 	onKeyboard,
 	type OwnKey,
-	spokenCommand,
+	spoken,
 	targetPrompt,
 } from "./key-names";
 import type { CaptureModalHandle } from "./capture-modal";
@@ -728,7 +728,12 @@ import { marketStationOf } from "./market";
 import { type HoldBids, holdSummary } from "./hold";
 
 import { exposeMarketLaw } from "./market-probe-hook";
-import { type CarrierKey, carrierKey, compareCarrierKeys } from "./carrier-key";
+import {
+	type CarrierKey,
+	carrierKey,
+	compareCarrierKeys,
+	systemIndexOfKey,
+} from "./carrier-key";
 import { NO_KNOWLEDGE } from "./knowledge-labels";
 import { disposeSubtree } from "./gpu-teardown";
 import {
@@ -13835,11 +13840,14 @@ class Game {
 	 * #408): this is the station bringing the ship in before the clock runs, not
 	 * the pilot flying. The pilot's own first dock is by hand.
 	 *
-	 * Sub-stepped in sim, so the clock starts at the dock rather than at zero:
-	 * 76.9 s on ten seeds when this was written.
+	 * Sub-stepped in sim, so the clock starts at the dock rather than at zero;
+	 * `probe-first-day` prints how long the run-in took.
 	 *
-	 * Returns `false` and leaves the ship in flight when it cannot dock; the day
-	 * then starts in flight, as a free one does.
+	 * Returns `false` when it cannot dock, and then **puts back what it moved**:
+	 * the ship at the arrival point it was placed from, at rest, facing as it
+	 * was, with nothing selected and the computer off. So a failed guided start
+	 * is a free one's start with the clock moved on, not a ship parked beside a
+	 * station under an autopilot the pilot does not own (sage, #528 round 2).
 	 */
 	startDockedAtHome(): boolean {
 		const id = this.world.system.contents.stations.find(
@@ -13851,6 +13859,21 @@ class Game {
 		if (!body || !snap) return false;
 		const { axis } = this.poseOfStation(id);
 		const rangeKm = snap.planeKm + FIRST_DAY_STANDOFF_KM;
+		const from = {
+			pos: { ...this.world.ship.pos },
+			vel: { ...this.world.ship.vel },
+			orientation: this.orientation.clone(),
+			targetId: this.targetId,
+		};
+		const giveUp = (): false => {
+			this.dockingComputerEngaged = false;
+			this.throttle = 0;
+			this.world.ship.pos = v3(from.pos.x, from.pos.y, from.pos.z);
+			this.world.ship.vel = v3(from.vel.x, from.vel.y, from.vel.z);
+			this.orientation.copy(from.orientation);
+			this.targetId = from.targetId;
+			return false;
+		};
 		this.world.ship.pos = v3(
 			body.pos.x + axis.x * rangeKm,
 			body.pos.y + axis.y * rangeKm,
@@ -13863,7 +13886,7 @@ class Game {
 		);
 		this.targetId = id;
 		if (this.requestDockingClearance().state?.clearance.kind !== "granted")
-			return false;
+			return giveUp();
 		this.dockingComputerEngaged = true;
 		const dt = 1 / 60;
 		for (
@@ -13880,7 +13903,12 @@ class Game {
 			}
 			if (this.dockPhase === "arriving") this.skipDockTraversal();
 		}
-		return this.dockPhase === "docked";
+		// Mid-traversal is on rails into the reserved berth: finish it.
+		if (this.dockPhase === "arriving") this.skipDockTraversal();
+		if (this.dockPhase === "docked") return true;
+		// A launch or an arrival that did not end cannot be undone by moving the
+		// ship; only a ship still flying goes back where it came from.
+		return this.dockPhase === "flying" ? giveUp() : false;
 	}
 
 	/**
@@ -13914,11 +13942,9 @@ class Game {
 						reportAt: job.terms.reportAt.carrierKey,
 						reportName: job.terms.reportName,
 						reportSystemName: job.terms.reportSystemName,
-						// A carrier key is `system:carrier` (`carrier-key.ts`).
 						sameSystem:
 							job.terms.reportAt.galaxyIndex === record.galaxy &&
-							Number(job.terms.reportAt.carrierKey.split(":")[0]) ===
-								record.index,
+							systemIndexOfKey(job.terms.reportAt.carrierKey) === record.index,
 					}
 				: null,
 			settledAny: journal.some((request) => request.status === "completed"),
@@ -13934,13 +13960,13 @@ class Game {
 	/** The keys the first day names, as the player has them bound. */
 	private firstDayKeys(): FirstDayKeys {
 		return {
-			starboard: spokenCommand(this.bindings, "view.headStarboard"),
-			clearance: spokenCommand(this.bindings, "dock.clearance"),
-			computer: spokenCommand(this.bindings, "dock.computer"),
-			cruise: spokenCommand(this.bindings, "fly.cruise"),
-			navigation: spokenCommand(this.bindings, "view.headPort"),
-			forward: spokenCommand(this.bindings, "view.headForward"),
-			face: spokenCommand(this.bindings, "fight.faceTarget"),
+			starboard: spoken(this.bindings, "view.headStarboard"),
+			clearance: spoken(this.bindings, "dock.clearance"),
+			computer: spoken(this.bindings, "dock.computer"),
+			cruise: spoken(this.bindings, "fly.cruise"),
+			navigation: spoken(this.bindings, "view.headPort"),
+			forward: spoken(this.bindings, "view.headForward"),
+			face: spoken(this.bindings, "fight.faceTarget"),
 		};
 	}
 

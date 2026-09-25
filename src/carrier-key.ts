@@ -51,8 +51,8 @@ export const isCarrierKey = (key: string): boolean => /^\d+:.+$/.test(key);
  * exactly the quietly-wrong ordering the comparator exists to prevent, and one
  * §4 resolves same-timestamp completions in.
  *
- * Not exported: `compareCarrierKeys` is its only caller, and a second path to
- * the split invites a caller that does not want the check.
+ * Not exported: `compareCarrierKeys` and `systemIndexOfKey` are its callers,
+ * and a second path to the split invites a caller that does not want the check.
  */
 const splitCarrierKey = (key: string): [number, string] => {
 	const at = key.indexOf(":");
@@ -60,6 +60,11 @@ const splitCarrierKey = (key: string): [number, string] => {
 		throw new Error(`carrier-key: ${key} is not a carrier key`);
 	return [Number(key.slice(0, at)), key.slice(at + 1)];
 };
+
+/** The system a key names — the half a caller asking "is this here?" needs
+ *  (#408), through the checked split rather than a second parse. */
+export const systemIndexOfKey = (key: CarrierKey): number =>
+	splitCarrierKey(key)[0];
 
 /**
  * The canonical carrier order: system index **numerically**, then the local id.

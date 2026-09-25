@@ -45,7 +45,10 @@ docking computer flies it in with Traffic running
 (`Game.startDockedAtHome`). The dock is an ordinary one, so it writes the
 `lastDocked` checkpoint, and a guided pilot has a checkpoint before their first
 flight. The clock starts at that dock rather than at zero: 76.9 s of game time
-on ten seeds.
+at each of the ten seeds tried when the path was built, because the run-in is
+the same geometry at every trade station. `probe-first-day` prints it for its
+own seed on every run. A start that cannot dock puts the ship back at the
+arrival point, so it is a free start with the clock moved on.
 
 A free new game, `?boot=direct` and `?system=` keep the in-flight start.
 `?guided` on a direct boot with nothing loaded opts in, for probes and

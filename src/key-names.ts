@@ -268,7 +268,7 @@ export function padHintFor(
  * one, so a command with no key left still has a button, and a prompt that
  * printed nothing would read `press  to cruise`.
  */
-function spoken(layout: Layout, id: CommandId): string {
+export function spoken(layout: Layout, id: CommandId): string {
 	return anyOf(keyboardFirst(layout, id));
 }
 
@@ -293,12 +293,6 @@ export const targetPrompt = (layout: Layout): string =>
 	`${spoken(layout, "fight.targetNext")} selects a target`;
 export const cruisePrompt = (layout: Layout): string =>
 	`press ${spoken(layout, "fly.cruise")} to cruise`;
-
-/** A command as the prompt line names it, for a sentence authored elsewhere —
- *  `first-day.ts`'s, which takes its keys as data so it can be tested
- *  headless (#408). */
-export const spokenCommand = (layout: Layout, id: CommandId): string =>
-	spoken(layout, id);
 
 /**
  * A cruise dial's two keys, for the legacy HUD's dial line: `(-/=)`.

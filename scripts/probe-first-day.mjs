@@ -117,6 +117,8 @@ const boot = await page.evaluate(async () => {
 	return {
 		firstDay: g.firstDay,
 		phase: g.dockPhase,
+		// How long the docked start's run-in took: the world clock at the dock.
+		runInS: Number(g.world.gameTime.toFixed(1)),
 		stationId: g.dock.stationId,
 		tradeId: trade?.id ?? null,
 		lastDocked: record
@@ -190,6 +192,12 @@ check(
 	local !== null && local.distanceLy === 0 && local.rewardCr > 0,
 	local ? `${local.reportName} · ${local.rewardCr} Cr` : "none",
 );
+// Everything below flies that offer, so without one there is nothing to fly:
+// report what was checked rather than throwing on `local.id` (sage round 2).
+if (local === null) {
+	await browser.close();
+	exit();
+}
 await shot(page, "03-requests-board");
 await page
 	.locator(
@@ -415,6 +423,35 @@ check(
 	"a free new game boots in flight, as before",
 	freeBoot.firstDay === "free" && freeBoot.phase === "flying",
 	JSON.stringify(freeBoot),
+);
+
+// A guided start that cannot dock puts back what it moved (sage round 2): the
+// clearance is refused here, which is the first of its two ways to give up.
+const failed = await free.evaluate(() => {
+	const g = window.__seelite;
+	const before = { ...g.world.ship.pos };
+	const targetBefore = g.targetId;
+	const real = g.requestDockingClearance;
+	g.requestDockingClearance = () => ({ id: null, state: null });
+	const docked = g.startDockedAtHome();
+	g.requestDockingClearance = real;
+	const p = g.world.ship.pos;
+	return {
+		docked,
+		movedKm: Math.hypot(p.x - before.x, p.y - before.y, p.z - before.z),
+		engaged: g.dockingComputerEngaged,
+		targetKept: g.targetId === targetBefore,
+		phase: g.dockPhase,
+	};
+});
+check(
+	"a guided start that cannot dock leaves the ship where a free start has it",
+	!failed.docked &&
+		failed.movedKm === 0 &&
+		!failed.engaged &&
+		failed.targetKept &&
+		failed.phase === "flying",
+	JSON.stringify(failed),
 );
 await free.evaluate(() => {
 	const g = window.__seelite;
