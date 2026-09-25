@@ -686,6 +686,7 @@ import {
 import {
 	attachCommander,
 	CommanderSwitch,
+	firstDayAtBoot,
 	flushFault,
 	messageOf,
 	pendingFor,
@@ -696,6 +697,7 @@ import {
 	withRestoreFault,
 	writeFault,
 } from "./commander-flow";
+import type { FirstDayChoice } from "./first-day";
 import {
 	COMMANDER_KEY,
 	type CommanderOverlayHandle,
@@ -764,6 +766,14 @@ import * as units from "./units";
 
 /** How many hails the session keeps. The console shows six; the store holds two
  *  screens, and no more, however long the trigger is held. */
+/** #408 D1: where a guided start asks for clearance — outside the docking
+ *  computer's standoff on the aperture axis, the placement `__parkInBerth`
+ *  flies from. Kilometres beyond the aperture plane. */
+const FIRST_DAY_STANDOFF_KM = 4.5;
+/** A bound on the guided start's run-in, in 1/60 s sim steps: ten minutes of
+ *  game time, eight times the 76.9 s it took when measured. */
+const FIRST_DAY_DOCK_STEPS = 60 * 600;
+
 const HAIL_LOG_KEEP = 12;
 
 /** How many charges the session keeps, on the same reasoning as the hails' —
@@ -1984,6 +1994,9 @@ class Game {
 	/** #89's D7 flag, chosen at new game and never edited. Read by the death
 	 *  path, not enforced by it — see `save-store.ts`. */
 	private permadeath = false;
+	/** #408 D4: New game's guided or free choice, chosen at new game and never
+	 *  edited. Public because the First day surfaces and the probes read it. */
+	firstDay: FirstDayChoice = "free";
 	/** Set by the load arm, read once by the constructor: a restored ship keeps
 	 *  the attitude it was saved with rather than being turned to face a star. */
 	private restoredAttitude = false;
@@ -3392,6 +3405,7 @@ class Game {
 			this.requests = save.commander.requests;
 			this.chargeAu = save.commander.chargeAu;
 			this.permadeath = save.commander.permadeath;
+			this.firstDay = save.commander.firstDay;
 			// **A docked save resumes in flight at the arrival point, and that
 			// is a deliberate scale-down rather than an omission.** Re-entering
 			// a berth means rebuilding a whole dock session — the grant, the
@@ -13718,6 +13732,7 @@ class Game {
 			dockedAt: station ? this.stationKey(station) : null,
 			chargeAu: this.chargeAu,
 			permadeath: this.permadeath,
+			firstDay: this.firstDay,
 			flight: {
 				pos: [
 					this.world.ship.pos.x,
@@ -13753,6 +13768,80 @@ class Game {
 			throw new Error("permadeath is chosen at new game, not later");
 		this.permadeath = true;
 		this.saveDirty();
+	}
+
+	/** #408 D4, at the one moment it can be chosen — `choosePermadeath`'s rule,
+	 *  for its reason. */
+	chooseFirstDay(choice: FirstDayChoice): void {
+		if (this.commerceWorld.gameTime > 0)
+			throw new Error("the first day is chosen at new game, not later");
+		this.firstDay = choice;
+		this.saveDirty();
+	}
+
+	/**
+	 * #408 D1: a guided new game starts in a berth at its start system's trade
+	 * station.
+	 *
+	 * **Through the docking protocol, never around it** (#9, #147). The ship is
+	 * set on the station's aperture axis, co-moving, outside the computer's
+	 * standoff; it asks for clearance like any pilot, the docking computer flies
+	 * the run-in, and the arrival traversal is skipped as a pilot's Enter skips
+	 * it. The berth is whatever the live allocator grants, with Traffic running.
+	 * So the dock is an ordinary dock, and its flush writes `lastDocked` — which
+	 * is why this runs after the store attaches, and what gives a guided pilot a
+	 * checkpoint before their first flight.
+	 *
+	 * The computer is engaged by setting the flag rather than through
+	 * `toggleDockingComputer`, so this keeps working on the day the computer
+	 * stops being fitted free (`hasDockingComputer`).
+	 *
+	 * Sub-stepped in sim, so the clock starts at the dock rather than at zero:
+	 * 76.9 s on ten seeds when this was written.
+	 *
+	 * Returns `false` and leaves the ship in flight when it cannot dock; the day
+	 * then starts in flight, as a free one does.
+	 */
+	startDockedAtHome(): boolean {
+		const id = this.world.system.contents.stations.find(
+			(s) => s.type === "trade",
+		)?.id;
+		if (!id || this.dock.phase !== "flying") return false;
+		const body = this.world.system.byId.get(id);
+		const snap = this.dockingSnapshot(id);
+		if (!body || !snap) return false;
+		const { axis } = this.poseOfStation(id);
+		const rangeKm = snap.planeKm + FIRST_DAY_STANDOFF_KM;
+		this.world.ship.pos = v3(
+			body.pos.x + axis.x * rangeKm,
+			body.pos.y + axis.y * rangeKm,
+			body.pos.z + axis.z * rangeKm,
+		);
+		this.world.ship.vel = this.stationVelocity(id);
+		this.orientation.setFromUnitVectors(
+			new THREE.Vector3(0, 0, -1),
+			new THREE.Vector3(-axis.x, -axis.y, -axis.z),
+		);
+		this.targetId = id;
+		if (this.requestDockingClearance().state?.clearance.kind !== "granted")
+			return false;
+		this.dockingComputerEngaged = true;
+		const dt = 1 / 60;
+		for (
+			let i = 0;
+			i < FIRST_DAY_DOCK_STEPS && this.dockPhase !== "docked";
+			i++
+		) {
+			this.step(dt);
+			// A pilot re-engages a computer that dropped out; so does this.
+			if (this.dockPhase === "flying" && !this.dockingComputerEngaged) {
+				if (!this.dockingSnapshot(id)?.grantLive)
+					this.requestDockingClearance();
+				this.dockingComputerEngaged = true;
+			}
+			if (this.dockPhase === "arriving") this.skipDockTraversal();
+		}
+		return this.dockPhase === "docked";
 	}
 
 	/**
@@ -15874,18 +15963,36 @@ if (postcard) {
 		game.commanderOverlay?.open();
 	};
 	let openAtBoot = plan.mode === "overlay";
+	// #408 D1 and D4: a guided new game is docked at its home station before the
+	// clock runs. **After the attach**, so that dock's flush writes the new
+	// Commander's `lastDocked`. Once per page: Continue on the overlay also
+	// attaches, and a game already flown is not a new game.
+	let firstDayBegun = false;
+	const beginFirstDay = (slot: string | null) => {
+		if (firstDayBegun || plan.loaded !== null) return;
+		firstDayBegun = true;
+		if (firstDayAtBoot(plan, slot, query.has("guided")) !== "guided") return;
+		game.chooseFirstDay("guided");
+		if (!game.startDockedAtHome())
+			console.warn(
+				"first day: the guided start did not dock; it begins in flight",
+			);
+	};
 	if (plan.mode === "direct") {
 		// `plan.writesNothing`, not `?no-save` read off the URL: two things make a
 		// boot write nothing, and the shell that attaches a store has to read the
 		// plan's answer rather than re-derive it from one of the two causes.
 		if (!plan.writesNothing && plan.fault === null) await attach(plan.slot);
+		beginFirstDay(plan.writesNothing ? null : plan.slot);
 		game.clockHeld = false;
 	} else if (plan.mode === "continue") {
 		// §11.3: a one-shot whose Commander another tab took in the meantime is
 		// discarded, and the overlay opens with that fault.
 		const fault = await attach(plan.slot);
-		if (fault === null) game.clockHeld = false;
-		else {
+		if (fault === null) {
+			beginFirstDay(plan.slot);
+			game.clockHeld = false;
+		} else {
 			plan = withLockFault(plan, fault);
 			openAtBoot = true;
 		}
@@ -15935,7 +16042,10 @@ if (postcard) {
 				return null;
 			}
 			const fault = plan.writesNothing ? null : await attach(slot);
-			if (fault === null) game.clockHeld = false;
+			if (fault === null) {
+				beginFirstDay(plan.writesNothing ? null : slot);
+				game.clockHeld = false;
+			}
 			return fault;
 		},
 		releaseHeldKeys: () => game.releaseHeldKeys(),
