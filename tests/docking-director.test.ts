@@ -30,6 +30,7 @@ import {
 	DIRECTOR_RANGE_KM,
 	directorEngaged,
 	dockingDirector,
+	LANE_TURN_LATENCY_S,
 	LANE_WAIT_STEP_S,
 	laneWaitEstimate,
 } from "../src/docking-director";
@@ -610,10 +611,13 @@ describe("#521: a live grant waiting on the lane says so, and how long", () => {
 	test("the estimate rounds up to its step and never shows less than one", () => {
 		// Rounding up, so the shown figure is never shorter than Traffic's.
 		expect(LANE_WAIT_STEP_S).toBe(5);
+		expect(LANE_TURN_LATENCY_S).toBe(0.2);
 		expect(laneWaitEstimate(0)).toBe("~5s");
-		expect(laneWaitEstimate(0.2)).toBe("~5s");
-		expect(laneWaitEstimate(5)).toBe("~5s");
-		expect(laneWaitEstimate(5.01)).toBe("~10s");
+		expect(laneWaitEstimate(4.8)).toBe("~5s");
+		// Just under a step: the turn lands after the boundary, so the figure
+		// cannot be the boundary (sage round 2).
+		expect(laneWaitEstimate(4.9)).toBe("~10s");
+		expect(laneWaitEstimate(79.9)).toBe("~85s");
 		expect(laneWaitEstimate(33)).toBe("~35s");
 		// Traffic cannot say: no figure, not a guess.
 		expect(laneWaitEstimate(null)).toBe("");

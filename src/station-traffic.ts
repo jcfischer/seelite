@@ -324,6 +324,15 @@ export function playerWinsLane(
 	return [...turns].sort(compareStationTurns)[0]?.participant.kind === "player";
 }
 
+/** One player turn at one station's lane, as the arbitration reads it. */
+export interface LaneTurnQuery {
+	authorityReady: boolean;
+	routes: readonly LaneRouteView[];
+	stationId: string;
+	readyAt: number;
+	movement: LaneRequest["kind"];
+}
+
 /** Why Traffic will not give the player the lane yet (#314). */
 export type LaneRefusal =
 	| "traffic-starting"
@@ -349,13 +358,7 @@ export interface LaneRouteView {
  *
  * `null` is the lane. The order is `laneBlockers`'s, below.
  */
-export function playerLaneRefusal(input: {
-	authorityReady: boolean;
-	routes: readonly LaneRouteView[];
-	stationId: string;
-	readyAt: number;
-	movement: LaneRequest["kind"];
-}): LaneRefusal | null {
+export function playerLaneRefusal(input: LaneTurnQuery): LaneRefusal | null {
 	return laneBlockers(input).refusal;
 }
 
@@ -370,14 +373,9 @@ export function playerLaneRefusal(input: {
  * blocker carries no predicted end. A collision can still interrupt a route
  * (#75), so the figure is an estimate and is worded as one.
  */
-export function playerLaneWait(input: {
-	authorityReady: boolean;
-	routes: readonly LaneRouteView[];
-	stationId: string;
-	readyAt: number;
-	movement: LaneRequest["kind"];
-	gameTime: number;
-}): { refusal: LaneRefusal; waitS: number | null } | null {
+export function playerLaneWait(
+	input: LaneTurnQuery & { gameTime: number },
+): { refusal: LaneRefusal; waitS: number | null } | null {
 	const { refusal, blockers } = laneBlockers(input);
 	if (refusal === null) return null;
 	if (refusal === "traffic-starting") return { refusal, waitS: null };
@@ -398,13 +396,10 @@ export function playerLaneWait(input: {
  * request that keeps its `readyAt` keeps its place** in that order, which is
  * what a held launch is.
  */
-function laneBlockers(input: {
-	authorityReady: boolean;
-	routes: readonly LaneRouteView[];
-	stationId: string;
-	readyAt: number;
-	movement: LaneRequest["kind"];
-}): { refusal: LaneRefusal | null; blockers: LaneRouteView[] } {
+function laneBlockers(input: LaneTurnQuery): {
+	refusal: LaneRefusal | null;
+	blockers: LaneRouteView[];
+} {
 	if (!input.authorityReady)
 		return { refusal: "traffic-starting", blockers: [] };
 	const here = input.routes.filter(

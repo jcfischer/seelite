@@ -1,7 +1,8 @@
 /**
  * #521: a wait for the Transit lane says why and how long — on the glass under
- * a live grant, and on the console under a held launch — and the figure is
- * never shorter than the wait it names.
+ * a live grant, and on the console under a held launch — and that at every
+ * sampled start time the figure was not shorter than the wait it named. Four
+ * start times at one seed are a sample, not a proof.
  *
  * Live Traffic, not a fixture. The ship is pinned on the trade station's axis
  * and hand-flown — no docking computer — and the clock runs until a carrier
@@ -37,10 +38,6 @@ const { check, watch, exit } = tally();
 
 // Start times spread over a Traffic cycle, so the waits found are not one.
 const STARTS = [120, 700, 1_500, 2_600];
-// Two authority ticks. The lane is re-decided at 10 Hz, a route's lane end
-// falls between two ticks, and the player's turn is taken on the tick after
-// the one that sees the lane empty.
-const TICK_SLACK_S = 0.2;
 const arrivals = [];
 const launches = [];
 
@@ -56,6 +53,8 @@ try {
 			const g = window.__seelite;
 			cancelAnimationFrame(g.animationFrame);
 			const sim = await import("/src/sim.ts");
+			// Read off the page, not restated: the turn latency the figure covers.
+			const { LANE_TURN_LATENCY_S } = await import("/src/docking-director.ts");
 			g.clearTrafficPresentation();
 			g.trafficSystemIndex = -1;
 			g.trafficActors = [];
@@ -114,6 +113,7 @@ try {
 				text: g.directorRender?.clearanceText ?? null,
 				estimateS: director?.laneWait?.waitS ?? null,
 				actualS: null,
+				latencyS: LANE_TURN_LATENCY_S,
 				turn: turn?.movement ?? null,
 				stampKept: null,
 			};
@@ -195,20 +195,21 @@ try {
 				return null;
 			}, launch.t0);
 		}
-		launches.push({ startAtS, ...launch });
+		launches.push({ startAtS, latencyS: arrival.latencyS, ...launch });
 		await page.close();
 	}
 
 	console.log(JSON.stringify({ arrivals, launches }));
 	const seen = (samples) => samples.filter((sample) => sample.found);
-	// Both the raw estimate, within one tick, and the rounded figure the pilot
-	// reads, with no slack at all: rounding up is what pays for the tick.
+	// Both the raw estimate, within the page's own turn latency, and the rounded
+	// figure the pilot reads, with no slack at all: that figure already carries
+	// the latency (`laneWaitEstimate`).
 	const shownS = (sample) =>
 		Number((sample.text ?? sample.notice ?? "").match(/~(\d+)s$/)?.[1]);
 	const inTime = (sample) =>
 		sample.actualS !== null &&
 		sample.estimateS !== null &&
-		sample.actualS <= sample.estimateS + TICK_SLACK_S &&
+		sample.actualS <= sample.estimateS + sample.latencyS &&
 		sample.actualS <= shownS(sample);
 
 	check(

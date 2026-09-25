@@ -217,8 +217,9 @@ The docking director reports the player's live one-based place as
 `HOLD · CLEARANCE QUEUE · POSITION n`. Once a berth is reserved, waiting for the
 Transit lane is reported under the live grant as `WAIT · <reason> · ~Ns` (#521):
 the reason is `playerLaneWait`'s, and the figure is the time until the last
-route ahead gives the lane back, read off each route's own `laneEndsAtS` and
-rounded up to 5 s. It is an estimate — a collision can interrupt a route — and
+route ahead gives the lane back, read off each route's own `laneEndsAtS`, plus
+the two authority ticks the turn takes to land (`LANE_TURN_LATENCY_S`), rounded
+up to 5 s. It is an estimate — a collision can interrupt a route — and
 when Traffic cannot say, no figure is shown. A held launch carries the same
 figure after its reason.
 

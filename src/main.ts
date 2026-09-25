@@ -9703,9 +9703,7 @@ class Game {
 	 * never touched here.
 	 */
 	private stepArrivalTurns() {
-		for (const [stationId, request] of this.playerLaneRequests)
-			if (request.movement === "arrival" && !this.holdsArrivalTurn(stationId))
-				this.playerLaneRequests.delete(stationId);
+		this.clearPlayerArrivalLaneRequests();
 		for (const [stationId, state] of this.dockingStates) {
 			if (!state.berthId || this.playerLaneRequests.has(stationId)) continue;
 			if (this.holdsArrivalTurn(stationId))
@@ -10078,10 +10076,11 @@ class Game {
 		else this.launch();
 	}
 
-	/** The arrival turn the player holds at a station: a docking computer's
-	 *  registered request keeps its first stamp, and a hand-flown ship, which
-	 *  registers none, asks as of now. Read by the crossing and by the wait on
-	 *  the glass, so the two judge the same turn (#521). */
+	/** The arrival turn the player holds at a station: the turn
+	 *  `stepArrivalTurns` registered keeps its first stamp, computer or
+	 *  hand-flown, and only with no turn held is it asked as of now. Read by the
+	 *  crossing and by the wait on the glass, so the two judge the same turn
+	 *  (#521). */
 	private arrivalReadyAt(stationId: string): number {
 		const request = this.playerLaneRequests.get(stationId);
 		return request?.movement === "arrival"

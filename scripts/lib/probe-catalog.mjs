@@ -256,7 +256,7 @@ export const PROBE_CATALOG = Object.freeze(
 		),
 		entry(
 			"probe-lane-wait.mjs",
-			"Checks that a live grant waiting on the Transit lane shows its reason and an estimate the real wait never exceeds.",
+			"Checks, against live Traffic at sampled start times, that arrival and launch lane waits show their reason and a figure the measured wait did not exceed.",
 			["lane wait", "Traffic", "docking director", "clearance", "estimate"],
 		),
 		entry(

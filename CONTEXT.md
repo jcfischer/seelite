@@ -297,10 +297,10 @@ _Avoid_: Launch queue
 **Lane wait**:
 How long the player waits for the Transit lane under a live grant or a **held
 launch**, and why: Traffic's reason plus the time until the last route ahead
-gives the lane back (`playerLaneWait`, #521). Shown as `~Ns`, rounded up and
-never a guess — no figure when Traffic cannot say. It is an estimate because a
-collision can interrupt a route. The glass writes it as `WAIT`, not `HOLD`,
-which already has four senses here.
+gives the lane back (`playerLaneWait`, #521). Shown as `~Ns`: that time plus
+the turn's own latency, rounded up, and never a guess — no figure when Traffic
+cannot say. It is an estimate because a collision can interrupt a route. The
+glass writes it as `WAIT`, not `HOLD`, which already has four senses here.
 _Avoid_: Lane queue position, ETA (the ETA is a target's)
 
 **Instance ordinal**:

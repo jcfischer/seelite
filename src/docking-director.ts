@@ -75,14 +75,26 @@ export const LANE_WAIT_REASON: Readonly<Record<LaneRefusal, string>> = {
 export const LANE_WAIT_STEP_S = 5;
 
 /**
- * A lane wait as the pilot reads it: `~10s`, rounded **up** to
- * `LANE_WAIT_STEP_S` and never below it, so the figure errs long rather than
- * short. `null` — Traffic cannot say — is an empty string, not a guess.
+ * How long after a route gives the lane back the player's turn is actually
+ * taken: two Traffic authority ticks at 10 Hz — the route's lane end falls
+ * between two ticks, and the turn is read on the step after the tick that
+ * sees the lane empty. `probe-lane-wait` measured 0.1–0.2 s against live
+ * Traffic; rounding alone does not cover it, because an estimate just under a
+ * step boundary rounds to the boundary itself.
+ */
+export const LANE_TURN_LATENCY_S = 0.2;
+
+/**
+ * A lane wait as the pilot reads it: `~10s` — the predicted wait plus
+ * `LANE_TURN_LATENCY_S`, rounded **up** to `LANE_WAIT_STEP_S` and never below
+ * it, so the figure errs long rather than short. `null` — Traffic cannot say
+ * — is an empty string, not a guess.
  */
 export function laneWaitEstimate(waitS: number | null): string {
 	if (waitS === null || !Number.isFinite(waitS)) return "";
 	const stepped =
-		Math.max(1, Math.ceil(waitS / LANE_WAIT_STEP_S)) * LANE_WAIT_STEP_S;
+		Math.max(1, Math.ceil((waitS + LANE_TURN_LATENCY_S) / LANE_WAIT_STEP_S)) *
+		LANE_WAIT_STEP_S;
 	return `~${stepped}s`;
 }
 
