@@ -17,6 +17,10 @@
  * - a refused link boots no game and touches nothing either;
  * - no page makes a request anywhere but the origin it was served from, none
  *   carries the recipe, and none is anything but a GET.
+ *
+ * A default-layout probe (#381 D11): it presses `6`, the shipped Postcard key,
+ * because a real press is what "the key opens the screen" is about — and, in
+ * the viewer, `z`, `9`, `6` and `w`, the shipped keys a viewer must ignore.
  */
 import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import {

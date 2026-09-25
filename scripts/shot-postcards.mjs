@@ -14,6 +14,9 @@
  *   open probe-shots/postcards/index.html
  *
  * Every game boots `?no-save`, so making the sheet writes no Commander.
+ *
+ * A default-layout probe (#381 D11): it opens the screen with `6`, the shipped
+ * Postcard key.
  */
 import { mkdirSync, writeFileSync } from "node:fs";
 import {
