@@ -179,3 +179,20 @@ export function firstDayPrompt(
 			`press ${keys.computer} to dock`
 		: "line up with the opening and fly in slowly";
 }
+
+/**
+ * Whether station control logs a line for this step (#408 D3).
+ *
+ * On a change of step, except the one change a session did not make: a
+ * session that **opens** on a finished day (`prev` is `null` — nothing has been
+ * logged yet this session — and the step is `trade`) says nothing, or a
+ * finished guided commander would hear the closing line on every reload,
+ * forever. The day cannot leave `trade`, so nothing after it is logged either.
+ */
+export function firstDayLogsStep(
+	prev: FirstDayStepId | null,
+	current: FirstDayStepId,
+): boolean {
+	if (current === prev) return false;
+	return !(prev === null && current === "trade");
+}

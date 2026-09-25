@@ -12,6 +12,7 @@ import {
 	FIRST_DAY_STEPS,
 	type FirstDayFacts,
 	type FirstDayKeys,
+	firstDayLogsStep,
 	firstDayPrompt,
 	firstDayStep,
 	firstDayText,
@@ -218,5 +219,24 @@ describe("#408 — the flight prompt", () => {
 		expect(firstDayPrompt(facts({ running: away }), null, KEYS)).toContain(
 			"Galaxy Map",
 		);
+	});
+});
+
+describe("#408 — when station control's line is logged", () => {
+	test("a step change is logged", () => {
+		expect(firstDayLogsStep(null, "take-work")).toBe(true);
+		expect(firstDayLogsStep("take-work", "launch")).toBe(true);
+		expect(firstDayLogsStep("report", "trade")).toBe(true);
+	});
+
+	test("no change, no line", () => {
+		expect(firstDayLogsStep("launch", "launch")).toBe(false);
+		expect(firstDayLogsStep("trade", "trade")).toBe(false);
+	});
+
+	test("a session that opens on a finished day logs nothing", () => {
+		// A finished guided commander reloads: nothing happened this session, so
+		// the closing line is not said again — every session, forever.
+		expect(firstDayLogsStep(null, "trade")).toBe(false);
 	});
 });

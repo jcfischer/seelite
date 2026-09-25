@@ -705,6 +705,7 @@ import {
 	type FirstDayFacts,
 	type FirstDayKeys,
 	type FirstDayStepId,
+	firstDayLogsStep,
 	firstDayPrompt,
 	firstDayStep,
 	firstDayText,
@@ -13943,7 +13944,7 @@ class Game {
 			// The closing line is said once, at the berth the day ended in.
 			if (current === "trade" && this.firstDayLastStep !== null)
 				this.firstDayClosingStation = this.dock.stationId;
-			if (this.firstDayLastStep !== "trade")
+			if (firstDayLogsStep(this.firstDayLastStep, current))
 				this.firstDayLog.push({
 					at: this.world.gameTime,
 					key: facts.dockedAt ?? facts.running?.reportAt ?? ("" as CarrierKey),
