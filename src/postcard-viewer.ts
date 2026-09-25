@@ -34,7 +34,7 @@ const STYLE = `
   color: #cfdce2; font: 14px/1.6 ui-monospace, "SF Mono", Menlo, Consolas, monospace;
 }
 #seelite-postcard-viewer .card {
-  display: block; width: min(92vw, calc((100vh - 170px) * 1.5)); height: auto;
+  display: block; width: min(92vw, calc((100vh - 200px) * 1.5)); height: auto;
   aspect-ratio: 3 / 2; border-radius: 3px;
   box-shadow: 0 18px 60px rgba(0, 0, 0, .6), 0 0 0 1px rgba(160, 190, 205, .12);
   background: #020406;

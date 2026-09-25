@@ -25,7 +25,9 @@ import {
 	BOOT_DIRECT,
 	BOOT_PARAM,
 	gameUrl,
+	POSTCARD_PREFIX,
 	PUBLIC_ROUTES,
+	postcardUrl,
 	publicUrl,
 	WORKBENCH_ROUTES,
 	workbenchUrl,
@@ -35,6 +37,7 @@ import {
 	BOOT_DIRECT as SRC_BOOT_DIRECT,
 	bootMode,
 } from "../src/boot-mode";
+import { POSTCARD_FRAGMENT_PREFIX, decodePostcard } from "../src/postcard";
 import {
 	callArguments,
 	codeOf,
@@ -45,7 +48,7 @@ import {
 
 const ORIGIN = "http://127.0.0.1:5199";
 
-const BUILDERS = ["gameUrl", "workbenchUrl", "publicUrl"];
+const BUILDERS = ["gameUrl", "workbenchUrl", "publicUrl", "postcardUrl"];
 
 /**
  * Every `.goto(` in a script source whose URL is not visibly a builder's.
@@ -396,5 +399,26 @@ describe("every script boots through the builder", () => {
 			unbuiltNavigations(sourceOf(f)).map((n) => `${f}:${n.line}: ${n.arg}`),
 		);
 		expect(offenders).toEqual([]);
+	});
+});
+
+describe("postcardUrl (#406)", () => {
+	test("spells the fragment the page reads", () => {
+		expect(POSTCARD_PREFIX).toBe(POSTCARD_FRAGMENT_PREFIX);
+	});
+
+	test("puts the recipe in the fragment and nothing in the query", () => {
+		const fragment =
+			"postcard=1&gen=7&seed=47&galaxy=0&system=12&t=0&pos=0,0,0&q=0,0,0,1&mode=clear&head=forward";
+		const url = new URL(postcardUrl(ORIGIN, fragment));
+		expect(url.search).toBe("");
+		expect(url.pathname).toBe("/");
+		expect(url.hash).toBe(`#${fragment}`);
+		expect(decodePostcard(url.hash).ok).toBe(true);
+	});
+
+	test("refuses a fragment that is not a postcard's", () => {
+		expect(() => postcardUrl(ORIGIN, "about")).toThrow(/postcard=/);
+		expect(() => postcardUrl(ORIGIN, "#postcard=1")).toThrow(/postcard=/);
 	});
 });

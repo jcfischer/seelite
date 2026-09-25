@@ -206,3 +206,29 @@ function assertWorkbench(routes, described) {
 			`workbenchUrl: no workbench route in ${described} — that URL boots the game; use gameUrl`,
 		);
 }
+
+/**
+ * What a postcard link's fragment starts with (#406). The page's spelling is
+ * `POSTCARD_FRAGMENT_PREFIX` in `src/postcard.ts`; this file runs under node and
+ * cannot import it, so `tests/game-url.test.ts` pins the two together.
+ */
+export const POSTCARD_PREFIX = "#postcard=";
+
+/**
+ * A postcard link: the site's root with the recipe in the **fragment** and no
+ * query at all — the shape the Postcard screen copies, and the one the viewer
+ * is reached by. `fragment` is the recipe's spelling without its `#`. It is not
+ * parsed here: a probe of the refusal has to be able to build a damaged link.
+ *
+ * @param {string} origin
+ * @param {string} fragment
+ * @returns {string}
+ */
+export function postcardUrl(origin, fragment) {
+	const hash = `#${fragment}`;
+	if (!hash.startsWith(POSTCARD_PREFIX))
+		throw new Error(
+			`postcardUrl: a postcard fragment starts "${POSTCARD_PREFIX.slice(1)}", not "${fragment.slice(0, 16)}"`,
+		);
+	return `${new globalThis.URL("/", origin).href}${hash}`;
+}

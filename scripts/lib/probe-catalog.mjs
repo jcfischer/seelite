@@ -315,6 +315,18 @@ export const PROBE_CATALOG = Object.freeze(
 			["pointer lock", "head look", "console interaction", "mouse input"],
 		),
 		entry(
+			"probe-postcard.mjs",
+			"Opens the Postcard screen, saves and shares a canonical card, copies its fragment link, and opens that link in the read-only viewer against a stored Commander, holding every stored byte and every request.",
+			[
+				"postcard",
+				"image export",
+				"share link",
+				"read-only viewer",
+				"save isolation",
+				"no network",
+			],
+		),
+		entry(
 			"probe-public-site.mjs",
 			"Checks every static public page for its route, privacy promise, navigation, and Play-now handoff without booting the game.",
 			[

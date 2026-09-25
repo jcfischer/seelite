@@ -13166,6 +13166,10 @@ class Game {
 			this.chaseYaw = kept.chaseYaw;
 			this.cabinHidden = kept.cabinHidden;
 			this.onResize();
+			// Two full renders at the card's size are one long frame, and the
+			// controller would read it as the pilot's cost: the same re-prime a
+			// resize gets, for the same reason.
+			this.primeAdaptive("postcard captured");
 		}
 		return out;
 	}
