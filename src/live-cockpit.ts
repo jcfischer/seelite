@@ -148,6 +148,8 @@ export interface FirstDayPanel {
 	 * 2026-09-25). `null` docked, for a free pilot, and after the day.
 	 */
 	consoleLine: string | null;
+	/** The flight controls as bound, keyboard and controller (#408). */
+	controls: { keyboard: string; controller: string };
 }
 
 export interface LiveCockpitState {
@@ -1204,7 +1206,7 @@ export class LiveCockpit {
 		// system from the Navigation list changes it, and a rebuild on that
 		// keystroke would blow away the filter field's focus and caret — the
 		// list would become unusable exactly while it was being used.
-		const key = `${state.visible}|${state.dockPhase}|${state.headLook}|${state.leftTab}|${state.rightTab}|${state.stationConsole?.label ?? ""}|${state.stationConsole?.tab ?? ""}|${state.stationConsole?.revision ?? 0}|${state.stationConsole?.message ?? ""}|${state.launchHold ? "held" : ""}|${!!state.requests}|${state.requests?.revision ?? 0}|${state.firstDay?.current ?? ""}|${state.firstDay?.text ?? ""}|${state.firstDay?.stationLine ?? ""}`;
+		const key = `${state.visible}|${state.dockPhase}|${state.headLook}|${state.leftTab}|${state.rightTab}|${state.stationConsole?.label ?? ""}|${state.stationConsole?.tab ?? ""}|${state.stationConsole?.revision ?? 0}|${state.stationConsole?.message ?? ""}|${state.launchHold ? "held" : ""}|${!!state.requests}|${state.requests?.revision ?? 0}|${state.firstDay?.current ?? ""}|${state.firstDay?.text ?? ""}|${state.firstDay?.stationLine ?? ""}|${state.firstDay?.controls.keyboard ?? ""}|${state.firstDay?.controls.controller ?? ""}`;
 		this.setVisible(state.visible);
 		this.root.dataset.liveHeadLook = state.headLook;
 		this.root.dataset.liveDocked = String(state.dockPhase === "docked");
@@ -1734,5 +1736,5 @@ function firstDayBody(panel: FirstDayPanel | undefined): string {
 		const state = i < at ? "done" : i === at ? "current" : "ahead";
 		return `<li class="lc-first-day-step" data-first-day-step="${step.id}" data-first-day-state="${state}">${escapeHtml(step.title)}</li>`;
 	}).join("");
-	return `<div class="lc-panel-body" data-live-first-day><div class="lc-rail"><b>FIRST DAY</b><span>A SHORT JOB</span><span>ON YOUR OWN TIME</span></div><div class="lc-panel-copy"><h3>NOW</h3><p data-live-first-day-now>${escapeHtml(panel.text)}</p><h3>THE DAY</h3><ol class="lc-first-day-steps">${rows}</ol></div></div>`;
+	return `<div class="lc-panel-body" data-live-first-day><div class="lc-rail"><b>FIRST DAY</b><span>A SHORT JOB</span><span>ON YOUR OWN TIME</span></div><div class="lc-panel-copy"><h3>NOW</h3><p data-live-first-day-now>${escapeHtml(panel.text)}</p><h3>THE DAY</h3><ol class="lc-first-day-steps">${rows}</ol><h3>FLYING</h3><p data-live-first-day-controls>${escapeHtml(panel.controls.keyboard)}<br>CONTROLLER · ${escapeHtml(panel.controls.controller)}</p></div></div>`;
 }

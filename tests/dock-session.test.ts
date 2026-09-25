@@ -257,6 +257,7 @@ describe("§12.6 obligation 3 — flight is inert unless the ship is flying", ()
 			frameNow(world, id),
 			interior,
 			world.gameTime,
+			0,
 		);
 		const out = run(world, session, TRAVERSAL_MAX);
 		expect(out.session.phase).toBe("flying");
@@ -338,6 +339,7 @@ describe("§13.3 — the arrival turns the ship round, and the launch does not",
 			frameNow(world, id),
 			interior,
 			world.gameTime,
+			0,
 		);
 
 		let s = session;
@@ -373,6 +375,7 @@ describe("§12.6 obligation 5 — every launch is skippable", () => {
 			frameNow(world, id),
 			interior,
 			world.gameTime,
+			0,
 		);
 		// Asserted unconditionally rather than as "skippable whenever its type's
 		// flag is set" — §12.2 argues that is always true, so the conditional

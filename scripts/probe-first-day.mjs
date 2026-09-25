@@ -99,7 +99,8 @@ const page = await context.newPage();
 watch(page);
 await installViewPlacement(page);
 await installViewFraming(page);
-await page.goto(gameUrl(origin, { seed: SEED, guided: true }));
+// Raiders off: a raider leg would interrupt the cruise this page measures.
+await page.goto(gameUrl(origin, { seed: SEED, guided: true, raider: "off" }));
 await bootedGame(page);
 await page.waitForFunction(() => !window.__seelite.clockHeld);
 
@@ -232,6 +233,48 @@ check(
 await shot(page, "04b-right-console-launch");
 await launchButton.click();
 await untilFlying(page);
+
+// A launch flies clear, then lets go still moving (#408, the principal's
+// playtest): released two hull lengths past the usual 20 m, flying out along the
+// axis at the gate speed, and still flying out two seconds later.
+const clearOf = (id) =>
+	page.evaluate((stationId) => {
+		const g = window.__seelite;
+		const body = g.world.system.byId.get(stationId);
+		const { axis } = g.poseOfStation(stationId);
+		const p = g.world.ship.pos;
+		const v = g.world.ship.vel;
+		const sv = g.stationVelocity(stationId);
+		const dot = (a, b) => a.x * b.x + a.y * b.y + a.z * b.z;
+		return {
+			pastPlaneKm:
+				dot(
+					{ x: p.x - body.pos.x, y: p.y - body.pos.y, z: p.z - body.pos.z },
+					axis,
+				) - g.dockingSnapshot(stationId).planeKm,
+			outwardKms: dot({ x: v.x - sv.x, y: v.y - sv.y, z: v.z - sv.z }, axis),
+			throttle: g.throttle,
+		};
+	}, id);
+const released = await clearOf(boot.stationId);
+await page.evaluate(() => {
+	const g = window.__seelite;
+	for (let i = 0; i < 120; i++) g.step(1 / 60);
+});
+const twoSecondsOn = await clearOf(boot.stationId);
+// Read off the page, not restated: the hull flown and the assist's cap.
+const { hullKm, capKms } = await page.evaluate(() => ({
+	hullKm: window.__seelite.playerHull.spec.env.lengthKm,
+	capKms: window.__seelite.assistCapKms,
+}));
+check(
+	"a launch lets go clear of the mouth, moving out at the speed its throttle holds",
+	released.pastPlaneKm > 2 * hullKm &&
+		released.outwardKms > 0 &&
+		Math.abs(released.outwardKms - released.throttle * capKms) < 0.01 &&
+		twoSecondsOn.pastPlaneKm > released.pastPlaneKm + 0.15,
+	JSON.stringify({ released, twoSecondsOn }),
+);
 await settle(page);
 const flying = await page.evaluate(() => ({
 	phase: window.__seelite.dockPhase,
@@ -241,6 +284,17 @@ check(
 	"in flight the glass names the delivery station",
 	flying.phase === "flying" && flying.prompt.includes(local.reportName),
 	JSON.stringify(flying),
+);
+const controls = await page.evaluate(
+	() => window.__seelite.firstDayControlsShown,
+);
+check(
+	"in flight the glass shows how to fly and steer, keyboard and controller",
+	controls.length === 2 &&
+		controls[0].startsWith("THROTTLE ") &&
+		controls[0].includes("PITCH") &&
+		controls[1].startsWith("CONTROLLER · THROTTLE "),
+	JSON.stringify(controls),
 );
 await shot(page, "05-flying-prompt");
 
@@ -278,6 +332,40 @@ check(
 	facing,
 );
 await shot(page, "05c-face-and-cruise");
+
+// F then J: the leg tracks the station until the drop (principal, 2026-09-25).
+// The station moves on its orbit through the leg, so a nose-locked leg that is
+// not steered at it misses the 50 km drop sphere.
+await page.keyboard.press("f");
+await page.keyboard.press("j");
+const leg = await page.evaluate((id) => {
+	const g = window.__seelite;
+	let cruised = false;
+	for (let i = 0; i < 60 * 900; i++) {
+		g.step(1 / 60);
+		if (g.regime === "cruise") cruised = true;
+		else if (cruised) break;
+	}
+	const body = g.world.system.byId.get(id);
+	const p = g.world.ship.pos;
+	return {
+		cruised,
+		regime: g.regime,
+		distanceKm: Math.hypot(
+			p.x - body.pos.x,
+			p.y - body.pos.y,
+			p.z - body.pos.z,
+		),
+		dropKm: g.cruiseParams.dropRadiusKm,
+		exit: g.lastExit,
+	};
+}, destId);
+check(
+	"F then J cruises to the station and drops at it",
+	leg.cruised && leg.regime === "normal" && leg.distanceKm <= leg.dropKm * 1.2,
+	JSON.stringify(leg),
+);
+await shot(page, "05d-dropped-at-station");
 
 // Near the delivery station with it selected: the glass names the clearance key.
 const near = await page.evaluate(async (id) => {
@@ -498,6 +586,11 @@ check(
 check(
 	"and no station control line on its port console",
 	(await consoleLine(free)) === null,
+);
+check(
+	"and no flight controls on its glass",
+	(await free.evaluate(() => window.__seelite.firstDayControlsShown)).length ===
+		0,
 );
 await shot(free, "10-free-tab");
 await free.evaluate(async () => {

@@ -476,7 +476,12 @@ import {
 	RAIDER_HULL_ID,
 	type RouteDetection,
 } from "./raider-slots";
-import { berthCentre, recomposeDirection } from "./arrival";
+import {
+	LAUNCH_CLEAR_HULL_LENGTHS,
+	LAUNCH_EXIT_KMS,
+	berthCentre,
+	recomposeDirection,
+} from "./arrival";
 import {
 	type DockPhase,
 	type DockSession,
@@ -601,6 +606,7 @@ import {
 	onKeyboard,
 	type OwnKey,
 	spoken,
+	flightControls,
 	targetPrompt,
 } from "./key-names";
 import type { CaptureModalHandle } from "./capture-modal";
@@ -799,6 +805,12 @@ const FIRST_DAY_DOCK_STEPS = 60 * 160;
  *  hails' twelve: the log shows six, and a first day logs five steps, which
  *  pushed every raider and hail line off the console in the first capture. */
 const FIRST_DAY_LOG_KEEP = 3;
+
+/** Where the first day's flight controls sit, as a fraction of the frame's
+ *  height from the top: the top of the glass, which carries nothing else. */
+const FIRST_DAY_CONTROLS_TOP = 0.09;
+/** Dimmer than the prompt's amber: a reference to glance at, not a step. */
+const FIRST_DAY_CONTROLS_FILL = "rgba(255, 214, 120, 0.62)";
 
 /** How many hails the session keeps. The console shows six; the store holds two
  *  screens, and no more, however long the trigger is held. */
@@ -2440,6 +2452,14 @@ class Game {
 	lastExit = "";
 	/** Internal route state only: targetId remains the selected station. */
 	private detour: CruiseGuidanceState | null = null;
+	/**
+	 * The station a plain cruise leg is tracking (principal, 2026-09-25): F then
+	 * J lost a moving station, while a detour's last leg already steered at its
+	 * live position. So a leg engaged with a station selected and no detour
+	 * steers at it the same way, through `stepCruiseGuidance`'s direct mode,
+	 * until the drop. Control input, a new target or the drop ends it.
+	 */
+	private cruiseTrackId: string | null = null;
 	/** Reused while steering an active detour; cruise must not make per-frame Three allocations. */
 	private readonly detourDirection = new THREE.Vector3();
 	private readonly detourCurrentNose = new THREE.Vector3();
@@ -10134,6 +10154,19 @@ class Game {
 		// would still be turning on the frame a launch hands control back.
 		this.rates = { pitch: 0, yaw: 0, roll: 0 };
 		this.throttle = 0;
+		// **A launch lets go moving (#408, the principal's playtest).** The law
+		// eases to rest at its release, and with the throttle at zero the assist
+		// held the ship there; it is handed over flying out along the axis at
+		// the gate speed instead, with the throttle that keeps it, so it clears
+		// the station until the pilot takes over.
+		if (wasLaunching && this.dock.phase === "flying" && wasAt) {
+			const { axis } = this.poseOfStation(wasAt);
+			this.world.ship.vel = add(
+				this.world.ship.vel,
+				scale(axis, LAUNCH_EXIT_KMS),
+			);
+			this.throttle = LAUNCH_EXIT_KMS / ASSIST_CAP_KMS;
+		}
 	}
 
 	/**
@@ -10175,6 +10208,8 @@ class Game {
 			this.apertureFrameOf(this.dock.stationId),
 			this.interiorOf(this.dock.stationId),
 			this.world.gameTime,
+			// Fly clear before letting go (#408): two lengths of the hull flown.
+			LAUNCH_CLEAR_HULL_LENGTHS * HULL_SPECS[this.commander.hull].env.lengthKm,
 		);
 		if (this.dock.phase === "launching") {
 			// The console is gone; its last refusal goes with it, or the next
@@ -10601,6 +10636,7 @@ class Game {
 		this.struckFor = 0;
 		this.lastExit = "";
 		this.detour = null;
+		this.cruiseTrackId = null;
 		this.frameBody = null;
 		this.proximityFrameBodyId = null;
 		this.dockingComputerEngaged = false;
@@ -11885,6 +11921,10 @@ class Game {
 			}
 			this.detour = begun.guidance;
 		}
+		// A station with no detour is tracked directly; a detour tracks it on its
+		// last leg already.
+		this.cruiseTrackId =
+			target && targetParentId && !this.detour ? target.id : null;
 		this.spoolLeftS = SPOOL_S;
 		this.lastExit = "";
 	}
@@ -11928,6 +11968,7 @@ class Game {
 		this.saveDirty();
 		this.detour = null;
 		this.cruiseSpeedKms = 0;
+		this.cruiseTrackId = null;
 		this.throttle = 0;
 		this.lastExit = reason;
 		if (this.legStartedAtS !== null) {
@@ -12105,8 +12146,12 @@ class Game {
 			this.dockingComputerEngaged = false;
 			this.clearPlayerArrivalLaneRequests();
 		}
-		if (this.detour && this.hasControlInput(yaw, pitch, roll)) {
+		if (
+			(this.detour || this.cruiseTrackId) &&
+			this.hasControlInput(yaw, pitch, roll)
+		) {
 			this.detour = null;
+			this.cruiseTrackId = null;
 			// A throttle key is the player's chosen value for this same frame.
 			// Do not briefly promote throttle-down to full cruise before its normal
 			// input handling below can apply it.
@@ -12385,9 +12430,47 @@ class Game {
 		if (step.starved) this.dropOut("drive charge exhausted");
 	}
 
+	/**
+	 * Steer a plain cruise leg at the station it was engaged on (see
+	 * `cruiseTrackId`): the detour's last leg, without the detour. Always `true`,
+	 * because tracking cannot fail — with no station left to track it lets go
+	 * and the leg flies on as a nose-locked one.
+	 */
+	private stepCruiseTrack(dt: number): boolean {
+		if (!this.cruiseTrackId) return true;
+		const target = this.targetBody();
+		if (!target || this.cruiseTrackId !== this.targetId) {
+			this.cruiseTrackId = null;
+			return true;
+		}
+		const guided = stepCruiseGuidance({
+			guidance: null,
+			pos: this.world.ship.pos,
+			nose: this.nose(),
+			target,
+			masses: this.masses(),
+			targetParentId: this.targetParentId(),
+			dt,
+			speedKms: this.cruiseSpeedKms,
+			steerDirect: true,
+		});
+		this.throttle = guided.throttle;
+		const desired = this.detourDirection.set(
+			guided.nose.x,
+			guided.nose.y,
+			guided.nose.z,
+		);
+		this.detourCurrentNose
+			.copy(this.detourForward)
+			.applyQuaternion(this.orientation);
+		this.detourOrientation.setFromUnitVectors(this.detourCurrentNose, desired);
+		this.orientation.premultiply(this.detourOrientation).normalize();
+		return true;
+	}
+
 	/** Turn toward the current internal waypoint; physical motion remains cruise. */
 	private stepDetour(dt: number): boolean {
-		if (!this.detour) return true;
+		if (!this.detour) return this.stepCruiseTrack(dt);
 		if (this.detour.targetId !== this.targetId) {
 			this.detour = null;
 			this.throttle = 1;
@@ -14054,7 +14137,46 @@ class Game {
 				guided && !facts.docked
 					? firstDayConsoleLine(facts, this.firstDayTarget(), keys)
 					: null,
+			controls: flightControls(this.bindings),
 		};
+	}
+
+	/**
+	 * The flight controls a guided pilot is shown on the glass (#408, the
+	 * principal's playtest): throttle, pitch, yaw and roll, on the keyboard and
+	 * the controller, as bound. At the top of the glass, which nothing else
+	 * uses, and only while the day has the pilot flying in normal flight — the
+	 * Fly and Dock-at-a-station steps — so a cruise leg and a berth are clear.
+	 * What was drawn is kept on `firstDayControlsShown` for the probe.
+	 */
+	firstDayControlsShown: readonly string[] = [];
+
+	private drawFirstDayControls(
+		ctx: CanvasRenderingContext2D,
+		w: number,
+		h: number,
+	): void {
+		const step =
+			this.firstDay === "guided" &&
+			this.regime === "normal" &&
+			this.dockPhase === "flying"
+				? firstDayStep(this.firstDayFacts())
+				: null;
+		if (step !== "fly" && step !== "find-station") {
+			this.firstDayControlsShown = [];
+			return;
+		}
+		const { keyboard, controller } = flightControls(this.bindings);
+		const lines = [keyboard, `CONTROLLER · ${controller}`];
+		ctx.save();
+		ctx.font = PROMPT_FONT;
+		ctx.textAlign = "center";
+		ctx.fillStyle = FIRST_DAY_CONTROLS_FILL;
+		const top = Math.round(h * FIRST_DAY_CONTROLS_TOP);
+		for (const [i, text] of lines.entries())
+			ctx.fillText(text, w / 2, top + i * PROMPT_LINE_HEIGHT_PX);
+		ctx.restore();
+		this.firstDayControlsShown = lines;
 	}
 
 	/**
@@ -15447,6 +15569,7 @@ class Game {
 		} else {
 			this.cockpitPrompt.reset();
 		}
+		this.drawFirstDayControls(ctx, w, h);
 		this.combatRig?.drawOverlay(ctx, w, h, this.view, this.bindings);
 
 		// The selected target owns the amber sky marker. Green remains prograde,

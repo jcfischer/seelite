@@ -37,6 +37,7 @@ import {
 	type ApertureFrame,
 	TRAVERSAL_SECONDS_DEEP,
 	TRAVERSAL_SECONDS_NEAR,
+	V_GATE_KMS,
 	frameAtPhase,
 	slotBasis,
 } from "./docking";
@@ -60,6 +61,26 @@ import { type Vec3, add, cross, dot, scale, sub, v3 } from "./vec3";
  * at, so it is a release rather than a manoeuvre.
  */
 export const LAUNCH_RELEASE_KM = 0.02;
+
+/**
+ * How far past `LAUNCH_RELEASE_KM` a **player's** launch flies before it lets go,
+ * in hull lengths of the ship being launched (#408, the principal's playtest).
+ *
+ * Twenty metres past the plane left most of the courier's 57.5 m hull in the
+ * mouth, and the pilot's first sight of open space was the inside of the frame.
+ * Two lengths puts the whole hull out with more than a length of clearance
+ * behind it. Traffic launches pass no clear distance and release where they
+ * always did: their timing is `station-route.ts`'s lane arithmetic, not a view.
+ */
+export const LAUNCH_CLEAR_HULL_LENGTHS = 2;
+
+/**
+ * The speed a player's launch hands the ship over at, km/s, outward along the
+ * axis — §3's gate speed, the pace a ship is allowed to cross the plane at.
+ * The caller also sets the throttle that holds it, so the ship keeps flying
+ * clear until the pilot takes over rather than stopping at the release.
+ */
+export const LAUNCH_EXIT_KMS = V_GATE_KMS;
 
 /**
  * How far off its berth surface the transfer leg leaves the ship, as a multiple
@@ -283,6 +304,12 @@ export function beginLaunch(
 	interior: StationInterior,
 	berth: Berth,
 	startedAtS: number,
+	/**
+	 * Past the usual release, km: a player's launch passes
+	 * `LAUNCH_CLEAR_HULL_LENGTHS` of its hull, Traffic passes 0. Required, so a
+	 * caller that forgot it cannot silently launch a player into the mouth.
+	 */
+	clearKm: number,
 ): ArrivalLaw {
 	// **The arrival's own route, reversed.** Written out again inline, a fourth
 	// leg or a moved staging point had to land in two places or the two
@@ -294,7 +321,9 @@ export function beginLaunch(
 	// the plane alone would sit below that leg, so the ship rose off its pad,
 	// crossed to the axis and then dropped 10 m to be let go.
 	const release = offset(
-		Math.max(frame.planeKm, interior.stagingAxialKm) + LAUNCH_RELEASE_KM,
+		Math.max(frame.planeKm, interior.stagingAxialKm) +
+			LAUNCH_RELEASE_KM +
+			clearKm,
 		0,
 		0,
 	);
