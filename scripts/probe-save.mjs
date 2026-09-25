@@ -549,7 +549,18 @@ try {
 			// `computerRefusal: "no-clearance"` and never engaged, which looks from
 			// outside exactly like an autopilot that cannot fly.
 			g.requestDockingClearance();
-			g.toggleDockingComputer();
+			{
+				// A new ship has no docking computer (#408): fit the one this flies.
+				if (!g.hasDockingComputer)
+					g.commander = {
+						...g.commander,
+						ownedEquipment: [
+							...g.commander.ownedEquipment,
+							g.dockingComputerName,
+						],
+					};
+				g.toggleDockingComputer();
+			}
 			// **Stepped, not rendered.** The docking computer is sim logic and needs
 			// no frame; rendering every step put a full SwiftShader frame on each of
 			// thousands of iterations and the probe simply did not finish. One frame

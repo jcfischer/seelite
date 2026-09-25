@@ -3144,25 +3144,18 @@ class Game {
 	}
 
 	/**
-	 * Whether the ship carries §7's 1,000 Cr computer.
+	 * Whether the ship carries §7's 1,000 Cr computer: whether the commander
+	 * owns one (`DOCKING_COMPUTER`, sold on the Equipment tab).
 	 *
-	 * `true` because there is nowhere to buy one: the market module has the
-	 * price (`EQUIPMENT`, and this node consumes that rather than pricing it)
-	 * and no screen sells it (#70 owns that). Shipping it fitted rather than
-	 * absent is what makes §7's behaviour reachable at all, and §7.1's reading —
-	 * an early-game skill gate and a late-game option — is a claim about the
-	 * economy that cannot be made until the shop exists.
-	 *
-	 * **The cost of that default is real and it is not the economy.** §3.1's
-	 * open question is whether a *person* can hold the 0.10 km/s gate, and a
-	 * game that boots with the autopilot fitted is a game where the first thing
-	 * anyone flies is the autopilot. The mitigation is that it is off until
-	 * asked for (`u`), and that §9.2's two failure runs disengage it explicitly
-	 * — but the honest reading is that this default makes the skill gate easy to
-	 * never meet, which is the opposite of what §7.1 assumes about the early
-	 * game. Once #70's screen exists this should ship `false`.
+	 * **A new ship has none, on the principal's ruling (#408, 2026-09-25).** It
+	 * shipped fitted while no screen sold it, and this comment said then that
+	 * the default made §7.1's early-game skill gate easy to never meet — the
+	 * first thing anyone flew was the autopilot. The Equipment tab sells it now,
+	 * so it is bought, and a new pilot docks by hand.
 	 */
-	hasDockingComputer = true;
+	get hasDockingComputer(): boolean {
+		return this.commander.ownedEquipment.includes(DOCKING_COMPUTER);
+	}
 
 	/** Whether it is flying. Any control input cancels it (§7). */
 	dockingComputerEngaged = false;
@@ -13825,8 +13818,9 @@ class Game {
 	 * checkpoint before their first flight.
 	 *
 	 * The computer is engaged by setting the flag rather than through
-	 * `toggleDockingComputer`, so this keeps working on the day the computer
-	 * stops being fitted free (`hasDockingComputer`).
+	 * `toggleDockingComputer`, because a new ship has none (`hasDockingComputer`,
+	 * #408): this is the station bringing the ship in before the clock runs, not
+	 * the pilot flying. The pilot's own first dock is by hand.
 	 *
 	 * Sub-stepped in sim, so the clock starts at the dock rather than at zero:
 	 * 76.9 s on ten seeds when this was written.
@@ -13917,6 +13911,7 @@ class Game {
 				this.requestsView().offers.some(
 					(offer) => offer.rowId === LOCAL_RUN_ROW_ID,
 				),
+			computerFitted: this.hasDockingComputer,
 		};
 	}
 

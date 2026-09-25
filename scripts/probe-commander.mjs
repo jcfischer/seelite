@@ -203,8 +203,9 @@ try {
 	await tabA.keyboard.press("Enter");
 	const seedPrefill = await tabA.inputValue('[data-field="seed"]');
 	await tabA.fill('[data-field="name"]', "Probe One");
-	// Name, seed, roll, permadeath: the toggle is three rows down.
-	for (let i = 0; i < 3; i++) await tabA.keyboard.press("ArrowDown");
+	// Name, seed, roll, first day guidance, permadeath: the permadeath toggle is
+	// four rows down (#408 put the guidance row above it, and left it on).
+	for (let i = 0; i < 4; i++) await tabA.keyboard.press("ArrowDown");
 	await tabA.keyboard.press("ArrowRight");
 	await tabA.keyboard.press("ArrowDown");
 	await reloadedBy(tabA, () => tabA.keyboard.press("Enter"));
@@ -232,6 +233,8 @@ try {
 			pending: await b.readMeta("pending"),
 			live: (await b.read("Probe One", "live")) !== null,
 			permadeath: env.commander.permadeath,
+			firstDay: env.commander.firstDay,
+			docked: window.__seelite.dockPhase,
 			seed: env.world.seed,
 		};
 	});
@@ -244,6 +247,11 @@ try {
 		"the new Commander has the seed and the permadeath New game chose",
 		landed.permadeath === true && String(landed.seed) === seedPrefill,
 		`${JSON.stringify(landed)} against seed field ${seedPrefill}`,
+	);
+	check(
+		"New game's first day guidance is on by default, and the Commander starts docked (#408)",
+		landed.firstDay === "guided" && landed.docked === "docked",
+		JSON.stringify(landed),
 	);
 
 	// -----------------------------------------------------------------------

@@ -61,6 +61,9 @@ export interface FirstDayFacts {
 	settledAny: boolean;
 	/** The board at the station the ship is docked at posts a Local run. */
 	localRunOnBoard: boolean;
+	/** The ship carries a docking computer. A new ship has none: it is bought
+	 *  (#408), so a new pilot is told to fly in, not which key docks. */
+	computerFitted: boolean;
 }
 
 /** The keys as bound, as the prompt line names them. */
@@ -101,6 +104,12 @@ const whereTo = (job: FirstDayJob): string =>
 		? job.reportName
 		: `${job.reportName} in the ${job.reportSystemName} system`;
 
+/** How the pilot gets from a cleared approach into the berth. */
+const dockTail = (facts: FirstDayFacts, keys: FirstDayKeys): string =>
+	facts.computerFitted
+		? `then ask for clearance with ${keys.clearance} and dock with ${keys.computer}.`
+		: `then ask for clearance with ${keys.clearance}, line up with the opening and fly in slowly.`;
+
 /**
  * The step in one or two plain sentences, for the tab and for station
  * control's line on the console.
@@ -110,7 +119,7 @@ export function firstDayText(facts: FirstDayFacts, keys: FirstDayKeys): string {
 	const job = facts.running;
 	switch (step) {
 		case "find-station":
-			return `Select a station on the Navigation console (${keys.navigation}), cruise to it with ${keys.cruise}, then ask for clearance with ${keys.clearance} and dock with ${keys.computer}.`;
+			return `Select a station on the Navigation console (${keys.navigation}), cruise to it with ${keys.cruise}, ${dockTail(facts, keys)}`;
 		case "take-work":
 			return facts.localRunOnBoard
 				? "Open the Requests tab on the station console and accept the Local run. It is a short delivery inside this system."
@@ -120,7 +129,7 @@ export function firstDayText(facts: FirstDayFacts, keys: FirstDayKeys): string {
 		case "fly":
 			if (!job) return "";
 			return job.sameSystem
-				? `Fly to ${whereTo(job)}: select it on the Navigation console (${keys.navigation}), cruise with ${keys.cruise}, then ask for clearance with ${keys.clearance} and dock with ${keys.computer}.`
+				? `Fly to ${whereTo(job)}: select it on the Navigation console (${keys.navigation}), cruise with ${keys.cruise}, ${dockTail(facts, keys)}`
 				: `Fly to ${whereTo(job)}: set a course on the Galaxy Map and jump, then find the station and dock.`;
 		case "report":
 			return "You are at the delivery station. Open the Requests tab and report the job to get paid.";
@@ -164,7 +173,8 @@ export function firstDayPrompt(
 			return `deliver to ${job.reportName} · select it on the Navigation console (${keys.navigation})`;
 	} else if (target?.key === null || target === null) return "";
 	if (!target.inVicinity || target.computerEngaged) return "";
-	return target.grantLive
+	if (!target.grantLive) return `press ${keys.clearance} for clearance`;
+	return facts.computerFitted
 		? `press ${keys.computer} to dock`
-		: `press ${keys.clearance} for clearance`;
+		: "cleared · line up with the opening and fly in slowly";
 }

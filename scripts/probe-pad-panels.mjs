@@ -122,7 +122,18 @@ const installPlaceOnAxis = () => {
 		g.step(1 / 60);
 		g.targetId = id;
 		g.requestDockingClearance();
-		if (!g.dockingComputerEngaged) g.toggleDockingComputer();
+		if (!g.dockingComputerEngaged) {
+			// A new ship has no docking computer (#408): fit the one this flies.
+			if (!g.hasDockingComputer)
+				g.commander = {
+					...g.commander,
+					ownedEquipment: [
+						...g.commander.ownedEquipment,
+						g.dockingComputerName,
+					],
+				};
+			g.toggleDockingComputer();
+		}
 		return snap;
 	};
 };
@@ -369,8 +380,15 @@ try {
 			// is kept as cheap insurance and is **unverified by this tier** —
 			// what is checked here is the weaker, real property that the hint
 			// follows a surface's contents rather than its name.
+			// **Every tab, counted off the page, so the walk ends back on Navigation.**
+			// This was a literal 4; #408 added a fifth tab and the loop stopped on it,
+			// which has nothing to walk, and the next check found no landings.
+			const tabCount = await page.evaluate(
+				() =>
+					document.querySelectorAll('[data-live-panel="left"] .lc-tab').length,
+			);
 			const perTab = [];
-			for (let i = 0; i < 4; i++) {
+			for (let i = 0; i < tabCount; i++) {
 				const seen = await page.evaluate(() => ({
 					tab: document.querySelector("[data-live-cockpit]").dataset
 						.liveLeftView,

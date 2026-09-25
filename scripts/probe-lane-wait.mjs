@@ -146,7 +146,18 @@ try {
 			? await page.evaluate(() => {
 					const g = window.__seelite;
 					const id = "station-trade";
-					if (!g.dockingComputerEngaged) g.toggleDockingComputer();
+					if (!g.dockingComputerEngaged) {
+						// A new ship has no docking computer (#408): fit the one this flies.
+						if (!g.hasDockingComputer)
+							g.commander = {
+								...g.commander,
+								ownedEquipment: [
+									...g.commander.ownedEquipment,
+									g.dockingComputerName,
+								],
+							};
+						g.toggleDockingComputer();
+					}
 					for (let i = 0; i < 6_000 && g.dockPhase === "flying"; i++)
 						g.step(0.1);
 					if (g.dockPhase === "arriving") g.skipDockTraversal();

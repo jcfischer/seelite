@@ -228,7 +228,32 @@ check(
 );
 await shot(page, "06-near-station");
 
-// Dock at the delivery station through the real protocol.
+// Cleared, with no docking computer: a new ship has none (#408), so the key
+// does nothing and the glass says to fly in rather than naming it.
+const cleared = await page.evaluate(async () => {
+	const g = window.__seelite;
+	g.requestDockingClearance();
+	const fitted = g.hasDockingComputer;
+	g.toggleDockingComputer();
+	const engaged = g.dockingComputerEngaged;
+	g.updateCockpit();
+	await new Promise((r) => requestAnimationFrame(() => r()));
+	return { fitted, engaged, prompt: g.cockpitPrompt.text };
+});
+check(
+	"a new ship has no docking computer, and its key does nothing",
+	cleared.fitted === false && cleared.engaged === false,
+	JSON.stringify(cleared),
+);
+check(
+	"cleared without one, the glass says to fly in, and names no docking key",
+	cleared.prompt.includes("fly in slowly") && !cleared.prompt.includes("dock"),
+	cleared.prompt,
+);
+await shot(page, "06b-cleared-by-hand");
+
+// Dock at the delivery station through the real protocol. `__parkInBerth`
+// fits the computer to fly the approach, so everything below has one.
 await page.evaluate(async (id) => {
 	const g = window.__seelite;
 	await window.__parkInBerth(id, g.berthIdsOfStation(id)[0]);

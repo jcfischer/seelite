@@ -33,6 +33,8 @@ const facts = (over: Partial<FirstDayFacts> = {}): FirstDayFacts => ({
 	running: null,
 	settledAny: false,
 	localRunOnBoard: false,
+	// A new ship has none (#408, the principal's ruling): it is bought.
+	computerFitted: false,
 	...over,
 });
 
@@ -106,11 +108,25 @@ describe("#408 — what the pilot is told", () => {
 	});
 
 	test("fly names the delivery station and the keys, as bound", () => {
-		const text = firstDayText(facts({ running }), KEYS);
+		const text = firstDayText(facts({ running, computerFitted: true }), KEYS);
 		expect(text).toContain("ERMA REFINERY");
-		for (const key of ["(1)", "j", "c", "u"]) expect(text).toContain(key);
+		for (const phrase of [
+			"Navigation console (1)",
+			"cruise with j",
+			"clearance with c",
+			"dock with u",
+		])
+			expect(text).toContain(phrase);
 		const rebound = firstDayText(facts({ running }), { ...KEYS, cruise: "k" });
-		expect(rebound).toContain("k");
+		expect(rebound).toContain("cruise with k");
+	});
+
+	test("without a docking computer the pilot is told to fly in, not to press u", () => {
+		for (const f of [facts({ running }), facts()]) {
+			const text = firstDayText(f, KEYS);
+			expect(text).not.toContain("with u");
+			expect(text).toContain("slowly");
+		}
 	});
 
 	test("a delivery one jump out says which system", () => {
@@ -163,12 +179,16 @@ describe("#408 — the flight prompt", () => {
 
 	test("near the station: clearance, then the docking computer, then nothing", () => {
 		const near = { key: THERE, inVicinity: true, computerEngaged: false };
+		expect(firstDayPrompt(flying(), { ...near, grantLive: false }, KEYS)).toBe(
+			"press c for clearance",
+		);
 		expect(
-			firstDayPrompt(flying(), { ...near, grantLive: false }, KEYS),
-		).toContain("c");
-		expect(
-			firstDayPrompt(flying(), { ...near, grantLive: true }, KEYS),
-		).toContain("u");
+			firstDayPrompt(
+				flying({ computerFitted: true }),
+				{ ...near, grantLive: true },
+				KEYS,
+			),
+		).toBe("press u to dock");
 		expect(
 			firstDayPrompt(
 				flying(),
@@ -178,11 +198,18 @@ describe("#408 — the flight prompt", () => {
 		).toBe("");
 	});
 
+	test("cleared without a docking computer: fly in slowly, until the ship is in", () => {
+		const near = { key: THERE, inVicinity: true, computerEngaged: false };
+		const line = firstDayPrompt(flying(), { ...near, grantLive: true }, KEYS);
+		expect(line).toContain("slowly");
+		expect(line).not.toContain(" u ");
+	});
+
 	test("finding a station works on whatever station is selected", () => {
 		const near = { key: HOME, inVicinity: true, computerEngaged: false };
-		expect(
-			firstDayPrompt(facts(), { ...near, grantLive: false }, KEYS),
-		).toContain("c");
+		expect(firstDayPrompt(facts(), { ...near, grantLive: false }, KEYS)).toBe(
+			"press c for clearance",
+		);
 		expect(firstDayPrompt(facts(), null, KEYS)).toBe("");
 	});
 
