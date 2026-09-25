@@ -813,6 +813,15 @@ candidate ends in normal flight with an explicit reason. Charge remains distance
 metered by the cruise integrator, and normal station arrival and docking remain
 unchanged.
 
+**A plain leg tracks its station too (#408).** The principal's playtest found
+that F then J lost a moving station unless the leg needed a detour, whose last
+leg already steers at the station's live position. A leg engaged with a station
+selected and no detour now steers at it through the same controller's direct
+mode, at the same bounded rate, until the drop. It is the same kind of aid as the
+detour and ends the same ways: any flight input, a new target or the drop. It
+never recaptures. `probe-first-day` flies it: the leg drops 50 km from the
+station with the tracking, and 426 km off without it.
+
 
 - The occluded quarter. Raising station orbits is measured above but not
   decided, and it moves the `station-orbits.json` baseline.

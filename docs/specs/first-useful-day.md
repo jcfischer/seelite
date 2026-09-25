@@ -146,6 +146,28 @@ slowly, and the docking key is named only to a pilot who owns one. D1's docked
 start still engages the computer's flag directly, because that is the station
 bringing the ship in before the clock runs, not the pilot flying.
 
+## Playtest rulings (2026-09-25)
+
+The principal flew the build and ruled on what the day should say and do. Each
+is built and probed; the mechanism a ruling changed is recorded in its owner.
+
+- **P1: Launch goes through the right console.** Enter on the docked console
+  acts on the focused Requests control, and it tracked the job instead of
+  launching. The launch step names the starboard head-look key and LAUNCH on
+  the Flight tab.
+- **P2: After selecting, say 2, F, then J.** When a station is selected on the
+  port console, station control says so there, where the head is turned and the
+  glass is not drawn. The glass then says to turn toward it and cruise.
+- **P3: A launch flies clear, and lets go moving.** Built for every player
+  launch, not only the first day's (`docking.md` §12.2).
+- **P4: F then J tracks the station.** A plain leg steers at the selected
+  station until the drop, as a detour's last leg did (`in-system-travel.md`
+  §12.5).
+- **P5: Show how to fly and steer.** A guided pilot in normal flight sees
+  throttle, pitch, yaw and roll, on the keyboard and the controller, at the top
+  of the glass, from the layout in force (`flightControls` in
+  `src/key-names.ts`). The First day tab lists them for every commander.
+
 ## The steps
 
 The step is **derived from state**, never stored (`src/first-day.ts`). Only
@@ -157,8 +179,8 @@ job outranks being docked.
 | --- | --- | --- |
 | Trade | A request has been reported | The pay is yours; the Market and more work are on the console |
 | Report | A job running, docked where it reports | Report on the Requests tab |
-| Launch | A job running, docked anywhere else | The launch key |
-| Fly | A job running, not docked | The delivery station; near it the clearance key, then the docking key if the computer is owned, else to fly in slowly (D7) |
+| Launch | A job running, docked anywhere else | Turn to the right console and select LAUNCH (P1) |
+| Fly | A job running, not docked | Select the delivery station on the port console, then 2, F and J (P2); near it the clearance key, then the docking key if the computer is owned, else to fly in slowly (D7) |
 | Take work | Nothing running, docked | Accept the Local run, or a job when none is posted |
 | Dock at a station | Nothing running, not docked | Select a station, cruise, clearance, dock |
 

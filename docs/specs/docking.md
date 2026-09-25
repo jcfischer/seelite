@@ -1107,6 +1107,14 @@ not the departure's. So, explicitly and in the same terms §12.1 and §12.3 use:
   in both directions, which is what makes it one rule rather than two.
 - Flight controls become live at that same instant, not before: a player steering
   inside the throat is the control problem E2 declined.
+- **A player's launch flies clear before it lets go (#408).** The principal's
+  playtest found the 20 m release (`LAUNCH_RELEASE_KM`) left most of a
+  courier's 57.5 m hull in the mouth, held there by the assist at zero
+  throttle. The law now runs `LAUNCH_CLEAR_HULL_LENGTHS` lengths of the flown
+  hull further out and hands the ship over moving outward at `LAUNCH_EXIT_KMS`,
+  with the throttle that holds it. So for a player the exemption, and the lane
+  the launch holds, end at that release. Traffic's launches are unchanged:
+  `beginLaunch`'s clear distance is required, and `station-route.ts` passes 0.
 
 **Launch is unconditionally skippable, and does not read E4's flag at all.** The
 tempting argument is that it need not: the flag is set by arriving, and a player
