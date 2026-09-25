@@ -93,11 +93,19 @@ export type WitchspaceCue = "hum" | "sweep" | "stop";
 
 export const idleWitchspace = (): WitchspaceState => ({ kind: "idle" });
 
-/** §8's wind-up has begun. Pairs with `beginCharge`. */
-export const beginWitchspace = (): WitchspaceState => ({
+/**
+ * The entry at `leftS` seconds from the cut — how `main.ts` keeps the effect on
+ * the charge's own countdown rather than on a second clock beside it. From
+ * idle it is a begin, and `witchspaceCues` hears it as one.
+ */
+export const entryWitchspace = (leftS: number): WitchspaceState => ({
 	kind: "entry",
-	leftS: JUMP_CHARGE_S,
+	leftS: Math.min(JUMP_CHARGE_S, Math.max(0, leftS)),
 });
+
+/** §8's wind-up has begun. Pairs with `beginCharge`. */
+export const beginWitchspace = (): WitchspaceState =>
+	entryWitchspace(JUMP_CHARGE_S);
 
 /**
  * The jump was taken: the world is the new system. From any state — a jump with

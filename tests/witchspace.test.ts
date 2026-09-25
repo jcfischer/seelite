@@ -16,6 +16,7 @@ import {
 	abortWitchspace,
 	arriveWitchspace,
 	beginWitchspace,
+	entryWitchspace,
 	idleWitchspace,
 	jumpedWitchspace,
 	type WitchspaceLook,
@@ -76,7 +77,9 @@ describe("the phase", () => {
 
 	test("witchspaceAtPhase reproduces the state a real run reaches", () => {
 		for (const t of [-2.5, -1, -0.2]) {
-			const real = witchspaceLook(run(beginWitchspace(), JUMP_CHARGE_S + t).state);
+			const real = witchspaceLook(
+				run(beginWitchspace(), JUMP_CHARGE_S + t).state,
+			);
 			const held = witchspaceLook(witchspaceAtPhase(t));
 			for (const k of Object.keys(held) as (keyof WitchspaceLook)[])
 				expect(held[k]).toBeCloseTo(real[k], 6);
@@ -122,17 +125,15 @@ describe("the look", () => {
 		const early = witchspaceLook(witchspaceAtPhase(0.3));
 		const late = witchspaceLook(witchspaceAtPhase(1));
 		expect(early.whiteout).toBeGreaterThan(late.whiteout);
-		expect(
-			witchspaceLook(witchspaceAtPhase(WITCHSPACE.exitS)).whiteout,
-		).toBe(0);
+		expect(witchspaceLook(witchspaceAtPhase(WITCHSPACE.exitS)).whiteout).toBe(
+			0,
+		);
 	});
 
 	test("the rift is drawn in the exit half and never in the entry half", () => {
 		expect(witchspaceLook(witchspaceAtPhase(-0.2)).rift).toBe(0);
 		expect(witchspaceLook(witchspaceAtPhase(0.3)).rift).toBeGreaterThan(0);
-		expect(
-			witchspaceLook(witchspaceAtPhase(WITCHSPACE.exitEndS)).rift,
-		).toBe(0);
+		expect(witchspaceLook(witchspaceAtPhase(WITCHSPACE.exitEndS)).rift).toBe(0);
 	});
 
 	test("every term stays inside [0, 1] across the whole straddle", () => {
@@ -147,6 +148,16 @@ describe("the look", () => {
 });
 
 describe("the cues", () => {
+	test("an entry synced from the charge hears the sweep on the same step a stepped one does", () => {
+		const prev = entryWitchspace(WITCHSPACE.sweepS + DT / 2);
+		const next = entryWitchspace(WITCHSPACE.sweepS - DT / 2);
+		expect(witchspaceCues(prev, next)).toEqual(["sweep"]);
+		expect(witchspaceCues(idleWitchspace(), entryWitchspace(0.5))).toEqual([
+			"hum",
+			"sweep",
+		]);
+	});
+
 	test("the hum starts with the wind-up and the sweep starts so its end lands on the cut", () => {
 		const begun = beginWitchspace();
 		const cues = [

@@ -529,6 +529,23 @@ import {
 	fleetLayout,
 	updateShipVisuals,
 } from "./ship-mesh";
+import { ArrivalRift } from "./arrival-rift";
+import {
+	WITCHSPACE,
+	type WitchspaceState,
+	abortWitchspace,
+	arriveWitchspace,
+	beginWitchspace,
+	entryWitchspace,
+	idleWitchspace,
+	jumpedWitchspace,
+	stepWitchspace,
+	witchspaceAtPhase,
+	witchspaceCues,
+	witchspaceLook,
+	witchspacePhase,
+} from "./witchspace";
+import { WitchspacePass } from "./witchspace-pass";
 import {
 	type DesignationScan,
 	type ScanStandoff,
@@ -1705,6 +1722,9 @@ class Game {
 	/** The last pass: tone map, dither, vignette (#200). Public so a probe can
 	 *  reach the dither's control arm through `window.__seelite`. */
 	outputPass!: SeeliteOutputPass;
+	/** #532's screen-space term: the entry's streak and the whiteout over the
+	 *  cut. A composer pass, so it survives `rebuildSystem()`. */
+	private witchspacePass!: WitchspacePass;
 	/**
 	 * Resolution has exactly one owner, and it is the player's setting.
 	 *
@@ -2155,6 +2175,21 @@ class Game {
 	 * `World` is.
 	 */
 	jumpCharge: JumpCharge = idleCharge();
+	/**
+	 * #532's transition across the jump — entry, cut, exit — as the state
+	 * machine `witchspace.ts` owns. Fed by events (`setWitchspace`), never read
+	 * off `jumpCharge`: the charge is idle at the cut, after a cancel and when
+	 * nothing charged, and the effect has to tell those apart.
+	 */
+	witchspace: WitchspaceState = idleWitchspace();
+	/**
+	 * #195 D4's phase handle: the phase the transition is drawn at while a
+	 * strip is captured, or `null` while it runs. Set only by
+	 * `holdWitchspace`; the game never holds it.
+	 */
+	private witchspaceHeldAt: number | null = null;
+	/** The world-anchored exit (#195 D2) of the last arrival, while it lasts. */
+	private arrivalRift: ArrivalRift | null = null;
 	/**
 	 * The committed destination (`galaxy-route.ts`'s `Course`), or `null`.
 	 *
@@ -3806,6 +3841,10 @@ class Game {
 			EXPOSURE.bloom.threshold,
 		);
 		this.composer.addPass(this.bloomPass);
+		// #532's transition, after the bloom and before the output stage:
+		// `witchspace-pass.ts` says why on both sides. Disabled until a jump.
+		this.witchspacePass = new WitchspacePass(this.settings.value.quality);
+		this.composer.addPass(this.witchspacePass);
 		// Kept as a field for the same reason `bloomPass` is: the vignette is set
 		// per frame from the view, and the dither has a control arm a probe
 		// switches. #200.
@@ -4875,6 +4914,10 @@ class Game {
 		// answer for every plated surface in the game rather than one per
 		// surface. `cockpit-surface.ts` owns what a cabin surface costs.
 		applyCockpitQuality(this.settings.value.quality);
+		// #532's pass draws on both sides; `low` takes fewer streak samples.
+		// Optional because this runs from `buildEnvironment`, before the
+		// composer exists; the constructor reads the setting itself.
+		this.witchspacePass?.setQuality(this.settings.value.quality);
 		// #201's two passes. A call rather than two lines here for
 		// `setComposerSamples`'s reason: an instrument that priced them by moving
 		// the player's setting would write `localStorage` and notify every other
@@ -10697,6 +10740,11 @@ class Game {
 		// one review round, and the throw reached this published handle (#187).
 		this.jumpCharge = idleCharge();
 		this.jumpNotice = "";
+		// And no transition: no effect held, no cue sounding, no rift left over.
+		this.witchspaceHeldAt = null;
+		this.setWitchspace(abortWitchspace(this.witchspace));
+		this.witchspace = idleWitchspace();
+		this.clearArrivalRift();
 		this.chargeAu = CHARGE_CAPACITY_AU;
 		// Selection is not written by the flight path, so the coverage scan does
 		// not ask for it, and it is not spelled here either — the constructor and
@@ -10881,6 +10929,7 @@ class Game {
 			return false;
 		}
 		this.jumpCharge = beginCharge(to.index);
+		this.setWitchspace(beginWitchspace());
 		this.jumpNotice = `jumping to ${to.name}`;
 		return true;
 	}
@@ -11665,8 +11714,134 @@ class Game {
 		if (!charging(this.jumpCharge) && this.pendingJump === null) return;
 		this.jumpCharge = cancelCharge();
 		this.pendingJump = null;
+		// Retracts what was on screen and stops both cues (D3): a sweep that
+		// played on after a cancel would announce a jump that did not happen.
+		this.setWitchspace(abortWitchspace(this.witchspace));
 		this.jumpNotice = `jump cancelled — ${reason}`;
 	}
+
+	/**
+	 * Move #532's transition to its next state and play what that move owes
+	 * (D3): the hum as a wind-up begins, the sweep so its end lands on the cut,
+	 * and a stop when an entry ends without a jump. Every state change goes
+	 * through here, so a cue cannot be forgotten at one of the four call sites.
+	 */
+	private setWitchspace(next: WitchspaceState) {
+		for (const cue of witchspaceCues(this.witchspace, next)) {
+			if (cue === "hum") this.audio.chargeHum(WITCHSPACE.humS);
+			else if (cue === "sweep") this.audio.hyperspace();
+			else this.audio.stopWitchspace();
+		}
+		this.witchspace = next;
+	}
+
+	/** Put an arrival rift behind the player ship, replacing any left over. */
+	private beginArrival() {
+		this.clearArrivalRift();
+		this.arrivalRift = new ArrivalRift({
+			pos: this.world.ship.pos,
+			nose: this.nose(),
+			reachKm: HULL_REACH_KM[PLAYER_HULL[0]],
+		});
+		this.nearScene.add(this.arrivalRift.object);
+	}
+
+	private clearArrivalRift() {
+		if (!this.arrivalRift) return;
+		this.arrivalRift.object.removeFromParent();
+		disposeSubtree(this.arrivalRift.object);
+		this.arrivalRift = null;
+	}
+
+	/**
+	 * #195 D2's exit **without an entry**: an arrival nobody watched depart.
+	 * The rift opens behind the ship where it stands and the screen fades in
+	 * from white, exactly as after a jump; nothing is heard, because there was
+	 * no wind-up. **The first day opens on a cinematic** (#530) calls this, and
+	 * films it from outside.
+	 */
+	playArrival() {
+		this.beginArrival();
+		this.setWitchspace(arriveWitchspace());
+	}
+
+	/**
+	 * #195 D4's phase handle: draw the transition at `t` seconds from the cut,
+	 * or give it back with `null`. The strip in the view set captures through
+	 * this, because the wind-up runs on wall-clock time and an ordinary capture
+	 * cannot land on the same frame twice.
+	 *
+	 * It holds the **drawing**, not the world: a capture that also wants the
+	 * charge and the bodies still holds the clock, as every view does. For a
+	 * phase before the cut with a charge running, the charge's countdown is set
+	 * to match, so the HUD reads the same second the effect is drawn at. After
+	 * the cut the rift has to exist, so that half is taken after a real jump or
+	 * `playArrival`.
+	 */
+	holdWitchspace(t: number | null) {
+		this.witchspaceHeldAt = t;
+		if (t !== null && t < 0 && charging(this.jumpCharge))
+			this.jumpCharge = {
+				...this.jumpCharge,
+				leftS: Math.min(JUMP_CHARGE_S, -t),
+			};
+	}
+
+	/** What the transition is drawing, for a probe to read by name. */
+	witchspaceReading() {
+		const shown =
+			this.witchspaceHeldAt === null
+				? this.witchspace
+				: witchspaceAtPhase(this.witchspaceHeldAt);
+		const rift = this.arrivalRift;
+		return {
+			state: this.witchspace.kind,
+			heldAt: this.witchspaceHeldAt,
+			phase: witchspacePhase(shown),
+			look: witchspaceLook(shown),
+			pass: {
+				inComposer: this.composer.passes.includes(this.witchspacePass),
+				enabled: this.witchspacePass.enabled,
+				samples: this.witchspacePass.samples,
+				...this.witchspacePass.look,
+			},
+			rift: rift
+				? {
+						inScene: rift.object.parent === this.nearScene,
+						visible: rift.object.visible,
+						strength: rift.strength,
+						radiusKm: rift.radiusKm,
+						anchor: { ...rift.anchor },
+					}
+				: null,
+		};
+	}
+
+	/**
+	 * One drawn frame of the transition. The exit and a retract step here, on
+	 * wall time — the entry rides the charge in `stepJumpCharge` — and the
+	 * pass and the rift draw whatever the state (or a held phase) says.
+	 */
+	private presentWitchspace(dt: number, camPos: Vec3) {
+		const held = this.witchspaceHeldAt;
+		if (
+			held === null &&
+			(this.witchspace.kind === "exit" || this.witchspace.kind === "retract")
+		)
+			this.setWitchspace(stepWitchspace(this.witchspace, dt));
+		const shown = held === null ? this.witchspace : witchspaceAtPhase(held);
+		const look = witchspaceLook(shown);
+		const phase = witchspacePhase(shown) ?? 0;
+		const size = this.renderer.getSize(this.witchspaceSize);
+		this.witchspacePass.apply(look, phase, size.x / Math.max(1, size.y));
+		if (!this.arrivalRift) return;
+		if (held === null && this.witchspace.kind === "idle") {
+			this.clearArrivalRift();
+			return;
+		}
+		this.arrivalRift.update(look.rift, phase, camPos);
+	}
+	private readonly witchspaceSize = new THREE.Vector2();
 
 	/**
 	 * One frame of the wind-up, and the jump at the end of it.
@@ -11679,6 +11854,12 @@ class Game {
 	private stepJumpCharge(dt: number) {
 		const step = stepCharge(this.jumpCharge, dt);
 		this.jumpCharge = step.charge;
+		// The entry rides the charge's own countdown, so the two cannot drift;
+		// a fired charge is idle, and the entry holds at the cut until the jump
+		// is taken at the end of this step.
+		this.setWitchspace(
+			entryWitchspace(step.fired === null ? step.charge.leftS : 0),
+		);
 		if (step.fired === null) return;
 		// **Armed, not taken.** See `pendingJump`.
 		this.pendingJump = step.fired;
@@ -11757,6 +11938,8 @@ class Game {
 		);
 		if (!decision.ok) {
 			this.jumpNotice = `jump aborted — ${decision.refusal}`;
+			// Refused at the cut, after the white is up and the sweep has peaked.
+			this.setWitchspace(abortWitchspace(this.witchspace));
 			return;
 		}
 		this.commander = {
@@ -11786,6 +11969,10 @@ class Game {
 		this.selectBootTarget();
 		this.faceTheStar();
 		this.refreshScannerContacts();
+		// The exit (#195 D1, D2): after the ship is placed and faced, because the
+		// rift stands behind it on its nose.
+		this.beginArrival();
+		this.setWitchspace(jumpedWitchspace(this.witchspace));
 		// The chart, if the Navigation tab is open. `jumpTo` is the chart's own
 		// "the ship moved" entry point, so the course re-derives from the new
 		// origin instead of the chart drawing a route from a system the ship has
@@ -11832,6 +12019,8 @@ class Game {
 	 * can have are `tests/gpu-teardown.test.ts`'s.
 	 */
 	private rebuildSystem() {
+		// The last arrival's rift belongs to the system being left.
+		this.clearArrivalRift();
 		for (const mesh of this.meshes.values()) mesh.removeFromParent();
 		for (const visual of this.bodyVisuals.values()) visual.dispose();
 		for (const station of this.stationVisuals.values()) station.dispose();
@@ -12622,6 +12811,7 @@ class Game {
 				? Math.log(this.cruiseSpeedKms / p.vMinKms) / span
 				: 0;
 		this.warp.update(intensity, this.orientation, dt);
+		this.presentWitchspace(dt, camPos);
 
 		const viewRotation = this.cameraRotation();
 		// All three cameras share the ship's head-look orientation and sit at the

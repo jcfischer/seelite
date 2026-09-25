@@ -17,7 +17,11 @@ const nose = v3(0, 0, 1);
 
 describe("the arrival rift", () => {
 	test("stands behind the ship on its nose axis, in world kilometres", () => {
-		const rift = new ArrivalRift({ pos: v3(1e8, 2e7, -3e6), nose, reachKm: 0.04 });
+		const rift = new ArrivalRift({
+			pos: v3(1e8, 2e7, -3e6),
+			nose,
+			reachKm: 0.04,
+		});
 		const back = ARRIVAL_RIFT.standoffReaches * 0.04;
 		expect(rift.anchor.x).toBe(1e8);
 		expect(rift.anchor.y).toBe(2e7);
@@ -31,8 +35,14 @@ describe("the arrival rift", () => {
 	});
 
 	test("faces along the nose, so a chase camera looks through it", () => {
-		const rift = new ArrivalRift({ pos: v3(0, 0, 0), nose: v3(1, 0, 0), reachKm: 0.04 });
-		const normal = new THREE.Vector3(0, 0, 1).applyQuaternion(rift.object.quaternion);
+		const rift = new ArrivalRift({
+			pos: v3(0, 0, 0),
+			nose: v3(1, 0, 0),
+			reachKm: 0.04,
+		});
+		const normal = new THREE.Vector3(0, 0, 1).applyQuaternion(
+			rift.object.quaternion,
+		);
 		expect(normal.x).toBeCloseTo(1, 9);
 	});
 
@@ -63,8 +73,12 @@ describe("the arrival rift", () => {
 	});
 
 	test("two rifts share nothing — an NPC's teardown cannot black out the player's", () => {
-		const a = resourcesOf(new ArrivalRift({ pos: v3(0, 0, 0), nose, reachKm: 0.04 }).object);
-		const b = resourcesOf(new ArrivalRift({ pos: v3(0, 0, 0), nose, reachKm: 0.2 }).object);
+		const a = resourcesOf(
+			new ArrivalRift({ pos: v3(0, 0, 0), nose, reachKm: 0.04 }).object,
+		);
+		const b = resourcesOf(
+			new ArrivalRift({ pos: v3(0, 0, 0), nose, reachKm: 0.2 }).object,
+		);
 		for (const r of a) expect(b.has(r)).toBe(false);
 	});
 });
