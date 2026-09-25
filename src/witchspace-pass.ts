@@ -33,6 +33,10 @@
  * jump it costs nothing on either side; inside one, both terms also branch on
  * their uniform (`CLAUDE.md`: a dial at zero still evaluates everything to its
  * right).
+ *
+ * What it costs while it draws is `scripts/measure-witchspace-cost.mjs`'s to
+ * print, per side and with the renderer it ran on; the figure is not restated
+ * here.
  */
 import { ShaderPass } from "three/addons/postprocessing/ShaderPass.js";
 import type { WitchspaceLook } from "./witchspace";

@@ -25,7 +25,12 @@ import { gameUrl } from "./lib/game-url.mjs";
 import { median, seededShuffler, separation } from "./lib/measurement.mjs";
 import { assertPlayersRenderer } from "./lib/players-renderer.mjs";
 import { SEED, VIEWPORT } from "./lib/view-set.mjs";
-import { bootedGame, guardedOrigin, launchChromium } from "./probe-guard.mjs";
+import {
+	bootedGame,
+	guardedOrigin,
+	launchChromium,
+	tally,
+} from "./probe-guard.mjs";
 
 const ORIGIN = process.env.PROBE_ORIGIN ?? "http://localhost:5173";
 const FRAMES = 60;
@@ -40,6 +45,10 @@ const page = await browser.newPage({
 	viewport: VIEWPORT,
 	deviceScaleFactor: 2,
 });
+// Watched, so a page error or a shader failure mid-run fails the run rather than
+// printing a table measured on a page that had stopped drawing.
+const { watch, exit } = tally();
+watch(page);
 await page.goto(gameUrl(origin, { seed: SEED, raider: "off" }));
 await bootedGame(page);
 const renderer = await assertPlayersRenderer(page, "measure");
@@ -109,3 +118,4 @@ for (const arm of ["high", "low"])
 	console.log(
 		`${arm} − off: ${fmt(median(arms[arm]) - median(arms.off))} ms, ${arm} slower in ${separation(arms[arm], arms.off)} pairings`,
 	);
+exit();
