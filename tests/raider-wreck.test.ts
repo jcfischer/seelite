@@ -93,6 +93,11 @@ describe("the cargo drop", () => {
 	 *  and a change to one would have left them measuring different orbits. */
 	const frameAt = (t: number) =>
 		v3(30 * Math.cos(t / 100), 30 * Math.sin(t / 100), 0);
+	/** That frame across one step from `t` (#529). */
+	const frameAcross = (t: number, dt: number) => ({
+		start: frameAt(t),
+		end: frameAt(t + dt),
+	});
 
 	test("the same kill drops the same canisters", () => {
 		expect(kill()).toEqual(kill());
@@ -213,7 +218,7 @@ describe("the cargo drop", () => {
 		let c = c0;
 		let last = atKill;
 		for (let t = 0; t < 15 - 1e-9; t += dt) {
-			const frame = { start: frameAt(t), end: frameAt(t + dt) };
+			const frame = frameAcross(t, dt);
 			last = frame.end;
 			c = stepCanisters(
 				[c],
@@ -244,7 +249,7 @@ describe("the cargo drop", () => {
 		// A mark dropped at the canister's position, carried by the frame.
 		let mark = c0.pos;
 		for (let t = 0; t < 120 - 1e-9; t += dt) {
-			const frame = { start: frameAt(t), end: frameAt(t + dt) };
+			const frame = frameAcross(t, dt);
 			c = stepCanisters(
 				[c],
 				far,

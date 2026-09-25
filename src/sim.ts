@@ -1050,35 +1050,39 @@ export function stepFlight(
 	const end = control.frame?.end ?? start;
 	const carried = frameMean({ start, end });
 	const relative = sub(ship.vel, start);
+	const next = control.assist
+		? assistedRelative(relative, control.nose, throttle, dt, perf)
+		: add(relative, scale(control.nose, perf.thrustKms2 * throttle * dt));
+	ship.vel = add(end, next);
+	ship.pos = add(ship.pos, scale(add(carried, next), dt));
+}
 
-	if (!control.assist) {
-		const thrust = scale(control.nose, perf.thrustKms2 * throttle * dt);
-		const next = add(relative, thrust);
-		ship.vel = add(end, next);
-		ship.pos = add(ship.pos, scale(add(carried, next), dt));
-		return;
-	}
-
+/** The assist's step on a velocity relative to the frame: #5's law. */
+function assistedRelative(
+	relative: Vec3,
+	nose: Vec3,
+	throttle: number,
+	dt: number,
+	perf: FlightPerformance,
+): Vec3 {
 	// Split it about the nose: the component along it is what the throttle
 	// governs, and everything perpendicular is drift the assist exists to remove.
-	const along = dot(relative, control.nose);
-	const lateral = sub(relative, scale(control.nose, along));
+	const along = dot(relative, nose);
+	const lateral = sub(relative, scale(nose, along));
 	const damped = scale(lateral, Math.exp(-dt / perf.assistLateralTauS));
 
 	const want = throttle * ASSIST_CAP_KMS;
 	const authority = perf.thrustKms2 * dt;
 	const next = along + clamp(want - along, -authority, authority);
 
-	let assisted = add(scale(control.nose, next), damped);
+	const assisted = add(scale(nose, next), damped);
 	// The cap is on the *total*, not on the commanded component: a ship that
 	// enters a turn at the cap would otherwise briefly exceed it, since the
 	// lateral remainder is still there while it decays.
 	const speed = length(assisted);
-	if (speed > ASSIST_CAP_KMS)
-		assisted = scale(assisted, ASSIST_CAP_KMS / speed);
-
-	ship.vel = add(end, assisted);
-	ship.pos = add(ship.pos, scale(add(carried, assisted), dt));
+	return speed > ASSIST_CAP_KMS
+		? scale(assisted, ASSIST_CAP_KMS / speed)
+		: assisted;
 }
 
 const clamp = (v: number, lo: number, hi: number): number =>
