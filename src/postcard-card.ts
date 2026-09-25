@@ -25,6 +25,7 @@ import {
 	encodePostcard,
 	postcardCaption,
 	postcardFileName,
+	postcardPose,
 	postcardRecipe,
 } from "./postcard";
 
@@ -108,6 +109,10 @@ export function cardBlob(card: HTMLCanvasElement): Promise<Blob> {
 }
 
 export type SaveOutcome = "shared" | "downloaded" | "cancelled";
+
+/** What the screen says after a save: the panel's and the viewer's one line. */
+export const saveOutcomeText = (outcome: SaveOutcome): string =>
+	outcome === "shared" ? "Shared." : outcome === "downloaded" ? "Saved." : "";
 
 /**
  * The share sheet where the browser can share this file, a download
@@ -211,9 +216,7 @@ export function makePostcard(
 		seed: recipe.seed,
 	});
 	const frame = source.capturePostcardFrame(
-		recipe.mode === "exterior"
-			? { mode: recipe.mode, yawRad: recipe.yawRad }
-			: { mode: recipe.mode, head: recipe.head },
+		postcardPose(recipe),
 		POSTCARD_WIDTH,
 		POSTCARD_HEIGHT,
 	);

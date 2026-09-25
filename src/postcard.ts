@@ -30,7 +30,8 @@
  * printed without trailing zeros or a negative zero, and the parse re-encodes
  * what it read and refuses any input that does not come back byte for byte. So
  * key order, `1.50`, `-0`, `047` and `4.7e1` are all refusals rather than
- * aliases, and `encode(parse(s)) === s` for every `s` the parse accepts.
+ * aliases, and `encode(parse(s)) === s` for every `s` the parse accepts, spelled
+ * without the leading `#` a `location.hash` carries (the parse takes either).
  *
  * ## Why this is a leaf
  *
@@ -102,6 +103,13 @@ const MAX_POS_KM = 1e10;
  */
 const PLACES = { t: 6, pos: 4, q: 7, yaw: 6 } as const;
 
+/**
+ * The largest chase yaw a recipe spells. Not `Math.PI`: a wrapped yaw of π
+ * quantises to 3.141593, which is past it, and the parse refused the exterior
+ * card of a pilot looking straight back at the ship's nose (sage round 1).
+ */
+const YAW_LIMIT = 3.141593;
+
 interface RecipeBase {
 	schema: number;
 	generator: number;
@@ -112,7 +120,7 @@ interface RecipeBase {
 	timeS: number;
 	/** The ship, in km, star-centred: `Ship.pos`. */
 	pos: [number, number, number];
-	/** The ship's attitude as `[x, y, z, w]`: `Game.orientation`. */
+	/** The ship's orientation as `[x, y, z, w]`: `Game.orientation`. */
 	orientation: [number, number, number, number];
 }
 
@@ -340,7 +348,7 @@ export function decodePostcard(fragment: string): PostcardParse {
 	if (exterior) {
 		const yawRad = decimal(fields.get("yaw") as string);
 		if (yawRad === null) return malformed;
-		if (!(Math.abs(yawRad) <= Math.PI)) return outOfRange;
+		if (!(Math.abs(yawRad) <= YAW_LIMIT)) return outOfRange;
 		recipe = { ...base, mode: "exterior", yawRad };
 	} else {
 		const head = fields.get("head") as string;
@@ -443,4 +451,13 @@ export function postcardRefusalText(reason: PostcardRefusal): {
 				dek: `Its link is damaged or incomplete, so there is no scene to rebuild. ${kept}`,
 			};
 	}
+}
+
+/** The camera half of a recipe: what `Game.capturePostcardFrame` is posed by. */
+export function postcardPose(
+	recipe: PostcardRecipe,
+): Pick<PostcardScene, "mode" | "head" | "yawRad"> {
+	return recipe.mode === "exterior"
+		? { mode: recipe.mode, yawRad: recipe.yawRad }
+		: { mode: recipe.mode, head: recipe.head };
 }

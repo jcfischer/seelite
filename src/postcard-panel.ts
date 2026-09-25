@@ -33,6 +33,7 @@ import {
 	makePostcard,
 	postcardLink,
 	saveImage,
+	saveOutcomeText,
 } from "./postcard-card";
 
 const LABELS: Record<PostcardMode, string> = {
@@ -164,6 +165,13 @@ export function mountPostcardPanel(
 			console.error("postcard: the card could not be drawn", error);
 			current = null;
 			blob = null;
+			// Nothing of the last composition may stay copyable under this one.
+			state.fragment = null;
+			state.link = null;
+			state.caption = null;
+			state.card = null;
+			element<HTMLInputElement>("input.link").value = "";
+			element<HTMLImageElement>("img.card").removeAttribute("src");
 			say("This moment could not be drawn as a postcard.");
 			return;
 		}
@@ -186,21 +194,15 @@ export function mountPostcardPanel(
 	};
 
 	const save = async () => {
-		if (!current) return;
-		const png = blob ?? (await cardBlob(current.card));
-		const outcome = await saveImage(
-			png,
-			current.fileName,
-			current.caption.place,
-		);
+		// Held across the awaits: a close or a mode change while the PNG encodes
+		// must not pair one composition's pixels with another's name (sage
+		// round 1).
+		const drawn = current;
+		if (!drawn) return;
+		const png = blob ?? (await cardBlob(drawn.card));
+		const outcome = await saveImage(png, drawn.fileName, drawn.caption.place);
 		state.lastSave = outcome;
-		say(
-			outcome === "shared"
-				? "Shared."
-				: outcome === "downloaded"
-					? "Saved."
-					: "",
-		);
+		say(saveOutcomeText(outcome));
 	};
 
 	const copyLink = async () => {
@@ -278,6 +280,9 @@ export function mountPostcardPanel(
 		const step = e.key === "ArrowRight" ? 1 : e.key === "ArrowLeft" ? -1 : 0;
 		if (step !== 0 && state.mode) {
 			e.preventDefault();
+			// One composition per press: each is two renders at the card's size and
+			// a PNG encode, and a held arrow would stack them (sage round 1).
+			if (e.repeat) return;
 			const at = POSTCARD_MODES.indexOf(state.mode);
 			setMode(
 				POSTCARD_MODES[

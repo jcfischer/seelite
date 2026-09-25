@@ -22,7 +22,7 @@
  * because a real press is what "the key opens the screen" is about — and, in
  * the viewer, `z`, `9`, `6` and `w`, the shipped keys a viewer must ignore.
  */
-import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { mkdirSync, readFileSync } from "node:fs";
 import {
 	bootedGame,
 	guardedOrigin,
@@ -31,6 +31,12 @@ import {
 	tally,
 } from "./probe-guard.mjs";
 import { gameUrl, postcardUrl, publicUrl } from "./lib/game-url.mjs";
+import {
+	PANEL_CARD,
+	VIEWER_CARD,
+	keepCard,
+	setPostcardMode,
+} from "./lib/postcard-shots.mjs";
 
 const ORIGIN =
 	process.env.PROBE_ORIGIN ?? process.argv[2] ?? "http://localhost:5173";
@@ -92,7 +98,11 @@ async function storageBytes() {
 	return bytes;
 }
 
-/** Luma statistics of a card `<img>`: lit share above the band, and a grid. */
+/**
+ * Luma statistics of a card `<img>`: the lit share above the band, and a grid
+ * over the **whole** card — band included, so a rebuilt card that captions
+ * another place differs where the caption is (sage round 1).
+ */
 const cardPixels = (selector) =>
 	async function read(page) {
 		return page.evaluate(async (sel) => {
@@ -103,7 +113,8 @@ const cardPixels = (selector) =>
 			canvas.height = img.naturalHeight;
 			const ctx = canvas.getContext("2d");
 			ctx.drawImage(img, 0, 0);
-			const h = Math.round(canvas.height * 0.8);
+			const h = canvas.height;
+			const above = Math.round(h * 0.8);
 			const { data } = ctx.getImageData(0, 0, canvas.width, h);
 			const cols = 24;
 			const rows = 16;
@@ -114,7 +125,7 @@ const cardPixels = (selector) =>
 					const i = (y * canvas.width + x) * 4;
 					const luma =
 						0.2126 * data[i] + 0.7152 * data[i + 1] + 0.0722 * data[i + 2];
-					if (luma > 24) lit++;
+					if (y < above && luma > 24) lit++;
 					grid[
 						Math.floor((y / h) * rows) * cols +
 							Math.floor((x / canvas.width) * cols)
@@ -124,7 +135,7 @@ const cardPixels = (selector) =>
 			return {
 				width: img.naturalWidth,
 				height: img.naturalHeight,
-				lit: lit / (canvas.width * h),
+				lit: lit / (canvas.width * above),
 				grid: grid.map((v) => v / cell),
 			};
 		}, selector);
@@ -136,18 +147,8 @@ const cardPixels = (selector) =>
  */
 const SHOTS = "probe-shots/postcard";
 mkdirSync(SHOTS, { recursive: true });
-async function keepCard(page, selector, name) {
-	const b64 = await page.evaluate(async (sel) => {
-		const blob = await (await fetch(document.querySelector(sel).src)).blob();
-		const bytes = new Uint8Array(await blob.arrayBuffer());
-		let text = "";
-		for (const byte of bytes) text += String.fromCharCode(byte);
-		return btoa(text);
-	}, selector);
-	writeFileSync(`${SHOTS}/${name}.png`, Buffer.from(b64, "base64"));
-}
-const panelCard = cardPixels("#seelite-postcard img.card");
-const viewerCard = cardPixels("#seelite-postcard-viewer img.card");
+const panelCard = cardPixels(PANEL_CARD);
+const viewerCard = cardPixels(VIEWER_CARD);
 /**
  * The share of grid cells whose mean luma moved by more than ten codes.
  * A share rather than a mean, because a subject that covers a few cells — the
@@ -248,25 +249,14 @@ check(
 
 const cards = {};
 for (const mode of ["clear", "cockpit", "exterior"]) {
-	const before = await game.evaluate(
-		() => document.querySelector("#seelite-postcard img.card")?.src ?? "",
-	);
-	await game.evaluate((m) => window.__seelite.postcardPanel.setMode(m), mode);
-	await game.waitForFunction(
-		(prev) => {
-			const img = document.querySelector("#seelite-postcard img.card");
-			return img && img.src !== prev && img.src.startsWith("blob:");
-		},
-		before,
-		{ timeout: 30000 },
-	);
+	await setPostcardMode(game, mode);
 	cards[mode] = {
 		...(await panelCard(game)),
 		state: await game.evaluate(() =>
 			structuredClone(window.__seelite.postcardPanel.state),
 		),
 	};
-	await keepCard(game, "#seelite-postcard img.card", `card-${mode}`);
+	await keepCard(game, PANEL_CARD, `${SHOTS}/card-${mode}.png`);
 	if (mode === "cockpit")
 		await game.screenshot({ path: `${SHOTS}/screen-in-game.png` });
 	check(
@@ -444,6 +434,7 @@ const rebuilt = await viewer.evaluate(() => {
 	return {
 		viewer: g.postcardViewer,
 		rebuilt: g.postcardViewState.rebuiltFragment,
+		caption: g.postcardViewState.caption,
 		seed: g.world.seed,
 		galaxy: g.world.system.record.galaxy,
 		system: g.world.system.record.index,
@@ -483,7 +474,7 @@ check(
 		.every((c, i) => Math.abs(Number(c) - rebuilt.pos[i]) < 1e-6),
 	rebuilt.pos.join(","),
 );
-await keepCard(viewer, "#seelite-postcard-viewer img.card", "card-rebuilt");
+await keepCard(viewer, VIEWER_CARD, `${SHOTS}/card-rebuilt.png`);
 await viewer.screenshot({ path: `${SHOTS}/screen-viewer.png` });
 const viewed = await viewerCard(viewer);
 // The same instrument on the same scene: the control the two thresholds above
@@ -495,7 +486,16 @@ check(
 	`${(againstPanel * 100).toFixed(1)}% of cells changed against the sender's`,
 );
 check(
-	"Visit this universe is the ordinary new-game path for the seed",
+	"the rebuilt card carries the sender's caption",
+	JSON.stringify(rebuilt.caption) === JSON.stringify(offered.caption),
+	JSON.stringify(rebuilt.caption),
+);
+// **A link, and only a link.** That a New game started from it cannot land on
+// the Commander this probe seeded is `beginNewGame`'s refusal of a taken name,
+// which `tests/save-store.test.ts` holds ("new game, import and rename each
+// refuse a name already taken"); this row claims the address and nothing more.
+check(
+	"Visit this universe links the overlay's New game for the seed",
 	new URL(rebuilt.visit).search === `?seed=${SEED}` &&
 		new URL(rebuilt.visit).hash === "",
 	rebuilt.visit,

@@ -22,6 +22,7 @@ import {
 	cardBlob,
 	makePostcard,
 	saveImage,
+	saveOutcomeText,
 } from "./postcard-card";
 import { escapeHtml } from "./escape-html";
 
@@ -132,11 +133,6 @@ export function mountPostcardViewer(
 			postcard.caption.place,
 		);
 		state.lastSave = outcome;
-		status.textContent =
-			outcome === "shared"
-				? "Shared."
-				: outcome === "downloaded"
-					? "Saved."
-					: "";
+		status.textContent = saveOutcomeText(outcome);
 	});
 }

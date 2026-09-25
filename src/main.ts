@@ -787,12 +787,12 @@ const CHARGE_LOG_KEEP = 12;
 const BAKE_FACES_PER_FRAME = 1;
 
 /**
- * The most renders a postcard capture spends letting bakes land (#406): the
- * fourteen-body worst case above is 168 faces at one a render, and this leaves
- * room over it. A bound, so a bake that never empties its queue costs a slow
- * card rather than a hung page.
+ * The most bake faces a postcard capture draws before it copies (#406): the
+ * fourteen-body worst case above is 168, and this leaves room over it. A
+ * bound, so a bake that never empties its queue costs a card with that body
+ * procedural — said in the console — rather than a hung page.
  */
-const POSTCARD_SETTLE_RENDERS = 256;
+const POSTCARD_SETTLE_FACES = 256;
 
 /** Scratch vector for aiming a station's aperture, allocated once: the render
  *  loop runs per body per frame, and a `Vector3` built there is garbage by the
@@ -13154,12 +13154,15 @@ class Game {
 	 * is not preserved, so it is only defined until the page next presents; a
 	 * `drawImage` with an `await` between the two reads a cleared buffer. Two
 	 * renders, not one: the first frame after a composition change is the one
-	 * that builds whatever the new camera has come within reach of — and then
-	 * on, until the planet bakes queued for this camera are drawn (#208): a bake
-	 * fills one cube face per `render`, and the viewer runs no loop to fill them,
-	 * so a close planet would otherwise rebuild on the procedural program against
-	 * a sent card drawn from its cube. The live game has normally baked already,
-	 * and pays the two.
+	 * that builds whatever the new camera has come within reach of.
+	 *
+	 * **Between them, the planet bakes that camera queued are drained** (#208).
+	 * The loop fills one cube face a frame and the viewer runs no loop, so a
+	 * close planet would otherwise rebuild on the procedural program against a
+	 * sent card drawn from its cube. Drained with the bake step alone — a face is
+	 * one full-screen quad, where a `render` would be the whole composer at the
+	 * card's size per face (sage round 1). The live game has normally baked
+	 * already and drains nothing.
 	 *
 	 * Everything the capture changes — the view, the head, the orbit, the
 	 * cabin, the drawing size — is put back before it returns, and the next
@@ -13182,13 +13185,23 @@ class Game {
 		try {
 			this.composePostcard(pose);
 			this.sizeDrawing(width, height, 1);
-			for (
-				let drawn = 0;
-				drawn < POSTCARD_SETTLE_RENDERS &&
-				(drawn < 2 || this.bakeQueue.length > 0);
-				drawn++
-			)
+			// Twice: a body the first bake finishes can change band on the next
+			// render and queue one more.
+			let faces = 0;
+			for (let pass = 0; pass < 2; pass++) {
 				this.render(0);
+				for (
+					;
+					this.bakeQueue.length > 0 && faces < POSTCARD_SETTLE_FACES;
+					faces++
+				)
+					this.stepBakes();
+			}
+			if (this.bakeQueue.length > 0)
+				console.warn(
+					`postcard: ${this.bakeQueue.length} bake(s) still queued after ${faces} faces, so this card draws them on the procedural program`,
+				);
+			this.render(0);
 			const ctx = out.getContext("2d");
 			if (!ctx) throw new Error("postcard: no 2D context for the card");
 			ctx.drawImage(this.renderer.domElement, 0, 0, width, height);
@@ -13198,9 +13211,9 @@ class Game {
 			this.chaseYaw = kept.chaseYaw;
 			this.cabinHidden = kept.cabinHidden;
 			this.onResize();
-			// Two full renders at the card's size are one long frame, and the
-			// controller would read it as the pilot's cost: the same re-prime a
-			// resize gets, for the same reason.
+			// Three renders at the card's size, and any bake faces, are one long
+			// frame, and the controller would read it as the pilot's cost: the same
+			// re-prime a resize gets, for the same reason.
 			this.primeAdaptive("postcard captured");
 		}
 		return out;

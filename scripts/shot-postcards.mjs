@@ -28,6 +28,12 @@ import {
 } from "./probe-guard.mjs";
 import { gameUrl, postcardUrl } from "./lib/game-url.mjs";
 import {
+	PANEL_CARD,
+	VIEWER_CARD,
+	keepCard,
+	setPostcardMode,
+} from "./lib/postcard-shots.mjs";
+import {
 	installViewFraming,
 	setView,
 	settleFrames,
@@ -97,7 +103,7 @@ const SCENES = [
 	},
 	{
 		name: "refinery-exterior",
-		what: "Another world: a refinery's pad, the exterior composition",
+		what: "Another world: a refinery, the exterior composition",
 		seed: 2,
 		place: () => ({ station: "refinery", rangeKm: 3.2 }),
 		view: "chase",
@@ -110,18 +116,6 @@ await guardedOrigin(ORIGIN);
 const browser = await launchChromium();
 const { watch } = tally();
 const context = await browser.newContext({ viewport: VIEWPORT });
-
-async function keepCard(page, selector, path) {
-	const b64 = await page.evaluate(async (sel) => {
-		const img = document.querySelector(sel);
-		const blob = await (await fetch(img.src)).blob();
-		const bytes = new Uint8Array(await blob.arrayBuffer());
-		let text = "";
-		for (const byte of bytes) text += String.fromCharCode(byte);
-		return btoa(text);
-	}, selector);
-	writeFileSync(path, Buffer.from(b64, "base64"));
-}
 
 const rows = [];
 for (const scene of SCENES) {
@@ -179,26 +173,8 @@ for (const scene of SCENES) {
 		null,
 		{ timeout: 30000 },
 	);
-	const before = await page.evaluate(
-		() => document.querySelector("#seelite-postcard img.card")?.src ?? "",
-	);
-	await page.evaluate(
-		(m) => window.__seelite.postcardPanel.setMode(m),
-		scene.mode,
-	);
-	await page.waitForFunction(
-		(prev) => {
-			const img = document.querySelector("#seelite-postcard img.card");
-			return img && img.src !== prev && img.src.startsWith("blob:");
-		},
-		before,
-		{ timeout: 30000 },
-	);
-	await keepCard(
-		page,
-		"#seelite-postcard img.card",
-		`${OUT}/${scene.name}-card.png`,
-	);
+	await setPostcardMode(page, scene.mode);
+	await keepCard(page, PANEL_CARD, `${OUT}/${scene.name}-card.png`);
 	const state = await page.evaluate(() =>
 		structuredClone(window.__seelite.postcardPanel.state),
 	);
@@ -209,18 +185,14 @@ for (const scene of SCENES) {
 	const link = postcardUrl(ORIGIN, state.fragment);
 	await viewer.goto(link, { waitUntil: "load" });
 	await viewer.waitForFunction(
-		() => {
-			const img = document.querySelector("#seelite-postcard-viewer img.card");
+		(sel) => {
+			const img = document.querySelector(sel);
 			return img?.src.startsWith("blob:") && img.complete;
 		},
-		null,
+		VIEWER_CARD,
 		{ timeout: 60000 },
 	);
-	await keepCard(
-		viewer,
-		"#seelite-postcard-viewer img.card",
-		`${OUT}/${scene.name}-rebuilt.png`,
-	);
+	await keepCard(viewer, VIEWER_CARD, `${OUT}/${scene.name}-rebuilt.png`);
 	await viewer.screenshot({ path: `${OUT}/${scene.name}-viewer.png` });
 	const rebuilt = await viewer.evaluate(
 		() => window.__seelite.postcardViewState.rebuiltFragment,

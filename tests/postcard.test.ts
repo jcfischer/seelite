@@ -29,6 +29,7 @@ import {
 	POSTCARD_WIDTH,
 	postcardCaption,
 	postcardFileName,
+	postcardPose,
 	postcardRecipe,
 	postcardRefusalText,
 } from "../src/postcard";
@@ -412,4 +413,34 @@ describe("a refusal says what it kept", () => {
 			expect(text.title.length).toBeGreaterThan(0);
 			expect(text.dek).toContain("nothing on this device was changed");
 		});
+});
+
+describe("the chase yaw at its ends (sage round 1)", () => {
+	for (const yawRad of [Math.PI, -Math.PI, 3 * Math.PI])
+		test(`a yaw of ${yawRad.toFixed(4)} spells a link the parse accepts`, () => {
+			const recipe = postcardRecipe({ ...scene, mode: "exterior", yawRad });
+			const back = decodePostcard(encodePostcard(recipe));
+			expect(back).toEqual({ ok: true, recipe });
+		});
+
+	test("past the quantised end is still refused", () => {
+		const exterior = encodePostcard(
+			postcardRecipe({ ...scene, mode: "exterior", yawRad: 0 }),
+		);
+		expect(refused(exterior.replace("yaw=0", "yaw=3.141594"))).toBe(
+			"out-of-range",
+		);
+	});
+});
+
+test("a recipe's pose is its camera half", () => {
+	expect(
+		postcardPose(postcardRecipe({ ...scene, mode: "clear", head: "left" })),
+	).toEqual({
+		mode: "clear",
+		head: "left",
+	});
+	expect(
+		postcardPose(postcardRecipe({ ...scene, mode: "exterior", yawRad: 0.5 })),
+	).toEqual({ mode: "exterior", yawRad: 0.5 });
 });

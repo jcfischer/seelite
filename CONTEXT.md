@@ -650,13 +650,14 @@ direction's ordinary English for a picture a pilot keeps
 
 **Scene recipe**:
 What a **Postcard** link carries in its URL **fragment**: schema and generator
-versions, seed, galaxy, system, game time, viewpoint, attitude and composition —
+versions, seed, galaxy, system, game time, viewpoint, orientation and composition —
 and nothing a Commander owns. Opening one boots the **postcard viewer**, a
 read-only page that rebuilds the view from the seeded baseline, runs no frame loop
 and attaches no store. It is not a save and not a replay: the sender's stock
 deficits, strikes and discoveries do not reach it, and a card of a pilot's own
 hull rebuilds with the starting one. `src/postcard.ts` owns the spelling and the
 strict parse; `tests/postcard.test.ts` holds both.
-_Avoid_: Snapshot, share code — a **snapshot** is the save's word (the overlay
-`persistent-world-state.md` calls a canonical snapshot), and a recipe is precisely
-not one.
+_Avoid_: Share code. **Scope note, not an _Avoid_ line:** "snapshot" is canonical
+elsewhere — `persistent-world-state.md` calls the save's overlay a canonical
+snapshot — so it is not banned here; a recipe is simply not one, and a sentence
+that calls it one has confused the two.
