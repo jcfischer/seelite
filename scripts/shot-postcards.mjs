@@ -32,6 +32,7 @@ import {
 	VIEWER_CARD,
 	keepCard,
 	setPostcardMode,
+	waitViewerCard,
 } from "./lib/postcard-shots.mjs";
 import {
 	installViewFraming,
@@ -55,7 +56,7 @@ const SCENES = [
 		name: "station-clear",
 		what: "Off a trade station, the clear composition",
 		seed: 47,
-		place: (kind) => ({ station: kind ?? "trade", rangeKm: 2.5 }),
+		place: { station: "trade", rangeKm: 2.5 },
 		view: "cockpit",
 		mode: "clear",
 	},
@@ -63,7 +64,7 @@ const SCENES = [
 		name: "station-cockpit",
 		what: "The same moment, the cockpit composition",
 		seed: 47,
-		place: (kind) => ({ station: kind ?? "trade", rangeKm: 2.5 }),
+		place: { station: "trade", rangeKm: 2.5 },
 		view: "cockpit",
 		mode: "cockpit",
 	},
@@ -71,7 +72,7 @@ const SCENES = [
 		name: "station-exterior",
 		what: "The same moment, the exterior composition",
 		seed: 47,
-		place: (kind) => ({ station: kind ?? "trade", rangeKm: 2.5 }),
+		place: { station: "trade", rangeKm: 2.5 },
 		view: "chase",
 		mode: "exterior",
 	},
@@ -79,7 +80,7 @@ const SCENES = [
 		name: "planet-clear",
 		what: "A planet at 2.6 radii, in the band drawn from its baked cube (#208), the clear composition",
 		seed: 47,
-		place: () => ({ planet: true, radii: 2.6, sunAngleDeg: 70 }),
+		place: { planet: true, radii: 2.6, sunAngleDeg: 70 },
 		view: "cockpit",
 		mode: "clear",
 	},
@@ -87,7 +88,7 @@ const SCENES = [
 		name: "planet-close-clear",
 		what: "The same planet inside two radii, where it is drawn procedurally rather than from its cube",
 		seed: 47,
-		place: () => ({ planet: true, radii: 1.3, sunAngleDeg: 70 }),
+		place: { planet: true, radii: 1.3, sunAngleDeg: 70 },
 		view: "cockpit",
 		mode: "clear",
 	},
@@ -95,9 +96,7 @@ const SCENES = [
 		name: "docked-cockpit",
 		what: "Docked in a trade station's deep overhead berth, the cockpit composition",
 		seed: 47,
-		place: () => ({
-			berth: { station: "station-trade", berth: "overhead-deep" },
-		}),
+		place: { berth: { station: "station-trade", berth: "overhead-deep" } },
 		view: "cockpit",
 		mode: "cockpit",
 	},
@@ -105,7 +104,7 @@ const SCENES = [
 		name: "refinery-exterior",
 		what: "Another world: a refinery, the exterior composition",
 		seed: 2,
-		place: () => ({ station: "refinery", rangeKm: 3.2 }),
+		place: { station: "refinery", rangeKm: 3.2 },
 		view: "chase",
 		mode: "exterior",
 	},
@@ -133,7 +132,7 @@ for (const scene of SCENES) {
 	await page.waitForFunction(() => window.__seelite.postcardPanel, null, {
 		timeout: 30000,
 	});
-	const spec = scene.place();
+	const spec = scene.place;
 	const placed = await page.evaluate(async (s) => {
 		const g = window.__seelite;
 		const bodies = g.world.system.bodies;
@@ -184,14 +183,7 @@ for (const scene of SCENES) {
 	watch(viewer, `${scene.name} viewer`);
 	const link = postcardUrl(ORIGIN, state.fragment);
 	await viewer.goto(link, { waitUntil: "load" });
-	await viewer.waitForFunction(
-		(sel) => {
-			const img = document.querySelector(sel);
-			return img?.src.startsWith("blob:") && img.complete;
-		},
-		VIEWER_CARD,
-		{ timeout: 60000 },
-	);
+	await waitViewerCard(viewer);
 	await keepCard(viewer, VIEWER_CARD, `${OUT}/${scene.name}-rebuilt.png`);
 	await viewer.screenshot({ path: `${OUT}/${scene.name}-viewer.png` });
 	const rebuilt = await viewer.evaluate(

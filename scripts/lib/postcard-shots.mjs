@@ -41,3 +41,18 @@ export async function keepCard(page, selector, path) {
 	}, selector);
 	writeFileSync(path, Buffer.from(b64, "base64"));
 }
+
+/**
+ * Wait until a page opened on a postcard link shows its card: the viewer's
+ * `<img>` holds the object URL of the finished PNG and has decoded it.
+ */
+export async function waitViewerCard(page, timeout = 60000) {
+	await page.waitForFunction(
+		(sel) => {
+			const img = document.querySelector(sel);
+			return img?.src.startsWith("blob:") && img.complete;
+		},
+		VIEWER_CARD,
+		{ timeout },
+	);
+}

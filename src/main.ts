@@ -677,6 +677,7 @@ import { type BootMode, bootMode } from "./boot-mode";
 import { querySystem } from "./boot-system";
 import {
 	type PostcardMode,
+	type PostcardPose,
 	type PostcardRecipe,
 	type PostcardScene,
 	decodePostcard,
@@ -9304,6 +9305,11 @@ class Game {
 			}
 			this.proximityFrameBodyId = null;
 		}
+		this.frameBody = this.nearestBody();
+	}
+
+	/** The nearest body within `NEAR_FAR_KM`, centre to ship, or `null`. */
+	private nearestBody(): Body | null {
 		let best: Body | null = null;
 		let bestKm = NEAR_FAR_KM;
 		for (const b of this.world.system.bodies) {
@@ -9313,7 +9319,7 @@ class Game {
 				bestKm = km;
 			}
 		}
-		this.frameBody = best;
+		return best;
 	}
 
 	/**
@@ -13096,9 +13102,7 @@ class Game {
 	 * than routed through `setHeadLook`, which also moves the pointer lock and
 	 * the consoles — a composition is a camera, not a pilot's action.
 	 */
-	private composePostcard(
-		pose: Pick<PostcardScene, "mode" | "head" | "yawRad">,
-	) {
+	private composePostcard(pose: PostcardPose) {
 		if (pose.mode === "exterior") {
 			this.view = "chase";
 			this.chaseYaw = pose.yawRad ?? 0;
@@ -13138,10 +13142,16 @@ class Game {
 		};
 	}
 
-	/** The generated place a card is captioned with: the nearest named body. */
+	/**
+	 * The generated place a card is captioned with: the nearest body within
+	 * `NEAR_FAR_KM`, by the rule `updateLocalFrameBody` falls back to. **Not
+	 * `frameBody`**, which can be a proximity frame *held* from where the pilot
+	 * flew in — history a recipe does not carry, so a viewer standing at the
+	 * same point could caption another place (sage round 2).
+	 */
 	postcardPlace(): { place: string | null; system: string } {
 		return {
-			place: this.frameBody?.name ?? null,
+			place: this.nearestBody()?.name ?? null,
 			system: this.world.system.record.name,
 		};
 	}
@@ -13160,9 +13170,10 @@ class Game {
 	 * The loop fills one cube face a frame and the viewer runs no loop, so a
 	 * planet in the baked band — beyond about two radii (`planet-bake.ts`) —
 	 * would otherwise rebuild on the procedural program against a sent card
-	 * drawn from its cube. **That is a matter of which program, not of what
-	 * shows:** the bake reproduces the procedural surface, and the sheet's planet
-	 * at 2.6 radii moved no pixel past 24/255 with the drain taken out. It is
+	 * drawn from its cube. **On the sheet it changed which program, not what
+	 * shows:** its one reading, the sheet's planet at 2.6 radii, moved no pixel past
+	 * 24/255 with the drain taken out — one planet at one range, not a law about
+	 * the band. It is
 	 * here so both cards come off one program, which is the thing a rebuild
 	 * promises; a difference the bake one day introduces would then be the
 	 * same on both. Drained with the bake step alone — a face is
@@ -13175,7 +13186,7 @@ class Game {
 	 * frame the loop draws is the pilot's own.
 	 */
 	capturePostcardFrame(
-		pose: Pick<PostcardScene, "mode" | "head" | "yawRad">,
+		pose: PostcardPose,
 		width: number,
 		height: number,
 	): HTMLCanvasElement {

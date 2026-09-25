@@ -19,6 +19,7 @@ import {
 	POSTCARD_WIDTH,
 	type PostcardCaption,
 	type PostcardMode,
+	type PostcardPose,
 	type PostcardRecipe,
 	type PostcardScene,
 	decodePostcard,
@@ -177,7 +178,7 @@ export interface PostcardSource {
 	postcardScene(mode: PostcardMode): PostcardScene;
 	postcardPlace(): { place: string | null; system: string };
 	capturePostcardFrame(
-		pose: Pick<PostcardScene, "mode" | "head" | "yawRad">,
+		pose: PostcardPose,
 		width: number,
 		height: number,
 	): HTMLCanvasElement;

@@ -36,6 +36,7 @@ import {
 	VIEWER_CARD,
 	keepCard,
 	setPostcardMode,
+	waitViewerCard,
 } from "./lib/postcard-shots.mjs";
 
 const ORIGIN =
@@ -425,10 +426,7 @@ await viewer.waitForFunction(
 	null,
 	{ timeout: 60000 },
 );
-await viewer.waitForFunction(() => {
-	const img = document.querySelector("#seelite-postcard-viewer img.card");
-	return img?.src.startsWith("blob:") && img.complete;
-});
+await waitViewerCard(viewer);
 const rebuilt = await viewer.evaluate(() => {
 	const g = window.__seelite;
 	return {

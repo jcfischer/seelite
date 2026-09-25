@@ -453,10 +453,11 @@ export function postcardRefusalText(reason: PostcardRefusal): {
 	}
 }
 
+/** The camera half of a scene: the composition, and the head or the orbit. */
+export type PostcardPose = Pick<PostcardScene, "mode" | "head" | "yawRad">;
+
 /** The camera half of a recipe: what `Game.capturePostcardFrame` is posed by. */
-export function postcardPose(
-	recipe: PostcardRecipe,
-): Pick<PostcardScene, "mode" | "head" | "yawRad"> {
+export function postcardPose(recipe: PostcardRecipe): PostcardPose {
 	return recipe.mode === "exterior"
 		? { mode: recipe.mode, yawRad: recipe.yawRad }
 		: { mode: recipe.mode, head: recipe.head };

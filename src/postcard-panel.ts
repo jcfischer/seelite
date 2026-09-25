@@ -212,7 +212,8 @@ export function mountPostcardPanel(
 		if (ok) say("Postcard link copied.");
 		else {
 			say("This page may not use the clipboard — the link is selected below.");
-			element<HTMLInputElement>("input.link").select();
+			// The screen may have closed while the clipboard answered.
+			if (root) element<HTMLInputElement>("input.link").select();
 		}
 	};
 
@@ -262,7 +263,13 @@ export function mountPostcardPanel(
 		blob = null;
 		if (objectUrl) URL.revokeObjectURL(objectUrl);
 		objectUrl = null;
+		// Nothing of a closed screen stays copyable through the handle, and a
+		// waiter on `fragment` sees the next open's card, not this one's.
 		state.mode = null;
+		state.fragment = null;
+		state.link = null;
+		state.caption = null;
+		state.card = null;
 		restoreClock?.();
 		restoreClock = null;
 	};

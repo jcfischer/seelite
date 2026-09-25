@@ -444,3 +444,22 @@ test("a recipe's pose is its camera half", () => {
 		postcardPose(postcardRecipe({ ...scene, mode: "exterior", yawRad: 0.5 })),
 	).toEqual({ mode: "exterior", yawRad: 0.5 });
 });
+
+test("a legacy generator's link spells back with the current one, and nothing else changes", () => {
+	const legacy = POSTCARD_GENERATORS[1];
+	const text = canonical().replace(
+		`&gen=${POSTCARD_GENERATORS[0]}&`,
+		`&gen=${legacy}&`,
+	);
+	const read = decodePostcard(text);
+	if (!read.ok) throw new Error(read.reason);
+	// What the viewer does: the rebuilt game hands its scene back through the
+	// same picker, which writes the current generator.
+	const again = encodePostcard(
+		postcardRecipe({ ...read.recipe, galaxy: read.recipe.galaxy }),
+	);
+	expect(again).toBe(canonical());
+	expect(
+		again.replace(`&gen=${POSTCARD_GENERATORS[0]}&`, `&gen=${legacy}&`),
+	).toBe(text);
+});

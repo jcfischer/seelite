@@ -11,8 +11,10 @@
  *
  * **Visit this universe** is the ordinary new-game path and nothing else: it
  * opens the Commander overlay with the seed filled in, where New game asks for
- * a Commander name of its own — `beginNewGame` refuses a name already taken,
- * so a visit cannot land on a pilot's save. It starts where every new game
+ * a Commander name of its own. That it cannot land on a pilot's save is
+ * `beginNewGame`'s refusal of a taken name, held by `tests/save-store.test.ts`
+ * ("new game, import and rename each refuse a name already taken"); the probe
+ * checks only this link. It starts where every new game
  * starts; the recipe's place and moment are the postcard's, not the game's.
  */
 import type { PostcardRecipe } from "./postcard";
@@ -53,7 +55,11 @@ const STYLE = `
 /** What a probe reads off the page, under `__seelite.postcardViewState`. */
 export interface PostcardViewState {
 	recipe: PostcardRecipe;
-	/** The recipe the rebuilt game spells back: equal to the link's, or a bug. */
+	/**
+	 * The recipe the rebuilt game spells back: equal to the link's for a link
+	 * of the current generator, or a bug. A legacy generator's link (a relabel,
+	 * #351) spells back with the current one, which is the only difference.
+	 */
 	rebuiltFragment: string | null;
 	card: { width: number; height: number } | null;
 	caption: Postcard["caption"] | null;
