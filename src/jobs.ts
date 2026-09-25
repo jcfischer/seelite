@@ -111,6 +111,9 @@ export interface JobRow {
 
 const job = (row: JobRow): JobRow => row;
 
+/** The Local run's row id (#408 D2), which the first day asks a board for. */
+export const LOCAL_RUN_ROW_ID = "courier-local-run";
+
 /**
  * The shipped catalogue.
  *
@@ -162,7 +165,7 @@ export const JOB_ROWS: readonly JobRow[] = [
 	job({
 		family: "courier",
 		slot: "courier-local",
-		rowId: "courier-local-run",
+		rowId: LOCAL_RUN_ROW_ID,
 		revision: 1,
 		title: "Local run",
 		purpose:

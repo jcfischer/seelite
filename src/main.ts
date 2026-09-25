@@ -600,6 +600,7 @@ import {
 	jumpPrompt,
 	onKeyboard,
 	type OwnKey,
+	spokenCommand,
 	targetPrompt,
 } from "./key-names";
 import type { CaptureModalHandle } from "./capture-modal";
@@ -640,6 +641,7 @@ import { readDeficit, recordTrade } from "./deficits";
 import {
 	emptyRequests,
 	entrustedTonnesAboard,
+	isRunning,
 	recordKill,
 	requestAction,
 	settledAt,
@@ -647,6 +649,7 @@ import {
 import {
 	NO_EXCLUDED_STATION,
 	type JobOffer,
+	LOCAL_RUN_ROW_ID,
 	bindJobs,
 	deliveryCandidates,
 } from "./jobs";
@@ -697,7 +700,16 @@ import {
 	withRestoreFault,
 	writeFault,
 } from "./commander-flow";
-import type { FirstDayChoice } from "./first-day";
+import {
+	type FirstDayChoice,
+	type FirstDayFacts,
+	type FirstDayKeys,
+	type FirstDayStepId,
+	firstDayPrompt,
+	firstDayStep,
+	firstDayText,
+} from "./first-day";
+import type { FirstDayPanel } from "./live-cockpit";
 import {
 	COMMANDER_KEY,
 	type CommanderOverlayHandle,
@@ -1997,6 +2009,14 @@ class Game {
 	/** #408 D4: New game's guided or free choice, chosen at new game and never
 	 *  edited. Public because the First day surfaces and the probes read it. */
 	firstDay: FirstDayChoice = "free";
+	/** #408: station control's lines to a guided pilot this session, for the
+	 *  Communications log. Session state for the hails' reason: a line of
+	 *  console text is not a saved fact. */
+	private readonly firstDayLog: RaiderLogLine[] = [];
+	/** The step last logged, so a line is written when the step changes. */
+	private firstDayLastStep: FirstDayStepId | null = null;
+	/** The station the day ended at, while the ship is still in its berth. */
+	private firstDayClosingStation: string | null = null;
 	/** Set by the load arm, read once by the constructor: a restored ship keeps
 	 *  the attitude it was saved with rather than being turned to face a star. */
 	private restoredAttitude = false;
@@ -9187,6 +9207,10 @@ class Game {
 				? jumpPrompt(this.bindings, hop.name)
 				: jumpRefusalText(decision.refusal, hop.name);
 		}
+		// #408: a guided pilot is told which station and which key, where the
+		// lines below would only say "a target" and "cruise".
+		const firstDay = this.firstDayGlassPrompt();
+		if (firstDay) return firstDay;
 		if (targetKm === null) return targetPrompt(this.bindings);
 		// An hour at the cap, which is 7,200 km. Below that the crawl is the
 		// intended experience — #10 §3 bounds the drop radius by exactly this
@@ -13350,6 +13374,8 @@ class Game {
 							// from the glass — so the sentence the pilot was shown at
 							// the frame it landed is still here after it has faded.
 							...this.charges,
+							// #408: station control's lines to a guided pilot.
+							...this.firstDayLog,
 						])
 							.slice(0, 6)
 							.map(formatRaiderLogLine)
@@ -13358,6 +13384,7 @@ class Game {
 			tuning: this.tuningSummary(),
 			requests: this.requestsView(dockContext, hold),
 			stationConsole: this.stationConsoleState(dockContext),
+			firstDay: this.firstDayPanel(),
 			launchHold: this.launchHold
 				? {
 						refusal: this.launchHold.refusal,
@@ -13842,6 +13869,129 @@ class Game {
 			if (this.dockPhase === "arriving") this.skipDockTraversal();
 		}
 		return this.dockPhase === "docked";
+	}
+
+	/**
+	 * #408: what the first day's step is derived from, read off live state.
+	 * Public so a probe reads the same facts the surfaces do.
+	 */
+	firstDayFacts(): FirstDayFacts {
+		const docked = this.dockPhase === "docked";
+		const station =
+			this.dock.phase !== "flying" && this.dock.stationId
+				? stationOf(this.world.system, this.dock.stationId)
+				: null;
+		const journal = Object.values(this.requests.byId);
+		const trackedId = this.requests.trackedRequestId;
+		const tracked = trackedId ? this.requests.byId[trackedId] : undefined;
+		// The tracked job when it is running — it is the one the pilot chose to
+		// follow — and otherwise the first running one.
+		const job =
+			tracked && isRunning(tracked.status)
+				? tracked
+				: journal.find((request) => isRunning(request.status));
+		const record = this.world.system.record;
+		return {
+			docked,
+			dockedAt: station ? this.stationKey(station) : null,
+			running: job
+				? {
+						reportAt: job.terms.reportAt.carrierKey,
+						reportName: job.terms.reportName,
+						reportSystemName: job.terms.reportSystemName,
+						// A carrier key is `system:carrier` (`carrier-key.ts`).
+						sameSystem:
+							job.terms.reportAt.galaxyIndex === record.galaxy &&
+							Number(job.terms.reportAt.carrierKey.split(":")[0]) ===
+								record.index,
+					}
+				: null,
+			settledAny: journal.some((request) => request.status === "completed"),
+			localRunOnBoard:
+				docked &&
+				this.requestsView().offers.some(
+					(offer) => offer.rowId === LOCAL_RUN_ROW_ID,
+				),
+		};
+	}
+
+	/** The keys the first day names, as the player has them bound. */
+	private firstDayKeys(): FirstDayKeys {
+		return {
+			launch: spokenCommand(this.bindings, "dock.launch"),
+			clearance: spokenCommand(this.bindings, "dock.clearance"),
+			computer: spokenCommand(this.bindings, "dock.computer"),
+			cruise: spokenCommand(this.bindings, "fly.cruise"),
+			target: spokenCommand(this.bindings, "fight.targetNext"),
+		};
+	}
+
+	/**
+	 * The First day tab's content and station control's line (#408 D3, D5).
+	 *
+	 * Also where a guided pilot's step change is logged: the Communications
+	 * log keeps station control's line after the console has moved on, so a
+	 * pilot who looked away can read what was said.
+	 */
+	private firstDayPanel(): FirstDayPanel {
+		const facts = this.firstDayFacts();
+		const current = firstDayStep(facts);
+		const text = firstDayText(facts, this.firstDayKeys());
+		const guided = this.firstDay === "guided";
+		if (guided && current !== this.firstDayLastStep) {
+			// The closing line is said once, at the berth the day ended in.
+			if (current === "trade" && this.firstDayLastStep !== null)
+				this.firstDayClosingStation = this.dock.stationId;
+			if (this.firstDayLastStep !== "trade")
+				this.firstDayLog.push({
+					at: this.world.gameTime,
+					key: facts.dockedAt ?? facts.running?.reportAt ?? ("" as CarrierKey),
+					text: `STATION CONTROL: ${text}`,
+				});
+			if (this.firstDayLog.length > HAIL_LOG_KEEP) this.firstDayLog.shift();
+			this.firstDayLastStep = current;
+		}
+		if (this.dockPhase !== "docked") this.firstDayClosingStation = null;
+		const closing =
+			current === "trade" &&
+			this.firstDayClosingStation !== null &&
+			this.firstDayClosingStation === this.dock.stationId;
+		return {
+			current,
+			text,
+			stationLine:
+				guided && facts.docked && (current !== "trade" || closing)
+					? text
+					: null,
+		};
+	}
+
+	/**
+	 * A guided pilot's line on the glass, or `""` (#408 D3). Read by
+	 * `cruisePrompt` below its safety lines and a set course, and above the
+	 * generic target and cruise hints it makes specific.
+	 */
+	private firstDayGlassPrompt(): string {
+		if (this.firstDay !== "guided") return "";
+		const selected = this.targetBody();
+		const station = selected
+			? this.world.system.contents.stations.find((s) => s.id === selected.id)
+			: undefined;
+		return firstDayPrompt(
+			this.firstDayFacts(),
+			selected
+				? {
+						key: station ? this.stationKey(station) : null,
+						inVicinity:
+							length(sub(selected.pos, this.world.ship.pos)) <= VICINITY_KM,
+						grantLive: station
+							? (this.dockingSnapshot(station.id)?.grantLive ?? false)
+							: false,
+						computerEngaged: this.dockingComputerEngaged,
+					}
+				: null,
+			this.firstDayKeys(),
+		);
 	}
 
 	/**
