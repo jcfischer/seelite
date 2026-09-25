@@ -489,14 +489,14 @@ check(
 	JSON.stringify(rebuilt.caption) === JSON.stringify(offered.caption),
 	JSON.stringify(rebuilt.caption),
 );
-// Read, not followed: the overlay a click opens consumes the one-shot, which is
-// a write, and the stored-bytes row below would then be measuring this probe.
+// The home page and not a boot: the principal's ruling, so a person sent a
+// postcard arrives at the threshold rather than inside a game.
 check(
-	"the viewer links the game itself, as the public site's Play now does",
+	"the viewer's Play link goes to the home page, not straight into a game",
 	rebuilt.play !== null &&
 		new URL(rebuilt.play).origin === new URL(ORIGIN).origin &&
 		new URL(rebuilt.play).pathname === "/" &&
-		new URL(rebuilt.play).search === "?boot=overlay" &&
+		new URL(rebuilt.play).search === "" &&
 		new URL(rebuilt.play).hash === "",
 	String(rebuilt.play),
 );
