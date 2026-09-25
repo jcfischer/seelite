@@ -13160,7 +13160,12 @@ class Game {
 	 * The loop fills one cube face a frame and the viewer runs no loop, so a
 	 * planet in the baked band — beyond about two radii (`planet-bake.ts`) —
 	 * would otherwise rebuild on the procedural program against a sent card
-	 * drawn from its cube. Drained with the bake step alone — a face is
+	 * drawn from its cube. **That is a matter of which program, not of what
+	 * shows:** the bake reproduces the procedural surface, and the sheet's planet
+	 * at 2.6 radii moved no pixel past 24/255 with the drain taken out. It is
+	 * here so both cards come off one program, which is the thing a rebuild
+	 * promises; a difference the bake one day introduces would then be the
+	 * same on both. Drained with the bake step alone — a face is
 	 * one full-screen quad, where a `render` would be the whole composer at the
 	 * card's size per face (sage round 1). The live game has normally baked
 	 * already and drains nothing.
