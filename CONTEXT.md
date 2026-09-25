@@ -635,3 +635,28 @@ sit *in* the background layer, so the words "background stars" name whichever on
 the sentence means and nothing is renamed here. What the sentence has to name is
 which population — an invented point and a system are not interchangeable, and the
 invariant between them is the reason.
+
+**Postcard**:
+A card the pilot makes of the current view: the frame drawn at one canonical size
+(3:2, 1800 x 1200), full bleed, with a band carrying **The Far Between**, the
+generated place and a galaxy-and-seed inscription. Made by the **Postcard screen**
+(`system.postcard`, `src/postcard-panel.ts`) in one of three compositions —
+*clear* (the cockpit eye, no cabin), *cockpit* and *exterior* — and saved to the
+share sheet or a download; it never leaves the browser otherwise.
+[Postcards from The Far Between](https://github.com/jcfischer/seelite/issues/406)
+owns the contract. **Scope note, not a ban:** the word is also the product
+direction's ordinary English for a picture a pilot keeps
+(`product-and-website-direction.md`), which is this.
+
+**Scene recipe**:
+What a **Postcard** link carries in its URL **fragment**: schema and generator
+versions, seed, galaxy, system, game time, viewpoint, attitude and composition —
+and nothing a Commander owns. Opening one boots the **postcard viewer**, a
+read-only page that rebuilds the view from the seeded baseline, runs no frame loop
+and attaches no store. It is not a save and not a replay: the sender's stock
+deficits, strikes and discoveries do not reach it, and a card of a pilot's own
+hull rebuilds with the starting one. `src/postcard.ts` owns the spelling and the
+strict parse; `tests/postcard.test.ts` holds both.
+_Avoid_: Snapshot, share code — a **snapshot** is the save's word (the overlay
+`persistent-world-state.md` calls a canonical snapshot), and a recipe is precisely
+not one.
