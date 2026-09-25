@@ -52,7 +52,7 @@ test("the assist holds the raider's speed in the fight's frame, as it holds the 
 			player.pos,
 			nose,
 			ENEMY_COLLISION_RADIUS_KM,
-			frameVel,
+			{ start: frameVel, end: frameVel },
 		).state;
 		player.pos = add(player.pos, scale(frameVel, DT));
 		fastest = Math.max(fastest, length(sub(enemy.ship.vel, frameVel)));
@@ -62,6 +62,61 @@ test("the assist holds the raider's speed in the fight's frame, as it holds the 
 	// A raider braking toward the star's frame is left kilometres behind a
 	// fight that moves at 30 km/s.
 	expect(farthest).toBeLessThan(30);
+});
+
+test("a raider fights beside an orbiting station exactly as it fights in deep space (#529)", () => {
+	// The frame the fight is flown in is a station on an orbit, and it
+	// accelerates — 71.7 m/s² at USBISO's gas-giant shipyard. A raider holding
+	// only its velocity lags it by `a × assistLateralTauS` and drifts off the
+	// player. Sharing the acceleration makes the frame the local inertial one,
+	// so the same duel, read relative to the player, is the same duel.
+	const ORBIT_KM = 39_770;
+	const OMEGA = Math.sqrt(0.0717 / ORBIT_KM);
+	const framePos = (t: number) =>
+		v3(ORBIT_KM * Math.cos(OMEGA * t), ORBIT_KM * Math.sin(OMEGA * t), 0);
+	const frameVel = (t: number) =>
+		v3(
+			-ORBIT_KM * OMEGA * Math.sin(OMEGA * t),
+			ORBIT_KM * OMEGA * Math.cos(OMEGA * t),
+			0,
+		);
+	const nose = v3(0, 0, -1);
+	const duel = (orbiting: boolean) => {
+		const player = orbiting
+			? { pos: framePos(0), vel: frameVel(0) }
+			: { pos: v3(), vel: v3() };
+		let enemy = createCombatEnemy(player, nose, 99);
+		const track: Vec3[] = [];
+		for (let i = 0; i < 30 / DT; i++) {
+			const t = i * DT;
+			const frame = orbiting
+				? { start: frameVel(t), end: frameVel(t + DT) }
+				: { start: v3(), end: v3() };
+			enemy = stepCombatEnemy(
+				enemy,
+				player,
+				nose,
+				createCombatPrototype(),
+				false,
+				DT,
+				player.pos,
+				nose,
+				ENEMY_COLLISION_RADIUS_KM,
+				frame,
+			).state;
+			// The player at rest in the frame, carried as `stepFlight` carries it.
+			player.pos = add(player.pos, scale(add(frame.start, frame.end), DT / 2));
+			player.vel = frame.end;
+			track.push(sub(enemy.ship.pos, player.pos));
+		}
+		return track;
+	};
+	const still = duel(false);
+	const orbiting = duel(true);
+	let worst = 0;
+	for (let i = 0; i < still.length; i++)
+		worst = Math.max(worst, length(sub(orbiting[i], still[i])));
+	expect(worst).toBeLessThan(1e-3);
 });
 
 /** A duel against a still player, tracing the nose's angular velocity. */

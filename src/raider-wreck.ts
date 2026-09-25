@@ -26,6 +26,7 @@ import { DOMAIN } from "./domains";
 import { stream } from "./galaxy";
 import { COMMODITIES, type Commodity } from "./market";
 import { mix } from "./rng";
+import type { FrameMotion } from "./sim";
 import {
 	type Vec3,
 	add,
@@ -323,12 +324,18 @@ const canisterAt = (
 
 /**
  * One canister moved one step, from game time `now`. Its velocity relative to
- * `frameVel` falls in a straight line to zero at `restsAt`. It moves with
- * `frameVel` for the whole step, and with the fading part on that part's mean
+ * `frame` falls in a straight line to zero at `restsAt`. It moves with the
+ * frame for the whole step, and with the fading part on that part's mean
  * only until it reaches rest, so the step that crosses `restsAt` is exact too
  * (sage #346: it had moved on the mean for the whole step and overshot).
  *
- * **`frameVel` is the canister's own frame — the body in `frameBodyId` — as it
+ * **The frame accelerates, and a canister shares it (#529)** — relative to
+ * `frame.start`, handed back against `frame.end`, and carried on the mean of
+ * the two, as `stepFlight` carries a ship. A canister at rest that rode the
+ * step-start velocity instead fell behind its station by `a·dt²/2` a step:
+ * a kilometre in five minutes at `MAX_DT` beside a gas-giant shipyard.
+ *
+ * **`frame` is the canister's own frame — the body in `frameBodyId` — as it
  * stands: not a snapshot taken at the kill, and not the observer's
  * `localFrame()`.** A canister carried its own copy of the kill's frame until the sixth
  * playtest reported cargo "on trajectories much longer than 10s". It was: the
@@ -345,17 +352,18 @@ export function driftCanister(
 	c: Canister,
 	dt: number,
 	now: number,
-	frameVel: Vec3,
+	frame: FrameMotion,
 ): Canister {
 	const left = c.restsAt - now;
 	const fading = Math.min(dt, Math.max(0, left));
 	const share = left > 0 ? (left - fading) / left : 0;
-	const relative = sub(c.vel, frameVel);
+	const relative = sub(c.vel, frame.start);
+	const carried = scale(add(frame.start, frame.end), 0.5);
 	const pos = add(
-		add(c.pos, scale(frameVel, dt)),
+		add(c.pos, scale(carried, dt)),
 		scale(relative, ((1 + share) / 2) * fading),
 	);
-	return { ...c, pos, vel: add(frameVel, scale(relative, share)) };
+	return { ...c, pos, vel: add(frame.end, scale(relative, share)) };
 }
 
 /** A scoop tried this step: taken into the hold, or refused by a full one. */
@@ -386,13 +394,13 @@ export function stepCanisters(
 	now: number,
 	accept: (canister: Canister) => number,
 	/**
-	 * The frame **this canister** comes to rest in, this step. Per canister and
+	 * The frame **this canister** comes to rest in, across this step. Per canister and
 	 * not one vector for all of them: the frame belongs to the body the kill
 	 * happened beside, and the observer may be anywhere (sage #355). Required
 	 * for `FlightPerformance`'s reason — a caller that forgot would silently
 	 * bring every canister to rest in star coordinates.
 	 */
-	frameVelFor: (canister: Canister) => Vec3,
+	frameFor: (canister: Canister) => FrameMotion,
 ): { kept: Canister[]; scoops: CanisterScoop[] } {
 	const kept: Canister[] = [];
 	const tried: CanisterScoop[] = [];
@@ -405,7 +413,7 @@ export function stepCanisters(
 			if (tonnes >= canister.tonnes) continue;
 			if (tonnes > 0) left = { ...canister, tonnes: canister.tonnes - tonnes };
 		}
-		kept.push(driftCanister(left, dt, now, frameVelFor(canister)));
+		kept.push(driftCanister(left, dt, now, frameFor(canister)));
 	}
 	return { kept, scoops: tried };
 }

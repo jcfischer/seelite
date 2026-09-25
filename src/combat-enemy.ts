@@ -44,6 +44,7 @@ import {
 	type Angular,
 	flightPerformance,
 	type FlightPerformance,
+	type FrameMotion,
 	stepAngular,
 	stepFlight,
 	type Ship,
@@ -491,16 +492,16 @@ export function stepCombatEnemy(
 	laserOrigin: Vec3 = player.pos,
 	laserNose: Vec3 = playerNose,
 	hitRadiusKm: number = ENEMY_COLLISION_RADIUS_KM,
-	/** The velocity the assist treats as at rest — the player's local frame
+	/** The frame the assist holds across this step — the player's local frame
 	 *  (#324), so both ships' 2 km/s cap is the same speed. The star's frame
 	 *  when omitted, as `stepFlight`'s is. */
-	frameVel?: Vec3,
+	frame?: FrameMotion,
 ): EnemyFlightStep {
 	return stepEnemyShip(state, player, playerNose, combat, playerFiring, dt, {
 		laserOrigin,
 		laserNose,
 		hitRadiusKm,
-		frameVel,
+		frame,
 		performance: STRIKER_PERFORMANCE,
 		intent: "attacker",
 	});
@@ -520,7 +521,10 @@ export interface EnemyShipOptions {
 	laserOrigin: Vec3;
 	laserNose: Vec3;
 	hitRadiusKm: number;
-	frameVel: Vec3 | undefined;
+	/** The fight's frame across this step, which both ships share — its
+	 *  acceleration as well as its velocity (#529), or beside a station over a
+	 *  gas giant the raider drifts off the player at the station's. */
+	frame: FrameMotion | undefined;
 	/** **Required**, for `FlightPerformance`'s reason: a caller that forgot to
 	 *  name a hull would silently fly a freighter as a raider. */
 	performance: FlightPerformance;
@@ -537,7 +541,7 @@ export function stepEnemyShip(
 	dt: number,
 	options: EnemyShipOptions,
 ): EnemyFlightStep {
-	const { laserOrigin, laserNose, hitRadiusKm, frameVel, performance, intent } =
+	const { laserOrigin, laserNose, hitRadiusKm, frame, performance, intent } =
 		options;
 	const step = Math.max(0, dt);
 	const toPlayer = sub(player.pos, state.ship.pos);
@@ -655,13 +659,15 @@ export function stepEnemyShip(
 	// stops a long extrapolation aiming at a place nobody is going.
 	//
 	// **In the frame, not in star coordinates** (#362). Both ships' assists
-	// hold them in `frameVel`, so the frame's own motion carries both and moves
+	// hold them in `frame`, so the frame's own motion carries both and moves
 	// neither relative to the other; only the player's velocity *relative to
 	// it* is a place to lead. Beside a station the frame moves ~30 km/s (#104),
 	// and leading on the absolute velocity aimed a patrol up to 150 km along
 	// the orbit, which it then flew toward and away from the fight. In the star
 	// frame, where every raider duel so far has been fought, the two are equal.
-	const playerRelVel = frameVel ? sub(player.vel, frameVel) : player.vel;
+	// `start`, because the player's velocity was handed back against the frame
+	// as it stands at the top of this step.
+	const playerRelVel = frame ? sub(player.vel, frame.start) : player.vel;
 	let lead = range / ASSIST_CAP_KMS;
 	for (let i = 0; i < 2; i++) {
 		const predicted = add(
@@ -727,12 +733,7 @@ export function stepEnemyShip(
 	const ship = { pos: { ...state.ship.pos }, vel: { ...state.ship.vel } };
 	// `step`, not `dt`: the clamp above is what stops a negative frame delta
 	// running the integrator backwards, and it has to reach the integrator too.
-	stepFlight(
-		ship,
-		{ nose, throttle, assist: true, frameVel },
-		step,
-		performance,
-	);
+	stepFlight(ship, { nose, throttle, assist: true, frame }, step, performance);
 
 	// Firing follows pointing, in any phase but a rout: a snapshot as the nose
 	// sweeps across the player during a break is a shot a pilot would take.

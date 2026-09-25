@@ -222,6 +222,7 @@ import {
 	flightPerformance,
 	type Body,
 	type FlightControl,
+	type FrameMotion,
 	type System,
 	type World,
 	advanceWorldClock,
@@ -6050,7 +6051,7 @@ class Game {
 			aimOrigin: this.cameraPos(),
 			aimNose: this.beamAim(),
 			hull: this.condition.hull,
-			frameVel: this.localFrame(),
+			frame: this.localFrameMotion(dt),
 		};
 		if (shot.fired && shot.damage > 0) this.engageStruckTraffic(pilot);
 		this.stepEngagedTraffic(pilot, shot, dt);
@@ -6077,7 +6078,7 @@ class Game {
 			// Its drawn attitude, or failing that the way it is moving.
 			const nose =
 				route?.nose ??
-				normalizeOr(sub(contact.velocity, pilot.frameVel), v3(0, 0, -1));
+				normalizeOr(sub(contact.velocity, pilot.frame.start), v3(0, 0, -1));
 			this.trafficEngagements.set(
 				key,
 				engage(
@@ -9288,15 +9289,15 @@ class Game {
 		return bodyVelocity(this.world.system, id, this.world.gameTime);
 	}
 
-	/** What the player is asking of the flight model this frame (#5's model, in
-	 *  `sim.ts`). The assist is a toggle and its state is remembered through
-	 *  cruise, which does not honour it (#10 §1). */
-	private control(): FlightControl {
+	/** What the player is asking of the flight model over the next `dt` (#5's
+	 *  model, in `sim.ts`). The assist is a toggle and its state is remembered
+	 *  through cruise, which does not honour it (#10 §1). */
+	private control(dt: number): FlightControl {
 		return {
 			nose: this.nose(),
 			throttle: this.throttle,
 			assist: this.assist,
-			frameVel: this.assistFrame().vel,
+			frame: this.assistFrameMotion(dt),
 		};
 	}
 
@@ -9319,22 +9320,61 @@ class Game {
 	 * is a fight they can stay in, not a reading of the relay.
 	 */
 	private assistFrame(): { vel: Vec3; label: string } {
+		const { label, velocityAt } = this.assistFrameSource();
+		return { vel: velocityAt(this.world.gameTime), label };
+	}
+
+	/** `assistFrame` across the next `dt`, which is what flight is stepped in
+	 *  (#529): the frame accelerates, and the ship shares it. */
+	private assistFrameMotion(dt: number): FrameMotion {
+		return this.frameMotion(this.assistFrameSource().velocityAt, dt);
+	}
+
+	/**
+	 * Which frame the assist holds, as a velocity at any game time.
+	 *
+	 * A function and not a vector because `FrameMotion` needs the **same**
+	 * frame at both ends of a step: the choice between relay and body is made
+	 * once, here, and a switch between steps then carries no velocity
+	 * difference into the step it happens on (#529).
+	 */
+	private assistFrameSource(): {
+		label: string;
+		velocityAt: (gameTime: number) => Vec3;
+	} {
 		const view = this.relayView;
 		if (view && this.proximityFrameBodyId === null) {
-			const { pos, vel } = this.relayNow(view);
+			const { pos } = this.relayNow(view);
 			if (
 				relayFrameHolds(
 					this.relaySelected() || this.tenderSelected(),
 					length(sub(pos, this.world.ship.pos)),
 				)
 			)
-				return { vel, label: "RELAY FRAME" };
+				return {
+					label: "RELAY FRAME",
+					velocityAt: (t) => this.relayVelocityAt(view, t),
+				};
 		}
 		const body = this.frameBody;
 		return {
-			vel: this.localFrame(),
 			label: body ? `${body.kind.toUpperCase()} FRAME` : "STAR FRAME",
+			velocityAt: this.localFrameSource(),
 		};
+	}
+
+	/** A frame's velocity over the next `dt`, from one source at both ends. */
+	private frameMotion(
+		velocityAt: (gameTime: number) => Vec3,
+		dt: number,
+	): FrameMotion {
+		const now = this.world.gameTime;
+		return { start: velocityAt(now), end: velocityAt(now + dt) };
+	}
+
+	/** `localFrame` across the next `dt` (#529). */
+	private localFrameMotion(dt: number): FrameMotion {
+		return this.frameMotion(this.localFrameSource(), dt);
 	}
 
 	/**
@@ -9353,10 +9393,13 @@ class Game {
 	 * perfectly good arrival. It binds #9: docking happens in this frame.
 	 */
 	private localFrame(): Vec3 {
-		const body = this.frameBody;
-		return body
-			? bodyVelocity(this.world.system, body.id, this.world.gameTime)
-			: v3();
+		return this.localFrameSource()(this.world.gameTime);
+	}
+
+	/** `localFrame`'s body, fixed now, as a velocity at any game time. */
+	private localFrameSource(): (gameTime: number) => Vec3 {
+		const id = this.frameBody?.id;
+		return id ? (t) => bodyVelocity(this.world.system, id, t) : () => v3();
 	}
 
 	/** The nearby body's inertial frame makes station-keeping legible at idle. */
@@ -10963,8 +11006,9 @@ class Game {
 				aimNose: this.beamAim(),
 				hull: this.condition.hull,
 				// The raider's assist holds speed in the player's frame (#324) —
-				// the frame the player's own assist holds, relay's included (#515).
-				frameVel: this.assistFrame().vel,
+				// the frame the player's own assist holds, relay's included (#515),
+				// and shares its acceleration as the player's does (#529).
+				frame: this.assistFrameMotion(dt),
 			},
 			shot,
 		});
@@ -11047,18 +11091,19 @@ class Game {
 				if (took.accepted) this.commander = took.commander;
 				return took.tonnes;
 			},
-			// Each canister's own frame, as it stands (#324). Not `localFrame()`:
-			// that is the *observer's* nearest body, so a pilot who flies past
-			// `NEAR_FAR_KM` would drop every canister at the station to star rest
-			// and lose them inside their five minutes (sage #355).
-			(canister) =>
-				canister.frameBodyId
-					? bodyVelocity(
-							this.world.system,
-							canister.frameBodyId,
-							this.world.gameTime,
-						)
-					: v3(),
+			// Each canister's own frame, as it stands (#324), across the step
+			// (#529). Not `localFrame()`: that is the *observer's* nearest body,
+			// so a pilot who flies past `NEAR_FAR_KM` would drop every canister at
+			// the station to star rest and lose them inside their five minutes
+			// (sage #355).
+			(canister) => {
+				const id = canister.frameBodyId;
+				const system = this.world.system;
+				return this.frameMotion(
+					id ? (t) => bodyVelocity(system, id, t) : () => v3(),
+					dt,
+				);
+			},
 		);
 		this.canisters = step.kept;
 		// A refused notice stands while the ship is beside the canister, and a
@@ -11601,6 +11646,15 @@ class Game {
 			pos: relayPosition(plan, contents, now),
 			vel: relayVelocity(plan, contents, now),
 		};
+	}
+
+	/** The relay's velocity at `gameTime`, for a frame stepped across it (#529);
+	 *  the frame-start reading when the plan is gone, as `relayNow`'s is. */
+	private relayVelocityAt(v: RelayView, gameTime: number): Vec3 {
+		const plan = this.currentRelayPlan();
+		return plan
+			? relayVelocity(plan, this.world.system.contents, gameTime)
+			: v.vel;
 	}
 
 	/** #43: the relay as a probe reads it. */
@@ -12318,7 +12372,7 @@ class Game {
 		// The whole world, not just the ship: `dt` is sim seconds and the bodies
 		// are on orbits driven by the same clock. Stepping the ship alone would
 		// freeze the system around it, which is the state the scaffold was in.
-		stepWorld(this.world, this.control(), dt, PLAYER_PERFORMANCE);
+		stepWorld(this.world, this.control(dt), dt, PLAYER_PERFORMANCE);
 		// After the world moved, because the hold is measured against where the
 		// target *is* this frame: a carrier that drove out of range mid-charge
 		// breaks it, and reading the old position would hold it forever.

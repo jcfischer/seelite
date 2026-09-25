@@ -39,6 +39,7 @@ import {
 	flightPerformance,
 	stepAngular,
 	stepFlight,
+	steadyFrame,
 } from "../../src/sim";
 import {
 	type Vec3,
@@ -141,7 +142,7 @@ export function flyToCargo(
 			PILOT_DT,
 			now,
 			(c) => c.tonnes,
-			() => frameVel,
+			() => steadyFrame(frameVel),
 		);
 		scooped += step.scoops.filter((s) => s.accepted).length;
 		canisters = step.kept;
@@ -190,7 +191,7 @@ export function flyToCargo(
 				: Math.min(1, (0.5 * km + 0.05) / ASSIST_CAP_KMS);
 		stepFlight(
 			ship,
-			{ nose, throttle, assist: true, frameVel },
+			{ nose, throttle, assist: true, frame: steadyFrame(frameVel) },
 			PILOT_DT,
 			COURIER,
 		);

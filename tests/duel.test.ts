@@ -18,6 +18,7 @@ import {
 	stepDuel,
 } from "../src/duel";
 import { HULL_SPECS } from "../src/hull";
+import { steadyFrame } from "../src/sim";
 import {
 	PULSE_LASER,
 	SHIELD_POOL,
@@ -37,7 +38,7 @@ function pilot(over: Partial<DuelPilot> = {}): DuelPilot {
 		aimOrigin: ship.pos,
 		aimNose: FORWARD,
 		hull: fullCondition("courier").hull,
-		frameVel: v3(0, 0, 0),
+		frame: steadyFrame(v3()),
 		...over,
 	};
 }

@@ -5,7 +5,7 @@
 import { describe, expect, test } from "bun:test";
 import { HULL_SPECS } from "../src/hull";
 import { raiderSlots } from "../src/raider-slots";
-import { ASSIST_CAP_KMS } from "../src/sim";
+import { ASSIST_CAP_KMS, steadyFrame } from "../src/sim";
 import {
 	CANISTER_COUNT,
 	CANISTER_EJECT_KMS,
@@ -182,7 +182,7 @@ describe("the cargo drop", () => {
 					dt,
 					500 + t,
 					(c: Canister) => c.tonnes,
-					() => frameVel,
+					() => steadyFrame(frameVel),
 				).kept[0];
 			return c;
 		};
@@ -212,14 +212,15 @@ describe("the cargo drop", () => {
 		let c = c0;
 		let last = atKill;
 		for (let t = 0; t < 15 - 1e-9; t += dt) {
-			last = frameAt(t);
+			const frame = { start: frameAt(t), end: frameAt(t + dt) };
+			last = frame.end;
 			c = stepCanisters(
 				[c],
 				far,
 				dt,
 				500 + t,
 				(c: Canister) => c.tonnes,
-				() => last,
+				() => frame,
 			).kept[0];
 		}
 		expect(length(sub(c.vel, last))).toBeLessThan(1e-9);
@@ -242,7 +243,7 @@ describe("the cargo drop", () => {
 		// A mark dropped at the canister's position, carried by the frame.
 		let mark = c0.pos;
 		for (let t = 0; t < 120 - 1e-9; t += dt) {
-			const frame = frameAt(t);
+			const frame = { start: frameAt(t), end: frameAt(t + dt) };
 			c = stepCanisters(
 				[c],
 				far,
@@ -251,7 +252,7 @@ describe("the cargo drop", () => {
 				(c: Canister) => c.tonnes,
 				() => frame,
 			).kept[0];
-			mark = add(mark, scale(frame, dt));
+			mark = add(mark, scale(add(frame.start, frame.end), dt / 2));
 		}
 		// The same run, against a canister that froze the kill's frame — the
 		// build this replaced. **A comparative claim, measured here**: the first
@@ -266,12 +267,58 @@ describe("the cargo drop", () => {
 				dt,
 				500 + t,
 				(c: Canister) => c.tonnes,
-				() => frameAt(0),
+				() => steadyFrame(frameAt(0)),
 			).kept[0];
 		const tracked = length(sub(c.pos, mark));
 		const stranded = length(sub(frozen.pos, mark));
 		expect(stranded).toBeGreaterThan(20);
 		expect(tracked).toBeLessThan(stranded / 10);
+	});
+
+	test("a canister at rest keeps station with an accelerating frame (#529)", () => {
+		// USBISO's gas-giant shipyard: a 71.7 m/s² orbit. A canister riding the
+		// step-start velocity fell `a·dt²/2` behind it every step — about a
+		// kilometre over its five minutes at `MAX_DT` — which is further than
+		// a pilot looking for it at the scoop's radius can miss by.
+		const ORBIT_KM = 39_770;
+		const OMEGA = Math.sqrt(0.0717 / ORBIT_KM);
+		const framePos = (t: number) =>
+			v3(ORBIT_KM * Math.cos(OMEGA * t), ORBIT_KM * Math.sin(OMEGA * t), 0);
+		const frameVel = (t: number) =>
+			v3(
+				-ORBIT_KM * OMEGA * Math.sin(OMEGA * t),
+				ORBIT_KM * OMEGA * Math.cos(OMEGA * t),
+				0,
+			);
+		const offset = v3(0, 0, 2);
+		let c: Canister = {
+			id: "rest",
+			commodity: "Food",
+			tonnes: 1,
+			pos: add(framePos(0), offset),
+			vel: frameVel(0),
+			frameBodyId: null,
+			restsAt: 0,
+			expiresAt: CANISTER_LIFETIME_S + 1,
+		};
+		const dt = 0.1;
+		let worst = 0;
+		for (let i = 0; i < CANISTER_LIFETIME_S / dt; i++) {
+			const t = i * dt;
+			c = stepCanisters(
+				[c],
+				far,
+				dt,
+				t,
+				(c: Canister) => c.tonnes,
+				() => ({ start: frameVel(t), end: frameVel(t + dt) }),
+			).kept[0];
+			worst = Math.max(
+				worst,
+				length(sub(sub(c.pos, framePos(t + dt)), offset)),
+			);
+		}
+		expect(worst).toBeLessThan(1e-3);
 	});
 
 	test("a canister rests in its own body's frame, not the observer's", () => {
@@ -286,7 +333,7 @@ describe("the cargo drop", () => {
 			"58:station-0": station,
 		};
 		const frameFor = (c: Canister) =>
-			c.frameBodyId ? frames[c.frameBodyId] : v3();
+			steadyFrame(c.frameBodyId ? frames[c.frameBodyId] : v3());
 		let pair = [near, away];
 		for (let t = 0; t < 12; t += 1 / 60)
 			pair = stepCanisters(
@@ -336,8 +383,8 @@ describe("drift, expiry and the scoop", () => {
 	// The frame these rows step in, as the resolver the stepper takes. At rest
 	// in it, so they see a constant velocity; the fade is the drop rows'
 	// question.
-	const carried = () => v3(0.01, 0, 0);
-	const still = () => v3();
+	const carried = () => steadyFrame(v3(0.01, 0, 0));
+	const still = () => steadyFrame(v3());
 
 	test("a canister drifts on its velocity and is gone at `expiresAt`", () => {
 		const [moved] = stepCanisters(
@@ -445,7 +492,7 @@ describe("a scoop takes what fits (civilian-combat.md H11)", () => {
 			0.1,
 			10,
 			() => 5,
-			() => v3(),
+			() => steadyFrame(v3()),
 		);
 		expect(step.scoops).toEqual([{ canister: lot, accepted: true, tonnes: 5 }]);
 		expect(step.kept).toHaveLength(1);
@@ -460,7 +507,7 @@ describe("a scoop takes what fits (civilian-combat.md H11)", () => {
 			0.1,
 			10,
 			(c) => c.tonnes,
-			() => v3(),
+			() => steadyFrame(v3()),
 		);
 		expect(step.kept).toHaveLength(0);
 	});
