@@ -31,7 +31,8 @@ import {
 	stepFlight,
 	stepWorld,
 	flightPerformance,
-	type FrameMotion,
+	frameMean,
+	steadyFrame,
 } from "../src/sim";
 import { VICINITY_KM, V_GATE_KMS } from "../src/docking";
 import { PLANET_APPROACH_RADIUS } from "../src/planet-approach-boundary";
@@ -44,6 +45,7 @@ import {
 import { AU_KM, FAR_SCALE, MAX_DT } from "../src/units";
 import { add, length, scale, sub, v3 } from "../src/vec3";
 import { codeOf } from "./lib/source-scan";
+import * as orbiting from "./helpers/orbiting-frame";
 import { PLAYER_BASELINE_HULL } from "../src/hull";
 
 /**
@@ -516,7 +518,7 @@ describe("stepFlight — #5's model, both regimes", () => {
 					nose: NOSE,
 					throttle: 0,
 					assist: true,
-					frame: { start: frameVel, end: frameVel },
+					frame: steadyFrame(frameVel),
 				},
 				0.1,
 				BASELINE,
@@ -537,7 +539,7 @@ describe("stepFlight — #5's model, both regimes", () => {
 					nose: NOSE,
 					throttle: 1,
 					assist: true,
-					frame: { start: frameVel, end: frameVel },
+					frame: steadyFrame(frameVel),
 				},
 				0.1,
 				BASELINE,
@@ -556,7 +558,7 @@ describe("stepFlight — #5's model, both regimes", () => {
 					nose: NOSE,
 					throttle: 0,
 					assist: false,
-					frame: { start: frameVel, end: frameVel },
+					frame: steadyFrame(frameVel),
 				},
 				0.1,
 				BASELINE,
@@ -819,21 +821,7 @@ describe("body velocities, which arrival turned out to depend on", () => {
  */
 describe("stepFlight in an orbiting frame (#529)", () => {
 	const NOSE = v3(0, 0, -1);
-	const ORBIT_KM = 39_770;
-	const ACCEL_KMS2 = 0.0717;
-	const OMEGA = Math.sqrt(ACCEL_KMS2 / ORBIT_KM);
-	const framePos = (t: number) =>
-		v3(ORBIT_KM * Math.cos(OMEGA * t), ORBIT_KM * Math.sin(OMEGA * t), 0);
-	const frameVel = (t: number) =>
-		v3(
-			-ORBIT_KM * OMEGA * Math.sin(OMEGA * t),
-			ORBIT_KM * OMEGA * Math.cos(OMEGA * t),
-			0,
-		);
-	const frameOver = (t: number, dt: number): FrameMotion => ({
-		start: frameVel(t),
-		end: frameVel(t + dt),
-	});
+	const { framePos, frameVel, frameOver } = orbiting;
 	/** The longest a run-in through `VICINITY_KM` takes at the assist cap. */
 	const RUN_IN_S = VICINITY_KM / ASSIST_CAP_KMS;
 
@@ -908,10 +896,12 @@ describe("stepFlight in an orbiting frame (#529)", () => {
 		expect(length(sub(ship.pos, framePos(RUN_IN_S)))).toBeLessThan(1e-3);
 	});
 
-	test("a frame switch is not an acceleration: a steady frame carries nothing", () => {
-		// The two velocities come from **one** frame, so a caller switching from
-		// the trade station to the shipyard between steps hands a pair that is
-		// the shipyard's at both ends — and the step is exactly a steady frame's.
+	test("a steady frame carries nothing, with the assist off", () => {
+		// What a steady frame hands the step: its velocity at both ends, and an
+		// unassisted ship then keeps exactly the velocity it had. This is **not**
+		// the frame-switch guarantee — that lives in the caller, which builds both
+		// ends from one source (`Game.assistFrameSource`), and no headless row
+		// reaches `Game`.
 		const ship = { pos: v3(), vel: v3(0.3, 30, 0) };
 		const steady = { start: v3(0, 30, 0), end: v3(0, 30, 0) };
 		stepFlight(

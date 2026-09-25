@@ -997,6 +997,12 @@ export const steadyFrame = (vel: Vec3): FrameMotion => ({
 	end: vel,
 });
 
+/** The frame's mean velocity across the step: what carries a position
+ *  through it, exactly for a frame whose acceleration is steady over one
+ *  step (#529). */
+export const frameMean = (frame: FrameMotion): Vec3 =>
+	scale(add(frame.start, frame.end), 0.5);
+
 /**
  * #5's model, built: assisted Newtonian, with the assist a toggle.
  *
@@ -1042,7 +1048,7 @@ export function stepFlight(
 	// step, 430 m in two minutes at `MAX_DT` beside the shipyard.
 	const start = control.frame?.start ?? v3();
 	const end = control.frame?.end ?? start;
-	const carried = scale(add(start, end), 0.5);
+	const carried = frameMean({ start, end });
 	const relative = sub(ship.vel, start);
 
 	if (!control.assist) {

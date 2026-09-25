@@ -5,7 +5,8 @@
 import { describe, expect, test } from "bun:test";
 import { HULL_SPECS } from "../src/hull";
 import { raiderSlots } from "../src/raider-slots";
-import { ASSIST_CAP_KMS, steadyFrame } from "../src/sim";
+import { ASSIST_CAP_KMS, frameMean, steadyFrame } from "../src/sim";
+import * as orbiting from "./helpers/orbiting-frame";
 import {
 	CANISTER_COUNT,
 	CANISTER_EJECT_KMS,
@@ -252,7 +253,7 @@ describe("the cargo drop", () => {
 				(c: Canister) => c.tonnes,
 				() => frame,
 			).kept[0];
-			mark = add(mark, scale(add(frame.start, frame.end), dt / 2));
+			mark = add(mark, scale(frameMean(frame), dt));
 		}
 		// The same run, against a canister that froze the kill's frame — the
 		// build this replaced. **A comparative claim, measured here**: the first
@@ -280,16 +281,7 @@ describe("the cargo drop", () => {
 		// step-start velocity fell `a·dt²/2` behind it every step — about a
 		// kilometre over its five minutes at `MAX_DT` — which is further than
 		// a pilot looking for it at the scoop's radius can miss by.
-		const ORBIT_KM = 39_770;
-		const OMEGA = Math.sqrt(0.0717 / ORBIT_KM);
-		const framePos = (t: number) =>
-			v3(ORBIT_KM * Math.cos(OMEGA * t), ORBIT_KM * Math.sin(OMEGA * t), 0);
-		const frameVel = (t: number) =>
-			v3(
-				-ORBIT_KM * OMEGA * Math.sin(OMEGA * t),
-				ORBIT_KM * OMEGA * Math.cos(OMEGA * t),
-				0,
-			);
+		const { framePos, frameVel, frameOver } = orbiting;
 		const offset = v3(0, 0, 2);
 		let c: Canister = {
 			id: "rest",
@@ -311,7 +303,7 @@ describe("the cargo drop", () => {
 				dt,
 				t,
 				(c: Canister) => c.tonnes,
-				() => ({ start: frameVel(t), end: frameVel(t + dt) }),
+				() => frameOver(t, dt),
 			).kept[0];
 			worst = Math.max(
 				worst,

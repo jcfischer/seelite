@@ -26,7 +26,7 @@ import { DOMAIN } from "./domains";
 import { stream } from "./galaxy";
 import { COMMODITIES, type Commodity } from "./market";
 import { mix } from "./rng";
-import type { FrameMotion } from "./sim";
+import { type FrameMotion, frameMean } from "./sim";
 import {
 	type Vec3,
 	add,
@@ -358,7 +358,7 @@ export function driftCanister(
 	const fading = Math.min(dt, Math.max(0, left));
 	const share = left > 0 ? (left - fading) / left : 0;
 	const relative = sub(c.vel, frame.start);
-	const carried = scale(add(frame.start, frame.end), 0.5);
+	const carried = frameMean(frame);
 	const pos = add(
 		add(c.pos, scale(carried, dt)),
 		scale(relative, ((1 + share) / 2) * fading),

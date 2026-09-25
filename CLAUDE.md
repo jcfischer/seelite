@@ -229,8 +229,8 @@ merge.
   other nodes are written against it.
 - **A fight beside a body is flown in that body's frame, and so is its aim.**
   Every ship's assist holds speed relative to its `frame`, which beside a
-  station moves ~30 km/s (#104) and **accelerates** — up to 114 m/s² at a
-  shipyard low over a gas giant — so the frame is a `FrameMotion`, its
+  station moves ~30 km/s (#104) and **accelerates** — 71.7 m/s² at USBISO's
+  shipyard, and 113.7 m/s² at the worst of #529's 200 start systems — so the frame is a `FrameMotion`, its
   velocity at both ends of the step, and every ship shares its acceleration
   with the assist on or off (#529). A velocity read once per step leaves a
   lag of `a × assistLateralTauS`, which slid USBISO's shipyard past a pilot

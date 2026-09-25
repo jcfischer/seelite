@@ -15,7 +15,13 @@ import {
 	createCombatEnemy,
 	stepCombatEnemy,
 } from "../src/combat-enemy";
-import { ASSIST_CAP_KMS, flightPerformance } from "../src/sim";
+import {
+	ASSIST_CAP_KMS,
+	flightPerformance,
+	frameMean,
+	steadyFrame,
+} from "../src/sim";
+import * as orbiting from "./helpers/orbiting-frame";
 import {
 	type Vec3,
 	add,
@@ -52,7 +58,7 @@ test("the assist holds the raider's speed in the fight's frame, as it holds the 
 			player.pos,
 			nose,
 			ENEMY_COLLISION_RADIUS_KM,
-			{ start: frameVel, end: frameVel },
+			steadyFrame(frameVel),
 		).state;
 		player.pos = add(player.pos, scale(frameVel, DT));
 		fastest = Math.max(fastest, length(sub(enemy.ship.vel, frameVel)));
@@ -70,28 +76,17 @@ test("a raider fights beside an orbiting station exactly as it fights in deep sp
 	// only its velocity lags it by `a × assistLateralTauS` and drifts off the
 	// player. Sharing the acceleration makes the frame the local inertial one,
 	// so the same duel, read relative to the player, is the same duel.
-	const ORBIT_KM = 39_770;
-	const OMEGA = Math.sqrt(0.0717 / ORBIT_KM);
-	const framePos = (t: number) =>
-		v3(ORBIT_KM * Math.cos(OMEGA * t), ORBIT_KM * Math.sin(OMEGA * t), 0);
-	const frameVel = (t: number) =>
-		v3(
-			-ORBIT_KM * OMEGA * Math.sin(OMEGA * t),
-			ORBIT_KM * OMEGA * Math.cos(OMEGA * t),
-			0,
-		);
+	const { framePos, frameVel, frameOver } = orbiting;
 	const nose = v3(0, 0, -1);
-	const duel = (orbiting: boolean) => {
-		const player = orbiting
+	const duel = (orbits: boolean) => {
+		const player = orbits
 			? { pos: framePos(0), vel: frameVel(0) }
 			: { pos: v3(), vel: v3() };
 		let enemy = createCombatEnemy(player, nose, 99);
 		const track: Vec3[] = [];
 		for (let i = 0; i < 30 / DT; i++) {
 			const t = i * DT;
-			const frame = orbiting
-				? { start: frameVel(t), end: frameVel(t + DT) }
-				: { start: v3(), end: v3() };
+			const frame = orbits ? frameOver(t, DT) : steadyFrame(v3());
 			enemy = stepCombatEnemy(
 				enemy,
 				player,
@@ -105,17 +100,17 @@ test("a raider fights beside an orbiting station exactly as it fights in deep sp
 				frame,
 			).state;
 			// The player at rest in the frame, carried as `stepFlight` carries it.
-			player.pos = add(player.pos, scale(add(frame.start, frame.end), DT / 2));
+			player.pos = add(player.pos, scale(frameMean(frame), DT));
 			player.vel = frame.end;
 			track.push(sub(enemy.ship.pos, player.pos));
 		}
 		return track;
 	};
 	const still = duel(false);
-	const orbiting = duel(true);
+	const circling = duel(true);
 	let worst = 0;
 	for (let i = 0; i < still.length; i++)
-		worst = Math.max(worst, length(sub(orbiting[i], still[i])));
+		worst = Math.max(worst, length(sub(circling[i], still[i])));
 	expect(worst).toBeLessThan(1e-3);
 });
 

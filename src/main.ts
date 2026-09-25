@@ -9398,7 +9398,12 @@ class Game {
 
 	/** `localFrame`'s body, fixed now, as a velocity at any game time. */
 	private localFrameSource(): (gameTime: number) => Vec3 {
-		const id = this.frameBody?.id;
+		return this.bodyFrameSource(this.frameBody?.id ?? null);
+	}
+
+	/** A body's frame as a velocity at any game time, or the star's for
+	 *  `null`. One copy for the player's frame and each canister's. */
+	private bodyFrameSource(id: string | null): (gameTime: number) => Vec3 {
 		return id ? (t) => bodyVelocity(this.world.system, id, t) : () => v3();
 	}
 
@@ -11096,14 +11101,8 @@ class Game {
 			// so a pilot who flies past `NEAR_FAR_KM` would drop every canister at
 			// the station to star rest and lose them inside their five minutes
 			// (sage #355).
-			(canister) => {
-				const id = canister.frameBodyId;
-				const system = this.world.system;
-				return this.frameMotion(
-					id ? (t) => bodyVelocity(system, id, t) : () => v3(),
-					dt,
-				);
-			},
+			(canister) =>
+				this.frameMotion(this.bodyFrameSource(canister.frameBodyId), dt),
 		);
 		this.canisters = step.kept;
 		// A refused notice stands while the ship is beside the canister, and a
@@ -11648,8 +11647,17 @@ class Game {
 		};
 	}
 
-	/** The relay's velocity at `gameTime`, for a frame stepped across it (#529);
-	 *  the frame-start reading when the plan is gone, as `relayNow`'s is. */
+	/**
+	 * The relay's velocity at `gameTime`, for a frame stepped across it (#529);
+	 * the frame-start reading when the plan is gone, as `relayNow`'s is.
+	 *
+	 * **Its acceleration is an orbit's, so it is a frame a ship may share with
+	 * the assist off.** `relayPosition` composes the parent planet's orbit and
+	 * the relay's own around it exactly as `placeBodies` composes a station's,
+	 * and its off-plane offset is a constant, which accelerates nothing. So the
+	 * relay's change of velocity is the same gravity a station's is, and
+	 * `FrameMotion`'s argument for sharing it holds unchanged.
+	 */
 	private relayVelocityAt(v: RelayView, gameTime: number): Vec3 {
 		const plan = this.currentRelayPlan();
 		return plan
