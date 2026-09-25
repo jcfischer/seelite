@@ -1,12 +1,12 @@
 /**
  * The page a postcard link opens (#406): the card, rebuilt from its recipe,
- * and three ways on — play the game, save the image, or start a game of one's
- * own in the same universe.
+ * and three ways on — the game's home page, save the image, or start a game
+ * of one's own in the same universe.
  *
- * **Play The Far Between** is the public site's own *Play now*
- * (`/?boot=overlay`), the principal's ask on the sheet: a person who was sent a
- * postcard is one click from the game, with their own Commanders where they
- * left them.
+ * **Play The Far Between** goes to the site's home page (`/`), the public
+ * threshold, and not into a game: the principal's ask on the sheet, then their
+ * ruling on where it lands. A person sent a postcard meets the game at its own
+ * front door, where *Play now* is one more click.
  *
  * **Read-only by construction, not by care.** The boot branch that mounts this
  * builds no catalog and no store, and the `Game` it hands over was built on the
@@ -88,14 +88,14 @@ export function mountPostcardViewer(
 		url.search = search;
 		return url.href;
 	};
-	const play = gameAt("?boot=overlay");
+	const play = gameAt("");
 	const visit = gameAt(`?seed=${recipe.seed}`);
 
 	const root = document.createElement("div");
 	root.id = "seelite-postcard-viewer";
 	root.innerHTML = `
 		<img class="card" alt="" />
-		<p class="line">A postcard from The Far Between. Opening it changed nothing on this device.</p>
+		<p class="line">A postcard from The Far Between.</p>
 		<div class="actions">
 			<a class="go play" data-action="play" href="${escapeHtml(play)}">Play The Far Between <span aria-hidden="true">→</span></a>
 			<button type="button" data-action="save">Save image</button>

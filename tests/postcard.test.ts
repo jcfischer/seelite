@@ -398,7 +398,7 @@ describe("the caption", () => {
 	});
 });
 
-describe("a refusal says what it kept", () => {
+describe("a refusal says what went wrong", () => {
 	const reasons = [
 		"too-long",
 		"malformed",
@@ -411,8 +411,20 @@ describe("a refusal says what it kept", () => {
 		test(`${reason}`, () => {
 			const text = postcardRefusalText(reason);
 			expect(text.title.length).toBeGreaterThan(0);
-			expect(text.dek).toContain("nothing on this device was changed");
+			expect(text.dek.length).toBeGreaterThan(0);
+			// The principal cut the device sentence from the viewer and the
+			// refusal alike; the promise is the probe's to hold, not the page's.
+			expect(`${text.title} ${text.dek}`).not.toMatch(/device/i);
 		});
+
+	test("the three families read differently", () => {
+		const said = new Set(
+			(["malformed", "unsupported-schema", "other-build"] as const).map(
+				(reason) => postcardRefusalText(reason).title,
+			),
+		);
+		expect(said.size).toBe(3);
+	});
 });
 
 describe("the chase yaw at its ends (sage round 1)", () => {
