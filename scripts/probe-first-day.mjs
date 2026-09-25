@@ -253,10 +253,13 @@ check(
 await shot(page, "06b-cleared-by-hand");
 
 // Dock at the delivery station through the real protocol. `__parkInBerth`
-// fits the computer to fly the approach, so everything below has one.
+// fits the computer to fly the approach, so everything below has one. **The
+// berth the grant above reserved**, not the first in the catalogue: a live grant
+// is a reservation, and asking the placement for another berth is refused.
 await page.evaluate(async (id) => {
 	const g = window.__seelite;
-	await window.__parkInBerth(id, g.berthIdsOfStation(id)[0]);
+	const held = g.dockingSnapshot(id)?.berthId;
+	await window.__parkInBerth(id, held ?? g.berthIdsOfStation(id)[0]);
 	g.setHeadLook("forward");
 	g.updateCockpit();
 }, destId);

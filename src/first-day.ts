@@ -175,6 +175,7 @@ export function firstDayPrompt(
 	if (!target.inVicinity || target.computerEngaged) return "";
 	if (!target.grantLive) return `press ${keys.clearance} for clearance`;
 	return facts.computerFitted
-		? `press ${keys.computer} to dock`
-		: "cleared · line up with the opening and fly in slowly";
+		? // No "cleared": the docking director prints CLEARED on the line above.
+			`press ${keys.computer} to dock`
+		: "line up with the opening and fly in slowly";
 }

@@ -2118,7 +2118,8 @@ class Game {
 	/** A copy, not the module's object: the dials mutate this, and the spec's
 	 *  own figures stay reachable as `DEFAULT_CRUISE` for the reset key. */
 	cruiseParams: CruiseParams = { ...DEFAULT_CRUISE };
-	/** §7's drive charge, AU. Starts full — a new game docks first. */
+	/** §7's drive charge, AU. Starts full, and a guided new game spends none of
+	 *  it on the docked start (#408); a free one starts in flight with it full. */
 	chargeAu = CHARGE_CAPACITY_AU;
 	/** Seconds left of §4's spool-up before cruise actually engages. */
 	spoolLeftS = 0;
