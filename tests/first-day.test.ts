@@ -10,6 +10,7 @@ import { describe, expect, test } from "bun:test";
 import { carrierKey } from "../src/carrier-key";
 import {
 	FIRST_DAY_STEPS,
+	firstDayConsoleLine,
 	type FirstDayFacts,
 	type FirstDayKeys,
 	firstDayLogsStep,
@@ -40,11 +41,13 @@ const facts = (over: Partial<FirstDayFacts> = {}): FirstDayFacts => ({
 });
 
 const KEYS: FirstDayKeys = {
-	launch: "enter",
+	starboard: "3",
 	clearance: "c",
 	computer: "u",
 	cruise: "j",
 	navigation: "1",
+	forward: "2",
+	face: "f",
 };
 
 describe("#408 — the first day's step", () => {
@@ -98,6 +101,20 @@ describe("#408 — the first day's step", () => {
 });
 
 describe("#408 — what the pilot is told", () => {
+	test("launch sends the pilot to the right console's button, not to a key", () => {
+		// Playtest, 2026-09-25: Enter on the docked console acts on the focused
+		// Requests control — it tracked the job instead of launching.
+		const home = carrierKey(3, "station-trade");
+		const text = firstDayText(
+			facts({ docked: true, dockedAt: home, running }),
+			KEYS,
+		);
+		expect(text).toContain("Press 3");
+		expect(text).toContain("right console");
+		expect(text).toContain("LAUNCH");
+		expect(text).not.toContain("enter");
+	});
+
 	test("take work names the Local run only when the board has one", () => {
 		const docked = { docked: true, dockedAt: HOME };
 		expect(
@@ -113,13 +130,13 @@ describe("#408 — what the pilot is told", () => {
 		expect(text).toContain("ERMA REFINERY");
 		for (const phrase of [
 			"Navigation console (1)",
-			"cruise with j",
+			"press 2 to face forward, f to turn toward it and j to cruise",
 			"clearance with c",
 			"dock with u",
 		])
 			expect(text).toContain(phrase);
 		const rebound = firstDayText(facts({ running }), { ...KEYS, cruise: "k" });
-		expect(rebound).toContain("cruise with k");
+		expect(rebound).toContain("k to cruise");
 	});
 
 	test("without a docking computer the pilot is told to fly in, not to press u", () => {
@@ -153,6 +170,7 @@ describe("#408 — the flight prompt", () => {
 				flying(),
 				{
 					key: HOME,
+					name: "ERMA STATION",
 					inVicinity: false,
 					grantLive: false,
 					computerEngaged: false,
@@ -163,23 +181,29 @@ describe("#408 — the flight prompt", () => {
 		expect(firstDayPrompt(flying(), null, KEYS)).toContain("ERMA REFINERY");
 	});
 
-	test("leaves a far delivery station to the cruise prompt", () => {
+	test("a far delivery station: turn toward it, then cruise (playtest)", () => {
 		expect(
 			firstDayPrompt(
 				flying(),
 				{
 					key: THERE,
+					name: "ERMA REFINERY",
 					inVicinity: false,
 					grantLive: false,
 					computerEngaged: false,
 				},
 				KEYS,
 			),
-		).toBe("");
+		).toBe("press f to face ERMA REFINERY, then j to cruise");
 	});
 
 	test("near the station: clearance, then the docking computer, then nothing", () => {
-		const near = { key: THERE, inVicinity: true, computerEngaged: false };
+		const near = {
+			key: THERE,
+			name: "ERMA REFINERY",
+			inVicinity: true,
+			computerEngaged: false,
+		};
 		expect(firstDayPrompt(flying(), { ...near, grantLive: false }, KEYS)).toBe(
 			"press c for clearance",
 		);
@@ -200,14 +224,24 @@ describe("#408 — the flight prompt", () => {
 	});
 
 	test("cleared without a docking computer: fly in slowly, until the ship is in", () => {
-		const near = { key: THERE, inVicinity: true, computerEngaged: false };
+		const near = {
+			key: THERE,
+			name: "ERMA REFINERY",
+			inVicinity: true,
+			computerEngaged: false,
+		};
 		const line = firstDayPrompt(flying(), { ...near, grantLive: true }, KEYS);
 		expect(line).toContain("slowly");
 		expect(line).not.toContain(" u ");
 	});
 
 	test("finding a station works on whatever station is selected", () => {
-		const near = { key: HOME, inVicinity: true, computerEngaged: false };
+		const near = {
+			key: HOME,
+			name: "ERMA STATION",
+			inVicinity: true,
+			computerEngaged: false,
+		};
 		expect(firstDayPrompt(facts(), { ...near, grantLive: false }, KEYS)).toBe(
 			"press c for clearance",
 		);
@@ -238,5 +272,58 @@ describe("#408 — when station control's line is logged", () => {
 		// A finished guided commander reloads: nothing happened this session, so
 		// the closing line is not said again — every session, forever.
 		expect(firstDayLogsStep(null, "trade")).toBe(false);
+	});
+});
+
+describe("#408 — station control on the port console", () => {
+	const selected = (key: typeof HOME, name: string) => ({
+		key,
+		name,
+		inVicinity: false,
+		grantLive: false,
+		computerEngaged: false,
+	});
+
+	test("asks for the delivery station until it is selected", () => {
+		expect(firstDayConsoleLine(facts({ running }), null, KEYS)).toBe(
+			"Select ERMA REFINERY on the Navigation list.",
+		);
+		expect(
+			firstDayConsoleLine(
+				facts({ running }),
+				selected(HOME, "ERMA STATION"),
+				KEYS,
+			),
+		).toBe("Select ERMA REFINERY on the Navigation list.");
+	});
+
+	test("once it is selected: face forward, turn toward it, cruise (playtest)", () => {
+		expect(
+			firstDayConsoleLine(
+				facts({ running }),
+				selected(THERE, "ERMA REFINERY"),
+				KEYS,
+			),
+		).toBe(
+			"ERMA REFINERY is selected. Press 2 to face forward, f to turn toward it, then j to cruise.",
+		);
+	});
+
+	test("finding a station works on whatever station is selected", () => {
+		expect(firstDayConsoleLine(facts(), null, KEYS)).toBe(
+			"Select a station on the Navigation list.",
+		);
+		expect(
+			firstDayConsoleLine(facts(), selected(HOME, "ERMA STATION"), KEYS),
+		).toContain("ERMA STATION is selected. Press 2");
+	});
+
+	test("says nothing docked or after the day", () => {
+		expect(
+			firstDayConsoleLine(facts({ docked: true, dockedAt: HOME }), null, KEYS),
+		).toBeNull();
+		expect(
+			firstDayConsoleLine(facts({ settledAny: true }), null, KEYS),
+		).toBeNull();
 	});
 });

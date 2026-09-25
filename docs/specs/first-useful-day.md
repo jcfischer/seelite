@@ -61,15 +61,21 @@ without a start checkpoint, and over docking every new game.
 ### D2: The first job is a "local run"
 
 A new authored courier row, **Local run**, that binds only to a station in the
-posting system. Every station with an in-system neighbour posts it, whoever is
-docked, so it is ordinary work and not a tutorial offer. It is its own slot
-beside D8's floor courier, with its own draw stream, offer identity and
-episode count, so taking or settling one never moves the other
-(`ordinary-requests.md` §3 records the second slot). It pays 78 Cr for 6 t.
+posting system. Every station whose system has a second station posts it,
+whoever is docked, so it is ordinary work and not a tutorial offer. It is its
+own **post** on the board beside D8's floor courier, with its own draw stream,
+offer identity and episode count, so taking or settling one never moves the
+other (`ordinary-requests.md` §3 records the second post). It pays 78 Cr for
+6 t.
 
-Measured on the build: 167 of 200 start trade stations post one, which is the
-33 single-station start systems above and no others. Every other offer on the
-first 120 systems of two galaxies is byte-identical to `origin/main`.
+Measured on the build: 167 of 200 start trade stations post one, which is
+every start system except the 33 single-station ones above.
+`scripts/measure-first-day.ts` reprints this and the figures above. Once, when
+the row landed, every other offer on the first 120 systems of two galaxies was
+compared with `origin/main` (96fd436) and was byte-identical. What keeps that
+true in the tree is structural: the existing posts keep their stream values,
+and `tests/local-run.test.ts` holds that settling either post leaves the other
+unchanged.
 
 A start system with no second station posts no local run; the guided day then
 points at a job the pilot can fly, which is the one-jump courier.
@@ -159,7 +165,7 @@ reload (D1).
 | --- | --- | --- |
 | v6 round-trips the choice; v2–v5 load as free; an older version carrying the key is refused | Headless | `tests/first-day-save.test.ts` |
 | The choice at boot: New game's, or `?guided` on a direct boot with nothing loaded | Headless | `tests/commander-flow.test.ts` |
-| The local run binds only in-system, is deterministic, declines with no in-system neighbour, and never moves the floor courier | Headless | `tests/local-run.test.ts` |
+| The local run binds only in-system, is deterministic, declines with no second station in the system, and never moves the floor courier | Headless | `tests/local-run.test.ts` |
 | Every step, its precedence, and the in-flight hole | Headless | `tests/first-day.test.ts` |
 | A guided new game boots docked through a real clearance and writes `lastDocked`; a free one boots in flight | Browser | `probe-first-day.mjs` |
 | The day flown end to end: accept, launch, fly, dock, deliver, report, paid | Browser | `probe-first-day.mjs` |

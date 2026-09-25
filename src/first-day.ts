@@ -57,7 +57,8 @@ export interface FirstDayFacts {
 	/** The station the ship is at, docked or on rails; `null` in flight. */
 	dockedAt: CarrierKey | null;
 	running: FirstDayJob | null;
-	/** The journal holds a completed request — the one fact that ends the day. */
+	/** The journal holds a request reported and paid (`status: "completed"`) —
+	 *  the one fact that ends the day. */
 	settledAny: boolean;
 	/** The board at the station the ship is docked at posts a Local run. */
 	localRunOnBoard: boolean;
@@ -68,7 +69,10 @@ export interface FirstDayFacts {
 
 /** The keys as bound, as the prompt line names them. */
 export interface FirstDayKeys {
-	launch: string;
+	/** Head-look to the starboard console, where LAUNCH is. Named rather than
+	 *  the launch key: on the docked console that key acts on whatever control
+	 *  has focus, and in playtest it tracked the job instead of launching. */
+	starboard: string;
 	clearance: string;
 	computer: string;
 	cruise: string;
@@ -76,6 +80,12 @@ export interface FirstDayKeys {
 	 *  station by name. Named rather than the next-target key, which cycles
 	 *  through every contact in the system. */
 	navigation: string;
+	/** Head-look back to the forward view, which the glass and the flight
+	 *  controls answer to. */
+	forward: string;
+	/** Turn the nose toward the selected target (playtest, 2026-09-25: the
+	 *  step between selecting a station and cruising to it). */
+	face: string;
 }
 
 /**
@@ -104,6 +114,10 @@ const whereTo = (job: FirstDayJob): string =>
 		? job.reportName
 		: `${job.reportName} in the ${job.reportSystemName} system`;
 
+/** From a selected target to cruising toward it. */
+const flyTail = (keys: FirstDayKeys): string =>
+	`press ${keys.forward} to face forward, ${keys.face} to turn toward it and ${keys.cruise} to cruise`;
+
 /** How the pilot gets from a cleared approach into the berth. */
 const dockTail = (facts: FirstDayFacts, keys: FirstDayKeys): string =>
 	facts.computerFitted
@@ -119,17 +133,17 @@ export function firstDayText(facts: FirstDayFacts, keys: FirstDayKeys): string {
 	const job = facts.running;
 	switch (step) {
 		case "find-station":
-			return `Select a station on the Navigation console (${keys.navigation}), cruise to it with ${keys.cruise}, ${dockTail(facts, keys)}`;
+			return `Select a station on the Navigation console (${keys.navigation}), ${flyTail(keys)}, ${dockTail(facts, keys)}`;
 		case "take-work":
 			return facts.localRunOnBoard
 				? "Open the Requests tab on the station console and accept the Local run. It is a short delivery inside this system."
 				: "Open the Requests tab on the station console and accept a job you can fly.";
 		case "launch":
-			return `You have the job. Press ${keys.launch} to launch.`;
+			return `You have the job. Press ${keys.starboard} to turn to the right console, and select LAUNCH on its Flight tab.`;
 		case "fly":
 			if (!job) return "";
 			return job.sameSystem
-				? `Fly to ${whereTo(job)}: select it on the Navigation console (${keys.navigation}), cruise with ${keys.cruise}, ${dockTail(facts, keys)}`
+				? `Fly to ${whereTo(job)}: select it on the Navigation console (${keys.navigation}), ${flyTail(keys)}, ${dockTail(facts, keys)}`
 				: `Fly to ${whereTo(job)}: set a course on the Galaxy Map and jump, then find the station and dock.`;
 		case "report":
 			return "You are at the delivery station. Open the Requests tab and report the job to get paid.";
@@ -141,6 +155,8 @@ export function firstDayText(facts: FirstDayFacts, keys: FirstDayKeys): string {
 /** What the prompt line needs to know about the selected target. `null` when
  *  nothing is selected. */
 export interface FirstDayTarget {
+	/** What the pilot calls it. */
+	name: string;
 	/** The selected station's key, or `null` when the target is not a
 	 *  station. */
 	key: CarrierKey | null;
@@ -155,8 +171,8 @@ export interface FirstDayTarget {
  * the cruise prompt beneath it.
  *
  * It speaks only where the ordinary prompt cannot know what the day is for:
- * which station to select, and — near one — the two keys that dock. A far
- * selected station is left to "press J to cruise", which already says it.
+ * which station to select, how to turn toward it and cruise, and — near one —
+ * how to dock.
  */
 export function firstDayPrompt(
 	facts: FirstDayFacts,
@@ -172,12 +188,41 @@ export function firstDayPrompt(
 		if (target?.key !== job.reportAt)
 			return `deliver to ${job.reportName} · select it on the Navigation console (${keys.navigation})`;
 	} else if (target?.key === null || target === null) return "";
-	if (!target.inVicinity || target.computerEngaged) return "";
+	if (!target.inVicinity)
+		return `press ${keys.face} to face ${target.name}, then ${keys.cruise} to cruise`;
+	if (target.computerEngaged) return "";
 	if (!target.grantLive) return `press ${keys.clearance} for clearance`;
 	return facts.computerFitted
 		? // No "cleared": the docking director prints CLEARED on the line above.
 			`press ${keys.computer} to dock`
 		: "line up with the opening and fly in slowly";
+}
+
+/**
+ * Station control's line on the port console, or `null` (#408 D3).
+ *
+ * The pilot selects a station there with the head turned, where the glass is
+ * not drawn — so what to press next has to be said on the console itself
+ * (playtest, 2026-09-25): select the station, then face forward, turn toward
+ * it and cruise.
+ */
+export function firstDayConsoleLine(
+	facts: FirstDayFacts,
+	target: FirstDayTarget | null,
+	keys: FirstDayKeys,
+): string | null {
+	const step = firstDayStep(facts);
+	if (step !== "fly" && step !== "find-station") return null;
+	const job = facts.running;
+	if (step === "fly" && job) {
+		if (!job.sameSystem)
+			return `Deliver to ${whereTo(job)}: set a course on the Galaxy Map tab and jump.`;
+		if (target?.key !== job.reportAt)
+			return `Select ${job.reportName} on the Navigation list.`;
+		return `${job.reportName} is selected. Press ${keys.forward} to face forward, ${keys.face} to turn toward it, then ${keys.cruise} to cruise.`;
+	}
+	if (!target?.key) return "Select a station on the Navigation list.";
+	return `${target.name} is selected. Press ${keys.forward} to face forward, ${keys.face} to turn toward it, then ${keys.cruise} to cruise.`;
 }
 
 /**

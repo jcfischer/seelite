@@ -748,7 +748,7 @@ describe("the rules a boot applies after the plan (§11.2, §11.3, D7, D9)", () 
 	test("a pending record from a build before #408 has no choice and reads as free", async () => {
 		const o = origin();
 		await o.backend.writeMeta({
-			pending: { name: "Old", seed: 5, permadeath: false, firstDay: "free" },
+			pending: { name: "Old", seed: 5, permadeath: false },
 			active: "Old",
 			oneShot: "Old",
 		});

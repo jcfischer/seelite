@@ -12,6 +12,9 @@
  *
  * Every state is captured, because a green run is not a legible one.
  */
+// A default-layout probe (#381 D11): it presses 1, 2 and 3 by name, as the
+// shipped layout binds the head-look keys station control names, and a moved
+// default turns it red for that reason.
 import { mkdirSync } from "node:fs";
 import {
 	bootedGame,
@@ -57,6 +60,27 @@ const stepOf = (page) =>
 				.firstDayStep ?? null
 		);
 	});
+/** Station control on the port console, when it is drawn and visible. */
+const consoleLine = (page) =>
+	page.evaluate(() => {
+		const line = document.querySelector("[data-live-console-control]");
+		return line?.checkVisibility() ? line.textContent : null;
+	});
+
+/** Out of the dock and into flight, with nothing selected and the head
+ *  forward: the launch traversal skipped, as a pilot's Enter skips it. */
+const untilFlying = (page) =>
+	page.evaluate(() => {
+		const g = window.__seelite;
+		g.setHeadLook("forward");
+		for (let i = 0; i < 600 && g.dockPhase !== "flying"; i++) {
+			g.skipDockTraversal();
+			g.step(1 / 60);
+		}
+		g.targetId = null;
+		g.updateCockpit();
+	});
+
 const stationLine = (page) =>
 	page.evaluate(
 		() =>
@@ -181,23 +205,25 @@ line = await stationLine(page);
 check(
 	"accepting it moves the day to launch, and station control says so",
 	f.running?.reportAt === local.reportAt.carrierKey &&
-		line?.toLowerCase().includes("launch"),
+		line?.toLowerCase().includes("launch") &&
+		line.includes("right console"),
 	line ?? "no line",
 );
 await shot(page, "04-accepted");
 
-// Launch, and read the glass.
+// Launch as a pilot does: turn to the right console and press LAUNCH. Enter
+// on the docked console acts on the focused Requests control instead, which in
+// playtest tracked the job rather than launching (2026-09-25).
 const credits0 = await page.evaluate(() => window.__seelite.commander.credits);
-await page.evaluate(() => {
-	const g = window.__seelite;
-	g.launch();
-	for (let i = 0; i < 600 && g.dockPhase !== "flying"; i++) {
-		g.skipDockTraversal();
-		g.step(1 / 60);
-	}
-	g.targetId = null;
-	g.updateCockpit();
-});
+await page.keyboard.press("3");
+const launchButton = page.locator("[data-live-launch]");
+check(
+	"the right console carries LAUNCH, where station control sends the pilot",
+	await launchButton.isVisible(),
+);
+await shot(page, "04b-right-console-launch");
+await launchButton.click();
+await untilFlying(page);
 await settle(page);
 const flying = await page.evaluate(() => ({
 	phase: window.__seelite.dockPhase,
@@ -210,8 +236,42 @@ check(
 );
 await shot(page, "05-flying-prompt");
 
-// Near the delivery station with it selected: the glass names the clearance key.
+// The playtest's path (2026-09-25): select the delivery station on the port
+// console, face forward, turn toward it, cruise. The console carries the line
+// while the head is turned, because the glass is not drawn there.
 const destId = local.reportAt.carrierKey.split(":").slice(1).join(":");
+await page.keyboard.press("1");
+await settle(page);
+let onConsole = await consoleLine(page);
+check(
+	"on the port console, station control asks for the delivery station",
+	onConsole?.includes(`Select ${local.reportName}`) ?? false,
+	onConsole ?? "no line",
+);
+await page
+	.locator(`[data-live-panel="left"] [data-live-nav-target="${destId}"]`)
+	.click();
+await settle(page);
+onConsole = await consoleLine(page);
+check(
+	"once it is selected, the console says 2, f, then j",
+	(onConsole?.includes(`${local.reportName} is selected. Press 2`) &&
+		onConsole.includes("then j to cruise")) ??
+		false,
+	onConsole ?? "no line",
+);
+await shot(page, "05b-selected-on-console");
+await page.keyboard.press("2");
+await settle(page);
+const facing = await page.evaluate(() => window.__seelite.cockpitPrompt.text);
+check(
+	"facing forward, the glass says to turn toward it and cruise",
+	facing === `press f to face ${local.reportName}, then j to cruise`,
+	facing,
+);
+await shot(page, "05c-face-and-cruise");
+
+// Near the delivery station with it selected: the glass names the clearance key.
 const near = await page.evaluate(async (id) => {
 	const g = window.__seelite;
 	const snap = g.dockingSnapshot(id);
@@ -320,13 +380,8 @@ await page.evaluate(() => {
 	g.setHeadLook("forward");
 	g.leftTab = "Navigation";
 	g.launch();
-	for (let i = 0; i < 600 && g.dockPhase !== "flying"; i++) {
-		g.skipDockTraversal();
-		g.step(1 / 60);
-	}
-	g.targetId = null;
-	g.updateCockpit();
 });
+await untilFlying(page);
 await settle(page);
 const after = await page.evaluate(() => window.__seelite.cockpitPrompt.text);
 check(
@@ -371,6 +426,10 @@ await settle(free);
 check(
 	"a free pilot has the tab too, on find-station",
 	(await stepOf(free)) === "find-station",
+);
+check(
+	"and no station control line on its port console",
+	(await consoleLine(free)) === null,
 );
 await shot(free, "10-free-tab");
 await free.evaluate(async () => {

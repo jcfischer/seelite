@@ -273,10 +273,10 @@ family binders found a world fact, plus one.
 
 **A station may post two courier offers (#408).** The courier family has a
 second binder, the **Local run**, which applies the floor's rule to this
-system's own stations only and declines where the posting station has no
-in-system neighbour. Its world fact is that neighbour. It is its own slot —
-its own offer identity, draw stream and episode count (`JobSlot` in
-`src/jobs.ts`) — so settling one never rerolls the floor. Why it exists, and
+system's own stations only and declines where the posting system has no
+second station. Its world fact is that second station. It is its own post on
+the board — its own offer identity, draw stream and episode count (`JobPost`
+in `src/jobs.ts`) — so settling one never rerolls the floor. Why it exists, and
 who it is for, is `first-useful-day.md` D2.
 
 ### 4. What each job changes

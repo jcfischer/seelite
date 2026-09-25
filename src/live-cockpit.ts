@@ -142,6 +142,12 @@ export interface FirstDayPanel {
 	 * this is where a docked step is said.
 	 */
 	stationLine: string | null;
+	/**
+	 * Station control's line on the port console, where a guided pilot selects
+	 * a station with the head turned and the glass is not drawn (playtest,
+	 * 2026-09-25). `null` docked, for a free pilot, and after the day.
+	 */
+	consoleLine: string | null;
 }
 
 export interface LiveCockpitState {
@@ -503,6 +509,9 @@ export class LiveCockpit {
 	private lastNavKey = "";
 	private lastLogKey: string | null = null;
 	private lastRelayKey = "";
+	/** #408: the port console's station control line last written; `undefined`
+	 *  after a rebuild, so the rebuilt element is always filled. */
+	private lastConsoleLine: string | null | undefined = undefined;
 	private readonly navRowsById = new Map<
 		string,
 		{
@@ -1214,6 +1223,7 @@ export class LiveCockpit {
 			// The rebuilt aside is empty; without this the cue stays empty until
 			// its key moves (sage #350).
 			this.lastRelayKey = "";
+			this.lastConsoleLine = undefined;
 			this.navRowsById.clear();
 			this.releaseChartHost();
 			this.root.innerHTML = this.markup(state);
@@ -1310,6 +1320,21 @@ export class LiveCockpit {
 				elements.relayCue.innerHTML = state.relay
 					? relayCueMarkup(state.relay)
 					: "";
+			}
+		}
+		// #408: station control on the port console, written in place. It changes
+		// when a station is selected, and a rebuild on selection would take the
+		// filter field's focus — the reason `targetId` is not in the key above.
+		const consoleLine = state.firstDay?.consoleLine ?? null;
+		if (consoleLine !== this.lastConsoleLine) {
+			this.lastConsoleLine = consoleLine;
+			const line = this.root.querySelector<HTMLElement>(
+				"[data-live-console-control]",
+			);
+			if (line) {
+				line.hidden = consoleLine === null;
+				const text = line.querySelector("span");
+				if (text) text.textContent = consoleLine ?? "";
 			}
 		}
 		if (valueKey === this.lastValueKey) return;
@@ -1498,7 +1523,7 @@ export class LiveCockpit {
 					(state.rightTab === "Flight"
 						? '<button class="lc-launch" type="button" data-live-launch>LAUNCH</button>'
 						: "");
-		return `<main class="lc-director" data-live-director><i class="lc-target-arrow" data-live-target-arrow aria-label="turn toward selected target">➤</i><strong>${targetName}</strong></main>${this.stationConsole(state)}${requestCue(state.requests)}<aside class="lc-relay-cue" data-live-relay-cue hidden></aside><aside class="lc-panel" data-live-panel="left" data-active="${view.activePanel === "left"}"><header><h2>${state.leftTab.toUpperCase()}</h2><small>LOCAL · 24</small></header><nav class="lc-tabs" aria-label="left console tabs">${leftTabs}</nav>${this.leftBody(state)}${launchHoldNotice}</aside><aside class="lc-panel" data-live-panel="right" data-active="${view.activePanel === "right"}"><header><h2>${state.rightTab.toUpperCase()}</h2><small>CMDR · SEELITE</small></header><nav class="lc-tabs" aria-label="right console tabs">${rightTabs}</nav>${this.rightBody(state)}${launch}</aside>`;
+		return `<main class="lc-director" data-live-director><i class="lc-target-arrow" data-live-target-arrow aria-label="turn toward selected target">➤</i><strong>${targetName}</strong></main>${this.stationConsole(state)}${requestCue(state.requests)}<aside class="lc-relay-cue" data-live-relay-cue hidden></aside><aside class="lc-panel" data-live-panel="left" data-active="${view.activePanel === "left"}"><header><h2>${state.leftTab.toUpperCase()}</h2><small>LOCAL · 24</small></header><nav class="lc-tabs" aria-label="left console tabs">${leftTabs}</nav><p class="lc-station-control lc-console-control" data-live-console-control hidden><b>STATION CONTROL</b> <span></span></p>${this.leftBody(state)}${launchHoldNotice}</aside><aside class="lc-panel" data-live-panel="right" data-active="${view.activePanel === "right"}"><header><h2>${state.rightTab.toUpperCase()}</h2><small>CMDR · SEELITE</small></header><nav class="lc-tabs" aria-label="right console tabs">${rightTabs}</nav>${this.rightBody(state)}${launch}</aside>`;
 	}
 
 	/** A held launch's reason and its way out, for every docked console (#314). */

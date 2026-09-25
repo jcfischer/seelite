@@ -346,8 +346,8 @@ Sourced intelligence about an object or search region. `docs/specs/missions-and-
 _Avoid_: Mission, confirmed target (for unconfirmed intelligence)
 
 **Local run**:
-A courier job that delivers inside the posting system, posted by every station with an in-system neighbour. Its own slot beside the courier floor, so settling one never rerolls the other. `docs/specs/first-useful-day.md` D2 owns why it exists; `docs/specs/ordinary-requests.md` §3 records the second slot.
-_Avoid_: Tutorial job, starter mission (it is posted for every pilot)
+A courier job that delivers inside the posting system, posted by every station whose system has a second station. Its own post on the board beside the courier floor, so settling one never rerolls the other. `docs/specs/first-useful-day.md` D2 owns why it exists; `docs/specs/ordinary-requests.md` §3 records the second post.
+_Avoid_: Tutorial job (it is posted for every pilot)
 
 **First day**:
 A guided new game's first job, from a docked start to a reported delivery, and the port-console tab that lists its steps for every commander. The step is derived from state and never saved; only New game's guided or free choice is. `docs/specs/first-useful-day.md` owns it.

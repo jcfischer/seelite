@@ -705,6 +705,8 @@ import {
 	type FirstDayFacts,
 	type FirstDayKeys,
 	type FirstDayStepId,
+	type FirstDayTarget,
+	firstDayConsoleLine,
 	firstDayLogsStep,
 	firstDayPrompt,
 	firstDayStep,
@@ -777,21 +779,24 @@ import {
 // removed from `sim.ts` and pinned with a source-scan test.
 import * as units from "./units";
 
-/** How many hails the session keeps. The console shows six; the store holds two
- *  screens, and no more, however long the trigger is held. */
 /** #408 D1: where a guided start asks for clearance — outside the docking
  *  computer's standoff on the aperture axis, the placement `__parkInBerth`
  *  flies from. Kilometres beyond the aperture plane. */
 const FIRST_DAY_STANDOFF_KM = 4.5;
-/** A bound on the guided start's run-in, in 1/60 s sim steps: ten minutes of
- *  game time, eight times the 76.9 s it took when measured. */
-const FIRST_DAY_DOCK_STEPS = 60 * 600;
+/** A bound on the guided start's run-in, in 1/60 s sim steps: 160 s of game
+ *  time, about twice the 76.9 s it took when measured. The steps are
+ *  synchronous at boot, so a stalled approach holds the page for the whole
+ *  bound before the day falls back to an in-flight start (sage, #528 round 1
+ *  — this was ten minutes). */
+const FIRST_DAY_DOCK_STEPS = 60 * 160;
 
 /** Station control's lines the Communications log keeps (#408). Three, not the
  *  hails' twelve: the log shows six, and a first day logs five steps, which
  *  pushed every raider and hail line off the console in the first capture. */
 const FIRST_DAY_LOG_KEEP = 3;
 
+/** How many hails the session keeps. The console shows six; the store holds two
+ *  screens, and no more, however long the trigger is held. */
 const HAIL_LOG_KEEP = 12;
 
 /** How many charges the session keeps, on the same reasoning as the hails' —
@@ -13290,6 +13295,12 @@ class Game {
 		// One projection per update, read by the Hold page (#445) and by the
 		// request board's Deliver control (#446).
 		const hold = holdSummary(this.commander, this.requests);
+		// One board per update: the console draws it and the first day asks it
+		// whether a Local run is posted (#408). Station control's log is written
+		// here, once, before the panel reads it.
+		const requests = this.requestsView(dockContext, hold);
+		const firstDayFacts = this.firstDayFacts(requests.offers);
+		this.noteFirstDayStep(firstDayFacts);
 		this.liveCockpit.update({
 			visible: true,
 			dockPhase: this.dock.phase,
@@ -13382,9 +13393,9 @@ class Game {
 					: [],
 			relay: this.relayCue(),
 			tuning: this.tuningSummary(),
-			requests: this.requestsView(dockContext, hold),
+			requests,
 			stationConsole: this.stationConsoleState(dockContext),
-			firstDay: this.firstDayPanel(),
+			firstDay: this.firstDayPanel(firstDayFacts),
 			launchHold: this.launchHold
 				? {
 						refusal: this.launchHold.refusal,
@@ -13875,8 +13886,11 @@ class Game {
 	/**
 	 * #408: what the first day's step is derived from, read off live state.
 	 * Public so a probe reads the same facts the surfaces do.
+	 *
+	 * `offers` is the board the caller already built, so a cockpit update does
+	 * not build the Requests view twice; without it, the board is asked for.
 	 */
-	firstDayFacts(): FirstDayFacts {
+	firstDayFacts(offers?: readonly JobOffer[]): FirstDayFacts {
 		const docked = this.dockPhase === "docked";
 		const station =
 			this.dock.phase !== "flying" && this.dock.stationId
@@ -13910,7 +13924,7 @@ class Game {
 			settledAny: journal.some((request) => request.status === "completed"),
 			localRunOnBoard:
 				docked &&
-				this.requestsView().offers.some(
+				(offers ?? this.requestsView().offers).some(
 					(offer) => offer.rowId === LOCAL_RUN_ROW_ID,
 				),
 			computerFitted: this.hasDockingComputer,
@@ -13920,41 +13934,69 @@ class Game {
 	/** The keys the first day names, as the player has them bound. */
 	private firstDayKeys(): FirstDayKeys {
 		return {
-			launch: spokenCommand(this.bindings, "dock.launch"),
+			starboard: spokenCommand(this.bindings, "view.headStarboard"),
 			clearance: spokenCommand(this.bindings, "dock.clearance"),
 			computer: spokenCommand(this.bindings, "dock.computer"),
 			cruise: spokenCommand(this.bindings, "fly.cruise"),
 			navigation: spokenCommand(this.bindings, "view.headPort"),
+			forward: spokenCommand(this.bindings, "view.headForward"),
+			face: spokenCommand(this.bindings, "fight.faceTarget"),
+		};
+	}
+
+	/** The selected target as the first day reads it, or `null`. */
+	private firstDayTarget(): FirstDayTarget | null {
+		const selected = this.targetBody();
+		if (!selected) return null;
+		const station = this.world.system.contents.stations.find(
+			(s) => s.id === selected.id,
+		);
+		return {
+			key: station ? this.stationKey(station) : null,
+			name: selected.name,
+			inVicinity: length(sub(selected.pos, this.world.ship.pos)) <= VICINITY_KM,
+			grantLive: station
+				? (this.dockingSnapshot(station.id)?.grantLive ?? false)
+				: false,
+			computerEngaged: this.dockingComputerEngaged,
 		};
 	}
 
 	/**
-	 * The First day tab's content and station control's line (#408 D3, D5).
-	 *
-	 * Also where a guided pilot's step change is logged: the Communications
-	 * log keeps station control's line after the console has moved on, so a
-	 * pilot who looked away can read what was said.
+	 * Station control's log, kept in step with the day (#408 D3): a line when
+	 * a guided pilot's step changes (`firstDayLogsStep`), and the berth the day
+	 * ended at while the ship is still in it. **The one writer**: the panel
+	 * below only reads what this leaves.
 	 */
-	private firstDayPanel(): FirstDayPanel {
-		const facts = this.firstDayFacts();
+	private noteFirstDayStep(facts: FirstDayFacts): void {
+		if (this.dockPhase !== "docked") this.firstDayClosingStation = null;
+		if (this.firstDay !== "guided") return;
 		const current = firstDayStep(facts);
-		const text = firstDayText(facts, this.firstDayKeys());
-		const guided = this.firstDay === "guided";
-		if (guided && current !== this.firstDayLastStep) {
-			// The closing line is said once, at the berth the day ended in.
-			if (current === "trade" && this.firstDayLastStep !== null)
-				this.firstDayClosingStation = this.dock.stationId;
-			if (firstDayLogsStep(this.firstDayLastStep, current))
-				this.firstDayLog.push({
-					at: this.world.gameTime,
-					key: facts.dockedAt ?? facts.running?.reportAt ?? ("" as CarrierKey),
-					text: `STATION CONTROL: ${text}`,
-				});
+		if (current === this.firstDayLastStep) return;
+		// The closing line is said once, at the berth the day ended in.
+		if (current === "trade" && this.firstDayLastStep !== null)
+			this.firstDayClosingStation = this.dock.stationId;
+		if (firstDayLogsStep(this.firstDayLastStep, current)) {
+			this.firstDayLog.push({
+				at: this.world.gameTime,
+				key: facts.dockedAt ?? facts.running?.reportAt ?? ("" as CarrierKey),
+				text: `STATION CONTROL: ${firstDayText(facts, this.firstDayKeys())}`,
+			});
 			if (this.firstDayLog.length > FIRST_DAY_LOG_KEEP)
 				this.firstDayLog.shift();
-			this.firstDayLastStep = current;
 		}
-		if (this.dockPhase !== "docked") this.firstDayClosingStation = null;
+		this.firstDayLastStep = current;
+	}
+
+	/**
+	 * The First day tab's content and station control's lines (#408 D3, D5).
+	 * A pure read: `noteFirstDayStep` has already run for these facts.
+	 */
+	private firstDayPanel(facts: FirstDayFacts): FirstDayPanel {
+		const current = firstDayStep(facts);
+		const keys = this.firstDayKeys();
+		const text = firstDayText(facts, keys);
+		const guided = this.firstDay === "guided";
 		const closing =
 			current === "trade" &&
 			this.firstDayClosingStation !== null &&
@@ -13966,6 +14008,10 @@ class Game {
 				guided && facts.docked && (current !== "trade" || closing)
 					? text
 					: null,
+			consoleLine:
+				guided && !facts.docked
+					? firstDayConsoleLine(facts, this.firstDayTarget(), keys)
+					: null,
 		};
 	}
 
@@ -13976,23 +14022,9 @@ class Game {
 	 */
 	private firstDayGlassPrompt(): string {
 		if (this.firstDay !== "guided") return "";
-		const selected = this.targetBody();
-		const station = selected
-			? this.world.system.contents.stations.find((s) => s.id === selected.id)
-			: undefined;
 		return firstDayPrompt(
 			this.firstDayFacts(),
-			selected
-				? {
-						key: station ? this.stationKey(station) : null,
-						inVicinity:
-							length(sub(selected.pos, this.world.ship.pos)) <= VICINITY_KM,
-						grantLive: station
-							? (this.dockingSnapshot(station.id)?.grantLive ?? false)
-							: false,
-						computerEngaged: this.dockingComputerEngaged,
-					}
-				: null,
+			this.firstDayTarget(),
 			this.firstDayKeys(),
 		);
 	}

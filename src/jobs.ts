@@ -57,15 +57,15 @@ export type JobFamily = "courier" | "procurement" | "bounty";
 /**
  * Which offer on a board a row fills (#408 D2).
  *
- * A family is what a job *is*; a slot is which of a station's offers it
+ * A family is what a job *is*; a post is which of a station's offers it
  * occupies, and it is the key an offer's identity, draw stream and episode
- * count are filed under. Every family is its own slot, and the courier family
+ * count are filed under. Every family is its own post, and the courier family
  * has a second one: the Local run, which binds only inside the posting system
  * and sits beside D8's floor rather than competing with it for one offer.
  * Keyed by family, the two would share an offer id and one episode count, and
  * settling a local run would reroll the floor.
  */
-export type JobSlot = JobFamily | "courier-local";
+export type JobPost = JobFamily | "courier-local";
 
 /**
  * What a job pays, as a rule rather than a figure.
@@ -91,7 +91,7 @@ export interface JobRow {
 	family: JobFamily;
 	/** The board offer this row fills; its family for every row but the Local
 	 *  run. */
-	slot: JobSlot;
+	post: JobPost;
 	/** Stable authored identity, and the first half of an offer's key. Named
 	 *  `rowId` because `CONTEXT.md` reserves the other word for a berth. */
 	rowId: string;
@@ -124,7 +124,7 @@ export const LOCAL_RUN_ROW_ID = "courier-local-run";
 export const JOB_ROWS: readonly JobRow[] = [
 	job({
 		family: "courier",
-		slot: "courier",
+		post: "courier",
 		rowId: "courier-consignment",
 		// Revision 2: plain words, at the principal's request (#508 follow-up).
 		revision: 2,
@@ -141,7 +141,7 @@ export const JOB_ROWS: readonly JobRow[] = [
 	}),
 	job({
 		family: "courier",
-		slot: "courier",
+		post: "courier",
 		rowId: "courier-priority",
 		// #459 rewrote this row's purpose, danger and consequence. An accepted
 		// offer pins the revision it was taken under, so terms a pilot was shown
@@ -164,7 +164,7 @@ export const JOB_ROWS: readonly JobRow[] = [
 	// about one board in fifty at a start station.
 	job({
 		family: "courier",
-		slot: "courier-local",
+		post: "courier-local",
 		rowId: LOCAL_RUN_ROW_ID,
 		revision: 1,
 		title: "Local run",
@@ -179,7 +179,7 @@ export const JOB_ROWS: readonly JobRow[] = [
 	}),
 	job({
 		family: "procurement",
-		slot: "procurement",
+		post: "procurement",
 		rowId: "procurement-shortfall",
 		// Revision 2: plain words, at the principal's request (#508 follow-up).
 		revision: 2,
@@ -198,7 +198,7 @@ export const JOB_ROWS: readonly JobRow[] = [
 	// outpost is the invented fact this table exists to avoid.
 	job({
 		family: "bounty",
-		slot: "bounty",
+		post: "bounty",
 		rowId: "bounty-relay",
 		// Revision 2: the principal read revision 1's words as machine-written.
 		// An accepted offer keeps the words it was taken under.
@@ -546,17 +546,17 @@ const listedAt = (station: Station, system: SystemRecord): Commodity[] => [
 ];
 
 /**
- * Each slot's sub-stream inside `DOMAIN.JOB_OFFERS`.
+ * Each post's sub-stream inside `DOMAIN.JOB_OFFERS`.
  *
  * **A total record, not a ternary.** The draw used to split on
  * `family === "courier" ? 1 : 2`, and a third family would have shared the
  * second's stream without a word from the compiler — the correlation
  * `CLAUDE.md`'s per-system RNG rule warns about. The two shipped values are
- * kept, so no courier or procurement board moves. Keyed by slot since #408,
+ * kept, so no courier or procurement board moves. Keyed by post since #408,
  * which added the Local run as a fourth stream rather than a draw inside the
  * floor's, so no floor courier moved either.
  */
-const SLOT_STREAM: Readonly<Record<JobSlot, number>> = {
+const POST_STREAM: Readonly<Record<JobPost, number>> = {
 	courier: 1,
 	procurement: 2,
 	bounty: 3,
@@ -568,7 +568,7 @@ const SLOT_STREAM: Readonly<Record<JobSlot, number>> = {
  *  not repeat one row. */
 const draw = (
 	station: Station,
-	slot: JobSlot,
+	post: JobPost,
 	episode: number,
 	/** Which operand this draw decides. Its own axis rather than an offset on
 	 *  the episode's, because two sub-streams sharing one namespace is the
@@ -582,7 +582,7 @@ const draw = (
 				mix(station.berthSeed ^ station.assemblySeed, DOMAIN.JOB_OFFERS),
 				axis,
 			),
-			mix(SLOT_STREAM[slot], episode),
+			mix(POST_STREAM[post], episode),
 		),
 	)();
 
@@ -605,32 +605,41 @@ const AXIS = { row: 0, destination: 1, good: 2 } as const;
  */
 export const COURIER_SPREAD_POOL = 3;
 
-const episodeOf = (ctx: BindContext, slot: JobSlot): number =>
-	(ctx.settled[slot] ?? 0) + 1;
+const episodeOf = (ctx: BindContext, post: JobPost): number =>
+	(ctx.settled[post] ?? 0) + 1;
 
-const offerId = (ctx: BindContext, slot: JobSlot, episode: number): string =>
+const offerId = (ctx: BindContext, post: JobPost, episode: number): string =>
 	`request-v1/${ctx.galaxyIndex}/${ctx.system.index}/${encodeURIComponent(
 		ctx.station.localCarrierId,
-	)}/${slot}-${episode}`;
+	)}/${post}-${episode}`;
 
-const rowsFor = (slot: JobSlot): JobRow[] =>
-	JOB_ROWS.filter((row) => row.slot === slot);
+const rowsFor = (post: JobPost): JobRow[] =>
+	JOB_ROWS.filter((row) => row.post === post);
+
+/** Every post, for reading one back out of a saved offer id. */
+const JOB_POSTS = Object.keys(POST_STREAM) as JobPost[];
 
 /**
- * The slot a journal entry was taken in, from the row id its terms pinned.
+ * The post a journal entry was taken in, read from its **saved offer id**
+ * (`offerId` ends in `/<post>-<episode>`), not from the current catalogue — a
+ * row retired or renamed later must not move a settled Local run into the
+ * floor's count and reroll that board (sage, #528 round 1).
  *
- * A row id no current row carries falls back to the family's own slot, which
- * is where every row before #408 lived.
+ * An id that names no post falls back to the family, which is where every
+ * offer before #408 lived.
  */
-export const slotOfRow = (rowId: string, family: JobFamily): JobSlot =>
-	JOB_ROWS.find((row) => row.rowId === rowId)?.slot ?? family;
+export const postOf = (offerIdValue: string, family: JobFamily): JobPost => {
+	const tail = offerIdValue.slice(offerIdValue.lastIndexOf("/") + 1);
+	const post = tail.slice(0, tail.lastIndexOf("-"));
+	return (JOB_POSTS as string[]).includes(post) ? (post as JobPost) : family;
+};
 
-const pickRow = (ctx: BindContext, slot: JobSlot, episode: number) => {
-	const rows = rowsFor(slot);
+const pickRow = (ctx: BindContext, post: JobPost, episode: number) => {
+	const rows = rowsFor(post);
 	return rows[
 		Math.min(
 			rows.length - 1,
-			Math.floor(draw(ctx.station, slot, episode, AXIS.row) * rows.length),
+			Math.floor(draw(ctx.station, post, episode, AXIS.row) * rows.length),
 		)
 	];
 };
@@ -673,7 +682,7 @@ export function bindCourier(ctx: BindContext): JobOffer | null {
 /**
  * #408 D2's Local run: the floor's rule over this system's own stations only.
  *
- * Declines where the posting station has no in-system neighbour, and there the
+ * Declines where the posting system has no second station to deliver to, and there the
  * floor is the only courier on the board.
  */
 export function bindLocalCourier(ctx: BindContext): JobOffer | null {
@@ -684,17 +693,17 @@ export function bindLocalCourier(ctx: BindContext): JobOffer | null {
 	);
 }
 
-/** A consignment in one courier slot, drawn from the destinations given. */
+/** A consignment in one courier post, drawn from the destinations given. */
 function bindConsignment(
 	ctx: BindContext,
-	slot: JobSlot,
+	post: JobPost,
 	destinations: readonly JobDestination[],
 ): JobOffer | null {
 	if (destinations.length === 0) return null;
-	const episode = episodeOf(ctx, slot);
-	const row = pickRow(ctx, slot, episode);
+	const episode = episodeOf(ctx, post);
+	const row = pickRow(ctx, post, episode);
 	const index = Math.floor(
-		draw(ctx.station, slot, episode, AXIS.destination) * destinations.length,
+		draw(ctx.station, post, episode, AXIS.destination) * destinations.length,
 	);
 	const destination = destinations[Math.min(index, destinations.length - 1)];
 
@@ -730,12 +739,12 @@ function bindConsignment(
 		ranked[
 			Math.min(
 				width - 1,
-				Math.floor(draw(ctx.station, slot, episode, AXIS.good) * width),
+				Math.floor(draw(ctx.station, post, episode, AXIS.good) * width),
 			)
 		].c;
 
 	return {
-		id: offerId(ctx, slot, episode),
+		id: offerId(ctx, post, episode),
 		family: "courier",
 		rowId: row.rowId,
 		revision: row.revision,
