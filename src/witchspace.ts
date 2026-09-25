@@ -109,7 +109,7 @@ export const WITCHSPACE = Object.freeze({
 
 /** What is drawn, each term in `[0, 1]`. */
 export interface WitchspaceLook {
-	/** The spiral streak across the sky. */
+	/** The streak: straight spokes out from the nose. */
 	streak: number;
 	/** How close to light speed the sky looks: aberration and Doppler. */
 	beta: number;

@@ -35,9 +35,11 @@ import { WITCHSPACE_MIST_GLSL } from "./witchspace-mist";
 
 export const ARRIVAL_RIFT = Object.freeze({
 	/** Radius at full strength, in the arriving hull's reach. */
-	radiusReaches: 3,
+	// Sized so a chase camera sees the ring round the ship: at three reaches and
+	// two behind, the ring overfilled the frame and only its haze showed.
+	radiusReaches: 1.6,
 	/** How far behind the ship the rift stands, in its reach. */
-	standoffReaches: 2,
+	standoffReaches: 1,
 	/** The radius it opens from, as a fraction of the full one. */
 	openFrom: 0.3,
 });
@@ -51,11 +53,14 @@ void main() {
 `;
 
 /**
- * The tunnel's own mist, seen end-on from outside: a vortex of the same
- * palette turning into a clear throat, with a thin rim. Additive: it adds
- * light and never darkens what is behind it. Three octaves and not the pass's
- * four, because from outside the rift is a subject in the frame rather than
- * the whole of it; it is drawn the same on both sides of #99's key.
+ * The ring of light a lens makes, in the tunnel's palette: space bends here,
+ * it does not swirl (the principal's fourth flight). The bending itself is
+ * the witchspace pass's `uLensE`, which pulls the sky behind the rift round
+ * it; this draws the Einstein ring that lensing piles the light into, a faint
+ * haze inside it, and nothing that turns. Additive: it adds light and never
+ * darkens what is behind it. Three octaves and not the pass's four, because
+ * from outside the rift is a subject in the frame rather than the whole of it;
+ * it is drawn the same on both sides of #99's key.
  */
 const FRAGMENT = /* glsl */ `
 #define OCTAVES 3
@@ -67,17 +72,17 @@ void main() {
 	vec2 p = vUv * 2.0 - 1.0;
 	float r = length(p);
 	if (r > 1.0) discard;
-	float a = atan(p.y, p.x);
-	// Wound tighter toward the throat, and turning with the phase.
-	float swirl = a + (1.0 - r) * 4.5 + uPhase * 1.6;
-	vec3 q = vec3(cos(swirl) * r * 2.2, sin(swirl) * r * 2.2, uPhase * 0.7 + r * 1.3);
-	float n = witchFbm(q * 1.4 + witchFbm(q) * 1.8);
-	// The throat is clear: from a chase camera the rift stands between the
+	// Noise over the disc as it lies, drifting only in time: it varies the
+	// ring's brightness and colour and never winds it.
+	vec3 q = vec3(p * 2.4, uPhase * 0.5);
+	float n = witchFbm(q * 1.3 + witchFbm(q) * 1.2);
+	float x = (r - 0.9) / 0.045;
+	float ring = exp(-x * x);
+	// The inside stays clear: from a chase camera the rift stands between the
 	// camera and the ship, and light there would wash the ship out.
-	float body = (1.0 - smoothstep(0.72, 1.0, r)) * smoothstep(0.25, 0.6, r);
-	float rim = smoothstep(0.82, 0.95, r) * (1.0 - smoothstep(0.95, 1.0, r));
-	vec3 tint = witchPalette(n * 1.5 + r * 0.9 + uPhase * 0.1);
-	vec3 col = tint * (0.1 + 1.1 * n * n) * body + tint * rim * 0.9;
+	float haze = (1.0 - smoothstep(0.6, 0.9, r)) * smoothstep(0.35, 0.75, r) * 0.3;
+	vec3 tint = witchPalette(n * 1.4 + uPhase * 0.1);
+	vec3 col = tint * (ring * (0.7 + 0.9 * n) + haze * n);
 	gl_FragColor = vec4(col * uStrength, 1.0);
 }
 `;
@@ -139,7 +144,7 @@ export class ArrivalRift {
 	}
 
 	/**
-	 * One frame: the strength from `witchspaceLook`, the phase for the swirl, and
+	 * One frame: the strength from `witchspaceLook`, the phase for the drift, and
 	 * the camera's world position for the camera-relative placement.
 	 */
 	update(strength: number, phase: number, cameraPos: Vec3) {

@@ -44,8 +44,8 @@
  *
  * **Between the approach layer and the near one**, on the principal's ruling
  * that the tunnel is outside the canopy. It reads the sky and the bodies
- * composited so far, twists them into the opening and draws the tunnel over
- * them; the near pass then draws the cabin and the hull over that, so neither
+ * composited so far, bends them round the nose and round the rift, and draws
+ * the tunnel over them; the near pass then draws the cabin and the hull over that, so neither
  * is ever covered or warped. It is written in **linear light**, and the bloom
  * and the tone map come after it, so the plasma strands, the rim and the throat
  * are hot enough to glow and the mist is not. The first build sat after the
@@ -170,6 +170,8 @@ uniform float uStreak;
 uniform float uTunnel;
 uniform float uBeta;
 uniform float uDark;
+uniform vec2 uLensAt;
+uniform float uLensE;
 uniform float uWhiteout;
 uniform float uFlow;
 uniform float uAspect;
@@ -179,6 +181,16 @@ float hash(float n) { return fract(sin(n) * 43758.5453); }
 ${WITCHSPACE_MIST_GLSL}
 
 vec2 toUv(vec2 p) { return vec2(p.x / uAspect, p.y) + 0.5; }
+
+// A point lens: the sky seen at p comes from r - E²/r along the same line
+// through the centre. Nothing turns — space bends, it does not swirl (the
+// principal's fourth flight) — and the stars near the centre stretch round it
+// into an Einstein ring at r = E, with the far side's image inside it.
+vec2 witchLens(vec2 p, vec2 centre, float einstein) {
+	vec2 d = p - centre;
+	float r2 = max(dot(d, d), 1e-5);
+	return centre + d * (1.0 - einstein * einstein / r2);
+}
 
 // The Doppler spectrum across the visible sky: blue-white ahead, through cyan,
 // green and gold, to deep red at the rim. The starbow is this, compressed.
@@ -194,9 +206,9 @@ void main() {
 	vec2 p = vec2(d.x * uAspect, d.y);
 	float r = length(p);
 	float ang = atan(p.y, p.x);
-	// The pull: the sky around the centre twists and falls into it, strongest
-	// near the middle. Only the layers behind the cabin are read here, so the
-	// cabin never swims.
+	// The pull: the drive's field bends the sky round the nose like a lens, and
+	// the arrival rift bends it round itself. Only the layers behind the cabin
+	// are read here, so the cabin never swims.
 	float pull = max(uStreak * 0.3, uTunnel);
 	// How much of this pixel the tunnel covers: an opening from the centre with
 	// a ragged, turning edge, full-frame at 1.
@@ -210,12 +222,9 @@ void main() {
 	vec3 c;
 	// Not under a full cover or a closed dark: the sky there is not seen, and
 	// this is the pass's dearest loop outside the tunnel itself.
-	if (pull > 0.0 && cover < 1.0 && uDark < 1.0) {
-		float twist = pull * 2.2 * exp(-r * 2.2);
-		float zoom = 1.0 - pull * 0.3 * exp(-r * 1.6);
-		float cs = cos(twist);
-		float sn = sin(twist);
-		vec2 q = vec2(p.x * cs - p.y * sn, p.x * sn + p.y * cs) * zoom;
+	if ((pull > 0.0 || uLensE > 0.0) && cover < 1.0 && uDark < 1.0) {
+		vec2 q = witchLens(p, uLensAt, uLensE);
+		q = witchLens(q, vec2(0.0), pull * 0.16);
 		// Smeared inward along the pull.
 		vec3 acc = vec3(0.0);
 		float w = 0.0;
@@ -231,9 +240,9 @@ void main() {
 	}
 	if (uStreak > 0.0 && cover < 1.0) {
 		// The streak's lines, from a hash of the angle and not from the sky,
-		// bent into the spiral the pull is turning, in the tunnel's palette.
-		float spiral = ang + 3.14159265 + r * 2.0 * pull;
-		float lanes = spiral * 19.099;
+		// straight out from the nose — a lens keeps a radial line radial — in
+		// the tunnel's palette.
+		float lanes = (ang + 3.14159265) * 19.099;
 		float seed = hash(floor(lanes));
 		// A thin line down the middle of its lane, not the whole lane: a lane is
 		// a wedge, and at the frame's edge a wedge is a broad pale band.
@@ -329,6 +338,8 @@ export class WitchspacePass extends ShaderPass {
 				uStreak: { value: 0 },
 				uBeta: { value: 0 },
 				uDark: { value: 0 },
+				uLensAt: { value: new THREE.Vector2() },
+				uLensE: { value: 0 },
 				uTunnel: { value: 0 },
 				uWhiteout: { value: 0 },
 				uFlow: { value: 0 },
@@ -421,7 +432,7 @@ export class WitchspacePass extends ShaderPass {
 	apply(
 		look: Pick<
 			WitchspaceLook,
-			"streak" | "beta" | "dark" | "tunnel" | "whiteout"
+			"streak" | "beta" | "dark" | "tunnel" | "whiteout" | "rift"
 		>,
 		flow: number,
 		aspect: number,
@@ -441,7 +452,26 @@ export class WitchspacePass extends ShaderPass {
 			look.beta > 0 ||
 			look.dark > 0 ||
 			look.tunnel > 0 ||
-			look.whiteout > 0;
+			look.whiteout > 0 ||
+			look.rift > 0;
+	}
+
+	/**
+	 * The lens the arrival rift puts in the sky (#532, the fourth flight): its
+	 * centre in the pass's aspect-corrected screen units and its Einstein
+	 * radius there. `main.ts` projects the rift every frame; zero is no lens.
+	 */
+	setLens(x: number, y: number, einstein: number) {
+		const u = this.material.uniforms;
+		(u.uLensAt.value as THREE.Vector2).set(x, y);
+		u.uLensE.value = Math.max(0, einstein);
+	}
+
+	/** The rift's lens as drawn, for a probe to read by name. */
+	get lens(): { x: number; y: number; einstein: number } {
+		const u = this.material.uniforms;
+		const at = u.uLensAt.value as THREE.Vector2;
+		return { x: at.x, y: at.y, einstein: u.uLensE.value as number };
 	}
 
 	/** The tunnel into its small target, when it is showing; then the composite. */

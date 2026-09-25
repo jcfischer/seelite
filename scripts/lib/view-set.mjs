@@ -930,7 +930,7 @@ export const VIEWS = Object.freeze([
 	{
 		name: "witchspace-entry",
 		covers: [532],
-		what: "Cockpit, 1.5 s before the cut: the starbow — the sky squeezed round the nose, blue ahead and red at the rim, the streak bending into a spiral.",
+		what: "Cockpit, 1.5 s before the cut: the starbow — the sky squeezed round the nose, blue ahead and red at the rim, the streaks straight out from the nose and the stars bent round it.",
 		shot: { kind: "witchspace", phase: -1.5, view: "cockpit" },
 	},
 	{

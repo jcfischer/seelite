@@ -20,14 +20,14 @@ describe("the witchspace pass", () => {
 	test("enables for any lit look and disables again when it is dark", () => {
 		const tunnelOnly = new WitchspacePass("high");
 		tunnelOnly.apply(
-			{ streak: 0, beta: 0, dark: 0, tunnel: 0.1, whiteout: 0 },
+			{ streak: 0, beta: 0, dark: 0, tunnel: 0.1, whiteout: 0, rift: 0 },
 			0,
 			1.6,
 		);
 		// The starbow alone lights it: it runs from the first second of the charge.
 		const betaOnly = new WitchspacePass("high");
 		betaOnly.apply(
-			{ streak: 0, beta: 0.1, dark: 0, tunnel: 0, whiteout: 0 },
+			{ streak: 0, beta: 0.1, dark: 0, tunnel: 0, whiteout: 0, rift: 0 },
 			0,
 			1.6,
 		);
@@ -38,7 +38,11 @@ describe("the witchspace pass", () => {
 		expect(pass.enabled).toBe(true);
 		pass.apply(witchspaceLook(witchspaceAtPhase(0.2)), 0.2, 1.6);
 		expect(pass.enabled).toBe(true);
-		pass.apply({ streak: 0, beta: 0, dark: 0, tunnel: 0, whiteout: 0 }, 0, 1.6);
+		pass.apply(
+			{ streak: 0, beta: 0, dark: 0, tunnel: 0, whiteout: 0, rift: 0 },
+			0,
+			1.6,
+		);
 		expect(pass.enabled).toBe(false);
 	});
 
@@ -75,7 +79,7 @@ describe("the witchspace pass", () => {
 		// The pull on the sky, the tunnel's samples and the rim each run only
 		// while their own term is up.
 		expect(WITCHSPACE_FRAGMENT).toContain(
-			"if (pull > 0.0 && cover < 1.0 && uDark < 1.0) {",
+			"if ((pull > 0.0 || uLensE > 0.0) && cover < 1.0 && uDark < 1.0) {",
 		);
 		expect(WITCHSPACE_FRAGMENT).toContain("if (cover > 0.0) {");
 		expect(WITCHSPACE_FRAGMENT).toContain(
@@ -84,6 +88,35 @@ describe("the witchspace pass", () => {
 		expect(WITCHSPACE_FRAGMENT).toContain("if (uWhiteout > 0.0) {");
 		expect(WITCHSPACE_FRAGMENT).toContain("if (uBeta > 0.0) {");
 		expect(WITCHSPACE_FRAGMENT).toContain("if (uDark > 0.0) {");
+	});
+
+	test("space bends, it does not swirl: the sky is read through a lens", () => {
+		// The principal's fourth flight: the pull on the sky and the rift's
+		// effect on it are point lenses, which move a star along its own line
+		// through the centre and never round it.
+		expect(WITCHSPACE_FRAGMENT).toContain(
+			"vec2 witchLens(vec2 p, vec2 centre, float einstein)",
+		);
+		expect(WITCHSPACE_FRAGMENT).toContain(
+			"return centre + d * (1.0 - einstein * einstein / r2);",
+		);
+		expect(WITCHSPACE_FRAGMENT).not.toContain("twist");
+		// And the streak's spokes are straight: their lane is the angle alone.
+		expect(WITCHSPACE_FRAGMENT).toContain(
+			"float lanes = (ang + 3.14159265) * 19.099;",
+		);
+	});
+
+	test("the rift alone lights the pass, for its lens, and a lens is never negative", () => {
+		const pass = new WitchspacePass("high");
+		pass.apply(
+			{ streak: 0, beta: 0, dark: 0, tunnel: 0, whiteout: 0, rift: 0.5 },
+			4,
+			1.6,
+		);
+		expect(pass.enabled).toBe(true);
+		pass.setLens(0.1, -0.2, -1);
+		expect(pass.lens).toEqual({ x: 0.1, y: -0.2, einstein: 0 });
 	});
 
 	test("nothing it draws is read from the sky", () => {

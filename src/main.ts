@@ -11811,6 +11811,7 @@ class Game {
 				inComposer: this.composer.passes.includes(this.witchspacePass),
 				enabled: this.witchspacePass.enabled,
 				samples: this.witchspacePass.samples,
+				lens: this.witchspacePass.lens,
 				...this.witchspacePass.look,
 			},
 			rift: rift
@@ -11851,6 +11852,39 @@ class Game {
 		this.arrivalRift.update(look.rift, phase, camPos);
 	}
 	private readonly witchspaceSize = new THREE.Vector2();
+	/**
+	 * The arrival rift's lens (the principal's fourth flight: space bends): where
+	 * the rift is on screen and its Einstein radius there, in the witchspace
+	 * pass's aspect-corrected units, so the sky behind the rift bends round it.
+	 * The radius is the rift's own apparent radius, scaled by its strength, so the
+	 * ring the rift draws is the ring the lens makes. Every camera sits at the
+	 * origin, so the rift's camera-relative position is its offset.
+	 */
+	private updateRiftLens() {
+		const rift = this.arrivalRift;
+		const strength = rift?.strength ?? 0;
+		const cam = this.nearCamera;
+		const pos = rift?.object.position;
+		const forward = this.riftForward
+			.set(0, 0, -1)
+			.applyQuaternion(cam.quaternion);
+		if (!rift || !pos || strength <= 0 || forward.dot(pos) <= 0) {
+			this.witchspacePass.setLens(0, 0, 0);
+			return;
+		}
+		cam.updateMatrixWorld();
+		const at = this.riftNdc.copy(pos).project(cam);
+		const halfTan = Math.tan((cam.fov * Math.PI) / 360);
+		const einstein = (rift.radiusKm / pos.length() / halfTan) * 0.5 * strength;
+		this.witchspacePass.setLens(
+			at.x * 0.5 * cam.aspect,
+			at.y * 0.5,
+			Math.min(0.6, einstein),
+		);
+	}
+	private readonly riftNdc = new THREE.Vector3();
+	private readonly riftForward = new THREE.Vector3();
+
 	/** The sky cameras' current aberration zoom, so the projection is rebuilt
 	 *  only when it moves. */
 	private skyZoom = 1;
@@ -12867,6 +12901,9 @@ class Game {
 		}
 		this.cockpit.mesh.quaternion.copy(this.orientation);
 		this.cockpit.mesh.visible = this.view === "cockpit" && !this.cabinHidden;
+		// After the cameras are aimed, so the rift's lens sits on the rift in
+		// this frame rather than the last one.
+		this.updateRiftLens();
 		// The star sphere follows the camera so it never parallaxes — which is
 		// what makes it read as infinitely far away rather than as a small ball
 		// the ship is inside. The camera being at the origin means this is a

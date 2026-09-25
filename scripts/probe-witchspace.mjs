@@ -334,6 +334,7 @@ const lit = await page.evaluate(() => {
 		sky: litRadius(plainLit),
 		riftMoved,
 		riftReading: reading.rift,
+		riftLens: reading.pass.lens,
 		before: passes[at - 1]?.scene === g.approachScene,
 		// The *first* pass holding the near scene, not merely the next one: the
 		// AO pass holds it too, and a pass moved after the near layer passed a
@@ -380,6 +381,11 @@ check(
 		lit.riftReading?.visible === true &&
 		lit.riftReading.strength > 0.5,
 	`${((lit.riftMoved ?? 0) * 100).toFixed(1)}% of pixels moved; ${JSON.stringify(lit.riftReading)}`,
+);
+check(
+	"and it bends the sky behind it: the pass carries its lens",
+	lit.riftLens?.einstein > 0,
+	JSON.stringify(lit.riftLens),
 );
 
 // The exit ends: the pass goes quiet and the rift is torn down.

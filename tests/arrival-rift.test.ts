@@ -49,7 +49,8 @@ describe("the arrival rift", () => {
 	test("is wider than the ship it lets through, at full strength", () => {
 		const rift = new ArrivalRift({ pos: v3(0, 0, 0), nose, reachKm: 0.04 });
 		rift.update(1, 0.5, v3(0, 0, 0));
-		expect(rift.radiusKm).toBeGreaterThan(0.04 * 2);
+		// Its diameter is wider than the ship's: the radius is past the reach.
+		expect(rift.radiusKm).toBeGreaterThan(0.04 * 1.2);
 	});
 
 	test("opens with its strength, and draws nothing at zero", () => {
