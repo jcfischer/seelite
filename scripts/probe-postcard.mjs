@@ -440,6 +440,7 @@ const rebuilt = await viewer.evaluate(() => {
 		pos: [g.world.ship.pos.x, g.world.ship.pos.y, g.world.ship.pos.z],
 		frames: g.frames,
 		visit: document.querySelector('[data-action="visit"]').href,
+		play: document.querySelector('[data-action="play"]')?.href ?? null,
 		canvasShown: getComputedStyle(g.renderer.domElement).display !== "none",
 	};
 });
@@ -487,6 +488,17 @@ check(
 	"the rebuilt card carries the sender's caption",
 	JSON.stringify(rebuilt.caption) === JSON.stringify(offered.caption),
 	JSON.stringify(rebuilt.caption),
+);
+// Read, not followed: the overlay a click opens consumes the one-shot, which is
+// a write, and the stored-bytes row below would then be measuring this probe.
+check(
+	"the viewer links the game itself, as the public site's Play now does",
+	rebuilt.play !== null &&
+		new URL(rebuilt.play).origin === new URL(ORIGIN).origin &&
+		new URL(rebuilt.play).pathname === "/" &&
+		new URL(rebuilt.play).search === "?boot=overlay" &&
+		new URL(rebuilt.play).hash === "",
+	String(rebuilt.play),
 );
 // **A link, and only a link.** That a New game started from it cannot land on
 // the Commander this probe seeded is `beginNewGame`'s refusal of a taken name,

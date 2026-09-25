@@ -1,7 +1,12 @@
 /**
  * The page a postcard link opens (#406): the card, rebuilt from its recipe,
- * and two ways on — save the image, or start a game of one's own in the same
- * universe.
+ * and three ways on — play the game, save the image, or start a game of one's
+ * own in the same universe.
+ *
+ * **Play The Far Between** is the public site's own *Play now*
+ * (`/?boot=overlay`), the principal's ask on the sheet: a person who was sent a
+ * postcard is one click from the game, with their own Commanders where they
+ * left them.
  *
  * **Read-only by construction, not by care.** The boot branch that mounts this
  * builds no catalog and no store, and the `Game` it hands over was built on the
@@ -44,11 +49,12 @@ const STYLE = `
 }
 #seelite-postcard-viewer .line { margin: 0; color: #8fa6b0; text-align: center; }
 #seelite-postcard-viewer .actions { display: flex; gap: 12px; flex-wrap: wrap; justify-content: center; }
-#seelite-postcard-viewer button, #seelite-postcard-viewer a.visit {
+#seelite-postcard-viewer button, #seelite-postcard-viewer a.go {
   font: inherit; padding: 9px 18px; border-radius: 4px; cursor: pointer; text-decoration: none;
   border: 1px solid rgba(150, 190, 210, .45); background: rgba(12, 24, 34, .9); color: #e6f0f3;
 }
-#seelite-postcard-viewer button:hover, #seelite-postcard-viewer a.visit:hover { border-color: #ffd479; }
+#seelite-postcard-viewer button:hover, #seelite-postcard-viewer a.go:hover { border-color: #ffd479; }
+#seelite-postcard-viewer a.play { border-color: #ffd479; color: #ffd479; }
 #seelite-postcard-viewer .status { min-height: 1.6em; margin: 0; color: #ffd479; }
 `;
 
@@ -76,9 +82,14 @@ export function mountPostcardViewer(
 	game.renderer.domElement.style.display = "none";
 	document.title = "A postcard — The Far Between";
 
-	const visit = new URL(import.meta.env.BASE_URL, window.location.href);
-	visit.hash = "";
-	visit.search = `?seed=${recipe.seed}`;
+	const gameAt = (search: string) => {
+		const url = new URL(import.meta.env.BASE_URL, window.location.href);
+		url.hash = "";
+		url.search = search;
+		return url.href;
+	};
+	const play = gameAt("?boot=overlay");
+	const visit = gameAt(`?seed=${recipe.seed}`);
 
 	const root = document.createElement("div");
 	root.id = "seelite-postcard-viewer";
@@ -86,8 +97,9 @@ export function mountPostcardViewer(
 		<img class="card" alt="" />
 		<p class="line">A postcard from The Far Between. Opening it changed nothing on this device.</p>
 		<div class="actions">
+			<a class="go play" data-action="play" href="${escapeHtml(play)}">Play The Far Between <span aria-hidden="true">→</span></a>
 			<button type="button" data-action="save">Save image</button>
-			<a class="visit" data-action="visit" href="${escapeHtml(visit.href)}">Visit this universe</a>
+			<a class="go" data-action="visit" href="${escapeHtml(visit)}">Visit this universe</a>
 		</div>
 		<p class="status" role="status" aria-live="polite"></p>`;
 	document.body.append(root);
