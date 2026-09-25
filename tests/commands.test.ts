@@ -69,6 +69,7 @@ const RATIFIED_LAYOUT: readonly string[] = [
 	"key:2::press → view.orbitCentre @ flight/instrument/console/modal chase -",
 	"key:3::hold → view.orbitStarboard @ flight/instrument/console/modal chase -",
 	"key:3::press → view.headStarboard @ flight/instrument/console/modal cockpit -",
+	"key:6::press → system.postcard @ flight/instrument/console/modal cockpit/chase -",
 	"key:9::press → system.commander @ flight/instrument/console/modal cockpit/chase -",
 	"key:;::press → tune.dropRadiusDown @ flight/instrument/console/modal cockpit/chase -",
 	"key:=::press → tune.vMaxUp @ flight/instrument/console/modal cockpit/chase -",
@@ -476,8 +477,8 @@ describe("the pad and the chord are resolved through the layout", () => {
 		// and Triangle keeps engaging it.
 		//
 		// **Onto `5`, because every letter in this game is already bound** —
-		// `4` through `8` and the backslash are the only free characters the
-		// shipped layout leaves. A letter target would be a legal D5 collision
+		// `4`, `5`, `7`, `8` and the backslash are the only free characters
+		// the shipped layout leaves (`6` is the Postcard screen's, #406). A letter target would be a legal D5 collision
 		// and this row would then be measuring that instead.
 		const layout = rebind(
 			DEFAULT_BINDINGS,

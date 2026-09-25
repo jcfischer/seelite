@@ -262,19 +262,23 @@ describe("workbenchUrl", () => {
 		// `query.has` before the first of them. `?fps` is a plain `if` too, and
 		// mounts a meter *beside* whatever follows — reading every `query.has`
 		// branch counted it as a workbench.
+		//
+		// **Since #406 the head is the postcard viewer**, which reads the
+		// fragment rather than the query and is not a workbench: every workbench
+		// is an `else if` arm behind it. The head is read as the last top-level
+		// `if (…) {` before the first arm, so a workbench moved to the head — or
+		// a query gate slipped in front of the viewer — is a red row here.
 		const main = readFileSync(join(import.meta.dir, "../src/main.ts"), "utf8");
 		const firstElseIf = main.search(/\} else if \(query\.has\(/);
 		expect(firstElseIf).toBeGreaterThan(0);
 		const head = [
-			...main
-				.slice(0, firstElseIf)
-				.matchAll(/\bif \(query\.has\("([a-z-]+)"\)\)/g),
+			...main.slice(0, firstElseIf).matchAll(/\nif \((.+)\) \{/g),
 		].at(-1);
+		expect(head?.[1]).toBe("postcard");
 		const arms = [
 			...main.matchAll(/\} else if \(query\.has\("([a-z-]+)"\)\)/g),
 		].map((m) => m[1]);
-		const chain = [head?.[1], ...arms];
-		expect(chain.sort()).toEqual([...WORKBENCH_ROUTES].sort());
+		expect(arms.sort()).toEqual([...WORKBENCH_ROUTES].sort());
 		expect(main.slice(firstElseIf)).toMatch(/\} else \{[\s\S]*new Game\(/);
 	});
 

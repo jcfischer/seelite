@@ -231,6 +231,7 @@ describe("the catalogue is complete against the source", () => {
 			// the panel's own listener.
 			"system.settings": "this.settingsPanel?.open()",
 			"system.commander": "this.commanderOverlay?.open()",
+			"system.postcard": "this.postcardPanel?.open()",
 			"view.reference": "controlsKeyMove(",
 			"view.toggle": 'this.view === "cockpit" ? "chase" : "cockpit"',
 			"panel.activate": "this.liveCockpit.activateKeyboardFocus(target)",

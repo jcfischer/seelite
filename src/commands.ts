@@ -730,13 +730,22 @@ const AUTHORED = [
 		views: CHASE,
 		keys: ["2"],
 	},
-	// system: the two player screens ------------------------------------
+	// system: the player screens ----------------------------------------
 	{ id: "system.settings", name: "Settings", group: "system", keys: ["z"] },
 	{
 		id: "system.commander",
 		name: "Commanders: save, load, switch",
 		group: "system",
 		keys: [COMMANDER_KEY],
+	},
+	{
+		// #406. A digit because every letter already carries a command, and `6`
+		// because `4`-`8` were the free pool the rebind rows move commands onto
+		// and it was the one the fewest of them used.
+		id: "system.postcard",
+		name: "Postcard: save this view as an image or a link",
+		group: "system",
+		keys: ["6"],
 	},
 	// system: the panel grammar -----------------------------------------
 	{

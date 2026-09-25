@@ -307,8 +307,9 @@ check(
 // keyboard and the pad at once — which no single layout edit does.
 //
 // Moved onto the characters the shipped layout leaves free, which
-// `tests/commands.test.ts` names as `4`–`8`.
-const FREE_KEYS = ["4", "5", "6", "7", "8"];
+// `tests/commands.test.ts` names: `4`, `5`, `7` and `8`. `6` left the pool
+// when the Postcard screen took it (#406).
+const FREE_KEYS = ["4", "5", "7", "8"];
 const DOORS = ["view.reference", "view.headStarboard", "system.settings"];
 const moved = await page.evaluate(
 	({ free, doors }) => {

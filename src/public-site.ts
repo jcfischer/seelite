@@ -97,17 +97,38 @@ function href(page: PublicPage): string {
 	return page.slug === "" ? "/" : `/${page.slug}/`;
 }
 
-export function mountPublicSite(slug: string): void {
-	const page = PUBLIC_PAGES.find((candidate) => candidate.slug === slug);
-	if (!page) throw new Error(`Unknown public page: ${slug}`);
+/** A page the site shell carries that is not one of `PUBLIC_PAGES`. */
+export type PublicNotice = Pick<
+	PublicPage,
+	"eyebrow" | "title" | "dek" | "content"
+> & { modifier: string };
+
+function mountShell(page: PublicNotice, current: PublicPage | null): void {
 	document.title = `${page.title} — The Far Between`;
 	document.body.classList.add("public-site");
 	document.body.innerHTML = `<main class="site-shell">
 		<header class="site-header"><a class="wordmark" href="/" aria-label="The Far Between home">THE FAR<br />BETWEEN</a>
-		<nav aria-label="Public site">${PUBLIC_PAGES.map((candidate) => `<a href="${href(candidate)}"${candidate === page ? ' aria-current="page"' : ""}>${candidate.nav}</a>`).join("")}</nav></header>
-		<article class="page page--${page.slug || "home"}"><p class="eyebrow">${page.eyebrow}</p><h1>${page.title}</h1><p class="dek">${page.dek}</p><div class="page-content">${page.content}</div></article>
+		<nav aria-label="Public site">${PUBLIC_PAGES.map((candidate) => `<a href="${href(candidate)}"${candidate === current ? ' aria-current="page"' : ""}>${candidate.nav}</a>`).join("")}</nav></header>
+		<article class="page page--${page.modifier}"><p class="eyebrow">${page.eyebrow}</p><h1>${page.title}</h1><p class="dek">${page.dek}</p><div class="page-content">${page.content}</div></article>
 		<footer><span>THE FAR BETWEEN</span><span>PLAY IN YOUR BROWSER</span><a href="/trust/">Privacy</a></footer>
 	</main>`;
+}
+
+/**
+ * A notice in the site's own shell: a refused postcard link (#406) is the one
+ * today. It stands on the root URL, so it highlights no page in the nav.
+ */
+export function mountPublicNotice(notice: PublicNotice): void {
+	mountShell(notice, null);
+}
+
+/** The play link the site's pages carry, for a notice that offers one. */
+export const PLAY_LINK = play;
+
+export function mountPublicSite(slug: string): void {
+	const page = PUBLIC_PAGES.find((candidate) => candidate.slug === slug);
+	if (!page) throw new Error(`Unknown public page: ${slug}`);
+	mountShell({ ...page, modifier: page.slug || "home" }, page);
 	const search = document.querySelector<HTMLInputElement>(
 		".manual-search input",
 	);

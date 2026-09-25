@@ -25,7 +25,12 @@ import {
 	decodePostcard,
 	encodePostcard,
 	isPostcardFragment,
+	POSTCARD_HEIGHT,
+	POSTCARD_WIDTH,
+	postcardCaption,
+	postcardFileName,
 	postcardRecipe,
+	postcardRefusalText,
 } from "../src/postcard";
 import {
 	LEGACY_WORLD_GENERATOR_VERSIONS,
@@ -345,4 +350,66 @@ test("a hand-built recipe of the declared type round-trips", () => {
 		head: "forward",
 	};
 	expect(decodePostcard(encodePostcard(recipe))).toEqual({ ok: true, recipe });
+});
+
+describe("the caption", () => {
+	const base = { system: "ANLEONOR", galaxy: 0, seed: 47 };
+
+	test("a star, a planet and a moon carry their system already", () => {
+		for (const place of ["ANLEONOR", "ANLEONOR II", "ANLEONOR IV a"])
+			expect(postcardCaption({ ...base, place }).place).toBe(place);
+	});
+
+	test("a station is placed in its system", () => {
+		expect(postcardCaption({ ...base, place: "INBIAGE" }).place).toBe(
+			"INBIAGE · ANLEONOR",
+		);
+		// A station whose name merely begins with the system's letters is not
+		// one of its bodies.
+		expect(postcardCaption({ ...base, place: "ANLEONORIS" }).place).toBe(
+			"ANLEONORIS · ANLEONOR",
+		);
+	});
+
+	test("deep space is the system", () => {
+		expect(postcardCaption({ ...base, place: null }).place).toBe("ANLEONOR");
+	});
+
+	test("the title and the inscription", () => {
+		expect(postcardCaption({ ...base, place: null })).toMatchObject({
+			title: "The Far Between",
+			inscription: "GALAXY 1 · SEED 47",
+		});
+		expect(
+			postcardCaption({ ...base, place: null, galaxy: 7 }).inscription,
+		).toBe("GALAXY 8 · SEED 47");
+	});
+
+	test("the file name is a place and a seed", () => {
+		const caption = postcardCaption({ ...base, place: "INBIAGE" });
+		expect(postcardFileName(caption, 47)).toBe(
+			"the-far-between-inbiage-anleonor-47.png",
+		);
+	});
+
+	test("the card is 3:2", () => {
+		expect(POSTCARD_WIDTH / POSTCARD_HEIGHT).toBe(3 / 2);
+	});
+});
+
+describe("a refusal says what it kept", () => {
+	const reasons = [
+		"too-long",
+		"malformed",
+		"unsupported-schema",
+		"other-build",
+		"out-of-range",
+		"not-canonical",
+	] as const;
+	for (const reason of reasons)
+		test(`${reason}`, () => {
+			const text = postcardRefusalText(reason);
+			expect(text.title.length).toBeGreaterThan(0);
+			expect(text.dek).toContain("nothing on this device was changed");
+		});
 });

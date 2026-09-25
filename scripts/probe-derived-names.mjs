@@ -63,7 +63,7 @@ const browser = await launchChromium();
 const FREE = {
 	commander: "4",
 	settings: "5",
-	cruise: "6",
+	cruise: "\\",
 	target: "7",
 	jump: "8",
 };
