@@ -25,7 +25,9 @@ import {
 	BOOT_DIRECT,
 	BOOT_PARAM,
 	gameUrl,
+	POSTCARD_PREFIX,
 	PUBLIC_ROUTES,
+	postcardUrl,
 	publicUrl,
 	WORKBENCH_ROUTES,
 	workbenchUrl,
@@ -35,6 +37,7 @@ import {
 	BOOT_DIRECT as SRC_BOOT_DIRECT,
 	bootMode,
 } from "../src/boot-mode";
+import { POSTCARD_FRAGMENT_PREFIX, decodePostcard } from "../src/postcard";
 import {
 	callArguments,
 	codeOf,
@@ -45,7 +48,7 @@ import {
 
 const ORIGIN = "http://127.0.0.1:5199";
 
-const BUILDERS = ["gameUrl", "workbenchUrl", "publicUrl"];
+const BUILDERS = ["gameUrl", "workbenchUrl", "publicUrl", "postcardUrl"];
 
 /**
  * Every `.goto(` in a script source whose URL is not visibly a builder's.
@@ -262,19 +265,23 @@ describe("workbenchUrl", () => {
 		// `query.has` before the first of them. `?fps` is a plain `if` too, and
 		// mounts a meter *beside* whatever follows — reading every `query.has`
 		// branch counted it as a workbench.
+		//
+		// **Since #406 the head is the postcard viewer**, which reads the
+		// fragment rather than the query and is not a workbench: every workbench
+		// is an `else if` arm behind it. The head is read as the last top-level
+		// `if (…) {` before the first arm, so a workbench moved to the head — or
+		// a query gate slipped in front of the viewer — is a red row here.
 		const main = readFileSync(join(import.meta.dir, "../src/main.ts"), "utf8");
 		const firstElseIf = main.search(/\} else if \(query\.has\(/);
 		expect(firstElseIf).toBeGreaterThan(0);
 		const head = [
-			...main
-				.slice(0, firstElseIf)
-				.matchAll(/\bif \(query\.has\("([a-z-]+)"\)\)/g),
+			...main.slice(0, firstElseIf).matchAll(/\nif \((.+)\) \{/g),
 		].at(-1);
+		expect(head?.[1]).toBe("postcard");
 		const arms = [
 			...main.matchAll(/\} else if \(query\.has\("([a-z-]+)"\)\)/g),
 		].map((m) => m[1]);
-		const chain = [head?.[1], ...arms];
-		expect(chain.sort()).toEqual([...WORKBENCH_ROUTES].sort());
+		expect(arms.sort()).toEqual([...WORKBENCH_ROUTES].sort());
 		expect(main.slice(firstElseIf)).toMatch(/\} else \{[\s\S]*new Game\(/);
 	});
 
@@ -392,5 +399,26 @@ describe("every script boots through the builder", () => {
 			unbuiltNavigations(sourceOf(f)).map((n) => `${f}:${n.line}: ${n.arg}`),
 		);
 		expect(offenders).toEqual([]);
+	});
+});
+
+describe("postcardUrl (#406)", () => {
+	test("spells the fragment the page reads", () => {
+		expect(POSTCARD_PREFIX).toBe(POSTCARD_FRAGMENT_PREFIX);
+	});
+
+	test("puts the recipe in the fragment and nothing in the query", () => {
+		const fragment =
+			"postcard=1&gen=7&seed=47&galaxy=0&system=12&t=0&pos=0,0,0&q=0,0,0,1&mode=clear&head=forward";
+		const url = new URL(postcardUrl(ORIGIN, fragment));
+		expect(url.search).toBe("");
+		expect(url.pathname).toBe("/");
+		expect(url.hash).toBe(`#${fragment}`);
+		expect(decodePostcard(url.hash).ok).toBe(true);
+	});
+
+	test("refuses a fragment that is not a postcard's", () => {
+		expect(() => postcardUrl(ORIGIN, "about")).toThrow(/postcard=/);
+		expect(() => postcardUrl(ORIGIN, "#postcard=1")).toThrow(/postcard=/);
 	});
 });

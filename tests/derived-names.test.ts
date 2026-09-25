@@ -308,7 +308,7 @@ describe("the prompt line and the dial legend (#381 S5)", () => {
 		expect(targetPrompt(movedKey("fight.targetNext", "5"))).toBe(
 			"5 selects a target",
 		);
-		expect(cruisePrompt(movedKey("fly.cruise", "6"))).toBe("press 6 to cruise");
+		expect(cruisePrompt(movedKey("fly.cruise", "7"))).toBe("press 7 to cruise");
 	});
 
 	test("a command moved off the keyboard is named where it went", () => {

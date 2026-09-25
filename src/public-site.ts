@@ -60,7 +60,7 @@ export const PUBLIC_PAGES: readonly PublicPage[] = [
 		content: `<label class="manual-search">Search this page <input type="search" placeholder="Try “dock” or “cruise”" autocomplete="off" /></label>
 			<p class="manual-note">Every key below is the one this game ships with. Keys are remappable, and the Controls tab in the cockpit shows the ones you fly with.</p>
 			<section data-topic><h2>Fly</h2><p>Pitch is <kbd data-command="fly.pitchDown">W</kbd> and <kbd data-command="fly.pitchUp">S</kbd>, yaw is <kbd data-command="fly.yawPort">A</kbd> and <kbd data-command="fly.yawStarboard">D</kbd>, roll is <kbd data-command="fly.rollPort">Q</kbd> and <kbd data-command="fly.rollStarboard">E</kbd>. The arrows do the same: <kbd data-command="fly.pitchDown">↑</kbd> and <kbd data-command="fly.pitchUp">↓</kbd> pitch, <kbd data-command="fly.yawPort">←</kbd> and <kbd data-command="fly.yawStarboard">→</kbd> yaw. <kbd data-command="fly.throttleUp">Shift</kbd> and <kbd data-command="fly.throttleDown">Ctrl</kbd> move the throttle. <kbd data-command="fly.assist">X</kbd> switches flight assist on a press, and keeps a combat-speed ceiling while it is on; switch it off when you want to drift. Held, <kbd data-command="fight.fireBeam">X</kbd> fires the beam. The green cue marks where you are going, not only where the ship points.</p></section>
-			<section data-topic><h2>Panels and controls</h2><p>Press <kbd data-command="view.reference">?</kbd> to open the Controls tab and see the complete, remappable control reference. <kbd data-command="view.headPort">1</kbd> opens the left panel, <kbd data-command="view.headForward">2</kbd> faces the forward panel, and <kbd data-command="view.headStarboard">3</kbd> opens the right panel. Press the same key again to return your view to flight.</p></section>
+			<section data-topic><h2>Panels and controls</h2><p>Press <kbd data-command="view.reference">?</kbd> to open the Controls tab and see the complete, remappable control reference. <kbd data-command="view.headPort">1</kbd> opens the left panel, <kbd data-command="view.headForward">2</kbd> faces the forward panel, and <kbd data-command="view.headStarboard">3</kbd> opens the right panel. Press the same key again to return your view to flight. <kbd data-command="system.postcard">6</kbd> opens the Postcard screen: save the view as an image, or copy a link that rebuilds it for someone else.</p></section>
 			<section data-topic><h2>Travel</h2><p><kbd data-command="fight.targetNext">T</kbd> and <kbd data-command="fight.targetPrevious">G</kbd> step through targets, <kbd data-command="fight.faceTarget">F</kbd> faces the one you selected, and <kbd data-command="fly.cruise">J</kbd> engages or drops cruise. <kbd data-command="fly.jump">&#96;</kbd> winds up the jump to another system. Cruise is for distance; ordinary flight is for arriving, fighting, and docking.</p></section>
 			<section data-topic><h2>Dock</h2><p><kbd data-command="dock.clearance">C</kbd> asks for clearance, and you need it before you enter the aperture. Follow the director, align with the aperture, and fly gently through the mouth. <kbd data-command="dock.computer">U</kbd> turns the docking computer on and off. <kbd data-command="dock.launch">Enter</kbd> launches you from a berth, and while an arrival or a departure is running it skips the rest of it.</p></section>
 			<section data-topic><h2>Work</h2><p>Requests, trade, and opportunities emerge from the state of the system. Take what suits you; none of them are compulsory. In Requests, <kbd data-command="panel.cursorUp">↑</kbd> and <kbd data-command="panel.cursorDown">↓</kbd> walk the cursor and <kbd data-command="panel.activate">Enter</kbd> opens the row; the mouse does the same.</p></section>
@@ -97,17 +97,38 @@ function href(page: PublicPage): string {
 	return page.slug === "" ? "/" : `/${page.slug}/`;
 }
 
-export function mountPublicSite(slug: string): void {
-	const page = PUBLIC_PAGES.find((candidate) => candidate.slug === slug);
-	if (!page) throw new Error(`Unknown public page: ${slug}`);
+/** A page the site shell carries that is not one of `PUBLIC_PAGES`. */
+export type PublicNotice = Pick<
+	PublicPage,
+	"eyebrow" | "title" | "dek" | "content"
+> & { modifier: string };
+
+function mountShell(page: PublicNotice, current: PublicPage | null): void {
 	document.title = `${page.title} — The Far Between`;
 	document.body.classList.add("public-site");
 	document.body.innerHTML = `<main class="site-shell">
 		<header class="site-header"><a class="wordmark" href="/" aria-label="The Far Between home">THE FAR<br />BETWEEN</a>
-		<nav aria-label="Public site">${PUBLIC_PAGES.map((candidate) => `<a href="${href(candidate)}"${candidate === page ? ' aria-current="page"' : ""}>${candidate.nav}</a>`).join("")}</nav></header>
-		<article class="page page--${page.slug || "home"}"><p class="eyebrow">${page.eyebrow}</p><h1>${page.title}</h1><p class="dek">${page.dek}</p><div class="page-content">${page.content}</div></article>
+		<nav aria-label="Public site">${PUBLIC_PAGES.map((candidate) => `<a href="${href(candidate)}"${candidate === current ? ' aria-current="page"' : ""}>${candidate.nav}</a>`).join("")}</nav></header>
+		<article class="page page--${page.modifier}"><p class="eyebrow">${page.eyebrow}</p><h1>${page.title}</h1><p class="dek">${page.dek}</p><div class="page-content">${page.content}</div></article>
 		<footer><span>THE FAR BETWEEN</span><span>PLAY IN YOUR BROWSER</span><a href="/trust/">Privacy</a></footer>
 	</main>`;
+}
+
+/**
+ * A notice in the site's own shell: a refused postcard link (#406) is the one
+ * today. It stands on the root URL, so it highlights no page in the nav.
+ */
+export function mountPublicNotice(notice: PublicNotice): void {
+	mountShell(notice, null);
+}
+
+/** The play link the site's pages carry, for a notice that offers one. */
+export const PLAY_LINK = play;
+
+export function mountPublicSite(slug: string): void {
+	const page = PUBLIC_PAGES.find((candidate) => candidate.slug === slug);
+	if (!page) throw new Error(`Unknown public page: ${slug}`);
+	mountShell({ ...page, modifier: page.slug || "home" }, page);
 	const search = document.querySelector<HTMLInputElement>(
 		".manual-search input",
 	);

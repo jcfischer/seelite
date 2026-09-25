@@ -512,6 +512,18 @@ who did not. So the boot plan answers `writesNothing` for both causes and the sh
 reads that, rather than re-deriving the permission from one of them at the call
 site.
 
+**A postcard link is a fourth route, and it constructs no catalog at all**
+([#406](https://github.com/jcfischer/seelite/issues/406)). A URL whose fragment
+starts `#postcard=` is parsed in `entry.ts` before the game is imported: a
+refused recipe mounts a notice and boots nothing, and an accepted one boots the
+read-only viewer, which builds its `Game` from the recipe with no backend, no
+lock, no catalog and no store — and no input listener or frame loop that could
+reach the settings or the layout. So its guarantee is not `writesNothing` read
+at four call sites; there is nothing for those sites to be handed.
+`scripts/probe-postcard.mjs` holds it against a store that has a Commander and a
+setting in it, byte for byte. **Visit this universe** leaves the viewer for
+`/?seed=N`, the overlay's ordinary New game with the seed filled in.
+
 ### 11.7 Verification obligations
 
 Headless: the active pointer's read, write and fallback; a boot that names a system

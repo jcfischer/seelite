@@ -191,6 +191,7 @@ import {
 } from "./pad-bindings";
 import type { PerfPanelHandle } from "./perf-panel";
 import type { SettingsPanelHandle } from "./settings-panel";
+import type { PostcardPanelHandle } from "./postcard-panel";
 import {
 	JUMP_CHARGE_S,
 	JUMP_TANK_LY,
@@ -675,6 +676,14 @@ import {
 import { type BootMode, bootMode } from "./boot-mode";
 import { querySystem } from "./boot-system";
 import {
+	type PostcardMode,
+	type PostcardPose,
+	type PostcardRecipe,
+	type PostcardScene,
+	decodePostcard,
+	isPostcardFragment,
+} from "./postcard";
+import {
 	attachCommander,
 	CommanderSwitch,
 	flushFault,
@@ -777,6 +786,14 @@ const CHARGE_LOG_KEEP = 12;
  * goes.
  */
 const BAKE_FACES_PER_FRAME = 1;
+
+/**
+ * The most bake faces a postcard capture draws before it copies (#406): the
+ * fourteen-body worst case above is 168, and this leaves room over it. A
+ * bound, so a bake that never empties its queue costs a card with that body
+ * procedural — said in the console — rather than a hung page.
+ */
+const POSTCARD_SETTLE_FACES = 256;
 
 /** Scratch vector for aiming a station's aperture, allocated once: the render
  *  loop runs per body per frame, and a `Vector3` built there is garbage by the
@@ -1985,6 +2002,19 @@ class Game {
 	 * zero.
 	 */
 	clockHeld = false;
+	/**
+	 * A page opened on a postcard recipe (#406): a read-only viewer. It builds
+	 * the recipe's place, never runs the frame loop, takes no input and attaches
+	 * no store — the boot branch that sets it writes nothing, and the
+	 * constructor installs none of the listeners that could change a setting,
+	 * a layout or the world.
+	 */
+	readonly postcardViewer: boolean;
+	/**
+	 * `clear` composition (#406): the cockpit eye with the cabin not drawn. Only
+	 * a postcard capture sets it, and only for the frame it draws.
+	 */
+	private cabinHidden = false;
 	/**
 	 * Called once, on the frame the hull reaches zero (#324). The boot sets it:
 	 * it restores the last dock, or opens the Commander overlay when there is
@@ -3312,12 +3342,42 @@ class Game {
 		seed: number,
 		save: SaveEnvelope | null = null,
 		atSystem: number | null = null,
+		postcard: PostcardRecipe | null = null,
 	) {
 		if (save !== null && atSystem !== null)
 			throw new Error(
 				`Game: a save names its own system, so ${atSystem} has nowhere to go — boot at a named system writes no save to load`,
 			);
-		if (save) {
+		// A recipe names its own place and carries no Commander, so it takes
+		// neither of the other two — for the reason above: a request half
+		// dropped is a state no caller can see.
+		if (postcard !== null && (save !== null || atSystem !== null))
+			throw new Error(
+				"Game: a postcard names its own place and is not a save, so it boots alone",
+			);
+		this.postcardViewer = postcard !== null;
+		if (postcard) {
+			// **The seeded baseline at the recipe's moment, and nothing else**
+			// (#406). A fresh persistent world, not a save's: the place is the
+			// generator's, so a sender's stock deficits, strikes and discoveries
+			// cannot reach it — the recipe does not carry them and this arm
+			// could not use them if it did. No `visit` either: nothing here is
+			// ever written, and a visited flag is a Commander's record.
+			this.world = restoreWorld(
+				postcard.seed,
+				postcard.galaxy,
+				postcard.system,
+				postcard.timeS,
+			);
+			this.commerceWorld = newPersistentWorld(postcard.seed);
+			const [x, y, z] = postcard.pos;
+			this.world.ship.pos = v3(x, y, z);
+			this.world.ship.vel = v3();
+			const [qx, qy, qz, qw] = postcard.orientation;
+			this.orientation.set(qx, qy, qz, qw).normalize();
+			this.restoredAttitude = true;
+			this.composePostcard(postcard);
+		} else if (save) {
 			// `restoreWorld` rather than `makeWorld` plus a jump: `jumpWorldTo`
 			// throws across a galaxy boundary on purpose, so a save taken in
 			// galaxy 3 is unreachable that way.
@@ -3895,6 +3955,18 @@ class Game {
 		// The saved row may already say `"auto"`, and nothing else starts it:
 		// the subscription above only fires on a change.
 		void this.applyResolutionMode();
+		// **A postcard viewer takes no input and runs no loop** (#406). Every
+		// listener below reaches something a viewer must not touch — a key can
+		// open the settings screen, whose rows write `localStorage`, or rebind a
+		// layout — so none is installed, rather than each being taught to
+		// refuse. The frames it shows are drawn on demand by
+		// `capturePostcardFrame`. The one cabin readout posed here is the throttle
+		// fill, at rest: the mesh is built full, and the instruments no loop will
+		// paint are left dark, since a recipe carries none of what they read.
+		if (this.postcardViewer) {
+			this.poseThrottleFill();
+			return;
+		}
 		window.addEventListener("keydown", (e) => this.onKey(e, true));
 		window.addEventListener("keyup", (e) => this.onKey(e, false));
 		// Audio cannot open before a gesture, so it opens on the first one.
@@ -7519,6 +7591,15 @@ class Game {
 		);
 		this.cockpit.flightInstrument.texture.needsUpdate = true;
 		this.cockpit.targetInstrument.texture.needsUpdate = true;
+		this.poseThrottleFill();
+	}
+
+	/**
+	 * The throttle fill for `this.throttle`. The mesh is built full, so a cabin
+	 * no instrument update has reached — the postcard viewer's (#406), which
+	 * runs no loop — draws a full bright bar until this is called.
+	 */
+	private poseThrottleFill() {
 		// The low end is nearest/lower on the sloped deck. Keep it anchored there
 		// and extend toward the windscreen as throttle rises; the old fill started
 		// at the top and slid down, the inverse of a physical throttle cue.
@@ -7635,7 +7716,14 @@ class Game {
 		// with the settings screen behind it would have walked that screen's
 		// rows with the d-pad instead of recording them.
 		if (this.captureModal?.isOpen()) return "capture";
-		if (this.commanderOverlay?.isOpen() || this.settingsPanel?.isOpen())
+		// The Postcard screen (#406) is a modal like the other two: the pointer
+		// comes back through `reconcilePointerLock` rather than through a
+		// release of the panel's own, and the sticks stop flying the ship.
+		if (
+			this.commanderOverlay?.isOpen() ||
+			this.settingsPanel?.isOpen() ||
+			this.postcardPanel?.isOpen()
+		)
 			return "modal";
 		// The instrument takes what a side console takes — six controls — and
 		// **not the sticks**: it is an overlay on a running game, and a mode that
@@ -7701,6 +7789,9 @@ class Game {
 	 * nothing here changes that; this is a second way in, not a replacement.
 	 */
 	settingsPanel: SettingsPanelHandle | null = null;
+
+	/** The Postcard screen (#406), once it has been mounted. */
+	postcardPanel: PostcardPanelHandle | null = null;
 
 	/**
 	 * The rebind modal (#369 D9), when the `Controls` tab has opened one.
@@ -8219,6 +8310,11 @@ class Game {
 			// capture-phase reason the case above gives.
 			case "system.commander":
 				this.commanderOverlay?.open();
+				return;
+			// #406. The same door as the two screens above, and for their reason:
+			// the registry owns the opening key so a rebind moves it.
+			case "system.postcard":
+				this.postcardPanel?.open();
 				return;
 			// #377, the principal's ruling: `F1` beside `?`. A bare key with no
 			// Shift in it, so it does not move the throttle on the way in.
@@ -9209,6 +9305,11 @@ class Game {
 			}
 			this.proximityFrameBodyId = null;
 		}
+		this.frameBody = this.nearestBody();
+	}
+
+	/** The nearest body within `NEAR_FAR_KM`, centre to ship, or `null`. */
+	private nearestBody(): Body | null {
 		let best: Body | null = null;
 		let bestKm = NEAR_FAR_KM;
 		for (const b of this.world.system.bodies) {
@@ -9218,7 +9319,7 @@ class Game {
 				bestKm = km;
 			}
 		}
-		this.frameBody = best;
+		return best;
 	}
 
 	/**
@@ -12405,7 +12506,7 @@ class Game {
 			cam.quaternion.copy(viewRotation);
 		}
 		this.cockpit.mesh.quaternion.copy(this.orientation);
-		this.cockpit.mesh.visible = this.view === "cockpit";
+		this.cockpit.mesh.visible = this.view === "cockpit" && !this.cabinHidden;
 		// The star sphere follows the camera so it never parallaxes — which is
 		// what makes it read as infinitely far away rather than as a small ball
 		// the ship is inside. The camera being at the origin means this is a
@@ -12737,7 +12838,9 @@ class Game {
 		// competing with the instruments, and on an exterior shot with no lens in
 		// the fiction it reads as a photograph of a spaceship.
 		this.outputPass.setVignette(
-			this.view === "cockpit" && this.settings.value.vignette === "on"
+			this.view === "cockpit" &&
+				!this.cabinHidden &&
+				this.settings.value.vignette === "on"
 				? VIGNETTE_MAX
 				: 0,
 		);
@@ -12990,6 +13093,147 @@ class Game {
 				: this.chaseYaw;
 		this.headRotation.setFromAxisAngle(HEAD_AXIS, yaw);
 		return this.viewRotation.copy(this.orientation).multiply(this.headRotation);
+	}
+
+	/**
+	 * Stand the camera where a postcard composition puts it (#406). `clear` and
+	 * `cockpit` are the cockpit eye, turned by `head`, with the cabin hidden or
+	 * drawn; `exterior` is the chase camera orbited by `yawRad`. Assigned rather
+	 * than routed through `setHeadLook`, which also moves the pointer lock and
+	 * the consoles — a composition is a camera, not a pilot's action.
+	 */
+	private composePostcard(pose: PostcardPose) {
+		if (pose.mode === "exterior") {
+			this.view = "chase";
+			this.chaseYaw = pose.yawRad ?? 0;
+			this.cabinHidden = false;
+		} else {
+			this.view = "cockpit";
+			this.headLook = pose.head ?? "forward";
+			this.cabinHidden = pose.mode === "clear";
+		}
+	}
+
+	/**
+	 * The scene a postcard of this moment would carry, composed as `mode`.
+	 *
+	 * The head and the orbit come from the view the pilot is in: a cockpit
+	 * composition from the chase view looks forward, and an exterior one from
+	 * the cockpit is directly astern. **Picked field by field** — see
+	 * `postcardRecipe` for why a whole object is never handed on.
+	 */
+	postcardScene(mode: PostcardMode): PostcardScene {
+		const record = this.world.system.record;
+		const q = this.orientation;
+		return {
+			seed: this.world.seed,
+			galaxy: record.galaxy,
+			system: record.index,
+			timeS: this.world.gameTime,
+			pos: [
+				this.world.ship.pos.x,
+				this.world.ship.pos.y,
+				this.world.ship.pos.z,
+			],
+			orientation: [q.x, q.y, q.z, q.w],
+			mode,
+			head: this.view === "cockpit" ? this.headLook : "forward",
+			yawRad: this.view === "chase" ? this.chaseYaw : 0,
+		};
+	}
+
+	/**
+	 * The generated place a card is captioned with: the nearest body within
+	 * `NEAR_FAR_KM`, by the rule `updateLocalFrameBody` falls back to. **Not
+	 * `frameBody`**, which can be a proximity frame *held* from where the pilot
+	 * flew in — history a recipe does not carry, so a viewer standing at the
+	 * same point could caption another place (sage round 2).
+	 */
+	postcardPlace(): { place: string | null; system: string } {
+		return {
+			place: this.nearestBody()?.name ?? null,
+			system: this.world.system.record.name,
+		};
+	}
+
+	/**
+	 * Draw this moment, composed as `pose`, at `width` x `height` and a pixel
+	 * ratio of one, and hand it back as a 2D canvas (#406).
+	 *
+	 * **The copy is taken in the same task as the render.** The drawing buffer
+	 * is not preserved, so it is only defined until the page next presents; a
+	 * `drawImage` with an `await` between the two reads a cleared buffer. Two
+	 * renders, not one: the first frame after a composition change is the one
+	 * that builds whatever the new camera has come within reach of.
+	 *
+	 * **Between them, the planet bakes that camera queued are drained** (#208).
+	 * The loop fills one cube face a frame and the viewer runs no loop, so a
+	 * planet in the baked band — beyond about two radii (`planet-bake.ts`) —
+	 * would otherwise rebuild on the procedural program against a sent card
+	 * drawn from its cube. **On the sheet it changed which program, not what
+	 * shows:** its one reading, the sheet's planet at 2.6 radii, moved no pixel past
+	 * 24/255 with the drain taken out — one planet at one range, not a law about
+	 * the band. It is
+	 * here so both cards come off one program, which is the thing a rebuild
+	 * promises; a difference the bake one day introduces would then be the
+	 * same on both. Drained with the bake step alone — a face is
+	 * one full-screen quad, where a `render` would be the whole composer at the
+	 * card's size per face (sage round 1). The live game has normally baked
+	 * already and drains nothing.
+	 *
+	 * Everything the capture changes — the view, the head, the orbit, the
+	 * cabin, the drawing size — is put back before it returns, and the next
+	 * frame the loop draws is the pilot's own.
+	 */
+	capturePostcardFrame(
+		pose: PostcardPose,
+		width: number,
+		height: number,
+	): HTMLCanvasElement {
+		const kept = {
+			view: this.view,
+			headLook: this.headLook,
+			chaseYaw: this.chaseYaw,
+			cabinHidden: this.cabinHidden,
+		};
+		const out = document.createElement("canvas");
+		out.width = width;
+		out.height = height;
+		try {
+			this.composePostcard(pose);
+			this.sizeDrawing(width, height, 1);
+			// Twice: a body the first bake finishes can change band on the next
+			// render and queue one more.
+			let faces = 0;
+			for (let pass = 0; pass < 2; pass++) {
+				this.render(0);
+				for (
+					;
+					this.bakeQueue.length > 0 && faces < POSTCARD_SETTLE_FACES;
+					faces++
+				)
+					this.stepBakes();
+			}
+			if (this.bakeQueue.length > 0)
+				console.warn(
+					`postcard: ${this.bakeQueue.length} bake(s) still queued after ${faces} faces, so this card draws them on the procedural program`,
+				);
+			this.render(0);
+			const ctx = out.getContext("2d");
+			if (!ctx) throw new Error("postcard: no 2D context for the card");
+			ctx.drawImage(this.renderer.domElement, 0, 0, width, height);
+		} finally {
+			this.view = kept.view;
+			this.headLook = kept.headLook;
+			this.chaseYaw = kept.chaseYaw;
+			this.cabinHidden = kept.cabinHidden;
+			this.onResize();
+			// Three renders at the card's size, and any bake faces, are one long
+			// frame, and the controller would read it as the pilot's cost: the same
+			// re-prime a resize gets, for the same reason.
+			this.primeAdaptive("postcard captured");
+		}
+		return out;
 	}
 
 	private updateCockpit() {
@@ -15175,12 +15419,27 @@ class Game {
 	 * It is read again here rather than remembered.
 	 */
 	private onResize() {
-		const w = window.innerWidth;
-		const h = window.innerHeight;
 		this.sizeOverlay();
 		const scale = this.effectiveRenderScale();
 		this.appliedRenderScale = scale;
-		const ratio = Math.min(window.devicePixelRatio, 2) * scale;
+		this.sizeDrawing(
+			window.innerWidth,
+			window.innerHeight,
+			Math.min(window.devicePixelRatio, 2) * scale,
+		);
+	}
+
+	/**
+	 * Size every drawing surface to `w` x `h` CSS pixels at `ratio`.
+	 *
+	 * `onResize` is the window's caller and `capturePostcardFrame` (#406) the
+	 * other: a postcard is drawn at one canonical size whatever the window is,
+	 * because the field of view is vertical and the aspect decides what it
+	 * covers. **`updateStyle` is false**, so the canvas keeps its CSS size while
+	 * the buffer is briefly another one — a postcard drawn between two frames
+	 * never shows on the page.
+	 */
+	private sizeDrawing(w: number, h: number, ratio: number) {
 		this.renderer.setPixelRatio(ratio);
 		this.composer.setPixelRatio(ratio);
 		for (const cam of [
@@ -15197,7 +15456,9 @@ class Game {
 		// setting must not be able to change what the surface looks like. Every
 		// camera shares one field of view, so one focal length serves all four.
 		this.focalPx = focalPx(h, this.nearCamera.fov);
-		this.renderer.setSize(w, h);
+		this.renderer.setSize(w, h, false);
+		this.renderer.domElement.style.width = `${window.innerWidth}px`;
+		this.renderer.domElement.style.height = `${window.innerHeight}px`;
 		this.composer.setSize(w, h);
 		// **After** the composer, not before. `EffectComposer.setSize` calls
 		// `setSize` on every pass it holds, so bloom's own resolution has to be
@@ -15387,7 +15648,31 @@ if (query.has("fps")) {
 	mountFpsMeter();
 }
 
-if (query.has("model-viewer")) {
+const postcard = isPostcardFragment(window.location.hash)
+	? decodePostcard(window.location.hash)
+	: null;
+
+if (postcard) {
+	// **The postcard viewer (#406), first in the chain** because `entry.ts`
+	// routes a postcard fragment here whatever else the URL carries, and the
+	// viewer is the read-only page. `entry.ts` already refused a bad recipe;
+	// this parse is the same function on the same string, and a refusal here
+	// means the two disagree, which is a bug worth a stack rather than a page.
+	//
+	// **No catalog, no backend, no lock, no store** — none of them is even
+	// constructed, so there is nothing to attach and nothing to flush. The
+	// `Game` is built on the recipe's arm, which installs no input listeners
+	// and starts no loop; the viewer draws its one card on demand.
+	if (!postcard.ok)
+		throw new Error(
+			`postcard: entry accepted a refused recipe (${postcard.reason})`,
+		);
+	const game = new Game(postcard.recipe.seed, null, null, postcard.recipe);
+	game.clockHeld = true;
+	(window as unknown as { __seelite: Game }).__seelite = game;
+	const { mountPostcardViewer } = await import("./postcard-viewer");
+	mountPostcardViewer(game, postcard.recipe);
+} else if (query.has("model-viewer")) {
 	const { mountModelViewer } = await import("./model-viewer");
 	mountModelViewer();
 	// The workbench owns an isolated render loop, so no live simulation is built
@@ -15735,6 +16020,24 @@ if (query.has("model-viewer")) {
 			() => game.controlsNow(),
 			(layout) => game.commitLayout(layout),
 		);
+	});
+	// The Postcard screen (#406). Player-facing and not gated, and imported on
+	// demand beside settings for the same reason: nothing of it is needed until
+	// the key is pressed.
+	import("./postcard-panel").then(({ mountPostcardPanel }) => {
+		game.postcardPanel = mountPostcardPanel({
+			source: game,
+			view: () => game.view,
+			holdClock: () => {
+				const held = game.clockHeld;
+				game.clockHeld = true;
+				return () => {
+					game.clockHeld = held;
+				};
+			},
+			releaseHeldKeys: () => game.releaseHeldKeys(),
+			ownKey: game.ownKey("system.postcard"),
+		});
 	});
 	import("./settings-panel").then(({ mountSettingsPanel }) => {
 		// Held on the game so the pad can drive the cursor the screen already
