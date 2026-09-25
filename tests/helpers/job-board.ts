@@ -16,6 +16,7 @@ import {
 	type BountyTarget,
 	type CargoOffer,
 	type JobFamily,
+	type JobSlot,
 	type JobOffer,
 	bindJobs,
 	canPostJobs,
@@ -27,7 +28,7 @@ import { type Station, generateContents } from "../../src/system";
 export interface BoardOptions {
 	deficits?: DeficitMap;
 	gameTimeMin?: number;
-	settled?: Partial<Record<JobFamily, number>>;
+	settled?: Partial<Record<JobSlot, number>>;
 	/** The system's operational Bounty target. Absent means none, so a board
 	 *  built here without one is the courier-and-procurement board. */
 	bountyTarget?: BountyTarget | null;

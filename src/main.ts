@@ -13420,7 +13420,7 @@ class Game {
 			const relayKey = relaySlot(this.world.system.record.index).key;
 			const relayLive =
 				this.currentRelayPlan() !== null && this.slotOperational(relayKey);
-			const key = `${context.galaxyIndex}:${context.stationKey}:${settled.courier}:${settled.procurement}:${settled.bounty}:${relayLive ? relayKey : "-"}:${this.stationConsoleRevision}`;
+			const key = `${context.galaxyIndex}:${context.stationKey}:${settled.courier}:${settled["courier-local"]}:${settled.procurement}:${settled.bounty}:${relayLive ? relayKey : "-"}:${this.stationConsoleRevision}`;
 			if (key !== this.requestOffersCacheKey) {
 				const bountyTarget = bountyTargetOf(
 					this.world.system.record,
