@@ -20,6 +20,7 @@ import {
 	type PilotAction,
 	openingAtBoot,
 	openingCaption,
+	openingOwedOnLoad,
 	type PilotFacts,
 	openingShot,
 	pilotStep,
@@ -506,5 +507,32 @@ describe("a shot starts on a step", () => {
 				run.skip(sim);
 			}),
 		).toEqual(skippedChanges);
+	});
+});
+
+describe("an opening a quit interrupted (the principal's ruling, 2026-09-26)", () => {
+	test("a guided commander loaded in flight with no lastDocked flies the rest, skipped", () => {
+		expect(
+			openingOwedOnLoad({
+				firstDay: "guided",
+				docked: false,
+				hasLastDocked: false,
+			}),
+		).toBe(true);
+	});
+	test("nothing else is owed one", () => {
+		for (const over of [
+			{ firstDay: "free" as const },
+			{ docked: true },
+			{ hasLastDocked: true },
+		])
+			expect(
+				openingOwedOnLoad({
+					firstDay: "guided",
+					docked: false,
+					hasLastDocked: false,
+					...over,
+				}),
+			).toBe(false);
 	});
 });

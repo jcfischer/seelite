@@ -443,3 +443,24 @@ export function openingCaption(
 			return "";
 	}
 }
+
+/**
+ * Whether a loaded commander is owed the rest of its opening (the principal's
+ * ruling on #535, 2026-09-26). A quit during a guided opening saves the ship
+ * mid-flight — mid-cruise, or on the run-in — before the dock has written
+ * `lastDocked`, and a loaded commander sees no opening. So one that is guided,
+ * not docked and has never docked flies the rest of it, skipped, on load, and
+ * a guided start still docks. A guided commander cannot otherwise be in flight
+ * with no `lastDocked`: its first flight begins from that dock.
+ */
+export function openingOwedOnLoad(commander: {
+	firstDay: OpeningKind;
+	docked: boolean;
+	hasLastDocked: boolean;
+}): boolean {
+	return (
+		commander.firstDay === "guided" &&
+		!commander.docked &&
+		!commander.hasLastDocked
+	);
+}

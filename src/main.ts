@@ -558,6 +558,7 @@ import {
 	type PilotAction,
 	openingAtBoot,
 	openingCaption,
+	openingOwedOnLoad,
 } from "./opening";
 import {
 	type ShotAnchor,
@@ -17002,9 +17003,30 @@ if (postcard) {
 	// Commander's `lastDocked`. Once per page: Continue on the overlay also
 	// attaches, and a game already flown is not a new game.
 	let firstDayBegun = false;
-	const beginFirstDay = (slot: string | null) => {
-		if (firstDayBegun || plan.loaded !== null) return;
+	const beginFirstDay = async (slot: string | null) => {
+		if (firstDayBegun) return;
 		firstDayBegun = true;
+		// The principal's ruling on #535: a guided commander saved mid-opening —
+		// in flight, never docked — flies the rest of it on load, skipped, so a
+		// guided start still docks. Before the clock runs, as the opening does.
+		if (plan.loaded !== null) {
+			if (slot === null) return;
+			let hasLastDocked = true;
+			try {
+				hasLastDocked = (await saveBackend.read(slot, "lastDocked")) !== null;
+			} catch {
+				// Unreadable is not absent: leave the commander where it is.
+			}
+			if (
+				openingOwedOnLoad({
+					firstDay: game.firstDay,
+					docked: game.dockPhase === "docked",
+					hasLastDocked,
+				})
+			)
+				game.beginOpening("guided", false);
+			return;
+		}
 		const firstDay = firstDayAtBoot(plan, slot, query.has("guided"));
 		if (firstDay === "guided") game.chooseFirstDay("guided");
 		// #535: the opening replaces D1's placement. It flies the ship in —
@@ -17029,14 +17051,14 @@ if (postcard) {
 		// boot write nothing, and the shell that attaches a store has to read the
 		// plan's answer rather than re-derive it from one of the two causes.
 		if (!plan.writesNothing && plan.fault === null) await attach(plan.slot);
-		beginFirstDay(plan.writesNothing ? null : plan.slot);
+		await beginFirstDay(plan.writesNothing ? null : plan.slot);
 		game.clockHeld = false;
 	} else if (plan.mode === "continue") {
 		// §11.3: a one-shot whose Commander another tab took in the meantime is
 		// discarded, and the overlay opens with that fault.
 		const fault = await attach(plan.slot);
 		if (fault === null) {
-			beginFirstDay(plan.slot);
+			await beginFirstDay(plan.slot);
 			game.clockHeld = false;
 		} else {
 			plan = withLockFault(plan, fault);
@@ -17089,7 +17111,7 @@ if (postcard) {
 			}
 			const fault = plan.writesNothing ? null : await attach(slot);
 			if (fault === null) {
-				beginFirstDay(plan.writesNothing ? null : slot);
+				await beginFirstDay(plan.writesNothing ? null : slot);
 				game.clockHeld = false;
 			}
 			return fault;

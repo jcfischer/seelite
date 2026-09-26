@@ -267,6 +267,55 @@ check(
 await clicked.context.close();
 
 // ---------------------------------------------------------------------------
+// A quit during the opening: the rest is flown on load (the principal's
+// ruling, 2026-09-26), so a guided start still docks
+// ---------------------------------------------------------------------------
+
+for (const shot of ["cruise", "dock"]) {
+	const quit = await boot({ guided: true, cinematic: 1 }, `quit at ${shot}`);
+	await quit.page.waitForFunction(
+		(s) => window.__seelite.openingReading().shot === s,
+		shot,
+		{ timeout: 60000, polling: 50 },
+	);
+	const saved = await quit.page.evaluate(async () => {
+		const g = window.__seelite;
+		await g.saveFlush("quit");
+		const b = g.save.backend;
+		const live = await b.read("default", "live");
+		return {
+			regime: live?.commander?.flight?.regime ?? null,
+			dockedAt: live?.commander?.dockedAt ?? null,
+			lastDocked: (await b.read("default", "lastDocked")) !== null,
+		};
+	});
+	// The same save, booted again: a loaded commander, not a new game.
+	await quit.page.goto(gameUrl(origin, { seed: SEED, raider: "off" }));
+	await bootedGame(quit.page);
+	const resumed = await quit.page.evaluate(() => {
+		const g = window.__seelite;
+		return {
+			outcome: g.openingReading().lastOutcome,
+			dockPhase: g.dockPhase,
+			stationId: g.dock.stationId,
+			firstDay: g.firstDay,
+		};
+	});
+	const record = await lastDocked(quit.page);
+	check(
+		`a quit at the ${shot} shot saves in flight, and the reload flies the rest and docks with lastDocked`,
+		saved.dockedAt === null &&
+			!saved.lastDocked &&
+			(resumed.outcome === "docked" || resumed.outcome === "fallback") &&
+			resumed.dockPhase === "docked" &&
+			resumed.stationId === trade.id &&
+			record?.dockedAt === trade.key,
+		JSON.stringify({ saved, resumed, record }),
+	);
+	await quit.context.close();
+}
+
+// ---------------------------------------------------------------------------
 // Free: arrival and fly-past, then control near the arrival point
 // ---------------------------------------------------------------------------
 
