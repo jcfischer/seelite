@@ -83,9 +83,11 @@ export interface OpeningSim {
 /**
  * The script's figures and the shots' table.
  *
- * The shot lengths are #530 D4's split of about 30 s, and they are the build's
- * to tune on the strip: arrival 6 s (the exit needs 4.6 s of sky unfolding),
- * fly-past 5 s (the burn and the spool), cruise 8 s, dock about 9 s.
+ * The shot lengths started as #530 D4's split of about 30 s and are tuned on
+ * the principal's flights: arrival 6 s (the exit needs 4.6 s of sky
+ * unfolding), fly-past 5 s (the burn and the spool), cruise about 10 s and
+ * then 6 s past the drop-out so the station can be recognised, dock about
+ * 9 s — about 36 s in all.
  *
  * Two shots show the sim faster than it runs, which is not time compression
  * (#10): nothing the pilot can act on is sped up, because the pilot is not
@@ -118,7 +120,7 @@ export const OPENING = Object.freeze({
 	approachCapS: 300,
 	/** The cruise shot: the leg's last `simS` seconds, `ratio` times faster
 	 *  than they run, and `tailS` shown seconds past the drop-out. */
-	cruiseShot: Object.freeze({ simS: 12, ratio: 1.5, tailS: 3 }),
+	cruiseShot: Object.freeze({ simS: 12, ratio: 1.5, tailS: 6 }),
 	/** The dock shot: the run-in from `km` of the station's centre, `ratio`
 	 *  times faster than it runs. */
 	dockShot: Object.freeze({ km: 1.6, ratio: 2 }),
