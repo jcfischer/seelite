@@ -4,6 +4,15 @@
  * out of read as one material. A string with no imports; each consumer defines
  * `OCTAVES` for its own cost.
  */
+/** The pass-through vertex shader both the pass and the rift draw with. */
+export const WITCHSPACE_VERTEX = /* glsl */ `
+varying vec2 vUv;
+void main() {
+	vUv = uv;
+	gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+}
+`;
+
 export const WITCHSPACE_MIST_GLSL = /* glsl */ `
 float witchHash(vec3 p) {
 	p = fract(p * 0.1031);

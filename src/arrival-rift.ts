@@ -31,7 +31,7 @@
  */
 import * as THREE from "three";
 import type { Vec3 } from "./vec3";
-import { WITCHSPACE_MIST_GLSL } from "./witchspace-mist";
+import { WITCHSPACE_MIST_GLSL, WITCHSPACE_VERTEX } from "./witchspace-mist";
 
 export const ARRIVAL_RIFT = Object.freeze({
 	/** Radius at full strength, in the arriving hull's reach. */
@@ -44,15 +44,12 @@ export const ARRIVAL_RIFT = Object.freeze({
 	openFrom: 0.3,
 });
 
-const VERTEX = /* glsl */ `
-varying vec2 vUv;
-void main() {
-	vUv = uv;
-	gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
-}
-`;
-
 /**
+ * **The lens is the player's rift's alone.** The pass carries one lens and
+ * `main.ts` feeds it from `arrivalRift`; #262's NPC arrivals can reuse this
+ * object for the ring, but their sky will not bend until the pass carries more
+ * than one lens.
+ *
  * The ring of light a lens makes, in the tunnel's palette: space bends here,
  * it does not swirl (the principal's fourth flight). The bending itself is
  * the witchspace pass's `uLensE`, which pulls the sky behind the rift round
@@ -112,7 +109,7 @@ export class ArrivalRift {
 		this.fullRadiusKm = ARRIVAL_RIFT.radiusReaches * reachKm;
 		const material = new THREE.ShaderMaterial({
 			uniforms: { uStrength: { value: 0 }, uPhase: { value: 0 } },
-			vertexShader: VERTEX,
+			vertexShader: WITCHSPACE_VERTEX,
 			fragmentShader: FRAGMENT,
 			transparent: true,
 			blending: THREE.AdditiveBlending,

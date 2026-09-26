@@ -913,8 +913,8 @@ export const VIEWS = Object.freeze([
 	 * Six cockpit rows across the straddle, and two from outside, because
 	 * #195 D2's rift is judged from outside the ship and a cockpit strip shows
 	 * none of it. The phases before the cut are drawn in the start system; the
-	 * ones from the cut on are drawn after a real jump to its nearest
-	 * neighbour, so the new system and the rift are the ones a player gets.
+	 * ones from the cut on are drawn after a real jump to the nearest
+	 * system, so the new system and the rift are the ones a player gets.
 	 *
 	 * **The `before` arm is the hard cut.** A build without `holdWitchspace` is
 	 * captured through the same placer and captioned as having no transition, the

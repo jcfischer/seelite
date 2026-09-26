@@ -2,9 +2,9 @@
  * #532: the straddle's pure half — the phase, the look it drives, the cue
  * schedule, and every way the effect can end.
  *
- * #195's D1 ratified the shape: entry in the last part of §8's wind-up, a
- * cover on the cut (a tunnel since the principal's first flight), an exit in the
- * new system. What is tested here is that
+ * #195's D1 ratified the shape: an entry through the whole of §8's wind-up
+ * since the principal's third flight, a cover on the cut, an exit in the new
+ * system. What is tested here is that
  * the effect is a **state machine fed by events** and not a reading of
  * `JumpCharge.leftS`: `stepCharge` returns the idle charge on the step it fires
  * and `cancelCharge` returns the same idle charge, so a phase derived from the
@@ -75,7 +75,7 @@ describe("the phase", () => {
 	});
 
 	test("the exit counts up from the cut, and ends idle", () => {
-		const s = jumpedWitchspace(run(beginWitchspace(), JUMP_CHARGE_S).state);
+		const s = jumpedWitchspace();
 		expect(witchspacePhase(s)).toBe(0);
 		const mid = run(s, 0.5).state;
 		expect(witchspacePhase(mid)).toBeCloseTo(0.5, 6);
@@ -93,10 +93,7 @@ describe("the phase", () => {
 				expect(held[k]).toBeCloseTo(real[k], 6);
 		}
 		for (const t of [0, 0.3, 1]) {
-			const real = run(
-				jumpedWitchspace(run(beginWitchspace(), JUMP_CHARGE_S).state),
-				t,
-			).state;
+			const real = run(jumpedWitchspace(), t).state;
 			const held = witchspaceLook(witchspaceAtPhase(t));
 			const flown = witchspaceLook(real);
 			for (const k of Object.keys(held) as (keyof WitchspaceLook)[])
@@ -278,7 +275,7 @@ describe("ending it early", () => {
 
 	test("abort is idempotent on idle and does not touch an exit", () => {
 		expect(abortWitchspace(idleWitchspace())).toEqual(idleWitchspace());
-		const exit = jumpedWitchspace(witchspaceAtPhase(0));
+		const exit = jumpedWitchspace();
 		expect(abortWitchspace(exit)).toEqual(exit);
 	});
 
@@ -295,14 +292,14 @@ describe("the exit clock", () => {
 		// `rebuildSystem()` rebuilds bodies, the environment and the sky; the
 		// frames after it can be long. A fade that advanced on raw dt would
 		// clear during the stall and show the pop-in the cover is there to hide.
-		const s = jumpedWitchspace(witchspaceAtPhase(0));
+		const s = jumpedWitchspace();
 		const after = stepWitchspace(s, 0.5);
 		expect(witchspacePhase(after)).toBeCloseTo(WITCHSPACE.maxExitDtS, 9);
 		expect(witchspaceLook(after).dark).toBe(1);
 	});
 
 	test("the arrival-only path plays the same exit as a jump", () => {
-		const jumped = jumpedWitchspace(witchspaceAtPhase(0));
+		const jumped = jumpedWitchspace();
 		const arrived = arriveWitchspace();
 		for (const t of [0, 0.3, 1, 2]) {
 			expect(witchspaceLook(run(arrived, t).state)).toEqual(
@@ -312,7 +309,7 @@ describe("the exit clock", () => {
 	});
 
 	test("jumped from idle — a jump with no entry — is still an exit", () => {
-		expect(witchspacePhase(jumpedWitchspace(idleWitchspace()))).toBe(0);
+		expect(witchspacePhase(jumpedWitchspace())).toBe(0);
 	});
 });
 

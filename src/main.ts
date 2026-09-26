@@ -1724,9 +1724,12 @@ class Game {
 	/** The last pass: tone map, dither, vignette (#200). Public so a probe can
 	 *  reach the dither's control arm through `window.__seelite`. */
 	outputPass!: SeeliteOutputPass;
-	/** #532's screen-space term: the entry's streak and the whiteout over the
-	 *  cut. A composer pass, so it survives `rebuildSystem()`. */
-	private witchspacePass!: WitchspacePass;
+	/** #532's pass: the starbow, the dark, the flash, the tunnel and the rift's
+	 *  lens. A composer pass, so it survives `rebuildSystem()`. Public so a probe
+	 *  and `measure-witchspace-cost.mjs` can reach it through
+	 *  `window.__seelite`, as `outputPass` is — `tsc` does not check those
+	 *  scripts, so a private name would rename out from under them silently. */
+	witchspacePass!: WitchspacePass;
 	/**
 	 * Resolution has exactly one owner, and it is the player's setting.
 	 *
@@ -2190,8 +2193,9 @@ class Game {
 	 * `holdWitchspace`; the game never holds it.
 	 */
 	private witchspaceHeldAt: number | null = null;
-	/** The world-anchored exit (#195 D2) of the last arrival, while it lasts. */
-	private arrivalRift: ArrivalRift | null = null;
+	/** The world-anchored exit (#195 D2) of the last arrival, while it lasts.
+	 *  Public for `probe-witchspace.mjs`, for `witchspacePass`'s reason. */
+	arrivalRift: ArrivalRift | null = null;
 	/**
 	 * The committed destination (`galaxy-route.ts`'s `Course`), or `null`.
 	 *
@@ -11760,9 +11764,10 @@ class Game {
 
 	/**
 	 * #195 D2's exit **without an entry**: an arrival nobody watched depart.
-	 * The rift opens behind the ship where it stands and the screen fades in
-	 * from white, exactly as after a jump; nothing is heard, because there was
-	 * no wind-up. **The first day opens on a cinematic** (#530) calls this, and
+	 * It plays the whole exit exactly as after a jump — the flash in the dark,
+	 * the tunnel out of the point and back into it, the sky unfolding, the rift
+	 * opening behind the ship where it stands, and the pilot's hands held until
+	 * the sky is back — and nothing is heard, because there was no wind-up. **The first day opens on a cinematic** (#530) calls this, and
 	 * films it from outside.
 	 */
 	playArrival() {
@@ -11833,6 +11838,15 @@ class Game {
 	 */
 	private presentWitchspace(dt: number, camPos: Vec3) {
 		const held = this.witchspaceHeldAt;
+		// Nothing to draw and nothing drawn: the common frame allocates nothing.
+		if (
+			held === null &&
+			this.witchspace.kind === "idle" &&
+			!this.arrivalRift &&
+			!this.witchspacePass.enabled &&
+			this.skyZoom === 1
+		)
+			return;
 		if (
 			held === null &&
 			(this.witchspace.kind === "exit" || this.witchspace.kind === "retract")
@@ -12038,7 +12052,7 @@ class Game {
 		// The exit (#195 D1, D2): after the ship is placed and faced, because the
 		// rift stands behind it on its nose.
 		this.beginArrival();
-		this.setWitchspace(jumpedWitchspace(this.witchspace));
+		this.setWitchspace(jumpedWitchspace());
 		// The chart, if the Navigation tab is open. `jumpTo` is the chart's own
 		// "the ship moved" entry point, so the course re-derives from the new
 		// origin instead of the chart drawing a route from a system the ship has

@@ -73,7 +73,7 @@ import * as THREE from "three";
 import { FullScreenQuad } from "three/addons/postprocessing/Pass.js";
 import { ShaderPass } from "three/addons/postprocessing/ShaderPass.js";
 import type { WitchspaceLook } from "./witchspace";
-import { WITCHSPACE_MIST_GLSL } from "./witchspace-mist";
+import { WITCHSPACE_MIST_GLSL, WITCHSPACE_VERTEX } from "./witchspace-mist";
 
 /** The linear-light value the flash mixes toward. ACES takes it to white. */
 export const WHITEOUT_LINEAR = 10;
@@ -230,10 +230,13 @@ void main() {
 		edge = uTunnel * 1.45 + (rag - 0.5) * 0.35 * (1.0 - uTunnel);
 		cover = 1.0 - smoothstep(edge - 0.25, edge, r);
 	}
+	// What the dark leaves visible: a disc that shrinks to nothing at 1.
+	float visible = mix(1.45, 0.0, uDark);
 	vec3 c;
-	// Not under a full cover or a closed dark: the sky there is not seen, and
-	// this is the pass's dearest loop outside the tunnel itself.
-	if ((pull > 0.0 || uLensE > 0.0) && cover < 1.0 && uDark < 1.0) {
+	// Not under a full cover, nor outside what the dark leaves: the sky there is
+	// not seen, and this is the pass's dearest loop outside the tunnel itself.
+	// Round 1 found it running on every pixel the closing dark then blacked out.
+	if ((pull > 0.0 || uLensE > 0.0) && cover < 1.0 && r < visible) {
 		vec2 q = witchLens(p, uLensAt, uLensE);
 		q = witchLens(q, vec2(0.0), pull * 0.16);
 		// Smeared inward along the pull.
@@ -269,7 +272,6 @@ void main() {
 	// so as the dark closes the spectrum closes with it into a ring round the
 	// point: the starbow. The aberration itself is the sky cameras' zoom,
 	// which main.ts sets from the same term.
-	float visible = mix(1.45, 0.0, uDark);
 	if (uBeta > 0.0) {
 		// Across what is on screen: the disc the dark leaves, or the frame's own
 		// corner radius while the dark is still beyond it. Normalised to the
@@ -318,14 +320,6 @@ void main() {
 }
 `;
 
-const VERTEX = /* glsl */ `
-varying vec2 vUv;
-void main() {
-	vUv = uv;
-	gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
-}
-`;
-
 const definesFor = (quality: WitchspaceQuality) => {
 	const q = WITCHSPACE_PASS_QUALITY[quality];
 	return { SAMPLES: q.samples, LAYERS: q.layers, OCTAVES: q.octaves };
@@ -360,7 +354,7 @@ export class WitchspacePass extends ShaderPass {
 				...defines,
 				WHITEOUT: WHITEOUT_LINEAR.toFixed(1),
 			},
-			vertexShader: VERTEX,
+			vertexShader: WITCHSPACE_VERTEX,
 			fragmentShader: WITCHSPACE_FRAGMENT,
 		});
 		this.scale = WITCHSPACE_PASS_QUALITY[quality].scale;
@@ -373,7 +367,7 @@ export class WitchspacePass extends ShaderPass {
 		this.tunnelMaterial = new THREE.ShaderMaterial({
 			uniforms: { uFlow: { value: 0 }, uAspect: { value: 1 } },
 			defines: { ...defines },
-			vertexShader: VERTEX,
+			vertexShader: WITCHSPACE_VERTEX,
 			fragmentShader: WITCHSPACE_TUNNEL_FRAGMENT,
 			depthTest: false,
 			depthWrite: false,

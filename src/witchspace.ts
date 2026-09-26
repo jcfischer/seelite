@@ -4,11 +4,12 @@
  *
  * #195's D1 ratified the shape and this module does not restate its reasons: a
  * jump is a **transition that straddles the cut**, not a place. The entry plays
- * in the last part of §8's wind-up, in the old system; a cover hides the frame
+ * through the whole of §8's wind-up, in the old system; a cover hides the frame
  * `jumpWorldTo` replaces the world on; the exit plays in the new system. D1
- * named the cover a whiteout. The principal flew that on 2026-09-26 and asked
- * for a colourful, swirling tunnel with volumetric mist instead, so the cover is
- * the tunnel now and the white is a flash on the cut.
+ * named the cover a whiteout. The principal flew five versions on 2026-09-26:
+ * the cover is now the dark that closes to a point as the ship escapes its
+ * light, the tunnel is ridden after the cut and bends rather than swirls, and
+ * the white is a flash on the cut. `WITCHSPACE` below carries the timeline.
  * The game clock is untouched — nothing here reads or advances it.
  *
  * ## Why a state machine and not a reading of the charge
@@ -115,7 +116,7 @@ export interface WitchspaceLook {
 	beta: number;
 	/** Black closing in from the rim: 1 leaves only the point ahead. */
 	dark: number;
-	/** The swirling tunnel, opening from the centre: 1 fills the frame. */
+	/** The bending tunnel, opening from the centre: 1 fills the frame. */
 	tunnel: number;
 	/** A flash of white over the whole frame, on the cut. */
 	whiteout: number;
@@ -155,7 +156,7 @@ export const beginWitchspace = (): WitchspaceState =>
  * The jump was taken: the world is the new system. From any state — a jump with
  * no entry drawn is still an arrival, and the exit is what the player sees.
  */
-export const jumpedWitchspace = (_from: WitchspaceState): WitchspaceState => ({
+export const jumpedWitchspace = (): WitchspaceState => ({
 	kind: "exit",
 	sinceS: 0,
 });

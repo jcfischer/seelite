@@ -6,14 +6,18 @@
  *   node scripts/measure-witchspace-cost.mjs        # in another
  *
  * The pass is enabled only for the few seconds around a jump, so this prices a
- * transient: the frame the player sees during the entry and the exit. Three
- * arms, each a block of `FRAMES` renders fenced by a 1x1 `readPixels` (the one
- * fence that fences on ANGLE Metal, `CLAUDE.md`):
+ * transient: the frame the player sees during the entry and the exit. Each arm
+ * is a block of `FRAMES` renders fenced by a 1x1 `readPixels` (the one fence
+ * that fences on ANGLE Metal, `CLAUDE.md`): `off`, nothing held and the pass
+ * disabled — the frame outside a jump — and each side of the key at each phase
+ * in `PHASES`.
  *
- * - `off` — nothing held, the pass disabled: the frame outside a jump.
- * - `high` — held 1.5 s after the cut, riding the tunnel with the sky pulled
- *   at its hardest: the dearest phase of the sequence.
- * - `low` — the same phase at the `low` side's sample count.
+ * **Three phases, because no one phase runs every loop.** Sage round 1 on #533
+ * caught the first version pricing only the full tunnel and calling it the
+ * dearest: under a full cover the sky's smear is skipped, so the phases where
+ * both run — the tunnel opening over a still-visible sky — were never measured.
+ * `-0.6` is the dark closing over the starbow (the sky loop, no tunnel), `0.3`
+ * the tunnel opening out of the point, `1.5` the tunnel at full cover.
  *
  * The arms are shuffled from a printed seed and reported as medians with the
  * Mann-Whitney pairing count (`lib/measurement.mjs` says why each). The
@@ -26,6 +30,7 @@ import { gameUrl } from "./lib/game-url.mjs";
 import { median, seededShuffler, separation } from "./lib/measurement.mjs";
 import { assertPlayersRenderer } from "./lib/players-renderer.mjs";
 import { SEED, VIEWPORT } from "./lib/view-set.mjs";
+import { installChargeToNearest } from "./lib/witchspace-page.mjs";
 import {
 	bootedGame,
 	guardedOrigin,
@@ -54,21 +59,16 @@ await page.goto(gameUrl(origin, { seed: SEED, raider: "off" }));
 await bootedGame(page);
 const renderer = await assertPlayersRenderer(page, "measure");
 
+await page.evaluate(installChargeToNearest);
 const setup = await page.evaluate(() => {
-	const g = window.__seelite;
-	g.clockHeld = true;
-	g.encounter = null;
-	const here = g.world.system.record;
-	const d = (a, b) =>
-		Math.hypot(a.pos.x - b.pos.x, a.pos.y - b.pos.y, a.pos.z - b.pos.z);
-	const near = g.world.galaxy.systems
-		.filter((s) => s.index !== here.index)
-		.sort((a, b) => d(a, here) - d(b, here))[0];
-	g.commitCourseTo(near.index);
-	return { charged: g.chargeJump(), notice: g.jumpNotice };
+	window.__seelite.clockHeld = true;
+	return window.__chargeToNearest();
 });
 if (!setup.charged)
 	throw new Error(`measure: the charge was refused (${setup.notice})`);
+
+/** The phases each side of the key is priced at; see the docstring. */
+const PHASES = [-0.6, 0.3, 1.5];
 
 const block = (arm) =>
 	page.evaluate(
@@ -77,8 +77,9 @@ const block = (arm) =>
 			const gl = g.renderer.getContext();
 			if (arm === "off") g.holdWitchspace(null);
 			else {
-				g.witchspacePass.setQuality(arm);
-				g.holdWitchspace(1.5);
+				const [quality, phase] = arm.split("@");
+				g.witchspacePass.setQuality(quality);
+				g.holdWitchspace(Number(phase));
 			}
 			// A warm frame: a changed sample count recompiles the program once,
 			// and timing that would price the switch rather than the term.
@@ -93,7 +94,9 @@ const block = (arm) =>
 		[arm, FRAMES],
 	);
 
-const arms = { off: [], high: [], low: [] };
+const arms = { off: [] };
+for (const phase of PHASES)
+	for (const quality of ["high", "low"]) arms[`${quality}@${phase}`] = [];
 const shuffle = seededShuffler(SHUFFLE_SEED);
 for (let b = 0; b < BLOCKS; b++)
 	for (const arm of shuffle(Object.keys(arms))) {
@@ -113,9 +116,9 @@ console.log(
 );
 for (const [arm, xs] of Object.entries(arms))
 	console.log(
-		`${arm.padEnd(5)} median ${fmt(median(xs))} ms  range ${fmt(Math.min(...xs))}–${fmt(Math.max(...xs))}`,
+		`${arm.padEnd(9)} median ${fmt(median(xs))} ms  range ${fmt(Math.min(...xs))}–${fmt(Math.max(...xs))}`,
 	);
-for (const arm of ["high", "low"])
+for (const arm of Object.keys(arms).filter((a) => a !== "off"))
 	console.log(
 		`${arm} − off: ${fmt(median(arms[arm]) - median(arms.off))} ms, ${arm} slower in ${separation(arms[arm], arms.off)} pairings`,
 	);

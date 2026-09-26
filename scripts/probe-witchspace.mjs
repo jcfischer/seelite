@@ -20,6 +20,7 @@
  */
 import { gameUrl } from "./lib/game-url.mjs";
 import { SEED, VIEWPORT } from "./lib/view-set.mjs";
+import { installChargeToNearest } from "./lib/witchspace-page.mjs";
 import {
 	bootedGame,
 	guardedOrigin,
@@ -38,6 +39,7 @@ const page = await browser.newPage({ viewport: VIEWPORT });
 watch(page);
 await page.goto(gameUrl(origin, { seed: SEED }));
 await bootedGame(page);
+await page.evaluate(installChargeToNearest);
 
 await page.evaluate(() => {
 	const g = window.__seelite;
@@ -46,6 +48,8 @@ await page.evaluate(() => {
 	let scratch = null;
 	let ctx = null;
 	window.__witch = {
+		/** Rec. 709 luma, one definition for every reading in this probe. */
+		luma,
 		/** One shipped frame, in the loop's own order. */
 		frame() {
 			g.step(dt);
@@ -80,23 +84,7 @@ await page.evaluate(() => {
 		},
 		/** The nearest other system, committed and charged for. */
 		chargeToNearest() {
-			const here = g.world.system.record;
-			const d = (a, b) =>
-				Math.hypot(a.pos.x - b.pos.x, a.pos.y - b.pos.y, a.pos.z - b.pos.z);
-			const near = g.world.galaxy.systems
-				.filter((s) => s.index !== here.index)
-				.sort((a, b) => d(a, here) - d(b, here))[0];
-			g.dropOut("probe");
-			g.encounter = null;
-			const committed = g.commitCourseTo(near.index);
-			const charged = g.chargeJump();
-			return {
-				from: here.index,
-				to: near.index,
-				committed,
-				charged,
-				notice: g.jumpNotice,
-			};
+			return window.__chargeToNearest();
 		},
 	};
 });
@@ -262,7 +250,7 @@ const lit = await page.evaluate(() => {
 	const streak = w.capture();
 	g.holdWitchspace(-3);
 	const plainLit = w.capture();
-	const luma = (d, i) => 0.2126 * d[i] + 0.7152 * d[i + 1] + 0.0722 * d[i + 2];
+	const luma = w.luma;
 	let cabin = 0;
 	let cabinMoved = 0;
 	let outside = 0;

@@ -57,6 +57,7 @@ import {
 } from "./lib/view-set.mjs";
 import { assertPlayersRenderer } from "./lib/players-renderer.mjs";
 import { installViewFraming } from "./lib/view-placement.mjs";
+import { installChargeToNearest } from "./lib/witchspace-page.mjs";
 import {
 	bootedGame,
 	guardedTree,
@@ -630,34 +631,28 @@ const PLACERS = {
 		// Marked before placing, like the duel: a jump saves, and a placer that
 		// throws still leaves the page marked.
 		worldWritten = true;
+		await page.evaluate(installChargeToNearest);
 		const result = await page.evaluate((phase) => {
 			const g = window.__seelite;
 			g.clockHeld = true;
-			g.encounter = null;
-			const here = g.world.system.record;
-			const d = (a, b) =>
-				Math.hypot(a.pos.x - b.pos.x, a.pos.y - b.pos.y, a.pos.z - b.pos.z);
-			const near = g.world.galaxy.systems
-				.filter((s) => s.index !== here.index)
-				.sort((a, b) => d(a, here) - d(b, here))[0];
-			g.commitCourseTo(near.index);
-			if (!g.chargeJump()) return { error: `charge refused: ${g.jumpNotice}` };
+			const start = window.__chargeToNearest();
+			if (!start.charged) return { error: `charge refused: ${start.notice}` };
 			if (phase >= 0) {
 				const dt = g.units.MAX_DT;
 				for (
 					let i = 0;
-					i < 200 && g.world.system.record.index === here.index;
+					i < 200 && g.world.system.record.index === start.from;
 					i++
 				)
 					g.step(dt);
-				if (g.world.system.record.index !== near.index)
-					return { error: `the jump to ${near.name} did not arrive` };
+				if (g.world.system.record.index !== start.to)
+					return { error: `the jump to ${start.toName} did not arrive` };
 			}
 			// A build before #532 has no handle: its frames are the hard cut, which
 			// is that build's honest `before`, and the caption says so.
 			const held = typeof g.holdWitchspace === "function";
 			if (held) g.holdWitchspace(phase);
-			return { from: here.name, to: near.name, held };
+			return { from: start.fromName, to: start.toName, held };
 		}, shot.phase);
 		if (result.error) throw new Error(`witchspace placer: ${result.error}`);
 		const cut = result.held

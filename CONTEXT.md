@@ -572,7 +572,7 @@ out. Misjumps and witchspace ambushes are reserved to #8. What is *drawn* is a
 transition that straddles the cut (#195 D1, built by #532): through the
 wind-up the sky crowds into a starbow and goes dark to one point ahead as the
 ship escapes its light; the cut is a flash in the dark; the arrival rides a
-swirling tunnel out of that point before the new sky unfolds, with an
+bending tunnel out of that point before the new sky unfolds, with an
 **arrival rift** behind the ship. It is a look, not a place, and adds no clock.
 _Avoid_: Hyperspace (as a place), jump space
 

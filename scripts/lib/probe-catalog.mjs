@@ -449,8 +449,8 @@ export const PROBE_CATALOG = Object.freeze(
 		),
 		entry(
 			"probe-witchspace.mjs",
-			"Flies a real hyperspace jump and checks the witchspace pass, whiteout, arrival rift, cancel retract and arrival-only path.",
-			["hyperspace jump", "witchspace transition", "composer", "arrival rift"],
+			"Flies a real jump and checks the starbow and aberration, the dark closing to the point, the tunnel behind the cabin, the held controls, the arrival rift and its lens, cancel retract and the arrival-only path.",
+			["jump", "witchspace transition", "composer", "arrival rift"],
 		),
 		entry(
 			"probe-witnesses.mjs",
