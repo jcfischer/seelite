@@ -88,6 +88,14 @@ describe("the witchspace pass", () => {
 		expect(WITCHSPACE_FRAGMENT).toContain("if (uWhiteout > 0.0) {");
 		expect(WITCHSPACE_FRAGMENT).toContain("if (uBeta > 0.0) {");
 		expect(WITCHSPACE_FRAGMENT).toContain("if (uDark > 0.0) {");
+		// The smear only while there is a streak to smear: the rift's lens
+		// alone takes one tap, not SAMPLES of the same texel.
+		expect(WITCHSPACE_FRAGMENT).toContain(
+			"if (uStreak > 0.0) {\n\t\t\t// Smeared inward",
+		);
+		expect(WITCHSPACE_FRAGMENT).toContain(
+			"c = texture2D(tDiffuse, toUv(q)).rgb;",
+		);
 	});
 
 	test("space bends, it does not swirl: the sky is read through a lens", () => {
@@ -114,6 +122,20 @@ describe("the witchspace pass", () => {
 		expect(WITCHSPACE_FRAGMENT).toContain(
 			"float lanes = (ang + 3.14159265) * 19.099;",
 		);
+	});
+
+	test("nothing turns in time: no angle is advanced by the phase", () => {
+		// `not.toContain("twist")` only caught rotation spelled that way; the rim's
+		// `witchPalette(ang * 0.16 + uFlow * 0.3)` turned its colours round the
+		// opening and passed it (sage round 2 on #533). An angle plus a multiple
+		// of the phase is a rotation whatever it is called.
+		const turns =
+			/\bang\b\s*(\*\s*[\d.]+\s*)?[+-][^;,)]*\buFlow\b|\buFlow\b[^;,)]*[+-]\s*\bang\b/;
+		// The guard can fail: it catches the line it was written for.
+		expect(turns.test("witchPalette(ang * 0.16 + uFlow * 0.3)")).toBe(true);
+		for (const source of [WITCHSPACE_FRAGMENT, WITCHSPACE_TUNNEL_FRAGMENT])
+			for (const line of source.split("\n"))
+				expect(turns.test(line)).toBe(false);
 	});
 
 	test("the rift alone lights the pass, for its lens, and a lens is never negative", () => {

@@ -16,6 +16,14 @@
  * to assert on a waveform, it wants its own stream — not this file borrowing
  * one.
  */
+/**
+ * `hyperspace()`'s sweep, seconds. Owned here, beside the cue, and read by
+ * `witchspace.ts`'s schedule: the cue is pushed to this layer and the layer
+ * imports nothing (`tests/headless.test.ts`), so the figure lives with the
+ * sound and the schedule reaches in for it.
+ */
+export const HYPERSPACE_SWEEP_S = 1.4;
+
 export class AudioFX {
 	private ctx: AudioContext | null = null;
 	private master: GainNode | null = null;
@@ -254,7 +262,7 @@ export class AudioFX {
 	hyperspace() {
 		const out = this.witchspaceGroup("sweep");
 		if (!out) return;
-		this.tone(90, 1.4, "sawtooth", 0.22, 1400, out);
+		this.tone(90, HYPERSPACE_SWEEP_S, "sawtooth", 0.22, 1400, out);
 		this.noiseBurst(1.2, 0.18, 2200, out);
 	}
 	/**

@@ -576,6 +576,15 @@ bending tunnel out of that point before the new sky unfolds, with an
 **arrival rift** behind the ship. It is a look, not a place, and adds no clock.
 _Avoid_: Hyperspace (as a place), jump space
 
+**Arrival rift**:
+The world-anchored half of a jump's exit (#195 D2, built by #532): a ring of
+light one hull length behind the arriving ship, facing along its nose, that
+opens with the new system's light and closes a few seconds later. It is the
+ring a lens makes, and the sky behind it bends round it — **the player's rift
+only** today, because the witchspace pass carries one lens. Owned by
+`src/arrival-rift.ts`; #530's opening and #262's NPC arrivals reuse it.
+_Avoid_: portal, wormhole (as an object)
+
 **Galactic frame**:
 Galaxy space — the coordinate system `galaxy.ts` places the 256 systems in, whose
 reference plane is `y = 0` and whose centre is the cluster's density peak. Its

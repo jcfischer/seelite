@@ -11771,6 +11771,11 @@ class Game {
 	 * films it from outside.
 	 */
 	playArrival() {
+		// A charge in flight is ended first: left running, its hum and sweep play
+		// on under the arrival and its next step writes an entry over the exit
+		// (sage round 2 on #533).
+		if (charging(this.jumpCharge) || this.pendingJump !== null)
+			this.cancelJumpCharge("arrival");
 		this.beginArrival();
 		this.setWitchspace(arriveWitchspace());
 	}
@@ -12018,7 +12023,7 @@ class Game {
 		);
 		if (!decision.ok) {
 			this.jumpNotice = `jump aborted — ${decision.refusal}`;
-			// Refused at the cut, after the white is up and the sweep has peaked.
+			// Refused at the cut, in the dark, after the sweep has peaked.
 			this.setWitchspace(abortWitchspace(this.witchspace));
 			return;
 		}
@@ -12389,12 +12394,15 @@ class Game {
 		// the principal's ruling. The clock runs and the ship flies on; nothing is
 		// near the arrival point, and the wind-up before the cut is never held.
 		const handsHeld = witchspaceControlHeld(this.witchspace);
-		const hands = handsHeld ? 0 : 1;
-		const yaw = hands * (this.axis("fly.yawStarboard", "fly.yawPort") + padYaw);
-		const pitch =
-			hands * (this.axis("fly.pitchUp", "fly.pitchDown") + padPitch);
-		const roll =
-			hands * (this.axis("fly.rollStarboard", "fly.rollPort") + padAxes.roll);
+		const yaw = handsHeld
+			? 0
+			: this.axis("fly.yawStarboard", "fly.yawPort") + padYaw;
+		const pitch = handsHeld
+			? 0
+			: this.axis("fly.pitchUp", "fly.pitchDown") + padPitch;
+		const roll = handsHeld
+			? 0
+			: this.axis("fly.rollStarboard", "fly.rollPort") + padAxes.roll;
 
 		// §7: any control input cancels the computer. Read before the rates are
 		// stepped, so the cancel and the input land on the same frame rather than

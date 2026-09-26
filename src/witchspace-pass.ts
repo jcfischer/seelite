@@ -86,8 +86,10 @@ export const WHITEOUT_LINEAR = 10;
  * the dearest thing in the renderer: drawn at full size over a retina buffer it
  * cost more than a whole 60 Hz frame on the high side (the first measurement
  * with `scripts/measure-witchspace-cost.mjs`). It is soft mist with no hard
- * edge of its own, so a quarter-size target loses almost nothing a player can
- * see and buys back a factor of sixteen.
+ * edge of its own. `high` draws it at 0.35 per axis — about an eighth of the
+ * pixels — and `low` at 0.25, a sixteenth. That the upsampled tunnel looks the
+ * same as a full-size one was judged by eye, once, on a pair of captures while
+ * the tunnel was being built; it is not a measured claim.
  */
 export const WITCHSPACE_PASS_QUALITY = Object.freeze({
 	high: Object.freeze({ samples: 12, layers: 7, octaves: 4, scale: 0.35 }),
@@ -222,7 +224,7 @@ void main() {
 	// are read here, so the cabin never swims.
 	float pull = max(uStreak * 0.3, uTunnel);
 	// How much of this pixel the tunnel covers: an opening from the centre with
-	// a ragged, turning edge, full-frame at 1.
+	// a ragged, shifting edge, full-frame at 1.
 	float cover = 0.0;
 	float edge = 0.0;
 	if (uTunnel > 0.0) {
@@ -239,16 +241,22 @@ void main() {
 	if ((pull > 0.0 || uLensE > 0.0) && cover < 1.0 && r < visible) {
 		vec2 q = witchLens(p, uLensAt, uLensE);
 		q = witchLens(q, vec2(0.0), pull * 0.16);
-		// Smeared inward along the pull.
-		vec3 acc = vec3(0.0);
-		float w = 0.0;
-		for (int i = 0; i < SAMPLES; i++) {
-			float k = float(i) / float(SAMPLES);
-			float wt = 1.0 - 0.6 * k;
-			acc += texture2D(tDiffuse, toUv(q * (1.0 - 0.25 * uStreak * k))).rgb * wt;
-			w += wt;
+		if (uStreak > 0.0) {
+			// Smeared inward along the pull.
+			vec3 acc = vec3(0.0);
+			float w = 0.0;
+			for (int i = 0; i < SAMPLES; i++) {
+				float k = float(i) / float(SAMPLES);
+				float wt = 1.0 - 0.6 * k;
+				acc += texture2D(tDiffuse, toUv(q * (1.0 - 0.25 * uStreak * k))).rgb * wt;
+				w += wt;
+			}
+			c = acc / w;
+		} else {
+			// Nothing to smear: the rift's lens alone, late in the arrival, where
+			// every tap of the loop would read the same texel (sage round 2).
+			c = texture2D(tDiffuse, toUv(q)).rgb;
 		}
-		c = acc / w;
 	} else {
 		c = texture2D(tDiffuse, vUv).rgb;
 	}
@@ -306,7 +314,7 @@ void main() {
 		float x = (r - edge + 0.12 + (crackle - 0.5) * 0.03) / 0.016;
 		float ring = exp(-x * x);
 		float flicker = 0.4 + 1.6 * crackle * crackle;
-		c += (witchPalette(ang * 0.16 + uFlow * 0.3) + 0.25) * ring * flicker * 1.3
+		c += (witchPalette(crackle * 0.9 + uFlow * 0.1) + 0.25) * ring * flicker * 1.3
 			* sin(3.14159265 * uTunnel);
 	}
 	// Shaped, because the mix is in linear light toward a value the tone map
@@ -452,13 +460,9 @@ export class WitchspacePass extends ShaderPass {
 		u.uAspect.value = aspect;
 		this.tunnelMaterial.uniforms.uFlow.value = flow;
 		this.tunnelMaterial.uniforms.uAspect.value = aspect;
-		this.enabled =
-			look.streak > 0 ||
-			look.beta > 0 ||
-			look.dark > 0 ||
-			look.tunnel > 0 ||
-			look.whiteout > 0 ||
-			look.rift > 0;
+		// Any term at all, read off the look rather than listed: a term added to
+		// `WitchspaceLook` lights the pass without an edit here.
+		this.enabled = Object.values(look).some((v) => v > 0);
 	}
 
 	/**

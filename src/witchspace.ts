@@ -32,6 +32,7 @@
  * Nothing in this file imports Three.js. `witchspace-pass.ts` and
  * `arrival-rift.ts` draw what `witchspaceLook` says.
  */
+import { HYPERSPACE_SWEEP_S } from "./audio";
 import { JUMP_CHARGE_S } from "./hyperspace";
 
 /**
@@ -52,7 +53,7 @@ import { JUMP_CHARGE_S } from "./hyperspace";
  *    back into it.
  * 5. **The new light catches up.** The dark recedes from the centre and the
  *    starbow unwinds to the true sky; the rift opens behind the ship. The
- *    pilot's controls come back when the sky has (`controlBackS`).
+ *    pilot's controls come back when the whole sky has (`controlBackS`).
  *
  * `sweepS` is not a proposal: it is `hyperspace()`'s length in `audio.ts`, and
  * D3 places that cue so its end lands on the cut. `humS` is the rest of the
@@ -78,10 +79,18 @@ export const WITCHSPACE = Object.freeze({
 	tunnelGoneS: 3.1,
 	/** The new light arrives: the dark starts to recede and the sky to unfold. */
 	unfoldAtS: 3.0,
-	/** The dark is gone by here, and the controls come back. */
-	controlBackS: 3.8,
+	/** The dark is gone by here. */
+	darkGoneS: 3.8,
 	/** The exit's screen-space length: every screen term is gone by here. */
 	exitS: 4.6,
+	/**
+	 * The pilot's controls come back here: **the whole sky is back**, not only
+	 * the dark gone. At `darkGoneS` the sky is still half squeezed and the HUD's
+	 * markers still disagree with it (sage round 2 on #533).
+	 */
+	get controlBackS() {
+		return this.exitS;
+	},
 	/** The arrival rift opens with the new light, and is gone by here. */
 	riftEndS: 7.5,
 	/**
@@ -99,9 +108,9 @@ export const WITCHSPACE = Object.freeze({
 	 */
 	maxExitDtS: 0.05,
 	/** `hyperspace()`'s sweep, seconds. */
-	sweepS: 1.4,
+	sweepS: HYPERSPACE_SWEEP_S,
 	/** The charge hum: the wind-up before the sweep. */
-	humS: JUMP_CHARGE_S - 1.4,
+	humS: JUMP_CHARGE_S - HYPERSPACE_SWEEP_S,
 	/** When the exit state ends: the longer of the screen terms and the rift. */
 	get exitEndS() {
 		return Math.max(this.exitS, this.riftEndS);
@@ -165,10 +174,7 @@ export const jumpedWitchspace = (): WitchspaceState => ({
  * The exit with no entry: an arrival nobody watched depart. #530's opening
  * films one, and #262's NPC arrivals can reuse the rift it draws.
  */
-export const arriveWitchspace = (): WitchspaceState => ({
-	kind: "exit",
-	sinceS: 0,
-});
+export const arriveWitchspace = jumpedWitchspace;
 
 /**
  * The entry ends without a jump: damage cancelled the charge, the ship docked,
@@ -269,7 +275,7 @@ export function witchspaceLook(state: WitchspaceState): WitchspaceLook {
 					smoothstep(W.unfoldAtS, W.unfoldAtS + 0.3, t) *
 					(1 - smoothstep(W.unfoldAtS + 0.3, W.exitS, t)),
 				beta: 1 - unfold,
-				dark: 1 - smoothstep(W.unfoldAtS, W.controlBackS, t),
+				dark: 1 - smoothstep(W.unfoldAtS, W.darkGoneS, t),
 				tunnel:
 					smoothstep(0, W.tunnelOpenS, t) *
 					(1 - smoothstep(W.tunnelCloseS, W.tunnelGoneS, t)),

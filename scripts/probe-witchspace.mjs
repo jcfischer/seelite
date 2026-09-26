@@ -466,13 +466,31 @@ const arrival = await page.evaluate(() => {
 	const g = window.__seelite;
 	const w = window.__witch;
 	const system = g.world.system.record.index;
+	// With a charge in flight: the arrival must end it rather than play under
+	// it (sage round 2 on #533), and it must never fire.
+	const start = w.chargeToNearest();
+	for (let i = 0; i < 5; i++) w.frame();
 	g.playArrival();
 	w.frame();
+	const reading = g.witchspaceReading();
+	const chargeEnded = g.jumpCharge.toIndex === null;
+	for (let i = 0; i < 40; i++) w.frame();
 	return {
-		reading: g.witchspaceReading(),
+		reading,
+		charged: start.charged,
+		chargeEnded,
 		same: g.world.system.record.index === system,
 	};
 });
+check(
+	"playArrival ends a charge in flight, and the charge never fires",
+	arrival.charged && arrival.chargeEnded && arrival.same,
+	JSON.stringify({
+		charged: arrival.charged,
+		ended: arrival.chargeEnded,
+		same: arrival.same,
+	}),
+);
 check(
 	"playArrival draws the exit and the rift without a jump",
 	arrival.same &&

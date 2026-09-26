@@ -319,10 +319,13 @@ describe("the pilot's hands", () => {
 		expect(witchspaceControlHeld(exitAt(0))).toBe(true);
 		expect(witchspaceControlHeld(exitAt(2))).toBe(true);
 		expect(witchspaceControlHeld(exitAt(WITCHSPACE.controlBackS))).toBe(false);
-		// The dark has receded by then: the pilot is handed a sky, not a wall.
-		expect(witchspaceLook(exitAt(WITCHSPACE.controlBackS)).dark).toBeLessThan(
-			0.1,
-		);
+		// The whole sky is back by then, not only the dark gone: at 3.8 s the
+		// dark had receded but the sky was still half squeezed and the markers
+		// still disagreed with it (sage round 2 on #533).
+		const back = witchspaceLook(exitAt(WITCHSPACE.controlBackS));
+		expect(back.dark).toBe(0);
+		expect(back.beta).toBe(0);
+		expect(back.streak).toBe(0);
 	});
 
 	test("the wind-up leaves them live — it is §8's vulnerable window", () => {
@@ -342,13 +345,28 @@ describe("the aberration", () => {
 		expect(witchspaceSkyZoom(1)).toBeGreaterThan(0);
 	});
 
-	test("it is the relativistic squeeze, not a guess", () => {
-		// tan(θ'/2) = sqrt((1-β)/(1+β)) tan(θ/2): a field of half-angle θ is seen
-		// inside θ'. The zoom is that factor at the peak speed the look reaches.
-		const b = WITCHSPACE.peakBeta * 0.6;
-		expect(witchspaceSkyZoom(0.6)).toBeCloseTo(
-			Math.sqrt((1 - b) / (1 + b)),
-			12,
-		);
+	test("near the nose the camera puts a star where aberration does, and wide of it the camera shows less", () => {
+		// Aberration moves a source at θ from the heading to θ' with
+		// tan(θ'/2) = sqrt((1-β)/(1+β)) · tan(θ/2). A perspective camera zoomed by
+		// z draws a source at θ where an unzoomed one draws atan(z · tan θ): the
+		// full-angle tangent, not the half-angle one. The zoom is chosen so the two
+		// agree near the axis, which is where the eye is — this is the claim, and
+		// it is checked against the physics rather than against the zoom's own
+		// formula (sage round 2 on #533 caught that tautology).
+		const beta = 0.6;
+		const b = WITCHSPACE.peakBeta * beta;
+		const k = Math.sqrt((1 - b) / (1 + b));
+		const z = witchspaceSkyZoom(beta);
+		const aberrated = (theta: number) => 2 * Math.atan(k * Math.tan(theta / 2));
+		const drawn = (theta: number) => Math.atan(z * Math.tan(theta));
+		const near = (5 * Math.PI) / 180;
+		expect(
+			Math.abs(drawn(near) - aberrated(near)) / aberrated(near),
+		).toBeLessThan(0.02);
+		// Wide of the nose the camera's tangent runs away from the half-angle one,
+		// so it draws the side sky further out than aberration would: it shows
+		// less of the sky than the physics. Recorded, not hidden.
+		const wide = (60 * Math.PI) / 180;
+		expect(drawn(wide)).toBeGreaterThan(aberrated(wide) * 1.05);
 	});
 });
