@@ -9425,7 +9425,7 @@ class Game {
 	 * is selected (#508 F2, and #515 for the tender, which parks at the wreck
 	 * and rides its frame), and `localFrame`'s otherwise.
 	 *
-	 * **The player's and the raider's (#515).** `DuelPilot.frameVel` is one
+	 * **The player's and the raider's (#515).** `DuelPilot.frame` is one
 	 * frame for the fight, so both caps are one speed — and a defender fought
 	 * beside the relay in the station's frame while the pilot held the relay's
 	 * measured 0.59 km/s apart at arrival and 2.39 km/s against the relay within
