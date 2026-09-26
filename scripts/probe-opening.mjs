@@ -202,6 +202,97 @@ await watched.page.screenshot({ path: `${out}/05-docked.png` });
 await watched.context.close();
 
 // ---------------------------------------------------------------------------
+// Every frame of every shot, on the principal's seeds (47–51). A held frame
+// steps no sim, and the arrival flicker the principal saw on 47 and the second
+// ship on 49 only happened between stepped frames: the camera's side was float
+// noise on seeds that face the star, and swung round the ship each step.
+// ---------------------------------------------------------------------------
+
+for (const seed of [47, 48, 49, 50, 51]) {
+	const context = await browser.newContext({
+		viewport: { width: 960, height: 600 },
+	});
+	const page = await context.newPage();
+	watch(page, `frames ${seed}`);
+	await page.goto(
+		gameUrl(origin, { seed, raider: "off", guided: true, cinematic: 1 }),
+	);
+	await bootedGame(page);
+	const frames = await page.evaluate(
+		() =>
+			new Promise((done) => {
+				const g = window.__seelite;
+				const rows = [];
+				const tick = () => {
+					const cam = g.openingActive ? g.openingCamera() : null;
+					if (cam) {
+						const s = g.openingScene();
+						const rel = {
+							x: cam.pos.x - s.ship.pos.x,
+							y: cam.pos.y - s.ship.pos.y,
+							z: cam.pos.z - s.ship.pos.z,
+						};
+						const d = Math.hypot(rel.x, rel.y, rel.z);
+						const c =
+							-(
+								rel.x * cam.forward.x +
+								rel.y * cam.forward.y +
+								rel.z * cam.forward.z
+							) / d;
+						rows.push({
+							shot: g.openingReading().shot,
+							rel,
+							distR: d / s.reachKm,
+							offDeg: (Math.acos(Math.max(-1, Math.min(1, c))) * 180) / Math.PI,
+						});
+					}
+					if (g.openingActive) requestAnimationFrame(tick);
+					else done(rows);
+				};
+				requestAnimationFrame(tick);
+			}),
+	);
+	// A jump within a take: the camera's place relative to the ship moving by
+	// more than a tenth of a reach between two frames of the arrival, where
+	// neither the ship nor the camera rule moves at all.
+	let arrivalJumpR = 0;
+	let arrivalFrames = 0;
+	for (let i = 1; i < frames.length; i++) {
+		const [a, b] = [frames[i - 1], frames[i]];
+		if (a.shot !== "arrival" || b.shot !== "arrival") continue;
+		arrivalFrames++;
+		const jump = Math.hypot(
+			b.rel.x - a.rel.x,
+			b.rel.y - a.rel.y,
+			b.rel.z - a.rel.z,
+		);
+		arrivalJumpR = Math.max(arrivalJumpR, jump / 0.036);
+	}
+	const closestR = Math.min(...frames.map((f) => f.distR));
+	const worstOff = Math.max(...frames.map((f) => f.offDeg));
+	const shotsSeen = [
+		...new Set(frames.map((f) => f.shot).filter(Boolean)),
+	].join(" ");
+	check(
+		`seed ${seed}: every frame keeps the camera steady, outside the hull, and the ship in frame`,
+		arrivalFrames > 100 &&
+			shotsSeen === "arrival flypast cruise dock" &&
+			arrivalJumpR < 0.1 &&
+			closestR > 2 &&
+			worstOff < 25,
+		JSON.stringify({
+			frames: frames.length,
+			arrivalFrames,
+			shotsSeen,
+			arrivalJumpR: Number(arrivalJumpR.toFixed(4)),
+			closestR: Number(closestR.toFixed(2)),
+			worstOffDeg: Number(worstOff.toFixed(1)),
+		}),
+	);
+	await context.close();
+}
+
+// ---------------------------------------------------------------------------
 // Guided, skipped by the key halfway through
 // ---------------------------------------------------------------------------
 

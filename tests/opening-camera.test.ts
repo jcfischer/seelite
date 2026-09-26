@@ -99,10 +99,16 @@ describe("each shot's rule", () => {
 	test("the cruise shot frames the station and its planet together when both fit", () => {
 		const s = scene({ planet: { pos: v3(1000, 40, 0) } });
 		const cam = shotCamera(anchorShot("cruise", s), s);
-		const station = offAxisDeg(cam, s.station!.pos);
-		const planet = offAxisDeg(cam, s.planet!.pos);
-		expect(station).toBeGreaterThan(1);
-		expect(Math.abs(station - planet)).toBeLessThan(1e-6);
+		// The look leans from the station toward the planet, as far as keeping
+		// the ship in frame allows.
+		const alone = scene();
+		const stationOnly = shotCamera(anchorShot("cruise", alone), alone);
+		expect(offAxisDeg(cam, s.planet!.pos)).toBeLessThan(
+			offAxisDeg(stationOnly, s.planet!.pos),
+		);
+		expect(offAxisDeg(cam, s.ship.pos)).toBeLessThanOrEqual(
+			SHOT_FRAMING.keepShipDeg + 1e-6,
+		);
 		// A planet behind the ship: the reverse angle, ahead of the ship looking
 		// back at it, with the planet behind it in the same frame.
 		const behind = scene({ planet: { pos: v3(1200, 20, 0) } });
@@ -147,5 +153,89 @@ describe("a shot keeps its angle", () => {
 		const cam = shotCamera(anchor, later);
 		expect(dot(sub(cam.pos, later.ship.pos), later.ship.nose)).toBeLessThan(0);
 		expect(anchorShot("cruise", later).reverse).toBe(true);
+	});
+});
+
+describe("the principal's flight on seeds 47–51 (#535)", () => {
+	// A new game boots with the star straight down the nose on some seeds
+	// (48 measured star·nose = 1.0). The "sun side" across the nose was then
+	// float noise scaled to unit length, and a 1e-12 attitude wobble per step
+	// turned it round the axis: the camera jumped between framings each frame.
+	test("a star on the nose gives a side that does not move with the noise", () => {
+		const nose = v3(
+			-0.4630937496796608,
+			-0.3597517463542386,
+			-0.8100141109898688,
+		);
+		const up = v3(
+			-0.17855327333830617,
+			0.9330480593169227,
+			-0.31231402079493736,
+		);
+		const at = (k: number) => scale(nose, -1.4e8 + k);
+		const sides = [0, 1e-7, 3e-7].map((k) => sunSide(nose, at(k), v3(), up));
+		for (const s of sides) {
+			expect(Math.abs(dot(s, nose))).toBeLessThan(1e-9);
+			expect(length(sub(s, sides[0]))).toBeLessThan(1e-6);
+		}
+	});
+
+	test("a shot's side is fixed on its first step, so a wobble cannot swing it", () => {
+		const s = scene({
+			starPos: add(v3(1060, 0, 0), scale(v3(-1, 0, 0), 1.5e8)),
+		});
+		for (const shot of ["arrival", "cruise", "dock"] as const) {
+			const anchor = anchorShot(shot, s);
+			const wobble = {
+				...s,
+				starPos: add(s.starPos, v3(0, 1e-3, 1e-3)),
+			};
+			near(shotCamera(anchor, wobble).pos, shotCamera(anchor, s).pos);
+		}
+	});
+
+	test("the fly-past never comes within two reaches of the ship on its path", () => {
+		const s = scene();
+		const anchor = anchorShot("flypast", s);
+		let closest = Number.POSITIVE_INFINITY;
+		for (let t = 0; t <= 5; t += 0.01) {
+			const pos = add(s.ship.pos, scale(s.ship.nose, 0.1 * t));
+			closest = Math.min(
+				closest,
+				length(
+					sub(shotCamera(anchor, { ...s, ship: { ...s.ship, pos } }).pos, pos),
+				),
+			);
+		}
+		expect(closest).toBeGreaterThan(2 * R);
+	});
+
+	test("at the pass the fly-past sees the ship from above, not flat side-on", () => {
+		const s = scene();
+		const anchor = anchorShot("flypast", s);
+		const cam = shotCamera(anchor, s);
+		const rel = sub(cam.pos, s.ship.pos);
+		const above =
+			dot(rel, s.ship.up) /
+			length(sub(rel, scale(s.ship.nose, dot(rel, s.ship.nose))));
+		expect(above).toBeGreaterThan(Math.sin((20 * Math.PI) / 180));
+	});
+
+	test("the cruise shot keeps the ship in frame however far the planet swings", () => {
+		for (const planet of [
+			v3(1000, 40, 0),
+			v3(1060, 300, 0),
+			v3(1200, 20, 0),
+			v3(900, -500, 200),
+		]) {
+			const s = scene({ planet: { pos: planet } });
+			const anchor = anchorShot("cruise", s);
+			for (const later of [planet, v3(1060, 0, 500), v3(1300, -40, 0)]) {
+				const cam = shotCamera(anchor, { ...s, planet: { pos: later } });
+				expect(offAxisDeg(cam, s.ship.pos)).toBeLessThan(
+					SHOT_FRAMING.keepShipDeg + 1e-6,
+				);
+			}
+		}
 	});
 });
