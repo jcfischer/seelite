@@ -590,6 +590,18 @@ only** today, because the witchspace pass carries one lens. Owned by
 `src/arrival-rift.ts`; #530's opening and #262's NPC arrivals reuse it.
 _Avoid_: portal, wormhole (as an object)
 
+**Light shift**:
+What the cruise sky does at speed (#537): the stars crowd toward the ship's
+heading by the aberration law and take #532's **starbow** colours — blue-white
+at the nose to gold and red at a ring about the frame's corner — with the light
+astern dimmed. Drawn per star in the backdrop's shader about the heading, so it
+follows the nose under head-look and in chase, and it moves or tints **no body,
+marker or bracket**: those stay true, which is what keeps cruise flyable. Its β
+is a display dial read off the same log-speed intensity as the streaks; the
+fiction is superluminal and the look is not. Owned by `src/light-shift.ts`.
+_Avoid_: warp tunnel, redshift (for the whole effect), Doppler effect (for the
+colour, which is the starbow's ring rather than a literal shift)
+
 **Galactic frame**:
 Galaxy space — the coordinate system `galaxy.ts` places the 256 systems in, whose
 reference plane is `y = 0` and whose centre is the cluster's density peak. Its

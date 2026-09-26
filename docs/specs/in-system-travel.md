@@ -253,6 +253,19 @@ speed comes from far-layer bodies sweeping past** — real motion from real
 geometry, and the reason #6 generates scenery planets at all. A full-screen warp
 tunnel would hide the one thing selling the speed.
 
+**The colour shift is the light shift (#537).** The principal's ask was the
+witchspace work's light shift on the cruise sky, with no tunnel, and flyable.
+So the star backdrop — and only the star backdrop — crowds toward the heading
+by the aberration law and takes #532's starbow, blue-white at the nose to red
+at a ring about the frame's corner, keyed to the same log-speed intensity as the
+streaks. It is drawn per star in the scene's frame, about the ship's nose, so no body
+moves on screen, no marker leaves its body and the far layer still carries the
+sense of speed; #532's two mechanisms — the sky cameras' zoom and the
+screen-space pass — were not reused, because each moves or tints the bodies a
+pilot reads. `src/light-shift.ts` owns the law and its dials, and
+`probe-cruise-light.mjs` holds a drawn star to it and the bodies to the frame
+without it.
+
 ### 5.1 The cruise HUD panel
 
 The map's HUD constraint (velocity-vector marker plus attitude reference) is

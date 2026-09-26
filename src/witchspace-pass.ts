@@ -76,6 +76,7 @@ import * as THREE from "three";
 import { FullScreenQuad } from "three/addons/postprocessing/Pass.js";
 import { ShaderPass } from "three/addons/postprocessing/ShaderPass.js";
 import type { WitchspaceLook } from "./witchspace";
+import { STARBOW_STOPS, glslVec3 } from "./light-shift";
 import { WITCHSPACE_MIST_GLSL, WITCHSPACE_VERTEX } from "./witchspace-mist";
 
 /** The linear-light value the flash mixes toward. ACES takes it to white. */
@@ -178,6 +179,25 @@ void main() {
 }
 `;
 
+/**
+ * The Doppler spectrum across the visible sky, from `light-shift.ts`'s
+ * `STARBOW_STOPS` — the one table both starbows are written from. Blended in a
+ * smoothstep chain, each stop eased in over its quarter; cruise's light shift
+ * blends the same stops linearly.
+ */
+const WITCHSPACE_STARBOW_GLSL = (() => {
+	const n = STARBOW_STOPS.length - 1;
+	const lines = STARBOW_STOPS.slice(1).map((stop, i) => {
+		const lo = (i / n).toFixed(2);
+		const hi = ((i + 1) / n).toFixed(2);
+		const from = i === 0 ? glslVec3(STARBOW_STOPS[0]) : "c";
+		return i < n - 1
+			? `	${i === 0 ? "vec3 " : ""}c = mix(${from}, ${glslVec3(stop)}, smoothstep(${lo}, ${hi}, x));`
+			: `	return mix(${from}, ${glslVec3(stop)}, smoothstep(${lo}, ${hi}, x));`;
+	});
+	return `vec3 starbow(float x) {\n${lines.join("\n")}\n}`;
+})();
+
 /** The composite. Exported so a test reads the branches it relies on. */
 export const WITCHSPACE_FRAGMENT = /* glsl */ `
 uniform sampler2D tDiffuse;
@@ -210,12 +230,7 @@ vec2 witchLens(vec2 p, vec2 centre, float einstein) {
 
 // The Doppler spectrum across the visible sky: blue-white ahead, through cyan,
 // green and gold, to deep red at the rim. The starbow is this, compressed.
-vec3 starbow(float x) {
-	vec3 c = mix(vec3(0.9, 0.95, 1.7), vec3(0.35, 0.95, 1.5), smoothstep(0.0, 0.25, x));
-	c = mix(c, vec3(0.45, 1.35, 0.5), smoothstep(0.25, 0.5, x));
-	c = mix(c, vec3(1.45, 1.1, 0.3), smoothstep(0.5, 0.75, x));
-	return mix(c, vec3(1.6, 0.3, 0.12), smoothstep(0.75, 1.0, x));
-}
+${WITCHSPACE_STARBOW_GLSL}
 
 void main() {
 	vec2 d = vUv - 0.5;

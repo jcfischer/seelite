@@ -57,6 +57,7 @@ import {
 } from "./lib/view-set.mjs";
 import { assertPlayersRenderer } from "./lib/players-renderer.mjs";
 import { installViewFraming } from "./lib/view-placement.mjs";
+import { installCruiseLeg } from "./lib/cruise-page.mjs";
 import { installChargeToNearest } from "./lib/witchspace-page.mjs";
 import {
 	bootedGame,
@@ -702,6 +703,41 @@ const PLACERS = {
 				`opening placer: asked for ${shot.shot} at ${shot.at} s and the hold landed on ${result.shot}`,
 			);
 		return `${shot.shot} +${result.shown.toFixed(2)} s`;
+	},
+	/**
+	 * #537's cruise light shift. A real leg to the farthest body, then the
+	 * clock held and the look held at `intensity`.
+	 *
+	 * **Read back, not assumed**: a leg that never reached cruise throws rather
+	 * than capturing normal flight under a cruise caption.
+	 */
+	cruise: async (page, shot) => {
+		// Cruise moves the ship and spends charge; the next row boots clean.
+		worldWritten = true;
+		await page.evaluate(installCruiseLeg);
+		const result = await page.evaluate((intensity) => {
+			const g = window.__seelite;
+			const leg = window.__cruiseLeg();
+			if (leg.regime !== "cruise")
+				return {
+					error: `the leg to ${leg.to} is not in cruise (${leg.regime})`,
+				};
+			g.clockHeld = true;
+			// A build before #537 has no handle: its frame is the streaks alone,
+			// which is that build's honest `before`, and the caption says so.
+			const held = typeof g.holdCruiseLight === "function";
+			if (held) g.holdCruiseLight(intensity);
+			return {
+				to: leg.to,
+				c: g.cruiseSpeedKms / g.units.C_KMS,
+				held,
+			};
+		}, shot.intensity);
+		if (result.error) throw new Error(`cruise placer: ${result.error}`);
+		const look = result.held
+			? `light shift held at ${shot.intensity}`
+			: "no light shift on this build: the streaks alone";
+		return `to ${result.to} at ${result.c.toFixed(1)} c · ${look}`;
 	},
 };
 assertPlacersCover(PLACERS);

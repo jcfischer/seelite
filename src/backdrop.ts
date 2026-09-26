@@ -89,6 +89,13 @@
  *   Closing the gap is a colour decision, not a size one: normalise the
  *   ramp to the same photosphere exposure or drop `FAINT_SIZE_MAX` further, and both
  *   move the look, so it is #433's sheet to settle.
+ *
+ * **All three are laws of the buffers, and in cruise the screen breaks them on
+ * purpose (#537).** While the light shift is drawn, the star shader pulls every
+ * point's colour toward the starbow and scales its size by 0.7–1.6× with its
+ * Doppler factor (`light-shift.ts`), so on screen colour is no longer class alone
+ * and a beamed faint point can outsize an unbeamed real one. At rest it is off,
+ * and the buffers are what the tests hold.
  */
 
 import { type Galaxy, type SystemRecord, distanceLy } from "./galaxy";

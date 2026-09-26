@@ -1025,6 +1025,12 @@ percentile farthest of 47.2: a **65 : 1** span for one layer to draw.
   outside it**. Nothing a count can do carries structure at those odds; brightness
   is the only channel left.
 
+These are laws of the point buffers. **In cruise the screen breaks the last two on
+purpose** (#537): the light shift pulls each point's colour toward the starbow and
+scales its drawn size by 0.7–1.6× with its Doppler factor, so a beamed faint point
+can outsize an unbeamed real one. It is off at rest, where these hold on screen as
+well. `in-system-travel.md` §5 and `src/light-shift.ts` own it.
+
 **The scope of that invariant is the size, and this section claimed more than it
 holds for a round.** Delivered light is `size² × tint`, and the two layers' tints are
 not on one authoring scale: {@link systemField}'s comes from a star-class hex through

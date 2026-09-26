@@ -819,6 +819,12 @@ import {
 import type { GalaxyChart } from "./galaxy-map";
 import { type WarpField, warpField } from "./warp";
 import {
+	CRUISE_LIGHT,
+	LIGHT_SHIFT_GLSL,
+	cruiseBeta,
+	easeBeta,
+} from "./light-shift";
+import {
 	type Vec3,
 	add,
 	dot,
@@ -4297,19 +4303,36 @@ class Game {
 				uPixelScale: {
 					value: this.renderer.domElement.height * STAR_PIXEL_SCALE,
 				},
+				// #537's cruise light shift: zero is the untouched sky.
+				uBeta: { value: 0 },
+				uHeading: { value: new THREE.Vector3(0, 0, -1) },
 			},
 			vertexShader: /* glsl */ `
 				attribute float aSize;
 				attribute vec3 aColor;
 				uniform float uPixelScale;
 				varying vec3 vColor;
+				${LIGHT_SHIFT_GLSL}
 				void main() {
-					vColor = aColor;
+					vec3 color = aColor;
+					float size = aSize;
+					// At rest this is the expression the sky used before #537. The
+					// shift's own path regroups the multiply, and the idle sky has
+					// no reason to pay for that in its rounding.
+					vec4 view = modelViewMatrix * vec4(position, 1.0);
+					if (uBeta > 0.0) {
+						// #537: the cruise light shift, in the scene's frame about
+						// the ship's heading.
+						vec4 world = modelMatrix * vec4(position, 1.0);
+						shiftStar(world.xyz, modelMatrix[3].xyz, color, size);
+						view = viewMatrix * world;
+					}
+					vColor = color;
 					// No distance attenuation: the sphere is re-centred on the camera
 					// every frame, so every star is exactly BACKDROP_RADIUS away and
 					// attenuating by depth would only add rounding.
-					gl_PointSize = max(1.0, aSize * uPixelScale);
-					gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+					gl_PointSize = max(1.0, size * uPixelScale);
+					gl_Position = projectionMatrix * view;
 				}
 			`,
 			fragmentShader: /* glsl */ `
@@ -10842,6 +10865,7 @@ class Game {
 		this.jumpNotice = "";
 		// And no transition: no effect held, no cue sounding, no rift left over.
 		this.witchspaceHeldAt = null;
+		this.cruiseLightHeldAt = null;
 		this.setWitchspace(abortWitchspace(this.witchspace));
 		this.witchspace = idleWitchspace();
 		this.clearArrivalRift();
@@ -12026,6 +12050,59 @@ class Game {
 	private readonly riftNdc = new THREE.Vector3();
 	private readonly riftForward = new THREE.Vector3();
 
+	/**
+	 * #537's phase handle: the cruise look (streaks and light shift) drawn at
+	 * this intensity while a view is captured, or `null` while it follows the
+	 * speed. Set only by `holdCruiseLight`; the game never holds it.
+	 */
+	private cruiseLightHeldAt: number | null = null;
+	/** The light shift's β as drawn, eased toward what the speed asks for. */
+	private cruiseLightBeta = 0;
+	private readonly cruiseHeading = new THREE.Vector3();
+
+	/**
+	 * Draw the cruise look at `intensity` in `[0, 1]`, or give it back with
+	 * `null`. A hold draws β with no ease, so every capture lands on the same
+	 * frame; the ship, the regime and the HUD are whatever the world is.
+	 */
+	holdCruiseLight(intensity: number | null) {
+		this.cruiseLightHeldAt = intensity;
+	}
+
+	/** What the light shift is drawing, for a probe to read by name. */
+	cruiseLightReading() {
+		const u = this.starMaterial.uniforms;
+		const h = u.uHeading.value as THREE.Vector3;
+		return {
+			heldAt: this.cruiseLightHeldAt,
+			beta: u.uBeta.value as number,
+			peakBeta: CRUISE_LIGHT.peakBeta,
+			heading: { x: h.x, y: h.y, z: h.z },
+		};
+	}
+
+	/**
+	 * #537: the cruise sky's light shift (`light-shift.ts`), on the star
+	 * backdrop alone and about the ship's heading, so the bodies, the markers
+	 * and the scanner stay true. It gives way to the witchspace transition,
+	 * which draws its own starbow through the sky cameras' zoom; a jump is
+	 * refused in cruise, so the two only meet in a drop-out's ease.
+	 */
+	private presentCruiseLight(intensity: number, dt: number) {
+		const held = this.cruiseLightHeldAt !== null;
+		const target =
+			held || this.witchspace.kind === "idle" ? cruiseBeta(intensity) : 0;
+		this.cruiseLightBeta = held
+			? target
+			: easeBeta(this.cruiseLightBeta, target, dt);
+		const u = this.starMaterial.uniforms;
+		u.uBeta.value = this.cruiseLightBeta;
+		if (this.cruiseLightBeta > 0)
+			(u.uHeading.value as THREE.Vector3).copy(
+				this.cruiseHeading.set(0, 0, -1).applyQuaternion(this.orientation),
+			);
+	}
+
 	/** The sky cameras' current aberration zoom, so the projection is rebuilt
 	 *  only when it moves. */
 	private skyZoom = 1;
@@ -13033,7 +13110,9 @@ class Game {
 			this.regime === "cruise" && this.cruiseSpeedKms > p.vMinKms
 				? Math.log(this.cruiseSpeedKms / p.vMinKms) / span
 				: 0;
-		this.warp.update(intensity, this.orientation, dt);
+		const shownIntensity = this.cruiseLightHeldAt ?? intensity;
+		this.warp.update(shownIntensity, this.orientation, dt);
+		this.presentCruiseLight(shownIntensity, dt);
 		this.presentWitchspace(dt, camPos);
 
 		const viewRotation = shotCam
