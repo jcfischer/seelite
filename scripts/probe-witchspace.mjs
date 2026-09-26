@@ -82,10 +82,6 @@ await page.evaluate(() => {
 				if (Math.abs(luma(a.data, i) - luma(b.data, i)) > by) n++;
 			return n / (a.width * a.height);
 		},
-		/** The nearest other system, committed and charged for. */
-		chargeToNearest() {
-			return window.__chargeToNearest();
-		},
 	};
 });
 
@@ -108,7 +104,7 @@ const jump = await page.evaluate(() => {
 	const g = window.__seelite;
 	const w = window.__witch;
 	g.clockHeld = true;
-	const start = w.chargeToNearest();
+	const start = window.__chargeToNearest();
 	const frames = [];
 	for (
 		let i = 0;
@@ -360,7 +356,11 @@ check(
 		lit.starbow.outer !== null &&
 		lit.sky.inner !== null &&
 		lit.sky.outer !== null &&
-		lit.starbow.inner - lit.starbow.outer > lit.sky.inner - lit.sky.outer + 20,
+		lit.starbow.inner - lit.starbow.outer >
+			lit.sky.inner - lit.sky.outer + 20 &&
+		// And the rim is red, not merely less blue (sage round 3): a steeper
+		// gradient alone passed the build whose red was off the screen.
+		lit.starbow.outer < 0,
 	`blue minus red, inner and outer: ${lit.starbow.inner?.toFixed(1)} and ${lit.starbow.outer?.toFixed(1)} against ${lit.sky.inner?.toFixed(1)} and ${lit.sky.outer?.toFixed(1)} at rest`,
 );
 check(
@@ -421,7 +421,7 @@ check(
 const cancel = await page.evaluate(() => {
 	const g = window.__seelite;
 	const w = window.__witch;
-	const start = w.chargeToNearest();
+	const start = window.__chargeToNearest();
 	let before = null;
 	for (let i = 0; i < 200; i++) {
 		w.frame();
@@ -468,7 +468,7 @@ const arrival = await page.evaluate(() => {
 	const system = g.world.system.record.index;
 	// With a charge in flight: the arrival must end it rather than play under
 	// it (sage round 2 on #533), and it must never fire.
-	const start = w.chargeToNearest();
+	const start = window.__chargeToNearest();
 	for (let i = 0; i < 5; i++) w.frame();
 	g.playArrival();
 	w.frame();

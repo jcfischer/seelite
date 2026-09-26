@@ -24,7 +24,9 @@
  * only a flash on the cut. On the third flight the principal added *we are
  * faster than light, so we are escaping the light*: the wind-up now squeezes
  * the sky into a starbow (the sky cameras' zoom does the aberration, this pass
- * the Doppler colour and the beaming), black closes in from the rim to one
+ * the Doppler colour and a beaming term — drawn, but not something the probe
+ * could isolate, so it is not claimed as measured), black closes in from the
+ * rim to one
  * point, and the tunnel opens out of that point after the cut. `witchspace.ts`
  * owns the timeline.
  *
@@ -60,8 +62,9 @@
  * #195 exists to remove. What `low` changes is the streak's sample count and
  * the tunnel's mist layers and noise octaves, which is `WITCHSPACE_PASS_QUALITY`
  * below — data, so a test reads it rather than a comment. The pass is
- * **disabled** whenever the look is dark, so outside a jump it costs nothing on
- * either side; inside one, every term also branches on its uniform (`CLAUDE.md`:
+ * **disabled** whenever every term of the look is zero, and the composer skips a
+ * disabled pass — what that idle frame costs is not priced (the cost instrument
+ * says so); inside a jump, every term also branches on its uniform (`CLAUDE.md`:
  * a dial at zero still evaluates everything to its right), and the tunnel is
  * evaluated only inside its own opening.
  *
@@ -227,7 +230,12 @@ void main() {
 	// a ragged, shifting edge, full-frame at 1.
 	float cover = 0.0;
 	float edge = 0.0;
-	if (uTunnel > 0.0) {
+	if (uTunnel >= 1.0) {
+		// Full: the ragged term is multiplied to nothing, so it is not evaluated
+		// on every pixel for the length of the ride (sage round 3).
+		edge = 1.45;
+		cover = 1.0;
+	} else if (uTunnel > 0.0) {
 		float rag = witchNoise(vec3(cos(ang) * 2.5, sin(ang) * 2.5, uFlow * 1.5));
 		edge = uTunnel * 1.45 + (rag - 0.5) * 0.35 * (1.0 - uTunnel);
 		cover = 1.0 - smoothstep(edge - 0.25, edge, r);

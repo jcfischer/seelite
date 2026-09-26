@@ -11802,12 +11802,16 @@ class Game {
 			};
 	}
 
+	/** The state drawn this frame: the held phase if one is held, else the real
+	 *  one. One place, so the probe's reading and the frame cannot disagree. */
+	private shownWitchspace(): WitchspaceState {
+		const held = this.witchspaceHeldAt;
+		return held === null ? this.witchspace : witchspaceAtPhase(held);
+	}
+
 	/** What the transition is drawing, for a probe to read by name. */
 	witchspaceReading() {
-		const shown =
-			this.witchspaceHeldAt === null
-				? this.witchspace
-				: witchspaceAtPhase(this.witchspaceHeldAt);
+		const shown = this.shownWitchspace();
 		const rift = this.arrivalRift;
 		return {
 			state: this.witchspace.kind,
@@ -11857,7 +11861,7 @@ class Game {
 			(this.witchspace.kind === "exit" || this.witchspace.kind === "retract")
 		)
 			this.setWitchspace(stepWitchspace(this.witchspace, dt));
-		const shown = held === null ? this.witchspace : witchspaceAtPhase(held);
+		const shown = this.shownWitchspace();
 		const look = witchspaceLook(shown);
 		const phase = witchspacePhase(shown) ?? 0;
 		const size = this.renderer.getSize(this.witchspaceSize);

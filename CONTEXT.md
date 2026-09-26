@@ -573,7 +573,8 @@ transition that straddles the cut (#195 D1, built by #532): through the
 wind-up the sky crowds into a starbow and goes dark to one point ahead as the
 ship escapes its light; the cut is a flash in the dark; the arrival rides a
 bending tunnel out of that point before the new sky unfolds, with an
-**arrival rift** behind the ship. It is a look, not a place, and adds no clock.
+**arrival rift** behind the ship. What is drawn is a look rather than a
+rendered place, and it adds no clock.
 _Avoid_: Hyperspace (as a place), jump space
 
 **Arrival rift**:

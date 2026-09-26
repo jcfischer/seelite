@@ -129,13 +129,30 @@ describe("the witchspace pass", () => {
 		// `witchPalette(ang * 0.16 + uFlow * 0.3)` turned its colours round the
 		// opening and passed it (sage round 2 on #533). An angle plus a multiple
 		// of the phase is a rotation whatever it is called.
-		const turns =
-			/\bang\b\s*(\*\s*[\d.]+\s*)?[+-][^;,)]*\buFlow\b|\buFlow\b[^;,)]*[+-]\s*\bang\b/;
-		// The guard can fail: it catches the line it was written for.
-		expect(turns.test("witchPalette(ang * 0.16 + uFlow * 0.3)")).toBe(true);
-		for (const source of [WITCHSPACE_FRAGMENT, WITCHSPACE_TUNNEL_FRAGMENT])
+		//
+		// Each shader spells its angle and its time its own way — the composite
+		// `ang` and `uFlow`, the tunnel `atan(...)` and `t` — so each gets its own
+		// pattern and its own positive control. Round 3 caught the first version
+		// running the composite's pattern over the tunnel, where it could not fail.
+		const guards = [
+			{
+				source: WITCHSPACE_FRAGMENT,
+				turns:
+					/\bang\b\s*(\*\s*[\d.]+\s*)?[+-][^;,)]*\buFlow\b|\buFlow\b[^;,)]*[+-]\s*\bang\b/,
+				control: "witchPalette(ang * 0.16 + uFlow * 0.3)",
+			},
+			{
+				source: WITCHSPACE_TUNNEL_FRAGMENT,
+				turns: /atan\([^)]*\)[^;]*[+-][^;]*\bt\b|\bt\b[^;]*[+-][^;]*atan\(/,
+				control: "float stripe = 0.2 * sin(atan(xy.y, xy.x) * 3.0 + t);",
+			},
+		];
+		for (const { source, turns, control } of guards) {
+			// The guard can fail: it catches the line it was written for.
+			expect(turns.test(control)).toBe(true);
 			for (const line of source.split("\n"))
 				expect(turns.test(line)).toBe(false);
+		}
 	});
 
 	test("the rift alone lights the pass, for its lens, and a lens is never negative", () => {

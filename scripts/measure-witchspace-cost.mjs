@@ -15,11 +15,12 @@
  * The pass is enabled only for the few seconds around a jump, so this prices a
  * transient: the frame the player sees during the entry and the exit. Each arm
  * is a block of `FRAMES` renders fenced by a 1x1 `readPixels` (the one fence
- * that fences on ANGLE Metal, `CLAUDE.md`): `off`, nothing held and the pass
- * disabled — the frame outside a jump — and each side of the key at each phase
+ * that fences on ANGLE Metal, `CLAUDE.md`): `off`, held past the transition's
+ * end with the pass disabled — one per view — and each side of the key at each phase
  * in `PHASES`.
  *
- * **Three phases, because no one phase runs every loop.** Sage round 1 on #533
+ * **Three cockpit phases and a chase one, because no one phase runs every
+ * loop.** Sage round 1 on #533
  * caught the first version pricing only the full tunnel and calling it the
  * dearest: under a full cover the sky's smear is skipped, so the phases where
  * both run — the tunnel opening over a still-visible sky — were never measured.
