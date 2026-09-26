@@ -258,7 +258,7 @@ witchspace work's light shift on the cruise sky, with no tunnel, and flyable.
 So the star backdrop — and only the star backdrop — crowds toward the heading
 by the aberration law and takes #532's starbow, blue-white at the nose to red
 at a ring about the frame's corner, keyed to the same log-speed intensity as the
-streaks. It is drawn per star in world space, about the ship's nose, so no body
+streaks. It is drawn per star in the scene's frame, about the ship's nose, so no body
 moves on screen, no marker leaves its body and the far layer still carries the
 sense of speed; #532's two mechanisms — the sky cameras' zoom and the
 screen-space pass — were not reused, because each moves or tints the bodies a

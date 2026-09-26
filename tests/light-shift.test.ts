@@ -3,14 +3,18 @@
  *
  * The star shader carries a GLSL copy of these functions, and
  * `probe-cruise-light.mjs` holds a drawn star against {@link aberrate}, so the
- * copy cannot drift from what is tested here. What is tested here is the
+ * copy's **placement** cannot drift from what is tested here. Its colour and
+ * size terms are written from the same tables, which is what the last block
+ * checks; whether they look right is the sheet's. What is tested here is the
  * physics, checked against a form of it the module does not use: the
  * half-angle law `tan(θ'/2) = sqrt((1-β)/(1+β)) · tan(θ/2)`.
  */
 import { describe, expect, test } from "bun:test";
 import {
 	CRUISE_LIGHT,
-	LIGHT_SHIFT_VERTEX_GLSL,
+	LIGHT_SHIFT_GLSL,
+	STARBOW_STOPS,
+	glslVec3,
 	aberrate,
 	aberrateCos,
 	beamedSize,
@@ -21,6 +25,7 @@ import {
 	starbowHue,
 } from "../src/light-shift";
 import { type Vec3, dot, length, v3 } from "../src/vec3";
+import { WITCHSPACE_FRAGMENT } from "../src/witchspace-pass";
 
 const unit = (a: Vec3) => {
 	const l = length(a);
@@ -175,7 +180,21 @@ describe("the cruise dial", () => {
 });
 
 describe("the shader copy", () => {
-	test("branches on beta, so the idle sky runs the old vertex path", () => {
-		expect(LIGHT_SHIFT_VERTEX_GLSL).toContain("if (uBeta > 0.0)");
+	test("returns at once at rest, so the idle sky runs the old vertex path", () => {
+		expect(LIGHT_SHIFT_GLSL).toContain("if (uBeta <= 0.0) return;");
+	});
+
+	test("its starbow is written from every stop of the one table", () => {
+		const n = STARBOW_STOPS.length - 1;
+		expect(LIGHT_SHIFT_GLSL).toContain(`clamp(x, 0.0, 1.0) * ${n.toFixed(1)}`);
+		for (const stop of STARBOW_STOPS)
+			expect(LIGHT_SHIFT_GLSL).toContain(glslVec3(stop));
+	});
+
+	test("the witchspace pass's starbow reads the same table", () => {
+		for (const stop of STARBOW_STOPS)
+			expect(WITCHSPACE_FRAGMENT).toContain(glslVec3(stop));
+		expect(WITCHSPACE_FRAGMENT).toContain("vec3 starbow(float x) {");
+		expect(WITCHSPACE_FRAGMENT).not.toContain("vec3(0.9, 0.95, 1.7)");
 	});
 });

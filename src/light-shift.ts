@@ -13,8 +13,8 @@
  * - The witchspace pass colours by screen radius and sits after the approach
  *   layer, so it would tint the bodies a pilot is reading.
  *
- * So the shift is done **per star, in world space, in the backdrop's vertex
- * shader**, about the ship's heading. Each star is moved by the aberration law,
+ * So the shift is done **per star, in the scene's frame rather than the
+ * camera's, in the backdrop's vertex shader**, about the ship's heading. Each star is moved by the aberration law,
  * pulled into the starbow's hue by its seen angle ({@link shiftColor} says why
  * the angle and not the Doppler factor), and beamed and dimmed by its Doppler
  * factor. The backdrop holds nothing but
@@ -24,7 +24,7 @@
  * nose-locks velocity in cruise.
  *
  * The fiction is superluminal and the look is not: β is a display dial read off
- * the same log-speed intensity as the warp streaks, capped under one. A literal
+ * the same log-speed intensity as the streaks (`warp.ts`), capped under one. A literal
  * 20 c has no aberration to draw.
  *
  * `tests/light-shift.test.ts` holds these functions against the half-angle form
@@ -48,8 +48,11 @@ export const CRUISE_LIGHT = Object.freeze({
 	sizeMax: 1.6,
 	/**
 	 * The starbow's radius: the seen angle from the heading, degrees, where the
-	 * ring reaches red. About the cockpit frame's corner, so the whole spectrum
-	 * is on screen looking ahead — #532 normalised its ring to the same corner.
+	 * ring reaches red. A look dial, set on the sheet and not derived from the
+	 * field of view: the game's 60° cameras put a 16:10 frame's corner 47.5° off
+	 * the axis, so red lands just past the corner looking ahead — #532 normalised
+	 * its ring to the same corner. Chase shares the 60° camera; a different frame
+	 * shape moves where the ring falls.
 	 */
 	ringDeg: 50,
 	/** How far a star is pulled to the ring's hue at peak β: under one, so a
@@ -61,10 +64,13 @@ export const CRUISE_LIGHT = Object.freeze({
 });
 
 /**
- * The starbow's stops, from the heading out to the ring: #532's `starbow()`
- * in `witchspace-pass.ts`, blue-white through cyan, green and gold to red.
+ * The starbow's stops, from the heading out to the ring: blue-white through
+ * cyan, green and gold to red. **One table for both starbows** — #532's
+ * `starbow()` in `witchspace-pass.ts` is written from it too, so a retune of the
+ * jump's colours reaches cruise (sage round 1 on #538). The two blend between
+ * the stops differently, and each says how.
  */
-const STOPS = [
+export const STARBOW_STOPS = [
 	[0.9, 0.95, 1.7],
 	[0.35, 0.95, 1.5],
 	[0.45, 1.35, 0.5],
@@ -143,9 +149,9 @@ const mix3 = (a: Rgb, b: Rgb, k: number): [number, number, number] => [
 
 /** The starbow's hue at `x` in `[0, 1]`, heading to ring, piecewise linear. */
 export function starbowHue(x: number): [number, number, number] {
-	const t = Math.min(1, Math.max(0, x)) * (STOPS.length - 1);
-	const i = Math.min(STOPS.length - 2, Math.floor(t));
-	return mix3(STOPS[i], STOPS[i + 1], t - i);
+	const t = Math.min(1, Math.max(0, x)) * (STARBOW_STOPS.length - 1);
+	const i = Math.min(STARBOW_STOPS.length - 2, Math.floor(t));
+	return mix3(STARBOW_STOPS[i], STARBOW_STOPS[i + 1], t - i);
 }
 
 /**
@@ -182,33 +188,43 @@ export function shiftColor(
 	return [out[0] * dim, out[1] * dim, out[2] * dim];
 }
 
-const glslVec3 = (c: readonly number[]) =>
+/** A GLSL `vec3` literal, for the shaders written from these tables. */
+export const glslVec3 = (c: readonly number[]) =>
 	`vec3(${c.map((x) => x.toFixed(4)).join(", ")})`;
 
+const glslStarbowHue = () => {
+	const n = STARBOW_STOPS.length - 1;
+	const branches = STARBOW_STOPS.slice(0, -1)
+		.map((stop, i) => {
+			const body = `mix(${glslVec3(stop)}, ${glslVec3(STARBOW_STOPS[i + 1])}, t - ${i.toFixed(1)})`;
+			return i < n - 1
+				? `	if (t < ${(i + 1).toFixed(1)}) return ${body};`
+				: `	return ${body};`;
+		})
+		.join("\n");
+	return `vec3 starbowHue(float x) {
+	float t = clamp(x, 0.0, 1.0) * ${n.toFixed(1)};
+${branches}
+}`;
+};
+
 /**
- * The backdrop's star vertex shader, with the shift. The GLSL copy of the
- * functions above, with their constants written in from {@link CRUISE_LIGHT}.
+ * The shift as a GLSL chunk: its two uniforms and `shiftStar`, which a star
+ * vertex shader calls on the star's position in the scene's frame, its colour
+ * and its size. The GLSL copy of the functions above, written from the same
+ * tables and constants. The shader around it — point size, projection — is the
+ * backdrop's, in `main.ts`.
  *
- * It branches on `uBeta`, so an idle sky runs the path it always ran (`CLAUDE.md`:
- * a dial at zero still evaluates everything to its right). The direction is read
- * off the model matrix rather than assumed: the star group follows the camera,
- * and a rotated group would otherwise shift the sky about the wrong axis.
+ * It returns at once when `uBeta` is zero, so an idle sky runs the path it always
+ * ran (`CLAUDE.md`: a dial at zero still evaluates everything to its right). The
+ * centre is read off the model matrix by the caller rather than assumed: the
+ * star group follows the camera.
  */
-export const LIGHT_SHIFT_VERTEX_GLSL = /* glsl */ `
-attribute float aSize;
-attribute vec3 aColor;
-uniform float uPixelScale;
+export const LIGHT_SHIFT_GLSL = /* glsl */ `
 uniform float uBeta;
 uniform vec3 uHeading;
-varying vec3 vColor;
 
-vec3 starbowHue(float x) {
-	float t = clamp(x, 0.0, 1.0) * 4.0;
-	if (t < 1.0) return mix(${glslVec3(STOPS[0])}, ${glslVec3(STOPS[1])}, t);
-	if (t < 2.0) return mix(${glslVec3(STOPS[1])}, ${glslVec3(STOPS[2])}, t - 1.0);
-	if (t < 3.0) return mix(${glslVec3(STOPS[2])}, ${glslVec3(STOPS[3])}, t - 2.0);
-	return mix(${glslVec3(STOPS[3])}, ${glslVec3(STOPS[4])}, t - 3.0);
-}
+${glslStarbowHue()}
 
 vec3 shiftColor(vec3 c, float seen, float d) {
 	const vec3 LUMA = ${glslVec3(LUMA)};
@@ -219,31 +235,20 @@ vec3 shiftColor(vec3 c, float seen, float d) {
 	return outc;
 }
 
-void main() {
-	vec3 color = aColor;
-	float size = aSize;
-	vec4 world = modelMatrix * vec4(position, 1.0);
-	if (uBeta > 0.0) {
-		vec3 centre = modelMatrix[3].xyz;
-		vec3 rel = world.xyz - centre;
-		float radius = length(rel);
-		vec3 n = rel / radius;
-		float c = dot(n, uHeading);
-		vec3 perp = n - c * uHeading;
-		float pl = length(perp);
-		float seen = (c + uBeta) / (1.0 + uBeta * c);
-		if (pl > 1e-6)
-			n = uHeading * seen + (perp / pl) * sqrt(max(0.0, 1.0 - seen * seen));
-		float d = sqrt(1.0 - uBeta * uBeta) / (1.0 - uBeta * seen);
-		color = shiftColor(color, seen, d);
-		size *= clamp(d * d, ${CRUISE_LIGHT.sizeMin.toFixed(4)}, ${CRUISE_LIGHT.sizeMax.toFixed(4)});
-		world.xyz = centre + n * radius;
-	}
-	vColor = color;
-	// No distance attenuation: the sphere is re-centred on the camera every
-	// frame, so every star is exactly BACKDROP_RADIUS away and attenuating by
-	// depth would only add rounding.
-	gl_PointSize = max(1.0, size * uPixelScale);
-	gl_Position = projectionMatrix * viewMatrix * world;
+void shiftStar(inout vec3 world, vec3 centre, inout vec3 color, inout float size) {
+	if (uBeta <= 0.0) return;
+	vec3 rel = world - centre;
+	float radius = length(rel);
+	vec3 n = rel / radius;
+	float c = dot(n, uHeading);
+	vec3 perp = n - c * uHeading;
+	float pl = length(perp);
+	float seen = (c + uBeta) / (1.0 + uBeta * c);
+	if (pl > 1e-6)
+		n = uHeading * seen + (perp / pl) * sqrt(max(0.0, 1.0 - seen * seen));
+	float d = sqrt(1.0 - uBeta * uBeta) / (1.0 - uBeta * seen);
+	color = shiftColor(color, seen, d);
+	size *= clamp(d * d, ${CRUISE_LIGHT.sizeMin.toFixed(4)}, ${CRUISE_LIGHT.sizeMax.toFixed(4)});
+	world = centre + n * radius;
 }
 `;

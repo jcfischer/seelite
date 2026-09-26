@@ -5,22 +5,28 @@
  * a running game can show is that the star shader carries them, about the
  * ship's heading, and that nothing a pilot reads to fly has moved:
  *
- * - **The GLSL copy agrees with `aberrate`.** One star is placed 40° off the
- *   heading, where the unshifted camera cannot see it, and the drawn point is
- *   found where the function says the shifted star is seen.
- * - **Bodies stay true.** With the star layer and the streaks taken away, the
- *   frame at full shift is the frame with none, pixel for pixel — the star, the
- *   cabin and the hull — and the sky cameras keep the near camera's focal
- *   scale, which is what keeps every marker on its body.
+ * - **The GLSL copy places a star where `aberrate` does, about the heading.**
+ *   One star 40° off the heading, where the unshifted camera cannot see it, is
+ *   found where the function says it is seen; and again with the head turned,
+ *   which is what separates the ship's heading from the camera's.
+ * - **Bodies stay true, in cruise.** On a live leg with the clock held, and with
+ *   the star layer and the streaks taken away, the frame at full shift is the
+ *   frame with none, pixel for pixel; and the sky cameras keep the near
+ *   camera's focal scale, which is what keeps every marker on its body.
  * - **It follows the speed, and a drop-out eases.** Live cruise draws the β the
  *   intensity asks for about the ship's nose; after a drop-out it is still
  *   there one frame later and gone a few seconds after.
- * - **The keys still fly.** A real throttle key and a real pitch key act in
- *   cruise with the shift at full.
+ *
+ * **Not here: whether the keys still fly.** The shift is a shader uniform and
+ * reaches no input, so a key row could not fail from it; the rows that were
+ * here measured input handling on any build and were removed (sage round 1 on
+ * #538). Flyability is the two rows above that hold the bodies and markers, and
+ * the principal flying it.
  *
  * **What this cannot see is the look.** That is the `cruise-*` views in
  * `lib/view-set.mjs` and the principal's.
  */
+import { installCruiseLeg } from "./lib/cruise-page.mjs";
 import { gameUrl } from "./lib/game-url.mjs";
 import { SEED, VIEWPORT } from "./lib/view-set.mjs";
 import {
@@ -41,6 +47,7 @@ const page = await browser.newPage({ viewport: VIEWPORT });
 watch(page);
 await page.goto(gameUrl(origin, { seed: SEED, raider: "off" }));
 await bootedGame(page);
+await page.evaluate(installCruiseLeg);
 
 await page.evaluate(async () => {
 	const g = window.__seelite;
@@ -92,6 +99,31 @@ await page.evaluate(async () => {
 				}
 			return n ? { n, x: sx / n, y: sy / n } : { n };
 		},
+		/**
+		 * A unit direction on the backdrop sphere to drawing-buffer pixels,
+		 * through `cam`'s own matrices: where a star in that direction is drawn.
+		 */
+		project(cam, dir, width, height) {
+			const R = g.units.BACKDROP_RADIUS;
+			const c = cam.matrixWorld.elements;
+			const p = {
+				x: c[12] + dir.x * R,
+				y: c[13] + dir.y * R,
+				z: c[14] + dir.z * R,
+			};
+			const v = cam.matrixWorldInverse.elements;
+			const m = cam.projectionMatrix.elements;
+			const vx = v[0] * p.x + v[4] * p.y + v[8] * p.z + v[12];
+			const vy = v[1] * p.x + v[5] * p.y + v[9] * p.z + v[13];
+			const vz = v[2] * p.x + v[6] * p.y + v[10] * p.z + v[14];
+			const cx = m[0] * vx + m[4] * vy + m[8] * vz + m[12];
+			const cy = m[1] * vx + m[5] * vy + m[9] * vz + m[13];
+			const cw = m[3] * vx + m[7] * vy + m[11] * vz + m[15];
+			return {
+				x: ((cx / cw + 1) / 2) * width,
+				y: ((1 - cy / cw) / 2) * height,
+			};
+		},
 	};
 });
 
@@ -124,10 +156,60 @@ check(
 	boot.users.join(", "),
 );
 
-// **Bodies stay true.** At the boot pose, facing the star: the star layer and
-// the streaks are taken away, and the frame must not move between no shift and
-// full shift. A same-build control pairs the full frame with itself, and a
-// positive control keeps the star layer, so the reading can see a change.
+// Real cruise, a frame at a time, rendered each frame so the ease runs.
+const live = await page.evaluate(() => {
+	const g = window.__seelite;
+	const w = window.__light;
+	const leg = window.__cruiseLeg({ render: true });
+	const p = g.cruiseParams;
+	const intensity =
+		Math.log(g.cruiseSpeedKms / p.vMinKms) / Math.log(p.vMaxKms / p.vMinKms);
+	const nose = g.nose();
+	const r = g.cruiseLightReading();
+	const focal = (cam) => [
+		cam.projectionMatrix.elements[0],
+		cam.projectionMatrix.elements[5],
+	];
+	return {
+		leg,
+		reading: r,
+		want: w.shift.cruiseBeta(intensity),
+		headingErr: Math.hypot(
+			r.heading.x - nose.x,
+			r.heading.y - nose.y,
+			r.heading.z - nose.z,
+		),
+		skyZoom: g.witchspaceReading().skyZoom,
+		near: focal(g.nearCamera),
+		skies: [g.backdropCamera, g.farCamera, g.approachCamera].map(focal),
+	};
+});
+check(
+	"live cruise draws the beta its speed asks for",
+	live.leg.regime === "cruise" &&
+		live.reading.beta > 0 &&
+		Math.abs(live.reading.beta - live.want) < 1e-3,
+	`beta ${live.reading.beta.toFixed(4)} against ${live.want.toFixed(4)}, to ${live.leg.to}`,
+);
+check(
+	"the shift is about the ship's nose",
+	live.headingErr < 1e-5,
+	`off by ${live.headingErr.toExponential(2)}`,
+);
+check(
+	"the sky cameras keep the near camera's focal scale, so markers sit on bodies",
+	live.skyZoom === 1 &&
+		live.skies.every(
+			([x, y]) =>
+				Math.abs(x - live.near[0]) < 1e-9 && Math.abs(y - live.near[1]) < 1e-9,
+		),
+	`zoom ${live.skyZoom}, near ${live.near.map((v) => v.toFixed(4))}, skies ${JSON.stringify(live.skies.map((s) => s.map((v) => v.toFixed(4))))}`,
+);
+
+// **Bodies stay true, in cruise.** On the live leg with the clock held: the star
+// layer and the streaks are taken away, and the frame must not move between no
+// shift and full shift. A same-build control pairs the full frame with itself,
+// and a positive control keeps the star layer, so the reading can see a change.
 const truth = await page.evaluate(() => {
 	const g = window.__seelite;
 	const w = window.__light;
@@ -156,6 +238,7 @@ const truth = await page.evaluate(() => {
 		return n / (img.width * img.height);
 	};
 	return {
+		regime: g.regime,
 		control: w.moved(bare1, bare1again, 2),
 		bodies: w.moved(bare0, bare1, 2),
 		sky: w.moved(skyOff, skyOn, 20),
@@ -163,9 +246,9 @@ const truth = await page.evaluate(() => {
 	};
 });
 check(
-	"the bare frame has something in it to move (the star and the cabin)",
-	truth.lit > 0.05,
-	`${(truth.lit * 100).toFixed(1)}% lit`,
+	"the bare cruise frame has something in it to move (the cabin, the bodies)",
+	truth.regime === "cruise" && truth.lit > 0.05,
+	`${truth.regime}, ${(truth.lit * 100).toFixed(1)}% lit`,
 );
 check(
 	"a bare frame is the same frame twice (the control)",
@@ -173,7 +256,7 @@ check(
 	`${(truth.control * 100).toFixed(4)}% moved`,
 );
 check(
-	"with the star layer and streaks away, full shift moves no pixel",
+	"in cruise, with the star layer and streaks away, full shift moves no pixel",
 	truth.bodies === 0,
 	`${(truth.bodies * 100).toFixed(4)}% moved`,
 );
@@ -181,71 +264,6 @@ check(
 	"with the star layer in, full shift does move the sky (the positive control)",
 	truth.sky > 0.001,
 	`${(truth.sky * 100).toFixed(3)}% moved`,
-);
-
-// Real cruise, a frame at a time, rendered each frame so the ease runs.
-const live = await page.evaluate(() => {
-	const g = window.__seelite;
-	const w = window.__light;
-	const far = g.world.system.bodies
-		.filter((b) => b.kind !== "star")
-		.map((b) => ({
-			b,
-			d: Math.hypot(
-				b.pos.x - g.world.ship.pos.x,
-				b.pos.y - g.world.ship.pos.y,
-				b.pos.z - g.world.ship.pos.z,
-			),
-		}))
-		.sort((a, b) => b.d - a.d)[0].b;
-	g.targetId = far.id;
-	g.faceTarget?.();
-	g.engageCruise();
-	for (let i = 0; i < 100 && g.regime !== "cruise"; i++) w.frame();
-	for (let i = 0; i < 150; i++) w.frame();
-	const p = g.cruiseParams;
-	const intensity =
-		Math.log(g.cruiseSpeedKms / p.vMinKms) / Math.log(p.vMaxKms / p.vMinKms);
-	const nose = g.nose();
-	const r = g.cruiseLightReading();
-	const focal = (cam) => [
-		cam.projectionMatrix.elements[0],
-		cam.projectionMatrix.elements[5],
-	];
-	return {
-		regime: g.regime,
-		reading: r,
-		want: w.shift.cruiseBeta(intensity),
-		headingErr: Math.hypot(
-			r.heading.x - nose.x,
-			r.heading.y - nose.y,
-			r.heading.z - nose.z,
-		),
-		skyZoom: g.witchspaceReading().skyZoom,
-		near: focal(g.nearCamera),
-		skies: [g.backdropCamera, g.farCamera, g.approachCamera].map(focal),
-	};
-});
-check(
-	"live cruise draws the beta its speed asks for",
-	live.regime === "cruise" &&
-		live.reading.beta > 0 &&
-		Math.abs(live.reading.beta - live.want) < 1e-3,
-	`beta ${live.reading.beta.toFixed(4)} against ${live.want.toFixed(4)}`,
-);
-check(
-	"the shift is about the ship's nose",
-	live.headingErr < 1e-5,
-	`off by ${live.headingErr.toExponential(2)}`,
-);
-check(
-	"the sky cameras keep the near camera's focal scale, so markers sit on bodies",
-	live.skyZoom === 1 &&
-		live.skies.every(
-			([x, y]) =>
-				Math.abs(x - live.near[0]) < 1e-9 && Math.abs(y - live.near[1]) < 1e-9,
-		),
-	`zoom ${live.skyZoom}, near ${live.near.map((v) => v.toFixed(4))}, skies ${JSON.stringify(live.skies.map((s) => s.map((v) => v.toFixed(4))))}`,
 );
 
 // **The GLSL copy, about the heading.** One bright star on the sky's own
@@ -317,26 +335,7 @@ const starCheck = (deg, toward, headLook) =>
 			g.cabinHidden = false;
 			g.bloomPass.enabled = true;
 			g.nearScene.add(g.warp.object);
-			const project = (dir) => {
-				const c = cam.matrixWorld.elements;
-				const p = {
-					x: c[12] + dir.x * R,
-					y: c[13] + dir.y * R,
-					z: c[14] + dir.z * R,
-				};
-				const v = cam.matrixWorldInverse.elements;
-				const m = cam.projectionMatrix.elements;
-				const vx = v[0] * p.x + v[4] * p.y + v[8] * p.z + v[12];
-				const vy = v[1] * p.x + v[5] * p.y + v[9] * p.z + v[13];
-				const vz = v[2] * p.x + v[6] * p.y + v[10] * p.z + v[14];
-				const cx = m[0] * vx + m[4] * vy + m[8] * vz + m[12];
-				const cy = m[1] * vx + m[5] * vy + m[9] * vz + m[13];
-				const cw = m[3] * vx + m[7] * vy + m[11] * vz + m[15];
-				return {
-					x: ((cx / cw + 1) / 2) * without.width,
-					y: ((1 - cy / cw) / 2) * without.height,
-				};
-			};
+			const at = (dir) => w.project(cam, dir, without.width, without.height);
 			return {
 				beta,
 				offNose:
@@ -345,8 +344,8 @@ const starCheck = (deg, toward, headLook) =>
 					) *
 						180) /
 					Math.PI,
-				want: project(w.shift.aberrate(d, h, beta)),
-				wantAtRest: project(d),
+				want: at(w.shift.aberrate(d, h, beta)),
+				wantAtRest: at(d),
 				got: w.centroid(without, shifted, 20),
 				atRest: w.centroid(without, rest, 20),
 			};
@@ -392,50 +391,12 @@ check(
 	`${fmt(side.got)} against ${fmt({ n: 1, ...side.want })} (${sideMiss.toFixed(2)} px)`,
 );
 
-// **The keys still fly**, in the default layout (#381 D11): Control is throttle
-// down and S pitches up. The shift at full; the frames are the probe's own.
-const pressFor = async (key, read) => {
-	const before = await page.evaluate(read);
-	await page.keyboard.down(key);
-	await page.evaluate(() => {
-		for (let i = 0; i < 6; i++) window.__light.frame();
-	});
-	await page.keyboard.up(key);
-	return { before, after: await page.evaluate(read) };
-};
-await page.evaluate(() => {
-	const g = window.__seelite;
-	g.clockHeld = true;
-	g.holdCruiseLight(1);
-});
-const throttle = await pressFor("Control", () => window.__seelite.throttle);
-check(
-	"a throttle key moves the throttle in cruise under full shift",
-	throttle.after < throttle.before,
-	`${throttle.before} → ${throttle.after}`,
-);
-const pitch = await pressFor("s", () => window.__seelite.nose());
-const turned =
-	Math.acos(
-		Math.min(
-			1,
-			pitch.before.x * pitch.after.x +
-				pitch.before.y * pitch.after.y +
-				pitch.before.z * pitch.after.z,
-		),
-	) *
-	(180 / Math.PI);
-check(
-	"a pitch key turns the nose in cruise under full shift",
-	turned > 0.01,
-	`${turned.toFixed(3)}°`,
-);
-
 // **A drop-out eases.** Live β, then a drop-out: still drawn one frame later,
 // gone within a few seconds.
 const ease = await page.evaluate(() => {
 	const g = window.__seelite;
 	const w = window.__light;
+	g.clockHeld = true;
 	g.holdCruiseLight(null);
 	for (let i = 0; i < 10; i++) w.frame();
 	const cruising = g.cruiseLightReading().beta;

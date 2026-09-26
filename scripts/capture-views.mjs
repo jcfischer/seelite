@@ -57,6 +57,7 @@ import {
 } from "./lib/view-set.mjs";
 import { assertPlayersRenderer } from "./lib/players-renderer.mjs";
 import { installViewFraming } from "./lib/view-placement.mjs";
+import { installCruiseLeg } from "./lib/cruise-page.mjs";
 import { installChargeToNearest } from "./lib/witchspace-page.mjs";
 import {
 	bootedGame,
@@ -713,29 +714,13 @@ const PLACERS = {
 	cruise: async (page, shot) => {
 		// Cruise moves the ship and spends charge; the next row boots clean.
 		worldWritten = true;
+		await page.evaluate(installCruiseLeg);
 		const result = await page.evaluate((intensity) => {
 			const g = window.__seelite;
-			const dt = g.units.MAX_DT;
-			g.resetFlightToStart();
-			const far = g.world.system.bodies
-				.filter((b) => b.kind !== "star")
-				.map((b) => ({
-					b,
-					d: Math.hypot(
-						b.pos.x - g.world.ship.pos.x,
-						b.pos.y - g.world.ship.pos.y,
-						b.pos.z - g.world.ship.pos.z,
-					),
-				}))
-				.sort((a, b) => b.d - a.d)[0].b;
-			g.targetId = far.id;
-			g.faceTarget?.();
-			g.engageCruise();
-			for (let i = 0; i < 100 && g.regime !== "cruise"; i++) g.step(dt);
-			for (let i = 0; i < 150; i++) g.step(dt);
-			if (g.regime !== "cruise")
+			const leg = window.__cruiseLeg();
+			if (leg.regime !== "cruise")
 				return {
-					error: `the leg to ${far.name} is not in cruise (${g.regime})`,
+					error: `the leg to ${leg.to} is not in cruise (${leg.regime})`,
 				};
 			g.clockHeld = true;
 			// A build before #537 has no handle: its frame is the streaks alone,
@@ -743,7 +728,7 @@ const PLACERS = {
 			const held = typeof g.holdCruiseLight === "function";
 			if (held) g.holdCruiseLight(intensity);
 			return {
-				to: far.name,
+				to: leg.to,
 				c: g.cruiseSpeedKms / g.units.C_KMS,
 				held,
 			};

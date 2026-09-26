@@ -819,7 +819,7 @@ import type { GalaxyChart } from "./galaxy-map";
 import { type WarpField, warpField } from "./warp";
 import {
 	CRUISE_LIGHT,
-	LIGHT_SHIFT_VERTEX_GLSL,
+	LIGHT_SHIFT_GLSL,
 	cruiseBeta,
 	easeBeta,
 } from "./light-shift";
@@ -4306,7 +4306,34 @@ class Game {
 				uBeta: { value: 0 },
 				uHeading: { value: new THREE.Vector3(0, 0, -1) },
 			},
-			vertexShader: LIGHT_SHIFT_VERTEX_GLSL,
+			vertexShader: /* glsl */ `
+				attribute float aSize;
+				attribute vec3 aColor;
+				uniform float uPixelScale;
+				varying vec3 vColor;
+				${LIGHT_SHIFT_GLSL}
+				void main() {
+					vec3 color = aColor;
+					float size = aSize;
+					// At rest this is the expression the sky always used, so an idle
+					// frame is bit-for-bit the frame before #537: a regrouped
+					// multiply moved sub-pixel star edges in station-approach.
+					vec4 view = modelViewMatrix * vec4(position, 1.0);
+					if (uBeta > 0.0) {
+						// #537: the cruise light shift, in the scene's frame about
+						// the ship's heading.
+						vec4 world = modelMatrix * vec4(position, 1.0);
+						shiftStar(world.xyz, modelMatrix[3].xyz, color, size);
+						view = viewMatrix * world;
+					}
+					vColor = color;
+					// No distance attenuation: the sphere is re-centred on the camera
+					// every frame, so every star is exactly BACKDROP_RADIUS away and
+					// attenuating by depth would only add rounding.
+					gl_PointSize = max(1.0, size * uPixelScale);
+					gl_Position = projectionMatrix * view;
+				}
+			`,
 			fragmentShader: /* glsl */ `
 				varying vec3 vColor;
 				void main() {
