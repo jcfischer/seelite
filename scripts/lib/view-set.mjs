@@ -147,6 +147,7 @@ export const LEVERS = Object.freeze({
 	431: "the derived sky: real neighbouring systems at true bearings, over the invented field behind them",
 	532: "the witchspace transition: the entry streak, the tunnel over the cut, its collapse and the arrival rift",
 	535: "the opening cinematic: the rift forming, the arrival, the fly-past, the planet fly-by, the station approach and the dock, filmed from outside",
+	537: "the cruise light shift: the star field crowding to the nose and coloured into #532's starbow, keyed to cruise speed, with the bodies and markers left true",
 });
 
 /**
@@ -208,6 +209,10 @@ export const LEVERS = Object.freeze({
  *   (#530's phase handle), on a guided new game booted with `?cinematic`.
  *   The hold steps the real flight there and stops it; the dock saves, so the
  *   next row boots clean.
+ * - `cruise` — #537's light shift in a real cruise leg to the farthest body,
+ *   the clock held and the look held at `intensity` through
+ *   `holdCruiseLight`, so the frame is the same every run. The live speed
+ *   already sits near the top of the dial, which is why the rows hold it.
  */
 export const SHOT_KINDS = Object.freeze([
 	"station-axis",
@@ -219,6 +224,7 @@ export const SHOT_KINDS = Object.freeze([
 	"controls",
 	"witchspace",
 	"opening",
+	"cruise",
 ]);
 
 /**
@@ -1052,6 +1058,32 @@ export const VIEWS = Object.freeze([
 		shot: { kind: "opening", shot: "dock", at: 7, view: "chase" },
 	},
 	/**
+	 * #537's cruise light shift, in a real cruise leg. Held at an intensity, the
+	 * way #532's strip is held at a phase, because the look eases with the speed.
+	 *
+	 * **The `before` arm is the streaks alone**: a build without
+	 * `holdCruiseLight` is the same leg with the pre-#537 sky, and the placer
+	 * captions it so.
+	 */
+	{
+		name: "cruise-light-half",
+		covers: [537],
+		what: "Cockpit, a cruise leg with the light shift held at half: the sky starting to crowd forward, a first blue at the nose.",
+		shot: { kind: "cruise", intensity: 0.5, view: "cockpit" },
+	},
+	{
+		name: "cruise-light-full",
+		covers: [537],
+		what: "Cockpit, the same leg at the top of the dial: the starbow — the sky crowded round the nose, blue-white ahead through green to gold at the rim, the target bracket clean on its station.",
+		shot: { kind: "cruise", intensity: 1, view: "cockpit" },
+	},
+	{
+		name: "cruise-light-chase",
+		covers: [537],
+		what: "Chase, the same leg at the top of the dial: the starbow round the hull, anchored on the ship's heading.",
+		shot: { kind: "cruise", intensity: 1, view: "chase" },
+	},
+	/**
 	 * §13.6's seven-frame acceptance set, as declared views.
 	 *
 	 * The receipt fixes them and they are transcribed rather than reinterpreted:
@@ -1264,6 +1296,8 @@ const SHOT_REQUIREMENTS = {
 	// A shot of the guided opening and shown seconds into it (#530's handle).
 	opening: (s) =>
 		OPENING_SHOT_NAMES.includes(s.shot) && finite(s.at) && s.at >= 0,
+	// The look's intensity, held (#537): the dial's own range.
+	cruise: (s) => finite(s.intensity) && s.intensity >= 0 && s.intensity <= 1,
 	duel: (s) =>
 		["forward", "right", "left"].includes(s.headLook) &&
 		(s.aftermath === undefined ||

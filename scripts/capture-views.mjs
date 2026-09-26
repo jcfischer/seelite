@@ -703,6 +703,57 @@ const PLACERS = {
 			);
 		return `${shot.shot} +${result.shown.toFixed(2)} s`;
 	},
+	/**
+	 * #537's cruise light shift. A real leg to the farthest body, then the
+	 * clock held and the look held at `intensity`.
+	 *
+	 * **Read back, not assumed**: a leg that never reached cruise throws rather
+	 * than capturing normal flight under a cruise caption.
+	 */
+	cruise: async (page, shot) => {
+		// Cruise moves the ship and spends charge; the next row boots clean.
+		worldWritten = true;
+		const result = await page.evaluate((intensity) => {
+			const g = window.__seelite;
+			const dt = g.units.MAX_DT;
+			g.resetFlightToStart();
+			const far = g.world.system.bodies
+				.filter((b) => b.kind !== "star")
+				.map((b) => ({
+					b,
+					d: Math.hypot(
+						b.pos.x - g.world.ship.pos.x,
+						b.pos.y - g.world.ship.pos.y,
+						b.pos.z - g.world.ship.pos.z,
+					),
+				}))
+				.sort((a, b) => b.d - a.d)[0].b;
+			g.targetId = far.id;
+			g.faceTarget?.();
+			g.engageCruise();
+			for (let i = 0; i < 100 && g.regime !== "cruise"; i++) g.step(dt);
+			for (let i = 0; i < 150; i++) g.step(dt);
+			if (g.regime !== "cruise")
+				return {
+					error: `the leg to ${far.name} is not in cruise (${g.regime})`,
+				};
+			g.clockHeld = true;
+			// A build before #537 has no handle: its frame is the streaks alone,
+			// which is that build's honest `before`, and the caption says so.
+			const held = typeof g.holdCruiseLight === "function";
+			if (held) g.holdCruiseLight(intensity);
+			return {
+				to: far.name,
+				c: g.cruiseSpeedKms / g.units.C_KMS,
+				held,
+			};
+		}, shot.intensity);
+		if (result.error) throw new Error(`cruise placer: ${result.error}`);
+		const look = result.held
+			? `light shift held at ${shot.intensity}`
+			: "no light shift on this build: the streaks alone";
+		return `to ${result.to} at ${result.c.toFixed(1)} c · ${look}`;
+	},
 };
 assertPlacersCover(PLACERS);
 
