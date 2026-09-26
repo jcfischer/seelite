@@ -218,6 +218,22 @@ try {
 			!s.clockHeld,
 		JSON.stringify(s),
 	);
+	// #535: a player's New game opens on the cinematic (#530 D3), and the one
+	// key skips it into the start it flies to (D2) — docked, for a guided game.
+	const opening = await tabA.evaluate(() => window.__seelite.openingReading());
+	await tabA.keyboard.press("Enter");
+	await tabA.waitForFunction(() => !window.__seelite.openingActive, null, {
+		timeout: 10000,
+	});
+	check(
+		"New game opens on the guided opening, and Enter skips it (#535)",
+		opening.active &&
+			opening.kind === "guided" &&
+			(await tabA.evaluate(
+				() => window.__seelite.openingReading().lastOutcome,
+			)) === "docked",
+		JSON.stringify({ ...opening, shownBy: undefined }),
+	);
 	const landed = await tabA.evaluate(async () => {
 		const b = window.__seelite.save.backend;
 		for (let i = 0; i < 100; i++) {
