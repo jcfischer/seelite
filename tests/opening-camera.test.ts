@@ -239,3 +239,43 @@ describe("the principal's flight on seeds 47–51 (#535)", () => {
 		}
 	});
 });
+
+describe("the arrival orbits the ship (the principal's second flight)", () => {
+	const at = (s: ShotScene, t: number) => ({ ...s, gameTime: s.gameTime + t });
+	test("the camera swings about sixty degrees round the ship over the shot, at one distance", () => {
+		const s = scene();
+		const anchor = anchorShot("arrival", s);
+		const start = shotCamera(anchor, s);
+		const end = shotCamera(anchor, at(s, SHOT_FRAMING.arrival.orbitS));
+		const flat = (c: { pos: Vec3 }) => {
+			const rel = sub(c.pos, s.ship.pos);
+			return sub(rel, scale(s.ship.up, dot(rel, s.ship.up)));
+		};
+		const [a, b] = [flat(start), flat(end)];
+		const swept =
+			(Math.acos(dot(a, b) / (length(a) * length(b))) * 180) / Math.PI;
+		expect(swept).toBeCloseTo(SHOT_FRAMING.arrival.orbitDeg, 3);
+		expect(length(sub(end.pos, s.ship.pos))).toBeCloseTo(
+			length(sub(start.pos, s.ship.pos)),
+			9,
+		);
+	});
+	test("it eases: slow at both ends, the ship in frame throughout", () => {
+		const s = scene();
+		const anchor = anchorShot("arrival", s);
+		const T = SHOT_FRAMING.arrival.orbitS;
+		const step = (t: number) =>
+			length(
+				sub(
+					shotCamera(anchor, at(s, t + 0.1)).pos,
+					shotCamera(anchor, at(s, t)).pos,
+				),
+			);
+		expect(step(0)).toBeLessThan(step(T / 2 - 0.05) / 3);
+		expect(step(T - 0.1)).toBeLessThan(step(T / 2 - 0.05) / 3);
+		for (let t = 0; t <= T; t += 0.5)
+			expect(offAxisDeg(shotCamera(anchor, at(s, t)), s.ship.pos)).toBeLessThan(
+				25,
+			);
+	});
+});

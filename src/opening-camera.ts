@@ -27,7 +27,7 @@ import {
 	scale,
 	sub,
 } from "./vec3";
-import type { OpeningShot } from "./opening";
+import { OPENING, type OpeningShot } from "./opening";
 
 /** What a shot is framed from, read off the sim each frame. */
 export interface ShotScene {
@@ -75,9 +75,23 @@ export interface ShotAnchor {
 
 /** The framing table, in hull reaches (R) or kilometres where named. */
 export const SHOT_FRAMING = Object.freeze({
-	/** Ahead of the resting ship and off to the sun side, looking back past it
-	 *  at the rift opening behind it. */
-	arrival: Object.freeze({ aheadR: 6, sideR: 3, upR: 1.2, lookBehindR: 2 }),
+	/**
+	 * Ahead of the resting ship and off to the sun side, looking back past it
+	 * at the rift opening behind it — and orbiting it, `orbitDeg` about its
+	 * up axis over the `orbitS` of the shot, eased at both ends (the
+	 * principal's second flight). It swings from `orbitFromDeg` off the nose
+	 * to 65°, so it stays on the lit side and the rift behind the ship never
+	 * turns edge-on.
+	 */
+	arrival: Object.freeze({
+		aheadR: 6,
+		sideR: 3,
+		upR: 1.2,
+		lookBehindR: 2,
+		orbitFromDeg: 5,
+		orbitDeg: 60,
+		orbitS: OPENING.arriveS,
+	}),
 	/**
 	 * A camera the ship passes: `passKm` down the nose from where the burn
 	 * starts — a second and a half of it — `offKm` to the side and `upKm`
@@ -222,11 +236,25 @@ export function shotCamera(anchor: ShotAnchor, scene: ShotScene): ShotCamera {
 	switch (anchor.shot) {
 		case "arrival": {
 			const f = SHOT_FRAMING.arrival;
+			// The orbit's plane is across the ship's up; its second axis points to
+			// the anchored side, so the sweep turns toward the lit flank.
+			const across2 = normalizeOr(cross(ship.up, ship.nose), side);
+			const e2 = dot(across2, side) < 0 ? scale(across2, -1) : across2;
+			const u = Math.min(
+				1,
+				Math.max(0, (scene.gameTime - anchor.atS) / f.orbitS),
+			);
+			const eased = u * u * (3 - 2 * u);
+			const phi = ((f.orbitFromDeg + eased * f.orbitDeg) * Math.PI) / 180;
+			const rho = Math.hypot(f.aheadR, f.sideR) * r;
 			const pos = add(
 				ship.pos,
 				add(
-					scale(ship.nose, f.aheadR * r),
-					add(scale(side, f.sideR * r), scale(ship.up, f.upR * r)),
+					add(
+						scale(ship.nose, Math.cos(phi) * rho),
+						scale(e2, Math.sin(phi) * rho),
+					),
+					scale(ship.up, f.upR * r),
 				),
 			);
 			const at = sub(ship.pos, scale(ship.nose, f.lookBehindR * r));

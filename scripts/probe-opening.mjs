@@ -253,8 +253,9 @@ for (const seed of [47, 48, 49, 50, 51]) {
 			}),
 	);
 	// A jump within a take: the camera's place relative to the ship moving by
-	// more than a tenth of a reach between two frames of the arrival, where
-	// neither the ship nor the camera rule moves at all.
+	// more than half a reach between two frames of the arrival. The orbit moves
+	// it by design, at most ~0.03 reaches a frame at 60 Hz (0.2 on a 100 ms
+	// hitch); the noise jumps this row was built on were 4.3 and 5.9.
 	let arrivalJumpR = 0;
 	let arrivalFrames = 0;
 	for (let i = 1; i < frames.length; i++) {
@@ -277,7 +278,7 @@ for (const seed of [47, 48, 49, 50, 51]) {
 		`seed ${seed}: every frame keeps the camera steady, outside the hull, and the ship in frame`,
 		arrivalFrames > 100 &&
 			shotsSeen === "arrival flypast cruise dock" &&
-			arrivalJumpR < 0.1 &&
+			arrivalJumpR < 0.5 &&
 			closestR > 2 &&
 			worstOff < 25,
 		JSON.stringify({

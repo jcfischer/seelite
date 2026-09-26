@@ -14409,6 +14409,9 @@ class Game {
 				},
 			);
 			this.playArrival();
+			// Anchored now, before any frame: the arrival's orbit is timed from
+			// here, so a held frame and a watched one swing to the same angle.
+			this.openingAnchor = anchorShot("arrival", this.openingScene());
 			return;
 		}
 		this.skipOpening();

@@ -117,8 +117,8 @@ export const OPENING = Object.freeze({
 	 *  drop-out). */
 	approachCapS: 300,
 	/** The cruise shot: the leg's last `simS` seconds, `ratio` times faster
-	 *  than they run. */
-	cruiseShot: Object.freeze({ simS: 12, ratio: 1.5 }),
+	 *  than they run, and `tailS` shown seconds past the drop-out. */
+	cruiseShot: Object.freeze({ simS: 12, ratio: 1.5, tailS: 3 }),
 	/** The dock shot: the run-in from `km` of the station's centre, `ratio`
 	 *  times faster than it runs. */
 	dockShot: Object.freeze({ km: 1.6, ratio: 2 }),
@@ -242,11 +242,23 @@ export function openingShot(
 		case "spool":
 			return "flypast";
 		case "cruise":
+			// Dropped out already: the step before the script moves to its
+			// approach leg is the shot's, not a one-step cut inside it.
+			if (facts.regime === "normal") return "cruise";
 			return facts.cruiseEtaS !== null &&
 				facts.cruiseEtaS <= OPENING.cruiseShot.simS
 				? "cruise"
 				: null;
 		case "approach":
+			// The cruise shot holds `tailS` shown seconds past the drop-out: the
+			// station only reads in the leg's last seconds, and cutting on the
+			// drop-out took it away before it could be recognised (the principal's
+			// second flight).
+			if (
+				state.legSteps <=
+				steps(OPENING.cruiseShot.tailS * OPENING.cruiseShot.ratio)
+			)
+				return "cruise";
 			return facts.runIn && facts.stationKm <= OPENING.dockShot.km
 				? "dock"
 				: null;

@@ -299,19 +299,27 @@ describe("the director", () => {
 				{ ...cruising, cruiseEtaS: OPENING.cruiseShot.simS - 0.1 },
 			),
 		).toBe("cruise");
+		// Past the cruise shot's tail, the approach is a cut until the run-in.
+		const pastTail =
+			Math.round(
+				(OPENING.cruiseShot.tailS * OPENING.cruiseShot.ratio) / OPENING.dtS,
+			) + 1;
 		expect(
-			openingShot({ ...pilot, leg: "approach" }, { ...facts, stationKm: 40 }),
+			openingShot(
+				{ ...pilot, leg: "approach", legSteps: pastTail },
+				{ ...facts, stationKm: 40 },
+			),
 		).toBe(null);
 		expect(
 			openingShot(
-				{ ...pilot, leg: "approach" },
+				{ ...pilot, leg: "approach", legSteps: pastTail },
 				{ ...facts, stationKm: OPENING.dockShot.km - 0.1, runIn: true },
 			),
 		).toBe("dock");
 		// A line-up that swings close past the station is not the run-in.
 		expect(
 			openingShot(
-				{ ...pilot, leg: "approach" },
+				{ ...pilot, leg: "approach", legSteps: pastTail },
 				{ ...facts, stationKm: OPENING.dockShot.km - 0.5 },
 			),
 		).toBe(null);
@@ -534,5 +542,39 @@ describe("an opening a quit interrupted (the principal's ruling, 2026-09-26)", (
 					...over,
 				}),
 			).toBe(false);
+	});
+});
+
+describe("the cruise shot holds past the drop-out (the principal's second flight)", () => {
+	// The station only reads in the leg's last seconds, and the shot cut on the
+	// drop-out 2-3 s before it could be recognised.
+	const facts: PilotFacts = {
+		regime: "normal",
+		spooling: false,
+		dockPhase: "flying",
+		computerEngaged: true,
+		grantLive: true,
+		cruiseEtaS: null,
+		stationKm: 50,
+		inVicinity: true,
+		runIn: false,
+	};
+	test("the first seconds of the approach are still the cruise shot, then a cut", () => {
+		const tail = Math.round(
+			(OPENING.cruiseShot.tailS * OPENING.cruiseShot.ratio) / OPENING.dtS,
+		);
+		const approach = { ...startPilot("guided"), leg: "approach" as const };
+		expect(openingShot({ ...approach, legSteps: 1 }, facts)).toBe("cruise");
+		expect(openingShot({ ...approach, legSteps: tail }, facts)).toBe("cruise");
+		expect(openingShot({ ...approach, legSteps: tail + 1 }, facts)).toBe(null);
+	});
+	test("a watched run shows the tail as part of the cruise shot", () => {
+		const run = new OpeningRun("guided");
+		watch(run, new FakeSim(), 4);
+		expect(run.shownBy.cruise).toBeGreaterThan(
+			OPENING.cruiseShot.simS / OPENING.cruiseShot.ratio +
+				OPENING.cruiseShot.tailS -
+				0.1,
+		);
 	});
 });
