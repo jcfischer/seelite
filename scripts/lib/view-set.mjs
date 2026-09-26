@@ -146,7 +146,7 @@ export const LEVERS = Object.freeze({
 	381: "the rebind modal, and the tab's Settings and Commanders doors beside it",
 	431: "the derived sky: real neighbouring systems at true bearings, over the invented field behind them",
 	532: "the witchspace transition: the entry streak, the tunnel over the cut, its collapse and the arrival rift",
-	535: "the opening cinematic: the arrival, the fly-past, the planet fly-by, the station approach and the dock, filmed from outside",
+	535: "the opening cinematic: the rift forming, the arrival, the fly-past, the planet fly-by, the station approach and the dock, filmed from outside",
 });
 
 /**
@@ -986,6 +986,12 @@ export const VIEWS = Object.freeze([
 	 * placer captions it so rather than pretending to a shot.
 	 */
 	{
+		name: "opening-forming",
+		covers: [535],
+		what: "The prologue, 2 s in: empty space at the arrival point, no ship yet, the witchspace rift forming out of nothing before the cut to the arrival.",
+		shot: { kind: "opening", shot: "forming", at: 2, view: "chase" },
+	},
+	{
 		name: "opening-arrival",
 		covers: [535],
 		what: "The opening, 1.5 s in: the ship in the witchspace tunnel, seen from ahead and off the nose — the rift is sized for a chase camera on that axis, and this is the frame that checks it from off it.",
@@ -1243,7 +1249,9 @@ const SHOT_REQUIREMENTS = {
 	witchspace: (s) => finite(s.phase),
 	// A shot of the guided opening and shown seconds into it (#530's handle).
 	opening: (s) =>
-		["arrival", "flypast", "cruise", "approach", "dock"].includes(s.shot) &&
+		["forming", "arrival", "flypast", "cruise", "approach", "dock"].includes(
+			s.shot,
+		) &&
 		finite(s.at) &&
 		s.at >= 0,
 	duel: (s) =>

@@ -341,3 +341,21 @@ describe("arrival and fly-past are one take (the principal's sixth note)", () =>
 		expect(closest).toBeGreaterThan(2 * R);
 	});
 });
+
+describe("the prologue (the principal's seventh note)", () => {
+	test("pushes in on the empty arrival point, the rift centred", () => {
+		const s = scene();
+		const anchor = anchorShot("forming", s);
+		const start = shotCamera(anchor, s);
+		const end = shotCamera(anchor, { ...s, gameTime: s.gameTime + 3 });
+		const rift = sub(s.ship.pos, scale(s.ship.nose, R));
+		// acos near one resolves about 1e-6 degrees; centred means below that
+		// by a margin, not exactly zero.
+		expect(offAxisDeg(start, rift)).toBeLessThan(1e-4);
+		expect(offAxisDeg(end, rift)).toBeLessThan(1e-4);
+		expect(length(sub(end.pos, rift))).toBeLessThan(
+			length(sub(start.pos, rift)),
+		);
+		expect(length(sub(end.pos, s.ship.pos))).toBeGreaterThan(8 * R);
+	});
+});

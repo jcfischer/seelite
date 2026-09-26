@@ -144,6 +144,7 @@ await skipped.context.close();
 const watched = await boot({ guided: true, cinematic: 1 }, "guided watched");
 const shots = [];
 let pressed = false;
+let prologue = null;
 for (let i = 0; i < 400; i++) {
 	const r = await watched.page.evaluate(() =>
 		window.__seelite.openingReading(),
@@ -153,6 +154,18 @@ for (let i = 0; i < 400; i++) {
 		shots.push(r.shot);
 		// Into the shot, where it has settled.
 		await watched.page.waitForTimeout(1200);
+		// The prologue is empty space with the rift forming: no ship drawn, a
+		// rift that is there and still growing.
+		if (r.shot === "forming")
+			prologue = await watched.page.evaluate(() => {
+				const g = window.__seelite;
+				return {
+					shot: g.openingReading().shot,
+					shipDrawn: g.shipMesh.visible,
+					riftStrength: g.arrivalRift?.strength ?? 0,
+					witchspace: g.witchspace.kind,
+				};
+			});
 		await watched.page.screenshot({
 			path: `${out}/${String(shots.length).padStart(2, "0")}-${r.shot}.png`,
 		});
@@ -172,9 +185,18 @@ for (let i = 0; i < 400; i++) {
 }
 await untilOver(watched.page);
 check(
-	"a watched guided opening shows arrival, fly-past, planet fly-by, station approach and dock, in order",
-	same(shots, ["arrival", "flypast", "cruise", "approach", "dock"]),
+	"a watched guided opening shows the rift forming, arrival, fly-past, planet fly-by, station approach and dock, in order",
+	same(shots, ["forming", "arrival", "flypast", "cruise", "approach", "dock"]),
 	shots.join(" → "),
+);
+check(
+	"the prologue draws no ship and a rift still forming, before the witchspace exit begins",
+	prologue?.shot === "forming" &&
+		prologue.shipDrawn === false &&
+		prologue.riftStrength > 0 &&
+		prologue.riftStrength < 1 &&
+		prologue.witchspace === "idle",
+	JSON.stringify(prologue),
 );
 check(
 	"the frame was letterboxed while it ran, and is gone after",
@@ -298,7 +320,7 @@ for (const seed of [47, 48, 49, 50, 51]) {
 		`seed ${seed}: arrival and fly-past are one steady take, the camera outside the hull, the ship in frame`,
 		arrivalFrames > 100 &&
 			takeFrames > arrivalFrames + 100 &&
-			shotsSeen === "arrival flypast cruise approach dock" &&
+			shotsSeen === "forming arrival flypast cruise approach dock" &&
 			takeJumpR < 0.5 &&
 			takeTurnDeg < 8 &&
 			closestR > 2 &&
@@ -462,8 +484,8 @@ const freeEnd = await free.page.evaluate((from) => {
 	};
 }, arrivalPoint);
 check(
-	"a free opening shows the arrival and the fly-past only",
-	same([...freeShots], ["arrival", "flypast"]),
+	"a free opening shows the rift forming, the arrival and the fly-past only",
+	same([...freeShots], ["forming", "arrival", "flypast"]),
 	[...freeShots].join(" → "),
 );
 check(

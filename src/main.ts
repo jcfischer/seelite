@@ -11891,6 +11891,16 @@ class Game {
 	 * pass and the rift draw whatever the state (or a held phase) says.
 	 */
 	private presentWitchspace(dt: number, camPos: Vec3) {
+		// #535's prologue draws the rift itself: forming out of nothing over
+		// `formS`, on the opening's own shown clock so a hold draws the frame a
+		// watched run does. The witchspace state is idle until the arrival.
+		const opening = this.opening;
+		if (opening?.shot === "forming" && this.arrivalRift) {
+			const t = opening.shownBy.forming;
+			const k = Math.min(1, t / OPENING.formS);
+			this.arrivalRift.update(k * k * (3 - 2 * k), t, camPos);
+			return;
+		}
 		const held = this.witchspaceHeldAt;
 		// Nothing to draw and nothing drawn: the common frame allocates nothing.
 		if (
@@ -13284,7 +13294,9 @@ class Game {
 			);
 		// The hull is the camera in cockpit view, and drawing a cube around the
 		// near plane fills the screen with its inside faces.
-		this.shipMesh.visible = this.view === "chase";
+		// #535's prologue is empty space: the ship has not arrived yet.
+		this.shipMesh.visible =
+			this.view === "chase" && this.opening?.shot !== "forming";
 
 		// **#241's gate, then #201's shadow camera** — in that order, because the
 		// gate decides whether there is a shadow to fit at all and
@@ -14408,10 +14420,13 @@ class Game {
 					if (this.openingActive) this.skipOpening();
 				},
 			);
-			this.playArrival();
-			// Anchored now, before any frame: the arrival's orbit is timed from
-			// here, so a held frame and a watched one swing to the same angle.
-			this.openingAnchor = anchorShot("arrival", this.openingScene());
+			// The prologue first (the principal's seventh note): empty space, the
+			// ship not drawn, the rift forming out of nothing. The arrival's own
+			// look — the tunnel, the flash — starts on the cut to it
+			// (`shotChanged`). Anchored now, before any frame, so a held frame and
+			// a watched one push in to the same place.
+			this.beginArrival();
+			this.openingAnchor = anchorShot("forming", this.openingScene());
 			return;
 		}
 		this.skipOpening();
@@ -14444,9 +14459,13 @@ class Game {
 		}
 		run.advanceTo(this.openingSim, shot, shownS);
 		// The arrival's look runs on wall time and a hold has run none, so it is
-		// held at the opening's own shown time — the time a watched run has had
-		// it on screen — and put away once that is past the rift.
-		if (run.shownS < WITCHSPACE.riftEndS) this.holdWitchspace(run.shownS);
+		// held at the opening's own shown time since the cut to the arrival —
+		// the time a watched run has had it on screen — and put away once that is
+		// past the rift. The prologue draws its own rift and holds nothing.
+		const sinceArrival = run.shownS - run.shownBy.forming;
+		if (shot === "forming") this.holdWitchspace(null);
+		else if (sinceArrival < WITCHSPACE.riftEndS)
+			this.holdWitchspace(sinceArrival);
 		else {
 			this.holdWitchspace(null);
 			this.witchspace = idleWitchspace();
@@ -14617,6 +14636,10 @@ class Game {
 		// frame or a skip past it cannot move where the camera stands. Reads
 		// only; a cut keeps the last anchor, and it lasts less than a frame.
 		shotChanged: (shot) => {
+			// The cut from the prologue: the exit plays from here, in a watched run
+			// only — a skipped one draws nothing, and `endOpening` puts it away.
+			if (shot === "arrival" && this.openingPriorView !== null)
+				this.playArrival();
 			if (shot)
 				this.openingAnchor = anchorShot(
 					shot,
@@ -17052,7 +17075,7 @@ if (postcard) {
 		// before any frame has run, so `holdOpening` lands on the same step
 		// every capture.
 		if (opening.watched && query.get("cinematic") === "held")
-			game.holdOpening("arrival", 0);
+			game.holdOpening("forming", 0);
 	};
 	if (plan.mode === "direct") {
 		// `plan.writesNothing`, not `?no-save` read off the URL: two things make a

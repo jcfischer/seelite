@@ -79,6 +79,13 @@ export interface ShotAnchor {
 /** The framing table, in hull reaches (R) or kilometres where named. */
 export const SHOT_FRAMING = Object.freeze({
 	/**
+	 * The prologue (the principal's seventh note): empty space where the ship
+	 * will arrive, the rift forming out of nothing. Ahead of the arrival point
+	 * and off to the sun side, looking at where the rift opens, pushing in
+	 * from `fromR` to `toR` over the shot — the ship is not drawn.
+	 */
+	forming: Object.freeze({ fromR: 16, toR: 11, sideR: 5, upR: 2 }),
+	/**
 	 * Ahead of the resting ship and off to the sun side, looking back past it
 	 * at the rift opening behind it — and orbiting it, `orbitDeg` about its
 	 * up axis over the `orbitS` of the shot, eased at both ends (the
@@ -293,6 +300,21 @@ export function shotCamera(anchor: ShotAnchor, scene: ShotScene): ShotCamera {
 	const axis = shotAxis(anchor.shot, scene);
 	const side = across(anchor.side, axis, ownSide(axis, ship.up));
 	switch (anchor.shot) {
+		case "forming": {
+			const f = SHOT_FRAMING.forming;
+			const push = eased((scene.gameTime - anchor.atS) / OPENING.formS);
+			const ahead = (f.fromR + (f.toR - f.fromR) * push) * r;
+			const pos = add(
+				ship.pos,
+				add(
+					scale(ship.nose, ahead),
+					add(scale(side, f.sideR * r), scale(ship.up, f.upR * r)),
+				),
+			);
+			// Where the rift stands: behind the arrival point on the nose axis.
+			const rift = sub(ship.pos, scale(ship.nose, r));
+			return looking(pos, rift, ship.up, scale(ship.nose, -1));
+		}
 		case "arrival": {
 			const f = SHOT_FRAMING.arrival;
 			// The orbit's plane is across the ship's up; its second axis points to

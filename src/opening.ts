@@ -26,6 +26,7 @@ export type OpeningKind = "guided" | "free";
 
 /** What the camera is showing. `null` in the director's answers is a cut. */
 export type OpeningShot =
+	| "forming"
 	| "arrival"
 	| "flypast"
 	| "cruise"
@@ -34,6 +35,7 @@ export type OpeningShot =
 
 /** Where the script is in the flight. `done` and `fallback` are the ends. */
 export type OpeningLeg =
+	| "form"
 	| "arrive"
 	| "burn"
 	| "spool"
@@ -104,6 +106,10 @@ export interface OpeningSim {
 export const OPENING = Object.freeze({
 	/** The one step the script is flown at, watched or skipped. */
 	dtS: 1 / 60,
+	/** The prologue: empty space at the arrival point, the ship not there
+	 *  yet, the witchspace rift forming out of nothing (the principal's seventh
+	 *  note). Shown 1:1; then the cut to the arrival. */
+	formS: 3,
 	/** The arrival: the ship at rest while the exit plays, shown 1:1. */
 	arriveS: 6,
 	/** The burn toward the station before cruise engages (guided), or the
@@ -146,17 +152,19 @@ export const OPENING_SHOTS: Readonly<
 	Record<OpeningKind, readonly OpeningShot[]>
 > = Object.freeze({
 	guided: Object.freeze([
+		"forming",
 		"arrival",
 		"flypast",
 		"cruise",
 		"approach",
 		"dock",
 	] as const),
-	free: Object.freeze(["arrival", "flypast"] as const),
+	free: Object.freeze(["forming", "arrival", "flypast"] as const),
 });
 
 /** How fast each shot shows the sim: sim seconds per shown second. */
 export const SHOT_RATIO: Readonly<Record<OpeningShot, number>> = Object.freeze({
+	forming: 1,
 	arrival: 1,
 	flypast: 1,
 	cruise: OPENING.cruiseShot.ratio,
@@ -185,7 +193,7 @@ const steps = (s: number) => Math.round(s / OPENING.dtS);
 
 export const startPilot = (kind: OpeningKind): PilotState => ({
 	kind,
-	leg: "arrive",
+	leg: "form",
 	legSteps: 0,
 });
 
@@ -209,6 +217,10 @@ export function pilotStep(
 		actions,
 	});
 	switch (state.leg) {
+		case "form":
+			// Nothing flies: the ship is not there yet, and the step is only the
+			// clock the prologue is shown on.
+			return state.legSteps >= steps(OPENING.formS) ? next("arrive") : stay();
 		case "arrive":
 			return state.legSteps >= steps(OPENING.arriveS)
 				? next("burn", ["throttle-burn"])
@@ -266,6 +278,8 @@ export function openingShot(
 	facts: PilotFacts,
 ): OpeningShot | null {
 	switch (state.leg) {
+		case "form":
+			return "forming";
 		case "arrive":
 			return "arrival";
 		case "burn":
@@ -316,10 +330,11 @@ export class OpeningRun {
 	readonly kind: OpeningKind;
 	pilot: PilotState;
 	/** The shot on screen, or `null` for a cut or after the end. */
-	shot: OpeningShot | null = "arrival";
+	shot: OpeningShot | null = "forming";
 	/** Shown seconds, in total and by shot. */
 	shownS = 0;
 	shownBy: Record<OpeningShot, number> = {
+		forming: 0,
 		arrival: 0,
 		flypast: 0,
 		cruise: 0,
@@ -472,6 +487,8 @@ export function openingCaption(
 	names: { system: string; station: string | null },
 ): string {
 	switch (shot) {
+		case "forming":
+			return `WITCHSPACE · ${names.system.toUpperCase()}`;
 		case "arrival":
 			return `ARRIVING · ${names.system.toUpperCase()}`;
 		case "flypast":

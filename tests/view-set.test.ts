@@ -168,13 +168,14 @@ describe("the view set itself", () => {
 		// added the canisters and the raider log, twenty-eight since #372 added
 		// the Controls tab open and folded, thirty-eight with #532's witchspace
 		// strip, forty-six since #535 added the opening's, forty-eight since the
-		// principal split its approach into a planet fly-by and a station approach. (#432 added a twenty-ninth and removed it
+		// principal split its approach into a planet fly-by and a station approach,
+		// forty-nine with the rift forming before the arrival. (#432 added a twenty-ninth and removed it
 		// in the same PR; #480 put one back, in the other role. Why both happened is
 		// told once, in the note beside `sky-at-the-rim`, and not here.) A literal and
 		// not `VIEWS.length`, which is the whole point: a view deleted by accident
 		// has to be a red run, and a check derived from its own subject cannot be
 		// one.
-		expect(VIEWS.length).toBe(48);
+		expect(VIEWS.length).toBe(49);
 		const names = VIEWS.map((v) => v.name);
 		expect(new Set(names).size).toBe(names.length);
 		for (const name of names) expect(name).toMatch(/^[a-z]+(-[a-z]+)*$/);
@@ -472,7 +473,7 @@ describe("the contact sheet", () => {
 		// The fixture spaces its frames 0.4 s apart, so the span is fixed by how
 		// many views the set declares — which is the count row's business, not this
 		// one's, and this literal moves with it.
-		expect(html).toContain("· clock 0.6–19.4s");
+		expect(html).toContain("· clock 0.6–19.8s");
 		expect(html).not.toContain("pinned");
 	});
 

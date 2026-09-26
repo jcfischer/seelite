@@ -158,17 +158,19 @@ function watch(run: OpeningRun, sim: FakeSim, seed: number, maxFrames = 1e6) {
 }
 
 describe("the two lengths (#530 D3)", () => {
-	test("a guided opening has five shots and a free one two", () => {
+	test("a guided opening has six shots and a free one three", () => {
 		// The planet fly-by and the station approach are two scenes (the
-		// principal's fifth note).
+		// principal's fifth note), and both open on the rift forming in empty
+		// space (the seventh).
 		expect(OPENING_SHOTS.guided).toEqual([
+			"forming",
 			"arrival",
 			"flypast",
 			"cruise",
 			"approach",
 			"dock",
 		]);
-		expect(OPENING_SHOTS.free).toEqual(["arrival", "flypast"]);
+		expect(OPENING_SHOTS.free).toEqual(["forming", "arrival", "flypast"]);
 	});
 
 	test("a guided run ends docked", () => {
@@ -190,21 +192,26 @@ describe("the two lengths (#530 D3)", () => {
 		expect(sim.throttle).toBe(0);
 	});
 
-	test("a free run is arrival plus fly-past: about ten seconds of sim", () => {
+	test("a free run is the prologue, arrival and fly-past: about fourteen seconds of sim", () => {
 		const sim = new FakeSim();
 		new OpeningRun("free").skip(sim);
-		expect(sim.t).toBeCloseTo(OPENING.arriveS + OPENING.burnS.free, 1);
-		expect(sim.t).toBeGreaterThan(8);
-		expect(sim.t).toBeLessThan(13);
+		expect(sim.t).toBeCloseTo(
+			OPENING.formS + OPENING.arriveS + OPENING.burnS.free,
+			1,
+		);
+		expect(sim.t).toBeGreaterThan(11);
+		expect(sim.t).toBeLessThan(16);
 	});
 });
 
 describe("the pilot script", () => {
-	test("the arrival holds still, then the burn opens the throttle", () => {
+	test("the prologue and the arrival hold still, then the burn opens the throttle", () => {
 		const sim = new FakeSim();
 		let pilot = startPilot("guided");
+		expect(pilot.leg).toBe("form");
 		const actions: PilotAction[] = [];
-		for (let i = 0; i < Math.round(OPENING.arriveS / OPENING.dtS) + 2; i++) {
+		const still = Math.round((OPENING.formS + OPENING.arriveS) / OPENING.dtS);
+		for (let i = 0; i < still + 3; i++) {
 			const r = pilotStep(pilot, sim.facts());
 			for (const a of r.actions) {
 				actions.push(a);
@@ -249,7 +256,11 @@ describe("the pilot script", () => {
 		expect(run.outcome).toBe("fallback");
 		// Not long after the spool would have ended: the refusal is noticed.
 		expect(sim.t).toBeLessThan(
-			OPENING.arriveS + OPENING.burnS.guided + OPENING.spoolCapS + 0.1,
+			OPENING.formS +
+				OPENING.arriveS +
+				OPENING.burnS.guided +
+				OPENING.spoolCapS +
+				0.1,
 		);
 	});
 
@@ -259,7 +270,8 @@ describe("the pilot script", () => {
 		run.skip(sim);
 		expect(run.outcome).toBe("fallback");
 		expect(sim.t).toBeLessThan(
-			OPENING.arriveS +
+			OPENING.formS +
+				OPENING.arriveS +
 				OPENING.burnS.guided +
 				OPENING.spoolCapS +
 				OPENING.cruiseCapS +
@@ -290,7 +302,8 @@ describe("the director", () => {
 			inVicinity: true,
 			runIn: false,
 		};
-		expect(openingShot(pilot, facts)).toBe("arrival");
+		expect(openingShot(pilot, facts)).toBe("forming");
+		expect(openingShot({ ...pilot, leg: "arrive" }, facts)).toBe("arrival");
 		expect(openingShot({ ...pilot, leg: "burn" }, facts)).toBe("flypast");
 		expect(openingShot({ ...pilot, leg: "spool" }, facts)).toBe("flypast");
 		const cruising = { ...facts, regime: "cruise" as const };
@@ -334,15 +347,22 @@ describe("the director", () => {
 		const sim = new FakeSim();
 		const run = new OpeningRun("guided");
 		const shots = watch(run, sim, 1).filter((s) => s !== "cut");
-		expect(shots).toEqual(["arrival", "flypast", "cruise", "approach", "dock"]);
+		expect(shots).toEqual([
+			"forming",
+			"arrival",
+			"flypast",
+			"cruise",
+			"approach",
+			"dock",
+		]);
 	});
 
-	test("a guided run shows about thirty seconds (D4)", () => {
+	test("a guided run shows about thirty-five seconds (D4, as the principal tuned it)", () => {
 		const sim = new FakeSim();
 		const run = new OpeningRun("guided");
 		watch(run, sim, 3);
-		expect(run.shownS).toBeGreaterThan(24);
-		expect(run.shownS).toBeLessThan(36);
+		expect(run.shownS).toBeGreaterThan(28);
+		expect(run.shownS).toBeLessThan(42);
 	});
 
 	test("each shot shows the same length at every frame rate", () => {
@@ -510,7 +530,7 @@ describe("a shot starts on a step", () => {
 			skippedChanges
 				.filter((c) => !c.endsWith("cut"))
 				.map((c) => c.split(":")[1]),
-		).toEqual(["flypast", "cruise", "approach", "dock"]);
+		).toEqual(["arrival", "flypast", "cruise", "approach", "dock"]);
 		// A fly-past framed from a later step would stand the camera somewhere
 		// else: the change is heard on the same step however the run is driven.
 		expect(heard((run, sim) => watch(run, sim, 5))).toEqual(skippedChanges);
@@ -596,6 +616,17 @@ describe("the station approach is a scene of its own (the principal's fifth note
 				OPENING.cruiseShot.simS / OPENING.cruiseShot.ratio,
 				0,
 			);
+		}
+	});
+});
+
+describe("the prologue is shown whole (the principal's seventh note)", () => {
+	test("forming shows formS at any cadence, then the arrival starts", () => {
+		for (const seed of [3, 8]) {
+			const run = new OpeningRun("free");
+			watch(run, new FakeSim(), seed);
+			expect(run.shownBy.forming).toBeCloseTo(OPENING.formS, 6);
+			expect(run.shownBy.arrival).toBeCloseTo(OPENING.arriveS, 6);
 		}
 	});
 });
