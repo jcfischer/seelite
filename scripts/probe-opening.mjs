@@ -242,6 +242,8 @@ for (const seed of [47, 48, 49, 50, 51]) {
 						rows.push({
 							shot: g.openingReading().shot,
 							rel,
+							cam: cam.pos,
+							forward: cam.forward,
 							distR: d / s.reachKm,
 							offDeg: (Math.acos(Math.max(-1, Math.min(1, c))) * 180) / Math.PI,
 						});
@@ -256,18 +258,36 @@ for (const seed of [47, 48, 49, 50, 51]) {
 	// more than half a reach between two frames of the arrival. The orbit moves
 	// it by design, at most ~0.03 reaches a frame at 60 Hz (0.2 on a 100 ms
 	// hitch); the noise jumps this row was built on were 4.3 and 5.9.
-	let arrivalJumpR = 0;
+	// **One take from the arrival through the fly-past** (the principal's
+	// sixth note): between two frames of it the camera may move only by the
+	// orbit (~0.03 reaches a frame; the fly-past camera stands still in its
+	// frame) and turn its aim by a few degrees. The noise jumps this was built
+	// on were 4.3 and 5.9 reaches, and the old cut between the two scenes
+	// moved the camera by several reaches at once.
+	const take = new Set(["arrival", "flypast"]);
+	let takeJumpR = 0;
+	let takeTurnDeg = 0;
 	let arrivalFrames = 0;
+	let takeFrames = 0;
 	for (let i = 1; i < frames.length; i++) {
 		const [a, b] = [frames[i - 1], frames[i]];
-		if (a.shot !== "arrival" || b.shot !== "arrival") continue;
-		arrivalFrames++;
+		if (!take.has(a.shot) || !take.has(b.shot)) continue;
+		takeFrames++;
+		if (b.shot === "arrival") arrivalFrames++;
 		const jump = Math.hypot(
-			b.rel.x - a.rel.x,
-			b.rel.y - a.rel.y,
-			b.rel.z - a.rel.z,
+			b.cam.x - a.cam.x,
+			b.cam.y - a.cam.y,
+			b.cam.z - a.cam.z,
 		);
-		arrivalJumpR = Math.max(arrivalJumpR, jump / 0.036);
+		takeJumpR = Math.max(takeJumpR, jump / 0.036);
+		const c =
+			a.forward.x * b.forward.x +
+			a.forward.y * b.forward.y +
+			a.forward.z * b.forward.z;
+		takeTurnDeg = Math.max(
+			takeTurnDeg,
+			(Math.acos(Math.max(-1, Math.min(1, c))) * 180) / Math.PI,
+		);
 	}
 	const closestR = Math.min(...frames.map((f) => f.distR));
 	const worstOff = Math.max(...frames.map((f) => f.offDeg));
@@ -275,17 +295,21 @@ for (const seed of [47, 48, 49, 50, 51]) {
 		...new Set(frames.map((f) => f.shot).filter(Boolean)),
 	].join(" ");
 	check(
-		`seed ${seed}: every frame keeps the camera steady, outside the hull, and the ship in frame`,
+		`seed ${seed}: arrival and fly-past are one steady take, the camera outside the hull, the ship in frame`,
 		arrivalFrames > 100 &&
+			takeFrames > arrivalFrames + 100 &&
 			shotsSeen === "arrival flypast cruise approach dock" &&
-			arrivalJumpR < 0.5 &&
+			takeJumpR < 0.5 &&
+			takeTurnDeg < 8 &&
 			closestR > 2 &&
 			worstOff < 25,
 		JSON.stringify({
 			frames: frames.length,
 			arrivalFrames,
+			takeFrames,
 			shotsSeen,
-			arrivalJumpR: Number(arrivalJumpR.toFixed(4)),
+			takeJumpR: Number(takeJumpR.toFixed(4)),
+			takeTurnDeg: Number(takeTurnDeg.toFixed(2)),
 			closestR: Number(closestR.toFixed(2)),
 			worstOffDeg: Number(worstOff.toFixed(1)),
 		}),

@@ -14504,7 +14504,7 @@ class Game {
 		// The run anchors each shot on the step it starts (`shotChanged`); the
 		// arrival starts before any step, so its first frame anchors it.
 		if (this.openingAnchor?.shot !== shot)
-			this.openingAnchor = anchorShot(shot, scene);
+			this.openingAnchor = anchorShot(shot, scene, this.openingAnchor);
 		return shotCamera(this.openingAnchor, scene);
 	}
 
@@ -14617,7 +14617,12 @@ class Game {
 		// frame or a skip past it cannot move where the camera stands. Reads
 		// only; a cut keeps the last anchor, and it lasts less than a frame.
 		shotChanged: (shot) => {
-			if (shot) this.openingAnchor = anchorShot(shot, this.openingScene());
+			if (shot)
+				this.openingAnchor = anchorShot(
+					shot,
+					this.openingScene(),
+					this.openingAnchor,
+				);
 		},
 	};
 

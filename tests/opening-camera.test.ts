@@ -309,3 +309,35 @@ describe("the planet fly-by (the principal's fifth note)", () => {
 		);
 	});
 });
+
+describe("arrival and fly-past are one take (the principal's sixth note)", () => {
+	const at = (s: ShotScene, t: number) => ({ ...s, gameTime: s.gameTime + t });
+	test("the fly-past starts where the arrival camera ends, looking the same way", () => {
+		const s = scene();
+		const arrival = anchorShot("arrival", s);
+		const end = at(s, SHOT_FRAMING.arrival.orbitS);
+		const last = shotCamera(arrival, end);
+		const flypast = anchorShot("flypast", end, arrival);
+		const first = shotCamera(flypast, end);
+		near(first.pos, last.pos);
+		expect(dot(first.forward, last.forward)).toBeGreaterThan(
+			Math.cos((1 * Math.PI) / 180),
+		);
+	});
+	test("then holds still in its frame while the ship burns past, never inside the hull", () => {
+		const s = scene();
+		const arrival = anchorShot("arrival", s);
+		const end = at(s, SHOT_FRAMING.arrival.orbitS);
+		const flypast = anchorShot("flypast", end, arrival);
+		let closest = Number.POSITIVE_INFINITY;
+		for (let t = 0; t <= 5; t += 0.05) {
+			const pos = add(s.ship.pos, scale(s.ship.nose, 0.1 * t));
+			const frame = { ...at(end, t), ship: { ...s.ship, pos } };
+			const cam = shotCamera(flypast, frame);
+			near(cam.pos, add(shotCamera(flypast, end).pos, scale(s.frameVel, t)));
+			closest = Math.min(closest, length(sub(cam.pos, pos)));
+			expect(offAxisDeg(cam, pos)).toBeLessThan(25);
+		}
+		expect(closest).toBeGreaterThan(2 * R);
+	});
+});

@@ -71,6 +71,9 @@ export interface ShotAnchor {
 	/** The fly-by's angle, chosen once on its first step so a shot never
 	 *  jumps between the two mid-take. */
 	reverse?: boolean;
+	/** The fly-past taken over from the arrival: how far behind the ship the
+	 *  arrival was looking, eased onto the ship over `handoverS`. */
+	lookBehindKm?: number;
 }
 
 /** The framing table, in hull reaches (R) or kilometres where named. */
@@ -98,7 +101,14 @@ export const SHOT_FRAMING = Object.freeze({
 	 * above, so the pass is seen three-quarters from above rather than flat
 	 * side-on and never inside the hull: 0.1 km off the path, 2.8 reaches.
 	 */
-	flypast: Object.freeze({ passKm: 0.15, offKm: 0.08, upKm: 0.06 }),
+	flypast: Object.freeze({
+		passKm: 0.15,
+		offKm: 0.08,
+		upKm: 0.06,
+		/** How long the look takes to settle from the arrival's aim onto the
+		 *  ship when the fly-past continues the arrival's take. */
+		handoverS: 1,
+	}),
 	/**
 	 * The planet fly-by. The station is a point until the leg's last seconds
 	 * and its planet is the place, so the shot is built round the planet.
@@ -185,7 +195,13 @@ const shotAxis = (shot: OpeningShot, scene: ShotScene): Vec3 => {
 };
 
 /** Anchor a shot on its first step. */
-export function anchorShot(shot: OpeningShot, scene: ShotScene): ShotAnchor {
+export function anchorShot(
+	shot: OpeningShot,
+	scene: ShotScene,
+	/** The shot this one follows, when it continues its take rather than
+	 *  cutting from it. */
+	previous: ShotAnchor | null = null,
+): ShotAnchor {
 	const { ship } = scene;
 	const axis = shotAxis(shot, scene);
 	const side = sunSide(axis, ship.pos, scene.starPos, ship.up);
@@ -212,6 +228,20 @@ export function anchorShot(shot: OpeningShot, scene: ShotScene): ShotAnchor {
 		};
 	}
 	if (shot !== "flypast") return base;
+	// **One take with the arrival** (the principal's sixth note): the orbit
+	// stops where it ended and that camera holds still in its frame while the
+	// burn carries the ship past it — no cut. It ended 65° off the nose and
+	// about six reaches off the ship's path, so the pass is three-quarters
+	// and clear of the hull.
+	if (previous?.shot === "arrival") {
+		const last = shotCamera(previous, scene);
+		return {
+			...base,
+			pos: last.pos,
+			up: last.up,
+			lookBehindKm: SHOT_FRAMING.arrival.lookBehindR * scene.reachKm,
+		};
+	}
 	const f = SHOT_FRAMING.flypast;
 	const up = across(ship.up, ship.nose, ownSide(side, ship.nose));
 	return {
@@ -286,11 +316,15 @@ export function shotCamera(anchor: ShotAnchor, scene: ShotScene): ShotCamera {
 			return looking(pos, at, ship.up, scale(ship.nose, -1));
 		}
 		case "flypast": {
-			const pos = add(
-				anchor.pos,
-				scale(anchor.frameVel, scene.gameTime - anchor.atS),
-			);
-			return looking(pos, ship.pos, anchor.up, ship.nose);
+			const since = scene.gameTime - anchor.atS;
+			const pos = add(anchor.pos, scale(anchor.frameVel, since));
+			// Continuing the arrival's take, the look starts on the arrival's aim
+			// and settles onto the ship, so the handover does not snap.
+			const behind =
+				(anchor.lookBehindKm ?? 0) *
+				(1 - eased(since / SHOT_FRAMING.flypast.handoverS));
+			const at = sub(ship.pos, scale(ship.nose, behind));
+			return looking(pos, at, anchor.up, ship.nose);
 		}
 		case "cruise": {
 			const f = SHOT_FRAMING.cruise;
