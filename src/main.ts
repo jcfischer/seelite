@@ -4315,9 +4315,9 @@ class Game {
 				void main() {
 					vec3 color = aColor;
 					float size = aSize;
-					// At rest this is the expression the sky always used, so an idle
-					// frame is bit-for-bit the frame before #537: a regrouped
-					// multiply moved sub-pixel star edges in station-approach.
+					// At rest this is the expression the sky used before #537. The
+					// shift's own path regroups the multiply, and the idle sky has
+					// no reason to pay for that in its rounding.
 					vec4 view = modelViewMatrix * vec4(position, 1.0);
 					if (uBeta > 0.0) {
 						// #537: the cruise light shift, in the scene's frame about

@@ -4,8 +4,8 @@
  * The star shader carries a GLSL copy of these functions, and
  * `probe-cruise-light.mjs` holds a drawn star against {@link aberrate}, so the
  * copy's **placement** cannot drift from what is tested here. Its colour and
- * size terms are written from the same tables, which is what the last block
- * checks; whether they look right is the sheet's. What is tested here is the
+ * size terms are written from the same tables and constants, which is what
+ * the last block checks by text; whether they look right is the sheet's. What is tested here is the
  * physics, checked against a form of it the module does not use: the
  * half-angle law `tan(θ'/2) = sqrt((1-β)/(1+β)) · tan(θ/2)`.
  */
@@ -189,6 +189,20 @@ describe("the shader copy", () => {
 		expect(LIGHT_SHIFT_GLSL).toContain(`clamp(x, 0.0, 1.0) * ${n.toFixed(1)}`);
 		for (const stop of STARBOW_STOPS)
 			expect(LIGHT_SHIFT_GLSL).toContain(glslVec3(stop));
+	});
+
+	test("its size clamp and colour dials are the module's constants", () => {
+		const f = (x: number) => x.toFixed(4);
+		expect(LIGHT_SHIFT_GLSL).toContain(
+			`clamp(d * d, ${f(CRUISE_LIGHT.sizeMin)}, ${f(CRUISE_LIGHT.sizeMax)})`,
+		);
+		expect(LIGHT_SHIFT_GLSL).toContain(`${f(CRUISE_LIGHT.strength)} * min(1.0`);
+		expect(LIGHT_SHIFT_GLSL).toContain(
+			`max(${f(CRUISE_LIGHT.dimFloor)}, d * d)`,
+		);
+		expect(LIGHT_SHIFT_GLSL).toContain(
+			((CRUISE_LIGHT.ringDeg * Math.PI) / 180).toFixed(6),
+		);
 	});
 
 	test("the witchspace pass's starbow reads the same table", () => {

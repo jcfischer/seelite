@@ -100,6 +100,23 @@ await page.evaluate(async () => {
 			return n ? { n, x: sx / n, y: sy / n } : { n };
 		},
 		/**
+		 * Run `fn` on a bare cockpit frame — no bloom, no streaks, clock held —
+		 * and restore both whatever `fn` does, so no row leaks into the next.
+		 */
+		bare(fn) {
+			g.clockHeld = true;
+			g.view = "cockpit";
+			g.bloomPass.enabled = false;
+			g.nearScene.remove(g.warp.object);
+			try {
+				return fn();
+			} finally {
+				g.nearScene.add(g.warp.object);
+				g.bloomPass.enabled = true;
+				g.holdCruiseLight(null);
+			}
+		},
+		/**
 		 * A unit direction on the backdrop sphere to drawing-buffer pixels,
 		 * through `cam`'s own matrices: where a star in that direction is drawn.
 		 */
@@ -213,6 +230,7 @@ check(
 const truth = await page.evaluate(() => {
 	const g = window.__seelite;
 	const w = window.__light;
+	// The positive control keeps the streaks too: the sky is what moves.
 	g.clockHeld = true;
 	g.view = "cockpit";
 	g.bloomPass.enabled = false;
@@ -220,17 +238,18 @@ const truth = await page.evaluate(() => {
 	const skyOff = w.capture();
 	g.holdCruiseLight(1);
 	const skyOn = w.capture();
-	g.nearScene.remove(g.warp.object);
-	g.starGroup.visible = false;
-	g.holdCruiseLight(0);
-	const bare0 = w.capture();
-	g.holdCruiseLight(1);
-	const bare1 = w.capture();
-	const bare1again = w.capture();
-	g.starGroup.visible = true;
-	g.nearScene.add(g.warp.object);
 	g.bloomPass.enabled = true;
-	g.holdCruiseLight(null);
+	const [bare0, bare1, bare1again] = w.bare(() => {
+		g.starGroup.visible = false;
+		try {
+			g.holdCruiseLight(0);
+			const off = w.capture();
+			g.holdCruiseLight(1);
+			return [off, w.capture(), w.capture()];
+		} finally {
+			g.starGroup.visible = true;
+		}
+	});
 	const lit = (img) => {
 		let n = 0;
 		for (let i = 0; i < img.data.length; i += 4)
@@ -278,77 +297,74 @@ const starCheck = (deg, toward, headLook) =>
 			const g = window.__seelite;
 			const w = window.__light;
 			const R = g.units.BACKDROP_RADIUS;
-			g.clockHeld = true;
-			g.view = "cockpit";
-			g.setHeadLook(headLook);
-			g.cabinHidden = true;
-			g.bloomPass.enabled = false;
-			g.nearScene.remove(g.warp.object);
-			g.holdCruiseLight(1);
-			g.render(0);
-			const cam = g.backdropCamera;
-			cam.updateMatrixWorld();
-			const e = cam.matrixWorld.elements;
-			const h = g.cruiseLightReading().heading;
-			const beta = g.cruiseLightReading().beta;
-			const dotv = (a, b) => a.x * b.x + a.y * b.y + a.z * b.z;
-			const pick =
-				toward === "up"
-					? { x: e[4], y: e[5], z: e[6] }
-					: { x: -e[8], y: -e[9], z: -e[10] };
-			const k = dotv(pick, h);
-			const u = {
-				x: pick.x - k * h.x,
-				y: pick.y - k * h.y,
-				z: pick.z - k * h.z,
-			};
-			const ul = Math.hypot(u.x, u.y, u.z);
-			const th = (deg * Math.PI) / 180;
-			const d = {
-				x: Math.cos(th) * h.x + (Math.sin(th) * u.x) / ul,
-				y: Math.cos(th) * h.y + (Math.sin(th) * u.y) / ul,
-				z: Math.cos(th) * h.z + (Math.sin(th) * u.z) / ul,
-			};
-			const layer = g.starGroup.children[0];
-			const geometry = new layer.geometry.constructor();
-			const Attr = layer.geometry.attributes.position.constructor;
-			geometry.setAttribute(
-				"position",
-				new Attr(new Float32Array([d.x * R, d.y * R, d.z * R]), 3),
-			);
-			geometry.setAttribute("aColor", new Attr(new Float32Array([4, 4, 4]), 3));
-			geometry.setAttribute("aSize", new Attr(new Float32Array([0.02]), 1));
-			const star = new layer.constructor(geometry, g.starMaterial);
-			star.frustumCulled = false;
-			const hidden = g.starGroup.children.slice();
-			for (const c of hidden) c.visible = false;
-			const without = w.capture();
-			g.starGroup.add(star);
-			const shifted = w.capture();
-			g.holdCruiseLight(0);
-			const rest = w.capture();
-			g.starGroup.remove(star);
-			geometry.dispose();
-			for (const c of hidden) c.visible = true;
-			g.holdCruiseLight(null);
-			g.setHeadLook("forward");
-			g.cabinHidden = false;
-			g.bloomPass.enabled = true;
-			g.nearScene.add(g.warp.object);
-			const at = (dir) => w.project(cam, dir, without.width, without.height);
-			return {
-				beta,
-				offNose:
-					(Math.acos(
-						Math.max(-1, Math.min(1, -e[8] * h.x - e[9] * h.y - e[10] * h.z)),
-					) *
-						180) /
-					Math.PI,
-				want: at(w.shift.aberrate(d, h, beta)),
-				wantAtRest: at(d),
-				got: w.centroid(without, shifted, 20),
-				atRest: w.centroid(without, rest, 20),
-			};
+			return w.bare(() => {
+				g.setHeadLook(headLook);
+				g.cabinHidden = true;
+				g.holdCruiseLight(1);
+				g.render(0);
+				const cam = g.backdropCamera;
+				cam.updateMatrixWorld();
+				const e = cam.matrixWorld.elements;
+				const { heading: h, beta } = g.cruiseLightReading();
+				const dotv = (a, b) => a.x * b.x + a.y * b.y + a.z * b.z;
+				const pick =
+					toward === "up"
+						? { x: e[4], y: e[5], z: e[6] }
+						: { x: -e[8], y: -e[9], z: -e[10] };
+				const k = dotv(pick, h);
+				const u = {
+					x: pick.x - k * h.x,
+					y: pick.y - k * h.y,
+					z: pick.z - k * h.z,
+				};
+				const ul = Math.hypot(u.x, u.y, u.z);
+				const th = (deg * Math.PI) / 180;
+				const d = {
+					x: Math.cos(th) * h.x + (Math.sin(th) * u.x) / ul,
+					y: Math.cos(th) * h.y + (Math.sin(th) * u.y) / ul,
+					z: Math.cos(th) * h.z + (Math.sin(th) * u.z) / ul,
+				};
+				const layer = g.starGroup.children[0];
+				const geometry = new layer.geometry.constructor();
+				const Attr = layer.geometry.attributes.position.constructor;
+				geometry.setAttribute(
+					"position",
+					new Attr(new Float32Array([d.x * R, d.y * R, d.z * R]), 3),
+				);
+				geometry.setAttribute(
+					"aColor",
+					new Attr(new Float32Array([4, 4, 4]), 3),
+				);
+				geometry.setAttribute("aSize", new Attr(new Float32Array([0.02]), 1));
+				const star = new layer.constructor(geometry, g.starMaterial);
+				star.frustumCulled = false;
+				const hidden = g.starGroup.children.slice();
+				for (const c of hidden) c.visible = false;
+				const without = w.capture();
+				g.starGroup.add(star);
+				const shifted = w.capture();
+				g.holdCruiseLight(0);
+				const rest = w.capture();
+				g.starGroup.remove(star);
+				geometry.dispose();
+				for (const c of hidden) c.visible = true;
+				g.setHeadLook("forward");
+				g.cabinHidden = false;
+				const at = (dir) => w.project(cam, dir, without.width, without.height);
+				return {
+					beta,
+					offNose:
+						(Math.acos(
+							Math.max(-1, Math.min(1, -e[8] * h.x - e[9] * h.y - e[10] * h.z)),
+						) *
+							180) /
+						Math.PI,
+					want: at(w.shift.aberrate(d, h, beta)),
+					wantAtRest: at(d),
+					got: w.centroid(without, shifted, 20),
+					atRest: w.centroid(without, rest, 20),
+				};
+			});
 		},
 		{ deg, toward, headLook },
 	);
