@@ -363,8 +363,7 @@ export class OpeningRun {
 	advanceTo(sim: OpeningSim, shot: OpeningShot, shownS: number): void {
 		const order = OPENING_SHOTS[this.kind];
 		const want = order.indexOf(shot);
-		if (want < 0)
-			throw new Error(`a ${this.kind} opening has no ${shot} shot`);
+		if (want < 0) throw new Error(`a ${this.kind} opening has no ${shot} shot`);
 		const at = this.shot === null ? -1 : order.indexOf(this.shot);
 		const passed =
 			this.done ||

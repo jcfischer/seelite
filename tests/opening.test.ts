@@ -65,7 +65,8 @@ class FakeSim implements OpeningSim {
 			stationKm:
 				this.regime === "cruise" ? 1e6 : Math.max(0, this.approachLeftS / 10),
 			inVicinity: this.regime !== "cruise",
-			runIn: this.regime !== "cruise" && this.computer && this.approachLeftS < 40,
+			runIn:
+				this.regime !== "cruise" && this.computer && this.approachLeftS < 40,
 		};
 	}
 
