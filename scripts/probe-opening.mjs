@@ -458,7 +458,7 @@ for (const shot of ["cruise", "dock"]) {
 	const expected = shot === "cruise" ? "docked" : "fallback";
 	check(
 		shot === "cruise"
-			? "a quit in the fly-by saves in flight, and the reload flies the rest and docks with lastDocked"
+			? "a quit in the fly-by saves in flight, and the reload flies the opening again from there and docks with lastDocked"
 			: "a quit on the run-in saves in flight, and the reload falls back to the placement and docks with lastDocked",
 		saved.dockedAt === null &&
 			!saved.lastDocked &&

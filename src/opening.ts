@@ -514,9 +514,12 @@ export function openingCaption(
  * ruling on #535, 2026-09-26). A quit during a guided opening saves the ship
  * mid-flight — mid-cruise, or on the run-in — before the dock has written
  * `lastDocked`, and a loaded commander sees no opening. So one that is guided,
- * not docked and has never docked flies the rest of it, skipped, on load:
- * from mid-cruise the rest is flown, and from the run-in #530 D6's fallback
- * places the ship.
+ * not docked and has never docked flies the opening again, skipped, on load
+ * — the whole script, from wherever the ship was saved, not a resume from the
+ * leg it stopped in (sage round 3 on #536). From mid-cruise that flies on to a
+ * dock (an engage while cruising is a no-op and the spool leg sees cruise);
+ * from the run-in a cruise that close is refused and #530 D6's fallback places
+ * the ship.
  *
  * The one other way to be guided, in flight and never docked is that fallback
  * failing too (`startDockedAtHome`'s own `giveUp`), and then every load tries

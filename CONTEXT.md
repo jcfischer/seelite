@@ -354,7 +354,7 @@ A guided new game's first job, from a docked start to a reported delivery, and t
 _Avoid_: Tutorial (there is no separate mode), onboarding (in the pilot's copy)
 
 **Opening**:
-A new game's first flight, filmed: the rift forming, the arrival from witchspace, a fly-past and, for a guided game, the planet fly-by, the station approach and the dock into its **First day**. A real flight in the sim, watched or skipped into the same state, with #530 D6's placement as its fallback. `src/opening.ts` owns the script and the shots, and #530's resolution the decisions.
+A new game's first flight, filmed: the rift forming, the arrival from witchspace, a fly-past and, for a guided game, the planet fly-by, the station approach and the dock into its **First day**. A real flight in the sim, watched or skipped into the same state, with #530 D6's placement as its fallback. `src/opening.ts` owns the script and which shot shows it, `src/opening-camera.ts` how each shot is framed, and #530's resolution the decisions.
 _Avoid_: Intro, cutscene (it is not a film; the flight is the game's)
 
 **Station control**:

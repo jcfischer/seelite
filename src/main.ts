@@ -17078,7 +17078,13 @@ if (postcard) {
 		// `?cinematic=held`: the strip's start — held on its first frame
 		// before any frame has run, so `holdOpening` lands on the same step
 		// every capture.
-		if (opening.watched && query.get("cinematic") === "held")
+		// Only a run that exists can be held: a guided system with no trade
+		// station falls back at once and never starts one (sage round 3 on #536).
+		if (
+			opening.watched &&
+			query.get("cinematic") === "held" &&
+			game.openingActive
+		)
 			game.holdOpening("forming", 0);
 	};
 	if (plan.mode === "direct") {
