@@ -248,102 +248,148 @@ check(
 	`zoom ${live.skyZoom}, near ${live.near.map((v) => v.toFixed(4))}, skies ${JSON.stringify(live.skies.map((s) => s.map((v) => v.toFixed(4))))}`,
 );
 
-// **The GLSL copy.** One bright star 40° off the heading, toward the camera's
-// up: outside the unshifted frame, and inside the shifted one where `aberrate`
-// puts it.
-const glsl = await page.evaluate(() => {
-	const g = window.__seelite;
-	const w = window.__light;
-	const R = g.units.BACKDROP_RADIUS;
-	g.clockHeld = true;
-	g.view = "cockpit";
-	g.cabinHidden = true;
-	g.bloomPass.enabled = false;
-	g.nearScene.remove(g.warp.object);
-	g.holdCruiseLight(1);
-	g.render(0);
-	const cam = g.backdropCamera;
-	cam.updateMatrixWorld();
-	const e = cam.matrixWorld.elements;
-	const h = g.cruiseLightReading().heading;
-	const beta = g.cruiseLightReading().beta;
-	const dotv = (a, b) => a.x * b.x + a.y * b.y + a.z * b.z;
-	const up0 = { x: e[4], y: e[5], z: e[6] };
-	const k = dotv(up0, h);
-	const u = { x: up0.x - k * h.x, y: up0.y - k * h.y, z: up0.z - k * h.z };
-	const ul = Math.hypot(u.x, u.y, u.z);
-	const th = (40 * Math.PI) / 180;
-	const d = {
-		x: Math.cos(th) * h.x + (Math.sin(th) * u.x) / ul,
-		y: Math.cos(th) * h.y + (Math.sin(th) * u.y) / ul,
-		z: Math.cos(th) * h.z + (Math.sin(th) * u.z) / ul,
-	};
-	// One point on the sky's own material, in the star group so it shares the
-	// group's model matrix; the rest of the sky is hidden.
-	const layer = g.starGroup.children[0];
-	const geometry = new layer.geometry.constructor();
-	const Attr = layer.geometry.attributes.position.constructor;
-	geometry.setAttribute(
-		"position",
-		new Attr(new Float32Array([d.x * R, d.y * R, d.z * R]), 3),
+// **The GLSL copy, about the heading.** One bright star on the sky's own
+// material, placed `deg` off the heading toward `toward` — the camera's up in
+// the forward view, the camera's forward with the head turned — and found where
+// `aberrate` says it is seen. The head-turned row is what separates the ship's
+// heading from the camera's: a shader that shifted about the view direction
+// passes the forward row and fails that one.
+const starCheck = (deg, toward, headLook) =>
+	page.evaluate(
+		({ deg, toward, headLook }) => {
+			const g = window.__seelite;
+			const w = window.__light;
+			const R = g.units.BACKDROP_RADIUS;
+			g.clockHeld = true;
+			g.view = "cockpit";
+			g.setHeadLook(headLook);
+			g.cabinHidden = true;
+			g.bloomPass.enabled = false;
+			g.nearScene.remove(g.warp.object);
+			g.holdCruiseLight(1);
+			g.render(0);
+			const cam = g.backdropCamera;
+			cam.updateMatrixWorld();
+			const e = cam.matrixWorld.elements;
+			const h = g.cruiseLightReading().heading;
+			const beta = g.cruiseLightReading().beta;
+			const dotv = (a, b) => a.x * b.x + a.y * b.y + a.z * b.z;
+			const pick =
+				toward === "up"
+					? { x: e[4], y: e[5], z: e[6] }
+					: { x: -e[8], y: -e[9], z: -e[10] };
+			const k = dotv(pick, h);
+			const u = {
+				x: pick.x - k * h.x,
+				y: pick.y - k * h.y,
+				z: pick.z - k * h.z,
+			};
+			const ul = Math.hypot(u.x, u.y, u.z);
+			const th = (deg * Math.PI) / 180;
+			const d = {
+				x: Math.cos(th) * h.x + (Math.sin(th) * u.x) / ul,
+				y: Math.cos(th) * h.y + (Math.sin(th) * u.y) / ul,
+				z: Math.cos(th) * h.z + (Math.sin(th) * u.z) / ul,
+			};
+			const layer = g.starGroup.children[0];
+			const geometry = new layer.geometry.constructor();
+			const Attr = layer.geometry.attributes.position.constructor;
+			geometry.setAttribute(
+				"position",
+				new Attr(new Float32Array([d.x * R, d.y * R, d.z * R]), 3),
+			);
+			geometry.setAttribute("aColor", new Attr(new Float32Array([4, 4, 4]), 3));
+			geometry.setAttribute("aSize", new Attr(new Float32Array([0.02]), 1));
+			const star = new layer.constructor(geometry, g.starMaterial);
+			star.frustumCulled = false;
+			const hidden = g.starGroup.children.slice();
+			for (const c of hidden) c.visible = false;
+			const without = w.capture();
+			g.starGroup.add(star);
+			const shifted = w.capture();
+			g.holdCruiseLight(0);
+			const rest = w.capture();
+			g.starGroup.remove(star);
+			geometry.dispose();
+			for (const c of hidden) c.visible = true;
+			g.holdCruiseLight(null);
+			g.setHeadLook("forward");
+			g.cabinHidden = false;
+			g.bloomPass.enabled = true;
+			g.nearScene.add(g.warp.object);
+			const project = (dir) => {
+				const c = cam.matrixWorld.elements;
+				const p = {
+					x: c[12] + dir.x * R,
+					y: c[13] + dir.y * R,
+					z: c[14] + dir.z * R,
+				};
+				const v = cam.matrixWorldInverse.elements;
+				const m = cam.projectionMatrix.elements;
+				const vx = v[0] * p.x + v[4] * p.y + v[8] * p.z + v[12];
+				const vy = v[1] * p.x + v[5] * p.y + v[9] * p.z + v[13];
+				const vz = v[2] * p.x + v[6] * p.y + v[10] * p.z + v[14];
+				const cx = m[0] * vx + m[4] * vy + m[8] * vz + m[12];
+				const cy = m[1] * vx + m[5] * vy + m[9] * vz + m[13];
+				const cw = m[3] * vx + m[7] * vy + m[11] * vz + m[15];
+				return {
+					x: ((cx / cw + 1) / 2) * without.width,
+					y: ((1 - cy / cw) / 2) * without.height,
+				};
+			};
+			return {
+				beta,
+				offNose:
+					(Math.acos(
+						Math.max(-1, Math.min(1, -e[8] * h.x - e[9] * h.y - e[10] * h.z)),
+					) *
+						180) /
+					Math.PI,
+				want: project(w.shift.aberrate(d, h, beta)),
+				wantAtRest: project(d),
+				got: w.centroid(without, shifted, 20),
+				atRest: w.centroid(without, rest, 20),
+			};
+		},
+		{ deg, toward, headLook },
 	);
-	geometry.setAttribute("aColor", new Attr(new Float32Array([4, 4, 4]), 3));
-	geometry.setAttribute("aSize", new Attr(new Float32Array([0.02]), 1));
-	const star = new layer.constructor(geometry, g.starMaterial);
-	star.frustumCulled = false;
-	const hidden = g.starGroup.children.slice();
-	for (const c of hidden) c.visible = false;
-	const without = w.capture();
-	g.starGroup.add(star);
-	const shifted = w.capture();
-	g.holdCruiseLight(0);
-	const rest = w.capture();
-	g.starGroup.remove(star);
-	geometry.dispose();
-	for (const c of hidden) c.visible = true;
-	g.holdCruiseLight(null);
-	g.cabinHidden = false;
-	g.bloomPass.enabled = true;
-	g.nearScene.add(g.warp.object);
-	// Where `aberrate` says it is seen, projected through the backdrop camera.
-	const seen = w.shift.aberrate(d, h, beta);
-	const c = cam.matrixWorld.elements;
-	const p = {
-		x: c[12] + seen.x * R,
-		y: c[13] + seen.y * R,
-		z: c[14] + seen.z * R,
-	};
-	const v = cam.matrixWorldInverse.elements;
-	const m = cam.projectionMatrix.elements;
-	const vx = v[0] * p.x + v[4] * p.y + v[8] * p.z + v[12];
-	const vy = v[1] * p.x + v[5] * p.y + v[9] * p.z + v[13];
-	const vz = v[2] * p.x + v[6] * p.y + v[10] * p.z + v[14];
-	const cx = m[0] * vx + m[4] * vy + m[8] * vz + m[12];
-	const cy = m[1] * vx + m[5] * vy + m[9] * vz + m[13];
-	const cw = m[3] * vx + m[7] * vy + m[11] * vz + m[15];
-	const W = without.width;
-	const H = without.height;
-	const want = { x: ((cx / cw + 1) / 2) * W, y: ((1 - cy / cw) / 2) * H };
-	return {
-		beta,
-		want,
-		got: w.centroid(without, shifted, 20),
-		atRest: w.centroid(without, rest, 20),
-		size: { W, H },
-	};
-});
-const miss = glsl.got.n
-	? Math.hypot(glsl.got.x - glsl.want.x, glsl.got.y - glsl.want.y)
-	: Number.POSITIVE_INFINITY;
+const missOf = (got, want) =>
+	got.n ? Math.hypot(got.x - want.x, got.y - want.y) : Number.POSITIVE_INFINITY;
+const fmt = (p) => (p.n === 0 ? "none" : `${p.x.toFixed(1)},${p.y.toFixed(1)}`);
+
+const ahead = await starCheck(40, "up", "forward");
 check(
 	"a star 40° off the nose is off the unshifted frame",
-	glsl.atRest.n === 0,
-	`${glsl.atRest.n} px lit`,
+	ahead.atRest.n === 0,
+	`${ahead.atRest.n} px lit`,
 );
+const aheadMiss = missOf(ahead.got, ahead.want);
 check(
 	"the shader draws it where aberrate() says it is seen",
-	glsl.got.n > 0 && miss < 3,
-	`${glsl.got.n} px, centroid ${glsl.got.x?.toFixed(1)},${glsl.got.y?.toFixed(1)} against ${glsl.want.x.toFixed(1)},${glsl.want.y.toFixed(1)} (${miss.toFixed(2)} px) at beta ${glsl.beta}`,
+	ahead.got.n > 0 && aheadMiss < 3,
+	`${ahead.got.n} px at ${fmt(ahead.got)} against ${fmt({ n: 1, ...ahead.want })} (${aheadMiss.toFixed(2)} px) at beta ${ahead.beta}`,
+);
+
+// Head turned: the camera looks well off the nose, and a star 82° off the
+// heading toward where it looks is on screen both at rest and shifted: at rest
+// about 15° past the view axis from the nose, shifted about 20° short of it.
+const side = await starCheck(82, "forward", "left");
+const sideRestMiss = missOf(side.atRest, side.wantAtRest);
+const sideMiss = missOf(side.got, side.want);
+check(
+	"with the head turned the camera looks well off the nose",
+	side.offNose > 30,
+	`${side.offNose.toFixed(1)}° off the nose`,
+);
+check(
+	"head turned, the unshifted star is where it always was",
+	side.atRest.n > 0 && sideRestMiss < 3,
+	`${fmt(side.atRest)} against ${fmt({ n: 1, ...side.wantAtRest })} (${sideRestMiss.toFixed(2)} px)`,
+);
+check(
+	"head turned, the shifted star is where aberrate() puts it about the ship's heading",
+	side.got.n > 0 && sideMiss < 3,
+	`${fmt(side.got)} against ${fmt({ n: 1, ...side.want })} (${sideMiss.toFixed(2)} px)`,
 );
 
 // **The keys still fly**, in the default layout (#381 D11): Control is throttle
