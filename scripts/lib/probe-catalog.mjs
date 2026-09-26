@@ -92,6 +92,11 @@ export const PROBE_CATALOG = Object.freeze(
 			["cruise", "automatic detour", "station target", "route progress"],
 		),
 		entry(
+			"probe-cruise-light.mjs",
+			"Checks the cruise light shift on the star backdrop: the shader places a star where aberration says, bodies and markers stay true, the keys still fly and a drop-out eases.",
+			["cruise", "light shift", "star field", "backdrop layer", "starbow"],
+		),
+		entry(
 			"probe-cruise.mjs",
 			"Flies the normal cruise regime through charge, travel, layer handoff, exit, and arrival behavior.",
 			[
