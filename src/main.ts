@@ -14438,6 +14438,17 @@ class Game {
 
 	/** How the last opening ended, kept after it is cleared. */
 	openingOutcome: OpeningOutcome | null = null;
+	/** The state the last opening ended in, taken before anything else runs. */
+	openingEnd: {
+		steps: number;
+		gameTime: number;
+		dock: string;
+		pos: number[];
+		vel: number[];
+		orientation: number[];
+		throttle: number;
+		regime: string;
+	} | null = null;
 	private opening: OpeningRun | null = null;
 	private openingStationId: string | null = null;
 	/** The view the pilot had before a watched opening took the camera. */
@@ -14569,6 +14580,20 @@ class Game {
 		this.opening = null;
 		this.openingAnchor = null;
 		this.openingOutcome = run.outcome;
+		// The state the run ended in, before the clock runs on: what a watched
+		// and a skipped run owe equality on (#530 D2), read by the probe.
+		const p = this.world.ship.pos;
+		const v = this.world.ship.vel;
+		this.openingEnd = {
+			steps: run.steps,
+			gameTime: this.world.gameTime,
+			dock: JSON.stringify(this.dock),
+			pos: [p.x, p.y, p.z],
+			vel: [v.x, v.y, v.z],
+			orientation: this.orientation.toArray(),
+			throttle: this.throttle,
+			regime: this.regime,
+		};
 		if (this.openingPriorView !== null) {
 			this.view = this.openingPriorView;
 			this.openingPriorView = null;
