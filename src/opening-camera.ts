@@ -38,6 +38,8 @@ export interface ShotScene {
 	/** The trade station: its centre, its aperture axis (outward), and the
 	 *  aperture plane's distance from the centre, km. */
 	station: { pos: Vec3; axis: Vec3; planeKm: number } | null;
+	/** The body the station orbits, when it has one. */
+	planet: { pos: Vec3 } | null;
 	/** The velocity of the frame the ship's assist holds speed in, km/s. */
 	frameVel: Vec3;
 	gameTime: number;
@@ -57,6 +59,9 @@ export interface ShotAnchor {
 	up: Vec3;
 	frameVel: Vec3;
 	atS: number;
+	/** The cruise shot's angle, chosen once on its first step so a shot
+	 *  never jumps between the two mid-take. */
+	reverse?: boolean;
 }
 
 /** The framing table, in hull reaches (R) or kilometres where named. */
@@ -67,8 +72,21 @@ export const SHOT_FRAMING = Object.freeze({
 	/** A camera the ship passes: `passKm` down the nose from where the burn
 	 *  starts — about three seconds of it — and `offKm` to the side. */
 	flypast: Object.freeze({ passKm: 0.3, offKm: 0.06, upKm: 0.012 }),
-	/** Behind the ship and to the sun side, looking where it is going. */
-	cruise: Object.freeze({ behindR: 8, sideR: 2, upR: 1 }),
+	/**
+	 * The station is a point until the leg's last seconds and its planet is
+	 * the place, so the shot is built round the planet. When the two are
+	 * within `pairDeg` of each other the camera stands behind the ship and
+	 * looks between them; when they are not — a station arrives *past* its
+	 * planet, 77° to 140° apart on seed 47 — it stands ahead of the ship and
+	 * looks back at it, the planet behind it, which is the reverse angle.
+	 */
+	cruise: Object.freeze({
+		behindR: 8,
+		aheadR: 10,
+		sideR: 2,
+		upR: 1,
+		pairDeg: 50,
+	}),
 	/** Outboard of the ship on the station's axis and to the sun side,
 	 *  looking at the aperture it is being brought into. */
 	dock: Object.freeze({ outboardR: 8, sideR: 2.5, upR: 1 }),
@@ -87,6 +105,24 @@ export function sunSide(axis: Vec3, from: Vec3, starPos: Vec3, up: Vec3): Vec3 {
 /** Anchor a shot on its first frame. */
 export function anchorShot(shot: OpeningShot, scene: ShotScene): ShotAnchor {
 	const { ship } = scene;
+	if (shot === "cruise") {
+		const planet = scene.planet?.pos;
+		const station = scene.station?.pos;
+		return {
+			shot,
+			pos: ship.pos,
+			up: ship.up,
+			frameVel: scene.frameVel,
+			atS: scene.gameTime,
+			reverse:
+				!!planet &&
+				!!station &&
+				degreesApart(
+					normalizeOr(sub(station, ship.pos), ship.nose),
+					normalizeOr(sub(planet, ship.pos), ship.nose),
+				) >= SHOT_FRAMING.cruise.pairDeg,
+		};
+	}
 	if (shot !== "flypast")
 		return {
 			shot,
@@ -158,8 +194,36 @@ export function shotCamera(anchor: ShotAnchor, scene: ShotScene): ShotCamera {
 					add(scale(side, f.sideR * r), scale(ship.up, f.upR * r)),
 				),
 			);
-			const at = scene.station?.pos ?? add(ship.pos, ship.nose);
-			return looking(pos, at, ship.up, ship.nose);
+			const station = scene.station?.pos ?? add(ship.pos, ship.nose);
+			const toStation = normalizeOr(sub(station, pos), ship.nose);
+			const planet = scene.planet?.pos;
+			if (!planet) return looking(pos, station, ship.up, ship.nose);
+			const toPlanet = normalizeOr(sub(planet, pos), toStation);
+			if (!anchor.reverse)
+				return {
+					pos,
+					forward: normalizeOr(add(toStation, toPlanet), toStation),
+					up: ship.up,
+				};
+			// The reverse angle: ahead of the ship, looking back past it at the
+			// planet, the ship between the two.
+			const ahead = add(
+				ship.pos,
+				add(
+					scale(ship.nose, f.aheadR * r),
+					add(scale(side, f.sideR * r), scale(ship.up, f.upR * r)),
+				),
+			);
+			const toShip = normalizeOr(sub(ship.pos, ahead), scale(ship.nose, -1));
+			const back = normalizeOr(sub(planet, ahead), toShip);
+			return {
+				pos: ahead,
+				forward:
+					degreesApart(toShip, back) < f.pairDeg
+						? normalizeOr(add(toShip, back), toShip)
+						: toShip,
+				up: ship.up,
+			};
 		}
 		case "dock": {
 			const f = SHOT_FRAMING.dock;
@@ -180,6 +244,9 @@ export function shotCamera(anchor: ShotAnchor, scene: ShotScene): ShotCamera {
 		}
 	}
 }
+
+const degreesApart = (a: Vec3, b: Vec3) =>
+	(Math.acos(Math.min(1, Math.max(-1, dot(a, b)))) * 180) / Math.PI;
 
 /** How far off the camera's line of sight `point` is, in degrees. */
 export function offAxisDeg(camera: ShotCamera, point: Vec3): number {

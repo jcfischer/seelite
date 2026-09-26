@@ -14,6 +14,10 @@
  * Every shot of the watched run is captured, because a green run is not a
  * legible one; the principal's yes on the sequence is the close, not this.
  */
+// A default-layout probe (#381 D11): it presses Enter by name because the
+// shipped layout binds the skip there, and it presses Shift, j and a during
+// the fly-past as the pilot's own throttle, cruise and yaw — keys the opening
+// has to ignore. A moved default turns it red for that reason.
 import { mkdirSync } from "node:fs";
 import {
 	bootedGame,
@@ -353,6 +357,42 @@ check(
 	JSON.stringify(fallback),
 );
 await failing.context.close();
+
+// ---------------------------------------------------------------------------
+// The phase handle lands on the same step every time (the strip's premise)
+// ---------------------------------------------------------------------------
+
+const holds = [];
+for (let i = 0; i < 2; i++) {
+	const held = await boot({ guided: true, cinematic: "held" }, `held ${i}`);
+	holds.push(
+		await held.page.evaluate(async () => {
+			const g = window.__seelite;
+			const start = g.openingReading();
+			g.holdOpening("dock", 1);
+			// Frames drawn while held step nothing.
+			await new Promise((r) =>
+				requestAnimationFrame(() => requestAnimationFrame(r)),
+			);
+			const r = g.openingReading();
+			const p = g.world.ship.pos;
+			return {
+				startHeld: start.held && start.steps === 0,
+				shot: r.shot,
+				steps: r.steps,
+				gameTime: g.world.gameTime,
+				pos: [p.x, p.y, p.z],
+			};
+		}),
+	);
+	await held.context.close();
+}
+check(
+	"?cinematic=held starts held, and a hold at a shot lands on the same step twice",
+	holds.every((h) => h.startHeld && h.shot === "dock") &&
+		same(holds[0], holds[1]),
+	JSON.stringify(holds.map((h) => ({ steps: h.steps, t: h.gameTime }))),
+);
 
 console.log(`captures: ${out}`);
 await browser.close();

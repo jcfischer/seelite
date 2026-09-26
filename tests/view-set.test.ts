@@ -157,7 +157,7 @@ describe("the view set itself", () => {
 		expect(FIXTURE.planets.every((p) => !p.gasGiant)).toBe(true);
 	});
 
-	test("declares thirty views with unique kebab-case names", () => {
+	test("declares its views with unique kebab-case names", () => {
 		// Eight after #129 added `station-flank`, fifteen since #147 added
 		// §13.6's seven-frame acceptance set, seventeen since #144 added the two
 		// station-port views #134 ratified, eighteen since #206 added
@@ -166,13 +166,14 @@ describe("the view set itself", () => {
 		// the refinery a frame from their own aperture axis, twenty-four since
 		// #324 added the duel's glass and console, twenty-six since #324 part d
 		// added the canisters and the raider log, twenty-eight since #372 added
-		// the Controls tab open and folded. (#432 added a twenty-ninth and removed it
+		// the Controls tab open and folded, thirty-eight with #532's witchspace
+		// strip, forty-six since #535 added the opening's. (#432 added a twenty-ninth and removed it
 		// in the same PR; #480 put one back, in the other role. Why both happened is
 		// told once, in the note beside `sky-at-the-rim`, and not here.) A literal and
 		// not `VIEWS.length`, which is the whole point: a view deleted by accident
 		// has to be a red run, and a check derived from its own subject cannot be
 		// one.
-		expect(VIEWS.length).toBe(38);
+		expect(VIEWS.length).toBe(46);
 		const names = VIEWS.map((v) => v.name);
 		expect(new Set(names).size).toBe(names.length);
 		for (const name of names) expect(name).toMatch(/^[a-z]+(-[a-z]+)*$/);
@@ -470,7 +471,7 @@ describe("the contact sheet", () => {
 		// The fixture spaces its frames 0.4 s apart, so the span is fixed by how
 		// many views the set declares — which is the count row's business, not this
 		// one's, and this literal moves with it.
-		expect(html).toContain("· clock 0.6–15.4s");
+		expect(html).toContain("· clock 0.6–18.6s");
 		expect(html).not.toContain("pinned");
 	});
 

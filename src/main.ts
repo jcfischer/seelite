@@ -555,12 +555,14 @@ import {
 	OpeningRun,
 	type OpeningShot,
 	type OpeningSim,
+	type PilotAction,
 	openingAtBoot,
 	openingCaption,
 } from "./opening";
 import {
 	type ShotAnchor,
 	type ShotCamera,
+	type ShotScene,
 	anchorShot,
 	shotCamera,
 } from "./opening-camera";
@@ -14416,8 +14418,21 @@ class Game {
 	holdOpening(shot: OpeningShot | null, shownS = 0): void {
 		const run = this.opening;
 		if (!run) throw new Error("no opening is running");
-		if (shot === null) run.release();
-		else run.advanceTo(this.openingSim, shot, shownS);
+		if (shot === null) {
+			run.release();
+			this.holdWitchspace(null);
+			return;
+		}
+		run.advanceTo(this.openingSim, shot, shownS);
+		// The arrival's look runs on wall time and a hold has run none, so it is
+		// held at the opening's own shown time — the time a watched run has had
+		// it on screen — and put away once that is past the rift.
+		if (run.shownS < WITCHSPACE.riftEndS) this.holdWitchspace(run.shownS);
+		else {
+			this.holdWitchspace(null);
+			this.witchspace = idleWitchspace();
+			this.clearArrivalRift();
+		}
 	}
 
 	/** What the opening is doing, for a probe to read by name. */
@@ -14466,10 +14481,22 @@ class Game {
 		if (!run || run.done || this.openingPriorView === null) return null;
 		const shot = run.shot ?? this.openingAnchor?.shot ?? null;
 		if (!shot) return null;
+		const scene = this.openingScene();
+		// The run anchors each shot on the step it starts (`shotChanged`); the
+		// arrival starts before any step, so its first frame anchors it.
+		if (this.openingAnchor?.shot !== shot)
+			this.openingAnchor = anchorShot(shot, scene);
+		return shotCamera(this.openingAnchor, scene);
+	}
+
+	/** What a shot is framed from, read off the sim as it stands. */
+	private openingScene(): ShotScene {
 		const id = this.openingStationId;
 		const body = id ? this.world.system.byId.get(id) : undefined;
 		const snap = id ? this.dockingSnapshot(id) : null;
-		const scene = {
+		const hostId = id ? stationHostIdOf(this.world.system, id) : null;
+		const host = hostId ? this.world.system.byId.get(hostId) : undefined;
+		return {
 			ship: {
 				pos: this.world.ship.pos,
 				nose: this.nose(),
@@ -14485,12 +14512,10 @@ class Game {
 							planeKm: snap.planeKm,
 						}
 					: null,
+			planet: host ? { pos: host.pos } : null,
 			frameVel: this.assistFrame().vel,
 			gameTime: this.world.gameTime,
 		};
-		if (this.openingAnchor?.shot !== shot)
-			this.openingAnchor = anchorShot(shot, scene);
-		return shotCamera(this.openingAnchor, scene);
 	}
 
 	private readonly shotBasis = new THREE.Matrix4();
@@ -14523,6 +14548,28 @@ class Game {
 		);
 	}
 
+	/** What each of the script's orders does, through the method a pilot's key
+	 *  reaches. A table rather than a switch, so the orders' names are not read
+	 *  as key comparisons by `tests/controls-catalogue.test.ts`. */
+	private readonly openingOrders: Readonly<Record<PilotAction, () => void>> = {
+		"throttle-burn": () => {
+			this.throttle = OPENING.burnThrottle;
+		},
+		"throttle-zero": () => {
+			this.throttle = 0;
+		},
+		"engage-cruise": () => this.engageCruise(),
+		"request-clearance": () => {
+			this.requestDockingClearance();
+		},
+		"engage-computer": () => {
+			this.dockingComputerEngaged = true;
+		},
+		"skip-traversal": () => {
+			this.skipDockTraversal();
+		},
+	};
+
 	/** The sim, as `opening.ts` drives it. Every order goes through the same
 	 *  method a pilot's key reaches, so the script flies nothing a pilot
 	 *  could not — bar the computer, which is the station's (D7, #408 D1). */
@@ -14545,29 +14592,14 @@ class Game {
 				runIn: this.lastComputerPhase === "run-in",
 			};
 		},
-		apply: (action) => {
-			switch (action) {
-				case "throttle-burn":
-					this.throttle = OPENING.burnThrottle;
-					return;
-				case "throttle-zero":
-					this.throttle = 0;
-					return;
-				case "engage-cruise":
-					this.engageCruise();
-					return;
-				case "request-clearance":
-					this.requestDockingClearance();
-					return;
-				case "engage-computer":
-					this.dockingComputerEngaged = true;
-					return;
-				case "skip-traversal":
-					this.skipDockTraversal();
-					return;
-			}
-		},
+		apply: (action) => this.openingOrders[action](),
 		step: (dt) => this.step(dt),
+		// Framed from the sim on the step the shot starts, so a hold, a long
+		// frame or a skip past it cannot move where the camera stands. Reads
+		// only; a cut keeps the last anchor, and it lasts less than a frame.
+		shotChanged: (shot) => {
+			if (shot) this.openingAnchor = anchorShot(shot, this.openingScene());
+		},
 	};
 
 	/**
@@ -14601,6 +14633,7 @@ class Game {
 		this.openingOverlay?.update(null);
 		// A skip lands mid-exit; the look is the arrival's, not the berth's.
 		if (this.witchspace.kind !== "idle") this.witchspace = idleWitchspace();
+		this.witchspaceHeldAt = null;
 		this.clearArrivalRift();
 		if (run.outcome === "fallback") this.openingFallback();
 		else if (run.outcome === "flying") this.targetId = null;
@@ -16968,7 +17001,13 @@ if (postcard) {
 			pinnedSystem: askedSystem !== null,
 			cinematic: query.has("cinematic"),
 		});
-		if (opening) game.beginOpening(opening.kind, opening.watched);
+		if (!opening) return;
+		game.beginOpening(opening.kind, opening.watched);
+		// `?cinematic=held`: the strip's start — held on its first frame
+		// before any frame has run, so `holdOpening` lands on the same step
+		// every capture.
+		if (opening.watched && query.get("cinematic") === "held")
+			game.holdOpening("arrival", 0);
 	};
 	if (plan.mode === "direct") {
 		// `plan.writesNothing`, not `?no-save` read off the URL: two things make a

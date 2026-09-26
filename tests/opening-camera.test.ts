@@ -26,6 +26,7 @@ function scene(over: Partial<ShotScene> = {}): ShotScene {
 		reachKm: R,
 		starPos: v3(0, 0, -1.5e8),
 		station: { pos: v3(1000, 0, 0), axis: v3(1, 0, 0), planeKm: 0.44 },
+		planet: null,
 		frameVel: v3(0, 0, 30),
 		gameTime: 100,
 		...over,
@@ -95,6 +96,24 @@ describe("each shot's rule", () => {
 		expect(dot(sub(cam.pos, s.ship.pos), s.station!.axis)).toBeGreaterThan(0);
 	});
 
+	test("the cruise shot frames the station and its planet together when both fit", () => {
+		const s = scene({ planet: { pos: v3(1000, 40, 0) } });
+		const cam = shotCamera(anchorShot("cruise", s), s);
+		const station = offAxisDeg(cam, s.station!.pos);
+		const planet = offAxisDeg(cam, s.planet!.pos);
+		expect(station).toBeGreaterThan(1);
+		expect(Math.abs(station - planet)).toBeLessThan(1e-6);
+		// A planet behind the ship: the reverse angle, ahead of the ship looking
+		// back at it, with the planet behind it in the same frame.
+		const behind = scene({ planet: { pos: v3(1200, 20, 0) } });
+		const reverse = shotCamera(anchorShot("cruise", behind), behind);
+		expect(
+			dot(sub(reverse.pos, behind.ship.pos), behind.ship.nose),
+		).toBeGreaterThan(0);
+		expect(offAxisDeg(reverse, behind.ship.pos)).toBeLessThan(30);
+		expect(offAxisDeg(reverse, behind.planet!.pos)).toBeLessThan(30);
+	});
+
 	test("the cruise shot looks at the station it is flying to", () => {
 		const s = scene();
 		const cam = shotCamera(anchorShot("cruise", s), s);
@@ -114,5 +133,19 @@ describe("each shot's rule", () => {
 		const side = sunSide(v3(1, 0, 0), v3(0, 0, 0), v3(1e8, 0, 0), v3(0, 1, 0));
 		expect(length(side)).toBeCloseTo(1, 9);
 		expect(Math.abs(dot(side, v3(1, 0, 0)))).toBeLessThan(1e-9);
+	});
+});
+
+describe("a shot keeps its angle", () => {
+	test("the cruise angle is chosen on the shot's first step, not per frame", () => {
+		const start = scene({ planet: { pos: v3(1000, 40, 0) } });
+		const anchor = anchorShot("cruise", start);
+		expect(anchor.reverse).toBe(false);
+		// Later in the take the planet has swung behind the ship. Chosen per
+		// frame this would cut to the reverse angle mid-shot.
+		const later = { ...start, planet: { pos: v3(1200, 20, 0) } };
+		const cam = shotCamera(anchor, later);
+		expect(dot(sub(cam.pos, later.ship.pos), later.ship.nose)).toBeLessThan(0);
+		expect(anchorShot("cruise", later).reverse).toBe(true);
 	});
 });

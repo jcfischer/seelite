@@ -50,6 +50,7 @@ class FakeSim implements OpeningSim {
 	dropEvery = 0;
 	/** A traversal that never finishes and a run-in that never ends. */
 	stuck = false;
+	shotChanged?: (shot: string | null) => void;
 
 	constructor(cruiseS = 60, approachS = 80) {
 		this.cruiseLeftS = cruiseS;
@@ -478,5 +479,32 @@ describe("the captions", () => {
 		expect(line).toContain("bringing you in");
 		// It must not teach that a ship docks itself.
 		expect(line.toLowerCase()).not.toContain("computer");
+	});
+});
+
+describe("a shot starts on a step", () => {
+	test("the sim hears each shot change on the step it happens, watched or held", () => {
+		const heard = (drive: (run: OpeningRun, sim: FakeSim) => void) => {
+			const sim = new FakeSim();
+			const changes: string[] = [];
+			sim.shotChanged = (shot) => changes.push(`${sim.steps}:${shot ?? "cut"}`);
+			drive(new OpeningRun("guided"), sim);
+			return changes;
+		};
+		const skippedChanges = heard((run, sim) => run.skip(sim));
+		expect(
+			skippedChanges
+				.filter((c) => !c.endsWith("cut"))
+				.map((c) => c.split(":")[1]),
+		).toEqual(["flypast", "cruise", "dock"]);
+		// A fly-past framed from a later step would stand the camera somewhere
+		// else: the change is heard on the same step however the run is driven.
+		expect(heard((run, sim) => watch(run, sim, 5))).toEqual(skippedChanges);
+		expect(
+			heard((run, sim) => {
+				run.advanceTo(sim, "flypast", 2.5);
+				run.skip(sim);
+			}),
+		).toEqual(skippedChanges);
 	});
 });

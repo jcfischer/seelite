@@ -74,6 +74,10 @@ export interface OpeningSim {
 	facts(): PilotFacts;
 	apply(action: PilotAction): void;
 	step(dt: number): void;
+	/** Told on the step a shot starts or a cut begins, so a shot is framed
+	 *  from the sim as it stood then — not from whichever later frame drew it
+	 *  first, which a hold or a long frame would move. */
+	shotChanged?(shot: OpeningShot | null): void;
 }
 
 /**
@@ -324,7 +328,9 @@ export class OpeningRun {
 			this.shownS += shown;
 			this.shownBy[shownShot] += shown;
 		}
-		this.shot = openingShot(this.pilot, sim.facts());
+		const next = openingShot(this.pilot, sim.facts());
+		if (next !== this.shot) sim.shotChanged?.(next);
+		this.shot = next;
 	}
 
 	/**
