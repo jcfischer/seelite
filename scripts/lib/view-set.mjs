@@ -146,7 +146,7 @@ export const LEVERS = Object.freeze({
 	381: "the rebind modal, and the tab's Settings and Commanders doors beside it",
 	431: "the derived sky: real neighbouring systems at true bearings, over the invented field behind them",
 	532: "the witchspace transition: the entry streak, the tunnel over the cut, its collapse and the arrival rift",
-	535: "the opening cinematic: the arrival, the fly-past, the cruise and the dock, filmed from outside",
+	535: "the opening cinematic: the arrival, the fly-past, the planet fly-by, the station approach and the dock, filmed from outside",
 });
 
 /**
@@ -1012,14 +1012,26 @@ export const VIEWS = Object.freeze([
 	{
 		name: "opening-cruise",
 		covers: [535],
-		what: "The cruise, 1 s in: the ship under cruise toward the station, from behind and on the sun side, the start system's bodies ahead.",
+		what: "The planet fly-by, 1 s in: the ship under cruise past the start station's planet — between ship and planet, or the reverse angle with the planet behind the ship.",
 		shot: { kind: "opening", shot: "cruise", at: 1, view: "chase" },
 	},
 	{
 		name: "opening-cruise-late",
 		covers: [535],
-		what: "The cruise, 7 s in: the leg's end, the ship slowing into the station's neighbourhood.",
+		what: "The planet fly-by, 7 s in: the leg's end, the camera swung round the ship with the planet still in frame.",
 		shot: { kind: "opening", shot: "cruise", at: 7, view: "chase" },
+	},
+	{
+		name: "opening-approach",
+		covers: [535],
+		what: "The station approach, 1 s in: the scene after the drop-out, behind the ship on the line from the station, ship and station in one frame.",
+		shot: { kind: "opening", shot: "approach", at: 1, view: "chase" },
+	},
+	{
+		name: "opening-approach-late",
+		covers: [535],
+		what: "The station approach, 5 s in: the ship closed to a few kilometres, the station recognisable before the cut to the dock.",
+		shot: { kind: "opening", shot: "approach", at: 5, view: "chase" },
 	},
 	{
 		name: "opening-dock",
@@ -1231,7 +1243,7 @@ const SHOT_REQUIREMENTS = {
 	witchspace: (s) => finite(s.phase),
 	// A shot of the guided opening and shown seconds into it (#530's handle).
 	opening: (s) =>
-		["arrival", "flypast", "cruise", "dock"].includes(s.shot) &&
+		["arrival", "flypast", "cruise", "approach", "dock"].includes(s.shot) &&
 		finite(s.at) &&
 		s.at >= 0,
 	duel: (s) =>

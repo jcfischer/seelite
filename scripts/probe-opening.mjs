@@ -172,8 +172,8 @@ for (let i = 0; i < 400; i++) {
 }
 await untilOver(watched.page);
 check(
-	"a watched guided opening shows arrival, fly-past, cruise and dock, in order",
-	same(shots, ["arrival", "flypast", "cruise", "dock"]),
+	"a watched guided opening shows arrival, fly-past, planet fly-by, station approach and dock, in order",
+	same(shots, ["arrival", "flypast", "cruise", "approach", "dock"]),
 	shots.join(" → "),
 );
 check(
@@ -277,7 +277,7 @@ for (const seed of [47, 48, 49, 50, 51]) {
 	check(
 		`seed ${seed}: every frame keeps the camera steady, outside the hull, and the ship in frame`,
 		arrivalFrames > 100 &&
-			shotsSeen === "arrival flypast cruise dock" &&
+			shotsSeen === "arrival flypast cruise approach dock" &&
 			arrivalJumpR < 0.5 &&
 			closestR > 2 &&
 			worstOff < 25,

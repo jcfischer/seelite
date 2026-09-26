@@ -25,7 +25,12 @@
 export type OpeningKind = "guided" | "free";
 
 /** What the camera is showing. `null` in the director's answers is a cut. */
-export type OpeningShot = "arrival" | "flypast" | "cruise" | "dock";
+export type OpeningShot =
+	| "arrival"
+	| "flypast"
+	| "cruise"
+	| "approach"
+	| "dock";
 
 /** Where the script is in the flight. `done` and `fallback` are the ends. */
 export type OpeningLeg =
@@ -118,11 +123,16 @@ export const OPENING = Object.freeze({
 	/** A run-in longer than this is a failure (measured 83–87 s from the
 	 *  drop-out). */
 	approachCapS: 300,
-	/** The cruise shot: the leg's last `simS` seconds, `ratio` times faster
-	 *  than they run, and `tailS` shown seconds past the drop-out at
-	 *  `tailRatio` — fast enough that the ship closes from the 50 km drop-out
-	 *  to about 5 km, where the station reads (the principal's fourth note). */
-	cruiseShot: Object.freeze({ simS: 12, ratio: 1.5, tailS: 6, tailRatio: 4 }),
+	/** The cruise shot, the planet fly-by: the leg's last `simS` seconds,
+	 *  `ratio` times faster than they run. */
+	cruiseShot: Object.freeze({ simS: 12, ratio: 1.5 }),
+	/**
+	 * The approach shot, a scene of its own after the drop-out (the
+	 * principal's fifth note: planet fly-by, then station approach, then the
+	 * dock): `shownS` on screen at `ratio`, fast enough that the ship closes
+	 * from the 50 km drop-out to within about 5 km, where the station reads.
+	 */
+	approachShot: Object.freeze({ shownS: 6, ratio: 4 }),
 	/** The dock shot: the run-in from `km` of the station's centre, `ratio`
 	 *  times faster than it runs. */
 	dockShot: Object.freeze({ km: 1.6, ratio: 2 }),
@@ -135,7 +145,13 @@ export const OPENING = Object.freeze({
 export const OPENING_SHOTS: Readonly<
 	Record<OpeningKind, readonly OpeningShot[]>
 > = Object.freeze({
-	guided: Object.freeze(["arrival", "flypast", "cruise", "dock"] as const),
+	guided: Object.freeze([
+		"arrival",
+		"flypast",
+		"cruise",
+		"approach",
+		"dock",
+	] as const),
 	free: Object.freeze(["arrival", "flypast"] as const),
 });
 
@@ -144,6 +160,7 @@ export const SHOT_RATIO: Readonly<Record<OpeningShot, number>> = Object.freeze({
 	arrival: 1,
 	flypast: 1,
 	cruise: OPENING.cruiseShot.ratio,
+	approach: OPENING.approachShot.ratio,
 	dock: OPENING.dockShot.ratio,
 });
 
@@ -153,9 +170,7 @@ export function shotRatio(
 	pilot: { leg: OpeningLeg },
 	shot: OpeningShot,
 ): number {
-	return shot === "cruise" && pilot.leg === "approach"
-		? OPENING.cruiseShot.tailRatio
-		: SHOT_RATIO[shot];
+	return SHOT_RATIO[shot];
 }
 
 export interface PilotState {
@@ -258,22 +273,20 @@ export function openingShot(
 			return "flypast";
 		case "cruise":
 			// Dropped out already: the step before the script moves to its
-			// approach leg is the shot's, not a one-step cut inside it.
-			if (facts.regime === "normal") return "cruise";
+			// approach leg opens the approach shot.
+			if (facts.regime === "normal") return "approach";
 			return facts.cruiseEtaS !== null &&
 				facts.cruiseEtaS <= OPENING.cruiseShot.simS
 				? "cruise"
 				: null;
 		case "approach":
-			// The cruise shot holds `tailS` shown seconds past the drop-out: the
-			// station only reads in the leg's last seconds, and cutting on the
-			// drop-out took it away before it could be recognised (the principal's
-			// second flight).
+			// The approach shot: the first `shownS` seconds past the drop-out, the
+			// ship closing on the station; then a cut to the run-in.
 			if (
 				state.legSteps <=
-				steps(OPENING.cruiseShot.tailS * OPENING.cruiseShot.tailRatio)
+				steps(OPENING.approachShot.shownS * OPENING.approachShot.ratio)
 			)
-				return "cruise";
+				return "approach";
 			return facts.runIn && facts.stationKm <= OPENING.dockShot.km
 				? "dock"
 				: null;
@@ -310,6 +323,7 @@ export class OpeningRun {
 		arrival: 0,
 		flypast: 0,
 		cruise: 0,
+		approach: 0,
 		dock: 0,
 	};
 	/** Held by the phase handle: frames run no steps until `release`. */
@@ -464,6 +478,8 @@ export function openingCaption(
 			return names.station ? `COURSE · ${names.station.toUpperCase()}` : "";
 		case "cruise":
 			return names.station ? `CRUISE · ${names.station.toUpperCase()}` : "";
+		case "approach":
+			return names.station ? `APPROACH · ${names.station.toUpperCase()}` : "";
 		case "dock":
 			return "STATION CONTROL: Cleared to berth. We are bringing you in.";
 		default:

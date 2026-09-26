@@ -158,11 +158,14 @@ function watch(run: OpeningRun, sim: FakeSim, seed: number, maxFrames = 1e6) {
 }
 
 describe("the two lengths (#530 D3)", () => {
-	test("a guided opening has four shots and a free one two", () => {
+	test("a guided opening has five shots and a free one two", () => {
+		// The planet fly-by and the station approach are two scenes (the
+		// principal's fifth note).
 		expect(OPENING_SHOTS.guided).toEqual([
 			"arrival",
 			"flypast",
 			"cruise",
+			"approach",
 			"dock",
 		]);
 		expect(OPENING_SHOTS.free).toEqual(["arrival", "flypast"]);
@@ -300,10 +303,11 @@ describe("the director", () => {
 				{ ...cruising, cruiseEtaS: OPENING.cruiseShot.simS - 0.1 },
 			),
 		).toBe("cruise");
-		// Past the cruise shot's tail, the approach is a cut until the run-in.
+		// Past the approach shot, a cut until the run-in.
 		const pastTail =
 			Math.round(
-				(OPENING.cruiseShot.tailS * OPENING.cruiseShot.tailRatio) / OPENING.dtS,
+				(OPENING.approachShot.shownS * OPENING.approachShot.ratio) /
+					OPENING.dtS,
 			) + 1;
 		expect(
 			openingShot(
@@ -330,7 +334,7 @@ describe("the director", () => {
 		const sim = new FakeSim();
 		const run = new OpeningRun("guided");
 		const shots = watch(run, sim, 1).filter((s) => s !== "cut");
-		expect(shots).toEqual(["arrival", "flypast", "cruise", "dock"]);
+		expect(shots).toEqual(["arrival", "flypast", "cruise", "approach", "dock"]);
 	});
 
 	test("a guided run shows about thirty seconds (D4)", () => {
@@ -506,7 +510,7 @@ describe("a shot starts on a step", () => {
 			skippedChanges
 				.filter((c) => !c.endsWith("cut"))
 				.map((c) => c.split(":")[1]),
-		).toEqual(["flypast", "cruise", "dock"]);
+		).toEqual(["flypast", "cruise", "approach", "dock"]);
 		// A fly-past framed from a later step would stand the camera somewhere
 		// else: the change is heard on the same step however the run is driven.
 		expect(heard((run, sim) => watch(run, sim, 5))).toEqual(skippedChanges);
@@ -546,9 +550,10 @@ describe("an opening a quit interrupted (the principal's ruling, 2026-09-26)", (
 	});
 });
 
-describe("the cruise shot holds past the drop-out (the principal's second flight)", () => {
-	// The station only reads in the leg's last seconds, and the shot cut on the
-	// drop-out 2-3 s before it could be recognised.
+describe("the station approach is a scene of its own (the principal's fifth note)", () => {
+	// Planet fly-by, then the station approach, then the dock. The approach
+	// runs faster than the sim so the ship closes on the station, which only
+	// reads in the last kilometres.
 	const facts: PilotFacts = {
 		regime: "normal",
 		spooling: false,
@@ -560,51 +565,35 @@ describe("the cruise shot holds past the drop-out (the principal's second flight
 		inVicinity: true,
 		runIn: false,
 	};
-	test("the first seconds of the approach are still the cruise shot, then a cut", () => {
-		const tail = Math.round(
-			(OPENING.cruiseShot.tailS * OPENING.cruiseShot.tailRatio) / OPENING.dtS,
-		);
+	const span = Math.round(
+		(OPENING.approachShot.shownS * OPENING.approachShot.ratio) / OPENING.dtS,
+	);
+	test("the drop-out cuts from the fly-by to the approach, which then cuts to the run-in", () => {
+		const cruising = { ...startPilot("guided"), leg: "cruise" as const };
+		expect(
+			openingShot(cruising, { ...facts, regime: "cruise", cruiseEtaS: 3 }),
+		).toBe("cruise");
+		expect(openingShot(cruising, facts)).toBe("approach");
 		const approach = { ...startPilot("guided"), leg: "approach" as const };
-		expect(openingShot({ ...approach, legSteps: 1 }, facts)).toBe("cruise");
-		expect(openingShot({ ...approach, legSteps: tail }, facts)).toBe("cruise");
-		expect(openingShot({ ...approach, legSteps: tail + 1 }, facts)).toBe(null);
-	});
-	test("a watched run shows the tail as part of the cruise shot", () => {
-		const run = new OpeningRun("guided");
-		watch(run, new FakeSim(), 4);
-		expect(run.shownBy.cruise).toBeGreaterThan(
-			OPENING.cruiseShot.simS / OPENING.cruiseShot.ratio +
-				OPENING.cruiseShot.tailS -
-				0.1,
+		expect(openingShot({ ...approach, legSteps: 1 }, facts)).toBe("approach");
+		expect(openingShot({ ...approach, legSteps: span }, facts)).toBe(
+			"approach",
 		);
+		expect(openingShot({ ...approach, legSteps: span + 1 }, facts)).toBe(null);
 	});
-});
-
-describe("the tail plays faster (the principal's fourth note)", () => {
-	test("the tail past the drop-out runs at its own, faster ratio", () => {
-		const tail = {
-			...startPilot("guided"),
-			leg: "approach" as const,
-			legSteps: 5,
-		};
-		const cruising = {
-			...startPilot("guided"),
-			leg: "cruise" as const,
-			legSteps: 5,
-		};
-		expect(shotRatio(tail, "cruise")).toBe(OPENING.cruiseShot.tailRatio);
-		expect(shotRatio(cruising, "cruise")).toBe(OPENING.cruiseShot.ratio);
-		expect(OPENING.cruiseShot.tailRatio).toBeGreaterThan(
+	test("it runs faster than the fly-by, and shows its shownS at any cadence", () => {
+		expect(OPENING.approachShot.ratio).toBeGreaterThan(
 			OPENING.cruiseShot.ratio,
 		);
-	});
-	test("and still shows its tailS on screen, watched at any cadence", () => {
+		expect(shotRatio(startPilot("guided"), "approach")).toBe(
+			OPENING.approachShot.ratio,
+		);
 		for (const seed of [2, 9]) {
 			const run = new OpeningRun("guided");
 			watch(run, new FakeSim(), seed);
-			const etaShown = OPENING.cruiseShot.simS / OPENING.cruiseShot.ratio;
+			expect(run.shownBy.approach).toBeCloseTo(OPENING.approachShot.shownS, 0);
 			expect(run.shownBy.cruise).toBeCloseTo(
-				etaShown + OPENING.cruiseShot.tailS,
+				OPENING.cruiseShot.simS / OPENING.cruiseShot.ratio,
 				0,
 			);
 		}

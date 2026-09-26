@@ -68,6 +68,9 @@ export interface ShotAnchor {
 	side: Vec3;
 	frameVel: Vec3;
 	atS: number;
+	/** The fly-by's angle, chosen once on its first step so a shot never
+	 *  jumps between the two mid-take. */
+	reverse?: boolean;
 }
 
 /** The framing table, in hull reaches (R) or kilometres where named. */
@@ -97,26 +100,39 @@ export const SHOT_FRAMING = Object.freeze({
 	 */
 	flypast: Object.freeze({ passKm: 0.15, offKm: 0.08, upKm: 0.06 }),
 	/**
-	 * Behind the ship on the line from the station through it, to the sun side,
-	 * aiming between ship and station so both stay in frame whatever the nose
-	 * does — the station kept leaving the viewport while the camera stood
-	 * behind the nose and the station's computer turned the ship to line up
-	 * (the principal's fourth note). The planet is in frame where the geometry
-	 * puts it there; it is no longer aimed for, and the reverse angle that
-	 * looked back at the ship past the planet is gone, since it put the
-	 * station behind the camera.
+	 * The planet fly-by. The station is a point until the leg's last seconds
+	 * and its planet is the place, so the shot is built round the planet.
+	 * When the two are within `pairDeg` of each other the camera stands
+	 * behind the ship and looks between them; when they are not — a station
+	 * arrives *past* its planet, 77° to 140° apart on seed 47 — it stands
+	 * ahead of the ship and looks back at it, the planet behind it, which is
+	 * the reverse angle. The look keeps the ship within `keepShipDeg`, and
+	 * the camera swings `orbitDeg` round the ship over the take (the
+	 * principal's third note).
 	 */
 	cruise: Object.freeze({
 		behindR: 8,
+		aheadR: 10,
 		sideR: 2,
 		upR: 1,
-		/** A slow swing round the ship over the take, about its up axis and
-		 *  eased (the principal's third note). `orbitS` is the take in sim
-		 *  seconds: the ETA window and the tail past the drop-out. */
+		pairDeg: 50,
 		orbitDeg: 25,
-		orbitS:
-			OPENING.cruiseShot.simS +
-			OPENING.cruiseShot.tailS * OPENING.cruiseShot.tailRatio,
+		orbitS: OPENING.cruiseShot.simS,
+	}),
+	/**
+	 * The station approach, its own scene after the drop-out (the principal's
+	 * fifth note). Behind the ship on the line from the station through it, to
+	 * the sun side, aiming between ship and station so both stay in frame
+	 * whatever the nose does: behind the nose, the station left the viewport
+	 * while the station's computer turned the ship to line up (the fourth
+	 * note). A swing of `orbitDeg` over the take.
+	 */
+	approach: Object.freeze({
+		behindR: 8,
+		sideR: 2,
+		upR: 1,
+		orbitDeg: 20,
+		orbitS: OPENING.approachShot.shownS * OPENING.approachShot.ratio,
 	}),
 	/** Outboard of the ship on the station's axis and to the sun side,
 	 *  looking at the aperture it is being brought into. */
@@ -161,9 +177,9 @@ export function sunSide(axis: Vec3, from: Vec3, starPos: Vec3, up: Vec3): Vec3 {
 /** The axis a shot's side is taken across. */
 const shotAxis = (shot: OpeningShot, scene: ShotScene): Vec3 => {
 	if (shot === "dock" && scene.station) return scene.station.axis;
-	// The cruise shot is laid out on the line from the station through the
+	// The approach shot is laid out on the line from the station through the
 	// ship, so its side is taken across that line.
-	if (shot === "cruise" && scene.station)
+	if (shot === "approach" && scene.station)
 		return normalizeOr(sub(scene.ship.pos, scene.station.pos), scene.ship.nose);
 	return scene.ship.nose;
 };
@@ -181,6 +197,20 @@ export function anchorShot(shot: OpeningShot, scene: ShotScene): ShotAnchor {
 		frameVel: scene.frameVel,
 		atS: scene.gameTime,
 	};
+	if (shot === "cruise") {
+		const planet = scene.planet?.pos;
+		const station = scene.station?.pos;
+		return {
+			...base,
+			reverse:
+				!!planet &&
+				!!station &&
+				degreesApart(
+					normalizeOr(sub(station, ship.pos), ship.nose),
+					normalizeOr(sub(planet, ship.pos), ship.nose),
+				) >= SHOT_FRAMING.cruise.pairDeg,
+		};
+	}
 	if (shot !== "flypast") return base;
 	const f = SHOT_FRAMING.flypast;
 	const up = across(ship.up, ship.nose, ownSide(side, ship.nose));
@@ -264,6 +294,47 @@ export function shotCamera(anchor: ShotAnchor, scene: ShotScene): ShotCamera {
 		}
 		case "cruise": {
 			const f = SHOT_FRAMING.cruise;
+			const swing =
+				(eased((scene.gameTime - anchor.atS) / f.orbitS) *
+					f.orbitDeg *
+					Math.PI) /
+				180;
+			const orbit = (at: Vec3) =>
+				add(ship.pos, turnedAbout(sub(at, ship.pos), ship.up, swing));
+			const station = scene.station?.pos ?? add(ship.pos, ship.nose);
+			const planet = scene.planet?.pos;
+			if (!anchor.reverse) {
+				const from = add(
+					ship.pos,
+					add(
+						scale(ship.nose, -f.behindR * r),
+						add(scale(side, f.sideR * r), scale(ship.up, f.upR * r)),
+					),
+				);
+				const pos = orbit(from);
+				const toStation = normalizeOr(sub(station, pos), ship.nose);
+				const want = planet
+					? add(toStation, normalizeOr(sub(planet, pos), toStation))
+					: toStation;
+				return framing(pos, ship.pos, want, ship.up);
+			}
+			// The reverse angle: ahead of the ship, looking back past it at the
+			// planet, the ship between the two.
+			const ahead = orbit(
+				add(
+					ship.pos,
+					add(
+						scale(ship.nose, f.aheadR * r),
+						add(scale(side, f.sideR * r), scale(ship.up, f.upR * r)),
+					),
+				),
+			);
+			const toShip = normalizeOr(sub(ship.pos, ahead), scale(ship.nose, -1));
+			const back = planet ? normalizeOr(sub(planet, ahead), toShip) : toShip;
+			return framing(ahead, ship.pos, add(toShip, back), ship.up);
+		}
+		case "approach": {
+			const f = SHOT_FRAMING.approach;
 			const swing =
 				(eased((scene.gameTime - anchor.atS) / f.orbitS) *
 					f.orbitDeg *
