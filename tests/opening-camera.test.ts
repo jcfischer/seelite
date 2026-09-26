@@ -77,13 +77,6 @@ describe("a camera moves with what it films", () => {
 });
 
 describe("each shot's rule", () => {
-	test("the fly-past stands down the nose, where the ship will pass it", () => {
-		const s = scene();
-		const cam = shotCamera(anchorShot("flypast", s), s);
-		const along = dot(sub(cam.pos, s.ship.pos), s.ship.nose);
-		expect(along).toBeCloseTo(SHOT_FRAMING.flypast.passKm, 9);
-	});
-
 	test("the dock shot looks at the aperture, with the ship in frame", () => {
 		const s = scene({
 			ship: { pos: v3(1001.2, 0, 0), nose: v3(-1, 0, 0), up: v3(0, 1, 0) },
@@ -187,17 +180,6 @@ describe("the principal's flight on seeds 47–51 (#535)", () => {
 			);
 		}
 		expect(closest).toBeGreaterThan(2 * R);
-	});
-
-	test("at the pass the fly-past sees the ship from above, not flat side-on", () => {
-		const s = scene();
-		const anchor = anchorShot("flypast", s);
-		const cam = shotCamera(anchor, s);
-		const rel = sub(cam.pos, s.ship.pos);
-		const above =
-			dot(rel, s.ship.up) /
-			length(sub(rel, scale(s.ship.nose, dot(rel, s.ship.nose))));
-		expect(above).toBeGreaterThan(Math.sin((20 * Math.PI) / 180));
 	});
 
 	test("the cruise shot keeps the ship in frame however far the planet swings", () => {

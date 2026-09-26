@@ -666,3 +666,18 @@ describe("the prologue is shown whole (the principal's seventh note)", () => {
 		}
 	});
 });
+
+describe("the phase handle in a cut (sage round 2 on #536)", () => {
+	test("asking for a shot already past from inside the cut after it throws at once", () => {
+		const sim = new FakeSim();
+		const run = new OpeningRun("guided");
+		// Run on to the cut after the fly-by: a frame ends there on the drop-out
+		// step, before the approach has been shown at all.
+		while (!(run.shownBy.cruise > 0 && run.shot === null))
+			run.frame(sim, 0.016);
+		expect(run.shownBy.approach).toBe(0);
+		const steps = sim.steps;
+		expect(() => run.advanceTo(sim, "cruise", 1)).toThrow(/already past/);
+		expect(sim.steps).toBe(steps);
+	});
+});

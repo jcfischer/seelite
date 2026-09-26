@@ -129,10 +129,13 @@ check(
 	skippedRecord?.dockedAt === trade.key && skippedRecord?.firstDay === "guided",
 	JSON.stringify(skippedRecord),
 );
+// The overlay is mounted only by a watched opening, so a skipped boot must
+// never have mounted it. Read after the end, a hidden overlay would pass
+// whether or not the boot was filmed (sage round 2 on #536).
 check(
-	"no frame of it was shown",
+	"no frame of it was shown: the opening's frame was never mounted",
 	await skipped.page.evaluate(
-		() => !document.querySelector("[data-opening]")?.checkVisibility(),
+		() => document.querySelector("[data-opening]") === null,
 	),
 );
 await skipped.context.close();

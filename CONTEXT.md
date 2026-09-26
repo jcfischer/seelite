@@ -353,6 +353,10 @@ _Avoid_: Tutorial job (it is posted for every pilot)
 A guided new game's first job, from a docked start to a reported delivery, and the port-console tab that lists its steps for every commander. The step is derived from state and never saved; only New game's guided or free choice is. `docs/specs/first-useful-day.md` owns it.
 _Avoid_: Tutorial (there is no separate mode), onboarding (in the pilot's copy)
 
+**Opening**:
+A new game's first flight, filmed: the rift forming, the arrival from witchspace, a fly-past and, for a guided game, the planet fly-by, the station approach and the dock into its **First day**. A real flight in the sim, watched or skipped into the same state, with #530 D6's placement as its fallback. `src/opening.ts` owns the script and the shots, and #530's resolution the decisions.
+_Avoid_: Intro, cutscene (it is not a film; the flight is the game's)
+
 **Station control**:
 The voice that speaks to a guided pilot on the docked station console and in the Communications log during the first day. `docs/specs/first-useful-day.md` D3 owns where it speaks and when it stops.
 _Avoid_: Dockmaster, tutorial prompt

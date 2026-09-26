@@ -428,11 +428,13 @@ export class OpeningRun {
 		const order = OPENING_SHOTS[this.kind];
 		const want = order.indexOf(shot);
 		if (want < 0) throw new Error(`a ${this.kind} opening has no ${shot} shot`);
-		const at = this.shot === null ? -1 : order.indexOf(this.shot);
+		// `shownBy[shot]` grows only while that shot is on screen, so it says a
+		// shot is past its time whether the run is in it or in a cut after it
+		// (sage round 2 on #536).
 		const passed =
 			this.done ||
 			order.slice(want + 1).some((later) => this.shownBy[later] > 0) ||
-			(at === want && this.shownBy[shot] > shownS + 1e-9);
+			this.shownBy[shot] > shownS + 1e-9;
 		if (passed)
 			throw new Error(`the opening is already past ${shot} at ${shownS} s`);
 		while (
@@ -479,6 +481,12 @@ export function openingAtBoot(boot: {
  * control brings a new ship in, because it has no docking computer (#408), and
  * the first day still teaches the pilot's first dock by hand.
  */
+const STATION_LABEL = Object.freeze({
+	flypast: "COURSE",
+	cruise: "CRUISE",
+	approach: "APPROACH",
+});
+
 export function openingCaption(
 	shot: OpeningShot | null,
 	names: { system: string; station: string | null },
@@ -489,11 +497,11 @@ export function openingCaption(
 		case "arrival":
 			return `ARRIVING · ${names.system.toUpperCase()}`;
 		case "flypast":
-			return names.station ? `COURSE · ${names.station.toUpperCase()}` : "";
 		case "cruise":
-			return names.station ? `CRUISE · ${names.station.toUpperCase()}` : "";
 		case "approach":
-			return names.station ? `APPROACH · ${names.station.toUpperCase()}` : "";
+			return names.station
+				? `${STATION_LABEL[shot]} · ${names.station.toUpperCase()}`
+				: "";
 		case "dock":
 			return "STATION CONTROL: Cleared to berth. We are bringing you in.";
 		default:
@@ -506,9 +514,14 @@ export function openingCaption(
  * ruling on #535, 2026-09-26). A quit during a guided opening saves the ship
  * mid-flight — mid-cruise, or on the run-in — before the dock has written
  * `lastDocked`, and a loaded commander sees no opening. So one that is guided,
- * not docked and has never docked flies the rest of it, skipped, on load, and
- * a guided start still docks. A guided commander cannot otherwise be in flight
- * with no `lastDocked`: its first flight begins from that dock.
+ * not docked and has never docked flies the rest of it, skipped, on load:
+ * from mid-cruise the rest is flown, and from the run-in #530 D6's fallback
+ * places the ship.
+ *
+ * The one other way to be guided, in flight and never docked is that fallback
+ * failing too (`startDockedAtHome`'s own `giveUp`), and then every load tries
+ * again — the same script from wherever the ship is. So a guided start docks
+ * unless the placement itself cannot (sage round 2 on #536).
  */
 export function openingOwedOnLoad(commander: {
 	firstDay: OpeningKind;

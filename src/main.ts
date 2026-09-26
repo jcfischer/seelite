@@ -565,6 +565,7 @@ import {
 	type ShotCamera,
 	type ShotScene,
 	anchorShot,
+	eased,
 	shotCamera,
 } from "./opening-camera";
 import {
@@ -11897,8 +11898,8 @@ class Game {
 		const opening = this.opening;
 		if (opening?.shot === "forming" && this.arrivalRift) {
 			const t = opening.shownBy.forming;
-			const k = Math.min(1, t / OPENING.formS);
-			this.arrivalRift.update(k * k * (3 - 2 * k), t, camPos);
+			// The camera's own easing, so the rift and the push-in move as one.
+			this.arrivalRift.update(eased(t / OPENING.formS), t, camPos);
 			return;
 		}
 		const held = this.witchspaceHeldAt;

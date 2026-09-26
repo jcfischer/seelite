@@ -103,19 +103,11 @@ export const SHOT_FRAMING = Object.freeze({
 		orbitS: OPENING.arriveS,
 	}),
 	/**
-	 * A camera the ship passes: `passKm` down the nose from where the burn
-	 * starts — a second and a half of it — `offKm` to the side and `upKm`
-	 * above, so the pass is seen three-quarters from above rather than flat
-	 * side-on and never inside the hull: 0.1 km off the path, 2.8 reaches.
+	 * The fly-past has no place of its own: it is the arrival's take
+	 * continued, the camera where the orbit ended. `handoverS` is how long
+	 * the look takes to settle from the arrival's aim onto the ship.
 	 */
-	flypast: Object.freeze({
-		passKm: 0.15,
-		offKm: 0.08,
-		upKm: 0.06,
-		/** How long the look takes to settle from the arrival's aim onto the
-		 *  ship when the fly-past continues the arrival's take. */
-		handoverS: 1,
-	}),
+	flypast: Object.freeze({ handoverS: 1 }),
 	/**
 	 * The planet fly-by. The station is a point until the leg's last seconds
 	 * and its planet is the place, so the shot is built round the planet.
@@ -158,8 +150,10 @@ export const SHOT_FRAMING = Object.freeze({
 	 *  A planet swinging past pulled the look 60–87° off the ship on seeds 48,
 	 *  50 and 51, and the ship left the frame. */
 	keepShipDeg: 20,
-	/** The most ship or station may sit off the cruise shot's aim. The near
-	 *  camera is 60° tall, so this keeps both inside the frame. */
+	/** The most ship or station sits off the approach shot's aim. No rule reads
+	 *  it: the approach's geometry — behind the ship on the station line, aimed
+	 *  between the two — keeps both within it, and the tests hold that. The near
+	 *  camera is 60° tall, so 22° is inside the frame. */
 	keepBothDeg: 22,
 	/** Below this much of the star across the axis (about 11°), the sun side is
 	 *  not a direction and the ship's own side is used. */
@@ -240,26 +234,23 @@ export function anchorShot(
 	// burn carries the ship past it — no cut. It ended 65° off the nose and
 	// about six reaches off the ship's path, so the pass is three-quarters
 	// and clear of the hull.
-	if (previous?.shot === "arrival") {
-		const last = shotCamera(previous, scene);
-		return {
-			...base,
-			pos: last.pos,
-			up: last.up,
-			lookBehindKm: SHOT_FRAMING.arrival.lookBehindR * scene.reachKm,
-		};
-	}
-	const f = SHOT_FRAMING.flypast;
-	const up = across(ship.up, ship.nose, ownSide(side, ship.nose));
+	// With no arrival to continue — a caller anchoring the fly-past on its
+	// own — the arrival is rebuilt as it stood at the end of its orbit, so
+	// there is one fly-past and not a second, unreached framing (sage round 2
+	// on #536).
+	const arrival =
+		previous?.shot === "arrival"
+			? previous
+			: anchorShot("arrival", {
+					...scene,
+					gameTime: scene.gameTime - SHOT_FRAMING.arrival.orbitS,
+				});
+	const last = shotCamera(arrival, scene);
 	return {
 		...base,
-		pos: add(
-			ship.pos,
-			add(
-				scale(ship.nose, f.passKm),
-				add(scale(side, f.offKm), scale(up, f.upKm)),
-			),
-		),
+		pos: last.pos,
+		up: last.up,
+		lookBehindKm: SHOT_FRAMING.arrival.lookBehindR * scene.reachKm,
 	};
 }
 
@@ -441,7 +432,7 @@ const swingRad = (
 	180;
 
 /** Smoothstep on [0, 1], clamped: slow at both ends of a swing. */
-const eased = (u: number): number => {
+export const eased = (u: number): number => {
 	const t = Math.min(1, Math.max(0, u));
 	return t * t * (3 - 2 * t);
 };

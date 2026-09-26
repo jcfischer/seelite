@@ -73,18 +73,23 @@ export function mountOpeningOverlay(
 				shown = null;
 				return;
 			}
-			if (shown === null) root.hidden = false;
+			if (shown === null) {
+				root.hidden = false;
+				// Once per showing: every key but the skip is ignored while the
+				// opening runs, so the bindings cannot change under it (sage round 2
+				// on #536).
+				const keys = skipKeys();
+				const markup =
+					keys.length === 0
+						? "SKIP"
+						: `${keys.map((k) => `<kbd>${escapeHtml(k)}</kbd>`).join(" or ")} SKIP`;
+				if (markup !== skipMarkup && skip) {
+					skip.innerHTML = markup;
+					skipMarkup = markup;
+				}
+			}
 			if (next !== shown && caption) caption.textContent = next;
 			shown = next;
-			const keys = skipKeys();
-			const markup =
-				keys.length === 0
-					? "SKIP"
-					: `${keys.map((k) => `<kbd>${escapeHtml(k)}</kbd>`).join(" or ")} SKIP`;
-			if (markup !== skipMarkup && skip) {
-				skip.innerHTML = markup;
-				skipMarkup = markup;
-			}
 		},
 	};
 }
