@@ -96,35 +96,28 @@ describe("each shot's rule", () => {
 		expect(dot(sub(cam.pos, s.ship.pos), s.station!.axis)).toBeGreaterThan(0);
 	});
 
-	test("the cruise shot frames the station and its planet together when both fit", () => {
-		const s = scene({ planet: { pos: v3(1000, 40, 0) } });
-		const cam = shotCamera(anchorShot("cruise", s), s);
-		// The look leans from the station toward the planet, as far as keeping
-		// the ship in frame allows.
-		const alone = scene();
-		const stationOnly = shotCamera(anchorShot("cruise", alone), alone);
-		expect(offAxisDeg(cam, s.planet!.pos)).toBeLessThan(
-			offAxisDeg(stationOnly, s.planet!.pos),
-		);
-		expect(offAxisDeg(cam, s.ship.pos)).toBeLessThanOrEqual(
-			SHOT_FRAMING.keepShipDeg + 1e-6,
-		);
-		// A planet behind the ship: the reverse angle, ahead of the ship looking
-		// back at it, with the planet behind it in the same frame.
-		const behind = scene({ planet: { pos: v3(1200, 20, 0) } });
-		const reverse = shotCamera(anchorShot("cruise", behind), behind);
-		expect(
-			dot(sub(reverse.pos, behind.ship.pos), behind.ship.nose),
-		).toBeGreaterThan(0);
-		expect(offAxisDeg(reverse, behind.ship.pos)).toBeLessThan(30);
-		expect(offAxisDeg(reverse, behind.planet!.pos)).toBeLessThan(30);
-	});
-
-	test("the cruise shot looks at the station it is flying to", () => {
-		const s = scene();
-		const cam = shotCamera(anchorShot("cruise", s), s);
-		expect(offAxisDeg(cam, s.station!.pos)).toBeLessThan(1e-6);
-	});
+	// The principal's fourth note: the station kept dropping out of the
+	// viewport. The cruise camera stands behind the ship on the line from the
+	// station through it and aims between the two, whatever the nose does.
+	for (const nose of [v3(-1, 0, 0), v3(0, 0, 1), v3(0.6, 0.8, 0)])
+		test(`the cruise shot holds ship and station in frame together (nose ${nose.x},${nose.y},${nose.z})`, () => {
+			const up = Math.abs(nose.y) > 0.5 ? v3(1, 0, 0) : v3(0, 1, 0);
+			const s = scene({
+				ship: { pos: v3(1045, 3, -2), nose, up },
+				planet: { pos: v3(1200, 20, 0) },
+			});
+			const anchor = anchorShot("cruise", s);
+			for (let t = 0; t <= SHOT_FRAMING.cruise.orbitS; t += 2) {
+				const cam = shotCamera(anchor, { ...s, gameTime: s.gameTime + t });
+				expect(offAxisDeg(cam, s.ship.pos)).toBeLessThanOrEqual(
+					SHOT_FRAMING.keepBothDeg + 1e-6,
+				);
+				expect(offAxisDeg(cam, s.station!.pos)).toBeLessThanOrEqual(
+					SHOT_FRAMING.keepBothDeg + 1e-6,
+				);
+				expect(length(sub(cam.pos, s.ship.pos))).toBeGreaterThan(2 * R);
+			}
+		});
 
 	test("the camera stands on the sun side, so it sees the lit flank", () => {
 		const s = scene();
@@ -139,20 +132,6 @@ describe("each shot's rule", () => {
 		const side = sunSide(v3(1, 0, 0), v3(0, 0, 0), v3(1e8, 0, 0), v3(0, 1, 0));
 		expect(length(side)).toBeCloseTo(1, 9);
 		expect(Math.abs(dot(side, v3(1, 0, 0)))).toBeLessThan(1e-9);
-	});
-});
-
-describe("a shot keeps its angle", () => {
-	test("the cruise angle is chosen on the shot's first step, not per frame", () => {
-		const start = scene({ planet: { pos: v3(1000, 40, 0) } });
-		const anchor = anchorShot("cruise", start);
-		expect(anchor.reverse).toBe(false);
-		// Later in the take the planet has swung behind the ship. Chosen per
-		// frame this would cut to the reverse angle mid-shot.
-		const later = { ...start, planet: { pos: v3(1200, 20, 0) } };
-		const cam = shotCamera(anchor, later);
-		expect(dot(sub(cam.pos, later.ship.pos), later.ship.nose)).toBeLessThan(0);
-		expect(anchorShot("cruise", later).reverse).toBe(true);
 	});
 });
 

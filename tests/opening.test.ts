@@ -23,6 +23,7 @@ import {
 	openingOwedOnLoad,
 	type PilotFacts,
 	openingShot,
+	shotRatio,
 	pilotStep,
 	startPilot,
 } from "../src/opening";
@@ -302,7 +303,7 @@ describe("the director", () => {
 		// Past the cruise shot's tail, the approach is a cut until the run-in.
 		const pastTail =
 			Math.round(
-				(OPENING.cruiseShot.tailS * OPENING.cruiseShot.ratio) / OPENING.dtS,
+				(OPENING.cruiseShot.tailS * OPENING.cruiseShot.tailRatio) / OPENING.dtS,
 			) + 1;
 		expect(
 			openingShot(
@@ -561,7 +562,7 @@ describe("the cruise shot holds past the drop-out (the principal's second flight
 	};
 	test("the first seconds of the approach are still the cruise shot, then a cut", () => {
 		const tail = Math.round(
-			(OPENING.cruiseShot.tailS * OPENING.cruiseShot.ratio) / OPENING.dtS,
+			(OPENING.cruiseShot.tailS * OPENING.cruiseShot.tailRatio) / OPENING.dtS,
 		);
 		const approach = { ...startPilot("guided"), leg: "approach" as const };
 		expect(openingShot({ ...approach, legSteps: 1 }, facts)).toBe("cruise");
@@ -576,5 +577,36 @@ describe("the cruise shot holds past the drop-out (the principal's second flight
 				OPENING.cruiseShot.tailS -
 				0.1,
 		);
+	});
+});
+
+describe("the tail plays faster (the principal's fourth note)", () => {
+	test("the tail past the drop-out runs at its own, faster ratio", () => {
+		const tail = {
+			...startPilot("guided"),
+			leg: "approach" as const,
+			legSteps: 5,
+		};
+		const cruising = {
+			...startPilot("guided"),
+			leg: "cruise" as const,
+			legSteps: 5,
+		};
+		expect(shotRatio(tail, "cruise")).toBe(OPENING.cruiseShot.tailRatio);
+		expect(shotRatio(cruising, "cruise")).toBe(OPENING.cruiseShot.ratio);
+		expect(OPENING.cruiseShot.tailRatio).toBeGreaterThan(
+			OPENING.cruiseShot.ratio,
+		);
+	});
+	test("and still shows its tailS on screen, watched at any cadence", () => {
+		for (const seed of [2, 9]) {
+			const run = new OpeningRun("guided");
+			watch(run, new FakeSim(), seed);
+			const etaShown = OPENING.cruiseShot.simS / OPENING.cruiseShot.ratio;
+			expect(run.shownBy.cruise).toBeCloseTo(
+				etaShown + OPENING.cruiseShot.tailS,
+				0,
+			);
+		}
 	});
 });

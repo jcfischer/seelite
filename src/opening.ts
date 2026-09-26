@@ -119,8 +119,10 @@ export const OPENING = Object.freeze({
 	 *  drop-out). */
 	approachCapS: 300,
 	/** The cruise shot: the leg's last `simS` seconds, `ratio` times faster
-	 *  than they run, and `tailS` shown seconds past the drop-out. */
-	cruiseShot: Object.freeze({ simS: 12, ratio: 1.5, tailS: 6 }),
+	 *  than they run, and `tailS` shown seconds past the drop-out at
+	 *  `tailRatio` — fast enough that the ship closes from the 50 km drop-out
+	 *  to about 5 km, where the station reads (the principal's fourth note). */
+	cruiseShot: Object.freeze({ simS: 12, ratio: 1.5, tailS: 6, tailRatio: 4 }),
 	/** The dock shot: the run-in from `km` of the station's centre, `ratio`
 	 *  times faster than it runs. */
 	dockShot: Object.freeze({ km: 1.6, ratio: 2 }),
@@ -144,6 +146,17 @@ export const SHOT_RATIO: Readonly<Record<OpeningShot, number>> = Object.freeze({
 	cruise: OPENING.cruiseShot.ratio,
 	dock: OPENING.dockShot.ratio,
 });
+
+/** How fast `shot` shows the sim while the script is at `pilot`: the
+ *  cruise shot's tail past the drop-out runs at its own ratio. */
+export function shotRatio(
+	pilot: { leg: OpeningLeg },
+	shot: OpeningShot,
+): number {
+	return shot === "cruise" && pilot.leg === "approach"
+		? OPENING.cruiseShot.tailRatio
+		: SHOT_RATIO[shot];
+}
 
 export interface PilotState {
 	kind: OpeningKind;
@@ -258,7 +271,7 @@ export function openingShot(
 			// second flight).
 			if (
 				state.legSteps <=
-				steps(OPENING.cruiseShot.tailS * OPENING.cruiseShot.ratio)
+				steps(OPENING.cruiseShot.tailS * OPENING.cruiseShot.tailRatio)
 			)
 				return "cruise";
 			return facts.runIn && facts.stationKm <= OPENING.dockShot.km
@@ -338,7 +351,7 @@ export class OpeningRun {
 		sim.step(OPENING.dtS);
 		this.stepsRun++;
 		if (shownShot !== null) {
-			const shown = OPENING.dtS / SHOT_RATIO[shownShot];
+			const shown = OPENING.dtS / shotRatio(this.pilot, shownShot);
 			this.shownS += shown;
 			this.shownBy[shownShot] += shown;
 		}
@@ -363,7 +376,7 @@ export class OpeningRun {
 			return;
 		}
 		const shot = this.shot;
-		this.budgetS += wallDt * SHOT_RATIO[shot];
+		this.budgetS += wallDt * shotRatio(this.pilot, shot);
 		while (this.budgetS >= OPENING.dtS - 1e-12 && !this.done) {
 			this.budgetS -= OPENING.dtS;
 			this.unit(sim);
