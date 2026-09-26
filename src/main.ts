@@ -7914,12 +7914,10 @@ class Game {
 	private reconcilePointerLock() {
 		// #535: the opening's SKIP is a control on the screen, and the mouse is
 		// always available (the principal's premise, #370): the pointer is free
-		// while it runs.
-		if (this.openingActive && this.canvasHoldsLock()) {
-			document.exitPointerLock();
-			return;
-		}
+		// while it runs. The same door, not a second one.
+		const openingHolds = this.openingActive && this.canvasHoldsLock();
 		if (
+			openingHolds ||
 			pointerLockMove(
 				this.padContextThisFrame,
 				this.consoleDrawnThisFrame,
