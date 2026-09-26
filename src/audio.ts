@@ -16,6 +16,14 @@
  * to assert on a waveform, it wants its own stream — not this file borrowing
  * one.
  */
+/**
+ * `hyperspace()`'s sweep, seconds. Owned here, beside the cue, and read by
+ * `witchspace.ts`'s schedule: the cue is pushed to this layer and the layer
+ * imports nothing (`tests/headless.test.ts`), so the figure lives with the
+ * sound and the schedule reaches in for it.
+ */
+export const HYPERSPACE_SWEEP_S = 1.4;
+
 export class AudioFX {
 	private ctx: AudioContext | null = null;
 	private master: GainNode | null = null;
@@ -170,6 +178,7 @@ export class AudioFX {
 		type: OscillatorType,
 		vol = 0.3,
 		slideTo?: number,
+		out?: AudioNode,
 	) {
 		if (!this.ctx || !this.master || this.muted) return;
 		const t = this.ctx.currentTime;
@@ -182,12 +191,17 @@ export class AudioFX {
 		g.gain.exponentialRampToValueAtTime(vol, t + 0.01);
 		g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
 		osc.connect(g);
-		g.connect(this.master);
+		g.connect(out ?? this.master);
 		osc.start(t);
 		osc.stop(t + dur + 0.05);
 	}
 
-	private noiseBurst(dur: number, vol = 0.3, filterFreq = 800) {
+	private noiseBurst(
+		dur: number,
+		vol = 0.3,
+		filterFreq = 800,
+		out?: AudioNode,
+	) {
 		if (!this.ctx || !this.master || this.muted) return;
 		const t = this.ctx.currentTime;
 		const len = Math.floor(this.ctx.sampleRate * dur);
@@ -205,7 +219,7 @@ export class AudioFX {
 		g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
 		src.connect(filter);
 		filter.connect(g);
-		g.connect(this.master);
+		g.connect(out ?? this.master);
 		src.start(t);
 	}
 
@@ -237,11 +251,80 @@ export class AudioFX {
 		this.tone(160, 0.18, "sine", 0.25, 240);
 		this.noiseBurst(0.12, 0.18, 600);
 	}
-	/** Witchspace entry: a rising sweep into nothing. */
+	/**
+	 * Witchspace entry: a rising sweep into nothing.
+	 *
+	 * #195's D3 places it: it starts `sweepS` before the cut so its top lands on
+	 * the cut (`witchspace.ts` owns the schedule). It goes through its own
+	 * group so `stopWitchspace` can take it back — a sweep that played on after
+	 * a cancelled charge would announce a jump that did not happen.
+	 */
 	hyperspace() {
-		this.tone(90, 1.4, "sawtooth", 0.22, 1400);
-		this.noiseBurst(1.2, 0.18, 2200);
+		const out = this.witchspaceGroup("sweep");
+		if (!out) return;
+		this.tone(90, HYPERSPACE_SWEEP_S, "sawtooth", 0.22, 1400, out);
+		this.noiseBurst(1.2, 0.18, 2200, out);
 	}
+	/**
+	 * The drive charging: a low hum under the first part of §8's wind-up, before
+	 * the sweep takes over (#195's D3). Two detuned low voices rising a fifth,
+	 * swelling in and easing out so the hand-off to the sweep is not a step.
+	 */
+	chargeHum(seconds: number) {
+		const out = this.witchspaceGroup("hum");
+		if (!out || !this.ctx) return;
+		const t = this.ctx.currentTime;
+		const env = this.ctx.createGain();
+		env.gain.setValueAtTime(0.0001, t);
+		env.gain.exponentialRampToValueAtTime(0.16, t + seconds * 0.6);
+		env.gain.exponentialRampToValueAtTime(0.0001, t + seconds);
+		const filter = this.ctx.createBiquadFilter();
+		filter.type = "lowpass";
+		filter.frequency.setValueAtTime(220, t);
+		filter.frequency.exponentialRampToValueAtTime(520, t + seconds);
+		filter.connect(env);
+		env.connect(out);
+		for (const [freq, type] of [
+			[55, "sawtooth"],
+			[55.7, "triangle"],
+		] as const) {
+			const osc = this.ctx.createOscillator();
+			osc.type = type;
+			osc.frequency.setValueAtTime(freq, t);
+			osc.frequency.exponentialRampToValueAtTime(freq * 1.5, t + seconds);
+			osc.connect(filter);
+			osc.start(t);
+			osc.stop(t + seconds + 0.05);
+		}
+	}
+	/**
+	 * Silence both witchspace cues now: the charge was cancelled (#532). Fast
+	 * rather than cut, so the stop is not a click.
+	 */
+	stopWitchspace() {
+		if (!this.ctx) return;
+		const t = this.ctx.currentTime;
+		for (const group of this.witchspaceGroups.values()) {
+			group.gain.setTargetAtTime(0, t, 0.03);
+			// Disconnected once the ramp has settled; the voices in it stop on
+			// their own schedule and have nowhere to go.
+			setTimeout(() => group.disconnect(), 300);
+		}
+		this.witchspaceGroups.clear();
+	}
+	/** The live witchspace cues, each behind its own gain. */
+	private readonly witchspaceGroups = new Map<"hum" | "sweep", GainNode>();
+	/** A fresh group for a cue, replacing one still sounding under the same name. */
+	private witchspaceGroup(cue: "hum" | "sweep"): GainNode | null {
+		if (!this.ctx || !this.master || this.muted) return null;
+		this.witchspaceGroups.get(cue)?.disconnect();
+		const group = this.ctx.createGain();
+		group.gain.value = 1;
+		group.connect(this.master);
+		this.witchspaceGroups.set(cue, group);
+		return group;
+	}
+
 	/** Something is wrong — low fuel, incoming missile, hull critical. */
 	alert() {
 		this.tone(660, 0.12, "square", 0.16);

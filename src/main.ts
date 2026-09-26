@@ -529,6 +529,25 @@ import {
 	fleetLayout,
 	updateShipVisuals,
 } from "./ship-mesh";
+import { ArrivalRift } from "./arrival-rift";
+import {
+	WITCHSPACE,
+	type WitchspaceState,
+	abortWitchspace,
+	arriveWitchspace,
+	beginWitchspace,
+	entryWitchspace,
+	idleWitchspace,
+	jumpedWitchspace,
+	stepWitchspace,
+	witchspaceAtPhase,
+	witchspaceControlHeld,
+	witchspaceCues,
+	witchspaceLook,
+	witchspacePhase,
+	witchspaceSkyZoom,
+} from "./witchspace";
+import { WitchspacePass } from "./witchspace-pass";
 import {
 	type DesignationScan,
 	type ScanStandoff,
@@ -1705,6 +1724,12 @@ class Game {
 	/** The last pass: tone map, dither, vignette (#200). Public so a probe can
 	 *  reach the dither's control arm through `window.__seelite`. */
 	outputPass!: SeeliteOutputPass;
+	/** #532's pass: the starbow, the dark, the flash, the tunnel and the rift's
+	 *  lens. A composer pass, so it survives `rebuildSystem()`. Public so a probe
+	 *  and `measure-witchspace-cost.mjs` can reach it through
+	 *  `window.__seelite`, as `outputPass` is — `tsc` does not check those
+	 *  scripts, so a private name would rename out from under them silently. */
+	witchspacePass!: WitchspacePass;
 	/**
 	 * Resolution has exactly one owner, and it is the player's setting.
 	 *
@@ -2155,6 +2180,22 @@ class Game {
 	 * `World` is.
 	 */
 	jumpCharge: JumpCharge = idleCharge();
+	/**
+	 * #532's transition across the jump — entry, cut, exit — as the state
+	 * machine `witchspace.ts` owns. Fed by events (`setWitchspace`), never read
+	 * off `jumpCharge`: the charge is idle at the cut, after a cancel and when
+	 * nothing charged, and the effect has to tell those apart.
+	 */
+	witchspace: WitchspaceState = idleWitchspace();
+	/**
+	 * #195 D4's phase handle: the phase the transition is drawn at while a
+	 * strip is captured, or `null` while it runs. Set only by
+	 * `holdWitchspace`; the game never holds it.
+	 */
+	private witchspaceHeldAt: number | null = null;
+	/** The world-anchored exit (#195 D2) of the last arrival, while it lasts.
+	 *  Public for `probe-witchspace.mjs`, for `witchspacePass`'s reason. */
+	arrivalRift: ArrivalRift | null = null;
 	/**
 	 * The committed destination (`galaxy-route.ts`'s `Course`), or `null`.
 	 *
@@ -3701,6 +3742,13 @@ class Game {
 		this.composer.addPass(backdropPass);
 		this.composer.addPass(farPass);
 		this.composer.addPass(approachPass);
+		// #532's transition, **between the approach layer and the near one**: it
+		// reads the sky and the bodies composited so far and draws the tunnel over
+		// them, and the near pass then draws the cabin and the hull over it, so
+		// the tunnel is outside the canopy. `witchspace-pass.ts` says why. Disabled
+		// until a jump, and the composer skips a disabled pass without a swap.
+		this.witchspacePass = new WitchspacePass(this.settings.value.quality);
+		this.composer.addPass(this.witchspacePass);
 		this.composer.addPass(nearPass);
 		// **#201's ambient occlusion, between the near pass and the bloom.**
 		//
@@ -4875,6 +4923,10 @@ class Game {
 		// answer for every plated surface in the game rather than one per
 		// surface. `cockpit-surface.ts` owns what a cabin surface costs.
 		applyCockpitQuality(this.settings.value.quality);
+		// #532's pass draws on both sides; `low` takes fewer streak samples.
+		// Optional because this runs from `buildEnvironment`, before the
+		// composer exists; the constructor reads the setting itself.
+		this.witchspacePass?.setQuality(this.settings.value.quality);
 		// #201's two passes. A call rather than two lines here for
 		// `setComposerSamples`'s reason: an instrument that priced them by moving
 		// the player's setting would write `localStorage` and notify every other
@@ -10697,6 +10749,11 @@ class Game {
 		// one review round, and the throw reached this published handle (#187).
 		this.jumpCharge = idleCharge();
 		this.jumpNotice = "";
+		// And no transition: no effect held, no cue sounding, no rift left over.
+		this.witchspaceHeldAt = null;
+		this.setWitchspace(abortWitchspace(this.witchspace));
+		this.witchspace = idleWitchspace();
+		this.clearArrivalRift();
 		this.chargeAu = CHARGE_CAPACITY_AU;
 		// Selection is not written by the flight path, so the coverage scan does
 		// not ask for it, and it is not spelled here either — the constructor and
@@ -10881,6 +10938,7 @@ class Game {
 			return false;
 		}
 		this.jumpCharge = beginCharge(to.index);
+		this.setWitchspace(beginWitchspace());
 		this.jumpNotice = `jumping to ${to.name}`;
 		return true;
 	}
@@ -11665,7 +11723,213 @@ class Game {
 		if (!charging(this.jumpCharge) && this.pendingJump === null) return;
 		this.jumpCharge = cancelCharge();
 		this.pendingJump = null;
+		// Retracts what was on screen and stops both cues (D3): a sweep that
+		// played on after a cancel would announce a jump that did not happen.
+		this.setWitchspace(abortWitchspace(this.witchspace));
 		this.jumpNotice = `jump cancelled — ${reason}`;
+	}
+
+	/**
+	 * Move #532's transition to its next state and play what that move owes
+	 * (D3): the hum as a wind-up begins, the sweep so its end lands on the cut,
+	 * and a stop when an entry ends without a jump. Every state change goes
+	 * through here, so a cue cannot be forgotten at one of the four call sites.
+	 */
+	private setWitchspace(next: WitchspaceState) {
+		for (const cue of witchspaceCues(this.witchspace, next)) {
+			if (cue === "hum") this.audio.chargeHum(WITCHSPACE.humS);
+			else if (cue === "sweep") this.audio.hyperspace();
+			else this.audio.stopWitchspace();
+		}
+		this.witchspace = next;
+	}
+
+	/** Put an arrival rift behind the player ship, replacing any left over. */
+	private beginArrival() {
+		this.clearArrivalRift();
+		this.arrivalRift = new ArrivalRift({
+			pos: this.world.ship.pos,
+			nose: this.nose(),
+			reachKm: HULL_REACH_KM[PLAYER_HULL[0]],
+		});
+		this.nearScene.add(this.arrivalRift.object);
+	}
+
+	private clearArrivalRift() {
+		if (!this.arrivalRift) return;
+		this.arrivalRift.object.removeFromParent();
+		disposeSubtree(this.arrivalRift.object);
+		this.arrivalRift = null;
+	}
+
+	/**
+	 * #195 D2's exit **without an entry**: an arrival nobody watched depart.
+	 * It plays the whole exit exactly as after a jump — the flash in the dark,
+	 * the tunnel out of the point and back into it, the sky unfolding, the rift
+	 * opening behind the ship where it stands, and the pilot's hands held until
+	 * the sky is back — and nothing is heard, because there was no wind-up. **The first day opens on a cinematic** (#530) calls this, and
+	 * films it from outside.
+	 */
+	playArrival() {
+		// A charge in flight is ended first: left running, its hum and sweep play
+		// on under the arrival and its next step writes an entry over the exit
+		// (sage round 2 on #533).
+		if (charging(this.jumpCharge) || this.pendingJump !== null)
+			this.cancelJumpCharge("arrival");
+		this.beginArrival();
+		this.setWitchspace(arriveWitchspace());
+	}
+
+	/**
+	 * #195 D4's phase handle: draw the transition at `t` seconds from the cut,
+	 * or give it back with `null`. The strip in the view set captures through
+	 * this, because the wind-up runs on wall-clock time and an ordinary capture
+	 * cannot land on the same frame twice.
+	 *
+	 * It holds the **drawing**, not the world: a capture that also wants the
+	 * charge and the bodies still holds the clock, as every view does. For a
+	 * phase before the cut with a charge running, the charge's countdown is set
+	 * to match, so the HUD reads the same second the effect is drawn at. After
+	 * the cut the rift has to exist, so that half is taken after a real jump or
+	 * `playArrival`.
+	 */
+	holdWitchspace(t: number | null) {
+		this.witchspaceHeldAt = t;
+		if (t !== null && t < 0 && charging(this.jumpCharge))
+			this.jumpCharge = {
+				...this.jumpCharge,
+				leftS: Math.min(JUMP_CHARGE_S, -t),
+			};
+	}
+
+	/** The state drawn this frame: the held phase if one is held, else the real
+	 *  one. One place, so the probe's reading and the frame cannot disagree. */
+	private shownWitchspace(): WitchspaceState {
+		const held = this.witchspaceHeldAt;
+		return held === null ? this.witchspace : witchspaceAtPhase(held);
+	}
+
+	/** What the transition is drawing, for a probe to read by name. */
+	witchspaceReading() {
+		const shown = this.shownWitchspace();
+		const rift = this.arrivalRift;
+		return {
+			state: this.witchspace.kind,
+			heldAt: this.witchspaceHeldAt,
+			phase: witchspacePhase(shown),
+			look: witchspaceLook(shown),
+			controlHeld: witchspaceControlHeld(this.witchspace),
+			controlBackS: WITCHSPACE.controlBackS,
+			skyZoom: this.skyZoom,
+			pass: {
+				inComposer: this.composer.passes.includes(this.witchspacePass),
+				enabled: this.witchspacePass.enabled,
+				samples: this.witchspacePass.samples,
+				lens: this.witchspacePass.lens,
+				...this.witchspacePass.look,
+			},
+			rift: rift
+				? {
+						inScene: rift.object.parent === this.nearScene,
+						visible: rift.object.visible,
+						strength: rift.strength,
+						radiusKm: rift.radiusKm,
+						anchor: { ...rift.anchor },
+					}
+				: null,
+		};
+	}
+
+	/**
+	 * One drawn frame of the transition. The exit and a retract step here, on
+	 * wall time — the entry rides the charge in `stepJumpCharge` — and the
+	 * pass and the rift draw whatever the state (or a held phase) says.
+	 */
+	private presentWitchspace(dt: number, camPos: Vec3) {
+		const held = this.witchspaceHeldAt;
+		// Nothing to draw and nothing drawn: the common frame allocates nothing.
+		if (
+			held === null &&
+			this.witchspace.kind === "idle" &&
+			!this.arrivalRift &&
+			!this.witchspacePass.enabled &&
+			this.skyZoom === 1
+		)
+			return;
+		if (
+			held === null &&
+			(this.witchspace.kind === "exit" || this.witchspace.kind === "retract")
+		)
+			this.setWitchspace(stepWitchspace(this.witchspace, dt));
+		const shown = this.shownWitchspace();
+		const look = witchspaceLook(shown);
+		const phase = witchspacePhase(shown) ?? 0;
+		const size = this.renderer.getSize(this.witchspaceSize);
+		this.witchspacePass.apply(look, phase, size.x / Math.max(1, size.y));
+		this.applySkyZoom(witchspaceSkyZoom(look.beta));
+		if (!this.arrivalRift) return;
+		if (held === null && this.witchspace.kind === "idle") {
+			this.clearArrivalRift();
+			return;
+		}
+		this.arrivalRift.update(look.rift, phase, camPos);
+	}
+	private readonly witchspaceSize = new THREE.Vector2();
+	/**
+	 * The arrival rift's lens (the principal's fourth flight: space bends): where
+	 * the rift is on screen and its Einstein radius there, in the witchspace
+	 * pass's aspect-corrected units, so the sky behind the rift bends round it.
+	 * The radius is the rift's own apparent radius, scaled by its strength, so the
+	 * ring the rift draws is the ring the lens makes. Every camera sits at the
+	 * origin, so the rift's camera-relative position is its offset.
+	 */
+	private updateRiftLens() {
+		const rift = this.arrivalRift;
+		const strength = rift?.strength ?? 0;
+		const cam = this.nearCamera;
+		const pos = rift?.object.position;
+		const forward = this.riftForward
+			.set(0, 0, -1)
+			.applyQuaternion(cam.quaternion);
+		if (!rift || !pos || strength <= 0 || forward.dot(pos) <= 0) {
+			this.witchspacePass.setLens(0, 0, 0);
+			return;
+		}
+		cam.updateMatrixWorld();
+		const at = this.riftNdc.copy(pos).project(cam);
+		const halfTan = Math.tan((cam.fov * Math.PI) / 360);
+		const einstein = (rift.radiusKm / pos.length() / halfTan) * 0.5 * strength;
+		this.witchspacePass.setLens(
+			at.x * 0.5 * cam.aspect,
+			at.y * 0.5,
+			Math.min(0.6, einstein),
+		);
+	}
+	private readonly riftNdc = new THREE.Vector3();
+	private readonly riftForward = new THREE.Vector3();
+
+	/** The sky cameras' current aberration zoom, so the projection is rebuilt
+	 *  only when it moves. */
+	private skyZoom = 1;
+
+	/**
+	 * #532's aberration: the backdrop, far and approach cameras take the zoom
+	 * `witchspaceSkyZoom` gives, so the sky crowds forward round the nose. Not
+	 * the near camera — the cabin and the hull travel with the pilot. Markers are
+	 * projected with the near camera's field (`markerNdc`), so while the sky is
+	 * squeezed they mark true bearings rather than the aberrated ones.
+	 */
+	private applySkyZoom(zoom: number) {
+		if (zoom === this.skyZoom) return;
+		this.skyZoom = zoom;
+		for (const cam of [
+			this.backdropCamera,
+			this.farCamera,
+			this.approachCamera,
+		]) {
+			cam.zoom = zoom;
+			cam.updateProjectionMatrix();
+		}
 	}
 
 	/**
@@ -11679,6 +11943,12 @@ class Game {
 	private stepJumpCharge(dt: number) {
 		const step = stepCharge(this.jumpCharge, dt);
 		this.jumpCharge = step.charge;
+		// The entry rides the charge's own countdown, so the two cannot drift;
+		// a fired charge is idle, and the entry holds at the cut until the jump
+		// is taken at the end of this step.
+		this.setWitchspace(
+			entryWitchspace(step.fired === null ? step.charge.leftS : 0),
+		);
 		if (step.fired === null) return;
 		// **Armed, not taken.** See `pendingJump`.
 		this.pendingJump = step.fired;
@@ -11757,6 +12027,8 @@ class Game {
 		);
 		if (!decision.ok) {
 			this.jumpNotice = `jump aborted — ${decision.refusal}`;
+			// Refused at the cut, in the dark, after the sweep has peaked.
+			this.setWitchspace(abortWitchspace(this.witchspace));
 			return;
 		}
 		this.commander = {
@@ -11786,6 +12058,10 @@ class Game {
 		this.selectBootTarget();
 		this.faceTheStar();
 		this.refreshScannerContacts();
+		// The exit (#195 D1, D2): after the ship is placed and faced, because the
+		// rift stands behind it on its nose.
+		this.beginArrival();
+		this.setWitchspace(jumpedWitchspace());
 		// The chart, if the Navigation tab is open. `jumpTo` is the chart's own
 		// "the ship moved" entry point, so the course re-derives from the new
 		// origin instead of the chart drawing a route from a system the ship has
@@ -11832,6 +12108,8 @@ class Game {
 	 * can have are `tests/gpu-teardown.test.ts`'s.
 	 */
 	private rebuildSystem() {
+		// The last arrival's rift belongs to the system being left.
+		this.clearArrivalRift();
 		for (const mesh of this.meshes.values()) mesh.removeFromParent();
 		for (const visual of this.bodyVisuals.values()) visual.dispose();
 		for (const station of this.stationVisuals.values()) station.dispose();
@@ -12116,9 +12394,19 @@ class Game {
 		const stickToChart = this.chartHasStick();
 		const padYaw = stickToChart ? 0 : padAxes.yaw;
 		const padPitch = stickToChart ? 0 : padAxes.pitch;
-		const yaw = this.axis("fly.yawStarboard", "fly.yawPort") + padYaw;
-		const pitch = this.axis("fly.pitchUp", "fly.pitchDown") + padPitch;
-		const roll = this.axis("fly.rollStarboard", "fly.rollPort") + padAxes.roll;
+		// #532: from the cut until the sky is back the pilot's hands are held, on
+		// the principal's ruling. The clock runs and the ship flies on; nothing is
+		// near the arrival point, and the wind-up before the cut is never held.
+		const handsHeld = witchspaceControlHeld(this.witchspace);
+		const yaw = handsHeld
+			? 0
+			: this.axis("fly.yawStarboard", "fly.yawPort") + padYaw;
+		const pitch = handsHeld
+			? 0
+			: this.axis("fly.pitchUp", "fly.pitchDown") + padPitch;
+		const roll = handsHeld
+			? 0
+			: this.axis("fly.rollStarboard", "fly.rollPort") + padAxes.roll;
 
 		// §7: any control input cancels the computer. Read before the rates are
 		// stepped, so the cancel and the input land on the same frame rather than
@@ -12209,7 +12497,7 @@ class Game {
 		// nudges without sustained intent. An earlier version of this comment
 		// said the reason "was never about the device", which overreached in the
 		// other direction; sage caught that.
-		const flying = contextFliesShip(this.padContext());
+		const flying = !handsHeld && contextFliesShip(this.padContext());
 		const impulse = flying
 			? {
 					pitch: clampAbs(-this.mouseDy * MOUSE_RAD_PER_PX, MOUSE_MAX_STEP),
@@ -12251,9 +12539,9 @@ class Game {
 		if (orbit !== 0)
 			this.chaseYaw = wrapAngle(this.chaseYaw + orbit * CHASE_ORBIT_RATE * dt);
 
-		if (this.held("fly.throttleUp"))
+		if (!handsHeld && this.held("fly.throttleUp"))
 			this.throttle = Math.min(1, this.throttle + dt * throttleRate);
-		if (this.held("fly.throttleDown"))
+		if (!handsHeld && this.held("fly.throttleDown"))
 			this.throttle = Math.max(0, this.throttle - dt * throttleRate);
 		// The triggers **trim** the throttle rather than setting it (#283's F2).
 		// A pull is a speed, not a position: let go and the throttle stays where
@@ -12261,7 +12549,7 @@ class Game {
 		// which is scaled down near a station so docking stays flyable, and
 		// keeps every existing writer of `this.throttle` from being fought on
 		// the next frame. `pad-bindings.ts` argues the rejected arm.
-		if (padAxes.throttleTrim !== 0)
+		if (!handsHeld && padAxes.throttleTrim !== 0)
 			this.throttle = Math.min(
 				1,
 				Math.max(0, this.throttle + padAxes.throttleTrim * dt * throttleRate),
@@ -12622,6 +12910,7 @@ class Game {
 				? Math.log(this.cruiseSpeedKms / p.vMinKms) / span
 				: 0;
 		this.warp.update(intensity, this.orientation, dt);
+		this.presentWitchspace(dt, camPos);
 
 		const viewRotation = this.cameraRotation();
 		// All three cameras share the ship's head-look orientation and sit at the
@@ -12638,6 +12927,9 @@ class Game {
 		}
 		this.cockpit.mesh.quaternion.copy(this.orientation);
 		this.cockpit.mesh.visible = this.view === "cockpit" && !this.cabinHidden;
+		// After the cameras are aimed, so the rift's lens sits on the rift in
+		// this frame rather than the last one.
+		this.updateRiftLens();
 		// The star sphere follows the camera so it never parallaxes — which is
 		// what makes it read as infinitely far away rather than as a small ball
 		// the ship is inside. The camera being at the origin means this is a

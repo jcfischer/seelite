@@ -568,9 +568,23 @@ _Avoid_: Energy (unqualified), capacitor, power
 Where the ship is between two systems. It costs no sim time today: the clock
 advances by the wind-up, which is flown, and by nothing else — so a jump does
 not turn over #25's 30-minute market epoch and is not a way to wait a market
-out. Misjumps and witchspace ambushes are reserved to #8, and the tunnel as a
-*rendered* thing is unbuilt.
+out. Misjumps and witchspace ambushes are reserved to #8. What is *drawn* is a
+transition that straddles the cut (#195 D1, built by #532): through the
+wind-up the sky crowds into a starbow and goes dark to one point ahead as the
+ship escapes its light; the cut is a flash in the dark; the arrival rides a
+bending tunnel out of that point before the new sky unfolds, with an
+**arrival rift** behind the ship. What is drawn is a look rather than a
+rendered place, and it adds no clock.
 _Avoid_: Hyperspace (as a place), jump space
+
+**Arrival rift**:
+The world-anchored half of a jump's exit (#195 D2, built by #532): a ring of
+light one hull length behind the arriving ship, facing along its nose, that
+opens with the new system's light and closes a few seconds later. It is the
+ring a lens makes, and the sky behind it bends round it — **the player's rift
+only** today, because the witchspace pass carries one lens. Owned by
+`src/arrival-rift.ts`; #530's opening and #262's NPC arrivals reuse it.
+_Avoid_: portal, wormhole (as an object)
 
 **Galactic frame**:
 Galaxy space — the coordinate system `galaxy.ts` places the 256 systems in, whose

@@ -145,6 +145,7 @@ export const LEVERS = Object.freeze({
 	372: "the Controls tab: every control as a folding tree of task groups",
 	381: "the rebind modal, and the tab's Settings and Commanders doors beside it",
 	431: "the derived sky: real neighbouring systems at true bearings, over the invented field behind them",
+	532: "the witchspace transition: the entry streak, the tunnel over the cut, its collapse and the arrival rift",
 });
 
 /**
@@ -198,6 +199,10 @@ export const LEVERS = Object.freeze({
  *   head is turned to the right console on its Controls tab (#372). `folded`
  *   names the task groups closed first. The frame is the tab's layout and is
  *   judged as one: #370's §1 risk — a wall of text — is what no probe fails on.
+ * - `witchspace` — #532's transition held at `phase` seconds from the cut
+ *   (#195 D4) with the clock held. Before the cut, a charge to the nearest
+ *   system from the start system; from the cut on, after that jump. The
+ *   placer writes world state (a jump saves), so the next row boots clean.
  */
 export const SHOT_KINDS = Object.freeze([
 	"station-axis",
@@ -207,6 +212,7 @@ export const SHOT_KINDS = Object.freeze([
 	"workbench-interior",
 	"duel",
 	"controls",
+	"witchspace",
 ]);
 
 /**
@@ -899,6 +905,71 @@ export const VIEWS = Object.freeze([
 		shot: { kind: "duel", headLook: "left", aftermath: "log", view: "cockpit" },
 	},
 	/**
+	 * #532's fixed-phase strip (#195 D4). The wind-up runs on wall-clock time,
+	 * so an ordinary capture cannot land on the same frame twice; each row holds
+	 * the transition at a phase through `holdWitchspace` and holds the clock, so
+	 * the charge cannot fire while the frame settles.
+	 *
+	 * Six cockpit rows across the straddle, and two from outside, because
+	 * #195 D2's rift is judged from outside the ship and a cockpit strip shows
+	 * none of it. The phases before the cut are drawn in the start system; the
+	 * ones from the cut on are drawn after a real jump to the nearest
+	 * system, so the new system and the rift are the ones a player gets.
+	 *
+	 * **The `before` arm is the hard cut.** A build without `holdWitchspace` is
+	 * captured through the same placer and captioned as having no transition, the
+	 * way the controls placer captions a build with no Controls tab. Capture it
+	 * with this branch's scripts over the base build's `src/`.
+	 */
+	{
+		name: "witchspace-windup",
+		covers: [532],
+		what: "Cockpit, 2.4 s before the cut: the sky starting to crowd forward as the drive takes the ship toward light speed.",
+		shot: { kind: "witchspace", phase: -2.4, view: "cockpit" },
+	},
+	{
+		name: "witchspace-entry",
+		covers: [532],
+		what: "Cockpit, 1.5 s before the cut: the starbow — the sky squeezed round the nose, blue ahead and red at the rim, the streaks straight out from the nose and the stars bent round it.",
+		shot: { kind: "witchspace", phase: -1.5, view: "cockpit" },
+	},
+	{
+		name: "witchspace-entry-late",
+		covers: [532],
+		what: "Cockpit, 0.4 s before the cut: escaping the light — the dark has closed to one blazing point ahead.",
+		shot: { kind: "witchspace", phase: -0.4, view: "cockpit" },
+	},
+	{
+		name: "witchspace-cut",
+		covers: [532],
+		what: "Cockpit, on the cut, in the new system: the flash in the dark the world is replaced in.",
+		shot: { kind: "witchspace", phase: 0, view: "cockpit" },
+	},
+	{
+		name: "witchspace-exit",
+		covers: [532],
+		what: "Cockpit, 1.5 s after the cut: riding the tunnel, behind the cabin — mist, plasma strands, rings rushing past.",
+		shot: { kind: "witchspace", phase: 1.5, view: "cockpit" },
+	},
+	{
+		name: "witchspace-exit-late",
+		covers: [532],
+		what: "Cockpit, 3.3 s after the cut: the new system's light catching up — the sky unfolding out of the point, red-shifted, the hands still held.",
+		shot: { kind: "witchspace", phase: 3.3, view: "cockpit" },
+	},
+	{
+		name: "witchspace-rift-chase",
+		covers: [532],
+		what: "Chase, 4.3 s after the cut: the sky back and the arrival rift open around the ship, from outside.",
+		shot: { kind: "witchspace", phase: 4.3, view: "chase" },
+	},
+	{
+		name: "witchspace-rift-closing",
+		covers: [532],
+		what: "Chase, 6.5 s after the cut: the rift closing behind a ship already in the new system.",
+		shot: { kind: "witchspace", phase: 6.5, view: "chase" },
+	},
+	/**
 	 * §13.6's seven-frame acceptance set, as declared views.
 	 *
 	 * The receipt fixes them and they are transcribed rather than reinterpreted:
@@ -1092,6 +1163,8 @@ const SHOT_REQUIREMENTS = {
 	controls: (s) =>
 		s.folded === undefined ||
 		(Array.isArray(s.folded) && s.folded.every((g) => typeof g === "string")),
+	// A phase in seconds from the cut (#195 D4): negative in the wind-up.
+	witchspace: (s) => finite(s.phase),
 	duel: (s) =>
 		["forward", "right", "left"].includes(s.headLook) &&
 		(s.aftermath === undefined ||
