@@ -174,14 +174,8 @@ export const SHOT_RATIO: Readonly<Record<OpeningShot, number>> = Object.freeze({
 	dock: OPENING.dockShot.ratio,
 });
 
-/** How fast `shot` shows the sim. A function of the script's place as well
- *  as the shot, so a shot can change pace mid-take without a second table. */
-export function shotRatio(
-	pilot: { leg: OpeningLeg },
-	shot: OpeningShot,
-): number {
-	return SHOT_RATIO[shot];
-}
+/** How fast `shot` shows the sim: sim seconds per shown second. */
+export const shotRatio = (shot: OpeningShot): number => SHOT_RATIO[shot];
 
 export interface PilotState {
 	kind: OpeningKind;
@@ -241,7 +235,11 @@ export function pilotStep(
 				: stay();
 		case "cruise":
 			if (facts.regime === "normal")
-				return next("approach", ["request-clearance", "engage-computer"]);
+				// A leg that dropped out short of the station cannot be brought in:
+				// a clearance is refused outside the vicinity, so none is asked for.
+				return facts.inVicinity
+					? next("approach", ["request-clearance", "engage-computer"])
+					: next("fallback");
 			return state.legSteps >= steps(OPENING.cruiseCapS)
 				? next("fallback")
 				: stay();
@@ -379,7 +377,7 @@ export class OpeningRun {
 		sim.step(OPENING.dtS);
 		this.stepsRun++;
 		if (shownShot !== null) {
-			const shown = OPENING.dtS / shotRatio(this.pilot, shownShot);
+			const shown = OPENING.dtS / shotRatio(shownShot);
 			this.shownS += shown;
 			this.shownBy[shownShot] += shown;
 		}
@@ -404,7 +402,7 @@ export class OpeningRun {
 			return;
 		}
 		const shot = this.shot;
-		this.budgetS += wallDt * shotRatio(this.pilot, shot);
+		this.budgetS += wallDt * shotRatio(shot);
 		while (this.budgetS >= OPENING.dtS - 1e-12 && !this.done) {
 			this.budgetS -= OPENING.dtS;
 			this.unit(sim);

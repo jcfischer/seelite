@@ -14398,6 +14398,8 @@ class Game {
 			(s) => s.type === "trade",
 		)?.id;
 		if (kind === "guided" && !tradeId) {
+			// Recorded as every other D6 path is (sage round 1 on #536).
+			this.openingOutcome = "fallback";
 			this.openingFallback();
 			return;
 		}
@@ -17042,19 +17044,20 @@ if (postcard) {
 		// guided start still docks. Before the clock runs, as the opening does.
 		if (plan.loaded !== null) {
 			if (slot === null) return;
+			const commander = {
+				firstDay: game.firstDay,
+				docked: game.dockPhase === "docked",
+			};
+			// Only a commander the rule could owe the rest is worth the storage
+			// read; every other load skips it (sage round 1 on #536).
+			if (!openingOwedOnLoad({ ...commander, hasLastDocked: false })) return;
 			let hasLastDocked = true;
 			try {
 				hasLastDocked = (await saveBackend.read(slot, "lastDocked")) !== null;
 			} catch {
 				// Unreadable is not absent: leave the commander where it is.
 			}
-			if (
-				openingOwedOnLoad({
-					firstDay: game.firstDay,
-					docked: game.dockPhase === "docked",
-					hasLastDocked,
-				})
-			)
+			if (openingOwedOnLoad({ ...commander, hasLastDocked }))
 				game.beginOpening("guided", false);
 			return;
 		}

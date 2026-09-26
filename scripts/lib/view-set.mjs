@@ -1232,6 +1232,20 @@ export function uncoveredLevers(views) {
 
 /** What each shot kind needs beyond `kind` and `view`, and how to check it. */
 const finite = (n) => typeof n === "number" && Number.isFinite(n);
+/**
+ * The opening's shots, as `src/opening.ts` names them in `OPENING_SHOTS.guided`.
+ * This file runs under node and cannot import that module, so the list is
+ * copied — and `tests/view-set.test.ts` holds the copy equal to the source.
+ */
+export const OPENING_SHOT_NAMES = Object.freeze([
+	"forming",
+	"arrival",
+	"flypast",
+	"cruise",
+	"approach",
+	"dock",
+]);
+
 const SHOT_REQUIREMENTS = {
 	"station-axis": (s) => typeof s.station === "string" && finite(s.radii),
 	"body-offset": (s) =>
@@ -1249,11 +1263,7 @@ const SHOT_REQUIREMENTS = {
 	witchspace: (s) => finite(s.phase),
 	// A shot of the guided opening and shown seconds into it (#530's handle).
 	opening: (s) =>
-		["forming", "arrival", "flypast", "cruise", "approach", "dock"].includes(
-			s.shot,
-		) &&
-		finite(s.at) &&
-		s.at >= 0,
+		OPENING_SHOT_NAMES.includes(s.shot) && finite(s.at) && s.at >= 0,
 	duel: (s) =>
 		["forward", "right", "left"].includes(s.headLook) &&
 		(s.aftermath === undefined ||

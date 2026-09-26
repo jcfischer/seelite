@@ -52,6 +52,10 @@ class FakeSim implements OpeningSim {
 	dropEvery = 0;
 	/** A traversal that never finishes and a run-in that never ends. */
 	stuck = false;
+	/** A spool that never hands over to cruise. */
+	stallSpool = false;
+	/** A leg that drops out short of the station, outside the vicinity. */
+	dropShort = false;
 	shotChanged?: (shot: string | null) => void;
 
 	constructor(cruiseS = 60, approachS = 80) {
@@ -69,7 +73,7 @@ class FakeSim implements OpeningSim {
 			cruiseEtaS: this.regime === "cruise" ? this.cruiseLeftS : null,
 			stationKm:
 				this.regime === "cruise" ? 1e6 : Math.max(0, this.approachLeftS / 10),
-			inVicinity: this.regime !== "cruise",
+			inVicinity: this.regime !== "cruise" && !this.dropShort,
 			runIn:
 				this.regime !== "cruise" && this.computer && this.approachLeftS < 40,
 		};
@@ -85,7 +89,7 @@ class FakeSim implements OpeningSim {
 				this.throttle = 0;
 				return;
 			case "engage-cruise":
-				if (!this.refuseCruise) this.spoolLeftS = 3;
+				if (!this.refuseCruise) this.spoolLeftS = this.stallSpool ? 1e9 : 3;
 				return;
 			case "request-clearance":
 				this.grant = true;
@@ -261,6 +265,36 @@ describe("the pilot script", () => {
 				OPENING.burnS.guided +
 				OPENING.spoolCapS +
 				0.1,
+		);
+	});
+
+	// Sage round 1 on #536: these two branches had no row.
+	test("a spool that never hands over falls back at the spool cap", () => {
+		const sim = new FakeSim();
+		sim.stallSpool = true;
+		const run = new OpeningRun("guided");
+		run.skip(sim);
+		expect(run.outcome).toBe("fallback");
+		expect(sim.regime).toBe("normal");
+		expect(sim.t).toBeCloseTo(
+			OPENING.formS +
+				OPENING.arriveS +
+				OPENING.burnS.guided +
+				OPENING.spoolCapS,
+			1,
+		);
+	});
+
+	test("a leg that drops out outside the vicinity falls back at once", () => {
+		const sim = new FakeSim();
+		sim.dropShort = true;
+		const run = new OpeningRun("guided");
+		run.skip(sim);
+		expect(run.outcome).toBe("fallback");
+		// Straight after the drop-out: no clearance asked, no computer engaged.
+		expect(sim.log.some((a) => a.endsWith("engage-computer"))).toBe(false);
+		expect(sim.t).toBeLessThan(
+			OPENING.formS + OPENING.arriveS + OPENING.burnS.guided + 3 + 60 + 0.1,
 		);
 	});
 
@@ -605,9 +639,7 @@ describe("the station approach is a scene of its own (the principal's fifth and 
 		expect(openingShot({ ...approach, legSteps: to + 1 }, facts)).toBe(null);
 	});
 	test("it shows its middle half at its ratio, at any cadence", () => {
-		expect(shotRatio(startPilot("guided"), "approach")).toBe(
-			OPENING.approachShot.ratio,
-		);
+		expect(shotRatio("approach")).toBe(OPENING.approachShot.ratio);
 		const shown =
 			(OPENING.approachShot.toS - OPENING.approachShot.fromS) /
 			OPENING.approachShot.ratio;

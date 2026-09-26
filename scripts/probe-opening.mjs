@@ -145,6 +145,7 @@ const watched = await boot({ guided: true, cinematic: 1 }, "guided watched");
 const shots = [];
 let pressed = false;
 let prologue = null;
+const letterboxed = new Set();
 for (let i = 0; i < 400; i++) {
 	const r = await watched.page.evaluate(() =>
 		window.__seelite.openingReading(),
@@ -154,6 +155,14 @@ for (let i = 0; i < 400; i++) {
 		shots.push(r.shot);
 		// Into the shot, where it has settled.
 		await watched.page.waitForTimeout(1200);
+		// The frame is letterboxed while each shot runs, read then rather than
+		// only after the end (sage round 1 on #536).
+		if (
+			await watched.page.evaluate(
+				() => !!document.querySelector("[data-opening]")?.checkVisibility(),
+			)
+		)
+			letterboxed.add(r.shot);
 		// The prologue is empty space with the rift forming: no ship drawn, a
 		// rift that is there and still growing.
 		if (r.shot === "forming")
@@ -199,10 +208,12 @@ check(
 	JSON.stringify(prologue),
 );
 check(
-	"the frame was letterboxed while it ran, and is gone after",
-	await watched.page.evaluate(
-		() => !document.querySelector("[data-opening]")?.checkVisibility(),
-	),
+	"the frame was letterboxed in every shot while it ran, and is gone after",
+	letterboxed.size === shots.length &&
+		(await watched.page.evaluate(
+			() => !document.querySelector("[data-opening]")?.checkVisibility(),
+		)),
+	`letterboxed in ${[...letterboxed].join(", ")}`,
 );
 const watchedEnd = await endState(watched.page);
 check(
@@ -220,7 +231,9 @@ check(
 	"the pilot gets the cockpit back, docked",
 	await watched.page.evaluate(() => window.__seelite.view === "cockpit"),
 );
-await watched.page.screenshot({ path: `${out}/05-docked.png` });
+await watched.page.screenshot({
+	path: `${out}/${String(shots.length + 1).padStart(2, "0")}-docked.png`,
+});
 await watched.context.close();
 
 // ---------------------------------------------------------------------------
@@ -276,10 +289,6 @@ for (const seed of [47, 48, 49, 50, 51]) {
 				requestAnimationFrame(tick);
 			}),
 	);
-	// A jump within a take: the camera's place relative to the ship moving by
-	// more than half a reach between two frames of the arrival. The orbit moves
-	// it by design, at most ~0.03 reaches a frame at 60 Hz (0.2 on a 100 ms
-	// hitch); the noise jumps this row was built on were 4.3 and 5.9.
 	// **One take from the arrival through the fly-past** (the principal's
 	// sixth note): between two frames of it the camera may move only by the
 	// orbit (~0.03 reaches a frame; the fly-past camera stands still in its
@@ -440,11 +449,17 @@ for (const shot of ["cruise", "dock"]) {
 		};
 	});
 	const record = await lastDocked(quit.page);
+	// Which way it docks is named, not either-or (sage round 1 on #536): from
+	// mid-cruise the rest is flown; on the run-in, a cruise that close is
+	// refused and #530 D6's fallback places the ship.
+	const expected = shot === "cruise" ? "docked" : "fallback";
 	check(
-		`a quit at the ${shot} shot saves in flight, and the reload flies the rest and docks with lastDocked`,
+		shot === "cruise"
+			? "a quit in the fly-by saves in flight, and the reload flies the rest and docks with lastDocked"
+			: "a quit on the run-in saves in flight, and the reload falls back to the placement and docks with lastDocked",
 		saved.dockedAt === null &&
 			!saved.lastDocked &&
-			(resumed.outcome === "docked" || resumed.outcome === "fallback") &&
+			resumed.outcome === expected &&
 			resumed.dockPhase === "docked" &&
 			resumed.stationId === trade.id &&
 			record?.dockedAt === trade.key,

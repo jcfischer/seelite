@@ -14,8 +14,8 @@
  * frames the ship the same whatever it is drawn at. The figures are the
  * build's first answer and the strip's to tune.
  *
- * Imports only `vec3`, a leaf, so `tests/opening-camera.test.ts` runs under
- * bun.
+ * Imports only `vec3` and `opening`, both leaves, so
+ * `tests/opening-camera.test.ts` runs under bun.
  */
 import {
 	type Vec3,
@@ -350,11 +350,7 @@ export function shotCamera(anchor: ShotAnchor, scene: ShotScene): ShotCamera {
 		}
 		case "cruise": {
 			const f = SHOT_FRAMING.cruise;
-			const swing =
-				(eased((scene.gameTime - anchor.atS) / f.orbitS) *
-					f.orbitDeg *
-					Math.PI) /
-				180;
+			const swing = swingRad(anchor, scene, f);
 			const orbit = (at: Vec3) =>
 				add(ship.pos, turnedAbout(sub(at, ship.pos), ship.up, swing));
 			const station = scene.station?.pos ?? add(ship.pos, ship.nose);
@@ -391,11 +387,7 @@ export function shotCamera(anchor: ShotAnchor, scene: ShotScene): ShotCamera {
 		}
 		case "approach": {
 			const f = SHOT_FRAMING.approach;
-			const swing =
-				(eased((scene.gameTime - anchor.atS) / f.orbitS) *
-					f.orbitDeg *
-					Math.PI) /
-				180;
+			const swing = swingRad(anchor, scene, f);
 			// `axis` runs from the station through the ship: behind the ship on
 			// it is where both are ahead of the camera together.
 			const lift = across(ship.up, axis, ownSide(axis, side));
@@ -437,6 +429,16 @@ export function shotCamera(anchor: ShotAnchor, scene: ShotScene): ShotCamera {
 		}
 	}
 }
+
+/** How far a shot has swung round the ship by now, radians: `orbitDeg` over
+ *  `orbitS` from the anchor, eased. */
+const swingRad = (
+	anchor: ShotAnchor,
+	scene: ShotScene,
+	f: { orbitDeg: number; orbitS: number },
+): number =>
+	(eased((scene.gameTime - anchor.atS) / f.orbitS) * f.orbitDeg * Math.PI) /
+	180;
 
 /** Smoothstep on [0, 1], clamped: slow at both ends of a swing. */
 const eased = (u: number): number => {

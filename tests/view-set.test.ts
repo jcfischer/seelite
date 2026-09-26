@@ -746,3 +746,21 @@ describe("the rim look row #480 added", () => {
 		expect(declaring.map((v) => v.name)).toEqual(["sky-at-the-rim"]);
 	});
 });
+
+describe("the opening strip names the opening's shots (sage round 1 on #536)", () => {
+	test("the validator's list is the source's list", async () => {
+		const { OPENING_SHOTS } = await import("../src/opening");
+		const { OPENING_SHOT_NAMES } = await import("../scripts/lib/view-set.mjs");
+		expect([...OPENING_SHOT_NAMES]).toEqual([...OPENING_SHOTS.guided]);
+	});
+	test("a shot the opening does not have is refused", async () => {
+		const { malformedShots } = await import("../scripts/lib/view-set.mjs");
+		const view = {
+			name: "opening-nowhere",
+			covers: [535],
+			what: "not a shot",
+			shot: { kind: "opening", shot: "nowhere", at: 1, view: "chase" },
+		};
+		expect(malformedShots([view]).length).toBe(1);
+	});
+});
