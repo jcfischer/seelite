@@ -298,6 +298,18 @@ export const PROBE_CATALOG = Object.freeze(
 			["shadows", "SSAO", "occlusion", "render pass", "bloom"],
 		),
 		entry(
+			"probe-opening.mjs",
+			"Flies the opening cinematic: a guided start watched, skipped at boot and skipped by the key ending in one state and docked with lastDocked, a free start ending in flight near the arrival point, no sequence under ?boot=direct or ?system=, no interdiction, the fallback, the phase handle repeatable, and a capture of every shot.",
+			[
+				"opening cinematic",
+				"new game",
+				"guided new game",
+				"skip",
+				"phase handle",
+				"docked start",
+			],
+		),
+		entry(
 			"probe-output-stage.mjs",
 			"Uses paired live renders to check antialiasing, encoding, vignette, dithering, and final-pass order.",
 			["output stage", "antialiasing", "encoding", "vignette", "dither"],

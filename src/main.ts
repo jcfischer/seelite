@@ -549,6 +549,30 @@ import {
 } from "./witchspace";
 import { WitchspacePass } from "./witchspace-pass";
 import {
+	type OpeningKind,
+	type OpeningOutcome,
+	OPENING,
+	OpeningRun,
+	type OpeningShot,
+	type OpeningSim,
+	type PilotAction,
+	openingAtBoot,
+	openingCaption,
+	openingOwedOnLoad,
+} from "./opening";
+import {
+	type ShotAnchor,
+	type ShotCamera,
+	type ShotScene,
+	anchorShot,
+	eased,
+	shotCamera,
+} from "./opening-camera";
+import {
+	type OpeningOverlayHandle,
+	mountOpeningOverlay,
+} from "./opening-overlay";
+import {
 	type DesignationScan,
 	type ScanStandoff,
 	type DisplayContact,
@@ -4131,6 +4155,9 @@ class Game {
 		// one, because a click can land in the same frame that drew the console it
 		// was aimed at and the cached answer is the frame's.
 		this.renderer.domElement.addEventListener("click", () => {
+			// #535: nobody flies during the opening, and a locked pointer could not
+			// reach its SKIP control.
+			if (this.openingActive) return;
 			const consoleDrawn = this.consoleIsDrawn();
 			if (
 				pointerLockMove(
@@ -7887,7 +7914,12 @@ class Game {
 	 * be said out loud to land.
 	 */
 	private reconcilePointerLock() {
+		// #535: the opening's SKIP is a control on the screen, and the mouse is
+		// always available (the principal's premise, #370): the pointer is free
+		// while it runs. The same door, not a second one.
+		const openingHolds = this.openingActive && this.canvasHoldsLock();
 		if (
+			openingHolds ||
 			pointerLockMove(
 				this.padContextThisFrame,
 				this.consoleDrawnThisFrame,
@@ -8360,6 +8392,14 @@ class Game {
 	 * long enough to forget what the first one felt like.
 	 */
 	private command(id: CommandId) {
+		// #530 D2: while the opening runs, one key answers — the one that skips
+		// a traversal skips the opening too — and every other is ignored, so
+		// nothing a pilot presses can make a watched run differ from a skipped
+		// one.
+		if (this.openingActive) {
+			if (id === "dock.launch") this.skipOpening();
+			return;
+		}
 		// **The jump notice is dismissed by playing** (#187). It is the last
 		// thing that happened — a refusal, a commitment, an arrival — and it
 		// holds the one prompt line until the pilot does something, which is the
@@ -8792,6 +8832,9 @@ class Game {
 	 * `impulse` — so nothing carries a delta into a later frame.
 	 */
 	private hasControlInput(yaw: number, pitch: number, roll: number): boolean {
+		// A held throttle key during the opening is not the pilot taking the
+		// stick: it would cancel the station's computer mid-run-in (#535).
+		if (this.openingActive) return false;
 		return (
 			yaw !== 0 ||
 			pitch !== 0 ||
@@ -10989,6 +11032,7 @@ class Game {
 	private triggerHeld(): boolean {
 		return (
 			!this.combatRig &&
+			!this.openingActive &&
 			flightLive(this.dock.phase) &&
 			(this.keys.has(" ") ||
 				mouseFireHeld(
@@ -11196,7 +11240,9 @@ class Game {
 
 	/** Draw the leg's encounter, if the leg has none running. */
 	private scheduleLegEncounter() {
-		if (this.combatRig || RAIDERS_OFF) return;
+		// #530 D6: no raider interdicts the opening's scripted cruise. The next
+		// leg after it rolls as a player meets it.
+		if (this.combatRig || RAIDERS_OFF || this.openingActive) return;
 		if (this.encounter && this.encounter.phase !== "over") return;
 		const record = this.world.system.record;
 		const now = this.world.gameTime;
@@ -11478,7 +11524,7 @@ class Game {
 	 * for the frame, so the new encounter is first stepped on the next one.
 	 */
 	private callDefender(target: CarrierKey, instance: number) {
-		if (this.combatRig || RAIDERS_OFF) return;
+		if (this.combatRig || RAIDERS_OFF || this.openingActive) return;
 		const record = this.world.system.record;
 		const now = this.world.gameTime;
 		const answer = answerHit(
@@ -11846,6 +11892,16 @@ class Game {
 	 * pass and the rift draw whatever the state (or a held phase) says.
 	 */
 	private presentWitchspace(dt: number, camPos: Vec3) {
+		// #535's prologue draws the rift itself: forming out of nothing over
+		// `formS`, on the opening's own shown clock so a hold draws the frame a
+		// watched run does. The witchspace state is idle until the arrival.
+		const opening = this.opening;
+		if (opening?.shot === "forming" && this.arrivalRift) {
+			const t = opening.shownBy.forming;
+			// The camera's own easing, so the rift and the push-in move as one.
+			this.arrivalRift.update(eased(t / OPENING.formS), t, camPos);
+			return;
+		}
 		const held = this.witchspaceHeldAt;
 		// Nothing to draw and nothing drawn: the common frame allocates nothing.
 		if (
@@ -12397,7 +12453,10 @@ class Game {
 		// #532: from the cut until the sky is back the pilot's hands are held, on
 		// the principal's ruling. The clock runs and the ship flies on; nothing is
 		// near the arrival point, and the wind-up before the cut is never held.
-		const handsHeld = witchspaceControlHeld(this.witchspace);
+		// #535: the opening flies the ship, so the pilot's hands are off it for
+		// the whole sequence — the same hold, for a different reason.
+		const handsHeld =
+			witchspaceControlHeld(this.witchspace) || this.openingActive;
 		const yaw = handsHeld
 			? 0
 			: this.axis("fly.yawStarboard", "fly.yawPort") + padYaw;
@@ -12894,7 +12953,10 @@ class Game {
 	 * position, which is not.
 	 */
 	render(dt = 0) {
-		const camPos = this.cameraPos();
+		// #535: the opening films the ship from outside, from a camera its shot
+		// places; everything else about the frame is the chase view's.
+		const shotCam = this.openingCamera();
+		const camPos = shotCam?.pos ?? this.cameraPos();
 		this.updateTrafficPresentation(camPos);
 		this.updateEncounterPresentation(camPos);
 		this.updateRelayPresentation(camPos);
@@ -12912,7 +12974,9 @@ class Game {
 		this.warp.update(intensity, this.orientation, dt);
 		this.presentWitchspace(dt, camPos);
 
-		const viewRotation = this.cameraRotation();
+		const viewRotation = shotCam
+			? this.shotRotation(shotCam)
+			: this.cameraRotation();
 		// All three cameras share the ship's head-look orientation and sit at the
 		// origin. The cockpit mesh keeps the ship orientation, so this is a pan
 		// inside the hull rather than a yaw of the world or a flight-control input.
@@ -13231,7 +13295,9 @@ class Game {
 			);
 		// The hull is the camera in cockpit view, and drawing a cube around the
 		// near plane fills the screen with its inside faces.
-		this.shipMesh.visible = this.view === "chase";
+		// #535's prologue is empty space: the ship has not arrived yet.
+		this.shipMesh.visible =
+			this.view === "chase" && this.opening?.shot !== "forming";
 
 		// **#241's gate, then #201's shadow camera** — in that order, because the
 		// gate decides whether there is a shadow to fit at all and
@@ -13444,7 +13510,15 @@ class Game {
 		// **The clock is held, not the loop** (§11.2): `lastTime` above still
 		// moves, so the frame after Continue carries one frame of time rather than
 		// everything since the page opened.
-		if (dt > 0 && !this.clockHeld) this.step(dt);
+		if (dt > 0 && !this.clockHeld) {
+			// #535: the opening owns the clock while it runs, and steps the sim
+			// at its own fixed step however long this frame was.
+			const opening = this.opening;
+			if (opening && !opening.done) {
+				opening.frame(this.openingSim, dt);
+				if (opening.done) this.endOpening();
+			} else this.step(dt);
+		}
 		if (this.frameAttribution)
 			this.frameAttribution.recordCpu(
 				"simulation/step",
@@ -13454,6 +13528,7 @@ class Game {
 		if (this.sceneRenderEligible()) this.render(dt);
 		this.updateCockpit();
 		if (this.legacyHud) this.updateHud();
+		this.openingOverlay?.update(this.openingActive ? this.openingLine() : null);
 		// Here and not in `updateCockpit`, which returns early in chase: §5.3's
 		// badge shows in every view.
 		// Not while the Commander overlay is open: it states the fault itself, and
@@ -14205,7 +14280,9 @@ class Game {
 
 	/**
 	 * #408 D1: a guided new game starts in a berth at its start system's trade
-	 * station.
+	 * station. **Since #535 this placement is #530 D6's fallback**: the guided
+	 * start is the opening's real flight (`beginOpening`), and this runs only
+	 * when that flight cannot dock, from wherever it stopped.
 	 *
 	 * **Through the docking protocol, never around it** (#9, #147). The ship is
 	 * set on the station's aperture axis, co-moving, outside the computer's
@@ -14303,6 +14380,347 @@ class Game {
 	}
 
 	/**
+	 * **The opening** (#535, ratified by #530): a new game's first flight,
+	 * flown by a script in the real sim and filmed from outside.
+	 *
+	 * `opening.ts` owns the script and the shots; this is the sim it drives.
+	 * A guided opening flies the arrival, a burn, a cruise leg to the trade
+	 * station and the station's run-in, and ends docked through a real
+	 * clearance whose flush writes `lastDocked` (D1). A free one is the arrival
+	 * and the fly-past, and ends in flight (D3).
+	 *
+	 * `watched` films it; otherwise it is skipped at once, which is the same
+	 * script run to its end (D2) — what `?boot=direct` gets. While it runs the
+	 * pilot's hands are off the ship and only the skip key answers
+	 * (`openingActive`).
+	 */
+	beginOpening(kind: OpeningKind, watched: boolean): void {
+		const tradeId = this.world.system.contents.stations.find(
+			(s) => s.type === "trade",
+		)?.id;
+		if (kind === "guided" && !tradeId) {
+			// Recorded as every other D6 path is (sage round 1 on #536).
+			this.openingOutcome = "fallback";
+			this.openingFallback();
+			return;
+		}
+		this.openingStationId = tradeId ?? null;
+		// A new game boots facing the trade station; the cruise tracks it.
+		this.targetId = tradeId ?? this.targetId;
+		this.opening = new OpeningRun(kind);
+		this.openingAnchor = null;
+		if (watched) {
+			// Filmed from outside: the chase view's frame — the hull drawn, no
+			// cabin, no vignette — under the shot's own camera. The pilot's view
+			// comes back at the end.
+			this.openingPriorView = this.view;
+			this.view = "chase";
+			// Every trigger the skip has — keyboard and pad — and a click: the
+			// mouse is always available (#370).
+			this.openingOverlay ??= mountOpeningOverlay(
+				() => boundNames(this.bindings, "dock.launch"),
+				() => {
+					if (this.openingActive) this.skipOpening();
+				},
+			);
+			// The prologue first (the principal's seventh note): empty space, the
+			// ship not drawn, the rift forming out of nothing. The arrival's own
+			// look — the tunnel, the flash — starts on the cut to it
+			// (`shotChanged`). Anchored now, before any frame, so a held frame and
+			// a watched one push in to the same place.
+			this.beginArrival();
+			this.openingAnchor = anchorShot("forming", this.openingScene());
+			return;
+		}
+		this.skipOpening();
+	}
+
+	/** The opening is running: the script flies, the pilot does not. */
+	get openingActive(): boolean {
+		return this.opening !== null && !this.opening.done;
+	}
+
+	/** #530 D2's one key: the rest of the same script, at once. */
+	skipOpening(): void {
+		const run = this.opening;
+		if (!run) return;
+		run.skip(this.openingSim);
+		this.endOpening();
+	}
+
+	/**
+	 * #530's phase handle: run the opening on to `shownS` seconds into `shot`
+	 * and hold it there, clock and all, for a capture. `null` gives it back.
+	 */
+	holdOpening(shot: OpeningShot | null, shownS = 0): void {
+		const run = this.opening;
+		if (!run) throw new Error("no opening is running");
+		if (shot === null) {
+			run.release();
+			this.holdWitchspace(null);
+			return;
+		}
+		run.advanceTo(this.openingSim, shot, shownS);
+		// The arrival's look runs on wall time and a hold has run none, so it is
+		// held at the opening's own shown time since the cut to the arrival —
+		// the time a watched run has had it on screen — and put away once that is
+		// past the rift. The prologue draws its own rift and holds nothing.
+		const sinceArrival = run.shownS - run.shownBy.forming;
+		if (shot === "forming") this.holdWitchspace(null);
+		else if (sinceArrival < WITCHSPACE.riftEndS)
+			this.holdWitchspace(sinceArrival);
+		else {
+			this.holdWitchspace(null);
+			this.witchspace = idleWitchspace();
+			this.clearArrivalRift();
+		}
+	}
+
+	/** What the opening is doing, for a probe to read by name. */
+	openingReading() {
+		const run = this.opening;
+		return {
+			active: this.openingActive,
+			kind: run?.kind ?? null,
+			leg: run?.pilot.leg ?? null,
+			shot: run?.shot ?? null,
+			held: run?.held ?? false,
+			steps: run?.steps ?? 0,
+			shownS: run?.shownS ?? 0,
+			shownBy: run ? { ...run.shownBy } : null,
+			lastOutcome: this.openingOutcome,
+		};
+	}
+
+	/** How the last opening ended, kept after it is cleared. */
+	openingOutcome: OpeningOutcome | null = null;
+	/** The state the last opening ended in, taken before anything else runs. */
+	openingEnd: {
+		steps: number;
+		gameTime: number;
+		dock: string;
+		pos: number[];
+		vel: number[];
+		orientation: number[];
+		throttle: number;
+		regime: string;
+	} | null = null;
+	private opening: OpeningRun | null = null;
+	private openingStationId: string | null = null;
+	/** The view the pilot had before a watched opening took the camera. */
+	private openingPriorView: typeof this.view | null = null;
+	private openingAnchor: ShotAnchor | null = null;
+	private openingOverlay: OpeningOverlayHandle | null = null;
+
+	/**
+	 * The shot's camera this frame, or `null` when no opening is showing.
+	 * Render-side only: `step` reads `cameraPos` for aim, and a sim that
+	 * aimed from the film camera would fly differently watched (#530 D2).
+	 */
+	private openingCamera(): ShotCamera | null {
+		const run = this.opening;
+		if (!run || run.done || this.openingPriorView === null) return null;
+		const shot = run.shot ?? this.openingAnchor?.shot ?? null;
+		if (!shot) return null;
+		const scene = this.openingScene();
+		// The run anchors each shot on the step it starts (`shotChanged`); the
+		// arrival starts before any step, so its first frame anchors it.
+		if (this.openingAnchor?.shot !== shot)
+			this.openingAnchor = anchorShot(shot, scene, this.openingAnchor);
+		return shotCamera(this.openingAnchor, scene);
+	}
+
+	/** What a shot is framed from, read off the sim as it stands. */
+	private openingScene(): ShotScene {
+		const id = this.openingStationId;
+		const body = id ? this.world.system.byId.get(id) : undefined;
+		const snap = id ? this.dockingSnapshot(id) : null;
+		const hostId = id ? stationHostIdOf(this.world.system, id) : null;
+		const host = hostId ? this.world.system.byId.get(hostId) : undefined;
+		return {
+			ship: {
+				pos: this.world.ship.pos,
+				nose: this.nose(),
+				up: this.shipUp(),
+			},
+			reachKm: HULL_REACH_KM[PLAYER_HULL[0]],
+			starPos: this.starBody?.pos ?? ORIGIN,
+			station:
+				id && body && snap
+					? {
+							pos: body.pos,
+							axis: this.poseOfStation(id).axis,
+							planeKm: snap.planeKm,
+						}
+					: null,
+			planet: host ? { pos: host.pos } : null,
+			frameVel: this.assistFrame().vel,
+			gameTime: this.world.gameTime,
+		};
+	}
+
+	private readonly shotBasis = new THREE.Matrix4();
+	private readonly shotEye = new THREE.Vector3();
+	private readonly shotTarget = new THREE.Vector3();
+	private readonly shotUp = new THREE.Vector3();
+	private readonly shotQuat = new THREE.Quaternion();
+
+	/** A camera at the origin looking along `cam.forward`. */
+	private shotRotation(cam: ShotCamera): THREE.Quaternion {
+		this.shotTarget.set(cam.forward.x, cam.forward.y, cam.forward.z);
+		this.shotUp.set(cam.up.x, cam.up.y, cam.up.z);
+		this.shotBasis.lookAt(
+			this.shotEye.set(0, 0, 0),
+			this.shotTarget,
+			this.shotUp,
+		);
+		return this.shotQuat.setFromRotationMatrix(this.shotBasis);
+	}
+
+	/** The line under the shot on screen. */
+	private openingLine(): string {
+		const id = this.openingStationId;
+		return openingCaption(
+			this.opening?.shot ?? this.openingAnchor?.shot ?? null,
+			{
+				system: this.world.system.record.name,
+				station: id ? this.nameOfStation(id) : null,
+			},
+		);
+	}
+
+	/** What each of the script's orders does, through the method a pilot's key
+	 *  reaches. A table rather than a switch, so the orders' names are not read
+	 *  as key comparisons by `tests/controls-catalogue.test.ts`. */
+	private readonly openingOrders: Readonly<Record<PilotAction, () => void>> = {
+		"throttle-burn": () => {
+			this.throttle = OPENING.burnThrottle;
+		},
+		"throttle-zero": () => {
+			this.throttle = 0;
+		},
+		"engage-cruise": () => this.engageCruise(),
+		"request-clearance": () => {
+			this.requestDockingClearance();
+		},
+		"engage-computer": () => {
+			this.dockingComputerEngaged = true;
+		},
+		"skip-traversal": () => {
+			this.skipDockTraversal();
+		},
+	};
+
+	/** The sim, as `opening.ts` drives it. Every order goes through the same
+	 *  method a pilot's key reaches, so the script flies nothing a pilot
+	 *  could not — bar the computer, which is the station's (D7, #408 D1). */
+	private readonly openingSim: OpeningSim = {
+		facts: () => {
+			const id = this.openingStationId;
+			const body = id ? this.world.system.byId.get(id) : undefined;
+			const stationKm = body
+				? length(sub(body.pos, this.world.ship.pos))
+				: Number.POSITIVE_INFINITY;
+			return {
+				regime: this.regime,
+				spooling: this.spoolLeftS > 0,
+				dockPhase: this.dock.phase,
+				computerEngaged: this.dockingComputerEngaged,
+				grantLive: id ? (this.dockingSnapshot(id)?.grantLive ?? false) : false,
+				cruiseEtaS: this.regime === "cruise" ? this.timeToTarget() : null,
+				stationKm,
+				inVicinity: stationKm <= VICINITY_KM,
+				runIn: this.lastComputerPhase === "run-in",
+			};
+		},
+		apply: (action) => this.openingOrders[action](),
+		step: (dt) => this.step(dt),
+		// Framed from the sim on the step the shot starts, so a hold, a long
+		// frame or a skip past it cannot move where the camera stands. Reads
+		// only; a cut keeps the last anchor, and it lasts less than a frame.
+		shotChanged: (shot) => {
+			// The cut from the prologue: the exit plays from here, in a watched run
+			// only — a skipped one draws nothing, and `endOpening` puts it away.
+			if (shot === "arrival" && this.openingPriorView !== null)
+				this.playArrival();
+			if (shot)
+				this.openingAnchor = anchorShot(
+					shot,
+					this.openingScene(),
+					this.openingAnchor,
+				);
+		},
+	};
+
+	/**
+	 * The end of an opening, watched or skipped: the arrival's look put away,
+	 * the pilot's view back, and a failed flight handed to D6's fallback.
+	 */
+	private endOpening(): void {
+		const run = this.opening;
+		if (!run) return;
+		this.opening = null;
+		this.openingAnchor = null;
+		this.openingOutcome = run.outcome;
+		// The state the run ended in, before the clock runs on: what a watched
+		// and a skipped run owe equality on (#530 D2), read by the probe.
+		const p = this.world.ship.pos;
+		const v = this.world.ship.vel;
+		this.openingEnd = {
+			steps: run.steps,
+			gameTime: this.world.gameTime,
+			dock: JSON.stringify(this.dock),
+			pos: [p.x, p.y, p.z],
+			vel: [v.x, v.y, v.z],
+			orientation: this.orientation.toArray(),
+			throttle: this.throttle,
+			regime: this.regime,
+		};
+		if (this.openingPriorView !== null) {
+			this.view = this.openingPriorView;
+			this.openingPriorView = null;
+		}
+		this.openingOverlay?.update(null);
+		// A skip lands mid-exit; the look is the arrival's, not the berth's.
+		if (this.witchspace.kind !== "idle") this.witchspace = idleWitchspace();
+		this.witchspaceHeldAt = null;
+		this.clearArrivalRift();
+		if (run.outcome === "fallback") this.openingFallback();
+		else if (run.outcome === "flying") this.targetId = null;
+	}
+
+	/**
+	 * #530 D6: a guided opening that could not fly in starts docked by #408
+	 * D1's placement instead, from wherever the ship is. Everything the script
+	 * left running is put down first — the cruise, the spool, the course, the
+	 * grant and the computer — so the placement starts from a ship at rest in
+	 * normal flight rather than one still under a script.
+	 */
+	private openingFallback(): void {
+		if (this.regime === "cruise") this.dropOut("opening fell back");
+		this.cancelSpoolUp();
+		this.detour = null;
+		this.cruiseTrackId = null;
+		const id = this.openingStationId;
+		if (id) {
+			const held = this.dockingStateOf(id);
+			if (held.clearance.kind === "granted")
+				this.dockingStates.set(
+					id,
+					releaseBerth({ ...held, clearance: { kind: "none" } }),
+				);
+		}
+		this.clearPlayerArrivalLaneRequests();
+		this.dockingComputerEngaged = false;
+		this.throttle = 0;
+		console.warn("opening: the flight did not dock; placing at the station");
+		if (!this.startDockedAtHome())
+			console.warn(
+				"first day: the guided start did not dock; it begins in flight",
+			);
+	}
+
+	/**
 	 * #408: what the first day's step is derived from, read off live state.
 	 * Public so a probe reads the same facts the surfaces do.
 	 *
@@ -14386,6 +14804,10 @@ class Game {
 	 * below only reads what this leaves.
 	 */
 	private noteFirstDayStep(facts: FirstDayFacts): void {
+		// Station control speaks to the pilot, and during the opening nobody is
+		// flying: a skipped run steps nothing through here, so a watched one must
+		// not log either, or the two would end with different logs (#530 D2).
+		if (this.openingActive) return;
 		if (this.dockPhase !== "docked") this.firstDayClosingStation = null;
 		if (this.firstDay !== "guided") return;
 		const current = firstDayStep(facts);
@@ -15563,7 +15985,12 @@ class Game {
 		// §8 M4/M10: arrival and launch are scripted, and a docked ship is not
 		// flyable. The forward station console owns the docked glass; no stale
 		// flight-floor, scanner, director, or attitude marks may leak through it.
-		if (this.view === "cockpit" && this.dock.phase !== "flying") {
+		// #535: nobody is flying during the opening, and a bracket on the shot
+		// would be glass the frame has no cockpit for.
+		if (
+			(this.view === "cockpit" && this.dock.phase !== "flying") ||
+			this.openingActive
+		) {
 			this.cockpitPrompt.reset();
 			this.combatRig?.clearOverlay();
 			this.directorRender = null;
@@ -16606,33 +17033,73 @@ if (postcard) {
 	};
 	let openAtBoot = plan.mode === "overlay";
 	// #408 D1 and D4: a guided new game is docked at its home station before the
-	// clock runs. **After the attach**, so that dock's flush writes the new
+	// clock runs — since #535 by the opening's flight, watched or skipped. **After the attach**, so that dock's flush writes the new
 	// Commander's `lastDocked`. Once per page: Continue on the overlay also
 	// attaches, and a game already flown is not a new game.
 	let firstDayBegun = false;
-	const beginFirstDay = (slot: string | null) => {
-		if (firstDayBegun || plan.loaded !== null) return;
+	const beginFirstDay = async (slot: string | null) => {
+		if (firstDayBegun) return;
 		firstDayBegun = true;
-		if (firstDayAtBoot(plan, slot, query.has("guided")) !== "guided") return;
-		game.chooseFirstDay("guided");
-		if (!game.startDockedAtHome())
-			console.warn(
-				"first day: the guided start did not dock; it begins in flight",
-			);
+		// The principal's ruling on #535: a guided commander saved mid-opening —
+		// in flight, never docked — flies the rest of it on load, skipped, so a
+		// guided start still docks. Before the clock runs, as the opening does.
+		if (plan.loaded !== null) {
+			if (slot === null) return;
+			const commander = {
+				firstDay: game.firstDay,
+				docked: game.dockPhase === "docked",
+			};
+			// Only a commander the rule could owe the rest is worth the storage
+			// read; every other load skips it (sage round 1 on #536).
+			if (!openingOwedOnLoad({ ...commander, hasLastDocked: false })) return;
+			let hasLastDocked = true;
+			try {
+				hasLastDocked = (await saveBackend.read(slot, "lastDocked")) !== null;
+			} catch {
+				// Unreadable is not absent: leave the commander where it is.
+			}
+			if (openingOwedOnLoad({ ...commander, hasLastDocked }))
+				game.beginOpening("guided", false);
+			return;
+		}
+		const firstDay = firstDayAtBoot(plan, slot, query.has("guided"));
+		if (firstDay === "guided") game.chooseFirstDay("guided");
+		// #535: the opening replaces D1's placement. It flies the ship in —
+		// watched by a player, skipped under `?boot=direct` — and falls back to
+		// `startDockedAtHome` when it cannot (#530 D6).
+		const opening = openingAtBoot({
+			firstDay,
+			direct: plan.mode === "direct",
+			pinnedSystem: askedSystem !== null,
+			cinematic: query.has("cinematic"),
+		});
+		if (!opening) return;
+		game.beginOpening(opening.kind, opening.watched);
+		// `?cinematic=held`: the strip's start — held on its first frame
+		// before any frame has run, so `holdOpening` lands on the same step
+		// every capture.
+		// Only a run that exists can be held: a guided system with no trade
+		// station falls back at once and never starts one (sage round 3 on #536).
+		if (
+			opening.watched &&
+			query.get("cinematic") === "held" &&
+			game.openingActive
+		)
+			game.holdOpening("forming", 0);
 	};
 	if (plan.mode === "direct") {
 		// `plan.writesNothing`, not `?no-save` read off the URL: two things make a
 		// boot write nothing, and the shell that attaches a store has to read the
 		// plan's answer rather than re-derive it from one of the two causes.
 		if (!plan.writesNothing && plan.fault === null) await attach(plan.slot);
-		beginFirstDay(plan.writesNothing ? null : plan.slot);
+		await beginFirstDay(plan.writesNothing ? null : plan.slot);
 		game.clockHeld = false;
 	} else if (plan.mode === "continue") {
 		// §11.3: a one-shot whose Commander another tab took in the meantime is
 		// discarded, and the overlay opens with that fault.
 		const fault = await attach(plan.slot);
 		if (fault === null) {
-			beginFirstDay(plan.slot);
+			await beginFirstDay(plan.slot);
 			game.clockHeld = false;
 		} else {
 			plan = withLockFault(plan, fault);
@@ -16685,7 +17152,7 @@ if (postcard) {
 			}
 			const fault = plan.writesNothing ? null : await attach(slot);
 			if (fault === null) {
-				beginFirstDay(plan.writesNothing ? null : slot);
+				await beginFirstDay(plan.writesNothing ? null : slot);
 				game.clockHeld = false;
 			}
 			return fault;

@@ -157,7 +157,7 @@ describe("the view set itself", () => {
 		expect(FIXTURE.planets.every((p) => !p.gasGiant)).toBe(true);
 	});
 
-	test("declares thirty views with unique kebab-case names", () => {
+	test("declares its views with unique kebab-case names", () => {
 		// Eight after #129 added `station-flank`, fifteen since #147 added
 		// §13.6's seven-frame acceptance set, seventeen since #144 added the two
 		// station-port views #134 ratified, eighteen since #206 added
@@ -166,13 +166,16 @@ describe("the view set itself", () => {
 		// the refinery a frame from their own aperture axis, twenty-four since
 		// #324 added the duel's glass and console, twenty-six since #324 part d
 		// added the canisters and the raider log, twenty-eight since #372 added
-		// the Controls tab open and folded. (#432 added a twenty-ninth and removed it
+		// the Controls tab open and folded, thirty-eight with #532's witchspace
+		// strip, forty-six since #535 added the opening's, forty-eight since the
+		// principal split its approach into a planet fly-by and a station approach,
+		// forty-nine with the rift forming before the arrival. (#432 added a twenty-ninth and removed it
 		// in the same PR; #480 put one back, in the other role. Why both happened is
 		// told once, in the note beside `sky-at-the-rim`, and not here.) A literal and
 		// not `VIEWS.length`, which is the whole point: a view deleted by accident
 		// has to be a red run, and a check derived from its own subject cannot be
 		// one.
-		expect(VIEWS.length).toBe(38);
+		expect(VIEWS.length).toBe(49);
 		const names = VIEWS.map((v) => v.name);
 		expect(new Set(names).size).toBe(names.length);
 		for (const name of names) expect(name).toMatch(/^[a-z]+(-[a-z]+)*$/);
@@ -470,7 +473,7 @@ describe("the contact sheet", () => {
 		// The fixture spaces its frames 0.4 s apart, so the span is fixed by how
 		// many views the set declares — which is the count row's business, not this
 		// one's, and this literal moves with it.
-		expect(html).toContain("· clock 0.6–15.4s");
+		expect(html).toContain("· clock 0.6–19.8s");
 		expect(html).not.toContain("pinned");
 	});
 
@@ -741,5 +744,23 @@ describe("the rim look row #480 added", () => {
 			(v) => (v.shot as { system?: number }).system !== undefined,
 		);
 		expect(declaring.map((v) => v.name)).toEqual(["sky-at-the-rim"]);
+	});
+});
+
+describe("the opening strip names the opening's shots (sage round 1 on #536)", () => {
+	test("the validator's list is the source's list", async () => {
+		const { OPENING_SHOTS } = await import("../src/opening");
+		const { OPENING_SHOT_NAMES } = await import("../scripts/lib/view-set.mjs");
+		expect([...OPENING_SHOT_NAMES]).toEqual([...OPENING_SHOTS.guided]);
+	});
+	test("a shot the opening does not have is refused", async () => {
+		const { malformedShots } = await import("../scripts/lib/view-set.mjs");
+		const view = {
+			name: "opening-nowhere",
+			covers: [535],
+			what: "not a shot",
+			shot: { kind: "opening", shot: "nowhere", at: 1, view: "chase" },
+		};
+		expect(malformedShots([view]).length).toBe(1);
 	});
 });

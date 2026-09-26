@@ -660,6 +660,49 @@ const PLACERS = {
 			: " · no transition on this build: the hard cut";
 		return `${shot.phase >= 0 ? "+" : ""}${shot.phase} s · ${result.from} → ${result.to}${cut}`;
 	},
+	/**
+	 * #535's strip. A guided new game booted with `?cinematic=held`, which
+	 * starts the opening held on its first frame, then held again at `at`
+	 * shown seconds into `shot` through #530's phase handle. The hold steps
+	 * the real flight there and stops, so every capture lands on the same step.
+	 *
+	 * **Read back, not assumed**: a hold that lands on another shot throws. A
+	 * build before #535 has no opening, and a guided boot there is #408 D1's
+	 * docked start, which is that build's honest `before` and is captioned so.
+	 */
+	opening: async (page, shot) => {
+		// The dock saves; the next row boots clean.
+		worldWritten = true;
+		await page.goto(
+			gameUrl(SERVING, {
+				seed: SEED,
+				raider: "off",
+				guided: true,
+				cinematic: "held",
+			}),
+			{ waitUntil: "load" },
+		);
+		await bootedGame(page);
+		await applyCaptureQuality(page);
+		const result = await page.evaluate(
+			({ want, at }) => {
+				const g = window.__seelite;
+				if (typeof g.holdOpening !== "function" || !g.openingActive)
+					return { held: false, phase: g.dockPhase };
+				g.holdOpening(want, at);
+				const r = g.openingReading();
+				return { held: true, shot: r.shot, shown: r.shownBy[want] };
+			},
+			{ want: shot.shot, at: shot.at },
+		);
+		if (!result.held)
+			return `no opening on this build: the docked start (${result.phase})`;
+		if (result.shot !== shot.shot)
+			throw new Error(
+				`opening placer: asked for ${shot.shot} at ${shot.at} s and the hold landed on ${result.shot}`,
+			);
+		return `${shot.shot} +${result.shown.toFixed(2)} s`;
+	},
 };
 assertPlacersCover(PLACERS);
 

@@ -146,6 +146,7 @@ export const LEVERS = Object.freeze({
 	381: "the rebind modal, and the tab's Settings and Commanders doors beside it",
 	431: "the derived sky: real neighbouring systems at true bearings, over the invented field behind them",
 	532: "the witchspace transition: the entry streak, the tunnel over the cut, its collapse and the arrival rift",
+	535: "the opening cinematic: the rift forming, the arrival, the fly-past, the planet fly-by, the station approach and the dock, filmed from outside",
 });
 
 /**
@@ -203,6 +204,10 @@ export const LEVERS = Object.freeze({
  *   (#195 D4) with the clock held. Before the cut, a charge to the nearest
  *   system from the start system; from the cut on, after that jump. The
  *   placer writes world state (a jump saves), so the next row boots clean.
+ * - `opening` — #535's opening held at `at` shown seconds into `shot`
+ *   (#530's phase handle), on a guided new game booted with `?cinematic`.
+ *   The hold steps the real flight there and stops it; the dock saves, so the
+ *   next row boots clean.
  */
 export const SHOT_KINDS = Object.freeze([
 	"station-axis",
@@ -213,6 +218,7 @@ export const SHOT_KINDS = Object.freeze([
 	"duel",
 	"controls",
 	"witchspace",
+	"opening",
 ]);
 
 /**
@@ -970,6 +976,82 @@ export const VIEWS = Object.freeze([
 		shot: { kind: "witchspace", phase: 6.5, view: "chase" },
 	},
 	/**
+	 * #535's strip: the opening a guided new game watches (#530), held through
+	 * its phase handle at a shot and a shown time. Two frames a shot, early and
+	 * late, because each shot moves: the rift opens and closes, the ship passes
+	 * the camera and goes to cruise, the planet slides past, the aperture grows.
+	 *
+	 * **The `before` arm is the docked start.** A build before #535 has no
+	 * opening, so a `?cinematic` boot there is #408 D1's placement, and the
+	 * placer captions it so rather than pretending to a shot.
+	 */
+	{
+		name: "opening-forming",
+		covers: [535],
+		what: "The prologue, 2 s in: empty space at the arrival point, no ship yet, the witchspace rift forming out of nothing before the cut to the arrival.",
+		shot: { kind: "opening", shot: "forming", at: 2, view: "chase" },
+	},
+	{
+		name: "opening-arrival",
+		covers: [535],
+		what: "The opening, 1.5 s in: the ship in the witchspace tunnel, seen from ahead and off the nose — the rift is sized for a chase camera on that axis, and this is the frame that checks it from off it.",
+		shot: { kind: "opening", shot: "arrival", at: 1.5, view: "chase" },
+	},
+	{
+		name: "opening-arrival-rift",
+		covers: [535],
+		what: "The opening, 4.5 s in: the sky back and the arrival rift open behind the resting ship, the system named under it.",
+		shot: { kind: "opening", shot: "arrival", at: 4.5, view: "chase" },
+	},
+	{
+		name: "opening-flypast",
+		covers: [535],
+		what: "The fly-past, 1.5 s in: the same take as the arrival, no cut — the orbit has stopped and the ship burns past that camera toward the trade station, the rift closing behind it.",
+		shot: { kind: "opening", shot: "flypast", at: 1.5, view: "chase" },
+	},
+	{
+		name: "opening-flypast-away",
+		covers: [535],
+		what: "The fly-past, 3.5 s in: the ship past the camera and going away, the spool about to hand it to cruise.",
+		shot: { kind: "opening", shot: "flypast", at: 3.5, view: "chase" },
+	},
+	{
+		name: "opening-cruise",
+		covers: [535],
+		what: "The planet fly-by, 1 s in: the ship under cruise past the start station's planet — between ship and planet, or the reverse angle with the planet behind the ship.",
+		shot: { kind: "opening", shot: "cruise", at: 1, view: "chase" },
+	},
+	{
+		name: "opening-cruise-late",
+		covers: [535],
+		what: "The planet fly-by, 7 s in: the leg's end, the camera swung round the ship with the planet still in frame.",
+		shot: { kind: "opening", shot: "cruise", at: 7, view: "chase" },
+	},
+	{
+		name: "opening-approach",
+		covers: [535],
+		what: "The station approach, 1 s in: the scene after the drop-out, behind the ship on the line from the station, ship and station in one frame.",
+		shot: { kind: "opening", shot: "approach", at: 1, view: "chase" },
+	},
+	{
+		name: "opening-approach-late",
+		covers: [535],
+		what: "The station approach, 5 s in: the ship closed to a few kilometres, the station recognisable before the cut to the dock.",
+		shot: { kind: "opening", shot: "approach", at: 5, view: "chase" },
+	},
+	{
+		name: "opening-dock",
+		covers: [535],
+		what: "The dock, 1 s in: station control bringing the ship in on the aperture axis, the station behind it and the line saying who flies.",
+		shot: { kind: "opening", shot: "dock", at: 1, view: "chase" },
+	},
+	{
+		name: "opening-dock-late",
+		covers: [535],
+		what: "The dock, 7 s in: the ship at the mouth of the slot, a moment before the berth.",
+		shot: { kind: "opening", shot: "dock", at: 7, view: "chase" },
+	},
+	/**
 	 * §13.6's seven-frame acceptance set, as declared views.
 	 *
 	 * The receipt fixes them and they are transcribed rather than reinterpreted:
@@ -1150,6 +1232,20 @@ export function uncoveredLevers(views) {
 
 /** What each shot kind needs beyond `kind` and `view`, and how to check it. */
 const finite = (n) => typeof n === "number" && Number.isFinite(n);
+/**
+ * The opening's shots, as `src/opening.ts` names them in `OPENING_SHOTS.guided`.
+ * This file runs under node and cannot import that module, so the list is
+ * copied — and `tests/view-set.test.ts` holds the copy equal to the source.
+ */
+export const OPENING_SHOT_NAMES = Object.freeze([
+	"forming",
+	"arrival",
+	"flypast",
+	"cruise",
+	"approach",
+	"dock",
+]);
+
 const SHOT_REQUIREMENTS = {
 	"station-axis": (s) => typeof s.station === "string" && finite(s.radii),
 	"body-offset": (s) =>
@@ -1165,6 +1261,9 @@ const SHOT_REQUIREMENTS = {
 		(Array.isArray(s.folded) && s.folded.every((g) => typeof g === "string")),
 	// A phase in seconds from the cut (#195 D4): negative in the wind-up.
 	witchspace: (s) => finite(s.phase),
+	// A shot of the guided opening and shown seconds into it (#530's handle).
+	opening: (s) =>
+		OPENING_SHOT_NAMES.includes(s.shot) && finite(s.at) && s.at >= 0,
 	duel: (s) =>
 		["forward", "right", "left"].includes(s.headLook) &&
 		(s.aftermath === undefined ||
