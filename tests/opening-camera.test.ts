@@ -279,3 +279,26 @@ describe("the arrival orbits the ship (the principal's second flight)", () => {
 			);
 	});
 });
+
+describe("the cruise shot orbits a little too (the principal's third note)", () => {
+	const at = (s: ShotScene, t: number) => ({ ...s, gameTime: s.gameTime + t });
+	for (const planet of [v3(1000, 40, 0), v3(1200, 20, 0)])
+		test(`the camera swings round the ship over the take, at one distance (planet ${planet.x})`, () => {
+			const s = scene({ planet: { pos: planet } });
+			const anchor = anchorShot("cruise", s);
+			const T = SHOT_FRAMING.cruise.orbitS;
+			const rel = (t: number) => {
+				const r = sub(shotCamera(anchor, at(s, t)).pos, s.ship.pos);
+				return sub(r, scale(s.ship.up, dot(r, s.ship.up)));
+			};
+			const [a, b] = [rel(0), rel(T)];
+			const swept =
+				(Math.acos(dot(a, b) / (length(a) * length(b))) * 180) / Math.PI;
+			expect(swept).toBeCloseTo(SHOT_FRAMING.cruise.orbitDeg, 3);
+			expect(length(b)).toBeCloseTo(length(a), 9);
+			for (let t = 0; t <= T; t += 1)
+				expect(
+					offAxisDeg(shotCamera(anchor, at(s, t)), s.ship.pos),
+				).toBeLessThanOrEqual(SHOT_FRAMING.keepShipDeg + 1e-6);
+		});
+});

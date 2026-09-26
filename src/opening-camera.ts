@@ -113,6 +113,13 @@ export const SHOT_FRAMING = Object.freeze({
 		sideR: 2,
 		upR: 1,
 		pairDeg: 50,
+		/** A slow swing round the ship over the take, about its up axis and
+		 *  eased, on either angle (the principal's third note). `orbitS` is the
+		 *  take in sim seconds: the ETA window and the tail past the drop-out. */
+		orbitDeg: 25,
+		orbitS:
+			OPENING.cruiseShot.simS +
+			OPENING.cruiseShot.tailS * OPENING.cruiseShot.ratio,
 	}),
 	/** Outboard of the ship on the station's axis and to the sun side,
 	 *  looking at the aperture it is being brought into. */
@@ -240,12 +247,8 @@ export function shotCamera(anchor: ShotAnchor, scene: ShotScene): ShotCamera {
 			// the anchored side, so the sweep turns toward the lit flank.
 			const across2 = normalizeOr(cross(ship.up, ship.nose), side);
 			const e2 = dot(across2, side) < 0 ? scale(across2, -1) : across2;
-			const u = Math.min(
-				1,
-				Math.max(0, (scene.gameTime - anchor.atS) / f.orbitS),
-			);
-			const eased = u * u * (3 - 2 * u);
-			const phi = ((f.orbitFromDeg + eased * f.orbitDeg) * Math.PI) / 180;
+			const u = eased((scene.gameTime - anchor.atS) / f.orbitS);
+			const phi = ((f.orbitFromDeg + u * f.orbitDeg) * Math.PI) / 180;
 			const rho = Math.hypot(f.aheadR, f.sideR) * r;
 			const pos = add(
 				ship.pos,
@@ -269,16 +272,24 @@ export function shotCamera(anchor: ShotAnchor, scene: ShotScene): ShotCamera {
 		}
 		case "cruise": {
 			const f = SHOT_FRAMING.cruise;
+			const swing =
+				(eased((scene.gameTime - anchor.atS) / f.orbitS) *
+					f.orbitDeg *
+					Math.PI) /
+				180;
+			const orbit = (at: Vec3) =>
+				add(ship.pos, turnedAbout(sub(at, ship.pos), ship.up, swing));
 			const station = scene.station?.pos ?? add(ship.pos, ship.nose);
 			const planet = scene.planet?.pos;
 			if (!anchor.reverse) {
-				const pos = add(
+				const from = add(
 					ship.pos,
 					add(
 						scale(ship.nose, -f.behindR * r),
 						add(scale(side, f.sideR * r), scale(ship.up, f.upR * r)),
 					),
 				);
+				const pos = orbit(from);
 				const toStation = normalizeOr(sub(station, pos), ship.nose);
 				const want = planet
 					? add(toStation, normalizeOr(sub(planet, pos), toStation))
@@ -287,11 +298,13 @@ export function shotCamera(anchor: ShotAnchor, scene: ShotScene): ShotCamera {
 			}
 			// The reverse angle: ahead of the ship, looking back past it at the
 			// planet, the ship between the two.
-			const ahead = add(
-				ship.pos,
+			const ahead = orbit(
 				add(
-					scale(ship.nose, f.aheadR * r),
-					add(scale(side, f.sideR * r), scale(ship.up, f.upR * r)),
+					ship.pos,
+					add(
+						scale(ship.nose, f.aheadR * r),
+						add(scale(side, f.sideR * r), scale(ship.up, f.upR * r)),
+					),
 				),
 			);
 			const toShip = normalizeOr(sub(ship.pos, ahead), scale(ship.nose, -1));
@@ -314,6 +327,22 @@ export function shotCamera(anchor: ShotAnchor, scene: ShotScene): ShotCamera {
 			return framing(pos, ship.pos, sub(aperture, pos), over);
 		}
 	}
+}
+
+/** Smoothstep on [0, 1], clamped: slow at both ends of a swing. */
+const eased = (u: number): number => {
+	const t = Math.min(1, Math.max(0, u));
+	return t * t * (3 - 2 * t);
+};
+
+/** `v` turned by `rad` about the unit `axis` (Rodrigues). */
+function turnedAbout(v: Vec3, axis: Vec3, rad: number): Vec3 {
+	const c = Math.cos(rad);
+	const s = Math.sin(rad);
+	return add(
+		add(scale(v, c), scale(cross(axis, v), s)),
+		scale(axis, dot(axis, v) * (1 - c)),
+	);
 }
 
 const degreesApart = (a: Vec3, b: Vec3) =>
