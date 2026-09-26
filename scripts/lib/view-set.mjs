@@ -1000,14 +1000,14 @@ export const VIEWS = Object.freeze([
 	{
 		name: "opening-flypast",
 		covers: [535],
-		what: "The fly-past, 3 s in: the ship passing the camera on its burn toward the trade station.",
-		shot: { kind: "opening", shot: "flypast", at: 3, view: "chase" },
+		what: "The fly-past, 1.5 s in: the ship passing the camera on its burn toward the trade station, three-quarters from above.",
+		shot: { kind: "opening", shot: "flypast", at: 1.5, view: "chase" },
 	},
 	{
 		name: "opening-flypast-away",
 		covers: [535],
-		what: "The fly-past, 4.8 s in: the ship past the camera and going away, the spool about to hand it to cruise.",
-		shot: { kind: "opening", shot: "flypast", at: 4.8, view: "chase" },
+		what: "The fly-past, 3.5 s in: the ship past the camera and going away, the spool about to hand it to cruise.",
+		shot: { kind: "opening", shot: "flypast", at: 3.5, view: "chase" },
 	},
 	{
 		name: "opening-cruise",
