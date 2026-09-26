@@ -43,7 +43,7 @@ export type OpeningOutcome = "docked" | "flying" | "fallback";
 
 /** An order the script gives the sim, before the step it belongs to. */
 export type PilotAction =
-	| "throttle-full"
+	| "throttle-burn"
 	| "throttle-zero"
 	| "engage-cruise"
 	| "request-clearance"
@@ -98,6 +98,11 @@ export const OPENING = Object.freeze({
 	/** The burn toward the station before cruise engages (guided), or the
 	 *  whole fly-past (free). */
 	burnS: Object.freeze({ guided: 2, free: 5 }),
+	/** The burn's throttle. Full throttle is 2 km/s within a second, which
+	 *  crosses a camera beside the ship in a hundredth of a second; a tenth of
+	 *  that is a pass the eye can follow, and the spool keeps it until cruise
+	 *  takes over at full throttle. */
+	burnThrottle: 0.05,
 	/** How long a spool-up may take before a missing cruise is a failure: the
 	 *  3 s spool and a second of margin. */
 	spoolCapS: 4,
@@ -172,7 +177,7 @@ export function pilotStep(
 	switch (state.leg) {
 		case "arrive":
 			return state.legSteps >= steps(OPENING.arriveS)
-				? next("burn", ["throttle-full"])
+				? next("burn", ["throttle-burn"])
 				: stay();
 		case "burn":
 			if (state.legSteps < steps(OPENING.burnS[state.kind])) return stay();
@@ -385,5 +390,50 @@ export class OpeningRun {
 	/** Give a held run back to its frames. */
 	release(): void {
 		this.held = false;
+	}
+}
+
+/**
+ * Who sees an opening, and how (#530 D3 as amended by the principal on
+ * 2026-09-26, and #535's ruling on `?boot=direct`).
+ *
+ * A player's new game watches it, guided or free. `?boot=direct` and
+ * `?system=` see no sequence, because every probe boots through them; for a
+ * guided game that still means the flight — skipped, which is the same script
+ * run to its end — so the probes start where a player who skips starts, and
+ * for a free one it means nothing at all, at rest at the arrival point with
+ * the clock at zero. `?cinematic` forces the sequence, for the strip.
+ */
+export function openingAtBoot(boot: {
+	firstDay: OpeningKind;
+	direct: boolean;
+	pinnedSystem: boolean;
+	cinematic: boolean;
+}): { kind: OpeningKind; watched: boolean } | null {
+	const watched = boot.cinematic || (!boot.direct && !boot.pinnedSystem);
+	if (!watched && boot.firstDay === "free") return null;
+	return { kind: boot.firstDay, watched };
+}
+
+/**
+ * The line under each shot. The dock's says who flies (#530 D7): station
+ * control brings a new ship in, because it has no docking computer (#408), and
+ * the first day still teaches the pilot's first dock by hand.
+ */
+export function openingCaption(
+	shot: OpeningShot | null,
+	names: { system: string; station: string | null },
+): string {
+	switch (shot) {
+		case "arrival":
+			return `ARRIVING · ${names.system.toUpperCase()}`;
+		case "flypast":
+			return names.station ? `COURSE · ${names.station.toUpperCase()}` : "";
+		case "cruise":
+			return names.station ? `CRUISE · ${names.station.toUpperCase()}` : "";
+		case "dock":
+			return "STATION CONTROL: Cleared to berth. We are bringing you in.";
+		default:
+			return "";
 	}
 }

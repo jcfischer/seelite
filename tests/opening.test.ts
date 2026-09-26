@@ -18,6 +18,8 @@ import {
 	type OpeningSim,
 	OpeningRun,
 	type PilotAction,
+	openingAtBoot,
+	openingCaption,
 	type PilotFacts,
 	openingShot,
 	pilotStep,
@@ -73,7 +75,7 @@ class FakeSim implements OpeningSim {
 	apply(action: PilotAction) {
 		this.log.push(`${this.steps}:${action}`);
 		switch (action) {
-			case "throttle-full":
+			case "throttle-burn":
 				this.throttle = 1;
 				return;
 			case "throttle-zero":
@@ -205,7 +207,7 @@ describe("the pilot script", () => {
 			sim.step(OPENING.dtS);
 			pilot = r.state;
 		}
-		expect(actions).toEqual(["throttle-full"]);
+		expect(actions).toEqual(["throttle-burn"]);
 		expect(pilot.leg).toBe("burn");
 	});
 
@@ -214,7 +216,7 @@ describe("the pilot script", () => {
 		new OpeningRun("guided").skip(sim);
 		const order = sim.log.map((entry) => entry.split(":")[1]);
 		expect(order.slice(0, 4)).toEqual([
-			"throttle-full",
+			"throttle-burn",
 			"engage-cruise",
 			"request-clearance",
 			"engage-computer",
@@ -427,5 +429,54 @@ describe("the phase handle", () => {
 	test("a shot the kind does not have is refused", () => {
 		const run = new OpeningRun("free");
 		expect(() => run.advanceTo(new FakeSim(), "dock", 0)).toThrow();
+	});
+});
+
+describe("who sees the opening (#530 D3, amended)", () => {
+	const at = (
+		firstDay: "guided" | "free",
+		over: Partial<Parameters<typeof openingAtBoot>[0]> = {},
+	) =>
+		openingAtBoot({
+			firstDay,
+			direct: false,
+			pinnedSystem: false,
+			cinematic: false,
+			...over,
+		});
+
+	test("a player's new game watches its opening, guided or free", () => {
+		expect(at("guided")).toEqual({ kind: "guided", watched: true });
+		expect(at("free")).toEqual({ kind: "free", watched: true });
+	});
+
+	test("?boot=direct and ?system= see no sequence", () => {
+		for (const over of [{ direct: true }, { pinnedSystem: true }]) {
+			// Guided still flies in: skipped, the same script to its end.
+			expect(at("guided", over)).toEqual({ kind: "guided", watched: false });
+			// Free steps nothing: at rest at the arrival point, clock at zero.
+			expect(at("free", over)).toBe(null);
+		}
+	});
+
+	test("?cinematic forces it, for the strip", () => {
+		const over = { direct: true, pinnedSystem: true, cinematic: true };
+		expect(at("guided", over)).toEqual({ kind: "guided", watched: true });
+		expect(at("free", over)).toEqual({ kind: "free", watched: true });
+	});
+});
+
+describe("the captions", () => {
+	const names = { system: "Lave", station: "Lave Orbital" };
+	test("the arrival names the system, the cruise the station", () => {
+		expect(openingCaption("arrival", names)).toContain("LAVE");
+		expect(openingCaption("cruise", names)).toContain("LAVE ORBITAL");
+	});
+	test("the dock shot says station control brings the ship in (D7)", () => {
+		const line = openingCaption("dock", names);
+		expect(line.startsWith("STATION CONTROL")).toBe(true);
+		expect(line).toContain("bringing you in");
+		// It must not teach that a ship docks itself.
+		expect(line.toLowerCase()).not.toContain("computer");
 	});
 });
