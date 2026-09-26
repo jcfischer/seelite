@@ -15,7 +15,9 @@
  *
  * So the shift is done **per star, in world space, in the backdrop's vertex
  * shader**, about the ship's heading. Each star is moved by the aberration law,
- * coloured by its Doppler factor and beamed. The backdrop holds nothing but
+ * pulled into the starbow's hue by its seen angle ({@link shiftColor} says why
+ * the angle and not the Doppler factor), and beamed and dimmed by its Doppler
+ * factor. The backdrop holds nothing but
  * stars, so every body, marker, bracket and scanner blip is true by
  * construction, and `in-system-travel.md` §5's sense of speed — far-layer bodies
  * sweeping past — is untouched. The heading is the ship's nose, because §1
@@ -27,7 +29,10 @@
  *
  * `tests/light-shift.test.ts` holds these functions against the half-angle form
  * of the law, and `probe-cruise-light.mjs` holds a drawn star against
- * {@link aberrate}, so the GLSL copy below cannot drift from them unseen.
+ * {@link aberrate} — in the forward view and with the head turned — so the
+ * shader's **placement** cannot drift from it unseen. Its colour and size terms
+ * are copies nothing in the browser compares; a drift there is the sheet's to
+ * catch.
  */
 import { type Vec3, dot, v3 } from "./vec3";
 
