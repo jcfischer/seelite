@@ -2,9 +2,11 @@
  * A headless flight harness: §7's autopilot command, slewed at the **hull's**
  * angular limits and integrated by `sim.ts`'s own assisted flight law.
  *
- * Everything runs in the station's frame with `frameVel` zero, which is exactly
- * the conversion `docking.md` §1 requires of every caller — so this exercises
- * the frame the checks are stated in rather than a convenient one.
+ * Everything runs in the station's frame with no `frame` passed, which is
+ * exactly the conversion `docking.md` §1 requires of every caller — so this
+ * exercises the frame the checks are stated in rather than a convenient one.
+ * That the station's orbit accelerates changes nothing here: the ship shares
+ * the frame's acceleration (#529), so flight in it is flight in a still one.
  *
  * **It lives here rather than in `tests/docking.test.ts` because #181 gave it a
  * second caller.** That file owns §9.1.11 — does the computer satisfy §3 — and

@@ -36,7 +36,8 @@ first playtest found it unhittable; the rate cap that followed still reached
 full rate in one frame.
 
 **Its assist holds speed in the player's local frame**, the frame the player's
-own assist uses (`DuelPilot.frameVel`). It had held speed in the star's frame,
+own assist uses (`DuelPilot.frame`, across the step since #529, so it shares
+the frame's acceleration too). It had held speed in the star's frame,
 so beside a body moving 30 km/s the two 2 km/s caps were different speeds. One
 frame for the fight, not a lookup per ship: the player's frame keeps its body
 through a hysteresis band, and two lookups could pick two frames. **Not yet in

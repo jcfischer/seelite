@@ -11,7 +11,7 @@
  * side, and the raider is hit-tested at its hull's true size rather than the
  * rig's drawn 3x. It also flies by the player's flight rules: it turns through
  * `stepAngular`, and its assist holds speed in the player's local frame
- * (`DuelPilot.frameVel`), so the 2 km/s cap is one speed for both ships.
+ * (`DuelPilot.frame`), so the 2 km/s cap is one speed for both ships.
  *
  * **What it returns rather than does.** The raider's hit on the player comes
  * back as an amount and a side for `Game.takeDamage` to land, because that is
@@ -37,7 +37,12 @@ import {
 	sideStruck,
 	stepCondition,
 } from "./ship-condition";
-import { type FlightPerformance, type Ship, flightPerformance } from "./sim";
+import {
+	type FlightPerformance,
+	type FrameMotion,
+	type Ship,
+	flightPerformance,
+} from "./sim";
 import { type Vec3, cross, frameAcross, normalizeOr, sub, v3 } from "./vec3";
 
 /** The raider's hit sphere: half its built length. */
@@ -108,8 +113,9 @@ export interface DuelPilot {
 	 *  too (#324): one frame for the fight, so both caps are the same speed.
 	 *  **Required** (sage #345), for `FlightPerformance`'s reason: a builder
 	 *  that forgot it would silently fly the raider in the star's frame. Pass
-	 *  `v3()` to mean the star's frame. */
-	frameVel: Vec3;
+	 *  `v3()` at both ends to mean the star's frame. Across the step, because
+	 *  the frame accelerates and the raider shares that too (#529). */
+	frame: FrameMotion;
 }
 
 /** The player's gun this step, as `stepCondition` already settled it. */
@@ -226,7 +232,7 @@ export function stepCombatShip(
 			laserOrigin: pilot.aimOrigin,
 			laserNose: pilot.aimNose,
 			hitRadiusKm: rules.hitRadiusKm,
-			frameVel: pilot.frameVel,
+			frame: pilot.frame,
 			performance: rules.performance,
 			intent: rules.intent,
 		},

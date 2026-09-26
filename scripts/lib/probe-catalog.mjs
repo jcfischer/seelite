@@ -159,6 +159,17 @@ export const PROBE_CATALOG = Object.freeze(
 			],
 		),
 		entry(
+			"probe-frame-acceleration.mjs",
+			"Parks co-moving beside USBISO's gas-giant shipyard with the throttle at zero, assist on and off, and checks the ship stays at rest in the station's accelerating frame.",
+			[
+				"flight assist",
+				"assist off",
+				"local frame",
+				"frame acceleration",
+				"docking approach",
+			],
+		),
+		entry(
 			"probe-frame-attribution.mjs",
 			"Checks query-gated frame-attribution labels, renderer facts, timer states, and default-route isolation.",
 			["frame attribution", "GPU timer", "performance panel", "render passes"],

@@ -66,7 +66,9 @@ const run = await page.evaluate(() => {
 	 *  fix replaced. Called through the page rather than copied here, so the
 	 *  "before" column cannot drift onto arithmetic the game no longer has. */
 	const stepFrozen = (c, dt, now, frameVel) =>
-		g.canisterFade(c, dt, now, frameVel);
+		// A frame that never moves is the same velocity at both ends of the
+		// step (`FrameMotion`, #529).
+		g.canisterFade(c, dt, now, { start: frameVel, end: frameVel });
 
 	const nearestKm = () => {
 		let best = Infinity;

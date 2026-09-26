@@ -25,7 +25,7 @@ import {
 } from "../src/relay-defender";
 import { relaySlot, relayTenderSlot } from "../src/relay-slot";
 import { fullCondition } from "../src/ship-condition";
-import { ASSIST_CAP_KMS } from "../src/sim";
+import { ASSIST_CAP_KMS, steadyFrame } from "../src/sim";
 import { type Vec3, add, length, scale, sub, v3 } from "../src/vec3";
 
 const DT = 1 / 60;
@@ -72,7 +72,7 @@ function frame(
 			aimOrigin: pos,
 			aimNose: v3(0, 0, -1),
 			hull: fullCondition("courier").hull,
-			frameVel,
+			frame: steadyFrame(frameVel),
 		},
 		shot: { fired: false, damage: 0 },
 	};

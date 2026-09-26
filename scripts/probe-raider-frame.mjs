@@ -62,12 +62,15 @@ const duel = await page.evaluate(() => {
 	let fastest = 0;
 	let frames = 0;
 	for (let i = 0; i < Math.round(3 / dt) && g.encounter; i++) {
-		// **The frame the step flew in**, read before it (sage #345): `Game`
-		// reads it at the start of the frame, and after the step the station's
-		// frame has moved on by up to 7.7e-4 km/s, more than this row's margin.
-		const frame = g.localFrame();
+		// **The frame the step handed the velocity back in**, read after it.
+		// Sage #345 read it before, because `Game` held the frame at the top of
+		// the step; #529 made the step share the frame's acceleration, so the
+		// raider's velocity is now stated against the frame where the step
+		// *ends*, and the top-of-step reading is up to 7.7e-4 km/s off — more
+		// than this row's margin.
 		g.step(dt);
 		g.render(dt);
+		const frame = g.localFrame();
 		const r = g.encounter?.raider;
 		if (!r) continue;
 		frames++;

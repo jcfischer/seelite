@@ -25,7 +25,7 @@ import {
 	PULSE_LASER,
 	fullCondition,
 } from "../src/ship-condition";
-import { ASSIST_CAP_KMS, flightPerformance } from "../src/sim";
+import { ASSIST_CAP_KMS, flightPerformance, steadyFrame } from "../src/sim";
 import {
 	type Vec3,
 	add,
@@ -97,7 +97,7 @@ function frame(t: number, f: Flight, fire = false): EncounterFrame {
 			aimOrigin: ship.pos,
 			aimNose: f.nose,
 			hull: fullCondition("courier").hull,
-			frameVel: v3(),
+			frame: steadyFrame(v3()),
 		},
 		shot: fire
 			? { fired: true, damage: PULSE_LASER.damagePerS * DT }

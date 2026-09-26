@@ -45,7 +45,7 @@ import {
 	trafficScheduleAt,
 } from "../src/station-traffic";
 import { PULSE_LASER, SHIELD_POOL, fullCondition } from "../src/ship-condition";
-import { flightPerformance } from "../src/sim";
+import { flightPerformance, steadyFrame } from "../src/sim";
 import { add, length, normalizeOr, scale, sub, v3 } from "../src/vec3";
 import { carrierManifest } from "../src/carrier-manifest";
 import { generateGalaxy } from "../src/galaxy";
@@ -91,7 +91,7 @@ function chaser(
 		aimOrigin: from.pos,
 		aimNose: nose,
 		hull: 100,
-		frameVel: v3(),
+		frame: steadyFrame(v3()),
 	};
 }
 
@@ -203,7 +203,7 @@ describe("H3: the reaction per role", () => {
 			aimOrigin: v3(),
 			aimNose: v3(1, 0, 0),
 			hull: 100,
-			frameVel: v3(),
+			frame: steadyFrame(v3()),
 		};
 		// A fleeing ship already nosed away runs at full throttle.
 		e = { ...e, flight: { ...e.flight, phase: "flee", maneuverSeconds: 30 } };
@@ -295,7 +295,7 @@ describe("a fight beside a station is flown in its frame", () => {
 					aimOrigin: player,
 					aimNose: v3(0, 0, -1),
 					hull: 100,
-					frameVel: frame,
+					frame: steadyFrame(frame),
 				};
 				e = stepEngagement(
 					e,
@@ -852,7 +852,7 @@ describe("H4's sustained-fire clock (#396)", () => {
 			aimOrigin: pos,
 			aimNose: dir,
 			hull: 100,
-			frameVel: v3(),
+			frame: steadyFrame(v3()),
 		};
 	}
 

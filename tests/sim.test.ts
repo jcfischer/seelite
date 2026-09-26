@@ -31,7 +31,10 @@ import {
 	stepFlight,
 	stepWorld,
 	flightPerformance,
+	frameMean,
+	steadyFrame,
 } from "../src/sim";
+import { VICINITY_KM, V_GATE_KMS } from "../src/docking";
 import { PLANET_APPROACH_RADIUS } from "../src/planet-approach-boundary";
 import { generateGalaxy, startSystem } from "../src/galaxy";
 import {
@@ -39,9 +42,10 @@ import {
 	MAX_ORBIT_AU,
 	arrivalPoint,
 } from "../src/system";
-import { AU_KM, FAR_SCALE } from "../src/units";
+import { AU_KM, FAR_SCALE, MAX_DT } from "../src/units";
 import { add, length, scale, sub, v3 } from "../src/vec3";
 import { codeOf } from "./lib/source-scan";
+import * as orbiting from "./helpers/orbiting-frame";
 import { PLAYER_BASELINE_HULL } from "../src/hull";
 
 /**
@@ -510,7 +514,12 @@ describe("stepFlight — #5's model, both regimes", () => {
 		for (let i = 0; i < 300; i++) {
 			stepFlight(
 				ship,
-				{ nose: NOSE, throttle: 0, assist: true, frameVel },
+				{
+					nose: NOSE,
+					throttle: 0,
+					assist: true,
+					frame: steadyFrame(frameVel),
+				},
 				0.1,
 				BASELINE,
 			);
@@ -526,7 +535,12 @@ describe("stepFlight — #5's model, both regimes", () => {
 		for (let i = 0; i < 300; i++) {
 			stepFlight(
 				running,
-				{ nose: NOSE, throttle: 1, assist: true, frameVel },
+				{
+					nose: NOSE,
+					throttle: 1,
+					assist: true,
+					frame: steadyFrame(frameVel),
+				},
 				0.1,
 				BASELINE,
 			);
@@ -534,13 +548,18 @@ describe("stepFlight — #5's model, both regimes", () => {
 		expect(length(sub(running.vel, frameVel))).toBeCloseTo(ASSIST_CAP_KMS, 6);
 	});
 
-	test("assist off ignores the local frame — that is what unassisted means", () => {
+	test("assist off ignores the local frame's velocity — that is what unassisted means", () => {
 		const frameVel = v3(0, 30, 0);
 		const ship = { pos: v3(), vel: v3() };
 		for (let i = 0; i < 10; i++) {
 			stepFlight(
 				ship,
-				{ nose: NOSE, throttle: 0, assist: false, frameVel },
+				{
+					nose: NOSE,
+					throttle: 0,
+					assist: false,
+					frame: steadyFrame(frameVel),
+				},
 				0.1,
 				BASELINE,
 			);
@@ -785,5 +804,114 @@ describe("body velocities, which arrival turned out to depend on", () => {
 		// is exactly the assumption that made the first cruise approach unarrivable.
 		expect(() => bodyVelocity(world.system, "no-such-body", 0)).toThrow();
 		expect(() => bodyAccelerationBound(world.system, "no-such-body")).toThrow();
+	});
+});
+
+/**
+ * #529: the frame the assist holds **accelerates**, because it is on an orbit.
+ *
+ * `stepFlight` read the frame's velocity once, at the top of the step, while
+ * the frame moved on underneath it. Each step the frame's change `a·dt` then
+ * reappeared as fresh drift, and the assist's damping settled on a steady lag
+ * of about `a × assistLateralTauS`. At a gas-giant shipyard that is 71.7 m/s²,
+ * and the station slid sideways past a pilot trying to dock by hand.
+ *
+ * The frame here is USBISO's shipyard (seed 3852403550): a circular orbit at
+ * the radius and acceleration measured when #529 was charted.
+ */
+describe("stepFlight in an orbiting frame (#529)", () => {
+	const NOSE = v3(0, 0, -1);
+	const { framePos, frameVel, frameOver } = orbiting;
+	/** The longest a run-in through `VICINITY_KM` takes at the assist cap. */
+	const RUN_IN_S = VICINITY_KM / ASSIST_CAP_KMS;
+
+	/**
+	 * One control script flown twice: in the star's frame, and in the orbiting
+	 * frame from a ship at rest in it. Returns the largest frame-relative
+	 * disagreement between the two, in position and in velocity.
+	 */
+	function flyBoth(assist: boolean, dt: number) {
+		const still = { pos: v3(), vel: v3() };
+		const moving = { pos: framePos(0), vel: frameVel(0) };
+		let worstKm = 0;
+		let worstKms = 0;
+		const steps = Math.round(RUN_IN_S / dt);
+		for (let i = 0; i < steps; i++) {
+			const t = i * dt;
+			// A script that turns, throttles up and back, and coasts — so the
+			// comparison is over flight, not over one held state.
+			const yaw = 0.3 * Math.sin(t / 97);
+			const control = {
+				nose: v3(Math.sin(yaw), 0, -Math.cos(yaw)),
+				throttle: assist ? 0.5 + 0.5 * Math.sin(t / 211) : t % 400 < 3 ? 1 : 0,
+				assist,
+			};
+			stepFlight(still, control, dt, BASELINE);
+			stepFlight(moving, { ...control, frame: frameOver(t, dt) }, dt, BASELINE);
+			const end = t + dt;
+			worstKm = Math.max(
+				worstKm,
+				length(sub(sub(moving.pos, framePos(end)), still.pos)),
+			);
+			worstKms = Math.max(
+				worstKms,
+				length(sub(sub(moving.vel, frameVel(end)), still.vel)),
+			);
+		}
+		return { worstKm, worstKms };
+	}
+
+	for (const dt of [1 / 60, MAX_DT])
+		for (const assist of [true, false])
+			test(`assist ${assist ? "on" : "off"} at dt ${dt.toFixed(3)}: flight in the frame is flight in the star's`, () => {
+				// The frame is free-falling, so it is the local inertial frame: a ship
+				// sharing its acceleration flies in it exactly as it would in the
+				// star's. Assist off shares it too — the principal's ruling on #529,
+				// because the acceleration is gravity's, not the computer's.
+				const { worstKm, worstKms } = flyBoth(assist, dt);
+				expect(worstKms).toBeLessThan(1e-6);
+				// A metre over the whole run-in. Carrying only the step-end velocity
+				// leaves `a·dt²/2` a step, which is 430 m here at `MAX_DT`.
+				expect(worstKm).toBeLessThan(1e-3);
+			});
+
+	test("at rest by the shipyard, the ship stays at rest (the reported case)", () => {
+		// The node's own row: throttle 0, assist on, the courier. Before the fix
+		// this read 0.087 km/s of sideways speed — 87% of `V_GATE_KMS` — and
+		// 10 km of separation inside two minutes.
+		const dt = MAX_DT;
+		const ship = { pos: framePos(0), vel: frameVel(0) };
+		let lateral = 0;
+		for (let i = 0; i < Math.round(RUN_IN_S / dt); i++) {
+			const t = i * dt;
+			stepFlight(
+				ship,
+				{ nose: NOSE, throttle: 0, assist: true, frame: frameOver(t, dt) },
+				dt,
+				BASELINE,
+			);
+			lateral = Math.max(lateral, length(sub(ship.vel, frameVel(t + dt))));
+		}
+		expect(lateral).toBeLessThan(V_GATE_KMS / 100);
+		expect(length(sub(ship.pos, framePos(RUN_IN_S)))).toBeLessThan(1e-3);
+	});
+
+	test("a steady frame carries nothing, with the assist off", () => {
+		// What a steady frame hands the step: its velocity at both ends, and an
+		// unassisted ship then keeps exactly the velocity it had. This is **not**
+		// the frame-switch guarantee — that lives in the caller, which builds both
+		// ends from one source (`Game.assistFrameSource`), and no headless row
+		// reaches `Game`.
+		const ship = { pos: v3(), vel: v3(0.3, 30, 0) };
+		const steady = { start: v3(0, 30, 0), end: v3(0, 30, 0) };
+		stepFlight(
+			ship,
+			{ nose: NOSE, throttle: 0, assist: false, frame: steady },
+			1,
+			BASELINE,
+		);
+		expect(ship.vel).toEqual(v3(0.3, 30, 0));
+		expect(ship.pos.x).toBeCloseTo(0.3, 12);
+		expect(ship.pos.y).toBeCloseTo(30, 12);
 	});
 });

@@ -947,8 +947,8 @@ export interface FlightControl {
 	/** #5's flight assist, a player toggle defaulting on. */
 	assist: boolean;
 	/**
-	 * The velocity the assist treats as **at rest**, km/s. Omit for the star's
-	 * frame, which is what the sim's coordinates are stated in.
+	 * The frame the ship flies in, across this step. Omit for the star's frame,
+	 * which is what the sim's coordinates are stated in.
 	 *
 	 * This exists because #14 flew an arrival and could not stay at it. Sim
 	 * space is star-centred, so "stopped" means stopped relative to the star —
@@ -958,11 +958,50 @@ export interface FlightControl {
 	 * that has stations solves this somehow; here the frame is passed in, and
 	 * the renderer picks the nearest body as the local one.
 	 *
-	 * Assist **off** ignores it: unassisted flight is Newtonian in the world's
-	 * own frame, which is the whole of what makes it unassisted.
+	 * **Both regimes share the frame's acceleration, and only the assist holds
+	 * its velocity (#529).** See `FrameMotion`.
 	 */
-	frameVel?: Vec3;
+	frame?: FrameMotion;
 }
+
+/**
+ * A frame's velocity at the two ends of one step, km/s.
+ *
+ * A frame is a body on an orbit, so it **accelerates** — a trade station at a
+ * few m/s², a shipyard low over a gas giant at 71.7. #529 found the assist
+ * holding a velocity read once at the top of the step while the frame moved
+ * on under it: every step the frame's `a·dt` came back as fresh drift, the
+ * lateral damping settled on a lag of `a × assistLateralTauS`, and the
+ * shipyard slid sideways past a pilot docking by hand at 0.087 km/s.
+ *
+ * So the ship's velocity is split against `start` and re-joined at `end`: a
+ * ship flying in the frame shares its acceleration, as it would share its
+ * gravity. The frame is free-falling, so that makes it the local inertial one,
+ * and flight in it is flight in the star's frame (`tests/sim.test.ts`).
+ *
+ * **Both ends come from one frame.** A caller that switches frame between
+ * steps passes the new frame's velocity at both ends of the step it switches
+ * on, and a switch then carries nothing — a difference of two bodies'
+ * velocities is not an acceleration. Pass `{ start: v, end: v }` for a frame
+ * that does not accelerate.
+ */
+export interface FrameMotion {
+	start: Vec3;
+	end: Vec3;
+}
+
+/** A frame that does not accelerate across the step: the same velocity at
+ *  both ends. */
+export const steadyFrame = (vel: Vec3): FrameMotion => ({
+	start: vel,
+	end: vel,
+});
+
+/** The frame's mean velocity across the step: what carries a position
+ *  through it, exactly for a frame whose acceleration is steady over one
+ *  step (#529). */
+export const frameMean = (frame: FrameMotion): Vec3 =>
+	scale(add(frame.start, frame.end), 0.5);
 
 /**
  * #5's model, built: assisted Newtonian, with the assist a toggle.
@@ -979,11 +1018,16 @@ export interface FlightControl {
  *
  * **Assist off** — thrust along the nose and nothing else. No cap, no damping,
  * no help: velocity and nose disagree permanently, which is the whole reason
- * the map's HUD constraint requires a velocity-vector marker.
+ * the map's HUD constraint requires a velocity-vector marker. It is Newtonian
+ * **in the frame**: the ship shares the frame's acceleration and never its
+ * velocity, so a frame that does not accelerate changes nothing and one on an
+ * orbit does not fall away from the ship (#529, the principal's ruling —
+ * the acceleration is gravity's, not the computer's).
  *
- * Semi-implicit Euler in both cases — velocity first, then position from the
- * *new* velocity. One line's difference from the explicit form, and noticeably
- * better behaved under the varying frame delta a browser gives you.
+ * Semi-implicit Euler in both cases — the relative velocity first, then
+ * position from the *new* one, carried on the frame's mean across the step
+ * (`FrameMotion`). One line's difference from the explicit form, and
+ * noticeably better behaved under the varying frame delta a browser gives you.
  *
  * `dt` is passed in rather than read from a clock, so a probe can step this
  * with a fixed delta and get the same answer twice.
@@ -997,39 +1041,48 @@ export function stepFlight(
 	if (dt <= 0) return;
 	const throttle = Math.min(1, Math.max(0, control.throttle));
 
-	if (!control.assist) {
-		ship.vel = add(
-			ship.vel,
-			scale(control.nose, perf.thrustKms2 * throttle * dt),
-		);
-		ship.pos = add(ship.pos, scale(ship.vel, dt));
-		return;
-	}
+	// Everything happens in the frame — see `FrameMotion`. The velocity is
+	// taken relative to the frame where the step starts and handed back
+	// relative to it where the step ends, and the position rides the frame's
+	// mean across the step: carrying only the end velocity leaves `a·dt²/2` a
+	// step, 430 m in two minutes at `MAX_DT` beside the shipyard.
+	const start = control.frame?.start ?? v3();
+	const end = control.frame?.end ?? start;
+	const carried = frameMean({ start, end });
+	const relative = sub(ship.vel, start);
+	const next = control.assist
+		? assistedRelative(relative, control.nose, throttle, dt, perf)
+		: add(relative, scale(control.nose, perf.thrustKms2 * throttle * dt));
+	ship.vel = add(end, next);
+	ship.pos = add(ship.pos, scale(add(carried, next), dt));
+}
 
-	// Everything the assist does happens in the local frame — see `frameVel`.
-	const frame = control.frameVel ?? v3();
-	const relative = sub(ship.vel, frame);
-
+/** The assist's step on a velocity relative to the frame: #5's law. */
+function assistedRelative(
+	relative: Vec3,
+	nose: Vec3,
+	throttle: number,
+	dt: number,
+	perf: FlightPerformance,
+): Vec3 {
 	// Split it about the nose: the component along it is what the throttle
 	// governs, and everything perpendicular is drift the assist exists to remove.
-	const along = dot(relative, control.nose);
-	const lateral = sub(relative, scale(control.nose, along));
+	const along = dot(relative, nose);
+	const lateral = sub(relative, scale(nose, along));
 	const damped = scale(lateral, Math.exp(-dt / perf.assistLateralTauS));
 
 	const want = throttle * ASSIST_CAP_KMS;
 	const authority = perf.thrustKms2 * dt;
 	const next = along + clamp(want - along, -authority, authority);
 
-	let assisted = add(scale(control.nose, next), damped);
+	const assisted = add(scale(nose, next), damped);
 	// The cap is on the *total*, not on the commanded component: a ship that
 	// enters a turn at the cap would otherwise briefly exceed it, since the
 	// lateral remainder is still there while it decays.
 	const speed = length(assisted);
-	if (speed > ASSIST_CAP_KMS)
-		assisted = scale(assisted, ASSIST_CAP_KMS / speed);
-
-	ship.vel = add(frame, assisted);
-	ship.pos = add(ship.pos, scale(ship.vel, dt));
+	return speed > ASSIST_CAP_KMS
+		? scale(assisted, ASSIST_CAP_KMS / speed)
+		: assisted;
 }
 
 const clamp = (v: number, lo: number, hi: number): number =>
