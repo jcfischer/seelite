@@ -17,7 +17,8 @@ import {
 	cruiseBeta,
 	dopplerFactor,
 	easeBeta,
-	shiftTint,
+	shiftColor,
+	starbowHue,
 } from "../src/light-shift";
 import { type Vec3, dot, length, v3 } from "../src/vec3";
 
@@ -113,12 +114,32 @@ describe("Doppler", () => {
 		expect(dopplerFactor(0.3, 0)).toBe(1);
 	});
 
-	test("the tint is bluer ahead than astern, and white at rest", () => {
-		const ahead = shiftTint(dopplerFactor(1, 0.6));
-		const astern = shiftTint(dopplerFactor(-1, 0.6));
-		expect(ahead[2] / ahead[0]).toBeGreaterThan(1);
-		expect(astern[2] / astern[0]).toBeLessThan(1);
-		expect(shiftTint(1)).toEqual([1, 1, 1]);
+	test("the starbow runs blue-white at the heading to red at the ring", () => {
+		const nose = starbowHue(0);
+		const ring = starbowHue(1);
+		expect(nose[2] / nose[0]).toBeGreaterThan(1.5);
+		expect(ring[2] / ring[0]).toBeLessThan(0.2);
+		expect(starbowHue(-1)).toEqual(nose);
+		expect(starbowHue(2)).toEqual(ring);
+	});
+
+	test("a warm star turns blue at the nose and red at the rim, and is itself at rest", () => {
+		const warm = [1, 0.7, 0.45] as const;
+		const beta = CRUISE_LIGHT.peakBeta;
+		const rim = Math.cos((CRUISE_LIGHT.ringDeg * Math.PI) / 180);
+		const nose = shiftColor(warm, 1, beta);
+		const edge = shiftColor(warm, rim, beta);
+		expect(nose[2] / nose[0]).toBeGreaterThan(1);
+		expect(edge[2] / edge[0]).toBeLessThan(warm[2] / warm[0]);
+		expect(shiftColor(warm, 0.5, 0)).toEqual([...warm]);
+	});
+
+	test("the pull keeps luminance, and light astern is dimmed", () => {
+		const warm = [1, 0.7, 0.45] as const;
+		const lum = (c: readonly number[]) =>
+			0.2126 * c[0] + 0.7152 * c[1] + 0.0722 * c[2];
+		expect(lum(shiftColor(warm, 0.9, 0.6))).toBeCloseTo(lum(warm), 9);
+		expect(lum(shiftColor(warm, -1, 0.6))).toBeLessThan(0.5 * lum(warm));
 	});
 
 	test("beaming is clamped both ways, so the nose is not a blaze", () => {

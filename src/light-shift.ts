@@ -41,15 +41,32 @@ export const CRUISE_LIGHT = Object.freeze({
 	 *  the crowd ahead — where the target sits — is not a blaze. */
 	sizeMin: 0.7,
 	sizeMax: 1.6,
-	/** `ln D` at which the colour shift is complete. */
-	lnShiftFull: Math.log(2),
+	/**
+	 * The starbow's radius: the seen angle from the heading, degrees, where the
+	 * ring reaches red. About the cockpit frame's corner, so the whole spectrum
+	 * is on screen looking ahead — #532 normalised its ring to the same corner.
+	 */
+	ringDeg: 50,
+	/** How far a star is pulled to the ring's hue at peak β: under one, so a
+	 *  star keeps a trace of its own class. */
+	strength: 0.85,
 	/** Redshifted light dims as `D²` down to this, in the colour: a point cannot
 	 *  shrink below the shader's one-pixel floor, so size alone cannot dim it. */
 	dimFloor: 0.3,
 });
 
-const BLUE = [0.72, 0.88, 1.35] as const;
-const RED = [1.3, 0.55, 0.3] as const;
+/**
+ * The starbow's stops, from the heading out to the ring: #532's `starbow()`
+ * in `witchspace-pass.ts`, blue-white through cyan, green and gold to red.
+ */
+const STOPS = [
+	[0.9, 0.95, 1.7],
+	[0.35, 0.95, 1.5],
+	[0.45, 1.35, 0.5],
+	[1.45, 1.1, 0.3],
+	[1.6, 0.3, 0.12],
+] as const;
+const LUMA = [0.2126, 0.7152, 0.0722] as const;
 
 /** The display β for an intensity in `[0, 1]`. */
 export function cruiseBeta(intensity: number): number {
@@ -111,18 +128,53 @@ export function beamedSize(doppler: number): number {
 	);
 }
 
-/** The colour multiplier for a Doppler factor: blue-white ahead, a dimmed red
- *  astern, white at one. */
-export function shiftTint(doppler: number): [number, number, number] {
-	const ln = Math.log(doppler);
-	const s = Math.min(1, Math.abs(ln) / CRUISE_LIGHT.lnShiftFull);
-	const to = ln >= 0 ? BLUE : RED;
-	const dim = ln >= 0 ? 1 : Math.max(CRUISE_LIGHT.dimFloor, doppler * doppler);
-	return [0, 1, 2].map((i) => (1 + (to[i] - 1) * s) * dim) as [
-		number,
-		number,
-		number,
-	];
+type Rgb = readonly [number, number, number];
+const luma = (c: Rgb) => c[0] * LUMA[0] + c[1] * LUMA[1] + c[2] * LUMA[2];
+const mix3 = (a: Rgb, b: Rgb, k: number): [number, number, number] => [
+	a[0] + (b[0] - a[0]) * k,
+	a[1] + (b[1] - a[1]) * k,
+	a[2] + (b[2] - a[2]) * k,
+];
+
+/** The starbow's hue at `x` in `[0, 1]`, heading to ring, piecewise linear. */
+export function starbowHue(x: number): [number, number, number] {
+	const t = Math.min(1, Math.max(0, x)) * (STOPS.length - 1);
+	const i = Math.min(STOPS.length - 2, Math.floor(t));
+	return mix3(STOPS[i], STOPS[i + 1], t - i);
+}
+
+/**
+ * A star's colour at a seen angle from the heading, at `beta`.
+ *
+ * **The starbow, not a literal Doppler shift.** At the β this dial reaches,
+ * every star in a forward frame has `D` above 1.5, and a colour read off `D`
+ * alone turned the whole view one pale blue — the first capture. #532's
+ * starbow is a ring: blue-white at the nose to red at the frame's rim, and that
+ * is what the principal ratified. So the hue is read off the seen angle, and
+ * the ring is anchored to the heading rather than to the screen.
+ *
+ * It is **pulled toward** the hue rather than multiplied by it: most of the sky
+ * is warm, and a warm star times a blue tint stays warm. Luminance is kept —
+ * the brightening ahead is the size's — and light with `D` under one dims as
+ * `D²` to a floor, which is what empties the sky astern.
+ */
+export function shiftColor(
+	color: Rgb,
+	cosSeen: number,
+	beta: number,
+): [number, number, number] {
+	if (beta <= 0) return [color[0], color[1], color[2]];
+	const x =
+		Math.acos(Math.min(1, Math.max(-1, cosSeen))) /
+		((CRUISE_LIGHT.ringDeg * Math.PI) / 180);
+	const hue = starbowHue(x);
+	const k = luma(color) / luma(hue);
+	const amount =
+		CRUISE_LIGHT.strength * Math.min(1, beta / CRUISE_LIGHT.peakBeta);
+	const out = mix3(color, [hue[0] * k, hue[1] * k, hue[2] * k], amount);
+	const d = dopplerFactor(cosSeen, beta);
+	const dim = d >= 1 ? 1 : Math.max(CRUISE_LIGHT.dimFloor, d * d);
+	return [out[0] * dim, out[1] * dim, out[2] * dim];
 }
 
 const glslVec3 = (c: readonly number[]) =>
@@ -145,12 +197,21 @@ uniform float uBeta;
 uniform vec3 uHeading;
 varying vec3 vColor;
 
-vec3 shiftTint(float d) {
-	float ln = log(d);
-	float s = min(1.0, abs(ln) / ${CRUISE_LIGHT.lnShiftFull.toFixed(6)});
-	if (ln >= 0.0) return mix(vec3(1.0), ${glslVec3(BLUE)}, s);
-	return mix(vec3(1.0), ${glslVec3(RED)}, s)
-		* max(${CRUISE_LIGHT.dimFloor.toFixed(4)}, d * d);
+vec3 starbowHue(float x) {
+	float t = clamp(x, 0.0, 1.0) * 4.0;
+	if (t < 1.0) return mix(${glslVec3(STOPS[0])}, ${glslVec3(STOPS[1])}, t);
+	if (t < 2.0) return mix(${glslVec3(STOPS[1])}, ${glslVec3(STOPS[2])}, t - 1.0);
+	if (t < 3.0) return mix(${glslVec3(STOPS[2])}, ${glslVec3(STOPS[3])}, t - 2.0);
+	return mix(${glslVec3(STOPS[3])}, ${glslVec3(STOPS[4])}, t - 3.0);
+}
+
+vec3 shiftColor(vec3 c, float seen, float d) {
+	const vec3 LUMA = ${glslVec3(LUMA)};
+	vec3 hue = starbowHue(acos(clamp(seen, -1.0, 1.0)) / ${((CRUISE_LIGHT.ringDeg * Math.PI) / 180).toFixed(6)});
+	float amount = ${CRUISE_LIGHT.strength.toFixed(4)} * min(1.0, uBeta / ${CRUISE_LIGHT.peakBeta.toFixed(4)});
+	vec3 outc = mix(c, hue * (dot(c, LUMA) / dot(hue, LUMA)), amount);
+	if (d < 1.0) outc *= max(${CRUISE_LIGHT.dimFloor.toFixed(4)}, d * d);
+	return outc;
 }
 
 void main() {
@@ -169,7 +230,7 @@ void main() {
 		if (pl > 1e-6)
 			n = uHeading * seen + (perp / pl) * sqrt(max(0.0, 1.0 - seen * seen));
 		float d = sqrt(1.0 - uBeta * uBeta) / (1.0 - uBeta * seen);
-		color *= shiftTint(d);
+		color = shiftColor(color, seen, d);
 		size *= clamp(d * d, ${CRUISE_LIGHT.sizeMin.toFixed(4)}, ${CRUISE_LIGHT.sizeMax.toFixed(4)});
 		world.xyz = centre + n * radius;
 	}
