@@ -4153,6 +4153,9 @@ class Game {
 		// one, because a click can land in the same frame that drew the console it
 		// was aimed at and the cached answer is the frame's.
 		this.renderer.domElement.addEventListener("click", () => {
+			// #535: nobody flies during the opening, and a locked pointer could not
+			// reach its SKIP control.
+			if (this.openingActive) return;
 			const consoleDrawn = this.consoleIsDrawn();
 			if (
 				pointerLockMove(
@@ -7909,6 +7912,13 @@ class Game {
 	 * be said out loud to land.
 	 */
 	private reconcilePointerLock() {
+		// #535: the opening's SKIP is a control on the screen, and the mouse is
+		// always available (the principal's premise, #370): the pointer is free
+		// while it runs.
+		if (this.openingActive && this.canvasHoldsLock()) {
+			document.exitPointerLock();
+			return;
+		}
 		if (
 			pointerLockMove(
 				this.padContextThisFrame,
@@ -14258,7 +14268,9 @@ class Game {
 
 	/**
 	 * #408 D1: a guided new game starts in a berth at its start system's trade
-	 * station.
+	 * station. **Since #535 this placement is #530 D6's fallback**: the guided
+	 * start is the opening's real flight (`beginOpening`), and this runs only
+	 * when that flight cannot dock, from wherever it stopped.
 	 *
 	 * **Through the docking protocol, never around it** (#9, #147). The ship is
 	 * set on the station's aperture axis, co-moving, outside the computer's
@@ -14389,8 +14401,13 @@ class Game {
 			// comes back at the end.
 			this.openingPriorView = this.view;
 			this.view = "chase";
-			this.openingOverlay ??= mountOpeningOverlay(() =>
-				this.ownKey("dock.launch").names(),
+			// Every trigger the skip has — keyboard and pad — and a click: the
+			// mouse is always available (#370).
+			this.openingOverlay ??= mountOpeningOverlay(
+				() => boundNames(this.bindings, "dock.launch"),
+				() => {
+					if (this.openingActive) this.skipOpening();
+				},
 			);
 			this.playArrival();
 			return;
@@ -16983,7 +17000,7 @@ if (postcard) {
 	};
 	let openAtBoot = plan.mode === "overlay";
 	// #408 D1 and D4: a guided new game is docked at its home station before the
-	// clock runs. **After the attach**, so that dock's flush writes the new
+	// clock runs — since #535 by the opening's flight, watched or skipped. **After the attach**, so that dock's flush writes the new
 	// Commander's `lastDocked`. Once per page: Continue on the overlay also
 	// attaches, and a game already flown is not a new game.
 	let firstDayBegun = false;

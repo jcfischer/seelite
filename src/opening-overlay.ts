@@ -30,7 +30,11 @@ const STYLE = `
   font: 500 13px/1.3 ui-monospace, SFMono-Regular, Menlo, monospace;
   letter-spacing: .14em; color: #cfd8e3;
 }
-#seelite-opening .skip { color: #7f8a96; }
+#seelite-opening .skip {
+  pointer-events: auto; cursor: pointer; font: inherit; letter-spacing: inherit;
+  color: #7f8a96; background: none; border: 0; padding: 4px 0;
+}
+#seelite-opening .skip:hover { color: #cfd8e3; }
 #seelite-opening kbd {
   font: inherit; color: #cfd8e3; padding: 0 5px;
   border: 1px solid rgba(207, 216, 227, .45); border-radius: 3px;
@@ -38,8 +42,11 @@ const STYLE = `
 `;
 
 export function mountOpeningOverlay(
-	/** `dock.launch`'s keys, printed, in the layout in force. */
+	/** `dock.launch`'s triggers, keyboard and pad, printed, in the layout in
+	 *  force. */
 	skipKeys: () => readonly string[],
+	/** A click on SKIP. */
+	onSkip: () => void,
 ): OpeningOverlayHandle {
 	if (!document.getElementById(STYLE_ID)) {
 		const style = document.createElement("style");
@@ -52,10 +59,11 @@ export function mountOpeningOverlay(
 	root.dataset.opening = "";
 	root.hidden = true;
 	root.innerHTML =
-		'<div class="bar top"></div><div class="bar bottom"><span class="caption" data-opening-caption></span><span class="skip" data-opening-skip></span></div>';
+		'<div class="bar top"></div><div class="bar bottom"><span class="caption" data-opening-caption></span><button type="button" class="skip" data-opening-skip></button></div>';
 	document.body.append(root);
 	const caption = root.querySelector<HTMLElement>("[data-opening-caption]");
 	const skip = root.querySelector<HTMLElement>("[data-opening-skip]");
+	skip?.addEventListener("click", onSkip);
 	let shown: string | null = null;
 	let skipMarkup = "";
 	return {
@@ -71,7 +79,7 @@ export function mountOpeningOverlay(
 			const keys = skipKeys();
 			const markup =
 				keys.length === 0
-					? ""
+					? "SKIP"
 					: `${keys.map((k) => `<kbd>${escapeHtml(k)}</kbd>`).join(" or ")} SKIP`;
 			if (markup !== skipMarkup && skip) {
 				skip.innerHTML = markup;

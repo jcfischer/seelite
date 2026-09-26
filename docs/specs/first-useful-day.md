@@ -54,6 +54,15 @@ moved: the ship at the arrival point, the computer off, the grant it was given
 released. So it is a free start with the clock moved on. `probe-first-day`
 runs both ways of failing: the clearance refused, and a run-in that never ends.
 
+**Amended by #530 (built in #535).** The guided start is now a real flight
+from the arrival point — the opening cinematic, `src/opening.ts` — which ends
+docked at the same trade station through a real clearance and writes
+`lastDocked` the same way. The placement above is its fallback (#530 D6), run
+from wherever the flight stopped. The clock at the dock is the whole flight's,
+about 148 s on seed 47 rather than 76.9 s. Under `?boot=direct` and
+`?system=` the flight still runs, skipped, so a guided probe starts where a
+player who skips the opening starts.
+
 A free new game, `?boot=direct` and `?system=` keep the in-flight start.
 `?guided` on a direct boot with nothing loaded opts in, for probes and
 playtests, on `?permadeath`'s rule.

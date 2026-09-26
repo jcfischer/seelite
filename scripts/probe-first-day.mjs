@@ -118,7 +118,8 @@ const boot = await page.evaluate(async () => {
 	return {
 		firstDay: g.firstDay,
 		phase: g.dockPhase,
-		// How long the docked start's run-in took: the world clock at the dock.
+		// The world clock at the dock: since #535 the whole opening flight's —
+		// arrival, cruise and run-in — not only the old placement's run-in.
 		runInS: Number(g.world.gameTime.toFixed(1)),
 		stationId: g.dock.stationId,
 		tradeId: trade?.id ?? null,

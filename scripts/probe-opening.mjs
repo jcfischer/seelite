@@ -222,6 +222,51 @@ check(
 await midway.context.close();
 
 // ---------------------------------------------------------------------------
+// Guided, skipped by a click: the mouse is always available (#370)
+// ---------------------------------------------------------------------------
+
+const clicked = await boot({ guided: true, cinematic: 1 }, "guided clicked");
+await clicked.page.waitForFunction(
+	() => window.__seelite.openingReading().shot === "flypast",
+	null,
+	{ timeout: 30000, polling: 100 },
+);
+const hint = await clicked.page.evaluate(() => {
+	const skip = document.querySelector("[data-opening-skip]");
+	const box = skip?.getBoundingClientRect();
+	return {
+		text: skip?.textContent ?? null,
+		visible: skip?.checkVisibility() ?? false,
+		x: box ? box.x + box.width / 2 : 0,
+		y: box ? box.y + box.height / 2 : 0,
+		pointerLocked: document.pointerLockElement !== null,
+		names: window.__seelite.bindings
+			.filter((b) => b.command === "dock.launch")
+			.map((b) => b.trigger.kind),
+	};
+});
+check(
+	"SKIP names every trigger the skip has, the pad's among them, and the pointer is free",
+	hint.visible &&
+		hint.names.includes("key") &&
+		hint.names.some((k) => k !== "key") &&
+		(hint.text?.split(" or ").length ?? 0) >= hint.names.length &&
+		!hint.pointerLocked,
+	JSON.stringify(hint),
+);
+// A real pointer event at the control's place, not a synthetic element.click(),
+// which reaches a control a locked pointer could not (#370, #371).
+await clicked.page.mouse.click(hint.x, hint.y);
+await untilOver(clicked.page, 10000);
+const clickedEnd = await endState(clicked.page);
+check(
+	"a click on SKIP skips to the same state (D2)",
+	same(clickedEnd, skippedEnd),
+	differing(clickedEnd, skippedEnd) || "identical",
+);
+await clicked.context.close();
+
+// ---------------------------------------------------------------------------
 // Free: arrival and fly-past, then control near the arrival point
 // ---------------------------------------------------------------------------
 
