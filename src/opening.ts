@@ -91,10 +91,10 @@ export interface OpeningSim {
  * The script's figures and the shots' table.
  *
  * The shot lengths started as #530 D4's split of about 30 s and are tuned on
- * the principal's flights: arrival 6 s (the exit needs 4.6 s of sky
- * unfolding), fly-past 5 s (the burn and the spool), cruise about 10 s and
- * then 6 s past the drop-out so the station can be recognised, dock about
- * 9 s — about 36 s in all.
+ * the principal's flights: the rift forming 3 s, arrival 6 s (the exit
+ * needs 4.6 s of sky unfolding), fly-past 5 s (the burn and the spool), the
+ * planet fly-by about 9 s, the station approach 6 s, dock about 9 s — about
+ * 38 s in all.
  *
  * Two shots show the sim faster than it runs, which is not time compression
  * (#10): nothing the pilot can act on is sped up, because the pilot is not
@@ -135,10 +135,12 @@ export const OPENING = Object.freeze({
 	/**
 	 * The approach shot, a scene of its own after the drop-out (the
 	 * principal's fifth note: planet fly-by, then station approach, then the
-	 * dock): `shownS` on screen at `ratio`, fast enough that the ship closes
-	 * from the 50 km drop-out to within about 5 km, where the station reads.
+	 * dock). It shows sim seconds `fromS` to `toS` past the drop-out at
+	 * `ratio` — the middle half of the 24 s the 4x version covered, at half
+	 * its speed (the eighth note); the first and last quarters fall into the
+	 * cut from the fly-by and the cut to the dock. 6 s on screen.
 	 */
-	approachShot: Object.freeze({ shownS: 6, ratio: 4 }),
+	approachShot: Object.freeze({ fromS: 6, toS: 18, ratio: 2 }),
 	/** The dock shot: the run-in from `km` of the station's centre, `ratio`
 	 *  times faster than it runs. */
 	dockShot: Object.freeze({ km: 1.6, ratio: 2 }),
@@ -172,8 +174,8 @@ export const SHOT_RATIO: Readonly<Record<OpeningShot, number>> = Object.freeze({
 	dock: OPENING.dockShot.ratio,
 });
 
-/** How fast `shot` shows the sim while the script is at `pilot`: the
- *  cruise shot's tail past the drop-out runs at its own ratio. */
+/** How fast `shot` shows the sim. A function of the script's place as well
+ *  as the shot, so a shot can change pace mid-take without a second table. */
 export function shotRatio(
 	pilot: { leg: OpeningLeg },
 	shot: OpeningShot,
@@ -287,20 +289,17 @@ export function openingShot(
 			return "flypast";
 		case "cruise":
 			// Dropped out already: the step before the script moves to its
-			// approach leg opens the approach shot.
-			if (facts.regime === "normal") return "approach";
+			// approach leg is the cut's — the approach's first quarter is cut.
+			if (facts.regime === "normal") return null;
 			return facts.cruiseEtaS !== null &&
 				facts.cruiseEtaS <= OPENING.cruiseShot.simS
 				? "cruise"
 				: null;
 		case "approach":
-			// The approach shot: the first `shownS` seconds past the drop-out, the
-			// ship closing on the station; then a cut to the run-in.
-			if (
-				state.legSteps <=
-				steps(OPENING.approachShot.shownS * OPENING.approachShot.ratio)
-			)
-				return "approach";
+			// The approach shot: sim seconds `fromS` to `toS` past the drop-out,
+			// the ship closing on the station; a cut before and after it.
+			if (state.legSteps <= steps(OPENING.approachShot.fromS)) return null;
+			if (state.legSteps <= steps(OPENING.approachShot.toS)) return "approach";
 			return facts.runIn && facts.stationKm <= OPENING.dockShot.km
 				? "dock"
 				: null;

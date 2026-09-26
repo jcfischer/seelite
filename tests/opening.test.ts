@@ -317,11 +317,7 @@ describe("the director", () => {
 			),
 		).toBe("cruise");
 		// Past the approach shot, a cut until the run-in.
-		const pastTail =
-			Math.round(
-				(OPENING.approachShot.shownS * OPENING.approachShot.ratio) /
-					OPENING.dtS,
-			) + 1;
+		const pastTail = Math.round(OPENING.approachShot.toS / OPENING.dtS) + 1;
 		expect(
 			openingShot(
 				{ ...pilot, leg: "approach", legSteps: pastTail },
@@ -570,10 +566,11 @@ describe("an opening a quit interrupted (the principal's ruling, 2026-09-26)", (
 	});
 });
 
-describe("the station approach is a scene of its own (the principal's fifth note)", () => {
-	// Planet fly-by, then the station approach, then the dock. The approach
-	// runs faster than the sim so the ship closes on the station, which only
-	// reads in the last kilometres.
+describe("the station approach is a scene of its own (the principal's fifth and eighth notes)", () => {
+	// Planet fly-by, then the station approach, then the dock. The approach is
+	// the middle half of the first 24 s past the drop-out, shown at 2x: its
+	// first and last quarters are cut, into the cut from the fly-by and the
+	// cut to the dock.
 	const facts: PilotFacts = {
 		regime: "normal",
 		spooling: false,
@@ -585,33 +582,40 @@ describe("the station approach is a scene of its own (the principal's fifth note
 		inVicinity: true,
 		runIn: false,
 	};
-	const span = Math.round(
-		(OPENING.approachShot.shownS * OPENING.approachShot.ratio) / OPENING.dtS,
-	);
-	test("the drop-out cuts from the fly-by to the approach, which then cuts to the run-in", () => {
+	const from = Math.round(OPENING.approachShot.fromS / OPENING.dtS);
+	const to = Math.round(OPENING.approachShot.toS / OPENING.dtS);
+	test("the middle half of the 24 s the 4x version covered", () => {
+		expect(OPENING.approachShot.fromS).toBeCloseTo(24 / 4, 9);
+		expect(OPENING.approachShot.toS).toBeCloseTo((24 * 3) / 4, 9);
+		expect(OPENING.approachShot.ratio).toBe(2);
+	});
+	test("the drop-out cuts, the approach shows its middle, then cuts again", () => {
 		const cruising = { ...startPilot("guided"), leg: "cruise" as const };
 		expect(
 			openingShot(cruising, { ...facts, regime: "cruise", cruiseEtaS: 3 }),
 		).toBe("cruise");
-		expect(openingShot(cruising, facts)).toBe("approach");
+		expect(openingShot(cruising, facts)).toBe(null);
 		const approach = { ...startPilot("guided"), leg: "approach" as const };
-		expect(openingShot({ ...approach, legSteps: 1 }, facts)).toBe("approach");
-		expect(openingShot({ ...approach, legSteps: span }, facts)).toBe(
+		expect(openingShot({ ...approach, legSteps: 1 }, facts)).toBe(null);
+		expect(openingShot({ ...approach, legSteps: from }, facts)).toBe(null);
+		expect(openingShot({ ...approach, legSteps: from + 1 }, facts)).toBe(
 			"approach",
 		);
-		expect(openingShot({ ...approach, legSteps: span + 1 }, facts)).toBe(null);
+		expect(openingShot({ ...approach, legSteps: to }, facts)).toBe("approach");
+		expect(openingShot({ ...approach, legSteps: to + 1 }, facts)).toBe(null);
 	});
-	test("it runs faster than the fly-by, and shows its shownS at any cadence", () => {
-		expect(OPENING.approachShot.ratio).toBeGreaterThan(
-			OPENING.cruiseShot.ratio,
-		);
+	test("it shows its middle half at its ratio, at any cadence", () => {
 		expect(shotRatio(startPilot("guided"), "approach")).toBe(
 			OPENING.approachShot.ratio,
 		);
+		const shown =
+			(OPENING.approachShot.toS - OPENING.approachShot.fromS) /
+			OPENING.approachShot.ratio;
+		expect(shown).toBeCloseTo(6, 9);
 		for (const seed of [2, 9]) {
 			const run = new OpeningRun("guided");
 			watch(run, new FakeSim(), seed);
-			expect(run.shownBy.approach).toBeCloseTo(OPENING.approachShot.shownS, 0);
+			expect(run.shownBy.approach).toBeCloseTo(shown, 1);
 			expect(run.shownBy.cruise).toBeCloseTo(
 				OPENING.cruiseShot.simS / OPENING.cruiseShot.ratio,
 				0,

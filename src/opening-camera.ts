@@ -149,7 +149,7 @@ export const SHOT_FRAMING = Object.freeze({
 		sideR: 2,
 		upR: 1,
 		orbitDeg: 20,
-		orbitS: OPENING.approachShot.shownS * OPENING.approachShot.ratio,
+		orbitS: OPENING.approachShot.toS - OPENING.approachShot.fromS,
 	}),
 	/** Outboard of the ship on the station's axis and to the sun side,
 	 *  looking at the aperture it is being brought into. */
