@@ -96,7 +96,7 @@ const MAIN = {
 /**
  * #544's cues and loops, which `origin/main` does not have: centred on this
  * branch's render after the principal's first listen (`npm run sounds --
- * --label after3`, seed 552). So these bands hold the prototype to what the
+ * --label after4`, seed 552). So these bands hold the prototype to what the
  * principal listens to, and move when the ear moves it. Every flight timeline takes the bed's wide band:
  * each carries noise loops, and most carry clicks, whose count moves with the
  * seed.
@@ -152,17 +152,24 @@ const SINCE_544 = {
 		bed: 1,
 	},
 	"flight-cruise-shimmer": {
-		rms: 0.01739,
-		peak: 0.21012,
+		rms: 0.0189,
+		peak: 0.20985,
 		onsetMs: 50.23,
 		hz: 250,
 		bed: 1,
 	},
 	"flight-cruise-throb": {
-		rms: 0.01832,
-		peak: 0.20827,
+		rms: 0.0222,
+		peak: 0.20565,
 		onsetMs: 50.23,
 		hz: 250,
+		bed: 1,
+	},
+	"flight-cruise-c-ladder": {
+		rms: 0.00879,
+		peak: 0.05348,
+		onsetMs: 39.4,
+		hz: 2035,
 		bed: 1,
 	},
 	"flight-cooling-clicks": {
@@ -225,6 +232,9 @@ const BURST_MAX_OF_UNCAPPED = 0.7;
 
 /** The least a loop's window may stand over its quiet window (#544). */
 const LOOP_MIN_RATIO = 1.5;
+
+/** The least each rung of the c ladder may stand over the one below (#544). */
+const LADDER_MIN_STEP = 1.3;
 
 const browser = await launchChromium();
 const { check, watch, exit } = tally();
@@ -358,6 +368,22 @@ try {
 			windowRms(await samplesOf(quiet), qw, high);
 		check(row, ratio > LOOP_MIN_RATIO, `window rms x${ratio.toFixed(2)}`);
 	}
+	// The principal's second listen heard no change from 1 to 30 c. The
+	// ladder holds 1, 2, 5, 10 and 20 c for two seconds each; high-passed,
+	// each step must stand clear of the one below.
+	const ladder = await samplesOf("flight-cruise-c-ladder");
+	const rungs = [
+		[0.5, 2.3],
+		[2.7, 4.3],
+		[4.7, 6.3],
+		[6.7, 8.3],
+		[8.7, 10.3],
+	].map((w) => windowRms(ladder, w, true));
+	check(
+		"every step from 1 to 20 c is heard above the one below",
+		rungs.every((r, i) => i === 0 || r > rungs[i - 1] * LADDER_MIN_STEP),
+		rungs.map((r) => r.toFixed(5)).join(" < "),
+	);
 	const idleMuted = await Promise.all(
 		[{ master: 0 }, { ship: 0 }].map((levels) =>
 			raw("flight-idle", { levels }),

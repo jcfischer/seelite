@@ -11,6 +11,7 @@ import {
 	flightSound,
 	flightSoundArms,
 	QUIET_FLIGHT,
+	CRUISE_C_SHARE,
 	cruiseSpeedShare,
 } from "../src/flight-sound";
 
@@ -173,12 +174,24 @@ test("the cruise bed follows cruise speed, not the lever", () => {
 	).toBe(0);
 });
 
-test("cruise speed is a log share of the regime's range", () => {
-	expect(cruiseSpeedShare(100, 100, 1e6)).toBe(0);
-	expect(cruiseSpeedShare(50, 100, 1e6)).toBe(0);
-	expect(cruiseSpeedShare(1e4, 100, 1e6)).toBeCloseTo(0.5, 9);
-	expect(cruiseSpeedShare(1e6, 100, 1e6)).toBe(1);
-	expect(cruiseSpeedShare(1e9, 100, 1e6)).toBe(1);
+test("cruise speed is a log share with light speed as the knee", () => {
+	const C = 299792.458;
+	const share = (kms: number) => cruiseSpeedShare(kms, 100, C, 23 * C);
+	expect(share(100)).toBe(0);
+	expect(share(50)).toBe(0);
+	expect(share(C)).toBeCloseTo(CRUISE_C_SHARE, 9);
+	expect(share(23 * C)).toBeCloseTo(1, 9);
+	expect(share(1e3 * C)).toBe(1);
+	// The principal's complaint: 1 to 30 c moved nothing an ear could find.
+	// Now it is most of the travel, and each step up is a real move.
+	expect(share(23 * C) - share(C)).toBeGreaterThan(0.6);
+	for (const [lo, hi] of [
+		[1, 2],
+		[2, 5],
+		[5, 10],
+		[10, 20],
+	])
+		expect(share(hi * C) - share(lo * C)).toBeGreaterThan(0.1);
 });
 
 test("heat rises under a burn and falls after it, frame-rate independent", () => {

@@ -422,12 +422,25 @@ export class AudioFX {
 		}
 		// Thrusters are quick: a puff starts and stops with the stick.
 		if (moved("rcs")) g.rcs.gain.setTargetAtTime(0.16 * mix.rcs, t, 0.025);
+		// The wind-up is a turbine spinning up (#544: "too simple" on the first
+		// listen): slow to start and quick to finish, so pitch follows s^1.5;
+		// a flutter that races from a few beats to a buzz; air rushing through
+		// it; a sub that grows under it; and a whine that arrives only near the
+		// top.
 		if (moved("spool")) {
 			const s = mix.spool;
-			g.spool.gain.setTargetAtTime(0.08 * s, t, 0.05);
-			g.spoolFilter.frequency.setTargetAtTime(300 + 2200 * s, t, 0.05);
+			const lift = s ** 1.5;
+			g.spool.gain.setTargetAtTime(s > 0 ? 0.1 * s ** 0.7 : 0, t, 0.05);
+			g.spoolFilter.frequency.setTargetAtTime(300 + 3200 * lift, t, 0.05);
 			for (const [osc, base] of g.spoolOscs)
-				osc.frequency.setTargetAtTime(base * 2 ** (2 * s), t, 0.05);
+				osc.frequency.setTargetAtTime(base * 2 ** (2.5 * lift), t, 0.05);
+			g.spoolFlutter.frequency.setTargetAtTime(3 + 30 * s * s, t, 0.05);
+			g.spoolAir.gain.setTargetAtTime(0.6 * s * s, t, 0.05);
+			g.spoolAirBand.frequency.setTargetAtTime(300 + 3700 * lift, t, 0.05);
+			g.spoolSub.gain.setTargetAtTime(1.2 * s, t, 0.05);
+			g.spoolSubOsc.frequency.setTargetAtTime(32 + 18 * s, t, 0.05);
+			g.spoolWhine.gain.setTargetAtTime(0.25 * s ** 3, t, 0.05);
+			g.spoolWhineOsc.frequency.setTargetAtTime(900 + 1700 * lift, t, 0.05);
 		}
 		// Cruise follows the speed, and quickly: the first listen heard a bed
 		// that faded in and out on a third of a second whatever the ship did.
@@ -441,19 +454,26 @@ export class AudioFX {
 			const shimmer = mix.cruiseVoice === "shimmer";
 			g.shimmer.gain.setTargetAtTime(shimmer ? on : 0, t, 0.15);
 			g.throb.gain.setTargetAtTime(shimmer ? 0 : on * 1.3, t, 0.15);
-			// The rush under either voice: air that is not there, rising in
-			// pitch and weight with the speed.
-			g.rush.gain.setTargetAtTime(0.1 * mix.cruise * (0.25 + s), t, 0.15);
-			g.rushBand.frequency.setTargetAtTime(250 * 2 ** (3.5 * s), t, 0.15);
-			// Shimmer: the band climbs three octaves, sweeps faster, and the
-			// drone rises a fifth.
-			g.band.frequency.setTargetAtTime(350 * 2 ** (3 * s), t, 0.15);
-			g.sweepRate.frequency.setTargetAtTime(0.12 + 1.1 * s, t, 0.3);
+			// Everything below moves with the speed and nothing moves on its
+			// own: the second listen found the bed "pulses too much" and heard no
+			// change from 1 to 30 c. The speed share has c as its knee
+			// (`cruiseSpeedShare`), so that range is most of this travel.
+			//
+			// The rush under either voice: air that is not there, rising more
+			// than four octaves and gaining weight with the speed.
+			g.rush.gain.setTargetAtTime(0.1 * mix.cruise * (0.3 + s), t, 0.15);
+			g.rushBand.frequency.setTargetAtTime(200 * 2 ** (4.3 * s), t, 0.15);
+			// Air above it all, only at the top of the range.
+			g.air.gain.setTargetAtTime(0.07 * mix.cruise * s * s, t, 0.15);
+			// Shimmer: the band climbs four octaves, and the drone rises an
+			// octave and opens from dark to bright.
+			g.band.frequency.setTargetAtTime(300 * 2 ** (4 * s), t, 0.15);
+			g.droneFilter.frequency.setTargetAtTime(200 + 2300 * s, t, 0.15);
 			for (const [osc, base] of g.droneOscs)
-				osc.frequency.setTargetAtTime(base * (1 + 0.5 * s), t, 0.3);
+				osc.frequency.setTargetAtTime(base * 2 ** s, t, 0.3);
 			// Throb: the beat quickens from a slow pulse to a flutter, and the
 			// note rises and opens.
-			g.beatRate.frequency.setTargetAtTime(0.9 + 5.5 * s, t, 0.3);
+			g.beatRate.frequency.setTargetAtTime(0.8 + 4 * s, t, 0.3);
 			g.throbFilter.frequency.setTargetAtTime(140 + 600 * s, t, 0.15);
 			for (const [osc, base] of g.throbOscs)
 				osc.frequency.setTargetAtTime(base * (1 + 0.7 * s), t, 0.3);
@@ -479,7 +499,8 @@ export class AudioFX {
 		g.humFilter.frequency.setTargetAtTime(170 + Math.random() * 250, t, 2);
 		g.pumpRate.frequency.setTargetAtTime(1 + Math.random() * 0.7, t, 3);
 		g.fanRate.frequency.setTargetAtTime(9 + Math.random() * 4, t, 3);
-		g.cruiseSwell.gain.setTargetAtTime(0.7 + Math.random() * 0.45, t, 1.2);
+		// Narrow and slow: a wider, quicker swell read as pulsing.
+		g.cruiseSwell.gain.setTargetAtTime(0.92 + Math.random() * 0.12, t, 3);
 	}
 
 	private makeFlightGraph(ctx: BaseAudioContext, out: AudioNode): FlightGraph {
@@ -602,14 +623,30 @@ export class AudioFX {
 		rcsFilter.connect(rcs);
 		loop(white, rcsFilter);
 
-		// The cruise wind-up: two voices an octave apart climbing two octaves.
+		// The cruise wind-up: a turbine spinning up (`flight` says how).
 		const spool = gain(out);
-		const spoolFilter = filter("lowpass", 300, 2);
-		spoolFilter.connect(spool);
+		const spoolBody = ctx.createGain();
+		spoolBody.gain.value = 0.7;
+		spoolBody.connect(spool);
+		const spoolFilter = filter("lowpass", 300, 2.5);
+		spoolFilter.connect(spoolBody);
 		const spoolOscs: [OscillatorNode, number][] = [
-			[osc("sawtooth", 70, spoolFilter), 70],
-			[osc("sine", 140.5, spoolFilter), 140.5],
+			[osc("sawtooth", 55, spoolFilter), 55],
+			[osc("sawtooth", 55.6, spoolFilter), 55.6],
+			[osc("square", 110.3, spoolFilter), 110.3],
 		];
+		const flutterDepth = ctx.createGain();
+		flutterDepth.gain.value = 0.3;
+		flutterDepth.connect(spoolBody.gain);
+		const spoolFlutter = osc("sine", 3, flutterDepth);
+		const spoolAir = gain(spool);
+		const spoolAirBand = filter("bandpass", 300, 1.2);
+		spoolAirBand.connect(spoolAir);
+		loop(white, spoolAirBand);
+		const spoolSub = gain(spool);
+		const spoolSubOsc = osc("sine", 32, spoolSub);
+		const spoolWhine = gain(spool);
+		const spoolWhineOsc = osc("sine", 900, spoolWhine);
 
 		// Cruise: both voices and the rush go through one swell, which `drift`
 		// moves, so the bed breathes rather than holding one level.
@@ -629,18 +666,23 @@ export class AudioFX {
 		const band = filter("bandpass", 350, 5);
 		band.connect(shimmer);
 		loop(white, band);
-		const sweep = ctx.createGain();
-		// Detune in cents is what the sweep moves, so its depth is the same
-		// musical interval wherever the speed has put the band.
-		sweep.gain.value = 500;
-		sweep.connect(band.detune);
-		const sweepRate = osc("sine", 0.12, sweep);
+		// No sweep on the band: a ±500-cent sweep was the wah the second
+		// listen heard as pulsing. The drone is exact ratios for the same
+		// reason — a partial a fraction of a hertz off beats against the others.
 		const drone = ctx.createGain();
-		drone.gain.value = 0.5;
+		drone.gain.value = 0.22;
 		drone.connect(shimmer);
-		const droneOscs: [OscillatorNode, number][] = [55, 82.5, 110.2].map(
-			(hz) => [osc("sine", hz, drone), hz],
-		);
+		const droneFilter = filter("lowpass", 200, 0.7);
+		droneFilter.connect(drone);
+		const droneOscs: [OscillatorNode, number][] = [55, 82.5, 110].map((hz) => [
+			osc("sawtooth", hz, droneFilter),
+			hz,
+		]);
+		// Air: a high hiss that only the top of the speed range lets in.
+		const air = gain(cruiseSwell);
+		const airFilter = filter("highpass", 6000, 0.7);
+		airFilter.connect(air);
+		loop(white, airFilter);
 
 		// Cruise, throb: a low pulse, as if the drive were beating through the
 		// hull, quickening with the speed.
@@ -655,7 +697,8 @@ export class AudioFX {
 			[osc("sine", 41.3, throbFilter), 41.3],
 		];
 		const beat = ctx.createGain();
-		beat.gain.value = 0.45;
+		// Shallow: the throb is a beat under the bed, not a tremolo on it.
+		beat.gain.value = 0.18;
 		beat.connect(pulse.gain);
 		const beatRate = osc("sine", 0.9, beat);
 
@@ -673,10 +716,18 @@ export class AudioFX {
 			spool,
 			spoolFilter,
 			spoolOscs,
+			spoolFlutter,
+			spoolAir,
+			spoolAirBand,
+			spoolSub,
+			spoolSubOsc,
+			spoolWhine,
+			spoolWhineOsc,
 			shimmer,
 			band,
-			sweepRate,
+			droneFilter,
 			droneOscs,
+			air,
 			throb,
 			throbFilter,
 			throbOscs,
@@ -993,7 +1044,15 @@ interface FlightGraph {
 	spoolOscs: [OscillatorNode, number][];
 	shimmer: GainNode;
 	band: BiquadFilterNode;
-	sweepRate: OscillatorNode;
+	droneFilter: BiquadFilterNode;
+	air: GainNode;
+	spoolFlutter: OscillatorNode;
+	spoolAir: GainNode;
+	spoolAirBand: BiquadFilterNode;
+	spoolSub: GainNode;
+	spoolSubOsc: OscillatorNode;
+	spoolWhine: GainNode;
+	spoolWhineOsc: OscillatorNode;
 	droneOscs: [OscillatorNode, number][];
 	throb: GainNode;
 	throbFilter: BiquadFilterNode;

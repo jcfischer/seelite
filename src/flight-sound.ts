@@ -102,19 +102,36 @@ export interface FlightReading {
 	readonly cruiseSpeed: number;
 }
 
+/** The share of the bed's travel a cruise at light speed has used. */
+export const CRUISE_C_SHARE = 0.3;
+
 /**
- * Where a cruise speed sits between the regime's floor and its cap, `0`..`1`,
- * on a **log** scale (#544). The range runs 100 km/s to 23 c, nearly five
- * decades, and a linear share would sit at zero for the whole approach and
- * leap at the top: the bed would be the fade in and out the principal heard.
+ * Where a cruise speed sits between the regime's floor and its cap, `0`..`1`
+ * (#544): log, with light speed as the knee.
+ *
+ * A plain log from 100 km/s to 23 c put 1 c at 0.72, so the whole
+ * superluminal range — where a leg spends its time — moved the bed through
+ * its top quarter, and the principal heard no change from 1 to 30 c. Below c
+ * now takes `CRUISE_C_SHARE` of the travel and c to the cap the rest, so 2 c,
+ * 5 c and 20 c are each a step an ear can find. Log on both sides, because a
+ * linear share would sit still for the approach and leap at the top.
  */
 export function cruiseSpeedShare(
 	speedKms: number,
 	vMinKms: number,
+	cKms: number,
 	vMaxKms: number,
 ): number {
-	if (!(speedKms > vMinKms) || !(vMaxKms > vMinKms)) return 0;
-	return clamp01(Math.log(speedKms / vMinKms) / Math.log(vMaxKms / vMinKms));
+	if (!(speedKms > vMinKms) || !(cKms > vMinKms) || !(vMaxKms > cKms)) return 0;
+	if (speedKms <= cKms)
+		return (
+			CRUISE_C_SHARE * (Math.log(speedKms / vMinKms) / Math.log(cKms / vMinKms))
+		);
+	return clamp01(
+		CRUISE_C_SHARE +
+			(1 - CRUISE_C_SHARE) *
+				(Math.log(speedKms / cKms) / Math.log(vMaxKms / cKms)),
+	);
 }
 
 export interface FlightSoundState {

@@ -104,6 +104,14 @@ function flightTimelines() {
 		]),
 		line("flight-cruise-shimmer", 10, "noclicks", cruise),
 		line("flight-cruise-throb", 10, "throb,noclicks", cruise),
+		// The superluminal range in steps, 2 s each: 1, 2, 5, 10, 20 c.
+		line("flight-cruise-c-ladder", 10.5, "noclicks", [
+			[0, { regime: "cruise", lever: 1, cruiseC: 1 }],
+			[2.5, { cruiseC: 2 }],
+			[4.5, { cruiseC: 5 }],
+			[6.5, { cruiseC: 10 }],
+			[8.5, { cruiseC: 20 }],
+		]),
 		// A long burn, then idle: the hull ticks as it cools.
 		line("flight-cooling-clicks", 14, "", [
 			[0, { lever: 1, drive: 1 }],
@@ -250,9 +258,24 @@ export async function renderInPage({
 	}
 	let live = null;
 	if (entry.flight) {
-		const { flightSound, flightSoundArms, QUIET_FLIGHT } = await import(
-			"/src/flight-sound.ts"
-		);
+		const { flightSound, flightSoundArms, QUIET_FLIGHT, cruiseSpeedShare } =
+			await import("/src/flight-sound.ts");
+		const { DEFAULT_CRUISE } = await import("/src/cruise.ts");
+		const { C_KMS } = await import("/src/units.ts");
+		// A key may name a cruise speed in c (`cruiseC`) rather than a share,
+		// and the share is then the game's own mapping of it.
+		const shareOf = (r) =>
+			r.cruiseC === undefined
+				? r
+				: {
+						...r,
+						cruiseSpeed: cruiseSpeedShare(
+							r.cruiseC * C_KMS,
+							DEFAULT_CRUISE.vMinKms,
+							C_KMS,
+							DEFAULT_CRUISE.vMaxKms,
+						),
+					};
 		const { arms, unknown } = flightSoundArms(entry.flight.arms);
 		if (unknown.length || arms === "legacy")
 			throw new Error(`${entry.name}: arms ${entry.flight.arms}`);
@@ -293,7 +316,7 @@ export async function renderInPage({
 			ctx.suspend(leadS + t).then(() => {
 				if (typeof seed === "number") Math.random = seeded;
 				try {
-					const step = flightSound(flight, readingAt(t), arms, dt);
+					const step = flightSound(flight, shareOf(readingAt(t)), arms, dt);
 					flight = step.state;
 					for (const cue of step.cues) fx.play(cue);
 					while (cues.length && cues[0][0] <= t) fx.play(cues.shift()[1]);

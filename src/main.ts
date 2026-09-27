@@ -11959,6 +11959,7 @@ class Game {
 				cruiseSpeed: cruiseSpeedShare(
 					this.cruiseSpeedKms,
 					this.cruiseParams.vMinKms,
+					C_KMS,
 					this.cruiseParams.vMaxKms,
 				),
 			},
