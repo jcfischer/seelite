@@ -11948,7 +11948,8 @@ class Game {
 	 * The ship's loops each frame (#544): `flight-sound.ts` maps this frame's
 	 * flight state to loop levels and regime cues, and `AudioFX.flight` plays
 	 * them. After the step, so the drive and thrust shares are this frame's.
-	 * Not when the clock is held: the loops keep the level they had.
+	 * On a held clock too, where the motion goes quiet and the hum stays; and
+	 * under the opening, where nothing plays.
 	 */
 	private stepFlightSound(dt: number) {
 		if (FLIGHT_SOUND.arms === "legacy") return;
@@ -11973,6 +11974,8 @@ class Game {
 					C_KMS,
 					this.cruiseParams.vMaxKms,
 				),
+				held: this.clockHeld,
+				hushed: this.openingActive,
 			},
 			FLIGHT_SOUND.arms,
 			dt,
@@ -13821,8 +13824,11 @@ class Game {
 				opening.frame(this.openingSim, dt);
 				if (opening.done) this.endOpening();
 			} else this.step(dt);
-			this.stepFlightSound(dt);
 		}
+		// Every frame, paused ones too: a paused burn does not keep its drive
+		// (the principal's ruling on #544), which needs the sound to hear the
+		// pause rather than keep the last level it was given.
+		this.stepFlightSound(this.clockHeld ? 0 : dt);
 		if (this.frameAttribution)
 			this.frameAttribution.recordCpu(
 				"simulation/step",

@@ -303,6 +303,8 @@ export async function renderInPage({
 			rcs: 0,
 			hullShare: 1,
 			cruiseSpeed: 0,
+			held: false,
+			hushed: false,
 		};
 		const readings = entry.flight.keys.map(([t, over]) => {
 			reading = { ...reading, ...over };

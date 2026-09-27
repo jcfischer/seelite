@@ -24,6 +24,8 @@ const flying: FlightReading = {
 	rcs: 0,
 	hullShare: 1,
 	cruiseSpeed: 0,
+	held: false,
+	hushed: false,
 };
 const arms = (over: Partial<FlightSoundArms> = {}): FlightSoundArms => ({
 	...DEFAULT_FLIGHT_ARMS,
@@ -234,4 +236,51 @@ test("the URL picks arms by token, and says what it did not know", () => {
 		arms: { ...DEFAULT_FLIGHT_ARMS, drive: "lever" },
 		unknown: ["loud"],
 	});
+});
+
+test("the opening is silent: no ship sound under it, and no regime cue", () => {
+	// The principal's ruling on #544: no hum under the opening.
+	const step = flightSound(
+		{ ...QUIET_FLIGHT, regime: "spool", heat: 0.9 },
+		{
+			...flying,
+			hushed: true,
+			regime: "cruise",
+			drive: 1,
+			rcs: 1,
+			cruiseSpeed: 1,
+			hullShare: 0,
+		},
+		arms(),
+		0.016,
+	);
+	const m = step.mix;
+	expect([
+		m.hum,
+		m.drive,
+		m.rcs,
+		m.spool,
+		m.cruise,
+		m.clickRate,
+		m.faintClickRate,
+	]).toEqual([0, 0, 0, 0, 0, 0, 0]);
+	expect(step.cues).toEqual([]);
+	// The regime is still tracked, so the first frame after it cues nothing.
+	expect(step.state.regime).toBe("cruise");
+});
+
+test("paused: the motion goes quiet, the ship's own hum and ticks stay", () => {
+	// The principal's ruling on #544: a paused burn does not keep its drive.
+	const held = { ...flying, held: true, drive: 1, rcs: 1, lever: 1 };
+	for (const regime of ["normal", "spool", "cruise"] as const) {
+		const m = flightSound(
+			QUIET_FLIGHT,
+			{ ...held, regime, spool: 0.5, cruiseSpeed: 1 },
+			arms({ drive: "lever" }),
+			0,
+		).mix;
+		expect([m.drive, m.rcs, m.spool, m.cruise]).toEqual([0, 0, 0, 0]);
+		expect(m.hum).toBe(1);
+		expect(m.faintClickRate).toBeGreaterThan(0);
+	}
 });

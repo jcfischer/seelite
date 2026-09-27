@@ -100,6 +100,10 @@ export interface FlightReading {
 	readonly hullShare: number;
 	/** Cruise speed as a share of its range, `0`..`1` (`cruiseSpeedShare`). */
 	readonly cruiseSpeed: number;
+	/** The clock is held — the game is paused. */
+	readonly held: boolean;
+	/** No ship sound at all: the opening is playing. */
+	readonly hushed: boolean;
 }
 
 /** The share of the bed's travel a cruise at light speed has used. */
@@ -173,8 +177,11 @@ export function flightSound(
 		cues.push({ kind: "cruiseDrop" });
 
 	const inCruise = reading.regime === "cruise";
+	// Paused, nothing is moving: the principal's ruling on #544 is that a
+	// paused burn does not keep its drive. The ship's own hum and ticks stay.
+	const moving = !reading.held;
 	const driveNow =
-		reading.docked || inCruise
+		reading.docked || inCruise || !moving
 			? 0
 			: clamp01(arms.drive === "lever" ? reading.lever : reading.drive);
 	// Exact in `dt` for a held input, so a frame rate does not change the heat.
@@ -188,7 +195,7 @@ export function flightSound(
 			CLICK_DAMAGE_PER_S * (1 - clamp01(reading.hullShare))
 		: 0;
 	const faintClickRate = clicking ? FAINT_CLICK_PER_S : 0;
-	const cruiseSpeed = inCruise ? clamp01(reading.cruiseSpeed) : 0;
+	const cruiseSpeed = inCruise && moving ? clamp01(reading.cruiseSpeed) : 0;
 
 	const mix: FlightMix = reading.docked
 		? {
@@ -205,15 +212,39 @@ export function flightSound(
 		: {
 				hum: 1,
 				drive: driveNow,
-				rcs: arms.rcs === "norcs" ? 0 : clamp01(reading.rcs),
-				spool: reading.regime === "spool" ? clamp01(reading.spool) : 0,
-				cruise: inCruise ? CRUISE_FLOOR + (1 - CRUISE_FLOOR) * cruiseSpeed : 0,
+				rcs: arms.rcs === "norcs" || !moving ? 0 : clamp01(reading.rcs),
+				spool:
+					reading.regime === "spool" && moving ? clamp01(reading.spool) : 0,
+				cruise:
+					inCruise && moving
+						? CRUISE_FLOOR + (1 - CRUISE_FLOOR) * cruiseSpeed
+						: 0,
 				cruiseSpeed,
 				cruiseVoice: arms.cruise,
 				clickRate,
 				faintClickRate,
 			};
-	return { state: { regime: reading.regime, heat }, mix, cues };
+	const next = { regime: reading.regime, heat };
+	// The opening is silent, on the principal's ruling on #544: no hum under
+	// it and no regime cue. The regime is still tracked, so the first frame
+	// after it does not cue a change the opening made.
+	if (reading.hushed)
+		return {
+			state: next,
+			mix: {
+				...mix,
+				hum: 0,
+				drive: 0,
+				rcs: 0,
+				spool: 0,
+				cruise: 0,
+				cruiseSpeed: 0,
+				clickRate: 0,
+				faintClickRate: 0,
+			},
+			cues: [],
+		};
+	return { state: next, mix, cues };
 }
 
 const clamp01 = (v: number): number => Math.min(1, Math.max(0, v));

@@ -16,6 +16,7 @@
  * - **a turn fires the thrusters**.
  * - **cruise spools, engages, and drops** — the wind-up rises, the engage and
  *   drop cues go through `Game.play` once each.
+ * - **a pause silences the drive and keeps the hum** — the principal's ruling.
  * - **`?flightsound=legacy` plays the bed before #544 and none of this**.
  */
 import {
@@ -88,6 +89,31 @@ const levels = (page) =>
 		"a burn is heard: the drive is up and the hum is on",
 		burn.graph && burn.mix?.drive > 0.9 && burn.mix?.hum === 1,
 		JSON.stringify(burn.mix),
+	);
+
+	// Paused mid-burn: the principal's ruling on #544 is that the drive
+	// goes quiet and the hum stays. The clock is held, as the pause menu holds it.
+	await page.evaluate(() => {
+		const g = window.__seelite;
+		g.world.ship.vel = { ...g.assistFrame().vel };
+		g.throttle = 1;
+	});
+	await wait(page, 300);
+	const burning = await levels(page);
+	await page.evaluate(() => {
+		window.__seelite.clockHeld = true;
+	});
+	await wait(page, 400);
+	const paused = await levels(page);
+	await page.evaluate(() => {
+		window.__seelite.clockHeld = false;
+	});
+	check(
+		"paused mid-burn: the drive goes quiet and the hum stays",
+		burning.mix?.drive > 0.9 &&
+			paused.mix?.drive === 0 &&
+			paused.mix?.hum === 1,
+		`burning ${burning.mix?.drive}, paused ${JSON.stringify(paused.mix)}`,
 	);
 
 	// At the setpoint: the lever still open, the ship holding its speed.
