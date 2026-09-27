@@ -1189,6 +1189,9 @@ export function run(
 		led.credits -= hop.fuelCr;
 		if (hop.kind === "jump") jumpMinutes += JUMP_SECONDS / 60;
 		dockMinutes += dockSeconds / 60;
+		// Read before the clock moves: `t - hop.seconds` after it is not `t` in
+		// floating point, and a hop would depart one ulp before the last arrived.
+		const departS = t;
 		t += hop.seconds;
 		const arriveMin = t / 60;
 		mark(hop.to.key, -1, arriveMin);
@@ -1203,7 +1206,7 @@ export function run(
 		}
 		opts.onHop?.({
 			kind: hop.kind,
-			departS: t - hop.seconds,
+			departS,
 			arriveS: t,
 			from: here,
 			to: hop.to,
