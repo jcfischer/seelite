@@ -65,7 +65,7 @@ export const PROBE_CATALOG = Object.freeze(
 		),
 		entry(
 			"probe-music.mjs",
-			"Renders the music synth offline through the music bus: the test score in bands, a quantised start and a crossfade on the bar line to the sample against an unquantised control, a request held until the worklet is ready, a stop that fades, a stem swap, the bus as the only music level, and the game loading the synth on the gesture that opens its sound.",
+			"Renders the music synth offline through the music bus: the test score in bands, a quantised start and a crossfade on the bar line to the sample against an unquantised control, a request held until the worklet is ready, a stop that fades, a crossfade's tail and a stem swap by colour, the bus as the only music level, and the game loading the synth on the gesture that opens its sound and sounding it live.",
 			[
 				"audio",
 				"music",

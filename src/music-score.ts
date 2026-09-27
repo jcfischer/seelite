@@ -63,13 +63,17 @@ export interface TempoPoint {
  * (`music-voices.ts`); a part names only what it changes.
  *
  * - `level` — the part's gain, `0`..`1`, before any stem fade.
- * - `attackS`, `decayS`, `sustain`, `releaseS` — the envelope. `decayS` is a
- *   time constant; `sustain` is a share of the peak.
- * - `ratio`, `index` — FM only: the modulator's frequency as a multiple of
- *   the carrier's, and the modulation depth in radians at the peak.
+ * - `attackS`, `decayS`, `sustain`, `releaseS` — the envelope. `attackS` is a
+ *   linear rise to the peak; `decayS` and `releaseS` are each the time to fall
+ *   60 dB, toward `sustain` and toward silence. `sustain` is a share of the
+ *   peak; at 0 a voice ends when its decay does.
+ * - `ratio` — FM: the modulator's frequency as a multiple of the carrier's.
+ *   Tone: the pitch it starts at, as a multiple of the note's, before it
+ *   glides down to it.
+ * - `index` — FM only: the modulation depth in radians at the peak.
  * - `feedback` — FM only: the modulator fed back into itself, in radians.
- * - `cutoffHz` — pad and noise: the filter. Pluck: the brightness of the
- *   pluck's first moment.
+ * - `cutoffHz` — pad: the lowpass. Pluck: the brightness of the pluck's first
+ *   moment. Noise has none: its band is centred on the note's pitch.
  */
 export interface PartSpec {
 	readonly voice: VoiceKind;
@@ -135,8 +139,9 @@ export type Quantum = "bar" | "section";
  * row is the only level the player sets (#542 D1); every gain here is the
  * synth's own, for fades and stems.
  *
- * - `load` — compile a song into a slot, by id. Refused (ignored) while that
- *   id is sounding.
+ * - `load` — compile a song into a slot, by id. Refused while that id is
+ *   sounding, or when the score is malformed: the worklet reports the reason
+ *   back (`MusicReport`) and the controller keeps it in `errors`.
  * - `play` — start `id` at `section` (default its first) on the quantum. A
  *   song already playing stops on the same line: a cut, not a fade.
  * - `crossfade` — start `to` on the quantum, and over `fadeS` seconds fade it

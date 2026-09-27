@@ -31,6 +31,9 @@
  *   **Each has a control that can fail it**: the same request with nothing
  *   playing starts when it arrives, a second earlier, and the row shows that
  *   start falls outside the band.
+ * - **after a crossfade the tail has the new song's colour** — the band row
+ *   for that render reads the waltz intro's centroid, so the handover is read
+ *   on a window long after the fade, beside each song alone.
  * - **a request made before the worklet is ready is held and played from its
  *   top** — D8.
  * - **a stop now fades, then is silence** — D5's pilot taking the stick back.
@@ -44,9 +47,12 @@
  * - **the game loads the synth on the gesture that opens its sound** — D8 in
  *   the running game: not before the first key, ready after it, and no
  *   command refused. It plays nothing; when music plays is #547's and #548's.
+ * - **the synth sounds on the game's live context, and a stop silences it** —
+ *   the one realtime row: the test march read at the music bus by an analyser.
+ *   It does not load the page, so it is not evidence for D4's stall claim.
  *
- * Every row but the last runs on the dev server's tree declaration, an origin
- * for `import("/src/music.ts")`, and boots no game; the last boots it.
+ * Every row but the last two runs on the dev server's tree declaration, an origin
+ * for `import("/src/music.ts")`, and boots no game; the last two boot it.
  */
 import { cueStats, roundStats } from "./lib/audio-stats.mjs";
 import { renderInPage, SOUND_SET } from "./lib/sound-set.mjs";
@@ -304,20 +310,38 @@ try {
 		);
 	}
 
+	/** Brightness of a window, in seconds: the rms of the first difference over
+	 *  the rms, so a level change does not move it and a change of colour does. */
+	const hi = (x, a, b) => {
+		let s = 0;
+		let e = 0;
+		for (let i = Math.round(a * SR) + 1; i < Math.round(b * SR); i++) {
+			const d = x[i] - x[i - 1];
+			s += d * d;
+			e += x[i] * x[i];
+		}
+		return Math.sqrt(s / e);
+	};
+
+	// ── After a crossfade, the new song's colour and not the old one's ──────
+	{
+		// The band row above reads the waltz intro's centroid for this render,
+		// as for the waltz alone, so the handover is read here: the tail, long
+		// after the fade, beside the march alone and the waltz alone.
+		const tail = hi(rendered.get("music-crossfade"), 6.5, 9.9);
+		const march = hi(rendered.get("music-march"), 1, 4.4);
+		const waltz = hi(rendered.get("music-waltz"), 6.5, 9.9);
+		check(
+			"after a crossfade the tail has the new song's colour, not the old one's",
+			Math.abs(tail / march - 1) < 0.15 && Math.abs(tail / waltz - 1) > 0.3,
+			`brightness ${tail.toFixed(4)}; the march alone ${march.toFixed(4)}, the waltz alone ${waltz.toFixed(4)}`,
+		);
+	}
+
 	// ── A stem swap, against the same render without one ────────────────────
 	{
 		const stems = rendered.get("music-stems");
 		const march = rendered.get("music-march");
-		const hi = (x, a, b) => {
-			let s = 0;
-			let e = 0;
-			for (let i = Math.round(a * SR) + 1; i < Math.round(b * SR); i++) {
-				const d = x[i] - x[i - 1];
-				s += d * d;
-				e += x[i] * x[i];
-			}
-			return Math.sqrt(s / e);
-		};
 		// The swap is asked at 3.5 s and lands on the march's next line; the
 		// lead alone before, the arpeggio alone after its 1.5 s fade.
 		const swapped = hi(stems, 6, 7.9) / hi(stems, 1, 3.4);
@@ -376,8 +400,9 @@ try {
 		await bootedGame(game);
 		const before = await game.evaluate(() => window.__seelite.music.ready);
 		// A trusted key press: the game's own unlock listener, which opens the
-		// context and then attaches the synth. Shift is bound to nothing alone.
-		await game.keyboard.press("Shift");
+		// context and then attaches the synth. F8 is bound to nothing
+		// (`DEFAULT_BINDINGS`), so the press does nothing else.
+		await game.keyboard.press("F8");
 		await game
 			.waitForFunction(() => window.__seelite.music.ready, null, {
 				timeout: 5000,
@@ -395,6 +420,45 @@ try {
 			"the game loads the synth on the gesture that opens its sound",
 			before === false && after.ready && after.errors.length === 0,
 			`ready ${before} before the key, ${after.ready} after; context ${after.state}; errors ${after.errors.length}`,
+		);
+		// Realtime, once: every row above renders offline. The test march
+		// through the game's own synth, read at the music bus by an analyser
+		// the probe adds, then stopped. It shows the worklet sounds on a live
+		// context; it does not load the page to test D4's claim that a stall
+		// cannot make a note late.
+		const live = await game.evaluate(async () => {
+			const g = window.__seelite;
+			const { TEST_MARCH } = await import("/src/music-test-score.ts");
+			const ctx = g.audio.context;
+			const tap = ctx.createAnalyser();
+			tap.fftSize = 2048;
+			g.audio.musicInput.connect(tap);
+			const level = () => {
+				const x = new Float32Array(tap.fftSize);
+				tap.getFloatTimeDomainData(x);
+				return Math.sqrt(x.reduce((s, v) => s + v * v, 0) / x.length);
+			};
+			const quiet = level();
+			g.music.load("probe-march", TEST_MARCH);
+			g.music.play("probe-march");
+			let heard = 0;
+			for (let i = 0; i < 20 && heard === 0; i++) {
+				await new Promise((r) => setTimeout(r, 100));
+				heard = level();
+			}
+			g.music.stop("now", 0.1);
+			await new Promise((r) => setTimeout(r, 400));
+			const after = level();
+			g.audio.musicInput.disconnect(tap);
+			return { quiet, heard, after, errors: g.music.errors };
+		});
+		check(
+			"the synth sounds on the game's live context, and a stop silences it",
+			live.quiet === 0 &&
+				live.heard > 1e-3 &&
+				live.after === 0 &&
+				live.errors.length === 0,
+			`rms at the music bus ${live.quiet} before, ${live.heard.toFixed(4)} playing, ${live.after} after the stop`,
 		);
 		await game.close();
 	}

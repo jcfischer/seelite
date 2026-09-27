@@ -11,8 +11,9 @@
  * `?worker&url`, so vite bundles it and everything it imports into one
  * hashed, self-contained script and hands back its same-origin URL, which
  * `addModule` loads. `new URL("./music-worklet.ts", import.meta.url)` was
- * the other form, and it is wrong here: vite copies a file named that way as
- * an asset, untranspiled, so the build would ship TypeScript to the browser.
+ * the other form, and it is wrong here: built in a scratch project, vite
+ * inlined the file as a base64 `data:video/mp2t` URL of its raw TypeScript —
+ * untranspiled, not a file of the bundle, and typed as an MPEG stream.
  *
  * **`sampleRate` is read once**, here, in the constructor (#541: 6.3x per
  * sample), and handed to the engine.

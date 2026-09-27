@@ -86,32 +86,28 @@ test("every flight arm is flown by some timeline, or says why not", () => {
 		expect(flown.has(v)).toBe(false);
 });
 
-/** Transport moves with no render, each with its reason. */
-const MOVES_NOT_RENDERED: Partial<Record<MusicCommand["type"], string>> = {
+/**
+ * Every transport move: `true` where a render scripts it for the ear, or the
+ * reason none does. A `Record` over the whole union, so a move added to
+ * `MusicCommand` with no entry here is a type error rather than a gap.
+ */
+const MOVES: Record<MusicCommand["type"], true | string> = {
+	load: "is sent for every render's songs before its script, not in it",
+	play: true,
+	crossfade: true,
 	jump: "is the same line arithmetic as resolve, which the waltz renders",
+	resolve: true,
+	stop: true,
+	stem: true,
+	tempo: true,
+	sync: "moves nothing: the render sends it around every scripted command",
 };
 
 test("every transport move is rendered for the ear, or says why not (#560)", () => {
 	const music = SOUND_SET.flatMap((e) => (e.music ? [e.music] : []));
 	const sent = new Set(music.flatMap((m) => m.script.map(([, c]) => c.type)));
-	const moves: MusicCommand["type"][] = [
-		"load",
-		"play",
-		"crossfade",
-		"jump",
-		"resolve",
-		"stop",
-		"stem",
-		"tempo",
-	];
-	for (const move of moves)
-		if (move !== "load")
-			expect([move, sent.has(move) || move in MOVES_NOT_RENDERED]).toEqual([
-				move,
-				true,
-			]);
-	for (const move of Object.keys(MOVES_NOT_RENDERED))
-		expect(sent.has(move)).toBe(false);
+	for (const [move, why] of Object.entries(MOVES))
+		expect([move, sent.has(move)]).toEqual([move, why === true]);
 	// And every song a render names is in the test score.
 	for (const m of music)
 		for (const song of Object.values(m.songs))
