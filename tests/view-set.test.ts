@@ -169,13 +169,15 @@ describe("the view set itself", () => {
 		// the Controls tab open and folded, thirty-eight with #532's witchspace
 		// strip, forty-six since #535 added the opening's, forty-eight since the
 		// principal split its approach into a planet fly-by and a station approach,
-		// forty-nine with the rift forming before the arrival. (#432 added a twenty-ninth and removed it
+		// forty-nine with the rift forming before the arrival, fifty-two with
+		// #537's cruise rows, fifty-four since #540 added the galaxy chart's
+		// crowded and isolated hover. (#432 added a twenty-ninth and removed it
 		// in the same PR; #480 put one back, in the other role. Why both happened is
 		// told once, in the note beside `sky-at-the-rim`, and not here.) A literal and
 		// not `VIEWS.length`, which is the whole point: a view deleted by accident
 		// has to be a red run, and a check derived from its own subject cannot be
 		// one.
-		expect(VIEWS.length).toBe(52);
+		expect(VIEWS.length).toBe(54);
 		const names = VIEWS.map((v) => v.name);
 		expect(new Set(names).size).toBe(names.length);
 		for (const name of names) expect(name).toMatch(/^[a-z]+(-[a-z]+)*$/);
@@ -362,6 +364,52 @@ describe("the view set itself", () => {
 		expect(uncoveredLevers(without)).toEqual([105]);
 	});
 
+	/**
+	 * #540's two rows are the only views of the chart, so dropping them has to
+	 * bring 112 back — and dropping either one alone must not, because the other
+	 * still carries it. That second half is what says the two are a pair rather
+	 * than one row counted twice.
+	 */
+	test("coverage goes red for the hover label when both chart rows go", () => {
+		const chart = VIEWS.filter((v) => v.shot.kind === "chart");
+		expect(chart.map((v) => v.name)).toEqual([
+			"chart-hover-crowded",
+			"chart-hover-isolated",
+		]);
+		for (const v of chart) expect(v.covers).toEqual([112]);
+		expect(uncoveredLevers(VIEWS.filter((v) => !chart.includes(v)))).toEqual([
+			112,
+		]);
+		for (const one of chart)
+			expect(uncoveredLevers(VIEWS.filter((v) => v !== one))).toEqual([]);
+	});
+
+	test("a chart row names which hover it frames, and nothing else passes", () => {
+		const row = (name: string, spot: unknown) => ({
+			name,
+			shot: { kind: "chart", view: "cockpit", spot },
+		});
+		expect(
+			malformedShots([
+				row("crowded", "crowded"),
+				row("isolated", "isolated"),
+				row("unnamed", undefined),
+				row("misspelt", "crowd"),
+			]),
+		).toEqual(["unnamed", "misspelt"]);
+	});
+
+	/**
+	 * **Each caption owes the reader the rule it cannot show** (#177 D3). A
+	 * still frame holds the label's look; hold, switch and release are the
+	 * probe's, and a caption that said nothing would let the sheet read as
+	 * evidence for the rule too.
+	 */
+	test("each chart caption says the probe holds hold, switch and release", () => {
+		for (const v of VIEWS.filter((v) => v.shot.kind === "chart"))
+			expect(v.what).toContain("probe-navigation-console.mjs");
+	});
+
 	test("the fixture is pinned: one seed, one clock, one viewport", () => {
 		expect(Number.isInteger(SEED)).toBe(true);
 		expect(GAME_TIME_S).toBe(0);
@@ -473,7 +521,7 @@ describe("the contact sheet", () => {
 		// The fixture spaces its frames 0.4 s apart, so the span is fixed by how
 		// many views the set declares — which is the count row's business, not this
 		// one's, and this literal moves with it.
-		expect(html).toContain("· clock 0.6–21.0s");
+		expect(html).toContain("· clock 0.6–21.8s");
 		expect(html).not.toContain("pinned");
 	});
 

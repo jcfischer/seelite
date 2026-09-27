@@ -55,6 +55,7 @@ import {
 	VIEWS,
 	contactSheet,
 } from "./lib/view-set.mjs";
+import { requireChartSpot } from "./lib/chart-hover-spot.mjs";
 import { assertPlayersRenderer } from "./lib/players-renderer.mjs";
 import { installViewFraming } from "./lib/view-placement.mjs";
 import { installCruiseLeg } from "./lib/cruise-page.mjs";
@@ -249,6 +250,73 @@ function assertPlacersCover(placers) {
 				`${missing.length ? `no placer for ${missing.join(", ")}; ` : ""}` +
 				`${extra.length ? `no SHOT_KINDS entry for ${extra.join(", ")}` : ""}`,
 		);
+}
+
+/**
+ * The spot the chart row being captured aimed at — its index and the badge
+ * count predicted there — for the readbacks either side of the shutter. Set by
+ * the `chart` placer and cleared at the top of every view, so a row that did not
+ * run the placer cannot be checked against another row's aim (sage round 1).
+ */
+let chartAimed = null;
+
+/**
+ * The chart's hover, read as state and as the drawn label, and refused unless
+ * both describe the hover the row is captioned for.
+ *
+ * **Read three times: after the move, and on both sides of the screenshot.**
+ * The first full capture of #540 passed the placer's readback and wrote two
+ * frames with no label in them at all — the hover was dropped between the
+ * placer and the screenshot, and nothing looked. The cause was not reproduced
+ * across two further runs; a headed window takes real pointer events from
+ * whoever is at the machine, and any of those clears it.
+ *
+ * One read before the screenshot leaves the gap after it (sage round 2), so
+ * the loop reads again once the frame is written. What the pair proves rests
+ * on the chart: a cleared hover does not come back until the pointer moves
+ * again, because `clearHover` drops the remembered position with it. So a
+ * label up on both sides was up during the frame — unless a pointer event
+ * cleared it and re-set it in between, which the second read catches unless it
+ * landed on the same system, and then the frame is still the one captioned.
+ *
+ * **The badge is checked against the prediction**, not only against the
+ * label's own text (sage round 1): the chart's `contested` read against its own
+ * label can only catch a label that disagrees with itself, so a build that
+ * miscounts — a clipped system counted, say — would pass.
+ *
+ * `checkVisibility` rather than the element's `display`, because a hidden
+ * ancestor leaves `display` reading `block` over a label nobody can see.
+ */
+async function assertChartHover(page, where, shot, aimed) {
+	if (aimed === null)
+		throw new Error(
+			`chart placer (${where}): the ${shot.spot} row has no aim to check — the placer did not run for it`,
+		);
+	const got = await page.evaluate(() => {
+		const el = document.querySelector("[data-map-hover]");
+		return {
+			hovered: window.__seeliteGalaxyMap?.hovered() ?? null,
+			shown: el instanceof HTMLElement && el.checkVisibility(),
+			text: el?.textContent ?? "",
+			events: (window.__captureEvents ?? []).slice(-8),
+		};
+	});
+	const { hovered } = got;
+	const recent = ` — the last events the page saw: ${JSON.stringify(got.events)}`;
+	if (hovered === null || hovered.index !== aimed.index || !got.shown)
+		throw new Error(
+			`chart placer (${where}): aimed at system ${aimed.index} for the ${shot.spot} row and the chart labelled ${hovered === null ? "nothing" : `system ${hovered.index}`}${got.shown ? "" : ", with no label drawn"}${recent}`,
+		);
+	const badged =
+		hovered.contested === aimed.contested &&
+		(aimed.contested > 0
+			? got.text.includes(`(${aimed.contested} more)`)
+			: !got.text.includes("more)"));
+	if (!badged)
+		throw new Error(
+			`chart placer (${where}): the ${shot.spot} row predicted ${aimed.contested} more, the chart counts ${hovered.contested} and its label reads "${got.text}"${recent}`,
+		);
+	return hovered;
 }
 
 /** One placer per shot kind. Each returns the subject it framed, for the log. */
@@ -618,6 +686,99 @@ const PLACERS = {
 		return `Controls tab${shot.folded?.length ? ` · folded ${shot.folded.join(", ")}` : ""}`;
 	},
 	/**
+	 * #177's hover label, with a player's pointer (D4). The spot comes from the
+	 * chart's own projection at run time — `lib/chart-hover-spot.mjs` picks it,
+	 * independently of the hover rule it is checking — and `page.mouse` moves
+	 * there, the way `probe-navigation-console.mjs` does. An in-page
+	 * `PointerEvent` was rejected: it is not a player's pointer (#370).
+	 *
+	 * **Read back by index, and the badge with it.** Names are not unique per
+	 * galaxy, so the label's text cannot say which system it names. A `null`, a
+	 * different index, or a badge the row's caption does not describe throws,
+	 * so no sheet is built over a frame captioned for another hover.
+	 */
+	chart: async (page, shot) => {
+		const frames = () =>
+			page.evaluate(
+				() =>
+					new Promise((r) =>
+						requestAnimationFrame(() => requestAnimationFrame(() => r())),
+					),
+			);
+		// **The pointer starts off the canvas** — the capture loop parks it in the
+		// corner before every view. Both rows share a page and the chart's hover
+		// holds its last system within a release radius, so the second row would
+		// otherwise begin with the first row's label held. The readback below
+		// confirms nothing is labelled before the pointer moves.
+		await page.evaluate(async () => {
+			await window.__returnToBootPosition();
+			window.__seelite.setHeadLook("left");
+		});
+		await page.waitForFunction(
+			() =>
+				document
+					.querySelector("[data-live-cockpit]")
+					?.getAttribute("data-live-head-look") === "left",
+		);
+		// The Galaxy Map tab of the Navigation console, clicked as the probe
+		// clicks it. Not a field assignment: the tab mounts the chart.
+		await page.evaluate(() => {
+			const tab = document.querySelector('[data-live-left-tab="Galaxy Map"]');
+			if (!(tab instanceof HTMLElement))
+				throw new Error("chart placer: no Galaxy Map tab on this build");
+			tab.click();
+		});
+		await page.waitForFunction(
+			() =>
+				document
+					.querySelector("[data-live-cockpit]")
+					?.getAttribute("data-live-left-view") === "Galaxy Map" &&
+				!!window.__seeliteGalaxyMap,
+		);
+		// The documented default framing and no selection: a selection draws a
+		// card, and a card beside the label is a different picture. The probe's
+		// hover section starts from the same state.
+		await page.evaluate(() => {
+			const map = window.__seeliteGalaxyMap;
+			map.select(null);
+			map.resetView();
+		});
+		await frames();
+		const layout = await page.evaluate(() => {
+			const map = window.__seeliteGalaxyMap;
+			const box = map.viewport();
+			return {
+				points: map.projected(),
+				box,
+				pickRadiusPx: map.pickRadiusPx,
+				held: map.hovered(),
+			};
+		});
+		if (layout.held !== null)
+			throw new Error(
+				`chart placer: ${JSON.stringify(layout.held)} was still labelled with the pointer off the chart`,
+			);
+		const spot = requireChartSpot(
+			layout.points,
+			{
+				pickRadiusPx: layout.pickRadiusPx,
+				width: layout.box.width,
+				height: layout.box.height,
+			},
+			shot.spot,
+		);
+		// Declared first, so the filter above is on before the move arrives.
+		const at = { x: layout.box.left + spot.x, y: layout.box.top + spot.y };
+		await page.evaluate((own) => {
+			window.__capturePointer = own;
+		}, at);
+		await page.mouse.move(at.x, at.y);
+		await frames();
+		const hovered = await assertChartHover(page, "placed", shot, spot);
+		chartAimed = spot;
+		return `Galaxy Map · ${shot.spot} · system ${hovered.index}${hovered.contested ? ` (${hovered.contested} more)` : ""}`;
+	},
+	/**
 	 * #532's strip. The clock is held first — the capture loop lets it run,
 	 * and a held phase before the cut with a running charge would fire the
 	 * jump during the settle frames — and a phase from the cut on is taken
@@ -870,6 +1031,72 @@ page.on("console", (m) => {
 page.on("pageerror", (e) => faulted(`page error: ${e.message}`));
 
 await installViewPlacement(page);
+/**
+ * **While a chart row owns the pointer, the page sees only the capture's
+ * pointer** — and it keeps a log of what it saw, for the chart rows' errors.
+ *
+ * A headed window also receives the physical cursor. During #540 a trusted
+ * `pointerleave` reached the chart canvas at (733.2, 623.8), 62 ms after the
+ * placer's move, at a coordinate no script used; every other pointer action in
+ * this script is a coordinate-free DOM `click()`. It cleared the label in two
+ * of six captures while the cursor wandered, and in three of three once it
+ * rested over the window. So the chart rows' frame depended on where the person
+ * running the capture had left their mouse.
+ *
+ * The chart placer declares where it put the pointer in
+ * `window.__capturePointer`, and this capture-phase listener on `window`
+ * stops any pointer or mouse event more than half a pixel from there before the
+ * canvas sees it — non-bubbling `pointerleave` included, since the capture
+ * phase runs through `window` for every event. The loop sets the declaration
+ * at the top of every view — the park position for a chart row, `null` for
+ * any other — so no other row is filtered. Dropped
+ * events are logged with `dropped: true`, so a failure still shows them.
+ */
+await page.addInitScript(() => {
+	const log = [];
+	window.__captureEvents = log;
+	window.__capturePointer = null;
+	const pointerish = new Set([
+		"pointermove",
+		"pointerover",
+		"pointerout",
+		"pointerenter",
+		"pointerleave",
+		"mousemove",
+		"mouseover",
+		"mouseout",
+		"mouseenter",
+		"mouseleave",
+	]);
+	for (const type of [...pointerish, "blur", "focus", "visibilitychange"])
+		window.addEventListener(
+			type,
+			(e) => {
+				const own = window.__capturePointer;
+				const dropped =
+					own !== null &&
+					pointerish.has(type) &&
+					Math.hypot(e.clientX - own.x, e.clientY - own.y) > 0.5;
+				if (dropped) e.stopImmediatePropagation();
+				if (type.startsWith("mouse") && !dropped) return;
+				const t = e.target;
+				log.push({
+					type,
+					x: e.clientX,
+					y: e.clientY,
+					trusted: e.isTrusted,
+					dropped,
+					target:
+						t instanceof Element
+							? `${t.tagName.toLowerCase()}${t.id ? `#${t.id}` : ""}`
+							: String(t),
+					atMs: Math.round(performance.now()),
+				});
+				if (log.length > 16) log.shift();
+			},
+			{ capture: true },
+		);
+});
 await installViewFraming(page);
 await page.goto(gameUrl(SERVING, { seed: SEED, raider: "off" }), {
 	waitUntil: "load",
@@ -915,6 +1142,23 @@ try {
 				.querySelector("[data-capture-modal] [data-capture-cancel]")
 				?.click();
 		});
+		// **And the pointer comes off whatever the previous view left it on.**
+		// The chart rows are the only ones that move it (#540); every row after
+		// them was framed with a pointer that never moved, and a cursor resting
+		// over the cockpit's DOM puts a `:hover` into a frame that has nothing to
+		// do with the chart. The chart placer relies on it to start unlabelled.
+		// A chart row owns the pointer from the park on, so the filter never lapses
+		// while the chart may be mounted: released first, the physical cursor got
+		// in between the park and the placer and left another system labelled.
+		// Every other row is released.
+		await page.evaluate(
+			(own) => {
+				window.__capturePointer = own;
+			},
+			view.shot.kind === "chart" ? { x: 0, y: 0 } : null,
+		);
+		await page.mouse.move(0, 0);
+		chartAimed = null;
 		// **Not on the workbench**, which has no view cycle: `v` there is an
 		// unbound key, so `setView` would press it eight times and then throw
 		// about a view the game does not have — on a page that is not the game.
@@ -996,6 +1240,10 @@ try {
 				`${view.name}: ${unbaked.join(", ")} can bake and hold no cube — the ` +
 					'frame would show the procedural program under an "after" label',
 			);
+		// The chart's second readback, after the settle and the bake wait: the
+		// label the placer confirmed has to still be drawn when the frame is.
+		if (view.shot.kind === "chart")
+			await assertChartHover(page, "before the shutter", view.shot, chartAimed);
 		const file = `${LABEL}/${view.name}.png`;
 		// Read at the shutter, not at the top of the run: the clock is normalised
 		// and then left to run, so each frame has its own. The sheet prints the
@@ -1010,9 +1258,24 @@ try {
 			() => window.__seelite?.world.gameTime ?? null,
 		);
 		await page.screenshot({ path: join(OUT, file) });
+		// And after it: a hover lost between the read above and the shutter would
+		// otherwise ship an unlabelled frame under a green run (sage round 2). The
+		// PNG is on disk by now; the throw stops the manifest and the sheet.
+		if (view.shot.kind === "chart")
+			await assertChartHover(page, "after the shutter", view.shot, chartAimed);
 		captured.push({ name: view.name, file, subject, gameTime });
+		// A chart row says how many foreign pointer events the filter dropped, so
+		// a green run shows whether the physical cursor was in play at all. The
+		// log keeps the last sixteen, so the count is a floor.
+		const foreign =
+			view.shot.kind === "chart"
+				? await page.evaluate(
+						() =>
+							(window.__captureEvents ?? []).filter((e) => e.dropped).length,
+					)
+				: null;
 		console.log(
-			`  ${view.name.padEnd(20)} ${view.shot.view.padEnd(8)} ${subject}`,
+			`  ${view.name.padEnd(20)} ${view.shot.view.padEnd(8)} ${subject}${foreign ? ` · ${foreign} foreign pointer events dropped` : ""}`,
 		);
 	}
 } finally {
