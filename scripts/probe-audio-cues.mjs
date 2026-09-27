@@ -11,9 +11,16 @@
  *
  * **Bands, never a hash** (#541, and the map's Constraints). Each cue is
  * rendered with a seeded `Math.random` (`renderInPage`'s `seed`), so one
- * engine gives one waveform; the bands are wide enough to hold across engines
- * and across the seeds a later sound node might pick, and narrow enough that a
- * cue routed nowhere, doubled, or turned into a different sound falls out.
+ * engine gives one waveform; the bands are wide enough to hold across the seeds
+ * a later sound node might pick, and narrow enough that a cue routed nowhere,
+ * or made louder or softer by a fifth, falls out.
+ *
+ * **A centroid is a poor ear for pitch.** A square wave's centroid is set by
+ * its harmonics up to the 16 kHz cap more than by its fundamental: the laser
+ * an octave up moved it 10%, from 4178 to 4590 Hz, which is why the noise
+ * cues' centroid band is ±7% and not wider. A smaller change of pitch passes
+ * here. The capture is what shows one: `npm run sounds` at two refs renders
+ * the pair sample for sample.
  *
  * What each check is evidence for:
  *
@@ -86,7 +93,7 @@ const BANDS = Object.fromEntries(
 	Object.entries(MAIN).map(([name, m]) => {
 		const [lo, hi] = m.bed ? [0.7, 1.4] : m.noise ? [0.8, 1.25] : [0.9, 1.1];
 		const [plo, phi] = m.bed || m.noise ? [0.6, 1.6] : [0.9, 1.1];
-		const [clo, chi] = m.bed ? [0.6, 1.5] : m.noise ? [0.85, 1.15] : [0.9, 1.1];
+		const [clo, chi] = m.bed ? [0.6, 1.5] : m.noise ? [0.93, 1.07] : [0.9, 1.1];
 		return [
 			name,
 			{
