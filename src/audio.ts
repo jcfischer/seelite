@@ -365,8 +365,11 @@ export class AudioFX {
 
 	/** The ship's loops (#544), built on the first frame that has any to play. */
 	private flightGraph: FlightGraph | null = null;
-	/** Each loop's last level written, so gains are written on change. */
+	/** The last mix asked for. */
 	private flightLevels: FlightMix | null = null;
+	/** Each group's levels as last **written** to its gains: what `flight`
+	 *  compares a new mix against, and what a probe reads. */
+	private readonly flightWritten: Partial<FlightMix> = {};
 	/** The audio clock at the last `flight` call: the span clicks are drawn over. */
 	private flightAt = -1;
 	/** When the loops next wander (`drift`), on the audio clock. */
@@ -405,9 +408,28 @@ export class AudioFX {
 			this.flightGraph = this.makeFlightGraph(this.ctx, this.buses.ship);
 		}
 		const g = this.flightGraph;
-		const was = this.flightLevels;
-		const moved = (key: keyof FlightMix) =>
-			!was || Math.abs((mix[key] as number) - (was[key] as number)) >= 0.005;
+		// **Against what was last written, not last frame** (sage round 1). A
+		// level that moves less than the threshold every frame — cruise speed
+		// through a leg, a three-second spool at 60 fps — never differs from the
+		// frame before by enough, so comparing with the frame before froze the
+		// bed and the wind-up at their first value. A group's keys are recorded
+		// together, when that group is written.
+		const w = this.flightWritten;
+		const moved = (...keys: (keyof FlightMix)[]) => {
+			const due = keys.some((k) => {
+				const want = mix[k];
+				const had = w[k];
+				if (had === undefined) return true;
+				// Silence is always written: a loop fading out must reach 0 and
+				// not rest a threshold short of it.
+				if (want === 0 && had !== 0) return true;
+				return typeof want === "number"
+					? Math.abs(want - (had as number)) >= 0.005
+					: want !== had;
+			});
+			if (due) for (const k of keys) (w as Record<string, unknown>)[k] = mix[k];
+			return due;
+		};
 		// About the rms of the level the principal settled on after "too loud";
 		// noise through narrow bands passes less than the tone it replaced.
 		if (moved("hum")) g.hum.gain.setTargetAtTime(0.048 * mix.hum, t, 0.3);
@@ -444,11 +466,7 @@ export class AudioFX {
 		}
 		// Cruise follows the speed, and quickly: the first listen heard a bed
 		// that faded in and out on a third of a second whatever the ship did.
-		if (
-			moved("cruise") ||
-			moved("cruiseSpeed") ||
-			was?.cruiseVoice !== mix.cruiseVoice
-		) {
+		if (moved("cruise", "cruiseSpeed", "cruiseVoice")) {
 			const on = 0.09 * mix.cruise;
 			const s = mix.cruiseSpeed;
 			const shimmer = mix.cruiseVoice === "shimmer";
@@ -535,8 +553,6 @@ export class AudioFX {
 		const brown = noiseLoop(ctx, "brown");
 		const white = noiseLoop(ctx, "white");
 
-		// The hum: one low sawtooth, rolled off so its harmonics carry it on a
-		// laptop speaker that cannot reach 48 Hz, breathing slowly.
 		// The hum is **machinery**, not mains: the first cut was a 48 Hz
 		// sawtooth and its octave, which the principal heard as "too electric".
 		// Now it is noise through the hull's low resonances, a pump churning at

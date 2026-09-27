@@ -95,9 +95,9 @@ const MAIN = {
 
 /**
  * #544's cues and loops, which `origin/main` does not have: centred on this
- * branch's render after the principal's first listen (`npm run sounds --
- * --label after4`, seed 552). So these bands hold the prototype to what the
- * principal listens to, and move when the ear moves it. Every flight timeline takes the bed's wide band:
+ * branch's own render (`npm run sounds -- --label after4`, seed 552), taken
+ * after the principal's third listen. So these bands hold the prototype to what
+ * the principal listens to, and move when the ear moves it. Every flight timeline takes the bed's wide band:
  * each carries noise loops, and most carry clicks, whose count moves with the
  * seed.
  */
@@ -384,14 +384,27 @@ try {
 		rungs.every((r, i) => i === 0 || r > rungs[i - 1] * LADDER_MIN_STEP),
 		rungs.map((r) => r.toFixed(5)).join(" < "),
 	);
-	const idleMuted = await Promise.all(
+	// Muted **while the loops play** (sage round 1): muted from the first
+	// sample, the engine builds no graph at all, so a row reading silence
+	// there passes whether or not a mute reaches a running loop. Each arm
+	// plays two seconds, then goes Off; the loops must be heard before it and
+	// be silent once the bus's fade has settled.
+	const mutedLive = await Promise.all(
 		[{ master: 0 }, { ship: 0 }].map((levels) =>
-			raw("flight-idle", { levels }),
+			raw("flight-idle", { levelsAt: [[2, levels]] }),
 		),
 	);
 	check(
-		"master Off and ship Off each silence the flight loops",
-		idleMuted.every((x) => x.every((v) => v === 0)),
+		"master Off and ship Off each silence flight loops already playing",
+		mutedLive.every(
+			(x) => windowRms(x, [1, 1.9]) > 1e-3 && windowRms(x, [2.5, 3.9]) < 1e-5,
+		),
+		mutedLive
+			.map(
+				(x) =>
+					`${windowRms(x, [1, 1.9]).toExponential(2)} then ${windowRms(x, [2.5, 3.9]).toExponential(2)}`,
+			)
+			.join("; "),
 	);
 
 	const laser = SOUND_SET.find((e) => e.name === "laser");

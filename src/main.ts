@@ -10894,6 +10894,13 @@ class Game {
 		this.occlusionGate = CLOSED_GATE;
 		this.applyOcclusion();
 
+		// #544's thrust shares: a reset is a ship at rest, and the flight sound
+		// may read them on a frame that runs no step (the opening steps on its
+		// own schedule).
+		this.driveShare = 0;
+		this.lateralShare = 0;
+		this.rotationShare = 0;
+
 		// A boot has no jump charging, so a reset has none either.
 		// `resetWorldToStart` rebuilds the start system when the ship is
 		// elsewhere, so this method is total after a jump too — it was not, for

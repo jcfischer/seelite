@@ -67,6 +67,15 @@ function flightTimelines() {
 		[0.5, { lever: 1, drive: 1 }],
 		[3, { drive: 0 }],
 	];
+	// Shared by the thruster row's two renders, which it compares: one copy,
+	// so the two cannot drift apart.
+	const rcs = [
+		[0, {}],
+		[0.3, { rcs: 1 }],
+		[0.8, { rcs: 0 }],
+		[1.5, { rcs: 0.5 }],
+		[1.7, { rcs: 0 }],
+	];
 	const cruise = [
 		[0, { lever: 0.3 }],
 		[0.5, { regime: "spool", spool: 0 }],
@@ -88,20 +97,8 @@ function flightTimelines() {
 		line("flight-idle", 4, "", [[0, {}]]),
 		line("flight-burn-thrust", 6, "noclicks", burn),
 		line("flight-burn-lever", 6, "lever,noclicks", burn),
-		line("flight-rcs", 3, "noclicks", [
-			[0, {}],
-			[0.3, { rcs: 1 }],
-			[0.8, { rcs: 0 }],
-			[1.5, { rcs: 0.5 }],
-			[1.7, { rcs: 0 }],
-		]),
-		line("flight-rcs-norcs", 3, "norcs,noclicks", [
-			[0, {}],
-			[0.3, { rcs: 1 }],
-			[0.8, { rcs: 0 }],
-			[1.5, { rcs: 0.5 }],
-			[1.7, { rcs: 0 }],
-		]),
+		line("flight-rcs", 3, "noclicks", rcs),
+		line("flight-rcs-norcs", 3, "norcs,noclicks", rcs),
 		line("flight-cruise-shimmer", 10, "noclicks", cruise),
 		line("flight-cruise-throb", 10, "throb,noclicks", cruise),
 		// The superluminal range in steps, 2 s each: 1, 2, 5, 10, 20 c.
@@ -145,6 +142,8 @@ function flightTimelines() {
  * - `bypassLimiter` — the engine's master is wired straight to the speakers,
  *   so a probe can read what the limiter did to a cue.
  * - `levels` — settings steps per bus, applied before the cue.
+ * - `levelsAt` — `[seconds, levels]` applied during a flight timeline, so a
+ *   mute can be tested on loops that are already playing (#544).
  * - `repeat`, `spacingS` — play the cue this many times, `spacingS` apart
  *   (0: at one instant). A burst.
  * - `uncapped` — the engine's voice pool is replaced by one with no caps: the
@@ -173,6 +172,7 @@ export async function renderInPage({
 	spacingS = 0,
 	leadS = 0.5,
 	uncapped = false,
+	levelsAt = [],
 }) {
 	const { AudioFX } = await import("/src/audio.ts");
 	const { WITCHSPACE } = await import("/src/witchspace.ts");
@@ -309,6 +309,7 @@ export async function renderInPage({
 		};
 		const dt = 1 / 50;
 		const cues = [...entry.flight.cues];
+		const setAt = [...levelsAt];
 		let flight = QUIET_FLIGHT;
 		const random = Math.random;
 		for (let i = 0; i * dt < seconds; i++) {
@@ -320,6 +321,9 @@ export async function renderInPage({
 					flight = step.state;
 					for (const cue of step.cues) fx.play(cue);
 					while (cues.length && cues[0][0] <= t) fx.play(cues.shift()[1]);
+					while (setAt.length && setAt[0][0] <= t)
+						for (const [bus, step] of Object.entries(setAt.shift()[1]))
+							fx.setLevel(bus, step);
 					fx.flight(step.mix);
 				} finally {
 					Math.random = random;

@@ -8,6 +8,7 @@ import {
 	ASSIST_CAP_KMS,
 	type FlightPerformance,
 	rotationShare,
+	stepFlight,
 	thrustShares,
 } from "../src/sim";
 
@@ -97,4 +98,42 @@ test("rotation: the change of rate against full authority", () => {
 		1,
 	);
 	expect(rotationShare(still, full, 0, perf)).toBe(0);
+});
+
+test("the shares match what stepFlight applies", () => {
+	// Sage round 1: `thrustShares` restates the assist's law, so a change to
+	// the law could leave the drive sound out of step with flight. This flies
+	// the step and holds the share to the change it actually made.
+	const cases = [
+		{ vel: { x: 0, y: 0, z: 0 }, throttle: 1, assist: true },
+		{ vel: { x: 0, y: 0, z: ASSIST_CAP_KMS }, throttle: 0.5, assist: true },
+		{ vel: { x: 0, y: 0, z: 1.99 }, throttle: 1, assist: true },
+		// Half a step short of the setpoint: the one case no clamp hides, so
+		// a share that moved off the law's setpoint reads differently here.
+		{
+			vel: { x: 0, y: 0, z: ASSIST_CAP_KMS - 0.5 * perf.thrustKms2 * dt },
+			throttle: 1,
+			assist: true,
+		},
+		{ vel: { x: 0.8, y: 0, z: 0.5 }, throttle: 0.5, assist: true },
+		{ vel: { x: 1, y: 0, z: 2 }, throttle: 0.4, assist: false },
+	];
+	for (const c of cases) {
+		const control = { nose, throttle: c.throttle, assist: c.assist };
+		const s = ship({ ...c.vel });
+		const shares = thrustShares(s, control, dt, perf);
+		const before = { ...s.vel };
+		stepFlight(s, control, dt, perf);
+		const authority = perf.thrustKms2 * dt;
+		const along = (s.vel.z - before.z) / authority;
+		const lateral =
+			Math.hypot(s.vel.x - before.x, s.vel.y - before.y) / authority;
+		// The assist's total cap can trim the step below the law's intent only
+		// when the sum is over the cap, which none of these cases reaches.
+		// A share is a level, clamped at full authority. The assist's drift
+		// removal is not thrust-limited in the law — at 0.8 km/s of drift it
+		// removes 2.65x the drive's authority in a step — so it reads as 1.
+		expect(Math.min(1, Math.abs(along))).toBeCloseTo(shares.main, 9);
+		expect(Math.min(1, lateral)).toBeCloseTo(shares.lateral, 9);
+	}
 });

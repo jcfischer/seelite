@@ -56,13 +56,16 @@ const open = async (params) => {
 	return { page, unlocked };
 };
 
-/** What the engine last wrote, and whether each graph exists. `AudioFX`'s
- *  private fields: a rename makes the read `undefined`, which fails a row. */
+/** What the engine last **wrote** to its gains, and whether each graph exists.
+ *  Not the requested mix: sage round 1 found levels that moved under the
+ *  write threshold each frame never written, and a probe reading the request
+ *  passed with the bed frozen. `AudioFX`'s private fields: a rename makes the
+ *  read `undefined`, which fails a row. */
 const levels = (page) =>
 	page.evaluate(() => {
 		const a = window.__seelite.audio;
 		return {
-			mix: a.flightLevels,
+			mix: a.flightWritten,
 			graph: a.flightGraph !== null && a.flightGraph !== undefined,
 			bed: a.bed !== null && a.bed !== undefined,
 		};
@@ -118,7 +121,7 @@ const levels = (page) =>
 		const t0 = performance.now();
 		while (performance.now() - t0 < 400) {
 			await new Promise(requestAnimationFrame);
-			peak = Math.max(peak, g.audio.flightLevels?.rcs ?? 0);
+			peak = Math.max(peak, g.audio.flightWritten?.rcs ?? 0);
 		}
 		g.held = held;
 		return peak;
@@ -143,18 +146,18 @@ const levels = (page) =>
 		const t0 = performance.now();
 		while (g.regime !== "cruise" && performance.now() - t0 < 6000) {
 			await new Promise(requestAnimationFrame);
-			const s = g.audio.flightLevels?.spool ?? 0;
+			const s = g.audio.flightWritten?.spool ?? 0;
 			if (s > 0) spoolRise.push(s);
 		}
 		for (let i = 0; i < 10; i++) await new Promise(requestAnimationFrame);
-		const inCruise = { ...g.audio.flightLevels, regime: g.regime };
+		const inCruise = { ...g.audio.flightWritten, regime: g.regime };
 		g.dropOut("probe");
 		for (let i = 0; i < 10; i++) await new Promise(requestAnimationFrame);
 		spoolRise = [spoolRise[0], spoolRise.at(-1)];
 		return {
 			spoolRise,
 			inCruise,
-			afterDrop: { ...g.audio.flightLevels, regime: g.regime },
+			afterDrop: { ...g.audio.flightWritten, regime: g.regime },
 			cues: g.__cues.filter((c) => c.startsWith("cruise")),
 		};
 	});
@@ -191,7 +194,7 @@ const levels = (page) =>
 	const legacy = await levels(page);
 	check(
 		"?flightsound=legacy plays the bed before #544 and no flight loops",
-		legacy.bed && !legacy.graph && legacy.mix == null,
+		legacy.bed && !legacy.graph && Object.keys(legacy.mix ?? {}).length === 0,
 		JSON.stringify(legacy),
 	);
 	await page.close();
