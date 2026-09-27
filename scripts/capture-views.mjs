@@ -1256,8 +1256,18 @@ try {
 		if (view.shot.kind === "chart")
 			await assertChartHover(page, "after the shutter", view.shot, chartAimed);
 		captured.push({ name: view.name, file, subject, gameTime });
+		// A chart row says how many foreign pointer events the filter dropped, so
+		// a green run shows whether the physical cursor was in play at all. The
+		// log keeps the last sixteen, so the count is a floor.
+		const foreign =
+			view.shot.kind === "chart"
+				? await page.evaluate(
+						() =>
+							(window.__captureEvents ?? []).filter((e) => e.dropped).length,
+					)
+				: null;
 		console.log(
-			`  ${view.name.padEnd(20)} ${view.shot.view.padEnd(8)} ${subject}`,
+			`  ${view.name.padEnd(20)} ${view.shot.view.padEnd(8)} ${subject}${foreign ? ` · ${foreign} foreign pointer events dropped` : ""}`,
 		);
 	}
 } finally {
