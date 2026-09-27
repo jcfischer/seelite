@@ -743,6 +743,48 @@ for (const viewport of VIEWPORTS) {
 	await page.close();
 }
 
+// ---- the shell is the flown hull's, not the galaxy's (#554) ----------------
+
+/**
+ * #185 D4: the sphere, the lit points and the *"N within X LY"* label read the
+ * flown hull's `tankLy`. Every check above flies the courier, whose tank *is*
+ * the galaxy's connectivity constant, so a build still drawing that constant
+ * passes all of them. This one mounts the same galaxy at three hulls and
+ * requires the reach, the label and the lit set to move together.
+ */
+const atHull = {};
+for (const hull of ["interceptor", "courier", "explorer"]) {
+	const page = await browser.newPage({
+		viewport: { width: 1280, height: 800 },
+	});
+	watch(page, `hull ${hull}`);
+	await page.goto(workbenchUrl(ORIGIN, { "galaxy-map": 0, hull }), {
+		waitUntil: "load",
+	});
+	await page.waitForSelector("#galaxy-map canvas");
+	await nextFrame(page);
+	atHull[hull] = await page.evaluate(() => ({
+		rangeLy: window.__seeliteGalaxyMap?.state?.jumpRangeLy,
+		lit: window.__seeliteGalaxyMap?.state?.litIndices.length,
+		legend: document.querySelector("[data-map-legend]")?.textContent ?? "",
+	}));
+	await page.close();
+}
+const { interceptor: short, courier: base, explorer: long } = atHull;
+check(
+	`the shell is the flown hull's: ${short.rangeLy}/${base.rangeLy}/${long.rangeLy} LY lights ${short.lit}/${base.lit}/${long.lit} systems`,
+	short.rangeLy < base.rangeLy &&
+		base.rangeLy < long.rangeLy &&
+		short.lit <= base.lit &&
+		base.lit <= long.lit &&
+		short.lit < long.lit &&
+		// The label states the same reach it lit, per hull — a label reading
+		// the constant would say 7 at all three.
+		[short, base, long].every((h) =>
+			h.legend.includes(`${h.lit} within ${h.rangeLy} LY`),
+		),
+);
+
 check(
 	`the disc aspect was measured on [${[...discMeasured].join(", ")}] of ${VIEWPORTS.length} viewports`,
 	// Desktop is the arm that frames the whole cluster, so it is the arm this
