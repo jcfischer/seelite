@@ -1047,8 +1047,9 @@ await installViewPlacement(page);
  * `window.__capturePointer`, and this capture-phase listener on `window`
  * stops any pointer or mouse event more than half a pixel from there before the
  * canvas sees it — non-bubbling `pointerleave` included, since the capture
- * phase runs through `window` for every event. The loop clears the
- * declaration at the top of every view, so no other row is filtered. Dropped
+ * phase runs through `window` for every event. The loop sets the declaration
+ * at the top of every view — the park position for a chart row, `null` for
+ * any other — so no other row is filtered. Dropped
  * events are logged with `dropped: true`, so a failure still shows them.
  */
 await page.addInitScript(() => {
@@ -1146,9 +1147,16 @@ try {
 		// them was framed with a pointer that never moved, and a cursor resting
 		// over the cockpit's DOM puts a `:hover` into a frame that has nothing to
 		// do with the chart. The chart placer relies on it to start unlabelled.
-		await page.evaluate(() => {
-			window.__capturePointer = null;
-		});
+		// A chart row owns the pointer from the park on, so the filter never lapses
+		// while the chart may be mounted: released first, the physical cursor got
+		// in between the park and the placer and left another system labelled.
+		// Every other row is released.
+		await page.evaluate(
+			(own) => {
+				window.__capturePointer = own;
+			},
+			view.shot.kind === "chart" ? { x: 0, y: 0 } : null,
+		);
 		await page.mouse.move(0, 0);
 		chartAimed = null;
 		// **Not on the workbench**, which has no view cycle: `v` there is an
