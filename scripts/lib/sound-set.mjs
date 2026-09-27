@@ -315,16 +315,13 @@ export async function renderInPage({
 		// held command would otherwise wait for a suspend (`Music.sync`).
 		await music.sync();
 		const due = new Map();
-		for (const [t, cmd] of script) {
-			const at = leadS + t;
-			if (!due.has(at)) due.set(at, []);
-			due.get(at).push(cmd);
-		}
-		for (const [t, levels] of levelsAt) {
-			const at = leadS + t;
-			if (!due.has(at)) due.set(at, []);
-			due.get(at).push({ levels });
-		}
+		const schedule = (t, v) => {
+			const key = leadS + t;
+			if (!due.has(key)) due.set(key, []);
+			due.get(key).push(v);
+		};
+		for (const [t, cmd] of script) schedule(t, cmd);
+		for (const [t, levels] of levelsAt) schedule(t, { levels });
 		for (const [at, cmds] of due)
 			ctx.suspend(at).then(() => {
 				for (const cmd of cmds)
@@ -334,7 +331,10 @@ export async function renderInPage({
 					else music.send(cmd);
 				// Resumed only once the worklet has applied them: sent and resumed at
 				// once, a command lands at the next suspend instead (`Music.sync`).
-				music.sync().then(() => ctx.resume());
+				// Resumed on a rejected sync too, so a worklet that failed shows up in
+				// `errors` rather than as a render that never ends.
+				const resume = () => ctx.resume();
+				music.sync().then(resume, resume);
 			});
 		const buffer = await ctx.startRendering();
 		return {

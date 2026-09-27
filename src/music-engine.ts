@@ -79,6 +79,10 @@ interface Slot {
 	haltAt: number;
 }
 
+/** A song sounds while it plays and while a fade out has yet to run out:
+ *  the one test, for stop, load and the slot search (sage round 2). */
+const sounding = (s: Slot) => s.player.playing || s.haltAt < Infinity;
+
 export class MusicEngine implements NoteSink, VoiceGain {
 	private readonly bank: VoiceBank;
 	private readonly slots: (Slot | null)[] = new Array(MUSIC_SONG_SLOTS).fill(
@@ -168,7 +172,7 @@ export class MusicEngine implements NoteSink, VoiceGain {
 				if (cmd.at === "now") {
 					const len = fade(cmd.fadeS);
 					for (const s of this.slots)
-						if (s && (s.player.playing || s.haltAt < Infinity)) {
+						if (s && sounding(s)) {
 							s.gain.set(0, now, len);
 							s.haltAt = Math.min(s.haltAt, now + len);
 						}
@@ -247,16 +251,13 @@ export class MusicEngine implements NoteSink, VoiceGain {
 		let ix = this.slots.findIndex((s) => s?.id === id);
 		if (ix >= 0) {
 			const s = this.slots[ix] as Slot;
-			if (s.player.playing || s.haltAt < Infinity)
+			if (sounding(s))
 				throw new Error(`music: ${id} is sounding and cannot be replaced`);
 			this.bank.clearOwner(ix);
 		} else {
 			// An empty slot first; then one whose song is silent.
 			ix = this.slots.indexOf(null);
-			if (ix < 0)
-				ix = this.slots.findIndex(
-					(s) => s !== null && !s.player.playing && s.haltAt === Infinity,
-				);
+			if (ix < 0) ix = this.slots.findIndex((s) => s !== null && !sounding(s));
 			if (ix < 0)
 				throw new Error(
 					`music: all ${this.slots.length} song slots are sounding`,

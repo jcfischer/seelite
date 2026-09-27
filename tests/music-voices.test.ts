@@ -160,10 +160,13 @@ describe("the cap (#543 D7)", () => {
 		expect(b.pitches().sort()).toEqual([60, 70]);
 	});
 
-	test("clear silences every voice at once", () => {
+	test("clearOwner silences one song's voices at once, and only those", () => {
 		const b = bank();
 		b.noteOn(0, part("pad"), 0, 0, 60, 1, SR);
-		b.clear();
+		b.noteOn(0, part("pad"), 1, 0, 67, 1, SR);
+		b.clearOwner(0);
+		expect(b.pitches()).toEqual([67]);
+		b.clearOwner(1);
 		expect(b.sounding).toBe(0);
 		expect(rms(render(b, 1000))).toBe(0);
 	});

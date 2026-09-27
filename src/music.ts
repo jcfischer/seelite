@@ -54,8 +54,8 @@ export class Music {
 	attach(ctx: BaseAudioContext, out: AudioNode): Promise<void> {
 		this.whenReady ??= this.loadWorklet(ctx, out).catch((err: unknown) => {
 			const e = err instanceof Error ? err : new Error(String(err));
-			this.errors.push(`the worklet did not load: `);
-			console.warn(`music: the worklet did not load: `);
+			this.errors.push(`the worklet did not load: ${e.message}`);
+			console.warn(`music: the worklet did not load: ${e.message}`);
 			for (const w of this.waiting.values()) w.reject(e);
 			this.waiting.clear();
 			this.whenReady = null;

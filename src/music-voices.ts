@@ -231,12 +231,6 @@ export class VoiceBank {
 		return out;
 	}
 
-	/** Free every slot now. The engine frees a song's slots with `clearOwner`;
-	 *  this is for a caller that wants the whole bank silent at once. */
-	clear() {
-		this.stage.fill(STAGE_FREE);
-	}
-
 	/** Free every slot one song holds: a song halted, or replaced. */
 	clearOwner(owner: number) {
 		for (let i = 0; i < this.cap; i++)

@@ -36,6 +36,9 @@
  * - **after a crossfade the tail has the new song's colour** — the band row
  *   for that render reads the waltz intro's centroid, so the handover is read
  *   on a window long after the fade, beside each song alone.
+ * - **a worklet that fails to load names its reason** — D8's promise when it
+ *   rejects: the reason reaches `errors`, a waiting `sync` is released, and a
+ *   second `attach` loads. `addModule` is refused on purpose to reach it.
  * - **a request made before the worklet is ready is held and played from its
  *   top** — D8.
  * - **a stop now fades, then is silence** — D5's pilot taking the stick back.
@@ -261,6 +264,36 @@ try {
 			"control: with nothing playing the same start is heard when asked, on neither line frame",
 			o.length >= 1 && Math.abs(arrivedS - ASK_S) < 0.02 && !onLine(d),
 			`first onset ${arrivedS.toFixed(4)} s, ${d} frames from where a line would be`,
+		);
+	}
+
+	// ── A worklet that fails to load says why, and can be tried again ──────
+	{
+		const r = await page.evaluate(async () => {
+			const { Music } = await import("/src/music.ts");
+			const music = new Music();
+			const refused = new OfflineAudioContext(1, 128, 48000);
+			refused.audioWorklet.addModule = () =>
+				Promise.reject(new Error("probe refusal"));
+			let syncError = null;
+			const waiting = music.sync().catch((e) => {
+				syncError = e.message;
+			});
+			await music.attach(refused, refused.destination).catch(() => {});
+			await waiting;
+			const failed = { errors: [...music.errors], ready: music.ready };
+			const good = new OfflineAudioContext(1, 128, 48000);
+			await music.attach(good, good.destination);
+			return { failed, syncError, retried: music.ready };
+		});
+		check(
+			"a worklet that fails to load names its reason, releases a waiting sync, and loads on the next attach",
+			r.failed.ready === false &&
+				r.failed.errors.length === 1 &&
+				r.failed.errors[0].includes("probe refusal") &&
+				r.syncError === "probe refusal" &&
+				r.retried === true,
+			JSON.stringify(r),
 		);
 	}
 
