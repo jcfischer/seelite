@@ -95,8 +95,8 @@ const MAIN = {
 
 /**
  * #544's cues and loops, which `origin/main` does not have: centred on this
- * branch's own render (`npm run sounds -- --label after4`, seed 552), taken
- * after the principal's third listen. So these bands hold the prototype to what
+ * branch's own render (`npm run sounds -- --label after5`, seed 552), taken
+ * after the principal's third listen and sage round 1's write fix. So these bands hold the prototype to what
  * the principal listens to, and move when the ear moves it. Every flight timeline takes the bed's wide band:
  * each carries noise loops, and most carry clicks, whose count moves with the
  * seed.
@@ -163,6 +163,13 @@ const SINCE_544 = {
 		peak: 0.20565,
 		onsetMs: 50.23,
 		hz: 250,
+		bed: 1,
+	},
+	"flight-cruise-slow-climb": {
+		rms: 0.00976,
+		peak: 0.04957,
+		onsetMs: 39.33,
+		hz: 2146,
 		bed: 1,
 	},
 	"flight-cruise-c-ladder": {
@@ -384,6 +391,18 @@ try {
 		rungs.every((r, i) => i === 0 || r > rungs[i - 1] * LADDER_MIN_STEP),
 		rungs.map((r) => r.toFixed(5)).join(" < "),
 	);
+	// A climb too slow for any one step to pass the write threshold must
+	// still be followed (sage round 1's blocker): the end of the climb stands
+	// well clear of its start, high-passed as the ladder is.
+	const climb = await samplesOf("flight-cruise-slow-climb");
+	const climbed =
+		windowRms(climb, [10.5, 12], true) / windowRms(climb, [0.5, 2], true);
+	check(
+		"a slow climb through c is followed, not frozen at its start",
+		climbed > 3,
+		`high-passed rms x${climbed.toFixed(2)}`,
+	);
+
 	// Muted **while the loops play** (sage round 1): muted from the first
 	// sample, the engine builds no graph at all, so a row reading silence
 	// there passes whether or not a mute reaches a running loop. Each arm

@@ -101,6 +101,13 @@ function flightTimelines() {
 		line("flight-rcs-norcs", 3, "norcs,noclicks", rcs),
 		line("flight-cruise-shimmer", 10, "noclicks", cruise),
 		line("flight-cruise-throb", 10, "throb,noclicks", cruise),
+		// A slow climb, 1 to 20 c over twelve seconds: each step moves the
+		// share by about 0.001, under `flight`'s write threshold. Sage round 1
+		// found such a level never written — the bed froze at its first value.
+		line("flight-cruise-slow-climb", 12.5, "noclicks", [
+			[0, { regime: "cruise", lever: 1, cruiseC: 1 }],
+			[12, { cruiseC: 20, ramp: true }],
+		]),
 		// The superluminal range in steps, 2 s each: 1, 2, 5, 10, 20 c.
 		line("flight-cruise-c-ladder", 10.5, "noclicks", [
 			[0, { regime: "cruise", lever: 1, cruiseC: 1 }],
