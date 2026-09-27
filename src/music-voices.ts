@@ -51,59 +51,61 @@ export interface ResolvedPart {
  * repo is one: the test score is heard with them, and #547 and #548 set what
  * their own parts need.
  */
-const DEFAULTS: Record<VoiceKind, Required<Omit<PartSpec, "voice" | "level">>> =
-	{
-		pad: {
-			attackS: 0.35,
-			decayS: 2,
-			sustain: 0.75,
-			releaseS: 1.2,
-			ratio: 1,
-			index: 0,
-			feedback: 0,
-			cutoffHz: 1400,
-		},
-		pluck: {
-			attackS: 0.002,
-			decayS: 2.5,
-			sustain: 0,
-			releaseS: 0.25,
-			ratio: 1,
-			index: 0,
-			feedback: 0,
-			cutoffHz: 4000,
-		},
-		fm: {
-			attackS: 0.004,
-			decayS: 1.6,
-			sustain: 0.2,
-			releaseS: 0.6,
-			ratio: 2,
-			index: 2.5,
-			feedback: 0.3,
-			cutoffHz: 0,
-		},
-		noise: {
-			attackS: 0.001,
-			decayS: 0.12,
-			sustain: 0,
-			releaseS: 0.08,
-			ratio: 1,
-			index: 0,
-			feedback: 0,
-			cutoffHz: 0,
-		},
-		tone: {
-			attackS: 0.001,
-			decayS: 0.35,
-			sustain: 0,
-			releaseS: 0.08,
-			ratio: 2.5,
-			index: 0,
-			feedback: 0,
-			cutoffHz: 0,
-		},
-	};
+const DEFAULTS: Record<
+	VoiceKind,
+	Required<Omit<PartSpec, "voice" | "level">>
+> = {
+	pad: {
+		attackS: 0.35,
+		decayS: 2,
+		sustain: 0.75,
+		releaseS: 1.2,
+		ratio: 1,
+		index: 0,
+		feedback: 0,
+		cutoffHz: 1400,
+	},
+	pluck: {
+		attackS: 0.002,
+		decayS: 2.5,
+		sustain: 0,
+		releaseS: 0.25,
+		ratio: 1,
+		index: 0,
+		feedback: 0,
+		cutoffHz: 4000,
+	},
+	fm: {
+		attackS: 0.004,
+		decayS: 1.6,
+		sustain: 0.2,
+		releaseS: 0.6,
+		ratio: 2,
+		index: 2.5,
+		feedback: 0.3,
+		cutoffHz: 0,
+	},
+	noise: {
+		attackS: 0.001,
+		decayS: 0.12,
+		sustain: 0,
+		releaseS: 0.08,
+		ratio: 1,
+		index: 0,
+		feedback: 0,
+		cutoffHz: 0,
+	},
+	tone: {
+		attackS: 0.001,
+		decayS: 0.35,
+		sustain: 0,
+		releaseS: 0.08,
+		ratio: 2.5,
+		index: 0,
+		feedback: 0,
+		cutoffHz: 0,
+	},
+};
 
 /** 60 dB in `seconds`, as a per-frame multiplier. */
 const fall60 = (seconds: number, sampleRate: number) =>
@@ -406,7 +408,9 @@ export class VoiceBank {
 				return y;
 			}
 			case 2: {
-				const m = Math.sin(2 * Math.PI * this.ph2[i] + part.feedback * this.fb[i]);
+				const m = Math.sin(
+					2 * Math.PI * this.ph2[i] + part.feedback * this.fb[i],
+				);
 				this.fb[i] = m;
 				const c = Math.sin(2 * Math.PI * this.ph1[i] + part.index * env * m);
 				this.ph1[i] = wrap(this.ph1[i] + this.inc1[i]);
@@ -437,7 +441,6 @@ export class VoiceBank {
 /** Chamberlin state-variable coefficient, capped where it stays stable. */
 const svfCoef = (hz: number, sampleRate: number) =>
 	2 * Math.sin((Math.PI * Math.min(hz, sampleRate / 6)) / sampleRate);
-
 
 const wrap = (p: number) => (p >= 1 ? p - 1 : p);
 

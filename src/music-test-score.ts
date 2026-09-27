@@ -32,7 +32,14 @@ const line = (
 	notes: readonly (readonly [number, number, number, number])[],
 	vel = 0.8,
 ): NoteEvent[] =>
-	notes.map(([bar, beat, pitch, dur]) => ({ part, bar, beat, dur, pitch, vel }));
+	notes.map(([bar, beat, pitch, dur]) => ({
+		part,
+		bar,
+		beat,
+		dur,
+		pitch,
+		vel,
+	}));
 
 // Chords, as MIDI note numbers.
 const D = [62, 66, 69];

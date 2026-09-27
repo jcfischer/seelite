@@ -83,10 +83,7 @@ function musicTimelines() {
 		tune("music-stems", 9, [
 			[0, play("march")],
 			[0, { type: "stem", part: "arp", level: 0, at: "now", fadeS: 0 }],
-			[
-				3.5,
-				{ type: "stem", part: "lead", level: 0, at: "bar", fadeS: 1.5 },
-			],
+			[3.5, { type: "stem", part: "lead", level: 0, at: "bar", fadeS: 1.5 }],
 			[3.5, { type: "stem", part: "arp", level: 1, at: "bar", fadeS: 1.5 }],
 		]),
 		// A pilot taking the stick back mid-waltz: faded out, not cut.

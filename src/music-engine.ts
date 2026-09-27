@@ -48,7 +48,9 @@ class Ramp {
 	at(frame: number): number {
 		if (frame < this.start) return this.from;
 		if (frame >= this.start + this.len) return this.to;
-		return this.from + ((this.to - this.from) * (frame - this.start)) / this.len;
+		return (
+			this.from + ((this.to - this.from) * (frame - this.start)) / this.len
+		);
 	}
 
 	/** Head for `to` from `start`, from wherever this ramp is at `start`. */
@@ -171,14 +173,16 @@ export class MusicEngine implements NoteSink, VoiceGain {
 					return;
 				}
 				const line = this.line(now, cmd.at);
-				for (const s of this.slots) if (s?.player.playing) s.player.stopAt(line);
+				for (const s of this.slots)
+					if (s?.player.playing) s.player.stopAt(line);
 				return;
 			}
 			case "stem": {
 				const lead = this.playingLead();
 				if (!lead) return;
 				const part = lead.player.song.parts.indexOf(cmd.part);
-				if (part < 0) throw new Error(`music: ${lead.id} has no part ${cmd.part}`);
+				if (part < 0)
+					throw new Error(`music: ${lead.id} has no part ${cmd.part}`);
 				const at = cmd.at === "now" ? now : this.line(now, cmd.at);
 				lead.partGain[part].set(cmd.level, at, fade(cmd.fadeS));
 				return;
@@ -217,7 +221,15 @@ export class MusicEngine implements NoteSink, VoiceGain {
 	/** `NoteSink`: a note from the slot being rendered. */
 	note(frame: number, part: number, pitch: number, vel: number, dur: number) {
 		const s = this.slots[this.rendering] as Slot;
-		this.bank.noteOn(frame, s.parts[part], this.rendering, part, pitch, vel, dur);
+		this.bank.noteOn(
+			frame,
+			s.parts[part],
+			this.rendering,
+			part,
+			pitch,
+			vel,
+			dur,
+		);
 		this.onNote?.(s.id, frame, s.player.song.parts[part]);
 	}
 
@@ -244,7 +256,9 @@ export class MusicEngine implements NoteSink, VoiceGain {
 					(s) => s !== null && !s.player.playing && s.haltAt === Infinity,
 				);
 			if (ix < 0)
-				throw new Error(`music: all ${this.slots.length} song slots are sounding`);
+				throw new Error(
+					`music: all ${this.slots.length} song slots are sounding`,
+				);
 			if (this.slots[ix]) this.bank.clearOwner(ix);
 		}
 		this.slots[ix] = {

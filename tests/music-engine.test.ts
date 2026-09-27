@@ -74,9 +74,9 @@ describe("starting", () => {
 		r.until(3 * BAR);
 		const b = r.heard.filter((h) => h.id === "b");
 		expect(b[0].frame).toBe(BAR);
-		expect(r.heard.filter((h) => h.id === "a").every((h) => h.frame < BAR)).toBe(
-			true,
-		);
+		expect(
+			r.heard.filter((h) => h.id === "a").every((h) => h.frame < BAR),
+		).toBe(true);
 	});
 
 	test("the section quantum waits for the section's end", () => {
@@ -138,9 +138,9 @@ describe("a crossfade between songs", () => {
 		expect(r.e.playing).toBe("b");
 		// No note of the old song after the fade has run out.
 		r.until(3 * BAR);
-		expect(r.heard.filter((h) => h.id === "a").every((h) => h.frame < BAR + F)).toBe(
-			true,
-		);
+		expect(
+			r.heard.filter((h) => h.id === "a").every((h) => h.frame < BAR + F),
+		).toBe(true);
 	});
 });
 
@@ -171,7 +171,9 @@ describe("stopping", () => {
 		expect(r.e.sounding).toBe(0);
 		expect(r.e.playing).toBe(null);
 		// And it faded rather than cut: halfway through, still sounding.
-		expect(Math.max(...tail.slice(5000, 7000).map(Math.abs))).toBeGreaterThan(0);
+		expect(Math.max(...tail.slice(5000, 7000).map(Math.abs))).toBeGreaterThan(
+			0,
+		);
 	});
 
 	test("a start after a stop is heard", () => {
@@ -241,14 +243,16 @@ describe("loading", () => {
 	test("a song cannot be replaced while it sounds", () => {
 		const r = rig();
 		r.send({ type: "play", id: "a", at: "bar" });
-		expect(() => r.send({ type: "load", id: "a", song: song("z", 40) })).toThrow(
-			/sounding/,
-		);
+		expect(() =>
+			r.send({ type: "load", id: "a", song: song("z", 40) }),
+		).toThrow(/sounding/);
 	});
 
 	test("an id that was never loaded is refused by name", () => {
 		const r = rig();
-		expect(() => r.send({ type: "play", id: "nope", at: "bar" })).toThrow(/nope/);
+		expect(() => r.send({ type: "play", id: "nope", at: "bar" })).toThrow(
+			/nope/,
+		);
 	});
 
 	test("a malformed score is refused at load", () => {

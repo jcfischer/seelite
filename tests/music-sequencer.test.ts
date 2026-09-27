@@ -202,7 +202,9 @@ describe("sections, loops and quantised moves", () => {
 	test("a loop replays its sections until it is resolved", () => {
 		const p = new Player(looped(), SR);
 		p.start(0);
-		expect(barsOf(run(p, 7 * 96000))).toEqual([0, 100, 101, 100, 101, 100, 101]);
+		expect(barsOf(run(p, 7 * 96000))).toEqual([
+			0, 100, 101, 100, 101, 100, 101,
+		]);
 		expect(p.playing).toBe(true);
 	});
 
@@ -275,7 +277,10 @@ describe("sections, loops and quantised moves", () => {
 
 describe("a tempo move", () => {
 	test("a scale at the line changes the bars after it", () => {
-		const p = new Player(compileSong(song({ loop: { from: "A", to: "A" } })), SR);
+		const p = new Player(
+			compileSong(song({ loop: { from: "A", to: "A" } })),
+			SR,
+		);
 		p.start(0);
 		const sink = collect();
 		p.render(0, 10, sink);
@@ -287,7 +292,10 @@ describe("a tempo move", () => {
 	});
 
 	test("a scale ramped over bars reaches its figure at the ramp's end", () => {
-		const p = new Player(compileSong(song({ loop: { from: "A", to: "A" } })), SR);
+		const p = new Player(
+			compileSong(song({ loop: { from: "A", to: "A" } })),
+			SR,
+		);
 		p.start(0);
 		const sink = collect();
 		p.render(0, 10, sink);

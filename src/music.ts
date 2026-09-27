@@ -96,7 +96,12 @@ export class Music {
 	}
 
 	play(id: string, opts: { section?: string; at?: Quantum } = {}) {
-		this.send({ type: "play", id, section: opts.section, at: opts.at ?? "bar" });
+		this.send({
+			type: "play",
+			id,
+			section: opts.section,
+			at: opts.at ?? "bar",
+		});
 	}
 
 	crossfade(
@@ -126,7 +131,12 @@ export class Music {
 		this.send({ type: "stop", at, fadeS });
 	}
 
-	stem(part: string, level: number, fadeS: number, at: Quantum | "now" = "bar") {
+	stem(
+		part: string,
+		level: number,
+		fadeS: number,
+		at: Quantum | "now" = "bar",
+	) {
 		this.send({ type: "stem", part, level, fadeS, at });
 	}
 

@@ -230,6 +230,12 @@ export class AudioFX {
 		return this.buses?.music ?? null;
 	}
 
+	/** The context the engine is built into, once there is one: what the
+	 *  music synth (#560) loads its worklet into. */
+	get context(): BaseAudioContext | null {
+		return this.ctx;
+	}
+
 	/**
 	 * Set a bus to a settings step, `0`..`1` (D2).
 	 *

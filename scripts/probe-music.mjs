@@ -41,13 +41,22 @@
  *   alone. That is also what shows the worklet's output goes into
  *   `AudioFX.musicInput` and nowhere else.
  * - **the limiter leaves the music alone** — as for every cue.
+ * - **the game loads the synth on the gesture that opens its sound** — D8 in
+ *   the running game: not before the first key, ready after it, and no
+ *   command refused. It plays nothing; when music plays is #547's and #548's.
  *
- * `window.__seelite` is not needed and the game is not booted: the page is
- * the dev server's tree declaration, an origin for `import("/src/music.ts")`.
+ * Every row but the last runs on the dev server's tree declaration, an origin
+ * for `import("/src/music.ts")`, and boots no game; the last boots it.
  */
 import { cueStats, roundStats } from "./lib/audio-stats.mjs";
 import { renderInPage, SOUND_SET } from "./lib/sound-set.mjs";
-import { guardedOrigin, launchChromium, tally } from "./probe-guard.mjs";
+import { gameUrl } from "./lib/game-url.mjs";
+import {
+	bootedGame,
+	guardedOrigin,
+	launchChromium,
+	tally,
+} from "./probe-guard.mjs";
 
 const origin = await guardedOrigin(
 	process.argv[2] ?? process.env.PROBE_ORIGIN ?? "http://127.0.0.1:5173",
@@ -135,11 +144,16 @@ try {
 	const rendered = new Map();
 	for (const entry of MUSIC) {
 		const r = await renderRaw(entry);
-		check(`${entry.name} renders through the synth`, !r.absent && r.errors?.length === 0, r.absent ? "absent: no music.ts served" : (r.errors ?? []).join("; "));
+		check(
+			`${entry.name} renders through the synth`,
+			!r.absent && r.errors?.length === 0,
+			r.absent ? "absent: no music.ts served" : (r.errors ?? []).join("; "),
+		);
 		if (r.absent) continue;
 		rendered.set(entry.name, r.samples);
 		const s = cueStats(r.samples, SR);
-		if (PRINT) console.log(JSON.stringify({ name: entry.name, ...roundStats(s) }));
+		if (PRINT)
+			console.log(JSON.stringify({ name: entry.name, ...roundStats(s) }));
 		const m = RENDERED[entry.name];
 		if (!m) continue;
 		const within = (v, c) => v >= c * 0.9 && v <= c * 1.1;
@@ -227,7 +241,9 @@ try {
 	// so it starts when it arrives — and the band above would refuse it.
 	{
 		const r = await renderRaw(
-			probeEntry("control", 3, [[ASK_S, { type: "play", id: "burst", at: "bar" }]]),
+			probeEntry("control", 3, [
+				[ASK_S, { type: "play", id: "burst", at: "bar" }],
+			]),
 		);
 		const o = onsets(r.samples);
 		const arrivedS = o[0] / SR;
@@ -242,7 +258,9 @@ try {
 	// ── D8: a request before ready is held, and plays from the top ─────────
 	{
 		const r = await renderRaw(
-			probeEntry("held", 1, [["attach", { type: "play", id: "pulse", at: "bar" }]]),
+			probeEntry("held", 1, [
+				["attach", { type: "play", id: "pulse", at: "bar" }],
+			]),
 			// From the context's first frame, and past the limiter's look-ahead,
 			// so the frame read is the worklet's own.
 			{ leadS: 0, bypassLimiter: true },
@@ -281,7 +299,8 @@ try {
 				during > 0 &&
 				during < before * 0.6 &&
 				peakIn(4.05, 6) === 0,
-			x && `rms ${before.toFixed(5)} before, ${during.toFixed(5)} in the fade's tail, peak ${peakIn(4.05, 6)} after`,
+			x &&
+				`rms ${before.toFixed(5)} before, ${during.toFixed(5)} in the fade's tail, peak ${peakIn(4.05, 6)} after`,
 		);
 	}
 
@@ -316,7 +335,9 @@ try {
 		const rms = (x) => Math.sqrt(x.reduce((s, v) => s + v * v, 0) / x.length);
 		const full = rms(rendered.get("music-march"));
 		const off = rms((await renderRaw(march, { levels: { music: 0 } })).samples);
-		const half = rms((await renderRaw(march, { levels: { music: 0.5 } })).samples);
+		const half = rms(
+			(await renderRaw(march, { levels: { music: 0.5 } })).samples,
+		);
 		const ship = rms((await renderRaw(march, { levels: { ship: 0 } })).samples);
 		check(
 			"music Off is silence, and 50% is a quarter of the level",
@@ -329,9 +350,14 @@ try {
 			`x${(ship / full).toFixed(6)}`,
 		);
 		const bypass = rms(
-			(await renderRaw(SOUND_SET.find((e) => e.name === "music-waltz"), {
-				bypassLimiter: true,
-			})).samples,
+			(
+				await renderRaw(
+					SOUND_SET.find((e) => e.name === "music-waltz"),
+					{
+						bypassLimiter: true,
+					},
+				)
+			).samples,
 		);
 		const waltz = rms(rendered.get("music-waltz"));
 		check(
@@ -339,6 +365,38 @@ try {
 			Math.abs(waltz / bypass - 1) <= 0.01,
 			`rms x${(waltz / bypass).toFixed(4)}`,
 		);
+	}
+	// ── In the game: loaded on the gesture that opens the sound (D8) ───────
+	{
+		const game = await browser.newPage({
+			viewport: { width: 900, height: 620 },
+		});
+		watch(game);
+		await game.goto(gameUrl(origin, { seed: 19, raider: "off" }));
+		await bootedGame(game);
+		const before = await game.evaluate(() => window.__seelite.music.ready);
+		// A trusted key press: the game's own unlock listener, which opens the
+		// context and then attaches the synth. Shift is bound to nothing alone.
+		await game.keyboard.press("Shift");
+		await game
+			.waitForFunction(() => window.__seelite.music.ready, null, {
+				timeout: 5000,
+			})
+			.catch(() => {});
+		const after = await game.evaluate(() => {
+			const g = window.__seelite;
+			return {
+				ready: g.music.ready,
+				errors: g.music.errors,
+				state: g.audio.context?.state,
+			};
+		});
+		check(
+			"the game loads the synth on the gesture that opens its sound",
+			before === false && after.ready && after.errors.length === 0,
+			`ready ${before} before the key, ${after.ready} after; context ${after.state}; errors ${after.errors.length}`,
+		);
+		await game.close();
 	}
 } finally {
 	await browser.close();

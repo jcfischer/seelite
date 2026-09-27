@@ -32,7 +32,13 @@ const rms = (x: Float32Array, a = 0, b = x.length) => {
 
 /** The period, in frames, with the strongest autocorrelation between two
  *  lags: a fundamental estimate for a steady tone. */
-const period = (x: Float32Array, from: number, len: number, lo: number, hi: number) => {
+const period = (
+	x: Float32Array,
+	from: number,
+	len: number,
+	lo: number,
+	hi: number,
+) => {
 	let best = lo;
 	let bestR = -Infinity;
 	for (let lag = lo; lag <= hi; lag++) {

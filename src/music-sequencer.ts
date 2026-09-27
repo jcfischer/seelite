@@ -258,8 +258,7 @@ export class Player {
 		const sr = this.sampleRate;
 		const B = this.song.beatsPerBar;
 		while (this.playing) {
-			const notes =
-				this.song.sections[this.section].byBar[this.bar];
+			const notes = this.song.sections[this.section].byBar[this.bar];
 			while (this.cursor < notes.length) {
 				const n = notes[this.cursor];
 				const onset =
@@ -302,10 +301,7 @@ export class Player {
 			if (next < 0) return line;
 			const nextSection = next >> 16;
 			const nextBar = next & 0xffff;
-			if (
-				Math.round(line) >= frame &&
-				(q === "bar" || nextBar === 0)
-			)
+			if (Math.round(line) >= frame && (q === "bar" || nextBar === 0))
 				return line;
 			section = nextSection;
 			bar = nextBar;
@@ -418,9 +414,11 @@ export class Player {
 		this.cursor = 0;
 		const s = this.song.sections[section];
 		const scoreBar = s.scoreBar + bar;
-		this.b0 = bpmAt(this.song.tempo, scoreBar, false) * this.scaleAt(this.barsPlayed);
+		this.b0 =
+			bpmAt(this.song.tempo, scoreBar, false) * this.scaleAt(this.barsPlayed);
 		this.b1 =
-			bpmAt(this.song.tempo, scoreBar, true) * this.scaleAt(this.barsPlayed + 1);
+			bpmAt(this.song.tempo, scoreBar, true) *
+			this.scaleAt(this.barsPlayed + 1);
 		const B = this.song.beatsPerBar;
 		this.barLen = this.sampleRate * beatSeconds(this.b0, this.b1, B, B);
 	}

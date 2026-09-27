@@ -409,6 +409,14 @@ describe("every script boots through the builder", () => {
 			},
 		],
 		[
+			"scripts/probe-music.mjs",
+			{
+				arg: "`${origin}/__seelite/tree`",
+				reason:
+					'#560\'s music probe renders the synth offline and boots no game: the tree declaration is an origin for `import("/src/music.ts")` and nothing more',
+			},
+		],
+		[
 			"scripts/capture-sounds.mjs",
 			{
 				arg: "`${origin}${TREE_ENDPOINT}`",

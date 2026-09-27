@@ -36,7 +36,8 @@ test.each(Object.keys(TEST_SONGS))(
 		let sum = 0;
 		const frames = 12 * SR;
 		for (let f = 0; f < frames; f += 128) {
-			if (f === 9 * SR - (9 * SR) % 128) e.command({ type: "resolve", at: "bar" }, f);
+			if (f === 9 * SR - ((9 * SR) % 128))
+				e.command({ type: "resolve", at: "bar" }, f);
 			e.render(out, f);
 			for (const v of out) {
 				peak = Math.max(peak, Math.abs(v));
