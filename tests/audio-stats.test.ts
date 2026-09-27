@@ -61,14 +61,36 @@ const chirp = (sr: number) => {
 	return x;
 };
 
+// The first harness read one cue, `laser()`'s square sweep, at 4861 Hz at
+// 48 kHz and 4482 Hz at 44.1 kHz. Two causes, and a test each.
+
 test("the centroid of a sweep does not move with the sample rate", () => {
-	// The first harness windowed 4096 *samples*, and the same cue read 4861 Hz
-	// at 48 kHz against 4482 at 44.1 kHz: on a sweep, a window of fixed samples
-	// covers a different stretch of it at each rate. A pure tone cannot show
-	// this — both windows read it within 1.5% — so the case is a sweep, where
-	// the sample-count window reads 4.5% apart and the duration window 0%.
+	// A window of fixed *samples* covers a different stretch of a sweep at each
+	// rate. A pure tone cannot show this — both windows read it within 1.5% —
+	// so the case is a sweep, where a 4096-sample window reads 4.5% apart and
+	// the duration window 0%.
 	const a = cueStats(chirp(48000), 48000).centroidHz;
 	const b = cueStats(chirp(44100), 44100).centroidHz;
+	expect(Math.abs(a - b) / a).toBeLessThan(0.01);
+});
+
+/** A band-limited square at `hz`: every odd harmonic below Nyquist. */
+const square = (sr: number, hz: number) => {
+	const x = new Float32Array(sr / 4);
+	for (let k = 1; k * hz < sr / 2; k += 2)
+		for (let i = 0; i < x.length; i++)
+			x[i] += (0.3 / k) * Math.sin((2 * Math.PI * k * hz * i) / sr);
+	return x;
+};
+
+test("the centroid of a harmonic-rich tone does not move with the sample rate", () => {
+	// A band-limited oscillator carries harmonics up to Nyquist, so a spectrum
+	// summed to Nyquist has a different set at 48 kHz than at 44.1: the square
+	// here reads 37% apart that way and 0% capped, and the larger part of the
+	// first harness's gap was this rather than the window. The centroid stops
+	// at a fixed frequency below both Nyquists.
+	const a = cueStats(square(48000, 880), 48000).centroidHz;
+	const b = cueStats(square(44100, 880), 44100).centroidHz;
 	expect(Math.abs(a - b) / a).toBeLessThan(0.01);
 });
 

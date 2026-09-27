@@ -16,9 +16,13 @@
  *   0.0001, as `audio.ts`'s `tone` does, crosses it a few ms after its start.
  * - `centroidHz` — the magnitude-weighted mean frequency of a Hann-windowed
  *   naive DFT over `windowS` seconds from the onset, at `bins` frequencies up to
- *   Nyquist; 0 for a silent buffer. The window is a **duration**, not a sample
- *   count: the first harness windowed 4096 samples, and one cue then read
- *   4861 Hz at 48 kHz against 4482 Hz at 44.1 kHz.
+ *   `maxHz`; 0 for a silent buffer. Both limits are chosen so the figure does
+ *   not move with the sample rate, which the first harness's did — one cue read
+ *   4861 Hz at 48 kHz against 4482 Hz at 44.1 kHz. The window is a
+ *   **duration**, because a fixed sample count covers a different stretch of a
+ *   sweep at each rate. And the spectrum stops at `maxHz`, below both
+ *   Nyquists, because a band-limited oscillator carries harmonics up to
+ *   Nyquist and a sum to Nyquist has more of them at the higher rate.
  * - `fnv` — FNV-1a over the float32 bytes. Equal only for bit-identical
  *   buffers, which #541 measured to hold for a noise-free cue within one
  *   engine and not across engines, so a probe asserts bands and never this.
@@ -26,7 +30,12 @@
 export function cueStats(
 	samples,
 	sampleRate,
-	{ onsetThreshold = 1e-3, windowS = 4096 / 48000, bins = 512 } = {},
+	{
+		onsetThreshold = 1e-3,
+		windowS = 4096 / 48000,
+		bins = 512,
+		maxHz = 16000,
+	} = {},
 ) {
 	let sum = 0;
 	let peak = 0;
@@ -46,7 +55,7 @@ export function cueStats(
 		let num = 0;
 		let den = 0;
 		for (let k = 1; k < bins; k++) {
-			const f = (k / bins) * (sampleRate / 2);
+			const f = (k / bins) * Math.min(maxHz, sampleRate / 2);
 			let re = 0;
 			let im = 0;
 			for (let j = 0; j < n; j++) {

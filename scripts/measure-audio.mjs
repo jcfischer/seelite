@@ -4,7 +4,14 @@
  * main-thread stall does to a cue, and what latency the output adds.
  *
  *   SEELITE_PROBE_RENDERER=hardware node scripts/measure-audio.mjs <mode>
+ *   SEELITE_PROBE_RENDERER=hardware WINDOW=visible node scripts/measure-audio.mjs <mode>
  *   node scripts/measure-audio.mjs <mode>        # cpu lane, headless shell
+ *
+ * **Three lanes, and the audio differs between them.** The GPU lane's default
+ * is windowless (#458), which Playwright launches headless — and a headless
+ * launch gets `--mute-audio`. `WINDOW=visible` asks `probe-guard` for its
+ * headed window instead, which is the only lane here whose output is not
+ * muted. The line each run prints first names the lane it ran on.
  *
  * Modes: `cues`, `voices`, `convolver`, `realtime`, `clock`, `latency`,
  * `unlock`, `gpucal`. No dev server: the script serves its own page, because
@@ -61,7 +68,11 @@
  */
 import { createServer } from "node:http";
 import { cueStats } from "./lib/audio-stats.mjs";
-import { launchChromium, probeRendererMode } from "./probe-guard.mjs";
+import {
+	launchChromium,
+	PROBE_WINDOW_VISIBLE,
+	probeRendererMode,
+} from "./probe-guard.mjs";
 
 const PORT = Number(process.env.PORT ?? 5391);
 const SEED = Number(process.env.SEED ?? 541);
@@ -572,7 +583,14 @@ const server = createServer((req, res) => {
 
 // Every mode but `unlock` lifts the autoplay rule, so a context can start
 // without scripting a gesture; `unlock` is the mode that asks about the rule.
+const visible = process.env.WINDOW === PROBE_WINDOW_VISIBLE;
+const lane = !probeRendererMode()
+	? "cpu-headless"
+	: visible
+		? "gpu-visible"
+		: "gpu-windowless";
 const browser = await launchChromium({
+	...(visible ? { probeWindow: PROBE_WINDOW_VISIBLE } : {}),
 	args: mode === "unlock" ? [] : ["--autoplay-policy=no-user-gesture-required"],
 });
 try {
@@ -586,7 +604,7 @@ try {
 	};
 	const p = await newPage();
 	out({
-		lane: probeRendererMode() ? "gpu-headed" : "cpu-headless",
+		lane,
 		ua: await p.evaluate(() => navigator.userAgent),
 		seed: SEED,
 		mode,
