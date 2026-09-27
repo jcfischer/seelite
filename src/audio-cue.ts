@@ -178,7 +178,9 @@ export function hitCues(
 		// Measured from the last cue, so the gap is `HIT_REARM_S` whatever the
 		// frame rate; the first fall after a quiet spell cues at once.
 		if (since < HIT_REARM_S) return since;
-		cues.push(key === "hull" ? { kind: "hullHit" } : { kind: "shieldHit", pool: key });
+		cues.push(
+			key === "hull" ? { kind: "hullHit" } : { kind: "shieldHit", pool: key },
+		);
 		return 0;
 	};
 	const fore = step("fore");

@@ -49,7 +49,8 @@ describe("the buses", () => {
 		expect(ctx.compressors).toHaveLength(1);
 		expect(master.outputs).toEqual([limiter]);
 		expect(limiter.outputs).toEqual([ctx.destination]);
-		for (const bus of Object.values(buses)) expect(bus.outputs).toEqual([master]);
+		for (const bus of Object.values(buses))
+			expect(bus.outputs).toEqual([master]);
 	});
 
 	test("at 100%, every bus gives today's gains: master 0.4 and every other bus 1", () => {
@@ -173,11 +174,7 @@ describe("the voice caps", () => {
 		expect(sounding).toHaveLength(VOICE_CAPS.weapons);
 		// The rest were stolen, and a steal is a fade rather than a cut.
 		for (const stolen of voices.filter((g) => g.gain.target === 0))
-			expect(stolen.gain.events).toContainEqual([
-				"target",
-				0,
-				ctx.currentTime,
-			]);
+			expect(stolen.gain.events).toContainEqual(["target", 0, ctx.currentTime]);
 		expect(VOICE_STEAL_FADE_S).toBeGreaterThan(0);
 	});
 

@@ -38,9 +38,9 @@ describe("the witchspace cues", () => {
 			.filter((g) => g.outputs.includes(ship));
 		expect(groups.length).toBe(2);
 		// No longer straight to master: #542 D1 moves them under ship.
-		expect(ctx.gains.slice(before).some((g) => g.outputs.includes(master))).toBe(
-			false,
-		);
+		expect(
+			ctx.gains.slice(before).some((g) => g.outputs.includes(master)),
+		).toBe(false);
 		// Every voice reaches the ship bus only through one of the two groups.
 		for (const source of ctx.sources) {
 			expect(reaches(source, ship)).toBe(true);

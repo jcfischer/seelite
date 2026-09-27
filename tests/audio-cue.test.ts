@@ -18,7 +18,11 @@ import {
 	hitCues,
 } from "../src/audio-cue";
 import { VoicePool } from "../src/voice-pool";
-import { QUIET_GUN, SHOT_SOUND_GAP_S, stepGunFeedback } from "../src/gun-feedback";
+import {
+	QUIET_GUN,
+	SHOT_SOUND_GAP_S,
+	stepGunFeedback,
+} from "../src/gun-feedback";
 import { nextScoopNotice } from "../src/cargo-notice";
 import {
 	WITCHSPACE,

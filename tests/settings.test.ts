@@ -16,7 +16,10 @@ import {
 	type Settings,
 	SETTING_KEYS,
 	SettingsStore,
+	settingSpec,
+	VOLUME_KEY,
 } from "../src/settings";
+import { BUSES } from "../src/audio-cue";
 
 /**
  * The real global, so it can be put back.
@@ -287,5 +290,35 @@ describe("Auto is a choice, not a default", () => {
 		expect(loadSettings().renderScale).toBe(DEFAULT_SETTINGS.renderScale);
 		installStorage({ [KEY]: `{"renderScale":"AUTO"}` });
 		expect(loadSettings().renderScale).toBe(DEFAULT_SETTINGS.renderScale);
+	});
+});
+
+describe("the volume rows (#552, after #542 D2)", () => {
+	test("one row per bus, each Off, 25, 50, 75 and 100%, defaulting to 100%", () => {
+		const store = new SettingsStore({ ...DEFAULT_SETTINGS });
+		expect(Object.keys(VOLUME_KEY).sort()).toEqual([...BUSES].sort());
+		for (const bus of BUSES) {
+			const key = VOLUME_KEY[bus];
+			expect(SETTING_KEYS).toContain(key);
+			expect(store.allowed(key)).toEqual([0, 0.25, 0.5, 0.75, 1]);
+			// 100%, so a player who never opens the screen hears the old mix.
+			expect(DEFAULT_SETTINGS[key]).toBe(1);
+		}
+	});
+
+	test("the steps read as Off and percentages", () => {
+		const describe = settingSpec(VOLUME_KEY.master).describe as (
+			v: number,
+		) => string;
+		expect([0, 0.25, 1].map(describe)).toEqual(["Off", "25%", "100%"]);
+	});
+
+	test("master's note says that Off is the mute, because there is no other", () => {
+		expect(settingSpec(VOLUME_KEY.master).note).toMatch(/mute/i);
+	});
+
+	test("the rows come after every existing row, so no cursor index moves", () => {
+		const volume = BUSES.map((b) => VOLUME_KEY[b]);
+		expect(SETTING_KEYS.slice(-volume.length)).toEqual(volume);
 	});
 });
