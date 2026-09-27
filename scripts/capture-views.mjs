@@ -767,7 +767,12 @@ const PLACERS = {
 			},
 			shot.spot,
 		);
-		await page.mouse.move(layout.box.left + spot.x, layout.box.top + spot.y);
+		// Declared first, so the filter above is on before the move arrives.
+		const at = { x: layout.box.left + spot.x, y: layout.box.top + spot.y };
+		await page.evaluate((own) => {
+			window.__capturePointer = own;
+		}, at);
+		await page.mouse.move(at.x, at.y);
 		await frames();
 		const hovered = await assertChartHover(page, "placed", shot, spot);
 		chartAimed = spot;
@@ -1027,38 +1032,59 @@ page.on("pageerror", (e) => faulted(`page error: ${e.message}`));
 
 await installViewPlacement(page);
 /**
- * The last pointer, focus and visibility events the page saw, for the chart
- * rows' error message and nothing else.
+ * **While a chart row owns the pointer, the page sees only the capture's
+ * pointer** — and it keeps a log of what it saw, for the chart rows' errors.
  *
- * Two of six full captures during #540 lost the hover label in the short
- * window around the screenshot, on a build with no mutation, and a loop of
- * twenty placements with the screenshot between two reads lost none. What
- * clears it was not found. A person's pointer over the headed window fits, and
- * so does a DOM change over the canvas, and the two print differently here: a
- * real pointer arrives at coordinates the placer never used. So a failure names
- * its own evidence rather than leaving the next reader to reproduce it.
- * Passive listeners in the capture phase; nothing is prevented or changed.
+ * A headed window also receives the physical cursor. During #540 a trusted
+ * `pointerleave` reached the chart canvas at (733.2, 623.8), 62 ms after the
+ * placer's move, at a coordinate no script used; every other pointer action in
+ * this script is a coordinate-free DOM `click()`. It cleared the label in two
+ * of six captures while the cursor wandered, and in three of three once it
+ * rested over the window. So the chart rows' frame depended on where the person
+ * running the capture had left their mouse.
+ *
+ * The chart placer declares where it put the pointer in
+ * `window.__capturePointer`, and this capture-phase listener on `window`
+ * stops any pointer or mouse event more than half a pixel from there before the
+ * canvas sees it — non-bubbling `pointerleave` included, since the capture
+ * phase runs through `window` for every event. The loop clears the
+ * declaration at the top of every view, so no other row is filtered. Dropped
+ * events are logged with `dropped: true`, so a failure still shows them.
  */
 await page.addInitScript(() => {
 	const log = [];
 	window.__captureEvents = log;
-	for (const type of [
+	window.__capturePointer = null;
+	const pointerish = new Set([
 		"pointermove",
-		"pointerleave",
 		"pointerover",
-		"blur",
-		"focus",
-		"visibilitychange",
-	])
+		"pointerout",
+		"pointerenter",
+		"pointerleave",
+		"mousemove",
+		"mouseover",
+		"mouseout",
+		"mouseenter",
+		"mouseleave",
+	]);
+	for (const type of [...pointerish, "blur", "focus", "visibilitychange"])
 		window.addEventListener(
 			type,
 			(e) => {
+				const own = window.__capturePointer;
+				const dropped =
+					own !== null &&
+					pointerish.has(type) &&
+					Math.hypot(e.clientX - own.x, e.clientY - own.y) > 0.5;
+				if (dropped) e.stopImmediatePropagation();
+				if (type.startsWith("mouse") && !dropped) return;
 				const t = e.target;
 				log.push({
 					type,
 					x: e.clientX,
 					y: e.clientY,
 					trusted: e.isTrusted,
+					dropped,
 					target:
 						t instanceof Element
 							? `${t.tagName.toLowerCase()}${t.id ? `#${t.id}` : ""}`
@@ -1067,7 +1093,7 @@ await page.addInitScript(() => {
 				});
 				if (log.length > 16) log.shift();
 			},
-			{ capture: true, passive: true },
+			{ capture: true },
 		);
 });
 await installViewFraming(page);
@@ -1120,6 +1146,9 @@ try {
 		// them was framed with a pointer that never moved, and a cursor resting
 		// over the cockpit's DOM puts a `:hover` into a frame that has nothing to
 		// do with the chart. The chart placer relies on it to start unlabelled.
+		await page.evaluate(() => {
+			window.__capturePointer = null;
+		});
 		await page.mouse.move(0, 0);
 		chartAimed = null;
 		// **Not on the workbench**, which has no view cycle: `v` there is an
