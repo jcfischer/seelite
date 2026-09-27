@@ -42,8 +42,9 @@
  *   reads `AudioContext.playbackStats`. The master gain is 1e-4, so nothing is
  *   audible. **`underrunEvents` is read as zero against non-zero only**: at
  *   overload it stays near 730 per 4 s from 512 to 1024 voices while audio
- *   time falls from 0.85 to 0.48 of wall time, and one overloaded run read a
- *   clock ratio of 0.99 beside 722 events. Its amounts are not understood, so
+ *   time falls from about 0.9 to 0.5 of wall time, and runs at 512 read audio
+ *   time as high as 0.99 of wall time beside 600 or more events. Its amounts
+ *   are not understood, so
  *   this prints them without calling them amounts. Native voices are not run
  *   in realtime.
  * - **`clock`** stalls the main thread for 150 or 300 ms, keyed on the audio
@@ -98,7 +99,7 @@ const MODES = [
  *
  * **`sampleRate` is read once, in the constructor.** A port of this class that
  * read the global in the inner loop — four times per voice per sample — cost
- * 13–18 ms per audio-second per voice offline against 2.0–2.7 for this one, so a
+ * 13–18 ms per audio-second per voice offline against 1.9–2.5 for this one, so a
  * worklet voice's cost is as much its code's as the platform's.
  */
 const WORKLET = `
