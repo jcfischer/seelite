@@ -15,8 +15,12 @@
  * a later sound node might pick. What that width lets through is stated
  * rather than implied: a tone-only cue (scoop, alert, ui, the hum) falls out
  * past ±10% in level; a noise one-shot only below ×0.8 or above ×1.25; the
- * bed only below ×0.7 or above ×1.4. A cue routed nowhere falls out of every
- * band. A smaller change of level is the capture's to show, not this probe's.
+ * bed only below ×0.7 or above ×1.4. A one-shot routed nowhere falls out of
+ * every band. **A flight timeline does not**: its level is mostly the hum, so a
+ * thruster loop that vanished leaves it inside the bed's band. Those loops are
+ * held by the windowed rows below instead, each a window where the loop plays
+ * against one where it does not, on the same seed. A smaller change of level is
+ * the capture's to show, not this probe's.
  *
  * **A centroid is a poor ear for pitch.** A square wave's centroid is set by
  * its harmonics up to the 16 kHz cap more than by its fundamental: the laser
@@ -226,6 +230,9 @@ const BANDS = Object.fromEntries(
  *  0.52 on the build that made the pool. */
 const BURST_MAX_OF_UNCAPPED = 0.7;
 
+/** The least a loop's window may stand over its quiet window (#544). */
+const LOOP_MIN_RATIO = 1.5;
+
 const browser = await launchChromium();
 const { check, watch, exit } = tally();
 try {
@@ -277,6 +284,85 @@ try {
 			`rms x${rms.toFixed(4)} peak x${peak.toFixed(4)} onset ${on.onsetMs.toFixed(2)} against ${off.onsetMs.toFixed(2)} ms`,
 		);
 	}
+
+	// #544's loops, each by a window where it plays against one where it does
+	// not. Whole-timeline figures cannot see one vanish: the hum carries them.
+	const raw = async (name, opts = {}) =>
+		(
+			await page.evaluate(renderInPage, {
+				entry: SOUND_SET.find((e) => e.name === name),
+				sampleRate: SR,
+				seed: SEED,
+				...opts,
+			})
+		).samples;
+	// `high`: rms of the first difference, a crude high-pass. The thrusters
+	// are a hiss near 2.6 kHz and the hum is under 300 Hz, so a plain rms of
+	// that window is mostly hum and read the hiss at only x1.33.
+	const windowRms = (samples, [a, b], high = false) => {
+		let w = samples.slice(Math.round(a * SR), Math.round(b * SR));
+		if (high) w = w.slice(1).map((v, i) => v - w[i]);
+		return Math.sqrt(w.reduce((sum, v) => sum + v * v, 0) / w.length);
+	};
+	const loopRows = [
+		// [row, loud timeline, window, quiet timeline, window, high-passed?]
+		[
+			"the thrusters are heard while they fire",
+			"flight-rcs",
+			[0.35, 0.8],
+			"flight-rcs-norcs",
+			[0.35, 0.8],
+			true,
+		],
+		[
+			"a burn is heard over the hum",
+			"flight-burn-thrust",
+			[1, 3],
+			"flight-burn-thrust",
+			[4.5, 6],
+		],
+		[
+			"the wind-up is heard before cruise",
+			"flight-cruise-shimmer",
+			[2.5, 3.4],
+			"flight-cruise-shimmer",
+			[0, 0.45],
+		],
+		[
+			"the shimmer bed is heard in cruise",
+			"flight-cruise-shimmer",
+			[5, 8],
+			"flight-cruise-shimmer",
+			[0, 0.45],
+		],
+		[
+			"the throb bed is heard in cruise",
+			"flight-cruise-throb",
+			[5, 8],
+			"flight-cruise-throb",
+			[0, 0.45],
+		],
+	];
+	const renders = new Map();
+	const samplesOf = async (name) => {
+		if (!renders.has(name)) renders.set(name, await raw(name));
+		return renders.get(name);
+	};
+	for (const [row, loud, lw, quiet, qw, high] of loopRows) {
+		const ratio =
+			windowRms(await samplesOf(loud), lw, high) /
+			windowRms(await samplesOf(quiet), qw, high);
+		check(row, ratio > LOOP_MIN_RATIO, `window rms x${ratio.toFixed(2)}`);
+	}
+	const idleMuted = await Promise.all(
+		[{ master: 0 }, { ship: 0 }].map((levels) =>
+			raw("flight-idle", { levels }),
+		),
+	);
+	check(
+		"master Off and ship Off each silence the flight loops",
+		idleMuted.every((x) => x.every((v) => v === 0)),
+	);
 
 	const laser = SOUND_SET.find((e) => e.name === "laser");
 	const alert = SOUND_SET.find((e) => e.name === "alert");
