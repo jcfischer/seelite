@@ -37,8 +37,9 @@
  *   for that render reads the waltz intro's centroid, so the handover is read
  *   on a window long after the fade, beside each song alone.
  * - **a worklet that fails to load names its reason** — D8's promise when it
- *   rejects: the reason reaches `errors`, a waiting `sync` is released, and a
- *   second `attach` loads. `addModule` is refused on purpose to reach it.
+ *   rejects: the reason reaches `errors`, a waiting `sync` is released, a
+ *   `sync` sent after it is refused rather than left to hang, and a second
+ *   `attach` loads. `addModule` is refused on purpose to reach it.
  * - **a request made before the worklet is ready is held and played from its
  *   top** — D8.
  * - **a stop now fades, then is silence** — D5's pilot taking the stick back.
@@ -294,16 +295,22 @@ try {
 			await music.attach(refused, refused.destination).catch(() => {});
 			await waiting;
 			const failed = { errors: [...music.errors], ready: music.ready };
+			// A sync after the failure, with no retry yet, is refused at once.
+			const late = await music.sync().then(
+				() => "answered",
+				(e) => e.message,
+			);
 			const good = new OfflineAudioContext(1, 128, 48000);
 			await music.attach(good, good.destination);
-			return { failed, syncError, retried: music.ready };
+			return { failed, syncError, late, retried: music.ready };
 		});
 		check(
-			"a worklet that fails to load names its reason, releases a waiting sync, and loads on the next attach",
+			"a worklet that fails to load names its reason, releases a waiting sync, refuses a later one, and loads on the next attach",
 			r.failed.ready === false &&
 				r.failed.errors.length === 1 &&
 				r.failed.errors[0].includes("probe refusal") &&
 				r.syncError === "probe refusal" &&
+				r.late === "probe refusal" &&
 				r.retried === true,
 			JSON.stringify(r),
 		);

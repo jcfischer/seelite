@@ -203,6 +203,21 @@ describe("starting", () => {
 		expect(r.e.gain(1, 0, r.now() + 4800)).toBeGreaterThan(b);
 	});
 
+	test("replaying the song that plays keeps its fade until the line", () => {
+		// Sage round 7: the replay set the gain to full when it arrived, a bar
+		// before the playhead moved, which was a step in the middle of a fade.
+		const r = rig();
+		r.send({ type: "play", id: "a", at: "bar" });
+		r.until(30000);
+		r.send({ type: "crossfade", to: "b", at: "bar", fadeS: 1.5 });
+		r.until(BAR + 24000);
+		const b = r.e.gain(1, 0, r.now());
+		expect(b).toBeLessThan(MUSIC_HEADROOM);
+		r.send({ type: "play", id: "b", at: "bar" });
+		expect(r.e.gain(1, 0, r.now())).toBeCloseTo(b, 6);
+		expect(r.e.gain(1, 0, 2 * BAR)).toBeCloseTo(MUSIC_HEADROOM, 9);
+	});
+
 	test("a refused start leaves the playing song as it was", () => {
 		// Sage round 6: the lead was told to stop before the section was
 		// checked, so a start refused by name still silenced the music.

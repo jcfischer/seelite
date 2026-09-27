@@ -174,7 +174,8 @@ describe("the frame windows", () => {
 			p.start(0);
 			expect(run(p, 4 * 96000, block)).toEqual(whole);
 		}
-		// 24000 is a beat: in 128-frame blocks, frame 24000 opens a block.
+		// 24000 is a beat and falls mid-block (remainder 64); 96000, a bar
+		// line, opens one.
 		expect(24000 % 128).toBe(64);
 		expect(whole.some((n) => n.frame % 128 === 0 && n.frame > 0)).toBe(true);
 	});

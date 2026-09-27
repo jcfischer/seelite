@@ -40,6 +40,8 @@ export class Music {
 	/** Every command the worklet refused, in order, with its reason, and a
 	 *  worklet that failed to load. */
 	readonly errors: string[] = [];
+	/** The last load's failure, until an `attach` succeeds. */
+	private failure: Error | null = null;
 
 	/**
 	 * Load the worklet into `ctx` and connect it to `out` — the music bus. A
@@ -48,12 +50,15 @@ export class Music {
 	 * **A failed load is recorded and can be retried** (sage round 1). Its
 	 * reason goes to `errors`, every `sync` waiting on it is rejected rather
 	 * than left hanging, and the next `attach` tries again; commands sent
-	 * meanwhile stay held for it. The promise still rejects, for a caller that
-	 * awaits it.
+	 * meanwhile stay held for it. Until then a new `sync` rejects at once with
+	 * the same reason (sage round 7): the game makes no second attach, and a
+	 * sync nothing would answer is a hang. The promise still rejects, for a
+	 * caller that awaits it.
 	 */
 	attach(ctx: BaseAudioContext, out: AudioNode): Promise<void> {
 		this.whenReady ??= this.loadWorklet(ctx, out).catch((err: unknown) => {
 			const e = err instanceof Error ? err : new Error(String(err));
+			this.failure = e;
 			this.errors.push(`the worklet did not load: ${e.message}`);
 			console.warn(`music: the worklet did not load: ${e.message}`);
 			for (const w of this.waiting.values()) w.reject(e);
@@ -66,6 +71,7 @@ export class Music {
 
 	private loadWorklet(ctx: BaseAudioContext, out: AudioNode): Promise<void> {
 		return ctx.audioWorklet.addModule(workletUrl).then(() => {
+			this.failure = null;
 			const node = new AudioWorkletNode(ctx, MUSIC_PROCESSOR, {
 				numberOfInputs: 0,
 				numberOfOutputs: 1,
@@ -105,6 +111,7 @@ export class Music {
 	 * suspend, because the render resumes before the worklet reads its port.
 	 */
 	sync(): Promise<void> {
+		if (this.failure && !this.whenReady) return Promise.reject(this.failure);
 		const token = ++this.syncs;
 		const answered = new Promise<void>((resolve, reject) =>
 			this.waiting.set(token, { resolve, reject }),

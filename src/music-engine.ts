@@ -318,17 +318,14 @@ export class MusicEngine implements NoteSink, VoiceGain {
 		return lead;
 	}
 
-	/** The quantum's line on the playing song, or `now` with none. */
 	/**
 	 * The quantum's line on the playing song, or `now` with none. A song
 	 * fading out on a stop now is not one (sage round 6): it is leaving, and
 	 * a start that waited for its line would wait on music that has stopped.
 	 */
 	private line(now: number, q: Quantum): number {
-		const lead = this.playingLead();
-		return lead && lead.haltAt === Infinity
-			? lead.player.lineAfter(now, q)
-			: now;
+		const lead = this.steadyLead();
+		return lead ? lead.player.lineAfter(now, q) : now;
 	}
 
 	/**
@@ -367,17 +364,23 @@ export class MusicEngine implements NoteSink, VoiceGain {
 		if (section !== undefined && target.player.song.sectionIndex(section) < 0)
 			throw new Error(`music: ${target.id} has no section ${section}`);
 		const line = this.line(now, at);
-		if (this.again(ix, line, section)) return null;
+		if (this.again(ix, line, now, section)) return null;
 		// A song already leaving on a stop's fade keeps that fade: handing it
 		// over again would restart it and push its end out.
-		const lead = this.playingLead();
 		return {
 			ix,
 			line,
 			target,
 			back: this.isSounding(ix),
-			lead: lead && lead.haltAt === Infinity ? lead : null,
+			lead: this.steadyLead(),
 		};
+	}
+
+	/** The playing song unless it is leaving on a stop's fade: the one rule
+	 *  for the quantum and for a handover (sage round 7). */
+	private steadyLead(): Slot | null {
+		const lead = this.playingLead();
+		return lead && lead.haltAt === Infinity ? lead : null;
 	}
 
 	/**
@@ -387,21 +390,28 @@ export class MusicEngine implements NoteSink, VoiceGain {
 	 * jump instead — to `section`, or back to the top — on the same line.
 	 * Returns whether it handled the move.
 	 */
-	private again(ix: number, line: number, section?: string): boolean {
+	private again(
+		ix: number,
+		line: number,
+		now: number,
+		section?: string,
+	): boolean {
 		const lead = this.playingLead();
 		if (!lead || this.lead !== ix) return false;
 		lead.player.jumpAt(line, section ?? 0);
-		// Inside a stop fade, the fade's halt goes too (sage round 3): left
-		// standing, it cut the replayed song when the old fade would have ended.
-		lead.gain.reset(1);
+		// Full on the line, where the playhead moves, and on its present path
+		// until then (sage round 7: set at once, it stepped mid-fade). Inside a
+		// stop fade, the fade's halt goes too (round 3): left standing, it cut
+		// the replayed song when the old fade would have ended.
+		lead.gain.set(1, line, 0, now);
 		lead.haltAt = Infinity;
 		return true;
 	}
 
 	private begin(ix: number, line: number, section?: string) {
 		const s = this.slots[ix] as Slot;
+		// `handover` has refused a section the song does not have.
 		const at = section === undefined ? 0 : s.player.song.sectionIndex(section);
-		if (at < 0) throw new Error(`music: ${s.id} has no section ${section}`);
 		// A song faded out and restarted before its halt keeps its voices.
 		s.haltAt = Infinity;
 		for (const g of s.partGain) g.reset(1);
