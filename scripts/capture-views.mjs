@@ -55,6 +55,7 @@ import {
 	VIEWS,
 	contactSheet,
 } from "./lib/view-set.mjs";
+import { requireChartSpot } from "./lib/chart-hover-spot.mjs";
 import { assertPlayersRenderer } from "./lib/players-renderer.mjs";
 import { installViewFraming } from "./lib/view-placement.mjs";
 import { installCruiseLeg } from "./lib/cruise-page.mjs";
@@ -618,6 +619,105 @@ const PLACERS = {
 		return `Controls tab${shot.folded?.length ? ` · folded ${shot.folded.join(", ")}` : ""}`;
 	},
 	/**
+	 * #177's hover label, with a player's pointer (D4). The spot comes from the
+	 * chart's own projection at run time — `lib/chart-hover-spot.mjs` picks it,
+	 * independently of the hover rule it is checking — and `page.mouse` moves
+	 * there, the way `probe-navigation-console.mjs` does. An in-page
+	 * `PointerEvent` was rejected: it is not a player's pointer (#370).
+	 *
+	 * **Read back by index, and the badge with it.** Names are not unique per
+	 * galaxy, so the label's text cannot say which system it names. A `null`, a
+	 * different index, or a badge the row's caption does not describe throws,
+	 * so no sheet is built over a frame captioned for another hover.
+	 */
+	chart: async (page, shot) => {
+		const frames = () =>
+			page.evaluate(
+				() =>
+					new Promise((r) =>
+						requestAnimationFrame(() => requestAnimationFrame(() => r())),
+					),
+			);
+		// **The pointer starts off the canvas** — the capture loop parks it in the
+		// corner before every view. Both rows share a page and the chart's hover
+		// holds its last system within a release radius, so the second row would
+		// otherwise begin with the first row's label held. The readback below
+		// confirms nothing is labelled before the pointer moves.
+		await page.evaluate(async () => {
+			await window.__returnToBootPosition();
+			window.__seelite.setHeadLook("left");
+		});
+		await page.waitForFunction(
+			() =>
+				document
+					.querySelector("[data-live-cockpit]")
+					?.getAttribute("data-live-head-look") === "left",
+		);
+		// The Galaxy Map tab of the Navigation console, clicked as the probe
+		// clicks it. Not a field assignment: the tab mounts the chart.
+		await page.evaluate(() => {
+			const tab = document.querySelector('[data-live-left-tab="Galaxy Map"]');
+			if (!(tab instanceof HTMLElement))
+				throw new Error("chart placer: no Galaxy Map tab on this build");
+			tab.click();
+		});
+		await page.waitForFunction(
+			() =>
+				document
+					.querySelector("[data-live-cockpit]")
+					?.getAttribute("data-live-left-view") === "Galaxy Map" &&
+				!!window.__seeliteGalaxyMap,
+		);
+		// The documented default framing and no selection: a selection draws a
+		// card, and a card beside the label is a different picture. The probe's
+		// hover section starts from the same state.
+		await page.evaluate(() => {
+			const map = window.__seeliteGalaxyMap;
+			map.select(null);
+			map.resetView();
+		});
+		await frames();
+		const layout = await page.evaluate(() => {
+			const map = window.__seeliteGalaxyMap;
+			const box = map.viewport();
+			return {
+				points: map.projected(),
+				box,
+				pickRadiusPx: map.pickRadiusPx,
+				held: map.hovered(),
+			};
+		});
+		if (layout.held !== null)
+			throw new Error(
+				`chart placer: ${JSON.stringify(layout.held)} was still labelled with the pointer off the chart`,
+			);
+		const spot = requireChartSpot(
+			layout.points,
+			{
+				pickRadiusPx: layout.pickRadiusPx,
+				width: layout.box.width,
+				height: layout.box.height,
+			},
+			shot.spot,
+		);
+		await page.mouse.move(layout.box.left + spot.x, layout.box.top + spot.y);
+		await frames();
+		const hovered = await page.evaluate(() =>
+			window.__seeliteGalaxyMap.hovered(),
+		);
+		if (hovered === null || hovered.index !== spot.index)
+			throw new Error(
+				`chart placer: aimed at system ${spot.index} for the ${shot.spot} row and the chart labelled ${hovered === null ? "nothing" : `system ${hovered.index}`}`,
+			);
+		const badged =
+			shot.spot === "crowded" ? hovered.contested > 0 : hovered.contested === 0;
+		if (!badged)
+			throw new Error(
+				`chart placer: the ${shot.spot} row's label counts ${hovered.contested} more — its caption describes ${shot.spot === "crowded" ? "a badge" : "none"}`,
+			);
+		return `Galaxy Map · ${shot.spot} · system ${hovered.index}${hovered.contested ? ` (${hovered.contested} more)` : ""}`;
+	},
+	/**
 	 * #532's strip. The clock is held first — the capture loop lets it run,
 	 * and a held phase before the cut with a running charge would fire the
 	 * jump during the settle frames — and a phase from the cut on is taken
@@ -915,6 +1015,12 @@ try {
 				.querySelector("[data-capture-modal] [data-capture-cancel]")
 				?.click();
 		});
+		// **And the pointer comes off whatever the previous view left it on.**
+		// The chart rows are the only ones that move it (#540); every row after
+		// them was framed with a pointer that never moved, and a cursor resting
+		// over the cockpit's DOM puts a `:hover` into a frame that has nothing to
+		// do with the chart. The chart placer relies on it to start unlabelled.
+		await page.mouse.move(0, 0);
 		// **Not on the workbench**, which has no view cycle: `v` there is an
 		// unbound key, so `setView` would press it eight times and then throw
 		// about a view the game does not have — on a page that is not the game.

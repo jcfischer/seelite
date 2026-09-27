@@ -22,6 +22,8 @@
  * point the sheet is built rather than left for a human to notice.
  */
 
+import { CHART_SPOTS } from "./chart-hover-spot.mjs";
+
 /**
  * The fixture, pinned three ways. All three are decisions, not defaults.
  *
@@ -125,6 +127,7 @@ export const LEVERS = Object.freeze({
 	102: "greebles and lit windows",
 	103: "selective bloom",
 	105: "the cockpit interior",
+	112: "the galaxy-chart hover label",
 	147: "the station interior",
 	162: "the aperture cut into the hull",
 	165: "the landing pad, and the shipyard keel aft of its hub",
@@ -213,6 +216,15 @@ export const LEVERS = Object.freeze({
  *   the clock held and the look held at `intensity` through
  *   `holdCruiseLight`, so the frame is the same every run. The live speed
  *   already sits near the top of the dial, which is why the rows hold it.
+ * - `chart` — #112's hover label on the galaxy chart, at the arrival point
+ *   with the head turned left to the Navigation console's Galaxy Map tab: the
+ *   cockpit mount and not `?galaxy-map`, because crowding is a pixel property
+ *   and §5.1 measures it there (#177 D2). `spot` names the hover —
+ *   `crowded`, where the label carries *(N more)*, or `isolated`. The placer
+ *   takes the spot from the chart's own projection at run time, moves a real
+ *   pointer there and reads `hovered()` back by index; a `null` or another
+ *   index fails the run (#177 D4). The frame holds the label's look only —
+ *   hold, switch and release are `probe-navigation-console.mjs`'s (D3).
  */
 export const SHOT_KINDS = Object.freeze([
 	"station-axis",
@@ -225,6 +237,7 @@ export const SHOT_KINDS = Object.freeze([
 	"witchspace",
 	"opening",
 	"cruise",
+	"chart",
 ]);
 
 /**
@@ -861,7 +874,7 @@ export const VIEWS = Object.freeze([
 	 * #381 S4's frame, and the reason it is here at all: the capture modal is a
 	 * **fourth modal surface**, which #369 D9 names as the cost of hosting the
 	 * rebind on this tab, and a drawn surface with no frame in the set is what
-	 * #177 is open about for the galaxy chart. It is captured mid-session
+	 * #177 was opened about for the galaxy chart (its rows are below). It is captured mid-session
 	 * rather than empty — a modal listening and a modal holding something are
 	 * different pictures, and the second is the one a player spends time
 	 * reading.
@@ -880,6 +893,23 @@ export const VIEWS = Object.freeze([
 			rebind: "fly.pitchUp",
 			press: "k",
 		},
+	},
+	/**
+	 * #177's two frames of #112's hover label, on the cockpit mount. Before the
+	 * duel rows, which set their own head and both consoles' tabs; the chart
+	 * writes no world state, so nothing after them depends on these.
+	 */
+	{
+		name: "chart-hover-crowded",
+		covers: [112],
+		what: "The Galaxy Map tab on the left console, the pointer on the most crowded spot the chart draws: the label names the nearest system with its range and an (N more) badge. The frame shows the label's look; probe-navigation-console.mjs holds hold, switch and release.",
+		shot: { kind: "chart", spot: "crowded", view: "cockpit" },
+	},
+	{
+		name: "chart-hover-isolated",
+		covers: [112],
+		what: "The same chart, the pointer beside a system with no other inside the pick radius: the label with no badge. The frame shows the label's look; probe-navigation-console.mjs holds hold, switch and release.",
+		shot: { kind: "chart", spot: "isolated", view: "cockpit" },
 	},
 	/**
 	 * #324 part (c)'s two frames: the glass and the console, because the
@@ -1298,6 +1328,8 @@ const SHOT_REQUIREMENTS = {
 		OPENING_SHOT_NAMES.includes(s.shot) && finite(s.at) && s.at >= 0,
 	// The look's intensity, held (#537): the dial's own range.
 	cruise: (s) => finite(s.intensity) && s.intensity >= 0 && s.intensity <= 1,
+	// Which hover the frame shows (#177 D2).
+	chart: (s) => CHART_SPOTS.includes(s.spot),
 	duel: (s) =>
 		["forward", "right", "left"].includes(s.headLook) &&
 		(s.aftermath === undefined ||
