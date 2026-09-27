@@ -1026,7 +1026,9 @@ export interface RunOptions {
 	/**
 	 * Called once per flown hop, after it is booked — an observer, never a
 	 * steer: nothing it returns is read, so an arm with one flies exactly the
-	 * run an arm without one does. `measure-ladder-rates.ts` (#562) tallies
+	 * run an arm without one does. That holds for an observer that only reads:
+	 * `from` and `to` are the run's own live ports, and one that mutates them
+	 * steers the run. `measure-ladder-rates.ts` (#562) tallies
 	 * realised margin and the legs a raider could meet from it.
 	 */
 	onHop?: (hop: HopRecord) => void;

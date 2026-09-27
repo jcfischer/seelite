@@ -6,8 +6,10 @@
  *
  * Rates, not thresholds: a threshold is a rate times the hours the principal
  * wants a rung to take, and those hours are the principal's answer, not this
- * file's. Every figure is a per-galaxy spread over the greedy trader's own
- * `GALAXY_LIST`, never one number.
+ * file's. Sections 1–3 print every rate as a per-galaxy spread over the
+ * greedy trader's own `GALAXY_LIST`, never one number; section 5 pools those
+ * spreads into one median per ladder, prints the values it pooled, and derives
+ * the thresholds from that median.
  *
  * 1. **Trade (D3)** — realised margin: Σ (sale − purchase basis) over market
  *    sales, read hop by hop through the trader's `onHop` observer. The trader's
@@ -95,6 +97,13 @@ if (!Number.isInteger(worldSeed))
 const WORLDS: World[] = GALAXY_LIST.map((g) => worldFor(worldSeed, g));
 const CHECKPOINTS_H = [1, 2, 4, 8].filter((h) => h <= hours);
 
+const median = (xs: readonly number[]): number => {
+	const s = [...xs].map((x) => finite("median input", x)).sort((a, b) => a - b);
+	if (s.length === 0) throw new Error("median of nothing");
+	const m = Math.floor(s.length / 2);
+	return s.length % 2 ? s[m] : (s[m - 1] + s[m]) / 2;
+};
+
 const range = (xs: number[], digits = 0): string => {
 	const f = xs.map((x) => finite("figure", x));
 	const lo = Math.min(...f).toFixed(digits);
@@ -179,15 +188,11 @@ interface TradeArm {
 	/** The hull the arm flies — its hold here, and its own strength when
 	 *  section 5 prices the arm's kills. */
 	hull: HullId;
-	/** Earns more with market memory than without, which is the round-trip
-	 *  pump `RunOptions.remembers` documents: section 5 pools no rate from it. */
-	pumped: boolean;
 	opts: Parameters<typeof run>[2];
 }
 const holdArm = (hull: HullId): TradeArm => ({
 	label: `${hull} ${HULL_SPECS[hull].holdT} t, capitalised, no shopping`,
 	hull,
-	pumped: hull === PLAYER_BASELINE_HULL,
 	opts: {
 		holdT: HULL_SPECS[hull].holdT,
 		shop: false,
@@ -198,7 +203,6 @@ const ARMS: TradeArm[] = [
 	{
 		label: `new pilot: courier ${HULL_SPECS.courier.holdT} t from ${START_CR} Cr, shopping on`,
 		hull: PLAYER_BASELINE_HULL,
-		pumped: false,
 		opts: { holdT: HULL_SPECS.courier.holdT, shop: true },
 	},
 	holdArm("courier"),
@@ -213,6 +217,11 @@ console.log(
 const tallies: Tally[][] = [];
 /** Section 5's inputs, per galaxy, collected where each section computes them. */
 const tradeRatesByArm: number[][] = [];
+/** An arm that earns more on a market with memory than on one without is
+ *  riding the round-trip pump `RunOptions.remembers` documents — the memory is
+ *  there to close a pair, never to open one. Computed per arm from the two
+ *  runs below; section 5 pools no rate from a pumped arm. */
+const pumpedByArm: boolean[] = [];
 const pulseKillsByArm: number[][] = [];
 const exploreRatesByArm: { label: string; perH: number[] }[] = [];
 for (const arm of ARMS) {
@@ -225,17 +234,20 @@ for (const arm of ARMS) {
 	console.log(
 		`     flew       ${range(rows.map((r) => r.minutes))} min of a ${hours * 60} min window`,
 	);
-	if (arm.opts?.shop === false) {
-		// The same arm on a market with no memory — `measure-hull-pricing.ts`'s
-		// pricing basis, printed so the deficit's share of the hold curve shows.
-		const bare = WORLDS.map((w) =>
-			flyTrade(w, { ...arm.opts, remembers: false }),
-		);
-		const bareH = bare.map((r) => r.marginCr / (r.minutes / 60));
-		console.log(
-			`     no memory  ${range(bareH)}    (${byGalaxy(bareH)})  — deficit off, for comparison`,
-		);
-	}
+	// The same arm on a market with no memory — `measure-hull-pricing.ts`'s
+	// pricing basis, and the control the pump test reads.
+	const bare = WORLDS.map((w) =>
+		flyTrade(w, { ...arm.opts, remembers: false }),
+	);
+	const bareH = bare.map((r) => r.marginCr / (r.minutes / 60));
+	const pumped = median(perHour) > median(bareH);
+	pumpedByArm.push(pumped);
+	console.log(
+		`     no memory  ${range(bareH)}    (${byGalaxy(bareH)})  — deficit off, for comparison`,
+	);
+	console.log(
+		`     pump       ${pumped ? `yes — memory out-earns no memory (median ${median(perHour).toFixed(0)} against ${median(bareH).toFixed(0)}), so section 5 pools no rate from this arm` : "no"}`,
+	);
 	CHECKPOINTS_H.forEach((h, i) => {
 		const at = rows.map((r) => r.atCheckpoint[i]);
 		const flown = at.filter((x): x is number => x !== null);
@@ -462,7 +474,10 @@ function explore(
 		)
 			path.unshift(c);
 		for (const hop of path) {
+			// Every system holds a station today; a generator that drops one must
+			// fail here rather than count a dock that never happened.
 			const to = portsOf(hop, w.contentsFor(hop))[0];
+			if (!to) throw new Error(`system ${hop.index} has no station to dock at`);
 			t += jumpSeconds(here, to, t, DOCK_SECONDS);
 			here = to;
 		}
@@ -508,6 +523,29 @@ for (const hull of ["courier", "explorer"] as const) {
 		});
 		console.log(`       kinds/h by window: ${windows.join("   ")}`);
 	}
+}
+
+// The bound on section 5's extrapolation: fly the greedy hours the top implies
+// (the focused hours at the human factor) and see how far one galaxy gets.
+const greedyHoursToTop = FOCUSED_HOURS_TO_TOP * HUMAN_FACTOR;
+console.log(
+	`\n   the explorer docking at every station, flown for ${greedyHoursToTop} h — the greedy hours section 5's top implies:`,
+);
+for (const hull of ["courier", "explorer"] as const) {
+	const rows = WORLDS.map((w) =>
+		explore(w, HULL_SPECS[hull].tankLy, "all", greedyHoursToTop * 3600),
+	);
+	const ex = rows.filter((r) => r.exhausted);
+	console.log(
+		`     ${hull.padEnd(9)} ${range(rows.map((r) => r.kinds))} kinds; ${ex.length}/${rows.length} galaxies exhausted${
+			ex.length
+				? `, at ${range(
+						ex.map((r) => r.seconds / 3600),
+						1,
+					)} h`
+				: ""
+		}`,
+	);
 }
 
 // ---------------------------------------------------------------------------
@@ -562,12 +600,6 @@ console.log(
 	`   declared: TOP_RUNG ${TOP_RUNG} (rungs 0–${TOP_RUNG}), RATIO ${RATIO}, FOCUSED_HOURS_TO_TOP ${FOCUSED_HOURS_TO_TOP}, HUMAN_FACTOR ${HUMAN_FACTOR} (a declared guess, recalibrated from #564's play log), CREDIT_K ${CREDIT_K}`,
 );
 
-const median = (xs: readonly number[]): number => {
-	const s = [...xs].map((x) => finite("median input", x)).sort((a, b) => a - b);
-	if (s.length === 0) throw new Error("median of nothing");
-	const m = Math.floor(s.length / 2);
-	return s.length % 2 ? s[m] : (s[m - 1] + s[m]) / 2;
-};
 const list = (xs: readonly number[], digits = 0) =>
 	xs.map((x) => x.toFixed(digits)).join(", ");
 
@@ -619,7 +651,7 @@ console.log(
 // without) — combat's legs are the trader's legs, so a pumped route is a
 // pumped leg count too. Each arm's kills are priced at that arm's own hull
 // against a raider, so no kill is credited as a hull that did not fly it.
-const pooled = ARMS.flatMap((arm, i) => (arm.pumped ? [] : [{ arm, i }]));
+const pooled = ARMS.flatMap((arm, i) => (pumpedByArm[i] ? [] : [{ arm, i }]));
 const tradeIn = pooled.map(({ arm, i }) => ({
 	arm: arm.label,
 	v: tradeRatesByArm[i],
@@ -678,7 +710,7 @@ for (const n of rungs)
 		`   ${String(n).padEnd(6)}${atRung(FOCUSED_HOURS_TO_TOP, n).toFixed(2).padStart(11)}${LADDERS.map((l, i) => atRung(tops[i], n).toFixed(l.digits).padStart(22)).join("")}`,
 	);
 const kindsPerGalaxy = median(pool.map((p) => p.systems + p.stations));
-const exploreTop = exploreRate * HUMAN_FACTOR * FOCUSED_HOURS_TO_TOP;
+const exploreTop = tops[LADDERS.findIndex((l) => l.name === "exploration")];
 const galaxiesToTop = exploreTop / kindsPerGalaxy;
 console.log(
 	`\n   exploration top ÷ kinds per galaxy (median ${kindsPerGalaxy}) = ${galaxiesToTop.toFixed(2)} galaxies`,
