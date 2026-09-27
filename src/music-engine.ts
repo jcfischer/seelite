@@ -86,6 +86,8 @@ export class MusicEngine implements NoteSink, VoiceGain {
 	private lead = -1;
 	/** The slot whose notes `note` is receiving, during `render`. */
 	private rendering = 0;
+	/** Where the last `render` ended: no move lands before it. */
+	private rendered = 0;
 
 	/**
 	 * `onNote` hears every note as it is scheduled, by song id, frame and part
@@ -116,6 +118,10 @@ export class MusicEngine implements NoteSink, VoiceGain {
 	 * reports that to the main thread.
 	 */
 	command(cmd: MusicCommand, now: number) {
+		// A port message runs between two quanta, and `currentFrame` there need
+		// not be the next quantum's start. A move placed behind what is
+		// already rendered would lose its first note, so it lands at the end.
+		now = Math.max(now, this.rendered);
 		const fade = (s: number) => Math.max(0, Math.round(s * this.sampleRate));
 		switch (cmd.type) {
 			case "load":
@@ -192,6 +198,7 @@ export class MusicEngine implements NoteSink, VoiceGain {
 	 */
 	render(out: Float32Array, frame: number) {
 		const to = frame + out.length;
+		this.rendered = to;
 		for (let i = 0; i < this.slots.length; i++) {
 			const s = this.slots[i];
 			if (!s) continue;

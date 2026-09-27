@@ -89,6 +89,17 @@ describe("starting", () => {
 		expect(r.heard.find((h) => h.frame === BAR)?.part).toBe("a");
 	});
 
+	test("a command stamped before the rendered end acts at that end", () => {
+		// A port message runs between two quanta, and what `currentFrame`
+		// reads there is not the next quantum's start on every engine. A start
+		// placed behind what is rendered would lose its first note.
+		const r = rig();
+		r.until(1280);
+		r.e.command({ type: "play", id: "a", at: "bar" }, 1280 - 128);
+		r.until(3000);
+		expect(r.heard[0]).toEqual({ id: "a", frame: 1280, part: "a" });
+	});
+
 	test("a start names its section", () => {
 		const r = rig();
 		r.send({ type: "play", id: "a", section: "B", at: "bar" });

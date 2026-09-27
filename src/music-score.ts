@@ -191,3 +191,10 @@ export type MusicCommand =
 /** The processor's registered name: the worklet registers it and the
  *  controller constructs it, from this one copy. */
 export const MUSIC_PROCESSOR = "seelite-music";
+
+/** What the worklet sends back over its `port`: a command it refused, and
+ *  why. The controller keeps the reason and warns with it. */
+export interface MusicReport {
+	readonly type: "error";
+	readonly message: string;
+}
