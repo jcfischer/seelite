@@ -192,7 +192,7 @@ export const DEFAULT_NEIGHBOUR_LIMIT = 8;
 // The world, as the trader sees it
 // ---------------------------------------------------------------------------
 
-interface Port {
+export interface Port {
 	record: SystemRecord;
 	contents: SystemContents;
 	station: Station;
@@ -248,7 +248,10 @@ const massesOf = (contents: SystemContents, gameTimeS: number): Mass[] =>
 		.filter((b) => b.kind !== "station")
 		.map((b) => ({ id: b.id, pos: b.pos, radiusKm: b.radiusKm }));
 
-function portsOf(record: SystemRecord, contents: SystemContents): Port[] {
+export function portsOf(
+	record: SystemRecord,
+	contents: SystemContents,
+): Port[] {
 	return contents.stations.map((station) => ({
 		record,
 		contents,
@@ -405,7 +408,7 @@ function basket(
 }
 
 /** Seconds from one port to another inside one system, at the current clock. */
-function intraSeconds(
+export function intraSeconds(
 	from: Port,
 	to: Port,
 	gameTimeS: number,
@@ -427,7 +430,7 @@ function intraSeconds(
 
 /** Seconds for a jump: wind-up, then the arrival-point-to-station leg §7.4
  *  makes a function of the inbound bearing. */
-function jumpSeconds(
+export function jumpSeconds(
 	from: Port,
 	to: Port,
 	gameTimeS: number,
@@ -1020,6 +1023,26 @@ export interface RunOptions {
 	 * prints the spread, rather than treating one start as the answer.
 	 */
 	startPolicy?: StartPolicy;
+	/**
+	 * Called once per flown hop, after it is booked — an observer, never a
+	 * steer: nothing it returns is read, so an arm with one flies exactly the
+	 * run an arm without one does. `measure-ladder-rates.ts` (#562) tallies
+	 * realised margin and the legs a raider could meet from it.
+	 */
+	onHop?: (hop: HopRecord) => void;
+}
+
+/** What `RunOptions.onHop` is told about one flown hop. */
+export interface HopRecord {
+	kind: "intra" | "jump";
+	/** Game seconds at departure, and at arrival. */
+	departS: number;
+	arriveS: number;
+	from: Port;
+	to: Port;
+	/** Σ units × (sale − purchase) at the quoted prices — the hop's margin. */
+	profitCr: number;
+	fuelCr: number;
 }
 
 export function run(
@@ -1176,6 +1199,15 @@ export function run(
 			tonnesLifted += tonnes;
 			ladenHops++;
 		}
+		opts.onHop?.({
+			kind: hop.kind,
+			departS: t - hop.seconds,
+			arriveS: t,
+			from: here,
+			to: hop.to,
+			profitCr: hop.profitCr,
+			fuelCr: hop.fuelCr,
+		});
 		here = hop.to;
 		dockTl.push(here.record.displayTL);
 		dockRadius.push(here.record.t);
