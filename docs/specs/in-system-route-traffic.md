@@ -209,11 +209,10 @@ the lanes behind it.
 
 Traffic actors use `HULL_SPECS[hull].chargeAu`. `advanceCruise` already meters
 actual powered distance through the existing distance-based consumption law,
-but today's regeneration and docking call sites cap every ship at the player's
-`CHARGE_CAPACITY_AU`. Implementation must parameterize those capacity/refill
-seams with an explicit `capacityAu`, defaulting to `CHARGE_CAPACITY_AU` so the
-player retains the current 12 AU behavior; Traffic passes its hull's
-`chargeAu`. Every completed dock then refills to that capacity for free, at home
+and the regeneration and docking seams take an explicit `capacityAu`: Traffic
+passes its hull's `chargeAu`, and since #554 the player passes the flown hull's
+(`CHARGE_CAPACITY_AU`, the courier's 12 AU default, is retired; the capacity is
+required). Every completed dock then refills to that capacity for free, at home
 or away. Normal flight uses the same passive rate and cruise consumes no
 invented NPC reserve.
 

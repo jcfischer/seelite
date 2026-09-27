@@ -14,7 +14,6 @@
 
 import {
 	GALAXY_COUNT,
-	JUMP_RANGE_LY,
 	SYSTEMS_PER_GALAXY,
 	type SystemRecord,
 	distanceLy,
@@ -23,8 +22,8 @@ import {
 } from "./galaxy";
 
 /**
- * Systems one jump from `from`, nearest first — the lit points inside the
- * map's 7 LY shell.
+ * Systems one jump from `from` at `maxJump` — the flown hull's tank — nearest
+ * first: the lit points inside the map's shell.
  *
  * A thin scope over `neighbours`, and the scope is the point. `neighbours`
  * takes identity as `(galaxy, index)` precisely so a caller *may* hold two
@@ -35,7 +34,7 @@ import {
 export function reachable(
 	systems: readonly SystemRecord[],
 	from: SystemRecord,
-	maxJump = JUMP_RANGE_LY,
+	maxJump: number,
 ): SystemRecord[] {
 	return neighbours(
 		systems.filter((s) => s.galaxy === from.galaxy),
@@ -303,7 +302,7 @@ const projectionCache = new WeakMap<
 export function projectJumps(
 	systems: readonly SystemRecord[],
 	from: SystemRecord,
-	maxJump = JUMP_RANGE_LY,
+	maxJump: number,
 ): JumpProjection {
 	let perArray = projectionCache.get(systems);
 	if (perArray === undefined) {
@@ -346,7 +345,7 @@ export function planRoute(
 	systems: readonly SystemRecord[],
 	from: SystemRecord,
 	to: SystemRecord,
-	maxJump = JUMP_RANGE_LY,
+	maxJump: number,
 ): Route | null {
 	if (from.galaxy !== to.galaxy) return null;
 
@@ -440,7 +439,7 @@ export function setCourse(
 	systems: readonly SystemRecord[],
 	from: SystemRecord,
 	to: SystemRecord,
-	maxJump = JUMP_RANGE_LY,
+	maxJump: number,
 ): Course | null {
 	if (planRoute(systems, from, to, maxJump) === null) return null;
 	return {
@@ -461,7 +460,7 @@ export function courseProgress(
 	systems: readonly SystemRecord[],
 	course: Course,
 	current: SystemRecord,
-	maxJump = JUMP_RANGE_LY,
+	maxJump: number,
 ): CourseProgress | null {
 	if (current.galaxy !== course.galaxy) return null;
 	const to = systems.find(

@@ -142,11 +142,12 @@ export interface HullSpec {
 	 *  rather than a typo. #8's prototype owns retuning any row, and moving one
 	 *  means moving the law or the check with it. */
 	readonly integrity: number;
-	/** Hyperspace tank, light years, and cruise drive charge, AU. The courier's
-	 *  are the game's `JUMP_RANGE_LY` and `CHARGE_CAPACITY_AU`; `tests/hull.test.ts`
-	 *  asserts that, which is what stops the two copies drifting. Nothing reads
-	 *  the other rows yet — the router and the chart take a jump range as a
-	 *  parameter but are handed the constant. */
+	/** Hyperspace tank, light years, and cruise drive charge, AU — both read
+	 *  off the **flown** hull (#185, #554). `tankLy` is the hull's jump range
+	 *  *and* its fuel capacity, one number, so a short tank flies a fragmented
+	 *  jump graph on purpose. The courier's tank equals `galaxy.ts`'s
+	 *  `JUMP_RANGE_LY`, the connectivity predicate, and `tests/hull.test.ts`
+	 *  asserts that; no other hull's has to. */
 	readonly tankLy: number;
 	readonly chargeAu: number;
 	/**
@@ -292,6 +293,18 @@ export const PURCHASABLE_HULL_IDS = [
 ] as const satisfies readonly HullId[];
 
 /**
+ * The purchasable hull a `?hull=` query names, or `null` for none.
+ *
+ * One reader for the flight's `PLAYER_HULL` and the chart workbench, so the
+ * two cannot accept different sets (#554). What to fly on `null` is the
+ * caller's: both fall back to the baseline and say so where they do.
+ */
+export const purchasableHullNamed = (asked: string | null): HullId | null =>
+	asked !== null && (PURCHASABLE_HULL_IDS as readonly string[]).includes(asked)
+		? (asked as HullId)
+		: null;
+
+/**
  * The roster, all twelve.
  *
  * **Twelve and not the seven**, although only seven are purchasable: the five
@@ -387,8 +400,8 @@ export const HULL_SPECS: Readonly<Record<HullId, HullSpec>> = {
 		holdT: 30,
 		hardpoints: 1,
 		integrity: 183,
-		// The one hull with more range than the baseline, which is what a survey
-		// hull is for. Nothing reads it yet — see `tankLy` above.
+		// The one purchasable hull with more range than the baseline, which is
+		// what a survey hull is for — see `tankLy` above.
 		tankLy: 9,
 		chargeAu: 16,
 		priceCr: 44_800,

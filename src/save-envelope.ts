@@ -31,7 +31,7 @@
 
 import { type CarrierKey, isCarrierKey } from "./carrier-key";
 import { type FirstDayChoice, isFirstDayChoice } from "./first-day-choice";
-import { HULL_IDS, type HullId } from "./hull";
+import { HULL_IDS, HULL_SPECS, type HullId } from "./hull";
 import { generateGalaxy } from "./galaxy";
 import { generateContents } from "./system";
 import { emptyRequests, parseRequests, type RequestsState } from "./requests";
@@ -299,9 +299,17 @@ const fail = (message: string): never => {
 	throw new Error(`save: ${message}`);
 };
 
-/** A new game's commander: #26's baseline hull, at rest, undocked, full
- *  charge. `chargeAu` is the caller's because `CHARGE_CAPACITY_AU` belongs to
- *  the travel model and this module is not it. */
+/** A new game's commander: at rest, undocked, and a charge the caller names —
+ *  the renderer owns the drive charge's session, and a full one is the hull's
+ *  `chargeAu` (#554).
+ *
+ *  **The boundary moved in one direction and on purpose.** The charge of a
+ *  *new* record is still the caller's. What this module now owns is the
+ *  *ceiling on load*: `parseCommander` clamps a stored tank and charge to the
+ *  record's own hull, because a record written before #554 filled every hull
+ *  to the courier's figures, and the parser is the one place every restore
+ *  passes through. It reads the roster (`hull.ts`, a leaf) and nothing of
+ *  the travel model. */
 export const newCommanderRecord = (
 	hull: HullId,
 	options: {
@@ -559,13 +567,26 @@ const parseCommander = (
 			credits: num(state, "credits", "commander.state"),
 			cargo,
 			ownedEquipment: [...(equipment as string[])].sort(),
-			fuelLy: num(state, "fuelLy", "commander.state"),
+			// **Clamped to the hull's tank, not refused** (#554). Every save
+			// before it filled to the courier's 7 LY whatever the hull, so a
+			// short-tank commander's record carries more fuel than the hull
+			// holds; that is a figure a rule moved under, not a corrupt record.
+			// A new record, so D8's untouched-on-disk rule is kept.
+			fuelLy: Math.min(
+				num(state, "fuelLy", "commander.state"),
+				HULL_SPECS[hull as HullId].tankLy,
+			),
 			hull: hull as HullId,
 		},
 		galaxyIndex,
 		systemIndex,
 		dockedAt: (dockedAt as CarrierKey | null) ?? null,
-		chargeAu: num(o, "chargeAu", "commander"),
+		// Likewise the drive charge: every hull regenerated to the courier's
+		// 12 AU before #554, which a 10 AU hull does not hold.
+		chargeAu: Math.min(
+			num(o, "chargeAu", "commander"),
+			HULL_SPECS[hull as HullId].chargeAu,
+		),
 		permadeath: o.permadeath as boolean,
 		firstDay,
 		flight: parseFlight(o.flight),

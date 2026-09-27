@@ -14,28 +14,20 @@
  * It imports no Three.js and no DOM, so `tests/hyperspace.test.ts` can replay a
  * wind-up at three frame rates and demand the same answer.
  *
- * ## The tank is `JUMP_RANGE_LY`, and that is a decision
+ * ## The gate is the flown hull's tank (#185 D1, #554)
  *
- * §8's table gives one figure for both: the range is 7.0 LY and a full tank is
- * 7.0 LY of fuel. `galaxy.ts` owns it as the **edge predicate for the
- * connectivity graph**, and that docstring records why it is deliberately not
- * derived from the flown hull's `tankLy` — a combat retune of one hull would
- * otherwise regenerate every system's edge set. So the tank is that constant
- * and not `HULL_SPECS[…].tankLy`, which is the same number today by a check in
- * `tests/hull.test.ts`. #185 is the node that makes the router and the spend
- * hull-aware together.
+ * A hull's `tankLy` is its jump range **and** its fuel capacity, one number,
+ * as the roster is written. So a jump over the hull's tank is refused as out of
+ * range, and a refuel fills to it (`station-commerce.ts`). A short-tank hull
+ * flies a fragmented graph on purpose: that is the price of the hull.
  *
- * **It is not the only name for it, and saying so was wrong** (sage round 2).
- * `market.ts` already exports `FUEL_TANK_LY = HULL_SPECS[PLAYER_BASELINE_HULL].tankLy`
- * and `scripts/lib/greedy-trader.ts` reasons about the tank with that, while
- * this module fills to a range-derived figure. The two are equal today only
- * because `tests/hull.test.ts` asserts the baseline hull's tank is the jump
- * range — and #185 is precisely the node that would make them differ, since it
- * asks whether reachability is a fact about the galaxy or about the ship.
- *
- * So they are two names for two questions that currently have one answer: what
- * a *jump* may cross (a galaxy fact, the connectivity graph's edge predicate)
- * and what a *hull* may carry (a roster fact). #185 is where they part.
+ * `galaxy.ts`'s `JUMP_RANGE_LY` is **not** read here. It is the galaxy's
+ * connectivity predicate — the reach at which every galaxy connects, which is
+ * the courier's tank — and nobody's jump gate. Until #554 this module filled
+ * to it and gated on it, and `market.ts` carried a second name for the same
+ * courier figure; both constants are gone, and the hull is a required argument
+ * for `FlightPerformance`'s reason — a default would fly the courier's tank in
+ * every hull, and the two are indistinguishable in a diff.
  *
  * ## Range is the squared comparison, on purpose
  *
@@ -45,12 +37,8 @@
  * plans — both use it, so a jump gate that rooted first could refuse a system
  * the chart drew inside the shell. One comparison, or the map lies.
  */
-import {
-	JUMP_RANGE_LY,
-	type SystemRecord,
-	distanceLy,
-	squaredDistanceLy,
-} from "./galaxy";
+import { type SystemRecord, distanceLy, squaredDistanceLy } from "./galaxy";
+import { HULL_SPECS, type HullId } from "./hull";
 
 /**
  * §8's wind-up, seconds — **declared here and borrowed by cruise**, which is
@@ -70,12 +58,6 @@ import {
  */
 export const JUMP_CHARGE_S = 3;
 
-/**
- * The hyperspace tank, light years. See the module docstring for why this is
- * `JUMP_RANGE_LY` rather than the hull's `tankLy`.
- */
-export const JUMP_TANK_LY = JUMP_RANGE_LY;
-
 /** Why a jump was refused. Every arm is reachable — see `tests/hyperspace.test.ts`. */
 export type JumpRefusal =
 	/** The destination is where the ship already is. */
@@ -83,7 +65,7 @@ export type JumpRefusal =
 	/** A different galaxy. That is the Galactic Hyperdrive (§2), which is a
 	 *  different act at a different price and is not built. */
 	| "other-galaxy"
-	/** Further than §8's 7.0 LY. */
+	/** Further than the flown hull's `tankLy` — §8's 7.0 LY on the courier. */
 	| "out-of-range"
 	/** Inside the range, but the tank does not hold it. */
 	| "insufficient-fuel";
@@ -119,10 +101,14 @@ export function planJump(
 	from: SystemRecord,
 	to: SystemRecord,
 	fuelLy: number,
+	/** The flown hull, whose `tankLy` is the range. Required: see the module
+	 *  docstring. */
+	hull: HullId,
 ): JumpDecision {
 	if (from.galaxy !== to.galaxy) return { ok: false, refusal: "other-galaxy" };
 	if (from.index === to.index) return { ok: false, refusal: "same-system" };
-	if (squaredDistanceLy(from.pos, to.pos) > JUMP_RANGE_LY * JUMP_RANGE_LY)
+	const rangeLy = HULL_SPECS[hull].tankLy;
+	if (squaredDistanceLy(from.pos, to.pos) > rangeLy * rangeLy)
 		return { ok: false, refusal: "out-of-range" };
 	// Rooted only here, for the ~8 systems that got this far — the same trade
 	// `neighbours` makes, and the gate above has already been decided on the

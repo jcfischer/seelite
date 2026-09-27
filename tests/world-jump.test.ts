@@ -22,6 +22,7 @@
  */
 import { describe, expect, test } from "bun:test";
 import {
+	JUMP_RANGE_LY,
 	type SystemRecord,
 	generateGalaxy,
 	neighbours,
@@ -65,7 +66,7 @@ const inboundBearing = (origin: SystemRecord, destination: SystemRecord) =>
 	unit(sub(origin.pos, destination.pos));
 
 const neighbourOf = (system: SystemRecord, nth = 0) => {
-	const list = neighbours(GALAXY.systems, system);
+	const list = neighbours(GALAXY.systems, system, JUMP_RANGE_LY);
 	if (list.length <= nth)
 		throw new Error(`${system.name} has no neighbour ${nth}`);
 	return list[nth];
@@ -141,7 +142,7 @@ describe("jumpWorldTo", () => {
 		// your route". A build still passing `originPos: null` puts the ship in
 		// the same place from both and passes every other row in this file.
 		const to = neighbourOf(HOME);
-		const otherOrigins = neighbours(GALAXY.systems, to).filter(
+		const otherOrigins = neighbours(GALAXY.systems, to, JUMP_RANGE_LY).filter(
 			(s) => s.index !== HOME.index,
 		);
 		expect(otherOrigins.length).toBeGreaterThan(0);
@@ -172,7 +173,7 @@ describe("jumpWorldTo", () => {
 		const world = makeWorld(SEED);
 		advanceWorldClock(world, 777);
 		let checked = 0;
-		for (const to of neighbours(GALAXY.systems, HOME)) {
+		for (const to of neighbours(GALAXY.systems, HOME, JUMP_RANGE_LY)) {
 			const flown = makeWorld(SEED);
 			advanceWorldClock(flown, 777);
 			jumpWorldTo(flown, to);

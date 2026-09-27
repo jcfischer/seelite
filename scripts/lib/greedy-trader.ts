@@ -47,6 +47,7 @@
  * measures, and `measure-cruise-pacing.ts` is where the flown comparison lives.
  */
 
+import { HULL_SPECS, PLAYER_BASELINE_HULL } from "../../src/hull";
 import { type CarrierKey, carrierKey } from "../../src/carrier-key";
 import { DEFAULT_CRUISE, legSeconds, type Mass } from "../../src/cruise";
 import { type DeficitMap, readDeficit, recordTrade } from "../../src/deficits";
@@ -63,7 +64,6 @@ import {
 	EQUIPMENT,
 	type Equipment,
 	FUEL_CR_PER_LY,
-	FUEL_TANK_LY,
 	fullKitCr,
 	HOLD_REFERENCE_T,
 	listsCommodity,
@@ -86,6 +86,10 @@ import {
 	type SystemContents,
 } from "../../src/system";
 import type { Vec3 } from "../../src/vec3";
+
+/** The courier's tank: this instrument models the baseline hull, and the
+ *  reach is a hull's since #554 rather than the galaxy's constant. */
+const COURIER_TANK_LY = HULL_SPECS[PLAYER_BASELINE_HULL].tankLy;
 
 // ---------------------------------------------------------------------------
 // The modelled numbers, all of them named
@@ -637,7 +641,7 @@ function intraOptions(here: Port, st: Stance): Hop[] {
 function jumpOptions(here: Port, world: World, st: Stance): Hop[] {
 	const { systems, contentsFor } = world;
 	const out: Hop[] = [];
-	const inRange = neighbours(systems, here.record);
+	const inRange = neighbours(systems, here.record, COURIER_TANK_LY);
 	// Counted per **enumeration**, not per decision: `jumpOptions` runs twice
 	// for each decision point — once from `flyingOptions` and once inside
 	// `waitOption` — so a denominator called "decisions" was double what a
@@ -646,14 +650,14 @@ function jumpOptions(here: Port, world: World, st: Stance): Hop[] {
 	st.tally.enumerations++;
 	for (const record of inRange.slice(0, st.neighbourLimit)) {
 		const ly = distanceLy(here.record.pos, record.pos);
-		// `neighbours` already bounds this at `JUMP_RANGE_LY`, which is
-		// `FUEL_TANK_LY` — so there is no separate range check to make, and this
-		// asserts the identity rather than assuming it. The tank is not *tracked*
+		// `neighbours` already bounds this at the courier's tank, which is its
+		// range and its capacity at once (#554) — so there is no separate range
+		// check to make, and this asserts the identity rather than assuming it. The tank is not *tracked*
 		// because fuel is sold at every station (§7) and the trader docks on every
 		// hop: a full refill is always one purchase away, so paying is refuelling.
-		if (ly > FUEL_TANK_LY)
+		if (ly > COURIER_TANK_LY)
 			throw new Error(
-				`neighbour at ${ly} LY is past the ${FUEL_TANK_LY} LY tank`,
+				`neighbour at ${ly} LY is past the ${COURIER_TANK_LY} LY tank`,
 			);
 		const fuelCr = ly * FUEL_CR_PER_LY;
 		if (fuelCr > st.credits) continue;

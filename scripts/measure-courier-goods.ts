@@ -35,6 +35,7 @@
  *
  * Run: `npx tsx scripts/measure-courier-goods.ts` or `bun scripts/measure-courier-goods.ts`
  */
+import { HULL_SPECS, PLAYER_BASELINE_HULL } from "../src/hull";
 import { carrierKey } from "../src/carrier-key";
 import { generateGalaxy, type SystemRecord } from "../src/galaxy";
 import {
@@ -54,6 +55,10 @@ import {
 	stationCommodities,
 } from "../src/market";
 import { type Station, generateContents } from "../src/system";
+
+/** The courier's tank: this instrument models the baseline hull, and the
+ *  reach is a hull's since #554 rather than the galaxy's constant. */
+const COURIER_TANK_LY = HULL_SPECS[PLAYER_BASELINE_HULL].tankLy;
 
 const GALAXY_SEED = 0x5ee11e;
 const GALAXY_INDEX = 0;
@@ -237,7 +242,13 @@ let shippedAgrees = 0;
 
 for (const { system, station } of places) {
 	const key = carrierKey(system.index, station.localCarrierId);
-	const candidates = deliveryCandidates(systems, system, generateContents, key);
+	const candidates = deliveryCandidates(
+		systems,
+		system,
+		generateContents,
+		key,
+		COURIER_TANK_LY,
+	);
 	const shipped = bindCourier(ctxFor(system, station, candidates));
 	if (!shipped) continue;
 	// The destination `bindCourier` drew, recovered from the offer so every
@@ -325,6 +336,7 @@ for (const system of systems)
 				system,
 				generateContents,
 				NO_EXCLUDED_STATION,
+				COURIER_TANK_LY,
 			).map((d) => d.system.index),
 		]),
 	);
@@ -377,6 +389,7 @@ const sweepEpisodes = (
 			system,
 			generateContents,
 			key,
+			COURIER_TANK_LY,
 		);
 		const offered = legFor(system, station, candidates);
 		if (!offered) continue;

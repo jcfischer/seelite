@@ -11,6 +11,7 @@
 import { type CarrierKey, carrierKey } from "../../src/carrier-key";
 import { type DeficitMap, recordTrade } from "../../src/deficits";
 import type { SystemRecord } from "../../src/galaxy";
+import { HULL_SPECS } from "../../src/hull";
 import {
 	type BindContext,
 	type BountyTarget,
@@ -58,6 +59,8 @@ export function boardContext(
 			record,
 			generateContents,
 			stationKeyOf(record, station),
+			// The courier's board: the reach is the flown hull's since #554.
+			HULL_SPECS.courier.tankLy,
 		),
 		deficits: options.deficits ?? {},
 		gameTimeMin: options.gameTimeMin ?? 0,

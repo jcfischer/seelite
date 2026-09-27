@@ -104,10 +104,11 @@ player does not always have to spare. So:
 
 ---
 
-## 3. Reachability: the 7 LY shell
+## 3. Reachability: the flown hull's shell
 
-- A **wireframe sphere of radius `JUMP_RANGE_LY`** is drawn around the current
-  system. Wireframe rather than a translucent solid: a solid ball 7 LY across,
+- A **wireframe sphere of radius the flown hull's `tankLy`** is drawn around the
+  current system — 7 LY on the courier (#185 D4, #554; the lit points, the
+  *"N within X LY"* label, every route and the finder read the same figure). Wireframe rather than a translucent solid: a solid ball 7 LY across,
   inside a 24.5 LY cluster, tints every system behind it — which is the one thing
   a chart must not do to the points it is about.
 - Systems inside it are **lit** (cyan); everything else is **dim**. The
@@ -171,7 +172,7 @@ is *no third copy was found by three searches of two kinds*, not *no third copy
 exists.*
 
 `tests/galaxy-route.test.ts` pins **each figure absolutely and then their
-agreement**: `FUEL_TANK_LY === 7`, both per-LY constants `=== 0.2 / 0.1`,
+agreement**: the courier's `tankLy === 7`, both per-LY constants `=== 0.2 / 0.1`,
 `jumpCost(7) === 14`, and the two constants equal to each other. The equality
 alone would have been the weaker check it first looked like — it proves the two
 match, not that either is right, so an edit moving both in the same direction
@@ -392,9 +393,17 @@ measured the diameter. Over five world seeds, eight galaxies each, from **every*
 system as origin, the worst shortest chain is **15 jumps** (14 at the shipped
 seed). At 9, real pairs sat permanently in the dimmed "beyond range" group with
 no control position that could promote them, which is *filtered-out reads as
-absent* — the failure the group exists to prevent. The ceiling is 16, and
+absent* — the failure the group exists to prevent. The ceiling was 16, and
 §9.1a re-measures the shipped seed's eight galaxies from every origin so a
 generator change that widens the galaxy goes red rather than stranding systems.
+
+**Since #554 the diameter is the flown hull's.** The finder projects at the
+hull's `tankLy`, and a short tank flies a fragmented graph whose components are
+long and thin, so the ceiling is set on the worst chain over every purchasable
+tank — the interceptor's, by a wide margin. It is 39, one past that measurement;
+the figures are not transcribed here, because
+`bun scripts/measure-galaxy-shape.ts tanks` reprints them and fails if the
+ceiling stops covering them.
 
 **The budget defaults to 1 jump**, which is the shell the chart already lights
 (§3), so list and chart agree on first open and no unreachable system is ever in
@@ -711,7 +720,7 @@ one held past 17 px never can — holding at all requires every system inside th
 pick radius to be no more than the switch margin nearer, which past 17 px means
 there are none.
 
-**What it says**: name, direct distance in LY, and the 7 LY shell marker.
+**What it says**: name, direct distance in LY, and the hull's shell marker.
 Economy, government and tech level stay on the record card — putting them here
 would make the click redundant and turn the label into the panel this section
 declines to build. The shell marker reads the same `reachable` set the lit
@@ -782,7 +791,7 @@ indexed.
 #6 ratified that galaxies are a **namespace, not geography** — all 8 exist from
 the start and switching changes one index. Drawing them on a chart whose whole
 subject is 3D distance would imply a spatial relationship they do not have, and
-a reachability the 7 LY tank does not have either. The Galactic Hyperdrive is a
+a reachability no hull's tank has either. The Galactic Hyperdrive is a
 Drive-console action (`hud-and-scanner.md` §1's right panel), not a map feature.
 
 ---

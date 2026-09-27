@@ -552,12 +552,13 @@ _Avoid_: Warp, hyperjump, hyperspace jump (as a verb), FTL
 "warp" makes the pair unnameable.
 
 **Hyperspace tank**:
-The 7 LY jump fuel, spent by distance and bought at any station's equipment
-screen at `economy-trade.md` §6.1's 0.2 Cr per 0.1 LY. Its capacity is
-`galaxy.ts`'s `JUMP_RANGE_LY` and deliberately **not** the flown hull's
-`tankLy`, because that constant is the connectivity graph's edge predicate —
-#185 is the node that makes both hull-aware. Distinct from the **drive charge**,
-which is cruise's own 12 AU reserve with free refills on docking.
+The jump fuel, spent by distance and bought at any station's equipment screen
+at `economy-trade.md` §6.1's 0.2 Cr per 0.1 LY. Its capacity is the flown
+hull's `tankLy`, which is also its jump range — one number (#185 D1, #554); the
+courier's is 7 LY. `galaxy.ts`'s `JUMP_RANGE_LY` is **not** a tank: it is the
+galaxy's connectivity predicate, the reach at which every galaxy is connected.
+Distinct from the **drive charge**, which is cruise's own reserve — the flown
+hull's `chargeAu`, 12 AU on the courier — with free refills on docking.
 _Avoid_: Fuel (unqualified), drive charge, energy (unqualified)
 
 **Energy bank**:

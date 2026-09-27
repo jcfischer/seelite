@@ -26,7 +26,6 @@ import {
 	type HullId,
 	PLAYER_BASELINE_HULL,
 } from "../src/hull";
-import { JUMP_TANK_LY } from "../src/hyperspace";
 import {
 	type CommanderState,
 	STARTING_CREDITS,
@@ -71,6 +70,10 @@ const CLOSING_FLOOR = quoteWithCut(
 const PRIOR_MARK_SEED = 0x51a7_10;
 /** The three priced berth types §5.6's closure claim covers. */
 type BerthType = "trade" | "refinery" | "shipyard";
+
+/** The baseline hull's tank. Every fuel row below flies the courier; the
+ *  per-hull row after them is what fails on a build that fills to one figure. */
+const COURIER_TANK_LY = HULL_SPECS[PLAYER_BASELINE_HULL].tankLy;
 
 const input = (
 	overrides: Partial<Parameters<typeof transactAtStation>[0]> = {},
@@ -252,7 +255,7 @@ test("a full tank is refused as full, not as unaffordable", () => {
 	expect(full.reason).toBe("fuel-full");
 	// And nothing moved.
 	expect(full.commander.credits).toBe(STARTING_CREDITS);
-	expect(full.commander.fuelLy).toBe(JUMP_TANK_LY);
+	expect(full.commander.fuelLy).toBe(COURIER_TANK_LY);
 });
 
 test("a full tank costs 14 Cr, which is §6.1's figure", () => {
@@ -261,7 +264,7 @@ test("a full tank costs 14 Cr, which is §6.1's figure", () => {
 		input({ commander: empty, action: { type: "buy-fuel" } }),
 	);
 	expect(filled.accepted).toBe(true);
-	expect(filled.commander.fuelLy).toBe(JUMP_TANK_LY);
+	expect(filled.commander.fuelLy).toBe(COURIER_TANK_LY);
 	expect(STARTING_CREDITS - filled.commander.credits).toBeCloseTo(14, 10);
 });
 
@@ -271,8 +274,18 @@ test("a partial tank buys the shortfall and not a whole tank", () => {
 		input({ commander: half, action: { type: "buy-fuel" } }),
 	);
 	expect(filled.accepted).toBe(true);
-	expect(filled.commander.fuelLy).toBe(JUMP_TANK_LY);
+	expect(filled.commander.fuelLy).toBe(COURIER_TANK_LY);
 	expect(STARTING_CREDITS - filled.commander.credits).toBeCloseTo(6, 10);
+});
+
+test("the tank fills to the flown hull's tankLy, not the courier's (#554)", () => {
+	for (const id of ["interceptor", "explorer"] as const) {
+		const dry = { ...newCommander(id), fuelLy: 0, credits: 10_000 };
+		const filled = transactAtStation(
+			input({ commander: dry, action: { type: "buy-fuel" } }),
+		);
+		expect([id, filled.commander.fuelLy]).toEqual([id, HULL_SPECS[id].tankLy]);
+	}
 });
 
 test("short of credits buys what they cover rather than refusing", () => {
@@ -311,9 +324,9 @@ test("the tank never overfills, however many times it is topped up", () => {
 			input({ commander, action: { type: "buy-fuel" } }),
 		);
 		commander = next.commander;
-		expect(commander.fuelLy).toBeLessThanOrEqual(JUMP_TANK_LY);
+		expect(commander.fuelLy).toBeLessThanOrEqual(COURIER_TANK_LY);
 	}
-	expect(commander.fuelLy).toBe(JUMP_TANK_LY);
+	expect(commander.fuelLy).toBe(COURIER_TANK_LY);
 });
 
 test("a fractional shortfall can be bought back, so the tank reaches 7.0 again", () => {
@@ -323,13 +336,13 @@ test("a fractional shortfall can be bought back, so the tank reaches 7.0 again",
 	// and the next attempt was refused as *insufficient credits* on a full purse.
 	const afterAJump = {
 		...newCommander(PLAYER_BASELINE_HULL),
-		fuelLy: JUMP_TANK_LY - 2.34,
+		fuelLy: COURIER_TANK_LY - 2.34,
 	};
 	const filled = transactAtStation(
 		input({ commander: afterAJump, action: { type: "buy-fuel" } }),
 	);
 	expect(filled.accepted).toBe(true);
-	expect(filled.commander.fuelLy).toBeCloseTo(JUMP_TANK_LY, 12);
+	expect(filled.commander.fuelLy).toBeCloseTo(COURIER_TANK_LY, 12);
 	expect(STARTING_CREDITS - filled.commander.credits).toBeCloseTo(4.68, 12);
 
 	// And a second press is refused as full rather than as money.
