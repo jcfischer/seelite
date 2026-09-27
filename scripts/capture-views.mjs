@@ -252,6 +252,53 @@ function assertPlacersCover(placers) {
 		);
 }
 
+/**
+ * The system the last chart row aimed at, for the second readback at the
+ * shutter. Set by the `chart` placer; read by the loop before the frame.
+ */
+let chartAimed = null;
+
+/**
+ * The chart's hover, read as state and as the drawn label, and refused unless
+ * both describe the hover the row is captioned for.
+ *
+ * **Read twice: after the move, and again at the shutter.** The first full
+ * capture of #540 passed the placer's readback and wrote two frames with no
+ * label in them at all — the hover was dropped between the placer and the
+ * screenshot, and nothing looked. The cause was not reproduced across two
+ * further runs; a headed window takes real pointer events from whoever is at
+ * the machine, and any of those clears it. Whatever the cause, the frame is
+ * what the caption describes or the run is red.
+ *
+ * `checkVisibility` rather than the element's `display`, because a hidden
+ * ancestor leaves `display` reading `block` over a label nobody can see.
+ */
+async function assertChartHover(page, where, shot, aimed) {
+	const got = await page.evaluate(() => {
+		const el = document.querySelector("[data-map-hover]");
+		return {
+			hovered: window.__seeliteGalaxyMap?.hovered() ?? null,
+			shown: el instanceof HTMLElement && el.checkVisibility(),
+			text: el?.textContent ?? "",
+		};
+	});
+	const { hovered } = got;
+	if (hovered === null || hovered.index !== aimed || !got.shown)
+		throw new Error(
+			`chart placer (${where}): aimed at system ${aimed} for the ${shot.spot} row and the chart labelled ${hovered === null ? "nothing" : `system ${hovered.index}`}${got.shown ? "" : ", with no label drawn"}`,
+		);
+	const badged =
+		shot.spot === "crowded"
+			? hovered.contested > 0 &&
+				got.text.includes(`(${hovered.contested} more)`)
+			: hovered.contested === 0 && !got.text.includes("more)");
+	if (!badged)
+		throw new Error(
+			`chart placer (${where}): the ${shot.spot} row's label counts ${hovered.contested} more and reads "${got.text}" — its caption describes ${shot.spot === "crowded" ? "a badge" : "none"}`,
+		);
+	return hovered;
+}
+
 /** One placer per shot kind. Each returns the subject it framed, for the log. */
 const PLACERS = {
 	"station-axis": async (page, shot) => {
@@ -702,19 +749,8 @@ const PLACERS = {
 		);
 		await page.mouse.move(layout.box.left + spot.x, layout.box.top + spot.y);
 		await frames();
-		const hovered = await page.evaluate(() =>
-			window.__seeliteGalaxyMap.hovered(),
-		);
-		if (hovered === null || hovered.index !== spot.index)
-			throw new Error(
-				`chart placer: aimed at system ${spot.index} for the ${shot.spot} row and the chart labelled ${hovered === null ? "nothing" : `system ${hovered.index}`}`,
-			);
-		const badged =
-			shot.spot === "crowded" ? hovered.contested > 0 : hovered.contested === 0;
-		if (!badged)
-			throw new Error(
-				`chart placer: the ${shot.spot} row's label counts ${hovered.contested} more — its caption describes ${shot.spot === "crowded" ? "a badge" : "none"}`,
-			);
+		const hovered = await assertChartHover(page, "placed", shot, spot.index);
+		chartAimed = spot.index;
 		return `Galaxy Map · ${shot.spot} · system ${hovered.index}${hovered.contested ? ` (${hovered.contested} more)` : ""}`;
 	},
 	/**
@@ -1102,6 +1138,10 @@ try {
 				`${view.name}: ${unbaked.join(", ")} can bake and hold no cube — the ` +
 					'frame would show the procedural program under an "after" label',
 			);
+		// The chart's second readback, after the settle and the bake wait: the
+		// label the placer confirmed has to still be drawn when the frame is.
+		if (view.shot.kind === "chart")
+			await assertChartHover(page, "at the shutter", view.shot, chartAimed);
 		const file = `${LABEL}/${view.name}.png`;
 		// Read at the shutter, not at the top of the run: the clock is normalised
 		// and then left to run, so each frame has its own. The sheet prints the
