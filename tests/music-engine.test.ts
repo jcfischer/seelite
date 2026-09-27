@@ -139,6 +139,36 @@ describe("starting", () => {
 		expect(r.heard.filter((h) => h.frame >= BAR).length).toBeGreaterThan(0);
 	});
 
+	test("a move sent with the start lands on the start's line, not a bar later", () => {
+		// Sage round 4: the start's own line had not been crossed yet, so a
+		// jump queued on it waited for the end of that bar.
+		const r = rig();
+		r.until(1280);
+		r.send({ type: "play", id: "a", at: "bar" });
+		r.send({ type: "jump", section: "B", at: "bar" });
+		r.send({ type: "tempo", scale: 2, at: "bar", rampBars: 0 });
+		r.until(30000);
+		expect(r.heard[0]).toEqual({ id: "a", frame: 1280, part: "a2" });
+		expect(r.heard[1].frame - r.heard[0].frame).toBe(12000);
+	});
+
+	test("a crossfade back to a song still fading out fades it back up", () => {
+		// Sage round 4: its gain was reset to 0 at once, cutting a song that
+		// was still ringing, before the line.
+		const r = rig();
+		r.send({ type: "play", id: "a", at: "bar" });
+		r.until(30000);
+		r.send({ type: "crossfade", to: "b", at: "bar", fadeS: 1 });
+		r.until(BAR + 24000);
+		const was = r.e.gain(0, 0, r.now());
+		expect(was).toBeGreaterThan(0);
+		r.send({ type: "crossfade", to: "a", at: "bar", fadeS: 1 });
+		expect(r.e.gain(0, 0, r.now())).toBeCloseTo(was, 6);
+		r.until(2 * BAR + 48000 + 256);
+		expect(r.e.playing).toBe("a");
+		expect(r.e.gain(0, 0, r.now())).toBeCloseTo(MUSIC_HEADROOM, 9);
+	});
+
 	test("a move with nothing playing is refused by name", () => {
 		// Sage round 3: the same reason as the unknown section below — a move
 		// dropped in silence leaves a score's author no signal.

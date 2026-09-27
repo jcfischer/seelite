@@ -211,6 +211,15 @@ try {
 		return e > 0 ? Math.sqrt(s / e) : 0;
 	};
 	const onLine = (d) => Object.values(ONSET_AFTER_LINE).includes(d);
+	/** Rms over a window in seconds, or the whole buffer: one body for every
+	 *  row that reads a level (sage round 4). */
+	const rmsOf = (x, a = 0, b = x.length / SR) => {
+		const i0 = Math.round(a * SR);
+		const i1 = Math.round(b * SR);
+		let s = 0;
+		for (let i = i0; i < i1; i++) s += x[i] * x[i];
+		return Math.sqrt(s / (i1 - i0));
+	};
 
 	for (const [row, ask] of [
 		[
@@ -328,16 +337,9 @@ try {
 				p = Math.max(p, Math.abs(x[i]));
 			return p;
 		};
-		const rmsIn = (a, b) => {
-			let s = 0;
-			const i0 = Math.round(a * SR);
-			const i1 = Math.round(b * SR);
-			for (let i = i0; i < i1; i++) s += x[i] * x[i];
-			return Math.sqrt(s / (i1 - i0));
-		};
 		// Stopped at 3.2 s over 0.8 s; the limiter's 6 ms beside it.
-		const before = rmsIn(2.6, 3.2);
-		const during = rmsIn(3.6, 3.95);
+		const before = rmsOf(x, 2.6, 3.2);
+		const during = rmsOf(x, 3.6, 3.95);
 		check(
 			"a stop now fades rather than cuts, and is silence once the fade has run",
 			x !== undefined &&
@@ -389,7 +391,7 @@ try {
 	// ── The music bus is the only level ─────────────────────────────────────
 	{
 		const march = SOUND_SET.find((e) => e.name === "music-march");
-		const rms = (x) => Math.sqrt(x.reduce((s, v) => s + v * v, 0) / x.length);
+		const rms = (x) => rmsOf(x);
 		const full = rms(rendered.get("music-march"));
 		const off = rms((await renderRaw(march, { levels: { music: 0 } })).samples);
 		const half = rms(

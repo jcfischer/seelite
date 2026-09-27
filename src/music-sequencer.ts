@@ -207,6 +207,11 @@ type Pending =
 			readonly rampBars: number;
 	  };
 
+/** `Player.takeDue`'s answers that are not a section to jump to. */
+const DUE_NONE = -1;
+const DUE_STOP = -2;
+const DUE_TEMPO = -3;
+
 /**
  * One song's playhead.
  *
@@ -267,6 +272,12 @@ export class Player {
 		const sr = this.sampleRate;
 		const B = this.song.beatsPerBar;
 		while (this.playing) {
+			// A move placed on this bar's own line before the bar began — sent
+			// with the start that placed the bar — lands here, before its notes.
+			if (this.cursor === 0 && this.pending.length > 0) {
+				this.settle();
+				if (!this.playing) return;
+			}
 			const notes = this.song.sections[this.section].byBar[this.bar];
 			while (this.cursor < notes.length) {
 				const n = notes[this.cursor];
@@ -387,38 +398,74 @@ export class Player {
 		let section = next >> 16;
 		let bar = next & 0xffff;
 		let ended = next < 0;
-		const p = this.pending;
-		// Compacted in place: a `splice` would return a new array, and this
-		// runs inside `process()`.
-		let kept = 0;
-		for (let i = 0; i < p.length; i++) {
-			const m = p[i];
-			// Due: the move's frame is this line or before it.
-			if (Math.round(m.frame) > Math.round(end)) {
-				p[kept++] = m;
-				continue;
-			}
-			if (m.kind === "jump") {
-				section = m.section;
-				bar = 0;
-				ended = false;
-				if (m.resolve) this.resolved = true;
-			} else if (m.kind === "stop") ended = true;
-			else {
-				this.scaleFrom = this.scaleAt(this.barsPlayed + 1);
-				this.scaleTo = m.scale;
-				this.scaleStart = this.barsPlayed + 1;
-				this.scaleBars = m.rampBars;
-			}
+		const due = this.takeDue(end, this.barsPlayed + 1);
+		if (due === DUE_STOP) ended = true;
+		else if (due >= 0) {
+			section = due;
+			bar = 0;
+			ended = false;
 		}
-		p.length = kept;
 		if (ended) {
-			this.playing = false;
-			p.length = 0;
+			this.halt();
 			return;
 		}
 		this.barsPlayed++;
 		this.enter(end, section, bar);
+	}
+
+	/**
+	 * Apply the moves due on the current bar's own line, before any of its
+	 * notes (sage round 4). `advance` applies what is due on the line it
+	 * crosses; a move placed on a line the playhead has not reached yet — a
+	 * start's, with a jump or a tempo sent beside it — would otherwise wait
+	 * for the end of that bar.
+	 */
+	private settle() {
+		const due = this.takeDue(this.barStart, this.barsPlayed);
+		if (due === DUE_NONE) return;
+		if (due === DUE_STOP) this.halt();
+		else
+			this.enter(
+				this.barStart,
+				due >= 0 ? due : this.section,
+				due >= 0 ? 0 : this.bar,
+			);
+	}
+
+	/**
+	 * Take every pending move due on `line` — its frame is the line or before
+	 * it — and apply what it sets: a resolve's flag, a tempo scale from the
+	 * `n`th bar played. Returns what the moves ask of the playhead, the last
+	 * one winning: a section to jump to, `DUE_STOP`, `DUE_TEMPO` for a tempo
+	 * alone, or `DUE_NONE`.
+	 *
+	 * Compacted in place: a `splice` would return a new array, and this runs
+	 * inside `process()`.
+	 */
+	private takeDue(line: number, n: number): number {
+		const p = this.pending;
+		let out = DUE_NONE;
+		let kept = 0;
+		for (let i = 0; i < p.length; i++) {
+			const m = p[i];
+			if (Math.round(m.frame) > Math.round(line)) {
+				p[kept++] = m;
+				continue;
+			}
+			if (m.kind === "jump") {
+				out = m.section;
+				if (m.resolve) this.resolved = true;
+			} else if (m.kind === "stop") out = DUE_STOP;
+			else {
+				this.scaleFrom = this.scaleAt(n);
+				this.scaleTo = m.scale;
+				this.scaleStart = n;
+				this.scaleBars = m.rampBars;
+				if (out === DUE_NONE) out = DUE_TEMPO;
+			}
+		}
+		p.length = kept;
+		return out;
 	}
 
 	private enter(frame: number, section: number, bar: number) {

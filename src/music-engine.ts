@@ -137,8 +137,13 @@ export class MusicEngine implements NoteSink, VoiceGain {
 				if (this.again(ix, line, cmd.section)) return;
 				const lead = this.slots[this.lead];
 				if (lead?.player.playing) lead.player.stopAt(line);
+				const target = this.slots[ix] as Slot;
+				const back = sounding(target);
 				this.begin(ix, line, cmd.section);
-				this.slots[ix]?.gain.reset(1);
+				// A song still fading out holds where its fade is until the line,
+				// then is full: the cut is on the line, not before it (sage round 4).
+				if (back) target.gain.set(1, line, 0);
+				else target.gain.reset(1);
 				return;
 			}
 			case "crossfade": {
@@ -151,10 +156,16 @@ export class MusicEngine implements NoteSink, VoiceGain {
 					lead.gain.set(0, line, len);
 					lead.haltAt = line + len;
 				}
+				const target = this.slots[ix] as Slot;
+				const back = sounding(target);
 				this.begin(ix, line, cmd.section);
-				const gain = (this.slots[ix] as Slot).gain;
-				gain.reset(0);
-				gain.set(1, line, len);
+				// Back to a song still fading out (sage round 4): it fades up from
+				// where it is now. Reset to 0, it was cut before the line.
+				if (back) target.gain.set(1, now, len);
+				else {
+					target.gain.reset(0);
+					target.gain.set(1, line, len);
+				}
 				return;
 			}
 			case "jump": {
