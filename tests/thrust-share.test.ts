@@ -116,6 +116,10 @@ test("the shares match what stepFlight applies", () => {
 			assist: true,
 		},
 		{ vel: { x: 0.8, y: 0, z: 0.5 }, throttle: 0.5, assist: true },
+		// Drift under saturation (sage round 2): 0.2 km/s removes about two
+		// thirds of the drive's authority, so the lateral law is compared as a
+		// figure and not as a clamped 1.
+		{ vel: { x: 0.2, y: 0, z: 0.5 }, throttle: 0.25, assist: true },
 		{ vel: { x: 1, y: 0, z: 2 }, throttle: 0.4, assist: false },
 	];
 	for (const c of cases) {
@@ -135,5 +139,9 @@ test("the shares match what stepFlight applies", () => {
 		// removes 2.65x the drive's authority in a step — so it reads as 1.
 		expect(Math.min(1, Math.abs(along))).toBeCloseTo(shares.main, 9);
 		expect(Math.min(1, lateral)).toBeCloseTo(shares.lateral, 9);
+		if (c.vel.x === 0.2) {
+			expect(shares.lateral).toBeGreaterThan(0.3);
+			expect(shares.lateral).toBeLessThan(0.9);
+		}
 	}
 });

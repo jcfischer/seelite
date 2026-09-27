@@ -365,8 +365,6 @@ export class AudioFX {
 
 	/** The ship's loops (#544), built on the first frame that has any to play. */
 	private flightGraph: FlightGraph | null = null;
-	/** The last mix asked for. */
-	private flightLevels: FlightMix | null = null;
 	/** Each group's levels as last **written** to its gains: what `flight`
 	 *  compares a new mix against, and what a probe reads. */
 	private readonly flightWritten: Partial<FlightMix> = {};
@@ -496,7 +494,6 @@ export class AudioFX {
 			for (const [osc, base] of g.throbOscs)
 				osc.frequency.setTargetAtTime(base * (1 + 0.7 * s), t, 0.3);
 		}
-		this.flightLevels = { ...mix };
 		// Two layers, on the principal's first listen: loud clicks that react,
 		// over faint ones at a sparse steady rate.
 		if (span > 0 && Math.random() < 1 - Math.exp(-mix.clickRate * span))
@@ -543,12 +540,17 @@ export class AudioFX {
 			o.start();
 			return o;
 		};
+		// Two noise buffers for the whole graph, each tapped at its own point
+		// (sage round 2: four were filled on the first flight frame). Taps a
+		// prime fraction of a second apart keep the loops that share a buffer
+		// from moving in step, which they did when each started at zero.
+		let taps = 0;
 		const loop = (buffer: AudioBuffer, to: AudioNode) => {
 			const src = ctx.createBufferSource();
 			src.buffer = buffer;
 			src.loop = true;
 			src.connect(to);
-			src.start();
+			src.start(0, (taps++ * 0.377) % buffer.duration);
 		};
 		const brown = noiseLoop(ctx, "brown");
 		const white = noiseLoop(ctx, "white");
@@ -569,10 +571,7 @@ export class AudioFX {
 		humBody.connect(humSwell);
 		const humFilter = filter("lowpass", 260, 0.7);
 		humFilter.connect(humBody);
-		// Its own noise, so the hum does not move in step with the drive.
-		const rumble = noiseLoop(ctx, "brown");
-		const hiss = noiseLoop(ctx, "white");
-		// The hull's resonances: narrow bands of the rumble, a plate ringing at
+		// The hull's resonances: narrow bands of the brown noise, a plate ringing at
 		// each. Gains lift the narrower bands, which pass less.
 		for (const [hz, q, level] of [
 			[62, 1.6, 1],
@@ -584,15 +583,15 @@ export class AudioFX {
 			g.gain.value = level;
 			band.connect(g);
 			g.connect(humFilter);
-			loop(rumble, band);
+			loop(brown, band);
 		}
-		// The pump: a low band of the rumble, churned by a slow beat.
+		// The pump: a low band of the brown noise, churned by a slow beat.
 		const pumpBand = filter("bandpass", 90, 1.5);
 		const pump = ctx.createGain();
 		pump.gain.value = 0.9;
 		pumpBand.connect(pump);
 		pump.connect(humFilter);
-		loop(rumble, pumpBand);
+		loop(brown, pumpBand);
 		const churn = ctx.createGain();
 		churn.gain.value = 0.7;
 		churn.connect(pump.gain);
@@ -604,7 +603,7 @@ export class AudioFX {
 		fan.gain.value = 0.5;
 		fanBand.connect(fan);
 		fan.connect(humBody);
-		loop(hiss, fanBand);
+		loop(white, fanBand);
 		const blades = ctx.createGain();
 		blades.gain.value = 0.4;
 		blades.connect(fan.gain);

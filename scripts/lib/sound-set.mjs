@@ -329,8 +329,8 @@ export async function renderInPage({
 					for (const cue of step.cues) fx.play(cue);
 					while (cues.length && cues[0][0] <= t) fx.play(cues.shift()[1]);
 					while (setAt.length && setAt[0][0] <= t)
-						for (const [bus, step] of Object.entries(setAt.shift()[1]))
-							fx.setLevel(bus, step);
+						for (const [bus, level] of Object.entries(setAt.shift()[1]))
+							fx.setLevel(bus, level);
 					fx.flight(step.mix);
 				} finally {
 					Math.random = random;
