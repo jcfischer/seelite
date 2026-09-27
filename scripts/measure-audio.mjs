@@ -97,10 +97,11 @@ const MODES = [
  * sample. `voices` of them summed inside one node. A string, because it runs
  * in `AudioWorkletGlobalScope`, whose names the repo's lint does not know.
  *
- * **`sampleRate` is read once, in the constructor.** A port of this class that
- * read the global in the inner loop — four times per voice per sample — cost
- * 13–18 ms per audio-second per voice offline against 1.9–2.5 for this one, so a
- * worklet voice's cost is as much its code's as the platform's.
+ * **`sampleRate` is read once, in the constructor.** `FmVoicesGlobal` is the
+ * same voice reading the global in the inner loop, four times per voice per
+ * sample, as a first port of this class did; the `voices` mode's
+ * `worklet-global` arm runs it beside the others, so what that costs is
+ * reprinted rather than remembered.
  */
 const WORKLET = `
 class FmVoices extends AudioWorkletProcessor {
@@ -138,6 +139,39 @@ class FmVoices extends AudioWorkletProcessor {
 	}
 }
 registerProcessor("fm-voices", FmVoices);
+class FmVoicesGlobal extends AudioWorkletProcessor {
+	constructor(opts) {
+		super();
+		this.n = opts.processorOptions.voices;
+		this.ph = new Float64Array(this.n); this.mph = new Float64Array(this.n);
+		this.fb = new Float64Array(this.n); this.lp = new Float64Array(this.n);
+		this.bp = new Float64Array(this.n); this.f = new Float64Array(this.n);
+		for (let i = 0; i < this.n; i++) this.f[i] = 110 * (1 + (i % 12) / 12);
+		this.t = 0;
+	}
+	process(_in, outs) {
+		const out = outs[0][0]; const n = this.n;
+		for (let s = 0; s < out.length; s++) {
+			const time = (this.t + s) / sampleRate; let acc = 0;
+			for (let v = 0; v < n; v++) {
+				this.mph[v] += (this.f[v] * 2) / sampleRate;
+				const m = Math.sin(2 * Math.PI * this.mph[v] + 0.7 * this.fb[v]);
+				this.fb[v] = m;
+				this.ph[v] += this.f[v] / sampleRate;
+				const c = Math.sin(2 * Math.PI * this.ph[v] + 2 * m);
+				const cut = 400 + 300 * Math.sin(2 * Math.PI * 0.5 * time + v);
+				const g = 2 * Math.sin((Math.PI * cut) / sampleRate);
+				this.lp[v] += g * this.bp[v];
+				this.bp[v] += g * (c - this.lp[v] - 0.5 * this.bp[v]);
+				acc += this.lp[v];
+			}
+			out[s] = acc * (0.5 / n);
+		}
+		this.t += out.length;
+		return true;
+	}
+}
+registerProcessor("fm-voices-global", FmVoicesGlobal);
 `;
 
 /**
@@ -244,11 +278,12 @@ function pageLib() {
 			for (let k = 0; k < seconds * 10; k++)
 				for (let v = 0; v < n; v++)
 					tone(ctx, m, k * 0.1, 110 * (1 + (v % 12) / 12), 0.09, "sawtooth");
-		} else if (arm === "worklet-one" || arm === "worklet-each") {
+		} else if (arm.startsWith("worklet-")) {
 			await ctx.audioWorklet.addModule("/worklet.js");
-			const one = arm === "worklet-one";
+			const one = arm !== "worklet-each";
+			const name = arm === "worklet-global" ? "fm-voices-global" : "fm-voices";
 			for (let v = 0; v < (one ? 1 : n); v++)
-				new AudioWorkletNode(ctx, "fm-voices", {
+				new AudioWorkletNode(ctx, name, {
 					processorOptions: { voices: one ? n : 1 },
 				}).connect(m);
 		} else if (arm.startsWith("convolver:")) {
@@ -308,6 +343,10 @@ function pageLib() {
 			const s = gl.createShader(type);
 			gl.shaderSource(s, src);
 			gl.compileShader(s);
+			// A program that fails leaves drawArrays a no-op, and a "gpu" row
+			// would then report an idle renderer as loaded.
+			if (!gl.getShaderParameter(s, gl.COMPILE_STATUS))
+				throw new Error(`load shader: ${gl.getShaderInfoLog(s)}`);
 			return s;
 		};
 		prog = gl.createProgram();
@@ -329,7 +368,12 @@ function pageLib() {
 			),
 		);
 		gl.linkProgram(prog);
+		if (!gl.getProgramParameter(prog, gl.LINK_STATUS))
+			throw new Error(`load program: ${gl.getProgramInfoLog(prog)}`);
 		gl.useProgram(prog);
+		const uN = gl.getUniformLocation(prog, "N");
+		const uT = gl.getUniformLocation(prog, "T");
+		const pixel = new Uint8Array(4);
 		gl.bindBuffer(gl.ARRAY_BUFFER, gl.createBuffer());
 		gl.bufferData(
 			gl.ARRAY_BUFFER,
@@ -341,10 +385,10 @@ function pageLib() {
 		const frame = (now) => {
 			rafTimes.push(now);
 			if (iters > 0) {
-				gl.uniform1i(gl.getUniformLocation(prog, "N"), iters);
-				gl.uniform1f(gl.getUniformLocation(prog, "T"), now * 1e-3);
+				gl.uniform1i(uN, iters);
+				gl.uniform1f(uT, now * 1e-3);
 				gl.drawArrays(gl.TRIANGLES, 0, 3);
-				gl.readPixels(0, 0, 1, 1, gl.RGBA, gl.UNSIGNED_BYTE, new Uint8Array(4));
+				gl.readPixels(0, 0, 1, 1, gl.RGBA, gl.UNSIGNED_BYTE, pixel);
 			}
 			if (busyMs > 0) {
 				const end = performance.now() + busyMs;
@@ -537,6 +581,20 @@ const shuffle = (a) => {
 	return a;
 };
 const out = (x) => console.log(JSON.stringify(x));
+/**
+ * The one round discipline every mode uses: `rounds` passes over `cells`,
+ * each pass in a fresh seeded order, every row printed as it lands.
+ */
+const runCells = async (rounds, cells, run) => {
+	const rows = [];
+	for (let r = 0; r < rounds; r++)
+		for (const cell of shuffle([...cells])) {
+			const row = await run(cell);
+			out(row);
+			rows.push(row);
+		}
+	return rows;
+};
 const span = (xs, d = 2) => {
 	const lo = Math.min(...xs);
 	const hi = Math.max(...xs);
@@ -619,12 +677,14 @@ try {
 	});
 
 	if (mode === "cues") {
-		const rows = [];
-		for (let r = 0; r < 5; r++)
-			for (const c of shuffle(["laser", "laserTone", "explosion", "scoop"]))
-				rows.push(await p.evaluate((c) => window.M.renderCue(c, 48000), c));
-		rows.push(await p.evaluate(() => window.M.renderCue("laserTone", 44100)));
-		for (const r of rows) out(r);
+		const rows = await runCells(
+			5,
+			["laser", "laserTone", "explosion", "scoop"],
+			(c) => p.evaluate((c) => window.M.renderCue(c, 48000), c),
+		);
+		const at44 = await p.evaluate(() => window.M.renderCue("laserTone", 44100));
+		out(at44);
+		rows.push(at44);
 		summarise(rows, (r) => `${r.name}@${r.sr}`, [
 			["rms", 5],
 			["peak", 4],
@@ -636,17 +696,17 @@ try {
 	} else if (mode === "voices" || mode === "convolver") {
 		const cells =
 			mode === "voices"
-				? ["native", "native-churn", "worklet-one", "worklet-each"].flatMap(
-						(a) => [8, 32, 128].map((n) => [a, n]),
-					)
+				? [
+						"native",
+						"native-churn",
+						"worklet-one",
+						"worklet-each",
+						"worklet-global",
+					].flatMap((a) => [8, 32, 128].map((n) => [a, n]))
 				: [0, 0.5, 2, 5].map((s) => [`convolver:${s}`, 1]);
-		const rows = [];
-		for (let r = 0; r < ROUNDS; r++)
-			for (const [a, n] of shuffle([...cells])) {
-				const row = await p.evaluate(([a, n]) => window.M.cost(a, n), [a, n]);
-				out(row);
-				rows.push(row);
-			}
+		const rows = await runCells(ROUNDS, cells, (c) =>
+			p.evaluate(([a, n]) => window.M.cost(a, n), c),
+		);
 		summarise(rows, (r) => `${r.arm} n=${String(r.n).padStart(3)}`, [
 			["msPerAudioSecond", 1],
 			["buildMs", 1],
@@ -661,16 +721,9 @@ try {
 				[0, 30],
 			].map(([i, b]) => [n, i, b]),
 		);
-		const rows = [];
-		for (let r = 0; r < ROUNDS; r++)
-			for (const [n, i, b] of shuffle([...cells])) {
-				const row = await p.evaluate(
-					([n, i, b]) => window.M.realtime(n, i, b),
-					[n, i, b],
-				);
-				out(row);
-				rows.push(row);
-			}
+		const rows = await runCells(ROUNDS, cells, (c) =>
+			p.evaluate(([n, i, b]) => window.M.realtime(n, i, b), c),
+		);
 		summarise(rows, (r) => `n=${String(r.n).padStart(4)} ${r.load}`, [
 			["frameMs", 1],
 			["clockRatio", 3],
@@ -687,17 +740,12 @@ try {
 				["lookahead", 0.2],
 			].map(([a, l]) => [a, l, s]),
 		);
-		const rows = [];
-		for (let r = 0; r < 4; r++)
-			for (const [a, l, s] of shuffle([...cells])) {
-				const phase = Math.round(rnd() * 100) / 100;
-				const row = await p.evaluate(
-					([a, l, s, ph]) => window.M.clock(a, l, s, ph),
-					[a, l, s, phase],
-				);
-				out(row);
-				rows.push(row);
-			}
+		const rows = await runCells(4, cells, ([a, l, s]) =>
+			p.evaluate(
+				([a, l, s, ph]) => window.M.clock(a, l, s, ph),
+				[a, l, s, Math.round(rnd() * 100) / 100],
+			),
+		);
 		summarise(rows, (r) => `stall ${r.stallMs} ${r.arm} ${r.lookaheadS}`, [
 			["maxLateMs", 1],
 			["lateBeats", 0],
