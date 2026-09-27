@@ -23,7 +23,7 @@ import {
 	type WitchspaceLook,
 	witchspaceAtPhase,
 	witchspaceControlHeld,
-	witchspaceCues,
+	witchspaceCues as witchspaceCueList,
 	witchspaceSkyZoom,
 	witchspaceLook,
 	witchspacePhase,
@@ -31,6 +31,17 @@ import {
 } from "../src/witchspace";
 
 const DT = 1 / 60;
+
+/**
+ * The cues by short name. The schedule is what this file tests; the cue's
+ * shape and the hum's length are `audio-cue.test.ts`'s (#552).
+ */
+const witchspaceCues = (
+	...args: Parameters<typeof witchspaceCueList>
+): string[] =>
+	witchspaceCueList(...args).map((c) =>
+		c.kind.replace("witchspace", "").toLowerCase(),
+	);
 
 /** Step a state for `seconds` at a fixed frame, collecting every cue. */
 function run(state: ReturnType<typeof idleWitchspace>, seconds: number) {

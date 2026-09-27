@@ -33,6 +33,7 @@
  * `arrival-rift.ts` draw what `witchspaceLook` says.
  */
 import { HYPERSPACE_SWEEP_S } from "./audio";
+import type { Cue } from "./audio-cue";
 import { JUMP_CHARGE_S } from "./hyperspace";
 
 /**
@@ -142,8 +143,12 @@ export type WitchspaceState =
 	/** A cancelled or refused entry fading from what was on screen. */
 	| { kind: "retract"; from: WitchspaceLook; sinceS: number };
 
-/** The cues `witchspaceCues` can emit. `stop` silences both of the others. */
-export type WitchspaceCue = "hum" | "sweep" | "stop";
+/** The cues `witchspaceCues` can emit. The stop silences both of the others.
+ *  The hum carries its own length, so the engine never reads this schedule. */
+export type WitchspaceCue = Extract<
+	Cue,
+	{ kind: "witchspaceHum" | "witchspaceSweep" | "witchspaceStop" }
+>;
 
 export const idleWitchspace = (): WitchspaceState => ({ kind: "idle" });
 
@@ -314,10 +319,10 @@ export function witchspaceControlHeld(state: WitchspaceState): boolean {
 /**
  * The cues a transition from `prev` to `next` owes (D3).
  *
- * - `hum` when a wind-up begins: the low charge hum for its first `humS`.
- * - `sweep` on the step the entry crosses `sweepS` from the cut, so
- *   `hyperspace()`'s end lands on the cut.
- * - `stop` when an entry ends without a jump. A sweep that played on after a
+ * - the hum when a wind-up begins: the low charge hum for its first `humS`.
+ * - the sweep on the step the entry crosses `sweepS` from the cut, so its end
+ *   lands on the cut.
+ * - the stop when an entry ends without a jump. A sweep that played on after a
  *   cancel would announce a jump that did not happen.
  *
  * The arrival-only path cues nothing: there was no wind-up to hear.
@@ -326,15 +331,21 @@ export function witchspaceCues(
 	prev: WitchspaceState,
 	next: WitchspaceState,
 ): WitchspaceCue[] {
+	const hum: WitchspaceCue = {
+		kind: "witchspaceHum",
+		seconds: WITCHSPACE.humS,
+	};
+	const sweep: WitchspaceCue = { kind: "witchspaceSweep" };
 	if (next.kind === "entry" && prev.kind !== "entry") {
-		return next.leftS <= WITCHSPACE.sweepS ? ["hum", "sweep"] : ["hum"];
+		return next.leftS <= WITCHSPACE.sweepS ? [hum, sweep] : [hum];
 	}
 	if (prev.kind === "entry" && next.kind === "entry") {
 		return prev.leftS > WITCHSPACE.sweepS && next.leftS <= WITCHSPACE.sweepS
-			? ["sweep"]
+			? [sweep]
 			: [];
 	}
-	if (prev.kind === "entry" && next.kind === "retract") return ["stop"];
+	if (prev.kind === "entry" && next.kind === "retract")
+		return [{ kind: "witchspaceStop" }];
 	return [];
 }
 

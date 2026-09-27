@@ -16,6 +16,7 @@
  * to the default rather than reaching the renderer — a stored `renderScale` of
  * `0` would otherwise ask for a zero-sized drawing buffer.
  */
+import type { Bus } from "./audio-cue";
 
 /**
  * The two values every on/off row takes.
@@ -28,6 +29,24 @@
  * its own `allowed`, and nothing outside this file needed a name for the pair.
  */
 const TOGGLE = ["on", "off"] as const;
+
+/**
+ * The steps every volume row takes (#542 D2): a settings row is a discrete
+ * `allowed` list, so a volume is a set of steps and not a slider. `audio.ts`'s
+ * `busGain` maps a step to a gain on a squared curve.
+ */
+const VOLUME_STEPS = [0, 0.25, 0.5, 0.75, 1] as const;
+const describeVolume = (v: number) =>
+	v === 0 ? "Off" : `${Math.round(v * 100)}%`;
+/** A volume row: only its label and note differ from the other four. */
+const volumeRow = (label: string, note: string) =>
+	({
+		fallback: 1,
+		allowed: VOLUME_STEPS,
+		label,
+		describe: describeVolume,
+		note,
+	}) as const;
 
 /** One place for the schema, because the default and the validator drift apart
  *  when they are written separately. */
@@ -266,7 +285,42 @@ const SCHEMA = {
 		describe: (v: string) => (v === "on" ? "On" : "Off"),
 		note: "Darkens corners, seams and the ground a ship stands on, so an interior reads as a room rather than as flat boxes. It shows most inside a station bay and barely at all in open space, and it is not cheap — on the machine this was measured on it costs roughly as much again as the rest of a cockpit frame. Turn it off first if you are short of frames and Antialiasing is already off.",
 	},
+	/**
+	 * One volume row per bus (#552, after #542's D1 and D2), after every other
+	 * row so no existing row moves on the screen.
+	 *
+	 * **Master at Off is the mute.** There is no separate toggle and no mute
+	 * key: the old `setMuted` had no caller and no row, so there was no mute to
+	 * keep. Every row defaults to 100%, which is the mix the game had before
+	 * the buses existed.
+	 */
+	volumeMaster: volumeRow(
+		"Volume",
+		"Everything the game plays. Off is the mute: nothing sounds, and a drive that is already running fades out.",
+	),
+	volumeShip: volumeRow(
+		"Ship",
+		"Your own ship, heard through the hull: the drive, the witchspace charge, the scoop and the docking clamps.",
+	),
+	volumeCombat: volumeRow("Combat", "Your guns firing and ships coming apart."),
+	volumeConsole: volumeRow(
+		"Console",
+		"The instruments speaking: alerts and clicks.",
+	),
+	volumeMusic: volumeRow(
+		"Music",
+		"The music, which is not in the ship and not heard through its hull. There is none yet.",
+	),
 } as const;
+
+/** Which settings row sets which bus. */
+export const VOLUME_KEY = {
+	master: "volumeMaster",
+	ship: "volumeShip",
+	combat: "volumeCombat",
+	console: "volumeConsole",
+	music: "volumeMusic",
+} as const satisfies Record<Bus, keyof typeof SCHEMA>;
 
 export type Quality = (typeof SCHEMA.quality.allowed)[number];
 

@@ -33,6 +33,7 @@ import {
 
 const HEADLESS = [
 	"audio",
+	"audio-cue",
 	"backdrop",
 	"binding-store",
 	"carrier-key",
@@ -70,6 +71,7 @@ const HEADLESS = [
 	"system",
 	"units",
 	"vec3",
+	"voice-pool",
 	"world-state",
 ] as const;
 
@@ -98,6 +100,7 @@ test("no module has been quietly dropped from the list", () => {
 	// exactly how it went wrong in seekolous.
 	const required = [
 		"audio",
+		"audio-cue",
 		"backdrop",
 		"binding-store",
 		"carrier-key",
@@ -135,6 +138,7 @@ test("no module has been quietly dropped from the list", () => {
 		"system",
 		"units",
 		"vec3",
+		"voice-pool",
 		"world-state",
 	];
 	const listed = new Set<string>(HEADLESS);
@@ -328,11 +332,29 @@ test("src/hull.ts is a leaf, and that is what lets both sides read it", () => {
 
 test("src/audio.ts stays free of the rest of the game", () => {
 	// The synth kit reaches `window` inside its methods and nowhere at module
-	// scope, which is what lets it sit in the headless list at all. Having no
-	// imports is the stronger claim beside it: an audio layer that imported the
-	// simulation to decide what to play would be a coupling in the wrong
-	// direction — cues are pushed to it, never pulled by it.
-	expect(importsIn("audio.ts")).toEqual([]);
+	// scope, which is what lets it sit in the headless list at all. Importing
+	// only its two leaves is the stronger claim beside it: an audio layer that
+	// imported the simulation to decide what to play would be a coupling in the
+	// wrong direction — cues are pushed to it, never pulled by it.
+	//
+	// #552 relaxed this from *no imports*, on purpose and to exactly two: the
+	// cue vocabulary the step modules also read, and the voice pool. Both are
+	// leaves themselves (below), so the audio layer still reaches nothing else.
+	const from = [
+		...codeOf("src/audio.ts").matchAll(/\bfrom\s*["'`]([^"'`]+)["'`]/g),
+	].map((m) => m[1]);
+	expect(from.sort()).toEqual(["./audio-cue", "./voice-pool"]);
+	expect(codeOf("src/audio.ts").match(/\brequire\s*\(|\bimport\s*\(/g)).toBe(
+		null,
+	);
+});
+
+test("the cue vocabulary and the voice pool are leaves", () => {
+	// #542 D3: the cue type lives in a leaf that imports nothing, so a step
+	// module can return a cue without reaching the audio layer, and the audio
+	// layer can play one without reaching the simulation.
+	expect(importsIn("audio-cue.ts")).toEqual([]);
+	expect(importsIn("voice-pool.ts")).toEqual([]);
 });
 
 test("src/relief-bands.ts imports only types", () => {

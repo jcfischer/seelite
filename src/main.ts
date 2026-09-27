@@ -102,7 +102,7 @@ import {
 	restoreVisibility,
 	subjectOf,
 } from "./occlusion-mesh";
-import { SettingsStore } from "./settings";
+import { SettingsStore, VOLUME_KEY } from "./settings";
 /**
  * Static, unlike `frame-attribution` below.
  *
@@ -124,6 +124,14 @@ import type {
 	FrameAttributionSnapshot,
 } from "./frame-attribution";
 import { AudioFX } from "./audio";
+import {
+	BUSES,
+	type Cue,
+	type HitArm,
+	type HitReading,
+	QUIET_HITS,
+	hitCues,
+} from "./audio-cue";
 import { CombatPrototypeRig } from "./combat-rig";
 import {
 	COURSE_CUE_LABEL,
@@ -4030,7 +4038,14 @@ class Game {
 		// resize the drawing buffer to the size it already is — a reallocation on
 		// the frame the player flipped a switch to *look* at something.
 		let applied = this.settings.value;
+		// The five volume rows (#542 D2), at boot and on every change. The engine
+		// holds a level before it has a context, so this needs no gesture.
+		for (const bus of BUSES) this.audio.setLevel(bus, applied[VOLUME_KEY[bus]]);
 		this.settings.subscribe((next) => {
+			for (const bus of BUSES) {
+				const key = VOLUME_KEY[bus];
+				if (next[key] !== applied[key]) this.audio.setLevel(bus, next[key]);
+			}
 			if (next.renderScale !== applied.renderScale) {
 				// Leaving Auto is synchronous: the player's number is already
 				// in hand, and only *entering* needs the sampler that
@@ -6528,7 +6543,7 @@ class Game {
 		// Bucketing it would keep a screenful *per galaxy* and make the rail's
 		// history a different length depending on how many systems were flown.
 		if (this.hails.length > HAIL_LOG_KEEP) this.hails.shift();
-		this.audio.alert();
+		this.play({ kind: "alert" });
 	}
 
 	/**
@@ -6644,7 +6659,7 @@ class Game {
 			"destroyed",
 			engagement,
 		);
-		this.audio.explosion();
+		this.play({ kind: "explosion" });
 		this.lastExit =
 			heat > 0
 				? `${actor.callsign} destroyed — an offence`
@@ -11179,7 +11194,7 @@ class Game {
 						frameBodyId: this.frameBody?.id ?? null,
 					}),
 				];
-				this.audio.explosion();
+				this.play({ kind: "explosion" });
 			}
 			const notice = step.encounter.end
 				? ENCOUNTER_END_NOTICE[step.encounter.end]
@@ -11250,8 +11265,7 @@ class Game {
 			const next = nextScoopNotice(this.scoop, event);
 			if (next.notice !== this.scoop) this.lastExit = scoopExit(event);
 			this.scoop = next.notice;
-			if (next.sound === "scoop") this.audio.scoop();
-			else if (next.sound === "alert") this.audio.alert();
+			if (next.cue) this.play(next.cue);
 		}
 		if (step.scoops.some((s) => s.accepted)) this.saveDirty();
 	}
@@ -11487,7 +11501,7 @@ class Game {
 					key,
 					relayDestruction(record.index, now, plan.watchedStationId),
 				);
-				this.audio.explosion();
+				this.play({ kind: "explosion" });
 				this.lastExit = "pirate relay destroyed";
 			}
 		}
@@ -11578,7 +11592,7 @@ class Game {
 			if (!isAlive(this.tenderCondition)) {
 				for (const t of tenderKill(record.index, now, plan.watchedStationId))
 					this.applyCarrierTransition(t.key, t.event);
-				this.audio.explosion();
+				this.play({ kind: "explosion" });
 				this.lastExit = "relay tender destroyed";
 				this.tenderView = null;
 			}
@@ -11868,13 +11882,59 @@ class Game {
 	 * through here, so a cue cannot be forgotten at one of the four call sites.
 	 */
 	private setWitchspace(next: WitchspaceState) {
-		for (const cue of witchspaceCues(this.witchspace, next)) {
-			if (cue === "hum") this.audio.chargeHum(WITCHSPACE.humS);
-			else if (cue === "sweep") this.audio.hyperspace();
-			else this.audio.stopWitchspace();
-		}
+		for (const cue of witchspaceCues(this.witchspace, next)) this.play(cue);
 		this.witchspace = next;
 	}
+
+	/**
+	 * The one dispatcher (#542 D3). Every cue the game plays comes through here —
+	 * returned by a pure step (the gun, the scoop, the witchspace schedule, the
+	 * hit delta) or named at an event (a kill, a hail) — and nothing else in
+	 * `Game` calls a cue on the engine. The engine's bed is the exception by
+	 * design: a loop takes a level every frame (`ambient`), not a cue.
+	 */
+	private play(cue: Cue) {
+		switch (cue.kind) {
+			case "shieldHit":
+			case "hullHit":
+				// **Received, and silent on purpose.** Hits made no sound before #552
+				// and this node changes no sound. What a hit sounds like, how often a
+				// held beam cues one, and whether it is a sustained voice instead are
+				// #545's to decide by ear; that node makes this arm play. **And it
+				// owes a gate first**: the delta reads any fall in a pool or in hull,
+				// so a condition replaced downward — a save loaded with a damaged
+				// ship, a hull bought with less integrity — would cue a hit too.
+				return;
+			default:
+				this.audio.play(cue);
+		}
+	}
+
+	/**
+	 * The shield and hull hits since the last step (D3), from a pure delta of
+	 * the condition: `hitCues` reads a fall in a pool or in hull, and knows
+	 * nothing about what caused it.
+	 *
+	 * **At the top of `step`, reading what the previous step left**, rather than
+	 * at its end: `step` returns from three places, and damage lands in half a
+	 * dozen. Read here, every one of them is seen once, a frame later — about
+	 * 17 ms, which is below what a pilot hears as late.
+	 */
+	private stepHitCues(dt: number) {
+		const now: HitReading = {
+			fore: this.condition.fore,
+			aft: this.condition.aft,
+			hull: this.condition.hull,
+		};
+		const step = hitCues(this.hitArm, this.hitSeen, now, dt);
+		this.hitArm = step.arm;
+		this.hitSeen = now;
+		for (const cue of step.cues) this.play(cue);
+	}
+	/** The condition `stepHitCues` last read. Starts empty, so the first
+	 *  reading is a rise and a new ship is not a hit. */
+	private hitSeen: HitReading = { fore: 0, aft: 0, hull: 0 };
+	private hitArm: HitArm = QUIET_HITS;
 
 	/** Put an arrival rift behind the player ship, replacing any left over. */
 	private beginArrival() {
@@ -12471,6 +12531,7 @@ class Game {
 	 * exactly what the game runs rather than its own copy of the order.
 	 */
 	step(dt: number) {
+		this.stepHitCues(dt);
 		this.updateTrafficAuthority();
 		// Before the phase branch, so a hold is retried while docked and ended in
 		// every other phase (#314).
@@ -12485,7 +12546,7 @@ class Game {
 		// trigger drew nothing and played nothing, and read as a dead key.
 		const feedback = stepGunFeedback(this.gunFeedback, gun.fired, dt);
 		this.gunFeedback = feedback.feedback;
-		if (feedback.playSound) this.audio.laser();
+		if (feedback.cue) this.play(feedback.cue);
 		this.updateLocalFrameBody();
 		// H6's lazy clear of the witness list, on the one clock that matters. This
 		// line runs on every flight step including §12's docked and arriving

@@ -95,3 +95,17 @@ export function cueStats(
 		fnv: h.toString(16).padStart(8, "0"),
 	};
 }
+
+/**
+ * The printed form of `cueStats`, one precision for every script that prints
+ * it (#552): the probe's `PRINT` lines and the capture's lines are read side by
+ * side, so they round the same way.
+ */
+export function roundStats(stats) {
+	return {
+		rms: +stats.rms.toFixed(5),
+		peak: +stats.peak.toFixed(5),
+		onsetMs: +stats.onsetMs.toFixed(2),
+		centroidHz: Math.round(stats.centroidHz),
+	};
+}

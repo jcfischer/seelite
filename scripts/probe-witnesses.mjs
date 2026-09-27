@@ -84,14 +84,15 @@ try {
 		// red the day the constant moves.
 		const trafficMod = await import("/src/station-traffic.ts");
 		const dt = g.units.MAX_DT;
-		// **Spied, not stubbed:** the alert is `AudioFX.alert`, and the question is
-		// whether the game's own hail path reaches it. Wrapping the shipped method
-		// keeps the sound the shipped one and counts the calls the game makes.
-		const shippedAlert = g.audio.alert.bind(g.audio);
+		// **Spied, not stubbed:** the alert is an `{ kind: "alert" }` cue into
+		// `AudioFX.play` (#552), and the question is whether the game's own hail
+		// path reaches it. Wrapping the shipped method keeps the sound the shipped
+		// one and counts the alerts the game plays.
+		const shippedPlay = g.audio.play.bind(g.audio);
 		g.alertCount = 0;
-		g.audio.alert = () => {
-			g.alertCount++;
-			return shippedAlert();
+		g.audio.play = (cue) => {
+			if (cue.kind === "alert") g.alertCount++;
+			return shippedPlay(cue);
 		};
 		const SLOW = new Set(["local-departure", "local-approach"]);
 		const frame = () => {

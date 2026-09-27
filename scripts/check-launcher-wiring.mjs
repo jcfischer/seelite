@@ -107,6 +107,10 @@ let callers = 0;
  */
 const EXEMPT = new Map([
 	[
+		"capture-sounds.mjs",
+		"#552's sound capture, the audio twin of `npm run views`: it renders every cue to WAV at a labelled ref for the principal's ear and asserts nothing; a page error throws out of the run rather than into a tally",
+	],
+	[
 		"shot-ships.mjs",
 		"takes screenshots; has no checks for a watch to report into",
 	],
