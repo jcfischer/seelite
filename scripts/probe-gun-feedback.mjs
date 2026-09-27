@@ -73,11 +73,13 @@ const setup = await page.evaluate(() => {
 		g.step(dt);
 		g.render(dt);
 	}
+	// Laser cues into the engine's one entry point (#552), counted on the way
+	// through; the shipped `play` still plays them.
 	window.__shots = 0;
-	const laser = g.audio.laser.bind(g.audio);
-	g.audio.laser = () => {
-		window.__shots += 1;
-		laser();
+	const play = g.audio.play.bind(g.audio);
+	g.audio.play = (cue) => {
+		if (cue.kind === "laser") window.__shots += 1;
+		play(cue);
 	};
 	// Frames the game actually ran, so the pacing check knows how many sounds
 	// an unpaced gun would have made.
