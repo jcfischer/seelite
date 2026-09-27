@@ -28,7 +28,7 @@ const dist = (a: { x: number; y: number }, b: { x: number; y: number }) =>
 	Math.hypot(a.x - b.x, a.y - b.y);
 
 describe("the crowded spot", () => {
-	test("is at the densest neighbourhood, naming the nearest system there", () => {
+	test("is at the densest sampled cluster, naming the nearest system there", () => {
 		const points = [
 			at(0, 60, 60),
 			at(1, 66, 60), // a pair
@@ -72,7 +72,7 @@ describe("the isolated spot", () => {
 		expect(d).toBeLessThan(VIEW.pickRadiusPx);
 	});
 
-	test("is refused where every drawn system has a neighbour", () => {
+	test("is refused where every drawn system shares its pick radius", () => {
 		const points = [
 			at(0, 60, 60),
 			at(1, 63, 60),
@@ -93,7 +93,7 @@ describe("what counts as drawn", () => {
 	 * from the hover's list, so counting it here would predict a badge the
 	 * chart never draws.
 	 */
-	test("a system behind the camera, past the near plane or off the canvas is no neighbour", () => {
+	test("a system behind the camera, past the near plane or off the canvas does not count", () => {
 		for (const ghost of [
 			at(9, 206, 150, { behind: true }),
 			at(9, 206, 150, { depth: -1.5 }),

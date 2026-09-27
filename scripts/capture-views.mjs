@@ -253,8 +253,10 @@ function assertPlacersCover(placers) {
 }
 
 /**
- * The system the last chart row aimed at, for the second readback at the
- * shutter. Set by the `chart` placer; read by the loop before the frame.
+ * The spot the chart row being captured aimed at — its index and the badge
+ * count predicted there — for the second readback at the shutter. Set by the
+ * `chart` placer and cleared at the top of every view, so a row that did not
+ * run the placer cannot be checked against another row's aim (sage round 1).
  */
 let chartAimed = null;
 
@@ -270,10 +272,19 @@ let chartAimed = null;
  * the machine, and any of those clears it. Whatever the cause, the frame is
  * what the caption describes or the run is red.
  *
+ * **The badge is checked against the prediction**, not only against the
+ * label's own text (sage round 1): the chart's `contested` read against its own
+ * label can only catch a label that disagrees with itself, so a build that
+ * miscounts — a clipped system counted, say — would pass.
+ *
  * `checkVisibility` rather than the element's `display`, because a hidden
  * ancestor leaves `display` reading `block` over a label nobody can see.
  */
 async function assertChartHover(page, where, shot, aimed) {
+	if (aimed === null)
+		throw new Error(
+			`chart placer (${where}): the ${shot.spot} row has no aim to check — the placer did not run for it`,
+		);
 	const got = await page.evaluate(() => {
 		const el = document.querySelector("[data-map-hover]");
 		return {
@@ -283,18 +294,18 @@ async function assertChartHover(page, where, shot, aimed) {
 		};
 	});
 	const { hovered } = got;
-	if (hovered === null || hovered.index !== aimed || !got.shown)
+	if (hovered === null || hovered.index !== aimed.index || !got.shown)
 		throw new Error(
-			`chart placer (${where}): aimed at system ${aimed} for the ${shot.spot} row and the chart labelled ${hovered === null ? "nothing" : `system ${hovered.index}`}${got.shown ? "" : ", with no label drawn"}`,
+			`chart placer (${where}): aimed at system ${aimed.index} for the ${shot.spot} row and the chart labelled ${hovered === null ? "nothing" : `system ${hovered.index}`}${got.shown ? "" : ", with no label drawn"}`,
 		);
 	const badged =
-		shot.spot === "crowded"
-			? hovered.contested > 0 &&
-				got.text.includes(`(${hovered.contested} more)`)
-			: hovered.contested === 0 && !got.text.includes("more)");
+		hovered.contested === aimed.contested &&
+		(aimed.contested > 0
+			? got.text.includes(`(${aimed.contested} more)`)
+			: !got.text.includes("more)"));
 	if (!badged)
 		throw new Error(
-			`chart placer (${where}): the ${shot.spot} row's label counts ${hovered.contested} more and reads "${got.text}" — its caption describes ${shot.spot === "crowded" ? "a badge" : "none"}`,
+			`chart placer (${where}): the ${shot.spot} row predicted ${aimed.contested} more, the chart counts ${hovered.contested} and its label reads "${got.text}"`,
 		);
 	return hovered;
 }
@@ -749,8 +760,8 @@ const PLACERS = {
 		);
 		await page.mouse.move(layout.box.left + spot.x, layout.box.top + spot.y);
 		await frames();
-		const hovered = await assertChartHover(page, "placed", shot, spot.index);
-		chartAimed = spot.index;
+		const hovered = await assertChartHover(page, "placed", shot, spot);
+		chartAimed = spot;
 		return `Galaxy Map · ${shot.spot} · system ${hovered.index}${hovered.contested ? ` (${hovered.contested} more)` : ""}`;
 	},
 	/**
@@ -1057,6 +1068,7 @@ try {
 		// over the cockpit's DOM puts a `:hover` into a frame that has nothing to
 		// do with the chart. The chart placer relies on it to start unlabelled.
 		await page.mouse.move(0, 0);
+		chartAimed = null;
 		// **Not on the workbench**, which has no view cycle: `v` there is an
 		// unbound key, so `setView` would press it eight times and then throw
 		// about a view the game does not have — on a page that is not the game.

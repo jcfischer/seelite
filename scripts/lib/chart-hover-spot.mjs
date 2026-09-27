@@ -39,8 +39,8 @@ export const CHART_SPOTS = Object.freeze(["crowded", "isolated"]);
 /**
  * The spot a row asks for, or `null` where the framing offers none.
  *
- * - `crowded` — the position with the most drawn systems inside the pick
- *   radius, at least two, naming the nearest of them. `contested` is the
+ * - `crowded` — the sampled position with the most drawn systems inside the
+ *   pick radius, at least two, naming the nearest of them. `contested` is the
  *   badge's number: the systems there other than the named one.
  * - `isolated` — a position with exactly one drawn system inside the pick
  *   radius, which is the one it names. `contested` is 0.

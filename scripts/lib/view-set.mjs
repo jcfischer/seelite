@@ -874,10 +874,10 @@ export const VIEWS = Object.freeze([
 	 * #381 S4's frame, and the reason it is here at all: the capture modal is a
 	 * **fourth modal surface**, which #369 D9 names as the cost of hosting the
 	 * rebind on this tab, and a drawn surface with no frame in the set is what
-	 * #177 was opened about for the galaxy chart (its rows are below). It is captured mid-session
-	 * rather than empty — a modal listening and a modal holding something are
-	 * different pictures, and the second is the one a player spends time
-	 * reading.
+	 * #177 was opened for on the galaxy chart (its rows are below). It is
+	 * captured mid-session rather than empty — a modal listening and a modal
+	 * holding something are different pictures, and the second is the one a
+	 * player spends time reading.
 	 *
 	 * The tab behind it is part of the subject: the frame shows the door, and
 	 * it shows a held row printing `hold` beside a pressed one, which is D3's
@@ -896,8 +896,10 @@ export const VIEWS = Object.freeze([
 	},
 	/**
 	 * #177's two frames of #112's hover label, on the cockpit mount. Before the
-	 * duel rows, which set their own head and both consoles' tabs; the chart
-	 * writes no world state, so nothing after them depends on these.
+	 * duel rows, which set their own head and both consoles' tabs. The chart
+	 * writes no save, so the next row needs no reload. It leaves the
+	 * left console on Galaxy Map, which the duel rows overwrite, and every row
+	 * below is taken later on the running clock, which the sheet's span prints.
 	 */
 	{
 		name: "chart-hover-crowded",
