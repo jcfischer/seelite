@@ -23,6 +23,10 @@
  *   sweep at each rate. And the spectrum stops at `maxHz`, below both
  *   Nyquists, because a band-limited oscillator carries harmonics up to
  *   Nyquist and a sum to Nyquist has more of them at the higher rate.
+ * - `centroidCapHz` — where that sum stopped: `maxHz`, or Nyquist when Nyquist
+ *   is lower. The rate-independence holds only while this is `maxHz` at both
+ *   rates compared — above 32 kHz with the default — so a caller comparing
+ *   rates reads it rather than assuming it.
  * - `fnv` — FNV-1a over the float32 bytes. Equal only for bit-identical
  *   buffers, which #541 measured to hold for a noise-free cue within one
  *   engine and not across engines, so a probe asserts bands and never this.
@@ -46,23 +50,27 @@ export function cueStats(
 		if (a > peak) peak = a;
 		if (onset < 0 && a > onsetThreshold) onset = i;
 	}
+	const cap = Math.min(maxHz, sampleRate / 2);
 	let centroidHz = 0;
 	if (onset >= 0) {
 		const n = Math.min(
 			Math.round(windowS * sampleRate),
 			samples.length - onset,
 		);
+		// The Hann-windowed stretch, once, rather than once per bin.
+		const x = new Float64Array(n);
+		for (let j = 0; j < n; j++)
+			x[j] = samples[onset + j] * (0.5 - 0.5 * Math.cos((2 * Math.PI * j) / n));
 		let num = 0;
 		let den = 0;
 		for (let k = 1; k < bins; k++) {
-			const f = (k / bins) * Math.min(maxHz, sampleRate / 2);
+			const f = (k / bins) * cap;
 			let re = 0;
 			let im = 0;
 			for (let j = 0; j < n; j++) {
-				const w = 0.5 - 0.5 * Math.cos((2 * Math.PI * j) / n);
 				const ph = (2 * Math.PI * f * j) / sampleRate;
-				re += samples[onset + j] * w * Math.cos(ph);
-				im -= samples[onset + j] * w * Math.sin(ph);
+				re += x[j] * Math.cos(ph);
+				im -= x[j] * Math.sin(ph);
 			}
 			const m = Math.hypot(re, im);
 			num += m * f;
@@ -83,6 +91,7 @@ export function cueStats(
 		onsetSample: onset,
 		onsetMs: onset >= 0 ? (onset * 1000) / sampleRate : -1,
 		centroidHz,
+		centroidCapHz: cap,
 		fnv: h.toString(16).padStart(8, "0"),
 	};
 }

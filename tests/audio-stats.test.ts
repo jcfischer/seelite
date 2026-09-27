@@ -67,11 +67,15 @@ const chirp = (sr: number) => {
 test("the centroid of a sweep does not move with the sample rate", () => {
 	// A window of fixed *samples* covers a different stretch of a sweep at each
 	// rate. A pure tone cannot show this — both windows read it within 1.5% —
-	// so the case is a sweep, where a 4096-sample window reads 4.5% apart and
-	// the duration window 0%.
-	const a = cueStats(chirp(48000), 48000).centroidHz;
-	const b = cueStats(chirp(44100), 44100).centroidHz;
-	expect(Math.abs(a - b) / a).toBeLessThan(0.01);
+	// so the case is a sweep. The rejected arm is run beside the shipped one,
+	// so the test shows it can tell them apart.
+	const apart = (opts: (sr: number) => object) => {
+		const a = cueStats(chirp(48000), 48000, opts(48000)).centroidHz;
+		const b = cueStats(chirp(44100), 44100, opts(44100)).centroidHz;
+		return Math.abs(a - b) / a;
+	};
+	expect(apart(() => ({}))).toBeLessThan(0.01);
+	expect(apart((sr) => ({ windowS: 4096 / sr }))).toBeGreaterThan(0.03);
 });
 
 /** A band-limited square at `hz`: every odd harmonic below Nyquist. */
@@ -86,12 +90,23 @@ const square = (sr: number, hz: number) => {
 test("the centroid of a harmonic-rich tone does not move with the sample rate", () => {
 	// A band-limited oscillator carries harmonics up to Nyquist, so a spectrum
 	// summed to Nyquist has a different set at 48 kHz than at 44.1: the square
-	// here reads 37% apart that way and 0% capped, and the larger part of the
-	// first harness's gap was this rather than the window. The centroid stops
-	// at a fixed frequency below both Nyquists.
-	const a = cueStats(square(48000, 880), 48000).centroidHz;
-	const b = cueStats(square(44100, 880), 44100).centroidHz;
-	expect(Math.abs(a - b) / a).toBeLessThan(0.01);
+	// here reads far apart that way, and the larger part of the first harness's
+	// gap was this rather than the window. The centroid stops at a fixed
+	// frequency below both Nyquists; the uncapped arm runs beside it.
+	const apart = (opts: object) => {
+		const a = cueStats(square(48000, 880), 48000, opts).centroidHz;
+		const b = cueStats(square(44100, 880), 44100, opts).centroidHz;
+		return Math.abs(a - b) / a;
+	};
+	expect(apart({})).toBeLessThan(0.01);
+	expect(apart({ maxHz: Number.POSITIVE_INFINITY })).toBeGreaterThan(0.2);
+});
+
+test("the cap cannot hold below twice itself, and the stats say so", () => {
+	// Below 32 kHz Nyquist is under the cap, and the sum stops at Nyquist
+	// again. A caller comparing rates there is told rather than trusted.
+	expect(cueStats(square(48000, 880), 48000).centroidCapHz).toBe(16000);
+	expect(cueStats(square(22050, 880), 22050).centroidCapHz).toBe(11025);
 });
 
 test("the hash is the samples: equal buffers agree, one changed sample does not", () => {
