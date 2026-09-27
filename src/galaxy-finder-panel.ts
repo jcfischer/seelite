@@ -21,7 +21,7 @@ import {
 	finderSessionFilter,
 	projectFinder,
 	rememberFinderBudget,
-	FINDER_NO_ROUTE,
+	finderReachLabel,
 } from "./galaxy-finder";
 import {
 	FACILITY_CHIPS,
@@ -521,12 +521,7 @@ export function mountFinderPanel({
 		name.textContent = row.name;
 		const reach = el("em");
 		Object.assign(reach.style, { fontStyle: "normal", color: "#8fb2c9" });
-		reach.textContent =
-			row.jumps === null
-				? FINDER_NO_ROUTE
-				: row.jumps === 0
-					? "here"
-					: `${row.jumps}j · ${row.routeLy?.toFixed(1)} LY`;
+		reach.textContent = finderReachLabel(row);
 		const detail = el("span");
 		Object.assign(detail.style, {
 			gridColumn: "1/3",

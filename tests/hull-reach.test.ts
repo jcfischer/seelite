@@ -22,6 +22,12 @@ import {
 	neighbours,
 	startSystem,
 } from "../src/galaxy";
+import {
+	FINDER_NO_ROUTE,
+	finderDefaultFilter,
+	finderReachLabel,
+	projectFinder,
+} from "../src/galaxy-finder";
 import { reachable } from "../src/galaxy-route";
 import { HULL_SPECS, PURCHASABLE_HULL_IDS } from "../src/hull";
 import { hullReachFrom } from "../src/hull-reach";
@@ -205,5 +211,39 @@ describe("#554 D5 — the job board draws within the flown hull's reach", () => 
 			expect(d.distanceLy).toBeLessThanOrEqual(HULL_SPECS.interceptor.tankLy);
 		expect(long.length).toBeGreaterThan(short.length);
 		expect(long.some((d) => d.distanceLy > JUMP_RANGE_LY)).toBe(true);
+	});
+});
+
+describe("#554 D4 — the Navigation list marks a system this hull cannot reach", () => {
+	test("a name query for a system cut off at 5 LY reads no route, and routes at 7", () => {
+		const home = startSystem(GALAXY);
+		const find = (tankLy: number, name: string) =>
+			[
+				...(() => {
+					const r = projectFinder(
+						SYSTEMS,
+						home,
+						{ ...finderDefaultFilter(), query: name },
+						{ maxJump: tankLy },
+					);
+					return [...r.inBudget, ...r.beyondRange];
+				})(),
+			].find((row) => row.name === name);
+		// A system in another component from home at the interceptor's tank:
+		// isolated systems are the plainest such case.
+		const cutOff = SYSTEMS.find(
+			(s) =>
+				s.index !== home.index &&
+				neighbours(SYSTEMS, s, HULL_SPECS.interceptor.tankLy).length === 0,
+		);
+		expect(cutOff).toBeDefined();
+		if (!cutOff) return;
+		const short = find(HULL_SPECS.interceptor.tankLy, cutOff.name);
+		const courier = find(HULL_SPECS.courier.tankLy, cutOff.name);
+		expect(short?.jumps).toBeNull();
+		expect(short && finderReachLabel(short)).toBe(FINDER_NO_ROUTE);
+		// The courier's reach is the galaxy's connectivity guarantee.
+		expect(courier?.jumps).toBeGreaterThan(0);
+		expect(courier && finderReachLabel(courier)).not.toBe(FINDER_NO_ROUTE);
 	});
 });

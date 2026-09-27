@@ -71,6 +71,17 @@ export interface FinderFilter {
  */
 export const FINDER_NO_ROUTE = "no route";
 
+/** What a row's reach column prints. Here rather than in the panel so the
+ *  headless tier can read the mark a short hull's unreachable row carries. */
+export const finderReachLabel = (
+	row: Pick<FinderRow, "jumps" | "routeLy">,
+): string =>
+	row.jumps === null
+		? FINDER_NO_ROUTE
+		: row.jumps === 0
+			? "here"
+			: `${row.jumps}j · ${row.routeLy?.toFixed(1)} LY`;
+
 /**
  * D6: one jump — the shell the chart already lights, at the flown hull's tank.
  *
