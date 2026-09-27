@@ -193,9 +193,17 @@ export async function renderInPage({
 	const fx = new AudioFX();
 	const modern = typeof fx.attach === "function";
 	// An entry this engine has nothing to play: a capture at an older ref.
+	// **A modern engine can be older too** (sage round 3): `origin/main` has
+	// #552's `play` but not #544's cruise cues, and `play` returns silently on
+	// a kind with no bus — a silent WAV under the cue's name. So a cue is
+	// absent unless the engine's own vocabulary lists its kind.
+	const knownKinds = modern
+		? Object.keys((await import("/src/audio-cue.ts")).CUE_BUS)
+		: [];
 	if (
 		(entry.flight && typeof fx.flight !== "function") ||
-		(entry.cue && !entry.legacy && !modern)
+		(entry.cue && !entry.legacy && !modern) ||
+		(entry.cue && modern && !knownKinds.includes(entry.cue.kind))
 	)
 		return { modern, absent: true, sampleRate, live: null, samples: [] };
 	if (modern) {

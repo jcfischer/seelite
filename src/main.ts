@@ -10900,6 +10900,10 @@ class Game {
 		this.driveShare = 0;
 		this.lateralShare = 0;
 		this.rotationShare = 0;
+		// And its memory (sage round 3): a reset taken in cruise would cue a
+		// drop on the next frame, and a hot hull would carry its cooling clicks
+		// into the fresh start.
+		this.flightSoundState = QUIET_FLIGHT;
 
 		// A boot has no jump charging, so a reset has none either.
 		// `resetWorldToStart` rebuilds the start system when the ship is
