@@ -14,6 +14,9 @@
  *   density            §3's neighbour counts, bucketed by profile radius
  *   diameter [seeds…]  the worst shortest-chain over every ordered pair, which
  *                      is what the finder's budget ceiling has to clear
+ *   tanks [seeds…]     the jump graph at each purchasable hull's tank (#185,
+ *                      #554): fragmentation, isolated systems, neighbours and
+ *                      the diameter inside each component
  *
  * This is the instrument behind `galaxy-generation.md` §2.1's derivation and
  * `galaxy-map.md` §5.1's crowding spread. It ships because #107 chose q = 0.7
@@ -68,6 +71,7 @@ import {
 } from "../src/galaxy";
 import { FINDER_MAX_BUDGET } from "../src/galaxy-finder";
 import { projectJumps } from "../src/galaxy-route";
+import { HULL_SPECS, PURCHASABLE_HULL_IDS } from "../src/hull";
 import type { Vec3 } from "../src/vec3";
 
 /** Throw rather than print a non-finite figure. */
@@ -731,7 +735,8 @@ function modeDiameter(): void {
 		for (let index = 0; index < GALAXY_COUNT; index++) {
 			const gx = generateGalaxy(seed, index);
 			for (const from of gx.systems) {
-				const reach = projectJumps(gx.systems, from);
+				// The galaxy's reach — the courier's tank. `tanks` sweeps the rest.
+				const reach = projectJumps(gx.systems, from, JUMP_RANGE_LY);
 				for (const to of gx.systems) {
 					const jumps = reach.reach(to)?.jumps;
 					if (jumps !== undefined && jumps > worstForSeed) {
@@ -754,6 +759,123 @@ function modeDiameter(): void {
 	);
 }
 
+/** #185's seeds, so a rerun reproduces the table its rulings were made on. */
+const TANK_SEEDS = [1, 47, 1234] as const;
+
+/**
+ * The jump graph **at each purchasable hull's tank** (#185, #554).
+ *
+ * Reachability is a fact about the flown hull: its `tankLy` is its jump range.
+ * `layoutGalaxy` guarantees connectivity only at `JUMP_RANGE_LY`, the
+ * courier's tank, so a shorter tank flies a fragmented graph and a longer one a
+ * denser graph. #185 ruled on a scratch script's figures and owed them this
+ * mode (#118's rule: a figure stated as measured owes a shipped instrument that
+ * reprints it). Nothing here is transcribed into a spec; the spec points here.
+ *
+ * Per tank, over the shipped layouts of every galaxy of every seed:
+ * - **fragmented** — galaxies whose jump graph has more than one component;
+ * - **outside main** — systems not in their galaxy's largest component;
+ * - **isolated** — systems with no neighbour at all, which is where a shipyard
+ *   refuses the hull (#185 D3);
+ * - **neighbours** — the per-galaxy mean, as a range;
+ * - **diameter** — the worst shortest chain *within* a component, against
+ *   the finder's budget ceiling: a chain longer than the ceiling is a system
+ *   the finder can never promote into its primary list for that hull.
+ */
+function modeTanks(): void {
+	const seeds = process.argv
+		.slice(3)
+		.map(Number)
+		.filter((n) => Number.isFinite(n));
+	const worldSeeds = seeds.length > 0 ? seeds : TANK_SEEDS;
+	const tanks = [
+		...new Set(PURCHASABLE_HULL_IDS.map((id) => HULL_SPECS[id].tankLy)),
+	].sort((a, b) => a - b);
+	const galaxies = worldSeeds.length * GALAXY_COUNT;
+	console.log(
+		`jump graph per hull tank over ${worldSeeds.length} world seeds (${worldSeeds.join(", ")}) x ${GALAXY_COUNT} galaxies = ${galaxies} galaxies of ${SYSTEMS_PER_GALAXY}`,
+	);
+	console.log(
+		"  tank  hulls                          fragmented  outside main  isolated  neighbours     diameter",
+	);
+	let connectedAtRange = true;
+	let worstDiameter = 0;
+	for (const tank of tanks) {
+		const hulls = PURCHASABLE_HULL_IDS.filter(
+			(id) => HULL_SPECS[id].tankLy === tank,
+		);
+		const tankSq = tank * tank;
+		let fragmented = 0;
+		let outside = 0;
+		let isolatedCount = 0;
+		let diameter = 0;
+		const means: number[] = [];
+		for (const seed of worldSeeds) {
+			for (let index = 0; index < GALAXY_COUNT; index++) {
+				const gx = generateGalaxy(seed, index);
+				const pos = gx.systems.map((s) => s.pos);
+				const n = pos.length;
+				const adj: number[][] = pos.map(() => []);
+				for (let i = 0; i < n; i++)
+					for (let j = i + 1; j < n; j++) {
+						const dx = pos[i].x - pos[j].x;
+						const dy = pos[i].y - pos[j].y;
+						const dz = pos[i].z - pos[j].z;
+						if (dx * dx + dy * dy + dz * dz <= tankSq) {
+							adj[i].push(j);
+							adj[j].push(i);
+						}
+					}
+				means.push(mean(adj.map((a) => a.length)));
+				isolatedCount += adj.filter((a) => a.length === 0).length;
+				const comp = new Int32Array(n).fill(-1);
+				const sizes: number[] = [];
+				for (let i = 0; i < n; i++) {
+					if (comp[i] !== -1) continue;
+					const c = sizes.length;
+					let size = 0;
+					const queue = [i];
+					comp[i] = c;
+					while (queue.length > 0) {
+						const at = queue.pop() as number;
+						size++;
+						for (const k of adj[at])
+							if (comp[k] === -1) {
+								comp[k] = c;
+								queue.push(k);
+							}
+					}
+					sizes.push(size);
+				}
+				if (sizes.length > 1) fragmented++;
+				outside += n - Math.max(...sizes);
+				for (const from of gx.systems) {
+					const reach = projectJumps(gx.systems, from, tank);
+					for (const to of gx.systems) {
+						const jumps = reach.reach(to)?.jumps;
+						if (jumps !== undefined && jumps > diameter) diameter = jumps;
+					}
+				}
+			}
+		}
+		if (tank >= JUMP_RANGE_LY && fragmented > 0) connectedAtRange = false;
+		worstDiameter = Math.max(worstDiameter, diameter);
+		const sorted = [...means].sort((a, b) => a - b);
+		console.log(
+			`  ${String(tank).padStart(4)}  ${hulls.join(", ").padEnd(30)} ${`${fragmented}/${galaxies}`.padStart(10)}  ${`${finite("outside", (100 * outside) / (galaxies * SYSTEMS_PER_GALAXY)).toFixed(1)}%`.padStart(12)}  ${String(isolatedCount).padStart(8)}  ${`${sorted[0].toFixed(2)}-${sorted[sorted.length - 1].toFixed(2)}`.padEnd(13)}  ${finite("diameter", diameter)} jumps`,
+		);
+	}
+	console.log(`finder ceiling : ${FINDER_MAX_BUDGET} jumps`);
+	assertThat(
+		`every galaxy is connected at every tank of at least JUMP_RANGE_LY (${JUMP_RANGE_LY} LY)`,
+		connectedAtRange,
+	);
+	assertThat(
+		`the finder's budget ceiling covers the worst chain at every tank (${worstDiameter} jumps)`,
+		FINDER_MAX_BUDGET >= worstDiameter,
+	);
+}
+
 /**
  * The modes, as a table.
  *
@@ -772,6 +894,7 @@ const MODES: Record<string, () => void> = {
 	grid: modeGrid,
 	density: modeDensity,
 	diameter: modeDiameter,
+	tanks: modeTanks,
 };
 
 const mode = process.argv[2] ?? "sweep";

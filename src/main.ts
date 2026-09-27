@@ -156,7 +156,6 @@ import {
 } from "./cockpit";
 import { sceneRenderEligible } from "./render-eligibility";
 import {
-	CHARGE_CAPACITY_AU,
 	CHARGE_REGEN_AU_PER_S,
 	type Mass,
 	type CruiseParams,
@@ -175,7 +174,7 @@ import {
 	stepCruiseGuidance,
 	type CruiseGuidanceState,
 } from "./cruise-guidance";
-import { GOVERNMENT_NAMES, JUMP_RANGE_LY, type SystemRecord } from "./galaxy";
+import { GOVERNMENT_NAMES, type SystemRecord } from "./galaxy";
 // The plane a system's bodies orbit near, and the plane the horizon line is
 // rolled against, in one declaration (#430). Authored in `galaxy-frame.ts` because
 // that module's whole subject is the relation between this plane and the
@@ -202,7 +201,6 @@ import type { SettingsPanelHandle } from "./settings-panel";
 import type { PostcardPanelHandle } from "./postcard-panel";
 import {
 	JUMP_CHARGE_S,
-	JUMP_TANK_LY,
 	type JumpCharge,
 	type JumpRefusal,
 	beginCharge,
@@ -2205,9 +2203,10 @@ class Game {
 	/** A copy, not the module's object: the dials mutate this, and the spec's
 	 *  own figures stay reachable as `DEFAULT_CRUISE` for the reset key. */
 	cruiseParams: CruiseParams = { ...DEFAULT_CRUISE };
-	/** §7's drive charge, AU. Starts full, and a guided new game spends none of
-	 *  it on the docked start (#408); a free one starts in flight with it full. */
-	chargeAu = CHARGE_CAPACITY_AU;
+	/** §7's drive charge, AU. Starts full — the flown hull's `chargeAu` (#554) —
+	 *  and a guided new game spends none of it on the docked start (#408); a
+	 *  free one starts in flight with it full. */
+	chargeAu = HULL_SPECS[this.commander.hull].chargeAu;
 	/** Seconds left of §4's spool-up before cruise actually engages. */
 	spoolLeftS = 0;
 	/**
@@ -3122,11 +3121,15 @@ class Game {
 	readonly directorRangeKm = DIRECTOR_RANGE_KM;
 	/** The widest reading §5's floor strip can take, so a probe measuring the
 	 *  fit drives the run the layout was solved for rather than a copy of it. */
-	readonly floorWidest = flightFloorWidest(
-		CHARGE_CAPACITY_AU,
-		CHARGE_REGEN_AU_PER_S,
-		SPOOL_S,
-	);
+	get floorWidest() {
+		// A getter, because the capacity is the flown hull's (#554) and a
+		// restored save can replace the hull after construction.
+		return flightFloorWidest(
+			this.chargeCapacityAu,
+			CHARGE_REGEN_AU_PER_S,
+			SPOOL_S,
+		);
+	}
 	/** The widest reading §8.3's course row can take, on the handle for the same
 	 *  reason `floorWidest` is: a probe measuring the fit drives the run the
 	 *  layout was solved for rather than a copy of it. */
@@ -8927,6 +8930,9 @@ class Game {
 					worldSeed: this.world.seed,
 					galaxyIndex: this.world.system.record.galaxy,
 					currentIndex: this.world.system.record.index,
+					// The flown hull's reach (#554): the shell, the lit points,
+					// the label, every route and the finder's lists.
+					tankLy: this.fuelCapacityLy,
 					// **Both getters, for the same reason `currentSystem` is one.**
 					// Held as values these froze at mount: a jump with the map
 					// open runs `observeCurrentSystemRelay` and then
@@ -10884,7 +10890,7 @@ class Game {
 		this.setWitchspace(abortWitchspace(this.witchspace));
 		this.witchspace = idleWitchspace();
 		this.clearArrivalRift();
-		this.chargeAu = CHARGE_CAPACITY_AU;
+		this.chargeAu = this.chargeCapacityAu;
 		// Selection is not written by the flight path, so the coverage scan does
 		// not ask for it, and it is not spelled here either — the constructor and
 		// this method call the same `selectBootTarget`. Two copies is how the
@@ -10934,8 +10940,20 @@ class Game {
 		this.commander.fuelLy = ly;
 	}
 
-	/** The tank's capacity, likewise. */
-	readonly fuelCapacityLy = JUMP_TANK_LY;
+	/**
+	 * The tank's capacity, likewise: the flown hull's `tankLy`, which is also
+	 * its jump range (#185 D1, #554). A getter on the commander's hull rather
+	 * than a field, because a restored save names the hull after construction.
+	 */
+	get fuelCapacityLy(): number {
+		return HULL_SPECS[this.commander.hull].tankLy;
+	}
+
+	/** The drive charge's capacity: the flown hull's `chargeAu` (#185 D6). The
+	 *  regeneration rate is one constant for every hull. */
+	get chargeCapacityAu(): number {
+		return HULL_SPECS[this.commander.hull].chargeAu;
+	}
 
 	/**
 	 * The commander's balance, credits — likewise on the handle so a probe reads
@@ -10988,7 +11006,12 @@ class Game {
 			(s) => s.galaxy === here.galaxy && s.index === index,
 		);
 		if (to === undefined) return false;
-		const course = setCourse(this.world.galaxy.systems, here, to);
+		const course = setCourse(
+			this.world.galaxy.systems,
+			here,
+			to,
+			this.fuelCapacityLy,
+		);
 		// **Both refusals leave any standing course alone.** An unknown index
 		// returned early above while an unroutable destination fell through to
 		// `setCourseTo(null)` — two refusals of one call, returning the same
@@ -11018,10 +11041,15 @@ class Game {
 		return cue?.nextHop ?? null;
 	}
 
-	/** `planJump` against this ship and this tank — the first and third
-	 *  arguments are always these two fields, and four sites spelled them. */
+	/** `planJump` against this ship, this tank and this hull — the other
+	 *  arguments are always these fields, and four sites spelled them. */
 	private jumpDecision(to: SystemRecord) {
-		return planJump(this.world.system.record, to, this.commander.fuelLy);
+		return planJump(
+			this.world.system.record,
+			to,
+			this.commander.fuelLy,
+			this.commander.hull,
+		);
 	}
 
 	/**
@@ -12275,11 +12303,7 @@ class Game {
 	 * invalidate it, "which nothing does yet".
 	 */
 	private performJump(to: SystemRecord) {
-		const decision = planJump(
-			this.world.system.record,
-			to,
-			this.commander.fuelLy,
-		);
+		const decision = this.jumpDecision(to);
 		if (!decision.ok) {
 			this.jumpNotice = `jump aborted — ${decision.refusal}`;
 			// Refused at the cut, in the dark, after the sweep has peaked.
@@ -12872,7 +12896,7 @@ class Game {
 		this.stepScan(dt);
 		// §7: the tank refills passively in normal flight, and that is the
 		// anti-stranding rule rather than a convenience.
-		this.chargeAu = chargeAfterRegen(this.chargeAu, dt);
+		this.chargeAu = chargeAfterRegen(this.chargeAu, dt, this.chargeCapacityAu);
 		this.stepDocking(before);
 		// Last, because §8's wind-up is only vulnerable if the frame it fires on
 		// is flown first — `stepDocking` is what applies a failed entry's damage,
@@ -14134,7 +14158,9 @@ class Game {
 				// filter rather than a regeneration — keying on the station made
 				// the second dock in a system pay for the whole neighbourhood
 				// again, inside a cockpit update.
-				const place = `${context.galaxyIndex}:${this.world.system.record.index}`;
+				// The tank is in the key: the neighbourhood is the flown hull's
+				// reach (#554), and a restore can replace the hull.
+				const place = `${context.galaxyIndex}:${this.world.system.record.index}:${this.fuelCapacityLy}`;
 				if (place !== this.requestDestinationsKey) {
 					this.requestDestinations = deliveryCandidates(
 						this.world.galaxy.systems,
@@ -14143,6 +14169,7 @@ class Game {
 						// No poster to exclude at this level; the filter below is
 						// what removes whichever station is posting.
 						NO_EXCLUDED_STATION,
+						this.fuelCapacityLy,
 					);
 					this.requestDestinationsKey = place;
 				}
@@ -15454,7 +15481,7 @@ class Game {
 				targetKm === null ? "" : range(targetKm),
 				eta === null ? "eta —" : `eta ${duration(eta)}`,
 				closing,
-				`charge ${this.chargeAu.toFixed(1)}/${CHARGE_CAPACITY_AU} AU`,
+				`charge ${this.chargeAu.toFixed(1)}/${this.chargeCapacityAu} AU`,
 				// The hyperspace tank and the set course (#187). They are here and
 				// not on the floor strip because `hud-and-scanner.md` §5 fixes
 				// that strip at four cells and gives the tank no home at all —
@@ -15532,7 +15559,7 @@ class Game {
 			throttle: this.throttle,
 			assist: this.assist,
 			chargeAu: this.chargeAu,
-			chargeCapacityAu: CHARGE_CAPACITY_AU,
+			chargeCapacityAu: this.chargeCapacityAu,
 			chargeRegenAuPerS: CHARGE_REGEN_AU_PER_S,
 		});
 	}
@@ -15564,13 +15591,13 @@ class Game {
 		// **Every input `courseProgress` reads is in the key.** The ship's
 		// galaxy as well as the course's — a course is per-galaxy, and §5.2
 		// names what a mismatch between the two means — and the jump range,
-		// which is `courseProgress`'s fourth argument and today a constant.
-		// #185 makes the range hull-aware, and a key blind to it would then
-		// serve the previous hull's chain.
-		// One local, passed *and* keyed. Interpolating the constant while letting
+		// which is `courseProgress`'s fourth argument and the flown hull's tank
+		// (#554). A key blind to it would serve the previous hull's chain after a
+		// restore replaced the hull.
+		// One local, passed *and* keyed. Interpolating a constant while letting
 		// `courseProgress` take its own default keyed a number this call could
 		// not vary — protection the comment claimed and the key did not give.
-		const maxJump = JUMP_RANGE_LY;
+		const maxJump = this.fuelCapacityLy;
 		const key = `${course.galaxy}:${course.destinationIndex}:${here.galaxy}:${here.index}:${maxJump}`;
 		if (this.courseChainCache?.key !== key) {
 			const progress = courseProgress(
@@ -15604,7 +15631,7 @@ class Game {
 	 */
 	courseCueState(): CourseCue | null {
 		const chain = this.courseChain();
-		if (chain === null) return null;
+		if (chain === null) return this.courseWithoutRoute();
 		if (chain.nextHop === null)
 			return { kind: "arrived", destination: chain.destination.name };
 		return {
@@ -15616,6 +15643,25 @@ class Game {
 			// predicts cannot drift apart.
 			affordable: this.jumpDecision(chain.nextHop).ok,
 		};
+	}
+
+	/**
+	 * A course this hull has no chain for, as a cue (#554, #185 D4).
+	 *
+	 * `courseProgress` answers `null` for three reasons, and only one of them
+	 * is this: a destination in the ship's own galaxy that `planRoute` cannot
+	 * reach at the flown hull's tank. The other two — another galaxy, an index
+	 * the galaxy does not have — keep drawing no row, as before.
+	 */
+	private courseWithoutRoute(): CourseCue | null {
+		const course = this.course;
+		if (!course) return null;
+		const here = this.world.system.record;
+		if (course.galaxy !== here.galaxy) return null;
+		const to = this.world.galaxy.systems.find(
+			(s) => s.index === course.destinationIndex,
+		);
+		return to ? { kind: "no-route", destination: to.name } : null;
 	}
 
 	/** Whether a raider is the selected target and on the scanner (#324). */

@@ -39,6 +39,7 @@
  * warm JIT, which is the state a player's session is in.
  */
 
+import { HULL_SPECS, PLAYER_BASELINE_HULL } from "../src/hull";
 import { generateGalaxy } from "../src/galaxy";
 import {
 	FINDER_DEFAULT_BUDGET,
@@ -46,6 +47,10 @@ import {
 	finderMatches,
 	projectFinder,
 } from "../src/galaxy-finder";
+
+/** The courier's tank: this instrument models the baseline hull, and the
+ *  reach is a hull's since #554 rather than the galaxy's constant. */
+const COURIER_TANK_LY = HULL_SPECS[PLAYER_BASELINE_HULL].tankLy;
 import { generateContents } from "../src/system";
 
 const WORLD_SEED = 0x5ee11e;
@@ -75,7 +80,7 @@ for (const system of galaxy.systems) byIndex.set(system.index, system);
 
 const guarded = (): number => {
 	const t0 = performance.now();
-	projectFinder(galaxy.systems, here, filter);
+	projectFinder(galaxy.systems, here, filter, { maxJump: COURIER_TANK_LY });
 	return performance.now() - t0;
 };
 
@@ -83,7 +88,12 @@ const guarded = (): number => {
  *  while a facility chip is on, after the first one. */
 const chipped = (): number => {
 	const t0 = performance.now();
-	projectFinder(galaxy.systems, here, { ...filter, facilities: ["REFINERY"] });
+	projectFinder(
+		galaxy.systems,
+		here,
+		{ ...filter, facilities: ["REFINERY"] },
+		{ maxJump: COURIER_TANK_LY },
+	);
 	return performance.now() - t0;
 };
 
@@ -97,7 +107,9 @@ const rosterPerSystem = (): number => {
 	// re-walked all 256 systems through `finderMatches` — work arm 1 had already
 	// paid inside `projectFinder`, and work the chip guard does not remove — so
 	// the printed delta carried a whole extra name-and-economy sweep.
-	const rows = projectFinder(galaxy.systems, here, filter);
+	const rows = projectFinder(galaxy.systems, here, filter, {
+		maxJump: COURIER_TANK_LY,
+	});
 	for (const row of [...rows.inBudget, ...rows.beyondRange])
 		generateContents(byIndex.get(row.index) as (typeof galaxy.systems)[number]);
 	return performance.now() - t0;

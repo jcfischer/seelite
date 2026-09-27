@@ -14,7 +14,6 @@
 import {
 	ECONOMY_NAMES,
 	GOVERNMENT_NAMES,
-	JUMP_RANGE_LY,
 	type SystemRecord,
 	distanceLy,
 } from "./galaxy";
@@ -66,7 +65,14 @@ export interface FinderFilter {
 }
 
 /**
- * D6: one jump — the 7 LY shell the chart already lights.
+ * What a row prints for a system the flown hull has no chain to (#554, #185
+ * D4). It was an em dash, which reads as *unknown*; a short tank flies a
+ * fragmented graph, so the row names the fact rather than hiding it.
+ */
+export const FINDER_NO_ROUTE = "no route";
+
+/**
+ * D6: one jump — the shell the chart already lights, at the flown hull's tank.
  *
  * List and chart therefore agree on first open, and no unreachable system is
  * ever in the primary list.
@@ -85,12 +91,19 @@ export const FINDER_DEFAULT_BUDGET = 1;
  * promote it, which is *filtered-out reads as absent*, the failure D7 exists to
  * prevent.
  *
- * 16 clears the measured worst by one. `galaxy-finder.test.ts` re-measures the
- * shipped seed's eight galaxies from every origin and goes red if the ceiling
- * stops covering it, because the diameter is a property of the generator and
- * the generator changes.
+ * **The diameter is a hull's, not the galaxy's, since #554.** The finder
+ * projects at the flown hull's tank, and a short tank flies a fragmented graph
+ * whose components are long and thin: the worst chain inside one is **38
+ * jumps** at the interceptor's 5 LY and 21 at 6 LY, over six world seeds, where
+ * the courier's is 15. At the old 16, four of the seven hulls had systems they
+ * could reach and the control could never promote.
+ *
+ * 39 clears the measured worst over every purchasable tank by one. The figures
+ * are not restated from a transcription: `bun scripts/measure-galaxy-shape.ts
+ * tanks` reprints them and fails if the ceiling stops covering them, and
+ * `galaxy-finder.test.ts` re-measures the shipped seed at every tank.
  */
-export const FINDER_MAX_BUDGET = 16;
+export const FINDER_MAX_BUDGET = 39;
 
 export const finderDefaultFilter = (): FinderFilter => ({
 	query: "",
@@ -332,7 +345,9 @@ function byReach(a: FinderRow, b: FinderRow): number {
  * growing a fifth and a sixth positional.
  */
 export interface ProjectFinderOptions {
-	maxJump?: number;
+	/** The flown hull's `tankLy`. Required: the finder's two lists are what
+	 *  *this* hull can reach, and a default would be the courier's (#554). */
+	maxJump: number;
 	knowledge?: LastKnownState;
 }
 
@@ -347,13 +362,13 @@ export interface ProjectFinderOptions {
  * `systems` may hold more than one galaxy — `projectJumps` scopes itself to
  * `from.galaxy`, and this scopes the rows the same way. #6 makes the galaxy a
  * namespace, and a finder that searched all eight would imply a reachability
- * the 7 LY tank does not have.
+ * no hull's tank has.
  */
 export function projectFinder(
 	systems: readonly SystemRecord[],
 	from: SystemRecord,
 	filter: FinderFilter,
-	{ maxJump = JUMP_RANGE_LY, knowledge = {} }: ProjectFinderOptions = {},
+	{ maxJump, knowledge = {} }: ProjectFinderOptions,
 ): FinderResults {
 	const projection = projectJumps(systems, from, maxJump);
 	const normalised = filter.query.trim().toLowerCase();

@@ -14,7 +14,6 @@
 
 import {
 	GALAXY_COUNT,
-	JUMP_RANGE_LY,
 	SYSTEMS_PER_GALAXY,
 	type SystemRecord,
 	distanceLy,
@@ -35,7 +34,7 @@ import {
 export function reachable(
 	systems: readonly SystemRecord[],
 	from: SystemRecord,
-	maxJump = JUMP_RANGE_LY,
+	maxJump: number,
 ): SystemRecord[] {
 	return neighbours(
 		systems.filter((s) => s.galaxy === from.galaxy),
@@ -303,7 +302,7 @@ const projectionCache = new WeakMap<
 export function projectJumps(
 	systems: readonly SystemRecord[],
 	from: SystemRecord,
-	maxJump = JUMP_RANGE_LY,
+	maxJump: number,
 ): JumpProjection {
 	let perArray = projectionCache.get(systems);
 	if (perArray === undefined) {
@@ -346,7 +345,7 @@ export function planRoute(
 	systems: readonly SystemRecord[],
 	from: SystemRecord,
 	to: SystemRecord,
-	maxJump = JUMP_RANGE_LY,
+	maxJump: number,
 ): Route | null {
 	if (from.galaxy !== to.galaxy) return null;
 
@@ -440,7 +439,7 @@ export function setCourse(
 	systems: readonly SystemRecord[],
 	from: SystemRecord,
 	to: SystemRecord,
-	maxJump = JUMP_RANGE_LY,
+	maxJump: number,
 ): Course | null {
 	if (planRoute(systems, from, to, maxJump) === null) return null;
 	return {
@@ -461,7 +460,7 @@ export function courseProgress(
 	systems: readonly SystemRecord[],
 	course: Course,
 	current: SystemRecord,
-	maxJump = JUMP_RANGE_LY,
+	maxJump: number,
 ): CourseProgress | null {
 	if (current.galaxy !== course.galaxy) return null;
 	const to = systems.find(

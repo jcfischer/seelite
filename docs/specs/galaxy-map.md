@@ -392,9 +392,17 @@ measured the diameter. Over five world seeds, eight galaxies each, from **every*
 system as origin, the worst shortest chain is **15 jumps** (14 at the shipped
 seed). At 9, real pairs sat permanently in the dimmed "beyond range" group with
 no control position that could promote them, which is *filtered-out reads as
-absent* — the failure the group exists to prevent. The ceiling is 16, and
+absent* — the failure the group exists to prevent. The ceiling was 16, and
 §9.1a re-measures the shipped seed's eight galaxies from every origin so a
 generator change that widens the galaxy goes red rather than stranding systems.
+
+**Since #554 the diameter is the flown hull's.** The finder projects at the
+hull's `tankLy`, and a short tank flies a fragmented graph whose components are
+long and thin, so the ceiling is set on the worst chain over every purchasable
+tank — the interceptor's, by a wide margin. It is 39, one past that measurement;
+the figures are not transcribed here, because
+`bun scripts/measure-galaxy-shape.ts tanks` reprints them and fails if the
+ceiling stops covering them.
 
 **The budget defaults to 1 jump**, which is the shell the chart already lights
 (§3), so list and chart agree on first open and no unreachable system is ever in

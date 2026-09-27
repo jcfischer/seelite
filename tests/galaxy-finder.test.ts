@@ -8,6 +8,7 @@
  * from — is `probe-navigation-console.mjs`'s.
  */
 
+import { HULL_SPECS, PURCHASABLE_HULL_IDS } from "../src/hull";
 import { describe, expect, test } from "bun:test";
 import {
 	FINDER_DEFAULT_BUDGET,
@@ -74,13 +75,13 @@ describe("the jump projection", () => {
 	 * branch no run enters is a branch nothing checks.
 	 */
 	test("every system's label equals planRoute's jump count", () => {
-		const reach = projectJumps(galaxy.systems, here);
+		const reach = projectJumps(galaxy.systems, here, JUMP_RANGE_LY);
 		let oneJump = 0;
 		let unreachable = 0;
 		let far = 0;
 		let compared = 0;
 		for (const system of galaxy.systems) {
-			const route = planRoute(galaxy.systems, here, system);
+			const route = planRoute(galaxy.systems, here, system, JUMP_RANGE_LY);
 			const label = reach.reach(system);
 			if (route === null) {
 				expect(label).toBeUndefined();
@@ -133,10 +134,10 @@ describe("the jump projection", () => {
 			pos: { x: 400 + i * 100, y: 0, z: 0 },
 		}));
 		const pool = [...galaxy.systems, ...islands];
-		const reach = projectJumps(pool, here);
+		const reach = projectJumps(pool, here, JUMP_RANGE_LY);
 		let checked = 0;
 		for (const island of islands) {
-			expect(planRoute(pool, here, island)).toBeNull();
+			expect(planRoute(pool, here, island, JUMP_RANGE_LY)).toBeNull();
 			expect(reach.reach(island)).toBeUndefined();
 			checked++;
 		}
@@ -144,7 +145,9 @@ describe("the jump projection", () => {
 		// And the reachable half is unchanged by their presence, so this is a
 		// test about the unreachable case rather than about a broken pool.
 		expect(reach.reach(here)?.jumps).toBe(0);
-		expect(reach.size).toBe(projectJumps(galaxy.systems, here).size);
+		expect(reach.size).toBe(
+			projectJumps(galaxy.systems, here, JUMP_RANGE_LY).size,
+		);
 	});
 
 	/** A galaxy §5 guarantees connected has no unreachable system — so the
@@ -156,7 +159,11 @@ describe("the jump projection", () => {
 			index: 900,
 			pos: { x: 400, y: 0, z: 0 },
 		};
-		const reach = projectJumps([...galaxy.systems, island], here);
+		const reach = projectJumps(
+			[...galaxy.systems, island],
+			here,
+			JUMP_RANGE_LY,
+		);
 		expect(reach.reach(island)).toBeUndefined();
 		expect(reach.reach(here)?.jumps).toBe(0);
 	});
@@ -171,8 +178,12 @@ describe("the jump projection", () => {
 	 */
 	test("a second galaxy in the pool is refused and changes nothing", () => {
 		const other = generateGalaxy(WORLD_SEED, 1);
-		const alone = projectJumps(galaxy.systems, here);
-		const mixed = projectJumps([...galaxy.systems, ...other.systems], here);
+		const alone = projectJumps(galaxy.systems, here, JUMP_RANGE_LY);
+		const mixed = projectJumps(
+			[...galaxy.systems, ...other.systems],
+			here,
+			JUMP_RANGE_LY,
+		);
 		expect(mixed.size).toBe(alone.size);
 		for (const system of galaxy.systems)
 			expect(mixed.reach(system)?.jumps).toBe(alone.reach(system)?.jumps);
@@ -206,6 +217,7 @@ describe("the jump projection", () => {
 			pool,
 			here,
 			filter({ query: foreignOnly.name, budgetJumps: 9 }),
+			{ maxJump: JUMP_RANGE_LY },
 		);
 		expect(absent.inBudget).toEqual([]);
 		expect(absent.beyondRange).toEqual([]);
@@ -226,6 +238,7 @@ describe("the jump projection", () => {
 			[...galaxy.systems, twin],
 			here,
 			filter({ query: mine0.name, budgetJumps: 9 }),
+			{ maxJump: JUMP_RANGE_LY },
 		);
 		const rows = [...found.inBudget, ...found.beyondRange];
 		expect(rows.length).toBeGreaterThan(0);
@@ -308,6 +321,7 @@ describe("D5 — what the filter admits and how it sorts", () => {
 			galaxy.systems,
 			here,
 			filter({ budgetJumps: 4 }),
+			{ maxJump: JUMP_RANGE_LY },
 		);
 		expect(inBudget.length).toBeGreaterThan(10);
 		for (let i = 1; i < inBudget.length; i++) {
@@ -328,11 +342,13 @@ describe("D5 — what the filter admits and how it sorts", () => {
 			galaxy.systems,
 			here,
 			filter({ budgetJumps: 3 }),
+			{ maxJump: JUMP_RANGE_LY },
 		);
 		const again = projectFinder(
 			[...galaxy.systems].reverse(),
 			here,
 			filter({ budgetJumps: 3 }),
+			{ maxJump: JUMP_RANGE_LY },
 		);
 		expect(again.inBudget.map((r) => r.index)).toEqual(
 			once.inBudget.map((r) => r.index),
@@ -340,7 +356,9 @@ describe("D5 — what the filter admits and how it sorts", () => {
 	});
 
 	test("a row carries government and tech level, which are read not filtered", () => {
-		const { inBudget } = projectFinder(galaxy.systems, here, filter());
+		const { inBudget } = projectFinder(galaxy.systems, here, filter(), {
+			maxJump: JUMP_RANGE_LY,
+		});
 		const first = inBudget[0];
 		const record = galaxy.systems.find(
 			(s) => s.index === first.index,
@@ -356,8 +374,10 @@ describe("D5 — what the filter admits and how it sorts", () => {
 
 describe("D6 — the budget bounds the primary list", () => {
 	test("the default admits exactly the systems inside the 7 LY shell, plus here", () => {
-		const { inBudget } = projectFinder(galaxy.systems, here, filter());
-		const reach = projectJumps(galaxy.systems, here);
+		const { inBudget } = projectFinder(galaxy.systems, here, filter(), {
+			maxJump: JUMP_RANGE_LY,
+		});
+		const reach = projectJumps(galaxy.systems, here, JUMP_RANGE_LY);
 		const expected = galaxy.systems.filter(
 			(s) => (reach.reach(s)?.jumps ?? 99) <= FINDER_DEFAULT_BUDGET,
 		);
@@ -371,11 +391,14 @@ describe("D6 — the budget bounds the primary list", () => {
 	});
 
 	test("widening the budget only ever adds rows", () => {
-		const narrow = projectFinder(galaxy.systems, here, filter()).inBudget;
+		const narrow = projectFinder(galaxy.systems, here, filter(), {
+			maxJump: JUMP_RANGE_LY,
+		}).inBudget;
 		const wide = projectFinder(
 			galaxy.systems,
 			here,
 			filter({ budgetJumps: 3 }),
+			{ maxJump: JUMP_RANGE_LY },
 		).inBudget;
 		expect(wide.length).toBeGreaterThan(narrow.length);
 		const held = new Set(wide.map((r) => r.index));
@@ -393,6 +416,7 @@ describe("D6 — the budget bounds the primary list", () => {
 			[...galaxy.systems, island],
 			here,
 			filter({ budgetJumps: 9 }),
+			{ maxJump: JUMP_RANGE_LY },
 		);
 		expect(inBudget.some((r) => r.index === island.index)).toBe(false);
 	});
@@ -411,24 +435,30 @@ describe("the budget ceiling covers the galaxy", () => {
 	 * failure D7 exists to prevent.
 	 *
 	 * Every origin in every galaxy of the shipped seed, because the worst pair
-	 * is not the start system's and a sample would be a different claim. ~360 ms.
+	 * is not the start system's and a sample would be a different claim — and
+	 * **at every purchasable hull's tank** since #554, because the finder
+	 * projects at the flown hull's and a short tank's components are long.
 	 */
 	test("no reachable pair needs more jumps than the control can ask for", () => {
 		let worst = 0;
 		let worstAt = "";
-		for (let index = 0; index < GALAXY_COUNT; index++) {
-			const gx = generateGalaxy(WORLD_SEED, index);
-			for (const from of gx.systems) {
-				const reach = projectJumps(gx.systems, from);
-				for (const to of gx.systems) {
-					const jumps = reach.reach(to)?.jumps;
-					if (jumps !== undefined && jumps > worst) {
-						worst = jumps;
-						worstAt = `g${index} ${from.name}→${to.name}`;
+		const tanks = new Set(
+			PURCHASABLE_HULL_IDS.map((id) => HULL_SPECS[id].tankLy),
+		);
+		for (const tank of tanks)
+			for (let index = 0; index < GALAXY_COUNT; index++) {
+				const gx = generateGalaxy(WORLD_SEED, index);
+				for (const from of gx.systems) {
+					const reach = projectJumps(gx.systems, from, tank);
+					for (const to of gx.systems) {
+						const jumps = reach.reach(to)?.jumps;
+						if (jumps !== undefined && jumps > worst) {
+							worst = jumps;
+							worstAt = `${tank} LY g${index} ${from.name}→${to.name}`;
+						}
 					}
 				}
 			}
-		}
 		// Printed into the failure by being in the message: a bare
 		// `toBeLessThanOrEqual` would say the ceiling was breached and not by
 		// how much or where.
@@ -437,8 +467,10 @@ describe("the budget ceiling covers the galaxy", () => {
 		});
 		expect(worst).toBeLessThanOrEqual(FINDER_MAX_BUDGET);
 		// And the ceiling is not absurdly above it either — a ceiling of 500
-		// would pass the line above while making the control useless.
-		expect(FINDER_MAX_BUDGET).toBeLessThanOrEqual(worst + 4);
+		// would pass the line above while making the control useless. The slack
+		// is wide because the shipped seed is not the worst: at 5 LY it reads
+		// 28 where six seeds read 38, and the ceiling is set on the six.
+		expect(FINDER_MAX_BUDGET).toBeLessThanOrEqual(Math.ceil(1.5 * worst));
 	});
 
 	test("the widest budget admits every reachable system", () => {
@@ -446,8 +478,9 @@ describe("the budget ceiling covers the galaxy", () => {
 			galaxy.systems,
 			here,
 			filter({ query: "", budgetJumps: FINDER_MAX_BUDGET }),
+			{ maxJump: JUMP_RANGE_LY },
 		);
-		const reach = projectJumps(galaxy.systems, here);
+		const reach = projectJumps(galaxy.systems, here, JUMP_RANGE_LY);
 		const reachable = galaxy.systems.filter(
 			(s) => reach.reach(s) !== undefined,
 		);
@@ -460,7 +493,9 @@ describe("D7 — a name lookup never returns a blank list", () => {
 	/** The node's obligation 3, first branch: matches all in budget, so the
 	 *  beyond-range group must be *absent*, not merely short. */
 	test("a query whose matches are all in budget shows no beyond-range group", () => {
-		const inShell = projectFinder(galaxy.systems, here, filter()).inBudget;
+		const inShell = projectFinder(galaxy.systems, here, filter(), {
+			maxJump: JUMP_RANGE_LY,
+		}).inBudget;
 		const target = inShell.find((r) => r.index !== here.index) as {
 			name: string;
 		};
@@ -468,6 +503,7 @@ describe("D7 — a name lookup never returns a blank list", () => {
 			galaxy.systems,
 			here,
 			filter({ query: target.name }),
+			{ maxJump: JUMP_RANGE_LY },
 		);
 		expect(results.inBudget.length).toBeGreaterThan(0);
 		expect(results.beyondRange).toEqual([]);
@@ -477,7 +513,7 @@ describe("D7 — a name lookup never returns a blank list", () => {
 	 *  *and* the primary list is empty. Together the two say the split tracks
 	 *  the budget rather than being a constant. */
 	test("a query whose matches are all out of budget shows the group and an empty primary list", () => {
-		const reach = projectJumps(galaxy.systems, here);
+		const reach = projectJumps(galaxy.systems, here, JUMP_RANGE_LY);
 		const far = galaxy.systems.find(
 			(s) => (reach.reach(s)?.jumps ?? 0) >= 3,
 		) as SystemRecord;
@@ -485,6 +521,7 @@ describe("D7 — a name lookup never returns a blank list", () => {
 			galaxy.systems,
 			here,
 			filter({ query: far.name }),
+			{ maxJump: JUMP_RANGE_LY },
 		);
 		expect(results.inBudget).toEqual([]);
 		expect(results.beyondRange.some((r) => r.index === far.index)).toBe(true);
@@ -495,7 +532,7 @@ describe("D7 — a name lookup never returns a blank list", () => {
 	});
 
 	test("widening the budget moves a row from beyond-range into the list", () => {
-		const reach = projectJumps(galaxy.systems, here);
+		const reach = projectJumps(galaxy.systems, here, JUMP_RANGE_LY);
 		const far = galaxy.systems.find(
 			(s) => (reach.reach(s)?.jumps ?? 0) === 3,
 		) as SystemRecord;
@@ -503,11 +540,13 @@ describe("D7 — a name lookup never returns a blank list", () => {
 			galaxy.systems,
 			here,
 			filter({ query: far.name }),
+			{ maxJump: JUMP_RANGE_LY },
 		);
 		const after = projectFinder(
 			galaxy.systems,
 			here,
 			filter({ query: far.name, budgetJumps: 3 }),
+			{ maxJump: JUMP_RANGE_LY },
 		);
 		expect(before.beyondRange.some((r) => r.index === far.index)).toBe(true);
 		expect(after.inBudget.some((r) => r.index === far.index)).toBe(true);
@@ -524,6 +563,7 @@ describe("D7 — a name lookup never returns a blank list", () => {
 			galaxy.systems,
 			here,
 			filter({ economies: [0, 1] }),
+			{ maxJump: JUMP_RANGE_LY },
 		);
 		expect(results.beyondRange).toEqual([]);
 	});
@@ -539,6 +579,7 @@ describe("D7 — a name lookup never returns a blank list", () => {
 			[...galaxy.systems, island],
 			here,
 			filter({ query: "Zzisola" }),
+			{ maxJump: JUMP_RANGE_LY },
 		);
 		const found = results.beyondRange.find((r) => r.index === island.index);
 		expect(found?.jumps).toBeNull();
@@ -599,7 +640,7 @@ describe("§9.4 facilities knowledge", () => {
 			galaxy.systems,
 			here,
 			filter({ facilities, budgetJumps: FINDER_MAX_BUDGET, ...over }),
-			knowledge ? { knowledge } : undefined,
+			{ maxJump: JUMP_RANGE_LY, ...(knowledge ? { knowledge } : {}) },
 		);
 
 	/** The first system in this galaxy carrying `role`, which every check here
@@ -697,7 +738,10 @@ describe("§9.4 facilities knowledge", () => {
 				facilities: ["KNOWN FENCE"],
 				budgetJumps: FINDER_MAX_BUDGET,
 			}),
-			{ knowledge: checked(system, refinery, "operational", 9) },
+			{
+				maxJump: JUMP_RANGE_LY,
+				knowledge: checked(system, refinery, "operational", 9),
+			},
 		);
 		expect(result.inBudget.map((row) => row.index)).toContain(system.index);
 		expect(result.uncheckedFence).toBeGreaterThan(0);
@@ -720,6 +764,7 @@ describe("§9.4 facilities knowledge", () => {
 			here,
 			filter({ facilities: ["SHIPYARD"], budgetJumps: FINDER_MAX_BUDGET }),
 			{
+				maxJump: JUMP_RANGE_LY,
 				knowledge: observed(system, shipyard, "disabled", 1000, "system-relay"),
 			},
 		);
@@ -768,7 +813,10 @@ describe("§9.4 facilities knowledge", () => {
 				galaxy.systems,
 				here,
 				filter({ facilities: ["SHIPYARD"], budgetJumps: FINDER_MAX_BUDGET }),
-				{ knowledge: observed(system, shipyard, condition, 5, "docking") },
+				{
+					maxJump: JUMP_RANGE_LY,
+					knowledge: observed(system, shipyard, condition, 5, "docking"),
+				},
 			);
 			const row = seen.inBudget.find(
 				(candidate) => candidate.index === system.index,
@@ -798,6 +846,7 @@ describe("§9.4 facilities knowledge", () => {
 			here,
 			filter({ facilities: ["SHIPYARD"], budgetJumps: FINDER_MAX_BUDGET }),
 			{
+				maxJump: JUMP_RANGE_LY,
 				// Spelt out rather than through `observed`: this is the only row
 				// in the file that carries a remembered recovery, and a
 				// parameter for one caller is the wider helper.
@@ -881,9 +930,7 @@ describe("§9.4 facilities knowledge", () => {
 			galaxy.systems,
 			here,
 			filter({ facilities: ["SHIPYARD"], budgetJumps: FINDER_MAX_BUDGET }),
-			{
-				knowledge: knowledge,
-			},
+			{ maxJump: JUMP_RANGE_LY, knowledge: knowledge },
 		);
 		const row = seen.inBudget.find(
 			(candidate) => candidate.index === system.index,
@@ -908,6 +955,7 @@ describe("§9.4 facilities knowledge", () => {
 			here,
 			filter({ facilities: ["KNOWN FENCE"], budgetJumps: FINDER_MAX_BUDGET }),
 			{
+				maxJump: JUMP_RANGE_LY,
 				knowledge: checked(system, refinery, "disabled", 40),
 			},
 		);
@@ -938,6 +986,7 @@ describe("§9.4 facilities knowledge", () => {
 			here,
 			filter({ facilities: ["KNOWN FENCE"], budgetJumps: FINDER_MAX_BUDGET }),
 			{
+				maxJump: JUMP_RANGE_LY,
 				knowledge: checked(system, refinery, "operational", 3),
 			},
 		);
@@ -960,6 +1009,7 @@ describe("§9.4 facilities knowledge", () => {
 			galaxy.systems,
 			here,
 			filter({ facilities: ["KNOWN FENCE"], budgetJumps: 1 }),
+			{ maxJump: JUMP_RANGE_LY },
 		);
 		const far = project(["KNOWN FENCE"]);
 		expect(near.uncheckedFence).toBeLessThan(far.uncheckedFence);
@@ -988,6 +1038,7 @@ describe("§9.4 facilities knowledge", () => {
 				budgetJumps: FINDER_MAX_BUDGET,
 				query: galaxy.systems[0].name,
 			}),
+			{ maxJump: JUMP_RANGE_LY },
 		);
 		expect(narrowed.uncheckedFence).toBeLessThan(wide.uncheckedFence);
 	});
@@ -1026,7 +1077,9 @@ describe("§9.4 facilities knowledge", () => {
 			facilities: ["REFINERY", "SHIPYARD"],
 			budgetJumps: FINDER_MAX_BUDGET,
 		});
-		const both = projectFinder(galaxy.systems, here, budget);
+		const both = projectFinder(galaxy.systems, here, budget, {
+			maxJump: JUMP_RANGE_LY,
+		});
 		const refineries = project(["REFINERY"]);
 		const shipyards = project(["SHIPYARD"]);
 		const indices = new Set(both.inBudget.map((row) => row.index));
@@ -1067,6 +1120,7 @@ describe("§9.4 facilities knowledge", () => {
 			galaxy.systems,
 			here,
 			filter({ budgetJumps: FINDER_MAX_BUDGET }),
+			{ maxJump: JUMP_RANGE_LY },
 		);
 		expect(seen.inBudget.length).toBeGreaterThan(0);
 		for (const row of seen.inBudget) expect(row.matchedFacilities).toEqual([]);
@@ -1252,6 +1306,7 @@ describe("selection", () => {
 			galaxy.systems,
 			here,
 			filter({ budgetJumps: 2 }),
+			{ maxJump: JUMP_RANGE_LY },
 		);
 		expect(inBudget.length).toBeGreaterThan(0);
 		expect(Object.keys(inBudget[0])).not.toContain("selected");

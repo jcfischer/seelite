@@ -123,21 +123,23 @@ export const GALAXY_RADIUS_LY = 24.53;
 export const CORE_RADIUS_LY = GALAXY_RADIUS_LY / Math.SQRT2;
 
 /**
- * Jump range (spec §2, §8), also the edge predicate for the connectivity graph.
+ * The reach at which every galaxy is guaranteed connected — `layoutGalaxy`'s
+ * connectivity predicate (spec §2) — and **nobody's jump gate** (#185, #554).
+ *
+ * Reachability is a fact about the flown hull: a hull's `tankLy` is its jump
+ * range and its fuel capacity, and the router, the chart, the jump gate and the
+ * job board all take it as a parameter. Connectivity is a fact about the
+ * galaxy, and this is it. The two agree on exactly one hull — the courier,
+ * which `tests/hull-reach.test.ts` asserts — and a shorter tank flies a
+ * fragmented graph on purpose (#185's measurement; `scripts/measure-galaxy-shape.ts
+ * --tanks` reprints it).
  *
  * **Galaxy-owned, and deliberately not derived from the roster.** #181 first
- * made it `HULL_SPECS[PLAYER_BASELINE_HULL].tankLy` — the range *is* the tank,
- * so one quantity was two constants — and sage's second round named what that
- * costs: this is the **edge predicate for the connectivity graph**, and the
- * roster's figures are provisional against #183's rating and #8's combat
- * balance. Deriving it means a combat retune of one hull silently regenerates
- * every system's edge set, which is world generation rather than ship handling,
- * and #107 already records that changing what a system *is* must precede
- * save/load.
- *
- * So the two stay separate quantities that happen to be equal, and
- * `tests/hull.test.ts` asserts they agree — the #46 shape, which is right here
- * precisely because they are not one thing.
+ * derived it from the courier's row, and sage named the cost: the roster's
+ * figures are provisional against #183 and #8, so a retune of one hull would
+ * silently regenerate every system's edge set. Moving it now is a migration
+ * under #107, because saves exist (#89). So no module but this one imports it;
+ * `tests/hull-reach.test.ts` fails if one does.
  */
 export const JUMP_RANGE_LY = 7.0;
 
@@ -754,7 +756,9 @@ export function startSystem(galaxy: Galaxy): SystemRecord {
 export function neighbours(
 	systems: readonly SystemRecord[],
 	from: SystemRecord,
-	maxJump = JUMP_RANGE_LY,
+	/** The flown hull's `tankLy`. Required: a default would hand every caller
+	 *  that forgot the courier's reach (#554). */
+	maxJump: number,
 ): SystemRecord[] {
 	// Squared first, rooted only for the ~8 survivors — the same reason
 	// `isConnected` does it, and the sort is what needs the true distance.

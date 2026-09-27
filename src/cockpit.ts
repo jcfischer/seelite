@@ -626,7 +626,15 @@ export type CourseCue =
 			 */
 			affordable: boolean;
 	  }
-	| { kind: "arrived"; destination: string };
+	| { kind: "arrived"; destination: string }
+	/**
+	 * The flown hull has no chain to the destination (#554, #185 D4).
+	 *
+	 * Connectivity is guaranteed at the courier's reach and nowhere else, so a
+	 * short-tank hull can hold a course it cannot fly — one loaded from a save,
+	 * or set in another hull. Absence would say *no course*, which is false.
+	 */
+	| { kind: "no-route"; destination: string };
 
 /**
  * The course row, or `null` for no row at all.
@@ -638,6 +646,13 @@ export type CourseCue =
  */
 export function courseCue(cue: CourseCue | null): FloorCell | null {
 	if (cue === null) return null;
+	if (cue.kind === "no-route")
+		return {
+			label: COURSE_CUE_LABEL,
+			value: `${cue.destination} no route`,
+			// §4's refusal: the course stands, and this hull cannot fly it.
+			tone: "refused",
+		};
 	if (cue.kind === "arrived")
 		return {
 			label: COURSE_CUE_LABEL,
@@ -682,6 +697,7 @@ export function courseCueWidest(): string {
 	const name = "M".repeat(SYSTEM_NAME_MAX_CHARS);
 	const candidates: CourseCue[] = [
 		{ kind: "arrived", destination: name },
+		{ kind: "no-route", destination: name },
 		{ kind: "underway", nextHop: name, remaining: 1, affordable: true },
 		{
 			kind: "underway",
@@ -720,6 +736,6 @@ export const jumpRefusalText = (
 	({
 		"same-system": "already there",
 		"other-galaxy": "no galactic hyperdrive fitted",
-		"out-of-range": `${destinationName} is out of range`,
+		"out-of-range": `${destinationName} is out of this hull's range`,
 		"insufficient-fuel": `not enough fuel for ${destinationName}`,
 	})[refusal];
