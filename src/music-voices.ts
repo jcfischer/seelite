@@ -231,6 +231,13 @@ export class VoiceBank {
 		return out;
 	}
 
+	/** Whether any held slot is `owner`'s: a song whose notes still ring. */
+	holds(owner: number): boolean {
+		for (let i = 0; i < this.cap; i++)
+			if (this.stage[i] !== STAGE_FREE && this.owner[i] === owner) return true;
+		return false;
+	}
+
 	/** Free every slot one song holds: a song halted, or replaced. */
 	clearOwner(owner: number) {
 		for (let i = 0; i < this.cap; i++)

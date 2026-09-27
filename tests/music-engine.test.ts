@@ -203,6 +203,52 @@ describe("starting", () => {
 		expect(r.e.gain(1, 0, r.now() + 4800)).toBeGreaterThan(b);
 	});
 
+	test("a refused start leaves the playing song as it was", () => {
+		// Sage round 6: the lead was told to stop before the section was
+		// checked, so a start refused by name still silenced the music.
+		const r = rig();
+		r.send({ type: "play", id: "a", at: "bar" });
+		r.until(30000);
+		expect(() =>
+			r.send({ type: "play", id: "b", section: "Q", at: "bar" }),
+		).toThrow(/Q/);
+		expect(() =>
+			r.send({ type: "crossfade", to: "b", section: "Q", at: "bar", fadeS: 1 }),
+		).toThrow(/Q/);
+		r.until(2 * BAR);
+		expect(r.e.playing).toBe("a");
+		expect(r.e.gain(0, 0, 2 * BAR)).toBeCloseTo(MUSIC_HEADROOM, 9);
+		expect(r.heard.some((h) => h.frame === BAR && h.id === "a")).toBe(true);
+	});
+
+	test("a song whose last notes still ring cannot be replaced under them", () => {
+		// Sage round 6: after a stop on the bar the song no longer plays but
+		// its notes ring out, and a load freed their voices with a step.
+		const r = rig();
+		r.send({ type: "play", id: "a", at: "bar" });
+		r.until(30000);
+		r.send({ type: "stop", at: "bar", fadeS: 0 });
+		r.until(BAR + 1280);
+		expect(r.e.playing).toBe(null);
+		expect(r.e.sounding).toBeGreaterThan(0);
+		expect(() =>
+			r.send({ type: "load", id: "a", song: song("z", 40) }),
+		).toThrow(/sounding/);
+	});
+
+	test("after a stop now, a start does not wait for the fading song's line", () => {
+		// Sage round 6: the song fading out still set the quantum, where the
+		// quantum's own rule is "with nothing playing, now".
+		const r = rig();
+		r.send({ type: "play", id: "a", at: "bar" });
+		r.until(30080);
+		r.send({ type: "stop", at: "now", fadeS: 1 });
+		r.until(30080 + 1280);
+		r.send({ type: "play", id: "b", at: "bar" });
+		r.until(30080 + 12800);
+		expect(r.heard.find((h) => h.id === "b")?.frame).toBe(30080 + 1280);
+	});
+
 	test("a move with nothing playing is refused by name", () => {
 		// Sage round 3: the same reason as the unknown section below — a move
 		// dropped in silence leaves a score's author no signal.

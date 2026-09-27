@@ -102,10 +102,6 @@ interface Slot {
 	haltAt: number;
 }
 
-/** A song sounds while it plays and while a fade out has yet to run out:
- *  the one test, for stop, load and the slot search (sage round 2). */
-const sounding = (s: Slot) => s.player.playing || s.haltAt < Infinity;
-
 export class MusicEngine implements NoteSink, VoiceGain {
 	private readonly bank: VoiceBank;
 	private readonly slots: (Slot | null)[] = new Array(MUSIC_SONG_SLOTS).fill(
@@ -155,39 +151,31 @@ export class MusicEngine implements NoteSink, VoiceGain {
 			case "load":
 				return this.load(cmd.id, cmd.song);
 			case "play": {
-				const ix = this.find(cmd.id);
-				const line = this.line(now, cmd.at);
-				if (this.again(ix, line, cmd.section)) return;
-				const lead = this.slots[this.lead];
-				if (lead?.player.playing) lead.player.stopAt(line);
-				const target = this.slots[ix] as Slot;
-				const back = sounding(target);
-				this.begin(ix, line, cmd.section);
+				const h = this.handover(cmd.id, cmd.at, cmd.section, now);
+				if (!h) return;
+				h.lead?.player.stopAt(h.line);
+				this.begin(h.ix, h.line, cmd.section);
 				// A song still fading out keeps fading until the line, then is
 				// full: the cut is on the line, not before it (sage rounds 4, 5).
-				if (back) target.gain.set(1, line, 0, now);
-				else target.gain.reset(1);
+				if (h.back) h.target.gain.set(1, h.line, 0, now);
+				else h.target.gain.reset(1);
 				return;
 			}
 			case "crossfade": {
-				const ix = this.find(cmd.to);
-				const line = this.line(now, cmd.at);
-				if (this.again(ix, line, cmd.section)) return;
+				const h = this.handover(cmd.to, cmd.at, cmd.section, now);
+				if (!h) return;
 				const len = fade(cmd.fadeS);
-				const lead = this.slots[this.lead];
-				if (lead?.player.playing) {
-					lead.gain.set(0, line, len, now);
-					lead.haltAt = line + len;
+				if (h.lead) {
+					h.lead.gain.set(0, h.line, len, now);
+					h.lead.haltAt = h.line + len;
 				}
-				const target = this.slots[ix] as Slot;
-				const back = sounding(target);
-				this.begin(ix, line, cmd.section);
+				this.begin(h.ix, h.line, cmd.section);
 				// Back to a song still fading out (sage round 4): it fades up from
 				// where it is now. Reset to 0, it was cut before the line.
-				if (back) target.gain.set(1, now, len, now);
+				if (h.back) h.target.gain.set(1, now, len, now);
 				else {
-					target.gain.reset(0);
-					target.gain.set(1, line, len, now);
+					h.target.gain.reset(0);
+					h.target.gain.set(1, h.line, len, now);
 				}
 				return;
 			}
@@ -204,11 +192,13 @@ export class MusicEngine implements NoteSink, VoiceGain {
 			case "stop": {
 				if (cmd.at === "now") {
 					const len = fade(cmd.fadeS);
-					for (const s of this.slots)
-						if (s && sounding(s)) {
+					for (let i = 0; i < this.slots.length; i++) {
+						const s = this.slots[i];
+						if (s && this.isSounding(i)) {
 							s.gain.set(0, now, len, now);
 							s.haltAt = Math.min(s.haltAt, now + len);
 						}
+					}
 					return;
 				}
 				const line = this.line(now, cmd.at);
@@ -281,14 +271,14 @@ export class MusicEngine implements NoteSink, VoiceGain {
 		const compiled = compileSong(song);
 		let ix = this.slots.findIndex((s) => s?.id === id);
 		if (ix >= 0) {
-			const s = this.slots[ix] as Slot;
-			if (sounding(s))
+			if (this.isSounding(ix))
 				throw new Error(`music: ${id} is sounding and cannot be replaced`);
 			this.bank.clearOwner(ix);
 		} else {
 			// An empty slot first; then one whose song is silent.
 			ix = this.slots.indexOf(null);
-			if (ix < 0) ix = this.slots.findIndex((s) => s !== null && !sounding(s));
+			if (ix < 0)
+				ix = this.slots.findIndex((s, i) => s !== null && !this.isSounding(i));
 			if (ix < 0)
 				throw new Error(
 					`music: all ${this.slots.length} song slots are sounding`,
@@ -329,9 +319,65 @@ export class MusicEngine implements NoteSink, VoiceGain {
 	}
 
 	/** The quantum's line on the playing song, or `now` with none. */
+	/**
+	 * The quantum's line on the playing song, or `now` with none. A song
+	 * fading out on a stop now is not one (sage round 6): it is leaving, and
+	 * a start that waited for its line would wait on music that has stopped.
+	 */
 	private line(now: number, q: Quantum): number {
 		const lead = this.playingLead();
-		return lead ? lead.player.lineAfter(now, q) : now;
+		return lead && lead.haltAt === Infinity
+			? lead.player.lineAfter(now, q)
+			: now;
+	}
+
+	/**
+	 * A song sounds while it plays, while a fade out has yet to run out, and
+	 * while any of its voices still rings — after a stop on the bar, its last
+	 * notes (sage round 6: a load freed them under the tail with a step). The
+	 * one test, for stop, load and the slot search.
+	 */
+	private isSounding(ix: number): boolean {
+		const s = this.slots[ix];
+		if (!s) return false;
+		return s.player.playing || s.haltAt < Infinity || this.bank.holds(ix);
+	}
+
+	/**
+	 * What a start and a crossfade share, with **every check made before any
+	 * song is touched** (sage round 6: the playing song was told to stop, then
+	 * the new one's section was refused, and the music stopped for nothing).
+	 * Null when the move names the song already playing, which `again` has
+	 * made a jump.
+	 */
+	private handover(
+		id: string,
+		at: Quantum,
+		section: string | undefined,
+		now: number,
+	): {
+		ix: number;
+		line: number;
+		target: Slot;
+		back: boolean;
+		lead: Slot | null;
+	} | null {
+		const ix = this.find(id);
+		const target = this.slots[ix] as Slot;
+		if (section !== undefined && target.player.song.sectionIndex(section) < 0)
+			throw new Error(`music: ${target.id} has no section ${section}`);
+		const line = this.line(now, at);
+		if (this.again(ix, line, section)) return null;
+		// A song already leaving on a stop's fade keeps that fade: handing it
+		// over again would restart it and push its end out.
+		const lead = this.playingLead();
+		return {
+			ix,
+			line,
+			target,
+			back: this.isSounding(ix),
+			lead: lead && lead.haltAt === Infinity ? lead : null,
+		};
 	}
 
 	/**

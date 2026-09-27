@@ -348,8 +348,9 @@ try {
 				during > 0 &&
 				during < before * 0.6 &&
 				peakIn(4.05, 6) === 0,
-			x.length > 0 &&
-				`rms ${before.toFixed(5)} before, ${during.toFixed(5)} in the fade's tail, peak ${peakIn(4.05, 6)} after`,
+			x.length === 0
+				? "music-stop-fade did not render"
+				: `rms ${before.toFixed(5)} before, ${during.toFixed(5)} in the fade's tail, peak ${peakIn(4.05, 6)} after`,
 		);
 	}
 
@@ -393,13 +394,16 @@ try {
 	// ── The music bus is the only level ─────────────────────────────────────
 	{
 		const march = SOUND_SET.find((e) => e.name === "music-march");
-		const rms = (x) => rmsOf(x);
-		const full = rms(rendered.get("music-march"));
-		const off = rms((await renderRaw(march, { levels: { music: 0 } })).samples);
-		const half = rms(
+		const full = rmsOf(rendered.get("music-march"));
+		const off = rmsOf(
+			(await renderRaw(march, { levels: { music: 0 } })).samples,
+		);
+		const half = rmsOf(
 			(await renderRaw(march, { levels: { music: 0.5 } })).samples,
 		);
-		const ship = rms((await renderRaw(march, { levels: { ship: 0 } })).samples);
+		const ship = rmsOf(
+			(await renderRaw(march, { levels: { ship: 0 } })).samples,
+		);
 		check(
 			"music Off is silence, and 50% is a quarter of the level",
 			off === 0 && Math.abs(half / full - 0.25) < 0.01,
@@ -410,7 +414,7 @@ try {
 			Math.abs(ship / full - 1) < 1e-6,
 			`x${(ship / full).toFixed(6)}`,
 		);
-		const bypass = rms(
+		const bypass = rmsOf(
 			(
 				await renderRaw(
 					SOUND_SET.find((e) => e.name === "music-waltz"),
@@ -420,7 +424,7 @@ try {
 				)
 			).samples,
 		);
-		const waltz = rms(rendered.get("music-waltz"));
+		const waltz = rmsOf(rendered.get("music-waltz"));
 		check(
 			"the limiter leaves the music alone",
 			Math.abs(waltz / bypass - 1) <= 0.01,
