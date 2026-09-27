@@ -95,109 +95,102 @@ const MAIN = {
 
 /**
  * #544's cues and loops, which `origin/main` does not have: centred on this
- * branch's first render instead (`npm run sounds -- --label after`, seed 552).
- * So these bands hold the prototype to what the principal listened to, and
- * move when the ear moves it. Every flight timeline takes the bed's wide band:
+ * branch's render after the principal's first listen (`npm run sounds --
+ * --label after2`, seed 552). So these bands hold the prototype to what the
+ * principal listens to, and move when the ear moves it. Every flight timeline takes the bed's wide band:
  * each carries noise loops, and most carry clicks, whose count moves with the
  * seed.
  */
 const SINCE_544 = {
 	"cruise-engage": {
-		rms: 0.02038,
-		peak: 0.16071,
-		onsetMs: 7.46,
-		hz: 623,
+		rms: 0.01988,
+		peak: 0.17615,
+		onsetMs: 7.38,
+		hz: 2698,
 		noise: 1,
 	},
 	"cruise-drop": {
-		rms: 0.01144,
-		peak: 0.15349,
-		onsetMs: 7.42,
-		hz: 2808,
+		rms: 0.01384,
+		peak: 0.17882,
+		onsetMs: 7.35,
+		hz: 3424,
 		noise: 1,
 	},
 	"flight-idle": {
-		rms: 0.01051,
-		peak: 0.02739,
-		onsetMs: 30.79,
+		rms: 0.00597,
+		peak: 0.01578,
+		onsetMs: 52.02,
 		hz: 162,
 		bed: 1,
 	},
 	"flight-burn-thrust": {
-		rms: 0.02421,
-		peak: 0.14033,
-		onsetMs: 30.79,
+		rms: 0.0225,
+		peak: 0.13142,
+		onsetMs: 52.02,
 		hz: 162,
 		bed: 1,
 	},
 	"flight-burn-lever": {
-		rms: 0.03466,
-		peak: 0.14033,
-		onsetMs: 30.79,
+		rms: 0.03346,
+		peak: 0.1342,
+		onsetMs: 52.02,
 		hz: 162,
 		bed: 1,
 	},
 	"flight-rcs": {
-		rms: 0.01144,
-		peak: 0.03646,
-		onsetMs: 30.79,
+		rms: 0.00693,
+		peak: 0.0289,
+		onsetMs: 52.02,
 		hz: 162,
 		bed: 1,
 	},
 	"flight-rcs-norcs": {
-		rms: 0.01103,
-		peak: 0.02739,
-		onsetMs: 30.79,
+		rms: 0.00622,
+		peak: 0.01578,
+		onsetMs: 52.02,
 		hz: 162,
 		bed: 1,
 	},
 	"flight-cruise-shimmer": {
-		rms: 0.02185,
-		peak: 0.18753,
-		onsetMs: 30.79,
+		rms: 0.01915,
+		peak: 0.19447,
+		onsetMs: 52.02,
 		hz: 162,
 		bed: 1,
 	},
 	"flight-cruise-throb": {
-		rms: 0.0232,
-		peak: 0.18672,
-		onsetMs: 30.79,
+		rms: 0.0203,
+		peak: 0.19334,
+		onsetMs: 52.02,
 		hz: 162,
 		bed: 1,
 	},
 	"flight-cooling-clicks": {
-		rms: 0.02505,
-		peak: 0.15464,
-		onsetMs: 13.65,
-		hz: 292,
+		rms: 0.02343,
+		peak: 0.14191,
+		onsetMs: 13.69,
+		hz: 289,
 		bed: 1,
 	},
 	"flight-damaged-clicks": {
-		rms: 0.00999,
-		peak: 0.04674,
-		onsetMs: 30.79,
-		hz: 162,
-		bed: 1,
-	},
-	"flight-damaged-sparse": {
-		rms: 0.00995,
-		peak: 0.02739,
-		onsetMs: 30.79,
+		rms: 0.00561,
+		peak: 0.0497,
+		onsetMs: 52.02,
 		hz: 162,
 		bed: 1,
 	},
 	"flight-docked": {
-		rms: 0.00496,
-		peak: 0.01233,
-		onsetMs: 66.38,
+		rms: 0.00281,
+		peak: 0.01019,
+		onsetMs: 128.79,
 		hz: 163,
 		bed: 1,
 	},
 	"flight-stack": {
-		rms: 0.03848,
-		peak: 0.20532,
-		onsetMs: 8.9,
-		hz: 4511,
+		rms: 0.03732,
+		peak: 0.22656,
+		onsetMs: 8.92,
+		hz: 4501,
 		bed: 1,
 	},
 };
@@ -341,6 +334,17 @@ try {
 			[5, 8],
 			"flight-cruise-throb",
 			[0, 0.45],
+		],
+		// The principal's first listen: the bed must follow the speed. At the
+		// cap against just after the engage, high-passed, because what speed
+		// moves is the pitch of the rush and the band, not only the level.
+		[
+			"the cruise bed rises with the speed",
+			"flight-cruise-shimmer",
+			[6.6, 7.4],
+			"flight-cruise-shimmer",
+			[4.4, 4.8],
+			true,
 		],
 	];
 	const renders = new Map();

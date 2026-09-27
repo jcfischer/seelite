@@ -11,6 +11,7 @@ import {
 	flightSound,
 	flightSoundArms,
 	QUIET_FLIGHT,
+	cruiseSpeedShare,
 } from "../src/flight-sound";
 
 const flying: FlightReading = {
@@ -21,6 +22,7 @@ const flying: FlightReading = {
 	drive: 0,
 	rcs: 0,
 	hullShare: 1,
+	cruiseSpeed: 0,
 };
 const arms = (over: Partial<FlightSoundArms> = {}): FlightSoundArms => ({
 	...DEFAULT_FLIGHT_ARMS,
@@ -122,34 +124,61 @@ test("docked: the hum by arm, and nothing of flight", () => {
 	).mix;
 	expect(silent.hum).toBe(0);
 	expect(silent.clickRate).toBe(0);
+	expect(silent.faintClickRate).toBe(0);
 });
 
-test("clicks: off, a steady sparse rate, or reacting to heat and damage", () => {
-	const rate = (a: Partial<FlightSoundArms>, r = flying, s = QUIET_FLIGHT) =>
-		flightSound(s, r, arms(a), 0.016).mix.clickRate;
-	expect(rate({ clicks: "noclicks" })).toBe(0);
-	const sparse = rate({ clicks: "sparse" });
-	expect(sparse).toBeGreaterThan(0);
-	// Sparse does not react.
-	expect(rate({ clicks: "sparse" }, { ...flying, hullShare: 0.2 })).toBe(
-		sparse,
-	);
-	// Reactive: a damaged hull ticks more.
-	const calm = rate({ clicks: "reactive" });
-	expect(
-		rate({ clicks: "reactive" }, { ...flying, hullShare: 0.2 }),
-	).toBeCloseTo(
-		calm +
-			(rate({ clicks: "reactive" }, { ...flying, hullShare: 0 }) - calm) * 0.8,
+test("clicks: loud ones react, faint ones stay sparse and steady", () => {
+	const mix = (r = flying, st = QUIET_FLIGHT, a = arms()) =>
+		flightSound(st, r, a, 0.016).mix;
+	// At rest and whole: no loud clicks, and the faint layer ticks on.
+	expect(mix().clickRate).toBe(0);
+	const faint = mix().faintClickRate;
+	expect(faint).toBeGreaterThan(0);
+	// A damaged hull ticks loud, in proportion to the damage...
+	expect(mix({ ...flying, hullShare: 0.2 }).clickRate).toBeCloseTo(
+		mix({ ...flying, hullShare: 0 }).clickRate * 0.8,
 		9,
 	);
-	// Reactive: a hull cooling after a burn ticks more than one at rest.
+	// ...and the faint layer does not react.
+	expect(mix({ ...flying, hullShare: 0.2 }).faintClickRate).toBe(faint);
+	// A hull cooling after a burn ticks loud, and not while the burn is on.
 	const hot = { ...QUIET_FLIGHT, heat: 0.8 };
-	expect(rate({ clicks: "reactive" }, flying, hot)).toBeGreaterThan(calm);
-	// ...and not while the burn is still on.
-	expect(rate({ clicks: "reactive" }, { ...flying, drive: 0.8 }, hot)).toBe(
-		calm,
+	expect(mix(flying, hot).clickRate).toBeGreaterThan(0);
+	expect(mix({ ...flying, drive: 0.8 }, hot).clickRate).toBe(0);
+	// `noclicks` silences both layers.
+	const none = mix(
+		{ ...flying, hullShare: 0 },
+		hot,
+		arms({ clicks: "noclicks" }),
 	);
+	expect([none.clickRate, none.faintClickRate]).toEqual([0, 0]);
+});
+
+test("the cruise bed follows cruise speed, not the lever", () => {
+	const at = (cruiseSpeed: number, lever: number) =>
+		flightSound(
+			QUIET_FLIGHT,
+			{ ...flying, regime: "cruise", cruiseSpeed, lever },
+			arms(),
+			0.016,
+		).mix;
+	expect(at(0.2, 1).cruise).toBeLessThan(at(0.9, 1).cruise);
+	expect(at(0.5, 0).cruise).toBe(at(0.5, 1).cruise);
+	expect(at(0.7, 1).cruiseSpeed).toBe(0.7);
+	expect(at(0, 0).cruise).toBeGreaterThan(0);
+	// Out of cruise the speed is nothing to the bed.
+	expect(
+		flightSound(QUIET_FLIGHT, { ...flying, cruiseSpeed: 1 }, arms(), 0.016).mix
+			.cruiseSpeed,
+	).toBe(0);
+});
+
+test("cruise speed is a log share of the regime's range", () => {
+	expect(cruiseSpeedShare(100, 100, 1e6)).toBe(0);
+	expect(cruiseSpeedShare(50, 100, 1e6)).toBe(0);
+	expect(cruiseSpeedShare(1e4, 100, 1e6)).toBeCloseTo(0.5, 9);
+	expect(cruiseSpeedShare(1e6, 100, 1e6)).toBe(1);
+	expect(cruiseSpeedShare(1e9, 100, 1e6)).toBe(1);
 });
 
 test("heat rises under a burn and falls after it, frame-rate independent", () => {
@@ -178,11 +207,11 @@ test("the URL picks arms by token, and says what it did not know", () => {
 		unknown: [],
 	});
 	expect(flightSoundArms("legacy")).toEqual({ arms: "legacy", unknown: [] });
-	expect(flightSoundArms("lever,norcs,throb,sparse,docksilent")).toEqual({
+	expect(flightSoundArms("lever,norcs,throb,noclicks,docksilent")).toEqual({
 		arms: {
 			drive: "lever",
 			rcs: "norcs",
-			clicks: "sparse",
+			clicks: "noclicks",
 			docked: "docksilent",
 			cruise: "throb",
 		},

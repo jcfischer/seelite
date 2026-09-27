@@ -128,8 +128,14 @@ const levels = (page) =>
 	// Cruise: spool, engage, drop.
 	const cruise = await page.evaluate(async () => {
 		const g = window.__seelite;
-		g.throttle = 0;
-		const station = g.world.system.bodies.find((b) => b.kind === "station");
+		// The farthest station, so the leg is at speed rather than one that
+		// drops on its first frame: the bed follows cruise speed (#544).
+		const ship = g.world.ship.pos;
+		const km = (b) =>
+			Math.hypot(b.pos.x - ship.x, b.pos.y - ship.y, b.pos.z - ship.z);
+		const station = g.world.system.bodies
+			.filter((b) => b.kind === "station")
+			.sort((a, b) => km(b) - km(a))[0];
 		g.targetId = station.id;
 		g.__cues.length = 0;
 		g.engageCruise();
@@ -158,9 +164,10 @@ const levels = (page) =>
 		JSON.stringify(cruise.spoolRise),
 	);
 	check(
-		"in cruise the bed replaces the drive",
+		"in cruise the bed replaces the drive, and it hears the speed",
 		cruise.inCruise.regime === "cruise" &&
-			cruise.inCruise.cruise > 0.5 &&
+			cruise.inCruise.cruiseSpeed > 0.5 &&
+			cruise.inCruise.cruise > 0.7 &&
 			cruise.inCruise.drive === 0 &&
 			cruise.inCruise.spool === 0,
 		JSON.stringify(cruise.inCruise),

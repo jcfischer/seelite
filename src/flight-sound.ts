@@ -19,8 +19,10 @@
  *   `lever`: the drive follows the lever, as the bed before #544 did, and a
  *   ship at full lever roars whether or not it is accelerating.
  * - **rcs** — whether the manoeuvring thrusters are heard at all.
- * - **clicks** — `reactive`: a slow base rate, more while the hull cools after
- *   a burn, more when it is damaged. `sparse`: the base rate only. `noclicks`.
+ * - **clicks** — `clicks`: two layers, on the principal's first listen (#544):
+ *   loud clicks that react — while the hull cools after a burn, and when it is
+ *   damaged — over faint ones at a sparse steady rate. `noclicks` is there so a
+ *   render can isolate a loop.
  * - **docked** — `dockhum`: the hum carries on, lower, in a berth.
  *   `docksilent`: a docked ship is silent.
  * - **cruise** — the sustained bed's voice: `shimmer` or `throb`.
@@ -33,7 +35,7 @@ import type { CruiseVoice, Cue, FlightMix } from "./audio-cue";
 export const FLIGHT_SOUND_ARMS = {
 	drive: ["thrust", "lever"],
 	rcs: ["rcs", "norcs"],
-	clicks: ["reactive", "sparse", "noclicks"],
+	clicks: ["clicks", "noclicks"],
 	docked: ["dockhum", "docksilent"],
 	cruise: ["shimmer", "throb"],
 } as const satisfies Record<string, readonly string[]> & {
@@ -49,7 +51,7 @@ export type FlightSoundArms = {
 export const DEFAULT_FLIGHT_ARMS: FlightSoundArms = {
 	drive: "thrust",
 	rcs: "rcs",
-	clicks: "reactive",
+	clicks: "clicks",
 	docked: "dockhum",
 	cruise: "shimmer",
 };
@@ -96,6 +98,23 @@ export interface FlightReading {
 	readonly rcs: number;
 	/** Hull left, as a share of the hull's integrity. */
 	readonly hullShare: number;
+	/** Cruise speed as a share of its range, `0`..`1` (`cruiseSpeedShare`). */
+	readonly cruiseSpeed: number;
+}
+
+/**
+ * Where a cruise speed sits between the regime's floor and its cap, `0`..`1`,
+ * on a **log** scale (#544). The range runs 100 km/s to 23 c, nearly five
+ * decades, and a linear share would sit at zero for the whole approach and
+ * leap at the top: the bed would be the fade in and out the principal heard.
+ */
+export function cruiseSpeedShare(
+	speedKms: number,
+	vMinKms: number,
+	vMaxKms: number,
+): number {
+	if (!(speedKms > vMinKms) || !(vMaxKms > vMinKms)) return 0;
+	return clamp01(Math.log(speedKms / vMinKms) / Math.log(vMaxKms / vMinKms));
 }
 
 export interface FlightSoundState {
@@ -111,14 +130,16 @@ export const QUIET_FLIGHT: FlightSoundState = { regime: "normal", heat: 0 };
 export const HEAT_TAU_S = 10;
 /** The hum in a berth, against 1 in flight (`dockhum`). */
 export const DOCKED_HUM = 0.45;
-/** Cruise's bed at zero lever; full lever is 1. Never silent in cruise: the
- *  lever there is a speed, and a ship in cruise is always going. */
-export const CRUISE_FLOOR = 0.55;
-/** Clicks per second at rest. */
-export const CLICK_BASE_PER_S = 0.12;
-/** Extra clicks per second per unit of heat above the drive now (`reactive`). */
+/** Cruise's bed at the regime's floor speed; the cap is 1. Never silent in
+ *  cruise: a ship in cruise is always going. It follows the *speed*, not the
+ *  lever — the principal's first listen (#544) heard a bed that faded in and
+ *  out whatever the ship did. */
+export const CRUISE_FLOOR = 0.4;
+/** Faint clicks per second, steady: the sparse layer. */
+export const FAINT_CLICK_PER_S = 0.25;
+/** Loud clicks per second per unit of heat above the drive now. */
 export const CLICK_COOLING_PER_S = 2;
-/** Extra clicks per second on a hull with nothing left (`reactive`). */
+/** Loud clicks per second on a hull with nothing left. */
 export const CLICK_DAMAGE_PER_S = 1.2;
 
 /** One frame: the next state, the loop levels, and any regime cue. */
@@ -144,14 +165,13 @@ export function flightSound(
 	const heat = state.heat + (driveNow - state.heat) * k;
 
 	const silent = reading.docked && arms.docked === "docksilent";
-	const clickRate =
-		silent || arms.clicks === "noclicks"
-			? 0
-			: arms.clicks === "sparse"
-				? CLICK_BASE_PER_S
-				: CLICK_BASE_PER_S +
-					CLICK_COOLING_PER_S * Math.max(0, heat - driveNow) +
-					CLICK_DAMAGE_PER_S * (1 - clamp01(reading.hullShare));
+	const clicking = !silent && arms.clicks === "clicks";
+	const clickRate = clicking
+		? CLICK_COOLING_PER_S * Math.max(0, heat - driveNow) +
+			CLICK_DAMAGE_PER_S * (1 - clamp01(reading.hullShare))
+		: 0;
+	const faintClickRate = clicking ? FAINT_CLICK_PER_S : 0;
+	const cruiseSpeed = inCruise ? clamp01(reading.cruiseSpeed) : 0;
 
 	const mix: FlightMix = reading.docked
 		? {
@@ -160,19 +180,21 @@ export function flightSound(
 				rcs: 0,
 				spool: 0,
 				cruise: 0,
+				cruiseSpeed: 0,
 				cruiseVoice: arms.cruise,
 				clickRate,
+				faintClickRate,
 			}
 		: {
 				hum: 1,
 				drive: driveNow,
 				rcs: arms.rcs === "norcs" ? 0 : clamp01(reading.rcs),
 				spool: reading.regime === "spool" ? clamp01(reading.spool) : 0,
-				cruise: inCruise
-					? CRUISE_FLOOR + (1 - CRUISE_FLOOR) * clamp01(reading.lever)
-					: 0,
+				cruise: inCruise ? CRUISE_FLOOR + (1 - CRUISE_FLOOR) * cruiseSpeed : 0,
+				cruiseSpeed,
 				cruiseVoice: arms.cruise,
 				clickRate,
+				faintClickRate,
 			};
 	return { state: { regime: reading.regime, heat }, mix, cues };
 }

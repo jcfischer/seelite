@@ -46,8 +46,8 @@ export const SOUND_SET = Object.freeze([
 	{ name: "bed-full", seconds: 3, loop: 1 },
 	// #544's cues and loops. None has a `legacy` method: nothing like them
 	// existed before #544, so a capture at an older ref renders them as absent.
-	{ name: "cruise-engage", seconds: 1.3, cue: { kind: "cruiseEngage" } },
-	{ name: "cruise-drop", seconds: 1.2, cue: { kind: "cruiseDrop" } },
+	{ name: "cruise-engage", seconds: 1.8, cue: { kind: "cruiseEngage" } },
+	{ name: "cruise-drop", seconds: 1.4, cue: { kind: "cruiseDrop" } },
 	...flightTimelines(),
 ]);
 
@@ -71,8 +71,13 @@ function flightTimelines() {
 		[0, { lever: 0.3 }],
 		[0.5, { regime: "spool", spool: 0 }],
 		[3.5, { spool: 1, ramp: true }],
-		[3.5, { regime: "cruise", spool: 0, lever: 1 }],
-		[8.5, { regime: "normal", lever: 0 }],
+		// Engaged at the floor speed, up to the cap, then the approach slows it
+		// before the drop: the bed follows the speed, not the lever.
+		[3.5, { regime: "cruise", spool: 0, lever: 1, cruiseSpeed: 0 }],
+		[6.5, { cruiseSpeed: 1, ramp: true }],
+		[7.5, { cruiseSpeed: 1 }],
+		[8.5, { cruiseSpeed: 0.1, ramp: true }],
+		[8.5, { regime: "normal", lever: 0, cruiseSpeed: 0 }],
 	];
 	const line = (name, seconds, arms, keys, cues = []) => ({
 		name,
@@ -105,7 +110,6 @@ function flightTimelines() {
 			[6, { lever: 0, drive: 0 }],
 		]),
 		line("flight-damaged-clicks", 8, "", [[0, { hullShare: 0.15 }]]),
-		line("flight-damaged-sparse", 8, "sparse", [[0, { hullShare: 0.15 }]]),
 		line("flight-docked", 3, "", [[0, { docked: true }]]),
 		// The headroom case: every ship loop at full under the loudest cue.
 		line(
@@ -260,6 +264,7 @@ export async function renderInPage({
 			drive: 0,
 			rcs: 0,
 			hullShare: 1,
+			cruiseSpeed: 0,
 		};
 		const readings = entry.flight.keys.map(([t, over]) => {
 			reading = { ...reading, ...over };

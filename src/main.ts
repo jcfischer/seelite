@@ -136,6 +136,7 @@ import { CombatPrototypeRig } from "./combat-rig";
 import {
 	type FlightSoundState,
 	QUIET_FLIGHT,
+	cruiseSpeedShare,
 	flightSound,
 	flightSoundArms,
 } from "./flight-sound";
@@ -11955,6 +11956,11 @@ class Game {
 				drive: this.driveShare,
 				rcs: Math.max(this.rotationShare, this.lateralShare),
 				hullShare: this.condition.hull / this.condition.hullMax,
+				cruiseSpeed: cruiseSpeedShare(
+					this.cruiseSpeedKms,
+					this.cruiseParams.vMinKms,
+					this.cruiseParams.vMaxKms,
+				),
 			},
 			FLIGHT_SOUND.arms,
 			dt,

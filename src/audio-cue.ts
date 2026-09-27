@@ -220,7 +220,12 @@ export interface FlightMix {
 	readonly spool: number;
 	/** The sustained cruise bed. */
 	readonly cruise: number;
+	/** Cruise speed, `0`..`1` of its log range: the bed's pitch, brightness
+	 *  and pace follow it. */
+	readonly cruiseSpeed: number;
 	readonly cruiseVoice: CruiseVoice;
-	/** Mean hull clicks per second; `audio.ts` places them at random (D6). */
+	/** Mean loud hull clicks per second; `audio.ts` places them at random (D6). */
 	readonly clickRate: number;
+	/** Mean faint clicks per second: the sparse steady layer under the loud. */
+	readonly faintClickRate: number;
 }
