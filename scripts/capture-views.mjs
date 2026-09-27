@@ -254,8 +254,8 @@ function assertPlacersCover(placers) {
 
 /**
  * The spot the chart row being captured aimed at — its index and the badge
- * count predicted there — for the second readback at the shutter. Set by the
- * `chart` placer and cleared at the top of every view, so a row that did not
+ * count predicted there — for the readbacks either side of the shutter. Set by
+ * the `chart` placer and cleared at the top of every view, so a row that did not
  * run the placer cannot be checked against another row's aim (sage round 1).
  */
 let chartAimed = null;
@@ -264,13 +264,20 @@ let chartAimed = null;
  * The chart's hover, read as state and as the drawn label, and refused unless
  * both describe the hover the row is captioned for.
  *
- * **Read twice: after the move, and again at the shutter.** The first full
- * capture of #540 passed the placer's readback and wrote two frames with no
- * label in them at all — the hover was dropped between the placer and the
- * screenshot, and nothing looked. The cause was not reproduced across two
- * further runs; a headed window takes real pointer events from whoever is at
- * the machine, and any of those clears it. Whatever the cause, the frame is
- * what the caption describes or the run is red.
+ * **Read three times: after the move, and on both sides of the screenshot.**
+ * The first full capture of #540 passed the placer's readback and wrote two
+ * frames with no label in them at all — the hover was dropped between the
+ * placer and the screenshot, and nothing looked. The cause was not reproduced
+ * across two further runs; a headed window takes real pointer events from
+ * whoever is at the machine, and any of those clears it.
+ *
+ * One read before the screenshot leaves the gap after it (sage round 2), so
+ * the loop reads again once the frame is written. What the pair proves rests
+ * on the chart: a cleared hover does not come back until the pointer moves
+ * again, because `clearHover` drops the remembered position with it. So a
+ * label up on both sides was up during the frame — unless a pointer event
+ * cleared it and re-set it in between, which the second read catches unless it
+ * landed on the same system, and then the frame is still the one captioned.
  *
  * **The badge is checked against the prediction**, not only against the
  * label's own text (sage round 1): the chart's `contested` read against its own
@@ -1153,7 +1160,7 @@ try {
 		// The chart's second readback, after the settle and the bake wait: the
 		// label the placer confirmed has to still be drawn when the frame is.
 		if (view.shot.kind === "chart")
-			await assertChartHover(page, "at the shutter", view.shot, chartAimed);
+			await assertChartHover(page, "before the shutter", view.shot, chartAimed);
 		const file = `${LABEL}/${view.name}.png`;
 		// Read at the shutter, not at the top of the run: the clock is normalised
 		// and then left to run, so each frame has its own. The sheet prints the
@@ -1168,6 +1175,11 @@ try {
 			() => window.__seelite?.world.gameTime ?? null,
 		);
 		await page.screenshot({ path: join(OUT, file) });
+		// And after it: a hover lost between the read above and the shutter would
+		// otherwise ship an unlabelled frame under a green run (sage round 2). The
+		// PNG is on disk by now; the throw stops the manifest and the sheet.
+		if (view.shot.kind === "chart")
+			await assertChartHover(page, "after the shutter", view.shot, chartAimed);
 		captured.push({ name: view.name, file, subject, gameTime });
 		console.log(
 			`  ${view.name.padEnd(20)} ${view.shot.view.padEnd(8)} ${subject}`,

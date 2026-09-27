@@ -24,11 +24,7 @@
  * `2r + 4` px inside the canvas so the label is not clamped at an edge.
  */
 
-/**
- * The two hovers the sheet shows, in the order the rows declare them.
- * @type {ReadonlyArray<"crowded" | "isolated">}
- */
-export const CHART_SPOTS = Object.freeze(["crowded", "isolated"]);
+import { CHART_SPOTS } from "./view-set.mjs";
 
 /**
  * @typedef {{ index: number, x: number, y: number, behind: boolean, depth: number }} ProjectedPoint

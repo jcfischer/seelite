@@ -10,10 +10,10 @@
  */
 import { describe, expect, test } from "bun:test";
 import {
-	CHART_SPOTS,
 	chartHoverSpot,
 	requireChartSpot,
 } from "../scripts/lib/chart-hover-spot.mjs";
+import { CHART_SPOTS } from "../scripts/lib/view-set.mjs";
 
 const VIEW = { pickRadiusPx: 14, width: 400, height: 300 };
 const at = (index: number, x: number, y: number, extra = {}) => ({
@@ -93,20 +93,29 @@ describe("what counts as drawn", () => {
 	 * from the hover's list, so counting it here would predict a badge the
 	 * chart never draws.
 	 */
-	test("a system behind the camera, past the near plane or off the canvas does not count", () => {
+	/**
+	 * **The ghost is three pixels off**, so every candidate cursor has it inside
+	 * the pick radius: counted, it leaves no isolated spot and makes a crowd.
+	 * Six pixels was the first version, and a cursor on the far side escaped it,
+	 * so the row passed with the filter deleted (sage round 2).
+	 *
+	 * The off-canvas half of the predicate is not tested here, because this
+	 * module cannot observe it: every cursor stands `2r + 4` inside the canvas,
+	 * which puts any system beyond the edge outside its pick radius. The filter
+	 * is kept so the list matches the chart's, not because a row can see it.
+	 */
+	test("a system behind the camera or past the near plane does not count", () => {
 		for (const ghost of [
-			at(9, 206, 150, { behind: true }),
-			at(9, 206, 150, { depth: -1.5 }),
+			at(9, 203, 150, { behind: true }),
+			at(9, 203, 150, { depth: -1.5 }),
 		]) {
 			const spot = requireChartSpot([at(2, 200, 150), ghost], VIEW, "isolated");
 			expect(spot.index).toBe(2);
 			expect(spot.contested).toBe(0);
+			expect(
+				chartHoverSpot([at(2, 200, 150), ghost], VIEW, "crowded"),
+			).toBeNull();
 		}
-		// Off the right edge, a few pixels out: inside a pick radius of a point
-		// near that edge, and rasterised by nothing.
-		expect(
-			chartHoverSpot([at(2, 395, 150), at(9, 403, 150)], VIEW, "crowded"),
-		).toBeNull();
 	});
 
 	test("the cursor keeps clear of the edges, so the label is not clamped", () => {

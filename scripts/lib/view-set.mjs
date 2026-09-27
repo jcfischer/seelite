@@ -22,8 +22,6 @@
  * point the sheet is built rather than left for a human to notice.
  */
 
-import { CHART_SPOTS } from "./chart-hover-spot.mjs";
-
 /**
  * The fixture, pinned three ways. All three are decisions, not defaults.
  *
@@ -239,6 +237,15 @@ export const SHOT_KINDS = Object.freeze([
 	"cruise",
 	"chart",
 ]);
+
+/**
+ * The two hovers a `chart` row may ask for, in the order the rows declare
+ * them. Declared here beside the kinds, as `OPENING_SHOT_NAMES` is, and
+ * imported by `chart-hover-spot.mjs` rather than the other way round, so a
+ * probe that reads this catalogue does not load the capture's spot search.
+ * @type {ReadonlyArray<"crowded" | "isolated">}
+ */
+export const CHART_SPOTS = Object.freeze(["crowded", "isolated"]);
 
 /**
  * One clock, and — with two declared exceptions — one seed.
@@ -904,7 +911,7 @@ export const VIEWS = Object.freeze([
 	{
 		name: "chart-hover-crowded",
 		covers: [112],
-		what: "The Galaxy Map tab on the left console, the pointer on the most crowded spot the chart draws: the label names the nearest system with its range and an (N more) badge. The frame shows the label's look; probe-navigation-console.mjs holds hold, switch and release.",
+		what: "The Galaxy Map tab on the left console, the pointer on the most crowded of the spots the placer samples: the label names the nearest system with its range and an (N more) badge. The frame shows the label's look; probe-navigation-console.mjs holds hold, switch and release.",
 		shot: { kind: "chart", spot: "crowded", view: "cockpit" },
 	},
 	{
