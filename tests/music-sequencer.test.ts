@@ -310,6 +310,12 @@ describe("a tempo move", () => {
 	});
 });
 
+test("a tempo scale that is not positive is refused, not dropped", () => {
+	const p = new Player(compileSong(song()), SR);
+	p.start(0);
+	expect(() => p.tempoAt(0, 0, 0)).toThrow(/tempo scale/);
+});
+
 describe("compiling refuses a malformed score", () => {
 	const bad = (over: Partial<Song>, match: RegExp) =>
 		expect(() => compileSong(song(over))).toThrow(match);

@@ -39,22 +39,22 @@ const period = (
 	lo: number,
 	hi: number,
 ) => {
-	let best = lo;
-	let bestR = -Infinity;
-	for (let lag = lo; lag <= hi; lag++) {
+	// The autocorrelation at one lag.
+	const at = (lag: number) => {
 		let r = 0;
 		for (let i = from; i < from + len; i++) r += x[i] * x[i + lag];
+		return r;
+	};
+	let best = lo;
+	let bestR = Number.NEGATIVE_INFINITY;
+	for (let lag = lo; lag <= hi; lag++) {
+		const r = at(lag);
 		if (r > bestR) {
 			bestR = r;
 			best = lag;
 		}
 	}
 	// Parabolic refinement around the peak.
-	const at = (lag: number) => {
-		let r = 0;
-		for (let i = from; i < from + len; i++) r += x[i] * x[i + lag];
-		return r;
-	};
 	const a = at(best - 1);
 	const c = at(best + 1);
 	return best + (0.5 * (a - c)) / (a - 2 * bestR + c);

@@ -109,8 +109,7 @@ export class MusicEngine implements NoteSink, VoiceGain {
 
 	/** The song the transport is moving, while it plays. */
 	get playing(): string | null {
-		const s = this.slots[this.lead];
-		return s?.player.playing ? s.id : null;
+		return this.playingLead()?.id ?? null;
 	}
 
 	/** Voices holding a slot. */
@@ -159,13 +158,13 @@ export class MusicEngine implements NoteSink, VoiceGain {
 				return;
 			}
 			case "jump": {
-				const lead = this.playingLead();
-				if (lead) lead.player.jumpAt(this.line(now, cmd.at), cmd.section);
+				const lead = this.requireLead(cmd.type);
+				lead.player.jumpAt(this.line(now, cmd.at), cmd.section);
 				return;
 			}
 			case "resolve": {
-				const lead = this.playingLead();
-				if (lead) lead.player.resolveAt(this.line(now, cmd.at));
+				const lead = this.requireLead(cmd.type);
+				lead.player.resolveAt(this.line(now, cmd.at));
 				return;
 			}
 			case "stop": {
@@ -184,8 +183,7 @@ export class MusicEngine implements NoteSink, VoiceGain {
 				return;
 			}
 			case "stem": {
-				const lead = this.playingLead();
-				if (!lead) return;
+				const lead = this.requireLead(cmd.type);
 				const part = lead.player.song.parts.indexOf(cmd.part);
 				if (part < 0)
 					throw new Error(`music: ${lead.id} has no part ${cmd.part}`);
@@ -194,9 +192,8 @@ export class MusicEngine implements NoteSink, VoiceGain {
 				return;
 			}
 			case "tempo": {
-				const lead = this.playingLead();
-				if (lead)
-					lead.player.tempoAt(this.line(now, cmd.at), cmd.scale, cmd.rampBars);
+				const lead = this.requireLead(cmd.type);
+				lead.player.tempoAt(this.line(now, cmd.at), cmd.scale, cmd.rampBars);
 				return;
 			}
 			// The worklet answers it; there is nothing to move.
@@ -285,6 +282,18 @@ export class MusicEngine implements NoteSink, VoiceGain {
 		return s?.player.playing ? s : null;
 	}
 
+	/**
+	 * The playing song, for a move that has nothing to act on without one.
+	 * Refused by name rather than dropped (sage round 3), for the reason an
+	 * unknown section is: a move lost in silence leaves a score's author no
+	 * signal.
+	 */
+	private requireLead(move: string): Slot {
+		const lead = this.playingLead();
+		if (!lead) throw new Error(`music: nothing is playing to ${move}`);
+		return lead;
+	}
+
 	/** The quantum's line on the playing song, or `now` with none. */
 	private line(now: number, q: Quantum): number {
 		const lead = this.playingLead();
@@ -302,7 +311,10 @@ export class MusicEngine implements NoteSink, VoiceGain {
 		const lead = this.playingLead();
 		if (!lead || this.lead !== ix) return false;
 		lead.player.jumpAt(line, section ?? 0);
+		// Inside a stop fade, the fade's halt goes too (sage round 3): left
+		// standing, it cut the replayed song when the old fade would have ended.
 		lead.gain.reset(1);
+		lead.haltAt = Infinity;
 		return true;
 	}
 

@@ -192,14 +192,20 @@ export interface NoteSink {
 }
 
 /** A transport move waiting for its line. */
-interface Pending {
-	readonly frame: number;
-	readonly kind: "jump" | "stop" | "tempo";
-	readonly section: number;
-	readonly resolve: boolean;
-	readonly scale: number;
-	readonly rampBars: number;
-}
+type Pending =
+	| {
+			readonly kind: "jump";
+			readonly frame: number;
+			readonly section: number;
+			readonly resolve: boolean;
+	  }
+	| { readonly kind: "stop"; readonly frame: number }
+	| {
+			readonly kind: "tempo";
+			readonly frame: number;
+			readonly scale: number;
+			readonly rampBars: number;
+	  };
 
 /**
  * One song's playhead.
@@ -315,40 +321,40 @@ export class Player {
 	}
 
 	jumpAt(frame: number, section: string | number) {
-		this.queue(frame, "jump", this.indexOf(section), false);
+		this.pending.push({
+			kind: "jump",
+			frame,
+			section: this.indexOf(section),
+			resolve: false,
+		});
 	}
 
 	/** Go to the song's resolve section at `frame`; the loop stops holding. */
 	resolveAt(frame: number) {
 		if (this.song.resolve < 0)
 			throw new Error(`music: ${this.song.name} has no resolve section`);
-		this.queue(frame, "jump", this.song.resolve, true);
+		this.pending.push({
+			kind: "jump",
+			frame,
+			section: this.song.resolve,
+			resolve: true,
+		});
 	}
 
 	stopAt(frame: number) {
-		this.queue(frame, "stop", 0, false);
+		this.pending.push({ kind: "stop", frame });
 	}
 
 	/** Scale the tempo map by `scale`, from `frame`, over `rampBars` bars. */
 	tempoAt(frame: number, scale: number, rampBars: number) {
-		if (!(scale > 0)) return;
+		if (!(scale > 0))
+			throw new Error(`music: a tempo scale of ${scale} is not a tempo`);
 		this.pending.push({
-			frame,
 			kind: "tempo",
-			section: 0,
-			resolve: false,
+			frame,
 			scale,
 			rampBars: Math.max(0, rampBars),
 		});
-	}
-
-	private queue(
-		frame: number,
-		kind: "jump" | "stop",
-		section: number,
-		resolve: boolean,
-	) {
-		this.pending.push({ frame, kind, section, resolve, scale: 1, rampBars: 0 });
 	}
 
 	/** A section's index, refusing one the song does not have by name: a jump

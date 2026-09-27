@@ -91,7 +91,10 @@ const RENDERED = {
 	"music-stop-fade": { rms: 0.01094, peak: 0.10148, hz: 3970 },
 	"music-tempo": { rms: 0.01566, peak: 0.10292, hz: 1777 },
 };
-const ONSET_MAX_MS = 12;
+/** The limiter's 6 ms look-ahead and a render quantum and a half (4 ms at
+ *  48 kHz): 10 ms, as the comment above says. It read 12 for a round, which
+ *  let a render 2 ms later than the rule pass (sage round 3). */
+const ONSET_MAX_MS = 6 + (1.5 * 128 * 1000) / SR;
 
 /** The two probe songs. The pulse's one note is freed long before the next
  *  bar line, so the render is exact silence there until something starts. */

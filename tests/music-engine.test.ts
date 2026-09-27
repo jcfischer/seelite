@@ -124,6 +124,34 @@ describe("starting", () => {
 		expect(r.e.gain(0, 0, 2 * BAR + 100)).toBeCloseTo(MUSIC_HEADROOM, 9);
 	});
 
+	test("playing the song that plays, inside its stop fade, keeps it playing", () => {
+		// Sage round 3: the replay reset the gain but left the fade's halt
+		// standing, so the song snapped back to full and was cut when the
+		// old fade would have ended.
+		const r = rig();
+		r.send({ type: "play", id: "a", at: "bar" });
+		r.until(30080);
+		r.send({ type: "stop", at: "now", fadeS: 0.5 });
+		r.until(30080 + 6400);
+		r.send({ type: "play", id: "a", section: "A", at: "bar" });
+		r.until(3 * BAR);
+		expect(r.e.playing).toBe("a");
+		expect(r.heard.filter((h) => h.frame >= BAR).length).toBeGreaterThan(0);
+	});
+
+	test("a move with nothing playing is refused by name", () => {
+		// Sage round 3: the same reason as the unknown section below — a move
+		// dropped in silence leaves a score's author no signal.
+		const r = rig();
+		for (const cmd of [
+			{ type: "jump", section: "A", at: "bar" },
+			{ type: "resolve", at: "bar" },
+			{ type: "stem", part: "a", level: 0, at: "now", fadeS: 0 },
+			{ type: "tempo", scale: 2, at: "bar", rampBars: 0 },
+		] as const)
+			expect(() => r.send(cmd)).toThrow(/nothing is playing/);
+	});
+
 	test("a jump to a section the song does not have is refused by name", () => {
 		// Sage round 1: it was dropped in silence, where its siblings throw.
 		const r = rig();
