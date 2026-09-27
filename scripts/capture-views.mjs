@@ -298,12 +298,14 @@ async function assertChartHover(page, where, shot, aimed) {
 			hovered: window.__seeliteGalaxyMap?.hovered() ?? null,
 			shown: el instanceof HTMLElement && el.checkVisibility(),
 			text: el?.textContent ?? "",
+			events: (window.__captureEvents ?? []).slice(-8),
 		};
 	});
 	const { hovered } = got;
+	const recent = ` — the last events the page saw: ${JSON.stringify(got.events)}`;
 	if (hovered === null || hovered.index !== aimed.index || !got.shown)
 		throw new Error(
-			`chart placer (${where}): aimed at system ${aimed.index} for the ${shot.spot} row and the chart labelled ${hovered === null ? "nothing" : `system ${hovered.index}`}${got.shown ? "" : ", with no label drawn"}`,
+			`chart placer (${where}): aimed at system ${aimed.index} for the ${shot.spot} row and the chart labelled ${hovered === null ? "nothing" : `system ${hovered.index}`}${got.shown ? "" : ", with no label drawn"}${recent}`,
 		);
 	const badged =
 		hovered.contested === aimed.contested &&
@@ -312,7 +314,7 @@ async function assertChartHover(page, where, shot, aimed) {
 			: !got.text.includes("more)"));
 	if (!badged)
 		throw new Error(
-			`chart placer (${where}): the ${shot.spot} row predicted ${aimed.contested} more, the chart counts ${hovered.contested} and its label reads "${got.text}"`,
+			`chart placer (${where}): the ${shot.spot} row predicted ${aimed.contested} more, the chart counts ${hovered.contested} and its label reads "${got.text}"${recent}`,
 		);
 	return hovered;
 }
@@ -1024,6 +1026,50 @@ page.on("console", (m) => {
 page.on("pageerror", (e) => faulted(`page error: ${e.message}`));
 
 await installViewPlacement(page);
+/**
+ * The last pointer, focus and visibility events the page saw, for the chart
+ * rows' error message and nothing else.
+ *
+ * Two of six full captures during #540 lost the hover label in the short
+ * window around the screenshot, on a build with no mutation, and a loop of
+ * twenty placements with the screenshot between two reads lost none. What
+ * clears it was not found. A person's pointer over the headed window fits, and
+ * so does a DOM change over the canvas, and the two print differently here: a
+ * real pointer arrives at coordinates the placer never used. So a failure names
+ * its own evidence rather than leaving the next reader to reproduce it.
+ * Passive listeners in the capture phase; nothing is prevented or changed.
+ */
+await page.addInitScript(() => {
+	const log = [];
+	window.__captureEvents = log;
+	for (const type of [
+		"pointermove",
+		"pointerleave",
+		"pointerover",
+		"blur",
+		"focus",
+		"visibilitychange",
+	])
+		window.addEventListener(
+			type,
+			(e) => {
+				const t = e.target;
+				log.push({
+					type,
+					x: e.clientX,
+					y: e.clientY,
+					trusted: e.isTrusted,
+					target:
+						t instanceof Element
+							? `${t.tagName.toLowerCase()}${t.id ? `#${t.id}` : ""}`
+							: String(t),
+					atMs: Math.round(performance.now()),
+				});
+				if (log.length > 16) log.shift();
+			},
+			{ capture: true, passive: true },
+		);
+});
 await installViewFraming(page);
 await page.goto(gameUrl(SERVING, { seed: SEED, raider: "off" }), {
 	waitUntil: "load",
