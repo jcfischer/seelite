@@ -330,23 +330,25 @@ try {
 
 	// ── Stop now: a fade, then silence ──────────────────────────────────────
 	{
-		const x = rendered.get("music-stop-fade");
+		const x = rendered.get("music-stop-fade") ?? new Float32Array(0);
 		const peakIn = (a, b) => {
 			let p = 0;
 			for (let i = Math.round(a * SR); i < Math.round(b * SR); i++)
 				p = Math.max(p, Math.abs(x[i]));
 			return p;
 		};
-		// Stopped at 3.2 s over 0.8 s; the limiter's 6 ms beside it.
+		// Stopped at 3.2 s over 0.8 s; the limiter's 6 ms beside it. A
+		// render that did not happen reads as empty and fails the row rather
+		// than throwing past it (sage round 5).
 		const before = rmsOf(x, 2.6, 3.2);
 		const during = rmsOf(x, 3.6, 3.95);
 		check(
 			"a stop now fades rather than cuts, and is silence once the fade has run",
-			x !== undefined &&
+			x.length > 0 &&
 				during > 0 &&
 				during < before * 0.6 &&
 				peakIn(4.05, 6) === 0,
-			x &&
+			x.length > 0 &&
 				`rms ${before.toFixed(5)} before, ${during.toFixed(5)} in the fade's tail, peak ${peakIn(4.05, 6)} after`,
 		);
 	}

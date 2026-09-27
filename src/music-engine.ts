@@ -37,25 +37,48 @@ import {
  */
 export const MUSIC_HEADROOM = 0.35;
 
-/** A gain moving linearly from `from` to `to` over `[start, start + len)`
- *  frames. */
+/**
+ * A gain in two straight segments: from `lead` to `start` it runs from
+ * `leadFrom` to `from`, and from `start` over `len` frames from `from` to
+ * `to`; outside them it holds.
+ *
+ * **Two, because a fade is placed on a line ahead of now** (sage rounds 4
+ * and 5). With one segment, a fade set on a future line replaced the path
+ * *before* that line as well, holding the value the old fade would reach at
+ * the line: a song fading out jumped at once to that value, which is 0 when
+ * the fade ends first. The first segment now carries the old path from now to
+ * the line — exact while the old fade is straight across that span, and never
+ * a step, because both ends are read off it.
+ */
 class Ramp {
+	lead = 0;
+	leadFrom = 1;
 	from = 1;
 	to = 1;
 	start = 0;
 	len = 0;
 
 	at(frame: number): number {
-		if (frame < this.start) return this.from;
+		if (frame < this.lead) return this.leadFrom;
+		if (frame < this.start)
+			return (
+				this.leadFrom +
+				((this.from - this.leadFrom) * (frame - this.lead)) /
+					(this.start - this.lead)
+			);
 		if (frame >= this.start + this.len) return this.to;
 		return (
 			this.from + ((this.to - this.from) * (frame - this.start)) / this.len
 		);
 	}
 
-	/** Head for `to` from `start`, from wherever this ramp is at `start`. */
-	set(to: number, start: number, len: number) {
+	/** Head for `to` from `start` over `len`, from wherever this ramp is at
+	 *  `start` — following its present path from `now` until then. */
+	set(to: number, start: number, len: number, now: number) {
+		const lead = Math.min(now, start);
+		this.leadFrom = this.at(lead);
 		this.from = this.at(start);
+		this.lead = lead;
 		this.to = to;
 		this.start = start;
 		this.len = Math.max(0, len);
@@ -63,8 +86,8 @@ class Ramp {
 
 	/** Hold `value` from the beginning of time. */
 	reset(value: number) {
-		this.from = this.to = value;
-		this.start = 0;
+		this.leadFrom = this.from = this.to = value;
+		this.lead = this.start = 0;
 		this.len = 0;
 	}
 }
@@ -140,9 +163,9 @@ export class MusicEngine implements NoteSink, VoiceGain {
 				const target = this.slots[ix] as Slot;
 				const back = sounding(target);
 				this.begin(ix, line, cmd.section);
-				// A song still fading out holds where its fade is until the line,
-				// then is full: the cut is on the line, not before it (sage round 4).
-				if (back) target.gain.set(1, line, 0);
+				// A song still fading out keeps fading until the line, then is
+				// full: the cut is on the line, not before it (sage rounds 4, 5).
+				if (back) target.gain.set(1, line, 0, now);
 				else target.gain.reset(1);
 				return;
 			}
@@ -153,7 +176,7 @@ export class MusicEngine implements NoteSink, VoiceGain {
 				const len = fade(cmd.fadeS);
 				const lead = this.slots[this.lead];
 				if (lead?.player.playing) {
-					lead.gain.set(0, line, len);
+					lead.gain.set(0, line, len, now);
 					lead.haltAt = line + len;
 				}
 				const target = this.slots[ix] as Slot;
@@ -161,10 +184,10 @@ export class MusicEngine implements NoteSink, VoiceGain {
 				this.begin(ix, line, cmd.section);
 				// Back to a song still fading out (sage round 4): it fades up from
 				// where it is now. Reset to 0, it was cut before the line.
-				if (back) target.gain.set(1, now, len);
+				if (back) target.gain.set(1, now, len, now);
 				else {
 					target.gain.reset(0);
-					target.gain.set(1, line, len);
+					target.gain.set(1, line, len, now);
 				}
 				return;
 			}
@@ -183,7 +206,7 @@ export class MusicEngine implements NoteSink, VoiceGain {
 					const len = fade(cmd.fadeS);
 					for (const s of this.slots)
 						if (s && sounding(s)) {
-							s.gain.set(0, now, len);
+							s.gain.set(0, now, len, now);
 							s.haltAt = Math.min(s.haltAt, now + len);
 						}
 					return;
@@ -199,7 +222,7 @@ export class MusicEngine implements NoteSink, VoiceGain {
 				if (part < 0)
 					throw new Error(`music: ${lead.id} has no part ${cmd.part}`);
 				const at = cmd.at === "now" ? now : this.line(now, cmd.at);
-				lead.partGain[part].set(cmd.level, at, fade(cmd.fadeS));
+				lead.partGain[part].set(cmd.level, at, fade(cmd.fadeS), now);
 				return;
 			}
 			case "tempo": {

@@ -169,6 +169,40 @@ describe("starting", () => {
 		expect(r.e.gain(0, 0, r.now())).toBeCloseTo(MUSIC_HEADROOM, 9);
 	});
 
+	test("a play back to a song still fading out holds it until the line", () => {
+		// Sage round 5: the play's gain step replaced the fade before the
+		// line with the fade's value *at* the line — 0 when the fade ends
+		// first — so the song was cut before the line.
+		const r = rig();
+		r.send({ type: "play", id: "a", at: "bar" });
+		r.until(30000);
+		r.send({ type: "crossfade", to: "b", at: "bar", fadeS: 1 });
+		r.until(BAR + 24000);
+		const was = r.e.gain(0, 0, r.now());
+		r.send({ type: "play", id: "a", at: "bar" });
+		expect(r.e.gain(0, 0, r.now())).toBeCloseTo(was, 6);
+		expect(r.e.gain(0, 0, 2 * BAR - 1)).toBeGreaterThanOrEqual(0);
+		expect(r.e.gain(0, 0, 2 * BAR)).toBeCloseTo(MUSIC_HEADROOM, 9);
+	});
+
+	test("a crossfade asked for during a crossfade starts from where the fades are", () => {
+		// The same cause: a fade placed on a future line took the path before
+		// that line away from the one still running.
+		const r = rig();
+		r.send({ type: "play", id: "a", at: "bar" });
+		r.until(30000);
+		r.send({ type: "crossfade", to: "b", at: "bar", fadeS: 1.5 });
+		r.until(BAR + 24000);
+		const b = r.e.gain(1, 0, r.now());
+		expect(b).toBeGreaterThan(0);
+		expect(b).toBeLessThan(MUSIC_HEADROOM);
+		r.send({ type: "stem", part: "b", level: 0, at: "bar", fadeS: 0.5 });
+		r.send({ type: "crossfade", to: "a", at: "bar", fadeS: 1 });
+		// b's fade in and its stem keep moving as they were until the line.
+		expect(r.e.gain(1, 0, r.now())).toBeCloseTo(b, 6);
+		expect(r.e.gain(1, 0, r.now() + 4800)).toBeGreaterThan(b);
+	});
+
 	test("a move with nothing playing is refused by name", () => {
 		// Sage round 3: the same reason as the unknown section below — a move
 		// dropped in silence leaves a score's author no signal.
