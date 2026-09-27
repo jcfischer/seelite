@@ -46,6 +46,7 @@ const HEADLESS = [
 	"deficits",
 	"docking",
 	"escape-html",
+	"flight-sound",
 	"galaxy",
 	"galaxy-frame",
 	"gamepad",
@@ -113,6 +114,7 @@ test("no module has been quietly dropped from the list", () => {
 		"deficits",
 		"docking",
 		"escape-html",
+		"flight-sound",
 		"galaxy",
 		"galaxy-frame",
 		"gamepad",
@@ -355,6 +357,16 @@ test("the cue vocabulary and the voice pool are leaves", () => {
 	// layer can play one without reaching the simulation.
 	expect(importsIn("audio-cue.ts")).toEqual([]);
 	expect(importsIn("voice-pool.ts")).toEqual([]);
+});
+
+test("the flight sound step reads only the cue vocabulary", () => {
+	// #544: flight state in, loop levels and cues out, with no path to the
+	// audio layer or the simulation.
+	const from = [
+		...codeOf("src/flight-sound.ts").matchAll(/\bfrom\s*["'`]([^"'`]+)["'`]/g),
+	].map((m) => m[1]);
+	expect(from).toEqual(["./audio-cue"]);
+	expect(importsIn("flight-sound.ts")).toHaveLength(2);
 });
 
 test("src/relief-bands.ts imports only types", () => {

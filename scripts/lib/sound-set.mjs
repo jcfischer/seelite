@@ -44,7 +44,95 @@ export const SOUND_SET = Object.freeze([
 	},
 	{ name: "bed-idle", seconds: 3, loop: 0.3 },
 	{ name: "bed-full", seconds: 3, loop: 1 },
+	// #544's cues and loops. None has a `legacy` method: nothing like them
+	// existed before #544, so a capture at an older ref renders them as absent.
+	{ name: "cruise-engage", seconds: 1.8, cue: { kind: "cruiseEngage" } },
+	{ name: "cruise-drop", seconds: 1.4, cue: { kind: "cruiseDrop" } },
+	...flightTimelines(),
 ]);
+
+/**
+ * #544's loops, rendered by flying a scripted timeline through the real
+ * `flight-sound.ts` step in the page, so what is heard is what the mapping
+ * gives and not a mix written here.
+ *
+ * `keys` are `[seconds, reading]`: each reading is merged over the one before
+ * it and held, or, with `ramp: true`, its numbers are reached linearly from
+ * the key before. `arms` is a `?flightsound=` value. `cues` are
+ * `[seconds, cue]` played beside the loops.
+ */
+function flightTimelines() {
+	const burn = [
+		[0, { lever: 0, drive: 0 }],
+		[0.5, { lever: 1, drive: 1 }],
+		[3, { drive: 0 }],
+	];
+	// Shared by the thruster row's two renders, which it compares: one copy,
+	// so the two cannot drift apart.
+	const rcs = [
+		[0, {}],
+		[0.3, { rcs: 1 }],
+		[0.8, { rcs: 0 }],
+		[1.5, { rcs: 0.5 }],
+		[1.7, { rcs: 0 }],
+	];
+	const cruise = [
+		[0, { lever: 0.3 }],
+		[0.5, { regime: "spool", spool: 0 }],
+		[3.5, { spool: 1, ramp: true }],
+		// Engaged at the floor speed, up to the cap, then the approach slows it
+		// before the drop: the bed follows the speed, not the lever.
+		[3.5, { regime: "cruise", spool: 0, lever: 1, cruiseSpeed: 0 }],
+		[6.5, { cruiseSpeed: 1, ramp: true }],
+		[7.5, { cruiseSpeed: 1 }],
+		[8.5, { cruiseSpeed: 0.1, ramp: true }],
+		[8.5, { regime: "normal", lever: 0, cruiseSpeed: 0 }],
+	];
+	const line = (name, seconds, arms, keys, cues = []) => ({
+		name,
+		seconds,
+		flight: { arms, keys, cues },
+	});
+	return [
+		line("flight-idle", 4, "", [[0, {}]]),
+		line("flight-burn-thrust", 6, "noclicks", burn),
+		line("flight-burn-lever", 6, "lever,noclicks", burn),
+		line("flight-rcs", 3, "noclicks", rcs),
+		line("flight-rcs-norcs", 3, "norcs,noclicks", rcs),
+		line("flight-cruise-shimmer", 10, "noclicks", cruise),
+		line("flight-cruise-throb", 10, "throb,noclicks", cruise),
+		// A slow climb, 1 to 20 c over twelve seconds: each step moves the
+		// share by about 0.001, under `flight`'s write threshold. Sage round 1
+		// found such a level never written — the bed froze at its first value.
+		line("flight-cruise-slow-climb", 12.5, "noclicks", [
+			[0, { regime: "cruise", lever: 1, cruiseC: 1 }],
+			[12, { cruiseC: 20, ramp: true }],
+		]),
+		// The superluminal range in steps, 2 s each: 1, 2, 5, 10, 20 c.
+		line("flight-cruise-c-ladder", 10.5, "noclicks", [
+			[0, { regime: "cruise", lever: 1, cruiseC: 1 }],
+			[2.5, { cruiseC: 2 }],
+			[4.5, { cruiseC: 5 }],
+			[6.5, { cruiseC: 10 }],
+			[8.5, { cruiseC: 20 }],
+		]),
+		// A long burn, then idle: the hull ticks as it cools.
+		line("flight-cooling-clicks", 14, "", [
+			[0, { lever: 1, drive: 1 }],
+			[6, { lever: 0, drive: 0 }],
+		]),
+		line("flight-damaged-clicks", 8, "", [[0, { hullShare: 0.15 }]]),
+		line("flight-docked", 3, "", [[0, { docked: true }]]),
+		// The headroom case: every ship loop at full under the loudest cue.
+		line(
+			"flight-stack",
+			3,
+			"lever,noclicks",
+			[[0, { lever: 1, drive: 1, rcs: 1 }]],
+			[[1, { kind: "explosion" }]],
+		),
+	];
+}
 
 /**
  * Render one entry in the page, offline, and hand back its samples.
@@ -61,6 +149,8 @@ export const SOUND_SET = Object.freeze([
  * - `bypassLimiter` — the engine's master is wired straight to the speakers,
  *   so a probe can read what the limiter did to a cue.
  * - `levels` — settings steps per bus, applied before the cue.
+ * - `levelsAt` — `[seconds, levels]` applied during a flight timeline, so a
+ *   mute can be tested on loops that are already playing (#544).
  * - `repeat`, `spacingS` — play the cue this many times, `spacingS` apart
  *   (0: at one instant). A burst.
  * - `uncapped` — the engine's voice pool is replaced by one with no caps: the
@@ -89,6 +179,7 @@ export async function renderInPage({
 	spacingS = 0,
 	leadS = 0.5,
 	uncapped = false,
+	levelsAt = [],
 }) {
 	const { AudioFX } = await import("/src/audio.ts");
 	const { WITCHSPACE } = await import("/src/witchspace.ts");
@@ -101,6 +192,20 @@ export async function renderInPage({
 	);
 	const fx = new AudioFX();
 	const modern = typeof fx.attach === "function";
+	// An entry this engine has nothing to play: a capture at an older ref.
+	// **A modern engine can be older too** (sage round 3): `origin/main` has
+	// #552's `play` but not #544's cruise cues, and `play` returns silently on
+	// a kind with no bus — a silent WAV under the cue's name. So a cue is
+	// absent unless the engine's own vocabulary lists its kind.
+	const knownKinds = modern
+		? Object.keys((await import("/src/audio-cue.ts")).CUE_BUS)
+		: [];
+	if (
+		(entry.flight && typeof fx.flight !== "function") ||
+		(entry.cue && !entry.legacy && !modern) ||
+		(entry.cue && modern && !knownKinds.includes(entry.cue.kind))
+	)
+		return { modern, absent: true, sampleRate, live: null, samples: [] };
 	if (modern) {
 		fx.attach(ctx);
 		// The two control arms below patch `AudioFX`'s private `master` and
@@ -167,6 +272,92 @@ export async function renderInPage({
 		at.set(t, (at.get(t) ?? 0) + 1);
 	}
 	let live = null;
+	if (entry.flight) {
+		const { flightSound, flightSoundArms, QUIET_FLIGHT, cruiseSpeedShare } =
+			await import("/src/flight-sound.ts");
+		const { DEFAULT_CRUISE } = await import("/src/cruise.ts");
+		const { C_KMS } = await import("/src/units.ts");
+		// A key may name a cruise speed in c (`cruiseC`) rather than a share,
+		// and the share is then the game's own mapping of it.
+		const shareOf = (r) =>
+			r.cruiseC === undefined
+				? r
+				: {
+						...r,
+						cruiseSpeed: cruiseSpeedShare(
+							r.cruiseC * C_KMS,
+							DEFAULT_CRUISE.vMinKms,
+							C_KMS,
+							DEFAULT_CRUISE.vMaxKms,
+						),
+					};
+		const { arms, unknown } = flightSoundArms(entry.flight.arms);
+		if (unknown.length || arms === "legacy")
+			throw new Error(`${entry.name}: arms ${entry.flight.arms}`);
+		let reading = {
+			docked: false,
+			regime: "normal",
+			spool: 0,
+			lever: 0,
+			drive: 0,
+			rcs: 0,
+			hullShare: 1,
+			cruiseSpeed: 0,
+			held: false,
+			hushed: false,
+		};
+		const readings = entry.flight.keys.map(([t, over]) => {
+			reading = { ...reading, ...over };
+			delete reading.ramp;
+			return [t, reading, over.ramp === true];
+		});
+		const readingAt = (t) => {
+			let i = 0;
+			while (i + 1 < readings.length && readings[i + 1][0] <= t) i++;
+			const next = readings[i + 1];
+			if (!next || !next[2]) return readings[i][1];
+			const [t0, a] = readings[i];
+			const k = (t - t0) / (next[0] - t0);
+			const out = { ...a };
+			for (const key of Object.keys(a))
+				if (typeof a[key] === "number")
+					out[key] = a[key] + (next[1][key] - a[key]) * k;
+			return out;
+		};
+		const dt = 1 / 50;
+		const cues = [...entry.flight.cues];
+		const setAt = [...levelsAt];
+		let flight = QUIET_FLIGHT;
+		const random = Math.random;
+		for (let i = 0; i * dt < seconds; i++) {
+			const t = i * dt;
+			ctx.suspend(leadS + t).then(() => {
+				if (typeof seed === "number") Math.random = seeded;
+				try {
+					const step = flightSound(flight, shareOf(readingAt(t)), arms, dt);
+					flight = step.state;
+					for (const cue of step.cues) fx.play(cue);
+					while (cues.length && cues[0][0] <= t) fx.play(cues.shift()[1]);
+					while (setAt.length && setAt[0][0] <= t)
+						for (const [bus, level] of Object.entries(setAt.shift()[1]))
+							fx.setLevel(bus, level);
+					fx.flight(step.mix);
+				} finally {
+					Math.random = random;
+				}
+				ctx.resume();
+			});
+		}
+		const buffer = await ctx.startRendering();
+		return {
+			modern,
+			sampleRate,
+			live: null,
+			samples: Array.from(
+				buffer.getChannelData(0).subarray(Math.round(leadS * sampleRate)),
+			),
+		};
+	}
 	for (const [t, n] of at)
 		ctx.suspend(t).then(() => {
 			for (let i = 0; i < n; i++) playOne();

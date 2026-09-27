@@ -51,6 +51,19 @@ export const PROBE_CATALOG = Object.freeze(
 			],
 		),
 		entry(
+			"probe-flight-sound.mjs",
+			"Flies the running game and reads back the ship's loop levels: a burn raises the drive and holding speed idles it, a turn fires the thrusters, cruise spools, engages and drops with one cue each, and the legacy arm plays only the old bed.",
+			[
+				"audio",
+				"flight sound",
+				"drive",
+				"thrusters",
+				"cruise",
+				"throttle",
+				"flight assist",
+			],
+		),
+		entry(
 			"probe-boot.mjs",
 			"Checks that the normal page boots cleanly and exposes the renderer, world, and deterministic seed contract.",
 			["application boot", "renderer", "seed", "window handle", "page errors"],

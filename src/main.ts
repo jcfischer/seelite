@@ -134,6 +134,13 @@ import {
 } from "./audio-cue";
 import { CombatPrototypeRig } from "./combat-rig";
 import {
+	type FlightSoundState,
+	QUIET_FLIGHT,
+	cruiseSpeedShare,
+	flightSound,
+	flightSoundArms,
+} from "./flight-sound";
+import {
 	COURSE_CUE_LABEL,
 	FLIGHT_FLOOR_LABELS,
 	SCANNER_RANGE_KM,
@@ -244,10 +251,12 @@ import {
 	restoreWorld,
 	canResetWorldToStart,
 	resetWorldToStart,
+	rotationShare,
 	stationOf,
 	stationPose,
 	stepAngular,
 	stepWorld,
+	thrustShares,
 } from "./sim";
 import type { SurfaceClass } from "./planet-appearance";
 import {
@@ -1041,6 +1050,19 @@ const playerFullCondition = (): ShipCondition => fullCondition(PLAYER_HULL[0]);
  * `forceRaider`. With neither, the leg law runs as a player meets it.
  */
 const RAIDER_PARAM = new URLSearchParams(window.location.search).get("raider");
+
+/**
+ * The flight sound's arms (#544), from `?flightsound=`: comma-separated
+ * tokens, or `legacy` for the throttle-driven bed before #544.
+ * `flight-sound.ts` lists them. A prototype's open questions, flown by ear.
+ */
+const FLIGHT_SOUND = flightSoundArms(
+	new URLSearchParams(window.location.search).get("flightsound"),
+);
+if (FLIGHT_SOUND.unknown.length)
+	console.warn(
+		`?flightsound: unknown ${FLIGHT_SOUND.unknown.join(", ")}; flying the defaults for those`,
+	);
 const RAIDERS_OFF =
 	RAIDER_PARAM !== null && ["off", "0", "false"].includes(RAIDER_PARAM);
 const RAIDER_PLAYTEST = RAIDER_PARAM !== null && !RAIDERS_OFF;
@@ -10872,6 +10894,17 @@ class Game {
 		this.occlusionGate = CLOSED_GATE;
 		this.applyOcclusion();
 
+		// #544's thrust shares: a reset is a ship at rest, and the flight sound
+		// may read them on a frame that runs no step (the opening steps on its
+		// own schedule).
+		this.driveShare = 0;
+		this.lateralShare = 0;
+		this.rotationShare = 0;
+		// And its memory (sage round 3): a reset taken in cruise would cue a
+		// drop on the next frame, and a hot hull would carry its cooling clicks
+		// into the fresh start.
+		this.flightSoundState = QUIET_FLIGHT;
+
 		// A boot has no jump charging, so a reset has none either.
 		// `resetWorldToStart` rebuilds the start system when the ship is
 		// elsewhere, so this method is total after a jump too — it was not, for
@@ -11890,8 +11923,9 @@ class Game {
 	 * The one dispatcher (#542 D3). Every cue the game plays comes through here —
 	 * returned by a pure step (the gun, the scoop, the witchspace schedule, the
 	 * hit delta) or named at an event (a kill, a hail) — and nothing else in
-	 * `Game` calls a cue on the engine. The engine's bed is the exception by
-	 * design: a loop takes a level every frame (`ambient`), not a cue.
+	 * `Game` calls a cue on the engine. The ship's loops are the exception by
+	 * design: a loop takes a level every frame (`flight`, and `ambient` on the
+	 * `?flightsound=legacy` arm), not a cue.
 	 */
 	private play(cue: Cue) {
 		switch (cue.kind) {
@@ -11909,6 +11943,53 @@ class Game {
 				this.audio.play(cue);
 		}
 	}
+
+	/**
+	 * The ship's loops each frame (#544): `flight-sound.ts` maps this frame's
+	 * flight state to loop levels and regime cues, and `AudioFX.flight` plays
+	 * them. After the step, so the drive and thrust shares are this frame's.
+	 * On a held clock too, where the motion goes quiet and the hum stays; and
+	 * under the opening, where nothing plays.
+	 */
+	private stepFlightSound(dt: number) {
+		if (FLIGHT_SOUND.arms === "legacy") return;
+		const step = flightSound(
+			this.flightSoundState,
+			{
+				docked: !flightLive(this.dock.phase),
+				regime:
+					this.regime === "cruise"
+						? "cruise"
+						: this.spoolLeftS > 0
+							? "spool"
+							: "normal",
+				spool: 1 - this.spoolLeftS / SPOOL_S,
+				lever: this.throttle,
+				drive: this.driveShare,
+				rcs: Math.max(this.rotationShare, this.lateralShare),
+				hullShare: this.condition.hull / this.condition.hullMax,
+				cruiseSpeed: cruiseSpeedShare(
+					this.cruiseSpeedKms,
+					this.cruiseParams.vMinKms,
+					C_KMS,
+					this.cruiseParams.vMaxKms,
+				),
+				held: this.clockHeld,
+				hushed: this.openingActive,
+			},
+			FLIGHT_SOUND.arms,
+			dt,
+		);
+		this.flightSoundState = step.state;
+		for (const cue of step.cues) this.play(cue);
+		this.audio.flight(step.mix);
+	}
+	/** The flight sound's memory: last regime and the hull's heat (#544). */
+	private flightSoundState: FlightSoundState = QUIET_FLIGHT;
+	/** This step's share of full drive, drift-removing and rotation thrust. */
+	private driveShare = 0;
+	private lateralShare = 0;
+	private rotationShare = 0;
 
 	/**
 	 * The shield and hull hits since the last step (D3), from a pure delta of
@@ -12532,6 +12613,12 @@ class Game {
 	 */
 	step(dt: number) {
 		this.stepHitCues(dt);
+		// What the drive and thrusters do this step, set where they fly (#544).
+		// Zero on every path that does not fly them: docked, cruise, and the
+		// docking computer's rotation.
+		this.driveShare = 0;
+		this.lateralShare = 0;
+		this.rotationShare = 0;
 		this.updateTrafficAuthority();
 		// Before the phase branch, so a hold is retried while docked and ended in
 		// every other phase (#314).
@@ -12731,7 +12818,7 @@ class Game {
 		if (this.stepDockingComputer(dt, approaches)) {
 			this.mouseDx = 0;
 			this.mouseDy = 0;
-			this.audio.ambient(this.throttle);
+			if (FLIGHT_SOUND.arms === "legacy") this.audio.ambient(this.throttle);
 			this.advanceNormalFlight(dt, approaches);
 			return;
 		}
@@ -12770,11 +12857,18 @@ class Game {
 		// Rotation carries momentum (`stepAngular`): the ship eases into a turn
 		// and, with the assist on, eases out of it. Setting the rate straight from
 		// the key state is what made this feel like 1984.
+		const ratesBefore = this.rates;
 		this.rates = stepAngular(
 			this.rates,
 			{ pitch, yaw, roll },
 			impulse,
 			this.assist,
+			dt,
+			PLAYER_PERFORMANCE,
+		);
+		this.rotationShare = rotationShare(
+			ratesBefore,
+			this.rates,
 			dt,
 			PLAYER_PERFORMANCE,
 		);
@@ -12813,7 +12907,7 @@ class Game {
 				1,
 				Math.max(0, this.throttle + padAxes.throttleTrim * dt * throttleRate),
 			);
-		this.audio.ambient(this.throttle);
+		if (FLIGHT_SOUND.arms === "legacy") this.audio.ambient(this.throttle);
 
 		// The spool-up runs in whichever regime the ship is in, and hands over at
 		// zero. Cruise begins at full throttle, because a wind-up that ends with
@@ -12865,7 +12959,17 @@ class Game {
 		// The whole world, not just the ship: `dt` is sim seconds and the bodies
 		// are on orbits driven by the same clock. Stepping the ship alone would
 		// freeze the system around it, which is the state the scaffold was in.
-		stepWorld(this.world, this.control(dt), dt, PLAYER_PERFORMANCE);
+		const control = this.control(dt);
+		// Before the step it predicts, off the control it will be given (#544).
+		const shares = thrustShares(
+			this.world.ship,
+			control,
+			dt,
+			PLAYER_PERFORMANCE,
+		);
+		this.driveShare = shares.main;
+		this.lateralShare = shares.lateral;
+		stepWorld(this.world, control, dt, PLAYER_PERFORMANCE);
 		// After the world moved, because the hold is measured against where the
 		// target *is* this frame: a carrier that drove out of range mid-charge
 		// breaks it, and reading the old position would hold it forever.
@@ -13721,6 +13825,10 @@ class Game {
 				if (opening.done) this.endOpening();
 			} else this.step(dt);
 		}
+		// Every frame, paused ones too: a paused burn does not keep its drive
+		// (the principal's ruling on #544), which needs the sound to hear the
+		// pause rather than keep the last level it was given.
+		this.stepFlightSound(this.clockHeld ? 0 : dt);
 		if (this.frameAttribution)
 			this.frameAttribution.recordCpu(
 				"simulation/step",

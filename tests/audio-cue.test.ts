@@ -246,6 +246,8 @@ test("a cue is a closed union: every kind is listed in CUE_BUS", () => {
 		"witchspaceHum",
 		"witchspaceSweep",
 		"witchspaceStop",
+		"cruiseEngage",
+		"cruiseDrop",
 	];
 	expect(Object.keys(CUE_BUS).sort()).toEqual([...kinds].sort());
 });

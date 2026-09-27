@@ -1085,6 +1085,66 @@ function assistedRelative(
 		: assisted;
 }
 
+/**
+ * How hard the drive and the thrusters work in the step `stepFlight` is about
+ * to take, each as a share of full authority, `0`..`1` (#544).
+ *
+ * Read off the same law, not measured off the result, because the result mixes
+ * in the frame: a ship holding its speed beside a station still has its
+ * absolute velocity changed every step, and none of that is the drive.
+ *
+ * - **Assist on**: `main` is the along-nose change the assist commands against
+ *   `thrustKms2 × dt`, so a ship at its setpoint is 0 and one accelerating or
+ *   braking is 1. `lateral` is the drift the assist removes this step, against
+ *   the same authority: the thrusters doing the assist's work.
+ * - **Assist off**: `main` is the lever, which is exactly the thrust applied,
+ *   and `lateral` is 0 — nothing removes drift.
+ *
+ * It is a prediction of the step, so call it with the control the step will
+ * be given, before the step.
+ */
+export function thrustShares(
+	ship: Pick<Ship, "vel">,
+	control: FlightControl,
+	dt: number,
+	perf: FlightPerformance,
+): { main: number; lateral: number } {
+	const throttle = clamp(control.throttle, 0, 1);
+	if (!control.assist) return { main: throttle, lateral: 0 };
+	const authority = perf.thrustKms2 * dt;
+	if (!(authority > 0)) return { main: 0, lateral: 0 };
+	const relative = sub(ship.vel, control.frame?.start ?? v3());
+	const along = dot(relative, control.nose);
+	const lateral = length(sub(relative, scale(control.nose, along)));
+	const removed = lateral * (1 - Math.exp(-dt / perf.assistLateralTauS));
+	return {
+		main: clamp(Math.abs(throttle * ASSIST_CAP_KMS - along) / authority, 0, 1),
+		lateral: clamp(removed / authority, 0, 1),
+	};
+}
+
+/**
+ * How hard the rotation thrusters worked in one `stepAngular` step: the
+ * largest change of rate on any axis, against `angularAccel × dt`, `0`..`1`
+ * (#544). A steady turn is 0; easing in or out of one is the thrusters firing.
+ * A mouse impulse can exceed the authority in one step, and is clamped.
+ */
+export function rotationShare(
+	before: Angular,
+	after: Angular,
+	dt: number,
+	perf: FlightPerformance,
+): number {
+	const authority = perf.angularAccel * dt;
+	if (!(authority > 0)) return 0;
+	const change = Math.max(
+		Math.abs(after.pitch - before.pitch),
+		Math.abs(after.yaw - before.yaw),
+		Math.abs(after.roll - before.roll),
+	);
+	return clamp(change / authority, 0, 1);
+}
+
 const clamp = (v: number, lo: number, hi: number): number =>
 	Math.min(hi, Math.max(lo, v));
 

@@ -30,6 +30,7 @@ import {
 	CUE_VOICE,
 	type Cue,
 	type CueBus,
+	type FlightMix,
 	VOICE_CAPS,
 	VOICE_MIX_CAP,
 	VOICE_PRIORITY,
@@ -278,6 +279,14 @@ export class AudioFX {
 			this.witchspaceSweep();
 			return;
 		}
+		if (cue.kind === "cruiseEngage") {
+			this.cruiseEngage(this.buses.ship);
+			return;
+		}
+		if (cue.kind === "cruiseDrop") {
+			this.cruiseDrop(this.buses.ship);
+			return;
+		}
 		const t = this.ctx.currentTime;
 		const admission = this.pool.admit(
 			CUE_VOICE[cue.kind],
@@ -354,6 +363,466 @@ export class AudioFX {
 		this.bed.filter.frequency.setTargetAtTime(180 + 700 * want, t, 0.4);
 	}
 
+	/** The ship's loops (#544), built on the first frame that has any to play. */
+	private flightGraph: FlightGraph | null = null;
+	/** Each group's levels as last **written** to its gains: what `flight`
+	 *  compares a new mix against, and what a probe reads. */
+	private readonly flightWritten: Partial<FlightMix> = {};
+	/** The audio clock at the last `flight` call: the span clicks are drawn over. */
+	private flightAt = -1;
+	/** When the loops next wander (`drift`), on the audio clock. */
+	private driftAt = 0;
+
+	/**
+	 * Hold the ship's loops at one frame's levels (#544): the hum, the drive,
+	 * the thrusters, the cruise wind-up and the cruise bed, and draw the hull's
+	 * clicks. `flight-sound.ts` computes the mix; this only plays it.
+	 *
+	 * Called every frame, and like `ambient` it writes a gain **on change**. It
+	 * builds nothing until a frame has something to play, and nothing before
+	 * there is a context. On the **ship** bus, which fades it on a mute.
+	 *
+	 * **Clicks are placed here, at random** (#542 D6): the mix carries a mean
+	 * rate and the span since the last call is a Poisson draw, so the rate holds
+	 * whatever the frame rate. A span longer than a quarter second — a stall, a
+	 * tab in the background — is not made up for in a burst.
+	 */
+	flight(mix: FlightMix) {
+		if (!this.ctx || !this.buses) return;
+		const t = this.ctx.currentTime;
+		const span = this.flightAt < 0 ? 0 : Math.min(0.25, t - this.flightAt);
+		this.flightAt = t;
+		if (!this.audible("ship")) return;
+		if (!this.flightGraph) {
+			const any =
+				mix.hum +
+				mix.drive +
+				mix.rcs +
+				mix.spool +
+				mix.cruise +
+				mix.clickRate +
+				mix.faintClickRate;
+			if (!(any > 0)) return;
+			this.flightGraph = this.makeFlightGraph(this.ctx, this.buses.ship);
+		}
+		const g = this.flightGraph;
+		// **Against what was last written, not last frame** (sage round 1). A
+		// level that moves less than the threshold every frame — cruise speed
+		// through a leg, a three-second spool at 60 fps — never differs from the
+		// frame before by enough, so comparing with the frame before froze the
+		// bed and the wind-up at their first value. A group's keys are recorded
+		// together, when that group is written.
+		const w = this.flightWritten;
+		const moved = (...keys: (keyof FlightMix)[]) => {
+			const due = keys.some((k) => {
+				const want = mix[k];
+				const had = w[k];
+				if (had === undefined) return true;
+				// Silence is always written: a loop fading out must reach 0 and
+				// not rest a threshold short of it.
+				if (want === 0 && had !== 0) return true;
+				return typeof want === "number"
+					? Math.abs(want - (had as number)) >= 0.005
+					: want !== had;
+			});
+			if (due) for (const k of keys) (w as Record<string, unknown>)[k] = mix[k];
+			return due;
+		};
+		// About the rms of the level the principal settled on after "too loud";
+		// noise through narrow bands passes less than the tone it replaced.
+		if (moved("hum")) g.hum.gain.setTargetAtTime(0.048 * mix.hum, t, 0.3);
+		if (t >= this.driftAt) this.drift(g, t);
+		if (moved("drive")) {
+			const d = mix.drive;
+			g.drive.gain.setTargetAtTime(0.2 * d * d, t, 0.12);
+			g.driveFilter.frequency.setTargetAtTime(200 + 900 * d, t, 0.2);
+			g.driveTone.gain.setTargetAtTime(0.07 * d * d, t, 0.12);
+			for (const [osc, base] of g.driveOscs)
+				osc.frequency.setTargetAtTime(base * (1 + 0.3 * d), t, 0.3);
+		}
+		// Thrusters are quick: a puff starts and stops with the stick.
+		if (moved("rcs")) g.rcs.gain.setTargetAtTime(0.16 * mix.rcs, t, 0.025);
+		// The wind-up is a turbine spinning up (#544: "too simple" on the first
+		// listen): slow to start and quick to finish, so pitch follows s^1.5;
+		// a flutter that races from a few beats to a buzz; air rushing through
+		// it; a sub that grows under it; and a whine that arrives only near the
+		// top.
+		if (moved("spool")) {
+			const s = mix.spool;
+			const lift = s ** 1.5;
+			g.spool.gain.setTargetAtTime(s > 0 ? 0.1 * s ** 0.7 : 0, t, 0.05);
+			g.spoolFilter.frequency.setTargetAtTime(300 + 3200 * lift, t, 0.05);
+			for (const [osc, base] of g.spoolOscs)
+				osc.frequency.setTargetAtTime(base * 2 ** (2.5 * lift), t, 0.05);
+			g.spoolFlutter.frequency.setTargetAtTime(3 + 30 * s * s, t, 0.05);
+			g.spoolAir.gain.setTargetAtTime(0.6 * s * s, t, 0.05);
+			g.spoolAirBand.frequency.setTargetAtTime(300 + 3700 * lift, t, 0.05);
+			g.spoolSub.gain.setTargetAtTime(1.2 * s, t, 0.05);
+			g.spoolSubOsc.frequency.setTargetAtTime(32 + 18 * s, t, 0.05);
+			g.spoolWhine.gain.setTargetAtTime(0.25 * s ** 3, t, 0.05);
+			g.spoolWhineOsc.frequency.setTargetAtTime(900 + 1700 * lift, t, 0.05);
+		}
+		// Cruise follows the speed, and quickly: the first listen heard a bed
+		// that faded in and out on a third of a second whatever the ship did.
+		if (moved("cruise", "cruiseSpeed", "cruiseVoice")) {
+			const on = 0.09 * mix.cruise;
+			const s = mix.cruiseSpeed;
+			const shimmer = mix.cruiseVoice === "shimmer";
+			g.shimmer.gain.setTargetAtTime(shimmer ? on : 0, t, 0.15);
+			g.throb.gain.setTargetAtTime(shimmer ? 0 : on * 1.3, t, 0.15);
+			// Everything below moves with the speed and nothing moves on its
+			// own: the second listen found the bed "pulses too much" and heard no
+			// change from 1 to 30 c. The speed share has c as its knee
+			// (`cruiseSpeedShare`), so that range is most of this travel.
+			//
+			// The rush under either voice: air that is not there, rising more
+			// than four octaves and gaining weight with the speed.
+			g.rush.gain.setTargetAtTime(0.1 * mix.cruise * (0.3 + s), t, 0.15);
+			g.rushBand.frequency.setTargetAtTime(200 * 2 ** (4.3 * s), t, 0.15);
+			// Air above it all, only at the top of the range.
+			g.air.gain.setTargetAtTime(0.07 * mix.cruise * s * s, t, 0.15);
+			// Shimmer: the band climbs four octaves, and the drone rises an
+			// octave and opens from dark to bright.
+			g.band.frequency.setTargetAtTime(300 * 2 ** (4 * s), t, 0.15);
+			g.droneFilter.frequency.setTargetAtTime(200 + 2300 * s, t, 0.15);
+			for (const [osc, base] of g.droneOscs)
+				osc.frequency.setTargetAtTime(base * 2 ** s, t, 0.3);
+			// Throb: the beat quickens from a slow pulse to a flutter, and the
+			// note rises and opens.
+			g.beatRate.frequency.setTargetAtTime(0.8 + 4 * s, t, 0.3);
+			g.throbFilter.frequency.setTargetAtTime(140 + 600 * s, t, 0.15);
+			for (const [osc, base] of g.throbOscs)
+				osc.frequency.setTargetAtTime(base * (1 + 0.7 * s), t, 0.3);
+		}
+		// Two layers, on the principal's first listen: loud clicks that react,
+		// over faint ones at a sparse steady rate.
+		if (span > 0 && Math.random() < 1 - Math.exp(-mix.clickRate * span))
+			this.click(this.buses.ship, t + Math.random() * 0.02, 1);
+		if (span > 0 && Math.random() < 1 - Math.exp(-mix.faintClickRate * span))
+			this.click(this.buses.ship, t + Math.random() * 0.02, 0.3);
+	}
+
+	/**
+	 * Let the hum and the cruise bed wander (#544): a new random target every
+	 * few seconds for the hum's level, colour and pitch and for the cruise
+	 * bed's level, each reached slowly. The first listen found the hum "too
+	 * uniform": two fixed LFOs are a period, and an ear finds a period.
+	 */
+	private drift(g: FlightGraph, t: number) {
+		this.driftAt = t + 1.5 + Math.random() * 4;
+		g.humSwell.gain.setTargetAtTime(0.55 + Math.random() * 0.6, t, 1.8);
+		g.humFilter.frequency.setTargetAtTime(170 + Math.random() * 250, t, 2);
+		g.pumpRate.frequency.setTargetAtTime(1 + Math.random() * 0.7, t, 3);
+		g.fanRate.frequency.setTargetAtTime(9 + Math.random() * 4, t, 3);
+		// Narrow and slow: a wider, quicker swell read as pulsing.
+		g.cruiseSwell.gain.setTargetAtTime(0.92 + Math.random() * 0.12, t, 3);
+	}
+
+	private makeFlightGraph(ctx: BaseAudioContext, out: AudioNode): FlightGraph {
+		const gain = (to: AudioNode) => {
+			const g = ctx.createGain();
+			g.gain.value = 0;
+			g.connect(to);
+			return g;
+		};
+		const filter = (type: BiquadFilterType, hz: number, q: number) => {
+			const f = ctx.createBiquadFilter();
+			f.type = type;
+			f.frequency.value = hz;
+			f.Q.value = q;
+			return f;
+		};
+		const osc = (type: OscillatorType, hz: number, to: AudioNode) => {
+			const o = ctx.createOscillator();
+			o.type = type;
+			o.frequency.value = hz;
+			o.connect(to);
+			o.start();
+			return o;
+		};
+		// Two noise buffers for the whole graph, each tapped at its own point
+		// (sage round 2: four were filled on the first flight frame). Taps a
+		// prime fraction of a second apart keep the loops that share a buffer
+		// from moving in step, which they did when each started at zero.
+		let taps = 0;
+		const loop = (buffer: AudioBuffer, to: AudioNode) => {
+			const src = ctx.createBufferSource();
+			src.buffer = buffer;
+			src.loop = true;
+			src.connect(to);
+			src.start(0, (taps++ * 0.377) % buffer.duration);
+		};
+		const brown = noiseLoop(ctx, "brown");
+		const white = noiseLoop(ctx, "white");
+
+		// The hum is **machinery**, not mains: the first cut was a 48 Hz
+		// sawtooth and its octave, which the principal heard as "too electric".
+		// Now it is noise through the hull's low resonances, a pump churning at
+		// about a beat a second and a fan's whirr, with no pitched tone in it.
+		// Two breaths at unrelated rates, and `drift` moving level, colour and
+		// the pump and fan rates at random on top: never one period an ear can
+		// lock onto.
+		const hum = gain(out);
+		const humSwell = ctx.createGain();
+		humSwell.gain.value = 1;
+		humSwell.connect(hum);
+		const humBody = ctx.createGain();
+		humBody.gain.value = 1;
+		humBody.connect(humSwell);
+		const humFilter = filter("lowpass", 260, 0.7);
+		humFilter.connect(humBody);
+		// The hull's resonances: narrow bands of the brown noise, a plate ringing at
+		// each. Gains lift the narrower bands, which pass less.
+		for (const [hz, q, level] of [
+			[62, 1.6, 1],
+			[138, 3, 0.8],
+			[231, 4.5, 0.6],
+		]) {
+			const band = filter("bandpass", hz, q);
+			const g = ctx.createGain();
+			g.gain.value = level;
+			band.connect(g);
+			g.connect(humFilter);
+			loop(brown, band);
+		}
+		// The pump: a low band of the brown noise, churned by a slow beat.
+		const pumpBand = filter("bandpass", 90, 1.5);
+		const pump = ctx.createGain();
+		pump.gain.value = 0.9;
+		pumpBand.connect(pump);
+		pump.connect(humFilter);
+		loop(brown, pumpBand);
+		const churn = ctx.createGain();
+		churn.gain.value = 0.7;
+		churn.connect(pump.gain);
+		const pumpRate = osc("sine", 1.3, churn);
+		// The fan: a faint whirr, beating at its blade rate. After the lowpass
+		// the hum's colour drift sweeps over it, so it comes and goes.
+		const fanBand = filter("bandpass", 420, 6);
+		const fan = ctx.createGain();
+		fan.gain.value = 0.5;
+		fanBand.connect(fan);
+		fan.connect(humBody);
+		loop(white, fanBand);
+		const blades = ctx.createGain();
+		blades.gain.value = 0.4;
+		blades.connect(fan.gain);
+		const fanRate = osc("sine", 11, blades);
+		for (const [rate, depth] of [
+			[0.13, 0.22],
+			[0.047, 0.18],
+		]) {
+			const breath = ctx.createGain();
+			breath.gain.value = depth;
+			breath.connect(humBody.gain);
+			osc("sine", rate, breath);
+		}
+
+		// The drive: the brown noise the old bed was, plus a low tone that
+		// rises with the burn, so full thrust is a note and not only a roar.
+		const drive = gain(out);
+		const driveFilter = filter("lowpass", 200, 0.6);
+		driveFilter.connect(drive);
+		loop(brown, driveFilter);
+		const driveTone = gain(out);
+		const toneFilter = filter("lowpass", 420, 0.9);
+		toneFilter.connect(driveTone);
+		const driveOscs: [OscillatorNode, number][] = [
+			[osc("sawtooth", 38, toneFilter), 38],
+			[osc("sawtooth", 57.4, toneFilter), 57.4],
+		];
+
+		// The thrusters: a hiss of gas, band-passed high.
+		const rcs = gain(out);
+		const rcsFilter = filter("bandpass", 2600, 0.9);
+		rcsFilter.connect(rcs);
+		loop(white, rcsFilter);
+
+		// The cruise wind-up: a turbine spinning up (`flight` says how).
+		const spool = gain(out);
+		const spoolBody = ctx.createGain();
+		spoolBody.gain.value = 0.7;
+		spoolBody.connect(spool);
+		const spoolFilter = filter("lowpass", 300, 2.5);
+		spoolFilter.connect(spoolBody);
+		const spoolOscs: [OscillatorNode, number][] = [
+			[osc("sawtooth", 55, spoolFilter), 55],
+			[osc("sawtooth", 55.6, spoolFilter), 55.6],
+			[osc("square", 110.3, spoolFilter), 110.3],
+		];
+		const flutterDepth = ctx.createGain();
+		flutterDepth.gain.value = 0.3;
+		flutterDepth.connect(spoolBody.gain);
+		const spoolFlutter = osc("sine", 3, flutterDepth);
+		const spoolAir = gain(spool);
+		const spoolAirBand = filter("bandpass", 300, 1.2);
+		spoolAirBand.connect(spoolAir);
+		loop(white, spoolAirBand);
+		const spoolSub = gain(spool);
+		const spoolSubOsc = osc("sine", 32, spoolSub);
+		const spoolWhine = gain(spool);
+		const spoolWhineOsc = osc("sine", 900, spoolWhine);
+
+		// Cruise: both voices and the rush go through one swell, which `drift`
+		// moves, so the bed breathes rather than holding one level.
+		const cruiseSwell = ctx.createGain();
+		cruiseSwell.gain.value = 1;
+		cruiseSwell.connect(out);
+
+		// The rush: wide-band noise whose pitch rises with the speed.
+		const rush = gain(cruiseSwell);
+		const rushBand = filter("bandpass", 250, 0.8);
+		rushBand.connect(rush);
+		loop(white, rushBand);
+
+		// Cruise, shimmer: a swept band of noise over an open fifth, both rising
+		// with the speed.
+		const shimmer = gain(cruiseSwell);
+		const band = filter("bandpass", 350, 5);
+		band.connect(shimmer);
+		loop(white, band);
+		// No sweep on the band: a ±500-cent sweep was the wah the second
+		// listen heard as pulsing. The drone is exact ratios for the same
+		// reason — a partial a fraction of a hertz off beats against the others.
+		const drone = ctx.createGain();
+		drone.gain.value = 0.22;
+		drone.connect(shimmer);
+		const droneFilter = filter("lowpass", 200, 0.7);
+		droneFilter.connect(drone);
+		const droneOscs: [OscillatorNode, number][] = [55, 82.5, 110].map((hz) => [
+			osc("sawtooth", hz, droneFilter),
+			hz,
+		]);
+		// Air: a high hiss that only the top of the speed range lets in.
+		const air = gain(cruiseSwell);
+		const airFilter = filter("highpass", 6000, 0.7);
+		airFilter.connect(air);
+		loop(white, airFilter);
+
+		// Cruise, throb: a low pulse, as if the drive were beating through the
+		// hull, quickening with the speed.
+		const throb = gain(cruiseSwell);
+		const pulse = ctx.createGain();
+		pulse.gain.value = 0.55;
+		pulse.connect(throb);
+		const throbFilter = filter("lowpass", 140, 0.8);
+		throbFilter.connect(pulse);
+		const throbOscs: [OscillatorNode, number][] = [
+			[osc("sawtooth", 41, throbFilter), 41],
+			[osc("sine", 41.3, throbFilter), 41.3],
+		];
+		const beat = ctx.createGain();
+		// Shallow: the throb is a beat under the bed, not a tremolo on it.
+		beat.gain.value = 0.18;
+		beat.connect(pulse.gain);
+		const beatRate = osc("sine", 0.9, beat);
+
+		return {
+			hum,
+			humSwell,
+			humFilter,
+			pumpRate,
+			fanRate,
+			drive,
+			driveFilter,
+			driveTone,
+			driveOscs,
+			rcs,
+			spool,
+			spoolFilter,
+			spoolOscs,
+			spoolFlutter,
+			spoolAir,
+			spoolAirBand,
+			spoolSub,
+			spoolSubOsc,
+			spoolWhine,
+			spoolWhineOsc,
+			shimmer,
+			band,
+			droneFilter,
+			droneOscs,
+			air,
+			throb,
+			throbFilter,
+			throbOscs,
+			beatRate,
+			rush,
+			rushBand,
+			cruiseSwell,
+		};
+	}
+
+	/**
+	 * One click of a working hull (#544): a few milliseconds of band-passed
+	 * noise at a random pitch and level, now and then a low knock instead.
+	 * Unpooled: `flight` draws them at a few a second at most, so there is no
+	 * burst for a cap to hold.
+	 */
+	private click(out: AudioNode, at: number, loudness: number) {
+		if (!this.ctx) return;
+		const ctx = this.ctx;
+		if (Math.random() < 0.3) {
+			const o = ctx.createOscillator();
+			const g = ctx.createGain();
+			o.type = "sine";
+			o.frequency.value = 180 + Math.random() * 140;
+			g.gain.setValueAtTime(0.0001, at);
+			g.gain.exponentialRampToValueAtTime(
+				(0.06 + Math.random() * 0.05) * loudness,
+				at + 0.004,
+			);
+			g.gain.exponentialRampToValueAtTime(0.0001, at + 0.06);
+			o.connect(g);
+			g.connect(out);
+			o.start(at);
+			o.stop(at + 0.08);
+			return;
+		}
+		const dur = 0.004 + Math.random() * 0.008;
+		const len = Math.max(1, Math.floor(ctx.sampleRate * dur));
+		const buffer = ctx.createBuffer(1, len, ctx.sampleRate);
+		const data = buffer.getChannelData(0);
+		for (let i = 0; i < len; i++)
+			data[i] = (Math.random() * 2 - 1) * (1 - i / len);
+		const src = ctx.createBufferSource();
+		src.buffer = buffer;
+		const f = ctx.createBiquadFilter();
+		f.type = "bandpass";
+		f.frequency.value = 1500 + Math.random() * 3500;
+		f.Q.value = 8;
+		const g = ctx.createGain();
+		g.gain.value = (0.25 + Math.random() * 0.35) * loudness;
+		src.connect(f);
+		f.connect(g);
+		g.connect(out);
+		src.start(at);
+	}
+
+	/**
+	 * Cruise engaging (#544): a rising rush, then the boom as the drive takes
+	 * hold. **Up, then a punch** — the drop is the mirror, a punch then down.
+	 * The first listen found the two "not distinct enough" when both fell.
+	 */
+	private cruiseEngage(out: AudioNode) {
+		this.tone(out, 60, 0.5, "sawtooth", 0.07, 900);
+		this.tone(out, 120, 0.5, "triangle", 0.05, 1800);
+		this.noiseBurst(out, 0.45, 0.1, 2500);
+		const boom = 0.45;
+		this.tone(out, 110, 0.9, "sine", 0.4, 35, boom);
+		this.noiseBurst(out, 0.5, 0.3, 400, boom);
+		this.tone(out, 2400, 0.08, "triangle", 0.06, 1200, boom);
+	}
+	/** Dropping out of cruise (#544): a sharp pop, then a long fall to a soft
+	 *  thud as the ship settles into normal flight. */
+	private cruiseDrop(out: AudioNode) {
+		this.noiseBurst(out, 0.15, 0.25, 3000);
+		this.tone(out, 60, 0.25, "sine", 0.3, 40);
+		this.tone(out, 900, 1, "sawtooth", 0.08, 50);
+		this.tone(out, 220, 0.9, "sine", 0.12, 55);
+		this.tone(out, 70, 0.3, "sine", 0.18, 40, 0.8);
+	}
+
 	/** Build the looping noise graph. Two seconds of it, cross-faded by chance. */
 	private makeBed(ctx: BaseAudioContext, out: AudioNode) {
 		const seconds = 2;
@@ -408,9 +877,10 @@ export class AudioFX {
 		type: OscillatorType,
 		vol = 0.3,
 		slideTo?: number,
+		delayS = 0,
 	) {
 		if (!this.ctx) return;
-		const t = this.ctx.currentTime;
+		const t = this.ctx.currentTime + delayS;
 		const osc = this.ctx.createOscillator();
 		const g = this.ctx.createGain();
 		osc.type = type;
@@ -426,9 +896,15 @@ export class AudioFX {
 	}
 
 	/** A decaying burst of filtered white noise into `out`. */
-	private noiseBurst(out: AudioNode, dur: number, vol = 0.3, filterFreq = 800) {
+	private noiseBurst(
+		out: AudioNode,
+		dur: number,
+		vol = 0.3,
+		filterFreq = 800,
+		delayS = 0,
+	) {
 		if (!this.ctx) return;
-		const t = this.ctx.currentTime;
+		const t = this.ctx.currentTime + delayS;
 		const len = Math.floor(this.ctx.sampleRate * dur);
 		const buffer = this.ctx.createBuffer(1, len, this.ctx.sampleRate);
 		const data = buffer.getChannelData(0);
@@ -568,4 +1044,73 @@ export class AudioFX {
 	private ui(out: AudioNode) {
 		this.tone(out, 520, 0.06, "square", 0.12);
 	}
+}
+
+/** The nodes `AudioFX.flight` writes (#544). */
+interface FlightGraph {
+	hum: GainNode;
+	drive: GainNode;
+	driveFilter: BiquadFilterNode;
+	driveTone: GainNode;
+	driveOscs: [OscillatorNode, number][];
+	rcs: GainNode;
+	spool: GainNode;
+	spoolFilter: BiquadFilterNode;
+	spoolOscs: [OscillatorNode, number][];
+	shimmer: GainNode;
+	band: BiquadFilterNode;
+	droneFilter: BiquadFilterNode;
+	air: GainNode;
+	spoolFlutter: OscillatorNode;
+	spoolAir: GainNode;
+	spoolAirBand: BiquadFilterNode;
+	spoolSub: GainNode;
+	spoolSubOsc: OscillatorNode;
+	spoolWhine: GainNode;
+	spoolWhineOsc: OscillatorNode;
+	droneOscs: [OscillatorNode, number][];
+	throb: GainNode;
+	throbFilter: BiquadFilterNode;
+	throbOscs: [OscillatorNode, number][];
+	beatRate: OscillatorNode;
+	rush: GainNode;
+	rushBand: BiquadFilterNode;
+	cruiseSwell: GainNode;
+	humSwell: GainNode;
+	humFilter: BiquadFilterNode;
+	pumpRate: OscillatorNode;
+	fanRate: OscillatorNode;
+}
+
+/**
+ * Two seconds of looping noise, brown or white, with its tail crossfaded into
+ * its head so the loop point has no step (`makeBed` on why the head is faded
+ * toward the *extra* samples and not toward its own tail). The same brown law
+ * as the bed; kept apart from `makeBed` so the bed before #544 renders
+ * exactly as it did.
+ */
+function noiseLoop(
+	ctx: BaseAudioContext,
+	kind: "brown" | "white",
+): AudioBuffer {
+	const len = Math.floor(ctx.sampleRate * 2);
+	const fade = Math.floor(ctx.sampleRate * 0.05);
+	const buffer = ctx.createBuffer(1, len, ctx.sampleRate);
+	const data = buffer.getChannelData(0);
+	const raw = new Float32Array(len + fade);
+	let last = 0;
+	for (let i = 0; i < raw.length; i++) {
+		const white = Math.random() * 2 - 1;
+		if (kind === "white") raw[i] = white * 0.5;
+		else {
+			last = (last + white * 0.02) * 0.995;
+			raw[i] = last * 3.2;
+		}
+	}
+	for (let i = 0; i < len; i++) data[i] = raw[i];
+	for (let i = 0; i < fade; i++) {
+		const k = i / fade;
+		data[i] = raw[i] * k + raw[len + i] * (1 - k);
+	}
+	return buffer;
 }

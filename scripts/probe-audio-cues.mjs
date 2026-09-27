@@ -15,8 +15,12 @@
  * a later sound node might pick. What that width lets through is stated
  * rather than implied: a tone-only cue (scoop, alert, ui, the hum) falls out
  * past ±10% in level; a noise one-shot only below ×0.8 or above ×1.25; the
- * bed only below ×0.7 or above ×1.4. A cue routed nowhere falls out of every
- * band. A smaller change of level is the capture's to show, not this probe's.
+ * bed only below ×0.7 or above ×1.4. A one-shot routed nowhere falls out of
+ * every band. **A flight timeline does not**: its level is mostly the hum, so a
+ * thruster loop that vanished leaves it inside the bed's band. Those loops are
+ * held by the windowed rows below instead, each a window where the loop plays
+ * against one where it does not, on the same seed. A smaller change of level is
+ * the capture's to show, not this probe's.
  *
  * **A centroid is a poor ear for pitch.** A square wave's centroid is set by
  * its harmonics up to the 16 kHz cap more than by its fundamental: the laser
@@ -90,6 +94,123 @@ const MAIN = {
 };
 
 /**
+ * #544's cues and loops, which `origin/main` does not have: centred on this
+ * branch's own render (`npm run sounds -- --label after6`, seed 552), taken
+ * after the principal's third listen and sage round 1's write fix and round 2's shared
+ * noise buffers. So these bands hold the prototype to what
+ * the principal listens to, and move when the ear moves it. Every flight timeline takes the bed's wide band:
+ * each carries noise loops, and most carry clicks, whose count moves with the
+ * seed.
+ */
+const SINCE_544 = {
+	"cruise-engage": {
+		rms: 0.01988,
+		peak: 0.17615,
+		onsetMs: 7.38,
+		hz: 2698,
+		noise: 1,
+	},
+	"cruise-drop": {
+		rms: 0.01384,
+		peak: 0.17882,
+		onsetMs: 7.35,
+		hz: 3424,
+		noise: 1,
+	},
+	"flight-idle": {
+		rms: 0.00586,
+		peak: 0.02802,
+		onsetMs: 46.48,
+		hz: 292,
+		bed: 1,
+	},
+	"flight-burn-thrust": {
+		rms: 0.02247,
+		peak: 0.12011,
+		onsetMs: 46.48,
+		hz: 292,
+		bed: 1,
+	},
+	"flight-burn-lever": {
+		rms: 0.03367,
+		peak: 0.13459,
+		onsetMs: 46.48,
+		hz: 292,
+		bed: 1,
+	},
+	"flight-rcs": {
+		rms: 0.00648,
+		peak: 0.03308,
+		onsetMs: 46.48,
+		hz: 292,
+		bed: 1,
+	},
+	"flight-rcs-norcs": {
+		rms: 0.00573,
+		peak: 0.02802,
+		onsetMs: 46.48,
+		hz: 292,
+		bed: 1,
+	},
+	"flight-cruise-shimmer": {
+		rms: 0.0189,
+		peak: 0.19486,
+		onsetMs: 46.48,
+		hz: 292,
+		bed: 1,
+	},
+	"flight-cruise-throb": {
+		rms: 0.02231,
+		peak: 0.19464,
+		onsetMs: 46.48,
+		hz: 292,
+		bed: 1,
+	},
+	"flight-cruise-slow-climb": {
+		rms: 0.01012,
+		peak: 0.05475,
+		onsetMs: 34.38,
+		hz: 3009,
+		bed: 1,
+	},
+	"flight-cruise-c-ladder": {
+		rms: 0.00904,
+		peak: 0.05464,
+		onsetMs: 34.38,
+		hz: 2887,
+		bed: 1,
+	},
+	"flight-cooling-clicks": {
+		rms: 0.02349,
+		peak: 0.14649,
+		onsetMs: 11.67,
+		hz: 293,
+		bed: 1,
+	},
+	"flight-damaged-clicks": {
+		rms: 0.00531,
+		peak: 0.04296,
+		onsetMs: 46.48,
+		hz: 292,
+		bed: 1,
+	},
+	"flight-docked": {
+		rms: 0.00259,
+		peak: 0.01261,
+		onsetMs: 64.35,
+		hz: 370,
+		bed: 1,
+	},
+	"flight-stack": {
+		rms: 0.03747,
+		peak: 0.20456,
+		onsetMs: 9.19,
+		hz: 4479,
+		bed: 1,
+	},
+};
+
+/**
  * Each cue's band: rms, peak and centroid as `[low, high]`, and the latest
  * onset in ms. A tone-only cue renders the same waveform on every seed, so
  * its band is ±10%; a noise cue's is wide enough for the seed's own spread
@@ -97,7 +218,7 @@ const MAIN = {
  * as much again, which is the order of a render quantum's rounding.
  */
 const BANDS = Object.fromEntries(
-	Object.entries(MAIN).map(([name, m]) => {
+	Object.entries({ ...MAIN, ...SINCE_544 }).map(([name, m]) => {
 		const [lo, hi] = m.bed ? [0.7, 1.4] : m.noise ? [0.8, 1.25] : [0.9, 1.1];
 		const [plo, phi] = m.bed || m.noise ? [0.6, 1.6] : [0.9, 1.1];
 		const [clo, chi] = m.bed ? [0.6, 1.5] : m.noise ? [0.93, 1.07] : [0.9, 1.1];
@@ -116,6 +237,12 @@ const BANDS = Object.fromEntries(
 /** The most of an uncapped burst's ring a capped one may reach. Read at
  *  0.52 on the build that made the pool. */
 const BURST_MAX_OF_UNCAPPED = 0.7;
+
+/** The least a loop's window may stand over its quiet window (#544). */
+const LOOP_MIN_RATIO = 1.5;
+
+/** The least each rung of the c ladder may stand over the one below (#544). */
+const LADDER_MIN_STEP = 1.3;
 
 const browser = await launchChromium();
 const { check, watch, exit } = tally();
@@ -168,6 +295,137 @@ try {
 			`rms x${rms.toFixed(4)} peak x${peak.toFixed(4)} onset ${on.onsetMs.toFixed(2)} against ${off.onsetMs.toFixed(2)} ms`,
 		);
 	}
+
+	// #544's loops, each by a window where it plays against one where it does
+	// not. Whole-timeline figures cannot see one vanish: the hum carries them.
+	const raw = async (name, opts = {}) =>
+		(
+			await page.evaluate(renderInPage, {
+				entry: SOUND_SET.find((e) => e.name === name),
+				sampleRate: SR,
+				seed: SEED,
+				...opts,
+			})
+		).samples;
+	// `high`: rms of the first difference, a crude high-pass. The thrusters
+	// are a hiss near 2.6 kHz and the hum is under 300 Hz, so a plain rms of
+	// that window is mostly hum and read the hiss at only x1.33.
+	const windowRms = (samples, [a, b], high = false) => {
+		let w = samples.slice(Math.round(a * SR), Math.round(b * SR));
+		if (high) w = w.slice(1).map((v, i) => v - w[i]);
+		return Math.sqrt(w.reduce((sum, v) => sum + v * v, 0) / w.length);
+	};
+	const loopRows = [
+		// [row, loud timeline, window, quiet timeline, window, high-passed?]
+		[
+			"the thrusters are heard while they fire",
+			"flight-rcs",
+			[0.35, 0.8],
+			"flight-rcs-norcs",
+			[0.35, 0.8],
+			true,
+		],
+		[
+			"a burn is heard over the hum",
+			"flight-burn-thrust",
+			[1, 3],
+			"flight-burn-thrust",
+			[4.5, 6],
+		],
+		[
+			"the wind-up is heard before cruise",
+			"flight-cruise-shimmer",
+			[2.5, 3.4],
+			"flight-cruise-shimmer",
+			[0, 0.45],
+		],
+		[
+			"the shimmer bed is heard in cruise",
+			"flight-cruise-shimmer",
+			[5, 8],
+			"flight-cruise-shimmer",
+			[0, 0.45],
+		],
+		[
+			"the throb bed is heard in cruise",
+			"flight-cruise-throb",
+			[5, 8],
+			"flight-cruise-throb",
+			[0, 0.45],
+		],
+		// The principal's first listen: the bed must follow the speed. At the
+		// cap against just after the engage, high-passed, because what speed
+		// moves is the pitch of the rush and the band, not only the level.
+		[
+			"the cruise bed rises with the speed",
+			"flight-cruise-shimmer",
+			[6.6, 7.4],
+			"flight-cruise-shimmer",
+			[4.4, 4.8],
+			true,
+		],
+	];
+	const renders = new Map();
+	const samplesOf = async (name) => {
+		if (!renders.has(name)) renders.set(name, await raw(name));
+		return renders.get(name);
+	};
+	for (const [row, loud, lw, quiet, qw, high] of loopRows) {
+		const ratio =
+			windowRms(await samplesOf(loud), lw, high) /
+			windowRms(await samplesOf(quiet), qw, high);
+		check(row, ratio > LOOP_MIN_RATIO, `window rms x${ratio.toFixed(2)}`);
+	}
+	// The principal's second listen heard no change from 1 to 30 c. The
+	// ladder holds 1, 2, 5, 10 and 20 c for two seconds each; high-passed,
+	// each step must stand clear of the one below.
+	const ladder = await samplesOf("flight-cruise-c-ladder");
+	const rungs = [
+		[0.5, 2.3],
+		[2.7, 4.3],
+		[4.7, 6.3],
+		[6.7, 8.3],
+		[8.7, 10.3],
+	].map((w) => windowRms(ladder, w, true));
+	check(
+		"every step from 1 to 20 c is heard above the one below",
+		rungs.every((r, i) => i === 0 || r > rungs[i - 1] * LADDER_MIN_STEP),
+		rungs.map((r) => r.toFixed(5)).join(" < "),
+	);
+	// A climb too slow for any one step to pass the write threshold must
+	// still be followed (sage round 1's blocker): the end of the climb stands
+	// well clear of its start, high-passed as the ladder is.
+	const climb = await samplesOf("flight-cruise-slow-climb");
+	const climbed =
+		windowRms(climb, [10.5, 12], true) / windowRms(climb, [0.5, 2], true);
+	check(
+		"a slow climb through c is followed, not frozen at its start",
+		climbed > 3,
+		`high-passed rms x${climbed.toFixed(2)}`,
+	);
+
+	// Muted **while the loops play** (sage round 1): muted from the first
+	// sample, the engine builds no graph at all, so a row reading silence
+	// there passes whether or not a mute reaches a running loop. Each arm
+	// plays two seconds, then goes Off; the loops must be heard before it and
+	// be silent once the bus's fade has settled.
+	const mutedLive = await Promise.all(
+		[{ master: 0 }, { ship: 0 }].map((levels) =>
+			raw("flight-idle", { levelsAt: [[2, levels]] }),
+		),
+	);
+	check(
+		"master Off and ship Off each silence flight loops already playing",
+		mutedLive.every(
+			(x) => windowRms(x, [1, 1.9]) > 1e-3 && windowRms(x, [2.5, 3.9]) < 1e-5,
+		),
+		mutedLive
+			.map(
+				(x) =>
+					`${windowRms(x, [1, 1.9]).toExponential(2)} then ${windowRms(x, [2.5, 3.9]).toExponential(2)}`,
+			)
+			.join("; "),
+	);
 
 	const laser = SOUND_SET.find((e) => e.name === "laser");
 	const alert = SOUND_SET.find((e) => e.name === "alert");
