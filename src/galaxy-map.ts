@@ -982,8 +982,14 @@ export function mountGalaxyChart({
 				: `course: ${systemByIndex(course.destinationIndex)?.name ?? "?"}` +
 					// A course this hull cannot fly read "? jump(s) left ·
 					// arrived" here, which is two false statements (#554).
+					// `courseProgress` is null for three reasons and only one
+					// is the hull's — the same split `Game.courseWithoutRoute`
+					// makes.
 					(progress === null
-						? "  ·  no route for this hull"
+						? course.galaxy === galaxyIndex &&
+							systemByIndex(course.destinationIndex) !== null
+							? "  ·  no route for this hull"
+							: "  ·  not on this chart"
 						: `  ·  ${progress.remaining} jump(s) left` +
 							(progress.nextHop
 								? `  ·  next ${progress.nextHop.system.name}`

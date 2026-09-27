@@ -109,7 +109,10 @@ export const FINDER_DEFAULT_BUDGET = 1;
  * courier's is 14. At the old 16, four of the seven hulls had systems they could
  * reach and the control could never promote.
  *
- * 39 clears the measured worst over every purchasable tank by one.
+ * 39 clears by one the worst chain **measured** over every purchasable tank —
+ * a measurement, not a bound. The worst chain at 5 LY swings with the world
+ * seed (28 on the shipped seed, 38 on seed 1), so a seed nobody swept can hold
+ * a longer one; the old 16 had the same status over its five seeds.
  * `bun scripts/measure-galaxy-shape.ts tanks` reprints the per-tank diameters
  * on #185's seeds and fails if the ceiling stops covering them, and
  * `galaxy-finder.test.ts` re-measures the shipped seed at every tank and seed

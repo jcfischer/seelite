@@ -28,7 +28,6 @@ import {
 	finderReachLabel,
 	projectFinder,
 } from "../src/galaxy-finder";
-import { reachable } from "../src/galaxy-route";
 import { HULL_SPECS, PURCHASABLE_HULL_IDS } from "../src/hull";
 import { hullReachFrom } from "../src/hull-reach";
 import { planJump } from "../src/hyperspace";
@@ -48,8 +47,9 @@ const sources = (readdirSync(SRC, { recursive: true }) as string[])
 	.filter((f) => f.endsWith(".ts"))
 	.map((f) => ({ file: f, text: readFileSync(join(SRC, f), "utf8") }));
 /** The source with block and line comments blanked, so a docstring may name
- *  the constant and code may not. Naive about `//` inside a string, which
- *  can only make the row stricter. */
+ *  the constant and code may not. Naive about `//` or `/*` inside a string
+ *  literal, which can only make the row **looser**: it blanks real code after
+ *  such a string, and a reader hidden there would pass. */
 const code = (text: string): string =>
 	text.replace(/\/\*[\s\S]*?\*\//g, "").replace(/\/\/[^\n]*/g, "");
 
@@ -178,17 +178,28 @@ describe("#554 D6 — the drive charge is the flown hull's", () => {
 
 describe("#554 D3 — the shipyard's law: a hull with no reach from here", () => {
 	test("reach is the count of systems within the hull's tank", () => {
+		// Against a brute-force distance filter rather than `reachable`, which
+		// is what the law calls — a shared defect would pass both sides.
 		const here = startSystem(GALAXY);
-		for (const id of PURCHASABLE_HULL_IDS)
+		const within = (tankLy: number) =>
+			SYSTEMS.filter(
+				(s) => s.index !== here.index && distanceLy(here.pos, s.pos) <= tankLy,
+			).length;
+		for (const id of PURCHASABLE_HULL_IDS) {
+			const n = within(HULL_SPECS[id].tankLy);
 			expect([id, hullReachFrom(SYSTEMS, here, id)]).toEqual([
 				id,
-				(() => {
-					const n = reachable(SYSTEMS, here, HULL_SPECS[id].tankLy).length;
-					return n === 0
-						? { ok: false, refusal: "no-reach" }
-						: { ok: true, systems: n };
-				})(),
+				n === 0 ? { ok: false, refusal: "no-reach" } : { ok: true, systems: n },
 			]);
+		}
+		// And the count moves with the tank, so the law reads the hull's.
+		const count = (id: "interceptor" | "courier" | "explorer") => {
+			const r = hullReachFrom(SYSTEMS, here, id);
+			return r.ok ? r.systems : 0;
+		};
+		expect(count("interceptor")).toBeLessThan(count("explorer"));
+		expect(count("interceptor")).toBeLessThanOrEqual(count("courier"));
+		expect(count("courier")).toBeLessThanOrEqual(count("explorer"));
 	});
 
 	test("an isolated system refuses a short hull and sells a long one", () => {
