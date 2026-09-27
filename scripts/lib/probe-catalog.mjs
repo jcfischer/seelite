@@ -39,6 +39,18 @@ export const PROBE_CATALOG = Object.freeze(
 			["cruise arrival", "host planet", "moving body", "station reachability"],
 		),
 		entry(
+			"probe-audio-cues.mjs",
+			"Renders every sound cue offline through the engine's buses and limiter, holds each in bands centred on the pre-bus engine, and checks the mute, the bus rows and the voice cap on a burst.",
+			[
+				"audio",
+				"sound cues",
+				"buses",
+				"limiter",
+				"voice pool",
+				"volume settings",
+			],
+		),
+		entry(
 			"probe-boot.mjs",
 			"Checks that the normal page boots cleanly and exposes the renderer, world, and deterministic seed contract.",
 			["application boot", "renderer", "seed", "window handle", "page errors"],

@@ -84,6 +84,16 @@ export const busGain = (bus: Bus, step: number): number => {
  * limit. The loudest cue this file plays peaks far below full scale after the
  * master's 0.4, so at 0 dB the compressor never engages on one cue.
  * `probe-audio-cues.mjs` renders cues with and without it and holds the level.
+ *
+ * **Two things it does do, measured on Chromium (#552).** Every cue reaches
+ * the speakers **6 ms later**: the node's fixed look-ahead. The capture at
+ * `origin/main` and at #552 renders every cue to within one 16-bit step of
+ * the other once shifted by exactly 288 samples at 48 kHz. And for about the
+ * **first tenth of a second of a context's life** it attenuates whatever
+ * plays: a laser at the context's first sample rendered at 0.43 of its level,
+ * 0.68 at 20 ms in, and 1.0000 from 100 ms on. The realtime context opens on
+ * the player's first gesture, so only a cue in that first tenth of a second
+ * is quieter.
  */
 export const LIMITER = {
 	thresholdDb: 0,
