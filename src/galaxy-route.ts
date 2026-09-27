@@ -22,8 +22,8 @@ import {
 } from "./galaxy";
 
 /**
- * Systems one jump from `from`, nearest first — the lit points inside the
- * map's 7 LY shell.
+ * Systems one jump from `from` at `maxJump` — the flown hull's tank — nearest
+ * first: the lit points inside the map's shell.
  *
  * A thin scope over `neighbours`, and the scope is the point. `neighbours`
  * takes identity as `(galaxy, index)` precisely so a caller *may* hold two

@@ -2,7 +2,7 @@
  * The galaxy map — node #11's chart, node #96's mount.
  *
  * `mountGalaxyChart` draws one galaxy's 256 systems as a freely orbitable cluster,
- * with the 7 LY shell around the current system, a derived route to whatever is
+ * with the flown hull's reach shell around the current system, a derived route to whatever is
  * selected, and the core haze on a toggle so the two treatments of the density
  * gradient can be compared side by side rather than argued about.
  *

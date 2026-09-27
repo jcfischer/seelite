@@ -132,7 +132,7 @@ export const CORE_RADIUS_LY = GALAXY_RADIUS_LY / Math.SQRT2;
  * galaxy, and this is it. The two agree on exactly one hull — the courier,
  * which `tests/hull-reach.test.ts` asserts — and a shorter tank flies a
  * fragmented graph on purpose (#185's measurement; `scripts/measure-galaxy-shape.ts
- * --tanks` reprints it).
+ * tanks` reprints it).
  *
  * **Galaxy-owned, and deliberately not derived from the roster.** #181 first
  * derived it from the courier's row, and sage named the cost: the roster's
