@@ -401,6 +401,22 @@ describe("every script boots through the builder", () => {
 	 */
 	const NOT_THE_GAME = new Map([
 		[
+			"scripts/probe-audio-cues.mjs",
+			{
+				arg: "`${origin}/__seelite/tree`",
+				reason:
+					"#552's cue probe renders the audio engine offline and boots no game: the dev server's tree declaration is an origin for `import(\"/src/audio.ts\")` and nothing more",
+			},
+		],
+		[
+			"scripts/capture-sounds.mjs",
+			{
+				arg: "`${origin}${TREE_ENDPOINT}`",
+				reason:
+					"#552's sound capture renders every cue offline at a ref and boots no game: the tree declaration is only an origin to import the engine from",
+			},
+		],
+		[
 			"scripts/measure-audio.mjs",
 			{
 				arg: "`http://localhost:${PORT}/`",

@@ -703,3 +703,18 @@ _Avoid_: Share code. **Scope note, not an _Avoid_ line:** "snapshot" is canonica
 elsewhere — `persistent-world-state.md` calls the save's overlay a canonical
 snapshot — so it is not banned here; a recipe is simply not one, and a sentence
 that calls it one has confused the two.
+
+**Sound cue**:
+One thing the game asks the sound engine to play — a laser, an explosion, a
+witchspace hum — as a member of the closed `Cue` union in `src/audio-cue.ts`,
+which imports nothing. Pure steps return sound cues and `Game.play` is the one
+dispatcher (#542 D3, built in #552). Distinct from a HUD cue (the course cue,
+the next-action cue), which is drawn, not heard.
+_Avoid_: Sound event, SFX call
+
+**Bus**:
+One of the sound engine's five gain stages — master, ship, combat, console,
+music — each set by its own volume row; every sound cue plays through exactly
+one (`CUE_BUS`), and master carries them all through the limiter (#542 D1).
+Master at Off is the mute.
+_Avoid_: Channel, mixer track

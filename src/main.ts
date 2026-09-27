@@ -11900,7 +11900,10 @@ class Game {
 				// **Received, and silent on purpose.** Hits made no sound before #552
 				// and this node changes no sound. What a hit sounds like, how often a
 				// held beam cues one, and whether it is a sustained voice instead are
-				// #545's to decide by ear; that node makes this arm play.
+				// #545's to decide by ear; that node makes this arm play. **And it
+				// owes a gate first**: the delta reads any fall in a pool or in hull,
+				// so a condition replaced downward — a save loaded with a damaged
+				// ship, a hull bought with less integrity — would cue a hit too.
 				return;
 			default:
 				this.audio.play(cue);

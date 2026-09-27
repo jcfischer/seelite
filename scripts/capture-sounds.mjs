@@ -100,7 +100,9 @@ const sha = execFileSync("git", ["rev-parse", "HEAD"], {
 const server = await createServer({
 	root,
 	configFile: join(root, "vite.config.ts"),
-	cacheDir: join(scratch ?? join(HERE, "node_modules"), ".vite-sounds"),
+	// Never inside `node_modules`: in a worktree that is a symlink to the
+	// primary checkout's, so two captures would share one cache.
+	cacheDir: join(scratch ?? HERE, ".vite-sounds"),
 	logLevel: "error",
 	server: { port: 0, host: "127.0.0.1", strictPort: false },
 });
@@ -114,9 +116,10 @@ try {
 
 	browser = await launchChromium();
 	const page = await browser.newPage();
-	page.on("pageerror", (e) => {
-		throw e;
-	});
+	// Collected and thrown after the renders, inside this `try`, so the
+	// throwaway worktree is still removed; a throw in the handler would not be.
+	const pageErrors = [];
+	page.on("pageerror", (e) => pageErrors.push(e));
 	await page.goto(`${origin}${TREE_ENDPOINT}`);
 
 	const dir = join(out, label);
@@ -141,6 +144,10 @@ try {
 		entries.push({ name: entry.name, file, stats });
 		console.log(JSON.stringify({ label, name: entry.name, ...round(stats) }));
 	}
+	if (pageErrors.length)
+		throw new Error(
+			`the page threw: ${pageErrors.map((e) => e.message).join("; ")}`,
+		);
 	const manifest = {
 		label,
 		ref: ref ?? "(this checkout)",
