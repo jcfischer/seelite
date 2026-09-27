@@ -176,10 +176,18 @@ function flyTrade(world: World, opts: Parameters<typeof run>[2]): Tally {
 
 interface TradeArm {
 	label: string;
+	/** The hull the arm flies — its hold here, and its own strength when
+	 *  section 5 prices the arm's kills. */
+	hull: HullId;
+	/** Earns more with market memory than without, which is the round-trip
+	 *  pump `RunOptions.remembers` documents: section 5 pools no rate from it. */
+	pumped: boolean;
 	opts: Parameters<typeof run>[2];
 }
 const holdArm = (hull: HullId): TradeArm => ({
 	label: `${hull} ${HULL_SPECS[hull].holdT} t, capitalised, no shopping`,
+	hull,
+	pumped: hull === PLAYER_BASELINE_HULL,
 	opts: {
 		holdT: HULL_SPECS[hull].holdT,
 		shop: false,
@@ -189,6 +197,8 @@ const holdArm = (hull: HullId): TradeArm => ({
 const ARMS: TradeArm[] = [
 	{
 		label: `new pilot: courier ${HULL_SPECS.courier.holdT} t from ${START_CR} Cr, shopping on`,
+		hull: PLAYER_BASELINE_HULL,
+		pumped: false,
 		opts: { holdT: HULL_SPECS.courier.holdT, shop: true },
 	},
 	holdArm("courier"),
@@ -288,6 +298,11 @@ const duelSeconds = (weapon: "pulse" | "beam"): number => {
 	let s = createCombatPrototype();
 	while (s.targetHull > 0 && s.playerHull > 0 && s.elapsed < 600)
 		s = stepCombatPrototype(s, duelInputs(s, dt, weapon));
+	// A loss or the cap is not a time to a kill, and would be priced as one.
+	if (s.targetHull > 0)
+		throw new Error(
+			`${weapon} duel did not kill: target ${s.targetHull}, player ${s.playerHull}, ${s.elapsed.toFixed(1)} s`,
+		);
 	return s.elapsed;
 };
 const pulseS = duelSeconds("pulse");
@@ -390,13 +405,20 @@ function explore(
 	tankLy: number,
 	policy: "one" | "all",
 	capS: number,
-): { kinds: number; seconds: number; exhausted: boolean } {
+): {
+	kinds: number;
+	seconds: number;
+	exhausted: boolean;
+	/** Kinds found by each of `CHECKPOINTS_H`, or null when the run ended first. */
+	at: (number | null)[];
+} {
 	const start = w.systems.find((r) => w.contentsFor(r).stations.length >= 1);
 	if (!start) throw new Error("no station in galaxy");
 	const visited = new Set<number>([start.index]);
 	let here: Port = portsOf(start, w.contentsFor(start))[0];
 	let t = 0;
 	let kinds = 0;
+	const at: (number | null)[] = CHECKPOINTS_H.map(() => null);
 	const dockAll = (port: Port) => {
 		const ports = portsOf(port.record, w.contentsFor(port.record));
 		kinds++; // the first dock, `port`
@@ -431,7 +453,7 @@ function explore(
 				queue.push(n);
 			}
 		}
-		if (!target) return { kinds, seconds: t, exhausted: true };
+		if (!target) return { kinds, seconds: t, exhausted: true, at };
 		const path: SystemRecord[] = [];
 		for (
 			let c: SystemRecord | undefined = target;
@@ -447,8 +469,10 @@ function explore(
 		visited.add(target.index);
 		kinds++; // first arrival
 		here = dockAll(here);
+		for (const [i, h] of CHECKPOINTS_H.entries())
+			if (at[i] === null && t >= h * 3600) at[i] = kinds;
 	}
-	return { kinds, seconds: t, exhausted: false };
+	return { kinds, seconds: t, exhausted: false, at };
 }
 
 console.log(
@@ -468,6 +492,21 @@ for (const hull of ["courier", "explorer"] as const) {
 				1,
 			)} h${ex.length ? `  (${ex.length}/${rows.length} exhausted the component)` : ""}`,
 		);
+		// The rate window by window, so section 5's extrapolation past this
+		// window rests on a shape that is printed rather than assumed.
+		let fromH = 0;
+		const windows = CHECKPOINTS_H.map((h, i) => {
+			const prior = i === 0 ? rows.map(() => 0) : rows.map((r) => r.at[i - 1]);
+			const perWindow = rows.flatMap((r, g) => {
+				const a = prior[g];
+				const b = r.at[i];
+				return a === null || b === null ? [] : [(b - a) / (h - fromH)];
+			});
+			const label = `${fromH}–${h} h ${perWindow.length ? range(perWindow, 0) : "—"}`;
+			fromH = h;
+			return label;
+		});
+		console.log(`       kinds/h by window: ${windows.join("   ")}`);
 	}
 }
 
@@ -575,16 +614,27 @@ console.log(
 	`   courier kills raider: ${courierVsRaider.toFixed(3)} credit; any unarmed target: 0`,
 );
 
-// The three rates. Trade leaves out the capitalised courier arm, which the
-// round-trip pump inflates (section 1: it earns more with memory than without).
-const tradeIn = ARMS.flatMap((arm, i) =>
-	arm.label.startsWith("courier ")
-		? []
-		: [{ arm: arm.label, v: tradeRatesByArm[i] }],
-);
+// The three rates. Trade and combat pool the same arms, and neither takes one
+// the round-trip pump inflates (section 1: it earns more with memory than
+// without) — combat's legs are the trader's legs, so a pumped route is a
+// pumped leg count too. Each arm's kills are priced at that arm's own hull
+// against a raider, so no kill is credited as a hull that did not fly it.
+const pooled = ARMS.flatMap((arm, i) => (arm.pumped ? [] : [{ arm, i }]));
+const tradeIn = pooled.map(({ arm, i }) => ({
+	arm: arm.label,
+	v: tradeRatesByArm[i],
+}));
+const combatIn = pooled.map(({ arm, i }) => {
+	const perKill = credit(arm.hull, "raider");
+	return {
+		arm: arm.label,
+		perKill,
+		kills: pulseKillsByArm[i],
+		v: pulseKillsByArm[i].map((k) => k * perKill),
+	};
+});
 const tradeRate = median(tradeIn.flatMap((a) => a.v));
-const killsRate = median(pulseKillsByArm.flat());
-const combatRate = killsRate * courierVsRaider;
+const combatRate = median(combatIn.flatMap((a) => a.v));
 const exploreRate = median(exploreRatesByArm.flatMap((a) => a.perH));
 
 console.log(
@@ -595,13 +645,14 @@ console.log(
 );
 for (const a of tradeIn) console.log(`       ${a.arm.padEnd(58)} ${list(a.v)}`);
 console.log(`       median ${tradeRate.toFixed(0)} Cr/h`);
-console.log("     combat — pulse kills/h, every arm:");
-ARMS.forEach((arm, i) =>
-	console.log(`       ${arm.label.padEnd(58)} ${list(pulseKillsByArm[i], 2)}`),
-);
 console.log(
-	`       median ${killsRate.toFixed(2)} kills/h × courier-vs-raider ${courierVsRaider.toFixed(3)} = ${combatRate.toFixed(2)} credit/h`,
+	"     combat — pulse kills/h × the arm's own hull-vs-raider credit, the same arms:",
 );
+for (const a of combatIn)
+	console.log(
+		`       ${a.arm.padEnd(58)} ${list(a.kills, 2)}  × ${a.perKill.toFixed(3)} = ${list(a.v, 2)}`,
+	);
+console.log(`       median ${combatRate.toFixed(2)} credit/h`);
 console.log("     exploration — kinds/h, the four explorer arms:");
 for (const a of exploreRatesByArm)
 	console.log(`       ${a.label.padEnd(58)} ${list(a.perH, 1)}`);
@@ -624,9 +675,18 @@ console.log(
 );
 for (const n of rungs)
 	console.log(
-		`   ${String(n).padEnd(6)}${(FOCUSED_HOURS_TO_TOP / RATIO ** (TOP_RUNG - n)).toFixed(2).padStart(11)}${LADDERS.map((l, i) => atRung(tops[i], n).toFixed(l.digits).padStart(22)).join("")}`,
+		`   ${String(n).padEnd(6)}${atRung(FOCUSED_HOURS_TO_TOP, n).toFixed(2).padStart(11)}${LADDERS.map((l, i) => atRung(tops[i], n).toFixed(l.digits).padStart(22)).join("")}`,
 	);
 const kindsPerGalaxy = median(pool.map((p) => p.systems + p.stations));
+const exploreTop = exploreRate * HUMAN_FACTOR * FOCUSED_HOURS_TO_TOP;
+const galaxiesToTop = exploreTop / kindsPerGalaxy;
 console.log(
-	`\n   exploration top ÷ kinds per galaxy (median ${kindsPerGalaxy}) = ${(tops[2] / kindsPerGalaxy).toFixed(2)} galaxies`,
+	`\n   exploration top ÷ kinds per galaxy (median ${kindsPerGalaxy}) = ${galaxiesToTop.toFixed(2)} galaxies`,
 );
+const firstOutOfReach = rungs.find(
+	(n) => atRung(exploreTop, n) > kindsPerGalaxy,
+);
+if (firstOutOfReach !== undefined)
+	console.log(
+		`   ${firstOutOfReach === TOP_RUNG ? `the top rung (${TOP_RUNG}) is` : `rungs ${firstOutOfReach}–${TOP_RUNG} are`} past one galaxy's pool: out of reach without the Galactic Hyperdrive (section 3), since a hull's tank never leaves its galaxy`,
+	);
