@@ -105,14 +105,15 @@ export const FINDER_DEFAULT_BUDGET = 1;
  * **The diameter is a hull's, not the galaxy's, since #554.** The finder
  * projects at the flown hull's tank, and a short tank flies a fragmented graph
  * whose components are long and thin: the worst chain inside one is **38
- * jumps** at the interceptor's 5 LY and 21 at 6 LY, over six world seeds, where
- * the courier's is 15. At the old 16, four of the seven hulls had systems they
- * could reach and the control could never promote.
+ * jumps** at the interceptor's 5 LY, on #185's world seed 1, where the
+ * courier's is 14. At the old 16, four of the seven hulls had systems they could
+ * reach and the control could never promote.
  *
- * 39 clears the measured worst over every purchasable tank by one. The figures
- * are not restated from a transcription: `bun scripts/measure-galaxy-shape.ts
- * tanks` reprints them and fails if the ceiling stops covering them, and
- * `galaxy-finder.test.ts` re-measures the shipped seed at every tank.
+ * 39 clears the measured worst over every purchasable tank by one.
+ * `bun scripts/measure-galaxy-shape.ts tanks` reprints the per-tank diameters
+ * on #185's seeds and fails if the ceiling stops covering them, and
+ * `galaxy-finder.test.ts` re-measures the shipped seed at every tank and seed
+ * 1 at the shortest, which is where the 38 is.
  */
 export const FINDER_MAX_BUDGET = 39;
 

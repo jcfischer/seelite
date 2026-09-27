@@ -47,11 +47,11 @@ import {
 	finderMatches,
 	projectFinder,
 } from "../src/galaxy-finder";
+import { generateContents } from "../src/system";
 
 /** The courier's tank: this instrument models the baseline hull, and the
  *  reach is a hull's since #554 rather than the galaxy's constant. */
 const COURIER_TANK_LY = HULL_SPECS[PLAYER_BASELINE_HULL].tankLy;
-import { generateContents } from "../src/system";
 
 const WORLD_SEED = 0x5ee11e;
 const REPEATS = 24;

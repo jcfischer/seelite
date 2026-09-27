@@ -54,11 +54,11 @@ import {
 	marketStationOf,
 	stationCommodities,
 } from "../src/market";
+import { type Station, generateContents } from "../src/system";
 
 /** The courier's tank: this instrument models the baseline hull, and the
  *  reach is a hull's since #554 rather than the galaxy's constant. */
 const COURIER_TANK_LY = HULL_SPECS[PLAYER_BASELINE_HULL].tankLy;
-import { type Station, generateContents } from "../src/system";
 
 const GALAXY_SEED = 0x5ee11e;
 const GALAXY_INDEX = 0;

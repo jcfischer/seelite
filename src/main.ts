@@ -524,6 +524,7 @@ import {
 	HULL_SPECS,
 	PLAYER_BASELINE_HULL,
 	PURCHASABLE_HULL_IDS,
+	purchasableHullNamed,
 	type HullEnvelope,
 	type HullId,
 	type HullVariantId,
@@ -998,9 +999,7 @@ const PLAYER_HULL: readonly [HullId, HullVariantId] = ((): readonly [
 	// chosen. An unknown or absent id falls back to the baseline rather than
 	// throwing, because a typo in a URL should not be a black screen.
 	const asked = new URLSearchParams(window.location.search).get("hull");
-	const id = (PURCHASABLE_HULL_IDS as readonly string[]).includes(asked ?? "")
-		? (asked as HullId)
-		: PLAYER_BASELINE_HULL;
+	const id = purchasableHullNamed(asked) ?? PLAYER_BASELINE_HULL;
 	// **It says so when it falls back.** Silently flying a courier while the
 	// pilot believes they are judging a freighter is the one way this affordance
 	// could produce a wrong answer, and the whole point of it is a judgement.

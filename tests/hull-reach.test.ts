@@ -43,9 +43,15 @@ import { generateContents } from "../src/system";
 import { newWorld } from "../src/world-state";
 
 const SRC = join(import.meta.dir, "..", "src");
-const sources = readdirSync(SRC)
+/** Every module under `src/`, recursively, as a path relative to it. */
+const sources = (readdirSync(SRC, { recursive: true }) as string[])
 	.filter((f) => f.endsWith(".ts"))
 	.map((f) => ({ file: f, text: readFileSync(join(SRC, f), "utf8") }));
+/** The source with block and line comments blanked, so a docstring may name
+ *  the constant and code may not. Naive about `//` inside a string, which
+ *  can only make the row stricter. */
+const code = (text: string): string =>
+	text.replace(/\/\*[\s\S]*?\*\//g, "").replace(/\/\/[^\n]*/g, "");
 
 const SEED = 20260902;
 const GALAXY = generateGalaxy(SEED, 0);
@@ -54,14 +60,20 @@ const SYSTEMS = GALAXY.systems;
 describe("#554 — no call site reads the galaxy's constant as a hull's", () => {
 	test("only galaxy.ts names JUMP_RANGE_LY in code", () => {
 		// Comments may name it — the docstrings that say what it now means have
-		// to. Code may not: an import is the only way another module reaches it.
-		const importers = sources
+		// to. Code may not, in any form: a named import, `galaxy.JUMP_RANGE_LY`
+		// through a namespace import, or a re-export.
+		const readers = sources
 			.filter(({ file }) => file !== "galaxy.ts")
-			.filter(({ text }) =>
-				/import\s*(type\s*)?\{[^}]*\bJUMP_RANGE_LY\b[^}]*\}/s.test(text),
-			)
+			.filter(({ text }) => /\bJUMP_RANGE_LY\b/.test(code(text)))
 			.map(({ file }) => file);
-		expect(importers).toEqual([]);
+		expect(readers).toEqual([]);
+		// And the row reaches something: the file that owns it does name it.
+		expect(
+			sources.some(
+				({ file, text }) =>
+					file === "galaxy.ts" && /\bJUMP_RANGE_LY\b/.test(code(text)),
+			),
+		).toBe(true);
 	});
 
 	test("the retired single-hull tank and charge constants are gone", () => {
@@ -217,18 +229,15 @@ describe("#554 D5 — the job board draws within the flown hull's reach", () => 
 describe("#554 D4 — the Navigation list marks a system this hull cannot reach", () => {
 	test("a name query for a system cut off at 5 LY reads no route, and routes at 7", () => {
 		const home = startSystem(GALAXY);
-		const find = (tankLy: number, name: string) =>
-			[
-				...(() => {
-					const r = projectFinder(
-						SYSTEMS,
-						home,
-						{ ...finderDefaultFilter(), query: name },
-						{ maxJump: tankLy },
-					);
-					return [...r.inBudget, ...r.beyondRange];
-				})(),
-			].find((row) => row.name === name);
+		const find = (tankLy: number, name: string) => {
+			const r = projectFinder(
+				SYSTEMS,
+				home,
+				{ ...finderDefaultFilter(), query: name },
+				{ maxJump: tankLy },
+			);
+			return [...r.inBudget, ...r.beyondRange].find((row) => row.name === name);
+		};
 		// A system in another component from home at the interceptor's tank:
 		// isolated systems are the plainest such case.
 		const cutOff = SYSTEMS.find(

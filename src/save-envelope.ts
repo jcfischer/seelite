@@ -301,7 +301,15 @@ const fail = (message: string): never => {
 
 /** A new game's commander: at rest, undocked, and a charge the caller names —
  *  the renderer owns the drive charge's session, and a full one is the hull's
- *  `chargeAu` (#554). */
+ *  `chargeAu` (#554).
+ *
+ *  **The boundary moved in one direction and on purpose.** The charge of a
+ *  *new* record is still the caller's. What this module now owns is the
+ *  *ceiling on load*: `parseCommander` clamps a stored tank and charge to the
+ *  record's own hull, because a record written before #554 filled every hull
+ *  to the courier's figures, and the parser is the one place every restore
+ *  passes through. It reads the roster (`hull.ts`, a leaf) and nothing of
+ *  the travel model. */
 export const newCommanderRecord = (
 	hull: HullId,
 	options: {

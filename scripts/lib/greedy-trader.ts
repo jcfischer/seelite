@@ -85,11 +85,11 @@ import {
 	placeBodies,
 	type SystemContents,
 } from "../../src/system";
+import type { Vec3 } from "../../src/vec3";
 
 /** The courier's tank: this instrument models the baseline hull, and the
  *  reach is a hull's since #554 rather than the galaxy's constant. */
 const COURIER_TANK_LY = HULL_SPECS[PLAYER_BASELINE_HULL].tankLy;
-import type { Vec3 } from "../../src/vec3";
 
 // ---------------------------------------------------------------------------
 // The modelled numbers, all of them named

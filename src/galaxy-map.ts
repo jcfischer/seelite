@@ -54,7 +54,7 @@ import {
 	HULL_SPECS,
 	type HullId,
 	PLAYER_BASELINE_HULL,
-	PURCHASABLE_HULL_IDS,
+	purchasableHullNamed,
 } from "./hull";
 import { rosterOf } from "./station-roster";
 import {
@@ -1751,12 +1751,8 @@ export function mountGalaxyMap(): void {
 
 	// `&hull=<id>` draws the chart at that hull's tank; absent or unknown, the
 	// baseline's — spelt out rather than defaulted, as the knowledge below is.
-	const asked = query.get("hull") ?? "";
-	const hull: HullId = (PURCHASABLE_HULL_IDS as readonly string[]).includes(
-		asked,
-	)
-		? (asked as HullId)
-		: PLAYER_BASELINE_HULL;
+	const hull: HullId =
+		purchasableHullNamed(query.get("hull")) ?? PLAYER_BASELINE_HULL;
 
 	const host = el("div");
 	Object.assign(host.style, { position: "fixed", inset: "0" });

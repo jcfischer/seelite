@@ -434,31 +434,45 @@ describe("the budget ceiling covers the galaxy", () => {
 	 * that could promote it: *filtered-out reads as absent*, which is the whole
 	 * failure D7 exists to prevent.
 	 *
-	 * Every origin in every galaxy of the shipped seed, because the worst pair
-	 * is not the start system's and a sample would be a different claim — and
-	 * **at every purchasable hull's tank** since #554, because the finder
-	 * projects at the flown hull's and a short tank's components are long.
+	 * Every origin in every galaxy, because the worst pair is not the start
+	 * system's and a sample would be a different claim — and **at every
+	 * purchasable hull's tank** since #554, because the finder projects at the
+	 * flown hull's and a short tank's components are long.
+	 *
+	 * Two arms. The shipped seed at every tank, and **world seed 1 at the
+	 * shortest tank**, because that is where the ceiling's basis is: #185's
+	 * seed 1 holds the 38-jump chain at the interceptor's 5 LY, and the shipped
+	 * seed reads only 28 there. Without the second arm the ceiling could fall
+	 * to 28 with this row green. ~1.5 s.
 	 */
 	test("no reachable pair needs more jumps than the control can ask for", () => {
 		let worst = 0;
 		let worstAt = "";
-		const tanks = new Set(
-			PURCHASABLE_HULL_IDS.map((id) => HULL_SPECS[id].tankLy),
-		);
-		for (const tank of tanks)
-			for (let index = 0; index < GALAXY_COUNT; index++) {
-				const gx = generateGalaxy(WORLD_SEED, index);
-				for (const from of gx.systems) {
-					const reach = projectJumps(gx.systems, from, tank);
-					for (const to of gx.systems) {
-						const jumps = reach.reach(to)?.jumps;
-						if (jumps !== undefined && jumps > worst) {
-							worst = jumps;
-							worstAt = `${tank} LY g${index} ${from.name}→${to.name}`;
+		const tanks = [
+			...new Set(PURCHASABLE_HULL_IDS.map((id) => HULL_SPECS[id].tankLy)),
+		];
+		const arms = [
+			{ seed: WORLD_SEED, tanks },
+			{ seed: 1, tanks: [Math.min(...tanks)] },
+		];
+		for (const arm of arms) {
+			const galaxies = Array.from({ length: GALAXY_COUNT }, (_, index) =>
+				generateGalaxy(arm.seed, index),
+			);
+			for (const tank of arm.tanks)
+				galaxies.forEach((gx, index) => {
+					for (const from of gx.systems) {
+						const reach = projectJumps(gx.systems, from, tank);
+						for (const to of gx.systems) {
+							const jumps = reach.reach(to)?.jumps;
+							if (jumps !== undefined && jumps > worst) {
+								worst = jumps;
+								worstAt = `seed ${arm.seed} ${tank} LY g${index} ${from.name}→${to.name}`;
+							}
 						}
 					}
-				}
-			}
+				});
+		}
 		// Printed into the failure by being in the message: a bare
 		// `toBeLessThanOrEqual` would say the ceiling was breached and not by
 		// how much or where.
@@ -467,10 +481,8 @@ describe("the budget ceiling covers the galaxy", () => {
 		});
 		expect(worst).toBeLessThanOrEqual(FINDER_MAX_BUDGET);
 		// And the ceiling is not absurdly above it either — a ceiling of 500
-		// would pass the line above while making the control useless. The slack
-		// is wide because the shipped seed is not the worst: at 5 LY it reads
-		// 28 where six seeds read 38, and the ceiling is set on the six.
-		expect(FINDER_MAX_BUDGET).toBeLessThanOrEqual(Math.ceil(1.5 * worst));
+		// would pass the line above while making the control useless.
+		expect(FINDER_MAX_BUDGET).toBeLessThanOrEqual(worst + 4);
 	});
 
 	test("the widest budget admits every reachable system", () => {

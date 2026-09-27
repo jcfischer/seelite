@@ -293,6 +293,18 @@ export const PURCHASABLE_HULL_IDS = [
 ] as const satisfies readonly HullId[];
 
 /**
+ * The purchasable hull a `?hull=` query names, or `null` for none.
+ *
+ * One reader for the flight's `PLAYER_HULL` and the chart workbench, so the
+ * two cannot accept different sets (#554). What to fly on `null` is the
+ * caller's: both fall back to the baseline and say so where they do.
+ */
+export const purchasableHullNamed = (asked: string | null): HullId | null =>
+	asked !== null && (PURCHASABLE_HULL_IDS as readonly string[]).includes(asked)
+		? (asked as HullId)
+		: null;
+
+/**
  * The roster, all twelve.
  *
  * **Twelve and not the seven**, although only seven are purchasable: the five

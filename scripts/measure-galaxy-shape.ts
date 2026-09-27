@@ -59,6 +59,7 @@ import {
 	JUMP_RANGE_LY,
 	MAX_LAYOUT_ATTEMPTS,
 	SYSTEMS_PER_GALAXY,
+	type SystemRecord,
 	clearLayoutCache,
 	isConnected,
 	generateGalaxy,
@@ -703,6 +704,25 @@ function modeSweep(): void {
 	}
 }
 
+/** The worst shortest chain over every ordered pair of one galaxy at
+ *  `maxJump`, and where it is. Unreachable pairs are skipped, so on a
+ *  fragmented graph this is the worst chain *inside* a component. */
+function worstChain(
+	systems: readonly SystemRecord[],
+	maxJump: number,
+): { jumps: number; from: string; to: string } {
+	let worst = { jumps: 0, from: "", to: "" };
+	for (const from of systems) {
+		const reach = projectJumps(systems, from, maxJump);
+		for (const to of systems) {
+			const jumps = reach.reach(to)?.jumps;
+			if (jumps !== undefined && jumps > worst.jumps)
+				worst = { jumps, from: from.name, to: to.name };
+		}
+	}
+	return worst;
+}
+
 /**
  * The galaxy's **jump diameter**: the worst shortest-chain over every ordered
  * pair, swept across world seeds.
@@ -733,17 +753,14 @@ function modeDiameter(): void {
 		let worstForSeed = 0;
 		let where = "";
 		for (let index = 0; index < GALAXY_COUNT; index++) {
-			const gx = generateGalaxy(seed, index);
-			for (const from of gx.systems) {
-				// The galaxy's reach — the courier's tank. `tanks` sweeps the rest.
-				const reach = projectJumps(gx.systems, from, JUMP_RANGE_LY);
-				for (const to of gx.systems) {
-					const jumps = reach.reach(to)?.jumps;
-					if (jumps !== undefined && jumps > worstForSeed) {
-						worstForSeed = jumps;
-						where = `g${index} ${from.name}→${to.name}`;
-					}
-				}
+			// The galaxy's reach — the courier's tank. `tanks` sweeps the rest.
+			const worst = worstChain(
+				generateGalaxy(seed, index).systems,
+				JUMP_RANGE_LY,
+			);
+			if (worst.jumps > worstForSeed) {
+				worstForSeed = worst.jumps;
+				where = `g${index} ${worst.from}→${worst.to}`;
 			}
 		}
 		overall = Math.max(overall, worstForSeed);
@@ -798,6 +815,12 @@ function modeTanks(): void {
 	console.log(
 		"  tank  hulls                          fragmented  outside main  isolated  neighbours     diameter",
 	);
+	// The layout does not depend on the tank, so each galaxy is generated once.
+	const layouts = worldSeeds.flatMap((seed) =>
+		Array.from({ length: GALAXY_COUNT }, (_, index) =>
+			generateGalaxy(seed, index),
+		),
+	);
 	let connectedAtRange = true;
 	let worstDiameter = 0;
 	for (const tank of tanks) {
@@ -810,53 +833,44 @@ function modeTanks(): void {
 		let isolatedCount = 0;
 		let diameter = 0;
 		const means: number[] = [];
-		for (const seed of worldSeeds) {
-			for (let index = 0; index < GALAXY_COUNT; index++) {
-				const gx = generateGalaxy(seed, index);
-				const pos = gx.systems.map((s) => s.pos);
-				const n = pos.length;
-				const adj: number[][] = pos.map(() => []);
-				for (let i = 0; i < n; i++)
-					for (let j = i + 1; j < n; j++) {
-						const dx = pos[i].x - pos[j].x;
-						const dy = pos[i].y - pos[j].y;
-						const dz = pos[i].z - pos[j].z;
-						if (dx * dx + dy * dy + dz * dz <= tankSq) {
-							adj[i].push(j);
-							adj[j].push(i);
+		for (const gx of layouts) {
+			const pos = gx.systems.map((s) => s.pos);
+			const n = pos.length;
+			const adj: number[][] = pos.map(() => []);
+			for (let i = 0; i < n; i++)
+				for (let j = i + 1; j < n; j++) {
+					const dx = pos[i].x - pos[j].x;
+					const dy = pos[i].y - pos[j].y;
+					const dz = pos[i].z - pos[j].z;
+					if (dx * dx + dy * dy + dz * dz <= tankSq) {
+						adj[i].push(j);
+						adj[j].push(i);
+					}
+				}
+			means.push(mean(adj.map((a) => a.length)));
+			isolatedCount += adj.filter((a) => a.length === 0).length;
+			const comp = new Int32Array(n).fill(-1);
+			const sizes: number[] = [];
+			for (let i = 0; i < n; i++) {
+				if (comp[i] !== -1) continue;
+				const c = sizes.length;
+				let size = 0;
+				const queue = [i];
+				comp[i] = c;
+				while (queue.length > 0) {
+					const at = queue.pop() as number;
+					size++;
+					for (const k of adj[at])
+						if (comp[k] === -1) {
+							comp[k] = c;
+							queue.push(k);
 						}
-					}
-				means.push(mean(adj.map((a) => a.length)));
-				isolatedCount += adj.filter((a) => a.length === 0).length;
-				const comp = new Int32Array(n).fill(-1);
-				const sizes: number[] = [];
-				for (let i = 0; i < n; i++) {
-					if (comp[i] !== -1) continue;
-					const c = sizes.length;
-					let size = 0;
-					const queue = [i];
-					comp[i] = c;
-					while (queue.length > 0) {
-						const at = queue.pop() as number;
-						size++;
-						for (const k of adj[at])
-							if (comp[k] === -1) {
-								comp[k] = c;
-								queue.push(k);
-							}
-					}
-					sizes.push(size);
 				}
-				if (sizes.length > 1) fragmented++;
-				outside += n - Math.max(...sizes);
-				for (const from of gx.systems) {
-					const reach = projectJumps(gx.systems, from, tank);
-					for (const to of gx.systems) {
-						const jumps = reach.reach(to)?.jumps;
-						if (jumps !== undefined && jumps > diameter) diameter = jumps;
-					}
-				}
+				sizes.push(size);
 			}
+			if (sizes.length > 1) fragmented++;
+			outside += n - Math.max(...sizes);
+			diameter = Math.max(diameter, worstChain(gx.systems, tank).jumps);
 		}
 		if (tank >= JUMP_RANGE_LY && fragmented > 0) connectedAtRange = false;
 		worstDiameter = Math.max(worstDiameter, diameter);
