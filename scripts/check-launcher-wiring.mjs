@@ -135,6 +135,10 @@ const EXEMPT = new Map([
 		"#99's headed frame-cost instrument; it asserts nothing by design — #98 settled that there is no frame-time floor to gate on — so there are no checks for a watch to report into",
 	],
 	[
+		"measure-audio.mjs",
+		"#541's WebAudio instrument; it prints offline render stats, voice and convolver cost, playbackStats under load and scheduling error under a stall for a receipt, and asserts nothing — it serves its own page, so there is no game for a watch to report on",
+	],
+	[
 		"measure-boot-time.mjs",
 		"#142's headed boot instrument; it prints a timing and asserts nothing, so there are no checks for a watch to report into — it refuses a software renderer rather than gating on a figure",
 	],

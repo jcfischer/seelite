@@ -394,11 +394,36 @@ describe("every script boots through the builder", () => {
 		expect(navigating.length).toBeGreaterThanOrEqual(30);
 	});
 
+	/**
+	 * Navigations that are not to the game, by file and by the exact argument —
+	 * so a game URL built by hand in the same file is still an offender. Each
+	 * entry says why the page is not the game's.
+	 */
+	const NOT_THE_GAME = new Map([
+		[
+			"scripts/measure-audio.mjs",
+			{
+				arg: "`http://localhost:${PORT}/`",
+				reason:
+					"#541's WebAudio instrument serves its own page: the measurement is of the browser, and an AudioWorklet needs a secure context, which about:blank is not",
+			},
+		],
+	]);
+
 	test("no script builds a game URL by hand", () => {
 		const offenders = all.flatMap((f) =>
-			unbuiltNavigations(sourceOf(f)).map((n) => `${f}:${n.line}: ${n.arg}`),
+			unbuiltNavigations(sourceOf(f))
+				.filter((n) => NOT_THE_GAME.get(f)?.arg !== n.arg)
+				.map((n) => `${f}:${n.line}: ${n.arg}`),
 		);
 		expect(offenders).toEqual([]);
+	});
+
+	test("every page that is not the game is still navigated to", () => {
+		// An entry that outlives its navigation would excuse whatever argument
+		// next took that exact text.
+		for (const [f, { arg }] of NOT_THE_GAME)
+			expect(unbuiltNavigations(sourceOf(f)).map((n) => n.arg)).toContain(arg);
 	});
 });
 
