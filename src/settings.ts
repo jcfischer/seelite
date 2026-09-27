@@ -311,7 +311,7 @@ const SCHEMA = {
 		allowed: VOLUME_STEPS,
 		label: "Console",
 		describe: describeVolume,
-		note: "The instruments speaking: alerts, notices and clicks.",
+		note: "The instruments speaking: alerts and clicks.",
 	},
 	volumeMusic: {
 		fallback: 1,
