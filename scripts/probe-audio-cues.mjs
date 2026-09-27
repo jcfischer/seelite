@@ -90,6 +90,115 @@ const MAIN = {
 };
 
 /**
+ * #544's cues and loops, which `origin/main` does not have: centred on this
+ * branch's first render instead (`npm run sounds -- --label after`, seed 552).
+ * So these bands hold the prototype to what the principal listened to, and
+ * move when the ear moves it. Every flight timeline takes the bed's wide band:
+ * each carries noise loops, and most carry clicks, whose count moves with the
+ * seed.
+ */
+const SINCE_544 = {
+	"cruise-engage": {
+		rms: 0.02038,
+		peak: 0.16071,
+		onsetMs: 7.46,
+		hz: 623,
+		noise: 1,
+	},
+	"cruise-drop": {
+		rms: 0.01144,
+		peak: 0.15349,
+		onsetMs: 7.42,
+		hz: 2808,
+		noise: 1,
+	},
+	"flight-idle": {
+		rms: 0.01051,
+		peak: 0.02739,
+		onsetMs: 30.79,
+		hz: 162,
+		bed: 1,
+	},
+	"flight-burn-thrust": {
+		rms: 0.02421,
+		peak: 0.14033,
+		onsetMs: 30.79,
+		hz: 162,
+		bed: 1,
+	},
+	"flight-burn-lever": {
+		rms: 0.03466,
+		peak: 0.14033,
+		onsetMs: 30.79,
+		hz: 162,
+		bed: 1,
+	},
+	"flight-rcs": {
+		rms: 0.01144,
+		peak: 0.03646,
+		onsetMs: 30.79,
+		hz: 162,
+		bed: 1,
+	},
+	"flight-rcs-norcs": {
+		rms: 0.01103,
+		peak: 0.02739,
+		onsetMs: 30.79,
+		hz: 162,
+		bed: 1,
+	},
+	"flight-cruise-shimmer": {
+		rms: 0.02185,
+		peak: 0.18753,
+		onsetMs: 30.79,
+		hz: 162,
+		bed: 1,
+	},
+	"flight-cruise-throb": {
+		rms: 0.0232,
+		peak: 0.18672,
+		onsetMs: 30.79,
+		hz: 162,
+		bed: 1,
+	},
+	"flight-cooling-clicks": {
+		rms: 0.02505,
+		peak: 0.15464,
+		onsetMs: 13.65,
+		hz: 292,
+		bed: 1,
+	},
+	"flight-damaged-clicks": {
+		rms: 0.00999,
+		peak: 0.04674,
+		onsetMs: 30.79,
+		hz: 162,
+		bed: 1,
+	},
+	"flight-damaged-sparse": {
+		rms: 0.00995,
+		peak: 0.02739,
+		onsetMs: 30.79,
+		hz: 162,
+		bed: 1,
+	},
+	"flight-docked": {
+		rms: 0.00496,
+		peak: 0.01233,
+		onsetMs: 66.38,
+		hz: 163,
+		bed: 1,
+	},
+	"flight-stack": {
+		rms: 0.03848,
+		peak: 0.20532,
+		onsetMs: 8.9,
+		hz: 4511,
+		bed: 1,
+	},
+};
+
+/**
  * Each cue's band: rms, peak and centroid as `[low, high]`, and the latest
  * onset in ms. A tone-only cue renders the same waveform on every seed, so
  * its band is ±10%; a noise cue's is wide enough for the seed's own spread
@@ -97,7 +206,7 @@ const MAIN = {
  * as much again, which is the order of a render quantum's rounding.
  */
 const BANDS = Object.fromEntries(
-	Object.entries(MAIN).map(([name, m]) => {
+	Object.entries({ ...MAIN, ...SINCE_544 }).map(([name, m]) => {
 		const [lo, hi] = m.bed ? [0.7, 1.4] : m.noise ? [0.8, 1.25] : [0.9, 1.1];
 		const [plo, phi] = m.bed || m.noise ? [0.6, 1.6] : [0.9, 1.1];
 		const [clo, chi] = m.bed ? [0.6, 1.5] : m.noise ? [0.93, 1.07] : [0.9, 1.1];

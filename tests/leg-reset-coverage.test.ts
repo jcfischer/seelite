@@ -133,6 +133,18 @@ const NOT_RESET: Record<string, string> = {
 		"stale id gives one body the large pair for one frame and then the right " +
 		"one; a jump clears it, because there the id names a body that no longer " +
 		"exists",
+	driveShare:
+		"#544's share of thrust this step, for the flight sound. `step` zeroes it " +
+		"at its top and the flight path sets it, and it is read only after the " +
+		"step — so there is no frame on which a reset's value would be read",
+	lateralShare:
+		"#544's share of thrust this step, for the flight sound. `step` zeroes it " +
+		"at its top and the flight path sets it, and it is read only after the " +
+		"step — so there is no frame on which a reset's value would be read",
+	rotationShare:
+		"#544's share of thrust this step, for the flight sound. `step` zeroes it " +
+		"at its top and the flight path sets it, and it is read only after the " +
+		"step — so there is no frame on which a reset's value would be read",
 };
 
 /**

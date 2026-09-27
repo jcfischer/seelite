@@ -34,7 +34,8 @@
  *
  * ## Not a probe
  *
- * It asserts nothing and exits 0 when it wrote every cue. `sound-set/` is
+ * It asserts nothing and exits 0 when it wrote every cue the served engine can
+ * play; an entry newer than the ref is logged as absent. `sound-set/` is
  * gitignored: before/after is two runs at two refs, not a baseline in git.
  */
 import { execFileSync } from "node:child_process";
@@ -137,6 +138,12 @@ try {
 			seed,
 		});
 		modern ??= r.modern;
+		// Nothing to play on this engine: an entry newer than the ref (#544).
+		// Left out of the manifest, so the listening page shows it as absent.
+		if (r.absent) {
+			console.log(JSON.stringify({ label, name: entry.name, absent: true }));
+			continue;
+		}
 		const file = `${entry.name}.wav`;
 		writeFileSync(join(dir, file), wav16(r.samples, SR));
 		const s = cueStats(r.samples, SR);
@@ -170,7 +177,7 @@ try {
 		JSON.stringify(manifest, null, "\t"),
 	);
 	writeFileSync(join(out, "index.html"), listeningPage(out));
-	console.log(`wrote ${entries.length} cues to ${dir}`);
+	console.log(`wrote ${entries.length} of ${SOUND_SET.length} cues to ${dir}`);
 	console.log(`open ${join(out, "index.html")}`);
 } finally {
 	await browser?.close();

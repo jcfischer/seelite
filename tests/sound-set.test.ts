@@ -4,8 +4,20 @@
  * kind missing from it is a sound nobody banded and nobody listened to.
  */
 import { expect, test } from "bun:test";
-import { SOUND_SET } from "../scripts/lib/sound-set.mjs";
+import { SOUND_SET as SET } from "../scripts/lib/sound-set.mjs";
 import { CUE_BUS, type CueKind } from "../src/audio-cue";
+import { DEFAULT_FLIGHT_ARMS, FLIGHT_SOUND_ARMS } from "../src/flight-sound";
+
+/** One entry, loosely: the list is a script's, and its inferred union has no
+ *  field common to every shape. */
+interface SoundEntry {
+	name: string;
+	cue?: { kind: string };
+	loop?: number;
+	legacy?: readonly unknown[];
+	flight?: { arms: string };
+}
+const SOUND_SET: readonly SoundEntry[] = SET;
 
 /** Kinds with no entry of their own, each with its reason. */
 const NOT_RENDERED: Partial<Record<CueKind, string>> = {
@@ -32,8 +44,33 @@ test("the bed is rendered at idle and at full throttle", () => {
 	expect(loops.some((l) => l > 0 && l < 1)).toBe(true);
 });
 
-test("each entry names the method the engine before #552 exposed", () => {
+test("each entry before #544 names the method the engine before #552 exposed", () => {
 	// The capture renders `origin/main` too, and that engine has no `play`.
+	// #544's cues and loops did not exist there and render as absent.
+	const since544 = new Set<string | undefined>(["cruiseEngage", "cruiseDrop"]);
 	for (const e of SOUND_SET)
-		if (e.loop === undefined) expect(e.legacy?.length).toBeGreaterThan(0);
+		if (e.loop === undefined && !e.flight && !since544.has(e.cue?.kind))
+			expect(e.legacy?.length).toBeGreaterThan(0);
+});
+
+/** Arms with no render, each with its reason. */
+const ARMS_NOT_RENDERED: Record<string, string> = {
+	docksilent: "is silence in a berth; the probe has no band for nothing",
+};
+
+test("every flight arm is flown by some timeline, or says why not", () => {
+	const flown = new Set(
+		SOUND_SET.flatMap((e) =>
+			e.flight ? String(e.flight.arms).split(",").filter(Boolean) : [],
+		),
+	);
+	for (const [arm, values] of Object.entries(FLIGHT_SOUND_ARMS))
+		for (const v of values)
+			if (
+				v !== DEFAULT_FLIGHT_ARMS[arm as keyof typeof DEFAULT_FLIGHT_ARMS] &&
+				!(v in ARMS_NOT_RENDERED)
+			)
+				expect([v, flown.has(v)]).toEqual([v, true]);
+	for (const v of Object.keys(ARMS_NOT_RENDERED))
+		expect(flown.has(v)).toBe(false);
 });

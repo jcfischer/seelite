@@ -34,7 +34,9 @@ export type Cue =
 	| { kind: "ui" }
 	| { kind: "witchspaceHum"; seconds: number }
 	| { kind: "witchspaceSweep" }
-	| { kind: "witchspaceStop" };
+	| { kind: "witchspaceStop" }
+	| { kind: "cruiseEngage" }
+	| { kind: "cruiseDrop" };
 
 export type CueKind = Cue["kind"];
 
@@ -68,6 +70,8 @@ export const CUE_BUS: Record<CueKind, CueBus> = {
 	witchspaceHum: "ship",
 	witchspaceSweep: "ship",
 	witchspaceStop: "ship",
+	cruiseEngage: "ship",
+	cruiseDrop: "ship",
 };
 
 /**
@@ -80,7 +84,11 @@ export type VoiceClass = (typeof VOICE_PRIORITY)[number];
 /** The cues that take a voice from the pool. */
 export type VoicedCueKind = Exclude<
 	CueKind,
-	"witchspaceHum" | "witchspaceSweep" | "witchspaceStop"
+	| "witchspaceHum"
+	| "witchspaceSweep"
+	| "witchspaceStop"
+	| "cruiseEngage"
+	| "cruiseDrop"
 >;
 
 /**
@@ -88,6 +96,9 @@ export type VoicedCueKind = Exclude<
  *
  * The witchspace cues are not pooled: each has one group of its own, which a
  * new cue of the same name replaces and a cancelled charge takes back (#532).
+ * Nor are the cruise cues (#544): one plays per regime change, so there is no
+ * burst for a cap to hold, and in the lowest class a UI click could take the
+ * engage's place.
  *
  * D4 names four classes, and `scoop` and `dock` are in none of them by name.
  * They go in **ui**, the lowest: neither is urgent, and a fight that fills the
@@ -187,4 +198,29 @@ export function hitCues(
 	const aft = step("aft");
 	const hull = step("hull");
 	return { arm: { fore, aft, hull }, cues };
+}
+
+/** The cruise bed's two candidate voices (#544), picked by ear. */
+export type CruiseVoice = "shimmer" | "throb";
+
+/**
+ * The ship's loops for one frame (#544): what `flight-sound.ts` computes from
+ * flight state and `AudioFX.flight` plays. Every level is `0`..`1`; a loop
+ * at 0 is silent. Here rather than in either module because `audio.ts` may
+ * import only this leaf and the voice pool (`tests/headless.test.ts`).
+ */
+export interface FlightMix {
+	/** The always-on hull hum. */
+	readonly hum: number;
+	/** The main drive: louder and brighter together. */
+	readonly drive: number;
+	/** The manoeuvring thrusters. */
+	readonly rcs: number;
+	/** The cruise wind-up, rising with its share done. */
+	readonly spool: number;
+	/** The sustained cruise bed. */
+	readonly cruise: number;
+	readonly cruiseVoice: CruiseVoice;
+	/** Mean hull clicks per second; `audio.ts` places them at random (D6). */
+	readonly clickRate: number;
 }

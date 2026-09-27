@@ -44,7 +44,79 @@ export const SOUND_SET = Object.freeze([
 	},
 	{ name: "bed-idle", seconds: 3, loop: 0.3 },
 	{ name: "bed-full", seconds: 3, loop: 1 },
+	// #544's cues and loops. None has a `legacy` method: nothing like them
+	// existed before #544, so a capture at an older ref renders them as absent.
+	{ name: "cruise-engage", seconds: 1.3, cue: { kind: "cruiseEngage" } },
+	{ name: "cruise-drop", seconds: 1.2, cue: { kind: "cruiseDrop" } },
+	...flightTimelines(),
 ]);
+
+/**
+ * #544's loops, rendered by flying a scripted timeline through the real
+ * `flight-sound.ts` step in the page, so what is heard is what the mapping
+ * gives and not a mix written here.
+ *
+ * `keys` are `[seconds, reading]`: each reading is merged over the one before
+ * it and held, or, with `ramp: true`, its numbers are reached linearly from
+ * the key before. `arms` is a `?flightsound=` value. `cues` are
+ * `[seconds, cue]` played beside the loops.
+ */
+function flightTimelines() {
+	const burn = [
+		[0, { lever: 0, drive: 0 }],
+		[0.5, { lever: 1, drive: 1 }],
+		[3, { drive: 0 }],
+	];
+	const cruise = [
+		[0, { lever: 0.3 }],
+		[0.5, { regime: "spool", spool: 0 }],
+		[3.5, { spool: 1, ramp: true }],
+		[3.5, { regime: "cruise", spool: 0, lever: 1 }],
+		[8.5, { regime: "normal", lever: 0 }],
+	];
+	const line = (name, seconds, arms, keys, cues = []) => ({
+		name,
+		seconds,
+		flight: { arms, keys, cues },
+	});
+	return [
+		line("flight-idle", 4, "", [[0, {}]]),
+		line("flight-burn-thrust", 6, "noclicks", burn),
+		line("flight-burn-lever", 6, "lever,noclicks", burn),
+		line("flight-rcs", 3, "noclicks", [
+			[0, {}],
+			[0.3, { rcs: 1 }],
+			[0.8, { rcs: 0 }],
+			[1.5, { rcs: 0.5 }],
+			[1.7, { rcs: 0 }],
+		]),
+		line("flight-rcs-norcs", 3, "norcs,noclicks", [
+			[0, {}],
+			[0.3, { rcs: 1 }],
+			[0.8, { rcs: 0 }],
+			[1.5, { rcs: 0.5 }],
+			[1.7, { rcs: 0 }],
+		]),
+		line("flight-cruise-shimmer", 10, "noclicks", cruise),
+		line("flight-cruise-throb", 10, "throb,noclicks", cruise),
+		// A long burn, then idle: the hull ticks as it cools.
+		line("flight-cooling-clicks", 14, "", [
+			[0, { lever: 1, drive: 1 }],
+			[6, { lever: 0, drive: 0 }],
+		]),
+		line("flight-damaged-clicks", 8, "", [[0, { hullShare: 0.15 }]]),
+		line("flight-damaged-sparse", 8, "sparse", [[0, { hullShare: 0.15 }]]),
+		line("flight-docked", 3, "", [[0, { docked: true }]]),
+		// The headroom case: every ship loop at full under the loudest cue.
+		line(
+			"flight-stack",
+			3,
+			"lever,noclicks",
+			[[0, { lever: 1, drive: 1, rcs: 1 }]],
+			[[1, { kind: "explosion" }]],
+		),
+	];
+}
 
 /**
  * Render one entry in the page, offline, and hand back its samples.
@@ -101,6 +173,12 @@ export async function renderInPage({
 	);
 	const fx = new AudioFX();
 	const modern = typeof fx.attach === "function";
+	// An entry this engine has nothing to play: a capture at an older ref.
+	if (
+		(entry.flight && typeof fx.flight !== "function") ||
+		(entry.cue && !entry.legacy && !modern)
+	)
+		return { modern, absent: true, sampleRate, live: null, samples: [] };
 	if (modern) {
 		fx.attach(ctx);
 		// The two control arms below patch `AudioFX`'s private `master` and
@@ -167,6 +245,70 @@ export async function renderInPage({
 		at.set(t, (at.get(t) ?? 0) + 1);
 	}
 	let live = null;
+	if (entry.flight) {
+		const { flightSound, flightSoundArms, QUIET_FLIGHT } = await import(
+			"/src/flight-sound.ts"
+		);
+		const { arms, unknown } = flightSoundArms(entry.flight.arms);
+		if (unknown.length || arms === "legacy")
+			throw new Error(`${entry.name}: arms ${entry.flight.arms}`);
+		let reading = {
+			docked: false,
+			regime: "normal",
+			spool: 0,
+			lever: 0,
+			drive: 0,
+			rcs: 0,
+			hullShare: 1,
+		};
+		const readings = entry.flight.keys.map(([t, over]) => {
+			reading = { ...reading, ...over };
+			delete reading.ramp;
+			return [t, reading, over.ramp === true];
+		});
+		const readingAt = (t) => {
+			let i = 0;
+			while (i + 1 < readings.length && readings[i + 1][0] <= t) i++;
+			const next = readings[i + 1];
+			if (!next || !next[2]) return readings[i][1];
+			const [t0, a] = readings[i];
+			const k = (t - t0) / (next[0] - t0);
+			const out = { ...a };
+			for (const key of Object.keys(a))
+				if (typeof a[key] === "number")
+					out[key] = a[key] + (next[1][key] - a[key]) * k;
+			return out;
+		};
+		const dt = 1 / 50;
+		const cues = [...entry.flight.cues];
+		let flight = QUIET_FLIGHT;
+		const random = Math.random;
+		for (let i = 0; i * dt < seconds; i++) {
+			const t = i * dt;
+			ctx.suspend(leadS + t).then(() => {
+				if (typeof seed === "number") Math.random = seeded;
+				try {
+					const step = flightSound(flight, readingAt(t), arms, dt);
+					flight = step.state;
+					for (const cue of step.cues) fx.play(cue);
+					while (cues.length && cues[0][0] <= t) fx.play(cues.shift()[1]);
+					fx.flight(step.mix);
+				} finally {
+					Math.random = random;
+				}
+				ctx.resume();
+			});
+		}
+		const buffer = await ctx.startRendering();
+		return {
+			modern,
+			sampleRate,
+			live: null,
+			samples: Array.from(
+				buffer.getChannelData(0).subarray(Math.round(leadS * sampleRate)),
+			),
+		};
+	}
 	for (const [t, n] of at)
 		ctx.suspend(t).then(() => {
 			for (let i = 0; i < n; i++) playOne();
