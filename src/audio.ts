@@ -40,7 +40,7 @@ import {
 import { VoicePool } from "./voice-pool";
 
 /**
- * `hyperspace()`'s sweep, seconds. Owned here, beside the cue, and read by
+ * The witchspace sweep's length, seconds. Owned here, beside the cue, and read by
  * `witchspace.ts`'s schedule: the cue is pushed to this layer and the layer
  * imports nothing (`tests/headless.test.ts`), so the figure lives with the
  * sound and the schedule reaches in for it.
@@ -92,8 +92,10 @@ export const busGain = (bus: Bus, step: number): number => {
  * **first tenth of a second of a context's life** it attenuates whatever
  * plays: a laser at the context's first sample rendered at 0.43 of its level,
  * 0.68 at 20 ms in, and 1.0000 from 100 ms on. The realtime context opens on
- * the player's first gesture, so only a cue in that first tenth of a second
- * is quieter.
+ * the player's first gesture, and that gesture is a likely moment for a cue —
+ * a first shot on Space — so the first cue of a session can be the quieter
+ * one. No probe covers that window: every render here starts half a second
+ * in. It is a case for the ear, flown.
  */
 export const LIMITER = {
 	thresholdDb: 0,
@@ -273,7 +275,7 @@ export class AudioFX {
 			return;
 		}
 		if (cue.kind === "witchspaceSweep") {
-			this.hyperspace();
+			this.witchspaceSweep();
 			return;
 		}
 		const t = this.ctx.currentTime;
@@ -482,7 +484,7 @@ export class AudioFX {
 	 * group so `stopWitchspace` can take it back — a sweep that played on after
 	 * a cancelled charge would announce a jump that did not happen.
 	 */
-	private hyperspace() {
+	private witchspaceSweep() {
 		const out = this.witchspaceGroup("sweep");
 		if (!out) return;
 		this.tone(out, 90, HYPERSPACE_SWEEP_S, "sawtooth", 0.22, 1400);

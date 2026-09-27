@@ -8,7 +8,17 @@
  */
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { AudioFX } from "../src/audio";
-import { FakeContext, reaches, withFakeWindow } from "./lib/fake-audio";
+import {
+	FakeContext,
+	reaches,
+	unlocked as engine,
+	withFakeWindow,
+} from "./lib/fake-audio";
+
+function unlocked() {
+	const { audio, ctx, master, buses } = engine();
+	return { audio, ctx, master, ship: buses.ship };
+}
 
 withFakeWindow(beforeEach, afterEach);
 
@@ -16,20 +26,9 @@ const HUM = { kind: "witchspaceHum", seconds: 1.6 } as const;
 const SWEEP = { kind: "witchspaceSweep" } as const;
 const STOP = { kind: "witchspaceStop" } as const;
 
-function unlocked() {
-	const audio = new AudioFX();
-	audio.ensure();
-	const ctx = FakeContext.made[0];
-	// The graph `attach` builds first: limiter, master, then the four buses in
-	// `BUSES` order after master. Ship is the one the witchspace cues use (D1).
-	const ship = ctx.gains[1];
-	return { audio, ctx, ship };
-}
-
 describe("the witchspace cues", () => {
 	test("the sweep and the hum each sound through a group of their own, on the ship bus", () => {
-		const { audio, ctx, ship } = unlocked();
-		const master = ctx.gains[0];
+		const { audio, ctx, master, ship } = unlocked();
 		const before = ctx.gains.length;
 		audio.play(HUM);
 		audio.play(SWEEP);

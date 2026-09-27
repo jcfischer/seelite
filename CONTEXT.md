@@ -717,4 +717,6 @@ One of the sound engine's five gain stages — master, ship, combat, console,
 music — each set by its own volume row; every sound cue plays through exactly
 one (`CUE_BUS`), and master carries them all through the limiter (#542 D1).
 Master at Off is the mute.
-_Avoid_: Channel, mixer track
+_Avoid_: Channel, mixer track — *as a name for a gain stage only*. An audio
+buffer's channel (`getChannelData`, a mono context's one channel) is WebAudio's
+own word and stays.

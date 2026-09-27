@@ -53,7 +53,7 @@ import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { createServer } from "vite";
-import { cueStats } from "./lib/audio-stats.mjs";
+import { cueStats, roundStats } from "./lib/audio-stats.mjs";
 import { renderInPage, SOUND_SET } from "./lib/sound-set.mjs";
 import { TREE_ENDPOINT } from "./lib/tree-declaration.mjs";
 import { launchChromium } from "./probe-guard.mjs";
@@ -81,33 +81,36 @@ const git = (...args) =>
 /** The tree to serve: this checkout, or a throwaway worktree at `ref`. */
 let root = HERE;
 let scratch = null;
-if (ref) {
-	// Real path: macOS `tmpdir()` is under a symlinked `/var`. Served from the
-	// unresolved path, the first capture failed in the page with "Unexpected
-	// identifier 'ctx'" — TypeScript reaching the browser — and served from
-	// the resolved one it renders.
-	scratch = realpathSync(mkdtempSync(join(tmpdir(), "seelite-sounds-")));
-	root = join(scratch, "tree");
-	git("worktree", "add", "--detach", root, ref);
-	// The dependencies are this checkout's. The cache is not: see the header.
-	symlinkSync(join(HERE, "node_modules"), join(root, "node_modules"));
-}
-const sha = execFileSync("git", ["rev-parse", "HEAD"], {
-	cwd: root,
-	encoding: "utf8",
-}).trim();
-
-const server = await createServer({
-	root,
-	configFile: join(root, "vite.config.ts"),
-	// Never inside `node_modules`: in a worktree that is a symlink to the
-	// primary checkout's, so two captures would share one cache.
-	cacheDir: join(scratch ?? HERE, ".vite-sounds"),
-	logLevel: "error",
-	server: { port: 0, host: "127.0.0.1", strictPort: false },
-});
+let server = null;
 let browser = null;
+// Opened before the worktree is made, so a ref whose config will not load still
+// has its worktree and scratch folder removed.
 try {
+	if (ref) {
+		// Real path: macOS `tmpdir()` is under a symlinked `/var`. Served from the
+		// unresolved path, the first capture failed in the page with "Unexpected
+		// identifier 'ctx'" — TypeScript reaching the browser — and served from
+		// the resolved one it renders.
+		scratch = realpathSync(mkdtempSync(join(tmpdir(), "seelite-sounds-")));
+		root = join(scratch, "tree");
+		git("worktree", "add", "--detach", root, ref);
+		// The dependencies are this checkout's. The cache is not: see the header.
+		symlinkSync(join(HERE, "node_modules"), join(root, "node_modules"));
+	}
+	const sha = execFileSync("git", ["rev-parse", "HEAD"], {
+		cwd: root,
+		encoding: "utf8",
+	}).trim();
+
+	server = await createServer({
+		root,
+		configFile: join(root, "vite.config.ts"),
+		// Never inside `node_modules`: in a worktree that is a symlink to the
+		// primary checkout's, so two captures would share one cache.
+		cacheDir: join(scratch ?? HERE, ".vite-sounds"),
+		logLevel: "error",
+		server: { port: 0, host: "127.0.0.1", strictPort: false },
+	});
 	await server.listen();
 	const origin = `http://127.0.0.1:${server.httpServer.address().port}`;
 	const declared = await (await fetch(`${origin}${TREE_ENDPOINT}`)).json();
@@ -126,12 +129,14 @@ try {
 	rmSync(dir, { recursive: true, force: true });
 	mkdirSync(dir, { recursive: true });
 	const entries = [];
+	let modern = null;
 	for (const entry of SOUND_SET) {
 		const r = await page.evaluate(renderInPage, {
 			entry,
 			sampleRate: SR,
 			seed,
 		});
+		modern ??= r.modern;
 		const file = `${entry.name}.wav`;
 		writeFileSync(join(dir, file), wav16(r.samples, SR));
 		const s = cueStats(r.samples, SR);
@@ -142,7 +147,9 @@ try {
 			centroidHz: s.centroidHz,
 		};
 		entries.push({ name: entry.name, file, stats });
-		console.log(JSON.stringify({ label, name: entry.name, ...round(stats) }));
+		console.log(
+			JSON.stringify({ label, name: entry.name, ...roundStats(stats) }),
+		);
 	}
 	if (pageErrors.length)
 		throw new Error(
@@ -152,14 +159,7 @@ try {
 		label,
 		ref: ref ?? "(this checkout)",
 		sha,
-		engine: (
-			await page.evaluate(renderInPage, {
-				entry: SOUND_SET[0],
-				sampleRate: 8000,
-			})
-		).modern
-			? "buses (#552)"
-			: "single master (before #552)",
+		engine: modern ? "buses (#552)" : "single master (before #552)",
 		seed,
 		sampleRate: SR,
 		at: new Date().toISOString(),
@@ -174,20 +174,9 @@ try {
 	console.log(`open ${join(out, "index.html")}`);
 } finally {
 	await browser?.close();
-	await server.close();
-	if (scratch) {
-		git("worktree", "remove", "--force", root);
-		rmSync(scratch, { recursive: true, force: true });
-	}
-}
-
-function round(stats) {
-	return {
-		rms: +stats.rms.toFixed(5),
-		peak: +stats.peak.toFixed(5),
-		onsetMs: +stats.onsetMs.toFixed(2),
-		centroidHz: Math.round(stats.centroidHz),
-	};
+	await server?.close();
+	if (scratch && existsSync(root)) git("worktree", "remove", "--force", root);
+	if (scratch) rmSync(scratch, { recursive: true, force: true });
 }
 
 /** Mono 16-bit PCM. The cues peak far below full scale, so 16 bits lose

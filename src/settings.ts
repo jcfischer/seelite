@@ -38,6 +38,15 @@ const TOGGLE = ["on", "off"] as const;
 const VOLUME_STEPS = [0, 0.25, 0.5, 0.75, 1] as const;
 const describeVolume = (v: number) =>
 	v === 0 ? "Off" : `${Math.round(v * 100)}%`;
+/** A volume row: only its label and note differ from the other four. */
+const volumeRow = (label: string, note: string) =>
+	({
+		fallback: 1,
+		allowed: VOLUME_STEPS,
+		label,
+		describe: describeVolume,
+		note,
+	}) as const;
 
 /** One place for the schema, because the default and the validator drift apart
  *  when they are written separately. */
@@ -285,41 +294,23 @@ const SCHEMA = {
 	 * keep. Every row defaults to 100%, which is the mix the game had before
 	 * the buses existed.
 	 */
-	volumeMaster: {
-		fallback: 1,
-		allowed: VOLUME_STEPS,
-		label: "Volume",
-		describe: describeVolume,
-		note: "Everything the game plays. Off is the mute: nothing sounds, and a drive that is already running fades out.",
-	},
-	volumeShip: {
-		fallback: 1,
-		allowed: VOLUME_STEPS,
-		label: "Ship",
-		describe: describeVolume,
-		note: "Your own ship, heard through the hull: the drive, the witchspace charge, the scoop and the docking clamps.",
-	},
-	volumeCombat: {
-		fallback: 1,
-		allowed: VOLUME_STEPS,
-		label: "Combat",
-		describe: describeVolume,
-		note: "Your guns firing and ships coming apart.",
-	},
-	volumeConsole: {
-		fallback: 1,
-		allowed: VOLUME_STEPS,
-		label: "Console",
-		describe: describeVolume,
-		note: "The instruments speaking: alerts and clicks.",
-	},
-	volumeMusic: {
-		fallback: 1,
-		allowed: VOLUME_STEPS,
-		label: "Music",
-		describe: describeVolume,
-		note: "The music, which is not in the ship and not heard through its hull. There is none yet.",
-	},
+	volumeMaster: volumeRow(
+		"Volume",
+		"Everything the game plays. Off is the mute: nothing sounds, and a drive that is already running fades out.",
+	),
+	volumeShip: volumeRow(
+		"Ship",
+		"Your own ship, heard through the hull: the drive, the witchspace charge, the scoop and the docking clamps.",
+	),
+	volumeCombat: volumeRow("Combat", "Your guns firing and ships coming apart."),
+	volumeConsole: volumeRow(
+		"Console",
+		"The instruments speaking: alerts and clicks.",
+	),
+	volumeMusic: volumeRow(
+		"Music",
+		"The music, which is not in the ship and not heard through its hull. There is none yet.",
+	),
 } as const;
 
 /** Which settings row sets which bus. */

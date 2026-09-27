@@ -24,24 +24,11 @@ import {
 	FakeContext,
 	type FakeGain,
 	reaches,
+	unlocked,
 	withFakeWindow,
 } from "./lib/fake-audio";
 
 withFakeWindow(beforeEach, afterEach);
-
-function unlocked() {
-	const audio = new AudioFX();
-	audio.ensure();
-	const ctx = FakeContext.made[0];
-	const [master, ship, combat, console_, music] = ctx.gains;
-	return {
-		audio,
-		ctx,
-		master,
-		limiter: ctx.compressors[0],
-		buses: { ship, combat, console: console_, music },
-	};
-}
 
 describe("the buses", () => {
 	test("each cue bus sums into master, and master reaches the speakers only through the limiter", () => {
@@ -114,8 +101,18 @@ describe("the volume rows", () => {
 		const audio = new AudioFX();
 		audio.setLevel("combat", 0.5);
 		audio.ensure();
-		const combat = FakeContext.made[0].gains[2];
-		expect(combat.gain.value).toBe(0.25);
+		const ctx = FakeContext.made[0];
+		const master = ctx.gains.find((g) =>
+			g.outputs.includes(ctx.compressors[0]),
+		) as FakeGain;
+		const buses = ctx.gains.filter((g) => g.outputs.includes(master));
+		expect(buses.map((b) => b.gain.value).sort()).toEqual([0.25, 1, 1, 1]);
+		// And the one at 0.25 is the bus a combat cue plays through.
+		const before = ctx.sources.length;
+		audio.play({ kind: "laser" });
+		const combat = buses.find((b) => b.gain.value === 0.25) as FakeGain;
+		for (const s of ctx.sources.slice(before))
+			expect(reaches(s, combat)).toBe(true);
 	});
 
 	test("a level set while playing eases the bus there", () => {

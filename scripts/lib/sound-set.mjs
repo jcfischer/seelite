@@ -103,6 +103,11 @@ export async function renderInPage({
 	const modern = typeof fx.attach === "function";
 	if (modern) {
 		fx.attach(ctx);
+		// The two control arms below patch `AudioFX`'s private `master` and
+		// `pool`. `tsc` does not check this file, so a rename there would make
+		// both arms silent no-ops; refuse loudly instead.
+		if ((bypassLimiter && !fx.master) || (uncapped && !fx.pool))
+			throw new Error("AudioFX no longer has the master or pool this reaches");
 		for (const [bus, step] of Object.entries(levels)) fx.setLevel(bus, step);
 		if (uncapped) {
 			const { VOICE_PRIORITY } = await import("/src/audio-cue.ts");

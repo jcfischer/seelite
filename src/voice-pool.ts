@@ -16,7 +16,6 @@
 export interface Voice<C extends string> {
 	readonly id: number;
 	readonly cls: C;
-	readonly startS: number;
 	readonly endS: number;
 }
 
@@ -79,7 +78,8 @@ export class VoicePool<C extends string> {
 			if (!take(victim)) return { admitted: false, id: -1, steal };
 		}
 		const id = this.nextId++;
-		this.voices.push({ id, cls, startS: nowS, endS });
+		// Pushed last, so array order is age order and `oldestOf` reads it.
+		this.voices.push({ id, cls, endS });
 		return { admitted: true, id, steal };
 	}
 }

@@ -4,6 +4,7 @@
  * waveform — the sounds are the principal's to judge and the offline probe's
  * to band. The plumbing is not.
  */
+import { AudioFX } from "../../src/audio";
 
 export class FakeParam {
 	value = 0;
@@ -125,4 +126,28 @@ export function withFakeWindow(
 	afterEach(() => {
 		(globalThis as { window?: unknown }).window = saved;
 	});
+}
+
+/**
+ * An engine unlocked on a fake context, with its graph named. One copy for
+ * every audio test: the buses are found by what they connect to rather than by
+ * creation order, so a reorder inside `attach` moves nothing here.
+ */
+export function unlocked() {
+	const audio = new AudioFX();
+	audio.ensure();
+	const ctx = FakeContext.made.at(-1) as FakeContext;
+	const limiter = ctx.compressors[0];
+	const master = ctx.gains.find((g) => g.outputs.includes(limiter)) as FakeGain;
+	const cueBuses = ctx.gains.filter((g) => g.outputs.includes(master));
+	// The four buses under master, in `BUSES` order after master — the one
+	// ordering this relies on, and `audio-engine.test.ts` checks it by gain.
+	const [ship, combat, console_, music] = cueBuses;
+	return {
+		audio,
+		ctx,
+		master,
+		limiter,
+		buses: { ship, combat, console: console_, music },
+	};
 }

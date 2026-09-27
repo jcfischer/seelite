@@ -12,8 +12,11 @@
  * **Bands, never a hash** (#541, and the map's Constraints). Each cue is
  * rendered with a seeded `Math.random` (`renderInPage`'s `seed`), so one
  * engine gives one waveform; the bands are wide enough to hold across the seeds
- * a later sound node might pick, and narrow enough that a cue routed nowhere,
- * or made louder or softer by a fifth, falls out.
+ * a later sound node might pick. What that width lets through is stated
+ * rather than implied: a tone-only cue (scoop, alert, ui, the hum) falls out
+ * past ±10% in level; a noise one-shot only below ×0.8 or above ×1.25; the
+ * bed only below ×0.7 or above ×1.4. A cue routed nowhere falls out of every
+ * band. A smaller change of level is the capture's to show, not this probe's.
  *
  * **A centroid is a poor ear for pitch.** A square wave's centroid is set by
  * its harmonics up to the 16 kHz cap more than by its fundamental: the laser
@@ -33,14 +36,18 @@
  *   `DynamicsCompressorNode` on master, and a threshold below full scale
  *   lifts every cue by its makeup gain.
  * - **master Off is silence, a bus Off silences only its own cues** — D2.
- * - **a burst holds at the cap** — thirty lasers at one instant render at
- *   about the level of the weapons cap's worth, not thirty; D4 in a browser.
+ * - **a burst holds at the cap** — thirty explosions one render quantum apart
+ *   leave no more voices sounding than the hits cap, and ring on after the
+ *   last one well below the same burst with the caps lifted; D4 in a browser.
+ *   The control arm and the leadless start are reached by patching the
+ *   engine's private `pool` and `master` (`renderInPage`), which `tsc` does
+ *   not see in a script, so `renderInPage` throws if either is missing.
  *
  * `window.__seelite` is not needed and the game is not booted: the page is
  * the dev server's tree declaration, which is enough of an origin for
  * `import("/src/audio.ts")` to be served.
  */
-import { cueStats } from "./lib/audio-stats.mjs";
+import { cueStats, roundStats } from "./lib/audio-stats.mjs";
 import { renderInPage, SOUND_SET } from "./lib/sound-set.mjs";
 import { guardedOrigin, launchChromium, tally } from "./probe-guard.mjs";
 
@@ -128,18 +135,12 @@ try {
 	const first = await render(SOUND_SET[0]);
 	check("the served engine has the offline seam", first.modern === true);
 
+	const rendered = new Map();
 	for (const entry of SOUND_SET) {
 		const s = await render(entry);
+		rendered.set(entry.name, s);
 		if (PRINT)
-			console.log(
-				JSON.stringify({
-					name: entry.name,
-					rms: +s.rms.toFixed(5),
-					peak: +s.peak.toFixed(5),
-					onsetMs: +s.onsetMs.toFixed(2),
-					centroidHz: Math.round(s.centroidHz),
-				}),
-			);
+			console.log(JSON.stringify({ name: entry.name, ...roundStats(s) }));
 		const band = BANDS[entry.name];
 		check(`${entry.name} has a band`, band !== undefined);
 		if (!band) continue;
@@ -156,7 +157,7 @@ try {
 	}
 
 	for (const entry of SOUND_SET) {
-		const on = await render(entry);
+		const on = rendered.get(entry.name);
 		const off = await render(entry, { bypassLimiter: true });
 		const ratio = (a, b) => (b > 0 ? a / b : Number.NaN);
 		const rms = ratio(on.rms, off.rms);
