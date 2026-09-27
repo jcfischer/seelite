@@ -408,8 +408,9 @@ export class AudioFX {
 		const was = this.flightLevels;
 		const moved = (key: keyof FlightMix) =>
 			!was || Math.abs((mix[key] as number) - (was[key] as number)) >= 0.005;
-		// Half the first listen's level: the principal heard it too loud.
-		if (moved("hum")) g.hum.gain.setTargetAtTime(0.014 * mix.hum, t, 0.3);
+		// About the rms of the level the principal settled on after "too loud";
+		// noise through narrow bands passes less than the tone it replaced.
+		if (moved("hum")) g.hum.gain.setTargetAtTime(0.048 * mix.hum, t, 0.3);
 		if (t >= this.driftAt) this.drift(g, t);
 		if (moved("drive")) {
 			const d = mix.drive;
@@ -476,8 +477,8 @@ export class AudioFX {
 		this.driftAt = t + 1.5 + Math.random() * 4;
 		g.humSwell.gain.setTargetAtTime(0.55 + Math.random() * 0.6, t, 1.8);
 		g.humFilter.frequency.setTargetAtTime(170 + Math.random() * 250, t, 2);
-		const cents = (Math.random() * 2 - 1) * 12;
-		for (const osc of g.humOscs) osc.detune.setTargetAtTime(cents, t, 3);
+		g.pumpRate.frequency.setTargetAtTime(1 + Math.random() * 0.7, t, 3);
+		g.fanRate.frequency.setTargetAtTime(9 + Math.random() * 4, t, 3);
 		g.cruiseSwell.gain.setTargetAtTime(0.7 + Math.random() * 0.45, t, 1.2);
 	}
 
@@ -515,8 +516,13 @@ export class AudioFX {
 
 		// The hum: one low sawtooth, rolled off so its harmonics carry it on a
 		// laptop speaker that cannot reach 48 Hz, breathing slowly.
+		// The hum is **machinery**, not mains: the first cut was a 48 Hz
+		// sawtooth and its octave, which the principal heard as "too electric".
+		// Now it is noise through the hull's low resonances, a pump churning at
+		// about a beat a second and a fan's whirr, with no pitched tone in it.
 		// Two breaths at unrelated rates, and `drift` moving level, colour and
-		// pitch at random on top: never one period an ear can lock onto.
+		// the pump and fan rates at random on top: never one period an ear can
+		// lock onto.
 		const hum = gain(out);
 		const humSwell = ctx.createGain();
 		humSwell.gain.value = 1;
@@ -526,10 +532,46 @@ export class AudioFX {
 		humBody.connect(humSwell);
 		const humFilter = filter("lowpass", 260, 0.7);
 		humFilter.connect(humBody);
-		const humOscs = [
-			osc("sawtooth", 48, humFilter),
-			osc("sine", 96.3, humFilter),
-		];
+		// Its own noise, so the hum does not move in step with the drive.
+		const rumble = noiseLoop(ctx, "brown");
+		const hiss = noiseLoop(ctx, "white");
+		// The hull's resonances: narrow bands of the rumble, a plate ringing at
+		// each. Gains lift the narrower bands, which pass less.
+		for (const [hz, q, level] of [
+			[62, 1.6, 1],
+			[138, 3, 0.8],
+			[231, 4.5, 0.6],
+		]) {
+			const band = filter("bandpass", hz, q);
+			const g = ctx.createGain();
+			g.gain.value = level;
+			band.connect(g);
+			g.connect(humFilter);
+			loop(rumble, band);
+		}
+		// The pump: a low band of the rumble, churned by a slow beat.
+		const pumpBand = filter("bandpass", 90, 1.5);
+		const pump = ctx.createGain();
+		pump.gain.value = 0.9;
+		pumpBand.connect(pump);
+		pump.connect(humFilter);
+		loop(rumble, pumpBand);
+		const churn = ctx.createGain();
+		churn.gain.value = 0.7;
+		churn.connect(pump.gain);
+		const pumpRate = osc("sine", 1.3, churn);
+		// The fan: a faint whirr, beating at its blade rate. After the lowpass
+		// the hum's colour drift sweeps over it, so it comes and goes.
+		const fanBand = filter("bandpass", 420, 6);
+		const fan = ctx.createGain();
+		fan.gain.value = 0.5;
+		fanBand.connect(fan);
+		fan.connect(humBody);
+		loop(hiss, fanBand);
+		const blades = ctx.createGain();
+		blades.gain.value = 0.4;
+		blades.connect(fan.gain);
+		const fanRate = osc("sine", 11, blades);
 		for (const [rate, depth] of [
 			[0.13, 0.22],
 			[0.047, 0.18],
@@ -621,7 +663,8 @@ export class AudioFX {
 			hum,
 			humSwell,
 			humFilter,
-			humOscs,
+			pumpRate,
+			fanRate,
 			drive,
 			driveFilter,
 			driveTone,
@@ -961,7 +1004,8 @@ interface FlightGraph {
 	cruiseSwell: GainNode;
 	humSwell: GainNode;
 	humFilter: BiquadFilterNode;
-	humOscs: OscillatorNode[];
+	pumpRate: OscillatorNode;
+	fanRate: OscillatorNode;
 }
 
 /**
