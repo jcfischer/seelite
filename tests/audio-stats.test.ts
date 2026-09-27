@@ -48,7 +48,11 @@ test("the centroid of a pure tone is the tone", () => {
 	expect(Math.abs(s.centroidHz - 1000)).toBeLessThan(50);
 });
 
-/** A falling sweep, 4 kHz to 500 Hz over 140 ms, as `laser()` slides. */
+/**
+ * A falling sine sweep, 4 kHz to 500 Hz over 140 ms. A stand-in with the
+ * *shape* of `laser()`'s slide, not its figures: the cue slides a square from
+ * 880 Hz to 180 Hz, and its harmonics are the next test's subject.
+ */
 const chirp = (sr: number) => {
 	const x = new Float32Array(sr / 2);
 	const start = Math.round(sr * 0.05);
@@ -62,7 +66,8 @@ const chirp = (sr: number) => {
 };
 
 // The first harness read one cue, `laser()`'s square sweep, at 4861 Hz at
-// 48 kHz and 4482 Hz at 44.1 kHz. Two causes, and a test each.
+// 48 kHz and 4482 Hz at 44.1 kHz. Two causes can move a centroid with the
+// rate, and each has a test on a signal built to show it alone.
 
 test("the centroid of a sweep does not move with the sample rate", () => {
 	// A window of fixed *samples* covers a different stretch of a sweep at each
@@ -90,9 +95,8 @@ const square = (sr: number, hz: number) => {
 test("the centroid of a harmonic-rich tone does not move with the sample rate", () => {
 	// A band-limited oscillator carries harmonics up to Nyquist, so a spectrum
 	// summed to Nyquist has a different set at 48 kHz than at 44.1: the square
-	// here reads far apart that way, and the larger part of the first harness's
-	// gap was this rather than the window. The centroid stops at a fixed
-	// frequency below both Nyquists; the uncapped arm runs beside it.
+	// here reads far apart that way. The centroid stops at a fixed frequency
+	// below both Nyquists; the uncapped arm runs beside it.
 	const apart = (opts: object) => {
 		const a = cueStats(square(48000, 880), 48000, opts).centroidHz;
 		const b = cueStats(square(44100, 880), 44100, opts).centroidHz;

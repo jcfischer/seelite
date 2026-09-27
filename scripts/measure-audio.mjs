@@ -16,8 +16,8 @@
  * Modes: `cues`, `voices`, `convolver`, `realtime`, `clock`, `latency`,
  * `unlock`, `gpucal`. No dev server: the script serves its own page, because
  * nothing here is about the game's build — it is about the browser the game
- * runs in. It launches through `launchChromium`, so the lane it prints is the
- * lane `probe-guard` asserted.
+ * runs in. It launches through `launchChromium`, and the lane it prints is
+ * derived from the same two switches `probeLaunchOptions` reads.
  *
  * ## Not a probe, and not a gate
  *
@@ -103,8 +103,14 @@ const MODES = [
  * `worklet-global` arm runs it beside the others, so what that costs is
  * reprinted rather than remembered.
  */
-const WORKLET = `
-class FmVoices extends AudioWorkletProcessor {
+/**
+ * One voice class, written once and emitted twice. The two differ only in
+ * `sr`, the expression every inner-loop use of the sample rate reads: a local
+ * copied from the constructor, or the global. A hand-kept second copy could
+ * drift from the first and skew the comparison it exists for.
+ */
+const voiceClass = (name, sr) => `
+class ${name} extends AudioWorkletProcessor {
 	constructor(opts) {
 		super();
 		this.n = opts.processorOptions.voices;
@@ -118,16 +124,16 @@ class FmVoices extends AudioWorkletProcessor {
 	process(_in, outs) {
 		const out = outs[0][0]; const L = out.length; const n = this.n; const sr = this.sr;
 		for (let s = 0; s < L; s++) {
-			const time = (this.t + s) / sr; let acc = 0;
+			const time = (this.t + s) / ${sr}; let acc = 0;
 			for (let v = 0; v < n; v++) {
 				const f = this.f[v];
-				this.mph[v] += (f * 2) / sr;
+				this.mph[v] += (f * 2) / ${sr};
 				const m = Math.sin(2 * Math.PI * this.mph[v] + 0.7 * this.fb[v]);
 				this.fb[v] = m;
-				this.ph[v] += f / sr;
+				this.ph[v] += f / ${sr};
 				const c = Math.sin(2 * Math.PI * this.ph[v] + 2 * m);
 				const cut = 400 + 300 * Math.sin(2 * Math.PI * 0.5 * time + v);
-				const g = 2 * Math.sin((Math.PI * cut) / sr);
+				const g = 2 * Math.sin((Math.PI * cut) / ${sr});
 				this.lp[v] += g * this.bp[v];
 				this.bp[v] += g * (c - this.lp[v] - 0.5 * this.bp[v]);
 				acc += this.lp[v];
@@ -138,39 +144,10 @@ class FmVoices extends AudioWorkletProcessor {
 		return true;
 	}
 }
+`;
+const WORKLET = `${voiceClass("FmVoices", "sr")}
 registerProcessor("fm-voices", FmVoices);
-class FmVoicesGlobal extends AudioWorkletProcessor {
-	constructor(opts) {
-		super();
-		this.n = opts.processorOptions.voices;
-		this.ph = new Float64Array(this.n); this.mph = new Float64Array(this.n);
-		this.fb = new Float64Array(this.n); this.lp = new Float64Array(this.n);
-		this.bp = new Float64Array(this.n); this.f = new Float64Array(this.n);
-		for (let i = 0; i < this.n; i++) this.f[i] = 110 * (1 + (i % 12) / 12);
-		this.t = 0;
-	}
-	process(_in, outs) {
-		const out = outs[0][0]; const n = this.n;
-		for (let s = 0; s < out.length; s++) {
-			const time = (this.t + s) / sampleRate; let acc = 0;
-			for (let v = 0; v < n; v++) {
-				this.mph[v] += (this.f[v] * 2) / sampleRate;
-				const m = Math.sin(2 * Math.PI * this.mph[v] + 0.7 * this.fb[v]);
-				this.fb[v] = m;
-				this.ph[v] += this.f[v] / sampleRate;
-				const c = Math.sin(2 * Math.PI * this.ph[v] + 2 * m);
-				const cut = 400 + 300 * Math.sin(2 * Math.PI * 0.5 * time + v);
-				const g = 2 * Math.sin((Math.PI * cut) / sampleRate);
-				this.lp[v] += g * this.bp[v];
-				this.bp[v] += g * (c - this.lp[v] - 0.5 * this.bp[v]);
-				acc += this.lp[v];
-			}
-			out[s] = acc * (0.5 / n);
-		}
-		this.t += out.length;
-		return true;
-	}
-}
+${voiceClass("FmVoicesGlobal", "sampleRate")}
 registerProcessor("fm-voices-global", FmVoicesGlobal);
 `;
 
@@ -441,6 +418,15 @@ function pageLib() {
 			(ctx.currentTime - c0) / ((performance.now() - p0) / 1000);
 		iters = 0;
 		busyMs = 0;
+		// A context that never ran reads 0 underruns, which is the figure a
+		// pass would print. It happened once (#541): in one run, 8 of 9 cells
+		// had a clock that stood still, 512 voices among them, and read clean.
+		// That run served its page from 127.0.0.1; a later 127.0.0.1 run and
+		// every localhost run did not, so the cause is not known.
+		if (clockRatio < 0.05)
+			throw new Error(
+				`context ${ctx.state}, clock at ${clockRatio.toFixed(3)} of wall time: no row`,
+			);
 		const delta = {};
 		for (const k of ["underrunEvents", "underrunDuration", "totalDuration"])
 			if (k in after) delta[k] = after[k] - before[k];
@@ -566,6 +552,22 @@ if (!MODES.includes(mode)) {
 	process.exit(2);
 }
 
+/**
+ * The lane, from the two switches `probeLaunchOptions` reads. It honours a
+ * window only on the hardware lane, so `WINDOW=visible` without it would
+ * launch the headless shell under a name that says otherwise: refused.
+ */
+const visible = process.env.WINDOW === PROBE_WINDOW_VISIBLE;
+if (visible && !probeRendererMode()) {
+	console.error("WINDOW=visible needs SEELITE_PROBE_RENDERER=hardware");
+	process.exit(2);
+}
+const lane = !probeRendererMode()
+	? "cpu-headless"
+	: visible
+		? "gpu-visible"
+		: "gpu-windowless";
+
 let seed = SEED;
 const rnd = () => {
 	seed = (seed + 0x6d2b79f5) | 0;
@@ -629,15 +631,13 @@ const summarise = (rows, keyOf, fields) => {
 const page = `<!doctype html><meta charset="utf-8"><title>measure-audio</title>
 <body style="margin:0;background:#000"><script src="/lib.js"></script></body>`;
 const lib = `window.cueStats = ${cueStats};\n(${pageLib})();`;
+const ROUTES = new Map([
+	["/", ["text/html", page]],
+	["/lib.js", ["text/javascript", lib]],
+	["/worklet.js", ["text/javascript", WORKLET]],
+]);
 const server = createServer((req, res) => {
-	const body =
-		req.url === "/"
-			? ["text/html", page]
-			: req.url === "/lib.js"
-				? ["text/javascript", lib]
-				: req.url === "/worklet.js"
-					? ["text/javascript", WORKLET]
-					: null;
+	const body = ROUTES.get(req.url);
 	if (!body) {
 		res.writeHead(404);
 		res.end();
@@ -645,16 +645,10 @@ const server = createServer((req, res) => {
 	}
 	res.writeHead(200, { "content-type": body[0] });
 	res.end(body[1]);
-}).listen(PORT);
+}).listen(PORT, "localhost");
 
 // Every mode but `unlock` lifts the autoplay rule, so a context can start
 // without scripting a gesture; `unlock` is the mode that asks about the rule.
-const visible = process.env.WINDOW === PROBE_WINDOW_VISIBLE;
-const lane = !probeRendererMode()
-	? "cpu-headless"
-	: visible
-		? "gpu-visible"
-		: "gpu-windowless";
 const browser = await launchChromium({
 	...(visible ? { probeWindow: PROBE_WINDOW_VISIBLE } : {}),
 	args: mode === "unlock" ? [] : ["--autoplay-policy=no-user-gesture-required"],
