@@ -8,7 +8,13 @@ import { expect, test } from "bun:test";
 import { cueStats } from "../scripts/lib/audio-stats.mjs";
 
 /** A sine of `amp` at `hz`, silent until `startS`, `seconds` long. */
-const sine = (sr: number, hz: number, amp: number, startS: number, seconds = 1) => {
+const sine = (
+	sr: number,
+	hz: number,
+	amp: number,
+	startS: number,
+	seconds = 1,
+) => {
 	const x = new Float32Array(Math.round(sr * seconds));
 	const start = Math.round(sr * startS);
 	for (let i = start; i < x.length; i++)
