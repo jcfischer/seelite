@@ -4194,7 +4194,8 @@ class Game {
 			if (this.audio.silent) return;
 			const ctx = this.audio.context;
 			const bus = this.audio.musicInput;
-			if (ctx && bus) void this.music.attach(ctx, bus);
+			// A failed load is kept in `music.errors`, and the next attach retries.
+			if (ctx && bus) this.music.attach(ctx, bus).catch(() => {});
 			window.removeEventListener("pointerdown", unlockAudio);
 			window.removeEventListener("keydown", unlockAudio);
 		};

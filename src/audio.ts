@@ -230,8 +230,13 @@ export class AudioFX {
 		return this.buses?.music ?? null;
 	}
 
-	/** The context the engine is built into, once there is one: what the
-	 *  music synth (#560) loads its worklet into. */
+	/**
+	 * The context the engine is built into, once there is one: what the music
+	 * synth (#560) loads its worklet into, and for that only. A node built in
+	 * it and connected anywhere but a bus is a level beside the settings rows,
+	 * which #542 D1 rules out; the synth connects to `musicInput` and nowhere
+	 * else (`tests/music-controller.test.ts`).
+	 */
 	get context(): BaseAudioContext | null {
 		return this.ctx;
 	}

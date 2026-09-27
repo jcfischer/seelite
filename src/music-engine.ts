@@ -131,6 +131,7 @@ export class MusicEngine implements NoteSink, VoiceGain {
 			case "play": {
 				const ix = this.find(cmd.id);
 				const line = this.line(now, cmd.at);
+				if (this.again(ix, line, cmd.section)) return;
 				const lead = this.slots[this.lead];
 				if (lead?.player.playing) lead.player.stopAt(line);
 				this.begin(ix, line, cmd.section);
@@ -140,9 +141,10 @@ export class MusicEngine implements NoteSink, VoiceGain {
 			case "crossfade": {
 				const ix = this.find(cmd.to);
 				const line = this.line(now, cmd.at);
+				if (this.again(ix, line, cmd.section)) return;
 				const len = fade(cmd.fadeS);
 				const lead = this.slots[this.lead];
-				if (lead?.player.playing && this.lead !== ix) {
+				if (lead?.player.playing) {
 					lead.gain.set(0, line, len);
 					lead.haltAt = line + len;
 				}
@@ -286,6 +288,21 @@ export class MusicEngine implements NoteSink, VoiceGain {
 	private line(now: number, q: Quantum): number {
 		const lead = this.playingLead();
 		return lead ? lead.player.lineAfter(now, q) : now;
+	}
+
+	/**
+	 * A start or crossfade naming the song already playing (sage round 1):
+	 * restarted in place, its bar line moved into the future and the rest of
+	 * the bar went unheard; faded against itself, it faded to nothing. It is a
+	 * jump instead — to `section`, or back to the top — on the same line.
+	 * Returns whether it handled the move.
+	 */
+	private again(ix: number, line: number, section?: string): boolean {
+		const lead = this.playingLead();
+		if (!lead || this.lead !== ix) return false;
+		lead.player.jumpAt(line, section ?? 0);
+		lead.gain.reset(1);
+		return true;
 	}
 
 	private begin(ix: number, line: number, section?: string) {

@@ -230,6 +230,9 @@ export class Player {
 	private scaleStart = 0;
 	private scaleBars = 0;
 	private readonly pending: Pending[] = [];
+	/** `lengthOf`'s tempo at a bar's line and end. */
+	private tempo0 = 0;
+	private tempo1 = 0;
 
 	constructor(
 		readonly song: CompiledSong,
@@ -317,7 +320,8 @@ export class Player {
 
 	/** Go to the song's resolve section at `frame`; the loop stops holding. */
 	resolveAt(frame: number) {
-		if (this.song.resolve < 0) return;
+		if (this.song.resolve < 0)
+			throw new Error(`music: ${this.song.name} has no resolve section`);
 		this.queue(frame, "jump", this.song.resolve, true);
 	}
 
@@ -344,14 +348,18 @@ export class Player {
 		section: number,
 		resolve: boolean,
 	) {
-		if (section < 0) return;
 		this.pending.push({ frame, kind, section, resolve, scale: 1, rampBars: 0 });
 	}
 
+	/** A section's index, refusing one the song does not have by name: a jump
+	 *  that dropped it in silence left a score's author no signal (sage round
+	 *  1), where a bad section on `play` and a bad part on `stem` both throw. */
 	private indexOf(section: string | number): number {
-		return typeof section === "number"
-			? section
-			: this.song.sectionIndex(section);
+		const ix =
+			typeof section === "number" ? section : this.song.sectionIndex(section);
+		if (!(ix >= 0 && ix < this.song.sections.length))
+			throw new Error(`music: ${this.song.name} has no section ${section}`);
+		return ix;
 	}
 
 	/**
@@ -412,24 +420,24 @@ export class Player {
 		this.bar = bar;
 		this.barStart = frame;
 		this.cursor = 0;
-		const s = this.song.sections[section];
-		const scoreBar = s.scoreBar + bar;
-		this.b0 =
-			bpmAt(this.song.tempo, scoreBar, false) * this.scaleAt(this.barsPlayed);
-		this.b1 =
-			bpmAt(this.song.tempo, scoreBar, true) *
-			this.scaleAt(this.barsPlayed + 1);
-		const B = this.song.beatsPerBar;
-		this.barLen = this.sampleRate * beatSeconds(this.b0, this.b1, B, B);
+		this.barLen = this.lengthOf(section, bar, this.barsPlayed);
+		this.b0 = this.tempo0;
+		this.b1 = this.tempo1;
 	}
 
-	/** A bar's length, for `lineAfter`'s walk: `enter`'s arithmetic. */
+	/**
+	 * The `n`th bar played, at `(section, bar)`: its length in frames, and its
+	 * tempo at the line and at its end in `tempo0` and `tempo1`. The one copy
+	 * of that arithmetic, for `enter` and for `lineAfter`'s walk, so the walk
+	 * cannot drift from the playhead (sage round 1). Scratch fields rather
+	 * than a returned pair, so neither allocates.
+	 */
 	private lengthOf(section: number, bar: number, n: number): number {
 		const scoreBar = this.song.sections[section].scoreBar + bar;
-		const b0 = bpmAt(this.song.tempo, scoreBar, false) * this.scaleAt(n);
-		const b1 = bpmAt(this.song.tempo, scoreBar, true) * this.scaleAt(n + 1);
+		this.tempo0 = bpmAt(this.song.tempo, scoreBar, false) * this.scaleAt(n);
+		this.tempo1 = bpmAt(this.song.tempo, scoreBar, true) * this.scaleAt(n + 1);
 		const B = this.song.beatsPerBar;
-		return this.sampleRate * beatSeconds(b0, b1, B, B);
+		return this.sampleRate * beatSeconds(this.tempo0, this.tempo1, B, B);
 	}
 
 	/** The tempo scale at the line that begins the `n`th bar played. */

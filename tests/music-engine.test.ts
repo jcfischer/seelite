@@ -100,6 +100,48 @@ describe("starting", () => {
 		expect(r.heard[0]).toEqual({ id: "a", frame: 1280, part: "a" });
 	});
 
+	test("playing the song that plays moves it on the line and keeps its bar", () => {
+		// Sage round 1: restarting it in place moved its bar line into the
+		// future, and the rest of the current bar was never heard.
+		const r = rig();
+		r.send({ type: "play", id: "a", at: "bar" });
+		r.until(30000);
+		r.send({ type: "play", id: "a", section: "B", at: "bar" });
+		r.until(BAR + 30000);
+		expect(r.heard.map((h) => h.frame)).toEqual([
+			0,
+			24000,
+			48000,
+			72000,
+			BAR,
+			BAR + 24000,
+		]);
+		expect(r.heard.at(-1)?.part).toBe("a2");
+		// And a crossfade to it is the same move, not a fade against itself.
+		r.send({ type: "crossfade", to: "a", section: "A", at: "bar", fadeS: 1 });
+		r.until(2 * BAR + 30000);
+		expect(r.heard.find((h) => h.frame === 2 * BAR)?.part).toBe("a");
+		expect(r.e.gain(0, 0, 2 * BAR + 100)).toBeCloseTo(MUSIC_HEADROOM, 9);
+	});
+
+	test("a jump to a section the song does not have is refused by name", () => {
+		// Sage round 1: it was dropped in silence, where its siblings throw.
+		const r = rig();
+		r.send({ type: "play", id: "a", at: "bar" });
+		expect(() => r.send({ type: "jump", section: "Q", at: "bar" })).toThrow(
+			/Q/,
+		);
+		const plain = new MusicEngine(SR);
+		plain.command(
+			{ type: "load", id: "p", song: { ...song("p", 60), resolve: undefined } },
+			0,
+		);
+		plain.command({ type: "play", id: "p", at: "bar" }, 0);
+		expect(() => plain.command({ type: "resolve", at: "bar" }, 0)).toThrow(
+			/resolve/,
+		);
+	});
+
 	test("a start names its section", () => {
 		const r = rig();
 		r.send({ type: "play", id: "a", section: "B", at: "bar" });

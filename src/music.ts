@@ -33,16 +33,39 @@ export class Music {
 	private readonly held: MusicCommand[] = [];
 	private whenReady: Promise<void> | null = null;
 	private syncs = 0;
-	private readonly waiting = new Map<number, () => void>();
-	/** Every command the worklet refused, in order, with its reason. */
+	private readonly waiting = new Map<
+		number,
+		{ resolve: () => void; reject: (e: Error) => void }
+	>();
+	/** Every command the worklet refused, in order, with its reason, and a
+	 *  worklet that failed to load. */
 	readonly errors: string[] = [];
 
 	/**
-	 * Load the worklet into `ctx` and connect it to `out` — the music bus. Once
-	 * per instance; a second call returns the first call's promise.
+	 * Load the worklet into `ctx` and connect it to `out` — the music bus. A
+	 * second call returns the first call's promise while it stands.
+	 *
+	 * **A failed load is recorded and can be retried** (sage round 1). Its
+	 * reason goes to `errors`, every `sync` waiting on it is rejected rather
+	 * than left hanging, and the next `attach` tries again; commands sent
+	 * meanwhile stay held for it. The promise still rejects, for a caller that
+	 * awaits it.
 	 */
 	attach(ctx: BaseAudioContext, out: AudioNode): Promise<void> {
-		this.whenReady ??= ctx.audioWorklet.addModule(workletUrl).then(() => {
+		this.whenReady ??= this.loadWorklet(ctx, out).catch((err: unknown) => {
+			const e = err instanceof Error ? err : new Error(String(err));
+			this.errors.push(`the worklet did not load: `);
+			console.warn(`music: the worklet did not load: `);
+			for (const w of this.waiting.values()) w.reject(e);
+			this.waiting.clear();
+			this.whenReady = null;
+			throw e;
+		});
+		return this.whenReady;
+	}
+
+	private loadWorklet(ctx: BaseAudioContext, out: AudioNode): Promise<void> {
+		return ctx.audioWorklet.addModule(workletUrl).then(() => {
 			const node = new AudioWorkletNode(ctx, MUSIC_PROCESSOR, {
 				numberOfInputs: 0,
 				numberOfOutputs: 1,
@@ -50,7 +73,7 @@ export class Music {
 			});
 			node.port.onmessage = (e: MessageEvent<MusicReport>) => {
 				if (e.data?.type === "synced") {
-					this.waiting.get(e.data.token)?.();
+					this.waiting.get(e.data.token)?.resolve();
 					this.waiting.delete(e.data.token);
 					return;
 				}
@@ -62,7 +85,6 @@ export class Music {
 			this.node = node;
 			for (const cmd of this.held.splice(0)) node.port.postMessage(cmd);
 		});
-		return this.whenReady;
 	}
 
 	/** True once the worklet is running and commands go straight to it. */
@@ -84,8 +106,8 @@ export class Music {
 	 */
 	sync(): Promise<void> {
 		const token = ++this.syncs;
-		const answered = new Promise<void>((resolve) =>
-			this.waiting.set(token, resolve),
+		const answered = new Promise<void>((resolve, reject) =>
+			this.waiting.set(token, { resolve, reject }),
 		);
 		this.send({ type: "sync", token });
 		return answered;

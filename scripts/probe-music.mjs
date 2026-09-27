@@ -12,10 +12,11 @@
  *
  * **Bands, never a hash** (#541). The worklet draws its noise from its own
  * stream, so one engine renders one waveform, but a hash would hold only
- * within one engine. Every onset below is a band on the **sample index**,
+ * within one engine. The onsets below are read on the **sample index**,
  * measured against the first note of the same render: the render's own start
- * moves with where the offline suspend lands, and a band on the difference
- * does not.
+ * moves with where the offline suspend lands, and the difference does not.
+ * They are exact frames, not bands: nothing noisy stands between the line and
+ * the first sample a voice writes.
  *
  * What each check is evidence for:
  *
@@ -27,10 +28,11 @@
  * - **a start and a crossfade land on the bar line, to the sample** — D5.
  *   Two probe songs written here: a low pulse on the first beat of every
  *   second bar, and a noise burst on every bar. The second is asked for in
- *   the pulse's first bar and must first sound on its second bar line.
+ *   the pulse's first bar and must first sound on its second bar line: on
+ *   the line's frame for a start, one frame after it for a crossfade.
  *   **Each has a control that can fail it**: the same request with nothing
  *   playing starts when it arrives, a second earlier, and the row shows that
- *   start falls outside the band.
+ *   start is on neither frame.
  * - **after a crossfade the tail has the new song's colour** — the band row
  *   for that render reads the waltz intro's centroid, so the handover is read
  *   on a window long after the fade, beside each song alone.
@@ -79,12 +81,12 @@ const BAR = 2 * SR;
  * render quantum and a half beside it.
  */
 const RENDERED = {
-	"music-waltz": { rms: 0.01249, peak: 0.11265, hz: 3970 },
-	"music-march": { rms: 0.01446, peak: 0.09774, hz: 1743 },
-	"music-crossfade": { rms: 0.01392, peak: 0.11073, hz: 3970 },
-	"music-stems": { rms: 0.01133, peak: 0.0756, hz: 542 },
-	"music-stop-fade": { rms: 0.01105, peak: 0.11073, hz: 3970 },
-	"music-tempo": { rms: 0.01551, peak: 0.10434, hz: 1743 },
+	"music-waltz": { rms: 0.01246, peak: 0.10398, hz: 3970 },
+	"music-march": { rms: 0.01469, peak: 0.10292, hz: 1777 },
+	"music-crossfade": { rms: 0.01371, peak: 0.10148, hz: 3970 },
+	"music-stems": { rms: 0.01124, peak: 0.08342, hz: 542 },
+	"music-stop-fade": { rms: 0.01094, peak: 0.10148, hz: 3970 },
+	"music-tempo": { rms: 0.01566, peak: 0.10292, hz: 1777 },
 };
 const ONSET_MAX_MS = 12;
 
@@ -121,9 +123,10 @@ const BURST = {
 
 /** Where the second song is asked for: in the pulse's first bar. */
 const ASK_S = 0.9;
-/** How far past its line a note may first sound, in frames: 0 for a start,
- *  1 for a crossfade, whose gain is 0 on the line itself. */
-const ONSET_BAND = [0, 1];
+/** How far past its line each note must first sound, in frames — exactly: 0
+ *  for a start, 1 for a crossfade, whose gain is 0 on the line itself. One
+ *  band for both let a start one frame late pass (sage round 1). */
+const ONSET_AFTER_LINE = { play: 0, crossfade: 1 };
 
 const browser = await launchChromium();
 const { check, watch, exit } = tally();
@@ -201,7 +204,7 @@ try {
 		}
 		return e > 0 ? Math.sqrt(s / e) : 0;
 	};
-	const inBand = (d) => d >= ONSET_BAND[0] && d <= ONSET_BAND[1];
+	const onLine = (d) => Object.values(ONSET_AFTER_LINE).includes(d);
 
 	for (const [row, ask] of [
 		[
@@ -229,8 +232,8 @@ try {
 		const pulse = bright(r.samples, o[0]) < 0.2;
 		check(
 			row,
-			o.length >= 2 && inBand(d) && noise && pulse,
-			`onsets ${o.slice(0, 3).join(", ")}; the burst ${d} frames after the line (band ${ONSET_BAND.join("..")}); brightness ${bright(r.samples, o[0]).toFixed(3)} then ${bright(r.samples, o[1]).toFixed(3)}`,
+			o.length >= 2 && d === ONSET_AFTER_LINE[ask.type] && noise && pulse,
+			`onsets ${o.slice(0, 3).join(", ")}; the burst ${d} frames after the line (wanted ${ONSET_AFTER_LINE[ask.type]}); brightness ${bright(r.samples, o[0]).toFixed(3)} then ${bright(r.samples, o[1]).toFixed(3)}`,
 		);
 		if (ask.type === "crossfade") {
 			// Two bars in, the pulse would sound again had it not been faded
@@ -255,8 +258,8 @@ try {
 		const arrivedS = o[0] / SR;
 		const d = o[0] - BAR;
 		check(
-			"control: with nothing playing the same start is heard when asked, outside the band",
-			o.length >= 1 && Math.abs(arrivedS - ASK_S) < 0.02 && !inBand(d),
+			"control: with nothing playing the same start is heard when asked, on neither line frame",
+			o.length >= 1 && Math.abs(arrivedS - ASK_S) < 0.02 && !onLine(d),
 			`first onset ${arrivedS.toFixed(4)} s, ${d} frames from where a line would be`,
 		);
 	}
@@ -310,18 +313,12 @@ try {
 		);
 	}
 
-	/** Brightness of a window, in seconds: the rms of the first difference over
-	 *  the rms, so a level change does not move it and a change of colour does. */
-	const hi = (x, a, b) => {
-		let s = 0;
-		let e = 0;
-		for (let i = Math.round(a * SR) + 1; i < Math.round(b * SR); i++) {
-			const d = x[i] - x[i - 1];
-			s += d * d;
-			e += x[i] * x[i];
-		}
-		return Math.sqrt(s / e);
-	};
+	/** `bright` over a window given in seconds: one body for the metric, so
+	 *  the rows that read colour cannot diverge (sage round 1). It is a ratio
+	 *  to the rms, so a level change does not move it and a change of colour
+	 *  does. */
+	const hi = (x, a, b) =>
+		bright(x, Math.round(a * SR), Math.round(b * SR) - Math.round(a * SR));
 
 	// ── After a crossfade, the new song's colour and not the old one's ──────
 	{

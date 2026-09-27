@@ -21,12 +21,20 @@
  */
 import type { PartSpec, VoiceKind } from "./music-score";
 
+// Each voice's number in the bank's `kind` array, which is a `Uint8Array`
+// rather than strings so a render reads no object. Named, so the two
+// switches below cannot drift from this table (sage round 1).
+const PAD = 0;
+const PLUCK = 1;
+const FM = 2;
+const NOISE = 3;
+const TONE = 4;
 const KIND: Record<VoiceKind, number> = {
-	pad: 0,
-	pluck: 1,
-	fm: 2,
-	noise: 3,
-	tone: 4,
+	pad: PAD,
+	pluck: PLUCK,
+	fm: FM,
+	noise: NOISE,
+	tone: TONE,
 };
 
 /** Every field a voice reads, with its defaults filled in and every time
@@ -223,8 +231,8 @@ export class VoiceBank {
 		return out;
 	}
 
-	/** Free every slot now. The engine calls it once a fade to silence has
-	 *  run out. */
+	/** Free every slot now. The engine frees a song's slots with `clearOwner`;
+	 *  this is for a caller that wants the whole bank silent at once. */
 	clear() {
 		this.stage.fill(STAGE_FREE);
 	}
@@ -284,22 +292,22 @@ export class VoiceBank {
 		this.bp[i] = 0;
 		const cents = PAD_DETUNE_CENTS / 1200;
 		switch (part.kind) {
-			case 0: // pad: two saws either side of the pitch, into a lowpass
+			case PAD: // two saws either side of the pitch, into a lowpass
 				this.inc1[i] = (f * 2 ** cents) / sr;
 				this.inc2[i] = (f * 2 ** -cents) / sr;
 				this.g[i] = svfCoef(part.cutoffHz, sr);
 				break;
-			case 1: // pluck: a burst of noise into a tuned delay line
+			case PLUCK: // a burst of noise into a tuned delay line
 				this.pluck(i, f, part.cutoffHz);
 				break;
-			case 2: // fm: carrier and modulator
+			case FM: // carrier and modulator
 				this.inc1[i] = f / sr;
 				this.inc2[i] = (f * part.ratio) / sr;
 				break;
-			case 3: // noise: a band of it, centred on the pitch
+			case NOISE: // a band of it, centred on the pitch
 				this.g[i] = svfCoef(f, sr);
 				break;
-			case 4: // tone: starts `ratio` times high and glides down
+			case TONE: // starts `ratio` times high and glides down
 				this.inc1[i] = f / sr;
 				this.inc2[i] = (f * (part.ratio - 1)) / sr;
 				this.g[i] = Math.exp(-1 / (TONE_GLIDE_S * sr));
@@ -312,15 +320,20 @@ export class VoiceBank {
 	private pluck(i: number, f: number, brightHz: number) {
 		const line = this.line[i];
 		const a = 1 - Math.exp((-2 * Math.PI * brightHz) / this.sampleRate);
+		// The loop's averaging filter delays half a frame; the line makes up
+		// the rest, fractionally, so a high note is not sharp.
+		const D = Math.min(line.length - 2, this.sampleRate / f - 0.5);
+		// Only the period the read head reaches, not the whole line sized for
+		// 20 Hz (sage round 1: a C6 filled 50 times what it read). Writing starts
+		// after it, so the head trails into fresh burst and then into the loop.
+		const n = Math.min(line.length, Math.ceil(D) + 2);
 		let y = 0;
-		for (let k = 0; k < line.length; k++) {
+		for (let k = 0; k < n; k++) {
 			y += a * (this.noise() - y);
 			line[k] = y;
 		}
-		this.lineW[i] = 0;
-		// The loop's averaging filter delays half a frame; the line makes up
-		// the rest, fractionally, so a high note is not sharp.
-		this.lineD[i] = Math.min(line.length - 2, this.sampleRate / f - 0.5);
+		this.lineW[i] = n % line.length;
+		this.lineD[i] = D;
 		this.fb[i] = 0;
 	}
 
@@ -384,14 +397,14 @@ export class VoiceBank {
 	/** One frame of voice `i`'s oscillator, before its envelope. */
 	private sample(i: number, kind: number, part: ResolvedPart, env: number) {
 		switch (kind) {
-			case 0: {
+			case PAD: {
 				const a = saw(this.ph1[i], this.inc1[i]);
 				const b = saw(this.ph2[i], this.inc2[i]);
 				this.ph1[i] = wrap(this.ph1[i] + this.inc1[i]);
 				this.ph2[i] = wrap(this.ph2[i] + this.inc2[i]);
 				return this.svf(i, 0.5 * (a + b), 1.1, false);
 			}
-			case 1: {
+			case PLUCK: {
 				const line = this.line[i];
 				const L = line.length;
 				const w = this.lineW[i];
@@ -407,7 +420,7 @@ export class VoiceBank {
 				this.lineW[i] = w + 1 === L ? 0 : w + 1;
 				return y;
 			}
-			case 2: {
+			case FM: {
 				const m = Math.sin(
 					2 * Math.PI * this.ph2[i] + part.feedback * this.fb[i],
 				);
@@ -417,9 +430,10 @@ export class VoiceBank {
 				this.ph2[i] = wrap(this.ph2[i] + this.inc2[i]);
 				return c * 0.6;
 			}
-			case 3:
+			case NOISE:
 				return this.svf(i, this.noise(), 0.9, true) * 1.4;
 			default: {
+				// TONE
 				const c = Math.sin(2 * Math.PI * this.ph1[i]);
 				this.ph1[i] = wrap(this.ph1[i] + this.inc1[i] + this.inc2[i]);
 				this.inc2[i] *= this.g[i];
