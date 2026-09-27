@@ -7,11 +7,13 @@
  *   SEELITE_PROBE_RENDERER=hardware WINDOW=visible node scripts/measure-audio.mjs <mode>
  *   node scripts/measure-audio.mjs <mode>        # cpu lane, headless shell
  *
- * **Three lanes, and the audio differs between them.** The GPU lane's default
- * is windowless (#458), which Playwright launches headless — and a headless
- * launch gets `--mute-audio`. `WINDOW=visible` asks `probe-guard` for its
- * headed window instead, which is the only lane here whose output is not
- * muted. The line each run prints first names the lane it ran on.
+ * **Three lanes.** The GPU lane's default is windowless (#458), which
+ * Playwright launches headless — and a headless launch gets `--mute-audio`.
+ * `WINDOW=visible` asks `probe-guard` for its headed window instead, which is
+ * the only lane here whose output is not muted. The line each run prints first
+ * names the lane it ran on. #541 ran `realtime`, `clock` and `latency` on
+ * both GPU lanes and read the same figures on each, so muting did not move
+ * them; the figures quoted below are from both unless a line names one.
  *
  * Modes: `cues`, `voices`, `convolver`, `realtime`, `clock`, `latency`,
  * `unlock`, `gpucal`. No dev server: the script serves its own page, because
@@ -41,7 +43,7 @@
  *   synthetic load (a full-screen shader, or a main-thread busy loop) and
  *   reads `AudioContext.playbackStats`. The master gain is 1e-4, so nothing is
  *   audible. **`underrunEvents` is read as zero against non-zero only**: at
- *   overload it stays near 730 per 4 s from 512 to 1024 voices while audio
+ *   overload (either GPU lane) it stays near 730 per 4 s from 512 to 1024 voices while audio
  *   time falls from about 0.9 to 0.5 of wall time, and runs at 512 read audio
  *   time as high as 0.99 of wall time beside 600 or more events. Its amounts
  *   are not understood, so
@@ -55,9 +57,9 @@
  *   does not record the output.
  * - **`unlock`** launches **without** the autoplay flag the other modes pass
  *   and reports the context state after no input, Escape, Shift, a key and a
- *   click. On Chrome 153 the context is already `running` and
- *   `userActivation.hasBeenActive` already true before any input, so this lane
- *   cannot check the gesture rule. The mode exists so that stays checkable.
+ *   click. On Chrome 153, on every lane #541 ran it on, the context is
+ *   already `running` and `userActivation.hasBeenActive` already true before
+ *   any input, so no lane here can check the gesture rule. The mode exists so that stays checkable.
  * - **`gpucal`** prints the frame period per shader iteration count, which is
  *   how `ITERS` for `realtime` is chosen (1600 gave ~33 ms frames on an M1 Pro,
  *   near `berth-free-look`'s 40 ms).
@@ -97,17 +99,14 @@ const MODES = [
  * sample. `voices` of them summed inside one node. A string, because it runs
  * in `AudioWorkletGlobalScope`, whose names the repo's lint does not know.
  *
- * **`sampleRate` is read once, in the constructor.** `FmVoicesGlobal` is the
- * same voice reading the global in the inner loop, four times per voice per
- * sample, as a first port of this class did; the `voices` mode's
- * `worklet-global` arm runs it beside the others, so what that costs is
- * reprinted rather than remembered.
- */
-/**
- * One voice class, written once and emitted twice. The two differ only in
- * `sr`, the expression every inner-loop use of the sample rate reads: a local
- * copied from the constructor, or the global. A hand-kept second copy could
- * drift from the first and skew the comparison it exists for.
+ * **Written once and emitted twice.** The two classes differ only in `sr`,
+ * the expression every inner-loop use of the sample rate reads: `FmVoices`
+ * reads a local copied from the constructor, `FmVoicesGlobal` reads the
+ * global — three times per voice per sample, and once more per sample — as a
+ * first port of this class did. The `voices` mode's `worklet-global` arm runs
+ * it beside the others, so what that costs is reprinted rather than
+ * remembered. A hand-kept second copy could drift from the first and skew the
+ * comparison it exists for.
  */
 const voiceClass = (name, sr) => `
 class ${name} extends AudioWorkletProcessor {
@@ -285,7 +284,7 @@ function pageLib() {
 				cv.connect(m);
 			} else src.connect(m);
 			src.start(0);
-		}
+		} else throw new Error(`unknown arm ${arm}`);
 		const buildMs = performance.now() - b0;
 		const t0 = performance.now();
 		const buf = await ctx.startRendering();
@@ -297,7 +296,12 @@ function pageLib() {
 			arm,
 			n,
 			buildMs,
-			msPerAudioSecond: renderMs / seconds,
+			// The churn arm's render figure measures a graph holding every note
+			// of the run, not churn, so it is not printed; its figure is the
+			// main-thread cost of one tone() call.
+			msPerAudioSecond: arm === "native-churn" ? null : renderMs / seconds,
+			usPerToneCall:
+				arm === "native-churn" ? (buildMs * 1000) / (seconds * 10 * n) : null,
 			alive: e > 0,
 		};
 	};
@@ -703,6 +707,7 @@ try {
 		);
 		summarise(rows, (r) => `${r.arm} n=${String(r.n).padStart(3)}`, [
 			["msPerAudioSecond", 1],
+			["usPerToneCall", 1],
 			["buildMs", 1],
 			["alive"],
 		]);
@@ -779,7 +784,7 @@ try {
 				...(await p.evaluate(() => window.M.framePeriod(1500))),
 			});
 		}
-	}
+	} else throw new Error(`mode ${mode} has no branch`);
 } finally {
 	await browser.close();
 	server.close();
