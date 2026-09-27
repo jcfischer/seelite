@@ -59,7 +59,7 @@ describe("a partial take (civilian-combat H11)", () => {
 			accepted: true,
 			leftT: 7,
 		});
-		expect(took.sound).toBe("scoop");
+		expect(took.cue?.kind).toBe("scoop");
 		const refused = nextScoopNotice(took.notice, {
 			canisterId: "c1",
 			commodity: "Food",
@@ -67,7 +67,7 @@ describe("a partial take (civilian-combat H11)", () => {
 			accepted: false,
 		});
 		expect(refused.notice).toBe(took.notice);
-		expect(refused.sound).toBe(null);
+		expect(refused.cue).toBe(null);
 	});
 
 	test("a different canister's refusal still replaces it, with the alert", () => {
@@ -85,7 +85,7 @@ describe("a partial take (civilian-combat H11)", () => {
 			accepted: false,
 		});
 		expect(other.notice.text).toBe("HOLD FULL  FURS LEFT IN SPACE");
-		expect(other.sound).toBe("alert");
+		expect(other.cue?.kind).toBe("alert");
 	});
 
 	test("a standing refusal re-arms without restarting the tone (sage #355)", () => {
@@ -95,14 +95,14 @@ describe("a partial take (civilian-combat H11)", () => {
 			tonnes: 1,
 			accepted: false,
 		});
-		expect(first.sound).toBe("alert");
+		expect(first.cue?.kind).toBe("alert");
 		const again = nextScoopNotice(first.notice, {
 			canisterId: "c2",
 			commodity: "Food",
 			tonnes: 1,
 			accepted: false,
 		});
-		expect(again.sound).toBe(null);
+		expect(again.cue).toBe(null);
 		expect(again.notice.left).toBe(SCOOP_NOTICE_S);
 	});
 
@@ -122,6 +122,6 @@ describe("a partial take (civilian-combat H11)", () => {
 			accepted: false,
 		});
 		expect(refused.notice.accepted).toBe(false);
-		expect(refused.sound).toBe("alert");
+		expect(refused.cue?.kind).toBe("alert");
 	});
 });

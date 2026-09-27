@@ -11,8 +11,9 @@
  *
  * This module decides when a tracer is on the glass and when a shot sound
  * plays, from whether the gun fired this step. `Game` draws and plays. It
- * imports nothing, so it stays in the headless tier.
+ * imports only the cue vocabulary, a leaf, so it stays in the headless tier.
  */
+import type { Cue } from "./audio-cue";
 
 /** How long the tracer stays on the glass after a fired step, s. Longer than
  *  a frame, so one fired step is seen at any frame rate. */
@@ -40,7 +41,7 @@ export function stepGunFeedback(
 	feedback: GunFeedback,
 	fired: boolean,
 	dt: number,
-): { feedback: GunFeedback; playSound: boolean } {
+): { feedback: GunFeedback; cue: Extract<Cue, { kind: "laser" }> | null } {
 	const since = feedback.sinceSoundS + dt;
 	if (!fired)
 		return {
@@ -48,7 +49,7 @@ export function stepGunFeedback(
 				tracerLeftS: Math.max(0, feedback.tracerLeftS - dt),
 				sinceSoundS: since,
 			},
-			playSound: false,
+			cue: null,
 		};
 	const playSound = since >= SHOT_SOUND_GAP_S;
 	return {
@@ -56,7 +57,7 @@ export function stepGunFeedback(
 			tracerLeftS: TRACER_HOLD_S,
 			sinceSoundS: playSound ? 0 : since,
 		},
-		playSound,
+		cue: playSound ? { kind: "laser" } : null,
 	};
 }
 

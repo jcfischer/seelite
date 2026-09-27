@@ -12,6 +12,7 @@
  * The words are here rather than in `main.ts` so the arithmetic tier can hold
  * them: what the glass does with them is the browser tier's to prove.
  */
+import type { Cue } from "./audio-cue";
 
 /** How long the notice stands on the glass. Long enough to read after the
  *  approach that earned it, short enough that three scoops in a row read as
@@ -81,7 +82,10 @@ export interface ScoopNotice {
 export function nextScoopNotice(
 	standing: ScoopNotice,
 	event: ScoopEvent & { canisterId: string },
-): { notice: ScoopNotice; sound: "scoop" | "alert" | null } {
+): {
+	notice: ScoopNotice;
+	cue: Extract<Cue, { kind: "scoop" } | { kind: "alert" }> | null;
+} {
 	const live = standing.left > 0;
 	if (
 		!event.accepted &&
@@ -89,13 +93,16 @@ export function nextScoopNotice(
 		standing.accepted &&
 		standing.canisterId === event.canisterId
 	)
-		return { notice: standing, sound: null };
+		return { notice: standing, cue: null };
 	const notice: ScoopNotice = {
 		text: scoopNotice(event),
 		left: SCOOP_NOTICE_S,
 		accepted: event.accepted,
 		canisterId: event.canisterId,
 	};
-	if (event.accepted) return { notice, sound: "scoop" };
-	return { notice, sound: live && !standing.accepted ? null : "alert" };
+	if (event.accepted) return { notice, cue: { kind: "scoop" } };
+	return {
+		notice,
+		cue: live && !standing.accepted ? null : { kind: "alert" },
+	};
 }
