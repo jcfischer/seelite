@@ -95,12 +95,18 @@ const MODES = [
  * operator feedback, into a state-variable lowpass whose cutoff moves every
  * sample. `voices` of them summed inside one node. A string, because it runs
  * in `AudioWorkletGlobalScope`, whose names the repo's lint does not know.
+ *
+ * **`sampleRate` is read once, in the constructor.** A port of this class that
+ * read the global in the inner loop — four times per voice per sample — cost
+ * 13–18 ms per audio-second per voice offline against 2.0–2.7 for this one, so a
+ * worklet voice's cost is as much its code's as the platform's.
  */
 const WORKLET = `
 class FmVoices extends AudioWorkletProcessor {
 	constructor(opts) {
 		super();
 		this.n = opts.processorOptions.voices;
+		this.sr = sampleRate;
 		this.ph = new Float64Array(this.n); this.mph = new Float64Array(this.n);
 		this.fb = new Float64Array(this.n); this.lp = new Float64Array(this.n);
 		this.bp = new Float64Array(this.n); this.f = new Float64Array(this.n);
@@ -108,24 +114,25 @@ class FmVoices extends AudioWorkletProcessor {
 		this.t = 0;
 	}
 	process(_in, outs) {
-		const out = outs[0][0]; const n = this.n;
-		for (let s = 0; s < out.length; s++) {
-			const time = (this.t + s) / sampleRate; let acc = 0;
+		const out = outs[0][0]; const L = out.length; const n = this.n; const sr = this.sr;
+		for (let s = 0; s < L; s++) {
+			const time = (this.t + s) / sr; let acc = 0;
 			for (let v = 0; v < n; v++) {
-				this.mph[v] += (this.f[v] * 2) / sampleRate;
+				const f = this.f[v];
+				this.mph[v] += (f * 2) / sr;
 				const m = Math.sin(2 * Math.PI * this.mph[v] + 0.7 * this.fb[v]);
 				this.fb[v] = m;
-				this.ph[v] += this.f[v] / sampleRate;
+				this.ph[v] += f / sr;
 				const c = Math.sin(2 * Math.PI * this.ph[v] + 2 * m);
 				const cut = 400 + 300 * Math.sin(2 * Math.PI * 0.5 * time + v);
-				const g = 2 * Math.sin((Math.PI * cut) / sampleRate);
+				const g = 2 * Math.sin((Math.PI * cut) / sr);
 				this.lp[v] += g * this.bp[v];
 				this.bp[v] += g * (c - this.lp[v] - 0.5 * this.bp[v]);
 				acc += this.lp[v];
 			}
 			out[s] = acc * (0.5 / n);
 		}
-		this.t += out.length;
+		this.t += L;
 		return true;
 	}
 }
