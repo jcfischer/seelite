@@ -151,6 +151,11 @@ export type Quantum = "bar" | "section";
  *   stems moved at once are a crossfade between parts.
  * - `tempo` — the playing song's tempo map is scaled by `scale`, from the
  *   quantum, reached over `rampBars` bars (0: at the line).
+ * - `sync` — moves nothing; the worklet answers `synced` with the token once
+ *   every command before it has been applied. An offline render needs it: a
+ *   message sent while the render is suspended is applied only when the
+ *   worklet next runs its message loop, which is the *next* suspend unless
+ *   the sender waits for the answer before it resumes.
  */
 export type MusicCommand =
 	| { readonly type: "load"; readonly id: string; readonly song: Song }
@@ -186,15 +191,15 @@ export type MusicCommand =
 			readonly scale: number;
 			readonly at: Quantum;
 			readonly rampBars: number;
-	  };
+	  }
+	| { readonly type: "sync"; readonly token: number };
 
 /** The processor's registered name: the worklet registers it and the
  *  controller constructs it, from this one copy. */
 export const MUSIC_PROCESSOR = "seelite-music";
 
-/** What the worklet sends back over its `port`: a command it refused, and
- *  why. The controller keeps the reason and warns with it. */
-export interface MusicReport {
-	readonly type: "error";
-	readonly message: string;
-}
+/** What the worklet sends back over its `port`: a command it refused and
+ *  why, which the controller keeps and warns with; or a `sync`'s answer. */
+export type MusicReport =
+	| { readonly type: "error"; readonly message: string }
+	| { readonly type: "synced"; readonly token: number };

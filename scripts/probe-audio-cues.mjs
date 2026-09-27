@@ -244,6 +244,9 @@ const LOOP_MIN_RATIO = 1.5;
 /** The least each rung of the c ladder may stand over the one below (#544). */
 const LADDER_MIN_STEP = 1.3;
 
+// #560's music renders are `probe-music.mjs`'s: this probe bands cues and loops.
+const CUES = SOUND_SET.filter((e) => !e.music);
+
 const browser = await launchChromium();
 const { check, watch, exit } = tally();
 try {
@@ -263,7 +266,7 @@ try {
 	check("the served engine has the offline seam", first.modern === true);
 
 	const rendered = new Map();
-	for (const entry of SOUND_SET) {
+	for (const entry of CUES) {
 		const s = await render(entry);
 		rendered.set(entry.name, s);
 		if (PRINT)
@@ -283,7 +286,7 @@ try {
 		);
 	}
 
-	for (const entry of SOUND_SET) {
+	for (const entry of CUES) {
 		const on = rendered.get(entry.name);
 		const off = await render(entry, { bypassLimiter: true });
 		const ratio = (a, b) => (b > 0 ? a / b : Number.NaN);

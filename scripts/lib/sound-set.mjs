@@ -49,7 +49,58 @@ export const SOUND_SET = Object.freeze([
 	{ name: "cruise-engage", seconds: 1.8, cue: { kind: "cruiseEngage" } },
 	{ name: "cruise-drop", seconds: 1.4, cue: { kind: "cruiseDrop" } },
 	...flightTimelines(),
+	...musicTimelines(),
 ]);
+
+/**
+ * #560's test score, played through the worklet synth. `songs` maps each id
+ * to a key of `TEST_SONGS` (`src/music-test-score.ts`), or to a song written
+ * inline; `script` is `[seconds, command]`, each a `MusicCommand` sent then.
+ * None has a `legacy` form: there was no synth before #560, so a capture at
+ * an older ref renders these as absent.
+ */
+function musicTimelines() {
+	const both = { waltz: "waltz", march: "march" };
+	const play = (id) => ({ type: "play", id, at: "bar" });
+	const tune = (name, seconds, script, songs = both) => ({
+		name,
+		seconds,
+		music: { songs, script },
+	});
+	return [
+		// Intro and the loop, then resolved into the coda's ritardando.
+		tune("music-waltz", 16, [
+			[0, play("waltz")],
+			[9.5, { type: "resolve", at: "bar" }],
+		]),
+		tune("music-march", 8, [[0, play("march")]]),
+		// Between songs: the march takes over on the waltz's next bar line.
+		tune("music-crossfade", 10, [
+			[0, play("waltz")],
+			[3.5, { type: "crossfade", to: "march", at: "bar", fadeS: 2 }],
+		]),
+		// Between parts: the lead alone, then the arpeggio takes its place.
+		tune("music-stems", 9, [
+			[0, play("march")],
+			[0, { type: "stem", part: "arp", level: 0, at: "now", fadeS: 0 }],
+			[
+				3.5,
+				{ type: "stem", part: "lead", level: 0, at: "bar", fadeS: 1.5 },
+			],
+			[3.5, { type: "stem", part: "arp", level: 1, at: "bar", fadeS: 1.5 }],
+		]),
+		// A pilot taking the stick back mid-waltz: faded out, not cut.
+		tune("music-stop-fade", 6, [
+			[0, play("waltz")],
+			[3.2, { type: "stop", at: "now", fadeS: 0.8 }],
+		]),
+		// The march quickening by half over two bars.
+		tune("music-tempo", 9, [
+			[0, play("march")],
+			[1, { type: "tempo", scale: 1.5, at: "bar", rampBars: 2 }],
+		]),
+	];
+}
 
 /**
  * #544's loops, rendered by flying a scripted timeline through the real
@@ -200,8 +251,20 @@ export async function renderInPage({
 	const knownKinds = modern
 		? Object.keys((await import("/src/audio-cue.ts")).CUE_BUS)
 		: [];
+	// #560's synth, where the served tree has one: an older ref has no
+	// `music.ts`, and the dynamic import of it rejects.
+	const synth =
+		entry.music && modern
+			? await import("/src/music.ts")
+					.then(async ({ Music }) => ({
+						Music,
+						songs: (await import("/src/music-test-score.ts")).TEST_SONGS,
+					}))
+					.catch(() => null)
+			: null;
 	if (
 		(entry.flight && typeof fx.flight !== "function") ||
+		(entry.music && !synth) ||
 		(entry.cue && !entry.legacy && !modern) ||
 		(entry.cue && modern && !knownKinds.includes(entry.cue.kind))
 	)
@@ -236,6 +299,56 @@ export async function renderInPage({
 		} finally {
 			window.AudioContext = saved;
 		}
+	}
+
+	if (entry.music) {
+		// The synth's own render (#560): loaded into this context and connected
+		// to the engine's music bus, as the game will. A command scripted at
+		// `"attach"` is sent before `attach` resolves, so the controller holds
+		// it (#543 D8); every other is sent at its time, after the lead.
+		const music = new synth.Music();
+		const ready = music.attach(ctx, fx.musicInput);
+		for (const [id, song] of Object.entries(entry.music.songs))
+			music.load(id, typeof song === "string" ? synth.songs[song] : song);
+		const script = [...entry.music.script];
+		while (script.length && script[0][0] === "attach")
+			music.send(script.shift()[1]);
+		await ready;
+		// And applied: an offline render starts without reading the port, so a
+		// held command would otherwise wait for a suspend (`Music.sync`).
+		await music.sync();
+		const due = new Map();
+		for (const [t, cmd] of script) {
+			const at = leadS + t;
+			if (!due.has(at)) due.set(at, []);
+			due.get(at).push(cmd);
+		}
+		for (const [t, levels] of levelsAt) {
+			const at = leadS + t;
+			if (!due.has(at)) due.set(at, []);
+			due.get(at).push({ levels });
+		}
+		for (const [at, cmds] of due)
+			ctx.suspend(at).then(() => {
+				for (const cmd of cmds)
+					if (cmd.levels)
+						for (const [bus, level] of Object.entries(cmd.levels))
+							fx.setLevel(bus, level);
+					else music.send(cmd);
+				// Resumed only once the worklet has applied them: sent and resumed at
+				// once, a command lands at the next suspend instead (`Music.sync`).
+				music.sync().then(() => ctx.resume());
+			});
+		const buffer = await ctx.startRendering();
+		return {
+			modern,
+			sampleRate,
+			live: null,
+			errors: music.errors,
+			samples: Array.from(
+				buffer.getChannelData(0).subarray(Math.round(leadS * sampleRate)),
+			),
+		};
 	}
 
 	let state = (typeof seed === "number" ? seed : 1) >>> 0 || 1;

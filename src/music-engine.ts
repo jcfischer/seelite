@@ -189,6 +189,9 @@ export class MusicEngine implements NoteSink, VoiceGain {
 					lead.player.tempoAt(this.line(now, cmd.at), cmd.scale, cmd.rampBars);
 				return;
 			}
+			// The worklet answers it; there is nothing to move.
+			case "sync":
+				return;
 		}
 	}
 

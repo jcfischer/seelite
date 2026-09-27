@@ -49,6 +49,11 @@ class MusicProcessor extends AudioWorkletProcessor {
 			options.processorOptions?.cap ?? MUSIC_VOICE_CAP,
 		);
 		this.port.onmessage = (e: MessageEvent<MusicCommand>) => {
+			if (e.data.type === "sync") {
+				const synced: MusicReport = { type: "synced", token: e.data.token };
+				this.port.postMessage(synced);
+				return;
+			}
 			try {
 				this.engine.command(e.data, currentFrame);
 			} catch (err) {

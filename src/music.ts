@@ -32,6 +32,8 @@ export class Music {
 	private node: AudioWorkletNode | null = null;
 	private readonly held: MusicCommand[] = [];
 	private whenReady: Promise<void> | null = null;
+	private syncs = 0;
+	private readonly waiting = new Map<number, () => void>();
 	/** Every command the worklet refused, in order, with its reason. */
 	readonly errors: string[] = [];
 
@@ -47,6 +49,11 @@ export class Music {
 				outputChannelCount: [1],
 			});
 			node.port.onmessage = (e: MessageEvent<MusicReport>) => {
+				if (e.data?.type === "synced") {
+					this.waiting.get(e.data.token)?.();
+					this.waiting.delete(e.data.token);
+					return;
+				}
 				if (e.data?.type !== "error") return;
 				this.errors.push(e.data.message);
 				console.warn(`music: ${e.data.message}`);
@@ -67,6 +74,21 @@ export class Music {
 	send(cmd: MusicCommand) {
 		if (this.node) this.node.port.postMessage(cmd);
 		else this.held.push(cmd);
+	}
+
+	/**
+	 * Resolves once the worklet has applied every command sent before this
+	 * call, and not before it is ready. An offline render awaits it inside a
+	 * suspend: a message sent there is otherwise applied only at the *next*
+	 * suspend, because the render resumes before the worklet reads its port.
+	 */
+	sync(): Promise<void> {
+		const token = ++this.syncs;
+		const answered = new Promise<void>((resolve) =>
+			this.waiting.set(token, resolve),
+		);
+		this.send({ type: "sync", token });
+		return answered;
 	}
 
 	load(id: string, song: Song) {
