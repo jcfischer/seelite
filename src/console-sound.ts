@@ -159,15 +159,9 @@ export function clearanceTone(
 	prev: Clearance,
 	next: Clearance,
 ): NotifyTone | null {
-	if (next.kind === "none" || next.kind === prev.kind) {
-		if (
-			next.kind === "denied" &&
-			prev.kind === "denied" &&
-			next.reason !== prev.reason
-		)
-			return "bad";
-		return null;
-	}
+	if (next.kind === "denied" && prev.kind === "denied")
+		return next.reason !== prev.reason ? "bad" : null;
+	if (next.kind === "none" || next.kind === prev.kind) return null;
 	if (next.kind === "granted") return "good";
 	if (next.kind === "queued") return "message";
 	return "bad";

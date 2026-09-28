@@ -164,7 +164,6 @@ try {
 	// ---------------------------------------------------------------------
 	{
 		const page = await open({});
-		// Station control answers a clearance request, once per change of answer.
 		const answer = await cuesOf(page, () =>
 			page.evaluate(async () => {
 				const g = window.__seelite;

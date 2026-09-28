@@ -717,6 +717,7 @@ import {
 	emptyRequests,
 	entrustedTonnesAboard,
 	isRunning,
+	readiedBy,
 	recordKill,
 	requestAction,
 	settledAt,
@@ -4016,13 +4017,15 @@ class Game {
 				this.updateCockpit();
 			},
 			onNavFilter: (filter) => {
+				// A chip is a press; a character typed into the query is not, so
+				// a search does not click once per key (#546, sage round 1).
+				if (filter.query === this.navFilter.query) this.consolePress(true);
 				this.navFilter = filter;
 				// Widening the filter re-admits rows whose estimate was computed
 				// earlier in this interval and then never touched again. Cheaper
 				// to drop the whole map on a filter change — which is a keystroke,
 				// not a frame — than to key every entry by its tick.
 				this.navEtaCache.clear();
-				this.consolePress(true);
 				this.updateCockpit();
 			},
 			onSelectTarget: (id) => {
@@ -8114,11 +8117,7 @@ class Game {
 			this.setHeadLook("forward");
 			return;
 		}
-		if (
-			intents.focusDelta !== 0 &&
-			this.liveCockpit.stepFocus(intents.focusDelta)
-		)
-			this.consoleFocus("pad");
+		if (intents.focusDelta !== 0) this.stepConsoleFocus(intents.focusDelta);
 		if (intents.tabDelta !== 0) this.liveCockpit.stepTab(intents.tabDelta);
 		// The console acts on its own rows and refuses the chart's, which are
 		// drawn inside the same panel and belong to a handle it does not hold.
@@ -8737,10 +8736,10 @@ class Game {
 				this.liveCockpit.stepTab(1);
 				return;
 			case "panel.cursorUp":
-				if (this.liveCockpit.stepFocus(-1)) this.consoleFocus("pad");
+				this.stepConsoleFocus(-1);
 				return;
 			case "panel.cursorDown":
-				if (this.liveCockpit.stepFocus(1)) this.consoleFocus("pad");
+				this.stepConsoleFocus(1);
 				return;
 			default:
 		}
@@ -12083,6 +12082,12 @@ class Game {
 		if (cue) this.play(cue);
 	}
 
+	/** Walk the console cursor, and tick when it lands on another row (#546).
+	 *  Every cursor path goes through here, so none can forget the tick. */
+	private stepConsoleFocus(delta: number) {
+		if (this.liveCockpit.stepFocus(delta)) this.consoleFocus("pad");
+	}
+
 	/** The console cursor landed on another row (#546). */
 	private consoleFocus(source: "pad" | "hover") {
 		const cue = focusCue(CONSOLE_SOUND.arms, source);
@@ -15358,10 +15363,11 @@ class Game {
 				event.occurredAt,
 			);
 			if (requests !== this.requests) {
+				// A request is ready to report: nothing else says so (#546). Not
+				// every change: a kill can advance a stage without readying one.
+				if (readiedBy(this.requests, requests)) this.consoleNotify("good");
 				this.requests = requests;
 				this.requestRevision += 1;
-				// A request is ready to report: nothing else says so (#546).
-				this.consoleNotify("good");
 			}
 		}
 		this.saveDirty();
@@ -15449,8 +15455,10 @@ class Game {
 		this.stationConsoleMessage = null;
 	}
 
-	/** Applies a complete commerce result or leaves both owner states untouched. */
-	/** Whether the till took the press: the press's sound reads it (#546). */
+	/**
+	 * Applies a complete commerce result or leaves both owner states untouched.
+	 * Returns whether the till took the press: the press's sound reads it (#546).
+	 */
 	private transactStation(action: StationAction): boolean {
 		const context = this.dockedStationContext();
 		if (!context) return false;

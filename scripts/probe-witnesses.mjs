@@ -87,13 +87,27 @@ try {
 		// **Spied, not stubbed:** the hail's sound is a `{ kind: "notify",
 		// tone: "message" }` cue into `AudioFX.play` — an `alert` until #546,
 		// which the principal ruled a message — and the question is whether the
-		// game's own hail path reaches it. The charge's `notify` is `bad` and is
-		// not counted. Wrapping the shipped method keeps the sound the shipped
-		// one and counts the hails the game plays.
+		// game's own hail path reaches it. **A tone alone does not name a hail**:
+		// station control's lines and a queued clearance are messages too (sage
+		// round 1 on #568). So a cue counts only when it reaches the engine
+		// inside the hail's own `consoleNotify` call, which is synchronous — a
+		// hail the gap silenced plays nothing and counts nothing. Wrapping the
+		// shipped methods keeps the sound the shipped one.
 		const shippedPlay = g.audio.play.bind(g.audio);
+		const shippedNotify = g.consoleNotify.bind(g);
 		g.hailSoundCount = 0;
+		let inHail = false;
+		g.consoleNotify = (tone, source) => {
+			inHail = source === "hail";
+			try {
+				return shippedNotify(tone, source);
+			} finally {
+				inHail = false;
+			}
+		};
 		g.audio.play = (cue) => {
-			if (cue.kind === "notify" && cue.tone === "message") g.hailSoundCount++;
+			if (inHail && cue.kind === "notify" && cue.tone === "message")
+				g.hailSoundCount++;
 			return shippedPlay(cue);
 		};
 		const SLOW = new Set(["local-departure", "local-approach"]);
