@@ -44,7 +44,7 @@
  * below runs the game's own Traffic rosters forward across up to half an hour of
  * system clock, and a second probe doing it again would spend the whole
  * `probe-all` ceiling to re-derive what this one already has. What is *not*
- * shared is the assertion: the hail rows read the rail, the log and the alert,
+ * shared is the assertion: the hail rows read the rail, the log and the hail's sound,
  * which nothing above reads, and they fail under their own names.
  */
 import { gameUrl } from "./lib/game-url.mjs";
@@ -84,14 +84,16 @@ try {
 		// red the day the constant moves.
 		const trafficMod = await import("/src/station-traffic.ts");
 		const dt = g.units.MAX_DT;
-		// **Spied, not stubbed:** the alert is an `{ kind: "alert" }` cue into
-		// `AudioFX.play` (#552), and the question is whether the game's own hail
-		// path reaches it. Wrapping the shipped method keeps the sound the shipped
-		// one and counts the alerts the game plays.
+		// **Spied, not stubbed:** the hail's sound is a `{ kind: "notify",
+		// tone: "message" }` cue into `AudioFX.play` — an `alert` until #546,
+		// which the principal ruled a message — and the question is whether the
+		// game's own hail path reaches it. The charge's `notify` is `bad` and is
+		// not counted. Wrapping the shipped method keeps the sound the shipped
+		// one and counts the hails the game plays.
 		const shippedPlay = g.audio.play.bind(g.audio);
-		g.alertCount = 0;
+		g.hailSoundCount = 0;
 		g.audio.play = (cue) => {
-			if (cue.kind === "alert") g.alertCount++;
+			if (cue.kind === "notify" && cue.tone === "message") g.hailSoundCount++;
 			return shippedPlay(cue);
 		};
 		const SLOW = new Set(["local-departure", "local-approach"]);
@@ -726,7 +728,7 @@ try {
 						? [...log.querySelectorAll("li")].map((li) => li.textContent ?? "")
 						: null,
 					store: g.trafficReadout().hails,
-					alerts: g.alertCount,
+					hailSounds: g.hailSoundCount,
 					noneRail: rail?.textContent === "NONE",
 				};
 			},
@@ -1011,7 +1013,7 @@ try {
 		"the rail's HAILS row reads NONE before a single frame is fired (#396: a label that carries a value)",
 		struck.strike?.commsBefore?.railPresent === true &&
 			struck.strike?.commsBefore?.rail === "NONE" &&
-			struck.strike?.commsBefore?.alerts === 0 &&
+			struck.strike?.commsBefore?.hailSounds === 0 &&
 			struck.strike?.commsBefore?.store.length === 0 &&
 			!struck.strike?.commsBefore?.logLines?.some((l) =>
 				l.includes("cease fire"),
@@ -1019,13 +1021,13 @@ try {
 		JSON.stringify({ commsBefore: struck.strike?.commsBefore }),
 	);
 	check(
-		"a Clean carrier hit for the first time hails: the rail names it, the log carries it, and the alert sounds (#396 §3)",
+		"a Clean carrier hit for the first time hails: the rail names it, the log carries it, and the hail sounds (#396 §3, #546)",
 		struck.strike?.hail?.frame >= 0 &&
 			struck.strike?.hail?.comms?.rail === struck.strike?.hail?.callsign &&
 			struck.strike?.hail?.comms?.logLines?.some((l) =>
 				l.includes("cease fire"),
 			) === true &&
-			struck.strike?.hail?.comms?.alerts === 1 &&
+			struck.strike?.hail?.comms?.hailSounds === 1 &&
 			// Before the charge. The hail is not an accusation: the clock that
 			// convicts is still running on this frame, and a victim that announced
 			// a charge which has not been made tells the pilot the wrong thing.
@@ -1131,7 +1133,7 @@ try {
 	check(
 		"the hail is one line per carrier, not one per hit (#396: the rail says who, not how often)",
 		struck.strike?.commsAfter?.store.length === 1 &&
-			struck.strike?.commsAfter?.alerts === 1 &&
+			struck.strike?.commsAfter?.hailSounds === 1 &&
 			struck.strike?.commsAfter?.rail === struck.strike?.hail?.callsign,
 		JSON.stringify({ commsAfter: struck.strike?.commsAfter }),
 	);
@@ -1418,7 +1420,7 @@ try {
 			lawful.shot?.landedFireS > 0 &&
 			lawful.shot?.before?.store.length === lawful.shot?.after?.store.length &&
 			lawful.shot?.before?.rail === lawful.shot?.after?.rail &&
-			lawful.shot?.before?.alerts === lawful.shot?.after?.alerts,
+			lawful.shot?.before?.hailSounds === lawful.shot?.after?.hailSounds,
 		JSON.stringify({
 			found: lawful.found,
 			search: lawful.search,
