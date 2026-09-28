@@ -4017,10 +4017,10 @@ class Game {
 				this.consolePress(true);
 				this.updateCockpit();
 			},
-			onNavFilter: (filter) => {
+			onNavFilter: (filter, source) => {
 				// A chip is a press; a character typed into the query is not, so
-				// a search does not click once per key (#546, sage round 1).
-				if (filter.query === this.navFilter.query) this.consolePress(true);
+				// a search does not click once per key (#546, sage rounds 1 and 3).
+				if (source === "chip") this.consolePress(true);
 				this.navFilter = filter;
 				// Widening the filter re-admits rows whose estimate was computed
 				// earlier in this interval and then never touched again. Cheaper

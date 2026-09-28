@@ -258,7 +258,9 @@ export interface LiveCockpitCallbacks {
 	onRequestAction?: (action: string, id: string) => void;
 	onRightTab: (tab: RightTab) => void;
 	onLeftTab: (tab: LeftTab) => void;
-	onNavFilter: (filter: NavFilter) => void;
+	/** `source` is the control that changed it: a chip is a press, a
+	 *  character typed into the query is not (#546). */
+	onNavFilter: (filter: NavFilter, source: "chip" | "query") => void;
 	onSelectTarget: (id: string) => void;
 	onStationTab: (tab: StationConsoleTab) => void;
 	onStationAction: (action: StationAction["type"], name: string) => void;
@@ -605,10 +607,10 @@ export class LiveCockpit {
 		this.root.addEventListener("input", (event) => {
 			const field = event.target as HTMLElement;
 			if (field.matches("[data-live-nav-query]"))
-				this.callbacks.onNavFilter({
-					...this.filter,
-					query: (field as HTMLInputElement).value,
-				});
+				this.callbacks.onNavFilter(
+					{ ...this.filter, query: (field as HTMLInputElement).value },
+					"query",
+				);
 		});
 		this.root.addEventListener("pointerover", (event) => {
 			const row = (event.target as HTMLElement).closest(
@@ -1214,7 +1216,7 @@ export class LiveCockpit {
 		const kinds = this.filter.kinds.includes(kind)
 			? this.filter.kinds.filter((k) => k !== kind)
 			: [...this.filter.kinds, kind];
-		this.callbacks.onNavFilter({ ...this.filter, kinds });
+		this.callbacks.onNavFilter({ ...this.filter, kinds }, "chip");
 	}
 
 	setVisible(visible: boolean) {

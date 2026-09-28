@@ -43,6 +43,15 @@ const open = async (params) => {
 		g.audio.ensure();
 		// Every cue the game plays, in order, through the one dispatcher.
 		g.__cues = [];
+		// The station every block uses: the first trade station, or any.
+		window.__station = () => {
+			const bodies = g.world.system.bodies;
+			const id =
+				bodies.find((b) => b.kind === "station" && b.stationType === "trade")
+					?.id ?? bodies.find((b) => b.kind === "station")?.id;
+			if (!id) throw Error("no station");
+			return id;
+		};
 		const play = g.play.bind(g);
 		g.play = (cue) => {
 			g.__cues.push(cue.kind === "notify" ? `notify:${cue.tone}` : cue.kind);
@@ -61,6 +70,14 @@ const cuesOf = async (page, act) => {
 	return page.evaluate(() => [...window.__seelite.__cues]);
 };
 
+/** A row that names the exact cues an act played, in order. */
+const checkCues = (name, got, want) =>
+	check(
+		name,
+		JSON.stringify(got) === JSON.stringify(want),
+		JSON.stringify(got),
+	);
+
 const clickIn = (page, selector) =>
 	page.evaluate((s) => {
 		const el = document.querySelector(s);
@@ -68,82 +85,63 @@ const clickIn = (page, selector) =>
 		el.click();
 	}, selector);
 
-/** Dock at the first trade station, head forward on its console. */
+/** Dock at `__station()`, head forward on its console. */
 const dock = (page) =>
 	page.evaluate(async () => {
 		const g = window.__seelite;
-		const id =
-			g.world.system.bodies.find(
-				(b) => b.kind === "station" && b.stationType === "trade",
-			)?.id ?? g.world.system.bodies.find((b) => b.kind === "station")?.id;
-		if (!id) throw Error("no station");
+		const id = window.__station();
 		await window.__parkInBerth(id, g.berthIdsOfStation(id)[0]);
 		g.setHeadLook("forward");
 		g.updateCockpit();
 		return g.dock.phase;
 	});
 
-try {
-	// ---------------------------------------------------------------------
-	// The defaults.
-	// ---------------------------------------------------------------------
-	const page = await open({});
-
-	const phase = await dock(page);
-	check("the ship is docked", phase === "docked", phase);
-
-	const tab = await cuesOf(page, () =>
-		clickIn(page, '[data-live-station-tab="Market"]'),
-	);
-	check(
-		"a console tab is a press",
-		JSON.stringify(tab) === '["press"]',
-		JSON.stringify(tab),
+/** Ask `__station()` for clearance twice from its aperture axis. A page of its
+ *  own: a grant reserves the berth `dock` parks in. */
+const askClearanceTwice = (page) =>
+	cuesOf(page, () =>
+		page.evaluate(async () => {
+			const g = window.__seelite;
+			const id = window.__station();
+			g.targetId = id;
+			// On the aperture axis, co-moving: inside clearance range.
+			await window.__viewAlongAxis(id, 5);
+			g.requestDockingClearance();
+			g.requestDockingClearance();
+		}),
 	);
 
-	/** The cues of one purchase press, with the commander holding `credits`. */
-	const buyWith = (credits) =>
-		cuesOf(page, async () => {
-			await page.evaluate((cr) => {
-				const g = window.__seelite;
-				g.commander = { ...g.commander, credits: cr };
-				g.updateCockpit();
-			}, credits);
-			await page.waitForTimeout(100);
-			await clickIn(page, '[data-live-station-action="buy-commodity"]');
-		});
+/** The cues of one purchase press, with the commander holding `credits`. */
+const buyWith = (page, credits) =>
+	cuesOf(page, async () => {
+		await page.evaluate((cr) => {
+			const g = window.__seelite;
+			g.commander = { ...g.commander, credits: cr };
+			g.updateCockpit();
+		}, credits);
+		await page.waitForTimeout(100);
+		await clickIn(page, '[data-live-station-action="buy-commodity"]');
+	});
 
-	// A purchase the till refuses: no credits.
-	const refused = await buyWith(0);
-	check(
-		"a purchase the till refuses is a refusal, not a press",
-		JSON.stringify(refused) === '["refuse"]',
-		JSON.stringify(refused),
-	);
+const tabPress = (page) =>
+	cuesOf(page, () => clickIn(page, '[data-live-station-tab="Market"]'));
 
-	const bought = await buyWith(100000);
-	check(
-		"a purchase the till takes is a press",
-		JSON.stringify(bought) === '["press"]',
-		JSON.stringify(bought),
-	);
-
-	const walked = await cuesOf(page, () =>
+const cursorTwice = (page) =>
+	cuesOf(page, () =>
 		page.evaluate(() => {
 			const g = window.__seelite;
 			g.panelCommand("panel.cursorDown", null);
 			g.panelCommand("panel.cursorDown", null);
 		}),
 	);
-	check(
-		"a cursor move is a tick, each one",
-		JSON.stringify(walked) === '["focus","focus"]',
-		JSON.stringify(walked),
-	);
 
-	// The hover reaches the game and the arm silences it: counting the calls
-	// as well as the cues, so "silent" cannot be "not wired" (sage round 2).
-	const hovered = await cuesOf(page, () =>
+/**
+ * Enter row 0, row 0 again and row 1, counting the `consoleFocus("hover")`
+ * calls as well as the cues, so "silent" cannot be "not wired" (sage
+ * round 2).
+ */
+const hoverRows = async (page) => {
+	const cues = await cuesOf(page, () =>
 		page.evaluate(() => {
 			const g = window.__seelite;
 			const shipped = g.consoleFocus.bind(g);
@@ -152,45 +150,63 @@ try {
 				if (source === "hover") g.__hoverCalls++;
 				return shipped(source);
 			};
-			const row = document.querySelector("[data-live-station-action]");
-			row.dispatchEvent(new PointerEvent("pointerover", { bubbles: true }));
+			const rows = document.querySelectorAll("[data-live-station-action]");
+			const over = (el) =>
+				el.dispatchEvent(new PointerEvent("pointerover", { bubbles: true }));
+			over(rows[0]);
+			over(rows[0]);
+			over(rows[1]);
 		}),
 	);
-	const hoverCalls = await page.evaluate(() => window.__seelite.__hoverCalls);
-	check(
-		"a hover reaches the game and is silent on the default arm",
-		hoverCalls === 1 && hovered.length === 0,
-		`${hoverCalls} call(s), cues ${JSON.stringify(hovered)}`,
-	);
-	await page.close();
+	const calls = await page.evaluate(() => window.__seelite.__hoverCalls);
+	return { cues, calls };
+};
+
+try {
+	// ---------------------------------------------------------------------
+	// The defaults.
+	// ---------------------------------------------------------------------
+	{
+		const page = await open({});
+		const phase = await dock(page);
+		check("the ship is docked", phase === "docked", phase);
+		checkCues("a console tab is a press", await tabPress(page), ["press"]);
+		checkCues(
+			"a purchase the till refuses is a refusal, not a press",
+			await buyWith(page, 0),
+			["refuse"],
+		);
+		checkCues(
+			"a purchase the till takes is a press",
+			await buyWith(page, 1e5),
+			["press"],
+		);
+		checkCues("a cursor move is a tick, each one", await cursorTwice(page), [
+			"focus",
+			"focus",
+		]);
+		const hover = await hoverRows(page);
+		check(
+			"a hover reaches the game and is silent on the default arm",
+			hover.calls === 2 && hover.cues.length === 0,
+			`${hover.calls} call(s), cues ${JSON.stringify(hover.cues)}`,
+		);
+		await page.close();
+	}
 
 	// ---------------------------------------------------------------------
 	// Station control answers a clearance request, once per change of
-	// answer. A page of its own: a grant reserves the berth `dock` parks in.
-	// On `every`, so the gap cannot silence a repeat and the row measures
-	// the change-of-answer rule alone (sage round 2).
+	// answer. On `every`, so the gap cannot silence a repeat and the row
+	// measures the change-of-answer rule alone (sage round 2).
 	// ---------------------------------------------------------------------
 	{
 		const page = await open({ consolesound: "every" });
-		const answer = await cuesOf(page, () =>
-			page.evaluate(async () => {
-				const g = window.__seelite;
-				const station = g.world.system.bodies.find(
-					(b) => b.kind === "station" && b.stationType === "trade",
-				);
-				g.targetId = station.id;
-				// On the aperture axis, co-moving: inside clearance range.
-				await window.__viewAlongAxis(station.id, 5);
-				g.requestDockingClearance();
-				g.requestDockingClearance();
-			}),
-		);
+		const answer = await askClearanceTwice(page);
 		check(
 			"a clearance answer is one message, and asking again is not news",
 			answer.length === 1 && answer[0].startsWith("notify:"),
 			JSON.stringify(answer),
 		);
-
 		await page.close();
 	}
 
@@ -198,44 +214,46 @@ try {
 	// hover: once per row entered.
 	// ---------------------------------------------------------------------
 	{
-		const p = await open({ consolesound: "hover" });
-		await dock(p);
-		const over = await cuesOf(p, () =>
-			p.evaluate(() => {
-				const tabs = document.querySelectorAll("[data-live-station-action]");
-				const over = (el) =>
-					el.dispatchEvent(new PointerEvent("pointerover", { bubbles: true }));
-				over(tabs[0]);
-				over(tabs[0]);
-				over(tabs[1]);
-			}),
-		);
-		check(
+		const page = await open({ consolesound: "hover" });
+		await dock(page);
+		checkCues(
 			"on hover, entering a row ticks once, and another row again",
-			JSON.stringify(over) === '["focus","focus"]',
-			JSON.stringify(over),
+			(await hoverRows(page)).cues,
+			["focus", "focus"],
 		);
-		await p.close();
+		await page.close();
 	}
 
 	// ---------------------------------------------------------------------
-	// legacy: the silent consoles before #546.
+	// legacy: the silent consoles before #546, on every act the defaults
+	// sound (sage round 3). A hail on legacy is `alert`, which
+	// `probe-witnesses` does not fly and `tests/console-sound.test.ts` holds.
 	// ---------------------------------------------------------------------
 	{
-		const p = await open({ consolesound: "legacy" });
-		await dock(p);
-		const silent = await cuesOf(p, async () => {
-			await clickIn(p, '[data-live-station-tab="Market"]');
-			await p.evaluate(() => {
-				window.__seelite.panelCommand("panel.cursorDown", null);
-			});
-		});
-		check(
-			"legacy plays nothing for a tab or a cursor move",
-			silent.length === 0,
-			JSON.stringify(silent),
+		const page = await open({ consolesound: "legacy" });
+		checkCues(
+			"legacy: a clearance answer is silent",
+			await askClearanceTwice(page),
+			[],
 		);
-		await p.close();
+		await page.close();
+	}
+	{
+		const page = await open({ consolesound: "legacy" });
+		await dock(page);
+		const acts = {
+			tab: await tabPress(page),
+			refused: await buyWith(page, 0),
+			bought: await buyWith(page, 1e5),
+			cursor: await cursorTwice(page),
+			hover: (await hoverRows(page)).cues,
+		};
+		check(
+			"legacy: a tab, a refused and a taken purchase, a cursor move and a hover are all silent",
+			Object.values(acts).every((cues) => cues.length === 0),
+			JSON.stringify(acts),
+		);
+		await page.close();
 	}
 } finally {
 	await browser.close();
