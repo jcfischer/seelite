@@ -68,6 +68,17 @@ cadence. Field Notes appears when there is meaningful work to show; it is not a
 second content treadmill. [Postcards from The Far Between](https://github.com/jcfischer/seelite/issues/406)
 supplies local image export and scene-recipe links, not a hosted gallery.
 
+**The principal ruled on a changelog on 2026-09-28 (#573).** The home
+threshold shows the latest three major changes, each a date and one sentence,
+and links to the full list on Field Notes, which is where this table already
+puts release notes. An agent proposes each sentence in the node's pull request
+and the principal approves the wording. The first release back-fills a few
+player-visible changes that shipped before launch. An entry keeps the node
+that shipped it as provenance, and no page prints it, because the repository is
+private. This is not the news feed or the cadence the paragraph above rules
+out: an entry is added only when a node ships a major change, and
+`src/changelog.ts` owns what counts as major.
+
 ### Voice and canon boundary
 
 The voice is quiet frontier: vast distance, human-scale instruments, restrained
