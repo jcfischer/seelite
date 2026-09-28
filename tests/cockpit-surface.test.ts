@@ -32,6 +32,7 @@ import {
 	cockpitCleanPlate,
 	cockpitMaterial,
 	dial,
+	lampPoolAcross,
 	lampPoolRamp,
 	plateCockpitUVs,
 	railLampPools,
@@ -320,7 +321,9 @@ describe("the pools the lamps leave on the rail (#204)", () => {
 		const run = to.clone().sub(from);
 		pools().forEach((pool, i) => {
 			const lamp = from.clone().addScaledVector(run, COCKPIT_LAMP.stops[i]);
-			const toward = pool.position.clone().sub(lamp);
+			// In the rail's own plane: the strip also stands off it toward the
+			// pilot, which the next test holds.
+			const toward = pool.position.clone().sub(lamp).setZ(0);
 			expect(toward.length()).toBeCloseTo(COCKPIT_LAMP_POOL.lengthKm / 2, 9);
 			// Down the rail: opposite the run from sill to header.
 			expect(toward.normalize().dot(run.clone().normalize())).toBeCloseTo(
@@ -364,13 +367,27 @@ describe("the pools the lamps leave on the rail (#204)", () => {
 			expect(lampPoolRamp(v + 0.05)).toBeLessThanOrEqual(lampPoolRamp(v));
 	});
 
-	test("a sleeve standing just proud of the rail, not buried in it", () => {
-		const sleeve = new THREE.Box3().setFromBufferAttribute(
-			pools()[0].geometry.getAttribute("position") as THREE.BufferAttribute,
+	test("a strip on the rail's face toward the pilot, narrower than the rail", () => {
+		// **Not a sleeve round the rail**, which was the first build: an
+		// additive glow over the whole circumference drew a lit cylinder wider
+		// than the dark rail inside it, and the sheet read it as a cream collar
+		// rather than as light on metal.
+		const pool = pools()[0];
+		pool.updateMatrixWorld(true);
+		const normal = new THREE.Vector3(0, 0, 1).transformDirection(
+			pool.matrixWorld,
 		);
-		const radius = (sleeve.max.x - sleeve.min.x) / 2;
-		expect(radius).toBeGreaterThan(CANOPY_RAIL_RADIUS_KM);
-		expect(radius).toBeLessThan(CANOPY_RAIL_RADIUS_KM * 1.2);
+		expect(normal.z).toBeCloseTo(1, 9);
+		const standoff = pool.position.z - rail.from[2];
+		expect(standoff).toBeGreaterThan(CANOPY_RAIL_RADIUS_KM);
+		expect(standoff).toBeLessThan(CANOPY_RAIL_RADIUS_KM * 1.2);
+		expect(COCKPIT_LAMP_POOL.widthKm).toBeLessThan(2 * CANOPY_RAIL_RADIUS_KM);
+	});
+
+	test("the strip fades to nothing at both of its long edges", () => {
+		expect(lampPoolAcross(0)).toBeCloseTo(0, 9);
+		expect(lampPoolAcross(1)).toBeCloseTo(0, 9);
+		expect(lampPoolAcross(0.5)).toBeCloseTo(1, 9);
 	});
 
 	test("light added, never shaded, and under the emissive ceiling", () => {

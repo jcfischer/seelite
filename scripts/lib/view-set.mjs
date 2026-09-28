@@ -504,7 +504,7 @@ export const VIEWS = Object.freeze([
 	},
 	{
 		name: "station-outline",
-		covers: [100, 103],
+		covers: [100, 103, 204],
 		/**
 		 * **102 came off here too, and for the same reason it came off
 		 * `station-approach`** (#129). A shipyard's ports are on the keel's top

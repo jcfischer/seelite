@@ -361,10 +361,7 @@ describe("the view set itself", () => {
 	 */
 	test("coverage goes red when a lever loses its only views", () => {
 		const without = VIEWS.filter((v) => !v.covers.includes(105));
-		// 204 goes with it, and should: #204's bonnet, canopy and lamp pools
-		// are judged from inside the cabin, so every view of them is a view of
-		// #105's interior too.
-		expect(uncoveredLevers(without)).toEqual([105, 204]);
+		expect(uncoveredLevers(without)).toEqual([105]);
 	});
 
 	/**

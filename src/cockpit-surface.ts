@@ -194,7 +194,7 @@ export const COCKPIT_EMISSIVE_INTENSITIES = {
 	trim: EMISSIVE_CEILING * 0.14,
 	inset: EMISSIVE_CEILING * 0,
 	lamp: EMISSIVE_CEILING * 0.34,
-	lampPool: EMISSIVE_CEILING * 0.16,
+	lampPool: EMISSIVE_CEILING * 0.12,
 	throttleIdle: EMISSIVE_CEILING * 0.04,
 	throttleFull: EMISSIVE_CEILING * 0.32,
 } as const;
@@ -772,20 +772,27 @@ export function railLamps(
  * node offered two routes: a short-range `PointLight` per lamp, gated at
  * `high`, or a gradient on the rail. Six point lights would be six more terms
  * every standard fragment in `nearScene` evaluates (the key light's lesson),
- * so this is the gradient: a sleeve a hair proud of the rail, additive, warm,
- * brightest at the lamp and gone by `lengthKm` below it. Free, and lit by
- * nothing, like the lamp.
+ * so this is the gradient: a flat strip on the rail's face toward the pilot,
+ * additive, warm, brightest at the lamp and gone by `lengthKm` below it, and
+ * fading to nothing at both long edges. Free, and lit by nothing, like the lamp.
+ *
+ * **A strip and not a sleeve.** The first build wrapped the rail in an additive
+ * cylinder, which drew a lit tube wider than the dark rail inside it; the sheet
+ * read it as a cream collar rather than as light lying on metal.
  *
  * - `lengthKm` **0.004**, 4 m in the cabin's frame: under the 5.4 m between
  *   the two closest stops, so no pool reaches the next lamp.
- * - `sleeveFactor` **1.06**: proud of the rail by 7.5 cm, which is clear of
- *   depth fighting at the cabin's range and far inside the lamp's housing.
+ * - `widthKm` **0.0016**: inside the rail's 2.5 m diameter, so the fade at
+ *   each edge lands on the rail rather than on space beside it.
+ * - `standoffFactor` **1.04**: the strip stands 5 cm proud of the rail's
+ *   widest radius toward the pilot, clear of depth fighting.
  * - `intensity` is the lamp's colour scaled, under the lamp's own — a pool is
  *   never brighter than what casts it — and set by looking.
  */
 export const COCKPIT_LAMP_POOL = {
 	lengthKm: 0.004,
-	sleeveFactor: 1.06,
+	widthKm: 0.0016,
+	standoffFactor: 1.04,
 	intensity: COCKPIT_EMISSIVE_INTENSITIES.lampPool,
 } as const;
 
@@ -796,19 +803,30 @@ export function lampPoolRamp(v: number): number {
 	return (1 - t) ** 2;
 }
 
+/** How bright a pool is at `u` across it: 0 at both long edges, 1 on the
+ *  centre line, so the strip has no edge of its own to read. */
+export function lampPoolAcross(u: number): number {
+	const t = Math.min(1, Math.max(0, u));
+	return Math.sin(Math.PI * t) ** 2;
+}
+
 let poolRamp: THREE.DataTexture | null = null;
 let poolGlow: THREE.MeshBasicMaterial | null = null;
 
-/** The ramp as a texture along v, built once. Linear data, not a colour. */
+/** The two falloffs as one texture, built once. Linear data, not a colour. */
 function poolRampTexture() {
 	if (poolRamp) return poolRamp;
-	const size = 64;
-	const data = new Uint8Array(size * 4);
-	for (let i = 0; i < size; i++) {
-		const value = Math.round(lampPoolRamp(i / (size - 1)) * 255);
-		data.set([value, value, value, 255], i * 4);
-	}
-	poolRamp = new THREE.DataTexture(data, 1, size, THREE.RGBAFormat);
+	const across = 16;
+	const along = 64;
+	const data = new Uint8Array(across * along * 4);
+	for (let j = 0; j < along; j++)
+		for (let i = 0; i < across; i++) {
+			const value = Math.round(
+				lampPoolRamp(j / (along - 1)) * lampPoolAcross(i / (across - 1)) * 255,
+			);
+			data.set([value, value, value, 255], (j * across + i) * 4);
+		}
+	poolRamp = new THREE.DataTexture(data, across, along, THREE.RGBAFormat);
 	poolRamp.magFilter = THREE.LinearFilter;
 	poolRamp.minFilter = THREE.LinearFilter;
 	poolRamp.needsUpdate = true;
@@ -834,9 +852,11 @@ function poolMaterial() {
 /**
  * The pools on one canopy side rail, one under each of `railLamps`' lamps.
  *
- * `from` is the sill end. Each sleeve's +Y — three's cylinder axis, where its
- * `v` is 1 — points down the rail, so `v` 0 is at the lamp and the ramp's
- * bright end is where the light is.
+ * `from` is the sill end. A plane faces +Z — toward the pilot — and carries
+ * `v` 1 at its +Y edge; turned about Z so that +Y points down the rail, `v` 0
+ * is at the lamp and the ramp's bright end is where the light is. The rails run
+ * at constant z, so the turn is about Z alone and the strip keeps facing the
+ * pilot.
  */
 export function railLampPools(
 	from: readonly [number, number, number],
@@ -850,14 +870,9 @@ export function railLampPools(
 		new THREE.Vector3(0, 1, 0),
 		down,
 	);
-	const radius = railRadiusKm * COCKPIT_LAMP_POOL.sleeveFactor;
-	const geometry = new THREE.CylinderGeometry(
-		radius,
-		radius,
+	const geometry = new THREE.PlaneGeometry(
+		COCKPIT_LAMP_POOL.widthKm,
 		COCKPIT_LAMP_POOL.lengthKm,
-		12,
-		1,
-		true,
 	);
 	return COCKPIT_LAMP.stops.map((t) => {
 		const mesh = new THREE.Mesh(geometry, poolMaterial());
@@ -867,6 +882,7 @@ export function railLampPools(
 			.copy(start)
 			.addScaledVector(along, t)
 			.addScaledVector(down, COCKPIT_LAMP_POOL.lengthKm / 2);
+		mesh.position.z += railRadiusKm * COCKPIT_LAMP_POOL.standoffFactor;
 		return mesh;
 	});
 }
