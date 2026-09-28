@@ -8,8 +8,8 @@
  * `alert`, played for a carrier's hail and a refused scoop, which is the ship's
  * *something is wrong* voice speaking for a message.
  *
- * A pure step that imports only the cue vocabulary, like `flight-sound.ts`
- * (#542 D3). The seam is where the **outcome** is known — the `Game` side of a
+ * A pure step that imports only the cue vocabulary and docking's
+ * `Clearance` type, both type-only, like `flight-sound.ts` (#542 D3). The seam is where the **outcome** is known — the `Game` side of a
  * console callback — and not at the DOM click: a refusal exists only after the
  * handler has run, so a click cued at the DOM would sound "done" first.
  *
@@ -107,9 +107,10 @@ export function focusCue(
 
 /**
  * How long a second message of one tone is silent after one sounded, s, on
- * `gap`. **A placeholder the listen sets**: long enough that a burst — a
- * clearance answer beside a station line — is one sound, short enough that
- * two separate events a breath apart are both heard.
+ * `gap` — the principal's Q4 on #546. **Per tone**: two messages of one
+ * meaning inside it are one sound, and messages of two meanings — a grant
+ * beside a station line — are both heard, because each says something the
+ * other does not. On `onenote` there is one tone, so one gap.
  */
 export const NOTIFY_GAP_S = 1.5;
 

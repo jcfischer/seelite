@@ -101,3 +101,27 @@ describe("the notice's window and its re-arm rule", () => {
 		expect(CHARGE_READ_S).toBeLessThan(CHARGE_NOTICE_S);
 	});
 });
+
+describe("the notice a second charge meets (#546)", () => {
+	// `main.ts` sounds the `bad` tone only when this returns a new notice,
+	// so the identity is the contract: a charge inside the first's reading
+	// time keeps the first on the glass and plays nothing.
+	test("inside the reading time, the standing notice is returned as is", () => {
+		const first = nextChargeNotice(
+			{ text: "", left: 0 },
+			{ callsign: CALLSIGN },
+		);
+		expect(nextChargeNotice(first, { callsign: "Other 2" })).toBe(first);
+	});
+
+	test("after it, a second charge is a new notice", () => {
+		const first = nextChargeNotice(
+			{ text: "", left: 0 },
+			{ callsign: CALLSIGN },
+		);
+		// A little past the reading time: subtracting it back out of the notice's
+		// length lands one ulp short of it, which is still inside.
+		const read = { ...first, left: CHARGE_NOTICE_S - CHARGE_READ_S - 0.01 };
+		expect(nextChargeNotice(read, { callsign: "Other 2" })).not.toBe(read);
+	});
+});
