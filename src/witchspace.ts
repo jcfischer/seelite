@@ -352,8 +352,10 @@ export function witchspaceControlHeld(state: WitchspaceState): boolean {
  *
  * - the hum when a wind-up begins: the low charge hum for its first `humS`.
  * - the sweep on the step the entry crosses `sweepS` from the cut, so its end
- *   lands on the cut. On the `swallow` arm it carries where the dark closes,
- *   in seconds from its own start, so it is drawn down into the point.
+ *   lands on the cut. On the `rise` and `swallow` arms it carries the time
+ *   left to the cut, so it holds to it however late it fired; on `swallow`
+ *   also where the dark closes, in seconds from its own start, so it is drawn
+ *   down into the point.
  * - the flash and the ride on the step the exit begins: the flash on the cut,
  *   and the ride for the tunnel's whole life, carrying its shape.
  * - the unfolding and the rift on the step the exit crosses `unfoldAtS`: the
@@ -381,12 +383,15 @@ export function witchspaceCues(
 		arms.before === "swallow"
 			? {
 					kind: "witchspaceSweep",
+					riseS: leftS,
 					swallow: {
 						fromS: Math.max(0, leftS - W.darkInS),
 						toS: Math.max(0, leftS - W.pointS),
 					},
 				}
-			: { kind: "witchspaceSweep" };
+			: arms.before === "rise"
+				? { kind: "witchspaceSweep", riseS: leftS }
+				: { kind: "witchspaceSweep" };
 	const stop: WitchspaceCue = { kind: "witchspaceStop" };
 	const endsExit = prev.kind === "exit" && next.kind !== "exit";
 	if (next.kind === "entry" && prev.kind !== "entry") {

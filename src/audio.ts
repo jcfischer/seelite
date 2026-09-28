@@ -294,7 +294,8 @@ export class AudioFX {
 			return;
 		}
 		if (cue.kind === "witchspaceSweep") {
-			this.witchspaceSweep(cue.swallow);
+			if (cue.riseS === undefined) this.witchspaceSweep();
+			else this.witchspaceRise(cue.riseS, cue.swallow);
 			return;
 		}
 		if (cue.kind === "witchspaceFlash") {
@@ -1306,21 +1307,38 @@ export class AudioFX {
 	 * group so `stopWitchspace` can take it back — a sweep that played on after
 	 * a cancelled charge would announce a jump that did not happen.
 	 *
-	 * With `swallow` (#534's arm), the sweep is drawn down into silence as the
-	 * dark closes to a point: its level and its top both fall from `fromS` to
-	 * nothing at `toS`, seconds from its start, so the point is heard as the
-	 * absence of the sweep before the flash.
+	 * Both of its parts decay from their onset, so most of it is heard in its
+	 * first half second and the cut arrives under the engine bed (#534).
 	 */
-	private witchspaceSweep(swallow?: SweepSwallow) {
+	private witchspaceSweep() {
+		const out = this.witchspaceGroup("sweep");
+		if (!out) return;
+		this.tone(out, 90, HYPERSPACE_SWEEP_S, "sawtooth", 0.22, 1400);
+		this.noiseBurst(out, 1.2, 0.18, 2200);
+	}
+	/**
+	 * The sweep that holds to the cut (#534's `rise` arm): the same climb from
+	 * 90 Hz to 1400, with a rising band of noise over it, swelling rather than
+	 * decaying for `seconds` — the time left to the cut — and ended there, so
+	 * the flash is what stops it.
+	 *
+	 * With `swallow`, it is drawn down into silence as the dark closes to a
+	 * point: its level and its top both fall from `fromS` to nothing at
+	 * `toS`, seconds from its start, so the point is heard as the sweep's
+	 * absence before the flash.
+	 */
+	private witchspaceRise(seconds: number, swallow?: SweepSwallow) {
 		const group = this.witchspaceGroup("sweep");
 		if (!group || !this.ctx) return;
+		const ctx = this.ctx;
+		const t = ctx.currentTime;
+		const end = t + Math.max(0.05, seconds);
 		let out: AudioNode = group;
 		if (swallow) {
-			const t = this.ctx.currentTime;
-			const gain = this.ctx.createGain();
+			const gain = ctx.createGain();
 			gain.gain.setValueAtTime(1, t + swallow.fromS);
 			gain.gain.exponentialRampToValueAtTime(0.0001, t + swallow.toS);
-			const filter = this.ctx.createBiquadFilter();
+			const filter = ctx.createBiquadFilter();
 			filter.type = "lowpass";
 			filter.frequency.setValueAtTime(12000, t + swallow.fromS);
 			filter.frequency.exponentialRampToValueAtTime(250, t + swallow.toS);
@@ -1328,8 +1346,39 @@ export class AudioFX {
 			gain.connect(group);
 			out = filter;
 		}
-		this.tone(out, 90, HYPERSPACE_SWEEP_S, "sawtooth", 0.22, 1400);
-		this.noiseBurst(out, 1.2, 0.18, 2200);
+		const env = ctx.createGain();
+		env.gain.setValueAtTime(0.0001, t);
+		env.gain.exponentialRampToValueAtTime(0.1, t + 0.05);
+		env.gain.exponentialRampToValueAtTime(0.18, end - 0.02);
+		env.gain.exponentialRampToValueAtTime(0.0001, end);
+		env.connect(out);
+		const saw = ctx.createOscillator();
+		saw.type = "sawtooth";
+		saw.frequency.setValueAtTime(90, t);
+		saw.frequency.exponentialRampToValueAtTime(1400, end);
+		const soft = ctx.createBiquadFilter();
+		soft.type = "lowpass";
+		soft.frequency.setValueAtTime(900, t);
+		soft.frequency.exponentialRampToValueAtTime(6000, end);
+		saw.connect(soft);
+		soft.connect(env);
+		const src = ctx.createBufferSource();
+		src.buffer = noiseLoop(ctx, "white");
+		src.loop = true;
+		const band = ctx.createBiquadFilter();
+		band.type = "bandpass";
+		band.Q.value = 1.5;
+		band.frequency.setValueAtTime(800, t);
+		band.frequency.exponentialRampToValueAtTime(5000, end);
+		const air = ctx.createGain();
+		air.gain.value = 0.7;
+		src.connect(band);
+		band.connect(air);
+		air.connect(env);
+		for (const s of [saw, src]) {
+			s.start(t);
+			s.stop(end + 0.05);
+		}
 	}
 	/**
 	 * The flash on the cut (#534). `boom`: a low impact, a sub dropping out
@@ -1341,13 +1390,13 @@ export class AudioFX {
 		if (!out) return;
 		if (voice === "glass") {
 			for (const [hz, vol, dur] of [
-				[1568, 0.07, 1.1],
-				[2349, 0.05, 0.9],
-				[3322, 0.04, 0.7],
-				[4699, 0.025, 0.5],
+				[1568, 0.11, 1.1],
+				[2349, 0.08, 0.9],
+				[3322, 0.06, 0.7],
+				[4699, 0.04, 0.5],
 			] as const)
 				this.tone(out, hz, dur, "sine", vol);
-			this.bandBurst(out, 0.35, 0.12, 6000, 0.7);
+			this.bandBurst(out, 0.35, 0.2, 6000, 0.7);
 			return;
 		}
 		this.tone(out, 95, 1.1, "sine", 0.42, 28);
@@ -1454,7 +1503,10 @@ export class AudioFX {
 		const t = ctx.currentTime;
 		const end = t + seconds;
 		const env = ctx.createGain();
-		env.gain.setValueAtTime(0.0001, t);
+		// From a hundredth rather than from silence: an exponential ramp spends
+		// most of its time far down, and from 0.0001 the first half of the
+		// swell was under the bed.
+		env.gain.setValueAtTime(0.01, t);
 		env.gain.exponentialRampToValueAtTime(1, t + seconds * 0.4);
 		env.gain.exponentialRampToValueAtTime(0.0001, end);
 		env.connect(out);
@@ -1467,7 +1519,7 @@ export class AudioFX {
 		band.frequency.setValueAtTime(5000, t);
 		band.frequency.exponentialRampToValueAtTime(300, end);
 		const noiseLevel = ctx.createGain();
-		noiseLevel.gain.value = 0.16;
+		noiseLevel.gain.value = 0.4;
 		src.connect(band);
 		band.connect(noiseLevel);
 		noiseLevel.connect(env);
@@ -1480,7 +1532,7 @@ export class AudioFX {
 		soft.frequency.setValueAtTime(3000, t);
 		soft.frequency.exponentialRampToValueAtTime(400, end);
 		const glideLevel = ctx.createGain();
-		glideLevel.gain.value = 0.06;
+		glideLevel.gain.value = 0.12;
 		glide.connect(soft);
 		soft.connect(glideLevel);
 		glideLevel.connect(env);

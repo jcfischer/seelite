@@ -32,6 +32,7 @@ interface SoundEntry {
 	flight?: { arms: string };
 	weapons?: { arms: string };
 	witchspace?: { arms: string; from: string };
+	scheduled?: { kind: string; arms: string };
 }
 const SOUND_SET: readonly SoundEntry[] = SET;
 
@@ -66,7 +67,13 @@ function scheduledKinds(e: SoundEntry): string[] {
 
 test("every cue kind is rendered, or says why not", () => {
 	const rendered = new Set<string>(
-		SOUND_SET.flatMap((e) => (e.cue ? [e.cue.kind] : scheduledKinds(e))),
+		SOUND_SET.flatMap((e) =>
+			e.cue
+				? [e.cue.kind]
+				: e.scheduled
+					? [e.scheduled.kind]
+					: scheduledKinds(e),
+		),
 	);
 	for (const kind of Object.keys(CUE_BUS) as CueKind[])
 		expect(rendered.has(kind) || kind in NOT_RENDERED).toBe(true);
@@ -109,6 +116,7 @@ test("each entry before #544 names the method the engine before #552 exposed", (
 			!e.flight &&
 			!e.weapons &&
 			!e.witchspace &&
+			!e.scheduled &&
 			!noLegacyMethod.has(e.cue?.kind) &&
 			!since545.has(e.name)
 		)

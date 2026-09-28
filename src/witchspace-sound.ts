@@ -11,9 +11,12 @@
  * **Pure, and it imports nothing**, for `witchspace.ts`'s reason: the cue is
  * pushed to the audio layer, and a step module is free of it.
  *
- * - **before** — the dark closing to a point. `sweep`: the sweep runs to the
- *   cut as it did. `swallow`: the sweep is drawn down into silence as the dark
- *   closes, so the point is heard as nothing before the flash.
+ * - **before** — the dark closing to a point. `sweep`: the sweep as it was,
+ *   which starts 1.4 s before the cut and is under the engine bed within half
+ *   a second of starting, so the cut itself arrives unannounced. `rise`: the
+ *   sweep holds and climbs all the way to the cut, and the flash cuts it off.
+ *   `swallow`: it holds and climbs, then is drawn down into silence as the
+ *   dark closes, so the point is heard as nothing before the flash.
  * - **flash** — the white on the cut. `boom`: a low impact. `glass`: a bright
  *   ring of light, high and short.
  * - **ride** — the tunnel. `rings`: a rushing that pulses with the rings as
@@ -29,7 +32,7 @@
  */
 
 export const WITCHSPACE_SOUND_ARMS = {
-	before: ["sweep", "swallow"],
+	before: ["sweep", "rise", "swallow"],
 	flash: ["boom", "glass"],
 	ride: ["rings", "bed"],
 	engine: ["duck", "noduck"],

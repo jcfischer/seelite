@@ -40,7 +40,9 @@ export type RideVoice = "rings" | "bed";
 /**
  * The sweep drawn down into silence as the dark closes to a point (#534's
  * `swallow` arm): seconds from the cue's start. The schedule works them out
- * from the dark's own timing, so the engine never reads it.
+ * from the dark's own timing, so the engine never reads it. Only a risen
+ * sweep carries one: the sweep before #534 has died away before the dark
+ * closes, so there is nothing left of it to swallow.
  */
 export interface SweepSwallow {
 	fromS: number;
@@ -71,7 +73,7 @@ export type Cue =
 	| { kind: "refuse" }
 	| { kind: "focus" }
 	| { kind: "witchspaceHum"; seconds: number }
-	| { kind: "witchspaceSweep"; swallow?: SweepSwallow }
+	| { kind: "witchspaceSweep"; riseS?: number; swallow?: SweepSwallow }
 	| { kind: "witchspaceFlash"; voice: FlashVoice }
 	| {
 			kind: "witchspaceRide";

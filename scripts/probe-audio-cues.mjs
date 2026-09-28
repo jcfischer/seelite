@@ -362,6 +362,87 @@ const SINCE_545 = {
 };
 
 /**
+ * #534's flash and jumps, which `origin/main` does not have: centred on this
+ * branch's own render (`PRINT=1`, seed 552), so they hold the prototype to
+ * what the principal listens to and move when the ear moves it. A jump takes
+ * the bed's wide band: it carries noise loops, the flight bed and every cue of
+ * the transition. Like a flight timeline, a jump whose ride vanished could
+ * stay inside that band, so each voice after the cut also renders alone in
+ * its own band, and the windowed rows below hold what only a timeline shows:
+ * the rift over the returning bed, the sweep's two arms, and the duck.
+ */
+const SINCE_534 = {
+	"witchspace-flash-boom": {
+		rms: 0.02627,
+		peak: 0.1912,
+		onsetMs: 7.44,
+		hz: 441,
+		noise: 1,
+	},
+	"witchspace-flash-glass": {
+		rms: 0.01139,
+		peak: 0.13603,
+		onsetMs: 7.33,
+		hz: 7136,
+		noise: 1,
+	},
+	"witchspace-ride-rings": {
+		rms: 0.01733,
+		peak: 0.04693,
+		onsetMs: 303.79,
+		hz: 2113,
+		noise: 1,
+	},
+	"witchspace-ride-bed": {
+		rms: 0.03115,
+		peak: 0.13226,
+		onsetMs: 259.27,
+		hz: 180,
+		noise: 1,
+	},
+	"witchspace-unfold": {
+		rms: 0.00659,
+		peak: 0.0675,
+		onsetMs: 51,
+		hz: 5235,
+		noise: 1,
+	},
+	"witchspace-rift": { rms: 0.02007, peak: 0.09312, onsetMs: 281.23, hz: 279 },
+	jump: { rms: 0.02022, peak: 0.18672, onsetMs: 13.21, hz: 281, bed: 1 },
+	"jump-rise": { rms: 0.02196, peak: 0.20146, onsetMs: 13.21, hz: 281, bed: 1 },
+	"jump-swallow": {
+		rms: 0.02012,
+		peak: 0.20143,
+		onsetMs: 13.21,
+		hz: 281,
+		bed: 1,
+	},
+	"jump-glass": {
+		rms: 0.01852,
+		peak: 0.13918,
+		onsetMs: 13.21,
+		hz: 281,
+		bed: 1,
+	},
+	"jump-bed": { rms: 0.02506, peak: 0.18671, onsetMs: 13.21, hz: 281, bed: 1 },
+	"jump-noduck": {
+		rms: 0.02062,
+		peak: 0.18744,
+		onsetMs: 13.21,
+		hz: 281,
+		bed: 1,
+	},
+	arrival: { rms: 0.02139, peak: 0.18356, onsetMs: 46.48, hz: 292, bed: 1 },
+	"arrival-quiet": {
+		rms: 0.0034,
+		peak: 0.02469,
+		onsetMs: 46.48,
+		hz: 292,
+		bed: 1,
+	},
+};
+
+/**
  * Each cue's band: rms, peak and centroid as `[low, high]`, and the latest
  * onset in ms. A tone-only cue renders the same waveform on every seed, so
  * its band is ±10%; a noise cue's is wide enough for the seed's own spread
@@ -369,26 +450,26 @@ const SINCE_545 = {
  * as much again, which is the order of a render quantum's rounding.
  */
 const BANDS = Object.fromEntries(
-	Object.entries({ ...MAIN, ...SINCE_544, ...SINCE_546, ...SINCE_545 }).map(
-		([name, m]) => {
-			const [lo, hi] = m.bed ? [0.7, 1.4] : m.noise ? [0.8, 1.25] : [0.9, 1.1];
-			const [plo, phi] = m.bed || m.noise ? [0.6, 1.6] : [0.9, 1.1];
-			const [clo, chi] = m.bed
-				? [0.6, 1.5]
-				: m.noise
-					? [0.93, 1.07]
-					: [0.9, 1.1];
-			return [
-				name,
-				{
-					rms: [m.rms * lo, m.rms * hi],
-					peak: [m.peak * plo, m.peak * phi],
-					onsetMs: m.onsetMs + (m.bed ? 60 : 12),
-					centroidHz: [m.hz * clo, m.hz * chi],
-				},
-			];
-		},
-	),
+	Object.entries({
+		...MAIN,
+		...SINCE_544,
+		...SINCE_546,
+		...SINCE_545,
+		...SINCE_534,
+	}).map(([name, m]) => {
+		const [lo, hi] = m.bed ? [0.7, 1.4] : m.noise ? [0.8, 1.25] : [0.9, 1.1];
+		const [plo, phi] = m.bed || m.noise ? [0.6, 1.6] : [0.9, 1.1];
+		const [clo, chi] = m.bed ? [0.6, 1.5] : m.noise ? [0.93, 1.07] : [0.9, 1.1];
+		return [
+			name,
+			{
+				rms: [m.rms * lo, m.rms * hi],
+				peak: [m.peak * plo, m.peak * phi],
+				onsetMs: m.onsetMs + (m.bed ? 60 : 12),
+				centroidHz: [m.hz * clo, m.hz * chi],
+			},
+		];
+	}),
 );
 
 /** The most of an uncapped burst's ring a capped one may reach. Read at
@@ -547,6 +628,44 @@ try {
 			[0.8, 1.4],
 			"weapons-taken-sizzle",
 			[2.6, 3.1],
+		],
+		// #534: each segment after the cut, against the quiet arrival at the
+		// same phase — the same flight bed, the same duck, and no cue. The
+		// arrival begins at 0.5 s, so its phase is the render time less that.
+		// The ride and the unfolding are held by their lone renders' bands and
+		// not here: against the quiet arrival they would be read against the
+		// duck's exact silence, which any tail at all stands over. The rift
+		// outlasts the duck, so its control has the bed in it.
+		[
+			"the rift is heard as it closes behind the ship",
+			"arrival",
+			[6, 7],
+			"arrival-quiet",
+			[6, 7],
+		],
+		// The wind-up's last quarter second, cut at 3.5 s: the risen sweep
+		// against the sweep as it was, and against itself swallowed.
+		[
+			"the risen sweep holds to the cut",
+			"jump-rise",
+			[3.2, 3.45],
+			"jump",
+			[3.2, 3.45],
+		],
+		[
+			"the swallowed sweep is gone before the flash",
+			"jump-rise",
+			[3.3, 3.45],
+			"jump-swallow",
+			[3.3, 3.45],
+		],
+		// Between the ride's close and the new light, where only the bed plays.
+		[
+			"the duck takes the engine away until the hands come back",
+			"jump-noduck",
+			[6.05, 6.45],
+			"jump",
+			[6.05, 6.45],
 		],
 	];
 	const renders = new Map();

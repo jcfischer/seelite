@@ -114,8 +114,25 @@ export const SOUND_SET = Object.freeze([
 	},
 	{ name: "landed-hull", seconds: 0.4, cue: { kind: "hitLanded", on: "hull" } },
 	...weaponTimelines(),
-	// #534's flash has one cue and no schedule to fly; the rest of the exit
-	// is heard in the jumps below, through the real schedule.
+	// #534's four voices after the cut, each alone. The flash's cue is whole
+	// in itself; the others carry the schedule's timing, so they are taken
+	// from it (`scheduled`: the first cue of that kind a jump plays on those
+	// arms) rather than restated here. The jumps below play them together.
+	...["rings", "bed"].map((voice) => ({
+		name: `witchspace-ride-${voice}`,
+		seconds: 3.4,
+		scheduled: { kind: "witchspaceRide", arms: voice },
+	})),
+	{
+		name: "witchspace-unfold",
+		seconds: 1.9,
+		scheduled: { kind: "witchspaceUnfold", arms: "" },
+	},
+	{
+		name: "witchspace-rift",
+		seconds: 4.8,
+		scheduled: { kind: "witchspaceRift", arms: "" },
+	},
 	{
 		name: "witchspace-flash-boom",
 		seconds: 1.4,
@@ -149,6 +166,7 @@ function witchspaceTimelines() {
 	});
 	return [
 		line("jump", 12, ""),
+		line("jump-rise", 12, "rise"),
 		line("jump-swallow", 12, "swallow"),
 		line("jump-glass", 12, "glass"),
 		line("jump-bed", 12, "bed"),
@@ -373,6 +391,7 @@ export async function renderInPage({
 	if (
 		(entry.flight && typeof fx.flight !== "function") ||
 		(entry.witchspace && !knownKinds.includes("witchspaceRide")) ||
+		(entry.scheduled && !knownKinds.includes(entry.scheduled.kind)) ||
 		(entry.weapons && typeof fx.weapons !== "function") ||
 		(entry.cue && !entry.legacy && !modern) ||
 		(entry.cue && modern && !knownKinds.includes(entry.cue.kind))
@@ -410,6 +429,28 @@ export async function renderInPage({
 		}
 	}
 
+	if (entry.scheduled) {
+		const W = await import("/src/witchspace.ts");
+		const { witchspaceSoundArms } = await import("/src/witchspace-sound.ts");
+		const { arms, unknown } = witchspaceSoundArms(entry.scheduled.arms);
+		if (unknown.length)
+			throw new Error(`${entry.name}: arms ${entry.scheduled.arms}`);
+		let s = W.beginWitchspace();
+		let found = null;
+		for (let i = 0; i < 2000 && !found && s.kind !== "idle"; i++) {
+			const next =
+				s.kind === "entry" && s.leftS <= 0
+					? W.jumpedWitchspace()
+					: W.stepWitchspace(s, 1 / 50);
+			found = W.witchspaceCues(s, next, arms).find(
+				(c) => c.kind === entry.scheduled.kind,
+			);
+			s = next;
+		}
+		if (!found)
+			throw new Error(`${entry.name}: no ${entry.scheduled.kind} in a jump`);
+		entry = { ...entry, cue: found };
+	}
 	let state = (typeof seed === "number" ? seed : 1) >>> 0 || 1;
 	const seeded = () => {
 		state = (Math.imul(state, 1664525) + 1013904223) >>> 0;

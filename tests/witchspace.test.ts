@@ -352,9 +352,17 @@ describe("after the cut (#534)", () => {
 		).toMatchObject({ voice: "bed" });
 	});
 
-	test("on the sweep arm the sweep runs to the cut; on swallow it is drawn into the point", () => {
+	test("on the sweep arm the sweep is as it was; on rise it holds to the cut; on swallow it is drawn into the point", () => {
 		const plain = jump().find(({ cue }) => cue.kind === "witchspaceSweep");
 		expect(plain?.cue).toEqual({ kind: "witchspaceSweep" });
+		const risen = jump({ ...DEFAULT_WITCHSPACE_ARMS, before: "rise" }).find(
+			({ cue }) => cue.kind === "witchspaceSweep",
+		);
+		// It rises for exactly the time left to the cut, however late it fired.
+		expect(risen?.cue).toEqual({
+			kind: "witchspaceSweep",
+			riseS: -(risen?.at as number),
+		});
 		const swallowed = jump({
 			...DEFAULT_WITCHSPACE_ARMS,
 			before: "swallow",
@@ -364,6 +372,7 @@ describe("after the cut (#534)", () => {
 		// `darkInS` before the cut and is a point at `pointS` before it.
 		expect(swallowed?.cue).toEqual({
 			kind: "witchspaceSweep",
+			riseS: at,
 			swallow: {
 				fromS: at - WITCHSPACE.darkInS,
 				toS: at - WITCHSPACE.pointS,

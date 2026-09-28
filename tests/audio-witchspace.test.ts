@@ -168,12 +168,29 @@ describe("after the cut (#534)", () => {
 	test("the swallowed sweep is drawn to silence where the dark closes", () => {
 		const { audio, ctx } = unlocked();
 		const t = ctx.currentTime;
-		audio.play({ kind: "witchspaceSweep", swallow: { fromS: 0.2, toS: 1.15 } });
+		audio.play({
+			kind: "witchspaceSweep",
+			riseS: 1.4,
+			swallow: { fromS: 0.2, toS: 1.15 },
+		});
 		const swallow = ctx.gains.find((g) =>
 			g.gain.events.some(([, v, at]) => v <= 0.001 && at === t + 1.15),
 		);
 		expect(swallow).toBeDefined();
 		expect(swallow?.gain.events).toContainEqual(["set", 1, t + 0.2]);
+	});
+
+	test("the risen sweep holds its level to the cut, where the plain one has died", () => {
+		const held = (cue: Parameters<AudioFX["play"]>[0]) => {
+			const { audio, ctx } = unlocked();
+			const t = ctx.currentTime;
+			audio.play(cue);
+			return ctx.gains.some((g) =>
+				g.gain.events.some(([, v, at]) => v >= 0.1 && at >= t + 1.3),
+			);
+		};
+		expect(held({ kind: "witchspaceSweep", riseS: 1.4 })).toBe(true);
+		expect(held(SWEEP)).toBe(false);
 	});
 
 	test("the plain sweep is not swallowed", () => {
