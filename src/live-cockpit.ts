@@ -288,6 +288,11 @@ export interface LiveCockpitCallbacks {
 	 * into the element handed up here and disposes when it is handed `null`.
 	 */
 	onChartHost: (host: HTMLElement | null) => void;
+	/**
+	 * The pointer landed on another of this surface's own rows (#546). Once
+	 * per row entered, not per pixel moved.
+	 */
+	onHover?: () => void;
 }
 
 /**
@@ -605,6 +610,17 @@ export class LiveCockpit {
 					query: (field as HTMLInputElement).value,
 				});
 		});
+		this.root.addEventListener("pointerover", (event) => {
+			const row = (event.target as HTMLElement).closest(
+				LiveCockpit.OWN_FOCUSABLE,
+			);
+			if (row === this.hovered) return;
+			this.hovered = row;
+			if (row) this.callbacks.onHover?.();
+		});
+		this.root.addEventListener("pointerleave", () => {
+			this.hovered = null;
+		});
 		this.root.addEventListener("focusin", (event) => {
 			const element = event.target as HTMLElement;
 			if (!element.matches("[data-live-request-action]")) return;
@@ -796,6 +812,8 @@ export class LiveCockpit {
 		`${LiveCockpit.OWN_FOCUSABLE},${LiveCockpit.FOREIGN_FOCUSABLE}`;
 
 	private focusCursor: FocusCursor = NO_FOCUS;
+	/** The row the pointer is over, so a hover ticks once per row (#546). */
+	private hovered: Element | null = null;
 
 	/**
 	 * Reveal the ring on the next render, once.
@@ -1027,11 +1045,17 @@ export class LiveCockpit {
 		if (reveal) element.scrollIntoView({ block: "nearest", inline: "nearest" });
 	}
 
-	/** Walk the cursor. `-1` is up the list and `1` is down it. */
-	stepFocus(delta: number) {
+	/**
+	 * Walk the cursor. `-1` is up the list and `1` is down it. Whether it
+	 * landed on another row, which is what the tick reads (#546): a list of one
+	 * wraps onto itself.
+	 */
+	stepFocus(delta: number): boolean {
 		const ids = this.focusIds(this.focusElements()).map((id) => ({ id }));
+		const from = this.focusCursor.id;
 		this.focusCursor = moveFocus(ids, this.focusCursor, delta);
 		this.applyFocusRing(true);
+		return this.focusCursor.id !== from;
 	}
 
 	/**

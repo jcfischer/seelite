@@ -141,6 +141,15 @@ import {
 	flightSoundArms,
 } from "./flight-sound";
 import {
+	clearanceTone,
+	consoleSoundArms,
+	focusCue,
+	type NotifyGate,
+	notifyCue,
+	pressCue,
+	QUIET_NOTIFY,
+} from "./console-sound";
+import {
 	COURSE_CUE_LABEL,
 	FLIGHT_FLOOR_LABELS,
 	SCANNER_RANGE_KM,
@@ -1059,6 +1068,18 @@ const FLIGHT_SOUND = flightSoundArms(
 if (FLIGHT_SOUND.unknown.length)
 	console.warn(
 		`?flightsound: unknown ${FLIGHT_SOUND.unknown.join(", ")}; flying the defaults for those`,
+	);
+/**
+ * The consoles' sound arms (#546), from `?consolesound=`: comma-separated
+ * tokens, or `legacy` for the silent consoles before #546.
+ * `console-sound.ts` lists them.
+ */
+const CONSOLE_SOUND = consoleSoundArms(
+	new URLSearchParams(window.location.search).get("consolesound"),
+);
+if (CONSOLE_SOUND.unknown.length)
+	console.warn(
+		`?consolesound: unknown ${CONSOLE_SOUND.unknown.join(", ")}; playing the defaults for those`,
 	);
 const RAIDERS_OFF =
 	RAIDER_PARAM !== null && ["off", "0", "false"].includes(RAIDER_PARAM);
@@ -3986,10 +4007,12 @@ class Game {
 					this.controlsRestoreTab,
 				);
 				this.rightTab = tab;
+				this.consolePress(true);
 				this.updateCockpit();
 			},
 			onLeftTab: (tab) => {
 				this.leftTab = tab;
+				this.consolePress(true);
 				this.updateCockpit();
 			},
 			onNavFilter: (filter) => {
@@ -3999,6 +4022,7 @@ class Game {
 				// to drop the whole map on a filter change — which is a keystroke,
 				// not a frame — than to key every entry by its tick.
 				this.navEtaCache.clear();
+				this.consolePress(true);
 				this.updateCockpit();
 			},
 			onSelectTarget: (id) => {
@@ -4007,8 +4031,12 @@ class Game {
 				// cannot reach — accepting one here would make the list's stated
 				// reason for omitting them false, and give the player a target
 				// `T` could never return to.
-				if (!this.selectable().some((body) => body.id === id)) return;
+				if (!this.selectable().some((body) => body.id === id)) {
+					this.consolePress(false);
+					return;
+				}
 				this.targetId = id;
+				this.consolePress(true);
 				this.updateCockpit();
 			},
 			onStationTab: (tab) => {
@@ -4017,9 +4045,11 @@ class Game {
 				// press retires it (#443) — including a press on the tab
 				// already showing, which is a pilot clearing the screen.
 				this.clearStationRefusal();
+				this.consolePress(true);
 				this.updateCockpit();
 			},
-			onRequestAction: (action, id) => this.actOnRequest(action, id),
+			onRequestAction: (action, id) =>
+				this.consolePress(this.actOnRequest(action, id)),
 			onStationAction: (type, name) => {
 				const action: StationAction =
 					type === "buy-fuel"
@@ -4027,18 +4057,20 @@ class Game {
 						: type === "buy-equipment"
 							? { type, equipment: name }
 							: { type, commodity: name };
-				this.transactStation(action);
+				this.consolePress(this.transactStation(action));
 			},
 			// A refused press holds the launch, and the hold is on the console, so
 			// both outcomes repaint (#314).
 			onLaunch: () => {
-				this.launch();
+				this.consolePress(this.launch());
 				this.updateCockpit();
 			},
 			onCancelLaunch: () => {
 				this.cancelLaunch();
+				this.consolePress(true);
 				this.updateCockpit();
 			},
+			onHover: () => this.consoleFocus("hover"),
 			onChartHost: (host) => this.setChartHost(host),
 		});
 		// The tab prints the layout in force from the first frame, not from the
@@ -6504,6 +6536,7 @@ class Game {
 		// glass would be the console accusing them of something the law did not.
 		if (heat > 0) {
 			this.charged = nextChargeNotice(this.charged, event);
+			this.consoleNotify("bad");
 			this.charges.push({
 				at: now,
 				key: actor.key,
@@ -6567,7 +6600,9 @@ class Game {
 		// Bucketing it would keep a screenful *per galaxy* and make the rail's
 		// history a different length depending on how many systems were flown.
 		if (this.hails.length > HAIL_LOG_KEEP) this.hails.shift();
-		this.play({ kind: "alert" });
+		// A message, which played `alert` before #546 and still does on
+		// `?consolesound=legacy`.
+		this.consoleNotify("message", "hail");
 	}
 
 	/**
@@ -8079,8 +8114,11 @@ class Game {
 			this.setHeadLook("forward");
 			return;
 		}
-		if (intents.focusDelta !== 0)
-			this.liveCockpit.stepFocus(intents.focusDelta);
+		if (
+			intents.focusDelta !== 0 &&
+			this.liveCockpit.stepFocus(intents.focusDelta)
+		)
+			this.consoleFocus("pad");
 		if (intents.tabDelta !== 0) this.liveCockpit.stepTab(intents.tabDelta);
 		// The console acts on its own rows and refuses the chart's, which are
 		// drawn inside the same panel and belong to a handle it does not hold.
@@ -8699,10 +8737,10 @@ class Game {
 				this.liveCockpit.stepTab(1);
 				return;
 			case "panel.cursorUp":
-				this.liveCockpit.stepFocus(-1);
+				if (this.liveCockpit.stepFocus(-1)) this.consoleFocus("pad");
 				return;
 			case "panel.cursorDown":
-				this.liveCockpit.stepFocus(1);
+				if (this.liveCockpit.stepFocus(1)) this.consoleFocus("pad");
 				return;
 			default:
 		}
@@ -9820,7 +9858,8 @@ class Game {
 		const selected = stations.find((s) => s.id === this.targetId);
 		const chosen = selected ?? stations[0];
 		if (!chosen || chosen.km > VICINITY_KM) return { id: null, state: null };
-		const next = requestClearance(this.dockingStateOf(chosen.id), {
+		const prev = this.dockingStateOf(chosen.id);
+		const next = requestClearance(prev, {
 			gameTime: this.world.gameTime,
 			rangeKm: chosen.km,
 			// §13.2: a grant reserves a berth, so the protocol needs the catalogue
@@ -9840,6 +9879,10 @@ class Game {
 			refusedByLaw: this.refusedByLaw(chosen.id),
 		});
 		this.dockingStates.set(chosen.id, next);
+		// Station control answers (#546): on a change of answer only, because
+		// the docking computer asks again and again.
+		const answer = clearanceTone(prev.clearance, next.clearance);
+		if (answer) this.consoleNotify(answer);
 		if (next.clearance.kind === "queued")
 			this.openPlayerTrafficEvent(
 				chosen.id,
@@ -12013,6 +12056,38 @@ class Game {
 	}
 	/** The flight sound's memory: last regime and the hull's heat (#544). */
 	private flightSoundState: FlightSoundState = QUIET_FLIGHT;
+
+	/** When each message tone last sounded (#546), on the wall clock: a
+	 *  message's gap is a thing heard, and a held sim clock does not stop it. */
+	private notifyGate: NotifyGate = QUIET_NOTIFY;
+
+	/** A console message arrived (#546). `console-sound.ts` picks the cue. */
+	private consoleNotify(
+		tone: Parameters<typeof notifyCue>[2],
+		source?: "hail",
+	) {
+		const step = notifyCue(
+			this.notifyGate,
+			CONSOLE_SOUND.arms,
+			tone,
+			performance.now() / 1000,
+			source,
+		);
+		this.notifyGate = step.gate;
+		if (step.cue) this.play(step.cue);
+	}
+
+	/** A console press whose outcome the handler now knows (#546). */
+	private consolePress(accepted: boolean) {
+		const cue = pressCue(CONSOLE_SOUND.arms, accepted);
+		if (cue) this.play(cue);
+	}
+
+	/** The console cursor landed on another row (#546). */
+	private consoleFocus(source: "pad" | "hover") {
+		const cue = focusCue(CONSOLE_SOUND.arms, source);
+		if (cue) this.play(cue);
+	}
 	/** This step's share of full drive, drift-removing and rotation thrust. */
 	private driveShare = 0;
 	private lateralShare = 0;
@@ -14341,15 +14416,17 @@ class Game {
 		};
 	}
 
-	private actOnRequest(action: string, id: string): void {
+	/** Whether the board did what was asked: the press's sound reads it (#546). */
+	private actOnRequest(action: string, id: string): boolean {
 		const view = this.requestsView();
+		let ok = true;
 		if (action === "details") {
 			if (
 				!view.offers.some((o) => o.id === id) &&
 				!this.requests.byId[id] &&
 				!this.requests.leadsById[id]
 			)
-				return;
+				return false;
 			this.requestSelectedId = id;
 			this.requestMessage = "";
 		} else {
@@ -14361,6 +14438,7 @@ class Game {
 				this.requestContext(view.docked),
 			);
 			this.requestMessage = result.message;
+			ok = result.ok;
 			if (result.ok) {
 				this.requests = result.state;
 				if (result.rewardCr)
@@ -14407,6 +14485,7 @@ class Game {
 		}
 		this.requestRevision += 1;
 		this.updateCockpit();
+		return ok;
 	}
 
 	/**
@@ -15159,6 +15238,7 @@ class Game {
 			});
 			if (this.firstDayLog.length > FIRST_DAY_LOG_KEEP)
 				this.firstDayLog.shift();
+			this.consoleNotify("message");
 		}
 		this.firstDayLastStep = current;
 	}
@@ -15280,6 +15360,8 @@ class Game {
 			if (requests !== this.requests) {
 				this.requests = requests;
 				this.requestRevision += 1;
+				// A request is ready to report: nothing else says so (#546).
+				this.consoleNotify("good");
 			}
 		}
 		this.saveDirty();
@@ -15368,9 +15450,10 @@ class Game {
 	}
 
 	/** Applies a complete commerce result or leaves both owner states untouched. */
-	private transactStation(action: StationAction) {
+	/** Whether the till took the press: the press's sound reads it (#546). */
+	private transactStation(action: StationAction): boolean {
 		const context = this.dockedStationContext();
-		if (!context) return;
+		if (!context) return false;
 		const { market, envelope, stationKey, galaxyIndex, economy, gameTimeMin } =
 			context;
 		const result = transactAtStation({
@@ -15404,7 +15487,7 @@ class Game {
 			});
 			this.stationConsoleRevision += 1;
 			this.updateCockpit();
-			return;
+			return false;
 		}
 		this.clearStationRefusal();
 		this.commander = result.commander;
@@ -15423,6 +15506,7 @@ class Game {
 		this.saveDirty();
 		this.stationConsoleRevision += 1;
 		this.updateCockpit();
+		return true;
 	}
 
 	/** Resolves the live dock session once for rendering and commerce actions. */

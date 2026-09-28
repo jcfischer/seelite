@@ -31,6 +31,7 @@ import {
 	type Cue,
 	type CueBus,
 	type FlightMix,
+	type NotifyTone,
 	VOICE_CAPS,
 	VOICE_MIX_CAP,
 	VOICE_PRIORITY,
@@ -119,6 +120,11 @@ export const CUE_LENGTH_S: Readonly<Record<VoicedCueKind, number>> = {
 	alert: 0.17,
 	scoop: 0.17,
 	ui: 0.11,
+	// #546's console voices: each tone's last start plus its ring.
+	notify: 0.45,
+	press: 0.08,
+	refuse: 0.25,
+	focus: 0.07,
 };
 
 type CueBuses = Record<Exclude<Bus, "master">, GainNode>;
@@ -322,6 +328,14 @@ export class AudioFX {
 				return this.scoop(voice);
 			case "ui":
 				return this.ui(voice);
+			case "notify":
+				return this.notify(voice, cue.tone);
+			case "press":
+				return this.press(voice);
+			case "refuse":
+				return this.refuse(voice);
+			case "focus":
+				return this.focus(voice);
 		}
 	}
 
@@ -1029,7 +1043,10 @@ export class AudioFX {
 		return group;
 	}
 
-	/** Something is wrong — low fuel, incoming missile, hull critical. */
+	/**
+	 * Something is wrong with the ship. Its callers before #546 were a
+	 * carrier's hail and a refused scoop: a message spoke in this voice.
+	 */
 	private alert(out: AudioNode) {
 		this.tone(out, 660, 0.12, "square", 0.16);
 		this.tone(out, 440, 0.12, "square", 0.16);
@@ -1040,9 +1057,48 @@ export class AudioFX {
 		this.tone(out, 320, 0.1, "triangle", 0.16, 720);
 		this.tone(out, 720, 0.12, "sine", 0.1, 960);
 	}
-	/** A button, a menu, a market row. */
+	/**
+	 * The one button tick the engine had, and it had no caller before #546.
+	 * Kept as the `square` press arm (`console-sound.ts`).
+	 */
 	private ui(out: AudioNode) {
 		this.tone(out, 520, 0.06, "square", 0.12);
+	}
+
+	/**
+	 * A console message (#546), by tone. Sine and triangle, where `alert` is
+	 * two squares at once: an instrument speaking, not an alarm.
+	 *
+	 * - **message** — two notes up a fifth: news.
+	 * - **good** — three notes rising: a thing done for the pilot.
+	 * - **bad** — two notes falling, lower and duller: a thing gone wrong.
+	 */
+	private notify(out: AudioNode, tone: NotifyTone) {
+		if (tone === "good") {
+			this.tone(out, 784, 0.1, "sine", 0.1);
+			this.tone(out, 988, 0.1, "sine", 0.1, undefined, 0.07);
+			this.tone(out, 1319, 0.22, "sine", 0.1, undefined, 0.14);
+		} else if (tone === "bad") {
+			this.tone(out, 622, 0.16, "triangle", 0.16);
+			this.tone(out, 466, 0.26, "triangle", 0.16, undefined, 0.13);
+		} else {
+			this.tone(out, 880, 0.14, "sine", 0.11);
+			this.tone(out, 1319, 0.24, "sine", 0.09, undefined, 0.09);
+		}
+	}
+	/** A console press that did what it said (#546): short and high. */
+	private press(out: AudioNode) {
+		this.tone(out, 1750, 0.025, "sine", 0.09);
+		this.tone(out, 3500, 0.012, "sine", 0.03);
+	}
+	/** A console press the game refused (#546): a low double buzz. */
+	private refuse(out: AudioNode) {
+		this.tone(out, 196, 0.07, "square", 0.06);
+		this.tone(out, 185, 0.09, "square", 0.06, undefined, 0.1);
+	}
+	/** The cursor landed on another row (#546): the quietest thing here. */
+	private focus(out: AudioNode) {
+		this.tone(out, 2600, 0.014, "sine", 0.035);
 	}
 }
 

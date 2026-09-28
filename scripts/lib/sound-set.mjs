@@ -48,6 +48,18 @@ export const SOUND_SET = Object.freeze([
 	// existed before #544, so a capture at an older ref renders them as absent.
 	{ name: "cruise-engage", seconds: 1.8, cue: { kind: "cruiseEngage" } },
 	{ name: "cruise-drop", seconds: 1.4, cue: { kind: "cruiseDrop" } },
+	// #546's console voices. None has a `legacy` method: the consoles were
+	// silent before #546, so an older ref renders them as absent.
+	{
+		name: "notify-message",
+		seconds: 0.6,
+		cue: { kind: "notify", tone: "message" },
+	},
+	{ name: "notify-good", seconds: 0.6, cue: { kind: "notify", tone: "good" } },
+	{ name: "notify-bad", seconds: 0.6, cue: { kind: "notify", tone: "bad" } },
+	{ name: "press", seconds: 0.3, cue: { kind: "press" } },
+	{ name: "refuse", seconds: 0.4, cue: { kind: "refuse" } },
+	{ name: "focus", seconds: 0.3, cue: { kind: "focus" } },
 	...flightTimelines(),
 ]);
 
