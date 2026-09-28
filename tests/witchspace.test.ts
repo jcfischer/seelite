@@ -627,6 +627,20 @@ describe("the flight bed under a jump (#534)", () => {
 		);
 	});
 
+	test("a quiet arrival does not duck it: that arm is the arrival as it was", () => {
+		// Sage round 2 on #575: before #534 nothing hushed the bed under an
+		// arrival, so a control arm that ducks it is not the old behaviour.
+		const quiet = {
+			...DEFAULT_WITCHSPACE_ARMS,
+			arrival: "arrivalquiet",
+		} as const;
+		expect(witchspaceHushesBed(arriveWitchspace(), quiet)).toBe(false);
+		expect(witchspaceHushesBed(jumpedWitchspace(), quiet)).toBe(true);
+		expect(
+			witchspaceHushesBed(arriveWitchspace(), DEFAULT_WITCHSPACE_ARMS),
+		).toBe(true);
+	});
+
 	test("on noduck it never is", () => {
 		for (const t of [-0.5, 0, 1, WITCHSPACE.controlBackS])
 			expect(witchspaceHushesBed(witchspaceAtPhase(t), noduck)).toBe(false);

@@ -434,8 +434,8 @@ const SINCE_534 = {
 	},
 	arrival: { rms: 0.02141, peak: 0.18356, onsetMs: 46.48, hz: 292, bed: 1 },
 	"arrival-quiet": {
-		rms: 0.0034,
-		peak: 0.02469,
+		rms: 0.00551,
+		peak: 0.02802,
 		onsetMs: 46.48,
 		hz: 292,
 		bed: 1,

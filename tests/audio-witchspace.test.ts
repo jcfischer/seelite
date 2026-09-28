@@ -173,6 +173,13 @@ describe("after the cut (#534)", () => {
 		audio.play({ kind: "witchspaceRideClose", seconds: 0.7 });
 		expect(group.gain.events).toContainEqual(["set", 1, t]);
 		expect(group.gain.events).toContainEqual(["exp", 0.0001, t + 0.7]);
+		// Its voices stop with the close rather than running on silent to
+		// the ride's bound (sage round 2 on #575).
+		const stops = ctx.sources.map(
+			(s) => (s as unknown as { stoppedAt: number[] }).stoppedAt,
+		);
+		for (const at of stops)
+			expect(Math.min(...at)).toBeLessThanOrEqual(t + 0.7 + 0.05);
 		// A stop after the close has nothing left to take.
 		const count = group.gain.events.length;
 		audio.play(STOP);

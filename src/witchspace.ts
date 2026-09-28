@@ -107,8 +107,11 @@ export const WITCHSPACE = Object.freeze({
 	/**
 	 * The longest a ride may sound, seconds from its start. Its end is its own
 	 * cue, fired off the exit clock at `tunnelCloseS`; this only bounds a ride
-	 * whose close never came, and a stall long enough to reach it is a
-	 * `rebuildSystem()` far outside anything measured.
+	 * whose close never came. **No stall has been measured against it.** What
+	 * the code does say is how large one must be: the exit clock takes at most
+	 * `maxExitDtS` from each frame, so the ride ends before its close only if
+	 * the frames before the close add more than `rideLimitS - tunnelCloseS`
+	 * (3.8 s) of wall time beyond that.
 	 */
 	get rideLimitS() {
 		return 2 * this.tunnelGoneS;
@@ -472,11 +475,20 @@ function exitCues(
  * on `duck`, from the cut until the pilot's hands come back. One rule for
  * `main.ts` and the listening harness, so the render the principal hears is
  * the rule the game flies (sage round 1 on #575).
+ *
+ * Not under a quiet arrival: that arm is the arrival as it was before #534,
+ * and nothing hushed the bed then (sage round 2).
  */
 export function witchspaceHushesBed(
 	state: WitchspaceState,
 	arms: WitchspaceSoundArms,
 ): boolean {
+	if (
+		state.kind === "exit" &&
+		state.from === "arrival" &&
+		arms.arrival === "arrivalquiet"
+	)
+		return false;
 	return arms.engine === "duck" && witchspaceControlHeld(state);
 }
 

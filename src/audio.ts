@@ -1494,11 +1494,15 @@ export class AudioFX {
 			s.start(t);
 			s.stop(end + 0.05);
 		}
+		this.rideSources = stops;
 	}
+	/** The ride's running voices, so its close can stop them. */
+	private rideSources: AudioScheduledSourceNode[] = [];
 	/**
 	 * The tunnel closing back into the point (#534): the ride's group taken
-	 * down over `seconds`. It is let go rather than disconnected — its voices
-	 * stop at their own bound — so a later stop has nothing of it to take.
+	 * down over `seconds`, and its voices stopped as it reaches silence rather
+	 * than running on to their bound (sage round 2 on #575). It is let go, not
+	 * disconnected, so a later stop has nothing of it to take.
 	 */
 	private witchspaceRideClose(seconds: number) {
 		const group = this.witchspaceGroups.get("ride");
@@ -1506,6 +1510,8 @@ export class AudioFX {
 		const t = this.ctx.currentTime;
 		group.gain.setValueAtTime(1, t);
 		group.gain.exponentialRampToValueAtTime(0.0001, t + seconds);
+		for (const s of this.rideSources) s.stop(t + seconds + 0.05);
+		this.rideSources = [];
 		this.witchspaceGroups.delete("ride");
 	}
 	/** A two-second noise loop, brown or white, not yet started. */
