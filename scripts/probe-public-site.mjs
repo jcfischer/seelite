@@ -109,6 +109,7 @@ function readChangelog() {
 	return {
 		entries: items.map((item) => ({
 			date: item.querySelector("time")?.getAttribute("datetime") ?? "",
+			shown: item.querySelector("time")?.textContent?.trim() ?? "",
 			text: item.querySelector(".changelog-text")?.textContent ?? "",
 			visible: item.checkVisibility(),
 		})),
@@ -161,6 +162,7 @@ for (const [label, viewport] of [
 				(entry) =>
 					entry.visible &&
 					/^\d{4}-\d{2}-\d{2}$/.test(entry.date) &&
+					/^\d{1,2} [A-Z][a-z]{2} \d{4}$/.test(entry.shown) &&
 					entry.text.length > 0,
 			),
 			JSON.stringify(state.entries),

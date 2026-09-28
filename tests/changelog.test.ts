@@ -33,7 +33,7 @@ describe("the changelog (#573)", () => {
 			).toBe(entry.date);
 			expect(entry.text).toBe(entry.text.trim());
 			expect(entry.text).toMatch(/^[A-Z].*\.$/);
-			// One sentence: no full stop before the last character.
+			// One sentence: no sentence-ending mark followed by a space before the end.
 			expect(entry.text.slice(0, -1)).not.toMatch(/[.!?]\s/);
 			// The text goes into markup unescaped by design, so it may not carry any.
 			expect(entry.text).not.toMatch(/[<>&"]/);
