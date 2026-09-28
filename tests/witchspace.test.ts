@@ -264,6 +264,12 @@ describe("the cues", () => {
 	});
 });
 
+/** The arms with the arrival heard, whatever the default. */
+const SOUNDED = {
+	...DEFAULT_WITCHSPACE_ARMS,
+	arrival: "arrivalsound",
+} as const;
+
 /** A whole jump at a fixed frame: the wind-up, the cut, the exit to idle. */
 function jump(arms = DEFAULT_WITCHSPACE_ARMS) {
 	const cues: { at: number; cue: WitchspaceCue }[] = [];
@@ -279,6 +285,16 @@ function jump(arms = DEFAULT_WITCHSPACE_ARMS) {
 }
 
 describe("after the cut (#534)", () => {
+	test("the defaults are the principal's ruling of 2026-09-28", () => {
+		expect(DEFAULT_WITCHSPACE_ARMS).toEqual({
+			before: "swallow",
+			flash: "boom",
+			ride: "bed",
+			engine: "noduck",
+			arrival: "arrivalquiet",
+		});
+	});
+
 	test("a jump is heard through the cut to the rift's close", () => {
 		expect(jump().map(({ cue }) => cue.kind)).toEqual([
 			"witchspaceHum",
@@ -375,7 +391,9 @@ describe("after the cut (#534)", () => {
 	});
 
 	test("on the sweep arm the sweep is as it was; on rise it holds to the cut; on swallow it is drawn into the point", () => {
-		const plain = jump().find(({ cue }) => cue.kind === "witchspaceSweep");
+		const plain = jump({ ...DEFAULT_WITCHSPACE_ARMS, before: "sweep" }).find(
+			({ cue }) => cue.kind === "witchspaceSweep",
+		);
 		expect(plain?.cue).toEqual({ kind: "witchspaceSweep" });
 		const risen = jump({ ...DEFAULT_WITCHSPACE_ARMS, before: "rise" }).find(
 			({ cue }) => cue.kind === "witchspaceSweep",
@@ -404,8 +422,8 @@ describe("after the cut (#534)", () => {
 
 	test("an arrival on the sound arm plays the exit a jump does, without the wind-up", () => {
 		const cues = [
-			...witchspaceCues(idleWitchspace(), arriveWitchspace()),
-			...run(arriveWitchspace(), WITCHSPACE.exitEndS + 0.1).cues,
+			...witchspaceCues(idleWitchspace(), arriveWitchspace(), SOUNDED),
+			...run(arriveWitchspace(), WITCHSPACE.exitEndS + 0.1, SOUNDED).cues,
 		];
 		expect(cues).toEqual([
 			"flash",
@@ -451,7 +469,7 @@ describe("ending an exit early (#534)", () => {
 
 	test("an arrival over a running exit stops it and starts again", () => {
 		const riding = run(jumpedWitchspace(), 1).state;
-		expect(witchspaceCues(riding, arriveWitchspace())).toEqual([
+		expect(witchspaceCues(riding, arriveWitchspace(), SOUNDED)).toEqual([
 			"stop",
 			"flash",
 			"ride",
@@ -614,30 +632,29 @@ describe("the aberration", () => {
 
 describe("the flight bed under a jump (#534)", () => {
 	const noduck = { ...DEFAULT_WITCHSPACE_ARMS, engine: "noduck" } as const;
+	const duck = { ...DEFAULT_WITCHSPACE_ARMS, engine: "duck" } as const;
 
 	test("on duck the bed is hushed from the cut until the hands come back", () => {
 		const hushed = (t: number) =>
-			witchspaceHushesBed(witchspaceAtPhase(t), DEFAULT_WITCHSPACE_ARMS);
+			witchspaceHushesBed(witchspaceAtPhase(t), duck);
 		expect(hushed(-0.5)).toBe(false);
 		expect(hushed(0)).toBe(true);
 		expect(hushed(WITCHSPACE.controlBackS - 0.01)).toBe(true);
 		expect(hushed(WITCHSPACE.controlBackS)).toBe(false);
-		expect(witchspaceHushesBed(idleWitchspace(), DEFAULT_WITCHSPACE_ARMS)).toBe(
-			false,
-		);
+		expect(witchspaceHushesBed(idleWitchspace(), duck)).toBe(false);
 	});
 
 	test("a quiet arrival does not duck it: that arm is the arrival as it was", () => {
 		// Sage round 2 on #575: before #534 nothing hushed the bed under an
 		// arrival, so a control arm that ducks it is not the old behaviour.
-		const quiet = {
-			...DEFAULT_WITCHSPACE_ARMS,
-			arrival: "arrivalquiet",
-		} as const;
+		const quiet = { ...duck, arrival: "arrivalquiet" } as const;
 		expect(witchspaceHushesBed(arriveWitchspace(), quiet)).toBe(false);
 		expect(witchspaceHushesBed(jumpedWitchspace(), quiet)).toBe(true);
 		expect(
-			witchspaceHushesBed(arriveWitchspace(), DEFAULT_WITCHSPACE_ARMS),
+			witchspaceHushesBed(arriveWitchspace(), {
+				...duck,
+				arrival: "arrivalsound",
+			}),
 		).toBe(true);
 	});
 

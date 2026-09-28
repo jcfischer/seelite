@@ -169,14 +169,16 @@ function witchspaceTimelines() {
 		witchspace: { arms, from },
 	});
 	return [
+		// The defaults are the principal's ruling (2026-09-28); each render
+		// after them flips one arm back to an answer that lost.
 		line("jump", 12, ""),
+		line("jump-sweep", 12, "sweep"),
 		line("jump-rise", 12, "rise"),
-		line("jump-swallow", 12, "swallow"),
 		line("jump-glass", 12, "glass"),
-		line("jump-bed", 12, "bed"),
-		line("jump-noduck", 12, "noduck"),
+		line("jump-rings", 12, "rings"),
+		line("jump-duck", 12, "duck"),
 		line("arrival", 9, "", "arrival"),
-		line("arrival-quiet", 9, "arrivalquiet", "arrival"),
+		line("arrival-sound", 9, "arrivalsound", "arrival"),
 	];
 }
 

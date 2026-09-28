@@ -408,34 +408,28 @@ const SINCE_534 = {
 		noise: 1,
 	},
 	"witchspace-rift": { rms: 0.02007, peak: 0.09312, onsetMs: 281.23, hz: 279 },
-	jump: { rms: 0.02024, peak: 0.18672, onsetMs: 13.21, hz: 281, bed: 1 },
-	"jump-rise": { rms: 0.02197, peak: 0.20146, onsetMs: 13.21, hz: 281, bed: 1 },
-	"jump-swallow": {
-		rms: 0.02013,
-		peak: 0.20143,
+	jump: { rms: 0.02492, peak: 0.20133, onsetMs: 13.21, hz: 281, bed: 1 },
+	"jump-sweep": {
+		rms: 0.02527,
+		peak: 0.18743,
 		onsetMs: 13.21,
 		hz: 281,
 		bed: 1,
 	},
-	"jump-glass": {
-		rms: 0.01854,
-		peak: 0.13918,
+	"jump-rise": { rms: 0.02642, peak: 0.20136, onsetMs: 13.21, hz: 281, bed: 1 },
+	"jump-glass": { rms: 0.0239, peak: 0.14895, onsetMs: 13.21, hz: 281, bed: 1 },
+	"jump-rings": {
+		rms: 0.02057,
+		peak: 0.20132,
 		onsetMs: 13.21,
 		hz: 281,
 		bed: 1,
 	},
-	"jump-bed": { rms: 0.02506, peak: 0.18671, onsetMs: 13.21, hz: 281, bed: 1 },
-	"jump-noduck": {
-		rms: 0.02063,
-		peak: 0.18744,
-		onsetMs: 13.21,
-		hz: 281,
-		bed: 1,
-	},
-	arrival: { rms: 0.02141, peak: 0.18356, onsetMs: 46.48, hz: 292, bed: 1 },
-	"arrival-quiet": {
-		rms: 0.00551,
-		peak: 0.02802,
+	"jump-duck": { rms: 0.02471, peak: 0.20144, onsetMs: 13.21, hz: 281, bed: 1 },
+	arrival: { rms: 0.00551, peak: 0.02802, onsetMs: 46.48, hz: 292, bed: 1 },
+	"arrival-sound": {
+		rms: 0.02709,
+		peak: 0.18325,
 		onsetMs: 46.48,
 		hz: 292,
 		bed: 1,
@@ -629,13 +623,13 @@ try {
 			"weapons-taken-sizzle",
 			[2.6, 3.1],
 		],
-		// #534: each segment after the cut, against the quiet arrival at the
-		// same phase — the same flight bed, the same duck, and no cue. The
-		// arrival begins at 0.5 s, so its phase is the render time less that.
-		// The ride and the unfolding are held by their lone renders' bands and
-		// not here: against the quiet arrival they would be read against the
-		// duck's exact silence, which any tail at all stands over. The rift
-		// outlasts the duck, so its control has the bed in it.
+		// #534's segments after the cut. The ride and the unfolding are held by
+		// their lone renders' bands and not here: against a quiet arrival on the
+		// `duck` arm they were read against the duck's exact silence, which any
+		// tail at all stands over. The rift is read below against the quiet
+		// arrival (the default since the principal's ruling) at the same phase —
+		// the same flight bed and no cue. An arrival begins at 0.5 s, so its phase
+		// is the render time less that.
 		// The ride's close is a cue of its own (sage round 1 on #575): its lone
 		// render plays the close at the tunnel's 2.4 s, gone by 3.1. A close that
 		// did nothing leaves the ride sounding and each lone band still holds,
@@ -649,9 +643,9 @@ try {
 		]),
 		[
 			"the rift is heard as it closes behind the ship",
-			"arrival",
+			"arrival-sound",
 			[6, 7],
-			"arrival-quiet",
+			"arrival",
 			[6, 7],
 		],
 		// The wind-up's last quarter second, cut at 3.5 s: the risen sweep
@@ -660,25 +654,26 @@ try {
 			"the risen sweep holds to the cut",
 			"jump-rise",
 			[3.2, 3.45],
-			"jump",
+			"jump-sweep",
 			[3.2, 3.45],
 		],
 		[
 			"the swallowed sweep is gone before the flash",
 			"jump-rise",
 			[3.3, 3.45],
-			"jump-swallow",
+			"jump",
 			[3.3, 3.45],
 		],
-		// Phase 2.55–2.95, inside the ride's fade (2.4 to 3.1) and before the
-		// new light: both arms play the same fading ride there, so what differs
-		// is the bed (sage round 1 on #575 corrected "only the bed plays").
+		// Phase 2.8–3.0: the ride has all but closed (2.4 to 3.1) and the new
+		// light is not yet in, so what differs is the bed. At 2.55–2.95 it read
+		// x3.64 under the `rings` ride and x1.72 under `bed`, which fills more
+		// of the fade: that window measured the ride as much as the bed.
 		[
 			"the duck takes the engine away until the hands come back",
-			"jump-noduck",
-			[6.05, 6.45],
 			"jump",
-			[6.05, 6.45],
+			[6.3, 6.5],
+			"jump-duck",
+			[6.3, 6.5],
 		],
 	];
 	const renders = new Map();

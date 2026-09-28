@@ -29,28 +29,32 @@
  *
  * The unfolding and the rift have one voice each; the arms above are where
  * the node's questions have more than one plausible answer.
+ *
+ * **The principal ruled on 2026-09-28, by ear:** `swallow`, `boom`, `bed`,
+ * `noduck`, `arrivalquiet`. Each ruled value is first in its row and is the
+ * default; the others stay on `?witchsound=` as comparison handles, as
+ * #544's do on `?flightsound=`.
  */
 
 export const WITCHSPACE_SOUND_ARMS = {
-	before: ["sweep", "rise", "swallow"],
+	before: ["swallow", "sweep", "rise"],
 	flash: ["boom", "glass"],
-	ride: ["rings", "bed"],
-	engine: ["duck", "noduck"],
-	arrival: ["arrivalsound", "arrivalquiet"],
+	ride: ["bed", "rings"],
+	engine: ["noduck", "duck"],
+	arrival: ["arrivalquiet", "arrivalsound"],
 } as const satisfies Record<string, readonly string[]>;
 
 export type WitchspaceSoundArms = {
 	-readonly [K in keyof typeof WITCHSPACE_SOUND_ARMS]: (typeof WITCHSPACE_SOUND_ARMS)[K][number];
 };
 
-/** The first of each arm. A default is needed to fly at all; it is not a
- *  ruling, and the principal's listen is what picks. */
+/** The first of each arm: the principal's ruling (2026-09-28). */
 export const DEFAULT_WITCHSPACE_ARMS: WitchspaceSoundArms = {
-	before: "sweep",
+	before: "swallow",
 	flash: "boom",
-	ride: "rings",
-	engine: "duck",
-	arrival: "arrivalsound",
+	ride: "bed",
+	engine: "noduck",
+	arrival: "arrivalquiet",
 };
 
 /**
