@@ -12,8 +12,7 @@ import {
 	arriveWitchspace,
 	beginWitchspace,
 	idleWitchspace,
-	jumpedWitchspace,
-	stepWitchspace,
+	stepJump,
 	witchspaceCues,
 } from "../src/witchspace";
 import {
@@ -32,7 +31,7 @@ interface SoundEntry {
 	flight?: { arms: string };
 	weapons?: { arms: string };
 	witchspace?: { arms: string; from: string };
-	scheduled?: { kind: string; arms: string };
+	scheduled?: { kinds: string[]; arms: string };
 }
 const SOUND_SET: readonly SoundEntry[] = SET;
 
@@ -54,10 +53,7 @@ function scheduledKinds(e: SoundEntry): string[] {
 		e.witchspace.from === "arrival" ? arriveWitchspace() : beginWitchspace();
 	kinds.push(...witchspaceCues(idleWitchspace(), s, arms).map((c) => c.kind));
 	for (let i = 0; i < 2000 && s.kind !== "idle"; i++) {
-		const next =
-			s.kind === "entry" && s.leftS <= 0
-				? jumpedWitchspace()
-				: stepWitchspace(s, 1 / 50);
+		const next = stepJump(s, 1 / 50);
 		kinds.push(...witchspaceCues(s, next, arms).map((c) => c.kind));
 		s = next;
 	}
@@ -71,7 +67,7 @@ test("every cue kind is rendered, or says why not", () => {
 			e.cue
 				? [e.cue.kind]
 				: e.scheduled
-					? [e.scheduled.kind]
+					? e.scheduled.kinds
 					: scheduledKinds(e),
 		),
 	);

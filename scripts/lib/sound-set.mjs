@@ -116,22 +116,26 @@ export const SOUND_SET = Object.freeze([
 	...weaponTimelines(),
 	// #534's four voices after the cut, each alone. The flash's cue is whole
 	// in itself; the others carry the schedule's timing, so they are taken
-	// from it (`scheduled`: the first cue of that kind a jump plays on those
-	// arms) rather than restated here. The jumps below play them together.
+	// from it (`scheduled`: the first cue of each kind a jump plays on those
+	// arms, each at its own phase from the first) rather than restated here.
+	// The ride is heard with its close. The jumps below play them together.
 	...["rings", "bed"].map((voice) => ({
 		name: `witchspace-ride-${voice}`,
 		seconds: 3.4,
-		scheduled: { kind: "witchspaceRide", arms: voice },
+		scheduled: {
+			kinds: ["witchspaceRide", "witchspaceRideClose"],
+			arms: voice,
+		},
 	})),
 	{
 		name: "witchspace-unfold",
 		seconds: 1.9,
-		scheduled: { kind: "witchspaceUnfold", arms: "" },
+		scheduled: { kinds: ["witchspaceUnfold"], arms: "" },
 	},
 	{
 		name: "witchspace-rift",
 		seconds: 4.8,
-		scheduled: { kind: "witchspaceRift", arms: "" },
+		scheduled: { kinds: ["witchspaceRift"], arms: "" },
 	},
 	{
 		name: "witchspace-flash-boom",
@@ -391,7 +395,8 @@ export async function renderInPage({
 	if (
 		(entry.flight && typeof fx.flight !== "function") ||
 		(entry.witchspace && !knownKinds.includes("witchspaceRide")) ||
-		(entry.scheduled && !knownKinds.includes(entry.scheduled.kind)) ||
+		(entry.scheduled &&
+			!entry.scheduled.kinds.every((k) => knownKinds.includes(k))) ||
 		(entry.weapons && typeof fx.weapons !== "function") ||
 		(entry.cue && !entry.legacy && !modern) ||
 		(entry.cue && modern && !knownKinds.includes(entry.cue.kind))
@@ -429,33 +434,58 @@ export async function renderInPage({
 		}
 	}
 
+	let state = (typeof seed === "number" ? seed : 1) >>> 0 || 1;
+	const seeded = () => {
+		state = (Math.imul(state, 1664525) + 1013904223) >>> 0;
+		return state / 4294967296;
+	};
 	if (entry.scheduled) {
 		const W = await import("/src/witchspace.ts");
 		const { witchspaceSoundArms } = await import("/src/witchspace-sound.ts");
 		const { arms, unknown } = witchspaceSoundArms(entry.scheduled.arms);
 		if (unknown.length)
 			throw new Error(`${entry.name}: arms ${entry.scheduled.arms}`);
+		const wanted = new Set(entry.scheduled.kinds);
+		const found = [];
 		let s = W.beginWitchspace();
-		let found = null;
-		for (let i = 0; i < 2000 && !found && s.kind !== "idle"; i++) {
-			const next =
-				s.kind === "entry" && s.leftS <= 0
-					? W.jumpedWitchspace()
-					: W.stepWitchspace(s, 1 / 50);
-			found = W.witchspaceCues(s, next, arms).find(
-				(c) => c.kind === entry.scheduled.kind,
-			);
+		for (let i = 0; i < 2000 && wanted.size && s.kind !== "idle"; i++) {
+			const next = W.stepJump(s, 1 / 50);
+			for (const c of W.witchspaceCues(s, next, arms))
+				if (wanted.delete(c.kind)) found.push([W.witchspacePhase(next), c]);
 			s = next;
 		}
-		if (!found)
-			throw new Error(`${entry.name}: no ${entry.scheduled.kind} in a jump`);
-		entry = { ...entry, cue: found };
+		if (wanted.size)
+			throw new Error(`${entry.name}: no ${[...wanted]} in a jump`);
+		// Each at its phase from the first. A suspend is quantised to a render
+		// quantum and two at one time are refused, so the times are rounded to
+		// one and a time two cues share plays both.
+		const quantum = 128 / sampleRate;
+		const byTime = new Map();
+		for (const [phase, cue] of found) {
+			const at = Math.round((leadS + phase - found[0][0]) / quantum) * quantum;
+			byTime.set(at, [...(byTime.get(at) ?? []), cue]);
+		}
+		for (const [at, cues] of byTime)
+			ctx.suspend(at).then(() => {
+				const random = Math.random;
+				if (typeof seed === "number") Math.random = seeded;
+				try {
+					for (const cue of cues) fx.play(cue);
+				} finally {
+					Math.random = random;
+				}
+				ctx.resume();
+			});
+		const buffer = await ctx.startRendering();
+		return {
+			modern,
+			sampleRate,
+			live: null,
+			samples: Array.from(
+				buffer.getChannelData(0).subarray(Math.round(leadS * sampleRate)),
+			),
+		};
 	}
-	let state = (typeof seed === "number" ? seed : 1) >>> 0 || 1;
-	const seeded = () => {
-		state = (Math.imul(state, 1664525) + 1013904223) >>> 0;
-		return state / 4294967296;
-	};
 	const playOne = () => {
 		const random = Math.random;
 		if (typeof seed === "number") Math.random = seeded;
@@ -631,10 +661,7 @@ export async function renderInPage({
 					entry.witchspace.from === "arrival"
 						? W.arriveWitchspace()
 						: W.beginWitchspace();
-			} else if (ws.kind === "entry" && ws.leftS <= 0) {
-				// The charge fires and the jump is taken at the end of the frame.
-				next = W.jumpedWitchspace();
-			} else next = W.stepWitchspace(ws, dt);
+			} else next = W.stepJump(ws, dt);
 			for (const cue of W.witchspaceCues(ws, next, arms)) fx.play(cue);
 			if (next.kind === "exit") cut = true;
 			ws = next;
@@ -651,7 +678,7 @@ export async function renderInPage({
 					hullShare: 1,
 					cruiseSpeed: 0,
 					held: false,
-					hushed: arms.engine === "duck" && W.witchspaceControlHeld(ws),
+					hushed: W.witchspaceHushesBed(ws, arms),
 				},
 				flightArms,
 				dt,

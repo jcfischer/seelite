@@ -27,8 +27,10 @@ import {
 	witchspaceSkyZoom,
 	witchspaceLook,
 	witchspacePhase,
+	stepJump,
 	stepWitchspace,
 	type WitchspaceCue,
+	witchspaceHushesBed,
 } from "../src/witchspace";
 import { WITCHSPACE_TUNNEL_FRAGMENT } from "../src/witchspace-pass";
 import { DEFAULT_WITCHSPACE_ARMS } from "../src/witchspace-sound";
@@ -272,9 +274,7 @@ function jump(arms = DEFAULT_WITCHSPACE_ARMS) {
 		s = next;
 	};
 	to(beginWitchspace());
-	while (s.kind === "entry" && s.leftS > 0) to(stepWitchspace(s, DT));
-	to(jumpedWitchspace());
-	while (s.kind === "exit") to(stepWitchspace(s, DT));
+	while (s.kind !== "idle") to(stepJump(s, DT));
 	return cues;
 }
 
@@ -285,25 +285,35 @@ describe("after the cut (#534)", () => {
 			"witchspaceSweep",
 			"witchspaceFlash",
 			"witchspaceRide",
+			"witchspaceRideClose",
 			"witchspaceUnfold",
 			"witchspaceRift",
 			"witchspaceStop",
 		]);
 	});
 
-	test("the flash and the ride start on the cut, and the ride lasts the tunnel's life", () => {
+	test("the flash and the ride start on the cut, and the ride closes when the tunnel does", () => {
 		const cues = jump();
 		const flash = cues.find(({ cue }) => cue.kind === "witchspaceFlash");
 		const ride = cues.find(({ cue }) => cue.kind === "witchspaceRide");
+		const close = cues.find(({ cue }) => cue.kind === "witchspaceRideClose");
 		expect(flash?.at).toBe(0);
 		expect(ride?.at).toBe(0);
+		// The ride carries no close of its own: its `seconds` only bounds one
+		// whose close never came, and is well past the tunnel's life.
 		expect(ride?.cue).toEqual({
 			kind: "witchspaceRide",
 			voice: DEFAULT_WITCHSPACE_ARMS.ride,
-			seconds: WITCHSPACE.tunnelGoneS,
+			seconds: WITCHSPACE.rideLimitS,
 			openS: WITCHSPACE.tunnelOpenS,
-			closeAtS: WITCHSPACE.tunnelCloseS,
 			ringHz: WITCHSPACE.ringHz,
+		});
+		expect(WITCHSPACE.rideLimitS).toBeGreaterThan(WITCHSPACE.tunnelGoneS);
+		expect(close?.at).toBeGreaterThanOrEqual(WITCHSPACE.tunnelCloseS);
+		expect(close?.at).toBeLessThan(WITCHSPACE.tunnelCloseS + DT + 1e-9);
+		expect(close?.cue).toEqual({
+			kind: "witchspaceRideClose",
+			seconds: WITCHSPACE.tunnelGoneS - WITCHSPACE.tunnelCloseS,
 		});
 	});
 
@@ -324,19 +334,31 @@ describe("after the cut (#534)", () => {
 		});
 	});
 
-	test("a long frame after the cut does not run the unfolding ahead of the sky", () => {
-		// The exit clock clamps a stall; the cue fires off that clock, so it
-		// lands when the sky unfolds and not when the wall clock says.
+	test("under long frames, each cue after the cut fires on the exit clock and not the wall clock", () => {
+		// `rebuildSystem()` can stall the frames after the cut; the exit clock
+		// clamps them (`maxExitDtS`) and the cues fire off that clock, so each
+		// lands on the step whose phase crosses its threshold — never earlier,
+		// which is what a cue scheduled on the audio clock at the cut would do.
+		const thresholds: Record<string, number> = {
+			rideclose: WITCHSPACE.tunnelCloseS,
+			unfold: WITCHSPACE.unfoldAtS,
+			rift: WITCHSPACE.unfoldAtS,
+		};
 		let s = jumpedWitchspace();
-		let fired = false;
-		while (!fired && s.kind === "exit") {
+		const firedAt: Record<string, number> = {};
+		while (s.kind === "exit") {
 			const next = stepWitchspace(s, 0.5);
-			fired = witchspaceCues(s, next).includes("unfold");
-			if (fired) expect(witchspaceLook(next).dark).toBeLessThanOrEqual(1);
+			if (next.kind !== "exit") break;
+			expect(next.sinceS - s.sinceS).toBeCloseTo(WITCHSPACE.maxExitDtS, 9);
+			for (const name of witchspaceCues(s, next))
+				if (name in thresholds) {
+					expect(s.sinceS).toBeLessThan(thresholds[name]);
+					expect(next.sinceS).toBeGreaterThanOrEqual(thresholds[name]);
+					firedAt[name] = next.sinceS;
+				}
 			s = next;
 		}
-		expect(fired).toBe(true);
-		expect(witchspacePhase(s)).toBeGreaterThanOrEqual(WITCHSPACE.unfoldAtS);
+		expect(Object.keys(firedAt).sort()).toEqual(Object.keys(thresholds).sort());
 	});
 
 	test("the arms pick the voices", () => {
@@ -385,7 +407,14 @@ describe("after the cut (#534)", () => {
 			...witchspaceCues(idleWitchspace(), arriveWitchspace()),
 			...run(arriveWitchspace(), WITCHSPACE.exitEndS + 0.1).cues,
 		];
-		expect(cues).toEqual(["flash", "ride", "unfold", "rift", "stop"]);
+		expect(cues).toEqual([
+			"flash",
+			"ride",
+			"rideclose",
+			"unfold",
+			"rift",
+			"stop",
+		]);
 	});
 
 	test("a jump is heard on either arrival arm", () => {
@@ -580,5 +609,37 @@ describe("the aberration", () => {
 		// less of the sky than the physics. Recorded, not hidden.
 		const wide = (60 * Math.PI) / 180;
 		expect(drawn(wide)).toBeGreaterThan(aberrated(wide) * 1.05);
+	});
+});
+
+describe("the flight bed under a jump (#534)", () => {
+	const noduck = { ...DEFAULT_WITCHSPACE_ARMS, engine: "noduck" } as const;
+
+	test("on duck the bed is hushed from the cut until the hands come back", () => {
+		const hushed = (t: number) =>
+			witchspaceHushesBed(witchspaceAtPhase(t), DEFAULT_WITCHSPACE_ARMS);
+		expect(hushed(-0.5)).toBe(false);
+		expect(hushed(0)).toBe(true);
+		expect(hushed(WITCHSPACE.controlBackS - 0.01)).toBe(true);
+		expect(hushed(WITCHSPACE.controlBackS)).toBe(false);
+		expect(witchspaceHushesBed(idleWitchspace(), DEFAULT_WITCHSPACE_ARMS)).toBe(
+			false,
+		);
+	});
+
+	test("on noduck it never is", () => {
+		for (const t of [-0.5, 0, 1, WITCHSPACE.controlBackS])
+			expect(witchspaceHushesBed(witchspaceAtPhase(t), noduck)).toBe(false);
+	});
+});
+
+describe("a scripted jump", () => {
+	test("takes the cut on the step after the entry reaches zero, then steps the exit", () => {
+		const atCut = entryWitchspace(0);
+		expect(stepJump(atCut, DT)).toEqual(jumpedWitchspace());
+		const early = entryWitchspace(1);
+		expect(stepJump(early, DT)).toEqual(stepWitchspace(early, DT));
+		const exit = jumpedWitchspace();
+		expect(stepJump(exit, DT)).toEqual(stepWitchspace(exit, DT));
 	});
 });

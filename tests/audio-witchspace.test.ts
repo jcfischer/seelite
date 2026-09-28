@@ -10,6 +10,7 @@ import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { AudioFX } from "../src/audio";
 import {
 	FakeContext,
+	type FakeGain,
 	reaches,
 	unlocked as engine,
 	withFakeWindow,
@@ -31,9 +32,8 @@ const AFTER = [
 	{
 		kind: "witchspaceRide",
 		voice: "rings",
-		seconds: 3.1,
+		seconds: 6.2,
 		openS: 0.5,
-		closeAtS: 2.4,
 		ringHz: 3.5,
 	},
 	{ kind: "witchspaceUnfold", seconds: 1.6 },
@@ -163,6 +163,27 @@ describe("after the cut (#534)", () => {
 		audio.setLevel("ship", 0);
 		expect(ship.gain.target).toBe(0);
 		for (const source of ctx.sources) expect(reaches(source, ship)).toBe(true);
+	});
+
+	test("the ride's close takes its group down over its seconds and lets it go", () => {
+		const { audio, ctx, ship } = unlocked();
+		audio.play(AFTER[1]);
+		const group = ctx.gains.find((g) => g.outputs.includes(ship)) as FakeGain;
+		const t = ctx.currentTime;
+		audio.play({ kind: "witchspaceRideClose", seconds: 0.7 });
+		expect(group.gain.events).toContainEqual(["set", 1, t]);
+		expect(group.gain.events).toContainEqual(["exp", 0.0001, t + 0.7]);
+		// A stop after the close has nothing left to take.
+		const count = group.gain.events.length;
+		audio.play(STOP);
+		expect(group.gain.events.length).toBe(count);
+	});
+
+	test("a close with no ride sounding schedules nothing", () => {
+		const { audio, ctx } = unlocked();
+		const before = ctx.gains.map((g) => g.gain.events.length);
+		audio.play({ kind: "witchspaceRideClose", seconds: 0.7 });
+		expect(ctx.gains.map((g) => g.gain.events.length)).toEqual(before);
 	});
 
 	test("the swallowed sweep is drawn to silence where the dark closes", () => {

@@ -287,6 +287,12 @@ export class AudioFX {
 			this.stopWitchspace();
 			return;
 		}
+		// Before the mute check, as the stop is: it ends a ride already
+		// sounding, which a mute has faded and not stopped.
+		if (cue.kind === "witchspaceRideClose") {
+			this.witchspaceRideClose(cue.seconds);
+			return;
+		}
 		const bus = CUE_BUS[cue.kind];
 		if (!this.audible(bus)) return;
 		if (cue.kind === "witchspaceHum") {
@@ -1362,9 +1368,7 @@ export class AudioFX {
 		soft.frequency.exponentialRampToValueAtTime(6000, end);
 		saw.connect(soft);
 		soft.connect(env);
-		const src = ctx.createBufferSource();
-		src.buffer = noiseLoop(ctx, "white");
-		src.loop = true;
+		const src = this.loopedNoise("white");
 		const band = ctx.createBiquadFilter();
 		band.type = "bandpass";
 		band.Q.value = 1.5;
@@ -1404,9 +1408,11 @@ export class AudioFX {
 		this.noiseBurst(out, 0.7, 0.3, 700);
 	}
 	/**
-	 * The ride through the tunnel (#534), for the tunnel's whole life: in over
-	 * `openS`, held, and out from `closeAtS` to `seconds`, as the tunnel opens
-	 * out of the point and closes back into it.
+	 * The ride through the tunnel (#534): in over `openS` as the tunnel opens
+	 * out of the point, and held. Its close is a cue of its own
+	 * (`witchspaceRideClose`), fired off the exit clock when the tunnel closes,
+	 * so a stall after the cut cannot close it ahead of the tunnel. `seconds`
+	 * only bounds a ride whose close never came.
 	 *
 	 * - `rings`: a rushing of band-passed noise that swells as each ring of
 	 *   light passes on the wall (`ringHz`), rising in pitch through the ride,
@@ -1419,19 +1425,15 @@ export class AudioFX {
 		const ctx = this.ctx;
 		const t = ctx.currentTime;
 		const end = t + cue.seconds;
-		const closeAt =
-			t + Math.min(cue.seconds, Math.max(cue.openS, cue.closeAtS));
 		const env = ctx.createGain();
 		env.gain.setValueAtTime(0.0001, t);
 		env.gain.exponentialRampToValueAtTime(1, t + cue.openS);
-		env.gain.setValueAtTime(1, closeAt);
+		env.gain.setValueAtTime(1, Math.max(t + cue.openS, end - 0.3));
 		env.gain.exponentialRampToValueAtTime(0.0001, end);
 		env.connect(out);
 		const stops: AudioScheduledSourceNode[] = [];
 		const noise = (kind: "brown" | "white") => {
-			const src = ctx.createBufferSource();
-			src.buffer = noiseLoop(ctx, kind);
-			src.loop = true;
+			const src = this.loopedNoise(kind);
 			stops.push(src);
 			return src;
 		};
@@ -1464,8 +1466,9 @@ export class AudioFX {
 			const band = ctx.createBiquadFilter();
 			band.type = "bandpass";
 			band.Q.value = 1.2;
+			// Rising through the ride toward 1800 Hz, whenever the close comes.
 			band.frequency.setValueAtTime(600, t);
-			band.frequency.exponentialRampToValueAtTime(1800, end);
+			band.frequency.setTargetAtTime(1800, t, 1);
 			// Each ring passing: a sharp swell and a longer fall, as the shader's
 			// `pow(sin, 14)` is a narrow bright line with dark between.
 			const pulse = ctx.createGain();
@@ -1493,6 +1496,27 @@ export class AudioFX {
 		}
 	}
 	/**
+	 * The tunnel closing back into the point (#534): the ride's group taken
+	 * down over `seconds`. It is let go rather than disconnected — its voices
+	 * stop at their own bound — so a later stop has nothing of it to take.
+	 */
+	private witchspaceRideClose(seconds: number) {
+		const group = this.witchspaceGroups.get("ride");
+		if (!group || !this.ctx) return;
+		const t = this.ctx.currentTime;
+		group.gain.setValueAtTime(1, t);
+		group.gain.exponentialRampToValueAtTime(0.0001, t + seconds);
+		this.witchspaceGroups.delete("ride");
+	}
+	/** A two-second noise loop, brown or white, not yet started. */
+	private loopedNoise(kind: "brown" | "white"): AudioBufferSourceNode {
+		const ctx = this.ctx as BaseAudioContext;
+		const src = ctx.createBufferSource();
+		src.buffer = noiseLoop(ctx, kind);
+		src.loop = true;
+		return src;
+	}
+	/**
 	 * The new light catching up (#534): a long fall from high to low, noise
 	 * and a glide together, swelling in and easing out as the sky unfolds.
 	 */
@@ -1510,9 +1534,7 @@ export class AudioFX {
 		env.gain.exponentialRampToValueAtTime(1, t + seconds * 0.4);
 		env.gain.exponentialRampToValueAtTime(0.0001, end);
 		env.connect(out);
-		const src = ctx.createBufferSource();
-		src.buffer = noiseLoop(ctx, "white");
-		src.loop = true;
+		const src = this.loopedNoise("white");
 		const band = ctx.createBiquadFilter();
 		band.type = "bandpass";
 		band.Q.value = 2;

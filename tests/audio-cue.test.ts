@@ -110,6 +110,7 @@ describe("voice classes", () => {
 		for (const kind of [
 			"witchspaceFlash",
 			"witchspaceRide",
+			"witchspaceRideClose",
 			"witchspaceUnfold",
 			"witchspaceRift",
 		] as const)
@@ -204,6 +205,7 @@ test("a cue is a closed union: every kind is listed in CUE_BUS", () => {
 		"witchspaceSweep",
 		"witchspaceFlash",
 		"witchspaceRide",
+		"witchspaceRideClose",
 		"witchspaceUnfold",
 		"witchspaceRift",
 		"witchspaceStop",

@@ -387,10 +387,10 @@ const SINCE_534 = {
 		noise: 1,
 	},
 	"witchspace-ride-rings": {
-		rms: 0.01733,
-		peak: 0.04693,
-		onsetMs: 303.79,
-		hz: 2113,
+		rms: 0.01739,
+		peak: 0.05032,
+		onsetMs: 311.77,
+		hz: 2482,
 		noise: 1,
 	},
 	"witchspace-ride-bed": {
@@ -408,17 +408,17 @@ const SINCE_534 = {
 		noise: 1,
 	},
 	"witchspace-rift": { rms: 0.02007, peak: 0.09312, onsetMs: 281.23, hz: 279 },
-	jump: { rms: 0.02022, peak: 0.18672, onsetMs: 13.21, hz: 281, bed: 1 },
-	"jump-rise": { rms: 0.02196, peak: 0.20146, onsetMs: 13.21, hz: 281, bed: 1 },
+	jump: { rms: 0.02024, peak: 0.18672, onsetMs: 13.21, hz: 281, bed: 1 },
+	"jump-rise": { rms: 0.02197, peak: 0.20146, onsetMs: 13.21, hz: 281, bed: 1 },
 	"jump-swallow": {
-		rms: 0.02012,
+		rms: 0.02013,
 		peak: 0.20143,
 		onsetMs: 13.21,
 		hz: 281,
 		bed: 1,
 	},
 	"jump-glass": {
-		rms: 0.01852,
+		rms: 0.01854,
 		peak: 0.13918,
 		onsetMs: 13.21,
 		hz: 281,
@@ -426,13 +426,13 @@ const SINCE_534 = {
 	},
 	"jump-bed": { rms: 0.02506, peak: 0.18671, onsetMs: 13.21, hz: 281, bed: 1 },
 	"jump-noduck": {
-		rms: 0.02062,
+		rms: 0.02063,
 		peak: 0.18744,
 		onsetMs: 13.21,
 		hz: 281,
 		bed: 1,
 	},
-	arrival: { rms: 0.02139, peak: 0.18356, onsetMs: 46.48, hz: 292, bed: 1 },
+	arrival: { rms: 0.02141, peak: 0.18356, onsetMs: 46.48, hz: 292, bed: 1 },
 	"arrival-quiet": {
 		rms: 0.0034,
 		peak: 0.02469,
@@ -636,6 +636,17 @@ try {
 		// not here: against the quiet arrival they would be read against the
 		// duck's exact silence, which any tail at all stands over. The rift
 		// outlasts the duck, so its control has the bed in it.
+		// The ride's close is a cue of its own (sage round 1 on #575): its lone
+		// render plays the close at the tunnel's 2.4 s, gone by 3.1. A close that
+		// did nothing leaves the ride sounding and each lone band still holds,
+		// so its middle is read against what is left after the tunnel is gone.
+		...["rings", "bed"].map((voice) => [
+			`the ${voice} ride closes with the tunnel`,
+			`witchspace-ride-${voice}`,
+			[1, 2],
+			`witchspace-ride-${voice}`,
+			[3.15, 3.4],
+		]),
 		[
 			"the rift is heard as it closes behind the ship",
 			"arrival",
@@ -659,7 +670,9 @@ try {
 			"jump-swallow",
 			[3.3, 3.45],
 		],
-		// Between the ride's close and the new light, where only the bed plays.
+		// Phase 2.55–2.95, inside the ride's fade (2.4 to 3.1) and before the
+		// new light: both arms play the same fading ride there, so what differs
+		// is the bed (sage round 1 on #575 corrected "only the bed plays").
 		[
 			"the duck takes the engine away until the hands come back",
 			"jump-noduck",

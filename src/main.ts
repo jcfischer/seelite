@@ -572,6 +572,7 @@ import {
 	witchspaceAtPhase,
 	witchspaceControlHeld,
 	witchspaceCues,
+	witchspaceHushesBed,
 	witchspaceLook,
 	witchspacePhase,
 	witchspaceSkyZoom,
@@ -12074,8 +12075,7 @@ class Game {
 				// gone from the cut until the pilot's hands come back.
 				hushed:
 					this.openingActive ||
-					(WITCH_SOUND.arms.engine === "duck" &&
-						witchspaceControlHeld(this.witchspace)),
+					witchspaceHushesBed(this.witchspace, WITCH_SOUND.arms),
 			},
 			FLIGHT_SOUND.arms,
 			dt,

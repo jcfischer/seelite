@@ -80,9 +80,9 @@ export type Cue =
 			voice: RideVoice;
 			seconds: number;
 			openS: number;
-			closeAtS: number;
 			ringHz: number;
 	  }
+	| { kind: "witchspaceRideClose"; seconds: number }
 	| { kind: "witchspaceUnfold"; seconds: number }
 	| { kind: "witchspaceRift"; seconds: number }
 	| { kind: "witchspaceStop" }
@@ -128,6 +128,7 @@ export const CUE_BUS: Record<CueKind, CueBus> = {
 	witchspaceSweep: "ship",
 	witchspaceFlash: "ship",
 	witchspaceRide: "ship",
+	witchspaceRideClose: "ship",
 	witchspaceUnfold: "ship",
 	witchspaceRift: "ship",
 	witchspaceStop: "ship",
@@ -149,6 +150,7 @@ export type VoicedCueKind = Exclude<
 	| "witchspaceSweep"
 	| "witchspaceFlash"
 	| "witchspaceRide"
+	| "witchspaceRideClose"
 	| "witchspaceUnfold"
 	| "witchspaceRift"
 	| "witchspaceStop"

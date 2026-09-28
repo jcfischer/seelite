@@ -104,6 +104,15 @@ export const WITCHSPACE = Object.freeze({
 	 * `WITCHSPACE_TUNNEL_FRAGMENT` rather than trusting this copy.
 	 */
 	ringHz: 22 / (2 * Math.PI),
+	/**
+	 * The longest a ride may sound, seconds from its start. Its end is its own
+	 * cue, fired off the exit clock at `tunnelCloseS`; this only bounds a ride
+	 * whose close never came, and a stall long enough to reach it is a
+	 * `rebuildSystem()` far outside anything measured.
+	 */
+	get rideLimitS() {
+		return 2 * this.tunnelGoneS;
+	},
 	/** The arrival rift opens with the new light, and is gone by here. */
 	riftEndS: 7.5,
 	/**
@@ -169,6 +178,7 @@ export type WitchspaceCue = Extract<
 			| "witchspaceSweep"
 			| "witchspaceFlash"
 			| "witchspaceRide"
+			| "witchspaceRideClose"
 			| "witchspaceUnfold"
 			| "witchspaceRift"
 			| "witchspaceStop";
@@ -357,7 +367,9 @@ export function witchspaceControlHeld(state: WitchspaceState): boolean {
  *   also where the dark closes, in seconds from its own start, so it is drawn
  *   down into the point.
  * - the flash and the ride on the step the exit begins: the flash on the cut,
- *   and the ride for the tunnel's whole life, carrying its shape.
+ *   and the ride opening with the tunnel.
+ * - the ride's close on the step the exit crosses `tunnelCloseS`, as the
+ *   tunnel closes back into the point.
  * - the unfolding and the rift on the step the exit crosses `unfoldAtS`: the
  *   new light arriving, and the rift that opens with it and closes behind.
  * - the stop when an entry ends without a jump — a sweep that played on after
@@ -367,7 +379,12 @@ export function witchspaceControlHeld(state: WitchspaceState): boolean {
  *
  * Each exit cue fires on its own threshold rather than all at the cut, because
  * the exit clock clamps a long frame (`maxExitDtS`) and the audio clock does
- * not: a rebuild's stall would leave one long cue ahead of what is drawn.
+ * not: a rebuild's stall would leave one long cue ahead of what is drawn. So
+ * nothing that follows the drawing is scheduled ahead on the audio clock —
+ * which is why the ride's close is a cue of its own (sage round 1 on #575).
+ * What a cue does schedule is its own shape once begun: the ride's swell in,
+ * the unfolding's fall and the rift's close run on the audio clock from the
+ * step that fired them.
  *
  * The arrival-only path plays the exit's cues on the `arrivalsound` arm and
  * nothing on `arrivalquiet`: there was no wind-up to hear.
@@ -377,6 +394,7 @@ export function witchspaceCues(
 	next: WitchspaceState,
 	arms: WitchspaceSoundArms = DEFAULT_WITCHSPACE_ARMS,
 ): WitchspaceCue[] {
+	if (next.kind === "exit") return exitCues(prev, next, arms);
 	const W = WITCHSPACE;
 	const hum: WitchspaceCue = { kind: "witchspaceHum", seconds: W.humS };
 	const sweep = (leftS: number): WitchspaceCue =>
@@ -393,7 +411,8 @@ export function witchspaceCues(
 				? { kind: "witchspaceSweep", riseS: leftS }
 				: { kind: "witchspaceSweep" };
 	const stop: WitchspaceCue = { kind: "witchspaceStop" };
-	const endsExit = prev.kind === "exit" && next.kind !== "exit";
+	// An exit ending: `next` is not one, or `exitCues` would have answered.
+	const endsExit = prev.kind === "exit";
 	if (next.kind === "entry" && prev.kind !== "entry") {
 		const begun = next.leftS <= W.sweepS ? [hum, sweep(next.leftS)] : [hum];
 		return endsExit ? [stop, ...begun] : begun;
@@ -404,34 +423,74 @@ export function witchspaceCues(
 			: [];
 	}
 	if (prev.kind === "entry" && next.kind === "retract") return [stop];
-	if (endsExit) return [stop];
-	if (next.kind !== "exit") return [];
+	return endsExit ? [stop] : [];
+}
+
+type ExitState = Extract<WitchspaceState, { kind: "exit" }>;
+
+/** `witchspaceCues` for a move into an exit: a new one, or one stepping on. */
+function exitCues(
+	prev: WitchspaceState,
+	next: ExitState,
+	arms: WitchspaceSoundArms,
+): WitchspaceCue[] {
+	const W = WITCHSPACE;
 	// A new exit: from the cut, or an arrival — which, over an exit still
 	// running, takes what that one was playing first.
-	const fresh = prev.kind !== "exit" || next.sinceS < prev.sinceS;
-	const heard = next.from === "jump" || arms.arrival === "arrivalsound";
+	const running = prev.kind === "exit" && next.sinceS >= prev.sinceS;
 	const cues: WitchspaceCue[] = [];
-	if (fresh && prev.kind === "exit") cues.push(stop);
-	if (!heard) return cues;
-	const since = fresh ? -1 : (prev as { sinceS: number }).sinceS;
-	if (fresh)
+	if (prev.kind === "exit" && !running) cues.push({ kind: "witchspaceStop" });
+	if (next.from === "arrival" && arms.arrival === "arrivalquiet") return cues;
+	const since = running ? prev.sinceS : -1;
+	const crosses = (at: number) => since < at && next.sinceS >= at;
+	if (!running)
 		cues.push(
 			{ kind: "witchspaceFlash", voice: arms.flash },
 			{
 				kind: "witchspaceRide",
 				voice: arms.ride,
-				seconds: W.tunnelGoneS - next.sinceS,
+				seconds: W.rideLimitS,
 				openS: W.tunnelOpenS,
-				closeAtS: W.tunnelCloseS - next.sinceS,
 				ringHz: W.ringHz,
 			},
 		);
-	if (since < W.unfoldAtS && next.sinceS >= W.unfoldAtS)
+	if (crosses(W.tunnelCloseS))
+		cues.push({
+			kind: "witchspaceRideClose",
+			seconds: W.tunnelGoneS - W.tunnelCloseS,
+		});
+	if (crosses(W.unfoldAtS))
 		cues.push(
 			{ kind: "witchspaceUnfold", seconds: W.exitS - W.unfoldAtS },
 			{ kind: "witchspaceRift", seconds: W.riftEndS - W.unfoldAtS },
 		);
 	return cues;
+}
+
+/**
+ * Whether the flight bed is hushed for the transition (#534's `engine` arm):
+ * on `duck`, from the cut until the pilot's hands come back. One rule for
+ * `main.ts` and the listening harness, so the render the principal hears is
+ * the rule the game flies (sage round 1 on #575).
+ */
+export function witchspaceHushesBed(
+	state: WitchspaceState,
+	arms: WitchspaceSoundArms,
+): boolean {
+	return arms.engine === "duck" && witchspaceControlHeld(state);
+}
+
+/**
+ * One step of a scripted jump: the entry counts down, the cut is taken on the
+ * step it reaches zero — as `takePendingJump` takes the armed jump at the end
+ * of that frame — and the exit counts up. The game does not call this: its cut
+ * is `performJump`. The tests and the listening harness do, so they fly one
+ * jump rather than four copies of it.
+ */
+export function stepJump(state: WitchspaceState, dt: number): WitchspaceState {
+	return state.kind === "entry" && state.leftS <= 0
+		? jumpedWitchspace()
+		: stepWitchspace(state, dt);
 }
 
 /**
