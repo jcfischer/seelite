@@ -1,0 +1,102 @@
+/**
+ * The public changelog: the major changes a returning player would notice,
+ * newest first. The home threshold prints the latest `HOME_CHANGELOG_COUNT`,
+ * and Field Notes prints them all (#573).
+ *
+ * **What counts as major.** A player-visible change that a returning player
+ * would notice: a new ship, system, kind of work, mechanic or screen. Not a
+ * refactor, probe work, performance tuning or an internal fix. #573 adds this
+ * question to the delivery SOP in the Notes of the machine map (#1): a node
+ * that answers yes adds its entry here in the same pull request, and the
+ * principal approves the sentence before the merge.
+ *
+ * **The canon boundary holds here too.** An entry names a thing a pilot can
+ * do or see. It does not name a story fact, a discovery or a resolution
+ * (`docs/specs/product-and-website-direction.md`, "Voice and canon boundary").
+ *
+ * `node` is provenance only. The repo is private, so the page never prints it.
+ *
+ * This module imports nothing, so the headless tier can read it whole.
+ */
+export type ChangelogEntry = {
+	/** `YYYY-MM-DD`, the day the change reached `main`. */
+	readonly date: string;
+	/** One plain sentence. No markup: it is printed as it stands. */
+	readonly text: string;
+	/** The work-graph node that shipped it. Never rendered. */
+	readonly node?: number;
+};
+
+export const CHANGELOG: readonly ChangelogEntry[] = [
+	{
+		date: "2026-09-28",
+		text: "The Far Between is live at farbetween.ch, free to play in the browser.",
+		node: 569,
+	},
+	{
+		date: "2026-09-28",
+		text: "The ship can be heard now: the drive, the thrusters, the consoles and the guns.",
+		node: 552,
+	},
+	{
+		date: "2026-09-26",
+		text: "A jump now passes through witchspace before the ship arrives in the new system.",
+		node: 532,
+	},
+	{
+		date: "2026-09-25",
+		text: "A new pilot starts docked, with a first day of short local runs to learn the work.",
+		node: 408,
+	},
+	{
+		date: "2026-09-25",
+		text: "Postcards save the view as an image, or as a link that rebuilds the scene.",
+		node: 406,
+	},
+	{
+		date: "2026-09-24",
+		text: "Some systems harbour a pirate relay, and their stations post a bounty on it.",
+		node: 351,
+	},
+];
+
+/** How many entries the home threshold shows. The rest are on Field Notes. */
+export const HOME_CHANGELOG_COUNT = 3;
+
+const MONTHS = [
+	"Jan",
+	"Feb",
+	"Mar",
+	"Apr",
+	"May",
+	"Jun",
+	"Jul",
+	"Aug",
+	"Sep",
+	"Oct",
+	"Nov",
+	"Dec",
+];
+
+/**
+ * `2026-09-28` as `28 Sep 2026`, read off the string. `new Date` parses a bare
+ * date as UTC and `toLocale*` prints it in the reader's zone and language, so
+ * the same entry could read as the 27th, or in German.
+ */
+export function changelogDate(date: string): string {
+	const parts = /^(\d{4})-(\d{2})-(\d{2})$/.exec(date);
+	const name = parts ? MONTHS[Number(parts[2]) - 1] : undefined;
+	if (!parts || !name) throw new Error(`Not a changelog date: ${date}`);
+	const [, year, , day] = parts;
+	return `${Number(day)} ${name} ${year}`;
+}
+
+/** The entries as a list the public pages print. */
+export function changelogList(entries: readonly ChangelogEntry[]): string {
+	return `<ol class="changelog">${entries
+		.map(
+			(entry) =>
+				`<li><time datetime="${entry.date}">${changelogDate(entry.date)}</time><span class="changelog-text">${entry.text}</span></li>`,
+		)
+		.join("")}</ol>`;
+}
