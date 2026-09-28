@@ -345,9 +345,15 @@ export const COCKPIT_KEY_LIGHT = {
 	 * own tone and falls off across it.
 	 */
 	intensity: 0.18,
-	/** Kilometres, in the cabin's oversized frame. Short enough that it reaches
-	 *  the deck and the console tops and dies before the canopy — a key that
-	 *  reached the glass would light the frame the player sees space through. */
+	/**
+	 * Kilometres, in the cabin's oversized frame. It reaches the deck and the
+	 * console tops, and it **does not die before the canopy**, which this said
+	 * until #204: the canopy header is about 27 m from the light against a 50 m
+	 * range. What keeps it off the glass is the glass's material class —
+	 * `MeshBasicMaterial`, which no light reaches (`cockpit-canopy.ts`) — and
+	 * not this range. The frame members round the pane are standard materials
+	 * and do take a little of it.
+	 */
 	rangeKm: 0.05,
 	/**
 	 * Above the scanner deck, not above the console's near lip.
