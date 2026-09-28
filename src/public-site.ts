@@ -20,7 +20,7 @@ export const PUBLIC_PAGES: readonly PublicPage[] = [
 		title: "The Far Between",
 		dek: "A little ship. A large sky. Work worth doing between the two.",
 		content: `<div class="threshold-actions">${play}<a class="button button--quiet" href="/about/">Find your bearings</a></div>
-			<p class="threshold-note">No accounts. No cookies. No advertising.<br />One visit count per page, and nothing after launch.</p>
+			<p class="threshold-note">No accounts. No cookies. No advertising.</p>
 			<div class="instrument" aria-label="A quiet frontier transmission"><span>SECTOR: UNCHARTED</span><span>LOCAL: 03:17</span><span>SIGNAL: FAINT</span></div>`,
 	},
 	{

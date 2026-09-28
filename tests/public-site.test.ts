@@ -102,9 +102,8 @@ describe("the quiet public threshold", () => {
 	test("keeps the home threshold private and hands play to the existing game boot", () => {
 		const source = readFileSync(repoPath("src/public-site.ts"), "utf8");
 		expect(source).toContain('href="/?boot=overlay"');
-		expect(source).toContain("No accounts. No cookies. No advertising.");
 		expect(source).toContain(
-			"One visit count per page, and nothing after launch.",
+			'<p class="threshold-note">No accounts. No cookies. No advertising.</p>',
 		);
 		expect(source).not.toMatch(/\bfetch\s*\(|WebSocket|EventSource/);
 	});
