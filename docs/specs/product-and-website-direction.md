@@ -31,8 +31,8 @@ world has enough depth to reward attention.
    Its clues emerge through ordinary frontier work and it never gates trade,
    combat, exploration, or progression.
 5. **Private and immediate are product qualities.** Browser play, local and
-   portable saves, no login, and nothing tracked beyond a visit count (#569)
-   are strengths, not omissions.
+   portable saves, no login, and nothing tracked beyond Counterscale pageviews
+   (#569) are strengths, not omissions.
 
 ## Player journey
 
@@ -82,8 +82,10 @@ canonical spoiler channel.
 The Trust page promises:
 
 - no accounts, cookies, or advertising;
-- one visit count per public page load and per game launch, and nothing
-  the game does after launch leaves the machine;
+- Counterscale pageview analytics on each public page load and each game
+  launch — the path, the referrer, and what the request headers carry, which
+  Counterscale breaks down by browser, device and country — and nothing the
+  game does after launch leaves the machine;
 - saves are local and portable; and
 - feedback leaves a player's machine only through a deliberately chosen
   external channel.
@@ -137,7 +139,7 @@ The following becomes sharp after this direction:
 2. **Build the quiet public threshold** — the Play, About, Field Notes,
    Manual, Trust and Credits structure with a direct route into the static
    game; no CMS, account system, or feed, and no analytics beyond #569's
-   visit count.
+   Counterscale pageviews.
 3. **Publish the first expedition story contract** — the separate, optional
    story decision in [An expedition story: ordinary frontier work leads to Rama](https://github.com/jcfischer/seelite/issues/338).
 4. **Build postcards** — the already bounded local export and scene-recipe

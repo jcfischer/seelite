@@ -8,6 +8,11 @@ import {
 } from "../src/visit-count";
 import { repoPath } from "./lib/source-scan";
 
+type FakeTag = {
+	attributes: Record<string, string>;
+	setAttribute(name: string, value: string): void;
+};
+
 /** Just enough of a document to receive a script tag. */
 function fakeDocument() {
 	const appended: Record<string, string>[] = [];
@@ -15,10 +20,11 @@ function fakeDocument() {
 		appended,
 		doc: {
 			head: {
-				append: (el: { attributes: Record<string, string> }) =>
-					appended.push(el.attributes),
+				append: (el: FakeTag) => {
+					appended.push(el.attributes);
+				},
 			},
-			createElement: (tag: string) => {
+			createElement: (tag: string): FakeTag => {
 				const attributes: Record<string, string> = { tag };
 				return {
 					attributes,

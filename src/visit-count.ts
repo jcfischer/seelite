@@ -17,7 +17,8 @@
  * is the build's `PROD` flag; nothing here runs under `npm run dev` or bun.
  *
  * **Once per page load.** The tracker also counts `history.pushState` and
- * `popstate`; this game calls neither, so nothing after launch is reported.
+ * `popstate`; this game calls neither, so nothing after launch is reported, and
+ * `tests/public-site.test.ts` goes red if a module starts to.
  */
 export const COUNTER_ORIGIN =
 	"https://counterscale.jens-christian-66c.workers.dev";
@@ -42,23 +43,24 @@ export function counterScript(kind: VisitKind): Record<string, string> {
 	};
 }
 
-type TagSink = {
-	head: { append(el: never): void };
-	createElement(tag: "script"): {
-		setAttribute(name: string, value: string): void;
-	};
+type Tag = { setAttribute(name: string, value: string): void };
+
+/** The two things `countVisit` needs of a document, so a test can stand in. */
+type TagSink<E extends Tag> = {
+	head: { append(el: E): void };
+	createElement(tag: "script"): E;
 };
 
-export function countVisit(
+export function countVisit<E extends Tag = HTMLScriptElement>(
 	kind: VisitKind,
 	{
 		enabled = import.meta.env?.PROD === true,
-		doc = globalThis.document as unknown as TagSink,
-	}: { enabled?: boolean; doc?: TagSink } = {},
+		doc = globalThis.document as unknown as TagSink<E>,
+	}: { enabled?: boolean; doc?: TagSink<E> } = {},
 ): void {
 	if (!enabled) return;
 	const script = doc.createElement("script");
 	for (const [name, value] of Object.entries(counterScript(kind)))
 		script.setAttribute(name, value);
-	doc.head.append(script as never);
+	doc.head.append(script);
 }
