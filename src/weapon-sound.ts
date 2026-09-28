@@ -153,6 +153,9 @@ export interface WeaponSoundState {
 	readonly sinceGiven: number;
 	/** This pull on a locked gun has clicked. */
 	readonly lockClicked: boolean;
+	/** The gun fired on the last reading: its shot lands after that reading
+	 *  was taken, so its fall is seen on this one. */
+	readonly firedLast: boolean;
 }
 
 const LONG_AGO = Number.POSITIVE_INFINITY;
@@ -166,6 +169,7 @@ export const QUIET_WEAPONS: WeaponSoundState = {
 	target: null,
 	sinceGiven: LONG_AGO,
 	lockClicked: false,
+	firedLast: false,
 };
 
 /** Every loop silent: the clock is held, or nothing is fighting. */
@@ -257,11 +261,16 @@ export function weaponSound(
 	}
 
 	// Hits landed, on the selected target only, and only on the target that
-	// was selected last step: a new selection is a first reading.
+	// was selected last step: a new selection is a first reading. And only
+	// with the gun firing now or on the last reading (sage round 1): a fall
+	// with no shot behind it is not the player's hit. `Game.step` reads the
+	// target before this step's shot lands, so a shot's fall is seen a step
+	// after it, when the trigger may already be let go.
+	const shooting = reading.fired || state.firedLast;
 	let sinceGiven = state.sinceGiven + step;
 	const was = state.target;
 	const now = reading.target;
-	if (was && now && was.id === now.id && arms.given === "given") {
+	if (was && now && was.id === now.id && shooting && arms.given === "given") {
 		const on =
 			now.fore < was.fore || now.aft < was.aft
 				? "shield"
@@ -284,6 +293,7 @@ export function weaponSound(
 			sinceFall,
 			target: now,
 			sinceGiven,
+			firedLast: reading.fired,
 			lockClicked:
 				lockedPull && (state.lockClicked || arms.lockout === "lockclick"),
 		},

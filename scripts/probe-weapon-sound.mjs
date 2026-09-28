@@ -166,9 +166,32 @@ const kinds = (r) => r.cues.map((c) => c.kind);
 		JSON.stringify(released.written),
 	);
 
+	// Idle loops are torn down (sage round 1): once every level has been silent
+	// for `WEAPON_IDLE_S` on the audio clock, the graph's sources stop.
+	const idle = await page.evaluate(async () => {
+		const g = window.__seelite;
+		const built = g.audio.weaponGraph !== null;
+		const { WEAPON_IDLE_S } = await import("/src/audio.ts");
+		const until = g.audio.ctx.currentTime + WEAPON_IDLE_S + 0.5;
+		while (g.audio.ctx.currentTime < until) {
+			g.audio.weapons(g.weaponMix);
+			await new Promise((r) => setTimeout(r, 100));
+		}
+		g.audio.weapons(g.weaponMix);
+		return { built, after: g.audio.weaponGraph };
+	});
+	check(
+		"a weapon graph silent for its idle time is torn down",
+		idle.built === true && idle.after === null,
+		JSON.stringify(idle),
+	);
+
 	// A hit landed on the selected raider.
 	const landed = await steps(page, 2, () => {
 		const g = window.__seelite;
+		// The gun firing: a landed hit needs a shot behind it (sage round 1).
+		g.condition = { ...g.condition, heat: 0, heatLocked: false };
+		g.keys.add(" ");
 		g.targetId = g.raiderContact.id;
 		g.step(g.units.MAX_DT);
 		const r = g.encounter.raider;

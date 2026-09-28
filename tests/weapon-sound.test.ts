@@ -250,8 +250,10 @@ describe("hits landed", () => {
 		aft: POOL,
 		hull,
 	});
+	/** The gun firing on `t`: a landed hit needs a shot behind it. */
 	const on = (t: WeaponReading["target"]): WeaponReading => ({
 		...whole,
+		fired: true,
 		target: t,
 	});
 
@@ -266,6 +268,23 @@ describe("hits landed", () => {
 			DEFAULT_WEAPON_ARMS,
 		);
 		expect(bare.cues).toEqual([{ kind: "hitLanded", on: "hull" }]);
+	});
+
+	test("a fall with the gun quiet is not the player's hit (sage round 1)", () => {
+		const quiet = (t: WeaponReading["target"]) => ({ ...whole, target: t });
+		expect(
+			run([quiet(target("r", 20)), quiet(target("r", 10))], DEFAULT_WEAPON_ARMS)
+				.cues,
+		).toEqual([]);
+	});
+
+	test("a shot fired last step still lands: the damage is read a step late", () => {
+		// `Game.step` reads the target before this step's shot lands, so the
+		// fall from a last shot is seen after the trigger is let go.
+		const quiet = { ...whole, target: target("r", 10) };
+		expect(run([on(target("r", 20)), quiet], DEFAULT_WEAPON_ARMS).cues).toEqual(
+			[{ kind: "hitLanded", on: "shield" }],
+		);
 	});
 
 	test("switching to a weaker target is not a hit", () => {

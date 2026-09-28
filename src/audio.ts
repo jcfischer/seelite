@@ -414,6 +414,17 @@ export class AudioFX {
 		}
 		const g = this.weaponGraph;
 		const t = this.ctx.currentTime;
+		// Torn down once every loop has been silent a while (sage round 1): the
+		// graph is ten running sources, and a fight is short beside a session.
+		// The written levels are kept, all zero, which is what a fresh graph's
+		// gains hold, so a rebuild writes only what moves.
+		if (mix.beam + mix.sizzleFore + mix.sizzleAft > 0) this.weaponLoudAt = t;
+		else if (t - this.weaponLoudAt > WEAPON_IDLE_S) {
+			for (const src of g.sources) src.stop();
+			g.root.disconnect();
+			this.weaponGraph = null;
+			return;
+		}
 		const w = this.weaponWritten;
 		const moved = (k: keyof WeaponMix) => {
 			const had = w[k];
@@ -442,7 +453,15 @@ export class AudioFX {
 			g.sizzleAft.gain.setTargetAtTime(0.22 * mix.sizzleAft, t, 0.03);
 	}
 
-	private makeWeaponGraph(ctx: BaseAudioContext, out: AudioNode): WeaponGraph {
+	/** When a weapon loop was last asked for, on the audio clock. */
+	private weaponLoudAt = 0;
+
+	private makeWeaponGraph(ctx: BaseAudioContext, bus: AudioNode): WeaponGraph {
+		const root = ctx.createGain();
+		root.gain.value = 1;
+		root.connect(bus);
+		const out = root;
+		const sources: AudioScheduledSourceNode[] = [];
 		const gain = (to: AudioNode, value = 0) => {
 			const g = ctx.createGain();
 			g.gain.value = value;
@@ -462,6 +481,7 @@ export class AudioFX {
 			o.frequency.value = hz;
 			o.connect(to);
 			o.start();
+			sources.push(o);
 			return o;
 		};
 		/** An oscillator swinging `param` by `depth` around its value. */
@@ -483,6 +503,7 @@ export class AudioFX {
 			src.loop = true;
 			src.connect(to);
 			src.start(0, offset % white.duration);
+			sources.push(src);
 		};
 
 		// The beam: a low buzz of two detuned saws through a resonant low-pass,
@@ -515,6 +536,8 @@ export class AudioFX {
 			return g;
 		};
 		return {
+			root,
+			sources,
 			beam,
 			beamFilter,
 			whine,
@@ -1369,8 +1392,16 @@ export class AudioFX {
 	}
 }
 
+/** How long every weapon loop must be silent before its graph is torn
+ *  down, s: well past the beam's and the sizzle's release. */
+export const WEAPON_IDLE_S = 2;
+
 /** The nodes `AudioFX.weapons` writes (#545). */
 interface WeaponGraph {
+	/** Everything goes through this, so a teardown is one disconnect. */
+	root: GainNode;
+	/** Every running source, so a teardown can stop them. */
+	sources: AudioScheduledSourceNode[];
 	beam: GainNode;
 	beamFilter: BiquadFilterNode;
 	whine: OscillatorNode;

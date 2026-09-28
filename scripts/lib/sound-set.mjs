@@ -401,33 +401,20 @@ export async function renderInPage({
 		at.set(t, (at.get(t) ?? 0) + 1);
 	}
 	let live = null;
-	if (entry.weapons) {
-		const { weaponSound, weaponSoundArms, QUIET_WEAPONS } = await import(
-			"/src/weapon-sound.ts"
-		);
-		const { stepGunFeedback, QUIET_GUN } = await import("/src/gun-feedback.ts");
-		const { arms, unknown } = weaponSoundArms(entry.weapons.arms);
-		if (unknown.length || arms === "legacy")
-			throw new Error(`${entry.name}: arms ${entry.weapons.arms}`);
-		let reading = {
-			fired: false,
-			trigger: false,
-			heatLocked: false,
-			heat: 0,
-			fore: 106,
-			aft: 106,
-			hull: 100,
-			target: null,
-			tFore: 0,
-			tAft: 0,
-			tHull: 0,
-		};
-		const readings = entry.weapons.keys.map(([t, over]) => {
+	/**
+	 * A scripted timeline's reading at `t` (#544, #545). `keys` are
+	 * `[seconds, reading]`, each merged over the one before and held, or with
+	 * `ramp: true` its numbers reached linearly from the key before. One copy
+	 * for both timelines (sage round 1 on #545).
+	 */
+	const timeline = (keys, initial) => {
+		let reading = initial;
+		const readings = keys.map(([t, over]) => {
 			reading = { ...reading, ...over };
 			delete reading.ramp;
 			return [t, reading, over.ramp === true];
 		});
-		const readingAt = (t) => {
+		return (t) => {
 			let i = 0;
 			while (i + 1 < readings.length && readings[i + 1][0] <= t) i++;
 			const next = readings[i + 1];
@@ -440,51 +427,17 @@ export async function renderInPage({
 					out[key] = a[key] + (next[1][key] - a[key]) * k;
 			return out;
 		};
-		const dt = 1 / 50;
-		let state = QUIET_WEAPONS;
-		let gun = QUIET_GUN;
-		let prev = null;
-		let sinceStruckS = 9;
+	};
+	/** Run `onStep(t, dt)` every `dt` of the render on the seeded stream, by
+	 *  suspending the render there, and hand back the samples after the lead. */
+	const renderSteps = async (dt, onStep) => {
 		const random = Math.random;
 		for (let i = 0; i * dt < seconds; i++) {
 			const t = i * dt;
 			ctx.suspend(leadS + t).then(() => {
 				if (typeof seed === "number") Math.random = seeded;
 				try {
-					const r = readingAt(t);
-					const feedback = stepGunFeedback(gun, r.fired, dt);
-					gun = feedback.feedback;
-					const fell =
-						prev !== null &&
-						(r.fore < prev.fore || r.aft < prev.aft || r.hull < prev.hull);
-					sinceStruckS = fell ? 0 : sinceStruckS + dt;
-					prev = r;
-					const step = weaponSound(
-						state,
-						{
-							fired: r.fired,
-							shotSound: feedback.sound,
-							trigger: r.trigger,
-							heatLocked: r.heatLocked,
-							heat: r.heat,
-							own: {
-								fore: r.fore,
-								aft: r.aft,
-								hull: r.hull,
-								poolMax: 106,
-								sinceStruckS,
-							},
-							target:
-								r.target === null
-									? null
-									: { id: r.target, fore: r.tFore, aft: r.tAft, hull: r.tHull },
-						},
-						arms,
-						dt,
-					);
-					state = step.state;
-					for (const cue of step.cues) fx.play(cue);
-					fx.weapons(step.mix);
+					onStep(t, dt);
 				} finally {
 					Math.random = random;
 				}
@@ -500,6 +453,69 @@ export async function renderInPage({
 				buffer.getChannelData(0).subarray(Math.round(leadS * sampleRate)),
 			),
 		};
+	};
+	if (entry.weapons) {
+		const { weaponSound, weaponSoundArms, QUIET_WEAPONS } = await import(
+			"/src/weapon-sound.ts"
+		);
+		const { stepGunFeedback, QUIET_GUN } = await import("/src/gun-feedback.ts");
+		const { arms, unknown } = weaponSoundArms(entry.weapons.arms);
+		if (unknown.length || arms === "legacy")
+			throw new Error(`${entry.name}: arms ${entry.weapons.arms}`);
+		const readingAt = timeline(entry.weapons.keys, {
+			fired: false,
+			trigger: false,
+			heatLocked: false,
+			heat: 0,
+			fore: 106,
+			aft: 106,
+			hull: 100,
+			target: null,
+			tFore: 0,
+			tAft: 0,
+			tHull: 0,
+		});
+		let state = QUIET_WEAPONS;
+		let gun = QUIET_GUN;
+		let prev = null;
+		let sinceStruckS = 9;
+		return renderSteps(1 / 50, (t, dt) => {
+			const r = readingAt(t);
+			const feedback = stepGunFeedback(gun, r.fired, dt);
+			gun = feedback.feedback;
+			// A fall in the ship's own condition is struck, as `applyDamage` has it.
+			const fell =
+				prev !== null &&
+				(r.fore < prev.fore || r.aft < prev.aft || r.hull < prev.hull);
+			sinceStruckS = fell ? 0 : sinceStruckS + dt;
+			prev = r;
+			const step = weaponSound(
+				state,
+				{
+					fired: r.fired,
+					shotSound: feedback.sound,
+					trigger: r.trigger,
+					heatLocked: r.heatLocked,
+					heat: r.heat,
+					own: {
+						fore: r.fore,
+						aft: r.aft,
+						hull: r.hull,
+						poolMax: 106,
+						sinceStruckS,
+					},
+					target:
+						r.target === null
+							? null
+							: { id: r.target, fore: r.tFore, aft: r.tAft, hull: r.tHull },
+				},
+				arms,
+				dt,
+			);
+			state = step.state;
+			for (const cue of step.cues) fx.play(cue);
+			fx.weapons(step.mix);
+		});
 	}
 	if (entry.flight) {
 		const { flightSound, flightSoundArms, QUIET_FLIGHT, cruiseSpeedShare } =
@@ -523,7 +539,7 @@ export async function renderInPage({
 		const { arms, unknown } = flightSoundArms(entry.flight.arms);
 		if (unknown.length || arms === "legacy")
 			throw new Error(`${entry.name}: arms ${entry.flight.arms}`);
-		let reading = {
+		const readingAt = timeline(entry.flight.keys, {
 			docked: false,
 			regime: "normal",
 			spool: 0,
@@ -534,58 +550,20 @@ export async function renderInPage({
 			cruiseSpeed: 0,
 			held: false,
 			hushed: false,
-		};
-		const readings = entry.flight.keys.map(([t, over]) => {
-			reading = { ...reading, ...over };
-			delete reading.ramp;
-			return [t, reading, over.ramp === true];
 		});
-		const readingAt = (t) => {
-			let i = 0;
-			while (i + 1 < readings.length && readings[i + 1][0] <= t) i++;
-			const next = readings[i + 1];
-			if (!next || !next[2]) return readings[i][1];
-			const [t0, a] = readings[i];
-			const k = (t - t0) / (next[0] - t0);
-			const out = { ...a };
-			for (const key of Object.keys(a))
-				if (typeof a[key] === "number")
-					out[key] = a[key] + (next[1][key] - a[key]) * k;
-			return out;
-		};
-		const dt = 1 / 50;
 		const cues = [...entry.flight.cues];
 		const setAt = [...levelsAt];
 		let flight = QUIET_FLIGHT;
-		const random = Math.random;
-		for (let i = 0; i * dt < seconds; i++) {
-			const t = i * dt;
-			ctx.suspend(leadS + t).then(() => {
-				if (typeof seed === "number") Math.random = seeded;
-				try {
-					const step = flightSound(flight, shareOf(readingAt(t)), arms, dt);
-					flight = step.state;
-					for (const cue of step.cues) fx.play(cue);
-					while (cues.length && cues[0][0] <= t) fx.play(cues.shift()[1]);
-					while (setAt.length && setAt[0][0] <= t)
-						for (const [bus, level] of Object.entries(setAt.shift()[1]))
-							fx.setLevel(bus, level);
-					fx.flight(step.mix);
-				} finally {
-					Math.random = random;
-				}
-				ctx.resume();
-			});
-		}
-		const buffer = await ctx.startRendering();
-		return {
-			modern,
-			sampleRate,
-			live: null,
-			samples: Array.from(
-				buffer.getChannelData(0).subarray(Math.round(leadS * sampleRate)),
-			),
-		};
+		return renderSteps(1 / 50, (t, dt) => {
+			const step = flightSound(flight, shareOf(readingAt(t)), arms, dt);
+			flight = step.state;
+			for (const cue of step.cues) fx.play(cue);
+			while (cues.length && cues[0][0] <= t) fx.play(cues.shift()[1]);
+			while (setAt.length && setAt[0][0] <= t)
+				for (const [bus, level] of Object.entries(setAt.shift()[1]))
+					fx.setLevel(bus, level);
+			fx.flight(step.mix);
+		});
 	}
 	for (const [t, n] of at)
 		ctx.suspend(t).then(() => {
