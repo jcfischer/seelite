@@ -23,6 +23,10 @@
  * 3. **The quality gate is live.** #99's finding: a reload puts the ship
  *    somewhere else, so a setting that only takes effect on reload cannot be
  *    judged. Toggled in the page, checked in the page.
+ * 4. **#204's additions reached the cabin.** The `face` mid-tone is on real
+ *    fittings, the canopy glass carries the scenes' environment under the same
+ *    gate and on the same rotation, and the six lamp pools are light added
+ *    rather than surfaces shaded.
  */
 import { guardedOrigin, launchChromium, tally } from "./probe-guard.mjs";
 import { gameUrl } from "./lib/game-url.mjs";
@@ -49,6 +53,8 @@ function state() {
 	/** One material, flattened to what this probe asks about. */
 	const describe = (material) => ({
 		type: material.type,
+		material: material.name,
+		blending: material.blending,
 		lit: material.type === "MeshStandardMaterial",
 		map: Boolean(material.map),
 		roughnessMap: Boolean(material.roughnessMap),
@@ -116,7 +122,26 @@ function state() {
 		spans.push({ name: object.name || "(unnamed)", span, extent });
 		if (object.name === "scanner-deck") deckSpan = span;
 	});
-	return { found: true, meshes, lights, spans, deckSpan };
+	// #204's glass: its explicit environment, and whether it is turned onto the
+	// star with the scene's. A basic material reads no `scene` field, so both
+	// are `main.ts`'s to keep, and a pane left on the bake's own rotation would
+	// reflect a star that is not there.
+	let glass = null;
+	cockpit.traverse((object) => {
+		if (object.name !== "canopy-glass") return;
+		const m = object.material;
+		const a = m.envMapRotation;
+		const b = game.nearScene.environmentRotation;
+		glass = {
+			envMap: Boolean(m.envMap),
+			reflectivity: m.reflectivity,
+			rotationMatches:
+				Math.abs(a.x - b.x) < 1e-9 &&
+				Math.abs(a.y - b.y) < 1e-9 &&
+				Math.abs(a.z - b.z) < 1e-9,
+		};
+	});
+	return { found: true, meshes, lights, spans, deckSpan, glass };
 }
 
 /**
@@ -129,7 +154,15 @@ function state() {
  * asserted on its own so the hole is a claim.
  */
 const structuralOf = (state) =>
-	state.meshes.filter((mesh) => mesh.lit && mesh.name !== "throttle-fill");
+	state.meshes.filter(
+		(mesh) =>
+			mesh.lit &&
+			mesh.name !== "throttle-fill" &&
+			// **Not a cabin surface.** #204's bonnet is the hull, in the hull's own
+			// paint and plate, drawn inside the cabin's group only because it has
+			// to turn with it; the cabin's profile, finishes and panel are not its.
+			mesh.name !== "cockpit-bonnet",
+	);
 
 /** The five surfaces a player *reads*. Named rather than derived, because the
  *  claim is about these specific ones and a derived set would grow silently. */
@@ -163,11 +196,20 @@ for (const viewport of VIEWPORTS) {
 		`${viewport.name}: the seam map is cut in at the default quality`,
 		structural.every((mesh) => mesh.normalMap),
 	);
-	// Three finishes, still three. A repaint is the failure #101 shipped once
-	// and it is invisible to every other assertion here.
+	// Four finishes, still four — #204 added `face`. A repaint is the failure
+	// #101 shipped once and it is invisible to every other assertion here.
 	check(
-		`${viewport.name}: the three cabin finishes stay distinct`,
-		new Set(structural.map((mesh) => mesh.dial)).size === 3,
+		`${viewport.name}: the four cabin finishes stay distinct`,
+		new Set(structural.map((mesh) => mesh.dial)).size === 4,
+	);
+	check(
+		`${viewport.name}: #204's face mid-tone is on the console tops and the deck`,
+		["console-top-port", "console-top-starboard", "scanner-deck"].every(
+			(name) =>
+				high.meshes.some(
+					(mesh) => mesh.name === name && mesh.material === "cockpit-face",
+				),
+		),
 	);
 	// **The advertised failure mode, guarded for every fitting.** An earlier
 	// version read the three shared textures off a shared material — which every
@@ -240,6 +282,26 @@ for (const viewport of VIEWPORTS) {
 		),
 	);
 	check(
+		`${viewport.name}: the canopy glass carries the environment, turned onto the star`,
+		high.glass?.envMap === true &&
+			high.glass.reflectivity > 0 &&
+			high.glass.rotationMatches,
+	);
+	// Six, one under each lamp, and light *added*: a basic material in additive
+	// blending, which nothing lights and #201's walk leaves out.
+	check(
+		`${viewport.name}: six lamp pools, added light rather than shaded surfaces`,
+		(() => {
+			const pools = high.meshes.filter(
+				(mesh) => mesh.name === "cockpit-lamp-pool",
+			);
+			return (
+				pools.length === 6 &&
+				pools.every((mesh) => !mesh.lit && mesh.blending === 2)
+			);
+		})(),
+	);
+	check(
 		`${viewport.name}: the cabin carries its own fill and #105's warm key`,
 		high.lights.some((l) => l.name === "cockpit-light" && l.visible) &&
 			high.lights.some((l) => l.name === "cockpit-key-light" && l.visible),
@@ -264,6 +326,12 @@ for (const viewport of VIEWPORTS) {
 			low.lights.some((l) => l.name === "cockpit-light" && l.visible),
 	);
 	check(
+		// The scenes carry no environment at low, so a pane reflecting one would
+		// be the only surface in the frame that did.
+		`${viewport.name}: low takes the canopy's reflection away with the scenes'`,
+		low.glass?.envMap === false,
+	);
+	check(
 		`${viewport.name}: low leaves the lamps alone`,
 		low.meshes.filter((mesh) => mesh.name === "cockpit-lamp").length ===
 			high.meshes.filter((mesh) => mesh.name === "cockpit-lamp").length &&
@@ -272,9 +340,12 @@ for (const viewport of VIEWPORTS) {
 	await page.evaluate(() => window.__seelite.settings.set("quality", "high"));
 	const restored = await page.evaluate(state);
 	check(
-		`${viewport.name}: high puts the seam map and the key light back`,
+		`${viewport.name}: high puts the seam map, the key light and the reflection back`,
 		structuralOf(restored).every((mesh) => mesh.normalMap) &&
-			restored.lights.some((l) => l.name === "cockpit-key-light" && l.visible),
+			restored.lights.some(
+				(l) => l.name === "cockpit-key-light" && l.visible,
+			) &&
+			restored.glass?.envMap === true,
 	);
 
 	await page.close();
