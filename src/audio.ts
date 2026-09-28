@@ -26,11 +26,14 @@
 import {
 	BUSES,
 	type Bus,
+	type WeaponMix,
 	CUE_BUS,
 	CUE_VOICE,
 	type Cue,
 	type CueBus,
 	type FlightMix,
+	type HitPool,
+	type HullHitVoice,
 	type NotifyTone,
 	VOICE_CAPS,
 	VOICE_MIX_CAP,
@@ -113,8 +116,11 @@ export const LIMITER = {
  */
 export const CUE_LENGTH_S: Readonly<Record<VoicedCueKind, number>> = {
 	laser: 0.19,
-	shieldHit: 0.25,
-	hullHit: 0.25,
+	// #545's voices: the longest of each kind's variants, with its tail.
+	gunLocked: 0.1,
+	shieldHit: 0.32,
+	hullHit: 0.45,
+	hitLanded: 0.15,
 	explosion: 0.8,
 	dock: 0.23,
 	alert: 0.17,
@@ -314,10 +320,15 @@ export class AudioFX {
 		this.voices.set(admission.id, voice);
 		switch (cue.kind) {
 			case "laser":
-				return this.laser(voice);
+				return cue.voice === "pew" ? this.laser(voice) : this.crack(voice);
+			case "gunLocked":
+				return this.gunLocked(voice);
 			case "shieldHit":
+				return this.shieldHit(voice, cue.pool, cue.share, cue.sided);
 			case "hullHit":
-				return this.hit(voice);
+				return this.hullHit(voice, cue.voice);
+			case "hitLanded":
+				return this.hitLanded(voice, cue.on);
 			case "explosion":
 				return this.explosion(voice);
 			case "dock":
@@ -375,6 +386,142 @@ export class AudioFX {
 		// Harder thrust is brighter as well as louder — a low rumble at any
 		// setting reads as traffic rather than as a drive.
 		this.bed.filter.frequency.setTargetAtTime(180 + 700 * want, t, 0.4);
+	}
+
+	/** The combat loops (#545), built on the first step that has any to play. */
+	private weaponGraph: WeaponGraph | null = null;
+	/** Each combat level as last **written**, for the reason `flightWritten`
+	 *  gives, and what a probe reads. */
+	private readonly weaponWritten: {
+		-readonly [K in keyof WeaponMix]?: number;
+	} = {};
+
+	/**
+	 * Hold the combat loops at one step's levels (#545): the sustained beam
+	 * while the gun fires, and a held enemy beam sizzling on each shield pool.
+	 * `weapon-sound.ts` computes the mix. On the **combat** bus, written on
+	 * change like `flight`, and nothing is built before a level is non-zero.
+	 *
+	 * The beam's onset is a discharge, played here and not as a cue: it is the
+	 * loop's own attack, and it belongs to the edge the loop sees.
+	 */
+	weapons(mix: WeaponMix) {
+		if (!this.ctx || !this.buses) return;
+		if (!this.audible("combat")) return;
+		if (!this.weaponGraph) {
+			if (!(mix.beam + mix.sizzleFore + mix.sizzleAft > 0)) return;
+			this.weaponGraph = this.makeWeaponGraph(this.ctx, this.buses.combat);
+		}
+		const g = this.weaponGraph;
+		const t = this.ctx.currentTime;
+		const w = this.weaponWritten;
+		const moved = (k: keyof WeaponMix) => {
+			const had = w[k];
+			const due =
+				had === undefined ||
+				(mix[k] === 0 && had !== 0) ||
+				Math.abs(mix[k] - had) >= 0.005;
+			if (due) w[k] = mix[k];
+			return due;
+		};
+		const wasFiring = (w.beam ?? 0) > 0;
+		if (moved("beam")) {
+			// Quick in, a little slower out: a beam cut off rings for a moment.
+			g.beam.gain.setTargetAtTime(0.11 * mix.beam, t, mix.beam ? 0.012 : 0.05);
+			if (mix.beam > 0 && !wasFiring) this.discharge(this.buses.combat, 0.6);
+		}
+		if (moved("heat")) {
+			const h = mix.heat;
+			g.whine.frequency.setTargetAtTime(1400 * 2 ** (1.1 * h), t, 0.1);
+			g.whineGain.gain.setTargetAtTime(0.012 + 0.12 * h * h, t, 0.1);
+			g.beamFilter.frequency.setTargetAtTime(900 + 1400 * h, t, 0.1);
+		}
+		if (moved("sizzleFore"))
+			g.sizzleFore.gain.setTargetAtTime(0.22 * mix.sizzleFore, t, 0.03);
+		if (moved("sizzleAft"))
+			g.sizzleAft.gain.setTargetAtTime(0.22 * mix.sizzleAft, t, 0.03);
+	}
+
+	private makeWeaponGraph(ctx: BaseAudioContext, out: AudioNode): WeaponGraph {
+		const gain = (to: AudioNode, value = 0) => {
+			const g = ctx.createGain();
+			g.gain.value = value;
+			g.connect(to);
+			return g;
+		};
+		const filter = (type: BiquadFilterType, hz: number, q: number) => {
+			const f = ctx.createBiquadFilter();
+			f.type = type;
+			f.frequency.value = hz;
+			f.Q.value = q;
+			return f;
+		};
+		const osc = (type: OscillatorType, hz: number, to: AudioNode) => {
+			const o = ctx.createOscillator();
+			o.type = type;
+			o.frequency.value = hz;
+			o.connect(to);
+			o.start();
+			return o;
+		};
+		/** An oscillator swinging `param` by `depth` around its value. */
+		const lfo = (
+			type: OscillatorType,
+			hz: number,
+			param: AudioParam,
+			depth: number,
+		) => {
+			const g = ctx.createGain();
+			g.gain.value = depth;
+			g.connect(param);
+			osc(type, hz, g);
+		};
+		const white = noiseLoop(ctx, "white");
+		const loop = (to: AudioNode, offset: number) => {
+			const src = ctx.createBufferSource();
+			src.buffer = white;
+			src.loop = true;
+			src.connect(to);
+			src.start(0, offset % white.duration);
+		};
+
+		// The beam: a low buzz of two detuned saws through a resonant low-pass,
+		// a hiss of the discharge riding on it, and a thin whine that heat lifts.
+		// A fast shimmer on the body keeps it from reading as a held note.
+		const beam = gain(out);
+		const shimmer = gain(beam, 0.8);
+		lfo("sine", 23, shimmer.gain, 0.2);
+		const beamFilter = filter("lowpass", 900, 4);
+		beamFilter.connect(shimmer);
+		osc("sawtooth", 82, beamFilter);
+		osc("sawtooth", 82.7, beamFilter);
+		osc("square", 164.3, gain(beamFilter, 0.3));
+		const hissBand = filter("bandpass", 2600, 1.4);
+		hissBand.connect(gain(shimmer, 0.9));
+		loop(hissBand, 0.131);
+		const whineGain = gain(beam, 0.012);
+		const whine = osc("sine", 1400, whineGain);
+
+		// A held enemy beam on a shield: noise in the pool's band, chopped by
+		// two square LFOs at unrelated rates into a crackle. Fore is brighter
+		// than aft, as a shield hit is on `sided`.
+		const sizzle = (hz: number, offset: number, rates: [number, number]) => {
+			const g = gain(out);
+			const chop = gain(g, 0.5);
+			for (const rate of rates) lfo("square", rate, chop.gain, 0.25);
+			const band = filter("bandpass", hz, 1.2);
+			band.connect(chop);
+			loop(band, offset);
+			return g;
+		};
+		return {
+			beam,
+			beamFilter,
+			whine,
+			whineGain,
+			sizzleFore: sizzle(3200, 0.577, [31, 47]),
+			sizzleAft: sizzle(1500, 1.093, [23, 37]),
+		};
 	}
 
 	/** The ship's loops (#544), built on the first frame that has any to play. */
@@ -946,15 +1093,135 @@ export class AudioFX {
 	 * caller names a cue and never learns what an oscillator is. #552 moved
 	 * them behind `play` and changed no figure in them.
 	 */
-	/** Pulse laser: a short descending zap. */
+	/** Pulse laser: a short descending zap. The `pew` voice since #545, which
+	 *  the principal rejected as *pew pew*. */
 	private laser(out: AudioNode) {
 		this.tone(out, 880, 0.14, "square", 0.14, 180);
 		this.noiseBurst(out, 0.08, 0.12, 3000);
 	}
-	/** A hit taken or landed on hull — thud, no debris. */
+	/** A hit taken or landed on hull — thud, no debris. The `thud` hull voice
+	 *  since #545. */
 	private hit(out: AudioNode) {
 		this.noiseBurst(out, 0.22, 0.35, 900);
 		this.tone(out, 120, 0.2, "triangle", 0.2, 70);
+	}
+
+	/** A short burst of band-passed noise into `out`. */
+	private bandBurst(
+		out: AudioNode,
+		dur: number,
+		vol: number,
+		hz: number,
+		q: number,
+		delayS = 0,
+	) {
+		if (!this.ctx) return;
+		const t = this.ctx.currentTime + delayS;
+		const len = Math.max(1, Math.floor(this.ctx.sampleRate * dur));
+		const buffer = this.ctx.createBuffer(1, len, this.ctx.sampleRate);
+		const data = buffer.getChannelData(0);
+		for (let i = 0; i < len; i++)
+			data[i] = (Math.random() * 2 - 1) * (1 - i / len) ** 2;
+		const src = this.ctx.createBufferSource();
+		src.buffer = buffer;
+		const filter = this.ctx.createBiquadFilter();
+		filter.type = "bandpass";
+		filter.frequency.value = hz;
+		filter.Q.value = q;
+		const g = this.ctx.createGain();
+		g.gain.value = vol;
+		src.connect(filter);
+		filter.connect(g);
+		g.connect(out);
+		src.start(t);
+	}
+
+	/**
+	 * A discharge (#545): a crack of bright noise over a short low punch, and
+	 * no falling pitch — the fall is what made the zap a *pew*. The `crack`
+	 * shot, and the beam's onset at `level`.
+	 */
+	private discharge(out: AudioNode, level: number) {
+		this.bandBurst(out, 0.035, 0.5 * level, 3400, 0.9);
+		this.bandBurst(out, 0.012, 0.35 * level, 7000, 1.5);
+		this.tone(out, 110, 0.09, "sine", 0.16 * level, 75);
+		this.tone(out, 1650, 0.05, "triangle", 0.03 * level);
+	}
+	private crack(out: AudioNode) {
+		this.discharge(out, 1);
+	}
+	/** A trigger pulled on a heat-locked gun (#545): a dry click, and a small
+	 *  drop that says the gun did not answer. */
+	private gunLocked(out: AudioNode) {
+		this.bandBurst(out, 0.008, 0.35, 2500, 5);
+		this.tone(out, 240, 0.06, "sine", 0.06, 150);
+	}
+
+	/**
+	 * A hit on a shield (#545): the field taking it, not the hull. A pitched
+	 * body falling as the field gives, a fizz of noise, and a faint ring at
+	 * inharmonic partials. Fore is higher and brighter than aft when the side
+	 * is heard. `share` is what is left of the pool: as it nears zero the body
+	 * thins and the fizz breaks into a crackle.
+	 */
+	private shieldHit(
+		out: AudioNode,
+		pool: HitPool,
+		share: number,
+		sided: boolean,
+	) {
+		const [f0, fizz] = !sided
+			? [340, 2300]
+			: pool === "fore"
+				? [430, 3000]
+				: [250, 1500];
+		const weak = 1 - Math.min(1, Math.max(0, share));
+		this.tone(out, f0, 0.22, "sine", 0.17 * (1 - 0.55 * weak), f0 * 0.42);
+		this.bandBurst(out, 0.18, 0.4, fizz, 1.5);
+		this.tone(out, f0 * 2.01, 0.14, "sine", 0.045);
+		this.tone(out, f0 * 2.99, 0.1, "sine", 0.03);
+		const crackles = Math.round(8 * weak);
+		for (let i = 0; i < crackles; i++)
+			this.bandBurst(
+				out,
+				0.006 + Math.random() * 0.01,
+				(0.25 + Math.random() * 0.3) * weak,
+				4000 + Math.random() * 3000,
+				4,
+				0.02 + Math.random() * 0.24,
+			);
+	}
+
+	/**
+	 * A hit on the hull (#545). `clang`: metal struck — a low punch, a crunch,
+	 * and a ring of inharmonic partials, each hit a little off the last so a
+	 * run of them is not one sample repeated. `thud`: the thud before #545.
+	 */
+	private hullHit(out: AudioNode, voice: HullHitVoice) {
+		if (voice === "thud") return this.hit(out);
+		const spread = 0.96 + Math.random() * 0.08;
+		this.tone(out, 72 * spread, 0.26, "sine", 0.3, 44);
+		this.noiseBurst(out, 0.13, 0.32, 1500);
+		for (const [hz, vol, dur] of [
+			[197, 0.08, 0.4],
+			[463, 0.06, 0.32],
+			[821, 0.045, 0.24],
+			[1307, 0.03, 0.18],
+			[2011, 0.018, 0.12],
+		] as const)
+			this.tone(out, hz * spread, dur, "sine", vol);
+	}
+
+	/** A hit the player landed (#545): smaller and further off than one taken
+	 *  — a thin tick off a shield, a dull knock off a hull. */
+	private hitLanded(out: AudioNode, on: "shield" | "hull") {
+		if (on === "shield") {
+			this.bandBurst(out, 0.06, 0.18, 2800, 3);
+			this.tone(out, 900, 0.05, "sine", 0.03, 520);
+			return;
+		}
+		this.noiseBurst(out, 0.1, 0.14, 500);
+		this.tone(out, 110, 0.1, "sine", 0.07, 80);
 	}
 	/** A ship coming apart. */
 	private explosion(out: AudioNode) {
@@ -1100,6 +1367,16 @@ export class AudioFX {
 	private focus(out: AudioNode) {
 		this.tone(out, 2600, 0.014, "sine", 0.035);
 	}
+}
+
+/** The nodes `AudioFX.weapons` writes (#545). */
+interface WeaponGraph {
+	beam: GainNode;
+	beamFilter: BiquadFilterNode;
+	whine: OscillatorNode;
+	whineGain: GainNode;
+	sizzleFore: GainNode;
+	sizzleAft: GainNode;
 }
 
 /** The nodes `AudioFX.flight` writes (#544). */

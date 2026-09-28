@@ -51,6 +51,19 @@ export const PROBE_CATALOG = Object.freeze(
 			],
 		),
 		entry(
+			"probe-weapon-sound.mjs",
+			"Fights a live duel on fixed steps and reads back the combat cues and loop levels: a hit taken plays and names its pool, a hit through the shield plays on the hull, a condition replaced downward plays nothing, the beam arm holds a loop while the gun fires, a hit landed on the selected raider plays, and the legacy arm keeps hits silent.",
+			[
+				"audio",
+				"combat sound",
+				"laser",
+				"shield hit",
+				"hull hit",
+				"damage",
+				"gun heat",
+			],
+		),
+		entry(
 			"probe-console-sound.mjs",
 			"Plays the running game's consoles and reads back which cue each act asks for: a tab or a purchase is a press, a refused purchase a refusal, a cursor move and a hover a tick, a clearance answer one message, and the legacy arm none of them.",
 			[

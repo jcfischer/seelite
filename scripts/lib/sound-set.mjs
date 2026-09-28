@@ -17,8 +17,20 @@
 
 /** Seconds are render lengths: the cue's ring plus room for the tail. */
 export const SOUND_SET = Object.freeze([
-	{ name: "laser", seconds: 0.5, cue: { kind: "laser" }, legacy: ["laser"] },
-	{ name: "hit", seconds: 0.6, cue: { kind: "hullHit" }, legacy: ["hit"] },
+	// The `pew` and `thud` voices are the sounds before #545, under the names
+	// they had, so their bands still hold them to the engine before #552.
+	{
+		name: "laser",
+		seconds: 0.5,
+		cue: { kind: "laser", voice: "pew" },
+		legacy: ["laser"],
+	},
+	{
+		name: "hit",
+		seconds: 0.6,
+		cue: { kind: "hullHit", voice: "thud" },
+		legacy: ["hit"],
+	},
 	{
 		name: "explosion",
 		seconds: 1.2,
@@ -61,7 +73,111 @@ export const SOUND_SET = Object.freeze([
 	{ name: "refuse", seconds: 0.4, cue: { kind: "refuse" } },
 	{ name: "focus", seconds: 0.3, cue: { kind: "focus" } },
 	...flightTimelines(),
+	// #545's voices. None has a `legacy` method: a crack, a clang, a shield
+	// and a landed hit did not exist before #545, so an older ref renders them
+	// as absent.
+	{
+		name: "laser-crack",
+		seconds: 0.4,
+		cue: { kind: "laser", voice: "crack" },
+	},
+	{ name: "gun-locked", seconds: 0.3, cue: { kind: "gunLocked" } },
+	{
+		name: "shield-fore",
+		seconds: 0.6,
+		cue: { kind: "shieldHit", pool: "fore", share: 1, sided: true },
+	},
+	{
+		name: "shield-aft",
+		seconds: 0.6,
+		cue: { kind: "shieldHit", pool: "aft", share: 1, sided: true },
+	},
+	{
+		name: "shield-onepool",
+		seconds: 0.6,
+		cue: { kind: "shieldHit", pool: "fore", share: 1, sided: false },
+	},
+	{
+		name: "shield-fore-low",
+		seconds: 0.6,
+		cue: { kind: "shieldHit", pool: "fore", share: 0.1, sided: true },
+	},
+	{
+		name: "hull-clang",
+		seconds: 0.8,
+		cue: { kind: "hullHit", voice: "clang" },
+	},
+	{
+		name: "landed-shield",
+		seconds: 0.4,
+		cue: { kind: "hitLanded", on: "shield" },
+	},
+	{ name: "landed-hull", seconds: 0.4, cue: { kind: "hitLanded", on: "hull" } },
+	...weaponTimelines(),
 ]);
+
+/**
+ * #545's duels, flown by a scripted timeline through the real
+ * `weapon-sound.ts` step, so what is heard is what the mapping gives.
+ *
+ * `keys` are `[seconds, reading]` as `flightTimelines`' are, over a flat
+ * reading: `fired`, `trigger`, `heatLocked`, `heat` for the gun; `fore`,
+ * `aft`, `hull` for the player's own condition; and `target`, `tFore`,
+ * `tAft`, `tHull` for the selected target (`target: null` is none). The
+ * shot pacing is `stepGunFeedback`'s, and a fall in the ship's own condition
+ * is struck, as `applyDamage` would have it. `arms` is a `?weaponsound=`
+ * value.
+ */
+function weaponTimelines() {
+	// Two bursts of fire, the second running the gun into its lockout, a pull
+	// on the locked gun, and a release.
+	const bursts = [
+		[0, { fired: false, trigger: false, heat: 0 }],
+		[0.3, { fired: true, trigger: true }],
+		[1.3, { fired: false, trigger: false, heat: 0.35 }],
+		[1.8, { fired: true, trigger: true }],
+		[4.3, { heat: 1, ramp: true }],
+		[4.3, { fired: false, heatLocked: true }],
+		[4.6, { trigger: false }],
+		[4.9, { trigger: true }],
+		[5.1, { trigger: false }],
+	];
+	// A raider's beam held on the fore shield for two seconds, draining it,
+	// then a pause, then on the aft through to the hull.
+	const taken = [
+		[0, { fore: 106, aft: 106, hull: 100 }],
+		[0.3, {}],
+		[2.3, { fore: 60, ramp: true }],
+		[3.3, {}],
+		[3.4, { aft: 100 }],
+		[5.4, { aft: 0, ramp: true }],
+		[6.9, { hull: 70, ramp: true }],
+	];
+	// The player's fire landing on a selected target: shield, then hull.
+	const given = [
+		[0, { target: "r", tFore: 106, tAft: 106, tHull: 100, fired: false }],
+		[0.3, { fired: true, trigger: true }],
+		[2.3, { tFore: 0, ramp: true }],
+		[3.8, { tHull: 60, ramp: true }],
+		[3.8, { fired: false, trigger: false }],
+	];
+	const line = (name, seconds, arms, keys) => ({
+		name,
+		seconds,
+		weapons: { arms, keys },
+	});
+	return [
+		line("weapons-crack", 5.5, "nolock", bursts),
+		line("weapons-beam", 5.5, "beam", bursts),
+		line("weapons-beam-heatflat", 5.5, "beam,heatflat", bursts),
+		line("weapons-pew", 5.5, "pew,nolock", bursts),
+		line("weapons-taken-sizzle", 7.3, "", taken),
+		line("weapons-taken-rearm", 7.3, "rearm", taken),
+		line("weapons-taken-plain", 7.3, "rearm,onepool,flat,thud", taken),
+		line("weapons-given", 4.3, "", given),
+		line("weapons-given-nogiven", 4.3, "nogiven", given),
+	];
+}
 
 /**
  * #544's loops, rendered by flying a scripted timeline through the real
@@ -214,6 +330,7 @@ export async function renderInPage({
 		: [];
 	if (
 		(entry.flight && typeof fx.flight !== "function") ||
+		(entry.weapons && typeof fx.weapons !== "function") ||
 		(entry.cue && !entry.legacy && !modern) ||
 		(entry.cue && modern && !knownKinds.includes(entry.cue.kind))
 	)
@@ -284,6 +401,106 @@ export async function renderInPage({
 		at.set(t, (at.get(t) ?? 0) + 1);
 	}
 	let live = null;
+	if (entry.weapons) {
+		const { weaponSound, weaponSoundArms, QUIET_WEAPONS } = await import(
+			"/src/weapon-sound.ts"
+		);
+		const { stepGunFeedback, QUIET_GUN } = await import("/src/gun-feedback.ts");
+		const { arms, unknown } = weaponSoundArms(entry.weapons.arms);
+		if (unknown.length || arms === "legacy")
+			throw new Error(`${entry.name}: arms ${entry.weapons.arms}`);
+		let reading = {
+			fired: false,
+			trigger: false,
+			heatLocked: false,
+			heat: 0,
+			fore: 106,
+			aft: 106,
+			hull: 100,
+			target: null,
+			tFore: 0,
+			tAft: 0,
+			tHull: 0,
+		};
+		const readings = entry.weapons.keys.map(([t, over]) => {
+			reading = { ...reading, ...over };
+			delete reading.ramp;
+			return [t, reading, over.ramp === true];
+		});
+		const readingAt = (t) => {
+			let i = 0;
+			while (i + 1 < readings.length && readings[i + 1][0] <= t) i++;
+			const next = readings[i + 1];
+			if (!next || !next[2]) return readings[i][1];
+			const [t0, a] = readings[i];
+			const k = (t - t0) / (next[0] - t0);
+			const out = { ...a };
+			for (const key of Object.keys(a))
+				if (typeof a[key] === "number")
+					out[key] = a[key] + (next[1][key] - a[key]) * k;
+			return out;
+		};
+		const dt = 1 / 50;
+		let state = QUIET_WEAPONS;
+		let gun = QUIET_GUN;
+		let prev = null;
+		let sinceStruckS = 9;
+		const random = Math.random;
+		for (let i = 0; i * dt < seconds; i++) {
+			const t = i * dt;
+			ctx.suspend(leadS + t).then(() => {
+				if (typeof seed === "number") Math.random = seeded;
+				try {
+					const r = readingAt(t);
+					const feedback = stepGunFeedback(gun, r.fired, dt);
+					gun = feedback.feedback;
+					const fell =
+						prev !== null &&
+						(r.fore < prev.fore || r.aft < prev.aft || r.hull < prev.hull);
+					sinceStruckS = fell ? 0 : sinceStruckS + dt;
+					prev = r;
+					const step = weaponSound(
+						state,
+						{
+							fired: r.fired,
+							shotSound: feedback.sound,
+							trigger: r.trigger,
+							heatLocked: r.heatLocked,
+							heat: r.heat,
+							own: {
+								fore: r.fore,
+								aft: r.aft,
+								hull: r.hull,
+								poolMax: 106,
+								sinceStruckS,
+							},
+							target:
+								r.target === null
+									? null
+									: { id: r.target, fore: r.tFore, aft: r.tAft, hull: r.tHull },
+						},
+						arms,
+						dt,
+					);
+					state = step.state;
+					for (const cue of step.cues) fx.play(cue);
+					fx.weapons(step.mix);
+				} finally {
+					Math.random = random;
+				}
+				ctx.resume();
+			});
+		}
+		const buffer = await ctx.startRendering();
+		return {
+			modern,
+			sampleRate,
+			live: null,
+			samples: Array.from(
+				buffer.getChannelData(0).subarray(Math.round(leadS * sampleRate)),
+			),
+		};
+	}
 	if (entry.flight) {
 		const { flightSound, flightSoundArms, QUIET_FLIGHT, cruiseSpeedShare } =
 			await import("/src/flight-sound.ts");

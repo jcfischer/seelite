@@ -39,6 +39,7 @@ const HEADLESS = [
 	"carrier-key",
 	"cockpit",
 	"combat-prototype",
+	"weapon-sound",
 	"commands",
 	"console-sound",
 	"controls-catalogue",
@@ -108,6 +109,7 @@ test("no module has been quietly dropped from the list", () => {
 		"carrier-key",
 		"cockpit",
 		"combat-prototype",
+		"weapon-sound",
 		"commands",
 		"console-sound",
 		"controls-catalogue",
@@ -369,6 +371,17 @@ test("the flight sound step reads only the cue vocabulary", () => {
 	].map((m) => m[1]);
 	expect(from).toEqual(["./audio-cue"]);
 	expect(importsIn("flight-sound.ts")).toHaveLength(2);
+});
+
+test("the combat sound step reads only the cue vocabulary, and only types", () => {
+	// #545: gun, shields, hull and target in, cues and loop levels out, with no
+	// path to the audio layer or the simulation.
+	const source = codeOf("src/weapon-sound.ts");
+	const from = [...source.matchAll(/\bfrom\s*["'`]([^"'`]+)["'`]/g)].map(
+		(m) => m[1],
+	);
+	expect(from).toEqual(["./audio-cue"]);
+	expect(source).toMatch(/import type \{[^}]*\} from "\.\/audio-cue"/);
 });
 
 test("src/relief-bands.ts imports only types", () => {

@@ -6,6 +6,7 @@
 import { expect, test } from "bun:test";
 import { SOUND_SET as SET } from "../scripts/lib/sound-set.mjs";
 import { CUE_BUS, type CueKind } from "../src/audio-cue";
+import { WEAPON_SOUND_ARMS, DEFAULT_WEAPON_ARMS } from "../src/weapon-sound";
 import { DEFAULT_FLIGHT_ARMS, FLIGHT_SOUND_ARMS } from "../src/flight-sound";
 
 /** One entry, loosely: the list is a script's, and its inferred union has no
@@ -16,12 +17,12 @@ interface SoundEntry {
 	loop?: number;
 	legacy?: readonly unknown[];
 	flight?: { arms: string };
+	weapons?: { arms: string };
 }
 const SOUND_SET: readonly SoundEntry[] = SET;
 
 /** Kinds with no entry of their own, each with its reason. */
 const NOT_RENDERED: Partial<Record<CueKind, string>> = {
-	shieldHit: "plays the same sound as hullHit, which the set renders as `hit`",
 	witchspaceStop: "takes the other two witchspace cues back; it makes no sound",
 };
 
@@ -55,10 +56,35 @@ test("each entry before #544 names the method the engine before #552 exposed", (
 		"press",
 		"refuse",
 		"focus",
+		"gunLocked",
+		"shieldHit",
+		"hitLanded",
 	]);
+	// And #545's new voices of kinds that existed before it: a crack and a
+	// clang were not sounds that engine could make.
+	const since545 = new Set(["laser-crack", "hull-clang"]);
 	for (const e of SOUND_SET)
-		if (e.loop === undefined && !e.flight && !noLegacyMethod.has(e.cue?.kind))
-			expect(e.legacy?.length).toBeGreaterThan(0);
+		if (
+			e.loop === undefined &&
+			!e.flight &&
+			!e.weapons &&
+			!noLegacyMethod.has(e.cue?.kind) &&
+			!since545.has(e.name)
+		)
+			expect([e.name, e.legacy?.length ?? 0]).not.toEqual([e.name, 0]);
+});
+
+test("every weapon arm is flown by some timeline", () => {
+	// #545: an arm nobody rendered is an arm nobody listened to.
+	const flown = new Set(
+		SOUND_SET.flatMap((e) =>
+			e.weapons ? String(e.weapons.arms).split(",").filter(Boolean) : [],
+		),
+	);
+	for (const [arm, values] of Object.entries(WEAPON_SOUND_ARMS))
+		for (const v of values)
+			if (v !== DEFAULT_WEAPON_ARMS[arm as keyof typeof DEFAULT_WEAPON_ARMS])
+				expect([v, flown.has(v)]).toEqual([v, true]);
 });
 
 /** Arms with no render, each with its reason. */

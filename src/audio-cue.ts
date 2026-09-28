@@ -23,18 +23,28 @@ export type HitPool = "fore" | "aft";
  */
 export type NotifyTone = "message" | "good" | "bad";
 
+/** The pulse laser's discrete shot voices (#545): a discharge crack, or the
+ *  descending zap before #545. The sustained beam is a loop (`WeaponMix`). */
+export type LaserVoice = "crack" | "pew";
+
+/** A hull hit's voice (#545): metal struck, or the thud before #545. */
+export type HullHitVoice = "clang" | "thud";
+
 /**
  * A closed union of every cue, with the data a cue needs.
  *
- * `shieldHit` and `hullHit` are emitted by `hitCues` below and are **not yet
- * played**: hits are silent on the build this replaced, and #545 decides what
- * they sound like and how often, by ear. `Game.play` says so at the arm.
+ * The combat cues carry what `weapon-sound.ts` decided from its arms (#545),
+ * so the engine plays what it is told and never reads an arm: a shield hit's
+ * pool, what is left of it (`share`, `0`..`1`) and whether the side is
+ * heard; a landed hit's surface.
  */
 export type Cue =
-	| { kind: "laser" }
+	| { kind: "laser"; voice: LaserVoice }
+	| { kind: "gunLocked" }
 	| { kind: "explosion" }
-	| { kind: "shieldHit"; pool: HitPool }
-	| { kind: "hullHit" }
+	| { kind: "shieldHit"; pool: HitPool; share: number; sided: boolean }
+	| { kind: "hullHit"; voice: HullHitVoice }
+	| { kind: "hitLanded"; on: "shield" | "hull" }
 	| { kind: "dock" }
 	| { kind: "scoop" }
 	| { kind: "alert" }
@@ -71,9 +81,11 @@ export type CueBus = Exclude<Bus, "master" | "music">;
  */
 export const CUE_BUS: Record<CueKind, CueBus> = {
 	laser: "combat",
+	gunLocked: "combat",
 	explosion: "combat",
 	shieldHit: "combat",
 	hullHit: "combat",
+	hitLanded: "combat",
 	dock: "ship",
 	scoop: "ship",
 	alert: "console",
@@ -123,8 +135,12 @@ export const CUE_VOICE: Record<VoicedCueKind, VoiceClass> = {
 	alert: "alert",
 	shieldHit: "hits",
 	hullHit: "hits",
+	// #545: a hit landed is the player's own act and lower than one taken, so
+	// a full mix yields it first; the dry click is the gun's.
+	hitLanded: "weapons",
 	explosion: "hits",
 	laser: "weapons",
+	gunLocked: "weapons",
 	ui: "ui",
 	// #546: in the highest class (#542 D4's order), so a full mix yields a
 	// click or a weapon before a message. A default, not a ruling: the
@@ -159,67 +175,19 @@ export const VOICE_MIX_CAP = 12;
  *  click (D4). A time constant for `setTargetAtTime`. */
 export const VOICE_STEAL_FADE_S = 0.01;
 
-/** What `hitCues` compares: the shield pools and the hull. `ShipCondition`
- *  satisfies it. */
-export interface HitReading {
-	readonly fore: number;
-	readonly aft: number;
-	readonly hull: number;
-}
-
-/** Seconds since each pool last cued a hit. */
-export interface HitArm {
-	readonly fore: number;
-	readonly aft: number;
-	readonly hull: number;
-}
-
-/** Nothing has hit yet: the first fall cues at once. */
-export const QUIET_HITS: HitArm = {
-	fore: Number.POSITIVE_INFINITY,
-	aft: Number.POSITIVE_INFINITY,
-	hull: Number.POSITIVE_INFINITY,
-};
-
 /**
- * The shortest gap between two hit cues on one pool, s.
- *
- * F3: enemy fire is continuous — `pulseDamagePerSecond × dt` every frame — so a
- * held beam lowers a pool on every frame. Without a re-arm that is a cue per
- * frame. **A placeholder**: the interval, and whether a held beam is one
- * sustained voice instead, are #545's to decide by ear.
+ * The combat loops for one step (#545): what `weapon-sound.ts` computes and
+ * `AudioFX.weapons` plays. Every level is `0`..`1`; a loop at 0 is silent.
  */
-export const HIT_REARM_S = 0.25;
-
-/**
- * The hit cues a step from `prev` to `next` owes (D3).
- *
- * A fall in a shield pool is a `shieldHit` naming the pool; a fall in hull is a
- * `hullHit`. A rise — recharge, repair, a new ship — is nothing. Each of the
- * three re-arms on its own, so a hit aft is not swallowed by a beam fore.
- */
-export function hitCues(
-	arm: HitArm,
-	prev: HitReading,
-	next: HitReading,
-	dt: number,
-): { arm: HitArm; cues: Cue[] } {
-	const cues: Cue[] = [];
-	const step = (key: keyof HitArm): number => {
-		const since = arm[key] + Math.max(0, dt);
-		if (!(next[key] < prev[key])) return since;
-		// Measured from the last cue, so the gap is `HIT_REARM_S` whatever the
-		// frame rate; the first fall after a quiet spell cues at once.
-		if (since < HIT_REARM_S) return since;
-		cues.push(
-			key === "hull" ? { kind: "hullHit" } : { kind: "shieldHit", pool: key },
-		);
-		return 0;
-	};
-	const fore = step("fore");
-	const aft = step("aft");
-	const hull = step("hull");
-	return { arm: { fore, aft, hull }, cues };
+export interface WeaponMix {
+	/** The sustained beam, while the gun fires (`beam` arm). */
+	readonly beam: number;
+	/** The gun's heat, which lifts the beam's whine (`heatrise`). */
+	readonly heat: number;
+	/** A held enemy beam sizzling on the fore shield (`sizzle`). */
+	readonly sizzleFore: number;
+	/** And on the aft. */
+	readonly sizzleAft: number;
 }
 
 /** The cruise bed's two candidate voices (#544), picked by ear. */

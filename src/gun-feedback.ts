@@ -9,11 +9,11 @@
  * fault. `probe-interdiction.mjs` checks the gun through the sim and could
  * not see that the screen stayed dark.
  *
- * This module decides when a tracer is on the glass and when a shot sound
- * plays, from whether the gun fired this step. `Game` draws and plays. It
- * imports only the cue vocabulary, a leaf, so it stays in the headless tier.
+ * This module decides when a tracer is on the glass and when a discrete shot
+ * sound is owed, from whether the gun fired this step. `Game` draws, and
+ * `weapon-sound.ts` picks the voice (#545), or none when the laser is a
+ * sustained beam. It imports nothing, so it stays in the headless tier.
  */
-import type { Cue } from "./audio-cue";
 
 /** How long the tracer stays on the glass after a fired step, s. Longer than
  *  a frame, so one fired step is seen at any frame rate. */
@@ -41,7 +41,7 @@ export function stepGunFeedback(
 	feedback: GunFeedback,
 	fired: boolean,
 	dt: number,
-): { feedback: GunFeedback; cue: Extract<Cue, { kind: "laser" }> | null } {
+): { feedback: GunFeedback; sound: boolean } {
 	const since = feedback.sinceSoundS + dt;
 	if (!fired)
 		return {
@@ -49,7 +49,7 @@ export function stepGunFeedback(
 				tracerLeftS: Math.max(0, feedback.tracerLeftS - dt),
 				sinceSoundS: since,
 			},
-			cue: null,
+			sound: false,
 		};
 	const playSound = since >= SHOT_SOUND_GAP_S;
 	return {
@@ -57,7 +57,7 @@ export function stepGunFeedback(
 			tracerLeftS: TRACER_HOLD_S,
 			sinceSoundS: playSound ? 0 : since,
 		},
-		cue: playSound ? { kind: "laser" } : null,
+		sound: playSound,
 	};
 }
 
