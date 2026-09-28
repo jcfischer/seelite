@@ -7271,13 +7271,16 @@ class Game {
 	/** The physical cockpit and its one, deck-mounted scanner. */
 	private buildCockpit() {
 		this.cockpit = {} as CockpitHardware;
-		// The three structural finishes, and why they are not declared here:
+		// The cabin's finishes, and why they are not declared here:
 		// `COCKPIT_FINISHES`. The short of it is that a finish named at this call
 		// site is one the calibration pass cannot see, and the cabin's roughest
 		// turned out not to be expressible over the wear curve without it.
 		const metal = cockpitMaterial("metal");
 		const trim = cockpitMaterial("trim");
 		const inset = cockpitMaterial("inset");
+		// #204's mid-tone, on the console tops and the scanner deck: the largest
+		// faces the cabin's own light falls on, so the ones a highlight can land on.
+		const face = cockpitMaterial("face");
 		const canopyGlass = new THREE.MeshBasicMaterial({
 			color: 0x0a2635,
 			transparent: true,
@@ -7445,8 +7448,18 @@ class Game {
 		// Layered side consoles, structural seams, and a raised centre deck give
 		// the cabin a constructed spacecraft language without closing the pilot's
 		// forward sightline.
-		addBox([0.01, 0.0022, 0.022], [-0.038, -0.019, -0.047], [0.24, 0, 0.06]);
-		addBox([0.01, 0.0022, 0.022], [0.038, -0.019, -0.047], [0.24, 0, -0.06]);
+		addBox(
+			[0.01, 0.0022, 0.022],
+			[-0.038, -0.019, -0.047],
+			[0.24, 0, 0.06],
+			face,
+		).name = "console-top-port";
+		addBox(
+			[0.01, 0.0022, 0.022],
+			[0.038, -0.019, -0.047],
+			[0.24, 0, -0.06],
+			face,
+		).name = "console-top-starboard";
 		addBox(
 			[0.006, 0.0008, 0.014],
 			[-0.038, -0.0179, -0.047],
@@ -7490,7 +7503,7 @@ class Game {
 		scannerMount.position.set(0, -0.014, -0.038);
 		scannerMount.rotation.x = dashboardPitch;
 		cockpit.add(scannerMount);
-		this.buildScannerAssembly(scannerMount, metal, trim, inset);
+		this.buildScannerAssembly(scannerMount, face, trim, inset);
 
 		this.buildHologramSystem(scannerMount);
 		this.cockpit.mesh = cockpit;
@@ -7515,11 +7528,11 @@ class Game {
 	/** Build the fitted scanner plate, instrument canvases, and throttle hardware. */
 	private buildScannerAssembly(
 		scannerMount: THREE.Group,
-		metal: THREE.MeshStandardMaterial,
+		face: THREE.MeshStandardMaterial,
 		trim: THREE.MeshStandardMaterial,
 		inset: THREE.MeshStandardMaterial,
 	) {
-		const deck = new THREE.Mesh(cockpitForm(0.032, 0.0016, 0.022), metal);
+		const deck = new THREE.Mesh(cockpitForm(0.032, 0.0016, 0.022), face);
 		deck.name = "scanner-deck";
 		scannerMount.add(deck);
 		const scannerWell = new THREE.Mesh(

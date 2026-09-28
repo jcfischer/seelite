@@ -131,7 +131,7 @@ describe("plating a cabin material", () => {
 		// **#101's round-two blocker, one surface over.** Forcing `roughness` and
 		// `metalness` to 1 rendered every paint at whatever the map's clean plate
 		// happened to be — a repaint shipped under a docstring saying nothing was
-		// repainted, green in both tiers. The cabin has three finishes and one
+		// repainted, green in both tiers. The cabin has four finishes and one
 		// shared map, so the scalar has to stay a per-material dial.
 		const clean = cockpitCleanPlate();
 		for (const id of COCKPIT_FINISH_IDS) {
@@ -153,7 +153,7 @@ describe("plating a cabin material", () => {
 		}
 	});
 
-	test("the three finishes stay distinct from one another", () => {
+	test("the finishes stay distinct from one another", () => {
 		// The failure above was not that a number was wrong, it was that three
 		// numbers became one. Stated as a difference so a scheme that preserved
 		// the *ratio* but collapsed the spread would still fail.
@@ -204,6 +204,39 @@ describe("plating a cabin material", () => {
 			expect(spec.roughness / clean.roughness).toBeLessThanOrEqual(1);
 			expect(spec.metalness / clean.metalness).toBeLessThanOrEqual(1);
 		}
+	});
+});
+
+describe("the face finish (#204)", () => {
+	/** Relative luminance of an sRGB hex, 0..1 — enough to rank paints. */
+	const luma = (hex: number) => {
+		const c = new THREE.Color(hex);
+		return 0.2126 * c.r + 0.7152 * c.g + 0.0722 * c.b;
+	};
+
+	test("the cabin has four finishes, and face is one of them", () => {
+		expect(COCKPIT_FINISH_IDS).toEqual(["metal", "trim", "inset", "face"]);
+	});
+
+	test("face is a mid-tone: brighter than every finish the cabin had", () => {
+		// The node opened on 40% of the frame being a near-black slab with
+		// nothing to catch a highlight. A fourth finish that was one more
+		// near-black would pass every dial check and change nothing.
+		for (const id of ["metal", "trim", "inset"] as const)
+			expect(luma(COCKPIT_FINISHES.face.color)).toBeGreaterThan(
+				2 * luma(COCKPIT_FINISHES[id].color),
+			);
+	});
+
+	test("face sits under the roughest finish, so the calibration is unmoved", () => {
+		// `CLAUDE.md`, "A material dial cannot exceed 1": a finish above 0.72
+		// would lift the wear curve and repaint the other three.
+		expect(COCKPIT_FINISHES.face.roughness).toBeLessThan(
+			COCKPIT_FINISHES.metal.roughness,
+		);
+		expect(COCKPIT_FINISHES.face.metalness).toBeLessThan(
+			COCKPIT_FINISHES.trim.metalness,
+		);
 	});
 });
 

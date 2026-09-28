@@ -125,9 +125,9 @@ export const COCKPIT_MAP_SIZE = 256;
  *   figure unchanged. It is the single largest driver of the scale-like read
  *   and there is no reason for the cabin to answer it differently.
  * - `roughness` and `metalness` **1**, and that is not a placeholder. The cabin
- *   has three finishes — `COCKPIT_FINISHES` — and one shared map cannot hold
- *   three. At 1 the map is the **wear curve alone** and each material scales it
- *   by its own finish, so all three survive. Forcing them flat was #101's
+ *   has four finishes — `COCKPIT_FINISHES` — and one shared map cannot hold
+ *   four. At 1 the map is the **wear curve alone** and each material scales it
+ *   by its own finish, so all four survive. Forcing them flat was #101's
  *   round-two blocker: three paints rendered as one, green in both tiers, under
  *   a docstring saying nothing was repainted.
  *
@@ -175,14 +175,14 @@ export const COCKPIT_PLATING: PlatingProfile = {
 export const COCKPIT_CHAMFER_KM = 0.0003;
 
 /**
- * The cabin's three structural finishes.
+ * The cabin's four finishes: three structural, and #204's mid-tone.
  *
  * **Here rather than inline in `buildCockpit`**, and that is what makes the
  * calibration below possible at all: a module that does not know what the
  * roughest finish in the cabin is cannot tell whether the wear map can express
- * it. `main.ts` built these three inline and #105 moved them, unchanged — the
- * figures are the ones the cabin has had since #35 and nothing here repaints
- * them.
+ * it. `main.ts` built the first three inline and #105 moved them, unchanged —
+ * the figures are the ones the cabin has had since #35 and nothing here
+ * repaints them.
  *
  * `inset` has no emissive because it is a recess. The other two carry the faint
  * self-lift they were authored with; `COCKPIT_LAMP` is a separate, brighter
@@ -219,6 +219,24 @@ export const COCKPIT_FINISHES = {
 		metalness: 0.3,
 		emissive: 0x000000,
 		emissiveIntensity: COCKPIT_EMISSIVE_INTENSITIES.inset,
+	},
+	/**
+	 * **The mid-tone (#204).** The three above are all near-black, so the
+	 * console tops and the scanner deck — the largest surfaces in the frame —
+	 * had nothing to catch a highlight. A satin grey-blue on the faces the
+	 * light falls on, with `metal` kept for the carcass round them.
+	 *
+	 * No emissive: a face that glows would lift the flight floor's backing,
+	 * which is the legibility regression #105 was forbidden. And its roughness
+	 * and metalness sit under the roughest and most metallic finishes above,
+	 * so the calibration does not move and the other three are not repainted.
+	 */
+	face: {
+		color: 0x3a4750,
+		roughness: 0.5,
+		metalness: 0.4,
+		emissive: 0x000000,
+		emissiveIntensity: 0,
 	},
 } as const;
 
@@ -574,7 +592,7 @@ export function registerKeyLight(light: { visible: boolean }) {
 	light.visible = COCKPIT_QUALITY[cockpitQuality].keyLight;
 }
 
-/** The clean-plate factors, for the test that checks the three finishes
+/** The clean-plate factors, for the test that checks the four finishes
  *  survive. */
 export const cockpitCleanPlate = () => cockpitMaps().clean;
 
