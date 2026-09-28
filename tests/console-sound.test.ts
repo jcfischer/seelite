@@ -122,3 +122,11 @@ test("a clearance answer sounds when it changes, and not when it repeats", () =>
 	).toBe("bad");
 	expect(clearanceTone(granted, none)).toBe(null);
 });
+
+test("each default is the first value of its arm", () => {
+	for (const [arm, values] of Object.entries(CONSOLE_SOUND_ARMS))
+		expect([arm, DEFAULT_CONSOLE_ARMS[arm as keyof typeof arms]]).toEqual([
+			arm,
+			values[0],
+		]);
+});

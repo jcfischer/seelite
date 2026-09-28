@@ -101,31 +101,27 @@ try {
 		JSON.stringify(tab),
 	);
 
-	// A purchase the till refuses: no credits.
-	const refused = await cuesOf(page, async () => {
-		await page.evaluate(() => {
-			const g = window.__seelite;
-			g.commander = { ...g.commander, credits: 0 };
-			g.updateCockpit();
+	/** The cues of one purchase press, with the commander holding `credits`. */
+	const buyWith = (credits) =>
+		cuesOf(page, async () => {
+			await page.evaluate((cr) => {
+				const g = window.__seelite;
+				g.commander = { ...g.commander, credits: cr };
+				g.updateCockpit();
+			}, credits);
+			await page.waitForTimeout(100);
+			await clickIn(page, '[data-live-station-action="buy-commodity"]');
 		});
-		await page.waitForTimeout(100);
-		await clickIn(page, '[data-live-station-action="buy-commodity"]');
-	});
+
+	// A purchase the till refuses: no credits.
+	const refused = await buyWith(0);
 	check(
 		"a purchase the till refuses is a refusal, not a press",
 		JSON.stringify(refused) === '["refuse"]',
 		JSON.stringify(refused),
 	);
 
-	const bought = await cuesOf(page, async () => {
-		await page.evaluate(() => {
-			const g = window.__seelite;
-			g.commander = { ...g.commander, credits: 100000 };
-			g.updateCockpit();
-		});
-		await page.waitForTimeout(100);
-		await clickIn(page, '[data-live-station-action="buy-commodity"]');
-	});
+	const bought = await buyWith(100000);
 	check(
 		"a purchase the till takes is a press",
 		JSON.stringify(bought) === '["press"]',
@@ -145,25 +141,37 @@ try {
 		JSON.stringify(walked),
 	);
 
+	// The hover reaches the game and the arm silences it: counting the calls
+	// as well as the cues, so "silent" cannot be "not wired" (sage round 2).
 	const hovered = await cuesOf(page, () =>
 		page.evaluate(() => {
+			const g = window.__seelite;
+			const shipped = g.consoleFocus.bind(g);
+			g.__hoverCalls = 0;
+			g.consoleFocus = (source) => {
+				if (source === "hover") g.__hoverCalls++;
+				return shipped(source);
+			};
 			const row = document.querySelector("[data-live-station-action]");
 			row.dispatchEvent(new PointerEvent("pointerover", { bubbles: true }));
 		}),
 	);
+	const hoverCalls = await page.evaluate(() => window.__seelite.__hoverCalls);
 	check(
-		"a hover is silent on the default arm",
-		hovered.length === 0,
-		JSON.stringify(hovered),
+		"a hover reaches the game and is silent on the default arm",
+		hoverCalls === 1 && hovered.length === 0,
+		`${hoverCalls} call(s), cues ${JSON.stringify(hovered)}`,
 	);
 	await page.close();
 
 	// ---------------------------------------------------------------------
 	// Station control answers a clearance request, once per change of
 	// answer. A page of its own: a grant reserves the berth `dock` parks in.
+	// On `every`, so the gap cannot silence a repeat and the row measures
+	// the change-of-answer rule alone (sage round 2).
 	// ---------------------------------------------------------------------
 	{
-		const page = await open({});
+		const page = await open({ consolesound: "every" });
 		const answer = await cuesOf(page, () =>
 			page.evaluate(async () => {
 				const g = window.__seelite;

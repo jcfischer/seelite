@@ -128,6 +128,7 @@ import {
 	BUSES,
 	type Cue,
 	type HitArm,
+	type NotifyTone,
 	type HitReading,
 	QUIET_HITS,
 	hitCues,
@@ -6538,8 +6539,12 @@ class Game {
 		// world and is not a thing the pilot was booked for, so saying so on the
 		// glass would be the console accusing them of something the law did not.
 		if (heat > 0) {
-			this.charged = nextChargeNotice(this.charged, event);
-			this.consoleNotify("bad");
+			// Sounded with the notice, not with the charge: a second charge
+			// inside the first's reading time keeps the first on the glass
+			// (`nextChargeNotice`), and a tone with nothing new to read is noise.
+			const notice = nextChargeNotice(this.charged, event);
+			if (notice !== this.charged) this.consoleNotify("bad");
+			this.charged = notice;
 			this.charges.push({
 				at: now,
 				key: actor.key,
@@ -12061,10 +12066,7 @@ class Game {
 	private notifyGate: NotifyGate = QUIET_NOTIFY;
 
 	/** A console message arrived (#546). `console-sound.ts` picks the cue. */
-	private consoleNotify(
-		tone: Parameters<typeof notifyCue>[2],
-		source?: "hail",
-	) {
+	private consoleNotify(tone: NotifyTone, source?: "hail") {
 		const step = notifyCue(
 			this.notifyGate,
 			CONSOLE_SOUND.arms,

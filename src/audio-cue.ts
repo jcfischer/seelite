@@ -126,8 +126,9 @@ export const CUE_VOICE: Record<VoicedCueKind, VoiceClass> = {
 	explosion: "hits",
 	laser: "weapons",
 	ui: "ui",
-	// #546: a message outranks a click, and a fight should not take a
-	// message's voice. Put to the principal's ear as a question.
+	// #546: in the highest class (#542 D4's order), so a full mix yields a
+	// click or a weapon before a message. A default, not a ruling: the
+	// principal's listen did not ask it.
 	notify: "alert",
 	press: "ui",
 	refuse: "ui",
