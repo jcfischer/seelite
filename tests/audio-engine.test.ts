@@ -58,9 +58,9 @@ describe("the buses", () => {
 
 	test("each cue plays through the bus CUE_BUS names", () => {
 		const cues: Cue[] = [
-			{ kind: "laser" },
+			{ kind: "laser", voice: "pew" },
 			{ kind: "explosion" },
-			{ kind: "hullHit" },
+			{ kind: "hullHit", voice: "thud" },
 			{ kind: "dock" },
 			{ kind: "scoop" },
 			{ kind: "alert" },
@@ -109,7 +109,7 @@ describe("the volume rows", () => {
 		expect(buses.map((b) => b.gain.value).sort()).toEqual([0.25, 1, 1, 1]);
 		// And the one at 0.25 is the bus a combat cue plays through.
 		const before = ctx.sources.length;
-		audio.play({ kind: "laser" });
+		audio.play({ kind: "laser", voice: "pew" });
 		const combat = buses.find((b) => b.gain.value === 0.25) as FakeGain;
 		for (const s of ctx.sources.slice(before))
 			expect(reaches(s, combat)).toBe(true);
@@ -136,7 +136,7 @@ describe("the volume rows", () => {
 		const { audio, ctx } = unlocked();
 		audio.setLevel("master", 0);
 		const before = ctx.gains.length;
-		audio.play({ kind: "laser" });
+		audio.play({ kind: "laser", voice: "pew" });
 		audio.play({ kind: "alert" });
 		audio.ambient(1);
 		expect(ctx.gains.length).toBe(before);
@@ -146,7 +146,7 @@ describe("the volume rows", () => {
 		const { audio, ctx } = unlocked();
 		audio.setLevel("combat", 0);
 		const before = ctx.sources.length;
-		audio.play({ kind: "laser" });
+		audio.play({ kind: "laser", voice: "pew" });
 		expect(ctx.sources.length).toBe(before);
 		audio.play({ kind: "alert" });
 		expect(ctx.sources.length).toBeGreaterThan(before);
@@ -164,7 +164,7 @@ describe("the volume rows", () => {
 describe("the voice caps", () => {
 	test("a burst of lasers at one instant holds at the weapons cap", () => {
 		const { audio, ctx, buses } = unlocked();
-		for (let i = 0; i < 30; i++) audio.play({ kind: "laser" });
+		for (let i = 0; i < 30; i++) audio.play({ kind: "laser", voice: "pew" });
 		// One voice gain per admitted laser, straight into the combat bus.
 		const voices = ctx.gains.filter((g) => g.outputs.includes(buses.combat));
 		const sounding = voices.filter((g) => g.gain.target > 0);
@@ -178,7 +178,7 @@ describe("the voice caps", () => {
 	test("the oldest is the one stolen", () => {
 		const { audio, ctx, buses } = unlocked();
 		for (let i = 0; i <= VOICE_CAPS.weapons; i++) {
-			audio.play({ kind: "laser" });
+			audio.play({ kind: "laser", voice: "pew" });
 			ctx.currentTime += 0.001;
 		}
 		const voices = ctx.gains.filter((g) => g.outputs.includes(buses.combat));
@@ -188,9 +188,10 @@ describe("the voice caps", () => {
 
 	test("a laser that has rung out frees its voice", () => {
 		const { audio, ctx, buses } = unlocked();
-		for (let i = 0; i < VOICE_CAPS.weapons; i++) audio.play({ kind: "laser" });
+		for (let i = 0; i < VOICE_CAPS.weapons; i++)
+			audio.play({ kind: "laser", voice: "pew" });
 		ctx.currentTime += CUE_LENGTH_S.laser + 0.01;
-		audio.play({ kind: "laser" });
+		audio.play({ kind: "laser", voice: "pew" });
 		const voices = ctx.gains.filter((g) => g.outputs.includes(buses.combat));
 		expect(voices.every((g) => g.gain.target === 1)).toBe(true);
 	});

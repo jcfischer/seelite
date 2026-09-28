@@ -212,8 +212,8 @@ const SINCE_544 = {
 
 /**
  * #546's console voices, which `origin/main` does not have: centred on this
- * branch's own render (`PRINT=1`, seed 552), taken before the principal's
- * first listen, so they hold the prototype to what is offered and move when
+ * branch's own render (`PRINT=1`, seed 552), re-taken after the principal's
+ * first listen (the shield hit became a sparkle), so they hold the prototype to what is offered and move when
  * the ear moves it. All tone-only: the ±10% band.
  */
 const SINCE_546 = {
@@ -226,6 +226,142 @@ const SINCE_546 = {
 };
 
 /**
+ * #545's voices and duels, which `origin/main` does not have: centred on this
+ * branch's own render (`PRINT=1`, seed 552), re-taken after the principal's
+ * first listen made the shield hit a sparkle, so they hold the prototype to
+ * what is offered and move when the ear moves it. Every duel takes the bed's wide band: each carries noise
+ * loops and many cues.
+ */
+const SINCE_545 = {
+	"laser-crack": {
+		rms: 0.00934,
+		peak: 0.16713,
+		onsetMs: 7.33,
+		hz: 5095,
+		noise: 1,
+	},
+	"gun-locked": {
+		rms: 0.00236,
+		peak: 0.02239,
+		onsetMs: 7.35,
+		hz: 553,
+		noise: 1,
+	},
+	"shield-fore": {
+		rms: 0.00645,
+		peak: 0.14594,
+		onsetMs: 7.33,
+		hz: 7313,
+		noise: 1,
+	},
+	"shield-aft": {
+		rms: 0.00545,
+		peak: 0.13747,
+		onsetMs: 7.33,
+		hz: 5290,
+		noise: 1,
+	},
+	"shield-onepool": {
+		rms: 0.00598,
+		peak: 0.1594,
+		onsetMs: 7.33,
+		hz: 6327,
+		noise: 1,
+	},
+	"shield-fore-low": {
+		rms: 0.00429,
+		peak: 0.0934,
+		onsetMs: 7.33,
+		hz: 7303,
+		noise: 1,
+	},
+	"hull-clang": {
+		rms: 0.01368,
+		peak: 0.14243,
+		onsetMs: 7.4,
+		hz: 660,
+		noise: 1,
+	},
+	"landed-shield": {
+		rms: 0.00195,
+		peak: 0.02805,
+		onsetMs: 7.35,
+		hz: 4660,
+		noise: 1,
+	},
+	"landed-hull": {
+		rms: 0.00281,
+		peak: 0.02422,
+		onsetMs: 7.48,
+		hz: 349,
+		noise: 1,
+	},
+	"weapons-crack": {
+		rms: 0.0137,
+		peak: 0.19883,
+		onsetMs: 306,
+		hz: 5095,
+		bed: 1,
+	},
+	"weapons-beam": {
+		rms: 0.02044,
+		peak: 0.11045,
+		onsetMs: 306.02,
+		hz: 2514,
+		bed: 1,
+	},
+	"weapons-beam-heatflat": {
+		rms: 0.02067,
+		peak: 0.12625,
+		onsetMs: 306.02,
+		hz: 2514,
+		bed: 1,
+	},
+	"weapons-pew": {
+		rms: 0.01102,
+		peak: 0.06297,
+		onsetMs: 306.04,
+		hz: 4178,
+		bed: 1,
+	},
+	"weapons-taken-sizzle": {
+		rms: 0.01199,
+		peak: 0.17765,
+		onsetMs: 327.33,
+		hz: 6828,
+		bed: 1,
+	},
+	"weapons-taken-rearm": {
+		rms: 0.01271,
+		peak: 0.18031,
+		onsetMs: 327.33,
+		hz: 7450,
+		bed: 1,
+	},
+	"weapons-taken-plain": {
+		rms: 0.00888,
+		peak: 0.18089,
+		onsetMs: 327.33,
+		hz: 6327,
+		bed: 1,
+	},
+	"weapons-given": {
+		rms: 0.01583,
+		peak: 0.20868,
+		onsetMs: 306,
+		hz: 4607,
+		bed: 1,
+	},
+	"weapons-given-nogiven": {
+		rms: 0.01549,
+		peak: 0.19883,
+		onsetMs: 306,
+		hz: 5095,
+		bed: 1,
+	},
+};
+
+/**
  * Each cue's band: rms, peak and centroid as `[low, high]`, and the latest
  * onset in ms. A tone-only cue renders the same waveform on every seed, so
  * its band is ±10%; a noise cue's is wide enough for the seed's own spread
@@ -233,20 +369,26 @@ const SINCE_546 = {
  * as much again, which is the order of a render quantum's rounding.
  */
 const BANDS = Object.fromEntries(
-	Object.entries({ ...MAIN, ...SINCE_544, ...SINCE_546 }).map(([name, m]) => {
-		const [lo, hi] = m.bed ? [0.7, 1.4] : m.noise ? [0.8, 1.25] : [0.9, 1.1];
-		const [plo, phi] = m.bed || m.noise ? [0.6, 1.6] : [0.9, 1.1];
-		const [clo, chi] = m.bed ? [0.6, 1.5] : m.noise ? [0.93, 1.07] : [0.9, 1.1];
-		return [
-			name,
-			{
-				rms: [m.rms * lo, m.rms * hi],
-				peak: [m.peak * plo, m.peak * phi],
-				onsetMs: m.onsetMs + (m.bed ? 60 : 12),
-				centroidHz: [m.hz * clo, m.hz * chi],
-			},
-		];
-	}),
+	Object.entries({ ...MAIN, ...SINCE_544, ...SINCE_546, ...SINCE_545 }).map(
+		([name, m]) => {
+			const [lo, hi] = m.bed ? [0.7, 1.4] : m.noise ? [0.8, 1.25] : [0.9, 1.1];
+			const [plo, phi] = m.bed || m.noise ? [0.6, 1.6] : [0.9, 1.1];
+			const [clo, chi] = m.bed
+				? [0.6, 1.5]
+				: m.noise
+					? [0.93, 1.07]
+					: [0.9, 1.1];
+			return [
+				name,
+				{
+					rms: [m.rms * lo, m.rms * hi],
+					peak: [m.peak * plo, m.peak * phi],
+					onsetMs: m.onsetMs + (m.bed ? 60 : 12),
+					centroidHz: [m.hz * clo, m.hz * chi],
+				},
+			];
+		},
+	),
 );
 
 /** The most of an uncapped burst's ring a capped one may reach. Read at
@@ -255,6 +397,10 @@ const BURST_MAX_OF_UNCAPPED = 0.7;
 
 /** The least a loop's window may stand over its quiet window (#544). */
 const LOOP_MIN_RATIO = 1.5;
+
+/** The least `heatrise`'s late-burst lift may stand over `heatflat`'s (#545):
+ *  read at x1.21 against x1.00 on the build that made it. */
+const HEAT_MIN_LIFT = 1.1;
 
 /** The least each rung of the c ladder may stand over the one below (#544). */
 const LADDER_MIN_STEP = 1.3;
@@ -379,6 +525,29 @@ try {
 			[4.4, 4.8],
 			true,
 		],
+		// #545: the beam is a loop while the gun fires, and it lets go between
+		// bursts and when the gun locks. Windows are `weaponTimelines`' keys.
+		[
+			"the beam is heard while the gun fires",
+			"weapons-beam",
+			[0.5, 1],
+			"weapons-beam",
+			[1.4, 1.7],
+		],
+		[
+			"the beam lets go when the gun locks",
+			"weapons-beam",
+			[3.9, 4.2],
+			"weapons-beam",
+			[4.5, 4.8],
+		],
+		[
+			"a held enemy beam sizzles on the shield between impacts",
+			"weapons-taken-sizzle",
+			[0.8, 1.4],
+			"weapons-taken-sizzle",
+			[2.6, 3.1],
+		],
 	];
 	const renders = new Map();
 	const samplesOf = async (name) => {
@@ -390,6 +559,22 @@ try {
 			windowRms(await samplesOf(loud), lw, high) /
 			windowRms(await samplesOf(quiet), qw, high);
 		check(row, ratio > LOOP_MIN_RATIO, `window rms x${ratio.toFixed(2)}`);
+	}
+	// #545's `heatrise`: the beam's whine climbs as the gun heats. Within one
+	// burst, late against early and high-passed, the rise must stand clear of
+	// the same windows on `heatflat`, where only the burst's own drift moves.
+	{
+		const lift = async (name) => {
+			const x = await samplesOf(name);
+			return windowRms(x, [3.9, 4.2], true) / windowRms(x, [2, 2.3], true);
+		};
+		const rise = await lift("weapons-beam");
+		const flat = await lift("weapons-beam-heatflat");
+		check(
+			"heat lifts the beam's whine",
+			rise > flat * HEAT_MIN_LIFT,
+			`late/early x${rise.toFixed(2)} against x${flat.toFixed(2)} on heatflat`,
+		);
 	}
 	// The principal's second listen heard no change from 1 to 30 c. The
 	// ladder holds 1, 2, 5, 10 and 20 c for two seconds each; high-passed,

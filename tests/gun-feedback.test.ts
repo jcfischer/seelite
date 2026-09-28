@@ -20,7 +20,7 @@ function run(start: GunFeedback, fired: boolean, n: number) {
 	for (let i = 0; i < n; i++) {
 		const step = stepGunFeedback(feedback, fired, DT);
 		feedback = step.feedback;
-		if (step.cue) sounds++;
+		if (step.sound) sounds++;
 	}
 	return { feedback, sounds };
 }
@@ -47,7 +47,7 @@ describe("the tracer", () => {
 
 describe("the shot sound", () => {
 	test("the first shot sounds at once", () => {
-		expect(stepGunFeedback(QUIET_GUN, true, DT).cue).toEqual({ kind: "laser" });
+		expect(stepGunFeedback(QUIET_GUN, true, DT).sound).toBe(true);
 	});
 
 	test("a held trigger sounds once per gap, not once per step", () => {

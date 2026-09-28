@@ -124,15 +124,14 @@ import type {
 	FrameAttributionSnapshot,
 } from "./frame-attribution";
 import { AudioFX } from "./audio";
+import { BUSES, type WeaponMix, type Cue, type NotifyTone } from "./audio-cue";
 import {
-	BUSES,
-	type Cue,
-	type HitArm,
-	type NotifyTone,
-	type HitReading,
-	QUIET_HITS,
-	hitCues,
-} from "./audio-cue";
+	type WeaponSoundState,
+	QUIET_WEAPONS,
+	SILENT_WEAPONS,
+	weaponSound,
+	weaponSoundArms,
+} from "./weapon-sound";
 import { CombatPrototypeRig } from "./combat-rig";
 import {
 	type FlightSoundState,
@@ -319,6 +318,8 @@ import {
 	type ConditionPrint,
 	type ShieldSide,
 	type ShipCondition,
+	HEAT_LOCK,
+	SHIELD_POOL,
 	applyDamage,
 	fullCondition,
 	headOnPool,
@@ -1082,6 +1083,18 @@ const CONSOLE_SOUND = consoleSoundArms(
 if (CONSOLE_SOUND.unknown.length)
 	console.warn(
 		`?consolesound: unknown ${CONSOLE_SOUND.unknown.join(", ")}; playing the defaults for those`,
+	);
+/**
+ * Weapons and damage by ear (#545), from `?weaponsound=`: comma-separated
+ * tokens, or `legacy` for the zap and the silent hits before #545.
+ * `weapon-sound.ts` lists them.
+ */
+const WEAPON_SOUND = weaponSoundArms(
+	new URLSearchParams(window.location.search).get("weaponsound"),
+);
+if (WEAPON_SOUND.unknown.length)
+	console.warn(
+		`?weaponsound: unknown ${WEAPON_SOUND.unknown.join(", ")}; playing the defaults for those`,
 	);
 const RAIDERS_OFF =
 	RAIDER_PARAM !== null && ["off", "0", "false"].includes(RAIDER_PARAM);
@@ -10870,6 +10883,10 @@ class Game {
 		this.scanFacts = null;
 		this.raiderFiring = false;
 		this.gunFeedback = QUIET_GUN;
+		// A new session's first reading of the ship and of a target is not a
+		// fall, and no loop carries over (#545).
+		this.weaponSoundState = QUIET_WEAPONS;
+		this.weaponMix = SILENT_WEAPONS;
 		this.canisters = [];
 		// And their contacts, now, rather than on the next step: `performJump`
 		// refreshes the scanner before any step runs, so the arrival frame would
@@ -12002,20 +12019,9 @@ class Game {
 	 * `?flightsound=legacy` arm), not a cue.
 	 */
 	private play(cue: Cue) {
-		switch (cue.kind) {
-			case "shieldHit":
-			case "hullHit":
-				// **Received, and silent on purpose.** Hits made no sound before #552
-				// and this node changes no sound. What a hit sounds like, how often a
-				// held beam cues one, and whether it is a sustained voice instead are
-				// #545's to decide by ear; that node makes this arm play. **And it
-				// owes a gate first**: the delta reads any fall in a pool or in hull,
-				// so a condition replaced downward — a save loaded with a damaged
-				// ship, a hull bought with less integrity — would cue a hit too.
-				return;
-			default:
-				this.audio.play(cue);
-		}
+		// Hits play since #545, which gave them the gate this arm once said they
+		// owed: a fall is a hit only when `applyDamage` struck (`weapon-sound.ts`).
+		this.audio.play(cue);
 	}
 
 	/**
@@ -12101,30 +12107,58 @@ class Game {
 	private rotationShare = 0;
 
 	/**
-	 * The shield and hull hits since the last step (D3), from a pure delta of
-	 * the condition: `hitCues` reads a fall in a pool or in hull, and knows
-	 * nothing about what caused it.
+	 * Weapons and damage, by ear (#545): this step's gun, the hits taken since
+	 * the last step and the hits landed on the selected target, through
+	 * `weapon-sound.ts`. Its cues play now; its loops are held in
+	 * `weaponMix` for the frame loop, which silences them on a held clock.
 	 *
-	 * **At the top of `step`, reading what the previous step left**, rather than
-	 * at its end: `step` returns from three places, and damage lands in half a
-	 * dozen. Read here, every one of them is seen once, a frame later — about
-	 * 17 ms, which is below what a pilot hears as late.
+	 * **Early in `step`, after the gun and before anything else lands damage**,
+	 * so the hits it reads are what the previous step left: `step` returns from
+	 * three places, and damage lands in half a dozen. Read here, every one of
+	 * them is seen once, a frame later — about 17 ms, which is below what a
+	 * pilot hears as late. #552 read hits as the first line of `step`; this
+	 * moves the read after the gun, which it needs, and no `return` stands
+	 * between the two places.
 	 */
-	private stepHitCues(dt: number) {
-		const now: HitReading = {
-			fore: this.condition.fore,
-			aft: this.condition.aft,
-			hull: this.condition.hull,
-		};
-		const step = hitCues(this.hitArm, this.hitSeen, now, dt);
-		this.hitArm = step.arm;
-		this.hitSeen = now;
+	private stepWeaponSound(dt: number, gun: { fired: boolean; sound: boolean }) {
+		const target = this.selectedTargetCondition();
+		const c = this.condition;
+		const step = weaponSound(
+			this.weaponSoundState,
+			{
+				fired: gun.fired,
+				shotSound: gun.sound,
+				trigger: this.triggerHeld(),
+				heatLocked: c.heatLocked,
+				heat: c.heat / HEAT_LOCK,
+				own: {
+					fore: c.fore,
+					aft: c.aft,
+					hull: c.hull,
+					poolMax: SHIELD_POOL,
+					sinceStruckS: c.sinceStruckS,
+				},
+				target:
+					target && this.targetId !== null
+						? {
+								id: this.targetId,
+								fore: target.fore,
+								aft: target.aft,
+								hull: target.hull,
+								sinceStruckS: this.selectedTargetStruckS(),
+							}
+						: null,
+			},
+			WEAPON_SOUND.arms,
+			dt,
+		);
+		this.weaponSoundState = step.state;
+		this.weaponMix = step.mix;
 		for (const cue of step.cues) this.play(cue);
 	}
-	/** The condition `stepHitCues` last read. Starts empty, so the first
-	 *  reading is a rise and a new ship is not a hit. */
-	private hitSeen: HitReading = { fore: 0, aft: 0, hull: 0 };
-	private hitArm: HitArm = QUIET_HITS;
+	private weaponSoundState: WeaponSoundState = QUIET_WEAPONS;
+	/** The weapon loops' levels from the last step (#545). */
+	private weaponMix: WeaponMix = SILENT_WEAPONS;
 
 	/** Put an arrival rift behind the player ship, replacing any left over. */
 	private beginArrival() {
@@ -12717,7 +12751,6 @@ class Game {
 	 * exactly what the game runs rather than its own copy of the order.
 	 */
 	step(dt: number) {
-		this.stepHitCues(dt);
 		// What the drive and thrusters do this step, set where they fly (#544).
 		// Zero on every path that does not fly them: docked, cruise, and the
 		// docking computer's rotation.
@@ -12738,7 +12771,7 @@ class Game {
 		// trigger drew nothing and played nothing, and read as a dead key.
 		const feedback = stepGunFeedback(this.gunFeedback, gun.fired, dt);
 		this.gunFeedback = feedback.feedback;
-		if (feedback.cue) this.play(feedback.cue);
+		this.stepWeaponSound(dt, { fired: gun.fired, sound: feedback.sound });
 		this.updateLocalFrameBody();
 		// H6's lazy clear of the witness list, on the one clock that matters. This
 		// line runs on every flight step including §12's docked and arriving
@@ -13934,6 +13967,9 @@ class Game {
 		// (the principal's ruling on #544), which needs the sound to hear the
 		// pause rather than keep the last level it was given.
 		this.stepFlightSound(this.clockHeld ? 0 : dt);
+		// The combat loops too: a held clock stops the step that would let a
+		// beam or a sizzle go, so the frame loop lets go of them here (#545).
+		this.audio.weapons(this.clockHeld ? SILENT_WEAPONS : this.weaponMix);
 		if (this.frameAttribution)
 			this.frameAttribution.recordCpu(
 				"simulation/step",
@@ -15924,6 +15960,24 @@ class Game {
 	 * has none; a wreck shows no line (#351 Q12); the relay's tender shows its
 	 * ship shields and hull (Q13).
 	 */
+	/**
+	 * Seconds since the selected target was last struck, beside
+	 * `selectedTargetCondition` and in its order, or `null` for a target that
+	 * keeps no strike clock: the relay has hull points only (#545, sage round 3).
+	 */
+	private selectedTargetStruckS(): number | null {
+		if (this.raiderSelected())
+			return this.encounter?.raider?.condition.sinceStruckS ?? null;
+		if (this.relayShootable()) return null;
+		if (this.tenderSelected()) return this.tenderCondition.sinceStruckS;
+		if (this.trafficSelected())
+			return (
+				this.trafficEngagements.get(this.targetId as CarrierKey)?.condition
+					.sinceStruckS ?? null
+			);
+		return null;
+	}
+
 	private selectedTargetCondition(): ConditionPrint | null {
 		if (this.raiderSelected()) return this.encounter?.raider?.condition ?? null;
 		// #351: the relay carries hull points and no shields, so its line reads
