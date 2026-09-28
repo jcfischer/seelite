@@ -42,7 +42,11 @@ await page.addInitScript(installFakePad);
 // refusal, so the stub is gone — and this probe clicking a real canvas with a
 // real pointer-lock request still standing, with `watch` reporting nothing, is
 // where that is checked. `probe-pointer-lock.mjs` counts the refusals directly.
-await page.goto(gameUrl(origin, { seed: 42 }));
+// On the `crack` arm: the default laser since the principal's ruling on #545
+// is a sustained beam, a loop with no shot cue to count, and
+// `probe-weapon-sound.mjs` holds that loop. The shot's pacing, which these
+// rows count, is the crack's.
+await page.goto(gameUrl(origin, { seed: 42, weaponsound: "crack" }));
 await bootedGame(page);
 
 // A live duel, flown to on fixed steps, then left to the game's own loop so the

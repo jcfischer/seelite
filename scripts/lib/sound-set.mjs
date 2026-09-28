@@ -167,15 +167,15 @@ function weaponTimelines() {
 		weapons: { arms, keys },
 	});
 	return [
-		line("weapons-crack", 5.5, "nolock", bursts),
+		line("weapons-crack", 5.5, "crack,nolock", bursts),
 		line("weapons-beam", 5.5, "beam", bursts),
 		line("weapons-beam-heatflat", 5.5, "beam,heatflat", bursts),
 		line("weapons-pew", 5.5, "pew,nolock", bursts),
 		line("weapons-taken-sizzle", 7.3, "", taken),
 		line("weapons-taken-rearm", 7.3, "rearm", taken),
 		line("weapons-taken-plain", 7.3, "rearm,onepool,flat,thud", taken),
-		line("weapons-given", 4.3, "", given),
-		line("weapons-given-nogiven", 4.3, "nogiven", given),
+		line("weapons-given", 4.3, "crack,given", given),
+		line("weapons-given-nogiven", 4.3, "crack", given),
 	];
 }
 

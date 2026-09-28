@@ -99,7 +99,8 @@ const steps = async (page, n, before = null, arg = null) => {
 const kinds = (r) => r.cues.map((c) => c.kind);
 
 {
-	const { page, setup } = await duel("beam");
+	// `given` on: the landed rows below need it, and `nogiven` is the default.
+	const { page, setup } = await duel("beam,given");
 	check(
 		"the probe reaches a live duel with sound running",
 		setup.phase === "duel" && setup.audible,

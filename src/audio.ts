@@ -1195,11 +1195,15 @@ export class AudioFX {
 	}
 
 	/**
-	 * A hit on a shield (#545): the field taking it, not the hull. A pitched
-	 * body falling as the field gives, a fizz of noise, and a faint ring at
-	 * inharmonic partials. Fore is higher and brighter than aft when the side
-	 * is heard. `share` is what is left of the pool: as it nears zero the body
-	 * thins and the fizz breaks into a crackle.
+	 * A hit on a shield (#545): the field taking it, not the hull, and an
+	 * electric sparkle — the principal's first listen heard the pitched body
+	 * this began with as a tom. A bright zap at the onset, then a scatter of
+	 * sparks, tiny high bursts crowded at the front and thinning out, over a
+	 * short electrical buzz. No pitched body at all.
+	 *
+	 * Fore sparks sit higher than aft when the side is heard. `share` is what
+	 * is left of the pool: as it nears zero the sparkle loses its density and
+	 * stretches into a sputter, and the zap weakens.
 	 */
 	private shieldHit(
 		out: AudioNode,
@@ -1207,26 +1211,28 @@ export class AudioFX {
 		share: number,
 		sided: boolean,
 	) {
-		const [f0, fizz] = !sided
-			? [340, 2300]
+		const [lo, hi] = !sided
+			? [3500, 7500]
 			: pool === "fore"
-				? [430, 3000]
-				: [250, 1500];
+				? [5000, 10000]
+				: [2500, 5500];
 		const weak = 1 - Math.min(1, Math.max(0, share));
-		this.tone(out, f0, 0.22, "sine", 0.17 * (1 - 0.55 * weak), f0 * 0.42);
-		this.bandBurst(out, 0.18, 0.4, fizz, 1.5);
-		this.tone(out, f0 * 2.01, 0.14, "sine", 0.045);
-		this.tone(out, f0 * 2.99, 0.1, "sine", 0.03);
-		const crackles = Math.round(8 * weak);
-		for (let i = 0; i < crackles; i++)
+		this.bandBurst(out, 0.025, 0.5 * (1 - 0.4 * weak), (lo + hi) / 2, 0.8);
+		this.tone(out, 118, 0.09, "sawtooth", 0.035);
+		const sparks = Math.round(22 - 12 * weak);
+		const spanS = 0.18 + 0.12 * weak;
+		for (let i = 0; i < sparks; i++) {
+			// Raised to a power, so the sparks crowd the front and thin out.
+			const at = spanS * Math.random() ** 1.8;
 			this.bandBurst(
 				out,
-				0.006 + Math.random() * 0.01,
-				(0.25 + Math.random() * 0.3) * weak,
-				4000 + Math.random() * 3000,
-				4,
-				0.02 + Math.random() * 0.24,
+				0.002 + Math.random() * 0.004,
+				(0.18 + Math.random() * 0.22) * (1 - (0.7 * at) / spanS),
+				lo + Math.random() * (hi - lo),
+				6,
+				at,
 			);
+		}
 	}
 
 	/**

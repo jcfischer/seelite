@@ -64,10 +64,25 @@ function run(readings: WeaponReading[], a: WeaponSoundArms | "legacy") {
 }
 
 describe("the arms", () => {
-	test("an empty value is the defaults, and a default is not a ruling", () => {
+	test("an empty value is the defaults", () => {
 		expect(weaponSoundArms(null)).toEqual({
 			arms: DEFAULT_WEAPON_ARMS,
 			unknown: [],
+		});
+	});
+
+	test("the defaults are the principal's rulings on the first listen", () => {
+		// 2026-09-28: beam, sizzle, clang, nogiven, sided, thin, lockclick,
+		// heatrise.
+		expect(DEFAULT_WEAPON_ARMS).toEqual({
+			laser: "beam",
+			heat: "heatrise",
+			lockout: "lockclick",
+			pools: "sided",
+			low: "thin",
+			held: "sizzle",
+			hull: "clang",
+			given: "nogiven",
 		});
 	});
 
@@ -277,12 +292,12 @@ describe("hits landed", () => {
 	test("a fall on the selected target is a landed hit, shield then hull", () => {
 		const { cues } = run(
 			[on(target("r", 20)), on(target("r", 10))],
-			DEFAULT_WEAPON_ARMS,
+			arms("given"),
 		);
 		expect(cues).toEqual([{ kind: "hitLanded", on: "shield" }]);
 		const bare = run(
 			[on(target("r", 0, 30)), on(target("r", 0, 25))],
-			DEFAULT_WEAPON_ARMS,
+			arms("given"),
 		);
 		expect(bare.cues).toEqual([{ kind: "hitLanded", on: "hull" }]);
 	});
@@ -290,15 +305,14 @@ describe("hits landed", () => {
 	test("a fall with the gun quiet is not the player's hit (sage round 1)", () => {
 		const quiet = (t: WeaponReading["target"]) => ({ ...whole, target: t });
 		expect(
-			run([quiet(target("r", 20)), quiet(target("r", 10))], DEFAULT_WEAPON_ARMS)
-				.cues,
+			run([quiet(target("r", 20)), quiet(target("r", 10))], arms("given")).cues,
 		).toEqual([]);
 	});
 
 	test("a target's condition replaced downward is not a landed hit (sage round 3)", () => {
 		const replaced = { ...target("r", 10), sinceStruckS: 5 };
 		expect(
-			run([on(target("r", 20)), on(replaced)], DEFAULT_WEAPON_ARMS).cues,
+			run([on(target("r", 20)), on(replaced)], arms("given")).cues,
 		).toEqual([]);
 	});
 
@@ -310,34 +324,32 @@ describe("hits landed", () => {
 			hull,
 			sinceStruckS: null,
 		});
-		expect(
-			run([on(relay(50)), on(relay(40))], DEFAULT_WEAPON_ARMS).cues,
-		).toEqual([{ kind: "hitLanded", on: "hull" }]);
+		expect(run([on(relay(50)), on(relay(40))], arms("given")).cues).toEqual([
+			{ kind: "hitLanded", on: "hull" },
+		]);
 	});
 
 	test("a shot fired last step still lands: the damage is read a step late", () => {
 		// `Game.step` reads the target before this step's shot lands, so the
 		// fall from a last shot is seen after the trigger is let go.
 		const quiet = { ...whole, target: target("r", 10) };
-		expect(run([on(target("r", 20)), quiet], DEFAULT_WEAPON_ARMS).cues).toEqual(
-			[{ kind: "hitLanded", on: "shield" }],
-		);
+		expect(run([on(target("r", 20)), quiet], arms("given")).cues).toEqual([
+			{ kind: "hitLanded", on: "shield" },
+		]);
 	});
 
 	test("switching to a weaker target is not a hit", () => {
 		expect(
-			run([on(target("a", 20)), on(target("b", 2))], DEFAULT_WEAPON_ARMS).cues,
+			run([on(target("a", 20)), on(target("b", 2))], arms("given")).cues,
 		).toEqual([]);
 		// Nor is picking one after none.
-		expect(
-			run([on(null), on(target("b", 2))], DEFAULT_WEAPON_ARMS).cues,
-		).toEqual([]);
+		expect(run([on(null), on(target("b", 2))], arms("given")).cues).toEqual([]);
 	});
 
 	test("landed hits re-arm, and nogiven is silent", () => {
 		const readings = [on(target("r", 20))];
 		for (let i = 1; i <= 60; i++) readings.push(on(target("r", 20 - i * 0.2)));
-		expect(run(readings, DEFAULT_WEAPON_ARMS).cues.length).toBe(
+		expect(run(readings, arms("given")).cues.length).toBe(
 			Math.ceil(1 / GIVEN_REARM_S),
 		);
 		expect(run(readings, arms("nogiven")).cues).toEqual([]);

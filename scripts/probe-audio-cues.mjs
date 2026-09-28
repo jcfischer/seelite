@@ -212,8 +212,8 @@ const SINCE_544 = {
 
 /**
  * #546's console voices, which `origin/main` does not have: centred on this
- * branch's own render (`PRINT=1`, seed 552), taken before the principal's
- * first listen, so they hold the prototype to what is offered and move when
+ * branch's own render (`PRINT=1`, seed 552), re-taken after the principal's
+ * first listen (the shield hit became a sparkle), so they hold the prototype to what is offered and move when
  * the ear moves it. All tone-only: the ±10% band.
  */
 const SINCE_546 = {
@@ -227,9 +227,9 @@ const SINCE_546 = {
 
 /**
  * #545's voices and duels, which `origin/main` does not have: centred on this
- * branch's own render (`PRINT=1`, seed 552), taken before the principal's
- * first listen, so they hold the prototype to what is offered and move when
- * the ear moves it. Every duel takes the bed's wide band: each carries noise
+ * branch's own render (`PRINT=1`, seed 552), re-taken after the principal's
+ * first listen made the shield hit a sparkle, so they hold the prototype to
+ * what is offered and move when the ear moves it. Every duel takes the bed's wide band: each carries noise
  * loops and many cues.
  */
 const SINCE_545 = {
@@ -248,31 +248,31 @@ const SINCE_545 = {
 		noise: 1,
 	},
 	"shield-fore": {
-		rms: 0.01101,
-		peak: 0.13241,
+		rms: 0.00645,
+		peak: 0.14594,
 		onsetMs: 7.33,
-		hz: 5045,
+		hz: 7313,
 		noise: 1,
 	},
 	"shield-aft": {
-		rms: 0.00937,
-		peak: 0.10756,
-		onsetMs: 7.35,
-		hz: 3803,
+		rms: 0.00545,
+		peak: 0.13747,
+		onsetMs: 7.33,
+		hz: 5290,
 		noise: 1,
 	},
 	"shield-onepool": {
-		rms: 0.01024,
-		peak: 0.11552,
+		rms: 0.00598,
+		peak: 0.1594,
 		onsetMs: 7.33,
-		hz: 4604,
+		hz: 6327,
 		noise: 1,
 	},
 	"shield-fore-low": {
-		rms: 0.00983,
-		peak: 0.10968,
+		rms: 0.00429,
+		peak: 0.0934,
 		onsetMs: 7.33,
-		hz: 5547,
+		hz: 7303,
 		noise: 1,
 	},
 	"hull-clang": {
@@ -325,24 +325,24 @@ const SINCE_545 = {
 		bed: 1,
 	},
 	"weapons-taken-sizzle": {
-		rms: 0.01244,
-		peak: 0.17175,
+		rms: 0.01199,
+		peak: 0.17765,
 		onsetMs: 327.33,
-		hz: 5045,
+		hz: 6828,
 		bed: 1,
 	},
 	"weapons-taken-rearm": {
-		rms: 0.01565,
-		peak: 0.17273,
+		rms: 0.01271,
+		peak: 0.18031,
 		onsetMs: 327.33,
-		hz: 5046,
+		hz: 7450,
 		bed: 1,
 	},
 	"weapons-taken-plain": {
-		rms: 0.01301,
-		peak: 0.14622,
+		rms: 0.00888,
+		peak: 0.18089,
 		onsetMs: 327.33,
-		hz: 4604,
+		hz: 6327,
 		bed: 1,
 	},
 	"weapons-given": {

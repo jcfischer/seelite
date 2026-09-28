@@ -17,7 +17,8 @@
  * ## The arms, from `?weaponsound=`
  *
  * Comma-separated tokens, unique across arms. The first of each is the
- * default; a default is needed to play at all and is not a ruling.
+ * default, and since the principal's first listen (2026-09-28) the default is
+ * the ruling; the others stay as comparison handles.
  *
  * - **laser** — `crack`: each paced shot is a short discharge crack, no pitch
  *   sweep. `beam`: a sustained hum for as long as the gun actually fires, with
@@ -50,14 +51,14 @@ import type {
 } from "./audio-cue";
 
 export const WEAPON_SOUND_ARMS = {
-	laser: ["crack", "beam", "pew"],
+	laser: ["beam", "crack", "pew"],
 	heat: ["heatrise", "heatflat"],
 	lockout: ["lockclick", "nolock"],
 	pools: ["sided", "onepool"],
 	low: ["thin", "flat"],
 	held: ["sizzle", "rearm"],
 	hull: ["clang", "thud"],
-	given: ["given", "nogiven"],
+	given: ["nogiven", "given"],
 } as const satisfies Record<string, readonly string[]> & {
 	hull: readonly HullHitVoice[];
 };
