@@ -66,17 +66,11 @@ export type WeaponSoundArms = {
 	-readonly [K in keyof typeof WEAPON_SOUND_ARMS]: (typeof WEAPON_SOUND_ARMS)[K][number];
 };
 
-/** The first of each arm. */
-export const DEFAULT_WEAPON_ARMS: WeaponSoundArms = {
-	laser: "crack",
-	heat: "heatrise",
-	lockout: "lockclick",
-	pools: "sided",
-	low: "thin",
-	held: "sizzle",
-	hull: "clang",
-	given: "given",
-};
+/** The first of each arm, derived so a reordered list cannot desync it
+ *  (sage round 2). */
+export const DEFAULT_WEAPON_ARMS = Object.fromEntries(
+	Object.entries(WEAPON_SOUND_ARMS).map(([arm, values]) => [arm, values[0]]),
+) as WeaponSoundArms;
 
 /**
  * The arms a `?weaponsound=` value names, or `legacy`. Unknown tokens are
@@ -156,6 +150,8 @@ export interface WeaponSoundState {
 	/** The gun fired on the last reading: its shot lands after that reading
 	 *  was taken, so its fall is seen on this one. */
 	readonly firedLast: boolean;
+	/** The last reading's `dt`, for the strike gate. */
+	readonly lastDt: number;
 }
 
 const LONG_AGO = Number.POSITIVE_INFINITY;
@@ -170,6 +166,7 @@ export const QUIET_WEAPONS: WeaponSoundState = {
 	sinceGiven: LONG_AGO,
 	lockClicked: false,
 	firedLast: false,
+	lastDt: 0,
 };
 
 /** Every loop silent: the clock is held, or nothing is fighting. */
@@ -218,12 +215,15 @@ export function weaponSound(
 		cues.push({ kind: "gunLocked" });
 
 	// Hits taken. A fall is a hit only when the ship was struck since the last
-	// reading: `applyDamage` zeroes `sinceStruckS`, and the one step that can
-	// have passed since adds at most `dt`. A condition replaced downward keeps a
-	// clock of seconds and is not a hit (the gate `Game.play` owed, #552).
+	// reading: `applyDamage` zeroes `sinceStruckS`, and one step's `dt` is
+	// added before it is read. That step is this one in `Game.step`'s order;
+	// the larger of this `dt` and the last is taken so the gate holds in either
+	// order under a varying frame time (sage round 2). A condition replaced
+	// downward keeps a clock of seconds and is not a hit (the gate `Game.play`
+	// owed, #552).
 	const own = reading.own;
 	const prev = state.own;
-	const struck = own.sinceStruckS <= step;
+	const struck = own.sinceStruckS <= Math.max(step, state.lastDt);
 	const fell = (key: "fore" | "aft" | "hull") =>
 		prev !== null && struck && own[key] < prev[key];
 
@@ -294,6 +294,7 @@ export function weaponSound(
 			target: now,
 			sinceGiven,
 			firedLast: reading.fired,
+			lastDt: step,
 			lockClicked:
 				lockedPull && (state.lockClicked || arms.lockout === "lockclick"),
 		},

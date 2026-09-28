@@ -12116,7 +12116,9 @@ class Game {
 	 * so the hits it reads are what the previous step left: `step` returns from
 	 * three places, and damage lands in half a dozen. Read here, every one of
 	 * them is seen once, a frame later — about 17 ms, which is below what a
-	 * pilot hears as late (#552's placement, kept).
+	 * pilot hears as late. #552 read hits as the first line of `step`; this
+	 * moves the read after the gun, which it needs, and no `return` stands
+	 * between the two places.
 	 */
 	private stepWeaponSound(dt: number, gun: { fired: boolean; sound: boolean }) {
 		const target = this.selectedTargetCondition();

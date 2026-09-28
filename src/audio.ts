@@ -407,24 +407,27 @@ export class AudioFX {
 	 */
 	weapons(mix: WeaponMix) {
 		if (!this.ctx || !this.buses) return;
-		if (!this.audible("combat")) return;
+		const t = this.ctx.currentTime;
+		const loud = mix.beam + mix.sizzleFore + mix.sizzleAft > 0;
+		// Torn down once every loop has been silent a while (sage round 1), and
+		// at once on a muted bus (round 2): the graph is ten running sources,
+		// and a fight is short beside a session. The written levels are kept,
+		// all zero, which is what a fresh graph's gains hold, so a rebuild
+		// writes only what moves.
+		if (!this.audible("combat")) {
+			this.dropWeaponGraph();
+			return;
+		}
+		if (loud) this.weaponLoudAt = t;
+		else if (t - this.weaponLoudAt > WEAPON_IDLE_S) {
+			this.dropWeaponGraph();
+			return;
+		}
 		if (!this.weaponGraph) {
-			if (!(mix.beam + mix.sizzleFore + mix.sizzleAft > 0)) return;
+			if (!loud) return;
 			this.weaponGraph = this.makeWeaponGraph(this.ctx, this.buses.combat);
 		}
 		const g = this.weaponGraph;
-		const t = this.ctx.currentTime;
-		// Torn down once every loop has been silent a while (sage round 1): the
-		// graph is ten running sources, and a fight is short beside a session.
-		// The written levels are kept, all zero, which is what a fresh graph's
-		// gains hold, so a rebuild writes only what moves.
-		if (mix.beam + mix.sizzleFore + mix.sizzleAft > 0) this.weaponLoudAt = t;
-		else if (t - this.weaponLoudAt > WEAPON_IDLE_S) {
-			for (const src of g.sources) src.stop();
-			g.root.disconnect();
-			this.weaponGraph = null;
-			return;
-		}
 		const w = this.weaponWritten;
 		const moved = (k: keyof WeaponMix) => {
 			const had = w[k];
@@ -455,6 +458,18 @@ export class AudioFX {
 
 	/** When a weapon loop was last asked for, on the audio clock. */
 	private weaponLoudAt = 0;
+
+	/** Stop every weapon source and let the graph go. */
+	private dropWeaponGraph() {
+		const g = this.weaponGraph;
+		if (!g) return;
+		for (const src of g.sources) src.stop();
+		g.root.disconnect();
+		this.weaponGraph = null;
+		// A muted bus faded the loops; what was written no longer holds.
+		for (const k of Object.keys(this.weaponWritten) as (keyof WeaponMix)[])
+			this.weaponWritten[k] = 0;
+	}
 
 	private makeWeaponGraph(ctx: BaseAudioContext, bus: AudioNode): WeaponGraph {
 		const root = ctx.createGain();

@@ -182,6 +182,21 @@ describe("hits taken", () => {
 		expect(run([whole, replaced], DEFAULT_WEAPON_ARMS).cues).toEqual([]);
 	});
 
+	test("a strike read after a longer step than this one is still a hit (sage round 2)", () => {
+		// The clock was advanced by a 1/30 s step, and this reading's is 1/60.
+		const first = weaponSound(
+			QUIET_WEAPONS,
+			whole,
+			DEFAULT_WEAPON_ARMS,
+			1 / 30,
+		);
+		const hit = struck({ fore: 5 });
+		const read = { ...hit, own: { ...hit.own, sinceStruckS: 1 / 30 } };
+		expect(
+			weaponSound(first.state, read, DEFAULT_WEAPON_ARMS, 1 / 60).cues.length,
+		).toBe(1);
+	});
+
 	test("recharge is not a hit", () => {
 		const low = struck({ fore: 2, aft: 3 });
 		const settled = { ...low, own: { ...low.own, sinceStruckS: 0.5 } };
