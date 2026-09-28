@@ -107,6 +107,14 @@ describe("voice classes", () => {
 		const voiced = Object.keys(CUE_VOICE) as CueKind[];
 		expect(voiced).not.toContain("witchspaceHum");
 		expect(voiced).not.toContain("witchspaceSweep");
+		for (const kind of [
+			"witchspaceFlash",
+			"witchspaceRide",
+			"witchspaceRideClose",
+			"witchspaceUnfold",
+			"witchspaceRift",
+		] as const)
+			expect(voiced).not.toContain(kind);
 		expect(voiced).not.toContain("witchspaceStop");
 	});
 });
@@ -195,6 +203,11 @@ test("a cue is a closed union: every kind is listed in CUE_BUS", () => {
 		"focus",
 		"witchspaceHum",
 		"witchspaceSweep",
+		"witchspaceFlash",
+		"witchspaceRide",
+		"witchspaceRideClose",
+		"witchspaceUnfold",
+		"witchspaceRift",
 		"witchspaceStop",
 		"cruiseEngage",
 		"cruiseDrop",

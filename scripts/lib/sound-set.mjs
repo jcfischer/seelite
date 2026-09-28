@@ -114,7 +114,73 @@ export const SOUND_SET = Object.freeze([
 	},
 	{ name: "landed-hull", seconds: 0.4, cue: { kind: "hitLanded", on: "hull" } },
 	...weaponTimelines(),
+	// #534's four voices after the cut, each alone. The flash's cue is whole
+	// in itself; the others carry the schedule's timing, so they are taken
+	// from it (`scheduled`: the first cue of each kind a jump plays on those
+	// arms, each at its own phase from the first) rather than restated here.
+	// The ride is heard with its close. The jumps below play them together.
+	...["rings", "bed"].map((voice) => ({
+		name: `witchspace-ride-${voice}`,
+		seconds: 3.4,
+		scheduled: {
+			kinds: ["witchspaceRide", "witchspaceRideClose"],
+			arms: voice,
+		},
+	})),
+	{
+		name: "witchspace-unfold",
+		seconds: 1.9,
+		scheduled: { kinds: ["witchspaceUnfold"], arms: "" },
+	},
+	{
+		name: "witchspace-rift",
+		seconds: 4.8,
+		scheduled: { kinds: ["witchspaceRift"], arms: "" },
+	},
+	{
+		name: "witchspace-flash-boom",
+		seconds: 1.4,
+		cue: { kind: "witchspaceFlash", voice: "boom" },
+	},
+	{
+		name: "witchspace-flash-glass",
+		seconds: 1.4,
+		cue: { kind: "witchspaceFlash", voice: "glass" },
+	},
+	...witchspaceTimelines(),
 ]);
+
+/**
+ * #534's jumps, flown through the real schedule (`witchspaceCues`) and the
+ * real flight bed, so what is heard is what a jump plays: the wind-up from
+ * half a second in, the cut, and the exit to the rift's close. `arms` is a
+ * `?witchsound=` value.
+ *
+ * The first is the defaults. Each after it flips one arm, so a listen
+ * compares one question at a time rather than a grid. The pilot burns at half
+ * before the cut and is at rest after it, as `clearFlightSession` leaves a
+ * ship that has jumped: so the bed after the cut is the hum, which is what
+ * the `engine` arm ducks.
+ */
+function witchspaceTimelines() {
+	const line = (name, seconds, arms, from = "jump") => ({
+		name,
+		seconds,
+		witchspace: { arms, from },
+	});
+	return [
+		// The defaults are the principal's ruling (2026-09-28); each render
+		// after them flips one arm back to an answer that lost.
+		line("jump", 12, ""),
+		line("jump-sweep", 12, "sweep"),
+		line("jump-rise", 12, "rise"),
+		line("jump-glass", 12, "glass"),
+		line("jump-rings", 12, "rings"),
+		line("jump-duck", 12, "duck"),
+		line("arrival", 9, "", "arrival"),
+		line("arrival-sound", 9, "arrivalsound", "arrival"),
+	];
+}
 
 /**
  * #545's duels, flown by a scripted timeline through the real
@@ -330,6 +396,9 @@ export async function renderInPage({
 		: [];
 	if (
 		(entry.flight && typeof fx.flight !== "function") ||
+		(entry.witchspace && !knownKinds.includes("witchspaceRide")) ||
+		(entry.scheduled &&
+			!entry.scheduled.kinds.every((k) => knownKinds.includes(k))) ||
 		(entry.weapons && typeof fx.weapons !== "function") ||
 		(entry.cue && !entry.legacy && !modern) ||
 		(entry.cue && modern && !knownKinds.includes(entry.cue.kind))
@@ -372,6 +441,53 @@ export async function renderInPage({
 		state = (Math.imul(state, 1664525) + 1013904223) >>> 0;
 		return state / 4294967296;
 	};
+	if (entry.scheduled) {
+		const W = await import("/src/witchspace.ts");
+		const { witchspaceSoundArms } = await import("/src/witchspace-sound.ts");
+		const { arms, unknown } = witchspaceSoundArms(entry.scheduled.arms);
+		if (unknown.length)
+			throw new Error(`${entry.name}: arms ${entry.scheduled.arms}`);
+		const wanted = new Set(entry.scheduled.kinds);
+		const found = [];
+		let s = W.beginWitchspace();
+		for (let i = 0; i < 2000 && wanted.size && s.kind !== "idle"; i++) {
+			const next = W.stepJump(s, 1 / 50);
+			for (const c of W.witchspaceCues(s, next, arms))
+				if (wanted.delete(c.kind)) found.push([W.witchspacePhase(next), c]);
+			s = next;
+		}
+		if (wanted.size)
+			throw new Error(`${entry.name}: no ${[...wanted]} in a jump`);
+		// Each at its phase from the first. A suspend is quantised to a render
+		// quantum and two at one time are refused, so the times are rounded to
+		// one and a time two cues share plays both.
+		const quantum = 128 / sampleRate;
+		const byTime = new Map();
+		for (const [phase, cue] of found) {
+			const at = Math.round((leadS + phase - found[0][0]) / quantum) * quantum;
+			byTime.set(at, [...(byTime.get(at) ?? []), cue]);
+		}
+		for (const [at, cues] of byTime)
+			ctx.suspend(at).then(() => {
+				const random = Math.random;
+				if (typeof seed === "number") Math.random = seeded;
+				try {
+					for (const cue of cues) fx.play(cue);
+				} finally {
+					Math.random = random;
+				}
+				ctx.resume();
+			});
+		const buffer = await ctx.startRendering();
+		return {
+			modern,
+			sampleRate,
+			live: null,
+			samples: Array.from(
+				buffer.getChannelData(0).subarray(Math.round(leadS * sampleRate)),
+			),
+		};
+	}
 	const playOne = () => {
 		const random = Math.random;
 		if (typeof seed === "number") Math.random = seeded;
@@ -522,6 +638,56 @@ export async function renderInPage({
 			state = step.state;
 			for (const cue of step.cues) fx.play(cue);
 			fx.weapons(step.mix);
+		});
+	}
+	if (entry.witchspace) {
+		const W = await import("/src/witchspace.ts");
+		const { witchspaceSoundArms } = await import("/src/witchspace-sound.ts");
+		const { flightSound, flightSoundArms, QUIET_FLIGHT } = await import(
+			"/src/flight-sound.ts"
+		);
+		const { arms, unknown } = witchspaceSoundArms(entry.witchspace.arms);
+		if (unknown.length)
+			throw new Error(`${entry.name}: arms ${entry.witchspace.arms}`);
+		const flightArms = flightSoundArms("noclicks").arms;
+		const startS = 0.5;
+		let ws = W.idleWitchspace();
+		let started = false;
+		let cut = false;
+		let flight = QUIET_FLIGHT;
+		return renderSteps(1 / 50, (t, dt) => {
+			let next;
+			if (!started && t >= startS) {
+				started = true;
+				next =
+					entry.witchspace.from === "arrival"
+						? W.arriveWitchspace()
+						: W.beginWitchspace();
+			} else next = W.stepJump(ws, dt);
+			for (const cue of W.witchspaceCues(ws, next, arms)) fx.play(cue);
+			if (next.kind === "exit") cut = true;
+			ws = next;
+			const burning = !cut && entry.witchspace.from === "jump";
+			const step = flightSound(
+				flight,
+				{
+					docked: false,
+					regime: "normal",
+					spool: 0,
+					lever: burning ? 0.5 : 0,
+					drive: burning ? 0.5 : 0,
+					rcs: 0,
+					hullShare: 1,
+					cruiseSpeed: 0,
+					held: false,
+					hushed: W.witchspaceHushesBed(ws, arms),
+				},
+				flightArms,
+				dt,
+			);
+			flight = step.state;
+			for (const cue of step.cues) fx.play(cue);
+			fx.flight(step.mix);
 		});
 	}
 	if (entry.flight) {

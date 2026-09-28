@@ -31,10 +31,12 @@ import {
 	CUE_VOICE,
 	type Cue,
 	type CueBus,
+	type FlashVoice,
 	type FlightMix,
 	type HitPool,
 	type HullHitVoice,
 	type NotifyTone,
+	type SweepSwallow,
 	VOICE_CAPS,
 	VOICE_MIX_CAP,
 	VOICE_PRIORITY,
@@ -134,6 +136,10 @@ export const CUE_LENGTH_S: Readonly<Record<VoicedCueKind, number>> = {
 };
 
 type CueBuses = Record<Exclude<Bus, "master">, GainNode>;
+
+/** The witchspace voices, each behind a gain of its own so a stop reaches it:
+ *  #195's two before the cut and #534's four after it. */
+type WitchspaceVoice = "hum" | "sweep" | "flash" | "ride" | "unfold" | "rift";
 
 export class AudioFX {
 	/** Whatever the cues build into: the realtime context, or an offline one. */
@@ -281,6 +287,12 @@ export class AudioFX {
 			this.stopWitchspace();
 			return;
 		}
+		// Before the mute check, as the stop is: it ends a ride already
+		// sounding, which a mute has faded and not stopped.
+		if (cue.kind === "witchspaceRideClose") {
+			this.witchspaceRideClose(cue.seconds);
+			return;
+		}
 		const bus = CUE_BUS[cue.kind];
 		if (!this.audible(bus)) return;
 		if (cue.kind === "witchspaceHum") {
@@ -288,7 +300,24 @@ export class AudioFX {
 			return;
 		}
 		if (cue.kind === "witchspaceSweep") {
-			this.witchspaceSweep();
+			if (cue.riseS === undefined) this.witchspaceSweep();
+			else this.witchspaceRise(cue.riseS, cue.swallow);
+			return;
+		}
+		if (cue.kind === "witchspaceFlash") {
+			this.witchspaceFlash(cue.voice);
+			return;
+		}
+		if (cue.kind === "witchspaceRide") {
+			this.witchspaceRide(cue);
+			return;
+		}
+		if (cue.kind === "witchspaceUnfold") {
+			this.witchspaceUnfold(cue.seconds);
+			return;
+		}
+		if (cue.kind === "witchspaceRift") {
+			this.witchspaceRift(cue.seconds);
 			return;
 		}
 		if (cue.kind === "cruiseEngage") {
@@ -1283,12 +1312,305 @@ export class AudioFX {
 	 * the cut (`witchspace.ts` owns the schedule). It goes through its own
 	 * group so `stopWitchspace` can take it back — a sweep that played on after
 	 * a cancelled charge would announce a jump that did not happen.
+	 *
+	 * Both of its parts decay from their onset, so most of it is heard in its
+	 * first half second and the cut arrives under the engine bed (#534).
 	 */
 	private witchspaceSweep() {
 		const out = this.witchspaceGroup("sweep");
 		if (!out) return;
 		this.tone(out, 90, HYPERSPACE_SWEEP_S, "sawtooth", 0.22, 1400);
 		this.noiseBurst(out, 1.2, 0.18, 2200);
+	}
+	/**
+	 * The sweep that holds to the cut (#534's `rise` arm): the same climb from
+	 * 90 Hz to 1400, with a rising band of noise over it, swelling rather than
+	 * decaying for `seconds` — the time left to the cut — and ended there, so
+	 * the flash is what stops it.
+	 *
+	 * With `swallow`, it is drawn down into silence as the dark closes to a
+	 * point: its level and its top both fall from `fromS` to nothing at
+	 * `toS`, seconds from its start, so the point is heard as the sweep's
+	 * absence before the flash.
+	 */
+	private witchspaceRise(seconds: number, swallow?: SweepSwallow) {
+		const group = this.witchspaceGroup("sweep");
+		if (!group || !this.ctx) return;
+		const ctx = this.ctx;
+		const t = ctx.currentTime;
+		const end = t + Math.max(0.05, seconds);
+		let out: AudioNode = group;
+		if (swallow) {
+			const gain = ctx.createGain();
+			gain.gain.setValueAtTime(1, t + swallow.fromS);
+			gain.gain.exponentialRampToValueAtTime(0.0001, t + swallow.toS);
+			const filter = ctx.createBiquadFilter();
+			filter.type = "lowpass";
+			filter.frequency.setValueAtTime(12000, t + swallow.fromS);
+			filter.frequency.exponentialRampToValueAtTime(250, t + swallow.toS);
+			filter.connect(gain);
+			gain.connect(group);
+			out = filter;
+		}
+		const env = ctx.createGain();
+		env.gain.setValueAtTime(0.0001, t);
+		env.gain.exponentialRampToValueAtTime(0.1, t + 0.05);
+		env.gain.exponentialRampToValueAtTime(0.18, end - 0.02);
+		env.gain.exponentialRampToValueAtTime(0.0001, end);
+		env.connect(out);
+		const saw = ctx.createOscillator();
+		saw.type = "sawtooth";
+		saw.frequency.setValueAtTime(90, t);
+		saw.frequency.exponentialRampToValueAtTime(1400, end);
+		const soft = ctx.createBiquadFilter();
+		soft.type = "lowpass";
+		soft.frequency.setValueAtTime(900, t);
+		soft.frequency.exponentialRampToValueAtTime(6000, end);
+		saw.connect(soft);
+		soft.connect(env);
+		const src = this.loopedNoise("white");
+		const band = ctx.createBiquadFilter();
+		band.type = "bandpass";
+		band.Q.value = 1.5;
+		band.frequency.setValueAtTime(800, t);
+		band.frequency.exponentialRampToValueAtTime(5000, end);
+		const air = ctx.createGain();
+		air.gain.value = 0.7;
+		src.connect(band);
+		band.connect(air);
+		air.connect(env);
+		for (const s of [saw, src]) {
+			s.start(t);
+			s.stop(end + 0.05);
+		}
+	}
+	/**
+	 * The flash on the cut (#534). `boom`: a low impact, a sub dropping out
+	 * under a burst of dark noise — the world replaced. `glass`: light — a
+	 * bright inharmonic ring and a hiss of air, high and short.
+	 */
+	private witchspaceFlash(voice: FlashVoice) {
+		const out = this.witchspaceGroup("flash");
+		if (!out) return;
+		if (voice === "glass") {
+			for (const [hz, vol, dur] of [
+				[1568, 0.11, 1.1],
+				[2349, 0.08, 0.9],
+				[3322, 0.06, 0.7],
+				[4699, 0.04, 0.5],
+			] as const)
+				this.tone(out, hz, dur, "sine", vol);
+			this.bandBurst(out, 0.35, 0.2, 6000, 0.7);
+			return;
+		}
+		this.tone(out, 95, 1.1, "sine", 0.42, 28);
+		this.tone(out, 190, 0.4, "triangle", 0.12, 60);
+		this.noiseBurst(out, 0.7, 0.3, 700);
+	}
+	/**
+	 * The ride through the tunnel (#534): in over `openS` as the tunnel opens
+	 * out of the point, and held. Its close is a cue of its own
+	 * (`witchspaceRideClose`), fired off the exit clock when the tunnel closes,
+	 * so a stall after the cut cannot close it ahead of the tunnel. `seconds`
+	 * only bounds a ride whose close never came.
+	 *
+	 * - `rings`: a rushing of band-passed noise that swells as each ring of
+	 *   light passes on the wall (`ringHz`), rising in pitch through the ride,
+	 *   over a low body.
+	 * - `bed`: a steady drone — dark noise and two slow-beating low saws.
+	 */
+	private witchspaceRide(cue: Extract<Cue, { kind: "witchspaceRide" }>) {
+		const out = this.witchspaceGroup("ride");
+		if (!out || !this.ctx) return;
+		const ctx = this.ctx;
+		const t = ctx.currentTime;
+		const end = t + cue.seconds;
+		const env = ctx.createGain();
+		env.gain.setValueAtTime(0.0001, t);
+		env.gain.exponentialRampToValueAtTime(1, t + cue.openS);
+		env.gain.setValueAtTime(1, Math.max(t + cue.openS, end - 0.3));
+		env.gain.exponentialRampToValueAtTime(0.0001, end);
+		env.connect(out);
+		const stops: AudioScheduledSourceNode[] = [];
+		const noise = (kind: "brown" | "white") => {
+			const src = this.loopedNoise(kind);
+			stops.push(src);
+			return src;
+		};
+		const osc = (hz: number, type: OscillatorType) => {
+			const o = ctx.createOscillator();
+			o.type = type;
+			o.frequency.setValueAtTime(hz, t);
+			stops.push(o);
+			return o;
+		};
+		if (cue.voice === "bed") {
+			const low = ctx.createBiquadFilter();
+			low.type = "lowpass";
+			low.frequency.setValueAtTime(320, t);
+			const level = ctx.createGain();
+			level.gain.value = 0.22;
+			noise("brown").connect(low);
+			low.connect(level);
+			level.connect(env);
+			const drone = ctx.createBiquadFilter();
+			drone.type = "lowpass";
+			drone.frequency.setValueAtTime(180, t);
+			const droneLevel = ctx.createGain();
+			droneLevel.gain.value = 0.09;
+			osc(41.2, "sawtooth").connect(drone);
+			osc(41.7, "sawtooth").connect(drone);
+			drone.connect(droneLevel);
+			droneLevel.connect(env);
+		} else {
+			const band = ctx.createBiquadFilter();
+			band.type = "bandpass";
+			band.Q.value = 1.2;
+			// Rising through the ride toward 1800 Hz, whenever the close comes.
+			band.frequency.setValueAtTime(600, t);
+			band.frequency.setTargetAtTime(1800, t, 1);
+			// Each ring passing: a sharp swell and a longer fall, as the shader's
+			// `pow(sin, 14)` is a narrow bright line with dark between.
+			const pulse = ctx.createGain();
+			const period = 1 / cue.ringHz;
+			pulse.gain.setValueAtTime(0.25, t);
+			for (let at = t + period; at < end; at += period) {
+				pulse.gain.setValueAtTime(0.25, at - 0.05);
+				pulse.gain.exponentialRampToValueAtTime(1, at);
+				pulse.gain.exponentialRampToValueAtTime(0.25, at + 0.18);
+			}
+			const level = ctx.createGain();
+			level.gain.value = 0.2;
+			noise("white").connect(band);
+			band.connect(pulse);
+			pulse.connect(level);
+			level.connect(env);
+			const bodyLevel = ctx.createGain();
+			bodyLevel.gain.value = 0.08;
+			osc(55, "sine").connect(bodyLevel);
+			bodyLevel.connect(env);
+		}
+		for (const s of stops) {
+			s.start(t);
+			s.stop(end + 0.05);
+		}
+		this.rideSources = stops;
+	}
+	/** The ride's running voices, so its close can stop them. */
+	private rideSources: AudioScheduledSourceNode[] = [];
+	/**
+	 * The tunnel closing back into the point (#534): the ride's group taken
+	 * down over `seconds`, and its voices stopped as it reaches silence rather
+	 * than running on to their bound (sage round 2 on #575). It is let go, not
+	 * disconnected, so a later stop has nothing of it to take.
+	 */
+	private witchspaceRideClose(seconds: number) {
+		const group = this.witchspaceGroups.get("ride");
+		if (!group || !this.ctx) return;
+		const t = this.ctx.currentTime;
+		group.gain.setValueAtTime(1, t);
+		group.gain.exponentialRampToValueAtTime(0.0001, t + seconds);
+		for (const s of this.rideSources) s.stop(t + seconds + 0.05);
+		this.rideSources = [];
+		this.witchspaceGroups.delete("ride");
+	}
+	/** A two-second noise loop, brown or white, not yet started. */
+	private loopedNoise(kind: "brown" | "white"): AudioBufferSourceNode {
+		const ctx = this.ctx as BaseAudioContext;
+		const src = ctx.createBufferSource();
+		src.buffer = noiseLoop(ctx, kind);
+		src.loop = true;
+		return src;
+	}
+	/**
+	 * The new light catching up (#534): a long fall from high to low, noise
+	 * and a glide together, swelling in and easing out as the sky unfolds.
+	 */
+	private witchspaceUnfold(seconds: number) {
+		const out = this.witchspaceGroup("unfold");
+		if (!out || !this.ctx) return;
+		const ctx = this.ctx;
+		const t = ctx.currentTime;
+		const end = t + seconds;
+		const env = ctx.createGain();
+		// From a hundredth rather than from silence: an exponential ramp spends
+		// most of its time far down, and from 0.0001 the first half of the
+		// swell was under the bed.
+		env.gain.setValueAtTime(0.01, t);
+		env.gain.exponentialRampToValueAtTime(1, t + seconds * 0.4);
+		env.gain.exponentialRampToValueAtTime(0.0001, end);
+		env.connect(out);
+		const src = this.loopedNoise("white");
+		const band = ctx.createBiquadFilter();
+		band.type = "bandpass";
+		band.Q.value = 2;
+		band.frequency.setValueAtTime(5000, t);
+		band.frequency.exponentialRampToValueAtTime(300, end);
+		const noiseLevel = ctx.createGain();
+		noiseLevel.gain.value = 0.4;
+		src.connect(band);
+		band.connect(noiseLevel);
+		noiseLevel.connect(env);
+		const glide = ctx.createOscillator();
+		glide.type = "sawtooth";
+		glide.frequency.setValueAtTime(1200, t);
+		glide.frequency.exponentialRampToValueAtTime(110, end);
+		const soft = ctx.createBiquadFilter();
+		soft.type = "lowpass";
+		soft.frequency.setValueAtTime(3000, t);
+		soft.frequency.exponentialRampToValueAtTime(400, end);
+		const glideLevel = ctx.createGain();
+		glideLevel.gain.value = 0.12;
+		glide.connect(soft);
+		soft.connect(glideLevel);
+		glideLevel.connect(env);
+		for (const s of [src, glide]) {
+			s.start(t);
+			s.stop(end + 0.05);
+		}
+	}
+	/**
+	 * The rift behind the ship (#534): a low chord of slow-beating voices with
+	 * a faint high shimmer, in with the new light and held, then falling in
+	 * pitch and fading as the rift closes.
+	 */
+	private witchspaceRift(seconds: number) {
+		const out = this.witchspaceGroup("rift");
+		if (!out || !this.ctx) return;
+		const ctx = this.ctx;
+		const t = ctx.currentTime;
+		const end = t + seconds;
+		const closeAt = t + Math.max(0.5, seconds - 1.5);
+		const env = ctx.createGain();
+		env.gain.setValueAtTime(0.0001, t);
+		env.gain.exponentialRampToValueAtTime(1, t + 0.5);
+		env.gain.setValueAtTime(1, closeAt);
+		env.gain.exponentialRampToValueAtTime(0.0001, end);
+		env.connect(out);
+		const soft = ctx.createBiquadFilter();
+		soft.type = "lowpass";
+		soft.frequency.setValueAtTime(900, t);
+		soft.connect(env);
+		for (const [hz, type, vol] of [
+			[73.4, "triangle", 0.07],
+			[73.9, "triangle", 0.07],
+			[110.2, "triangle", 0.05],
+			[146.9, "sine", 0.04],
+			[1760, "sine", 0.012],
+			[1767, "sine", 0.012],
+		] as const) {
+			const o = ctx.createOscillator();
+			o.type = type;
+			o.frequency.setValueAtTime(hz, t);
+			o.frequency.setValueAtTime(hz, closeAt);
+			o.frequency.exponentialRampToValueAtTime(hz * 0.6, end);
+			const g = ctx.createGain();
+			g.gain.value = vol;
+			o.connect(g);
+			g.connect(hz > 1000 ? env : soft);
+			o.start(t);
+			o.stop(end + 0.05);
+		}
 	}
 	/**
 	 * The drive charging: a low hum under the first part of §8's wind-up, before
@@ -1323,8 +1645,9 @@ export class AudioFX {
 		}
 	}
 	/**
-	 * Silence both witchspace cues now: the charge was cancelled (#532). Fast
-	 * rather than cut, so the stop is not a click.
+	 * Silence every witchspace cue now: the charge was cancelled (#532), or
+	 * the exit was cut short (#534). Fast rather than cut, so the stop is not a
+	 * click.
 	 */
 	private stopWitchspace() {
 		if (!this.ctx) return;
@@ -1338,12 +1661,12 @@ export class AudioFX {
 		this.witchspaceGroups.clear();
 	}
 	/** The live witchspace cues, each behind its own gain. */
-	private readonly witchspaceGroups = new Map<"hum" | "sweep", GainNode>();
+	private readonly witchspaceGroups = new Map<WitchspaceVoice, GainNode>();
 	/**
 	 * A fresh group for a cue, replacing one still sounding under the same name.
 	 * On the **ship** bus (D1), where it once went straight to master.
 	 */
-	private witchspaceGroup(cue: "hum" | "sweep"): GainNode | null {
+	private witchspaceGroup(cue: WitchspaceVoice): GainNode | null {
 		if (!this.ctx || !this.buses) return null;
 		this.witchspaceGroups.get(cue)?.disconnect();
 		const group = this.ctx.createGain();

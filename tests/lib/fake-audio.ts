@@ -75,8 +75,12 @@ export class FakeContext {
 		const o = Object.assign(new FakeNode(), {
 			type: "sine",
 			frequency: new FakeParam(),
+			/** Every time `stop` was scheduled for; the earliest one wins. */
+			stoppedAt: [] as number[],
 			start() {},
-			stop() {},
+			stop(t: number) {
+				o.stoppedAt.push(t);
+			},
 		});
 		this.sources.push(o);
 		return o;
@@ -96,7 +100,11 @@ export class FakeContext {
 		const s = Object.assign(new FakeNode(), {
 			buffer: null,
 			loop: false,
+			stoppedAt: [] as number[],
 			start() {},
+			stop(t: number) {
+				s.stoppedAt.push(t);
+			},
 		});
 		this.sources.push(s);
 		return s;

@@ -362,6 +362,81 @@ const SINCE_545 = {
 };
 
 /**
+ * #534's flash and jumps, which `origin/main` does not have: centred on this
+ * branch's own render (`PRINT=1`, seed 552), so they hold the prototype to
+ * what the principal listens to and move when the ear moves it. A jump takes
+ * the bed's wide band: it carries noise loops, the flight bed and every cue of
+ * the transition. Like a flight timeline, a jump whose ride vanished could
+ * stay inside that band, so each voice after the cut also renders alone in
+ * its own band, and the windowed rows below hold what only a timeline shows:
+ * the rift over the returning bed, the sweep's two arms, and the duck.
+ */
+const SINCE_534 = {
+	"witchspace-flash-boom": {
+		rms: 0.02627,
+		peak: 0.1912,
+		onsetMs: 7.44,
+		hz: 441,
+		noise: 1,
+	},
+	"witchspace-flash-glass": {
+		rms: 0.01139,
+		peak: 0.13603,
+		onsetMs: 7.33,
+		hz: 7136,
+		noise: 1,
+	},
+	"witchspace-ride-rings": {
+		rms: 0.01739,
+		peak: 0.05032,
+		onsetMs: 311.77,
+		hz: 2482,
+		noise: 1,
+	},
+	"witchspace-ride-bed": {
+		rms: 0.03115,
+		peak: 0.13226,
+		onsetMs: 259.27,
+		hz: 180,
+		noise: 1,
+	},
+	"witchspace-unfold": {
+		rms: 0.00659,
+		peak: 0.0675,
+		onsetMs: 51,
+		hz: 5235,
+		noise: 1,
+	},
+	"witchspace-rift": { rms: 0.02007, peak: 0.09312, onsetMs: 281.23, hz: 279 },
+	jump: { rms: 0.02492, peak: 0.20133, onsetMs: 13.21, hz: 281, bed: 1 },
+	"jump-sweep": {
+		rms: 0.02527,
+		peak: 0.18743,
+		onsetMs: 13.21,
+		hz: 281,
+		bed: 1,
+	},
+	"jump-rise": { rms: 0.02642, peak: 0.20136, onsetMs: 13.21, hz: 281, bed: 1 },
+	"jump-glass": { rms: 0.0239, peak: 0.14895, onsetMs: 13.21, hz: 281, bed: 1 },
+	"jump-rings": {
+		rms: 0.02057,
+		peak: 0.20132,
+		onsetMs: 13.21,
+		hz: 281,
+		bed: 1,
+	},
+	"jump-duck": { rms: 0.02471, peak: 0.20144, onsetMs: 13.21, hz: 281, bed: 1 },
+	arrival: { rms: 0.00551, peak: 0.02802, onsetMs: 46.48, hz: 292, bed: 1 },
+	"arrival-sound": {
+		rms: 0.02709,
+		peak: 0.18325,
+		onsetMs: 46.48,
+		hz: 292,
+		bed: 1,
+	},
+};
+
+/**
  * Each cue's band: rms, peak and centroid as `[low, high]`, and the latest
  * onset in ms. A tone-only cue renders the same waveform on every seed, so
  * its band is ±10%; a noise cue's is wide enough for the seed's own spread
@@ -369,26 +444,26 @@ const SINCE_545 = {
  * as much again, which is the order of a render quantum's rounding.
  */
 const BANDS = Object.fromEntries(
-	Object.entries({ ...MAIN, ...SINCE_544, ...SINCE_546, ...SINCE_545 }).map(
-		([name, m]) => {
-			const [lo, hi] = m.bed ? [0.7, 1.4] : m.noise ? [0.8, 1.25] : [0.9, 1.1];
-			const [plo, phi] = m.bed || m.noise ? [0.6, 1.6] : [0.9, 1.1];
-			const [clo, chi] = m.bed
-				? [0.6, 1.5]
-				: m.noise
-					? [0.93, 1.07]
-					: [0.9, 1.1];
-			return [
-				name,
-				{
-					rms: [m.rms * lo, m.rms * hi],
-					peak: [m.peak * plo, m.peak * phi],
-					onsetMs: m.onsetMs + (m.bed ? 60 : 12),
-					centroidHz: [m.hz * clo, m.hz * chi],
-				},
-			];
-		},
-	),
+	Object.entries({
+		...MAIN,
+		...SINCE_544,
+		...SINCE_546,
+		...SINCE_545,
+		...SINCE_534,
+	}).map(([name, m]) => {
+		const [lo, hi] = m.bed ? [0.7, 1.4] : m.noise ? [0.8, 1.25] : [0.9, 1.1];
+		const [plo, phi] = m.bed || m.noise ? [0.6, 1.6] : [0.9, 1.1];
+		const [clo, chi] = m.bed ? [0.6, 1.5] : m.noise ? [0.93, 1.07] : [0.9, 1.1];
+		return [
+			name,
+			{
+				rms: [m.rms * lo, m.rms * hi],
+				peak: [m.peak * plo, m.peak * phi],
+				onsetMs: m.onsetMs + (m.bed ? 60 : 12),
+				centroidHz: [m.hz * clo, m.hz * chi],
+			},
+		];
+	}),
 );
 
 /** The most of an uncapped burst's ring a capped one may reach. Read at
@@ -547,6 +622,58 @@ try {
 			[0.8, 1.4],
 			"weapons-taken-sizzle",
 			[2.6, 3.1],
+		],
+		// #534's segments after the cut. The ride and the unfolding are held by
+		// their lone renders' bands and not here: against a quiet arrival on the
+		// `duck` arm they were read against the duck's exact silence, which any
+		// tail at all stands over. The rift is read below against the quiet
+		// arrival (the default since the principal's ruling) at the same phase —
+		// the same flight bed and no cue. An arrival begins at 0.5 s, so its phase
+		// is the render time less that.
+		// The ride's close is a cue of its own (sage round 1 on #575): its lone
+		// render plays the close at the tunnel's 2.4 s, gone by 3.1. A close that
+		// did nothing leaves the ride sounding and each lone band still holds,
+		// so its middle is read against what is left after the tunnel is gone.
+		...["rings", "bed"].map((voice) => [
+			`the ${voice} ride closes with the tunnel`,
+			`witchspace-ride-${voice}`,
+			[1, 2],
+			`witchspace-ride-${voice}`,
+			[3.15, 3.4],
+		]),
+		[
+			"the rift is heard as it closes behind the ship",
+			"arrival-sound",
+			[6, 7],
+			"arrival",
+			[6, 7],
+		],
+		// The wind-up's last quarter second, cut at 3.5 s: the risen sweep
+		// against the sweep as it was, and against itself swallowed.
+		[
+			"the risen sweep holds to the cut",
+			"jump-rise",
+			[3.2, 3.45],
+			"jump-sweep",
+			[3.2, 3.45],
+		],
+		[
+			"the swallowed sweep is gone before the flash",
+			"jump-rise",
+			[3.3, 3.45],
+			"jump",
+			[3.3, 3.45],
+		],
+		// Phase 2.8–3.0: the ride has all but closed (2.4 to 3.1) and the new
+		// light is not yet in, so what differs is the bed. At 2.55–2.95 it read
+		// x3.64 under the `rings` ride and x1.72 under `bed`, which fills more
+		// of the fade: that window measured the ride as much as the bed.
+		[
+			"the duck takes the engine away until the hands come back",
+			"jump",
+			[6.3, 6.5],
+			"jump-duck",
+			[6.3, 6.5],
 		],
 	];
 	const renders = new Map();

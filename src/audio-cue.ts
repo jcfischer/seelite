@@ -30,6 +30,25 @@ export type LaserVoice = "crack" | "pew";
 /** A hull hit's voice (#545): metal struck, or the thud before #545. */
 export type HullHitVoice = "clang" | "thud";
 
+/** The flash on the cut, by ear (#534): a low impact, or a bright ring. */
+export type FlashVoice = "boom" | "glass";
+
+/** The ride through the tunnel (#534): a rushing that pulses with its rings,
+ *  or a steady low drone. */
+export type RideVoice = "rings" | "bed";
+
+/**
+ * The sweep drawn down into silence as the dark closes to a point (#534's
+ * `swallow` arm): seconds from the cue's start. The schedule works them out
+ * from the dark's own timing, so the engine never reads it. Only a risen
+ * sweep carries one: the sweep before #534 has died away before the dark
+ * closes, so there is nothing left of it to swallow.
+ */
+export interface SweepSwallow {
+	fromS: number;
+	toS: number;
+}
+
 /**
  * A closed union of every cue, with the data a cue needs.
  *
@@ -54,7 +73,18 @@ export type Cue =
 	| { kind: "refuse" }
 	| { kind: "focus" }
 	| { kind: "witchspaceHum"; seconds: number }
-	| { kind: "witchspaceSweep" }
+	| { kind: "witchspaceSweep"; riseS?: number; swallow?: SweepSwallow }
+	| { kind: "witchspaceFlash"; voice: FlashVoice }
+	| {
+			kind: "witchspaceRide";
+			voice: RideVoice;
+			seconds: number;
+			openS: number;
+			ringHz: number;
+	  }
+	| { kind: "witchspaceRideClose"; seconds: number }
+	| { kind: "witchspaceUnfold"; seconds: number }
+	| { kind: "witchspaceRift"; seconds: number }
 	| { kind: "witchspaceStop" }
 	| { kind: "cruiseEngage" }
 	| { kind: "cruiseDrop" };
@@ -96,6 +126,11 @@ export const CUE_BUS: Record<CueKind, CueBus> = {
 	focus: "console",
 	witchspaceHum: "ship",
 	witchspaceSweep: "ship",
+	witchspaceFlash: "ship",
+	witchspaceRide: "ship",
+	witchspaceRideClose: "ship",
+	witchspaceUnfold: "ship",
+	witchspaceRift: "ship",
 	witchspaceStop: "ship",
 	cruiseEngage: "ship",
 	cruiseDrop: "ship",
@@ -113,6 +148,11 @@ export type VoicedCueKind = Exclude<
 	CueKind,
 	| "witchspaceHum"
 	| "witchspaceSweep"
+	| "witchspaceFlash"
+	| "witchspaceRide"
+	| "witchspaceRideClose"
+	| "witchspaceUnfold"
+	| "witchspaceRift"
 	| "witchspaceStop"
 	| "cruiseEngage"
 	| "cruiseDrop"
