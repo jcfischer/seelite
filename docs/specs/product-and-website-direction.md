@@ -83,9 +83,10 @@ The Trust page promises:
 
 - no accounts, cookies, or advertising;
 - Counterscale pageview analytics on each public page load and each game
-  launch — the path, the referrer, and what the request headers carry, which
-  Counterscale breaks down by browser, device and country — and nothing the
-  game does after launch leaves the machine;
+  launch — the request arrives with the IP address and browser headers, and
+  Counterscale records the path, the referrer, browser, device type and
+  country but not the IP — and nothing the game does after launch leaves the
+  machine;
 - saves are local and portable; and
 - feedback leaves a player's machine only through a deliberately chosen
   external channel.
@@ -101,8 +102,10 @@ to see how many people are playing, so counterscale on public pages and launch
 is enough."* This promise said no tracking, analytics or runtime network calls
 at all. Now a production build loads the principal's self-hosted Counterscale
 counter once per public page and once per game launch, under two site ids so
-the two are told apart. It sends the path, the referrer and the headers every
-request carries; it sets no cookie and stores nothing in the browser. `src/visit-count.ts`
+the two are told apart. Each request arrives with the IP address and
+browser headers; upstream Counterscale records path, referrer, user agent,
+browser, device type and country, and not the IP. It sets no cookie and
+stores nothing in the browser. `src/visit-count.ts`
 owns the mechanism.
 
 ## Development horizons

@@ -73,7 +73,7 @@ export const PUBLIC_PAGES: readonly PublicPage[] = [
 		eyebrow: "Trust",
 		title: "Your flight is yours.",
 		dek: "The Far Between is private by default, immediate by design, and intentionally small in what it asks of you.",
-		content: `<ul class="promise"><li>No accounts, cookies, or advertising.</li><li>Each page load and each game launch is counted once, by a self-hosted Counterscale counter. It receives the page’s path, the site you came from, and the headers every web request carries. Nothing the game does after launch leaves your machine.</li><li>Saves live locally in your browser and can be exported as portable data.</li></ul>
+		content: `<ul class="promise"><li>No accounts, cookies, or advertising.</li><li>Each page load and each game launch is counted once, by a self-hosted Counterscale counter. Like any web request, it arrives with your IP address and browser headers. The counter records the page’s path, the site you came from, your browser, device type and country — not your IP address. Nothing the game does after launch leaves your machine.</li><li>Saves live locally in your browser and can be exported as portable data.</li></ul>
 			<p>There is no behavioural telemetry. The project learns through direct feedback and conversation.</p>`,
 	},
 	{
