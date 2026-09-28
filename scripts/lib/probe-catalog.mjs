@@ -51,6 +51,20 @@ export const PROBE_CATALOG = Object.freeze(
 			],
 		),
 		entry(
+			"probe-console-sound.mjs",
+			"Plays the running game's consoles and reads back which cue each act asks for: a tab or a purchase is a press, a refused purchase a refusal, a cursor move and a hover a tick, a clearance answer one message, and the legacy arm none of them.",
+			[
+				"audio",
+				"console sound",
+				"notifications",
+				"button clicks",
+				"refusal",
+				"pad focus",
+				"hover",
+				"docking clearance",
+			],
+		),
+		entry(
 			"probe-flight-sound.mjs",
 			"Flies the running game and reads back the ship's loop levels: a burn raises the drive and holding speed idles it, a turn fires the thrusters, cruise spools, engages and drops with one cue each, and the legacy arm plays only the old bed.",
 			[

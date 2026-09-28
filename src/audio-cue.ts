@@ -17,6 +17,13 @@
 export type HitPool = "fore" | "aft";
 
 /**
+ * What a console message means, to the ear (#546): news, a thing done for the
+ * pilot, or a thing gone wrong. `alert` is none of these: it is the ship
+ * saying something is wrong with the ship.
+ */
+export type NotifyTone = "message" | "good" | "bad";
+
+/**
  * A closed union of every cue, with the data a cue needs.
  *
  * `shieldHit` and `hullHit` are emitted by `hitCues` below and are **not yet
@@ -32,6 +39,10 @@ export type Cue =
 	| { kind: "scoop" }
 	| { kind: "alert" }
 	| { kind: "ui" }
+	| { kind: "notify"; tone: NotifyTone }
+	| { kind: "press" }
+	| { kind: "refuse" }
+	| { kind: "focus" }
 	| { kind: "witchspaceHum"; seconds: number }
 	| { kind: "witchspaceSweep" }
 	| { kind: "witchspaceStop" }
@@ -67,6 +78,10 @@ export const CUE_BUS: Record<CueKind, CueBus> = {
 	scoop: "ship",
 	alert: "console",
 	ui: "console",
+	notify: "console",
+	press: "console",
+	refuse: "console",
+	focus: "console",
 	witchspaceHum: "ship",
 	witchspaceSweep: "ship",
 	witchspaceStop: "ship",
@@ -111,6 +126,13 @@ export const CUE_VOICE: Record<VoicedCueKind, VoiceClass> = {
 	explosion: "hits",
 	laser: "weapons",
 	ui: "ui",
+	// #546: in the highest class (#542 D4's order), so a full mix yields a
+	// click or a weapon before a message. A default, not a ruling: the
+	// principal's listen did not ask it.
+	notify: "alert",
+	press: "ui",
+	refuse: "ui",
+	focus: "ui",
 	scoop: "ui",
 	dock: "ui",
 };

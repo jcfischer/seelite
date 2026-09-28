@@ -211,6 +211,21 @@ const SINCE_544 = {
 };
 
 /**
+ * #546's console voices, which `origin/main` does not have: centred on this
+ * branch's own render (`PRINT=1`, seed 552), taken before the principal's
+ * first listen, so they hold the prototype to what is offered and move when
+ * the ear moves it. All tone-only: the ±10% band.
+ */
+const SINCE_546 = {
+	"notify-message": { rms: 0.00593, peak: 0.04275, onsetMs: 12.08, hz: 888 },
+	"notify-good": { rms: 0.00637, peak: 0.03951, onsetMs: 12.06, hz: 884 },
+	"notify-bad": { rms: 0.00806, peak: 0.06284, onsetMs: 11.75, hz: 1098 },
+	press: { rms: 0.00204, peak: 0.03691, onsetMs: 11.79, hz: 2162 },
+	refuse: { rms: 0.00359, peak: 0.02322, onsetMs: 12.46, hz: 2822 },
+	focus: { rms: 0.00062, peak: 0.01306, onsetMs: 13, hz: 2778 },
+};
+
+/**
  * Each cue's band: rms, peak and centroid as `[low, high]`, and the latest
  * onset in ms. A tone-only cue renders the same waveform on every seed, so
  * its band is ±10%; a noise cue's is wide enough for the seed's own spread
@@ -218,7 +233,7 @@ const SINCE_544 = {
  * as much again, which is the order of a render quantum's rounding.
  */
 const BANDS = Object.fromEntries(
-	Object.entries({ ...MAIN, ...SINCE_544 }).map(([name, m]) => {
+	Object.entries({ ...MAIN, ...SINCE_544, ...SINCE_546 }).map(([name, m]) => {
 		const [lo, hi] = m.bed ? [0.7, 1.4] : m.noise ? [0.8, 1.25] : [0.9, 1.1];
 		const [plo, phi] = m.bed || m.noise ? [0.6, 1.6] : [0.9, 1.1];
 		const [clo, chi] = m.bed ? [0.6, 1.5] : m.noise ? [0.93, 1.07] : [0.9, 1.1];

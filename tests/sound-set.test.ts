@@ -47,9 +47,17 @@ test("the bed is rendered at idle and at full throttle", () => {
 test("each entry before #544 names the method the engine before #552 exposed", () => {
 	// The capture renders `origin/main` too, and that engine has no `play`.
 	// #544's cues and loops did not exist there and render as absent.
-	const since544 = new Set<string | undefined>(["cruiseEngage", "cruiseDrop"]);
+	// And #546's console voices: the consoles were silent before it.
+	const noLegacyMethod = new Set<string | undefined>([
+		"cruiseEngage",
+		"cruiseDrop",
+		"notify",
+		"press",
+		"refuse",
+		"focus",
+	]);
 	for (const e of SOUND_SET)
-		if (e.loop === undefined && !e.flight && !since544.has(e.cue?.kind))
+		if (e.loop === undefined && !e.flight && !noLegacyMethod.has(e.cue?.kind))
 			expect(e.legacy?.length).toBeGreaterThan(0);
 });
 
