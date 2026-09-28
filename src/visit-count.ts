@@ -18,7 +18,7 @@
  *
  * **Once per page load.** The tracker also counts `history.pushState` and
  * `popstate`; this game calls neither, so nothing after launch is reported, and
- * `tests/public-site.test.ts` goes red if a module starts to.
+ * `tests/public-site.test.ts` goes red on the spellings of either it knows.
  */
 export const COUNTER_ORIGIN =
 	"https://counterscale.jens-christian-66c.workers.dev";

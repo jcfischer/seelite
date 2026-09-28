@@ -131,13 +131,19 @@ describe("the quiet public threshold", () => {
 
 	/**
 	 * Counterscale's tracker also reports on `history.pushState` and on
-	 * `popstate`, which a fragment assignment fires too. So the Trust line
+	 * `popstate`, which any move to a fragment fires too. So the Trust line
 	 * "Nothing the game does after launch leaves your machine" holds only while
-	 * no module does any of the three (#569). A `location.assign` is a new page
-	 * load and is counted as one, which is what the Trust line says.
+	 * no module does either (#569). A `location.assign` to another URL is a new
+	 * page load and is counted as one, which is what the Trust line says.
+	 *
+	 * **It matches spellings, not the behaviour.** `pushState`, a `popstate`
+	 * listener, and a fragment reached by assignment, by `assign`/`replace`,
+	 * or by an `href="#…"` in markup — the in-page links that sage round 2
+	 * named. A fragment built from a variable passes it.
 	 */
 	test("nothing the page loads navigates within the page", () => {
-		const navigates = /\bpushState\b|\bpopstate\b|location\.hash\s*=[^=]/;
+		const navigates =
+			/\bpushState\b|\bpopstate\b|location\.hash\s*=[^=]|location\.href\s*=\s*["'`]#|location\.(assign|replace)\(\s*["'`]#|href=\\?["']#/;
 		const offenders = srcFiles().filter((rel) => navigates.test(codeOf(rel)));
 		expect(offenders).toEqual([]);
 		// Not vacuous: there are modules to scan, and they are this game's.
