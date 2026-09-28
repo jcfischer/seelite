@@ -31,7 +31,8 @@ world has enough depth to reward attention.
    Its clues emerge through ordinary frontier work and it never gates trade,
    combat, exploration, or progression.
 5. **Private and immediate are product qualities.** Browser play, local and
-   portable saves, no login, and no tracking are strengths, not omissions.
+   portable saves, no login, and nothing tracked beyond a visit count (#569)
+   are strengths, not omissions.
 
 ## Player journey
 
@@ -80,7 +81,9 @@ canonical spoiler channel.
 
 The Trust page promises:
 
-- no accounts, tracking, analytics, advertising, or runtime network calls;
+- no accounts, cookies, or advertising;
+- one visit count per public page load and per game launch, and nothing
+  the game does after launch leaves the machine;
 - saves are local and portable; and
 - feedback leaves a player's machine only through a deliberately chosen
   external channel.
@@ -90,6 +93,15 @@ conversations—not behavioural telemetry. It is non-commercial by default.
 Voluntary support may later be considered only outside the play loop. Ads,
 subscriptions, pay-to-progress, and account-gated access are excluded unless
 the principal explicitly redraws this product promise.
+
+**The principal redrew one line of it on 2026-09-28 (#569):** *"I just want
+to see how many people are playing, so counterscale on public pages and launch
+is enough."* This promise said no tracking, analytics or runtime network calls
+at all. Now a production build loads the principal's self-hosted Counterscale
+counter once per public page and once per game launch, under two site ids so
+the two are told apart. It sends the path, the referrer and the headers every
+request carries; it sets no cookie and stores nothing in the browser. `src/visit-count.ts`
+owns the mechanism.
 
 ## Development horizons
 
@@ -124,7 +136,8 @@ The following becomes sharp after this direction:
    separate tutorial mode.
 2. **Build the quiet public threshold** — the Play, About, Field Notes,
    Manual, Trust and Credits structure with a direct route into the static
-   game; no CMS, analytics, account system, or feed.
+   game; no CMS, account system, or feed, and no analytics beyond #569's
+   visit count.
 3. **Publish the first expedition story contract** — the separate, optional
    story decision in [An expedition story: ordinary frontier work leads to Rama](https://github.com/jcfischer/seelite/issues/338).
 4. **Build postcards** — the already bounded local export and scene-recipe

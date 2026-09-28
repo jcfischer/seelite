@@ -414,7 +414,7 @@ export const PROBE_CATALOG = Object.freeze(
 				"static routes",
 				"privacy promise",
 				"Play now",
-				"no tracking",
+				"visit count",
 			],
 		),
 		entry(

@@ -1,7 +1,8 @@
 # seelite
 
 A browser-playable classic-Elite (1984) trade–fight–explore loop. TypeScript +
-Vite + Three.js, static bundle, no backend, no runtime network requests.
+Vite + Three.js, static bundle, no backend, no runtime network requests beyond
+one visit count per public page load and game launch (#569, `src/visit-count.ts`).
 
 ## Read the map first
 

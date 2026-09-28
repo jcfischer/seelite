@@ -8,11 +8,7 @@ const PAGES = [
 	["about", "A frontier with room to breathe.", "Play now"],
 	["field-notes", "Occasional signals from the frontier.", "Play now"],
 	["manual", "Enough to leave the berth.", "Search this page"],
-	[
-		"trust",
-		"Your flight is yours.",
-		"No accounts, tracking, analytics, advertising, or runtime network calls.",
-	],
+	["trust", "Your flight is yours.", "No accounts, cookies, or advertising."],
 	[
 		"credits",
 		"Made in the long wake of old space games.",

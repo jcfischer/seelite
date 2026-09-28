@@ -102,8 +102,10 @@ describe("the quiet public threshold", () => {
 	test("keeps the home threshold private and hands play to the existing game boot", () => {
 		const source = readFileSync(repoPath("src/public-site.ts"), "utf8");
 		expect(source).toContain('href="/?boot=overlay"');
-		expect(source).toContain("No accounts. No tracking. No analytics.");
-		expect(source).toContain("No runtime network calls.");
+		expect(source).toContain("No accounts. No cookies. No advertising.");
+		expect(source).toContain(
+			"One visit count per page, and nothing after launch.",
+		);
 		expect(source).not.toMatch(/\bfetch\s*\(|WebSocket|EventSource/);
 	});
 
@@ -114,12 +116,18 @@ describe("the quiet public threshold", () => {
 	 * them — a repo-wide claim from a one-file scan, which sage round 4 named.
 	 * This reads every module the page can load, with comments stripped so a
 	 * paragraph about not fetching is not mistaken for a fetch.
+	 *
+	 * **One module is allowed, and it is named (#569).** The principal ruled that
+	 * a page load and a game launch are counted by Counterscale, which the page
+	 * reaches by adding a script tag rather than by calling anything below — so
+	 * the pattern also looks for a created script element, or the one module
+	 * that reaches the network would be the one module this row cannot see.
 	 */
-	test("no module the page loads can reach the network", () => {
+	test("only the visit counter can reach the network", () => {
 		const reaches =
-			/\bfetch\s*\(|\bXMLHttpRequest\b|\bWebSocket\b|\bEventSource\b|sendBeacon/;
+			/\bfetch\s*\(|\bXMLHttpRequest\b|\bWebSocket\b|\bEventSource\b|sendBeacon|createElement\(\s*["'`]script/;
 		const offenders = srcFiles().filter((rel) => reaches.test(codeOf(rel)));
-		expect(offenders).toEqual([]);
+		expect(offenders).toEqual(["src/visit-count.ts"]);
 		// Not vacuous: there are modules to scan, and they are this game's.
 		expect(srcFiles().length).toBeGreaterThan(50);
 	});

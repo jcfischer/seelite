@@ -20,7 +20,7 @@ export const PUBLIC_PAGES: readonly PublicPage[] = [
 		title: "The Far Between",
 		dek: "A little ship. A large sky. Work worth doing between the two.",
 		content: `<div class="threshold-actions">${play}<a class="button button--quiet" href="/about/">Find your bearings</a></div>
-			<p class="threshold-note">No accounts. No tracking. No analytics.<br />No runtime network calls.</p>
+			<p class="threshold-note">No accounts. No cookies. No advertising.<br />One visit count per page, and nothing after launch.</p>
 			<div class="instrument" aria-label="A quiet frontier transmission"><span>SECTOR: UNCHARTED</span><span>LOCAL: 03:17</span><span>SIGNAL: FAINT</span></div>`,
 	},
 	{
@@ -73,7 +73,7 @@ export const PUBLIC_PAGES: readonly PublicPage[] = [
 		eyebrow: "Trust",
 		title: "Your flight is yours.",
 		dek: "The Far Between is private by default, immediate by design, and intentionally small in what it asks of you.",
-		content: `<ul class="promise"><li>No accounts, tracking, analytics, advertising, or runtime network calls.</li><li>Saves live locally in your browser and can be exported as portable data.</li></ul>
+		content: `<ul class="promise"><li>No accounts, cookies, or advertising.</li><li>Each page load and each game launch is counted once, by a self-hosted Counterscale counter. It receives the page’s path, the site you came from, and the headers every web request carries. Nothing the game does after launch leaves your machine.</li><li>Saves live locally in your browser and can be exported as portable data.</li></ul>
 			<p>There is no behavioural telemetry. The project learns through direct feedback and conversation.</p>`,
 	},
 	{
