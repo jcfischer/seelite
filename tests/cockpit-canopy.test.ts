@@ -59,13 +59,18 @@ describe("the frame the pane is seated in", () => {
 	test("the sill and the header cover the whole of the edge they sit on", () => {
 		// A frame member shorter than its edge leaves the pane's corner in open
 		// space, which is the "floating" read #105 closed the frame to remove.
-		const bottom = CANOPY_OUTLINE.filter(([, y]) => y === CANOPY_FRAME.sill.position[1]);
-		const top = CANOPY_OUTLINE.filter(([, y]) => y === CANOPY_FRAME.header.position[1]);
+		const bottom = CANOPY_OUTLINE.filter(
+			([, y]) => y === CANOPY_FRAME.sill.position[1],
+		);
+		const top = CANOPY_OUTLINE.filter(
+			([, y]) => y === CANOPY_FRAME.header.position[1],
+		);
 		expect(bottom).toHaveLength(2);
 		expect(top).toHaveLength(2);
 		const covers = (member: typeof CANOPY_FRAME.sill, edge: typeof bottom) => {
 			const half = member.size[0] / 2;
-			for (const [x] of edge) expect(Math.abs(x - member.position[0])).toBeLessThanOrEqual(half);
+			for (const [x] of edge)
+				expect(Math.abs(x - member.position[0])).toBeLessThanOrEqual(half);
 		};
 		covers(CANOPY_FRAME.sill, bottom);
 		covers(CANOPY_FRAME.header, top);
