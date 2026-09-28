@@ -507,7 +507,14 @@ export async function renderInPage({
 					target:
 						r.target === null
 							? null
-							: { id: r.target, fore: r.tFore, aft: r.tAft, hull: r.tHull },
+							: {
+									id: r.target,
+									fore: r.tFore,
+									aft: r.tAft,
+									hull: r.tHull,
+									// Every fall on the scripted target is the player's.
+									sinceStruckS: 0,
+								},
 				},
 				arms,
 				dt,

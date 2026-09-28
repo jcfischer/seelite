@@ -12145,6 +12145,7 @@ class Game {
 								fore: target.fore,
 								aft: target.aft,
 								hull: target.hull,
+								sinceStruckS: this.selectedTargetStruckS(),
 							}
 						: null,
 			},
@@ -15959,6 +15960,24 @@ class Game {
 	 * has none; a wreck shows no line (#351 Q12); the relay's tender shows its
 	 * ship shields and hull (Q13).
 	 */
+	/**
+	 * Seconds since the selected target was last struck, beside
+	 * `selectedTargetCondition` and in its order, or `null` for a target that
+	 * keeps no strike clock: the relay has hull points only (#545, sage round 3).
+	 */
+	private selectedTargetStruckS(): number | null {
+		if (this.raiderSelected())
+			return this.encounter?.raider?.condition.sinceStruckS ?? null;
+		if (this.relayShootable()) return null;
+		if (this.tenderSelected()) return this.tenderCondition.sinceStruckS;
+		if (this.trafficSelected())
+			return (
+				this.trafficEngagements.get(this.targetId as CarrierKey)?.condition
+					.sinceStruckS ?? null
+			);
+		return null;
+	}
+
 	private selectedTargetCondition(): ConditionPrint | null {
 		if (this.raiderSelected()) return this.encounter?.raider?.condition ?? null;
 		// #351: the relay carries hull points and no shields, so its line reads

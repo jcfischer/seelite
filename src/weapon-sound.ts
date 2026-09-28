@@ -115,6 +115,9 @@ export interface TargetReading {
 	readonly fore: number;
 	readonly aft: number;
 	readonly hull: number;
+	/** Seconds since `applyDamage` last struck it, or `null` for a target
+	 *  with no strike clock (the relay, which has hull points only). */
+	readonly sinceStruckS: number | null;
 }
 
 /** What the game reads off one step for the combat sound. */
@@ -270,7 +273,22 @@ export function weaponSound(
 	let sinceGiven = state.sinceGiven + step;
 	const was = state.target;
 	const now = reading.target;
-	if (was && now && was.id === now.id && shooting && arms.given === "given") {
+	// And, where the target keeps a strike clock, only when it was struck, as a
+	// hit taken is (sage round 3): a target's condition replaced downward is
+	// not a hit. What this cannot tell is *who* struck it: a fall from another
+	// ship's fire while the player's gun fires still reads as the player's.
+	const hitSince =
+		now !== null &&
+		(now.sinceStruckS === null ||
+			now.sinceStruckS <= Math.max(step, state.lastDt));
+	if (
+		was &&
+		now &&
+		was.id === now.id &&
+		shooting &&
+		hitSince &&
+		arms.given === "given"
+	) {
 		const on =
 			now.fore < was.fore || now.aft < was.aft
 				? "shield"

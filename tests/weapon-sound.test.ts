@@ -259,11 +259,13 @@ describe("hits taken", () => {
 });
 
 describe("hits landed", () => {
+	/** A target struck this step, as `applyDamage` leaves one. */
 	const target = (id: string, fore: number, hull = 30) => ({
 		id,
 		fore,
 		aft: POOL,
 		hull,
+		sinceStruckS: 0,
 	});
 	/** The gun firing on `t`: a landed hit needs a shot behind it. */
 	const on = (t: WeaponReading["target"]): WeaponReading => ({
@@ -291,6 +293,26 @@ describe("hits landed", () => {
 			run([quiet(target("r", 20)), quiet(target("r", 10))], DEFAULT_WEAPON_ARMS)
 				.cues,
 		).toEqual([]);
+	});
+
+	test("a target's condition replaced downward is not a landed hit (sage round 3)", () => {
+		const replaced = { ...target("r", 10), sinceStruckS: 5 };
+		expect(
+			run([on(target("r", 20)), on(replaced)], DEFAULT_WEAPON_ARMS).cues,
+		).toEqual([]);
+	});
+
+	test("a target with no strike clock lands on any fall while firing", () => {
+		const relay = (hull: number) => ({
+			id: "relay",
+			fore: 0,
+			aft: 0,
+			hull,
+			sinceStruckS: null,
+		});
+		expect(
+			run([on(relay(50)), on(relay(40))], DEFAULT_WEAPON_ARMS).cues,
+		).toEqual([{ kind: "hitLanded", on: "hull" }]);
 	});
 
 	test("a shot fired last step still lands: the damage is read a step late", () => {

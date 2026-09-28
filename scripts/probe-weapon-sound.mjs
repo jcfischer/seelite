@@ -82,13 +82,13 @@ const duel = async (weaponsound) => {
 	return { page, setup };
 };
 
-/** Run `before` in the page, then step `n` fixed steps; hand back the cues
+/** Run `before(arg)` in the page, then step `n` fixed steps; hand back the cues
  *  that reached the engine. */
-const steps = async (page, n, before = null) => {
+const steps = async (page, n, before = null, arg = null) => {
 	await page.evaluate(() => {
 		window.__cues = [];
 	});
-	if (before) await page.evaluate(before);
+	if (before) await page.evaluate(before, arg);
 	return page.evaluate((n) => {
 		const g = window.__seelite;
 		const dt = g.units.MAX_DT;
@@ -199,24 +199,46 @@ const kinds = (r) => r.cues.map((c) => c.kind);
 		JSON.stringify(idle),
 	);
 
-	// A hit landed on the selected raider.
-	const landed = await steps(page, 2, () => {
+	// A fall on the selected raider. The trigger is let go and the step is told
+	// the gun fired on its last reading, so no real shot can land inside the
+	// row and the raider falls only by the hand below: once struck, as
+	// `applyDamage` leaves it (`sinceStruckS` 0), and once not (sage round 3).
+	// So this proves the wiring and both gates, not that a shot hit.
+	await page.evaluate(() => {
 		const g = window.__seelite;
-		// The gun firing: a landed hit needs a shot behind it (sage round 1).
-		window.__fireGun();
+		g.clockHeld = true;
+		g.keys.delete(" ");
 		g.targetId = g.raiderContact.id;
 		g.step(g.units.MAX_DT);
-		const r = g.encounter.raider;
-		r.condition = {
-			...r.condition,
-			fore: r.condition.fore * 0.5,
-			aft: r.condition.aft * 0.5,
-		};
 	});
+	const dropRaider = (sinceStruckS) =>
+		steps(
+			page,
+			1,
+			(sinceStruckS) => {
+				const g = window.__seelite;
+				g.weaponSoundState = { ...g.weaponSoundState, firedLast: true };
+				const r = g.encounter.raider;
+				r.condition = {
+					...r.condition,
+					fore: r.condition.fore * 0.5,
+					aft: r.condition.aft * 0.5,
+					sinceStruckS,
+				};
+			},
+			sinceStruckS,
+		);
+	const unstruck = await dropRaider(30);
+	const landed = await dropRaider(0);
 	check(
-		"a hit landed on the selected raider plays",
+		"a struck fall on the selected raider, with the gun just fired, plays a landed hit",
 		landed.cues.some((c) => c.kind === "hitLanded" && c.on === "shield"),
 		JSON.stringify(landed.cues),
+	);
+	check(
+		"and the same fall with no strike behind it plays none",
+		!kinds(unstruck).includes("hitLanded"),
+		JSON.stringify(unstruck.cues),
 	);
 	await page.close();
 }

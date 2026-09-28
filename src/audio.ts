@@ -475,7 +475,6 @@ export class AudioFX {
 		const root = ctx.createGain();
 		root.gain.value = 1;
 		root.connect(bus);
-		const out = root;
 		const sources: AudioScheduledSourceNode[] = [];
 		const gain = (to: AudioNode, value = 0) => {
 			const g = ctx.createGain();
@@ -524,7 +523,7 @@ export class AudioFX {
 		// The beam: a low buzz of two detuned saws through a resonant low-pass,
 		// a hiss of the discharge riding on it, and a thin whine that heat lifts.
 		// A fast shimmer on the body keeps it from reading as a held note.
-		const beam = gain(out);
+		const beam = gain(root);
 		const shimmer = gain(beam, 0.8);
 		lfo("sine", 23, shimmer.gain, 0.2);
 		const beamFilter = filter("lowpass", 900, 4);
@@ -542,7 +541,7 @@ export class AudioFX {
 		// two square LFOs at unrelated rates into a crackle. Fore is brighter
 		// than aft, as a shield hit is on `sided`.
 		const sizzle = (hz: number, offset: number, rates: [number, number]) => {
-			const g = gain(out);
+			const g = gain(root);
 			const chop = gain(g, 0.5);
 			for (const rate of rates) lfo("square", rate, chop.gain, 0.25);
 			const band = filter("bandpass", hz, 1.2);
