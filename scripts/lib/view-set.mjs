@@ -136,6 +136,7 @@ export const LEVERS = Object.freeze({
 	207: "the relief program picked by how big the planet looks",
 	202: "the station finish: a second plating octave, a cut seam, macro fixtures",
 	203: "the hull finish: a second plating octave, muted paint, a rim, collars, open bells",
+	204: "the front of the ship from the cockpit: the bonnet, a canopy with thickness, the face mid-tone, lamp pools",
 	208: "the baked cube a planet is drawn from below two radii",
 	211: "the half-resolution planet surface beneath a full-resolution limb",
 	257: "the refinery and outpost forms solved by wave function collapse, and selected",
@@ -319,7 +320,7 @@ export const CHART_SPOTS = Object.freeze(["crowded", "isolated"]);
 export const VIEWS = Object.freeze([
 	{
 		name: "cockpit-arrival",
-		covers: [105, 103, 99, 200, 201],
+		covers: [105, 103, 99, 200, 201, 204],
 		what: "The interior and the HUD, station ahead at arrival range. ~40% of this frame is cockpit.",
 		shot: {
 			kind: "station-axis",
@@ -341,7 +342,7 @@ export const VIEWS = Object.freeze([
 		// view is the whole set; the figures live there rather than being
 		// restated here, which is how this comment came to carry a superseded
 		// pair through a round of review.
-		covers: [199, 105, 103, 102, 99, 201, 203],
+		covers: [199, 105, 103, 102, 99, 201, 203, 204],
 		what: "The same interior with the star beyond the station: the case the camera-side fill was added for, and the dark side that only reads because it emits.",
 		shot: {
 			kind: "body-offset",
@@ -1138,7 +1139,7 @@ export const VIEWS = Object.freeze([
 	 */
 	{
 		name: "berth-arrival",
-		covers: [147, 105, 99, 201],
+		covers: [147, 105, 99, 201, 204],
 		what: "§13.6.1 — a trade station's bay mid-transfer to a deep overhead berth, in the cockpit. The scripted traversal, at the leg that leaves the lane.",
 		shot: {
 			kind: "berth",

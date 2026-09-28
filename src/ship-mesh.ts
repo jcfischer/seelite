@@ -508,6 +508,15 @@ function makePalette(id: HullId): Palette {
 	return palette;
 }
 
+/**
+ * A hull's own `hull` paint, plated, under the current finish — the material
+ * its main body is built in. #204's cockpit bonnet wears it, so the front of
+ * the ship seen from the cabin is the flown hull's colour and plates.
+ */
+export function hullPaint(id: HullId): THREE.MeshStandardMaterial {
+	return makePalette(id).hull;
+}
+
 function add(
 	root: THREE.Group,
 	name: string,

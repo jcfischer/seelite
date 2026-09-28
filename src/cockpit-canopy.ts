@@ -63,6 +63,13 @@ export const CANOPY_SIDE_RAILS = [
 ] as const;
 
 /**
+ * The side rails' radius, kilometres — 1.25 m in the cabin's frame. The lamps'
+ * standoff (`COCKPIT_LAMP.standoffKm`) and the pools' sleeve are both sized
+ * against it, so it is named once rather than typed at the `addStrut` call.
+ */
+export const CANOPY_RAIL_RADIUS_KM = 0.00125;
+
+/**
  * The sill and the header: `size` and `position`, kilometres, for a
  * `cockpitForm` box on the `trim` finish. Each spans the whole of its edge of
  * the outline and is deeper than the pane is thick, so the pane's edge is

@@ -194,6 +194,7 @@ export const COCKPIT_EMISSIVE_INTENSITIES = {
 	trim: EMISSIVE_CEILING * 0.14,
 	inset: EMISSIVE_CEILING * 0,
 	lamp: EMISSIVE_CEILING * 0.34,
+	lampPool: EMISSIVE_CEILING * 0.16,
 	throttleIdle: EMISSIVE_CEILING * 0.04,
 	throttleFull: EMISSIVE_CEILING * 0.32,
 } as const;
@@ -302,8 +303,8 @@ export const COCKPIT_LAMP = {
 	 * How far each lamp stands off its rail's axis, toward the cabin.
 	 *
 	 * **Not decoration: without it the lamps do not exist.** A canopy side rail
-	 * is a cylinder of 1.25 m radius in the cabin's frame — `addStrut`'s
-	 * `0.00125` — and the first lamps were 0.6 m across and centred on the rail
+	 * is a cylinder of 1.25 m radius in the cabin's frame —
+	 * `CANOPY_RAIL_RADIUS_KM` — and the first lamps were 0.6 m across and centred on the rail
 	 * axis, so every one was drawn *inside* the rail and the sheet showed
 	 * nothing at all.
 	 *
@@ -759,6 +760,113 @@ export function railLamps(
 		// constant z, so one axis is the whole of it.
 		mesh.position.copy(start).addScaledVector(along, t);
 		mesh.position.z += COCKPIT_LAMP.standoffKm;
+		return mesh;
+	});
+}
+
+/**
+ * The pool of light each lamp leaves on the rail below it (#204).
+ *
+ * The lamps lit nothing — a `MeshBasicMaterial` lights itself and no other
+ * surface — so the canopy frame carried six bright dots on an unlit rail. The
+ * node offered two routes: a short-range `PointLight` per lamp, gated at
+ * `high`, or a gradient on the rail. Six point lights would be six more terms
+ * every standard fragment in `nearScene` evaluates (the key light's lesson),
+ * so this is the gradient: a sleeve a hair proud of the rail, additive, warm,
+ * brightest at the lamp and gone by `lengthKm` below it. Free, and lit by
+ * nothing, like the lamp.
+ *
+ * - `lengthKm` **0.004**, 4 m in the cabin's frame: under the 5.4 m between
+ *   the two closest stops, so no pool reaches the next lamp.
+ * - `sleeveFactor` **1.06**: proud of the rail by 7.5 cm, which is clear of
+ *   depth fighting at the cabin's range and far inside the lamp's housing.
+ * - `intensity` is the lamp's colour scaled, under the lamp's own — a pool is
+ *   never brighter than what casts it — and set by looking.
+ */
+export const COCKPIT_LAMP_POOL = {
+	lengthKm: 0.004,
+	sleeveFactor: 1.06,
+	intensity: COCKPIT_EMISSIVE_INTENSITIES.lampPool,
+} as const;
+
+/** How bright a pool is at `v` along it, 1 at the lamp and 0 at its far end —
+ *  a squared falloff, so the light gathers at the lamp. */
+export function lampPoolRamp(v: number): number {
+	const t = Math.min(1, Math.max(0, v));
+	return (1 - t) ** 2;
+}
+
+let poolRamp: THREE.DataTexture | null = null;
+let poolGlow: THREE.MeshBasicMaterial | null = null;
+
+/** The ramp as a texture along v, built once. Linear data, not a colour. */
+function poolRampTexture() {
+	if (poolRamp) return poolRamp;
+	const size = 64;
+	const data = new Uint8Array(size * 4);
+	for (let i = 0; i < size; i++) {
+		const value = Math.round(lampPoolRamp(i / (size - 1)) * 255);
+		data.set([value, value, value, 255], i * 4);
+	}
+	poolRamp = new THREE.DataTexture(data, 1, size, THREE.RGBAFormat);
+	poolRamp.magFilter = THREE.LinearFilter;
+	poolRamp.minFilter = THREE.LinearFilter;
+	poolRamp.needsUpdate = true;
+	return poolRamp;
+}
+
+function poolMaterial() {
+	if (!poolGlow) {
+		poolGlow = new THREE.MeshBasicMaterial({
+			color: new THREE.Color(COCKPIT_LAMP.color).multiplyScalar(
+				COCKPIT_LAMP_POOL.intensity,
+			),
+			map: poolRampTexture(),
+			transparent: true,
+			blending: THREE.AdditiveBlending,
+			depthWrite: false,
+		});
+		poolGlow.name = "cockpit-lamp-pool";
+	}
+	return poolGlow;
+}
+
+/**
+ * The pools on one canopy side rail, one under each of `railLamps`' lamps.
+ *
+ * `from` is the sill end. Each sleeve's +Y — three's cylinder axis, where its
+ * `v` is 1 — points down the rail, so `v` 0 is at the lamp and the ramp's
+ * bright end is where the light is.
+ */
+export function railLampPools(
+	from: readonly [number, number, number],
+	to: readonly [number, number, number],
+	railRadiusKm: number,
+): THREE.Mesh[] {
+	const start = new THREE.Vector3(...from);
+	const along = new THREE.Vector3(...to).sub(start);
+	const down = along.clone().normalize().negate();
+	const orientation = new THREE.Quaternion().setFromUnitVectors(
+		new THREE.Vector3(0, 1, 0),
+		down,
+	);
+	const radius = railRadiusKm * COCKPIT_LAMP_POOL.sleeveFactor;
+	const geometry = new THREE.CylinderGeometry(
+		radius,
+		radius,
+		COCKPIT_LAMP_POOL.lengthKm,
+		12,
+		1,
+		true,
+	);
+	return COCKPIT_LAMP.stops.map((t) => {
+		const mesh = new THREE.Mesh(geometry, poolMaterial());
+		mesh.name = "cockpit-lamp-pool";
+		mesh.quaternion.copy(orientation);
+		mesh.position
+			.copy(start)
+			.addScaledVector(along, t)
+			.addScaledVector(down, COCKPIT_LAMP_POOL.lengthKm / 2);
 		return mesh;
 	});
 }

@@ -556,8 +556,10 @@ import {
 	HULL_VARIANTS,
 	buildShipMesh,
 	fleetLayout,
+	hullPaint,
 	updateShipVisuals,
 } from "./ship-mesh";
+import { buildBonnet } from "./cockpit-bonnet";
 import { ArrivalRift } from "./arrival-rift";
 import {
 	WITCHSPACE,
@@ -643,11 +645,13 @@ import {
 	cockpitForm,
 	cockpitMaterial,
 	plateCockpitUVs,
+	railLampPools,
 	railLamps,
 	registerKeyLight,
 } from "./cockpit-surface";
 import {
 	CANOPY_FRAME,
+	CANOPY_RAIL_RADIUS_KM,
 	CANOPY_SIDE_RAILS,
 	canopyGlassMaterial,
 	canopyPaneGeometry,
@@ -7392,14 +7396,31 @@ class Game {
 		const canopyPane = new THREE.Mesh(canopyPaneGeometry(), canopyGlass);
 		canopyPane.name = "canopy-glass";
 		cockpit.add(canopyPane);
+		// The front of the ship, below the sill (#204): a proxy in the cabin's
+		// frame in the flown hull's own paint — `cockpit-bonnet.ts` has why the
+		// real hull cannot be it.
+		cockpit.add(buildBonnet(hullPaint(PLAYER_HULL[0])));
 		for (const rail of CANOPY_SIDE_RAILS)
-			addStrut(rail.from, rail.to, 0.00125, `canopy-side-rail-${rail.side}`);
+			addStrut(
+				rail.from,
+				rail.to,
+				CANOPY_RAIL_RADIUS_KM,
+				`canopy-side-rail-${rail.side}`,
+			);
 		// Three lamps on each, and nowhere else. The first pass ran continuous
 		// lit bars under the header, under the sill and along each console; none
 		// of that is in the reference, where the canopy frame carries a few small
 		// lamps and everything else that glows is an instrument.
-		for (const rail of CANOPY_SIDE_RAILS)
+		for (const rail of CANOPY_SIDE_RAILS) {
 			for (const lamp of railLamps(rail.from, rail.to)) cockpit.add(lamp);
+			// And the light each one leaves on the rail below it (#204).
+			for (const pool of railLampPools(
+				rail.from,
+				rail.to,
+				CANOPY_RAIL_RADIUS_KM,
+			))
+				cockpit.add(pool);
+		}
 		addBox(
 			CANOPY_FRAME.header.size,
 			CANOPY_FRAME.header.position,
