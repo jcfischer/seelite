@@ -1,3 +1,5 @@
+import { CHANGELOG, HOME_CHANGELOG_COUNT, changelogList } from "./changelog";
+
 export type PublicPage = {
 	slug: "" | "about" | "field-notes" | "manual" | "trust" | "credits";
 	entry: string;
@@ -21,7 +23,8 @@ export const PUBLIC_PAGES: readonly PublicPage[] = [
 		dek: "A little ship. A large sky. Work worth doing between the two.",
 		content: `<div class="threshold-actions">${play}<a class="button button--quiet" href="/about/">Find your bearings</a></div>
 			<p class="threshold-note">No accounts. No cookies. No advertising.</p>
-			<div class="instrument" aria-label="A quiet frontier transmission"><span>SECTOR: UNCHARTED</span><span>LOCAL: 03:17</span><span>SIGNAL: FAINT</span></div>`,
+			<div class="instrument" aria-label="A quiet frontier transmission"><span>SECTOR: UNCHARTED</span><span>LOCAL: 03:17</span><span>SIGNAL: FAINT</span></div>
+			<section class="changelog-home" aria-labelledby="changelog-home"><h2 id="changelog-home">Recent changes</h2>${changelogList(CHANGELOG.slice(0, HOME_CHANGELOG_COUNT))}<a class="changelog-more" href="/field-notes/">All changes <span aria-hidden="true">→</span></a></section>`,
 	},
 	{
 		slug: "about",
@@ -42,7 +45,8 @@ export const PUBLIC_PAGES: readonly PublicPage[] = [
 		eyebrow: "Field Notes",
 		title: "Occasional signals from the frontier.",
 		dek: "Screens, postcards, release notes, and worthwhile observations arrive here when there is something real to show.",
-		content: `<p>The first note is still in flight. Until then, the game is the better place to find out what is waiting.</p>
+		content: `<h2>Changes</h2>
+			${changelogList(CHANGELOG)}
 			${play}`,
 	},
 	{
