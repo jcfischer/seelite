@@ -4,11 +4,11 @@
  * and Field Notes prints them all (#573).
  *
  * **What counts as major.** A player-visible change that a returning player
- * would notice: a new ship, system, mission type, mechanic or screen. Not a
- * refactor, probe work, performance tuning or an internal fix. The delivery
- * SOP on the map asks this question when a node closes; a node that answers
- * yes adds its entry here in the same pull request, and the principal approves
- * the sentence before the merge.
+ * would notice: a new ship, system, kind of work, mechanic or screen. Not a
+ * refactor, probe work, performance tuning or an internal fix. #573 adds this
+ * question to the delivery SOP in the Notes of the machine map (#1): a node
+ * that answers yes adds its entry here in the same pull request, and the
+ * principal approves the sentence before the merge.
  *
  * **The canon boundary holds here too.** An entry names a thing a pilot can
  * do or see. It does not name a story fact, a discovery or a resolution
@@ -84,9 +84,10 @@ const MONTHS = [
  * the same entry could read as the 27th, or in German.
  */
 export function changelogDate(date: string): string {
-	const [year, month, day] = date.split("-");
-	const name = MONTHS[Number(month) - 1];
-	if (!year || !day || !name) throw new Error(`Not a changelog date: ${date}`);
+	const parts = /^(\d{4})-(\d{2})-(\d{2})$/.exec(date);
+	const name = parts ? MONTHS[Number(parts[2]) - 1] : undefined;
+	if (!parts || !name) throw new Error(`Not a changelog date: ${date}`);
+	const [, year, , day] = parts;
 	return `${Number(day)} ${name} ${year}`;
 }
 

@@ -154,7 +154,7 @@ for (const [label, viewport] of [
 	for (const [name, state] of [
 		["home", home],
 		["field-notes", notes],
-	])
+	]) {
 		check(
 			`${name} shows every change it lists, dated (${label})`,
 			state.entries.every(
@@ -165,15 +165,12 @@ for (const [label, viewport] of [
 			),
 			JSON.stringify(state.entries),
 		);
-	for (const [name, state] of [
-		["home", home],
-		["field-notes", notes],
-	])
 		check(
 			`${name}'s last change can be scrolled to (${label})`,
 			state.lastReachable === true,
 			String(state.lastReachable),
 		);
+	}
 	check(
 		`home links to the full list on Field Notes (${label})`,
 		home.more === true,

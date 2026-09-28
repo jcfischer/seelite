@@ -54,6 +54,8 @@ describe("the changelog (#573)", () => {
 		expect(changelogDate("2026-01-01")).toBe("1 Jan 2026");
 		expect(changelogDate("2025-12-31")).toBe("31 Dec 2025");
 		expect(() => changelogDate("2026-13-01")).toThrow();
+		expect(() => changelogDate("2026-09-28x")).toThrow();
+		expect(() => changelogDate("2026-9-28")).toThrow();
 	});
 
 	test("marks each entry with a machine-readable date", () => {
@@ -86,7 +88,10 @@ describe("the changelog (#573)", () => {
 			expect(candidate.content).not.toContain("github.com");
 			for (const entry of CHANGELOG)
 				if (entry.node !== undefined)
-					expect(candidate.content).not.toContain(`#${entry.node}`);
+					// Bare or with a hash: the number in any form, as a whole number.
+					expect(candidate.content).not.toMatch(
+						new RegExp(`(?<![\\d.])${entry.node}(?![\\d.])`),
+					);
 		}
 	});
 
