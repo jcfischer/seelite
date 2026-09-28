@@ -114,7 +114,49 @@ export const SOUND_SET = Object.freeze([
 	},
 	{ name: "landed-hull", seconds: 0.4, cue: { kind: "hitLanded", on: "hull" } },
 	...weaponTimelines(),
+	// #534's flash has one cue and no schedule to fly; the rest of the exit
+	// is heard in the jumps below, through the real schedule.
+	{
+		name: "witchspace-flash-boom",
+		seconds: 1.4,
+		cue: { kind: "witchspaceFlash", voice: "boom" },
+	},
+	{
+		name: "witchspace-flash-glass",
+		seconds: 1.4,
+		cue: { kind: "witchspaceFlash", voice: "glass" },
+	},
+	...witchspaceTimelines(),
 ]);
+
+/**
+ * #534's jumps, flown through the real schedule (`witchspaceCues`) and the
+ * real flight bed, so what is heard is what a jump plays: the wind-up from
+ * half a second in, the cut, and the exit to the rift's close. `arms` is a
+ * `?witchsound=` value.
+ *
+ * The first is the defaults. Each after it flips one arm, so a listen
+ * compares one question at a time rather than a grid. The pilot burns at half
+ * before the cut and is at rest after it, as `clearFlightSession` leaves a
+ * ship that has jumped: so the bed after the cut is the hum, which is what
+ * the `engine` arm ducks.
+ */
+function witchspaceTimelines() {
+	const line = (name, seconds, arms, from = "jump") => ({
+		name,
+		seconds,
+		witchspace: { arms, from },
+	});
+	return [
+		line("jump", 12, ""),
+		line("jump-swallow", 12, "swallow"),
+		line("jump-glass", 12, "glass"),
+		line("jump-bed", 12, "bed"),
+		line("jump-noduck", 12, "noduck"),
+		line("arrival", 9, "", "arrival"),
+		line("arrival-quiet", 9, "arrivalquiet", "arrival"),
+	];
+}
 
 /**
  * #545's duels, flown by a scripted timeline through the real
@@ -330,6 +372,7 @@ export async function renderInPage({
 		: [];
 	if (
 		(entry.flight && typeof fx.flight !== "function") ||
+		(entry.witchspace && !knownKinds.includes("witchspaceRide")) ||
 		(entry.weapons && typeof fx.weapons !== "function") ||
 		(entry.cue && !entry.legacy && !modern) ||
 		(entry.cue && modern && !knownKinds.includes(entry.cue.kind))
@@ -522,6 +565,59 @@ export async function renderInPage({
 			state = step.state;
 			for (const cue of step.cues) fx.play(cue);
 			fx.weapons(step.mix);
+		});
+	}
+	if (entry.witchspace) {
+		const W = await import("/src/witchspace.ts");
+		const { witchspaceSoundArms } = await import("/src/witchspace-sound.ts");
+		const { flightSound, flightSoundArms, QUIET_FLIGHT } = await import(
+			"/src/flight-sound.ts"
+		);
+		const { arms, unknown } = witchspaceSoundArms(entry.witchspace.arms);
+		if (unknown.length)
+			throw new Error(`${entry.name}: arms ${entry.witchspace.arms}`);
+		const flightArms = flightSoundArms("noclicks").arms;
+		const startS = 0.5;
+		let ws = W.idleWitchspace();
+		let started = false;
+		let cut = false;
+		let flight = QUIET_FLIGHT;
+		return renderSteps(1 / 50, (t, dt) => {
+			let next;
+			if (!started && t >= startS) {
+				started = true;
+				next =
+					entry.witchspace.from === "arrival"
+						? W.arriveWitchspace()
+						: W.beginWitchspace();
+			} else if (ws.kind === "entry" && ws.leftS <= 0) {
+				// The charge fires and the jump is taken at the end of the frame.
+				next = W.jumpedWitchspace();
+			} else next = W.stepWitchspace(ws, dt);
+			for (const cue of W.witchspaceCues(ws, next, arms)) fx.play(cue);
+			if (next.kind === "exit") cut = true;
+			ws = next;
+			const burning = !cut && entry.witchspace.from === "jump";
+			const step = flightSound(
+				flight,
+				{
+					docked: false,
+					regime: "normal",
+					spool: 0,
+					lever: burning ? 0.5 : 0,
+					drive: burning ? 0.5 : 0,
+					rcs: 0,
+					hullShare: 1,
+					cruiseSpeed: 0,
+					held: false,
+					hushed: arms.engine === "duck" && W.witchspaceControlHeld(ws),
+				},
+				flightArms,
+				dt,
+			);
+			flight = step.state;
+			for (const cue of step.cues) fx.play(cue);
+			fx.flight(step.mix);
 		});
 	}
 	if (entry.flight) {

@@ -132,6 +132,7 @@ import {
 	weaponSound,
 	weaponSoundArms,
 } from "./weapon-sound";
+import { witchspaceSoundArms } from "./witchspace-sound";
 import { CombatPrototypeRig } from "./combat-rig";
 import {
 	type FlightSoundState,
@@ -1095,6 +1096,17 @@ const WEAPON_SOUND = weaponSoundArms(
 if (WEAPON_SOUND.unknown.length)
 	console.warn(
 		`?weaponsound: unknown ${WEAPON_SOUND.unknown.join(", ")}; playing the defaults for those`,
+	);
+/**
+ * A jump by ear after the cut (#534), from `?witchsound=`: comma-separated
+ * tokens. `witchspace-sound.ts` lists them.
+ */
+const WITCH_SOUND = witchspaceSoundArms(
+	new URLSearchParams(window.location.search).get("witchsound"),
+);
+if (WITCH_SOUND.unknown.length)
+	console.warn(
+		`?witchsound: unknown ${WITCH_SOUND.unknown.join(", ")}; playing the defaults for those`,
 	);
 const RAIDERS_OFF =
 	RAIDER_PARAM !== null && ["off", "0", "false"].includes(RAIDER_PARAM);
@@ -10983,8 +10995,10 @@ class Game {
 		// And no transition: no effect held, no cue sounding, no rift left over.
 		this.witchspaceHeldAt = null;
 		this.cruiseLightHeldAt = null;
+		// Both through `setWitchspace`, so an exit cut short stops its cues: the
+		// ride and the rift run for seconds, and an abort leaves an exit as it is.
 		this.setWitchspace(abortWitchspace(this.witchspace));
-		this.witchspace = idleWitchspace();
+		this.setWitchspace(idleWitchspace());
 		this.clearArrivalRift();
 		this.chargeAu = this.chargeCapacityAu;
 		// Selection is not written by the flight path, so the coverage scan does
@@ -12006,7 +12020,8 @@ class Game {
 	 * through here, so a cue cannot be forgotten at one of the four call sites.
 	 */
 	private setWitchspace(next: WitchspaceState) {
-		for (const cue of witchspaceCues(this.witchspace, next)) this.play(cue);
+		for (const cue of witchspaceCues(this.witchspace, next, WITCH_SOUND.arms))
+			this.play(cue);
 		this.witchspace = next;
 	}
 
@@ -12055,7 +12070,12 @@ class Game {
 					this.cruiseParams.vMaxKms,
 				),
 				held: this.clockHeld,
-				hushed: this.openingActive,
+				// The opening is silent (#544), and on #534's `duck` arm the bed is
+				// gone from the cut until the pilot's hands come back.
+				hushed:
+					this.openingActive ||
+					(WITCH_SOUND.arms.engine === "duck" &&
+						witchspaceControlHeld(this.witchspace)),
 			},
 			FLIGHT_SOUND.arms,
 			dt,
@@ -12183,8 +12203,9 @@ class Game {
 	 * It plays the whole exit exactly as after a jump — the flash in the dark,
 	 * the tunnel out of the point and back into it, the sky unfolding, the rift
 	 * opening behind the ship where it stands, and the pilot's hands held until
-	 * the sky is back — and nothing is heard, because there was no wind-up. **The first day opens on a cinematic** (#530) calls this, and
-	 * films it from outside.
+	 * the sky is back. Whether it is heard is #534's `arrival` arm: the exit's
+	 * cues, or nothing, because there was no wind-up. **The first day opens on
+	 * a cinematic** (#530) calls this, and films it from outside.
 	 */
 	playArrival() {
 		// A charge in flight is ended first: left running, its hum and sweep play

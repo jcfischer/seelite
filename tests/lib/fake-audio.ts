@@ -97,6 +97,7 @@ export class FakeContext {
 			buffer: null,
 			loop: false,
 			start() {},
+			stop() {},
 		});
 		this.sources.push(s);
 		return s;

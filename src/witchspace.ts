@@ -35,6 +35,10 @@
 import { HYPERSPACE_SWEEP_S } from "./audio";
 import type { Cue } from "./audio-cue";
 import { JUMP_CHARGE_S } from "./hyperspace";
+import {
+	DEFAULT_WITCHSPACE_ARMS,
+	type WitchspaceSoundArms,
+} from "./witchspace-sound";
 
 /**
  * The timeline. **Proposals, judged on the strip and in flight** — #532 names
@@ -92,6 +96,14 @@ export const WITCHSPACE = Object.freeze({
 	get controlBackS() {
 		return this.exitS;
 	},
+	/**
+	 * How often a ring of light passes on the tunnel wall, Hz: the ride's
+	 * `rings` voice pulses with it (#534). The shader draws the rings as
+	 * `sin(wallDepth * 3.5 - t * 22.0)` with `t` the phase in seconds, so one
+	 * passes every 2π/22 s; `tests/witchspace.test.ts` reads that 22 out of
+	 * `WITCHSPACE_TUNNEL_FRAGMENT` rather than trusting this copy.
+	 */
+	ringHz: 22 / (2 * Math.PI),
 	/** The arrival rift opens with the new light, and is gone by here. */
 	riftEndS: 7.5,
 	/**
@@ -138,16 +150,29 @@ export type WitchspaceState =
 	| { kind: "idle" }
 	/** The wind-up. `leftS` is seconds to the cut, and holds at zero. */
 	| { kind: "entry"; leftS: number }
-	/** The new system. `sinceS` is seconds from the cut. */
-	| { kind: "exit"; sinceS: number }
+	/**
+	 * The new system. `sinceS` is seconds from the cut. `from` is what began
+	 * it — a jump, or an arrival nobody watched depart — which the look does not
+	 * read and the cues do (#534's `arrival` arm).
+	 */
+	| { kind: "exit"; sinceS: number; from: "jump" | "arrival" }
 	/** A cancelled or refused entry fading from what was on screen. */
 	| { kind: "retract"; from: WitchspaceLook; sinceS: number };
 
-/** The cues `witchspaceCues` can emit. The stop silences both of the others.
- *  The hum carries its own length, so the engine never reads this schedule. */
+/** The cues `witchspaceCues` can emit. The stop silences every other one.
+ *  Each carries its own timing, so the engine never reads this schedule. */
 export type WitchspaceCue = Extract<
 	Cue,
-	{ kind: "witchspaceHum" | "witchspaceSweep" | "witchspaceStop" }
+	{
+		kind:
+			| "witchspaceHum"
+			| "witchspaceSweep"
+			| "witchspaceFlash"
+			| "witchspaceRide"
+			| "witchspaceUnfold"
+			| "witchspaceRift"
+			| "witchspaceStop";
+	}
 >;
 
 export const idleWitchspace = (): WitchspaceState => ({ kind: "idle" });
@@ -173,13 +198,18 @@ export const beginWitchspace = (): WitchspaceState =>
 export const jumpedWitchspace = (): WitchspaceState => ({
 	kind: "exit",
 	sinceS: 0,
+	from: "jump",
 });
 
 /**
  * The exit with no entry: an arrival nobody watched depart. #530's opening
  * films one, and #262's NPC arrivals can reuse the rift it draws.
  */
-export const arriveWitchspace = jumpedWitchspace;
+export const arriveWitchspace = (): WitchspaceState => ({
+	kind: "exit",
+	sinceS: 0,
+	from: "arrival",
+});
 
 /**
  * The entry ends without a jump: damage cancelled the charge, the ship docked,
@@ -205,7 +235,7 @@ export function stepWitchspace(
 			const sinceS = state.sinceS + Math.min(dt, WITCHSPACE.maxExitDtS);
 			return sinceS >= WITCHSPACE.exitEndS
 				? idleWitchspace()
-				: { kind: "exit", sinceS };
+				: { ...state, sinceS };
 		}
 		case "retract": {
 			const sinceS = state.sinceS + dt;
@@ -231,7 +261,7 @@ export function witchspacePhase(state: WitchspaceState): number | null {
 export function witchspaceAtPhase(t: number): WitchspaceState {
 	return t < 0
 		? { kind: "entry", leftS: Math.min(JUMP_CHARGE_S, -t) }
-		: { kind: "exit", sinceS: t };
+		: { kind: "exit", sinceS: t, from: "jump" };
 }
 
 const clamp01 = (x: number) => Math.min(1, Math.max(0, x));
@@ -317,36 +347,86 @@ export function witchspaceControlHeld(state: WitchspaceState): boolean {
 }
 
 /**
- * The cues a transition from `prev` to `next` owes (D3).
+ * The cues a transition from `prev` to `next` owes: D3's two before the cut,
+ * and #534's four after it.
  *
  * - the hum when a wind-up begins: the low charge hum for its first `humS`.
  * - the sweep on the step the entry crosses `sweepS` from the cut, so its end
- *   lands on the cut.
- * - the stop when an entry ends without a jump. A sweep that played on after a
- *   cancel would announce a jump that did not happen.
+ *   lands on the cut. On the `swallow` arm it carries where the dark closes,
+ *   in seconds from its own start, so it is drawn down into the point.
+ * - the flash and the ride on the step the exit begins: the flash on the cut,
+ *   and the ride for the tunnel's whole life, carrying its shape.
+ * - the unfolding and the rift on the step the exit crosses `unfoldAtS`: the
+ *   new light arriving, and the rift that opens with it and closes behind.
+ * - the stop when an entry ends without a jump — a sweep that played on after
+ *   a cancel would announce a jump that did not happen — and when an exit ends
+ *   at all: at its natural end every voice has already rung out and the stop
+ *   takes nothing, and a reset, a new charge or a second arrival cut it short.
  *
- * The arrival-only path cues nothing: there was no wind-up to hear.
+ * Each exit cue fires on its own threshold rather than all at the cut, because
+ * the exit clock clamps a long frame (`maxExitDtS`) and the audio clock does
+ * not: a rebuild's stall would leave one long cue ahead of what is drawn.
+ *
+ * The arrival-only path plays the exit's cues on the `arrivalsound` arm and
+ * nothing on `arrivalquiet`: there was no wind-up to hear.
  */
 export function witchspaceCues(
 	prev: WitchspaceState,
 	next: WitchspaceState,
+	arms: WitchspaceSoundArms = DEFAULT_WITCHSPACE_ARMS,
 ): WitchspaceCue[] {
-	const hum: WitchspaceCue = {
-		kind: "witchspaceHum",
-		seconds: WITCHSPACE.humS,
-	};
-	const sweep: WitchspaceCue = { kind: "witchspaceSweep" };
+	const W = WITCHSPACE;
+	const hum: WitchspaceCue = { kind: "witchspaceHum", seconds: W.humS };
+	const sweep = (leftS: number): WitchspaceCue =>
+		arms.before === "swallow"
+			? {
+					kind: "witchspaceSweep",
+					swallow: {
+						fromS: Math.max(0, leftS - W.darkInS),
+						toS: Math.max(0, leftS - W.pointS),
+					},
+				}
+			: { kind: "witchspaceSweep" };
+	const stop: WitchspaceCue = { kind: "witchspaceStop" };
+	const endsExit = prev.kind === "exit" && next.kind !== "exit";
 	if (next.kind === "entry" && prev.kind !== "entry") {
-		return next.leftS <= WITCHSPACE.sweepS ? [hum, sweep] : [hum];
+		const begun = next.leftS <= W.sweepS ? [hum, sweep(next.leftS)] : [hum];
+		return endsExit ? [stop, ...begun] : begun;
 	}
 	if (prev.kind === "entry" && next.kind === "entry") {
-		return prev.leftS > WITCHSPACE.sweepS && next.leftS <= WITCHSPACE.sweepS
-			? [sweep]
+		return prev.leftS > W.sweepS && next.leftS <= W.sweepS
+			? [sweep(next.leftS)]
 			: [];
 	}
-	if (prev.kind === "entry" && next.kind === "retract")
-		return [{ kind: "witchspaceStop" }];
-	return [];
+	if (prev.kind === "entry" && next.kind === "retract") return [stop];
+	if (endsExit) return [stop];
+	if (next.kind !== "exit") return [];
+	// A new exit: from the cut, or an arrival — which, over an exit still
+	// running, takes what that one was playing first.
+	const fresh = prev.kind !== "exit" || next.sinceS < prev.sinceS;
+	const heard = next.from === "jump" || arms.arrival === "arrivalsound";
+	const cues: WitchspaceCue[] = [];
+	if (fresh && prev.kind === "exit") cues.push(stop);
+	if (!heard) return cues;
+	const since = fresh ? -1 : (prev as { sinceS: number }).sinceS;
+	if (fresh)
+		cues.push(
+			{ kind: "witchspaceFlash", voice: arms.flash },
+			{
+				kind: "witchspaceRide",
+				voice: arms.ride,
+				seconds: W.tunnelGoneS - next.sinceS,
+				openS: W.tunnelOpenS,
+				closeAtS: W.tunnelCloseS - next.sinceS,
+				ringHz: W.ringHz,
+			},
+		);
+	if (since < W.unfoldAtS && next.sinceS >= W.unfoldAtS)
+		cues.push(
+			{ kind: "witchspaceUnfold", seconds: W.exitS - W.unfoldAtS },
+			{ kind: "witchspaceRift", seconds: W.riftEndS - W.unfoldAtS },
+		);
+	return cues;
 }
 
 /**
