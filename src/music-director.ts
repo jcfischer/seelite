@@ -31,6 +31,10 @@ import {
 	type MusicLevel,
 	stationBed,
 } from "./music-generate";
+import {
+	flightBed as legacyFlightBed,
+	stationBed as legacyStationBed,
+} from "./music-generate-legacy";
 import type { MusicCommand } from "./music-score";
 import type { StationType } from "./station";
 
@@ -90,18 +94,21 @@ const rank = (l: MusicLevel) => FLIGHT_LEVELS.indexOf(l);
 /**
  * The prototype's arms, flown by ear from `?music=`: `off`; a level name,
  * which holds the music at that level whatever the signals say, for
- * listening; and `lowhull-always`, the arm the principal did not choose —
- * low condition is combat even with no threat.
+ * listening; `lowhull-always`, the arm the principal did not choose —
+ * low condition is combat even with no threat; and `legacy`, the first bed
+ * the principal heard as boring (D12), kept to compare against.
  */
 export interface MusicArms {
 	readonly off: boolean;
 	readonly force: MusicLevel | null;
 	readonly lowHull: "threat" | "always";
+	readonly legacy: boolean;
 }
 export const DEFAULT_MUSIC_ARMS: MusicArms = {
 	off: false,
 	force: null,
 	lowHull: "threat",
+	legacy: false,
 };
 
 export function musicArms(value: string | null): {
@@ -114,6 +121,7 @@ export function musicArms(value: string | null): {
 		if (!token) continue;
 		if (token === "off") arms = { ...arms, off: true };
 		else if (token === "lowhull-always") arms = { ...arms, lowHull: "always" };
+		else if (token === "legacy") arms = { ...arms, legacy: true };
 		else if ((FLIGHT_LEVELS as readonly string[]).includes(token))
 			arms = { ...arms, force: token as MusicLevel };
 		else unknown.push(token);
@@ -146,7 +154,9 @@ export interface MusicState {
 	readonly bed: "none" | "flight" | "station";
 	/** The slot holding this system's flight bed. */
 	readonly flightId: FlightId | null;
-	readonly flightSeed: number | null;
+	/** Which bed the flight slot holds: the system, and first or second bed
+	 *  (`legacy`), so a change of either loads a new one. */
+	readonly flightKey: string | null;
 	readonly variant: number;
 	readonly stationKey: string | null;
 	readonly level: MusicLevel;
@@ -160,7 +170,7 @@ export interface MusicState {
 export const initialMusicState = (): MusicState => ({
 	bed: "none",
 	flightId: null,
-	flightSeed: null,
+	flightKey: null,
 	variant: 0,
 	stationKey: null,
 	level: "calm",
@@ -198,14 +208,18 @@ export function stepMusic(
 
 	if (r.scene === "docked") {
 		const role = r.stationRole ?? "trade";
-		const key = `${r.systemSeed >>> 0}/${role}`;
+		const key = `${r.systemSeed >>> 0}/${role}/${arms.legacy ? "legacy" : "second"}`;
 		if (s.bed === "station" && s.stationKey === key)
 			return { state: s, commands: cmds };
 		if (s.stationKey !== key)
 			cmds.push({
 				type: "load",
 				id: "station",
-				song: stationBed(r.systemSeed, role, 0),
+				song: (arms.legacy ? legacyStationBed : stationBed)(
+					r.systemSeed,
+					role,
+					0,
+				),
 			});
 		cmds.push({
 			type: "crossfade",
@@ -221,15 +235,19 @@ export function stepMusic(
 
 	const target = dangerLevel(r, arms);
 	// Into flight: from silence, from the station, or into a new system.
-	if (s.bed !== "flight" || s.flightSeed !== r.systemSeed) {
+	const flightKey = `${r.systemSeed >>> 0}/${arms.legacy ? "legacy" : "second"}`;
+	if (s.bed !== "flight" || s.flightKey !== flightKey) {
 		let { flightId, variant } = s;
-		if (s.flightSeed !== r.systemSeed || flightId === null) {
+		if (s.flightKey !== flightKey || flightId === null) {
 			flightId = other(flightId);
 			variant = 0;
 			cmds.push({
 				type: "load",
 				id: flightId,
-				song: flightBed(r.systemSeed, variant),
+				song: (arms.legacy ? legacyFlightBed : flightBed)(
+					r.systemSeed,
+					variant,
+				),
 			});
 		}
 		cmds.push(
@@ -248,7 +266,7 @@ export function stepMusic(
 				...s,
 				bed: "flight",
 				flightId,
-				flightSeed: r.systemSeed,
+				flightKey,
 				variant,
 				level: target,
 				fallS: 0,
@@ -302,7 +320,10 @@ export function stepMusic(
 			{
 				type: "load",
 				id: flightId,
-				song: flightBed(r.systemSeed, variant),
+				song: (arms.legacy ? legacyFlightBed : flightBed)(
+					r.systemSeed,
+					variant,
+				),
 			},
 			{
 				type: "crossfade",

@@ -91,8 +91,18 @@ function adaptiveTimelines() {
 			[36, { encounter: "contest" }],
 			[54, { raiderFiring: true }],
 		]),
+		// The second bed against the first (D12): the same system held at calm
+		// for 100 s, and the same station, each way. `legacy` is the first bed.
+		tune("music-calm", 100, [[0, { systemSeed: 1234 }]], "calm"),
+		tune("music-calm-legacy", 100, [[0, { systemSeed: 1234 }]], "calm,legacy"),
+		tune(
+			"music-station-trade-legacy",
+			60,
+			[[0, { scene: "docked", stationRole: "trade", systemSeed: 1234 }]],
+			"legacy",
+		),
 		...["trade", "refinery", "shipyard", "outpost"].map((role) =>
-			tune(`music-station-${role}`, 24, [
+			tune(`music-station-${role}`, 60, [
 				[0, { scene: "docked", stationRole: role, systemSeed: 1234 }],
 			]),
 		),

@@ -244,7 +244,13 @@ describe("the prototype's arms, from ?music=", () => {
 
 	test("off, a forced level and the losing low-hull arm parse", () => {
 		const { arms, unknown } = musicArms("threat, lowhull-always,bogus");
-		expect(arms).toEqual({ off: false, force: "threat", lowHull: "always" });
+		expect(arms).toEqual({
+			off: false,
+			force: "threat",
+			lowHull: "always",
+			legacy: false,
+		});
+		expect(musicArms("legacy").arms.legacy).toBe(true);
 		expect(unknown).toEqual(["bogus"]);
 		expect(musicArms("off").arms.off).toBe(true);
 	});
@@ -258,6 +264,17 @@ describe("the prototype's arms, from ?music=", () => {
 	test("lowhull-always holds combat with no threat", () => {
 		const arms = { ...DEFAULT_MUSIC_ARMS, lowHull: "always" as const };
 		expect(dangerLevel(at({ hullShare: 0.1 }), arms)).toBe("combat");
+	});
+
+	test("legacy loads the first bed, the default the second", () => {
+		const legacy = { ...DEFAULT_MUSIC_ARMS, legacy: true };
+		const song = (arms: typeof legacy) => {
+			const load = stepMusic(initialMusicState(), calm, 0.1, arms).commands[0];
+			if (load.type !== "load") throw new Error(`first command ${load.type}`);
+			return load.song;
+		};
+		expect(song(legacy).sections[0].bars).toBe(16);
+		expect(song(DEFAULT_MUSIC_ARMS).sections[0].bars).toBeGreaterThan(16);
 	});
 
 	test("off plays nothing, and fades out what was playing", () => {
@@ -316,9 +333,24 @@ test("a rise just after a fresh variant is asked for still lands on the next bar
 	}
 	const bpm = flightBed(calm.systemSeed, 0).tempo[0].bpm;
 	const barFrames = (4 * 60 * SR) / bpm;
-	const lead = heard.find((h) => h.part === "lead" && h.frame >= riseAt);
-	expect(lead).toBeDefined();
-	expect((lead?.frame ?? Infinity) - riseAt).toBeLessThanOrEqual(
-		barFrames + 128,
+	// A part only threat and combat play: the second bed's calm can carry its
+	// motif on `lead`, which would pass this without any rise. Threat's first
+	// hat is half a beat after its line.
+	const hat = heard.find((h) => h.part === "hat" && h.frame >= riseAt);
+	expect(hat).toBeDefined();
+	expect((hat?.frame ?? Infinity) - riseAt).toBeLessThanOrEqual(
+		1.25 * barFrames + 128,
 	);
+	// Three minutes of the full engine, the reverb and the drone included.
+}, 30000);
+
+test("switching between the first and second bed loads the other one", () => {
+	const second = fly([[1, calm]]).state;
+	const legacy = { ...DEFAULT_MUSIC_ARMS, legacy: true };
+	const r = stepMusic(second, calm, 0.1, legacy);
+	const load = r.commands.find((c) => c.type === "load");
+	expect(load).toBeDefined();
+	if (load?.type !== "load") throw new Error("no load");
+	expect(load.song.sections[0].bars).toBe(16);
+	expect(r.commands.some((c) => c.type === "crossfade")).toBe(true);
 });

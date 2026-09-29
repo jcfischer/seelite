@@ -1,260 +1,353 @@
 /**
- * The generative bed (#548): a star system's music, written as a score at
- * runtime and played by the synth (#560).
+ * The generative bed, second form (#548 D12): authored fragments
+ * (`music-fragments.ts`) that a system's seed picks and develops, played on
+ * the synth's second voices (#560 D10).
  *
- * **What is authored and what is drawn (D8).** The rules are written here —
- * the modes, the progressions each level walks, how each part plays — and the
- * notes are drawn. A system's seed, under its own `DOMAIN.MUSIC` tag, gives it
- * a **theme**: a tonic, a bright mode, a tempo and a palette, so a system has
- * a recognisable sound and a revisit sounds familiar. A **variant** index
- * draws the notes inside that theme, so the director can bring in fresh
- * material without the key moving.
+ * The first bed (`music-generate-legacy.ts`, still `?music=legacy`) was heard
+ * as *super boring*: a random walk of chords, no motif, one rhythm, and one
+ * 16-bar loop the director held for minutes. This one answers each of those.
  *
- * **One song per system, one section per level (D4, D5).** `calm`, `wary`,
- * `threat` and `combat` share the tonic and the palette; each has its own
- * mode, darker as the level rises, its own tempo on the tempo map, and its
- * own parts — the stems that enter with the level. The director holds the
- * section its level names (`hold` on the transport) and jumps on a bar line.
- * `arp` is the cruise stem (D7): written into every section and faded in and
- * out by the director.
+ * - **A theme per system.** The seed fixes the key and bright mode (the
+ *   shared `musicTheme`), and here a motif, how far it is shifted, which
+ *   voice carries it, and an arpeggio shape — so a system has a tune, not
+ *   only a key. A **variant** keeps all of that and draws a new progression
+ *   and new ornaments, for the director's refresh.
+ * - **Calm is long and never loops inside itself.** The director holds a
+ *   section for as long as the level lasts, so a 16-bar section *is* a
+ *   16-bar loop. Calm is `CALM_BARS` long, and its layers run on co-prime
+ *   cycles, as Eno's airport music does: chords every 8 bars, the motif
+ *   every 7, strings every 13, glints every 5. No two stretches line up the
+ *   same way inside the section.
+ * - **The motif is developed.** Each statement follows `CALM_FORM`: the
+ *   theme, moved with the harmony, inverted, augmented, cut short,
+ *   backwards, and home again.
+ * - **The harmony goes somewhere.** A progression from the authored set,
+ *   repeated with one chord substituted and closed on the dominant, so the
+ *   held section leans back into its own top.
  *
- * **The station bed (D2, D8)** takes the system's key and bright mode in a
- * slower, sparser arrangement, and the station's role picks its texture.
+ * **Wary, threat and combat are the first bed's sections** until the calm
+ * and station beds pass the principal's ear (the order the prototype runs
+ * in); they share the new parts' names where they meet (`bell`, `lead`,
+ * `arp`) and play on the new voices there.
  *
- * Pure, and imports only the score's types and the seed arithmetic, so it is
- * held headless (`tests/music-generate.test.ts`).
+ * Pure, so `tests/music-generate.test.ts` holds it headless.
  */
-import { DOMAIN } from "./domains";
+import {
+	ARP_SHAPES,
+	CALM_FORM,
+	CALM_PROGRESSIONS,
+	CALM_SUBSTITUTE,
+	type Development,
+	MOTIFS,
+	type Motif,
+} from "./music-fragments";
+import {
+	FLIGHT_LEVELS,
+	FLIGHT_PARTS,
+	LEVEL_MODE,
+	LEVEL_TEMPO,
+	levelSection,
+	MODES,
+	type MusicLevel,
+	type MusicTheme,
+	musicTheme,
+	SECTION_BARS,
+	STATION_ROLES,
+	themeSeed,
+} from "./music-generate-legacy";
 import type { NoteEvent, PartSpec, Song } from "./music-score";
 import { mix, seededRand } from "./rng";
 import type { StationType } from "./station";
 
-/** Scale intervals from the tonic, one octave. */
-export const MODES = {
-	lydian: [0, 2, 4, 6, 7, 9, 11],
-	ionian: [0, 2, 4, 5, 7, 9, 11],
-	mixolydian: [0, 2, 4, 5, 7, 9, 10],
-	dorian: [0, 2, 3, 5, 7, 9, 10],
-	aeolian: [0, 2, 3, 5, 7, 8, 10],
-	harmonicMinor: [0, 2, 3, 5, 7, 8, 11],
-	phrygian: [0, 1, 3, 5, 7, 8, 10],
-} as const;
-export type ModeName = keyof typeof MODES;
+export {
+	FLIGHT_LEVELS,
+	LEVEL_MODE,
+	LEVEL_TEMPO,
+	MODES,
+	type ModeName,
+	type MusicLevel,
+	type MusicTheme,
+	musicTheme,
+	STATION_ROLES,
+} from "./music-generate-legacy";
 
-/** The four levels of danger, calm first (D4). */
-export const FLIGHT_LEVELS = ["calm", "wary", "threat", "combat"] as const;
-export type MusicLevel = (typeof FLIGHT_LEVELS)[number];
+/** Calm's length: long enough that the co-prime layers never line up twice
+ *  inside it. */
+export const CALM_BARS = 64;
+/** The station bed's length. */
+export const STATION_BARS = 32;
+/** Bars per chord in calm and at the station. */
+const CHORD_BARS = 8;
+/** The layer cycles, in bars: pairwise co-prime with each other. */
+const MOTIF_EVERY = 7;
+const STRINGS_EVERY = 13;
+const GLINT_EVERY = 5;
 
-/** The bright modes a system's calm is drawn from. */
-const CALM_MODES: readonly ModeName[] = [
-	"lydian",
-	"ionian",
-	"mixolydian",
-	"dorian",
-];
+/** The voices that carry a system's motif. */
+const CARRIERS = ["keys", "bell", "lead"] as const;
+type Carrier = (typeof CARRIERS)[number];
 
-/** The mode each level above calm is in: darker as the level rises (D5). */
-export const LEVEL_MODE: Readonly<
-	Record<Exclude<MusicLevel, "calm">, ModeName>
-> = { wary: "aeolian", threat: "harmonicMinor", combat: "phrygian" };
-
-/** Each level's tempo as a multiple of the theme's (D5). By ear. */
-export const LEVEL_TEMPO: Readonly<Record<MusicLevel, number>> = {
-	calm: 1,
-	wary: 1,
-	threat: 1.1,
-	combat: 1.25,
-};
-
-/** Bars per level section: four phrases of four. */
-export const SECTION_BARS = 16;
-
-export const STATION_ROLES: readonly StationType[] = [
-	"trade",
-	"refinery",
-	"shipyard",
-	"outpost",
-];
-
-/** What a system's seed fixes about its music (D8). */
-export interface MusicTheme {
-	/** Pitch class of the tonic, 0 = C. */
-	readonly tonic: number;
-	readonly calmMode: ModeName;
-	readonly bpm: number;
-	readonly padCutoffHz: number;
-	readonly bellRatio: number;
-	readonly bellIndex: number;
+/** What a system's seed fixes beyond its key (D12): its tune. */
+export interface MusicTune {
+	readonly motif: Motif;
+	/** Scale degrees the motif is shifted by. */
+	readonly shift: number;
+	readonly carrier: Carrier;
+	readonly arp: readonly number[];
+	/** The octave the motif sits in: 60 or 72, as a C. */
+	readonly register: number;
 }
 
-/** The root of every draw in this module: the system's seed, split by tag. */
-const themeSeed = (systemSeed: number) => mix(systemSeed >>> 0, DOMAIN.MUSIC);
+/** A stream of its own for the tune, apart from every variant's. */
+const TUNE_STREAM = 0x74756e65;
 
-const pick = <T>(rand: () => number, list: readonly T[]): T =>
-	list[Math.floor(rand() * list.length) % list.length];
-
-export function musicTheme(systemSeed: number): MusicTheme {
-	const rand = seededRand(themeSeed(systemSeed));
+export function musicTune(systemSeed: number): MusicTune {
+	const rand = seededRand(mix(themeSeed(systemSeed), TUNE_STREAM));
+	const pick = <T>(list: readonly T[]) =>
+		list[Math.floor(rand() * list.length) % list.length];
 	return {
-		tonic: Math.floor(rand() * 12) % 12,
-		calmMode: pick(rand, CALM_MODES),
-		bpm: Math.round(66 + rand() * 16),
-		padCutoffHz: Math.round(700 + rand() * 900),
-		bellRatio: pick(rand, [2, 3, 3.5, 1.5, 4]),
-		bellIndex: 1.2 + rand() * 1.4,
+		motif: pick(MOTIFS),
+		shift: Math.floor(rand() * 3),
+		carrier: pick(CARRIERS),
+		arp: pick(ARP_SHAPES),
+		register: rand() < 0.5 ? 60 : 72,
 	};
 }
 
-/** The pitch of a scale degree above `base`, where `base` is a tonic. */
-const degree = (mode: readonly number[], base: number, d: number) =>
-	base + 12 * Math.floor(d / 7) + mode[((d % 7) + 7) % 7];
-
-/** A chord's pitch classes voiced upward from `lo`, closest first. */
-const voice = (pitches: readonly number[], lo: number) =>
-	pitches.map((p) => lo + ((((p - lo) % 12) + 12) % 12)).sort((a, b) => a - b);
-
-/** The chords a level walks, as scale degrees of its mode: tonic first. */
-const PROGRESSIONS: Readonly<Record<MusicLevel, readonly number[]>> = {
-	calm: [0, 3, 4, 5, 1],
-	wary: [0, 5, 3, 6],
-	threat: [0, 3, 4, 5],
-	combat: [0, 1, 0, 6],
-};
-/** Bars per chord at each level: calm breathes, combat drives. */
-const CHORD_BARS: Readonly<Record<MusicLevel, number>> = {
-	calm: 2,
-	wary: 2,
-	threat: 1,
-	combat: 1,
-};
-
-const FLIGHT_PARTS = (t: MusicTheme): Record<string, PartSpec> => ({
-	pad: {
-		voice: "pad",
-		level: 0.3,
-		attackS: 1.6,
-		releaseS: 2.6,
-		cutoffHz: t.padCutoffHz,
+/** The parts the second bed plays, on #560's second voices. By ear: the
+ *  showcase the principal heard, softened for a bed. */
+const PARTS: Readonly<Record<string, PartSpec>> = {
+	drone: { voice: "drone", level: 0.4, reverb: 0.5 },
+	strings: {
+		voice: "analog",
+		level: 0.26,
+		unison: 4,
+		detune: 0.15,
+		spread: 1,
+		attackS: 2.5,
+		sustain: 0.9,
+		releaseS: 3,
+		cutoffHz: 1300,
+		envAmount: 0.8,
+		envDecayS: 4,
+		vibrato: 0.06,
+		reverb: 0.6,
 	},
-	bass: { voice: "pluck", level: 0.5, cutoffHz: 600, decayS: 3 },
+	keys: { voice: "keys", level: 0.34, reverb: 0.45, echo: 0.3 },
 	bell: {
 		voice: "fm",
 		level: 0.2,
-		ratio: t.bellRatio,
-		index: t.bellIndex,
-		decayS: 2.4,
-		sustain: 0,
-		feedback: 0.05,
+		ratio: 3.5,
+		index: 3,
+		indexDecayS: 0.8,
+		sustain: 0.3,
+		decayS: 3,
+		releaseS: 1.5,
+		reverb: 0.5,
+		echo: 0.3,
+		pan: 0.3,
 	},
-	arp: { voice: "pluck", level: 0.2, cutoffHz: 2400, decayS: 0.7 },
-	pulse: { voice: "pluck", level: 0.42, cutoffHz: 450, decayS: 0.35 },
 	lead: {
-		voice: "fm",
+		voice: "analog",
 		level: 0.22,
-		ratio: 1,
-		index: 1.4,
-		attackS: 0.02,
-		decayS: 0.9,
-		sustain: 0.35,
-		releaseS: 0.3,
-		feedback: 0.25,
+		unison: 2,
+		detune: 0.05,
+		attackS: 0.25,
+		sustain: 0.8,
+		releaseS: 1,
+		cutoffHz: 1000,
+		envAmount: 0.8,
+		envDecayS: 1.5,
+		vibrato: 0.12,
+		reverb: 0.5,
+		echo: 0.35,
 	},
-	kick: { voice: "tone", level: 0.6 },
-	hat: { voice: "noise", level: 0.13 },
-});
+	glint: {
+		voice: "keys",
+		level: 0.18,
+		decayS: 2,
+		pan: -0.35,
+		reverb: 0.6,
+		echo: 0.4,
+	},
+	arp: {
+		voice: "keys",
+		level: 0.2,
+		decayS: 0.8,
+		releaseS: 0.2,
+		reverb: 0.3,
+		echo: 0.25,
+	},
+};
 
-/** One level's section: its chords, and each part as the level plays it. */
-function levelSection(
-	level: MusicLevel,
+/** The room both beds play in. */
+const SPACE = { reverbS: 5, echoBeats: 0.75, echoFeedback: 0.4 };
+
+/** Degree `d` of `mode` over `tonic`, in the octave whose C is `base`. */
+const degree = (
 	mode: readonly number[],
 	tonic: number,
-	rand: () => number,
-): NoteEvent[] {
-	const out: NoteEvent[] = [];
-	const push = (
+	base: number,
+	d: number,
+) => base + tonic + 12 * Math.floor(d / 7) + mode[((d % 7) + 7) % 7];
+
+/** The motif as a statement takes it: degrees and beats, developed. */
+function develop(
+	m: Motif,
+	how: Development,
+	shift: number,
+	chordRoot: number,
+): { degrees: number[]; beats: number[] } {
+	const d = m.degrees.map((x) => x + shift);
+	const b = [...m.beats];
+	switch (how) {
+		case "theme":
+			return { degrees: d, beats: b };
+		case "transposed":
+			return { degrees: d.map((x) => x + chordRoot), beats: b };
+		case "inverted":
+			return { degrees: d.map((x) => 2 * d[0] - x), beats: b };
+		case "augmented":
+			return { degrees: d, beats: b.map((x) => x * 1.5) };
+		case "fragment": {
+			const n = Math.min(3, d.length);
+			const beats = b.slice(0, n);
+			beats[n - 1] *= 2;
+			return { degrees: d.slice(0, n), beats };
+		}
+		case "retrograde":
+			return { degrees: [...d].reverse(), beats: [...b].reverse() };
+	}
+}
+
+/** Collects events, with a bar-and-beat position from a running beat count. */
+function writer(beatsPerBar: number) {
+	const events: NoteEvent[] = [];
+	const at = (
 		part: string,
-		bar: number,
 		beat: number,
 		dur: number,
 		pitch: number,
 		vel: number,
-	) => out.push({ part, bar, beat, dur, pitch, vel });
-	const prog = PROGRESSIONS[level];
-	const per = CHORD_BARS[level];
-	const bass = 36 + tonic;
-	// Tonic on each phrase's first chord; the rest walk the progression.
-	let chord = 0;
-	for (let bar = 0; bar < SECTION_BARS; bar++) {
-		if (bar % per === 0) chord = bar % 4 === 0 ? 0 : pick(rand, prog.slice(1));
-		const root = degree(mode, bass, chord);
-		const triad = [0, 2, 4, 6].map((k) => degree(mode, bass, chord + k));
-		const first = bar % per === 0;
-		if (first) {
-			// The pad holds the chord across its bars, a seventh on top.
-			const pad = voice(triad, 55);
-			for (const p of pad) push("pad", bar, 0, 4 * per, p, 0.55);
-			if (level !== "combat") push("bass", bar, 0, 4 * per, root, 0.6);
-		}
-		// The travel stem: eighths up and down the chord, faded by the director.
-		const arp = voice(triad, 62);
-		const shape = [0, 1, 2, 3, 2, 1, 0, 2];
-		for (let i = 0; i < 8; i++)
-			push("arp", bar, i / 2, 0.5, arp[shape[i]], i % 2 ? 0.3 : 0.45);
+	) =>
+		events.push({
+			part,
+			bar: Math.floor(beat / beatsPerBar),
+			beat: beat % beatsPerBar,
+			dur,
+			pitch,
+			vel,
+		});
+	return { events, at };
+}
 
-		if (level === "calm" || level === "wary") {
-			// The bell: a sparse line from the chord, high and quiet.
-			const chance = level === "calm" ? 0.55 : 0.3;
-			if (rand() < chance) {
-				const n = 1 + Math.floor(rand() * 3);
-				const beats = [0, 1.5, 2, 3].filter(() => rand() < 0.6).slice(0, n);
-				for (const b of beats)
-					push(
-						"bell",
-						bar,
-						b,
-						2,
-						degree(mode, 72 + tonic, pick(rand, [0, 2, 4, 7, 9])),
-						0.3 + rand() * 0.3,
-					);
-			}
+/** A long, layered bed over `chords` (scale-degree roots, one per
+ *  `CHORD_BARS`), each layer on its own cycle. Which layers play is the
+ *  caller's: calm has them all, each station role a few. */
+function bed(opts: {
+	theme: MusicTheme;
+	tune: MusicTune;
+	chords: readonly number[];
+	bars: number;
+	rand: () => number;
+	carrier: string | null;
+	motifEvery: number;
+	strings: number | null;
+	glint: number | null;
+	arp: boolean;
+	formOffset: number;
+	lowDrone?: boolean;
+}): NoteEvent[] {
+	const { theme, tune, chords, bars, rand } = opts;
+	const B = 4;
+	const mode = MODES[theme.calmMode];
+	const at = (b: number) => chords[Math.floor(b / CHORD_BARS) % chords.length];
+	const deg = (base: number, d: number) => degree(mode, theme.tonic, base, d);
+	const w = writer(B);
+
+	// The drone: root, fifth and octave, one chord per change, held to the next.
+	for (let b = 0; b < bars; b += CHORD_BARS) {
+		const r = at(b);
+		const len = CHORD_BARS * B;
+		w.at("drone", b * B, len, deg(36, r), 0.7);
+		w.at("drone", b * B, len, deg(36, r + 4), 0.55);
+		w.at("drone", b * B, len, deg(48, r), 0.5);
+		if (opts.lowDrone) w.at("drone", b * B, len, deg(24, r), 0.45);
+	}
+
+	// Strings: a chord now and then, held to the next change.
+	if (opts.strings)
+		for (let b = 3 % opts.strings; b < bars; b += opts.strings) {
+			const r = at(b);
+			const next = (Math.floor(b / CHORD_BARS) + 1) * CHORD_BARS;
+			const len = Math.min(24, (next - b) * B);
+			if (len < 8) continue;
+			for (const k of [0, 2, 4, 6])
+				w.at("strings", b * B, len, deg(48, r + k), 0.45);
 		}
-		if (level !== "calm") {
-			// The pulse: eighths on the root, accents moving with the level.
-			for (let i = 0; i < 8; i++) {
-				const accent = level === "combat" ? i % 3 === 0 : i % 4 === 0;
-				push("pulse", bar, i / 2, 0.4, root, accent ? 0.7 : 0.4);
-			}
-		}
-		if (level === "threat" || level === "combat") {
-			// The lead: a half-step motif round the tonic, a phrase per two bars.
-			if (bar % 2 === 0) {
-				const top = 60 + tonic;
-				const motif =
-					level === "threat"
-						? [0, mode[6] - 12, 0, mode[2]]
-						: [0, mode[1], 0, mode[1], mode[2], mode[1]];
-				const step = level === "threat" ? 1 : 0.5;
-				motif.forEach((iv, i) =>
-					push("lead", bar, i * step, step * 0.9, top + iv, 0.55),
+
+	// The motif, developed statement by statement.
+	if (opts.carrier) {
+		let s = 0;
+		for (let b = 1; b < bars; b += opts.motifEvery, s++) {
+			const how = CALM_FORM[(s + opts.formOffset) % CALM_FORM.length];
+			const { degrees, beats } = develop(tune.motif, how, tune.shift, at(b));
+			let pos = b * B;
+			const total = beats.reduce((x, y) => x + y, 0);
+			if (pos + total > bars * B) break;
+			degrees.forEach((d, i) => {
+				const vel = i === 0 ? 0.7 : i === degrees.length - 1 ? 0.5 : 0.6;
+				w.at(
+					opts.carrier as string,
+					pos,
+					beats[i] * 0.95,
+					deg(tune.register, d),
+					vel,
 				);
-			}
-			// Offbeat hats in threat, sixteenths in combat.
-			const hats =
-				level === "threat"
-					? [0.5, 1.5, 2.5, 3.5]
-					: [...Array(16)].map((_, i) => i / 4);
-			for (const b of hats)
-				push("hat", bar, b, 0.1, 104, b % 1 === 0.5 ? 0.6 : 0.3 + rand() * 0.2);
-		}
-		if (level === "combat") {
-			push("kick", bar, 0, 0.5, 36, 0.9);
-			push("kick", bar, 2, 0.5, 36, 0.8);
-			if (rand() < 0.5) push("kick", bar, 2.5, 0.5, 36, 0.6);
-			push("bass", bar, 0, 1.5, root, 0.7);
-			push("bass", bar, 2, 1.5, root, 0.6);
+				pos += beats[i];
+			});
 		}
 	}
-	return out;
+
+	// Glints: one or two high chord tones, quiet, on their own cycle.
+	if (opts.glint)
+		for (let b = 2; b < bars; b += opts.glint) {
+			const r = at(b);
+			const n = rand() < 0.5 ? 1 : 2;
+			for (let k = 0; k < n; k++) {
+				const beat = [0, 1.5, 2.5][Math.floor(rand() * 3) % 3];
+				const tone = [0, 2, 4, 7][Math.floor(rand() * 4) % 4];
+				w.at(
+					"glint",
+					b * B + beat + k,
+					2,
+					deg(84, r + tone),
+					0.25 + 0.1 * rand(),
+				);
+			}
+		}
+
+	// The cruise stem: eighths over the chord, silent until the director
+	// fades it in.
+	if (opts.arp)
+		for (let b = 0; b < bars; b++) {
+			const r = at(b);
+			const tones = [0, 2, 4, 7].map((k) => deg(60, r + k));
+			tune.arp.forEach((ix, i) =>
+				w.at("arp", b * B + i / 2, 0.5, tones[ix], i % 2 ? 0.25 : 0.35),
+			);
+		}
+	return w.events;
+}
+
+/** A calm progression, twice, one chord substituted on the repeat and the
+ *  last the dominant. */
+function calmChords(rand: () => number): number[] {
+	const p =
+		CALM_PROGRESSIONS[
+			Math.floor(rand() * CALM_PROGRESSIONS.length) % CALM_PROGRESSIONS.length
+		];
+	return [p[0], p[1], p[2], p[3], p[0], p[1], CALM_SUBSTITUTE[p[2]] ?? p[2], 4];
 }
 
 /**
@@ -263,117 +356,134 @@ function levelSection(
  */
 export function flightBed(systemSeed: number, variant: number): Song {
 	const theme = musicTheme(systemSeed);
+	const tune = musicTune(systemSeed);
 	const rand = seededRand(mix(themeSeed(systemSeed), variant + 1));
-	const sections = FLIGHT_LEVELS.map((level) => ({
-		name: level,
-		bars: SECTION_BARS,
-		events: levelSection(
-			level,
-			MODES[level === "calm" ? theme.calmMode : LEVEL_MODE[level]],
-			theme.tonic,
-			rand,
-		),
-	}));
+	const calm = bed({
+		theme,
+		tune,
+		chords: calmChords(rand),
+		bars: CALM_BARS,
+		rand,
+		carrier: tune.carrier,
+		motifEvery: MOTIF_EVERY,
+		strings: STRINGS_EVERY,
+		glint: GLINT_EVERY,
+		arp: true,
+		formOffset: variant,
+	});
+	const sections = [
+		{ name: "calm", bars: CALM_BARS, events: calm },
+		...FLIGHT_LEVELS.slice(1).map((level) => ({
+			name: level,
+			bars: SECTION_BARS,
+			events: levelSection(
+				level,
+				MODES[LEVEL_MODE[level as Exclude<MusicLevel, "calm">]],
+				theme.tonic,
+				rand,
+			),
+		})),
+	];
+	let bar = 0;
+	const tempo = sections.map((s, i) => {
+		const point = {
+			bar,
+			bpm: Math.round(theme.bpm * LEVEL_TEMPO[FLIGHT_LEVELS[i]]),
+		};
+		bar += s.bars;
+		return point;
+	});
 	return {
 		name: `flight ${systemSeed >>> 0}/${variant}`,
 		beatsPerBar: 4,
-		parts: FLIGHT_PARTS(theme),
+		parts: { ...FLIGHT_PARTS(theme), ...PARTS },
 		sections,
-		tempo: FLIGHT_LEVELS.map((level, i) => ({
-			bar: i * SECTION_BARS,
-			bpm: Math.round(theme.bpm * LEVEL_TEMPO[level]),
-		})),
+		tempo,
+		space: SPACE,
 	};
 }
 
-/** What a station's role does to the bed's texture (D8). */
-const ROLE_TEXTURE: Readonly<
+/** What a station's role plays (D8): which layers, on which cycles. */
+const ROLE_BED: Readonly<
 	Record<
 		StationType,
 		{
-			bellChance: number;
-			bellRatio: number | null;
-			cutoff: number;
-			arp: boolean;
+			carrier: string | null;
+			motifEvery: number;
+			strings: number | null;
+			glint: number | null;
+			lowDrone: boolean;
 		}
 	>
 > = {
-	trade: { bellChance: 0.5, bellRatio: null, cutoff: 1, arp: true },
-	shipyard: { bellChance: 0.35, bellRatio: 3.5, cutoff: 1.2, arp: false },
-	refinery: { bellChance: 0.2, bellRatio: 1.41, cutoff: 0.6, arp: false },
-	outpost: { bellChance: 0.15, bellRatio: 2, cutoff: 0.8, arp: false },
+	trade: {
+		carrier: "keys",
+		motifEvery: 7,
+		strings: 11,
+		glint: null,
+		lowDrone: false,
+	},
+	shipyard: {
+		carrier: "bell",
+		motifEvery: 9,
+		strings: null,
+		glint: 5,
+		lowDrone: false,
+	},
+	refinery: {
+		carrier: null,
+		motifEvery: 7,
+		strings: 9,
+		glint: 7,
+		lowDrone: true,
+	},
+	outpost: {
+		carrier: "keys",
+		motifEvery: 11,
+		strings: null,
+		glint: 6,
+		lowDrone: false,
+	},
 };
 
-/** The station bed: the system's key and bright mode, slower and sparser. */
+/** The station bed: the system's key, bright mode and tune, slower, and
+ *  textured by the station's role. */
 export function stationBed(
 	systemSeed: number,
 	role: StationType,
 	variant: number,
 ): Song {
 	const theme = musicTheme(systemSeed);
-	const tex = ROLE_TEXTURE[role];
+	const tune = musicTune(systemSeed);
 	const rand = seededRand(
 		mix(mix(themeSeed(systemSeed), STATION_ROLES.indexOf(role) + 101), variant),
 	);
-	const mode = MODES[theme.calmMode];
-	const bass = 36 + theme.tonic;
-	const events: NoteEvent[] = [];
-	const push = (
-		part: string,
-		bar: number,
-		beat: number,
-		dur: number,
-		pitch: number,
-		vel: number,
-	) => events.push({ part, bar, beat, dur, pitch, vel });
-	for (let bar = 0; bar < SECTION_BARS; bar += 4) {
-		const chord = bar === 0 ? 0 : pick(rand, PROGRESSIONS.calm.slice(1));
-		const tones = [0, 2, 4, 6].map((k) => degree(mode, bass, chord + k));
-		for (const p of voice(tones, 55)) push("pad", bar, 0, 16, p, 0.45);
-		push("bass", bar, 0, 16, degree(mode, bass, chord), 0.4);
-		for (let b = bar; b < bar + 4; b++) {
-			if (rand() < tex.bellChance)
-				push(
-					"bell",
-					b,
-					pick(rand, [0, 1, 2, 3]),
-					3,
-					degree(mode, 72 + theme.tonic, pick(rand, [0, 2, 4, 7, 9])),
-					0.25 + rand() * 0.25,
-				);
-			if (tex.arp && b % 2 === 0) {
-				const arp = voice(tones, 62);
-				for (let i = 0; i < 4; i++) push("arp", b, i, 1, arp[i], 0.25);
-			}
-		}
-	}
-	const parts: Record<string, PartSpec> = {
-		pad: {
-			voice: "pad",
-			level: 0.3,
-			attackS: 2.4,
-			releaseS: 3.2,
-			cutoffHz: Math.round(theme.padCutoffHz * tex.cutoff),
-		},
-		bass: { voice: "pluck", level: 0.4, cutoffHz: 500, decayS: 4 },
-		bell: {
-			voice: "fm",
-			level: 0.18,
-			ratio: tex.bellRatio ?? theme.bellRatio,
-			index: theme.bellIndex,
-			decayS: 3,
-			sustain: 0,
-			feedback: 0.05,
-		},
-	};
-	if (tex.arp)
-		parts.arp = { voice: "pluck", level: 0.15, cutoffHz: 1800, decayS: 1.2 };
+	const r = ROLE_BED[role];
+	const p = calmChords(rand);
+	const events = bed({
+		theme,
+		tune,
+		chords: [p[0], p[1], p[2], 4],
+		bars: STATION_BARS,
+		rand,
+		carrier: r.carrier,
+		motifEvery: r.motifEvery,
+		strings: r.strings,
+		glint: r.glint,
+		arp: false,
+		formOffset: variant + 3,
+		lowDrone: r.lowDrone,
+	});
+	const used = new Set(events.map((e) => e.part));
 	return {
 		name: `station ${role} ${systemSeed >>> 0}/${variant}`,
 		beatsPerBar: 4,
-		parts,
-		sections: [{ name: "bed", bars: SECTION_BARS, events }],
+		parts: Object.fromEntries(
+			Object.entries(PARTS).filter(([name]) => used.has(name)),
+		),
+		sections: [{ name: "bed", bars: STATION_BARS, events }],
 		tempo: [{ bar: 0, bpm: Math.round(theme.bpm * 0.8) }],
 		loop: { from: "bed", to: "bed" },
+		space: SPACE,
 	};
 }
