@@ -1158,5 +1158,68 @@ check(
 	`grant expired at ${grant.expiresAtS?.toFixed(0) ?? "none"}, live=${grant.live}`,
 );
 
+// #321: the docked console must follow the market clock without a trade or
+// tab change after the jump. Read the expected row from the same market
+// projection the till uses, then wait for the normal frame loop to redraw it.
+const fadedShelf = await page.evaluate(async () => {
+	const g = window.__seelite;
+	g.setHeadLook("forward");
+	document.querySelector('[data-live-station-tab="Market"]')?.click();
+	const food = () => document.querySelector('[data-live-market-row="Food"]');
+	const read = () => ({
+		buy: food()?.querySelector("[data-live-buy]")?.firstChild?.textContent ?? null,
+		sell: food()?.querySelector("[data-live-sell]")?.firstChild?.textContent ?? null,
+		shelf: food()?.querySelector("[data-live-shelf]")?.firstChild?.textContent ?? null,
+	});
+	for (let i = 0; i < 3; i++)
+		food()?.querySelector('[data-live-station-action="buy-commodity"]')?.click();
+	const before = read();
+	g.world.gameTime += 20 * 60;
+	const { stationMarketScreen, priceLabel } = await import("/src/station-console.ts");
+	const { readDeficit } = await import("/src/deficits.ts");
+	const context = g.dockedStationContext();
+	const row = stationMarketScreen({
+		station: context.market,
+		economy: context.economy,
+		gameTimeMin: context.gameTimeMin,
+		deficitOf: (name) =>
+			readDeficit(context.envelope.deficits, context.stationKey, name, context.gameTimeMin),
+		holdT: g.stationConsoleState().hold.capacityT,
+		displayTL: g.world.system.record.displayTL,
+	}).find((entry) => entry.commodity.name === "Food");
+	return {
+		before,
+		expected: row && {
+			buy: priceLabel(row.buyCr),
+			sell: priceLabel(row.sellCr),
+			shelf: `${row.quantity} ${row.commodity.unit}`,
+		},
+	};
+});
+const refreshedShelf = await page.waitForFunction(
+	(expected) => {
+		const food = document.querySelector('[data-live-market-row="Food"]');
+		const value = (hook) => food?.querySelector(hook)?.firstChild?.textContent ?? null;
+		const actual = {
+			buy: value("[data-live-buy]"),
+			sell: value("[data-live-sell]"),
+			shelf: value("[data-live-shelf]"),
+		};
+		return actual.buy === expected.buy &&
+			actual.sell === expected.sell &&
+			actual.shelf === expected.shelf;
+	},
+	fadedShelf.expected,
+	{ timeout: 3000 },
+).then(() => true, () => false);
+check(
+	"the untouched docked console refreshes its shelf and prices as the deficit decays",
+	refreshedShelf &&
+		fadedShelf.expected !== undefined &&
+		fadedShelf.before.shelf !== fadedShelf.expected.shelf &&
+		fadedShelf.before.buy !== fadedShelf.expected.buy,
+	JSON.stringify(fadedShelf),
+);
+
 await browser.close();
 exit();
