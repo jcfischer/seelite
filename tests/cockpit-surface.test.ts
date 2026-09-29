@@ -240,13 +240,18 @@ describe("the face finish (#204)", () => {
 	});
 
 	test("face sits under the roughest finish, so the calibration is unmoved", () => {
-		// `CLAUDE.md`, "A material dial cannot exceed 1": a finish above 0.72
-		// would lift the wear curve and repaint the other three.
+		// `CLAUDE.md`, "A material dial cannot exceed 1". `calibrate` reads
+		// only the strongest roughness and metalness over every finish, so a
+		// finish under both of the other three's maxima leaves the lift exactly
+		// where it was, and the other three are not repainted.
+		const others = COCKPIT_FINISH_IDS.filter((id) => id !== "face");
+		const strongest = (key: "roughness" | "metalness") =>
+			Math.max(...others.map((id) => COCKPIT_FINISHES[id][key]));
 		expect(COCKPIT_FINISHES.face.roughness).toBeLessThan(
-			COCKPIT_FINISHES.metal.roughness,
+			strongest("roughness"),
 		);
 		expect(COCKPIT_FINISHES.face.metalness).toBeLessThan(
-			COCKPIT_FINISHES.trim.metalness,
+			strongest("metalness"),
 		);
 	});
 });

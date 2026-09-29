@@ -156,12 +156,12 @@ function state() {
 const structuralOf = (state) =>
 	state.meshes.filter((mesh) => mesh.lit && mesh.name !== "throttle-fill");
 
-/** The five surfaces a player *reads*. Named rather than derived, because the
- *  claim is about these specific ones and a derived set would grow silently. */
 /** `THREE.AdditiveBlending`'s value; the probe reads materials off the page and
  *  has no `three` import of its own to name it from. */
 const ADDITIVE_BLENDING = 2;
 
+/** The five surfaces a player *reads*. Named rather than derived, because the
+ *  claim is about these specific ones and a derived set would grow silently. */
 const READABLE = [
 	"canopy-glass",
 	"scanner",
@@ -199,8 +199,7 @@ for (const viewport of VIEWPORTS) {
 		new Set(structural.map((mesh) => mesh.dial)).size === 4,
 	);
 	check(
-		// And **not** on the deck: its top edge is the flight-floor strip's
-		// backdrop, and the mid-tone there took the strip's dim labels with it.
+		// And **not** on the deck — `COCKPIT_FINISHES.face` says why.
 		`${viewport.name}: #204's face mid-tone is on the console tops and off the deck`,
 		["console-top-port", "console-top-starboard"].every((name) =>
 			high.meshes.some(
