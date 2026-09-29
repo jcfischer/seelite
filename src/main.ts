@@ -7291,8 +7291,8 @@ class Game {
 		const metal = cockpitMaterial("metal");
 		const trim = cockpitMaterial("trim");
 		const inset = cockpitMaterial("inset");
-		// #204's mid-tone, on the console tops and the scanner deck: the largest
-		// faces the cabin's own light falls on, so the ones a highlight can land on.
+		// #204's mid-tone, on the two console tops: large faces the cabin's own
+		// light falls on, and behind no readout. Not on the scanner deck — see there.
 		const face = cockpitMaterial("face");
 		// #204's glass: a basic material, so no light in the scene reaches it, with
 		// the environment handed to it explicitly — `cockpit-canopy.ts` has why.
@@ -7510,7 +7510,7 @@ class Game {
 		scannerMount.position.set(0, -0.014, -0.038);
 		scannerMount.rotation.x = dashboardPitch;
 		cockpit.add(scannerMount);
-		this.buildScannerAssembly(scannerMount, face, trim, inset);
+		this.buildScannerAssembly(scannerMount, metal, trim, inset);
 
 		this.buildHologramSystem(scannerMount);
 		this.cockpit.mesh = cockpit;
@@ -7554,11 +7554,14 @@ class Game {
 	/** Build the fitted scanner plate, instrument canvases, and throttle hardware. */
 	private buildScannerAssembly(
 		scannerMount: THREE.Group,
-		face: THREE.MeshStandardMaterial,
+		metal: THREE.MeshStandardMaterial,
 		trim: THREE.MeshStandardMaterial,
 		inset: THREE.MeshStandardMaterial,
 	) {
-		const deck = new THREE.Mesh(cockpitForm(0.032, 0.0016, 0.022), face);
+		// **`metal`, not #204's `face`.** The deck's top edge is the backdrop of the
+		// flight-floor strip, and on the mid-tone the strip's dim labels — MODE,
+		// THR, ASSIST, CHARGE — all but vanished on the sheet.
+		const deck = new THREE.Mesh(cockpitForm(0.032, 0.0016, 0.022), metal);
 		deck.name = "scanner-deck";
 		scannerMount.add(deck);
 		const scannerWell = new THREE.Mesh(

@@ -195,13 +195,18 @@ for (const viewport of VIEWPORTS) {
 		new Set(structural.map((mesh) => mesh.dial)).size === 4,
 	);
 	check(
-		`${viewport.name}: #204's face mid-tone is on the console tops and the deck`,
-		["console-top-port", "console-top-starboard", "scanner-deck"].every(
-			(name) =>
-				high.meshes.some(
-					(mesh) => mesh.name === name && mesh.material === "cockpit-face",
-				),
-		),
+		// And **not** on the deck: its top edge is the flight-floor strip's
+		// backdrop, and the mid-tone there took the strip's dim labels with it.
+		`${viewport.name}: #204's face mid-tone is on the console tops and off the deck`,
+		["console-top-port", "console-top-starboard"].every((name) =>
+			high.meshes.some(
+				(mesh) => mesh.name === name && mesh.material === "cockpit-face",
+			),
+		) &&
+			high.meshes.some(
+				(mesh) =>
+					mesh.name === "scanner-deck" && mesh.material === "cockpit-metal",
+			),
 	);
 	// **The advertised failure mode, guarded for every fitting.** An earlier
 	// version read the three shared textures off a shared material — which every

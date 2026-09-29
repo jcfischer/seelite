@@ -223,9 +223,11 @@ export const COCKPIT_FINISHES = {
 	},
 	/**
 	 * **The mid-tone (#204).** The three above are all near-black, so the
-	 * console tops and the scanner deck — the largest surfaces in the frame —
-	 * had nothing to catch a highlight. A satin grey-blue on the faces the
-	 * light falls on, with `metal` kept for the carcass round them.
+	 * console tops had nothing to catch a highlight. A satin grey-blue on the
+	 * faces the light falls on, with `metal` kept for the carcass round them.
+	 * **Not on the scanner deck**, which #204 proposed: its top edge is the
+	 * backdrop of the flight-floor strip, and on this tone the strip's dim
+	 * labels all but vanished on the sheet.
 	 *
 	 * No emissive: a face that glows would lift the flight floor's backing,
 	 * which is the legibility regression #105 was forbidden. And its roughness
