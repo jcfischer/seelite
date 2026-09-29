@@ -79,7 +79,9 @@ describe("the Equipment tab's locked rows", () => {
 			displayTL: 11,
 			rungs: START,
 		});
-		expect(screen.available.find((e) => e.per === "ly")?.locked).toBeUndefined();
+		expect(
+			screen.available.find((e) => e.per === "ly")?.locked,
+		).toBeUndefined();
 	});
 });
 

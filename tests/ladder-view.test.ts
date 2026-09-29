@@ -13,7 +13,11 @@ import {
 	emptyPending,
 	threshold,
 } from "../src/ladder";
-import { commanderBody, ladderView } from "../src/ladder-view";
+import {
+	RATE_MIN_PLAYED_H,
+	commanderBody,
+	ladderView,
+} from "../src/ladder-view";
 import { codeOf } from "./lib/source-scan";
 
 const record = (over: Partial<LadderRecord> = {}): LadderRecord => ({
@@ -77,9 +81,14 @@ describe("the view", () => {
 		expect(view.rows.map((r) => r.perHour)).toEqual([1.5, 10_000, 20]);
 	});
 
-	test("no rate before any play", () => {
-		const view = ladderView(record(), emptyPending());
-		expect(view.rows.every((r) => r.perHour === null)).toBe(true);
+	test("no rate under an hour of play", () => {
+		for (const playedS of [0, 60, RATE_MIN_PLAYED_H * 3600 - 1]) {
+			const view = ladderView(
+				record({ banked: { combat: 1, trade: 1, exploration: 1 }, playedS }),
+				emptyPending(),
+			);
+			expect(view.rows.every((r) => r.perHour === null)).toBe(true);
+		}
 	});
 });
 

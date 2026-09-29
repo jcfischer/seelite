@@ -269,6 +269,19 @@ export const PROBE_CATALOG = Object.freeze(
 			],
 		),
 		entry(
+			"probe-ladders.mjs",
+			"Banks a kill on a real dock, draws the three ladders on the right console's Commander page, and checks a locked shipyard row and the rung that opens it.",
+			[
+				"ladders",
+				"rung",
+				"banking on dock",
+				"Commander page",
+				"equipment gate",
+				"locked row",
+				"right console",
+			],
+		),
+		entry(
 			"probe-hud.mjs",
 			"Checks full-screen HUD sizing and projection of attitude, velocity, target, and docking markers.",
 			["HUD", "projection", "canvas resize", "markers", "cockpit"],

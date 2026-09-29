@@ -38,6 +38,14 @@ export const LADDER_STYLE = `
 .lc-ladder-capstone { color: #fff0c9; }
 `;
 
+/**
+ * Play below which no rate is shown. A rate over a few minutes is a figure
+ * about the minutes — the first capture read 4,397 kill credit an hour off
+ * one kill — and the log exists to be read against #562's 40 h, not against a
+ * sortie.
+ */
+export const RATE_MIN_PLAYED_H = 1;
+
 export interface LadderRow {
 	ladder: Ladder;
 	rung: number;
@@ -47,7 +55,7 @@ export interface LadderRow {
 	 *  because a sale and a settlement happen docked. */
 	pending: number;
 	next: { rung: number; name: string; at: number } | null;
-	/** Banked credit per hour of play, or `null` before any play. */
+	/** Banked credit per hour of play, or `null` under `RATE_MIN_PLAYED_H`. */
 	perHour: number | null;
 }
 
@@ -85,7 +93,7 @@ export function ladderView(
 								name: RUNG_NAMES[ladder][rung + 1],
 								at: threshold(ladder, rung + 1),
 							},
-				perHour: record.playedS > 0 ? banked / playedH : null,
+				perHour: playedH >= RATE_MIN_PLAYED_H ? banked / playedH : null,
 			};
 		}),
 		playedH,

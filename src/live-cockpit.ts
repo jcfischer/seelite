@@ -489,6 +489,9 @@ const STYLE = `${REQUESTS_STYLE}${HOLD_STYLE}${LADDER_STYLE}${RELAY_CUE_STYLE}
 .lc-station-delta { margin-left: 5px; color: #f0b05e; }
 .lc-station-section { margin: 14px 0 6px; color: #cb8c51; font-size: 11px; letter-spacing: .08em; }
 .lc-station-equipment { flex: 1; overflow: auto; margin-top: 8px; }
+/* A fixed action column: each row is its own grid, so BUY, OWNED and LOCKED at their own widths moved the price column (#564). */
+.lc-station-equipment .lc-station-row { grid-template-columns: minmax(120px, 1.4fr) 1fr 1fr 64px; }
+.lc-station-equipment .lc-station-row > :nth-child(4) { justify-self: end; }
 .lc-station-action { border: 1px solid rgba(229, 170, 82, .52); border-radius: 3px; padding: 2px 6px; background: rgba(223, 122, 20, .16); color: #ffe1a9; cursor: pointer; font: inherit; font-size: 10px; }
 .lc-station-action:hover { background: rgba(223, 122, 20, .32); }
 .lc-station-owned { color: #9ed89b; font-size: 10px; letter-spacing: .06em; }
@@ -1702,12 +1705,17 @@ export class LiveCockpit {
 								? // #183 D6: the #489 locked-row pattern — listed, named and
 									// with no BUY, because a vanished row says nothing about
 									// what to climb. Owned wins: a gate blocks new purchases.
-									`<span class="lc-station-locked" data-live-equipment-locked="${entry.locked.ladder}:${entry.locked.rung}">LOCKED · ${entry.locked.ladder.toUpperCase()} ${entry.locked.rung} · ${escapeHtml(entry.locked.name.toUpperCase())}</span>`
+									`<span class="lc-station-locked" data-live-equipment-locked="${entry.locked.ladder}:${entry.locked.rung}">LOCKED</span>`
 								: `<button class="lc-station-action" type="button" data-live-station-action="buy-equipment" data-live-station-name="${name}">BUY</button>`;
+				// The rung a locked row needs goes in the middle cell, which a
+				// unit item leaves empty: in the action cell it was wider than
+				// BUY, and each row is its own grid, so the price column moved.
 				const held =
 					entry.per === "ly"
 						? `${fuel.ly.toFixed(1)}/${fuel.capacityLy} LY`
-						: "";
+						: entry.locked && !owned.includes(entry.name)
+							? `<span class="lc-station-locked">${entry.locked.ladder.toUpperCase()} ${entry.locked.rung} · ${escapeHtml(entry.locked.name.toUpperCase())}</span>`
+							: "";
 				return `<div class="lc-station-row" data-live-equipment="available"><span>${name}</span><span class="lc-station-cell">${entry.priceCr} Cr</span><span class="lc-station-cell">${held}</span>${action}</div>`;
 			})
 			.join("");
