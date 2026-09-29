@@ -20,6 +20,8 @@ import {
 } from "../src/music-director";
 import type { MusicCommand } from "../src/music-score";
 import { fullCondition } from "../src/ship-condition";
+import { MusicEngine } from "../src/music-engine";
+import { flightBed } from "../src/music-generate";
 
 const calm: MusicReading = {
 	scene: "flight",
@@ -221,14 +223,14 @@ describe("cruise and fresh material (D7, D8)", () => {
 		]);
 	});
 
-	test("a long calm brings in a new variant on a section line", () => {
+	test("a long calm brings in a new variant on the next bar", () => {
 		const { commands } = fly([[REFRESH_S + 1, calm]], 0.5);
 		const fresh = commands.slice(4);
 		expect(fresh[0]).toMatchObject({ type: "load", id: "flight-b" });
 		expect(fresh[1]).toMatchObject({
 			type: "crossfade",
 			to: "flight-b",
-			at: "section",
+			at: "bar",
 			section: "calm",
 			hold: true,
 		});
@@ -274,4 +276,49 @@ test("a ship never struck is not taking fire: a fresh condition reads calm", () 
 	// made every boot and every repair start at combat and fall for 30 s.
 	const c = fullCondition("courier");
 	expect(dangerLevel(at({ sinceStruckS: c.sinceStruckS }))).toBe("calm");
+});
+
+test("death fades the music though it holds the clock", () => {
+	// `takeDamage` holds the clock as the ship dies: a held step that returned
+	// before reading the scene kept the fight's music looping through death.
+	const playing = fly([
+		[1, at({ encounter: "duel", raiderFiring: true })],
+	]).state;
+	const r = stepMusic(playing, at({ scene: "dead", held: true }), 0);
+	expect(r.commands).toEqual([{ type: "stop", at: "now", fadeS: 2.5 }]);
+	expect(r.state.bed).toBe("none");
+});
+
+test("a rise just after a fresh variant is asked for still lands on the next bar", () => {
+	// Through the real engine: a refresh placed on a section line made the
+	// incoming song the lead at once, and a rise sent then waited for that
+	// line — up to a whole section of calm under a raider.
+	const SR = 48000;
+	const heard: { frame: number; part: string }[] = [];
+	const engine = new MusicEngine(SR, undefined, (_, frame, part) =>
+		heard.push({ frame, part }),
+	);
+	const out = new Float32Array(128);
+	let frame = 0;
+	let state = initialMusicState();
+	let riseAt = -1;
+	const steps = Math.round((REFRESH_S + 20) / 0.1);
+	for (let i = 0; i < steps; i++) {
+		const t = i * 0.1;
+		// The rise comes 0.5 s after the refresh.
+		const r = t >= REFRESH_S + 0.5 ? at({ encounter: "contest" }) : calm;
+		if (riseAt < 0 && r !== calm) riseAt = Math.round(t * SR);
+		const s = stepMusic(state, r, 0.1);
+		state = s.state;
+		for (const cmd of s.commands) engine.command(cmd, frame);
+		for (const end = Math.round((t + 0.1) * SR); frame < end; frame += 128)
+			engine.render(out, frame);
+	}
+	const bpm = flightBed(calm.systemSeed, 0).tempo[0].bpm;
+	const barFrames = (4 * 60 * SR) / bpm;
+	const lead = heard.find((h) => h.part === "lead" && h.frame >= riseAt);
+	expect(lead).toBeDefined();
+	expect((lead?.frame ?? Infinity) - riseAt).toBeLessThanOrEqual(
+		barFrames + 128,
+	);
 });

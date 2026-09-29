@@ -7,8 +7,9 @@
  * **What plays (D2, D3).** In flight, the system's generative bed
  * (`flightBed`), held on the section its danger level names. Docked, the
  * station bed. Witchspace (#534), the docking computer (#547) and death own
- * their sound, so the music fades out under them. A pause holds everything:
- * no command and no clock.
+ * their sound, so the music fades out under them — read before the hold,
+ * because death holds the clock. A pause holds everything else: no command
+ * and no clock.
  *
  * **The ladder (D4).** `dangerLevel` reads the highest signal: taking fire is
  * combat, a contest or a duel is threat, an inbound raider or a Wanted
@@ -21,7 +22,7 @@
  * `FALL_HOLD_S` with nothing as high, and then drops one level, so a raider
  * at the edge of range does not flip the mood each second. Cruise fades the
  * `arp` stem in and lifts the tempo a little (D7). After `REFRESH_S` of calm
- * a new variant of the same theme comes in on a section line, so the bed does
+ * a new variant of the same theme comes in on the next bar, so the bed does
  * not loop audibly (D8).
  */
 import {
@@ -184,14 +185,16 @@ export function stepMusic(
 	dt: number,
 	arms: MusicArms = DEFAULT_MUSIC_ARMS,
 ): { state: MusicState; commands: MusicCommand[] } {
-	if (r.held) return { state: s, commands: [] };
 	const cmds: MusicCommand[] = [];
 
+	// Before the hold: death holds the clock as the ship dies, and the fade is
+	// what it owes (D2).
 	if (arms.off || (r.scene !== "flight" && r.scene !== "docked")) {
 		if (s.bed !== "none")
 			cmds.push({ type: "stop", at: "now", fadeS: FADE_OUT_S });
 		return { state: { ...s, bed: "none" }, commands: cmds };
 	}
+	if (r.held) return { state: s, commands: cmds };
 
 	if (r.scene === "docked") {
 		const role = r.stationRole ?? "trade";
@@ -306,7 +309,10 @@ export function stepMusic(
 				to: flightId,
 				fadeS: REFRESH_FADE_S,
 				section: "calm",
-				at: "section",
+				// On the bar, not the section line: the incoming song is the lead from
+				// the moment it is asked for, so a rise sent before a section line
+				// waited for it, up to 16 bars of calm under a raider.
+				at: "bar",
 				hold: true,
 			},
 			...settle(cruise),

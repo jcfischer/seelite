@@ -62,10 +62,12 @@
  */
 import { cueStats, roundStats } from "./lib/audio-stats.mjs";
 import { renderInPage, SOUND_SET } from "./lib/sound-set.mjs";
+import { installViewFraming } from "./lib/view-placement.mjs";
 import { gameUrl } from "./lib/game-url.mjs";
 import {
 	bootedGame,
 	guardedOrigin,
+	installViewPlacement,
 	launchChromium,
 	tally,
 } from "./probe-guard.mjs";
@@ -600,6 +602,64 @@ try {
 				live.after === 0 &&
 				live.errors.length === 0,
 			`rms at the music bus ${live.quiet} before, ${live.heard.toFixed(4)} playing, ${live.after} after the stop`,
+		);
+		await game.close();
+	}
+	// ── In the game: a docked pilot hears the station bed (#548) ────────────
+	// A new pilot's first sound is docked (#408). Every docked row above is the
+	// pure director's; this is the game's own berth and console, parked by
+	// `__parkInBerth` as `probe-hold.mjs` does, with whatever they hold.
+	{
+		const game = await browser.newPage({
+			viewport: { width: 900, height: 620 },
+		});
+		watch(game);
+		await installViewPlacement(game);
+		await installViewFraming(game);
+		await game.goto(gameUrl(origin, { seed: 19, raider: "off" }));
+		await bootedGame(game);
+		await game.evaluate(async () => {
+			const g = window.__seelite;
+			const id = g.world.system.bodies.find((b) => b.kind === "station")?.id;
+			if (!id) throw Error("no station");
+			await window.__parkInBerth(id, g.berthIdsOfStation(id)[0]);
+		});
+		await game.keyboard.press("F8");
+		const live = await game.evaluate(async () => {
+			const g = window.__seelite;
+			for (let i = 0; i < 50 && !g.music.ready; i++)
+				await new Promise((r) => setTimeout(r, 100));
+			const ctx = g.audio.context;
+			const tap = ctx.createAnalyser();
+			tap.fftSize = 2048;
+			g.audio.musicInput.connect(tap);
+			const level = () => {
+				const x = new Float32Array(tap.fftSize);
+				tap.getFloatTimeDomainData(x);
+				return Math.sqrt(x.reduce((s, v) => s + v * v, 0) / x.length);
+			};
+			// The station pad's attack is slow: the loudest of five seconds.
+			let heard = 0;
+			for (let i = 0; i < 50; i++) {
+				await new Promise((r) => setTimeout(r, 100));
+				heard = Math.max(heard, level());
+			}
+			g.audio.musicInput.disconnect(tap);
+			return {
+				phase: g.dockPhase,
+				held: g.clockHeld,
+				heard,
+				bed: g.musicState.bed,
+				errors: g.music.errors,
+			};
+		});
+		check(
+			"a docked pilot hears the station bed on the live context (#548)",
+			live.phase === "docked" &&
+				live.bed === "station" &&
+				live.heard > 1e-3 &&
+				live.errors.length === 0,
+			`${live.phase}, clock ${live.held ? "held" : "running"}; bed ${live.bed}; rms at the music bus ${live.heard.toFixed(4)}; errors ${live.errors.join("; ") || 0}`,
 		);
 		await game.close();
 	}

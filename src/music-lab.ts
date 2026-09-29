@@ -1,5 +1,6 @@
 /**
- * The music lab (#548 D9), on `?music-lab`: the adaptive music with the game
+ * The music lab (#548 D9), on `?music-lab&boot=direct` — a bare `?music-lab`
+ * lands on the public page (`entry.ts`): the adaptive music with the game
  * taken out, for the principal's ear. Pick a system, force a level, toggle
  * cruise, dock at a station of any role, and hear the transitions land.
  *
