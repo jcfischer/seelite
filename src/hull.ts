@@ -165,8 +165,9 @@ export interface HullSpec {
 	 * the failure `galaxy-generation.md` §2.1 carried for years. Whether a
 	 * shipyard *lists* a priced hull is a separate question and
 	 * `PURCHASABLE_HULL_IDS` is where it is answered: `patrol` and `raider` hold
-	 * 6 t and 10 t, well inside the measured range, so the law answers for them
-	 * and #183's rating decides whether they are for sale.
+	 * 6 t and 10 t, well inside the measured range, so the law answers for them.
+	 * #562 put them on the combat ladder at rungs 6 and 7, and neither is sold
+	 * until #565 and #566 rule on what flying one means to the law.
 	 */
 	readonly priceCr: number | null;
 }
@@ -279,7 +280,9 @@ export const hullPriceCr = (holdT: number): number | null => {
  *
  * `patrol` and `raider` read as NPC identities rather than purchases — selling
  * a police hull or a pirate hull makes #8's legal status and #13's fence
- * geography owe rules they do not have — and are gated behind the rating node.
+ * geography owe rules they do not have. Each carries a combat rung (#562 D7,
+ * `ladder.ts`'s `GATES`), and a rung does not supply those rules, so neither
+ * joins this list until #565 and #566 close.
  * The capitals do not dock at all (#56, and `voyager` since #331).
  */
 export const PURCHASABLE_HULL_IDS = [
@@ -312,8 +315,9 @@ export const purchasableHullNamed = (asked: string | null): HullId | null =>
  * capital hulls remain available to #8's encounters. A `Partial` record would
  * make every consumer answer for a hull with no mass, and the hole would be
  * found by whichever one forgot. Their figures are provisional in the sense
- * that #183's rating and #8's combat balance may retune them; the seven civilian
- * rows are this node's answer.
+ * that #8's combat balance may retune them — and a retune of `integrity` moves
+ * what a kill of that hull pays, which `kill-credit.ts` reads; the seven
+ * civilian rows are this node's answer.
  */
 export const HULL_SPECS: Readonly<Record<HullId, HullSpec>> = {
 	courier: {

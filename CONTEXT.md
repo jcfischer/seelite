@@ -87,9 +87,9 @@ draw to its end: inbound, contest, duel, and over — missed, broken, lost,
 escaped, fled or destroyed. The draw is a cruise leg's, or a **Pirate relay**'s
 call when it or its **Relay tender** is hit (#515): that defender is called in
 normal flight, skips the contest and drops straight into the duel, and
-`src/relay-defender.ts` owns the call rule. `combat-model.md` §3's rating-chosen
+`src/relay-defender.ts` owns the call rule. `combat-model.md` §3's rung-chosen
 composition makes it a group; today's only composition is a single raider
-filling one **Raider slot** (#324, #183 owns the rest). It is not saved
+filling one **Raider slot** (#324, #563 owns the rest). It is not saved
 history; what a destroyed raider leaves in the world is the slot's own
 condition. `src/encounter.ts` owns the phases.
 _Avoid_: Spawn, fight instance
@@ -528,6 +528,32 @@ overlay and the active-Commander pointer. **Scope note:** `slot` and
 `deleteSlot` are the storage layer's words for the same thing and stay as they
 are; this entry governs what a player reads, not what the store calls its keys.
 _Avoid_: save game, save file, profile (in player-facing text)
+
+**Ladder**:
+One of three commander-global progressions — combat, trade and exploration —
+each with nine **Rungs** (#183). Combat counts kill credit, trade realised
+margin (sale less purchase basis, plus job pay), exploration first-time kinds
+(first arrival in a system, first dock at a station). A ladder gates its own
+hulls and equipment; jobs, prices and stations read none. Shown on the right
+console's **Commander** page — a console tab, not the **Commander** overlay.
+`src/ladder.ts` owns thresholds, names and gates; `src/kill-credit.ts` owns a
+kill's price.
+_Avoid_: rating, rank (for the three together), level, XP
+
+**Rung**:
+A step on a **Ladder**, 0 (the start) to 8 (the top), each exactly twice the
+credit of the one below (#562). Rungs have original names, never Elite's. A
+rung never falls, and a gate blocks only new purchases, so an item owned below
+its rung stays owned.
+_Avoid_: tier (that is #26's hull tier), grade
+
+**Banked credit**:
+Ladder credit the save carries. Credit earned in flight — a kill, a first
+arrival — is **unbanked** until the next dock banks it, and is lost with the
+ship before that (#183 D7): a death restores the last dock's record, and a save
+taken in flight does not carry it. Trade credit is earned docked, so it banks
+at once.
+_Avoid_: score, XP
 
 **Failed entry**:
 A crossing of the aperture plane that does not satisfy every check. It repels the ship, damages it, and keeps its clearance grant; unless it was a barge it does not turn the station hostile. Damage is quadratic in the closing speed above a floor, so a failed entry at the gate speed is survivable by design while one flown at the assist cap is not — "it costs you something, not everything" is a claim about the gate, not a guarantee at any speed. `docs/specs/docking.md` §2 owns the model.
