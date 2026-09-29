@@ -10,6 +10,7 @@
 import { describe, expect, test } from "bun:test";
 import {
 	CALM_BARS,
+	CALM_LIFT_BPM,
 	FLIGHT_LEVELS,
 	flightBed,
 	MODES,
@@ -219,4 +220,12 @@ describe("the station bed", () => {
 		);
 		expect(new Set(prints).size).toBe(STATION_ROLES.length);
 	});
+});
+
+test("calm runs 10 bpm above the system's theme tempo (the principal, 2026-09-29)", () => {
+	for (const seed of SEEDS.slice(0, 8)) {
+		const t = musicTheme(seed);
+		expect(flightBed(seed, 0).tempo[0].bpm).toBe(t.bpm + CALM_LIFT_BPM);
+		expect(CALM_LIFT_BPM).toBe(10);
+	}
 });

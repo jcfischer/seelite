@@ -74,6 +74,15 @@ export {
 /** Calm's length: long enough that the co-prime layers never line up twice
  *  inside it. */
 export const CALM_BARS = 64;
+/**
+ * The second bed runs this much above the system's theme tempo: the
+ * principal's ruling on the first listening of calm, 2026-09-29 (*ok to
+ * increase the tempo of the calm music a bit, 10 bpm*). Every level and the
+ * station bed scale from the lifted figure, so wary is not left slower than
+ * calm; the first bed keeps the theme tempo, as it was heard.
+ */
+export const CALM_LIFT_BPM = 10;
+
 /** The station bed's length. */
 export const STATION_BARS = 32;
 /** Bars per chord in calm and at the station. */
@@ -388,7 +397,9 @@ export function flightBed(systemSeed: number, variant: number): Song {
 	const tempo = sections.map((s, i) => {
 		const point = {
 			bar,
-			bpm: Math.round(theme.bpm * LEVEL_TEMPO[FLIGHT_LEVELS[i]]),
+			bpm: Math.round(
+				(theme.bpm + CALM_LIFT_BPM) * LEVEL_TEMPO[FLIGHT_LEVELS[i]],
+			),
 		};
 		bar += s.bars;
 		return point;
@@ -482,7 +493,7 @@ export function stationBed(
 			Object.entries(PARTS).filter(([name]) => used.has(name)),
 		),
 		sections: [{ name: "bed", bars: STATION_BARS, events }],
-		tempo: [{ bar: 0, bpm: Math.round(theme.bpm * 0.8) }],
+		tempo: [{ bar: 0, bpm: Math.round((theme.bpm + CALM_LIFT_BPM) * 0.8) }],
 		loop: { from: "bed", to: "bed" },
 		space: SPACE,
 	};
