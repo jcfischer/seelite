@@ -1165,6 +1165,17 @@ const fadedShelf = await page.evaluate(async () => {
 	const g = window.__seelite;
 	g.setHeadLook("forward");
 	document.querySelector('[data-live-station-tab="Market"]')?.click();
+	const { MARKET_PERIOD_MIN, DEFICIT_HALF_LIFE_MIN, marketEpoch } =
+		await import("/src/market.ts");
+	const station = g.dockedStationContext().market;
+	const nextEpoch = marketEpoch(station.phaseMin, g.world.gameTime / 60) + 1;
+	// Start just inside one station market epoch, leaving a full half-life
+	// before its next turnover. Otherwise the generated base can move in the
+	// opposite direction and hide a shelf recovered by decay.
+	g.world.gameTime =
+		(nextEpoch * MARKET_PERIOD_MIN - station.phaseMin) * 60 + 1;
+	await new Promise((resolve) => requestAnimationFrame(resolve));
+	await new Promise((resolve) => requestAnimationFrame(resolve));
 	const food = () => document.querySelector('[data-live-market-row="Food"]');
 	const read = () => ({
 		buy:
@@ -1176,12 +1187,25 @@ const fadedShelf = await page.evaluate(async () => {
 			food()?.querySelector("[data-live-shelf]")?.firstChild?.textContent ??
 			null,
 	});
-	for (let i = 0; i < 3; i++)
+	for (let i = 0; i < 12; i++)
 		food()
 			?.querySelector('[data-live-station-action="buy-commodity"]')
 			?.click();
+	// The trade's own revision must reach the DOM before the clock moves;
+	// otherwise that pending redraw could falsely satisfy the decay check.
+	await new Promise((resolve) => requestAnimationFrame(resolve));
+	await new Promise((resolve) => requestAnimationFrame(resolve));
 	const before = read();
-	g.world.gameTime += 20 * 60;
+	const traded = /HOLD .*Food 12\b/.test(
+		document.querySelector("[data-live-commander]")?.textContent ?? "",
+	);
+	const shownAfterTrade = g
+		.stationConsoleState()
+		.market.find((entry) => entry.commodity.name === "Food");
+	const tradeDrawn =
+		before.shelf ===
+		`${shownAfterTrade?.quantity} ${shownAfterTrade?.commodity.unit}`;
+	g.world.gameTime += (DEFICIT_HALF_LIFE_MIN + 1) * 60;
 	const { stationMarketScreen, priceLabel } = await import(
 		"/src/station-console.ts"
 	);
@@ -1203,6 +1227,8 @@ const fadedShelf = await page.evaluate(async () => {
 	}).find((entry) => entry.commodity.name === "Food");
 	return {
 		before,
+		traded,
+		tradeDrawn,
 		expected: row && {
 			buy: priceLabel(row.buyCr),
 			sell: priceLabel(row.sellCr),
@@ -1237,6 +1263,8 @@ const refreshedShelf = await page
 check(
 	"the untouched docked console refreshes its shelf and prices as the deficit decays",
 	refreshedShelf &&
+		fadedShelf.traded &&
+		fadedShelf.tradeDrawn &&
 		fadedShelf.expected !== undefined &&
 		fadedShelf.before.shelf !== fadedShelf.expected.shelf &&
 		fadedShelf.before.buy !== fadedShelf.expected.buy,

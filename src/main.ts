@@ -2278,6 +2278,7 @@ class Game {
 	/** Docked console screens rebuild only when a printed value can change. */
 	private stationConsoleCache: LiveCockpitState["stationConsole"] = null;
 	private stationConsoleCacheKey: string | null = null;
+	private stationConsoleCacheStationId: string | null = null;
 	/** Last whole game second at which the cached market was checked. */
 	private stationConsoleMarketSampleS: number | null = null;
 	/** #445's bid column, memoised on the key the priced rows were built under. */
@@ -14748,6 +14749,7 @@ class Game {
 		if (!context) {
 			this.stationConsoleCache = null;
 			this.stationConsoleCacheKey = null;
+			this.stationConsoleCacheStationId = null;
 			this.stationConsoleMarketSampleS = null;
 			return null;
 		}
@@ -14778,7 +14780,7 @@ class Game {
 		if (
 			this.stationConsoleCache &&
 			this.stationConsoleCache.revision === this.stationConsoleRevision &&
-			this.stationConsoleCacheKey?.startsWith(`${this.dock.stationId}|`) &&
+			this.stationConsoleCacheStationId === this.dock.stationId &&
 			this.stationConsoleMarketSampleS !== sampleS
 		) {
 			freshMarket = readMarket();
@@ -14814,6 +14816,7 @@ class Game {
 		const key = `${this.dock.stationId}|${this.stationConsoleTab}|${this.stationConsoleRevision}|${this.stationConsoleMessage ?? ""}|${hold.usedT}/${hold.capacityT}|${holdKey}`;
 		if (this.stationConsoleCacheKey === key) return this.stationConsoleCache;
 		this.stationConsoleCacheKey = key;
+		this.stationConsoleCacheStationId = this.dock.stationId;
 		this.stationConsoleMarketSampleS = sampleS;
 		this.stationConsoleCache = {
 			label: this.nameOfStation(station.id),

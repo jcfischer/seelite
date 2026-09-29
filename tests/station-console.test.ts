@@ -105,6 +105,10 @@ test("a market redraw is needed only when a printed row changes", () => {
 		index === food ? { ...row, buyCr: (row.buyCr ?? 0) + 0.1 } : row,
 	);
 	expect(marketDisplayChanged(before, dearer)).toBe(true);
+	const subDigit = unchanged.map((row, index) =>
+		index === food ? { ...row, buyCr: (row.buyCr ?? 0) + 0.001 } : row,
+	);
+	expect(marketDisplayChanged(before, subDigit)).toBe(false);
 });
 
 // ---------------------------------------------------------------------------

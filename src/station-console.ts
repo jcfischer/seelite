@@ -251,24 +251,35 @@ export function stationMarketScreen(
 	});
 }
 
-/** The fields the market row prints, including the arrows beside the values. */
+/** What one market row prints, shared by redraw detection and the renderer. */
+export function marketDisplayValues(row: ConsoleMarketRow) {
+	return {
+		name: row.commodity.name,
+		unit: row.commodity.unit,
+		listed: row.listed,
+		buy: row.listed ? priceLabel(row.buyCr ?? 0) : null,
+		sell: row.listed ? priceLabel(row.sellCr ?? 0) : null,
+		shelf: row.listed ? `${row.quantity ?? 0} ${row.commodity.unit}` : null,
+		priceDelta:
+			row.priceDeltaCr === undefined ? null : signedDelta(row.priceDeltaCr, 1),
+		quantityDelta:
+			row.quantityDelta === undefined
+				? null
+				: signedDelta(row.quantityDelta, 0),
+	};
+}
+
+/** A clock tick redraws only when a row's rendered values change. */
 export function marketDisplayChanged(
 	before: readonly ConsoleMarketRow[],
 	after: readonly ConsoleMarketRow[],
 ): boolean {
 	if (before.length !== after.length) return true;
-	return before.some((row, index) => {
-		const next = after[index];
-		return (
-			row.commodity.name !== next.commodity.name ||
-			row.listed !== next.listed ||
-			row.buyCr !== next.buyCr ||
-			row.sellCr !== next.sellCr ||
-			row.quantity !== next.quantity ||
-			row.priceDeltaCr !== next.priceDeltaCr ||
-			row.quantityDelta !== next.quantityDelta
-		);
-	});
+	return before.some(
+		(row, index) =>
+			JSON.stringify(marketDisplayValues(row)) !==
+			JSON.stringify(marketDisplayValues(after[index])),
+	);
 }
 
 /**
