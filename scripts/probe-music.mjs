@@ -95,6 +95,51 @@ const RENDERED = {
 	// carries its own onset, in the band like the rest, rather than the
 	// limiter's 10 ms.
 	"music-voices": { rms: 0.02846, peak: 0.1775, hz: 700, onset: 51.48 },
+	// #548's director renders fade in by design — 3 s from silence, and a
+	// station pad's slow attack — so each carries its own onset, in the band
+	// like the rest, rather than the limiter's 10 ms.
+	"music-adaptive-run-a": {
+		rms: 0.01343,
+		peak: 0.09562,
+		hz: 894,
+		onset: 494.46,
+	},
+	"music-adaptive-run-b": {
+		rms: 0.01366,
+		peak: 0.09015,
+		hz: 1050,
+		onset: 484.42,
+	},
+	"music-adaptive-ladder": {
+		rms: 0.01351,
+		peak: 0.09198,
+		hz: 1104,
+		onset: 298.25,
+	},
+	"music-station-trade": {
+		rms: 0.01059,
+		peak: 0.05091,
+		hz: 894,
+		onset: 494.46,
+	},
+	"music-station-refinery": {
+		rms: 0.0102,
+		peak: 0.04631,
+		hz: 673,
+		onset: 494.54,
+	},
+	"music-station-shipyard": {
+		rms: 0.01062,
+		peak: 0.04864,
+		hz: 1007,
+		onset: 494.44,
+	},
+	"music-station-outpost": {
+		rms: 0.01043,
+		peak: 0.04877,
+		hz: 781,
+		onset: 494.48,
+	},
 };
 /** The limiter's 6 ms look-ahead and a render quantum and a half (4 ms at
  *  48 kHz): 10 ms, as the comment above says. It read 12 for a round, which
@@ -217,6 +262,46 @@ try {
 		return e > 0 ? Math.sqrt(s / e) : 0;
 	};
 	const onLine = (d) => Object.values(ONSET_AFTER_LINE).includes(d);
+
+	// ── #548: the ladder gets busier as the danger rises ────────────────────
+	// The ladder rises calm, wary, threat, combat at 18 s each. Neither the
+	// level nor the brightness separates them — the pad sets both, and #548
+	// measured the brightness at 0.084 calm against 0.090 combat — so this
+	// counts transients: 10 ms frames of the first difference's energy that
+	// jump past twice the mean of the four before. Threat's hats and lead and
+	// combat's kick and sixteenths are what it hears. Wary's added pulse is a
+	// dark low pluck and does not register (#548 read it 0.44/s against calm's
+	// 0.58), so wary is left to the ear.
+	const ladder = rendered.get("music-adaptive-ladder");
+	if (ladder) {
+		const perS = (a, b) => {
+			const F = SR / 100;
+			const e = [];
+			for (let k = a * SR; k + F < b * SR; k += F) {
+				let q = 0;
+				for (let j = k + 1; j < k + F; j++) {
+					const d = ladder[j] - ladder[j - 1];
+					q += d * d;
+				}
+				e.push(q);
+			}
+			let n = 0;
+			for (let i = 5; i < e.length; i++) {
+				const jump = (j) =>
+					e[j] > (e[j - 1] + e[j - 2] + e[j - 3] + e[j - 4]) / 2;
+				if (jump(i) && !jump(i - 1)) n++;
+			}
+			return n / (b - a);
+		};
+		const calmRate = perS(6, 18);
+		const threatRate = perS(38, 54);
+		const fightRate = perS(56, 72);
+		check(
+			"the ladder's threat and combat are busier than its calm (#548)",
+			threatRate >= 2 * calmRate && fightRate >= 4 * calmRate,
+			`transients/s calm ${calmRate.toFixed(2)}, wary ${perS(20, 36).toFixed(2)}, threat ${threatRate.toFixed(2)}, combat ${fightRate.toFixed(2)}`,
+		);
+	}
 	/** Rms over a window in seconds, or the whole buffer: one body for every
 	 *  row that reads a level (sage round 4). */
 	const rmsOf = (x, a = 0, b = x.length / SR) => {
@@ -449,7 +534,10 @@ try {
 			viewport: { width: 900, height: 620 },
 		});
 		watch(game);
-		await game.goto(gameUrl(origin, { seed: 19, raider: "off" }));
+		// `music: "off"` keeps #548's director out: it drives the same synth,
+		// and with it on the live row below read 0.0008 against its 1e-3. This
+		// page is about the synth; the director has its own page after it.
+		await game.goto(gameUrl(origin, { seed: 19, raider: "off", music: "off" }));
 		await bootedGame(game);
 		const before = await game.evaluate(() => window.__seelite.music.ready);
 		// A trusted key press: the game's own unlock listener, which opens the
@@ -512,6 +600,55 @@ try {
 				live.after === 0 &&
 				live.errors.length === 0,
 			`rms at the music bus ${live.quiet} before, ${live.heard.toFixed(4)} playing, ${live.after} after the stop`,
+		);
+		await game.close();
+	}
+	// ── In the game: the director plays the system's bed (#548) ────────────
+	{
+		const game = await browser.newPage({
+			viewport: { width: 900, height: 620 },
+		});
+		watch(game);
+		await game.goto(gameUrl(origin, { seed: 19, raider: "off" }));
+		await bootedGame(game);
+		await game.keyboard.press("F8");
+		const live = await game.evaluate(async () => {
+			const g = window.__seelite;
+			for (let i = 0; i < 50 && !g.music.ready; i++)
+				await new Promise((r) => setTimeout(r, 100));
+			const ctx = g.audio.context;
+			const tap = ctx.createAnalyser();
+			tap.fftSize = 2048;
+			g.audio.musicInput.connect(tap);
+			const level = () => {
+				const x = new Float32Array(tap.fftSize);
+				tap.getFloatTimeDomainData(x);
+				return Math.sqrt(x.reduce((s, v) => s + v * v, 0) / x.length);
+			};
+			// The bed fades in over seconds: read the loudest of four seconds.
+			let heard = 0;
+			for (let i = 0; i < 40; i++) {
+				await new Promise((r) => setTimeout(r, 100));
+				heard = Math.max(heard, level());
+			}
+			g.audio.musicInput.disconnect(tap);
+			return {
+				heard,
+				bed: g.musicState.bed,
+				level: g.musicState.level,
+				errors: g.music.errors,
+			};
+		});
+		check(
+			"the director plays the system's bed on the game's live context, calm at a quiet boot (#548)",
+			// Calm: raiders off, a new commander, a full hull. It read combat
+			// once, from a struck window wider than a fresh condition's
+			// `sinceStruckS`.
+			live.bed !== "none" &&
+				live.level === "calm" &&
+				live.heard > 1e-3 &&
+				live.errors.length === 0,
+			`bed ${live.bed} at ${live.level}; rms at the music bus ${live.heard.toFixed(4)}; errors ${live.errors.join("; ") || 0}`,
 		);
 		await game.close();
 	}

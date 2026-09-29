@@ -19,6 +19,7 @@ import {
 	stepMusic,
 } from "../src/music-director";
 import type { MusicCommand } from "../src/music-score";
+import { fullCondition } from "../src/ship-condition";
 
 const calm: MusicReading = {
 	scene: "flight",
@@ -265,4 +266,12 @@ describe("the prototype's arms, from ?music=", () => {
 			{ type: "stop", at: "now", fadeS: 2.5 },
 		]);
 	});
+});
+
+test("a ship never struck is not taking fire: a fresh condition reads calm", () => {
+	// `fullCondition` starts `sinceStruckS` at the recharge delay, which is
+	// the condition's own "not struck lately". A struck window wider than that
+	// made every boot and every repair start at combat and fall for 30 s.
+	const c = fullCondition("courier");
+	expect(dangerLevel(at({ sinceStruckS: c.sinceStruckS }))).toBe("calm");
 });

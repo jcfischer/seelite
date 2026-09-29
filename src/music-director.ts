@@ -61,8 +61,13 @@ export interface MusicReading {
 	readonly stationRole: StationType | null;
 }
 
-/** A hit this recent is combat. By ear. */
-export const STRUCK_WINDOW_S = 4;
+/**
+ * A hit this recent is combat. By ear, and under the shields' recharge delay
+ * (`SHIELD_RECHARGE_DELAY_S`, 3 s): a fresh condition starts `sinceStruckS`
+ * there as its "not struck lately", so a wider window made every boot and
+ * every repair start at combat.
+ */
+export const STRUCK_WINDOW_S = 2.5;
 /** Below these, the ship is hurt (D4's "low", set by ear). */
 export const LOW_SHIELD_SHARE = 0.25;
 export const LOW_HULL_SHARE = 0.35;
