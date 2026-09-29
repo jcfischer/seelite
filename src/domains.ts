@@ -119,6 +119,10 @@ export const DOMAIN = {
 	 *  the target, its instance and the call ordinal, so no two calls share a
 	 *  draw and a call moves no leg's encounter. */
 	RELAY_DEFENDER: 26,
+	/** A system's music (`music-generate.ts`, #548 D8): its theme — tonic,
+	 *  mode, tempo, palette — and the notes each variant draws. Its own tag,
+	 *  so the score moves no world draw and a system keeps its sound. */
+	MUSIC: 27,
 } as const;
 
 export type DomainName = keyof typeof DOMAIN;
