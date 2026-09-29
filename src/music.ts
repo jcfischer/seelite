@@ -75,7 +75,7 @@ export class Music {
 			const node = new AudioWorkletNode(ctx, MUSIC_PROCESSOR, {
 				numberOfInputs: 0,
 				numberOfOutputs: 1,
-				outputChannelCount: [1],
+				outputChannelCount: [2],
 			});
 			node.port.onmessage = (e: MessageEvent<MusicReport>) => {
 				if (e.data?.type === "synced") {

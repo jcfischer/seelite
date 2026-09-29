@@ -74,6 +74,10 @@ export interface TempoPoint {
  * - `feedback` — FM only: the modulator fed back into itself, in radians.
  * - `cutoffHz` — pad: the lowpass. Pluck: the brightness of the pluck's first
  *   moment. Noise has none: its band is centred on the note's pitch.
+ * - `pan` — `-1` left .. `1` right; 0, the centre, is the default.
+ * - `reverb`, `echo` — the part's sends into the song's space
+ *   (`music-space.ts`), `0`..`1`. **Both default to 0**: a part is dry
+ *   unless its score puts it in the room, so every score states its own mix.
  */
 export interface PartSpec {
 	readonly voice: VoiceKind;
@@ -86,6 +90,21 @@ export interface PartSpec {
 	readonly index?: number;
 	readonly feedback?: number;
 	readonly cutoffHz?: number;
+	readonly pan?: number;
+	readonly reverb?: number;
+	readonly echo?: number;
+}
+
+/**
+ * The room a song plays in (`music-space.ts`): the reverb's time to fall
+ * 60 dB, the echo's spacing in beats at the song's first tempo, and each
+ * echo's level against the last. Every field has a default
+ * (`DEFAULT_SONG_SPACE` in `music-engine.ts`).
+ */
+export interface SongSpace {
+	readonly reverbS?: number;
+	readonly echoBeats?: number;
+	readonly echoFeedback?: number;
 }
 
 /**
@@ -112,6 +131,7 @@ export interface Song {
 	readonly loop?: { readonly from: string; readonly to: string };
 	readonly resolve?: string;
 	readonly lilt?: readonly number[];
+	readonly space?: SongSpace;
 }
 
 /**

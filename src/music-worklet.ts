@@ -68,8 +68,10 @@ class MusicProcessor extends AudioWorkletProcessor {
 	}
 
 	process(_inputs: Float32Array[][], outputs: Float32Array[][]): boolean {
+		// Two channels: the space is stereo (`music-space.ts`). A one-channel
+		// output still gets the fold-down.
 		const out = outputs[0]?.[0];
-		if (out) this.engine.render(out, currentFrame);
+		if (out) this.engine.render(out, currentFrame, outputs[0]?.[1]);
 		return true;
 	}
 }

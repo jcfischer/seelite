@@ -384,14 +384,16 @@ test("the music vocabulary is a leaf", () => {
 
 test("the music worklet's modules reach only each other and the score", () => {
 	// #560: everything the worklet bundles is pure — the score, the scheduling
-	// core, the voices and the engine — so bun runs all of it headless and the
+	// core, the voices, the space and the engine — so bun runs all of it headless and the
 	// worklet shell is the only part that needs `AudioWorkletGlobalScope`.
 	// None of them reaches the audio layer, the game or a browser global.
 	expect(fromsIn("music-sequencer.ts")).toEqual(["./music-score"]);
 	expect(fromsIn("music-voices.ts")).toEqual(["./music-score"]);
+	expect(fromsIn("music-space.ts")).toEqual([]);
 	expect(fromsIn("music-engine.ts")).toEqual([
 		"./music-score",
 		"./music-sequencer",
+		"./music-space",
 		"./music-voices",
 	]);
 	expect(fromsIn("music-worklet.ts")).toEqual([

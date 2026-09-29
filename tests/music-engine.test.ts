@@ -498,3 +498,97 @@ describe("a held section (#548)", () => {
 		expect(parts(r.heard, "b")).toEqual(["b2", "b2", "b2", "b2"]);
 	});
 });
+
+describe("stereo and the space (#560, after #548's first listening)", () => {
+	/** One note of one part, rendered in stereo for `seconds`. */
+	const stereo = (
+		part: Partial<Song["parts"][string]>,
+		seconds: number,
+		extra: (e: MusicEngine, f: number) => void = () => {},
+		mono = false,
+	) => {
+		const e = new MusicEngine(SR, 16);
+		const one: Song = {
+			name: "one",
+			beatsPerBar: 4,
+			parts: { p: { voice: "fm", level: 1, ...part } },
+			sections: [
+				{
+					name: "A",
+					bars: 1,
+					events: [{ part: "p", bar: 0, beat: 0, dur: 0.5, pitch: 69, vel: 1 }],
+				},
+			],
+			tempo: [{ bar: 0, bpm: 120 }],
+			space: { reverbS: 2, echoBeats: 1, echoFeedback: 0.4 },
+		};
+		e.command({ type: "load", id: "one", song: one }, 0);
+		e.command({ type: "play", id: "one", at: "bar" }, 0);
+		const n = Math.round(seconds * SR);
+		const L = new Float32Array(n);
+		const R = new Float32Array(n);
+		for (let f = 0; f < n; f += 128) {
+			extra(e, f);
+			e.render(
+				L.subarray(f, f + 128),
+				f,
+				mono ? undefined : R.subarray(f, f + 128),
+			);
+		}
+		return { L, R };
+	};
+	const energy = (x: Float32Array, a: number, b: number) => {
+		let s = 0;
+		for (let i = Math.round(a * SR); i < Math.round(b * SR); i++)
+			s += x[i] * x[i];
+		return s;
+	};
+
+	test("a centred dry part is the same on both sides, and its fold-down is the mono render", () => {
+		const { L, R } = stereo({}, 0.5);
+		const mono = stereo({}, 0.5, undefined, true).L;
+		for (let i = 0; i < L.length; i++) {
+			expect(L[i]).toBe(R[i]);
+			expect(mono[i]).toBeCloseTo((L[i] + R[i]) / 2, 7);
+		}
+		expect(energy(L, 0, 0.3)).toBeGreaterThan(0);
+	});
+
+	test("a part panned hard left is silent on the right", () => {
+		const { L, R } = stereo({ pan: -1 }, 0.5);
+		expect(energy(R, 0, 0.5)).toBeLessThan(1e-12);
+		expect(energy(L, 0, 0.5)).toBeGreaterThan(0);
+	});
+
+	test("a part with a reverb send rings after its note; a dry part does not", () => {
+		const wet = stereo(
+			{ reverb: 0.6, decayS: 0.1, sustain: 0, releaseS: 0.05 },
+			2,
+		);
+		const dry = stereo({ decayS: 0.1, sustain: 0, releaseS: 0.05 }, 2);
+		expect(energy(dry.L, 0.6, 1.5)).toBe(0);
+		expect(energy(wet.L, 0.6, 1.5)).toBeGreaterThan(0);
+		expect(energy(wet.R, 0.6, 1.5)).toBeGreaterThan(0);
+	});
+
+	test("the song's space sets the echo: one beat at 120 bpm repeats at 0.5 s", () => {
+		const { L } = stereo(
+			{ echo: 1, decayS: 0.05, sustain: 0, releaseS: 0.02 },
+			1,
+		);
+		// Dry note over by 0.2 s; the first repeat, on the left, at 0.5 s.
+		expect(energy(L, 0.3, 0.45)).toBe(0);
+		expect(energy(L, 0.5, 0.65)).toBeGreaterThan(0);
+	});
+
+	test("a stop now fades the space with the song, and then it is silence", () => {
+		const { L, R } = stereo({ reverb: 1, echo: 1 }, 2, (e, f) => {
+			if (f === 0.25 * SR - ((0.25 * SR) % 128))
+				e.command({ type: "stop", at: "now", fadeS: 0.1 }, f);
+		});
+		for (let i = Math.round(0.5 * SR); i < 2 * SR; i++) {
+			expect(L[i]).toBe(0);
+			expect(R[i]).toBe(0);
+		}
+	});
+});

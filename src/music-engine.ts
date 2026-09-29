@@ -21,11 +21,14 @@ import {
 	type MusicCommand,
 	type Quantum,
 	type Song,
+	type SongSpace,
 } from "./music-score";
+import { Space, type SpaceSpec } from "./music-space";
 import { compileSong, type NoteSink, Player } from "./music-sequencer";
 import {
 	type ResolvedPart,
 	resolvePart,
+	type StereoOut,
 	VoiceBank,
 	type VoiceGain,
 } from "./music-voices";
@@ -36,6 +39,18 @@ import {
  * test score; #547 and #548 balance their parts under it.
  */
 export const MUSIC_HEADROOM = 0.35;
+
+/** The room a song plays in when its score names none (`Song.space`). By
+ *  ear, toward the references the principal named on #548: a long hall. */
+export const DEFAULT_SONG_SPACE: Required<SongSpace> = {
+	reverbS: 4.5,
+	echoBeats: 0.75,
+	echoFeedback: 0.4,
+};
+
+/** The block the engine renders in. The worklet's quantum is 128; a longer
+ *  `render` is cut into these. */
+const BLOCK = 128;
 
 /**
  * A gain in two straight segments: from `lead` to `start` it runs from
@@ -100,6 +115,8 @@ interface Slot {
 	readonly gain: Ramp;
 	/** When a fade out has run out: the song is halted and its voices freed. */
 	haltAt: number;
+	/** The room it plays in, with its echo in seconds at its first tempo. */
+	readonly space: SpaceSpec;
 }
 
 export class MusicEngine implements NoteSink, VoiceGain {
@@ -113,6 +130,21 @@ export class MusicEngine implements NoteSink, VoiceGain {
 	private rendering = 0;
 	/** Where the last `render` ended: no move lands before it. */
 	private rendered = 0;
+	/** The reverb and echo every part sends into, and the gain on what comes
+	 *  back: a stop now fades it with the song. */
+	private readonly space: Space;
+	private readonly spaceGain = new Ramp();
+	/** The block's two channels, its three sends and the space's return. */
+	private readonly bufL = new Float32Array(BLOCK);
+	private readonly bufR = new Float32Array(BLOCK);
+	private readonly wetL = new Float32Array(BLOCK);
+	private readonly wetR = new Float32Array(BLOCK);
+	private readonly sends: StereoOut = {
+		right: this.bufR,
+		revL: new Float32Array(BLOCK),
+		revR: new Float32Array(BLOCK),
+		echo: new Float32Array(BLOCK),
+	};
 
 	/**
 	 * `onNote` hears every note as it is scheduled, by song id, frame and part
@@ -124,6 +156,11 @@ export class MusicEngine implements NoteSink, VoiceGain {
 		private readonly onNote?: (id: string, frame: number, part: string) => void,
 	) {
 		this.bank = new VoiceBank(cap, sampleRate);
+		this.space = new Space(sampleRate, {
+			reverbS: DEFAULT_SONG_SPACE.reverbS,
+			echoS: 0.5,
+			echoFeedback: DEFAULT_SONG_SPACE.echoFeedback,
+		});
 	}
 
 	/** The song the transport is moving, while it plays. */
@@ -205,6 +242,9 @@ export class MusicEngine implements NoteSink, VoiceGain {
 							s.haltAt = Math.min(s.haltAt, now + len);
 						}
 					}
+					// The room goes with it: a stop now is a pilot taking the
+					// stick back, and a hall ringing on after it is not a stop.
+					this.spaceGain.set(0, now, len, now);
 					return;
 				}
 				const line = this.line(now, cmd.at);
@@ -233,11 +273,31 @@ export class MusicEngine implements NoteSink, VoiceGain {
 	}
 
 	/**
-	 * Render the block that starts on `frame` into `out`, overwriting it.
-	 * Notes first, so a note due inside the block joins it on its frame.
+	 * Render the block that starts on `frame` into `out`, overwriting it:
+	 * the left channel, with `outR` the right. Without `outR`, `out` gets
+	 * the fold-down, (L + R) / 2 — what a mono destination hears.
 	 */
-	render(out: Float32Array, frame: number) {
-		const to = frame + out.length;
+	render(out: Float32Array, frame: number, outR?: Float32Array) {
+		for (let k = 0; k < out.length; k += BLOCK) {
+			const m = Math.min(BLOCK, out.length - k);
+			this.renderBlock(
+				out.subarray(k, k + m),
+				outR?.subarray(k, k + m),
+				frame + k,
+			);
+		}
+	}
+
+	/** One block of at most `BLOCK` frames. Notes first, so a note due inside
+	 *  the block joins it on its frame; then the voices, dry and sent; then the
+	 *  room. */
+	private renderBlock(
+		out: Float32Array,
+		outR: Float32Array | undefined,
+		frame: number,
+	) {
+		const n = out.length;
+		const to = frame + n;
 		this.rendered = to;
 		for (let i = 0; i < this.slots.length; i++) {
 			const s = this.slots[i];
@@ -247,8 +307,34 @@ export class MusicEngine implements NoteSink, VoiceGain {
 			this.rendering = i;
 			s.player.render(frame, to, this);
 		}
-		out.fill(0);
-		this.bank.render(out, frame, this);
+		const L = this.bufL.subarray(0, n);
+		const R = this.bufR.subarray(0, n);
+		const sends: StereoOut = {
+			right: R,
+			revL: this.sends.revL.subarray(0, n),
+			revR: this.sends.revR.subarray(0, n),
+			echo: this.sends.echo.subarray(0, n),
+		};
+		L.fill(0);
+		R.fill(0);
+		sends.revL.fill(0);
+		sends.revR.fill(0);
+		sends.echo.fill(0);
+		this.bank.render(L, frame, this, sends);
+		const wetL = this.wetL.subarray(0, n);
+		const wetR = this.wetR.subarray(0, n);
+		wetL.fill(0);
+		wetR.fill(0);
+		this.space.process(sends.revL, sends.revR, sends.echo, wetL, wetR);
+		for (let k = 0; k < n; k++) {
+			const g = this.spaceGain.at(frame + k);
+			const l = L[k] + wetL[k] * g;
+			const r = R[k] + wetR[k] * g;
+			if (outR) {
+				out[k] = l;
+				outR[k] = r;
+			} else out[k] = 0.5 * (l + r);
+		}
 	}
 
 	/** `NoteSink`: a note from the slot being rendered. */
@@ -298,6 +384,7 @@ export class MusicEngine implements NoteSink, VoiceGain {
 			partGain: compiled.parts.map(() => new Ramp()),
 			gain: new Ramp(),
 			haltAt: Infinity,
+			space: spaceOf(song),
 		};
 	}
 
@@ -430,6 +517,9 @@ export class MusicEngine implements NoteSink, VoiceGain {
 		for (const g of s.partGain) g.reset(1);
 		s.player.start(line, at, hold);
 		this.lead = ix;
+		// The room is the lead's, and back at full from its line.
+		this.space.set(s.space);
+		this.spaceGain.set(1, line, 0, this.rendered);
 	}
 
 	private halt(ix: number) {
@@ -438,4 +528,14 @@ export class MusicEngine implements NoteSink, VoiceGain {
 		s.haltAt = Infinity;
 		this.bank.clearOwner(ix);
 	}
+}
+
+/** A song's room, its echo in seconds at its first tempo. */
+function spaceOf(song: Song): SpaceSpec {
+	const sp = { ...DEFAULT_SONG_SPACE, ...song.space };
+	return {
+		reverbS: sp.reverbS,
+		echoS: (sp.echoBeats * 60) / song.tempo[0].bpm,
+		echoFeedback: sp.echoFeedback,
+	};
 }

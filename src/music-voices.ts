@@ -52,6 +52,11 @@ export interface ResolvedPart {
 	readonly index: number;
 	readonly feedback: number;
 	readonly cutoffHz: number;
+	/** Equal-power gains, scaled so the centre is 1 on each side. */
+	readonly panL: number;
+	readonly panR: number;
+	readonly reverb: number;
+	readonly echo: number;
 }
 
 /**
@@ -72,6 +77,9 @@ const DEFAULTS: Record<
 		index: 0,
 		feedback: 0,
 		cutoffHz: 1400,
+		pan: 0,
+		reverb: 0,
+		echo: 0,
 	},
 	pluck: {
 		attackS: 0.002,
@@ -82,6 +90,9 @@ const DEFAULTS: Record<
 		index: 0,
 		feedback: 0,
 		cutoffHz: 4000,
+		pan: 0,
+		reverb: 0,
+		echo: 0,
 	},
 	fm: {
 		attackS: 0.004,
@@ -92,6 +103,9 @@ const DEFAULTS: Record<
 		index: 2.5,
 		feedback: 0.3,
 		cutoffHz: 0,
+		pan: 0,
+		reverb: 0,
+		echo: 0,
 	},
 	noise: {
 		attackS: 0.001,
@@ -102,6 +116,9 @@ const DEFAULTS: Record<
 		index: 0,
 		feedback: 0,
 		cutoffHz: 0,
+		pan: 0,
+		reverb: 0,
+		echo: 0,
 	},
 	tone: {
 		attackS: 0.001,
@@ -112,6 +129,9 @@ const DEFAULTS: Record<
 		index: 0,
 		feedback: 0,
 		cutoffHz: 0,
+		pan: 0,
+		reverb: 0,
+		echo: 0,
 	},
 };
 
@@ -132,7 +152,29 @@ export function resolvePart(spec: PartSpec, sampleRate: number): ResolvedPart {
 		index: d.index,
 		feedback: d.feedback,
 		cutoffHz: d.cutoffHz,
+		...panGains(d.pan),
+		reverb: d.reverb,
+		echo: d.echo,
 	};
+}
+
+/** Equal power, scaled by √2 so a centred part is 1 on each side and a mono
+ *  fold-down, (L + R) / 2, is the level the mono synth had. */
+function panGains(pan: number): { panL: number; panR: number } {
+	const th = ((Math.max(-1, Math.min(1, pan)) + 1) * Math.PI) / 4;
+	return { panL: Math.SQRT2 * Math.cos(th), panR: Math.SQRT2 * Math.sin(th) };
+}
+
+/**
+ * Where a stereo render writes, beside the left channel it is handed: the
+ * right channel and the three sends into the space. All the length of the
+ * block.
+ */
+export interface StereoOut {
+	readonly right: Float32Array;
+	readonly revL: Float32Array;
+	readonly revR: Float32Array;
+	readonly echo: Float32Array;
 }
 
 const stripUndefined = (spec: PartSpec) =>
@@ -179,6 +221,12 @@ export class VoiceBank {
 	private readonly fb: Float64Array;
 	private readonly lp: Float64Array;
 	private readonly bp: Float64Array;
+	/** The pad's second filter: its right side, one saw each. */
+	private readonly lp2: Float64Array;
+	private readonly bp2: Float64Array;
+	/** The right side of the last `sample`, for the pad; every other voice
+	 *  is one signal, panned. */
+	private sideR = 0;
 	private readonly g: Float64Array;
 	/** The pluck's delay line: one per slot, sized once for the floor. */
 	private readonly line: Float32Array[];
@@ -208,6 +256,8 @@ export class VoiceBank {
 		this.fb = f64();
 		this.lp = f64();
 		this.bp = f64();
+		this.lp2 = f64();
+		this.bp2 = f64();
 		this.g = f64();
 		const lineLen = Math.ceil(sampleRate / PLUCK_FLOOR_HZ) + 4;
 		this.line = Array.from({ length: cap }, () => new Float32Array(lineLen));
@@ -291,6 +341,8 @@ export class VoiceBank {
 		this.fb[i] = 0;
 		this.lp[i] = 0;
 		this.bp[i] = 0;
+		this.lp2[i] = 0;
+		this.bp2[i] = 0;
 		const cents = PAD_DETUNE_CENTS / 1200;
 		switch (part.kind) {
 			case PAD: // two saws either side of the pitch, into a lowpass
@@ -350,8 +402,16 @@ export class VoiceBank {
 	/**
 	 * Add every voice into `out`, which holds the frames from `frame` on.
 	 * A voice is silent before its start frame and joins mid-block on it.
+	 *
+	 * With `stereo`, `out` is the left channel and the rest go where it
+	 * says; without it, `out` gets the fold-down, (L + R) / 2, and no send.
 	 */
-	render(out: Float32Array, frame: number, gains: VoiceGain) {
+	render(
+		out: Float32Array,
+		frame: number,
+		gains: VoiceGain,
+		stereo?: StereoOut,
+	) {
 		const n = out.length;
 		for (let i = 0; i < this.cap; i++) {
 			if (this.stage[i] === STAGE_FREE) continue;
@@ -388,7 +448,16 @@ export class VoiceBank {
 					}
 				}
 				const x = this.sample(i, kind, part, env);
-				out[s] += x * env * amp * gains.gain(owner, pIx, frame + s);
+				const k = env * amp * gains.gain(owner, pIx, frame + s);
+				const l = x * k * part.panL;
+				const r = (kind === PAD ? this.sideR : x) * k * part.panR;
+				if (stereo) {
+					out[s] += l;
+					stereo.right[s] += r;
+					stereo.revL[s] += l * part.reverb;
+					stereo.revR[s] += r * part.reverb;
+					stereo.echo[s] += 0.5 * (l + r) * part.echo;
+				} else out[s] += 0.5 * (l + r);
 			}
 			this.env[i] = env;
 			this.stage[i] = stage;
@@ -403,7 +472,10 @@ export class VoiceBank {
 				const b = saw(this.ph2[i], this.inc2[i]);
 				this.ph1[i] = wrap(this.ph1[i] + this.inc1[i]);
 				this.ph2[i] = wrap(this.ph2[i] + this.inc2[i]);
-				return this.svf(i, 0.5 * (a + b), 1.1, false);
+				// One saw a side, each through its own filter: the width. Folded
+				// down, (f(a) + f(b)) / 2 is f((a + b) / 2), the mono pad exactly.
+				this.sideR = this.svf2(i, b, 1.1);
+				return this.svf(i, a, 1.1, false);
 			}
 			case PLUCK: {
 				const line = this.line[i];
@@ -441,6 +513,15 @@ export class VoiceBank {
 				return c * 0.8;
 			}
 		}
+	}
+
+	/** The pad's right-side filter: the same Chamberlin lowpass, its own
+	 *  state. */
+	private svf2(i: number, x: number, damp: number): number {
+		const g = this.g[i];
+		this.lp2[i] += g * this.bp2[i];
+		this.bp2[i] += g * (x - this.lp2[i] - damp * this.bp2[i]);
+		return this.lp2[i];
 	}
 
 	/** One step of voice `i`'s Chamberlin state-variable filter: its lowpass
