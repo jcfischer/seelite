@@ -277,7 +277,7 @@ export const seededLadderRecord = (
 	for (const [g, systems] of Object.entries(visitedSystems))
 		if (systems.length > 0)
 			visited[Number(g)] = { systems: [...systems], stations: [] };
-	const here = visited[galaxyIndex] ?? { systems: [], stations: [] };
+	const here = visitedIn(visited, galaxyIndex);
 	visited[galaxyIndex] = {
 		systems: [...new Set([...here.systems, systemIndex])].sort((a, b) => a - b),
 		stations: dockedAt ? [dockedAt] : [],
@@ -381,12 +381,23 @@ export const bankOnDock = (
 		combat: record.banked.combat + pending.combat,
 		exploration: record.banked.exploration + kinds,
 	};
-	const next: LadderRecord = { ...record, banked, visited };
-	const atTop = LADDERS.every((l) => rungOf(l, banked[l]) >= CAPSTONE_RUNG);
-	return record.capstoneAt === null && atTop
-		? { ...next, capstoneAt: at.gameTime }
-		: next;
+	return withCapstone({ ...record, banked, visited }, at.gameTime);
 };
+
+/**
+ * The capstone, recorded the first time all three ladders stand at the top
+ * (#183 D8), and never moved after. Read wherever banked credit rises while
+ * docked — a dock, and a sale or a settlement at that dock's console — so a
+ * sale that completes the tops is not stamped with the next dock's time.
+ */
+export const withCapstone = (
+	record: LadderRecord,
+	gameTime: number,
+): LadderRecord =>
+	record.capstoneAt === null &&
+	LADDERS.every((l) => rungOf(l, record.banked[l]) >= CAPSTONE_RUNG)
+		? { ...record, capstoneAt: gameTime }
+		: record;
 
 /** Trade credit, banked at once: a sale or a settlement happens docked. */
 export const bankTrade = (record: LadderRecord, cr: number): LadderRecord =>

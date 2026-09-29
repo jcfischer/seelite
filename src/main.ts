@@ -743,6 +743,7 @@ import {
 	reconcileBasis,
 	rungsOf,
 	seededLadderRecord,
+	withCapstone,
 } from "./ladder";
 import {
 	emptyRequests,
@@ -14655,10 +14656,13 @@ class Game {
 				}
 				// #183 D3: a settlement's pay banks at once — a report happens
 				// docked — and goods a job took take their basis with them.
-				this.ladders = ladderAfterSettlement(
-					this.ladders,
-					result.rewardCr ?? 0,
-					this.commander.cargo,
+				this.ladders = withCapstone(
+					ladderAfterSettlement(
+						this.ladders,
+						result.rewardCr ?? 0,
+						this.commander.cargo,
+					),
+					this.world.gameTime,
 				);
 				if (result.mark) {
 					// §4's mark, through the module's own writer and with the
@@ -14860,8 +14864,12 @@ class Game {
 	/**
 	 * A player's kill, priced on the combat ladder (#562 D3): pending until the
 	 * next dock. `null` is a target with no hull row — the relay — and pays
-	 * nothing, as an unarmed hull does (D4). Every kill path calls this, so a
-	 * path that forgot is visible as the one that does not.
+	 * nothing, as an unarmed hull does (D4). Called at each of the four kill
+	 * sites — traffic, raider (its defender included), relay, tender — by hand,
+	 * and nothing checks that list: `probe-raider-consequence` reads the
+	 * raider's credit and `probe-traffic-engagement` an unarmed kill's zero, so
+	 * a relay or tender call that went missing would pay what it pays anyway,
+	 * which is nothing.
 	 */
 	private creditKill(target: HullId | null): void {
 		if (target === null) return;
@@ -15763,11 +15771,9 @@ class Game {
 		}
 		this.clearStationRefusal();
 		// #183 D3: a buy records its basis, a sale banks its margin at once.
-		this.ladders = ladderAfterMarket(
-			this.ladders,
-			action,
-			this.commander,
-			result.commander,
+		this.ladders = withCapstone(
+			ladderAfterMarket(this.ladders, action, this.commander, result.commander),
+			this.world.gameTime,
 		);
 		this.commander = result.commander;
 		// Through the module's own writer, not by hand. `setDeficits` carries

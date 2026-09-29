@@ -540,8 +540,9 @@ margin (sale less purchase basis, plus job pay), exploration first-time kinds
 (first arrival in a system, first dock at a station). A ladder gates its own
 hulls and equipment; jobs, prices and stations read none. Shown on the right
 console's **Commander** page — a console tab, not the **Commander** overlay.
-`src/ladder.ts` owns thresholds, names and gates; `src/kill-credit.ts` owns a
-kill's price.
+`src/ladder.ts` owns thresholds, names, gates and the trade ladder's purchase
+basis (`LadderRecord.basis`, which the hold does not carry);
+`src/kill-credit.ts` owns a kill's price.
 _Avoid_: rating, rank (for the three together), level, XP
 
 **Rung**:

@@ -1698,35 +1698,36 @@ export class LiveCockpit {
 				// what is in it.
 				// One precedence rule for both cells: a gate blocks only new
 				// purchases, so owned wins over locked (#183 D9).
-				const locked = owned.includes(entry.name) ? undefined : entry.locked;
-				const state =
+				const row =
 					entry.per === "ly"
-						? "fill"
+						? ({ kind: "fill" } as const)
 						: owned.includes(entry.name)
-							? "owned"
-							: locked
-								? "locked"
-								: "open";
-				const action =
-					state === "fill"
-						? `<button class="lc-station-action" type="button" data-live-station-action="buy-fuel" data-live-station-name="${name}">FILL</button>`
-						: state === "owned"
-							? '<span class="lc-station-owned">OWNED</span>'
-							: locked
-								? // #183 D6: the #489 locked-row pattern — listed, named and
-									// with no BUY, because a vanished row says nothing about
-									// what to climb. Owned wins: a gate blocks new purchases.
-									`<span class="lc-station-locked" data-live-equipment-locked="${locked.ladder}:${locked.rung}">LOCKED</span>`
-								: `<button class="lc-station-action" type="button" data-live-station-action="buy-equipment" data-live-station-name="${name}">BUY</button>`;
-				// The rung a locked row needs goes in the middle cell, which a
-				// unit item leaves empty: in the action cell it was wider than
-				// BUY, and each row is its own grid, so the price column moved.
-				const held =
-					entry.per === "ly"
-						? `${fuel.ly.toFixed(1)}/${fuel.capacityLy} LY`
-						: locked
-							? `<span class="lc-station-locked">${locked.ladder.toUpperCase()} ${locked.rung} · ${escapeHtml(locked.name.toUpperCase())}</span>`
-							: "";
+							? ({ kind: "owned" } as const)
+							: entry.locked
+								? ({ kind: "locked", locked: entry.locked } as const)
+								: ({ kind: "open" } as const);
+				let action: string;
+				let held = "";
+				switch (row.kind) {
+					case "fill":
+						action = `<button class="lc-station-action" type="button" data-live-station-action="buy-fuel" data-live-station-name="${name}">FILL</button>`;
+						held = `${fuel.ly.toFixed(1)}/${fuel.capacityLy} LY`;
+						break;
+					case "owned":
+						action = '<span class="lc-station-owned">OWNED</span>';
+						break;
+					case "locked":
+						// #183 D6: the #489 locked-row pattern — listed, named and with
+						// no BUY, because a vanished row says nothing about what to
+						// climb. The rung goes in the middle cell, which a unit item
+						// leaves empty: in the action cell it was wider than BUY, and
+						// each row is its own grid, so the price column moved.
+						action = `<span class="lc-station-locked" data-live-equipment-locked="${row.locked.ladder}:${row.locked.rung}">LOCKED</span>`;
+						held = `<span class="lc-station-locked">${row.locked.ladder.toUpperCase()} ${row.locked.rung} · ${escapeHtml(row.locked.name.toUpperCase())}</span>`;
+						break;
+					default:
+						action = `<button class="lc-station-action" type="button" data-live-station-action="buy-equipment" data-live-station-name="${name}">BUY</button>`;
+				}
 				return `<div class="lc-station-row" data-live-equipment="available"><span>${name}</span><span class="lc-station-cell">${entry.priceCr} Cr</span><span class="lc-station-cell">${held}</span>${action}</div>`;
 			})
 			.join("");

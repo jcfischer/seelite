@@ -19,6 +19,8 @@ import {
 	RUNG_NAMES,
 	TOP_RUNG,
 	bankOnDock,
+	bankTrade,
+	withCapstone,
 	basisAfterBuy,
 	basisAfterScoop,
 	emptyLadderRecord,
@@ -402,5 +404,22 @@ describe("a job settlement (#183 D3)", () => {
 		const next = ladderAfterSettlement(record, 250, { Food: 4 });
 		expect(next.banked.trade).toBe(250);
 		expect(next.basis.Food).toEqual({ units: 4, cr: 40 });
+	});
+});
+
+describe("the capstone on a docked sale (#183 D8)", () => {
+	test("a sale that completes the tops records it at that sale's time", () => {
+		const nearTop: LadderRecord = {
+			...emptyLadderRecord(),
+			banked: {
+				combat: LADDER_TOP.combat,
+				trade: LADDER_TOP.trade - 1,
+				exploration: LADDER_TOP.exploration,
+			},
+		};
+		expect(withCapstone(nearTop, 10).capstoneAt).toBeNull();
+		const sold = withCapstone(bankTrade(nearTop, 5), 42);
+		expect(sold.capstoneAt).toBe(42);
+		expect(withCapstone(sold, 99).capstoneAt).toBe(42);
 	});
 });
