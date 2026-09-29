@@ -556,10 +556,8 @@ import {
 	HULL_VARIANTS,
 	buildShipMesh,
 	fleetLayout,
-	hullPaint,
 	updateShipVisuals,
 } from "./ship-mesh";
-import { buildBonnet } from "./cockpit-bonnet";
 import { ArrivalRift } from "./arrival-rift";
 import {
 	WITCHSPACE,
@@ -7396,10 +7394,6 @@ class Game {
 		const canopyPane = new THREE.Mesh(canopyPaneGeometry(), canopyGlass);
 		canopyPane.name = "canopy-glass";
 		cockpit.add(canopyPane);
-		// The front of the ship, below the sill (#204): a proxy in the cabin's
-		// frame in the flown hull's own paint — `cockpit-bonnet.ts` has why the
-		// real hull cannot be it.
-		cockpit.add(buildBonnet(hullPaint(PLAYER_HULL[0])));
 		for (const rail of CANOPY_SIDE_RAILS)
 			addStrut(
 				rail.from,

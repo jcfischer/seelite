@@ -136,7 +136,7 @@ export const LEVERS = Object.freeze({
 	207: "the relief program picked by how big the planet looks",
 	202: "the station finish: a second plating octave, a cut seam, macro fixtures",
 	203: "the hull finish: a second plating octave, muted paint, a rim, collars, open bells",
-	204: "the front of the ship from the cockpit: the bonnet, a canopy with thickness, the face mid-tone, lamp pools",
+	204: "the cabin read as the front of a ship: a canopy with thickness and a reflection, the face mid-tone, lamp pools",
 	208: "the baked cube a planet is drawn from below two radii",
 	211: "the half-resolution planet surface beneath a full-resolution limb",
 	257: "the refinery and outpost forms solved by wave function collapse, and selected",

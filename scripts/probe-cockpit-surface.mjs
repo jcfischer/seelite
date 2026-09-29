@@ -154,15 +154,7 @@ function state() {
  * asserted on its own so the hole is a claim.
  */
 const structuralOf = (state) =>
-	state.meshes.filter(
-		(mesh) =>
-			mesh.lit &&
-			mesh.name !== "throttle-fill" &&
-			// **Not a cabin surface.** #204's bonnet is the hull, in the hull's own
-			// paint and plate, drawn inside the cabin's group only because it has
-			// to turn with it; the cabin's profile, finishes and panel are not its.
-			mesh.name !== "cockpit-bonnet",
-	);
+	state.meshes.filter((mesh) => mesh.lit && mesh.name !== "throttle-fill");
 
 /** The five surfaces a player *reads*. Named rather than derived, because the
  *  claim is about these specific ones and a derived set would grow silently. */
