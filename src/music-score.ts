@@ -13,7 +13,17 @@
 
 /** The synth's voices (#543 D1). `noise` and `tone` are the two percussion
  *  voices: a burst of filtered noise, and a sine that drops in pitch. */
-export type VoiceKind = "pad" | "pluck" | "fm" | "noise" | "tone";
+export type VoiceKind =
+	| "pad"
+	| "pluck"
+	| "fm"
+	| "noise"
+	| "tone"
+	| "analog"
+	| "drone"
+	| "acid"
+	| "keys"
+	| "kick";
 
 /**
  * One note (#543 D3).
@@ -69,9 +79,28 @@ export interface TempoPoint {
  *   peak; at 0 a voice ends when its decay does.
  * - `ratio` — FM: the modulator's frequency as a multiple of the carrier's.
  *   Tone: the pitch it starts at, as a multiple of the note's, before it
- *   glides down to it.
- * - `index` — FM only: the modulation depth in radians at the peak.
+ *   glides down to it. Analog: the cross-modulator's, as for FM. Keys: the
+ *   spacing of the partials in multiples of the note — 1 is harmonic, a
+ *   little above 1 stretches them toward glass and bells.
+ * - `index` — FM: the modulation depth in radians at the peak. Analog: how
+ *   far the cross-modulator bends the pitch (0 is none). Keys: brightness,
+ *   how slowly the partials fall off with their number.
+ * - `indexDecayS` — FM: the time for the index to fall 60 dB on its own
+ *   clock, so a bell darkens while it rings. 0, the default, keeps the index
+ *   on the amplitude envelope.
  * - `feedback` — FM only: the modulator fed back into itself, in radians.
+ * - `unison` — analog, drone: oscillators per note, 1..8.
+ * - `detune` — analog, drone: how far they spread in pitch, semitones.
+ * - `drift` — analog, drone: how often, per second, each takes a new small
+ *   random detune, glided into: the analog wander.
+ * - `spread` — analog, drone: how wide across the field they sit, `0`..`1`.
+ * - `envAmount`, `envDecayS` — analog, acid: the filter envelope, in octaves
+ *   above `cutoffHz` at its peak, and its 60 dB fall.
+ * - `resonance` — analog, acid: the filter's peak at its cutoff, `0`..`1`.
+ * - `drive` — acid: saturation, `0`..`1`.
+ * - `glideS` — acid: a note that overlaps the next slides to it, on this
+ *   time constant, without a new attack.
+ * - `vibrato` — analog: depth in semitones, fading in over the first bars.
  * - `cutoffHz` — pad: the lowpass. Pluck: the brightness of the pluck's first
  *   moment. Noise has none: its band is centred on the note's pitch.
  * - `pan` — `-1` left .. `1` right; 0, the centre, is the default.
@@ -89,6 +118,17 @@ export interface PartSpec {
 	readonly ratio?: number;
 	readonly index?: number;
 	readonly feedback?: number;
+	readonly indexDecayS?: number;
+	readonly unison?: number;
+	readonly detune?: number;
+	readonly drift?: number;
+	readonly spread?: number;
+	readonly envAmount?: number;
+	readonly envDecayS?: number;
+	readonly resonance?: number;
+	readonly drive?: number;
+	readonly glideS?: number;
+	readonly vibrato?: number;
 	readonly cutoffHz?: number;
 	readonly pan?: number;
 	readonly reverb?: number;
