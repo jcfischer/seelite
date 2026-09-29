@@ -97,50 +97,63 @@ const RENDERED = {
 	// carries its own onset, in the band like the rest, rather than the
 	// limiter's 10 ms.
 	"music-voices": { rms: 0.02846, peak: 0.1775, hz: 700, onset: 51.48 },
-	// #548's director renders fade in by design — 3 s from silence, and a
-	// station pad's slow attack — so each carries its own onset, in the band
-	// like the rest, rather than the limiter's 10 ms.
+	// #548's director renders fade in by design — a crossfade from silence,
+	// and a drone's or station pad's slow attack — so each carries its own
+	// onset, in the band like the rest, rather than the limiter's 10 ms.
+	// Re-measured on the second bed (D12) at the principal's ear; the
+	// `-legacy` rows are the first bed, kept to compare against.
 	"music-adaptive-run-a": {
-		rms: 0.01343,
-		peak: 0.09562,
-		hz: 894,
-		onset: 494.46,
+		rms: 0.03229,
+		peak: 0.21797,
+		hz: 694,
+		onset: 387.94,
 	},
 	"music-adaptive-run-b": {
-		rms: 0.01366,
-		peak: 0.09015,
-		hz: 1050,
-		onset: 484.42,
+		rms: 0.03211,
+		peak: 0.24243,
+		hz: 1009,
+		onset: 394.77,
 	},
 	"music-adaptive-ladder": {
-		rms: 0.01351,
-		peak: 0.09198,
-		hz: 1104,
-		onset: 298.25,
+		rms: 0.0287,
+		peak: 0.14727,
+		hz: 694,
+		onset: 387.94,
 	},
-	"music-station-trade": {
-		rms: 0.01059,
+	"music-calm": { rms: 0.03133, peak: 0.19431, hz: 694, onset: 387.94 },
+	"music-calm-legacy": { rms: 0.01323, peak: 0.06673, hz: 1104, onset: 298.25 },
+	"music-wary": { rms: 0.03128, peak: 0.18026, hz: 476, onset: 298.9 },
+	"music-threat": { rms: 0.02262, peak: 0.13548, hz: 2078, onset: 314.08 },
+	"music-combat": { rms: 0.02272, peak: 0.12223, hz: 1435, onset: 145 },
+	"music-station-trade-legacy": {
+		rms: 0.01082,
 		peak: 0.05091,
 		hz: 894,
 		onset: 494.46,
 	},
+	"music-station-trade": {
+		rms: 0.03208,
+		peak: 0.18239,
+		hz: 694,
+		onset: 387.94,
+	},
 	"music-station-refinery": {
-		rms: 0.0102,
-		peak: 0.04631,
-		hz: 673,
-		onset: 494.54,
+		rms: 0.03296,
+		peak: 0.17742,
+		hz: 611,
+		onset: 387.44,
 	},
 	"music-station-shipyard": {
-		rms: 0.01062,
-		peak: 0.04864,
-		hz: 1007,
-		onset: 494.44,
+		rms: 0.02668,
+		peak: 0.13214,
+		hz: 694,
+		onset: 387.94,
 	},
 	"music-station-outpost": {
-		rms: 0.01043,
-		peak: 0.04877,
-		hz: 781,
-		onset: 494.48,
+		rms: 0.02671,
+		peak: 0.13214,
+		hz: 694,
+		onset: 387.94,
 	},
 };
 /** The limiter's 6 ms look-ahead and a render quantum and a half (4 ms at
@@ -266,14 +279,16 @@ try {
 	const onLine = (d) => Object.values(ONSET_AFTER_LINE).includes(d);
 
 	// ── #548: the ladder gets busier as the danger rises ────────────────────
-	// The ladder rises calm, wary, threat, combat at 18 s each. Neither the
-	// level nor the brightness separates them — the pad sets both, and #548
-	// measured the brightness at 0.084 calm against 0.090 combat — so this
-	// counts transients: 10 ms frames of the first difference's energy that
-	// jump past twice the mean of the four before. Threat's hats and lead and
-	// combat's kick and sixteenths are what it hears. Wary's added pulse is a
-	// dark low pluck and does not register (#548 read it 0.44/s against calm's
-	// 0.58), so wary is left to the ear.
+	// The ladder rises calm, wary, threat, combat at 18 s each. The level does
+	// not separate them — on the first bed the pad set both level and
+	// brightness — so this counts transients: 10 ms frames of the first
+	// difference's energy that jump past twice the mean of the four before.
+	// Threat's hats and acid and combat's kit and sixteenths are what it
+	// hears. On the second bed calm reads 0.00/s — its slow attacks and long
+	// reverb make no jumps — so a ratio to calm alone would pass anything:
+	// each level also has a floor of its own, and combat must be busier than
+	// the threat. Wary's bass is dark and low and barely registers (0.13/s),
+	// so wary is left to the ear.
 	const ladder = rendered.get("music-adaptive-ladder");
 	if (ladder) {
 		const perS = (a, b) => {
@@ -300,7 +315,9 @@ try {
 		const fightRate = perS(56, 72);
 		check(
 			"the ladder's threat and combat are busier than its calm (#548)",
-			threatRate >= 2 * calmRate && fightRate >= 4 * calmRate,
+			threatRate >= Math.max(1, 2 * calmRate) &&
+				fightRate >= Math.max(3, 4 * calmRate) &&
+				fightRate > threatRate,
 			`transients/s calm ${calmRate.toFixed(2)}, wary ${perS(20, 36).toFixed(2)}, threat ${threatRate.toFixed(2)}, combat ${fightRate.toFixed(2)}`,
 		);
 	}
