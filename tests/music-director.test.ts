@@ -6,11 +6,13 @@
  */
 import { describe, expect, test } from "bun:test";
 import {
+	DEFAULT_MUSIC_ARMS,
 	dangerLevel,
 	FALL_HOLD_S,
 	initialMusicState,
 	LOW_HULL_SHARE,
 	LOW_SHIELD_SHARE,
+	musicArms,
 	type MusicReading,
 	REFRESH_S,
 	STRUCK_WINDOW_S,
@@ -229,5 +231,38 @@ describe("cruise and fresh material (D7, D8)", () => {
 			section: "calm",
 			hold: true,
 		});
+	});
+});
+
+describe("the prototype's arms, from ?music=", () => {
+	test("no value is the rulings", () => {
+		expect(musicArms(null)).toEqual({ arms: DEFAULT_MUSIC_ARMS, unknown: [] });
+	});
+
+	test("off, a forced level and the losing low-hull arm parse", () => {
+		const { arms, unknown } = musicArms("threat, lowhull-always,bogus");
+		expect(arms).toEqual({ off: false, force: "threat", lowHull: "always" });
+		expect(unknown).toEqual(["bogus"]);
+		expect(musicArms("off").arms.off).toBe(true);
+	});
+
+	test("a forced level wins over every signal", () => {
+		const arms = { ...DEFAULT_MUSIC_ARMS, force: "wary" as const };
+		expect(dangerLevel(at({ raiderFiring: true }), arms)).toBe("wary");
+		expect(dangerLevel(calm, arms)).toBe("wary");
+	});
+
+	test("lowhull-always holds combat with no threat", () => {
+		const arms = { ...DEFAULT_MUSIC_ARMS, lowHull: "always" as const };
+		expect(dangerLevel(at({ hullShare: 0.1 }), arms)).toBe("combat");
+	});
+
+	test("off plays nothing, and fades out what was playing", () => {
+		const off = { ...DEFAULT_MUSIC_ARMS, off: true };
+		expect(stepMusic(initialMusicState(), calm, 0.1, off).commands).toEqual([]);
+		const playing = fly([[1, calm]]).state;
+		expect(stepMusic(playing, calm, 0.1, off).commands).toEqual([
+			{ type: "stop", at: "now", fadeS: 2.5 },
+		]);
 	});
 });

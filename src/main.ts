@@ -126,6 +126,13 @@ import type {
 import { AudioFX } from "./audio";
 import { Music } from "./music";
 import {
+	initialMusicState,
+	type MusicScene,
+	type MusicState,
+	musicArms,
+	stepMusic,
+} from "./music-director";
+import {
 	BUSES,
 	type Cue,
 	type HitArm,
@@ -316,6 +323,7 @@ import {
 	fullCondition,
 	headOnPool,
 	isAlive,
+	SHIELD_POOL,
 	sideStruck,
 	stepCondition,
 } from "./ship-condition";
@@ -1063,6 +1071,18 @@ const FLIGHT_SOUND = flightSoundArms(
 if (FLIGHT_SOUND.unknown.length)
 	console.warn(
 		`?flightsound: unknown ${FLIGHT_SOUND.unknown.join(", ")}; flying the defaults for those`,
+	);
+/**
+ * The adaptive music's arms (#548), from `?music=`: `off`, a level name to
+ * hold the music there, and `lowhull-always`. `music-director.ts` lists
+ * them. A prototype's open questions, heard by ear.
+ */
+const MUSIC_ARMS = musicArms(
+	new URLSearchParams(window.location.search).get("music"),
+);
+if (MUSIC_ARMS.unknown.length)
+	console.warn(
+		`?music: unknown ${MUSIC_ARMS.unknown.join(", ")}; playing the defaults for those`,
 	);
 const RAIDERS_OFF =
 	RAIDER_PARAM !== null && ["off", "0", "false"].includes(RAIDER_PARAM);
@@ -2033,8 +2053,8 @@ class Game {
 	/**
 	 * The music synth (#560). Its worklet is loaded into the audio context on
 	 * the gesture that opens it, and its readiness is a promise (#543 D8), so
-	 * no cue waits on it. **Nothing plays yet**: when music plays is #547's and
-	 * #548's to decide, and they send it scores through this.
+	 * no cue waits on it. #548's director sends it the system's bed each frame
+	 * (`stepMusicDirector`); #547's waltz will send it the docking run's.
 	 */
 	readonly music = new Music();
 	/**
@@ -12000,6 +12020,55 @@ class Game {
 	}
 	/** The flight sound's memory: last regime and the hull's heat (#544). */
 	private flightSoundState: FlightSoundState = QUIET_FLIGHT;
+
+	/**
+	 * The adaptive music each frame (#548): `music-director.ts` reads the
+	 * pilot's situation and sends the synth what to play. On a held clock too,
+	 * where it holds; and under the opening, which holds it as well.
+	 */
+	private stepMusicDirector(dt: number) {
+		const dock = this.dock;
+		const scene: MusicScene = this.dead
+			? "dead"
+			: this.witchspace.kind !== "idle" || charging(this.jumpCharge)
+				? "witchspace"
+				: this.dockingComputerEngaged
+					? "dockingComputer"
+					: dock.phase === "docked" || dock.phase === "arriving"
+						? "docked"
+						: "flight";
+		const station = dock.stationId
+			? stationOf(this.world.system, dock.stationId)
+			: null;
+		const phase = this.encounter?.phase ?? "over";
+		let engaged = false;
+		for (const e of this.trafficEngagements.values())
+			if (e.armed) engaged = true;
+		const c = this.condition;
+		const step = stepMusic(
+			this.musicState,
+			{
+				scene,
+				held: this.clockHeld || this.openingActive,
+				cruise: this.regime === "cruise",
+				encounter: phase === "over" ? "none" : phase,
+				sinceStruckS: c.sinceStruckS,
+				raiderFiring: this.raiderFiring,
+				engaged,
+				standing: this.legalStanding(),
+				shieldShare: Math.min(c.fore, c.aft) / SHIELD_POOL,
+				hullShare: c.hull / c.hullMax,
+				systemSeed: this.world.system.record.seed,
+				stationRole: station?.type ?? null,
+			},
+			dt,
+			MUSIC_ARMS.arms,
+		);
+		this.musicState = step.state;
+		for (const cmd of step.commands) this.music.send(cmd);
+	}
+	/** The director's memory: bed, level, its hold and the variant (#548). */
+	private musicState: MusicState = initialMusicState();
 	/** This step's share of full drive, drift-removing and rotation thrust. */
 	private driveShare = 0;
 	private lateralShare = 0;
@@ -13843,6 +13912,7 @@ class Game {
 		// (the principal's ruling on #544), which needs the sound to hear the
 		// pause rather than keep the last level it was given.
 		this.stepFlightSound(this.clockHeld ? 0 : dt);
+		this.stepMusicDirector(this.clockHeld ? 0 : dt);
 		if (this.frameAttribution)
 			this.frameAttribution.recordCpu(
 				"simulation/step",

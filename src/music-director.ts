@@ -81,14 +81,52 @@ const STEM_FADE_S = 2;
 
 const rank = (l: MusicLevel) => FLIGHT_LEVELS.indexOf(l);
 
-export function dangerLevel(r: MusicReading): MusicLevel {
+/**
+ * The prototype's arms, flown by ear from `?music=`: `off`; a level name,
+ * which holds the music at that level whatever the signals say, for
+ * listening; and `lowhull-always`, the arm the principal did not choose —
+ * low condition is combat even with no threat.
+ */
+export interface MusicArms {
+	readonly off: boolean;
+	readonly force: MusicLevel | null;
+	readonly lowHull: "threat" | "always";
+}
+export const DEFAULT_MUSIC_ARMS: MusicArms = {
+	off: false,
+	force: null,
+	lowHull: "threat",
+};
+
+export function musicArms(value: string | null): {
+	arms: MusicArms;
+	unknown: string[];
+} {
+	let arms = DEFAULT_MUSIC_ARMS;
+	const unknown: string[] = [];
+	for (const token of (value ?? "").split(",").map((t) => t.trim())) {
+		if (!token) continue;
+		if (token === "off") arms = { ...arms, off: true };
+		else if (token === "lowhull-always") arms = { ...arms, lowHull: "always" };
+		else if ((FLIGHT_LEVELS as readonly string[]).includes(token))
+			arms = { ...arms, force: token as MusicLevel };
+		else unknown.push(token);
+	}
+	return { arms, unknown };
+}
+
+export function dangerLevel(
+	r: MusicReading,
+	arms: MusicArms = DEFAULT_MUSIC_ARMS,
+): MusicLevel {
+	if (arms.force) return arms.force;
 	const threat = r.encounter !== "none" || r.engaged;
 	const low = r.shieldShare < LOW_SHIELD_SHARE || r.hullShare < LOW_HULL_SHARE;
 	if (
 		r.raiderFiring ||
 		r.engaged ||
 		r.sinceStruckS < STRUCK_WINDOW_S ||
-		(low && threat)
+		(low && (threat || arms.lowHull === "always"))
 	)
 		return "combat";
 	if (r.encounter === "contest" || r.encounter === "duel") return "threat";
@@ -139,11 +177,12 @@ export function stepMusic(
 	s: MusicState,
 	r: MusicReading,
 	dt: number,
+	arms: MusicArms = DEFAULT_MUSIC_ARMS,
 ): { state: MusicState; commands: MusicCommand[] } {
 	if (r.held) return { state: s, commands: [] };
 	const cmds: MusicCommand[] = [];
 
-	if (r.scene !== "flight" && r.scene !== "docked") {
+	if (arms.off || (r.scene !== "flight" && r.scene !== "docked")) {
 		if (s.bed !== "none")
 			cmds.push({ type: "stop", at: "now", fadeS: FADE_OUT_S });
 		return { state: { ...s, bed: "none" }, commands: cmds };
@@ -172,7 +211,7 @@ export function stepMusic(
 		};
 	}
 
-	const target = dangerLevel(r);
+	const target = dangerLevel(r, arms);
 	// Into flight: from silence, from the station, or into a new system.
 	if (s.bed !== "flight" || s.flightSeed !== r.systemSeed) {
 		let { flightId, variant } = s;
