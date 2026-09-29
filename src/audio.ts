@@ -1264,7 +1264,16 @@ export class AudioFX {
 		drive: number,
 		delayS = 0,
 	) {
-		this.drivenSine(out, from, to, dur * 0.5, 0.003, dur, level, drive, delayS);
+		this.drivenSine(out, {
+			from,
+			to,
+			sweepS: dur * 0.5,
+			attackS: 0.003,
+			dur,
+			level,
+			drive,
+			delayS,
+		});
 	}
 	/** A sine held at `hz`, driven: a thump with no pitch to fall. `level`
 	 *  and `drive` as `impactPunch`'s. */
@@ -1275,7 +1284,15 @@ export class AudioFX {
 		level: number,
 		drive: number,
 	) {
-		this.drivenSine(out, hz, hz, 0, 0.002, dur, level, drive);
+		this.drivenSine(out, {
+			from: hz,
+			to: hz,
+			sweepS: 0,
+			attackS: 0.002,
+			dur,
+			level,
+			drive,
+		});
 	}
 	/** The body of an impact: a sine falling to a floor over `len`, driven
 	 *  enough that its second and third harmonics carry it on a small speaker.
@@ -1289,18 +1306,16 @@ export class AudioFX {
 		level: number,
 		delayS = 0,
 	) {
-		const floor = Math.max(38, to);
-		this.drivenSine(
-			out,
+		this.drivenSine(out, {
 			from,
-			floor,
-			len * 0.7,
-			0.005,
-			len,
+			to: Math.max(38, to),
+			sweepS: len * 0.7,
+			attackS: 0.005,
+			dur: len,
 			level,
-			SUB_DRIVE,
+			drive: SUB_DRIVE,
 			delayS,
-		);
+		});
 	}
 	/**
 	 * The one body under `impactPunch`, `thump` and `sub`: a sine from
@@ -1310,14 +1325,25 @@ export class AudioFX {
 	 */
 	private drivenSine(
 		out: AudioNode,
-		from: number,
-		to: number,
-		sweepS: number,
-		attackS: number,
-		dur: number,
-		level: number,
-		drive: number,
-		delayS = 0,
+		{
+			from,
+			to,
+			sweepS,
+			attackS,
+			dur,
+			level,
+			drive,
+			delayS = 0,
+		}: {
+			from: number;
+			to: number;
+			sweepS: number;
+			attackS: number;
+			dur: number;
+			level: number;
+			drive: number;
+			delayS?: number;
+		},
 	) {
 		if (!this.ctx) return;
 		const t = this.ctx.currentTime + delayS;
@@ -1336,7 +1362,14 @@ export class AudioFX {
 	}
 	/** The edge on an impact: a few milliseconds of high-passed noise. */
 	private snap(out: AudioNode, vol: number, hz: number, delayS = 0) {
-		this.filteredNoise(out, 0.03, vol, "highpass", hz, hz, 0.7, delayS);
+		this.filteredNoise(out, {
+			dur: 0.03,
+			vol,
+			type: "highpass",
+			fromHz: hz,
+			toHz: hz,
+			delayS,
+		});
 	}
 	/** The air of an impact: noise under a low-pass closing from `fromHz` to
 	 *  `toHz`, decaying over `len`. */
@@ -1348,7 +1381,14 @@ export class AudioFX {
 		len: number,
 		delayS = 0,
 	) {
-		this.filteredNoise(out, len, vol, "lowpass", fromHz, toHz, 0.7, delayS);
+		this.filteredNoise(out, {
+			dur: len,
+			vol,
+			type: "lowpass",
+			fromHz,
+			toHz,
+			delayS,
+		});
 	}
 	/** A short low band of noise, driven: weight with no pitch in it. `vol`
 	 *  is the gain into the saturator — a narrow band of noise passes little of
@@ -1361,27 +1401,36 @@ export class AudioFX {
 		drive: number,
 	) {
 		if (!this.ctx) return;
-		this.filteredNoise(
-			this.saturator(drive, out),
+		this.filteredNoise(this.saturator(drive, out), {
 			dur,
 			vol,
-			"bandpass",
-			hz,
-			hz,
-			0.7,
-		);
+			type: "bandpass",
+			fromHz: hz,
+			toHz: hz,
+		});
 	}
 	/** Noise through one filter whose frequency moves from `fromHz` to `toHz`,
-	 *  decaying exponentially to silence over `dur`. */
+	 *  decaying exponentially to silence over `dur`. `q` is the filter's, 0.7
+	 *  unless stated. */
 	private filteredNoise(
 		out: AudioNode,
-		dur: number,
-		vol: number,
-		type: BiquadFilterType,
-		fromHz: number,
-		toHz: number,
-		q: number,
-		delayS = 0,
+		{
+			dur,
+			vol,
+			type,
+			fromHz,
+			toHz,
+			q = 0.7,
+			delayS = 0,
+		}: {
+			dur: number;
+			vol: number;
+			type: BiquadFilterType;
+			fromHz: number;
+			toHz: number;
+			q?: number;
+			delayS?: number;
+		},
 	) {
 		if (!this.ctx) return;
 		const t = this.ctx.currentTime + delayS;
@@ -1560,7 +1609,9 @@ export class AudioFX {
 		this.wash(out, 0.4, 6000, 250, 1.3);
 		this.wash(out, 0.5, 450, 80, 1.7);
 		for (let i = 0; i < 10; i++) {
-			const at = 0.12 + Math.random() ** 1.5 * 0.9;
+			// Under 1 s, so `1 - at` below keeps every spark's level positive
+			// (sage round 2 on #578: at 0.9 the latest reached 1.02).
+			const at = 0.12 + Math.random() ** 1.5 * 0.85;
 			this.bandBurst(
 				out,
 				0.004 + Math.random() * 0.01,

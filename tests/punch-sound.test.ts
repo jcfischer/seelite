@@ -166,6 +166,23 @@ describe("the heavy voices", () => {
 			).toHaveLength(0);
 	});
 
+	test("no heavy explosion sets a negative level: a late spark of debris is quieter, not inverted", () => {
+		// Sage round 2 on #578: the latest spark could start past 1 s, and its
+		// level `(…) * (1 - at)` went below zero. Drawn with a stream that puts
+		// every spark at the end of its range.
+		const random = Math.random;
+		Math.random = () => 0.999999;
+		try {
+			const { ctx } = build({ kind: "explosion" }, "heavy");
+			for (const g of ctx.gains) {
+				expect(g.gain.value).toBeGreaterThanOrEqual(0);
+				for (const [, v] of g.gain.events) expect(v).toBeGreaterThanOrEqual(0);
+			}
+		} finally {
+			Math.random = random;
+		}
+	});
+
 	test("the console cues are not touched", () => {
 		for (const cue of [
 			{ kind: "alert" },
