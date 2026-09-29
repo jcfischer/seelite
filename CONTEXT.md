@@ -738,3 +738,22 @@ _Avoid_: Layer, track
 Where a transport move lands: the playing song's next bar line (`"bar"`) or
 the end of its section (`"section"`); with nothing playing, now. Distinct from
 WebAudio's *render quantum*, the 128 frames `process()` renders at a time.
+
+**Bed** (music):
+The music that plays under a place: a star system's **flight bed**, one song
+with a section per danger level, and the **station bed** while docked, in the
+system's key and textured by the station's role (#548). Generated from the
+system's theme; `src/music-generate.ts` writes both.
+_Avoid_: Soundtrack, playlist, ambient track
+
+**Danger level** (music):
+The adaptive music's four states — calm, wary, threat, combat — read by
+`dangerLevel` in `src/music-director.ts` from the encounter, fire, standing
+and condition (#548 D4). Each names the flight bed's section the director
+holds; a rise lands on the next bar, a fall waits a hold.
+_Avoid_: Intensity, alert level, threat level — *threat* is one of the four.
+
+**Theme** (music):
+What a system's seed fixes about its music under `DOMAIN.MUSIC`: tonic, bright
+mode, tempo and palette (`musicTheme`). A **variant** draws new notes inside
+the same theme.
