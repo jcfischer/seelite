@@ -46,19 +46,11 @@ const KIND: Record<VoiceKind, number> = {
 	keys: KEYS,
 	kick: KICK,
 };
-/** The voices that are two signals, one a side; every other is one, panned. */
-const STEREO = [
-	true,
-	false,
-	false,
-	false,
-	false,
-	true,
-	true,
-	false,
-	true,
-	false,
-];
+/** The voices that are two signals, one a side; every other is one, panned.
+ *  Indexed by kind, and filled by name (sage round 8), so a kind added or
+ *  renumbered above cannot take another's row. */
+const STEREO = new Uint8Array(Object.keys(KIND).length);
+for (const k of [PAD, ANALOG, DRONE, KEYS]) STEREO[k] = 1;
 
 /** Every field a voice reads, with its defaults filled in and every time
  *  already in frames or a per-frame coefficient. */
@@ -140,13 +132,7 @@ const DEFAULTS: Record<VoiceKind, VoiceDefaults> = {
 		decayS: 2,
 		sustain: 0.75,
 		releaseS: 1.2,
-		ratio: 1,
-		index: 0,
-		feedback: 0,
 		cutoffHz: 1400,
-		pan: 0,
-		reverb: 0,
-		echo: 0,
 	},
 	pluck: {
 		...BASE,
@@ -154,13 +140,7 @@ const DEFAULTS: Record<VoiceKind, VoiceDefaults> = {
 		decayS: 2.5,
 		sustain: 0,
 		releaseS: 0.25,
-		ratio: 1,
-		index: 0,
-		feedback: 0,
 		cutoffHz: 4000,
-		pan: 0,
-		reverb: 0,
-		echo: 0,
 	},
 	fm: {
 		...BASE,
@@ -171,10 +151,6 @@ const DEFAULTS: Record<VoiceKind, VoiceDefaults> = {
 		ratio: 2,
 		index: 2.5,
 		feedback: 0.3,
-		cutoffHz: 0,
-		pan: 0,
-		reverb: 0,
-		echo: 0,
 	},
 	noise: {
 		...BASE,
@@ -182,13 +158,6 @@ const DEFAULTS: Record<VoiceKind, VoiceDefaults> = {
 		decayS: 0.12,
 		sustain: 0,
 		releaseS: 0.08,
-		ratio: 1,
-		index: 0,
-		feedback: 0,
-		cutoffHz: 0,
-		pan: 0,
-		reverb: 0,
-		echo: 0,
 	},
 	tone: {
 		...BASE,
@@ -197,12 +166,6 @@ const DEFAULTS: Record<VoiceKind, VoiceDefaults> = {
 		sustain: 0,
 		releaseS: 0.08,
 		ratio: 2.5,
-		index: 0,
-		feedback: 0,
-		cutoffHz: 0,
-		pan: 0,
-		reverb: 0,
-		echo: 0,
 	},
 	// After Oxygène's and Blade Runner's strings: three drifting saws across
 	// the field, a filter that opens with the note and settles.
@@ -305,10 +268,16 @@ export function resolvePart(spec: PartSpec, sampleRate: number): ResolvedPart {
 }
 
 /** Equal power, scaled by √2 so a centred part is 1 on each side and a mono
- *  fold-down, (L + R) / 2, is the level the mono synth had. */
+ *  fold-down, (L + R) / 2, is the level the mono synth had. The one pan law:
+ *  a part, a unison oscillator and a keys partial all sit in the field by it. */
+const panLeft = (pan: number) =>
+	Math.SQRT2 * Math.cos(((pan + 1) * Math.PI) / 4);
+const panRight = (pan: number) =>
+	Math.SQRT2 * Math.sin(((pan + 1) * Math.PI) / 4);
+
 function panGains(pan: number): { panL: number; panR: number } {
-	const th = ((Math.max(-1, Math.min(1, pan)) + 1) * Math.PI) / 4;
-	return { panL: Math.SQRT2 * Math.cos(th), panR: Math.SQRT2 * Math.sin(th) };
+	const p = Math.max(-1, Math.min(1, pan));
+	return { panL: panLeft(p), panR: panRight(p) };
 }
 
 /**
@@ -385,7 +354,8 @@ export class VoiceBank {
 	private readonly fb: Float64Array;
 	private readonly lp: Float64Array;
 	private readonly bp: Float64Array;
-	/** The pad's second filter: its right side, one saw each. */
+	/** The second filter's state (`svf2`): the pad's and the analog's right
+	 *  side, and the acid's second stage. */
 	private readonly lp2: Float64Array;
 	private readonly bp2: Float64Array;
 	/** The right side of the last `sample`, for the stereo voices. */
@@ -429,7 +399,9 @@ export class VoiceBank {
 	private readonly lineW: Int32Array;
 	private readonly lineD: Float64Array;
 	private readonly parts: (ResolvedPart | null)[];
-	private seed = 0x9e3779b9;
+	/** The bank's own noise, -1..1: the bursts, the drift and the unison
+	 *  phases. */
+	private readonly noise = xorshift(0x9e3779b9);
 
 	constructor(
 		readonly cap: number,
@@ -570,6 +542,9 @@ export class VoiceBank {
 		if (slot < 0) return;
 		const i = slot;
 		const taken = this.stage[i] !== STAGE_FREE;
+		// Read before the slot is rewritten: an acid slides on only from an
+		// acid (sage round 8), never from the pitch of a voice it stole.
+		const wasAcid = taken && this.kind[i] === ACID;
 		const sr = this.sampleRate;
 		const f = mtof(pitch);
 		this.stage[i] = STAGE_ATTACK;
@@ -623,7 +598,7 @@ export class VoiceBank {
 				this.g[i] = svfCoef(part.cutoffHz, sr);
 				break;
 			case ACID:
-				this.inc1[i] = taken && this.kind[i] === ACID ? this.inc1[i] : f / sr;
+				this.inc1[i] = wasAcid ? this.inc1[i] : f / sr;
 				this.glideTo[i] = f / sr;
 				this.fenv[i] = 1;
 				this.accent[i] = vel > 0.8 ? 1 : 0;
@@ -650,11 +625,10 @@ export class VoiceBank {
 			this.opJit[o] = 0;
 			this.opJitTo[o] = 0;
 			this.opPh[o] = n > 1 ? 0.5 * (this.noise() + 1) : 0;
-			// Equal power across the field, as `panGains`, and scaled so the
-			// sum of `n` sits at the level of one.
-			const th = ((1 + part.spread * (2 * t - 1)) * Math.PI) / 4;
-			this.opL[o] = (Math.SQRT2 * Math.cos(th)) / Math.sqrt(n);
-			this.opR[o] = (Math.SQRT2 * Math.sin(th)) / Math.sqrt(n);
+			// Across the field, scaled so the sum of `n` sits at the level of one.
+			const pan = part.spread * (2 * t - 1);
+			this.opL[o] = panLeft(pan) / Math.sqrt(n);
+			this.opR[o] = panRight(pan) / Math.sqrt(n);
 		}
 		this.driftLeft[i] = 0;
 	}
@@ -676,9 +650,8 @@ export class VoiceBank {
 			this.kY2[o] = 0;
 			this.kY1[o] = a * r * Math.sin(w);
 			const pan = k === 0 ? 0 : k % 2 ? -0.35 : 0.35;
-			const th = ((pan + 1) * Math.PI) / 4;
-			this.kL[o] = Math.SQRT2 * Math.cos(th);
-			this.kR[o] = Math.SQRT2 * Math.sin(th);
+			this.kL[o] = panLeft(pan);
+			this.kR[o] = panRight(pan);
 		}
 	}
 
@@ -702,15 +675,6 @@ export class VoiceBank {
 		this.lineW[i] = n % line.length;
 		this.lineD[i] = D;
 		this.fb[i] = 0;
-	}
-
-	private noise(): number {
-		let x = this.seed;
-		x ^= x << 13;
-		x ^= x >>> 17;
-		x ^= x << 5;
-		this.seed = x >>> 0;
-		return this.seed / 2147483648 - 1;
 	}
 
 	/**
@@ -994,23 +958,33 @@ export class VoiceBank {
 		return softclip(1.3 * x) * 0.8;
 	}
 
-	/** The pad's right-side filter: the same Chamberlin lowpass, its own
-	 *  state. */
+	/** Voice `i`'s second filter, the same lowpass on its own state: the
+	 *  right side of the pad and the analog, and the acid's second stage. */
 	private svf2(i: number, x: number, damp: number): number {
-		const g = this.g[i];
-		this.lp2[i] += g * this.bp2[i];
-		this.bp2[i] += g * (x - this.lp2[i] - damp * this.bp2[i]);
-		return this.lp2[i];
+		return svfStep(this.lp2, this.bp2, i, this.g[i], x, damp, false);
 	}
 
 	/** One step of voice `i`'s Chamberlin state-variable filter: its lowpass
 	 *  output, or with `band` its bandpass. */
 	private svf(i: number, x: number, damp: number, band: boolean): number {
-		const g = this.g[i];
-		this.lp[i] += g * this.bp[i];
-		this.bp[i] += g * (x - this.lp[i] - damp * this.bp[i]);
-		return band ? this.bp[i] : this.lp[i];
+		return svfStep(this.lp, this.bp, i, this.g[i], x, damp, band);
 	}
+}
+
+/** One step of a Chamberlin state-variable filter whose state is row `i` of
+ *  `lp` and `bp`: its lowpass output, or with `band` its bandpass. */
+function svfStep(
+	lp: Float64Array,
+	bp: Float64Array,
+	i: number,
+	g: number,
+	x: number,
+	damp: number,
+	band: boolean,
+): number {
+	lp[i] += g * bp[i];
+	bp[i] += g * (x - lp[i] - damp * bp[i]);
+	return band ? bp[i] : lp[i];
 }
 
 /** Chamberlin state-variable coefficient, capped where it stays stable. */

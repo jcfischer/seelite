@@ -9,6 +9,7 @@
 import { describe, expect, test } from "bun:test";
 import type { PartSpec, VoiceKind } from "../src/music-score";
 import { resolvePart, VoiceBank } from "../src/music-voices";
+import { period, rms } from "./lib/audio-measure";
 
 const SR = 48000;
 const unity = { gain: () => 1 };
@@ -38,11 +39,6 @@ const render = (b: VoiceBank, frames: number) => {
 	return { L, R };
 };
 
-const rms = (x: Float32Array, a: number, b: number) => {
-	let s = 0;
-	for (let i = a; i < b; i++) s += x[i] * x[i];
-	return Math.sqrt(s / Math.max(1, b - a));
-};
 const peakOf = (x: Float32Array) => {
 	let m = 0;
 	for (const v of x) m = Math.max(m, Math.abs(v));
@@ -57,32 +53,6 @@ const bright = (x: Float32Array, a: number, b: number) => {
 		e += x[i] * x[i];
 	}
 	return Math.sqrt(d / e);
-};
-/** The strongest autocorrelation lag between `lo` and `hi`, refined. */
-const period = (
-	x: Float32Array,
-	from: number,
-	len: number,
-	lo: number,
-	hi: number,
-) => {
-	const at = (lag: number) => {
-		let r = 0;
-		for (let i = from; i < from + len; i++) r += x[i] * x[i + lag];
-		return r;
-	};
-	let best = lo;
-	let bestR = Number.NEGATIVE_INFINITY;
-	for (let lag = lo; lag <= hi; lag++) {
-		const r = at(lag);
-		if (r > bestR) {
-			bestR = r;
-			best = lag;
-		}
-	}
-	const a = at(best - 1);
-	const c = at(best + 1);
-	return best + (0.5 * (a - c)) / (a - 2 * bestR + c);
 };
 const correlation = (
 	a: Float32Array,
@@ -245,6 +215,32 @@ describe("acid (R3)", () => {
 		b.noteOn(0.5 * SR, p, 0, 0, 57, 0.7, 0.4 * SR); // A3
 		render(b, 0.52 * SR);
 		expect(b.sounding).toBe(1);
+	});
+
+	test("an acid note that takes another voice's slot starts on its own pitch (sage round 8)", () => {
+		// One slot: an A5 pad sounding, then an A2 acid that must steal it. The
+		// slide carries over only from an acid; a pad's A5 is not where it was.
+		const b = new VoiceBank(1, SR);
+		b.noteOn(0, part("pad"), 0, 0, 81, 0.7, SR);
+		b.noteOn(
+			0.1 * SR,
+			part("acid", { glideS: 0.5, envAmount: 0, resonance: 0, cutoffHz: 4000 }),
+			0,
+			1,
+			45,
+			0.7,
+			SR,
+		);
+		const { L } = render(b, 0.3 * SR);
+		const P110 = SR / 110;
+		const p = period(
+			L,
+			0.15 * SR,
+			4096,
+			Math.round(P110 * 0.4),
+			Math.round(P110 * 1.2),
+		);
+		expect(Math.abs(p / P110 - 1)).toBeLessThan(0.01);
 	});
 
 	test("the slide glides: part-way between the two pitches, then at the second", () => {

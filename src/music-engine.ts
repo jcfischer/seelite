@@ -278,25 +278,31 @@ export class MusicEngine implements NoteSink, VoiceGain {
 	 * the fold-down, (L + R) / 2 — what a mono destination hears.
 	 */
 	render(out: Float32Array, frame: number, outR?: Float32Array) {
-		for (let k = 0; k < out.length; k += BLOCK) {
-			const m = Math.min(BLOCK, out.length - k);
+		for (let k = 0; k < out.length; k += BLOCK)
 			this.renderBlock(
-				out.subarray(k, k + m),
-				outR?.subarray(k, k + m),
+				out,
+				outR,
+				k,
+				Math.min(BLOCK, out.length - k),
 				frame + k,
 			);
-		}
 	}
 
-	/** One block of at most `BLOCK` frames. Notes first, so a note due inside
-	 *  the block joins it on its frame; then the voices, dry and sent; then the
-	 *  room. */
+	/** One block of at most `BLOCK` frames, written to `out` (and `outR`)
+	 *  from `off`. Notes first, so a note due inside the block joins it on its
+	 *  frame; then the voices, dry and sent; then the room.
+	 *
+	 *  **A whole block takes no view** (sage round 8): it renders into the
+	 *  engine's own buffers as they are, and writes `out` by index. Only a
+	 *  short last block — a `render` whose length is not a multiple of
+	 *  `BLOCK`, which the worklet's quantum never is — cuts views of them. */
 	private renderBlock(
 		out: Float32Array,
 		outR: Float32Array | undefined,
+		off: number,
+		n: number,
 		frame: number,
 	) {
-		const n = out.length;
 		const to = frame + n;
 		this.rendered = to;
 		for (let i = 0; i < this.slots.length; i++) {
@@ -307,33 +313,42 @@ export class MusicEngine implements NoteSink, VoiceGain {
 			this.rendering = i;
 			s.player.render(frame, to, this);
 		}
-		const L = this.bufL.subarray(0, n);
-		const R = this.bufR.subarray(0, n);
-		const sends: StereoOut = {
-			right: R,
-			revL: this.sends.revL.subarray(0, n),
-			revR: this.sends.revR.subarray(0, n),
-			echo: this.sends.echo.subarray(0, n),
-		};
+		const whole = n === BLOCK;
+		const L = whole ? this.bufL : this.bufL.subarray(0, n);
+		const sends: StereoOut = whole
+			? this.sends
+			: {
+					right: this.bufR.subarray(0, n),
+					revL: this.sends.revL.subarray(0, n),
+					revR: this.sends.revR.subarray(0, n),
+					echo: this.sends.echo.subarray(0, n),
+				};
+		const R = sends.right;
 		L.fill(0);
 		R.fill(0);
 		sends.revL.fill(0);
 		sends.revR.fill(0);
 		sends.echo.fill(0);
 		this.bank.render(L, frame, this, sends);
-		const wetL = this.wetL.subarray(0, n);
-		const wetR = this.wetR.subarray(0, n);
+		const wetL = whole ? this.wetL : this.wetL.subarray(0, n);
+		const wetR = whole ? this.wetR : this.wetR.subarray(0, n);
 		wetL.fill(0);
 		wetR.fill(0);
+		// A stop now faded the room out and it stays out: what it still holds
+		// is heard by nothing, so drop it. Kept, it came back at full on the
+		// next song's line, before that song had played a note.
+		const room = this.spaceGain;
+		if (room.to === 0 && frame >= room.start + room.len && !this.space.silent)
+			this.space.clear();
 		this.space.process(sends.revL, sends.revR, sends.echo, wetL, wetR);
 		for (let k = 0; k < n; k++) {
 			const g = this.spaceGain.at(frame + k);
 			const l = L[k] + wetL[k] * g;
 			const r = R[k] + wetR[k] * g;
 			if (outR) {
-				out[k] = l;
-				outR[k] = r;
-			} else out[k] = 0.5 * (l + r);
+				out[off + k] = l;
+				outR[off + k] = r;
+			} else out[off + k] = 0.5 * (l + r);
 		}
 	}
 
