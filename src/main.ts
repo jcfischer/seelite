@@ -727,6 +727,7 @@ const MODIFIER_KEYS: ReadonlySet<string> = new Set([
 ]);
 import { readDeficit, recordTrade } from "./deficits";
 import { killCredit } from "./kill-credit";
+import { ladderView } from "./ladder-view";
 import {
 	type LadderRecord,
 	type PendingCredit,
@@ -14396,6 +14397,7 @@ class Game {
 			// market call, so the figure on this page is the figure the till
 			// would pay, and `null` in flight rather than a stale one.
 			holdBids: this.holdBids(dockContext),
+			ladders: ladderView(this.ladders, this.ladderPending),
 			mode: this.regime === "cruise" ? "CRUISE" : "NORMAL FLIGHT",
 			throttle: `${(this.throttle * 100).toFixed(0)}%`,
 			speed: velocity.speed,

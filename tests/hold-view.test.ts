@@ -238,7 +238,14 @@ describe("the right console's tab order", () => {
 			.exec(source)?.[1]
 			.match(/"([A-Za-z]+)"/g)
 			?.map((q) => q.slice(1, -1));
-		expect(listed).toEqual(["Flight", "Drive", "Hold", "Controls", "Tuning"]);
+		expect(listed).toEqual([
+			"Flight",
+			"Drive",
+			"Hold",
+			"Commander",
+			"Controls",
+			"Tuning",
+		]);
 		// #370 D1's rule, stated as the rule rather than as the whole list, so
 		// a later tab that keeps it does not have to edit this line too.
 		const i = listed?.indexOf("Controls") ?? -1;
