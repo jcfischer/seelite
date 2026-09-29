@@ -151,10 +151,11 @@ export class MusicEngine implements NoteSink, VoiceGain {
 			case "load":
 				return this.load(cmd.id, cmd.song);
 			case "play": {
-				const h = this.handover(cmd.id, cmd.at, cmd.section, now);
+				const hold = cmd.hold ?? false;
+				const h = this.handover(cmd.id, cmd.at, cmd.section, now, hold);
 				if (!h) return;
 				h.lead?.player.stopAt(h.line);
-				this.begin(h.ix, h.line, cmd.section);
+				this.begin(h.ix, h.line, cmd.section, hold);
 				// A song still fading out keeps fading until the line, then is
 				// full: the cut is on the line, not before it (sage rounds 4, 5).
 				if (h.back) h.target.gain.set(1, h.line, 0, now);
@@ -162,14 +163,15 @@ export class MusicEngine implements NoteSink, VoiceGain {
 				return;
 			}
 			case "crossfade": {
-				const h = this.handover(cmd.to, cmd.at, cmd.section, now);
+				const hold = cmd.hold ?? false;
+				const h = this.handover(cmd.to, cmd.at, cmd.section, now, hold);
 				if (!h) return;
 				const len = fade(cmd.fadeS);
 				if (h.lead) {
 					h.lead.gain.set(0, h.line, len, now);
 					h.lead.haltAt = h.line + len;
 				}
-				this.begin(h.ix, h.line, cmd.section);
+				this.begin(h.ix, h.line, cmd.section, hold);
 				// Back to a song still fading out (sage round 4): it fades up from
 				// where it is now. Reset to 0, it was cut before the line.
 				if (h.back) h.target.gain.set(1, now, len, now);
@@ -181,7 +183,11 @@ export class MusicEngine implements NoteSink, VoiceGain {
 			}
 			case "jump": {
 				const lead = this.requireLead(cmd.type);
-				lead.player.jumpAt(this.line(now, cmd.at), cmd.section);
+				lead.player.jumpAt(
+					this.line(now, cmd.at),
+					cmd.section,
+					cmd.hold ?? false,
+				);
 				return;
 			}
 			case "resolve": {
@@ -352,6 +358,7 @@ export class MusicEngine implements NoteSink, VoiceGain {
 		at: Quantum,
 		section: string | undefined,
 		now: number,
+		hold: boolean,
 	): {
 		ix: number;
 		line: number;
@@ -364,7 +371,7 @@ export class MusicEngine implements NoteSink, VoiceGain {
 		if (section !== undefined && target.player.song.sectionIndex(section) < 0)
 			throw new Error(`music: ${target.id} has no section ${section}`);
 		const line = this.line(now, at);
-		if (this.again(ix, line, now, section)) return null;
+		if (this.again(ix, line, now, section, hold)) return null;
 		// A song already leaving on a stop's fade keeps that fade: handing it
 		// over again would restart it and push its end out.
 		return {
@@ -394,11 +401,12 @@ export class MusicEngine implements NoteSink, VoiceGain {
 		ix: number,
 		line: number,
 		now: number,
-		section?: string,
+		section: string | undefined,
+		hold: boolean,
 	): boolean {
 		const lead = this.playingLead();
 		if (!lead || this.lead !== ix) return false;
-		lead.player.jumpAt(line, section ?? 0);
+		lead.player.jumpAt(line, section ?? 0, hold);
 		// Full on the line, where the playhead moves, and on its present path
 		// until then (sage round 7: set at once, it stepped mid-fade). Inside a
 		// stop fade, the fade's halt goes too (round 3): left standing, it cut
@@ -408,14 +416,19 @@ export class MusicEngine implements NoteSink, VoiceGain {
 		return true;
 	}
 
-	private begin(ix: number, line: number, section?: string) {
+	private begin(
+		ix: number,
+		line: number,
+		section: string | undefined,
+		hold: boolean,
+	) {
 		const s = this.slots[ix] as Slot;
 		// `handover` has refused a section the song does not have.
 		const at = section === undefined ? 0 : s.player.song.sectionIndex(section);
 		// A song faded out and restarted before its halt keeps its voices.
 		s.haltAt = Infinity;
 		for (const g of s.partGain) g.reset(1);
-		s.player.start(line, at);
+		s.player.start(line, at, hold);
 		this.lead = ix;
 	}
 

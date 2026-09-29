@@ -152,6 +152,9 @@ export type Quantum = "bar" | "section";
  * - `stop` — on a quantum: no note starts after the line, and the notes
  *   sounding ring out. `"now"`: everything fades out over `fadeS`, for a
  *   pilot who takes the stick back mid-waltz.
+ * - `hold` on `play`, `crossfade` and `jump` (#548) — the section it
+ *   lands on then loops in place of the song's own loop, until another held
+ *   move: an adaptive score stays on the section its level names.
  * - `stem` — a part of the playing song fades to `level` over `fadeS`. Two
  *   stems moved at once are a crossfade between parts.
  * - `tempo` — the playing song's tempo map is scaled by `scale`, from the
@@ -169,6 +172,7 @@ export type MusicCommand =
 			readonly id: string;
 			readonly section?: string;
 			readonly at: Quantum;
+			readonly hold?: boolean;
 	  }
 	| {
 			readonly type: "crossfade";
@@ -176,8 +180,14 @@ export type MusicCommand =
 			readonly section?: string;
 			readonly at: Quantum;
 			readonly fadeS: number;
+			readonly hold?: boolean;
 	  }
-	| { readonly type: "jump"; readonly section: string; readonly at: Quantum }
+	| {
+			readonly type: "jump";
+			readonly section: string;
+			readonly at: Quantum;
+			readonly hold?: boolean;
+	  }
 	| { readonly type: "resolve"; readonly at: Quantum }
 	| {
 			readonly type: "stop";

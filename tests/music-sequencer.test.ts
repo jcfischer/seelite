@@ -276,6 +276,70 @@ describe("sections, loops and quantised moves", () => {
 	});
 });
 
+describe("a held section (#548)", () => {
+	// No loop of its own: without a hold it plays intro, A, coda and ends.
+	const plain = () => compileSong(song());
+	const barsOf = (notes: Heard[]) =>
+		notes.filter((_, i) => i % 4 === 0).map((n) => n.pitch);
+
+	test("a held jump loops its section in place of the song's loop", () => {
+		const p = new Player(plain(), SR);
+		p.start(0);
+		const sink = collect();
+		p.render(0, 30000, sink);
+		p.jumpAt(p.lineAfter(30000, "bar"), "coda", true);
+		p.render(30000, 5 * 96000, sink);
+		expect(barsOf(sink.notes)).toEqual([0, 200, 200, 200, 200]);
+		expect(p.playing).toBe(true);
+	});
+
+	test("a later held jump moves the hold, and the walk follows it", () => {
+		const p = new Player(plain(), SR);
+		p.start(0, 1, true);
+		const sink = collect();
+		p.render(0, 30000, sink);
+		// A is two bars and held: its section line is two bars on, and again.
+		expect(p.lineAfter(30000, "section")).toBe(2 * 96000);
+		expect(p.lineAfter(2 * 96000 + 1, "section")).toBe(4 * 96000);
+		p.jumpAt(p.lineAfter(30000, "section"), "intro", true);
+		p.render(30000, 5 * 96000, sink);
+		expect(barsOf(sink.notes)).toEqual([100, 101, 0, 0, 0]);
+	});
+
+	test("a held start loops the section it starts at", () => {
+		const p = new Player(plain(), SR);
+		p.start(0, 1, true);
+		expect(barsOf(run(p, 6 * 96000))).toEqual([100, 101, 100, 101, 100, 101]);
+	});
+
+	test("an unheld jump leaves the hold in force", () => {
+		const p = new Player(
+			compileSong(song({ loop: { from: "A", to: "A" } })),
+			SR,
+		);
+		p.start(0, 2, true);
+		const sink = collect();
+		p.render(0, 30000, sink);
+		p.jumpAt(p.lineAfter(30000, "bar"), "A");
+		p.render(30000, 6 * 96000, sink);
+		// A plays through once, and the held coda takes over from the song's loop.
+		expect(barsOf(sink.notes)).toEqual([200, 100, 101, 200, 200, 200]);
+	});
+
+	test("a start without a hold restores the song's own loop", () => {
+		const p = new Player(
+			compileSong(song({ loop: { from: "A", to: "A" } })),
+			SR,
+		);
+		p.start(0, 2, true);
+		p.render(0, 96000, collect());
+		p.start(96000);
+		const sink = collect();
+		p.render(96000, 6 * 96000, sink);
+		expect(barsOf(sink.notes)).toEqual([0, 100, 101, 100, 101]);
+	});
+});
+
 describe("a tempo move", () => {
 	test("a scale at the line changes the bars after it", () => {
 		const p = new Player(

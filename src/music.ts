@@ -124,19 +124,23 @@ export class Music {
 		this.send({ type: "load", id, song });
 	}
 
-	play(id: string, opts: { section?: string; at?: Quantum } = {}) {
+	play(
+		id: string,
+		opts: { section?: string; at?: Quantum; hold?: boolean } = {},
+	) {
 		this.send({
 			type: "play",
 			id,
 			section: opts.section,
 			at: opts.at ?? "bar",
+			hold: opts.hold,
 		});
 	}
 
 	crossfade(
 		to: string,
 		fadeS: number,
-		opts: { section?: string; at?: Quantum } = {},
+		opts: { section?: string; at?: Quantum; hold?: boolean } = {},
 	) {
 		this.send({
 			type: "crossfade",
@@ -144,11 +148,12 @@ export class Music {
 			fadeS,
 			section: opts.section,
 			at: opts.at ?? "bar",
+			hold: opts.hold,
 		});
 	}
 
-	jump(section: string, at: Quantum = "bar") {
-		this.send({ type: "jump", section, at });
+	jump(section: string, at: Quantum = "bar", hold = false) {
+		this.send({ type: "jump", section, at, hold });
 	}
 
 	resolve(at: Quantum = "bar") {

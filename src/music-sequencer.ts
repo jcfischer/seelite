@@ -198,6 +198,7 @@ type Pending =
 			readonly frame: number;
 			readonly section: number;
 			readonly resolve: boolean;
+			readonly hold: boolean;
 	  }
 	| { readonly kind: "stop"; readonly frame: number }
 	| {
@@ -236,6 +237,10 @@ export class Player {
 	/** Bars begun since `start`: the tempo scale's clock. */
 	private barsPlayed = 0;
 	private resolved = false;
+	/** The loop in force: the song's own, until a held move replaces it with
+	 *  one section (#548). */
+	private loopFrom = -1;
+	private loopTo = -1;
 	private scaleFrom = 1;
 	private scaleTo = 1;
 	private scaleStart = 0;
@@ -251,10 +256,13 @@ export class Player {
 	) {}
 
 	/** Bar 0 of `section` sounds from `frame`. Clears every pending move and
-	 *  the tempo scale. */
-	start(frame: number, section = 0) {
+	 *  the tempo scale. With `hold`, the section loops in place of the song's
+	 *  own loop (#548). */
+	start(frame: number, section = 0, hold = false) {
 		this.playing = true;
 		this.resolved = false;
+		this.loopFrom = hold ? section : this.song.loopFrom;
+		this.loopTo = hold ? section : this.song.loopTo;
 		this.pending.length = 0;
 		this.scaleFrom = this.scaleTo = 1;
 		this.scaleBars = 0;
@@ -331,12 +339,18 @@ export class Player {
 		return line;
 	}
 
-	jumpAt(frame: number, section: string | number) {
+	/**
+	 * Go to `section` at `frame`. With `hold`, that section then loops in
+	 * place of the song's own loop, until another held move (#548): an
+	 * adaptive score stays on the section its level names.
+	 */
+	jumpAt(frame: number, section: string | number, hold = false) {
 		this.pending.push({
 			kind: "jump",
 			frame,
 			section: this.indexOf(section),
 			resolve: false,
+			hold,
 		});
 	}
 
@@ -349,6 +363,7 @@ export class Player {
 			frame,
 			section: this.song.resolve,
 			resolve: true,
+			hold: false,
 		});
 	}
 
@@ -387,7 +402,7 @@ export class Player {
 	private next(section: number, bar: number, resolved: boolean): number {
 		const s = this.song;
 		if (bar + 1 < s.sections[section].bars) return (section << 16) | (bar + 1);
-		if (!resolved && s.loopTo === section) return s.loopFrom << 16;
+		if (!resolved && this.loopTo === section) return this.loopFrom << 16;
 		if (section + 1 < s.sections.length) return (section + 1) << 16;
 		return -1;
 	}
@@ -455,6 +470,10 @@ export class Player {
 			if (m.kind === "jump") {
 				out = m.section;
 				if (m.resolve) this.resolved = true;
+				if (m.hold) {
+					this.loopFrom = this.loopTo = m.section;
+					this.resolved = false;
+				}
 			} else if (m.kind === "stop") out = DUE_STOP;
 			else {
 				this.scaleFrom = this.scaleAt(n);

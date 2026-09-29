@@ -461,3 +461,40 @@ describe("loading", () => {
 		expect(e.cap).toBe(3);
 	});
 });
+
+describe("a held section (#548)", () => {
+	const parts = (heard: Heard[], id: string) =>
+		heard.filter((h) => h.id === id && h.frame % BAR === 0).map((h) => h.part);
+
+	test("a held play loops the section it starts at", () => {
+		const r = rig();
+		r.send({ type: "play", id: "a", section: "B", at: "bar", hold: true });
+		r.until(4 * BAR);
+		expect(parts(r.heard, "a")).toEqual(["a2", "a2", "a2", "a2"]);
+	});
+
+	test("a held jump moves the loop to its section", () => {
+		const r = rig();
+		r.send({ type: "play", id: "a", section: "B", at: "bar", hold: true });
+		r.until(1000);
+		r.send({ type: "jump", section: "A", at: "bar", hold: true });
+		r.until(4 * BAR);
+		expect(parts(r.heard, "a")).toEqual(["a2", "a", "a", "a"]);
+	});
+
+	test("a held crossfade holds the section in the song it brings in", () => {
+		const r = rig();
+		r.send({ type: "play", id: "a", at: "bar" });
+		r.until(1000);
+		r.send({
+			type: "crossfade",
+			to: "b",
+			section: "B",
+			at: "bar",
+			fadeS: 0.5,
+			hold: true,
+		});
+		r.until(5 * BAR);
+		expect(parts(r.heard, "b")).toEqual(["b2", "b2", "b2", "b2"]);
+	});
+});
