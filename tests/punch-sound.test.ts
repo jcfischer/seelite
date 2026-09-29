@@ -11,7 +11,7 @@ import {
 	HEAVY_CUE_LENGTH_S,
 	cueLengthS,
 } from "../src/audio";
-import type { Cue, VoicedCueKind } from "../src/audio-cue";
+import { CUE_BUS, type Cue, type VoicedCueKind } from "../src/audio-cue";
 import { DEFAULT_PUNCH, PUNCH_ARMS, punchArm } from "../src/punch-sound";
 import {
 	FakeContext,
@@ -74,6 +74,10 @@ function build(cue: Cue, punch: "heavy" | "thin") {
 	};
 }
 
+/** The bus a weighted cue plays through, as `CUE_BUS` names it. */
+const busOf = (cue: Cue, b: ReturnType<typeof build>) =>
+	b.buses[CUE_BUS[cue.kind] as keyof typeof b.buses];
+
 /** The oscillators among what a cue built. */
 const oscillatorsOf = (b: ReturnType<typeof build>) =>
 	b.sources.filter((s) => s.frequency !== undefined);
@@ -101,12 +105,7 @@ describe("the heavy voices", () => {
 			const heavy = build(cue, "heavy");
 			const thin = build(cue, "thin");
 			expect(heavy.sources.length).toBeGreaterThan(thin.sources.length);
-			const bus =
-				cue.kind.startsWith("witchspace") ||
-				cue.kind.startsWith("cruise") ||
-				cue.kind === "dock"
-					? heavy.buses.ship
-					: heavy.buses.combat;
+			const bus = busOf(cue, heavy);
 			for (const s of heavy.sources) expect(reaches(s, bus)).toBe(true);
 		},
 	);
@@ -190,12 +189,7 @@ describe("the heavy voices", () => {
 			expect(heavy.ctx.convolvers).toHaveLength(1);
 			const [reverb] = heavy.ctx.convolvers;
 			expect(reverb.buffer).not.toBeNull();
-			const bus =
-				cue.kind.startsWith("witchspace") ||
-				cue.kind.startsWith("cruise") ||
-				cue.kind === "dock"
-					? heavy.buses.ship
-					: heavy.buses.combat;
+			const bus = busOf(cue, heavy);
 			expect(reverb.outputs).toEqual([bus]);
 			// The cue's own sound reaches it: the tail is of this cue.
 			expect(heavy.sources.some((s) => reaches(s, reverb))).toBe(true);
@@ -211,6 +205,33 @@ describe("the heavy voices", () => {
 		audio.play({ kind: "dock" });
 		audio.play({ kind: "cruiseDrop" });
 		expect(ctx.convolvers).toHaveLength(2);
+	});
+
+	test("the two buses' reverbs share one impulse, drawn once", () => {
+		FakeContext.made.length = 0;
+		const { audio, ctx } = unlocked();
+		audio.play({ kind: "explosion" });
+		audio.play({ kind: "dock" });
+		expect(ctx.convolvers).toHaveLength(2);
+		expect(ctx.convolvers[0].buffer).toBe(ctx.convolvers[1].buffer);
+	});
+
+	test("each heavy flash sends from a group of its own, so jumps do not stack sends (sage round 3)", () => {
+		FakeContext.made.length = 0;
+		const { audio, ctx } = unlocked();
+		audio.play({ kind: "witchspaceFlash", voice: "boom" });
+		audio.play({ kind: "witchspaceFlash", voice: "boom" });
+		const [reverb] = ctx.convolvers;
+		const sends = ctx.gains.filter((g) => g.outputs.includes(reverb));
+		expect(sends).toHaveLength(2);
+		const groups = sends.map((send) =>
+			ctx.gains.find((g) => g.outputs.includes(send)),
+		);
+		expect(groups[0]).toBeDefined();
+		expect(groups[0]).not.toBe(groups[1]);
+		// The first jump's group is let go when the second begins.
+		expect(groups[0]?.disconnected).toBe(true);
+		expect(groups[1]?.disconnected).toBe(false);
 	});
 
 	test("the loops never reach a reverb, and the beam's onset does not either", () => {

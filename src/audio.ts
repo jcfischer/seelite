@@ -175,11 +175,12 @@ export const REVERB_SEND: Readonly<Partial<Record<CueKind, number>>> = {
  * the hit. Two channels, drawn separately, so the realtime context hears it
  * wide.
  *
- * **Scaled here to unit energy, with the node's own normalisation off.** The
+ * **Scaled here so its squares sum to one, with the node's own normalisation
+ * off.** The
  * first cut left `normalize` on and shaped the decay by `(1 - x) ^ 3.2`:
  * the node turned the impulse far down, the shape was dead by two seconds,
- * and the tail after a heavy explosion read about −80 dB. At unit energy a
- * send's gain is the tail's level against the hit's, by energy.
+ * and the tail after a heavy explosion read about −80 dB. Scaled so, a
+ * send's gain is the tail's rms against the hit's, for a broadband hit.
  */
 export const REVERB = {
 	seconds: 3,
@@ -391,11 +392,11 @@ export class AudioFX {
 			return;
 		}
 		if (cue.kind === "cruiseEngage") {
-			this.cruiseEngage(this.sending(this.buses.ship, "ship", cue.kind));
+			this.cruiseEngage(this.sending(cue.kind));
 			return;
 		}
 		if (cue.kind === "cruiseDrop") {
-			this.cruiseDrop(this.sending(this.buses.ship, "ship", cue.kind));
+			this.cruiseDrop(this.sending(cue.kind));
 			return;
 		}
 		const t = this.ctx.currentTime;
@@ -1110,9 +1111,22 @@ export class AudioFX {
 		if (this.punch === "heavy") {
 			// #577: the boom as an impact — a punch and a sub with a floor
 			// under the same click and air, where the thin boom fell to 35 Hz.
-			this.impactPunch(out, 150, 50, 0.16, 0.4, 3, boom);
-			this.sub(out, 110, 42, 0.9, 0.4, boom);
-			this.wash(out, 0.3, 6000, 300, 0.6, boom);
+			this.impactPunch(out, {
+				from: 150,
+				to: 50,
+				dur: 0.16,
+				level: 0.4,
+				drive: 3,
+				delayS: boom,
+			});
+			this.sub(out, { from: 110, to: 42, len: 0.9, level: 0.4, delayS: boom });
+			this.wash(out, {
+				vol: 0.3,
+				fromHz: 6000,
+				toHz: 300,
+				len: 0.6,
+				delayS: boom,
+			});
 			this.noiseBurst(out, 0.5, 0.3, 400, boom);
 			this.tone(out, 2400, 0.08, "triangle", 0.06, 1200, boom);
 			return;
@@ -1132,8 +1146,21 @@ export class AudioFX {
 		if (this.punch !== "heavy") return;
 		// #577: the pop is a hit, and the settle lands.
 		this.snap(out, 0.3, 2500);
-		this.impactPunch(out, 150, 48, 0.14, 0.35, 3);
-		this.impactPunch(out, 100, 45, 0.18, 0.25, 2.5, 0.8);
+		this.impactPunch(out, {
+			from: 150,
+			to: 48,
+			dur: 0.14,
+			level: 0.35,
+			drive: 3,
+		});
+		this.impactPunch(out, {
+			from: 100,
+			to: 45,
+			dur: 0.18,
+			level: 0.25,
+			drive: 2.5,
+			delayS: 0.8,
+		});
 	}
 
 	/** Build the looping noise graph. Two seconds of it, cross-faded by chance. */
@@ -1298,12 +1325,21 @@ export class AudioFX {
 	 *  it is rounded off, which is how many harmonics it gains. */
 	private impactPunch(
 		out: AudioNode,
-		from: number,
-		to: number,
-		dur: number,
-		level: number,
-		drive: number,
-		delayS = 0,
+		{
+			from,
+			to,
+			dur,
+			level,
+			drive,
+			delayS = 0,
+		}: {
+			from: number;
+			to: number;
+			dur: number;
+			level: number;
+			drive: number;
+			delayS?: number;
+		},
 	) {
 		this.drivenSine(out, {
 			from,
@@ -1341,11 +1377,19 @@ export class AudioFX {
 	 *  `level` is its peak. */
 	private sub(
 		out: AudioNode,
-		from: number,
-		to: number,
-		len: number,
-		level: number,
-		delayS = 0,
+		{
+			from,
+			to,
+			len,
+			level,
+			delayS = 0,
+		}: {
+			from: number;
+			to: number;
+			len: number;
+			level: number;
+			delayS?: number;
+		},
 	) {
 		this.drivenSine(out, {
 			from,
@@ -1416,11 +1460,19 @@ export class AudioFX {
 	 *  `toHz`, decaying over `len`. */
 	private wash(
 		out: AudioNode,
-		vol: number,
-		fromHz: number,
-		toHz: number,
-		len: number,
-		delayS = 0,
+		{
+			vol,
+			fromHz,
+			toHz,
+			len,
+			delayS = 0,
+		}: {
+			vol: number;
+			fromHz: number;
+			toHz: number;
+			len: number;
+			delayS?: number;
+		},
 	) {
 		this.filteredNoise(out, {
 			dur: len,
@@ -1514,12 +1566,15 @@ export class AudioFX {
 	 */
 	private sendToReverb(from: AudioNode, bus: CueBus, kind: CueKind) {
 		const amount = REVERB_SEND[kind];
-		if (this.punch !== "heavy" || !amount || !this.ctx || !this.buses) return;
+		if (!this.sends(kind) || !amount || !this.ctx || !this.buses) return;
 		let reverb = this.reverbs.get(bus);
 		if (!reverb) {
 			reverb = this.ctx.createConvolver();
 			reverb.normalize = false;
-			reverb.buffer = reverbImpulse(this.ctx);
+			// One impulse for every bus (sage round 3): two draws of the same
+			// law are the same room, and the second cost another frame.
+			this.impulse ??= reverbImpulse(this.ctx);
+			reverb.buffer = this.impulse;
 			reverb.connect(this.buses[bus]);
 			this.reverbs.set(bus, reverb);
 		}
@@ -1529,10 +1584,21 @@ export class AudioFX {
 		send.connect(reverb);
 	}
 
-	/** `out` with a reverb send beside it on the heavy arm, for a cue that
+	/** The reverb's impulse (#577), drawn once, on the first send. */
+	private impulse: AudioBuffer | null = null;
+
+	/** Whether a cue of `kind` feeds the reverb: heavy, and named in
+	 *  `REVERB_SEND`. The one copy of that rule. */
+	private sends(kind: CueKind): boolean {
+		return this.punch === "heavy" && (REVERB_SEND[kind] ?? 0) > 0;
+	}
+
+	/** Its bus, with a reverb send beside it on the heavy arm, for a cue that
 	 *  plays straight into its bus and has no voice of its own to send from. */
-	private sending(out: AudioNode, bus: CueBus, kind: CueKind): AudioNode {
-		if (this.punch !== "heavy" || !REVERB_SEND[kind] || !this.ctx) return out;
+	private sending(kind: CueKind): AudioNode {
+		const bus = CUE_BUS[kind];
+		const out = (this.buses as CueBuses)[bus];
+		if (!this.sends(kind) || !this.ctx) return out;
 		const g = this.ctx.createGain();
 		g.gain.value = 1;
 		g.connect(out);
@@ -1652,9 +1718,15 @@ export class AudioFX {
 		if (this.punch !== "heavy") return;
 		// #577: the hull taking it — a punch, a snap on the strike and a crunch
 		// closing down under the ring, which is still the clang.
-		this.impactPunch(out, 140, 50, 0.14, 0.45, 3);
+		this.impactPunch(out, {
+			from: 140,
+			to: 50,
+			dur: 0.14,
+			level: 0.45,
+			drive: 3,
+		});
 		this.snap(out, 0.3, 2500);
-		this.wash(out, 0.3, 5000, 400, 0.3);
+		this.wash(out, { vol: 0.3, fromHz: 5000, toHz: 400, len: 0.3 });
 	}
 
 	/** A hit the player landed (#545): smaller and further off than one taken
@@ -1667,7 +1739,14 @@ export class AudioFX {
 		}
 		this.noiseBurst(out, 0.1, 0.14, 500);
 		this.tone(out, 110, 0.1, "sine", 0.07, 80);
-		if (this.punch === "heavy") this.impactPunch(out, 120, 60, 0.08, 0.1, 2);
+		if (this.punch === "heavy")
+			this.impactPunch(out, {
+				from: 120,
+				to: 60,
+				dur: 0.08,
+				level: 0.1,
+				drive: 2,
+			});
 	}
 	/** A ship coming apart. */
 	private explosion(out: AudioNode) {
@@ -1682,10 +1761,16 @@ export class AudioFX {
 	 */
 	private heavyExplosion(out: AudioNode) {
 		this.snap(out, 0.3, 2000);
-		this.impactPunch(out, 160, 48, 0.22, 0.5, 3);
-		this.sub(out, 90, 40, 1.5, 0.45);
-		this.wash(out, 0.4, 6000, 250, 1.3);
-		this.wash(out, 0.5, 450, 80, 1.7);
+		this.impactPunch(out, {
+			from: 160,
+			to: 48,
+			dur: 0.22,
+			level: 0.5,
+			drive: 3,
+		});
+		this.sub(out, { from: 90, to: 40, len: 1.5, level: 0.45 });
+		this.wash(out, { vol: 0.4, fromHz: 6000, toHz: 250, len: 1.3 });
+		this.wash(out, { vol: 0.5, fromHz: 450, toHz: 80, len: 1.7 });
 		for (let i = 0; i < 10; i++) {
 			// Under 1 s, so `1 - at` below keeps every spark's level positive
 			// (sage round 2 on #578: at 0.9 the latest reached 1.02).
@@ -1707,7 +1792,14 @@ export class AudioFX {
 		if (this.punch !== "heavy") return;
 		// #577: two clamps, each a clunk of metal with a short ring.
 		for (const at of [0, 0.09]) {
-			this.impactPunch(out, 130, 55, 0.1, 0.3, 3, at);
+			this.impactPunch(out, {
+				from: 130,
+				to: 55,
+				dur: 0.1,
+				level: 0.3,
+				drive: 3,
+				delayS: at,
+			});
 			this.snap(out, 0.15, 3000, at);
 		}
 		for (const [hz, vol, dur] of [
@@ -1816,16 +1908,22 @@ export class AudioFX {
 			return;
 		}
 		if (this.punch === "heavy") {
-			this.sendToReverb(out, "ship", "witchspaceFlash");
+			this.sendToReverb(out, CUE_BUS.witchspaceFlash, "witchspaceFlash");
 			// #577: the world replaced, as an impact — a punch and a sub with a
 			// floor where the thin boom fell to 28 Hz, a snap, a wash closing
 			// down and a long rumble under it.
 			this.snap(out, 0.3, 2000);
-			this.impactPunch(out, 170, 45, 0.24, 0.45, 3);
-			this.sub(out, 110, 40, 1.6, 0.42);
+			this.impactPunch(out, {
+				from: 170,
+				to: 45,
+				dur: 0.24,
+				level: 0.45,
+				drive: 3,
+			});
+			this.sub(out, { from: 110, to: 40, len: 1.6, level: 0.42 });
 			this.tone(out, 190, 0.4, "triangle", 0.12, 60);
-			this.wash(out, 0.35, 7000, 200, 1.5);
-			this.wash(out, 0.45, 300, 70, 2);
+			this.wash(out, { vol: 0.35, fromHz: 7000, toHz: 200, len: 1.5 });
+			this.wash(out, { vol: 0.45, fromHz: 300, toHz: 70, len: 2 });
 			return;
 		}
 		this.tone(out, 95, 1.1, "sine", 0.42, 28);
@@ -2222,16 +2320,16 @@ function reverbImpulse(ctx: BaseAudioContext): AudioBuffer {
 	for (let c = 0; c < 2; c++) {
 		const d = buffer.getChannelData(c);
 		let lp = 0;
-		let energy = 0;
+		let sumSq = 0;
 		for (let i = pre; i < len; i++) {
 			const x = (i - pre) / (len - pre);
 			lp +=
 				(Math.random() * 2 - 1 - lp) *
 				(0.25 + 0.7 * REVERB.brightness * (1 - x));
 			d[i] = lp * Math.exp(-(i - pre) / ctx.sampleRate / REVERB.decayS);
-			energy += d[i] * d[i];
+			sumSq += d[i] * d[i];
 		}
-		const scale = energy > 0 ? 1 / Math.sqrt(energy) : 0;
+		const scale = sumSq > 0 ? 1 / Math.sqrt(sumSq) : 0;
 		for (let i = pre; i < len; i++) d[i] *= scale;
 	}
 	return buffer;
