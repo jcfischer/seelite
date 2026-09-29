@@ -14905,8 +14905,6 @@ class Game {
 			chargeAu: this.chargeAu,
 			permadeath: this.permadeath,
 			firstDay: this.firstDay,
-			// A copy: `playedS` is advanced in place every frame, and a record
-			// handed to the store must not move after it is read.
 			// A copy (`playedS` moves in place every frame), and a basis brought
 			// into line with the hold: goods leave it by paths that are not a sale
 			// — a shipyard's confiscation, a job — and the parser refuses a basis

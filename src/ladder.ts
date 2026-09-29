@@ -261,20 +261,30 @@ export const emptyLadderRecord = (): LadderRecord => ({
  * The record a new game or a v6 migration starts with: zero on every ladder,
  * the current system and docked station already seen (#183 D9). A pilot is not
  * paid for where they started.
+ *
+ * **A migration also seeds every system the old world marks visited** (the
+ * principal's ruling on #564's review): a v6 world keeps §7's visited flags per
+ * galaxy, and without them a veteran would be paid again for places flown
+ * before the ladders existed. Stations have no such record, so only the one
+ * docked at is seeded.
  */
 export const seededLadderRecord = (
 	galaxyIndex: number,
 	systemIndex: number,
 	dockedAt: CarrierKey | null,
-): LadderRecord => ({
-	...emptyLadderRecord(),
-	visited: {
-		[galaxyIndex]: {
-			systems: [systemIndex],
-			stations: dockedAt ? [dockedAt] : [],
-		},
-	},
-});
+	visitedSystems: Readonly<Record<number, readonly number[]>> = {},
+): LadderRecord => {
+	const visited: Record<number, VisitedPlaces> = {};
+	for (const [g, systems] of Object.entries(visitedSystems))
+		if (systems.length > 0)
+			visited[Number(g)] = { systems: [...systems], stations: [] };
+	const here = visited[galaxyIndex] ?? { systems: [], stations: [] };
+	visited[galaxyIndex] = {
+		systems: [...new Set([...here.systems, systemIndex])].sort((a, b) => a - b),
+		stations: dockedAt ? [dockedAt] : [],
+	};
+	return { ...emptyLadderRecord(), visited };
+};
 
 // ---------------------------------------------------------------------------
 // Pending credit and banking (#183 D7)
@@ -619,17 +629,14 @@ export const ladderAfterMarket = (
 			),
 		};
 	}
-	if (action.type === "sell-commodity") {
-		const sale = saleMargin(
-			record.basis,
-			before.cargo,
-			good,
-			(before.cargo[good] ?? 0) - (after.cargo[good] ?? 0),
-			after.credits - before.credits,
-		);
-		return bankTrade({ ...record, basis: sale.basis }, sale.marginCr);
-	}
-	return record;
+	const sale = saleMargin(
+		record.basis,
+		before.cargo,
+		good,
+		(before.cargo[good] ?? 0) - (after.cargo[good] ?? 0),
+		after.credits - before.credits,
+	);
+	return bankTrade({ ...record, basis: sale.basis }, sale.marginCr);
 };
 
 /**

@@ -103,6 +103,28 @@ describe("#183 D9 — the ladders in the save", () => {
 		expect(commander.firstDay).toBe("guided");
 	});
 
+	test("a v6 migration seeds every system the old world marks visited", () => {
+		const save = saved();
+		save.world.galaxies[2] = {
+			...save.world.galaxies[2],
+			visited: [3, 17, 40],
+		};
+		save.world.galaxies[0] = { ...save.world.galaxies[0], visited: [5] };
+		const v6 = resealed(serializeSave(save), (body) => {
+			body.saveSchemaVersion = 6;
+			delete body.commander.ladders;
+		});
+		const { commander } = parseSave(v6);
+		expect(commander.ladders.banked.exploration).toBe(0);
+		expect(commander.ladders.visited).toEqual({
+			0: { systems: [5], stations: [] },
+			2: {
+				systems: [3, 17, 40],
+				stations: ["17:station-trade" as CarrierKey],
+			},
+		});
+	});
+
 	test("an older version carrying the key is refused by name", () => {
 		const grafted = resealed(serializeSave(saved()), (body) => {
 			body.saveSchemaVersion = 6;

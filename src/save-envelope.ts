@@ -349,8 +349,8 @@ export const newCommanderRecord = (
 	permadeath: options.permadeath ?? false,
 	firstDay: options.firstDay ?? "free",
 	// A new game is paid for nothing it starts with: its own system is seeded
-	// (#183 D9's migration rule, applied to the start). The docked start seeds
-	// its station where the renderer docks it.
+	// (#183 D9's migration rule, applied to the start). The start station is
+	// not: its first dock, a guided start's included, earns one kind.
 	ladders: seededLadderRecord(
 		options.galaxyIndex ?? 0,
 		options.systemIndex ?? 0,
@@ -499,6 +499,9 @@ const parseCommander = (
 	raw: unknown,
 	now: number,
 	version: number,
+	/** The loaded world's §7 visited flags per galaxy — what a pre-7 record's
+	 *  ladders are seeded from, so a veteran is not paid for old places. */
+	visitedSystems: Readonly<Record<number, readonly number[]>>,
 ): CommanderRecord => {
 	const o = asObject(raw, "commander");
 	// `Partial` is what makes the `undefined` arm real to the compiler: typed as
@@ -593,6 +596,7 @@ const parseCommander = (
 					galaxyIndex,
 					systemIndex,
 					(dockedAt as CarrierKey | null) ?? null,
+					visitedSystems,
 				);
 	// **A basis names a good aboard, and no more of it than is aboard.** The
 	// cargo check above is the model: a line for a good nothing can price, or
@@ -699,6 +703,7 @@ export function parseSave(raw: unknown): SaveEnvelope {
 		o.commander,
 		world.gameTime,
 		version as number,
+		Object.fromEntries(world.galaxies.map((g, i) => [i, g.visited])),
 	);
 	const offers = [
 		...Object.values(commander.requests.byId).map((r) => r.terms),

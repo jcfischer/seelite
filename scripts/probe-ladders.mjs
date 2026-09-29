@@ -86,7 +86,7 @@ try {
 	check("it lists three ladders", rows === 3, `${rows}`);
 	const combatInFlight = await ladderRow("combat");
 	check(
-		"this flight's kill credit shows as unbanked, and nothing is banked",
+		"this flight's pending kill credit, set directly, shows as unbanked (the kill paths are probe-raider-consequence's)",
 		/\+0\.8 UNBANKED/.test(combatInFlight) && /^COMBAT/m.test(combatInFlight),
 		combatInFlight.replaceAll("\n", " | "),
 	);
