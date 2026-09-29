@@ -110,9 +110,10 @@ describe("the glass", () => {
 		expect(glass.opacity).toBe(CANOPY_GLASS.opacity);
 	});
 
-	test("a faint pane, still: more than the flat one, far from a mirror", () => {
-		expect(CANOPY_GLASS.opacity).toBeGreaterThan(0.08);
-		expect(CANOPY_GLASS.opacity).toBeLessThan(0.2);
+	test("a faint pane, still: no darker than the flat one, far from a mirror", () => {
+		// 0.12 moved `probe-planet-surfaces`'s disc mask; `CANOPY_GLASS` says how.
+		expect(CANOPY_GLASS.opacity).toBeLessThanOrEqual(0.08);
+		expect(CANOPY_GLASS.opacity).toBeGreaterThan(0);
 		expect(CANOPY_GLASS.reflectivity).toBeGreaterThan(0);
 		expect(CANOPY_GLASS.reflectivity).toBeLessThanOrEqual(1);
 	});

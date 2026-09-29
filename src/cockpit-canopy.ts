@@ -92,8 +92,13 @@ export const CANOPY_FRAME = {
  * - `thicknessKm` **0.0006** — 60 cm in the cabin's frame, a few millimetres at
  *   life size. Enough that the pane's rim is a line where the side walls catch
  *   the eye obliquely; under the header's 2 m depth, so the rim is buried.
- * - `opacity` **0.12** against the flat pane's 0.08, the node's figure: a pane
- *   the eye can find, still one the flight is read through.
+ * - `opacity` **0.08**, the flat pane's, and **not** the node's 0.12. At
+ *   0.12 the tint lifts the space behind the pane by a few display codes, and
+ *   that moved `probe-planet-surfaces`'s disc mask by a patch: desert's
+ *   bake-against-noise check at four radii read 19.1% against a 12% band,
+ *   where 0.08 reads 4.7% on the same build. The thickness and the reflection
+ *   are what make the pane findable; the tint stays where the planet checks
+ *   were calibrated.
  * - `reflectivity` is how much of the environment is **added** over the tint,
  *   and then scaled by `opacity` like the rest of the pane — so what reaches the
  *   screen is `opacity × reflectivity` of the environment. Set by looking, like
@@ -101,7 +106,7 @@ export const CANOPY_FRAME = {
  */
 export const CANOPY_GLASS = {
 	color: 0x0a2635,
-	opacity: 0.12,
+	opacity: 0.08,
 	reflectivity: 0.6,
 	thicknessKm: 0.0006,
 } as const;
