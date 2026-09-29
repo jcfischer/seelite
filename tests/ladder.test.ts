@@ -276,9 +276,9 @@ describe("the basis a sale's margin is read against (#183 D3)", () => {
 });
 
 describe("a hold that lost goods some other way", () => {
-	test("a confiscation shrinks the basis at its own average cost", () => {
-		// A shipyard scan takes cargo without a sale (#13); the parser refuses a
-		// basis covering more than is aboard, so the write reconciles first.
+	test("goods gone off the till shrink the basis at its own average cost", () => {
+		// A job hand-over today; the parser refuses a basis covering more than
+		// is aboard, so the write reconciles first.
 		const basis = {
 			Narcotics: { units: 10, cr: 200 },
 			Food: { units: 2, cr: 8 },
@@ -361,6 +361,25 @@ describe("a market transaction's effect on the ladder (#183 D3)", () => {
 		);
 		expect(sold.banked.trade).toBeCloseTo(2 * 15 - 2 * 10, 9);
 		expect(sold.basis.Food).toEqual({ units: 8, cr: 80 });
+	});
+
+	test("a sale after an unreconciled loss prices against the goods still aboard", () => {
+		// 10 bought at 10 Cr, 6 gone off the till with the line left stale, 4
+		// sold at 15. The margin is the same either way (the average holds); what the
+		// reconcile changes is the line left behind, which without it would still
+		// price 6 units that are gone against the next goods of that name.
+		const record: LadderRecord = {
+			...emptyLadderRecord(),
+			basis: { Food: { units: 10, cr: 100 } },
+		};
+		const sold = ladderAfterMarket(
+			record,
+			{ type: "sell-commodity", commodity: "Food" },
+			{ credits: 0, cargo: { Food: 4 } },
+			{ credits: 60, cargo: {} },
+		);
+		expect(sold.banked.trade).toBeCloseTo(60 - 40, 9);
+		expect(sold.basis.Food).toBeUndefined();
 	});
 
 	test("anything else leaves the record as it was", () => {

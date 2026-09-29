@@ -1698,12 +1698,13 @@ export class LiveCockpit {
 				// what is in it.
 				// One precedence rule for both cells: a gate blocks only new
 				// purchases, so owned wins over locked (#183 D9).
+				const locked = owned.includes(entry.name) ? undefined : entry.locked;
 				const state =
 					entry.per === "ly"
 						? "fill"
 						: owned.includes(entry.name)
 							? "owned"
-							: entry.locked
+							: locked
 								? "locked"
 								: "open";
 				const action =
@@ -1711,11 +1712,11 @@ export class LiveCockpit {
 						? `<button class="lc-station-action" type="button" data-live-station-action="buy-fuel" data-live-station-name="${name}">FILL</button>`
 						: state === "owned"
 							? '<span class="lc-station-owned">OWNED</span>'
-							: state === "locked" && entry.locked
+							: locked
 								? // #183 D6: the #489 locked-row pattern — listed, named and
 									// with no BUY, because a vanished row says nothing about
 									// what to climb. Owned wins: a gate blocks new purchases.
-									`<span class="lc-station-locked" data-live-equipment-locked="${entry.locked.ladder}:${entry.locked.rung}">LOCKED</span>`
+									`<span class="lc-station-locked" data-live-equipment-locked="${locked.ladder}:${locked.rung}">LOCKED</span>`
 								: `<button class="lc-station-action" type="button" data-live-station-action="buy-equipment" data-live-station-name="${name}">BUY</button>`;
 				// The rung a locked row needs goes in the middle cell, which a
 				// unit item leaves empty: in the action cell it was wider than
@@ -1723,8 +1724,8 @@ export class LiveCockpit {
 				const held =
 					entry.per === "ly"
 						? `${fuel.ly.toFixed(1)}/${fuel.capacityLy} LY`
-						: state === "locked" && entry.locked
-							? `<span class="lc-station-locked">${entry.locked.ladder.toUpperCase()} ${entry.locked.rung} · ${escapeHtml(entry.locked.name.toUpperCase())}</span>`
+						: locked
+							? `<span class="lc-station-locked">${locked.ladder.toUpperCase()} ${locked.rung} · ${escapeHtml(locked.name.toUpperCase())}</span>`
 							: "";
 				return `<div class="lc-station-row" data-live-equipment="available"><span>${name}</span><span class="lc-station-cell">${entry.priceCr} Cr</span><span class="lc-station-cell">${held}</span>${action}</div>`;
 			})

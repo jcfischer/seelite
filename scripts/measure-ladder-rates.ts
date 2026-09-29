@@ -724,5 +724,5 @@ if (firstOutOfReach !== undefined)
 console.log("\n   shipped tops (src/ladder.ts LADDER_TOP) against this run:");
 for (const [i, l] of LADDERS.entries())
 	console.log(
-		`     ${l.name.padEnd(12)} shipped ${String(LADDER_TOP[l.name as keyof typeof LADDER_TOP]).padStart(10)}   derived ${tops[i].toFixed(l.digits).padStart(10)}`,
+		`     ${l.name.padEnd(12)} shipped ${String(LADDER_TOP[l.name as keyof typeof LADDER_TOP]).padStart(10)}   derived ${tops[i].toFixed(l.digits).padStart(10)}   (unrounded ${tops[i]}, shipped/derived ${(LADDER_TOP[l.name as keyof typeof LADDER_TOP] / tops[i]).toFixed(6)})`,
 	);

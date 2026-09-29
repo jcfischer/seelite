@@ -109,6 +109,15 @@ const FIGURE: Record<Ladder, (n: number) => string> = {
 	exploration: (n) => String(Math.floor(n)),
 };
 
+/** A threshold in the same units, **rounded up**: a rung is reached at or
+ *  above it, so a figure rounded down names a total that does not reach it —
+ *  exploration's rung 1 is 8.24 kinds, and "AT 8" would be a lie at 8. */
+const THRESHOLD: Record<Ladder, (n: number) => string> = {
+	combat: (n) => (Math.ceil(n * 10 - 1e-9) / 10).toFixed(1),
+	trade: (n) => `${Math.ceil(n - 1e-9).toLocaleString("en-US")} Cr`,
+	exploration: (n) => String(Math.ceil(n - 1e-9)),
+};
+
 const UNIT: Record<Ladder, string> = {
 	combat: "KILL CREDIT",
 	trade: "REALISED MARGIN",
@@ -143,7 +152,7 @@ export function commanderBody(view: LadderView): string {
 					? `<small class="lc-ladder-pending" data-live-ladder-pending>+${figure(row.pending)} UNBANKED</small>`
 					: "";
 			const next = row.next
-				? `<small>NEXT ${esc(row.next.name.toUpperCase())} AT ${figure(row.next.at)}</small>`
+				? `<small>NEXT ${esc(row.next.name.toUpperCase())} AT ${THRESHOLD[row.ladder](row.next.at)}</small>`
 				: "<small>TOP RUNG</small>";
 			const rate =
 				row.perHour === null

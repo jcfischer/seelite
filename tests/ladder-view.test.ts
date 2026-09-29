@@ -101,6 +101,14 @@ describe("the body", () => {
 		expect(html).toContain('data-live-ladder="trade"');
 	});
 
+	test("prints the next threshold rounded up, so the figure it names is enough", () => {
+		// Exploration's rung 1 is 1055 / 128 = 8.24 kinds; 8 does not reach it.
+		const html = commanderBody(ladderView(record(), emptyPending()));
+		expect(html).toContain(`AT ${Math.ceil(threshold("exploration", 1))}<`);
+		expect(Math.ceil(threshold("exploration", 1))).toBe(9);
+		expect(html).toContain("AT 1.2<");
+	});
+
 	test("shows this flight's pending credit as unbanked", () => {
 		const html = commanderBody(
 			ladderView(record(), { combat: 1.25, systems: [] }),

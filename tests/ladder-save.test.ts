@@ -1,9 +1,9 @@
 /**
  * #564: save schema 6 → 7, the ladders' record on the commander (#183 D9).
  *
- * A v6 save migrates at zero on every ladder, seeds its visited sets with the
- * system it is in and the station it is docked at, and keeps everything it
- * owns — a gate blocks only new purchases.
+ * A v6 save migrates at zero on every ladder, seeds its visited sets with
+ * every system its world marks visited and the station it is docked at, and
+ * keeps everything it owns — a gate blocks only new purchases.
  */
 
 import { describe, expect, test } from "bun:test";

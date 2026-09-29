@@ -14906,9 +14906,11 @@ class Game {
 			permadeath: this.permadeath,
 			firstDay: this.firstDay,
 			// A copy (`playedS` moves in place every frame), and a basis brought
-			// into line with the hold: goods leave it by paths that are not a sale
-			// — a shipyard's confiscation, a job — and the parser refuses a basis
-			// covering more than is aboard rather than guessing which units went.
+			// into line with the hold. **A guard, not a known path**: today the one
+			// non-sale removal is a job hand-over, which reconciles as it settles.
+			// The parser refuses a basis covering more than is aboard, so a later
+			// path that forgets — `combat-model.md` §4's confiscation is specified
+			// and not built — would otherwise make a written save unloadable.
 			ladders: {
 				...this.ladders,
 				basis: reconcileBasis(this.ladders.basis, this.commander.cargo),

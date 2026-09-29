@@ -111,8 +111,9 @@ import {
  * **7 adds `commander.ladders` (#564, #183 D9)**: the three banked totals,
  * the per-galaxy visited-system and docked-station sets, the purchase basis a
  * sale's margin is read against, and the play log. Every older record migrates
- * at zero on every ladder, its sets seeded with the system it is in and the
- * station it is docked at, and keeps everything it owns. Credit earned since
+ * at zero on every ladder, its sets seeded with every system its own world
+ * marks visited (§7's flags, per galaxy) and the station it is docked at, and
+ * keeps everything it owns. Credit earned since
  * the last dock is not here at all: it is lost with the ship (#183 D7).
  */
 export const SAVE_SCHEMA_VERSION = 7;
@@ -584,7 +585,7 @@ const parseCommander = (
 	const systemIndex = num(o, "systemIndex", "commander");
 	if (!isSystemIndex(systemIndex))
 		fail(`commander: ${systemIndex} is not a system index`);
-	// #183 D9: an older record migrates at zero, seeded with where it stands. A
+	// #183 D9: an older record migrates at zero, seeded with where it has been. A
 	// current one without the key is truncated, and #89's obligation 5 says a
 	// truncation must not read as zero.
 	if (version >= 7 && o.ladders === undefined)

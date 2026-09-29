@@ -95,11 +95,10 @@ export const TOP_RUNGS: Rungs = {
 };
 
 /** The three rungs a record stands on. */
-export const rungsOf = (record: LadderRecord): Rungs => ({
-	combat: rungOf("combat", record.banked.combat),
-	trade: rungOf("trade", record.banked.trade),
-	exploration: rungOf("exploration", record.banked.exploration),
-});
+export const rungsOf = (record: LadderRecord): Rungs =>
+	Object.fromEntries(
+		LADDERS.map((l) => [l, rungOf(l, record.banked[l])]),
+	) as Record<Ladder, number>;
 
 /**
  * Each ladder's nine rung names, rung 0 first (#183 D5).
@@ -616,6 +615,10 @@ export const ladderAfterMarket = (
 ): LadderRecord => {
 	if (action.type !== "buy-commodity" && action.type !== "sell-commodity")
 		return record;
+	// Brought into line with the hold first. A guard: a job hand-over reconciles
+	// as it settles, and it is today's only non-sale removal, but a later one
+	// that forgot would price this transaction against units that are gone.
+	record = { ...record, basis: reconcileBasis(record.basis, before.cargo) };
 	const good = action.commodity;
 	if (action.type === "buy-commodity") {
 		const units = (after.cargo[good] ?? 0) - (before.cargo[good] ?? 0);
