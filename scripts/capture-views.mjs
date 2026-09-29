@@ -881,7 +881,10 @@ const PLACERS = {
 				(b) => b.kind === "station" && b.stationType === "shipyard",
 			)?.id;
 			if (!id) return { error: "no shipyard in the fixture's system" };
-			await window.__parkInBerth(id, g.berthIdsOfStation(id)[0]);
+			// Head right through the dock: see the bake wait below.
+			await window.__parkInBerth(id, g.berthIdsOfStation(id)[0], {
+				headLook: "right",
+			});
 			if (rungs === "top") {
 				const L = await import("/src/ladder.ts");
 				g.ladders = {
@@ -896,12 +899,24 @@ const PLACERS = {
 					cargo: { Food: 20 },
 				};
 			}
-			g.setHeadLook("forward");
 			g.stationConsoleRevision += 1;
-			g.updateCockpit();
 			return { id };
 		}, shot.rungs);
 		if (result.error) throw new Error(`shipyard-tab placer: ${result.error}`);
+		// **The bakes finish with the head turned, then it faces the console.**
+		// This row boots fresh, and the dock queues a planet bake that does not
+		// advance while a docked head faces forward — measured on this build and
+		// on main alike: `planet-4` stayed queued for 20 s forward and drained at
+		// once turned right. Left queued, the capture's own bake wait times out.
+		await page.waitForFunction(
+			() => (window.__seelite?.bakeQueue?.length ?? 0) === 0,
+			undefined,
+			{ timeout: 60_000 },
+		);
+		await page.evaluate(() => {
+			window.__seelite.setHeadLook("forward");
+			window.__seelite.updateCockpit();
+		});
 		// **A build without the tab is captured, not refused**, on the
 		// Controls row's precedent: the `before` of #583 is a shipyard whose
 		// console has no Shipyard tab, and the subject line says so.
@@ -1202,6 +1217,12 @@ try {
 		// unbound key, so `setView` would press it eight times and then throw
 		// about a view the game does not have — on a page that is not the game.
 		if (view.shot.kind !== "workbench-interior") {
+			// **The Shipyard rows dock and bank, which writes the world**, so they
+			// need what the duel's next row gets: a boot with no save. Without it
+			// the reload after the refinery's seed restores the seed-47 save an
+			// earlier row flushed, its clock ahead of the one `__startClockAt`
+			// puts back, and the dock's first write throws (#583).
+			if (view.shot.kind === "shipyard-tab") worldWritten = true;
 			// Before the view is set, because a page load resets the game to the
 			// cockpit and would undo it.
 			await ensureFixture(
