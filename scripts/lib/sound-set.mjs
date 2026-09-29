@@ -300,26 +300,14 @@ export async function renderInPage({
 	 * before the render starts.
 	 */
 	async function directorScript({ keys, arms: armsValue }, seconds) {
-		const { initialMusicState, musicArms, stepMusic } = await import(
-			"/src/music-director.ts"
-		);
+		const { initialMusicState, musicArms, QUIET_READING, stepMusic } =
+			await import("/src/music-director.ts");
 		const { arms, unknown } = musicArms(armsValue);
 		if (unknown.length)
 			throw new Error(`?music: unknown ${unknown.join(", ")}`);
-		let reading = {
-			scene: "flight",
-			held: false,
-			cruise: false,
-			encounter: "none",
-			sinceStruckS: 99,
-			raiderFiring: false,
-			engaged: false,
-			standing: "clean",
-			shieldShare: 1,
-			hullShare: 1,
-			systemSeed: 1,
-			stationRole: null,
-		};
+		// Ready throughout: the script is worked out before the render starts,
+		// and every command is sent once the worklet has loaded.
+		let reading = QUIET_READING;
 		const readings = keys.map(([t, over]) => {
 			reading = { ...reading, ...over };
 			return [t, reading];

@@ -14,6 +14,7 @@ import {
 	LOW_SHIELD_SHARE,
 	musicArms,
 	type MusicReading,
+	QUIET_READING,
 	REFRESH_S,
 	STRUCK_WINDOW_S,
 	stepMusic,
@@ -23,20 +24,7 @@ import { fullCondition } from "../src/ship-condition";
 import { MusicEngine } from "../src/music-engine";
 import { flightBed } from "../src/music-generate";
 
-const calm: MusicReading = {
-	scene: "flight",
-	held: false,
-	cruise: false,
-	encounter: "none",
-	sinceStruckS: 999,
-	raiderFiring: false,
-	engaged: false,
-	standing: "clean",
-	shieldShare: 1,
-	hullShare: 1,
-	systemSeed: 1234,
-	stationRole: null,
-};
+const calm: MusicReading = { ...QUIET_READING, systemSeed: 1234 };
 const at = (over: Partial<MusicReading>): MusicReading => ({
 	...calm,
 	...over,
@@ -113,6 +101,21 @@ describe("beds and hand-overs (D2, D3)", () => {
 			section: "calm",
 			hold: true,
 		});
+	});
+
+	test("a synth that is not ready is sent nothing, and the first ready frame starts the bed (sage round 1)", () => {
+		// `Music.send` holds every command until its worklet loads, with no
+		// limit, and for good if it never does: a whole `Song` a refresh.
+		const waiting = fly([
+			[5, at({ ready: false })],
+			[5, at({ ready: false, scene: "docked", stationRole: "trade" })],
+			[5, at({ ready: false, encounter: "duel" })],
+		]);
+		expect(waiting.commands).toEqual([]);
+		expect(waiting.state).toEqual(initialMusicState());
+		const { steps } = fly([[0.1, calm]], 0.1, waiting.state);
+		expect(steps[0][0]).toMatchObject({ type: "load", id: "flight-a" });
+		expect(steps[0][1]).toMatchObject({ type: "crossfade", to: "flight-a" });
 	});
 
 	test("an arrival in danger enters at that level", () => {

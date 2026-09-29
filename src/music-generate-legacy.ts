@@ -1,9 +1,9 @@
 /**
  * The first generative bed (#548), kept as `?music=legacy` after the
  * principal heard it as *super boring*: `music-generate.ts` is the second.
- * Its theme, modes and levels are still the vocabulary both share, and its
- * wary, threat and combat sections play in the second until those are
- * rewritten after the ear on calm (#548 D12).
+ * The second writes every section of its own and shares only this file's
+ * vocabulary: the modes, the levels and their modes and tempi, the station
+ * roles, and the theme and its seed (#548 D12).
  *
  * **What is authored and what is drawn (D8).** The rules are written here —
  * the modes, the progressions each level walks, how each part plays — and the
@@ -25,7 +25,7 @@
  * slower, sparser arrangement, and the station's role picks its texture.
  *
  * Pure, and imports only the score's types and the seed arithmetic, so it is
- * held headless (`tests/music-generate.test.ts`).
+ * held headless (`tests/music-generate-legacy.test.ts`).
  */
 import { DOMAIN } from "./domains";
 import type { NoteEvent, PartSpec, Song } from "./music-score";

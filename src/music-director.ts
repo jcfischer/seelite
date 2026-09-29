@@ -9,7 +9,7 @@
  * station bed. Witchspace (#534), the docking computer (#547) and death own
  * their sound, so the music fades out under them — read before the hold,
  * because death holds the clock. A pause holds everything else: no command
- * and no clock.
+ * and no clock. A synth whose worklet is not running is sent nothing at all.
  *
  * **The ladder (D4).** `dangerLevel` reads the highest signal: taking fire is
  * combat, a contest or a duel is threat, an inbound raider or a Wanted
@@ -49,6 +49,11 @@ export type MusicScene =
 /** What the director reads from the game each frame. */
 export interface MusicReading {
 	readonly scene: MusicScene;
+	/** The synth takes commands: false until its worklet has loaded, and for
+	 *  good if it failed to. `Music.send` holds what it is sent until then,
+	 *  with no limit, so the director sends nothing and keeps no state; the
+	 *  first ready frame starts the bed from silence. */
+	readonly ready: boolean;
 	/** The clock is held: a pause, a menu. */
 	readonly held: boolean;
 	readonly cruise: boolean;
@@ -129,6 +134,24 @@ export function musicArms(value: string | null): {
 	return { arms, unknown };
 }
 
+/** A quiet reading: in flight, nothing near, a whole ship, the synth ready.
+ *  The lab and the offline renders spread their own situation over it. */
+export const QUIET_READING: MusicReading = {
+	scene: "flight",
+	ready: true,
+	held: false,
+	cruise: false,
+	encounter: "none",
+	sinceStruckS: 99,
+	raiderFiring: false,
+	engaged: false,
+	standing: "clean",
+	shieldShare: 1,
+	hullShare: 1,
+	systemSeed: 1,
+	stationRole: null,
+};
+
 export function dangerLevel(
 	r: MusicReading,
 	arms: MusicArms = DEFAULT_MUSIC_ARMS,
@@ -152,9 +175,9 @@ type FlightId = "flight-a" | "flight-b";
 
 export interface MusicState {
 	readonly bed: "none" | "flight" | "station";
-	/** The slot holding this system's flight bed. */
+	/** The song id holding this system's flight bed. */
 	readonly flightId: FlightId | null;
-	/** Which bed the flight slot holds: the system, and first or second bed
+	/** Which bed that song id holds: the system, and first or second bed
 	 *  (`legacy`), so a change of either loads a new one. */
 	readonly flightKey: string | null;
 	readonly variant: number;
@@ -196,6 +219,7 @@ export function stepMusic(
 	arms: MusicArms = DEFAULT_MUSIC_ARMS,
 ): { state: MusicState; commands: MusicCommand[] } {
 	const cmds: MusicCommand[] = [];
+	if (!r.ready) return { state: s, commands: cmds };
 
 	// Before the hold: death holds the clock as the ship dies, and the fade is
 	// what it owes (D2).

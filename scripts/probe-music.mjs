@@ -655,7 +655,7 @@ try {
 				tap.getFloatTimeDomainData(x);
 				return Math.sqrt(x.reduce((s, v) => s + v * v, 0) / x.length);
 			};
-			// The station pad's attack is slow: the loudest of five seconds.
+			// The station bed fades in and its drone swells: the loudest of five seconds.
 			let heard = 0;
 			for (let i = 0; i < 50; i++) {
 				await new Promise((r) => setTimeout(r, 100));

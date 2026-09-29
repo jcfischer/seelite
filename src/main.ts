@@ -12049,6 +12049,7 @@ class Game {
 			this.musicState,
 			{
 				scene,
+				ready: this.music.ready,
 				held: this.clockHeld || this.openingActive,
 				cruise: this.regime === "cruise",
 				encounter: phase === "over" ? "none" : phase,

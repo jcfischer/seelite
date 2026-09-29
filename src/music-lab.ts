@@ -17,6 +17,7 @@ import {
 	initialMusicState,
 	type MusicReading,
 	type MusicScene,
+	QUIET_READING,
 	stepMusic,
 } from "./music-director";
 import { FLIGHT_LEVELS, type MusicLevel, musicTheme } from "./music-generate";
@@ -92,16 +93,10 @@ export function mountMusicLab() {
 
 	function tick() {
 		const reading: MusicReading = {
+			...QUIET_READING,
 			scene: checked("scene") as MusicScene,
-			held: false,
+			ready: music.ready,
 			cruise: $<HTMLInputElement>("cruise").checked,
-			encounter: "none",
-			sinceStruckS: 99,
-			raiderFiring: false,
-			engaged: false,
-			standing: "clean",
-			shieldShare: 1,
-			hullShare: 1,
 			systemSeed: Number(seedIn.value) >>> 0,
 			stationRole: $<HTMLSelectElement>("role").value as StationType,
 		};

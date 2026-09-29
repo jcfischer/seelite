@@ -104,8 +104,10 @@ describe("the flight bed", () => {
 	});
 
 	test("a bed stays cheap to compile: few enough notes for one quantum's slack", () => {
-		// 1625 notes compiled in 0.36 ms on the principal's machine against a
-		// 2.67 ms quantum; a refresh loads a whole bed while music plays.
+		// A refresh loads a whole bed while music plays, against a 2.67 ms
+		// quantum. Re-measured in sage round 1, bun on the principal's machine:
+		// at most 3274 notes over these seeds, compiled in a median 0.25 ms
+		// (p90 0.65, 200 runs). No row times it: a wall clock on CI is noise.
 		for (const seed of SEEDS.slice(0, 8)) {
 			const n = flightBed(seed, 0).sections.reduce(
 				(k, s) => k + s.events.length,
@@ -302,6 +304,13 @@ describe("wary, threat and combat (D12, after the ear on calm)", () => {
 				);
 				expect(st.some((s) => kin.includes(contour(s).join()))).toBe(true);
 			}
+			// A threat states only the head, three notes, and never develops it:
+			// every statement has the first two steps of the theme's own shape,
+			// not its inversion (sage round 1).
+			const heads = statements(section(song, "threat").events, "lead", 4);
+			expect(heads.length).toBeGreaterThanOrEqual(5);
+			const head = contour(theme).slice(0, 2).join();
+			for (const s of heads) expect(contour(s).join()).toBe(head);
 		}
 	});
 

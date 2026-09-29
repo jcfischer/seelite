@@ -309,7 +309,7 @@ const SCHEMA = {
 	),
 	volumeMusic: volumeRow(
 		"Music",
-		"The music, which is not in the ship and not heard through its hull: each system's own theme in flight, darker in a fight, and a quieter one while docked.",
+		"The music, which is not in the ship and not heard through its hull: each system's own theme in flight, darker in a fight, and a calmer one while docked.",
 	),
 } as const;
 
