@@ -43,6 +43,12 @@
  * - **a burst holds at the cap** — thirty explosions one render quantum apart
  *   leave no more voices sounding than the hits cap, and ring on after the
  *   last one well below the same burst with the caps lifted; D4 in a browser.
+ * - **the heavy arm carries weight, and thin is the sound it had** (#577) —
+ *   every band above is read on `?punch=thin`, so a heavy voice that leaked
+ *   into the thin arm is a red run on the cue it touched. The weighted cues
+ *   render again on `heavy` in bands of their own, each must stand clear of
+ *   its thin render under 250 Hz, and the order of the hits by level holds:
+ *   an explosion over a hull hit over a shield hit over a hit landed.
  *   The control arm and the leadless start are reached by patching the
  *   engine's private `pool` and `master` (`renderInPage`), which `tsc` does
  *   not see in a script, so `renderInPage` throws if either is missing.
@@ -437,34 +443,115 @@ const SINCE_534 = {
 };
 
 /**
+ * #577's heavy voices, on `?punch=heavy` (the default): centred on this
+ * branch's own render (seed 552), so they hold the prototype to what is
+ * offered and move when the ear moves it. Every one has a noise part. Over
+ * seeds 1–3 and 552 rms moved under 3% and peak up to 12%, and the centroid
+ * up to 5%, save the low shield hit's, which a sputter of few sparks moves
+ * up to 16% — its centroid band is widened to match (`hzSpread`).
+ */
+const HEAVY = {
+	explosion: { rms: 0.0556, peak: 0.4503, onsetMs: 8.2, hz: 3619, noise: 1 },
+	"hull-clang": { rms: 0.0262, peak: 0.3098, onsetMs: 7.4, hz: 2177, noise: 1 },
+	"shield-fore": {
+		rms: 0.0088,
+		peak: 0.2015,
+		onsetMs: 7.3,
+		hz: 6765,
+		noise: 1,
+	},
+	"shield-aft": { rms: 0.0082, peak: 0.2143, onsetMs: 7.3, hz: 4841, noise: 1 },
+	"shield-onepool": {
+		rms: 0.0085,
+		peak: 0.2098,
+		onsetMs: 7.3,
+		hz: 5787,
+		noise: 1,
+	},
+	"shield-fore-low": {
+		rms: 0.0055,
+		peak: 0.1213,
+		onsetMs: 7.3,
+		hz: 6379,
+		noise: 1,
+		hzSpread: 0.18,
+	},
+	"laser-crack": {
+		rms: 0.0186,
+		peak: 0.2272,
+		onsetMs: 7.3,
+		hz: 4038,
+		noise: 1,
+	},
+	"landed-hull": { rms: 0.0047, peak: 0.0424, onsetMs: 7.5, hz: 338, noise: 1 },
+	dock: { rms: 0.0269, peak: 0.1933, onsetMs: 7.5, hz: 818, noise: 1 },
+	"witchspace-flash-boom": {
+		rms: 0.0557,
+		peak: 0.4602,
+		onsetMs: 8.2,
+		hz: 3858,
+		noise: 1,
+	},
+	"cruise-engage": {
+		rms: 0.0289,
+		peak: 0.385,
+		onsetMs: 7.4,
+		hz: 2698,
+		noise: 1,
+	},
+	"cruise-drop": {
+		rms: 0.0215,
+		peak: 0.2711,
+		onsetMs: 7.4,
+		hz: 2703,
+		noise: 1,
+	},
+};
+
+/** The least a heavy render's rms under 250 Hz may stand over its thin
+ *  render's (#577): read at x1.44 (the cruise engage) to x4.6 (the shield
+ *  hit) on the build that made it, and x1.00 when heavy plays thin. */
+const HEAVY_MIN_LOW_LIFT = 1.3;
+
+/**
  * Each cue's band: rms, peak and centroid as `[low, high]`, and the latest
  * onset in ms. A tone-only cue renders the same waveform on every seed, so
  * its band is ±10%; a noise cue's is wide enough for the seed's own spread
  * above, and the bed's wider again. The onset allows the limiter's 6 ms and
  * as much again, which is the order of a render quantum's rounding.
  */
-const BANDS = Object.fromEntries(
-	Object.entries({
-		...MAIN,
-		...SINCE_544,
-		...SINCE_546,
-		...SINCE_545,
-		...SINCE_534,
-	}).map(([name, m]) => {
-		const [lo, hi] = m.bed ? [0.7, 1.4] : m.noise ? [0.8, 1.25] : [0.9, 1.1];
-		const [plo, phi] = m.bed || m.noise ? [0.6, 1.6] : [0.9, 1.1];
-		const [clo, chi] = m.bed ? [0.6, 1.5] : m.noise ? [0.93, 1.07] : [0.9, 1.1];
-		return [
-			name,
-			{
-				rms: [m.rms * lo, m.rms * hi],
-				peak: [m.peak * plo, m.peak * phi],
-				onsetMs: m.onsetMs + (m.bed ? 60 : 12),
-				centroidHz: [m.hz * clo, m.hz * chi],
-			},
-		];
-	}),
-);
+const bandsOf = (table) =>
+	Object.fromEntries(
+		Object.entries(table).map(([name, m]) => {
+			const [lo, hi] = m.bed ? [0.7, 1.4] : m.noise ? [0.8, 1.25] : [0.9, 1.1];
+			const [plo, phi] = m.bed || m.noise ? [0.6, 1.6] : [0.9, 1.1];
+			const [clo, chi] = m.hzSpread
+				? [1 - m.hzSpread, 1 + m.hzSpread]
+				: m.bed
+					? [0.6, 1.5]
+					: m.noise
+						? [0.93, 1.07]
+						: [0.9, 1.1];
+			return [
+				name,
+				{
+					rms: [m.rms * lo, m.rms * hi],
+					peak: [m.peak * plo, m.peak * phi],
+					onsetMs: m.onsetMs + (m.bed ? 60 : 12),
+					centroidHz: [m.hz * clo, m.hz * chi],
+				},
+			];
+		}),
+	);
+/** Read on `?punch=thin`: the sound every cue had before #577. */
+const BANDS = bandsOf({
+	...MAIN,
+	...SINCE_544,
+	...SINCE_546,
+	...SINCE_545,
+	...SINCE_534,
+});
+const HEAVY_BANDS = bandsOf(HEAVY);
 
 /** The most of an uncapped burst's ring a capped one may reach. Read at
  *  0.52 on the build that made the pool. */
@@ -498,18 +585,10 @@ try {
 	const first = await render(SOUND_SET[0]);
 	check("the served engine has the offline seam", first.modern === true);
 
-	const rendered = new Map();
-	for (const entry of SOUND_SET) {
-		const s = await render(entry);
-		rendered.set(entry.name, s);
-		if (PRINT)
-			console.log(JSON.stringify({ name: entry.name, ...roundStats(s) }));
-		const band = BANDS[entry.name];
-		check(`${entry.name} has a band`, band !== undefined);
-		if (!band) continue;
-		const within = (v, [lo, hi]) => v >= lo && v <= hi;
+	const within = (v, [lo, hi]) => v >= lo && v <= hi;
+	const inBand = (name, s, band, arm) =>
 		check(
-			`${entry.name} renders in its band`,
+			`${name} renders in its ${arm} band`,
 			within(s.rms, band.rms) &&
 				within(s.peak, band.peak) &&
 				s.onsetMs >= 0 &&
@@ -517,18 +596,89 @@ try {
 				within(s.centroidHz, band.centroidHz),
 			`rms ${s.rms.toFixed(4)} peak ${s.peak.toFixed(4)} onset ${s.onsetMs.toFixed(1)} ms centroid ${Math.round(s.centroidHz)} Hz`,
 		);
+	const thin = { punch: "thin" };
+	const heavy = { punch: "heavy" };
+	const rendered = new Map();
+	for (const entry of SOUND_SET) {
+		const s = await render(entry, thin);
+		rendered.set(entry.name, s);
+		if (PRINT)
+			console.log(JSON.stringify({ name: entry.name, ...roundStats(s) }));
+		const band = BANDS[entry.name];
+		check(`${entry.name} has a band`, band !== undefined);
+		if (band) inBand(entry.name, s, band, "thin");
+	}
+	const renderedHeavy = new Map();
+	for (const [name, band] of Object.entries(HEAVY_BANDS)) {
+		const entry = SOUND_SET.find((e) => e.name === name);
+		check(`${name} is in the sound set`, entry !== undefined);
+		if (!entry) continue;
+		const s = await render(entry, heavy);
+		renderedHeavy.set(name, s);
+		if (PRINT)
+			console.log(JSON.stringify({ name, punch: "heavy", ...roundStats(s) }));
+		inBand(name, s, band, "heavy");
 	}
 
-	for (const entry of SOUND_SET) {
-		const on = rendered.get(entry.name);
-		const off = await render(entry, { bypassLimiter: true });
+	for (const [entry, on, arm] of [
+		...SOUND_SET.map((e) => [e, rendered.get(e.name), thin]),
+		...[...renderedHeavy].map(([name, s]) => [
+			SOUND_SET.find((e) => e.name === name),
+			s,
+			heavy,
+		]),
+	]) {
+		const off = await render(entry, { bypassLimiter: true, ...arm });
 		const ratio = (a, b) => (b > 0 ? a / b : Number.NaN);
 		const rms = ratio(on.rms, off.rms);
 		const peak = ratio(on.peak, off.peak);
 		check(
-			`the limiter leaves ${entry.name} alone`,
+			`the limiter leaves ${entry.name} alone on ${arm.punch}`,
 			Math.abs(rms - 1) <= 0.01 && Math.abs(peak - 1) <= 0.01,
 			`rms x${rms.toFixed(4)} peak x${peak.toFixed(4)} onset ${on.onsetMs.toFixed(2)} against ${off.onsetMs.toFixed(2)} ms`,
+		);
+	}
+
+	// #577: heavy against thin under 250 Hz, on the same seed. A crude band —
+	// two one-pole low-passes — is enough: what it must see is the punch and
+	// the sub, which thin does not have.
+	{
+		const lowRms = (x, hz = 250) => {
+			const a = Math.exp((-2 * Math.PI * hz) / SR);
+			let y1 = 0;
+			let y2 = 0;
+			let sum = 0;
+			for (const v of x) {
+				y1 = (1 - a) * v + a * y1;
+				y2 = (1 - a) * y1 + a * y2;
+				sum += y2 * y2;
+			}
+			return Math.sqrt(sum / x.length);
+		};
+		const samples = async (name, arm) =>
+			(
+				await page.evaluate(renderInPage, {
+					entry: SOUND_SET.find((e) => e.name === name),
+					sampleRate: SR,
+					seed: SEED,
+					...arm,
+				})
+			).samples;
+		for (const name of Object.keys(HEAVY)) {
+			const lift =
+				lowRms(await samples(name, heavy)) / lowRms(await samples(name, thin));
+			check(
+				`${name} carries more weight under 250 Hz on heavy than on thin`,
+				lift > HEAVY_MIN_LOW_LIFT,
+				`x${lift.toFixed(2)}`,
+			);
+		}
+		const rms = (name) => renderedHeavy.get(name)?.rms ?? Number.NaN;
+		const order = ["explosion", "hull-clang", "shield-fore", "landed-hull"];
+		check(
+			"on heavy an explosion outweighs a hull hit, which outweighs a shield hit, which outweighs a hit landed",
+			order.every((n, i) => i === 0 || rms(n) < rms(order[i - 1])),
+			order.map((n) => `${n} ${rms(n).toFixed(4)}`).join(" > "),
 		);
 	}
 
@@ -793,7 +943,7 @@ try {
 		const cue = await import("/src/audio-cue.ts");
 		return cue.VOICE_CAPS;
 	});
-	const burstOf = (uncapped) =>
+	const burstOf = (uncapped, arm = heavy) =>
 		page.evaluate(renderInPage, {
 			entry: explosion,
 			sampleRate: SR,
@@ -801,9 +951,18 @@ try {
 			repeat: 30,
 			spacingS: 128 / SR,
 			uncapped,
+			...arm,
 		});
 	const burst = await burstOf(false);
 	const open = await burstOf(true);
+	// The tail is read on thin (#577). A heavy explosion peaks near half of full
+	// scale, so six of them already sit on the limiter and thirty sit on it
+	// harder: both tails come out near the ceiling, and the ratio reads the
+	// limiter rather than the pool (x0.87 on the build that found it). The pool
+	// does not know which arm is playing; thin is the arm the threshold was
+	// read on.
+	const burstThin = await burstOf(false, thin);
+	const openThin = await burstOf(true, thin);
 	check(
 		"a burst of thirty explosions leaves no more voices sounding than the hits cap",
 		burst.live !== null && burst.live <= caps.hits,
@@ -815,10 +974,14 @@ try {
 	const burstStats = cueStats(burst.samples, SR);
 	check(
 		"and after the last one it rings well below the same burst with no caps",
-		tail(burst) < tail(open) * BURST_MAX_OF_UNCAPPED,
-		`tail rms ${tail(burst).toFixed(4)} against ${tail(open).toFixed(4)} with no caps`,
+		tail(burstThin) < tail(openThin) * BURST_MAX_OF_UNCAPPED,
+		`thin: tail rms ${tail(burstThin).toFixed(4)} against ${tail(openThin).toFixed(4)} with no caps`,
 	);
-	check("and it does not clip", burstStats.peak < 1, `peak ${burstStats.peak}`);
+	check(
+		"and it does not clip, on either arm",
+		burstStats.peak < 1 && cueStats(burstThin.samples, SR).peak < 1,
+		`peak ${burstStats.peak} heavy, ${cueStats(burstThin.samples, SR).peak} thin`,
+	);
 } finally {
 	await browser.close();
 }

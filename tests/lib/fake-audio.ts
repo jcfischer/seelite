@@ -58,6 +58,8 @@ export class FakeContext {
 	readonly gains: FakeGain[] = [];
 	readonly compressors: FakeCompressor[] = [];
 	readonly sources: FakeNode[] = [];
+	/** Every saturator built (#577), with the curve it was given. */
+	readonly shapers: (FakeNode & { curve: Float32Array | null })[] = [];
 	constructor() {
 		FakeContext.made.push(this);
 	}
@@ -91,6 +93,14 @@ export class FakeContext {
 			frequency: new FakeParam(),
 			Q: new FakeParam(),
 		});
+	}
+	createWaveShaper() {
+		const w = Object.assign(new FakeNode(), {
+			curve: null as Float32Array | null,
+			oversample: "none",
+		});
+		this.shapers.push(w);
+		return w;
 	}
 	createBuffer(_c: number, len: number) {
 		const data = new Float32Array(len);

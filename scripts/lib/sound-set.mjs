@@ -355,6 +355,10 @@ function flightTimelines() {
  *   game's context has been running long before a cue, and an offline render
  *   is a context that starts at the cue: see `probe-audio-cues.mjs` on what the
  *   limiter does in its first milliseconds.
+ * - `punch` — the engine's `?punch=` arm (#577), `heavy` or `thin`; null
+ *   plays the engine's default. Named on an engine that has no such arm, it
+ *   throws rather than render the one sound that engine has under either
+ *   name.
  *
  * **The engine before #552** has neither `attach` nor `play`. Its own
  * `ensure()` is called with `window.AudioContext` briefly pointing at the
@@ -374,6 +378,7 @@ export async function renderInPage({
 	leadS = 0.5,
 	uncapped = false,
 	levelsAt = [],
+	punch = null,
 }) {
 	const { AudioFX } = await import("/src/audio.ts");
 	const { WITCHSPACE } = await import("/src/witchspace.ts");
@@ -385,6 +390,11 @@ export async function renderInPage({
 		sampleRate,
 	);
 	const fx = new AudioFX();
+	if (punch !== null) {
+		if (!("punch" in fx))
+			throw new Error(`punch=${punch}: this engine has no punch arm`);
+		fx.punch = punch;
+	}
 	const modern = typeof fx.attach === "function";
 	// An entry this engine has nothing to play: a capture at an older ref.
 	// **A modern engine can be older too** (sage round 3): `origin/main` has
