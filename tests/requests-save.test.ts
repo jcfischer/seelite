@@ -192,10 +192,11 @@ test("verified schema 2 migrates a copy to empty journal; corrupt and unsupporte
 	// version 2 body out of a current one; if the two ever met, it would be
 	// asserting the migration path against no migration at all. It went red on
 	// #453's bump, which is the tripwire working.
-	expect(SAVE_SCHEMA_VERSION).toBe(6);
+	expect(SAVE_SCHEMA_VERSION).toBe(7);
 	const { integrity, ...body } = current;
 	body.saveSchemaVersion = 2;
 	delete body.commander.firstDay;
+	delete body.commander.ladders;
 	delete body.commander.requests;
 	const old = { ...body, integrity: fnv1a(JSON.stringify(body)) };
 	const before = JSON.stringify(old);
@@ -299,6 +300,7 @@ test("a schema 3 journal migrates when empty and is refused when it is not", () 
 		const { integrity, ...body } = current;
 		body.saveSchemaVersion = 3;
 		delete body.commander.firstDay;
+		delete body.commander.ladders;
 		body.commander.requests = requests;
 		return { ...body, integrity: fnv1a(JSON.stringify(body)) };
 	};
@@ -451,6 +453,7 @@ const asV4 = (
 	const { integrity: _, ...body } = raw;
 	body.saveSchemaVersion = 4;
 	delete body.commander.firstDay;
+	delete body.commander.ladders;
 	const offers = [
 		...Object.values(
 			body.commander.requests.byId as Record<string, { terms: JobOffer }>,

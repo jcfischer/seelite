@@ -230,7 +230,10 @@ describe("banking on dock (#183 D7)", () => {
 		};
 		const at = { galaxyIndex: 0, station: key("1:station-trade"), gameTime: 5 };
 		const without = bankOnDock(
-			{ ...nearTop, visited: { 0: { systems: [], stations: [key("1:station-trade")] } } },
+			{
+				...nearTop,
+				visited: { 0: { systems: [], stations: [key("1:station-trade")] } },
+			},
 			emptyPending(),
 			at,
 		);
