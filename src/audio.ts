@@ -115,9 +115,10 @@ export const LIMITER = {
 
 /**
  * How long each pooled cue rings, s: the voice pool's end time for it. The
- * longest of the cue's parts, with the tail `tone` leaves before it stops,
- * on whichever `punch` arm rings longer (#577): the heavy explosion's rumble
- * and the heavy dock's second clamp outlast the thin voices.
+ * longest of the cue's parts, with the tail `tone` leaves before it stops.
+ * These are the `thin` voices'; `HEAVY_CUE_LENGTH_S` overrides the ones the
+ * heavy arm lengthens (#577), so thin holds its voices exactly as long as it
+ * did before.
  */
 export const CUE_LENGTH_S: Readonly<Record<VoicedCueKind, number>> = {
 	laser: 0.19,
@@ -126,8 +127,8 @@ export const CUE_LENGTH_S: Readonly<Record<VoicedCueKind, number>> = {
 	shieldHit: 0.32,
 	hullHit: 0.45,
 	hitLanded: 0.15,
-	explosion: 1.75,
-	dock: 0.36,
+	explosion: 0.8,
+	dock: 0.23,
 	alert: 0.17,
 	scoop: 0.17,
 	ui: 0.11,
@@ -137,6 +138,20 @@ export const CUE_LENGTH_S: Readonly<Record<VoicedCueKind, number>> = {
 	refuse: 0.25,
 	focus: 0.07,
 };
+
+/** The pooled cues the heavy arm rings longer than thin (#577): the
+ *  explosion's rumble and the dock's second clamp. */
+export const HEAVY_CUE_LENGTH_S: Readonly<
+	Partial<Record<VoicedCueKind, number>>
+> = {
+	explosion: 1.75,
+	dock: 0.36,
+};
+
+/** How long a pooled cue rings on an arm, s: the pool's end time for it. */
+export const cueLengthS = (kind: VoicedCueKind, punch: PunchVoice): number =>
+	(punch === "heavy" ? HEAVY_CUE_LENGTH_S[kind] : undefined) ??
+	CUE_LENGTH_S[kind];
 
 type CueBuses = Record<Exclude<Bus, "master">, GainNode>;
 
@@ -347,7 +362,7 @@ export class AudioFX {
 		const admission = this.pool.admit(
 			CUE_VOICE[cue.kind],
 			t,
-			t + CUE_LENGTH_S[cue.kind],
+			t + cueLengthS(cue.kind, this.punch),
 		);
 		for (const id of admission.steal) {
 			this.voices.get(id)?.gain.setTargetAtTime(0, t, VOICE_STEAL_FADE_S);
@@ -1056,7 +1071,7 @@ export class AudioFX {
 			// under the same click and air, where the thin boom fell to 35 Hz.
 			this.impactPunch(out, 150, 50, 0.16, 0.4, 3, boom);
 			this.sub(out, 110, 42, 0.9, 0.4, boom);
-			this.crash(out, 0.3, 6000, 300, 0.6, boom);
+			this.wash(out, 0.3, 6000, 300, 0.6, boom);
 			this.noiseBurst(out, 0.5, 0.3, 400, boom);
 			this.tone(out, 2400, 0.08, "triangle", 0.06, 1200, boom);
 			return;
@@ -1232,11 +1247,10 @@ export class AudioFX {
 		src.start(t);
 	}
 
-	/**
-	 * The heavy arm's layers (#577), after the trailer's score. Every one ends
-	 * in an exponential ramp to silence and stops there, so a voice's length is
-	 * its own and `CUE_LENGTH_S` can cover it.
-	 */
+	// The heavy arm's layers (#577), after the trailer's score. Every one ends
+	// in an exponential ramp to silence and stops there, so a voice's length is
+	// its own and `HEAVY_CUE_LENGTH_S` can cover it.
+
 	/** A sine falling fast from `from` to `to` Hz, driven into a saturator:
 	 *  the chest of an impact, and its harmonics are what a small speaker
 	 *  hears. `level` is its peak out of the saturator; `drive` is how much
@@ -1250,20 +1264,7 @@ export class AudioFX {
 		drive: number,
 		delayS = 0,
 	) {
-		if (!this.ctx) return;
-		const t = this.ctx.currentTime + delayS;
-		const o = this.ctx.createOscillator();
-		o.type = "sine";
-		o.frequency.setValueAtTime(from, t);
-		o.frequency.exponentialRampToValueAtTime(to, t + dur * 0.5);
-		const g = this.ctx.createGain();
-		g.gain.setValueAtTime(0.0001, t);
-		g.gain.exponentialRampToValueAtTime(1, t + 0.003);
-		g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
-		o.connect(g);
-		g.connect(this.saturator(drive, out, peakMakeup(drive, level)));
-		o.start(t);
-		o.stop(t + dur + 0.02);
+		this.drivenSine(out, from, to, dur * 0.5, 0.003, dur, level, drive, delayS);
 	}
 	/** A sine held at `hz`, driven: a thump with no pitch to fall. `level`
 	 *  and `drive` as `impactPunch`'s. */
@@ -1274,19 +1275,7 @@ export class AudioFX {
 		level: number,
 		drive: number,
 	) {
-		if (!this.ctx) return;
-		const t = this.ctx.currentTime;
-		const o = this.ctx.createOscillator();
-		o.type = "sine";
-		o.frequency.setValueAtTime(hz, t);
-		const g = this.ctx.createGain();
-		g.gain.setValueAtTime(0.0001, t);
-		g.gain.exponentialRampToValueAtTime(1, t + 0.002);
-		g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
-		o.connect(g);
-		g.connect(this.saturator(drive, out, peakMakeup(drive, level)));
-		o.start(t);
-		o.stop(t + dur + 0.02);
+		this.drivenSine(out, hz, hz, 0, 0.002, dur, level, drive);
 	}
 	/** The body of an impact: a sine falling to a floor over `len`, driven
 	 *  enough that its second and third harmonics carry it on a small speaker.
@@ -1300,20 +1289,50 @@ export class AudioFX {
 		level: number,
 		delayS = 0,
 	) {
+		const floor = Math.max(38, to);
+		this.drivenSine(
+			out,
+			from,
+			floor,
+			len * 0.7,
+			0.005,
+			len,
+			level,
+			SUB_DRIVE,
+			delayS,
+		);
+	}
+	/**
+	 * The one body under `impactPunch`, `thump` and `sub`: a sine from
+	 * `from` to `to` Hz over `sweepS` (held when they are equal), in over
+	 * `attackS` and down to silence at `dur`, driven into a saturator whose
+	 * makeup puts its peak at `level`.
+	 */
+	private drivenSine(
+		out: AudioNode,
+		from: number,
+		to: number,
+		sweepS: number,
+		attackS: number,
+		dur: number,
+		level: number,
+		drive: number,
+		delayS = 0,
+	) {
 		if (!this.ctx) return;
 		const t = this.ctx.currentTime + delayS;
 		const o = this.ctx.createOscillator();
 		o.type = "sine";
 		o.frequency.setValueAtTime(from, t);
-		o.frequency.exponentialRampToValueAtTime(Math.max(38, to), t + len * 0.7);
+		if (to !== from) o.frequency.exponentialRampToValueAtTime(to, t + sweepS);
 		const g = this.ctx.createGain();
 		g.gain.setValueAtTime(0.0001, t);
-		g.gain.exponentialRampToValueAtTime(1, t + 0.005);
-		g.gain.exponentialRampToValueAtTime(0.0001, t + len);
+		g.gain.exponentialRampToValueAtTime(1, t + attackS);
+		g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
 		o.connect(g);
-		g.connect(this.saturator(SUB_DRIVE, out, peakMakeup(SUB_DRIVE, level)));
+		g.connect(this.saturator(drive, out, peakMakeup(drive, level)));
 		o.start(t);
-		o.stop(t + len + 0.02);
+		o.stop(t + dur + 0.02);
 	}
 	/** The edge on an impact: a few milliseconds of high-passed noise. */
 	private snap(out: AudioNode, vol: number, hz: number, delayS = 0) {
@@ -1321,7 +1340,7 @@ export class AudioFX {
 	}
 	/** The air of an impact: noise under a low-pass closing from `fromHz` to
 	 *  `toHz`, decaying over `len`. */
-	private crash(
+	private wash(
 		out: AudioNode,
 		vol: number,
 		fromHz: number,
@@ -1366,28 +1385,33 @@ export class AudioFX {
 	) {
 		if (!this.ctx) return;
 		const t = this.ctx.currentTime + delayS;
-		const len = Math.max(1, Math.floor(this.ctx.sampleRate * dur));
-		const buffer = this.ctx.createBuffer(1, len, this.ctx.sampleRate);
-		const data = buffer.getChannelData(0);
-		for (let i = 0; i < len; i++) data[i] = Math.random() * 2 - 1;
+		// One loop of white noise for every heavy layer (sage round 1 on #578):
+		// a heavy explosion drew about three seconds of fresh noise per cue.
+		// Each layer starts at its own random point in it. Built on first use,
+		// so the thin arm never draws for it.
+		this.heavyNoise ??= noiseLoop(this.ctx, "white");
 		const src = this.ctx.createBufferSource();
-		src.buffer = buffer;
+		src.buffer = this.heavyNoise;
+		src.loop = true;
 		const filter = this.ctx.createBiquadFilter();
 		filter.type = type;
 		filter.Q.value = q;
 		filter.frequency.setValueAtTime(fromHz, t);
 		if (toHz !== fromHz)
 			filter.frequency.exponentialRampToValueAtTime(toHz, t + dur * 0.8);
+		// `noiseLoop`'s white is at half scale; this noise was at full.
 		const g = this.ctx.createGain();
 		g.gain.setValueAtTime(0.0001, t);
-		g.gain.exponentialRampToValueAtTime(vol, t + 0.002);
+		g.gain.exponentialRampToValueAtTime(2 * vol, t + 0.002);
 		g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
 		src.connect(filter);
 		filter.connect(g);
 		g.connect(out);
-		src.start(t);
+		src.start(t, Math.random() * (this.heavyNoise.duration - 0.01));
 		src.stop(t + dur);
 	}
+	/** The heavy arm's noise loop (#577), built on first use. */
+	private heavyNoise: AudioBuffer | null = null;
 	/**
 	 * A saturator into `out`: `tanh(drive·x) / drive`, so a quiet signal
 	 * passes at its own level and a loud one is rounded off, then `makeup`
@@ -1503,7 +1527,7 @@ export class AudioFX {
 		// closing down under the ring, which is still the clang.
 		this.impactPunch(out, 140, 50, 0.14, 0.45, 3);
 		this.snap(out, 0.3, 2500);
-		this.crash(out, 0.3, 5000, 400, 0.3);
+		this.wash(out, 0.3, 5000, 400, 0.3);
 	}
 
 	/** A hit the player landed (#545): smaller and further off than one taken
@@ -1526,15 +1550,15 @@ export class AudioFX {
 	}
 	/**
 	 * A ship coming apart, with weight (#577), after the trailer's impacts: a
-	 * snap on the flash, a punch, a sub falling to its floor, a crash whose
+	 * snap on the flash, a punch, a sub falling to its floor, a wash of noise whose
 	 * low-pass closes, a rumble under it, and debris crackling as it scatters.
 	 */
 	private heavyExplosion(out: AudioNode) {
 		this.snap(out, 0.3, 2000);
 		this.impactPunch(out, 160, 48, 0.22, 0.5, 3);
 		this.sub(out, 90, 40, 1.5, 0.45);
-		this.crash(out, 0.4, 6000, 250, 1.3);
-		this.crash(out, 0.5, 450, 80, 1.7);
+		this.wash(out, 0.4, 6000, 250, 1.3);
+		this.wash(out, 0.5, 450, 80, 1.7);
 		for (let i = 0; i < 10; i++) {
 			const at = 0.12 + Math.random() ** 1.5 * 0.9;
 			this.bandBurst(
@@ -1664,14 +1688,14 @@ export class AudioFX {
 		}
 		if (this.punch === "heavy") {
 			// #577: the world replaced, as an impact — a punch and a sub with a
-			// floor where the thin boom fell to 28 Hz, a snap, a crash closing
+			// floor where the thin boom fell to 28 Hz, a snap, a wash closing
 			// down and a long rumble under it.
 			this.snap(out, 0.3, 2000);
 			this.impactPunch(out, 170, 45, 0.24, 0.45, 3);
 			this.sub(out, 110, 40, 1.6, 0.42);
 			this.tone(out, 190, 0.4, "triangle", 0.12, 60);
-			this.crash(out, 0.35, 7000, 200, 1.5);
-			this.crash(out, 0.45, 300, 70, 2);
+			this.wash(out, 0.35, 7000, 200, 1.5);
+			this.wash(out, 0.45, 300, 70, 2);
 			return;
 		}
 		this.tone(out, 95, 1.1, "sine", 0.42, 28);

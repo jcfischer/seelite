@@ -446,71 +446,76 @@ const SINCE_534 = {
  * #577's heavy voices, on `?punch=heavy` (the default): centred on this
  * branch's own render (seed 552), so they hold the prototype to what is
  * offered and move when the ear moves it. Every one has a noise part. Over
- * seeds 1–3 and 552 rms moved under 3% and peak up to 12%, and the centroid
- * up to 5%, save the low shield hit's, which a sputter of few sparks moves
- * up to 16% — its centroid band is widened to match (`hzSpread`).
+ * seeds 1–3 and 552 rms moved up to 10% and peak up to 20%, and the
+ * centroid under 5% save the shield hits': a scatter of few sparks moves it
+ * up to 12%, and on the low shield up to 14% — their centroid bands are
+ * widened to match (`hzSpread`).
  */
 const HEAVY = {
-	explosion: { rms: 0.0556, peak: 0.4503, onsetMs: 8.2, hz: 3619, noise: 1 },
-	"hull-clang": { rms: 0.0262, peak: 0.3098, onsetMs: 7.4, hz: 2177, noise: 1 },
+	explosion: { rms: 0.0556, peak: 0.4857, onsetMs: 8.3, hz: 3531, noise: 1 },
+	"hull-clang": { rms: 0.0262, peak: 0.3034, onsetMs: 7.4, hz: 2062, noise: 1 },
 	"shield-fore": {
-		rms: 0.0088,
-		peak: 0.2015,
-		onsetMs: 7.3,
-		hz: 6765,
-		noise: 1,
-	},
-	"shield-aft": { rms: 0.0082, peak: 0.2143, onsetMs: 7.3, hz: 4841, noise: 1 },
-	"shield-onepool": {
 		rms: 0.0085,
-		peak: 0.2098,
+		peak: 0.2084,
 		onsetMs: 7.3,
-		hz: 5787,
+		hz: 6744,
 		noise: 1,
+		hzSpread: 0.15,
+	},
+	"shield-aft": {
+		rms: 0.0078,
+		peak: 0.1876,
+		onsetMs: 7.3,
+		hz: 4831,
+		noise: 1,
+		hzSpread: 0.15,
+	},
+	"shield-onepool": {
+		rms: 0.0082,
+		peak: 0.1936,
+		onsetMs: 7.3,
+		hz: 5763,
+		noise: 1,
+		hzSpread: 0.15,
 	},
 	"shield-fore-low": {
-		rms: 0.0055,
-		peak: 0.1213,
+		rms: 0.0058,
+		peak: 0.1291,
 		onsetMs: 7.3,
-		hz: 6379,
+		hz: 6593,
 		noise: 1,
 		hzSpread: 0.18,
 	},
 	"laser-crack": {
-		rms: 0.0186,
-		peak: 0.2272,
+		rms: 0.0175,
+		peak: 0.2775,
 		onsetMs: 7.3,
-		hz: 4038,
+		hz: 4113,
 		noise: 1,
 	},
 	"landed-hull": { rms: 0.0047, peak: 0.0424, onsetMs: 7.5, hz: 338, noise: 1 },
-	dock: { rms: 0.0269, peak: 0.1933, onsetMs: 7.5, hz: 818, noise: 1 },
+	dock: { rms: 0.0269, peak: 0.1921, onsetMs: 7.5, hz: 709, noise: 1 },
 	"witchspace-flash-boom": {
-		rms: 0.0557,
-		peak: 0.4602,
-		onsetMs: 8.2,
-		hz: 3858,
+		rms: 0.0552,
+		peak: 0.4947,
+		onsetMs: 8.3,
+		hz: 3773,
 		noise: 1,
 	},
 	"cruise-engage": {
-		rms: 0.0289,
-		peak: 0.385,
+		rms: 0.029,
+		peak: 0.3464,
 		onsetMs: 7.4,
 		hz: 2698,
 		noise: 1,
 	},
-	"cruise-drop": {
-		rms: 0.0215,
-		peak: 0.2711,
-		onsetMs: 7.4,
-		hz: 2703,
-		noise: 1,
-	},
+	"cruise-drop": { rms: 0.0215, peak: 0.271, onsetMs: 7.4, hz: 2698, noise: 1 },
 };
 
 /** The least a heavy render's rms under 250 Hz may stand over its thin
- *  render's (#577): read at x1.44 (the cruise engage) to x4.6 (the shield
- *  hit) on the build that made it, and x1.00 when heavy plays thin. */
+ *  render's (#577). The probe prints each lift; the smallest on the build
+ *  that made it was the cruise engage's, near x1.4, and a build where heavy
+ *  plays thin reads x1.00 on every cue. */
 const HEAVY_MIN_LOW_LIFT = 1.3;
 
 /**
@@ -598,6 +603,7 @@ try {
 		);
 	const thin = { punch: "thin" };
 	const heavy = { punch: "heavy" };
+	const entryOf = new Map(SOUND_SET.map((e) => [e.name, e]));
 	const rendered = new Map();
 	for (const entry of SOUND_SET) {
 		const s = await render(entry, thin);
@@ -610,7 +616,7 @@ try {
 	}
 	const renderedHeavy = new Map();
 	for (const [name, band] of Object.entries(HEAVY_BANDS)) {
-		const entry = SOUND_SET.find((e) => e.name === name);
+		const entry = entryOf.get(name);
 		check(`${name} is in the sound set`, entry !== undefined);
 		if (!entry) continue;
 		const s = await render(entry, heavy);
@@ -622,11 +628,7 @@ try {
 
 	for (const [entry, on, arm] of [
 		...SOUND_SET.map((e) => [e, rendered.get(e.name), thin]),
-		...[...renderedHeavy].map(([name, s]) => [
-			SOUND_SET.find((e) => e.name === name),
-			s,
-			heavy,
-		]),
+		...[...renderedHeavy].map(([name, s]) => [entryOf.get(name), s, heavy]),
 	]) {
 		const off = await render(entry, { bypassLimiter: true, ...arm });
 		const ratio = (a, b) => (b > 0 ? a / b : Number.NaN);
@@ -658,7 +660,7 @@ try {
 		const samples = async (name, arm) =>
 			(
 				await page.evaluate(renderInPage, {
-					entry: SOUND_SET.find((e) => e.name === name),
+					entry: entryOf.get(name),
 					sampleRate: SR,
 					seed: SEED,
 					...arm,
@@ -955,27 +957,43 @@ try {
 		});
 	const burst = await burstOf(false);
 	const open = await burstOf(true);
-	// The tail is read on thin (#577). A heavy explosion peaks near half of full
-	// scale, so six of them already sit on the limiter and thirty sit on it
-	// harder: both tails come out near the ceiling, and the ratio reads the
-	// limiter rather than the pool (x0.87 on the build that found it). The pool
-	// does not know which arm is playing; thin is the arm the threshold was
-	// read on.
+	// Two tails since #577, and the heavy one is read high-passed. Heavy's tail
+	// is mostly its sub, a pitched sine, and thirty copies 2.7 ms apart spread
+	// over several of its periods and cancel one another: bypassing the
+	// limiter, the uncapped burst stood at 0.164 against the capped 0.151 over
+	// 0.1–0.3 s, where thin's noise tail scaled as its square root (x2.1). So a
+	// plain tail ratio on heavy reads phase interference, not the pool — sage
+	// round 1 on #578 asked for the control that shows it, and the limiter this
+	// comment first blamed was not it (x0.90 with it bypassed). A first
+	// difference drops the sub and keeps the noise wash, which sums as thin's
+	// does.
 	const burstThin = await burstOf(false, thin);
 	const openThin = await burstOf(true, thin);
+
 	check(
 		"a burst of thirty explosions leaves no more voices sounding than the hits cap",
 		burst.live !== null && burst.live <= caps.hits,
 		`${burst.live} sounding, cap ${caps.hits}; ${open.live} with no caps`,
 	);
 	// From the last one on: what the pool removes is the pile of tails.
-	const tail = (r) =>
-		cueStats(r.samples.slice(Math.round(29 * 128 + 0.02 * SR)), SR).rms;
+	const tailOf = (r) => r.samples.slice(Math.round(29 * 128 + 0.02 * SR));
+	const tail = (r) => cueStats(tailOf(r), SR).rms;
+	const tailHigh = (r) => {
+		const x = tailOf(r);
+		let sum = 0;
+		for (let i = 1; i < x.length; i++) sum += (x[i] - x[i - 1]) ** 2;
+		return Math.sqrt(sum / (x.length - 1));
+	};
 	const burstStats = cueStats(burst.samples, SR);
 	check(
 		"and after the last one it rings well below the same burst with no caps",
 		tail(burstThin) < tail(openThin) * BURST_MAX_OF_UNCAPPED,
 		`thin: tail rms ${tail(burstThin).toFixed(4)} against ${tail(openThin).toFixed(4)} with no caps`,
+	);
+	check(
+		"and so it does on heavy, high-passed",
+		tailHigh(burst) < tailHigh(open) * BURST_MAX_OF_UNCAPPED,
+		`heavy: high-passed tail rms ${tailHigh(burst).toFixed(5)} against ${tailHigh(open).toFixed(5)} with no caps; unfiltered ${tail(burst).toFixed(4)} against ${tail(open).toFixed(4)}`,
 	);
 	check(
 		"and it does not clip, on either arm",

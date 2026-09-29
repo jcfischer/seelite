@@ -5,7 +5,12 @@
  * characters #545 ruled on, which the weight must not undo.
  */
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
-import { AudioFX, CUE_LENGTH_S } from "../src/audio";
+import {
+	AudioFX,
+	CUE_LENGTH_S,
+	HEAVY_CUE_LENGTH_S,
+	cueLengthS,
+} from "../src/audio";
 import type { Cue, VoicedCueKind } from "../src/audio-cue";
 import { DEFAULT_PUNCH, PUNCH_ARMS, punchArm } from "../src/punch-sound";
 import {
@@ -69,6 +74,10 @@ function build(cue: Cue, punch: "heavy" | "thin") {
 	};
 }
 
+/** The oscillators among what a cue built. */
+const oscillatorsOf = (b: ReturnType<typeof build>) =>
+	b.sources.filter((s) => s.frequency !== undefined);
+
 describe("the heavy voices", () => {
 	test.each(WEIGHTED.map((c) => [c.kind, c] as const))(
 		"%s is driven through a saturator on heavy and through none on thin",
@@ -116,27 +125,40 @@ describe("the heavy voices", () => {
 		for (const cue of WEIGHTED) {
 			if (!(cue.kind in CUE_LENGTH_S)) continue;
 			const { ctx, sources } = build(cue, "heavy");
-			const len = CUE_LENGTH_S[cue.kind as VoicedCueKind];
+			const len = cueLengthS(cue.kind as VoicedCueKind, "heavy");
 			for (const s of sources)
 				for (const at of s.stoppedAt)
 					expect(at - ctx.currentTime).toBeLessThanOrEqual(len + 1e-9);
 		}
 	});
 
+	test("thin holds its voices exactly as long as before #577; only heavy's are longer", () => {
+		// Sage round 1 on #578: one table for both arms held a thin explosion
+		// in the pool for 1.75 s, so thin was not the sound before #577.
+		expect(CUE_LENGTH_S.explosion).toBe(0.8);
+		expect(CUE_LENGTH_S.dock).toBe(0.23);
+		for (const kind of Object.keys(CUE_LENGTH_S) as VoicedCueKind[]) {
+			expect(cueLengthS(kind, "thin")).toBe(CUE_LENGTH_S[kind]);
+			expect(cueLengthS(kind, "heavy")).toBeGreaterThanOrEqual(
+				CUE_LENGTH_S[kind],
+			);
+		}
+		expect(Object.keys(HEAVY_CUE_LENGTH_S).sort()).toEqual([
+			"dock",
+			"explosion",
+		]);
+	});
+
 	test("the shield hit gains no pitched body: its weight is noise (#545 heard a tone as a tom)", () => {
 		const heavy = build(WEIGHTED[2], "heavy");
 		const thin = build(WEIGHTED[2], "thin");
-		const oscillators = (b: typeof heavy) =>
-			b.sources.filter((s) => s.frequency !== undefined).length;
-		expect(oscillators(heavy)).toBe(oscillators(thin));
+		expect(oscillatorsOf(heavy)).toHaveLength(oscillatorsOf(thin).length);
 	});
 
 	test("the crack gains no falling sweep: every heavy oscillator it adds holds its pitch (#545's pew)", () => {
 		const heavy = build({ kind: "laser", voice: "crack" }, "heavy");
 		const thin = build({ kind: "laser", voice: "crack" }, "thin");
-		const oscillators = (b: typeof heavy) =>
-			b.sources.filter((s) => s.frequency !== undefined);
-		const added = oscillators(heavy).slice(oscillators(thin).length);
+		const added = oscillatorsOf(heavy).slice(oscillatorsOf(thin).length);
 		expect(added.length).toBeGreaterThan(0);
 		for (const o of added)
 			expect(

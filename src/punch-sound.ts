@@ -4,7 +4,7 @@
  * The one-shots were feeble beside the trailer's score: an explosion was one
  * noise burst over one sine and peaked at 0.19 of full scale. `heavy` gives
  * every impact a body — a punch, a sub with a floor, saturation on the low
- * layers, a snap on the transient and a closing crash — and `thin` is the
+ * layers, a snap on the transient and a wash of noise closing down — and `thin` is the
  * sound before this node, kept so the two can be flown one after the other.
  * What each voice sounds like is `AudioFX`'s.
  *
