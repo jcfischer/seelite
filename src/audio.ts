@@ -31,11 +31,13 @@ import {
 	CUE_VOICE,
 	type Cue,
 	type CueBus,
+	type CueKind,
 	type FlashVoice,
 	type FlightMix,
 	type HitPool,
 	type HullHitVoice,
 	type NotifyTone,
+	type PunchVoice,
 	type SweepSwallow,
 	VOICE_CAPS,
 	VOICE_MIX_CAP,
@@ -115,6 +117,9 @@ export const LIMITER = {
 /**
  * How long each pooled cue rings, s: the voice pool's end time for it. The
  * longest of the cue's parts, with the tail `tone` leaves before it stops.
+ * These are the `thin` voices'; `HEAVY_CUE_LENGTH_S` overrides the ones the
+ * heavy arm lengthens (#577), so thin holds its voices exactly as long as it
+ * did before.
  */
 export const CUE_LENGTH_S: Readonly<Record<VoicedCueKind, number>> = {
 	laser: 0.19,
@@ -135,6 +140,60 @@ export const CUE_LENGTH_S: Readonly<Record<VoicedCueKind, number>> = {
 	focus: 0.07,
 };
 
+/** The pooled cues the heavy arm rings longer than thin (#577): the
+ *  explosion's rumble and the dock's second clamp. */
+export const HEAVY_CUE_LENGTH_S: Readonly<
+	Partial<Record<VoicedCueKind, number>>
+> = {
+	explosion: 1.75,
+	dock: 0.36,
+};
+
+/**
+ * How much of each weighted cue feeds its bus's reverb on the heavy arm
+ * (#577): the tail the principal asked for after the first listen. A landed
+ * hit sends more than its dry level would suggest, because further off is
+ * wetter; the crack sends least, because it repeats and a crowded tail is mud.
+ * The console cues and every loop send nothing.
+ */
+export const REVERB_SEND: Readonly<Partial<Record<CueKind, number>>> = {
+	explosion: 0.7,
+	witchspaceFlash: 0.7,
+	hullHit: 0.45,
+	cruiseEngage: 0.4,
+	cruiseDrop: 0.35,
+	dock: 0.35,
+	hitLanded: 0.35,
+	shieldHit: 0.25,
+	laser: 0.15,
+};
+
+/**
+ * The reverb's impulse (#577), after the trailer's hall: noise that darkens
+ * as it decays, falling by `e` every `decayS` (so about 60 dB in
+ * `6.9 × decayS`), after a short pre-delay so the tail stands apart from
+ * the hit. Two channels, drawn separately, so the realtime context hears it
+ * wide.
+ *
+ * **Scaled here so its squares sum to one, with the node's own normalisation
+ * off.** The
+ * first cut left `normalize` on and shaped the decay by `(1 - x) ^ 3.2`:
+ * the node turned the impulse far down, the shape was dead by two seconds,
+ * and the tail after a heavy explosion read about −80 dB. Scaled so, a
+ * send's gain is the tail's rms against the hit's, for a broadband hit.
+ */
+export const REVERB = {
+	seconds: 3,
+	preDelayS: 0.012,
+	decayS: 0.5,
+	brightness: 0.6,
+} as const;
+
+/** How long a pooled cue rings on an arm, s: the pool's end time for it. */
+export const cueLengthS = (kind: VoicedCueKind, punch: PunchVoice): number =>
+	(punch === "heavy" ? HEAVY_CUE_LENGTH_S[kind] : undefined) ??
+	CUE_LENGTH_S[kind];
+
 type CueBuses = Record<Exclude<Bus, "master">, GainNode>;
 
 /** The witchspace voices, each behind a gain of its own so a stop reaches it:
@@ -142,6 +201,18 @@ type CueBuses = Record<Exclude<Bus, "master">, GainNode>;
 type WitchspaceVoice = "hum" | "sweep" | "flash" | "ride" | "unfold" | "rift";
 
 export class AudioFX {
+	/**
+	 * How much weight the one-shots carry (#577, `?punch=`): `heavy` gives
+	 * every impact a body, `thin` is the sound before #577. Read as each cue
+	 * is built, so a change reaches the next cue and never one already sounding.
+	 * The loops and the console cues do not read it.
+	 */
+	punch: PunchVoice;
+
+	constructor(punch: PunchVoice = "heavy") {
+		this.punch = punch;
+	}
+
 	/** Whatever the cues build into: the realtime context, or an offline one. */
 	private ctx: BaseAudioContext | null = null;
 	/** The realtime context `ensure()` opened, which is the one that resumes. */
@@ -321,18 +392,18 @@ export class AudioFX {
 			return;
 		}
 		if (cue.kind === "cruiseEngage") {
-			this.cruiseEngage(this.buses.ship);
+			this.cruiseEngage(this.sending(cue.kind));
 			return;
 		}
 		if (cue.kind === "cruiseDrop") {
-			this.cruiseDrop(this.buses.ship);
+			this.cruiseDrop(this.sending(cue.kind));
 			return;
 		}
 		const t = this.ctx.currentTime;
 		const admission = this.pool.admit(
 			CUE_VOICE[cue.kind],
 			t,
-			t + CUE_LENGTH_S[cue.kind],
+			t + cueLengthS(cue.kind, this.punch),
 		);
 		for (const id of admission.steal) {
 			this.voices.get(id)?.gain.setTargetAtTime(0, t, VOICE_STEAL_FADE_S);
@@ -346,6 +417,7 @@ export class AudioFX {
 		const voice = this.ctx.createGain();
 		voice.gain.value = 1;
 		voice.connect(this.buses[bus]);
+		this.sendToReverb(voice, bus, cue.kind);
 		this.voices.set(admission.id, voice);
 		switch (cue.kind) {
 			case "laser":
@@ -1036,6 +1108,29 @@ export class AudioFX {
 		this.tone(out, 120, 0.5, "triangle", 0.05, 1800);
 		this.noiseBurst(out, 0.45, 0.1, 2500);
 		const boom = 0.45;
+		if (this.punch === "heavy") {
+			// #577: the boom as an impact — a punch and a sub with a floor
+			// under the same click and air, where the thin boom fell to 35 Hz.
+			this.impactPunch(out, {
+				from: 150,
+				to: 50,
+				dur: 0.16,
+				level: 0.4,
+				drive: 3,
+				delayS: boom,
+			});
+			this.sub(out, { from: 110, to: 42, len: 0.9, level: 0.4, delayS: boom });
+			this.wash(out, {
+				vol: 0.3,
+				fromHz: 6000,
+				toHz: 300,
+				len: 0.6,
+				delayS: boom,
+			});
+			this.noiseBurst(out, 0.5, 0.3, 400, boom);
+			this.tone(out, 2400, 0.08, "triangle", 0.06, 1200, boom);
+			return;
+		}
 		this.tone(out, 110, 0.9, "sine", 0.4, 35, boom);
 		this.noiseBurst(out, 0.5, 0.3, 400, boom);
 		this.tone(out, 2400, 0.08, "triangle", 0.06, 1200, boom);
@@ -1048,6 +1143,24 @@ export class AudioFX {
 		this.tone(out, 900, 1, "sawtooth", 0.08, 50);
 		this.tone(out, 220, 0.9, "sine", 0.12, 55);
 		this.tone(out, 70, 0.3, "sine", 0.18, 40, 0.8);
+		if (this.punch !== "heavy") return;
+		// #577: the pop is a hit, and the settle lands.
+		this.snap(out, 0.3, 2500);
+		this.impactPunch(out, {
+			from: 150,
+			to: 48,
+			dur: 0.14,
+			level: 0.35,
+			drive: 3,
+		});
+		this.impactPunch(out, {
+			from: 100,
+			to: 45,
+			dur: 0.18,
+			level: 0.25,
+			drive: 2.5,
+			delayS: 0.8,
+		});
 	}
 
 	/** Build the looping noise graph. Two seconds of it, cross-faded by chance. */
@@ -1202,6 +1315,317 @@ export class AudioFX {
 		src.start(t);
 	}
 
+	// The heavy arm's layers (#577), after the trailer's score. Every one ends
+	// in an exponential ramp to silence and stops there, so a voice's length is
+	// its own and `HEAVY_CUE_LENGTH_S` can cover it.
+
+	/** A sine falling fast from `from` to `to` Hz, driven into a saturator:
+	 *  the chest of an impact, and its harmonics are what a small speaker
+	 *  hears. `level` is its peak out of the saturator; `drive` is how much
+	 *  it is rounded off, which is how many harmonics it gains. */
+	private impactPunch(
+		out: AudioNode,
+		{
+			from,
+			to,
+			dur,
+			level,
+			drive,
+			delayS = 0,
+		}: {
+			from: number;
+			to: number;
+			dur: number;
+			level: number;
+			drive: number;
+			delayS?: number;
+		},
+	) {
+		this.drivenSine(out, {
+			from,
+			to,
+			sweepS: dur * 0.5,
+			attackS: 0.003,
+			dur,
+			level,
+			drive,
+			delayS,
+		});
+	}
+	/** A sine held at `hz`, driven: a thump with no pitch to fall. `level`
+	 *  and `drive` as `impactPunch`'s. */
+	private thump(
+		out: AudioNode,
+		hz: number,
+		dur: number,
+		level: number,
+		drive: number,
+	) {
+		this.drivenSine(out, {
+			from: hz,
+			to: hz,
+			sweepS: 0,
+			attackS: 0.002,
+			dur,
+			level,
+			drive,
+		});
+	}
+	/** The body of an impact: a sine falling to a floor over `len`, driven
+	 *  enough that its second and third harmonics carry it on a small speaker.
+	 *  Never under 38 Hz: below that it costs headroom and is not heard.
+	 *  `level` is its peak. */
+	private sub(
+		out: AudioNode,
+		{
+			from,
+			to,
+			len,
+			level,
+			delayS = 0,
+		}: {
+			from: number;
+			to: number;
+			len: number;
+			level: number;
+			delayS?: number;
+		},
+	) {
+		this.drivenSine(out, {
+			from,
+			to: Math.max(38, to),
+			sweepS: len * 0.7,
+			attackS: 0.005,
+			dur: len,
+			level,
+			drive: SUB_DRIVE,
+			delayS,
+		});
+	}
+	/**
+	 * The one body under `impactPunch`, `thump` and `sub`: a sine from
+	 * `from` to `to` Hz over `sweepS` (held when they are equal), in over
+	 * `attackS` and down to silence at `dur`, driven into a saturator whose
+	 * makeup puts its peak at `level`.
+	 */
+	private drivenSine(
+		out: AudioNode,
+		{
+			from,
+			to,
+			sweepS,
+			attackS,
+			dur,
+			level,
+			drive,
+			delayS = 0,
+		}: {
+			from: number;
+			to: number;
+			sweepS: number;
+			attackS: number;
+			dur: number;
+			level: number;
+			drive: number;
+			delayS?: number;
+		},
+	) {
+		if (!this.ctx) return;
+		const t = this.ctx.currentTime + delayS;
+		const o = this.ctx.createOscillator();
+		o.type = "sine";
+		o.frequency.setValueAtTime(from, t);
+		if (to !== from) o.frequency.exponentialRampToValueAtTime(to, t + sweepS);
+		const g = this.ctx.createGain();
+		g.gain.setValueAtTime(0.0001, t);
+		g.gain.exponentialRampToValueAtTime(1, t + attackS);
+		g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
+		o.connect(g);
+		g.connect(this.saturator(drive, out, peakMakeup(drive, level)));
+		o.start(t);
+		o.stop(t + dur + 0.02);
+	}
+	/** The edge on an impact: a few milliseconds of high-passed noise. */
+	private snap(out: AudioNode, vol: number, hz: number, delayS = 0) {
+		this.filteredNoise(out, {
+			dur: 0.03,
+			vol,
+			type: "highpass",
+			fromHz: hz,
+			toHz: hz,
+			delayS,
+		});
+	}
+	/** The air of an impact: noise under a low-pass closing from `fromHz` to
+	 *  `toHz`, decaying over `len`. */
+	private wash(
+		out: AudioNode,
+		{
+			vol,
+			fromHz,
+			toHz,
+			len,
+			delayS = 0,
+		}: {
+			vol: number;
+			fromHz: number;
+			toHz: number;
+			len: number;
+			delayS?: number;
+		},
+	) {
+		this.filteredNoise(out, {
+			dur: len,
+			vol,
+			type: "lowpass",
+			fromHz,
+			toHz,
+			delayS,
+		});
+	}
+	/** A short low band of noise, driven: weight with no pitch in it. `vol`
+	 *  is the gain into the saturator — a narrow band of noise passes little of
+	 *  it — and `drive` sets the ceiling, `tanh(drive) / drive`. */
+	private lowBurst(
+		out: AudioNode,
+		dur: number,
+		vol: number,
+		hz: number,
+		drive: number,
+	) {
+		if (!this.ctx) return;
+		this.filteredNoise(this.saturator(drive, out), {
+			dur,
+			vol,
+			type: "bandpass",
+			fromHz: hz,
+			toHz: hz,
+		});
+	}
+	/** Noise through one filter whose frequency moves from `fromHz` to `toHz`,
+	 *  decaying exponentially to silence over `dur`. `q` is the filter's, 0.7
+	 *  unless stated. */
+	private filteredNoise(
+		out: AudioNode,
+		{
+			dur,
+			vol,
+			type,
+			fromHz,
+			toHz,
+			q = 0.7,
+			delayS = 0,
+		}: {
+			dur: number;
+			vol: number;
+			type: BiquadFilterType;
+			fromHz: number;
+			toHz: number;
+			q?: number;
+			delayS?: number;
+		},
+	) {
+		if (!this.ctx) return;
+		const t = this.ctx.currentTime + delayS;
+		// One loop of white noise for every heavy layer (sage round 1 on #578):
+		// a heavy explosion drew about three seconds of fresh noise per cue.
+		// Each layer starts at its own random point in it. Built on first use,
+		// so the thin arm never draws for it.
+		this.heavyNoise ??= noiseLoop(this.ctx, "white");
+		const src = this.ctx.createBufferSource();
+		src.buffer = this.heavyNoise;
+		src.loop = true;
+		const filter = this.ctx.createBiquadFilter();
+		filter.type = type;
+		filter.Q.value = q;
+		filter.frequency.setValueAtTime(fromHz, t);
+		if (toHz !== fromHz)
+			filter.frequency.exponentialRampToValueAtTime(toHz, t + dur * 0.8);
+		// `noiseLoop`'s white is at half scale; this noise was at full.
+		const g = this.ctx.createGain();
+		g.gain.setValueAtTime(0.0001, t);
+		g.gain.exponentialRampToValueAtTime(2 * vol, t + 0.002);
+		g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
+		src.connect(filter);
+		filter.connect(g);
+		g.connect(out);
+		src.start(t, Math.random() * (this.heavyNoise.duration - 0.01));
+		src.stop(t + dur);
+	}
+	/** The heavy arm's noise loop (#577), built on first use. */
+	private heavyNoise: AudioBuffer | null = null;
+
+	/** Each bus's reverb (#577), built on the first heavy cue that sends. */
+	private readonly reverbs = new Map<CueBus, ConvolverNode>();
+
+	/**
+	 * Feed `from` into its bus's reverb by `REVERB_SEND[kind]`, on the heavy
+	 * arm only. The reverb returns into the bus, so the bus row and the mute
+	 * reach the tail as they reach the hit. It is built on first use, so the
+	 * thin arm never builds it and never draws the noise its impulse is made of.
+	 */
+	private sendToReverb(from: AudioNode, bus: CueBus, kind: CueKind) {
+		const amount = REVERB_SEND[kind];
+		if (!this.sends(kind) || !amount || !this.ctx || !this.buses) return;
+		let reverb = this.reverbs.get(bus);
+		if (!reverb) {
+			reverb = this.ctx.createConvolver();
+			reverb.normalize = false;
+			// One impulse for every bus (sage round 3): two draws of the same
+			// law are the same room, and the second cost another frame.
+			this.impulse ??= reverbImpulse(this.ctx);
+			reverb.buffer = this.impulse;
+			reverb.connect(this.buses[bus]);
+			this.reverbs.set(bus, reverb);
+		}
+		const send = this.ctx.createGain();
+		send.gain.value = amount;
+		from.connect(send);
+		send.connect(reverb);
+	}
+
+	/** The reverb's impulse (#577), drawn once, on the first send. */
+	private impulse: AudioBuffer | null = null;
+
+	/** Whether a cue of `kind` feeds the reverb: heavy, and named in
+	 *  `REVERB_SEND`. The one copy of that rule. */
+	private sends(kind: CueKind): boolean {
+		return this.punch === "heavy" && (REVERB_SEND[kind] ?? 0) > 0;
+	}
+
+	/** Its bus, with a reverb send beside it on the heavy arm, for a cue that
+	 *  plays straight into its bus and has no voice of its own to send from. */
+	private sending(kind: CueKind): AudioNode {
+		const bus = CUE_BUS[kind];
+		const out = (this.buses as CueBuses)[bus];
+		if (!this.sends(kind) || !this.ctx) return out;
+		const g = this.ctx.createGain();
+		g.gain.value = 1;
+		g.connect(out);
+		this.sendToReverb(g, bus, kind);
+		return g;
+	}
+	/**
+	 * A saturator into `out`: `tanh(drive·x) / drive`, so a quiet signal
+	 * passes at its own level and a loud one is rounded off, then `makeup`
+	 * after it. The curve thickens and never boosts; any gain is the makeup's,
+	 * stated at the call.
+	 */
+	private saturator(drive: number, out: AudioNode, makeup = 1): AudioNode {
+		const ctx = this.ctx as BaseAudioContext;
+		const shaper = ctx.createWaveShaper();
+		shaper.curve = saturationCurve(drive);
+		shaper.oversample = "2x";
+		if (makeup === 1) shaper.connect(out);
+		else {
+			const g = ctx.createGain();
+			g.gain.value = makeup;
+			shaper.connect(g);
+			g.connect(out);
+		}
+		return shaper;
+	}
+
 	/**
 	 * A discharge (#545): a crack of bright noise over a short low punch, and
 	 * no falling pitch — the fall is what made the zap a *pew*. The `crack`
@@ -1212,6 +1636,11 @@ export class AudioFX {
 		this.bandBurst(out, 0.012, 0.35 * level, 7000, 1.5);
 		this.tone(out, 110, 0.09, "sine", 0.16 * level, 75);
 		this.tone(out, 1650, 0.05, "triangle", 0.03 * level);
+		if (this.punch !== "heavy") return;
+		// #577: a thump that holds its pitch — a falling one is the *pew* —
+		// and a breath of low noise, so the shot has a body.
+		this.thump(out, 62, 0.07, 0.3 * level, 3);
+		this.lowBurst(out, 0.03, 3 * level, 180, 2);
 	}
 	private crack(out: AudioNode) {
 		this.discharge(out, 1);
@@ -1262,6 +1691,10 @@ export class AudioFX {
 				at,
 			);
 		}
+		if (this.punch !== "heavy") return;
+		// #577: the field taking the blow, heard as a low shove of noise rather
+		// than a tone (#545 heard a tone as a tom). Less of it as the pool empties.
+		this.lowBurst(out, 0.05, 2.5 * (1 - 0.5 * weak), 260, 2);
 	}
 
 	/**
@@ -1282,6 +1715,18 @@ export class AudioFX {
 			[2011, 0.018, 0.12],
 		] as const)
 			this.tone(out, hz * spread, dur, "sine", vol);
+		if (this.punch !== "heavy") return;
+		// #577: the hull taking it — a punch, a snap on the strike and a crunch
+		// closing down under the ring, which is still the clang.
+		this.impactPunch(out, {
+			from: 140,
+			to: 50,
+			dur: 0.14,
+			level: 0.45,
+			drive: 3,
+		});
+		this.snap(out, 0.3, 2500);
+		this.wash(out, { vol: 0.3, fromHz: 5000, toHz: 400, len: 0.3 });
 	}
 
 	/** A hit the player landed (#545): smaller and further off than one taken
@@ -1294,16 +1739,75 @@ export class AudioFX {
 		}
 		this.noiseBurst(out, 0.1, 0.14, 500);
 		this.tone(out, 110, 0.1, "sine", 0.07, 80);
+		if (this.punch === "heavy")
+			this.impactPunch(out, {
+				from: 120,
+				to: 60,
+				dur: 0.08,
+				level: 0.1,
+				drive: 2,
+			});
 	}
 	/** A ship coming apart. */
 	private explosion(out: AudioNode) {
+		if (this.punch === "heavy") return this.heavyExplosion(out);
 		this.noiseBurst(out, 0.8, 0.5, 500);
 		this.tone(out, 70, 0.6, "sine", 0.4, 30);
+	}
+	/**
+	 * A ship coming apart, with weight (#577), after the trailer's impacts: a
+	 * snap on the flash, a punch, a sub falling to its floor, a wash of noise whose
+	 * low-pass closes, a rumble under it, and debris crackling as it scatters.
+	 */
+	private heavyExplosion(out: AudioNode) {
+		this.snap(out, 0.3, 2000);
+		this.impactPunch(out, {
+			from: 160,
+			to: 48,
+			dur: 0.22,
+			level: 0.5,
+			drive: 3,
+		});
+		this.sub(out, { from: 90, to: 40, len: 1.5, level: 0.45 });
+		this.wash(out, { vol: 0.4, fromHz: 6000, toHz: 250, len: 1.3 });
+		this.wash(out, { vol: 0.5, fromHz: 450, toHz: 80, len: 1.7 });
+		for (let i = 0; i < 10; i++) {
+			// Under 1 s, so `1 - at` below keeps every spark's level positive
+			// (sage round 2 on #578: at 0.9 the latest reached 1.02).
+			const at = 0.12 + Math.random() ** 1.5 * 0.85;
+			this.bandBurst(
+				out,
+				0.004 + Math.random() * 0.01,
+				(0.08 + Math.random() * 0.16) * (1 - at),
+				600 + Math.random() * 2400,
+				4,
+				at,
+			);
+		}
 	}
 	/** Docking clamps engaging. */
 	private dock(out: AudioNode) {
 		this.tone(out, 160, 0.18, "sine", 0.25, 240);
 		this.noiseBurst(out, 0.12, 0.18, 600);
+		if (this.punch !== "heavy") return;
+		// #577: two clamps, each a clunk of metal with a short ring.
+		for (const at of [0, 0.09]) {
+			this.impactPunch(out, {
+				from: 130,
+				to: 55,
+				dur: 0.1,
+				level: 0.3,
+				drive: 3,
+				delayS: at,
+			});
+			this.snap(out, 0.15, 3000, at);
+		}
+		for (const [hz, vol, dur] of [
+			[311, 0.03, 0.22],
+			[733, 0.02, 0.16],
+			[1289, 0.012, 0.1],
+		] as const)
+			this.tone(out, hz, dur, "sine", vol, undefined, 0.09);
 	}
 	/**
 	 * Witchspace entry: a rising sweep into nothing.
@@ -1401,6 +1905,25 @@ export class AudioFX {
 			] as const)
 				this.tone(out, hz, dur, "sine", vol);
 			this.bandBurst(out, 0.35, 0.2, 6000, 0.7);
+			return;
+		}
+		if (this.punch === "heavy") {
+			this.sendToReverb(out, CUE_BUS.witchspaceFlash, "witchspaceFlash");
+			// #577: the world replaced, as an impact — a punch and a sub with a
+			// floor where the thin boom fell to 28 Hz, a snap, a wash closing
+			// down and a long rumble under it.
+			this.snap(out, 0.3, 2000);
+			this.impactPunch(out, {
+				from: 170,
+				to: 45,
+				dur: 0.24,
+				level: 0.45,
+				drive: 3,
+			});
+			this.sub(out, { from: 110, to: 40, len: 1.6, level: 0.42 });
+			this.tone(out, 190, 0.4, "triangle", 0.12, 60);
+			this.wash(out, { vol: 0.35, fromHz: 7000, toHz: 200, len: 1.5 });
+			this.wash(out, { vol: 0.45, fromHz: 300, toHz: 70, len: 2 });
 			return;
 		}
 		this.tone(out, 95, 1.1, "sine", 0.42, 28);
@@ -1787,6 +2310,54 @@ interface FlightGraph {
 	humFilter: BiquadFilterNode;
 	pumpRate: OscillatorNode;
 	fanRate: OscillatorNode;
+}
+
+/** `REVERB`'s impulse, drawn from `Math.random()` like every noise here. */
+function reverbImpulse(ctx: BaseAudioContext): AudioBuffer {
+	const len = Math.floor(ctx.sampleRate * REVERB.seconds);
+	const pre = Math.floor(ctx.sampleRate * REVERB.preDelayS);
+	const buffer = ctx.createBuffer(2, len, ctx.sampleRate);
+	for (let c = 0; c < 2; c++) {
+		const d = buffer.getChannelData(c);
+		let lp = 0;
+		let sumSq = 0;
+		for (let i = pre; i < len; i++) {
+			const x = (i - pre) / (len - pre);
+			lp +=
+				(Math.random() * 2 - 1 - lp) *
+				(0.25 + 0.7 * REVERB.brightness * (1 - x));
+			d[i] = lp * Math.exp(-(i - pre) / ctx.sampleRate / REVERB.decayS);
+			sumSq += d[i] * d[i];
+		}
+		const scale = sumSq > 0 ? 1 / Math.sqrt(sumSq) : 0;
+		for (let i = pre; i < len; i++) d[i] *= scale;
+	}
+	return buffer;
+}
+
+/** How hard the heavy arm's sub is driven (#577). */
+const SUB_DRIVE = 2;
+
+/** The gain after a `drive` saturator that puts a full-scale input's peak at
+ *  `level`: the curve's own ceiling is `tanh(drive) / drive`. */
+const peakMakeup = (drive: number, level: number) =>
+	(level * drive) / Math.tanh(drive);
+
+/** Each drive's saturation curve, built once: odd, through zero, bounded
+ *  by 1. An odd length puts a sample exactly at zero, so silence stays silent. */
+const SATURATION_CURVES = new Map<number, Float32Array<ArrayBuffer>>();
+function saturationCurve(drive: number): Float32Array<ArrayBuffer> {
+	let curve = SATURATION_CURVES.get(drive);
+	if (!curve) {
+		const n = 1025;
+		curve = new Float32Array(n);
+		for (let i = 0; i < n; i++) {
+			const x = (i / (n - 1)) * 2 - 1;
+			curve[i] = Math.tanh(drive * x) / drive;
+		}
+		SATURATION_CURVES.set(drive, curve);
+	}
+	return curve;
 }
 
 /**

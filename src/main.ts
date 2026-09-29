@@ -133,6 +133,7 @@ import {
 	weaponSoundArms,
 } from "./weapon-sound";
 import { witchspaceSoundArms } from "./witchspace-sound";
+import { punchArm } from "./punch-sound";
 import { CombatPrototypeRig } from "./combat-rig";
 import {
 	type FlightSoundState,
@@ -1117,6 +1118,17 @@ if (WITCH_SOUND.unknown.length)
 	console.warn(
 		`?witchsound: unknown ${WITCH_SOUND.unknown.join(", ")}; playing the defaults for those`,
 	);
+/**
+ * Weight in the effects by ear (#577), from `?punch=`: `heavy` or `thin`,
+ * the one-shots before #577. `punch-sound.ts` lists them.
+ */
+const PUNCH_SOUND = punchArm(
+	new URLSearchParams(window.location.search).get("punch"),
+);
+if (PUNCH_SOUND.unknown.length)
+	console.warn(
+		`?punch: unknown ${PUNCH_SOUND.unknown.join(", ")}; playing ${PUNCH_SOUND.arm}`,
+	);
 const RAIDERS_OFF =
 	RAIDER_PARAM !== null && ["off", "0", "false"].includes(RAIDER_PARAM);
 const RAIDER_PLAYTEST = RAIDER_PARAM !== null && !RAIDERS_OFF;
@@ -2085,7 +2097,7 @@ class Game {
 	/** The display the controller's measurements were taken on; see `displaySignature`. */
 	private adaptiveDisplay: string | null = null;
 	private rendererInfoAutoReset: boolean | null = null;
-	readonly audio = new AudioFX();
+	readonly audio = new AudioFX(PUNCH_SOUND.arm);
 	/**
 	 * The pad (#283). Constructed here because construction reaches for nothing —
 	 * `navigator` is touched inside `poll()` alone, which is rule 2 of the

@@ -30,6 +30,10 @@ export type LaserVoice = "crack" | "pew";
 /** A hull hit's voice (#545): metal struck, or the thud before #545. */
 export type HullHitVoice = "clang" | "thud";
 
+/** How much weight the one-shots carry (#577): a body under every impact,
+ *  or the sound before #577. The engine's setting, not a cue's field. */
+export type PunchVoice = "heavy" | "thin";
+
 /** The flash on the cut, by ear (#534): a low impact, or a bright ring. */
 export type FlashVoice = "boom" | "glass";
 
