@@ -51,9 +51,21 @@ import {
 	PLAYER_BASELINE_HULL,
 	PURCHASABLE_HULL_IDS,
 } from "../src/hull";
+import {
+	isArmedTarget,
+	killCredit,
+	strength as fittedStrength,
+	targetStrength,
+} from "../src/kill-credit";
+import {
+	FOCUSED_HOURS_TO_TOP,
+	HUMAN_FACTOR,
+	LADDER_TOP,
+	RUNG_RATIO,
+	TOP_RUNG,
+} from "../src/ladder";
 import { fullKitCr } from "../src/market";
 import { PULSE_LASER, SHIELD_POOL } from "../src/ship-condition";
-import { ARMED_TRAFFIC_HULLS } from "../src/traffic-engagement";
 import { RELAY_INTEGRITY } from "../src/pirate-relay";
 import { RAIDER_REPAIR_S, RAIDER_WRECK_S } from "../src/raider-wreck";
 import { legEncounter, raiderLegChance } from "../src/raider-slots";
@@ -73,20 +85,12 @@ import {
 	DOCK_SECONDS,
 } from "./lib/greedy-trader";
 
-// The declared decision inputs — the principal's ruling on #562. Everything
-// section 5 prints is computed from these and from sections 1–3.
-/** The top rung's index: rungs run 0 to 8, nine per ladder (#183 D5). */
-const TOP_RUNG = 8;
-/** Each rung costs exactly this multiple of the one below. */
-const RATIO = 2;
-/** Hours of focused play, on one ladder, from rung 0 to the top. */
-const FOCUSED_HOURS_TO_TOP = 40;
-/** A declared guess, not a measurement: a human earns this share of the greedy
- *  trader's rate. Recalibrated from #564's play log. */
-const HUMAN_FACTOR = 0.5;
-/** A kill of an equal-strength target pays 2·S_t/(S_o+S_t) = 1, the most any
- *  kill pays is this. */
-const CREDIT_K = 2;
+// The declared decision inputs — the principal's ruling on #562 — are the
+// game's own since #564: `src/ladder.ts` owns them and the price of a kill is
+// `src/kill-credit.ts`'s, so this instrument and the game read one copy.
+// Everything section 5 prints is computed from these and from sections 1–3,
+// and it ends by printing the tops the game ships beside the tops it derived.
+const RATIO = RUNG_RATIO;
 
 const hours = Number(process.argv[2] ?? 8);
 const worldSeed = Number(process.argv[3] ?? 0x5ee11e);
@@ -597,32 +601,25 @@ console.log(
 	"\n5. THRESHOLDS — the principal's ruling on #562, computed from 1–3",
 );
 console.log(
-	`   declared: TOP_RUNG ${TOP_RUNG} (rungs 0–${TOP_RUNG}), RATIO ${RATIO}, FOCUSED_HOURS_TO_TOP ${FOCUSED_HOURS_TO_TOP}, HUMAN_FACTOR ${HUMAN_FACTOR} (a declared guess, recalibrated from #564's play log), CREDIT_K ${CREDIT_K}`,
+	`   declared (src/ladder.ts): TOP_RUNG ${TOP_RUNG} (rungs 0–${TOP_RUNG}), RATIO ${RATIO}, FOCUSED_HOURS_TO_TOP ${FOCUSED_HOURS_TO_TOP}, HUMAN_FACTOR ${HUMAN_FACTOR} (a declared guess, recalibrated from the Commander page's play log)`,
 );
 
 const list = (xs: readonly number[], digits = 0) =>
 	xs.map((x) => x.toFixed(digits)).join(", ");
 
-// Combat strength. Hardpoints have no behaviour yet, so every armed hull fires
-// one pulse laser: DPS is `PULSE_LASER.damagePerS`, a single constant in
-// `ship-condition.ts`. A hull is armed if Traffic arms it
-// (`ARMED_TRAFFIC_HULLS`), if it is the raider (raiders fire) or if it is the
-// player's hull; every other hull never fires and has S = 0.
-const AI_SKILL = 1;
-const isArmed = (h: HullId): boolean =>
-	ARMED_TRAFFIC_HULLS.has(h) || h === "raider" || h === PLAYER_BASELINE_HULL;
-const dps = (h: HullId, armed = isArmed(h)): number =>
-	armed ? PULSE_LASER.damagePerS : 0;
-const strength = (h: HullId, armed = isArmed(h)): number =>
-	(SHIELD_POOL + HULL_SPECS[h].integrity) * dps(h, armed) * AI_SKILL;
-const credit = (own: HullId, target: HullId): number => {
-	const so = strength(own, true);
-	const st = strength(target);
-	return (CREDIT_K * st) / (so + st);
-};
+// Combat strength and the price of a kill are the game's (`kill-credit.ts`).
+// Hardpoints have no behaviour yet, so every armed hull fires one pulse laser.
+// A *target* is armed if Traffic arms it or it is the raider; the pilot's own
+// ship is always armed. The pilot's hull is no longer printed as an armed
+// target, because in the game a courier in the lanes never fires.
+const isArmed = isArmedTarget;
+const dps = (h: HullId): number => (isArmed(h) ? PULSE_LASER.damagePerS : 0);
+const strength = (h: HullId): number => targetStrength(h);
+const credit = (own: HullId, target: HullId): number =>
+	killCredit({ hull: own }, target);
 
 console.log(
-	`\n   strength S = (SHIELD_POOL ${SHIELD_POOL} + integrity) × DPS × aiSkill ${AI_SKILL}; DPS = PULSE_LASER.damagePerS ${PULSE_LASER.damagePerS} if armed, else 0`,
+	`\n   strength S = (SHIELD_POOL ${SHIELD_POOL} + integrity) × DPS × aiSkill 1; DPS = PULSE_LASER.damagePerS ${PULSE_LASER.damagePerS} if armed, else 0; own S (always armed): courier ${fittedStrength({ hull: PLAYER_BASELINE_HULL })}`,
 );
 for (const h of DOCKABLE_HULL_IDS)
 	console.log(
@@ -632,7 +629,7 @@ for (const h of DOCKABLE_HULL_IDS)
 const OWN_ROWS: HullId[] = [...PURCHASABLE_HULL_IDS, "patrol", "raider"];
 const TARGET_COLS: HullId[] = DOCKABLE_HULL_IDS.filter((h) => isArmed(h));
 console.log(
-	`\n   credit per kill = ${CREDIT_K}·S_t / (S_o + S_t); rows: own hull, flown armed; columns: armed targets`,
+	`\n   credit per kill = 2·S_t / (S_o + S_t); rows: own hull, flown armed; columns: armed targets`,
 );
 console.log(
 	`   ${"".padEnd(12)}${TARGET_COLS.map((c) => c.slice(0, 11).padStart(12)).join("")}`,
@@ -721,4 +718,13 @@ const firstOutOfReach = rungs.find(
 if (firstOutOfReach !== undefined)
 	console.log(
 		`   ${firstOutOfReach === TOP_RUNG ? `the top rung (${TOP_RUNG}) is` : `rungs ${firstOutOfReach}–${TOP_RUNG} are`} past one galaxy's pool: out of reach without the Galactic Hyperdrive (section 3), since a hull's tank never leaves its galaxy`,
+	);
+
+// The figures the game ships (`LADDER_TOP`) beside this run's. They are
+// stored rather than derived at load, so a drift in the generators or the
+// trader shows here and not in a player's rung.
+console.log("\n   shipped tops (src/ladder.ts LADDER_TOP) against this run:");
+for (const [i, l] of LADDERS.entries())
+	console.log(
+		`     ${l.name.padEnd(12)} shipped ${String(LADDER_TOP[l.name as keyof typeof LADDER_TOP]).padStart(10)}   derived ${tops[i].toFixed(l.digits).padStart(10)}`,
 	);
