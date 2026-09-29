@@ -872,6 +872,45 @@ const PLACERS = {
 	 * **Read back, not assumed**: a leg that never reached cruise throws rather
 	 * than capturing normal flight under a cruise caption.
 	 */
+	"shipyard-tab": async (page, shot) => {
+		// The rungs and the purse are written, so the next row boots clean.
+		worldWritten = true;
+		const result = await page.evaluate(async (rungs) => {
+			const g = window.__seelite;
+			const id = g.world.system.bodies.find(
+				(b) => b.kind === "station" && b.stationType === "shipyard",
+			)?.id;
+			if (!id) return { error: "no shipyard in the fixture's system" };
+			await window.__parkInBerth(id, g.berthIdsOfStation(id)[0]);
+			if (rungs === "top") {
+				const L = await import("/src/ladder.ts");
+				g.ladders = {
+					...g.ladders,
+					banked: Object.fromEntries(
+						L.LADDERS.map((l) => [l, L.threshold(l, L.TOP_RUNG)]),
+					),
+				};
+				g.commander = {
+					...g.commander,
+					credits: 100_000,
+					cargo: { Food: 20 },
+				};
+			}
+			g.setHeadLook("forward");
+			g.stationConsoleRevision += 1;
+			g.updateCockpit();
+			return { id };
+		}, shot.rungs);
+		if (result.error) throw new Error(`shipyard-tab placer: ${result.error}`);
+		// **A build without the tab is captured, not refused**, on the
+		// Controls row's precedent: the `before` of #583 is a shipyard whose
+		// console has no Shipyard tab, and the subject line says so.
+		const tab = page.locator('[data-live-station-tab="Shipyard"]');
+		if ((await tab.count()) === 0)
+			return `${result.id} · no Shipyard tab on this build`;
+		await tab.click();
+		return `${result.id} · Shipyard tab at ${shot.rungs} rungs`;
+	},
 	cruise: async (page, shot) => {
 		// Cruise moves the ship and spends charge; the next row boots clean.
 		worldWritten = true;

@@ -901,10 +901,14 @@ exist at all, which the player cannot infer from a list that simply ends early.
 console handles absence one way across both tabs: what is missing is named, and
 why.
 
-Hull purchase is this tab's, and its prices are not this spec's or
-`economy-trade.md` §7's — the ship-roster node
-([#26](https://github.com/jcfischer/seelite/issues/26)) owes them, and until it
-lands the shipyard's hull section is empty rather than absent.
+**Amended by [#556](https://github.com/jcfischer/seelite/issues/556) D1:
+hull purchase is not this tab's.** It was, as a heading that stayed empty until
+the roster priced hulls. #556 gave it a **Shipyard** tab of its own — the third
+tab M3 anticipated, at shipyards only (D8), where every purchasable hull is a
+row carrying one reason or its net price and reach (D9). The heading here went
+with the amendment ([#583](https://github.com/jcfischer/seelite/issues/583)).
+The absence rule above does not extend to that tab: at any station that is not
+a shipyard it is absent, not empty.
 
 ### 8.4 Launch
 
@@ -1045,6 +1049,6 @@ separates them at every d, which is why the obligation is written that way.
    out-earns a smuggling run by 62%. M5 makes the exception visible on a screen
    where the numbers say not to take it. That is #7's recorded weak joint 11 and
    #8's to price; this spec displays it faithfully and does not repair it.
-4. **The hull section is empty until #26.** §8.3. A shipyard's equipment tab has
-   a hulls heading with nothing under it, which is a state the gallery has to
-   render and a player will see.
+4. **The hull section was empty until #26, and is gone since #583.** §8.3's
+   amendment moved hulls to the Shipyard tab, so a shipyard's equipment tab
+   draws no hull heading; `probe-station-console` checks that it does not.

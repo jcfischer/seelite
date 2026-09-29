@@ -272,10 +272,13 @@ reason, in the style of its existing `equipment-unavailable`:
 | `buy-equipment`, type exclusive | exclusive |
 | `buy-fuel` | none — never refused on condition |
 
-Hull purchase has **no `StationAction` today** — `StationAction` is four verbs
-and none of them buys a hull. When the shipyard's hull sale is built it reads
-the exclusive slot. Recording this so a later reader does not take §4.1's
-mention of hulls as evidence that a code path exists.
+Hull purchase is the `buy-hull` `StationAction` since
+[#583](https://github.com/jcfischer/seelite/issues/583), and it reads the
+exclusive slot **once this spec's condition exists** — it does not yet.
+[#556](https://github.com/jcfischer/seelite/issues/556) D9 places the damaged
+exclusive slot second in a hull row's refusal order, after the rung lock; with
+no slot condition built there is nothing to read, so `hullOffer` carries no such
+refusal, and the node that builds this projection adds it there.
 
 The docked console must show a disabled capability as unavailable **before** the
 player attempts it, and say the station is damaged rather than that the item is
