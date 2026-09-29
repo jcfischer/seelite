@@ -282,6 +282,19 @@ export const PROBE_CATALOG = Object.freeze(
 			],
 		),
 		entry(
+			"probe-shipyard.mjs",
+			"Docks at a shipyard, reads the Shipyard tab's hull rows, buys a hull and checks the mesh, handling, condition and berth follow it, delivers a hull at the launch crossing, and reloads to fly the saved hull over a conflicting ?hull=.",
+			[
+				"shipyard",
+				"hull sale",
+				"trade-in",
+				"flown hull",
+				"ship mesh",
+				"save load",
+				"station console",
+			],
+		),
+		entry(
 			"probe-hud.mjs",
 			"Checks full-screen HUD sizing and projection of attitude, velocity, target, and docking markers.",
 			["HUD", "projection", "canvas resize", "markers", "cockpit"],
