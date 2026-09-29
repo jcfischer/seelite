@@ -48,6 +48,7 @@ import type { DockPhase } from "./dock-session";
 // a type import is erased at build and cannot be one. `relief-bands.ts` and
 // `pad-bindings.ts` stand the same way, and `tests/headless.test.ts` asserts it.
 import type { CommerceRefusal } from "./station-commerce";
+import { type GateRefusal, type Rungs, gateRefusal } from "./ladder";
 
 // ---------------------------------------------------------------------------
 // §8.1 / §8.4 — what is on the glass, and when
@@ -322,6 +323,13 @@ export interface ConsoleEquipmentEntry {
 	name: string;
 	priceCr: number;
 	per: UniversalItem["per"];
+	/**
+	 * The ladder gate this row fails, or absent (#183 D6, #562 D7). A locked
+	 * row still lists — it names its ladder and rung and draws no BUY, the
+	 * #489 locked-row pattern — because a row that vanished below its rung
+	 * would tell the pilot nothing about what to climb.
+	 */
+	locked?: GateRefusal;
 }
 
 /** An item the station does not sell, with M8's stated reason. */
@@ -403,8 +411,18 @@ const scopeReason = (
 export function stationEquipmentScreen(input: {
 	type: StationTypeKey;
 	displayTL: number;
+	/**
+	 * The pilot's three rungs. **Required**, for `holdT`'s reason: a caller that
+	 * forgot them would sell every gated item, and the two are
+	 * indistinguishable in a diff. `TOP_RUNGS` is the explicit open gate.
+	 */
+	rungs: Rungs;
 }): ConsoleEquipmentScreen {
-	const { type, displayTL } = input;
+	const { type, displayTL, rungs } = input;
+	const gated = (entry: ConsoleEquipmentEntry): ConsoleEquipmentEntry => {
+		const locked = gateRefusal(entry.name, rungs);
+		return locked ? { ...entry, locked } : entry;
+	};
 	// The gate itself, not `universalItemsAt(displayTL).length` — that built a
 	// throwaway array on every render to read a number this computes.
 	const reach = universalReach(displayTL);
@@ -412,7 +430,7 @@ export function stationEquipmentScreen(input: {
 	const unavailable: ConsoleUnavailableEntry[] = [];
 
 	UNIVERSAL_ITEMS.forEach((item, index) => {
-		if (index < reach) available.push(item);
+		if (index < reach) available.push(gated(item));
 		else
 			unavailable.push({
 				name: item.name,
@@ -427,7 +445,7 @@ export function stationEquipmentScreen(input: {
 			priceCr: item.priceCr,
 			per: "unit",
 		};
-		if (item.scope === type) available.push(entry);
+		if (item.scope === type) available.push(gated(entry));
 		else unavailable.push({ name: item.name, reason: scopeReason(item.scope) });
 	}
 
@@ -516,6 +534,7 @@ const REFUSAL_SENTENCES: Record<
 		"Salvage — this station buys it, never sells it.",
 	"commodity-unavailable": () => "Not traded here.",
 	"equipment-owned": () => "Already fitted.",
+	"equipment-locked": () => "Locked — the row names the rung it needs.",
 	"equipment-unavailable": () => "This station does not fit that.",
 	"fuel-full": () => "The tank is full.",
 	"insufficient-credits": () => "Not enough credits.",

@@ -21,13 +21,14 @@
  * Trade credit is earned docked — a sale and a job settlement both happen at a
  * console — so it banks at once and never passes through pending.
  *
+ * A kill's price is `kill-credit.ts`'s, which reads the roster and the combat
+ * model; this module imports neither, so the console's gate can read it
+ * without pulling combat into commerce.
+ *
  * No DOM and no Three.js.
  */
 
 import { type CarrierKey, isCarrierKey } from "./carrier-key";
-import { HULL_SPECS, type HullId } from "./hull";
-import { PULSE_LASER, SHIELD_POOL } from "./ship-condition";
-import { ARMED_TRAFFIC_HULLS } from "./traffic-engagement";
 import { GALAXY_COUNT, isSystemIndex } from "./world-state";
 
 // ---------------------------------------------------------------------------
@@ -74,11 +75,21 @@ export const threshold = (ladder: Ladder, rung: number): number =>
 /** The highest rung a banked total reaches. */
 export const rungOf = (ladder: Ladder, banked: number): number => {
 	let rung = 0;
-	for (let n = 1; n <= TOP_RUNG; n++) if (banked >= threshold(ladder, n)) rung = n;
+	for (let n = 1; n <= TOP_RUNG; n++)
+		if (banked >= threshold(ladder, n)) rung = n;
 	return rung;
 };
 
 export type Rungs = Readonly<Record<Ladder, number>>;
+
+/** Every ladder at the top: every gate open. What a caller that is not about
+ *  gates passes — a test of the hold, a gallery state — so it names the
+ *  choice rather than inheriting one. */
+export const TOP_RUNGS: Rungs = {
+	combat: TOP_RUNG,
+	trade: TOP_RUNG,
+	exploration: TOP_RUNG,
+};
 
 /** The three rungs a record stands on. */
 export const rungsOf = (record: LadderRecord): Rungs => ({
@@ -128,65 +139,6 @@ export const RUNG_NAMES: Readonly<Record<Ladder, readonly string[]>> = {
 		"Cartographer",
 		"Starwright",
 	],
-};
-
-// ---------------------------------------------------------------------------
-// Combat credit (#562 D3, D4)
-// ---------------------------------------------------------------------------
-
-/** AI skill, S's third factor. 1 for every ship today (#562 D3): S is derived
- *  from stats, and a learned skill is #563's fog. */
-const AI_SKILL = 1;
-/** The most a kill pays, reached only against an infinitely stronger target:
- *  a matched kill pays 2·S/(S+S) = 1. */
-const CREDIT_K = 2;
-
-/**
- * The ship the pilot flies, as far as strength reads it.
- *
- * **The fitted ship, not the hull** (#562 D3): a weapon upgrade raises S_own.
- * Today every weapon item is inert — hardpoints have no behaviour and the
- * pilot fires one pulse laser whatever is fitted — so `equipment` changes
- * nothing yet. It is on the input so the node that gives a laser behaviour
- * changes `fittedDps` and not every caller.
- */
-export interface FittedShip {
-	hull: HullId;
-	equipment?: readonly string[];
-}
-
-const fittedDps = (_ship: FittedShip): number => PULSE_LASER.damagePerS;
-
-/** Whether a hull fires when it is a target: Traffic's armed hulls and the
- *  raider. Every other hull never fires (`traffic-engagement.ts`, H3). */
-export const isArmedTarget = (hull: HullId): boolean =>
-	ARMED_TRAFFIC_HULLS.has(hull) || hull === "raider";
-
-/**
- * S = effective HP × DPS × AI skill (#562 D3). Effective HP is one shield bank
- * plus integrity. The pilot's own ship is always armed.
- */
-export const strength = (ship: FittedShip): number =>
-	(SHIELD_POOL + HULL_SPECS[ship.hull].integrity) * fittedDps(ship) * AI_SKILL;
-
-/** A target's S: zero when it never fires (#562 D4). */
-export const targetStrength = (hull: HullId): number =>
-	isArmedTarget(hull)
-		? (SHIELD_POOL + HULL_SPECS[hull].integrity) *
-			PULSE_LASER.damagePerS *
-			AI_SKILL
-		: 0;
-
-/**
- * What one kill pays: 2·S_target / (S_own + S_target) (#562 D3). The curve is
- * its own clamp — a matched kill pays 1, none pays 2, and a much weaker target
- * pays close to 0. An unarmed target pays exactly 0 (#562 D4); it still pays
- * in cargo, bounty and heat, which are not this ladder's.
- */
-export const killCredit = (own: FittedShip, target: HullId): number => {
-	const st = targetStrength(target);
-	if (st === 0) return 0;
-	return (CREDIT_K * st) / (strength(own) + st);
 };
 
 // ---------------------------------------------------------------------------
@@ -402,12 +354,20 @@ export const bankOnDock = (
 	let visited = record.visited;
 	let kinds = 0;
 	for (const { galaxyIndex, systemIndex } of pending.systems) {
-		if (visitedIn({ ...record, visited }, galaxyIndex).systems.includes(systemIndex))
+		if (
+			visitedIn({ ...record, visited }, galaxyIndex).systems.includes(
+				systemIndex,
+			)
+		)
 			continue;
 		visited = withPlace(visited, galaxyIndex, { system: systemIndex });
 		kinds += 1;
 	}
-	if (!visitedIn({ ...record, visited }, at.galaxyIndex).stations.includes(at.station)) {
+	if (
+		!visitedIn({ ...record, visited }, at.galaxyIndex).stations.includes(
+			at.station,
+		)
+	) {
 		visited = withPlace(visited, at.galaxyIndex, { station: at.station });
 		kinds += 1;
 	}
@@ -426,7 +386,10 @@ export const bankOnDock = (
 /** Trade credit, banked at once: a sale or a settlement happens docked. */
 export const bankTrade = (record: LadderRecord, cr: number): LadderRecord =>
 	cr > 0
-		? { ...record, banked: { ...record.banked, trade: record.banked.trade + cr } }
+		? {
+				...record,
+				banked: { ...record.banked, trade: record.banked.trade + cr },
+			}
 		: record;
 
 // ---------------------------------------------------------------------------
@@ -542,7 +505,10 @@ export const serializeLadders = (record: LadderRecord): unknown => {
 	}
 	const basis: Record<string, unknown> = {};
 	for (const good of Object.keys(record.basis).sort())
-		basis[good] = { units: record.basis[good].units, cr: record.basis[good].cr };
+		basis[good] = {
+			units: record.basis[good].units,
+			cr: record.basis[good].cr,
+		};
 	return {
 		banked: {
 			combat: record.banked.combat,
@@ -616,3 +582,69 @@ export const parseLadders = (raw: unknown): LadderRecord => {
 		capstoneAt,
 	};
 };
+
+// ---------------------------------------------------------------------------
+// What a console transaction does to the record
+// ---------------------------------------------------------------------------
+
+/** The two commander fields a market transaction moves. */
+interface Purse {
+	credits: number;
+	cargo: Readonly<Record<string, number>>;
+}
+
+/**
+ * A till's accepted transaction, read off the commander before and after it.
+ *
+ * **Before and after, not the price.** The till owns the price — the bid cut,
+ * the stock response — and a second computation of it here would be a second
+ * place to get it wrong. What the till charged is the credit delta; what it
+ * moved is the cargo delta. A buy records a basis and banks nothing; a sale
+ * banks its margin at once, because it happens docked.
+ */
+export const ladderAfterMarket = (
+	record: LadderRecord,
+	action: { type: string; commodity?: string },
+	before: Purse,
+	after: Purse,
+): LadderRecord => {
+	const good = action.commodity;
+	if (good === undefined) return record;
+	if (action.type === "buy-commodity") {
+		const units = (after.cargo[good] ?? 0) - (before.cargo[good] ?? 0);
+		return {
+			...record,
+			basis: basisAfterBuy(
+				record.basis,
+				good,
+				units,
+				before.credits - after.credits,
+			),
+		};
+	}
+	if (action.type === "sell-commodity") {
+		const sale = saleMargin(
+			record.basis,
+			before.cargo,
+			good,
+			(before.cargo[good] ?? 0) - (after.cargo[good] ?? 0),
+			after.credits - before.credits,
+		);
+		return bankTrade({ ...record, basis: sale.basis }, sale.marginCr);
+	}
+	return record;
+};
+
+/**
+ * A job settled at a console: its pay banks at once (D3 counts it at its pay),
+ * and any goods it took from the hold take their basis with them.
+ */
+export const ladderAfterSettlement = (
+	record: LadderRecord,
+	rewardCr: number,
+	heldAfter: Readonly<Record<string, number>>,
+): LadderRecord =>
+	bankTrade(
+		{ ...record, basis: reconcileBasis(record.basis, heldAfter) },
+		rewardCr,
+	);

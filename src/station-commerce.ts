@@ -26,7 +26,11 @@ import {
 	shelfQuantity,
 	stockResponse,
 } from "./market";
-import { stationEquipmentScreen } from "./station-console";
+import type { Rungs } from "./ladder";
+import {
+	type ConsoleEquipmentEntry,
+	stationEquipmentScreen,
+} from "./station-console";
 
 export interface CommanderState {
 	credits: number;
@@ -104,6 +108,11 @@ export interface StationCommerceInput {
 	 * words that a display-only deduction is insufficient.
 	 */
 	entrustedT: number;
+	/**
+	 * The pilot's three rungs, which the equipment gate reads (#183 D6).
+	 * Required for `entrustedT`'s reason; `TOP_RUNGS` is the open gate.
+	 */
+	rungs: Rungs;
 	action: StationAction;
 }
 
@@ -129,6 +138,7 @@ export type CommerceRefusal =
 	| "insufficient-credits"
 	| "equipment-unavailable"
 	| "equipment-owned"
+	| "equipment-locked"
 	| "invalid-quantity"
 	| "unknown-commodity"
 	| "commodity-unavailable"
@@ -232,10 +242,11 @@ export function scoopCargo(
 
 const availableEquipment = (
 	input: StationCommerceInput,
-): readonly UniversalItem[] =>
+): readonly ConsoleEquipmentEntry[] =>
 	stationEquipmentScreen({
 		type: input.station.type,
 		displayTL: input.displayTL,
+		rungs: input.rungs,
 	}).available.filter((item) => item.per === "unit");
 
 /**
@@ -288,8 +299,11 @@ export function transactAtStation(
 			(item) => item.name === action.equipment,
 		);
 		if (!entry) return rejected(input, "equipment-unavailable");
+		// Owned before locked: a gate blocks only new purchases (#183 D9), so an
+		// item a v6 commander already fitted is "already fitted", not locked.
 		if (input.commander.ownedEquipment.includes(entry.name))
 			return rejected(input, "equipment-owned");
+		if (entry.locked) return rejected(input, "equipment-locked");
 		if (input.commander.credits < entry.priceCr)
 			return rejected(input, "insufficient-credits");
 		return {

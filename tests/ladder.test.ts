@@ -25,7 +25,8 @@ import {
 	emptyPending,
 	gateOf,
 	gateRefusal,
-	killCredit,
+	ladderAfterMarket,
+	ladderAfterSettlement,
 	parseLadders,
 	pendingArrival,
 	pendingKill,
@@ -33,9 +34,9 @@ import {
 	rungsOf,
 	saleMargin,
 	serializeLadders,
-	strength,
 	threshold,
 } from "../src/ladder";
+import { killCredit, strength } from "../src/kill-credit";
 import { EQUIPMENT } from "../src/market";
 
 const key = (s: string) => s as CarrierKey;
@@ -308,5 +309,60 @@ describe("the saved record (#183 D9)", () => {
 		expect(() =>
 			parseLadders({ ...good, banked: { combat: 0, trade: 0 } }),
 		).toThrow();
+	});
+});
+
+describe("a market transaction's effect on the ladder (#183 D3)", () => {
+	const before = { credits: 1000, cargo: { Food: 4 } };
+	test("a buy records its basis and banks nothing", () => {
+		const after = { credits: 900, cargo: { Food: 14 } };
+		const next = ladderAfterMarket(
+			emptyLadderRecord(),
+			{ type: "buy-commodity", commodity: "Food" },
+			before,
+			after,
+		);
+		expect(next.basis.Food).toEqual({ units: 10, cr: 100 });
+		expect(next.banked.trade).toBe(0);
+	});
+
+	test("a sale banks its margin at once, and the v6 units go first", () => {
+		const bought = ladderAfterMarket(
+			emptyLadderRecord(),
+			{ type: "buy-commodity", commodity: "Food" },
+			before,
+			{ credits: 900, cargo: { Food: 14 } },
+		);
+		// 4 t with no basis, then 2 of the 10 bought at 10 Cr each.
+		const sold = ladderAfterMarket(
+			bought,
+			{ type: "sell-commodity", commodity: "Food" },
+			{ credits: 900, cargo: { Food: 14 } },
+			{ credits: 990, cargo: { Food: 8 } },
+		);
+		expect(sold.banked.trade).toBeCloseTo(2 * 15 - 2 * 10, 9);
+		expect(sold.basis.Food).toEqual({ units: 8, cr: 80 });
+	});
+
+	test("anything else leaves the record as it was", () => {
+		const record = emptyLadderRecord();
+		expect(
+			ladderAfterMarket(record, { type: "buy-fuel" }, before, {
+				...before,
+				credits: 990,
+			}),
+		).toBe(record);
+	});
+});
+
+describe("a job settlement (#183 D3)", () => {
+	test("banks its pay and drops the basis of goods it took", () => {
+		const record: LadderRecord = {
+			...emptyLadderRecord(),
+			basis: { Food: { units: 10, cr: 100 } },
+		};
+		const next = ladderAfterSettlement(record, 250, { Food: 4 });
+		expect(next.banked.trade).toBe(250);
+		expect(next.basis.Food).toEqual({ units: 4, cr: 40 });
 	});
 });

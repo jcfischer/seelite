@@ -21,6 +21,7 @@
  *   exactly rather than nearly.
  */
 
+import { TOP_RUNGS } from "../src/ladder";
 import { describe, expect, test } from "bun:test";
 import { readFileSync } from "node:fs";
 import * as THREE from "three";
@@ -133,6 +134,7 @@ const commerceInput = (commander: ReturnType<typeof newCommander>) => ({
 	gameTimeMin: 0,
 	displayTL: 8,
 	entrustedT: 0,
+	rungs: TOP_RUNGS,
 	action: { type: "buy-commodity" as const, commodity: "Food" },
 });
 

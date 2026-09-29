@@ -726,6 +726,22 @@ const MODIFIER_KEYS: ReadonlySet<string> = new Set([
 	"CapsLock",
 ]);
 import { readDeficit, recordTrade } from "./deficits";
+import { killCredit } from "./kill-credit";
+import {
+	type LadderRecord,
+	type PendingCredit,
+	type Rungs,
+	bankOnDock,
+	basisAfterScoop,
+	emptyLadderRecord,
+	emptyPending,
+	ladderAfterMarket,
+	ladderAfterSettlement,
+	pendingArrival,
+	pendingKill,
+	rungsOf,
+	seededLadderRecord,
+} from "./ladder";
 import {
 	emptyRequests,
 	entrustedTonnesAboard,
@@ -2184,6 +2200,18 @@ class Game {
 	private layoutNotices: readonly LayoutNotice[] = [];
 	/** Commander-owned mutable commerce state; no renderer may write it. */
 	private commander = newCommander(PLAYER_HULL[0]);
+	/**
+	 * The three ladders' banked record (#183), saved beside `commander` so a
+	 * death's revert to `lastDocked` moves credits and rungs together.
+	 */
+	private ladders: LadderRecord = emptyLadderRecord();
+	/**
+	 * Credit earned since the last dock (#183 D7): kills and first arrivals.
+	 * **Never saved** — `commanderRecord` has nowhere to put it — so a death,
+	 * which restores `lastDocked`, and a mid-flight save both lose it. The next
+	 * dock banks it.
+	 */
+	private ladderPending: PendingCredit = emptyPending();
 	/** The game-owned per-galaxy state holds the station deficit map. */
 	private commerceWorld!: WorldState;
 	/** #89's D7 flag, chosen at new game and never edited. Read by the death
@@ -3632,6 +3660,7 @@ class Game {
 			this.chargeAu = save.commander.chargeAu;
 			this.permadeath = save.commander.permadeath;
 			this.firstDay = save.commander.firstDay;
+			this.ladders = save.commander.ladders;
 			// **A docked save resumes in flight at the arrival point, and that
 			// is a deliberate scale-down rather than an omission.** Re-entering
 			// a berth means rebuilding a whole dock session — the grant, the
@@ -3698,6 +3727,13 @@ class Game {
 				this.commerceWorld,
 				this.world.system.record.galaxy,
 				this.world.system.record.index,
+			);
+			// #183 D9's seed, applied to a new game: the start system is not a
+			// first arrival the pilot earned. The first dock is, wherever it is.
+			this.ladders = seededLadderRecord(
+				this.world.system.record.galaxy,
+				this.world.system.record.index,
+				null,
 			);
 		}
 		this.observeCurrentSystemRelay();
@@ -6758,6 +6794,7 @@ class Game {
 			now,
 		))
 			this.applyCarrierTransition(actor.key, event);
+		this.creditKill(actor.hullId);
 		this.canisters = [
 			...this.canisters,
 			...dropManifestCanisters({
@@ -10400,6 +10437,11 @@ class Game {
 			);
 			this.openPlayerTrafficEvent(id, "lane", this.world.gameTime, "arrival");
 			this.world.ship.vel = stationVel;
+			// #183 D7: the dock banks what the flight earned, and the station's
+			// first dock. **Before the flush below**, which writes `lastDocked`
+			// — the record a death restores. Banked after it, the credit would
+			// ride only on the next write.
+			this.bankLadders(this.stationKey(stationOf(this.world.system, id)));
 			// D4's unconditional dock flush, and the one that lays down #89's
 			// `lastDocked` checkpoint — the record a non-permadeath death
 			// restores.
@@ -11371,6 +11413,9 @@ class Game {
 					encounter.slot.key,
 					raiderDestruction(record.index, now),
 				);
+				// The relay's defender (#515) is a raider from a slot, so it is
+				// priced here too.
+				this.creditKill(RAIDER_HULL_ID);
 				this.canisters = [
 					...this.canisters,
 					...dropCanisters({
@@ -11426,7 +11471,19 @@ class Game {
 					canister.tonnes,
 					entrustedTonnesAboard(this.requests),
 				);
-				if (took.accepted) this.commander = took.commander;
+				if (took.accepted) {
+					this.commander = took.commander;
+					// Scooped goods cost nothing, so their sale is all margin
+					// (the principal's ruling on #564).
+					this.ladders = {
+						...this.ladders,
+						basis: basisAfterScoop(
+							this.ladders.basis,
+							canister.commodity,
+							took.tonnes,
+						),
+					};
+				}
 				return took.tonnes;
 			},
 			// Each canister's own frame, as it stands (#324), across the step
@@ -11693,6 +11750,8 @@ class Game {
 					key,
 					relayDestruction(record.index, now, plan.watchedStationId),
 				);
+				// No hull row and no gun: it pays in the bounty, not in rank.
+				this.creditKill(null);
 				this.play({ kind: "explosion" });
 				this.lastExit = "pirate relay destroyed";
 			}
@@ -11784,6 +11843,9 @@ class Game {
 			if (!isAlive(this.tenderCondition)) {
 				for (const t of tenderKill(record.index, now, plan.watchedStationId))
 					this.applyCarrierTransition(t.key, t.event);
+				// Unarmed, so it pays 0 (#562 D4); priced rather than skipped so
+				// every kill path reads the same.
+				this.creditKill(RELAY_TENDER_HULL_ID);
 				this.play({ kind: "explosion" });
 				this.lastExit = "relay tender destroyed";
 				this.tenderView = null;
@@ -12591,6 +12653,13 @@ class Game {
 		// §7's visited flag, per galaxy (`persistent-world-state.md` §7). The
 		// start system is recorded at boot; this is every system after it.
 		this.commerceWorld = visit(this.commerceWorld, to.galaxy, to.index);
+		// #183 D4: a first arrival is a kind, pending until the next dock.
+		this.ladderPending = pendingArrival(
+			this.ladders,
+			this.ladderPending,
+			to.galaxy,
+			to.index,
+		);
 		this.observeCurrentSystemRelay();
 
 		// The flight session, reset to what arriving in a system is: at rest, in
@@ -14039,6 +14108,8 @@ class Game {
 				opening.frame(this.openingSim, dt);
 				if (opening.done) this.endOpening();
 			} else this.step(dt);
+			// #562 D2's play log: seconds with the clock running.
+			this.ladders.playedS += dt;
 		}
 		// Every frame, paused ones too: a paused burn does not keep its drive
 		// (the principal's ruling on #544), which needs the sound to hear the
@@ -14575,6 +14646,13 @@ class Game {
 					}
 					this.commander = { ...this.commander, cargo };
 				}
+				// #183 D3: a settlement's pay banks at once — a report happens
+				// docked — and goods a job took take their basis with them.
+				this.ladders = ladderAfterSettlement(
+					this.ladders,
+					result.rewardCr ?? 0,
+					this.commander.cargo,
+				);
 				if (result.mark) {
 					// §4's mark, through the module's own writer and with the
 					// **flown** hull's hold (#182) — the same figure the till uses.
@@ -14717,6 +14795,7 @@ class Game {
 			equipment: stationEquipmentScreen({
 				type: market.type,
 				displayTL: this.world.system.record.displayTL,
+				rungs: this.rungs(),
 			}),
 			credits: this.commander.credits,
 			hold,
@@ -14734,6 +14813,42 @@ class Game {
 			revision: this.stationConsoleRevision,
 		};
 		return this.stationConsoleCache;
+	}
+
+	/** The pilot's three rungs, off the banked record. */
+	rungs(): Rungs {
+		return rungsOf(this.ladders);
+	}
+
+	/**
+	 * Banks the pending credit and the station's first-dock kind (#183 D7), and
+	 * records the capstone if this dock reached it (D8).
+	 */
+	private bankLadders(station: CarrierKey): void {
+		this.ladders = bankOnDock(this.ladders, this.ladderPending, {
+			galaxyIndex: this.world.system.record.galaxy,
+			station,
+			gameTime: this.world.gameTime,
+		});
+		this.ladderPending = emptyPending();
+		this.saveDirty();
+	}
+
+	/**
+	 * A player's kill, priced on the combat ladder (#562 D3): pending until the
+	 * next dock. `null` is a target with no hull row — the relay — and pays
+	 * nothing, as an unarmed hull does (D4). Every kill path calls this, so a
+	 * path that forgot is visible as the one that does not.
+	 */
+	private creditKill(target: HullId | null): void {
+		if (target === null) return;
+		this.ladderPending = pendingKill(
+			this.ladderPending,
+			killCredit(
+				{ hull: this.commander.hull, equipment: this.commander.ownedEquipment },
+				target,
+			),
+		);
 	}
 
 	/**
@@ -14767,6 +14882,9 @@ class Game {
 			chargeAu: this.chargeAu,
 			permadeath: this.permadeath,
 			firstDay: this.firstDay,
+			// A copy: `playedS` is advanced in place every frame, and a record
+			// handed to the store must not move after it is read.
+			ladders: { ...this.ladders },
 			flight: {
 				pos: [
 					this.world.ship.pos.x,
@@ -15588,6 +15706,7 @@ class Game {
 			gameTimeMin,
 			displayTL: this.world.system.record.displayTL,
 			entrustedT: entrustedTonnesAboard(this.requests),
+			rungs: this.rungs(),
 			action,
 		});
 		if (!result.accepted) {
@@ -15613,6 +15732,13 @@ class Game {
 			return false;
 		}
 		this.clearStationRefusal();
+		// #183 D3: a buy records its basis, a sale banks its margin at once.
+		this.ladders = ladderAfterMarket(
+			this.ladders,
+			action,
+			this.commander,
+			result.commander,
+		);
 		this.commander = result.commander;
 		// Through the module's own writer, not by hand. `setDeficits` carries
 		// the galaxy bound, the "no write before the clock" refusal and
