@@ -74,6 +74,8 @@ function musicTimelines() {
 			[9.5, { type: "resolve", at: "bar" }],
 		]),
 		tune("music-march", 8, [[0, play("march")]]),
+		// The second voices in their room, section by section (#560 D10).
+		tune("music-voices", 56, [[0, play("voices")]], { voices: "voices" }),
 		// Between songs: the march takes over on the waltz's next bar line.
 		tune("music-crossfade", 10, [
 			[0, play("waltz")],
@@ -233,8 +235,10 @@ export async function renderInPage({
 	const { WITCHSPACE } = await import("/src/witchspace.ts");
 	const resolve = (v) => (v === "hum" ? WITCHSPACE.humS : v);
 	const seconds = resolve(entry.seconds) + (entry.seconds === "hum" ? 0.3 : 0);
+	// Music renders in stereo (the synth's space is, since #548's first
+	// listening); every cue stays mono, as it plays.
 	const ctx = new OfflineAudioContext(
-		1,
+		entry.music ? 2 : 1,
 		Math.round((leadS + seconds + (repeat - 1) * spacingS) * sampleRate),
 		sampleRate,
 	);
@@ -337,14 +341,22 @@ export async function renderInPage({
 				music.sync().then(resume, resume);
 			});
 		const buffer = await ctx.startRendering();
+		const from = Math.round(leadS * sampleRate);
+		const left = buffer.getChannelData(0).subarray(from);
+		const right = buffer.getChannelData(1).subarray(from);
+		// `samples` is the fold-down, (L + R) / 2 — what a mono destination
+		// hears — so every band a probe reads keeps its meaning; the two sides
+		// are for the ear.
+		const fold = new Float32Array(left.length);
+		for (let i = 0; i < fold.length; i++) fold[i] = 0.5 * (left[i] + right[i]);
 		return {
 			modern,
 			sampleRate,
 			live: null,
 			errors: music.errors,
-			samples: Array.from(
-				buffer.getChannelData(0).subarray(Math.round(leadS * sampleRate)),
-			),
+			samples: Array.from(fold),
+			left: Array.from(left),
+			right: Array.from(right),
 		};
 	}
 

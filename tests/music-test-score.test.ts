@@ -21,7 +21,18 @@ test("between them, the test songs sound every voice", () => {
 			Object.values(s.parts).map((p) => p.voice),
 		),
 	);
-	expect([...voices].sort()).toEqual(["fm", "noise", "pad", "pluck", "tone"]);
+	expect([...voices].sort()).toEqual([
+		"acid",
+		"analog",
+		"drone",
+		"fm",
+		"keys",
+		"kick",
+		"noise",
+		"pad",
+		"pluck",
+		"tone",
+	]);
 });
 
 test.each(Object.keys(TEST_SONGS))(
@@ -34,7 +45,11 @@ test.each(Object.keys(TEST_SONGS))(
 		const out = new Float32Array(128);
 		let peak = 0;
 		let sum = 0;
-		const frames = 12 * SR;
+		// Twelve seconds, or the whole song where it runs longer without a loop.
+		const song = TEST_SONGS[id];
+		const bars = song.sections.reduce((n, sec) => n + sec.bars, 0);
+		const seconds = (bars * song.beatsPerBar * 60) / song.tempo[0].bpm;
+		const frames = Math.round(Math.max(12, song.loop ? 12 : seconds + 1) * SR);
 		for (let f = 0; f < frames; f += 128) {
 			// Into the coda, where the song has one to resolve into.
 			if (TEST_SONGS[id].resolve && f === 9 * SR - ((9 * SR) % 128))

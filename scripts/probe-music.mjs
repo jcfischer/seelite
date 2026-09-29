@@ -91,6 +91,10 @@ const RENDERED = {
 	"music-stems": { rms: 0.01124, peak: 0.08342, hz: 542 },
 	"music-stop-fade": { rms: 0.01094, peak: 0.10148, hz: 3970 },
 	"music-tempo": { rms: 0.01566, peak: 0.10292, hz: 1777 },
+	// The second voices open on the drone's three-second swell, so this one
+	// carries its own onset, in the band like the rest, rather than the
+	// limiter's 10 ms.
+	"music-voices": { rms: 0.02846, peak: 0.1775, hz: 700, onset: 51.48 },
 };
 /** The limiter's 6 ms look-ahead and a render quantum and a half (4 ms at
  *  48 kHz): 10 ms, as the comment above says. It read 12 for a round, which
@@ -178,8 +182,9 @@ try {
 			within(s.rms, m.rms) &&
 				within(s.peak, m.peak) &&
 				within(s.centroidHz, m.hz) &&
-				s.onsetMs >= 0 &&
-				s.onsetMs <= ONSET_MAX_MS,
+				(m.onset === undefined
+					? s.onsetMs >= 0 && s.onsetMs <= ONSET_MAX_MS
+					: within(s.onsetMs, m.onset)),
 			`rms ${s.rms.toFixed(5)} peak ${s.peak.toFixed(5)} onset ${s.onsetMs.toFixed(2)} ms centroid ${Math.round(s.centroidHz)} Hz`,
 		);
 	}

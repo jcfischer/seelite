@@ -477,7 +477,10 @@ export class VoiceBank {
 		this.kC2 = partials();
 		this.kL = new Float32Array(cap * PARTIALS);
 		this.kR = new Float32Array(cap * PARTIALS);
-		this.drone = new DroneTables(() => this.noise());
+		// Its own stream: drawn from the bank's, the tables moved every pluck
+		// and noise burst after them, and a render of a song with no drone in
+		// it changed.
+		this.drone = new DroneTables(xorshift(0x2545f491));
 		this.g = f64();
 		const lineLen = Math.ceil(sampleRate / PLUCK_FLOOR_HZ) + 4;
 		this.line = Array.from({ length: cap }, () => new Float32Array(lineLen));
@@ -1148,4 +1151,16 @@ class DroneTables {
 		for (let set = 0; set < 2; set++)
 			this.scale[set][idx] = this.peak[set] > 0 ? 1 / this.peak[set] : 0;
 	}
+}
+
+/** A xorshift stream, -1..1, of its own. */
+function xorshift(seed: number): () => number {
+	let x = seed >>> 0 || 1;
+	return () => {
+		x ^= x << 13;
+		x ^= x >>> 17;
+		x ^= x << 5;
+		x >>>= 0;
+		return x / 2147483648 - 1;
+	};
 }
