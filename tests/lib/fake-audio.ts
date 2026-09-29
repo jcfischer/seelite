@@ -60,6 +60,8 @@ export class FakeContext {
 	readonly sources: FakeNode[] = [];
 	/** Every saturator built (#577), with the curve it was given. */
 	readonly shapers: (FakeNode & { curve: Float32Array | null })[] = [];
+	/** Every reverb built (#577), with the impulse it was given. */
+	readonly convolvers: (FakeNode & { buffer: unknown })[] = [];
 	constructor() {
 		FakeContext.made.push(this);
 	}
@@ -94,6 +96,14 @@ export class FakeContext {
 			Q: new FakeParam(),
 		});
 	}
+	createConvolver() {
+		const c = Object.assign(new FakeNode(), {
+			buffer: null as unknown,
+			normalize: true,
+		});
+		this.convolvers.push(c);
+		return c;
+	}
 	createWaveShaper() {
 		const w = Object.assign(new FakeNode(), {
 			curve: null as Float32Array | null,
@@ -102,9 +112,14 @@ export class FakeContext {
 		this.shapers.push(w);
 		return w;
 	}
-	createBuffer(_c: number, len: number) {
-		const data = new Float32Array(len);
-		return { getChannelData: () => data };
+	createBuffer(channels: number, len: number) {
+		const data = Array.from({ length: channels }, () => new Float32Array(len));
+		return {
+			numberOfChannels: channels,
+			length: len,
+			duration: len / this.sampleRate,
+			getChannelData: (c: number) => data[c],
+		};
 	}
 	createBufferSource() {
 		const s = Object.assign(new FakeNode(), {

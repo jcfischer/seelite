@@ -105,7 +105,7 @@ test("each entry before #544 names the method the engine before #552 exposed", (
 	]);
 	// And #545's new voices of kinds that existed before it: a crack and a
 	// clang were not sounds that engine could make.
-	const since545 = new Set(["laser-crack", "hull-clang"]);
+	const since545 = new Set(["laser-crack", "hull-clang", "hull-clang-tail"]);
 	for (const e of SOUND_SET)
 		if (
 			e.loop === undefined &&

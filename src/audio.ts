@@ -31,6 +31,7 @@ import {
 	CUE_VOICE,
 	type Cue,
 	type CueBus,
+	type CueKind,
 	type FlashVoice,
 	type FlightMix,
 	type HitPool,
@@ -147,6 +148,45 @@ export const HEAVY_CUE_LENGTH_S: Readonly<
 	explosion: 1.75,
 	dock: 0.36,
 };
+
+/**
+ * How much of each weighted cue feeds its bus's reverb on the heavy arm
+ * (#577): the tail the principal asked for after the first listen. A landed
+ * hit sends more than its dry level would suggest, because further off is
+ * wetter; the crack sends least, because it repeats and a crowded tail is mud.
+ * The console cues and every loop send nothing.
+ */
+export const REVERB_SEND: Readonly<Partial<Record<CueKind, number>>> = {
+	explosion: 0.7,
+	witchspaceFlash: 0.7,
+	hullHit: 0.45,
+	cruiseEngage: 0.4,
+	cruiseDrop: 0.35,
+	dock: 0.35,
+	hitLanded: 0.35,
+	shieldHit: 0.25,
+	laser: 0.15,
+};
+
+/**
+ * The reverb's impulse (#577), after the trailer's hall: noise that darkens
+ * as it decays, falling by `e` every `decayS` (so about 60 dB in
+ * `6.9 × decayS`), after a short pre-delay so the tail stands apart from
+ * the hit. Two channels, drawn separately, so the realtime context hears it
+ * wide.
+ *
+ * **Scaled here to unit energy, with the node's own normalisation off.** The
+ * first cut left `normalize` on and shaped the decay by `(1 - x) ^ 3.2`:
+ * the node turned the impulse far down, the shape was dead by two seconds,
+ * and the tail after a heavy explosion read about −80 dB. At unit energy a
+ * send's gain is the tail's level against the hit's, by energy.
+ */
+export const REVERB = {
+	seconds: 3,
+	preDelayS: 0.012,
+	decayS: 0.5,
+	brightness: 0.6,
+} as const;
 
 /** How long a pooled cue rings on an arm, s: the pool's end time for it. */
 export const cueLengthS = (kind: VoicedCueKind, punch: PunchVoice): number =>
@@ -351,11 +391,11 @@ export class AudioFX {
 			return;
 		}
 		if (cue.kind === "cruiseEngage") {
-			this.cruiseEngage(this.buses.ship);
+			this.cruiseEngage(this.sending(this.buses.ship, "ship", cue.kind));
 			return;
 		}
 		if (cue.kind === "cruiseDrop") {
-			this.cruiseDrop(this.buses.ship);
+			this.cruiseDrop(this.sending(this.buses.ship, "ship", cue.kind));
 			return;
 		}
 		const t = this.ctx.currentTime;
@@ -376,6 +416,7 @@ export class AudioFX {
 		const voice = this.ctx.createGain();
 		voice.gain.value = 1;
 		voice.connect(this.buses[bus]);
+		this.sendToReverb(voice, bus, cue.kind);
 		this.voices.set(admission.id, voice);
 		switch (cue.kind) {
 			case "laser":
@@ -1461,6 +1502,43 @@ export class AudioFX {
 	}
 	/** The heavy arm's noise loop (#577), built on first use. */
 	private heavyNoise: AudioBuffer | null = null;
+
+	/** Each bus's reverb (#577), built on the first heavy cue that sends. */
+	private readonly reverbs = new Map<CueBus, ConvolverNode>();
+
+	/**
+	 * Feed `from` into its bus's reverb by `REVERB_SEND[kind]`, on the heavy
+	 * arm only. The reverb returns into the bus, so the bus row and the mute
+	 * reach the tail as they reach the hit. It is built on first use, so the
+	 * thin arm never builds it and never draws the noise its impulse is made of.
+	 */
+	private sendToReverb(from: AudioNode, bus: CueBus, kind: CueKind) {
+		const amount = REVERB_SEND[kind];
+		if (this.punch !== "heavy" || !amount || !this.ctx || !this.buses) return;
+		let reverb = this.reverbs.get(bus);
+		if (!reverb) {
+			reverb = this.ctx.createConvolver();
+			reverb.normalize = false;
+			reverb.buffer = reverbImpulse(this.ctx);
+			reverb.connect(this.buses[bus]);
+			this.reverbs.set(bus, reverb);
+		}
+		const send = this.ctx.createGain();
+		send.gain.value = amount;
+		from.connect(send);
+		send.connect(reverb);
+	}
+
+	/** `out` with a reverb send beside it on the heavy arm, for a cue that
+	 *  plays straight into its bus and has no voice of its own to send from. */
+	private sending(out: AudioNode, bus: CueBus, kind: CueKind): AudioNode {
+		if (this.punch !== "heavy" || !REVERB_SEND[kind] || !this.ctx) return out;
+		const g = this.ctx.createGain();
+		g.gain.value = 1;
+		g.connect(out);
+		this.sendToReverb(g, bus, kind);
+		return g;
+	}
 	/**
 	 * A saturator into `out`: `tanh(drive·x) / drive`, so a quiet signal
 	 * passes at its own level and a loud one is rounded off, then `makeup`
@@ -1738,6 +1816,7 @@ export class AudioFX {
 			return;
 		}
 		if (this.punch === "heavy") {
+			this.sendToReverb(out, "ship", "witchspaceFlash");
 			// #577: the world replaced, as an impact — a punch and a sub with a
 			// floor where the thin boom fell to 28 Hz, a snap, a wash closing
 			// down and a long rumble under it.
@@ -2133,6 +2212,29 @@ interface FlightGraph {
 	humFilter: BiquadFilterNode;
 	pumpRate: OscillatorNode;
 	fanRate: OscillatorNode;
+}
+
+/** `REVERB`'s impulse, drawn from `Math.random()` like every noise here. */
+function reverbImpulse(ctx: BaseAudioContext): AudioBuffer {
+	const len = Math.floor(ctx.sampleRate * REVERB.seconds);
+	const pre = Math.floor(ctx.sampleRate * REVERB.preDelayS);
+	const buffer = ctx.createBuffer(2, len, ctx.sampleRate);
+	for (let c = 0; c < 2; c++) {
+		const d = buffer.getChannelData(c);
+		let lp = 0;
+		let energy = 0;
+		for (let i = pre; i < len; i++) {
+			const x = (i - pre) / (len - pre);
+			lp +=
+				(Math.random() * 2 - 1 - lp) *
+				(0.25 + 0.7 * REVERB.brightness * (1 - x));
+			d[i] = lp * Math.exp(-(i - pre) / ctx.sampleRate / REVERB.decayS);
+			energy += d[i] * d[i];
+		}
+		const scale = energy > 0 ? 1 / Math.sqrt(energy) : 0;
+		for (let i = pre; i < len; i++) d[i] *= scale;
+	}
+	return buffer;
 }
 
 /** How hard the heavy arm's sub is driven (#577). */

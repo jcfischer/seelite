@@ -443,74 +443,157 @@ const SINCE_534 = {
 };
 
 /**
- * #577's heavy voices, on `?punch=heavy` (the default): centred on this
- * branch's own render (seed 552), so they hold the prototype to what is
- * offered and move when the ear moves it. Every one has a noise part. Over
- * seeds 1–3 and 552 rms moved up to 10% and peak up to 20%, and the
- * centroid under 5% save the shield hits': a scatter of few sparks moves it
- * up to 12%, and on the low shield up to 14% — their centroid bands are
- * widened to match (`hzSpread`).
+ * #577's heavy voices, on `?punch=heavy` (the default), reverb included:
+ * centred on this branch's own render (seed 552), so they hold the prototype
+ * to what is offered and move when the ear moves it. Every one has a noise
+ * part. Over seeds 1–3 and 552 rms moved up to 16% and peak up to 38% (the
+ * shield hits', whose sparks are few), and the centroid under 7% save the
+ * shield hits' and the dock's: a scatter of few sparks moves the first up to
+ * 14%, and the dock's clamps ring into a reverb whose impulse is drawn per
+ * render, which moves its centroid up to 21% — their centroid bands are
+ * widened to match (`hzSpread`). The `-tail` entries are the same cues
+ * rendered long enough to hear the reverb out.
  */
 const HEAVY = {
-	explosion: { rms: 0.0556, peak: 0.4857, onsetMs: 8.3, hz: 3531, noise: 1 },
-	"hull-clang": { rms: 0.0262, peak: 0.3034, onsetMs: 7.4, hz: 2062, noise: 1 },
+	explosion: { rms: 0.0692, peak: 0.465, onsetMs: 8.3, hz: 3623, noise: 1 },
+	"hull-clang": { rms: 0.0282, peak: 0.3027, onsetMs: 7.4, hz: 2229, noise: 1 },
 	"shield-fore": {
-		rms: 0.0085,
-		peak: 0.2084,
+		rms: 0.0086,
+		peak: 0.2199,
 		onsetMs: 7.3,
-		hz: 6744,
+		hz: 7095,
 		noise: 1,
 		hzSpread: 0.15,
 	},
 	"shield-aft": {
-		rms: 0.0078,
-		peak: 0.1876,
+		rms: 0.0079,
+		peak: 0.1918,
 		onsetMs: 7.3,
-		hz: 4831,
+		hz: 4876,
 		noise: 1,
 		hzSpread: 0.15,
 	},
 	"shield-onepool": {
-		rms: 0.0082,
-		peak: 0.1936,
+		rms: 0.0084,
+		peak: 0.2077,
 		onsetMs: 7.3,
-		hz: 5763,
+		hz: 5855,
 		noise: 1,
 		hzSpread: 0.15,
 	},
 	"shield-fore-low": {
-		rms: 0.0058,
-		peak: 0.1291,
+		rms: 0.0054,
+		peak: 0.1114,
 		onsetMs: 7.3,
-		hz: 6593,
+		hz: 7388,
 		noise: 1,
 		hzSpread: 0.18,
 	},
 	"laser-crack": {
-		rms: 0.0175,
-		peak: 0.2775,
+		rms: 0.0184,
+		peak: 0.2669,
 		onsetMs: 7.3,
-		hz: 4113,
+		hz: 4192,
 		noise: 1,
 	},
-	"landed-hull": { rms: 0.0047, peak: 0.0424, onsetMs: 7.5, hz: 338, noise: 1 },
-	dock: { rms: 0.0269, peak: 0.1921, onsetMs: 7.5, hz: 709, noise: 1 },
+	"landed-hull": { rms: 0.0049, peak: 0.0409, onsetMs: 7.5, hz: 350, noise: 1 },
+	dock: {
+		rms: 0.0285,
+		peak: 0.1841,
+		onsetMs: 7.5,
+		hz: 1289,
+		noise: 1,
+		hzSpread: 0.25,
+	},
 	"witchspace-flash-boom": {
-		rms: 0.0552,
-		peak: 0.4947,
+		rms: 0.0708,
+		peak: 0.4414,
 		onsetMs: 8.3,
-		hz: 3773,
+		hz: 3774,
 		noise: 1,
 	},
 	"cruise-engage": {
-		rms: 0.029,
-		peak: 0.3464,
+		rms: 0.0321,
+		peak: 0.4042,
 		onsetMs: 7.4,
-		hz: 2698,
+		hz: 2786,
 		noise: 1,
 	},
-	"cruise-drop": { rms: 0.0215, peak: 0.271, onsetMs: 7.4, hz: 2698, noise: 1 },
+	"cruise-drop": {
+		rms: 0.0229,
+		peak: 0.2657,
+		onsetMs: 7.4,
+		hz: 2684,
+		noise: 1,
+	},
+	"explosion-tail": {
+		rms: 0.038,
+		peak: 0.465,
+		onsetMs: 8.3,
+		hz: 3623,
+		noise: 1,
+	},
+	"hull-clang-tail": {
+		rms: 0.0146,
+		peak: 0.3027,
+		onsetMs: 7.4,
+		hz: 2229,
+		noise: 1,
+	},
+	"witchspace-flash-boom-tail": {
+		rms: 0.0419,
+		peak: 0.4414,
+		onsetMs: 8.3,
+		hz: 3774,
+		noise: 1,
+	},
 };
+
+/**
+ * The `-tail` entries on thin (#577): the sound before #577 in a longer
+ * window, so each is its short entry's sound with more silence after it.
+ * Centred on this branch's thin render (seed 552), which renders the short
+ * entries to the `MAIN` and `SINCE_545` / `SINCE_534` figures.
+ */
+const SINCE_577 = {
+	"explosion-tail": {
+		rms: 0.011,
+		peak: 0.1894,
+		onsetMs: 7.4,
+		hz: 447,
+		noise: 1,
+	},
+	"hull-clang-tail": {
+		rms: 0.0071,
+		peak: 0.1424,
+		onsetMs: 7.4,
+		hz: 660,
+		noise: 1,
+	},
+	"witchspace-flash-boom-tail": {
+		rms: 0.0155,
+		peak: 0.1912,
+		onsetMs: 7.4,
+		hz: 441,
+		noise: 1,
+	},
+};
+
+/**
+ * Where each `-tail` entry's dry voices have all stopped (#577): after
+ * `cueLengthS` on heavy for the pooled two, and after the flash's longest
+ * wash for the flash. What is left in the window is the reverb alone, and it
+ * must stand above `TAIL_MIN_OF_PEAK` of the cue's own peak. The first cut of
+ * the reverb read about 2e-4 of its peak there — its impulse was normalised
+ * by the node and dead by two seconds — and this row is the one that would
+ * have said so.
+ */
+const TAIL_WINDOWS = {
+	"explosion-tail": [1.85, 2.5],
+	"hull-clang-tail": [0.6, 1.2],
+	"witchspace-flash-boom-tail": [2.1, 2.7],
+};
+const TAIL_MIN_OF_PEAK = 1e-3;
 
 /** The least a heavy render's rms under 250 Hz may stand over its thin
  *  render's (#577). The probe prints each lift; the smallest on the build
@@ -555,6 +638,7 @@ const BANDS = bandsOf({
 	...SINCE_546,
 	...SINCE_545,
 	...SINCE_534,
+	...SINCE_577,
 });
 const HEAVY_BANDS = bandsOf(HEAVY);
 
@@ -673,6 +757,21 @@ try {
 				`${name} carries more weight under 250 Hz on heavy than on thin`,
 				lift > HEAVY_MIN_LOW_LIFT,
 				`x${lift.toFixed(2)}`,
+			);
+		}
+		const windowOf = (x, [a, b]) => {
+			const w = x.slice(Math.round(a * SR), Math.round(b * SR));
+			return Math.sqrt(w.reduce((q, v) => q + v * v, 0) / w.length);
+		};
+		for (const [name, window] of Object.entries(TAIL_WINDOWS)) {
+			const wet = await samples(name, heavy);
+			const dry = await samples(name, thin);
+			const peak = renderedHeavy.get(name)?.peak ?? Number.NaN;
+			const tail = windowOf(wet, window);
+			check(
+				`${name} rings on in the reverb after every dry voice has stopped, on heavy only`,
+				tail > peak * TAIL_MIN_OF_PEAK && windowOf(dry, window) < 1e-5,
+				`${window.join("–")} s: rms ${tail.toExponential(2)} (${(20 * Math.log10(tail / peak)) | 0} dB under its peak); thin ${windowOf(dry, window).toExponential(2)}`,
 			);
 		}
 		const rms = (name) => renderedHeavy.get(name)?.rms ?? Number.NaN;

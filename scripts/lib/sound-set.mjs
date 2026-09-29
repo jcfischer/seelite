@@ -148,6 +148,26 @@ export const SOUND_SET = Object.freeze([
 		cue: { kind: "witchspaceFlash", voice: "glass" },
 	},
 	...witchspaceTimelines(),
+	// #577's reverb, heard to its end. The renders above stop where the thin
+	// voices did, which cuts a tail of more than two seconds; these are the
+	// same cues, long enough to hear it ring out. Longer entries rather than
+	// longer windows on the ones above, so every band there keeps its window.
+	{
+		name: "explosion-tail",
+		seconds: 4,
+		cue: { kind: "explosion" },
+		legacy: ["explosion"],
+	},
+	{
+		name: "hull-clang-tail",
+		seconds: 3,
+		cue: { kind: "hullHit", voice: "clang" },
+	},
+	{
+		name: "witchspace-flash-boom-tail",
+		seconds: 4,
+		cue: { kind: "witchspaceFlash", voice: "boom" },
+	},
 ]);
 
 /**

@@ -183,6 +183,55 @@ describe("the heavy voices", () => {
 		}
 	});
 
+	test.each(WEIGHTED.map((c) => [c.kind, c] as const))(
+		"%s sends into a reverb on its own bus on heavy, and thin builds none",
+		(_kind, cue) => {
+			const heavy = build(cue, "heavy");
+			expect(heavy.ctx.convolvers).toHaveLength(1);
+			const [reverb] = heavy.ctx.convolvers;
+			expect(reverb.buffer).not.toBeNull();
+			const bus =
+				cue.kind.startsWith("witchspace") ||
+				cue.kind.startsWith("cruise") ||
+				cue.kind === "dock"
+					? heavy.buses.ship
+					: heavy.buses.combat;
+			expect(reverb.outputs).toEqual([bus]);
+			// The cue's own sound reaches it: the tail is of this cue.
+			expect(heavy.sources.some((s) => reaches(s, reverb))).toBe(true);
+			expect(build(cue, "thin").ctx.convolvers).toHaveLength(0);
+		},
+	);
+
+	test("one reverb per bus, however many cues send to it", () => {
+		FakeContext.made.length = 0;
+		const { audio, ctx } = unlocked();
+		for (let i = 0; i < 5; i++) audio.play({ kind: "explosion" });
+		audio.play({ kind: "hullHit", voice: "clang" });
+		audio.play({ kind: "dock" });
+		audio.play({ kind: "cruiseDrop" });
+		expect(ctx.convolvers).toHaveLength(2);
+	});
+
+	test("the loops never reach a reverb, and the beam's onset does not either", () => {
+		FakeContext.made.length = 0;
+		const { audio, ctx } = unlocked();
+		audio.flight({
+			hum: 1,
+			drive: 1,
+			rcs: 1,
+			spool: 0.5,
+			cruise: 1,
+			cruiseSpeed: 0.5,
+			cruiseVoice: "shimmer",
+			clickRate: 0,
+			faintClickRate: 0,
+		});
+		audio.weapons({ beam: 1, heat: 0.5, sizzleFore: 1, sizzleAft: 1 });
+		audio.ambient(1);
+		expect(ctx.convolvers).toHaveLength(0);
+	});
+
 	test("the console cues are not touched", () => {
 		for (const cue of [
 			{ kind: "alert" },
@@ -197,6 +246,7 @@ describe("the heavy voices", () => {
 			const thin = build(cue, "thin");
 			expect(heavy.sources.length).toBe(thin.sources.length);
 			expect(heavy.shapers).toHaveLength(0);
+			expect(heavy.ctx.convolvers).toHaveLength(0);
 		}
 	});
 });
