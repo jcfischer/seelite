@@ -17229,6 +17229,11 @@ if (postcard) {
 	mountModelViewer();
 	// The workbench owns an isolated render loop, so no live simulation is built
 	// behind it. It is a visual asset tool rather than a second game mode.
+} else if (query.has("music-lab")) {
+	// #548's listening surface: the director and synth with no game behind
+	// them, for the principal's ear. No world, no render loop.
+	const { mountMusicLab } = await import("./music-lab");
+	mountMusicLab();
 } else if (query.has("hud-gallery")) {
 	const { mountStateGallery } = await import("./state-gallery");
 	mountStateGallery();

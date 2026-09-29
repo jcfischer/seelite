@@ -147,10 +147,10 @@ const FLIGHT_PARTS = (t: MusicTheme): Record<string, PartSpec> => ({
 		feedback: 0.05,
 	},
 	arp: { voice: "pluck", level: 0.2, cutoffHz: 2400, decayS: 0.7 },
-	pulse: { voice: "pluck", level: 0.32, cutoffHz: 450, decayS: 0.35 },
+	pulse: { voice: "pluck", level: 0.42, cutoffHz: 450, decayS: 0.35 },
 	lead: {
 		voice: "fm",
-		level: 0.16,
+		level: 0.22,
 		ratio: 1,
 		index: 1.4,
 		attackS: 0.02,
@@ -159,8 +159,8 @@ const FLIGHT_PARTS = (t: MusicTheme): Record<string, PartSpec> => ({
 		releaseS: 0.3,
 		feedback: 0.25,
 	},
-	kick: { voice: "tone", level: 0.45 },
-	hat: { voice: "noise", level: 0.1 },
+	kick: { voice: "tone", level: 0.6 },
+	hat: { voice: "noise", level: 0.13 },
 });
 
 /** One level's section: its chords, and each part as the level plays it. */
