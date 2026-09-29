@@ -76,6 +76,10 @@ const origin = await guardedOrigin(
 	process.argv[2] ?? process.env.PROBE_ORIGIN ?? "http://127.0.0.1:5173",
 );
 const PRINT = process.env.PRINT === "1";
+/** How much of each music render the bands are read off, s. */
+const PROBE_RENDER_S = 20;
+/** The renders a row reads past that, and so rendered whole. */
+const FULL_LENGTH = new Set(["music-adaptive-ladder"]);
 const SR = 48000;
 /** 120 bpm in 4/4: a bar is two seconds. The probe songs below say so. */
 const BAR = 2 * SR;
@@ -96,21 +100,22 @@ const RENDERED = {
 	// The second voices open on the drone's three-second swell, so this one
 	// carries its own onset, in the band like the rest, rather than the
 	// limiter's 10 ms.
-	"music-voices": { rms: 0.02846, peak: 0.1775, hz: 700, onset: 51.48 },
+	"music-voices": { rms: 0.03047, peak: 0.1775, hz: 700, onset: 51.48 },
 	// #548's director renders fade in by design — a crossfade from silence,
 	// and a drone's or station pad's slow attack — so each carries its own
 	// onset, in the band like the rest, rather than the limiter's 10 ms.
-	// Re-measured on the second bed (D12) at the principal's ear; the
-	// `-legacy` rows are the first bed, kept to compare against.
+	// Measured on the second bed (D12) over each render's opening
+	// `PROBE_RENDER_S`, the ladder whole; the `-legacy` rows are the first
+	// bed, kept to compare against.
 	"music-adaptive-run-a": {
-		rms: 0.03229,
-		peak: 0.21797,
+		rms: 0.01828,
+		peak: 0.09585,
 		hz: 694,
 		onset: 387.94,
 	},
 	"music-adaptive-run-b": {
-		rms: 0.03211,
-		peak: 0.24243,
+		rms: 0.01777,
+		peak: 0.0979,
 		hz: 1009,
 		onset: 394.77,
 	},
@@ -120,38 +125,38 @@ const RENDERED = {
 		hz: 694,
 		onset: 387.94,
 	},
-	"music-calm": { rms: 0.03133, peak: 0.19431, hz: 694, onset: 387.94 },
-	"music-calm-legacy": { rms: 0.01323, peak: 0.06673, hz: 1104, onset: 298.25 },
-	"music-wary": { rms: 0.03128, peak: 0.18026, hz: 476, onset: 298.9 },
-	"music-threat": { rms: 0.02262, peak: 0.13548, hz: 2078, onset: 314.08 },
-	"music-combat": { rms: 0.02272, peak: 0.12223, hz: 1435, onset: 145 },
+	"music-calm": { rms: 0.02423, peak: 0.12964, hz: 694, onset: 387.94 },
+	"music-calm-legacy": { rms: 0.01264, peak: 0.0644, hz: 1104, onset: 298.25 },
+	"music-wary": { rms: 0.02306, peak: 0.14824, hz: 476, onset: 298.9 },
+	"music-threat": { rms: 0.01908, peak: 0.10102, hz: 2078, onset: 314.08 },
+	"music-combat": { rms: 0.01867, peak: 0.10714, hz: 1435, onset: 145 },
 	"music-station-trade-legacy": {
-		rms: 0.01082,
+		rms: 0.01045,
 		peak: 0.05091,
 		hz: 894,
 		onset: 494.46,
 	},
 	"music-station-trade": {
-		rms: 0.03208,
-		peak: 0.18239,
+		rms: 0.02341,
+		peak: 0.14354,
 		hz: 694,
 		onset: 387.94,
 	},
 	"music-station-refinery": {
-		rms: 0.03296,
-		peak: 0.17742,
+		rms: 0.02616,
+		peak: 0.14289,
 		hz: 611,
 		onset: 387.44,
 	},
 	"music-station-shipyard": {
-		rms: 0.02668,
-		peak: 0.13214,
+		rms: 0.02,
+		peak: 0.09451,
 		hz: 694,
 		onset: 387.94,
 	},
 	"music-station-outpost": {
-		rms: 0.02671,
-		peak: 0.13214,
+		rms: 0.02006,
+		peak: 0.09585,
 		hz: 694,
 		onset: 387.94,
 	},
@@ -223,7 +228,15 @@ try {
 	);
 	const rendered = new Map();
 	for (const entry of MUSIC) {
-		const r = await renderRaw(entry);
+		// The band is read off the render's opening `PROBE_RENDER_S`: the sound
+		// set's listening renders run to minutes, and all of them whole
+		// outlasted probe-all's ten-minute limit (#548). The ladder keeps its
+		// length, because a row below reads all four of its levels.
+		const r = await renderRaw(
+			FULL_LENGTH.has(entry.name)
+				? entry
+				: { ...entry, seconds: Math.min(entry.seconds, PROBE_RENDER_S) },
+		);
 		check(
 			`${entry.name} renders through the synth`,
 			!r.absent && r.errors?.length === 0,
