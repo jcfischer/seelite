@@ -268,7 +268,8 @@ audio { width: 220px; }
 const SETS = ${data};
 const a = document.getElementById("a"), b = document.getElementById("b");
 for (const sel of [a, b]) for (const m of SETS) sel.add(new Option(m.label, m.label));
-a.selectedIndex = 0; b.selectedIndex = Math.min(1, SETS.length - 1);
+// The newest two, newest as B (#560): the first two hid a third capture's rows.
+b.selectedIndex = SETS.length - 1; a.selectedIndex = Math.max(0, SETS.length - 2);
 const fig = (s) => s ? "rms " + s.rms.toFixed(4) + "  peak " + s.peak.toFixed(3) + "  onset " + s.onsetMs.toFixed(1) + " ms  " + Math.round(s.centroidHz) + " Hz" : "—";
 const esc = (t) => String(t).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c]);
 function draw() {
