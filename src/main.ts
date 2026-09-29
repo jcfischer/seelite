@@ -870,6 +870,7 @@ import {
 } from "./world-state";
 import {
 	type StationConsoleTab,
+	marketDisplayChanged,
 	refusalSentence,
 	stationEquipmentScreen,
 	stationMarketScreen,
@@ -2274,9 +2275,11 @@ class Game {
 	commanderOverlay: CommanderOverlayHandle | null = null;
 	/** The save-fault badge (`hud-and-scanner.md` §5.3), once mounted. */
 	saveBadge: SaveBadgeHandle | null = null;
-	/** Docked console screens are stable until station or tab changes; do not rebuild them each frame. */
+	/** Docked console screens rebuild only when a printed value can change. */
 	private stationConsoleCache: LiveCockpitState["stationConsole"] = null;
 	private stationConsoleCacheKey: string | null = null;
+	/** Last whole game second at which the cached market was checked. */
+	private stationConsoleMarketSampleS: number | null = null;
 	/** #445's bid column, memoised on the key the priced rows were built under. */
 	private holdBidsCache: HoldBids = null;
 	private holdBidsCacheKey: string | null | undefined = undefined;
@@ -14716,13 +14719,9 @@ class Game {
 		// rows were built under. Without it the frame loop allocated a Map and
 		// seventeen entries on every cockpit update whether or not the page was
 		// open, to read back a table that had not moved.
-		// **The console's key is the right key, and it has a known hole.** It
-		// carries the station, the tab and `stationConsoleRevision`, which the
-		// till and a request action bump — so a price that moved because the
-		// *player* moved it invalidates this too. What neither covers is a
-		// price that moves on the **clock**: §5.2's deficit decays and the
-		// market epoch turns. That is #321's open question for the shelf, and
-		// the bid column inherits it rather than adding a second one.
+		// The console's key carries the station, tab and revision. #321 makes
+		// clock-driven shelf and quote changes bump that same revision, so this
+		// bid column and the market page share one priced projection.
 		//
 		// **`undefined` is "never computed" and `null` is "not docked".** Both
 		// fields started at `null`, so a screen built while the console's own
@@ -14749,10 +14748,44 @@ class Game {
 		if (!context) {
 			this.stationConsoleCache = null;
 			this.stationConsoleCacheKey = null;
+			this.stationConsoleMarketSampleS = null;
 			return null;
 		}
 		const { station, market, envelope, stationKey, economy, gameTimeMin } =
 			context;
+		const readMarket = () =>
+			stationMarketScreen({
+				station: market,
+				economy,
+				gameTimeMin,
+				deficitOf: (goodName) =>
+					readDeficit(envelope.deficits, stationKey, goodName, gameTimeMin),
+				// The flown hold, bay included — the same figure the transaction
+				// uses (#182), read through `commanderHold` so the screen and till
+				// agree about whether a Large Cargo Bay counts.
+				holdT: commanderHold(
+					this.commander,
+					entrustedTonnesAboard(this.requests),
+				).capacityT,
+				displayTL: this.world.system.record.displayTL,
+			});
+		// Decay is continuous, but the shelf is whole and prices print to
+		// tenths. Sample once per game second while docked; only a change in a
+		// displayed field invalidates the memo and cockpit markup. A trade has
+		// already bumped the revision and takes the ordinary rebuild path.
+		const sampleS = Math.floor(this.world.gameTime);
+		let freshMarket: ReturnType<typeof readMarket> | undefined;
+		if (
+			this.stationConsoleCache &&
+			this.stationConsoleCache.revision === this.stationConsoleRevision &&
+			this.stationConsoleCacheKey?.startsWith(`${this.dock.stationId}|`) &&
+			this.stationConsoleMarketSampleS !== sampleS
+		) {
+			freshMarket = readMarket();
+			this.stationConsoleMarketSampleS = sampleS;
+			if (marketDisplayChanged(this.stationConsoleCache.market, freshMarket))
+				this.stationConsoleRevision += 1;
+		}
 		// One projection for the whole console (#443). The hold line, the
 		// commander footer's sellable goods and `cargo-full`'s sentence all
 		// read it, so the three cannot disagree about what is aboard.
@@ -14781,28 +14814,11 @@ class Game {
 		const key = `${this.dock.stationId}|${this.stationConsoleTab}|${this.stationConsoleRevision}|${this.stationConsoleMessage ?? ""}|${hold.usedT}/${hold.capacityT}|${holdKey}`;
 		if (this.stationConsoleCacheKey === key) return this.stationConsoleCache;
 		this.stationConsoleCacheKey = key;
+		this.stationConsoleMarketSampleS = sampleS;
 		this.stationConsoleCache = {
 			label: this.nameOfStation(station.id),
 			tab: this.stationConsoleTab,
-			market: stationMarketScreen({
-				station: market,
-				economy,
-				gameTimeMin,
-				deficitOf: (goodName) =>
-					readDeficit(envelope.deficits, stationKey, goodName, gameTimeMin),
-				// The flown hold, bay included — the same figure the transaction
-				// uses (#182), read through `commanderHold` rather than off the
-				// roster so the screen and the till cannot disagree about whether
-				// a Large Cargo Bay counts.
-				holdT: commanderHold(
-					this.commander,
-					entrustedTonnesAboard(this.requests),
-				).capacityT,
-				// The system's tech level, which is what §5.6's cut is a function
-				// of. Read from the same record the transaction reads it from, so
-				// the quote on the glass is the quote the till charges.
-				displayTL: this.world.system.record.displayTL,
-			}),
+			market: freshMarket ?? readMarket(),
 			equipment: stationEquipmentScreen({
 				type: market.type,
 				displayTL: this.world.system.record.displayTL,

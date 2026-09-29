@@ -55,6 +55,7 @@ import {
 	signedDelta,
 	stationConsoleVisible,
 	stationEquipmentScreen,
+	marketDisplayChanged,
 	stationMarketScreen,
 	universalItemsAt,
 } from "../src/station-console";
@@ -82,6 +83,29 @@ const TRADE = stationOf("trade", false);
 const FENCE = stationOf("refinery", true);
 
 const noDeficit = () => 0;
+
+test("a market redraw is needed only when a printed row changes", () => {
+	const before = stationMarketScreen({
+		station: TRADE,
+		economy: ECONOMY,
+		gameTimeMin: 0,
+		deficitOf: noDeficit,
+		holdT: HOLD_REFERENCE_T,
+		displayTL: SCREEN_TL,
+	});
+	const unchanged = before.map((row) => ({ ...row }));
+	expect(marketDisplayChanged(before, unchanged)).toBe(false);
+	const food = before.findIndex((row) => row.commodity.name === "Food");
+	expect(food).toBeGreaterThanOrEqual(0);
+	const thinner = unchanged.map((row, index) =>
+		index === food ? { ...row, quantity: (row.quantity ?? 0) - 1 } : row,
+	);
+	expect(marketDisplayChanged(before, thinner)).toBe(true);
+	const dearer = unchanged.map((row, index) =>
+		index === food ? { ...row, buyCr: (row.buyCr ?? 0) + 0.1 } : row,
+	);
+	expect(marketDisplayChanged(before, dearer)).toBe(true);
+});
 
 // ---------------------------------------------------------------------------
 // Obligation 3 — the row builder never asks for a price it cannot have

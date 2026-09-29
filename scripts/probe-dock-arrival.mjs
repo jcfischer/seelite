@@ -1167,15 +1167,24 @@ const fadedShelf = await page.evaluate(async () => {
 	document.querySelector('[data-live-station-tab="Market"]')?.click();
 	const food = () => document.querySelector('[data-live-market-row="Food"]');
 	const read = () => ({
-		buy: food()?.querySelector("[data-live-buy]")?.firstChild?.textContent ?? null,
-		sell: food()?.querySelector("[data-live-sell]")?.firstChild?.textContent ?? null,
-		shelf: food()?.querySelector("[data-live-shelf]")?.firstChild?.textContent ?? null,
+		buy:
+			food()?.querySelector("[data-live-buy]")?.firstChild?.textContent ?? null,
+		sell:
+			food()?.querySelector("[data-live-sell]")?.firstChild?.textContent ??
+			null,
+		shelf:
+			food()?.querySelector("[data-live-shelf]")?.firstChild?.textContent ??
+			null,
 	});
 	for (let i = 0; i < 3; i++)
-		food()?.querySelector('[data-live-station-action="buy-commodity"]')?.click();
+		food()
+			?.querySelector('[data-live-station-action="buy-commodity"]')
+			?.click();
 	const before = read();
 	g.world.gameTime += 20 * 60;
-	const { stationMarketScreen, priceLabel } = await import("/src/station-console.ts");
+	const { stationMarketScreen, priceLabel } = await import(
+		"/src/station-console.ts"
+	);
 	const { readDeficit } = await import("/src/deficits.ts");
 	const context = g.dockedStationContext();
 	const row = stationMarketScreen({
@@ -1183,7 +1192,12 @@ const fadedShelf = await page.evaluate(async () => {
 		economy: context.economy,
 		gameTimeMin: context.gameTimeMin,
 		deficitOf: (name) =>
-			readDeficit(context.envelope.deficits, context.stationKey, name, context.gameTimeMin),
+			readDeficit(
+				context.envelope.deficits,
+				context.stationKey,
+				name,
+				context.gameTimeMin,
+			),
 		holdT: g.stationConsoleState().hold.capacityT,
 		displayTL: g.world.system.record.displayTL,
 	}).find((entry) => entry.commodity.name === "Food");
@@ -1196,22 +1210,30 @@ const fadedShelf = await page.evaluate(async () => {
 		},
 	};
 });
-const refreshedShelf = await page.waitForFunction(
-	(expected) => {
-		const food = document.querySelector('[data-live-market-row="Food"]');
-		const value = (hook) => food?.querySelector(hook)?.firstChild?.textContent ?? null;
-		const actual = {
-			buy: value("[data-live-buy]"),
-			sell: value("[data-live-sell]"),
-			shelf: value("[data-live-shelf]"),
-		};
-		return actual.buy === expected.buy &&
-			actual.sell === expected.sell &&
-			actual.shelf === expected.shelf;
-	},
-	fadedShelf.expected,
-	{ timeout: 3000 },
-).then(() => true, () => false);
+const refreshedShelf = await page
+	.waitForFunction(
+		(expected) => {
+			const food = document.querySelector('[data-live-market-row="Food"]');
+			const value = (hook) =>
+				food?.querySelector(hook)?.firstChild?.textContent ?? null;
+			const actual = {
+				buy: value("[data-live-buy]"),
+				sell: value("[data-live-sell]"),
+				shelf: value("[data-live-shelf]"),
+			};
+			return (
+				actual.buy === expected.buy &&
+				actual.sell === expected.sell &&
+				actual.shelf === expected.shelf
+			);
+		},
+		fadedShelf.expected,
+		{ timeout: 3000 },
+	)
+	.then(
+		() => true,
+		() => false,
+	);
 check(
 	"the untouched docked console refreshes its shelf and prices as the deficit decays",
 	refreshedShelf &&

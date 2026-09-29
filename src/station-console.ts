@@ -251,6 +251,26 @@ export function stationMarketScreen(
 	});
 }
 
+/** The fields the market row prints, including the arrows beside the values. */
+export function marketDisplayChanged(
+	before: readonly ConsoleMarketRow[],
+	after: readonly ConsoleMarketRow[],
+): boolean {
+	if (before.length !== after.length) return true;
+	return before.some((row, index) => {
+		const next = after[index];
+		return (
+			row.commodity.name !== next.commodity.name ||
+			row.listed !== next.listed ||
+			row.buyCr !== next.buyCr ||
+			row.sellCr !== next.sellCr ||
+			row.quantity !== next.quantity ||
+			row.priceDeltaCr !== next.priceDeltaCr ||
+			row.quantityDelta !== next.quantityDelta
+		);
+	});
+}
+
 /**
  * **M6's arrow**, and the rule that a delta which rounds to zero gets none.
  *
