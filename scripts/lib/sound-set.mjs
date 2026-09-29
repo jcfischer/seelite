@@ -95,6 +95,10 @@ function adaptiveTimelines() {
 		// for 100 s, and the same station, each way. `legacy` is the first bed.
 		tune("music-calm", 100, [[0, { systemSeed: 1234 }]], "calm"),
 		tune("music-calm-legacy", 100, [[0, { systemSeed: 1234 }]], "calm,legacy"),
+		// Each danger section held for a minute: long enough to hear its form.
+		...["wary", "threat", "combat"].map((level) =>
+			tune(`music-${level}`, 60, [[0, { systemSeed: 1234 }]], level),
+		),
 		tune(
 			"music-station-trade-legacy",
 			60,
