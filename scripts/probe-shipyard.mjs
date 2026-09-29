@@ -386,6 +386,44 @@ try {
 	);
 	await reloaded.close();
 
+	// #584's other two boots. A loaded Commander with no ?hull= flies its
+	// hull and says nothing about a URL that asked for nothing.
+	warnings.length = 0;
+	const plain = await context.newPage();
+	t.watchShaders(plain, "shipyard-plain");
+	plain.on("console", (msg) => {
+		if (msg.type() === "warning") warnings.push(msg.text());
+	});
+	await plain.goto(gameUrl(origin, { seed: SEED }), { waitUntil: "load" });
+	await bootedGame(plain);
+	const plainState = await flownState(plain);
+	check(
+		"a loaded Commander with no ?hull= flies its saved hull, silently",
+		plainState.id === "explorer" &&
+			plainState.meshHull === "explorer" &&
+			!warnings.some((w) => w.includes("?hull=")),
+		`${JSON.stringify(plainState)} · ${warnings.join(" | ")}`,
+	);
+	await plain.close();
+
+	// A direct boot on another world's seed sets the Commander aside, so it is
+	// a fresh game, and a fresh game flies the URL's hull.
+	const aside = await context.newPage();
+	t.watchShaders(aside, "shipyard-aside");
+	await aside.goto(gameUrl(origin, { seed: SEED + 1, hull: "tug" }), {
+		waitUntil: "load",
+	});
+	await bootedGame(aside);
+	const asideState = await flownState(aside);
+	check(
+		"a direct ?seed= boot that sets the save aside flies the URL's hull",
+		asideState.id === "tug" &&
+			asideState.commanderHull === "tug" &&
+			asideState.meshHull === "tug",
+		JSON.stringify(asideState),
+	);
+	await aside.close();
+
 	// A fresh game still honours ?hull= — the affordance's own purpose.
 	const fresh = await context.newPage();
 	t.watchShaders(fresh, "shipyard-fresh");

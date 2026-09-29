@@ -262,7 +262,9 @@ export const CONSOLE_STATIONS: readonly ConsoleStation[] = [
  *  through the dock the player is. */
 export interface ConsoleView {
 	station: ConsoleStation;
-	tab: Exclude<StationConsoleTab, "Requests">;
+	/** Market and Equipment only: Requests and the Shipyard (#583) are the live
+	 *  console's, and the gallery has no renderer for either. */
+	tab: Exclude<StationConsoleTab, "Requests" | "Shipyard">;
 	phase: DockPhase;
 	/** #6's clock in game minutes — the epoch the quote is taken in. */
 	gameTimeMin: number;

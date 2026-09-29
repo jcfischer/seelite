@@ -263,20 +263,22 @@ describe("#556 D6 — cargo over the new hold", () => {
 		expect(fits.commander.cargo).toEqual({});
 	});
 
-	test("illegal cargo a shipyard cannot bid on is kept; legal goes first", () => {
+	test("contraband is never auto-sold; legal cargo goes first", () => {
 		const commander = rich({ cargo: { Narcotics: 6, Food: 10 } });
 		const offer = hullOffer(input({ commander }), "interceptor");
 		expect(offer.accepted).toBe(true);
 		expect(offer.commander.cargo).toEqual({ Narcotics: 6, Food: 2 });
-		// …and refuses when the unsellable lot and the entrusted one overflow.
+		// …and refuses when the contraband and the entrusted lot overflow.
 		const over = hullOffer(input({ commander, entrustedT: 3 }), "interceptor");
 		expect(over.reason).toBe("hull-hold");
-		// A fence-shipyard bids, so there it is one more lot in the order.
+		// Kept even where a bid exists: the rule is about the goods, not the
+		// station. No shipyard has a black market today (#13), so this station
+		// is constructed rather than generated.
 		const fenced = hullOffer(
 			input({ commander, station: FENCE_YARD, entrustedT: 3 }),
 			"interceptor",
 		);
-		expect(fenced.accepted).toBe(true);
+		expect(fenced.reason).toBe("hull-hold");
 	});
 
 	test("the sale's proceeds count toward the price (D9's credits step)", () => {

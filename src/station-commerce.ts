@@ -513,11 +513,12 @@ export type HullOffer = StationCommerceResult & {
  * (`station-damage.md` §4), so there is no condition to read, and a refusal
  * nothing could produce would be a sentence nobody reads.
  *
- * D6's order, by the principal's ruling on #583: tonne goods this station bids
- * on are sold **cheapest bid first**, in whole tonnes, at the flown hull's
- * `holdT` — the price a manual sale at that moment gets. Goods it cannot bid
- * on (contraband at a shipyard without a black market) are kept, and so is
- * the entrusted lot; if those alone overflow the new hold, the sale is refused.
+ * D6's order, by the principal's rulings on #583: legal tonne goods are sold
+ * **cheapest bid first**, in whole tonnes, at the flown hull's `holdT` — the
+ * price a manual sale at that moment gets. Contraband is always kept (no
+ * shipyard has a black market today, `STATION_FENCE_ELIGIBLE`, but the rule
+ * does not lean on that), and so is the entrusted lot; if those alone overflow
+ * the new hold, the sale is refused.
  */
 export function hullOffer(
 	input: StationCommerceInput,
@@ -562,9 +563,12 @@ export function hullOffer(
 	);
 	const sellable = Object.entries(commander.cargo)
 		.map(([name, units]) => ({ good: commodity(name), units }))
+		// Contraband is never auto-sold (the principal's ruling): legal goods go
+		// first, and only if what stays aboard overflows is the sale refused.
+		// Every legal good is listed everywhere (`listsCommodity`), so a legal
+		// lot always has a bid here.
 		.filter(
-			({ good, units }) =>
-				good.unit === "t" && units > 0 && listsCommodity(good, input.station),
+			({ good, units }) => good.unit === "t" && units > 0 && !good.illegal,
 		)
 		.map((lot) => ({
 			...lot,
