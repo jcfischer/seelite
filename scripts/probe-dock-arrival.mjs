@@ -1271,5 +1271,42 @@ check(
 	JSON.stringify(fadedShelf),
 );
 
+// A market refresh must not rebuild the Requests tab while the pilot is
+// using its keyboard controls. The trade above leaves a decaying Food mark;
+// take another half-life with the Requests tab focused and watch the same DOM
+// node survive while the cached market moves underneath it.
+const requestFocusAcrossDecay = await page.evaluate(async () => {
+	const g = window.__seelite;
+	const { DEFICIT_HALF_LIFE_MIN } = await import("/src/market.ts");
+	document.querySelector('[data-live-station-tab="Requests"]')?.click();
+	await new Promise((resolve) => requestAnimationFrame(resolve));
+	await new Promise((resolve) => requestAnimationFrame(resolve));
+	const tab = document.querySelector('[data-live-station-tab="Requests"]');
+	tab?.focus();
+	const before = g
+		.stationConsoleState()
+		.market.find((row) => row.commodity.name === "Food");
+	const revision = g.stationConsoleRevision;
+	g.world.gameTime += (DEFICIT_HALF_LIFE_MIN + 1) * 60;
+	await new Promise((resolve) => requestAnimationFrame(resolve));
+	await new Promise((resolve) => requestAnimationFrame(resolve));
+	const after = g
+		.stationConsoleState()
+		.market.find((row) => row.commodity.name === "Food");
+	return {
+		marketMoved:
+			before?.quantity !== after?.quantity || before?.buyCr !== after?.buyCr,
+		focusKept: tab?.isConnected && document.activeElement === tab,
+		revisionHeld: g.stationConsoleRevision === revision,
+	};
+});
+check(
+	"clock-driven market changes keep keyboard focus on the Requests tab",
+	requestFocusAcrossDecay.marketMoved &&
+		requestFocusAcrossDecay.focusKept &&
+		requestFocusAcrossDecay.revisionHeld,
+	JSON.stringify(requestFocusAcrossDecay),
+);
+
 await browser.close();
 exit();

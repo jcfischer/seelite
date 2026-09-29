@@ -14772,9 +14772,11 @@ class Game {
 				displayTL: this.world.system.record.displayTL,
 			});
 		// Decay is continuous, but the shelf is whole and prices print to
-		// tenths. Sample once per game second while docked; only a change in a
-		// displayed field invalidates the memo and cockpit markup. A trade has
-		// already bumped the revision and takes the ordinary rebuild path.
+		// tenths. Sample once per game second while docked. A changed value
+		// always refreshes the market memo, but only redraws the cockpit while
+		// the Market or Hold values are visible. Redrawing the Requests tab on
+		// a market tick detaches its focused keyboard control mid-action.
+		// A trade has already bumped the revision and takes the ordinary path.
 		const sampleS = Math.floor(this.world.gameTime);
 		let freshMarket: ReturnType<typeof readMarket> | undefined;
 		if (
@@ -14785,8 +14787,20 @@ class Game {
 		) {
 			freshMarket = readMarket();
 			this.stationConsoleMarketSampleS = sampleS;
-			if (marketDisplayChanged(this.stationConsoleCache.market, freshMarket))
-				this.stationConsoleRevision += 1;
+			if (marketDisplayChanged(this.stationConsoleCache.market, freshMarket)) {
+				const marketVisible =
+					this.headLook === "forward" && this.stationConsoleTab === "Market";
+				const holdVisible =
+					this.headLook === "right" && this.rightTab === "Hold";
+				if (marketVisible || holdVisible) this.stationConsoleRevision += 1;
+				else {
+					// The screen is hidden. Rebuild its cached rows for the next
+					// visit without changing LiveCockpit's structural key; the bid
+					// memo also needs the new quote even though its key is unchanged.
+					this.stationConsoleCacheKey = null;
+					this.holdBidsCacheKey = undefined;
+				}
+			}
 		}
 		// One projection for the whole console (#443). The hold line, the
 		// commander footer's sellable goods and `cargo-full`'s sentence all
