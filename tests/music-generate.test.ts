@@ -229,3 +229,107 @@ test("calm runs 10 bpm above the system's theme tempo (the principal, 2026-09-29
 		expect(CALM_LIFT_BPM).toBe(10);
 	}
 });
+
+describe("wary, threat and combat (D12, after the ear on calm)", () => {
+	const LEVELS = ["wary", "threat", "combat"] as const;
+	const MODE_OF = {
+		wary: "aeolian",
+		threat: "harmonicMinor",
+		combat: "phrygian",
+	} as const;
+
+	test("each is long enough to hold, in its level's mode on the system's tonic", () => {
+		for (const seed of SEEDS.slice(0, 16)) {
+			const t = musicTheme(seed);
+			const song = flightBed(seed, 0);
+			for (const level of LEVELS) {
+				const s = section(song, level);
+				expect(s.bars).toBeGreaterThanOrEqual(24);
+				const allowed = new Set(
+					MODES[MODE_OF[level]].map((i) => (t.tonic + i) % 12),
+				);
+				for (const e of s.events)
+					if (!UNPITCHED.has(e.part))
+						expect(allowed.has(pc(e.pitch))).toBe(true);
+			}
+		}
+	});
+
+	test("none loops in a few bars: wary not within 16, threat and combat not within 8", () => {
+		for (const seed of SEEDS.slice(0, 16)) {
+			const song = flightBed(seed, 0);
+			const wary = section(song, "wary");
+			expect(loopPeriod(barPrints(wary.events, wary.bars), 16)).toBe(0);
+			for (const level of ["threat", "combat"]) {
+				const s = section(song, level);
+				expect(loopPeriod(barPrints(s.events, s.bars), 8)).toBe(0);
+			}
+		}
+	});
+
+	test("the danger comes in as parts: bass and lead when wary, acid and hats in a threat, the kit in combat", () => {
+		const song = flightBed(SEEDS[4], 0);
+		const parts = (level: string) =>
+			new Set(section(song, level).events.map((e) => e.part));
+		for (const p of ["kick", "snare", "hat", "acid"])
+			expect(parts("calm").has(p)).toBe(false);
+		for (const p of ["bass", "lead"]) expect(parts("wary").has(p)).toBe(true);
+		for (const p of ["kick", "snare"]) expect(parts("wary").has(p)).toBe(false);
+		for (const p of ["creep", "hat"]) expect(parts("threat").has(p)).toBe(true);
+		for (const p of ["kick", "snare", "hat", "acid", "lead"])
+			expect(parts("combat").has(p)).toBe(true);
+	});
+
+	test("the system's motif is heard in every level, in its own mode", () => {
+		for (const seed of SEEDS.slice(0, 16)) {
+			const song = flightBed(seed, 0);
+			const calm = section(song, "calm");
+			const carrier = ["keys", "bell", "lead"].find((p) =>
+				calm.events.some((e) => e.part === p && e.pitch >= 60),
+			) as string;
+			const theme = statements(calm.events, carrier, 4).filter(
+				(s) => s.length >= 3,
+			)[0];
+			const kin = [
+				contour(theme).join(),
+				contour(theme)
+					.map((x) => -x)
+					.join(),
+			];
+			for (const level of ["wary", "combat"]) {
+				const st = statements(section(song, level).events, "lead", 4).filter(
+					(s) => s.length >= 3,
+				);
+				expect(st.some((s) => kin.includes(contour(s).join()))).toBe(true);
+			}
+		}
+	});
+
+	test("a threat climbs: its motif fragments start higher and higher", () => {
+		for (const seed of SEEDS.slice(0, 16)) {
+			const threat = section(flightBed(seed, 0), "threat");
+			const firsts = statements(threat.events, "lead", 4).map((s) => s[0]);
+			expect(firsts.length).toBeGreaterThanOrEqual(5);
+			const rises = firsts.slice(1).filter((p, i) => p > firsts[i]).length;
+			expect(rises).toBeGreaterThanOrEqual(
+				Math.ceil((firsts.length - 1) * 0.6),
+			);
+		}
+	});
+
+	test("combat fills its fourth bars: the kit's pattern there is not the groove's", () => {
+		const combat = section(flightBed(SEEDS[2], 0), "combat");
+		const kit = (bar: number) =>
+			combat.events
+				.filter(
+					(e) => e.bar === bar && ["kick", "snare", "hat"].includes(e.part),
+				)
+				.map((e) => `${e.part}@${e.beat}`)
+				.sort()
+				.join();
+		for (let b = 3; b < combat.bars; b += 4) {
+			expect(kit(b)).not.toBe(kit(b - 1));
+			expect(kit(b)).not.toBe(kit(b - 3));
+		}
+	});
+});

@@ -25,33 +25,41 @@
  *   repeated with one chord substituted and closed on the dominant, so the
  *   held section leans back into its own top.
  *
- * **Wary, threat and combat are the first bed's sections** until the calm
- * and station beds pass the principal's ear (the order the prototype runs
- * in); they share the new parts' names where they meet (`bell`, `lead`,
- * `arp`) and play on the new voices there.
+ * **Wary, threat and combat** follow once calm had the principal's ear:
+ * each in its level's darker mode, with the system's motif carried through
+ * — developed when wary, climbing in fragments under a threat, stated whole
+ * over the kit in combat — so the tune is recognisable as the danger rises.
+ * Each is long enough to hold and breaks its own pattern: wary on co-prime
+ * layers, the threat's fragments every three bars over two-bar grooves, and
+ * combat's grooves alternating by phrase with a fill every fourth bar.
  *
  * Pure, so `tests/music-generate.test.ts` holds it headless.
  */
 import {
+	ACID_GROOVES,
 	ARP_SHAPES,
 	CALM_FORM,
 	CALM_PROGRESSIONS,
 	CALM_SUBSTITUTE,
+	COMBAT_FILLS,
+	COMBAT_GROOVES,
+	COMBAT_PROGRESSIONS,
 	type Development,
+	type KitBar,
 	MOTIFS,
 	type Motif,
+	OSTINATOS,
+	THREAT_KIT,
+	THREAT_PROGRESSIONS,
+	WARY_PROGRESSIONS,
 } from "./music-fragments";
 import {
 	FLIGHT_LEVELS,
-	FLIGHT_PARTS,
 	LEVEL_MODE,
 	LEVEL_TEMPO,
-	levelSection,
 	MODES,
-	type MusicLevel,
 	type MusicTheme,
 	musicTheme,
-	SECTION_BARS,
 	STATION_ROLES,
 	themeSeed,
 } from "./music-generate-legacy";
@@ -87,6 +95,11 @@ export const CALM_LIFT_BPM = 10;
 export const STATION_BARS = 32;
 /** Bars per chord in calm and at the station. */
 const CHORD_BARS = 8;
+/** The danger sections' lengths. */
+export const WARY_BARS = 32;
+export const THREAT_BARS = 24;
+export const COMBAT_BARS = 32;
+
 /** The layer cycles, in bars: pairwise co-prime with each other. */
 const MOTIF_EVERY = 7;
 const STRINGS_EVERY = 13;
@@ -187,7 +200,52 @@ const PARTS: Readonly<Record<string, PartSpec>> = {
 		reverb: 0.3,
 		echo: 0.25,
 	},
+	bass: {
+		voice: "analog",
+		level: 0.32,
+		unison: 2,
+		detune: 0.04,
+		spread: 0.3,
+		attackS: 0.005,
+		decayS: 0.4,
+		sustain: 0.5,
+		releaseS: 0.1,
+		cutoffHz: 350,
+		envAmount: 2,
+		envDecayS: 0.2,
+		resonance: 0.25,
+		reverb: 0.1,
+	},
+	acid: { voice: "acid", level: 0.3, reverb: 0.12, echo: 0.2 },
+	// The threat's acid: darker and held back, no accents.
+	creep: {
+		voice: "acid",
+		level: 0.24,
+		cutoffHz: 300,
+		envAmount: 1.8,
+		envDecayS: 0.25,
+		resonance: 0.75,
+		drive: 0.2,
+		reverb: 0.2,
+		echo: 0.3,
+	},
+	kick: { voice: "kick", level: 0.62, reverb: 0.04 },
+	snare: {
+		voice: "noise",
+		level: 0.22,
+		decayS: 0.22,
+		releaseS: 0.1,
+		reverb: 0.25,
+	},
+	hat: { voice: "noise", level: 0.08, pan: 0.25, reverb: 0.12 },
 };
+
+/** Where the kit's parts sit: the kick's body, the threat's tom, the snare's
+ *  and the hat's noise bands. */
+const KICK_PITCH = 29;
+const TOM_PITCH = 41;
+const SNARE_PITCH = 88;
+const HAT_PITCH = 104;
 
 /** The room both beds play in. */
 const SPACE = { reverbS: 5, echoBeats: 0.75, echoFeedback: 0.4 };
@@ -359,6 +417,258 @@ function calmChords(rand: () => number): number[] {
 	return [p[0], p[1], p[2], p[3], p[0], p[1], CALM_SUBSTITUTE[p[2]] ?? p[2], 4];
 }
 
+/** A random pick from a list. */
+const pickOf = <T>(rand: () => number, list: readonly T[]): T =>
+	list[Math.floor(rand() * list.length) % list.length];
+
+/** Degree-to-pitch in a level's mode. */
+const inMode =
+	(theme: MusicTheme, mode: readonly number[]) => (base: number, d: number) =>
+		degree(mode, theme.tonic, base, d);
+
+/** The motif's statements, one every `every` bars from `from`, each
+ *  developed by `form`, on `part`. */
+function statementsOf(
+	w: ReturnType<typeof writer>,
+	opts: {
+		tune: MusicTune;
+		deg: (base: number, d: number) => number;
+		part: string;
+		from: number;
+		every: number;
+		bars: number;
+		form: readonly Development[];
+		chordAt: (bar: number) => number;
+		register: number;
+	},
+) {
+	let s = 0;
+	for (let b = opts.from; b < opts.bars; b += opts.every, s++) {
+		const how = opts.form[s % opts.form.length];
+		const { degrees, beats } = develop(
+			opts.tune.motif,
+			how,
+			opts.tune.shift,
+			opts.chordAt(b),
+		);
+		const total = beats.reduce((x, y) => x + y, 0);
+		if (b * 4 + total > opts.bars * 4) break;
+		let pos = b * 4;
+		degrees.forEach((d, i) => {
+			w.at(
+				opts.part,
+				pos,
+				beats[i] * 0.95,
+				opts.deg(opts.register, d),
+				i === 0 ? 0.72 : 0.6,
+			);
+			pos += beats[i];
+		});
+	}
+}
+
+/** The cruise stem over a section's chords. */
+function arpOf(
+	w: ReturnType<typeof writer>,
+	tune: MusicTune,
+	deg: (base: number, d: number) => number,
+	bars: number,
+	chordAt: (bar: number) => number,
+) {
+	for (let b = 0; b < bars; b++) {
+		const tones = [0, 2, 4, 7].map((k) => deg(60, chordAt(b) + k));
+		tune.arp.forEach((ix, i) =>
+			w.at("arp", b * 4 + i / 2, 0.5, tones[ix], i % 2 ? 0.25 : 0.35),
+		);
+	}
+}
+
+/** One kit bar: each part's sixteen steps, `x` a hit and `X` an accent. */
+function kitOf(
+	w: ReturnType<typeof writer>,
+	bar: number,
+	kit: KitBar,
+	kickPitch = KICK_PITCH,
+) {
+	const parts: [keyof KitBar, number, number][] = [
+		["kick", kickPitch, 0.5],
+		["snare", SNARE_PITCH, 0.25],
+		["hat", HAT_PITCH, 0.1],
+	];
+	for (const [part, pitch, dur] of parts)
+		[...kit[part]].forEach((c, i) => {
+			if (c === ".") return;
+			w.at(part, bar * 4 + i / 4, dur, pitch, c === "X" ? 0.95 : 0.7);
+		});
+}
+
+/** Wary (aeolian): the drone and swelling strings on a progression that
+ *  leans home, a bass ostinato, the motif on the lead every five bars and the
+ *  bell every seven. */
+function wary(
+	theme: MusicTheme,
+	tune: MusicTune,
+	rand: () => number,
+): NoteEvent[] {
+	const deg = inMode(theme, MODES[LEVEL_MODE.wary]);
+	const chords = pickOf(rand, WARY_PROGRESSIONS);
+	const chordAt = (b: number) =>
+		chords[Math.floor(b / CHORD_BARS) % chords.length];
+	const w = writer(4);
+	const ost = [pickOf(rand, OSTINATOS), pickOf(rand, OSTINATOS)];
+	for (let b = 0; b < WARY_BARS; b += CHORD_BARS) {
+		const r = chordAt(b);
+		w.at("drone", b * 4, CHORD_BARS * 4, deg(36, r), 0.65);
+		w.at("drone", b * 4, CHORD_BARS * 4, deg(36, r + 4), 0.5);
+		for (const k of [0, 2, 4, 6])
+			w.at("strings", (b + 1) * 4, 28, deg(48, r + k), 0.4);
+	}
+	for (let b = 0; b < WARY_BARS; b += 2) {
+		// The second half of each chord takes the other figure.
+		const fig = ost[Math.floor((b % CHORD_BARS) / 4)];
+		fig.forEach((d, i) => {
+			if (d === null) return;
+			w.at(
+				"bass",
+				b * 4 + i / 2,
+				0.45,
+				deg(36, chordAt(b) + d),
+				i % 4 === 0 ? 0.7 : 0.5,
+			);
+		});
+	}
+	statementsOf(w, {
+		tune,
+		deg,
+		part: "lead",
+		from: 2,
+		every: 5,
+		bars: WARY_BARS,
+		form: ["theme", "transposed", "inverted", "theme", "fragment", "augmented"],
+		chordAt,
+		register: 60,
+	});
+	for (let b = 4; b < WARY_BARS; b += 7)
+		for (const k of [0, 4])
+			w.at("bell", b * 4 + (k ? 1.5 : 0), 3, deg(84, chordAt(b) + k), 0.45);
+	arpOf(w, tune, deg, WARY_BARS, chordAt);
+	return w.events;
+}
+
+/** Threat (harmonic minor): held dark chords, the low acid creeping in two-
+ *  bar grooves, offbeat hats and a tom, and the motif's head every three
+ *  bars, a step higher each time. */
+function threat(
+	theme: MusicTheme,
+	tune: MusicTune,
+	rand: () => number,
+): NoteEvent[] {
+	const deg = inMode(theme, MODES[LEVEL_MODE.threat]);
+	const chords = pickOf(rand, THREAT_PROGRESSIONS);
+	const per = 4;
+	const chordAt = (b: number) => chords[Math.floor(b / per) % chords.length];
+	const w = writer(4);
+	const grooves = [pickOf(rand, ACID_GROOVES), pickOf(rand, ACID_GROOVES)];
+	for (let b = 0; b < THREAT_BARS; b += per) {
+		const r = chordAt(b);
+		w.at("drone", b * 4, per * 4, deg(36, r), 0.6);
+		w.at("drone", b * 4, per * 4, deg(36, r + 4), 0.45);
+		for (const k of [0, 2, 4]) w.at("strings", b * 4, 15, deg(48, r + k), 0.35);
+	}
+	for (let b = 0; b < THREAT_BARS; b++) {
+		const g = grooves[Math.floor(b / 2) % 2];
+		g.forEach(([d, flags], i) => {
+			if (d === null) return;
+			const slide = flags.includes("s");
+			w.at(
+				"creep",
+				b * 4 + i / 4,
+				slide ? 0.3 : 0.15,
+				deg(36, chordAt(b) + d),
+				flags.includes("a") ? 0.75 : 0.5,
+			);
+		});
+		kitOf(
+			w,
+			b,
+			{
+				...THREAT_KIT,
+				kick: b % 2 === 0 ? THREAT_KIT.kick : "................",
+			},
+			TOM_PITCH,
+		);
+	}
+	// The motif's head, climbing: each statement a degree above the last.
+	const head = tune.motif.degrees.slice(0, 3).map((d) => d + tune.shift);
+	const beats = tune.motif.beats.slice(0, 3);
+	for (let b = 1, k = 0; b < THREAT_BARS; b += 3, k++) {
+		let pos = b * 4;
+		head.forEach((d, i) => {
+			w.at("lead", pos, beats[i] * 0.95, deg(60, d + k), i === 0 ? 0.72 : 0.6);
+			pos += beats[i];
+		});
+	}
+	arpOf(w, tune, deg, THREAT_BARS, chordAt);
+	return w.events;
+}
+
+/** Combat (phrygian): the kit in grooves that alternate by phrase with a fill
+ *  every fourth bar, the acid driving with accents and slides, string stabs
+ *  on each chord, a tonic pedal, and the whole motif every eight bars. */
+function combat(
+	theme: MusicTheme,
+	tune: MusicTune,
+	rand: () => number,
+): NoteEvent[] {
+	const deg = inMode(theme, MODES[LEVEL_MODE.combat]);
+	const p =
+		Math.floor(rand() * COMBAT_PROGRESSIONS.length) %
+		COMBAT_PROGRESSIONS.length;
+	const passes = [p, p, p, (p + 1) % COMBAT_PROGRESSIONS.length];
+	const chordAt = (b: number) =>
+		COMBAT_PROGRESSIONS[passes[Math.floor(b / 8) % 4]][Math.floor(b / 2) % 4];
+	const w = writer(4);
+	const grooves = [pickOf(rand, ACID_GROOVES), pickOf(rand, ACID_GROOVES)];
+	w.at("drone", 0, COMBAT_BARS * 4, deg(24, 0), 0.45);
+	w.at("drone", 0, COMBAT_BARS * 4, deg(36, 0), 0.4);
+	for (let b = 0; b < COMBAT_BARS; b++) {
+		const phrase = Math.floor(b / 4);
+		kitOf(
+			w,
+			b,
+			b % 4 === 3 ? COMBAT_FILLS[phrase % 2] : COMBAT_GROOVES[phrase % 2],
+		);
+		grooves[phrase % 2].forEach(([d, flags], i) => {
+			if (d === null) return;
+			const slide = flags.includes("s");
+			w.at(
+				"acid",
+				b * 4 + i / 4,
+				slide ? 0.3 : 0.15,
+				deg(36, chordAt(b) + d),
+				flags.includes("a") ? 0.9 : 0.62,
+			);
+		});
+		if (b % 2 === 0)
+			for (const beat of [0, 2.5])
+				for (const k of [0, 2, 4])
+					w.at("strings", b * 4 + beat, 0.4, deg(60, chordAt(b) + k), 0.6);
+	}
+	statementsOf(w, {
+		tune,
+		deg,
+		part: "lead",
+		from: 0,
+		every: 8,
+		bars: COMBAT_BARS,
+		form: ["theme", "transposed", "augmented", "inverted"],
+		chordAt,
+		register: 72,
+	});
+	arpOf(w, tune, deg, COMBAT_BARS, chordAt);
+	return w.events;
+}
+
 /**
  * A system's flight bed: one song, one section per level, each held by the
  * director. The same `(systemSeed, variant)` writes the same score.
@@ -382,16 +692,9 @@ export function flightBed(systemSeed: number, variant: number): Song {
 	});
 	const sections = [
 		{ name: "calm", bars: CALM_BARS, events: calm },
-		...FLIGHT_LEVELS.slice(1).map((level) => ({
-			name: level,
-			bars: SECTION_BARS,
-			events: levelSection(
-				level,
-				MODES[LEVEL_MODE[level as Exclude<MusicLevel, "calm">]],
-				theme.tonic,
-				rand,
-			),
-		})),
+		{ name: "wary", bars: WARY_BARS, events: wary(theme, tune, rand) },
+		{ name: "threat", bars: THREAT_BARS, events: threat(theme, tune, rand) },
+		{ name: "combat", bars: COMBAT_BARS, events: combat(theme, tune, rand) },
 	];
 	let bar = 0;
 	const tempo = sections.map((s, i) => {
@@ -407,7 +710,7 @@ export function flightBed(systemSeed: number, variant: number): Song {
 	return {
 		name: `flight ${systemSeed >>> 0}/${variant}`,
 		beatsPerBar: 4,
-		parts: { ...FLIGHT_PARTS(theme), ...PARTS },
+		parts: { ...PARTS },
 		sections,
 		tempo,
 		space: SPACE,
