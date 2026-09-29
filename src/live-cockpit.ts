@@ -36,7 +36,8 @@ import {
 import { padHintFor } from "./key-names";
 import type { ScanConsoleReadout } from "./carrier-scan";
 import type { DuelConsoleReadout } from "./duel-hud";
-import type { StationAction } from "./station-commerce";
+import type { HullOffer, StationAction } from "./station-commerce";
+import type { HullId } from "./hull";
 import type { HoldBids, HoldSummary } from "./hold";
 import { escapeHtml } from "./escape-html";
 import { HOLD_STYLE, holdBody } from "./hold-view";
@@ -221,6 +222,15 @@ export interface LiveCockpitState {
 		tab: StationConsoleTab;
 		market: readonly ConsoleMarketRow[];
 		equipment: ConsoleEquipmentScreen;
+		/**
+		 * The Shipyard tab (#556 D1, D8): the flown hull and one `hullOffer`
+		 * per purchasable hull, or `null` at every station that is not a
+		 * shipyard — where the tab is absent rather than empty.
+		 */
+		shipyard: {
+			flown: HullId;
+			offers: readonly HullOffer[];
+		} | null;
 		credits: number;
 		/**
 		 * What is aboard, whose it is, and how much room is left (#443).
@@ -495,6 +505,8 @@ const STYLE = `${REQUESTS_STYLE}${HOLD_STYLE}${LADDER_STYLE}${RELAY_CUE_STYLE}
 .lc-station-action { border: 1px solid rgba(229, 170, 82, .52); border-radius: 3px; padding: 2px 6px; background: rgba(223, 122, 20, .16); color: #ffe1a9; cursor: pointer; font: inherit; font-size: 10px; }
 .lc-station-action:hover { background: rgba(223, 122, 20, .32); }
 .lc-station-owned { color: #9ed89b; font-size: 10px; letter-spacing: .06em; }
+.lc-station-shipyard .lc-station-row { grid-template-columns: minmax(96px, 1fr) .9fr 1fr 1.8fr 64px; }
+.lc-station-shipyard .lc-station-row > :nth-child(5) { justify-self: end; }
 .lc-station-locked { color: #a9814f; font-size: 10px; letter-spacing: .06em; }
 .lc-station-commander { margin: 9px 0 0; color: #f5bd78; font-size: 11px; }
 .lc-station-hold { margin: 6px 0 0; color: #f5bd78; font-size: 11px; letter-spacing: .06em; }
@@ -683,14 +695,20 @@ export class LiveCockpit {
 				(action === "buy-commodity" ||
 					action === "sell-commodity" ||
 					action === "buy-equipment" ||
-					action === "buy-fuel")
+					action === "buy-fuel" ||
+					action === "buy-hull")
 			)
 				this.callbacks.onStationAction(action, name);
 			return;
 		}
 		if (stationTab) {
 			const value = stationTab.dataset.liveStationTab;
-			if (value === "Market" || value === "Equipment" || value === "Requests")
+			if (
+				value === "Market" ||
+				value === "Equipment" ||
+				value === "Shipyard" ||
+				value === "Requests"
+			)
 				this.callbacks.onStationTab(value);
 			return;
 		}
@@ -1629,8 +1647,10 @@ export class LiveCockpit {
 	private stationConsole(state: LiveCockpitState) {
 		const stationConsole = state.stationConsole;
 		if (!stationConsole || state.dockPhase !== "docked") return "";
-		const tabs = (["Market", "Equipment", "Requests"] as const)
+		const tabs = (["Market", "Equipment", "Shipyard", "Requests"] as const)
 			.filter((tab) => tab !== "Requests" || !!state.requests)
+			// #556 D8: at shipyards only, and absent rather than empty elsewhere.
+			.filter((tab) => tab !== "Shipyard" || !!stationConsole.shipyard)
 			.map(
 				(tab) =>
 					`<button class="lc-tab" type="button" data-live-station-tab="${tab}" aria-selected="${stationConsole.tab === tab}">${tab}</button>`,
@@ -1641,14 +1661,16 @@ export class LiveCockpit {
 				? requestsBody(state.requests)
 				: stationConsole.tab === "Market"
 					? this.market(stationConsole.market)
-					: this.equipment(
-							stationConsole.equipment,
-							stationConsole.ownedEquipment,
-							{
-								ly: stationConsole.fuelLy,
-								capacityLy: stationConsole.fuelCapacityLy,
-							},
-						)
+					: stationConsole.tab === "Shipyard" && stationConsole.shipyard
+						? this.shipyard(stationConsole.shipyard, stationConsole.credits)
+						: this.equipment(
+								stationConsole.equipment,
+								stationConsole.ownedEquipment,
+								{
+									ly: stationConsole.fuelLy,
+									capacityLy: stationConsole.fuelCapacityLy,
+								},
+							)
 		}${this.launchHoldBlock(state)}<p class="lc-station-commander" data-live-commander>${stationConsole.credits.toFixed(1)} Cr · HOLD ${escapeHtml(stationConsole.cargo.join(", ") || "EMPTY")}</p></section>`;
 	}
 
@@ -1681,6 +1703,51 @@ export class LiveCockpit {
 			return `<div class="lc-station-row" data-live-market-row="${name}" data-live-listed="true"><span>${name}</span><span class="lc-station-cell" data-live-buy>${buy}${priceDelta}</span><span class="lc-station-cell lc-station-bid" data-live-sell>${sell}</span><span class="lc-station-cell" data-live-shelf>${stock}${stockDelta}</span><span>${actions}</span></div>`;
 		};
 		return `<div class="lc-station-market" data-live-station-market><div class="lc-station-row lc-station-head"><span>GOOD</span><span class="lc-station-cell">BUY</span><span class="lc-station-cell">SELL</span><span class="lc-station-cell">SHELF</span><span>ACTION</span></div>${rows.map(row).join("")}</div>`;
+	}
+
+	/**
+	 * The Shipyard tab (#556): one row per purchasable hull, each carrying the
+	 * one reason `hullOffer` gave it — first match wins, permanent before
+	 * fixable (D9) — or, open, the net price and how many systems the hull
+	 * reaches from here (#185 D3). The figures are the offer's, so a press
+	 * gets exactly what the row says.
+	 */
+	private shipyard(
+		yard: { flown: HullId; offers: readonly HullOffer[] },
+		credits: number,
+	) {
+		const cr = (value: number) => Math.round(value).toLocaleString("en-US");
+		const row = (offer: HullOffer) => {
+			const name = escapeHtml(offer.hull.toUpperCase());
+			const net =
+				offer.netCr >= 0
+					? `${cr(offer.netCr)} Cr`
+					: `PAYS ${cr(-offer.netCr)} Cr`;
+			let note: string;
+			let action: string;
+			if (offer.accepted) {
+				const soldT = offer.sold.reduce((sum, lot) => sum + lot.units, 0);
+				const systems = offer.reach?.ok ? offer.reach.systems : 0;
+				note = `REACHES ${systems} SYSTEM${systems === 1 ? "" : "S"}${
+					soldT > 0 ? ` · SELLS ${soldT} t` : ""
+				}`;
+				action = `<button class="lc-station-action" type="button" data-live-station-action="buy-hull" data-live-station-name="${escapeHtml(offer.hull)}">BUY</button>`;
+			} else {
+				note = hullRefusalNote(offer, credits);
+				action =
+					offer.reason === "hull-owned"
+						? '<span class="lc-station-owned">FLOWN</span>'
+						: offer.reason === "hull-locked"
+							? '<span class="lc-station-locked">LOCKED</span>'
+							: '<span class="lc-station-locked">—</span>';
+			}
+			return `<div class="lc-station-row" data-live-hull-row="${escapeHtml(offer.hull)}" data-live-hull-reason="${offer.reason ?? ""}"><span>${name}</span><span class="lc-station-cell">${offer.listCr > 0 ? `${cr(offer.listCr)} Cr` : "—"}</span><span class="lc-station-cell" data-live-hull-net>${offer.reason === "hull-owned" ? "—" : net}</span><span class="lc-station-cell${offer.accepted ? "" : " lc-station-locked"}" data-live-hull-note>${escapeHtml(note)}</span>${action}</div>`;
+		};
+		const tradeIn = yard.offers.find((offer) => offer.hull !== yard.flown);
+		const head = tradeIn
+			? `<p class="lc-station-hold" data-live-hull-trade-in>TRADE-IN · ${escapeHtml(yard.flown.toUpperCase())} · ${cr(tradeIn.tradeInCr)} Cr</p>`
+			: "";
+		return `<div class="lc-station-shipyard" data-live-station-shipyard>${head}<div class="lc-station-row lc-station-head"><span>HULL</span><span class="lc-station-cell">LIST</span><span class="lc-station-cell">NET</span><span class="lc-station-cell">FROM HERE</span><span>ACTION</span></div>${yard.offers.map(row).join("")}</div>`;
 	}
 
 	private equipment(
@@ -1807,4 +1874,30 @@ function firstDayBody(panel: FirstDayPanel | undefined): string {
 		return `<li class="lc-first-day-step" data-first-day-step="${step.id}" data-first-day-state="${state}">${escapeHtml(step.title)}</li>`;
 	}).join("");
 	return `<div class="lc-panel-body" data-live-first-day><div class="lc-rail"><b>FIRST DAY</b><span>A SHORT JOB</span><span>ON YOUR OWN TIME</span></div><div class="lc-panel-copy"><h3>NOW</h3><p data-live-first-day-now>${escapeHtml(panel.text)}</p><h3>THE DAY</h3><ol class="lc-first-day-steps">${rows}</ol><h3>FLYING</h3><p data-live-first-day-controls>${escapeHtml(panel.controls.keyboard)}<br>CONTROLLER · ${escapeHtml(panel.controls.controller)}</p></div></div>`;
+}
+
+/**
+ * A refused hull row's one reason, in the row's words (#556 D9). The till's
+ * sentence for the same refusal is `refusalSentence`'s; this is the short
+ * form a row has room for, and it names the figure a pilot can act on.
+ */
+function hullRefusalNote(offer: HullOffer, credits: number): string {
+	switch (offer.reason) {
+		case "hull-owned":
+			return "THE HULL YOU FLY";
+		case "hull-locked":
+			return offer.locked
+				? `${offer.locked.ladder.toUpperCase()} ${offer.locked.rung} · ${offer.locked.name.toUpperCase()}`
+				: "LOCKED";
+		case "no-reach":
+			return "NO SYSTEM IN RANGE FROM HERE";
+		case "hull-mounts":
+			return "TOO FEW HARDPOINTS FOR YOUR WEAPONS";
+		case "hull-hold":
+			return "HOLD TOO SMALL FOR WHAT MUST STAY ABOARD";
+		case "insufficient-credits":
+			return `${Math.ceil(offer.netCr - credits - offer.saleCr).toLocaleString("en-US")} Cr SHORT`;
+		default:
+			return "NOT SOLD HERE";
+	}
 }

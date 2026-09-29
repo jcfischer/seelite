@@ -387,28 +387,9 @@ function renderEquipmentTab(view: ConsoleView): string {
 			),
 		)
 		.join("");
-	// §8.7's joint 4: a heading with nothing under it is a state a player sees,
-	// so the gallery renders it rather than hiding the gap until #26.
-	// The heading is a shipyard's; what is under it is #26's. Rendering
-	// `screen.hulls` rather than the placeholder unconditionally means the day
-	// that node prices them the tab shows them instead of still saying nobody
-	// has.
-	const hulls = screen.hullsSection
-		? `<h4 class="sg-block-head" data-gallery-hulls>HULLS</h4>${
-				screen.hulls.length === 0
-					? `<p class="sg-absent" data-gallery-hulls-empty>Not priced yet — the ship roster owes them.</p>`
-					: screen.hulls
-							.map((hull) =>
-								catalogueRow(
-									"data-gallery-hull-item",
-									hull.name,
-									`${hull.priceCr.toLocaleString("en-US")} Cr`,
-								),
-							)
-							.join("")
-			}`
-		: "";
-	return `<div class="sg-market" data-gallery-equipment>${available}<h4 class="sg-block-head" data-gallery-unavailable>UNAVAILABLE HERE</h4>${unavailable}${hulls}</div>`;
+	// No HULLS heading: #556 D1 moved hull sales to their own Shipyard tab on
+	// the live console, and the empty heading §8.7's joint 4 drew here went.
+	return `<div class="sg-market" data-gallery-equipment>${available}<h4 class="sg-block-head" data-gallery-unavailable>UNAVAILABLE HERE</h4>${unavailable}</div>`;
 }
 
 /**

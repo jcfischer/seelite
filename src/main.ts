@@ -850,8 +850,10 @@ import {
 	commanderHold,
 	newCommander,
 	scoopCargo,
+	shipyardScreen,
 	transactAtStation,
 	type StationAction,
+	type StationCommerceInput,
 } from "./station-commerce";
 import {
 	newWorld as newPersistentWorld,
@@ -14787,12 +14789,18 @@ class Game {
 		const holdKey = hold.lines
 			.map((line) => `${line.owner}:${line.goodName}:${line.amount}`)
 			.join(",");
-		const key = `${this.dock.stationId}|${this.stationConsoleTab}|${this.stationConsoleRevision}|${this.stationConsoleMessage ?? ""}|${hold.usedT}/${hold.capacityT}|${holdKey}`;
+		// The rows read the rungs and the flown hull too: a dock banks rungs,
+		// and a purchase changes the hull, and both must reprice the Shipyard.
+		const rungs = this.rungs();
+		const key = `${this.dock.stationId}|${this.commander.hull}|${Object.values(rungs).join("/")}|${this.stationConsoleTab}|${this.stationConsoleRevision}|${this.stationConsoleMessage ?? ""}|${hold.usedT}/${hold.capacityT}|${holdKey}`;
 		if (this.stationConsoleCacheKey === key) return this.stationConsoleCache;
 		this.stationConsoleCacheKey = key;
 		this.stationConsoleCache = {
 			label: this.nameOfStation(station.id),
-			tab: this.stationConsoleTab,
+			tab:
+				this.stationConsoleTab === "Shipyard" && market.type !== "shipyard"
+					? "Market"
+					: this.stationConsoleTab,
 			market: stationMarketScreen({
 				station: market,
 				economy,
@@ -14817,6 +14825,21 @@ class Game {
 				displayTL: this.world.system.record.displayTL,
 				rungs: this.rungs(),
 			}),
+			// #556 D1, D8: the Shipyard tab, at shipyards and nowhere else. The
+			// action on the input is a placeholder — `shipyardScreen` prices
+			// every hull through `hullOffer`, which reads everything but it.
+			shipyard:
+				market.type === "shipyard"
+					? {
+							flown: this.commander.hull,
+							offers: shipyardScreen(
+								this.commerceInput(context, {
+									type: "buy-hull",
+									hull: this.commander.hull,
+								}),
+							),
+						}
+					: null,
 			credits: this.commander.credits,
 			hold,
 			message: this.stationConsoleMessage,
@@ -15735,6 +15758,31 @@ class Game {
 		this.stationConsoleMessage = null;
 	}
 
+	/**
+	 * Everything the till reads, for one action at the docked station.
+	 *
+	 * One builder for the press and for the Shipyard tab's rows (#583), so the
+	 * row is priced on exactly the inputs a press on it will be.
+	 */
+	private commerceInput(
+		context: NonNullable<ReturnType<Game["dockedStationContext"]>>,
+		action: StationAction,
+	): StationCommerceInput {
+		return {
+			commander: this.commander,
+			deficits: context.envelope.deficits,
+			station: context.market,
+			stationKey: context.stationKey,
+			economy: context.economy,
+			gameTimeMin: context.gameTimeMin,
+			displayTL: this.world.system.record.displayTL,
+			entrustedT: entrustedTonnesAboard(this.requests),
+			rungs: this.rungs(),
+			hullReach: this.hullReachHere,
+			action,
+		};
+	}
+
 	/** How far a hull reaches from the system the ship is in (#185 D3): the
 	 *  shipyard row and the till both read it through `hullOffer`. */
 	private readonly hullReachHere = (hull: HullId) =>
@@ -15747,21 +15795,8 @@ class Game {
 	private transactStation(action: StationAction): boolean {
 		const context = this.dockedStationContext();
 		if (!context) return false;
-		const { market, envelope, stationKey, galaxyIndex, economy, gameTimeMin } =
-			context;
-		const result = transactAtStation({
-			commander: this.commander,
-			deficits: envelope.deficits,
-			station: market,
-			stationKey,
-			economy,
-			gameTimeMin,
-			displayTL: this.world.system.record.displayTL,
-			entrustedT: entrustedTonnesAboard(this.requests),
-			rungs: this.rungs(),
-			hullReach: this.hullReachHere,
-			action,
-		});
+		const { envelope, galaxyIndex } = context;
+		const result = transactAtStation(this.commerceInput(context, action));
 		if (!result.accepted) {
 			// **The reason was always computed; it was the caller that dropped
 			// it** (#443). A refusal to sell then read as a bug in the till,

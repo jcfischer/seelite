@@ -54,8 +54,13 @@ import { type GateRefusal, type Rungs, gateRefusal } from "./ladder";
 // §8.1 / §8.4 — what is on the glass, and when
 // ---------------------------------------------------------------------------
 
-/** §8's tabs. M3: later station business takes a third, not a second wall. */
-export type StationConsoleTab = "Market" | "Equipment" | "Requests";
+/** §8's tabs. M3: later station business takes a tab, not a second wall —
+ *  the Shipyard is one, at shipyards only (#556 D1, D8). */
+export type StationConsoleTab =
+	| "Market"
+	| "Equipment"
+	| "Shipyard"
+	| "Requests";
 
 /**
  * Where a dock is, as far as the console is concerned.
@@ -342,10 +347,6 @@ export interface ConsoleEquipmentScreen {
 	available: readonly ConsoleEquipmentEntry[];
 	/** M8's **unavailable here** block — the same absence rule as M5's. */
 	unavailable: readonly ConsoleUnavailableEntry[];
-	/** §8.3: a heading with nothing under it until #26 prices hulls. */
-	hulls: readonly ConsoleEquipmentEntry[];
-	/** Whether the hull heading is drawn at all — shipyards only. */
-	hullsSection: boolean;
 }
 
 /**
@@ -449,14 +450,9 @@ export function stationEquipmentScreen(input: {
 		else unavailable.push({ name: item.name, reason: scopeReason(item.scope) });
 	}
 
-	return {
-		available,
-		unavailable,
-		// §8.3 and §8.7's joint 4: the heading is a state the gallery renders and
-		// a player sees, and it stays empty until #26 prices hulls.
-		hulls: [],
-		hullsSection: type === "shipyard",
-	};
+	// No hull heading: hulls are sold on the Shipyard tab (#556 D1), which
+	// amends §8.3 M8's heading here.
+	return { available, unavailable };
 }
 
 // ---------------------------------------------------------------------------
