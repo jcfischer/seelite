@@ -26,13 +26,24 @@ import {
 	COCKPIT_FINISHES,
 	COCKPIT_FINISH_IDS,
 	COCKPIT_LAMP,
+	COCKPIT_LAMP_POOL,
 	applyCockpitQuality,
 	calibratedProfile,
 	cockpitCleanPlate,
 	cockpitMaterial,
 	dial,
+	lampPoolAcross,
+	lampPoolRamp,
+	lampStopPoints,
 	plateCockpitUVs,
+	railLampPools,
+	railLamps,
 } from "../src/cockpit-surface";
+import {
+	CANOPY_RAIL_RADIUS_KM,
+	CANOPY_SIDE_RAILS,
+} from "../src/cockpit-canopy";
+import { EMISSIVE_CEILING } from "../src/light-rig";
 import { uvUnitsOf } from "../src/loft";
 
 /** The UV extent of a geometry, in plate units, per axis. */
@@ -131,7 +142,7 @@ describe("plating a cabin material", () => {
 		// **#101's round-two blocker, one surface over.** Forcing `roughness` and
 		// `metalness` to 1 rendered every paint at whatever the map's clean plate
 		// happened to be — a repaint shipped under a docstring saying nothing was
-		// repainted, green in both tiers. The cabin has three finishes and one
+		// repainted, green in both tiers. The cabin has four finishes and one
 		// shared map, so the scalar has to stay a per-material dial.
 		const clean = cockpitCleanPlate();
 		for (const id of COCKPIT_FINISH_IDS) {
@@ -153,7 +164,7 @@ describe("plating a cabin material", () => {
 		}
 	});
 
-	test("the three finishes stay distinct from one another", () => {
+	test("the finishes stay distinct from one another", () => {
 		// The failure above was not that a number was wrong, it was that three
 		// numbers became one. Stated as a difference so a scheme that preserved
 		// the *ratio* but collapsed the spread would still fail.
@@ -204,6 +215,44 @@ describe("plating a cabin material", () => {
 			expect(spec.roughness / clean.roughness).toBeLessThanOrEqual(1);
 			expect(spec.metalness / clean.metalness).toBeLessThanOrEqual(1);
 		}
+	});
+});
+
+describe("the face finish (#204)", () => {
+	/** Relative luminance of an sRGB hex, 0..1 — enough to rank paints. */
+	const luma = (hex: number) => {
+		const c = new THREE.Color(hex);
+		return 0.2126 * c.r + 0.7152 * c.g + 0.0722 * c.b;
+	};
+
+	test("the cabin has four finishes, and face is one of them", () => {
+		expect(COCKPIT_FINISH_IDS).toEqual(["metal", "trim", "inset", "face"]);
+	});
+
+	test("face is a mid-tone: brighter than every finish the cabin had", () => {
+		// The node opened on 40% of the frame being a near-black slab with
+		// nothing to catch a highlight. A fourth finish that was one more
+		// near-black would pass every dial check and change nothing.
+		for (const id of ["metal", "trim", "inset"] as const)
+			expect(luma(COCKPIT_FINISHES.face.color)).toBeGreaterThan(
+				2 * luma(COCKPIT_FINISHES[id].color),
+			);
+	});
+
+	test("face sits under the roughest finish, so the calibration is unmoved", () => {
+		// `CLAUDE.md`, "A material dial cannot exceed 1". `calibrate` reads
+		// only the strongest roughness and metalness over every finish, so a
+		// finish under both of the other three's maxima leaves the lift exactly
+		// where it was, and the other three are not repainted.
+		const others = COCKPIT_FINISH_IDS.filter((id) => id !== "face");
+		const strongest = (key: "roughness" | "metalness") =>
+			Math.max(...others.map((id) => COCKPIT_FINISHES[id][key]));
+		expect(COCKPIT_FINISHES.face.roughness).toBeLessThan(
+			strongest("roughness"),
+		);
+		expect(COCKPIT_FINISHES.face.metalness).toBeLessThan(
+			strongest("metalness"),
+		);
 	});
 });
 
@@ -259,5 +308,123 @@ describe("the canopy-frame lamps", () => {
 			expect(t).toBeGreaterThan(0);
 			expect(t).toBeLessThan(1);
 		}
+	});
+});
+
+describe("the pools the lamps leave on the rail (#204)", () => {
+	const rail = CANOPY_SIDE_RAILS[0];
+	const pools = () => railLampPools(rail.from, rail.to, CANOPY_RAIL_RADIUS_KM);
+
+	test("one pool under each lamp", () => {
+		expect(pools()).toHaveLength(railLamps(rail.from, rail.to).length);
+	});
+
+	test("each pool starts at its lamp and runs down the rail toward the sill", () => {
+		// `from` is the sill end. A pool running up the rail would be light
+		// falling upward; one centred on the lamp would be a halo, not a pool.
+		const from = new THREE.Vector3(...rail.from);
+		const to = new THREE.Vector3(...rail.to);
+		const run = to.clone().sub(from);
+		const stops = lampStopPoints(rail.from, rail.to);
+		pools().forEach((pool, i) => {
+			const lamp = stops[i];
+			// In the rail's own plane: the strip also stands off it toward the
+			// pilot, which the next test holds.
+			const toward = pool.position.clone().sub(lamp).setZ(0);
+			expect(toward.length()).toBeCloseTo(COCKPIT_LAMP_POOL.lengthKm / 2, 9);
+			// Down the rail: opposite the run from sill to header.
+			expect(toward.normalize().dot(run.clone().normalize())).toBeCloseTo(
+				-1,
+				6,
+			);
+		});
+	});
+
+	test("brightest at the lamp and dark at its far end, by the built UVs and map", () => {
+		// The map is sampled along the strip's v. Two things can flip the bright
+		// end away from the lamp — the strip's orientation and the map's row
+		// order — so this reads both off what was built: the vertex UVs, then the
+		// texels those UVs land on.
+		const pool = pools()[1];
+		pool.updateMatrixWorld(true);
+		const lamp = lampStopPoints(rail.from, rail.to)[1];
+		const position = pool.geometry.getAttribute(
+			"position",
+		) as THREE.BufferAttribute;
+		const uv = pool.geometry.getAttribute("uv") as THREE.BufferAttribute;
+		let nearV = 0;
+		let farV = 0;
+		let nearest = Number.POSITIVE_INFINITY;
+		let farthest = 0;
+		for (let i = 0; i < position.count; i++) {
+			const d = new THREE.Vector3()
+				.fromBufferAttribute(position, i)
+				.applyMatrix4(pool.matrixWorld)
+				.distanceTo(lamp);
+			if (d < nearest) [nearest, nearV] = [d, uv.getY(i)];
+			if (d > farthest) [farthest, farV] = [d, uv.getY(i)];
+		}
+		expect(lampPoolRamp(nearV)).toBeCloseTo(1, 6);
+		expect(lampPoolRamp(farV)).toBeCloseTo(0, 6);
+		// A `DataTexture` is not flipped, so row 0 is v 0. Read the centre
+		// column, where the across-falloff is at its peak.
+		const map = (pool.material as THREE.MeshBasicMaterial)
+			.map as THREE.DataTexture;
+		const { data, width, height } = map.image as {
+			data: Uint8Array;
+			width: number;
+			height: number;
+		};
+		const texel = (v: number) =>
+			data[(Math.round(v * (height - 1)) * width + (width >> 1)) * 4];
+		expect(texel(nearV)).toBeGreaterThan(240);
+		expect(texel(farV)).toBeLessThan(5);
+	});
+
+	test("the ramp falls monotonically", () => {
+		for (let v = 0; v < 1; v += 0.05)
+			expect(lampPoolRamp(v + 0.05)).toBeLessThanOrEqual(lampPoolRamp(v));
+	});
+
+	test("a strip on the rail's face toward the pilot, narrower than the rail", () => {
+		// **Not a sleeve round the rail**, which was the first build: an
+		// additive glow over the whole circumference drew a lit cylinder wider
+		// than the dark rail inside it, and the sheet read it as a cream collar
+		// rather than as light on metal.
+		const pool = pools()[0];
+		pool.updateMatrixWorld(true);
+		const normal = new THREE.Vector3(0, 0, 1).transformDirection(
+			pool.matrixWorld,
+		);
+		expect(normal.z).toBeCloseTo(1, 9);
+		const standoff = pool.position.z - rail.from[2];
+		expect(standoff).toBeGreaterThan(CANOPY_RAIL_RADIUS_KM);
+		expect(standoff).toBeLessThan(CANOPY_RAIL_RADIUS_KM * 1.2);
+		expect(COCKPIT_LAMP_POOL.widthKm).toBeLessThan(2 * CANOPY_RAIL_RADIUS_KM);
+	});
+
+	test("the strip fades to nothing at both of its long edges", () => {
+		expect(lampPoolAcross(0)).toBeCloseTo(0, 9);
+		expect(lampPoolAcross(1)).toBeCloseTo(0, 9);
+		expect(lampPoolAcross(0.5)).toBeCloseTo(1, 9);
+	});
+
+	test("light added, never shaded, and under the emissive ceiling", () => {
+		// A basic material with additive blending: free, lit by nothing, and
+		// outside #201's occlusion walk. And the lamp's own warm white, so
+		// `hud-and-scanner.md` §4's red-is-refusal is inherited, not re-argued.
+		const material = pools()[0].material as THREE.MeshBasicMaterial;
+		expect(material).toBeInstanceOf(THREE.MeshBasicMaterial);
+		expect(material.blending).toBe(THREE.AdditiveBlending);
+		expect(material.depthWrite).toBe(false);
+		expect(COCKPIT_LAMP_POOL.intensity).toBeLessThanOrEqual(EMISSIVE_CEILING);
+		const lamp = new THREE.Color(COCKPIT_LAMP.color).multiplyScalar(
+			COCKPIT_LAMP_POOL.intensity,
+		);
+		expect(material.color.getHex()).toBe(lamp.getHex());
+	});
+
+	test("dimmer than the lamp that casts it", () => {
+		expect(COCKPIT_LAMP_POOL.intensity).toBeLessThan(COCKPIT_LAMP.intensity);
 	});
 });

@@ -643,9 +643,17 @@ import {
 	cockpitForm,
 	cockpitMaterial,
 	plateCockpitUVs,
+	railLampPools,
 	railLamps,
 	registerKeyLight,
 } from "./cockpit-surface";
+import {
+	CANOPY_FRAME,
+	CANOPY_RAIL_RADIUS_KM,
+	CANOPY_SIDE_RAILS,
+	canopyGlassMaterial,
+	canopyPaneGeometry,
+} from "./cockpit-canopy";
 import { applyHullQuality, hullFinishId } from "./ship-surface";
 import type { StationInterior } from "./station-interior";
 import { type Station, generateContents } from "./system";
@@ -2002,6 +2010,9 @@ class Game {
 	private shipMesh!: THREE.Group;
 	/** Cockpit structure follows the ship, while the camera pans within it. */
 	private cockpit!: CockpitHardware;
+	/** #204's canopy glass, held so the quality gate and the star rotation can
+	 *  reach its explicit environment. Null until `buildCockpit`. */
+	private canopyGlass: THREE.MeshBasicMaterial | null = null;
 	private tuningKey = "";
 	private tuningText = "";
 	/** Exposed for the browser probe; sourced fresh from simulation every frame. */
@@ -5075,6 +5086,8 @@ class Game {
 		// answer for every plated surface in the game rather than one per
 		// surface. `cockpit-surface.ts` owns what a cabin surface costs.
 		applyCockpitQuality(this.settings.value.quality);
+		// And the canopy's reflection, which follows the scenes' environment.
+		this.applyCanopyEnvironment();
 		// #532's pass draws on both sides; `low` takes fewer streak samples.
 		// Optional because this runs from `buildEnvironment`, before the
 		// composer exists; the constructor reads the setting itself.
@@ -7271,20 +7284,22 @@ class Game {
 	/** The physical cockpit and its one, deck-mounted scanner. */
 	private buildCockpit() {
 		this.cockpit = {} as CockpitHardware;
-		// The three structural finishes, and why they are not declared here:
+		// The cabin's finishes, and why they are not declared here:
 		// `COCKPIT_FINISHES`. The short of it is that a finish named at this call
 		// site is one the calibration pass cannot see, and the cabin's roughest
 		// turned out not to be expressible over the wear curve without it.
 		const metal = cockpitMaterial("metal");
 		const trim = cockpitMaterial("trim");
 		const inset = cockpitMaterial("inset");
-		const canopyGlass = new THREE.MeshBasicMaterial({
-			color: 0x0a2635,
-			transparent: true,
-			opacity: 0.08,
-			side: THREE.DoubleSide,
-			depthWrite: false,
-		});
+		// #204's mid-tone, on the two console tops: large faces the cabin's own
+		// light falls on, and behind no readout. Not on the scanner deck:
+		// `COCKPIT_FINISHES.face` says why.
+		const face = cockpitMaterial("face");
+		// #204's glass: a basic material, so no light in the scene reaches it, with
+		// the environment handed to it explicitly — `cockpit-canopy.ts` has why.
+		const canopyGlass = canopyGlassMaterial();
+		this.canopyGlass = canopyGlass;
+		this.applyCanopyEnvironment();
 		const cockpit = new THREE.Group();
 		cockpit.name = "cockpit";
 		// Space remains black, but the pilot's own instruments should not. This
@@ -7299,8 +7314,9 @@ class Game {
 		// console tops were missing — both cockpit views render the same flat
 		// tone whether the star is ahead of the ship or 175° behind it. Warm
 		// against the lamp's cool, which is the contrast the reference cabins
-		// have. Its range dies before the canopy on purpose: a key that reached
-		// the glass would light the frame the player sees space through.
+		// have. It must not light the glass the player sees space through, and
+		// what holds that is the glass's class, not this light's range —
+		// `COCKPIT_KEY_LIGHT.rangeKm` has the distances.
 		const keyLight = new THREE.PointLight(
 			COCKPIT_KEY_LIGHT.color,
 			COCKPIT_KEY_LIGHT.intensity,
@@ -7373,50 +7389,45 @@ class Game {
 		// A real windscreen frame: the former rails did not meet a sill or header,
 		// so they read as objects floating in space. The glass stays subtle, while
 		// the connected trapezoid gives the player a stable cockpit boundary.
-		const canopyShape = new THREE.Shape();
-		canopyShape.moveTo(-0.043, -0.013);
-		canopyShape.lineTo(-0.05, 0.018);
-		canopyShape.lineTo(0.05, 0.018);
-		canopyShape.lineTo(0.043, -0.013);
-		canopyShape.closePath();
-		const canopyPane = new THREE.Mesh(
-			new THREE.ShapeGeometry(canopyShape),
-			canopyGlass,
-		);
+		// The pane has thickness now (#204), and its outline, rails, sill and
+		// header are one set of figures in `cockpit-canopy.ts` rather than four
+		// sets of literals that happened to agree.
+		const canopyPane = new THREE.Mesh(canopyPaneGeometry(), canopyGlass);
 		canopyPane.name = "canopy-glass";
-		canopyPane.position.z = -0.065;
 		cockpit.add(canopyPane);
-		/**
-		 * The two canopy side rails, and the **one** place their endpoints live.
-		 *
-		 * The lamp placement below claimed to take "the rail's own endpoints, so
-		 * the two cannot drift apart" while re-typing the same six literals — a
-		 * comment describing a binding that did not exist. An editor who trusted
-		 * it and moved only the `addStrut` call would leave six lamps floating at
-		 * the old position, with nothing going red. Both readers take this array.
-		 */
-		const CANOPY_SIDE_RAILS = [
-			{
-				side: "port",
-				from: [-0.043, -0.013, -0.065] as [number, number, number],
-				to: [-0.05, 0.018, -0.065] as [number, number, number],
-			},
-			{
-				side: "starboard",
-				from: [0.043, -0.013, -0.065] as [number, number, number],
-				to: [0.05, 0.018, -0.065] as [number, number, number],
-			},
-		];
 		for (const rail of CANOPY_SIDE_RAILS)
-			addStrut(rail.from, rail.to, 0.00125, `canopy-side-rail-${rail.side}`);
+			addStrut(
+				rail.from,
+				rail.to,
+				CANOPY_RAIL_RADIUS_KM,
+				`canopy-side-rail-${rail.side}`,
+			);
 		// Three lamps on each, and nowhere else. The first pass ran continuous
 		// lit bars under the header, under the sill and along each console; none
 		// of that is in the reference, where the canopy frame carries a few small
 		// lamps and everything else that glows is an instrument.
-		for (const rail of CANOPY_SIDE_RAILS)
+		for (const rail of CANOPY_SIDE_RAILS) {
 			for (const lamp of railLamps(rail.from, rail.to)) cockpit.add(lamp);
-		addBox([0.102, 0.0013, 0.002], [0, 0.018, -0.065], [0, 0, 0], trim);
-		addBox([0.088, 0.002, 0.004], [0, -0.013, -0.065], [0, 0, 0], trim);
+			// And the light each one leaves on the rail below it (#204).
+			for (const pool of railLampPools(
+				rail.from,
+				rail.to,
+				CANOPY_RAIL_RADIUS_KM,
+			))
+				cockpit.add(pool);
+		}
+		addBox(
+			CANOPY_FRAME.header.size,
+			CANOPY_FRAME.header.position,
+			[0, 0, 0],
+			trim,
+		).name = "canopy-header";
+		addBox(
+			CANOPY_FRAME.sill.size,
+			CANOPY_FRAME.sill.position,
+			[0, 0, 0],
+			trim,
+		).name = "canopy-sill";
 		// Header braces close the upper corners into the nearer cockpit frame. The
 		// former side rails only framed the pane itself, leaving the windscreen
 		// visually detached from the overhead cockpit boundary.
@@ -7445,8 +7456,18 @@ class Game {
 		// Layered side consoles, structural seams, and a raised centre deck give
 		// the cabin a constructed spacecraft language without closing the pilot's
 		// forward sightline.
-		addBox([0.01, 0.0022, 0.022], [-0.038, -0.019, -0.047], [0.24, 0, 0.06]);
-		addBox([0.01, 0.0022, 0.022], [0.038, -0.019, -0.047], [0.24, 0, -0.06]);
+		addBox(
+			[0.01, 0.0022, 0.022],
+			[-0.038, -0.019, -0.047],
+			[0.24, 0, 0.06],
+			face,
+		).name = "console-top-port";
+		addBox(
+			[0.01, 0.0022, 0.022],
+			[0.038, -0.019, -0.047],
+			[0.24, 0, -0.06],
+			face,
+		).name = "console-top-starboard";
 		addBox(
 			[0.006, 0.0008, 0.014],
 			[-0.038, -0.0179, -0.047],
@@ -7503,6 +7524,25 @@ class Game {
 		this.nearScene.add(cockpit);
 	}
 
+	/**
+	 * Give the canopy glass the scenes' environment, or take it away (#204).
+	 *
+	 * The same gate as `scene.environment`: at `low` the scenes carry none, so
+	 * a pane reflecting one would be the only surface in the frame that did.
+	 * Called from `applyQuality` and from `buildCockpit`, because the boot-time
+	 * quality pass runs before the cabin exists.
+	 */
+	private applyCanopyEnvironment() {
+		const glass = this.canopyGlass;
+		if (!glass) return;
+		const mode = LIGHT_RIG.quality[this.settings.value.quality];
+		const next = mode.environment ? this.environmentMap : null;
+		if (glass.envMap === next) return;
+		glass.envMap = next;
+		// Gaining or losing a map changes three's defines, so relink.
+		glass.needsUpdate = true;
+	}
+
 	/** What each occlusion walk marked, kept for `probe-occlusion.mjs` to read
 	 *  off the page. A walk that matched nothing renders a perfect frame with
 	 *  the feature silently missing, so the count is the only evidence there
@@ -7519,6 +7559,7 @@ class Game {
 		trim: THREE.MeshStandardMaterial,
 		inset: THREE.MeshStandardMaterial,
 	) {
+		// **`metal`, not #204's `face`** — `COCKPIT_FINISHES.face` says why.
 		const deck = new THREE.Mesh(cockpitForm(0.032, 0.0016, 0.022), metal);
 		deck.name = "scanner-deck";
 		scannerMount.add(deck);
@@ -13405,6 +13446,9 @@ class Game {
 			rig.hemisphere.position.copy(STAR_DIR);
 			rig.scene.environmentRotation.copy(ENV_EULER);
 		}
+		// The canopy glass is a basic material and reads no `scene` field, so
+		// its environment is turned onto the star here, beside the scenes'.
+		this.canopyGlass?.envMapRotation.copy(ENV_EULER);
 	}
 
 	/**
