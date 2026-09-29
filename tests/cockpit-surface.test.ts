@@ -34,6 +34,7 @@ import {
 	dial,
 	lampPoolAcross,
 	lampPoolRamp,
+	lampStopPoints,
 	plateCockpitUVs,
 	railLampPools,
 	railLamps,
@@ -319,8 +320,9 @@ describe("the pools the lamps leave on the rail (#204)", () => {
 		const from = new THREE.Vector3(...rail.from);
 		const to = new THREE.Vector3(...rail.to);
 		const run = to.clone().sub(from);
+		const stops = lampStopPoints(rail.from, rail.to);
 		pools().forEach((pool, i) => {
-			const lamp = from.clone().addScaledVector(run, COCKPIT_LAMP.stops[i]);
+			const lamp = stops[i];
 			// In the rail's own plane: the strip also stands off it toward the
 			// pilot, which the next test holds.
 			const toward = pool.position.clone().sub(lamp).setZ(0);
@@ -333,15 +335,14 @@ describe("the pools the lamps leave on the rail (#204)", () => {
 		});
 	});
 
-	test("brightest at the lamp and dark at its far end, by the geometry's own UVs", () => {
-		// The ramp is sampled along the sleeve's v; an orientation that flips
-		// the sleeve puts the bright end away from the lamp, and only reading
-		// the built vertices catches that.
-		const from = new THREE.Vector3(...rail.from);
-		const run = new THREE.Vector3(...rail.to).sub(from);
+	test("brightest at the lamp and dark at its far end, by the built UVs and map", () => {
+		// The map is sampled along the strip's v. Two things can flip the bright
+		// end away from the lamp — the strip's orientation and the map's row
+		// order — so this reads both off what was built: the vertex UVs, then the
+		// texels those UVs land on.
 		const pool = pools()[1];
 		pool.updateMatrixWorld(true);
-		const lamp = from.clone().addScaledVector(run, COCKPIT_LAMP.stops[1]);
+		const lamp = lampStopPoints(rail.from, rail.to)[1];
 		const position = pool.geometry.getAttribute(
 			"position",
 		) as THREE.BufferAttribute;
@@ -360,6 +361,19 @@ describe("the pools the lamps leave on the rail (#204)", () => {
 		}
 		expect(lampPoolRamp(nearV)).toBeCloseTo(1, 6);
 		expect(lampPoolRamp(farV)).toBeCloseTo(0, 6);
+		// A `DataTexture` is not flipped, so row 0 is v 0. Read the centre
+		// column, where the across-falloff is at its peak.
+		const map = (pool.material as THREE.MeshBasicMaterial)
+			.map as THREE.DataTexture;
+		const { data, width, height } = map.image as {
+			data: Uint8Array;
+			width: number;
+			height: number;
+		};
+		const texel = (v: number) =>
+			data[(Math.round(v * (height - 1)) * width + (width >> 1)) * 4];
+		expect(texel(nearV)).toBeGreaterThan(240);
+		expect(texel(farV)).toBeLessThan(5);
 	});
 
 	test("the ramp falls monotonically", () => {

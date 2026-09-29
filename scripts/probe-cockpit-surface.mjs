@@ -158,6 +158,10 @@ const structuralOf = (state) =>
 
 /** The five surfaces a player *reads*. Named rather than derived, because the
  *  claim is about these specific ones and a derived set would grow silently. */
+/** `THREE.AdditiveBlending`'s value; the probe reads materials off the page and
+ *  has no `three` import of its own to name it from. */
+const ADDITIVE_BLENDING = 2;
+
 const READABLE = [
 	"canopy-glass",
 	"scanner",
@@ -294,7 +298,7 @@ for (const viewport of VIEWPORTS) {
 			);
 			return (
 				pools.length === 6 &&
-				pools.every((mesh) => !mesh.lit && mesh.blending === 2)
+				pools.every((mesh) => !mesh.lit && mesh.blending === ADDITIVE_BLENDING)
 			);
 		})(),
 	);

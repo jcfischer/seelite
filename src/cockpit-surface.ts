@@ -723,6 +723,20 @@ export function cockpitForm(
 }
 
 /**
+ * Where the lamps sit on one canopy side rail, on the rail's own axis — one
+ * point per `COCKPIT_LAMP.stops`. The lamps, their pools and the tests all
+ * read this, so a change to where a lamp goes is made once.
+ */
+export function lampStopPoints(
+	from: readonly [number, number, number],
+	to: readonly [number, number, number],
+): THREE.Vector3[] {
+	const start = new THREE.Vector3(...from);
+	const along = new THREE.Vector3(...to).sub(start);
+	return COCKPIT_LAMP.stops.map((t) => start.clone().addScaledVector(along, t));
+}
+
+/**
  * The three lamps on one canopy side rail, ready to be added to the cabin.
  *
  * **Here rather than inside `buildCockpit`**, for the reason `cockpitForm`
@@ -753,14 +767,14 @@ export function railLamps(
 		new THREE.Vector3(1, 0, 0),
 		along.clone().normalize(),
 	);
-	return COCKPIT_LAMP.stops.map((t) => {
+	return lampStopPoints(from, to).map((stop) => {
 		const mesh = new THREE.Mesh(lampGeometry(), lampMaterial());
 		mesh.name = "cockpit-lamp";
 		mesh.quaternion.copy(orientation);
 		// **+Z is toward the pilot**, and the standoff is what makes the lamp
 		// visible at all — see `COCKPIT_LAMP.standoffKm`. The rails run at
 		// constant z, so one axis is the whole of it.
-		mesh.position.copy(start).addScaledVector(along, t);
+		mesh.position.copy(stop);
 		mesh.position.z += COCKPIT_LAMP.standoffKm;
 		return mesh;
 	});
@@ -876,13 +890,12 @@ export function railLampPools(
 		COCKPIT_LAMP_POOL.widthKm,
 		COCKPIT_LAMP_POOL.lengthKm,
 	);
-	return COCKPIT_LAMP.stops.map((t) => {
+	return lampStopPoints(from, to).map((stop) => {
 		const mesh = new THREE.Mesh(geometry, poolMaterial());
 		mesh.name = "cockpit-lamp-pool";
 		mesh.quaternion.copy(orientation);
 		mesh.position
-			.copy(start)
-			.addScaledVector(along, t)
+			.copy(stop)
 			.addScaledVector(down, COCKPIT_LAMP_POOL.lengthKm / 2);
 		mesh.position.z += railRadiusKm * COCKPIT_LAMP_POOL.standoffFactor;
 		return mesh;
