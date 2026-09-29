@@ -1,0 +1,618 @@
+/**
+ * The three ladders (#183), their credit, their gates and their saved record.
+ *
+ * #183 ruled the shape — three commander-global ladders, credit banked on
+ * dock and never falling, each ladder gating its own hulls and equipment — and
+ * #562 ruled every figure: rungs 0 to 8 at exactly twice the one below, the
+ * three tops, the Elo-like price of a kill and the gate catalogue. This module
+ * is where those rulings live in the game, and
+ * `scripts/measure-ladder-rates.ts` imports the formulas from here and reprints
+ * the tops beside what a fresh run derives, so the instrument and the game read
+ * one copy.
+ *
+ * **Pending and banked are two things, and only one is saved.** Credit earned
+ * in flight — a kill, a first arrival — is pending until the next dock banks it
+ * (#183 D7). A pending figure is session state on the renderer: it is lost with
+ * the ship because a death restores `lastDocked` (#324), and it is lost across
+ * a mid-flight save because `serializeLadders` has nowhere to put it (#183 D9).
+ * A first arrival joins the visited set only when it banks, so a lost arrival
+ * is one the pilot can earn again rather than a kind burned forever.
+ *
+ * Trade credit is earned docked — a sale and a job settlement both happen at a
+ * console — so it banks at once and never passes through pending.
+ *
+ * No DOM and no Three.js.
+ */
+
+import { type CarrierKey, isCarrierKey } from "./carrier-key";
+import { HULL_SPECS, type HullId } from "./hull";
+import { PULSE_LASER, SHIELD_POOL } from "./ship-condition";
+import { ARMED_TRAFFIC_HULLS } from "./traffic-engagement";
+import { GALAXY_COUNT, isSystemIndex } from "./world-state";
+
+// ---------------------------------------------------------------------------
+// The ladders and their thresholds (#562 D1, D2, D8)
+// ---------------------------------------------------------------------------
+
+export const LADDERS = ["combat", "trade", "exploration"] as const;
+export type Ladder = (typeof LADDERS)[number];
+
+/** Rungs run 0 (the start, every pilot has it) to 8 (#562 D1). */
+export const TOP_RUNG = 8;
+/** Each rung costs exactly this multiple of the one below (#562 D1). */
+export const RUNG_RATIO = 2;
+/** Hours of focused play from rung 0 to the top, on one ladder (#562 D2). */
+export const FOCUSED_HOURS_TO_TOP = 40;
+/** A declared guess, not a measurement (#562 D2): a person earns this share of
+ *  the greedy model pilot's rate. `LadderRecord.playedS` is the play log that
+ *  replaces it. */
+export const HUMAN_FACTOR = 0.5;
+/** The rung the capstone reads on all three ladders (#183 D8). */
+export const CAPSTONE_RUNG = TOP_RUNG;
+
+/**
+ * Each ladder's top-rung threshold, **as #562 published it**: rate × human
+ * factor × 40 h, from the medians `scripts/measure-ladder-rates.ts` measures.
+ *
+ * Stored rather than derived at load for the reason `HULL_SPECS.priceCr` is: the
+ * measurement runs the greedy trader over four galaxies for eight hours, and a
+ * figure a player's rung depends on does not move because a generator did. The
+ * script prints this beside its fresh derivation, so a drift is visible there.
+ * Trade is realised margin in Cr, combat is kill credit, exploration is
+ * first-time kinds.
+ */
+export const LADDER_TOP: Readonly<Record<Ladder, number>> = {
+	combat: 141.5,
+	trade: 438_276,
+	exploration: 1_055,
+};
+
+/** What rung `n` costs on a ladder: the top over 2^(8 − n). Rung 0 is free. */
+export const threshold = (ladder: Ladder, rung: number): number =>
+	rung <= 0 ? 0 : LADDER_TOP[ladder] / RUNG_RATIO ** (TOP_RUNG - rung);
+
+/** The highest rung a banked total reaches. */
+export const rungOf = (ladder: Ladder, banked: number): number => {
+	let rung = 0;
+	for (let n = 1; n <= TOP_RUNG; n++) if (banked >= threshold(ladder, n)) rung = n;
+	return rung;
+};
+
+export type Rungs = Readonly<Record<Ladder, number>>;
+
+/** The three rungs a record stands on. */
+export const rungsOf = (record: LadderRecord): Rungs => ({
+	combat: rungOf("combat", record.banked.combat),
+	trade: rungOf("trade", record.banked.trade),
+	exploration: rungOf("exploration", record.banked.exploration),
+});
+
+/**
+ * Each ladder's nine rung names, rung 0 first (#183 D5).
+ *
+ * **Original names.** The map's Constraints forbid Elite's, which corrects
+ * #8's "retains Elite's named ladder". Drafted with `/write-story`; the
+ * principal's yes is what makes them final.
+ */
+export const RUNG_NAMES: Readonly<Record<Ladder, readonly string[]>> = {
+	combat: [
+		"Unblooded",
+		"Green",
+		"Scrapper",
+		"Gunhand",
+		"Veteran",
+		"Hardened",
+		"Ace",
+		"Nemesis",
+		"Legend",
+	],
+	trade: [
+		"Hawker",
+		"Carter",
+		"Packman",
+		"Chandler",
+		"Factor",
+		"Shipper",
+		"Magnate",
+		"Baron",
+		"Mogul",
+	],
+	exploration: [
+		"Homebound",
+		"Drifter",
+		"Wayfarer",
+		"Charter",
+		"Wanderer",
+		"Navigator",
+		"Farfarer",
+		"Cartographer",
+		"Starwright",
+	],
+};
+
+// ---------------------------------------------------------------------------
+// Combat credit (#562 D3, D4)
+// ---------------------------------------------------------------------------
+
+/** AI skill, S's third factor. 1 for every ship today (#562 D3): S is derived
+ *  from stats, and a learned skill is #563's fog. */
+const AI_SKILL = 1;
+/** The most a kill pays, reached only against an infinitely stronger target:
+ *  a matched kill pays 2·S/(S+S) = 1. */
+const CREDIT_K = 2;
+
+/**
+ * The ship the pilot flies, as far as strength reads it.
+ *
+ * **The fitted ship, not the hull** (#562 D3): a weapon upgrade raises S_own.
+ * Today every weapon item is inert — hardpoints have no behaviour and the
+ * pilot fires one pulse laser whatever is fitted — so `equipment` changes
+ * nothing yet. It is on the input so the node that gives a laser behaviour
+ * changes `fittedDps` and not every caller.
+ */
+export interface FittedShip {
+	hull: HullId;
+	equipment?: readonly string[];
+}
+
+const fittedDps = (_ship: FittedShip): number => PULSE_LASER.damagePerS;
+
+/** Whether a hull fires when it is a target: Traffic's armed hulls and the
+ *  raider. Every other hull never fires (`traffic-engagement.ts`, H3). */
+export const isArmedTarget = (hull: HullId): boolean =>
+	ARMED_TRAFFIC_HULLS.has(hull) || hull === "raider";
+
+/**
+ * S = effective HP × DPS × AI skill (#562 D3). Effective HP is one shield bank
+ * plus integrity. The pilot's own ship is always armed.
+ */
+export const strength = (ship: FittedShip): number =>
+	(SHIELD_POOL + HULL_SPECS[ship.hull].integrity) * fittedDps(ship) * AI_SKILL;
+
+/** A target's S: zero when it never fires (#562 D4). */
+export const targetStrength = (hull: HullId): number =>
+	isArmedTarget(hull)
+		? (SHIELD_POOL + HULL_SPECS[hull].integrity) *
+			PULSE_LASER.damagePerS *
+			AI_SKILL
+		: 0;
+
+/**
+ * What one kill pays: 2·S_target / (S_own + S_target) (#562 D3). The curve is
+ * its own clamp — a matched kill pays 1, none pays 2, and a much weaker target
+ * pays close to 0. An unarmed target pays exactly 0 (#562 D4); it still pays
+ * in cargo, bounty and heat, which are not this ladder's.
+ */
+export const killCredit = (own: FittedShip, target: HullId): number => {
+	const st = targetStrength(target);
+	if (st === 0) return 0;
+	return (CREDIT_K * st) / (strength(own) + st);
+};
+
+// ---------------------------------------------------------------------------
+// The gate catalogue (#562 D7)
+// ---------------------------------------------------------------------------
+
+export interface Gate {
+	ladder: Ladder;
+	rung: number;
+}
+
+/**
+ * Every gated hull and item, by the name a shipyard or the Equipment tab sells
+ * it under. **Absent means rung 0**: the courier, the Docking Computer and the
+ * Long-Range Scanner (#408 and #481 depend on them), the Identity Scanner and
+ * the Escape Pod. Rung 8 gates nothing; it counts toward the capstone.
+ *
+ * Eleven of these items have no behaviour yet, and are gated anyway (#562 D6):
+ * the node that builds an item inherits its gate. `patrol` and `raider` carry a
+ * rung and are still not sold — `PURCHASABLE_HULL_IDS` leaves them out until
+ * #565 and #566 close, because a rung does not supply the legal rules their
+ * sale needs. A tier hull (#26) has no row yet; it will sit on its base role's
+ * ladder above the base hull's rung.
+ */
+export const GATES: Readonly<Record<string, Gate>> = {
+	"Extra Pulse Laser": { ladder: "combat", rung: 1 },
+	Missile: { ladder: "combat", rung: 1 },
+	"E.C.M. System": { ladder: "combat", rung: 2 },
+	interceptor: { ladder: "combat", rung: 3 },
+	"Extra Beam Laser": { ladder: "combat", rung: 3 },
+	"Extra Energy Unit": { ladder: "combat", rung: 4 },
+	"Energy Bomb": { ladder: "combat", rung: 5 },
+	patrol: { ladder: "combat", rung: 6 },
+	"Military Laser": { ladder: "combat", rung: 6 },
+	raider: { ladder: "combat", rung: 7 },
+	"Large Cargo Bay": { ladder: "trade", rung: 1 },
+	prospector: { ladder: "trade", rung: 2 },
+	"Mining Laser": { ladder: "trade", rung: 2 },
+	tug: { ladder: "trade", rung: 3 },
+	miner: { ladder: "trade", rung: 4 },
+	freighter: { ladder: "trade", rung: 5 },
+	"Fuel Scoops": { ladder: "exploration", rung: 1 },
+	explorer: { ladder: "exploration", rung: 3 },
+	"Galactic Hyperdrive": { ladder: "exploration", rung: 5 },
+};
+
+export const gateOf = (name: string): Gate | null =>
+	Object.hasOwn(GATES, name) ? GATES[name] : null;
+
+/** Why a purchase is locked: the ladder, the rung, and that rung's name. */
+export interface GateRefusal extends Gate {
+	name: string;
+}
+
+/**
+ * The gate a purchase fails, or `null` when the pilot stands on its rung.
+ *
+ * **One rung on one ladder** (the map's Constraint from #183): nothing here
+ * reads two ladders or a price. A gate blocks new purchases only — an owned
+ * item stays owned whatever the rung (#183 D9).
+ */
+export const gateRefusal = (name: string, rungs: Rungs): GateRefusal | null => {
+	const gate = gateOf(name);
+	if (!gate || rungs[gate.ladder] >= gate.rung) return null;
+	return { ...gate, name: RUNG_NAMES[gate.ladder][gate.rung] };
+};
+
+// ---------------------------------------------------------------------------
+// The saved record (#183 D9)
+// ---------------------------------------------------------------------------
+
+/** One galaxy's first-time places: the ones banked and the ones a migration or
+ *  a new game seeded. Seeded entries earn nothing; they only stop a kind being
+ *  earned for a place the pilot already had. */
+export interface VisitedPlaces {
+	/** System indices, ascending. */
+	systems: number[];
+	/** Carrier keys, sorted. */
+	stations: CarrierKey[];
+}
+
+/** What a held good cost: `cr` for `units` of it. Units the hold carries past
+ *  `units` have no basis and pay no margin — a v6 hold, on the principal's
+ *  ruling on #564. */
+export interface BasisLine {
+	units: number;
+	cr: number;
+}
+export type CargoBasis = Readonly<Record<string, BasisLine>>;
+
+export interface LadderRecord {
+	/** Banked credit per ladder. Never falls (#183 D7). Exploration's is not
+	 *  the size of `visited`: seeded places are in the sets and earned nothing. */
+	banked: Record<Ladder, number>;
+	/** Per galaxy, keyed by galaxy index; a galaxy with nothing is absent. The
+	 *  totals are commander-global and these name places in one galaxy (D1). */
+	visited: Readonly<Partial<Record<number, VisitedPlaces>>>;
+	/** What the hold's goods cost, per good (D3's purchase basis). */
+	basis: CargoBasis;
+	/** Seconds of real play with the clock running — #562 D2's play log, which
+	 *  turns banked credit into a rate per hour. */
+	playedS: number;
+	/** Game time of the dock on which all three ladders stood at the top (#183
+	 *  D8), or `null`. A recorded fact only; what it opens is fog. */
+	capstoneAt: number | null;
+}
+
+export const emptyLadderRecord = (): LadderRecord => ({
+	banked: { combat: 0, trade: 0, exploration: 0 },
+	visited: {},
+	basis: {},
+	playedS: 0,
+	capstoneAt: null,
+});
+
+/**
+ * The record a new game or a v6 migration starts with: zero on every ladder,
+ * the current system and docked station already seen (#183 D9). A pilot is not
+ * paid for where they started.
+ */
+export const seededLadderRecord = (
+	galaxyIndex: number,
+	systemIndex: number,
+	dockedAt: CarrierKey | null,
+): LadderRecord => ({
+	...emptyLadderRecord(),
+	visited: {
+		[galaxyIndex]: {
+			systems: [systemIndex],
+			stations: dockedAt ? [dockedAt] : [],
+		},
+	},
+});
+
+// ---------------------------------------------------------------------------
+// Pending credit and banking (#183 D7)
+// ---------------------------------------------------------------------------
+
+/** Credit earned since the last dock. Session state: never serialised. */
+export interface PendingCredit {
+	combat: number;
+	systems: readonly { galaxyIndex: number; systemIndex: number }[];
+}
+
+export const emptyPending = (): PendingCredit => ({ combat: 0, systems: [] });
+
+export const pendingKill = (
+	pending: PendingCredit,
+	credit: number,
+): PendingCredit =>
+	credit > 0 ? { ...pending, combat: pending.combat + credit } : pending;
+
+const visitedIn = (record: LadderRecord, galaxyIndex: number): VisitedPlaces =>
+	record.visited[galaxyIndex] ?? { systems: [], stations: [] };
+
+/** An arrival: a first-time kind, pending, unless the system is already in the
+ *  set or already pending. */
+export const pendingArrival = (
+	record: LadderRecord,
+	pending: PendingCredit,
+	galaxyIndex: number,
+	systemIndex: number,
+): PendingCredit => {
+	if (visitedIn(record, galaxyIndex).systems.includes(systemIndex))
+		return pending;
+	if (
+		pending.systems.some(
+			(s) => s.galaxyIndex === galaxyIndex && s.systemIndex === systemIndex,
+		)
+	)
+		return pending;
+	return {
+		...pending,
+		systems: [...pending.systems, { galaxyIndex, systemIndex }],
+	};
+};
+
+const withPlace = (
+	visited: LadderRecord["visited"],
+	galaxyIndex: number,
+	add: { system?: number; station?: CarrierKey },
+): LadderRecord["visited"] => {
+	const here = visited[galaxyIndex] ?? { systems: [], stations: [] };
+	return {
+		...visited,
+		[galaxyIndex]: {
+			systems:
+				add.system === undefined
+					? here.systems
+					: [...here.systems, add.system].sort((a, b) => a - b),
+			stations:
+				add.station === undefined
+					? here.stations
+					: [...here.stations, add.station].sort(),
+		},
+	};
+};
+
+/**
+ * A dock: the station's first-dock kind, then everything pending, then the
+ * capstone check — in that order, so the capstone reads the dock's own credit.
+ *
+ * **The caller banks before the dock flush.** `lastDocked` is the record a
+ * death restores; banked after the flush, a dock's credit would ride only on
+ * the next write, and a death before it would lose credit the pilot docked
+ * with.
+ */
+export const bankOnDock = (
+	record: LadderRecord,
+	pending: PendingCredit,
+	at: { galaxyIndex: number; station: CarrierKey; gameTime: number },
+): LadderRecord => {
+	let visited = record.visited;
+	let kinds = 0;
+	for (const { galaxyIndex, systemIndex } of pending.systems) {
+		if (visitedIn({ ...record, visited }, galaxyIndex).systems.includes(systemIndex))
+			continue;
+		visited = withPlace(visited, galaxyIndex, { system: systemIndex });
+		kinds += 1;
+	}
+	if (!visitedIn({ ...record, visited }, at.galaxyIndex).stations.includes(at.station)) {
+		visited = withPlace(visited, at.galaxyIndex, { station: at.station });
+		kinds += 1;
+	}
+	const banked = {
+		...record.banked,
+		combat: record.banked.combat + pending.combat,
+		exploration: record.banked.exploration + kinds,
+	};
+	const next: LadderRecord = { ...record, banked, visited };
+	const atTop = LADDERS.every((l) => rungOf(l, banked[l]) >= CAPSTONE_RUNG);
+	return record.capstoneAt === null && atTop
+		? { ...next, capstoneAt: at.gameTime }
+		: next;
+};
+
+/** Trade credit, banked at once: a sale or a settlement happens docked. */
+export const bankTrade = (record: LadderRecord, cr: number): LadderRecord =>
+	cr > 0
+		? { ...record, banked: { ...record.banked, trade: record.banked.trade + cr } }
+		: record;
+
+// ---------------------------------------------------------------------------
+// The purchase basis (#183 D3)
+// ---------------------------------------------------------------------------
+
+const lineOf = (basis: CargoBasis, good: string): BasisLine =>
+	Object.hasOwn(basis, good) ? basis[good] : { units: 0, cr: 0 };
+
+const withLine = (
+	basis: CargoBasis,
+	good: string,
+	line: BasisLine,
+): CargoBasis => {
+	const next = { ...basis };
+	if (line.units <= 0) delete next[good];
+	else next[good] = line;
+	return next;
+};
+
+/** A market purchase: `units` at a total of `cr`. */
+export const basisAfterBuy = (
+	basis: CargoBasis,
+	good: string,
+	units: number,
+	cr: number,
+): CargoBasis => {
+	const line = lineOf(basis, good);
+	return withLine(basis, good, { units: line.units + units, cr: line.cr + cr });
+};
+
+/** A scooped canister: its units cost nothing, so their sale is all margin
+ *  (the principal's ruling on #564; D3 counts contraband). */
+export const basisAfterScoop = (
+	basis: CargoBasis,
+	good: string,
+	units: number,
+): CargoBasis => basisAfterBuy(basis, good, units, 0);
+
+/**
+ * A market sale of `units` for `proceedsCr`, against the hold as it stood
+ * before the sale.
+ *
+ * Units with no basis are sold first and pay no margin — the ruling that keeps
+ * a v6 migration at zero. The rest are sold at the line's average cost. **A
+ * loss does not subtract** (D3): a sale below cost pays 0, never less.
+ */
+export const saleMargin = (
+	basis: CargoBasis,
+	heldBefore: Readonly<Record<string, number>>,
+	good: string,
+	units: number,
+	proceedsCr: number,
+): { marginCr: number; basis: CargoBasis } => {
+	const line = lineOf(basis, good);
+	const held = heldBefore[good] ?? 0;
+	const unbased = Math.max(0, held - line.units);
+	const fromBased = Math.max(0, Math.min(line.units, units - unbased));
+	if (fromBased === 0) return { marginCr: 0, basis };
+	const costCr = (line.cr * fromBased) / line.units;
+	const proceedsBased = (proceedsCr * fromBased) / units;
+	return {
+		marginCr: Math.max(0, proceedsBased - costCr),
+		basis: withLine(basis, good, {
+			units: line.units - fromBased,
+			cr: line.cr - costCr,
+		}),
+	};
+};
+
+/**
+ * The basis brought into line with a hold that lost goods some other way — a
+ * job commitment, a delivery. A line never covers more units than are aboard;
+ * it shrinks at its own average cost. Goods that *arrive* some other way get no
+ * line, so they pay no margin, which is the safe side.
+ */
+export const reconcileBasis = (
+	basis: CargoBasis,
+	held: Readonly<Record<string, number>>,
+): CargoBasis => {
+	let next = basis;
+	for (const [good, line] of Object.entries(basis)) {
+		const aboard = held[good] ?? 0;
+		if (aboard >= line.units) continue;
+		next = withLine(next, good, {
+			units: aboard,
+			cr: line.units > 0 ? (line.cr * aboard) / line.units : 0,
+		});
+	}
+	return next;
+};
+
+// ---------------------------------------------------------------------------
+// Serialisation
+// ---------------------------------------------------------------------------
+
+const fail = (message: string): never => {
+	throw new Error(`save: commander.ladders: ${message}`);
+};
+
+/** Canonical form: fixed key order, sorted galaxies, goods and places, so two
+ *  equal records hash the same. No pending field exists to write. */
+export const serializeLadders = (record: LadderRecord): unknown => {
+	const visited: Record<string, unknown> = {};
+	for (const g of Object.keys(record.visited)
+		.map(Number)
+		.sort((a, b) => a - b)) {
+		const places = record.visited[g] as VisitedPlaces;
+		visited[String(g)] = {
+			systems: [...places.systems].sort((a, b) => a - b),
+			stations: [...places.stations].sort(),
+		};
+	}
+	const basis: Record<string, unknown> = {};
+	for (const good of Object.keys(record.basis).sort())
+		basis[good] = { units: record.basis[good].units, cr: record.basis[good].cr };
+	return {
+		banked: {
+			combat: record.banked.combat,
+			trade: record.banked.trade,
+			exploration: record.banked.exploration,
+		},
+		visited,
+		basis,
+		playedS: record.playedS,
+		capstoneAt: record.capstoneAt,
+	};
+};
+
+const obj = (raw: unknown, what: string): Record<string, unknown> => {
+	if (raw === null || typeof raw !== "object" || Array.isArray(raw))
+		fail(`${what} is not an object`);
+	return raw as Record<string, unknown>;
+};
+
+const nonNegative = (raw: unknown, what: string): number => {
+	if (typeof raw !== "number" || !Number.isFinite(raw) || raw < 0)
+		fail(`${what} is not a non-negative number`);
+	return raw as number;
+};
+
+/** Reads a saved record back, or throws with a named reason. Copies every
+ *  value out; never edits what it was handed (#89 D8). */
+export const parseLadders = (raw: unknown): LadderRecord => {
+	const o = obj(raw, "record");
+	const b = obj(o.banked, "banked");
+	const banked = {
+		combat: nonNegative(b.combat, "banked.combat"),
+		trade: nonNegative(b.trade, "banked.trade"),
+		exploration: nonNegative(b.exploration, "banked.exploration"),
+	};
+	const visited: Record<number, VisitedPlaces> = {};
+	for (const [k, v] of Object.entries(obj(o.visited, "visited"))) {
+		const g = Number(k);
+		if (!Number.isInteger(g) || g < 0 || g >= GALAXY_COUNT || String(g) !== k)
+			fail(`visited: ${k} is not a galaxy index`);
+		const places = obj(v, `visited.${k}`);
+		const systems = places.systems;
+		if (!Array.isArray(systems) || !systems.every(isSystemIndex))
+			fail(`visited.${k}.systems is not a list of system indices`);
+		const stations = places.stations;
+		if (
+			!Array.isArray(stations) ||
+			!stations.every((s) => typeof s === "string" && isCarrierKey(s))
+		)
+			fail(`visited.${k}.stations is not a list of carrier keys`);
+		visited[g] = {
+			systems: [...(systems as number[])],
+			stations: [...(stations as CarrierKey[])],
+		};
+	}
+	const basis: Record<string, BasisLine> = Object.create(null);
+	for (const [good, v] of Object.entries(obj(o.basis, "basis"))) {
+		const line = obj(v, `basis.${good}`);
+		basis[good] = {
+			units: nonNegative(line.units, `basis.${good}.units`),
+			cr: nonNegative(line.cr, `basis.${good}.cr`),
+		};
+	}
+	const capstoneAt =
+		o.capstoneAt === null ? null : nonNegative(o.capstoneAt, "capstoneAt");
+	return {
+		banked,
+		visited,
+		basis: { ...basis },
+		playedS: nonNegative(o.playedS, "playedS"),
+		capstoneAt,
+	};
+};
