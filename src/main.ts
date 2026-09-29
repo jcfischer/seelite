@@ -200,6 +200,7 @@ import { GOVERNMENT_NAMES, type SystemRecord } from "./galaxy";
 // vector handed to it.
 import { SYSTEM_PLANE_NORMAL } from "./galaxy-frame";
 import { type Course, courseProgress, setCourse } from "./galaxy-route";
+import { hullReachFrom } from "./hull-reach";
 // The pad, normalised. What any of it *means* is `pollPad` and the panel
 // routing below, and nowhere else — that module was copied in from seekolous
 // and must not learn what a station is.
@@ -736,6 +737,7 @@ import {
 	basisAfterScoop,
 	emptyLadderRecord,
 	emptyPending,
+	ladderAfterHullSale,
 	ladderAfterMarket,
 	ladderAfterSettlement,
 	pendingArrival,
@@ -4147,6 +4149,13 @@ class Game {
 			onRequestAction: (action, id) =>
 				this.consolePress(this.actOnRequest(action, id)),
 			onStationAction: (type, name) => {
+				if (type === "buy-hull") {
+					// The row carries a hull id; one the roster does not sell is a
+					// tampered press, and it buys nothing.
+					const hull = purchasableHullNamed(name);
+					if (hull) this.consolePress(this.transactStation({ type, hull }));
+					return;
+				}
 				const action: StationAction =
 					type === "buy-fuel"
 						? { type }
@@ -15726,6 +15735,11 @@ class Game {
 		this.stationConsoleMessage = null;
 	}
 
+	/** How far a hull reaches from the system the ship is in (#185 D3): the
+	 *  shipyard row and the till both read it through `hullOffer`. */
+	private readonly hullReachHere = (hull: HullId) =>
+		hullReachFrom(this.world.galaxy.systems, this.world.system.record, hull);
+
 	/**
 	 * Applies a complete commerce result or leaves both owner states untouched.
 	 * Returns whether the till took the press: the press's sound reads it (#546).
@@ -15745,6 +15759,7 @@ class Game {
 			displayTL: this.world.system.record.displayTL,
 			entrustedT: entrustedTonnesAboard(this.requests),
 			rungs: this.rungs(),
+			hullReach: this.hullReachHere,
 			action,
 		});
 		if (!result.accepted) {
@@ -15772,7 +15787,18 @@ class Game {
 		this.clearStationRefusal();
 		// #183 D3: a buy records its basis, a sale banks its margin at once.
 		this.ladders = withCapstone(
-			ladderAfterMarket(this.ladders, action, this.commander, result.commander),
+			action.type === "buy-hull"
+				? ladderAfterHullSale(
+						this.ladders,
+						this.commander.cargo,
+						result.sold ?? [],
+					)
+				: ladderAfterMarket(
+						this.ladders,
+						action,
+						this.commander,
+						result.commander,
+					),
 			this.world.gameTime,
 		);
 		this.commander = result.commander;

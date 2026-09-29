@@ -212,6 +212,7 @@ export function flyConsoleCycle(
 				gameTimeMin,
 				entrustedT: 0,
 				rungs: TOP_RUNGS,
+				hullReach: () => ({ ok: true, systems: 1 }) as const,
 				displayTL,
 				action: {
 					type: kind === "buy" ? "buy-commodity" : "sell-commodity",

@@ -40,6 +40,7 @@ const buy = (equipment: string, rungs: Rungs, owned: string[] = []) =>
 		displayTL: 11,
 		entrustedT: 0,
 		rungs,
+		hullReach: () => ({ ok: true, systems: 1 }) as const,
 		action: { type: "buy-equipment", equipment },
 	});
 

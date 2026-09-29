@@ -12,13 +12,15 @@
  */
 import type { CarrierKey } from "./carrier-key";
 import { type DeficitMap, readDeficit, recordTrade } from "./deficits";
-import { HULL_SPECS, type HullId } from "./hull";
+import { HULL_SPECS, type HullId, PURCHASABLE_HULL_IDS } from "./hull";
+import type { HullReach } from "./hull-reach";
 import {
 	FUEL_CR_PER_LY,
 	type Commodity,
 	type MarketStation,
 	type QuoteFn,
 	type UniversalItem,
+	EQUIPMENT,
 	commodity,
 	listsCommodity,
 	marketQuote,
@@ -26,7 +28,7 @@ import {
 	shelfQuantity,
 	stockResponse,
 } from "./market";
-import type { Rungs } from "./ladder";
+import { type GateRefusal, type Rungs, gateRefusal } from "./ladder";
 import {
 	type ConsoleEquipmentEntry,
 	stationEquipmentScreen,
@@ -88,7 +90,14 @@ export type StationAction =
 	 * refused: a pilot with 3 Cr and an empty tank needs the 1.5 LY those buy
 	 * more than they need a refusal.
 	 */
-	| { type: "buy-fuel" };
+	| { type: "buy-fuel" }
+	/**
+	 * Buy a hull at a shipyard, trading in the flown one (#556, #583).
+	 *
+	 * `hullOffer` prices it, and the row the Shipyard tab prints is that same
+	 * offer — so the refusal on a row is the refusal a press gets.
+	 */
+	| { type: "buy-hull"; hull: HullId };
 
 export interface StationCommerceInput {
 	commander: CommanderState;
@@ -113,6 +122,15 @@ export interface StationCommerceInput {
 	 * Required for `entrustedT`'s reason; `TOP_RUNGS` is the open gate.
 	 */
 	rungs: Rungs;
+	/**
+	 * How far each hull reaches from this system (#185 D3) — `hullReachFrom`
+	 * bound to the galaxy and the system the ship is docked in.
+	 *
+	 * A function rather than the galaxy, so this module stays off the galaxy's
+	 * import graph; required for `entrustedT`'s reason, since a caller that
+	 * forgot it would sell a hull that can never leave.
+	 */
+	hullReach: (hull: HullId) => HullReach;
 	action: StationAction;
 }
 
@@ -145,7 +163,13 @@ export type CommerceRefusal =
 	| "commodity-sell-only"
 	| "insufficient-shelf"
 	| "cargo-full"
-	| "cargo-missing";
+	| "cargo-missing"
+	| "hull-unavailable"
+	| "hull-owned"
+	| "hull-locked"
+	| "no-reach"
+	| "hull-mounts"
+	| "hull-hold";
 
 /**
  * One transaction's outcome, **discriminated on `accepted`** (#443).
@@ -163,6 +187,9 @@ export type StationCommerceResult =
 			reason: null;
 			commander: CommanderState;
 			deficits: DeficitMap;
+			/** A hull purchase's auto-sale (#556 D6), for the ladder to bank;
+			 *  absent on every other action. */
+			sold?: readonly SoldLot[];
 	  }
 	| {
 			accepted: false;
@@ -266,6 +293,18 @@ export function transactAtStation(
 	quote: QuoteFn = marketQuote,
 ): StationCommerceResult {
 	const { action } = input;
+	if (action.type === "buy-hull") {
+		const offer = hullOffer(input, action.hull, quote);
+		return offer.accepted
+			? {
+					accepted: true,
+					reason: null,
+					commander: offer.commander,
+					deficits: offer.deficits,
+					sold: offer.sold,
+				}
+			: rejected(input, offer.reason);
+	}
 	if (action.type === "buy-fuel") {
 		// To the flown hull's tank, which is also its range (#185 D1, #554).
 		const wanted =
@@ -401,3 +440,219 @@ export const commanderHold = (
 	usedT: heldTonnes(commander.cargo) + entrustedT,
 	capacityT: holdCapacityT(commander),
 });
+
+// ---------------------------------------------------------------------------
+// The shipyard's hull sale (#556, #583)
+// ---------------------------------------------------------------------------
+
+/** #556 D5: the flown hull is taken at nine tenths of its list price, so a
+ *  swap and back loses a tenth of each hull and no loop earns. */
+export const HULL_TRADE_IN_FRACTION = 0.9;
+
+/**
+ * The fittings that take a weapon mount (#556 D4), and every other fitting.
+ *
+ * The pilot's standard pulse laser is part of the hull and takes no row here;
+ * the extra lasers and the mining laser each take one of the new hull's
+ * `hardpoints`. Both lists are asserted against `EQUIPMENT` in
+ * `tests/hull-sale.test.ts`, so a new fitting has to be put on one side.
+ */
+export const MOUNTED_EQUIPMENT = [
+	"Extra Pulse Laser",
+	"Extra Beam Laser",
+	"Military Laser",
+	"Mining Laser",
+] as const satisfies readonly (typeof EQUIPMENT)[number]["name"][];
+
+export const UNMOUNTED_EQUIPMENT: readonly string[] = EQUIPMENT.map(
+	(item) => item.name,
+).filter((name) => !(MOUNTED_EQUIPMENT as readonly string[]).includes(name));
+
+const mountsUsed = (owned: readonly string[]): number =>
+	owned.filter((name) =>
+		(MOUNTED_EQUIPMENT as readonly string[]).includes(name),
+	).length;
+
+/** One lot the offer sells to make the cargo fit the new hold (#556 D6). */
+export interface SoldLot {
+	good: string;
+	units: number;
+	proceedsCr: number;
+}
+
+/**
+ * One hull, priced for one commander at one shipyard: the row and the till.
+ *
+ * On a refusal `commander` and `deficits` are the inputs untouched, as every
+ * refusal of the till leaves them; the price fields are still filled where
+ * they could be computed, so a refused row can still print its figures.
+ */
+export type HullOffer = StationCommerceResult & {
+	hull: HullId;
+	/** The new hull's list price. */
+	listCr: number;
+	/** What the flown hull fetches, `HULL_TRADE_IN_FRACTION` of its list. */
+	tradeInCr: number;
+	/** `listCr − tradeInCr`; negative when the shipyard pays the pilot. */
+	netCr: number;
+	/** How far the hull reaches from here, or `null` when not yet read. */
+	reach: HullReach | null;
+	/** The ladder gate the row fails, on a `hull-locked` refusal. */
+	locked?: GateRefusal;
+	/** The lots D6 sells, cheapest bid first, and what they fetch. */
+	sold: readonly SoldLot[];
+	saleCr: number;
+};
+
+/**
+ * #556 in one function: the trade-in (D5), the mount check (D4), the cargo
+ * over the new hold sold through this till (D6), and the refusal order D9
+ * rules — lock, reach, fit, credits, first match wins.
+ *
+ * **D9's damaged-exclusive-slot step is not here**: station damage is unbuilt
+ * (`station-damage.md` §4), so there is no condition to read, and a refusal
+ * nothing could produce would be a sentence nobody reads.
+ *
+ * D6's order, by the principal's ruling on #583: tonne goods this station bids
+ * on are sold **cheapest bid first**, in whole tonnes, at the flown hull's
+ * `holdT` — the price a manual sale at that moment gets. Goods it cannot bid
+ * on (contraband at a shipyard without a black market) are kept, and so is
+ * the entrusted lot; if those alone overflow the new hold, the sale is refused.
+ */
+export function hullOffer(
+	input: StationCommerceInput,
+	hull: HullId,
+	quote: QuoteFn = marketQuote,
+): HullOffer {
+	const { commander } = input;
+	const listCr = HULL_SPECS[hull].priceCr ?? 0;
+	const tradeInCr = Math.round(
+		(HULL_SPECS[commander.hull].priceCr ?? 0) * HULL_TRADE_IN_FRACTION,
+	);
+	const base = {
+		hull,
+		listCr,
+		tradeInCr,
+		netCr: listCr - tradeInCr,
+		reach: null as HullReach | null,
+		sold: [] as readonly SoldLot[],
+		saleCr: 0,
+	};
+	const sold = HULL_SPECS[hull].priceCr !== null;
+	if (
+		input.station.type !== "shipyard" ||
+		!sold ||
+		!(PURCHASABLE_HULL_IDS as readonly HullId[]).includes(hull)
+	)
+		return { ...rejected(input, "hull-unavailable"), ...base };
+	if (hull === commander.hull)
+		return { ...rejected(input, "hull-owned"), ...base };
+	const locked = gateRefusal(hull, input.rungs);
+	if (locked) return { ...rejected(input, "hull-locked"), ...base, locked };
+	const reach = input.hullReach(hull);
+	if (!reach.ok) return { ...rejected(input, "no-reach"), ...base, reach };
+	const reached = { ...base, reach };
+	if (mountsUsed(commander.ownedEquipment) > HULL_SPECS[hull].hardpoints)
+		return { ...rejected(input, "hull-mounts"), ...reached };
+
+	// D6: what the new hold can take, and what must go to make it fit.
+	const capacityT = holdCapacityT({ ...commander, hull });
+	let overflowT = Math.ceil(
+		heldTonnes(commander.cargo) + input.entrustedT - capacityT,
+	);
+	const sellable = Object.entries(commander.cargo)
+		.map(([name, units]) => ({ good: commodity(name), units }))
+		.filter(
+			({ good, units }) =>
+				good.unit === "t" && units > 0 && listsCommodity(good, input.station),
+		)
+		.map((lot) => ({
+			...lot,
+			bidCr: bidAt(input, lot.good, quote),
+		}))
+		.sort((a, b) => a.bidCr - b.bidCr);
+	const sellableT = sellable.reduce((sum, lot) => sum + lot.units, 0);
+	if (overflowT > sellableT)
+		return { ...rejected(input, "hull-hold"), ...reached };
+
+	let state = { commander, deficits: input.deficits };
+	const lots: SoldLot[] = [];
+	for (const lot of sellable) {
+		if (overflowT <= 0) break;
+		const units = Math.min(lot.units, overflowT);
+		const out = transactAtStation(
+			{
+				...input,
+				commander: state.commander,
+				deficits: state.deficits,
+				action: {
+					type: "sell-commodity",
+					commodity: lot.good.name,
+					quantity: units,
+				},
+			},
+			quote,
+		);
+		// A listed good the commander holds sells; a refusal here is a defect in
+		// this function, not a state the pilot can reach.
+		if (!out.accepted)
+			throw new Error(`auto-sale of ${lot.good.name} refused: ${out.reason}`);
+		lots.push({
+			good: lot.good.name,
+			units,
+			proceedsCr: out.commander.credits - state.commander.credits,
+		});
+		state = { commander: out.commander, deficits: out.deficits };
+		overflowT -= units;
+	}
+	const saleCr = lots.reduce((sum, lot) => sum + lot.proceedsCr, 0);
+	const priced = { ...reached, sold: lots, saleCr };
+	if (commander.credits + saleCr < priced.netCr)
+		return { ...rejected(input, "insufficient-credits"), ...priced };
+	return {
+		accepted: true,
+		reason: null,
+		commander: {
+			...state.commander,
+			hull,
+			credits: state.commander.credits - priced.netCr,
+			// As #554's load clamp does: the tank is the hull's, never topped up.
+			fuelLy: Math.min(state.commander.fuelLy, HULL_SPECS[hull].tankLy),
+		},
+		deficits: state.deficits,
+		...priced,
+	};
+}
+
+/** What this station pays for one unit now, as the sell branch charges it. */
+const bidAt = (
+	input: StationCommerceInput,
+	good: Commodity,
+	quote: QuoteFn,
+): number => {
+	const base = marketRow(good, input.economy, input.station, input.gameTimeMin);
+	const deficit = readDeficit(
+		input.deficits,
+		input.stationKey,
+		good.name,
+		input.gameTimeMin,
+	);
+	const mid = stockResponse(
+		base.priceCr,
+		deficit,
+		holdCapacityT(input.commander),
+	);
+	return quote(mid, input.displayTL).sellCr;
+};
+
+/**
+ * The Shipyard tab (#556 D1, D8): one offer per purchasable hull, in roster
+ * order, at shipyards only — the tab is absent elsewhere, so a non-shipyard
+ * gets no rows rather than seven refusals.
+ */
+export const shipyardScreen = (
+	input: StationCommerceInput,
+): readonly HullOffer[] =>
+	input.station.type === "shipyard"
+		? PURCHASABLE_HULL_IDS.map((hull) => hullOffer(input, hull))
+		: [];
