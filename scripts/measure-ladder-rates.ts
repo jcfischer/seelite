@@ -90,7 +90,6 @@ import {
 // `src/kill-credit.ts`'s, so this instrument and the game read one copy.
 // Everything section 5 prints is computed from these and from sections 1–3,
 // and it ends by printing the tops the game ships beside the tops it derived.
-const RATIO = RUNG_RATIO;
 
 const hours = Number(process.argv[2] ?? 8);
 const worldSeed = Number(process.argv[3] ?? 0x5ee11e);
@@ -601,7 +600,7 @@ console.log(
 	"\n5. THRESHOLDS — the principal's ruling on #562, computed from 1–3",
 );
 console.log(
-	`   declared (src/ladder.ts): TOP_RUNG ${TOP_RUNG} (rungs 0–${TOP_RUNG}), RATIO ${RATIO}, FOCUSED_HOURS_TO_TOP ${FOCUSED_HOURS_TO_TOP}, HUMAN_FACTOR ${HUMAN_FACTOR} (a declared guess, recalibrated from the Commander page's play log)`,
+	`   declared (src/ladder.ts): TOP_RUNG ${TOP_RUNG} (rungs 0–${TOP_RUNG}), RUNG_RATIO ${RUNG_RATIO}, FOCUSED_HOURS_TO_TOP ${FOCUSED_HOURS_TO_TOP}, HUMAN_FACTOR ${HUMAN_FACTOR} (a declared guess, recalibrated from the Commander page's play log)`,
 );
 
 const list = (xs: readonly number[], digits = 0) =>
@@ -612,9 +611,8 @@ const list = (xs: readonly number[], digits = 0) =>
 // A *target* is armed if Traffic arms it or it is the raider; the pilot's own
 // ship is always armed. The pilot's hull is no longer printed as an armed
 // target, because in the game a courier in the lanes never fires.
-const isArmed = isArmedTarget;
-const dps = (h: HullId): number => (isArmed(h) ? PULSE_LASER.damagePerS : 0);
-const strength = (h: HullId): number => targetStrength(h);
+const dps = (h: HullId): number =>
+	isArmedTarget(h) ? PULSE_LASER.damagePerS : 0;
 const credit = (own: HullId, target: HullId): number =>
 	killCredit({ hull: own }, target);
 
@@ -623,11 +621,11 @@ console.log(
 );
 for (const h of DOCKABLE_HULL_IDS)
 	console.log(
-		`     ${h.padEnd(12)} integrity ${String(HULL_SPECS[h].integrity).padStart(4)}  ${isArmed(h) ? "armed  " : "unarmed"}  DPS ${dps(h)}  S ${strength(h)}`,
+		`     ${h.padEnd(12)} integrity ${String(HULL_SPECS[h].integrity).padStart(4)}  ${isArmedTarget(h) ? "armed  " : "unarmed"}  DPS ${dps(h)}  S ${targetStrength(h)}`,
 	);
 
 const OWN_ROWS: HullId[] = [...PURCHASABLE_HULL_IDS, "patrol", "raider"];
-const TARGET_COLS: HullId[] = DOCKABLE_HULL_IDS.filter((h) => isArmed(h));
+const TARGET_COLS: HullId[] = DOCKABLE_HULL_IDS.filter((h) => isArmedTarget(h));
 console.log(
 	`\n   credit per kill = 2·S_t / (S_o + S_t); rows: own hull, flown armed; columns: armed targets`,
 );
@@ -694,10 +692,10 @@ const LADDERS = [
 ];
 const tops = LADDERS.map((l) => l.rate * HUMAN_FACTOR * FOCUSED_HOURS_TO_TOP);
 const rungs = Array.from({ length: TOP_RUNG }, (_, i) => i + 1);
-const atRung = (top: number, n: number) => top / RATIO ** (TOP_RUNG - n);
+const atRung = (top: number, n: number) => top / RUNG_RATIO ** (TOP_RUNG - n);
 
 console.log(
-	`\n   top = rate × HUMAN_FACTOR × FOCUSED_HOURS_TO_TOP; rung n = top / ${RATIO}^(${TOP_RUNG} − n)`,
+	`\n   top = rate × HUMAN_FACTOR × FOCUSED_HOURS_TO_TOP; rung n = top / ${RUNG_RATIO}^(${TOP_RUNG} − n)`,
 );
 console.log(
 	`   ${"rung".padEnd(6)}${"focused h".padStart(11)}${LADDERS.map((l) => `${l.name} (${l.unit})`.padStart(22)).join("")}`,

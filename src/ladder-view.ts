@@ -123,6 +123,17 @@ const UNIT: Record<Ladder, string> = {
 export const ladderViewKey = (view: LadderView): string =>
 	`${view.rows.map((r) => `${r.rung}:${FIGURE[r.ladder](r.banked)}:${r.pending.toFixed(1)}`).join(",")}|${view.playedH.toFixed(1)}|${view.capstone}`;
 
+/**
+ * The inputs `ladderView` reads, as a string: a caller memoises the view on
+ * it, since the cockpit state is built every frame and the page is one tab of
+ * six. `playedS` enters in six-minute steps, the resolution the page prints.
+ */
+export const ladderInputKey = (
+	record: LadderRecord,
+	pending: PendingCredit,
+): string =>
+	`${LADDERS.map((l) => record.banked[l]).join(",")}|${pending.combat}|${pending.systems.length}|${Math.floor(record.playedS / 360)}|${record.capstoneAt}`;
+
 export function commanderBody(view: LadderView): string {
 	const rows = view.rows
 		.map((row) => {

@@ -47,16 +47,15 @@ export const isArmedTarget = (hull: HullId): boolean =>
  * S = effective HP × DPS × AI skill (#562 D3). Effective HP is one shield bank
  * plus integrity. The pilot's own ship is always armed.
  */
+const hullStrength = (hull: HullId, dps: number): number =>
+	(SHIELD_POOL + HULL_SPECS[hull].integrity) * dps * AI_SKILL;
+
 export const strength = (ship: FittedShip): number =>
-	(SHIELD_POOL + HULL_SPECS[ship.hull].integrity) * fittedDps(ship) * AI_SKILL;
+	hullStrength(ship.hull, fittedDps(ship));
 
 /** A target's S: zero when it never fires (#562 D4). */
 export const targetStrength = (hull: HullId): number =>
-	isArmedTarget(hull)
-		? (SHIELD_POOL + HULL_SPECS[hull].integrity) *
-			PULSE_LASER.damagePerS *
-			AI_SKILL
-		: 0;
+	isArmedTarget(hull) ? hullStrength(hull, PULSE_LASER.damagePerS) : 0;
 
 /**
  * What one kill pays: 2·S_target / (S_own + S_target) (#562 D3). The curve is

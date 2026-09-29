@@ -727,7 +727,7 @@ const MODIFIER_KEYS: ReadonlySet<string> = new Set([
 ]);
 import { readDeficit, recordTrade } from "./deficits";
 import { killCredit } from "./kill-credit";
-import { ladderView } from "./ladder-view";
+import { type LadderView, ladderInputKey, ladderView } from "./ladder-view";
 import {
 	type LadderRecord,
 	type PendingCredit,
@@ -740,6 +740,7 @@ import {
 	ladderAfterSettlement,
 	pendingArrival,
 	pendingKill,
+	reconcileBasis,
 	rungsOf,
 	seededLadderRecord,
 } from "./ladder";
@@ -3662,6 +3663,10 @@ class Game {
 			this.permadeath = save.commander.permadeath;
 			this.firstDay = save.commander.firstDay;
 			this.ladders = save.commander.ladders;
+			// Explicit, though a restore builds a fresh `Game` and it is empty
+			// already: a death reloads the page into `lastDocked`, and credit
+			// earned before it must not ride into the dock it restores (D7).
+			this.ladderPending = emptyPending();
 			// **A docked save resumes in flight at the arrival point, and that
 			// is a deliberate scale-down rather than an omission.** Re-entering
 			// a berth means rebuilding a whole dock session — the grant, the
@@ -14397,7 +14402,7 @@ class Game {
 			// market call, so the figure on this page is the figure the till
 			// would pay, and `null` in flight rather than a stale one.
 			holdBids: this.holdBids(dockContext),
-			ladders: ladderView(this.ladders, this.ladderPending),
+			ladders: this.commanderPage(),
 			mode: this.regime === "cruise" ? "CRUISE" : "NORMAL FLIGHT",
 			throttle: `${(this.throttle * 100).toFixed(0)}%`,
 			speed: velocity.speed,
@@ -14817,6 +14822,22 @@ class Game {
 		return this.stationConsoleCache;
 	}
 
+	private commanderPageKey = "";
+	private commanderPageView: LadderView | null = null;
+
+	/**
+	 * The Commander page's view, rebuilt only when a figure it prints changes:
+	 * the cockpit state is built every frame, and the page is one tab of six.
+	 */
+	private commanderPage(): LadderView {
+		const key = ladderInputKey(this.ladders, this.ladderPending);
+		if (key !== this.commanderPageKey || !this.commanderPageView) {
+			this.commanderPageKey = key;
+			this.commanderPageView = ladderView(this.ladders, this.ladderPending);
+		}
+		return this.commanderPageView;
+	}
+
 	/** The pilot's three rungs, off the banked record. */
 	rungs(): Rungs {
 		return rungsOf(this.ladders);
@@ -14886,7 +14907,14 @@ class Game {
 			firstDay: this.firstDay,
 			// A copy: `playedS` is advanced in place every frame, and a record
 			// handed to the store must not move after it is read.
-			ladders: { ...this.ladders },
+			// A copy (`playedS` moves in place every frame), and a basis brought
+			// into line with the hold: goods leave it by paths that are not a sale
+			// — a shipyard's confiscation, a job — and the parser refuses a basis
+			// covering more than is aboard rather than guessing which units went.
+			ladders: {
+				...this.ladders,
+				basis: reconcileBasis(this.ladders.basis, this.commander.cargo),
+			},
 			flight: {
 				pos: [
 					this.world.ship.pos.x,

@@ -183,7 +183,7 @@ catalogue would put three unrelated decisions in one document. The principal
 also declined folding them together with the damage node, which would bundle a
 generation rule with a cockpit verb — two things tuned by different evidence.
 
-### D12 — Jobs are independent of the rating ladder
+### D12 — Jobs are independent of the ladders
 
 Nothing in this spec reads a ladder rung. Jobs are gated by need (D8) and by
 concrete requirements — a weapon, hold space, equipment.

@@ -808,6 +808,8 @@ try {
 	const killed = await page.evaluate((key) => {
 		const p = window.__engagementProbe;
 		const g = window.__seelite;
+		// #564: an unarmed carrier's kill pays no combat credit (#562 D4).
+		const pendingBefore = g.ladderPending.combat;
 		const { heat, updatedAt } = g.legalRow();
 		const statusBefore = { heat, updatedAt };
 		let steps = 0;
@@ -884,8 +886,14 @@ try {
 			targetAfter: g.targetId,
 			lastExit: g.lastExit,
 			killedAt: now,
+			pendingDelta: g.ladderPending.combat - pendingBefore,
 		};
 	}, killKey);
+	check(
+		"the unarmed kill adds no combat credit, though the game flew its kill path (#564, #562 D4)",
+		killed.condition === "destroyed" && killed.pendingDelta === 0,
+		`${killed.condition} · ${killed.pendingDelta}`,
+	);
 	check(
 		"held in the beam it dies, and the kill is a world-state destroy",
 		killed.condition === "destroyed" &&

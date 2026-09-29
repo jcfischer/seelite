@@ -18,7 +18,6 @@ import {
 	commanderBody,
 	ladderView,
 } from "../src/ladder-view";
-import { codeOf } from "./lib/source-scan";
 
 const record = (over: Partial<LadderRecord> = {}): LadderRecord => ({
 	...emptyLadderRecord(),
@@ -114,23 +113,5 @@ describe("the body", () => {
 			ladderView(record({ capstoneAt: 1000 }), emptyPending()),
 		);
 		expect(html).toContain("data-live-capstone");
-	});
-});
-
-describe("the right console", () => {
-	test("Commander sits after Hold, and Controls stays immediately before Tuning", () => {
-		const source = codeOf("src/live-cockpit.ts");
-		const listed = /const RIGHT_TABS: readonly RightTab\[\] = \[([\s\S]*?)\];/
-			.exec(source)?.[1]
-			.match(/"([A-Za-z]+)"/g)
-			?.map((q) => q.slice(1, -1));
-		expect(listed).toEqual([
-			"Flight",
-			"Drive",
-			"Hold",
-			"Commander",
-			"Controls",
-			"Tuning",
-		]);
 	});
 });

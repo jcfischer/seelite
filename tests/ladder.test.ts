@@ -30,6 +30,7 @@ import {
 	parseLadders,
 	pendingArrival,
 	pendingKill,
+	reconcileBasis,
 	rungOf,
 	rungsOf,
 	saleMargin,
@@ -271,6 +272,24 @@ describe("the basis a sale's margin is read against (#183 D3)", () => {
 	test("a scooped unit has a basis of zero, so its sale is all margin", () => {
 		const basis = basisAfterScoop({}, "Gold", 2);
 		expect(saleMargin(basis, { Gold: 2 }, "Gold", 2, 90).marginCr).toBe(90);
+	});
+});
+
+describe("a hold that lost goods some other way", () => {
+	test("a confiscation shrinks the basis at its own average cost", () => {
+		// A shipyard scan takes cargo without a sale (#13); the parser refuses a
+		// basis covering more than is aboard, so the write reconciles first.
+		const basis = {
+			Narcotics: { units: 10, cr: 200 },
+			Food: { units: 2, cr: 8 },
+		};
+		expect(reconcileBasis(basis, { Food: 2 })).toEqual({
+			Food: { units: 2, cr: 8 },
+		});
+		expect(reconcileBasis(basis, { Narcotics: 4, Food: 2 }).Narcotics).toEqual({
+			units: 4,
+			cr: 80,
+		});
 	});
 });
 

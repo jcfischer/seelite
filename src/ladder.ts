@@ -29,6 +29,9 @@
  */
 
 import { type CarrierKey, isCarrierKey } from "./carrier-key";
+// Type-only: `station-commerce.ts` imports this module's `Rungs` the same way,
+// and an erased import cannot close a cycle.
+import type { StationAction } from "./station-commerce";
 import { GALAXY_COUNT, isSystemIndex } from "./world-state";
 
 // ---------------------------------------------------------------------------
@@ -291,8 +294,10 @@ export const pendingKill = (
 ): PendingCredit =>
 	credit > 0 ? { ...pending, combat: pending.combat + credit } : pending;
 
-const visitedIn = (record: LadderRecord, galaxyIndex: number): VisitedPlaces =>
-	record.visited[galaxyIndex] ?? { systems: [], stations: [] };
+const visitedIn = (
+	visited: LadderRecord["visited"],
+	galaxyIndex: number,
+): VisitedPlaces => visited[galaxyIndex] ?? { systems: [], stations: [] };
 
 /** An arrival: a first-time kind, pending, unless the system is already in the
  *  set or already pending. */
@@ -302,7 +307,7 @@ export const pendingArrival = (
 	galaxyIndex: number,
 	systemIndex: number,
 ): PendingCredit => {
-	if (visitedIn(record, galaxyIndex).systems.includes(systemIndex))
+	if (visitedIn(record.visited, galaxyIndex).systems.includes(systemIndex))
 		return pending;
 	if (
 		pending.systems.some(
@@ -321,7 +326,7 @@ const withPlace = (
 	galaxyIndex: number,
 	add: { system?: number; station?: CarrierKey },
 ): LadderRecord["visited"] => {
-	const here = visited[galaxyIndex] ?? { systems: [], stations: [] };
+	const here = visitedIn(visited, galaxyIndex);
 	return {
 		...visited,
 		[galaxyIndex]: {
@@ -354,20 +359,11 @@ export const bankOnDock = (
 	let visited = record.visited;
 	let kinds = 0;
 	for (const { galaxyIndex, systemIndex } of pending.systems) {
-		if (
-			visitedIn({ ...record, visited }, galaxyIndex).systems.includes(
-				systemIndex,
-			)
-		)
-			continue;
+		if (visitedIn(visited, galaxyIndex).systems.includes(systemIndex)) continue;
 		visited = withPlace(visited, galaxyIndex, { system: systemIndex });
 		kinds += 1;
 	}
-	if (
-		!visitedIn({ ...record, visited }, at.galaxyIndex).stations.includes(
-			at.station,
-		)
-	) {
+	if (!visitedIn(visited, at.galaxyIndex).stations.includes(at.station)) {
 		visited = withPlace(visited, at.galaxyIndex, { station: at.station });
 		kinds += 1;
 	}
@@ -604,12 +600,13 @@ interface Purse {
  */
 export const ladderAfterMarket = (
 	record: LadderRecord,
-	action: { type: string; commodity?: string },
+	action: StationAction,
 	before: Purse,
 	after: Purse,
 ): LadderRecord => {
+	if (action.type !== "buy-commodity" && action.type !== "sell-commodity")
+		return record;
 	const good = action.commodity;
-	if (good === undefined) return record;
 	if (action.type === "buy-commodity") {
 		const units = (after.cargo[good] ?? 0) - (before.cargo[good] ?? 0);
 		return {

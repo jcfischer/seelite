@@ -162,15 +162,34 @@ try {
 	);
 	// Each row is its own grid, so a wide action cell moves the price column;
 	// the first capture showed exactly that.
-	const priceX = await page.evaluate(() =>
-		[...document.querySelectorAll('[data-live-equipment="available"]')]
-			.filter((row) => !/Fuel/.test(row.textContent ?? ""))
-			.map((row) => Math.round(row.children[1].getBoundingClientRect().right)),
-	);
+	// The docking computer `__parkInBerth` fitted is the owned row; the check
+	// says which kinds it measured rather than assuming all three were there.
+	const columns = await page.evaluate(() => {
+		const rows = [
+			...document.querySelectorAll('[data-live-equipment="available"]'),
+		].filter((row) => !/Fuel/.test(row.textContent ?? ""));
+		return {
+			x: rows.map((row) =>
+				Math.round(row.children[1].getBoundingClientRect().right),
+			),
+			kinds: [
+				...new Set(
+					rows.map((row) =>
+						/OWNED/.test(row.textContent ?? "")
+							? "owned"
+							: /LOCKED/.test(row.textContent ?? "")
+								? "locked"
+								: "open",
+					),
+				),
+			].sort(),
+		};
+	});
 	check(
 		"the price column stays aligned across locked, owned and open rows",
-		new Set(priceX).size === 1,
-		priceX.join(","),
+		new Set(columns.x).size === 1 &&
+			columns.kinds.join(",") === "locked,open,owned",
+		`${columns.kinds.join(",")} · ${columns.x.join(",")}`,
 	);
 	check(
 		"and draws no BUY",

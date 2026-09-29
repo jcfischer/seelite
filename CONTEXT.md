@@ -527,6 +527,10 @@ overlay and the active-Commander pointer. **Scope note:** `slot` and
 `CommanderCatalog`'s `slots()`, `exportSlot`, `importSlot`, `renameSlot` and
 `deleteSlot` are the storage layer's words for the same thing and stay as they
 are; this entry governs what a player reads, not what the store calls its keys.
+**Second sense (#564):** the right console's **Commander** tab is the pilot's
+page — the three **Ladders** — and not the save slot. The two never meet on one
+surface: the overlay is out of fiction, the tab is a cockpit wall, and the
+tab's label names who the page is about.
 _Avoid_: save game, save file, profile (in player-facing text)
 
 **Ladder**:
