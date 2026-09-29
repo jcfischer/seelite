@@ -514,6 +514,10 @@ export class MusicEngine implements NoteSink, VoiceGain {
 		// stop fade, the fade's halt goes too (round 3): left standing, it cut
 		// the replayed song when the old fade would have ended.
 		lead.gain.set(1, line, 0, now);
+		// And its room, which the stop faded with it (sage round 9): left out,
+		// the song came back dry, and once the fade had run the room was
+		// cleared for good.
+		this.spaceGain.set(1, line, 0, now);
 		lead.haltAt = Infinity;
 		return true;
 	}
@@ -545,12 +549,15 @@ export class MusicEngine implements NoteSink, VoiceGain {
 	}
 }
 
-/** A song's room, its echo in seconds at its first tempo. */
+/** A song's room, its echo in seconds at its first tempo. A field given as
+ *  `undefined` takes its default (sage round 9): spread over the defaults,
+ *  it replaced one, and a NaN decay fed back through every line. */
 function spaceOf(song: Song): SpaceSpec {
-	const sp = { ...DEFAULT_SONG_SPACE, ...song.space };
+	const sp = song.space;
+	const d = DEFAULT_SONG_SPACE;
 	return {
-		reverbS: sp.reverbS,
-		echoS: (sp.echoBeats * 60) / song.tempo[0].bpm,
-		echoFeedback: sp.echoFeedback,
+		reverbS: sp?.reverbS ?? d.reverbS,
+		echoS: ((sp?.echoBeats ?? d.echoBeats) * 60) / song.tempo[0].bpm,
+		echoFeedback: sp?.echoFeedback ?? d.echoFeedback,
 	};
 }

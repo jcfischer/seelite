@@ -121,6 +121,28 @@ describe("analog unison (R1, R2)", () => {
 		for (let i = 0; i < SR; i++) expect(L[i]).toBeCloseTo(R[i], 9);
 	});
 
+	test("with no attack, the filter envelope opens at once (sage round 9)", () => {
+		// `fenv` started at 0 and only the attack raised it, so an attack of
+		// 0 left every envelope amount unheard.
+		const one = (envAmount: number) => {
+			const b = new VoiceBank(4, SR);
+			const p = part("analog", {
+				attackS: 0,
+				envAmount,
+				envDecayS: 0.4,
+				cutoffHz: 500,
+				unison: 1,
+				detune: 0,
+				drift: 0,
+			});
+			b.noteOn(0, p, 0, 0, A3, 1, SR);
+			return render(b, 0.2 * SR).L;
+		};
+		expect(bright(one(3), 0.01 * SR, 0.1 * SR)).toBeGreaterThan(
+			1.5 * bright(one(0), 0.01 * SR, 0.1 * SR),
+		);
+	});
+
 	test("the filter envelope opens bright and closes", () => {
 		const b = new VoiceBank(4, SR);
 		const p = part("analog", {

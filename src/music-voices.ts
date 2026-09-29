@@ -863,7 +863,10 @@ export class VoiceBank {
 			r += v * this.opR[o];
 		}
 		// The filter envelope: up with the attack, then its own fall.
+		// With no attack it opens at once (sage round 9): from 0, only the
+		// attack ever raised it, and an attack of 0 left the envelope unheard.
 		if (t < part.attackS) this.fenv[i] = t / part.attackS;
+		else if (t === 0) this.fenv[i] = 1;
 		else this.fenv[i] *= part.envDecayCoef;
 		if (this.age[i] % CUT_EVERY === 1)
 			this.g[i] = svfCoef(

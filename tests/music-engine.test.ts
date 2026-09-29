@@ -581,6 +581,94 @@ describe("stereo and the space (#560, after #548's first listening)", () => {
 		expect(energy(L, 0.5, 0.65)).toBeGreaterThan(0);
 	});
 
+	test("replaying the song inside its stop now's fade brings its room back on the line (sage round 9)", () => {
+		// The stop faded the room to 0 and the replay restored only the
+		// song's own gain: the song came back dry, for good.
+		const e = new MusicEngine(SR, 16);
+		const hall: Song = {
+			name: "hall",
+			beatsPerBar: 4,
+			parts: {
+				p: {
+					voice: "fm",
+					level: 1,
+					reverb: 1,
+					decayS: 0.1,
+					sustain: 0,
+					releaseS: 0.05,
+				},
+			},
+			sections: [
+				{
+					name: "A",
+					bars: 2,
+					events: [{ part: "p", bar: 0, beat: 0, dur: 0.1, pitch: 69, vel: 1 }],
+				},
+			],
+			tempo: [{ bar: 0, bpm: 120 }],
+			space: { reverbS: 2 },
+		};
+		e.command({ type: "load", id: "hall", song: hall }, 0);
+		e.command({ type: "play", id: "hall", at: "bar" }, 0);
+		const L = new Float32Array(128);
+		const stopAt = 0.25 * SR - ((0.25 * SR) % 128);
+		const replayAt = 0.5 * SR - ((0.5 * SR) % 128);
+		let tail = 0;
+		for (let f = 0; f < 2.8 * SR; f += 128) {
+			if (f === stopAt) e.command({ type: "stop", at: "now", fadeS: 0.5 }, f);
+			if (f === replayAt)
+				e.command({ type: "play", id: "hall", section: "A", at: "bar" }, f);
+			e.render(L, f);
+			// The replay is a jump on the bar line at 2 s, and its note is dry by
+			// 2.2 s: after that, only the room sounds.
+			if (f >= 2.3 * SR) for (const v of L) tail += v * v;
+		}
+		expect(e.playing).toBe("hall");
+		expect(tail).toBeGreaterThan(1e-6);
+	});
+
+	test("a room field given as undefined takes its default, not NaN (sage round 9)", () => {
+		const { L, R } = stereo({ reverb: 1, echo: 1 }, 1, (e, f) => {
+			if (f === 0) {
+				e.command({ type: "stop", at: "now", fadeS: 0 }, 0);
+				e.command(
+					{
+						type: "load",
+						id: "undef",
+						song: {
+							name: "undef",
+							beatsPerBar: 4,
+							parts: { p: { voice: "fm", level: 1, reverb: 1, echo: 1 } },
+							sections: [
+								{
+									name: "A",
+									bars: 1,
+									events: [
+										{ part: "p", bar: 0, beat: 0, dur: 0.5, pitch: 69, vel: 1 },
+									],
+								},
+							],
+							tempo: [{ bar: 0, bpm: 120 }],
+							space: {
+								reverbS: undefined,
+								echoBeats: undefined,
+								echoFeedback: undefined,
+							},
+						},
+					},
+					0,
+				);
+				e.command({ type: "play", id: "undef", at: "bar" }, 0);
+			}
+		});
+		let energy = 0;
+		for (let i = 0; i < L.length; i++) {
+			expect(Number.isFinite(L[i]) && Number.isFinite(R[i])).toBe(true);
+			energy += L[i] * L[i];
+		}
+		expect(energy).toBeGreaterThan(0);
+	});
+
 	test("a song started after a stop now's fade has run does not bring the stopped room back", () => {
 		// The stop fades the room to 0, but the room still holds the hall's
 		// tail; the next song's line set the room back to full, and that tail
