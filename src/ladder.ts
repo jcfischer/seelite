@@ -102,8 +102,8 @@ export const rungsOf = (record: LadderRecord): Rungs => ({
  * Each ladder's nine rung names, rung 0 first (#183 D5).
  *
  * **Original names.** The map's Constraints forbid Elite's, which corrects
- * #8's "retains Elite's named ladder". Drafted with `/write-story`; the
- * principal's yes is what makes them final.
+ * #8's "retains Elite's named ladder". Drafted with `/write-story` and
+ * approved by the principal on 2026-09-29, over an alternative set.
  */
 export const RUNG_NAMES: Readonly<Record<Ladder, readonly string[]>> = {
 	combat: [
