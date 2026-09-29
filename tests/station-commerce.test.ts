@@ -1,4 +1,5 @@
 import { describe, expect, test } from "bun:test";
+import { TOP_RUNGS } from "../src/ladder";
 import { type CarrierKey, carrierKey } from "../src/carrier-key";
 import { type DeficitMap, readDeficit, recordTrade } from "../src/deficits";
 import {
@@ -86,6 +87,7 @@ const input = (
 	gameTimeMin: 0,
 	displayTL: 8,
 	entrustedT: 0,
+	rungs: TOP_RUNGS,
 	action: { type: "buy-commodity", commodity: "Food" } as const,
 	...overrides,
 });
@@ -975,6 +977,7 @@ describe("§5.6 the bid cut, charged by the till", () => {
 				commander,
 				deficits,
 				entrustedT: 0,
+				rungs: TOP_RUNGS,
 				station,
 				stationKey,
 				economy: 3,
@@ -1019,6 +1022,7 @@ describe("§5.6 the bid cut, charged by the till", () => {
 					commander,
 					deficits,
 					entrustedT: 0,
+					rungs: TOP_RUNGS,
 					station: STATION,
 					stationKey: KEY,
 					economy: 3,

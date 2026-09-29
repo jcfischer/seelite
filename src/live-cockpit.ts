@@ -40,6 +40,12 @@ import type { StationAction } from "./station-commerce";
 import type { HoldBids, HoldSummary } from "./hold";
 import { escapeHtml } from "./escape-html";
 import { HOLD_STYLE, holdBody } from "./hold-view";
+import {
+	LADDER_STYLE,
+	type LadderView,
+	commanderBody,
+	ladderViewKey,
+} from "./ladder-view";
 import type {
 	ConsoleEquipmentScreen,
 	ConsoleMarketRow,
@@ -67,6 +73,11 @@ export type RightTab =
 	 * what an ordinary carrier carries on one voyage.
 	 */
 	| "Hold"
+	/**
+	 * #564's page: the three ladders (#183 D9). What the pilot *is*, beside
+	 * what is aboard; the Commander overlay is saves and slots, not this.
+	 */
+	| "Commander"
 	| "Controls"
 	| "Tuning";
 
@@ -102,6 +113,7 @@ const RIGHT_TABS: readonly RightTab[] = [
 	// about the ship in front of you. #370 D1's rule is unchanged: `Tuning`
 	// stays last.
 	"Hold",
+	"Commander",
 	"Controls",
 	"Tuning",
 ];
@@ -246,6 +258,8 @@ export interface LiveCockpitState {
 	 * the stale-number failure `stockResponse`'s screen already guards against.
 	 */
 	holdBids: HoldBids;
+	/** The three ladders, for the right console's **Commander** page (#564). */
+	ladders: LadderView;
 	/** A held launch (#314), and Traffic's estimate of how long (#521):
 	 *  `waitS` is `null` when Traffic cannot say, never a guess. */
 	launchHold: { refusal: LaneRefusal; waitS: number | null } | null;
@@ -353,7 +367,7 @@ function navEta(seconds: number | null) {
 	return `${(seconds / 86_400).toFixed(0)}d`;
 }
 
-const STYLE = `${REQUESTS_STYLE}${HOLD_STYLE}${RELAY_CUE_STYLE}
+const STYLE = `${REQUESTS_STYLE}${HOLD_STYLE}${LADDER_STYLE}${RELAY_CUE_STYLE}
 #live-cockpit { position: fixed; inset: 0; z-index: 4; pointer-events: none; color: #c8e7f7; font: 12px/1.35 ui-monospace, "SF Mono", Menlo, monospace; text-shadow: 0 0 8px rgba(0, 0, 0, .92); }
 #live-cockpit[data-live-active="false"] { display: none; }
 #live-cockpit * { box-sizing: border-box; }
@@ -377,6 +391,7 @@ const STYLE = `${REQUESTS_STYLE}${HOLD_STYLE}${RELAY_CUE_STYLE}
 #live-cockpit[data-live-head-look="left"][data-live-left-view="Galaxy Map"] .lc-panel[data-live-panel="left"] { display: flex; flex-direction: column; }
 .lc-panel-body[data-live-chart-body] { grid-template-columns: 1fr; flex: 1 1 auto; min-height: 0; }
 .lc-panel-body.lc-hold-body { grid-template-columns: 1fr; }
+.lc-panel-body.lc-ladders-body { grid-template-columns: 1fr; }
 .lc-rail { display: grid; align-content: start; gap: 8px; padding: 14px 12px; border-right: 1px solid rgba(229, 170, 82, .42); color: #e9a766; font-size: 11px; }
 .lc-rail b { color: #ffe1a9; letter-spacing: .08em; }
 .lc-rail em { display: block; color: #fff0c9; font-style: normal; letter-spacing: .05em; }
@@ -474,9 +489,13 @@ const STYLE = `${REQUESTS_STYLE}${HOLD_STYLE}${RELAY_CUE_STYLE}
 .lc-station-delta { margin-left: 5px; color: #f0b05e; }
 .lc-station-section { margin: 14px 0 6px; color: #cb8c51; font-size: 11px; letter-spacing: .08em; }
 .lc-station-equipment { flex: 1; overflow: auto; margin-top: 8px; }
+/* A fixed action column: each row is its own grid, so BUY, OWNED and LOCKED at their own widths moved the price column (#564). */
+.lc-station-equipment .lc-station-row { grid-template-columns: minmax(120px, 1.4fr) 1fr 1fr 64px; }
+.lc-station-equipment .lc-station-row > :nth-child(4) { justify-self: end; }
 .lc-station-action { border: 1px solid rgba(229, 170, 82, .52); border-radius: 3px; padding: 2px 6px; background: rgba(223, 122, 20, .16); color: #ffe1a9; cursor: pointer; font: inherit; font-size: 10px; }
 .lc-station-action:hover { background: rgba(223, 122, 20, .32); }
 .lc-station-owned { color: #9ed89b; font-size: 10px; letter-spacing: .06em; }
+.lc-station-locked { color: #a9814f; font-size: 10px; letter-spacing: .06em; }
 .lc-station-commander { margin: 9px 0 0; color: #f5bd78; font-size: 11px; }
 .lc-station-hold { margin: 6px 0 0; color: #f5bd78; font-size: 11px; letter-spacing: .06em; }
 /* Red is refusal (hud-and-scanner.md section 4), which is exactly what this
@@ -1232,7 +1251,7 @@ export class LiveCockpit {
 		// system from the Navigation list changes it, and a rebuild on that
 		// keystroke would blow away the filter field's focus and caret — the
 		// list would become unusable exactly while it was being used.
-		const key = `${state.visible}|${state.dockPhase}|${state.headLook}|${state.leftTab}|${state.rightTab}|${state.stationConsole?.label ?? ""}|${state.stationConsole?.tab ?? ""}|${state.stationConsole?.revision ?? 0}|${state.stationConsole?.message ?? ""}|${state.launchHold ? "held" : ""}|${!!state.requests}|${state.requests?.revision ?? 0}|${state.firstDay?.current ?? ""}|${state.firstDay?.text ?? ""}|${state.firstDay?.stationLine ?? ""}|${state.firstDay?.controls.keyboard ?? ""}|${state.firstDay?.controls.controller ?? ""}`;
+		const key = `${state.visible}|${state.dockPhase}|${state.headLook}|${state.leftTab}|${state.rightTab}|${state.stationConsole?.label ?? ""}|${state.stationConsole?.tab ?? ""}|${state.stationConsole?.revision ?? 0}|${state.stationConsole?.message ?? ""}|${state.launchHold ? "held" : ""}|${!!state.requests}|${state.requests?.revision ?? 0}|${state.firstDay?.current ?? ""}|${state.firstDay?.text ?? ""}|${state.firstDay?.stationLine ?? ""}|${state.firstDay?.controls.keyboard ?? ""}|${state.firstDay?.controls.controller ?? ""}|${state.rightTab === "Commander" ? ladderViewKey(state.ladders) : ""}`;
 		this.setVisible(state.visible);
 		this.root.dataset.liveHeadLook = state.headLook;
 		this.root.dataset.liveDocked = String(state.dockPhase === "docked");
@@ -1677,16 +1696,38 @@ export class LiveCockpit {
 				// the light year rather than by the unit, so the button fills the
 				// tank and the middle cell — empty on every other row — prints
 				// what is in it.
-				const action =
+				// One precedence rule for both cells: a gate blocks only new
+				// purchases, so owned wins over locked (#183 D9).
+				const row =
 					entry.per === "ly"
-						? `<button class="lc-station-action" type="button" data-live-station-action="buy-fuel" data-live-station-name="${name}">FILL</button>`
+						? ({ kind: "fill" } as const)
 						: owned.includes(entry.name)
-							? '<span class="lc-station-owned">OWNED</span>'
-							: `<button class="lc-station-action" type="button" data-live-station-action="buy-equipment" data-live-station-name="${name}">BUY</button>`;
-				const held =
-					entry.per === "ly"
-						? `${fuel.ly.toFixed(1)}/${fuel.capacityLy} LY`
-						: "";
+							? ({ kind: "owned" } as const)
+							: entry.locked
+								? ({ kind: "locked", locked: entry.locked } as const)
+								: ({ kind: "open" } as const);
+				let action: string;
+				let held = "";
+				switch (row.kind) {
+					case "fill":
+						action = `<button class="lc-station-action" type="button" data-live-station-action="buy-fuel" data-live-station-name="${name}">FILL</button>`;
+						held = `${fuel.ly.toFixed(1)}/${fuel.capacityLy} LY`;
+						break;
+					case "owned":
+						action = '<span class="lc-station-owned">OWNED</span>';
+						break;
+					case "locked":
+						// #183 D6: the #489 locked-row pattern — listed, named and with
+						// no BUY, because a vanished row says nothing about what to
+						// climb. The rung goes in the middle cell, which a unit item
+						// leaves empty: in the action cell it was wider than BUY, and
+						// each row is its own grid, so the price column moved.
+						action = `<span class="lc-station-locked" data-live-equipment-locked="${row.locked.ladder}:${row.locked.rung}">LOCKED</span>`;
+						held = `<span class="lc-station-locked">${row.locked.ladder.toUpperCase()} ${row.locked.rung} · ${escapeHtml(row.locked.name.toUpperCase())}</span>`;
+						break;
+					default:
+						action = `<button class="lc-station-action" type="button" data-live-station-action="buy-equipment" data-live-station-name="${name}">BUY</button>`;
+				}
 				return `<div class="lc-station-row" data-live-equipment="available"><span>${name}</span><span class="lc-station-cell">${entry.priceCr} Cr</span><span class="lc-station-cell">${held}</span>${action}</div>`;
 			})
 			.join("");
@@ -1710,6 +1751,9 @@ export class LiveCockpit {
 		// #445, on the Galaxy Map and `Controls` precedent: a page with its own
 		// grid replaces the rail-and-copy body wholesale rather than being
 		// squeezed into a 48-character column.
+		// #564, on the Hold page's precedent: its own grid, one column.
+		if (state.rightTab === "Commander")
+			return `<div class="lc-panel-body lc-ladders-body">${commanderBody(state.ladders)}</div>`;
 		if (state.rightTab === "Hold")
 			// `lc-hold-body` collapses the rail-and-copy grid to one column, on
 			// `[data-live-chart-body]`'s precedent: the default two-column body

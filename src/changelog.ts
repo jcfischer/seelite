@@ -29,6 +29,11 @@ export type ChangelogEntry = {
 
 export const CHANGELOG: readonly ChangelogEntry[] = [
 	{
+		date: "2026-09-29",
+		text: "Three ladders now rank a pilot in combat, trade and exploration, and some ships and equipment wait for a higher rung.",
+		node: 564,
+	},
+	{
 		date: "2026-09-28",
 		text: "The Far Between is live at farbetween.ch, free to play in the browser.",
 		node: 569,

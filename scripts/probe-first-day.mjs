@@ -115,7 +115,11 @@ const boot = await page.evaluate(async () => {
 		record = await backend.read("default", "lastDocked");
 		if (!record) await new Promise((r) => setTimeout(r, 100));
 	}
+	// The version off the page, not a literal: #564's bump turned a pinned 6
+	// red here, which is the "probes read constants off the page" rule.
+	const { SAVE_SCHEMA_VERSION } = await import("/src/save-envelope.ts");
 	return {
+		schemaVersion: SAVE_SCHEMA_VERSION,
 		firstDay: g.firstDay,
 		phase: g.dockPhase,
 		// The world clock at the dock: since #535 the whole opening flight's —
@@ -141,11 +145,11 @@ check(
 	JSON.stringify(boot),
 );
 check(
-	"that dock writes the lastDocked checkpoint, guided, at schema 6",
+	"that dock writes the lastDocked checkpoint, guided, at the current schema",
 	boot.lastDocked !== null &&
 		boot.lastDocked.dockedAt?.endsWith(`:${boot.tradeId}`) &&
 		boot.lastDocked.firstDay === "guided" &&
-		boot.lastDocked.version === 6,
+		boot.lastDocked.version === boot.schemaVersion,
 	JSON.stringify(boot.lastDocked),
 );
 

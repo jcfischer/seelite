@@ -136,7 +136,7 @@ export const CORE_RADIUS_LY = GALAXY_RADIUS_LY / Math.SQRT2;
  *
  * **Galaxy-owned, and deliberately not derived from the roster.** #181 first
  * derived it from the courier's row, and sage named the cost: the roster's
- * figures are provisional against #183 and #8, so a retune of one hull would
+ * figures are provisional against #8's combat balance, so a retune of one hull would
  * silently regenerate every system's edge set. Moving it now is a migration
  * under #107, because saves exist (#89). So no module but this one imports it;
  * `tests/hull-reach.test.ts` fails if one does.

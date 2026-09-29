@@ -183,17 +183,18 @@ catalogue would put three unrelated decisions in one document. The principal
 also declined folding them together with the damage node, which would bundle a
 generation rule with a cockpit verb — two things tuned by different evidence.
 
-### D12 — Jobs are independent of the rating ladder
+### D12 — Jobs are independent of the ladders
 
-Nothing in this spec reads the Harmless-to-Elite rating. Jobs are gated by
-need (D8) and by concrete requirements — a weapon, hold space, equipment.
+Nothing in this spec reads a ladder rung. Jobs are gated by need (D8) and by
+concrete requirements — a weapon, hold space, equipment.
 
-No hook is reserved for a later rating gate, because §2 of the request
-contract already makes acceptance an atomic eligibility check that refuses with
-a readable reason. [Harmless to Elite](https://github.com/jcfischer/seelite/issues/183)
-can therefore add a gate without amending this spec.
+No hook is reserved for a rung gate, and none is owed:
+[Harmless to Elite](https://github.com/jcfischer/seelite/issues/183) ruled (D6)
+that jobs, prices and stations read no ladder. A settled job's pay does count
+toward the trade ladder, as realised margin does (D3); that is a ladder
+reading a job, not a job reading a ladder.
 
-Rejected: rating weighting the pay, which is D9's second throttle wearing
+Rejected: a rung weighting the pay, which is D9's second throttle wearing
 different clothes.
 
 ### D13 — The courier floor's mark is the stock deficit
