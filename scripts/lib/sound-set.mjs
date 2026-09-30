@@ -645,6 +645,10 @@ export async function renderInPage({
 										: {}),
 								}))
 								.catch(() => ({}))),
+							// #589's classical set-pieces, where the served tree has them.
+							...(await import("/src/music-classical/index.ts")
+								.then((m) => m.CLASSICAL_SONGS)
+								.catch(() => ({}))),
 						},
 					}))
 					.catch(() => null)
