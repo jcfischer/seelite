@@ -317,6 +317,10 @@ const liftedPerHop = (arm: readonly Result[]) =>
 	);
 const fillOf = (arm: readonly Result[], holdT: number) =>
 	liftedPerHop(arm) / holdT;
+/** Arms that ended before the window — one predicate for section C's count and
+ *  section J's control count, which are printed side by side. */
+const endedEarly = (arm: readonly Result[]) =>
+	arm.filter((r) => r.minutes < hours * 60 - 1).length;
 
 /** §7.1's rounding rule for an exponent: the pooled fit to two places. */
 const twoPlaces = (b: number) => Math.round(b * 100) / 100;
@@ -348,7 +352,7 @@ console.log("\n  hold t     mean      p10      p90    t lifted/hop    fill");
 let shortArms = 0;
 for (const holdT of HOLD_LADDER) {
 	const arm = armAt(holdT);
-	shortArms += arm.filter((r) => r.minutes < hours * 60 - 1).length;
+	shortArms += endedEarly(arm);
 	const rates = arm.map(rateOf);
 	curve.set(holdT, rates);
 	const lifted = liftedPerHop(arm);
@@ -447,6 +451,8 @@ const LOWER_HOLDS = HOLD_LADDER.filter(
 		h <= HULL_PRICE_KNEE_HOLD_T,
 );
 const UPPER_HOLDS = HOLD_LADDER.filter((h) => h >= HULL_PRICE_KNEE_HOLD_T);
+/** The ladder holds priced by the upper segment alone. */
+const ABOVE_KNEE = UPPER_HOLDS.filter((h) => h > HULL_PRICE_KNEE_HOLD_T);
 if (!LOWER_HOLDS.includes(HULL_PRICE_KNEE_HOLD_T))
 	throw new Error(
 		`the ladder does not fly the knee, ${HULL_PRICE_KNEE_HOLD_T} t`,
@@ -831,6 +837,8 @@ console.log(
 	"\n  the subset alone.",
 );
 console.log("\n  working capital     b   rate at 20 t   rate at 200 t");
+/** Each cap's slope, kept so the verdict below is read off the sweep. */
+const capSlopes = new Map<number, number>();
 for (const cap of CAPITAL_CAPS) {
 	const points = CAPITAL_HOLDS.map((h) => ({
 		h,
@@ -842,19 +850,29 @@ for (const cap of CAPITAL_CAPS) {
 			: mean(curveAt(h)),
 	}));
 	const f = fitPower(points);
+	capSlopes.set(cap, f.b);
 	const at = (h: number) => (points.find((p) => p.h === h) as { r: number }).r;
 	console.log(
 		`${rightAlign(Number.isFinite(cap) ? `${cap.toLocaleString("en-GB")} Cr` : "uncapped", 17)}` +
 			`${rightAlign(finite("b", f.b).toFixed(3), 6)}${rightAlign(at(20).toFixed(0), 15)}${rightAlign(at(200).toFixed(0), 16)}`,
 	);
 }
-console.log(
-	`\n  **The bias is real, and it has stopped moving by the kit's total.** Below`,
-	`\n  a few thousand credits the exponent collapses — a hold you cannot fill is`,
-	`\n  worth nothing, which is §6's capital-limited opening said in a second way —`,
-	`\n  and by ${fullKitCr().toLocaleString("en-GB")} Cr it equals the uncapped arm. The curve is flown at`,
-	"\n  that capital, so the law prices a hull for a buyer who holds it.",
-);
+{
+	// **Read off the sweep, not asserted beside it.** The kit's row against the
+	// uncapped one decides whether the curve's capital is past the bias.
+	const atKit = capSlopes.get(fullKitCr()) as number;
+	const uncapped = capSlopes.get(Number.POSITIVE_INFINITY) as number;
+	const lowest = capSlopes.get(CAPITAL_CAPS[0]) as number;
+	const stopped = Math.abs(atKit - uncapped) < 0.01;
+	console.log(
+		`\n  At ${CAPITAL_CAPS[0].toLocaleString("en-GB")} Cr the slope is ${lowest.toFixed(3)} — a hold you cannot fill is`,
+		"\n  worth nothing, which is §6's capital-limited opening said a second way.",
+		`\n  At the kit's ${fullKitCr().toLocaleString("en-GB")} Cr it is ${atKit.toFixed(3)} against ${uncapped.toFixed(3)} uncapped: `,
+		stopped
+			? "\n  **the bias has stopped moving by the kit**, and section C flies at that\n  capital, so the law prices a hull for a buyer who holds it."
+			: "\n  **the bias is still moving at the kit**, so section C's capital does not\n  put the law past it, and §7.1's reading of this section owes a re-check.",
+	);
+}
 {
 	// **Not the claim #182 made here.** It read "the cheapest hull costs more
 	// than the kit, so a player who can buy a hull at all is past the range
@@ -892,7 +910,7 @@ console.log("\n== J. the spread's own effect: the same sweep with NO_WEDGE ==");
 console.log(
 	"  #196 shipped §5.6's bid cut and left this re-derivation to its own run, so",
 	"\n  a price could not move for two reasons at once. The same holds here: a fresh",
-	"\n  run against §7.1's printed figures is the spread **plus** every engine change",
+	"\n  run against #182's printed figures is the spread **plus** every engine change",
 	"\n  since #182. So the control is the pre-#196 quote law flown on today's engine,",
 	"\n  and both factors of the baseline fly it — the rate **and** the window. A",
 	"\n  control on the rate alone would leave the spread in one factor.",
@@ -905,7 +923,7 @@ console.log(
 	);
 	for (const holdT of HOLD_LADDER) {
 		const arm = armAt(holdT, { quote: NO_WEDGE });
-		controlShort += arm.filter((r) => r.minutes < hours * 60 - 1).length;
+		controlShort += endedEarly(arm);
 		const rates = arm.map(rateOf);
 		control.set(holdT, rates);
 		const shipped = curveAt(holdT);
@@ -913,7 +931,8 @@ console.log(
 		// A ratio of means would let the richest worlds speak for the rest.
 		const ratios = shipped.map((r, wi) => r / rates[wi]);
 		const shippedArm = fillAt.get(holdT);
-		if (!shippedArm) throw new Error(`no fill recorded at ${holdT} t`);
+		if (shippedArm === undefined)
+			throw new Error(`no fill recorded at ${holdT} t`);
 		console.log(
 			`${rightAlign(holdT, 6)}${rightAlign(mean(shipped).toFixed(0), 10)}${rightAlign(mean(rates).toFixed(0), 11)}` +
 				`${rightAlign(`${median(ratios).toFixed(3)} (${quantile(ratios, 0.1).toFixed(3)}-${quantile(ratios, 0.9).toFixed(3)})`, 33)}` +
@@ -1027,7 +1046,7 @@ console.log(
 			id: id as string,
 			h: HULL_SPECS[id].holdT,
 		})),
-		...UPPER_HOLDS.filter((h) => h > HULL_PRICE_KNEE_HOLD_T).map((h) => ({
+		...ABOVE_KNEE.map((h) => ({
 			id: "(ladder)",
 			h,
 		})),
@@ -1067,7 +1086,7 @@ console.log(
 		const { rungs } = rungsAbove(price);
 		console.log(
 			`  ${label.padEnd(13)}${rightAlign(pct(worstOver(sortedByHold.map((id) => HULL_SPECS[id].holdT))), 19)}` +
-				`${rightAlign(pct(worstOver(UPPER_HOLDS.filter((h) => h > HULL_PRICE_KNEE_HOLD_T))), 11)}` +
+				`${rightAlign(pct(worstOver(ABOVE_KNEE)), 11)}` +
 				`${rightAlign(under.length === 0 ? "none" : under.join(", "), 26)}${rightAlign(rungs, 14)}`,
 		);
 	}
@@ -1091,8 +1110,8 @@ console.log(
 	}
 	console.log(
 		"\n  The shipped-arm minus no-wedge column is the spread alone; no-wedge",
-		"\n  against §7.1's printed figures is engine drift since #182 alone. Neither",
-		"\n  moves a constant: the declared pair is §7.1's, and a change is an",
+		"\n  against #182's figures (b 0.612, window 48.7 min) is drift since #182",
+		"\n  alone. Neither moves a constant: the declared law is §7.1's, and a change is an",
 		"\n  amendment there with its reason, not an edit here.",
 	);
 }

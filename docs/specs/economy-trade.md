@@ -1444,9 +1444,11 @@ engine as the control, so the spread is measured alone:
   early, against none in the control.
 
 So the law is two segments, split at `HULL_PRICE_KNEE_HOLD_T`. **The knee is placed,
-not fitted**: it is the largest hold the roster sells, so the lower segment is
-fitted on exactly the holds that exist (8–60 t) and the upper one on the ladder
-above them (60–200 t). The local slope is 0.97 over 20–60 t and 0.60 over 60–120 t,
+not fitted**: it sits at the freighter's 60 t, the largest hold the roster sold
+when #383 measured it, so the lower segment is fitted on the holds that existed
+(8–60 t) and the upper one on the ladder above them (60–200 t). It is a
+constant rather than a rule about the roster: selling a §7.2 rung later does not
+move it, and only a re-measured bend does. The local slope is 0.97 over 20–60 t and 0.60 over 60–120 t,
 so the bend is within one ladder step of it. The principal chose this law on
 2026-09-30 from four candidates, each printed by section J beside the measured
 value of every hold (its rate × the window):

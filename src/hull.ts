@@ -207,8 +207,10 @@ export const HULL_PRICE_EXPONENT = 1;
 /** The baseline hull's price, credits. */
 export const HULL_PRICE_BASELINE_CR = 23_000;
 
-/** Where the curve bends, tonnes — the largest hold the roster sells, so the
- *  lower fit spans every hull that exists and the upper one the ladder above. */
+/** Where the curve bends, tonnes — placed at the freighter's hold, which was
+ *  the largest hold the roster sold when #383 measured the bend there. It is a
+ *  constant, not a rule: a rung sold above it later does not move it, and only
+ *  a re-measured bend does. */
 export const HULL_PRICE_KNEE_HOLD_T = 60;
 
 /** The upper segment's elasticity, from the knee to past the ceiling. */
