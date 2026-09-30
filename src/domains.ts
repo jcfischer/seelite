@@ -124,8 +124,9 @@ export const DOMAIN = {
 	 *  so the score moves no world draw and a system keeps its sound. */
 	MUSIC: 27,
 	/** A planet rung's formation mass (#64/#590). One draw per rung, including
-	 * discarded rungs, so changing the giant/rocky mix moves no BODIES or
-	 * STATIONS draw and leaves every earlier rung's result alone. */
+	 * discarded rungs, on a stream separate from BODIES and STATIONS. Changing
+	 * the giant/rocky threshold can reclassify a rung, but does not move those
+	 * existing draws or another rung's formation roll. */
 	FORMATION_MASS: 28,
 } as const;
 

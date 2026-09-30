@@ -74,7 +74,8 @@ describe("#89 D5 — the save envelope", () => {
 		// Written by the unmodified version-7 generator before #590. System 92's
 		// shipyard orbited planet-4 then; the new host is planet-2. The saved
 		// deficit and dockedAt both name the carrier key, never its old position.
-		// This checks parse/migration and the regenerated host, not Game's spawn.
+		// This checks parse/migration and the regenerated host, not Game's
+		// load-time ship placement.
 		const raw = JSON.parse(
 			readFileSync(
 				new URL(
