@@ -145,7 +145,10 @@ try {
 			continue;
 		}
 		const file = `${entry.name}.wav`;
-		writeFileSync(join(dir, file), wav16(r.samples, SR));
+		writeFileSync(
+			join(dir, file),
+			r.right ? wav16([r.left, r.right], SR) : wav16([r.samples], SR),
+		);
 		const s = cueStats(r.samples, SR);
 		const stats = {
 			rms: s.rms,
@@ -186,14 +189,18 @@ try {
 	if (scratch) rmSync(scratch, { recursive: true, force: true });
 }
 
-/** Mono 16-bit PCM. The cues peak far below full scale, so 16 bits lose
- *  nothing an ear can hear, and every browser plays it. */
-function wav16(samples, sampleRate) {
-	const data = Buffer.alloc(samples.length * 2);
-	for (let i = 0; i < samples.length; i++) {
-		const v = Math.max(-1, Math.min(1, samples[i]));
-		data.writeInt16LE(Math.round(v * 32767), i * 2);
-	}
+/** 16-bit PCM, one channel per array: mono for a cue, stereo for music.
+ *  The cues peak far below full scale, so 16 bits lose nothing an ear can
+ *  hear, and every browser plays it. */
+function wav16(channels, sampleRate) {
+	const n = channels.length;
+	const len = channels[0].length;
+	const data = Buffer.alloc(len * n * 2);
+	for (let i = 0; i < len; i++)
+		for (let c = 0; c < n; c++) {
+			const v = Math.max(-1, Math.min(1, channels[c][i]));
+			data.writeInt16LE(Math.round(v * 32767), (i * n + c) * 2);
+		}
 	const head = Buffer.alloc(44);
 	head.write("RIFF", 0);
 	head.writeUInt32LE(36 + data.length, 4);
@@ -201,10 +208,10 @@ function wav16(samples, sampleRate) {
 	head.write("fmt ", 12);
 	head.writeUInt32LE(16, 16);
 	head.writeUInt16LE(1, 20);
-	head.writeUInt16LE(1, 22);
+	head.writeUInt16LE(n, 22);
 	head.writeUInt32LE(sampleRate, 24);
-	head.writeUInt32LE(sampleRate * 2, 28);
-	head.writeUInt16LE(2, 32);
+	head.writeUInt32LE(sampleRate * 2 * n, 28);
+	head.writeUInt16LE(2 * n, 32);
 	head.writeUInt16LE(16, 34);
 	head.write("data", 36);
 	head.writeUInt32LE(data.length, 40);
@@ -261,7 +268,8 @@ audio { width: 220px; }
 const SETS = ${data};
 const a = document.getElementById("a"), b = document.getElementById("b");
 for (const sel of [a, b]) for (const m of SETS) sel.add(new Option(m.label, m.label));
-a.selectedIndex = 0; b.selectedIndex = Math.min(1, SETS.length - 1);
+// The newest two, newest as B (#560): the first two hid a third capture's rows.
+b.selectedIndex = SETS.length - 1; a.selectedIndex = Math.max(0, SETS.length - 2);
 const fig = (s) => s ? "rms " + s.rms.toFixed(4) + "  peak " + s.peak.toFixed(3) + "  onset " + s.onsetMs.toFixed(1) + " ms  " + Math.round(s.centroidHz) + " Hz" : "—";
 const esc = (t) => String(t).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c]);
 function draw() {

@@ -125,6 +125,7 @@ import type {
 } from "./frame-attribution";
 import { AudioFX } from "./audio";
 import { BUSES, type WeaponMix, type Cue, type NotifyTone } from "./audio-cue";
+import { Music } from "./music";
 import {
 	type WeaponSoundState,
 	QUIET_WEAPONS,
@@ -2082,6 +2083,13 @@ class Game {
 	private adaptiveDisplay: string | null = null;
 	private rendererInfoAutoReset: boolean | null = null;
 	readonly audio = new AudioFX(PUNCH_SOUND.arm);
+	/**
+	 * The music synth (#560). Its worklet is loaded into the audio context on
+	 * the gesture that opens it, and its readiness is a promise (#543 D8), so
+	 * no cue waits on it. **Nothing plays yet**: when music plays is #547's and
+	 * #548's to decide, and they send it scores through this.
+	 */
+	readonly music = new Music();
 	/**
 	 * The pad (#283). Constructed here because construction reaches for nothing —
 	 * `navigator` is touched inside `poll()` alone, which is rule 2 of the
@@ -4336,6 +4344,12 @@ class Game {
 			// round 5. `silent` is the context's own state, so this asks whether
 			// the unlock happened rather than whether it was attempted.
 			if (this.audio.silent) return;
+			const ctx = this.audio.context;
+			const bus = this.audio.musicInput;
+			// A failed load is kept in `music.errors` and is final for this session:
+			// these listeners are removed below, so nothing here attaches again.
+			// Whether a later `attach` retries is #547's and #548's to decide.
+			if (ctx && bus) this.music.attach(ctx, bus).catch(() => {});
 			window.removeEventListener("pointerdown", unlockAudio);
 			window.removeEventListener("keydown", unlockAudio);
 		};

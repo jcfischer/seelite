@@ -752,3 +752,21 @@ Master at Off is the mute.
 _Avoid_: Channel, mixer track — *as a name for a gain stage only*. An audio
 buffer's channel (`getChannelData`, a mono context's one channel) is WebAudio's
 own word and stays.
+
+**Score**:
+Music written as note data in TypeScript — a `Song` of named sections of typed
+note events, with a tempo map, a lilt, and loop and resolve points — which the
+music synth plays at runtime (#543 D2–D3, built in #560). Source, not an asset:
+nothing is downloaded or recorded. The types live in `src/music-score.ts`,
+which imports nothing.
+_Avoid_: Track, MIDI file, sequence
+
+**Stem**:
+One part of a score, faded on its own while the song plays (`stem` in
+`MusicCommand`). Two stems moved together are a crossfade between parts.
+_Avoid_: Layer, track
+
+**Quantum** (music):
+Where a transport move lands: the playing song's next bar line (`"bar"`) or
+the end of its section (`"section"`); with nothing playing, now. Distinct from
+WebAudio's *render quantum*, the 128 frames `process()` renders at a time.

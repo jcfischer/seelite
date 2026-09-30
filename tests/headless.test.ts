@@ -59,6 +59,11 @@ const HEADLESS = [
 	"key-dispatch",
 	"key-names",
 	"layout-notice",
+	"music-engine",
+	"music-score",
+	"music-sequencer",
+	"music-test-score",
+	"music-voices",
 	"names",
 	"noise",
 	"pad-bindings",
@@ -130,6 +135,11 @@ test("no module has been quietly dropped from the list", () => {
 		"key-dispatch",
 		"key-names",
 		"layout-notice",
+		"music-engine",
+		"music-score",
+		"music-sequencer",
+		"music-test-score",
+		"music-voices",
 		"names",
 		"noise",
 		"pad-bindings",
@@ -363,6 +373,50 @@ test("the cue vocabulary and the voice pool are leaves", () => {
 	// layer can play one without reaching the simulation.
 	expect(importsIn("audio-cue.ts")).toEqual([]);
 	expect(importsIn("voice-pool.ts")).toEqual([]);
+});
+
+/** The modules a file names with `from`, sorted: static imports and
+ *  re-exports alike. */
+const fromsIn = (file: string) =>
+	[...codeOf(`src/${file}`).matchAll(/\bfrom\s*["'`]([^"'`]+)["'`]/g)]
+		.map((m) => m[1])
+		.sort();
+
+test("the music vocabulary is a leaf", () => {
+	// #543 D3: the score's types and the transport's messages, read by the
+	// main thread and the worklet alike, so neither reaches the other.
+	expect(importsIn("music-score.ts")).toEqual([]);
+});
+
+test("the music worklet's modules reach only each other and the score", () => {
+	// #560: everything the worklet bundles is pure — the score, the scheduling
+	// core, the voices, the space and the engine — so bun runs all of it headless and the
+	// worklet shell is the only part that needs `AudioWorkletGlobalScope`.
+	// None of them reaches the audio layer, the game or a browser global.
+	expect(fromsIn("music-sequencer.ts")).toEqual(["./music-score"]);
+	expect(fromsIn("music-voices.ts")).toEqual(["./music-score"]);
+	expect(fromsIn("music-space.ts")).toEqual([]);
+	expect(fromsIn("music-engine.ts")).toEqual([
+		"./music-score",
+		"./music-sequencer",
+		"./music-space",
+		"./music-voices",
+	]);
+	expect(fromsIn("music-worklet.ts")).toEqual([
+		"./music-engine",
+		"./music-score",
+	]);
+	expect(fromsIn("music-test-score.ts")).toEqual(["./music-score"]);
+	// The worklet file registers itself on load, so it is never imported for
+	// its values: only `?worker&url` names it, and that only in `music.ts`.
+	const namesWorklet = srcFiles()
+		.filter((f) => /music-worklet/.test(codeOf(f)))
+		.map((f) => f.replace(/^.*\/src\//, "src/"))
+		.filter((f) => f !== "src/music-worklet.ts");
+	expect(namesWorklet).toEqual(["src/music.ts"]);
+	expect(codeOf("src/music.ts")).toMatch(
+		/from\s*"\.\/music-worklet\.ts\?worker&url"/,
+	);
 });
 
 test("the flight sound step reads only the cue vocabulary", () => {

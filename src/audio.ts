@@ -320,6 +320,17 @@ export class AudioFX {
 	}
 
 	/**
+	 * The context the engine is built into, once there is one: what the music
+	 * synth (#560) loads its worklet into, and for that only. A node built in
+	 * it and connected anywhere but a bus is a level beside the settings rows,
+	 * which #542 D1 rules out; the synth connects to `musicInput` and nowhere
+	 * else (`tests/music-controller.test.ts`).
+	 */
+	get context(): BaseAudioContext | null {
+		return this.ctx;
+	}
+
+	/**
 	 * Set a bus to a settings step, `0`..`1` (D2).
 	 *
 	 * Eased over a few tens of milliseconds rather than set, so a step is not a

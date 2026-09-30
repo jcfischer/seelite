@@ -656,6 +656,9 @@ const HEAT_MIN_LIFT = 1.1;
 /** The least each rung of the c ladder may stand over the one below (#544). */
 const LADDER_MIN_STEP = 1.3;
 
+// #560's music renders are `probe-music.mjs`'s: this probe bands cues and loops.
+const CUES = SOUND_SET.filter((e) => !e.music);
+
 const browser = await launchChromium();
 const { check, watch, exit } = tally();
 try {
@@ -689,7 +692,8 @@ try {
 	const heavy = { punch: "heavy" };
 	const entryOf = new Map(SOUND_SET.map((e) => [e.name, e]));
 	const rendered = new Map();
-	for (const entry of SOUND_SET) {
+	// The music renders are probe-music's (#560): this reads the cues.
+	for (const entry of CUES) {
 		const s = await render(entry, thin);
 		rendered.set(entry.name, s);
 		if (PRINT)
@@ -711,7 +715,7 @@ try {
 	}
 
 	for (const [entry, on, arm] of [
-		...SOUND_SET.map((e) => [e, rendered.get(e.name), thin]),
+		...CUES.map((e) => [e, rendered.get(e.name), thin]),
 		...[...renderedHeavy].map(([name, s]) => [entryOf.get(name), s, heavy]),
 	]) {
 		const off = await render(entry, { bypassLimiter: true, ...arm });

@@ -20,6 +20,8 @@ import {
 	WITCHSPACE_SOUND_ARMS,
 	witchspaceSoundArms,
 } from "../src/witchspace-sound";
+import type { MusicCommand } from "../src/music-score";
+import { TEST_SONGS } from "../src/music-test-score";
 
 /** One entry, loosely: the list is a script's, and its inferred union has no
  *  field common to every shape. */
@@ -29,6 +31,10 @@ interface SoundEntry {
 	loop?: number;
 	legacy?: readonly unknown[];
 	flight?: { arms: string };
+	music?: {
+		songs: Record<string, string | object>;
+		script: readonly (readonly [number | "attach", { type: string }])[];
+	};
 	weapons?: { arms: string };
 	witchspace?: { arms: string; from: string };
 	scheduled?: { kinds: string[]; arms: string };
@@ -110,6 +116,7 @@ test("each entry before #544 names the method the engine before #552 exposed", (
 		if (
 			e.loop === undefined &&
 			!e.flight &&
+			!e.music &&
 			!e.weapons &&
 			!e.witchspace &&
 			!e.scheduled &&
@@ -152,6 +159,34 @@ test("every flight arm is flown by some timeline, or says why not", () => {
 				expect([v, flown.has(v)]).toEqual([v, true]);
 	for (const v of Object.keys(ARMS_NOT_RENDERED))
 		expect(flown.has(v)).toBe(false);
+});
+
+/**
+ * Every transport move: `true` where a render scripts it for the ear, or the
+ * reason none does. A `Record` over the whole union, so a move added to
+ * `MusicCommand` with no entry here is a type error rather than a gap.
+ */
+const MOVES: Record<MusicCommand["type"], true | string> = {
+	load: "is sent for every render's songs before its script, not in it",
+	play: true,
+	crossfade: true,
+	jump: "is the same line arithmetic as resolve, which the waltz renders",
+	resolve: true,
+	stop: true,
+	stem: true,
+	tempo: true,
+	sync: "moves nothing: the render sends it around every scripted command",
+};
+
+test("every transport move is rendered for the ear, or says why not (#560)", () => {
+	const music = SOUND_SET.flatMap((e) => (e.music ? [e.music] : []));
+	const sent = new Set(music.flatMap((m) => m.script.map(([, c]) => c.type)));
+	for (const [move, why] of Object.entries(MOVES))
+		expect([move, sent.has(move)]).toEqual([move, why === true]);
+	// And every song a render names is in the test score.
+	for (const m of music)
+		for (const song of Object.values(m.songs))
+			if (typeof song === "string") expect(TEST_SONGS[song]).toBeDefined();
 });
 
 test("every witchspace arm is flown by some jump, one question at a time", () => {
