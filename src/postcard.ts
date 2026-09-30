@@ -47,14 +47,13 @@
 export const POSTCARD_SCHEMA = 1;
 
 /**
- * Generator versions a recipe may name: the current one first, which a new
- * recipe is written with, then the legacy versions a save may still carry.
- * A legacy link rebuilds on the current generated baseline: version 8 moved
- * some shipyards and planets, so the old view can differ even though the
- * camera coordinates survive. Restated from `world-state.ts`; the test holds
- * the supported versions together.
+ * Generator versions whose scene layout this build can reproduce. Saves can
+ * rebase persistent state onto the current generator, but a scene recipe asks
+ * to rebuild its original view. Version 8 changed some planets and shipyard
+ * placements, so older links are refused rather than silently reinterpreted.
+ * The test holds this version against `world-state.ts`'s current version.
  */
-export const POSTCARD_GENERATORS: readonly number[] = [8, 7, 6];
+export const POSTCARD_GENERATORS: readonly number[] = [8];
 
 /** `GALAXY_COUNT` and `SYSTEMS_PER_GALAXY`, restated for the leaf's reason. */
 export const POSTCARD_GALAXIES = 8;

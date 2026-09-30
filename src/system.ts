@@ -578,16 +578,16 @@ export function generateContents(record: SystemRecord): SystemContents {
 		const radiusKm = size.base + radiusRoll * size.span;
 		const id = `planet-${i}`;
 		const name = planetName(record.name, planets.length);
-		const moons = buildMoons(
-			id,
-			name,
-			radiusKm,
-			isGasGiant ? moonCount : moonCount >= 2 ? 1 : 0,
-			moonRolls,
+		const moons = buildMoons({
+			planetId: id,
+			planetDisplayName: name,
+			planetRadiusKm: radiusKm,
+			count: isGasGiant ? moonCount : moonCount >= 2 ? 1 : 0,
+			rolls: moonRolls,
 			inclination,
 			node,
-			isGasGiant ? Infinity : radiusKm * 0.5,
-		);
+			radiusCapKm: isGasGiant ? Infinity : radiusKm * 0.5,
+		});
 		planets.push({
 			id,
 			name,
@@ -618,7 +618,7 @@ export function generateContents(record: SystemRecord): SystemContents {
 		belt = { aAu, halfWidthAu: aAu * 0.1 };
 	}
 
-	const stations = generateStations(record, star, planets, belt);
+	const stations = generateStations(record, star, planets, belt, habitableAu);
 	return { star, habitableAu, planets, belt, stations };
 }
 
@@ -632,16 +632,25 @@ export function generateContents(record: SystemRecord): SystemContents {
  *
  * Moon sizes and orbits are scenery. Far-layer only, per §6.2.
  */
-function buildMoons(
-	planetId: string,
-	planetDisplayName: string,
-	planetRadiusKm: number,
-	count: number,
-	rolls: readonly number[],
-	inclination: number,
-	node: number,
-	moonRadiusCapKm: number,
-): Moon[] {
+function buildMoons({
+	planetId,
+	planetDisplayName,
+	planetRadiusKm,
+	count,
+	rolls,
+	inclination,
+	node,
+	radiusCapKm,
+}: {
+	planetId: string;
+	planetDisplayName: string;
+	planetRadiusKm: number;
+	count: number;
+	rolls: readonly number[];
+	inclination: number;
+	node: number;
+	radiusCapKm: number;
+}): Moon[] {
 	const moons: Moon[] = [];
 	for (let m = 0; m < count; m++) {
 		const base = m * ROLLS_PER_MOON;
@@ -650,7 +659,7 @@ function buildMoons(
 			name: moonName(planetDisplayName, m),
 			radiusKm: Math.min(
 				MOON_RADIUS_KM.base + rolls[base] * MOON_RADIUS_KM.span,
-				moonRadiusCapKm,
+				radiusCapKm,
 			),
 			orbit: {
 				radiusKm:
@@ -738,6 +747,7 @@ function generateStations(
 	star: StarClassDef,
 	planets: readonly Planet[],
 	belt: Belt | null,
+	habitableAu: number,
 ): Station[] {
 	const rand = stream(record.seed, DOMAIN.STATIONS);
 	// Two more streams, one per new field, and never `rand` above: a draw
@@ -838,11 +848,23 @@ function generateStations(
 	}
 
 	if (record.displayTL >= SHIPYARD_MIN_TL) {
+		// Select from the old host list first. Removing a giant from that list
+		// must not move a shipyard whose old host is still eligible. Reuse the
+		// same placement roll for a fallback, without shifting station draws.
+		const legacyHosts = [
+			...(primary ? [primary] : []),
+			...planets.filter((p) => p.aAu > GIANT_ORBIT_FACTOR * habitableAu),
+		];
 		const hosts = [
 			...(primary ? [primary] : []),
 			...planets.filter((p) => p.isGasGiant),
 		];
-		const host = hosts[Math.floor(rand() * hosts.length)];
+		const hostRoll = rand();
+		const oldHost = legacyHosts[Math.floor(hostRoll * legacyHosts.length)];
+		const host =
+			oldHost?.isPrimary || oldHost?.isGasGiant
+				? oldHost
+				: hosts[Math.floor(hostRoll * hosts.length)];
 		if (host) {
 			stations.push({
 				id: "station-shipyard",

@@ -1,5 +1,6 @@
 import { expect, test } from "bun:test";
 import { createHash } from "node:crypto";
+import { readFileSync } from "node:fs";
 import { carrierKey } from "../src/carrier-key";
 import { generateGalaxy } from "../src/galaxy";
 import {
@@ -150,6 +151,31 @@ test("station identities survive and shipyards use only primary or giant hosts",
 	}
 	expect(shipyards).toBeGreaterThan(50);
 	expect(primaryFallbacks).toBeGreaterThan(5);
+});
+
+test("a shipyard keeps its former host when that host remains eligible", () => {
+	// Captured on generator v7 before #590. A removed giant may relocate its
+	// shipyard, but a surviving host must not move because the candidate list
+	// became shorter ahead of it.
+	const oldHosts = JSON.parse(
+		readFileSync(
+			new URL("fixtures/shipyard-hosts-generator-v7.json", import.meta.url),
+			"utf8",
+		),
+	) as [number, number, string][];
+	expect(oldHosts.length).toBe(85);
+	for (const [galaxy, index, oldHostId] of oldHosts) {
+		const record = generateGalaxy(6218014, galaxy).systems[index];
+		const contents = generateContents(record);
+		const oldHost = contents.planets.find((planet) => planet.id === oldHostId);
+		if (!oldHost)
+			throw new Error(`missing old host ${galaxy}/${index}/${oldHostId}`);
+		if (!oldHost.isPrimary && !oldHost.isGasGiant) continue;
+		expect(
+			contents.stations.find((station) => station.type === "shipyard")
+				?.parentId,
+		).toBe(oldHostId);
+	}
 });
 
 test("a docked shipyard save still names the regenerated station after load", () => {

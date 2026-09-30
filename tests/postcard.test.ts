@@ -72,12 +72,8 @@ describe("the recipe's constants agree with the modules that own them", () => {
 		expect(POSTCARD_SYSTEMS).toBe(SYSTEMS_PER_GALAXY);
 	});
 
-	test("the generators a recipe may name are the ones a save may", () => {
-		// The current one first: that is the one a new recipe is written with.
-		expect(POSTCARD_GENERATORS).toEqual([
-			WORLD_GENERATOR_VERSION,
-			...LEGACY_WORLD_GENERATOR_VERSIONS,
-		]);
+	test("a recipe may name only the current visual generator", () => {
+		expect(POSTCARD_GENERATORS).toEqual([WORLD_GENERATOR_VERSION]);
 	});
 });
 
@@ -135,11 +131,9 @@ describe("round trip", () => {
 		expect(POSTCARD_FRAGMENT_PREFIX).toBe("#postcard=");
 	});
 
-	test("every legacy generator a save may name is accepted as written", () => {
-		for (const gen of POSTCARD_GENERATORS) {
-			const back = decodePostcard(withPair("gen", String(gen)));
-			expect(back.ok && back.recipe.generator).toBe(gen);
-		}
+	test("legacy scene recipes are refused when their geometry has changed", () => {
+		for (const gen of LEGACY_WORLD_GENERATOR_VERSIONS)
+			expect(decodePostcard(withPair("gen", String(gen))).ok).toBe(false);
 	});
 });
 
@@ -455,23 +449,4 @@ test("a recipe's pose is its camera half", () => {
 	expect(
 		postcardPose(postcardRecipe({ ...scene, mode: "exterior", yawRad: 0.5 })),
 	).toEqual({ mode: "exterior", yawRad: 0.5 });
-});
-
-test("a legacy generator's link spells back with the current one, and nothing else changes", () => {
-	const legacy = POSTCARD_GENERATORS[1];
-	const text = canonical().replace(
-		`&gen=${POSTCARD_GENERATORS[0]}&`,
-		`&gen=${legacy}&`,
-	);
-	const read = decodePostcard(text);
-	if (!read.ok) throw new Error(read.reason);
-	// What the viewer does: the rebuilt game hands its scene back through the
-	// same picker, which writes the current generator.
-	const again = encodePostcard(
-		postcardRecipe({ ...read.recipe, galaxy: read.recipe.galaxy }),
-	);
-	expect(again).toBe(canonical());
-	expect(
-		again.replace(`&gen=${POSTCARD_GENERATORS[0]}&`, `&gen=${legacy}&`),
-	).toBe(text);
 });
