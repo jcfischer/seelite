@@ -86,12 +86,14 @@ const list = (hull: HullId): number => HULL_SPECS[hull].priceCr ?? 0;
 const NO_RUNGS: Rungs = { combat: 0, trade: 0, exploration: 0 };
 
 describe("#556 D5 — the trade-in", () => {
-	test("courier → freighter nets 36,900 Cr, the receipt's own figure", () => {
+	test("courier → freighter nets 48,300 Cr, §7.1's own figure", () => {
+		// #583's receipt quoted 36,900 on #182's prices; #383 re-priced the
+		// roster and §7.1 prints this one now.
 		const offer = hullOffer(input(), "freighter");
-		expect(offer.tradeInCr).toBe(31_500);
-		expect(offer.netCr).toBe(36_900);
+		expect(offer.tradeInCr).toBe(20_700);
+		expect(offer.netCr).toBe(48_300);
 		expect(offer.accepted).toBe(true);
-		expect(offer.commander.credits).toBe(100_000 - 36_900);
+		expect(offer.commander.credits).toBe(100_000 - 48_300);
 		expect(offer.commander.hull).toBe("freighter");
 	});
 

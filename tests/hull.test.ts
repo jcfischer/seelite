@@ -35,7 +35,9 @@ import {
 	HULL_IDS,
 	HULL_PRICE_BASELINE_CR,
 	HULL_PRICE_EXPONENT,
+	HULL_PRICE_KNEE_HOLD_T,
 	HULL_PRICE_STEP_CR,
+	HULL_PRICE_UPPER_EXPONENT,
 	HULL_SPECS,
 	HULL_VARIANT_IDS,
 	hullPriceCr,
@@ -481,23 +483,40 @@ describe("what a hull costs (#182, #26's D4 and D7)", () => {
 			expect([id, HULL_SPECS[id].priceCr]).not.toEqual([id, null]);
 	});
 
-	test("the price law is monotone in the hold and cheaper per tonne as it grows", () => {
-		// Both halves matter and the second is the measured finding: the exponent
-		// is under one, so a hull that carries three times as much does not cost
-		// three times as much, because it does not *earn* three times as much.
-		// A build with a linear law passes the first assertion and fails this one.
+	test("the price law is monotone in the hold, and bends at the knee", () => {
+		// **#383's finding, in the shape it has.** With §5.6's spread live the
+		// roster's holds earn in proportion to the hold, so the lower segment is
+		// never *dearer* per tonne as it grows; above the knee the shelves run
+		// short and every further tonne earns less. A single power law passes the
+		// first two assertions and fails the knee; #182's law, which was
+		// cheaper per tonne everywhere, fails nothing here, which is why the
+		// pins below exist.
 		let last = 0;
 		let lastPerTonne = Number.POSITIVE_INFINITY;
 		for (let holdT = 1; holdT <= HULL_CEILING_HOLD_T; holdT++) {
 			const price = hullPriceCr(holdT) as number;
 			expect(price).toBeGreaterThanOrEqual(last);
 			last = price;
+			// A rounded price is off the law by up to half a step, so a tonne's
+			// share of it can wobble by that much over the hold.
 			const perTonne = price / holdT;
-			expect(perTonne).toBeLessThanOrEqual(lastPerTonne + 1e-9);
+			expect(perTonne).toBeLessThanOrEqual(
+				lastPerTonne + HULL_PRICE_STEP_CR / holdT,
+			);
 			lastPerTonne = perTonne;
 		}
 		expect(HULL_PRICE_EXPONENT).toBeGreaterThan(0);
-		expect(HULL_PRICE_EXPONENT).toBeLessThan(1);
+		expect(HULL_PRICE_EXPONENT).toBeLessThanOrEqual(1);
+		expect(HULL_PRICE_UPPER_EXPONENT).toBeLessThan(HULL_PRICE_EXPONENT);
+		// The knee is a hold the roster sells, so no hull is priced by a segment
+		// that was fitted without it.
+		expect(
+			PURCHASABLE_HULL_IDS.map((id) => HULL_SPECS[id].holdT),
+		).toContain(HULL_PRICE_KNEE_HOLD_T);
+		const perT = (h: number) => (hullPriceCr(h) as number) / h;
+		expect(perT(HULL_CEILING_HOLD_T)).toBeLessThan(
+			perT(HULL_PRICE_KNEE_HOLD_T),
+		);
 	});
 
 	test("the shipped prices are the ones §7.1 publishes, to the credit", () => {
@@ -513,15 +532,15 @@ describe("what a hull costs (#182, #26's D4 and D7)", () => {
 				PURCHASABLE_HULL_IDS.map((id) => [id, HULL_SPECS[id].priceCr]),
 			),
 		).toEqual({
-			interceptor: 20_000,
-			prospector: 25_600,
-			courier: 35_000,
-			tug: 39_100,
-			explorer: 44_800,
-			miner: 53_400,
-			freighter: 68_400,
+			interceptor: 9_200,
+			prospector: 13_800,
+			courier: 23_000,
+			tug: 27_600,
+			explorer: 34_500,
+			miner: 46_000,
+			freighter: 69_000,
 		});
-		expect(hullPriceCr(HULL_CEILING_HOLD_T)).toBe(141_300);
+		expect(hullPriceCr(HULL_CEILING_HOLD_T)).toBe(128_000);
 		expect(HULL_PRICE_BASELINE_CR % HULL_PRICE_STEP_CR).toBe(0);
 		// Every quoted price is on the step, so a spec table and a shipyard screen
 		// cannot round differently.
@@ -565,9 +584,9 @@ describe("what a hull costs (#182, #26's D4 and D7)", () => {
 			holdT: Number(m[1]),
 			priceCr: Number(m[2].replace(/,/g, "")),
 		}));
-		// Seven civilian hulls and three rungs — if the tables stop being read the
+		// Seven civilian hulls and two rungs — if the tables stop being read the
 		// loop below would pass on nothing at all.
-		expect(rows.length).toBe(PURCHASABLE_HULL_IDS.length + 3);
+		expect(rows.length).toBe(PURCHASABLE_HULL_IDS.length + 2);
 		for (const row of rows)
 			expect([row.holdT, row.priceCr as number | null]).toEqual([
 				row.holdT,
@@ -593,6 +612,12 @@ describe("what a hull costs (#182, #26's D4 and D7)", () => {
 			`HULL_PRICE_BASELINE_CR = ${withCommas(HULL_PRICE_BASELINE_CR)} Cr`,
 		);
 		expect(spec).toContain(`HULL_PRICE_EXPONENT = ${HULL_PRICE_EXPONENT}`);
+		expect(spec).toContain(
+			`HULL_PRICE_KNEE_HOLD_T = ${HULL_PRICE_KNEE_HOLD_T} t`,
+		);
+		expect(spec).toContain(
+			`HULL_PRICE_UPPER_EXPONENT = ${HULL_PRICE_UPPER_EXPONENT}`,
+		);
 		expect(spec).toContain(`HULL_CEILING_HOLD_T = ${HULL_CEILING_HOLD_T} t`);
 		for (const id of PURCHASABLE_HULL_IDS)
 			expect([
