@@ -793,7 +793,7 @@ try {
 			g.regime = "normal";
 			g.spoolLeftS = 0;
 			g.detour = null;
-			g.dockingComputerEngaged = false;
+			g.dockingComputer.disengage();
 			g.dock = {
 				phase: "flying",
 				stationId: null,

@@ -330,9 +330,9 @@ import {
 	slewToward,
 	slotBasis,
 	tickDocking,
-	type ComputerPhase,
 	offAxisKm,
 } from "./docking";
+import { DockingComputer, type DisengageHow } from "./docking-computer";
 import {
 	type ConditionPrint,
 	type ShieldSide,
@@ -3450,27 +3450,12 @@ class Game {
 		return this.commander.ownedEquipment.includes(DOCKING_COMPUTER);
 	}
 
-	/** Whether it is flying. Any control input cancels it (§7). */
-	dockingComputerEngaged = false;
-
 	/**
-	 * Why the computer last stopped flying, or `null`.
-	 *
-	 * Held rather than dropped because a disengagement the player cannot see is
-	 * the same defect §8 records about invisible tolerances. The cue itself
-	 * belongs to the HUD node; this is the value it will read.
+	 * Whether the computer is flying, why it last let go, and the phase its
+	 * next step is fed (#596). Engaged and disengaged only through its own
+	 * pair, so no engage can leave an old refusal standing.
 	 */
-	lastComputerRefusal: "no-clearance" | "hostile" | "out-of-range" | null =
-		null;
-
-	/**
-	 * The phase the computer's last step returned at `lastComputerStationId`,
-	 * fed back into the next one (#315). `"idle"` whenever it did not fly on the
-	 * last step or the nearest station changed, so a run-in always starts on
-	 * the tight side of that station's corridor hysteresis.
-	 */
-	private lastComputerPhase: ComputerPhase = "idle";
-	private lastComputerStationId: string | null = null;
+	readonly dockingComputer = new DockingComputer();
 
 	/** The name it is filed under in the equipment table, on the handle so a
 	 *  probe naming it does not restate the string. */
@@ -10311,8 +10296,7 @@ class Game {
 			clearance: state.clearance,
 			grantLive: grantLive(state, this.world.gameTime),
 			hostile: state.hostile,
-			computerEngaged: this.dockingComputerEngaged,
-			computerRefusal: this.lastComputerRefusal,
+			...this.dockingComputer.snapshot(),
 			dockedAt: this.dockedAt,
 			// **§12.3's third row, on the page.** Obligation 8's checkable half
 			// is that the three exempt states are *distinguishable* from ordinary
@@ -10360,10 +10344,22 @@ class Game {
 	 *  check — `dockingComputerStep` refuses the same conditions a pilot fails. */
 	toggleDockingComputer() {
 		if (!this.hasDockingComputer) return;
-		this.dockingComputerEngaged = !this.dockingComputerEngaged;
-		this.lastComputerPhase = "idle";
-		if (this.dockingComputerEngaged) this.lastComputerRefusal = null;
-		else this.clearPlayerArrivalLaneRequests();
+		if (!this.dockingComputer.engaged) {
+			this.dockingComputer.engage();
+			return;
+		}
+		this.cancelComputerApproach({ idle: true });
+	}
+
+	/**
+	 * Stop the computer and drop the arrival turn it was holding. Every
+	 * disengage but two goes through here; the dock that ends a flight and the
+	 * flight-session teardown call `disengage()` alone, because neither drops a
+	 * lane request (#596).
+	 */
+	private cancelComputerApproach(how?: DisengageHow) {
+		this.dockingComputer.disengage(how);
+		this.clearPlayerArrivalLaneRequests();
 	}
 
 	/** A cancelled computer approach must not keep an invisible arrival turn. */
@@ -10539,7 +10535,7 @@ class Game {
 		// throttle on the same frame, so the next step hand-flew with a throttle
 		// nobody set and the assist accelerated a docked ship along its nose,
 		// through the station it had just docked at.
-		this.dockingComputerEngaged = false;
+		this.dockingComputer.disengage();
 		this.throttle = 0;
 
 		if (outcome.docked) {
@@ -10880,19 +10876,13 @@ class Game {
 	): boolean {
 		// Taken before anything can return. Every early exit leaves the corridor,
 		// so the stored phase is idle unless a step runs and records its own.
-		let previousPhase = this.lastComputerPhase;
-		this.lastComputerPhase = "idle";
-		if (!this.dockingComputerEngaged || this.dockedAt) return false;
+		this.dockingComputer.beginStep();
+		if (!this.dockingComputer.engaged || this.dockedAt) return false;
 		// The first entry is the nearest station: `dockingApproaches` walks in
 		// range order.
 		const [nearestId, approach] = approaches.entries().next().value ?? [];
 		if (!nearestId || !approach) return false;
-		// A phase belongs to one station's corridor; carried to another it would
-		// start that run-in on the wide side of the hysteresis.
-		if (nearestId !== this.lastComputerStationId) {
-			previousPhase = "idle";
-			this.lastComputerStationId = nearestId;
-		}
+		const previousPhase = this.dockingComputer.phaseAt(nearestId);
 		const { frame } = approach;
 		const stationState = this.dockingStateOf(nearestId);
 		const awaitingBerth = stationState.clearance.kind === "queued";
@@ -10916,7 +10906,7 @@ class Game {
 			maxSpeedKms: ASSIST_CAP_KMS,
 			previousPhase,
 		});
-		this.lastComputerPhase = command.phase;
+		this.dockingComputer.recordPhase(command.phase);
 		if (!command.engaged) {
 			// **Silent disengagement is the failure mode here.** §8's HUD cues are
 			// not this node's, so nothing tells the player the autopilot stopped —
@@ -10925,9 +10915,7 @@ class Game {
 			// where the computer put it would hand back a ship still closing at a
 			// speed nobody chose, so the throttle goes to zero and the reason is
 			// recorded for the HUD node to read.
-			this.dockingComputerEngaged = false;
-			this.clearPlayerArrivalLaneRequests();
-			this.lastComputerRefusal = command.refused;
+			this.cancelComputerApproach({ refused: command.refused });
 			this.throttle = 0;
 			return false;
 		}
@@ -11050,9 +11038,9 @@ class Game {
 	 *
 	 * ## What it does not reset, and why the name says so
 	 *
-	 * The **docking session**. `dock`, `interimCondition` and the commerce clock
-	 * stamp are written by `stepDockPhase`, `enterArrival` and `applyDamage`,
-	 * none of which is on the coverage scan's declared list — so the guard cannot
+	 * The **docking session**. `dock` and the commerce clock stamp are written
+	 * by `stepDockPhase` and `enterArrival`, neither of which is on the coverage
+	 * scan's declared list — so the guard cannot
 	 * see this gap either, which is why it is written here and why the method is
 	 * named for the half it does deliver. Called after a leg that entered an
 	 * aperture it would put the ship at the arrival point with a docking phase
@@ -11182,7 +11170,7 @@ class Game {
 		this.cruiseTrackId = null;
 		this.frameBody = null;
 		this.proximityFrameBodyId = null;
-		this.dockingComputerEngaged = false;
+		this.dockingComputer.disengage();
 		// An armed jump does not survive arriving somewhere. `takePendingJump`
 		// clears it before it calls `performJump`, so this is the reset's case
 		// and any later one — the coverage scan asked for it the moment the
@@ -12376,7 +12364,7 @@ class Game {
 			? "dead"
 			: this.witchspace.kind !== "idle" || charging(this.jumpCharge)
 				? "witchspace"
-				: this.dockingComputerEngaged
+				: this.dockingComputer.engaged
 					? "dockingComputer"
 					: dock.phase === "docked" || dock.phase === "arriving"
 						? "docked"
@@ -13284,9 +13272,11 @@ class Game {
 		// other, so it takes an armed jump — it simply never armed one.
 		if (charging(this.jumpCharge)) this.stepJumpCharge(dt);
 
-		if (this.dockingComputerEngaged && this.hasControlInput(yaw, pitch, roll)) {
-			this.dockingComputerEngaged = false;
-			this.clearPlayerArrivalLaneRequests();
+		if (
+			this.dockingComputer.engaged &&
+			this.hasControlInput(yaw, pitch, roll)
+		) {
+			this.cancelComputerApproach();
 		}
 		if (
 			(this.detour || this.cruiseTrackId) &&
@@ -15289,8 +15279,7 @@ class Game {
 					id,
 					releaseBerth({ ...held, clearance: { kind: "none" } }),
 				);
-			this.clearPlayerArrivalLaneRequests();
-			this.dockingComputerEngaged = false;
+			this.cancelComputerApproach();
 			this.throttle = 0;
 			this.world.ship.pos = v3(from.pos.x, from.pos.y, from.pos.z);
 			this.world.ship.vel = v3(from.vel.x, from.vel.y, from.vel.z);
@@ -15311,7 +15300,7 @@ class Game {
 		this.targetId = id;
 		if (this.requestDockingClearance().state?.clearance.kind !== "granted")
 			return giveUp();
-		this.dockingComputerEngaged = true;
+		this.dockingComputer.engage();
 		const dt = 1 / 60;
 		for (
 			let i = 0;
@@ -15320,10 +15309,10 @@ class Game {
 		) {
 			this.step(dt);
 			// A pilot re-engages a computer that dropped out; so does this.
-			if (this.dockPhase === "flying" && !this.dockingComputerEngaged) {
+			if (this.dockPhase === "flying" && !this.dockingComputer.engaged) {
 				if (!this.dockingSnapshot(id)?.grantLive)
 					this.requestDockingClearance();
-				this.dockingComputerEngaged = true;
+				this.dockingComputer.engage();
 			}
 			if (this.dockPhase === "arriving") this.skipDockTraversal();
 		}
@@ -15560,7 +15549,7 @@ class Game {
 			this.requestDockingClearance();
 		},
 		"engage-computer": () => {
-			this.dockingComputerEngaged = true;
+			this.dockingComputer.engage();
 		},
 		"skip-traversal": () => {
 			this.skipDockTraversal();
@@ -15581,12 +15570,12 @@ class Game {
 				regime: this.regime,
 				spooling: this.spoolLeftS > 0,
 				dockPhase: this.dock.phase,
-				computerEngaged: this.dockingComputerEngaged,
+				computerEngaged: this.dockingComputer.engaged,
 				grantLive: id ? (this.dockingSnapshot(id)?.grantLive ?? false) : false,
 				cruiseEtaS: this.regime === "cruise" ? this.timeToTarget() : null,
 				stationKm,
 				inVicinity: stationKm <= VICINITY_KM,
-				runIn: this.lastComputerPhase === "run-in",
+				runIn: this.dockingComputer.phase === "run-in",
 			};
 		},
 		apply: (action) => this.openingOrders[action](),
@@ -15666,8 +15655,7 @@ class Game {
 					releaseBerth({ ...held, clearance: { kind: "none" } }),
 				);
 		}
-		this.clearPlayerArrivalLaneRequests();
-		this.dockingComputerEngaged = false;
+		this.cancelComputerApproach();
 		this.throttle = 0;
 		console.warn("opening: the flight did not dock; placing at the station");
 		if (!this.startDockedAtHome())
@@ -15749,7 +15737,7 @@ class Game {
 			grantLive: station
 				? (this.dockingSnapshot(station.id)?.grantLive ?? false)
 				: false,
-			computerEngaged: this.dockingComputerEngaged,
+			computerEngaged: this.dockingComputer.engaged,
 		};
 	}
 
