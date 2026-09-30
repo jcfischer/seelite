@@ -8,6 +8,7 @@
  * whatever it wrote. How it sounds is the principal's ear.
  */
 import { describe, expect, test } from "bun:test";
+import { readFileSync } from "node:fs";
 import {
 	CALM_BARS,
 	CALM_LIFT_BPM,
@@ -21,6 +22,7 @@ import {
 } from "../src/music-generate";
 import type { NoteEvent, Song } from "../src/music-score";
 import { compileSong } from "../src/music-sequencer";
+import { repoPath } from "./lib/source-scan";
 
 const SEEDS = Array.from({ length: 48 }, (_, i) => (i * 2654435761) >>> 0);
 const UNPITCHED = new Set(["kick", "hat", "snare"]);
@@ -54,7 +56,7 @@ const loopPeriod = (prints: readonly string[], max: number) => {
 	return 0;
 };
 
-/** A carrier's statements: its notes grouped where a gap of two beats or more
+/** A motif voice's statements: its notes grouped where a gap of two beats or more
  *  separates them. */
 const statements = (
 	events: readonly NoteEvent[],
@@ -141,13 +143,13 @@ describe("calm (D12)", () => {
 		for (const seed of SEEDS.slice(0, 16)) {
 			const song = flightBed(seed, 0);
 			const calm = section(song, "calm");
-			const carrier = ["keys", "bell", "lead"].find((p) =>
+			const motifVoice = ["keys", "bell", "lead"].find((p) =>
 				calm.events.some((e) => e.part === p && e.pitch >= 60),
 			);
-			expect(carrier).toBeDefined();
+			expect(motifVoice).toBeDefined();
 			const st = statements(
 				calm.events,
-				carrier as string,
+				motifVoice as string,
 				song.beatsPerBar,
 			).filter((s) => s.length >= 3);
 			expect(st.length).toBeGreaterThanOrEqual(5);
@@ -286,10 +288,10 @@ describe("wary, threat and combat (D12, after the ear on calm)", () => {
 		for (const seed of SEEDS.slice(0, 16)) {
 			const song = flightBed(seed, 0);
 			const calm = section(song, "calm");
-			const carrier = ["keys", "bell", "lead"].find((p) =>
+			const motifVoice = ["keys", "bell", "lead"].find((p) =>
 				calm.events.some((e) => e.part === p && e.pitch >= 60),
 			) as string;
-			const theme = statements(calm.events, carrier, 4).filter(
+			const theme = statements(calm.events, motifVoice, 4).filter(
 				(s) => s.length >= 3,
 			)[0];
 			const kin = [
@@ -340,5 +342,15 @@ describe("wary, threat and combat (D12, after the ear on calm)", () => {
 			expect(kit(b)).not.toBe(kit(b - 1));
 			expect(kit(b)).not.toBe(kit(b - 3));
 		}
+	});
+});
+
+describe("vocabulary", () => {
+	test("the generator never calls the motif's voice a carrier (#587)", () => {
+		// *Carrier* is a game term (CONTEXT.md): a ship or station the world
+		// tracks. The voice that plays a system's motif is its motif voice. FM's
+		// carrier and modulator live in the synth, not here.
+		const source = readFileSync(repoPath("src/music-generate.ts"), "utf8");
+		expect(source.match(/carrier/gi) ?? []).toEqual([]);
 	});
 });

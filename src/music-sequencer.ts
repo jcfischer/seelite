@@ -270,6 +270,12 @@ export class Player {
 		this.enter(frame, section, 0);
 	}
 
+	/** The tempo at the current bar's line, with the scale applied: what the
+	 *  engine times the song's echo by (#587). */
+	get bpm(): number {
+		return this.b0;
+	}
+
 	/** Stop now: no note after this. What is sounding is the voices' to end. */
 	halt() {
 		this.playing = false;
