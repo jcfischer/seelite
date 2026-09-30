@@ -356,6 +356,7 @@ function musicTimelines() {
 		// phrase, the same detached, one note soft and one loud.
 		tune("voice-strings", 30, [[0, play("strings")]], { strings: "strings" }),
 		tune("voice-brass", 30, [[0, play("brass")]], { brass: "brass" }),
+		tune("voice-flute", 30, [[0, play("flute")]], { flute: "flute" }),
 		// Between songs: the march takes over on the waltz's next bar line.
 		tune("music-crossfade", 10, [
 			[0, play("waltz")],
@@ -394,10 +395,10 @@ function danubeTimelines() {
 	const songs = { danube: "danube" };
 	const play = [0, { type: "play", id: "danube", at: "bar" }];
 	const resolve = (s) => [s, { type: "resolve", at: "bar" }];
-	const tune = (name, seconds, script) => ({
+	const tune = (name, seconds, script, over = songs) => ({
 		name,
 		seconds,
-		music: { songs, script },
+		music: { songs: over, script },
 	});
 	return [
 		// The intro, two whole loops of the waltz, the cadence.
@@ -410,6 +411,17 @@ function danubeTimelines() {
 		// The shortest run and the longest, the cadence at the plane.
 		tune("music-danube-run-short", 70, [play, resolve(62)]),
 		tune("music-danube-run-long", 100, [play, resolve(92)]),
+		// D12: the same two loops and the shortest run in the other two voicings.
+		...["oxygene", "hybrid"].flatMap((v) => {
+			const id = `danube-${v}`;
+			const start = [0, { type: "play", id, at: "bar" }];
+			return [
+				tune(`music-danube-${v}`, 100, [start, resolve(91)], { [id]: id }),
+				tune(`music-danube-${v}-run-short`, 70, [start, resolve(62)], {
+					[id]: id,
+				}),
+			];
+		}),
 	];
 }
 
@@ -622,7 +634,16 @@ export async function renderInPage({
 							...(await import("/src/music-test-score.ts")).TEST_SONGS,
 							// #547's waltz, where the served tree has it.
 							...(await import("/src/music-danube.ts")
-								.then((m) => ({ danube: m.BLUE_DANUBE }))
+								.then((m) => ({
+									danube: m.BLUE_DANUBE,
+									// #547 D12's voicings, where the served tree has them.
+									...(m.danubeSong
+										? {
+												"danube-oxygene": m.danubeSong("oxygene"),
+												"danube-hybrid": m.danubeSong("hybrid"),
+											}
+										: {}),
+								}))
 								.catch(() => ({}))),
 						},
 					}))

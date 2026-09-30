@@ -373,7 +373,7 @@ export const TEST_VOICES: Song = {
  * 4/4 at 76 bpm; each section two bars.
  */
 const orchestral = (
-	voice: "strings" | "brass",
+	voice: "strings" | "brass" | "flute",
 	chordPitches: readonly number[],
 	phrase: readonly number[],
 ): Song => ({
@@ -445,6 +445,13 @@ export const TEST_BRASS = orchestral(
 	[53, 57, 60, 65, 64, 60, 57, 60],
 );
 
+/** The flute, high: a D major chord of three players and a line. */
+export const TEST_FLUTE = orchestral(
+	"flute",
+	[74, 78, 81],
+	[74, 76, 78, 79, 81, 83, 81, 78],
+);
+
 /** Every test song by the id the sound set loads it under. */
 export const TEST_SONGS: Readonly<Record<string, Song>> = {
 	waltz: TEST_WALTZ,
@@ -452,4 +459,5 @@ export const TEST_SONGS: Readonly<Record<string, Song>> = {
 	voices: TEST_VOICES,
 	strings: TEST_STRINGS,
 	brass: TEST_BRASS,
+	flute: TEST_FLUTE,
 };

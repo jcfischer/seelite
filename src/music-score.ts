@@ -25,7 +25,8 @@ export type VoiceKind =
 	| "keys"
 	| "kick"
 	| "strings"
-	| "brass";
+	| "brass"
+	| "flute";
 
 /**
  * One note (#543 D3).
@@ -109,7 +110,10 @@ export interface TempoPoint {
  *   carries and `envAmount` how many octaves the lowpass opens at full
  *   velocity. For **brass**, `index` is how far below the note, in
  *   semitones, the pitch starts before it rises into it, and `envAmount`
- *   how far the filter swells on the attack, scaled by velocity.
+ *   how far the filter swells on the attack, scaled by velocity. For
+ *   **flute** (#547 D10), `index` is how much breath the tone carries —
+ *   more at the onset, a little under the held note — `cutoffHz` is where
+ *   that breath's band sits, and `glideS` makes it legato as for strings.
  * - `cutoffHz` — pad: the lowpass. Pluck: the brightness of the pluck's first
  *   moment. Noise has none: its band is centred on the note's pitch.
  * - `pan` — `-1` left .. `1` right; 0, the centre, is the default.

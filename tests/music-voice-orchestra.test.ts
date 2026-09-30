@@ -72,7 +72,7 @@ const highs = (x: Float32Array, a: number, z: number) => {
 	return Math.sqrt(d / e);
 };
 
-const ORCHESTRA: VoiceKind[] = ["strings", "brass"];
+const ORCHESTRA: VoiceKind[] = ["strings", "brass", "flute"];
 
 describe("each orchestral voice", () => {
 	for (const kind of ORCHESTRA) {
@@ -294,5 +294,62 @@ describe("soft brass", () => {
 			return highs(render(b, SR).M, 0.4 * SR, 0.8 * SR);
 		};
 		expect(one(1)).toBeGreaterThan(1.5 * one(0.3));
+	});
+});
+
+describe("flute", () => {
+	test("a soft attack: 30–90 ms to the note", () => {
+		const b = new VoiceBank(4, SR);
+		b.noteOn(0, part("flute", { ...plain, index: 0 }), 0, 0, A3 + 12, 0.8, SR);
+		const t = riseS(envelope(render(b, SR).M, 240), 240);
+		expect(t).toBeGreaterThanOrEqual(0.03);
+		expect(t).toBeLessThanOrEqual(0.09);
+	});
+
+	test("breath at the onset, and less of it under the held tone", () => {
+		const b = new VoiceBank(4, SR);
+		b.noteOn(0, part("flute", plain), 0, 0, A3 + 12, 1, SR);
+		const x = render(b, SR).M;
+		const P = Math.round(SR / 440);
+		const aperiodic = (from: number) => {
+			let d = 0;
+			let e = 0;
+			for (let i = from; i < from + 2400; i++) {
+				d += (x[i + P] - x[i]) ** 2;
+				e += x[i] ** 2;
+			}
+			return d / e;
+		};
+		const onset = aperiodic(Math.round(0.01 * SR));
+		const held = aperiodic(Math.round(0.6 * SR));
+		expect(onset).toBeGreaterThan(3 * held);
+		// Low under the tone, but there: a flute is not a sine.
+		expect(held).toBeGreaterThan(0.001);
+		expect(held).toBeLessThan(0.2);
+	});
+
+	test("the vibrato arrives late", () => {
+		const b = new VoiceBank(4, SR);
+		const p = part("flute", { ...plain, vibrato: 0.3, index: 0 });
+		b.noteOn(0, p, 0, 0, A3, 1, SR * 3);
+		const { M } = render(b, SR * 3);
+		const spread = (from: number, to: number) => {
+			const hz: number[] = [];
+			for (let t = from; t < to; t += 0.02)
+				hz.push(hzAt(M, Math.round(t * SR)));
+			return Math.max(...hz) - Math.min(...hz);
+		};
+		const late = spread(1.5, 2.5);
+		expect(late).toBeGreaterThan(1.5);
+		expect(spread(0.05, 0.2)).toBeLessThan(0.4 * late);
+	});
+
+	test("legato: a following note glides on the same voice", () => {
+		const b = new VoiceBank(4, SR);
+		const p = part("flute", { ...plain, glideS: 0.03 });
+		b.noteOn(0, p, 0, 0, A3, 1, SR);
+		b.noteOn(SR - 480, p, 0, 0, A3 + 7, 1, SR);
+		render(b, 1.2 * SR);
+		expect(b.pitches()).toEqual([A3 + 7]);
 	});
 });

@@ -36,6 +36,7 @@ const KEYS = 8;
 const KICK = 9;
 const STRINGS = 10;
 const BRASS = 11;
+const FLUTE = 12;
 const KIND: Record<VoiceKind, number> = {
 	pad: PAD,
 	pluck: PLUCK,
@@ -49,12 +50,16 @@ const KIND: Record<VoiceKind, number> = {
 	kick: KICK,
 	strings: STRINGS,
 	brass: BRASS,
+	flute: FLUTE,
 };
 /** The voices that are two signals, one a side; every other is one, panned.
  *  Indexed by kind, and filled by name (sage round 8), so a kind added or
  *  renumbered above cannot take another's row. */
 const STEREO = new Uint8Array(Object.keys(KIND).length);
 for (const k of [PAD, ANALOG, DRONE, KEYS, STRINGS]) STEREO[k] = 1;
+/** The voices that can play legato, and carry their own weight to do it. */
+const LEGATO = new Uint8Array(Object.keys(KIND).length);
+for (const k of [STRINGS, BRASS, FLUTE]) LEGATO[k] = 1;
 
 /** Every field a voice reads, with its defaults filled in and every time
  *  already in frames or a per-frame coefficient. */
@@ -270,6 +275,21 @@ const DEFAULTS: Record<VoiceKind, VoiceDefaults> = {
 		index: 0.4,
 		vibrato: 0.05,
 	},
+	// A flute (#547 D10): a sine with a little of its second and third
+	// harmonics, breath in a band above it that is loud as the note starts and
+	// stays low under it, a soft attack and a vibrato that comes late.
+	flute: {
+		...BASE,
+		attackS: 0.05,
+		decayS: 1,
+		sustain: 1,
+		releaseS: 0.12,
+		cutoffHz: 2600,
+		index: 0.5,
+		vibrato: 0.12,
+		drift: 2,
+		detune: 0.03,
+	},
 };
 
 /** 60 dB in `seconds`, as a per-frame multiplier. */
@@ -389,6 +409,10 @@ const BRASS_SCOOP_S = 0.06;
 /** A legato join: how far the last note may end before the next begins
  *  and still be carried on the same bow, s. */
 const LEGATO_GAP_S = 0.03;
+/** The flute's breath: how long the onset's burst lasts, s, and the share of
+ *  it that stays under the held tone. */
+const BREATH_ONSET_S = 0.06;
+const BREATH_HELD = 0.18;
 /** Per frame, how fast a legato note's weight follows the new note's. */
 const LEGATO_VEL = 0.002;
 
@@ -601,7 +625,7 @@ export class VoiceBank {
 		// still sounding in the same part — or ending within a breath of it —
 		// is carried on that voice, gliding to the new pitch with no new
 		// attack. Of several, the nearest in pitch not already carried on.
-		if ((part.kind === STRINGS || part.kind === BRASS) && part.glideCoef < 1) {
+		if (LEGATO[part.kind] && part.glideCoef < 1) {
 			const gap = LEGATO_GAP_S * this.sampleRate;
 			let best = -1;
 			let bestD = Number.POSITIVE_INFINITY;
@@ -662,7 +686,7 @@ export class VoiceBank {
 		this.pitch[i] = pitch;
 		// The strings and brass carry their weight themselves, so a legato
 		// note can change it without a new attack.
-		const weighted = part.kind === STRINGS || part.kind === BRASS;
+		const weighted = LEGATO[part.kind] === 1;
 		this.amp[i] = weighted ? part.level : vel * part.level;
 		this.vel[i] = vel;
 		this.velTo[i] = vel;
@@ -720,6 +744,17 @@ export class VoiceBank {
 			case KICK:
 				this.inc1[i] = f / sr;
 				for (let k = 0; k < 4; k++) this.opPh[i * MAX_OPS + k] = 0;
+				break;
+			case FLUTE:
+				// The breath's band: at the part's cutoff, or above the note.
+				this.g[i] = svfCoef(Math.max(part.cutoffHz, 2 * f), sr);
+				this.inc1[i] = f / sr;
+				this.glideTo[i] = f / sr;
+				this.opOff[i * MAX_OPS] = 0;
+				this.opJit[i * MAX_OPS] = 0;
+				this.opJitTo[i * MAX_OPS] = 0;
+				this.driftLeft[i] = 0;
+				this.ph2[i] = 0.5 * (this.noise() + 1);
 				break;
 			case STRINGS:
 			case BRASS:
@@ -898,6 +933,8 @@ export class VoiceBank {
 				return this.bowed(i, part, at);
 			case BRASS:
 				return this.horn(i, part, at);
+			case FLUTE:
+				return this.flute(i, part, at);
 			case PAD: {
 				const a = saw(this.ph1[i], this.inc1[i]);
 				const b = saw(this.ph2[i], this.inc2[i]);
@@ -1107,6 +1144,32 @@ export class VoiceBank {
 			);
 		const y = this.svf(i, x, part.damp, false);
 		return this.svf2(i, y, part.damp) * vel;
+	}
+
+	/** A flute: a sine with a little of its second and third harmonics — more
+	 *  of them the harder it is blown — and breath, a band of noise above the
+	 *  note, loud as the note starts and low under it after. One oscillator,
+	 *  wandering a little in pitch as a player does. */
+	private flute(i: number, part: ResolvedPart, at: number) {
+		const t = this.age[i]++ / this.sampleRate;
+		const o = i * MAX_OPS;
+		const vib = this.carry(i, part, at, t);
+		if (part.driftFrames > 0 && --this.driftLeft[i] <= 0) {
+			this.driftLeft[i] = part.driftFrames;
+			this.opJitTo[o] = 0.5 * part.detune * this.noise();
+		}
+		this.opJit[o] += DRIFT_GLIDE * (this.opJitTo[o] - this.opJit[o]);
+		const inc = this.inc1[i] * semis(this.opJit[o] + vib);
+		const p = 2 * Math.PI * this.ph1[i];
+		this.ph1[i] = wrap(this.ph1[i] + inc);
+		const vel = this.vel[i];
+		const h = 0.06 + 0.12 * vel;
+		const tone = Math.sin(p) + h * Math.sin(2 * p) + 0.5 * h * Math.sin(3 * p);
+		const breath =
+			part.index *
+			(BREATH_HELD + (1 - BREATH_HELD) * Math.exp(-t / BREATH_ONSET_S)) *
+			this.svf(i, this.noise(), 1.2, true);
+		return (0.7 * tone + breath) * vel;
 	}
 
 	/** The drone: eight oscillators reading the morphing tables. */

@@ -22,7 +22,7 @@ import {
 } from "../src/witchspace-sound";
 import type { MusicCommand } from "../src/music-score";
 import { TEST_SONGS } from "../src/music-test-score";
-import { BLUE_DANUBE } from "../src/music-danube";
+import { BLUE_DANUBE, danubeSong } from "../src/music-danube";
 
 /** One entry, loosely: the list is a script's, and its inferred union has no
  *  field common to every shape. */
@@ -191,7 +191,12 @@ test("every transport move is rendered for the ear, or says why not (#560)", () 
 		expect([move, sent.has(move)]).toEqual([move, why === true]);
 	// And every song a render names is one `renderInPage` can load: the test
 	// score's, or #547's waltz.
-	const songs: Record<string, unknown> = { ...TEST_SONGS, danube: BLUE_DANUBE };
+	const songs: Record<string, unknown> = {
+		...TEST_SONGS,
+		danube: BLUE_DANUBE,
+		"danube-oxygene": danubeSong("oxygene"),
+		"danube-hybrid": danubeSong("hybrid"),
+	};
 	for (const m of music)
 		for (const song of Object.values(m.songs ?? {}))
 			if (typeof song === "string")

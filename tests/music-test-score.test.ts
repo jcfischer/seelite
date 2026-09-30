@@ -26,6 +26,7 @@ test("between them, the test songs sound every voice", () => {
 		"analog",
 		"brass",
 		"drone",
+		"flute",
 		"fm",
 		"keys",
 		"kick",

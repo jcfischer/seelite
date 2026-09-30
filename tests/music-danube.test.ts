@@ -4,9 +4,12 @@
  * into — carries Strauss's theme as the Breitkopf score has it, and renders
  * through the engine under full scale.
  */
-import { expect, test } from "bun:test";
+import { describe, expect, test } from "bun:test";
 import {
 	BLUE_DANUBE,
+	DANUBE_VOICINGS,
+	type DanubeVoicing,
+	danubeSong,
 	DANUBE_CANCEL_FADE_S,
 	WALTZ_BPM,
 } from "../src/music-danube";
@@ -229,4 +232,80 @@ test("the listening renders' script matches the score (sound-set)", async () => 
 	// The comment in sound-set says the intro is ~19.2 s.
 	expect(intro).toBeGreaterThan(19.1);
 	expect(intro).toBeLessThan(19.3);
+});
+
+describe("the voicings (D12)", () => {
+	const names = Object.keys(DANUBE_VOICINGS) as DanubeVoicing[];
+
+	test("orchestra, oxygene and hybrid, and the game's is the orchestra", () => {
+		expect(names.sort()).toEqual(["hybrid", "orchestra", "oxygene"]);
+		expect(BLUE_DANUBE.parts).toBe(DANUBE_VOICINGS.orchestra);
+	});
+
+	test.each(names)(
+		"%s: the same notes, the same form, only the instruments differ",
+		(v) => {
+			const song = danubeSong(v);
+			expect(() => compileSong(song)).not.toThrow();
+			expect(song.sections).toBe(BLUE_DANUBE.sections);
+			expect(song.tempo).toBe(BLUE_DANUBE.tempo);
+			expect(song.loop).toEqual(BLUE_DANUBE.loop);
+			expect(song.resolve).toBe(BLUE_DANUBE.resolve);
+			expect(Object.keys(song.parts).sort()).toEqual(
+				Object.keys(BLUE_DANUBE.parts).sort(),
+			);
+		},
+	);
+
+	test("oxygene is a string machine: no pluck, no keys, no fm; the answers on flute", () => {
+		const ox = DANUBE_VOICINGS.oxygene;
+		for (const p of Object.values(ox))
+			expect(["pluck", "keys", "fm"]).not.toContain(p.voice);
+		expect(ox.melody.voice).toBe("analog");
+		expect(ox.strings.voice).toBe("drone");
+		expect(ox.answer.voice).toBe("flute");
+		expect(ox.kick.level).toBe(0.1);
+	});
+
+	test("hybrid is oxygene with the body and the accompaniment bowed", () => {
+		const { hybrid, oxygene } = DANUBE_VOICINGS;
+		for (const p of ["strings", "bass", "chords"] as const)
+			expect(hybrid[p].voice).toBe("strings");
+		for (const p of [
+			"violins",
+			"shimmer",
+			"horn",
+			"melody",
+			"answer",
+			"kick",
+		] as const)
+			expect(hybrid[p]).toBe(oxygene[p]);
+	});
+
+	test.each(["oxygene", "hybrid"] as const)(
+		"%s: every part sounds, bounded, through the intro and into the waltz",
+		(v) => {
+			const heard = new Set<string>();
+			const e = new MusicEngine(SR, undefined, (_, __, part) =>
+				heard.add(part),
+			);
+			e.command({ type: "load", id: v, song: danubeSong(v) }, 0);
+			e.command({ type: "play", id: v, at: "bar" }, 0);
+			const out = new Float32Array(128);
+			let peak = 0;
+			let sum = 0;
+			const frames = 25 * SR;
+			for (let f = 0; f < frames; f += 128) {
+				e.render(out, f);
+				for (const x of out) {
+					peak = Math.max(peak, Math.abs(x));
+					sum += x * x;
+				}
+			}
+			expect([...heard].sort()).toEqual(Object.keys(DANUBE_VOICINGS[v]).sort());
+			expect(Math.sqrt(sum / frames)).toBeGreaterThan(0.005);
+			expect(peak).toBeLessThan(0.9);
+		},
+		RENDER_TIMEOUT_MS,
+	);
 });

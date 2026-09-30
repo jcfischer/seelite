@@ -29,6 +29,10 @@
  *   second desk; and the oom-pah-pah as a low stroke on the first beat and
  *   short detached chords on the second and third, over a soft held body. A
  *   kick at a tenth of the bed's level stands in for the timpani's weight.
+ * - **D9–D12** — the orchestra was heard as *better, but still super cheesy*.
+ *   It stays, and two voicings sit beside it to compare (`DANUBE_VOICINGS`):
+ *   `oxygene`, on the string machine and drone of the principal's own
+ *   references, and `hybrid`, that with its accompaniment bowed again.
  *
  * **The Andantino is 6/8 and the song is 3/4.** A song has one
  * `beatsPerBar`, so a 6/8 bar is written as a 3/4 bar whose eighth is half a
@@ -77,7 +81,22 @@ const chord = (
 ): NoteEvent[] =>
 	pitches.map((pitch) => ({ part, bar, beat, dur, pitch, vel }));
 
-const PARTS: Readonly<Record<string, PartSpec>> = {
+/** The parts every voicing names: the score writes to these and nothing
+ *  else, so a voicing changes what they sound like and never which notes. */
+export type DanubePart =
+	| "violins"
+	| "shimmer"
+	| "horn"
+	| "melody"
+	| "answer"
+	| "strings"
+	| "bass"
+	| "chords"
+	| "kick";
+type Voicing = Readonly<Record<DanubePart, PartSpec>>;
+
+/** D8: the orchestra, bowed, with the horn call on brass. */
+const ORCHESTRA: Voicing = {
 	// The Andantino's violins: a held chord, bowed slowly in and out.
 	violins: {
 		voice: "strings",
@@ -178,6 +197,153 @@ const PARTS: Readonly<Record<string, PartSpec>> = {
 	// A timpani's weight under the first beat, and no more.
 	kick: { voice: "kick", level: 0.1, reverb: 0.1 },
 };
+
+/**
+ * D12's first alternative, after the principal's references (#548 D11): the
+ * waltz on a string machine. The `analog` voice is that machine — unison
+ * saws that drift apart and back, which is the chorus movement; the synth has
+ * no phaser — over a `drone` bed for the harmony, with the woodwinds'
+ * answers on `flute`. No `pluck`, no `keys`, no `fm`.
+ *
+ * **The horn call is on `brass`, not `analog`.** The call rises out of the
+ * chord the intro's machine is holding; on the same voice it is one more
+ * line of the same colour and blurs into it. `brass` has what `analog` does
+ * not — a scoop into each note and a filter that swells as it speaks — so the
+ * call is heard as a call. On a string machine that is also the less cheesy
+ * of the two: an `analog` lead with a slow attack is the sound the rest of the
+ * voicing already is.
+ */
+const OXYGENE: Voicing = {
+	// The intro's held chord: a slow machine, wide, drifting.
+	violins: {
+		voice: "analog",
+		level: 0.24,
+		unison: 4,
+		detune: 0.15,
+		drift: 6,
+		spread: 1,
+		attackS: 0.9,
+		decayS: 3,
+		sustain: 0.9,
+		releaseS: 2,
+		cutoffHz: 1300,
+		envAmount: 0.6,
+		envDecayS: 3,
+		vibrato: 0.04,
+		reverb: 0.65,
+		echo: 0.15,
+	},
+	// The tremolo: short strokes of the machine, its filter snapping shut.
+	shimmer: {
+		voice: "analog",
+		level: 0.08,
+		unison: 2,
+		detune: 0.08,
+		spread: 0.6,
+		attackS: 0.02,
+		decayS: 0.15,
+		sustain: 0.5,
+		releaseS: 0.1,
+		cutoffHz: 1800,
+		envAmount: 1,
+		envDecayS: 0.2,
+		pan: 0.2,
+		reverb: 0.6,
+	},
+	horn: ORCHESTRA.horn,
+	// The theme: the machine's lead, a slower attack, the drift its chorus.
+	melody: {
+		voice: "analog",
+		level: 0.3,
+		unison: 4,
+		detune: 0.14,
+		drift: 6,
+		spread: 0.9,
+		attackS: 0.12,
+		decayS: 1.5,
+		sustain: 0.85,
+		releaseS: 0.8,
+		cutoffHz: 1600,
+		envAmount: 0.8,
+		envDecayS: 1.5,
+		vibrato: 0.06,
+		pan: -0.1,
+		reverb: 0.5,
+		echo: 0.2,
+	},
+	answer: {
+		voice: "flute",
+		level: 0.22,
+		glideS: 0.03,
+		pan: 0.3,
+		reverb: 0.5,
+		echo: 0.25,
+	},
+	// The harmony under the bar: the drone's morphing tables, held softly,
+	// quick enough in to speak inside a bar.
+	strings: {
+		voice: "drone",
+		level: 0.12,
+		attackS: 0.4,
+		releaseS: 0.8,
+		detune: 0.08,
+		drift: 8,
+		spread: 1,
+		reverb: 0.6,
+	},
+	// The first beat: a soft low machine note, dark, closing.
+	bass: {
+		voice: "analog",
+		level: 0.35,
+		unison: 2,
+		detune: 0.04,
+		spread: 0.3,
+		attackS: 0.02,
+		decayS: 0.5,
+		sustain: 0.4,
+		releaseS: 0.2,
+		cutoffHz: 300,
+		envAmount: 1.2,
+		envDecayS: 0.25,
+		reverb: 0.15,
+	},
+	// The second and third beats: soft short machine chords.
+	chords: {
+		voice: "analog",
+		level: 0.14,
+		unison: 2,
+		detune: 0.06,
+		spread: 0.5,
+		attackS: 0.015,
+		decayS: 0.25,
+		sustain: 0.3,
+		releaseS: 0.12,
+		cutoffHz: 1200,
+		envAmount: 1,
+		envDecayS: 0.15,
+		pan: 0.15,
+		reverb: 0.35,
+	},
+	kick: ORCHESTRA.kick,
+};
+
+/** D12's second: the string machine, with the body and the bowed
+ *  accompaniment — the held harmony, the first beat and the "pah" chords —
+ *  back on `strings`. */
+const HYBRID: Voicing = {
+	...OXYGENE,
+	strings: ORCHESTRA.strings,
+	bass: ORCHESTRA.bass,
+	chords: ORCHESTRA.chords,
+};
+
+/** Every voicing, by name: `orchestra` is D8's and the one the game plays. */
+export const DANUBE_VOICINGS = {
+	orchestra: ORCHESTRA,
+	oxygene: OXYGENE,
+	hybrid: HYBRID,
+} as const satisfies Readonly<Record<string, Voicing>>;
+export type DanubeVoicing = keyof typeof DANUBE_VOICINGS;
 
 /** The kick's pitch, as the second bed's kit has it. */
 const KICK_PITCH = 29;
@@ -465,11 +631,18 @@ const CADENCE: NoteEvent[] = [
  * the waltz is at `WALTZ_BPM` throughout, so every loop is the same length;
  * the cadence broadens from its second bar to its last.
  */
-export const BLUE_DANUBE: Song = {
+/** The waltz in one voicing: the same score, other instruments. */
+export const danubeSong = (voicing: DanubeVoicing): Song => {
+	const parts: Voicing | undefined = DANUBE_VOICINGS[voicing];
+	if (!parts) throw new Error(`no Danube voicing "${voicing}"`);
+	return { ...SCORE, name: `${SCORE.name} (${voicing})`, parts };
+};
+
+const SCORE: Song = {
 	name: "An der schönen blauen Donau",
 	beatsPerBar: 3,
 	lilt: [0, -0.06, 0.03],
-	parts: PARTS,
+	parts: ORCHESTRA,
 	sections: [
 		{ name: "intro", bars: 9, events: INTRO },
 		{ name: "waltz", bars: 32, events: WALTZ },
@@ -487,3 +660,6 @@ export const BLUE_DANUBE: Song = {
 	resolve: "cadence",
 	space: { reverbS: 3.5 },
 };
+
+/** The waltz as the game plays it: D8's orchestra. */
+export const BLUE_DANUBE: Song = SCORE;
