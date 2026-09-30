@@ -15,6 +15,8 @@ import type { NoteEvent } from "../src/music-score";
 import { beatSeconds, bpmAt, compileSong } from "../src/music-sequencer";
 
 const SR = 48000;
+/** A render of a minute of bowed strings runs past bun's 5 s default. */
+const RENDER_TIMEOUT_MS = 60_000;
 const section = (name: string) => {
 	const s = BLUE_DANUBE.sections.find((x) => x.name === name);
 	if (!s) throw new Error(`no section ${name}`);
@@ -154,35 +156,47 @@ const introSeconds = () => {
 	return s;
 };
 
-test("resolved at the plane, it plays every part, ends, and falls silent (D1)", () => {
-	// A 62 s run: the shortest measured on #547.
-	const resolveAt = 62 * SR - ((62 * SR) % 128);
-	const r = render(75, (e, f) => {
-		if (f === resolveAt) e.command({ type: "resolve", at: "bar" }, f);
-	});
-	expect([...r.heard].sort()).toEqual(Object.keys(BLUE_DANUBE.parts).sort());
-	expect(r.peak).toBeLessThan(0.9);
-	// Sounding through the intro and the waltz.
-	expect(Math.min(...r.rms.slice(1, 60))).toBeGreaterThan(0.005);
-	// The cadence is four bars at no less than 120 bpm: six seconds at most,
-	// and the hall's tail another few. By 74 s it is over.
-	expect(r.rms[73]).toBeLessThan(0.001);
-});
+test(
+	"resolved at the plane, it plays every part, ends, and falls silent (D1)",
+	() => {
+		// A 62 s run: the shortest measured on #547.
+		const resolveAt = 62 * SR - ((62 * SR) % 128);
+		const r = render(75, (e, f) => {
+			if (f === resolveAt) e.command({ type: "resolve", at: "bar" }, f);
+		});
+		expect([...r.heard].sort()).toEqual(Object.keys(BLUE_DANUBE.parts).sort());
+		expect(r.peak).toBeLessThan(0.9);
+		// Sounding through the intro and the waltz.
+		expect(Math.min(...r.rms.slice(1, 60))).toBeGreaterThan(0.005);
+		// The cadence is four bars at no less than 120 bpm: six seconds at most,
+		// and the hall's tail another few. By 74 s it is over.
+		expect(r.rms[73]).toBeLessThan(0.001);
+	},
+	RENDER_TIMEOUT_MS,
+);
 
-test("unresolved, the waltz loops rather than ending", () => {
-	const r = render(Math.ceil(introSeconds() + 2 * 36 + 4), () => {});
-	expect(Math.min(...r.rms.slice(1))).toBeGreaterThan(0.005);
-});
+test(
+	"unresolved, the waltz loops rather than ending",
+	() => {
+		const r = render(Math.ceil(introSeconds() + 2 * 36 + 4), () => {});
+		expect(Math.min(...r.rms.slice(1))).toBeGreaterThan(0.005);
+	},
+	RENDER_TIMEOUT_MS,
+);
 
-test("a cancel fades it to silence within the fade and its tail (D2)", () => {
-	const stopAt = 40 * SR - ((40 * SR) % 128);
-	const r = render(48, (e, f) => {
-		if (f === stopAt)
-			e.command({ type: "stop", at: "now", fadeS: DANUBE_CANCEL_FADE_S }, f);
-	});
-	expect(r.rms[38]).toBeGreaterThan(0.005);
-	expect(r.rms[40 + Math.ceil(DANUBE_CANCEL_FADE_S) + 1]).toBeLessThan(0.001);
-});
+test(
+	"a cancel fades it to silence within the fade and its tail (D2)",
+	() => {
+		const stopAt = 40 * SR - ((40 * SR) % 128);
+		const r = render(48, (e, f) => {
+			if (f === stopAt)
+				e.command({ type: "stop", at: "now", fadeS: DANUBE_CANCEL_FADE_S }, f);
+		});
+		expect(r.rms[38]).toBeGreaterThan(0.005);
+		expect(r.rms[40 + Math.ceil(DANUBE_CANCEL_FADE_S) + 1]).toBeLessThan(0.001);
+	},
+	RENDER_TIMEOUT_MS,
+);
 
 test("the listening renders' script matches the score (sound-set)", async () => {
 	const { SOUND_SET } = await import("../scripts/lib/sound-set.mjs");

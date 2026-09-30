@@ -21,10 +21,14 @@
  *   A–C#–E call), then Waltz No. 1 from its upbeat bar. The Tempo di Valse
  *   lead-in between them is left out: the Andantino's ninth bar is already
  *   the waltz's dominant, and the run is a minute long.
- * - **D4** — a synth orchestra: the tremolo is a held analog string chord with
- *   a quiet keys tremolo over it, the melody is keys with the flutes' answers
- *   doubled on a bell, and the oom-pah-pah is a plucked bass, plucked chords
- *   and a soft kick, over a pad for the string body.
+ * - **D4, re-voiced by D7/D8** — the first voicing, on keys, plucks and a
+ *   bell, was heard as *too plinky*; the notes stood and the instruments
+ *   changed. Everything is bowed now (`strings`) but the horn call, which is
+ *   `brass`: the Andantino's held chord with a tremolo of short strokes over
+ *   it; the theme legato on the first violins, the woodwinds' answers on a
+ *   second desk; and the oom-pah-pah as a low stroke on the first beat and
+ *   short detached chords on the second and third, over a soft held body. A
+ *   kick at a tenth of the bed's level stands in for the timpani's weight.
  *
  * **The Andantino is 6/8 and the song is 3/4.** A song has one
  * `beatsPerBar`, so a 6/8 bar is written as a 3/4 bar whose eighth is half a
@@ -74,85 +78,105 @@ const chord = (
 	pitches.map((pitch) => ({ part, bar, beat, dur, pitch, vel }));
 
 const PARTS: Readonly<Record<string, PartSpec>> = {
-	// The Andantino's strings: a held chord, slow in and slow out.
+	// The Andantino's violins: a held chord, bowed slowly in and out.
 	violins: {
-		voice: "analog",
-		level: 0.22,
-		unison: 4,
-		detune: 0.12,
-		spread: 1,
-		attackS: 1.2,
-		sustain: 0.9,
-		releaseS: 2,
-		cutoffHz: 2200,
-		envAmount: 0.4,
-		envDecayS: 3,
-		vibrato: 0.08,
+		voice: "strings",
+		level: 0.3,
+		attackS: 0.6,
+		releaseS: 1.5,
+		cutoffHz: 1100,
+		envAmount: 1.4,
+		vibrato: 0.1,
 		reverb: 0.6,
 	},
-	// The tremolo over it: the chord's top two notes in sixteenths, quietly.
+	// The tremolo over it: the chord's top two notes in sixteenths, each a
+	// short stroke of the bow, quietly.
 	shimmer: {
-		voice: "keys",
-		level: 0.08,
-		decayS: 0.3,
-		sustain: 0,
-		releaseS: 0.15,
+		voice: "strings",
+		level: 0.1,
+		attackS: 0.03,
+		releaseS: 0.08,
+		unison: 2,
+		index: 0.15,
+		vibrato: 0,
+		cutoffHz: 1600,
 		pan: 0.2,
 		reverb: 0.6,
 	},
+	// The horns' call, carried legato through its eighths into the held note.
 	horn: {
-		voice: "analog",
-		level: 0.26,
-		unison: 2,
-		detune: 0.04,
-		attackS: 0.12,
-		sustain: 0.85,
+		voice: "brass",
+		level: 0.34,
+		glideS: 0.03,
 		releaseS: 0.8,
-		cutoffHz: 900,
-		envAmount: 0.6,
-		envDecayS: 1,
-		vibrato: 0.05,
 		pan: -0.2,
 		reverb: 0.5,
 	},
+	// The first violins: the theme, legato, the grace notes sliding in.
 	melody: {
-		voice: "keys",
-		level: 0.36,
-		decayS: 2.5,
-		sustain: 0.35,
-		releaseS: 0.6,
-		pan: -0.1,
-		reverb: 0.35,
+		voice: "strings",
+		level: 0.34,
+		glideS: 0.03,
+		attackS: 0.08,
+		releaseS: 0.4,
+		cutoffHz: 1400,
+		envAmount: 1.8,
+		vibrato: 0.12,
+		pan: -0.15,
+		reverb: 0.4,
 	},
-	// The flutes' answers, on the same pitches.
+	// The flutes' and oboes' answers, on the same pitches: a second desk,
+	// brighter and to the other side.
 	answer: {
-		voice: "fm",
+		voice: "strings",
 		level: 0.14,
-		ratio: 3.5,
-		index: 2,
-		indexDecayS: 0.6,
-		decayS: 1.5,
-		sustain: 0,
+		attackS: 0.06,
+		releaseS: 0.35,
+		unison: 3,
+		cutoffHz: 2200,
+		vibrato: 0.1,
 		pan: 0.3,
 		reverb: 0.45,
 	},
+	// The body under the bar: the inner strings' harmony, held softly.
 	strings: {
-		voice: "pad",
-		level: 0.2,
-		attackS: 0.35,
-		releaseS: 1.2,
-		cutoffHz: 1800,
+		voice: "strings",
+		level: 0.1,
+		attackS: 0.3,
+		releaseS: 0.6,
+		unison: 3,
+		cutoffHz: 900,
+		envAmount: 1,
+		vibrato: 0.08,
 		reverb: 0.55,
 	},
-	bass: { voice: "pluck", level: 0.55, cutoffHz: 900, reverb: 0.15 },
+	// Cellos and basses on the first beat: a short stroke, low.
+	bass: {
+		voice: "strings",
+		level: 0.42,
+		attackS: 0.04,
+		releaseS: 0.25,
+		cutoffHz: 650,
+		envAmount: 1.2,
+		index: 0.25,
+		vibrato: 0,
+		reverb: 0.2,
+	},
+	// The oom-pah-pah's "pah": short detached chords, the bow off the string.
 	chords: {
-		voice: "pluck",
-		level: 0.28,
-		cutoffHz: 2200,
+		voice: "strings",
+		level: 0.2,
+		attackS: 0.03,
+		releaseS: 0.12,
+		unison: 3,
+		cutoffHz: 1500,
+		index: 0.2,
+		vibrato: 0,
 		pan: 0.15,
 		reverb: 0.3,
 	},
-	kick: { voice: "kick", level: 0.28, reverb: 0.05 },
+	// A timpani's weight under the first beat, and no more.
+	kick: { voice: "kick", level: 0.1, reverb: 0.1 },
 };
 
 /** The kick's pitch, as the second bed's kit has it. */

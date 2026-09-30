@@ -352,6 +352,10 @@ function musicTimelines() {
 		tune("music-march", 8, [[0, play("march")]]),
 		// The second voices in their room, section by section (#560 D10).
 		tune("music-voices", 56, [[0, play("voices")]], { voices: "voices" }),
+		// #547 D8's orchestral voices on their own: a held chord, a legato
+		// phrase, the same detached, one note soft and one loud.
+		tune("voice-strings", 30, [[0, play("strings")]], { strings: "strings" }),
+		tune("voice-brass", 30, [[0, play("brass")]], { brass: "brass" }),
 		// Between songs: the march takes over on the waltz's next bar line.
 		tune("music-crossfade", 10, [
 			[0, play("waltz")],

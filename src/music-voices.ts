@@ -34,6 +34,8 @@ const DRONE = 6;
 const ACID = 7;
 const KEYS = 8;
 const KICK = 9;
+const STRINGS = 10;
+const BRASS = 11;
 const KIND: Record<VoiceKind, number> = {
 	pad: PAD,
 	pluck: PLUCK,
@@ -45,12 +47,14 @@ const KIND: Record<VoiceKind, number> = {
 	acid: ACID,
 	keys: KEYS,
 	kick: KICK,
+	strings: STRINGS,
+	brass: BRASS,
 };
 /** The voices that are two signals, one a side; every other is one, panned.
  *  Indexed by kind, and filled by name (sage round 8), so a kind added or
  *  renumbered above cannot take another's row. */
 const STEREO = new Uint8Array(Object.keys(KIND).length);
-for (const k of [PAD, ANALOG, DRONE, KEYS]) STEREO[k] = 1;
+for (const k of [PAD, ANALOG, DRONE, KEYS, STRINGS]) STEREO[k] = 1;
 
 /** Every field a voice reads, with its defaults filled in and every time
  *  already in frames or a per-frame coefficient. */
@@ -228,6 +232,44 @@ const DEFAULTS: Record<VoiceKind, VoiceDefaults> = {
 		sustain: 0,
 		releaseS: 0.05,
 	},
+	// A bowed section (#547 D8): five detuned saws a note across the field, a
+	// bow's slow attack with its noise, a vibrato that arrives late, and a
+	// lowpass that opens with the bow's weight. Held for the note's length.
+	strings: {
+		...BASE,
+		attackS: 0.1,
+		decayS: 1,
+		sustain: 1,
+		releaseS: 0.35,
+		cutoffHz: 1300,
+		unison: 5,
+		detune: 0.12,
+		drift: 4,
+		spread: 0.8,
+		envAmount: 1.6,
+		index: 0.35,
+		vibrato: 0.15,
+	},
+	// A soft horn (#547 D8): a saw and a pulse on one phase, through two lowpass
+	// stages whose cutoff swells as the note speaks, the pitch rising into it
+	// from a little below. Warm and dark at p; it brightens only when pushed.
+	brass: {
+		...BASE,
+		attackS: 0.12,
+		decayS: 1.5,
+		sustain: 0.85,
+		releaseS: 0.25,
+		cutoffHz: 600,
+		resonance: 0.2,
+		unison: 1,
+		detune: 0.03,
+		drift: 3,
+		spread: 0,
+		envAmount: 2.4,
+		envDecayS: 0.8,
+		index: 0.4,
+		vibrato: 0.05,
+	},
 };
 
 /** 60 dB in `seconds`, as a per-frame multiplier. */
@@ -333,6 +375,22 @@ const DRONE_ROWS = 64;
 const DRIFT_GLIDE = 0.002;
 /** Frames between filter-coefficient updates on the swept voices. */
 const CUT_EVERY = 8;
+/** The strings' and brass's vibrato: its rate, when it starts after the
+ *  note does, and how long it takes to reach its depth. */
+const VIBRATO_HZ = 5;
+const VIBRATO_ONSET_S = 0.3;
+const VIBRATO_RISE_S = 0.5;
+/** The bow's noise: how long it rings after the onset, and the one-pole
+ *  that takes its lows away, per frame. */
+const BOW_NOISE_S = 0.045;
+const BOW_HIGHPASS = 0.2;
+/** The brass's rise into its pitch: a time constant, s. */
+const BRASS_SCOOP_S = 0.06;
+/** A legato join: how far the last note may end before the next begins
+ *  and still be carried on the same bow, s. */
+const LEGATO_GAP_S = 0.03;
+/** Per frame, how fast a legato note's weight follows the new note's. */
+const LEGATO_VEL = 0.002;
 
 const STAGE_FREE = 0;
 const STAGE_ATTACK = 1;
@@ -386,6 +444,9 @@ export class VoiceBank {
 	private readonly slideInc: Float64Array;
 	private readonly slideAt: Float64Array;
 	private readonly accent: Uint8Array;
+	/** The strings' and brass's bow weight, and where a legato note takes it. */
+	private readonly vel: Float64Array;
+	private readonly velTo: Float64Array;
 	/** The drone's table set per slot: 0 full, 1 thin. */
 	private readonly thin: Uint8Array;
 	/** The keys' partials: two past outputs and the two recurrence terms. */
@@ -447,6 +508,8 @@ export class VoiceBank {
 		this.slideInc = f64();
 		this.slideAt = f64();
 		this.accent = new Uint8Array(cap);
+		this.vel = f64();
+		this.velTo = f64();
 		this.thin = new Uint8Array(cap);
 		const partials = () => new Float64Array(cap * PARTIALS);
 		this.kY1 = partials();
@@ -534,6 +597,42 @@ export class VoiceBank {
 				mono = i;
 				break;
 			}
+		// Strings and brass played legato: a note that follows on from one
+		// still sounding in the same part — or ending within a breath of it —
+		// is carried on that voice, gliding to the new pitch with no new
+		// attack. Of several, the nearest in pitch not already carried on.
+		if ((part.kind === STRINGS || part.kind === BRASS) && part.glideCoef < 1) {
+			const gap = LEGATO_GAP_S * this.sampleRate;
+			let best = -1;
+			let bestD = Number.POSITIVE_INFINITY;
+			for (let i = 0; i < this.cap; i++) {
+				if (
+					this.stage[i] === STAGE_FREE ||
+					this.kind[i] !== part.kind ||
+					this.owner[i] !== owner ||
+					this.partIx[i] !== partIndex ||
+					this.start[i] >= frame ||
+					this.end[i] < frame - gap ||
+					this.slideAt[i] === frame
+				)
+					continue;
+				const d = Math.abs(this.pitch[i] - pitch);
+				if (d < bestD) {
+					bestD = d;
+					best = i;
+				}
+			}
+			if (best >= 0) {
+				this.glideTo[best] = mtof(pitch) / this.sampleRate;
+				this.slideAt[best] = frame;
+				this.velTo[best] = vel;
+				this.end[best] = frame + durFrames;
+				this.pitch[best] = pitch;
+				// Past its end already: bowed on from where its release had got to.
+				if (this.stage[best] === STAGE_RELEASE) this.stage[best] = STAGE_ATTACK;
+				return;
+			}
+		}
 		for (let i = 0; mono < 0 && i < this.cap; i++) {
 			if (this.stage[i] === STAGE_FREE) {
 				slot = i;
@@ -561,7 +660,12 @@ export class VoiceBank {
 		this.start[i] = frame;
 		this.end[i] = frame + durFrames;
 		this.pitch[i] = pitch;
-		this.amp[i] = vel * part.level;
+		// The strings and brass carry their weight themselves, so a legato
+		// note can change it without a new attack.
+		const weighted = part.kind === STRINGS || part.kind === BRASS;
+		this.amp[i] = weighted ? part.level : vel * part.level;
+		this.vel[i] = vel;
+		this.velTo[i] = vel;
 		if (!taken) this.env[i] = 0;
 		this.ph1[i] = 0;
 		this.ph2[i] = 0.25;
@@ -616,6 +720,21 @@ export class VoiceBank {
 			case KICK:
 				this.inc1[i] = f / sr;
 				for (let k = 0; k < 4; k++) this.opPh[i * MAX_OPS + k] = 0;
+				break;
+			case STRINGS:
+			case BRASS:
+				this.inc1[i] = f / sr;
+				this.glideTo[i] = f / sr;
+				this.unisonOn(i, part);
+				// A section is not evenly tuned: evenly spaced detunes beat at one
+				// common rate, and the section swells and fades on it. Each player
+				// a little off their place.
+				for (let k = 0; k < part.unison; k++)
+					this.opOff[i * MAX_OPS + k] += 0.4 * part.detune * this.noise();
+				// Each voice's vibrato on its own phase, so a section does not
+				// pulse as one.
+				this.ph2[i] = 0.5 * (this.noise() + 1);
+				this.g[i] = svfCoef(part.cutoffHz, sr);
 				break;
 		}
 	}
@@ -775,6 +894,10 @@ export class VoiceBank {
 				return this.keys(i);
 			case KICK:
 				return this.kick(i);
+			case STRINGS:
+				return this.bowed(i, part, at);
+			case BRASS:
+				return this.horn(i, part, at);
 			case PAD: {
 				const a = saw(this.ph1[i], this.inc1[i]);
 				const b = saw(this.ph2[i], this.inc2[i]);
@@ -886,6 +1009,104 @@ export class VoiceBank {
 			);
 		this.sideR = this.svf2(i, r, part.damp);
 		return this.svf(i, l, part.damp, false);
+	}
+
+	/** A legato note's glide and change of weight, from the frame it begins;
+	 *  and the vibrato, arriving once the note is under way. Returns the
+	 *  vibrato, in semitones. */
+	private carry(i: number, part: ResolvedPart, at: number, t: number) {
+		if (at >= this.slideAt[i]) {
+			this.inc1[i] += part.glideCoef * (this.glideTo[i] - this.inc1[i]);
+			this.vel[i] += LEGATO_VEL * (this.velTo[i] - this.vel[i]);
+		}
+		if (part.vibrato <= 0 || t < VIBRATO_ONSET_S) return 0;
+		const depth = Math.min(1, (t - VIBRATO_ONSET_S) / VIBRATO_RISE_S);
+		return (
+			part.vibrato *
+			depth *
+			Math.sin(2 * Math.PI * (VIBRATO_HZ * t + this.ph2[i]))
+		);
+	}
+
+	/** Bowed strings: `unison` saws across the field, bow noise on the
+	 *  attack, the late vibrato, and a lowpass a side opened by the bow's
+	 *  weight and swelling with the attack. */
+	private bowed(i: number, part: ResolvedPart, at: number) {
+		const sr = this.sampleRate;
+		const n = part.unison;
+		const base = i * MAX_OPS;
+		const t = this.age[i]++ / sr;
+		this.wander(i, part);
+		const vib = this.carry(i, part, at, t);
+		let l = 0;
+		let r = 0;
+		for (let k = 0; k < n; k++) {
+			const o = base + k;
+			const inc = this.inc1[i] * semis(this.opOff[o] + this.opJit[o] + vib);
+			const v = saw(this.opPh[o], inc);
+			this.opPh[o] = wrap(this.opPh[o] + inc);
+			l += v * this.opL[o];
+			r += v * this.opR[o];
+		}
+		// The bow: a burst of high noise, dying as the string takes the note.
+		if (t < 6 * BOW_NOISE_S && part.index > 0) {
+			const x = this.noise();
+			this.fb[i] += BOW_HIGHPASS * (x - this.fb[i]);
+			const bow = part.index * Math.exp(-t / BOW_NOISE_S) * (x - this.fb[i]);
+			l += bow;
+			r += bow;
+		}
+		const vel = this.vel[i];
+		if (this.age[i] % CUT_EVERY === 1) {
+			const swell = 0.6 + 0.4 * Math.min(1, t / Math.max(1e-3, part.attackS));
+			this.g[i] = svfCoef(
+				part.cutoffHz * 2 ** (part.envAmount * vel) * swell,
+				sr,
+			);
+		}
+		this.sideR = this.svf2(i, r, part.damp) * vel;
+		return this.svf(i, l, part.damp, false) * vel;
+	}
+
+	/** Soft brass: a saw and a pulse on each oscillator's one phase — one
+	 *  oscillator by default, since two detuned ones swell and fade as they
+	 *  beat — rising into the pitch
+	 *  from below, through two lowpass stages whose cutoff swells as the note
+	 *  speaks — by as much as the note's weight allows. */
+	private horn(i: number, part: ResolvedPart, at: number) {
+		const sr = this.sampleRate;
+		const n = part.unison;
+		const base = i * MAX_OPS;
+		const t = this.age[i]++ / sr;
+		this.wander(i, part);
+		const vib = this.carry(i, part, at, t);
+		const scoop = -part.index * Math.exp(-t / BRASS_SCOOP_S);
+		let x = 0;
+		for (let k = 0; k < n; k++) {
+			const o = base + k;
+			const inc =
+				this.inc1[i] * semis(this.opOff[o] + this.opJit[o] + vib + scoop);
+			const ph = this.opPh[o];
+			// The pulse is a saw less a shifted saw.
+			const sw = saw(ph, inc);
+			const v = sw + 0.6 * (sw - saw(wrap(ph + 0.4), inc));
+			this.opPh[o] = wrap(ph + inc);
+			x += v;
+		}
+		x /= 1.6 * Math.sqrt(n);
+		// The swell: up over the attack and a little past it, then settling.
+		const rise = 1.3 * Math.max(1e-3, part.attackS);
+		if (t < rise) this.fenv[i] = t / rise;
+		else this.fenv[i] = 0.75 + (this.fenv[i] - 0.75) * part.envDecayCoef;
+		const vel = this.vel[i];
+		if (this.age[i] % CUT_EVERY === 1)
+			this.g[i] = svfCoef(
+				part.cutoffHz *
+					2 ** (part.envAmount * this.fenv[i] * (0.3 + 0.7 * vel)),
+				sr,
+			);
+		const y = this.svf(i, x, part.damp, false);
+		return this.svf2(i, y, part.damp) * vel;
 	}
 
 	/** The drone: eight oscillators reading the morphing tables. */

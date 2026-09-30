@@ -366,9 +366,90 @@ export const TEST_VOICES: Song = {
 	space: { reverbS: 5, echoBeats: 0.75, echoFeedback: 0.45 },
 };
 
+/**
+ * #547's orchestral voices on their own, for the principal to judge before
+ * the waltz is heard on them (D8): a held chord, a legato phrase, then the
+ * same notes detached, then one note soft and one loud. Original material,
+ * 4/4 at 76 bpm; each section two bars.
+ */
+const orchestral = (
+	voice: "strings" | "brass",
+	chordPitches: readonly number[],
+	phrase: readonly number[],
+): Song => ({
+	name: `${voice} alone`,
+	beatsPerBar: 4,
+	parts: {
+		legato: { voice, level: 0.5, glideS: 0.05, reverb: 0.4 },
+		detached: {
+			voice,
+			level: 0.5,
+			attackS: voice === "strings" ? 0.06 : 0.08,
+			releaseS: 0.15,
+			reverb: 0.4,
+		},
+	},
+	sections: [
+		{
+			name: "chord",
+			bars: 2,
+			events: chord("legato", 0, chordPitches, 8, 0.65),
+		},
+		{
+			name: "legato",
+			bars: 2,
+			events: phrase.map((pitch, k) => ({
+				part: "legato",
+				bar: Math.floor(k / 4),
+				beat: k % 4,
+				dur: k === phrase.length - 1 ? 4 - (k % 4) : 1,
+				pitch,
+				vel: 0.7,
+			})),
+		},
+		{
+			name: "detached",
+			bars: 2,
+			events: phrase.map((pitch, k) => ({
+				part: "detached",
+				bar: Math.floor(k / 4),
+				beat: k % 4,
+				dur: 0.45,
+				pitch,
+				vel: 0.7,
+			})),
+		},
+		{
+			name: "dynamics",
+			bars: 2,
+			events: [
+				...line("legato", [[0, 0, phrase[0], 3.5]], 0.3),
+				...line("legato", [[1, 0, phrase[0], 3.5]], 1),
+			],
+		},
+	],
+	tempo: [{ bar: 0, bpm: 76 }],
+	space: { reverbS: 3 },
+});
+
+/** The bowed section on an A major chord and an ascending line. */
+export const TEST_STRINGS = orchestral(
+	"strings",
+	[45, 57, 61, 64, 69],
+	[64, 66, 68, 69, 71, 73, 71, 69],
+);
+/** The horn, lower: an F major chord and a call. */
+export const TEST_BRASS = orchestral(
+	"brass",
+	[41, 53, 57, 60],
+	[53, 57, 60, 65, 64, 60, 57, 60],
+);
+
 /** Every test song by the id the sound set loads it under. */
 export const TEST_SONGS: Readonly<Record<string, Song>> = {
 	waltz: TEST_WALTZ,
 	march: TEST_MARCH,
 	voices: TEST_VOICES,
+	strings: TEST_STRINGS,
+	brass: TEST_BRASS,
 };

@@ -24,6 +24,7 @@ test("between them, the test songs sound every voice", () => {
 	expect([...voices].sort()).toEqual([
 		"acid",
 		"analog",
+		"brass",
 		"drone",
 		"fm",
 		"keys",
@@ -31,6 +32,7 @@ test("between them, the test songs sound every voice", () => {
 		"noise",
 		"pad",
 		"pluck",
+		"strings",
 		"tone",
 	]);
 });

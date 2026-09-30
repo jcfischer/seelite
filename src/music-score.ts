@@ -23,7 +23,9 @@ export type VoiceKind =
 	| "drone"
 	| "acid"
 	| "keys"
-	| "kick";
+	| "kick"
+	| "strings"
+	| "brass";
 
 /**
  * One note (#543 D3).
@@ -99,8 +101,15 @@ export interface TempoPoint {
  * - `resonance` — analog, acid: the filter's peak at its cutoff, `0`..`1`.
  * - `drive` — acid: saturation, `0`..`1`.
  * - `glideS` — acid: a note that overlaps the next slides to it, on this
- *   time constant, without a new attack.
+ *   time constant, without a new attack. Strings, brass: the same, and it is
+ *   what makes a part **legato** — 0, the default, bows every note anew.
  * - `vibrato` — analog: depth in semitones, fading in over the first bars.
+ *   Strings, brass: the same, arriving only once a note is under way.
+ * - For **strings** (#547 D8), `index` is how much bow noise the attack
+ *   carries and `envAmount` how many octaves the lowpass opens at full
+ *   velocity. For **brass**, `index` is how far below the note, in
+ *   semitones, the pitch starts before it rises into it, and `envAmount`
+ *   how far the filter swells on the attack, scaled by velocity.
  * - `cutoffHz` — pad: the lowpass. Pluck: the brightness of the pluck's first
  *   moment. Noise has none: its band is centred on the note's pitch.
  * - `pan` — `-1` left .. `1` right; 0, the centre, is the default.
