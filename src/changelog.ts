@@ -30,7 +30,7 @@ export type ChangelogEntry = {
 export const CHANGELOG: readonly ChangelogEntry[] = [
 	{
 		date: "2026-09-30",
-		text: "Shipyards now sell ships: trade in the one you fly for a freighter, an explorer or one of five others.",
+		text: "Shipyards now sell ships: trade in the one you fly for a freighter, an explorer or one of the others.",
 		node: 583,
 	},
 	{

@@ -125,7 +125,7 @@ describe("#556 D5 — the trade-in", () => {
 });
 
 describe("#556 — what a purchase does to the rest of the commander", () => {
-	test("fuel clamps to the new tank and is never topped up", () => {
+	test("the hyperspace tank clamps to the new hull's and is never topped up", () => {
 		const full = hullOffer(input(), "interceptor");
 		expect(full.commander.fuelLy).toBe(HULL_SPECS.interceptor.tankLy);
 		const low = hullOffer(

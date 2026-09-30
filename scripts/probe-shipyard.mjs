@@ -57,7 +57,7 @@ const flownState = (page) =>
 			shipRows: g.markedOcclusion.filter(([name]) => name === "ship").length,
 			performanceMatches:
 				JSON.stringify(g.playerHull.performance) === JSON.stringify(perf),
-			// The hull term, not the whole record: energy, heat and the struck
+			// The hull term, not the whole record: the energy bank, heat and the struck
 			// clock are stepped every frame, so they never equal a fresh one.
 			conditionIsWhole:
 				g.condition.hullMax === H.HULL_SPECS[id].integrity &&

@@ -534,7 +534,7 @@ const REFUSAL_SENTENCES: Record<
 	"equipment-unavailable": () => "This station does not fit that.",
 	"fuel-full": () => "The tank is full.",
 	"hull-hold": () =>
-		"Too much aboard for that hold — the entrusted lot and goods this station will not buy stay aboard.",
+		"Too much would stay aboard for that hold — the entrusted lot and contraband are never sold.",
 	"hull-locked": () => "Locked — the row names the rung it needs.",
 	"hull-mounts": () => "More weapons fitted than that hull has hardpoints.",
 	"hull-owned": () => "That is the hull you fly.",

@@ -127,12 +127,15 @@ export interface StationCommerceInput {
 	 * bound to the galaxy and the system the ship is docked in.
 	 *
 	 * A function rather than the galaxy, so this module stays off the galaxy's
-	 * import graph; required for `entrustedT`'s reason, since a caller that
-	 * forgot it would sell a hull that can never leave.
+	 * import graph. **Required**, because a caller that forgot it would sell a
+	 * hull that can never leave, and no default can know the galaxy.
 	 */
 	hullReach: (hull: HullId) => HullReach;
 	action: StationAction;
 }
+
+/** Everything the till reads but the action — what a screen prices rows on. */
+export type ConsoleInput = Omit<StationCommerceInput, "action">;
 
 /**
  * Every way the till says no, as a closed set (#443).
@@ -199,7 +202,7 @@ export type StationCommerceResult =
 	  };
 
 const rejected = (
-	input: StationCommerceInput,
+	input: Pick<StationCommerceInput, "commander" | "deficits">,
 	reason: CommerceRefusal,
 ): StationCommerceResult => ({
 	accepted: false as const,
@@ -368,19 +371,10 @@ export function transactAtStation(
 	}
 	if (!listsCommodity(good, input.station))
 		return rejected(input, "commodity-unavailable");
-	const base = marketRow(good, input.economy, input.station, input.gameTimeMin);
-	const deficit = readDeficit(
-		input.deficits,
-		input.stationKey,
-		good.name,
-		input.gameTimeMin,
-	);
-	const holdT = holdCapacityT(input.commander);
-	const midCr = stockResponse(base.priceCr, deficit, holdT);
+	const { base, deficit, holdT, q } = priceAt(input, good, quote);
 	// **The two directions are two prices now**, and picking between them here —
 	// rather than letting each branch read the figure it wants — is what keeps a
 	// sale from being charged the ask by a caller that took the wrong field.
-	const q = quote(midCr, input.displayTL);
 	const priceCr = action.type === "buy-commodity" ? q.buyCr : q.sellCr;
 	const shelf = shelfQuantity(base.quantity, deficit);
 	if (action.type === "buy-commodity") {
@@ -521,7 +515,7 @@ export type HullOffer = StationCommerceResult & {
  * the new hold, the sale is refused.
  */
 export function hullOffer(
-	input: StationCommerceInput,
+	input: ConsoleInput,
 	hull: HullId,
 	quote: QuoteFn = marketQuote,
 ): HullOffer {
@@ -539,10 +533,10 @@ export function hullOffer(
 		sold: [] as readonly SoldLot[],
 		saleCr: 0,
 	};
-	const sold = HULL_SPECS[hull].priceCr !== null;
+	const priced = HULL_SPECS[hull].priceCr !== null;
 	if (
 		input.station.type !== "shipyard" ||
-		!sold ||
+		!priced ||
 		!(PURCHASABLE_HULL_IDS as readonly HullId[]).includes(hull)
 	)
 		return { ...rejected(input, "hull-unavailable"), ...base };
@@ -572,7 +566,7 @@ export function hullOffer(
 		)
 		.map((lot) => ({
 			...lot,
-			bidCr: bidAt(input, lot.good, quote),
+			bidCr: priceAt(input, lot.good, quote).q.sellCr,
 		}))
 		.sort((a, b) => a.bidCr - b.bidCr);
 	const sellableT = sellable.reduce((sum, lot) => sum + lot.units, 0);
@@ -610,30 +604,31 @@ export function hullOffer(
 		overflowT -= units;
 	}
 	const saleCr = lots.reduce((sum, lot) => sum + lot.proceedsCr, 0);
-	const priced = { ...reached, sold: lots, saleCr };
-	if (commander.credits + saleCr < priced.netCr)
-		return { ...rejected(input, "insufficient-credits"), ...priced };
+	const offer = { ...reached, sold: lots, saleCr };
+	if (commander.credits + saleCr < offer.netCr)
+		return { ...rejected(input, "insufficient-credits"), ...offer };
 	return {
 		accepted: true,
 		reason: null,
 		commander: {
 			...state.commander,
 			hull,
-			credits: state.commander.credits - priced.netCr,
+			credits: state.commander.credits - offer.netCr,
 			// As #554's load clamp does: the tank is the hull's, never topped up.
 			fuelLy: Math.min(state.commander.fuelLy, HULL_SPECS[hull].tankLy),
 		},
 		deficits: state.deficits,
-		...priced,
+		...offer,
 	};
 }
 
-/** What this station pays for one unit now, as the sell branch charges it. */
-const bidAt = (
-	input: StationCommerceInput,
-	good: Commodity,
-	quote: QuoteFn,
-): number => {
+/**
+ * One good at this console now: its market row, the deficit, the flown hold
+ * and both quoted prices. **The one derivation** the till charges from and the
+ * hull sale's auto-sale sorts by, so the order lots are sold in cannot drift
+ * from the price they are sold at.
+ */
+const priceAt = (input: ConsoleInput, good: Commodity, quote: QuoteFn) => {
 	const base = marketRow(good, input.economy, input.station, input.gameTimeMin);
 	const deficit = readDeficit(
 		input.deficits,
@@ -641,12 +636,9 @@ const bidAt = (
 		good.name,
 		input.gameTimeMin,
 	);
-	const mid = stockResponse(
-		base.priceCr,
-		deficit,
-		holdCapacityT(input.commander),
-	);
-	return quote(mid, input.displayTL).sellCr;
+	const holdT = holdCapacityT(input.commander);
+	const q = quote(stockResponse(base.priceCr, deficit, holdT), input.displayTL);
+	return { base, deficit, holdT, q };
 };
 
 /**
@@ -654,9 +646,7 @@ const bidAt = (
  * order, at shipyards only — the tab is absent elsewhere, so a non-shipyard
  * gets no rows rather than seven refusals.
  */
-export const shipyardScreen = (
-	input: StationCommerceInput,
-): readonly HullOffer[] =>
+export const shipyardScreen = (input: ConsoleInput): readonly HullOffer[] =>
 	input.station.type === "shipyard"
 		? PURCHASABLE_HULL_IDS.map((hull) => hullOffer(input, hull))
 		: [];

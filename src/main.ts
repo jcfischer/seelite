@@ -852,6 +852,7 @@ import {
 	transactAtStation,
 	type StationAction,
 	type StationCommerceInput,
+	type ConsoleInput,
 } from "./station-commerce";
 import {
 	newWorld as newPersistentWorld,
@@ -5471,6 +5472,10 @@ class Game {
 	 * `probe-occlusion` reads still has one `ship` row.
 	 */
 	private setFlownHull(hull: HullId): void {
+		// The charge is the new hull's full `chargeAu`, as docking gives — set
+		// here, where the hull takes over, so a hull waiting for the launch
+		// (D10) does not lend the old one its charge while it is still flown.
+		this.chargeAu = HULL_SPECS[hull].chargeAu;
 		if (hull === this.flownHull) return;
 		this.flownHull = hull;
 		this.condition = this.flownFullCondition();
@@ -5496,13 +5501,11 @@ class Game {
 	/**
 	 * A hull the shipyard just sold, handed to the ship (#556 D7, D10).
 	 *
-	 * The drive charge is the new hull's full `chargeAu`, as docking gives.
 	 * The hull goes into the berth `deliverHull` picks — the one it was bought
 	 * in when it fits — or, with no free berth that fits, it waits for the
 	 * next launch and the ship stays the old hull in the old berth until then.
 	 */
 	private receiveHull(hull: HullId): void {
-		this.chargeAu = HULL_SPECS[hull].chargeAu;
 		const stationId = this.dock.stationId;
 		const berthId = this.dock.berthId;
 		if (this.dock.phase !== "docked" || !stationId || !berthId) {
@@ -14909,19 +14912,12 @@ class Game {
 				displayTL: this.world.system.record.displayTL,
 				rungs: this.rungs(),
 			}),
-			// #556 D1, D8: the Shipyard tab, at shipyards and nowhere else. The
-			// action on the input is a placeholder — `shipyardScreen` prices
-			// every hull through `hullOffer`, which reads everything but it.
+			// #556 D1, D8: the Shipyard tab, at shipyards and nowhere else.
 			shipyard:
 				market.type === "shipyard"
 					? {
 							flown: this.commander.hull,
-							offers: shipyardScreen(
-								this.commerceInput(context, {
-									type: "buy-hull",
-									hull: this.commander.hull,
-								}),
-							),
+							offers: shipyardScreen(this.consoleInput(context)),
 						}
 					: null,
 			credits: this.commander.credits,
@@ -15852,6 +15848,13 @@ class Game {
 		context: NonNullable<ReturnType<Game["dockedStationContext"]>>,
 		action: StationAction,
 	): StationCommerceInput {
+		return { ...this.consoleInput(context), action };
+	}
+
+	/** `commerceInput` without the action: what the Shipyard's rows price on. */
+	private consoleInput(
+		context: NonNullable<ReturnType<Game["dockedStationContext"]>>,
+	): ConsoleInput {
 		return {
 			commander: this.commander,
 			deficits: context.envelope.deficits,
@@ -15863,7 +15866,6 @@ class Game {
 			entrustedT: entrustedTonnesAboard(this.requests),
 			rungs: this.rungs(),
 			hullReach: this.hullReachHere,
-			action,
 		};
 	}
 
@@ -15879,7 +15881,7 @@ class Game {
 	private transactStation(action: StationAction): boolean {
 		const context = this.dockedStationContext();
 		if (!context) return false;
-		const { envelope, galaxyIndex } = context;
+		const { galaxyIndex } = context;
 		const result = transactAtStation(this.commerceInput(context, action));
 		if (!result.accepted) {
 			// **The reason was always computed; it was the caller that dropped

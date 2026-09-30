@@ -7,8 +7,13 @@ import {
 	DOCKABLE_HULL_IDS,
 	HULL_SPECS,
 	PLAYER_BASELINE_HULL,
+	PURCHASABLE_HULL_IDS,
 } from "../src/hull";
-import { berthFits, stationInterior } from "../src/station-interior";
+import {
+	type StationInterior,
+	berthFits,
+	stationInterior,
+} from "../src/station-interior";
 import { STATION_GEOMETRY } from "../src/station";
 
 describe("#557 / #584 — the boot hull", () => {
@@ -52,6 +57,29 @@ describe("#557 / #584 — the boot hull", () => {
 	});
 });
 
+test("every purchasable hull fits every shipyard berth, over a spread of seeds", () => {
+	// Why D7's re-berth and D10's delivery cannot happen in play today. If a
+	// berth ever stops admitting a purchasable hull, this goes red and those
+	// two arms become reachable — which is the moment to fly them.
+	let pairs = 0;
+	for (let seed = 0; seed < 64; seed++) {
+		const yard = stationInterior(
+			"shipyard",
+			STATION_GEOMETRY.shipyard.aperturePlaneKm,
+			seed,
+		);
+		for (const berth of yard.berths)
+			for (const hull of PURCHASABLE_HULL_IDS) {
+				expect(
+					berthFits(berth, HULL_SPECS[hull].env),
+					`${hull} @ ${seed}/${berth.id}`,
+				).toBe(true);
+				pairs += 1;
+			}
+	}
+	expect(pairs).toBeGreaterThan(64 * PURCHASABLE_HULL_IDS.length);
+});
+
 describe("#556 D7 / D10 — where a bought hull goes", () => {
 	const interior = stationInterior(
 		"shipyard",
@@ -59,6 +87,21 @@ describe("#556 D7 / D10 — where a bought hull goes", () => {
 		7,
 	);
 	const here = interior.berths[0];
+	/** The interior with its first berth too small for anything — the one way
+	 *  to reach D7 and D10, since every purchasable hull fits every berth. */
+	const shrinkFirstBerth = (from: StationInterior): StationInterior => ({
+		...from,
+		berths: from.berths.map((berth, i) =>
+			i === 0
+				? {
+						...berth,
+						clearLengthKm: 0.001,
+						clearBeamKm: 0.001,
+						clearHeightKm: 0.001,
+					}
+				: berth,
+		),
+	});
 
 	test("a hull that fits the berth it was bought in stays there", () => {
 		let checked = 0;
@@ -77,19 +120,7 @@ describe("#556 D7 / D10 — where a bought hull goes", () => {
 
 	test("otherwise it is re-berthed through chooseBerth, old berth freed", () => {
 		// A berth-shaped hole: shrink the current berth so nothing fits it.
-		const tiny = {
-			...interior,
-			berths: interior.berths.map((berth, i) =>
-				i === 0
-					? {
-							...berth,
-							clearLengthKm: 0.001,
-							clearBeamKm: 0.001,
-							clearHeightKm: 0.001,
-						}
-					: berth,
-			),
-		};
+		const tiny = shrinkFirstBerth(interior);
 		const env = HULL_SPECS.freighter.env;
 		const occupied = new Set([tiny.berths[0].id]);
 		const delivery = deliverHull(tiny, tiny.berths[0].id, env, occupied);
@@ -104,19 +135,7 @@ describe("#556 D7 / D10 — where a bought hull goes", () => {
 	test("with no free berth that fits, it is delivered on launch (D10)", () => {
 		const env = HULL_SPECS.freighter.env;
 		// Every other berth taken, and the current one too small.
-		const tiny = {
-			...interior,
-			berths: interior.berths.map((berth, i) =>
-				i === 0
-					? {
-							...berth,
-							clearLengthKm: 0.001,
-							clearBeamKm: 0.001,
-							clearHeightKm: 0.001,
-						}
-					: berth,
-			),
-		};
+		const tiny = shrinkFirstBerth(interior);
 		const occupied = new Set(tiny.berths.map((b) => b.id));
 		expect(deliverHull(tiny, tiny.berths[0].id, env, occupied)).toEqual({
 			kind: "on-launch",
