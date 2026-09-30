@@ -1080,3 +1080,19 @@ export async function renderInPage({
 		),
 	};
 }
+
+/**
+ * #589's classical set-pieces (`src/music-classical/`), each played once from
+ * its start, as `npm run sounds -- --set classical` renders them for the
+ * principal's ear. `seconds` is the excerpt plus its hall. Filled as works land.
+ */
+export const CLASSICAL_SET = Object.freeze(
+	/** @type {[string, number][]} */ ([]).map(([id, seconds]) => ({
+		name: `classical-${id}`,
+		seconds,
+		music: {
+			songs: { [id]: id },
+			script: [[0, { type: "play", id, at: "bar" }]],
+		},
+	})),
+);
