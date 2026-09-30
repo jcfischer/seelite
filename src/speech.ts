@@ -51,6 +51,8 @@ interface PhonemeSpec {
 	/** A liquid or glide: the vowel beside it glides from its formants, not
 	 *  from a locus. */
 	readonly glide?: boolean;
+	/** A nasal: the antiresonance in its murmur, Hz. */
+	readonly nasalZero?: number;
 	/** A stop: expanded into closure, burst and, voiceless, aspiration of
 	 *  `vot` ms. */
 	readonly stop?: { readonly voiced: boolean; readonly vot: number };
@@ -109,17 +111,24 @@ export const PHONEMES: Readonly<Record<string, PhonemeSpec>> = {
 	R: { f: [310, 1060, 1380], ms: 70, av: 0.8, glide: true },
 	W: { f: [290, 610, 2150], ms: 70, av: 0.8, glide: true },
 	Y: { f: [260, 2070, 3020], ms: 60, av: 0.8, glide: true },
-	M: { f: [250, 1100, 2130], ms: 75, av: 0.55, place: "lab" },
-	N: { f: [250, 1600, 2600], ms: 65, av: 0.55, place: "alv" },
+	// A nasal's murmur: the mouth closed, a zero where the closed cavity
+	// traps its resonance — low for a labial, higher for an alveolar, above
+	// the band for a velar. The zero is what tells M from N in the murmur.
+	M: { f: [250, 1100, 2130], ms: 75, av: 0.55, place: "lab", nasalZero: 1000 },
+	N: { f: [250, 1600, 2600], ms: 65, av: 0.55, place: "alv", nasalZero: 1800 },
 	NG: { f: [250, 2000, 2900], ms: 80, av: 0.55, place: "vel" },
-	F: fric([340, 1100, 2080], 105, 0, 0.35, 4500, 3500, "lab"),
-	V: fric([340, 1100, 2080], 65, 0.45, 0.25, 4500, 3500, "lab"),
-	TH: fric([320, 1290, 2540], 105, 0, 0.3, 5000, 3500, "dent"),
-	DH: fric([320, 1290, 2540], 50, 0.5, 0.2, 5000, 3500, "dent"),
-	S: fric([320, 1390, 2530], 115, 0, 0.9, 5500, 1800, "alv"),
-	Z: fric([320, 1390, 2530], 85, 0.45, 0.6, 5500, 1800, "alv"),
-	SH: fric([300, 1840, 2750], 125, 0, 1, 2900, 1300, "pal"),
-	ZH: fric([300, 1840, 2750], 85, 0.45, 0.6, 2900, 1300, "pal"),
+	// Fricatives placed for the radio, which passes 300–3400 Hz (the first
+	// table put S at 5.5 kHz and F and TH near 5, and the band removed all
+	// three): S bright at the top of the band, SH dark inside it, F and TH
+	// weak and flat, told apart mostly by their glides, as on a telephone.
+	F: fric([340, 1100, 2080], 105, 0, 0.14, 3000, 6000, "lab"),
+	V: fric([340, 1100, 2080], 65, 0.45, 0.1, 3000, 6000, "lab"),
+	TH: fric([320, 1290, 2540], 105, 0, 0.09, 3500, 6000, "dent"),
+	DH: fric([320, 1290, 2540], 50, 0.5, 0.07, 3500, 6000, "dent"),
+	S: fric([320, 1390, 2530], 115, 0, 1, 4000, 2200, "alv"),
+	Z: fric([320, 1390, 2530], 85, 0.45, 0.65, 4000, 2200, "alv"),
+	SH: fric([300, 1840, 2750], 125, 0, 1, 2500, 1100, "pal"),
+	ZH: fric([300, 1840, 2750], 85, 0.45, 0.6, 2500, 1100, "pal"),
 	HH: { f: [500, 1500, 2500], ms: 65, av: 0, ah: 0.6, copyNext: true },
 	// Voice onset times after English's: a velar's the longest, a labial's
 	// the shortest; a voiced stop's is short lag and is not written out.
@@ -230,6 +239,8 @@ interface Seg {
 	pitch: number;
 	/** A burst: its amplitude track is not smoothed. */
 	sharp: boolean;
+	/** A nasal murmur's antiresonance, Hz; 0 for none. */
+	nz: number;
 }
 
 const framesOf = (ms: number) => Math.max(1, Math.round(ms / 1000 / FRAME_S));
@@ -256,19 +267,24 @@ function nextFormants(tokens: readonly Token[], i: number): Formants | null {
 	return null;
 }
 
-/** Where a burst's noise is centred, and how wide: a labial's low and
- *  diffuse, an alveolar's high, a velar's compact at the vowel's F2. */
-function burstBand(place: Place, vowel: Formants | null): [number, number] {
+/** Where a burst's noise is centred, how wide, and how strong: a labial's
+ *  low, diffuse and weak, an alveolar's high, a velar's compact and strong
+ *  at its locus's F2. All inside the radio's band: an alveolar's at 3.9 kHz
+ *  was above it, and the radio took the burst away. */
+function burstBand(
+	place: Place,
+	vowel: Formants | null,
+): [number, number, number] {
 	switch (place) {
 		case "lab":
-			return [1100, 2500];
+			return [1000, 2500, 0.45];
 		case "alv":
 		case "dent":
-			return [3900, 1500];
+			return [3200, 1500, 0.9];
 		case "pal":
-			return [3000, 1200];
+			return [2800, 1200, 0.9];
 		case "vel":
-			return [Math.min(3000, Math.max(1200, (vowel?.[1] ?? 1600) + 150)), 600];
+			return [locus("vel", vowel ?? [500, 1500, 2500])[1], 500, 1];
 	}
 }
 
@@ -293,6 +309,7 @@ function segments(tokens: readonly Token[], v: SpeechVoice): Seg[] {
 		fb: 2000,
 		pitch: 1,
 		sharp: false,
+		nz: 0,
 	});
 	// The last vowel of a phrase is lengthened, as a speaker slows into a stop.
 	let lastVowel = -1;
@@ -318,10 +335,10 @@ function segments(tokens: readonly Token[], v: SpeechVoice): Seg[] {
 				av: p.stop.voiced ? 0.12 : 0,
 				pitch,
 			});
-			const [ff, fb] = burstBand(p.place ?? "alv", vowel);
+			const [ff, fb, amp] = burstBand(p.place ?? "alv", vowel);
 			segs.push({
-				...quiet(p.stop.voiced ? 8 : 12, at, "burst", p),
-				af: p.stop.voiced ? 0.55 : 0.9,
+				...quiet(p.stop.voiced ? 10 : 12, at, "burst", p),
+				af: (p.stop.voiced ? 0.8 : 1) * amp,
 				ff,
 				fb,
 				pitch,
@@ -367,26 +384,33 @@ function segments(tokens: readonly Token[], v: SpeechVoice): Seg[] {
 			fb: p.fb ?? 2000,
 			pitch,
 			sharp: false,
+			nz: p.nasalZero ?? 0,
 		});
 	});
 	return segs;
 }
 
 /** A place's locus beside a vowel: where the formants point during the
- *  consonant. A velar's moves with the vowel, its F2 and F3 pinched together. */
+ *  consonant. A labial's F2 and F3 low; an alveolar's F3 high; a velar's
+ *  moves with the vowel, its F2 and F3 pinched together just above it.
+ *
+ *  Retuned on the principal's ear (2026-09-30: *bay, day, gay sound the
+ *  same*): before EY the first table started D and G 47 Hz apart in F2 and
+ *  nowhere apart in F3. Now B, D and G start near 1300, 1760 and 2090 in F2
+ *  and 2300, 2710 and 2510 in F3. */
 function locus(place: Place, v: Formants): Formants {
 	switch (place) {
 		case "lab":
 			return [200, 800, 2100];
 		case "dent":
-			return [200, 1400, 2600];
+			return [200, 1400, 2700];
 		case "alv":
-			return [200, 1750, 2700];
+			return [200, 1800, 2900];
 		case "pal":
 			return [200, 2000, 2800];
 		case "vel": {
-			const f2 = Math.min(2500, v[1] + 250);
-			return [200, f2, f2 + 300];
+			const f2 = Math.min(2700, 1.3 * v[1] + 150);
+			return [200, f2, f2 + 120];
 		}
 	}
 }
@@ -394,20 +418,21 @@ function locus(place: Place, v: Formants): Formants {
 /** How far from the locus toward the vowel a transition starts, per
  *  formant: Klatt's k. */
 const LOCUS_K: Readonly<Record<Place, Formants>> = {
-	lab: [0.35, 0.65, 0.5],
-	dent: [0.35, 0.5, 0.5],
-	alv: [0.35, 0.5, 0.5],
-	pal: [0.35, 0.6, 0.5],
-	vel: [0.35, 0.75, 0.5],
+	lab: [0.35, 0.55, 0.5],
+	dent: [0.35, 0.45, 0.5],
+	alv: [0.35, 0.45, 0.5],
+	pal: [0.35, 0.5, 0.5],
+	vel: [0.35, 0.45, 0.5],
 };
-/** How long the transition in the vowel takes, ms. */
+/** How long the transition in the vowel takes, ms: long enough to be heard
+ *  as a glide, which is what carries the place through the radio. */
 const TRANSITION_MS: Readonly<Record<Place | "glide" | "vowel", number>> = {
-	lab: 45,
-	dent: 50,
-	alv: 50,
-	pal: 60,
-	vel: 65,
-	glide: 75,
+	lab: 55,
+	dent: 60,
+	alv: 60,
+	pal: 65,
+	vel: 75,
+	glide: 80,
 	vowel: 60,
 };
 
@@ -444,6 +469,7 @@ export interface Tracks {
 	ff: Float64Array;
 	fb: Float64Array;
 	pitch: Float64Array;
+	nz: Float64Array;
 }
 
 /** A centred moving average over \`w\` frames. */
@@ -549,6 +575,7 @@ function tracks(segs: readonly Seg[], v: SpeechVoice): Tracks {
 		ff: new Float64Array(n),
 		fb: new Float64Array(n),
 		pitch: new Float64Array(n),
+		nz: new Float64Array(n),
 	};
 	const sharp = new Uint8Array(n);
 	let i = 0;
@@ -565,6 +592,7 @@ function tracks(segs: readonly Seg[], v: SpeechVoice): Tracks {
 			t.ff[i] = s.ff;
 			t.fb[i] = s.fb;
 			t.pitch[i] = s.pitch;
+			t.nz[i] = s.nz;
 			sharp[i] = s.sharp ? 1 : 0;
 		}
 	transitions(t, segs);
@@ -593,7 +621,7 @@ export const frameTracks = (tokens: readonly Token[], voice: SpeechVoice) =>
 	tracks(segments(tokens, voice), voice);
 
 /** A two-pole resonator, Klatt's: unity gain at DC. */
-class Resonator {
+export class Resonator {
 	private y1 = 0;
 	private y2 = 0;
 	private a = 1;
@@ -617,6 +645,39 @@ class Resonator {
 		const y = this.a * x + this.b * this.y1 + this.c * this.y2;
 		this.y2 = this.y1;
 		this.y1 = y;
+		return y;
+	}
+}
+
+/** A two-zero antiresonator, Klatt's: the exact inverse of `Resonator` at
+ *  the same frequency and bandwidth, and at 0 Hz an exact identity, so a
+ *  frame with no nasal zero passes the cascade through untouched. */
+export class AntiResonator {
+	private x1 = 0;
+	private x2 = 0;
+	private a = 1;
+	private b = 0;
+	private c = 0;
+	set(hz: number, bw: number) {
+		if (hz <= 0) {
+			this.a = 1;
+			this.b = 0;
+			this.c = 0;
+			return;
+		}
+		const T = 1 / SPEECH_RATE;
+		const f = Math.min(hz, 0.45 * SPEECH_RATE);
+		const C = -Math.exp(-2 * Math.PI * bw * T);
+		const B = 2 * Math.exp(-Math.PI * bw * T) * Math.cos(2 * Math.PI * f * T);
+		const A = 1 - B - C;
+		this.a = 1 / A;
+		this.b = -B / A;
+		this.c = -C / A;
+	}
+	step(x: number) {
+		const y = this.a * x + this.b * this.x1 + this.c * this.x2;
+		this.x2 = this.x1;
+		this.x1 = x;
 		return y;
 	}
 }
@@ -658,14 +719,18 @@ export function speak(
 		new Resonator(),
 	];
 	const fric = new Resonator();
+	const zero = new AntiResonator();
 	let phase = 0;
 	let flow = 0;
 	let jit = 1;
 	let fricGain = 1;
 	for (let fr = 0; fr < t.n; fr++) {
+		// A murmur's upper formants are damped: the sound leaves by the nose.
+		const damp = t.nz[fr] > 0 ? 2.5 : 1;
 		r[0].set(t.f1[fr], 60 + 0.05 * t.f1[fr]);
-		r[1].set(t.f2[fr], 70 + 0.04 * t.f2[fr]);
-		r[2].set(t.f3[fr], 110 + 0.03 * t.f3[fr]);
+		r[1].set(t.f2[fr], (70 + 0.04 * t.f2[fr]) * damp);
+		r[2].set(t.f3[fr], (110 + 0.03 * t.f3[fr]) * damp);
+		zero.set(t.nz[fr], 200);
 		r[3].set(3500 * voice.tract, 250);
 		fric.set(t.ff[fr], t.fb[fr]);
 		fricGain = 1 / fric.peak(t.ff[fr]);
@@ -690,6 +755,7 @@ export function speak(
 			const n = rand();
 			let x = av * src + (ah + voice.breath * av) * 0.35 * n;
 			for (const res of r) x = res.step(x);
+			x = zero.step(x);
 			out[i] = x + af * 0.5 * fricGain * fric.step(rand());
 		}
 	}

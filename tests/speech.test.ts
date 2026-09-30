@@ -7,7 +7,9 @@
 import { describe, expect, test } from "bun:test";
 import { RADIO, radio } from "../src/radio";
 import {
+	AntiResonator,
 	frameTracks,
+	Resonator,
 	PHONEMES,
 	parsePhonemes,
 	SPEECH_RATE,
@@ -74,14 +76,37 @@ describe("the synthesiser", () => {
 		expect(ratio(iy)).toBeGreaterThan(10 * ratio(aa));
 	});
 
-	test("an S is noise above the vowels", () => {
-		const s = held("S");
-		const aa = held("AA");
-		const high = (h: typeof s) =>
-			bandEnergy(h.x, 4000, 7000, h.a, h.b) /
-			bandEnergy(h.x, 100, 7000, h.a, h.b);
-		expect(high(s)).toBeGreaterThan(0.5);
-		expect(high(aa)).toBeLessThan(0.05);
+	test("fricatives sit inside the radio's band, each in its own place", () => {
+		// The first table put S at 5.5 kHz and F and TH near 5: the radio's
+		// 300–3400 Hz band took all three and left three gaps.
+		const cons = (ph: string) => {
+			const tokens = parsePhonemes(`AA1 ${ph} AA1`);
+			const t = frameTracks(tokens, VOICES.machine);
+			const at = t.role.flatMap((r, i) => (r === "cons" ? [i] : []));
+			return {
+				x: speak(tokens, VOICES.machine),
+				a: at[1] * 80,
+				b: at[at.length - 2] * 80,
+			};
+		};
+		const centroid = (h: ReturnType<typeof cons>) => {
+			let num = 0;
+			let den = 0;
+			for (let hz = 300; hz < 7000; hz += 100) {
+				const e = bandEnergy(h.x, hz, hz + 100, h.a, h.b);
+				num += hz * e;
+				den += e;
+			}
+			return num / den;
+		};
+		const inBand = (h: ReturnType<typeof cons>) =>
+			bandEnergy(h.x, 2500, 3400, h.a, h.b);
+		expect(centroid(cons("S"))).toBeGreaterThan(centroid(cons("SH")) + 800);
+		expect(centroid(cons("SH"))).toBeLessThan(3400);
+		// Beside the same vowel, S is far the loudest hiss in the top of the
+		// band, and F and TH are weak.
+		expect(inBand(cons("S"))).toBeGreaterThan(4 * inBand(cons("F")));
+		expect(inBand(cons("S"))).toBeGreaterThan(4 * inBand(cons("TH")));
 	});
 
 	test("a phrase is finite, peaks at 0.9 and renders the same twice", () => {
@@ -122,9 +147,26 @@ describe("consonants through the radio band", () => {
 	test("a velar's glide starts where the vowel is, a labial's low, an alveolar's high", () => {
 		// The locus rule: a fixed place for G would start both vowels alike.
 		expect(vowelStartF2("G IY1")).toBeGreaterThan(2250);
-		expect(vowelStartF2("G UW1")).toBeLessThan(1100);
+		expect(vowelStartF2("G UW1")).toBeLessThan(1250);
 		expect(vowelStartF2("B AA1")).toBeLessThan(1000);
 		expect(vowelStartF2("D AA1")).toBeGreaterThan(1350);
+	});
+
+	test("B, D and G start apart before the same vowel, in F2 and in F3", () => {
+		// The principal's ear, 2026-09-30: *bay, day, gay sound the same*. The
+		// first loci started D and G 47 Hz apart in F2 and together in F3.
+		const start = (ph: string) => {
+			const { t, at } = framesOf(ph, "vowel");
+			const k = VOICES.machine.tract;
+			return { f2: t.f2[at[0]] / k, f3: t.f3[at[0]] / k };
+		};
+		const b = start("B EY1");
+		const d = start("D EY1");
+		const g = start("G EY1");
+		expect(d.f2 - b.f2).toBeGreaterThan(250);
+		expect(g.f2 - d.f2).toBeGreaterThan(200);
+		expect(d.f3 - g.f3).toBeGreaterThan(100);
+		expect(d.f3 - b.f3).toBeGreaterThan(200);
 	});
 
 	test("a voiceless stop's aspiration carries the start of the glide", () => {
@@ -167,6 +209,42 @@ describe("consonants through the radio band", () => {
 			burstCentroid("AH0 K UW1") + 300,
 		);
 		expect(burstCentroid("AH0 P AA1")).toBeLessThan(burstCentroid("AH0 T AA1"));
+	});
+});
+
+describe("the nasal zero", () => {
+	test("the antiresonator is the resonator's exact inverse, and off is identity", () => {
+		const res = new Resonator();
+		const anti = new AntiResonator();
+		res.set(1000, 200);
+		anti.set(1000, 200);
+		const off = new AntiResonator();
+		off.set(0, 200);
+		let x = 12345;
+		let worst = 0;
+		let worstOff = 0;
+		for (let i = 0; i < 4000; i++) {
+			x = (x * 1103515245 + 12345) >>> 0;
+			const v = x / 2 ** 31 - 1;
+			worst = Math.max(worst, Math.abs(anti.step(res.step(v)) - v));
+			worstOff = Math.max(worstOff, Math.abs(off.step(v) - v));
+		}
+		expect(worst).toBeLessThan(1e-9);
+		expect(worstOff).toBe(0);
+	});
+
+	test("M's murmur has its hole lower than N's", () => {
+		// With no zero, the two murmurs differ only in a damped F2.
+		const murmur = (ph: string) => {
+			const tokens = parsePhonemes(`AA1 ${ph} AA1`);
+			const t = frameTracks(tokens, VOICES.machine);
+			const at = t.role.flatMap((r, i) => (r === "cons" ? [i] : []));
+			const x = speak(tokens, VOICES.machine);
+			const a = at[1] * 80;
+			const b = at[at.length - 2] * 80;
+			return bandEnergy(x, 900, 1150, a, b) / bandEnergy(x, 1650, 1950, a, b);
+		};
+		expect(murmur("M")).toBeLessThan(murmur("N"));
 	});
 });
 
