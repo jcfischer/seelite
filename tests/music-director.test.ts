@@ -12,6 +12,7 @@ import {
 	initialMusicState,
 	LOW_HULL_SHARE,
 	LOW_SHIELD_SHARE,
+	type MusicArms,
 	musicArms,
 	type MusicReading,
 	QUIET_READING,
@@ -22,7 +23,7 @@ import {
 import type { MusicCommand } from "../src/music-score";
 import { fullCondition } from "../src/ship-condition";
 import { MusicEngine } from "../src/music-engine";
-import { flightBed } from "../src/music-generate";
+import { berlinFlightBed } from "../src/music-generate-berlin";
 
 const calm: MusicReading = { ...QUIET_READING, systemSeed: 1234 };
 const at = (over: Partial<MusicReading>): MusicReading => ({
@@ -251,9 +252,10 @@ describe("the prototype's arms, from ?music=", () => {
 			off: false,
 			force: "threat",
 			lowHull: "always",
-			legacy: false,
+			bed: "berlin",
 		});
-		expect(musicArms("legacy").arms.legacy).toBe(true);
+		expect(musicArms("legacy").arms.bed).toBe("legacy");
+		expect(musicArms("second").arms.bed).toBe("second");
 		expect(unknown).toEqual(["bogus"]);
 		expect(musicArms("off").arms.off).toBe(true);
 	});
@@ -269,15 +271,18 @@ describe("the prototype's arms, from ?music=", () => {
 		expect(dangerLevel(at({ hullShare: 0.1 }), arms)).toBe("combat");
 	});
 
-	test("legacy loads the first bed, the default the second", () => {
-		const legacy = { ...DEFAULT_MUSIC_ARMS, legacy: true };
-		const song = (arms: typeof legacy) => {
+	test("each bed arm loads its bed, the default the Berlin prototype", () => {
+		const legacy = { ...DEFAULT_MUSIC_ARMS, bed: "legacy" as const };
+		const song = (arms: MusicArms) => {
 			const load = stepMusic(initialMusicState(), calm, 0.1, arms).commands[0];
 			if (load.type !== "load") throw new Error(`first command ${load.type}`);
 			return load.song;
 		};
 		expect(song(legacy).sections[0].bars).toBe(16);
-		expect(song(DEFAULT_MUSIC_ARMS).sections[0].bars).toBeGreaterThan(16);
+		expect(song({ ...DEFAULT_MUSIC_ARMS, bed: "second" }).name).toMatch(
+			/^flight /,
+		);
+		expect(song(DEFAULT_MUSIC_ARMS).name).toMatch(/^berlin /);
 	});
 
 	test("off plays nothing, and fades out what was playing", () => {
@@ -334,7 +339,7 @@ test("a rise just after a fresh variant is asked for still lands on the next bar
 		for (const end = Math.round((t + 0.1) * SR); frame < end; frame += 128)
 			engine.render(out, frame);
 	}
-	const bpm = flightBed(calm.systemSeed, 0).tempo[0].bpm;
+	const bpm = berlinFlightBed(calm.systemSeed, 0).tempo[0].bpm;
 	const barFrames = (4 * 60 * SR) / bpm;
 	// A part only threat and combat play: the second bed's calm can carry its
 	// motif on `lead`, which would pass this without any rise. Threat's first
@@ -347,9 +352,9 @@ test("a rise just after a fresh variant is asked for still lands on the next bar
 	// Three minutes of the full engine, the reverb and the drone included.
 }, 30000);
 
-test("switching between the first and second bed loads the other one", () => {
+test("switching between two beds loads the other one", () => {
 	const second = fly([[1, calm]]).state;
-	const legacy = { ...DEFAULT_MUSIC_ARMS, legacy: true };
+	const legacy = { ...DEFAULT_MUSIC_ARMS, bed: "legacy" as const };
 	const r = stepMusic(second, calm, 0.1, legacy);
 	const load = r.commands.find((c) => c.type === "load");
 	expect(load).toBeDefined();

@@ -35,7 +35,8 @@ import {
 	flightBed as legacyFlightBed,
 	stationBed as legacyStationBed,
 } from "./music-generate-legacy";
-import type { MusicCommand } from "./music-score";
+import { berlinFlightBed, berlinStationBed } from "./music-generate-berlin";
+import type { MusicCommand, Song } from "./music-score";
 import type { StationType } from "./station";
 
 /** Who owns the sound this frame. */
@@ -100,20 +101,38 @@ const rank = (l: MusicLevel) => FLIGHT_LEVELS.indexOf(l);
  * The prototype's arms, flown by ear from `?music=`: `off`; a level name,
  * which holds the music at that level whatever the signals say, for
  * listening; `lowhull-always`, the arm the principal did not choose —
- * low condition is combat even with no threat; and `legacy`, the first bed
- * the principal heard as boring (D12), kept to compare against.
+ * low condition is combat even with no threat; and which bed plays —
+ * `legacy`, the first bed the principal heard as boring (D12), `second`,
+ * the authored-fragment bed heard as too slow (2026-09-30), or the Berlin-
+ * school prototype, the default, kept side by side to compare by ear.
  */
 export interface MusicArms {
 	readonly off: boolean;
 	readonly force: MusicLevel | null;
 	readonly lowHull: "threat" | "always";
-	readonly legacy: boolean;
+	readonly bed: MusicBed;
 }
+export type MusicBed = "legacy" | "second" | "berlin";
+
+/** Each bed's two songs: a system's flight bed and a station's. */
+const BEDS: Readonly<
+	Record<
+		MusicBed,
+		{
+			flight: (systemSeed: number, variant: number) => Song;
+			station: (systemSeed: number, role: StationType, variant: number) => Song;
+		}
+	>
+> = {
+	legacy: { flight: legacyFlightBed, station: legacyStationBed },
+	second: { flight: flightBed, station: stationBed },
+	berlin: { flight: berlinFlightBed, station: berlinStationBed },
+};
 export const DEFAULT_MUSIC_ARMS: MusicArms = {
 	off: false,
 	force: null,
 	lowHull: "threat",
-	legacy: false,
+	bed: "berlin",
 };
 
 export function musicArms(value: string | null): {
@@ -126,7 +145,8 @@ export function musicArms(value: string | null): {
 		if (!token) continue;
 		if (token === "off") arms = { ...arms, off: true };
 		else if (token === "lowhull-always") arms = { ...arms, lowHull: "always" };
-		else if (token === "legacy") arms = { ...arms, legacy: true };
+		else if (token === "legacy" || token === "second" || token === "berlin")
+			arms = { ...arms, bed: token };
 		else if ((FLIGHT_LEVELS as readonly string[]).includes(token))
 			arms = { ...arms, force: token as MusicLevel };
 		else unknown.push(token);
@@ -232,14 +252,14 @@ export function stepMusic(
 
 	if (r.scene === "docked") {
 		const role = r.stationRole ?? "trade";
-		const key = `${r.systemSeed >>> 0}/${role}/${arms.legacy ? "legacy" : "second"}`;
+		const key = `${r.systemSeed >>> 0}/${role}/${arms.bed}`;
 		if (s.bed === "station" && s.stationKey === key)
 			return { state: s, commands: cmds };
 		if (s.stationKey !== key)
 			cmds.push({
 				type: "load",
 				id: "station",
-				song: (arms.legacy ? legacyStationBed : stationBed)(
+				song: BEDS[arms.bed].station(
 					r.systemSeed,
 					role,
 					0,
@@ -259,7 +279,7 @@ export function stepMusic(
 
 	const target = dangerLevel(r, arms);
 	// Into flight: from silence, from the station, or into a new system.
-	const flightKey = `${r.systemSeed >>> 0}/${arms.legacy ? "legacy" : "second"}`;
+	const flightKey = `${r.systemSeed >>> 0}/${arms.bed}`;
 	if (s.bed !== "flight" || s.flightKey !== flightKey) {
 		let { flightId, variant } = s;
 		if (s.flightKey !== flightKey || flightId === null) {
@@ -268,7 +288,7 @@ export function stepMusic(
 			cmds.push({
 				type: "load",
 				id: flightId,
-				song: (arms.legacy ? legacyFlightBed : flightBed)(
+				song: BEDS[arms.bed].flight(
 					r.systemSeed,
 					variant,
 				),
@@ -344,7 +364,7 @@ export function stepMusic(
 			{
 				type: "load",
 				id: flightId,
-				song: (arms.legacy ? legacyFlightBed : flightBed)(
+				song: BEDS[arms.bed].flight(
 					r.systemSeed,
 					variant,
 				),

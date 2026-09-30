@@ -13,6 +13,7 @@ import { AudioFX } from "./audio";
 import { Music } from "./music";
 import {
 	DEFAULT_MUSIC_ARMS,
+	type MusicBed,
 	FALL_HOLD_S,
 	initialMusicState,
 	type MusicReading,
@@ -46,7 +47,7 @@ export function mountMusicLab() {
     <select id="role"><option>trade</option><option>refinery</option><option>shipyard</option><option>outpost</option></select></label>
   <label><input type="radio" name="scene" value="witchspace"> Witchspace (music yields)</label>
   <label style="margin-left:12px"><input id="cruise" type="checkbox"> Cruise</label>
-  <label style="margin-left:12px"><input id="legacy" type="checkbox"> First bed (legacy)</label>
+  <label style="margin-left:12px">Bed <select id="bed"><option value="berlin">Berlin (third)</option><option value="second">second</option><option value="legacy">first (legacy)</option></select></label>
 </fieldset>
 <fieldset style="border:1px solid #2a323c;margin:0 0 12px"><legend>Danger level</legend>
   ${FLIGHT_LEVELS.map((l, i) => `<label><input type="radio" name="level" value="${l}"${i === 0 ? " checked" : ""}> ${l}</label>`).join(" ")}
@@ -103,7 +104,7 @@ export function mountMusicLab() {
 		const step = stepMusic(state, reading, STEP_S, {
 			...DEFAULT_MUSIC_ARMS,
 			force: checked("level") as MusicLevel,
-			legacy: $<HTMLInputElement>("legacy").checked,
+			bed: $<HTMLSelectElement>("bed").value as MusicBed,
 		});
 		state = step.state;
 		for (const cmd of step.commands) music.send(cmd);
