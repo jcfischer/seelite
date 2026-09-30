@@ -1079,9 +1079,10 @@ console.log(
 console.log("\n== what is gated and what is not ==");
 console.log(
 	"  `npm test` gates: the response's hold-invariance and its ratchet, every",
-	"\n  row against `hullPriceCr`, the exponent and baseline being the figures",
-	"\n  quoted here, the ceiling against the berth cell and the roster's own",
-	"\n  densities, and that no priced hull sits above the ceiling.",
+	"\n  row against `hullPriceCr`, the seven prices and the ceiling's pinned to",
+	"\n  §7.1's table, the four law constants being the ones §7.1 quotes, the",
+	"\n  knee bending the law down, the ceiling against the berth cell and the",
+	"\n  roster's own densities, and that no priced hull sits above the ceiling.",
 );
 console.log(
 	`  run by hand, this file: the ${WORLDS.length}-world curve, its fit, the payback`,
