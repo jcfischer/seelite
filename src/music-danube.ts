@@ -179,16 +179,23 @@ const ORCHESTRA: Voicing = {
 		vibrato: 0.08,
 		reverb: 0.55,
 	},
-	// Cellos and basses on the first beat: a short stroke, low.
+	// Cellos and basses on the first beat: a short stroke, low — and gritty
+	// (D16, a first guess for the lab): the saturation, the lowpass opened
+	// for the low register and the rosin under it. The grit nearly doubles
+	// the level of a note from A1 to A2, so the level is halved to hold it.
 	bass: {
 		voice: "strings",
-		level: 0.42,
+		level: 0.23,
 		attackS: 0.04,
 		releaseS: 0.25,
 		cutoffHz: 650,
 		envAmount: 1.2,
-		index: 0.25,
+		index: 0.35,
 		vibrato: 0,
+		drive: 0.35,
+		keyTrack: 0.6,
+		rosin: 0.35,
+		rosinLow: 1,
 		reverb: 0.2,
 	},
 	// The oom-pah-pah's "pah": short detached chords, the bow off the string.
