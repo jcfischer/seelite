@@ -511,7 +511,8 @@ dwarf, 1.0 AU for a G star, 4.5 AU for an A star.
   planets, including ice worlds, gain exactly one moon: the existing moon-count
   roll selects it when it is 2 or 3. Rocky moon radius is capped at half its
   host's radius, and its orbit clears the host and moon. IDs remain
-  `planet-<rung>-moon-0`; all moons remain airless far-layer scenery.
+  `planet-<rung>-moon-0`; all moons remain airless scenery and use the same
+  distance-based render-layer rule as other bodies.
 - The primary rung is kept and clamped into the envelope, even when its
   floating-point rescale lands just outside it. Shipyards host on that primary
   or a remaining gas giant, never an outer rocky ice world. Station IDs and

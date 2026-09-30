@@ -140,8 +140,8 @@
 			},
 			"visited": {
 				"0": {
-					"systems": [0],
-					"stations": []
+					"systems": [0, 92],
+					"stations": ["92:station-shipyard"]
 				}
 			},
 			"basis": {},
@@ -156,5 +156,5 @@
 			"throttle": 0
 		}
 	},
-	"integrity": 574532047
+	"integrity": 590779432
 }

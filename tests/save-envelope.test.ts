@@ -71,7 +71,8 @@ const commander = (): CommanderRecord => {
 
 describe("#89 D5 — the save envelope", () => {
 	test("a version-7 docked save retains its shipyard key and deficit after host relocation", () => {
-		// Written by the unmodified version-7 generator before #590. System 92's
+		// Serialized by the unmodified version-7 code from a dock-consistent
+		// state before #590. System 92's
 		// shipyard orbited planet-4 then; the new host is planet-2. The saved
 		// deficit and dockedAt both name the carrier key, never its old position.
 		// This checks parse/migration and the regenerated host, not Game's
@@ -88,8 +89,11 @@ describe("#89 D5 — the save envelope", () => {
 		expect(raw.world.worldGeneratorVersion).toBe(7);
 		const loaded = parseSave(raw);
 		const key = carrierKey(92, LOCAL_CARRIER_ID.shipyard);
+		expect(raw.commander.ladders.visited[0].systems).toContain(92);
+		expect(raw.commander.ladders.visited[0].stations).toContain(key);
 		expect(loaded.world.worldGeneratorVersion).toBe(WORLD_GENERATOR_VERSION);
 		expect(loaded.commander.dockedAt).toBe(key);
+		expect(loaded.commander.ladders.visited[0]?.stations).toContain(key);
 		expect(loaded.world.galaxies[0].deficits[key]).toBeDefined();
 		const restored = restoreWorld(47, 0, 92, loaded.world.gameTime);
 		const shipyard = restored.system.contents.stations.find(
