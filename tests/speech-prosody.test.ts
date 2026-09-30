@@ -16,6 +16,7 @@ import {
 	VOICES,
 } from "../src/speech";
 import { textToTokens } from "../src/speech-lexicon";
+import { bandEnergy } from "./lib/audio-measure";
 
 /** The lengths, in frames, of each run of vowel frames, in order. */
 const vowelRuns = (tokens: Token[], voice: SpeechVoice = VOICES.approach) => {
@@ -104,22 +105,15 @@ describe("intonation (a hat pattern)", () => {
 
 describe("the glottal source", () => {
 	/** Energy in `[lo, hi)` Hz over the middle of a held AA. */
-	const band = (x: Float32Array, lo: number, hi: number) => {
-		const a = Math.floor(0.35 * SPEECH_RATE);
-		const b = Math.floor(0.5 * SPEECH_RATE);
-		let e = 0;
-		for (let hz = lo; hz < hi; hz += 25) {
-			const w = (2 * Math.PI * hz) / SPEECH_RATE;
-			let re = 0;
-			let im = 0;
-			for (let i = a; i < b; i++) {
-				re += x[i] * Math.cos(w * i);
-				im += x[i] * Math.sin(w * i);
-			}
-			e += re * re + im * im;
-		}
-		return e;
-	};
+	const band = (x: Float32Array, lo: number, hi: number) =>
+		bandEnergy(
+			x,
+			SPEECH_RATE,
+			lo,
+			hi,
+			Math.floor(0.35 * SPEECH_RATE),
+			Math.floor(0.5 * SPEECH_RATE),
+		);
 	const aa = (voice: SpeechVoice) => speak(parsePhonemes(". AA1 ."), voice);
 
 	test("tilt takes energy from the top of the spectrum", () => {

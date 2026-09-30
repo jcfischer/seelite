@@ -17,29 +17,16 @@ import {
 	VOICES,
 } from "../src/speech";
 import { LEXICON, textToTokens } from "../src/speech-lexicon";
+import { bandEnergy as sharedBandEnergy } from "./lib/audio-measure";
 
 /** Energy in `[lo, hi)` Hz over `x[a..b)`, by DFT bins 25 Hz apart. */
-function bandEnergy(
+const bandEnergy = (
 	x: Float32Array,
 	lo: number,
 	hi: number,
 	a = 0,
 	b = x.length,
-) {
-	let e = 0;
-	const n = b - a;
-	for (let hz = lo; hz < hi; hz += 25) {
-		const w = (2 * Math.PI * hz) / SPEECH_RATE;
-		let re = 0;
-		let im = 0;
-		for (let i = a; i < b; i++) {
-			re += x[i] * Math.cos(w * i);
-			im += x[i] * Math.sin(w * i);
-		}
-		e += (re * re + im * im) / n;
-	}
-	return e;
-}
+) => sharedBandEnergy(x, SPEECH_RATE, lo, hi, a, b);
 
 /** A sustained phoneme, stressed, between pauses, and its middle. */
 const held = (ph: string) => {

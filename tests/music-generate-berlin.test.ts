@@ -167,42 +167,34 @@ describe("the Berlin bed", () => {
 	});
 });
 
-/** The most voices the engine holds over a whole section, played held. */
-function peakVoices(song: Song, name: string): number {
-	const SR = 48000;
-	const e = new MusicEngine(SR);
-	e.command({ type: "load", id: "s", song }, 0);
-	e.command({ type: "play", id: "s", section: name, at: "bar", hold: true }, 0);
-	const bpm = song.tempo[0].bpm;
-	const seconds = (section(song, name).bars * 4 * 60) / bpm;
-	const L = new Float32Array(128);
-	const R = new Float32Array(128);
-	let peak = 0;
-	for (let f = 0; f < seconds * SR; f += 128) {
-		e.render(L, f, R);
-		peak = Math.max(peak, e.sounding);
-	}
-	return peak;
-}
-
-/** The most voices the engine holds across a jump from `from`, held
- *  `afterBars` in, to `to`: the old section's last notes ring on under the
- *  new one's first. */
-function peakAcross(song: Song, from: string, afterBars: number, to: string) {
+/**
+ * The most voices the engine holds playing `from`, held: over the whole
+ * section, or with `jump`, across a jump `afterBars` in to `to` — where the
+ * old section's last notes ring on under the new one's first. One render
+ * loop for both (round 2 of #600's review).
+ */
+function peakVoices(
+	song: Song,
+	from: string,
+	jump?: { afterBars: number; to: string },
+): number {
 	const SR = 48000;
 	const e = new MusicEngine(SR);
 	e.command({ type: "load", id: "s", song }, 0);
 	e.command({ type: "play", id: "s", section: from, at: "bar", hold: true }, 0);
 	const i = song.sections.findIndex((x) => x.name === from);
 	const barS = (4 * 60) / song.tempo[i].bpm;
-	const jumpAt = Math.round((afterBars + 0.5) * barS * SR);
+	const jumpAt = jump ? Math.round((jump.afterBars + 0.5) * barS * SR) : 0;
+	const end = jump
+		? jumpAt + 10 * barS * SR
+		: section(song, from).bars * barS * SR;
 	const L = new Float32Array(128);
 	const R = new Float32Array(128);
 	let peak = 0;
-	let sent = false;
-	for (let f = 0; f < jumpAt + 10 * barS * SR; f += 128) {
-		if (!sent && f >= jumpAt) {
-			e.command({ type: "jump", section: to, at: "bar", hold: true }, f);
+	let sent = !jump;
+	for (let f = 0; f < end; f += 128) {
+		if (!sent && jump && f >= jumpAt) {
+			e.command({ type: "jump", section: jump.to, at: "bar", hold: true }, f);
 			sent = true;
 		}
 		e.render(L, f, R);
@@ -226,7 +218,7 @@ describe("the voice cap", () => {
 		for (const [from, after, to] of JUMPS)
 			test(`a jump from ${from} to ${to} on system ${seed} never reaches it`, () => {
 				expect(
-					peakAcross(berlinFlightBed(seed, 0), from, after, to),
+					peakVoices(berlinFlightBed(seed, 0), from, { afterBars: after, to }),
 				).toBeLessThan(MUSIC_VOICE_CAP);
 			}, 30000);
 
