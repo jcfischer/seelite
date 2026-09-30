@@ -14797,6 +14797,7 @@ class Game {
 					// The screen is hidden. Rebuild its cached rows for the next
 					// visit without changing LiveCockpit's structural key; the bid
 					// memo also needs the new quote even though its key is unchanged.
+					this.stationConsoleCache = null;
 					this.stationConsoleCacheKey = null;
 					this.holdBidsCacheKey = undefined;
 				}

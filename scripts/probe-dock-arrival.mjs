@@ -1271,6 +1271,124 @@ check(
 	JSON.stringify(fadedShelf),
 );
 
+// Cross a market epoch with an unmarked good, so a base-market turnover rather
+// than further deficit decay must redraw a row that the pilot has not touched.
+const epochTurn = await page.evaluate(async () => {
+	const g = window.__seelite;
+	const { MARKET_PERIOD_MIN, marketEpoch } = await import("/src/market.ts");
+	const { stationMarketScreen, priceLabel } = await import(
+		"/src/station-console.ts"
+	);
+	const { readDeficit } = await import("/src/deficits.ts");
+	const station = g.dockedStationContext().market;
+	const boundaryS =
+		((marketEpoch(station.phaseMin, g.world.gameTime / 60) + 1) *
+			MARKET_PERIOD_MIN -
+			station.phaseMin) *
+		60;
+	const beforeS = boundaryS - 2;
+	const afterS = boundaryS + 1;
+	const holdT = g.stationConsoleState().hold.capacityT;
+	const projected = (timeS) => {
+		g.world.gameTime = timeS;
+		const context = g.dockedStationContext();
+		return stationMarketScreen({
+			station: context.market,
+			economy: context.economy,
+			gameTimeMin: context.gameTimeMin,
+			deficitOf: (name) =>
+				readDeficit(
+					context.envelope.deficits,
+					context.stationKey,
+					name,
+					context.gameTimeMin,
+				),
+			holdT,
+			displayTL: g.world.system.record.displayTL,
+		})
+			.filter(
+				(row) =>
+					row.listed &&
+					row.buyCr !== undefined &&
+					row.sellCr !== undefined &&
+					readDeficit(
+						context.envelope.deficits,
+						context.stationKey,
+						row.commodity.name,
+						context.gameTimeMin,
+					) === 0,
+			)
+			.map((row) => ({
+				name: row.commodity.name,
+				buy: priceLabel(row.buyCr),
+				sell: priceLabel(row.sellCr),
+				shelf: `${row.quantity} ${row.commodity.unit}`,
+			}));
+	};
+	const beforeRows = projected(beforeS);
+	const afterRows = projected(afterS);
+	const before = beforeRows.find((row) => {
+		const after = afterRows.find((next) => next.name === row.name);
+		return (
+			after &&
+			(row.buy !== after.buy ||
+				row.sell !== after.sell ||
+				row.shelf !== after.shelf)
+		);
+	});
+	g.world.gameTime = beforeS;
+	return {
+		before,
+		after: afterRows.find((row) => row.name === before?.name),
+		beforeS,
+		afterS,
+		beforeEpoch: marketEpoch(station.phaseMin, beforeS / 60),
+		afterEpoch: marketEpoch(station.phaseMin, afterS / 60),
+	};
+});
+const visibleMarketRowMatches = (expected) => {
+	const row = document.querySelector(
+		`[data-live-market-row="${expected.name}"]`,
+	);
+	const value = (hook) =>
+		row?.querySelector(hook)?.firstChild?.textContent ?? null;
+	return (
+		value("[data-live-buy]") === expected.buy &&
+		value("[data-live-sell]") === expected.sell &&
+		value("[data-live-shelf]") === expected.shelf
+	);
+};
+let epochBaselineDrawn = false;
+let epochRedrawn = false;
+if (epochTurn.before && epochTurn.after) {
+	epochBaselineDrawn = await page
+		.waitForFunction(visibleMarketRowMatches, epochTurn.before, {
+			timeout: 3000,
+		})
+		.then(
+			() => true,
+			() => false,
+		);
+	await page.evaluate((afterS) => {
+		window.__seelite.world.gameTime = afterS;
+	}, epochTurn.afterS);
+	epochRedrawn = await page
+		.waitForFunction(visibleMarketRowMatches, epochTurn.after, {
+			timeout: 3000,
+		})
+		.then(
+			() => true,
+			() => false,
+		);
+}
+check(
+	"the untouched market redraws a base quote or shelf across an epoch turn",
+	epochTurn.afterEpoch === epochTurn.beforeEpoch + 1 &&
+		epochBaselineDrawn &&
+		epochRedrawn,
+	JSON.stringify({ epochTurn, epochBaselineDrawn, epochRedrawn }),
+);
+
 // A market refresh must not rebuild the Requests tab while the pilot is
 // using its keyboard controls. The trade above leaves a decaying Food mark;
 // take another half-life with the Requests tab focused and watch the same DOM

@@ -278,15 +278,8 @@ export function marketDisplayChanged(
 	return before.some((row, index) => {
 		const a = marketDisplayValues(row);
 		const b = marketDisplayValues(after[index]);
-		return (
-			a.name !== b.name ||
-			a.unit !== b.unit ||
-			a.listed !== b.listed ||
-			a.buy !== b.buy ||
-			a.sell !== b.sell ||
-			a.shelf !== b.shelf ||
-			a.priceDelta !== b.priceDelta ||
-			a.quantityDelta !== b.quantityDelta
+		return (Object.keys(a) as (keyof typeof a)[]).some(
+			(key) => a[key] !== b[key],
 		);
 	});
 }
