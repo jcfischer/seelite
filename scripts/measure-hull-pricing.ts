@@ -94,7 +94,10 @@ import {
 	stockResponse,
 } from "../src/market";
 import { BERTH_CELL } from "../src/station-interior";
-import { HULL_TRADE_IN_FRACTION } from "../src/station-commerce";
+import {
+	HULL_TRADE_IN_FRACTION,
+	STARTING_CREDITS,
+} from "../src/station-commerce";
 import { derivedCeiling, m3PerTonneOfHold } from "../tests/helpers/hull-math";
 import {
 	CLOSABLE_RATIO,
@@ -929,9 +932,23 @@ for (const cap of CAPITAL_CAPS) {
 		const tradeInCaps = subKit
 			.map((id) => ({ id, cr: tradeIn - listOf(id) }))
 			.filter((c) => c.cr > 0);
+		// **Not every route in is paid by the trade-in.** A pilot who flies one
+		// sold hull into a sub-kit hull whose list exceeds the trade-in pays the
+		// difference in cash and can leave the yard with nothing — the
+		// interceptor into the prospector is one. On those routes the floor is an
+		// empty wallet, and the pilot's arm is flown from the game's own opening
+		// balance, below which no pilot is poorer than a new game.
+		const cashRoutes = subKit.flatMap((to) =>
+			PURCHASABLE_HULL_IDS.filter(
+				(from) =>
+					from !== to &&
+					Math.round(listOf(from) * HULL_TRADE_IN_FRACTION) < listOf(to),
+			).map((from) => `${from} -> ${to}`),
+		);
 		const crText = (c: number) => `${Math.round(c).toLocaleString("en-GB")} Cr`;
 		const caps = [
 			...new Set([
+				STARTING_CREDITS,
 				...CAPITAL_CAPS.filter((c) => c < fullKitCr()),
 				...tradeInCaps.map((c) => c.cr),
 				fullKitCr(),
@@ -941,15 +958,16 @@ for (const cap of CAPITAL_CAPS) {
 			const from = tradeInCaps.filter((t) => t.cr === c).map((t) => t.id);
 			if (from.length > 0)
 				return `${PLAYER_BASELINE_HULL} -> ${from.join("/")}`;
+			if (c === STARTING_CREDITS) return "a new game's opening";
 			return c === fullKitCr() ? "the kit" : "section I";
 		};
 		console.log(
-			`  ${subKit.join(" and ")} cost less than the kit, so a pilot who buys one`,
-			"\n  can hold less than section C's capital. What that costs them, as the",
-			`\n  ratio the law asserts: r(h) / r(${baseT} t) at one capital, per world, median`,
-			"\n  [p10–p90], and the per-world ratio of each arm to section C's at the kit.",
-			`\n  A trade-in capital is ${HULL_TRADE_IN_FRACTION} x the ${PLAYER_BASELINE_HULL}'s list less the new hull's,`,
-			"\n  from an empty wallet.",
+			`  ${subKit.join(" and ")} cost less than the kit, so a pilot who buys one` +
+				"\n  can hold less than section C's capital. What that costs them, as the" +
+				`\n  ratio the law asserts: r(h) / r(${baseT} t) at one capital, per world, median` +
+				"\n  [p10–p90], and the per-world ratio of each arm to section C's at the kit." +
+				`\n  A trade-in capital is ${HULL_TRADE_IN_FRACTION} x the ${PLAYER_BASELINE_HULL}'s list less the new hull's,` +
+				"\n  from an empty wallet.",
 		);
 		// Each arm flown once per hold and options; the baseline's arm is shared
 		// by every sub-kit hold rather than re-flown for each.
@@ -970,6 +988,8 @@ for (const cap of CAPITAL_CAPS) {
 		/** The worst median drift from the kit's ratio at each capital, over both
 		 *  arms and every sub-kit hold. */
 		const drift = new Map<number, number>();
+		/** The same, on the start arm alone: the pilot, without the cap's bound. */
+		const startDrift = new Map<number, number>();
 		for (const h of subKit.map((id) => HULL_SPECS[id].holdT)) {
 			const kit = ratios(curveAt, h);
 			console.log(
@@ -996,6 +1016,10 @@ for (const cap of CAPITAL_CAPS) {
 						Math.abs(startKit - 1),
 					),
 				);
+				startDrift.set(
+					c,
+					Math.max(startDrift.get(c) ?? 0, Math.abs(startKit - 1)),
+				);
 				console.log(
 					`${rightAlign(crText(c), 17)}  ${capLabel(c).padEnd(22)}` +
 						`${rightAlign(cell(capped), 25)}${rightAlign(capKit.toFixed(3), 7)}` +
@@ -1006,10 +1030,13 @@ for (const cap of CAPITAL_CAPS) {
 		// **Read off the sweep, not asserted beside it**, on section I's own
 		// tolerance scaled to a ratio: a 1% median drift, either arm, either hold.
 		const TOLERANCE = 0.01;
-		const settled = caps.filter((c) =>
-			caps.filter((d) => d >= c).every((d) => (drift.get(d) ?? 0) < TOLERANCE),
-		);
-		const stopsAt = settled.length > 0 ? Math.min(...settled) : Number.NaN;
+		const settledFrom = (by: Map<number, number>) => {
+			const settled = caps.filter((c) =>
+				caps.filter((d) => d >= c).every((d) => (by.get(d) ?? 0) < TOLERANCE),
+			);
+			return settled.length > 0 ? Math.min(...settled) : Number.NaN;
+		};
+		const stopsAt = settledFrom(drift);
 		// No positive trade-in means every sub-kit hull costs cash off the
 		// baseline hull, so a pilot can arrive with nothing: the floor is zero,
 		// which no swept capital clears.
@@ -1019,10 +1046,21 @@ for (const cap of CAPITAL_CAPS) {
 			Number.isFinite(stopsAt) && stopsAt <= lowestTradeIn
 				? `\n  **The bias has stopped by ${crText(stopsAt)}** — within ${100 * TOLERANCE}% of the kit on both arms` +
 						`\n  from there up — and the lowest trade-in capital is ${crText(lowestTradeIn)}. So a pilot who` +
-						"\n  buys a sub-kit hull is past it, and the law's lower segment does not move."
+						`\n  trades a ${PLAYER_BASELINE_HULL} in for a sub-kit hull is past it.`
 				: `\n  **The bias reaches a trade-in capital** (settled from ${Number.isFinite(stopsAt) ? crText(stopsAt) : "no capital swept"}` +
 						`\n  against the lowest trade-in's ${crText(lowestTradeIn)}), so §7.1's no-move reading owes a re-check.`,
 		);
+		if (cashRoutes.length > 0) {
+			const atOpening = startDrift.get(STARTING_CREDITS) ?? Number.NaN;
+			const pilotFrom = settledFrom(startDrift);
+			console.log(
+				`\n  **Not every route in is covered by that.** ${cashRoutes.join(", ")} ${cashRoutes.length === 1 ? "costs" : "cost"}` +
+					"\n  more than the trade-in, so a pilot can leave the yard with an empty wallet," +
+					"\n  where the cap arm's bound does not settle. Read on the pilot's arm alone:" +
+					`\n  it is within ${100 * TOLERANCE}% of the kit from ${Number.isFinite(pilotFrom) ? crText(pilotFrom) : "no capital swept"}, and ${(100 * finite("opening drift", atOpening)).toFixed(1)}% off it` +
+					`\n  at a new game's ${crText(STARTING_CREDITS)} opening, the worst over both sub-kit holds.`,
+			);
+		}
 	}
 }
 console.log(

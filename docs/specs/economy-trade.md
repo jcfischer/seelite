@@ -1529,8 +1529,8 @@ price none of them — and this section invents no figure for them — which is 
 the interceptor, the hardest-accelerating hull in the game, prices below the
 courier.
 
-**Working capital is the one bias that was measured, and it stops below every
-capital a sub-kit hull's pilot holds.** The exponent collapses to 0.115 at 500 Cr
+**Working capital is the one bias that was measured, and it does not move the
+lower segment.** The exponent collapses to 0.115 at 500 Cr
 — a hold you cannot fill is worth nothing, which is §6's capital-limited opening
 said a second way — and has stopped moving by the kit's total. #182 closed the
 argument there because the cheapest hull then cost more than the kit. That
@@ -1546,8 +1546,14 @@ are within 1% of the kit from 2,000 Cr up**, at 8 t and at 12 t. The lowest
 capital a pilot holds after the trade-in from the courier with an empty wallet is
 6,900 Cr (prospector; 11,500 for the interceptor), and there both arms' median
 per-world ratio to the kit is 1.000, with p10–p90 matching the kit's to three
-places. Even a 500 Cr opening balance drifts only 1.5% at 8 t, against
-a world-to-world spread of 0.328–0.419. **The lower segment does not move.** The
+places. **Not every route in is paid by the trade-in**: the interceptor's trade-in
+(8,280 Cr) is less than the prospector's list, so a pilot who makes that step pays
+5,520 Cr in cash and can leave the yard with nothing. There the cap arm's bound
+does not settle (1.66x the kit at 100 Cr, 8 t), so the route is read on the
+pilot's arm alone. That arm is within 1% of the kit from 1,000 Cr, and at a new
+game's own 100 Cr opening it drifts 2.5% at 8 t and 0.9% at 12 t. The world-to-world
+spread at the kit is 0.328–0.419 at 8 t. **The lower segment does not move**, by
+the principal's ruling (2026-09-30). The
 lower segment's own ±1σ is not the yardstick for this: it is the fit's error on
 *b*, and section C's own 8 t ratio (0.395 against the law's 0.400) sits outside it
 at the kit with no cap at all. `measure-hull-pricing.ts` section I reprints the
