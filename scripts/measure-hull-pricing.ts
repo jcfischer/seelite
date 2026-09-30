@@ -77,9 +77,13 @@ import {
 	PLAYER_BASELINE_HULL,
 	PURCHASABLE_HULL_IDS,
 	hullPriceCr,
-	priceAtExponent,
+	priceUnderLaw,
+	type HullPriceLaw,
+	HULL_PRICE_LAW,
 	HULL_PRICE_EXPONENT,
 	HULL_PRICE_BASELINE_CR,
+	HULL_PRICE_KNEE_HOLD_T,
+	HULL_PRICE_UPPER_EXPONENT,
 	HULL_CEILING_HOLD_T,
 } from "../src/hull";
 import {
@@ -279,8 +283,9 @@ console.log(
  * minutes` climbs with `hours`: measured over these worlds the 20 t rate went
  * 474 -> 613 -> 690 -> 736 Cr/min at 1, 2, 4 and 8 h, and a price derived from
  * it would move 23,099 -> 35,840 Cr with an instrument parameter that means
- * nothing in the game. Opening at `fullKitCr()` removes the transient instead
- * of averaging over it, and section I sweeps what is left.
+ * nothing in the game — #182's figures, before §5.6's spread. Opening at
+ * `fullKitCr()` removes the transient instead of averaging over it, and
+ * section I sweeps what is left.
  *
  * The *exponent* barely noticed either way — 0.621 / 0.613 / 0.605 / 0.609
  * across the same four windows — which is why the ladder's shape survived the
@@ -417,11 +422,46 @@ console.log(
 			`worst ${(100 * Math.max(...resid)).toFixed(1)}% (at ${HOLD_LADDER[resid.indexOf(Math.max(...resid))]} t)`,
 	);
 	console.log(
-		"    **b is well under 1, and that is the finding #26's D6 assumed away**:",
-		"\n    tripling the hold does not triple the income, because the marginal",
-		"\n    tonne has to be filled with a worse good than the one before it.",
+		"    **One power law is the wrong shape since #196's spread (#383).** The",
+		"\n    residual above is the tell; the law ships two segments instead, split",
+		"\n    at the knee, and each is fitted on its own span below.",
 	);
 }
+
+/** The holds each segment of §7.1's law is fitted on. The knee is in both:
+ *  it is the lower segment's top and the upper one's anchor. */
+const LOWER_HOLDS = HOLD_LADDER.filter(
+	(h) =>
+		h >= Math.min(...PURCHASABLE_HULL_IDS.map((id) => HULL_SPECS[id].holdT)) &&
+		h <= HULL_PRICE_KNEE_HOLD_T,
+);
+const UPPER_HOLDS = HOLD_LADDER.filter((h) => h >= HULL_PRICE_KNEE_HOLD_T);
+if (!LOWER_HOLDS.includes(HULL_PRICE_KNEE_HOLD_T))
+	throw new Error(
+		`the ladder does not fly the knee, ${HULL_PRICE_KNEE_HOLD_T} t`,
+	);
+const segmentFits = (rates: (h: number) => number[]) => {
+	const fit = (holds: readonly number[]) => ({
+		pooled: fitPower(holds.map((h) => ({ h, r: mean(rates(h)) }))),
+		perWorld: WORLDS.map(
+			(_, wi) => fitPower(holds.map((h) => ({ h, r: rates(h)[wi] }))).b,
+		),
+	});
+	return { lower: fit(LOWER_HOLDS), upper: fit(UPPER_HOLDS) };
+};
+const segments = segmentFits(curveAt);
+console.log(
+	`\n  fitted by segment, split at the knee (${HULL_PRICE_KNEE_HOLD_T} t, the roster's largest hold):`,
+);
+for (const [label, holds, f] of [
+	["lower", LOWER_HOLDS, segments.lower],
+	["upper", UPPER_HOLDS, segments.upper],
+] as const)
+	console.log(
+		`    ${label} (${holds.join(", ")} t): b ${finite("b", f.pooled.b).toFixed(3)} ± ${f.pooled.se.toFixed(3)}; ` +
+			`per world median ${median(f.perWorld).toFixed(3)}, ` +
+			`p10 ${quantile(f.perWorld, 0.1).toFixed(3)}, p90 ${quantile(f.perWorld, 0.9).toFixed(3)}`,
+	);
 
 // ---------------------------------------------------------------------------
 // D. What the market's memory is worth to a greedy trader
@@ -515,62 +555,80 @@ console.log(
 
 console.log("\n== F. the seven civilian hulls, priced ==");
 console.log(
-	`  price(hold) = ${HULL_PRICE_BASELINE_CR} Cr x (hold / ${HOLD_REFERENCE_T})^${HULL_PRICE_EXPONENT}, ` +
-		"rounded — `hullPriceCr` in `src/hull.ts`.",
+	`  price(hold) = ${HULL_PRICE_BASELINE_CR} Cr x (hold / ${HOLD_REFERENCE_T})^${HULL_PRICE_EXPONENT} up to ${HULL_PRICE_KNEE_HOLD_T} t, ` +
+		`then x (hold / ${HULL_PRICE_KNEE_HOLD_T})^${HULL_PRICE_UPPER_EXPONENT} above it,` +
+		"\n  rounded — `hullPriceCr` in `src/hull.ts`.",
 );
 console.log(
 	`  The baseline is the measured rate at ${HOLD_REFERENCE_T} t times the window above;`,
-	"\n  the exponent is the fitted b. What is being capitalised is the *hold*, and",
-	"\n  the trading economy prices nothing else — **which is a concession rather",
-	"\n  than a measurement**. A trader that fears no pirate and does not route was",
-	"\n  never handed a hardpoint, a point of integrity or a light year of tank to",
-	"\n  vary, so the sweep measured the hold and conceded the rest. #8 and #183",
-	"\n  own those axes and this node invents no figure for them.",
+	"\n  each exponent is its segment's fitted b. What is being capitalised is the",
+	"\n  *hold*, and the trading economy prices nothing else — **which is a",
+	"\n  concession rather than a measurement**. A trader that fears no pirate and",
+	"\n  does not route was never handed a hardpoint, a point of integrity or a",
+	"\n  light year of tank to vary, so the sweep measured the hold and conceded",
+	"\n  the rest. #8 and #183 own those axes and this node invents no figure for",
+	"\n  them.",
 );
+/** §7.1's derivation on this run: the baseline is the *rate at 20 t* times the
+ *  window — the measured rate section C holds, not a fit's intercept paired
+ *  with an exponent it was not fitted against — and each exponent is its
+ *  segment's pooled fit rounded to two places, as §7.1 rounds it. */
+const derivedLaw = (
+	rates: (h: number) => number[],
+	windowMin: number,
+	fits = segmentFits(rates),
+): HullPriceLaw => ({
+	baselineCr: mean(rates(HOLD_REFERENCE_T)) * windowMin,
+	exponent: Math.round(fits.lower.pooled.b * 100) / 100,
+	kneeHoldT: HULL_PRICE_KNEE_HOLD_T,
+	upperExponent: Math.round(fits.upper.pooled.b * 100) / 100,
+});
 {
 	// **The #118 loop, closed.** A figure a spec states as measured owes a mode
-	// in a shipped instrument that reprints it — so this run re-derives the two
-	// declared constants and says how far it has drifted from them.
-	// **§7.1's own definition, and not a third thing.** `pooled.a x 20^0.61`
-	// pairs the fit's intercept with an exponent it was not fitted against, so
-	// the drift it printed was partly that mismatch; the section says the
-	// baseline is the *rate at 20 t* times the window, and that rate is the
-	// measured one section C already holds.
-	const derivedBaseline = mean(curveAt(HOLD_REFERENCE_T)) * kitWindow.median;
+	// in a shipped instrument that reprints it — so this run re-derives every
+	// declared constant and says how far it has drifted from them.
+	const fresh = derivedLaw(curveAt, kitWindow.median, segments);
 	console.log(
-		`\n  declared: exponent ${HULL_PRICE_EXPONENT}, baseline ${HULL_PRICE_BASELINE_CR} Cr`,
+		`\n  declared:  baseline ${HULL_PRICE_BASELINE_CR} Cr, exponent ${HULL_PRICE_EXPONENT}, ` +
+			`upper ${HULL_PRICE_UPPER_EXPONENT} above ${HULL_PRICE_KNEE_HOLD_T} t`,
 	);
 	console.log(
-		`  this run's fit: slope ${finite("b", pooled.b).toFixed(3)} ± ` +
-			`${finite("se", pooled.se).toFixed(3)} — over a hundredth, so it settles` +
-			"\n  neither the third place nor the second. The declared " +
-			`${HULL_PRICE_EXPONENT} is a legible rounding of` +
-			"\n  the mean-curve fit rather than a resolved figure, and what its" +
-			"\n  uncertainty costs the ladder is measured instead of argued:",
+		`  this run:  baseline ${finite("baseline", fresh.baselineCr).toFixed(0)} Cr ` +
+			`(${(100 * (fresh.baselineCr / HULL_PRICE_BASELINE_CR - 1)).toFixed(1)}% off the declared, ` +
+			"which is rounded to a legible figure),",
+		`\n             exponent ${fresh.exponent}, upper ${fresh.upperExponent} — each the pooled fit to two places.`,
 	);
-	for (const holdT of [8, HOLD_REFERENCE_T, 60, HULL_CEILING_HOLD_T]) {
-		// The shipped law, evaluated at a different exponent — not a second copy
-		// of it. `priceAtExponent` is what `hullPriceCr` itself calls, so the
-		// rounding step cannot drift between the leaf and this band.
-		const at = (b: number) => priceAtExponent(holdT, b);
-		const mid = at(HULL_PRICE_EXPONENT);
-		const lo = at(HULL_PRICE_EXPONENT - pooled.se);
-		const hi = at(HULL_PRICE_EXPONENT + pooled.se);
+	console.log(
+		"\n  Neither fit's standard error settles its second place, so what that",
+		"\n  uncertainty costs the ladder is measured instead of argued — each segment",
+		"\n  moved by its own ±1σ, through the leaf's own law:",
+	);
+	for (const holdT of [
+		8,
+		HOLD_REFERENCE_T,
+		HULL_PRICE_KNEE_HOLD_T,
+		HULL_CEILING_HOLD_T,
+	]) {
+		const at = (dLower: number, dUpper: number) =>
+			priceUnderLaw(holdT, {
+				...HULL_PRICE_LAW,
+				exponent: HULL_PRICE_EXPONENT + dLower,
+				upperExponent: HULL_PRICE_UPPER_EXPONENT + dUpper,
+			});
+		const mid = at(0, 0);
+		const sl = segments.lower.pooled.se;
+		const su = segments.upper.pooled.se;
+		const band = [at(-sl, -su), at(-sl, su), at(sl, -su), at(sl, su)];
+		const lo = Math.min(...band);
+		const hi = Math.max(...band);
 		console.log(
 			`    ${rightAlign(holdT, 5)} t: ${rightAlign(mid.toLocaleString("en-GB"), 8)} Cr, ` +
-				`±1σ ${Math.min(lo, hi).toLocaleString("en-GB")}-${Math.max(lo, hi).toLocaleString("en-GB")} ` +
+				`±1σ ${lo.toLocaleString("en-GB")}-${hi.toLocaleString("en-GB")} ` +
 				// The magnitude, because a larger exponent *lowers* every price below
 				// the anchor and a signed spread there reads as a shrinking band.
 				`(${(100 * Math.max(Math.abs(hi / mid - 1), Math.abs(lo / mid - 1))).toFixed(1)}%)`,
 		);
 	}
-	console.log();
-	console.log(
-		`  this run derives the baseline at the declared exponent: ` +
-			`${finite("baseline", derivedBaseline).toFixed(0)} Cr ` +
-			`(${(100 * (derivedBaseline / HULL_PRICE_BASELINE_CR - 1)).toFixed(1)}% off the declared, ` +
-			"which is a price rounded to a legible figure)",
-	);
 }
 console.log("\n  hull          hold   measured Cr/min   price      vs kit");
 const sortedByHold = [...PURCHASABLE_HULL_IDS].sort(
@@ -596,10 +654,10 @@ for (const id of sortedByHold) {
 console.log("\n== G. the ceiling ==");
 console.log(
 	"  #26's D7 sets it where the curve stops being interesting. **Measured, the",
-	"\n  curve never does**: section C is a power law with no knee anywhere in the",
-	"\n  ladder, and the fill column shows the shelves still filling the hold at",
-	"\n  the top of it. So the ceiling is not the economy's, and saying which one",
-	"\n  it is instead is the answer rather than a substitute for one.",
+	"\n  curve bends and never stops rising**: section C's upper segment is still",
+	`\n  climbing at b ${segments.upper.pooled.b.toFixed(3)} to the top of the ladder, and the fill column`,
+	`\n  still reads ${(100 * (fillAt.get(HOLD_LADDER[HOLD_LADDER.length - 1]) as number)).toFixed(0)}% at ${HOLD_LADDER[HOLD_LADDER.length - 1]} t. So the ceiling is not the economy's, and saying which`,
+	"\n  one it is instead is the answer rather than a substitute for one.",
 );
 {
 	// **Through `derivedCeiling`, which is the gate's own derivation.** Section G
@@ -754,16 +812,28 @@ for (const cap of CAPITAL_CAPS) {
 	);
 }
 console.log(
-	`\n  **The bias is real and it is exhausted before a hull is affordable.** Below`,
+	`\n  **The bias is real, and it has stopped moving by the kit's total.** Below`,
 	`\n  a few thousand credits the exponent collapses — a hold you cannot fill is`,
 	`\n  worth nothing, which is §6's capital-limited opening said in a second way —`,
-	`\n  and it has stopped moving by ${fullKitCr().toLocaleString("en-GB")} Cr, where it equals the uncapped`,
-	`\n  arm to three decimals. That is the kit's own total, and the cheapest hull`,
-	`\n  in section F costs more than it: a player who can buy a hull at all is`,
-	`\n  already past the range where this bias bites, so the third correction moved`,
-	"\n  the answer by nothing and the run of same-direction corrections is broken",
-	"\n  by a measurement rather than by a claim.",
+	`\n  and by ${fullKitCr().toLocaleString("en-GB")} Cr it equals the uncapped arm. The curve is flown at`,
+	"\n  that capital, so the law prices a hull for a buyer who holds it.",
 );
+{
+	// **Not the claim #182 made here.** It read "the cheapest hull costs more
+	// than the kit, so a player who can buy a hull at all is past the range
+	// where this bias bites", and #383's re-price made it false: printed from
+	// the roster, so the next re-price cannot make it false silently.
+	const cheaper = sortedByHold.filter(
+		(id) => (HULL_SPECS[id].priceCr as number) < fullKitCr(),
+	);
+	console.log(
+		cheaper.length === 0
+			? "  Every hull in section F costs more than the kit, so a player who can buy\n  one outright is past the range where this bias bites."
+			: `  ${cheaper.join(" and ")} cost less than the kit, so a pilot who buys one` +
+					"\n  outright can still be inside the range where it bites. This sweep does" +
+					"\n  not measure what that costs them, and §7.1 records it as open.",
+	);
+}
 console.log(
 	"\n  One known bias is left and it is #7's ruling rather than this file's: a hop",
 	"\n  buys its whole basket at one price, with no slippage inside a transaction",
@@ -864,23 +934,6 @@ console.log(
 			`    ${`${lo}-${hi} t`.padEnd(11)}${rightAlign(finite("slope", slope(curveAt, lo, hi)).toFixed(3), 9)}` +
 				`${rightAlign(finite("slope", slope(controlAt, lo, hi)).toFixed(3), 11)}`,
 		);
-	// The roster's own span: the fit a price for a hull that exists rests on,
-	// without the holds below any hull or above the largest one.
-	const rosterHolds = HOLD_LADDER.filter(
-		(h) =>
-			h >= HULL_SPECS[sortedByHold[0]].holdT &&
-			h <= HULL_SPECS[sortedByHold[sortedByHold.length - 1]].holdT,
-	);
-	const rosterFit = (rates: (h: number) => number[]) =>
-		fitPower(rosterHolds.map((h) => ({ h, r: mean(rates(h)) })));
-	const rs = rosterFit(curveAt);
-	const rc = rosterFit(controlAt);
-	console.log(
-		`\n  fitted over the roster's own span (${rosterHolds.join(", ")} t):` +
-			`\n    shipped   b ${rs.b.toFixed(3)} ± ${rs.se.toFixed(3)}` +
-			`\n    no wedge  b ${rc.b.toFixed(3)} ± ${rc.se.toFixed(3)}`,
-	);
-
 	const controlWindow = kitWindowFor({ quote: NO_WEDGE });
 	const rate20 = mean(curveAt(HOLD_REFERENCE_T));
 	const controlRate20 = mean(controlAt(HOLD_REFERENCE_T));
@@ -897,32 +950,42 @@ console.log(
 			`${rightAlign(pct((rate20 * kitWindow.median) / (controlRate20 * controlWindow.median) - 1), 18)}`,
 	);
 
-	// §7.1's own derivation on each arm — the fitted b rounded to two places as
-	// the spec rounds it, and the baseline to the step through the leaf's law.
-	const lawOf = (b: number, baselineCr: number) => ({
-		b: Math.round(b * 100) / 100,
+	// Every candidate is a `HullPriceLaw`, so every one is priced by the leaf's
+	// own function; a single power law is the same shape with no knee.
+	const single = (b: number, baselineCr: number): HullPriceLaw => ({
 		baselineCr,
+		exponent: Math.round(b * 100) / 100,
+		kneeHoldT: Number.POSITIVE_INFINITY,
+		upperExponent: Number.NaN,
 	});
-	const laws = [
+	const controlSegments = segmentFits(controlAt);
+	const laws: { label: string; law: HullPriceLaw }[] = [
+		{ label: "declared", law: HULL_PRICE_LAW },
+		{ label: "this run", law: derivedLaw(curveAt, kitWindow.median, segments) },
+		{ label: "one law", law: single(pooled.b, rate20 * kitWindow.median) },
 		{
-			label: "declared",
-			b: HULL_PRICE_EXPONENT,
-			baselineCr: HULL_PRICE_BASELINE_CR,
+			label: "roster only",
+			law: single(segments.lower.pooled.b, rate20 * kitWindow.median),
 		},
-		{ label: "full span", ...lawOf(pooled.b, rate20 * kitWindow.median) },
-		{ label: "roster span", ...lawOf(rs.b, rate20 * kitWindow.median) },
 		{
 			label: "no wedge",
-			...lawOf(controlPooled.b, controlRate20 * controlWindow.median),
+			law: derivedLaw(controlAt, controlWindow.median, controlSegments),
+		},
+		{
+			label: "#182",
+			law: single(0.61, 35_000),
 		},
 	];
 	console.log(
 		"\n  candidate laws — §7.1's derivation (rate at 20 t x window, fitted b to",
-		"\n  two places) on each fit, beside the declared pair:",
+		"\n  two places) on each fit, beside the declared law and #182's:",
 	);
-	for (const l of laws)
+	for (const { label, law } of laws)
 		console.log(
-			`    ${l.label.padEnd(12)} ${l.baselineCr.toFixed(0)} Cr x (hold/${HOLD_REFERENCE_T})^${l.b}`,
+			`    ${label.padEnd(12)} ${law.baselineCr.toFixed(0)} Cr x (hold/${HOLD_REFERENCE_T})^${law.exponent}` +
+				(Number.isFinite(law.kneeHoldT)
+					? `, ^${law.upperExponent} above ${law.kneeHoldT} t`
+					: ""),
 		);
 	// **What the hold is measured to be worth**, on the shipped arm: its own
 	// rate times the same window, which is §7.1's definition read at each hold
@@ -936,17 +999,17 @@ console.log(
 			id: id as string,
 			h: HULL_SPECS[id].holdT,
 		})),
-		{ id: "(ladder)", h: 200 },
+		...UPPER_HOLDS.filter((h) => h > HULL_PRICE_KNEE_HOLD_T).map((h) => ({
+			id: "(ladder)",
+			h,
+		})),
 	];
 	for (const { id, h } of rows)
 		console.log(
 			`  ${id.padEnd(13)}${rightAlign(h, 4)}${rightAlign(Math.round(valueAt(h)).toLocaleString("en-GB"), 11)}` +
 				laws
 					.map((l) =>
-						rightAlign(
-							priceAtExponent(h, l.b, l.baselineCr).toLocaleString("en-GB"),
-							13,
-						),
+						rightAlign(priceUnderLaw(h, l.law).toLocaleString("en-GB"), 13),
 					)
 					.join(""),
 		);
@@ -955,26 +1018,21 @@ console.log(
 			laws
 				.map((l) =>
 					rightAlign(
-						priceAtExponent(
-							HULL_CEILING_HOLD_T,
-							l.b,
-							l.baselineCr,
-						).toLocaleString("en-GB"),
+						priceUnderLaw(HULL_CEILING_HOLD_T, l.law).toLocaleString("en-GB"),
 						13,
 					),
 				)
 				.join(""),
 	);
 	console.log(
-		"\n  law            worst miss in roster   at 200 t             under the kit   rungs above",
+		"\n  law          worst miss: roster   above it             under the kit   rungs above",
 	);
-	for (const l of laws) {
-		const price = (h: number) => priceAtExponent(h, l.b, l.baselineCr);
-		const misses = sortedByHold.map((id) => {
-			const h = HULL_SPECS[id].holdT;
-			return price(h) / valueAt(h) - 1;
-		});
-		const worst = misses.reduce((a, m) => (Math.abs(m) > Math.abs(a) ? m : a));
+	for (const { label, law } of laws) {
+		const price = (h: number) => priceUnderLaw(h, law);
+		const worstOver = (holds: readonly number[]) =>
+			holds
+				.map((h) => price(h) / valueAt(h) - 1)
+				.reduce((a, m) => (Math.abs(m) > Math.abs(a) ? m : a));
 		const under = sortedByHold.filter(
 			(id) => price(HULL_SPECS[id].holdT) < fullKitCr(),
 		);
@@ -987,23 +1045,17 @@ console.log(
 				Math.log(widest),
 		);
 		console.log(
-			`  ${l.label.padEnd(15)}${rightAlign(pct(worst), 20)}${rightAlign(pct(price(200) / valueAt(200) - 1), 11)}` +
+			`  ${label.padEnd(13)}${rightAlign(pct(worstOver(sortedByHold.map((id) => HULL_SPECS[id].holdT))), 19)}` +
+				`${rightAlign(pct(worstOver(UPPER_HOLDS.filter((h) => h > HULL_PRICE_KNEE_HOLD_T))), 11)}` +
 				`${rightAlign(under.length === 0 ? "none" : under.join(", "), 26)}${rightAlign(rungs, 14)}`,
 		);
 	}
-	{
-		const perWorldRoster = (rates: (h: number) => number[]) =>
-			WORLDS.map(
-				(_, wi) => fitPower(rosterHolds.map((h) => ({ h, r: rates(h)[wi] }))).b,
-			);
-		const ws = perWorldRoster(curveAt);
-		const wc = perWorldRoster(controlAt);
-		console.log(
-			`\n  roster-span b per world (n=${WORLDS.length}): shipped median ${median(ws).toFixed(3)} ` +
-				`(p10 ${quantile(ws, 0.1).toFixed(3)}, p90 ${quantile(ws, 0.9).toFixed(3)}); ` +
-				`no wedge median ${median(wc).toFixed(3)} (p10 ${quantile(wc, 0.1).toFixed(3)}, p90 ${quantile(wc, 0.9).toFixed(3)})`,
-		);
-	}
+	console.log(
+		`\n  no-wedge segments: lower b ${controlSegments.lower.pooled.b.toFixed(3)} ` +
+			`(per world ${median(controlSegments.lower.perWorld).toFixed(3)}, ` +
+			`p10 ${quantile(controlSegments.lower.perWorld, 0.1).toFixed(3)}, p90 ${quantile(controlSegments.lower.perWorld, 0.9).toFixed(3)}), ` +
+			`upper b ${controlSegments.upper.pooled.b.toFixed(3)}`,
+	);
 	console.log(
 		"\n  §5.2's memory, on both quote laws — reported, not re-opened:",
 	);

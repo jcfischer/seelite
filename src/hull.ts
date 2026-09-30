@@ -173,37 +173,61 @@ export interface HullSpec {
 }
 
 /**
- * #182's measured price law: what a hull's **hold** is worth, capitalised.
+ * #383's price law: what a hull's **hold** is worth, capitalised, with §5.6's
+ * spread live.
  *
- * `price(hold) = HULL_PRICE_BASELINE_CR x (hold / the baseline hold) ^ exponent`,
- * rounded. The exponent is the fitted elasticity of the greedy trader's Cr/min
- * on the hold; the baseline is that fit's rate at the baseline hull's hold times
+ * `price(hold) = HULL_PRICE_BASELINE_CR x (hold / the baseline hold) ^ exponent`
+ * up to `HULL_PRICE_KNEE_HOLD_T`, and the same figure at the knee carried on at
+ * `HULL_PRICE_UPPER_EXPONENT` above it, rounded. The two exponents are the
+ * fitted elasticities of the greedy trader's Cr/min on the hold, one fit per
+ * segment; the baseline is the measured rate at the baseline hull's hold times
  * the measured time it takes to earn `fullKitCr()`. So a hull costs what its
  * hold earns back over one kit — #26's own two anchors, used as anchors.
  *
  * **`economy-trade.md` §7.1 owns the derivation, the figures and the caveats**,
  * and this docstring deliberately carries none of them: a measurement narrative
  * copied into three files diverges, and one copy of this one already did.
- * `scripts/measure-hull-pricing.ts` reprints both constants beside what a fresh
- * run derives, which is the map's #118 rule.
- *
- * **Two decimals is a legible rounding of the fit, not a resolved figure.** The
- * slope's standard error is about a hundredth and a half, so it settles neither
- * the third place nor the second; what §7.1 measures instead is what that
- * uncertainty costs the ladder, and the answer is under a couple of rounding
- * steps everywhere.
+ * `scripts/measure-hull-pricing.ts` reprints every constant here beside what a
+ * fresh run derives, which is the map's #118 rule.
  */
-export const HULL_PRICE_EXPONENT = 0.61;
+export interface HullPriceLaw {
+	/** The baseline hull's price, credits — the law's anchor. */
+	readonly baselineCr: number;
+	/** The elasticity at and below the knee. */
+	readonly exponent: number;
+	/** Where the second segment starts, tonnes. `Infinity` is one power law. */
+	readonly kneeHoldT: number;
+	/** The elasticity above the knee. */
+	readonly upperExponent: number;
+}
 
-/** The baseline hull's price, credits — the law's anchor. See the exponent
- *  above for where both figures come from. */
-export const HULL_PRICE_BASELINE_CR = 35_000;
+/** The lower segment's elasticity. See `HullPriceLaw` for where it comes from. */
+export const HULL_PRICE_EXPONENT = 1;
+
+/** The baseline hull's price, credits. */
+export const HULL_PRICE_BASELINE_CR = 23_000;
+
+/** Where the curve bends, tonnes — the largest hold the roster sells, so the
+ *  lower fit spans every hull that exists and the upper one the ladder above. */
+export const HULL_PRICE_KNEE_HOLD_T = 60;
+
+/** The upper segment's elasticity, from the knee to past the ceiling. */
+export const HULL_PRICE_UPPER_EXPONENT = 0.52;
 
 /** Prices are quoted to the nearest hundred credits, like every other figure in
  *  `economy-trade.md` §7. Finer would be false precision against a fitted
  *  exponent; §7.1 there carries the fit's own standard error and the
  *  world-to-world spread, and this file deliberately does not restate either. */
 export const HULL_PRICE_STEP_CR = 100;
+
+/** The shipped law as one value, so the instrument can evaluate a variant of it
+ *  through the same function rather than beside it. */
+export const HULL_PRICE_LAW: HullPriceLaw = {
+	baselineCr: HULL_PRICE_BASELINE_CR,
+	exponent: HULL_PRICE_EXPONENT,
+	kneeHoldT: HULL_PRICE_KNEE_HOLD_T,
+	upperExponent: HULL_PRICE_UPPER_EXPONENT,
+};
 
 /**
  * The largest hold that can dock anywhere, tonnes — #26's D7, and the answer is
@@ -246,25 +270,22 @@ export const requirePositiveHold = (holdT: number): void => {
 };
 
 /**
- * The law at an arbitrary exponent, and the ceiling check off.
+ * Any law of `HullPriceLaw`'s shape, and the ceiling check off.
  *
- * Exported for `measure-hull-pricing.ts`, which prints what the fit's own
- * uncertainty costs the ladder by evaluating the same law at the exponent ± its
- * standard error. Without it the instrument had the formula and the rounding
- * step written out a second time, and a step change would have landed in the
- * leaf while the printed band went on rounding the old way. `baselineCr` is
- * there for the same reason: #383 prints the ladder a fresh run would derive,
- * baseline and exponent both, through this law rather than beside it.
+ * Exported for `measure-hull-pricing.ts`, which prints what the fits' own
+ * uncertainty costs the ladder and what a fresh run would derive, by evaluating
+ * a variant of the shipped law. Without it the instrument had the formula and
+ * the rounding step written out a second time, and a step change would have
+ * landed in the leaf while the printed band went on rounding the old way.
  */
-export const priceAtExponent = (
-	holdT: number,
-	exponent: number,
-	baselineCr: number = HULL_PRICE_BASELINE_CR,
-): number => {
+export const priceUnderLaw = (holdT: number, law: HullPriceLaw): number => {
 	requirePositiveHold(holdT);
+	const ref = HULL_SPECS[PLAYER_BASELINE_HULL].holdT;
+	const lowerAt = (h: number) => law.baselineCr * (h / ref) ** law.exponent;
 	const raw =
-		baselineCr *
-		(holdT / HULL_SPECS[PLAYER_BASELINE_HULL].holdT) ** exponent;
+		holdT <= law.kneeHoldT
+			? lowerAt(holdT)
+			: lowerAt(law.kneeHoldT) * (holdT / law.kneeHoldT) ** law.upperExponent;
 	return Math.round(raw / HULL_PRICE_STEP_CR) * HULL_PRICE_STEP_CR;
 };
 
@@ -278,7 +299,7 @@ export const priceAtExponent = (
 export const hullPriceCr = (holdT: number): number | null => {
 	requirePositiveHold(holdT);
 	if (holdT > HULL_CEILING_HOLD_T) return null;
-	return priceAtExponent(holdT, HULL_PRICE_EXPONENT);
+	return priceUnderLaw(holdT, HULL_PRICE_LAW);
 };
 
 /**
@@ -338,7 +359,7 @@ export const HULL_SPECS: Readonly<Record<HullId, HullSpec>> = {
 		integrity: 100,
 		tankLy: 7,
 		chargeAu: 12,
-		priceCr: 35_000,
+		priceCr: 23_000,
 	},
 	interceptor: {
 		role: "fast",
@@ -351,7 +372,7 @@ export const HULL_SPECS: Readonly<Record<HullId, HullSpec>> = {
 		integrity: 95,
 		tankLy: 5,
 		chargeAu: 10,
-		priceCr: 20_000,
+		priceCr: 9_200,
 	},
 	freighter: {
 		role: "cargo",
@@ -366,7 +387,7 @@ export const HULL_SPECS: Readonly<Record<HullId, HullSpec>> = {
 		integrity: 166,
 		tankLy: 7,
 		chargeAu: 12,
-		priceCr: 68_400,
+		priceCr: 69_000,
 	},
 	miner: {
 		role: "industrial",
@@ -379,7 +400,7 @@ export const HULL_SPECS: Readonly<Record<HullId, HullSpec>> = {
 		integrity: 215,
 		tankLy: 6,
 		chargeAu: 10,
-		priceCr: 53_400,
+		priceCr: 46_000,
 	},
 	patrol: {
 		role: "security",
@@ -400,7 +421,7 @@ export const HULL_SPECS: Readonly<Record<HullId, HullSpec>> = {
 		integrity: 85,
 		tankLy: 6,
 		chargeAu: 12,
-		priceCr: 16_800,
+		priceCr: 6_900,
 	},
 	explorer: {
 		role: "survey",
@@ -415,7 +436,7 @@ export const HULL_SPECS: Readonly<Record<HullId, HullSpec>> = {
 		// what a survey hull is for — see `tankLy` above.
 		tankLy: 9,
 		chargeAu: 16,
-		priceCr: 44_800,
+		priceCr: 34_500,
 	},
 	raider: {
 		role: "outlaw",
@@ -428,7 +449,7 @@ export const HULL_SPECS: Readonly<Record<HullId, HullSpec>> = {
 		integrity: 81,
 		tankLy: 6,
 		chargeAu: 10,
-		priceCr: 22_900,
+		priceCr: 11_500,
 	},
 	carrier: {
 		role: "capital",
@@ -454,7 +475,7 @@ export const HULL_SPECS: Readonly<Record<HullId, HullSpec>> = {
 		integrity: 152,
 		tankLy: 6,
 		chargeAu: 10,
-		priceCr: 39_100,
+		priceCr: 27_600,
 	},
 	prospector: {
 		role: "prospect",
@@ -467,7 +488,7 @@ export const HULL_SPECS: Readonly<Record<HullId, HullSpec>> = {
 		integrity: 98,
 		tankLy: 6,
 		chargeAu: 12,
-		priceCr: 25_600,
+		priceCr: 13_800,
 	},
 	dreadnought: {
 		role: "battle-line",
