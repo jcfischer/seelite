@@ -325,7 +325,7 @@ import {
 	tickDocking,
 	offAxisKm,
 } from "./docking";
-import { DockingComputer } from "./docking-computer";
+import { DockingComputer, type DisengageHow } from "./docking-computer";
 import {
 	type ConditionPrint,
 	type ShieldSide,
@@ -10328,7 +10328,17 @@ class Game {
 			this.dockingComputer.engage();
 			return;
 		}
-		this.dockingComputer.disengage({ idle: true });
+		this.cancelComputerApproach({ idle: true });
+	}
+
+	/**
+	 * Stop the computer and drop the arrival turn it was holding. Every
+	 * disengage but two goes through here; the dock that ends a flight and the
+	 * flight-session teardown call `disengage()` alone, because neither drops a
+	 * lane request (#596).
+	 */
+	private cancelComputerApproach(how?: DisengageHow) {
+		this.dockingComputer.disengage(how);
 		this.clearPlayerArrivalLaneRequests();
 	}
 
@@ -10883,8 +10893,7 @@ class Game {
 			// where the computer put it would hand back a ship still closing at a
 			// speed nobody chose, so the throttle goes to zero and the reason is
 			// recorded for the HUD node to read.
-			this.dockingComputer.disengage({ refused: command.refused });
-			this.clearPlayerArrivalLaneRequests();
+			this.cancelComputerApproach({ refused: command.refused });
 			this.throttle = 0;
 			return false;
 		}
@@ -13231,8 +13240,7 @@ class Game {
 			this.dockingComputer.engaged &&
 			this.hasControlInput(yaw, pitch, roll)
 		) {
-			this.dockingComputer.disengage();
-			this.clearPlayerArrivalLaneRequests();
+			this.cancelComputerApproach();
 		}
 		if (
 			(this.detour || this.cruiseTrackId) &&
@@ -15235,8 +15243,7 @@ class Game {
 					id,
 					releaseBerth({ ...held, clearance: { kind: "none" } }),
 				);
-			this.clearPlayerArrivalLaneRequests();
-			this.dockingComputer.disengage();
+			this.cancelComputerApproach();
 			this.throttle = 0;
 			this.world.ship.pos = v3(from.pos.x, from.pos.y, from.pos.z);
 			this.world.ship.vel = v3(from.vel.x, from.vel.y, from.vel.z);
@@ -15612,8 +15619,7 @@ class Game {
 					releaseBerth({ ...held, clearance: { kind: "none" } }),
 				);
 		}
-		this.clearPlayerArrivalLaneRequests();
-		this.dockingComputer.disengage();
+		this.cancelComputerApproach();
 		this.throttle = 0;
 		console.warn("opening: the flight did not dock; placing at the station");
 		if (!this.startDockedAtHome())

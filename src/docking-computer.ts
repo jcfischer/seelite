@@ -18,6 +18,9 @@ import type { ComputerCommand, ComputerPhase } from "./docking";
 
 export type ComputerRefusal = ComputerCommand["refused"];
 
+/** How `disengage` stops the computer: see its docblock. */
+export type DisengageHow = { refused?: ComputerRefusal; idle?: boolean };
+
 export class DockingComputer {
 	#engaged = false;
 	#refusal: ComputerRefusal = null;
@@ -61,7 +64,7 @@ export class DockingComputer {
 	 * last reason. `idle` forgets the recorded phase at once, which only the
 	 * pilot's toggle asks for — every other site leaves it for the next step.
 	 */
-	disengage(how: { refused?: ComputerRefusal; idle?: boolean } = {}): void {
+	disengage(how: DisengageHow = {}): void {
 		this.#engaged = false;
 		if (how.refused !== undefined) this.#refusal = how.refused;
 		if (how.idle) this.#phase = "idle";

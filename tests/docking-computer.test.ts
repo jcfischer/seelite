@@ -96,11 +96,25 @@ describe("main.ts routes every engage through DockingComputer", () => {
 		expect(left).toEqual([]);
 	});
 
-	test("every engage and disengage is a call on the one session", () => {
+	test("every engage is a call on the one session", () => {
 		// The premise, so a renamed field cannot pass by finding nothing.
 		const engages = main.match(/this\.dockingComputer\.engage\(\)/g) ?? [];
 		// The toggle, the guided start twice and the opening's order.
 		expect(engages.length).toBe(4);
-		expect(main).not.toMatch(/dockingComputer\.(?:engaged|refusal)\s*=/);
+		expect(main).not.toMatch(/dockingComputer\.(?:engaged|refusal)\s*=(?!=)/);
+	});
+
+	test("every disengage is accounted for, and lane clearing is per site", () => {
+		// Two sites stop the computer without dropping a lane request: the dock
+		// or bounce that ends a flight, and the flight-session teardown.
+		const bare = main.match(/this\.dockingComputer\.disengage\(\)/g) ?? [];
+		expect(bare.length).toBe(2);
+		// Everything else cancels the approach: the toggle, a refusal, control
+		// input, the guided start's give-up and the opening's fallback.
+		const cancels = main.match(/this\.cancelComputerApproach\(/g) ?? [];
+		expect(cancels.length).toBe(5);
+		// And the one place both happen together is the helper itself.
+		const inside = main.match(/this\.dockingComputer\.disengage\(how\)/g) ?? [];
+		expect(inside.length).toBe(1);
 	});
 });

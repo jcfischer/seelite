@@ -1209,6 +1209,10 @@ describe("§9.1.11 the docking computer", () => {
 		});
 		expect(cmd.engaged).toBe(false);
 		expect(cmd.refused).toBe("out-of-range");
+		// A refusal records idle (#596): `Game` stores this phase before it
+		// disengages, so engaging again after a refusal feeds the next step
+		// the same phase `engage()` sets.
+		expect(cmd.phase).toBe("idle");
 	});
 });
 
