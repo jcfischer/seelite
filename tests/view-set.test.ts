@@ -177,7 +177,7 @@ describe("the view set itself", () => {
 		// not `VIEWS.length`, which is the whole point: a view deleted by accident
 		// has to be a red run, and a check derived from its own subject cannot be
 		// one.
-		expect(VIEWS.length).toBe(56);
+		expect(VIEWS.length).toBe(57);
 		const names = VIEWS.map((v) => v.name);
 		expect(new Set(names).size).toBe(names.length);
 		for (const name of names) expect(name).toMatch(/^[a-z]+(-[a-z]+)*$/);
@@ -521,7 +521,7 @@ describe("the contact sheet", () => {
 		// The fixture spaces its frames 0.4 s apart, so the span is fixed by how
 		// many views the set declares — which is the count row's business, not this
 		// one's, and this literal moves with it.
-		expect(html).toContain("· clock 0.6–22.6s");
+		expect(html).toContain("· clock 0.6–23.0s");
 		expect(html).not.toContain("pinned");
 	});
 
@@ -783,7 +783,7 @@ describe("the rim look row #480 added", () => {
 	 * decision widened or a fixture copied, and either way it should be a red run
 	 * rather than a quiet merge.
 	 */
-	test("it is the only row in the set that names a system to stand at", () => {
+	test("the named-system rows stand at their declared systems", () => {
 		// Cast rather than a declaration: `system` is declared by exactly one row's
 		// literal, so it exists on one arm of the union `view-set.mjs` infers and on
 		// none of the other twenty-eight — which is exactly what a union refuses to
@@ -791,7 +791,10 @@ describe("the rim look row #480 added", () => {
 		const declaring = VIEWS.filter(
 			(v) => (v.shot as { system?: number }).system !== undefined,
 		);
-		expect(declaring.map((v) => v.name)).toEqual(["sky-at-the-rim"]);
+		expect(declaring.map((v) => v.name)).toEqual([
+			"cold-rocky-ice",
+			"sky-at-the-rim",
+		]);
 	});
 });
 

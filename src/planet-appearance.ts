@@ -120,11 +120,9 @@ export const WARMTH = {
 	TERRAN: 1.3,
 	/** Cold enough that the ocean is gone. The same line as `GIANT`. */
 	DESERT: GIANT_ORBIT_FACTOR,
-	/** `system.ts`'s own `isGasGiant` factor, imported rather than restated.
-	 *  Together with `orbitWarmth` — which owns the clamped denominator — both
-	 *  halves of the comparison now come from the generator, so the parity is
-	 *  structural. The generated-systems sweep in the tests still runs, because
-	 *  it checks the *rule built on them* agrees per planet. */
+	/** `system.ts`'s outer-orbit factor, imported rather than restated.
+	 *  Beyond it formation mass decides giant or rocky; this line alone no
+	 *  longer predicts the family. */
 	GIANT: GIANT_ORBIT_FACTOR,
 	/** Beyond this a giant is methane-blue rather than ammonia-brown. */
 	ICE_GIANT: 5.0,
@@ -133,9 +131,9 @@ export const WARMTH = {
 /**
  * Which rung a body sits on.
  *
- * Split out from `appearanceFor` because it is the part the parity test wants:
- * given a generated planet's orbit and the generator's own `isGasGiant`, does
- * this ladder agree about which family it belongs to?
+ * Split out from `appearanceFor` so generated planets can pass their explicit
+ * family alongside orbit warmth. The appearance test checks reachability of
+ * every rung, including cold rocky ice worlds.
  *
  * Overloaded for the same reason `appearanceFor` is — a planet must say which
  * family it is in, and a star or a moon must not be handed a flag that would be

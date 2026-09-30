@@ -458,7 +458,7 @@ describe("postcardUrl (#406)", () => {
 
 	test("puts the recipe in the fragment and nothing in the query", () => {
 		const fragment =
-			"postcard=1&gen=7&seed=47&galaxy=0&system=12&t=0&pos=0,0,0&q=0,0,0,1&mode=clear&head=forward";
+			"postcard=1&gen=8&seed=47&galaxy=0&system=12&t=0&pos=0,0,0&q=0,0,0,1&mode=clear&head=forward";
 		const url = new URL(postcardUrl(ORIGIN, fragment));
 		expect(url.search).toBe("");
 		expect(url.pathname).toBe("/");

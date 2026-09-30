@@ -250,93 +250,74 @@ describe("§9.1 namespace and baseline stability", () => {
 		});
 	});
 
-	/**
-	 * A galaxy's fingerprint over the carriers an older version enumerated, in
-	 * that version's line format.
-	 *
-	 * **The line format is restated here on purpose.** It is pinned to versions
-	 * that no longer exist; if `carrierBaselineFingerprint`'s format changes,
-	 * these goldens cannot match and the rows say so. Versions 5 and 6 share it:
-	 * a raider line ends at its parent, every other line carries its orbit.
-	 */
-	const legacyFingerprint = (
+	/** Captured from the version-7 generator, before #590 moved shipyards.
+	 * Persisted rows key by system, local carrier id and type; parent and
+	 * placement are regenerated. This is the narrower migration guarantee. */
+	const migrationIdentityFingerprint = (
 		galaxy: number,
 		keep: (c: GeneratedCarrier) => boolean,
 	): number => {
 		const parts: string[] = [];
 		for (const c of enumerateCarriers(WORLD, galaxy)) {
 			if (!keep(c)) continue;
-			if (c.kind === "raider") {
-				parts.push(
-					`${c.systemIndex}|${c.localCarrierId}|raider:${c.hullId}|${c.parentId ?? "-"}`,
-				);
-				continue;
-			}
-			if (c.kind !== "station" && c.kind !== "traffic")
-				throw new Error(`no legacy line format for ${c.kind}`);
 			const generatedType =
 				c.kind === "station"
 					? c.stationType
-					: `traffic:${c.homeStationType}:${c.hullId}`;
-			parts.push(
-				`${c.systemIndex}|${c.localCarrierId}|${generatedType}|${c.parentId ?? "-"}|${c.orbitRadiusKm.toFixed(6)}|${c.orbitTheta0.toFixed(6)}`,
-			);
+					: c.kind === "traffic"
+						? `traffic:${c.homeStationType}:${c.hullId}`
+						: c.kind === "raider"
+							? `raider:${c.hullId}`
+							: c.kind === "relay-tender"
+								? `relay-tender:${c.hullId}`
+								: "relay";
+			parts.push(`${c.systemIndex}|${c.localCarrierId}|${generatedType}`);
 		}
 		return fnv1a(parts.join("\n"));
 	};
 
-	/** Each older version's own golden fingerprints, and the kinds it had. */
-	const LEGACY_GOLDENS: Record<
+	/** Each supported version's carrier kinds and version-7 identity goldens. */
+	const MIGRATION_IDENTITY_GOLDENS: Record<
 		number,
 		{ kinds: GeneratedCarrier["kind"][]; goldens: number[] }
 	> = {
-		5: {
-			kinds: ["station", "traffic"],
-			goldens: [
-				3533000626, 1070577234, 2722668670, 3149233322, 2273383725, 63070487,
-				656005811, 694742327,
-			],
-		},
-		// The pins `GOLDEN_FINGERPRINTS` held at 6.
 		6: {
 			kinds: ["station", "traffic", "raider"],
 			goldens: [
-				1163913307, 3856323717, 2679409367, 1183764877, 1701938284, 3786678530,
-				2605068771, 239491612,
+				2609890307, 265893734, 760533092, 2718293085, 720293326, 3301096691,
+				1318704267, 3042873790,
+			],
+		},
+		7: {
+			kinds: ["station", "traffic", "raider", "relay", "relay-tender"],
+			goldens: [
+				4019261657, 2620491408, 1543164142, 1310966715, 1616386912, 2463802301,
+				3863013389, 4286568612,
 			],
 		},
 	};
 
-	test("every older version's carriers are unmoved: identity, type, parent and placement", () => {
-		// #324 added raider slots and was to move nothing else, and #351 the relay
-		// and its tender. A count cannot show that — two generators with the
-		// same number of slots in different places agree on it (sage round 1 on
-		// #324). Hashing an older version's kinds alone, in its line format,
-		// against its own goldens shows them unmoved — which is also what lets a
-		// version-6 save load under 7 by relabelling (`parseWorld`).
-		for (const [version, { kinds, goldens }] of Object.entries(LEGACY_GOLDENS))
+	test("versions 6 and 7 keep every carrier identity and type through the rebase", () => {
+		for (const [version, { kinds, goldens }] of Object.entries(
+			MIGRATION_IDENTITY_GOLDENS,
+		))
 			expect({
 				version,
 				hashes: [0, 1, 2, 3, 4, 5, 6, 7].map((g) =>
-					legacyFingerprint(g, (c) => kinds.includes(c.kind)),
+					migrationIdentityFingerprint(g, (c) => kinds.includes(c.kind)),
 				),
 			}).toEqual({ version, hashes: goldens });
 	});
 
-	test("every legacy generator version is pinned by its own goldens (#351)", () => {
-		// `LEGACY_WORLD_GENERATOR_VERSIONS` loads a listed version by relabelling,
-		// which is safe only while that version's carriers are pinned unmoved by
-		// the row above. So every listed version must have an entry there; a
-		// version added to the list without goldens fails here.
+	test("every supported old generator version has an identity golden", () => {
 		for (const version of LEGACY_WORLD_GENERATOR_VERSIONS)
-			expect(LEGACY_GOLDENS[version]?.goldens).toHaveLength(8);
+			expect(MIGRATION_IDENTITY_GOLDENS[version]?.goldens).toHaveLength(8);
 	});
 
 	test("the carrier baseline fingerprint is pinned per galaxy", () => {
 		// Identity, type, parent and generated placement, hashed. It goes red on
 		// any generator change that moves a station — which is exactly when
 		// `WORLD_GENERATOR_VERSION` owes a bump and a migration.
-		expect(WORLD_GENERATOR_VERSION).toBe(7);
+		expect(WORLD_GENERATOR_VERSION).toBe(8);
 		const fingerprints = [0, 1, 2, 3, 4, 5, 6, 7].map((g) =>
 			carrierBaselineFingerprint(WORLD, g),
 		);
@@ -346,7 +327,7 @@ describe("§9.1 namespace and baseline stability", () => {
 });
 
 /**
- * Pinned at `WORLD_GENERATOR_VERSION` 7 against world seed `0x5ee11e`.
+ * Pinned at `WORLD_GENERATOR_VERSION` 8 against world seed `0x5ee11e`.
  *
  * - 1 → 2: node #32's orbit floor moved every floored station's generated
  *   placement — the set this hashes — so the baseline moved with it.
@@ -364,10 +345,13 @@ describe("§9.1 namespace and baseline stability", () => {
  *   version 5's own fingerprints rather than against a count.
  * - 6 → 7: #351 enrolled the pirate relay and its repair tender, one of each
  *   in every system with a station, with the relay's plan as its placement.
- *   Every version-6 slot is unmoved — the row above holds that against version
- *   6's own fingerprints — which is why a version-6 save migrates by
- *   relabelling. `station-damage.md` E7 shares this version with that node's
+ *   Every version-6 slot was unmoved at that release. A version-6 save then
+ *   migrated by relabelling. `station-damage.md` E7 shares this version with that node's
  *   capability carriers: whichever lands second adds to 7 rather than bumping.
+ * - 7 → 8: #590 turns some outer giants into rocky ice worlds and moves
+ *   shipyards off them. Station keys and carrier types remain fixed; the
+ *   migration identity goldens above pin that narrower invariant. Saved
+ *   overlays rebase onto newly generated placements.
  *
  * Version 4 changed all eight hashes because every generated station gained
  * Traffic Carrier slots; version 5 changes all eight again because every one of
@@ -387,8 +371,8 @@ describe("§9.1 namespace and baseline stability", () => {
  * migration, and §2 says so.
  */
 const GOLDEN_FINGERPRINTS = [
-	1495174783, 874558933, 1891587096, 3105162523, 4045939684, 726290825,
-	793607978, 1558993420,
+	1163733963, 1672146284, 3852086902, 2162345770, 2887711080, 3286766929,
+	4125920552, 2160286286,
 ];
 
 // ---------------------------------------------------------------------------
@@ -2344,7 +2328,7 @@ describe("§9.9 atomicity and integrity", () => {
 		);
 	});
 
-	test("a snapshot the version-6 build wrote loads as version 7 (#351)", () => {
+	test("a snapshot the version-6 build wrote loads as version 8 (#351/#590)", () => {
 		// `tests/fixtures/world-generator-v6.json` was written by `serializeWorld`
 		// at fd58d51, the last version-6 `main`: a visit, a stock deficit at
 		// system 3's trade station, and the prototype's relay destroyed there.
@@ -2367,7 +2351,7 @@ describe("§9.9 atomicity and integrity", () => {
 		).toBe("destroyed");
 	});
 
-	test("a version-6 snapshot loads as version 7, rows and all (#351)", () => {
+	test("a version-6 snapshot rebases onto version 8, rows and all (#351/#590)", () => {
 		// 6 → 7 added carriers and moved none (the row "every version-6 slot is
 		// version 6's"), so a version-6 row still names the carrier it named. The
 		// migration is a relabel. The prototype's relay rows come across because
@@ -2391,12 +2375,42 @@ describe("§9.9 atomicity and integrity", () => {
 		expect(loaded.galaxies[0].objective[relayKey]).toEqual(
 			destroyed.galaxies[0].objective[relayKey],
 		);
-		// And the next write is a version-7 body, whose hash is its own.
+		// And the next write is a version-8 body, whose hash is its own.
 		const rewritten = serializeWorld(loaded) as {
 			worldGeneratorVersion: number;
 		};
-		expect(rewritten.worldGeneratorVersion).toBe(7);
-		expect(parseWorld(rewritten).worldGeneratorVersion).toBe(7);
+		expect(rewritten.worldGeneratorVersion).toBe(8);
+		expect(parseWorld(rewritten).worldGeneratorVersion).toBe(8);
+	});
+
+	test("a version-7 station overlay rebases without losing its stable key", () => {
+		const record = generateGalaxy(WORLD, 0).systems.find((candidate) =>
+			generateContents(candidate).stations.some(
+				(station) => station.type === "shipyard",
+			),
+		);
+		if (!record) throw new Error("corpus has no shipyard");
+		const key = carrierKey(record.index, LOCAL_CARRIER_ID.shipyard);
+		const world = visit(newWorld(WORLD), 0, record.index);
+		world.worldGeneratorVersion = 7;
+		const changed = applyTransition(world, 0, key, {
+			kind: "disable",
+			occurredAt: 10,
+			cause: PLAYER,
+		});
+		const raw = serializeWorld(changed);
+		const loaded = parseWorld(raw);
+		expect(loaded.worldGeneratorVersion).toBe(8);
+		expect(loaded.galaxies[0].objective[key]).toEqual(
+			changed.galaxies[0].objective[key],
+		);
+		expect(
+			[...enumerateCarriers(WORLD, 0)].some(
+				(carrier) =>
+					carrier.systemIndex === record.index &&
+					carrier.localCarrierId === LOCAL_CARRIER_ID.shipyard,
+			),
+		).toBe(true);
 	});
 
 	test("the relabel does not excuse a version-6 body from its hash (#351)", () => {

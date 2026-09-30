@@ -154,6 +154,7 @@ export const LEVERS = Object.freeze({
 	535: "the opening cinematic: the rift forming, the arrival, the fly-past, the planet fly-by, the station approach and the dock, filmed from outside",
 	537: "the cruise light shift: the star field crowding to the nose and coloured into #532's starbow, keyed to cruise speed, with the bodies and markers left true",
 	583: "the Shipyard tab: one row per hull, carrying its one reason, or its net price and how far it reaches from here",
+	590: "an outer rung's formation family and its visible ice surface",
 });
 
 /**
@@ -265,9 +266,8 @@ export const CHART_SPOTS = Object.freeze(["crowded", "isolated"]);
  * **One seed is not one place, and one place is not the whole cluster.** Every
  * row is framed in the system the game boots at, which is `startSystem` — the most
  * *central* well-stocked and orderly one — and a row may name a `system` to stand at
- * instead (#432). One does: `sky-at-the-rim` (#480). Why the set needed it, the rule
- * that picked its star, and what its line on the sheet may claim are all told once,
- * in the note beside that row, and not here. What belongs here is the mechanism.
+ * instead (#432). `sky-at-the-rim` (#480) and `cold-rocky-ice` (#590) do.
+ * Each row states why it chose that star; the shared mechanism belongs here.
  * `capture-views.mjs` restores the system with the seed before each view and reads
  * the booted index back: a row that got a different system than it asked for has to
  * be a red run rather than a wrong picture wearing the right caption. The half of
@@ -679,6 +679,23 @@ export const VIEWS = Object.freeze([
 		shot: {
 			kind: "body-offset",
 			body: "planet-5",
+			radii: 2,
+			sunAngleDeg: 60,
+			view: "chase",
+		},
+	},
+	/** The same outer rung becomes a rocky ice world under #590. LEGEOR is
+	 * system 8 of seed 47; planet-1 is the first ice world there with a moon.
+	 * Framing by two host radii keeps the surface legible on both sides of the
+	 * before/after comparison, despite the old giant's much larger radius. */
+	{
+		name: "cold-rocky-ice",
+		covers: [590],
+		what: "The outer planet-1 in LEGEOR at two radii: compare the old giant with the new rocky ice world on the same seeded rung.",
+		shot: {
+			kind: "body-offset",
+			body: "planet-1",
+			system: 8,
 			radii: 2,
 			sunAngleDeg: 60,
 			view: "chase",

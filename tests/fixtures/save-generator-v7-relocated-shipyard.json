@@ -1,0 +1,160 @@
+{
+	"saveSchemaVersion": 7,
+	"world": {
+		"worldSchemaVersion": 3,
+		"worldGeneratorVersion": 7,
+		"seed": 47,
+		"gameTime": 0,
+		"galaxies": [
+			{
+				"galaxyIndex": 0,
+				"objective": {},
+				"episodes": {},
+				"knowledge": {},
+				"deficits": {
+					"92:station-shipyard": {
+						"goods": {
+							"Food": 2
+						},
+						"updatedAt": 0
+					}
+				},
+				"visited": [92],
+				"legalStatus": {
+					"heat": 0,
+					"updatedAt": 0
+				}
+			},
+			{
+				"galaxyIndex": 1,
+				"objective": {},
+				"episodes": {},
+				"knowledge": {},
+				"deficits": {},
+				"visited": [],
+				"legalStatus": {
+					"heat": 0,
+					"updatedAt": 0
+				}
+			},
+			{
+				"galaxyIndex": 2,
+				"objective": {},
+				"episodes": {},
+				"knowledge": {},
+				"deficits": {},
+				"visited": [],
+				"legalStatus": {
+					"heat": 0,
+					"updatedAt": 0
+				}
+			},
+			{
+				"galaxyIndex": 3,
+				"objective": {},
+				"episodes": {},
+				"knowledge": {},
+				"deficits": {},
+				"visited": [],
+				"legalStatus": {
+					"heat": 0,
+					"updatedAt": 0
+				}
+			},
+			{
+				"galaxyIndex": 4,
+				"objective": {},
+				"episodes": {},
+				"knowledge": {},
+				"deficits": {},
+				"visited": [],
+				"legalStatus": {
+					"heat": 0,
+					"updatedAt": 0
+				}
+			},
+			{
+				"galaxyIndex": 5,
+				"objective": {},
+				"episodes": {},
+				"knowledge": {},
+				"deficits": {},
+				"visited": [],
+				"legalStatus": {
+					"heat": 0,
+					"updatedAt": 0
+				}
+			},
+			{
+				"galaxyIndex": 6,
+				"objective": {},
+				"episodes": {},
+				"knowledge": {},
+				"deficits": {},
+				"visited": [],
+				"legalStatus": {
+					"heat": 0,
+					"updatedAt": 0
+				}
+			},
+			{
+				"galaxyIndex": 7,
+				"objective": {},
+				"episodes": {},
+				"knowledge": {},
+				"deficits": {},
+				"visited": [],
+				"legalStatus": {
+					"heat": 0,
+					"updatedAt": 0
+				}
+			}
+		],
+		"integrity": 1874941291
+	},
+	"commander": {
+		"requests": {
+			"byId": {},
+			"leadsById": {},
+			"entrustedByLotId": {},
+			"trackedRequestId": null
+		},
+		"state": {
+			"credits": 100,
+			"cargo": {},
+			"ownedEquipment": [],
+			"fuelLy": 7,
+			"hull": "courier"
+		},
+		"galaxyIndex": 0,
+		"systemIndex": 92,
+		"dockedAt": "92:station-shipyard",
+		"chargeAu": 0,
+		"permadeath": false,
+		"firstDay": "free",
+		"ladders": {
+			"banked": {
+				"combat": 0,
+				"trade": 0,
+				"exploration": 0
+			},
+			"visited": {
+				"0": {
+					"systems": [0, 92],
+					"stations": ["92:station-shipyard"]
+				}
+			},
+			"basis": {},
+			"playedS": 0,
+			"capstoneAt": null
+		},
+		"flight": {
+			"pos": [0, 0, 0],
+			"vel": [0, 0, 0],
+			"orientation": [0, 0, 0, 1],
+			"regime": "normal",
+			"throttle": 0
+		}
+	},
+	"integrity": 590779432
+}

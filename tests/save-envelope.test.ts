@@ -9,6 +9,7 @@
  */
 
 import { describe, expect, test } from "bun:test";
+import { readFileSync } from "node:fs";
 import { carrierKey } from "../src/carrier-key";
 import { recordTrade } from "../src/deficits";
 import { HOLD_REFERENCE_T } from "../src/market";
@@ -20,6 +21,7 @@ import {
 	serializeSave,
 } from "../src/save-envelope";
 import { LOCAL_CARRIER_ID } from "../src/station";
+import { restoreWorld } from "../src/sim";
 import {
 	enumerateCarriers,
 	newWorld,
@@ -68,6 +70,39 @@ const commander = (): CommanderRecord => {
 };
 
 describe("#89 D5 — the save envelope", () => {
+	test("a version-7 docked save retains its shipyard key and deficit after host relocation", () => {
+		// Serialized by the unmodified version-7 code from a dock-consistent
+		// state before #590. System 92's
+		// shipyard orbited planet-4 then; the new host is planet-2. The saved
+		// deficit and dockedAt both name the carrier key, never its old position.
+		// This checks parse/migration and the regenerated host, not Game's
+		// load-time ship placement.
+		const raw = JSON.parse(
+			readFileSync(
+				new URL(
+					"./fixtures/save-generator-v7-relocated-shipyard.json",
+					import.meta.url,
+				),
+				"utf8",
+			),
+		);
+		expect(raw.world.worldGeneratorVersion).toBe(7);
+		const loaded = parseSave(raw);
+		const key = carrierKey(92, LOCAL_CARRIER_ID.shipyard);
+		expect(raw.commander.ladders.visited[0].systems).toContain(92);
+		expect(raw.commander.ladders.visited[0].stations).toContain(key);
+		expect(loaded.world.worldGeneratorVersion).toBe(WORLD_GENERATOR_VERSION);
+		expect(loaded.commander.dockedAt).toBe(key);
+		expect(loaded.commander.ladders.visited[0]?.stations).toContain(key);
+		expect(loaded.world.galaxies[0].deficits[key]).toBeDefined();
+		const restored = restoreWorld(47, 0, 92, loaded.world.gameTime);
+		const shipyard = restored.system.contents.stations.find(
+			(station) => station.localCarrierId === LOCAL_CARRIER_ID.shipyard,
+		);
+		expect(shipyard?.id).toBe(LOCAL_CARRIER_ID.shipyard);
+		expect(shipyard?.parentId).toBe("planet-2");
+	});
+
 	test("obligation 1: every field of both halves survives a round trip", () => {
 		const save = { world: world(), commander: commander() };
 		const back = parseSave(serializeSave(save));
