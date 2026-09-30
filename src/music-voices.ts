@@ -87,6 +87,9 @@ export interface ResolvedPart {
 	/** Per frame, toward a slide's target; 1 for no glide. */
 	readonly glideCoef: number;
 	readonly vibrato: number;
+	/** The sweep: cycles per frame (0 for none), and its depth in octaves. */
+	readonly sweepInc: number;
+	readonly sweepOct: number;
 	readonly attackS: number;
 	readonly decayS: number;
 }
@@ -123,6 +126,8 @@ const BASE: VoiceDefaults = {
 	drive: 0,
 	glideS: 0,
 	vibrato: 0,
+	sweepS: 0,
+	sweepOct: 0,
 };
 
 const DEFAULTS: Record<VoiceKind, VoiceDefaults> = {
@@ -158,6 +163,8 @@ const DEFAULTS: Record<VoiceKind, VoiceDefaults> = {
 		decayS: 0.12,
 		sustain: 0,
 		releaseS: 0.08,
+		// The band's damping before it had a dial: 2 - 1.9 × 11/19 = 0.9.
+		resonance: 11 / 19,
 	},
 	tone: {
 		...BASE,
@@ -262,6 +269,9 @@ export function resolvePart(spec: PartSpec, sampleRate: number): ResolvedPart {
 		drive: d.drive,
 		glideCoef: d.glideS > 0 ? 1 - Math.exp(-1 / (d.glideS * sampleRate)) : 1,
 		vibrato: d.vibrato,
+		sweepInc:
+			d.sweepS > 0 && d.sweepOct !== 0 ? 1 / (d.sweepS * sampleRate) : 0,
+		sweepOct: d.sweepS > 0 ? d.sweepOct : 0,
 		attackS: d.attackS,
 		decayS: d.decayS,
 	};
@@ -589,7 +599,7 @@ export class VoiceBank {
 				this.inc2[i] = (f * part.ratio) / sr;
 				break;
 			case NOISE: // a band of it, centred on the pitch
-				this.g[i] = svfCoef(f, sr);
+				this.g[i] = svfCoef(f * sweep(part, frame), sr);
 				break;
 			case TONE: // starts `ratio` times high and glides down
 				this.inc1[i] = f / sr;
@@ -765,7 +775,7 @@ export class VoiceBank {
 	) {
 		switch (kind) {
 			case ANALOG:
-				return this.analog(i, part);
+				return this.analog(i, part, at);
 			case DRONE:
 				this.droneRan = true;
 				return this.droneSample(i, part);
@@ -818,7 +828,12 @@ export class VoiceBank {
 				return c * 0.6;
 			}
 			case NOISE:
-				return this.svf(i, this.noise(), 0.9, true) * 1.4;
+				if (part.sweepInc > 0 && this.age[i]++ % CUT_EVERY === 0)
+					this.g[i] = svfCoef(
+						mtof(this.pitch[i]) * sweep(part, at),
+						this.sampleRate,
+					);
+				return this.svf(i, this.noise(), part.damp, true) * 1.4;
 			default: {
 				// TONE
 				const c = Math.sin(2 * Math.PI * this.ph1[i]);
@@ -847,7 +862,7 @@ export class VoiceBank {
 
 	/** Analog unison: `unison` saws, each detuned and drifting and placed in
 	 *  the field, through a lowpass a side whose cutoff rides an envelope. */
-	private analog(i: number, part: ResolvedPart) {
+	private analog(i: number, part: ResolvedPart, at: number) {
 		const sr = this.sampleRate;
 		const n = part.unison;
 		const base = i * MAX_OPS;
@@ -881,7 +896,7 @@ export class VoiceBank {
 		else this.fenv[i] *= part.envDecayCoef;
 		if (this.age[i] % CUT_EVERY === 1)
 			this.g[i] = svfCoef(
-				part.cutoffHz * 2 ** (part.envAmount * this.fenv[i]),
+				part.cutoffHz * 2 ** (part.envAmount * this.fenv[i]) * sweep(part, at),
 				sr,
 			);
 		this.sideR = this.svf2(i, r, part.damp);
@@ -923,7 +938,7 @@ export class VoiceBank {
 		this.fenv[i] *= part.envDecayCoef;
 		if (this.age[i]++ % CUT_EVERY === 0) {
 			const oct = part.envAmount * this.fenv[i] * (1 + 0.5 * this.accent[i]);
-			this.g[i] = svfCoef(part.cutoffHz * 2 ** oct, sr);
+			this.g[i] = svfCoef(part.cutoffHz * 2 ** oct * sweep(part, at), sr);
 		}
 		let x = this.svf(i, v, part.damp, false);
 		x = this.svf2(i, x, part.damp);
@@ -999,6 +1014,17 @@ function svfStep(
 	lp[i] += g * bp[i];
 	bp[i] += g * (x - lp[i] - damp * bp[i]);
 	return band ? bp[i] : lp[i];
+}
+
+/** Where a part's slow sweep has the filter at frame `at`: a multiple of
+ *  the cutoff, 1 at the bottom of the cycle and `2^sweepOct` at its top. */
+function sweep(part: ResolvedPart, at: number): number {
+	if (part.sweepInc === 0) return 1;
+	const ph = at * part.sweepInc;
+	return (
+		2 **
+		(part.sweepOct * 0.5 * (1 - Math.cos(2 * Math.PI * (ph - Math.floor(ph)))))
+	);
 }
 
 /** Chamberlin state-variable coefficient, capped where it stays stable. */
