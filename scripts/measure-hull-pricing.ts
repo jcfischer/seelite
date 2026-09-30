@@ -920,17 +920,16 @@ for (const cap of CAPITAL_CAPS) {
 		);
 	} else {
 		const baseT = HOLD_REFERENCE_T;
-		const baseList = hullPriceCr(
-			HULL_SPECS[PLAYER_BASELINE_HULL].holdT,
-		) as number;
+		// The shipyard's own arithmetic (`hullOffer`): the rows' list prices and
+		// the trade-in rounded — not the law, though the suite holds them equal.
+		const listOf = (id: HullId) => HULL_SPECS[id].priceCr as number;
+		const tradeIn = Math.round(
+			listOf(PLAYER_BASELINE_HULL) * HULL_TRADE_IN_FRACTION,
+		);
 		const tradeInCaps = subKit
-			.map((id) => ({
-				id,
-				cr:
-					HULL_TRADE_IN_FRACTION * baseList -
-					(hullPriceCr(HULL_SPECS[id].holdT) as number),
-			}))
+			.map((id) => ({ id, cr: tradeIn - listOf(id) }))
 			.filter((c) => c.cr > 0);
+		const crText = (c: number) => `${Math.round(c).toLocaleString("en-GB")} Cr`;
 		const caps = [
 			...new Set([
 				...CAPITAL_CAPS.filter((c) => c < fullKitCr()),
@@ -968,7 +967,8 @@ for (const cap of CAPITAL_CAPS) {
 			WORLDS.map((_, wi) => finite("ratio", rates(h)[wi] / rates(baseT)[wi]));
 		const cell = (r: readonly number[]) =>
 			`${median(r).toFixed(3)} [${quantile(r, 0.1).toFixed(3)}–${quantile(r, 0.9).toFixed(3)}]`;
-		/** Median per-world drift from the kit's ratio, by capital, both arms. */
+		/** The worst median drift from the kit's ratio at each capital, over both
+		 *  arms and every sub-kit hold. */
 		const drift = new Map<number, number>();
 		for (const h of subKit.map((id) => HULL_SPECS[id].holdT)) {
 			const kit = ratios(curveAt, h);
@@ -997,7 +997,7 @@ for (const cap of CAPITAL_CAPS) {
 					),
 				);
 				console.log(
-					`${rightAlign(`${Math.round(c).toLocaleString("en-GB")} Cr`, 17)}  ${capLabel(c).padEnd(22)}` +
+					`${rightAlign(crText(c), 17)}  ${capLabel(c).padEnd(22)}` +
 						`${rightAlign(cell(capped), 25)}${rightAlign(capKit.toFixed(3), 7)}` +
 						`${rightAlign(cell(started), 26)}${rightAlign(startKit.toFixed(3), 7)}`,
 				);
@@ -1010,14 +1010,18 @@ for (const cap of CAPITAL_CAPS) {
 			caps.filter((d) => d >= c).every((d) => (drift.get(d) ?? 0) < TOLERANCE),
 		);
 		const stopsAt = settled.length > 0 ? Math.min(...settled) : Number.NaN;
-		const lowestTradeIn = Math.min(...tradeInCaps.map((t) => t.cr));
+		// No positive trade-in means every sub-kit hull costs cash off the
+		// baseline hull, so a pilot can arrive with nothing: the floor is zero,
+		// which no swept capital clears.
+		const lowestTradeIn =
+			tradeInCaps.length > 0 ? Math.min(...tradeInCaps.map((t) => t.cr)) : 0;
 		console.log(
 			Number.isFinite(stopsAt) && stopsAt <= lowestTradeIn
-				? `\n  **The bias has stopped by ${stopsAt.toLocaleString("en-GB")} Cr** — within ${100 * TOLERANCE}% of the kit on both arms` +
-						`\n  from there up — and the lowest trade-in capital is ${Math.round(lowestTradeIn).toLocaleString("en-GB")} Cr. So a pilot who` +
+				? `\n  **The bias has stopped by ${crText(stopsAt)}** — within ${100 * TOLERANCE}% of the kit on both arms` +
+						`\n  from there up — and the lowest trade-in capital is ${crText(lowestTradeIn)}. So a pilot who` +
 						"\n  buys a sub-kit hull is past it, and the law's lower segment does not move."
-				: `\n  **The bias reaches a trade-in capital** (settled from ${Number.isFinite(stopsAt) ? stopsAt.toLocaleString("en-GB") : "no capital swept"}` +
-						`\n  against the lowest trade-in's ${Math.round(lowestTradeIn).toLocaleString("en-GB")} Cr), so §7.1's no-move reading owes a re-check.`,
+				: `\n  **The bias reaches a trade-in capital** (settled from ${Number.isFinite(stopsAt) ? crText(stopsAt) : "no capital swept"}` +
+						`\n  against the lowest trade-in's ${crText(lowestTradeIn)}), so §7.1's no-move reading owes a re-check.`,
 		);
 	}
 }

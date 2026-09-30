@@ -1535,7 +1535,8 @@ capital a sub-kit hull's pilot holds.** The exponent collapses to 0.115 at 500 C
 said a second way — and has stopped moving by the kit's total. #182 closed the
 argument there because the cheapest hull then cost more than the kit. That
 stopped being true before #383: the kit grew to 20,725 Cr past the interceptor's
-20,000, and #383's prices put the prospector below it too. So
+#182 price of 20,000, and #383's prices (9,200 and 13,800) put both sub-kit hulls
+well below it. So
 [#594](https://github.com/jcfischer/seelite/issues/594) measured the one ratio
 the law asserts for those two hulls, `r(h) / r(20 t)` at a single capital, paired
 per world against section C's at the kit. It used two arms: a cap on what one hop
@@ -1543,8 +1544,9 @@ may spend, which is a bound because the wallet never grows, and an opening
 balance that compounds, which is a pilot who has just bought the hull. **Both arms
 are within 1% of the kit from 2,000 Cr up**, at 8 t and at 12 t. The lowest
 capital a pilot holds after the trade-in from the courier with an empty wallet is
-6,900 Cr (prospector; 11,500 for the interceptor), and there every per-world ratio
-equals the kit's. Even a 500 Cr opening balance drifts only 1.5% at 8 t, against
+6,900 Cr (prospector; 11,500 for the interceptor), and there both arms' median
+per-world ratio to the kit is 1.000, with p10–p90 matching the kit's to three
+places. Even a 500 Cr opening balance drifts only 1.5% at 8 t, against
 a world-to-world spread of 0.328–0.419. **The lower segment does not move.** The
 lower segment's own ±1σ is not the yardstick for this: it is the fit's error on
 *b*, and section C's own 8 t ratio (0.395 against the law's 0.400) sits outside it
