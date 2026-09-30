@@ -88,6 +88,7 @@ const input = (
 	displayTL: 8,
 	entrustedT: 0,
 	rungs: TOP_RUNGS,
+	hullReach: () => ({ ok: true, systems: 1 }) as const,
 	action: { type: "buy-commodity", commodity: "Food" } as const,
 	...overrides,
 });
@@ -978,6 +979,7 @@ describe("§5.6 the bid cut, charged by the till", () => {
 				deficits,
 				entrustedT: 0,
 				rungs: TOP_RUNGS,
+				hullReach: () => ({ ok: true, systems: 1 }) as const,
 				station,
 				stationKey,
 				economy: 3,
@@ -1023,6 +1025,7 @@ describe("§5.6 the bid cut, charged by the till", () => {
 					deficits,
 					entrustedT: 0,
 					rungs: TOP_RUNGS,
+					hullReach: () => ({ ok: true, systems: 1 }) as const,
 					station: STATION,
 					stationKey: KEY,
 					economy: 3,

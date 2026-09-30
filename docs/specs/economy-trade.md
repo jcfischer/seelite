@@ -1502,6 +1502,18 @@ is not the same as every price being an upper bound** — the law is a ratio
 against the 20 t baseline, so a larger exponent *lowers* every price under it.
 Above the baseline these are upper bounds; below it they are lower ones.
 
+**A hull is bought with a trade-in, so its effective cost is `new − 0.9 × old`**
+([#556](https://github.com/jcfischer/seelite/issues/556) D5, built by
+[#583](https://github.com/jcfischer/seelite/issues/583)). The derivation above
+prices a hull as cash paid from earnings and assumes no trade-in; the shipyard
+takes the flown hull at `HULL_TRADE_IN_FRACTION` (0.9, `station-commerce.ts`) of
+its list price. So the list prices in the table are what a hull is *worth*, and
+the step between rungs is what it *costs*: courier to freighter nets 36,900 Cr,
+not 68,400, and courier to interceptor pays the pilot 11,500. A swap and back
+loses a tenth of each hull, so no loop earns. The payback window above is
+therefore an upper bound on a step up the ladder rather than its figure — this
+section does not re-derive the window net of the trade-in.
+
 ### 7.2 The ceiling, and how many rungs the ladder holds
 
 #26's D7 puts the ceiling where the priced curve stops being interesting.

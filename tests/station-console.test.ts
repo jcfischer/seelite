@@ -445,25 +445,18 @@ test("obligation 6: type exclusives are sold at their own type and named everywh
 	}
 });
 
-test("§8.3: the hull section exists at a shipyard and is empty until #26", () => {
+test("§8.3 as #556 D1 amends it: the Equipment tab carries no hull heading", () => {
+	// Hulls are sold on the Shipyard tab now; a hull section here would be a
+	// second place to buy one, priced by nothing.
 	expect(
-		stationEquipmentScreen({
-			type: "shipyard",
-			displayTL: 11,
-			rungs: TOP_RUNGS,
-		}).hullsSection,
-	).toBe(true);
-	expect(
-		stationEquipmentScreen({
-			type: "shipyard",
-			displayTL: 11,
-			rungs: TOP_RUNGS,
-		}).hulls,
-	).toEqual([]);
-	expect(
-		stationEquipmentScreen({ type: "trade", displayTL: 11, rungs: TOP_RUNGS })
-			.hullsSection,
-	).toBe(false);
+		Object.keys(
+			stationEquipmentScreen({
+				type: "shipyard",
+				displayTL: 11,
+				rungs: TOP_RUNGS,
+			}),
+		).sort(),
+	).toEqual(["available", "unavailable"]);
 });
 
 // ---------------------------------------------------------------------------

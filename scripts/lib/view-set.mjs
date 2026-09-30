@@ -153,6 +153,7 @@ export const LEVERS = Object.freeze({
 	532: "the witchspace transition: the entry streak, the tunnel over the cut, its collapse and the arrival rift",
 	535: "the opening cinematic: the rift forming, the arrival, the fly-past, the planet fly-by, the station approach and the dock, filmed from outside",
 	537: "the cruise light shift: the star field crowding to the nose and coloured into #532's starbow, keyed to cruise speed, with the bodies and markers left true",
+	583: "the Shipyard tab: one row per hull, carrying its one reason, or its net price and how far it reaches from here",
 });
 
 /**
@@ -240,6 +241,7 @@ export const SHOT_KINDS = Object.freeze([
 	"opening",
 	"cruise",
 	"chart",
+	"shipyard-tab",
 ]);
 
 /**
@@ -1245,6 +1247,18 @@ export const VIEWS = Object.freeze([
 		},
 	},
 	{
+		name: "shipyard-tab-new-game",
+		covers: [583],
+		what: "Docked at the fixture's shipyard on a new game's rungs, the Shipyard tab: the flown courier marked FLOWN, every other hull locked with its ladder, rung and rung name.",
+		shot: { kind: "shipyard-tab", rungs: "new-game", view: "cockpit" },
+	},
+	{
+		name: "shipyard-tab-open",
+		covers: [583],
+		what: "The same tab at the top rungs with 100,000 Cr and 20 t of Food aboard: every row open, its net price after the trade-in, how many systems it reaches from here, and what a smaller hold would sell.",
+		shot: { kind: "shipyard-tab", rungs: "top", view: "cockpit" },
+	},
+	{
 		name: "outpost-interior-workbench",
 		covers: [165, 147, 257],
 		/**
@@ -1343,6 +1357,8 @@ const SHOT_REQUIREMENTS = {
 	cruise: (s) => finite(s.intensity) && s.intensity >= 0 && s.intensity <= 1,
 	// Which hover the frame shows (#177 D2).
 	chart: (s) => CHART_SPOTS.includes(s.spot),
+	// Which rungs the rows are read at (#583): a new game's, or the top.
+	"shipyard-tab": (s) => s.rungs === "new-game" || s.rungs === "top",
 	duel: (s) =>
 		["forward", "right", "left"].includes(s.headLook) &&
 		(s.aftermath === undefined ||

@@ -113,9 +113,9 @@ test("§8: the arrival renders neither the console nor the floor it replaced", (
 	expect(arriving).not.toContain("data-gallery-scanner");
 });
 
-test("§8.3: the gallery has a shipyard, so the empty hull heading is rendered somewhere", () => {
-	// The heading is drawn at a shipyard and nowhere else. Without a shipyard in
-	// the rig it would be markup no state reaches — shipped, and unprobed.
+test("§8.3 as #556 D1 amends it: no hull heading, even at the gallery's shipyard", () => {
+	// Hulls moved to the live console's Shipyard tab; the empty heading the
+	// gallery drew at a shipyard went with them.
 	const yard = CONSOLE_STATIONS.find((station) => station.id === "yard");
 	if (!yard) throw new Error("the console rig has no shipyard");
 	const rendered = renderGalleryState(
@@ -124,8 +124,9 @@ test("§8.3: the gallery has a shipyard, so the empty hull heading is rendered s
 		"forward",
 		{ ...DEFAULT_CONSOLE_VIEW, station: yard, tab: "Equipment" },
 	);
-	expect(rendered).toContain("data-gallery-hulls");
-	expect(rendered).toContain("data-gallery-hulls-empty");
+	// The control: this is the equipment tab, drawn.
+	expect(rendered).toContain("data-gallery-equipment");
+	expect(rendered).not.toContain("data-gallery-hulls");
 	const trade = renderGalleryState(
 		galleryState("docked"),
 		"Flight",

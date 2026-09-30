@@ -128,9 +128,6 @@ function measureConsole() {
 			document.querySelector("[data-gallery-unavailable]"),
 		),
 		hullsHead: Boolean(document.querySelector("[data-gallery-hulls]")),
-		hullsEmptyVisible: isVisible(
-			document.querySelector("[data-gallery-hulls-empty]"),
-		),
 		unavailable: [
 			...document.querySelectorAll("[data-gallery-unavailable-item]"),
 		].map((el) => ({
@@ -401,12 +398,14 @@ check(
 	equipment.unavailable.map((entry) => entry.reason).join(" | "),
 );
 
-// --- §8.3 / §8.7's joint 4 — the empty hull heading a player will see ------
+// --- §8.3 as #556 D1 amends it — hulls left the Equipment tab ------------
 await page.locator('[data-gallery-station="yard"]').click();
 const yard = await page.evaluate(measureConsole);
 check(
-	"§8.3: a shipyard draws the hull heading, empty until #26 prices hulls",
-	yard.activeTab === "Equipment" && yard.hullsHead && yard.hullsEmptyVisible,
+	"§8.3 as #556 D1 amends it: a shipyard's Equipment tab draws no hull heading",
+	yard.activeTab === "Equipment" &&
+		yard.equipment.length > 0 &&
+		!yard.hullsHead,
 );
 check(
 	"§8.3: a trade station draws no hull heading at all",

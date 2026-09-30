@@ -135,6 +135,7 @@ const commerceInput = (commander: ReturnType<typeof newCommander>) => ({
 	displayTL: 8,
 	entrustedT: 0,
 	rungs: TOP_RUNGS,
+	hullReach: () => ({ ok: true, systems: 1 }) as const,
 	action: { type: "buy-commodity" as const, commodity: "Food" },
 });
 

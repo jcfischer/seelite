@@ -180,8 +180,9 @@ export const GALLERY_STATES: readonly GalleryState[] = [
  * be seen at a single station — away from a fence the three illegal rows are
  * unpriced, at one they are priced like everything else, and one station shows
  * one side of that and reads like a rule with no exception. The shipyard is
- * there for a different reason: §8.3's hull heading is drawn at one and nowhere
- * else, so without it that state would be markup no gallery state reaches.
+ * there for a different reason: it came for §8.3's hull heading, which #556 D1
+ * moved to the live console's Shipyard tab, and it stays as the one station
+ * whose own exclusives list as available rather than as "shipyards only".
  */
 export interface ConsoleStation {
 	id: "trade" | "fence" | "yard";
@@ -244,9 +245,9 @@ export const CONSOLE_STATIONS: readonly ConsoleStation[] = [
 		displayTL: 9,
 		blackMarket: true,
 	}),
-	// A shipyard, because §8.3's hull heading is drawn at one and nowhere else.
-	// Without it the empty-hulls state §8.7's joint 4 names — one a player will
-	// see — would ship in the markup and be rendered by no gallery state.
+	// A shipyard: the one station whose own exclusives list as available. It
+	// came for §8.3's empty hull heading, which #556 D1 moved to the live
+	// console's Shipyard tab; `probe-station-console` checks it draws none.
 	consoleStation({
 		id: "yard",
 		label: "SHIPYARD · TL 11",
@@ -261,7 +262,9 @@ export const CONSOLE_STATIONS: readonly ConsoleStation[] = [
  *  through the dock the player is. */
 export interface ConsoleView {
 	station: ConsoleStation;
-	tab: Exclude<StationConsoleTab, "Requests">;
+	/** Market and Equipment only: Requests and the Shipyard (#583) are the live
+	 *  console's, and the gallery has no renderer for either. */
+	tab: Exclude<StationConsoleTab, "Requests" | "Shipyard">;
 	phase: DockPhase;
 	/** #6's clock in game minutes — the epoch the quote is taken in. */
 	gameTimeMin: number;
@@ -387,28 +390,9 @@ function renderEquipmentTab(view: ConsoleView): string {
 			),
 		)
 		.join("");
-	// §8.7's joint 4: a heading with nothing under it is a state a player sees,
-	// so the gallery renders it rather than hiding the gap until #26.
-	// The heading is a shipyard's; what is under it is #26's. Rendering
-	// `screen.hulls` rather than the placeholder unconditionally means the day
-	// that node prices them the tab shows them instead of still saying nobody
-	// has.
-	const hulls = screen.hullsSection
-		? `<h4 class="sg-block-head" data-gallery-hulls>HULLS</h4>${
-				screen.hulls.length === 0
-					? `<p class="sg-absent" data-gallery-hulls-empty>Not priced yet — the ship roster owes them.</p>`
-					: screen.hulls
-							.map((hull) =>
-								catalogueRow(
-									"data-gallery-hull-item",
-									hull.name,
-									`${hull.priceCr.toLocaleString("en-US")} Cr`,
-								),
-							)
-							.join("")
-			}`
-		: "";
-	return `<div class="sg-market" data-gallery-equipment>${available}<h4 class="sg-block-head" data-gallery-unavailable>UNAVAILABLE HERE</h4>${unavailable}${hulls}</div>`;
+	// No HULLS heading: #556 D1 moved hull sales to their own Shipyard tab on
+	// the live console, and the empty heading §8.7's joint 4 drew here went.
+	return `<div class="sg-market" data-gallery-equipment>${available}<h4 class="sg-block-head" data-gallery-unavailable>UNAVAILABLE HERE</h4>${unavailable}</div>`;
 }
 
 /**

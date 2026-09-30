@@ -10,15 +10,14 @@
  * the reason on the row, and otherwise prints how many systems the hull
  * reaches from there.
  *
- * **Two other arrivals exist, both only through the `?hull=` development
- * query today, and neither is refused here.** A new game starts at
- * `startSystem`, which has no edge at 5 LY in 20 of 2400 galaxies (world seeds
- * 1–300); and a save from before #554 may hold a short hull where the old 7 LY
- * gate let it jump. Which hull a boot flies is #557's to decide, and the
- * answer to both belongs there.
+ * **Two other arrivals exist, and neither is refused here.** A new game on
+ * the `?hull=` development query starts at `startSystem`, which has no edge
+ * at 5 LY in 20 of 2400 galaxies (world seeds 1–300); and a save from before
+ * #554 may hold a short hull where the old 7 LY gate let it jump. #557 ruled
+ * that a loaded save flies its own hull, so the second is the save's to carry.
  *
- * Only the law is built. No screen sells a hull yet — the flown hull comes from
- * `?hull=` — so the row that prints this belongs to the node that builds one.
+ * The Shipyard tab reads this (#583): `hullOffer` in `station-commerce.ts`
+ * takes it as `hullReach`, so the row and the till refuse on one answer.
  */
 import type { SystemRecord } from "./galaxy";
 import { reachable } from "./galaxy-route";

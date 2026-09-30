@@ -99,8 +99,8 @@ export interface HullSpec {
 	 *
 	 * #26's D2 reads the `a`/`b`/`c` meshes as design alternates — three attempts
 	 * at one idea, ranked as equals by #35 — the way a station role has three
-	 * forms and one is selected. Nothing selected until here, and `PLAYER_HULL`
-	 * in `main.ts` was the only place a variant had ever been named.
+	 * forms and one is selected. Nothing selected until here, and a constant in
+	 * `main.ts` was the only place a variant had ever been named.
 	 *
 	 * Selected by a stated rule rather than by taste, because taste is the
 	 * principal's: **the variant admitted by the most station roles, `a` on a
@@ -298,9 +298,10 @@ export const PURCHASABLE_HULL_IDS = [
 /**
  * The purchasable hull a `?hull=` query names, or `null` for none.
  *
- * One reader for the flight's `PLAYER_HULL` and the chart workbench, so the
- * two cannot accept different sets (#554). What to fly on `null` is the
- * caller's: both fall back to the baseline and say so where they do.
+ * One reader for a fresh game's first hull (`bootHull` in `flown-hull.ts`)
+ * and the chart workbench, so the two cannot accept different sets (#554).
+ * What to fly on `null` is the caller's: both fall back to the baseline and
+ * say so where they do.
  */
 export const purchasableHullNamed = (asked: string | null): HullId | null =>
 	asked !== null && (PURCHASABLE_HULL_IDS as readonly string[]).includes(asked)
@@ -501,7 +502,7 @@ export const HULL_SPECS: Readonly<Record<HullId, HullSpec>> = {
 	},
 };
 
-/** The hull the player flies until a shipyard sells another: #26's ratified
+/** The hull a new game flies until a shipyard sells another: #26's ratified
  *  `player-baseline`, read off the roster rather than restated as a constant in
  *  the renderer, which is where it lived. */
 export const PLAYER_BASELINE_HULL: HullId = "courier";

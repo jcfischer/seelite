@@ -208,6 +208,8 @@ import { GOVERNMENT_NAMES, type SystemRecord } from "./galaxy";
 // vector handed to it.
 import { SYSTEM_PLANE_NORMAL } from "./galaxy-frame";
 import { type Course, courseProgress, setCourse } from "./galaxy-route";
+import { type HullReach, hullReachFrom } from "./hull-reach";
+import { bootHull, deliverHull } from "./flown-hull";
 // The pad, normalised. What any of it *means* is `pollPad` and the panel
 // routing below, and nowhere else — that module was copied in from seekolous
 // and must not learn what a station is.
@@ -552,12 +554,9 @@ import {
 import { SPEC_FIXTURE_NAMES, stationFinishId } from "./station-visuals";
 import {
 	HULL_SPECS,
-	PLAYER_BASELINE_HULL,
-	PURCHASABLE_HULL_IDS,
 	purchasableHullNamed,
 	type HullEnvelope,
 	type HullId,
-	type HullVariantId,
 } from "./hull";
 import {
 	type FleetSlot,
@@ -744,6 +743,7 @@ import {
 	basisAfterScoop,
 	emptyLadderRecord,
 	emptyPending,
+	ladderAfterHullSale,
 	ladderAfterMarket,
 	ladderAfterSettlement,
 	pendingArrival,
@@ -856,8 +856,10 @@ import {
 	commanderHold,
 	newCommander,
 	scoopCargo,
+	shipyardScreen,
 	transactAtStation,
 	type StationAction,
+	type ConsoleInput,
 } from "./station-commerce";
 import {
 	newWorld as newPersistentWorld,
@@ -1034,54 +1036,17 @@ const CHASE_BACK_KM = 0.14;
 const CHASE_UP_KM = 0.04;
 
 /**
- * The hull the player flies: the courier `Kestrel`.
+ * The raw `?hull=` value, read once at load (#554, #557).
  *
- * **Read off the roster now rather than declared here** (#181). This was a
- * hardcoded pair, and its own comment said #26 would replace it — #26 ruled the
- * courier the `player-baseline` and #181 gave every hull a selected variant, so
- * both halves come from `HULL_SPECS` and the renderer names no roster fact of
- * its own. A shipyard that sells a second hull changes this to a saved value; it
- * does not change where the variant comes from.
+ * **A fresh-game development affordance, not a way to change a saved ship.**
+ * #26's D5 says a freighter is sluggish and an interceptor is sharp, and a
+ * probe cannot fail on *this feels wrong*, so the query lets a person fly any
+ * purchasable hull on a new game. A loaded Commander flies its saved hull and
+ * the query is reported and ignored — `bootHull` in `flown-hull.ts` owns
+ * that rule, and the flown hull is `Game` state that follows the commander
+ * from then on (#583 D2), so a shipyard can change it mid-session.
  */
-const PLAYER_HULL: readonly [HullId, HullVariantId] = ((): readonly [
-	HullId,
-	HullVariantId,
-] => {
-	// **`?hull=<id>` is a development affordance and the node that closes on
-	// flying one.** #26's D5 says a freighter is sluggish and an interceptor is
-	// sharp; a probe cannot fail on *this feels wrong*, so the sluggish end of
-	// the roster has to be flown by a person, and until a shipyard exists there
-	// is no other way to be in one. It is the same shape as `?combat=1` and
-	// `?seed=` — a query the game reads once at load, not a mode.
-	//
-	// A shipyard replaces it with a **saved** value; it does not change where the
-	// variant comes from, and it does not make this a second place a hull is
-	// chosen. An unknown or absent id falls back to the baseline rather than
-	// throwing, because a typo in a URL should not be a black screen.
-	const asked = new URLSearchParams(window.location.search).get("hull");
-	const id = purchasableHullNamed(asked) ?? PLAYER_BASELINE_HULL;
-	// **It says so when it falls back.** Silently flying a courier while the
-	// pilot believes they are judging a freighter is the one way this affordance
-	// could produce a wrong answer, and the whole point of it is a judgement.
-	if (asked !== null && asked !== id)
-		console.warn(
-			`[seelite] ?hull=${asked} is not one of ${PURCHASABLE_HULL_IDS.join(", ")} — flying the ${id}`,
-		);
-	return [id, HULL_SPECS[id].variant];
-})();
-
-/** The player hull's envelope, which is what a berth's fit predicate compares
- *  against (§13.2). Read off the roster rather than restated — and it is the
- *  *measured* box of the selected variant, which is the half #181 fixed. */
-const PLAYER_ENVELOPE = HULL_SPECS[PLAYER_HULL[0]].env;
-
-/** The player hull's handling (#26's D5). One derivation per hull, computed
- *  once: `flightPerformance` is pure and the roster does not change mid-frame. */
-const PLAYER_PERFORMANCE: FlightPerformance = flightPerformance(PLAYER_HULL[0]);
-
-/** A whole ship of the flown hull. A function, because a condition is mutable
- *  state and every caller needs its own. */
-const playerFullCondition = (): ShipCondition => fullCondition(PLAYER_HULL[0]);
+const ASKED_HULL = new URLSearchParams(window.location.search).get("hull");
 
 /**
  * `?raider` puts a raider on every cruise leg, five seconds in (#324), and
@@ -2230,7 +2195,48 @@ class Game {
 	 *  the one statement of what it is made of. */
 	private layoutNotices: readonly LayoutNotice[] = [];
 	/** Commander-owned mutable commerce state; no renderer may write it. */
-	private commander = newCommander(PLAYER_HULL[0]);
+	private commander = newCommander(bootHull(ASKED_HULL, null).hull);
+
+	/**
+	 * The hull being flown — handling, mesh, condition capacity and berth
+	 * envelope all read it (#583 D2, #584).
+	 *
+	 * Equal to `commander.hull` except while a hull bought where no berth fits
+	 * it waits to be delivered on launch (#556 D10): then the commander owns
+	 * the new hull and the ship in the berth is still the old one.
+	 */
+	private flownHull: HullId = this.commander.hull;
+
+	/** A hull bought while docked that takes over at the next launch (D10). */
+	private hullOnLaunch: HullId | null = null;
+
+	/** The flown hull's handling, derived once per hull: `flightPerformance`
+	 *  is pure and the roster does not change mid-frame. */
+	private flownPerformanceOf: { hull: HullId; perf: FlightPerformance } = {
+		hull: this.flownHull,
+		perf: flightPerformance(this.flownHull),
+	};
+
+	private get flownPerformance(): FlightPerformance {
+		if (this.flownPerformanceOf.hull !== this.flownHull)
+			this.flownPerformanceOf = {
+				hull: this.flownHull,
+				perf: flightPerformance(this.flownHull),
+			};
+		return this.flownPerformanceOf.perf;
+	}
+
+	/** The flown hull's envelope, which a berth's fit predicate compares
+	 *  against (§13.2) — the *measured* box of the selected variant (#181). */
+	private get flownEnvelope() {
+		return HULL_SPECS[this.flownHull].env;
+	}
+
+	/** A whole ship of the flown hull. A function, because a condition is
+	 *  mutable state and every caller needs its own. */
+	private flownFullCondition(): ShipCondition {
+		return fullCondition(this.flownHull);
+	}
 	/**
 	 * The three ladders' banked record (#183), saved beside `commander` so a
 	 * death's revert to `lastDocked` moves credits and rungs together.
@@ -3222,12 +3228,14 @@ class Game {
 	 * measuring whichever hull the URL happened to name, and would report a
 	 * sluggish approach as a regression.
 	 */
-	readonly playerHull = {
-		id: PLAYER_HULL[0],
-		variant: PLAYER_HULL[1],
-		spec: HULL_SPECS[PLAYER_HULL[0]],
-		performance: PLAYER_PERFORMANCE,
-	};
+	get playerHull() {
+		return {
+			id: this.flownHull,
+			variant: HULL_SPECS[this.flownHull].variant,
+			spec: HULL_SPECS[this.flownHull],
+			performance: this.flownPerformance,
+		};
+	}
 
 	/** #14's shell, on the handle for the same reason: `probe-arrival.mjs` states
 	 *  its bound as a fraction of this rather than as its own 1.05. */
@@ -3369,7 +3377,7 @@ class Game {
 	 * it, and nothing does yet. **Not saved**, as before #324, so a reload
 	 * refills the whole condition.
 	 */
-	condition: ShipCondition = playerFullCondition();
+	condition: ShipCondition = this.flownFullCondition();
 
 	/**
 	 * §12's dock state machine — arriving, docked, launching, or flying.
@@ -3774,6 +3782,13 @@ class Game {
 				null,
 			);
 		}
+		// #557's ruling, built by #584: one effective hull before anything
+		// hull-dependent is built. The save's own hull is not touched to agree
+		// with the URL; the URL is reported instead.
+		const boot = bootHull(ASKED_HULL, save ? save.commander.state.hull : null);
+		if (boot.warning) console.warn(boot.warning);
+		this.flownHull = boot.hull;
+		this.condition = this.flownFullCondition();
 		this.observeCurrentSystemRelay();
 		for (const _body of this.world.system.bodies)
 			this.scannerContactBuffer.push({} as ScannerContact);
@@ -4178,6 +4193,13 @@ class Game {
 			onRequestAction: (action, id) =>
 				this.consolePress(this.actOnRequest(action, id)),
 			onStationAction: (type, name) => {
+				if (type === "buy-hull") {
+					// The row carries a hull id; one the roster does not sell is a
+					// tampered press, and it buys nothing.
+					const hull = purchasableHullNamed(name);
+					if (hull) this.consolePress(this.transactStation({ type, hull }));
+					return;
+				}
 				const action: StationAction =
 					type === "buy-fuel"
 						? { type }
@@ -5447,7 +5469,10 @@ class Game {
 		// belongs to `?model-viewer=ship`, which frames each hull against its own
 		// declared reach; real traffic needs simulation positions, and those are
 		// #26's to give.
-		this.shipMesh = buildShipMesh(...PLAYER_HULL).root;
+		this.shipMesh = buildShipMesh(
+			this.flownHull,
+			HULL_SPECS[this.flownHull].variant,
+		).root;
 		// Every role's station maps now, beside the hull's: built lazily they
 		// land inside a jump's populate, 32-47 ms a role under `worn`.
 		warmStationMaps();
@@ -5470,6 +5495,82 @@ class Game {
 					markOcclusion(parked.mesh),
 				]);
 		}
+	}
+
+	/**
+	 * Make `hull` the flown hull now (#583 D2): handling and envelope follow
+	 * `flownHull`, the condition is a whole ship of it, and the mesh is
+	 * rebuilt in place.
+	 *
+	 * A whole condition, because #556 ruled nothing about carrying damage
+	 * across a trade-in and a new hull is a new hull. The old mesh is disposed
+	 * and its occlusion record replaced rather than appended, so the list
+	 * `probe-occlusion` reads still has one `ship` row.
+	 */
+	private setFlownHull(hull: HullId): void {
+		// The charge is the new hull's full `chargeAu`, as docking gives — set
+		// here, where the hull takes over, so a hull waiting for the launch
+		// (D10) does not lend the old one its charge while it is still flown.
+		this.chargeAu = HULL_SPECS[hull].chargeAu;
+		if (hull === this.flownHull) return;
+		this.flownHull = hull;
+		this.condition = this.flownFullCondition();
+		const old = this.shipMesh;
+		const mesh = buildShipMesh(hull, HULL_SPECS[hull].variant).root;
+		mesh.name = "ship";
+		mesh.position.copy(old.position);
+		mesh.quaternion.copy(old.quaternion);
+		mesh.visible = old.visible;
+		old.removeFromParent();
+		disposeSubtree(old);
+		this.shipMesh = mesh;
+		const marked = this.markedOcclusion.findIndex(([name]) => name === "ship");
+		const record: (typeof this.markedOcclusion)[number] = [
+			"ship",
+			markOcclusion(mesh),
+		];
+		if (marked >= 0) this.markedOcclusion[marked] = record;
+		else this.markedOcclusion.push(record);
+		this.nearScene.add(mesh);
+	}
+
+	/**
+	 * A hull the shipyard just sold, handed to the ship (#556 D7, D10).
+	 *
+	 * The hull goes into the berth `deliverHull` picks — the one it was bought
+	 * in when it fits — or, with no free berth that fits, it waits for the
+	 * next launch and the ship stays the old hull in the old berth until then.
+	 */
+	private receiveHull(hull: HullId): void {
+		const stationId = this.dock.stationId;
+		const berthId = this.dock.berthId;
+		if (this.dock.phase !== "docked" || !stationId || !berthId) {
+			this.hullOnLaunch = null;
+			this.setFlownHull(hull);
+			return;
+		}
+		const delivery = deliverHull(
+			this.interiorOf(stationId),
+			berthId,
+			HULL_SPECS[hull].env,
+			this.occupiedAt(stationId),
+			this.world.gameTime,
+		);
+		if (delivery.kind === "on-launch") {
+			this.hullOnLaunch = hull;
+			return;
+		}
+		if (delivery.berthId !== berthId) {
+			this.dock = { ...this.dock, berthId: delivery.berthId };
+			const state = this.dockingStates.get(stationId);
+			if (state)
+				this.dockingStates.set(stationId, {
+					...state,
+					berthId: delivery.berthId,
+				});
+		}
+		this.hullOnLaunch = null;
+		this.setFlownHull(hull);
 	}
 
 	private openPlayerTrafficEvent(
@@ -9946,16 +10047,6 @@ class Game {
 
 	private readonly interiors = new Map<string, StationInterior>();
 
-	/** The traffic record `stepDockingProtocol` fills and reuses. Mutable and
-	 *  private, because `tickDocking` reads it synchronously and keeps nothing;
-	 *  the hull never changes while #26's roster is one hull. */
-	private readonly traffic = {
-		interior: null as unknown as StationInterior,
-		hull: PLAYER_ENVELOPE,
-		occupied: EMPTY_BERTHS as ReadonlySet<string>,
-		sessionHere: false,
-	};
-
 	/** How long the traversal in progress takes, seconds, or `null` when none
 	 *  is (§13.3). On the page because the duration is priced on the *route* —
 	 *  a caller scaling by a constant is scaling by the wrong one for any berth
@@ -10029,7 +10120,7 @@ class Game {
 			// §13.2: a grant reserves a berth, so the protocol needs the catalogue
 			// and the envelope it has to fit.
 			interior: this.interiorOf(chosen.id),
-			hull: PLAYER_ENVELOPE,
+			hull: this.flownEnvelope,
 			// §6.1: the same live Traffic occupancy map the route projector fills.
 			occupied: this.occupiedAt(chosen.id),
 			// #13 §5.1.1's shipyard scan. The predicate behind it is #8's and
@@ -10053,7 +10144,7 @@ class Game {
 				"clearance",
 				this.world.gameTime,
 				undefined,
-				PLAYER_ENVELOPE,
+				this.flownEnvelope,
 			);
 		else this.closePlayerTrafficEvent(chosen.id, "clearance");
 		return { id: chosen.id, state: next };
@@ -10167,7 +10258,7 @@ class Game {
 			this.dock.stationId === target
 				? (this.dock.berthId ?? state.berthId)
 				: state.berthId;
-		const full = playerFullCondition();
+		const full = this.flownFullCondition();
 		return {
 			stationId: target,
 			rangeKm: length(pose.rel),
@@ -10316,7 +10407,7 @@ class Game {
 		for (const [id, state] of this.dockingStates) {
 			const next = tickDocking(state, this.world.gameTime, {
 				interior: this.interiorOf(id),
-				hull: PLAYER_ENVELOPE,
+				hull: this.flownEnvelope,
 				occupied: this.occupiedAt(id),
 				sessionHere: this.dock.stationId === id && this.dock.phase !== "flying",
 			});
@@ -10546,6 +10637,12 @@ class Game {
 		if (wasLaunching && this.dock.phase === "flying" && wasAt) {
 			const state = this.dockingStates.get(wasAt);
 			if (state) this.dockingStates.set(wasAt, releaseBerth(state));
+			// #556 D10: a hull no berth could take is delivered here, at the
+			// crossing that ends the launch — the ship flew out as the old one.
+			if (this.hullOnLaunch) {
+				this.setFlownHull(this.hullOnLaunch);
+				this.hullOnLaunch = null;
+			}
 			// **This is where `dockedAt` becomes null**, so this is where the
 			// record stops describing a parked ship. Left to the debounce, a tab
 			// closed in the first moments of a launch reloaded as still parked —
@@ -10629,7 +10726,7 @@ class Game {
 			this.interiorOf(this.dock.stationId),
 			this.world.gameTime,
 			// Fly clear before letting go (#408): two lengths of the hull flown.
-			LAUNCH_CLEAR_HULL_LENGTHS * HULL_SPECS[this.commander.hull].env.lengthKm,
+			LAUNCH_CLEAR_HULL_LENGTHS * this.flownEnvelope.lengthKm,
 		);
 		if (this.dock.phase === "launching") {
 			// The console is gone; its last refusal goes with it, or the next
@@ -10812,7 +10909,7 @@ class Game {
 			this.throttle = 0;
 			return false;
 		}
-		const rate = PLAYER_PERFORMANCE.angularMax;
+		const rate = this.flownPerformance.angularMax;
 		const nose = slewToward(this.nose(), command.nose, rate.yaw * dt);
 		const up = slewToward(this.shipUp(), command.up, rate.roll * dt);
 		this.setAttitude(nose, up);
@@ -11104,7 +11201,7 @@ class Game {
 		this.clearFlightSession();
 		// A reset is a boot, and a boot has a whole ship. Here and not in
 		// `clearFlightSession`, which a jump shares: a jump repairs nothing.
-		this.condition = playerFullCondition();
+		this.condition = this.flownFullCondition();
 
 		// **#241's gate goes back to shut, which is where a boot in open space
 		// finds it.** Left open, a reset would draw both passes for the whole
@@ -12395,7 +12492,7 @@ class Game {
 		this.arrivalRift = new ArrivalRift({
 			pos: this.world.ship.pos,
 			nose: this.nose(),
-			reachKm: HULL_REACH_KM[PLAYER_HULL[0]],
+			reachKm: HULL_REACH_KM[this.flownHull],
 		});
 		this.nearScene.add(this.arrivalRift.object);
 	}
@@ -13239,13 +13336,13 @@ class Game {
 			impulse,
 			this.assist,
 			dt,
-			PLAYER_PERFORMANCE,
+			this.flownPerformance,
 		);
 		this.rotationShare = rotationShare(
 			ratesBefore,
 			this.rates,
 			dt,
-			PLAYER_PERFORMANCE,
+			this.flownPerformance,
 		);
 
 		// Rotations composed in the ship's own frame — multiply on the right —
@@ -13340,11 +13437,11 @@ class Game {
 			this.world.ship,
 			control,
 			dt,
-			PLAYER_PERFORMANCE,
+			this.flownPerformance,
 		);
 		this.driveShare = shares.main;
 		this.lateralShare = shares.lateral;
-		stepWorld(this.world, control, dt, PLAYER_PERFORMANCE);
+		stepWorld(this.world, control, dt, this.flownPerformance);
 		// After the world moved, because the hold is measured against where the
 		// target *is* this frame: a carrier that drove out of range mid-charge
 		// breaks it, and reading the old position would hold it forever.
@@ -14912,20 +15009,34 @@ class Game {
 		const holdKey = hold.lines
 			.map((line) => `${line.owner}:${line.goodName}:${line.amount}`)
 			.join(",");
-		const key = `${this.dock.stationId}|${this.stationConsoleTab}|${this.stationConsoleRevision}|${this.stationConsoleMessage ?? ""}|${hold.usedT}/${hold.capacityT}|${holdKey}`;
+		// The rows read the rungs and the flown hull too: a dock banks rungs,
+		// and a purchase changes the hull, and both must reprice the Shipyard.
+		const rungs = this.rungs();
+		const key = `${this.dock.stationId}|${this.commander.hull}|${Object.values(rungs).join("/")}|${this.stationConsoleTab}|${this.stationConsoleRevision}|${this.stationConsoleMessage ?? ""}|${hold.usedT}/${hold.capacityT}|${holdKey}`;
 		if (this.stationConsoleCacheKey === key) return this.stationConsoleCache;
 		this.stationConsoleCacheKey = key;
 		this.stationConsoleCacheStationId = this.dock.stationId;
 		this.stationConsoleMarketSampleS = sampleS;
 		this.stationConsoleCache = {
 			label: this.nameOfStation(station.id),
-			tab: this.stationConsoleTab,
+			tab:
+				this.stationConsoleTab === "Shipyard" && market.type !== "shipyard"
+					? "Market"
+					: this.stationConsoleTab,
 			market: freshMarket ?? readMarket(),
 			equipment: stationEquipmentScreen({
 				type: market.type,
 				displayTL: this.world.system.record.displayTL,
 				rungs: this.rungs(),
 			}),
+			// #556 D1, D8: the Shipyard tab, at shipyards and nowhere else.
+			shipyard:
+				market.type === "shipyard"
+					? {
+							flown: this.commander.hull,
+							offers: shipyardScreen(this.consoleInput(context)),
+						}
+					: null,
 			credits: this.commander.credits,
 			hold,
 			message: this.stationConsoleMessage,
@@ -15352,7 +15463,7 @@ class Game {
 				nose: this.nose(),
 				up: this.shipUp(),
 			},
-			reachKm: HULL_REACH_KM[PLAYER_HULL[0]],
+			reachKm: HULL_REACH_KM[this.flownHull],
 			starPos: this.starBody?.pos ?? ORIGIN,
 			station:
 				id && body && snap
@@ -15845,24 +15956,64 @@ class Game {
 	}
 
 	/**
+	 * Everything the till reads but the action, at the docked station.
+	 *
+	 * One builder for the press and for the Shipyard tab's rows (#583), so the
+	 * row is priced on exactly the inputs a press on it will be.
+	 */
+	private consoleInput(
+		context: NonNullable<ReturnType<Game["dockedStationContext"]>>,
+	): ConsoleInput {
+		return {
+			commander: this.commander,
+			deficits: context.envelope.deficits,
+			station: context.market,
+			stationKey: context.stationKey,
+			economy: context.economy,
+			gameTimeMin: context.gameTimeMin,
+			displayTL: this.world.system.record.displayTL,
+			entrustedT: entrustedTonnesAboard(this.requests),
+			rungs: this.rungs(),
+			hullReach: this.hullReachHere,
+		};
+	}
+
+	/** How far a hull reaches from the system the ship is in (#185 D3): the
+	 *  shipyard row and the till both read it through `hullOffer`. Kept per
+	 *  system, because the answer is a function of the system and the hull and
+	 *  the console asks for all seven rows on every repaint. */
+	private hullReachOf: { system: string; byHull: Map<HullId, HullReach> } = {
+		system: "",
+		byHull: new Map(),
+	};
+
+	private readonly hullReachHere = (hull: HullId): HullReach => {
+		const { galaxy, index } = this.world.system.record;
+		const system = `${galaxy}:${index}`;
+		if (this.hullReachOf.system !== system)
+			this.hullReachOf = { system, byHull: new Map() };
+		let reach = this.hullReachOf.byHull.get(hull);
+		if (!reach) {
+			reach = hullReachFrom(
+				this.world.galaxy.systems,
+				this.world.system.record,
+				hull,
+			);
+			this.hullReachOf.byHull.set(hull, reach);
+		}
+		return reach;
+	};
+
+	/**
 	 * Applies a complete commerce result or leaves both owner states untouched.
 	 * Returns whether the till took the press: the press's sound reads it (#546).
 	 */
 	private transactStation(action: StationAction): boolean {
 		const context = this.dockedStationContext();
 		if (!context) return false;
-		const { market, envelope, stationKey, galaxyIndex, economy, gameTimeMin } =
-			context;
+		const { galaxyIndex } = context;
 		const result = transactAtStation({
-			commander: this.commander,
-			deficits: envelope.deficits,
-			station: market,
-			stationKey,
-			economy,
-			gameTimeMin,
-			displayTL: this.world.system.record.displayTL,
-			entrustedT: entrustedTonnesAboard(this.requests),
-			rungs: this.rungs(),
+			...this.consoleInput(context),
 			action,
 		});
 		if (!result.accepted) {
@@ -15890,10 +16041,22 @@ class Game {
 		this.clearStationRefusal();
 		// #183 D3: a buy records its basis, a sale banks its margin at once.
 		this.ladders = withCapstone(
-			ladderAfterMarket(this.ladders, action, this.commander, result.commander),
+			action.type === "buy-hull"
+				? ladderAfterHullSale(
+						this.ladders,
+						this.commander.cargo,
+						result.sold ?? [],
+					)
+				: ladderAfterMarket(
+						this.ladders,
+						action,
+						this.commander,
+						result.commander,
+					),
 			this.world.gameTime,
 		);
 		this.commander = result.commander;
+		if (action.type === "buy-hull") this.receiveHull(result.commander.hull);
 		// Through the module's own writer, not by hand. `setDeficits` carries
 		// the galaxy bound, the "no write before the clock" refusal and
 		// `materializeDue`, and it takes the world clock in **seconds** — the

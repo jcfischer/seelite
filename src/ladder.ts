@@ -31,7 +31,7 @@
 import { type CarrierKey, isCarrierKey } from "./carrier-key";
 // Type-only: `station-commerce.ts` imports this module's `Rungs` the same way,
 // and an erased import cannot close a cycle.
-import type { StationAction } from "./station-commerce";
+import type { SoldLot, StationAction } from "./station-commerce";
 import { GALAXY_COUNT, isSystemIndex } from "./world-state";
 
 // ---------------------------------------------------------------------------
@@ -666,3 +666,30 @@ export const ladderAfterSettlement = (
 		{ ...record, basis: reconcileBasis(record.basis, heldAfter) },
 		rewardCr,
 	);
+
+/**
+ * A hull purchase's auto-sale (#556 D6), banked lot by lot as the same sales
+ * pressed by hand would bank: "the same till" includes the ladder. Each lot's
+ * margin reads the hold as it stood before that lot, as `ladderAfterMarket`
+ * reads it before a press.
+ */
+export const ladderAfterHullSale = (
+	record: LadderRecord,
+	cargoBefore: Readonly<Record<string, number>>,
+	sold: readonly SoldLot[],
+): LadderRecord => {
+	let next = { ...record, basis: reconcileBasis(record.basis, cargoBefore) };
+	let held = cargoBefore;
+	for (const lot of sold) {
+		const sale = saleMargin(
+			next.basis,
+			held,
+			lot.good,
+			lot.units,
+			lot.proceedsCr,
+		);
+		next = bankTrade({ ...next, basis: sale.basis }, sale.marginCr);
+		held = { ...held, [lot.good]: (held[lot.good] ?? 0) - lot.units };
+	}
+	return next;
+};
