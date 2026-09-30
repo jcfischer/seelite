@@ -1529,15 +1529,27 @@ price none of them — and this section invents no figure for them — which is 
 the interceptor, the hardest-accelerating hull in the game, prices below the
 courier.
 
-**Working capital is the one bias that was measured, and the re-price re-opened
-half of it.** The exponent collapses to 0.115 at 500 Cr — a hold you cannot fill
-is worth nothing, which is §6's capital-limited opening said a second way — and
-has stopped moving by the kit's total. #182 closed the argument there because
-the cheapest hull then cost more than the kit. **That stopped being true before
-#383**: the kit grew to 20,725 Cr past the interceptor's 20,000, and #383's prices
-put the prospector below it too. A pilot who buys either outright can still be
-inside the range where the bias bites. That cost is not measured,
-and it is left open rather than argued away. The other known bias is §10.1's
+**Working capital is the one bias that was measured, and it stops below every
+capital a sub-kit hull's pilot holds.** The exponent collapses to 0.115 at 500 Cr
+— a hold you cannot fill is worth nothing, which is §6's capital-limited opening
+said a second way — and has stopped moving by the kit's total. #182 closed the
+argument there because the cheapest hull then cost more than the kit. That
+stopped being true before #383: the kit grew to 20,725 Cr past the interceptor's
+20,000, and #383's prices put the prospector below it too. So
+[#594](https://github.com/jcfischer/seelite/issues/594) measured the one ratio
+the law asserts for those two hulls, `r(h) / r(20 t)` at a single capital, paired
+per world against section C's at the kit. It used two arms: a cap on what one hop
+may spend, which is a bound because the wallet never grows, and an opening
+balance that compounds, which is a pilot who has just bought the hull. **Both arms
+are within 1% of the kit from 2,000 Cr up**, at 8 t and at 12 t. The lowest
+capital a pilot holds after the trade-in from the courier with an empty wallet is
+6,900 Cr (prospector; 11,500 for the interceptor), and there every per-world ratio
+equals the kit's. Even a 500 Cr opening balance drifts only 1.5% at 8 t, against
+a world-to-world spread of 0.328–0.419. **The lower segment does not move.** The
+lower segment's own ±1σ is not the yardstick for this: it is the fit's error on
+*b*, and section C's own 8 t ratio (0.395 against the law's 0.400) sits outside it
+at the kit with no cap at all. `measure-hull-pricing.ts` section I reprints the
+table and reads the verdict off the sweep. The other known bias is §10.1's
 no-slippage rule: a hop buys its whole basket at one price, which flatters a hold
 big enough to move the marginal unit. It runs the direction that steepens the
 curve, so the fitted exponents are the upper end of what the sweep supports, and
