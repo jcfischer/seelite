@@ -17863,6 +17863,11 @@ if (postcard) {
 	// them, for the principal's ear. No world, no render loop.
 	const { mountMusicLab } = await import("./music-lab");
 	mountMusicLab();
+} else if (query.has("voice-lab")) {
+	// The voice prototype's listening surface: the formant synthesiser and the
+	// radio, with no game behind them.
+	const { mountVoiceLab } = await import("./voice-lab");
+	mountVoiceLab();
 } else if (query.has("hud-gallery")) {
 	const { mountStateGallery } = await import("./state-gallery");
 	mountStateGallery();
