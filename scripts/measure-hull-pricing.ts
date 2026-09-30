@@ -85,6 +85,7 @@ import {
 import {
 	HOLD_REFERENCE_T,
 	PRICE_ELASTICITY,
+	type QuoteFn,
 	fullKitCr,
 	stockResponse,
 } from "../src/market";
@@ -828,8 +829,7 @@ console.log(
 		HOLD_LADDER.map((h) => ({ h, r: mean(controlAt(h)) })),
 	);
 	const controlBetas = WORLDS.map(
-		(_, wi) =>
-			fitPower(HOLD_LADDER.map((h) => ({ h, r: controlAt(h)[wi] }))).b,
+		(_, wi) => fitPower(HOLD_LADDER.map((h) => ({ h, r: controlAt(h)[wi] }))).b,
 	);
 	// The paired difference in slope, world by world: each world's own
 	// richness cancels, which a difference of pooled fits would not promise.
@@ -903,34 +903,119 @@ console.log(
 		b: Math.round(b * 100) / 100,
 		baselineCr,
 	});
-	const derived = {
-		shipped: lawOf(pooled.b, rate20 * kitWindow.median),
-		control: lawOf(controlPooled.b, controlRate20 * controlWindow.median),
-	};
+	const laws = [
+		{
+			label: "declared",
+			b: HULL_PRICE_EXPONENT,
+			baselineCr: HULL_PRICE_BASELINE_CR,
+		},
+		{ label: "full span", ...lawOf(pooled.b, rate20 * kitWindow.median) },
+		{ label: "roster span", ...lawOf(rs.b, rate20 * kitWindow.median) },
+		{
+			label: "no wedge",
+			...lawOf(controlPooled.b, controlRate20 * controlWindow.median),
+		},
+	];
 	console.log(
-		"\n  the roster under each derivation, beside the declared law" +
-			`\n  (declared ${HULL_PRICE_BASELINE_CR} Cr x (hold/${HOLD_REFERENCE_T})^${HULL_PRICE_EXPONENT};` +
-			` shipped-arm ${derived.shipped.baselineCr.toFixed(0)} Cr x ^${derived.shipped.b};` +
-			` no-wedge ${derived.control.baselineCr.toFixed(0)} Cr x ^${derived.control.b})`,
+		"\n  candidate laws — §7.1's derivation (rate at 20 t x window, fitted b to",
+		"\n  two places) on each fit, beside the declared pair:",
 	);
-	console.log(
-		"\n  hull          hold    declared    shipped arm    no wedge",
-	);
-	for (const id of sortedByHold) {
-		const h = HULL_SPECS[id].holdT;
-		const at = (l: { b: number; baselineCr: number }) =>
-			priceAtExponent(h, l.b, l.baselineCr).toLocaleString("en-GB");
+	for (const l of laws)
 		console.log(
-			`  ${id.padEnd(13)}${rightAlign(h, 4)}${rightAlign((hullPriceCr(h) as number).toLocaleString("en-GB"), 12)}` +
-				`${rightAlign(at(derived.shipped), 15)}${rightAlign(at(derived.control), 12)}`,
+			`    ${l.label.padEnd(12)} ${l.baselineCr.toFixed(0)} Cr x (hold/${HOLD_REFERENCE_T})^${l.b}`,
+		);
+	// **What the hold is measured to be worth**, on the shipped arm: its own
+	// rate times the same window, which is §7.1's definition read at each hold
+	// rather than through a fitted law. A law is judged against this column.
+	const valueAt = (h: number) => mean(curveAt(h)) * kitWindow.median;
+	console.log(
+		`\n  hull          hold   measured${laws.map((l) => rightAlign(l.label, 13)).join("")}`,
+	);
+	const rows = [
+		...sortedByHold.map((id) => ({
+			id: id as string,
+			h: HULL_SPECS[id].holdT,
+		})),
+		{ id: "(ladder)", h: 200 },
+	];
+	for (const { id, h } of rows)
+		console.log(
+			`  ${id.padEnd(13)}${rightAlign(h, 4)}${rightAlign(Math.round(valueAt(h)).toLocaleString("en-GB"), 11)}` +
+				laws
+					.map((l) =>
+						rightAlign(
+							priceAtExponent(h, l.b, l.baselineCr).toLocaleString("en-GB"),
+							13,
+						),
+					)
+					.join(""),
+		);
+	console.log(
+		`  ${"ceiling".padEnd(13)}${rightAlign(HULL_CEILING_HOLD_T, 4)}${rightAlign("-", 11)}` +
+			laws
+				.map((l) =>
+					rightAlign(
+						priceAtExponent(
+							HULL_CEILING_HOLD_T,
+							l.b,
+							l.baselineCr,
+						).toLocaleString("en-GB"),
+						13,
+					),
+				)
+				.join(""),
+	);
+	console.log(
+		"\n  law            worst miss in roster   at 200 t             under the kit   rungs above",
+	);
+	for (const l of laws) {
+		const price = (h: number) => priceAtExponent(h, l.b, l.baselineCr);
+		const misses = sortedByHold.map((id) => {
+			const h = HULL_SPECS[id].holdT;
+			return price(h) / valueAt(h) - 1;
+		});
+		const worst = misses.reduce((a, m) => (Math.abs(m) > Math.abs(a) ? m : a));
+		const under = sortedByHold.filter(
+			(id) => price(HULL_SPECS[id].holdT) < fullKitCr(),
+		);
+		// Section H's count, on this law: the gap from the roster's top to the
+		// ceiling in steps of the roster's own widest step.
+		const ps = sortedByHold.map((id) => price(HULL_SPECS[id].holdT));
+		const widest = Math.max(...ps.slice(1).map((p, i) => p / ps[i]));
+		const rungs = Math.ceil(
+			Math.log(price(HULL_CEILING_HOLD_T) / ps[ps.length - 1]) /
+				Math.log(widest),
+		);
+		console.log(
+			`  ${l.label.padEnd(15)}${rightAlign(pct(worst), 20)}${rightAlign(pct(price(200) / valueAt(200) - 1), 11)}` +
+				`${rightAlign(under.length === 0 ? "none" : under.join(", "), 26)}${rightAlign(rungs, 14)}`,
+		);
+	}
+	{
+		const perWorldRoster = (rates: (h: number) => number[]) =>
+			WORLDS.map(
+				(_, wi) => fitPower(rosterHolds.map((h) => ({ h, r: rates(h)[wi] }))).b,
+			);
+		const ws = perWorldRoster(curveAt);
+		const wc = perWorldRoster(controlAt);
+		console.log(
+			`\n  roster-span b per world (n=${WORLDS.length}): shipped median ${median(ws).toFixed(3)} ` +
+				`(p10 ${quantile(ws, 0.1).toFixed(3)}, p90 ${quantile(ws, 0.9).toFixed(3)}); ` +
+				`no wedge median ${median(wc).toFixed(3)} (p10 ${quantile(wc, 0.1).toFixed(3)}, p90 ${quantile(wc, 0.9).toFixed(3)})`,
 		);
 	}
 	console.log(
-		`  ${"ceiling".padEnd(13)}${rightAlign(HULL_CEILING_HOLD_T, 4)}` +
-			`${rightAlign((hullPriceCr(HULL_CEILING_HOLD_T) as number).toLocaleString("en-GB"), 12)}` +
-			`${rightAlign(priceAtExponent(HULL_CEILING_HOLD_T, derived.shipped.b, derived.shipped.baselineCr).toLocaleString("en-GB"), 15)}` +
-			`${rightAlign(priceAtExponent(HULL_CEILING_HOLD_T, derived.control.b, derived.control.baselineCr).toLocaleString("en-GB"), 12)}`,
+		"\n  §5.2's memory, on both quote laws — reported, not re-opened:",
 	);
+	console.log("    hold t   shipped: memory worth   no wedge: memory worth");
+	for (const holdT of [8, 20, 60, 200]) {
+		const worth = (quote: QuoteFn | undefined, off: number) =>
+			mean(armAt(holdT, { remembers: true, quote }).map(rateOf)) / off;
+		console.log(
+			`${rightAlign(holdT, 10)}${rightAlign(`${worth(undefined, mean(curveAt(holdT))).toFixed(2)}x`, 24)}` +
+				`${rightAlign(`${worth(NO_WEDGE, mean(controlAt(holdT))).toFixed(2)}x`, 25)}`,
+		);
+	}
 	console.log(
 		"\n  The shipped-arm minus no-wedge column is the spread alone; no-wedge",
 		"\n  against §7.1's printed figures is engine drift since #182 alone. Neither",
