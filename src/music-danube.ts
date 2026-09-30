@@ -127,9 +127,14 @@ const ORCHESTRA: Voicing = {
 	// it rises from: legato through its eighths into the held note, more bow
 	// on each attack, a little brighter, to the left of the violins, and just
 	// above them in level.
+	//
+	// And gritty (D16, a first guess for the lab — "the low strings" were
+	// this call, A3 to E4): the saturation, the lowpass opened below A4, and
+	// the rosin under it. The grit raises its rms by half over the call's
+	// notes (0.064 to 0.098), so the level goes from 0.34 to 0.22 to hold it.
 	horn: {
 		voice: "strings",
-		level: 0.34,
+		level: 0.22,
 		glideS: 0.03,
 		attackS: 0.07,
 		releaseS: 0.6,
@@ -138,6 +143,10 @@ const ORCHESTRA: Voicing = {
 		cutoffHz: 1700,
 		envAmount: 1.8,
 		vibrato: 0.12,
+		drive: 0.35,
+		keyTrack: 0.6,
+		rosin: 0.35,
+		rosinLow: 1,
 		pan: -0.35,
 		reverb: 0.5,
 	},
@@ -179,23 +188,16 @@ const ORCHESTRA: Voicing = {
 		vibrato: 0.08,
 		reverb: 0.55,
 	},
-	// Cellos and basses on the first beat: a short stroke, low — and gritty
-	// (D16, a first guess for the lab): the saturation, the lowpass opened
-	// for the low register and the rosin under it. The grit nearly doubles
-	// the level of a note from A1 to A2, so the level is halved to hold it.
+	// Cellos and basses on the first beat: a short stroke, low.
 	bass: {
 		voice: "strings",
-		level: 0.23,
+		level: 0.42,
 		attackS: 0.04,
 		releaseS: 0.25,
 		cutoffHz: 650,
 		envAmount: 1.2,
-		index: 0.35,
+		index: 0.25,
 		vibrato: 0,
-		drive: 0.35,
-		keyTrack: 0.6,
-		rosin: 0.35,
-		rosinLow: 1,
 		reverb: 0.2,
 	},
 	// The oom-pah-pah's "pah": short detached chords, the bow off the string.

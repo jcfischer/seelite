@@ -36,7 +36,8 @@ function sums(b: VoiceBank, frames: number): [number, number] {
 }
 
 /** The voice alone: a low note, a mid chord and a legato pair, and the
- *  waltz's first six seconds in the orchestra. */
+ *  waltz's first six seconds in the orchestra, its horn call as it was
+ *  before the grit. */
 export function stringsFingerprint(over: Partial<PartSpec> = {}): number[] {
 	const part = resolvePart({ voice: "strings", level: 1, ...over }, SR);
 	const out: number[] = [];
@@ -55,7 +56,25 @@ export function stringsFingerprint(over: Partial<PartSpec> = {}): number[] {
 	pair.noteOn(SR - 480, leg, 0, 0, 64, 0.7, SR);
 	out.push(...sums(pair, 2 * SR));
 	const e = new MusicEngine(SR);
-	e.command({ type: "load", id: "o", song: danubeSong("orchestra") }, 0);
+	// The horn call with its grit (D16) taken off again: the desk as it was
+	// before, so the figure still measures the voice and not the tuning.
+	const song = danubeSong("orchestra");
+	const horn = {
+		...song.parts.horn,
+		level: 0.34,
+		drive: 0,
+		keyTrack: 0,
+		rosin: 0,
+		rosinLow: 1,
+	};
+	e.command(
+		{
+			type: "load",
+			id: "o",
+			song: { ...song, parts: { ...song.parts, horn } },
+		},
+		0,
+	);
 	e.command({ type: "play", id: "o", at: "bar" }, 0);
 	const buf = new Float32Array(128);
 	let sq = 0;

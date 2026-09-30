@@ -14,7 +14,8 @@ import {
 	WALTZ_BPM,
 } from "../src/music-danube";
 import { MusicEngine } from "../src/music-engine";
-import type { NoteEvent } from "../src/music-score";
+import type { NoteEvent, PartSpec } from "../src/music-score";
+import { resolvePart, VoiceBank } from "../src/music-voices";
 import { beatSeconds, bpmAt, compileSong } from "../src/music-sequencer";
 
 const SR = 48000;
@@ -275,7 +276,19 @@ describe("the voicings (D12)", () => {
 		// A desk of its own: it stands out of the intro's chord.
 		const o = DANUBE_VOICINGS.orchestra;
 		expect(o.horn.pan).not.toBe(o.violins.pan ?? 0);
-		expect(o.horn.level).toBeGreaterThan(o.violins.level);
+		// Above them as heard, not as a dial: the grit raises a note's level,
+		// so the horn's is set lower and sounds louder (D16).
+		const heard = (spec: PartSpec) => {
+			const b = new VoiceBank(8, SR);
+			b.noteOn(0, resolvePart(spec, SR), 0, 0, 61, 0.5, 0.6 * SR);
+			const out = new Float32Array(SR);
+			for (let f = 0; f < SR; f += 128)
+				b.render(out.subarray(f, f + 128), f, { gain: () => 1 });
+			let s = 0;
+			for (const v of out) s += v * v;
+			return Math.sqrt(s / SR);
+		};
+		expect(heard(o.horn)).toBeGreaterThan(heard(o.violins));
 		expect(o.horn.glideS ?? 0).toBeGreaterThan(0);
 	});
 

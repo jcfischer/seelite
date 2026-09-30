@@ -39,14 +39,17 @@ interface Stored {
 	voicing: DanubeVoicing;
 	desk: DanubePart;
 	pitch: number;
+	/** Whether the desk was picked by hand. A stored desk that was only the
+	 *  old default is not kept: the lab opens on the horn call (D16). */
+	deskChosen?: boolean;
 	edits: Record<string, Partial<Record<StringsKey, number>>>;
 }
 
 function readStore(): Stored {
 	const fresh: Stored = {
 		voicing: "orchestra",
-		desk: "bass",
-		pitch: 36,
+		desk: "horn",
+		pitch: 57,
 		edits: {},
 	};
 	try {
@@ -58,9 +61,13 @@ function readStore(): Stored {
 		const desks = stringsDesks(voicing);
 		return {
 			voicing,
-			desk: desks.includes(s.desk as DanubePart)
-				? (s.desk as DanubePart)
-				: desks[0],
+			desk:
+				s.deskChosen && desks.includes(s.desk as DanubePart)
+					? (s.desk as DanubePart)
+					: desks.includes(fresh.desk)
+						? fresh.desk
+						: desks[0],
+			deskChosen: s.deskChosen === true,
 			pitch: typeof s.pitch === "number" ? s.pitch : fresh.pitch,
 			edits: s.edits && typeof s.edits === "object" ? s.edits : {},
 		};
@@ -230,6 +237,7 @@ export function mountStringsLab() {
 	};
 	deskIn.onchange = () => {
 		state.desk = deskIn.value as DanubePart;
+		state.deskChosen = true;
 		renderSliders();
 		changed();
 	};
