@@ -30,7 +30,8 @@
  * #552 is reached through its own `ensure()` (`renderInPage` says how).
  *
  * `SEED` (default 552) picks the stream; `SEED=off` renders with the engine's
- * own randomness, which is what a player hears. `--out` moves the folder.
+ * own randomness, which is what a player hears. `--out` moves the folder, and
+ * `--only a,b` renders just those entries.
  *
  * ## Not a probe
  *
@@ -67,6 +68,9 @@ function arg(name) {
 	return at >= 0 ? process.argv[at + 1] : undefined;
 }
 const label = arg("label");
+// `--only a,b`: render just those entries — a re-render of what one change
+// moved, rather than the whole set.
+const only = arg("only")?.split(",");
 const ref = arg("ref");
 const out = resolve(arg("out") ?? join(HERE, "sound-set"));
 const seed =
@@ -131,7 +135,16 @@ try {
 	mkdirSync(dir, { recursive: true });
 	const entries = [];
 	let modern = null;
-	for (const entry of SOUND_SET) {
+	const chosen = only
+		? SOUND_SET.filter((e) => only.includes(e.name))
+		: SOUND_SET;
+	if (only && chosen.length !== only.length) {
+		const known = new Set(SOUND_SET.map((e) => e.name));
+		throw new Error(
+			`--only names no entry: ${only.filter((n) => !known.has(n))}`,
+		);
+	}
+	for (const entry of chosen) {
 		const r = await page.evaluate(renderInPage, {
 			entry,
 			sampleRate: SR,
@@ -180,7 +193,7 @@ try {
 		JSON.stringify(manifest, null, "\t"),
 	);
 	writeFileSync(join(out, "index.html"), listeningPage(out));
-	console.log(`wrote ${entries.length} of ${SOUND_SET.length} cues to ${dir}`);
+	console.log(`wrote ${entries.length} of ${chosen.length} cues to ${dir}`);
 	console.log(`open ${join(out, "index.html")}`);
 } finally {
 	await browser?.close();

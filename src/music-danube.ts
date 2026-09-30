@@ -23,9 +23,10 @@
  *   the waltz's dominant, and the run is a minute long.
  * - **D4, re-voiced by D7/D8** — the first voicing, on keys, plucks and a
  *   bell, was heard as *too plinky*; the notes stood and the instruments
- *   changed. Everything is bowed now (`strings`) but the horn call, which is
- *   `brass`: the Andantino's held chord with a tremolo of short strokes over
- *   it; the theme legato on the first violins, the woodwinds' answers on a
+ *   changed. Everything is bowed now (`strings`): the Andantino's held chord
+ *   with a tremolo of short strokes over it and the horns' call on a desk of
+ *   its own (D14: it was `brass` until the principal heard it as *bad*); the
+ *   theme legato on the first violins, the woodwinds' answers on a
  *   second desk; and the oom-pah-pah as a low stroke on the first beat and
  *   short detached chords on the second and third, over a soft held body. A
  *   kick at a tenth of the bed's level stands in for the timpani's weight.
@@ -95,7 +96,7 @@ export type DanubePart =
 	| "kick";
 type Voicing = Readonly<Record<DanubePart, PartSpec>>;
 
-/** D8: the orchestra, bowed, with the horn call on brass. */
+/** D8: the orchestra, bowed; D14 moved the horn call onto the strings too. */
 const ORCHESTRA: Voicing = {
 	// The Andantino's violins: a held chord, bowed slowly in and out.
 	violins: {
@@ -122,13 +123,22 @@ const ORCHESTRA: Voicing = {
 		pan: 0.2,
 		reverb: 0.6,
 	},
-	// The horns' call, carried legato through its eighths into the held note.
+	// The horns' call (D14), a desk of its own so it stands out of the chord
+	// it rises from: legato through its eighths into the held note, more bow
+	// on each attack, a little brighter, to the left of the violins, and just
+	// above them in level.
 	horn: {
-		voice: "brass",
+		voice: "strings",
 		level: 0.34,
 		glideS: 0.03,
-		releaseS: 0.8,
-		pan: -0.2,
+		attackS: 0.07,
+		releaseS: 0.6,
+		unison: 4,
+		index: 0.5,
+		cutoffHz: 1700,
+		envAmount: 1.8,
+		vibrato: 0.12,
+		pan: -0.35,
 		reverb: 0.5,
 	},
 	// The first violins: the theme, legato, the grace notes sliding in.
@@ -205,13 +215,12 @@ const ORCHESTRA: Voicing = {
  * no phaser — over a `drone` bed for the harmony, with the woodwinds'
  * answers on `flute`. No `pluck`, no `keys`, no `fm`.
  *
- * **The horn call is on `brass`, not `analog`.** The call rises out of the
- * chord the intro's machine is holding; on the same voice it is one more
- * line of the same colour and blurs into it. `brass` has what `analog` does
- * not — a scoop into each note and a filter that swells as it speaks — so the
- * call is heard as a call. On a string machine that is also the less cheesy
- * of the two: an `analog` lead with a slow attack is the sound the rest of the
- * voicing already is.
+ * **The horn call is on the orchestra's bowed desk, not `analog`** (D14). The
+ * call rises out of the chord the intro's machine is holding; on the same
+ * voice it is one more line of the same colour and blurs into it. It was on
+ * `brass` for that reason, and the principal heard the brass as *bad*; the
+ * bowed desk keeps the contrast — a bow's attack against the machine's slow
+ * swell — without it. No voicing plays `brass` now; the synth keeps it.
  */
 const OXYGENE: Voicing = {
 	// The intro's held chord: a slow machine, wide, drifting.

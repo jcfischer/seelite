@@ -267,6 +267,18 @@ describe("the voicings (D12)", () => {
 		expect(ox.kick.level).toBe(0.1);
 	});
 
+	test("the horn call is bowed in every voicing, and nothing plays brass (D14)", () => {
+		for (const v of Object.values(DANUBE_VOICINGS)) {
+			expect(v.horn.voice).toBe("strings");
+			for (const p of Object.values(v)) expect(p.voice).not.toBe("brass");
+		}
+		// A desk of its own: it stands out of the intro's chord.
+		const o = DANUBE_VOICINGS.orchestra;
+		expect(o.horn.pan).not.toBe(o.violins.pan ?? 0);
+		expect(o.horn.level).toBeGreaterThan(o.violins.level);
+		expect(o.horn.glideS ?? 0).toBeGreaterThan(0);
+	});
+
 	test("hybrid is oxygene with the body and the accompaniment bowed", () => {
 		const { hybrid, oxygene } = DANUBE_VOICINGS;
 		for (const p of ["strings", "bass", "chords"] as const)
