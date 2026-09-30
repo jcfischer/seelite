@@ -91,7 +91,7 @@ function bands(x: Float32Array, a: number): number[] {
  *  each band floored at what masks it. */
 export function features(ph: string, arm: Arm, seed: number): number[][] {
 	const tokens = parsePhonemes(ph);
-	const voice = VOICES.control;
+	const voice = VOICES.approach;
 	const t = frameTracks(tokens, voice);
 	const onset = t.role.indexOf("vowel") * 80;
 	let x = speak(tokens, voice, seed);

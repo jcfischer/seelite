@@ -1,5 +1,9 @@
 /**
- * What the game says aloud (#600): the lines, which event says which, the
+ * What the game says aloud (#600). **Approach control** is a station's radio
+ * voice in flight (CONTEXT.md); it is not **Station control**, the first
+ * day's voice on the docked console, whose place first-useful-day D3 owns.
+ *
+ * Also: the lines, which event says which, the
  * music's numbers, and the `?voices=` arm. Text only, so the director and the
  * tests read it with no synthesiser behind it; `comms-voice.ts` renders a
  * line, and `AudioFX.speak` plays it.
@@ -7,15 +11,16 @@
  * The lines voice what the console already says, and no more: a clearance
  * answer on a **change** of answer, as `clearanceTone` sounds it (#546); a
  * struck carrier's hail (`hailText`, which the rail prints with its
- * callsign); and station control's welcome as the arrival begins. Every word
+ * callsign); and approach control's welcome as the arrival begins. Every word
  * is the lexicon's (`speech-lexicon.ts`), and `tests/comms.test.ts` holds each
  * line to it, because a word the lexicon lacks is skipped, not said.
  */
+import { clearanceTone } from "./console-sound";
 import type { Clearance } from "./docking";
 import { mix, seededRand } from "./rng";
 
 /** Who is speaking: a voice of `speech.ts`'s `VOICES`. */
-export type CommsVoice = "control" | "pilot" | "pirate" | "machine";
+export type CommsVoice = "approach" | "pilot" | "pirate" | "machine";
 
 export interface CommsLine {
 	readonly text: string;
@@ -25,40 +30,40 @@ export interface CommsLine {
 export const COMMS_LINES = {
 	granted: {
 		text: "Clearance granted. Proceed to your berth.",
-		voice: "control",
+		voice: "approach",
 	},
-	queued: { text: "Docking request queued. Hold position.", voice: "control" },
+	queued: { text: "Docking request queued. Hold position.", voice: "approach" },
 	deniedHostile: {
 		text: "Docking request denied. You are hostile.",
-		voice: "control",
+		voice: "approach",
 	},
 	deniedContraband: {
 		text: "Docking request denied. Contraband on board.",
-		voice: "control",
+		voice: "approach",
 	},
 	deniedNoBerth: {
 		text: "Docking request denied. No berth for your ship.",
-		voice: "control",
+		voice: "approach",
 	},
 	ceaseFire: { text: "Cease fire! Cease fire!", voice: "pilot" },
-	welcome: { text: "Welcome aboard, commander.", voice: "control" },
+	welcome: { text: "Welcome aboard, commander.", voice: "approach" },
 } as const satisfies Record<string, CommsLine>;
 
 export type CommsLineId = keyof typeof COMMS_LINES;
 
-/** Station control's answer, on a change of answer only — the same changes
- *  `clearanceTone` sounds — or `null` when it is not news. */
+/** Approach control's answer, on a change of answer only — read from
+ *  `clearanceTone` (#546), so the voice and the console tone cannot disagree
+ *  about what is news — or `null` when it is not. */
 export function clearanceLine(
 	prev: Clearance,
 	next: Clearance,
 ): CommsLineId | null {
+	if (clearanceTone(prev, next) === null) return null;
 	if (next.kind === "denied") {
-		if (prev.kind === "denied" && prev.reason === next.reason) return null;
 		if (next.reason === "hostile") return "deniedHostile";
 		if (next.reason === "contraband") return "deniedContraband";
 		return "deniedNoBerth";
 	}
-	if (next.kind === "none" || next.kind === prev.kind) return null;
 	return next.kind === "granted" ? "granted" : "queued";
 }
 

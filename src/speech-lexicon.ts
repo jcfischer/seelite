@@ -13,6 +13,7 @@ export const LEXICON: Readonly<Record<string, string>> = {
 	A: "AH0",
 	ABOARD: "AH0 B AO1 R D",
 	ALERT: "AH0 L ER1 T",
+	APPROACH: "AH0 P R OW1 CH",
 	AND: "AH0 N D",
 	ARE: "AA1 R",
 	BAY: "B EY1",

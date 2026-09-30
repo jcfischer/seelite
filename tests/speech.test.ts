@@ -111,14 +111,14 @@ describe("the synthesiser", () => {
 
 	test("a phrase is finite, peaks at 0.9 and renders the same twice", () => {
 		const { tokens } = textToTokens("Cobra one, clearance granted.");
-		const a = speak(tokens, VOICES.control);
+		const a = speak(tokens, VOICES.approach);
 		let peak = 0;
 		for (const v of a) {
 			expect(Number.isFinite(v)).toBe(true);
 			peak = Math.max(peak, Math.abs(v));
 		}
 		expect(peak).toBeCloseTo(0.9, 5);
-		expect(speak(tokens, VOICES.control)).toEqual(a);
+		expect(speak(tokens, VOICES.approach)).toEqual(a);
 		expect(a.length / SPEECH_RATE).toBeGreaterThan(1);
 		expect(a.length / SPEECH_RATE).toBeLessThan(3);
 	});
@@ -250,8 +250,8 @@ describe("the nasal zero", () => {
 
 describe("the radio", () => {
 	test("it passes its band and little outside it", () => {
-		const { tokens } = textToTokens("Commander, this is station control.");
-		const x = radio(speak(tokens, VOICES.control), {
+		const { tokens } = textToTokens("Commander, this is approach control.");
+		const x = radio(speak(tokens, VOICES.approach), {
 			...RADIO,
 			hiss: 0,
 			squelch: false,

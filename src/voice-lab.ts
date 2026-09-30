@@ -11,14 +11,13 @@ import { MUSIC_VOICE_SPACE } from "./comms-voice";
 import { RADIO, radio } from "./radio";
 import { SPEECH_RATE, speak, VOICES } from "./speech";
 import { LEXICON, textToTokens } from "./speech-lexicon";
-import { speak as speakV1 } from "./speech-v1";
 
 const PRESETS = [
 	// Minimal pairs, in the manner of the Modified Rhyme Test: which of each
 	// set is heard as another says what to fix.
 	"[B EY1] , [D EY1] , [G EY1] . [P AE1 D] , [B AE1 D] , [T AE1 D] . [S IH1 N] , [F IH1 N] , [TH IH1 N] , [SH IH1 N] . [M EY1] , [N EY1] .",
 	"Cobra one, clearance granted. Proceed to your berth.",
-	"Commander, this is station control. Welcome aboard.",
+	"Commander, this is approach control. Welcome aboard.",
 	"Docking request denied. Hold position.",
 	"Hostile contact. Shields up. Weapons in range.",
 	"Drop your cargo or die, pilot.",
@@ -44,7 +43,6 @@ export function mountVoiceLab() {
   <label>Voice <select id="voice">${Object.keys(VOICES)
 		.map((v) => `<option>${v}</option>`)
 		.join("")}</select></label>
-  <label style="margin-left:12px">Engine <select id="engine"><option value="locus">locus (second)</option><option value="first">first</option></select></label>
   <label style="margin-left:12px">Rate <input id="rate" type="range" min="0.7" max="1.4" step="0.05" value="1"> <span id="rateV">1.00</span></label>
   <label style="margin-left:12px">Pitch <input id="pitch" type="range" min="0.7" max="1.4" step="0.05" value="1"> <span id="pitchV">1.00</span></label>
 </p>
@@ -89,8 +87,7 @@ export function mountVoiceLab() {
 			f0: base.f0 * Number($<HTMLInputElement>("pitch").value),
 		};
 		const t0 = performance.now();
-		const engine = $<HTMLSelectElement>("engine").value;
-		const dry = (engine === "first" ? speakV1 : speak)(tokens, voice);
+		const dry = speak(tokens, voice);
 		const through = (
 			root.querySelector("input[name=through]:checked") as HTMLInputElement
 		).value;

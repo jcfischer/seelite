@@ -168,7 +168,9 @@ export interface SpeechVoice {
 }
 
 export const VOICES: Readonly<Record<string, SpeechVoice>> = {
-	control: {
+	// Approach control: a station's radio voice (#600), not the first day's
+	// Station control.
+	approach: {
 		f0: 110,
 		tract: 1,
 		declination: 0.22,

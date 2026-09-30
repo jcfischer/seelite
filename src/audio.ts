@@ -80,6 +80,8 @@ export interface SpeechSpace {
 	readonly feedback: number;
 }
 const SPEECH_ECHO_LOWPASS_HZ = 1800;
+/** The longest a far-off voice's echo is kept connected after its line. */
+export const SPEECH_ECHO_MAX_TAIL_S = 10;
 
 /**
  * A settings step, `0`..`1`, as a bus gain (#542 D2).
@@ -359,36 +361,60 @@ export class AudioFX {
 		const src = ctx.createBufferSource();
 		src.buffer = buf;
 		const out = buses[bus];
-		if (space) {
-			// Far off: quieter, and mostly its own echo, darkening as it repeats.
-			const level = ctx.createGain();
-			level.gain.value = space.level;
-			const delay = ctx.createDelay(2);
-			delay.delayTime.value = space.echoS;
-			const tone = ctx.createBiquadFilter();
-			tone.type = "lowpass";
-			tone.frequency.value = SPEECH_ECHO_LOWPASS_HZ;
-			const fb = ctx.createGain();
-			fb.gain.value = space.feedback;
-			src.connect(level);
-			level.connect(out);
-			level.connect(delay);
-			delay.connect(tone);
-			tone.connect(fb);
-			fb.connect(delay);
-			tone.connect(out);
-			// A loop never falls silent on its own terms, so it is taken apart
-			// once the line has ended and the echo has fallen 60 dB.
-			const tailS =
-				(space.echoS * Math.log(1e-3)) /
-				Math.log(Math.max(1e-3, space.feedback));
-			src.onended = () =>
-				setTimeout(() => {
-					for (const n of [level, delay, tone, fb]) n.disconnect();
-				}, tailS * 1000);
-		} else src.connect(out);
-		const now = ctx.currentTime;
+		if (space) this.room(ctx, src, out, space);
+		else src.connect(out);
 		const len = samples.length / sampleRate;
+		src.start(this.queueLine(bus, src, len, ctx.currentTime));
+		return len;
+	}
+
+	/** A far-off voice's room between `src` and `out`: quieter, and mostly
+	 *  its own echo, darkening as it repeats. */
+	private room(
+		ctx: BaseAudioContext,
+		src: AudioBufferSourceNode,
+		out: AudioNode,
+		space: SpeechSpace,
+	) {
+		const level = ctx.createGain();
+		level.gain.value = space.level;
+		const delay = ctx.createDelay(2);
+		delay.delayTime.value = space.echoS;
+		const tone = ctx.createBiquadFilter();
+		tone.type = "lowpass";
+		tone.frequency.value = SPEECH_ECHO_LOWPASS_HZ;
+		const fb = ctx.createGain();
+		fb.gain.value = space.feedback;
+		src.connect(level);
+		level.connect(out);
+		level.connect(delay);
+		delay.connect(tone);
+		tone.connect(fb);
+		fb.connect(delay);
+		tone.connect(out);
+		// A loop never falls silent on its own terms, so it is taken apart
+		// once the line has ended and the echo has fallen 60 dB — and never
+		// later than `SPEECH_ECHO_MAX_TAIL_S`: at a feedback of 1 it would
+		// never fall at all.
+		const fb1 = Math.min(0.99, Math.max(1e-3, space.feedback));
+		const tailS = Math.min(
+			SPEECH_ECHO_MAX_TAIL_S,
+			(space.echoS * Math.log(1e-3)) / Math.log(fb1),
+		);
+		src.onended = () =>
+			setTimeout(() => {
+				for (const n of [level, delay, tone, fb]) n.disconnect();
+			}, tailS * 1000);
+	}
+
+	/** When a line of `len` s on `bus` starts, asked for at `now`: after the
+	 *  one speaking, replacing a line still waiting. */
+	private queueLine(
+		bus: SpeechBus,
+		src: AudioBufferSourceNode,
+		len: number,
+		now: number,
+	): number {
 		const slot = this.spoken.get(bus) ?? { speakingEnds: 0, waiting: null };
 		let from: number;
 		if (slot.waiting && slot.waiting.from > now) {
@@ -402,14 +428,13 @@ export class AudioFX {
 				);
 			from = Math.max(now, slot.speakingEnds);
 		}
-		src.start(from);
 		if (from > now) slot.waiting = { src, from, len };
 		else {
 			slot.speakingEnds = from + len;
 			slot.waiting = null;
 		}
 		this.spoken.set(bus, slot);
-		return len;
+		return from;
 	}
 
 	/**

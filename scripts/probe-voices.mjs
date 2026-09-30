@@ -20,7 +20,7 @@
  *   no room, whose tail is silent; and the music row Off is silence.
  * - **a line asked while one speaks waits for it** — two lines asked at once
  *   last as long as both, not as long as one.
- * - **the game says station control's answer, and `?voices=nocomms` does
+ * - **the game says approach control's answer, and `?voices=nocomms` does
  *   not** — the wiring in `main.ts`, read by a spy on `audio.speak` around a
  *   clearance request beside a station.
  * - **the game says the numbers on the music bus** — the director's phrase,
@@ -198,7 +198,7 @@ try {
 	const spoken = await saysOnClearance(null);
 	const quiet = await saysOnClearance("nocomms");
 	check(
-		"the game says station control's answer, and ?voices=nocomms does not",
+		"the game says approach control's answer, and ?voices=nocomms does not",
 		spoken.kind !== null &&
 			spoken.kind !== "none" &&
 			spoken.out.length === 1 &&

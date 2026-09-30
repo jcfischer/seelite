@@ -77,6 +77,9 @@ export function renderNumbersAhead(text: string) {
 	});
 }
 
+/** Whether `text` has been rendered ahead and not yet taken. */
+export const aheadReady = (text: string) => ahead.has(text);
+
 /** The phrase for `text`: the one rendered ahead, or rendered now. */
 export function takeNumbers(text: string): Float32Array {
 	const hit = ahead.get(text);

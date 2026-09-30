@@ -18,7 +18,7 @@ import {
 import { textToTokens } from "../src/speech-lexicon";
 
 /** The lengths, in frames, of each run of vowel frames, in order. */
-const vowelRuns = (tokens: Token[], voice: SpeechVoice = VOICES.control) => {
+const vowelRuns = (tokens: Token[], voice: SpeechVoice = VOICES.approach) => {
 	const t = frameTracks(tokens, voice);
 	const runs: number[] = [];
 	let n = 0;
@@ -70,7 +70,7 @@ describe("durations (Klatt's rules)", () => {
 });
 
 describe("intonation (a hat pattern)", () => {
-	const pitchAt = (text: string, voice = VOICES.control) => {
+	const pitchAt = (text: string, voice = VOICES.approach) => {
 		const tokens = textToTokens(text).tokens;
 		const t = frameTracks(tokens, voice);
 		const vowels = t.role.flatMap((r, i) => (r === "vowel" ? [i] : []));
@@ -78,7 +78,7 @@ describe("intonation (a hat pattern)", () => {
 	};
 
 	test("the pitch rises into the first stressed vowel and falls at the end", () => {
-		const { t, vowels } = pitchAt("This is the station control.");
+		const { t, vowels } = pitchAt("This is approach control.");
 		const first = vowels[0];
 		const last = vowels[vowels.length - 1];
 		let peak = 0;
@@ -96,10 +96,7 @@ describe("intonation (a hat pattern)", () => {
 	});
 
 	test("the machine speaks on one pitch", () => {
-		const { t, vowels } = pitchAt(
-			"This is the station control.",
-			VOICES.machine,
-		);
+		const { t, vowels } = pitchAt("This is approach control.", VOICES.machine);
 		const ps = vowels.map((i) => t.pitch[i]);
 		expect(Math.max(...ps) - Math.min(...ps)).toBeLessThan(0.01);
 	});

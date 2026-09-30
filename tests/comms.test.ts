@@ -4,6 +4,7 @@
  * sounds is the principal's ear; that it reaches a bus is here.
  */
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
+import { clearanceTone } from "../src/console-sound";
 import type { Clearance } from "../src/docking";
 import {
 	COMMS_LINES,
@@ -13,12 +14,14 @@ import {
 	voiceArms,
 } from "../src/comms";
 import {
+	aheadReady,
 	renderLine,
 	renderNumbers,
 	renderNumbersAhead,
 	takeNumbers,
 } from "../src/comms-voice";
 import { textToTokens } from "../src/speech-lexicon";
+import { SPEECH_ECHO_MAX_TAIL_S } from "../src/audio";
 import { reaches, unlocked, withFakeWindow } from "./lib/fake-audio";
 
 withFakeWindow(beforeEach, afterEach);
@@ -49,7 +52,7 @@ describe("the lines", () => {
 		expect(renderLine("granted")).toBe(renderLine("granted"));
 	});
 
-	test("station control speaks on a change of answer, as the console sounds", () => {
+	test("approach control speaks on a change of answer, as the console sounds", () => {
 		expect(clearanceLine(none, granted)).toBe("granted");
 		expect(clearanceLine(queued, granted)).toBe("granted");
 		expect(clearanceLine(granted, granted)).toBeNull();
@@ -64,6 +67,27 @@ describe("the lines", () => {
 		expect(clearanceLine(granted, none)).toBeNull();
 	});
 
+	test("approach control speaks exactly when the console sounds", () => {
+		// Round 2: `clearanceLine` reads `clearanceTone`, and every pair of
+		// answers is held to it, so the two cannot drift apart.
+		const answers: Clearance[] = [
+			none,
+			granted,
+			{ kind: "granted", expiresAtS: 90 },
+			queued,
+			{ kind: "queued", position: 1 },
+			denied("hostile"),
+			denied("contraband"),
+			denied("no berth that fits"),
+		];
+		for (const prev of answers)
+			for (const next of answers)
+				expect(
+					clearanceLine(prev, next) !== null,
+					`${JSON.stringify(prev)} -> ${JSON.stringify(next)}`,
+				).toBe(clearanceTone(prev, next) !== null);
+	});
+
 	test("the numbers are the system's own, and move on", () => {
 		const a = numbersPhrase(1234, 0);
 		expect(a).toBe(numbersPhrase(1234, 0));
@@ -76,19 +100,18 @@ describe("the lines", () => {
 
 describe("rendering off the frame", () => {
 	test("the next phrase is rendered ahead, not when it is asked, and taken once", async () => {
+		// Round 2 of #600's review: the first form of this test passed with
+		// `renderNumbersAhead` a no-op. It reads the cache now.
 		const text = numbersPhrase(4242, 7);
 		renderNumbersAhead(text);
-		// Headless there is no idle callback, so a timer stands in for it: the
-		// render has not happened inside the call that asked for it.
-		const early = takeNumbers(text);
+		// Not inside the call that asked: headless, a timer stands in for the
+		// page's idle callback.
+		expect(aheadReady(text)).toBe(false);
 		await new Promise((r) => setTimeout(r, 5));
-		renderNumbersAhead(text);
-		await new Promise((r) => setTimeout(r, 5));
+		expect(aheadReady(text)).toBe(true);
 		const taken = takeNumbers(text);
+		expect(aheadReady(text)).toBe(false);
 		expect(taken).toEqual(renderNumbers(text));
-		expect(early).toEqual(taken);
-		// Taken once: the next ask renders afresh.
-		expect(takeNumbers(text)).not.toBe(taken);
 	});
 });
 
@@ -167,5 +190,29 @@ describe("a spoken line on the engine", () => {
 		// 60 dB of a 0.5 feedback every 0.42 s: about ten repeats.
 		expect(waited).toBeGreaterThan(4000);
 		expect(waited).toBeLessThan(4500);
+	});
+
+	test("an echo that would never fall is still taken apart", () => {
+		const { audio, ctx } = unlocked();
+		audio.speak(new Float32Array(1600), 16000, "music", {
+			echoS: 0.42,
+			feedback: 1,
+			level: 0.3,
+		});
+		const src = ctx.sources.at(-1) as unknown as { onended: () => void };
+		const saved = globalThis.setTimeout;
+		let waited = Number.NaN;
+		globalThis.setTimeout = ((fn: () => void, ms: number) => {
+			waited = ms;
+			fn();
+			return 0;
+		}) as unknown as typeof setTimeout;
+		try {
+			src.onended();
+		} finally {
+			globalThis.setTimeout = saved;
+		}
+		expect(Number.isFinite(waited)).toBe(true);
+		expect(waited).toBeLessThanOrEqual(SPEECH_ECHO_MAX_TAIL_S * 1000);
 	});
 });

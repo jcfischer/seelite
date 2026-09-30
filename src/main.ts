@@ -1149,7 +1149,7 @@ if (MUSIC_ARMS.unknown.length)
 	);
 /**
  * Which voices speak (#600), from `?voices=`: `off`, `nocomms` or
- * `nomusic`. Station control and hails on the console bus; the numbers
+ * `nomusic`. Approach control and hails on the console bus; the numbers
  * station in the Berlin bed's calm on the music bus.
  */
 const VOICE_ARMS = voiceArms(
@@ -10595,7 +10595,7 @@ class Game {
 				this.world.gameTime,
 			);
 			this.openPlayerTrafficEvent(id, "lane", this.world.gameTime, "arrival");
-			// Station control's welcome as the arrival begins (#600).
+			// Approach control's welcome as the arrival begins (#600).
 			this.sayComms("welcome");
 			this.world.ship.vel = stationVel;
 			// #183 D7: the dock banks what the flight earned, and the station's
@@ -12409,12 +12409,24 @@ class Game {
 		for (const cmd of step.commands) this.music.send(cmd);
 		// The numbers station, far off in the music (#600). The next phrase is
 		// rendered ahead, in idle time, never inside this step.
-		if (VOICE_ARMS.music && step.state.bed === "flight")
-			renderNumbersAhead(
-				numbersPhrase(this.world.system.record.seed, step.state.voiceN),
-			);
+		// Only where it will be said, and worked out only when it changes.
+		if (
+			VOICE_ARMS.music &&
+			MUSIC_ARMS.arms.bed === "berlin" &&
+			step.state.bed === "flight"
+		) {
+			const seed = this.world.system.record.seed;
+			const key = `${seed >>> 0}/${step.state.voiceN}`;
+			if (key !== this.numbersAheadKey) {
+				this.numbersAheadKey = key;
+				renderNumbersAhead(numbersPhrase(seed, step.state.voiceN));
+			}
+		}
 		if (step.voice) sayNumbers(this.audio, step.voice);
 	}
+
+	/** The numbers phrase last rendered ahead, as system/index (#600). */
+	private numbersAheadKey = "";
 
 	/** A comms line through the radio, on the console bus (#600). Rendered
 	 *  once per line and kept (`comms-voice.ts`). */

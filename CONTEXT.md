@@ -361,6 +361,14 @@ _Avoid_: Intro, cutscene (it is not a film; the flight is the game's)
 The voice that speaks to a guided pilot on the docked station console and in the Communications log during the first day. `docs/specs/first-useful-day.md` D3 owns where it speaks and when it stops.
 _Avoid_: Dockmaster, tutorial prompt
 
+**Approach control**:
+A station's voice on the radio in flight: it answers each change of a docking clearance and welcomes an arrival. A synthesised voice through the ship's radio (#600); `src/comms.ts` owns what it says and when. Not **Station control**, which is the first day's voice on the docked console.
+_Avoid_: Station control (the first day's voice), tower
+
+**Numbers station**:
+A transmission overheard far off in the Berlin bed's calm: groups of digits in a machine voice, the system's own and in the system's order, played through an echo on the music bus (#600). The director says when and what; `src/comms.ts` owns the phrases.
+_Avoid_: Radio chatter (it is not addressed to the pilot)
+
 **Accepted request**:
 A job the pilot has explicitly committed to undertaking for a requester. `docs/specs/missions-and-requests.md` owns concurrent commitments and progress (D1 and §3).
 _Avoid_: Active mission (when implying a single accepted job)

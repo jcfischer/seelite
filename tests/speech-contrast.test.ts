@@ -6,8 +6,11 @@
  *
  * Contrast is the distance between two words over the distance between two
  * renders of one word, each band floored at the noise that masks it. The
- * threshold is the ear's: at the first radio P/T read 1.89 and was heard
- * apart, B/D/G read 0.61–0.99 and were heard as one.
+ * threshold is the ear's, from the report it answers: on the synthesiser
+ * the principal heard then, through the first radio's hiss, P/T read 1.89
+ * and was heard apart, and B/D/G read 0.61–0.99 and were heard as one. The
+ * merged synthesiser reads 0.69/1.14/0.72 through that hiss (`radio.ts`), so
+ * B/G alone has since crossed 1 — under this threshold still.
  */
 import { describe, expect, test } from "bun:test";
 import { contrast } from "../scripts/measure-speech-contrast";
