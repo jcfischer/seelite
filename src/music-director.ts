@@ -259,11 +259,7 @@ export function stepMusic(
 			cmds.push({
 				type: "load",
 				id: "station",
-				song: BEDS[arms.bed].station(
-					r.systemSeed,
-					role,
-					0,
-				),
+				song: BEDS[arms.bed].station(r.systemSeed, role, 0),
 			});
 		cmds.push({
 			type: "crossfade",
@@ -288,10 +284,7 @@ export function stepMusic(
 			cmds.push({
 				type: "load",
 				id: flightId,
-				song: BEDS[arms.bed].flight(
-					r.systemSeed,
-					variant,
-				),
+				song: BEDS[arms.bed].flight(r.systemSeed, variant),
 			});
 		}
 		cmds.push(
@@ -364,10 +357,7 @@ export function stepMusic(
 			{
 				type: "load",
 				id: flightId,
-				song: BEDS[arms.bed].flight(
-					r.systemSeed,
-					variant,
-				),
+				song: BEDS[arms.bed].flight(r.systemSeed, variant),
 			},
 			{
 				type: "crossfade",

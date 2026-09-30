@@ -32,7 +32,9 @@ describe("the Berlin bed", () => {
 		for (const seed of SEEDS.slice(0, 6)) {
 			expect(() => compileSong(berlinFlightBed(seed, 0))).not.toThrow();
 			for (const role of STATION_ROLES)
-				expect(() => compileSong(berlinStationBed(seed, role, 1))).not.toThrow();
+				expect(() =>
+					compileSong(berlinStationBed(seed, role, 1)),
+				).not.toThrow();
 		}
 	});
 
@@ -124,11 +126,14 @@ describe("the Berlin bed", () => {
 		const calm = section(berlinFlightBed(11, 0), "calm");
 		const lengths = new Set(
 			[16, 17, 18, 19].map(
-				(b) => calm.events.filter((e) => e.part === "sparkle" && e.bar === b).length,
+				(b) =>
+					calm.events.filter((e) => e.part === "sparkle" && e.bar === b).length,
 			),
 		);
 		expect(lengths.size).toBe(1);
-		expect(berlinTune(11).odd.length % 2 === 1 || berlinTune(11).odd.length === 6).toBe(true);
+		expect(
+			berlinTune(11).odd.length % 2 === 1 || berlinTune(11).odd.length === 6,
+		).toBe(true);
 	});
 });
 
