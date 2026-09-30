@@ -10,6 +10,7 @@
  * listening surface, not a game mode: no world, no render loop.
  */
 import { AudioFX } from "./audio";
+import { MUSIC_VOICE_SPACE, renderNumbers, SPEECH_RATE } from "./comms-voice";
 import { Music } from "./music";
 import {
 	DEFAULT_MUSIC_ARMS,
@@ -108,6 +109,14 @@ export function mountMusicLab() {
 		});
 		state = step.state;
 		for (const cmd of step.commands) music.send(cmd);
+		// The numbers station, far off in the music (#600).
+		if (step.voice)
+			fx.speak(
+				renderNumbers(step.voice),
+				SPEECH_RATE,
+				"music",
+				MUSIC_VOICE_SPACE,
+			);
 		$("state").textContent = [
 			`bed      ${state.bed}${state.bed === "flight" ? ` (${state.flightId}, variant ${state.variant})` : ""}`,
 			`level    ${state.level}${state.fallS > 0 ? `  falling in ${(FALL_HOLD_S - state.fallS).toFixed(1)} s` : ""}`,

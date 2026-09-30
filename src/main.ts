@@ -133,6 +133,13 @@ import {
 	musicArms,
 	stepMusic,
 } from "./music-director";
+import { type CommsLineId, clearanceLine, voiceArms } from "./comms";
+import {
+	MUSIC_VOICE_SPACE,
+	renderLine,
+	renderNumbers,
+	SPEECH_RATE,
+} from "./comms-voice";
 import {
 	type WeaponSoundState,
 	QUIET_WEAPONS,
@@ -1134,6 +1141,14 @@ if (MUSIC_ARMS.unknown.length)
 	console.warn(
 		`?music: unknown ${MUSIC_ARMS.unknown.join(", ")}; playing the defaults for those`,
 	);
+/**
+ * Which voices speak (#600), from `?voices=`: `off`, `nocomms` or
+ * `nomusic`. Station control and hails on the console bus; the numbers
+ * station in the Berlin bed's calm on the music bus.
+ */
+const VOICE_ARMS = voiceArms(
+	new URLSearchParams(window.location.search).get("voices"),
+);
 const RAIDERS_OFF =
 	RAIDER_PARAM !== null && ["off", "0", "false"].includes(RAIDER_PARAM);
 const RAIDER_PLAYTEST = RAIDER_PARAM !== null && !RAIDERS_OFF;
@@ -6843,6 +6858,8 @@ class Game {
 		// A message, which played `alert` before #546 and still does on
 		// `?consolesound=legacy`.
 		this.consoleNotify("message", "hail");
+		// The struck carrier, on the radio (#600).
+		this.sayComms("ceaseFire");
 	}
 
 	/**
@@ -10138,6 +10155,9 @@ class Game {
 		// the docking computer asks again and again.
 		const answer = clearanceTone(prev.clearance, next.clearance);
 		if (answer) this.consoleNotify(answer);
+		// And says it (#600), on the same changes of answer.
+		const line = clearanceLine(prev.clearance, next.clearance);
+		if (line) this.sayComms(line);
 		if (next.clearance.kind === "queued")
 			this.openPlayerTrafficEvent(
 				chosen.id,
@@ -10571,6 +10591,8 @@ class Game {
 				this.world.gameTime,
 			);
 			this.openPlayerTrafficEvent(id, "lane", this.world.gameTime, "arrival");
+			// Station control's welcome as the arrival begins (#600).
+			this.sayComms("welcome");
 			this.world.ship.vel = stationVel;
 			// #183 D7: the dock banks what the flight earned, and the station's
 			// first dock. **Before the flush below**, which writes `lastDocked`
@@ -12385,10 +12407,24 @@ class Game {
 				stationRole: station?.type ?? null,
 			},
 			dt,
-			MUSIC_ARMS.arms,
+			{ ...MUSIC_ARMS.arms, voice: VOICE_ARMS.music },
 		);
 		this.musicState = step.state;
 		for (const cmd of step.commands) this.music.send(cmd);
+		// The numbers station, far off in the music (#600).
+		if (step.voice)
+			this.audio.speak(
+				renderNumbers(step.voice),
+				SPEECH_RATE,
+				"music",
+				MUSIC_VOICE_SPACE,
+			);
+	}
+
+	/** A comms line through the radio, on the console bus (#600). Rendered
+	 *  once per line and kept (`comms-voice.ts`). */
+	private sayComms(id: CommsLineId) {
+		if (VOICE_ARMS.comms) this.audio.speak(renderLine(id), SPEECH_RATE);
 	}
 	/** The director's memory: bed, level, its hold and the variant (#548). */
 	private musicState: MusicState = initialMusicState();

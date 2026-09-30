@@ -29,6 +29,7 @@ export const BOOT_DIRECT = "direct";
 export const WORKBENCH_ROUTES = Object.freeze([
 	"model-viewer",
 	"music-lab",
+	"voice-lab",
 	"hud-gallery",
 	"galaxy-map",
 	"planet-prototype",

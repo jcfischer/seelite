@@ -253,6 +253,7 @@ describe("the prototype's arms, from ?music=", () => {
 			force: "threat",
 			lowHull: "always",
 			bed: "berlin",
+			voice: true,
 		});
 		expect(musicArms("legacy").arms.bed).toBe("legacy");
 		expect(musicArms("second").arms.bed).toBe("second");

@@ -60,6 +60,8 @@ export class FakeContext {
 	readonly sources: FakeNode[] = [];
 	/** Every saturator built (#577), with the curve it was given. */
 	readonly shapers: (FakeNode & { curve: Float32Array | null })[] = [];
+	/** Every delay built (#600's far-off voice). */
+	readonly delays: (FakeNode & { delayTime: FakeParam })[] = [];
 	/** Every reverb built (#577), with the impulse it was given. */
 	readonly convolvers: (FakeNode & { buffer: unknown })[] = [];
 	constructor() {
@@ -96,6 +98,11 @@ export class FakeContext {
 			Q: new FakeParam(),
 		});
 	}
+	createDelay() {
+		const d = Object.assign(new FakeNode(), { delayTime: new FakeParam() });
+		this.delays.push(d);
+		return d;
+	}
 	createConvolver() {
 		const c = Object.assign(new FakeNode(), {
 			buffer: null as unknown,
@@ -126,7 +133,11 @@ export class FakeContext {
 			buffer: null,
 			loop: false,
 			stoppedAt: [] as number[],
-			start() {},
+			/** Every time `start` was called for. */
+			startedAt: [] as number[],
+			start(t = 0) {
+				s.startedAt.push(t);
+			},
 			stop(t: number) {
 				s.stoppedAt.push(t);
 			},
@@ -137,10 +148,17 @@ export class FakeContext {
 	resume() {}
 }
 
-/** Does `node` reach `target` through the recorded graph? */
-export function reaches(node: FakeNode, target: FakeNode): boolean {
+/** Does `node` reach `target` through the recorded graph? A graph may hold a
+ *  cycle — an echo's feedback loop (#600) — so each node is walked once. */
+export function reaches(
+	node: FakeNode,
+	target: FakeNode,
+	seen = new Set<FakeNode>(),
+): boolean {
 	if (node === target) return true;
-	return node.outputs.some((o) => reaches(o, target));
+	if (seen.has(node)) return false;
+	seen.add(node);
+	return node.outputs.some((o) => reaches(o, target, seen));
 }
 
 /** Install `FakeContext` as `window.AudioContext` for the test, and restore. */
