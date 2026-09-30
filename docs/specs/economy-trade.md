@@ -1475,12 +1475,13 @@ round 23,000 — rounding a price to a legible figure is what this whole section
 does. **The instrument reprints every constant beside what a fresh run derives**,
 per the map's #118 rule.
 
-**The control reproduces #182, so the curve did not drift.** With the spread
+**The control reproduces #182's curve; the window drifted 4.5% and is not traced.** With the spread
 removed the full-span fit reads b 0.612, A 114.77 and a per-world median of 0.621
 (0.531–0.683) — #182's figures to the printed digit. The one factor that moved is
 the kit window, 50.9 min against #182's 48.7, so the control's baseline is 33,914
-Cr against #182's derived 34,743. That drift is small and not the spread's; it is
-reported rather than traced.
+Cr against #182's derived 34,743. That drift is not the spread's, because the
+control has no spread, and it feeds the baseline directly; it is reported rather
+than traced, so "no drift" is a claim about the rate curve only.
 
 **Both factors fly the same economy — memory off, no shopping pass — and
 differ in one thing, the capital they open with.** That is deliberate and it is
@@ -1524,9 +1525,10 @@ courier.
 half of it.** The exponent collapses to 0.115 at 500 Cr — a hold you cannot fill
 is worth nothing, which is §6's capital-limited opening said a second way — and
 has stopped moving by the kit's total. #182 closed the argument there because
-the cheapest hull then cost more than the kit. **It no longer does**: the
-interceptor and the prospector list below it, so a pilot who buys one outright
-can still be inside the range where the bias bites. That cost is not measured,
+the cheapest hull then cost more than the kit. **That stopped being true before
+#383**: the kit grew to 20,725 Cr past the interceptor's 20,000, and #383's prices
+put the prospector below it too. A pilot who buys either outright can still be
+inside the range where the bias bites. That cost is not measured,
 and it is left open rather than argued away. The other known bias is §10.1's
 no-slippage rule: a hop buys its whole basket at one price, which flatters a hold
 big enough to move the marginal unit. It runs the direction that steepens the

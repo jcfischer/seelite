@@ -487,10 +487,10 @@ describe("what a hull costs (#182, #26's D4 and D7)", () => {
 		// **#383's finding, in the shape it has.** With §5.6's spread live the
 		// roster's holds earn in proportion to the hold, so the lower segment is
 		// never *dearer* per tonne as it grows; above the knee the shelves run
-		// short and every further tonne earns less. A single power law passes the
-		// first two assertions and fails the knee; #182's law, which was
-		// cheaper per tonne everywhere, fails nothing here, which is why the
-		// pins below exist.
+		// short and every further tonne earns less. The loop cannot tell one
+		// law from two; the knee is the elasticity read off the *prices* either
+		// side of it, which a single power law of any exponent holds equal.
+		// #182's law fails that, and so would the ^0.88 candidate.
 		let last = 0;
 		let lastPerTonne = Number.POSITIVE_INFINITY;
 		for (let holdT = 1; holdT <= HULL_CEILING_HOLD_T; holdT++) {
@@ -513,10 +513,17 @@ describe("what a hull costs (#182, #26's D4 and D7)", () => {
 		expect(PURCHASABLE_HULL_IDS.map((id) => HULL_SPECS[id].holdT)).toContain(
 			HULL_PRICE_KNEE_HOLD_T,
 		);
-		const perT = (h: number) => (hullPriceCr(h) as number) / h;
-		expect(perT(HULL_CEILING_HOLD_T)).toBeLessThan(
-			perT(HULL_PRICE_KNEE_HOLD_T),
+		// Read off the rounded prices over a wide span each side, so the
+		// rounding step is far below the difference being asserted.
+		const elasticity = (lo: number, hi: number) =>
+			Math.log((hullPriceCr(hi) as number) / (hullPriceCr(lo) as number)) /
+			Math.log(hi / lo);
+		const below = elasticity(
+			HULL_PRICE_KNEE_HOLD_T / 3,
+			HULL_PRICE_KNEE_HOLD_T,
 		);
+		const above = elasticity(HULL_PRICE_KNEE_HOLD_T, HULL_CEILING_HOLD_T);
+		expect(below - above).toBeGreaterThan(0.2);
 	});
 
 	test("the shipped prices are the ones §7.1 publishes, to the credit", () => {

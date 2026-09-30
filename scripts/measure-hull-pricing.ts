@@ -307,6 +307,20 @@ const armAt = (holdT: number, opts: RunOptions = {}): Result[] =>
 
 const rateOf = (r: Result) => finite("Cr/min", r.earnedCr / r.minutes);
 
+/** Tonnes lifted per laden hop over an arm, and that as a share of the hold —
+ *  one definition for section C's column and section J's control column. */
+const liftedPerHop = (arm: readonly Result[]) =>
+	arm.reduce((a, r) => a + r.tonnesLifted, 0) /
+	Math.max(
+		arm.reduce((a, r) => a + r.ladenHops, 0),
+		1,
+	);
+const fillOf = (arm: readonly Result[], holdT: number) =>
+	liftedPerHop(arm) / holdT;
+
+/** §7.1's rounding rule for an exponent: the pooled fit to two places. */
+const twoPlaces = (b: number) => Math.round(b * 100) / 100;
+
 /** Section C's arms, by hold — declared here rather than at its first use so
  *  `curveAt` below closes over a binding a reader can already see. */
 const curve = new Map<number, number[]>();
@@ -337,15 +351,10 @@ for (const holdT of HOLD_LADDER) {
 	shortArms += arm.filter((r) => r.minutes < hours * 60 - 1).length;
 	const rates = arm.map(rateOf);
 	curve.set(holdT, rates);
-	const lifted =
-		arm.reduce((a, r) => a + r.tonnesLifted, 0) /
-		Math.max(
-			arm.reduce((a, r) => a + r.ladenHops, 0),
-			1,
-		);
+	const lifted = liftedPerHop(arm);
+	fillAt.set(holdT, fillOf(arm, holdT));
 	// `startHoldT` read back rather than assumed: the column says what the engine
 	// flew, not what this loop asked for.
-	fillAt.set(holdT, lifted / holdT);
 	const flown = arm[0].startHoldT;
 	if (flown !== holdT)
 		throw new Error(`asked for ${holdT} t, engine flew ${flown} t`);
@@ -390,11 +399,18 @@ function fitPower(points: { h: number; r: number }[]): {
 	return { a, b, se: Math.sqrt(rss / (n - 2) / sxxCentred) };
 }
 
-const perWorld = WORLDS.map((_, wi) =>
-	fitPower(HOLD_LADDER.map((h) => ({ h, r: curveAt(h)[wi] }))),
-);
-const pooled = fitPower(HOLD_LADDER.map((h) => ({ h, r: mean(curveAt(h)) })));
-const betas = perWorld.map((f) => f.b);
+/** One span of holds fitted both ways: pooled on the mean curve, and per
+ *  world for the spread. Section C, both segments and section J's control all
+ *  call this, so the three cannot be fitted differently. */
+const fitSpan = (rates: (h: number) => number[], holds: readonly number[]) => ({
+	pooled: fitPower(holds.map((h) => ({ h, r: mean(rates(h)) }))),
+	perWorld: WORLDS.map(
+		(_, wi) => fitPower(holds.map((h) => ({ h, r: rates(h)[wi] }))).b,
+	),
+});
+const fullSpan = fitSpan(curveAt, HOLD_LADDER);
+const pooled = fullSpan.pooled;
+const betas = fullSpan.perWorld;
 console.log(
 	`\n  arms that ended before the ${hours} h window: ${shortArms} of ` +
 		`${HOLD_LADDER.length * WORLDS.length} — the one terminal state left when` +
@@ -421,11 +437,6 @@ console.log(
 		`    fit residual against the mean curve: median ${(100 * quantile(resid, 0.5)).toFixed(1)}%, ` +
 			`worst ${(100 * Math.max(...resid)).toFixed(1)}% (at ${HOLD_LADDER[resid.indexOf(Math.max(...resid))]} t)`,
 	);
-	console.log(
-		"    **One power law is the wrong shape since #196's spread (#383).** The",
-		"\n    residual above is the tell; the law ships two segments instead, split",
-		"\n    at the knee, and each is fitted on its own span below.",
-	);
 }
 
 /** The holds each segment of §7.1's law is fitted on. The knee is in both:
@@ -440,15 +451,10 @@ if (!LOWER_HOLDS.includes(HULL_PRICE_KNEE_HOLD_T))
 	throw new Error(
 		`the ladder does not fly the knee, ${HULL_PRICE_KNEE_HOLD_T} t`,
 	);
-const segmentFits = (rates: (h: number) => number[]) => {
-	const fit = (holds: readonly number[]) => ({
-		pooled: fitPower(holds.map((h) => ({ h, r: mean(rates(h)) }))),
-		perWorld: WORLDS.map(
-			(_, wi) => fitPower(holds.map((h) => ({ h, r: rates(h)[wi] }))).b,
-		),
-	});
-	return { lower: fit(LOWER_HOLDS), upper: fit(UPPER_HOLDS) };
-};
+const segmentFits = (rates: (h: number) => number[]) => ({
+	lower: fitSpan(rates, LOWER_HOLDS),
+	upper: fitSpan(rates, UPPER_HOLDS),
+});
 const segments = segmentFits(curveAt);
 console.log(
 	`\n  fitted by segment, split at the knee (${HULL_PRICE_KNEE_HOLD_T} t, the roster's largest hold):`,
@@ -462,6 +468,21 @@ for (const [label, holds, f] of [
 			`per world median ${median(f.perWorld).toFixed(3)}, ` +
 			`p10 ${quantile(f.perWorld, 0.1).toFixed(3)}, p90 ${quantile(f.perWorld, 0.9).toFixed(3)}`,
 	);
+{
+	// **The shape verdict is this run's, not a sentence.** "b is well under 1"
+	// was printed whatever the fit said; a knee is claimed only when the two
+	// slopes differ by more than twice their combined standard error.
+	const { lower, upper } = segments;
+	const gap = lower.pooled.b - upper.pooled.b;
+	const sigma = Math.hypot(lower.pooled.se, upper.pooled.se);
+	console.log(
+		gap > 2 * sigma
+			? `    the slopes differ by ${gap.toFixed(3)}, ${(gap / sigma).toFixed(1)}σ: the curve has a knee, and` +
+					"\n    one law over the ladder is the wrong shape for it."
+			: `    the slopes differ by ${gap.toFixed(3)}, only ${(gap / sigma).toFixed(1)}σ: this run does not` +
+					"\n    support a knee, and §7.1's two segments owe a re-derivation.",
+	);
+}
 
 // ---------------------------------------------------------------------------
 // D. What the market's memory is worth to a greedy trader
@@ -579,9 +600,9 @@ const derivedLaw = (
 	fits = segmentFits(rates),
 ): HullPriceLaw => ({
 	baselineCr: mean(rates(HOLD_REFERENCE_T)) * windowMin,
-	exponent: Math.round(fits.lower.pooled.b * 100) / 100,
+	exponent: twoPlaces(fits.lower.pooled.b),
 	kneeHoldT: HULL_PRICE_KNEE_HOLD_T,
-	upperExponent: Math.round(fits.upper.pooled.b * 100) / 100,
+	upperExponent: twoPlaces(fits.upper.pooled.b),
 });
 {
 	// **The #118 loop, closed.** A figure a spec states as measured owes a mode
@@ -697,14 +718,39 @@ console.log(
 // H. The rungs — a count, not a choice
 // ---------------------------------------------------------------------------
 
-console.log("\n== H. where the rungs go ==");
-{
-	const prices = sortedByHold.map(
-		(id) => hullPriceCr(HULL_SPECS[id].holdT) as number,
-	);
+/**
+ * Section H's rung count under any price function — the gap from the roster's
+ * top to the ceiling, in steps of the roster's own widest step. Section J
+ * counts every candidate law through this, so a change to the rule reaches
+ * both.
+ */
+const rungsAbove = (price: (holdT: number) => number) => {
+	const prices = sortedByHold.map((id) => price(HULL_SPECS[id].holdT));
 	const steps = prices.slice(1).map((p, i) => p / prices[i]);
 	const typical = median(steps);
 	const widest = Math.max(...steps);
+	const top = prices[prices.length - 1];
+	const ceiling = price(HULL_CEILING_HOLD_T);
+	const gap = ceiling / top;
+	return {
+		steps,
+		typical,
+		widest,
+		top,
+		ceiling,
+		gap,
+		// Bounded by the widest existing step rather than the typical one, which is
+		// the weaker and safer claim: the fewest rungs that leave the ladder no
+		// coarser anywhere than it already is.
+		rungs: Math.ceil(Math.log(gap) / Math.log(widest)),
+		atTypical: Math.ceil(Math.log(gap) / Math.log(typical)),
+	};
+};
+
+console.log("\n== H. where the rungs go ==");
+{
+	const { steps, typical, widest, top, ceiling, gap, rungs, atTypical } =
+		rungsAbove((h) => hullPriceCr(h) as number);
 	console.log(
 		`  the roster's own price steps: ${steps.map((x) => x.toFixed(2)).join(", ")}`,
 	);
@@ -724,16 +770,7 @@ console.log("\n== H. where the rungs go ==");
 			`${gapThreshold.toFixed(2)}x — room for a rung at the ladder's own`,
 		"\n  spacing. It is not the maximum of the steps, which nothing could exceed.",
 	);
-	const top = prices[prices.length - 1];
 	const topHoldT = HULL_SPECS[sortedByHold[sortedByHold.length - 1]].holdT;
-	const ceiling = hullPriceCr(HULL_CEILING_HOLD_T) as number;
-	const gap = ceiling / top;
-	// The *count* is bounded by the roster's widest existing step rather than by
-	// its typical one, which is the weaker and safer claim: it is the smallest
-	// number of rungs that leaves the ladder no coarser anywhere than it already
-	// is. At the typical step it would be one more.
-	const rungs = Math.ceil(Math.log(gap) / Math.log(widest));
-	const atTypical = Math.ceil(Math.log(gap) / Math.log(typical));
 	console.log(
 		`\n  interior gaps: ${interior} of ${steps.length} — the priced roster has ` +
 			`${interior === 0 ? "none" : `${interior}`}.`,
@@ -821,8 +858,9 @@ console.log(
 {
 	// **Not the claim #182 made here.** It read "the cheapest hull costs more
 	// than the kit, so a player who can buy a hull at all is past the range
-	// where this bias bites", and #383's re-price made it false: printed from
-	// the roster, so the next re-price cannot make it false silently.
+	// where this bias bites". The kit grew past the interceptor's 20,000 Cr
+	// before #383 touched a price, and #383's re-price added the prospector:
+	// printed from the roster, so the next change cannot make it false silently.
 	const cheaper = sortedByHold.filter(
 		(id) => (HULL_SPECS[id].priceCr as number) < fullKitCr(),
 	);
@@ -874,19 +912,12 @@ console.log(
 		// **Per world, then summarised** — the paired design section C's fit uses.
 		// A ratio of means would let the richest worlds speak for the rest.
 		const ratios = shipped.map((r, wi) => r / rates[wi]);
-		const liftedShare = (rs: Result[]) =>
-			rs.reduce((a, r) => a + r.tonnesLifted, 0) /
-			Math.max(
-				rs.reduce((a, r) => a + r.ladenHops, 0),
-				1,
-			) /
-			holdT;
 		const shippedArm = fillAt.get(holdT);
 		if (!shippedArm) throw new Error(`no fill recorded at ${holdT} t`);
 		console.log(
 			`${rightAlign(holdT, 6)}${rightAlign(mean(shipped).toFixed(0), 10)}${rightAlign(mean(rates).toFixed(0), 11)}` +
 				`${rightAlign(`${median(ratios).toFixed(3)} (${quantile(ratios, 0.1).toFixed(3)}-${quantile(ratios, 0.9).toFixed(3)})`, 33)}` +
-				`${rightAlign(`${(100 * shippedArm).toFixed(0)}% / ${(100 * liftedShare(arm)).toFixed(0)}%`, 25)}`,
+				`${rightAlign(`${(100 * shippedArm).toFixed(0)}% / ${(100 * fillOf(arm, holdT)).toFixed(0)}%`, 25)}`,
 		);
 	}
 	console.log(
@@ -895,12 +926,9 @@ console.log(
 	);
 
 	const controlAt = (h: number) => control.get(h) as number[];
-	const controlPooled = fitPower(
-		HOLD_LADDER.map((h) => ({ h, r: mean(controlAt(h)) })),
-	);
-	const controlBetas = WORLDS.map(
-		(_, wi) => fitPower(HOLD_LADDER.map((h) => ({ h, r: controlAt(h)[wi] }))).b,
-	);
+	const controlSpan = fitSpan(controlAt, HOLD_LADDER);
+	const controlPooled = controlSpan.pooled;
+	const controlBetas = controlSpan.perWorld;
 	// The paired difference in slope, world by world: each world's own
 	// richness cancels, which a difference of pooled fits would not promise.
 	const slopeShift = betas.map((b, wi) => b - controlBetas[wi]);
@@ -954,7 +982,7 @@ console.log(
 	// own function; a single power law is the same shape with no knee.
 	const single = (b: number, baselineCr: number): HullPriceLaw => ({
 		baselineCr,
-		exponent: Math.round(b * 100) / 100,
+		exponent: twoPlaces(b),
 		kneeHoldT: Number.POSITIVE_INFINITY,
 		upperExponent: Number.NaN,
 	});
@@ -1036,14 +1064,7 @@ console.log(
 		const under = sortedByHold.filter(
 			(id) => price(HULL_SPECS[id].holdT) < fullKitCr(),
 		);
-		// Section H's count, on this law: the gap from the roster's top to the
-		// ceiling in steps of the roster's own widest step.
-		const ps = sortedByHold.map((id) => price(HULL_SPECS[id].holdT));
-		const widest = Math.max(...ps.slice(1).map((p, i) => p / ps[i]));
-		const rungs = Math.ceil(
-			Math.log(price(HULL_CEILING_HOLD_T) / ps[ps.length - 1]) /
-				Math.log(widest),
-		);
+		const { rungs } = rungsAbove(price);
 		console.log(
 			`  ${label.padEnd(13)}${rightAlign(pct(worstOver(sortedByHold.map((id) => HULL_SPECS[id].holdT))), 19)}` +
 				`${rightAlign(pct(worstOver(UPPER_HOLDS.filter((h) => h > HULL_PRICE_KNEE_HOLD_T))), 11)}` +
