@@ -130,9 +130,10 @@ test("station identities survive and shipyards use only primary or giant hosts",
 		const again = generateContents(record);
 		expect(again.stations).toEqual(contents.stations);
 		const primary = contents.planets.find((planet) => planet.isPrimary);
+		if (!primary) throw new Error(`missing primary in system ${record.index}`);
 		expect(
 			contents.stations.find((station) => station.type === "trade")?.parentId,
-		).toBe(primary?.id);
+		).toBe(primary.id);
 		for (const station of contents.stations) {
 			expect(station.id).toBe(`station-${station.type}`);
 			if (station.type !== "shipyard") continue;
@@ -143,7 +144,7 @@ test("station identities survive and shipyards use only primary or giant hosts",
 			expect(host?.isPrimary || host?.isGasGiant).toBe(true);
 			if (!contents.planets.some((planet) => planet.isGasGiant)) {
 				primaryFallbacks++;
-				expect(station.parentId).toBe(primary?.id);
+				expect(station.parentId).toBe(primary.id);
 			}
 		}
 	}
