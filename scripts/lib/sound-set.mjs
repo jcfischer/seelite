@@ -170,6 +170,7 @@ export const SOUND_SET = Object.freeze([
 	},
 	...musicTimelines(),
 	...adaptiveTimelines(),
+	...danubeTimelines(),
 ]);
 
 /**
@@ -373,6 +374,38 @@ function musicTimelines() {
 			[0, play("march")],
 			[1, { type: "tempo", scale: 1.5, at: "bar", rampBars: 2 }],
 		]),
+	];
+}
+
+/**
+ * #547's Blue Danube (`src/music-danube.ts`), the docking computer's waltz,
+ * scripted as the director will send it: `play` when the computer engages,
+ * `resolve` on the bar line after the plane (D1), or `stop` now over two bars
+ * when the pilot takes the stick (D2). The run lengths are #547's measured
+ * ones: 61–65 s from 4 km out, 90–92 s from 50 km. The intro is ~19.2 s and a
+ * loop of the waltz 36 s, so a resolve at 91 s lands on the end of the second
+ * loop. Each render runs on past its cadence for the arrival and the hall.
+ */
+function danubeTimelines() {
+	const songs = { danube: "danube" };
+	const play = [0, { type: "play", id: "danube", at: "bar" }];
+	const resolve = (s) => [s, { type: "resolve", at: "bar" }];
+	const tune = (name, seconds, script) => ({
+		name,
+		seconds,
+		music: { songs, script },
+	});
+	return [
+		// The intro, two whole loops of the waltz, the cadence.
+		tune("music-danube", 100, [play, resolve(91)]),
+		// The pilot takes the stick 14 s into the first loop: two bars' fade.
+		tune("music-danube-cancel", 40, [
+			play,
+			[33, { type: "stop", at: "now", fadeS: 2.25 }],
+		]),
+		// The shortest run and the longest, the cadence at the plane.
+		tune("music-danube-run-short", 70, [play, resolve(62)]),
+		tune("music-danube-run-long", 100, [play, resolve(92)]),
 	];
 }
 
@@ -581,13 +614,24 @@ export async function renderInPage({
 			? await import("/src/music.ts")
 					.then(async ({ Music }) => ({
 						Music,
-						songs: (await import("/src/music-test-score.ts")).TEST_SONGS,
+						songs: {
+							...(await import("/src/music-test-score.ts")).TEST_SONGS,
+							// #547's waltz, where the served tree has it.
+							...(await import("/src/music-danube.ts")
+								.then((m) => ({ danube: m.BLUE_DANUBE }))
+								.catch(() => ({}))),
+						},
 					}))
 					.catch(() => null)
 			: null;
 	if (
 		(entry.flight && typeof fx.flight !== "function") ||
 		(entry.music && !synth) ||
+		// A song the served tree does not have: #547's waltz at an older ref.
+		(entry.music &&
+			Object.values(entry.music.songs ?? {}).some(
+				(s) => typeof s === "string" && !synth.songs[s],
+			)) ||
 		(entry.witchspace && !knownKinds.includes("witchspaceRide")) ||
 		(entry.scheduled &&
 			!entry.scheduled.kinds.every((k) => knownKinds.includes(k))) ||
