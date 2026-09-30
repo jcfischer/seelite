@@ -68,8 +68,10 @@ quantity  = clamp(clamp(clamp(baseQuantity + changing − product, 0, 63)
 | `PRICE_ELASTICITY` | 0.10 per full hold, any hull | §5.3 |
 | `HOLD_REFERENCE_T` | 20 t — the *baseline hull's* hold | §6, `src/hull.ts` |
 | `DEFICIT_SATURATION_RUNS` | 3.15 runs of the flown hold | §5.2 |
-| `HULL_PRICE_BASELINE_CR` | 35,000 Cr | §7.1 |
-| `HULL_PRICE_EXPONENT` | 0.61 | §7.1 |
+| `HULL_PRICE_BASELINE_CR` | 23,000 Cr | §7.1 |
+| `HULL_PRICE_EXPONENT` | 1, up to the knee | §7.1 |
+| `HULL_PRICE_KNEE_HOLD_T` | 60 t | §7.1 |
+| `HULL_PRICE_UPPER_EXPONENT` | 0.52, above the knee | §7.1 |
 | `HULL_CEILING_HOLD_T` | 197 t | §7.2 |
 | `BID_CUT_FLOOR` | 0.10 — `PRICE_ELASTICITY`, the mark one full hold leaves | §5.6 |
 | `BID_CUT_GRADE` | 0.15 wider from rim to core | §5.6 |
@@ -1386,121 +1388,152 @@ frontier is where you cannot buy what the frontier requires
 [#26](https://github.com/jcfischer/seelite/issues/26) graduated the fog — both
 axes, roles horizontally and tiers vertically — and deferred the prices to a
 measurement on purpose (D4). [#182](https://github.com/jcfischer/seelite/issues/182)
-made it. `src/hull.ts` is where the figures live, as data, per §1's rule.
+made it, and [#383](https://github.com/jcfischer/seelite/issues/383) made it again
+once §5.6's spread had changed what a hold earns. `src/hull.ts` is where the
+figures live, as data, per §1's rule.
 
 **A hull costs what its hold earns back over one kit.**
 
 ```
-hullPriceCr(holdT) = HULL_PRICE_BASELINE_CR
-                     × (holdT / HOLD_REFERENCE_T) ^ HULL_PRICE_EXPONENT
+hullPriceCr(holdT) = HULL_PRICE_BASELINE_CR × (holdT / HOLD_REFERENCE_T) ^ HULL_PRICE_EXPONENT
+                     up to the knee, then that figure at the knee
+                     × (holdT / HULL_PRICE_KNEE_HOLD_T) ^ HULL_PRICE_UPPER_EXPONENT
                      rounded to HULL_PRICE_STEP_CR
 
-HULL_PRICE_BASELINE_CR = 35,000 Cr    HULL_PRICE_EXPONENT = 0.61
+HULL_PRICE_BASELINE_CR = 23,000 Cr    HULL_PRICE_EXPONENT = 1
+HULL_PRICE_KNEE_HOLD_T = 60 t         HULL_PRICE_UPPER_EXPONENT = 0.52
 HULL_PRICE_STEP_CR     = 100 Cr       HULL_CEILING_HOLD_T = 197 t
 ```
 
 | Hull | Hold | Price | vs the kit |
 |---|---|---|---|
-| interceptor | 8 t | 20,000 Cr | 1.05× |
-| prospector | 12 t | 25,600 Cr | 1.34× |
-| **courier** (baseline) | 20 t | **35,000 Cr** | 1.83× |
-| tug | 24 t | 39,100 Cr | 2.04× |
-| explorer | 30 t | 44,800 Cr | 2.34× |
-| miner | 40 t | 53,400 Cr | 2.79× |
-| freighter | 60 t | 68,400 Cr | 3.58× |
+| interceptor | 8 t | 9,200 Cr | 0.44× |
+| prospector | 12 t | 13,800 Cr | 0.67× |
+| **courier** (baseline) | 20 t | **23,000 Cr** | 1.11× |
+| tug | 24 t | 27,600 Cr | 1.33× |
+| explorer | 30 t | 34,500 Cr | 1.66× |
+| miner | 40 t | 46,000 Cr | 2.22× |
+| freighter | 60 t | 69,000 Cr | 3.33× |
 
-`patrol` (6 t, 16,800 Cr) and `raider` (10 t, 22,900 Cr) are priced by the same
-law; they sit on the combat ladder at rungs 6 and 7 (#562 D7) and are not sold
-until #565 and #566 close. The two capitals carry `priceCr: null`,
-because 400 t and 200 t are past the ceiling and outside the range the curve was
-measured over, and #56 rules they dock at nothing.
+The kit is `fullKitCr()`, 20,725 Cr. `patrol` (6 t, 6,900 Cr) and `raider` (10 t,
+11,500 Cr) are priced by the same law; they sit on the combat ladder at rungs 6
+and 7 (#562 D7) and are not sold until #565 and #566 close. The two capitals carry
+`priceCr: null`, because 400 t and 200 t are past the ceiling and outside the
+range the curve was measured over, and #56 rules they dock at nothing.
 
-**The exponent is the finding, and it is well under one.** D6 reasoned from *"a
-60 t hold moves 3× the cargo"*. Measured, it earns **1.9×**: the marginal tonne
-has to be filled with a worse good than the one before it. A roster priced on
-the assumption that income is linear in the hold would have overpriced the
-freighter by **1.54×** — 105,000 Cr against 68,400 — and the 197 t ceiling by
-**2.44×**. Two-to-one is reached above the roster rather than inside it, and a
-draft of this line said "every large hull".
+**What #383 changed, and why the law has two segments.** #182 fitted one power law,
+`hold^0.61`, on an economy with one price per good. §5.6's bid cut takes 10–25% of
+every *sale*. The instrument's section J flies the pre-#196 quote law on today's
+engine as the control, so the spread is measured alone:
 
-**Where the two constants come from.** `scripts/measure-hull-pricing.ts` flies
+- **The level fell by a third.** At 20 t the spread cuts the rate by 57.7% and
+  lengthens the kit window by 60.5% (81.6 min against 50.9); the product, which is
+  the baseline, falls by 32.1%.
+- **The shape changed too, which #196's hypothesis did not expect.** The cut costs
+  a small hold most: an 8 t hold keeps 0.277 of its no-spread rate and a 60 t hold
+  0.538 (paired per world, medians). Over the roster's own holds the rate is now
+  **linear in the hold** — b 0.996 ± 0.007 on the mean curve, per world
+  0.928–1.074 (p10–p90) — where the control reads 0.651. The *mechanism* is not
+  measured: the engine does not split income by good, so #182's "the marginal
+  tonne is filled with a worse good" is not offered for either arm.
+- **Above the freighter's hold the curve bends, and the spread did not cause
+  that.** From 60 t to 200 t the rate rises at b 0.517 ± 0.030 (per world
+  0.344–0.655), and the control's upper segment reads 0.509. #182's single law
+  averaged the two segments; with the lower one straightened, one law misses by
+  31.6% at the top of the ladder. Fill falls to 89% at 200 t and 5 of 512 arms end
+  early, against none in the control.
+
+So the law is two segments, split at `HULL_PRICE_KNEE_HOLD_T`. **The knee is placed,
+not fitted**: it is the largest hold the roster sells, so the lower segment is
+fitted on exactly the holds that exist (8–60 t) and the upper one on the ladder
+above them (60–200 t). The local slope is 0.97 over 20–60 t and 0.60 over 60–120 t,
+so the bend is within one ladder step of it. The principal chose this law on
+2026-09-30 from four candidates, each printed by section J beside the measured
+value of every hold (its rate × the window):
+
+| law | worst miss, roster | worst miss, above it | ceiling | rungs |
+|---|---|---|---|---|
+| two segments (shipped) | +3.1% | +4.4% | 128,000 | 2 |
+| one power law, ^0.88 | +13.8% | +41.4% | 172,500 | 3 |
+| roster fit carried on, ^1.00 | +3.2% | +86.4% | 226,900 | 3 |
+| #182's, 35,000 × ^0.61 | +121.0% | +15.4% | 141,300 | 3 |
+
+**Two digits, and neither is resolved by its fit.** Each exponent is its
+segment's pooled fit rounded to two places. What the standard errors cost is
+measured rather than argued: moving each segment by its own ±1σ moves the
+interceptor 1.1%, the freighter 0.7% and the ceiling 4.4%, and the courier not at
+all (it is the anchor). `measure-hull-pricing.ts` prints that band beside the
+declared law.
+
+**Where the constants come from.** `scripts/measure-hull-pricing.ts` flies
 `scripts/lib/greedy-trader.ts` at sixteen holds over **32 worlds** (4 seeds × 8
-galaxies), 2 h per arm, with the hold as the only thing that varies. Fitted over
-4–200 t the rate is a power law, `114.8 × hold^0.612` Cr/min, within 6% of the
-mean curve at the median hold and 12.1% at its worst (4 t, below any hull in the
-roster). **The law ships `0.61`, and no digit of it is "resolved" by the fit.** Three
-drafts of this paragraph claimed a precision, each wrongly: by the
-*world-to-world* spread (a different and much wider quantity — per-world
-exponent median 0.621, p10–p90 **0.531–0.683**), then by the standard error as
-though it supported the digit it sits in, and the standard error is **0.014**,
-which is a hundredth and a half, so it does not settle the *second* place
-either. The honest statement is that the constant is the mean-curve fit rounded
-to two places and its uncertainty is about ±0.01, and what that costs is
-measured rather than argued: **at 0.61 ± 0.014 the courier does not move at all
-(it is the anchor), the interceptor and the freighter move 1.5% and the ceiling
-3.1%** — every one of them under a rounding step at the bottom and a few at the
-top. The ladder's shape survives its own uncertainty and the price level is
-fixed by the anchor rather than by the exponent, which is why two decimals is a
-legible constant rather than a claim about resolution.
-`measure-hull-pricing.ts` prints that band beside the declared pair.
+galaxies), 2 h per arm, with the hold as the only thing that varies. The baseline
+is the measured rate at 20 t times the economy's own progression unit: the
+measured time the baseline hull takes to earn `fullKitCr()`, **81.6 min median**
+(52.0–176.0) over the same 32 worlds. That gives 23,040 Cr and the constant is the
+round 23,000 — rounding a price to a legible figure is what this whole section
+does. **The instrument reprints every constant beside what a fresh run derives**,
+per the map's #118 rule.
 
-The baseline is the rate at 20 t times the economy's own progression unit: the
-measured time the baseline hull takes to earn `fullKitCr()`, **48.7 min median**
-over the same 32 worlds. At the shipped exponent that derivation gives 34,743 Cr
-and the constant is the round 35,000 — a 0.7% round-up, and rounding a price to a
-legible figure is what this whole section does. **The instrument reprints both
-constants beside what a fresh run derives**, per the map's #118 rule.
+**The control reproduces #182, so the curve did not drift.** With the spread
+removed the full-span fit reads b 0.612, A 114.77 and a per-world median of 0.621
+(0.531–0.683) — #182's figures to the printed digit. The one factor that moved is
+the kit window, 50.9 min against #182's 48.7, so the control's baseline is 33,914
+Cr against #182's derived 34,743. That drift is small and not the spread's; it is
+reported rather than traced.
 
 **Both factors fly the same economy — memory off, no shopping pass — and
 differ in one thing, the capital they open with.** That is deliberate and it is
 the whole content of the price *level*, so it is stated rather than buried: if
 the rate came from the same 100 Cr opening as the window, then rate × window
 would be `fullKitCr()` by identity for the baseline hull, every hull would cost
-the kit times `(hold / 20)^b`, and the level would carry no information at all.
+the kit times its hold ratio, and the level would carry no information at all.
 What the two regimes give it is a meaning: **what a hull earns for the player
-who can afford one, over the span the game calls one kit.** The 1.83× ratio to
+who can afford one, over the span the game calls one kit.** The 1.11× ratio to
 the kit is exactly the ratio between those two regimes' rates, and a reader who
 takes it as a fact about the economy rather than about that choice is reading
 it wrong.
 
 The *shipped* economy is slower than either arm: §8 reports the same milestone
-at 56–82 min with the deficit and the shopping list in it. So 48.7 min is the
-payback window of the economy §7.1 prices against, and a reader who wants the
-figure a player experiences wants §8's. **Recorded as weak joint 13** rather
-than argued away.
+with the deficit and the shopping list in it. So the window is the payback
+window of the economy §7.1 prices against, and a reader who wants the figure a
+player experiences wants §8's. **Recorded as weak joint 13** rather than argued
+away.
 
 **The two arms open with different capital, and that is not one clock counted
 twice.** The curve arm opens at `fullKitCr()`; the window arm opens at §6's
 100 Cr. The window is a *unit of time* — how long the economy takes to yield one
 kit at its own opening pace — so it is measured from the opening, because that
 is what the unit means. The curve is a *rate*, and a rate averaged across the
-capital-limited opening measures the opening: from 100 Cr the 20 t rate ran
-474 → 613 → 690 → 736 Cr/min at windows of 1, 2, 4 and 8 h, so the price level
-would have carried an instrument parameter that means nothing in the game
-(23,099 → 35,840 Cr). Opening at a hull buyer's own capital removes the
-transient rather than averaging over it, and the *exponent* barely noticed
-either way — 0.621 / 0.613 / 0.605 / 0.609 across the same four windows.
+capital-limited opening measures the opening: in #182's run, before the spread,
+the 20 t rate ran 474 → 613 → 690 → 736 Cr/min at windows of 1, 2, 4 and 8 h, so
+the price level would have carried an instrument parameter that means nothing in
+the game. Opening at a hull buyer's own capital removes the transient rather than
+averaging over it.
 
 **The trading economy prices the hold and nothing else, and that is a concession
 rather than a measurement.** The greedy trader fears no pirate and does not
 route, so a hardpoint, a point of integrity, a light year of tank and an AU of
 charge were never *varied*: the sweep measured the hold and conceded the rest.
 #8's combat balance owns those axes — #183's ladders gate hulls by rung and
-price none of them — and this section invents no figure for them — which is why the interceptor, the hardest-accelerating hull
-in the game, prices below the courier.
+price none of them — and this section invents no figure for them — which is why
+the interceptor, the hardest-accelerating hull in the game, prices below the
+courier.
 
-**Two of the sweep's own corrections moved the answer the same way** (#25's
-tell), so the next known bias in that direction was measured rather than argued
-away. Working capital: the exponent collapses to 0.023 at 500 Cr — a hold you
-cannot fill is worth nothing, which is §6's capital-limited opening said a
-second way — and has stopped moving by 19,125 Cr, less than the cheapest hull,
-so a player who can buy a hull at all is past where it bites. One bias is left
-and it is §10.1's no-slippage rule rather than the instrument's: a hop buys its
-whole basket at one price, which flatters a hold big enough to move the marginal
-unit. **That makes the exponent the upper end of what the sweep supports, which
-is not the same as every price being an upper bound** — the law is a ratio
-against the 20 t baseline, so a larger exponent *lowers* every price under it.
-Above the baseline these are upper bounds; below it they are lower ones.
+**Working capital is the one bias that was measured, and the re-price re-opened
+half of it.** The exponent collapses to 0.115 at 500 Cr — a hold you cannot fill
+is worth nothing, which is §6's capital-limited opening said a second way — and
+has stopped moving by the kit's total. #182 closed the argument there because
+the cheapest hull then cost more than the kit. **It no longer does**: the
+interceptor and the prospector list below it, so a pilot who buys one outright
+can still be inside the range where the bias bites. That cost is not measured,
+and it is left open rather than argued away. The other known bias is §10.1's
+no-slippage rule: a hop buys its whole basket at one price, which flatters a hold
+big enough to move the marginal unit. It runs the direction that steepens the
+curve, so the fitted exponents are the upper end of what the sweep supports, and
+because the law is a ratio against the 20 t baseline, a larger exponent *lowers*
+every price under it. Above the baseline these prices are upper bounds; below it
+they are lower ones.
 
 **A hull is bought with a trade-in, so its effective cost is `new − 0.9 × old`**
 ([#556](https://github.com/jcfischer/seelite/issues/556) D5, built by
@@ -1508,8 +1541,8 @@ Above the baseline these are upper bounds; below it they are lower ones.
 prices a hull as cash paid from earnings and assumes no trade-in; the shipyard
 takes the flown hull at `HULL_TRADE_IN_FRACTION` (0.9, `station-commerce.ts`) of
 its list price. So the list prices in the table are what a hull is *worth*, and
-the step between rungs is what it *costs*: courier to freighter nets 36,900 Cr,
-not 68,400, and courier to interceptor pays the pilot 11,500. A swap and back
+the step between rungs is what it *costs*: courier to freighter nets 48,300 Cr,
+not 69,000, and courier to interceptor pays the pilot 11,500. A swap and back
 loses a tenth of each hull, so no loop earns. The payback window above is
 therefore an upper bound on a step up the ladder rather than its figure — this
 section does not re-derive the window net of the trade-in.
@@ -1517,17 +1550,16 @@ section does not re-derive the window net of the trade-in.
 ### 7.2 The ceiling, and how many rungs the ladder holds
 
 #26's D7 puts the ceiling where the priced curve stops being interesting.
-**Measured, it never does**: §7.1's curve is a power law with no knee anywhere
-in the ladder, and a trader with one kit's capital still fills 93% of a 200 t
-hold at the top of it, and **no arm of the sweep ended before its window** (0 of
-512). So the binding limit is not the economy's, and naming
-which one it is *is* the answer rather than a substitute for one.
+**Measured, it never does**: §7.1's upper segment bends but is still rising at
+b 0.52 to 200 t, and a trader with one kit's capital still fills 89% of a 200 t
+hold. So the binding limit is not the economy's, and naming which one it is *is*
+the answer rather than a substitute for one.
 
 It is the berth. The largest clear envelope in the game — `BERTH_CELL.trade`, 90
 × 58 × 40 m, **208,800 m³**, the maximum over all four station types — against
 the roster's own densest hold, the cargo role's **1,059.6 m³ of bounding box per
 tonne**. Floored, because a hold that does not fit is not a ceiling, that admits
-**197 t** (the quotient is 197.06), priced at **141,300 Cr**. The density is
+**197 t** (the quotient is 197.06), priced at **128,000 Cr**. The density is
 quoted to a decimal on purpose: rounded to 1,060 the same division floors to 196,
 and `tests/helpers/hull-math.ts` derives it from the envelope rather than from
 either printed figure. It is an upper bound in
@@ -1540,33 +1572,34 @@ stretched to 197 t at the cargo role's density fits a trade berth and one at
 198 t does not.
 
 **The rung count is an output.** The priced roster's own adjacent price steps are
-1.28×, 1.37×, 1.12×, 1.15×, 1.19×, 1.28× — a typical (median) step of **1.24×**
-and a widest of **1.37×**. A gap is an interval wider than **one typical step
-squared, 1.53×**: room for a rung at the ladder's own spacing. That threshold is
+1.50×, 1.67×, 1.20×, 1.25×, 1.33×, 1.50× — a typical (median) step of **1.42×**
+and a widest of **1.67×**. A gap is an interval wider than **one typical step
+squared, 2.01×**: room for a rung at the ladder's own spacing. That threshold is
 not the maximum of the steps, which nothing could exceed — a draft used the
 maximum and reported "no interior gap" on any roster whatever, which is a check
 derived from its own subject. By the real criterion the priced roster has **no
-interior gap**, and the one gap is above it: 68,400 Cr to the ceiling's 141,300
-is 2.07×, which holds **three steps of at most the roster's widest 1.37×** — so
-**three new rungs** (four at the typical step; three is the smaller and safer
-claim, being the fewest that leave the ladder no coarser anywhere than it
-already is):
+interior gap**, and the one gap is above it: 69,000 Cr to the ceiling's 128,000
+is 1.86×, which holds **two steps of at most the roster's widest 1.67×** — so
+**two new rungs**, and the typical step gives two as well:
 
 | rung | hold | price |
 |---|---|---|
-| 1 | 89 t | 87,000 Cr |
-| 2 | 133 t | 111,200 Cr |
-| 3 | 197 t | 141,300 Cr — the ceiling |
+| 1 | 109 t | 94,100 Cr |
+| 2 | 197 t | 128,000 Cr — the ceiling |
 
-**Three is derived, not chosen — but the rule that derives it was chosen, and
+#182 derived three rungs here. #383's law moved the count and nobody edited it:
+the roster's steps widened as the lower segment straightened, and the gap above
+narrowed as the upper one bent.
+
+**Two is derived, not chosen — but the rule that derives it was chosen, and
 saying otherwise would be the tautology this section already corrected once.**
 What is measured is the two endpoints and the roster's own step distribution;
-what is a decision is dividing by the *widest* step rather than the typical one
-(four rungs), and spacing the holds evenly in the log. A retune of the curve or
-of the berth cell moves the count without anybody editing a number, which is the
-property that matters; a different spacing rule would move it too. **What the hulls at those rungs look like is not this
-section's** — #26 puts drawing them out of scope and #130 is open on ship detail
-the existing roster already lacks.
+what is a decision is dividing by the *widest* step rather than the typical one,
+and spacing the holds evenly in the log. A retune of the curve or of the berth
+cell moves the count without anybody editing a number, which is the property that
+matters; a different spacing rule would move it too. **What the hulls at those
+rungs look like is not this section's** — #26 puts drawing them out of scope and
+#130 is open on ship detail the existing roster already lacks.
 
 ---
 
@@ -1765,10 +1798,12 @@ second measurement that could drift from `TYPE_OFFSET` without failing anything.
 bun run scripts/measure-hull-pricing.ts [hours]     # default 2 h per arm
 ```
 
-Nine sections: the clamp bite that §5.2's change answers, the D6 sweep of the
+Ten sections: the clamp bite that §5.2's change answers, the D6 sweep of the
 hold multiplier against §5.4's brake, the hold curve and its fit, what §5.2's
 memory is worth to a greedy trader, the payback window, the priced roster, the
-ceiling, the rung count, and where the measurement is still biased. It flies
+ceiling, the rung count, where the measurement is still biased, and (#383) the
+spread's own effect against a no-wedge control arm with every candidate law
+judged against the measured value of each hold. It flies
 `scripts/lib/greedy-trader.ts` — **the same engine `measure-greedy-trader.ts`
 reports §5.5 and §8 from**, which is what makes the arms of a hold sweep
 incapable of being built differently. §10.3's three riggings were all that one
@@ -2039,9 +2074,10 @@ settled it.
   this line.** §7.1's curve was fitted with the pump excluded, which #182 recorded as
   the condition of getting an answer at all; a spread changes what a hold earns, so
   the exponent and the seven prices are owed a fresh run of
-  `measure-hull-pricing.ts`. That run is deliberately not folded into #196, which
-  would have let a hull price move for two reasons at once. The shipped law stays
-  `holdPriceCr ∝ hold^0.61` until it says otherwise.
+  `measure-hull-pricing.ts`. That run was deliberately not folded into #196, which
+  would have let a hull price move for two reasons at once, and
+  [#383](https://github.com/jcfischer/seelite/issues/383) made it: §7.1's law is
+  two segments now, and the level fell by a third.
 - **A node nobody has opened yet: the unit §5.2 counts a deficit in.** A sale of
   63 units of Platinum moves the market as though it were 63 *tonnes*, because
   `addDeficit` adds units while `stockResponse` divides by a hold measured in
@@ -2232,7 +2268,7 @@ settled it.
     gives the level content — from one arm the product is `fullKitCr()` by
     identity and every hull would cost the kit times `(hold / 20)^b`. So "a hull
     costs what its hold earns back over one kit" is a design rule anchored to
-    #26's own anchor, and the 1.83× baseline-to-kit ratio is a fact about that
+    #26's own anchor, and the 1.11× baseline-to-kit ratio is a fact about that
     rule rather than about the economy. Cheap to revisit: the shape is the
     measurement and re-anchoring moves the whole ladder together.
 14. **§5.2's hold-invariance is the tonne goods'.** A run of a sub-tonne good is

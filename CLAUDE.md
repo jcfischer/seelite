@@ -195,17 +195,21 @@ merge.
   identical at the baseline hull and stops distinguishing hulls entirely above
   63 t. The rejected arm is kept runnable as `fixedReferenceResponse`.
 - **A hull's price is a law, not a figure, and the ceiling is geometric.**
-  `hullPriceCr(holdT)` in `src/hull.ts` is #182's measured curve —
+  `hullPriceCr(holdT)` in `src/hull.ts` is a measured curve in two segments
+  (#182, re-derived by #383 with §5.6's spread live) —
   `HULL_PRICE_BASELINE_CR × (holdT / the baseline hull's hold) ^
-  HULL_PRICE_EXPONENT` — and every row's `priceCr` is asserted against it, the
-  way `integrity` is. **The constants are not restated here**: they moved once
+  HULL_PRICE_EXPONENT` up to `HULL_PRICE_KNEE_HOLD_T`, and
+  `HULL_PRICE_UPPER_EXPONENT` above it — and every row's `priceCr` is asserted
+  against it, the way `integrity` is. **The constants are not restated here**: they moved once
   during review and this file said so for a round, which is the drift a third
   copy buys. `economy-trade.md` §7.1 owns them and
   `scripts/measure-hull-pricing.ts` reprints them beside what a fresh run
-  derives. What is worth knowing without opening either: the exponent is well
-  under one — a 60 t hold moves 3x the cargo and earns about 1.9x — so a linear
-  assumption overprices the freighter by half again and the ceiling by better
-  than two to one.
+  derives. What is worth knowing without opening either: the spread made the
+  lower segment **linear** — across the roster a hold earns in proportion to its
+  tonnes — and the curve bends above the freighter's hold, so one power law
+  over the whole ladder misprices both ends. A price moved by the spread and by
+  an engine change at once cannot be told apart; the instrument's no-wedge arm
+  is the control that separates them.
   `HULL_CEILING_HOLD_T` is the largest hold any berth admits, declared in the
   leaf and re-derived in `tests/hull.test.ts` from the berth catalogue against
   the cargo role's hold density; the *economy* has no ceiling, so the largest
