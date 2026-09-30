@@ -1,7 +1,7 @@
 /**
  * The domain tags: the second-level stream split, per `galaxy-generation.md` §1.
  *
- * **A leaf, and that is the point.** These are eleven integers, and every module
+ * **A leaf, and that is the point.** These are fixed integer tags, and every module
  * that draws a seeded number needs them — including `market.ts`, which has no
  * other business with the galaxy generator. Living in `galaxy.ts` they dragged
  * the whole of system generation into anything that wanted one constant, which
@@ -123,6 +123,10 @@ export const DOMAIN = {
 	 *  mode, tempo, palette — and the notes each variant draws. Its own tag,
 	 *  so the score moves no world draw and a system keeps its sound. */
 	MUSIC: 27,
+	/** A planet rung's formation mass (#64/#590). One draw per rung, including
+	 * discarded rungs, so changing the giant/rocky mix moves no BODIES or
+	 * STATIONS draw and leaves every earlier rung's result alone. */
+	FORMATION_MASS: 28,
 } as const;
 
 export type DomainName = keyof typeof DOMAIN;

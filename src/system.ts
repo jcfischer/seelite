@@ -48,8 +48,8 @@
  * band or a colour changes what a body looks like and moves no draw: the rolls
  * are taken first and scaled afterwards. So a renderer decision may retune them
  * without touching a seed's output — which is why they can sit in this module
- * without making it the renderer's business. The one exception is the gas-giant
- * *threshold* (`a > 2·a_hab`), which is spec'd (§6.2) and does decide moons.
+ * without making it the renderer's business. The outer formation threshold
+ * (`a > 2·a_hab`) and its independent mass roll are spec'd (§6.2).
  */
 
 import { moonName, planetName, starName } from "./body-name";
@@ -91,8 +91,11 @@ export const SHIPYARD_MIN_TL = 10;
  *  the two cannot drift apart and leave a fallback guarding nothing. */
 export const MAX_MOONS = 3;
 
+/** Fraction of outer rungs that form small rocky ice worlds (#64). */
+export const COLD_ROCKY_FRACTION = 0.2;
+
 /**
- * A planet is a gas giant past this multiple of the habitable distance (§6.2).
+ * A planet may be a gas giant past this multiple of the habitable distance (§6.2).
  *
  * Exported because the renderer's surface classifier draws the same line, and a
  * second copy of the number over there would be kept honest only by a test.
@@ -256,8 +259,8 @@ export interface Planet {
 	/** Orbit radius in AU — the figure the spec's envelope and ladder talk in. */
 	aAu: number;
 	radiusKm: number;
-	/** `a > 2·a_hab` (spec §6.2). Gas giants carry moons and can host a
-	 *  shipyard. */
+	/** `a > 2·a_hab` and the formation-mass roll (spec §6.2). Only giants
+	 *  can host a shipyard apart from the primary. */
 	isGasGiant: boolean;
 	/** The one rung the ladder was rescaled onto `a_hab`. Hosts the main trade
 	 *  station. */
@@ -487,14 +490,16 @@ export const starClassFor = (systemSeed: number): StarClassDef =>
 /**
  * Generate a system's contents from its record.
  *
- * Two streams, in a fixed draw order each: `BODIES` for the star, planets, moons
- * and belt; `STATIONS` for the stations. Inserting a draw inside one of them
+ * Three streams: `BODIES` for the star, planets, moons and belt; `STATIONS` for
+ * stations; `FORMATION_MASS` for one draw per planet rung. Inserting a draw
+ * inside either existing stream
  * moves everything after it in that stream and nothing in the other — which is
  * the whole reason the domains exist, and the reason to add a *new* domain
  * rather than a draw when something genuinely new arrives.
  */
 export function generateContents(record: SystemRecord): SystemContents {
 	const bodies = stream(record.seed, DOMAIN.BODIES);
+	const formationMass = stream(record.seed, DOMAIN.FORMATION_MASS);
 	const star = {
 		id: "star",
 		name: starName(record.name),
@@ -518,6 +523,7 @@ export function generateContents(record: SystemRecord): SystemContents {
 	const planets: Planet[] = [];
 	for (let i = 0; i < rungCount; i++) {
 		const aAu = ladder[i] * scaleFactor;
+		const massRoll = formationMass();
 		const isPrimary = i === primaryRung;
 		// Draws happen for discarded rungs too, so that whether a rung survives
 		// does not shift the parameters of the ones that do.
@@ -565,14 +571,23 @@ export function generateContents(record: SystemRecord): SystemContents {
 			? Math.min(MAX_ORBIT_AU, Math.max(MIN_ORBIT_AU, aAu))
 			: aAu;
 
-		const isGasGiant = orbitAu > GIANT_ORBIT_FACTOR * habitableAu;
+		const isGasGiant =
+			orbitAu > GIANT_ORBIT_FACTOR * habitableAu &&
+			massRoll >= COLD_ROCKY_FRACTION;
 		const size = isGasGiant ? GIANT_RADIUS_KM : ROCKY_RADIUS_KM;
 		const radiusKm = size.base + radiusRoll * size.span;
 		const id = `planet-${i}`;
 		const name = planetName(record.name, planets.length);
-		const moons = isGasGiant
-			? buildMoons(id, name, radiusKm, moonCount, moonRolls, inclination, node)
-			: [];
+		const moons = buildMoons(
+			id,
+			name,
+			radiusKm,
+			isGasGiant ? moonCount : moonCount >= 2 ? 1 : 0,
+			moonRolls,
+			inclination,
+			node,
+			isGasGiant ? Infinity : radiusKm * 0.5,
+		);
 		planets.push({
 			id,
 			name,
@@ -608,7 +623,7 @@ export function generateContents(record: SystemRecord): SystemContents {
 }
 
 /**
- * A gas giant's moons, from rolls already drawn.
+ * A planet's moons, from rolls already drawn.
  *
  * Extracted from `generateContents` and taking **rolls, not a stream**, which is
  * the point: it cannot consume a draw, so it cannot move the draw sequence. That
@@ -625,6 +640,7 @@ function buildMoons(
 	rolls: readonly number[],
 	inclination: number,
 	node: number,
+	moonRadiusCapKm: number,
 ): Moon[] {
 	const moons: Moon[] = [];
 	for (let m = 0; m < count; m++) {
@@ -632,7 +648,10 @@ function buildMoons(
 		moons.push({
 			id: `${planetId}-moon-${m}`,
 			name: moonName(planetDisplayName, m),
-			radiusKm: MOON_RADIUS_KM.base + rolls[base] * MOON_RADIUS_KM.span,
+			radiusKm: Math.min(
+				MOON_RADIUS_KM.base + rolls[base] * MOON_RADIUS_KM.span,
+				moonRadiusCapKm,
+			),
 			orbit: {
 				radiusKm:
 					planetRadiusKm +

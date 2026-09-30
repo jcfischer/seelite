@@ -20,7 +20,7 @@
  *
  * ## The spelling
  *
- * `postcard=1&gen=7&seed=47&galaxy=0&system=12&t=…&pos=x,y,z&q=x,y,z,w&mode=…`
+ * `postcard=1&gen=8&seed=47&galaxy=0&system=12&t=…&pos=x,y,z&q=x,y,z,w&mode=…`
  * then `head=…` for the two cockpit-eye modes or `yaw=…` for the exterior. It is
  * readable on purpose: a person looking at a link can see that it carries a
  * place and a camera and nothing else. It rides the **fragment**, which the
@@ -49,11 +49,12 @@ export const POSTCARD_SCHEMA = 1;
 /**
  * Generator versions a recipe may name: the current one first, which a new
  * recipe is written with, then the legacy versions a save may still carry.
- * A legacy version is one whose every carrier kept its identity, type, parent
- * and placement (#351), so the place a recipe names is the place it was.
- * Restated from `world-state.ts`; the test holds the two together.
+ * A legacy link rebuilds on the current generated baseline: version 8 moved
+ * some shipyards and planets, so the old view can differ even though the
+ * camera coordinates survive. Restated from `world-state.ts`; the test holds
+ * the supported versions together.
  */
-export const POSTCARD_GENERATORS: readonly number[] = [7, 6];
+export const POSTCARD_GENERATORS: readonly number[] = [8, 7, 6];
 
 /** `GALAXY_COUNT` and `SYSTEMS_PER_GALAXY`, restated for the leaf's reason. */
 export const POSTCARD_GALAXIES = 8;

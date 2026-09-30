@@ -43,13 +43,28 @@ describe("station placement is stable against added draws", () => {
 		expect(baseline.rows.length).toBeGreaterThan(500);
 	});
 
-	test("every station's type, parent and orbit match the baseline", () => {
+	test("unaffected stations match the baseline; relocated shipyards keep their draws", () => {
 		const now = stationRows(baseline.worldSeed, baseline.galaxies);
 		// Count first: a length mismatch means stations appeared or vanished, and
 		// the row-by-row diff below would then misalign and report every station
 		// as changed rather than naming the real one.
 		expect(now.length).toBe(baseline.rows.length);
-		expect(now).toEqual(baseline.rows);
+		let relocated = 0;
+		for (let i = 0; i < now.length; i++) {
+			const before = baseline.rows[i].split("\t");
+			const after = now[i].split("\t");
+			if (before[2] !== "station-shipyard" || before[4] === after[4]) {
+				expect(after).toEqual(before);
+				continue;
+			}
+			relocated++;
+			// Only a shipyard's host may move. Its stable identity, type, period
+			// and phase prove the STATIONS stream kept its draw order.
+			expect(after.slice(0, 4)).toEqual(before.slice(0, 4));
+			expect(after[6]).toBe(before[6]);
+			expect(after[7]).toBe(before[7]);
+		}
+		expect(relocated).toBeGreaterThan(0);
 	});
 });
 

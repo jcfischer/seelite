@@ -48,16 +48,8 @@ test("a planet cannot be classified without saying which family it is in", () =>
 /**
  * What the generator actually produces, run through the ladder.
  *
- * **This is no longer a parity test, and saying so matters.** It used to assert
- * `warmth > WARMTH.GIANT` equals the generator's `isGasGiant` — which was a
- * real check while `WARMTH.GIANT` was a hand-copied 2 and the denominator was
- * spelled here. Now that `system.ts` owns both `GIANT_ORBIT_FACTOR` and
- * `orbitWarmth`, that comparison reduces to `aAu / hab > 2` against
- * `aAu > 2 * hab`: an algebraic identity that four galaxies of iteration cannot
- * fail. The parity is guaranteed by construction, and a test pretending to
- * check it would be the third version of the same circular assertion.
- *
- * What is *not* guaranteed by construction, and is what this sweep is for: that
+ * The family is now also decided by the independent formation-mass roll; an
+ * outer orbit may be a rocky ice world. This sweep checks that
  * the ladder's thresholds sit where the generator's orbits actually fall. Every
  * rung could be internally consistent and still describe worlds that never get
  * generated — set `WARMTH.TERRAN` to 0.01 and no system in the galaxy would
@@ -92,36 +84,17 @@ test("the ladder's rungs land where the generator's orbits actually fall", () =>
 
 	expect(planets).toBeGreaterThan(200);
 
-	// Six of the seven planet rungs are reachable from real generated orbits.
+	// All seven planet rungs are reachable from real generated orbits.
 	for (const rung of [
 		"lava",
 		"venusian",
 		"terran",
 		"desert",
+		"ice",
 		"jovian",
 		"iceGiant",
 	])
 		expect(seen.get(rung) ?? 0).toBeGreaterThan(0);
-
-	/*
-	 * `ice` is not, and this asserts that it is not — on purpose.
-	 *
-	 * A rocky body reaches the ice rung by being past `WARMTH.GIANT` while
-	 * `isGasGiant` is false. But `system.ts` sets `isGasGiant = aAu > 2 * hab`,
-	 * which is the same line, so *every* planet the generator puts out there is a
-	 * giant and the rung is unreachable by construction. 319 planets across four
-	 * galaxies produce zero.
-	 *
-	 * The class is built and correct — the gallery draws it by passing the flag
-	 * directly — and it is kept because the fix is a generator question, not a
-	 * display one: a small body far from its star is rocky in reality, and
-	 * `isGasGiant` currently has no mass or radius term to say so. That belongs
-	 * to the generation spec, not to this prototype.
-	 *
-	 * Asserted rather than omitted so that the day the generator gains that term,
-	 * this test goes red and says which decision it is waiting on.
-	 */
-	expect(seen.get("ice") ?? 0).toBe(0);
 });
 
 test("class comes from the orbit, decoration comes from the seed", () => {

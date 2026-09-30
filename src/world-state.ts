@@ -74,20 +74,23 @@ export const WORLD_SCHEMA_VERSION = 3;
  * exactly the set `carrierBaselineFingerprint` hashes, so the pinned
  * fingerprints in `world-state.test.ts` go red at the same moment.
  */
-export const WORLD_GENERATOR_VERSION = 7;
+export const WORLD_GENERATOR_VERSION = 8;
 
 /**
- * Generator versions a snapshot may still carry, each loading as the current
- * one (#351). A version belongs here only when every carrier it enumerated is
- * still enumerated with the same identity, type, parent and placement — then a
- * row it saved names the carrier it named, and the migration is a relabel.
- * `tests/world-state.test.ts` holds that for 6 against version 6's own golden
- * fingerprints. Version 5 is not here, and listing it would open nothing: saves
+ * Generator versions a snapshot may still carry. Version 6 → 7 was a pure
+ * relabel (#351). Version 8 changes the generated parent and position of some
+ * shipyards (#590), so 6/7 now migrate by rebasing their overlays onto the new
+ * baseline. No carrier geometry is persisted; every old carrier key and type
+ * still names the same station or vessel. `tests/world-state.test.ts` pins
+ * those identities against fingerprints captured on the version-7 generator.
+ * A docked commander keeps its station key and resumes at arrival, as the
+ * loader already does; an in-flight commander keeps its saved position.
+ * Version 5 is not here, and listing it would open nothing: saves
  * shipped on 2026-09-11 at version 5, but `WORLD_SCHEMA_VERSION` 3 arrived on
  * 09-18 after version 6, so every version-5 snapshot carries schema 2 and the
  * schema check refuses it first.
  */
-export const LEGACY_WORLD_GENERATOR_VERSIONS: readonly number[] = [6];
+export const LEGACY_WORLD_GENERATOR_VERSIONS: readonly number[] = [7, 6];
 
 export const GALAXY_COUNT = 8;
 
@@ -2247,8 +2250,9 @@ export function parseWorld(raw: unknown): WorldState {
 
 	const world: WorldState = {
 		worldSchemaVersion,
-		// The relabel. The integrity hash below is over what arrived, so it still
-		// checks the version-6 body; the next write hashes a version-7 one.
+		// Rebase old overlays onto the generated version-8 catalog. The integrity
+		// hash below still checks the body that arrived; the next write hashes an
+		// explicitly version-8 one. Old physical placements are not stored.
 		worldGeneratorVersion: WORLD_GENERATOR_VERSION,
 		seed: num(o, "seed", "snapshot"),
 		gameTime: num(o, "gameTime", "snapshot"),

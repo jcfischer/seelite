@@ -57,14 +57,16 @@ const layoutSeed = (worldSeed: number, g: number, attempt: number) =>
 const systemSeed = (worldSeed: number, g: number, attempt: number, n: number) =>
   mix(layoutSeed(worldSeed, g, attempt), n);
 
-/** Domain-tagged sub-streams, so adding a draw in one domain moves no other. */
+/** The founding tags; src/domains.ts is the full append-only table. */
 const DOMAIN = { POS: 1, NAME: 2, POLITY: 3, BODIES: 4, STATIONS: 5, DESC: 6 } as const;
 const stream = (sysSeed: number, domain: number) =>
   seededRand(mix(sysSeed, domain));
 ```
 
 `STREAMS.galaxy` and `STREAMS.system` already exist in `src/rng.ts`; the
-domain tags above are the second-level split `mix` was written for. Adding a
+domain tags above are the second-level split `mix` was written for. `FORMATION_MASS`
+is tag 28 in the canonical `src/domains.ts` table, independent of `BODIES` and
+`STATIONS`. Adding a
 domain tag is safe (it perturbs no existing stream); renaming or renumbering
 one is not, and changes every seed's output.
 
@@ -494,13 +496,36 @@ dwarf, 1.0 AU for a G star, 4.5 AU for an A star.
 
 ### 6.2 Planets
 
-- Count: 3–7 total.
+- Count: 3–7 candidate rungs; 1–7 survive the orbit envelope.
 - Orbit envelope: **0.3 – 6 AU**.
 - Build a Titius-Bode-like ladder — successive ratios drawn from `U(1.4, 2.3)`
   — then **rescale the whole ladder in log space so one planet lands exactly on
-  `a_hab`**. That planet is the **primary**. Discard any rung falling outside
-  the envelope.
-- Gas giants (a > 2·a_hab) carry 0–3 moons, far-layer scenery only.
+  `a_hab`**. That planet is the **primary**. Discard other rungs falling outside
+  the envelope; keep and clamp the primary.
+- Each rung draws formation mass from its own `FORMATION_MASS` stream, including
+  rungs discarded by the orbit envelope. Among outer rungs (`a > 2·a_hab`),
+  20% form small rocky ice worlds and the rest form gas giants. The independent
+  stream leaves the old `BODIES` and `STATIONS` draws in place; the inner
+  planets' seeded names, sizes and orbits stay fixed.
+- Gas giants retain the existing 0–3 moon distribution. Half of all rocky
+  planets, including ice worlds, gain exactly one moon: the existing moon-count
+  roll selects it when it is 2 or 3. Rocky moon radius is capped at half its
+  host's radius, and its orbit clears the host and moon. IDs remain
+  `planet-<rung>-moon-0`; all moons remain airless far-layer scenery.
+- The primary rung is kept and clamped into the envelope, even when its
+  floating-point rescale lands just outside it. Shipyards host on that primary
+  or a remaining gas giant, never an outer rocky ice world. Station IDs and
+  carrier keys stay fixed; a shipyard can move hosts when an old giant becomes
+  rocky. A docked save still records its station key and resumes in flight at
+  arrival, as the existing loader contract specifies.
+
+`bun run scripts/measure-cold-rocky-moons.ts` repeats the 24-galaxy census
+(three world seeds × eight galaxies). On this generator: 1,451 ice worlds out
+of 7,534 outer planets (19.3%), and 6,581 rocky planets with moons out of
+13,027 rocky planets (50.5%). The smallest single-galaxy buckets are 284 outer
+planets and 520 rocky planets; the script prints every galaxy's denominator,
+not just the pooled totals. `tests/cold-rocky-moons.test.ts` checks a four-galaxy
+subset in the headless suite and pins unchanged inner planets separately.
 
 ### 6.3 Asteroid belt
 
