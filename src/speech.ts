@@ -157,6 +157,13 @@ export interface SpeechVoice {
 	readonly breath: number;
 	/** Speaking rate: 1 the tables' durations, higher faster. */
 	readonly rate: number;
+	/** The glottis's open share of a cycle (KLGLOTT88's OQ): higher is
+	 *  breathier and softer, lower pressed and buzzier. */
+	readonly openQuotient: number;
+	/** Spectral tilt, dB of loss at 3 kHz: a softer, darker source. */
+	readonly tilt: number;
+	/** Klatt's flutter: the slow wander of a real voice's pitch, 0..1. */
+	readonly flutter: number;
 }
 
 export const VOICES: Readonly<Record<string, SpeechVoice>> = {
@@ -168,6 +175,9 @@ export const VOICES: Readonly<Record<string, SpeechVoice>> = {
 		jitter: 0.01,
 		breath: 0.04,
 		rate: 1.05,
+		openQuotient: 0.6,
+		tilt: 4,
+		flutter: 0.5,
 	},
 	pilot: {
 		f0: 195,
@@ -177,6 +187,9 @@ export const VOICES: Readonly<Record<string, SpeechVoice>> = {
 		jitter: 0.012,
 		breath: 0.07,
 		rate: 1.1,
+		openQuotient: 0.66,
+		tilt: 3,
+		flutter: 0.5,
 	},
 	pirate: {
 		f0: 88,
@@ -186,6 +199,9 @@ export const VOICES: Readonly<Record<string, SpeechVoice>> = {
 		jitter: 0.03,
 		breath: 0.12,
 		rate: 0.95,
+		openQuotient: 0.5,
+		tilt: 8,
+		flutter: 1,
 	},
 	machine: {
 		f0: 100,
@@ -195,25 +211,34 @@ export const VOICES: Readonly<Record<string, SpeechVoice>> = {
 		jitter: 0,
 		breath: 0,
 		rate: 0.95,
+		openQuotient: 0.5,
+		tilt: 0,
+		flutter: 0,
 	},
 };
 
-/** A phoneme token: an ARPAbet symbol and its stress, or a pause in ms. */
+/**
+ * A phoneme token: an ARPAbet symbol, its stress and the number of the word
+ * it belongs to (the duration rules read word edges); or a pause in ms, which
+ * ends a phrase, with `q` when the phrase was a question.
+ */
 export type Token =
-	| { readonly ph: string; readonly stress: 0 | 1 | 2 }
-	| { readonly pause: number };
+	| { readonly ph: string; readonly stress: 0 | 1 | 2; readonly w: number }
+	| { readonly pause: number; readonly q?: boolean };
 
-/** `"K AA1 B R AH0"` as tokens. Throws on a symbol with no table row. */
-export function parsePhonemes(text: string): Token[] {
+/** `"K AA1 B R AH0"` as tokens, all of word `w`. Throws on a symbol with no
+ *  table row. */
+export function parsePhonemes(text: string, w = 0): Token[] {
 	const out: Token[] = [];
 	for (const raw of text.trim().split(/\s+/)) {
 		if (!raw) continue;
 		if (raw === ",") out.push({ pause: 140 });
 		else if (raw === ".") out.push({ pause: 320 });
+		else if (raw === "?") out.push({ pause: 320, q: true });
 		else {
 			const m = /^([A-Z]+)([012])?$/.exec(raw.toUpperCase());
 			if (!m || !PHONEMES[m[1]]) throw new Error(`speech: no phoneme ${raw}`);
-			out.push({ ph: m[1], stress: Number(m[2] ?? 0) as 0 | 1 | 2 });
+			out.push({ ph: m[1], stress: Number(m[2] ?? 0) as 0 | 1 | 2, w });
 		}
 	}
 	return out;
@@ -235,12 +260,113 @@ interface Seg {
 	af: number;
 	ff: number;
 	fb: number;
-	/** Pitch as a share of the voice's f0, at the segment's start. */
+	/** Pitch as a share of the voice's f0, at the segment's start and end. */
 	pitch: number;
+	pitchEnd: number;
 	/** A burst: its amplitude track is not smoothed. */
 	sharp: boolean;
 	/** A nasal murmur's antiresonance, Hz; 0 for none. */
 	nz: number;
+}
+
+const NASALS = new Set(["M", "N", "NG"]);
+
+/**
+ * Each vowel's pitch, start and end, as a share of f0: a hat pattern per
+ * phrase ('t Hart, Collier and Cohen; Klatt's MITalk). The pitch rises into
+ * the first stressed vowel, stays up across the phrase, and falls on the
+ * last stressed vowel — or, in a question, rises there instead and stays up.
+ * A voice with no accent speaks on one pitch.
+ */
+function intonation(
+	tokens: readonly Token[],
+	v: SpeechVoice,
+): Map<number, [number, number]> {
+	const out = new Map<number, [number, number]>();
+	const a = v.accent;
+	const fall = a > 0 ? 0.88 : 1;
+	const rise = 1 + 1.6 * a;
+	let phrase: number[] = [];
+	const close = (q: boolean) => {
+		const vowels = phrase.filter((i) => {
+			const t = tokens[i];
+			return "ph" in t && PHONEMES[t.ph].vowel;
+		});
+		const stressed = vowels.filter((i) => {
+			const t = tokens[i];
+			return "ph" in t && t.stress === 1;
+		});
+		const peaks = stressed.length ? stressed : vowels;
+		const s0 = peaks[0];
+		const sL = peaks[peaks.length - 1];
+		for (const k of vowels) {
+			const t = tokens[k];
+			const on = "ph" in t && t.stress === 1;
+			let p: [number, number];
+			if (k < s0) p = [1, 1];
+			else if (k === s0 && k === sL) p = q ? [1, rise] : [1 + a, fall];
+			else if (k === s0) p = [1 + a, 1 + 0.8 * a];
+			else if (k < sL)
+				p = on ? [1 + 0.9 * a, 1 + 0.8 * a] : [1 + 0.7 * a, 1 + 0.7 * a];
+			else if (k === sL) p = q ? [1 + 0.5 * a, rise] : [1 + 0.9 * a, fall];
+			else p = q ? [rise, rise] : [fall, fall];
+			out.set(k, p);
+		}
+		phrase = [];
+	};
+	tokens.forEach((t, i) => {
+		if ("pause" in t) close(t.q === true);
+		else phrase.push(i);
+	});
+	close(false);
+	return out;
+}
+
+/**
+ * A vowel's length, ms, by a subset of Klatt's duration rules (1979): only
+ * the part above a floor of `VOWEL_FLOOR` of its inherent length is
+ * stretched or shrunk. Unstressed is short; a vowel that is not its word's
+ * last is shortened (a longer word is said faster); one before a voiceless
+ * obstruent in its word is short and one before a voiced one long; and the
+ * last vowel of a phrase is lengthened, as a speaker slows into a stop.
+ */
+const VOWEL_FLOOR = 0.45;
+function vowelMs(
+	tokens: readonly Token[],
+	i: number,
+	phraseFinal: boolean,
+): number {
+	const t = tokens[i] as Extract<Token, { ph: string }>;
+	const p = PHONEMES[t.ph];
+	let pr = t.stress === 0 ? 0.5 : t.stress === 2 ? 0.8 : 1.15;
+	let lastInWord = true;
+	for (let k = i + 1; k < tokens.length; k++) {
+		const u = tokens[k];
+		if (!("ph" in u) || u.w !== t.w) break;
+		if (PHONEMES[u.ph].vowel) lastInWord = false;
+	}
+	if (!lastInWord) pr *= 0.8;
+	const next = tokens[i + 1];
+	if (next && "ph" in next && next.w === t.w) {
+		const n = PHONEMES[next.ph];
+		if (NASALS.has(next.ph)) pr *= 0.9;
+		else if (n.stop) pr *= n.stop.voiced ? 1.2 : 0.7;
+		else if ((n.af ?? 0) > 0) pr *= n.av > 0 ? 1.3 : 0.7;
+	}
+	const floor = VOWEL_FLOOR * p.ms;
+	return (floor + (p.ms - floor) * pr) * (phraseFinal ? 1.4 : 1);
+}
+
+/** Whether a consonant token stands beside another consonant in its word:
+ *  a cluster, each of whose members is shortened. */
+function inCluster(tokens: readonly Token[], i: number): boolean {
+	const t = tokens[i];
+	if (!("ph" in t)) return false;
+	for (const k of [i - 1, i + 1]) {
+		const u = tokens[k];
+		if (u && "ph" in u && u.w === t.w && !PHONEMES[u.ph].vowel) return true;
+	}
+	return false;
 }
 
 const framesOf = (ms: number) => Math.max(1, Math.round(ms / 1000 / FRAME_S));
@@ -308,32 +434,51 @@ function segments(tokens: readonly Token[], v: SpeechVoice): Seg[] {
 		ff: 3000,
 		fb: 2000,
 		pitch: 1,
+		pitchEnd: 1,
 		sharp: false,
 		nz: 0,
 	});
-	// The last vowel of a phrase is lengthened, as a speaker slows into a stop.
+	const tune = intonation(tokens, v);
+	// The last vowel of each phrase: lengthened.
+	const phraseFinal = new Set<number>();
 	let lastVowel = -1;
 	tokens.forEach((t, i) => {
 		if ("ph" in t && PHONEMES[t.ph].vowel) lastVowel = i;
+		if ("pause" in t || i === tokens.length - 1) {
+			if (lastVowel >= 0) phraseFinal.add(lastVowel);
+			lastVowel = -1;
+		}
 	});
+	// A consonant takes the pitch the voice was last at.
+	let held = 1;
 	tokens.forEach((t, i) => {
 		if ("pause" in t) {
-			segs.push(
-				quiet(t.pause, segs.at(-1)?.fEnd ?? [500, 1500, 2500], "pause", null),
-			);
+			segs.push({
+				...quiet(
+					t.pause,
+					segs.at(-1)?.fEnd ?? [500, 1500, 2500],
+					"pause",
+					null,
+				),
+				pitch: held,
+				pitchEnd: held,
+			});
 			return;
 		}
 		const p = PHONEMES[t.ph];
 		const vowel = nextVowel(tokens, i);
-		const pitch = p.vowel && t.stress === 1 ? 1 + v.accent : 1;
+		const [pitch, pitchEnd] = tune.get(i) ?? [held, held];
+		held = pitchEnd;
+		const cluster = inCluster(tokens, i) ? 0.8 : 1;
 		if (p.stop) {
 			// Closure and burst, formants at the stop's locus beside the vowel it
 			// releases into; a voice bar if voiced.
 			const at = vowel ? locus(p.place ?? "alv", vowel) : p.f;
 			segs.push({
-				...quiet(p.stop.voiced ? 45 : 60, at, "closure", p),
+				...quiet((p.stop.voiced ? 45 : 60) * cluster, at, "closure", p),
 				av: p.stop.voiced ? 0.12 : 0,
 				pitch,
+				pitchEnd: pitch,
 			});
 			const [ff, fb, amp] = burstBand(p.place ?? "alv", vowel);
 			segs.push({
@@ -342,6 +487,7 @@ function segments(tokens: readonly Token[], v: SpeechVoice): Seg[] {
 				ff,
 				fb,
 				pitch,
+				pitchEnd: pitch,
 				sharp: true,
 			});
 			if (p.then) {
@@ -353,6 +499,7 @@ function segments(tokens: readonly Token[], v: SpeechVoice): Seg[] {
 					ff: fr.ff ?? 3000,
 					fb: fr.fb ?? 2000,
 					pitch,
+					pitchEnd: pitch,
 				});
 			} else if (p.stop.vot > 0)
 				// The aspiration's formants are the vowel's, reached through the
@@ -361,15 +508,13 @@ function segments(tokens: readonly Token[], v: SpeechVoice): Seg[] {
 					...quiet(p.stop.vot / v.rate, vowel ?? p.f, "asp", p),
 					ah: 0.55,
 					pitch,
+					pitchEnd: pitch,
 				});
 			return;
 		}
-		let ms = p.ms;
-		if (p.vowel) {
-			if (t.stress === 0) ms *= 0.72;
-			if (t.stress === 1) ms *= 1.15;
-			if (i === lastVowel) ms *= 1.4;
-		}
+		const ms = p.vowel
+			? vowelMs(tokens, i, phraseFinal.has(i))
+			: p.ms * cluster;
 		const f = p.copyNext ? (nextFormants(tokens, i) ?? p.f) : p.f;
 		segs.push({
 			frames: framesOf(ms / v.rate),
@@ -383,6 +528,7 @@ function segments(tokens: readonly Token[], v: SpeechVoice): Seg[] {
 			ff: p.ff ?? 3000,
 			fb: p.fb ?? 2000,
 			pitch,
+			pitchEnd,
 			sharp: false,
 			nz: p.nasalZero ?? 0,
 		});
@@ -591,14 +737,13 @@ function tracks(segs: readonly Seg[], v: SpeechVoice): Tracks {
 			t.af[i] = s.af;
 			t.ff[i] = s.ff;
 			t.fb[i] = s.fb;
-			t.pitch[i] = s.pitch;
+			t.pitch[i] = s.pitch + (s.pitchEnd - s.pitch) * u;
 			t.nz[i] = s.nz;
 			sharp[i] = s.sharp ? 1 : 0;
 		}
 	transitions(t, segs);
 	// What the transitions do not cover — consonant to consonant — takes a
-	// short glide, not a step; levels move over 15 ms, and a stressed vowel's
-	// pitch rises and falls over 120.
+	// short glide, not a step; levels move over 15 ms.
 	t.f1 = smooth(t.f1, 3);
 	t.f2 = smooth(t.f2, 3);
 	t.f3 = smooth(t.f3, 3);
@@ -607,7 +752,8 @@ function tracks(segs: readonly Seg[], v: SpeechVoice): Tracks {
 	t.av = smooth(t.av, 3, sharp);
 	t.ah = smooth(t.ah, 3);
 	t.af = smooth(t.af, 3, sharp);
-	t.pitch = smooth(t.pitch, 25);
+	// The contour is explicit now; this only rounds its corners, over 45 ms.
+	t.pitch = smooth(t.pitch, 9);
 	// The phrase's pitch falls as the breath runs out.
 	for (let k = 0; k < n; k++)
 		t.pitch[k] *= 1 + 0.5 * v.declination - v.declination * (k / n);
@@ -694,13 +840,34 @@ function noise(seed: number): () => number {
 	};
 }
 
-/** Rosenberg's glottal flow at phase `p` of a cycle. */
-function glottal(p: number): number {
-	const open = 0.4;
-	const close = 0.16;
-	if (p < open) return 0.5 * (1 - Math.cos((Math.PI * p) / open));
-	if (p < open + close) return Math.cos((Math.PI * (p - open)) / (2 * close));
-	return 0;
+/** KLGLOTT88's glottal flow at phase `p` of a cycle: a cubic over the open
+ *  share `oq`, peaking at 1, and closed for the rest. */
+function glottal(p: number, oq: number): number {
+	if (p >= oq) return 0;
+	const u = p / oq;
+	return 6.75 * u * u * (1 - u);
+}
+
+/** Klatt's flutter: f0's slow wander at `t` s, as a multiple, three
+ *  incommensurate sines, at most ±2% at `amount` 1. */
+export function flutter(t: number, amount: number): number {
+	if (amount === 0) return 1;
+	const w = 2 * Math.PI * t;
+	return (
+		1 +
+		(amount *
+			0.02 *
+			(Math.sin(12.7 * w) + Math.sin(7.1 * w) + Math.sin(4.7 * w))) /
+			3
+	);
+}
+
+/** The one-pole lowpass that loses `tiltDb` at 3 kHz, as its coefficient; 1
+ *  passes everything. */
+function tiltCoef(tiltDb: number): number {
+	if (tiltDb <= 0) return 1;
+	const fc = 3000 / Math.sqrt(10 ** (tiltDb / 10) - 1);
+	return 1 - Math.exp((-2 * Math.PI * fc) / SPEECH_RATE);
 }
 
 /** Render tokens in a voice, at `SPEECH_RATE`, peak-normalised to 0.9. */
@@ -722,6 +889,8 @@ export function speak(
 	const zero = new AntiResonator();
 	let phase = 0;
 	let flow = 0;
+	let tilted = 0;
+	const tiltA = tiltCoef(voice.tilt);
 	let jit = 1;
 	let fricGain = 1;
 	for (let fr = 0; fr < t.n; fr++) {
@@ -734,7 +903,7 @@ export function speak(
 		r[3].set(3500 * voice.tract, 250);
 		fric.set(t.ff[fr], t.fb[fr]);
 		fricGain = 1 / fric.peak(t.ff[fr]);
-		const f0 = voice.f0 * t.pitch[fr];
+		const f0 = voice.f0 * t.pitch[fr] * flutter(fr * FRAME_S, voice.flutter);
 		for (let k = 0; k < FRAME; k++) {
 			const i = fr * FRAME + k;
 			// Levels move within the frame too, so a burst has no step.
@@ -748,10 +917,12 @@ export function speak(
 				phase -= 1;
 				jit = 1 + voice.jitter * rand();
 			}
-			const g = glottal(phase);
+			const g = glottal(phase, voice.openQuotient);
 			// The flow's derivative: the lips radiate its slope.
-			const src = (g - flow) * (SPEECH_RATE / f0) * 0.12;
+			let src = (g - flow) * (SPEECH_RATE / f0) * 0.12;
 			flow = g;
+			tilted += tiltA * (src - tilted);
+			src = tilted;
 			const n = rand();
 			let x = av * src + (ah + voice.breath * av) * 0.35 * n;
 			for (const res of r) x = res.step(x);

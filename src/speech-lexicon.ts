@@ -2,7 +2,9 @@
  * The words the game's voices say, as ARPAbet (stress 1 primary, 2
  * secondary, 0 none), and text into `speech.ts`'s tokens. Written here word
  * by word for the radio and the music; there is no letter-to-sound rule, so
- * a word not listed is reported rather than guessed at. `[K AA1 B R AH0]` in
+ * a word not listed is reported rather than guessed at. Each word is
+ * numbered, which the duration rules read; a question mark ends a phrase
+ * that rises. `[K AA1 B R AH0]` in
  * a text is phonemes, for a word the lexicon lacks.
  */
 import { parsePhonemes, type Token } from "./speech";
@@ -118,14 +120,16 @@ export function textToTokens(text: string): {
 	const tokens: Token[] = [];
 	const unknown: string[] = [];
 	const parts = text.match(/\[[^\]]*\]|[A-Za-z']+|\d|[.,!?;:]/g) ?? [];
+	let w = 0;
 	for (const p of parts) {
-		if (p.startsWith("[")) tokens.push(...parsePhonemes(p.slice(1, -1)));
-		else if (/^[.!?]$/.test(p)) tokens.push({ pause: 320 });
+		if (p.startsWith("[")) tokens.push(...parsePhonemes(p.slice(1, -1), w++));
+		else if (p === "?") tokens.push({ pause: 320, q: true });
+		else if (/^[.!]$/.test(p)) tokens.push({ pause: 320 });
 		else if (/^[,;:]$/.test(p)) tokens.push({ pause: 140 });
 		else {
 			const word = /^\d$/.test(p) ? DIGITS[Number(p)] : p.toUpperCase();
 			const ph = LEXICON[word];
-			if (ph) tokens.push(...parsePhonemes(ph));
+			if (ph) tokens.push(...parsePhonemes(ph, w++));
 			else unknown.push(p);
 		}
 	}
