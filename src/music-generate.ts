@@ -105,16 +105,16 @@ const MOTIF_EVERY = 7;
 const STRINGS_EVERY = 13;
 const GLINT_EVERY = 5;
 
-/** The voices that carry a system's motif. */
-const CARRIERS = ["keys", "bell", "lead"] as const;
-type Carrier = (typeof CARRIERS)[number];
+/** The voices that can play a system's motif: its **motif voice**. */
+const MOTIF_VOICES = ["keys", "bell", "lead"] as const;
+type MotifVoice = (typeof MOTIF_VOICES)[number];
 
 /** What a system's seed fixes beyond its key (D12): its tune. */
 export interface MusicTune {
 	readonly motif: Motif;
 	/** Scale degrees the motif is shifted by. */
 	readonly shift: number;
-	readonly carrier: Carrier;
+	readonly motifVoice: MotifVoice;
 	readonly arp: readonly number[];
 	/** The octave the motif sits in: 60 or 72, as a C. */
 	readonly register: number;
@@ -130,7 +130,7 @@ export function musicTune(systemSeed: number): MusicTune {
 	return {
 		motif: pick(MOTIFS),
 		shift: Math.floor(rand() * 3),
-		carrier: pick(CARRIERS),
+		motifVoice: pick(MOTIF_VOICES),
 		arp: pick(ARP_SHAPES),
 		register: rand() < 0.5 ? 60 : 72,
 	};
@@ -317,7 +317,7 @@ function bed(opts: {
 	chords: readonly number[];
 	bars: number;
 	rand: () => number;
-	carrier: string | null;
+	motifVoice: string | null;
 	motifEvery: number;
 	strings: number | null;
 	glint: number | null;
@@ -354,7 +354,7 @@ function bed(opts: {
 		}
 
 	// The motif, developed statement by statement.
-	if (opts.carrier) {
+	if (opts.motifVoice) {
 		let s = 0;
 		for (let b = 1; b < bars; b += opts.motifEvery, s++) {
 			const how = CALM_FORM[(s + opts.formOffset) % CALM_FORM.length];
@@ -365,7 +365,7 @@ function bed(opts: {
 			degrees.forEach((d, i) => {
 				const vel = i === 0 ? 0.7 : i === degrees.length - 1 ? 0.5 : 0.6;
 				w.at(
-					opts.carrier as string,
+					opts.motifVoice as string,
 					pos,
 					beats[i] * 0.95,
 					deg(tune.register, d),
@@ -683,7 +683,7 @@ export function flightBed(systemSeed: number, variant: number): Song {
 		chords: calmChords(rand),
 		bars: CALM_BARS,
 		rand,
-		carrier: tune.carrier,
+		motifVoice: tune.motifVoice,
 		motifEvery: MOTIF_EVERY,
 		strings: STRINGS_EVERY,
 		glint: GLINT_EVERY,
@@ -722,7 +722,7 @@ const ROLE_BED: Readonly<
 	Record<
 		StationType,
 		{
-			carrier: string | null;
+			motifVoice: string | null;
 			motifEvery: number;
 			strings: number | null;
 			glint: number | null;
@@ -731,28 +731,28 @@ const ROLE_BED: Readonly<
 	>
 > = {
 	trade: {
-		carrier: "keys",
+		motifVoice: "keys",
 		motifEvery: 7,
 		strings: 11,
 		glint: null,
 		lowDrone: false,
 	},
 	shipyard: {
-		carrier: "bell",
+		motifVoice: "bell",
 		motifEvery: 9,
 		strings: null,
 		glint: 5,
 		lowDrone: false,
 	},
 	refinery: {
-		carrier: null,
+		motifVoice: null,
 		motifEvery: 7,
 		strings: 9,
 		glint: 7,
 		lowDrone: true,
 	},
 	outpost: {
-		carrier: "keys",
+		motifVoice: "keys",
 		motifEvery: 11,
 		strings: null,
 		glint: 6,
@@ -780,7 +780,7 @@ export function stationBed(
 		chords: [p[0], p[1], p[2], 4],
 		bars: STATION_BARS,
 		rand,
-		carrier: r.carrier,
+		motifVoice: r.motifVoice,
 		motifEvery: r.motifEvery,
 		strings: r.strings,
 		glint: r.glint,
