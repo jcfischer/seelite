@@ -94,6 +94,7 @@ import {
 	stockResponse,
 } from "../src/market";
 import { BERTH_CELL } from "../src/station-interior";
+import { HULL_TRADE_IN_FRACTION } from "../src/station-commerce";
 import { derivedCeiling, m3PerTonneOfHold } from "../tests/helpers/hull-math";
 import {
 	CLOSABLE_RATIO,
@@ -899,6 +900,108 @@ for (const cap of CAPITAL_CAPS) {
 					"\n  outright can still be inside the range where it bites. This sweep does" +
 					"\n  not measure what that costs them, and §7.1 records it as open.",
 	);
+}
+{
+	// **#594: what the bias costs a pilot who buys a hull below the kit.** The
+	// law is anchored at the baseline hold, so what it asserts about a sub-kit
+	// hull is one ratio — its price over the baseline's — and that is what is
+	// measured here, paired per world: `r(h, C) / r(baseline, C)` at the same
+	// capital `C`. A slope fitted on these holds would differ from section C's
+	// lower segment by the holds alone, before capital entered at all.
+	//
+	// Two arms, because a capital is two different things. `cap` is section I's:
+	// one hop may never spend more than `C`, so the wallet never grows — a bound,
+	// not a pilot. `start` opens at `C` and compounds, which is a pilot who has
+	// just bought the hull. The capitals are section I's sweep plus what a
+	// pilot holds after the trade-in from the baseline hull with an empty wallet,
+	// derived from the prices rather than typed in, because they moved once
+	// already the day this was written.
+	const subKit = underKit((h) => hullPriceCr(h) as number);
+	const baseT = HOLD_REFERENCE_T;
+	const baseList = hullPriceCr(
+		HULL_SPECS[PLAYER_BASELINE_HULL].holdT,
+	) as number;
+	const tradeInCaps = subKit
+		.map((id) => ({
+			id,
+			cr:
+				HULL_TRADE_IN_FRACTION * baseList -
+				(hullPriceCr(HULL_SPECS[id].holdT) as number),
+		}))
+		.filter((c) => c.cr > 0);
+	const caps = [
+		...new Set([
+			...CAPITAL_CAPS.filter((c) => c < fullKitCr()),
+			...tradeInCaps.map((c) => c.cr),
+			fullKitCr(),
+		]),
+	].sort((a, b) => a - b);
+	const capLabel = (c: number) => {
+		const from = tradeInCaps.filter((t) => t.cr === c).map((t) => t.id);
+		if (from.length > 0) return `${PLAYER_BASELINE_HULL} -> ${from.join("/")}`;
+		return c === fullKitCr() ? "the kit" : "section I";
+	};
+	const holds = [...subKit.map((id) => HULL_SPECS[id].holdT), baseT];
+	const lowerSe = segments.lower.pooled.se;
+	console.log(
+		`\n  #594 — ${subKit.join(" and ")}, at the capital a pilot who buys one can hold.`,
+		`\n  Each cell is r(h) / r(${baseT} t) at the same capital, per world, median [p10–p90];`,
+		`\n  the law says (h / ${baseT})^${HULL_PRICE_EXPONENT}, with section F's ±1σ on the lower segment`,
+		`\n  (± ${lowerSe.toFixed(3)} on b). Trade-in capitals are ${HULL_TRADE_IN_FRACTION} x the ${PLAYER_BASELINE_HULL}'s`,
+		"\n  list less the new hull's, from an empty wallet.",
+	);
+	const ratioStats = (rates: (h: number) => number[], h: number) => {
+		const r = WORLDS.map((_, wi) =>
+			finite("ratio", rates(h)[wi] / rates(baseT)[wi]),
+		);
+		return {
+			r,
+			median: median(r),
+			p10: quantile(r, 0.1),
+			p90: quantile(r, 0.9),
+		};
+	};
+	const cell = (s: { median: number; p10: number; p90: number }) =>
+		`${s.median.toFixed(3)} [${s.p10.toFixed(3)}–${s.p90.toFixed(3)}]`;
+	for (const h of holds.filter((x) => x !== baseT)) {
+		const law = (h / baseT) ** HULL_PRICE_EXPONENT;
+		const lo = Math.min(
+			(h / baseT) ** (HULL_PRICE_EXPONENT - lowerSe),
+			(h / baseT) ** (HULL_PRICE_EXPONENT + lowerSe),
+		);
+		const hi = Math.max(
+			(h / baseT) ** (HULL_PRICE_EXPONENT - lowerSe),
+			(h / baseT) ** (HULL_PRICE_EXPONENT + lowerSe),
+		);
+		const kit = ratioStats(curveAt, h);
+		console.log(
+			`\n  ${h} t: law ${law.toFixed(3)}, ±1σ ${lo.toFixed(3)}–${hi.toFixed(3)}; ` +
+				`section C at the kit, uncapped: ${cell(kit)}`,
+		);
+		console.log(
+			"    capital              from                   cap arm                   start arm         start/kit paired",
+		);
+		for (const c of caps) {
+			const armRates = (opts: RunOptions) => {
+				const byHold = new Map(
+					[h, baseT].map((x) => [x, armAt(x, opts).map(rateOf)] as const),
+				);
+				return (x: number) => byHold.get(x) as number[];
+			};
+			const capped = ratioStats(armRates({ capitalCapCr: c }), h);
+			// The start arm at the kit *is* section C's arm, so it is read back.
+			const started =
+				c === fullKitCr() ? kit : ratioStats(armRates({ startCr: c }), h);
+			const paired = median(started.r.map((x, wi) => x / kit.r[wi]));
+			const inBand = (m: number) => (m >= lo && m <= hi ? "in" : "out");
+			console.log(
+				`${rightAlign(`${Math.round(c).toLocaleString("en-GB")} Cr`, 13)}  ${capLabel(c).padEnd(22)}` +
+					`${rightAlign(`${cell(capped)} ${inBand(capped.median)}`, 26)}` +
+					`${rightAlign(`${cell(started)} ${inBand(started.median)}`, 26)}` +
+					`${rightAlign(paired.toFixed(3), 16)}`,
+			);
+		}
+	}
 }
 console.log(
 	"\n  One known bias is left and it is #7's ruling rather than this file's: a hop",
