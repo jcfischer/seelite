@@ -738,12 +738,16 @@ export class VoiceBank {
 				const k = env * amp * gains.gain(owner, pIx, frame + s);
 				const l = x * k * part.panL;
 				const r = (STEREO[kind] ? this.sideR : x) * k * part.panR;
-				if (stereo && room) {
+				if (stereo) {
 					out[s] += l;
 					stereo.right[s] += r;
-					room.revL[s] += l * part.reverb;
-					room.revR[s] += r * part.reverb;
-					room.echo[s] += 0.5 * (l + r) * part.echo;
+					// An owner with no sends is the caller's fault, and the voice
+					// still reaches both channels dry (sage round 2).
+					if (room) {
+						room.revL[s] += l * part.reverb;
+						room.revR[s] += r * part.reverb;
+						room.echo[s] += 0.5 * (l + r) * part.echo;
+					}
 				} else out[s] += 0.5 * (l + r);
 			}
 			this.env[i] = env;

@@ -214,12 +214,9 @@ export class MusicEngine implements NoteSink, VoiceGain {
 				// A song still fading out keeps fading until the line, then is
 				// full: the cut is on the line, not before it (sage rounds 4, 5).
 				if (h.back) h.target.gain.set(1, h.line, 0, now);
-				else {
-					h.target.gain.reset(1);
-					this.dropFadedTail(h.ix);
-				}
+				else h.target.gain.reset(1);
 				// Its room likewise, and only its room (#587).
-				this.roomOf(h.ix).gain.set(1, h.line, 0, now);
+				this.restoreRoom(h.ix, h.line, now, !h.back);
 				return;
 			}
 			case "crossfade": {
@@ -240,8 +237,7 @@ export class MusicEngine implements NoteSink, VoiceGain {
 				} else {
 					h.target.gain.reset(0);
 					h.target.gain.set(1, h.line, len, now);
-					this.dropFadedTail(h.ix);
-					this.roomOf(h.ix).gain.set(1, h.line, 0, now);
+					this.restoreRoom(h.ix, h.line, now, true);
 				}
 				return;
 			}
@@ -437,7 +433,7 @@ export class MusicEngine implements NoteSink, VoiceGain {
 			// An empty slot first; then one whose song is silent: its room
 			// silent too if one is; then a room ringing at full, whose tail
 			// rings on into the new song's; last, a room a stop now is fading,
-			// whose tail the start drops (`dropFadedTail`, sage round 1).
+			// whose tail the start drops (`restoreRoom`, sage round 1).
 			const free = (s: Slot | null, i: number) =>
 				s !== null && !this.isSounding(i);
 			ix = this.slots.indexOf(null);
@@ -474,17 +470,22 @@ export class MusicEngine implements NoteSink, VoiceGain {
 	}
 
 	/**
-	 * A song starting fresh in a room a stop now has faded, or is fading,
-	 * drops what that room still holds (sage round 1). Brought back to full on
-	 * the line, a stopped song's tail came back loud — the fault a room per
-	 * slot was made to remove — and it is the stop's to finish, not the new
-	 * song's to carry.
+	 * Slot `ix`'s room at full from `line`, on its present path until then:
+	 * the one rule for a play, a crossfade and a replay (sage round 2).
+	 *
+	 * A song starting `fresh` in a room a stop now has faded, or is fading,
+	 * first drops what that room still holds (sage round 1). Brought back to
+	 * full on the line, a stopped song's tail came back loud — the fault a
+	 * room per slot was made to remove — and it is the stop's to finish, not
+	 * the new song's to carry. A song coming back to its own room keeps it.
 	 */
-	private dropFadedTail(ix: number) {
+	private restoreRoom(ix: number, line: number, now: number, fresh: boolean) {
 		const room = this.roomOf(ix);
-		if (room.gain.to !== 0) return;
-		room.space.clear();
-		room.gain.reset(1);
+		if (fresh && room.gain.to === 0) {
+			room.space.clear();
+			room.gain.reset(1);
+		}
+		room.gain.set(1, line, 0, now);
 	}
 
 	/** Slot `ix`'s room: every loaded slot has one. */
@@ -606,7 +607,7 @@ export class MusicEngine implements NoteSink, VoiceGain {
 		// And its room, which the stop faded with it (sage round 9): left out,
 		// the song came back dry, and once the fade had run the room was
 		// cleared for good.
-		this.roomOf(ix).gain.set(1, line, 0, now);
+		this.restoreRoom(ix, line, now, false);
 		lead.haltAt = Infinity;
 		return true;
 	}

@@ -581,7 +581,7 @@ describe("stereo and the space (#560, after #548's first listening)", () => {
 		expect(energy(L, 0.5, 0.65)).toBeGreaterThan(0);
 	});
 
-	test("the echo follows the tempo: one beat at 60 bpm after 120 repeats at 1 s (#587)", () => {
+	test("the echo follows the tempo: one beat is 0.5 s at 120 bpm, then 1 s at 60 bpm (#587)", () => {
 		// The echo was timed at the song's first tempo, so a section written
 		// faster or slower drifted against its own repeats.
 		const e = new MusicEngine(SR, 16);
