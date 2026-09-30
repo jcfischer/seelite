@@ -214,7 +214,10 @@ export class MusicEngine implements NoteSink, VoiceGain {
 				// A song still fading out keeps fading until the line, then is
 				// full: the cut is on the line, not before it (sage rounds 4, 5).
 				if (h.back) h.target.gain.set(1, h.line, 0, now);
-				else h.target.gain.reset(1);
+				else {
+					h.target.gain.reset(1);
+					this.dropFadedTail(h.ix);
+				}
 				// Its room likewise, and only its room (#587).
 				this.roomOf(h.ix).gain.set(1, h.line, 0, now);
 				return;
@@ -237,6 +240,7 @@ export class MusicEngine implements NoteSink, VoiceGain {
 				} else {
 					h.target.gain.reset(0);
 					h.target.gain.set(1, h.line, len, now);
+					this.dropFadedTail(h.ix);
 					this.roomOf(h.ix).gain.set(1, h.line, 0, now);
 				}
 				return;
@@ -268,8 +272,10 @@ export class MusicEngine implements NoteSink, VoiceGain {
 					// Every room goes with it, a halted song's tail too: a stop now
 					// is a pilot taking the stick back, and a hall ringing on after
 					// it is not a stop.
-					for (const room of this.rooms)
-						if (room && !room.space.silent) room.gain.set(0, now, len, now);
+					// Silent rooms too (sage round 1): a song stopped in a rest
+					// plays on until its fade ends, and a note inside the fade
+					// rang on in a room still at full.
+					for (const room of this.rooms) room?.gain.set(0, now, len, now);
 					return;
 				}
 				const line = this.line(now, cmd.at);
@@ -358,7 +364,11 @@ export class MusicEngine implements NoteSink, VoiceGain {
 		const R = stereo.right;
 		L.fill(0);
 		R.fill(0);
-		for (const b of stereo.sends) {
+		// Only a slot with a room has a song, and only a song has voices to
+		// send (sage round 1: every slot was cleared every block).
+		for (let i = 0; i < this.rooms.length; i++) {
+			if (!this.rooms[i]) continue;
+			const b = stereo.sends[i];
 			b.revL.fill(0);
 			b.revR.fill(0);
 			b.echo.fill(0);
@@ -424,17 +434,22 @@ export class MusicEngine implements NoteSink, VoiceGain {
 				throw new Error(`music: ${id} is sounding and cannot be replaced`);
 			this.bank.clearOwner(ix);
 		} else {
-			// An empty slot first; then one whose song is silent, its room
-			// silent too if one is; then any whose song is silent, where the
-			// last song's tail rings on into the new one's room.
+			// An empty slot first; then one whose song is silent: its room
+			// silent too if one is; then a room ringing at full, whose tail
+			// rings on into the new song's; last, a room a stop now is fading,
+			// whose tail the start drops (`dropFadedTail`, sage round 1).
+			const free = (s: Slot | null, i: number) =>
+				s !== null && !this.isSounding(i);
 			ix = this.slots.indexOf(null);
 			if (ix < 0)
 				ix = this.slots.findIndex(
-					(s, i) =>
-						s !== null && !this.isSounding(i) && !!this.rooms[i]?.space.silent,
+					(s, i) => free(s, i) && !!this.rooms[i]?.space.silent,
 				);
 			if (ix < 0)
-				ix = this.slots.findIndex((s, i) => s !== null && !this.isSounding(i));
+				ix = this.slots.findIndex(
+					(s, i) => free(s, i) && this.rooms[i]?.gain.to !== 0,
+				);
+			if (ix < 0) ix = this.slots.findIndex(free);
 			if (ix < 0)
 				throw new Error(
 					`music: all ${this.slots.length} song slots are sounding`,
@@ -456,6 +471,20 @@ export class MusicEngine implements NoteSink, VoiceGain {
 			gain: new Ramp(),
 			sends: this.sendBufs[ix],
 		};
+	}
+
+	/**
+	 * A song starting fresh in a room a stop now has faded, or is fading,
+	 * drops what that room still holds (sage round 1). Brought back to full on
+	 * the line, a stopped song's tail came back loud — the fault a room per
+	 * slot was made to remove — and it is the stop's to finish, not the new
+	 * song's to carry.
+	 */
+	private dropFadedTail(ix: number) {
+		const room = this.roomOf(ix);
+		if (room.gain.to !== 0) return;
+		room.space.clear();
+		room.gain.reset(1);
 	}
 
 	/** Slot `ix`'s room: every loaded slot has one. */

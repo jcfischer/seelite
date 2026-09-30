@@ -599,7 +599,13 @@ describe("stereo and the space (#560, after #548's first listening)", () => {
 				},
 			},
 			sections: [
-				{ name: "A", bars: 1, events: [] },
+				// A note in A, so the room is ringing when B's tempo lands and the
+				// echo glides rather than jumps (sage round 1).
+				{
+					name: "A",
+					bars: 1,
+					events: [{ part: "p", bar: 0, beat: 0, dur: 0.1, pitch: 69, vel: 1 }],
+				},
 				{
 					name: "B",
 					bars: 2,
@@ -619,20 +625,11 @@ describe("stereo and the space (#560, after #548's first listening)", () => {
 		const R = new Float32Array(n);
 		for (let f = 0; f < n; f += 128)
 			e.render(L.subarray(f, f + 128), f, R.subarray(f, f + 128));
-		// Section B, and its note, begin at 2 s.
-		const note = 2 * SR;
-		const energy = (a: number, b: number) => {
-			let v = 0;
-			for (
-				let i = note + Math.round(a * SR);
-				i < note + Math.round(b * SR);
-				i++
-			)
-				v += L[i] * L[i];
-			return v;
-		};
-		expect(energy(0.45, 0.6)).toBe(0);
-		expect(energy(0.98, 1.15)).toBeGreaterThan(0);
+		// Section B, and its note, begin at 2 s. What A's note left in the room
+		// rings under both windows, so read the repeat against it.
+		const oldTime = energy(L, 2.45, 2.6);
+		const newTime = energy(L, 2.98, 3.15);
+		expect(newTime).toBeGreaterThan(20 * oldTime);
 	});
 
 	test("replaying the song inside its stop now's fade brings its room back on the line (sage round 9)", () => {
@@ -817,6 +814,107 @@ describe("stereo and the space (#560, after #548's first listening)", () => {
 		expect(after).toBeLessThanOrEqual(before);
 		// And once the fade has run, silence until b plays.
 		expect(past).toBe(0);
+	});
+
+	test("a stop now at a rest still fades that song's room (#587 sage round 1)", () => {
+		// The stop faded only rooms that were ringing at that instant. A song
+		// stopped in a rest plays on until its fade ends, and a note inside
+		// the fade rang on in a room still at full.
+		const e = new MusicEngine(SR, 16);
+		const late: Song = {
+			name: "late",
+			beatsPerBar: 4,
+			parts: { p: { voice: "pad", level: 1, reverb: 1 } },
+			sections: [
+				{
+					name: "A",
+					bars: 1,
+					events: [{ part: "p", bar: 0, beat: 2, dur: 0.5, pitch: 60, vel: 1 }],
+				},
+			],
+			tempo: [{ bar: 0, bpm: 120 }],
+			space: { reverbS: 6 },
+		};
+		e.command({ type: "load", id: "late", song: late }, 0);
+		e.command({ type: "play", id: "late", at: "bar" }, 0);
+		const stopAt = 0.5 * SR - ((0.5 * SR) % 128);
+		const fadeS = 1;
+		const quiet = stopAt + fadeS * SR + 128;
+		const L = new Float32Array(128);
+		const R = new Float32Array(128);
+		let inFade = 0;
+		let past = 0;
+		for (let f = 0; f < 3 * SR; f += 128) {
+			if (f === stopAt) e.command({ type: "stop", at: "now", fadeS }, f);
+			e.render(L, f, R);
+			for (let k = 0; k < 128; k++) {
+				const v = Math.abs(L[k]) + Math.abs(R[k]);
+				if (f + k < quiet) inFade = Math.max(inFade, v);
+				else past = Math.max(past, v);
+			}
+		}
+		// The note on beat 2, at 1 s, sounded inside the fade.
+		expect(inFade).toBeGreaterThan(0.001);
+		expect(past).toBe(0);
+	});
+
+	test("a song loaded into a slot whose room is fading out does not bring that tail back (#587 sage round 1)", () => {
+		// With every slot's room ringing, a load takes one whose room a stop
+		// now is fading, and the new song's line set it back to full.
+		const e = new MusicEngine(SR, 16);
+		// 480 bpm: a bar is half a second, so four songs play in two. A long
+		// room on the first three, a short one on the last, so the tails a
+		// load can land on are about as loud as each other.
+		const hall = (name: string, beat: number, reverbS = 20): Song => ({
+			name,
+			beatsPerBar: 4,
+			parts: { p: { voice: "pad", level: 1, reverb: 1 } },
+			sections: [
+				{
+					name: "A",
+					bars: 1,
+					events: [{ part: "p", bar: 0, beat, dur: 0.5, pitch: 60, vel: 1 }],
+				},
+			],
+			tempo: [{ bar: 0, bpm: 480 }],
+			space: { reverbS },
+		});
+		const ids = ["a", "b", "c", "d"];
+		for (const id of ids)
+			e.command(
+				{ type: "load", id, song: hall(id, 0, id === "d" ? 1 : 20) },
+				0,
+			);
+		const snap = (s: number) => s * SR - ((s * SR) % 128);
+		// Each plays one bar, on the bar: every room rings.
+		const plays = new Map(ids.map((id, i) => [snap(i * 0.5 + 0.1), id]));
+		const stopAt = snap(1.7);
+		const fadeS = 2;
+		// Late in the fade, where the rooms are at a fifth.
+		const loadAt = snap(3.3);
+		const eNote = loadAt + 0.375 * SR;
+		const L = new Float32Array(128);
+		const R = new Float32Array(128);
+		let before = 0;
+		let after = 0;
+		for (let f = 0; f < eNote; f += 128) {
+			const id = plays.get(f);
+			if (id) e.command({ type: "play", id, at: "bar" }, f);
+			if (f === stopAt) e.command({ type: "stop", at: "now", fadeS }, f);
+			if (f === loadAt) {
+				e.command({ type: "load", id: "e", song: hall("e", 3) }, f);
+				e.command({ type: "play", id: "e", at: "bar" }, f);
+			}
+			e.render(L, f, R);
+			for (let k = 0; k < 128; k++) {
+				const v = Math.abs(L[k]) + Math.abs(R[k]);
+				const t = f + k;
+				if (t >= loadAt - 0.05 * SR && t < loadAt) before = Math.max(before, v);
+				else if (t >= loadAt && t < eNote) after = Math.max(after, v);
+			}
+		}
+		expect(before).toBeGreaterThan(0.001);
+		expect(after).toBeLessThanOrEqual(before);
 	});
 
 	test("a worklet quantum takes no typed-array view, stereo or folded (sage round 8)", () => {

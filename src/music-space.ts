@@ -187,15 +187,7 @@ export class Space {
 				tapL += x * (this.echoL[r2] - tapL);
 				tapR += x * (this.echoR[r2] - tapR);
 				this.echoMix += this.echoStep;
-				if (this.echoMix >= 1) {
-					this.echoD = this.echoNext;
-					this.echoNext = -1;
-					if (this.echoQueued >= 0 && this.echoQueued !== this.echoD) {
-						this.echoNext = this.echoQueued;
-						this.echoMix = 0;
-					}
-					this.echoQueued = -1;
-				}
+				if (this.echoMix >= 1) this.endGlide(true);
 			}
 			this.lpL += ec * (tapL - this.lpL);
 			this.lpR += ec * (tapR - this.lpR);
@@ -257,6 +249,22 @@ export class Space {
 		} else this.quietFrames = 0;
 	}
 
+	/**
+	 * A glide has reached its tap, the one place the three glide fields move
+	 * together (sage round 1). A time asked for during it starts the next
+	 * glide with `chain`; without, the space takes that time at once.
+	 */
+	private endGlide(chain: boolean) {
+		this.echoD = this.echoNext;
+		const queued = this.echoQueued;
+		this.echoNext = this.echoQueued = -1;
+		if (queued < 0 || queued === this.echoD) return;
+		if (chain) {
+			this.echoNext = queued;
+			this.echoMix = 0;
+		} else this.echoD = queued;
+	}
+
 	/** Drop everything the space holds, at once: silence from the next frame.
 	 *  The engine's, once a stop now has faded the space out (`MusicEngine`). */
 	clear() {
@@ -267,9 +275,7 @@ export class Space {
 		this.echoR.fill(0);
 		this.lpL = this.lpR = 0;
 		// A glide in flight has nothing left to glide over: take its end.
-		if (this.echoNext >= 0)
-			this.echoD = this.echoQueued >= 0 ? this.echoQueued : this.echoNext;
-		this.echoNext = this.echoQueued = -1;
+		if (this.echoNext >= 0) this.endGlide(false);
 		this.quietFrames = 0;
 		this.isSilent = true;
 	}
