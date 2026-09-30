@@ -396,7 +396,7 @@ const cleared = await page.evaluate(async () => {
 	g.requestDockingClearance();
 	const fitted = g.hasDockingComputer;
 	g.toggleDockingComputer();
-	const engaged = g.dockingComputerEngaged;
+	const engaged = g.dockingComputer.engaged;
 	g.updateCockpit();
 	await new Promise((r) => requestAnimationFrame(() => r()));
 	return { fitted, engaged, prompt: g.cockpitPrompt.text };
@@ -532,7 +532,7 @@ const failed = await free.evaluate(() => {
 	return {
 		docked,
 		movedKm: Math.hypot(p.x - before.x, p.y - before.y, p.z - before.z),
-		engaged: g.dockingComputerEngaged,
+		engaged: g.dockingComputer.engaged,
 		targetKept: g.targetId === targetBefore,
 		phase: g.dockPhase,
 	};
@@ -563,7 +563,7 @@ const timedOut = await free.evaluate(() => {
 	return {
 		docked,
 		movedKm: Math.hypot(p.x - before.x, p.y - before.y, p.z - before.z),
-		engaged: g.dockingComputerEngaged,
+		engaged: g.dockingComputer.engaged,
 		clearance: g.dockingSnapshot(trade)?.grantLive ?? null,
 		phase: g.dockPhase,
 	};
