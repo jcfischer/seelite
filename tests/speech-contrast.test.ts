@@ -16,7 +16,10 @@ import { describe, expect, test } from "bun:test";
 import { contrast } from "../scripts/measure-speech-contrast";
 import { RADIO } from "../src/radio";
 
-const HEARD_APART = 1.9;
+/** Between the ear's two readings: under the lowest pair heard apart (P/T,
+ *  1.89) and over the highest heard as one (0.99). At 1.9 this rejected the
+ *  very pair it was calibrated on (sage round 3). */
+const HEARD_APART = 1.8;
 const radio = {
 	name: "radio",
 	radio: { ...RADIO, beepHz: 0, squelch: false },

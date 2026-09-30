@@ -45,10 +45,13 @@ export const MUSIC_VOICE_SPACE: SpeechSpace = {
 const whenIdle = (fn: () => void) => {
 	const idle = (
 		globalThis as {
-			requestIdleCallback?: (f: () => void, o?: { timeout: number }) => void;
+			requestIdleCallback?: (f: () => void) => void;
 		}
 	).requestIdleCallback;
-	if (idle) idle(fn, { timeout: 2000 });
+	// No deadline: forced after one, the render ran as an ordinary long task
+	// and dropped frames on a page that is rarely idle (sage round 3). A
+	// phrase not ready when it is asked is rendered then (`takeNumbers`).
+	if (idle) idle(fn);
 	else setTimeout(fn, 0);
 };
 

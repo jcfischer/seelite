@@ -90,6 +90,11 @@ export const REFRESH_S = 180;
 /** The cruise lift (D7). */
 export const CRUISE_TEMPO = 1.06;
 
+/** Whether these arms play the numbers station at all (#600): the one
+ *  gate the director says them by and the host renders them ahead by. */
+export const numbersOn = (arms: MusicArms) =>
+	arms.voice && arms.bed === "berlin";
+
 /** The numbers station's first phrase in calm, and the gap after each. By
  *  ear, and a placeholder until it is heard: rare enough to be an event. */
 export const VOICE_FIRST_S = 40;
@@ -398,7 +403,7 @@ export function stepMusic(
 	// it; the director only says when and what.
 	let { voiceS, voiceN } = s;
 	let voice: string | undefined;
-	if (arms.voice && arms.bed === "berlin" && level === "calm") {
+	if (numbersOn(arms) && level === "calm") {
 		voiceS += dt;
 		if (voiceS >= (voiceN === 0 ? VOICE_FIRST_S : VOICE_EVERY_S)) {
 			voiceS = 0;

@@ -131,6 +131,7 @@ import {
 	type MusicScene,
 	type MusicState,
 	musicArms,
+	numbersOn,
 	stepMusic,
 } from "./music-director";
 import {
@@ -1155,6 +1156,8 @@ if (MUSIC_ARMS.unknown.length)
 const VOICE_ARMS = voiceArms(
 	new URLSearchParams(window.location.search).get("voices"),
 );
+/** The director's arms: `?music=`'s, with `?voices=`'s say on the numbers. */
+const DIRECTOR_ARMS = { ...MUSIC_ARMS.arms, voice: VOICE_ARMS.music };
 const RAIDERS_OFF =
 	RAIDER_PARAM !== null && ["off", "0", "false"].includes(RAIDER_PARAM);
 const RAIDER_PLAYTEST = RAIDER_PARAM !== null && !RAIDERS_OFF;
@@ -12403,30 +12406,26 @@ class Game {
 				stationRole: station?.type ?? null,
 			},
 			dt,
-			{ ...MUSIC_ARMS.arms, voice: VOICE_ARMS.music },
+			DIRECTOR_ARMS,
 		);
 		this.musicState = step.state;
 		for (const cmd of step.commands) this.music.send(cmd);
 		// The numbers station, far off in the music (#600). The next phrase is
 		// rendered ahead, in idle time, never inside this step.
 		// Only where it will be said, and worked out only when it changes.
-		if (
-			VOICE_ARMS.music &&
-			MUSIC_ARMS.arms.bed === "berlin" &&
-			step.state.bed === "flight"
-		) {
+		if (numbersOn(DIRECTOR_ARMS) && step.state.bed === "flight") {
 			const seed = this.world.system.record.seed;
-			const key = `${seed >>> 0}/${step.state.voiceN}`;
-			if (key !== this.numbersAheadKey) {
-				this.numbersAheadKey = key;
-				renderNumbersAhead(numbersPhrase(seed, step.state.voiceN));
+			const n = step.state.voiceN;
+			if (seed !== this.numbersAhead.seed || n !== this.numbersAhead.n) {
+				this.numbersAhead = { seed, n };
+				renderNumbersAhead(numbersPhrase(seed, n));
 			}
 		}
 		if (step.voice) sayNumbers(this.audio, step.voice);
 	}
 
-	/** The numbers phrase last rendered ahead, as system/index (#600). */
-	private numbersAheadKey = "";
+	/** The numbers phrase last rendered ahead: its system and index (#600). */
+	private numbersAhead = { seed: Number.NaN, n: -1 };
 
 	/** A comms line through the radio, on the console bus (#600). Rendered
 	 *  once per line and kept (`comms-voice.ts`). */

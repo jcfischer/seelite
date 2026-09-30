@@ -105,7 +105,7 @@ export const PROBE_CATALOG = Object.freeze(
 		),
 		entry(
 			"probe-voices.mjs",
-			"Renders the synthesised voices offline through the engine's buses: a comms line on the console bus with the console row as its only level, the numbers station on the music bus with an echo that outlasts it against a dry control, a second line waiting for the first; and the running game saying station control's answer on a clearance request, silent under ?voices=nocomms, and saying the director's numbers on the music bus.",
+			"Renders the synthesised voices offline through the engine's buses: a comms line on the console bus with the console row as its only level, the numbers station on the music bus with an echo that outlasts it against a dry control, a second line waiting for the first; and the running game saying approach control's answer on a clearance request, silent under ?voices=nocomms, and saying the director's numbers on the music bus.",
 			[
 				"audio",
 				"voices",

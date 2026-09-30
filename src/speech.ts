@@ -18,7 +18,7 @@
  * not the consonant's own noise, is what says *b*, *d* or *g* through a
  * radio, whose band removes most of that noise. A stop's burst sits where
  * its place puts it — a velar's at the next vowel's second formant. Per sample, a
- * glottal pulse (Rosenberg's) and aspiration noise go through four formant
+ * glottal pulse (KLGLOTT88's) and aspiration noise go through four formant
  * resonators in cascade, and frication noise through one more in parallel.
  *
  * Rendered offline, at `SPEECH_RATE`, into a `Float32Array`: a phrase is

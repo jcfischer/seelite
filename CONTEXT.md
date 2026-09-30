@@ -363,7 +363,7 @@ _Avoid_: Dockmaster, tutorial prompt
 
 **Approach control**:
 A station's voice on the radio in flight: it answers each change of a docking clearance and welcomes an arrival. A synthesised voice through the ship's radio (#600); `src/comms.ts` owns what it says and when. Not **Station control**, which is the first day's voice on the docked console.
-_Avoid_: Station control (the first day's voice), tower
+_Avoid_: tower
 
 **Numbers station**:
 A transmission overheard far off in the Berlin bed's calm: groups of digits in a machine voice, the system's own and in the system's order, played through an echo on the music bus (#600). The director says when and what; `src/comms.ts` owns the phrases.
