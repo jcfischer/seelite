@@ -12,8 +12,12 @@
  * game's words into them). Each phoneme is a target: three formants, a
  * voicing level, an aspiration level, a frication level and band. Stops are
  * expanded into closure, burst and aspiration. The targets become 5 ms frame
- * tracks, smoothed so the formants glide from one phoneme into the next —
- * which is most of what makes formant speech intelligible. Per sample, a
+ * tracks. A consonant holds its **locus**, where its place of articulation
+ * puts the formants, and the vowel beside it starts part of the way from
+ * that locus and glides to its own target (Klatt's locus rule): the glide,
+ * not the consonant's own noise, is what says *b*, *d* or *g* through a
+ * radio, whose band removes most of that noise. A stop's burst sits where
+ * its place puts it — a velar's at the next vowel's second formant. Per sample, a
  * glottal pulse (Rosenberg's) and aspiration noise go through four formant
  * resonators in cascade, and frication noise through one more in parallel.
  *
@@ -27,6 +31,7 @@ const FRAME = 80; // 5 ms
 const FRAME_S = FRAME / SPEECH_RATE;
 
 type Formants = readonly [number, number, number];
+type Place = "lab" | "dent" | "alv" | "pal" | "vel";
 
 /** One phoneme's targets. `f2` is a diphthong's end. Levels are 0..1. */
 interface PhonemeSpec {
@@ -41,8 +46,14 @@ interface PhonemeSpec {
 	readonly ff?: number;
 	readonly fb?: number;
 	readonly vowel?: boolean;
-	/** A stop: expanded into closure, burst and (voiceless) aspiration. */
-	readonly stop?: { readonly voiced: boolean; readonly burstHz: number };
+	/** Where a consonant is made: its locus and its burst. */
+	readonly place?: Place;
+	/** A liquid or glide: the vowel beside it glides from its formants, not
+	 *  from a locus. */
+	readonly glide?: boolean;
+	/** A stop: expanded into closure, burst and, voiceless, aspiration of
+	 *  `vot` ms. */
+	readonly stop?: { readonly voiced: boolean; readonly vot: number };
 	/** An affricate: a stop into this fricative. */
 	readonly then?: string;
 	/** Take the next phoneme's formants (HH). */
@@ -57,6 +68,26 @@ const V = (f: Formants, ms: number, f2?: Formants): PhonemeSpec => ({
 	av: 1,
 	vowel: true,
 });
+function fric(
+	f: Formants,
+	ms: number,
+	av: number,
+	af: number,
+	ff: number,
+	fb: number,
+	place: Place,
+): PhonemeSpec {
+	return { f, ms, av, af, ff, fb, place };
+}
+function stop(
+	f: Formants,
+	voiced: boolean,
+	vot: number,
+	place: Place,
+): PhonemeSpec {
+	return { f, ms: 0, av: 0, place, stop: { voiced, vot } };
+}
+
 export const PHONEMES: Readonly<Record<string, PhonemeSpec>> = {
 	IY: V([270, 2290, 3010], 150),
 	IH: V([390, 1990, 2550], 105),
@@ -74,72 +105,32 @@ export const PHONEMES: Readonly<Record<string, PhonemeSpec>> = {
 	OW: V([540, 1100, 2300], 180, [450, 900, 2300]),
 	AW: V([720, 1250, 2600], 220, [450, 1000, 2400]),
 	OY: V([550, 960, 2400], 230, [360, 1820, 2450]),
-	L: { f: [330, 1050, 2880], ms: 70, av: 0.8 },
-	R: { f: [310, 1060, 1380], ms: 70, av: 0.8 },
-	W: { f: [290, 610, 2150], ms: 70, av: 0.8 },
-	Y: { f: [260, 2070, 3020], ms: 60, av: 0.8 },
-	M: { f: [250, 1100, 2130], ms: 75, av: 0.55 },
-	N: { f: [250, 1600, 2600], ms: 65, av: 0.55 },
-	NG: { f: [250, 2000, 2900], ms: 80, av: 0.55 },
-	F: { f: [340, 1100, 2080], ms: 105, av: 0, af: 0.35, ff: 4500, fb: 3500 },
-	V: { f: [340, 1100, 2080], ms: 65, av: 0.45, af: 0.25, ff: 4500, fb: 3500 },
-	TH: { f: [320, 1290, 2540], ms: 105, av: 0, af: 0.3, ff: 5000, fb: 3500 },
-	DH: { f: [320, 1290, 2540], ms: 50, av: 0.5, af: 0.2, ff: 5000, fb: 3500 },
-	S: { f: [320, 1390, 2530], ms: 115, av: 0, af: 0.9, ff: 5500, fb: 1800 },
-	Z: { f: [320, 1390, 2530], ms: 85, av: 0.45, af: 0.6, ff: 5500, fb: 1800 },
-	SH: { f: [300, 1840, 2750], ms: 125, av: 0, af: 1, ff: 2900, fb: 1300 },
-	ZH: { f: [300, 1840, 2750], ms: 85, av: 0.45, af: 0.6, ff: 2900, fb: 1300 },
+	L: { f: [330, 1050, 2880], ms: 70, av: 0.8, glide: true },
+	R: { f: [310, 1060, 1380], ms: 70, av: 0.8, glide: true },
+	W: { f: [290, 610, 2150], ms: 70, av: 0.8, glide: true },
+	Y: { f: [260, 2070, 3020], ms: 60, av: 0.8, glide: true },
+	M: { f: [250, 1100, 2130], ms: 75, av: 0.55, place: "lab" },
+	N: { f: [250, 1600, 2600], ms: 65, av: 0.55, place: "alv" },
+	NG: { f: [250, 2000, 2900], ms: 80, av: 0.55, place: "vel" },
+	F: fric([340, 1100, 2080], 105, 0, 0.35, 4500, 3500, "lab"),
+	V: fric([340, 1100, 2080], 65, 0.45, 0.25, 4500, 3500, "lab"),
+	TH: fric([320, 1290, 2540], 105, 0, 0.3, 5000, 3500, "dent"),
+	DH: fric([320, 1290, 2540], 50, 0.5, 0.2, 5000, 3500, "dent"),
+	S: fric([320, 1390, 2530], 115, 0, 0.9, 5500, 1800, "alv"),
+	Z: fric([320, 1390, 2530], 85, 0.45, 0.6, 5500, 1800, "alv"),
+	SH: fric([300, 1840, 2750], 125, 0, 1, 2900, 1300, "pal"),
+	ZH: fric([300, 1840, 2750], 85, 0.45, 0.6, 2900, 1300, "pal"),
 	HH: { f: [500, 1500, 2500], ms: 65, av: 0, ah: 0.6, copyNext: true },
-	P: {
-		f: [250, 900, 2100],
-		ms: 0,
-		av: 0,
-		stop: { voiced: false, burstHz: 900 },
-	},
-	B: {
-		f: [250, 900, 2100],
-		ms: 0,
-		av: 0,
-		stop: { voiced: true, burstHz: 900 },
-	},
-	T: {
-		f: [250, 1700, 2600],
-		ms: 0,
-		av: 0,
-		stop: { voiced: false, burstHz: 4200 },
-	},
-	D: {
-		f: [250, 1700, 2600],
-		ms: 0,
-		av: 0,
-		stop: { voiced: true, burstHz: 4200 },
-	},
-	K: {
-		f: [250, 1900, 2850],
-		ms: 0,
-		av: 0,
-		stop: { voiced: false, burstHz: 2000 },
-	},
-	G: {
-		f: [250, 1900, 2850],
-		ms: 0,
-		av: 0,
-		stop: { voiced: true, burstHz: 2000 },
-	},
-	CH: {
-		f: [300, 1840, 2750],
-		ms: 0,
-		av: 0,
-		stop: { voiced: false, burstHz: 3500 },
-		then: "SH",
-	},
-	JH: {
-		f: [300, 1840, 2750],
-		ms: 0,
-		av: 0,
-		stop: { voiced: true, burstHz: 3500 },
-		then: "ZH",
-	},
+	// Voice onset times after English's: a velar's the longest, a labial's
+	// the shortest; a voiced stop's is short lag and is not written out.
+	P: stop([250, 900, 2100], false, 45, "lab"),
+	B: stop([250, 900, 2100], true, 0, "lab"),
+	T: stop([250, 1700, 2600], false, 55, "alv"),
+	D: stop([250, 1700, 2600], true, 0, "alv"),
+	K: stop([250, 1900, 2850], false, 65, "vel"),
+	G: stop([250, 1900, 2850], true, 0, "vel"),
+	CH: { ...stop([300, 1840, 2750], false, 0, "pal"), then: "SH" },
+	JH: { ...stop([300, 1840, 2750], true, 0, "pal"), then: "ZH" },
 };
 
 /** A voice: its pitch, the size of its vocal tract, how it moves its pitch. */
@@ -219,9 +210,15 @@ export function parsePhonemes(text: string): Token[] {
 	return out;
 }
 
+/** What a stretch of the frame track is, for the transitions and the tests. */
+export type Role = "vowel" | "cons" | "closure" | "burst" | "asp" | "pause";
+
 /** One stretch of the frame track: held or gliding targets. */
 interface Seg {
 	frames: number;
+	role: Role;
+	/** The phoneme it belongs to; \`null\` for a pause. */
+	spec: PhonemeSpec | null;
 	f: Formants;
 	fEnd: Formants;
 	av: number;
@@ -237,7 +234,18 @@ interface Seg {
 
 const framesOf = (ms: number) => Math.max(1, Math.round(ms / 1000 / FRAME_S));
 
-/** The next phoneme's formants after token `i`, for HH and aspiration. */
+/** The next vowel's formants after token \`i\`, before a pause. */
+function nextVowel(tokens: readonly Token[], i: number): Formants | null {
+	for (let k = i + 1; k < tokens.length; k++) {
+		const t = tokens[k];
+		if ("pause" in t) return null;
+		const p = PHONEMES[t.ph];
+		if (p.vowel) return p.f;
+	}
+	return null;
+}
+
+/** The next phoneme's own formants after token \`i\`, for HH. */
 function nextFormants(tokens: readonly Token[], i: number): Formants | null {
 	for (let k = i + 1; k < tokens.length; k++) {
 		const t = tokens[k];
@@ -248,11 +256,34 @@ function nextFormants(tokens: readonly Token[], i: number): Formants | null {
 	return null;
 }
 
-/** The phrase as segments, before smoothing. */
+/** Where a burst's noise is centred, and how wide: a labial's low and
+ *  diffuse, an alveolar's high, a velar's compact at the vowel's F2. */
+function burstBand(place: Place, vowel: Formants | null): [number, number] {
+	switch (place) {
+		case "lab":
+			return [1100, 2500];
+		case "alv":
+		case "dent":
+			return [3900, 1500];
+		case "pal":
+			return [3000, 1200];
+		case "vel":
+			return [Math.min(3000, Math.max(1200, (vowel?.[1] ?? 1600) + 150)), 600];
+	}
+}
+
+/** The phrase as segments, before the transitions. */
 function segments(tokens: readonly Token[], v: SpeechVoice): Seg[] {
 	const segs: Seg[] = [];
-	const quiet = (ms: number, f: Formants): Seg => ({
+	const quiet = (
+		ms: number,
+		f: Formants,
+		role: Role,
+		spec: PhonemeSpec | null,
+	): Seg => ({
 		frames: framesOf(ms),
+		role,
+		spec,
 		f,
 		fEnd: f,
 		av: 0,
@@ -270,57 +301,49 @@ function segments(tokens: readonly Token[], v: SpeechVoice): Seg[] {
 	});
 	tokens.forEach((t, i) => {
 		if ("pause" in t) {
-			segs.push(quiet(t.pause, segs.at(-1)?.fEnd ?? [500, 1500, 2500]));
+			segs.push(
+				quiet(t.pause, segs.at(-1)?.fEnd ?? [500, 1500, 2500], "pause", null),
+			);
 			return;
 		}
 		const p = PHONEMES[t.ph];
-		const next = nextFormants(tokens, i) ?? p.f;
+		const vowel = nextVowel(tokens, i);
 		const pitch = p.vowel && t.stress === 1 ? 1 + v.accent : 1;
 		if (p.stop) {
-			// Closure, formants at the stop's locus; a voice bar if voiced.
+			// Closure and burst, formants at the stop's locus beside the vowel it
+			// releases into; a voice bar if voiced.
+			const at = vowel ? locus(p.place ?? "alv", vowel) : p.f;
 			segs.push({
-				...quiet(p.stop.voiced ? 45 : 60, p.f),
+				...quiet(p.stop.voiced ? 45 : 60, at, "closure", p),
 				av: p.stop.voiced ? 0.12 : 0,
 				pitch,
 			});
+			const [ff, fb] = burstBand(p.place ?? "alv", vowel);
 			segs.push({
-				frames: framesOf(p.stop.voiced ? 8 : 12),
-				f: p.f,
-				fEnd: p.f,
-				av: 0,
-				ah: 0,
-				af: p.stop.voiced ? 0.5 : 0.9,
-				ff: p.stop.burstHz,
-				fb: 1800,
+				...quiet(p.stop.voiced ? 8 : 12, at, "burst", p),
+				af: p.stop.voiced ? 0.55 : 0.9,
+				ff,
+				fb,
 				pitch,
 				sharp: true,
 			});
 			if (p.then) {
 				const fr = PHONEMES[p.then];
 				segs.push({
-					frames: framesOf(fr.ms * 0.8),
-					f: fr.f,
-					fEnd: fr.f,
+					...quiet(fr.ms * 0.8, fr.f, "cons", fr),
 					av: fr.av,
-					ah: 0,
 					af: fr.af ?? 0,
 					ff: fr.ff ?? 3000,
 					fb: fr.fb ?? 2000,
 					pitch,
-					sharp: false,
 				});
-			} else if (!p.stop.voiced)
+			} else if (p.stop.vot > 0)
+				// The aspiration's formants are the vowel's, reached through the
+				// transition from the release.
 				segs.push({
-					frames: framesOf(40),
-					f: next,
-					fEnd: next,
-					av: 0,
+					...quiet(p.stop.vot / v.rate, vowel ?? p.f, "asp", p),
 					ah: 0.55,
-					af: 0,
-					ff: 3000,
-					fb: 2000,
 					pitch,
-					sharp: false,
 				});
 			return;
 		}
@@ -330,9 +353,11 @@ function segments(tokens: readonly Token[], v: SpeechVoice): Seg[] {
 			if (t.stress === 1) ms *= 1.15;
 			if (i === lastVowel) ms *= 1.4;
 		}
-		const f = p.copyNext ? next : p.f;
+		const f = p.copyNext ? (nextFormants(tokens, i) ?? p.f) : p.f;
 		segs.push({
 			frames: framesOf(ms / v.rate),
+			role: p.vowel ? "vowel" : "cons",
+			spec: p,
 			f,
 			fEnd: p.f2 ?? f,
 			av: p.vowel && t.stress === 0 ? 0.8 * p.av : p.av,
@@ -347,9 +372,69 @@ function segments(tokens: readonly Token[], v: SpeechVoice): Seg[] {
 	return segs;
 }
 
-/** Frame tracks: each parameter per 5 ms frame. */
-interface Tracks {
+/** A place's locus beside a vowel: where the formants point during the
+ *  consonant. A velar's moves with the vowel, its F2 and F3 pinched together. */
+function locus(place: Place, v: Formants): Formants {
+	switch (place) {
+		case "lab":
+			return [200, 800, 2100];
+		case "dent":
+			return [200, 1400, 2600];
+		case "alv":
+			return [200, 1750, 2700];
+		case "pal":
+			return [200, 2000, 2800];
+		case "vel": {
+			const f2 = Math.min(2500, v[1] + 250);
+			return [200, f2, f2 + 300];
+		}
+	}
+}
+
+/** How far from the locus toward the vowel a transition starts, per
+ *  formant: Klatt's k. */
+const LOCUS_K: Readonly<Record<Place, Formants>> = {
+	lab: [0.35, 0.65, 0.5],
+	dent: [0.35, 0.5, 0.5],
+	alv: [0.35, 0.5, 0.5],
+	pal: [0.35, 0.6, 0.5],
+	vel: [0.35, 0.75, 0.5],
+};
+/** How long the transition in the vowel takes, ms. */
+const TRANSITION_MS: Readonly<Record<Place | "glide" | "vowel", number>> = {
+	lab: 45,
+	dent: 50,
+	alv: 50,
+	pal: 60,
+	vel: 65,
+	glide: 75,
+	vowel: 60,
+};
+
+/** Where the vowel's formants start (or end) beside consonant \`c\`, and over
+ *  how many frames it glides from there to its target. */
+function boundary(
+	c: PhonemeSpec,
+	v: Formants,
+): { at: Formants; frames: number } | null {
+	if (c.copyNext) return null;
+	if (c.glide) return { at: c.f, frames: framesOf(TRANSITION_MS.glide) };
+	if (c.vowel) return null;
+	const place = c.place ?? "alv";
+	const L = locus(place, v);
+	const k = LOCUS_K[place];
+	return {
+		at: [0, 1, 2].map(
+			(n) => L[n] + k[n] * (v[n] - L[n]),
+		) as unknown as Formants,
+		frames: framesOf(TRANSITION_MS[place]),
+	};
+}
+
+/** Frame tracks: each parameter per 5 ms frame, and what each frame is. */
+export interface Tracks {
 	n: number;
+	role: Role[];
 	f1: Float64Array;
 	f2: Float64Array;
 	f3: Float64Array;
@@ -361,7 +446,7 @@ interface Tracks {
 	pitch: Float64Array;
 }
 
-/** A centred moving average over `w` frames: the glide between targets. */
+/** A centred moving average over \`w\` frames. */
 function smooth(x: Float64Array, w: number, keep?: Uint8Array): Float64Array {
 	if (w <= 1) return x;
 	const out = new Float64Array(x.length);
@@ -383,10 +468,78 @@ function smooth(x: Float64Array, w: number, keep?: Uint8Array): Float64Array {
 	return out;
 }
 
+/** The transitions: each vowel glides in from the consonant before it —
+ *  from its release, so a voiceless stop's aspiration carries the start of
+ *  the glide — and out toward the consonant after it. */
+function transitions(t: Tracks, segs: readonly Seg[]) {
+	const F = [t.f1, t.f2, t.f3];
+	const start: number[] = [];
+	let at = 0;
+	for (const s of segs) {
+		start.push(at);
+		at += s.frames;
+	}
+	segs.forEach((s, j) => {
+		if (s.role !== "vowel") return;
+		const s0 = start[j];
+		const e = s0 + s.frames;
+		const own = (i: number) =>
+			F.map((f) => f[Math.max(s0, Math.min(e - 1, i))]);
+		// In: from the consonant before, or the vowel before.
+		let r = s0;
+		let spec: PhonemeSpec | null = null;
+		const prev = segs[j - 1];
+		if (prev?.role === "asp") {
+			r = start[j - 1];
+			spec = prev.spec;
+		} else if (prev && (prev.role === "burst" || prev.role === "cons"))
+			spec = prev.spec;
+		let from: { at: Formants; frames: number } | null = null;
+		if (spec) from = boundary(spec, s.f);
+		else if (prev?.role === "vowel") {
+			const pe = start[j - 1] + prev.frames - 1;
+			from = {
+				at: F.map((f, n) => 0.5 * (f[pe] + s.f[n])) as unknown as Formants,
+				frames: framesOf(TRANSITION_MS.vowel / 2),
+			};
+		}
+		if (from) {
+			const target = own(r + from.frames);
+			for (let i = r; i < Math.min(r + from.frames, e); i++) {
+				const u = (i - r) / from.frames;
+				const w = u * u * (3 - 2 * u);
+				F.forEach((f, n) => {
+					const goal = i < s0 ? target[n] : own(i)[n];
+					f[i] = from.at[n] + (goal - from.at[n]) * w;
+				});
+			}
+		}
+		// Out: toward the consonant after.
+		const next = segs[j + 1];
+		if (
+			next &&
+			(next.role === "closure" || next.role === "cons") &&
+			next.spec
+		) {
+			const to = boundary(next.spec, s.fEnd);
+			if (to)
+				for (let i = Math.max(s0, e - to.frames); i < e; i++) {
+					const u = (i - (e - to.frames) + 1) / to.frames;
+					const w = u * u * (3 - 2 * u);
+					const o = own(i);
+					F.forEach((f, n) => {
+						f[i] = o[n] + (to.at[n] - o[n]) * w;
+					});
+				}
+		}
+	});
+}
+
 function tracks(segs: readonly Seg[], v: SpeechVoice): Tracks {
 	const n = segs.reduce((a, s) => a + s.frames, 0);
 	const t: Tracks = {
 		n,
+		role: [],
 		f1: new Float64Array(n),
 		f2: new Float64Array(n),
 		f3: new Float64Array(n),
@@ -402,6 +555,7 @@ function tracks(segs: readonly Seg[], v: SpeechVoice): Tracks {
 	for (const s of segs)
 		for (let k = 0; k < s.frames; k++, i++) {
 			const u = s.frames > 1 ? k / (s.frames - 1) : 0;
+			t.role.push(s.role);
 			t.f1[i] = s.f[0] + (s.fEnd[0] - s.f[0]) * u;
 			t.f2[i] = s.f[1] + (s.fEnd[1] - s.f[1]) * u;
 			t.f3[i] = s.f[2] + (s.fEnd[2] - s.f[2]) * u;
@@ -413,12 +567,16 @@ function tracks(segs: readonly Seg[], v: SpeechVoice): Tracks {
 			t.pitch[i] = s.pitch;
 			sharp[i] = s.sharp ? 1 : 0;
 		}
-	// Formants glide over 40 ms, levels over 15, a stressed vowel's pitch
-	// rises and falls over 120.
-	t.f1 = smooth(t.f1, 9);
-	t.f2 = smooth(t.f2, 9);
-	t.f3 = smooth(t.f3, 9);
-	t.av = smooth(t.av, 3);
+	transitions(t, segs);
+	// What the transitions do not cover — consonant to consonant — takes a
+	// short glide, not a step; levels move over 15 ms, and a stressed vowel's
+	// pitch rises and falls over 120.
+	t.f1 = smooth(t.f1, 3);
+	t.f2 = smooth(t.f2, 3);
+	t.f3 = smooth(t.f3, 3);
+	// A burst keeps its own voicing: smoothed, the vowel's voicing spilled
+	// over a voiced stop's 8 ms burst and hid it.
+	t.av = smooth(t.av, 3, sharp);
 	t.ah = smooth(t.ah, 3);
 	t.af = smooth(t.af, 3, sharp);
 	t.pitch = smooth(t.pitch, 25);
@@ -429,6 +587,10 @@ function tracks(segs: readonly Seg[], v: SpeechVoice): Tracks {
 		for (let k = 0; k < n; k++) f[k] *= v.tract;
 	return t;
 }
+
+/** The frame tracks a phrase renders from: for tests and the lab. */
+export const frameTracks = (tokens: readonly Token[], voice: SpeechVoice) =>
+	tracks(segments(tokens, voice), voice);
 
 /** A two-pole resonator, Klatt's: unity gain at DC. */
 class Resonator {

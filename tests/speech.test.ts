@@ -7,6 +7,7 @@
 import { describe, expect, test } from "bun:test";
 import { RADIO, radio } from "../src/radio";
 import {
+	frameTracks,
 	PHONEMES,
 	parsePhonemes,
 	SPEECH_RATE,
@@ -103,6 +104,69 @@ describe("the synthesiser", () => {
 				const x = speak(parsePhonemes(`AA1 ${ph} AA1`), voice);
 				expect(x.every(Number.isFinite), ph).toBe(true);
 			}
+	});
+});
+
+describe("consonants through the radio band", () => {
+	/** The frames of `role` in a phrase's tracks. */
+	const framesOf = (ph: string, role: string) => {
+		const t = frameTracks(parsePhonemes(ph), VOICES.machine);
+		const at = t.role.flatMap((r, i) => (r === role ? [i] : []));
+		return { t, at };
+	};
+	const vowelStartF2 = (ph: string) => {
+		const { t, at } = framesOf(ph, "vowel");
+		return t.f2[at[0]] / VOICES.machine.tract;
+	};
+
+	test("a velar's glide starts where the vowel is, a labial's low, an alveolar's high", () => {
+		// The locus rule: a fixed place for G would start both vowels alike.
+		expect(vowelStartF2("G IY1")).toBeGreaterThan(2250);
+		expect(vowelStartF2("G UW1")).toBeLessThan(1100);
+		expect(vowelStartF2("B AA1")).toBeLessThan(1000);
+		expect(vowelStartF2("D AA1")).toBeGreaterThan(1350);
+	});
+
+	test("a voiceless stop's aspiration carries the start of the glide", () => {
+		// An alveolar before AA: the widest F2 glide, falling from about 1420.
+		// Held at the vowel's target, as aspiration once was, it would be flat.
+		const { t, at } = framesOf("T AA1", "asp");
+		const tract = VOICES.machine.tract;
+		expect(at.length).toBeGreaterThan(2);
+		expect(t.f2[at[0]] / tract).toBeGreaterThan(1090 + 200);
+		expect(t.f2[at[at.length - 1]]).toBeLessThan(t.f2[at[0]] - 50);
+	});
+
+	test("a velar's voice onset is later than a labial's", () => {
+		expect(framesOf("K AA1", "asp").at.length).toBeGreaterThan(
+			framesOf("P AA1", "asp").at.length,
+		);
+	});
+
+	/** The spectral centroid of the burst, Hz. */
+	const burstCentroid = (ph: string) => {
+		const tokens = parsePhonemes(ph);
+		const { at } = framesOf(ph, "burst");
+		const x = speak(tokens, VOICES.machine);
+		const a = at[0] * 80;
+		const b = (at[at.length - 1] + 1) * 80;
+		let num = 0;
+		let den = 0;
+		for (let hz = 200; hz < 6000; hz += 100) {
+			const e = bandEnergy(x, hz, hz + 100, a, b);
+			num += hz * e;
+			den += e;
+		}
+		return num / den;
+	};
+
+	test("a burst sits where its place puts it", () => {
+		// A velar's follows the vowel's F2: one fixed band fails the first row.
+		// Voiceless, so the burst is not under the voicing.
+		expect(burstCentroid("AH0 K IY1")).toBeGreaterThan(
+			burstCentroid("AH0 K UW1") + 300,
+		);
+		expect(burstCentroid("AH0 P AA1")).toBeLessThan(burstCentroid("AH0 T AA1"));
 	});
 });
 

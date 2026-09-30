@@ -21,9 +21,12 @@ export interface RadioSettings {
 	readonly beepHz: number;
 }
 
+/** A telephone's and an aviation radio's band: 350–2800 Hz, the first
+ *  figure, cut F1 of IY, UW and ER, which is what tells the close vowels
+ *  apart, and the top of F3. */
 export const RADIO: RadioSettings = {
-	lowHz: 350,
-	highHz: 2800,
+	lowHz: 300,
+	highHz: 3400,
 	drive: 0.5,
 	hiss: 0.03,
 	squelch: true,

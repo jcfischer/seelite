@@ -8,8 +8,12 @@
 import { RADIO, radio } from "./radio";
 import { SPEECH_RATE, speak, VOICES } from "./speech";
 import { LEXICON, textToTokens } from "./speech-lexicon";
+import { speak as speakV1 } from "./speech-v1";
 
 const PRESETS = [
+	// Minimal pairs, in the manner of the Modified Rhyme Test: which of each
+	// set is heard as another says what to fix.
+	"[B EY1] , [D EY1] , [G EY1] . [P AE1 D] , [B AE1 D] , [T AE1 D] . [S IH1 N] , [F IH1 N] , [TH IH1 N] , [SH IH1 N] . [M EY1] , [N EY1] .",
 	"Cobra one, clearance granted. Proceed to docking bay 4.",
 	"Commander, this is station control. Welcome aboard.",
 	"Docking request denied. Hold position.",
@@ -37,6 +41,7 @@ export function mountVoiceLab() {
   <label>Voice <select id="voice">${Object.keys(VOICES)
 		.map((v) => `<option>${v}</option>`)
 		.join("")}</select></label>
+  <label style="margin-left:12px">Engine <select id="engine"><option value="locus">locus (second)</option><option value="first">first</option></select></label>
   <label style="margin-left:12px">Rate <input id="rate" type="range" min="0.7" max="1.4" step="0.05" value="1"> <span id="rateV">1.00</span></label>
   <label style="margin-left:12px">Pitch <input id="pitch" type="range" min="0.7" max="1.4" step="0.05" value="1"> <span id="pitchV">1.00</span></label>
 </p>
@@ -45,6 +50,10 @@ export function mountVoiceLab() {
   <label><input type="radio" name="through" value="dry"> Dry</label>
   <label><input type="radio" name="through" value="space"> Radio, far off in the echo (music texture)</label>
   <label style="margin-left:12px"><input id="beep" type="checkbox" checked> Roger beep</label>
+</p>
+<p>
+  <label>Radio band <input id="low" type="range" min="100" max="600" step="50" value="${RADIO.lowHz}"> <span id="lowV">${RADIO.lowHz}</span></label>
+  <label style="margin-left:12px">to <input id="high" type="range" min="2000" max="5000" step="100" value="${RADIO.highHz}"> <span id="highV">${RADIO.highHz}</span> Hz</label>
 </p>
 <p><button id="say" style="font-size:16px;padding:6px 18px">Say it</button></p>
 <pre id="info" style="font:13px ui-monospace,monospace;color:#8a96a3;background:#12171d;padding:10px;white-space:pre-wrap"></pre>
@@ -58,11 +67,11 @@ export function mountVoiceLab() {
 		text.value = (e.target as HTMLSelectElement).value;
 		say();
 	};
-	for (const id of ["rate", "pitch"])
+	for (const id of ["rate", "pitch", "low", "high"])
 		$<HTMLInputElement>(id).oninput = () => {
-			$(`${id}V`).textContent = Number($<HTMLInputElement>(id).value).toFixed(
-				2,
-			);
+			const v = Number($<HTMLInputElement>(id).value);
+			$(`${id}V`).textContent =
+				id === "low" || id === "high" ? `${v}` : v.toFixed(2);
 		};
 
 	let ctx: AudioContext | null = null;
@@ -80,7 +89,8 @@ export function mountVoiceLab() {
 			f0: base.f0 * Number($<HTMLInputElement>("pitch").value),
 		};
 		const t0 = performance.now();
-		const dry = speak(tokens, voice);
+		const engine = $<HTMLSelectElement>("engine").value;
+		const dry = (engine === "first" ? speakV1 : speak)(tokens, voice);
 		const through = (
 			root.querySelector("input[name=through]:checked") as HTMLInputElement
 		).value;
@@ -89,6 +99,8 @@ export function mountVoiceLab() {
 				? dry
 				: radio(dry, {
 						...RADIO,
+						lowHz: Number($<HTMLInputElement>("low").value),
+						highHz: Number($<HTMLInputElement>("high").value),
 						beepHz: $<HTMLInputElement>("beep").checked ? RADIO.beepHz : 0,
 					});
 		const ms = performance.now() - t0;
