@@ -100,6 +100,7 @@ import {
 	type StockResponse,
 	surveyResiduals,
 } from "../tests/helpers/market-math";
+import { NO_WEDGE } from "../tests/helpers/console-cycle";
 import { GALAXY_COUNT } from "../src/galaxy";
 import {
 	DOCK_SECONDS,
@@ -303,6 +304,9 @@ const rateOf = (r: Result) => finite("Cr/min", r.earnedCr / r.minutes);
 /** Section C's arms, by hold — declared here rather than at its first use so
  *  `curveAt` below closes over a binding a reader can already see. */
 const curve = new Map<number, number[]>();
+/** Section C's fill column by hold, kept so section J prints it beside the
+ *  control arm's rather than re-flying the shipped arm to get it. */
+const fillAt = new Map<number, number>();
 
 /** Section C's stored arm, and a throw rather than `mean([])` if a caller asks
  *  for a hold the ladder does not carry — `finite`'s rule applied to a lookup:
@@ -335,6 +339,7 @@ for (const holdT of HOLD_LADDER) {
 		);
 	// `startHoldT` read back rather than assumed: the column says what the engine
 	// flew, not what this loop asked for.
+	fillAt.set(holdT, lifted / holdT);
 	const flown = arm[0].startHoldT;
 	if (flown !== holdT)
 		throw new Error(`asked for ${holdT} t, engine flew ${flown} t`);
@@ -455,7 +460,7 @@ for (const holdT of [8, 20, 60, 200]) {
 console.log(
 	"\n== E. the payback window: the economy's own progression unit ==",
 );
-const kitWindow = (() => {
+const kitWindowFor = (extra: RunOptions = {}) => {
 	// **This arm keeps §6's 100 Cr opening, and that is not the curve's clock
 	// twice.** The window is a *unit of time* — how long the economy takes to
 	// yield one kit at its own opening pace — and it is measured from the
@@ -468,6 +473,7 @@ const kitWindow = (() => {
 			stopAtKit: true,
 			shop: false,
 			remembers: false,
+			...extra,
 		}),
 	);
 	const kits = arm
@@ -480,7 +486,8 @@ const kitWindow = (() => {
 		lo: Math.min(...kits),
 		hi: Math.max(...kits),
 	};
-})();
+};
+const kitWindow = kitWindowFor();
 console.log(
 	`  time for the baseline hull to earn fullKitCr() = ${fullKitCr()} Cr, ` +
 		`from §6's 100 Cr opening:\n    ${kitWindow.n}/${kitWindow.of} worlds, ` +
@@ -767,6 +774,133 @@ console.log(
 	"\n  it. Above the baseline these prices are upper bounds; below it they are",
 	"\n  lower ones, and the baseline itself is fixed by the anchor rather than b.",
 );
+
+// ---------------------------------------------------------------------------
+// J. What the spread did to the curve — #383
+// ---------------------------------------------------------------------------
+
+console.log("\n== J. the spread's own effect: the same sweep with NO_WEDGE ==");
+console.log(
+	"  #196 shipped §5.6's bid cut and left this re-derivation to its own run, so",
+	"\n  a price could not move for two reasons at once. The same holds here: a fresh",
+	"\n  run against §7.1's printed figures is the spread **plus** every engine change",
+	"\n  since #182. So the control is the pre-#196 quote law flown on today's engine,",
+	"\n  and both factors of the baseline fly it — the rate **and** the window. A",
+	"\n  control on the rate alone would leave the spread in one factor.",
+);
+{
+	const control = new Map<number, number[]>();
+	let controlShort = 0;
+	console.log(
+		"\n  hold t   shipped   no wedge   paired ratio median (p10-p90)   fill shipped / no wedge",
+	);
+	for (const holdT of HOLD_LADDER) {
+		const arm = armAt(holdT, { quote: NO_WEDGE });
+		controlShort += arm.filter((r) => r.minutes < hours * 60 - 1).length;
+		const rates = arm.map(rateOf);
+		control.set(holdT, rates);
+		const shipped = curveAt(holdT);
+		// **Per world, then summarised** — the paired design section C's fit uses.
+		// A ratio of means would let the richest worlds speak for the rest.
+		const ratios = shipped.map((r, wi) => r / rates[wi]);
+		const liftedShare = (rs: Result[]) =>
+			rs.reduce((a, r) => a + r.tonnesLifted, 0) /
+			Math.max(
+				rs.reduce((a, r) => a + r.ladenHops, 0),
+				1,
+			) /
+			holdT;
+		const shippedArm = fillAt.get(holdT);
+		if (!shippedArm) throw new Error(`no fill recorded at ${holdT} t`);
+		console.log(
+			`${rightAlign(holdT, 6)}${rightAlign(mean(shipped).toFixed(0), 10)}${rightAlign(mean(rates).toFixed(0), 11)}` +
+				`${rightAlign(`${median(ratios).toFixed(3)} (${quantile(ratios, 0.1).toFixed(3)}-${quantile(ratios, 0.9).toFixed(3)})`, 33)}` +
+				`${rightAlign(`${(100 * shippedArm).toFixed(0)}% / ${(100 * liftedShare(arm)).toFixed(0)}%`, 25)}`,
+		);
+	}
+	console.log(
+		`\n  arms that ended before the window: shipped ${shortArms}, no wedge ${controlShort}, ` +
+			`of ${HOLD_LADDER.length * WORLDS.length} each.`,
+	);
+
+	const controlAt = (h: number) => control.get(h) as number[];
+	const controlPooled = fitPower(
+		HOLD_LADDER.map((h) => ({ h, r: mean(controlAt(h)) })),
+	);
+	const controlBetas = WORLDS.map(
+		(_, wi) =>
+			fitPower(HOLD_LADDER.map((h) => ({ h, r: controlAt(h)[wi] }))).b,
+	);
+	// The paired difference in slope, world by world: each world's own
+	// richness cancels, which a difference of pooled fits would not promise.
+	const slopeShift = betas.map((b, wi) => b - controlBetas[wi]);
+	console.log(
+		`\n  fitted exponent, pooled on the mean curve:` +
+			`\n    shipped   b ${pooled.b.toFixed(3)} ± ${pooled.se.toFixed(3)}, A ${pooled.a.toFixed(2)}` +
+			`\n    no wedge  b ${controlPooled.b.toFixed(3)} ± ${controlPooled.se.toFixed(3)}, A ${controlPooled.a.toFixed(2)}` +
+			`\n  per world, shipped minus no wedge: median ${median(slopeShift).toFixed(3)}, ` +
+			`p10 ${quantile(slopeShift, 0.1).toFixed(3)}, p90 ${quantile(slopeShift, 0.9).toFixed(3)}` +
+			`\n  (no wedge per world: median ${median(controlBetas).toFixed(3)}, ` +
+			`p10 ${quantile(controlBetas, 0.1).toFixed(3)}, p90 ${quantile(controlBetas, 0.9).toFixed(3)})`,
+	);
+
+	const controlWindow = kitWindowFor({ quote: NO_WEDGE });
+	const rate20 = mean(curveAt(HOLD_REFERENCE_T));
+	const controlRate20 = mean(controlAt(HOLD_REFERENCE_T));
+	const pct = (x: number) => `${x >= 0 ? "+" : ""}${(100 * x).toFixed(1)}%`;
+	console.log(
+		`\n  the baseline's two factors, and what the spread did to each:` +
+			`\n                     shipped   no wedge   spread's effect` +
+			`\n    rate at ${HOLD_REFERENCE_T} t    ${rightAlign(rate20.toFixed(0), 8)}${rightAlign(controlRate20.toFixed(0), 11)}` +
+			`${rightAlign(pct(rate20 / controlRate20 - 1), 18)}` +
+			`\n    kit window     ${rightAlign(kitWindow.median.toFixed(1), 8)}${rightAlign(controlWindow.median.toFixed(1), 11)}` +
+			`${rightAlign(pct(kitWindow.median / controlWindow.median - 1), 18)}` +
+			`   (min; ${kitWindow.n}/${kitWindow.of} and ${controlWindow.n}/${controlWindow.of} worlds reach the kit)` +
+			`\n    baseline       ${rightAlign((rate20 * kitWindow.median).toFixed(0), 8)}${rightAlign((controlRate20 * controlWindow.median).toFixed(0), 11)}` +
+			`${rightAlign(pct((rate20 * kitWindow.median) / (controlRate20 * controlWindow.median) - 1), 18)}`,
+	);
+
+	// §7.1's own derivation on each arm — the fitted b rounded to two places as
+	// the spec rounds it, and the baseline to the step through the leaf's law.
+	const lawOf = (b: number, baselineCr: number) => ({
+		b: Math.round(b * 100) / 100,
+		baselineCr,
+	});
+	const derived = {
+		shipped: lawOf(pooled.b, rate20 * kitWindow.median),
+		control: lawOf(controlPooled.b, controlRate20 * controlWindow.median),
+	};
+	console.log(
+		"\n  the roster under each derivation, beside the declared law" +
+			`\n  (declared ${HULL_PRICE_BASELINE_CR} Cr x (hold/${HOLD_REFERENCE_T})^${HULL_PRICE_EXPONENT};` +
+			` shipped-arm ${derived.shipped.baselineCr.toFixed(0)} Cr x ^${derived.shipped.b};` +
+			` no-wedge ${derived.control.baselineCr.toFixed(0)} Cr x ^${derived.control.b})`,
+	);
+	console.log(
+		"\n  hull          hold    declared    shipped arm    no wedge",
+	);
+	for (const id of sortedByHold) {
+		const h = HULL_SPECS[id].holdT;
+		const at = (l: { b: number; baselineCr: number }) =>
+			priceAtExponent(h, l.b, l.baselineCr).toLocaleString("en-GB");
+		console.log(
+			`  ${id.padEnd(13)}${rightAlign(h, 4)}${rightAlign((hullPriceCr(h) as number).toLocaleString("en-GB"), 12)}` +
+				`${rightAlign(at(derived.shipped), 15)}${rightAlign(at(derived.control), 12)}`,
+		);
+	}
+	console.log(
+		`  ${"ceiling".padEnd(13)}${rightAlign(HULL_CEILING_HOLD_T, 4)}` +
+			`${rightAlign((hullPriceCr(HULL_CEILING_HOLD_T) as number).toLocaleString("en-GB"), 12)}` +
+			`${rightAlign(priceAtExponent(HULL_CEILING_HOLD_T, derived.shipped.b, derived.shipped.baselineCr).toLocaleString("en-GB"), 15)}` +
+			`${rightAlign(priceAtExponent(HULL_CEILING_HOLD_T, derived.control.b, derived.control.baselineCr).toLocaleString("en-GB"), 12)}`,
+	);
+	console.log(
+		"\n  The shipped-arm minus no-wedge column is the spread alone; no-wedge",
+		"\n  against §7.1's printed figures is engine drift since #182 alone. Neither",
+		"\n  moves a constant: the declared pair is §7.1's, and a change is an",
+		"\n  amendment there with its reason, not an edit here.",
+	);
+}
 
 console.log("\n== what is gated and what is not ==");
 console.log(

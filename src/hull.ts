@@ -252,12 +252,18 @@ export const requirePositiveHold = (holdT: number): void => {
  * uncertainty costs the ladder by evaluating the same law at the exponent ± its
  * standard error. Without it the instrument had the formula and the rounding
  * step written out a second time, and a step change would have landed in the
- * leaf while the printed band went on rounding the old way.
+ * leaf while the printed band went on rounding the old way. `baselineCr` is
+ * there for the same reason: #383 prints the ladder a fresh run would derive,
+ * baseline and exponent both, through this law rather than beside it.
  */
-export const priceAtExponent = (holdT: number, exponent: number): number => {
+export const priceAtExponent = (
+	holdT: number,
+	exponent: number,
+	baselineCr: number = HULL_PRICE_BASELINE_CR,
+): number => {
 	requirePositiveHold(holdT);
 	const raw =
-		HULL_PRICE_BASELINE_CR *
+		baselineCr *
 		(holdT / HULL_SPECS[PLAYER_BASELINE_HULL].holdT) ** exponent;
 	return Math.round(raw / HULL_PRICE_STEP_CR) * HULL_PRICE_STEP_CR;
 };
