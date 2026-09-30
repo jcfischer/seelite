@@ -251,7 +251,7 @@ export function stationMarketScreen(
 	});
 }
 
-/** What one market row prints, shared by redraw detection and the renderer. */
+/** Canonical printed form of a market row, for rendering and redraw detection. */
 export function marketDisplayValues(row: ConsoleMarketRow) {
 	return {
 		name: row.commodity.name,
@@ -275,11 +275,20 @@ export function marketDisplayChanged(
 	after: readonly ConsoleMarketRow[],
 ): boolean {
 	if (before.length !== after.length) return true;
-	return before.some(
-		(row, index) =>
-			JSON.stringify(marketDisplayValues(row)) !==
-			JSON.stringify(marketDisplayValues(after[index])),
-	);
+	return before.some((row, index) => {
+		const a = marketDisplayValues(row);
+		const b = marketDisplayValues(after[index]);
+		return (
+			a.name !== b.name ||
+			a.unit !== b.unit ||
+			a.listed !== b.listed ||
+			a.buy !== b.buy ||
+			a.sell !== b.sell ||
+			a.shelf !== b.shelf ||
+			a.priceDelta !== b.priceDelta ||
+			a.quantityDelta !== b.quantityDelta
+		);
+	});
 }
 
 /**

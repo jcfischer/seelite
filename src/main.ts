@@ -14720,9 +14720,9 @@ class Game {
 		// rows were built under. Without it the frame loop allocated a Map and
 		// seventeen entries on every cockpit update whether or not the page was
 		// open, to read back a table that had not moved.
-		// The console's key carries the station, tab and revision. #321 makes
-		// clock-driven shelf and quote changes bump that same revision, so this
-		// bid column and the market page share one priced projection.
+		// The console's key carries the station, tab and revision. #321 bumps
+		// that revision for visible clock-driven market changes and invalidates
+		// the key for hidden changes, so bids use the current priced projection.
 		//
 		// **`undefined` is "never computed" and `null` is "not docked".** Both
 		// fields started at `null`, so a screen built while the console's own
