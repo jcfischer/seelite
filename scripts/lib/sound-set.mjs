@@ -305,9 +305,11 @@ function adaptiveTimelines() {
 			[36, { encounter: "contest" }],
 			[54, { raiderFiring: true }],
 		]),
-		// The second bed against the first (D12): the same system held at calm
-		// for 100 s, and the same station, each way. `legacy` is the first bed.
+		// The Berlin bed (#600, the default) against the second and the first
+		// (D12): the same system held at calm for 100 s, and the same station,
+		// each way. `second` is the second bed, `legacy` the first.
 		tune("music-calm", 100, [[0, { systemSeed: 1234 }]], "calm"),
+		tune("music-calm-second", 100, [[0, { systemSeed: 1234 }]], "calm,second"),
 		tune("music-calm-legacy", 100, [[0, { systemSeed: 1234 }]], "calm,legacy"),
 		// Each danger section held for a minute: long enough to hear its form.
 		...["wary", "threat", "combat"].map((level) =>

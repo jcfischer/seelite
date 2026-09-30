@@ -26,8 +26,8 @@
  *   again to the end.
  *
  * Threat and combat keep the second bed's sections, which are already
- * sequenced on the acid, with the new motifs through them and the noise wash
- * under the threat (combat has no voices left for it). Each has a stream of its own, so a layer added to
+ * sequenced on the acid, with the new motifs through them and no wash: under
+ * the threat it covered the hats, and combat has no voices left for it. Each has a stream of its own, so a layer added to
  * calm cannot move a pick in a fight.
  *
  * Pure, so `tests/music-generate-berlin.test.ts` holds it headless.
@@ -96,7 +96,13 @@ const BREAK_BARS = 8;
 /** The noise wash's two periods, seconds: co-prime, so the two sides never
  *  sweep together for long. */
 const WIND_S = [23, 31] as const;
-const WASH_BARS = 32;
+/** A wash note's length. A held note outlives a jump to another level —
+ *  the engine moves the playhead, not the voices already sounding — so a
+ *  32-bar wash played calm's noise under a fight for over a minute, and
+ *  covered the threat's hats (probe-music's ladder read 0.06 transients/s).
+ *  No note of this bed is longer than `MAX_NOTE_BARS`. */
+const WASH_BARS = 4;
+export const MAX_NOTE_BARS = 4;
 
 /** Streams of their own, apart from the second bed's. */
 const BERLIN_TUNE = 0x6265726c;
@@ -219,12 +225,16 @@ function berlinParts(bpm: number): Record<string, PartSpec> {
 			reverb: 0.45,
 			echo: 0.4,
 		},
+		// The cruise stem, released quickly: silent until cruise, its tails
+		// still hold voices, and the 4-bar wash left wary one voice from the
+		// cap with the second bed's 0.2 s.
+		arp: { ...PARTS.arp, releaseS: 0.08 },
 		windL: {
 			voice: "noise",
 			level: 0.045,
-			attackS: 4,
+			attackS: 1.5,
 			sustain: 1,
-			releaseS: 5,
+			releaseS: 1.5,
 			resonance: 0.85,
 			sweepS: WIND_S[0],
 			sweepOct: 3.2,
@@ -234,9 +244,9 @@ function berlinParts(bpm: number): Record<string, PartSpec> {
 		windR: {
 			voice: "noise",
 			level: 0.04,
-			attackS: 4,
+			attackS: 1.5,
 			sustain: 1,
-			releaseS: 5,
+			releaseS: 1.5,
 			resonance: 0.85,
 			sweepS: WIND_S[1],
 			sweepOct: 2.8,
@@ -259,21 +269,15 @@ function berlinParts(bpm: number): Record<string, PartSpec> {
 type Writer = ReturnType<typeof writer>;
 type Deg = (base: number, d: number) => number;
 
-/** The noise wash over `bars`: one long band a side, `WASH_BARS` a note,
- *  so its change-over (four voices for the length of a release) lands in
- *  calm's breakdown, where the sequence has given its voices back. Under a fight, one side: the kit has taken
- *  the voices the second would need. */
-function wash(
-	w: Writer,
-	bars: number,
-	base: number,
-	vel: number,
-	sides: 1 | 2 = 2,
-) {
+/** The noise wash over `bars`: a band a side, `WASH_BARS` a note, each
+ *  note's release crossing the next one's attack, so the wash is continuous
+ *  and a jump leaves at most a note of it behind. The sweep is the part's,
+ *  on the synth's clock, so it does not restart with each note. */
+function wash(w: Writer, bars: number, base: number, vel: number) {
 	for (let b = 0; b < bars; b += WASH_BARS) {
 		const len = Math.min(WASH_BARS, bars - b) * 4;
 		w.at("windL", b * 4, len, base, vel);
-		if (sides === 2) w.at("windR", b * 4 + 2, len - 2, base + 7, vel * 0.9);
+		w.at("windR", b * 4 + 2, len - 2, base + 7, vel * 0.9);
 	}
 }
 
@@ -588,16 +592,30 @@ function wary(
 	return w.events;
 }
 
-/** The second bed's threat, with the wash under it. */
-function withWash(
-	events: NoteEvent[],
-	bars: number,
-	base: number,
-	vel: number,
-): NoteEvent[] {
-	const w = writer(4);
-	wash(w, bars, base, vel, 1);
-	return [...events, ...w.events];
+/**
+ * Every note longer than `MAX_NOTE_BARS`, as consecutive notes of at most
+ * that length: the second bed's combat holds its tonic pedal for all 32 bars,
+ * and this bed plays that section as it is written but not that note, which
+ * would ring on through a fall for a minute. A voice's release crossing the
+ * next one's attack keeps a held tone held.
+ */
+function splitLong(events: readonly NoteEvent[]): NoteEvent[] {
+	const most = MAX_NOTE_BARS * 4;
+	return events.flatMap((e) => {
+		if (e.dur <= most) return [e];
+		const out: NoteEvent[] = [];
+		const start = e.bar * 4 + e.beat;
+		for (let t = 0; t < e.dur; t += most) {
+			const at = start + t;
+			out.push({
+				...e,
+				bar: Math.floor(at / 4),
+				beat: at % 4,
+				dur: Math.min(most, e.dur - t),
+			});
+		}
+		return out;
+	});
 }
 
 /** The rand for one section of a variant: its own stream. */
@@ -630,12 +648,10 @@ export function berlinFlightBed(systemSeed: number, variant: number): Song {
 		{
 			name: "threat",
 			bars: threatBars,
-			events: withWash(
-				threat(theme, tune, streamOf(systemSeed, variant, STREAM.threat)),
-				threatBars,
-				64,
-				0.9,
-			),
+			// No wash: under the threat it covered the hats, which are what a
+			// threat is heard by (held alone, 1.06 transients/s with it, 2.06
+			// without).
+			events: threat(theme, tune, streamOf(systemSeed, variant, STREAM.threat)),
 		},
 		{
 			name: "combat",
@@ -644,6 +660,7 @@ export function berlinFlightBed(systemSeed: number, variant: number): Song {
 			events: combat(theme, tune, streamOf(systemSeed, variant, STREAM.combat)),
 		},
 	];
+	for (const s of sections) s.events = splitLong(s.events);
 	let bar = 0;
 	const tempo = sections.map((s, i) => {
 		const point = {

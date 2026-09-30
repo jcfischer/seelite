@@ -13,6 +13,7 @@ import {
 	berlinFlightBed,
 	berlinStationBed,
 	berlinTune,
+	MAX_NOTE_BARS,
 	MUTATE_EVERY,
 } from "../src/music-generate-berlin";
 import { flightBed, STATION_ROLES } from "../src/music-generate";
@@ -195,4 +196,18 @@ describe("the voice cap", () => {
 				MUSIC_VOICE_CAP,
 			);
 	}, 60000);
+});
+
+describe("a jump leaves little behind", () => {
+	test("no note of the flight bed outlasts MAX_NOTE_BARS", () => {
+		// The engine moves the playhead on a jump and leaves sounding voices
+		// alone, so a 32-bar wash played calm's noise under a fight for over a
+		// minute (probe-music's ladder: threat 0.06 transients/s).
+		for (const seed of SEEDS.slice(0, 6))
+			for (const s of berlinFlightBed(seed, 0).sections)
+				for (const e of s.events)
+					expect(e.dur, `${s.name} ${e.part}`).toBeLessThanOrEqual(
+						MAX_NOTE_BARS * 4,
+					);
+	});
 });
