@@ -1542,17 +1542,20 @@ the law asserts for those two hulls, `r(h) / r(20 t)` at a single capital, paire
 per world against section C's at the kit. It used two arms: a cap on what one hop
 may spend, which is a bound because the wallet never grows, and an opening
 balance that compounds, which is a pilot who has just bought the hull. **Both arms
-are within 1% of the kit from 2,000 Cr up**, at 8 t and at 12 t. The lowest
-capital a pilot holds after the trade-in from the courier with an empty wallet is
-6,900 Cr (prospector; 11,500 for the interceptor), and there both arms' median
-per-world ratio to the kit is 1.000, with p10–p90 matching the kit's to three
-places. **Not every route in is paid by the trade-in**: the interceptor's trade-in
+are within 1% of the kit from 2,000 Cr up**, at 8 t and at 12 t. Of every route
+into a sub-kit hull that the trade-in pays for, the one that leaves a pilot with an
+empty wallet the least is the prospector into the interceptor, at 3,220 Cr. From the
+courier the figures are 6,900 Cr (prospector) and 11,500 (interceptor). At each of
+these capitals both arms' median per-world ratio to the kit is 1.000 or 0.998. **Not
+every route in is paid by the trade-in**: the interceptor's trade-in
 (8,280 Cr) is less than the prospector's list, so a pilot who makes that step pays
 5,520 Cr in cash and can leave the yard with nothing. There the cap arm's bound
 does not settle (1.66x the kit at 100 Cr, 8 t), so the route is read on the
 pilot's arm alone. That arm is within 1% of the kit from 1,000 Cr, and at a new
-game's own 100 Cr opening it drifts 2.5% at 8 t and 0.9% at 12 t. The world-to-world
-spread at the kit is 0.328–0.419 at 8 t. **The lower segment does not move**, by
+game's own 100 Cr opening it drifts 2.5% at 8 t and 0.9% at 12 t. An empty wallet
+cannot be flown, because the trader buys nothing and the ratio is undefined. So
+100 Cr is the lowest balance measured, and what a pilot holds between that and
+nothing is not measured. The world-to-world spread at the kit is 0.328–0.419 at 8 t. **The lower segment does not move**, by
 the principal's ruling (2026-09-30). The
 lower segment's own ±1σ is not the yardstick for this: it is the fit's error on
 *b*, and section C's own 8 t ratio (0.395 against the law's 0.400) sits outside it
