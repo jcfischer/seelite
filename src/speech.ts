@@ -251,7 +251,7 @@ export type Role = "vowel" | "cons" | "closure" | "burst" | "asp" | "pause";
 interface Seg {
 	frames: number;
 	role: Role;
-	/** The phoneme it belongs to; \`null\` for a pause. */
+	/** The phoneme it belongs to; `null` for a pause. */
 	spec: PhonemeSpec | null;
 	f: Formants;
 	fEnd: Formants;
@@ -371,7 +371,7 @@ function inCluster(tokens: readonly Token[], i: number): boolean {
 
 const framesOf = (ms: number) => Math.max(1, Math.round(ms / 1000 / FRAME_S));
 
-/** The next vowel's formants after token \`i\`, before a pause. */
+/** The next vowel's formants after token `i`, before a pause. */
 function nextVowel(tokens: readonly Token[], i: number): Formants | null {
 	for (let k = i + 1; k < tokens.length; k++) {
 		const t = tokens[k];
@@ -382,7 +382,7 @@ function nextVowel(tokens: readonly Token[], i: number): Formants | null {
 	return null;
 }
 
-/** The next phoneme's own formants after token \`i\`, for HH. */
+/** The next phoneme's own formants after token `i`, for HH. */
 function nextFormants(tokens: readonly Token[], i: number): Formants | null {
 	for (let k = i + 1; k < tokens.length; k++) {
 		const t = tokens[k];
@@ -582,7 +582,7 @@ const TRANSITION_MS: Readonly<Record<Place | "glide" | "vowel", number>> = {
 	vowel: 60,
 };
 
-/** Where the vowel's formants start (or end) beside consonant \`c\`, and over
+/** Where the vowel's formants start (or end) beside consonant `c`, and over
  *  how many frames it glides from there to its target. */
 function boundary(
 	c: PhonemeSpec,
@@ -618,7 +618,7 @@ export interface Tracks {
 	nz: Float64Array;
 }
 
-/** A centred moving average over \`w\` frames. */
+/** A centred moving average over `w` frames. */
 function smooth(x: Float64Array, w: number, keep?: Uint8Array): Float64Array {
 	if (w <= 1) return x;
 	const out = new Float64Array(x.length);

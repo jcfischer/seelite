@@ -17,10 +17,12 @@ export interface RadioSettings {
 	 *  is captured by the carrier, not by the voice: while the transmitter is
 	 *  keyed the hiss stays this low through every word and gap, and it is
 	 *  loud only in the squelch bursts as the carrier opens and drops.
-	 *  Measured (`scripts/measure-speech-contrast.ts`): the first figure, 0.03,
-	 *  sat on a stop's burst and glide and took B, D and G from 3.65, 5.28 and
-	 *  2.87 dry to 0.93, 1.60 and 1.08; ducking it on the voice's envelope left
-	 *  a word-initial stop under the full hiss. */
+	 *  Measured (`scripts/measure-speech-contrast.ts`, on the synthesiser as
+	 *  merged): the first figure, 0.03, sat on a stop's burst and glide and
+	 *  took B/D, B/G and D/G from 3.22, 5.04 and 3.13 dry to 0.69, 1.14 and
+	 *  0.72; this one keeps 2.54, 4.27 and 2.83. Ducking it on the voice's
+	 *  envelope was tried first and left a word-initial stop under the full
+	 *  hiss. */
 	readonly hiss: number;
 	/** Squelch bursts at the open and close. */
 	readonly squelch: boolean;
@@ -28,13 +30,13 @@ export interface RadioSettings {
 	readonly beepHz: number;
 }
 
-/** A telephone's and an aviation radio's band: 350–2800 Hz, the first
- *  figure, cut F1 of IY, UW and ER, which is what tells the close vowels
- *  apart, and the top of F3. */
 /** The keyed carrier's hiss, and the squelch bursts' level. */
 export const HISS_KEYED = 0.002;
 const SQUELCH_LEVEL = 0.5;
 
+/** A telephone's and an aviation radio's band, 300–3400 Hz: the first
+ *  figure, 350–2800, cut F1 of IY, UW and ER, which is what tells the close
+ *  vowels apart, and the top of F3. */
 export const RADIO: RadioSettings = {
 	lowHz: 300,
 	highHz: 3400,

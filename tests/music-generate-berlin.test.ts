@@ -148,17 +148,22 @@ describe("the Berlin bed", () => {
 	});
 
 	test("the counter-sequence phases against the bar", () => {
-		const calm = section(berlinFlightBed(11, 0), "calm");
-		const lengths = new Set(
-			[16, 17, 18, 19].map(
-				(b) =>
-					calm.events.filter((e) => e.part === "sparkle" && e.bar === b).length,
-			),
-		);
-		expect(lengths.size).toBe(1);
-		expect(
-			berlinTune(11).odd.length % 2 === 1 || berlinTune(11).odd.length === 6,
-		).toBe(true);
+		// Its odd length against sixteen steps: each bar opens on a different
+		// step of it. A run restarted on every bar line would open every bar the
+		// same, and the phasing — the point of an odd length — would be gone.
+		for (const seed of SEEDS.slice(0, 8)) {
+			const calm = section(berlinFlightBed(seed, 0), "calm");
+			// Bars 16–19 share one chord, so only the phase can move the opening.
+			const openings = new Set(
+				[16, 17, 18, 19].map(
+					(bar) =>
+						calm.events.find(
+							(e) => e.part === "sparkle" && e.bar === bar && e.beat === 0,
+						)?.pitch,
+				),
+			);
+			expect(openings.size, `system ${seed}`).toBeGreaterThan(1);
+		}
 	});
 });
 
@@ -180,7 +185,51 @@ function peakVoices(song: Song, name: string): number {
 	return peak;
 }
 
+/** The most voices the engine holds across a jump from `from`, held
+ *  `afterBars` in, to `to`: the old section's last notes ring on under the
+ *  new one's first. */
+function peakAcross(song: Song, from: string, afterBars: number, to: string) {
+	const SR = 48000;
+	const e = new MusicEngine(SR);
+	e.command({ type: "load", id: "s", song }, 0);
+	e.command({ type: "play", id: "s", section: from, at: "bar", hold: true }, 0);
+	const i = song.sections.findIndex((x) => x.name === from);
+	const barS = (4 * 60) / song.tempo[i].bpm;
+	const jumpAt = Math.round((afterBars + 0.5) * barS * SR);
+	const L = new Float32Array(128);
+	const R = new Float32Array(128);
+	let peak = 0;
+	let sent = false;
+	for (let f = 0; f < jumpAt + 10 * barS * SR; f += 128) {
+		if (!sent && f >= jumpAt) {
+			e.command({ type: "jump", section: to, at: "bar", hold: true }, f);
+			sent = true;
+		}
+		e.render(L, f, R);
+		if (f >= jumpAt) peak = Math.max(peak, e.sounding);
+	}
+	return peak;
+}
+
 describe("the voice cap", () => {
+	// Round 1 of #600's review: a cap held on each section alone says nothing
+	// about the bars after a jump. Threat to combat reached 24 of 24 on system
+	// 1234 while the cruise stem still played under a fight.
+	const JUMPS: [string, number, string][] = [
+		["calm", 47, "combat"],
+		["wary", 23, "combat"],
+		["threat", 15, "combat"],
+		["combat", 23, "threat"],
+		["threat", 15, "wary"],
+	];
+	for (const seed of [1234, 5])
+		for (const [from, after, to] of JUMPS)
+			test(`a jump from ${from} to ${to} on system ${seed} never reaches it`, () => {
+				expect(
+					peakAcross(berlinFlightBed(seed, 0), from, after, to),
+				).toBeLessThan(MUSIC_VOICE_CAP);
+			}, 30000);
+
 	// At the cap the oldest voice is stolen, and the oldest is the drone.
 	for (const seed of [1234, 99, 7])
 		for (const name of ["calm", "wary", "threat", "combat"])

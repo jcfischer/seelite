@@ -325,6 +325,9 @@ export function stepMusic(
 				fallS: 0,
 				calmS: 0,
 				cruise: r.cruise,
+				// A new system starts its own numbers from the first:
+				// `numbersPhrase` is the system's, and so is their order.
+				...(s.flightKey === flightKey ? {} : { voiceS: 0, voiceN: 0 }),
 			},
 			commands: cmds,
 		};

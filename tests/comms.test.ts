@@ -116,4 +116,33 @@ describe("a spoken line on the engine", () => {
 		expect(src && reaches(src, buses.console)).toBe(false);
 		expect(ctx.delays.length).toBe(1);
 	});
+
+	test("a far-off voice's echo is taken apart after the line and its tail", () => {
+		const { audio, ctx } = unlocked();
+		audio.speak(new Float32Array(1600), 16000, "music", {
+			echoS: 0.42,
+			feedback: 0.5,
+			level: 0.3,
+		});
+		const src = ctx.sources.at(-1) as unknown as { onended: () => void };
+		const delay = ctx.delays[0];
+		expect(delay.disconnected).toBe(false);
+		// The tail is seconds long: run the timer at once.
+		const saved = globalThis.setTimeout;
+		let waited = 0;
+		globalThis.setTimeout = ((fn: () => void, ms: number) => {
+			waited = ms;
+			fn();
+			return 0;
+		}) as unknown as typeof setTimeout;
+		try {
+			src.onended();
+		} finally {
+			globalThis.setTimeout = saved;
+		}
+		expect(delay.disconnected).toBe(true);
+		// 60 dB of a 0.5 feedback every 0.42 s: about ten repeats.
+		expect(waited).toBeGreaterThan(4000);
+		expect(waited).toBeLessThan(4500);
+	});
 });

@@ -104,7 +104,10 @@ const RENDERED = {
 	// #548's director renders fade in by design — a crossfade from silence,
 	// and a drone's or station pad's slow attack — so each carries its own
 	// onset, in the band like the rest, rather than the limiter's 10 ms.
-	// Measured on the Berlin bed (#600, approved by ear 2026-09-30) over each
+	// Measured on the Berlin bed (#600) as it merges — approved by ear on
+	// 2026-09-30, then changed in review where the principal has not heard it
+	// (4-bar wash notes, no wash under the threat, no cruise stem in a fight) —
+	// over each
 	// render's opening `PROBE_RENDER_S`, the ladder whole; `-second` is the
 	// second bed (D12) and the `-legacy` rows the first, kept to compare
 	// against.

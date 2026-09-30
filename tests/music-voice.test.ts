@@ -48,6 +48,25 @@ describe("the numbers in the music", () => {
 		expect(heard[1].at - heard[0].at).toBeCloseTo(VOICE_EVERY_S, 0);
 	});
 
+	test("a new system starts its own numbers from the first", () => {
+		let state = initialMusicState();
+		const heard: string[] = [];
+		const fly = (reading: MusicReading, seconds: number) => {
+			for (let i = 0; i < Math.round(seconds / STEP); i++) {
+				const step = stepMusic(state, reading, STEP);
+				state = step.state;
+				if (step.voice) heard.push(step.voice);
+			}
+		};
+		fly(calm, VOICE_FIRST_S + VOICE_EVERY_S + 1);
+		fly({ ...calm, systemSeed: 99 }, VOICE_FIRST_S + 1);
+		expect(heard).toEqual([
+			numbersPhrase(1234, 0),
+			numbersPhrase(1234, 1),
+			numbersPhrase(99, 0),
+		]);
+	});
+
 	test("a fight hears none", () => {
 		const arms = { ...DEFAULT_MUSIC_ARMS, force: "combat" as const };
 		expect(listen(VOICE_FIRST_S + 5, calm, arms)).toEqual([]);

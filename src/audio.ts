@@ -377,6 +377,15 @@ export class AudioFX {
 			tone.connect(fb);
 			fb.connect(delay);
 			tone.connect(out);
+			// A loop never falls silent on its own terms, so it is taken apart
+			// once the line has ended and the echo has fallen 60 dB.
+			const tailS =
+				(space.echoS * Math.log(1e-3)) /
+				Math.log(Math.max(1e-3, space.feedback));
+			src.onended = () =>
+				setTimeout(() => {
+					for (const n of [level, delay, tone, fb]) n.disconnect();
+				}, tailS * 1000);
 		} else src.connect(out);
 		const now = ctx.currentTime;
 		const len = samples.length / sampleRate;

@@ -24,7 +24,7 @@ export interface CommsLine {
 
 export const COMMS_LINES = {
 	granted: {
-		text: "Clearance granted. Proceed to docking bay.",
+		text: "Clearance granted. Proceed to your berth.",
 		voice: "control",
 	},
 	queued: { text: "Docking request queued. Hold position.", voice: "control" },

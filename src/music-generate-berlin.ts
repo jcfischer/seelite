@@ -46,6 +46,7 @@ import {
 	develop,
 	FLIGHT_LEVELS,
 	inMode,
+	LEVEL_MODE,
 	MODES,
 	type MusicTheme,
 	type MusicTune,
@@ -58,7 +59,6 @@ import {
 	threat,
 	writer,
 } from "./music-generate";
-import { LEVEL_MODE } from "./music-generate-legacy";
 import type { NoteEvent, PartSpec, Song } from "./music-score";
 import { mix, seededRand } from "./rng";
 import type { StationType } from "./station";
@@ -100,7 +100,9 @@ const WIND_S = [23, 31] as const;
  *  the engine moves the playhead, not the voices already sounding — so a
  *  32-bar wash played calm's noise under a fight for over a minute, and
  *  covered the threat's hats (probe-music's ladder read 0.06 transients/s).
- *  No note of this bed is longer than `MAX_NOTE_BARS`. */
+ *  No note of the **flight** bed is longer than `MAX_NOTE_BARS`
+ *  (`splitLong`); the station bed is one looped section with no jump, and
+ *  holds its drone for a chord's eight bars. */
 const WASH_BARS = 4;
 export const MAX_NOTE_BARS = 4;
 
@@ -660,7 +662,14 @@ export function berlinFlightBed(systemSeed: number, variant: number): Song {
 			events: combat(theme, tune, streamOf(systemSeed, variant, STREAM.combat)),
 		},
 	];
-	for (const s of sections) s.events = splitLong(s.events);
+	for (const s of sections) {
+		s.events = splitLong(s.events);
+		// No cruise stem under a fight: silent unless cruising, its tails still
+		// held voices, and a jump from threat to combat reached the cap with
+		// them (24 of 24 on system 1234).
+		if (s.name === "threat" || s.name === "combat")
+			s.events = s.events.filter((e) => e.part !== "arp");
+	}
 	let bar = 0;
 	const tempo = sections.map((s, i) => {
 		const point = {

@@ -251,7 +251,7 @@ const HAT_PITCH = 104;
 export const SPACE = { reverbS: 5, echoBeats: 0.75, echoFeedback: 0.4 };
 
 /** Degree `d` of `mode` over `tonic`, in the octave whose C is `base`. */
-export const degree = (
+const degree = (
 	mode: readonly number[],
 	tonic: number,
 	base: number,
@@ -428,7 +428,7 @@ export const inMode =
 
 /** The motif's statements, one every `every` bars from `from`, each
  *  developed by `form`, on `part`. */
-export function statementsOf(
+function statementsOf(
 	w: ReturnType<typeof writer>,
 	opts: {
 		tune: MusicTune;
