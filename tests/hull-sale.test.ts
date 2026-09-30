@@ -282,10 +282,27 @@ describe("#556 D6 — cargo over the new hold", () => {
 	});
 
 	test("the sale's proceeds count toward the price (D9's credits step)", () => {
-		const commander = rich({ credits: 0, cargo: { Computers: 20 } });
-		const offer = hullOffer(input({ commander }), "prospector");
-		// Courier → prospector costs 25,600 − 31,500 < 0: paid, whatever the hold.
-		expect(offer.accepted).toBe(true);
+		// **The purse is built from the offer's own figures, so a build that
+		// dropped the proceeds from the check fails here.** With today's roster
+		// a smaller hold always pays the pilot (0.9 of the flown hull's list
+		// exceeds every smaller hull's), so proceeds can only decide a sale on a
+		// purse already short of it — which is what the negative credits are.
+		const cargo = { Computers: 20 };
+		const probe = hullOffer(
+			input({ commander: rich({ cargo }) }),
+			"interceptor",
+		);
+		expect(probe.saleCr).toBeGreaterThan(0);
+		const at = (credits: number) =>
+			hullOffer(input({ commander: rich({ credits, cargo }) }), "interceptor");
+		// Short by less than the proceeds: the sale closes the gap.
+		const covered = at(probe.netCr - probe.saleCr / 2);
+		expect(covered.accepted).toBe(true);
+		// Short by more than the proceeds: refused on credits.
+		expect(at(probe.netCr - probe.saleCr - 1).reason).toBe(
+			"insufficient-credits",
+		);
+		// And a plain shortfall with nothing to sell is refused.
 		const dear = hullOffer(
 			input({ commander: rich({ credits: 36_899 }) }),
 			"freighter",

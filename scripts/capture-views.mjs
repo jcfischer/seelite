@@ -865,13 +865,8 @@ const PLACERS = {
 			);
 		return `${shot.shot} +${result.shown.toFixed(2)} s`;
 	},
-	/**
-	 * #537's cruise light shift. A real leg to the farthest body, then the
-	 * clock held and the look held at `intensity`.
-	 *
-	 * **Read back, not assumed**: a leg that never reached cruise throws rather
-	 * than capturing normal flight under a cruise caption.
-	 */
+	/** #583's Shipyard tab, docked at the fixture's shipyard, at a new game's
+	 *  rungs or the top. */
 	"shipyard-tab": async (page, shot) => {
 		// The rungs and the purse are written, so the next row boots clean.
 		worldWritten = true;
@@ -926,6 +921,13 @@ const PLACERS = {
 		await tab.click();
 		return `${result.id} · Shipyard tab at ${shot.rungs} rungs`;
 	},
+	/**
+	 * #537's cruise light shift. A real leg to the farthest body, then the
+	 * clock held and the look held at `intensity`.
+	 *
+	 * **Read back, not assumed**: a leg that never reached cruise throws rather
+	 * than capturing normal flight under a cruise caption.
+	 */
 	cruise: async (page, shot) => {
 		// Cruise moves the ship and spends charge; the next row boots clean.
 		worldWritten = true;

@@ -9,7 +9,9 @@
  * the rendered row is the offer, that the press reaches the till, and that
  * the mesh, handling, condition and berth all follow the hull that was bought.
  *
- * Every figure is read off the page's own modules, never restated here.
+ * Every roster figure — the count, the holds, the prices, the trade-in — is
+ * read off the page's own modules, never restated here. What is typed in is
+ * the scenario: 100,000 Cr and 20 t of Food, which the checks then read back.
  */
 import { mkdirSync } from "node:fs";
 import {
@@ -91,6 +93,21 @@ try {
 		waitUntil: "load",
 	});
 	await bootedGame(page);
+	const roster = await page.evaluate(async () => {
+		const H = await import("/src/hull.ts");
+		const C = await import("/src/station-commerce.ts");
+		const list = (id) => H.HULL_SPECS[id].priceCr;
+		return {
+			count: H.PURCHASABLE_HULL_IDS.length,
+			interceptorHold: H.HULL_SPECS.interceptor.holdT,
+			courierTradeIn: Math.round(list("courier") * C.HULL_TRADE_IN_FRACTION),
+			interceptorNet:
+				list("interceptor") -
+				Math.round(list("courier") * C.HULL_TRADE_IN_FRACTION),
+		};
+	});
+	/** The scenario's cargo, typed once: the checks read it back. */
+	const FOOD_T = 20;
 
 	// -------------------------------------------------------------------
 	// Docked at a shipyard: the tab, and one reason per row.
@@ -165,7 +182,7 @@ try {
 	);
 	check(
 		"no row is refused for reach here, and the check is not empty",
-		rows.rows.length === 7 && rows.rows.every((r) => r.reach.ok),
+		rows.rows.length === roster.count && rows.rows.every((r) => r.reach.ok),
 		rows.rows.map((r) => `${r.hull}:${r.reach.systems}`).join(","),
 	);
 	await page.screenshot({ path: `${out}/00-shipyard-new-game.png` });
@@ -173,7 +190,7 @@ try {
 	// -------------------------------------------------------------------
 	// Open the rungs, fund the pilot, fill the hold: every row open.
 	// -------------------------------------------------------------------
-	await page.evaluate(async () => {
+	await page.evaluate(async (foodT) => {
 		const L = await import("/src/ladder.ts");
 		const g = window.__seelite;
 		const banked = Object.fromEntries(
@@ -183,11 +200,11 @@ try {
 		g.commander = {
 			...g.commander,
 			credits: 100_000,
-			cargo: { Food: 20 },
+			cargo: { Food: foodT },
 		};
 		g.stationConsoleRevision += 1;
 		g.updateCockpit();
-	});
+	}, FOOD_T);
 	const open = await page.evaluate(async () => {
 		const R = await import("/src/hull-reach.ts");
 		const g = window.__seelite;
@@ -209,7 +226,7 @@ try {
 	const others = open.filter((r) => r.hull !== "courier");
 	check(
 		"at the top rungs every other row is open and prints its reach from here, read from hullReachFrom",
-		others.length === 6 &&
+		others.length === roster.count - 1 &&
 			others.every(
 				(r) =>
 					r.reason === "" &&
@@ -223,13 +240,14 @@ try {
 		open.find((r) => r.hull === "interceptor")?.note ?? "";
 	check(
 		"a hull with a smaller hold says what it will sell",
-		interceptorNote.includes("SELLS 12 t"),
+		interceptorNote.includes(`SELLS ${FOOD_T - roster.interceptorHold} t`),
 		interceptorNote,
 	);
 	const tradeIn = await page.locator("[data-live-hull-trade-in]").innerText();
 	check(
 		"the trade-in line names the flown hull and its 90%",
-		tradeIn.includes("COURIER") && tradeIn.includes("31,500 Cr"),
+		tradeIn.includes("COURIER") &&
+			tradeIn.includes(`${roster.courierTradeIn.toLocaleString("en-US")} Cr`),
 		tradeIn,
 	);
 	await page.screenshot({ path: `${out}/01-shipyard-open.png` });
@@ -295,7 +313,8 @@ try {
 	);
 	check(
 		"the overflow was sold through the till and the shipyard paid the difference",
-		after.cargo.Food === expected.hold && after.credits > purse + 11_500,
+		after.cargo.Food === expected.hold &&
+			after.credits > purse - roster.interceptorNet,
 		`${purse} → ${after.credits} Cr · ${JSON.stringify(after.cargo)}`,
 	);
 	const rowNow = await page

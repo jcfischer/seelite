@@ -200,7 +200,7 @@ import { GOVERNMENT_NAMES, type SystemRecord } from "./galaxy";
 // vector handed to it.
 import { SYSTEM_PLANE_NORMAL } from "./galaxy-frame";
 import { type Course, courseProgress, setCourse } from "./galaxy-route";
-import { hullReachFrom } from "./hull-reach";
+import { type HullReach, hullReachFrom } from "./hull-reach";
 import { bootHull, deliverHull } from "./flown-hull";
 // The pad, normalised. What any of it *means* is `pollPad` and the panel
 // routing below, and nowhere else — that module was copied in from seekolous
@@ -851,7 +851,6 @@ import {
 	shipyardScreen,
 	transactAtStation,
 	type StationAction,
-	type StationCommerceInput,
 	type ConsoleInput,
 } from "./station-commerce";
 import {
@@ -15839,19 +15838,11 @@ class Game {
 	}
 
 	/**
-	 * Everything the till reads, for one action at the docked station.
+	 * Everything the till reads but the action, at the docked station.
 	 *
 	 * One builder for the press and for the Shipyard tab's rows (#583), so the
 	 * row is priced on exactly the inputs a press on it will be.
 	 */
-	private commerceInput(
-		context: NonNullable<ReturnType<Game["dockedStationContext"]>>,
-		action: StationAction,
-	): StationCommerceInput {
-		return { ...this.consoleInput(context), action };
-	}
-
-	/** `commerceInput` without the action: what the Shipyard's rows price on. */
 	private consoleInput(
 		context: NonNullable<ReturnType<Game["dockedStationContext"]>>,
 	): ConsoleInput {
@@ -15870,9 +15861,30 @@ class Game {
 	}
 
 	/** How far a hull reaches from the system the ship is in (#185 D3): the
-	 *  shipyard row and the till both read it through `hullOffer`. */
-	private readonly hullReachHere = (hull: HullId) =>
-		hullReachFrom(this.world.galaxy.systems, this.world.system.record, hull);
+	 *  shipyard row and the till both read it through `hullOffer`. Kept per
+	 *  system, because the answer is a function of the system and the hull and
+	 *  the console asks for all seven rows on every repaint. */
+	private hullReachOf: { system: string; byHull: Map<HullId, HullReach> } = {
+		system: "",
+		byHull: new Map(),
+	};
+
+	private readonly hullReachHere = (hull: HullId): HullReach => {
+		const { galaxy, index } = this.world.system.record;
+		const system = `${galaxy}:${index}`;
+		if (this.hullReachOf.system !== system)
+			this.hullReachOf = { system, byHull: new Map() };
+		let reach = this.hullReachOf.byHull.get(hull);
+		if (!reach) {
+			reach = hullReachFrom(
+				this.world.galaxy.systems,
+				this.world.system.record,
+				hull,
+			);
+			this.hullReachOf.byHull.set(hull, reach);
+		}
+		return reach;
+	};
 
 	/**
 	 * Applies a complete commerce result or leaves both owner states untouched.
@@ -15882,7 +15894,10 @@ class Game {
 		const context = this.dockedStationContext();
 		if (!context) return false;
 		const { galaxyIndex } = context;
-		const result = transactAtStation(this.commerceInput(context, action));
+		const result = transactAtStation({
+			...this.consoleInput(context),
+			action,
+		});
 		if (!result.accepted) {
 			// **The reason was always computed; it was the caller that dropped
 			// it** (#443). A refusal to sell then read as a bug in the till,
