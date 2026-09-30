@@ -127,6 +127,13 @@ import { AudioFX } from "./audio";
 import { BUSES, type WeaponMix, type Cue, type NotifyTone } from "./audio-cue";
 import { Music } from "./music";
 import {
+	initialMusicState,
+	type MusicScene,
+	type MusicState,
+	musicArms,
+	stepMusic,
+} from "./music-director";
+import {
 	type WeaponSoundState,
 	QUIET_WEAPONS,
 	SILENT_WEAPONS,
@@ -873,6 +880,7 @@ import {
 } from "./world-state";
 import {
 	type StationConsoleTab,
+	marketDisplayChanged,
 	refusalSentence,
 	stationEquipmentScreen,
 	stationMarketScreen,
@@ -1113,6 +1121,18 @@ const PUNCH_SOUND = punchArm(
 if (PUNCH_SOUND.unknown.length)
 	console.warn(
 		`?punch: unknown ${PUNCH_SOUND.unknown.join(", ")}; playing ${PUNCH_SOUND.arm}`,
+	);
+/**
+ * The adaptive music's arms (#548), from `?music=`: `off`, a level name to
+ * hold the music there, and `lowhull-always`. `music-director.ts` lists
+ * them. A prototype's open questions, heard by ear.
+ */
+const MUSIC_ARMS = musicArms(
+	new URLSearchParams(window.location.search).get("music"),
+);
+if (MUSIC_ARMS.unknown.length)
+	console.warn(
+		`?music: unknown ${MUSIC_ARMS.unknown.join(", ")}; playing the defaults for those`,
 	);
 const RAIDERS_OFF =
 	RAIDER_PARAM !== null && ["off", "0", "false"].includes(RAIDER_PARAM);
@@ -2086,8 +2106,8 @@ class Game {
 	/**
 	 * The music synth (#560). Its worklet is loaded into the audio context on
 	 * the gesture that opens it, and its readiness is a promise (#543 D8), so
-	 * no cue waits on it. **Nothing plays yet**: when music plays is #547's and
-	 * #548's to decide, and they send it scores through this.
+	 * no cue waits on it. #548's director sends it the system's bed each frame
+	 * (`stepMusicDirector`); #547's waltz will send it the docking run's.
 	 */
 	readonly music = new Music();
 	/**
@@ -2288,9 +2308,12 @@ class Game {
 	commanderOverlay: CommanderOverlayHandle | null = null;
 	/** The save-fault badge (`hud-and-scanner.md` §5.3), once mounted. */
 	saveBadge: SaveBadgeHandle | null = null;
-	/** Docked console screens are stable until station or tab changes; do not rebuild them each frame. */
+	/** Docked console screens rebuild only when a printed value can change. */
 	private stationConsoleCache: LiveCockpitState["stationConsole"] = null;
 	private stationConsoleCacheKey: string | null = null;
+	private stationConsoleCacheStationId: string | null = null;
+	/** Last whole game second at which the cached market was checked. */
+	private stationConsoleMarketSampleS: number | null = null;
 	/** #445's bid column, memoised on the key the priced rows were built under. */
 	private holdBidsCache: HoldBids = null;
 	private holdBidsCacheKey: string | null | undefined = undefined;
@@ -12320,6 +12343,56 @@ class Game {
 	/** The flight sound's memory: last regime and the hull's heat (#544). */
 	private flightSoundState: FlightSoundState = QUIET_FLIGHT;
 
+	/**
+	 * The adaptive music each frame (#548): `music-director.ts` reads the
+	 * pilot's situation and sends the synth what to play. On a held clock too,
+	 * where it holds; and under the opening, which holds it as well.
+	 */
+	private stepMusicDirector(dt: number) {
+		const dock = this.dock;
+		const scene: MusicScene = this.dead
+			? "dead"
+			: this.witchspace.kind !== "idle" || charging(this.jumpCharge)
+				? "witchspace"
+				: this.dockingComputerEngaged
+					? "dockingComputer"
+					: dock.phase === "docked" || dock.phase === "arriving"
+						? "docked"
+						: "flight";
+		const station = dock.stationId
+			? stationOf(this.world.system, dock.stationId)
+			: null;
+		const phase = this.encounter?.phase ?? "over";
+		let engaged = false;
+		for (const e of this.trafficEngagements.values())
+			if (e.armed) engaged = true;
+		const c = this.condition;
+		const step = stepMusic(
+			this.musicState,
+			{
+				scene,
+				ready: this.music.ready,
+				held: this.clockHeld || this.openingActive,
+				cruise: this.regime === "cruise",
+				encounter: phase === "over" ? "none" : phase,
+				sinceStruckS: c.sinceStruckS,
+				raiderFiring: this.raiderFiring,
+				engaged,
+				standing: this.legalStanding(),
+				shieldShare: Math.min(c.fore, c.aft) / SHIELD_POOL,
+				hullShare: c.hull / c.hullMax,
+				systemSeed: this.world.system.record.seed,
+				stationRole: station?.type ?? null,
+			},
+			dt,
+			MUSIC_ARMS.arms,
+		);
+		this.musicState = step.state;
+		for (const cmd of step.commands) this.music.send(cmd);
+	}
+	/** The director's memory: bed, level, its hold and the variant (#548). */
+	private musicState: MusicState = initialMusicState();
+
 	/** When each message tone last sounded (#546), on the wall clock: a
 	 *  message's gap is a thing heard, and a held sim clock does not stop it. */
 	private notifyGate: NotifyGate = QUIET_NOTIFY;
@@ -14233,6 +14306,7 @@ class Game {
 		// (the principal's ruling on #544), which needs the sound to hear the
 		// pause rather than keep the last level it was given.
 		this.stepFlightSound(this.clockHeld ? 0 : dt);
+		this.stepMusicDirector(this.clockHeld ? 0 : dt);
 		// The combat loops too: a held clock stops the step that would let a
 		// beam or a sizzle go, so the frame loop lets go of them here (#545).
 		this.audio.weapons(this.clockHeld ? SILENT_WEAPONS : this.weaponMix);
@@ -14827,13 +14901,9 @@ class Game {
 		// rows were built under. Without it the frame loop allocated a Map and
 		// seventeen entries on every cockpit update whether or not the page was
 		// open, to read back a table that had not moved.
-		// **The console's key is the right key, and it has a known hole.** It
-		// carries the station, the tab and `stationConsoleRevision`, which the
-		// till and a request action bump — so a price that moved because the
-		// *player* moved it invalidates this too. What neither covers is a
-		// price that moves on the **clock**: §5.2's deficit decays and the
-		// market epoch turns. That is #321's open question for the shelf, and
-		// the bid column inherits it rather than adding a second one.
+		// The console's key carries the station, tab and revision. #321 bumps
+		// that revision for visible clock-driven market changes and invalidates
+		// the key for hidden changes, so bids use the current priced projection.
 		//
 		// **`undefined` is "never computed" and `null` is "not docked".** Both
 		// fields started at `null`, so a screen built while the console's own
@@ -14860,10 +14930,60 @@ class Game {
 		if (!context) {
 			this.stationConsoleCache = null;
 			this.stationConsoleCacheKey = null;
+			this.stationConsoleCacheStationId = null;
+			this.stationConsoleMarketSampleS = null;
 			return null;
 		}
 		const { station, market, envelope, stationKey, economy, gameTimeMin } =
 			context;
+		const readMarket = () =>
+			stationMarketScreen({
+				station: market,
+				economy,
+				gameTimeMin,
+				deficitOf: (goodName) =>
+					readDeficit(envelope.deficits, stationKey, goodName, gameTimeMin),
+				// The flown hold, bay included — the same figure the transaction
+				// uses (#182), read through `commanderHold` so the screen and till
+				// agree about whether a Large Cargo Bay counts.
+				holdT: commanderHold(
+					this.commander,
+					entrustedTonnesAboard(this.requests),
+				).capacityT,
+				displayTL: this.world.system.record.displayTL,
+			});
+		// Decay is continuous, but the shelf is whole and prices print to
+		// tenths. Sample once per game second while docked. A changed value
+		// always refreshes the market memo, but only redraws the cockpit while
+		// the Market or Hold values are visible. Redrawing the Requests tab on
+		// a market tick detaches its focused keyboard control mid-action.
+		// A trade has already bumped the revision and takes the ordinary path.
+		const sampleS = Math.floor(this.world.gameTime);
+		let freshMarket: ReturnType<typeof readMarket> | undefined;
+		if (
+			this.stationConsoleCache &&
+			this.stationConsoleCache.revision === this.stationConsoleRevision &&
+			this.stationConsoleCacheStationId === this.dock.stationId &&
+			this.stationConsoleMarketSampleS !== sampleS
+		) {
+			freshMarket = readMarket();
+			this.stationConsoleMarketSampleS = sampleS;
+			if (marketDisplayChanged(this.stationConsoleCache.market, freshMarket)) {
+				const marketVisible =
+					this.headLook === "forward" && this.stationConsoleTab === "Market";
+				const holdVisible =
+					this.headLook === "right" && this.rightTab === "Hold";
+				if (marketVisible || holdVisible) this.stationConsoleRevision += 1;
+				else {
+					// The screen is hidden. Rebuild its cached rows for the next
+					// visit without changing LiveCockpit's structural key; the bid
+					// memo also needs the new quote even though its key is unchanged.
+					this.stationConsoleCache = null;
+					this.stationConsoleCacheKey = null;
+					this.holdBidsCacheKey = undefined;
+				}
+			}
+		}
 		// One projection for the whole console (#443). The hold line, the
 		// commander footer's sellable goods and `cargo-full`'s sentence all
 		// read it, so the three cannot disagree about what is aboard.
@@ -14895,31 +15015,15 @@ class Game {
 		const key = `${this.dock.stationId}|${this.commander.hull}|${Object.values(rungs).join("/")}|${this.stationConsoleTab}|${this.stationConsoleRevision}|${this.stationConsoleMessage ?? ""}|${hold.usedT}/${hold.capacityT}|${holdKey}`;
 		if (this.stationConsoleCacheKey === key) return this.stationConsoleCache;
 		this.stationConsoleCacheKey = key;
+		this.stationConsoleCacheStationId = this.dock.stationId;
+		this.stationConsoleMarketSampleS = sampleS;
 		this.stationConsoleCache = {
 			label: this.nameOfStation(station.id),
 			tab:
 				this.stationConsoleTab === "Shipyard" && market.type !== "shipyard"
 					? "Market"
 					: this.stationConsoleTab,
-			market: stationMarketScreen({
-				station: market,
-				economy,
-				gameTimeMin,
-				deficitOf: (goodName) =>
-					readDeficit(envelope.deficits, stationKey, goodName, gameTimeMin),
-				// The flown hold, bay included — the same figure the transaction
-				// uses (#182), read through `commanderHold` rather than off the
-				// roster so the screen and the till cannot disagree about whether
-				// a Large Cargo Bay counts.
-				holdT: commanderHold(
-					this.commander,
-					entrustedTonnesAboard(this.requests),
-				).capacityT,
-				// The system's tech level, which is what §5.6's cut is a function
-				// of. Read from the same record the transaction reads it from, so
-				// the quote on the glass is the quote the till charges.
-				displayTL: this.world.system.record.displayTL,
-			}),
+			market: freshMarket ?? readMarket(),
 			equipment: stationEquipmentScreen({
 				type: market.type,
 				displayTL: this.world.system.record.displayTL,
@@ -17754,6 +17858,11 @@ if (postcard) {
 	mountModelViewer();
 	// The workbench owns an isolated render loop, so no live simulation is built
 	// behind it. It is a visual asset tool rather than a second game mode.
+} else if (query.has("music-lab")) {
+	// #548's listening surface: the director and synth with no game behind
+	// them, for the principal's ear. No world, no render loop.
+	const { mountMusicLab } = await import("./music-lab");
+	mountMusicLab();
 } else if (query.has("hud-gallery")) {
 	const { mountStateGallery } = await import("./state-gallery");
 	mountStateGallery();
