@@ -17863,6 +17863,10 @@ if (postcard) {
 	// them, for the principal's ear. No world, no render loop.
 	const { mountMusicLab } = await import("./music-lab");
 	mountMusicLab();
+} else if (query.has("strings-lab")) {
+	// #547 D15: every strings knob as a slider, on the real synth. No world.
+	const { mountStringsLab } = await import("./strings-lab");
+	mountStringsLab();
 } else if (query.has("hud-gallery")) {
 	const { mountStateGallery } = await import("./state-gallery");
 	mountStateGallery();
