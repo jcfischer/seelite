@@ -1158,5 +1158,273 @@ check(
 	`grant expired at ${grant.expiresAtS?.toFixed(0) ?? "none"}, live=${grant.live}`,
 );
 
+// #321: the docked console must follow the market clock without a trade or
+// tab change after the jump. Read the expected row from the same market
+// projection the till uses, then wait for the normal frame loop to redraw it.
+const fadedShelf = await page.evaluate(async () => {
+	const g = window.__seelite;
+	g.setHeadLook("forward");
+	document.querySelector('[data-live-station-tab="Market"]')?.click();
+	const { MARKET_PERIOD_MIN, DEFICIT_HALF_LIFE_MIN, marketEpoch } =
+		await import("/src/market.ts");
+	const station = g.dockedStationContext().market;
+	const nextEpoch = marketEpoch(station.phaseMin, g.world.gameTime / 60) + 1;
+	// Start just inside one station market epoch, leaving a full half-life
+	// before its next turnover. Otherwise the generated base can move in the
+	// opposite direction and hide a shelf recovered by decay.
+	g.world.gameTime =
+		(nextEpoch * MARKET_PERIOD_MIN - station.phaseMin) * 60 + 1;
+	await new Promise((resolve) => requestAnimationFrame(resolve));
+	await new Promise((resolve) => requestAnimationFrame(resolve));
+	const food = () => document.querySelector('[data-live-market-row="Food"]');
+	const read = () => ({
+		buy:
+			food()?.querySelector("[data-live-buy]")?.firstChild?.textContent ?? null,
+		sell:
+			food()?.querySelector("[data-live-sell]")?.firstChild?.textContent ??
+			null,
+		shelf:
+			food()?.querySelector("[data-live-shelf]")?.firstChild?.textContent ??
+			null,
+	});
+	for (let i = 0; i < 12; i++)
+		food()
+			?.querySelector('[data-live-station-action="buy-commodity"]')
+			?.click();
+	// The trade's own revision must reach the DOM before the clock moves;
+	// otherwise that pending redraw could falsely satisfy the decay check.
+	await new Promise((resolve) => requestAnimationFrame(resolve));
+	await new Promise((resolve) => requestAnimationFrame(resolve));
+	const before = read();
+	const traded = /HOLD .*Food 12\b/.test(
+		document.querySelector("[data-live-commander]")?.textContent ?? "",
+	);
+	const shownAfterTrade = g
+		.stationConsoleState()
+		.market.find((entry) => entry.commodity.name === "Food");
+	const tradeDrawn =
+		before.shelf ===
+		`${shownAfterTrade?.quantity} ${shownAfterTrade?.commodity.unit}`;
+	g.world.gameTime += (DEFICIT_HALF_LIFE_MIN + 1) * 60;
+	const { stationMarketScreen, priceLabel } = await import(
+		"/src/station-console.ts"
+	);
+	const { readDeficit } = await import("/src/deficits.ts");
+	const context = g.dockedStationContext();
+	const row = stationMarketScreen({
+		station: context.market,
+		economy: context.economy,
+		gameTimeMin: context.gameTimeMin,
+		deficitOf: (name) =>
+			readDeficit(
+				context.envelope.deficits,
+				context.stationKey,
+				name,
+				context.gameTimeMin,
+			),
+		holdT: g.stationConsoleState().hold.capacityT,
+		displayTL: g.world.system.record.displayTL,
+	}).find((entry) => entry.commodity.name === "Food");
+	return {
+		before,
+		traded,
+		tradeDrawn,
+		expected: row && {
+			buy: priceLabel(row.buyCr),
+			sell: priceLabel(row.sellCr),
+			shelf: `${row.quantity} ${row.commodity.unit}`,
+		},
+	};
+});
+const refreshedShelf = await page
+	.waitForFunction(
+		(expected) => {
+			const food = document.querySelector('[data-live-market-row="Food"]');
+			const value = (hook) =>
+				food?.querySelector(hook)?.firstChild?.textContent ?? null;
+			const actual = {
+				buy: value("[data-live-buy]"),
+				sell: value("[data-live-sell]"),
+				shelf: value("[data-live-shelf]"),
+			};
+			return (
+				actual.buy === expected.buy &&
+				actual.sell === expected.sell &&
+				actual.shelf === expected.shelf
+			);
+		},
+		fadedShelf.expected,
+		{ timeout: 3000 },
+	)
+	.then(
+		() => true,
+		() => false,
+	);
+check(
+	"the untouched docked console refreshes its shelf and prices as the deficit decays",
+	refreshedShelf &&
+		fadedShelf.traded &&
+		fadedShelf.tradeDrawn &&
+		fadedShelf.expected !== undefined &&
+		fadedShelf.before.shelf !== fadedShelf.expected.shelf &&
+		fadedShelf.before.buy !== fadedShelf.expected.buy,
+	JSON.stringify(fadedShelf),
+);
+
+// Cross a market epoch with an unmarked good, so a base-market turnover rather
+// than further deficit decay must redraw a row that the pilot has not touched.
+const epochTurn = await page.evaluate(async () => {
+	const g = window.__seelite;
+	const { MARKET_PERIOD_MIN, marketEpoch } = await import("/src/market.ts");
+	const { stationMarketScreen, priceLabel } = await import(
+		"/src/station-console.ts"
+	);
+	const { readDeficit } = await import("/src/deficits.ts");
+	const station = g.dockedStationContext().market;
+	const boundaryS =
+		((marketEpoch(station.phaseMin, g.world.gameTime / 60) + 1) *
+			MARKET_PERIOD_MIN -
+			station.phaseMin) *
+		60;
+	const beforeS = boundaryS - 2;
+	const afterS = boundaryS + 1;
+	const holdT = g.stationConsoleState().hold.capacityT;
+	const projected = (timeS) => {
+		g.world.gameTime = timeS;
+		const context = g.dockedStationContext();
+		return stationMarketScreen({
+			station: context.market,
+			economy: context.economy,
+			gameTimeMin: context.gameTimeMin,
+			deficitOf: (name) =>
+				readDeficit(
+					context.envelope.deficits,
+					context.stationKey,
+					name,
+					context.gameTimeMin,
+				),
+			holdT,
+			displayTL: g.world.system.record.displayTL,
+		})
+			.filter(
+				(row) =>
+					row.listed &&
+					row.buyCr !== undefined &&
+					row.sellCr !== undefined &&
+					readDeficit(
+						context.envelope.deficits,
+						context.stationKey,
+						row.commodity.name,
+						context.gameTimeMin,
+					) === 0,
+			)
+			.map((row) => ({
+				name: row.commodity.name,
+				buy: priceLabel(row.buyCr),
+				sell: priceLabel(row.sellCr),
+				shelf: `${row.quantity} ${row.commodity.unit}`,
+			}));
+	};
+	const beforeRows = projected(beforeS);
+	const afterRows = projected(afterS);
+	const before = beforeRows.find((row) => {
+		const after = afterRows.find((next) => next.name === row.name);
+		return (
+			after &&
+			(row.buy !== after.buy ||
+				row.sell !== after.sell ||
+				row.shelf !== after.shelf)
+		);
+	});
+	g.world.gameTime = beforeS;
+	return {
+		before,
+		after: afterRows.find((row) => row.name === before?.name),
+		beforeS,
+		afterS,
+		beforeEpoch: marketEpoch(station.phaseMin, beforeS / 60),
+		afterEpoch: marketEpoch(station.phaseMin, afterS / 60),
+	};
+});
+const visibleMarketRowMatches = (expected) => {
+	const row = document.querySelector(
+		`[data-live-market-row="${expected.name}"]`,
+	);
+	const value = (hook) =>
+		row?.querySelector(hook)?.firstChild?.textContent ?? null;
+	return (
+		value("[data-live-buy]") === expected.buy &&
+		value("[data-live-sell]") === expected.sell &&
+		value("[data-live-shelf]") === expected.shelf
+	);
+};
+let epochBaselineDrawn = false;
+let epochRedrawn = false;
+if (epochTurn.before && epochTurn.after) {
+	epochBaselineDrawn = await page
+		.waitForFunction(visibleMarketRowMatches, epochTurn.before, {
+			timeout: 3000,
+		})
+		.then(
+			() => true,
+			() => false,
+		);
+	await page.evaluate((afterS) => {
+		window.__seelite.world.gameTime = afterS;
+	}, epochTurn.afterS);
+	epochRedrawn = await page
+		.waitForFunction(visibleMarketRowMatches, epochTurn.after, {
+			timeout: 3000,
+		})
+		.then(
+			() => true,
+			() => false,
+		);
+}
+check(
+	"the untouched market redraws a base quote or shelf across an epoch turn",
+	epochTurn.afterEpoch === epochTurn.beforeEpoch + 1 &&
+		epochBaselineDrawn &&
+		epochRedrawn,
+	JSON.stringify({ epochTurn, epochBaselineDrawn, epochRedrawn }),
+);
+
+// A market refresh must not rebuild the Requests tab while the pilot is
+// using its keyboard controls. The trade above leaves a decaying Food mark;
+// take another half-life with the Requests tab focused and watch the same DOM
+// node survive while the cached market moves underneath it.
+const requestFocusAcrossDecay = await page.evaluate(async () => {
+	const g = window.__seelite;
+	const { DEFICIT_HALF_LIFE_MIN } = await import("/src/market.ts");
+	document.querySelector('[data-live-station-tab="Requests"]')?.click();
+	await new Promise((resolve) => requestAnimationFrame(resolve));
+	await new Promise((resolve) => requestAnimationFrame(resolve));
+	const tab = document.querySelector('[data-live-station-tab="Requests"]');
+	tab?.focus();
+	const before = g
+		.stationConsoleState()
+		.market.find((row) => row.commodity.name === "Food");
+	const revision = g.stationConsoleRevision;
+	g.world.gameTime += (DEFICIT_HALF_LIFE_MIN + 1) * 60;
+	await new Promise((resolve) => requestAnimationFrame(resolve));
+	await new Promise((resolve) => requestAnimationFrame(resolve));
+	const after = g
+		.stationConsoleState()
+		.market.find((row) => row.commodity.name === "Food");
+	return {
+		marketMoved:
+			before?.quantity !== after?.quantity || before?.buyCr !== after?.buyCr,
+		focusKept: tab?.isConnected && document.activeElement === tab,
+		revisionHeld: g.stationConsoleRevision === revision,
+	};
+});
+check(
+	"clock-driven market changes keep keyboard focus on the Requests tab",
+	requestFocusAcrossDecay.marketMoved &&
+		requestFocusAcrossDecay.focusKept &&
+		requestFocusAcrossDecay.revisionHeld,
+	JSON.stringify(requestFocusAcrossDecay),
+);
+
 await browser.close();
 exit();

@@ -251,6 +251,39 @@ export function stationMarketScreen(
 	});
 }
 
+/** Canonical printed form of a market row, for rendering and redraw detection. */
+export function marketDisplayValues(row: ConsoleMarketRow) {
+	return {
+		name: row.commodity.name,
+		unit: row.commodity.unit,
+		listed: row.listed,
+		buy: row.listed ? priceLabel(row.buyCr ?? 0) : null,
+		sell: row.listed ? priceLabel(row.sellCr ?? 0) : null,
+		shelf: row.listed ? `${row.quantity ?? 0} ${row.commodity.unit}` : null,
+		priceDelta:
+			row.priceDeltaCr === undefined ? null : signedDelta(row.priceDeltaCr, 1),
+		quantityDelta:
+			row.quantityDelta === undefined
+				? null
+				: signedDelta(row.quantityDelta, 0),
+	};
+}
+
+/** A clock tick redraws only when a row's rendered values change. */
+export function marketDisplayChanged(
+	before: readonly ConsoleMarketRow[],
+	after: readonly ConsoleMarketRow[],
+): boolean {
+	if (before.length !== after.length) return true;
+	return before.some((row, index) => {
+		const a = marketDisplayValues(row);
+		const b = marketDisplayValues(after[index]);
+		return (Object.keys(a) as (keyof typeof a)[]).some(
+			(key) => a[key] !== b[key],
+		);
+	});
+}
+
 /**
  * **M6's arrow**, and the rule that a delta which rounds to zero gets none.
  *

@@ -51,7 +51,7 @@ import type {
 	ConsoleMarketRow,
 	StationConsoleTab,
 } from "./station-console";
-import { entrustedClause, priceLabel, signedDelta } from "./station-console";
+import { entrustedClause, marketDisplayValues } from "./station-console";
 import { LANE_WAIT_REASON, withLaneWait } from "./docking-director";
 import type { LaneRefusal } from "./station-traffic";
 import { FIRST_DAY_STEPS, type FirstDayStepId } from "./first-day";
@@ -1654,7 +1654,8 @@ export class LiveCockpit {
 
 	private market(rows: readonly ConsoleMarketRow[]) {
 		const row = (entry: ConsoleMarketRow) => {
-			const name = escapeHtml(entry.commodity.name);
+			const display = marketDisplayValues(entry);
+			const name = escapeHtml(display.name);
 			if (!entry.listed)
 				return `<div class="lc-station-row" data-live-market-row="${name}" data-live-listed="false"><span>${name}</span><span class="lc-station-cell">—</span><span class="lc-station-cell">—</span><span class="lc-station-cell">—</span></div>`;
 			// **Two prices, both through `priceLabel`** (§5.6, #191 D3). The BUY
@@ -1664,17 +1665,17 @@ export class LiveCockpit {
 			// multiple of `PRICE_STEP_CR` and a responded one is a multiple of
 			// nothing, so either one rounded to whole credits is a number the till
 			// will not honour.
-			const buy = priceLabel(entry.buyCr ?? 0);
-			const sell = priceLabel(entry.sellCr ?? 0);
-			const stock = `${entry.quantity ?? 0} ${escapeHtml(entry.commodity.unit)}`;
+			const buy = display.buy;
+			const sell = display.sell;
+			const stock = escapeHtml(display.shelf ?? "");
 			const priceDelta =
-				entry.priceDeltaCr === undefined
+				display.priceDelta === null
 					? ""
-					: `<small class="lc-station-delta">${signedDelta(entry.priceDeltaCr, 1)}</small>`;
+					: `<small class="lc-station-delta">${display.priceDelta}</small>`;
 			const stockDelta =
-				entry.quantityDelta === undefined
+				display.quantityDelta === null
 					? ""
-					: `<small class="lc-station-delta">${signedDelta(entry.quantityDelta, 0)}</small>`;
+					: `<small class="lc-station-delta">${display.quantityDelta}</small>`;
 			const actions = entry.commodity.sellOnly
 				? `<button class="lc-station-action" type="button" data-live-station-action="sell-commodity" data-live-station-name="${name}">SELL</button>`
 				: `<button class="lc-station-action" type="button" data-live-station-action="buy-commodity" data-live-station-name="${name}">BUY</button><button class="lc-station-action" type="button" data-live-station-action="sell-commodity" data-live-station-name="${name}">SELL</button>`;
