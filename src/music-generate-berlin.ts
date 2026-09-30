@@ -221,7 +221,7 @@ function berlinParts(bpm: number): Record<string, PartSpec> {
 		},
 		windL: {
 			voice: "noise",
-			level: 0.22,
+			level: 0.09,
 			attackS: 4,
 			sustain: 1,
 			releaseS: 5,
@@ -233,7 +233,7 @@ function berlinParts(bpm: number): Record<string, PartSpec> {
 		},
 		windR: {
 			voice: "noise",
-			level: 0.2,
+			level: 0.08,
 			attackS: 4,
 			sustain: 1,
 			releaseS: 5,
@@ -245,7 +245,7 @@ function berlinParts(bpm: number): Record<string, PartSpec> {
 		},
 		riser: {
 			voice: "noise",
-			level: 0.16,
+			level: 0.09,
 			attackS: 0.12,
 			sustain: 1,
 			releaseS: 0.35,
