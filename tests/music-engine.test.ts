@@ -712,6 +712,59 @@ describe("stereo and the space (#560, after #548's first listening)", () => {
 		expect(between).toBe(0);
 	});
 
+	test("a song started inside a stop now's fade leaves the old tail on its fade (#587)", () => {
+		// One room for every song: the new song's line set it back to full,
+		// and the stopped song's tail came back with it, loud, in the middle
+		// of its own fade out.
+		const e = new MusicEngine(SR, 16);
+		const at = (beat: number): Song => ({
+			name: "hall",
+			beatsPerBar: 4,
+			parts: { p: { voice: "pad", level: 1, reverb: 1, echo: 1 } },
+			sections: [
+				{
+					name: "A",
+					bars: 1,
+					events: [{ part: "p", bar: 0, beat, dur: 1, pitch: 60, vel: 1 }],
+				},
+			],
+			tempo: [{ bar: 0, bpm: 120 }],
+			space: { reverbS: 6 },
+		});
+		e.command({ type: "load", id: "a", song: at(0) }, 0);
+		e.command({ type: "load", id: "b", song: at(3) }, 0);
+		e.command({ type: "play", id: "a", at: "bar" }, 0);
+		const snap = (s: number) => s * SR - ((s * SR) % 128);
+		const stopAt = snap(1.2);
+		const fadeS = 1;
+		const playAt = snap(1.5);
+		const quiet = stopAt + fadeS * SR;
+		// b starts now (a is leaving) and its first note is on beat 3.
+		const bNote = playAt + 1.5 * SR;
+		const L = new Float32Array(128);
+		const R = new Float32Array(128);
+		let before = 0;
+		let after = 0;
+		let past = 0;
+		for (let f = 0; f < bNote; f += 128) {
+			if (f === stopAt) e.command({ type: "stop", at: "now", fadeS }, f);
+			if (f === playAt) e.command({ type: "play", id: "b", at: "bar" }, f);
+			e.render(L, f, R);
+			for (let k = 0; k < 128; k++) {
+				const v = Math.abs(L[k]) + Math.abs(R[k]);
+				const t = f + k;
+				if (t >= playAt - 0.05 * SR && t < playAt) before = Math.max(before, v);
+				else if (t >= playAt && t < quiet) after = Math.max(after, v);
+				else if (t >= quiet && t < bNote) past = Math.max(past, v);
+			}
+		}
+		expect(before).toBeGreaterThan(0.001);
+		// Still fading: never louder than it was just before b started.
+		expect(after).toBeLessThanOrEqual(before);
+		// And once the fade has run, silence until b plays.
+		expect(past).toBe(0);
+	});
+
 	test("a worklet quantum takes no typed-array view, stereo or folded (sage round 8)", () => {
 		// `render` may not allocate (#543 D1). A view is an allocation, and the
 		// stereo render took eight a quantum: one per buffer and send.

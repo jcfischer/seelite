@@ -280,16 +280,22 @@ function panGains(pan: number): { panL: number; panR: number } {
 	return { panL: panLeft(p), panR: panRight(p) };
 }
 
-/**
- * Where a stereo render writes, beside the left channel it is handed: the
- * right channel and the three sends into the space. All the length of the
- * block.
- */
-export interface StereoOut {
-	readonly right: Float32Array;
+/** The three sends into one song's room, the length of the block. */
+export interface RoomSends {
 	readonly revL: Float32Array;
 	readonly revR: Float32Array;
 	readonly echo: Float32Array;
+}
+
+/**
+ * Where a stereo render writes, beside the left channel it is handed: the
+ * right channel, and each owner's sends into its own room, by owner (#587:
+ * one room for every song let a new song bring a stopped song's tail back).
+ * All the length of the block.
+ */
+export interface StereoOut {
+	readonly right: Float32Array;
+	readonly sends: readonly RoomSends[];
 }
 
 const stripUndefined = (spec: PartSpec) =>
@@ -697,6 +703,7 @@ export class VoiceBank {
 			if (this.stage[i] === STAGE_FREE) continue;
 			const part = this.parts[i] as ResolvedPart;
 			const owner = this.owner[i];
+			const room = stereo?.sends[owner];
 			const pIx = this.partIx[i];
 			const startAt = this.start[i] - frame;
 			if (startAt >= n) continue;
@@ -731,12 +738,12 @@ export class VoiceBank {
 				const k = env * amp * gains.gain(owner, pIx, frame + s);
 				const l = x * k * part.panL;
 				const r = (STEREO[kind] ? this.sideR : x) * k * part.panR;
-				if (stereo) {
+				if (stereo && room) {
 					out[s] += l;
 					stereo.right[s] += r;
-					stereo.revL[s] += l * part.reverb;
-					stereo.revR[s] += r * part.reverb;
-					stereo.echo[s] += 0.5 * (l + r) * part.echo;
+					room.revL[s] += l * part.reverb;
+					room.revR[s] += r * part.reverb;
+					room.echo[s] += 0.5 * (l + r) * part.echo;
 				} else out[s] += 0.5 * (l + r);
 			}
 			this.env[i] = env;

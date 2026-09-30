@@ -2,8 +2,11 @@
  * The music engine the worklet runs (#560, after #543's D4, D5 and D7):
  * transport commands in, one block of samples out.
  *
- * It holds up to `MUSIC_SONG_SLOTS` compiled songs, a `Player` for each, one
- * `VoiceBank` for all of them, and the fades. Pure — no WebAudio and no
+ * It holds up to `MUSIC_SONG_SLOTS` compiled songs, a `Player` and a room
+ * for each, one `VoiceBank` for all of them, and the fades. **A room is a
+ * slot's, not the engine's** (#587): with one room for every song, a song
+ * started inside a stop now's fade set it back to full, and the stopped
+ * song's tail came back with it. Pure — no WebAudio and no
  * globals — so `tests/music-engine.test.ts` holds the whole transport
  * headless; `music-worklet.ts` moves messages and buffers and nothing else.
  *
@@ -27,6 +30,7 @@ import { Space, type SpaceSpec } from "./music-space";
 import { compileSong, type NoteSink, Player } from "./music-sequencer";
 import {
 	type ResolvedPart,
+	type RoomSends,
 	resolvePart,
 	type StereoOut,
 	VoiceBank,
@@ -119,6 +123,15 @@ interface Slot {
 	readonly space: SpaceSpec;
 }
 
+/** A slot's room: the reverb and echo its parts send into, the gain on what
+ *  comes back (a stop now fades it with the song), and its sends. It
+ *  outlives the song in the slot, so a tail rings out after a halt. */
+interface Room {
+	readonly space: Space;
+	readonly gain: Ramp;
+	readonly sends: RoomSends;
+}
+
 export class MusicEngine implements NoteSink, VoiceGain {
 	private readonly bank: VoiceBank;
 	private readonly slots: (Slot | null)[] = new Array(MUSIC_SONG_SLOTS).fill(
@@ -130,20 +143,28 @@ export class MusicEngine implements NoteSink, VoiceGain {
 	private rendering = 0;
 	/** Where the last `render` ended: no move lands before it. */
 	private rendered = 0;
-	/** The reverb and echo every part sends into, and the gain on what comes
-	 *  back: a stop now fades it with the song. */
-	private readonly space: Space;
-	private readonly spaceGain = new Ramp();
-	/** The block's two channels, its three sends and the space's return. */
+	/** Each slot's room, by slot: made when a song is first loaded there. */
+	private readonly rooms: (Room | null)[] = new Array(MUSIC_SONG_SLOTS).fill(
+		null,
+	);
+	/** The block's two channels, and a room's return. */
 	private readonly bufL = new Float32Array(BLOCK);
 	private readonly bufR = new Float32Array(BLOCK);
 	private readonly wetL = new Float32Array(BLOCK);
 	private readonly wetR = new Float32Array(BLOCK);
-	private readonly sends: StereoOut = {
+	/** Every slot's sends, whether or not it has a room yet: the bank writes
+	 *  by owner, and an owner with no song has no voice. */
+	private readonly sendBufs: readonly RoomSends[] = Array.from(
+		{ length: MUSIC_SONG_SLOTS },
+		() => ({
+			revL: new Float32Array(BLOCK),
+			revR: new Float32Array(BLOCK),
+			echo: new Float32Array(BLOCK),
+		}),
+	);
+	private readonly stereo: StereoOut = {
 		right: this.bufR,
-		revL: new Float32Array(BLOCK),
-		revR: new Float32Array(BLOCK),
-		echo: new Float32Array(BLOCK),
+		sends: this.sendBufs,
 	};
 
 	/**
@@ -156,11 +177,6 @@ export class MusicEngine implements NoteSink, VoiceGain {
 		private readonly onNote?: (id: string, frame: number, part: string) => void,
 	) {
 		this.bank = new VoiceBank(cap, sampleRate);
-		this.space = new Space(sampleRate, {
-			reverbS: DEFAULT_SONG_SPACE.reverbS,
-			echoS: 0.5,
-			echoFeedback: DEFAULT_SONG_SPACE.echoFeedback,
-		});
 	}
 
 	/** The song the transport is moving, while it plays. */
@@ -197,6 +213,8 @@ export class MusicEngine implements NoteSink, VoiceGain {
 				// full: the cut is on the line, not before it (sage rounds 4, 5).
 				if (h.back) h.target.gain.set(1, h.line, 0, now);
 				else h.target.gain.reset(1);
+				// Its room likewise, and only its room (#587).
+				this.roomOf(h.ix).gain.set(1, h.line, 0, now);
 				return;
 			}
 			case "crossfade": {
@@ -211,10 +229,13 @@ export class MusicEngine implements NoteSink, VoiceGain {
 				this.begin(h.ix, h.line, cmd.section, hold);
 				// Back to a song still fading out (sage round 4): it fades up from
 				// where it is now. Reset to 0, it was cut before the line.
-				if (h.back) h.target.gain.set(1, now, len, now);
-				else {
+				if (h.back) {
+					h.target.gain.set(1, now, len, now);
+					this.roomOf(h.ix).gain.set(1, now, len, now);
+				} else {
 					h.target.gain.reset(0);
 					h.target.gain.set(1, h.line, len, now);
+					this.roomOf(h.ix).gain.set(1, h.line, 0, now);
 				}
 				return;
 			}
@@ -242,9 +263,11 @@ export class MusicEngine implements NoteSink, VoiceGain {
 							s.haltAt = Math.min(s.haltAt, now + len);
 						}
 					}
-					// The room goes with it: a stop now is a pilot taking the
-					// stick back, and a hall ringing on after it is not a stop.
-					this.spaceGain.set(0, now, len, now);
+					// Every room goes with it, a halted song's tail too: a stop now
+					// is a pilot taking the stick back, and a hall ringing on after
+					// it is not a stop.
+					for (const room of this.rooms)
+						if (room && !room.space.silent) room.gain.set(0, now, len, now);
 					return;
 				}
 				const line = this.line(now, cmd.at);
@@ -315,40 +338,52 @@ export class MusicEngine implements NoteSink, VoiceGain {
 		}
 		const whole = n === BLOCK;
 		const L = whole ? this.bufL : this.bufL.subarray(0, n);
-		const sends: StereoOut = whole
-			? this.sends
+		const stereo: StereoOut = whole
+			? this.stereo
 			: {
 					right: this.bufR.subarray(0, n),
-					revL: this.sends.revL.subarray(0, n),
-					revR: this.sends.revR.subarray(0, n),
-					echo: this.sends.echo.subarray(0, n),
+					sends: this.sendBufs.map((b) => ({
+						revL: b.revL.subarray(0, n),
+						revR: b.revR.subarray(0, n),
+						echo: b.echo.subarray(0, n),
+					})),
 				};
-		const R = sends.right;
+		const R = stereo.right;
 		L.fill(0);
 		R.fill(0);
-		sends.revL.fill(0);
-		sends.revR.fill(0);
-		sends.echo.fill(0);
-		this.bank.render(L, frame, this, sends);
+		for (const b of stereo.sends) {
+			b.revL.fill(0);
+			b.revR.fill(0);
+			b.echo.fill(0);
+		}
+		this.bank.render(L, frame, this, stereo);
 		const wetL = whole ? this.wetL : this.wetL.subarray(0, n);
 		const wetR = whole ? this.wetR : this.wetR.subarray(0, n);
-		wetL.fill(0);
-		wetR.fill(0);
-		// A stop now faded the room out and it stays out: what it still holds
-		// is heard by nothing, so drop it. Kept, it came back at full on the
-		// next song's line, before that song had played a note.
-		const room = this.spaceGain;
-		if (room.to === 0 && frame >= room.start + room.len && !this.space.silent)
-			this.space.clear();
-		this.space.process(sends.revL, sends.revR, sends.echo, wetL, wetR);
+		for (let i = 0; i < this.rooms.length; i++) {
+			const room = this.rooms[i];
+			if (!room) continue;
+			const g = room.gain;
+			// A stop now faded the room out and it stays out: what it still
+			// holds is heard by nothing, so drop it. Kept, it came back at full
+			// on the next song's line, before that song had played a note.
+			if (g.to === 0 && frame >= g.start + g.len && !room.space.silent)
+				room.space.clear();
+			const b = stereo.sends[i];
+			wetL.fill(0);
+			wetR.fill(0);
+			room.space.process(b.revL, b.revR, b.echo, wetL, wetR);
+			if (room.space.silent) continue;
+			for (let k = 0; k < n; k++) {
+				const gk = g.at(frame + k);
+				L[k] += wetL[k] * gk;
+				R[k] += wetR[k] * gk;
+			}
+		}
 		for (let k = 0; k < n; k++) {
-			const g = this.spaceGain.at(frame + k);
-			const l = L[k] + wetL[k] * g;
-			const r = R[k] + wetR[k] * g;
 			if (outR) {
-				out[off + k] = l;
-				outR[off + k] = r;
-			} else out[off + k] = 0.5 * (l + r);
+				out[off + k] = L[k];
+				outR[off + k] = R[k];
+			} else out[off + k] = 0.5 * (L[k] + R[k]);
 		}
 	}
 
@@ -382,8 +417,15 @@ export class MusicEngine implements NoteSink, VoiceGain {
 				throw new Error(`music: ${id} is sounding and cannot be replaced`);
 			this.bank.clearOwner(ix);
 		} else {
-			// An empty slot first; then one whose song is silent.
+			// An empty slot first; then one whose song is silent, its room
+			// silent too if one is; then any whose song is silent, where the
+			// last song's tail rings on into the new one's room.
 			ix = this.slots.indexOf(null);
+			if (ix < 0)
+				ix = this.slots.findIndex(
+					(s, i) =>
+						s !== null && !this.isSounding(i) && !!this.rooms[i]?.space.silent,
+				);
 			if (ix < 0)
 				ix = this.slots.findIndex((s, i) => s !== null && !this.isSounding(i));
 			if (ix < 0)
@@ -401,6 +443,16 @@ export class MusicEngine implements NoteSink, VoiceGain {
 			haltAt: Infinity,
 			space: spaceOf(song),
 		};
+		this.rooms[ix] ??= {
+			space: new Space(this.sampleRate, spaceOf(song)),
+			gain: new Ramp(),
+			sends: this.sendBufs[ix],
+		};
+	}
+
+	/** Slot `ix`'s room: every loaded slot has one. */
+	private roomOf(ix: number): Room {
+		return this.rooms[ix] as Room;
 	}
 
 	private find(id: string): number {
@@ -517,7 +569,7 @@ export class MusicEngine implements NoteSink, VoiceGain {
 		// And its room, which the stop faded with it (sage round 9): left out,
 		// the song came back dry, and once the fade had run the room was
 		// cleared for good.
-		this.spaceGain.set(1, line, 0, now);
+		this.roomOf(ix).gain.set(1, line, 0, now);
 		lead.haltAt = Infinity;
 		return true;
 	}
@@ -536,9 +588,9 @@ export class MusicEngine implements NoteSink, VoiceGain {
 		for (const g of s.partGain) g.reset(1);
 		s.player.start(line, at, hold);
 		this.lead = ix;
-		// The room is the lead's, and back at full from its line.
-		this.space.set(s.space);
-		this.spaceGain.set(1, line, 0, this.rendered);
+		// Its room takes its shape; its gain is the caller's, beside the
+		// song's own.
+		this.roomOf(ix).space.set(s.space);
 	}
 
 	private halt(ix: number) {

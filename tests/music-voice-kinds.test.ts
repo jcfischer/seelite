@@ -31,9 +31,13 @@ const render = (b: VoiceBank, frames: number) => {
 		const m = Math.min(128, frames - f);
 		b.render(L.subarray(f, f + m), f, unity, {
 			right: R.subarray(f, f + m),
-			revL: revL.subarray(0, m),
-			revR: revR.subarray(0, m),
-			echo: echo.subarray(0, m),
+			sends: [
+				{
+					revL: revL.subarray(0, m),
+					revR: revR.subarray(0, m),
+					echo: echo.subarray(0, m),
+				},
+			],
 		});
 	}
 	return { L, R };
