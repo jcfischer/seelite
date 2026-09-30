@@ -3,6 +3,7 @@
  * It does not talk to `Game`: docking, communications, panels, and scanner
  * contacts are still design consumers, not completed simulation systems.
  */
+import { TOP_RUNGS } from "./ladder";
 import { escapeHtml as esc } from "./escape-html";
 import * as THREE from "three";
 import { TRAVERSAL_SECONDS_DEEP, TRAVERSAL_SECONDS_NEAR } from "./docking";
@@ -361,6 +362,9 @@ function renderEquipmentTab(view: ConsoleView): string {
 	const screen = stationEquipmentScreen({
 		type: view.station.type,
 		displayTL: view.station.displayTL,
+		// The gallery's states are about the console's layout, not a pilot's
+		// progress, so every gate is open and the rows read as they did.
+		rungs: TOP_RUNGS,
 	});
 	const available = screen.available
 		.map((item) =>

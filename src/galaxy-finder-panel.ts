@@ -21,6 +21,7 @@ import {
 	finderSessionFilter,
 	projectFinder,
 	rememberFinderBudget,
+	finderReachLabel,
 } from "./galaxy-finder";
 import {
 	FACILITY_CHIPS,
@@ -141,6 +142,9 @@ export interface FinderPanelOptions {
 	/** The chart's root. The panel appends itself and is removed with it. */
 	root: HTMLElement;
 	systems: readonly SystemRecord[];
+	/** The flown hull's `tankLy`: both lists are what this hull reaches
+	 *  (#554). Required, for `FlightPerformance`'s reason. */
+	tankLy: number;
 	/**
 	 * Last-known station intelligence, read on every render.
 	 *
@@ -213,6 +217,7 @@ const el = <K extends keyof HTMLElementTagNameMap>(
 export function mountFinderPanel({
 	root,
 	systems,
+	tankLy,
 	knowledge,
 	now,
 	currentSystem,
@@ -516,12 +521,7 @@ export function mountFinderPanel({
 		name.textContent = row.name;
 		const reach = el("em");
 		Object.assign(reach.style, { fontStyle: "normal", color: "#8fb2c9" });
-		reach.textContent =
-			row.jumps === null
-				? "—"
-				: row.jumps === 0
-					? "here"
-					: `${row.jumps}j · ${row.routeLy?.toFixed(1)} LY`;
+		reach.textContent = finderReachLabel(row);
 		const detail = el("span");
 		Object.assign(detail.style, {
 			gridColumn: "1/3",
@@ -650,7 +650,10 @@ export function mountFinderPanel({
 		if (inputKey !== projectionKey || rows !== projectionKnowledge) {
 			projectionKey = inputKey;
 			projectionKnowledge = rows;
-			results = projectFinder(systems, here, filter, { knowledge: rows });
+			results = projectFinder(systems, here, filter, {
+				maxJump: tankLy,
+				knowledge: rows,
+			});
 		}
 		const { inBudget, beyondRange, uncheckedFence } = results;
 		// **Keyed on what the rows actually print.** Two filters can yield the

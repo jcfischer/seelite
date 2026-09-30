@@ -1,4 +1,5 @@
 import { decodePostcard, isPostcardFragment } from "./postcard";
+import { countVisit } from "./visit-count";
 
 const query = new URLSearchParams(window.location.search);
 
@@ -14,7 +15,9 @@ if (isPostcardFragment(window.location.hash)) {
 }
 // A bare root is the public threshold. Existing probes and game links carry a
 // boot mode; `seed` preserves the overlay probe's deliberate `boot: null` arm.
-else if (query.has("boot") || query.has("seed")) await import("./main");
-else await import("./public-entry");
+else if (query.has("boot") || query.has("seed")) {
+	countVisit("launch");
+	await import("./main");
+} else await import("./public-entry");
 
 export {};

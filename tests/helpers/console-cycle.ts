@@ -16,6 +16,7 @@
  * reports the closure it was asked for whether or not the trade happened is the
  * worst kind: its number gets transcribed into a spec.
  */
+import { TOP_RUNGS } from "../../src/ladder";
 import type { CarrierKey } from "../../src/carrier-key";
 import { carrierKey } from "../../src/carrier-key";
 import type { DeficitMap } from "../../src/deficits";
@@ -210,6 +211,7 @@ export function flyConsoleCycle(
 				economy,
 				gameTimeMin,
 				entrustedT: 0,
+				rungs: TOP_RUNGS,
 				displayTL,
 				action: {
 					type: kind === "buy" ? "buy-commodity" : "sell-commodity",

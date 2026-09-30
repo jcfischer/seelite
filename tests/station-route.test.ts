@@ -945,6 +945,7 @@ describe("canonical Traffic cruise", () => {
 		}),
 		massesAt: () => [],
 		targetParentId: null,
+		capacityAu: HULL_SPECS.courier.chargeAu,
 	};
 	const initial: TrafficCruiseState = {
 		phase: "cruise",

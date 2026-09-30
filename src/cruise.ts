@@ -152,10 +152,6 @@ export const DEFAULT_CRUISE: CruiseParams = {
 	approachLeadS: 3,
 };
 
-/** §7: the drive charge, in AU of cruise range — **the baseline hull's, read
- *  off the roster** (#181). Like the jump range it is one quantity, and a
- *  second declaration here is how the two come to disagree. */
-export const CHARGE_CAPACITY_AU = HULL_SPECS[PLAYER_BASELINE_HULL].chargeAu;
 /** §7: passive regeneration, ~1 AU/min, in AU per second. The anti-stranding
  *  rule, and not optional. */
 export const CHARGE_REGEN_AU_PER_S = 1 / 60;
@@ -404,15 +400,16 @@ export function closingSpeed(
 	return length(sub(scale(nose, speedKms), targetVel));
 }
 
-/** §7's regeneration, saturating at the caller's hull-specific tank.
+/** §7's regeneration, saturating at the flying hull's `chargeAu`.
  *
- * The player keeps the 12 AU default. Traffic routes pass the actor hull's
- * capacity explicitly, so a 16 AU explorer does not silently become a courier
- * merely because it spent time in normal flight. */
+ * **The capacity is required** (#554, #185 D6): the player passes the flown
+ * hull's and Traffic the actor hull's, so neither a 16 AU explorer nor a 10 AU
+ * interceptor silently becomes a courier. The rate is one constant for every
+ * hull — the anti-stranding rule is the same rule whatever the ship. */
 export function chargeAfterRegen(
 	chargeAu: number,
 	dt: number,
-	capacityAu = CHARGE_CAPACITY_AU,
+	capacityAu: number,
 ): number {
 	return Math.min(capacityAu, chargeAu + CHARGE_REGEN_AU_PER_S * dt);
 }

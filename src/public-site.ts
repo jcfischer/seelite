@@ -1,3 +1,5 @@
+import { CHANGELOG, HOME_CHANGELOG_COUNT, changelogList } from "./changelog";
+
 export type PublicPage = {
 	slug: "" | "about" | "field-notes" | "manual" | "trust" | "credits";
 	entry: string;
@@ -20,8 +22,9 @@ export const PUBLIC_PAGES: readonly PublicPage[] = [
 		title: "The Far Between",
 		dek: "A little ship. A large sky. Work worth doing between the two.",
 		content: `<div class="threshold-actions">${play}<a class="button button--quiet" href="/about/">Find your bearings</a></div>
-			<p class="threshold-note">No accounts. No tracking. No analytics.<br />No runtime network calls.</p>
-			<div class="instrument" aria-label="A quiet frontier transmission"><span>SECTOR: UNCHARTED</span><span>LOCAL: 03:17</span><span>SIGNAL: FAINT</span></div>`,
+			<p class="threshold-note">No accounts. No cookies. No advertising.</p>
+			<div class="instrument" aria-label="A quiet frontier transmission"><span>SECTOR: UNCHARTED</span><span>LOCAL: 03:17</span><span>SIGNAL: FAINT</span></div>
+			<section class="changelog-home" aria-labelledby="changelog-home"><h2 id="changelog-home">Recent changes</h2>${changelogList(CHANGELOG.slice(0, HOME_CHANGELOG_COUNT))}<a class="changelog-more" href="/field-notes/">All changes <span aria-hidden="true">→</span></a></section>`,
 	},
 	{
 		slug: "about",
@@ -42,7 +45,8 @@ export const PUBLIC_PAGES: readonly PublicPage[] = [
 		eyebrow: "Field Notes",
 		title: "Occasional signals from the frontier.",
 		dek: "Screens, postcards, release notes, and worthwhile observations arrive here when there is something real to show.",
-		content: `<p>The first note is still in flight. Until then, the game is the better place to find out what is waiting.</p>
+		content: `<h2>Changes</h2>
+			${changelogList(CHANGELOG)}
 			${play}`,
 	},
 	{
@@ -73,7 +77,7 @@ export const PUBLIC_PAGES: readonly PublicPage[] = [
 		eyebrow: "Trust",
 		title: "Your flight is yours.",
 		dek: "The Far Between is private by default, immediate by design, and intentionally small in what it asks of you.",
-		content: `<ul class="promise"><li>No accounts, tracking, analytics, advertising, or runtime network calls.</li><li>Saves live locally in your browser and can be exported as portable data.</li></ul>
+		content: `<ul class="promise"><li>No accounts, cookies, or advertising.</li><li>Each page load and each game launch is counted once, by a self-hosted Counterscale counter. Like any web request, it arrives with your IP address and browser headers. The counter records the page’s path, the site you came from, your browser, device type and country — not your IP address. Nothing the game does after launch leaves your machine.</li><li>Saves live locally in your browser and can be exported as portable data.</li></ul>
 			<p>There is no behavioural telemetry. The project learns through direct feedback and conversation.</p>`,
 	},
 	{

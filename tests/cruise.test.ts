@@ -16,7 +16,6 @@
  */
 import { expect, test } from "bun:test";
 import {
-	CHARGE_CAPACITY_AU,
 	HOST_CLEARANCE_KM,
 	type CruiseParams,
 	CHARGE_PER_AU,
@@ -40,6 +39,11 @@ import { PLANET_APPROACH_RADIUS } from "../src/planet-approach-boundary";
 import { ARRIVAL_CLEARANCE_AU, MAX_ORBIT_AU } from "../src/system";
 import { AU_KM, HANDOFF_KM } from "../src/units";
 import { type Vec3, add, length, scale, sub, v3 } from "../src/vec3";
+import { HULL_SPECS, PURCHASABLE_HULL_IDS } from "../src/hull";
+
+/** The courier's drive charge — the hull every row here flies. The charge is
+ *  per hull since #554; `CHARGE_CAPACITY_AU` was this figure under one name. */
+const COURIER_CHARGE_AU = HULL_SPECS.courier.chargeAu;
 
 const P = DEFAULT_CRUISE;
 
@@ -420,7 +424,7 @@ test("charge is spent per AU travelled, not per second", () => {
 	const spend = (massAt: Vec3) => {
 		const target = { pos: v3(), radiusKm: 1.2 };
 		let pos = v3(legKm, 0, 0);
-		let charge = CHARGE_CAPACITY_AU;
+		let charge = COURIER_CHARGE_AU;
 		let seconds = 0;
 		while (seconds < 900 && pos.x > legKm * 0.02) {
 			const step = advanceCruise({
@@ -438,7 +442,7 @@ test("charge is spent per AU travelled, not per second", () => {
 			charge = chargeAfterTravel(charge, step.travelledKm);
 			seconds += 0.1;
 		}
-		return { spent: CHARGE_CAPACITY_AU - charge, seconds, endX: pos.x };
+		return { spent: COURIER_CHARGE_AU - charge, seconds, endX: pos.x };
 	};
 
 	// The well sits just off the line, so the same kilometres take far longer.
@@ -466,12 +470,15 @@ test("the meter itself is per AU, and never goes below empty", () => {
 
 test("regeneration restores one AU a minute and stops at capacity", () => {
 	expect(CHARGE_REGEN_AU_PER_S * 60).toBeCloseTo(1, 9);
-	expect(chargeAfterRegen(0, 60)).toBeCloseTo(1, 6);
-	expect(chargeAfterRegen(CHARGE_CAPACITY_AU - 0.1, 600)).toBe(
-		CHARGE_CAPACITY_AU,
-	);
+	expect(chargeAfterRegen(0, 60, COURIER_CHARGE_AU)).toBeCloseTo(1, 6);
+	expect(
+		chargeAfterRegen(COURIER_CHARGE_AU - 0.1, 600, COURIER_CHARGE_AU),
+	).toBe(COURIER_CHARGE_AU);
 	// Twelve minutes for a full tank from empty — §7's stated penalty.
-	expect(chargeAfterRegen(0, 12 * 60)).toBeCloseTo(CHARGE_CAPACITY_AU, 6);
+	expect(chargeAfterRegen(0, 12 * 60, COURIER_CHARGE_AU)).toBeCloseTo(
+		COURIER_CHARGE_AU,
+		6,
+	);
 });
 
 test("a ship at zero charge in deep space can always reach a station", () => {
@@ -481,7 +488,7 @@ test("a ship at zero charge in deep space can always reach a station", () => {
 	//
 	// Eighty seconds buys enough range to reach a station an AU away — §7's own
 	// stated penalty, and the case that actually happens.
-	expect(chargeAfterRegen(0, 80)).toBeGreaterThan(1);
+	expect(chargeAfterRegen(0, 80, COURIER_CHARGE_AU)).toBeGreaterThan(1);
 
 	// The worst case on the map is wider than the tank, and that is a finding
 	// rather than a failure. The widest leg the generator can produce is a body
@@ -490,12 +497,18 @@ test("a ship at zero charge in deep space can always reach a station", () => {
 	// "any leg in one hop" — it is "any leg, in hops, because regeneration has no
 	// ceiling in time".
 	const worstLegAu = 2 * MAX_ORBIT_AU + ARRIVAL_CLEARANCE_AU;
-	expect(worstLegAu).toBeGreaterThan(CHARGE_CAPACITY_AU);
+	expect(worstLegAu).toBeGreaterThan(COURIER_CHARGE_AU);
 	// Two full charges clear it with room to spare, so the stranding case is a
 	// wait, never a dead end.
-	expect(2 * CHARGE_CAPACITY_AU).toBeGreaterThan(worstLegAu);
+	expect(2 * COURIER_CHARGE_AU).toBeGreaterThan(worstLegAu);
+	// And it holds for every hull a pilot can fly, not only the courier: the
+	// charge is per hull since #554 and the rate is one (#185 D6).
+	for (const id of PURCHASABLE_HULL_IDS)
+		expect([id, 2 * HULL_SPECS[id].chargeAu > worstLegAu]).toEqual([id, true]);
 	// And the wait for one full tank is §7's twelve minutes, not an hour.
-	expect(chargeAfterRegen(0, 12 * 60)).toBe(CHARGE_CAPACITY_AU);
+	expect(chargeAfterRegen(0, 12 * 60, COURIER_CHARGE_AU)).toBe(
+		COURIER_CHARGE_AU,
+	);
 });
 
 test("cruise does not move a ship with no charge", () => {

@@ -108,6 +108,8 @@ const kill = await page.evaluate(() => {
 		},
 	};
 	const cargoBefore = { ...g.commander.cargo };
+	// #564: the kill's combat credit, read across the kill the game flew.
+	const pendingBefore = g.ladderPending.combat;
 	g.keys.add(" ");
 	// Aim, then step: the step fires along the aim it starts with. Aiming after
 	// the step shoots where a fleeing raider was, and the capture lost one so.
@@ -139,12 +141,26 @@ const kill = await page.evaluate(() => {
 			expiresAt: c.expiresAt,
 		})),
 		cargoBefore,
+		pendingDelta: g.ladderPending.combat - pendingBefore,
+		ownHull: g.commander.hull,
 	};
 });
 check(
 	"a kill ends the encounter as destroyed",
 	!kill.error && kill.encounter === null && kill.lastExit.endsWith("destroyed"),
 	JSON.stringify(kill),
+);
+// #564: the kill path the game flew prices the raider on the combat ladder,
+// pending until a dock. Read off the page's own formula, never restated.
+const expectedCredit = await page.evaluate(
+	async (own) =>
+		(await import("/src/kill-credit.ts")).killCredit({ hull: own }, "raider"),
+	kill.ownHull,
+);
+check(
+	"the kill is pending combat credit at the game's price for a raider (#564)",
+	expectedCredit > 0 && Math.abs(kill.pendingDelta - expectedCredit) < 1e-9,
+	`${kill.pendingDelta} against ${expectedCredit}`,
 );
 check(
 	"the kill writes the slot's destruction into world state",

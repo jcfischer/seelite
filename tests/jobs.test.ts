@@ -26,8 +26,6 @@ import {
 	deliveryCandidates,
 	jobMark,
 } from "../src/jobs";
-// `JUMP_TANK_LY` is the jump tank's capacity (`hyperspace.ts`), in LY.
-import { JUMP_TANK_LY } from "../src/hyperspace";
 import {
 	boardAt,
 	boardContext,
@@ -72,6 +70,7 @@ const deliveriesFrom = (systemIndex: number, localCarrierId: string) =>
 		SYSTEMS[systemIndex],
 		generateContents,
 		carrierKey(systemIndex, localCarrierId),
+		JUMP_RANGE_LY,
 	);
 
 /** The board, through the one helper every caller binds with. */
@@ -169,13 +168,6 @@ describe("§2 — a binder is a pure function of station, world and clock", () =
 		expect(terms(after)).toEqual(terms(before));
 	});
 
-	test('the tank reaches a jump, so "one jump within it" can fail', () => {
-		// The destination filter reads `JUMP_RANGE_LY`, so a check against that
-		// same constant restates it. The principal's ruling was about the
-		// **tank**, and this is the line where the two meet.
-		expect(JUMP_RANGE_LY).toBeLessThanOrEqual(JUMP_TANK_LY);
-	});
-
 	test("a station with no reachable destination posts nothing, loudly", () => {
 		// The decline path the floor's claim depends on: it exists, and after
 		// this round it is the *only* one. The courier used to decline a second
@@ -209,6 +201,7 @@ describe("§2 — a binder is a pure function of station, world and clock", () =
 							record,
 							generateContents,
 							stationKeyOf(record, station),
+							JUMP_RANGE_LY,
 						).length === 0
 					)
 						continue;
@@ -429,6 +422,7 @@ describe("#455 — a consignment is drawn from the widest-spread goods", () => {
 					system,
 					generateContents,
 					stationKeyOf(system, station),
+					JUMP_RANGE_LY,
 				).find(
 					(d) =>
 						carrierKey(d.system.index, d.station.localCarrierId) ===

@@ -8,6 +8,7 @@
 import { describe, expect, test } from "bun:test";
 import type { PartSpec, VoiceKind } from "../src/music-score";
 import { resolvePart, VoiceBank } from "../src/music-voices";
+import { period, rms } from "./lib/audio-measure";
 
 const SR = 48000;
 const unity = { gain: () => 1 };
@@ -22,42 +23,6 @@ const render = (b: VoiceBank, frames: number) => {
 	for (let f = 0; f < frames; f += 128)
 		b.render(out.subarray(f, Math.min(frames, f + 128)), f, unity);
 	return out;
-};
-
-const rms = (x: Float32Array, a = 0, b = x.length) => {
-	let s = 0;
-	for (let i = a; i < b; i++) s += x[i] * x[i];
-	return Math.sqrt(s / Math.max(1, b - a));
-};
-
-/** The period, in frames, with the strongest autocorrelation between two
- *  lags: a fundamental estimate for a steady tone. */
-const period = (
-	x: Float32Array,
-	from: number,
-	len: number,
-	lo: number,
-	hi: number,
-) => {
-	// The autocorrelation at one lag.
-	const at = (lag: number) => {
-		let r = 0;
-		for (let i = from; i < from + len; i++) r += x[i] * x[i + lag];
-		return r;
-	};
-	let best = lo;
-	let bestR = Number.NEGATIVE_INFINITY;
-	for (let lag = lo; lag <= hi; lag++) {
-		const r = at(lag);
-		if (r > bestR) {
-			bestR = r;
-			best = lag;
-		}
-	}
-	// Parabolic refinement around the peak.
-	const a = at(best - 1);
-	const c = at(best + 1);
-	return best + (0.5 * (a - c)) / (a - 2 * bestR + c);
 };
 
 const KINDS: VoiceKind[] = ["pad", "pluck", "fm", "noise", "tone"];

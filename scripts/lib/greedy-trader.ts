@@ -47,6 +47,7 @@
  * measures, and `measure-cruise-pacing.ts` is where the flown comparison lives.
  */
 
+import { HULL_SPECS, PLAYER_BASELINE_HULL } from "../../src/hull";
 import { type CarrierKey, carrierKey } from "../../src/carrier-key";
 import { DEFAULT_CRUISE, legSeconds, type Mass } from "../../src/cruise";
 import { type DeficitMap, readDeficit, recordTrade } from "../../src/deficits";
@@ -63,7 +64,6 @@ import {
 	EQUIPMENT,
 	type Equipment,
 	FUEL_CR_PER_LY,
-	FUEL_TANK_LY,
 	fullKitCr,
 	HOLD_REFERENCE_T,
 	listsCommodity,
@@ -86,6 +86,10 @@ import {
 	type SystemContents,
 } from "../../src/system";
 import type { Vec3 } from "../../src/vec3";
+
+/** The courier's tank: this instrument models the baseline hull, and the
+ *  reach is a hull's since #554 rather than the galaxy's constant. */
+const COURIER_TANK_LY = HULL_SPECS[PLAYER_BASELINE_HULL].tankLy;
 
 // ---------------------------------------------------------------------------
 // The modelled numbers, all of them named
@@ -188,7 +192,7 @@ export const DEFAULT_NEIGHBOUR_LIMIT = 8;
 // The world, as the trader sees it
 // ---------------------------------------------------------------------------
 
-interface Port {
+export interface Port {
 	record: SystemRecord;
 	contents: SystemContents;
 	station: Station;
@@ -244,7 +248,10 @@ const massesOf = (contents: SystemContents, gameTimeS: number): Mass[] =>
 		.filter((b) => b.kind !== "station")
 		.map((b) => ({ id: b.id, pos: b.pos, radiusKm: b.radiusKm }));
 
-function portsOf(record: SystemRecord, contents: SystemContents): Port[] {
+export function portsOf(
+	record: SystemRecord,
+	contents: SystemContents,
+): Port[] {
 	return contents.stations.map((station) => ({
 		record,
 		contents,
@@ -401,7 +408,7 @@ function basket(
 }
 
 /** Seconds from one port to another inside one system, at the current clock. */
-function intraSeconds(
+export function intraSeconds(
 	from: Port,
 	to: Port,
 	gameTimeS: number,
@@ -423,7 +430,7 @@ function intraSeconds(
 
 /** Seconds for a jump: wind-up, then the arrival-point-to-station leg §7.4
  *  makes a function of the inbound bearing. */
-function jumpSeconds(
+export function jumpSeconds(
 	from: Port,
 	to: Port,
 	gameTimeS: number,
@@ -637,7 +644,7 @@ function intraOptions(here: Port, st: Stance): Hop[] {
 function jumpOptions(here: Port, world: World, st: Stance): Hop[] {
 	const { systems, contentsFor } = world;
 	const out: Hop[] = [];
-	const inRange = neighbours(systems, here.record);
+	const inRange = neighbours(systems, here.record, COURIER_TANK_LY);
 	// Counted per **enumeration**, not per decision: `jumpOptions` runs twice
 	// for each decision point — once from `flyingOptions` and once inside
 	// `waitOption` — so a denominator called "decisions" was double what a
@@ -646,14 +653,14 @@ function jumpOptions(here: Port, world: World, st: Stance): Hop[] {
 	st.tally.enumerations++;
 	for (const record of inRange.slice(0, st.neighbourLimit)) {
 		const ly = distanceLy(here.record.pos, record.pos);
-		// `neighbours` already bounds this at `JUMP_RANGE_LY`, which is
-		// `FUEL_TANK_LY` — so there is no separate range check to make, and this
-		// asserts the identity rather than assuming it. The tank is not *tracked*
+		// `neighbours` already bounds this at the courier's tank, which is its
+		// range and its capacity at once (#554) — so there is no separate range
+		// check to make, and this asserts the identity rather than assuming it. The tank is not *tracked*
 		// because fuel is sold at every station (§7) and the trader docks on every
 		// hop: a full refill is always one purchase away, so paying is refuelling.
-		if (ly > FUEL_TANK_LY)
+		if (ly > COURIER_TANK_LY)
 			throw new Error(
-				`neighbour at ${ly} LY is past the ${FUEL_TANK_LY} LY tank`,
+				`neighbour at ${ly} LY is past the ${COURIER_TANK_LY} LY tank`,
 			);
 		const fuelCr = ly * FUEL_CR_PER_LY;
 		if (fuelCr > st.credits) continue;
@@ -1016,6 +1023,28 @@ export interface RunOptions {
 	 * prints the spread, rather than treating one start as the answer.
 	 */
 	startPolicy?: StartPolicy;
+	/**
+	 * Called once per flown hop, after it is booked — an observer, never a
+	 * steer: nothing it returns is read, so an arm with one flies exactly the
+	 * run an arm without one does. That holds for an observer that only reads:
+	 * `from` and `to` are the run's own live ports, and one that mutates them
+	 * steers the run. `measure-ladder-rates.ts` (#562) tallies
+	 * realised margin and the legs a raider could meet from it.
+	 */
+	onHop?: (hop: HopRecord) => void;
+}
+
+/** What `RunOptions.onHop` is told about one flown hop. */
+export interface HopRecord {
+	kind: "intra" | "jump";
+	/** Game seconds at departure, and at arrival. */
+	departS: number;
+	arriveS: number;
+	from: Port;
+	to: Port;
+	/** Σ units × (sale − purchase) at the quoted prices — the hop's margin. */
+	profitCr: number;
+	fuelCr: number;
 }
 
 export function run(
@@ -1160,6 +1189,9 @@ export function run(
 		led.credits -= hop.fuelCr;
 		if (hop.kind === "jump") jumpMinutes += JUMP_SECONDS / 60;
 		dockMinutes += dockSeconds / 60;
+		// Read before the clock moves: `t - hop.seconds` after it is not `t` in
+		// floating point, and a hop would depart one ulp before the last arrived.
+		const departS = t;
 		t += hop.seconds;
 		const arriveMin = t / 60;
 		mark(hop.to.key, -1, arriveMin);
@@ -1172,6 +1204,15 @@ export function run(
 			tonnesLifted += tonnes;
 			ladenHops++;
 		}
+		opts.onHop?.({
+			kind: hop.kind,
+			departS,
+			arriveS: t,
+			from: here,
+			to: hop.to,
+			profitCr: hop.profitCr,
+			fuelCr: hop.fuelCr,
+		});
 		here = hop.to;
 		dockTl.push(here.record.displayTL);
 		dockRadius.push(here.record.t);

@@ -13,7 +13,13 @@
  */
 
 import { describe, expect, test } from "bun:test";
-import { CHARGE_CAPACITY_AU, CHARGE_REGEN_AU_PER_S } from "../src/cruise";
+import { CHARGE_REGEN_AU_PER_S } from "../src/cruise";
+import { HULL_SPECS } from "../src/hull";
+
+/** The courier's drive charge — the hull every row here flies. The charge is
+ *  per hull since #554; `CHARGE_CAPACITY_AU` was this figure under one name. */
+const COURIER_CHARGE_AU = HULL_SPECS.courier.chargeAu;
+
 /**
  * The wind-up, from the module that owns it.
  *
@@ -36,8 +42,8 @@ const flying = (over: Partial<FlightFloorState> = {}): FlightFloorState => ({
 	jumpChargeLeftS: 0,
 	throttle: 0,
 	assist: true,
-	chargeAu: CHARGE_CAPACITY_AU,
-	chargeCapacityAu: CHARGE_CAPACITY_AU,
+	chargeAu: COURIER_CHARGE_AU,
+	chargeCapacityAu: COURIER_CHARGE_AU,
 	chargeRegenAuPerS: CHARGE_REGEN_AU_PER_S,
 	...over,
 });
@@ -188,10 +194,10 @@ describe("CHARGE — the second consumable, and the anti-stranding rule", () => 
 	/** The capacity is the sim's, not a literal here — two spellings of one
 	 *  quantity is how a retune leaves the instrument lying. */
 	test("the pair is the sim's own capacity and rate", () => {
-		expect(CHARGE_CAPACITY_AU).toBe(12);
+		expect(COURIER_CHARGE_AU).toBe(12);
 		expect(CHARGE_REGEN_AU_PER_S * 60).toBeCloseTo(1, 12);
 		expect(cell(flying({ chargeAu: 3 }), "CHARGE").value).toContain(
-			`/${CHARGE_CAPACITY_AU} AU`,
+			`/${COURIER_CHARGE_AU} AU`,
 		);
 	});
 });
@@ -249,7 +255,7 @@ describe("the widest reading, which the strip is laid out against", () => {
 	 */
 	test("no reachable reading is longer than its bound", () => {
 		const widest = flightFloorWidest(
-			CHARGE_CAPACITY_AU,
+			COURIER_CHARGE_AU,
 			CHARGE_REGEN_AU_PER_S,
 			SPOOL_SECONDS,
 		);
@@ -264,8 +270,8 @@ describe("the widest reading, which the strip is laid out against", () => {
 							0.05,
 							1,
 							9.95,
-							CHARGE_CAPACITY_AU - 0.05,
-							CHARGE_CAPACITY_AU,
+							COURIER_CHARGE_AU - 0.05,
+							COURIER_CHARGE_AU,
 						]) {
 							for (const c of flightFloorCells({
 								regime,
@@ -274,7 +280,7 @@ describe("the widest reading, which the strip is laid out against", () => {
 								throttle,
 								assist,
 								chargeAu,
-								chargeCapacityAu: CHARGE_CAPACITY_AU,
+								chargeCapacityAu: COURIER_CHARGE_AU,
 								chargeRegenAuPerS: CHARGE_REGEN_AU_PER_S,
 							})) {
 								checked++;
@@ -300,7 +306,7 @@ describe("the widest reading, which the strip is laid out against", () => {
 	 */
 	test("the bound is close to the longest reachable reading", () => {
 		const widest = flightFloorWidest(
-			CHARGE_CAPACITY_AU,
+			COURIER_CHARGE_AU,
 			CHARGE_REGEN_AU_PER_S,
 			SPOOL_SECONDS,
 		);
@@ -310,8 +316,8 @@ describe("the widest reading, which the strip is laid out against", () => {
 			jumpChargeLeftS: 0,
 			throttle: 1,
 			assist: false,
-			chargeAu: CHARGE_CAPACITY_AU - 0.05,
-			chargeCapacityAu: CHARGE_CAPACITY_AU,
+			chargeAu: COURIER_CHARGE_AU - 0.05,
+			chargeCapacityAu: COURIER_CHARGE_AU,
 			chargeRegenAuPerS: CHARGE_REGEN_AU_PER_S,
 		}).find((c) => c.label === "CHARGE") as { value: string };
 		expect(
@@ -323,8 +329,8 @@ describe("the widest reading, which the strip is laid out against", () => {
 			jumpChargeLeftS: 0,
 			throttle: 0,
 			assist: true,
-			chargeAu: CHARGE_CAPACITY_AU,
-			chargeCapacityAu: CHARGE_CAPACITY_AU,
+			chargeAu: COURIER_CHARGE_AU,
+			chargeCapacityAu: COURIER_CHARGE_AU,
 			chargeRegenAuPerS: CHARGE_REGEN_AU_PER_S,
 		}).find((c) => c.label === "MODE") as { value: string };
 		expect(widest.MODE).toBe(longestMode.value);
@@ -341,8 +347,8 @@ describe("the widest reading, which the strip is laid out against", () => {
 							jumpChargeLeftS: 0,
 							throttle: 0,
 							assist: true,
-							chargeAu: CHARGE_CAPACITY_AU,
-							chargeCapacityAu: CHARGE_CAPACITY_AU,
+							chargeAu: COURIER_CHARGE_AU,
+							chargeCapacityAu: COURIER_CHARGE_AU,
 							chargeRegenAuPerS: CHARGE_REGEN_AU_PER_S,
 						}).find((c) => c.label === "MODE") as { value: string }
 					).value.length,
@@ -387,7 +393,7 @@ describe("the jump wind-up", () => {
 		// A jump reading longer than `SPOOL 3.0s` would move the bound, and the
 		// only tier that could see the consequence is the one with a canvas.
 		const widest = flightFloorWidest(
-			CHARGE_CAPACITY_AU,
+			COURIER_CHARGE_AU,
 			CHARGE_REGEN_AU_PER_S,
 			SPOOL_SECONDS,
 		);

@@ -1410,7 +1410,8 @@ HULL_PRICE_STEP_CR     = 100 Cr       HULL_CEILING_HOLD_T = 197 t
 | freighter | 60 t | 68,400 Cr | 3.58× |
 
 `patrol` (6 t, 16,800 Cr) and `raider` (10 t, 22,900 Cr) are priced by the same
-law and gated behind #26's D3 rating; the two capitals carry `priceCr: null`,
+law; they sit on the combat ladder at rungs 6 and 7 (#562 D7) and are not sold
+until #565 and #566 close. The two capitals carry `priceCr: null`,
 because 400 t and 200 t are past the ceiling and outside the range the curve was
 measured over, and #56 rules they dock at nothing.
 
@@ -1484,8 +1485,8 @@ either way — 0.621 / 0.613 / 0.605 / 0.609 across the same four windows.
 rather than a measurement.** The greedy trader fears no pirate and does not
 route, so a hardpoint, a point of integrity, a light year of tank and an AU of
 charge were never *varied*: the sweep measured the hold and conceded the rest.
-#8's combat balance and #183's rating own those axes, and this section invents
-no figure for them — which is why the interceptor, the hardest-accelerating hull
+#8's combat balance owns those axes — #183's ladders gate hulls by rung and
+price none of them — and this section invents no figure for them — which is why the interceptor, the hardest-accelerating hull
 in the game, prices below the courier.
 
 **Two of the sweep's own corrections moved the answer the same way** (#25's
@@ -2021,7 +2022,8 @@ settled it.
   narrower than what it received: the combat axes — hardpoints, integrity,
   thrust — have no price in a trading economy and belong to
   [#8](https://github.com/jcfischer/seelite/issues/8), and whether a shipyard
-  lists `patrol` and `raider` is #183's rating. **§5.6 re-opens the price half of
+  lists `patrol` and `raider` is #183's ladder gate (#562 D7) together with
+  #565 and #566. **§5.6 re-opens the price half of
   this line.** §7.1's curve was fitted with the pump excluded, which #182 recorded as
   the condition of getting an answer at all; a spread changes what a hold earns, so
   the exponent and the seven prices are owed a fresh run of

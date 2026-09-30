@@ -356,6 +356,8 @@ test("a jump or a reset takes the cargo contacts with the canisters", () => {
 					CANISTER_RADIUS_KM,
 					CARGO_CONTACT_COLOUR,
 					QUIET_GUN: null,
+					QUIET_WEAPONS: null,
+					SILENT_WEAPONS: null,
 					beginScanHold: () => ({ key: null, chargeS: 0 }),
 				},
 			),

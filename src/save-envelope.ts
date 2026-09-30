@@ -31,7 +31,7 @@
 
 import { type CarrierKey, isCarrierKey } from "./carrier-key";
 import { type FirstDayChoice, isFirstDayChoice } from "./first-day-choice";
-import { HULL_IDS, type HullId } from "./hull";
+import { HULL_IDS, HULL_SPECS, type HullId } from "./hull";
 import { generateGalaxy } from "./galaxy";
 import { generateContents } from "./system";
 import { emptyRequests, parseRequests, type RequestsState } from "./requests";
@@ -40,6 +40,12 @@ import {
 	newCommander,
 	STARTING_CREDITS,
 } from "./station-commerce";
+import {
+	type LadderRecord,
+	parseLadders,
+	seededLadderRecord,
+	serializeLadders,
+} from "./ladder";
 import { COMMODITIES } from "./market";
 import { fnv1a } from "./rng";
 import {
@@ -101,8 +107,16 @@ import {
  * Every older record loads as `free`: a pilot who already has a save is not a
  * new pilot, and the guided day's push would otherwise start talking to them
  * about launching.
+ *
+ * **7 adds `commander.ladders` (#564, #183 D9)**: the three banked totals,
+ * the per-galaxy visited-system and docked-station sets, the purchase basis a
+ * sale's margin is read against, and the play log. Every older record migrates
+ * at zero on every ladder, its sets seeded with every system its own world
+ * marks visited (§7's flags, per galaxy) and the station it is docked at, and
+ * keeps everything it owns. Credit earned since
+ * the last dock is not here at all: it is lost with the ship (#183 D7).
  */
-export const SAVE_SCHEMA_VERSION = 6;
+export const SAVE_SCHEMA_VERSION = 7;
 /**
  * Versions this parser still reads but no longer writes.
  *
@@ -120,10 +134,12 @@ export const SAVE_SCHEMA_VERSION = 6;
  * data rather than emptying it, and the first with a real population behind
  * it.
  *
- * **5 is every save written between #453 and #408**, so it is the population a
+ * **5 is every save written between #453 and #408.**
+ *
+ * **6 is every save written between #408 and #564**, so it is the population a
  * player most likely holds.
  */
-export const LEGACY_SAVE_SCHEMA_VERSIONS = [2, 3, 4, 5] as const;
+export const LEGACY_SAVE_SCHEMA_VERSIONS = [2, 3, 4, 5, 6] as const;
 
 /**
  * What a legacy version may not contain.
@@ -142,10 +158,11 @@ export const LEGACY_SAVE_SCHEMA_VERSIONS = [2, 3, 4, 5] as const;
 export const LEGACY_SCHEMA_FORBIDS: Readonly<
 	Partial<Record<number, readonly string[]>>
 > = {
-	2: ["requests", "firstDay"],
-	3: ["firstDay"],
-	4: ["firstDay"],
-	5: ["firstDay"],
+	2: ["requests", "firstDay", "ladders"],
+	3: ["firstDay", "ladders"],
+	4: ["firstDay", "ladders"],
+	5: ["firstDay", "ladders"],
+	6: ["ladders"],
 };
 
 /**
@@ -286,6 +303,10 @@ export interface CommanderRecord {
 	permadeath: boolean;
 	/** #408 D4: New game's choice, written at creation and never edited. */
 	firstDay: FirstDayChoice;
+	/** The three ladders' banked record (#183 D9). Beside `state` in the one
+	 *  record, so a death's revert to `lastDocked` moves the credits and the
+	 *  rungs together. */
+	ladders: LadderRecord;
 	flight: SavedFlight;
 }
 
@@ -299,9 +320,17 @@ const fail = (message: string): never => {
 	throw new Error(`save: ${message}`);
 };
 
-/** A new game's commander: #26's baseline hull, at rest, undocked, full
- *  charge. `chargeAu` is the caller's because `CHARGE_CAPACITY_AU` belongs to
- *  the travel model and this module is not it. */
+/** A new game's commander: at rest, undocked, and a charge the caller names —
+ *  the renderer owns the drive charge's session, and a full one is the hull's
+ *  `chargeAu` (#554).
+ *
+ *  **The boundary moved in one direction and on purpose.** The charge of a
+ *  *new* record is still the caller's. What this module now owns is the
+ *  *ceiling on load*: `parseCommander` clamps a stored tank and charge to the
+ *  record's own hull, because a record written before #554 filled every hull
+ *  to the courier's figures, and the parser is the one place every restore
+ *  passes through. It reads the roster (`hull.ts`, a leaf) and nothing of
+ *  the travel model. */
 export const newCommanderRecord = (
 	hull: HullId,
 	options: {
@@ -320,6 +349,14 @@ export const newCommanderRecord = (
 	chargeAu: options.chargeAu ?? 0,
 	permadeath: options.permadeath ?? false,
 	firstDay: options.firstDay ?? "free",
+	// A new game is paid for nothing it starts with: its own system is seeded
+	// (#183 D9's migration rule, applied to the start). The start station is
+	// not: its first dock, a guided start's included, earns one kind.
+	ladders: seededLadderRecord(
+		options.galaxyIndex ?? 0,
+		options.systemIndex ?? 0,
+		null,
+	),
 	flight: {
 		pos: [0, 0, 0],
 		vel: [0, 0, 0],
@@ -376,6 +413,7 @@ const canonicalCommander = (record: CommanderRecord) => {
 		chargeAu: record.chargeAu,
 		permadeath: record.permadeath,
 		firstDay: record.firstDay,
+		ladders: serializeLadders(record.ladders),
 		flight: {
 			pos: [...record.flight.pos],
 			vel: [...record.flight.vel],
@@ -462,6 +500,9 @@ const parseCommander = (
 	raw: unknown,
 	now: number,
 	version: number,
+	/** The loaded world's §7 visited flags per galaxy — what a pre-7 record's
+	 *  ladders are seeded from, so a veteran is not paid for old places. */
+	visitedSystems: Readonly<Record<number, readonly number[]>>,
 ): CommanderRecord => {
 	const o = asObject(raw, "commander");
 	// `Partial` is what makes the `undefined` arm real to the compiler: typed as
@@ -513,12 +554,15 @@ const parseCommander = (
 	// A legacy record has no choice and loads as free — the forbids table above
 	// has already refused one that carries the key. A current record without it
 	// is truncated, and #89's obligation 5 says that must not read as free.
-	const legacy = version !== SAVE_SCHEMA_VERSION;
-	if (!legacy && !isFirstDayChoice(o.firstDay))
+	// **Keyed on the version that added it, not on "current".** When 7 made 6
+	// legacy, a `version !== SAVE_SCHEMA_VERSION` test here would have loaded
+	// every guided v6 commander as free.
+	const hasFirstDay = version >= 6;
+	if (hasFirstDay && !isFirstDayChoice(o.firstDay))
 		fail(`commander: firstDay ${String(o.firstDay)} is not guided or free`);
-	const firstDay: FirstDayChoice = legacy
-		? "free"
-		: (o.firstDay as FirstDayChoice);
+	const firstDay: FirstDayChoice = hasFirstDay
+		? (o.firstDay as FirstDayChoice)
+		: "free";
 	// **Bounded, not merely finite — and bounded on both indices.** For a round
 	// the system index was checked only for being a non-negative integer while
 	// the comment claimed it covered "a system the galaxy does not have", so
@@ -541,6 +585,30 @@ const parseCommander = (
 	const systemIndex = num(o, "systemIndex", "commander");
 	if (!isSystemIndex(systemIndex))
 		fail(`commander: ${systemIndex} is not a system index`);
+	// #183 D9: an older record migrates at zero, seeded with where it has been. A
+	// current one without the key is truncated, and #89's obligation 5 says a
+	// truncation must not read as zero.
+	if (version >= 7 && o.ladders === undefined)
+		fail("commander: ladders is missing");
+	const ladders =
+		version >= 7
+			? parseLadders(o.ladders)
+			: seededLadderRecord(
+					galaxyIndex,
+					systemIndex,
+					(dockedAt as CarrierKey | null) ?? null,
+					visitedSystems,
+				);
+	// **A basis names a good aboard, and no more of it than is aboard.** The
+	// cargo check above is the model: a line for a good nothing can price, or
+	// for tonnes the hold does not carry, is a margin the pilot could be paid
+	// for goods that are not there.
+	for (const [good, line] of Object.entries(ladders.basis)) {
+		if (!goodNames.has(good))
+			fail(`commander.ladders.basis: ${good} is not a commodity`);
+		if (line.units > (cargo[good] ?? 0))
+			fail(`commander.ladders.basis: ${good} covers more than is aboard`);
+	}
 	return {
 		requests:
 			version === 2
@@ -559,15 +627,29 @@ const parseCommander = (
 			credits: num(state, "credits", "commander.state"),
 			cargo,
 			ownedEquipment: [...(equipment as string[])].sort(),
-			fuelLy: num(state, "fuelLy", "commander.state"),
+			// **Clamped to the hull's tank, not refused** (#554). Every save
+			// before it filled to the courier's 7 LY whatever the hull, so a
+			// short-tank commander's record carries more fuel than the hull
+			// holds; that is a figure a rule moved under, not a corrupt record.
+			// A new record, so D8's untouched-on-disk rule is kept.
+			fuelLy: Math.min(
+				num(state, "fuelLy", "commander.state"),
+				HULL_SPECS[hull as HullId].tankLy,
+			),
 			hull: hull as HullId,
 		},
 		galaxyIndex,
 		systemIndex,
 		dockedAt: (dockedAt as CarrierKey | null) ?? null,
-		chargeAu: num(o, "chargeAu", "commander"),
+		// Likewise the drive charge: every hull regenerated to the courier's
+		// 12 AU before #554, which a 10 AU hull does not hold.
+		chargeAu: Math.min(
+			num(o, "chargeAu", "commander"),
+			HULL_SPECS[hull as HullId].chargeAu,
+		),
 		permadeath: o.permadeath as boolean,
 		firstDay,
+		ladders,
 		flight: parseFlight(o.flight),
 	};
 };
@@ -622,6 +704,7 @@ export function parseSave(raw: unknown): SaveEnvelope {
 		o.commander,
 		world.gameTime,
 		version as number,
+		Object.fromEntries(world.galaxies.map((g, i) => [i, g.visited])),
 	);
 	const offers = [
 		...Object.values(commander.requests.byId).map((r) => r.terms),

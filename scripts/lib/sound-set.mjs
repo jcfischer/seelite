@@ -17,8 +17,20 @@
 
 /** Seconds are render lengths: the cue's ring plus room for the tail. */
 export const SOUND_SET = Object.freeze([
-	{ name: "laser", seconds: 0.5, cue: { kind: "laser" }, legacy: ["laser"] },
-	{ name: "hit", seconds: 0.6, cue: { kind: "hullHit" }, legacy: ["hit"] },
+	// The `pew` and `thud` voices are the sounds before #545, under the names
+	// they had, so their bands still hold them to the engine before #552.
+	{
+		name: "laser",
+		seconds: 0.5,
+		cue: { kind: "laser", voice: "pew" },
+		legacy: ["laser"],
+	},
+	{
+		name: "hit",
+		seconds: 0.6,
+		cue: { kind: "hullHit", voice: "thud" },
+		legacy: ["hit"],
+	},
 	{
 		name: "explosion",
 		seconds: 1.2,
@@ -48,10 +60,212 @@ export const SOUND_SET = Object.freeze([
 	// existed before #544, so a capture at an older ref renders them as absent.
 	{ name: "cruise-engage", seconds: 1.8, cue: { kind: "cruiseEngage" } },
 	{ name: "cruise-drop", seconds: 1.4, cue: { kind: "cruiseDrop" } },
+	// #546's console voices. None has a `legacy` method: the consoles were
+	// silent before #546, so an older ref renders them as absent.
+	{
+		name: "notify-message",
+		seconds: 0.6,
+		cue: { kind: "notify", tone: "message" },
+	},
+	{ name: "notify-good", seconds: 0.6, cue: { kind: "notify", tone: "good" } },
+	{ name: "notify-bad", seconds: 0.6, cue: { kind: "notify", tone: "bad" } },
+	{ name: "press", seconds: 0.3, cue: { kind: "press" } },
+	{ name: "refuse", seconds: 0.4, cue: { kind: "refuse" } },
+	{ name: "focus", seconds: 0.3, cue: { kind: "focus" } },
 	...flightTimelines(),
+	// #545's voices. None has a `legacy` method: a crack, a clang, a shield
+	// and a landed hit did not exist before #545, so an older ref renders them
+	// as absent.
+	{
+		name: "laser-crack",
+		seconds: 0.4,
+		cue: { kind: "laser", voice: "crack" },
+	},
+	{ name: "gun-locked", seconds: 0.3, cue: { kind: "gunLocked" } },
+	{
+		name: "shield-fore",
+		seconds: 0.6,
+		cue: { kind: "shieldHit", pool: "fore", share: 1, sided: true },
+	},
+	{
+		name: "shield-aft",
+		seconds: 0.6,
+		cue: { kind: "shieldHit", pool: "aft", share: 1, sided: true },
+	},
+	{
+		name: "shield-onepool",
+		seconds: 0.6,
+		cue: { kind: "shieldHit", pool: "fore", share: 1, sided: false },
+	},
+	{
+		name: "shield-fore-low",
+		seconds: 0.6,
+		cue: { kind: "shieldHit", pool: "fore", share: 0.1, sided: true },
+	},
+	{
+		name: "hull-clang",
+		seconds: 0.8,
+		cue: { kind: "hullHit", voice: "clang" },
+	},
+	{
+		name: "landed-shield",
+		seconds: 0.4,
+		cue: { kind: "hitLanded", on: "shield" },
+	},
+	{ name: "landed-hull", seconds: 0.4, cue: { kind: "hitLanded", on: "hull" } },
+	...weaponTimelines(),
+	// #534's four voices after the cut, each alone. The flash's cue is whole
+	// in itself; the others carry the schedule's timing, so they are taken
+	// from it (`scheduled`: the first cue of each kind a jump plays on those
+	// arms, each at its own phase from the first) rather than restated here.
+	// The ride is heard with its close. The jumps below play them together.
+	...["rings", "bed"].map((voice) => ({
+		name: `witchspace-ride-${voice}`,
+		seconds: 3.4,
+		scheduled: {
+			kinds: ["witchspaceRide", "witchspaceRideClose"],
+			arms: voice,
+		},
+	})),
+	{
+		name: "witchspace-unfold",
+		seconds: 1.9,
+		scheduled: { kinds: ["witchspaceUnfold"], arms: "" },
+	},
+	{
+		name: "witchspace-rift",
+		seconds: 4.8,
+		scheduled: { kinds: ["witchspaceRift"], arms: "" },
+	},
+	{
+		name: "witchspace-flash-boom",
+		seconds: 1.4,
+		cue: { kind: "witchspaceFlash", voice: "boom" },
+	},
+	{
+		name: "witchspace-flash-glass",
+		seconds: 1.4,
+		cue: { kind: "witchspaceFlash", voice: "glass" },
+	},
+	...witchspaceTimelines(),
+	// #577's reverb, heard to its end. The renders above stop where the thin
+	// voices did, which cuts a tail of more than two seconds; these are the
+	// same cues, long enough to hear it ring out. Longer entries rather than
+	// longer windows on the ones above, so every band there keeps its window.
+	{
+		name: "explosion-tail",
+		seconds: 4,
+		cue: { kind: "explosion" },
+		legacy: ["explosion"],
+	},
+	{
+		name: "hull-clang-tail",
+		seconds: 3,
+		cue: { kind: "hullHit", voice: "clang" },
+	},
+	{
+		name: "witchspace-flash-boom-tail",
+		seconds: 4,
+		cue: { kind: "witchspaceFlash", voice: "boom" },
+	},
 	...musicTimelines(),
 	...adaptiveTimelines(),
 ]);
+
+/**
+ * #534's jumps, flown through the real schedule (`witchspaceCues`) and the
+ * real flight bed, so what is heard is what a jump plays: the wind-up from
+ * half a second in, the cut, and the exit to the rift's close. `arms` is a
+ * `?witchsound=` value.
+ *
+ * The first is the defaults. Each after it flips one arm, so a listen
+ * compares one question at a time rather than a grid. The pilot burns at half
+ * before the cut and is at rest after it, as `clearFlightSession` leaves a
+ * ship that has jumped: so the bed after the cut is the hum, which is what
+ * the `engine` arm ducks.
+ */
+function witchspaceTimelines() {
+	const line = (name, seconds, arms, from = "jump") => ({
+		name,
+		seconds,
+		witchspace: { arms, from },
+	});
+	return [
+		// The defaults are the principal's ruling (2026-09-28); each render
+		// after them flips one arm back to an answer that lost.
+		line("jump", 12, ""),
+		line("jump-sweep", 12, "sweep"),
+		line("jump-rise", 12, "rise"),
+		line("jump-glass", 12, "glass"),
+		line("jump-rings", 12, "rings"),
+		line("jump-duck", 12, "duck"),
+		line("arrival", 9, "", "arrival"),
+		line("arrival-sound", 9, "arrivalsound", "arrival"),
+	];
+}
+
+/**
+ * #545's duels, flown by a scripted timeline through the real
+ * `weapon-sound.ts` step, so what is heard is what the mapping gives.
+ *
+ * `keys` are `[seconds, reading]` as `flightTimelines`' are, over a flat
+ * reading: `fired`, `trigger`, `heatLocked`, `heat` for the gun; `fore`,
+ * `aft`, `hull` for the player's own condition; and `target`, `tFore`,
+ * `tAft`, `tHull` for the selected target (`target: null` is none). The
+ * shot pacing is `stepGunFeedback`'s, and a fall in the ship's own condition
+ * is struck, as `applyDamage` would have it. `arms` is a `?weaponsound=`
+ * value.
+ */
+function weaponTimelines() {
+	// Two bursts of fire, the second running the gun into its lockout, a pull
+	// on the locked gun, and a release.
+	const bursts = [
+		[0, { fired: false, trigger: false, heat: 0 }],
+		[0.3, { fired: true, trigger: true }],
+		[1.3, { fired: false, trigger: false, heat: 0.35 }],
+		[1.8, { fired: true, trigger: true }],
+		[4.3, { heat: 1, ramp: true }],
+		[4.3, { fired: false, heatLocked: true }],
+		[4.6, { trigger: false }],
+		[4.9, { trigger: true }],
+		[5.1, { trigger: false }],
+	];
+	// A raider's beam held on the fore shield for two seconds, draining it,
+	// then a pause, then on the aft through to the hull.
+	const taken = [
+		[0, { fore: 106, aft: 106, hull: 100 }],
+		[0.3, {}],
+		[2.3, { fore: 60, ramp: true }],
+		[3.3, {}],
+		[3.4, { aft: 100 }],
+		[5.4, { aft: 0, ramp: true }],
+		[6.9, { hull: 70, ramp: true }],
+	];
+	// The player's fire landing on a selected target: shield, then hull.
+	const given = [
+		[0, { target: "r", tFore: 106, tAft: 106, tHull: 100, fired: false }],
+		[0.3, { fired: true, trigger: true }],
+		[2.3, { tFore: 0, ramp: true }],
+		[3.8, { tHull: 60, ramp: true }],
+		[3.8, { fired: false, trigger: false }],
+	];
+	const line = (name, seconds, arms, keys) => ({
+		name,
+		seconds,
+		weapons: { arms, keys },
+	});
+	return [
+		line("weapons-crack", 5.5, "crack,nolock", bursts),
+		line("weapons-beam", 5.5, "beam", bursts),
+		line("weapons-beam-heatflat", 5.5, "beam,heatflat", bursts),
+		line("weapons-pew", 5.5, "pew,nolock", bursts),
+		line("weapons-taken-sizzle", 7.3, "", taken),
+		line("weapons-taken-rearm", 7.3, "rearm", taken),
+		line("weapons-taken-plain", 7.3, "rearm,onepool,flat,thud", taken),
+		line("weapons-given", 4.3, "crack,given", given),
+		line("weapons-given-nogiven", 4.3, "crack", given),
+	];
+}
 
 /**
  * #548's adaptive music, rendered by stepping the real director
@@ -272,6 +486,10 @@ function flightTimelines() {
  *   game's context has been running long before a cue, and an offline render
  *   is a context that starts at the cue: see `probe-audio-cues.mjs` on what the
  *   limiter does in its first milliseconds.
+ * - `punch` — the engine's `?punch=` arm (#577), `heavy` or `thin`; null
+ *   plays the engine's default. Named on an engine that has no such arm, it
+ *   throws rather than render the one sound that engine has under either
+ *   name.
  *
  * **The engine before #552** has neither `attach` nor `play`. Its own
  * `ensure()` is called with `window.AudioContext` briefly pointing at the
@@ -291,6 +509,7 @@ export async function renderInPage({
 	leadS = 0.5,
 	uncapped = false,
 	levelsAt = [],
+	punch = null,
 }) {
 	/**
 	 * #548: step the director through `keys` at a fixed step and return what it
@@ -341,6 +560,11 @@ export async function renderInPage({
 		sampleRate,
 	);
 	const fx = new AudioFX();
+	if (punch !== null) {
+		if (!("punch" in fx))
+			throw new Error(`punch=${punch}: this engine has no punch arm`);
+		fx.punch = punch;
+	}
 	const modern = typeof fx.attach === "function";
 	// An entry this engine has nothing to play: a capture at an older ref.
 	// **A modern engine can be older too** (sage round 3): `origin/main` has
@@ -364,6 +588,10 @@ export async function renderInPage({
 	if (
 		(entry.flight && typeof fx.flight !== "function") ||
 		(entry.music && !synth) ||
+		(entry.witchspace && !knownKinds.includes("witchspaceRide")) ||
+		(entry.scheduled &&
+			!entry.scheduled.kinds.every((k) => knownKinds.includes(k))) ||
+		(entry.weapons && typeof fx.weapons !== "function") ||
 		(entry.cue && !entry.legacy && !modern) ||
 		(entry.cue && modern && !knownKinds.includes(entry.cue.kind))
 	)
@@ -465,6 +693,53 @@ export async function renderInPage({
 		state = (Math.imul(state, 1664525) + 1013904223) >>> 0;
 		return state / 4294967296;
 	};
+	if (entry.scheduled) {
+		const W = await import("/src/witchspace.ts");
+		const { witchspaceSoundArms } = await import("/src/witchspace-sound.ts");
+		const { arms, unknown } = witchspaceSoundArms(entry.scheduled.arms);
+		if (unknown.length)
+			throw new Error(`${entry.name}: arms ${entry.scheduled.arms}`);
+		const wanted = new Set(entry.scheduled.kinds);
+		const found = [];
+		let s = W.beginWitchspace();
+		for (let i = 0; i < 2000 && wanted.size && s.kind !== "idle"; i++) {
+			const next = W.stepJump(s, 1 / 50);
+			for (const c of W.witchspaceCues(s, next, arms))
+				if (wanted.delete(c.kind)) found.push([W.witchspacePhase(next), c]);
+			s = next;
+		}
+		if (wanted.size)
+			throw new Error(`${entry.name}: no ${[...wanted]} in a jump`);
+		// Each at its phase from the first. A suspend is quantised to a render
+		// quantum and two at one time are refused, so the times are rounded to
+		// one and a time two cues share plays both.
+		const quantum = 128 / sampleRate;
+		const byTime = new Map();
+		for (const [phase, cue] of found) {
+			const at = Math.round((leadS + phase - found[0][0]) / quantum) * quantum;
+			byTime.set(at, [...(byTime.get(at) ?? []), cue]);
+		}
+		for (const [at, cues] of byTime)
+			ctx.suspend(at).then(() => {
+				const random = Math.random;
+				if (typeof seed === "number") Math.random = seeded;
+				try {
+					for (const cue of cues) fx.play(cue);
+				} finally {
+					Math.random = random;
+				}
+				ctx.resume();
+			});
+		const buffer = await ctx.startRendering();
+		return {
+			modern,
+			sampleRate,
+			live: null,
+			samples: Array.from(
+				buffer.getChannelData(0).subarray(Math.round(leadS * sampleRate)),
+			),
+		};
+	}
 	const playOne = () => {
 		const random = Math.random;
 		if (typeof seed === "number") Math.random = seeded;
@@ -494,6 +769,179 @@ export async function renderInPage({
 		at.set(t, (at.get(t) ?? 0) + 1);
 	}
 	let live = null;
+	/**
+	 * A scripted timeline's reading at `t` (#544, #545). `keys` are
+	 * `[seconds, reading]`, each merged over the one before and held, or with
+	 * `ramp: true` its numbers reached linearly from the key before. One copy
+	 * for both timelines (sage round 1 on #545).
+	 */
+	const timeline = (keys, initial) => {
+		let reading = initial;
+		const readings = keys.map(([t, over]) => {
+			reading = { ...reading, ...over };
+			delete reading.ramp;
+			return [t, reading, over.ramp === true];
+		});
+		return (t) => {
+			let i = 0;
+			while (i + 1 < readings.length && readings[i + 1][0] <= t) i++;
+			const next = readings[i + 1];
+			if (!next || !next[2]) return readings[i][1];
+			const [t0, a] = readings[i];
+			const k = (t - t0) / (next[0] - t0);
+			const out = { ...a };
+			for (const key of Object.keys(a))
+				if (typeof a[key] === "number")
+					out[key] = a[key] + (next[1][key] - a[key]) * k;
+			return out;
+		};
+	};
+	/** Run `onStep(t, dt)` every `dt` of the render on the seeded stream, by
+	 *  suspending the render there, and hand back the samples after the lead. */
+	const renderSteps = async (dt, onStep) => {
+		const random = Math.random;
+		for (let i = 0; i * dt < seconds; i++) {
+			const t = i * dt;
+			ctx.suspend(leadS + t).then(() => {
+				if (typeof seed === "number") Math.random = seeded;
+				try {
+					onStep(t, dt);
+				} finally {
+					Math.random = random;
+				}
+				ctx.resume();
+			});
+		}
+		const buffer = await ctx.startRendering();
+		return {
+			modern,
+			sampleRate,
+			live: null,
+			samples: Array.from(
+				buffer.getChannelData(0).subarray(Math.round(leadS * sampleRate)),
+			),
+		};
+	};
+	if (entry.weapons) {
+		const { weaponSound, weaponSoundArms, QUIET_WEAPONS } = await import(
+			"/src/weapon-sound.ts"
+		);
+		const { stepGunFeedback, QUIET_GUN } = await import("/src/gun-feedback.ts");
+		const { arms, unknown } = weaponSoundArms(entry.weapons.arms);
+		if (unknown.length || arms === "legacy")
+			throw new Error(`${entry.name}: arms ${entry.weapons.arms}`);
+		const readingAt = timeline(entry.weapons.keys, {
+			fired: false,
+			trigger: false,
+			heatLocked: false,
+			heat: 0,
+			fore: 106,
+			aft: 106,
+			hull: 100,
+			target: null,
+			tFore: 0,
+			tAft: 0,
+			tHull: 0,
+		});
+		let state = QUIET_WEAPONS;
+		let gun = QUIET_GUN;
+		let prev = null;
+		let sinceStruckS = 9;
+		return renderSteps(1 / 50, (t, dt) => {
+			const r = readingAt(t);
+			const feedback = stepGunFeedback(gun, r.fired, dt);
+			gun = feedback.feedback;
+			// A fall in the ship's own condition is struck, as `applyDamage` has it.
+			const fell =
+				prev !== null &&
+				(r.fore < prev.fore || r.aft < prev.aft || r.hull < prev.hull);
+			sinceStruckS = fell ? 0 : sinceStruckS + dt;
+			prev = r;
+			const step = weaponSound(
+				state,
+				{
+					fired: r.fired,
+					shotSound: feedback.sound,
+					trigger: r.trigger,
+					heatLocked: r.heatLocked,
+					heat: r.heat,
+					own: {
+						fore: r.fore,
+						aft: r.aft,
+						hull: r.hull,
+						poolMax: 106,
+						sinceStruckS,
+					},
+					target:
+						r.target === null
+							? null
+							: {
+									id: r.target,
+									fore: r.tFore,
+									aft: r.tAft,
+									hull: r.tHull,
+									// Every fall on the scripted target is the player's.
+									sinceStruckS: 0,
+								},
+				},
+				arms,
+				dt,
+			);
+			state = step.state;
+			for (const cue of step.cues) fx.play(cue);
+			fx.weapons(step.mix);
+		});
+	}
+	if (entry.witchspace) {
+		const W = await import("/src/witchspace.ts");
+		const { witchspaceSoundArms } = await import("/src/witchspace-sound.ts");
+		const { flightSound, flightSoundArms, QUIET_FLIGHT } = await import(
+			"/src/flight-sound.ts"
+		);
+		const { arms, unknown } = witchspaceSoundArms(entry.witchspace.arms);
+		if (unknown.length)
+			throw new Error(`${entry.name}: arms ${entry.witchspace.arms}`);
+		const flightArms = flightSoundArms("noclicks").arms;
+		const startS = 0.5;
+		let ws = W.idleWitchspace();
+		let started = false;
+		let cut = false;
+		let flight = QUIET_FLIGHT;
+		return renderSteps(1 / 50, (t, dt) => {
+			let next;
+			if (!started && t >= startS) {
+				started = true;
+				next =
+					entry.witchspace.from === "arrival"
+						? W.arriveWitchspace()
+						: W.beginWitchspace();
+			} else next = W.stepJump(ws, dt);
+			for (const cue of W.witchspaceCues(ws, next, arms)) fx.play(cue);
+			if (next.kind === "exit") cut = true;
+			ws = next;
+			const burning = !cut && entry.witchspace.from === "jump";
+			const step = flightSound(
+				flight,
+				{
+					docked: false,
+					regime: "normal",
+					spool: 0,
+					lever: burning ? 0.5 : 0,
+					drive: burning ? 0.5 : 0,
+					rcs: 0,
+					hullShare: 1,
+					cruiseSpeed: 0,
+					held: false,
+					hushed: W.witchspaceHushesBed(ws, arms),
+				},
+				flightArms,
+				dt,
+			);
+			flight = step.state;
+			for (const cue of step.cues) fx.play(cue);
+			fx.flight(step.mix);
+		});
+	}
 	if (entry.flight) {
 		const { flightSound, flightSoundArms, QUIET_FLIGHT, cruiseSpeedShare } =
 			await import("/src/flight-sound.ts");
@@ -516,7 +964,7 @@ export async function renderInPage({
 		const { arms, unknown } = flightSoundArms(entry.flight.arms);
 		if (unknown.length || arms === "legacy")
 			throw new Error(`${entry.name}: arms ${entry.flight.arms}`);
-		let reading = {
+		const readingAt = timeline(entry.flight.keys, {
 			docked: false,
 			regime: "normal",
 			spool: 0,
@@ -527,58 +975,20 @@ export async function renderInPage({
 			cruiseSpeed: 0,
 			held: false,
 			hushed: false,
-		};
-		const readings = entry.flight.keys.map(([t, over]) => {
-			reading = { ...reading, ...over };
-			delete reading.ramp;
-			return [t, reading, over.ramp === true];
 		});
-		const readingAt = (t) => {
-			let i = 0;
-			while (i + 1 < readings.length && readings[i + 1][0] <= t) i++;
-			const next = readings[i + 1];
-			if (!next || !next[2]) return readings[i][1];
-			const [t0, a] = readings[i];
-			const k = (t - t0) / (next[0] - t0);
-			const out = { ...a };
-			for (const key of Object.keys(a))
-				if (typeof a[key] === "number")
-					out[key] = a[key] + (next[1][key] - a[key]) * k;
-			return out;
-		};
-		const dt = 1 / 50;
 		const cues = [...entry.flight.cues];
 		const setAt = [...levelsAt];
 		let flight = QUIET_FLIGHT;
-		const random = Math.random;
-		for (let i = 0; i * dt < seconds; i++) {
-			const t = i * dt;
-			ctx.suspend(leadS + t).then(() => {
-				if (typeof seed === "number") Math.random = seeded;
-				try {
-					const step = flightSound(flight, shareOf(readingAt(t)), arms, dt);
-					flight = step.state;
-					for (const cue of step.cues) fx.play(cue);
-					while (cues.length && cues[0][0] <= t) fx.play(cues.shift()[1]);
-					while (setAt.length && setAt[0][0] <= t)
-						for (const [bus, level] of Object.entries(setAt.shift()[1]))
-							fx.setLevel(bus, level);
-					fx.flight(step.mix);
-				} finally {
-					Math.random = random;
-				}
-				ctx.resume();
-			});
-		}
-		const buffer = await ctx.startRendering();
-		return {
-			modern,
-			sampleRate,
-			live: null,
-			samples: Array.from(
-				buffer.getChannelData(0).subarray(Math.round(leadS * sampleRate)),
-			),
-		};
+		return renderSteps(1 / 50, (t, dt) => {
+			const step = flightSound(flight, shareOf(readingAt(t)), arms, dt);
+			flight = step.state;
+			for (const cue of step.cues) fx.play(cue);
+			while (cues.length && cues[0][0] <= t) fx.play(cues.shift()[1]);
+			while (setAt.length && setAt[0][0] <= t)
+				for (const [bus, level] of Object.entries(setAt.shift()[1]))
+					fx.setLevel(bus, level);
+			fx.flight(step.mix);
+		});
 	}
 	for (const [t, n] of at)
 		ctx.suspend(t).then(() => {

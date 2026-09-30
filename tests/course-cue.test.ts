@@ -18,8 +18,9 @@ import {
 	type CourseCue,
 	courseCue,
 	courseCueWidest,
+	jumpRefusalText,
 } from "../src/cockpit";
-import { generateGalaxy } from "../src/galaxy";
+import { JUMP_RANGE_LY, generateGalaxy } from "../src/galaxy";
 import { projectJumps } from "../src/galaxy-route";
 import { SYSTEM_NAME_MAX_CHARS, SYSTEM_NAME_MIN_CHARS } from "../src/names";
 
@@ -74,10 +75,8 @@ describe("underway, the row is §8.3's two facts", () => {
 	});
 
 	/**
-	 * #117 D3. The generator cannot produce an unreachable destination — §5 of
-	 * `galaxy-generation.md` guarantees same-galaxy connectivity and §8.2 makes
-	 * a course envelope-matched to its galaxy — so the reachable refusal is a
-	 * next hop the tank cannot pay for. The row carries the *tone* and not the
+	 * #117 D3. An unreachable destination is its own state since #554 (below);
+	 * this is the other refusal, a next hop the tank cannot pay for. The row carries the *tone* and not the
 	 * sentence: `planJump` owns the codes, `jumpRefusalText` owns the words and
 	 * §3's prompt prints them. One quantity spelled two ways is how the glass
 	 * comes to say two things about one fact.
@@ -86,6 +85,28 @@ describe("underway, the row is §8.3's two facts", () => {
 		const refused = courseCue(underway({ affordable: false }));
 		expect(refused?.tone).toBe("refused");
 		expect(refused?.value).toBe(courseCue(underway())?.value);
+	});
+});
+
+describe("a course with no route for this hull says so (#554)", () => {
+	/**
+	 * #185 D4. Connectivity is guaranteed at the courier's reach only, so a
+	 * short-tank hull can hold a course it has no chain for — one loaded from a
+	 * save, or set in another hull. Returning `null` there drew no row at all,
+	 * which is the silent failure D4 names.
+	 */
+	test("the row stands, red, naming the destination", () => {
+		expect(courseCue({ kind: "no-route", destination: "LAVEIAN" })).toEqual({
+			label: COURSE_CUE_LABEL,
+			value: "LAVEIAN no route",
+			tone: "refused",
+		});
+	});
+
+	test("an out-of-range refusal names whose range", () => {
+		expect(jumpRefusalText("out-of-range", "LAVEIAN")).toBe(
+			"LAVEIAN is out of this hull's range",
+		);
 	});
 });
 
@@ -118,6 +139,7 @@ describe("the row is laid out against its widest possible reading", () => {
 		const name = "M".repeat(SYSTEM_NAME_MAX_CHARS);
 		const readings: CourseCue[] = [
 			{ kind: "arrived", destination: name },
+			{ kind: "no-route", destination: name },
 			underway({ nextHop: name, remaining: 1 }),
 			underway({ nextHop: name, remaining: 9, affordable: false }),
 			underway({ nextHop: name, remaining: 99 }),
@@ -136,6 +158,7 @@ describe("the row is laid out against its widest possible reading", () => {
 		const name = "M".repeat(SYSTEM_NAME_MAX_CHARS);
 		const produced = [
 			courseCue({ kind: "arrived", destination: name })?.value,
+			courseCue({ kind: "no-route", destination: name })?.value,
 			courseCue(underway({ nextHop: name, remaining: 99 }))?.value,
 		];
 		expect(produced).toContain(widest);
@@ -196,7 +219,7 @@ describe("the bound's assumptions hold over the sampled seeds", () => {
 			for (let galaxy = 0; galaxy < 8; galaxy++) {
 				const { systems } = generateGalaxy(seed, galaxy);
 				for (const from of systems) {
-					const projection = projectJumps(systems, from);
+					const projection = projectJumps(systems, from, JUMP_RANGE_LY);
 					for (const to of systems) {
 						const reach = projection.reach(to);
 						if (reach !== undefined && reach.jumps > most) most = reach.jumps;

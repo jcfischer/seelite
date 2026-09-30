@@ -142,11 +142,12 @@ export interface HullSpec {
 	 *  rather than a typo. #8's prototype owns retuning any row, and moving one
 	 *  means moving the law or the check with it. */
 	readonly integrity: number;
-	/** Hyperspace tank, light years, and cruise drive charge, AU. The courier's
-	 *  are the game's `JUMP_RANGE_LY` and `CHARGE_CAPACITY_AU`; `tests/hull.test.ts`
-	 *  asserts that, which is what stops the two copies drifting. Nothing reads
-	 *  the other rows yet — the router and the chart take a jump range as a
-	 *  parameter but are handed the constant. */
+	/** Hyperspace tank, light years, and cruise drive charge, AU — both read
+	 *  off the **flown** hull (#185, #554). `tankLy` is the hull's jump range
+	 *  *and* its fuel capacity, one number, so a short tank flies a fragmented
+	 *  jump graph on purpose. The courier's tank equals `galaxy.ts`'s
+	 *  `JUMP_RANGE_LY`, the connectivity predicate, and `tests/hull.test.ts`
+	 *  asserts that; no other hull's has to. */
 	readonly tankLy: number;
 	readonly chargeAu: number;
 	/**
@@ -164,8 +165,9 @@ export interface HullSpec {
 	 * the failure `galaxy-generation.md` §2.1 carried for years. Whether a
 	 * shipyard *lists* a priced hull is a separate question and
 	 * `PURCHASABLE_HULL_IDS` is where it is answered: `patrol` and `raider` hold
-	 * 6 t and 10 t, well inside the measured range, so the law answers for them
-	 * and #183's rating decides whether they are for sale.
+	 * 6 t and 10 t, well inside the measured range, so the law answers for them.
+	 * #562 put them on the combat ladder at rungs 6 and 7, and neither is sold
+	 * until #565 and #566 rule on what flying one means to the law.
 	 */
 	readonly priceCr: number | null;
 }
@@ -278,7 +280,9 @@ export const hullPriceCr = (holdT: number): number | null => {
  *
  * `patrol` and `raider` read as NPC identities rather than purchases — selling
  * a police hull or a pirate hull makes #8's legal status and #13's fence
- * geography owe rules they do not have — and are gated behind the rating node.
+ * geography owe rules they do not have. Each carries a combat rung (#562 D7,
+ * `ladder.ts`'s `GATES`), and a rung does not supply those rules, so neither
+ * joins this list until #565 and #566 close.
  * The capitals do not dock at all (#56, and `voyager` since #331).
  */
 export const PURCHASABLE_HULL_IDS = [
@@ -292,6 +296,18 @@ export const PURCHASABLE_HULL_IDS = [
 ] as const satisfies readonly HullId[];
 
 /**
+ * The purchasable hull a `?hull=` query names, or `null` for none.
+ *
+ * One reader for the flight's `PLAYER_HULL` and the chart workbench, so the
+ * two cannot accept different sets (#554). What to fly on `null` is the
+ * caller's: both fall back to the baseline and say so where they do.
+ */
+export const purchasableHullNamed = (asked: string | null): HullId | null =>
+	asked !== null && (PURCHASABLE_HULL_IDS as readonly string[]).includes(asked)
+		? (asked as HullId)
+		: null;
+
+/**
  * The roster, all twelve.
  *
  * **Twelve and not the seven**, although only seven are purchasable: the five
@@ -299,8 +315,9 @@ export const PURCHASABLE_HULL_IDS = [
  * capital hulls remain available to #8's encounters. A `Partial` record would
  * make every consumer answer for a hull with no mass, and the hole would be
  * found by whichever one forgot. Their figures are provisional in the sense
- * that #183's rating and #8's combat balance may retune them; the seven civilian
- * rows are this node's answer.
+ * that #8's combat balance may retune them — and a retune of `integrity` moves
+ * what a kill of that hull pays, which `kill-credit.ts` reads; the seven
+ * civilian rows are this node's answer.
  */
 export const HULL_SPECS: Readonly<Record<HullId, HullSpec>> = {
 	courier: {
@@ -387,8 +404,8 @@ export const HULL_SPECS: Readonly<Record<HullId, HullSpec>> = {
 		holdT: 30,
 		hardpoints: 1,
 		integrity: 183,
-		// The one hull with more range than the baseline, which is what a survey
-		// hull is for. Nothing reads it yet — see `tankLy` above.
+		// The one purchasable hull with more range than the baseline, which is
+		// what a survey hull is for — see `tankLy` above.
 		tankLy: 9,
 		chargeAu: 16,
 		priceCr: 44_800,

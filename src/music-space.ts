@@ -200,7 +200,9 @@ export class Space {
 		} else this.quietFrames = 0;
 	}
 
-	private clear() {
+	/** Drop everything the space holds, at once: silence from the next frame.
+	 *  The engine's, once a stop now has faded the space out (`MusicEngine`). */
+	clear() {
 		for (const l of this.lines) l.fill(0);
 		this.damp.fill(0);
 		this.pre.fill(0);

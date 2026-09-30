@@ -124,6 +124,7 @@ import type {
 	FrameAttributionSnapshot,
 } from "./frame-attribution";
 import { AudioFX } from "./audio";
+import { BUSES, type WeaponMix, type Cue, type NotifyTone } from "./audio-cue";
 import { Music } from "./music";
 import {
 	initialMusicState,
@@ -133,13 +134,14 @@ import {
 	stepMusic,
 } from "./music-director";
 import {
-	BUSES,
-	type Cue,
-	type HitArm,
-	type HitReading,
-	QUIET_HITS,
-	hitCues,
-} from "./audio-cue";
+	type WeaponSoundState,
+	QUIET_WEAPONS,
+	SILENT_WEAPONS,
+	weaponSound,
+	weaponSoundArms,
+} from "./weapon-sound";
+import { witchspaceSoundArms } from "./witchspace-sound";
+import { punchArm } from "./punch-sound";
 import { CombatPrototypeRig } from "./combat-rig";
 import {
 	type FlightSoundState,
@@ -148,6 +150,15 @@ import {
 	flightSound,
 	flightSoundArms,
 } from "./flight-sound";
+import {
+	clearanceTone,
+	consoleSoundArms,
+	focusCue,
+	type NotifyGate,
+	notifyCue,
+	pressCue,
+	QUIET_NOTIFY,
+} from "./console-sound";
 import {
 	COURSE_CUE_LABEL,
 	FLIGHT_FLOOR_LABELS,
@@ -171,7 +182,6 @@ import {
 } from "./cockpit";
 import { sceneRenderEligible } from "./render-eligibility";
 import {
-	CHARGE_CAPACITY_AU,
 	CHARGE_REGEN_AU_PER_S,
 	type Mass,
 	type CruiseParams,
@@ -190,7 +200,7 @@ import {
 	stepCruiseGuidance,
 	type CruiseGuidanceState,
 } from "./cruise-guidance";
-import { GOVERNMENT_NAMES, JUMP_RANGE_LY, type SystemRecord } from "./galaxy";
+import { GOVERNMENT_NAMES, type SystemRecord } from "./galaxy";
 // The plane a system's bodies orbit near, and the plane the horizon line is
 // rolled against, in one declaration (#430). Authored in `galaxy-frame.ts` because
 // that module's whole subject is the relation between this plane and the
@@ -217,7 +227,6 @@ import type { SettingsPanelHandle } from "./settings-panel";
 import type { PostcardPanelHandle } from "./postcard-panel";
 import {
 	JUMP_CHARGE_S,
-	JUMP_TANK_LY,
 	type JumpCharge,
 	type JumpRefusal,
 	beginCharge,
@@ -319,11 +328,12 @@ import {
 	type ConditionPrint,
 	type ShieldSide,
 	type ShipCondition,
+	HEAT_LOCK,
+	SHIELD_POOL,
 	applyDamage,
 	fullCondition,
 	headOnPool,
 	isAlive,
-	SHIELD_POOL,
 	sideStruck,
 	stepCondition,
 } from "./ship-condition";
@@ -544,6 +554,7 @@ import {
 	HULL_SPECS,
 	PLAYER_BASELINE_HULL,
 	PURCHASABLE_HULL_IDS,
+	purchasableHullNamed,
 	type HullEnvelope,
 	type HullId,
 	type HullVariantId,
@@ -570,6 +581,7 @@ import {
 	witchspaceAtPhase,
 	witchspaceControlHeld,
 	witchspaceCues,
+	witchspaceHushesBed,
 	witchspaceLook,
 	witchspacePhase,
 	witchspaceSkyZoom,
@@ -640,9 +652,17 @@ import {
 	cockpitForm,
 	cockpitMaterial,
 	plateCockpitUVs,
+	railLampPools,
 	railLamps,
 	registerKeyLight,
 } from "./cockpit-surface";
+import {
+	CANOPY_FRAME,
+	CANOPY_RAIL_RADIUS_KM,
+	CANOPY_SIDE_RAILS,
+	canopyGlassMaterial,
+	canopyPaneGeometry,
+} from "./cockpit-canopy";
 import { applyHullQuality, hullFinishId } from "./ship-surface";
 import type { StationInterior } from "./station-interior";
 import { type Station, generateContents } from "./system";
@@ -714,10 +734,30 @@ const MODIFIER_KEYS: ReadonlySet<string> = new Set([
 	"CapsLock",
 ]);
 import { readDeficit, recordTrade } from "./deficits";
+import { killCredit } from "./kill-credit";
+import { type LadderView, ladderInputKey, ladderView } from "./ladder-view";
+import {
+	type LadderRecord,
+	type PendingCredit,
+	type Rungs,
+	bankOnDock,
+	basisAfterScoop,
+	emptyLadderRecord,
+	emptyPending,
+	ladderAfterMarket,
+	ladderAfterSettlement,
+	pendingArrival,
+	pendingKill,
+	reconcileBasis,
+	rungsOf,
+	seededLadderRecord,
+	withCapstone,
+} from "./ladder";
 import {
 	emptyRequests,
 	entrustedTonnesAboard,
 	isRunning,
+	readiedBy,
 	recordKill,
 	requestAction,
 	settledAt,
@@ -1018,9 +1058,7 @@ const PLAYER_HULL: readonly [HullId, HullVariantId] = ((): readonly [
 	// chosen. An unknown or absent id falls back to the baseline rather than
 	// throwing, because a typo in a URL should not be a black screen.
 	const asked = new URLSearchParams(window.location.search).get("hull");
-	const id = (PURCHASABLE_HULL_IDS as readonly string[]).includes(asked ?? "")
-		? (asked as HullId)
-		: PLAYER_BASELINE_HULL;
+	const id = purchasableHullNamed(asked) ?? PLAYER_BASELINE_HULL;
 	// **It says so when it falls back.** Silently flying a courier while the
 	// pilot believes they are judging a freighter is the one way this affordance
 	// could produce a wrong answer, and the whole point of it is a judgement.
@@ -1071,6 +1109,52 @@ const FLIGHT_SOUND = flightSoundArms(
 if (FLIGHT_SOUND.unknown.length)
 	console.warn(
 		`?flightsound: unknown ${FLIGHT_SOUND.unknown.join(", ")}; flying the defaults for those`,
+	);
+/**
+ * The consoles' sound arms (#546), from `?consolesound=`: comma-separated
+ * tokens, or `legacy` for the silent consoles before #546.
+ * `console-sound.ts` lists them.
+ */
+const CONSOLE_SOUND = consoleSoundArms(
+	new URLSearchParams(window.location.search).get("consolesound"),
+);
+if (CONSOLE_SOUND.unknown.length)
+	console.warn(
+		`?consolesound: unknown ${CONSOLE_SOUND.unknown.join(", ")}; playing the defaults for those`,
+	);
+/**
+ * Weapons and damage by ear (#545), from `?weaponsound=`: comma-separated
+ * tokens, or `legacy` for the zap and the silent hits before #545.
+ * `weapon-sound.ts` lists them.
+ */
+const WEAPON_SOUND = weaponSoundArms(
+	new URLSearchParams(window.location.search).get("weaponsound"),
+);
+if (WEAPON_SOUND.unknown.length)
+	console.warn(
+		`?weaponsound: unknown ${WEAPON_SOUND.unknown.join(", ")}; playing the defaults for those`,
+	);
+/**
+ * A jump by ear after the cut (#534), from `?witchsound=`: comma-separated
+ * tokens. `witchspace-sound.ts` lists them.
+ */
+const WITCH_SOUND = witchspaceSoundArms(
+	new URLSearchParams(window.location.search).get("witchsound"),
+);
+if (WITCH_SOUND.unknown.length)
+	console.warn(
+		`?witchsound: unknown ${WITCH_SOUND.unknown.join(", ")}; playing the defaults for those`,
+	);
+/**
+ * Weight in the effects by ear (#577), from `?punch=`: `heavy` or `thin`,
+ * the one-shots before #577. `punch-sound.ts` lists them.
+ */
+const PUNCH_SOUND = punchArm(
+	new URLSearchParams(window.location.search).get("punch"),
+);
+if (PUNCH_SOUND.unknown.length)
+	console.warn(
+		`?punch: unknown ${PUNCH_SOUND.unknown.join(", ")}; playing ${PUNCH_SOUND.arm}`,
 	);
 /**
  * The adaptive music's arms (#548), from `?music=`: `off`, a level name to
@@ -1977,6 +2061,9 @@ class Game {
 	private shipMesh!: THREE.Group;
 	/** Cockpit structure follows the ship, while the camera pans within it. */
 	private cockpit!: CockpitHardware;
+	/** #204's canopy glass, held so the quality gate and the star rotation can
+	 *  reach its explicit environment. Null until `buildCockpit`. */
+	private canopyGlass: THREE.MeshBasicMaterial | null = null;
 	private tuningKey = "";
 	private tuningText = "";
 	/** Exposed for the browser probe; sourced fresh from simulation every frame. */
@@ -2049,7 +2136,7 @@ class Game {
 	/** The display the controller's measurements were taken on; see `displaySignature`. */
 	private adaptiveDisplay: string | null = null;
 	private rendererInfoAutoReset: boolean | null = null;
-	readonly audio = new AudioFX();
+	readonly audio = new AudioFX(PUNCH_SOUND.arm);
 	/**
 	 * The music synth (#560). Its worklet is loaded into the audio context on
 	 * the gesture that opens it, and its readiness is a promise (#543 D8), so
@@ -2143,6 +2230,18 @@ class Game {
 	private layoutNotices: readonly LayoutNotice[] = [];
 	/** Commander-owned mutable commerce state; no renderer may write it. */
 	private commander = newCommander(PLAYER_HULL[0]);
+	/**
+	 * The three ladders' banked record (#183), saved beside `commander` so a
+	 * death's revert to `lastDocked` moves credits and rungs together.
+	 */
+	private ladders: LadderRecord = emptyLadderRecord();
+	/**
+	 * Credit earned since the last dock (#183 D7): kills and first arrivals.
+	 * **Never saved** — `commanderRecord` has nowhere to put it — so a death,
+	 * which restores `lastDocked`, and a mid-flight save both lose it. The next
+	 * dock banks it.
+	 */
+	private ladderPending: PendingCredit = emptyPending();
 	/** The game-owned per-galaxy state holds the station deficit map. */
 	private commerceWorld!: WorldState;
 	/** #89's D7 flag, chosen at new game and never edited. Read by the death
@@ -2255,9 +2354,10 @@ class Game {
 	/** A copy, not the module's object: the dials mutate this, and the spec's
 	 *  own figures stay reachable as `DEFAULT_CRUISE` for the reset key. */
 	cruiseParams: CruiseParams = { ...DEFAULT_CRUISE };
-	/** §7's drive charge, AU. Starts full, and a guided new game spends none of
-	 *  it on the docked start (#408); a free one starts in flight with it full. */
-	chargeAu = CHARGE_CAPACITY_AU;
+	/** §7's drive charge, AU. Starts full — the flown hull's `chargeAu` (#554) —
+	 *  and a guided new game spends none of it on the docked start (#408); a
+	 *  free one starts in flight with it full. */
+	chargeAu = HULL_SPECS[this.commander.hull].chargeAu;
 	/** Seconds left of §4's spool-up before cruise actually engages. */
 	spoolLeftS = 0;
 	/**
@@ -3172,11 +3272,15 @@ class Game {
 	readonly directorRangeKm = DIRECTOR_RANGE_KM;
 	/** The widest reading §5's floor strip can take, so a probe measuring the
 	 *  fit drives the run the layout was solved for rather than a copy of it. */
-	readonly floorWidest = flightFloorWidest(
-		CHARGE_CAPACITY_AU,
-		CHARGE_REGEN_AU_PER_S,
-		SPOOL_S,
-	);
+	get floorWidest() {
+		// A getter, because the capacity is the flown hull's (#554) and a
+		// restored save can replace the hull after construction.
+		return flightFloorWidest(
+			this.chargeCapacityAu,
+			CHARGE_REGEN_AU_PER_S,
+			SPOOL_S,
+		);
+	}
 	/** The widest reading §8.3's course row can take, on the handle for the same
 	 *  reason `floorWidest` is: a probe measuring the fit drives the run the
 	 *  layout was solved for rather than a copy of it. */
@@ -3586,6 +3690,11 @@ class Game {
 			this.chargeAu = save.commander.chargeAu;
 			this.permadeath = save.commander.permadeath;
 			this.firstDay = save.commander.firstDay;
+			this.ladders = save.commander.ladders;
+			// Explicit, though a restore builds a fresh `Game` and it is empty
+			// already: a death reloads the page into `lastDocked`, and credit
+			// earned before it must not ride into the dock it restores (D7).
+			this.ladderPending = emptyPending();
 			// **A docked save resumes in flight at the arrival point, and that
 			// is a deliberate scale-down rather than an omission.** Re-entering
 			// a berth means rebuilding a whole dock session — the grant, the
@@ -3652,6 +3761,13 @@ class Game {
 				this.commerceWorld,
 				this.world.system.record.galaxy,
 				this.world.system.record.index,
+			);
+			// #183 D9's seed, applied to a new game: the start system is not a
+			// first arrival the pilot earned. The first dock is, wherever it is.
+			this.ladders = seededLadderRecord(
+				this.world.system.record.galaxy,
+				this.world.system.record.index,
+				null,
 			);
 		}
 		this.observeCurrentSystemRelay();
@@ -4012,13 +4128,18 @@ class Game {
 					this.controlsRestoreTab,
 				);
 				this.rightTab = tab;
+				this.consolePress(true);
 				this.updateCockpit();
 			},
 			onLeftTab: (tab) => {
 				this.leftTab = tab;
+				this.consolePress(true);
 				this.updateCockpit();
 			},
-			onNavFilter: (filter) => {
+			onNavFilter: (filter, source) => {
+				// A chip is a press; a character typed into the query is not, so
+				// a search does not click once per key (#546, sage rounds 1 and 3).
+				if (source === "chip") this.consolePress(true);
 				this.navFilter = filter;
 				// Widening the filter re-admits rows whose estimate was computed
 				// earlier in this interval and then never touched again. Cheaper
@@ -4033,8 +4154,12 @@ class Game {
 				// cannot reach — accepting one here would make the list's stated
 				// reason for omitting them false, and give the player a target
 				// `T` could never return to.
-				if (!this.selectable().some((body) => body.id === id)) return;
+				if (!this.selectable().some((body) => body.id === id)) {
+					this.consolePress(false);
+					return;
+				}
 				this.targetId = id;
+				this.consolePress(true);
 				this.updateCockpit();
 			},
 			onStationTab: (tab) => {
@@ -4043,9 +4168,11 @@ class Game {
 				// press retires it (#443) — including a press on the tab
 				// already showing, which is a pilot clearing the screen.
 				this.clearStationRefusal();
+				this.consolePress(true);
 				this.updateCockpit();
 			},
-			onRequestAction: (action, id) => this.actOnRequest(action, id),
+			onRequestAction: (action, id) =>
+				this.consolePress(this.actOnRequest(action, id)),
 			onStationAction: (type, name) => {
 				const action: StationAction =
 					type === "buy-fuel"
@@ -4053,18 +4180,20 @@ class Game {
 						: type === "buy-equipment"
 							? { type, equipment: name }
 							: { type, commodity: name };
-				this.transactStation(action);
+				this.consolePress(this.transactStation(action));
 			},
 			// A refused press holds the launch, and the hold is on the console, so
 			// both outcomes repaint (#314).
 			onLaunch: () => {
-				this.launch();
+				this.consolePress(this.launch());
 				this.updateCockpit();
 			},
 			onCancelLaunch: () => {
 				this.cancelLaunch();
+				this.consolePress(true);
 				this.updateCockpit();
 			},
+			onHover: () => this.consoleFocus("hover"),
 			onChartHost: (host) => this.setChartHost(host),
 		});
 		// The tab prints the layout in force from the first frame, not from the
@@ -5045,6 +5174,8 @@ class Game {
 		// answer for every plated surface in the game rather than one per
 		// surface. `cockpit-surface.ts` owns what a cabin surface costs.
 		applyCockpitQuality(this.settings.value.quality);
+		// And the canopy's reflection, which follows the scenes' environment.
+		this.applyCanopyEnvironment();
 		// #532's pass draws on both sides; `low` takes fewer streak samples.
 		// Optional because this runs from `buildEnvironment`, before the
 		// composer exists; the constructor reads the setting itself.
@@ -6535,7 +6666,12 @@ class Game {
 		// world and is not a thing the pilot was booked for, so saying so on the
 		// glass would be the console accusing them of something the law did not.
 		if (heat > 0) {
-			this.charged = nextChargeNotice(this.charged, event);
+			// Sounded with the notice, not with the charge: a second charge
+			// inside the first's reading time keeps the first on the glass
+			// (`nextChargeNotice`), and a tone with nothing new to read is noise.
+			const notice = nextChargeNotice(this.charged, event);
+			if (notice !== this.charged) this.consoleNotify("bad");
+			this.charged = notice;
 			this.charges.push({
 				at: now,
 				key: actor.key,
@@ -6599,7 +6735,9 @@ class Game {
 		// Bucketing it would keep a screenful *per galaxy* and make the rail's
 		// history a different length depending on how many systems were flown.
 		if (this.hails.length > HAIL_LOG_KEEP) this.hails.shift();
-		this.play({ kind: "alert" });
+		// A message, which played `alert` before #546 and still does on
+		// `?consolesound=legacy`.
+		this.consoleNotify("message", "hail");
 	}
 
 	/**
@@ -6696,6 +6834,7 @@ class Game {
 			now,
 		))
 			this.applyCarrierTransition(actor.key, event);
+		this.creditKill(actor.hullId);
 		this.canisters = [
 			...this.canisters,
 			...dropManifestCanisters({
@@ -7234,20 +7373,22 @@ class Game {
 	/** The physical cockpit and its one, deck-mounted scanner. */
 	private buildCockpit() {
 		this.cockpit = {} as CockpitHardware;
-		// The three structural finishes, and why they are not declared here:
+		// The cabin's finishes, and why they are not declared here:
 		// `COCKPIT_FINISHES`. The short of it is that a finish named at this call
 		// site is one the calibration pass cannot see, and the cabin's roughest
 		// turned out not to be expressible over the wear curve without it.
 		const metal = cockpitMaterial("metal");
 		const trim = cockpitMaterial("trim");
 		const inset = cockpitMaterial("inset");
-		const canopyGlass = new THREE.MeshBasicMaterial({
-			color: 0x0a2635,
-			transparent: true,
-			opacity: 0.08,
-			side: THREE.DoubleSide,
-			depthWrite: false,
-		});
+		// #204's mid-tone, on the two console tops: large faces the cabin's own
+		// light falls on, and behind no readout. Not on the scanner deck:
+		// `COCKPIT_FINISHES.face` says why.
+		const face = cockpitMaterial("face");
+		// #204's glass: a basic material, so no light in the scene reaches it, with
+		// the environment handed to it explicitly — `cockpit-canopy.ts` has why.
+		const canopyGlass = canopyGlassMaterial();
+		this.canopyGlass = canopyGlass;
+		this.applyCanopyEnvironment();
 		const cockpit = new THREE.Group();
 		cockpit.name = "cockpit";
 		// Space remains black, but the pilot's own instruments should not. This
@@ -7262,8 +7403,9 @@ class Game {
 		// console tops were missing — both cockpit views render the same flat
 		// tone whether the star is ahead of the ship or 175° behind it. Warm
 		// against the lamp's cool, which is the contrast the reference cabins
-		// have. Its range dies before the canopy on purpose: a key that reached
-		// the glass would light the frame the player sees space through.
+		// have. It must not light the glass the player sees space through, and
+		// what holds that is the glass's class, not this light's range —
+		// `COCKPIT_KEY_LIGHT.rangeKm` has the distances.
 		const keyLight = new THREE.PointLight(
 			COCKPIT_KEY_LIGHT.color,
 			COCKPIT_KEY_LIGHT.intensity,
@@ -7336,50 +7478,45 @@ class Game {
 		// A real windscreen frame: the former rails did not meet a sill or header,
 		// so they read as objects floating in space. The glass stays subtle, while
 		// the connected trapezoid gives the player a stable cockpit boundary.
-		const canopyShape = new THREE.Shape();
-		canopyShape.moveTo(-0.043, -0.013);
-		canopyShape.lineTo(-0.05, 0.018);
-		canopyShape.lineTo(0.05, 0.018);
-		canopyShape.lineTo(0.043, -0.013);
-		canopyShape.closePath();
-		const canopyPane = new THREE.Mesh(
-			new THREE.ShapeGeometry(canopyShape),
-			canopyGlass,
-		);
+		// The pane has thickness now (#204), and its outline, rails, sill and
+		// header are one set of figures in `cockpit-canopy.ts` rather than four
+		// sets of literals that happened to agree.
+		const canopyPane = new THREE.Mesh(canopyPaneGeometry(), canopyGlass);
 		canopyPane.name = "canopy-glass";
-		canopyPane.position.z = -0.065;
 		cockpit.add(canopyPane);
-		/**
-		 * The two canopy side rails, and the **one** place their endpoints live.
-		 *
-		 * The lamp placement below claimed to take "the rail's own endpoints, so
-		 * the two cannot drift apart" while re-typing the same six literals — a
-		 * comment describing a binding that did not exist. An editor who trusted
-		 * it and moved only the `addStrut` call would leave six lamps floating at
-		 * the old position, with nothing going red. Both readers take this array.
-		 */
-		const CANOPY_SIDE_RAILS = [
-			{
-				side: "port",
-				from: [-0.043, -0.013, -0.065] as [number, number, number],
-				to: [-0.05, 0.018, -0.065] as [number, number, number],
-			},
-			{
-				side: "starboard",
-				from: [0.043, -0.013, -0.065] as [number, number, number],
-				to: [0.05, 0.018, -0.065] as [number, number, number],
-			},
-		];
 		for (const rail of CANOPY_SIDE_RAILS)
-			addStrut(rail.from, rail.to, 0.00125, `canopy-side-rail-${rail.side}`);
+			addStrut(
+				rail.from,
+				rail.to,
+				CANOPY_RAIL_RADIUS_KM,
+				`canopy-side-rail-${rail.side}`,
+			);
 		// Three lamps on each, and nowhere else. The first pass ran continuous
 		// lit bars under the header, under the sill and along each console; none
 		// of that is in the reference, where the canopy frame carries a few small
 		// lamps and everything else that glows is an instrument.
-		for (const rail of CANOPY_SIDE_RAILS)
+		for (const rail of CANOPY_SIDE_RAILS) {
 			for (const lamp of railLamps(rail.from, rail.to)) cockpit.add(lamp);
-		addBox([0.102, 0.0013, 0.002], [0, 0.018, -0.065], [0, 0, 0], trim);
-		addBox([0.088, 0.002, 0.004], [0, -0.013, -0.065], [0, 0, 0], trim);
+			// And the light each one leaves on the rail below it (#204).
+			for (const pool of railLampPools(
+				rail.from,
+				rail.to,
+				CANOPY_RAIL_RADIUS_KM,
+			))
+				cockpit.add(pool);
+		}
+		addBox(
+			CANOPY_FRAME.header.size,
+			CANOPY_FRAME.header.position,
+			[0, 0, 0],
+			trim,
+		).name = "canopy-header";
+		addBox(
+			CANOPY_FRAME.sill.size,
+			CANOPY_FRAME.sill.position,
+			[0, 0, 0],
+			trim,
+		).name = "canopy-sill";
 		// Header braces close the upper corners into the nearer cockpit frame. The
 		// former side rails only framed the pane itself, leaving the windscreen
 		// visually detached from the overhead cockpit boundary.
@@ -7408,8 +7545,18 @@ class Game {
 		// Layered side consoles, structural seams, and a raised centre deck give
 		// the cabin a constructed spacecraft language without closing the pilot's
 		// forward sightline.
-		addBox([0.01, 0.0022, 0.022], [-0.038, -0.019, -0.047], [0.24, 0, 0.06]);
-		addBox([0.01, 0.0022, 0.022], [0.038, -0.019, -0.047], [0.24, 0, -0.06]);
+		addBox(
+			[0.01, 0.0022, 0.022],
+			[-0.038, -0.019, -0.047],
+			[0.24, 0, 0.06],
+			face,
+		).name = "console-top-port";
+		addBox(
+			[0.01, 0.0022, 0.022],
+			[0.038, -0.019, -0.047],
+			[0.24, 0, -0.06],
+			face,
+		).name = "console-top-starboard";
 		addBox(
 			[0.006, 0.0008, 0.014],
 			[-0.038, -0.0179, -0.047],
@@ -7466,6 +7613,25 @@ class Game {
 		this.nearScene.add(cockpit);
 	}
 
+	/**
+	 * Give the canopy glass the scenes' environment, or take it away (#204).
+	 *
+	 * The same gate as `scene.environment`: at `low` the scenes carry none, so
+	 * a pane reflecting one would be the only surface in the frame that did.
+	 * Called from `applyQuality` and from `buildCockpit`, because the boot-time
+	 * quality pass runs before the cabin exists.
+	 */
+	private applyCanopyEnvironment() {
+		const glass = this.canopyGlass;
+		if (!glass) return;
+		const mode = LIGHT_RIG.quality[this.settings.value.quality];
+		const next = mode.environment ? this.environmentMap : null;
+		if (glass.envMap === next) return;
+		glass.envMap = next;
+		// Gaining or losing a map changes three's defines, so relink.
+		glass.needsUpdate = true;
+	}
+
 	/** What each occlusion walk marked, kept for `probe-occlusion.mjs` to read
 	 *  off the page. A walk that matched nothing renders a perfect frame with
 	 *  the feature silently missing, so the count is the only evidence there
@@ -7482,6 +7648,7 @@ class Game {
 		trim: THREE.MeshStandardMaterial,
 		inset: THREE.MeshStandardMaterial,
 	) {
+		// **`metal`, not #204's `face`** — `COCKPIT_FINISHES.face` says why.
 		const deck = new THREE.Mesh(cockpitForm(0.032, 0.0016, 0.022), metal);
 		deck.name = "scanner-deck";
 		scannerMount.add(deck);
@@ -8111,8 +8278,7 @@ class Game {
 			this.setHeadLook("forward");
 			return;
 		}
-		if (intents.focusDelta !== 0)
-			this.liveCockpit.stepFocus(intents.focusDelta);
+		if (intents.focusDelta !== 0) this.stepConsoleFocus(intents.focusDelta);
 		if (intents.tabDelta !== 0) this.liveCockpit.stepTab(intents.tabDelta);
 		// The console acts on its own rows and refuses the chart's, which are
 		// drawn inside the same panel and belong to a handle it does not hold.
@@ -8731,10 +8897,10 @@ class Game {
 				this.liveCockpit.stepTab(1);
 				return;
 			case "panel.cursorUp":
-				this.liveCockpit.stepFocus(-1);
+				this.stepConsoleFocus(-1);
 				return;
 			case "panel.cursorDown":
-				this.liveCockpit.stepFocus(1);
+				this.stepConsoleFocus(1);
 				return;
 			default:
 		}
@@ -8983,6 +9149,9 @@ class Game {
 					worldSeed: this.world.seed,
 					galaxyIndex: this.world.system.record.galaxy,
 					currentIndex: this.world.system.record.index,
+					// The flown hull's reach (#554): the shell, the lit points,
+					// the label, every route and the finder's lists.
+					tankLy: this.fuelCapacityLy,
 					// **Both getters, for the same reason `currentSystem` is one.**
 					// Held as values these froze at mount: a jump with the map
 					// open runs `observeCurrentSystemRelay` and then
@@ -9849,7 +10018,8 @@ class Game {
 		const selected = stations.find((s) => s.id === this.targetId);
 		const chosen = selected ?? stations[0];
 		if (!chosen || chosen.km > VICINITY_KM) return { id: null, state: null };
-		const next = requestClearance(this.dockingStateOf(chosen.id), {
+		const prev = this.dockingStateOf(chosen.id);
+		const next = requestClearance(prev, {
 			gameTime: this.world.gameTime,
 			rangeKm: chosen.km,
 			// §13.2: a grant reserves a berth, so the protocol needs the catalogue
@@ -9869,6 +10039,10 @@ class Game {
 			refusedByLaw: this.refusedByLaw(chosen.id),
 		});
 		this.dockingStates.set(chosen.id, next);
+		// Station control answers (#546): on a change of answer only, because
+		// the docking computer asks again and again.
+		const answer = clearanceTone(prev.clearance, next.clearance);
+		if (answer) this.consoleNotify(answer);
 		if (next.clearance.kind === "queued")
 			this.openPlayerTrafficEvent(
 				chosen.id,
@@ -10303,6 +10477,11 @@ class Game {
 			);
 			this.openPlayerTrafficEvent(id, "lane", this.world.gameTime, "arrival");
 			this.world.ship.vel = stationVel;
+			// #183 D7: the dock banks what the flight earned, and the station's
+			// first dock. **Before the flush below**, which writes `lastDocked`
+			// — the record a death restores. Banked after it, the credit would
+			// ride only on the next write.
+			this.bankLadders(this.stationKey(stationOf(this.world.system, id)));
 			// D4's unconditional dock flush, and the one that lays down #89's
 			// `lastDocked` checkpoint — the record a non-permadeath death
 			// restores.
@@ -10852,6 +11031,10 @@ class Game {
 		this.scanFacts = null;
 		this.raiderFiring = false;
 		this.gunFeedback = QUIET_GUN;
+		// A new session's first reading of the ship and of a target is not a
+		// fall, and no loop carries over (#545).
+		this.weaponSoundState = QUIET_WEAPONS;
+		this.weaponMix = SILENT_WEAPONS;
 		this.canisters = [];
 		// And their contacts, now, rather than on the next step: `performJump`
 		// refreshes the scanner before any step runs, so the arrival frame would
@@ -10948,10 +11131,12 @@ class Game {
 		// And no transition: no effect held, no cue sounding, no rift left over.
 		this.witchspaceHeldAt = null;
 		this.cruiseLightHeldAt = null;
+		// Both through `setWitchspace`, so an exit cut short stops its cues: the
+		// ride and the rift run for seconds, and an abort leaves an exit as it is.
 		this.setWitchspace(abortWitchspace(this.witchspace));
-		this.witchspace = idleWitchspace();
+		this.setWitchspace(idleWitchspace());
 		this.clearArrivalRift();
-		this.chargeAu = CHARGE_CAPACITY_AU;
+		this.chargeAu = this.chargeCapacityAu;
 		// Selection is not written by the flight path, so the coverage scan does
 		// not ask for it, and it is not spelled here either — the constructor and
 		// this method call the same `selectBootTarget`. Two copies is how the
@@ -11001,8 +11186,20 @@ class Game {
 		this.commander.fuelLy = ly;
 	}
 
-	/** The tank's capacity, likewise. */
-	readonly fuelCapacityLy = JUMP_TANK_LY;
+	/**
+	 * The tank's capacity, likewise: the flown hull's `tankLy`, which is also
+	 * its jump range (#185 D1, #554). A getter on the commander's hull rather
+	 * than a field, because a restored save names the hull after construction.
+	 */
+	get fuelCapacityLy(): number {
+		return HULL_SPECS[this.commander.hull].tankLy;
+	}
+
+	/** The drive charge's capacity: the flown hull's `chargeAu` (#185 D6). The
+	 *  regeneration rate is one constant for every hull. */
+	get chargeCapacityAu(): number {
+		return HULL_SPECS[this.commander.hull].chargeAu;
+	}
 
 	/**
 	 * The commander's balance, credits — likewise on the handle so a probe reads
@@ -11055,7 +11252,12 @@ class Game {
 			(s) => s.galaxy === here.galaxy && s.index === index,
 		);
 		if (to === undefined) return false;
-		const course = setCourse(this.world.galaxy.systems, here, to);
+		const course = setCourse(
+			this.world.galaxy.systems,
+			here,
+			to,
+			this.fuelCapacityLy,
+		);
 		// **Both refusals leave any standing course alone.** An unknown index
 		// returned early above while an unroutable destination fell through to
 		// `setCourseTo(null)` — two refusals of one call, returning the same
@@ -11085,10 +11287,15 @@ class Game {
 		return cue?.nextHop ?? null;
 	}
 
-	/** `planJump` against this ship and this tank — the first and third
-	 *  arguments are always these two fields, and four sites spelled them. */
+	/** `planJump` against this ship, this tank and this hull — the other
+	 *  arguments are always these fields, and four sites spelled them. */
 	private jumpDecision(to: SystemRecord) {
-		return planJump(this.world.system.record, to, this.commander.fuelLy);
+		return planJump(
+			this.world.system.record,
+			to,
+			this.commander.fuelLy,
+			this.commander.hull,
+		);
 	}
 
 	/**
@@ -11246,6 +11453,9 @@ class Game {
 					encounter.slot.key,
 					raiderDestruction(record.index, now),
 				);
+				// The relay's defender (#515) is a raider from a slot, so it is
+				// priced here too.
+				this.creditKill(RAIDER_HULL_ID);
 				this.canisters = [
 					...this.canisters,
 					...dropCanisters({
@@ -11301,7 +11511,19 @@ class Game {
 					canister.tonnes,
 					entrustedTonnesAboard(this.requests),
 				);
-				if (took.accepted) this.commander = took.commander;
+				if (took.accepted) {
+					this.commander = took.commander;
+					// Scooped goods cost nothing, so their sale is all margin
+					// (the principal's ruling on #564).
+					this.ladders = {
+						...this.ladders,
+						basis: basisAfterScoop(
+							this.ladders.basis,
+							canister.commodity,
+							took.tonnes,
+						),
+					};
+				}
 				return took.tonnes;
 			},
 			// Each canister's own frame, as it stands (#324), across the step
@@ -11568,6 +11790,8 @@ class Game {
 					key,
 					relayDestruction(record.index, now, plan.watchedStationId),
 				);
+				// No hull row and no gun: it pays in the bounty, not in rank.
+				this.creditKill(null);
 				this.play({ kind: "explosion" });
 				this.lastExit = "pirate relay destroyed";
 			}
@@ -11659,6 +11883,9 @@ class Game {
 			if (!isAlive(this.tenderCondition)) {
 				for (const t of tenderKill(record.index, now, plan.watchedStationId))
 					this.applyCarrierTransition(t.key, t.event);
+				// Unarmed, so it pays 0 (#562 D4); priced rather than skipped so
+				// every kill path reads the same.
+				this.creditKill(RELAY_TENDER_HULL_ID);
 				this.play({ kind: "explosion" });
 				this.lastExit = "relay tender destroyed";
 				this.tenderView = null;
@@ -11949,7 +12176,8 @@ class Game {
 	 * through here, so a cue cannot be forgotten at one of the four call sites.
 	 */
 	private setWitchspace(next: WitchspaceState) {
-		for (const cue of witchspaceCues(this.witchspace, next)) this.play(cue);
+		for (const cue of witchspaceCues(this.witchspace, next, WITCH_SOUND.arms))
+			this.play(cue);
 		this.witchspace = next;
 	}
 
@@ -11962,20 +12190,9 @@ class Game {
 	 * `?flightsound=legacy` arm), not a cue.
 	 */
 	private play(cue: Cue) {
-		switch (cue.kind) {
-			case "shieldHit":
-			case "hullHit":
-				// **Received, and silent on purpose.** Hits made no sound before #552
-				// and this node changes no sound. What a hit sounds like, how often a
-				// held beam cues one, and whether it is a sustained voice instead are
-				// #545's to decide by ear; that node makes this arm play. **And it
-				// owes a gate first**: the delta reads any fall in a pool or in hull,
-				// so a condition replaced downward — a save loaded with a damaged
-				// ship, a hull bought with less integrity — would cue a hit too.
-				return;
-			default:
-				this.audio.play(cue);
-		}
+		// Hits play since #545, which gave them the gate this arm once said they
+		// owed: a fall is a hit only when `applyDamage` struck (`weapon-sound.ts`).
+		this.audio.play(cue);
 	}
 
 	/**
@@ -12009,7 +12226,11 @@ class Game {
 					this.cruiseParams.vMaxKms,
 				),
 				held: this.clockHeld,
-				hushed: this.openingActive,
+				// The opening is silent (#544), and on #534's `duck` arm the bed is
+				// gone from the cut until the pilot's hands come back.
+				hushed:
+					this.openingActive ||
+					witchspaceHushesBed(this.witchspace, WITCH_SOUND.arms),
 			},
 			FLIGHT_SOUND.arms,
 			dt,
@@ -12070,36 +12291,99 @@ class Game {
 	}
 	/** The director's memory: bed, level, its hold and the variant (#548). */
 	private musicState: MusicState = initialMusicState();
+
+	/** When each message tone last sounded (#546), on the wall clock: a
+	 *  message's gap is a thing heard, and a held sim clock does not stop it. */
+	private notifyGate: NotifyGate = QUIET_NOTIFY;
+
+	/** A console message arrived (#546). `console-sound.ts` picks the cue. */
+	private consoleNotify(tone: NotifyTone, source?: "hail") {
+		const step = notifyCue(
+			this.notifyGate,
+			CONSOLE_SOUND.arms,
+			tone,
+			performance.now() / 1000,
+			source,
+		);
+		this.notifyGate = step.gate;
+		if (step.cue) this.play(step.cue);
+	}
+
+	/** A console press whose outcome the handler now knows (#546). */
+	private consolePress(accepted: boolean) {
+		const cue = pressCue(CONSOLE_SOUND.arms, accepted);
+		if (cue) this.play(cue);
+	}
+
+	/** Walk the console cursor, and tick when it lands on another row (#546).
+	 *  Every cursor path goes through here, so none can forget the tick. */
+	private stepConsoleFocus(delta: number) {
+		if (this.liveCockpit.stepFocus(delta)) this.consoleFocus("pad");
+	}
+
+	/** The console cursor landed on another row (#546). */
+	private consoleFocus(source: "pad" | "hover") {
+		const cue = focusCue(CONSOLE_SOUND.arms, source);
+		if (cue) this.play(cue);
+	}
 	/** This step's share of full drive, drift-removing and rotation thrust. */
 	private driveShare = 0;
 	private lateralShare = 0;
 	private rotationShare = 0;
 
 	/**
-	 * The shield and hull hits since the last step (D3), from a pure delta of
-	 * the condition: `hitCues` reads a fall in a pool or in hull, and knows
-	 * nothing about what caused it.
+	 * Weapons and damage, by ear (#545): this step's gun, the hits taken since
+	 * the last step and the hits landed on the selected target, through
+	 * `weapon-sound.ts`. Its cues play now; its loops are held in
+	 * `weaponMix` for the frame loop, which silences them on a held clock.
 	 *
-	 * **At the top of `step`, reading what the previous step left**, rather than
-	 * at its end: `step` returns from three places, and damage lands in half a
-	 * dozen. Read here, every one of them is seen once, a frame later — about
-	 * 17 ms, which is below what a pilot hears as late.
+	 * **Early in `step`, after the gun and before anything else lands damage**,
+	 * so the hits it reads are what the previous step left: `step` returns from
+	 * three places, and damage lands in half a dozen. Read here, every one of
+	 * them is seen once, a frame later — about 17 ms, which is below what a
+	 * pilot hears as late. #552 read hits as the first line of `step`; this
+	 * moves the read after the gun, which it needs, and no `return` stands
+	 * between the two places.
 	 */
-	private stepHitCues(dt: number) {
-		const now: HitReading = {
-			fore: this.condition.fore,
-			aft: this.condition.aft,
-			hull: this.condition.hull,
-		};
-		const step = hitCues(this.hitArm, this.hitSeen, now, dt);
-		this.hitArm = step.arm;
-		this.hitSeen = now;
+	private stepWeaponSound(dt: number, gun: { fired: boolean; sound: boolean }) {
+		const target = this.selectedTargetCondition();
+		const c = this.condition;
+		const step = weaponSound(
+			this.weaponSoundState,
+			{
+				fired: gun.fired,
+				shotSound: gun.sound,
+				trigger: this.triggerHeld(),
+				heatLocked: c.heatLocked,
+				heat: c.heat / HEAT_LOCK,
+				own: {
+					fore: c.fore,
+					aft: c.aft,
+					hull: c.hull,
+					poolMax: SHIELD_POOL,
+					sinceStruckS: c.sinceStruckS,
+				},
+				target:
+					target && this.targetId !== null
+						? {
+								id: this.targetId,
+								fore: target.fore,
+								aft: target.aft,
+								hull: target.hull,
+								sinceStruckS: this.selectedTargetStruckS(),
+							}
+						: null,
+			},
+			WEAPON_SOUND.arms,
+			dt,
+		);
+		this.weaponSoundState = step.state;
+		this.weaponMix = step.mix;
 		for (const cue of step.cues) this.play(cue);
 	}
-	/** The condition `stepHitCues` last read. Starts empty, so the first
-	 *  reading is a rise and a new ship is not a hit. */
-	private hitSeen: HitReading = { fore: 0, aft: 0, hull: 0 };
-	private hitArm: HitArm = QUIET_HITS;
+	private weaponSoundState: WeaponSoundState = QUIET_WEAPONS;
+	/** The weapon loops' levels from the last step (#545). */
+	private weaponMix: WeaponMix = SILENT_WEAPONS;
 
 	/** Put an arrival rift behind the player ship, replacing any left over. */
 	private beginArrival() {
@@ -12124,8 +12408,9 @@ class Game {
 	 * It plays the whole exit exactly as after a jump — the flash in the dark,
 	 * the tunnel out of the point and back into it, the sky unfolding, the rift
 	 * opening behind the ship where it stands, and the pilot's hands held until
-	 * the sky is back — and nothing is heard, because there was no wind-up. **The first day opens on a cinematic** (#530) calls this, and
-	 * films it from outside.
+	 * the sky is back. Whether it is heard is #534's `arrival` arm: the exit's
+	 * cues, or nothing, because there was no wind-up. **The first day opens on
+	 * a cinematic** (#530) calls this, and films it from outside.
 	 */
 	playArrival() {
 		// A charge in flight is ended first: left running, its hum and sweep play
@@ -12440,11 +12725,7 @@ class Game {
 	 * invalidate it, "which nothing does yet".
 	 */
 	private performJump(to: SystemRecord) {
-		const decision = planJump(
-			this.world.system.record,
-			to,
-			this.commander.fuelLy,
-		);
+		const decision = this.jumpDecision(to);
 		if (!decision.ok) {
 			this.jumpNotice = `jump aborted — ${decision.refusal}`;
 			// Refused at the cut, in the dark, after the sweep has peaked.
@@ -12462,6 +12743,13 @@ class Game {
 		// §7's visited flag, per galaxy (`persistent-world-state.md` §7). The
 		// start system is recorded at boot; this is every system after it.
 		this.commerceWorld = visit(this.commerceWorld, to.galaxy, to.index);
+		// #183 D4: a first arrival is a kind, pending until the next dock.
+		this.ladderPending = pendingArrival(
+			this.ladders,
+			this.ladderPending,
+			to.galaxy,
+			to.index,
+		);
 		this.observeCurrentSystemRelay();
 
 		// The flight session, reset to what arriving in a system is: at rest, in
@@ -12696,7 +12984,6 @@ class Game {
 	 * exactly what the game runs rather than its own copy of the order.
 	 */
 	step(dt: number) {
-		this.stepHitCues(dt);
 		// What the drive and thrusters do this step, set where they fly (#544).
 		// Zero on every path that does not fly them: docked, cruise, and the
 		// docking computer's rotation.
@@ -12717,7 +13004,7 @@ class Game {
 		// trigger drew nothing and played nothing, and read as a dead key.
 		const feedback = stepGunFeedback(this.gunFeedback, gun.fired, dt);
 		this.gunFeedback = feedback.feedback;
-		if (feedback.cue) this.play(feedback.cue);
+		this.stepWeaponSound(dt, { fired: gun.fired, sound: feedback.sound });
 		this.updateLocalFrameBody();
 		// H6's lazy clear of the witness list, on the one clock that matters. This
 		// line runs on every flight step including §12's docked and arriving
@@ -13060,7 +13347,7 @@ class Game {
 		this.stepScan(dt);
 		// §7: the tank refills passively in normal flight, and that is the
 		// anti-stranding rule rather than a convenience.
-		this.chargeAu = chargeAfterRegen(this.chargeAu, dt);
+		this.chargeAu = chargeAfterRegen(this.chargeAu, dt, this.chargeCapacityAu);
 		this.stepDocking(before);
 		// Last, because §8's wind-up is only vulnerable if the frame it fires on
 		// is flown first — `stepDocking` is what applies a failed entry's damage,
@@ -13330,6 +13617,9 @@ class Game {
 			rig.hemisphere.position.copy(STAR_DIR);
 			rig.scene.environmentRotation.copy(ENV_EULER);
 		}
+		// The canopy glass is a basic material and reads no `scene` field, so
+		// its environment is turned onto the star here, beside the scenes'.
+		this.canopyGlass?.envMapRotation.copy(ENV_EULER);
 	}
 
 	/**
@@ -13908,12 +14198,17 @@ class Game {
 				opening.frame(this.openingSim, dt);
 				if (opening.done) this.endOpening();
 			} else this.step(dt);
+			// #562 D2's play log: seconds with the clock running.
+			this.ladders.playedS += dt;
 		}
 		// Every frame, paused ones too: a paused burn does not keep its drive
 		// (the principal's ruling on #544), which needs the sound to hear the
 		// pause rather than keep the last level it was given.
 		this.stepFlightSound(this.clockHeld ? 0 : dt);
 		this.stepMusicDirector(this.clockHeld ? 0 : dt);
+		// The combat loops too: a held clock stops the step that would let a
+		// beam or a sizzle go, so the frame loop lets go of them here (#545).
+		this.audio.weapons(this.clockHeld ? SILENT_WEAPONS : this.weaponMix);
 		if (this.frameAttribution)
 			this.frameAttribution.recordCpu(
 				"simulation/step",
@@ -14192,6 +14487,7 @@ class Game {
 			// market call, so the figure on this page is the figure the till
 			// would pay, and `null` in flight rather than a stale one.
 			holdBids: this.holdBids(dockContext),
+			ladders: this.commanderPage(),
 			mode: this.regime === "cruise" ? "CRUISE" : "NORMAL FLIGHT",
 			throttle: `${(this.throttle * 100).toFixed(0)}%`,
 			speed: velocity.speed,
@@ -14327,7 +14623,9 @@ class Game {
 				// filter rather than a regeneration — keying on the station made
 				// the second dock in a system pay for the whole neighbourhood
 				// again, inside a cockpit update.
-				const place = `${context.galaxyIndex}:${this.world.system.record.index}`;
+				// The tank is in the key: the neighbourhood is the flown hull's
+				// reach (#554), and a restore can replace the hull.
+				const place = `${context.galaxyIndex}:${this.world.system.record.index}:${this.fuelCapacityLy}`;
 				if (place !== this.requestDestinationsKey) {
 					this.requestDestinations = deliveryCandidates(
 						this.world.galaxy.systems,
@@ -14336,6 +14634,7 @@ class Game {
 						// No poster to exclude at this level; the filter below is
 						// what removes whichever station is posting.
 						NO_EXCLUDED_STATION,
+						this.fuelCapacityLy,
 					);
 					this.requestDestinationsKey = place;
 				}
@@ -14400,15 +14699,17 @@ class Game {
 		};
 	}
 
-	private actOnRequest(action: string, id: string): void {
+	/** Whether the board did what was asked: the press's sound reads it (#546). */
+	private actOnRequest(action: string, id: string): boolean {
 		const view = this.requestsView();
+		let ok = true;
 		if (action === "details") {
 			if (
 				!view.offers.some((o) => o.id === id) &&
 				!this.requests.byId[id] &&
 				!this.requests.leadsById[id]
 			)
-				return;
+				return false;
 			this.requestSelectedId = id;
 			this.requestMessage = "";
 		} else {
@@ -14420,6 +14721,7 @@ class Game {
 				this.requestContext(view.docked),
 			);
 			this.requestMessage = result.message;
+			ok = result.ok;
 			if (result.ok) {
 				this.requests = result.state;
 				if (result.rewardCr)
@@ -14436,6 +14738,16 @@ class Game {
 					}
 					this.commander = { ...this.commander, cargo };
 				}
+				// #183 D3: a settlement's pay banks at once — a report happens
+				// docked — and goods a job took take their basis with them.
+				this.ladders = withCapstone(
+					ladderAfterSettlement(
+						this.ladders,
+						result.rewardCr ?? 0,
+						this.commander.cargo,
+					),
+					this.world.gameTime,
+				);
 				if (result.mark) {
 					// §4's mark, through the module's own writer and with the
 					// **flown** hull's hold (#182) — the same figure the till uses.
@@ -14466,6 +14778,7 @@ class Game {
 		}
 		this.requestRevision += 1;
 		this.updateCockpit();
+		return ok;
 	}
 
 	/**
@@ -14577,6 +14890,7 @@ class Game {
 			equipment: stationEquipmentScreen({
 				type: market.type,
 				displayTL: this.world.system.record.displayTL,
+				rungs: this.rungs(),
 			}),
 			credits: this.commander.credits,
 			hold,
@@ -14594,6 +14908,62 @@ class Game {
 			revision: this.stationConsoleRevision,
 		};
 		return this.stationConsoleCache;
+	}
+
+	private commanderPageKey = "";
+	private commanderPageView: LadderView | null = null;
+
+	/**
+	 * The Commander page's view, rebuilt only when a figure it prints changes:
+	 * the cockpit state is built every frame, and the page is one tab of six.
+	 */
+	private commanderPage(): LadderView {
+		const key = ladderInputKey(this.ladders, this.ladderPending);
+		if (key !== this.commanderPageKey || !this.commanderPageView) {
+			this.commanderPageKey = key;
+			this.commanderPageView = ladderView(this.ladders, this.ladderPending);
+		}
+		return this.commanderPageView;
+	}
+
+	/** The pilot's three rungs, off the banked record. */
+	rungs(): Rungs {
+		return rungsOf(this.ladders);
+	}
+
+	/**
+	 * Banks the pending credit and the station's first-dock kind (#183 D7), and
+	 * records the capstone if this dock reached it (D8).
+	 */
+	private bankLadders(station: CarrierKey): void {
+		this.ladders = bankOnDock(this.ladders, this.ladderPending, {
+			galaxyIndex: this.world.system.record.galaxy,
+			station,
+			gameTime: this.world.gameTime,
+		});
+		this.ladderPending = emptyPending();
+		this.saveDirty();
+	}
+
+	/**
+	 * A player's kill, priced on the combat ladder (#562 D3): pending until the
+	 * next dock. `null` is a target with no hull row — the relay — and pays
+	 * nothing, as an unarmed hull does (D4). Called at each of the four kill
+	 * sites — traffic, raider (its defender included), relay, tender — by hand,
+	 * and nothing checks that list: `probe-raider-consequence` reads the
+	 * raider's credit and `probe-traffic-engagement` an unarmed kill's zero, so
+	 * a relay or tender call that went missing would pay what it pays anyway,
+	 * which is nothing.
+	 */
+	private creditKill(target: HullId | null): void {
+		if (target === null) return;
+		this.ladderPending = pendingKill(
+			this.ladderPending,
+			killCredit(
+				{ hull: this.commander.hull, equipment: this.commander.ownedEquipment },
+				target,
+			),
+		);
 	}
 
 	/**
@@ -14627,6 +14997,16 @@ class Game {
 			chargeAu: this.chargeAu,
 			permadeath: this.permadeath,
 			firstDay: this.firstDay,
+			// A copy (`playedS` moves in place every frame), and a basis brought
+			// into line with the hold. **A guard, not a known path**: today the one
+			// non-sale removal is a job hand-over, which reconciles as it settles.
+			// The parser refuses a basis covering more than is aboard, so a later
+			// path that forgets — `combat-model.md` §4's confiscation is specified
+			// and not built — would otherwise make a written save unloadable.
+			ladders: {
+				...this.ladders,
+				basis: reconcileBasis(this.ladders.basis, this.commander.cargo),
+			},
 			flight: {
 				pos: [
 					this.world.ship.pos.x,
@@ -15218,6 +15598,7 @@ class Game {
 			});
 			if (this.firstDayLog.length > FIRST_DAY_LOG_KEEP)
 				this.firstDayLog.shift();
+			this.consoleNotify("message");
 		}
 		this.firstDayLastStep = current;
 	}
@@ -15337,6 +15718,9 @@ class Game {
 				event.occurredAt,
 			);
 			if (requests !== this.requests) {
+				// A request is ready to report: nothing else says so (#546). Not
+				// every change: a kill can advance a stage without readying one.
+				if (readiedBy(this.requests, requests)) this.consoleNotify("good");
 				this.requests = requests;
 				this.requestRevision += 1;
 			}
@@ -15426,10 +15810,13 @@ class Game {
 		this.stationConsoleMessage = null;
 	}
 
-	/** Applies a complete commerce result or leaves both owner states untouched. */
-	private transactStation(action: StationAction) {
+	/**
+	 * Applies a complete commerce result or leaves both owner states untouched.
+	 * Returns whether the till took the press: the press's sound reads it (#546).
+	 */
+	private transactStation(action: StationAction): boolean {
 		const context = this.dockedStationContext();
-		if (!context) return;
+		if (!context) return false;
 		const { market, envelope, stationKey, galaxyIndex, economy, gameTimeMin } =
 			context;
 		const result = transactAtStation({
@@ -15441,6 +15828,7 @@ class Game {
 			gameTimeMin,
 			displayTL: this.world.system.record.displayTL,
 			entrustedT: entrustedTonnesAboard(this.requests),
+			rungs: this.rungs(),
 			action,
 		});
 		if (!result.accepted) {
@@ -15463,9 +15851,14 @@ class Game {
 			});
 			this.stationConsoleRevision += 1;
 			this.updateCockpit();
-			return;
+			return false;
 		}
 		this.clearStationRefusal();
+		// #183 D3: a buy records its basis, a sale banks its margin at once.
+		this.ladders = withCapstone(
+			ladderAfterMarket(this.ladders, action, this.commander, result.commander),
+			this.world.gameTime,
+		);
 		this.commander = result.commander;
 		// Through the module's own writer, not by hand. `setDeficits` carries
 		// the galaxy bound, the "no write before the clock" refusal and
@@ -15482,6 +15875,7 @@ class Game {
 		this.saveDirty();
 		this.stationConsoleRevision += 1;
 		this.updateCockpit();
+		return true;
 	}
 
 	/** Resolves the live dock session once for rendering and commerce actions. */
@@ -15647,7 +16041,7 @@ class Game {
 				targetKm === null ? "" : range(targetKm),
 				eta === null ? "eta —" : `eta ${duration(eta)}`,
 				closing,
-				`charge ${this.chargeAu.toFixed(1)}/${CHARGE_CAPACITY_AU} AU`,
+				`charge ${this.chargeAu.toFixed(1)}/${this.chargeCapacityAu} AU`,
 				// The hyperspace tank and the set course (#187). They are here and
 				// not on the floor strip because `hud-and-scanner.md` §5 fixes
 				// that strip at four cells and gives the tank no home at all —
@@ -15725,7 +16119,7 @@ class Game {
 			throttle: this.throttle,
 			assist: this.assist,
 			chargeAu: this.chargeAu,
-			chargeCapacityAu: CHARGE_CAPACITY_AU,
+			chargeCapacityAu: this.chargeCapacityAu,
 			chargeRegenAuPerS: CHARGE_REGEN_AU_PER_S,
 		});
 	}
@@ -15757,13 +16151,13 @@ class Game {
 		// **Every input `courseProgress` reads is in the key.** The ship's
 		// galaxy as well as the course's — a course is per-galaxy, and §5.2
 		// names what a mismatch between the two means — and the jump range,
-		// which is `courseProgress`'s fourth argument and today a constant.
-		// #185 makes the range hull-aware, and a key blind to it would then
-		// serve the previous hull's chain.
-		// One local, passed *and* keyed. Interpolating the constant while letting
+		// which is `courseProgress`'s fourth argument and the flown hull's tank
+		// (#554). A key blind to it would serve the previous hull's chain after a
+		// restore replaced the hull.
+		// One local, passed *and* keyed. Interpolating a constant while letting
 		// `courseProgress` take its own default keyed a number this call could
 		// not vary — protection the comment claimed and the key did not give.
-		const maxJump = JUMP_RANGE_LY;
+		const maxJump = this.fuelCapacityLy;
 		const key = `${course.galaxy}:${course.destinationIndex}:${here.galaxy}:${here.index}:${maxJump}`;
 		if (this.courseChainCache?.key !== key) {
 			const progress = courseProgress(
@@ -15797,7 +16191,7 @@ class Game {
 	 */
 	courseCueState(): CourseCue | null {
 		const chain = this.courseChain();
-		if (chain === null) return null;
+		if (chain === null) return this.courseWithoutRoute();
 		if (chain.nextHop === null)
 			return { kind: "arrived", destination: chain.destination.name };
 		return {
@@ -15809,6 +16203,25 @@ class Game {
 			// predicts cannot drift apart.
 			affordable: this.jumpDecision(chain.nextHop).ok,
 		};
+	}
+
+	/**
+	 * A course this hull has no chain for, as a cue (#554, #185 D4).
+	 *
+	 * `courseProgress` answers `null` for three reasons, and only one of them
+	 * is this: a destination in the ship's own galaxy that `planRoute` cannot
+	 * reach at the flown hull's tank. The other two — another galaxy, an index
+	 * the galaxy does not have — keep drawing no row, as before.
+	 */
+	private courseWithoutRoute(): CourseCue | null {
+		const course = this.course;
+		if (!course) return null;
+		const here = this.world.system.record;
+		if (course.galaxy !== here.galaxy) return null;
+		const to = this.world.galaxy.systems.find(
+			(s) => s.index === course.destinationIndex,
+		);
+		return to ? { kind: "no-route", destination: to.name } : null;
 	}
 
 	/** Whether a raider is the selected target and on the scanner (#324). */
@@ -15870,6 +16283,24 @@ class Game {
 	 * has none; a wreck shows no line (#351 Q12); the relay's tender shows its
 	 * ship shields and hull (Q13).
 	 */
+	/**
+	 * Seconds since the selected target was last struck, beside
+	 * `selectedTargetCondition` and in its order, or `null` for a target that
+	 * keeps no strike clock: the relay has hull points only (#545, sage round 3).
+	 */
+	private selectedTargetStruckS(): number | null {
+		if (this.raiderSelected())
+			return this.encounter?.raider?.condition.sinceStruckS ?? null;
+		if (this.relayShootable()) return null;
+		if (this.tenderSelected()) return this.tenderCondition.sinceStruckS;
+		if (this.trafficSelected())
+			return (
+				this.trafficEngagements.get(this.targetId as CarrierKey)?.condition
+					.sinceStruckS ?? null
+			);
+		return null;
+	}
+
 	private selectedTargetCondition(): ConditionPrint | null {
 		if (this.raiderSelected()) return this.encounter?.raider?.condition ?? null;
 		// #351: the relay carries hull points and no shields, so its line reads

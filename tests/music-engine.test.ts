@@ -581,6 +581,187 @@ describe("stereo and the space (#560, after #548's first listening)", () => {
 		expect(energy(L, 0.5, 0.65)).toBeGreaterThan(0);
 	});
 
+	test("replaying the song inside its stop now's fade brings its room back on the line (sage round 9)", () => {
+		// The stop faded the room to 0 and the replay restored only the
+		// song's own gain: the song came back dry, for good.
+		const e = new MusicEngine(SR, 16);
+		const hall: Song = {
+			name: "hall",
+			beatsPerBar: 4,
+			parts: {
+				p: {
+					voice: "fm",
+					level: 1,
+					reverb: 1,
+					decayS: 0.1,
+					sustain: 0,
+					releaseS: 0.05,
+				},
+			},
+			sections: [
+				{
+					name: "A",
+					bars: 2,
+					events: [{ part: "p", bar: 0, beat: 0, dur: 0.1, pitch: 69, vel: 1 }],
+				},
+			],
+			tempo: [{ bar: 0, bpm: 120 }],
+			space: { reverbS: 2 },
+		};
+		e.command({ type: "load", id: "hall", song: hall }, 0);
+		e.command({ type: "play", id: "hall", at: "bar" }, 0);
+		const L = new Float32Array(128);
+		const stopAt = 0.25 * SR - ((0.25 * SR) % 128);
+		const replayAt = 0.5 * SR - ((0.5 * SR) % 128);
+		let tail = 0;
+		for (let f = 0; f < 2.8 * SR; f += 128) {
+			if (f === stopAt) e.command({ type: "stop", at: "now", fadeS: 0.5 }, f);
+			if (f === replayAt)
+				e.command({ type: "play", id: "hall", section: "A", at: "bar" }, f);
+			e.render(L, f);
+			// The replay is a jump on the bar line at 2 s, and its note is dry by
+			// 2.2 s: after that, only the room sounds.
+			if (f >= 2.3 * SR) for (const v of L) tail += v * v;
+		}
+		expect(e.playing).toBe("hall");
+		expect(tail).toBeGreaterThan(1e-6);
+	});
+
+	test("a room field given as undefined takes its default, not NaN (sage round 9)", () => {
+		const { L, R } = stereo({ reverb: 1, echo: 1 }, 1, (e, f) => {
+			if (f === 0) {
+				e.command({ type: "stop", at: "now", fadeS: 0 }, 0);
+				e.command(
+					{
+						type: "load",
+						id: "undef",
+						song: {
+							name: "undef",
+							beatsPerBar: 4,
+							parts: { p: { voice: "fm", level: 1, reverb: 1, echo: 1 } },
+							sections: [
+								{
+									name: "A",
+									bars: 1,
+									events: [
+										{ part: "p", bar: 0, beat: 0, dur: 0.5, pitch: 69, vel: 1 },
+									],
+								},
+							],
+							tempo: [{ bar: 0, bpm: 120 }],
+							space: {
+								reverbS: undefined,
+								echoBeats: undefined,
+								echoFeedback: undefined,
+							},
+						},
+					},
+					0,
+				);
+				e.command({ type: "play", id: "undef", at: "bar" }, 0);
+			}
+		});
+		let energy = 0;
+		for (let i = 0; i < L.length; i++) {
+			expect(Number.isFinite(L[i]) && Number.isFinite(R[i])).toBe(true);
+			energy += L[i] * L[i];
+		}
+		expect(energy).toBeGreaterThan(0);
+	});
+
+	test("a song started after a stop now's fade has run does not bring the stopped room back", () => {
+		// The stop fades the room to 0, but the room still holds the hall's
+		// tail; the next song's line set the room back to full, and that tail
+		// came back with it, at once, before the new song had played a note.
+		const e = new MusicEngine(SR, 16);
+		const at = (beat: number): Song => ({
+			name: "hall",
+			beatsPerBar: 4,
+			parts: { p: { voice: "pad", level: 1, reverb: 1, echo: 1 } },
+			sections: [
+				{
+					name: "A",
+					bars: 1,
+					events: [{ part: "p", bar: 0, beat, dur: 1, pitch: 60, vel: 1 }],
+				},
+			],
+			tempo: [{ bar: 0, bpm: 120 }],
+		});
+		e.command({ type: "load", id: "a", song: at(0) }, 0);
+		e.command({ type: "load", id: "b", song: at(3) }, 0);
+		e.command({ type: "play", id: "a", at: "bar" }, 0);
+		const stopAt = 1.2 * SR - ((1.2 * SR) % 128);
+		const playAt = 1.5 * SR - ((1.5 * SR) % 128);
+		const L = new Float32Array(128);
+		const R = new Float32Array(128);
+		let ringing = 0;
+		let between = 0;
+		for (let f = 0; f < 2.5 * SR; f += 128) {
+			if (f === stopAt) e.command({ type: "stop", at: "now", fadeS: 0.1 }, f);
+			if (f === playAt) e.command({ type: "play", id: "b", at: "bar" }, f);
+			e.render(L, f, R);
+			for (let k = 0; k < 128; k++) {
+				const v = Math.abs(L[k]) + Math.abs(R[k]);
+				// Before the stop the room is ringing; after b starts, and
+				// before its first note on beat 3, it must be silent.
+				if (f + k < stopAt) ringing = Math.max(ringing, v);
+				else if (f + k >= playAt) between = Math.max(between, v);
+			}
+		}
+		expect(ringing).toBeGreaterThan(0.01);
+		expect(between).toBe(0);
+	});
+
+	test("a worklet quantum takes no typed-array view, stereo or folded (sage round 8)", () => {
+		// `render` may not allocate (#543 D1). A view is an allocation, and the
+		// stereo render took eight a quantum: one per buffer and send.
+		const e = new MusicEngine(SR, 16);
+		const room: Song = {
+			name: "room",
+			beatsPerBar: 4,
+			parts: {
+				p: { voice: "pad", level: 1, reverb: 0.5, echo: 0.5, pan: -0.5 },
+				d: { voice: "drone", level: 1, reverb: 0.5 },
+			},
+			sections: [
+				{
+					name: "A",
+					bars: 1,
+					events: [
+						{ part: "p", bar: 0, beat: 0, dur: 2, pitch: 60, vel: 1 },
+						{ part: "d", bar: 0, beat: 0, dur: 2, pitch: 48, vel: 1 },
+					],
+				},
+			],
+			tempo: [{ bar: 0, bpm: 120 }],
+		};
+		e.command({ type: "load", id: "room", song: room }, 0);
+		e.command({ type: "play", id: "room", at: "bar" }, 0);
+		const L = new Float32Array(128);
+		const R = new Float32Array(128);
+		const subarray = Float32Array.prototype.subarray;
+		let views = 0;
+		Float32Array.prototype.subarray = function (
+			this: Float32Array,
+			...args: [number?, number?]
+		) {
+			views++;
+			return subarray.apply(this, args);
+		};
+		let peak = 0;
+		try {
+			for (let f = 0; f < 0.5 * SR; f += 128) {
+				if (f % 256 === 0) e.render(L, f, R);
+				else e.render(L, f);
+				for (let k = 0; k < 128; k++) peak = Math.max(peak, Math.abs(L[k]));
+			}
+		} finally {
+			Float32Array.prototype.subarray = subarray;
+		}
+		expect(peak).toBeGreaterThan(0);
+		expect(views).toBe(0);
+	});
+
 	test("a stop now fades the space with the song, and then it is silence", () => {
 		const { L, R } = stereo({ reverb: 1, echo: 1 }, 2, (e, f) => {
 			if (f === 0.25 * SR - ((0.25 * SR) % 128))
