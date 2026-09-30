@@ -1209,10 +1209,37 @@ describe("§9.1.11 the docking computer", () => {
 		});
 		expect(cmd.engaged).toBe(false);
 		expect(cmd.refused).toBe("out-of-range");
-		// A refusal records idle (#596): `Game` stores this phase before it
-		// disengages, so engaging again after a refusal feeds the next step
-		// the same phase `engage()` sets.
-		expect(cmd.phase).toBe("idle");
+	});
+
+	test("every refusal records idle", () => {
+		// #596: `Game` stores this phase before it disengages, so engaging again
+		// after any refusal feeds the next step the same phase `engage()` sets.
+		const frame = frameFor();
+		const granted = requestClearance(newDockingState(), {
+			gameTime: 0,
+			rangeKm: 500,
+			...TRAFFIC,
+		});
+		const refusal = (rangeKm: number, state: typeof granted) =>
+			dockingComputerStep({
+				frame,
+				pose: nominal(frame, { rel: scale(AXIS, rangeKm) }),
+				state,
+				gameTime: 0,
+				maxSpeedKms: ASSIST_CAP_KMS,
+				previousPhase: "run-in",
+			});
+		const inside = VICINITY_KM * 0.5;
+		const cases = [
+			refusal(inside, newDockingState()),
+			refusal(inside, { ...granted, hostile: true }),
+			refusal(VICINITY_KM * 1.1, granted),
+		];
+		expect(cases.map(({ refused, phase }) => ({ refused, phase }))).toEqual([
+			{ refused: "no-clearance", phase: "idle" },
+			{ refused: "hostile", phase: "idle" },
+			{ refused: "out-of-range", phase: "idle" },
+		]);
 	});
 });
 

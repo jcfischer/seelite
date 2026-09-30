@@ -52,7 +52,7 @@ describe("DockingComputer", () => {
 		const computer = new DockingComputer();
 		computer.engage();
 		computer.beginStep();
-		computer.phaseAt("station-a", "idle");
+		computer.phaseAt("station-a");
 		computer.recordPhase("run-in");
 		computer.disengage();
 		expect(computer.phase).toBe("run-in");
@@ -70,16 +70,21 @@ describe("DockingComputer", () => {
 
 	test("a step takes the last phase and leaves idle behind", () => {
 		const computer = new DockingComputer();
+		computer.phaseAt("station-a");
 		computer.recordPhase("run-in");
-		expect(computer.beginStep()).toBe("run-in");
+		computer.beginStep();
 		expect(computer.phase).toBe("idle");
+		expect(computer.phaseAt("station-a")).toBe("run-in");
 	});
 
 	test("a phase belongs to one station's corridor", () => {
 		const computer = new DockingComputer();
-		expect(computer.phaseAt("station-a", "run-in")).toBe("idle");
-		expect(computer.phaseAt("station-a", "run-in")).toBe("run-in");
-		expect(computer.phaseAt("station-b", "run-in")).toBe("idle");
+		computer.recordPhase("run-in");
+		computer.beginStep();
+		// The first station seen has no phase of its own yet.
+		expect(computer.phaseAt("station-a")).toBe("idle");
+		expect(computer.phaseAt("station-a")).toBe("run-in");
+		expect(computer.phaseAt("station-b")).toBe("idle");
 	});
 });
 

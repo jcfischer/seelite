@@ -10854,13 +10854,13 @@ class Game {
 	): boolean {
 		// Taken before anything can return. Every early exit leaves the corridor,
 		// so the stored phase is idle unless a step runs and records its own.
-		const taken = this.dockingComputer.beginStep();
+		this.dockingComputer.beginStep();
 		if (!this.dockingComputer.engaged || this.dockedAt) return false;
 		// The first entry is the nearest station: `dockingApproaches` walks in
 		// range order.
 		const [nearestId, approach] = approaches.entries().next().value ?? [];
 		if (!nearestId || !approach) return false;
-		const previousPhase = this.dockingComputer.phaseAt(nearestId, taken);
+		const previousPhase = this.dockingComputer.phaseAt(nearestId);
 		const { frame } = approach;
 		const stationState = this.dockingStateOf(nearestId);
 		const awaitingBerth = stationState.clearance.kind === "queued";

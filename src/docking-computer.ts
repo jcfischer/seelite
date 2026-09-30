@@ -11,8 +11,9 @@
  * setter here, so tsc refuses a write that skips the pair.
  *
  * Clearing the pilot's arrival-lane requests is not in here. It is `Game`'s
- * lane state, and the dock that ends a flight does not clear them while every
- * other disengage does, so each call site keeps its own.
+ * lane state, and two disengages do not clear them: the dock or bounce that
+ * ends a flight, and the flight-session teardown. `Game.cancelComputerApproach`
+ * pairs the two for every other site.
  */
 import type { ComputerCommand, ComputerPhase } from "./docking";
 
@@ -26,6 +27,8 @@ export class DockingComputer {
 	#refusal: ComputerRefusal = null;
 	#phase: ComputerPhase = "idle";
 	#stationId: string | null = null;
+	/** The phase this step started from, kept by `beginStep`. */
+	#taken: ComputerPhase = "idle";
 
 	/** Whether it is flying. Any control input cancels it (§7). */
 	get engaged(): boolean {
@@ -76,23 +79,23 @@ export class DockingComputer {
 	}
 
 	/**
-	 * Taken at the top of every step, before anything can return: the phase
-	 * the last step recorded, with idle left in its place, so every early exit
-	 * leaves the corridor.
+	 * Called at the top of every step, before anything can return: it keeps
+	 * the phase the last step recorded for `phaseAt` and leaves idle in its
+	 * place, so every early exit leaves the corridor.
 	 */
-	beginStep(): ComputerPhase {
-		const previous = this.#phase;
+	beginStep(): void {
+		this.#taken = this.#phase;
 		this.#phase = "idle";
-		return previous;
 	}
 
 	/**
-	 * `previous` if the computer is still at the station that phase was flown
-	 * at, else idle. A phase belongs to one station's corridor; carried to
-	 * another it would start that run-in on the wide side of the hysteresis.
+	 * The phase `beginStep` kept, if the computer is still at the station that
+	 * phase was flown at, else idle. A phase belongs to one station's corridor;
+	 * carried to another it would start that run-in on the wide side of the
+	 * hysteresis.
 	 */
-	phaseAt(stationId: string, previous: ComputerPhase): ComputerPhase {
-		if (stationId === this.#stationId) return previous;
+	phaseAt(stationId: string): ComputerPhase {
+		if (stationId === this.#stationId) return this.#taken;
 		this.#stationId = stationId;
 		return "idle";
 	}
