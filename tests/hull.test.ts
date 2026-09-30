@@ -510,9 +510,9 @@ describe("what a hull costs (#182, #26's D4 and D7)", () => {
 		expect(HULL_PRICE_UPPER_EXPONENT).toBeLessThan(HULL_PRICE_EXPONENT);
 		// The knee is a hold the roster sells, so no hull is priced by a segment
 		// that was fitted without it.
-		expect(
-			PURCHASABLE_HULL_IDS.map((id) => HULL_SPECS[id].holdT),
-		).toContain(HULL_PRICE_KNEE_HOLD_T);
+		expect(PURCHASABLE_HULL_IDS.map((id) => HULL_SPECS[id].holdT)).toContain(
+			HULL_PRICE_KNEE_HOLD_T,
+		);
 		const perT = (h: number) => (hullPriceCr(h) as number) / h;
 		expect(perT(HULL_CEILING_HOLD_T)).toBeLessThan(
 			perT(HULL_PRICE_KNEE_HOLD_T),
