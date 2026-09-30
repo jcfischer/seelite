@@ -51,6 +51,33 @@ export const PROBE_CATALOG = Object.freeze(
 			],
 		),
 		entry(
+			"probe-weapon-sound.mjs",
+			"Fights a live duel on fixed steps and reads back the combat cues and loop levels: a hit taken plays and names its pool, a hit through the shield plays on the hull, a condition replaced downward plays nothing, the beam arm holds a loop while the gun fires, a hit landed on the selected raider plays, and the legacy arm keeps hits silent.",
+			[
+				"audio",
+				"combat sound",
+				"laser",
+				"shield hit",
+				"hull hit",
+				"damage",
+				"gun heat",
+			],
+		),
+		entry(
+			"probe-console-sound.mjs",
+			"Plays the running game's consoles and reads back which cue each act asks for: a tab or a purchase is a press, a refused purchase a refusal, a cursor move and a hover a tick, a clearance answer one message, and the legacy arm none of them.",
+			[
+				"audio",
+				"console sound",
+				"notifications",
+				"button clicks",
+				"refusal",
+				"pad focus",
+				"hover",
+				"docking clearance",
+			],
+		),
+		entry(
 			"probe-flight-sound.mjs",
 			"Flies the running game and reads back the ship's loop levels: a burn raises the drive and holding speed idles it, a turn fires the thrusters, cruise spools, engages and drops with one cue each, and the legacy arm plays only the old bed.",
 			[
@@ -255,6 +282,19 @@ export const PROBE_CATALOG = Object.freeze(
 			],
 		),
 		entry(
+			"probe-ladders.mjs",
+			"Banks a kill on a real dock, draws the three ladders on the right console's Commander page, and checks a locked shipyard row and the rung that opens it.",
+			[
+				"ladders",
+				"rung",
+				"banking on dock",
+				"Commander page",
+				"equipment gate",
+				"locked row",
+				"right console",
+			],
+		),
+		entry(
 			"probe-hud.mjs",
 			"Checks full-screen HUD sizing and projection of attitude, velocity, target, and docking markers.",
 			["HUD", "projection", "canvas resize", "markers", "cockpit"],
@@ -413,7 +453,7 @@ export const PROBE_CATALOG = Object.freeze(
 				"static routes",
 				"privacy promise",
 				"Play now",
-				"no tracking",
+				"visit count",
 			],
 		),
 		entry(

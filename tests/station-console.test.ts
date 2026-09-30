@@ -13,6 +13,7 @@
  *   count check is blind from `displayTL` 0 through 6 — exactly the half a
  *   reader thinking about frontier stations would write against.
  */
+import { TOP_RUNGS } from "../src/ladder";
 import { describe, expect, test } from "bun:test";
 import { readFileSync } from "node:fs";
 import {
@@ -333,7 +334,11 @@ test("obligation 8: the gate puts the galactic hyperdrive at displayTL 7", () =>
 // ---------------------------------------------------------------------------
 
 test("obligation 6: a low-TL trade station lists what it sells and names what it does not", () => {
-	const screen = stationEquipmentScreen({ type: "trade", displayTL: 4 });
+	const screen = stationEquipmentScreen({
+		type: "trade",
+		displayTL: 4,
+		rungs: TOP_RUNGS,
+	});
 	expect(screen.available.length).toBeGreaterThan(0);
 	expect(screen.unavailable.length).toBeGreaterThan(0);
 	for (const entry of screen.unavailable) {
@@ -361,12 +366,20 @@ test("obligation 6: a low-TL trade station lists what it sells and names what it
 });
 
 test("obligation 6: type exclusives are sold at their own type and named everywhere else", () => {
-	const refinery = stationEquipmentScreen({ type: "refinery", displayTL: 9 });
+	const refinery = stationEquipmentScreen({
+		type: "refinery",
+		displayTL: 9,
+		rungs: TOP_RUNGS,
+	});
 	expect(refinery.available.map((e) => e.name)).toContain("Fuel Scoops");
 	expect(refinery.available.map((e) => e.name)).toContain("Mining Laser");
 	expect(refinery.unavailable.map((e) => e.reason)).toContain("shipyards only");
 
-	const shipyard = stationEquipmentScreen({ type: "shipyard", displayTL: 11 });
+	const shipyard = stationEquipmentScreen({
+		type: "shipyard",
+		displayTL: 11,
+		rungs: TOP_RUNGS,
+	});
 	expect(shipyard.available.map((e) => e.name)).toContain("Military Laser");
 	expect(shipyard.unavailable.map((e) => e.reason)).toContain(
 		"refineries only",
@@ -389,7 +402,11 @@ test("obligation 6: type exclusives are sold at their own type and named everywh
 	// station types name the module and refuse to sell it. A refinery is
 	// checked above through the shared reason string; the trade station is the
 	// type with no exclusive of its own, so nothing else covers it.
-	const trade = stationEquipmentScreen({ type: "trade", displayTL: 11 });
+	const trade = stationEquipmentScreen({
+		type: "trade",
+		displayTL: 11,
+		rungs: TOP_RUNGS,
+	});
 	for (const screen of [refinery, trade]) {
 		expect(screen.available.map((e) => e.name)).not.toContain(
 			LONG_RANGE_SCANNER,
@@ -402,13 +419,22 @@ test("obligation 6: type exclusives are sold at their own type and named everywh
 
 test("§8.3: the hull section exists at a shipyard and is empty until #26", () => {
 	expect(
-		stationEquipmentScreen({ type: "shipyard", displayTL: 11 }).hullsSection,
+		stationEquipmentScreen({
+			type: "shipyard",
+			displayTL: 11,
+			rungs: TOP_RUNGS,
+		}).hullsSection,
 	).toBe(true);
 	expect(
-		stationEquipmentScreen({ type: "shipyard", displayTL: 11 }).hulls,
+		stationEquipmentScreen({
+			type: "shipyard",
+			displayTL: 11,
+			rungs: TOP_RUNGS,
+		}).hulls,
 	).toEqual([]);
 	expect(
-		stationEquipmentScreen({ type: "trade", displayTL: 11 }).hullsSection,
+		stationEquipmentScreen({ type: "trade", displayTL: 11, rungs: TOP_RUNGS })
+			.hullsSection,
 	).toBe(false);
 });
 

@@ -40,7 +40,7 @@
 import { type CarrierKey, carrierKey } from "./carrier-key";
 import { type DeficitMap, readDeficit } from "./deficits";
 import { DOMAIN } from "./domains";
-import { JUMP_RANGE_LY, type SystemRecord, distanceLy } from "./galaxy";
+import { type SystemRecord, distanceLy } from "./galaxy";
 import { reachable } from "./galaxy-route";
 import {
 	type Commodity,
@@ -223,7 +223,7 @@ export const JOB_ROWS: readonly JobRow[] = [
 export interface JobDestination {
 	system: SystemRecord;
 	station: Station;
-	/** 0 within the posting system; never more than `JUMP_RANGE_LY`. */
+	/** 0 within the posting system; never more than the flown hull's tank. */
 	distanceLy: number;
 }
 
@@ -232,12 +232,12 @@ export interface JobDestination {
  * stations, and the stations of every system one jump away.
  *
  * The ruling is the principal's (#411, 2026-09-20): one jump, within the jump
- * tank's capacity. `JUMP_RANGE_LY` is a jump's reach and `reachable` already
- * reads it; `tests/jobs.test.ts` holds it at or under `JUMP_TANK_LY`, which is
- * what makes "within the tank" a claim that can fail rather than a restatement
- * of the constant the filter uses. **`CommanderState.fuelLy` is not read here
- * and must not be** — see the module header. #185 is open on the per-hull
- * tank; when it closes, this is the function that owes it a second look.
+ * tank's capacity. Since #185 D5 that is the **flown hull's** `tankLy`, which
+ * is its jump range and its capacity at once (#554) — so the board's contents
+ * depend on the hull, and `maxJump` is required for `FlightPerformance`'s
+ * reason. **`CommanderState.fuelLy` is not read here and must not be** — see
+ * the module header: the board is what the hull can reach, not what the tank
+ * holds this minute.
  */
 /**
  * The key a caller passes when no station is posting yet — a neighbourhood
@@ -257,6 +257,8 @@ export function deliveryCandidates(
 	 * nothing, for a caller that caches one neighbourhood per system.
 	 */
 	excludeKey: CarrierKey,
+	/** The flown hull's `tankLy` (#554). */
+	maxJump: number,
 ): JobDestination[] {
 	// **Only stations a job may name.** The filter is here rather than in the
 	// binder because a binder that draws one candidate and then declines it is
@@ -269,7 +271,7 @@ export function deliveryCandidates(
 			carrierKey(from.index, station.localCarrierId) !== excludeKey
 		)
 			out.push({ system: from, station, distanceLy: 0 });
-	for (const record of reachable(systems, from, JUMP_RANGE_LY))
+	for (const record of reachable(systems, from, maxJump))
 		for (const station of contentsOf(record).stations)
 			if (canPostJobs(station))
 				out.push({

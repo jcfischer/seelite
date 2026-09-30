@@ -34,7 +34,6 @@ import {
 	DISPLAY_TL_MIN,
 	EQUIPMENT,
 	FUEL_CR_PER_LY,
-	FUEL_TANK_LY,
 	HOLD_REFERENCE_T,
 	LONG_RANGE_SCANNER,
 	LONG_RANGE_SCANNER_PRICE_CR,
@@ -1136,7 +1135,7 @@ describe("§7/§8 equipment prices and the fitting-out total", () => {
 		expect(EQUIPMENT.filter((e) => e.scope === "shipyard").length).toBe(4);
 		// Fuel is the tenth universal item; it is priced per LY, not per unit,
 		// so it lives in its own constants rather than in the list.
-		expect(FUEL_CR_PER_LY * FUEL_TANK_LY).toBe(14);
+		expect(FUEL_CR_PER_LY * HULL_SPECS.courier.tankLy).toBe(14);
 		// The items Elite's cassette never had.
 		expect(
 			EQUIPMENT.filter((e) => e.newToSeelite)

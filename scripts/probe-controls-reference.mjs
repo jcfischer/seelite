@@ -207,7 +207,8 @@ check(
 // `Tuning`, and that is unchanged. The row failed on the branch that added the
 // tab and passed on `origin/main`, which is the only reason anyone noticed:
 // this probe is red on both trees for an unrelated reason (#441), and a
-// standing red is exactly where a real regression hides.
+// standing red is exactly where a real regression hides. #564 moved it again:
+// the Commander page sits after Hold, beside the other pages about the ship.
 const rightTabOrder = (
 	await page.evaluate(() =>
 		[
@@ -219,7 +220,7 @@ const rightTabOrder = (
 ).join(",");
 check(
 	"the right console's tabs are in order, with Controls immediately before Tuning",
-	rightTabOrder === "Flight,Drive,Hold,Controls,Tuning",
+	rightTabOrder === "Flight,Drive,Hold,Commander,Controls,Tuning",
 	rightTabOrder,
 );
 // #370 R1: `THROTTLE_UP` is Shift, so the chord's modifier is itself a held

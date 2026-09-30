@@ -6,7 +6,20 @@
 import { expect, test } from "bun:test";
 import { SOUND_SET as SET } from "../scripts/lib/sound-set.mjs";
 import { CUE_BUS, type CueKind } from "../src/audio-cue";
+import { WEAPON_SOUND_ARMS, DEFAULT_WEAPON_ARMS } from "../src/weapon-sound";
 import { DEFAULT_FLIGHT_ARMS, FLIGHT_SOUND_ARMS } from "../src/flight-sound";
+import {
+	arriveWitchspace,
+	beginWitchspace,
+	idleWitchspace,
+	stepJump,
+	witchspaceCues,
+} from "../src/witchspace";
+import {
+	DEFAULT_WITCHSPACE_ARMS,
+	WITCHSPACE_SOUND_ARMS,
+	witchspaceSoundArms,
+} from "../src/witchspace-sound";
 import type { MusicCommand } from "../src/music-score";
 import { TEST_SONGS } from "../src/music-test-score";
 
@@ -22,18 +35,47 @@ interface SoundEntry {
 		songs: Record<string, string | object>;
 		script: readonly (readonly [number | "attach", { type: string }])[];
 	};
+	weapons?: { arms: string };
+	witchspace?: { arms: string; from: string };
+	scheduled?: { kinds: string[]; arms: string };
 }
 const SOUND_SET: readonly SoundEntry[] = SET;
 
 /** Kinds with no entry of their own, each with its reason. */
 const NOT_RENDERED: Partial<Record<CueKind, string>> = {
-	shieldHit: "plays the same sound as hullHit, which the set renders as `hit`",
-	witchspaceStop: "takes the other two witchspace cues back; it makes no sound",
+	witchspaceStop: "takes the other witchspace cues back; it makes no sound",
 };
+
+/**
+ * The kinds a jump timeline plays, from the real schedule stepped as
+ * `renderInPage` steps it (#534): the ride, the unfolding and the rift are
+ * rendered there and not as lone cues, because their shape is the schedule's.
+ */
+function scheduledKinds(e: SoundEntry): string[] {
+	if (!e.witchspace) return [];
+	const { arms } = witchspaceSoundArms(e.witchspace.arms);
+	const kinds: string[] = [];
+	let s =
+		e.witchspace.from === "arrival" ? arriveWitchspace() : beginWitchspace();
+	kinds.push(...witchspaceCues(idleWitchspace(), s, arms).map((c) => c.kind));
+	for (let i = 0; i < 2000 && s.kind !== "idle"; i++) {
+		const next = stepJump(s, 1 / 50);
+		kinds.push(...witchspaceCues(s, next, arms).map((c) => c.kind));
+		s = next;
+	}
+	// The stop is played too, and is `NOT_RENDERED`'s: it makes no sound.
+	return kinds.filter((k) => k !== "witchspaceStop");
+}
 
 test("every cue kind is rendered, or says why not", () => {
 	const rendered = new Set<string>(
-		SOUND_SET.flatMap((e) => (e.cue ? [e.cue.kind] : [])),
+		SOUND_SET.flatMap((e) =>
+			e.cue
+				? [e.cue.kind]
+				: e.scheduled
+					? e.scheduled.kinds
+					: scheduledKinds(e),
+		),
 	);
 	for (const kind of Object.keys(CUE_BUS) as CueKind[])
 		expect(rendered.has(kind) || kind in NOT_RENDERED).toBe(true);
@@ -53,15 +95,48 @@ test("the bed is rendered at idle and at full throttle", () => {
 test("each entry before #544 names the method the engine before #552 exposed", () => {
 	// The capture renders `origin/main` too, and that engine has no `play`.
 	// #544's cues and loops did not exist there and render as absent.
-	const since544 = new Set<string | undefined>(["cruiseEngage", "cruiseDrop"]);
+	// And #546's console voices: the consoles were silent before it.
+	const noLegacyMethod = new Set<string | undefined>([
+		"cruiseEngage",
+		"cruiseDrop",
+		"notify",
+		"press",
+		"refuse",
+		"focus",
+		"gunLocked",
+		"shieldHit",
+		"hitLanded",
+		// #534's flash: a jump was silent after the cut before it.
+		"witchspaceFlash",
+	]);
+	// And #545's new voices of kinds that existed before it: a crack and a
+	// clang were not sounds that engine could make.
+	const since545 = new Set(["laser-crack", "hull-clang", "hull-clang-tail"]);
 	for (const e of SOUND_SET)
 		if (
 			e.loop === undefined &&
 			!e.flight &&
 			!e.music &&
-			!since544.has(e.cue?.kind)
+			!e.weapons &&
+			!e.witchspace &&
+			!e.scheduled &&
+			!noLegacyMethod.has(e.cue?.kind) &&
+			!since545.has(e.name)
 		)
-			expect(e.legacy?.length).toBeGreaterThan(0);
+			expect([e.name, e.legacy?.length ?? 0]).not.toEqual([e.name, 0]);
+});
+
+test("every weapon arm is flown by some timeline", () => {
+	// #545: an arm nobody rendered is an arm nobody listened to.
+	const flown = new Set(
+		SOUND_SET.flatMap((e) =>
+			e.weapons ? String(e.weapons.arms).split(",").filter(Boolean) : [],
+		),
+	);
+	for (const [arm, values] of Object.entries(WEAPON_SOUND_ARMS))
+		for (const v of values)
+			if (v !== DEFAULT_WEAPON_ARMS[arm as keyof typeof DEFAULT_WEAPON_ARMS])
+				expect([v, flown.has(v)]).toEqual([v, true]);
 });
 
 /** Arms with no render, each with its reason. */
@@ -112,4 +187,30 @@ test("every transport move is rendered for the ear, or says why not (#560)", () 
 	for (const m of music)
 		for (const song of Object.values(m.songs))
 			if (typeof song === "string") expect(TEST_SONGS[song]).toBeDefined();
+});
+
+test("every witchspace arm is flown by some jump, one question at a time", () => {
+	// #534: an arm nobody rendered is an arm nobody listened to.
+	const jumps = SOUND_SET.filter((e) => e.witchspace);
+	const flown = new Set(
+		jumps.flatMap((e) => {
+			const { arms, unknown } = witchspaceSoundArms(
+				(e.witchspace as { arms: string }).arms,
+			);
+			expect([e.name, unknown]).toEqual([e.name, []]);
+			return Object.values(arms);
+		}),
+	);
+	for (const values of Object.values(WITCHSPACE_SOUND_ARMS))
+		for (const v of values) expect([v, flown.has(v)]).toEqual([v, true]);
+	// Each flips at most one arm from the defaults.
+	for (const e of jumps) {
+		const { arms } = witchspaceSoundArms(
+			(e.witchspace as { arms: string }).arms,
+		);
+		const flipped = (Object.keys(arms) as (keyof typeof arms)[]).filter(
+			(k) => arms[k] !== DEFAULT_WITCHSPACE_ARMS[k],
+		);
+		expect([e.name, flipped.length <= 1]).toEqual([e.name, true]);
+	}
 });

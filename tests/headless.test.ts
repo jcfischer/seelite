@@ -39,7 +39,9 @@ const HEADLESS = [
 	"carrier-key",
 	"cockpit",
 	"combat-prototype",
+	"weapon-sound",
 	"commands",
+	"console-sound",
 	"controls-catalogue",
 	"controls-reference",
 	"cruise",
@@ -68,6 +70,7 @@ const HEADLESS = [
 	"panel-focus",
 	"planet-appearance",
 	"postcard",
+	"punch-sound",
 	"quat",
 	"rng",
 	"ship-mesh",
@@ -112,7 +115,9 @@ test("no module has been quietly dropped from the list", () => {
 		"carrier-key",
 		"cockpit",
 		"combat-prototype",
+		"weapon-sound",
 		"commands",
+		"console-sound",
 		"controls-catalogue",
 		"controls-reference",
 		"cruise",
@@ -141,6 +146,7 @@ test("no module has been quietly dropped from the list", () => {
 		"panel-focus",
 		"planet-appearance",
 		"postcard",
+		"punch-sound",
 		"quat",
 		"rng",
 		"ship-mesh",
@@ -421,6 +427,28 @@ test("the flight sound step reads only the cue vocabulary", () => {
 	].map((m) => m[1]);
 	expect(from).toEqual(["./audio-cue"]);
 	expect(importsIn("flight-sound.ts")).toHaveLength(2);
+});
+
+test("the combat sound step reads only the cue vocabulary, and only types", () => {
+	// #545: gun, shields, hull and target in, cues and loop levels out, with no
+	// path to the audio layer or the simulation.
+	const source = codeOf("src/weapon-sound.ts");
+	const from = [...source.matchAll(/\bfrom\s*["'`]([^"'`]+)["'`]/g)].map(
+		(m) => m[1],
+	);
+	expect(from).toEqual(["./audio-cue"]);
+	expect(source).toMatch(/import type \{[^}]*\} from "\.\/audio-cue"/);
+});
+
+test("the punch arm reads only a type from the cue vocabulary", () => {
+	// #577: the arm is parsed where the URL is read and handed to the engine,
+	// with no path to the audio layer or the simulation.
+	const source = codeOf("src/punch-sound.ts");
+	const from = [...source.matchAll(/\bfrom\s*["'`]([^"'`]+)["'`]/g)].map(
+		(m) => m[1],
+	);
+	expect(from).toEqual(["./audio-cue"]);
+	expect(source).toMatch(/import type \{[^}]*\} from "\.\/audio-cue"/);
 });
 
 test("src/relief-bands.ts imports only types", () => {

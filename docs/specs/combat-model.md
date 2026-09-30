@@ -141,7 +141,7 @@ target has not been answered; a defender's end re-arms the next hit, and a call
 that sent nobody answers that target instance for the visit. `?raider=off`
 calls none. `src/relay-defender.ts` owns the delay, the range and the call rule.
 
-System law supplies the baseline danger, cargo value makes a route attractive, and combat rating chooses a fair encounter composition. Rating does not secretly change enemy stats or simply increase spawn frequency. Harder encounters are small role-based groups: interceptors pressure escape, strikers attack, and higher-risk groups may add a missile carrier or tougher leader. Ships break to recharge or flee when outmatched.
+System law supplies the baseline danger, cargo value makes a route attractive, and the pilot's combat rung chooses a fair encounter composition ([#563](https://github.com/jcfischer/seelite/issues/563) owns how). The rung does not secretly change enemy stats or simply increase spawn frequency. Harder encounters are small role-based groups: interceptors pressure escape, strikers attack, and higher-risk groups may add a missile carrier or tougher leader. Ships break to recharge or flee when outmatched.
 
 **Out of the beam is out of the fight** is §2.2's routing rule, not a duel rule: the
 encounter, not `stepDuel`, decides it.
@@ -150,7 +150,7 @@ encounter, not `stepDuel`, decides it.
 
 A resolved encounter changes a named carrier rather than deleting a generic spawn. Defeating it records player provenance, removes its route threat, and derives a visible 30-minute game-clock lifecycle from **destroyed** through **repairing** to **replaced**. This is a revisitable operational consequence, never territory control.
 
-Rewards are weighted combat-rank credit, recoverable cargo, and lawful bounties only for sanctioned targets. There is no universal cash bounty. Combat rank retains Elite's named ladder and near-doubling thresholds, with weighted credit so weak-ship farming is inefficient.
+Rewards are weighted combat-rank credit, recoverable cargo, and lawful bounties only for sanctioned targets. There is no universal cash bounty. Combat rank is one of three ladders ([#183](https://github.com/jcfischer/seelite/issues/183)), and it does **not** retain Elite's named ladder: the map's Constraints forbid Elite's names, so its nine rungs carry original ones. Each rung costs exactly twice the one below (#562 D1). A kill pays Elo-like credit, 2·S_target / (S_own + S_target), from the fitted ship's strength — which today reads the hull alone, because every ship fires one pulse laser and no weapon item has behaviour yet — so a much weaker target pays close to nothing and an unarmed one pays nothing (#562 D3, D4). Credit earned in flight is banked on the next dock and lost with the ship before it (#183 D7). `src/ladder.ts` owns the thresholds, names and gates; `src/kill-credit.ts` owns the price of a kill.
 
 Legal status is per galaxy, bounded, and visibly presented as **Clean**, **Wanted**, or **Fugitive**. Offences add heat; thresholds determine police response and shipyard hostility. Heat decays lazily against the authoritative game clock with a 30-minute clean-play half-life, visibly stepping back through the states.
 

@@ -13,7 +13,6 @@
 import type { CarrierKey } from "./carrier-key";
 import { type DeficitMap, readDeficit, recordTrade } from "./deficits";
 import { HULL_SPECS, type HullId } from "./hull";
-import { JUMP_TANK_LY } from "./hyperspace";
 import {
 	FUEL_CR_PER_LY,
 	type Commodity,
@@ -27,7 +26,11 @@ import {
 	shelfQuantity,
 	stockResponse,
 } from "./market";
-import { stationEquipmentScreen } from "./station-console";
+import type { Rungs } from "./ladder";
+import {
+	type ConsoleEquipmentEntry,
+	stationEquipmentScreen,
+} from "./station-console";
 
 export interface CommanderState {
 	credits: number;
@@ -40,8 +43,9 @@ export interface CommanderState {
 	 * On the commander beside credits and cargo, because it is bought here and
 	 * spent by the ship — the same shape as the drive charge being session
 	 * state on the renderer. It is **not** the drive charge: §7 of
-	 * `in-system-travel.md` gives cruise its own 12 AU reserve with free
-	 * refills, and a jump does not touch it.
+	 * `in-system-travel.md` gives cruise its own reserve — the hull's `chargeAu`
+	 * — with free refills, and a jump does not touch it. Its capacity is the
+	 * hull's `tankLy` (#554), which is also its jump range.
 	 */
 	fuelLy: number;
 	/**
@@ -64,9 +68,9 @@ export const newCommander = (hull: HullId): CommanderState => ({
 	credits: STARTING_CREDITS,
 	cargo: {},
 	ownedEquipment: [],
-	// A full tank, which is Elite's own opening position and the only one a
-	// hundred credits can afford to be given (a full tank is 14 Cr).
-	fuelLy: JUMP_TANK_LY,
+	// A full tank of the hull's own `tankLy` (#554), which is Elite's opening
+	// position — the courier's full tank is 14 Cr.
+	fuelLy: HULL_SPECS[hull].tankLy,
 	hull,
 });
 
@@ -104,6 +108,11 @@ export interface StationCommerceInput {
 	 * words that a display-only deduction is insufficient.
 	 */
 	entrustedT: number;
+	/**
+	 * The pilot's three rungs, which the equipment gate reads (#183 D6).
+	 * Required for `entrustedT`'s reason; `TOP_RUNGS` is the open gate.
+	 */
+	rungs: Rungs;
 	action: StationAction;
 }
 
@@ -129,6 +138,7 @@ export type CommerceRefusal =
 	| "insufficient-credits"
 	| "equipment-unavailable"
 	| "equipment-owned"
+	| "equipment-locked"
 	| "invalid-quantity"
 	| "unknown-commodity"
 	| "commodity-unavailable"
@@ -232,10 +242,11 @@ export function scoopCargo(
 
 const availableEquipment = (
 	input: StationCommerceInput,
-): readonly UniversalItem[] =>
+): readonly ConsoleEquipmentEntry[] =>
 	stationEquipmentScreen({
 		type: input.station.type,
 		displayTL: input.displayTL,
+		rungs: input.rungs,
 	}).available.filter((item) => item.per === "unit");
 
 /**
@@ -256,7 +267,9 @@ export function transactAtStation(
 ): StationCommerceResult {
 	const { action } = input;
 	if (action.type === "buy-fuel") {
-		const wanted = JUMP_TANK_LY - input.commander.fuelLy;
+		// To the flown hull's tank, which is also its range (#185 D1, #554).
+		const wanted =
+			HULL_SPECS[input.commander.hull].tankLy - input.commander.fuelLy;
 		const affordable = input.commander.credits / FUEL_CR_PER_LY;
 		// **Neither figure is rounded, and the first version rounded both.** A
 		// jump costs the distance flown, which is not a multiple of anything, so
@@ -286,8 +299,11 @@ export function transactAtStation(
 			(item) => item.name === action.equipment,
 		);
 		if (!entry) return rejected(input, "equipment-unavailable");
+		// Owned before locked: a gate blocks only new purchases (#183 D9), so an
+		// item a v6 commander already fitted is "already fitted", not locked.
 		if (input.commander.ownedEquipment.includes(entry.name))
 			return rejected(input, "equipment-owned");
+		if (entry.locked) return rejected(input, "equipment-locked");
 		if (input.commander.credits < entry.priceCr)
 			return rejected(input, "insufficient-credits");
 		return {

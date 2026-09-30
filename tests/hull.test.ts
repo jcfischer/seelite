@@ -11,20 +11,22 @@
  *   selected variant's mesh and compare, because the table this replaced was
  *   68% out on height and the berth catalogue had been sized from it.
  * - **Two modules that name one quantity owe an assertion that they agree**
- *   (#46). The courier's hold, tank and drive charge are `HOLD_REFERENCE_T`,
- *   `JUMP_RANGE_LY` and `CHARGE_CAPACITY_AU`; each pair is pinned here, because
- *   a grep for prose cannot check a number (#11).
+ *   (#46). The courier's hold is `HOLD_REFERENCE_T` and its tank is
+ *   `JUMP_RANGE_LY`, the galaxy's connectivity predicate; each pair is pinned,
+ *   because a grep for prose cannot check a number (#11). The tank and the
+ *   drive charge are read off the flown hull everywhere else since #554, which
+ *   `tests/hull-reach.test.ts` holds.
  * - **A derivation must reproduce what it replaced.** #5's tuned constants are
  *   the baseline hull's, so `flightPerformance("courier")` has to be them
  *   exactly rather than nearly.
  */
 
+import { TOP_RUNGS } from "../src/ladder";
 import { describe, expect, test } from "bun:test";
 import { readFileSync } from "node:fs";
 import * as THREE from "three";
-import { CHARGE_CAPACITY_AU } from "../src/cruise";
 import { carrierKey } from "../src/carrier-key";
-import { FUEL_TANK_LY, HOLD_REFERENCE_T, marketStationOf } from "../src/market";
+import { HOLD_REFERENCE_T, marketStationOf } from "../src/market";
 import { JUMP_RANGE_LY } from "../src/galaxy";
 import {
 	CAPITAL_HULL_IDS,
@@ -132,6 +134,7 @@ const commerceInput = (commander: ReturnType<typeof newCommander>) => ({
 	gameTimeMin: 0,
 	displayTL: 8,
 	entrustedT: 0,
+	rungs: TOP_RUNGS,
 	action: { type: "buy-commodity" as const, commodity: "Food" },
 });
 
@@ -236,42 +239,33 @@ describe("the roster is the single owner, not a second copy", () => {
 		expect(holds.size).toBeGreaterThan(1);
 	});
 
-	test("the jump range and the baseline tank agree, and this one can fail", () => {
-		// **`JUMP_RANGE_LY` is galaxy-owned on purpose**, and this is the only row
-		// in this file that is a genuine drift guard rather than a statement of
-		// direction. #181 first derived it from the roster; sage's second round
-		// named the cost — it is the **edge predicate for the connectivity
-		// graph**, and the roster's figures are provisional against #183 and #8,
-		// so a combat retune of one hull's tank would silently regenerate every
-		// system's edge set. Two quantities that happen to be equal, so #46's
-		// answer is the assertion rather than the derivation.
+	test("the connectivity predicate and the baseline tank agree, and this one can fail", () => {
+		// **`JUMP_RANGE_LY` is galaxy-owned on purpose** (#185 D2): it is the
+		// reach at which every galaxy is connected, and the roster's figures are
+		// provisional against #183 and #8, so deriving it would let a retune of
+		// one hull regenerate every system's edge set. It is the courier's tank
+		// and nobody's jump gate; #46's answer is the assertion.
 		expect(JUMP_RANGE_LY).toBe(HULL_SPECS[PLAYER_BASELINE_HULL].tankLy);
 	});
 
-	test("the hold reference, the purchasable tank and the drive charge are the roster's", () => {
-		// These three *are* derived — a hold reference, a purchasable tank and a
-		// drive charge are the hull's own figures, and none of them decides what a
-		// system is. So the three lines below are true **by construction**, and
-		// they are here as a statement of the ownership direction rather than as
-		// a check that could fail. The check that can fail is the hold row above:
-		// a figure that no longer reaches behaviour.
+	test("the hold reference is the roster's", () => {
+		// Derived, so true **by construction** — a statement of the ownership
+		// direction rather than a check that could fail.
 		expect(HOLD_REFERENCE_T).toBe(HULL_SPECS[PLAYER_BASELINE_HULL].holdT);
-		expect(FUEL_TANK_LY).toBe(HULL_SPECS[PLAYER_BASELINE_HULL].tankLy);
-		expect(CHARGE_CAPACITY_AU).toBe(HULL_SPECS[PLAYER_BASELINE_HULL].chargeAu);
 	});
 
-	test("the tank and the drive charge are still one hull's, and the table says so", () => {
-		// **A property nothing reads is not shipped** — #25's rule about a rule
-		// that lives only in an instrument, one level along. Unlike the hold, the
-		// per-hull tank is *not* wired: every router and finder takes `maxJump` as
-		// a parameter and every caller hands it `JUMP_RANGE_LY`, which is the
-		// baseline's. This row states which hulls are affected so the gap is in
-		// the tier that can hold it rather than only in prose.
-		const varies = HULL_IDS.filter(
-			(id) => HULL_SPECS[id].tankLy !== JUMP_RANGE_LY,
+	test("the tanks and the drive charges genuinely differ, so reading one hull's is visible", () => {
+		// #554 wired both per hull; `tests/hull-reach.test.ts` fails if a call
+		// site hands the router the galaxy's constant. That check is worth
+		// something only while the roster actually varies, which this pins.
+		const tanks = new Set(
+			PURCHASABLE_HULL_IDS.map((id) => HULL_SPECS[id].tankLy),
 		);
-		expect(varies.length).toBeGreaterThan(0);
-		console.log(`tanks the router does not yet read: ${varies.join(", ")}`);
+		const charges = new Set(
+			PURCHASABLE_HULL_IDS.map((id) => HULL_SPECS[id].chargeAu),
+		);
+		expect(tanks.size).toBeGreaterThan(1);
+		expect(charges.size).toBeGreaterThan(1);
 	});
 
 	test("the seven purchasable hulls are the seven, and no capital is among them", () => {

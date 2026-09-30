@@ -2,7 +2,7 @@
  * The galaxy map — node #11's chart, node #96's mount.
  *
  * `mountGalaxyChart` draws one galaxy's 256 systems as a freely orbitable cluster,
- * with the 7 LY shell around the current system, a derived route to whatever is
+ * with the flown hull's reach shell around the current system, a derived route to whatever is
  * selected, and the core haze on a toggle so the two treatments of the density
  * gradient can be compared side by side rather than argued about.
  *
@@ -31,7 +31,6 @@ import {
 	GALAXY_COUNT,
 	GALAXY_FLATTENING_Q,
 	GALAXY_RADIUS_LY,
-	JUMP_RANGE_LY,
 	SYSTEMS_PER_GALAXY,
 	type Galaxy,
 	type SystemRecord,
@@ -51,6 +50,12 @@ import {
 	worldMinute,
 } from "./knowledge-labels";
 import { carrierKey } from "./carrier-key";
+import {
+	HULL_SPECS,
+	type HullId,
+	PLAYER_BASELINE_HULL,
+	purchasableHullNamed,
+} from "./hull";
 import { rosterOf } from "./station-roster";
 import {
 	type Course,
@@ -161,12 +166,14 @@ export interface GalaxyMapState {
 	systemCount: number;
 	currentIndex: number;
 	selectedIndex: number | null;
-	/** Indices inside the 7 LY shell, nearest first — the lit points. */
+	/** Indices inside the flown hull's shell, nearest first — the lit points. */
 	litIndices: number[];
 	/** D2: drop-lines exist for the current system and the selection, and for
 	 *  nothing else. Two segments when something is selected, one when not. */
 	dropLineCount: number;
 	haze: boolean;
+	/** The flown hull's `tankLy`, which the shell, the lit points and every
+	 *  route are drawn at (#554) — not the galaxy's connectivity constant. */
 	jumpRangeLy: number;
 	galaxyRadiusLy: number;
 	coreRadiusLy: number;
@@ -346,6 +353,12 @@ export interface GalaxyChartOptions {
 	galaxyIndex: number;
 	/** Where the ship is. Defaults to the galaxy's own start system. */
 	currentIndex?: number;
+	/**
+	 * The flown hull's `tankLy` — its jump range (#185 D1, D4). Required for
+	 * `FlightPerformance`'s reason: a default would draw the courier's shell
+	 * around every hull, and the two are indistinguishable in a diff.
+	 */
+	tankLy: number;
 	/** Read-only last-known station intelligence; mounting never writes it, and
 	 *  opening the map is not an information channel (§5.2.1). A getter, and
 	 *  required, for the reason `mountFinderPanel`'s own doc gives. */
@@ -407,6 +420,7 @@ export function mountGalaxyChart({
 	worldSeed,
 	galaxyIndex,
 	currentIndex,
+	tankLy,
 	knowledge,
 	now,
 	globalKeys = false,
@@ -685,14 +699,12 @@ export function mountGalaxyChart({
 	);
 	cluster.add(cloud);
 
-	// D3: the reachability shell. Wireframe rather than a solid translucent
-	// ball — a solid one at 7 LY around a point deep inside a 24.5 LY cluster
+	// D3: the reachability shell, at the flown hull's tank (#554). Wireframe
+	// rather than a solid translucent ball — a solid one at 7 LY around a point deep inside a 24.5 LY cluster
 	// tints every system behind it, which is the one thing the chart must not
 	// do to the points it is about.
 	const shell = new THREE.LineSegments(
-		new THREE.WireframeGeometry(
-			new THREE.SphereGeometry(JUMP_RANGE_LY, 24, 16),
-		),
+		new THREE.WireframeGeometry(new THREE.SphereGeometry(tankLy, 24, 16)),
 		new THREE.LineBasicMaterial({
 			color: COLOUR.shell,
 			transparent: true,
@@ -814,6 +826,7 @@ export function mountGalaxyChart({
 	const finder = mountFinderPanel({
 		root,
 		systems: galaxy.systems,
+		tankLy,
 		knowledge,
 		now,
 		currentSystem: () => current,
@@ -829,8 +842,8 @@ export function mountGalaxyChart({
 
 	let lit: SystemRecord[] = [];
 	let progress: CourseProgress | null = null;
-	/** Hoisted out of `recompute` so the hover label's 7 LY marker and the lit
-	 *  points' colour are one fact rather than two derivations of `JUMP_RANGE_LY`
+	/** Hoisted out of `recompute` so the hover label's range marker and the lit
+	 *  points' colour are one fact rather than two derivations of the hull's tank
 	 *  that have to agree. A label reading "in range" over a dim point would be
 	 *  the map's recurring two-implementations trap in miniature. */
 	let litSet = new Set<number>();
@@ -875,7 +888,7 @@ export function mountGalaxyChart({
 				`TL ${record.displayTL} · pop ${(record.population / 10).toFixed(1)} bn`,
 				`${distanceLy(current.pos, record.pos).toFixed(1)} LY direct`,
 				route === null
-					? "no route within range"
+					? "no route for this hull"
 					: route.jumps === 0
 						? "you are here"
 						: `${route.jumps} jump(s) · ${route.totalLy.toFixed(1)} LY · ${route.totalCr.toFixed(0)} Cr`,
@@ -888,7 +901,7 @@ export function mountGalaxyChart({
 	};
 
 	const recompute = (): void => {
-		lit = reachable(galaxy.systems, current);
+		lit = reachable(galaxy.systems, current, tankLy);
 		litSet = new Set(lit.map((s) => s.index));
 
 		galaxy.systems.forEach((s, i) => {
@@ -929,7 +942,9 @@ export function mountGalaxyChart({
 		});
 
 		route =
-			selected === null ? null : planRoute(galaxy.systems, current, selected);
+			selected === null
+				? null
+				: planRoute(galaxy.systems, current, selected, tankLy);
 
 		if (route !== null && route.jumps > 0) {
 			const rp = routeGeometry.attributes.position.array as Float32Array;
@@ -955,18 +970,30 @@ export function mountGalaxyChart({
 		// systems — so a getter that looks free was one full search per read,
 		// and the probe reads `state` inside a 256-iteration loop.
 		progress =
-			course === null ? null : courseProgress(galaxy.systems, course, current);
+			course === null
+				? null
+				: courseProgress(galaxy.systems, course, current, tankLy);
 
 		legend.textContent = [
 			`galaxy ${galaxyIndex}  ·  seed 0x${worldSeed.toString(16)}`,
-			`at ${current.name}  ·  ${lit.length} within ${JUMP_RANGE_LY} LY`,
+			`at ${current.name}  ·  ${lit.length} within ${tankLy} LY`,
 			course === null
 				? "no course set"
 				: `course: ${systemByIndex(course.destinationIndex)?.name ?? "?"}` +
-					`  ·  ${progress?.remaining ?? "?"} jump(s) left` +
-					(progress?.nextHop
-						? `  ·  next ${progress.nextHop.system.name}`
-						: "  ·  arrived"),
+					// A course this hull cannot fly read "? jump(s) left ·
+					// arrived" here, which is two false statements (#554).
+					// `courseProgress` is null for three reasons and only one
+					// is the hull's — the same split `Game.courseWithoutRoute`
+					// makes.
+					(progress === null
+						? course.galaxy === galaxyIndex &&
+							systemByIndex(course.destinationIndex) !== null
+							? "  ·  no route for this hull"
+							: "  ·  not on this chart"
+						: `  ·  ${progress.remaining} jump(s) left` +
+							(progress.nextHop
+								? `  ·  next ${progress.nextHop.system.name}`
+								: "  ·  arrived")),
 			"drag orbit · wheel zoom · click select · H haze",
 		].join("\n");
 
@@ -1203,7 +1230,7 @@ export function mountGalaxyChart({
 			hoverLabel.style.display = "none";
 			return;
 		}
-		// D2: name, direct distance, and the 7 LY shell marker. Economy,
+		// D2: name, direct distance, and the hull's shell marker. Economy,
 		// government and tech level stay on the record card — putting them here
 		// would make the click redundant and turn the label into a second panel.
 		hoverLabel.style.display = "block";
@@ -1383,7 +1410,7 @@ export function mountGalaxyChart({
 
 	function commitCourse(): boolean {
 		if (selected === null) return false;
-		const next = setCourse(galaxy.systems, current, selected);
+		const next = setCourse(galaxy.systems, current, selected, tankLy);
 		if (next === null) return false;
 		course = next;
 		onCourse?.(course);
@@ -1583,7 +1610,7 @@ export function mountGalaxyChart({
 				// wrong — it was asserting the same field twice.
 				dropLineCount: dropGeometry.drawRange.count / 2,
 				haze: haze.visible,
-				jumpRangeLy: JUMP_RANGE_LY,
+				jumpRangeLy: tankLy,
 				galaxyRadiusLy: GALAXY_RADIUS_LY,
 				coreRadiusLy: CORE_RADIUS_LY,
 				flatteningQ: GALAXY_FLATTENING_Q,
@@ -1728,6 +1755,11 @@ export function mountGalaxyMap(): void {
 			? Math.abs(Math.trunc(rawSeed)) >>> 0
 			: 0x5ee11e;
 
+	// `&hull=<id>` draws the chart at that hull's tank; absent or unknown, the
+	// baseline's — spelt out rather than defaulted, as the knowledge below is.
+	const hull: HullId =
+		purchasableHullNamed(query.get("hull")) ?? PLAYER_BASELINE_HULL;
+
 	const host = el("div");
 	Object.assign(host.style, { position: "fixed", inset: "0" });
 	document.body.appendChild(host);
@@ -1740,6 +1772,7 @@ export function mountGalaxyMap(): void {
 		host,
 		worldSeed,
 		galaxyIndex,
+		tankLy: HULL_SPECS[hull].tankLy,
 		knowledge: () => NO_KNOWLEDGE,
 		now: () => 0,
 		globalKeys: true,

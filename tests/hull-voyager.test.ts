@@ -61,8 +61,8 @@ describe("voyager is an expedition capital", () => {
 	});
 
 	test("it declares the largest tankLy and chargeAu in the roster", () => {
-		// Declared, not flown: the router still reads `JUMP_RANGE_LY`, not the
-		// flown hull's tank, until #185 (CONTEXT.md, **Hyperspace tank**).
+		// Declared, not flown: the router reads the flown hull's tank since #554,
+		// and the voyager is not a hull a pilot can fly yet.
 		for (const id of HULL_IDS) {
 			if (id === VOYAGER) continue;
 			expect([id, HULL_SPECS[VOYAGER].tankLy > HULL_SPECS[id].tankLy]).toEqual([

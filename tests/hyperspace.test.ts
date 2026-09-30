@@ -22,7 +22,6 @@ import {
 } from "../src/galaxy";
 import {
 	JUMP_CHARGE_S,
-	JUMP_TANK_LY,
 	beginCharge,
 	cancelCharge,
 	charging,
@@ -30,6 +29,11 @@ import {
 	planJump,
 	stepCharge,
 } from "../src/hyperspace";
+import { HULL_SPECS } from "../src/hull";
+
+/** The courier's tank — the hull every row here flies. The gate is the flown
+ *  hull's since #554; `tests/hull-reach.test.ts` flies the short and long ones. */
+const COURIER_TANK_LY = HULL_SPECS.courier.tankLy;
 
 const SEED = 20260902;
 const GALAXY = generateGalaxy(SEED, 0);
@@ -37,7 +41,7 @@ const HOME = startSystem(GALAXY);
 
 /** A system inside the shell, and one outside it — both from the shipped
  *  generator rather than invented, so the figures below are the game's. */
-const NEAR = neighbours(GALAXY.systems, HOME)[0];
+const NEAR = neighbours(GALAXY.systems, HOME, JUMP_RANGE_LY)[0];
 const FAR = GALAXY.systems
 	.filter((s) => s.index !== HOME.index)
 	.map((s) => ({ s, d: distanceLy(HOME.pos, s.pos) }))
@@ -52,28 +56,28 @@ describe("the fixtures are what they claim", () => {
 
 describe("planJump", () => {
 	test("a full tank reaches the nearest neighbour, and the tank pays the distance", () => {
-		const decision = planJump(HOME, NEAR, JUMP_TANK_LY);
+		const decision = planJump(HOME, NEAR, COURIER_TANK_LY, "courier");
 		if (!decision.ok) throw new Error(`refused: ${decision.refusal}`);
 		const ly = distanceLy(HOME.pos, NEAR.pos);
 		expect(decision.plan.distanceLy).toBeCloseTo(ly, 12);
-		expect(decision.plan.fuelLeftLy).toBeCloseTo(JUMP_TANK_LY - ly, 12);
+		expect(decision.plan.fuelLeftLy).toBeCloseTo(COURIER_TANK_LY - ly, 12);
 		expect(decision.plan.to).toBe(NEAR);
 	});
 
 	test("the destination the ship is already in is refused before anything else", () => {
 		// A zero-length jump is in range and free, so every later gate accepts it.
-		const decision = planJump(HOME, HOME, JUMP_TANK_LY);
+		const decision = planJump(HOME, HOME, COURIER_TANK_LY, "courier");
 		expect(decision).toEqual({ ok: false, refusal: "same-system" });
 	});
 
 	test("out of range outranks an empty tank", () => {
 		// The distinction the HUD needs: refuelling does not make FAR reachable,
 		// so a message about fuel would send the player to buy what they have.
-		expect(planJump(HOME, FAR, JUMP_TANK_LY)).toEqual({
+		expect(planJump(HOME, FAR, COURIER_TANK_LY, "courier")).toEqual({
 			ok: false,
 			refusal: "out-of-range",
 		});
-		expect(planJump(HOME, FAR, 0)).toEqual({
+		expect(planJump(HOME, FAR, 0, "courier")).toEqual({
 			ok: false,
 			refusal: "out-of-range",
 		});
@@ -81,12 +85,12 @@ describe("planJump", () => {
 
 	test("in range and short of fuel is its own refusal", () => {
 		const ly = distanceLy(HOME.pos, NEAR.pos);
-		expect(planJump(HOME, NEAR, ly - 1e-9)).toEqual({
+		expect(planJump(HOME, NEAR, ly - 1e-9, "courier")).toEqual({
 			ok: false,
 			refusal: "insufficient-fuel",
 		});
 		// Exactly enough is enough: the tank is spent to zero, not to a residue.
-		const exact = planJump(HOME, NEAR, ly);
+		const exact = planJump(HOME, NEAR, ly, "courier");
 		if (!exact.ok) throw new Error(`refused: ${exact.refusal}`);
 		expect(exact.plan.fuelLeftLy).toBeCloseTo(0, 12);
 	});
@@ -94,7 +98,7 @@ describe("planJump", () => {
 	test("another galaxy is refused, because that is the Galactic Hyperdrive", () => {
 		const other = startSystem(generateGalaxy(SEED, 1));
 		expect(other.galaxy).toBe(1);
-		expect(planJump(HOME, other, JUMP_TANK_LY)).toEqual({
+		expect(planJump(HOME, other, COURIER_TANK_LY, "courier")).toEqual({
 			ok: false,
 			refusal: "other-galaxy",
 		});
@@ -106,11 +110,13 @@ describe("planJump", () => {
 		// range. Swept over the whole galaxy rather than one pair, because the
 		// disagreement is a property of a boundary nobody can pick by hand.
 		const lit = new Set(
-			neighbours(GALAXY.systems, HOME).map((s: SystemRecord) => s.index),
+			neighbours(GALAXY.systems, HOME, JUMP_RANGE_LY).map(
+				(s: SystemRecord) => s.index,
+			),
 		);
 		for (const system of GALAXY.systems) {
 			if (system.index === HOME.index) continue;
-			const decision = planJump(HOME, system, JUMP_TANK_LY);
+			const decision = planJump(HOME, system, COURIER_TANK_LY, "courier");
 			const accepted = decision.ok || decision.refusal === "insufficient-fuel";
 			expect([system.index, accepted]).toEqual([
 				system.index,
@@ -172,9 +178,5 @@ describe("the wind-up", () => {
 		charge = cancelCharge();
 		expect(charging(charge)).toBe(false);
 		expect(stepCharge(charge, 10).fired).toBeNull();
-	});
-
-	test("the tank is the range, one quantity with one name", () => {
-		expect(JUMP_TANK_LY).toBe(JUMP_RANGE_LY);
 	});
 });

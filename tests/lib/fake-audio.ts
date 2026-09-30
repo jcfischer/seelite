@@ -58,6 +58,10 @@ export class FakeContext {
 	readonly gains: FakeGain[] = [];
 	readonly compressors: FakeCompressor[] = [];
 	readonly sources: FakeNode[] = [];
+	/** Every saturator built (#577), with the curve it was given. */
+	readonly shapers: (FakeNode & { curve: Float32Array | null })[] = [];
+	/** Every reverb built (#577), with the impulse it was given. */
+	readonly convolvers: (FakeNode & { buffer: unknown })[] = [];
 	constructor() {
 		FakeContext.made.push(this);
 	}
@@ -75,8 +79,12 @@ export class FakeContext {
 		const o = Object.assign(new FakeNode(), {
 			type: "sine",
 			frequency: new FakeParam(),
+			/** Every time `stop` was scheduled for; the earliest one wins. */
+			stoppedAt: [] as number[],
 			start() {},
-			stop() {},
+			stop(t: number) {
+				o.stoppedAt.push(t);
+			},
 		});
 		this.sources.push(o);
 		return o;
@@ -88,15 +96,40 @@ export class FakeContext {
 			Q: new FakeParam(),
 		});
 	}
-	createBuffer(_c: number, len: number) {
-		const data = new Float32Array(len);
-		return { getChannelData: () => data };
+	createConvolver() {
+		const c = Object.assign(new FakeNode(), {
+			buffer: null as unknown,
+			normalize: true,
+		});
+		this.convolvers.push(c);
+		return c;
+	}
+	createWaveShaper() {
+		const w = Object.assign(new FakeNode(), {
+			curve: null as Float32Array | null,
+			oversample: "none",
+		});
+		this.shapers.push(w);
+		return w;
+	}
+	createBuffer(channels: number, len: number) {
+		const data = Array.from({ length: channels }, () => new Float32Array(len));
+		return {
+			numberOfChannels: channels,
+			length: len,
+			duration: len / this.sampleRate,
+			getChannelData: (c: number) => data[c],
+		};
 	}
 	createBufferSource() {
 		const s = Object.assign(new FakeNode(), {
 			buffer: null,
 			loop: false,
+			stoppedAt: [] as number[],
 			start() {},
+			stop(t: number) {
+				s.stoppedAt.push(t);
+			},
 		});
 		this.sources.push(s);
 		return s;

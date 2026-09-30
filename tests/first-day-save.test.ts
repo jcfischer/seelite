@@ -1,7 +1,7 @@
 /**
  * #408 D4: a new game's guided/free choice is saved on the commander.
  *
- * Version 6 adds `firstDay`. Every older version loads as `free` — a pilot who
+ * Version 6 adds `firstDay`, and 7 keeps it. Every older version loads as `free` — a pilot who
  * already has a save is not new — and an older version that carries the key
  * was assembled rather than saved, so it is refused by name.
  */
@@ -37,10 +37,18 @@ const resealed = (
 };
 
 describe("#408 D4 — the saved first-day choice", () => {
-	test("the schema is 6", () => {
+	test("the schema is 7, and 6 is the first version that carries the key", () => {
 		// A literal, so the next bump has to come through here.
-		expect(SAVE_SCHEMA_VERSION).toBe(6);
-		expect([...LEGACY_SAVE_SCHEMA_VERSIONS]).toEqual([2, 3, 4, 5]);
+		expect(SAVE_SCHEMA_VERSION).toBe(7);
+		expect([...LEGACY_SAVE_SCHEMA_VERSIONS]).toEqual([2, 3, 4, 5, 6]);
+	});
+
+	test("a version 6 record keeps its choice (#564 made 6 legacy)", () => {
+		const v6 = resealed(serializeSave(saveOf("guided")), (body) => {
+			body.saveSchemaVersion = 6;
+			delete body.commander.ladders;
+		});
+		expect(parseSave(v6).commander.firstDay).toBe("guided");
 	});
 
 	test("a new commander is free unless the caller says guided", () => {
@@ -61,6 +69,7 @@ describe("#408 D4 — the saved first-day choice", () => {
 		const v5 = resealed(serializeSave(saveOf("guided")), (body) => {
 			body.saveSchemaVersion = 5;
 			delete body.commander.firstDay;
+			delete body.commander.ladders;
 		});
 		expect(parseSave(v5).commander.firstDay).toBe("free");
 	});
@@ -68,9 +77,12 @@ describe("#408 D4 — the saved first-day choice", () => {
 	test("every older version carrying the key is refused by name", () => {
 		// The v2 body also drops `requests`, which v2 forbids for its own reason;
 		// without that this row would be red on the wrong key.
-		for (const version of LEGACY_SAVE_SCHEMA_VERSIONS) {
+		// 6 added the key, so it is not among them; `ladders` is dropped so the
+		// refusal is on the key this row is about.
+		for (const version of LEGACY_SAVE_SCHEMA_VERSIONS.filter((v) => v < 6)) {
 			const grafted = resealed(serializeSave(saveOf("free")), (body) => {
 				body.saveSchemaVersion = version;
+				delete body.commander.ladders;
 				if (version === 2) delete body.commander.requests;
 			});
 			expect(() => parseSave(grafted)).toThrow(
@@ -79,7 +91,7 @@ describe("#408 D4 — the saved first-day choice", () => {
 		}
 	});
 
-	test("a version 6 record without the key is truncated, not free", () => {
+	test("a current record without the key is truncated, not free", () => {
 		const truncated = resealed(serializeSave(saveOf("free")), (body) => {
 			delete body.commander.firstDay;
 		});

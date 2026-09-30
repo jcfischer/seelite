@@ -314,7 +314,7 @@ Cruise draws on **its own reserve**, not the hyperspace fuel tank.
 
 | Property | Value |
 |---|---|
-| Capacity | **12 AU** of cruise range |
+| Capacity | the flown hull's `chargeAu` of cruise range — **12 AU** on the courier, 10–40 across the roster (#185 D6, #554) |
 | Consumption | 1 unit per AU **travelled in cruise** (distance, not time) |
 | Refill on docking | instant, free, any station |
 | Passive regeneration | **~1 AU/min** while in normal flight |
@@ -334,9 +334,9 @@ station an AU away is an unwinnable save. At 1 AU/min, running dry costs about
 **eighty seconds** of waiting to buy enough range to reach a station, and twelve
 minutes for a full charge. A penalty that is felt and never fatal.
 
-Hyperspace fuel keeps its 1984 meaning untouched: 7 LY tank, 0.2 Cr / 0.1 LY
-(14 Cr a full tank — `economy-trade.md` §6.1), a
-jump resource only. Sun-skimming gains the second purpose it wanted.
+Hyperspace fuel keeps its 1984 meaning: the courier's 7 LY tank, 0.2 Cr / 0.1 LY
+(14 Cr a full tank — `economy-trade.md` §6.1), a jump resource only. Since #554
+the tank is the flown hull's `tankLy`, which is also its jump range. Sun-skimming gains the second purpose it wanted.
 
 ---
 
@@ -855,10 +855,9 @@ charge as the player-facing cruise path. Route time advances on canonical
 0.1-second ticks against the authoritative game clock; render cadence and visit
 order do not advance it.
 
-Section 7's 12 AU capacity remains the player baseline. Traffic routes extend
-the shared regeneration and docking-refill seams to accept an explicit capacity
-and pass their hull's `HULL_SPECS[hull].chargeAu`; distance consumption and the
-player default remain unchanged. `in-system-route-traffic.md` §1 defines the
+Section 7's capacity is the flying hull's `HULL_SPECS[hull].chargeAu` for the
+player and for Traffic alike (#554): the shared regeneration and docking-refill
+seams take it as a required argument, and distance consumption is unchanged. `in-system-route-traffic.md` §1 defines the
 bounded detour-chain snapshot used only for initial destination eligibility.
 
 The actor cruises toward a moving destination Traffic hold, then uses normal

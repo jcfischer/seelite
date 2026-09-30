@@ -218,6 +218,21 @@ solved to hold, slightly improving it. `tests/galaxy.test.ts` pins the measured
 mean as a band around the shipped figure rather than as a `>` threshold: a
 threshold leaves a retune green and this spec silently wrong.
 
+**These are the courier's figures, not the galaxy's (#185, #554).** "In range"
+is measured at `JUMP_RANGE_LY`, which is the courier's tank and the reach at
+which `layoutGalaxy` guarantees every galaxy connected. Reachability is a fact
+about the flown hull: a hull's `tankLy` is its jump range, and a shorter tank
+flies a fragmented graph on purpose. The per-tank table — fragmentation,
+isolated systems, neighbours and the diameter inside each component, for every
+purchasable hull's tank — is not transcribed here; it is reprinted by
+
+```
+bun scripts/measure-galaxy-shape.ts tanks
+```
+
+which runs #185's seeds by default and fails if any galaxy fragments at a tank
+of at least `JUMP_RANGE_LY`.
+
 `R` and the core radius are **outputs**. What is held fixed is ~8-in-range, and
 the core ratio stays `R/√2` so §3's 3:1 gradient survives the reshape unchanged.
 
@@ -677,7 +692,7 @@ the act. What it added to the table rather than merely implementing:
 | Property | Value | Where it lives |
 |---|---|---|
 | Wind-up | **3 s**, flown in normal flight | `hyperspace.ts`'s `JUMP_CHARGE_S` |
-| Tank | 7.0 LY, spent by distance | `galaxy.ts`'s `JUMP_RANGE_LY` |
+| Tank | the flown hull's `tankLy` — its range and its capacity (#554); 7.0 LY on the courier — spent by distance | `hull.ts`'s `HULL_SPECS[hull].tankLy` |
 | Refuel | any station's equipment screen, §6.1's price | `station-commerce.ts` |
 | Range gate | the **squared** comparison | `hyperspace.ts`'s `planJump` |
 | Cancelled by | damage — today, a failed dock (`docking.md` §2.0) | `Game.cancelJumpCharge` |

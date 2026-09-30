@@ -23,11 +23,12 @@
  * that module's reason: `live-cockpit.ts` is long, and a projection with
  * branches deserves its own rows.
  *
- * **There is no purchase price.** Nothing in the game records what a tonne
- * cost — `CommanderState.cargo` is a quantity per good and no more — so the
- * page shows what a good *fetches here* and never what it cost. Inventing a
- * cost basis is a save-shape decision and therefore a `SAVE_SCHEMA_VERSION`
- * question; it is not made here.
+ * **It shows no purchase price.** `CommanderState.cargo` is a quantity per
+ * good and no more, so the page shows what a good *fetches here* and never
+ * what it cost. Since #564 the save does carry a purchase basis — the trade
+ * ladder's, in `LadderRecord.basis` — but it is partial by design: goods
+ * carried from a v6 save have none, and pay no margin. Whether this page
+ * should print it is a question for a later node, not a figure to borrow.
  *
  * No DOM and no Three.js: this is a string.
  */

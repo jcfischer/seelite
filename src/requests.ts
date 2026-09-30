@@ -661,6 +661,19 @@ export function recordKill(
 	return byId ? { ...state, byId } : state;
 }
 
+/**
+ * Whether a step made some request ready to report (#546): the one change
+ * the console announces. A kill can move a request to its next stage without
+ * readying it, so "the state changed" is not the question.
+ */
+export function readiedBy(prev: RequestsState, next: RequestsState): boolean {
+	return Object.values(next.byId).some(
+		(request) =>
+			request.status === "ready-to-report" &&
+			prev.byId[request.offerId]?.status !== "ready-to-report",
+	);
+}
+
 /** Reject an inconsistent journal; never silently discard settlement. */
 export function parseRequests(raw: unknown, now: number): RequestsState {
 	const bad = (): never => {

@@ -27,7 +27,8 @@ import {
 	neighbours,
 	startSystem,
 } from "../src/galaxy";
-import { FUEL_CR_PER_LY, FUEL_TANK_LY } from "../src/market";
+import { FUEL_CR_PER_LY } from "../src/market";
+import { HULL_SPECS } from "../src/hull";
 import {
 	COURSE_SCHEMA_VERSION,
 	type Course,
@@ -116,20 +117,20 @@ describe("§4 fuel price — one figure, two modules", () => {
 	test("a full tank costs 14 Cr, in both modules that name a fuel price", () => {
 		// **The absolute figures first, then the agreement.** Equality alone
 		// proves only that the two constants match, so an edit moving both in
-		// the same direction passes it — and `jumpCost(FUEL_TANK_LY) === 14`
-		// leans on `FUEL_TANK_LY` being 7, which nothing here asserted. Elite's
+		// the same direction passes it — and a courier's full tank costing 14
+		// leans on its tank being 7, which nothing here asserted. Elite's
 		// PRXS table is 0.2 Cr per 0.1 LY over a 7 LY tank, and each of those
 		// three numbers is now pinned on its own.
-		expect(FUEL_TANK_LY).toBe(7);
+		expect(HULL_SPECS.courier.tankLy).toBe(7);
 		expect(FUEL_COST_PER_LY).toBe(0.2 / 0.1);
 		expect(FUEL_CR_PER_LY).toBe(0.2 / 0.1);
-		expect(jumpCost(FUEL_TANK_LY)).toBeCloseTo(14, 10);
+		expect(jumpCost(HULL_SPECS.courier.tankLy)).toBeCloseTo(14, 10);
 		expect(FUEL_COST_PER_LY).toBe(FUEL_CR_PER_LY);
 	});
 
 	test("a route's credit total is its distance at that price", () => {
 		const systems = [at(0, 0), at(1, 5), at(2, 10)];
-		const route = planRoute(systems, systems[0], systems[2]);
+		const route = planRoute(systems, systems[0], systems[2], JUMP_RANGE_LY);
 		expect(route).not.toBeNull();
 		if (route === null) return;
 		expect(route.totalCr).toBeCloseTo(route.totalLy * FUEL_CR_PER_LY, 10);
@@ -141,8 +142,8 @@ describe("§3 reachability — the 7 LY shell", () => {
 	test("`reachable` is `neighbours`, and both read the true 3D distance", () => {
 		const galaxy = generateGalaxy(0xa11ce, 0);
 		const from = startSystem(galaxy);
-		const lit = reachable(galaxy.systems, from);
-		expect(lit).toEqual(neighbours(galaxy.systems, from));
+		const lit = reachable(galaxy.systems, from, JUMP_RANGE_LY);
+		expect(lit).toEqual(neighbours(galaxy.systems, from, JUMP_RANGE_LY));
 		for (const s of lit) {
 			expect(distanceLy(from.pos, s.pos)).toBeLessThanOrEqual(JUMP_RANGE_LY);
 		}
@@ -152,7 +153,7 @@ describe("§3 reachability — the 7 LY shell", () => {
 		const from = at(0, 0);
 		const inside = at(1, JUMP_RANGE_LY - 0.001);
 		const outside = at(2, JUMP_RANGE_LY + 0.001);
-		const lit = reachable([from, inside, outside], from);
+		const lit = reachable([from, inside, outside], from, JUMP_RANGE_LY);
 		expect(lit.map((s) => s.index)).toEqual([1]);
 	});
 
@@ -161,14 +162,14 @@ describe("§3 reachability — the 7 LY shell", () => {
 		// 5 LY out in x and 5 in z is 7.07 LY away: outside the shell, and
 		// inside it if either axis is dropped.
 		const diagonal = at(1, 5, 0, 5);
-		expect(reachable([from, diagonal], from)).toEqual([]);
+		expect(reachable([from, diagonal], from, JUMP_RANGE_LY)).toEqual([]);
 	});
 });
 
 describe("§4 route planning — fewest jumps, then shortest", () => {
 	test("a system routes to itself in no jumps at all", () => {
 		const systems = [at(0, 0), at(1, 5)];
-		const route = planRoute(systems, systems[0], systems[0]);
+		const route = planRoute(systems, systems[0], systems[0], JUMP_RANGE_LY);
 		expect(route).not.toBeNull();
 		if (route === null) return;
 		expect(route.jumps).toBe(0);
@@ -179,7 +180,7 @@ describe("§4 route planning — fewest jumps, then shortest", () => {
 
 	test("a neighbour is one hop, priced at its true distance", () => {
 		const systems = [at(0, 0), at(1, 6)];
-		const route = planRoute(systems, systems[0], systems[1]);
+		const route = planRoute(systems, systems[0], systems[1], JUMP_RANGE_LY);
 		expect(route).not.toBeNull();
 		if (route === null) return;
 		expect(route.jumps).toBe(1);
@@ -205,7 +206,7 @@ describe("§4 route planning — fewest jumps, then shortest", () => {
 			at(2, 6.9), // 6.90 LY — the longer first step, and the only way on
 			at(3, 13.5), // reachable from 2 only, 6.60 LY further
 		];
-		const route = planRoute(systems, systems[0], systems[3]);
+		const route = planRoute(systems, systems[0], systems[3], JUMP_RANGE_LY);
 		expect(route).not.toBeNull();
 		if (route === null) return;
 		expect(route.jumps).toBe(2);
@@ -238,7 +239,7 @@ describe("§4 route planning — fewest jumps, then shortest", () => {
 			at(2, 6, 0), // via here: 6.00 + 6.00 = 12.00 LY — legal, and shorter
 			at(3, 12, 0),
 		];
-		const route = planRoute(systems, systems[0], systems[3]);
+		const route = planRoute(systems, systems[0], systems[3], JUMP_RANGE_LY);
 		expect(route).not.toBeNull();
 		if (route === null) return;
 		expect(route.jumps).toBe(2);
@@ -249,7 +250,7 @@ describe("§4 route planning — fewest jumps, then shortest", () => {
 	test("a longer chain is taken when the short one is not jumpable", () => {
 		// 0 to 3 is 20 LY: no two-jump chain exists at a 7 LY range.
 		const systems = [at(0, 0), at(1, 6.5), at(2, 13), at(3, 19.5)];
-		const route = planRoute(systems, systems[0], systems[3]);
+		const route = planRoute(systems, systems[0], systems[3], JUMP_RANGE_LY);
 		expect(route).not.toBeNull();
 		if (route === null) return;
 		expect(route.jumps).toBe(3);
@@ -257,7 +258,9 @@ describe("§4 route planning — fewest jumps, then shortest", () => {
 
 	test("an unreachable destination is null, not an empty route", () => {
 		const systems = [at(0, 0), at(1, 100)];
-		expect(planRoute(systems, systems[0], systems[1])).toBeNull();
+		expect(
+			planRoute(systems, systems[0], systems[1], JUMP_RANGE_LY),
+		).toBeNull();
 	});
 
 	test("the planner agrees with brute force on graphs small enough to enumerate", () => {
@@ -283,7 +286,7 @@ describe("§4 route planning — fewest jumps, then shortest", () => {
 				);
 			}
 			const last = systems[systems.length - 1];
-			const route = planRoute(systems, systems[0], last);
+			const route = planRoute(systems, systems[0], last, JUMP_RANGE_LY);
 			const truth = bestByEnumeration(systems, systems[0], last);
 			if (truth === null) {
 				expect(route).toBeNull();
@@ -304,7 +307,7 @@ describe("§4 route planning — fewest jumps, then shortest", () => {
 		const galaxy = generateGalaxy(0xbeef, 0);
 		const from = startSystem(galaxy);
 		for (const to of galaxy.systems) {
-			const route = planRoute(galaxy.systems, from, to);
+			const route = planRoute(galaxy.systems, from, to, JUMP_RANGE_LY);
 			expect(route).not.toBeNull();
 			if (route === null) continue;
 			let at = from;
@@ -330,7 +333,7 @@ describe("§4 route planning — fewest jumps, then shortest", () => {
 		const galaxy = generateGalaxy(0xc0ffee, 3);
 		const from = galaxy.systems[100];
 		for (const to of galaxy.systems) {
-			expect(planRoute(galaxy.systems, from, to)).not.toBeNull();
+			expect(planRoute(galaxy.systems, from, to, JUMP_RANGE_LY)).not.toBeNull();
 		}
 	});
 
@@ -338,8 +341,8 @@ describe("§4 route planning — fewest jumps, then shortest", () => {
 		const galaxy = generateGalaxy(0x1234, 1);
 		const a = galaxy.systems[7];
 		const b = galaxy.systems[201];
-		const first = planRoute(galaxy.systems, a, b);
-		const second = planRoute(galaxy.systems, a, b);
+		const first = planRoute(galaxy.systems, a, b, JUMP_RANGE_LY);
+		const second = planRoute(galaxy.systems, a, b, JUMP_RANGE_LY);
 		expect(first).not.toBeNull();
 		expect(JSON.stringify(first)).toBe(JSON.stringify(second));
 	});
@@ -349,8 +352,8 @@ describe("§4 route planning — fewest jumps, then shortest", () => {
 	test("a cross-galaxy pair does not route", () => {
 		const here = at(0, 0);
 		const there = { ...at(1, 1), galaxy: 4 };
-		expect(planRoute([here, there], here, there)).toBeNull();
-		expect(reachable([here, there], here)).toEqual([]);
+		expect(planRoute([here, there], here, there, JUMP_RANGE_LY)).toBeNull();
+		expect(reachable([here, there], here, JUMP_RANGE_LY)).toEqual([]);
 	});
 });
 
@@ -383,7 +386,7 @@ describe("§8 course — a destination, not a stored chain", () => {
 	)[0];
 
 	test("setting a course keeps the destination, and the chain is derived", () => {
-		const course = setCourse(galaxy.systems, from, far);
+		const course = setCourse(galaxy.systems, from, far, JUMP_RANGE_LY);
 		expect(course).not.toBeNull();
 		if (course === null) return;
 		expect(course.destinationIndex).toBe(far.index);
@@ -399,7 +402,9 @@ describe("§8 course — a destination, not a stored chain", () => {
 	test("a course cannot be set to an unroutable destination", () => {
 		const here = at(0, 0);
 		const marooned = at(1, 100);
-		expect(setCourse([here, marooned], here, marooned)).toBeNull();
+		expect(
+			setCourse([here, marooned], here, marooned, JUMP_RANGE_LY),
+		).toBeNull();
 	});
 
 	/**
@@ -410,11 +415,11 @@ describe("§8 course — a destination, not a stored chain", () => {
 	 * the player jumps somewhere that is not on it.
 	 */
 	test("progress re-derives from where the ship actually is, not from the plan", () => {
-		const course = setCourse(galaxy.systems, from, far);
+		const course = setCourse(galaxy.systems, from, far, JUMP_RANGE_LY);
 		expect(course).not.toBeNull();
 		if (course === null) return;
 
-		const planned = courseProgress(galaxy.systems, course, from);
+		const planned = courseProgress(galaxy.systems, course, from, JUMP_RANGE_LY);
 		expect(planned).not.toBeNull();
 		if (planned === null) return;
 		expect(planned.remaining).toBe(planned.route.jumps);
@@ -428,7 +433,12 @@ describe("§8 course — a destination, not a stored chain", () => {
 		expect(offPlan).toBeDefined();
 		if (offPlan === undefined) return;
 
-		const after = courseProgress(galaxy.systems, course, offPlan);
+		const after = courseProgress(
+			galaxy.systems,
+			course,
+			offPlan,
+			JUMP_RANGE_LY,
+		);
 		expect(after).not.toBeNull();
 		if (after === null) return;
 		expect(after.route.hops.at(-1)?.system.index).toBe(far.index);
@@ -436,10 +446,10 @@ describe("§8 course — a destination, not a stored chain", () => {
 	});
 
 	test("arriving at the destination completes the course", () => {
-		const course = setCourse(galaxy.systems, from, far);
+		const course = setCourse(galaxy.systems, from, far, JUMP_RANGE_LY);
 		expect(course).not.toBeNull();
 		if (course === null) return;
-		const done = courseProgress(galaxy.systems, course, far);
+		const done = courseProgress(galaxy.systems, course, far, JUMP_RANGE_LY);
 		expect(done).not.toBeNull();
 		if (done === null) return;
 		expect(done.arrived).toBe(true);

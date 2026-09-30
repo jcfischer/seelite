@@ -168,7 +168,9 @@ export interface TrafficCruiseEnvironment {
 	targetAt(gameTime: number): Mass;
 	massesAt(gameTime: number): readonly Mass[];
 	targetParentId: string | null;
-	capacityAu?: number;
+	/** The actor hull's `chargeAu`. Required: a default would regenerate every
+	 *  carrier to the courier's charge (#554). */
+	capacityAu: number;
 	guide?: (
 		state: Readonly<TrafficCruiseState>,
 		gameTime: number,
