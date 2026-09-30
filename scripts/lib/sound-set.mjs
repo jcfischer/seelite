@@ -168,6 +168,7 @@ export const SOUND_SET = Object.freeze([
 		seconds: 4,
 		cue: { kind: "witchspaceFlash", voice: "boom" },
 	},
+	...musicTimelines(),
 ]);
 
 /**
@@ -262,6 +263,55 @@ function weaponTimelines() {
 		line("weapons-taken-plain", 7.3, "rearm,onepool,flat,thud", taken),
 		line("weapons-given", 4.3, "crack,given", given),
 		line("weapons-given-nogiven", 4.3, "crack", given),
+	];
+}
+
+/**
+ * #560's test score, played through the worklet synth. `songs` maps each id
+ * to a key of `TEST_SONGS` (`src/music-test-score.ts`), or to a song written
+ * inline; `script` is `[seconds, command]`, each a `MusicCommand` sent then.
+ * None has a `legacy` form: there was no synth before #560, so a capture at
+ * an older ref renders these as absent.
+ */
+function musicTimelines() {
+	const both = { waltz: "waltz", march: "march" };
+	const play = (id) => ({ type: "play", id, at: "bar" });
+	const tune = (name, seconds, script, songs = both) => ({
+		name,
+		seconds,
+		music: { songs, script },
+	});
+	return [
+		// Intro and the loop, then resolved into the coda's ritardando.
+		tune("music-waltz", 16, [
+			[0, play("waltz")],
+			[9.5, { type: "resolve", at: "bar" }],
+		]),
+		tune("music-march", 8, [[0, play("march")]]),
+		// The second voices in their room, section by section (#560 D10).
+		tune("music-voices", 56, [[0, play("voices")]], { voices: "voices" }),
+		// Between songs: the march takes over on the waltz's next bar line.
+		tune("music-crossfade", 10, [
+			[0, play("waltz")],
+			[3.5, { type: "crossfade", to: "march", at: "bar", fadeS: 2 }],
+		]),
+		// Between parts: the lead alone, then the arpeggio takes its place.
+		tune("music-stems", 9, [
+			[0, play("march")],
+			[0, { type: "stem", part: "arp", level: 0, at: "now", fadeS: 0 }],
+			[3.5, { type: "stem", part: "lead", level: 0, at: "bar", fadeS: 1.5 }],
+			[3.5, { type: "stem", part: "arp", level: 1, at: "bar", fadeS: 1.5 }],
+		]),
+		// A pilot taking the stick back mid-waltz: faded out, not cut.
+		tune("music-stop-fade", 6, [
+			[0, play("waltz")],
+			[3.2, { type: "stop", at: "now", fadeS: 0.8 }],
+		]),
+		// The march quickening by half over two bars.
+		tune("music-tempo", 9, [
+			[0, play("march")],
+			[1, { type: "tempo", scale: 1.5, at: "bar", rampBars: 2 }],
+		]),
 	];
 }
 
@@ -404,8 +454,10 @@ export async function renderInPage({
 	const { WITCHSPACE } = await import("/src/witchspace.ts");
 	const resolve = (v) => (v === "hum" ? WITCHSPACE.humS : v);
 	const seconds = resolve(entry.seconds) + (entry.seconds === "hum" ? 0.3 : 0);
+	// Music renders in stereo (the synth's space is, since #548's first
+	// listening); every cue stays mono, as it plays.
 	const ctx = new OfflineAudioContext(
-		1,
+		entry.music ? 2 : 1,
 		Math.round((leadS + seconds + (repeat - 1) * spacingS) * sampleRate),
 		sampleRate,
 	);
@@ -424,8 +476,20 @@ export async function renderInPage({
 	const knownKinds = modern
 		? Object.keys((await import("/src/audio-cue.ts")).CUE_BUS)
 		: [];
+	// #560's synth, where the served tree has one: an older ref has no
+	// `music.ts`, and the dynamic import of it rejects.
+	const synth =
+		entry.music && modern
+			? await import("/src/music.ts")
+					.then(async ({ Music }) => ({
+						Music,
+						songs: (await import("/src/music-test-score.ts")).TEST_SONGS,
+					}))
+					.catch(() => null)
+			: null;
 	if (
 		(entry.flight && typeof fx.flight !== "function") ||
+		(entry.music && !synth) ||
 		(entry.witchspace && !knownKinds.includes("witchspaceRide")) ||
 		(entry.scheduled &&
 			!entry.scheduled.kinds.every((k) => knownKinds.includes(k))) ||
@@ -464,6 +528,64 @@ export async function renderInPage({
 		} finally {
 			window.AudioContext = saved;
 		}
+	}
+
+	if (entry.music) {
+		// The synth's own render (#560): loaded into this context and connected
+		// to the engine's music bus, as the game will. A command scripted at
+		// `"attach"` is sent before `attach` resolves, so the controller holds
+		// it (#543 D8); every other is sent at its time, after the lead.
+		const music = new synth.Music();
+		const ready = music.attach(ctx, fx.musicInput);
+		for (const [id, song] of Object.entries(entry.music.songs))
+			music.load(id, typeof song === "string" ? synth.songs[song] : song);
+		const script = [...entry.music.script];
+		while (script.length && script[0][0] === "attach")
+			music.send(script.shift()[1]);
+		await ready;
+		// And applied: an offline render starts without reading the port, so a
+		// held command would otherwise wait for a suspend (`Music.sync`).
+		await music.sync();
+		const due = new Map();
+		const schedule = (t, v) => {
+			const key = leadS + t;
+			if (!due.has(key)) due.set(key, []);
+			due.get(key).push(v);
+		};
+		for (const [t, cmd] of script) schedule(t, cmd);
+		for (const [t, levels] of levelsAt) schedule(t, { levels });
+		for (const [at, cmds] of due)
+			ctx.suspend(at).then(() => {
+				for (const cmd of cmds)
+					if (cmd.levels)
+						for (const [bus, level] of Object.entries(cmd.levels))
+							fx.setLevel(bus, level);
+					else music.send(cmd);
+				// Resumed only once the worklet has applied them: sent and resumed at
+				// once, a command lands at the next suspend instead (`Music.sync`).
+				// Resumed on a rejected sync too, so a worklet that failed shows up in
+				// `errors` rather than as a render that never ends.
+				const resume = () => ctx.resume();
+				music.sync().then(resume, resume);
+			});
+		const buffer = await ctx.startRendering();
+		const from = Math.round(leadS * sampleRate);
+		const left = buffer.getChannelData(0).subarray(from);
+		const right = buffer.getChannelData(1).subarray(from);
+		// `samples` is the fold-down, (L + R) / 2 — what a mono destination
+		// hears — so every band a probe reads keeps its meaning; the two sides
+		// are for the ear.
+		const fold = new Float32Array(left.length);
+		for (let i = 0; i < fold.length; i++) fold[i] = 0.5 * (left[i] + right[i]);
+		return {
+			modern,
+			sampleRate,
+			live: null,
+			errors: music.errors,
+			samples: Array.from(fold),
+			left: Array.from(left),
+			right: Array.from(right),
+		};
 	}
 
 	let state = (typeof seed === "number" ? seed : 1) >>> 0 || 1;
