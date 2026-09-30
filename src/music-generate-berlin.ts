@@ -292,11 +292,15 @@ function riser(w: Writer, from: number, bars: number, base: number) {
 }
 
 /** The running sequence over `[from, to)`: sixteenths over each bar's
- *  chord, one step mutated every `MUTATE_EVERY` bars, accents in threes. */
+ *  chord, one step mutated every `MUTATE_EVERY` bars, accents in threes.
+ *  `steps` is the caller's and is mutated in place, so a run that stops
+ *  and starts again carries on from where it was rather than from the
+ *  seed's pattern; `resume` mutates on the way back in. */
 function sequence(
 	w: Writer,
 	o: {
-		seq: readonly (number | null)[];
+		steps: (number | null)[];
+		resume?: boolean;
 		deg: Deg;
 		chordAt: (bar: number) => number;
 		from: number;
@@ -305,12 +309,16 @@ function sequence(
 		register: number;
 	},
 ) {
-	const steps = [...o.seq];
+	const { steps } = o;
 	for (let b = o.from; b < o.to; b++) {
-		if (b > o.from && (b - o.from) % MUTATE_EVERY === 0) {
+		if ((b > o.from || o.resume) && (b - o.from) % MUTATE_EVERY === 0) {
 			// Never the downbeat: the root on one is what keeps it anchored.
+			// And never to the value it had, so every mutation is heard.
 			const at = 1 + Math.floor(o.rand() * 15);
-			steps[at] = pickOf(o.rand, [0, 2, 4, 5, 7, 9, 11]);
+			steps[at] = pickOf(
+				o.rand,
+				[0, 2, 4, 5, 7, 9, 11].filter((d) => d !== steps[at]),
+			);
 		}
 		const r = o.chordAt(b);
 		steps.forEach((d, i) => {
@@ -462,12 +470,14 @@ function calm(
 	drone(w, deg, chordAt, bars, 0.6);
 	wash(w, bars, 76, 0.7);
 	choir(w, deg, chordAt, 0, bars, 0.4);
+	const steps = [...tune.seq];
 	for (const [from, to] of [
 		[SEQ_IN, BREAK_AT],
 		[back, bars],
 	])
 		sequence(w, {
-			seq: tune.seq,
+			steps,
+			resume: from === back,
 			deg,
 			chordAt,
 			from,
@@ -553,7 +563,7 @@ function wary(
 	wash(w, bars, 69, 0.9);
 	choir(w, deg, chordAt, 0, bars, 0.35);
 	sequence(w, {
-		seq: pickOf(rand, SEQUENCES),
+		steps: [...pickOf(rand, SEQUENCES)],
 		deg,
 		chordAt,
 		from: 0,
@@ -698,7 +708,7 @@ export function berlinStationBed(
 	wash(w, bars, 72, r.wash);
 	if (r.seq)
 		sequence(w, {
-			seq: tune.seq,
+			steps: [...tune.seq],
 			deg,
 			chordAt,
 			from: 4,

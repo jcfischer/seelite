@@ -86,6 +86,30 @@ describe("the Berlin bed", () => {
 		}
 	});
 
+	test("no sequence bar comes back once it has moved on", () => {
+		// A bar repeats on purpose while its chord holds, which is four bars,
+		// or eight where the progression's substitute equals its neighbour. So
+		// identical bars must be one unbroken run; a bar that returns after
+		// others is the pattern coming round again. After the breakdown it
+		// once restarted from the seed's pattern, and bars 36–43 replayed 4–11.
+		for (const seed of SEEDS) {
+			const calm = section(berlinFlightBed(seed, 0), "calm");
+			const bars = new Map<number, string[]>();
+			for (const e of calm.events)
+				if (e.part === "seq")
+					bars.set(e.bar, [...(bars.get(e.bar) ?? []), `${e.beat}:${e.pitch}`]);
+			const runs = new Map<string, number[]>();
+			for (const [bar, notes] of bars) {
+				const key = notes.sort().join();
+				runs.set(key, [...(runs.get(key) ?? []), bar]);
+			}
+			for (const run of runs.values()) {
+				run.sort((x, y) => x - y);
+				expect(run[run.length - 1] - run[0]).toBe(run.length - 1);
+			}
+		}
+	});
+
 	test("the noise wash covers calm on both sides, and a riser leads back in", () => {
 		const calm = section(berlinFlightBed(3, 0), "calm");
 		for (const side of ["windL", "windR"]) {
