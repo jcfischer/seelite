@@ -844,6 +844,43 @@ console.log(
 			`p10 ${quantile(controlBetas, 0.1).toFixed(3)}, p90 ${quantile(controlBetas, 0.9).toFixed(3)})`,
 	);
 
+	// **The slope is not one number any more, so it is printed by segment.** A
+	// power law over 4-200 t is one slope by construction; the spread's arm
+	// bends, and a single fit hides where. Each segment is a paired log-slope
+	// between two ladder holds, on the mean curve.
+	const SEGMENTS: readonly [number, number][] = [
+		[4, 8],
+		[8, 20],
+		[20, 60],
+		[60, 120],
+		[120, 200],
+	];
+	const slope = (rates: (h: number) => number[], lo: number, hi: number) =>
+		Math.log(mean(rates(hi)) / mean(rates(lo))) / Math.log(hi / lo);
+	console.log("\n  local exponent by segment, mean curve:");
+	console.log("    segment      shipped   no wedge");
+	for (const [lo, hi] of SEGMENTS)
+		console.log(
+			`    ${`${lo}-${hi} t`.padEnd(11)}${rightAlign(finite("slope", slope(curveAt, lo, hi)).toFixed(3), 9)}` +
+				`${rightAlign(finite("slope", slope(controlAt, lo, hi)).toFixed(3), 11)}`,
+		);
+	// The roster's own span: the fit a price for a hull that exists rests on,
+	// without the holds below any hull or above the largest one.
+	const rosterHolds = HOLD_LADDER.filter(
+		(h) =>
+			h >= HULL_SPECS[sortedByHold[0]].holdT &&
+			h <= HULL_SPECS[sortedByHold[sortedByHold.length - 1]].holdT,
+	);
+	const rosterFit = (rates: (h: number) => number[]) =>
+		fitPower(rosterHolds.map((h) => ({ h, r: mean(rates(h)) })));
+	const rs = rosterFit(curveAt);
+	const rc = rosterFit(controlAt);
+	console.log(
+		`\n  fitted over the roster's own span (${rosterHolds.join(", ")} t):` +
+			`\n    shipped   b ${rs.b.toFixed(3)} ± ${rs.se.toFixed(3)}` +
+			`\n    no wedge  b ${rc.b.toFixed(3)} ± ${rc.se.toFixed(3)}`,
+	);
+
 	const controlWindow = kitWindowFor({ quote: NO_WEDGE });
 	const rate20 = mean(curveAt(HOLD_REFERENCE_T));
 	const controlRate20 = mean(controlAt(HOLD_REFERENCE_T));
