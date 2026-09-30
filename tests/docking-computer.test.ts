@@ -89,12 +89,10 @@ describe("main.ts routes every engage through DockingComputer", () => {
 	test("no field the class owns is still written on Game", () => {
 		const retired =
 			/\b(dockingComputerEngaged|lastComputerRefusal|lastComputerPhase|lastComputerStationId)\b/;
-		const left = main
-			.split("\n")
-			.flatMap((line, i) => {
-				const hit = line.match(retired);
-				return hit ? [`${hit[1]}:${i + 1}`] : [];
-			});
+		const left = main.split("\n").flatMap((line, i) => {
+			const hit = line.match(retired);
+			return hit ? [`${hit[1]}:${i + 1}`] : [];
+		});
 		expect(left).toEqual([]);
 	});
 
