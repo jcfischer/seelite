@@ -119,16 +119,16 @@ export const PHONEMES: Readonly<Record<string, PhonemeSpec>> = {
 	NG: { f: [250, 2000, 2900], ms: 80, av: 0.55, place: "vel" },
 	// Fricatives placed for the radio, which passes 300–3400 Hz (the first
 	// table put S at 5.5 kHz and F and TH near 5, and the band removed all
-	// three): S bright at the top of the band, SH dark inside it, F and TH
+	// three): S bright at 3.3 kHz, the top of the band, SH dark at 2.3, F and TH
 	// weak and flat, told apart mostly by their glides, as on a telephone.
 	F: fric([340, 1100, 2080], 105, 0, 0.14, 3000, 6000, "lab"),
 	V: fric([340, 1100, 2080], 65, 0.45, 0.1, 3000, 6000, "lab"),
 	TH: fric([320, 1290, 2540], 105, 0, 0.09, 3500, 6000, "dent"),
 	DH: fric([320, 1290, 2540], 50, 0.5, 0.07, 3500, 6000, "dent"),
-	S: fric([320, 1390, 2530], 115, 0, 1, 4000, 2200, "alv"),
-	Z: fric([320, 1390, 2530], 85, 0.45, 0.65, 4000, 2200, "alv"),
-	SH: fric([300, 1840, 2750], 125, 0, 1, 2500, 1100, "pal"),
-	ZH: fric([300, 1840, 2750], 85, 0.45, 0.6, 2500, 1100, "pal"),
+	S: fric([320, 1390, 2530], 115, 0, 1, 3300, 1600, "alv"),
+	Z: fric([320, 1390, 2530], 85, 0.45, 0.65, 3300, 1600, "alv"),
+	SH: fric([300, 1840, 2750], 125, 0, 1, 2300, 900, "pal"),
+	ZH: fric([300, 1840, 2750], 85, 0.45, 0.6, 2300, 900, "pal"),
 	HH: { f: [500, 1500, 2500], ms: 65, av: 0, ah: 0.6, copyNext: true },
 	// Voice onset times after English's: a velar's the longest, a labial's
 	// the shortest; a voiced stop's is short lag and is not written out.
@@ -396,14 +396,14 @@ function segments(tokens: readonly Token[], v: SpeechVoice): Seg[] {
  *
  *  Retuned on the principal's ear (2026-09-30: *bay, day, gay sound the
  *  same*): before EY the first table started D and G 47 Hz apart in F2 and
- *  nowhere apart in F3. Now B, D and G start near 1300, 1760 and 2090 in F2
- *  and 2300, 2710 and 2510 in F3. */
+ *  nowhere apart in F3. Now B, D and G start at 1050, 1776 and 2185 in F2 and
+ *  2242, 2772 and 2511 in F3 (measured off `frameTracks`). */
 function locus(place: Place, v: Formants): Formants {
 	switch (place) {
 		case "lab":
 			return [200, 800, 2100];
 		case "dent":
-			return [200, 1400, 2700];
+			return [200, 1650, 2700];
 		case "alv":
 			return [200, 1800, 2900];
 		case "pal":
@@ -418,8 +418,8 @@ function locus(place: Place, v: Formants): Formants {
 /** How far from the locus toward the vowel a transition starts, per
  *  formant: Klatt's k. */
 const LOCUS_K: Readonly<Record<Place, Formants>> = {
-	lab: [0.35, 0.55, 0.5],
-	dent: [0.35, 0.45, 0.5],
+	lab: [0.35, 0.4, 0.5],
+	dent: [0.35, 0.35, 0.5],
 	alv: [0.35, 0.45, 0.5],
 	pal: [0.35, 0.5, 0.5],
 	vel: [0.35, 0.45, 0.5],
@@ -431,7 +431,7 @@ const TRANSITION_MS: Readonly<Record<Place | "glide" | "vowel", number>> = {
 	dent: 60,
 	alv: 60,
 	pal: 65,
-	vel: 75,
+	vel: 90,
 	glide: 80,
 	vowel: 60,
 };
