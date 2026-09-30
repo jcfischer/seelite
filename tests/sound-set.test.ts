@@ -32,8 +32,10 @@ interface SoundEntry {
 	legacy?: readonly unknown[];
 	flight?: { arms: string };
 	music?: {
-		songs: Record<string, string | object>;
-		script: readonly (readonly [number | "attach", { type: string }])[];
+		songs?: Record<string, string | object>;
+		script?: readonly (readonly [number | "attach", { type: string }])[];
+		/** #548: a scripted situation the director is stepped through. */
+		director?: { keys: readonly unknown[]; arms: string };
 	};
 	weapons?: { arms: string };
 	witchspace?: { arms: string; from: string };
@@ -179,13 +181,16 @@ const MOVES: Record<MusicCommand["type"], true | string> = {
 };
 
 test("every transport move is rendered for the ear, or says why not (#560)", () => {
-	const music = SOUND_SET.flatMap((e) => (e.music ? [e.music] : []));
-	const sent = new Set(music.flatMap((m) => m.script.map(([, c]) => c.type)));
+	// Scripted renders only: #548's director renders send what the director does.
+	const music = SOUND_SET.flatMap((e) => (e.music?.script ? [e.music] : []));
+	const sent = new Set(
+		music.flatMap((m) => (m.script ?? []).map(([, c]) => c.type)),
+	);
 	for (const [move, why] of Object.entries(MOVES))
 		expect([move, sent.has(move)]).toEqual([move, why === true]);
 	// And every song a render names is in the test score.
 	for (const m of music)
-		for (const song of Object.values(m.songs))
+		for (const song of Object.values(m.songs ?? {}))
 			if (typeof song === "string") expect(TEST_SONGS[song]).toBeDefined();
 });
 

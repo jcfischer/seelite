@@ -23,11 +23,12 @@ export const BOOT_DIRECT = "direct";
 
 /**
  * The routes `main.ts` mounts instead of the game. The test reads `main.ts`'s
- * branches and asserts this list matches them, so a fifth workbench is a red
+ * branches and asserts this list matches them, so a new workbench is a red
  * run here rather than a probe that waits on an overlay.
  */
 export const WORKBENCH_ROUTES = Object.freeze([
 	"model-viewer",
+	"music-lab",
 	"hud-gallery",
 	"galaxy-map",
 	"planet-prototype",

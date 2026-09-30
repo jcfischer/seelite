@@ -169,6 +169,7 @@ export const SOUND_SET = Object.freeze([
 		cue: { kind: "witchspaceFlash", voice: "boom" },
 	},
 	...musicTimelines(),
+	...adaptiveTimelines(),
 ]);
 
 /**
@@ -263,6 +264,66 @@ function weaponTimelines() {
 		line("weapons-taken-plain", 7.3, "rearm,onepool,flat,thud", taken),
 		line("weapons-given", 4.3, "crack,given", given),
 		line("weapons-given-nogiven", 4.3, "crack", given),
+	];
+}
+
+/**
+ * #548's adaptive music, rendered by stepping the real director
+ * (`music-director.ts`) through a scripted situation in the page: what is
+ * heard is the commands the director sent, on the synth the game plays.
+ *
+ * `keys` are `[seconds, reading]`, each merged over the one before and
+ * held. `arms` is a `?music=` value.
+ */
+function adaptiveTimelines() {
+	const run = (seed) => [
+		[0, { scene: "docked", stationRole: "trade", systemSeed: seed }],
+		[10, { scene: "flight" }],
+		[28, { cruise: true }],
+		[44, { cruise: false, encounter: "inbound" }],
+		[54, { encounter: "contest" }],
+		[62, { encounter: "duel" }],
+		[70, { raiderFiring: true, sinceStruckS: 0 }],
+		[80, { raiderFiring: false, sinceStruckS: 99, shieldShare: 0.2 }],
+		// The raider is gone and the shields come back: the fall, one level per
+		// hold, back to calm.
+		[90, { encounter: "none", shieldShare: 1, hullShare: 0.8 }],
+		[128, { scene: "docked", stationRole: "refinery" }],
+	];
+	const tune = (name, seconds, keys, arms = "") => ({
+		name,
+		seconds,
+		music: { director: { keys, arms } },
+	});
+	return [
+		tune("music-adaptive-run-a", 140, run(1234)),
+		tune("music-adaptive-run-b", 140, run(987654)),
+		// Every level at once, rising: the four sections of one system.
+		tune("music-adaptive-ladder", 72, [
+			[0, { systemSeed: 1234 }],
+			[18, { encounter: "inbound" }],
+			[36, { encounter: "contest" }],
+			[54, { raiderFiring: true }],
+		]),
+		// The second bed against the first (D12): the same system held at calm
+		// for 100 s, and the same station, each way. `legacy` is the first bed.
+		tune("music-calm", 100, [[0, { systemSeed: 1234 }]], "calm"),
+		tune("music-calm-legacy", 100, [[0, { systemSeed: 1234 }]], "calm,legacy"),
+		// Each danger section held for a minute: long enough to hear its form.
+		...["wary", "threat", "combat"].map((level) =>
+			tune(`music-${level}`, 60, [[0, { systemSeed: 1234 }]], level),
+		),
+		tune(
+			"music-station-trade-legacy",
+			60,
+			[[0, { scene: "docked", stationRole: "trade", systemSeed: 1234 }]],
+			"legacy",
+		),
+		...["trade", "refinery", "shipyard", "outpost"].map((role) =>
+			tune(`music-station-${role}`, 60, [
+				[0, { scene: "docked", stationRole: role, systemSeed: 1234 }],
+			]),
+		),
 	];
 }
 
@@ -450,6 +511,43 @@ export async function renderInPage({
 	levelsAt = [],
 	punch = null,
 }) {
+	/**
+	 * #548: step the director through `keys` at a fixed step and return what it
+	 * sent as a `[seconds, command]` script. Nested in `renderInPage` because
+	 * `page.evaluate` sends only that function's source; it imports the served
+	 * tree's director. The director is pure, so its commands can be worked out
+	 * before the render starts.
+	 */
+	async function directorScript({ keys, arms: armsValue }, seconds) {
+		const { initialMusicState, musicArms, QUIET_READING, stepMusic } =
+			await import("/src/music-director.ts");
+		const { arms, unknown } = musicArms(armsValue);
+		if (unknown.length)
+			throw new Error(`?music: unknown ${unknown.join(", ")}`);
+		// Ready throughout: the script is worked out before the render starts,
+		// and every command is sent once the worklet has loaded.
+		let reading = QUIET_READING;
+		const readings = keys.map(([t, over]) => {
+			reading = { ...reading, ...over };
+			return [t, reading];
+		});
+		const dt = 1 / 10;
+		const script = [];
+		let state = initialMusicState();
+		for (let i = 0; i * dt < seconds; i++) {
+			const t = i * dt;
+			let k = 0;
+			while (k + 1 < readings.length && readings[k + 1][0] <= t) k++;
+			const r = readings[k][1];
+			// A hit ages with the clock, as `sinceStruckS` does in the game.
+			const struck = r.sinceStruckS + (t - readings[k][0]);
+			const step = stepMusic(state, { ...r, sinceStruckS: struck }, dt, arms);
+			state = step.state;
+			for (const cmd of step.commands) script.push([t, cmd]);
+		}
+		return script;
+	}
+
 	const { AudioFX } = await import("/src/audio.ts");
 	const { WITCHSPACE } = await import("/src/witchspace.ts");
 	const resolve = (v) => (v === "hum" ? WITCHSPACE.humS : v);
@@ -537,9 +635,11 @@ export async function renderInPage({
 		// it (#543 D8); every other is sent at its time, after the lead.
 		const music = new synth.Music();
 		const ready = music.attach(ctx, fx.musicInput);
-		for (const [id, song] of Object.entries(entry.music.songs))
+		for (const [id, song] of Object.entries(entry.music.songs ?? {}))
 			music.load(id, typeof song === "string" ? synth.songs[song] : song);
-		const script = [...entry.music.script];
+		const script = entry.music.director
+			? await directorScript(entry.music.director, seconds)
+			: [...entry.music.script];
 		while (script.length && script[0][0] === "attach")
 			music.send(script.shift()[1]);
 		await ready;

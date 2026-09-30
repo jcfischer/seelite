@@ -62,10 +62,12 @@
  */
 import { cueStats, roundStats } from "./lib/audio-stats.mjs";
 import { renderInPage, SOUND_SET } from "./lib/sound-set.mjs";
+import { installViewFraming } from "./lib/view-placement.mjs";
 import { gameUrl } from "./lib/game-url.mjs";
 import {
 	bootedGame,
 	guardedOrigin,
+	installViewPlacement,
 	launchChromium,
 	tally,
 } from "./probe-guard.mjs";
@@ -74,6 +76,10 @@ const origin = await guardedOrigin(
 	process.argv[2] ?? process.env.PROBE_ORIGIN ?? "http://127.0.0.1:5173",
 );
 const PRINT = process.env.PRINT === "1";
+/** How much of each music render the bands are read off, s. */
+const PROBE_RENDER_S = 20;
+/** The renders a row reads past that, and so rendered whole. */
+const FULL_LENGTH = new Set(["music-adaptive-ladder"]);
 const SR = 48000;
 /** 120 bpm in 4/4: a bar is two seconds. The probe songs below say so. */
 const BAR = 2 * SR;
@@ -94,7 +100,66 @@ const RENDERED = {
 	// The second voices open on the drone's three-second swell, so this one
 	// carries its own onset, in the band like the rest, rather than the
 	// limiter's 10 ms.
-	"music-voices": { rms: 0.02846, peak: 0.1775, hz: 700, onset: 51.48 },
+	"music-voices": { rms: 0.03047, peak: 0.1775, hz: 700, onset: 51.48 },
+	// #548's director renders fade in by design — a crossfade from silence,
+	// and a drone's or station pad's slow attack — so each carries its own
+	// onset, in the band like the rest, rather than the limiter's 10 ms.
+	// Measured on the second bed (D12) over each render's opening
+	// `PROBE_RENDER_S`, the ladder whole; the `-legacy` rows are the first
+	// bed, kept to compare against.
+	"music-adaptive-run-a": {
+		rms: 0.01828,
+		peak: 0.09585,
+		hz: 694,
+		onset: 387.94,
+	},
+	"music-adaptive-run-b": {
+		rms: 0.01777,
+		peak: 0.0979,
+		hz: 1009,
+		onset: 394.77,
+	},
+	"music-adaptive-ladder": {
+		rms: 0.0287,
+		peak: 0.14727,
+		hz: 694,
+		onset: 387.94,
+	},
+	"music-calm": { rms: 0.02423, peak: 0.12964, hz: 694, onset: 387.94 },
+	"music-calm-legacy": { rms: 0.01264, peak: 0.0644, hz: 1104, onset: 298.25 },
+	"music-wary": { rms: 0.02306, peak: 0.14824, hz: 476, onset: 298.9 },
+	"music-threat": { rms: 0.01908, peak: 0.10102, hz: 2078, onset: 314.08 },
+	"music-combat": { rms: 0.01867, peak: 0.10714, hz: 1435, onset: 145 },
+	"music-station-trade-legacy": {
+		rms: 0.01045,
+		peak: 0.05091,
+		hz: 894,
+		onset: 494.46,
+	},
+	"music-station-trade": {
+		rms: 0.02341,
+		peak: 0.14354,
+		hz: 694,
+		onset: 387.94,
+	},
+	"music-station-refinery": {
+		rms: 0.02616,
+		peak: 0.14289,
+		hz: 611,
+		onset: 387.44,
+	},
+	"music-station-shipyard": {
+		rms: 0.02,
+		peak: 0.09451,
+		hz: 694,
+		onset: 387.94,
+	},
+	"music-station-outpost": {
+		rms: 0.02006,
+		peak: 0.09585,
+		hz: 694,
+		onset: 387.94,
+	},
 };
 /** The limiter's 6 ms look-ahead and a render quantum and a half (4 ms at
  *  48 kHz): 10 ms, as the comment above says. It read 12 for a round, which
@@ -163,7 +228,15 @@ try {
 	);
 	const rendered = new Map();
 	for (const entry of MUSIC) {
-		const r = await renderRaw(entry);
+		// The band is read off the render's opening `PROBE_RENDER_S`: the sound
+		// set's listening renders run to minutes, and all of them whole
+		// outlasted probe-all's ten-minute limit (#548). The ladder keeps its
+		// length, because a row below reads all four of its levels.
+		const r = await renderRaw(
+			FULL_LENGTH.has(entry.name)
+				? entry
+				: { ...entry, seconds: Math.min(entry.seconds, PROBE_RENDER_S) },
+		);
 		check(
 			`${entry.name} renders through the synth`,
 			!r.absent && r.errors?.length === 0,
@@ -217,6 +290,50 @@ try {
 		return e > 0 ? Math.sqrt(s / e) : 0;
 	};
 	const onLine = (d) => Object.values(ONSET_AFTER_LINE).includes(d);
+
+	// ── #548: the ladder gets busier as the danger rises ────────────────────
+	// The ladder rises calm, wary, threat, combat at 18 s each. The level does
+	// not separate them — on the first bed the pad set both level and
+	// brightness — so this counts transients: 10 ms frames of the first
+	// difference's energy that jump past twice the mean of the four before.
+	// Threat's hats and acid and combat's kit and sixteenths are what it
+	// hears. On the second bed calm reads 0.00/s — its slow attacks and long
+	// reverb make no jumps — so a ratio to calm alone would pass anything:
+	// each level also has a floor of its own, and combat must be busier than
+	// the threat. Wary's bass is dark and low and barely registers (0.13/s),
+	// so wary is left to the ear.
+	const ladder = rendered.get("music-adaptive-ladder");
+	if (ladder) {
+		const perS = (a, b) => {
+			const F = SR / 100;
+			const e = [];
+			for (let k = a * SR; k + F < b * SR; k += F) {
+				let q = 0;
+				for (let j = k + 1; j < k + F; j++) {
+					const d = ladder[j] - ladder[j - 1];
+					q += d * d;
+				}
+				e.push(q);
+			}
+			let n = 0;
+			for (let i = 5; i < e.length; i++) {
+				const jump = (j) =>
+					e[j] > (e[j - 1] + e[j - 2] + e[j - 3] + e[j - 4]) / 2;
+				if (jump(i) && !jump(i - 1)) n++;
+			}
+			return n / (b - a);
+		};
+		const calmRate = perS(6, 18);
+		const threatRate = perS(38, 54);
+		const fightRate = perS(56, 72);
+		check(
+			"the ladder's threat and combat are busier than its calm (#548)",
+			threatRate >= Math.max(1, 2 * calmRate) &&
+				fightRate >= Math.max(3, 4 * calmRate) &&
+				fightRate > threatRate,
+			`transients/s calm ${calmRate.toFixed(2)}, wary ${perS(20, 36).toFixed(2)}, threat ${threatRate.toFixed(2)}, combat ${fightRate.toFixed(2)}`,
+		);
+	}
 	/** Rms over a window in seconds, or the whole buffer: one body for every
 	 *  row that reads a level (sage round 4). */
 	const rmsOf = (x, a = 0, b = x.length / SR) => {
@@ -449,7 +566,10 @@ try {
 			viewport: { width: 900, height: 620 },
 		});
 		watch(game);
-		await game.goto(gameUrl(origin, { seed: 19, raider: "off" }));
+		// `music: "off"` keeps #548's director out: it drives the same synth,
+		// and with it on the live row below read 0.0008 against its 1e-3. This
+		// page is about the synth; the director has its own page after it.
+		await game.goto(gameUrl(origin, { seed: 19, raider: "off", music: "off" }));
 		await bootedGame(game);
 		const before = await game.evaluate(() => window.__seelite.music.ready);
 		// A trusted key press: the game's own unlock listener, which opens the
@@ -512,6 +632,113 @@ try {
 				live.after === 0 &&
 				live.errors.length === 0,
 			`rms at the music bus ${live.quiet} before, ${live.heard.toFixed(4)} playing, ${live.after} after the stop`,
+		);
+		await game.close();
+	}
+	// ── In the game: a docked pilot hears the station bed (#548) ────────────
+	// A new pilot's first sound is docked (#408). Every docked row above is the
+	// pure director's; this is the game's own berth and console, parked by
+	// `__parkInBerth` as `probe-hold.mjs` does, with whatever they hold.
+	{
+		const game = await browser.newPage({
+			viewport: { width: 900, height: 620 },
+		});
+		watch(game);
+		await installViewPlacement(game);
+		await installViewFraming(game);
+		await game.goto(gameUrl(origin, { seed: 19, raider: "off" }));
+		await bootedGame(game);
+		await game.evaluate(async () => {
+			const g = window.__seelite;
+			const id = g.world.system.bodies.find((b) => b.kind === "station")?.id;
+			if (!id) throw Error("no station");
+			await window.__parkInBerth(id, g.berthIdsOfStation(id)[0]);
+		});
+		await game.keyboard.press("F8");
+		const live = await game.evaluate(async () => {
+			const g = window.__seelite;
+			for (let i = 0; i < 50 && !g.music.ready; i++)
+				await new Promise((r) => setTimeout(r, 100));
+			const ctx = g.audio.context;
+			const tap = ctx.createAnalyser();
+			tap.fftSize = 2048;
+			g.audio.musicInput.connect(tap);
+			const level = () => {
+				const x = new Float32Array(tap.fftSize);
+				tap.getFloatTimeDomainData(x);
+				return Math.sqrt(x.reduce((s, v) => s + v * v, 0) / x.length);
+			};
+			// The station bed fades in and its drone swells: the loudest of five seconds.
+			let heard = 0;
+			for (let i = 0; i < 50; i++) {
+				await new Promise((r) => setTimeout(r, 100));
+				heard = Math.max(heard, level());
+			}
+			g.audio.musicInput.disconnect(tap);
+			return {
+				phase: g.dockPhase,
+				held: g.clockHeld,
+				heard,
+				bed: g.musicState.bed,
+				errors: g.music.errors,
+			};
+		});
+		check(
+			"a docked pilot hears the station bed on the live context (#548)",
+			live.phase === "docked" &&
+				live.bed === "station" &&
+				live.heard > 1e-3 &&
+				live.errors.length === 0,
+			`${live.phase}, clock ${live.held ? "held" : "running"}; bed ${live.bed}; rms at the music bus ${live.heard.toFixed(4)}; errors ${live.errors.join("; ") || 0}`,
+		);
+		await game.close();
+	}
+	// ── In the game: the director plays the system's bed (#548) ────────────
+	{
+		const game = await browser.newPage({
+			viewport: { width: 900, height: 620 },
+		});
+		watch(game);
+		await game.goto(gameUrl(origin, { seed: 19, raider: "off" }));
+		await bootedGame(game);
+		await game.keyboard.press("F8");
+		const live = await game.evaluate(async () => {
+			const g = window.__seelite;
+			for (let i = 0; i < 50 && !g.music.ready; i++)
+				await new Promise((r) => setTimeout(r, 100));
+			const ctx = g.audio.context;
+			const tap = ctx.createAnalyser();
+			tap.fftSize = 2048;
+			g.audio.musicInput.connect(tap);
+			const level = () => {
+				const x = new Float32Array(tap.fftSize);
+				tap.getFloatTimeDomainData(x);
+				return Math.sqrt(x.reduce((s, v) => s + v * v, 0) / x.length);
+			};
+			// The bed fades in over seconds: read the loudest of four seconds.
+			let heard = 0;
+			for (let i = 0; i < 40; i++) {
+				await new Promise((r) => setTimeout(r, 100));
+				heard = Math.max(heard, level());
+			}
+			g.audio.musicInput.disconnect(tap);
+			return {
+				heard,
+				bed: g.musicState.bed,
+				level: g.musicState.level,
+				errors: g.music.errors,
+			};
+		});
+		check(
+			"the director plays the system's bed on the game's live context, calm at a quiet boot (#548)",
+			// Calm: raiders off, a new commander, a full hull. It read combat
+			// once, from a struck window wider than a fresh condition's
+			// `sinceStruckS`.
+			live.bed !== "none" &&
+				live.level === "calm" &&
+				live.heard > 1e-3 &&
+				live.errors.length === 0,
+			`bed ${live.bed} at ${live.level}; rms at the music bus ${live.heard.toFixed(4)}; errors ${live.errors.join("; ") || 0}`,
 		);
 		await game.close();
 	}
