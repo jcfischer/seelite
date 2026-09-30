@@ -56,16 +56,24 @@ export function stringsFingerprint(over: Partial<PartSpec> = {}): number[] {
 	pair.noteOn(SR - 480, leg, 0, 0, 64, 0.7, SR);
 	out.push(...sums(pair, 2 * SR));
 	const e = new MusicEngine(SR);
-	// The horn call with its grit (D16) taken off again: the desk as it was
-	// before, so the figure still measures the voice and not the tuning.
+	// The horn call as it was before the grit (D16), pinned here as a
+	// literal from 0caa468 rather than derived from the score's desk: the
+	// principal tunes that desk in the lab, and a figure built from it would
+	// measure the tuning and not the voice.
 	const song = danubeSong("orchestra");
-	const horn = {
-		...song.parts.horn,
+	const horn: PartSpec = {
+		voice: "strings",
 		level: 0.34,
-		drive: 0,
-		keyTrack: 0,
-		rosin: 0,
-		rosinLow: 1,
+		glideS: 0.03,
+		attackS: 0.07,
+		releaseS: 0.6,
+		unison: 4,
+		index: 0.5,
+		cutoffHz: 1700,
+		envAmount: 1.8,
+		vibrato: 0.12,
+		pan: -0.35,
+		reverb: 0.5,
 	};
 	e.command(
 		{

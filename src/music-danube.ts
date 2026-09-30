@@ -128,25 +128,30 @@ const ORCHESTRA: Voicing = {
 	// on each attack, a little brighter, to the left of the violins, and just
 	// above them in level.
 	//
-	// And gritty (D16, a first guess for the lab — "the low strings" were
-	// this call, A3 to E4): the saturation, the lowpass opened below A4, and
-	// the rosin under it. The grit raises its rms by half over the call's
-	// notes (0.064 to 0.098), so the level goes from 0.34 to 0.22 to hold it.
+	// And gritty (D16 — "the low strings" were this call, A3 to E4): the
+	// saturation, the lowpass opened below A4, and the rosin under it. These
+	// are the principal's own values from the strings lab (D17), which found
+	// the legato glide the main fault: 0.03 s smeared the call's eighths, and
+	// 0.005 s keeps them as bowed steps while the notes still join.
 	horn: {
 		voice: "strings",
-		level: 0.22,
-		glideS: 0.03,
+		level: 0.26,
+		unison: 6,
+		detune: 0.1,
 		attackS: 0.07,
+		sustain: 0.9,
 		releaseS: 0.6,
-		unison: 4,
-		index: 0.5,
-		cutoffHz: 1700,
+		glideS: 0.005,
+		index: 0.47,
+		vibrato: 0.09,
+		vibratoHz: 2.9,
+		cutoffHz: 1780,
 		envAmount: 1.8,
-		vibrato: 0.12,
-		drive: 0.35,
-		keyTrack: 0.6,
-		rosin: 0.35,
-		rosinLow: 1,
+		resonance: 0.24,
+		keyTrack: 0.44,
+		drive: 0.44,
+		rosin: 0.43,
+		rosinLow: 0.7,
 		pan: -0.35,
 		reverb: 0.5,
 	},
