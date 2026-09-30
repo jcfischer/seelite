@@ -41,6 +41,9 @@ const LINES_MS = [29.7, 37.1, 41.1, 43.7, 53.3, 59.9, 67.7, 73.1];
 const PRE_DELAY_S = 0.02;
 /** Where each loop's damping starts to eat the highs. */
 const DAMP_HZ = 6500;
+/** How long a new echo time takes to arrive (#587): the old tap fades out
+ *  as the new one fades in, so the move has no step and no pitch bend. */
+const ECHO_GLIDE_S = 0.05;
 /** Where each echo's lowpass sits: every repeat is darker than the last. */
 const ECHO_TONE_HZ = 4500;
 /** Below this, what the space holds is silence (-120 dB). */
@@ -66,6 +69,12 @@ export class Space {
 	private readonly echoR: Float32Array;
 	private echoW = 0;
 	private echoD = 1;
+	/** The tap being faded in, in frames, and how far: -1 for none. */
+	private echoNext = -1;
+	private echoMix = 0;
+	/** A time asked for while a glide runs: the next glide's. -1 for none. */
+	private echoQueued = -1;
+	private readonly echoStep: number;
 	private fb = 0;
 	private lpL = 0;
 	private lpR = 0;
@@ -92,19 +101,44 @@ export class Space {
 		this.echoL = new Float32Array(echoLen);
 		this.echoR = new Float32Array(echoLen);
 		this.echoCoef = onePole(ECHO_TONE_HZ, sampleRate);
+		this.echoStep = 1 / Math.max(1, Math.round(ECHO_GLIDE_S * sampleRate));
 		this.set(spec);
 	}
 
-	/** Change the decay and the echo. Takes effect from the next frame. */
+	/** Change the decay and the echo. The decay and feedback take effect from
+	 *  the next frame; the echo time as `setEcho` moves it. */
 	set(spec: SpaceSpec) {
 		const rt = Math.max(0.1, spec.reverbS);
 		for (let i = 0; i < 8; i++)
 			this.gain[i] = 10 ** ((-3 * this.len[i]) / this.sampleRate / rt);
-		this.echoD = Math.max(
-			1,
-			Math.min(this.echoL.length - 1, Math.round(spec.echoS * this.sampleRate)),
-		);
+		this.setEcho(spec.echoS);
 		this.fb = Math.min(0.95, Math.max(0, spec.echoFeedback));
+	}
+
+	/**
+	 * Move the echo to `echoS`, held to the line's length (#587: the engine
+	 * retimes it to the tempo on every bar line). A silent space takes it at
+	 * once; a sounding one glides, reading the old and the new tap together
+	 * over `ECHO_GLIDE_S`. Asked again mid-glide, the newest time waits for
+	 * the glide to end.
+	 */
+	setEcho(echoS: number) {
+		const d = Math.max(
+			1,
+			Math.min(this.echoL.length - 1, Math.round(echoS * this.sampleRate)),
+		);
+		if (this.isSilent) {
+			this.echoD = d;
+			this.echoNext = this.echoQueued = -1;
+			return;
+		}
+		if (this.echoNext >= 0) {
+			this.echoQueued = d === this.echoNext ? -1 : d;
+			return;
+		}
+		if (d === this.echoD) return;
+		this.echoNext = d;
+		this.echoMix = 0;
 	}
 
 	/** True while the space holds nothing and adds nothing. */
@@ -144,8 +178,27 @@ export class Space {
 			// The echo: read, darken, cross-feed, and write.
 			let r = this.echoW - this.echoD;
 			if (r < 0) r += eLen;
-			this.lpL += ec * (this.echoL[r] - this.lpL);
-			this.lpR += ec * (this.echoR[r] - this.lpR);
+			let tapL = this.echoL[r];
+			let tapR = this.echoR[r];
+			if (this.echoNext >= 0) {
+				let r2 = this.echoW - this.echoNext;
+				if (r2 < 0) r2 += eLen;
+				const x = this.echoMix;
+				tapL += x * (this.echoL[r2] - tapL);
+				tapR += x * (this.echoR[r2] - tapR);
+				this.echoMix += this.echoStep;
+				if (this.echoMix >= 1) {
+					this.echoD = this.echoNext;
+					this.echoNext = -1;
+					if (this.echoQueued >= 0 && this.echoQueued !== this.echoD) {
+						this.echoNext = this.echoQueued;
+						this.echoMix = 0;
+					}
+					this.echoQueued = -1;
+				}
+			}
+			this.lpL += ec * (tapL - this.lpL);
+			this.lpR += ec * (tapR - this.lpR);
 			const eL = this.lpL;
 			const eR = this.lpR;
 			this.echoL[this.echoW] = echo[k] + this.fb * eR;
@@ -196,7 +249,11 @@ export class Space {
 		// echo's line, the longest loop and the pre-delay all pass in that time.
 		if (input === 0 && held < QUIET) {
 			this.quietFrames += n;
-			if (this.quietFrames > this.echoD + len[7] + this.preLen) this.clear();
+			if (
+				this.quietFrames >
+				Math.max(this.echoD, this.echoNext) + len[7] + this.preLen
+			)
+				this.clear();
 		} else this.quietFrames = 0;
 	}
 
@@ -209,6 +266,10 @@ export class Space {
 		this.echoL.fill(0);
 		this.echoR.fill(0);
 		this.lpL = this.lpR = 0;
+		// A glide in flight has nothing left to glide over: take its end.
+		if (this.echoNext >= 0)
+			this.echoD = this.echoQueued >= 0 ? this.echoQueued : this.echoNext;
+		this.echoNext = this.echoQueued = -1;
 		this.quietFrames = 0;
 		this.isSilent = true;
 	}

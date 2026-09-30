@@ -119,8 +119,10 @@ interface Slot {
 	readonly gain: Ramp;
 	/** When a fade out has run out: the song is halted and its voices freed. */
 	haltAt: number;
-	/** The room it plays in, with its echo in seconds at its first tempo. */
+	/** The room it starts in, with its echo in seconds at its first tempo. */
 	readonly space: SpaceSpec;
+	/** Its echo in beats: `render` retimes the room to the tempo (#587). */
+	readonly echoBeats: number;
 }
 
 /** A slot's room: the reverb and echo its parts send into, the gain on what
@@ -335,6 +337,11 @@ export class MusicEngine implements NoteSink, VoiceGain {
 			if (!s.player.playing) continue;
 			this.rendering = i;
 			s.player.render(frame, to, this);
+			// The echo keeps the beat: the tempo moves on a bar line, and so
+			// does the room (#587). Timed once, at the first tempo, a faster
+			// section drifted against its own repeats.
+			if (s.player.playing)
+				this.roomOf(i).space.setEcho((s.echoBeats * 60) / s.player.bpm);
 		}
 		const whole = n === BLOCK;
 		const L = whole ? this.bufL : this.bufL.subarray(0, n);
@@ -442,6 +449,7 @@ export class MusicEngine implements NoteSink, VoiceGain {
 			gain: new Ramp(),
 			haltAt: Infinity,
 			space: spaceOf(song),
+			echoBeats: song.space?.echoBeats ?? DEFAULT_SONG_SPACE.echoBeats,
 		};
 		this.rooms[ix] ??= {
 			space: new Space(this.sampleRate, spaceOf(song)),
@@ -601,7 +609,8 @@ export class MusicEngine implements NoteSink, VoiceGain {
 	}
 }
 
-/** A song's room, its echo in seconds at its first tempo. A field given as
+/** A song's room as it starts, its echo in seconds at its first tempo;
+ *  `render` retimes the echo from there. A field given as
  *  `undefined` takes its default (sage round 9): spread over the defaults,
  *  it replaced one, and a NaN decay fed back through every line. */
 function spaceOf(song: Song): SpaceSpec {

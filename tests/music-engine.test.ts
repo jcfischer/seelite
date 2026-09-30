@@ -581,6 +581,60 @@ describe("stereo and the space (#560, after #548's first listening)", () => {
 		expect(energy(L, 0.5, 0.65)).toBeGreaterThan(0);
 	});
 
+	test("the echo follows the tempo: one beat at 60 bpm after 120 repeats at 1 s (#587)", () => {
+		// The echo was timed at the song's first tempo, so a section written
+		// faster or slower drifted against its own repeats.
+		const e = new MusicEngine(SR, 16);
+		const two: Song = {
+			name: "two",
+			beatsPerBar: 4,
+			parts: {
+				p: {
+					voice: "fm",
+					level: 1,
+					echo: 1,
+					decayS: 0.05,
+					sustain: 0,
+					releaseS: 0.02,
+				},
+			},
+			sections: [
+				{ name: "A", bars: 1, events: [] },
+				{
+					name: "B",
+					bars: 2,
+					events: [{ part: "p", bar: 0, beat: 0, dur: 0.1, pitch: 69, vel: 1 }],
+				},
+			],
+			tempo: [
+				{ bar: 0, bpm: 120 },
+				{ bar: 1, bpm: 60 },
+			],
+			space: { echoBeats: 1, echoFeedback: 0 },
+		};
+		e.command({ type: "load", id: "two", song: two }, 0);
+		e.command({ type: "play", id: "two", at: "bar" }, 0);
+		const n = 5 * SR;
+		const L = new Float32Array(n);
+		const R = new Float32Array(n);
+		for (let f = 0; f < n; f += 128)
+			e.render(L.subarray(f, f + 128), f, R.subarray(f, f + 128));
+		// Section B, and its note, begin at 2 s.
+		const note = 2 * SR;
+		const energy = (a: number, b: number) => {
+			let v = 0;
+			for (
+				let i = note + Math.round(a * SR);
+				i < note + Math.round(b * SR);
+				i++
+			)
+				v += L[i] * L[i];
+			return v;
+		};
+		expect(energy(0.45, 0.6)).toBe(0);
+		expect(energy(0.98, 1.15)).toBeGreaterThan(0);
+	});
+
 	test("replaying the song inside its stop now's fade brings its room back on the line (sage round 9)", () => {
 		// The stop faded the room to 0 and the replay restored only the
 		// song's own gain: the song came back dry, for good.

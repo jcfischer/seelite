@@ -5,7 +5,7 @@
  * silence after them. How it sounds is the principal's ear.
  */
 import { describe, expect, test } from "bun:test";
-import { Space } from "../src/music-space";
+import { ECHO_MAX_S, Space } from "../src/music-space";
 
 const SR = 48000;
 const BLOCK = 128;
@@ -137,5 +137,58 @@ describe("the echo", () => {
 			expect(r).toBeLessThan(0.55);
 		}
 		expect(three.m).toBeGreaterThan(0);
+	});
+});
+
+describe("an echo time that moves (#587)", () => {
+	/** The largest step between two samples of `x` from `a` to `b`. */
+	const maxStep = (x: Float32Array, a: number, b: number) => {
+		let m = 0;
+		for (let i = a + 1; i < b; i++) m = Math.max(m, Math.abs(x[i] - x[i - 1]));
+		return m;
+	};
+	const tone = (f: number) => ({
+		echo: Math.sin((2 * Math.PI * 220 * f) / SR),
+	});
+
+	test("a new echo time is reached without a step in the output", () => {
+		const s = new Space(SR, { reverbS: 1, echoS: 0.3, echoFeedback: 0 });
+		s.echoToReverb = 0;
+		const at = 0.6 * SR;
+		const { L } = run(s, 1.2, (f) => {
+			if (f === at) s.setEcho(0.41);
+			return tone(f);
+		});
+		// A steady sine through the echo moves by at most its own slope; a tap
+		// jumped between two points on the line steps by up to twice its peak.
+		const steady = maxStep(L, 0.4 * SR, at);
+		expect(maxStep(L, at, 1.2 * SR)).toBeLessThan(steady * 1.5);
+	});
+
+	test("once the glide has run, a repeat lands on the new time", () => {
+		const s = new Space(SR, { reverbS: 1, echoS: 0.3, echoFeedback: 0 });
+		s.echoToReverb = 0;
+		s.setEcho(0.5);
+		const pulse = 0.2 * SR;
+		const { L } = run(s, 1, (f) => ({ echo: f === pulse ? 1 : 0 }));
+		const e = (a: number, b: number) => {
+			let v = 0;
+			for (let i = Math.round(a * SR); i < Math.round(b * SR); i++)
+				v += L[i] * L[i];
+			return v;
+		};
+		expect(e(0.45, 0.55)).toBe(0);
+		expect(e(0.7, 0.75)).toBeGreaterThan(0);
+	});
+
+	test("an echo time past the line holds at the line's end", () => {
+		const s = new Space(SR, { reverbS: 1, echoS: 0.3, echoFeedback: 0 });
+		s.echoToReverb = 0;
+		s.setEcho(5);
+		const { L } = run(s, 2.2, (f) => ({ echo: f === 0 ? 1 : 0 }));
+		let first = -1;
+		for (let i = 0; i < L.length && first < 0; i++) if (L[i] !== 0) first = i;
+		expect(first / SR).toBeGreaterThan(1.99);
+		expect(first / SR).toBeLessThanOrEqual(ECHO_MAX_S + 0.01);
 	});
 });

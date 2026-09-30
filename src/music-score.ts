@@ -137,7 +137,8 @@ export interface PartSpec {
 
 /**
  * The room a song plays in (`music-space.ts`): the reverb's time to fall
- * 60 dB, the echo's spacing in beats at the song's first tempo, and each
+ * 60 dB, the echo's spacing in beats at the tempo the song is playing (#587:
+ * retimed on every bar line), and each
  * echo's level against the last. Every field has a default
  * (`DEFAULT_SONG_SPACE` in `music-engine.ts`).
  */
