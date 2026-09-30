@@ -133,12 +133,18 @@ import {
 	musicArms,
 	stepMusic,
 } from "./music-director";
-import { type CommsLineId, clearanceLine, voiceArms } from "./comms";
 import {
-	MUSIC_VOICE_SPACE,
+	type CommsLineId,
+	clearanceLine,
+	numbersPhrase,
+	voiceArms,
+} from "./comms";
+import {
+	prewarmComms,
 	renderLine,
-	renderNumbers,
+	renderNumbersAhead,
 	SPEECH_RATE,
+	sayNumbers,
 } from "./comms-voice";
 import {
 	type WeaponSoundState,
@@ -4373,6 +4379,8 @@ class Game {
 			// these listeners are removed below, so nothing here attaches again.
 			// Whether a later `attach` retries is #547's and #548's to decide.
 			if (ctx && bus) this.music.attach(ctx, bus).catch(() => {});
+			// The comms lines, rendered in idle time before one is needed (#600).
+			if (VOICE_ARMS.comms) prewarmComms();
 			window.removeEventListener("pointerdown", unlockAudio);
 			window.removeEventListener("keydown", unlockAudio);
 		};
@@ -12399,14 +12407,13 @@ class Game {
 		);
 		this.musicState = step.state;
 		for (const cmd of step.commands) this.music.send(cmd);
-		// The numbers station, far off in the music (#600).
-		if (step.voice)
-			this.audio.speak(
-				renderNumbers(step.voice),
-				SPEECH_RATE,
-				"music",
-				MUSIC_VOICE_SPACE,
+		// The numbers station, far off in the music (#600). The next phrase is
+		// rendered ahead, in idle time, never inside this step.
+		if (VOICE_ARMS.music && step.state.bed === "flight")
+			renderNumbersAhead(
+				numbersPhrase(this.world.system.record.seed, step.state.voiceN),
 			);
+		if (step.voice) sayNumbers(this.audio, step.voice);
 	}
 
 	/** A comms line through the radio, on the console bus (#600). Rendered

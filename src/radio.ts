@@ -6,6 +6,7 @@
  * much of a formant synthesiser's roughness, which is why a radio is where
  * these voices are heard.
  */
+import { xorshiftNoise as noise } from "./xorshift";
 import { SPEECH_RATE } from "./speech";
 
 export interface RadioSettings {
@@ -78,17 +79,6 @@ function band(s: RadioSettings) {
 		biquad("lp", s.highHz),
 	];
 	return (x: number) => f.reduce((y, g) => g(y), x);
-}
-
-function noise(seed: number): () => number {
-	let x = seed >>> 0 || 1;
-	return () => {
-		x ^= x << 13;
-		x ^= x >>> 17;
-		x ^= x << 5;
-		x >>>= 0;
-		return x / 2147483648 - 1;
-	};
 }
 
 const SQUELCH_S = 0.09;

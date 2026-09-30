@@ -12,7 +12,12 @@ import {
 	numbersPhrase,
 	voiceArms,
 } from "../src/comms";
-import { renderLine } from "../src/comms-voice";
+import {
+	renderLine,
+	renderNumbers,
+	renderNumbersAhead,
+	takeNumbers,
+} from "../src/comms-voice";
 import { textToTokens } from "../src/speech-lexicon";
 import { reaches, unlocked, withFakeWindow } from "./lib/fake-audio";
 
@@ -66,6 +71,24 @@ describe("the lines", () => {
 		expect(a).not.toBe(numbersPhrase(99, 0));
 		expect(a).toMatch(/^(\d \d \d \d\. ){2}\d \d \d \d\.$/);
 		expect(textToTokens(a).unknown).toEqual([]);
+	});
+});
+
+describe("rendering off the frame", () => {
+	test("the next phrase is rendered ahead, not when it is asked, and taken once", async () => {
+		const text = numbersPhrase(4242, 7);
+		renderNumbersAhead(text);
+		// Headless there is no idle callback, so a timer stands in for it: the
+		// render has not happened inside the call that asked for it.
+		const early = takeNumbers(text);
+		await new Promise((r) => setTimeout(r, 5));
+		renderNumbersAhead(text);
+		await new Promise((r) => setTimeout(r, 5));
+		const taken = takeNumbers(text);
+		expect(taken).toEqual(renderNumbers(text));
+		expect(early).toEqual(taken);
+		// Taken once: the next ask renders afresh.
+		expect(takeNumbers(text)).not.toBe(taken);
 	});
 });
 

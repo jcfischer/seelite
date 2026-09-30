@@ -22,6 +22,7 @@
  * short and said many times, so it is rendered once and played as a buffer.
  * Pure and deterministic, so `tests/speech.test.ts` holds it headless.
  */
+import { xorshiftNoise as noise } from "./xorshift";
 
 export const SPEECH_RATE = 16000;
 const FRAME = 80; // 5 ms
@@ -458,18 +459,6 @@ class Resonator {
 		this.y1 = y;
 		return y;
 	}
-}
-
-/** A seeded noise stream, -1..1. */
-function noise(seed: number): () => number {
-	let x = seed >>> 0 || 1;
-	return () => {
-		x ^= x << 13;
-		x ^= x >>> 17;
-		x ^= x << 5;
-		x >>>= 0;
-		return x / 2147483648 - 1;
-	};
 }
 
 /** Rosenberg's glottal flow at phase `p` of a cycle. */

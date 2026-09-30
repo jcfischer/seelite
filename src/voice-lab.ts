@@ -3,8 +3,11 @@
  * radio with the game taken out, for the principal's ear (prototype,
  * 2026-09-30). Type a phrase from the lexicon's words, or phonemes in
  * brackets; pick a voice; hear it dry, through the radio, or far off in the
- * music's echo.
+ * music's echo — played through the engine's own `AudioFX.speak`, on the
+ * bus and in the room the game uses, so the lab cannot drift from it.
  */
+import { AudioFX } from "./audio";
+import { MUSIC_VOICE_SPACE } from "./comms-voice";
 import { RADIO, radio } from "./radio";
 import { SPEECH_RATE, speak, VOICES } from "./speech";
 import { LEXICON, textToTokens } from "./speech-lexicon";
@@ -14,7 +17,7 @@ const PRESETS = [
 	// Minimal pairs, in the manner of the Modified Rhyme Test: which of each
 	// set is heard as another says what to fix.
 	"[B EY1] , [D EY1] , [G EY1] . [P AE1 D] , [B AE1 D] , [T AE1 D] . [S IH1 N] , [F IH1 N] , [TH IH1 N] , [SH IH1 N] . [M EY1] , [N EY1] .",
-	"Cobra one, clearance granted. Proceed to docking bay 4.",
+	"Cobra one, clearance granted. Proceed to your berth.",
 	"Commander, this is station control. Welcome aboard.",
 	"Docking request denied. Hold position.",
 	"Hostile contact. Shields up. Weapons in range.",
@@ -74,13 +77,10 @@ export function mountVoiceLab() {
 				id === "low" || id === "high" ? `${v}` : v.toFixed(2);
 		};
 
-	let ctx: AudioContext | null = null;
-	let playing: AudioBufferSourceNode | null = null;
+	const fx = new AudioFX();
 
 	function say() {
-		ctx ??= new AudioContext();
-		const c = ctx;
-		void c.resume();
+		fx.ensure();
 		const { tokens, unknown } = textToTokens(text.value);
 		const base = VOICES[$<HTMLSelectElement>("voice").value];
 		const voice = {
@@ -104,33 +104,9 @@ export function mountVoiceLab() {
 						beepHz: $<HTMLInputElement>("beep").checked ? RADIO.beepHz : 0,
 					});
 		const ms = performance.now() - t0;
-		const buf = c.createBuffer(1, out.length, SPEECH_RATE);
-		buf.copyToChannel(new Float32Array(out), 0);
-		playing?.stop();
-		const src = c.createBufferSource();
-		src.buffer = buf;
-		const gain = c.createGain();
-		gain.gain.value = 0.7;
-		src.connect(gain);
-		if (through === "space") {
-			// Far off: quieter, and mostly its own echo.
-			gain.gain.value = 0.3;
-			const delay = c.createDelay(2);
-			delay.delayTime.value = 0.42;
-			const fb = c.createGain();
-			fb.gain.value = 0.55;
-			const tone = c.createBiquadFilter();
-			tone.type = "lowpass";
-			tone.frequency.value = 1800;
-			gain.connect(delay);
-			delay.connect(tone);
-			tone.connect(fb);
-			fb.connect(delay);
-			tone.connect(c.destination);
-		}
-		gain.connect(c.destination);
-		src.start();
-		playing = src;
+		if (through === "space")
+			fx.speak(out, SPEECH_RATE, "music", MUSIC_VOICE_SPACE);
+		else fx.speak(out, SPEECH_RATE, "console");
 		$("info").textContent = [
 			`${(out.length / SPEECH_RATE).toFixed(2)} s, rendered in ${ms.toFixed(0)} ms`,
 			unknown.length
