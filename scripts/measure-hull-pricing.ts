@@ -753,6 +753,11 @@ const rungsAbove = (price: (holdT: number) => number) => {
 	};
 };
 
+/** The sold hulls a price function puts below the kit — one filter for
+ *  section I's shipped roster and section J's candidate laws. */
+const underKit = (price: (holdT: number) => number) =>
+	sortedByHold.filter((id) => price(HULL_SPECS[id].holdT) < fullKitCr());
+
 console.log("\n== H. where the rungs go ==");
 {
 	const { steps, typical, widest, top, ceiling, gap, rungs, atTypical } =
@@ -860,9 +865,16 @@ for (const cap of CAPITAL_CAPS) {
 {
 	// **Read off the sweep, not asserted beside it.** The kit's row against the
 	// uncapped one decides whether the curve's capital is past the bias.
-	const atKit = capSlopes.get(fullKitCr()) as number;
-	const uncapped = capSlopes.get(Number.POSITIVE_INFINITY) as number;
-	const lowest = capSlopes.get(CAPITAL_CAPS[0]) as number;
+	// A throw rather than `undefined`, as `curveAt` does: the kit has moved
+	// once already, and a cap list that no longer holds it must say so.
+	const slopeAt = (cap: number) => {
+		const b = capSlopes.get(cap);
+		if (b === undefined) throw new Error(`no capital row at ${cap} Cr`);
+		return b;
+	};
+	const atKit = slopeAt(fullKitCr());
+	const uncapped = slopeAt(Number.POSITIVE_INFINITY);
+	const lowest = slopeAt(CAPITAL_CAPS[0]);
 	const stopped = Math.abs(atKit - uncapped) < 0.01;
 	console.log(
 		`\n  At ${CAPITAL_CAPS[0].toLocaleString("en-GB")} Cr the slope is ${lowest.toFixed(3)} — a hold you cannot fill is`,
@@ -879,9 +891,7 @@ for (const cap of CAPITAL_CAPS) {
 	// where this bias bites". The kit grew past the interceptor's 20,000 Cr
 	// before #383 touched a price, and #383's re-price added the prospector:
 	// printed from the roster, so the next change cannot make it false silently.
-	const cheaper = sortedByHold.filter(
-		(id) => (HULL_SPECS[id].priceCr as number) < fullKitCr(),
-	);
+	const cheaper = underKit((h) => hullPriceCr(h) as number);
 	console.log(
 		cheaper.length === 0
 			? "  Every hull in section F costs more than the kit, so a player who can buy\n  one outright is past the range where this bias bites."
@@ -1051,25 +1061,20 @@ console.log(
 			h,
 		})),
 	];
+	const lawCells = (h: number) =>
+		laws
+			.map((l) =>
+				rightAlign(priceUnderLaw(h, l.law).toLocaleString("en-GB"), 13),
+			)
+			.join("");
 	for (const { id, h } of rows)
 		console.log(
 			`  ${id.padEnd(13)}${rightAlign(h, 4)}${rightAlign(Math.round(valueAt(h)).toLocaleString("en-GB"), 11)}` +
-				laws
-					.map((l) =>
-						rightAlign(priceUnderLaw(h, l.law).toLocaleString("en-GB"), 13),
-					)
-					.join(""),
+				lawCells(h),
 		);
 	console.log(
 		`  ${"ceiling".padEnd(13)}${rightAlign(HULL_CEILING_HOLD_T, 4)}${rightAlign("-", 11)}` +
-			laws
-				.map((l) =>
-					rightAlign(
-						priceUnderLaw(HULL_CEILING_HOLD_T, l.law).toLocaleString("en-GB"),
-						13,
-					),
-				)
-				.join(""),
+			lawCells(HULL_CEILING_HOLD_T),
 	);
 	console.log(
 		"\n  law          worst miss: roster   above it             under the kit   rungs above",
@@ -1080,9 +1085,7 @@ console.log(
 			holds
 				.map((h) => price(h) / valueAt(h) - 1)
 				.reduce((a, m) => (Math.abs(m) > Math.abs(a) ? m : a));
-		const under = sortedByHold.filter(
-			(id) => price(HULL_SPECS[id].holdT) < fullKitCr(),
-		);
+		const under = underKit(price);
 		const { rungs } = rungsAbove(price);
 		console.log(
 			`  ${label.padEnd(13)}${rightAlign(pct(worstOver(sortedByHold.map((id) => HULL_SPECS[id].holdT))), 19)}` +

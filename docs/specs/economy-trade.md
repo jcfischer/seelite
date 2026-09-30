@@ -1460,6 +1460,12 @@ value of every hold (its rate × the window):
 | roster fit carried on, ^1.00 | +3.2% | +86.4% | 226,900 | 3 |
 | #182's, 35,000 × ^0.61 | +121.0% | +15.4% | 141,300 | 3 |
 
+**Read the misses as fit, not as prediction.** Each is scored on the same holds
+its law was fitted on, so the law with the most parameters is favoured by
+construction, and #182's row keeps #182's anchor, so most of its miss is the fall
+in level rather than its shape. What the table settles is narrower: one law
+cannot fit both ends at once, and the two-segment law does.
+
 **Two digits, and neither is resolved by its fit.** Each exponent is its
 segment's pooled fit rounded to two places. What the standard errors cost is
 measured rather than argued: moving each segment by its own ±1σ moves the
