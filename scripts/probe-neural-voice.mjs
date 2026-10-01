@@ -94,11 +94,10 @@ try {
 		const page = await context.newPage();
 		watch(page);
 		if (pad) await page.addInitScript(installFakePad);
-		await page.goto(
-			playerBoot
-				? gameUrl(origin, { raider: "off" }, { boot: "overlay" })
-				: gameUrl(origin, { raider: "off", voices: "ask" }),
-		);
+		const playerUrl = gameUrl(origin, { raider: "off" }, { boot: "overlay" });
+		const askUrl = gameUrl(origin, { raider: "off", voices: "ask" });
+		if (playerBoot) await page.goto(playerUrl);
+		else await page.goto(askUrl);
 		await bootedGame(page, 60000);
 		await page.waitForSelector("[data-voice-question]", { timeout: 20000 });
 		// The size arrives after the view: wait for the figure.
