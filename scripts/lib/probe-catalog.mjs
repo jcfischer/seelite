@@ -148,6 +148,20 @@ export const PROBE_CATALOG = Object.freeze(
 			],
 		),
 		entry(
+			"probe-chase-view.mjs",
+			"Orbits the chase camera and checks the glass against Three.js's own projection: placed cues stay on their bodies, the boresight pip sits on the drawn nose, the beam starts at each hull muzzle, the gun aims from the hull whatever the orbit, and the cockpit-only floor is absent.",
+			[
+				"chase view",
+				"camera orbit",
+				"HUD projection",
+				"boresight",
+				"laser",
+				"hardpoints",
+				"muzzle",
+				"flight floor",
+			],
+		),
+		entry(
 			"probe-cockpit-surface.mjs",
 			"Verifies live cockpit surface geometry, plating materials, and reversible renderer controls.",
 			["cockpit", "surface", "plating", "materials", "scene graph"],
