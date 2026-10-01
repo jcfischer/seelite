@@ -14,6 +14,11 @@ export default defineConfig({
 	 * reads it.
 	 */
 	plugins: [treeDeclaration()],
+	/**
+	 * The neural voice's runtime loads a sibling file relative to its own
+	 * module, which the dependency pre-bundler moves away from it.
+	 */
+	optimizeDeps: { exclude: ["onnxruntime-web"] },
 	server: {
 		/**
 		 * No browser on `npm run dev`. Pass `--open` when you want one.

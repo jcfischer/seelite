@@ -8,6 +8,13 @@
  */
 import { AudioFX } from "./audio";
 import { MUSIC_VOICE_SPACE } from "./comms-voice";
+import {
+	KOKORO_RATE,
+	NEURAL_VOICES,
+	NeuralVoice,
+	type NeuralVoiceId,
+	resample,
+} from "./neural-voice";
 import { RADIO, radio } from "./radio";
 import { SPEECH_RATE, speak, VOICES } from "./speech";
 import { LEXICON, textToTokens } from "./speech-lexicon";
@@ -40,7 +47,12 @@ export function mountVoiceLab() {
 <p><select id="preset" style="width:100%">${PRESETS.map((p) => `<option>${p}</option>`).join("")}</select></p>
 <p><textarea id="text" rows="3" style="width:100%;box-sizing:border-box;font:15px ui-monospace,monospace;background:#12171d;color:#dde3ea;border:1px solid #2a323c">${PRESETS[0]}</textarea></p>
 <p>
-  <label>Voice <select id="voice">${Object.keys(VOICES)
+  <label>Engine <select id="engine"><option value="neural">neural (Kokoro, in the browser)</option><option value="formant">formant</option></select></label>
+  <label style="margin-left:12px">Backend <select id="ep"><option value="wasm">WASM, q8 (88 MB)</option><option value="webgpu">WebGPU, fp16 (156 MB)</option></select></label>
+  <label style="margin-left:12px">Neural voice <select id="nvoice">${NEURAL_VOICES.map((v) => `<option>${v}</option>`).join("")}</select></label>
+</p>
+<p>
+  <label>Formant voice <select id="voice">${Object.keys(VOICES)
 		.map((v) => `<option>${v}</option>`)
 		.join("")}</select></label>
   <label style="margin-left:12px">Rate <input id="rate" type="range" min="0.7" max="1.4" step="0.05" value="1"> <span id="rateV">1.00</span></label>
@@ -76,8 +88,68 @@ export function mountVoiceLab() {
 		};
 
 	const fx = new AudioFX();
+	let neural = new NeuralVoice();
+	let loadMs: number | null = null;
+
+	/** Through the radio, dry, or far off, as the radio buttons say. */
+	function play(dry: Float32Array): Float32Array {
+		const through = (
+			root.querySelector("input[name=through]:checked") as HTMLInputElement
+		).value;
+		const out =
+			through === "dry"
+				? dry
+				: radio(dry, {
+						...RADIO,
+						lowHz: Number($<HTMLInputElement>("low").value),
+						highHz: Number($<HTMLInputElement>("high").value),
+						beepHz: $<HTMLInputElement>("beep").checked ? RADIO.beepHz : 0,
+					});
+		if (through === "space")
+			fx.speak(out, SPEECH_RATE, "music", MUSIC_VOICE_SPACE);
+		else fx.speak(out, SPEECH_RATE, "console");
+		return out;
+	}
+
+	async function sayNeural() {
+		fx.ensure();
+		const info = $("info");
+		const ep = $<HTMLSelectElement>("ep").value as "wasm" | "webgpu";
+		if (neural.ep !== ep) {
+			neural = new NeuralVoice(ep);
+			loadMs = null;
+		}
+		if (loadMs === null) {
+			info.textContent = "loading the model (about 100 MB the first time)…";
+			loadMs = await neural.load();
+		}
+		info.textContent = "speaking…";
+		const voice = $<HTMLSelectElement>("nvoice").value as NeuralVoiceId;
+		const r = await neural.say(
+			text.value,
+			voice,
+			Number($<HTMLInputElement>("rate").value),
+		);
+		const audioS = r.samples.length / KOKORO_RATE;
+		const out = play(resample(r.samples, KOKORO_RATE, SPEECH_RATE));
+		info.textContent = [
+			`${neural.ep}: model loaded in ${(loadMs / 1000).toFixed(1)} s`,
+			`${audioS.toFixed(2)} s of speech generated in ${(r.ms / 1000).toFixed(2)} s — ${(audioS / (r.ms / 1000)).toFixed(2)}× real time`,
+			`${(out.length / SPEECH_RATE).toFixed(2)} s played`,
+			r.unknown.length
+				? `not in the lexicon, skipped: ${r.unknown.join(", ")}`
+				: "every word known",
+			`IPA: ${r.ipa}`,
+		].join("\n");
+	}
 
 	function say() {
+		if ($<HTMLSelectElement>("engine").value === "neural") {
+			sayNeural().catch((e) => {
+				$("info").textContent = `neural voice failed: ${e}`;
+			});
+			return;
+		}
 		fx.ensure();
 		const { tokens, unknown } = textToTokens(text.value);
 		const base = VOICES[$<HTMLSelectElement>("voice").value];
