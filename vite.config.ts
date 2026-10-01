@@ -20,6 +20,19 @@ function dropRuntimeWasm(): Plugin {
 			const left = Object.keys(bundle).filter((n) => n.endsWith(".wasm"));
 			if (left.length)
 				this.error(`a runtime binary would ship: ${left.join(", ")}`);
+			// The worker's chunk names the WASM backend's loader by a path into
+			// the package's private layout: if a runtime bump moved it, the
+			// built WASM voice would fail and only a manual run would see it
+			// (sage round 6 on #606). The chunk with the voice in it must ship
+			// the loader beside it.
+			const voiced = Object.keys(bundle).some((n) =>
+				/ort\.wasm\.bundle/.test(n),
+			);
+			const loader = Object.keys(bundle).some((n) =>
+				/(^|\/)ort-wasm-simd-threaded-[^/]*\.mjs$/.test(n),
+			);
+			if (voiced && !loader)
+				this.error("the WASM backend's loader module would not ship");
 		},
 	};
 }

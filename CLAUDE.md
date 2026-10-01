@@ -5,8 +5,9 @@ Vite + Three.js, static bundle, no backend, no runtime network requests beyond
 Counterscale pageview analytics on each public page load and game launch (#569,
 `src/visit-count.ts`) — and the natural voice's files from this site's own
 origin (#604, `src/bundle-fetch.ts`): its manifest when the question is asked
-and on each start with the voice on, and its model once, when the player
-chooses it. The voice is the one trained asset; the map's Constraints carry
+and on each start with the voice on, and its model when the player
+chooses it — once per version where the browser keeps it, at every start in
+a private window. The voice is the one trained asset; the map's Constraints carry
 the ruling.
 
 ## Read the map first

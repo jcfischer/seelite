@@ -7,6 +7,7 @@
  */
 import { describe, expect, test } from "bun:test";
 import { createHash } from "node:crypto";
+import { existsSync, readFileSync } from "node:fs";
 import {
 	BACKEND_FILES,
 	buildManifest,
@@ -112,6 +113,21 @@ describe("the manifest", () => {
 			expect(files[0]).toStartWith("model-");
 			expect(files[1]).toStartWith("ort-");
 		}
+	});
+});
+
+describe("the WASM backend's loader", () => {
+	test("is where the worker names it, in the installed runtime", () => {
+		// A runtime bump that moved it would break the built WASM voice; the
+		// build refuses too, and this fails first, headless (sage round 6).
+		const src = readFileSync("src/neural-voice.worker.ts", "utf8");
+		const path = /"\.\.\/(node_modules\/onnxruntime-web\/[^"]+\.mjs)"/.exec(
+			src,
+		)?.[1];
+		expect(path).toBe(
+			"node_modules/onnxruntime-web/dist/ort-wasm-simd-threaded.mjs",
+		);
+		expect(existsSync(path ?? "")).toBe(true);
 	});
 });
 

@@ -7,7 +7,8 @@
  * `load` downloads every file the backend needs — its model, its runtime
  * binary and every voice — through the cache (`voice-store.ts`), checks each
  * against the manifest's checksum, and hands the runtime its binary
- * directly, so the runtime fetches nothing itself. Lines run **one at a
+ * directly, so the runtime fetches no binary of its own; on WASM it imports
+ * its loader module from the URL this worker names (see `load`). Lines run **one at a
  * time**, urgent first: two runs overlapping in one session fail, and a
  * comms answer should not wait behind phrases rendered ahead. It still waits
  * for the one line running, which cannot be interrupted; `sayLine` speaks
@@ -69,6 +70,12 @@ async function assemble(
 ): Promise<ArrayBuffer> {
 	const file = manifest.files[id];
 	if (!file) throw new Error(`no file ${id} in the manifest`);
+	/** Drop this file's kept parts: the next start fetches them again. */
+	const forget = () =>
+		dropParts(
+			manifest.version,
+			file.parts.map((p) => `${base}${p}`),
+		);
 	const out = new Uint8Array(file.bytes);
 	let at = 0;
 	for (const part of file.parts) {
@@ -78,10 +85,7 @@ async function assemble(
 		// A part longer than the room left is a bad part: forget it like a
 		// checksum failure, or every later start fails on it (sage round 5).
 		if (at + buf.length > file.bytes) {
-			await dropParts(
-				manifest.version,
-				file.parts.map((p) => `${base}${p}`),
-			);
+			await forget();
 			throw new Error(`${id}: more than ${file.bytes} bytes`);
 		}
 		out.set(buf, at);
@@ -91,10 +95,7 @@ async function assemble(
 	const got =
 		at === file.bytes ? hex(await crypto.subtle.digest("SHA-256", out)) : null;
 	if (got !== file.sha256) {
-		await dropParts(
-			manifest.version,
-			file.parts.map((p) => `${base}${p}`),
-		);
+		await forget();
 		throw new Error(
 			got === null
 				? `${id}: ${at} bytes, expected ${file.bytes}`

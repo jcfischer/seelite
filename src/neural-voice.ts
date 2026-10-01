@@ -24,12 +24,9 @@ import { IPA_GB, IPA_US, KOKORO_VOCAB } from "./voice-ipa";
 
 export {
 	backendBytes,
-	backendFileIds,
-	KOKORO_RATE,
 	type NeuralBackend,
 	RADIO_RATE,
 	resample,
-	styleRow,
 	type VoiceManifest,
 } from "./neural-voice-core";
 import {
@@ -233,6 +230,10 @@ export class NeuralVoice {
 	private next = 1;
 	/** WebGPU could not run here this page: `localStorage` may not keep it. */
 	private webGpuRefused = false;
+	private refuseWebGpu(m: VoiceManifest) {
+		this.webGpuRefused = true;
+		forgetWebGpu(m);
+	}
 	/** Lines being generated, by line key. */
 	private inflight = new Map<
 		string,
@@ -271,11 +272,26 @@ export class NeuralVoice {
 		if (this.webGpuRefused || (m && webGpuFailed(m.version))) return "wasm";
 		try {
 			const adapter = await (navigator as GpuNavigator).gpu?.requestAdapter();
-			if (adapter?.features.has("shader-f16")) return "webgpu";
+			if (!adapter?.features.has("shader-f16")) return "wasm";
 		} catch {
-			// No WebGPU: WASM.
+			return "wasm";
 		}
-		return "wasm";
+		// Too little room for the larger model: the smaller, here as well as
+		// in the start, so the question quotes what will download (sage
+		// round 6 on #606).
+		try {
+			const room = await navigator.storage?.estimate?.();
+			if (
+				m &&
+				room?.quota !== undefined &&
+				room.usage !== undefined &&
+				room.quota - room.usage < backendBytes(m, "webgpu") * 1.1
+			)
+				return "wasm";
+		} catch {
+			// Storage the browser will not describe: try WebGPU.
+		}
+		return "webgpu";
 	}
 
 	/** What starting would download here, bytes, or `null` with no voice. */
@@ -292,16 +308,14 @@ export class NeuralVoice {
 		if (this.starting) return this.starting;
 		if (this.state.kind === "ready" || this.state.kind === "loading")
 			return Promise.resolve(this.state);
-		{
-			// Cleared only if it is still this start: `stop` drops a start it
-			// cancels, so a new one is not handed the cancelled promise
-			// (sage round 3 on #606).
-			const p: Promise<NeuralState> = this.begin(force).finally(() => {
-				if (this.starting === p) this.starting = null;
-			});
-			this.starting = p;
-		}
-		return this.starting;
+		// Cleared only if it is still this start: `stop` drops a start it
+		// cancels, so a new one is not handed the cancelled promise (sage
+		// round 3 on #606).
+		const p: Promise<NeuralState> = this.begin(force).finally(() => {
+			if (this.starting === p) this.starting = null;
+		});
+		this.starting = p;
+		return p;
 	}
 
 	private async begin(force?: NeuralBackend): Promise<NeuralState> {
@@ -314,17 +328,9 @@ export class NeuralVoice {
 		}
 		let b: NeuralBackend | null = force ?? (await this.backend(m));
 		try {
-			const room = await navigator.storage?.estimate?.();
-			const free =
-				room?.quota !== undefined && room.usage !== undefined
-					? room.quota - room.usage
-					: Number.POSITIVE_INFINITY;
-			// Not over the lab's explicit choice.
-			if (!force && b === "webgpu" && free < backendBytes(m, b) * 1.1)
-				b = "wasm";
 			await navigator.storage?.persist?.();
 		} catch {
-			// Storage the browser will not describe: try anyway.
+			// Storage the browser will not keep: try anyway.
 		}
 		while (b && gen === this.gen) {
 			if (await this.load(m, b)) return this.state;
@@ -333,10 +339,7 @@ export class NeuralVoice {
 			// WebGPU cannot run (sage round 4 on #606).
 			if (gen !== this.gen) return this.state;
 			const next: NeuralBackend | null = force ? null : fallbackAfter(b);
-			if (b === "webgpu" && next) {
-				this.webGpuRefused = true;
-				forgetWebGpu(m);
-			}
+			if (b === "webgpu" && next) this.refuseWebGpu(m);
 			b = next;
 		}
 		return this.state;
@@ -399,8 +402,7 @@ export class NeuralVoice {
 					// rather than keep a ready voice that never speaks (sage
 					// round 4 on #606). One bad line after others spoke is a line.
 					if (backend === "webgpu" && !spoke && this.worker === worker) {
-						this.webGpuRefused = true;
-						forgetWebGpu(m);
+						this.refuseWebGpu(m);
 						fail(r.message);
 						void this.start();
 					}
@@ -425,6 +427,7 @@ export class NeuralVoice {
 		voice: NeuralVoiceId,
 		speed = 1,
 		urgent = false,
+		keep = true,
 	): Promise<Float32Array | null> {
 		const worker = this.worker;
 		if (this.state.kind !== "ready" || !this.manifest || !worker)
@@ -438,7 +441,13 @@ export class NeuralVoice {
 			if (urgent) send(worker, { type: "urgent", key });
 			return running.samples;
 		}
-		const samples = this.generate(worker, key, { text, voice, speed, urgent });
+		const samples = this.generate(worker, key, {
+			text,
+			voice,
+			speed,
+			urgent,
+			keep,
+		});
 		this.inflight.set(key, { samples });
 		// Settled either way; a rejection is the caller's to handle, and the
 		// bookkeeping must not raise a second, unhandled one.
@@ -450,9 +459,17 @@ export class NeuralVoice {
 	private async generate(
 		worker: Worker,
 		key: string,
-		ask: { text: string; voice: NeuralVoiceId; speed: number; urgent: boolean },
+		ask: {
+			text: string;
+			voice: NeuralVoiceId;
+			speed: number;
+			urgent: boolean;
+			/** Into the line cache: a one-off phrase is not, or it would age
+			 *  the comms lines out (sage round 6 on #606). */
+			keep: boolean;
+		},
 	): Promise<Float32Array | null> {
-		const { text, voice, speed, urgent } = ask;
+		const { text, voice, speed, urgent, keep } = ask;
 		const kept = await loadLine(key);
 		if (kept) return kept;
 		// Stopped during the lookup: that worker is gone and would never answer.
@@ -463,8 +480,10 @@ export class NeuralVoice {
 			this.waiting.set(id, { ok, no });
 			send(worker, { type: "say", id, key, ids, voice, speed, urgent });
 		});
-		await storeLine(key, samples);
-		this.remember(key, samples);
+		if (keep) {
+			await storeLine(key, samples);
+			this.remember(key, samples);
+		}
 		return samples;
 	}
 

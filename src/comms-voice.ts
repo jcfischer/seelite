@@ -71,6 +71,8 @@ const whenIdle = (fn: () => void) => {
 const ahead = new Map<string, Float32Array>();
 const pending = new Set<string>();
 const AHEAD_KEEP = 4;
+/** The same phrases in the neural voice, once generated. */
+const aheadNeural = new Map<string, Float32Array>();
 
 /**
  * Render `text` when the page is idle, so the phrase the director asks for
@@ -79,10 +81,20 @@ const AHEAD_KEEP = 4;
  * `numbersPhrase(seed, state.voiceN)`.
  */
 export function renderNumbersAhead(text: string) {
-	// In the neural voice too, into the line cache, behind anything urgent.
-	void readyVoice()
-		?.line(text, NEURAL_ROLE.machine)
-		.catch(() => null);
+	// In the neural voice too, behind anything urgent — held here and not
+	// in the line cache: each phrase is said once, and kept it would age the
+	// comms lines out of the store (sage round 6 on #606).
+	const voice = readyVoice();
+	if (voice && !aheadNeural.has(text))
+		void voice
+			.line(text, NEURAL_ROLE.machine, 1, false, false)
+			.then((n) => {
+				if (!n) return;
+				if (aheadNeural.size >= AHEAD_KEEP)
+					aheadNeural.delete(aheadNeural.keys().next().value as string);
+				aheadNeural.set(text, n);
+			})
+			.catch(() => null);
 	if (ahead.has(text) || pending.has(text)) return;
 	pending.add(text);
 	whenIdle(() => {
@@ -163,12 +175,10 @@ export async function prewarmNeural() {
  *  way of saying it. In the neural voice from the line cache when it was
  *  rendered ahead, else the formant voice's. */
 export async function sayNumbers(fx: AudioFX, text: string) {
-	// The cache only: a phrase still generating is said by the formant voice
-	// now rather than seconds after its step (sage round 1 on #606).
-	const n =
-		(await readyVoice()
-			?.kept(text, NEURAL_ROLE.machine)
-			.catch(() => null)) ?? null;
+	// Rendered ahead only: a phrase still generating is said by the formant
+	// voice now rather than seconds after its step (sage round 1 on #606).
+	const n = readyVoice() ? (aheadNeural.get(text) ?? null) : null;
+	aheadNeural.delete(text);
 	const out = n ? radio(n, { ...RADIO, beepHz: 0 }) : takeNumbers(text);
 	fx.speak(out, SPEECH_RATE, "music", MUSIC_VOICE_SPACE);
 }
