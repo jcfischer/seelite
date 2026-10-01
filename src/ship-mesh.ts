@@ -46,6 +46,7 @@ import {
 	type HullVariantId,
 } from "./hull";
 import { shared } from "./gpu-teardown";
+import type { Vec3 } from "./vec3";
 import {
 	currentHullFinish,
 	hullFinishId,
@@ -6594,6 +6595,90 @@ function addNavLights(root: THREE.Group) {
 		navLightsMaterial().uniforms.uPixelRatio.value = renderer.getPixelRatio();
 	};
 	root.add(points);
+}
+
+/** A part this hull draws as a gun: a pod or a muzzle ring. */
+const GUN_PART = /-(hardpoint-[a-z]+|muzzle)$/;
+
+const muzzleCache = new Map<string, readonly Vec3[]>();
+
+/**
+ * Where a hull's guns are (#607 D3), in the mesh's own frame: kilometres,
+ * forward `-z`. There is one muzzle for each declared hardpoint
+ * (`HULL_SPECS[id].hardpoints`, D5). In chase view the beam is drawn from
+ * these, so the world position of a muzzle is the ship's position plus its
+ * orientation applied to the muzzle.
+ *
+ * **Measured once from the built hull and returned as data**, as the nav
+ * lights are placed from it. Nothing reads a position back out of the scene
+ * graph at draw time, and no child is added, so the roster's hash and the
+ * berth envelope do not move.
+ *
+ * Two sources. A hull that **draws** its guns — named `…-hardpoint-<side>`
+ * or `…-muzzle` parts, as many as it has hardpoints — fires from each part's
+ * forward tip. Every other hull gets its mounts on the forward surface: in
+ * line across the beam at the hull's mid-height, mirrored about the centre
+ * line, each found by a ray from in front, as a nav light is.
+ */
+export function shipMuzzlesKm(
+	id: HullId,
+	variant: HullVariantId,
+): readonly Vec3[] {
+	const key = `${id}/${variant}`;
+	const known = muzzleCache.get(key);
+	if (known) return known;
+	const root = buildShipMesh(id, variant).root;
+	root.updateMatrixWorld(true);
+	const count = HULL_SPECS[id].hardpoints;
+	const parts: THREE.Object3D[] = [];
+	root.traverse((o) => {
+		if (GUN_PART.test(o.name)) parts.push(o);
+	});
+	let muzzles: Vec3[];
+	if (parts.length === count) {
+		muzzles = parts.map((part) => {
+			const b = new THREE.Box3().setFromObject(part);
+			const c = b.getCenter(new THREE.Vector3());
+			return { x: c.x, y: c.y, z: b.min.z };
+		});
+	} else {
+		const box = new THREE.Box3().setFromObject(root);
+		const size = box.getSize(new THREE.Vector3());
+		const centre = box.getCenter(new THREE.Vector3());
+		const standoff = Math.max(size.x, size.y, size.z) * NAV_LIGHT_STANDOFF;
+		const caster = new THREE.Raycaster();
+		const mounts = (spread: number) =>
+			Array.from({ length: count }, (_, i) => {
+				const x =
+					centre.x + (count === 1 ? 0 : spread * (2 * (i / (count - 1)) - 1));
+				caster.set(
+					new THREE.Vector3(x, centre.y, box.min.z - standoff),
+					new THREE.Vector3(0, 0, 1),
+				);
+				const hit = caster.intersectObject(root, true).find((h) => h.face);
+				return {
+					x,
+					y: centre.y,
+					z: hit ? hit.point.z : Number.POSITIVE_INFINITY,
+				};
+			});
+		// From a quarter of the beam either side, inward by halves until every
+		// mount lands on the forward half. A narrow nose ahead of swept wings
+		// otherwise put a pair on the wing roots, far aft (the interceptor, the
+		// raider and two capitals did).
+		let spread = size.x / 4;
+		let found = mounts(spread);
+		for (let i = 0; i < 6 && found.some((m) => !(m.z < centre.z)); i++) {
+			spread /= 2;
+			found = mounts(spread);
+		}
+		// Still no metal ahead on some line, a gap in the nose: the box's front
+		// face, which is ahead of the hull and on its centre line's span.
+		muzzles = found.map((m) => (m.z < centre.z ? m : { ...m, z: box.min.z }));
+	}
+	const frozen = Object.freeze(muzzles.map((m) => Object.freeze(m)));
+	muzzleCache.set(key, frozen);
+	return frozen;
 }
 
 export function buildShipMesh(
