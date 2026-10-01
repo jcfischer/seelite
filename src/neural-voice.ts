@@ -13,7 +13,7 @@
 import { fetchBundled } from "./bundle-fetch";
 import type { VoiceArms } from "./comms";
 import { IPA_GB, IPA_US, KOKORO_VOCAB } from "./voice-ipa";
-import { lineKey, loadLine, storeLine } from "./voice-store";
+import { dropParts, lineKey, loadLine, storeLine } from "./voice-store";
 
 /** The model's output rate, and the length of one style row. */
 export const KOKORO_RATE = 24000;
@@ -108,20 +108,40 @@ export function resample(x: Float32Array, from: number, to: number) {
 	const out = new Float32Array(n);
 	const fc = (0.45 * to) / from;
 	const H = 24;
-	for (let i = 0; i < n; i++) {
-		const c = i * ratio;
-		let s = 0;
-		let w = 0;
-		for (let k = Math.ceil(c - H); k <= Math.floor(c + H); k++) {
-			if (k < 0 || k >= x.length) continue;
-			const t = k - c;
+	// The taps depend only on where the output sample falls between two
+	// input samples, and 24 kHz to 16 kHz has two such places: the weights
+	// are worked out once per place rather than per sample (sage round 3 on
+	// #606). A ratio with many places stops caching and stays correct.
+	const kernels = new Map<number, { first: number; w: Float64Array }>();
+	const kernel = (frac: number) => {
+		const hit = kernels.get(frac);
+		if (hit) return hit;
+		const first = Math.ceil(frac - H);
+		const last = Math.floor(frac + H);
+		const w = new Float64Array(last - first + 1);
+		for (let o = first; o <= last; o++) {
+			const t = o - frac;
 			const sinc =
 				t === 0 ? 2 * fc : Math.sin(2 * Math.PI * fc * t) / (Math.PI * t);
-			const win = 0.5 + 0.5 * Math.cos((Math.PI * t) / H);
-			s += x[k] * sinc * win;
-			w += sinc * win;
+			w[o - first] = sinc * (0.5 + 0.5 * Math.cos((Math.PI * t) / H));
 		}
-		out[i] = w ? s / w : 0;
+		const k = { first, w };
+		if (kernels.size < 64) kernels.set(frac, k);
+		return k;
+	};
+	for (let i = 0; i < n; i++) {
+		const c = i * ratio;
+		const base = Math.floor(c);
+		const { first, w } = kernel(c - base);
+		let s = 0;
+		let sum = 0;
+		for (let j = 0; j < w.length; j++) {
+			const k = base + first + j;
+			if (k < 0 || k >= x.length) continue;
+			s += x[k] * w[j];
+			sum += w[j];
+		}
+		out[i] = sum ? s / sum : 0;
 	}
 	return out;
 }
@@ -146,7 +166,6 @@ export interface VoiceManifest {
 }
 export type NeuralBackend = "wasm" | "webgpu";
 
-/** Bytes a backend downloads: its files and every voice. */
 /** The files a backend loads: its model, its runtime and every voice. */
 export const backendFileIds = (m: VoiceManifest, b: NeuralBackend) => [
 	...m.backends[b],
@@ -165,6 +184,27 @@ export type NeuralState =
 	| { kind: "loading"; backend: NeuralBackend; bytes: number; total: number }
 	| { kind: "ready"; backend: NeuralBackend }
 	| { kind: "failed"; reason: string };
+
+/** Where a WebGPU failure is remembered, by the build it failed on. */
+const WEBGPU_FAILED_KEY = "seelite-voice-webgpu-failed";
+
+/** Whether WebGPU failed to run this build's model here before. */
+function webGpuFailed(version: string): boolean {
+	try {
+		return localStorage.getItem(WEBGPU_FAILED_KEY) === version;
+	} catch {
+		return false;
+	}
+}
+
+/** Remember that WebGPU could not run this build's model here. */
+function rememberWebGpuFailed(version: string) {
+	try {
+		localStorage.setItem(WEBGPU_FAILED_KEY, version);
+	} catch {
+		// Unremembered: the next start tries WebGPU again.
+	}
+}
 
 /** The fallback chain's next step after a backend fails. */
 export const fallbackAfter = (b: NeuralBackend): NeuralBackend | null =>
@@ -234,7 +274,10 @@ export class NeuralVoice {
 	}
 
 	/** The backend this browser would use: WebGPU with half floats, or WASM. */
-	async backend(): Promise<NeuralBackend> {
+	async backend(m?: VoiceManifest): Promise<NeuralBackend> {
+		// WebGPU already failed here on this build: the question quotes, and
+		// the start loads, what will actually run.
+		if (m && webGpuFailed(m.version)) return "wasm";
 		try {
 			const adapter = await (navigator as GpuNavigator).gpu?.requestAdapter();
 			if (adapter?.features.has("shader-f16")) return "webgpu";
@@ -247,7 +290,7 @@ export class NeuralVoice {
 	/** What starting would download here, bytes, or `null` with no voice. */
 	async downloadBytes(): Promise<number | null> {
 		const m = await this.readManifest();
-		return m ? backendBytes(m, await this.backend()) : null;
+		return m ? backendBytes(m, await this.backend(m)) : null;
 	}
 
 	/** Load the voice, falling back WebGPU → WASM; settles `ready` or
@@ -255,9 +298,15 @@ export class NeuralVoice {
 	start(force?: NeuralBackend): Promise<NeuralState> {
 		if (this.state.kind === "ready" || this.state.kind === "loading")
 			return Promise.resolve(this.state);
-		this.starting ??= this.begin(force).finally(() => {
-			this.starting = null;
-		});
+		if (!this.starting) {
+			// Cleared only if it is still this start: `stop` drops a start it
+			// cancels, so a new one is not handed the cancelled promise
+			// (sage round 3 on #606).
+			const p: Promise<NeuralState> = this.begin(force).finally(() => {
+				if (this.starting === p) this.starting = null;
+			});
+			this.starting = p;
+		}
 		return this.starting;
 	}
 
@@ -269,7 +318,7 @@ export class NeuralVoice {
 			this.set({ kind: "failed", reason: "this server has no voice" });
 			return this.state;
 		}
-		let b: NeuralBackend | null = force ?? (await this.backend());
+		let b: NeuralBackend | null = force ?? (await this.backend(m));
 		try {
 			const room = await navigator.storage?.estimate?.();
 			const free =
@@ -285,7 +334,20 @@ export class NeuralVoice {
 		}
 		while (b && gen === this.gen) {
 			if (await this.load(m, b)) return this.state;
-			b = force ? null : fallbackAfter(b);
+			const next: NeuralBackend | null = force ? null : fallbackAfter(b);
+			// WebGPU failed here: remember it for this build, so the next
+			// start and the question go straight to WASM, and free its files
+			// rather than keep both (sage round 3 on #606).
+			if (b === "webgpu" && next) {
+				rememberWebGpuFailed(m.version);
+				void dropParts(
+					m.version,
+					m.backends.webgpu.flatMap((id) =>
+						m.files[id].parts.map((p) => `${VOICE_BASE}${p}`),
+					),
+				);
+			}
+			b = next;
 		}
 		return this.state;
 	}
@@ -309,6 +371,18 @@ export class NeuralVoice {
 				settle(ok);
 			};
 			this.settle = resolve;
+			/** A load that fails, or a ready voice whose worker dies: every
+			 *  line waiting on it is refused and the worker is let go, so no
+			 *  caller waits forever (sage round 3 on #606). */
+			const fail = (message: string) => {
+				if (this.worker !== worker) {
+					worker.terminate();
+					return resolve(false);
+				}
+				this.halt();
+				this.set({ kind: "failed", reason: `${backend}: ${message}` });
+				resolve(false);
+			};
 			worker.onmessage = (e: MessageEvent<Reply>) => {
 				const r = e.data;
 				if (r.type === "progress")
@@ -327,17 +401,9 @@ export class NeuralVoice {
 				} else if (r.id !== undefined) {
 					this.waiting.get(r.id)?.no(new Error(r.message));
 					this.waiting.delete(r.id);
-				} else {
-					this.set({ kind: "failed", reason: `${backend}: ${r.message}` });
-					worker.terminate();
-					resolve(false);
-				}
+				} else fail(r.message);
 			};
-			worker.onerror = (e) => {
-				this.set({ kind: "failed", reason: `${backend}: ${e.message}` });
-				worker.terminate();
-				resolve(false);
-			};
+			worker.onerror = (e) => fail(e.message);
 			worker.postMessage({
 				type: "load",
 				manifest: m,
@@ -438,6 +504,7 @@ export class NeuralVoice {
 	/** Stop the voice and any start in flight; `off`. */
 	stop() {
 		this.gen++;
+		this.starting = null;
 		this.halt();
 		this.set({ kind: "off" });
 	}

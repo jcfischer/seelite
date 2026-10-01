@@ -20,18 +20,25 @@ export const MODEL_REVISION = "1939ad2a8e416c0acfeecc08a694d14ef25f2231";
 /** Each part's size: under the host's 25 MiB with room to spare. */
 export const PART_BYTES = 20 * 1024 * 1024;
 
-/** The voices the game ships, by Kokoro's id. Kokoro's first letter is the
+/** The voices the game ships, by Kokoro's id, each with the checksum its
+ *  file must have: one list, so a voice cannot be fetched without being
+ *  offered or offered without being fetched. Kokoro's first letter is the
  *  accent: `a` American, `b` British. */
-export const VOICE_IDS = [
-	"bm_george",
-	"bm_lewis",
-	"am_michael",
-	"bf_emma",
-	"af_bella",
-	"bf_isabella",
-	"af_nicole",
-	"bf_alice",
-];
+export const VOICE_SHA256 = {
+	bm_george: "c4b235a4c1f2cd3b939fed08b899ce9385638b763f7b73a59616c4fc9bd6c9bc",
+	bm_lewis: "b8f671cef828c30e66fdf0b0756a76bba58f6bb3398cbbf27058642acbcedb97",
+	am_michael:
+		"1d1f21dd8da39c30705cd4c75d039d265e9bc4a2a93ed09bc9e1b1225eb95ba1",
+	bf_emma: "669fe0647f9dd04fcab92f1439a40eeb4c8b4ab1f82e4996fe3d918ce4a63b73",
+	af_bella: "f69d836209b78eb8c66e75e3cda491e26ea838a3674257e9d4e5703cbaf55c8b",
+	bf_isabella:
+		"3754352c4aaa46d17f27654ab7518d65b62ad6163a0f55a5f4330c2da2c4e94f",
+	af_nicole: "cd2191ab31b914ed7b318416b0e4440fdf392ddad9106a060819aa600a64f59a",
+	bf_alice: "08afa6ba24da61ea5e8efa139e5aadc938d83f0a6da5a900adaf763ac1da5573",
+};
+
+/** The voices, in the order the lab offers them. */
+export const VOICE_IDS = Object.keys(VOICE_SHA256);
 
 /** Files fetched from the model repository, with the checksum each must
  *  have. A mismatch stops the build. */
@@ -46,40 +53,7 @@ export const REMOTE_FILES = [
 		path: "onnx/model_fp16.onnx",
 		sha256: "ba4527a874b42b21e35f468c10d326fdff3c7fc8cac1f85e9eb6c0dfc35c334a",
 	},
-	...[
-		[
-			"bm_george",
-			"c4b235a4c1f2cd3b939fed08b899ce9385638b763f7b73a59616c4fc9bd6c9bc",
-		],
-		[
-			"bm_lewis",
-			"b8f671cef828c30e66fdf0b0756a76bba58f6bb3398cbbf27058642acbcedb97",
-		],
-		[
-			"am_michael",
-			"1d1f21dd8da39c30705cd4c75d039d265e9bc4a2a93ed09bc9e1b1225eb95ba1",
-		],
-		[
-			"bf_emma",
-			"669fe0647f9dd04fcab92f1439a40eeb4c8b4ab1f82e4996fe3d918ce4a63b73",
-		],
-		[
-			"af_bella",
-			"f69d836209b78eb8c66e75e3cda491e26ea838a3674257e9d4e5703cbaf55c8b",
-		],
-		[
-			"bf_isabella",
-			"3754352c4aaa46d17f27654ab7518d65b62ad6163a0f55a5f4330c2da2c4e94f",
-		],
-		[
-			"af_nicole",
-			"cd2191ab31b914ed7b318416b0e4440fdf392ddad9106a060819aa600a64f59a",
-		],
-		[
-			"bf_alice",
-			"08afa6ba24da61ea5e8efa139e5aadc938d83f0a6da5a900adaf763ac1da5573",
-		],
-	].map(([v, sha256]) => ({
+	...Object.entries(VOICE_SHA256).map(([v, sha256]) => ({
 		id: `voice:${v}`,
 		path: `voices/${v}.bin`,
 		sha256,

@@ -68,7 +68,11 @@ const FAKE = {
 		]),
 	),
 };
-const FAKE_BYTES = 50_000_000 + 11_000_000 + 522_240;
+/** What the question should quote: the fixture's own sizes, summed. */
+const FAKE_BYTES = [
+	...FAKE.backends.wasm,
+	...FAKE.voices.map((v) => `voice:${v}`),
+].reduce((n, id) => n + FAKE.files[id].bytes, 0);
 
 /**
  * An init script: `window.__spySpeak(on)` reports every line handed to the

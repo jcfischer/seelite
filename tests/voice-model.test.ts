@@ -20,6 +20,7 @@ import { fetchBundled, isBundlePath } from "../src/bundle-fetch";
 import {
 	backendBytes,
 	NEURAL_VOICES,
+	resample,
 	type VoiceManifest,
 } from "../src/neural-voice";
 import { LEXICON } from "../src/speech-lexicon";
@@ -96,6 +97,61 @@ describe("the manifest", () => {
 		// Two lists, one in the fetch script and one in the bundle: a voice in
 		// one only is downloaded and never offered, or offered and never there.
 		expect([...NEURAL_VOICES] as string[]).toEqual([...VOICE_IDS]);
+	});
+
+	test("each backend lists its model first and its runtime second", () => {
+		// The worker reads them by position: swapped, it would hand the
+		// runtime a model as its binary (sage round 3 on #606).
+		for (const files of Object.values(BACKEND_FILES)) {
+			expect(files).toHaveLength(2);
+			expect(files[0]).toStartWith("model-");
+			expect(files[1]).toStartWith("ort-");
+		}
+	});
+});
+
+describe("the resampler", () => {
+	/** The per-sample formula the cached kernels replaced, kept as the oracle. */
+	function reference(x: Float32Array, from: number, to: number) {
+		const ratio = from / to;
+		const n = Math.floor(x.length / ratio);
+		const out = new Float32Array(n);
+		const fc = (0.45 * to) / from;
+		const H = 24;
+		for (let i = 0; i < n; i++) {
+			const c = i * ratio;
+			let sum = 0;
+			let w = 0;
+			for (let k = Math.ceil(c - H); k <= Math.floor(c + H); k++) {
+				if (k < 0 || k >= x.length) continue;
+				const t = k - c;
+				const sinc =
+					t === 0 ? 2 * fc : Math.sin(2 * Math.PI * fc * t) / (Math.PI * t);
+				const win = 0.5 + 0.5 * Math.cos((Math.PI * t) / H);
+				sum += x[k] * sinc * win;
+				w += sinc * win;
+			}
+			out[i] = w ? sum / w : 0;
+		}
+		return out;
+	}
+
+	test("cached kernels give the per-sample formula's output, edges included", () => {
+		const x = new Float32Array(2400);
+		for (let i = 0; i < x.length; i++)
+			x[i] = Math.sin(i * 0.05) * 0.6 + Math.sin(i * 0.31) * 0.3;
+		for (const [from, to] of [
+			[24000, 16000],
+			[24000, 22050],
+		]) {
+			const got = resample(x, from, to);
+			const want = reference(x, from, to);
+			expect(got.length).toBe(want.length);
+			let worst = 0;
+			for (let i = 0; i < got.length; i++)
+				worst = Math.max(worst, Math.abs(got[i] - want[i]));
+			expect(worst).toBeLessThan(1e-6);
+		}
 	});
 });
 
