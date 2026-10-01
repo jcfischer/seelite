@@ -56,6 +56,7 @@ export function wellFormed(song: Song) {
 		);
 	});
 	test(`${song.name}: no brass, which the principal heard as bad (#547 D14)`, () => {
-		for (const p of Object.values(song.parts)) expect(p.voice).not.toBe("brass");
+		for (const p of Object.values(song.parts))
+			expect(p.voice).not.toBe("brass");
 	});
 }

@@ -138,9 +138,7 @@ try {
 	mkdirSync(dir, { recursive: true });
 	const entries = [];
 	let modern = null;
-	const chosen = only
-		? SET.filter((e) => only.includes(e.name))
-		: SET;
+	const chosen = only ? SET.filter((e) => only.includes(e.name)) : SET;
 	if (only && chosen.length !== only.length) {
 		const known = new Set(SET.map((e) => e.name));
 		throw new Error(
