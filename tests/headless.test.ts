@@ -394,7 +394,13 @@ test("the music worklet's modules reach only each other and the score", () => {
 	// worklet shell is the only part that needs `AudioWorkletGlobalScope`.
 	// None of them reaches the audio layer, the game or a browser global.
 	expect(fromsIn("music-sequencer.ts")).toEqual(["./music-score"]);
-	expect(fromsIn("music-voices.ts")).toEqual(["./music-score"]);
+	// The strings' knob table (#547 D15) is the voices' defaults and the lab's
+	// sliders: data, reaching only the score's types.
+	expect(fromsIn("music-voices.ts")).toEqual([
+		"./music-score",
+		"./strings-params",
+	]);
+	expect(fromsIn("strings-params.ts")).toEqual(["./music-score"]);
 	expect(fromsIn("music-space.ts")).toEqual([]);
 	expect(fromsIn("music-engine.ts")).toEqual([
 		"./music-score",

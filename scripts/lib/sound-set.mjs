@@ -170,6 +170,7 @@ export const SOUND_SET = Object.freeze([
 	},
 	...musicTimelines(),
 	...adaptiveTimelines(),
+	...danubeTimelines(),
 ]);
 
 /**
@@ -353,6 +354,11 @@ function musicTimelines() {
 		tune("music-march", 8, [[0, play("march")]]),
 		// The second voices in their room, section by section (#560 D10).
 		tune("music-voices", 56, [[0, play("voices")]], { voices: "voices" }),
+		// #547 D8's orchestral voices on their own: a held chord, a legato
+		// phrase, the same detached, one note soft and one loud.
+		tune("voice-strings", 30, [[0, play("strings")]], { strings: "strings" }),
+		tune("voice-brass", 30, [[0, play("brass")]], { brass: "brass" }),
+		tune("voice-flute", 30, [[0, play("flute")]], { flute: "flute" }),
 		// Between songs: the march takes over on the waltz's next bar line.
 		tune("music-crossfade", 10, [
 			[0, play("waltz")],
@@ -375,6 +381,49 @@ function musicTimelines() {
 			[0, play("march")],
 			[1, { type: "tempo", scale: 1.5, at: "bar", rampBars: 2 }],
 		]),
+	];
+}
+
+/**
+ * #547's Blue Danube (`src/music-danube.ts`), the docking computer's waltz,
+ * scripted as the director will send it: `play` when the computer engages,
+ * `resolve` on the bar line after the plane (D1), or `stop` now over two bars
+ * when the pilot takes the stick (D2). The run lengths are #547's measured
+ * ones: 61–65 s from 4 km out, 90–92 s from 50 km. The intro is ~19.2 s and a
+ * loop of the waltz 36 s, so a resolve at 91 s lands on the end of the second
+ * loop. Each render runs on past its cadence for the arrival and the hall.
+ */
+function danubeTimelines() {
+	const songs = { danube: "danube" };
+	const play = [0, { type: "play", id: "danube", at: "bar" }];
+	const resolve = (s) => [s, { type: "resolve", at: "bar" }];
+	const tune = (name, seconds, script, over = songs) => ({
+		name,
+		seconds,
+		music: { songs: over, script },
+	});
+	return [
+		// The intro, two whole loops of the waltz, the cadence.
+		tune("music-danube", 100, [play, resolve(91)]),
+		// The pilot takes the stick 14 s into the first loop: two bars' fade.
+		tune("music-danube-cancel", 40, [
+			play,
+			[33, { type: "stop", at: "now", fadeS: 2.25 }],
+		]),
+		// The shortest run and the longest, the cadence at the plane.
+		tune("music-danube-run-short", 70, [play, resolve(62)]),
+		tune("music-danube-run-long", 100, [play, resolve(92)]),
+		// D12: the same two loops and the shortest run in the other two voicings.
+		...["oxygene", "hybrid"].flatMap((v) => {
+			const id = `danube-${v}`;
+			const start = [0, { type: "play", id, at: "bar" }];
+			return [
+				tune(`music-danube-${v}`, 100, [start, resolve(91)], { [id]: id }),
+				tune(`music-danube-${v}-run-short`, 70, [start, resolve(62)], {
+					[id]: id,
+				}),
+			];
+		}),
 	];
 }
 
@@ -583,13 +632,28 @@ export async function renderInPage({
 			? await import("/src/music.ts")
 					.then(async ({ Music }) => ({
 						Music,
-						songs: (await import("/src/music-test-score.ts")).TEST_SONGS,
+						songs: {
+							...(await import("/src/music-test-score.ts")).TEST_SONGS,
+							// #547's waltz, where the served tree has it.
+							...(await import("/src/music-danube.ts")
+								// One map in the module (sage round 1); an older tree has
+								// only the waltz.
+								.then((m) =>
+									m.danubeSongs ? m.danubeSongs() : { danube: m.BLUE_DANUBE },
+								)
+								.catch(() => ({}))),
+						},
 					}))
 					.catch(() => null)
 			: null;
 	if (
 		(entry.flight && typeof fx.flight !== "function") ||
 		(entry.music && !synth) ||
+		// A song the served tree does not have: #547's waltz at an older ref.
+		(entry.music &&
+			Object.values(entry.music.songs ?? {}).some(
+				(s) => typeof s === "string" && !synth.songs[s],
+			)) ||
 		(entry.witchspace && !knownKinds.includes("witchspaceRide")) ||
 		(entry.scheduled &&
 			!entry.scheduled.kinds.every((k) => knownKinds.includes(k))) ||

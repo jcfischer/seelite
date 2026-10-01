@@ -23,7 +23,10 @@ export type VoiceKind =
 	| "drone"
 	| "acid"
 	| "keys"
-	| "kick";
+	| "kick"
+	| "strings"
+	| "brass"
+	| "flute";
 
 /**
  * One note (#543 D3).
@@ -97,10 +100,21 @@ export interface TempoPoint {
  * - `envAmount`, `envDecayS` — analog, acid: the filter envelope, in octaves
  *   above `cutoffHz` at its peak, and its 60 dB fall.
  * - `resonance` — analog, acid, noise: the filter's peak at its cutoff, `0`..`1`.
- * - `drive` — acid: saturation, `0`..`1`.
+ * - `drive` — acid: saturation, `0`..`1`. Strings: the same after the
+ *   lowpass, its level kept — the grit (#547 D16).
  * - `glideS` — acid: a note that overlaps the next slides to it, on this
- *   time constant, without a new attack.
+ *   time constant, without a new attack. Strings, brass: the same, and it is
+ *   what makes a part **legato** — 0, the default, bows every note anew.
  * - `vibrato` — analog: depth in semitones, fading in over the first bars.
+ *   Strings, brass: the same, arriving only once a note is under way.
+ * - For **strings** (#547 D8), `index` is how much bow noise the attack
+ *   carries and `envAmount` how many octaves the lowpass opens at full
+ *   velocity. For **brass**, `index` is how far below the note, in
+ *   semitones, the pitch starts before it rises into it, and `envAmount`
+ *   how far the filter swells on the attack, scaled by velocity. For
+ *   **flute** (#547 D10), `index` is how much breath the tone carries —
+ *   more at the onset, a little under the held note — `cutoffHz` is where
+ *   that breath's band sits, and `glideS` makes it legato as for strings.
  * - `sweepS`, `sweepOct` — analog, acid, noise: a slow sweep of the
  *   filter, one period in `sweepS` seconds, opening up to `sweepOct`
  *   octaves above where it would be and closing again. Its phase is the
@@ -141,6 +155,22 @@ export interface PartSpec {
 	readonly pan?: number;
 	readonly reverb?: number;
 	readonly echo?: number;
+	/** Strings, brass, flute: the vibrato's rate, when it starts into a note,
+	 *  and how long it takes to reach its depth (#547 D15). */
+	readonly vibratoHz?: number;
+	readonly vibratoOnsetS?: number;
+	readonly vibratoRiseS?: number;
+	/** Strings: how quickly the attack's bow noise dies, s. */
+	readonly bowS?: number;
+	/** Strings: how much darker a note starts, opening over its attack. */
+	readonly swell?: number;
+	/** Strings, the grit (#547 D16), with `drive` above: how far the lowpass
+	 *  opens for a note below A4; a rosin scratch tuned to the note's
+	 *  harmonics under the whole note; and how much more of it a low note
+	 *  gets. All off by default. `strings-params.ts` has each range. */
+	readonly keyTrack?: number;
+	readonly rosin?: number;
+	readonly rosinLow?: number;
 }
 
 /**

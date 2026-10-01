@@ -24,13 +24,16 @@ test("between them, the test songs sound every voice", () => {
 	expect([...voices].sort()).toEqual([
 		"acid",
 		"analog",
+		"brass",
 		"drone",
+		"flute",
 		"fm",
 		"keys",
 		"kick",
 		"noise",
 		"pad",
 		"pluck",
+		"strings",
 		"tone",
 	]);
 });

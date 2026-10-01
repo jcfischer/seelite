@@ -20,6 +20,7 @@
  * voice.
  */
 import type { PartSpec, VoiceKind } from "./music-score";
+import { stringsDefaults } from "./strings-params";
 
 // Each voice's number in the bank's `kind` array, which is a `Uint8Array`
 // rather than strings so a render reads no object. Named, so the two
@@ -34,6 +35,9 @@ const DRONE = 6;
 const ACID = 7;
 const KEYS = 8;
 const KICK = 9;
+const STRINGS = 10;
+const BRASS = 11;
+const FLUTE = 12;
 const KIND: Record<VoiceKind, number> = {
 	pad: PAD,
 	pluck: PLUCK,
@@ -45,12 +49,18 @@ const KIND: Record<VoiceKind, number> = {
 	acid: ACID,
 	keys: KEYS,
 	kick: KICK,
+	strings: STRINGS,
+	brass: BRASS,
+	flute: FLUTE,
 };
 /** The voices that are two signals, one a side; every other is one, panned.
  *  Indexed by kind, and filled by name (sage round 8), so a kind added or
  *  renumbered above cannot take another's row. */
 const STEREO = new Uint8Array(Object.keys(KIND).length);
-for (const k of [PAD, ANALOG, DRONE, KEYS]) STEREO[k] = 1;
+for (const k of [PAD, ANALOG, DRONE, KEYS, STRINGS]) STEREO[k] = 1;
+/** The voices that can play legato, and carry their own weight to do it. */
+const LEGATO = new Uint8Array(Object.keys(KIND).length);
+for (const k of [STRINGS, BRASS, FLUTE]) LEGATO[k] = 1;
 
 /** Every field a voice reads, with its defaults filled in and every time
  *  already in frames or a per-frame coefficient. */
@@ -84,6 +94,10 @@ export interface ResolvedPart {
 	/** The state-variable filter's damping, from the resonance. */
 	readonly damp: number;
 	readonly drive: number;
+	/** Strings: the drive's gain into its `tanh` and the `1 / tanh` that
+	 *  keeps its level — constants of the part, so not worked per sample. */
+	readonly driveK: number;
+	readonly driveNorm: number;
 	/** Per frame, toward a slide's target; 1 for no glide. */
 	readonly glideCoef: number;
 	readonly vibrato: number;
@@ -92,6 +106,14 @@ export interface ResolvedPart {
 	readonly sweepOct: number;
 	readonly attackS: number;
 	readonly decayS: number;
+	readonly vibratoHz: number;
+	readonly vibratoOnsetS: number;
+	readonly vibratoRiseS: number;
+	readonly bowS: number;
+	readonly swell: number;
+	readonly keyTrack: number;
+	readonly rosin: number;
+	readonly rosinLow: number;
 }
 
 /**
@@ -126,9 +148,21 @@ const BASE: VoiceDefaults = {
 	drive: 0,
 	glideS: 0,
 	vibrato: 0,
+	vibratoHz: 5,
+	vibratoOnsetS: 0.3,
+	vibratoRiseS: 0.5,
+	bowS: 0.045,
+	swell: 0.4,
+	keyTrack: 0,
+	rosin: 0,
+	rosinLow: 1,
 	sweepS: 0,
 	sweepOct: 0,
 };
+
+/** The strings' defaults are its parameter table's (#547 D15), but for the
+ *  level, which every part names for itself. */
+const { level: _stringsLevel, ...STRINGS_TABLE } = stringsDefaults();
 
 const DEFAULTS: Record<VoiceKind, VoiceDefaults> = {
 	pad: {
@@ -235,6 +269,45 @@ const DEFAULTS: Record<VoiceKind, VoiceDefaults> = {
 		sustain: 0,
 		releaseS: 0.05,
 	},
+	// A bowed section (#547 D8): five detuned saws a note across the field, a
+	// bow's slow attack with its noise, a vibrato that arrives late, and a
+	// lowpass that opens with the bow's weight. Held for the note's length.
+	strings: { ...BASE, ...STRINGS_TABLE },
+	// A soft horn (#547 D8): a saw and a pulse on one phase, through two lowpass
+	// stages whose cutoff swells as the note speaks, the pitch rising into it
+	// from a little below. Warm and dark at p; it brightens only when pushed.
+	brass: {
+		...BASE,
+		attackS: 0.12,
+		decayS: 1.5,
+		sustain: 0.85,
+		releaseS: 0.25,
+		cutoffHz: 600,
+		resonance: 0.2,
+		unison: 1,
+		detune: 0.03,
+		drift: 3,
+		spread: 0,
+		envAmount: 2.4,
+		envDecayS: 0.8,
+		index: 0.4,
+		vibrato: 0.05,
+	},
+	// A flute (#547 D10): a sine with a little of its second and third
+	// harmonics, breath in a band above it that is loud as the note starts and
+	// stays low under it, a soft attack and a vibrato that comes late.
+	flute: {
+		...BASE,
+		attackS: 0.05,
+		decayS: 1,
+		sustain: 1,
+		releaseS: 0.12,
+		cutoffHz: 2600,
+		index: 0.5,
+		vibrato: 0.12,
+		drift: 2,
+		detune: 0.03,
+	},
 };
 
 /** 60 dB in `seconds`, as a per-frame multiplier. */
@@ -267,6 +340,8 @@ export function resolvePart(spec: PartSpec, sampleRate: number): ResolvedPart {
 		envDecayCoef: fall60(d.envDecayS, sampleRate),
 		damp: 2 - 1.9 * Math.max(0, Math.min(1, d.resonance)),
 		drive: d.drive,
+		driveK: 1 + 8 * d.drive,
+		driveNorm: 1 / Math.tanh(1 + 8 * d.drive),
 		glideCoef: d.glideS > 0 ? 1 - Math.exp(-1 / (d.glideS * sampleRate)) : 1,
 		vibrato: d.vibrato,
 		sweepInc:
@@ -274,6 +349,14 @@ export function resolvePart(spec: PartSpec, sampleRate: number): ResolvedPart {
 		sweepOct: d.sweepS > 0 ? d.sweepOct : 0,
 		attackS: d.attackS,
 		decayS: d.decayS,
+		vibratoHz: d.vibratoHz,
+		vibratoOnsetS: d.vibratoOnsetS,
+		vibratoRiseS: d.vibratoRiseS,
+		bowS: d.bowS,
+		swell: d.swell,
+		keyTrack: d.keyTrack,
+		rosin: d.rosin,
+		rosinLow: d.rosinLow,
 	};
 }
 
@@ -343,6 +426,26 @@ const DRONE_ROWS = 64;
 const DRIFT_GLIDE = 0.002;
 /** Frames between filter-coefficient updates on the swept voices. */
 const CUT_EVERY = 8;
+/** The bow noise's one-pole that takes its lows away, per frame. */
+const BOW_HIGHPASS = 0.2;
+/** The rosin's comb: how much of each period feeds back, which is how
+ *  narrowly its noise sits on the note's harmonics. */
+const ROSIN_FEEDBACK = 0.85;
+/** Rosin and key tracking both lean on the notes below this, Hz. */
+const LOW_REF_HZ = 440;
+/** The most a low note's rosin is multiplied by. */
+const ROSIN_LOW_MAX = 4;
+/** The brass's rise into its pitch: a time constant, s. */
+const BRASS_SCOOP_S = 0.06;
+/** A legato join: how far the last note may end before the next begins
+ *  and still be carried on the same bow, s. */
+const LEGATO_GAP_S = 0.03;
+/** The flute's breath: how long the onset's burst lasts, s, and the share of
+ *  it that stays under the held tone. */
+const BREATH_ONSET_S = 0.06;
+const BREATH_HELD = 0.18;
+/** Per frame, how fast a legato note's weight follows the new note's. */
+const LEGATO_VEL = 0.002;
 
 const STAGE_FREE = 0;
 const STAGE_ATTACK = 1;
@@ -396,6 +499,9 @@ export class VoiceBank {
 	private readonly slideInc: Float64Array;
 	private readonly slideAt: Float64Array;
 	private readonly accent: Uint8Array;
+	/** The strings' and brass's bow weight, and where a legato note takes it. */
+	private readonly vel: Float64Array;
+	private readonly velTo: Float64Array;
 	/** The drone's table set per slot: 0 full, 1 thin. */
 	private readonly thin: Uint8Array;
 	/** The keys' partials: two past outputs and the two recurrence terms. */
@@ -457,6 +563,8 @@ export class VoiceBank {
 		this.slideInc = f64();
 		this.slideAt = f64();
 		this.accent = new Uint8Array(cap);
+		this.vel = f64();
+		this.velTo = f64();
 		this.thin = new Uint8Array(cap);
 		const partials = () => new Float64Array(cap * PARTIALS);
 		this.kY1 = partials();
@@ -544,6 +652,42 @@ export class VoiceBank {
 				mono = i;
 				break;
 			}
+		// Strings and brass played legato: a note that follows on from one
+		// still sounding in the same part — or ending within a breath of it —
+		// is carried on that voice, gliding to the new pitch with no new
+		// attack. Of several, the nearest in pitch not already carried on.
+		if (LEGATO[part.kind] && part.glideCoef < 1) {
+			const gap = LEGATO_GAP_S * this.sampleRate;
+			let best = -1;
+			let bestD = Number.POSITIVE_INFINITY;
+			for (let i = 0; i < this.cap; i++) {
+				if (
+					this.stage[i] === STAGE_FREE ||
+					this.kind[i] !== part.kind ||
+					this.owner[i] !== owner ||
+					this.partIx[i] !== partIndex ||
+					this.start[i] >= frame ||
+					this.end[i] < frame - gap ||
+					this.slideAt[i] === frame
+				)
+					continue;
+				const d = Math.abs(this.pitch[i] - pitch);
+				if (d < bestD) {
+					bestD = d;
+					best = i;
+				}
+			}
+			if (best >= 0) {
+				this.glideTo[best] = mtof(pitch) / this.sampleRate;
+				this.slideAt[best] = frame;
+				this.velTo[best] = vel;
+				this.end[best] = frame + durFrames;
+				this.pitch[best] = pitch;
+				// Past its end already: bowed on from where its release had got to.
+				if (this.stage[best] === STAGE_RELEASE) this.stage[best] = STAGE_ATTACK;
+				return;
+			}
+		}
 		for (let i = 0; mono < 0 && i < this.cap; i++) {
 			if (this.stage[i] === STAGE_FREE) {
 				slot = i;
@@ -571,7 +715,12 @@ export class VoiceBank {
 		this.start[i] = frame;
 		this.end[i] = frame + durFrames;
 		this.pitch[i] = pitch;
-		this.amp[i] = vel * part.level;
+		// The strings and brass carry their weight themselves, so a legato
+		// note can change it without a new attack.
+		const weighted = LEGATO[part.kind] === 1;
+		this.amp[i] = weighted ? part.level : vel * part.level;
+		this.vel[i] = vel;
+		this.velTo[i] = vel;
 		if (!taken) this.env[i] = 0;
 		this.ph1[i] = 0;
 		this.ph2[i] = 0.25;
@@ -626,6 +775,36 @@ export class VoiceBank {
 			case KICK:
 				this.inc1[i] = f / sr;
 				for (let k = 0; k < 4; k++) this.opPh[i * MAX_OPS + k] = 0;
+				break;
+			case FLUTE:
+				// The breath's band: at the part's cutoff, or above the note.
+				this.g[i] = svfCoef(Math.max(part.cutoffHz, 2 * f), sr);
+				this.inc1[i] = f / sr;
+				this.glideTo[i] = f / sr;
+				this.opOff[i * MAX_OPS] = 0;
+				this.opJit[i * MAX_OPS] = 0;
+				this.opJitTo[i * MAX_OPS] = 0;
+				this.driftLeft[i] = 0;
+				this.ph2[i] = 0.5 * (this.noise() + 1);
+				break;
+			case STRINGS:
+			case BRASS:
+				this.inc1[i] = f / sr;
+				this.glideTo[i] = f / sr;
+				this.unisonOn(i, part);
+				if (part.rosin > 0) {
+					this.line[i].fill(0);
+					this.lineW[i] = 0;
+				}
+				// A section is not evenly tuned: evenly spaced detunes beat at one
+				// common rate, and the section swells and fades on it. Each player
+				// a little off their place.
+				for (let k = 0; k < part.unison; k++)
+					this.opOff[i * MAX_OPS + k] += 0.4 * part.detune * this.noise();
+				// Each voice's vibrato on its own phase, so a section does not
+				// pulse as one.
+				this.ph2[i] = 0.5 * (this.noise() + 1);
+				this.g[i] = svfCoef(part.cutoffHz, sr);
 				break;
 		}
 	}
@@ -785,6 +964,12 @@ export class VoiceBank {
 				return this.keys(i);
 			case KICK:
 				return this.kick(i);
+			case STRINGS:
+				return this.bowed(i, part, at);
+			case BRASS:
+				return this.horn(i, part, at);
+			case FLUTE:
+				return this.flute(i, part, at);
 			case PAD: {
 				const a = saw(this.ph1[i], this.inc1[i]);
 				const b = saw(this.ph2[i], this.inc2[i]);
@@ -901,6 +1086,183 @@ export class VoiceBank {
 			);
 		this.sideR = this.svf2(i, r, part.damp);
 		return this.svf(i, l, part.damp, false);
+	}
+
+	/** A legato note's glide and change of weight, from the frame it begins;
+	 *  and the vibrato, arriving once the note is under way. Returns the
+	 *  vibrato, in semitones. */
+	private carry(i: number, part: ResolvedPart, at: number, t: number) {
+		if (at >= this.slideAt[i]) {
+			this.inc1[i] += part.glideCoef * (this.glideTo[i] - this.inc1[i]);
+			this.vel[i] += LEGATO_VEL * (this.velTo[i] - this.vel[i]);
+		}
+		if (part.vibrato <= 0 || t < part.vibratoOnsetS) return 0;
+		// Guarded as the swell is: a rise of 0 divides 0 by 0 at the onset, and
+		// the NaN reaches the filter's state and silences the voice for good.
+		const depth = Math.min(
+			1,
+			(t - part.vibratoOnsetS) / Math.max(1e-3, part.vibratoRiseS),
+		);
+		return (
+			part.vibrato *
+			depth *
+			Math.sin(2 * Math.PI * (part.vibratoHz * t + this.ph2[i]))
+		);
+	}
+
+	/** Bowed strings: `unison` saws across the field, bow noise on the
+	 *  attack, the late vibrato, and a lowpass a side opened by the bow's
+	 *  weight and swelling with the attack. */
+	private bowed(i: number, part: ResolvedPart, at: number) {
+		const sr = this.sampleRate;
+		const n = part.unison;
+		const base = i * MAX_OPS;
+		const t = this.age[i]++ / sr;
+		this.wander(i, part);
+		const vib = this.carry(i, part, at, t);
+		let l = 0;
+		let r = 0;
+		for (let k = 0; k < n; k++) {
+			const o = base + k;
+			const inc = this.inc1[i] * semis(this.opOff[o] + this.opJit[o] + vib);
+			const v = saw(this.opPh[o], inc);
+			this.opPh[o] = wrap(this.opPh[o] + inc);
+			l += v * this.opL[o];
+			r += v * this.opR[o];
+		}
+		// The bow: a burst of high noise, dying as the string takes the note.
+		if (t < 6 * part.bowS && part.index > 0) {
+			const x = this.noise();
+			this.fb[i] += BOW_HIGHPASS * (x - this.fb[i]);
+			const bow = part.index * Math.exp(-t / part.bowS) * (x - this.fb[i]);
+			l += bow;
+			r += bow;
+		}
+		// The rosin (D16): noise through a comb tuned to the note's period, so
+		// it sits on the harmonics, under the whole note and more of it low.
+		if (part.rosin > 0) {
+			const hz = this.inc1[i] * sr;
+			const low = Math.min(ROSIN_LOW_MAX, (LOW_REF_HZ / hz) ** part.rosinLow);
+			const y = this.comb(i, this.noise(), 1 / this.inc1[i]);
+			const scratch = 0.25 * part.rosin * low * y;
+			l += scratch;
+			r += scratch;
+		}
+		const vel = this.vel[i];
+		if (this.age[i] % CUT_EVERY === 1) {
+			const swell =
+				1 -
+				part.swell +
+				part.swell * Math.min(1, t / Math.max(1e-3, part.attackS));
+			let cut = part.cutoffHz * 2 ** (part.envAmount * vel) * swell;
+			// Key tracking (D16): a note below A4 opens the lowpass.
+			if (part.keyTrack > 0) {
+				const hz = this.inc1[i] * sr;
+				if (hz < LOW_REF_HZ) cut *= (LOW_REF_HZ / hz) ** part.keyTrack;
+			}
+			// Held where the filter stays stable undamped: `svfCoef`'s own cap,
+			// a sixth of the rate, is past it at no resonance, and key tracking
+			// or the lab's sliders reach it. No default setting does.
+			this.g[i] = svfCoef(Math.min(cut, sr / 8), sr);
+		}
+		let yl = this.svf(i, l, part.damp, false);
+		let yr = this.svf2(i, r, part.damp);
+		// The drive (D16): a saturation after the lowpass, its level kept.
+		// After, not before: a saw is already every harmonic, and a lowpass
+		// behind the drive takes away what the drive adds; after it, the
+		// clipped edges are the grit.
+		if (part.drive > 0) {
+			yl = Math.tanh(part.driveK * yl) * part.driveNorm;
+			yr = Math.tanh(part.driveK * yr) * part.driveNorm;
+		}
+		this.sideR = yr * vel;
+		return yl * vel;
+	}
+
+	/** One step of voice `i`'s comb: `x` plus the line `period` frames back,
+	 *  fed back. It shares the pluck's delay line, which a strings voice does
+	 *  not otherwise use. */
+	private comb(i: number, x: number, period: number) {
+		const line = this.line[i];
+		const L = line.length;
+		const D = Math.min(L - 2, period);
+		const w = this.lineW[i];
+		let r = w - D;
+		if (r < 0) r += L;
+		const r0 = Math.floor(r);
+		const frac = r - r0;
+		const back = line[r0] + (line[(r0 + 1) % L] - line[r0]) * frac;
+		const y = x + ROSIN_FEEDBACK * back;
+		line[w] = y;
+		this.lineW[i] = w + 1 === L ? 0 : w + 1;
+		return (1 - ROSIN_FEEDBACK) * y;
+	}
+
+	/** Soft brass: a saw and a pulse on each oscillator's one phase — one
+	 *  oscillator by default, since two detuned ones swell and fade as they
+	 *  beat — rising into the pitch
+	 *  from below, through two lowpass stages whose cutoff swells as the note
+	 *  speaks — by as much as the note's weight allows. */
+	private horn(i: number, part: ResolvedPart, at: number) {
+		const sr = this.sampleRate;
+		const n = part.unison;
+		const base = i * MAX_OPS;
+		const t = this.age[i]++ / sr;
+		this.wander(i, part);
+		const vib = this.carry(i, part, at, t);
+		const scoop = -part.index * Math.exp(-t / BRASS_SCOOP_S);
+		let x = 0;
+		for (let k = 0; k < n; k++) {
+			const o = base + k;
+			const inc =
+				this.inc1[i] * semis(this.opOff[o] + this.opJit[o] + vib + scoop);
+			const ph = this.opPh[o];
+			// The pulse is a saw less a shifted saw.
+			const sw = saw(ph, inc);
+			const v = sw + 0.6 * (sw - saw(wrap(ph + 0.4), inc));
+			this.opPh[o] = wrap(ph + inc);
+			x += v;
+		}
+		x /= 1.6 * Math.sqrt(n);
+		// The swell: up over the attack and a little past it, then settling.
+		const rise = 1.3 * Math.max(1e-3, part.attackS);
+		if (t < rise) this.fenv[i] = t / rise;
+		else this.fenv[i] = 0.75 + (this.fenv[i] - 0.75) * part.envDecayCoef;
+		const vel = this.vel[i];
+		if (this.age[i] % CUT_EVERY === 1)
+			this.g[i] = svfCoef(
+				part.cutoffHz *
+					2 ** (part.envAmount * this.fenv[i] * (0.3 + 0.7 * vel)),
+				sr,
+			);
+		const y = this.svf(i, x, part.damp, false);
+		return this.svf2(i, y, part.damp) * vel;
+	}
+
+	/** A flute: a sine with a little of its second and third harmonics — more
+	 *  of them the harder it is blown — and breath, a band of noise above the
+	 *  note, loud as the note starts and low under it after. One oscillator,
+	 *  wandering a little in pitch as a player does. */
+	private flute(i: number, part: ResolvedPart, at: number) {
+		const t = this.age[i]++ / this.sampleRate;
+		const o = i * MAX_OPS;
+		const vib = this.carry(i, part, at, t);
+		if (part.driftFrames > 0 && --this.driftLeft[i] <= 0) {
+			this.driftLeft[i] = part.driftFrames;
+			this.opJitTo[o] = 0.5 * part.detune * this.noise();
+		}
+		this.opJit[o] += DRIFT_GLIDE * (this.opJitTo[o] - this.opJit[o]);
+		const inc = this.inc1[i] * semis(this.opJit[o] + vib);
+		const p = 2 * Math.PI * this.ph1[i];
+		this.ph1[i] = wrap(this.ph1[i] + inc);
+		const vel = this.vel[i];
+		const h = 0.06 + 0.12 * vel;
+		const tone = Math.sin(p) + h * Math.sin(2 * p) + 0.5 * h * Math.sin(3 * p);
+		const breath =
+			part.index *
+			(BREATH_HELD + (1 - BREATH_HELD) * Math.exp(-t / BREATH_ONSET_S)) *
+			this.svf(i, this.noise(), 1.2, true);
+		return (0.7 * tone + breath) * vel;
 	}
 
 	/** The drone: eight oscillators reading the morphing tables. */

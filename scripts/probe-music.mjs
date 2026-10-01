@@ -165,6 +165,31 @@ const RENDERED = {
 		hz: 995,
 		onset: 426.73,
 	},
+	// #547's orchestral voices alone, and the waltz in its three voicings.
+	// Every waltz row is read over its opening 20 s, which is the intro in
+	// each, so the rows of one voicing read alike; the intro's strings come
+	// in slowly and carry their own onset.
+	"voice-strings": { rms: 0.03647, peak: 0.2311, hz: 1434 },
+	"voice-brass": { rms: 0.03628, peak: 0.18322, hz: 370 },
+	"voice-flute": { rms: 0.0312, peak: 0.1569, hz: 4018 },
+	...Object.fromEntries(
+		["", "-cancel", "-run-short", "-run-long"].map((s) => [
+			`music-danube${s}`,
+			{ rms: 0.02767, peak: 0.13663, hz: 2011, onset: 17.15 },
+		]),
+	),
+	...Object.fromEntries(
+		["", "-run-short"].flatMap((s) => [
+			[
+				`music-danube-oxygene${s}`,
+				{ rms: 0.02578, peak: 0.12825, hz: 1970, onset: 15.48 },
+			],
+			[
+				`music-danube-hybrid${s}`,
+				{ rms: 0.02549, peak: 0.13305, hz: 1970, onset: 15.48 },
+			],
+		]),
+	),
 };
 /** The limiter's 6 ms look-ahead and a render quantum and a half (4 ms at
  *  48 kHz): 10 ms, as the comment above says. It read 12 for a round, which
@@ -232,15 +257,27 @@ try {
 		MUSIC.map((e) => e.name).join(", "),
 	);
 	const rendered = new Map();
+	// A scripted render cut to its opening drops the commands past the cut
+	// (#547): the waltz resolves at 62 s and later, and an offline context
+	// refuses a suspend at or past its end.
+	const opening = (entry) => {
+		const seconds = Math.min(entry.seconds, PROBE_RENDER_S);
+		const script = entry.music.script?.filter(
+			([t]) => t === "attach" || t < seconds,
+		);
+		return {
+			...entry,
+			seconds,
+			music: script ? { ...entry.music, script } : entry.music,
+		};
+	};
 	for (const entry of MUSIC) {
 		// The band is read off the render's opening `PROBE_RENDER_S`: the sound
 		// set's listening renders run to minutes, and all of them whole
 		// outlasted probe-all's ten-minute limit (#548). The ladder keeps its
 		// length, because a row below reads all four of its levels.
 		const r = await renderRaw(
-			FULL_LENGTH.has(entry.name)
-				? entry
-				: { ...entry, seconds: Math.min(entry.seconds, PROBE_RENDER_S) },
+			FULL_LENGTH.has(entry.name) ? entry : opening(entry),
 		);
 		check(
 			`${entry.name} renders through the synth`,
