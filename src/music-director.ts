@@ -53,7 +53,6 @@ import {
 	DANUBE_VOICINGS,
 	type DanubeVoicing,
 	danubeSong,
-	WALTZ_BPM,
 } from "./music-danube";
 import type { MusicCommand, Song } from "./music-score";
 import { beatSeconds, bpmAt } from "./music-sequencer";
@@ -127,13 +126,30 @@ export const waltzCadenceS = (voicing: DanubeVoicing): number => {
 	const song = danubeSong(voicing);
 	const at = song.sections.findIndex((x) => x.name === song.resolve);
 	if (at < 0) throw new Error(`${song.name} has no resolve section`);
-	const first = song.sections.slice(0, at).reduce((n, x) => n + x.bars, 0);
+	const startOf = (i: number) =>
+		song.sections.slice(0, i).reduce((n, x) => n + x.bars, 0);
 	const beats = song.beatsPerBar;
-	let s = (beats * 60) / WALTZ_BPM;
-	for (let bar = first; bar < first + song.sections[at].bars; bar++) {
-		const b0 = bpmAt(song.tempo, bar, false);
-		s += beatSeconds(b0, bpmAt(song.tempo, bar, true), beats, beats);
-	}
+	const barS = (bar: number) =>
+		beatSeconds(
+			bpmAt(song.tempo, bar, false),
+			bpmAt(song.tempo, bar, true),
+			beats,
+			beats,
+		);
+	// The wait for the line: the longest bar of the loop the resolve is sent
+	// in, on that song's own tempo map (sage round 3: it was `WALTZ_BPM`).
+	const loop = song.sections.findIndex((x) => x.name === song.loop?.from);
+	if (loop < 0) throw new Error(`${song.name} has no loop`);
+	let s = 0;
+	for (
+		let bar = startOf(loop);
+		bar < startOf(loop) + song.sections[loop].bars;
+		bar++
+	)
+		s = Math.max(s, barS(bar));
+	const first = startOf(at);
+	for (let bar = first; bar < first + song.sections[at].bars; bar++)
+		s += barS(bar);
 	cadences.set(voicing, s);
 	return s;
 };
@@ -363,8 +379,11 @@ function stepWaltz(
 		// The cadence plays out into the berth; the station bed waits for it.
 		// Out of the dock early (a launch), the bed's crossfade takes it.
 		// The voicing that is playing: `waltzKey` is set by the load that
-		// started it, so it is never null here, and the arms are not read.
-		const hold = waltzCadenceS(s.waltzKey ?? DEFAULT_MUSIC_ARMS.waltz);
+		// started it, and the arms are not read. Null is a broken invariant,
+		// said rather than covered (sage round 3).
+		if (s.waltzKey === null)
+			throw new Error("a waltz resolving with none loaded");
+		const hold = waltzCadenceS(s.waltzKey);
 		if (r.scene === "docked" && !arms.off && s.waltzS < hold) {
 			const waltzS = r.held ? s.waltzS : s.waltzS + dt;
 			if (waltzS < hold)

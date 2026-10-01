@@ -908,8 +908,12 @@ try {
 		const { WALTZ_CADENCE_S, WALTZ_DUCK_DB } = await game.evaluate(
 			() => import("/src/music-director.ts"),
 		);
-		const { duckGain } = await game.evaluate(() => import("/src/audio.ts"));
-		const duck = duckGain(WALTZ_DUCK_DB);
+		// In the page: a module's function does not survive the trip back
+		// out of `evaluate`, only its numbers do.
+		const duck = await game.evaluate(
+			async (db) => (await import("/src/audio.ts")).duckGain(db),
+			WALTZ_DUCK_DB,
+		);
 		const run = await engage();
 		const types = (sent) =>
 			sent

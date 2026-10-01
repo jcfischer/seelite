@@ -636,11 +636,18 @@ const CADENCE: NoteEvent[] = [
 	...line("kick", [[3, 0, KICK_PITCH, 0.5]], 0.8),
 ];
 
-/** The waltz in one voicing: the same score, other instruments. */
+const voiced = new Map<DanubeVoicing, Song>();
+
+/** The waltz in one voicing: the same score, other instruments. Built once
+ *  per voicing, so the director's cadence and its load share one song. */
 export const danubeSong = (voicing: DanubeVoicing): Song => {
+	const known = voiced.get(voicing);
+	if (known) return known;
 	const parts: Voicing | undefined = DANUBE_VOICINGS[voicing];
 	if (!parts) throw new Error(`no Danube voicing "${voicing}"`);
-	return { ...SCORE, name: `${SCORE.name} (${voicing})`, parts };
+	const song = { ...SCORE, name: `${SCORE.name} (${voicing})`, parts };
+	voiced.set(voicing, song);
+	return song;
 };
 
 /**
