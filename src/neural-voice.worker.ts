@@ -12,7 +12,7 @@
  */
 import { KOKORO_RATE, resample, styleRow } from "./neural-voice";
 import { SPEECH_RATE } from "./speech";
-import { cachedPart, dropOldModels } from "./voice-store";
+import { cachedPart, dropOldModels, dropParts } from "./voice-store";
 
 type Ort = typeof import("onnxruntime-web/wasm");
 interface ManifestFile {
@@ -84,10 +84,19 @@ async function assemble(
 		at += buf.length;
 		progress(buf.length);
 	}
-	if (at !== file.bytes)
-		throw new Error(`${id}: ${at} bytes, expected ${file.bytes}`);
-	const got = hex(await crypto.subtle.digest("SHA-256", out));
-	if (got !== file.sha256) throw new Error(`${id}: checksum mismatch`);
+	const got =
+		at === file.bytes ? hex(await crypto.subtle.digest("SHA-256", out)) : null;
+	if (got !== file.sha256) {
+		await dropParts(
+			manifest.version,
+			file.parts.map((p) => `${base}${p}`),
+		);
+		throw new Error(
+			got === null
+				? `${id}: ${at} bytes, expected ${file.bytes}`
+				: `${id}: checksum mismatch`,
+		);
+	}
 	return out.buffer;
 }
 

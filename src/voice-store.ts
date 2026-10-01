@@ -59,8 +59,23 @@ export async function cachedPart(
 	}
 	const res = await fetchBundled(path);
 	if (!res.ok) throw new Error(`voice: ${path}: HTTP ${res.status}`);
+	// A server answers a path it does not have with its page and a 200 (vite
+	// does); kept, that page would fail the checksum on every later start.
+	if (res.headers.get("content-type")?.includes("text/html"))
+		throw new Error(`voice: ${path}: the server has no such file`);
 	if (cache) await cache.put(path, res.clone());
 	return await res.arrayBuffer();
+}
+
+/** Forget a file's kept parts: one that failed its checksum is fetched
+ *  again on the next start rather than failing it forever. */
+export async function dropParts(version: string, paths: string[]) {
+	try {
+		const cache = await caches.open(MODEL_CACHE_PREFIX + version);
+		for (const p of paths) await cache.delete(p);
+	} catch {
+		// Nothing kept where there is no Cache Storage.
+	}
 }
 
 /** Delete every model cache but `keep`'s: a new build leaves the old. */

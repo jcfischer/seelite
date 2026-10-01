@@ -121,6 +121,23 @@ export const PROBE_CATALOG = Object.freeze(
 			],
 		),
 		entry(
+			"probe-neural-voice.mjs",
+			"Asks the natural-voice question before the Commander menu under ?voices=ask and answers it by mouse, keyboard, Esc and pad, each answer setting the Voice row; a voice whose parts are refused settles failed while a comms line still reaches the console bus; and, with the fetched model on the dev server, the game speaks approach control in Kokoro, a line said again comes from the kept lines, two lines asked at once both arrive and the median frame holds while a line generates, per backend.",
+			[
+				"neural voice",
+				"Kokoro",
+				"onnxruntime-web",
+				"voice settings",
+				"Commander overlay",
+				"line cache",
+				"Cache Storage",
+				"IndexedDB",
+				"web worker",
+				"WebGPU",
+				"comms",
+			],
+		),
+		entry(
 			"probe-boot.mjs",
 			"Checks that the normal page boots cleanly and exposes the renderer, world, and deterministic seed contract.",
 			["application boot", "renderer", "seed", "window handle", "page errors"],

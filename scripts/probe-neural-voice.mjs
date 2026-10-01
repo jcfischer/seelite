@@ -1,0 +1,339 @@
+/**
+ * The natural voice (#604) in a real browser: the question at boot, the
+ * fallback to the synthesised voice, and Kokoro speaking the game's lines.
+ *
+ *   node scripts/fetch-voice-model.mjs     # once: the model, into public/
+ *   npm run probe:one probe-neural-voice
+ *
+ * **The second half needs the model on the dev server** and fails loudly
+ * without it, naming the command above: a row that skipped would read
+ * exactly like one that passed. The first half serves a made-up manifest
+ * through a route and needs nothing.
+ *
+ * What each check is evidence for:
+ *
+ * - **the question comes before the menu and names the download** — the
+ *   overlay's voice view under `?voices=ask`, its size from the manifest.
+ * - **Not now by mouse, No by keyboard, Download by pad, Esc as Not now** —
+ *   each answer is the settings row's: Ask, Synthesised, Natural, Ask.
+ * - **a voice that cannot load leaves the synthesised voice speaking** —
+ *   every part refused, the voice settles `failed` and a comms line still
+ *   reaches the console bus.
+ * - **the game speaks approach control in the natural voice** — the line
+ *   handed to the bus is Kokoro's, not the formant voice's.
+ * - **a line said again comes from the kept lines** — the second asking
+ *   is a read, far faster than the first generation.
+ * - **two lines asked at once both arrive** — the worker's queue.
+ * - **the median frame holds while a line generates** — the worker keeps
+ *   inference off the main thread; per backend. The p95 is printed and not
+ *   gated: on WebGPU the model shares the GPU with the game, and #604
+ *   measured the p95 at 16 ms idle and 58 ms generating on an M1 Pro.
+ */
+import { STANDARD_INDEX, installFakePad } from "./lib/fake-pad.mjs";
+import { gameUrl } from "./lib/game-url.mjs";
+import {
+	bootedGame,
+	guardedOrigin,
+	launchChromium,
+	tally,
+} from "./probe-guard.mjs";
+
+const origin = await guardedOrigin(
+	process.argv[2] ?? process.env.PROBE_ORIGIN ?? "http://127.0.0.1:5173",
+);
+
+/** A manifest with the same size on both backends, so the question's
+ *  figure does not depend on which one this browser would pick. */
+const FAKE = {
+	version: "0000000000000000",
+	revision: "probe",
+	partBytes: 20971520,
+	backends: {
+		wasm: ["model-wasm", "ort-wasm"],
+		webgpu: ["model-webgpu", "ort-webgpu"],
+	},
+	voices: ["bm_george"],
+	files: Object.fromEntries(
+		[
+			["model-wasm", 50_000_000],
+			["ort-wasm", 11_000_000],
+			["model-webgpu", 50_000_000],
+			["ort-webgpu", 11_000_000],
+			["voice:bm_george", 522_240],
+		].map(([id, bytes]) => [
+			id,
+			{ name: id, bytes, sha256: "0".repeat(64), parts: [`${id}.0.part`] },
+		]),
+	),
+};
+const FAKE_BYTES = 50_000_000 + 11_000_000 + 522_240;
+
+const browser = await launchChromium();
+const { check, watch, exit } = tally();
+const contexts = [];
+try {
+	/** A fresh context with the fake manifest and every part refused. */
+	const askPage = async ({ pad = false } = {}) => {
+		const context = await browser.newContext();
+		contexts.push(context);
+		await context.route("**/voice-model/manifest.json", (r) =>
+			r.fulfill({
+				contentType: "application/json",
+				body: JSON.stringify(FAKE),
+			}),
+		);
+		await context.route("**/voice-model/*.part", (r) =>
+			r.fulfill({ status: 404, body: "" }),
+		);
+		const page = await context.newPage();
+		watch(page);
+		if (pad) await page.addInitScript(installFakePad);
+		await page.goto(gameUrl(origin, { raider: "off", voices: "ask" }));
+		await bootedGame(page, 60000);
+		await page.waitForSelector("[data-voice-question]", { timeout: 20000 });
+		// The size arrives after the view: wait for the figure.
+		await page.waitForFunction(
+			() =>
+				/\d MB/.test(
+					document.querySelector('#seelite-commander [data-row="0"]')
+						?.textContent ?? "",
+				),
+			null,
+			{ timeout: 20000 },
+		);
+		return page;
+	};
+	const state = (page) =>
+		page.evaluate(() => ({
+			asking: document.querySelector("[data-voice-question]") !== null,
+			open: document.querySelector("#seelite-commander") !== null,
+			voice: window.__seelite.settings.value.voice,
+			neural: window.__seelite.neural.state.kind,
+		}));
+
+	// ── The question, by mouse: Not now ────────────────────────────────────
+	const mouse = await askPage();
+	const label = await mouse.$eval(
+		'#seelite-commander [data-row="0"]',
+		(e) => e.textContent,
+	);
+	const want = await mouse.evaluate(
+		async (b) => (await import("/src/commander-overlay.ts")).voiceSize(b),
+		FAKE_BYTES,
+	);
+	check(
+		"the question comes before the menu and names the download",
+		label.includes(want),
+		`row 0 "${label}", want ${want}`,
+	);
+	await mouse.click('#seelite-commander [data-row="1"]');
+	const later = await state(mouse);
+	check(
+		"Not now, by mouse, goes to the menu and leaves the row at Ask",
+		!later.asking && later.open && later.voice === "ask",
+		JSON.stringify(later),
+	);
+
+	// ── By keyboard: No; and Esc ───────────────────────────────────────────
+	const keys = await askPage();
+	await keys.keyboard.press("ArrowDown");
+	await keys.keyboard.press("ArrowDown");
+	await keys.keyboard.press("Enter");
+	const no = await state(keys);
+	const esc = await askPage();
+	await esc.keyboard.press("Escape");
+	const escaped = await state(esc);
+	check(
+		"No, by keyboard, sets Synthesised; Esc is Not now",
+		!no.asking &&
+			no.voice === "formant" &&
+			no.neural === "off" &&
+			!escaped.asking &&
+			escaped.voice === "ask",
+		`No ${JSON.stringify(no)}; Esc ${JSON.stringify(escaped)}`,
+	);
+
+	// ── By pad: Download, against a server that refuses every part ─────────
+	const padPage = await askPage({ pad: true });
+	await padPage.evaluate(async (a) => {
+		window.__pad.hold(a);
+		await window.__frames(3);
+		window.__pad.release(a);
+		await window.__frames(3);
+	}, STANDARD_INDEX.a);
+	await padPage.waitForFunction(
+		() => window.__seelite.neural.state.kind === "failed",
+		null,
+		{ timeout: 30000 },
+	);
+	const chosen = await state(padPage);
+	const fallback = await padPage.evaluate(() => {
+		const g = window.__seelite;
+		const out = [];
+		const speak = g.audio.speak.bind(g.audio);
+		g.audio.speak = (x, rate, bus, space) => {
+			out.push(bus ?? "console");
+			return speak(x, rate, bus, space);
+		};
+		g.sayComms("granted");
+		return { out, reason: g.neural.state.reason };
+	});
+	check(
+		"Download, by pad, sets Natural; a voice that cannot load leaves the synthesised voice speaking",
+		chosen.voice === "neural" &&
+			chosen.neural === "failed" &&
+			fallback.out.length === 1 &&
+			fallback.out[0] === "console",
+		`${JSON.stringify(chosen)}; ${fallback.reason}; said on ${fallback.out.join(", ") || "nothing"}`,
+	);
+
+	// ── The model itself ───────────────────────────────────────────────────
+	const res = await fetch(`${origin}/voice-model/manifest.json`);
+	const served = (res.headers.get("content-type") ?? "").includes("json");
+	check(
+		"the dev server has the model",
+		served,
+		served
+			? "manifest served"
+			: "no /voice-model/manifest.json: run `node scripts/fetch-voice-model.mjs`",
+	);
+	if (served) {
+		// ── The game speaks approach control in the natural voice ───────────
+		const context = await browser.newContext();
+		contexts.push(context);
+		const game = await context.newPage();
+		watch(game);
+		await game.goto(gameUrl(origin, { raider: "off", voices: "neural" }));
+		await bootedGame(game, 60000);
+		await game.waitForFunction(
+			() => ["ready", "failed"].includes(window.__seelite.neural.state.kind),
+			null,
+			{ timeout: 240000, polling: 500 },
+		);
+		const spoken = await game.evaluate(async () => {
+			const g = window.__seelite;
+			const { renderLine } = await import("/src/comms-voice.ts");
+			const said = new Promise((res) => {
+				const speak = g.audio.speak.bind(g.audio);
+				g.audio.speak = (x, rate, bus, space) => {
+					res({ n: x.length, bus: bus ?? "console" });
+					return speak(x, rate, bus, space);
+				};
+			});
+			g.sayComms("granted");
+			return {
+				state: g.neural.state,
+				said: await said,
+				formant: renderLine("granted").length,
+			};
+		});
+		check(
+			"the game speaks approach control in the natural voice",
+			spoken.state.kind === "ready" &&
+				spoken.said.bus === "console" &&
+				spoken.said.n !== spoken.formant &&
+				spoken.said.n > 8000,
+			`${JSON.stringify(spoken.state)}; ${spoken.said.n} samples on ${spoken.said.bus}, the formant line ${spoken.formant}`,
+		);
+
+		// ── Kept lines, the queue and the cadence, per backend ──────────────
+		// `nocomms`: no prewarm running behind the measurement.
+		const bench = await context.newPage();
+		watch(bench);
+		await bench.goto(
+			gameUrl(origin, { raider: "off", voices: "neural,nocomms" }),
+		);
+		await bootedGame(bench, 60000);
+		await bench.waitForFunction(
+			() => ["ready", "failed"].includes(window.__seelite.neural.state.kind),
+			null,
+			{ timeout: 240000, polling: 500 },
+		);
+		const first = await bench.evaluate(
+			() => window.__seelite.neural.state.backend,
+		);
+		const backends = first === "webgpu" ? ["webgpu", "wasm"] : [first];
+		for (const backend of backends) {
+			const r = await bench.evaluate(async (backend) => {
+				const g = window.__seelite;
+				if (g.neural.state.backend !== backend) {
+					g.neural.stop();
+					await g.neural.start(backend);
+				}
+				if (g.neural.state.kind !== "ready") return { state: g.neural.state };
+				const { COMMS_LINES } = await import("/src/comms.ts");
+				const texts = Object.values(COMMS_LINES).map((l) => l.text);
+				const long = texts.join(" ");
+				// A speed no other row uses, so nothing is kept from before.
+				const speed = 0.93 + Math.random() * 0.01;
+				const frames = (until) =>
+					new Promise((res) => {
+						const dt = [];
+						let last = performance.now();
+						const tick = (t) => {
+							dt.push(t - last);
+							last = t;
+							if (until()) res(dt);
+							else requestAnimationFrame(tick);
+						};
+						requestAnimationFrame(tick);
+					});
+				const stats = (dt) => {
+					const s = [...dt].sort((a, b) => a - b);
+					const q = (p) => s[Math.min(s.length - 1, Math.floor(p * s.length))];
+					return { n: s.length, median: q(0.5), p95: q(0.95) };
+				};
+				const t0 = performance.now();
+				const idle = stats(await frames(() => performance.now() - t0 > 2000));
+				let done = false;
+				const g0 = performance.now();
+				const line = g.neural.line(long, "bm_george", speed).finally(() => {
+					done = true;
+				});
+				const busy = stats(await frames(() => done));
+				const samples = await line;
+				const genMs = performance.now() - g0;
+				const k0 = performance.now();
+				const again = await g.neural.line(long, "bm_george", speed);
+				const keptMs = performance.now() - k0;
+				const pair = await Promise.all([
+					g.neural.line(texts[0], "af_bella", speed, true),
+					g.neural.line(texts[1], "am_michael", speed),
+				]);
+				return {
+					state: g.neural.state,
+					seconds: (samples?.length ?? 0) / 16000,
+					genMs,
+					keptMs,
+					same: again?.length === samples?.length,
+					pair: pair.map((p) => p?.length ?? 0),
+					idle,
+					busy,
+				};
+			}, backend);
+			if (r.state.kind !== "ready") {
+				check(`${backend}: the voice is ready`, false, JSON.stringify(r.state));
+				continue;
+			}
+			check(
+				`${backend}: a line said again comes from the kept lines`,
+				r.same && r.keptMs < r.genMs / 5,
+				`${r.seconds.toFixed(1)} s of speech generated in ${r.genMs.toFixed(0)} ms, read back in ${r.keptMs.toFixed(0)} ms`,
+			);
+			check(
+				`${backend}: two lines asked at once both arrive`,
+				r.pair.every((n) => n > 8000),
+				`${r.pair.join(", ")} samples`,
+			);
+			check(
+				`${backend}: the median frame holds while a line generates`,
+				r.busy.median <= r.idle.median * 1.25 + 1,
+				`idle median ${r.idle.median.toFixed(1)} ms p95 ${r.idle.p95.toFixed(1)} (${r.idle.n}); generating median ${r.busy.median.toFixed(1)} p95 ${r.busy.p95.toFixed(1)} (${r.busy.n})`,
+			);
+		}
+	}
+} finally {
+	for (const context of contexts) await context.close().catch(() => {});
+	await browser.close();
+}
+exit();
