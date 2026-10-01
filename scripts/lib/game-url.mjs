@@ -30,6 +30,7 @@ export const WORKBENCH_ROUTES = Object.freeze([
 	"model-viewer",
 	"music-lab",
 	"strings-lab",
+	"voice-lab",
 	"hud-gallery",
 	"galaxy-map",
 	"planet-prototype",

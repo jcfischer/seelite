@@ -210,7 +210,7 @@ async function fly(setup) {
 			// inherited an autopilot still flying the first one — it overrode the
 			// throttle and the attitude every frame and the run measured the
 			// computer under a name that said "hand-flown".
-			g.dockingComputerEngaged = false;
+			g.dockingComputer.disengage();
 			if (setup.computer) {
 				{
 					// A new ship has no docking computer (#408): fit the one this flies.
@@ -503,7 +503,7 @@ const undock = good.docked
 					skipped,
 					stillDocked: g.dockedAt === id,
 					phase: after.dockPhase,
-					computerCanEngage: g.dockingComputerEngaged,
+					computerCanEngage: g.dockingComputer.engaged,
 					throttle: throttleAfterDock,
 					axialKm: after.axialKm,
 					planeKm: after.planeKm,
@@ -581,7 +581,7 @@ if (undock) {
 		`throttle ${undock.throttle}`,
 	);
 	await page.evaluate(() => {
-		window.__seelite.dockingComputerEngaged = false;
+		window.__seelite.dockingComputer.disengage();
 		window.__seelite.setThrottle(0);
 	});
 }
@@ -595,7 +595,7 @@ const passiveFlyby = await page.evaluate(() => {
 	const g = window.__seelite;
 	const D = window.__dock;
 	const id = D.spinner().id;
-	g.dockingComputerEngaged = false;
+	g.dockingComputer.disengage();
 	g.dockingStates.delete(id);
 	g.resetDock();
 	g.lastEntry = null;
@@ -828,7 +828,7 @@ async function directorAt(setup) {
 				{ x: 0, y: 0, z: 0 },
 			);
 			g.targetId = id;
-			g.dockingComputerEngaged = false;
+			g.dockingComputer.disengage();
 			g.setHeadLook(setup.headLook ?? "forward");
 
 			const inward = D.scale(snap.axis, -1);

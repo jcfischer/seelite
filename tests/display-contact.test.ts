@@ -2,6 +2,7 @@ import { expect, test } from "bun:test";
 import { readFileSync } from "node:fs";
 import ts from "typescript";
 import { projectNavTargets } from "../src/cockpit";
+import { DockingComputer } from "../src/docking-computer";
 import { bodyAccelerationBound, bodyVelocity, makeWorld } from "../src/sim";
 import {
 	type DisplayContact,
@@ -368,6 +369,8 @@ test("a jump or a reset takes the cargo contacts with the canisters", () => {
 			],
 			cargoContacts: new Map(),
 			contacts: [] as DisplayContact[],
+			// The teardown disengages it (#596); a plain field once took the write.
+			dockingComputer: new DockingComputer(),
 			selectableCache: null,
 			targetId: null as string | null,
 		},

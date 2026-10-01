@@ -417,6 +417,14 @@ describe("every script boots through the builder", () => {
 			},
 		],
 		[
+			"scripts/probe-voices.mjs",
+			{
+				arg: "`${origin}/__seelite/tree`",
+				reason:
+					'#600\'s offline rows render the voices through the engine and boot no game: the tree declaration is an origin for `import("/src/audio.ts")`; its game rows go through `gameUrl`',
+			},
+		],
+		[
 			"scripts/capture-sounds.mjs",
 			{
 				arg: "`${origin}${TREE_ENDPOINT}`",

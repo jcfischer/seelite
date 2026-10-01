@@ -138,7 +138,7 @@ export function musicTune(systemSeed: number): MusicTune {
 
 /** The parts the second bed plays, on #560's second voices. By ear: the
  *  showcase the principal heard, softened for a bed. */
-const PARTS: Readonly<Record<string, PartSpec>> = {
+export const PARTS: Readonly<Record<string, PartSpec>> = {
 	drone: { voice: "drone", level: 0.4, reverb: 0.5 },
 	strings: {
 		voice: "analog",
@@ -248,7 +248,7 @@ const SNARE_PITCH = 88;
 const HAT_PITCH = 104;
 
 /** The room both beds play in. */
-const SPACE = { reverbS: 5, echoBeats: 0.75, echoFeedback: 0.4 };
+export const SPACE = { reverbS: 5, echoBeats: 0.75, echoFeedback: 0.4 };
 
 /** Degree `d` of `mode` over `tonic`, in the octave whose C is `base`. */
 const degree = (
@@ -259,7 +259,7 @@ const degree = (
 ) => base + tonic + 12 * Math.floor(d / 7) + mode[((d % 7) + 7) % 7];
 
 /** The motif as a statement takes it: degrees and beats, developed. */
-function develop(
+export function develop(
 	m: Motif,
 	how: Development,
 	shift: number,
@@ -288,7 +288,7 @@ function develop(
 }
 
 /** Collects events, with a bar-and-beat position from a running beat count. */
-function writer(beatsPerBar: number) {
+export function writer(beatsPerBar: number) {
 	const events: NoteEvent[] = [];
 	const at = (
 		part: string,
@@ -409,7 +409,7 @@ function bed(opts: {
 
 /** A calm progression, twice, one chord substituted on the repeat and the
  *  last the dominant. */
-function calmChords(rand: () => number): number[] {
+export function calmChords(rand: () => number): number[] {
 	const p =
 		CALM_PROGRESSIONS[
 			Math.floor(rand() * CALM_PROGRESSIONS.length) % CALM_PROGRESSIONS.length
@@ -418,11 +418,11 @@ function calmChords(rand: () => number): number[] {
 }
 
 /** A random pick from a list. */
-const pickOf = <T>(rand: () => number, list: readonly T[]): T =>
+export const pickOf = <T>(rand: () => number, list: readonly T[]): T =>
 	list[Math.floor(rand() * list.length) % list.length];
 
 /** Degree-to-pitch in a level's mode. */
-const inMode =
+export const inMode =
 	(theme: MusicTheme, mode: readonly number[]) => (base: number, d: number) =>
 		degree(mode, theme.tonic, base, d);
 
@@ -558,7 +558,7 @@ function wary(
 /** Threat (harmonic minor): held dark chords, the low acid creeping in two-
  *  bar grooves, offbeat hats and a tom, and the motif's head every three
  *  bars, a step higher each time. */
-function threat(
+export function threat(
 	theme: MusicTheme,
 	tune: MusicTune,
 	rand: () => number,
@@ -615,7 +615,7 @@ function threat(
 /** Combat (phrygian): the kit in grooves that alternate by phrase with a fill
  *  every fourth bar, the acid driving with accents and slides, string stabs
  *  on each chord, a tonic pedal, and the whole motif every eight bars. */
-function combat(
+export function combat(
 	theme: MusicTheme,
 	tune: MusicTune,
 	rand: () => number,

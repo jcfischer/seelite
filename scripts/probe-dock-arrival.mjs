@@ -187,7 +187,7 @@ await page.addInitScript(() => {
 		if (!engage) return snap;
 		g.targetId = id;
 		g.requestDockingClearance();
-		if (!g.dockingComputerEngaged) {
+		if (!g.dockingComputer.engaged) {
 			// A new ship has no docking computer (#408): fit the one this flies.
 			if (!g.hasDockingComputer)
 				g.commander = {

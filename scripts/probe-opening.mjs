@@ -593,7 +593,7 @@ const fallback = await failing.page.evaluate(() => {
 		dockPhase: g.dockPhase,
 		regime: g.regime,
 		spooling: g.spoolLeftS > 0,
-		computer: g.dockingComputerEngaged,
+		computer: g.dockingComputer.engaged,
 		stationId: g.dock.stationId,
 	};
 });
