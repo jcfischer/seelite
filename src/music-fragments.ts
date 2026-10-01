@@ -231,3 +231,89 @@ export const THREAT_KIT: KitBar = {
 	snare: "................",
 	hat: "..x...x...x...x.",
 };
+
+/**
+ * The third bed's material (the Berlin-school prototype): original, in the
+ * manner of Tangerine Dream's sequencer records and Klaus Schulze, taking no
+ * sequence, melody or progression from either (both are protected works, so
+ * they give manner only, as the map's Constraints say).
+ *
+ * The second bed's motifs were heard as boring: four or five stepwise notes
+ * in long values. These are two bars each, with repeated notes, leaps past
+ * the octave and eighths and sixteenths against a long last note, so a
+ * statement has a rhythm of its own and is answered (`answerOf` in
+ * `music-generate-berlin.ts`) rather than left hanging.
+ */
+export const BERLIN_MOTIFS: readonly Motif[] = [
+	{
+		name: "signal",
+		degrees: [4, 4, 7, 4, 3, 2, 0],
+		beats: [0.75, 0.25, 1, 1, 0.5, 0.5, 4],
+	},
+	{
+		name: "orbit",
+		degrees: [0, 2, 4, 7, 9, 7, 4, 2],
+		beats: [0.5, 0.5, 0.5, 0.5, 1.5, 0.5, 1, 3],
+	},
+	{
+		name: "beacon",
+		degrees: [7, 7, 7, 5, 4, 5, 2],
+		beats: [0.5, 0.25, 0.25, 1, 1, 1, 4],
+	},
+	{
+		name: "leap",
+		degrees: [0, 7, 6, 4, 2, 4, 0, -1],
+		beats: [1, 1.5, 0.5, 1, 0.5, 0.5, 1, 2],
+	},
+	{
+		name: "drift",
+		degrees: [2, 3, 2, 0, 4, 3, 2, 1],
+		beats: [0.75, 0.75, 0.5, 2, 0.75, 0.75, 0.5, 2],
+	},
+	{
+		name: "flare",
+		degrees: [0, 4, 7, 11, 9, 7],
+		beats: [0.5, 0.5, 0.5, 0.5, 2, 4],
+	},
+	{
+		name: "relay",
+		degrees: [4, 2, 4, 2, 5, 4, 2, 0],
+		beats: [0.5, 0.5, 0.5, 0.5, 1, 1, 1, 3],
+	},
+	{
+		name: "rise",
+		degrees: [-3, 0, 2, 4, 2, 4, 7],
+		beats: [1, 0.5, 0.5, 1, 0.5, 0.5, 4],
+	},
+];
+
+/**
+ * The running sequence: sixteen sixteenths a bar, scale degrees above the
+ * chord's root (7 an octave), `null` a rest. Transposed with the harmony and
+ * mutated a step at a time as it runs, as a player at a step sequencer would.
+ */
+export const SEQUENCES: readonly (readonly (number | null)[])[] = [
+	[0, 7, 4, 7, 2, 7, 4, 7, 0, 7, 4, 7, 5, 4, 2, 4],
+	[0, 0, 7, 0, 4, 0, 9, 0, 0, 0, 7, 0, 11, 9, 7, 4],
+	[0, 4, 7, 4, 9, 7, 4, 7, 0, 4, 7, 4, 11, 9, 7, 9],
+	[0, 2, 4, 0, 7, 4, 2, 4, 0, 2, 4, 0, 9, 7, 4, 2],
+	[7, 0, 4, 0, 7, 0, 5, 0, 7, 0, 4, 0, 9, 0, 7, 4],
+	[0, null, 7, 0, 4, null, 7, 5, 0, null, 7, 0, 4, 2, -1, 2],
+];
+
+/** The high counter-sequence: an odd length run in sixteenths, so it phases
+ *  against the bar and the running sequence and lines up again only after
+ *  that many bars. */
+export const ODD_SEQUENCES: readonly (readonly number[])[] = [
+	[0, 4, 7, 9, 4],
+	[7, 4, 2, 4, 9, 7],
+	[0, 2, 4, 7, 4, 2, 9],
+	[11, 7, 4, 7, 9],
+];
+
+/** The bass pulse: eight eighths a bar above the chord's root, 7 an octave. */
+export const PULSES: readonly (readonly number[])[] = [
+	[0, 7, 0, 7, 0, 7, 0, 7],
+	[0, 0, 7, 0, 0, 7, 0, 7],
+	[0, 7, 0, 7, 0, 7, 4, 7],
+];

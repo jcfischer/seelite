@@ -68,6 +68,21 @@ export const BUS_FULL_GAIN: Readonly<Record<Bus, number>> = {
 	music: 1,
 };
 
+/** The buses a spoken line plays through (#600): comms on the console, a
+ *  voice in the music on the music bus. */
+export type SpeechBus = "console" | "music";
+
+/** A far-off voice's room (#600): its level, and an echo that darkens as it
+ *  repeats. */
+export interface SpeechSpace {
+	readonly level: number;
+	readonly echoS: number;
+	readonly feedback: number;
+}
+const SPEECH_ECHO_LOWPASS_HZ = 1800;
+/** The longest a far-off voice's echo is kept connected after its line. */
+export const SPEECH_ECHO_MAX_TAIL_S = 10;
+
 /**
  * A settings step, `0`..`1`, as a bus gain (#542 D2).
  *
@@ -308,6 +323,118 @@ export class AudioFX {
 			console: bus("console"),
 			music: bus("music"),
 		};
+	}
+
+	/** Per bus, when the line speaking now ends and the line waiting behind
+	 *  it (#600). */
+	private readonly spoken = new Map<
+		SpeechBus,
+		{
+			speakingEnds: number;
+			waiting: { src: AudioBufferSourceNode; from: number; len: number } | null;
+		}
+	>();
+
+	/**
+	 * Play a rendered speech line through `bus` (#600): comms on the console
+	 * bus, where the ship's instruments speak (D1), and a far-off voice in the
+	 * music on the music bus, through `space`'s echo. Every node is built here
+	 * and ends on a bus, so the rows the player sets are still the only levels.
+	 *
+	 * One line speaks at a time per bus. A line that arrives while one speaks
+	 * waits for its end, and a newer waiting line replaces the older, so a burst
+	 * of answers says the latest rather than a backlog.
+	 *
+	 * Returns the line's length, s, or `null` before there is a context.
+	 */
+	speak(
+		samples: Float32Array,
+		sampleRate: number,
+		bus: SpeechBus = "console",
+		space?: SpeechSpace,
+	): number | null {
+		const ctx = this.ctx;
+		const buses = this.buses;
+		if (!ctx || !buses) return null;
+		const buf = ctx.createBuffer(1, samples.length, sampleRate);
+		buf.getChannelData(0).set(samples);
+		const src = ctx.createBufferSource();
+		src.buffer = buf;
+		const out = buses[bus];
+		if (space) this.room(ctx, src, out, space);
+		else src.connect(out);
+		const len = samples.length / sampleRate;
+		src.start(this.queueLine(bus, src, len, ctx.currentTime));
+		return len;
+	}
+
+	/** A far-off voice's room between `src` and `out`: quieter, and mostly
+	 *  its own echo, darkening as it repeats. */
+	private room(
+		ctx: BaseAudioContext,
+		src: AudioBufferSourceNode,
+		out: AudioNode,
+		space: SpeechSpace,
+	) {
+		const level = ctx.createGain();
+		level.gain.value = space.level;
+		const delay = ctx.createDelay(2);
+		delay.delayTime.value = space.echoS;
+		const tone = ctx.createBiquadFilter();
+		tone.type = "lowpass";
+		tone.frequency.value = SPEECH_ECHO_LOWPASS_HZ;
+		const fb = ctx.createGain();
+		fb.gain.value = space.feedback;
+		src.connect(level);
+		level.connect(out);
+		level.connect(delay);
+		delay.connect(tone);
+		tone.connect(fb);
+		fb.connect(delay);
+		tone.connect(out);
+		// A loop never falls silent on its own terms, so it is taken apart
+		// once the line has ended and the echo has fallen 60 dB — and never
+		// later than `SPEECH_ECHO_MAX_TAIL_S`: at a feedback of 1 it would
+		// never fall at all.
+		const fb1 = Math.min(0.99, Math.max(1e-3, space.feedback));
+		const tailS = Math.min(
+			SPEECH_ECHO_MAX_TAIL_S,
+			(space.echoS * Math.log(1e-3)) / Math.log(fb1),
+		);
+		src.onended = () =>
+			setTimeout(() => {
+				for (const n of [level, delay, tone, fb]) n.disconnect();
+			}, tailS * 1000);
+	}
+
+	/** When a line of `len` s on `bus` starts, asked for at `now`: after the
+	 *  one speaking, replacing a line still waiting. */
+	private queueLine(
+		bus: SpeechBus,
+		src: AudioBufferSourceNode,
+		len: number,
+		now: number,
+	): number {
+		const slot = this.spoken.get(bus) ?? { speakingEnds: 0, waiting: null };
+		let from: number;
+		if (slot.waiting && slot.waiting.from > now) {
+			slot.waiting.src.stop();
+			from = slot.waiting.from;
+		} else {
+			if (slot.waiting)
+				slot.speakingEnds = Math.max(
+					slot.speakingEnds,
+					slot.waiting.from + slot.waiting.len,
+				);
+			from = Math.max(now, slot.speakingEnds);
+		}
+		if (from > now) slot.waiting = { src, from, len };
+		else {
+			slot.speakingEnds = from + len;
+			slot.waiting = null;
+		}
+		this.spoken.set(bus, slot);
+		return from;
 	}
 
 	/**

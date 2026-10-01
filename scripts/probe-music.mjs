@@ -104,32 +104,37 @@ const RENDERED = {
 	// #548's director renders fade in by design — a crossfade from silence,
 	// and a drone's or station pad's slow attack — so each carries its own
 	// onset, in the band like the rest, rather than the limiter's 10 ms.
-	// Measured on the second bed (D12) over each render's opening
-	// `PROBE_RENDER_S`, the ladder whole; the `-legacy` rows are the first
-	// bed, kept to compare against.
+	// Measured on the Berlin bed (#600) as it merges — approved by ear on
+	// 2026-09-30, then changed in review where the principal has not heard it
+	// (4-bar wash notes, no wash under the threat, no cruise stem in a fight) —
+	// over each
+	// render's opening `PROBE_RENDER_S`, the ladder whole; `-second` is the
+	// second bed (D12) and the `-legacy` rows the first, kept to compare
+	// against.
 	"music-adaptive-run-a": {
-		rms: 0.01828,
-		peak: 0.09585,
-		hz: 694,
-		onset: 387.94,
+		rms: 0.01545,
+		peak: 0.07171,
+		hz: 889,
+		onset: 426.73,
 	},
 	"music-adaptive-run-b": {
-		rms: 0.01777,
-		peak: 0.0979,
-		hz: 1009,
-		onset: 394.77,
+		rms: 0.01553,
+		peak: 0.08242,
+		hz: 1100,
+		onset: 397.88,
 	},
 	"music-adaptive-ladder": {
-		rms: 0.0287,
-		peak: 0.14727,
-		hz: 694,
-		onset: 387.94,
+		rms: 0.02435,
+		peak: 0.16218,
+		hz: 1220,
+		onset: 422.08,
 	},
-	"music-calm": { rms: 0.02423, peak: 0.12964, hz: 694, onset: 387.94 },
+	"music-calm": { rms: 0.01749, peak: 0.11267, hz: 1220, onset: 422.08 },
+	"music-calm-second": { rms: 0.02423, peak: 0.12964, hz: 694, onset: 387.94 },
 	"music-calm-legacy": { rms: 0.01264, peak: 0.0644, hz: 1104, onset: 298.25 },
-	"music-wary": { rms: 0.02306, peak: 0.14824, hz: 476, onset: 298.9 },
-	"music-threat": { rms: 0.01908, peak: 0.10102, hz: 2078, onset: 314.08 },
-	"music-combat": { rms: 0.01867, peak: 0.10714, hz: 1435, onset: 145 },
+	"music-wary": { rms: 0.01656, peak: 0.11233, hz: 568, onset: 136.35 },
+	"music-threat": { rms: 0.01807, peak: 0.10341, hz: 1582, onset: 255.65 },
+	"music-combat": { rms: 0.01775, peak: 0.11183, hz: 2688, onset: 229.08 },
 	"music-station-trade-legacy": {
 		rms: 0.01045,
 		peak: 0.05091,
@@ -137,28 +142,28 @@ const RENDERED = {
 		onset: 494.46,
 	},
 	"music-station-trade": {
-		rms: 0.02341,
-		peak: 0.14354,
-		hz: 694,
-		onset: 387.94,
+		rms: 0.01665,
+		peak: 0.09226,
+		hz: 889,
+		onset: 426.73,
 	},
 	"music-station-refinery": {
-		rms: 0.02616,
-		peak: 0.14289,
-		hz: 611,
-		onset: 387.44,
+		rms: 0.01648,
+		peak: 0.07835,
+		hz: 1126,
+		onset: 400.06,
 	},
 	"music-station-shipyard": {
-		rms: 0.02,
-		peak: 0.09451,
-		hz: 694,
-		onset: 387.94,
+		rms: 0.01651,
+		peak: 0.09143,
+		hz: 836,
+		onset: 426.73,
 	},
 	"music-station-outpost": {
-		rms: 0.02006,
-		peak: 0.09585,
-		hz: 694,
-		onset: 387.94,
+		rms: 0.01625,
+		peak: 0.07503,
+		hz: 995,
+		onset: 426.73,
 	},
 };
 /** The limiter's 6 ms look-ahead and a render quantum and a half (4 ms at
@@ -297,11 +302,13 @@ try {
 	// brightness — so this counts transients: 10 ms frames of the first
 	// difference's energy that jump past twice the mean of the four before.
 	// Threat's hats and acid and combat's kit and sixteenths are what it
-	// hears. On the second bed calm reads 0.00/s — its slow attacks and long
-	// reverb make no jumps — so a ratio to calm alone would pass anything:
+	// hears. On the second bed calm read 0.00/s — its slow attacks and long
+	// reverb made no jumps — so a ratio to calm alone would pass anything:
 	// each level also has a floor of its own, and combat must be busier than
-	// the threat. Wary's bass is dark and low and barely registers (0.13/s),
-	// so wary is left to the ear.
+	// the threat. The Berlin bed's calm reads about 0.7/s under its noise
+	// wash (#600), and so does wary, so wary is still left to the ear.
+	// **A held note outlives a jump**: the Berlin wash's first 32-bar notes
+	// rang on into the threat and read it at 0.06/s here.
 	const ladder = rendered.get("music-adaptive-ladder");
 	if (ladder) {
 		const perS = (a, b) => {

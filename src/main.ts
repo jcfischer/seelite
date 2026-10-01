@@ -131,8 +131,22 @@ import {
 	type MusicScene,
 	type MusicState,
 	musicArms,
+	numbersOn,
 	stepMusic,
 } from "./music-director";
+import {
+	type CommsLineId,
+	clearanceLine,
+	numbersPhrase,
+	voiceArms,
+} from "./comms";
+import {
+	prewarmComms,
+	renderLine,
+	renderNumbersAhead,
+	SPEECH_RATE,
+	sayNumbers,
+} from "./comms-voice";
 import {
 	type WeaponSoundState,
 	QUIET_WEAPONS,
@@ -1134,6 +1148,16 @@ if (MUSIC_ARMS.unknown.length)
 	console.warn(
 		`?music: unknown ${MUSIC_ARMS.unknown.join(", ")}; playing the defaults for those`,
 	);
+/**
+ * Which voices speak (#600), from `?voices=`: `off`, `nocomms` or
+ * `nomusic`. Approach control and hails on the console bus; the numbers
+ * station in the Berlin bed's calm on the music bus.
+ */
+const VOICE_ARMS = voiceArms(
+	new URLSearchParams(window.location.search).get("voices"),
+);
+/** The director's arms: `?music=`'s, with `?voices=`'s say on the numbers. */
+const DIRECTOR_ARMS = { ...MUSIC_ARMS.arms, voice: VOICE_ARMS.music };
 const RAIDERS_OFF =
 	RAIDER_PARAM !== null && ["off", "0", "false"].includes(RAIDER_PARAM);
 const RAIDER_PLAYTEST = RAIDER_PARAM !== null && !RAIDERS_OFF;
@@ -4358,6 +4382,8 @@ class Game {
 			// these listeners are removed below, so nothing here attaches again.
 			// Whether a later `attach` retries is #547's and #548's to decide.
 			if (ctx && bus) this.music.attach(ctx, bus).catch(() => {});
+			// The comms lines, rendered in idle time before one is needed (#600).
+			if (VOICE_ARMS.comms) prewarmComms();
 			window.removeEventListener("pointerdown", unlockAudio);
 			window.removeEventListener("keydown", unlockAudio);
 		};
@@ -6828,6 +6854,8 @@ class Game {
 		// A message, which played `alert` before #546 and still does on
 		// `?consolesound=legacy`.
 		this.consoleNotify("message", "hail");
+		// The struck carrier, on the radio (#600).
+		this.sayComms("ceaseFire");
 	}
 
 	/**
@@ -10123,6 +10151,9 @@ class Game {
 		// the docking computer asks again and again.
 		const answer = clearanceTone(prev.clearance, next.clearance);
 		if (answer) this.consoleNotify(answer);
+		// And says it (#600), on the same changes of answer.
+		const line = clearanceLine(prev.clearance, next.clearance);
+		if (line) this.sayComms(line);
 		if (next.clearance.kind === "queued")
 			this.openPlayerTrafficEvent(
 				chosen.id,
@@ -10567,6 +10598,8 @@ class Game {
 				this.world.gameTime,
 			);
 			this.openPlayerTrafficEvent(id, "lane", this.world.gameTime, "arrival");
+			// Approach control's welcome as the arrival begins (#600).
+			this.sayComms("welcome");
 			this.world.ship.vel = stationVel;
 			// #183 D7: the dock banks what the flight earned, and the station's
 			// first dock. **Before the flush below**, which writes `lastDocked`
@@ -12373,10 +12406,31 @@ class Game {
 				stationRole: station?.type ?? null,
 			},
 			dt,
-			MUSIC_ARMS.arms,
+			DIRECTOR_ARMS,
 		);
 		this.musicState = step.state;
 		for (const cmd of step.commands) this.music.send(cmd);
+		// The numbers station, far off in the music (#600). The next phrase is
+		// rendered ahead, in idle time, never inside this step.
+		// Only where it will be said, and worked out only when it changes.
+		if (numbersOn(DIRECTOR_ARMS) && step.state.bed === "flight") {
+			const seed = this.world.system.record.seed;
+			const n = step.state.voiceN;
+			if (seed !== this.numbersAhead.seed || n !== this.numbersAhead.n) {
+				this.numbersAhead = { seed, n };
+				renderNumbersAhead(numbersPhrase(seed, n));
+			}
+		}
+		if (step.voice) sayNumbers(this.audio, step.voice);
+	}
+
+	/** The numbers phrase last rendered ahead: its system and index (#600). */
+	private numbersAhead = { seed: Number.NaN, n: -1 };
+
+	/** A comms line through the radio, on the console bus (#600). Rendered
+	 *  once per line and kept (`comms-voice.ts`). */
+	private sayComms(id: CommsLineId) {
+		if (VOICE_ARMS.comms) this.audio.speak(renderLine(id), SPEECH_RATE);
 	}
 	/** The director's memory: bed, level, its hold and the variant (#548). */
 	private musicState: MusicState = initialMusicState();
@@ -17851,6 +17905,11 @@ if (postcard) {
 	// them, for the principal's ear. No world, no render loop.
 	const { mountMusicLab } = await import("./music-lab");
 	mountMusicLab();
+} else if (query.has("voice-lab")) {
+	// The voice prototype's listening surface: the formant synthesiser and the
+	// radio, with no game behind them.
+	const { mountVoiceLab } = await import("./voice-lab");
+	mountVoiceLab();
 } else if (query.has("hud-gallery")) {
 	const { mountStateGallery } = await import("./state-gallery");
 	mountStateGallery();
