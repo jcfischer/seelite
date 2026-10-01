@@ -141,7 +141,8 @@ describe("the quiet public threshold", () => {
 	/**
 	 * Counterscale's tracker also reports on `history.pushState` and on
 	 * `popstate`, which any move to a fragment fires too. So the Trust line
-	 * "Nothing the game does after launch leaves your machine" holds only while
+	 * "Nothing the game does after launch leaves your machine" (save the natural
+	 * voice's download, which the line names, #604) holds only while
 	 * no module does either (#569). A `location.assign` to another URL is a new
 	 * page load and is counted as one, which is what the Trust line says.
 	 *
