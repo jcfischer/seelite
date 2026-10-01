@@ -111,13 +111,19 @@ export const CRUISE_TEMPO = 1.06;
 /** The ship bus under the waltz (#547 D5): about 6 dB. */
 export const WALTZ_DUCK_DB = 6;
 
+const cadences = new Map<DanubeVoicing, number>();
+
 /**
- * From the plane to the cadence's end (#547 D1): one waltz bar at most to
- * reach the line the `resolve` lands on, then the cadence on the score's own
- * tempo map, which broadens it. The station bed comes in after it. Read off
- * the score, so a retuned cadence moves it.
+ * From the plane to the cadence's end (#547 D1), in one voicing: one waltz
+ * bar at most to reach the line the `resolve` lands on, then the cadence on
+ * that song's own tempo map, which broadens it. The station bed comes in
+ * after it. Read off the song the director loads, so a retuned cadence — or a
+ * voicing given a tempo map of its own — moves it (sage round 1).
  */
-export const WALTZ_CADENCE_S = ((song: Song): number => {
+export const waltzCadenceS = (voicing: DanubeVoicing): number => {
+	const known = cadences.get(voicing);
+	if (known !== undefined) return known;
+	const song = danubeSong(voicing);
 	const at = song.sections.findIndex((x) => x.name === song.resolve);
 	if (at < 0) throw new Error(`${song.name} has no resolve section`);
 	const first = song.sections.slice(0, at).reduce((n, x) => n + x.bars, 0);
@@ -127,8 +133,9 @@ export const WALTZ_CADENCE_S = ((song: Song): number => {
 		const b0 = bpmAt(song.tempo, bar, false);
 		s += beatSeconds(b0, bpmAt(song.tempo, bar, true), beats, beats);
 	}
+	cadences.set(voicing, s);
 	return s;
-})(danubeSong("hybrid"));
+};
 
 /** Whether these arms play the numbers station at all (#600): the one
  *  gate the director says them by and the host renders them ahead by. */
@@ -193,6 +200,9 @@ export const DEFAULT_MUSIC_ARMS: MusicArms = {
 	voice: true,
 	waltz: "hybrid",
 };
+
+/** The default voicing's cadence hold, for the tests and the probe. */
+export const WALTZ_CADENCE_S = waltzCadenceS(DEFAULT_MUSIC_ARMS.waltz);
 
 export function musicArms(value: string | null): {
 	arms: MusicArms;
@@ -316,18 +326,21 @@ const settle = (cruise: boolean): MusicCommand[] => [
 export const waltzDuckDb = (s: MusicState): number =>
 	s.waltz === "playing" ? WALTZ_DUCK_DB : 0;
 
-export function stepMusic(
+/**
+ * The docking computer's waltz (#603), ahead of the beds: `done` when this
+ * step belongs to it. Otherwise the bed logic carries on from the state and
+ * commands it returns — a cancel's fade, then whatever the scene plays.
+ */
+function stepWaltz(
 	state: MusicState,
 	r: MusicReading,
 	dt: number,
-	arms: MusicArms = DEFAULT_MUSIC_ARMS,
-): { state: MusicState; commands: MusicCommand[]; voice?: string } {
+	arms: MusicArms,
+): { state: MusicState; commands: MusicCommand[]; done: boolean } {
 	let s = state;
 	const cmds: MusicCommand[] = [];
-	if (!r.ready) return { state: s, commands: cmds };
-
-	// The waltz (#603). A run ends one of two ways, and both are read before
-	// the hold, because death holds the clock and still owes its fade.
+	// A run ends one of two ways, and both are read before the hold, because
+	// death holds the clock and still owes its fade.
 	if (s.waltz === "playing" && (arms.off || r.scene !== "dockingComputer")) {
 		if (r.scene === "docked" && !arms.off) {
 			// The plane (D1): the loop goes to the cadence on the bar.
@@ -335,6 +348,7 @@ export function stepMusic(
 			return {
 				state: { ...s, waltz: "resolving", waltzS: 0 },
 				commands: cmds,
+				done: true,
 			};
 		}
 		// Anything else (D2): two bars' fade, then whatever the scene plays.
@@ -344,16 +358,19 @@ export function stepMusic(
 	if (s.waltz === "resolving") {
 		// The cadence plays out into the berth; the station bed waits for it.
 		// Out of the dock early (a launch), the bed's crossfade takes it.
-		if (r.scene === "docked" && !arms.off && s.waltzS < WALTZ_CADENCE_S) {
+		// The voicing that is playing: `waltzKey` is set by the load.
+		const hold = waltzCadenceS(s.waltzKey ?? arms.waltz);
+		if (r.scene === "docked" && !arms.off && s.waltzS < hold) {
 			const waltzS = r.held ? s.waltzS : s.waltzS + dt;
-			if (waltzS < WALTZ_CADENCE_S)
-				return { state: { ...s, waltzS }, commands: cmds };
+			if (waltzS < hold)
+				return { state: { ...s, waltzS }, commands: cmds, done: true };
 		}
 		s = { ...s, waltz: "none", waltzS: 0 };
 	}
 	if (r.scene === "dockingComputer" && !arms.off) {
 		// Held — the opening, a menu — nothing starts.
-		if (s.waltz === "playing" || r.held) return { state: s, commands: cmds };
+		if (s.waltz === "playing" || r.held)
+			return { state: s, commands: cmds, done: true };
 		if (s.waltzKey !== arms.waltz)
 			cmds.push({ type: "load", id: "danube", song: danubeSong(arms.waltz) });
 		// `play`, not a crossfade: the bed stops starting notes on its line and
@@ -362,8 +379,23 @@ export function stepMusic(
 		return {
 			state: { ...s, bed: "none", waltz: "playing", waltzKey: arms.waltz },
 			commands: cmds,
+			done: true,
 		};
 	}
+	return { state: s, commands: cmds, done: false };
+}
+
+export function stepMusic(
+	state: MusicState,
+	r: MusicReading,
+	dt: number,
+	arms: MusicArms = DEFAULT_MUSIC_ARMS,
+): { state: MusicState; commands: MusicCommand[]; voice?: string } {
+	if (!r.ready) return { state, commands: [] };
+	const waltz = stepWaltz(state, r, dt, arms);
+	if (waltz.done) return { state: waltz.state, commands: waltz.commands };
+	let s = waltz.state;
+	const cmds = waltz.commands;
 
 	// Before the hold: death holds the clock as the ship dies, and the fade is
 	// what it owes (D2).

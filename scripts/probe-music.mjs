@@ -899,7 +899,8 @@ try {
 		const { WALTZ_CADENCE_S, WALTZ_DUCK_DB } = await game.evaluate(
 			() => import("/src/music-director.ts"),
 		);
-		const duck = 10 ** (-WALTZ_DUCK_DB / 20);
+		const { duckGain } = await game.evaluate(() => import("/src/audio.ts"));
+		const duck = duckGain(WALTZ_DUCK_DB);
 		const run = await engage();
 		const types = (sent) =>
 			sent
@@ -971,6 +972,9 @@ try {
 				plane.bed === "station" &&
 				plane.waitS !== null &&
 				plane.waitS >= WALTZ_CADENCE_S - 0.25 &&
+				// Two-sided, as the headless row is (sage round 1): a bed held
+				// far past the cadence fails as well as one that cut it.
+				plane.waitS <= WALTZ_CADENCE_S + 1.5 &&
 				plane.lateErrors.length === 0,
 			`ship bus x${(plane.midDuck / run.before).toFixed(3)} 1.5 s after; station bed ${plane.waitS?.toFixed(2)} s after the plane against a ${WALTZ_CADENCE_S.toFixed(2)} s cadence; bed ${plane.bed}; errors ${plane.lateErrors.join("; ") || 0}`,
 		);

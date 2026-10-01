@@ -12,6 +12,7 @@ import {
 	initialMusicState,
 	WALTZ_CADENCE_S,
 	WALTZ_DUCK_DB,
+	waltzCadenceS,
 	waltzDuckDb,
 	LOW_HULL_SHARE,
 	LOW_SHIELD_SHARE,
@@ -439,6 +440,24 @@ describe("the docking computer's waltz (#603)", () => {
 		// 4 x 1.5 s, after at most one 1.125 s bar of the waltz to its line.
 		expect(WALTZ_CADENCE_S).toBeGreaterThan(5 * 1.125);
 		expect(WALTZ_CADENCE_S).toBeLessThan(1.125 + 4 * 1.5);
+	});
+
+	test("the cadence's hold is the playing voicing's, read off its own song (sage round 1)", () => {
+		expect(WALTZ_CADENCE_S).toBe(waltzCadenceS("hybrid"));
+		// The three share Strauss's tempo map today; each is still read off
+		// its own song, so a voicing that changed it would move its own hold.
+		for (const v of ["orchestra", "oxygene"] as const)
+			expect(waltzCadenceS(v)).toBeCloseTo(WALTZ_CADENCE_S, 9);
+		// And the resolving branch reads the voicing that was loaded, not the
+		// arms of the step: the station bed waits the same with arms changed.
+		const oxygene = { ...DEFAULT_MUSIC_ARMS, waltz: "oxygene" as const };
+		let state = fly([
+			[1, calm],
+			[20, computer],
+		]).state;
+		state = stepMusic(state, arriving, 0.1, oxygene).state;
+		expect(state.waltz).toBe("resolving");
+		expect(state.waltzKey).toBe("hybrid");
 	});
 
 	test("the pilot takes the stick: a two-bar fade, and the bed is back on the bar (D2)", () => {
