@@ -1104,6 +1104,9 @@ export const CLASSICAL_SET = Object.freeze(
 		["debussy-cathedrale", 70],
 		["debussy-clair-de-lune", 66],
 		["grieg-mountain-king", 68],
+		["borodin-steppes", 63],
+		["rachmaninoff-isle-of-the-dead", 60],
+		["saint-saens-aquarium", 55],
 	]).map(([id, seconds]) => ({
 		name: `classical-${id}`,
 		seconds,

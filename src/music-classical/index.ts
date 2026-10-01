@@ -7,6 +7,7 @@ import type { Song } from "../music-score";
 import { BACH_AIR, BACH_AIR_SECONDS } from "./bach-air";
 import { JESU_JOY, JESU_JOY_SECONDS } from "./bach-jesu-joy";
 import { WACHET_AUF, WACHET_AUF_SECONDS } from "./bach-wachet-auf";
+import { STEPPES, STEPPES_SECONDS } from "./borodin-steppes";
 import { BRUCKNER_ADAGIO, BRUCKNER_ADAGIO_SECONDS } from "./bruckner-7-adagio";
 import { CATHEDRALE, CATHEDRALE_SECONDS } from "./debussy-cathedrale";
 import { CLAIR_DE_LUNE, CLAIR_DE_LUNE_SECONDS } from "./debussy-clair-de-lune";
@@ -16,6 +17,11 @@ import { MOUNTAIN_KING, MOUNTAIN_KING_SECONDS } from "./grieg-mountain-king";
 import { MARS, MARS_SECONDS } from "./holst-mars";
 import { NEPTUNE, NEPTUNE_SECONDS } from "./holst-neptune";
 import { SATURN, SATURN_SECONDS } from "./holst-saturn";
+import {
+	ISLE_OF_THE_DEAD,
+	ISLE_OF_THE_DEAD_SECONDS,
+} from "./rachmaninoff-isle-of-the-dead";
+import { AQUARIUM, AQUARIUM_SECONDS } from "./saint-saens-aquarium";
 import { GNOSSIENNE, GNOSSIENNE_SECONDS } from "./satie-gnossienne-1";
 import { GYMNOPEDIE, GYMNOPEDIE_SECONDS } from "./satie-gymnopedie-1";
 import { ZARATHUSTRA, ZARATHUSTRA_SECONDS } from "./strauss-zarathustra";
@@ -48,6 +54,12 @@ export const CLASSICAL_WORKS: Readonly<
 		song: MOUNTAIN_KING,
 		seconds: MOUNTAIN_KING_SECONDS,
 	},
+	"borodin-steppes": { song: STEPPES, seconds: STEPPES_SECONDS },
+	"rachmaninoff-isle-of-the-dead": {
+		song: ISLE_OF_THE_DEAD,
+		seconds: ISLE_OF_THE_DEAD_SECONDS,
+	},
+	"saint-saens-aquarium": { song: AQUARIUM, seconds: AQUARIUM_SECONDS },
 };
 
 /** Every work's song by its id, as `renderInPage` loads them. */
