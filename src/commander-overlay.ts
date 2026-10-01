@@ -245,12 +245,14 @@ export const voiceSize = (bytes: number) =>
  * the pad reads `Esc` alone.
  */
 export function commanderHint(
-	kind: "menu" | "form",
+	kind: "menu" | "form" | "question",
 	running: boolean,
 	closeKeys: readonly string[],
 ): string {
 	if (kind === "form")
 		return "↑↓ choose · type in a field · Enter do it · Esc back";
+	// #604: the voice question has no field, and Esc is its "Not now".
+	if (kind === "question") return "↑↓ choose · Enter do it · Esc not now";
 	const close = running
 		? ` · ${["Esc", ...closeKeys].join(" or ")} to close`
 		: "";
@@ -707,7 +709,11 @@ export function mountCommanderOverlay(
 		}
 		const hint = escapeHtml(
 			commanderHint(
-				view.kind === "menu" ? "menu" : "form",
+				view.kind === "menu"
+					? "menu"
+					: view.kind === "voice"
+						? "question"
+						: "form",
 				running,
 				options.ownKey.names(),
 			),

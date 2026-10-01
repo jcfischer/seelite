@@ -322,7 +322,7 @@ const SCHEMA = {
 		label: "Voice",
 		describe: (v: string) =>
 			v === "neural" ? "Natural" : v === "formant" ? "Synthesised" : "Ask",
-		note: "Natural is a speech model that runs in your browser: about 100 to 180 MB, downloaded once from this site and kept in your browser, and speaking a little after each event. Synthesised is the game's own small voice, with nothing to download. Choosing Synthesised deletes the downloaded voice and every line it kept. Ask puts the question on the Commander screen.",
+		note: "Natural is a speech model that runs in your browser: about 110 to 190 MB, downloaded once from this site and kept in your browser. Until it is ready, the synthesised voice speaks. Synthesised is the game's own small voice, with nothing to download. Choosing Synthesised deletes the downloaded voice and every line it kept. Ask puts the question on the Commander screen.",
 	},
 } as const;
 

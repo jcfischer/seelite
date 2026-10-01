@@ -10,11 +10,13 @@
 
 import { describe, expect, test } from "bun:test";
 import {
+	commanderHint,
 	commanderMenu,
 	freeCommanderName,
 	initialCursor,
 	type MenuInput,
 	parseSeed,
+	voiceSize,
 } from "../src/commander-overlay";
 
 const base: MenuInput = {
@@ -122,5 +124,18 @@ describe("New game's defaults", () => {
 		expect(parseSeed("4294967295")).toBe(0xffff_ffff);
 		for (const bad of ["", " ", "-1", "1.5", "4294967296", "abc", "1e3"])
 			expect(`${bad}: ${parseSeed(bad)}`).toBe(`${bad}: null`);
+	});
+});
+
+describe("the voice question (#604)", () => {
+	test("its size is decimal megabytes, as a download is quoted", () => {
+		expect(voiceSize(107_749_290)).toBe("108 MB");
+		expect(voiceSize(189_300_000)).toBe("189 MB");
+	});
+
+	test("its footer names no field, and Esc as Not now", () => {
+		const hint = commanderHint("question", true, []);
+		expect(hint).not.toContain("field");
+		expect(hint).toContain("Esc not now");
 	});
 });
