@@ -11,7 +11,12 @@
  */
 import type { AudioFX, SpeechSpace } from "./audio";
 import { COMMS_LINES, type CommsLineId } from "./comms";
-import { NEURAL_ROLE, type NeuralVoice } from "./neural-voice";
+import {
+	NEURAL_ROLE,
+	type NeuralVoice,
+	SPEAKER_VOICES,
+	speakerVoice,
+} from "./neural-voice";
 import { RADIO, radio } from "./radio";
 import { SPEECH_RATE, speak, VOICES } from "./speech";
 import { textToTokens } from "./speech-lexicon";
@@ -130,28 +135,28 @@ const readyVoice = () =>
  * generation, which runs about three times slower than speech on WASM (sage
  * round 1 on #606). A miss is generated, urgent, for the next time.
  */
-export async function sayLine(fx: AudioFX, id: CommsLineId) {
+export async function sayLine(fx: AudioFX, id: CommsLineId, speaker?: string) {
 	const line = COMMS_LINES[id];
 	const voice = readyVoice();
-	const n = voice
-		? await voice.kept(line.text, NEURAL_ROLE[line.voice]).catch(() => null)
-		: null;
+	const who = speakerVoice(line.voice, speaker);
+	const n = voice ? await voice.kept(line.text, who).catch(() => null) : null;
 	fx.speak(n ? radio(n) : renderLine(id), SPEECH_RATE);
-	if (voice && !n)
-		void voice
-			.line(line.text, NEURAL_ROLE[line.voice], 1, true)
-			.catch(() => null);
+	if (voice && !n) void voice.line(line.text, who, 1, true).catch(() => null);
 }
 
-/** Every comms line in the neural voice, into the line cache, one after
- *  another behind anything urgent: run when the voice becomes ready. */
+/**
+ * Every comms line in every voice its speakers may have, into the line
+ * cache, one after another behind anything urgent: run when the voice
+ * becomes ready. Voices rotate by speaker (#604), so a line is prepared once
+ * per voice rather than once — a few dozen lines, a few megabytes kept.
+ */
 export async function prewarmNeural() {
-	for (const id of Object.keys(COMMS_LINES) as CommsLineId[]) {
-		const voice = readyVoice();
-		if (!voice) return;
-		const line = COMMS_LINES[id];
-		await voice.line(line.text, NEURAL_ROLE[line.voice]).catch(() => null);
-	}
+	for (const who of SPEAKER_VOICES)
+		for (const id of Object.keys(COMMS_LINES) as CommsLineId[]) {
+			const voice = readyVoice();
+			if (!voice) return;
+			await voice.line(COMMS_LINES[id].text, who).catch(() => null);
+		}
 }
 
 /** The numbers station, far off in the music: the game's and the lab's one

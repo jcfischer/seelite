@@ -106,15 +106,43 @@ export function tokenize(ipa: string): number[] {
 	return [0, ...ids.slice(0, MAX_TOKENS), 0];
 }
 
-/** Who speaks with which neural voice. **The agent's defaults, not the
- *  principal's choice** — the principal heard the set and chose none; the
- *  voice lab lets every role be heard in every voice. */
+/** Each role's voice when no speaker is named — the lab, a probe, a line
+ *  with nobody behind it. The machine's is the only one the game keeps. */
 export const NEURAL_ROLE = {
 	approach: "bm_george",
 	pilot: "af_bella",
 	pirate: "am_michael",
 	machine: "af_nicole",
 } as const satisfies Record<string, NeuralVoiceId>;
+
+/** The voices a station or a pilot may speak with: every one the game
+ *  ships but the machine's, which stays the numbers station's alone. */
+export const SPEAKER_VOICES: readonly NeuralVoiceId[] = NEURAL_VOICES.filter(
+	(v) => v !== NEURAL_ROLE.machine,
+);
+
+/**
+ * Who speaks with which voice, by the principal's ruling on #604: the voice
+ * **rotates from station to station and from pilot to pilot**, and the
+ * machine stays one voice. A speaker is its id — a station's, a carrier's —
+ * so the same station always answers in the same voice, this session and
+ * the next, and the next station is drawn afresh. A role with no speaker
+ * named takes its default.
+ */
+export function speakerVoice(
+	role: keyof typeof NEURAL_ROLE,
+	speaker?: string,
+): NeuralVoiceId {
+	if (role === "machine" || speaker === undefined) return NEURAL_ROLE[role];
+	// FNV-1a: a stable spread of ids over the voices, with no draw from any
+	// of the world's streams.
+	let h = 0x811c9dc5;
+	for (let i = 0; i < speaker.length; i++) {
+		h ^= speaker.charCodeAt(i);
+		h = Math.imul(h, 0x01000193) >>> 0;
+	}
+	return SPEAKER_VOICES[h % SPEAKER_VOICES.length];
+}
 
 /** Where the neural voice is. `failed` carries why, for the settings row
  *  and the lab; the formant voice speaks meanwhile in every state but

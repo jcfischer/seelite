@@ -6870,7 +6870,7 @@ class Game {
 		// `?consolesound=legacy`.
 		this.consoleNotify("message", "hail");
 		// The struck carrier, on the radio (#600).
-		this.sayComms("ceaseFire");
+		this.sayComms("ceaseFire", actor.key);
 	}
 
 	/**
@@ -10168,7 +10168,7 @@ class Game {
 		if (answer) this.consoleNotify(answer);
 		// And says it (#600), on the same changes of answer.
 		const line = clearanceLine(prev.clearance, next.clearance);
-		if (line) this.sayComms(line);
+		if (line) this.sayComms(line, chosen.id);
 		if (next.clearance.kind === "queued")
 			this.openPlayerTrafficEvent(
 				chosen.id,
@@ -10614,7 +10614,7 @@ class Game {
 			);
 			this.openPlayerTrafficEvent(id, "lane", this.world.gameTime, "arrival");
 			// Approach control's welcome as the arrival begins (#600).
-			this.sayComms("welcome");
+			this.sayComms("welcome", id);
 			this.world.ship.vel = stationVel;
 			// #183 D7: the dock banks what the flight earned, and the station's
 			// first dock. **Before the flush below**, which writes `lastDocked`
@@ -12447,10 +12447,11 @@ class Game {
 	/** The numbers phrase last rendered ahead: its system and index (#600). */
 	private numbersAhead = { seed: Number.NaN, n: -1 };
 
-	/** A comms line through the radio, on the console bus (#600). Rendered
-	 *  once per line and kept (`comms-voice.ts`). */
-	private sayComms(id: CommsLineId) {
-		if (VOICE_ARMS.comms) void sayLine(this.audio, id);
+	/** A comms line through the radio, on the console bus (#600), in the
+	 *  voice of whoever says it: a station's or a carrier's id picks it
+	 *  (#604), so each sounds its own. */
+	private sayComms(id: CommsLineId, speaker?: string) {
+		if (VOICE_ARMS.comms) void sayLine(this.audio, id, speaker);
 	}
 
 	/** The natural voice (#604): started by the settings row, or by

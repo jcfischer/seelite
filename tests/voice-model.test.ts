@@ -19,8 +19,11 @@ import {
 import { fetchBundled, isBundlePath } from "../src/bundle-fetch";
 import {
 	backendBytes,
+	NEURAL_ROLE,
 	NEURAL_VOICES,
 	resample,
+	SPEAKER_VOICES,
+	speakerVoice,
 	type VoiceManifest,
 } from "../src/neural-voice";
 import { LEXICON } from "../src/speech-lexicon";
@@ -207,5 +210,33 @@ describe("the lexicon's IPA", () => {
 			expect(IPA_US[word], word).toBeTruthy();
 			expect(IPA_GB[word], word).toBeTruthy();
 		}
+	});
+});
+
+describe("who speaks with which voice (#604, the principal's ruling)", () => {
+	const ids = Array.from({ length: 200 }, (_, i) => `station:${i * 7919}`);
+
+	test("the same speaker always has the same voice", () => {
+		for (const id of ids.slice(0, 20))
+			expect(speakerVoice("approach", id)).toBe(speakerVoice("approach", id));
+	});
+
+	test("voices rotate from speaker to speaker over every voice but the machine's", () => {
+		const heard = new Set(ids.map((id) => speakerVoice("approach", id)));
+		expect([...heard].sort()).toEqual([...SPEAKER_VOICES].sort());
+		expect(SPEAKER_VOICES).not.toContain(NEURAL_ROLE.machine);
+		expect(SPEAKER_VOICES).toHaveLength(NEURAL_VOICES.length - 1);
+		// A pilot is drawn the same way, by its own id.
+		const pilots = new Set(
+			ids.map((id) => speakerVoice("pilot", id.replace("station", "carrier"))),
+		);
+		expect(pilots.size).toBe(SPEAKER_VOICES.length);
+	});
+
+	test("the machine keeps one voice, and a line with no speaker its role's", () => {
+		for (const id of ids.slice(0, 20))
+			expect(speakerVoice("machine", id)).toBe(NEURAL_ROLE.machine);
+		expect(speakerVoice("approach")).toBe(NEURAL_ROLE.approach);
+		expect(speakerVoice("pilot")).toBe(NEURAL_ROLE.pilot);
 	});
 });
