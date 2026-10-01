@@ -3,11 +3,8 @@
  * one condition model, one pulse laser and #53's controller.
  */
 import { describe, expect, test } from "bun:test";
-import {
-	ENEMY_COLLISION_RADIUS_KM,
-	PLAYER_LASER_RANGE_KM,
-	playerLaserHit,
-} from "../src/combat-enemy";
+import { ENEMY_COLLISION_RADIUS_KM, playerLaserHit } from "../src/combat-enemy";
+import { PLAYER_LASER_RANGE_KM } from "../src/laser";
 import {
 	type DuelPilot,
 	RAIDER_OUT_OF_BEAM_KM,

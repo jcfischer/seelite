@@ -9,6 +9,7 @@ import {
 	SHOT_SOUND_GAP_S,
 	TRACER_HOLD_S,
 	stepGunFeedback,
+	tracerPorts,
 } from "../src/gun-feedback";
 
 const DT = 1 / 60;
@@ -61,5 +62,31 @@ describe("the shot sound", () => {
 
 	test("a quiet gun never sounds", () => {
 		expect(run(QUIET_GUN, false, 120).sounds).toBe(0);
+	});
+});
+
+describe("one port on the glass per gun (#607, the principal: the cockpit too)", () => {
+	test("no gun, no port: the cockpit agrees with chase's no muzzle", () => {
+		expect(tracerPorts(0)).toEqual([]);
+	});
+
+	test("one gun, one port, low on the glass's centre line", () => {
+		expect(tracerPorts(1)).toEqual([{ x: 0.5, y: 0.64 }]);
+	});
+
+	test("two guns keep the pair the cockpit always drew", () => {
+		expect(tracerPorts(2)).toEqual([
+			{ x: 0.24, y: 0.64 },
+			{ x: 0.76, y: 0.64 },
+		]);
+	});
+
+	test("more spread evenly between them, mirrored", () => {
+		const six = tracerPorts(6);
+		expect(six).toHaveLength(6);
+		expect(six[0].x).toBeCloseTo(0.24, 12);
+		expect(six[5].x).toBeCloseTo(0.76, 12);
+		for (let i = 0; i < 6; i++)
+			expect(six[i].x + six[5 - i].x).toBeCloseTo(1, 12);
 	});
 });

@@ -824,7 +824,11 @@ try {
 			const send = g.music.send.bind(g.music);
 			g.music.send = (cmd) => {
 				const { song, ...rest } = cmd;
-				window.__sent.push({ ...rest, ms: performance.now() });
+				window.__sent.push({
+					...rest,
+					ms: performance.now(),
+					gameS: g.world.gameTime,
+				});
 				send(cmd);
 			};
 			// The bed has started, so the waltz's `play` has a line to wait for.
@@ -946,7 +950,11 @@ try {
 						return { refused: g.dockingSnapshot(id).computerRefusal };
 				}
 				const from = window.__sent.length;
-				const atPlane = performance.now();
+				// Game time, the clock the director's hold counts. A frame's `dt`
+				// is capped at `MAX_DT`, so under load game time falls behind the
+				// wall: a wall-clock wait read 7.99 s for a 6.34 s hold (#607).
+				const atPlane = g.world.gameTime;
+				const maxDt = g.units.MAX_DT;
 				// The arrival runs on the game's own frames from here.
 				await new Promise((r) => setTimeout(r, 1500));
 				const resolved = window.__sent.slice(from);
@@ -962,7 +970,8 @@ try {
 					resolved,
 					midDuck,
 					errors,
-					waitS: station ? (station.ms - atPlane) / 1000 : null,
+					waitS: station ? station.gameS - atPlane : null,
+					maxDt,
 					bed: g.musicState.bed,
 					lateErrors: [...g.music.errors],
 				};
@@ -984,12 +993,13 @@ try {
 			plane.midDuck / run.before > 0.9 &&
 				plane.bed === "station" &&
 				plane.waitS !== null &&
-				plane.waitS >= WALTZ_CADENCE_S - 0.25 &&
-				// Two-sided, as the headless row is (sage round 1): a bed held
-				// far past the cadence fails as well as one that cut it.
-				plane.waitS <= WALTZ_CADENCE_S + 1.5 &&
+				// Two-sided, in game time. The hold starts on the first frame after
+				// the plane and adds each frame's `dt`, so the wait is the cadence
+				// plus at most that first frame and the one that crosses the line.
+				plane.waitS >= WALTZ_CADENCE_S - 1e-6 &&
+				plane.waitS <= WALTZ_CADENCE_S + 2 * plane.maxDt + 1e-6 &&
 				plane.lateErrors.length === 0,
-			`ship bus x${(plane.midDuck / run.before).toFixed(3)} 1.5 s after; station bed ${plane.waitS?.toFixed(2)} s after the plane against a ${WALTZ_CADENCE_S.toFixed(2)} s cadence; bed ${plane.bed}; errors ${plane.lateErrors.join("; ") || 0}`,
+			`ship bus x${(plane.midDuck / run.before).toFixed(3)} 1.5 s after; station bed ${plane.waitS?.toFixed(3)} game-s after the plane against a ${WALTZ_CADENCE_S.toFixed(3)} s cadence (+ at most ${(2 * plane.maxDt).toFixed(2)}); bed ${plane.bed}; errors ${plane.lateErrors.join("; ") || 0}`,
 		);
 		// A second run, and the pilot takes the stick: a held throttle key is
 		// control input (§7), through the game's own keyboard path. This is a

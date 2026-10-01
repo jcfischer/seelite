@@ -6,7 +6,7 @@
  */
 import { describe, expect, test } from "bun:test";
 import type { CarrierKey } from "../src/carrier-key";
-import { PLAYER_LASER_RANGE_KM } from "../src/combat-enemy";
+import { PLAYER_LASER_RANGE_KM } from "../src/laser";
 import { RAIDER_OUT_OF_BEAM_KM } from "../src/duel";
 import {
 	type Encounter,

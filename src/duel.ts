@@ -23,11 +23,11 @@ import {
 	type EnemyIntent,
 	type EnemyReadout,
 	NO_ROTATION,
-	PLAYER_LASER_RANGE_KM,
 	playerLaserHit,
 	stepEnemyShip,
 } from "./combat-enemy";
 import { HULL_SPECS } from "./hull";
+import { PLAYER_LASER_RANGE_KM } from "./laser";
 import { RAIDER_HULL_ID } from "./raider-slots";
 import {
 	type ShieldSide,

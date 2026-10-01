@@ -156,6 +156,16 @@ export function intoCameraFrame(v: Vec3, q: Quat): Vec3 {
 	};
 }
 
+/** A projected point on a `w` × `h` canvas, in pixels: x right, y down. */
+export const ndcToPx = (
+	m: { readonly ndcX: number; readonly ndcY: number },
+	w: number,
+	h: number,
+) => ({
+	x: (m.ndcX * 0.5 + 0.5) * w,
+	y: (1 - (m.ndcY * 0.5 + 0.5)) * h,
+});
+
 /**
  * Project a world-space direction onto the screen.
  *

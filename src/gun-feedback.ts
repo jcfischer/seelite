@@ -67,6 +67,26 @@ export const TRACER_PORTS = [
 	{ x: 0.24, y: 0.64 },
 	{ x: 0.76, y: 0.64 },
 ] as const;
+
+/**
+ * One port per gun (#607): a hull with one hardpoint fires one beam, from low
+ * on the glass's centre line, and two keep `TRACER_PORTS`'s pair. More are
+ * spread evenly between the pair's ports. The cockpit's counterpart of the
+ * chase beam from each muzzle.
+ */
+export function tracerPorts(
+	guns: number,
+): readonly { readonly x: number; readonly y: number }[] {
+	const [left, right] = TRACER_PORTS;
+	// No gun, no beam: chase draws none for a hull with no muzzles, and the
+	// cockpit agrees (sage round 2 on #608).
+	if (guns <= 0) return [];
+	if (guns === 1) return [{ x: 0.5, y: left.y }];
+	return Array.from({ length: guns }, (_, i) => ({
+		x: left.x + ((right.x - left.x) * i) / (guns - 1),
+		y: left.y,
+	}));
+}
 export const TRACER_AIM = { x: 0.5, y: 0.5 } as const;
 export const TRACER_COLOUR = "rgba(116, 234, 255, 0.98)";
 
@@ -81,6 +101,35 @@ export function drawGunTracer(
 	h: number,
 	glassBottom: number,
 	aim: { readonly x: number; readonly y: number } = TRACER_AIM,
+	ports: readonly { readonly x: number; readonly y: number }[] = TRACER_PORTS,
+): void {
+	drawTracerSegments(
+		ctx,
+		w,
+		h,
+		glassBottom,
+		ports.map((port) => ({
+			from: { x: w * port.x, y: h * port.y },
+			to: { x: w * aim.x, y: h * aim.y },
+		})),
+	);
+}
+
+/** One beam on the canvas, in pixels. */
+export interface TracerSegment {
+	readonly from: { readonly x: number; readonly y: number };
+	readonly to: { readonly x: number; readonly y: number };
+}
+
+/** Draw tracer segments in canvas pixels, clipped above `glassBottom`: the
+ *  chase view's beams, one from each muzzle (#607 D3). In the tracer's own
+ *  colour and weight, so a chase shot reads as the same gun. */
+export function drawTracerSegments(
+	ctx: CanvasRenderingContext2D,
+	w: number,
+	h: number,
+	glassBottom: number,
+	segments: readonly TracerSegment[],
 ): void {
 	ctx.save();
 	ctx.beginPath();
@@ -89,9 +138,9 @@ export function drawGunTracer(
 	ctx.strokeStyle = TRACER_COLOUR;
 	ctx.lineWidth = 3;
 	ctx.beginPath();
-	for (const port of TRACER_PORTS) {
-		ctx.moveTo(w * port.x, h * port.y);
-		ctx.lineTo(w * aim.x, h * aim.y);
+	for (const { from, to } of segments) {
+		ctx.moveTo(from.x, from.y);
+		ctx.lineTo(to.x, to.y);
 	}
 	ctx.stroke();
 	ctx.restore();
