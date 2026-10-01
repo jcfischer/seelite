@@ -1,14 +1,14 @@
 /**
- * The natural voice (#604) in a real browser: the question at boot, the
- * fallback to the synthesised voice, and Kokoro speaking the game's lines.
+ * The natural voice's question and fallback (#604) in a real browser — the
+ * half that needs no model, so it gates `npm run probe` on any checkout.
  *
- *   node scripts/fetch-voice-model.mjs     # once: the model, into public/
  *   npm run probe:one probe-neural-voice
  *
- * **The second half needs the model on the dev server** and fails loudly
- * without it, naming the command above: a row that skipped would read
- * exactly like one that passed. The first half serves a made-up manifest
- * through a route and needs nothing.
+ * It serves a made-up manifest through a route and refuses every part. The
+ * voice itself — Kokoro speaking, the line cache, the frame while a line
+ * generates, every request it makes — needs the 280 MiB model, and is
+ * `scripts/measure-neural-voice.mjs`, run by hand (the principal's ruling,
+ * D5 on #606).
  *
  * What each check is evidence for:
  *
@@ -19,15 +19,8 @@
  * - **a voice that cannot load leaves the synthesised voice speaking** —
  *   every part refused, the voice settles `failed` and a comms line still
  *   reaches the console bus.
- * - **the game speaks approach control in the natural voice** — the line
- *   handed to the bus is Kokoro's, not the formant voice's.
- * - **a line said again comes from the kept lines** — the second asking
- *   is a read, far faster than the first generation.
- * - **two lines asked at once both arrive** — the worker's queue.
- * - **the median frame holds while a line generates** — the worker keeps
- *   inference off the main thread; per backend. The p95 is printed and not
- *   gated: on WebGPU the model shares the GPU with the game, and #604
- *   measured the p95 at 16 ms idle and 58 ms generating on an M1 Pro.
+ * - **on the player's boot the question comes before the menu** — and New
+ *   game reaches flight without asking again.
  */
 // A default-layout probe (#381 D11): it presses keys by name, as the shipped
 // layout binds them, and a moved default turns it red for that reason.
@@ -92,14 +85,6 @@ const installSpeakSpy = () => {
 		};
 	};
 };
-
-/** The voice has settled, ready or failed: a load from localhost's parts. */
-const voiceSettled = (page) =>
-	page.waitForFunction(
-		() => ["ready", "failed"].includes(window.__seelite.neural.state.kind),
-		null,
-		{ timeout: 240000, polling: 500 },
-	);
 
 const browser = await launchChromium();
 const { check, watch, exit } = tally();
@@ -220,6 +205,10 @@ try {
 		"Download, by pad, sets Natural; a voice that cannot load leaves the synthesised voice speaking",
 		chosen.voice === "neural" &&
 			chosen.neural === "failed" &&
+			// Failed on the refused part — so the worker loaded and fetched.
+			// A worker that cannot even load also settles `failed`, and this
+			// row passed one for a round.
+			/HTTP 404/.test(fallback.reason ?? "") &&
 			fallback.out.length === 1 &&
 			fallback.out[0] === "console",
 		`${JSON.stringify(chosen)}; ${fallback.reason}; said on ${fallback.out.join(", ") || "nothing"}`,
@@ -257,208 +246,6 @@ try {
 			!flying.clockHeld,
 		`first ${JSON.stringify(asked)}; menu after Esc ${menu}; after New game ${JSON.stringify(flying)}`,
 	);
-
-	// ── The model itself ───────────────────────────────────────────────────
-	const res = await fetch(`${origin}/voice-model/manifest.json`);
-	const served = (res.headers.get("content-type") ?? "").includes("json");
-	check(
-		"the dev server has the model",
-		served,
-		served
-			? "manifest served"
-			: "no /voice-model/manifest.json: run `node scripts/fetch-voice-model.mjs`",
-	);
-	if (served) {
-		// ── The game speaks approach control in the natural voice ───────────
-		// Every request either page makes, workers' included: the voice's
-		// files come from this origin and nothing else (sage round 1 on #606).
-		const requests = [];
-		const recorded = async () => {
-			const c = await browser.newContext();
-			contexts.push(c);
-			await c.addInitScript(installSpeakSpy);
-			c.on("request", (q) => requests.push(q.url()));
-			return c;
-		};
-		const context = await recorded();
-		const game = await context.newPage();
-		watch(game);
-		await game.goto(gameUrl(origin, { raider: "off", voices: "neural" }));
-		await bootedGame(game, 60000);
-		await voiceSettled(game);
-		const spoken = await game.evaluate(async () => {
-			const g = window.__seelite;
-			const { renderLine } = await import("/src/comms-voice.ts");
-			const { COMMS_LINES } = await import("/src/comms.ts");
-			const { NEURAL_ROLE } = await import("/src/neural-voice.ts");
-			// Kept first: a line the cache lacks is said by the formant voice.
-			await g.neural.line(COMMS_LINES.granted.text, NEURAL_ROLE.approach);
-			let restore = () => {};
-			const said = new Promise((res) => {
-				restore = window.__spySpeak(res);
-			});
-			g.sayComms("granted");
-			const line = await said;
-			restore();
-			return {
-				state: g.neural.state,
-				said: line,
-				formant: renderLine("granted").length,
-			};
-		});
-		check(
-			"the game speaks approach control in the natural voice",
-			spoken.state.kind === "ready" &&
-				spoken.said.bus === "console" &&
-				spoken.said.n !== spoken.formant &&
-				spoken.said.n > 8000,
-			`${JSON.stringify(spoken.state)}; ${spoken.said.n} samples on ${spoken.said.bus}, the formant line ${spoken.formant}`,
-		);
-
-		// ── Kept lines, the queue and the cadence, per backend ──────────────
-		// `nocomms`: no prewarm running behind the measurement. Its own
-		// context, so its line cache starts empty.
-		const bench = await (await recorded()).newPage();
-		watch(bench);
-		await bench.goto(
-			gameUrl(origin, { raider: "off", voices: "neural,nocomms" }),
-		);
-		await bootedGame(bench, 60000);
-		await voiceSettled(bench);
-		// ── A line the cache lacks: the formant voice now, Kokoro next time ──
-		const miss = await bench.evaluate(async () => {
-			const g = window.__seelite;
-			const cv = await import("/src/comms-voice.ts");
-			const { COMMS_LINES } = await import("/src/comms.ts");
-			const { NEURAL_ROLE } = await import("/src/neural-voice.ts");
-			const said = [];
-			const restore = window.__spySpeak((c) => said.push(c.n));
-			const t0 = performance.now();
-			await cv.sayLine(g.audio, "granted");
-			const firstMs = performance.now() - t0;
-			const text = COMMS_LINES.granted.text;
-			const voice = NEURAL_ROLE.approach;
-			for (let i = 0; i < 600 && !(await g.neural.kept(text, voice)); i++)
-				await new Promise((r) => setTimeout(r, 100));
-			await cv.sayLine(g.audio, "granted");
-			restore();
-			return {
-				state: g.neural.state.kind,
-				said,
-				firstMs,
-				formant: cv.renderLine("granted").length,
-			};
-		});
-		check(
-			"a comms line the cache lacks is said at once by the formant voice, and in Kokoro once kept",
-			miss.state === "ready" &&
-				miss.said.length === 2 &&
-				miss.said[0] === miss.formant &&
-				miss.firstMs < 250 &&
-				miss.said[1] !== miss.formant &&
-				miss.said[1] > 8000,
-			`said ${miss.said.join(" then ")} samples (the formant line ${miss.formant}); the first after ${miss.firstMs.toFixed(0)} ms`,
-		);
-		const first = await bench.evaluate(
-			() => window.__seelite.neural.state.backend,
-		);
-		const backends = first === "webgpu" ? ["webgpu", "wasm"] : [first];
-		for (const backend of backends) {
-			const r = await bench.evaluate(async (backend) => {
-				const g = window.__seelite;
-				if (g.neural.state.backend !== backend) {
-					g.neural.stop();
-					await g.neural.start(backend);
-				}
-				if (g.neural.state.kind !== "ready") return { state: g.neural.state };
-				const { COMMS_LINES } = await import("/src/comms.ts");
-				const texts = Object.values(COMMS_LINES).map((l) => l.text);
-				const long = texts.join(" ");
-				// A speed no other row uses, so nothing is kept from before.
-				const speed = 0.93 + Math.random() * 0.01;
-				const frames = (until) =>
-					new Promise((res) => {
-						const dt = [];
-						let last = performance.now();
-						const tick = (t) => {
-							dt.push(t - last);
-							last = t;
-							if (until()) res(dt);
-							else requestAnimationFrame(tick);
-						};
-						requestAnimationFrame(tick);
-					});
-				const stats = (dt) => {
-					const s = [...dt].sort((a, b) => a - b);
-					const q = (p) => s[Math.min(s.length - 1, Math.floor(p * s.length))];
-					return { n: s.length, median: q(0.5), p95: q(0.95) };
-				};
-				const t0 = performance.now();
-				const idle = stats(await frames(() => performance.now() - t0 > 2000));
-				let done = false;
-				const g0 = performance.now();
-				const line = g.neural.line(long, "bm_george", speed).finally(() => {
-					done = true;
-				});
-				const busy = stats(await frames(() => done));
-				const samples = await line;
-				const genMs = performance.now() - g0;
-				const k0 = performance.now();
-				const again = await g.neural.line(long, "bm_george", speed);
-				const keptMs = performance.now() - k0;
-				const pair = await Promise.all([
-					g.neural.line(texts[0], "af_bella", speed, true),
-					g.neural.line(texts[1], "am_michael", speed),
-				]);
-				return {
-					state: g.neural.state,
-					seconds: (samples?.length ?? 0) / 16000,
-					genMs,
-					keptMs,
-					same: again?.length === samples?.length,
-					pair: pair.map((p) => p?.length ?? 0),
-					idle,
-					busy,
-				};
-			}, backend);
-			if (r.state.kind !== "ready") {
-				check(`${backend}: the voice is ready`, false, JSON.stringify(r.state));
-				continue;
-			}
-			check(
-				`${backend}: a line said again comes from the kept lines`,
-				r.same && r.keptMs < r.genMs / 5,
-				`${r.seconds.toFixed(1)} s of speech generated in ${r.genMs.toFixed(0)} ms, read back in ${r.keptMs.toFixed(0)} ms`,
-			);
-			check(
-				`${backend}: two lines asked at once both arrive`,
-				r.pair.every((n) => n > 8000),
-				`${r.pair.join(", ")} samples`,
-			);
-			check(
-				`${backend}: the median frame holds while a line generates`,
-				r.busy.median <= r.idle.median * 1.25 + 1,
-				`idle median ${r.idle.median.toFixed(1)} ms p95 ${r.idle.p95.toFixed(1)} (${r.idle.n}); generating median ${r.busy.median.toFixed(1)} p95 ${r.busy.p95.toFixed(1)} (${r.busy.n})`,
-			);
-		}
-
-		// ── Every request the voice made stayed on this origin ─────────────
-		// Not vacuous: the parts are fetched by the worker, so a recorder
-		// that could not see the worker would hold no part at all.
-		const foreign = requests.filter((u) => !u.startsWith(`${origin}/`));
-		// And the runtime fetched no binary of its own: every `.wasm` came
-		// through the parts (sage round 4 on #606). Its JavaScript is imported
-		// as a module, as every module of the game is.
-		const ownWasm = requests.filter(
-			(u) => /\.wasm(\?|$)/.test(u) && !u.includes("/voice-model/"),
-		);
-		const parts = requests.filter((u) => /\/voice-model\/.+\.part$/.test(u));
-		check(
-			"every request the voice made, its worker's included, stayed on this origin, and no runtime binary was fetched outside the parts",
-			foreign.length === 0 && ownWasm.length === 0 && parts.length > 0,
-			`${requests.length} requests, ${parts.length} model parts; off-origin: ${foreign.slice(0, 3).join(", ") || "none"}; a runtime .wasm of its own: ${ownWasm.slice(0, 3).join(", ") || "none"}`,
-		);
-	}
 } finally {
 	for (const context of contexts) await context.close().catch(() => {});
 	await browser.close();

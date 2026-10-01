@@ -126,6 +126,21 @@ async function load(m: {
 	// which this node does not do (it would block the visit counter).
 	ort.env.wasm.numThreads = 1;
 	ort.env.wasm.wasmBinary = runtime;
+	// The WASM backend's loader. onnxruntime-web's WASM bundle, unlike its
+	// WebGPU one, does not carry its Emscripten loader: it imports
+	// `ort-wasm-simd-threaded.mjs` from beside itself, which a dev server
+	// serves out of `node_modules` and a build never emitted — so every
+	// built game's WASM voice failed while every dev run passed. Named here
+	// by `new URL(…, import.meta.url)`, the build emits it as a file of this
+	// origin; the package's exports do not reach it by import, and an alias
+	// was pre-bundled into a module the worker could not import.
+	if (ep === "wasm")
+		ort.env.wasm.wasmPaths = {
+			mjs: new URL(
+				"../node_modules/onnxruntime-web/dist/ort-wasm-simd-threaded.mjs",
+				import.meta.url,
+			).href,
+		};
 	session = await ort.InferenceSession.create(new Uint8Array(model), {
 		executionProviders: [ep],
 	});

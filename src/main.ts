@@ -136,6 +136,7 @@ import {
 	waltzDuckDb,
 } from "./music-director";
 import {
+	COMMS_LINES,
 	type CommsLineId,
 	clearanceLine,
 	numbersPhrase,
@@ -144,12 +145,18 @@ import {
 import {
 	prewarmComms,
 	prewarmNeural,
+	renderLine,
 	renderNumbersAhead,
 	sayLine,
 	sayNumbers,
 	useNeuralVoice,
 } from "./comms-voice";
-import { NeuralVoice, neuralWanted } from "./neural-voice";
+import {
+	NEURAL_ROLE,
+	NeuralVoice,
+	neuralWanted,
+	speakerVoice,
+} from "./neural-voice";
 import { deleteVoiceData } from "./voice-store";
 import {
 	type WeaponSoundState,
@@ -18305,6 +18312,20 @@ if (postcard) {
 	// Read off the page by `scripts/probe-save.mjs` rather than restated there:
 	// a probe with its own copy of the debounce goes falsely red the day the
 	// module moves it.
+	// The voice's lines and its routing, for `measure-neural-voice.mjs`
+	// (#604), which runs against a built page as well, where there is no
+	// `/src` to import them from.
+	(
+		window as unknown as {
+			__seelite: { voiceKit: Record<string, unknown> };
+		}
+	).__seelite.voiceKit = {
+		lines: COMMS_LINES,
+		role: NEURAL_ROLE,
+		speakerVoice,
+		renderLine,
+		sayLine,
+	};
 	(
 		window as unknown as {
 			__seelite: { save: Record<string, unknown> };

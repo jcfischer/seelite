@@ -712,4 +712,6 @@ Playwright for probes. No Python. Procedural everything — no downloaded assets
 audio synthesised via WebAudio, textures generated at load. The one exception
 is the natural voice (#604), by the principal's ruling in the map's
 Constraints: `node scripts/fetch-voice-model.mjs` puts it in
-`public/voice-model/` (git-ignored), and `probe-neural-voice` needs it there.
+`public/voice-model/` (git-ignored), and `scripts/measure-neural-voice.mjs`
+— manual, by the principal's ruling — needs it there; `probe-neural-voice`
+gates without it.
