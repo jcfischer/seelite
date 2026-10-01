@@ -261,6 +261,7 @@ import {
 	duration,
 	edgeOf,
 	horizonRoll,
+	ndcToPx,
 	prograde,
 	projectDirection,
 } from "./hud";
@@ -354,12 +355,8 @@ import {
 	sideStruck,
 	stepCondition,
 } from "./ship-condition";
-import {
-	type DuelPilot,
-	PLAYER_LASER_RANGE_KM,
-	type PlayerShot,
-	raiderInSights,
-} from "./duel";
+import { type DuelPilot, type PlayerShot, raiderInSights } from "./duel";
+import { PLAYER_LASER_RANGE_KM } from "./laser";
 import {
 	type Engagement,
 	chargedOffence,
@@ -5514,6 +5511,9 @@ class Game {
 			this.flownHull,
 			HULL_SPECS[this.flownHull].variant,
 		).root;
+		// The muzzles are measured off a mesh of their own: here, with the
+		// hull's, rather than on the first chase shot (sage round 1 on #608).
+		shipMuzzlesKm(this.flownHull, HULL_SPECS[this.flownHull].variant);
 		// Every role's station maps now, beside the hull's: built lazily they
 		// land inside a jump's populate, 32-47 ms a role under `worn`.
 		warmStationMaps();
@@ -5558,6 +5558,7 @@ class Game {
 		this.condition = this.flownFullCondition();
 		const old = this.shipMesh;
 		const mesh = buildShipMesh(hull, HULL_SPECS[hull].variant).root;
+		shipMuzzlesKm(hull, HULL_SPECS[hull].variant);
 		mesh.name = "ship";
 		mesh.position.copy(old.position);
 		mesh.quaternion.copy(old.quaternion);
@@ -10011,10 +10012,7 @@ class Game {
 		const camPos = this.cameraPos();
 		const camRot = this.cameraRotation();
 		const fovYRad = (this.nearCamera.fov * Math.PI) / 180;
-		const px = (m: { ndcX: number; ndcY: number }) => ({
-			x: (m.ndcX * 0.5 + 0.5) * w,
-			y: (1 - (m.ndcY * 0.5 + 0.5)) * h,
-		});
+		const px = (m: { ndcX: number; ndcY: number }) => ndcToPx(m, w, h);
 		const out: {
 			from: { x: number; y: number };
 			to: { x: number; y: number };
@@ -16961,10 +16959,7 @@ class Game {
 		const place = (dir: Vec3) => {
 			const m = this.markerNdc(dir);
 			if (m.behind) return null;
-			return {
-				x: (m.ndcX * 0.5 + 0.5) * w,
-				y: (1 - (m.ndcY * 0.5 + 0.5)) * h,
-			};
+			return ndcToPx(m, w, h);
 		};
 
 		// ---------------------------------------------------------------------
@@ -17182,10 +17177,8 @@ class Game {
 			this.floorRender = null;
 			return;
 		}
-		const toPixels = (ndcX: number, ndcY: number) => ({
-			x: (ndcX * 0.5 + 0.5) * w,
-			y: (1 - (ndcY * 0.5 + 0.5)) * h,
-		});
+		const toPixels = (ndcX: number, ndcY: number) =>
+			ndcToPx({ ndcX, ndcY }, w, h);
 		const place = (dir: Vec3) => {
 			const m = this.markerNdc(dir);
 			return m.behind ? null : { ...toPixels(m.ndcX, m.ndcY), on: m.onScreen };
@@ -17538,25 +17531,21 @@ class Game {
 		// while it is operational: `stepRelay` lands nothing on a wreck, so a
 		// wreck earns no mark (#351 Q12).
 		const relaySelected = selectedBody !== null && this.relayShootable();
+		const origin = this.weaponOrigin();
 		const onTarget =
 			(raiderSelected &&
 				onTargetMark(
 					this.encounter?.phase ?? null,
-					raiderInSights(this.weaponOrigin(), this.beamAim(), selectedBody.pos),
+					raiderInSights(origin, this.beamAim(), selectedBody.pos),
 				)) ||
 			(relaySelected &&
-				relayInSights(this.weaponOrigin(), this.beamAim(), selectedBody.pos)) ||
+				relayInSights(origin, this.beamAim(), selectedBody.pos)) ||
 			(selectedBody !== null &&
 				this.tenderSelected() &&
-				tenderInSights(
-					this.weaponOrigin(),
-					this.beamAim(),
-					selectedBody.pos,
-				)) ||
+				tenderInSights(origin, this.beamAim(), selectedBody.pos)) ||
 			// An ordinary carrier (civilian-combat H3) earns it as the relay does:
 			// `stepTrafficEngagements` lands a shot whenever this test passes.
-			(selectedBody !== null &&
-				this.trafficOnTarget(this.weaponOrigin(), selectedBody));
+			(selectedBody !== null && this.trafficOnTarget(origin, selectedBody));
 		// Read once for the frame, not at each of the two places that needs them.
 		// The declutter reservation and the paint have to agree about what is drawn
 		// here, and deriving the same string twice across a hundred lines of draw

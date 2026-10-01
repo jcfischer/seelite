@@ -100,19 +100,16 @@ export function drawGunTracer(
 	aim: { readonly x: number; readonly y: number } = TRACER_AIM,
 	ports: readonly { readonly x: number; readonly y: number }[] = TRACER_PORTS,
 ): void {
-	ctx.save();
-	ctx.beginPath();
-	ctx.rect(0, 0, w, h * glassBottom);
-	ctx.clip();
-	ctx.strokeStyle = TRACER_COLOUR;
-	ctx.lineWidth = 3;
-	ctx.beginPath();
-	for (const port of ports) {
-		ctx.moveTo(w * port.x, h * port.y);
-		ctx.lineTo(w * aim.x, h * aim.y);
-	}
-	ctx.stroke();
-	ctx.restore();
+	drawTracerSegments(
+		ctx,
+		w,
+		h,
+		glassBottom,
+		ports.map((port) => ({
+			from: { x: w * port.x, y: h * port.y },
+			to: { x: w * aim.x, y: h * aim.y },
+		})),
+	);
 }
 
 /** Draw tracer segments in canvas pixels, clipped above `glassBottom`: the

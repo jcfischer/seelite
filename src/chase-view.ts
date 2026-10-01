@@ -66,7 +66,7 @@ export function beamSegments(
 }
 
 /** Closer than this to the camera plane, a point is cut back to it. */
-const NEAR_KM = 1e-6;
+export const NEAR_KM = 1e-6;
 
 /**
  * A world segment on the camera's screen, cut at the camera plane: a beam

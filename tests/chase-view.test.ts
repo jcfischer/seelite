@@ -8,11 +8,12 @@ import { describe, expect, test } from "bun:test";
 import {
 	beamSegments,
 	muzzlesWorld,
+	NEAR_KM,
 	projectSegment,
 	shipCuesShown,
 	weaponRay,
 } from "../src/chase-view";
-import { type Quat, projectDirection } from "../src/hud";
+import { intoCameraFrame, type Quat, projectDirection } from "../src/hud";
 import { length, sub, type Vec3, v3 } from "../src/vec3";
 
 /** A rotation of `rad` about +y (yaw), as the chase orbit turns. */
@@ -110,7 +111,32 @@ describe("a beam on the chase camera's screen (#607)", () => {
 		);
 		expect(seg).not.toBeNull();
 		if (!seg) return;
-		expect(Number.isFinite(seg[1].ndcX + seg[1].ndcY)).toBe(true);
+		// The near end is the muzzle as the camera sees it; the far end is the
+		// point on the beam where it crosses NEAR_KM in front of the camera —
+		// found here by hand, on the beam's own line, in the camera's frame.
+		const a = v3(0, 0, -0.03);
+		const b = v3(0, 0, -12);
+		const ca = intoCameraFrame(sub(a, front), rot);
+		const cb = intoCameraFrame(sub(b, front), rot);
+		const t = (NEAR_KM - -ca.z) / (-cb.z - -ca.z);
+		const cut = {
+			x: ca.x + (cb.x - ca.x) * t,
+			y: ca.y + (cb.y - ca.y) * t,
+			z: ca.z + (cb.z - ca.z) * t,
+		};
+		const want = projectDirection(cut, IDENTITY, FOV, 1.5);
+		const near0 = projectDirection(sub(a, front), rot, FOV, 1.5);
+		expect(seg[0].ndcX).toBeCloseTo(near0.ndcX, 9);
+		expect(seg[0].ndcY).toBeCloseTo(near0.ndcY, 9);
+		// At NEAR_KM in front of the camera the cut end projects far off the
+		// screen, tens of thousands of NDC: compared relatively, not to places.
+		const rel = (got: number, ref: number) =>
+			Math.abs(got - ref) / Math.max(1, Math.abs(ref));
+		expect(rel(seg[1].ndcX, want.ndcX)).toBeLessThan(1e-6);
+		expect(rel(seg[1].ndcY, want.ndcY)).toBeLessThan(1e-6);
+		// Coming at the camera from below its eye line, the cut end is far
+		// down the screen, not mirrored up through it.
+		expect(seg[1].ndcY).toBeLessThan(near0.ndcY);
 	});
 
 	test("a segment wholly behind the camera draws nothing", () => {

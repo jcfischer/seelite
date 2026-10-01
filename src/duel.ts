@@ -23,15 +23,11 @@ import {
 	type EnemyIntent,
 	type EnemyReadout,
 	NO_ROTATION,
-	PLAYER_LASER_RANGE_KM,
 	playerLaserHit,
 	stepEnemyShip,
 } from "./combat-enemy";
 import { HULL_SPECS } from "./hull";
-
-/** The production beam's reach, for the game: `main.ts` reads it here to
- *  draw the chase beam that far (#607), not from the rig's module. */
-export { PLAYER_LASER_RANGE_KM };
+import { PLAYER_LASER_RANGE_KM } from "./laser";
 import { RAIDER_HULL_ID } from "./raider-slots";
 import {
 	type ShieldSide,

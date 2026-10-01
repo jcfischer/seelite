@@ -38,6 +38,7 @@
  */
 
 import { HULL_SPECS, type HullId } from "./hull";
+import { PLAYER_LASER_RANGE_KM } from "./laser";
 import { mix, seedFor } from "./rng";
 import {
 	ASSIST_CAP_KMS,
@@ -188,8 +189,6 @@ const THREAT_REACTION_S = 0.45;
  *  evaded on *any* tracking, which meant the player pointing at the target was
  *  enough to call off the attack, and the target never attacked at all. */
 const MERGE_ASPECT_COS = 0.3;
-
-export const PLAYER_LASER_RANGE_KM = 12;
 
 /**
  * How large the prototype draws the raider it borrows from the hull roster.

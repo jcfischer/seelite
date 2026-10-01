@@ -6641,7 +6641,19 @@ export function shipMuzzlesKm(
 			const c = b.getCenter(new THREE.Vector3());
 			return { x: c.x, y: c.y, z: b.min.z };
 		});
-	} else {
+	} else muzzles = raycastMuzzles(root, count);
+	const frozen = Object.freeze(muzzles.map((m) => Object.freeze(m)));
+	muzzleCache.set(key, frozen);
+	return frozen;
+}
+
+/**
+ * A hull with no gun parts: `count` mounts on its forward surface, in line
+ * across the beam at mid-height and mirrored about the centre line, each found
+ * by a ray from in front, as a nav light is.
+ */
+function raycastMuzzles(root: THREE.Group, count: number): Vec3[] {
+	{
 		const box = new THREE.Box3().setFromObject(root);
 		const size = box.getSize(new THREE.Vector3());
 		const centre = box.getCenter(new THREE.Vector3());
@@ -6674,11 +6686,8 @@ export function shipMuzzlesKm(
 		}
 		// Still no metal ahead on some line, a gap in the nose: the box's front
 		// face, which is ahead of the hull and on its centre line's span.
-		muzzles = found.map((m) => (m.z < centre.z ? m : { ...m, z: box.min.z }));
+		return found.map((m) => (m.z < centre.z ? m : { ...m, z: box.min.z }));
 	}
-	const frozen = Object.freeze(muzzles.map((m) => Object.freeze(m)));
-	muzzleCache.set(key, frozen);
-	return frozen;
 }
 
 export function buildShipMesh(

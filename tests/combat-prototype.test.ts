@@ -6,12 +6,12 @@ import {
 	stepCombatPrototype,
 	duelTargetInCone,
 } from "../src/combat-prototype";
+import { PLAYER_LASER_RANGE_KM } from "../src/laser";
 import {
 	ENEMY_COLLISION_RADIUS_KM,
 	FIRE_COS,
 	GUN_RANGE_KM,
 	MERGE_BREAK_KM,
-	PLAYER_LASER_RANGE_KM,
 	STRIKER_HULL_ID,
 	createCombatEnemy,
 	playerLaserHit,
