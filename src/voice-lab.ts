@@ -9,11 +9,11 @@
 import { AudioFX } from "./audio";
 import { MUSIC_VOICE_SPACE } from "./comms-voice";
 import {
-	KOKORO_RATE,
 	NEURAL_VOICES,
+	type NeuralBackend,
 	NeuralVoice,
 	type NeuralVoiceId,
-	resample,
+	textToIpa,
 } from "./neural-voice";
 import { RADIO, radio } from "./radio";
 import { SPEECH_RATE, speak, VOICES } from "./speech";
@@ -89,6 +89,7 @@ export function mountVoiceLab() {
 
 	const fx = new AudioFX();
 	let neural = new NeuralVoice();
+	let neuralEp: NeuralBackend | null = null;
 	let loadMs: number | null = null;
 
 	/** Through the radio, dry, or far off, as the radio buttons say. */
@@ -114,32 +115,46 @@ export function mountVoiceLab() {
 	async function sayNeural() {
 		fx.ensure();
 		const info = $("info");
-		const ep = $<HTMLSelectElement>("ep").value as "wasm" | "webgpu";
-		if (neural.ep !== ep) {
-			neural = new NeuralVoice(ep);
-			loadMs = null;
+		const ep = $<HTMLSelectElement>("ep").value as NeuralBackend;
+		if (neuralEp !== ep) {
+			neural.stop();
+			neural = new NeuralVoice();
+			neuralEp = ep;
 		}
-		if (loadMs === null) {
-			info.textContent = "loading the model (about 100 MB the first time)…";
-			loadMs = await neural.load();
+		if (neural.state.kind !== "ready") {
+			const t0 = performance.now();
+			neural.onChange = (st) => {
+				if (st.kind === "loading")
+					info.textContent = `${st.backend}: loading ${(st.bytes / 1048576).toFixed(0)} of ${(st.total / 1048576).toFixed(0)} MB…`;
+			};
+			const st = await neural.start(ep);
+			if (st.kind !== "ready") {
+				info.textContent = `neural voice not ready: ${st.kind === "failed" ? st.reason : st.kind}`;
+				return;
+			}
+			loadMs = performance.now() - t0;
 		}
 		info.textContent = "speaking…";
 		const voice = $<HTMLSelectElement>("nvoice").value as NeuralVoiceId;
-		const r = await neural.say(
+		const { ipa, unknown } = textToIpa(text.value, voice);
+		const t1 = performance.now();
+		const samples = await neural.line(
 			text.value,
 			voice,
 			Number($<HTMLInputElement>("rate").value),
 		);
-		const audioS = r.samples.length / KOKORO_RATE;
-		const out = play(resample(r.samples, KOKORO_RATE, SPEECH_RATE));
+		const ms = performance.now() - t1;
+		if (!samples) return;
+		const audioS = samples.length / SPEECH_RATE;
+		const out = play(samples);
 		info.textContent = [
-			`${neural.ep}: model loaded in ${(loadMs / 1000).toFixed(1)} s`,
-			`${audioS.toFixed(2)} s of speech generated in ${(r.ms / 1000).toFixed(2)} s — ${(audioS / (r.ms / 1000)).toFixed(2)}× real time`,
+			`${neuralEp}: ready in ${((loadMs ?? 0) / 1000).toFixed(1)} s`,
+			`${audioS.toFixed(2)} s of speech in ${(ms / 1000).toFixed(2)} s — ${(audioS / (ms / 1000)).toFixed(2)}× real time (a kept line reads back in milliseconds)`,
 			`${(out.length / SPEECH_RATE).toFixed(2)} s played`,
-			r.unknown.length
-				? `not in the lexicon, skipped: ${r.unknown.join(", ")}`
+			unknown.length
+				? `not in the lexicon, skipped: ${unknown.join(", ")}`
 				: "every word known",
-			`IPA: ${r.ipa}`,
+			`IPA: ${ipa}`,
 		].join("\n");
 	}
 
