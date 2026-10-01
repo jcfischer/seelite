@@ -57,8 +57,19 @@
  *   the one realtime row: the test march read at the music bus by an analyser.
  *   It does not load the page, so it is not evidence for D4's stall claim.
  *
- * Every row but the last two runs on the dev server's tree declaration, an origin
- * for `import("/src/music.ts")`, and boots no game; the last two boot it.
+ * - **the docking computer plays the waltz** (#603) — a real run on the
+ *   game's own frame loop: engaging sends `load` and `play` for `danube`
+ *   and ducks the ship bus by `WALTZ_DUCK_DB`; the plane sends `resolve`
+ *   with a waltz playing to take it (the synth refuses one without), lets
+ *   the bus back, and holds the station bed for `WALTZ_CADENCE_S`; a held
+ *   throttle key on a second run is a stop now over `DANUBE_CANCEL_FADE_S`
+ *   and the flight bed back on the bar. These read what was **sent**, the
+ *   bus gain and the refusals. What the waltz sounds like is the offline
+ *   renders' and the principal's ear.
+ *
+ * The rows before **the game loads the synth** run on the dev server's tree
+ * declaration, an origin for `import("/src/music.ts")`, and boot no game; that
+ * row and every one after it boot it.
  */
 import { cueStats, roundStats } from "./lib/audio-stats.mjs";
 import { renderInPage, SOUND_SET } from "./lib/sound-set.mjs";
@@ -783,6 +794,229 @@ try {
 				live.heard > 1e-3 &&
 				live.errors.length === 0,
 			`bed ${live.bed} at ${live.level}; rms at the music bus ${live.heard.toFixed(4)}; errors ${live.errors.join("; ") || 0}`,
+		);
+		await game.close();
+	}
+	// ── In the game: the docking computer plays the waltz (#603) ────────────
+	// A real run on the game's own frame loop, which is what steps the
+	// director. What this can show is the **command stream** the director
+	// sent, the ship bus's gain and the synth's refusals — a `resolve` with no
+	// waltz playing is one. Whether it sounds right is the offline renders'
+	// and the principal's ear.
+	{
+		const game = await browser.newPage({
+			viewport: { width: 900, height: 620 },
+		});
+		watch(game);
+		await installViewPlacement(game);
+		await game.goto(gameUrl(origin, { seed: 19, raider: "off" }));
+		await bootedGame(game);
+		await game.keyboard.press("F8");
+		const ready = await game.evaluate(async () => {
+			const g = window.__seelite;
+			for (let i = 0; i < 50 && !g.music.ready; i++)
+				await new Promise((r) => setTimeout(r, 100));
+			// Every command the director sends, with the wall time it was sent.
+			window.__sent = [];
+			const send = g.music.send.bind(g.music);
+			g.music.send = (cmd) => {
+				const { song, ...rest } = cmd;
+				window.__sent.push({ ...rest, ms: performance.now() });
+				send(cmd);
+			};
+			// The bed has started, so the waltz's `play` has a line to wait for.
+			await new Promise((r) => setTimeout(r, 2000));
+			return { ready: g.music.ready, bed: g.musicState.bed };
+		});
+		check(
+			"the waltz row starts from the flight bed, on a ready synth",
+			ready.ready && ready.bed === "flight",
+			`ready ${ready.ready}, bed ${ready.bed}`,
+		);
+		// Outside §7's standoff, cleared, the computer fitted and engaged, and
+		// the game's own frames left to fly it. Traffic is stopped as
+		// `__parkInBerth` stops it, so the clearance is not a lane's to refuse.
+		const engage = async () =>
+			game.evaluate(async () => {
+				const g = window.__seelite;
+				const id = g.world.system.bodies.find((b) => b.kind === "station")?.id;
+				if (!id) throw Error("no station");
+				g.clearTrafficPresentation();
+				g.trafficSystemIndex = g.world.system.record.index;
+				g.trafficActors = [];
+				g.trafficTick = Math.floor(g.world.gameTime * 10);
+				g.updateTrafficAuthority = () => {};
+				g.updateTrafficPresentation = () => {};
+				const snap = g.dockingSnapshot(id);
+				await window.__viewAlongAxis(id, snap.planeKm + 4.5, {
+					comoving: true,
+				});
+				g.targetId = id;
+				const granted =
+					g.requestDockingClearance().state?.clearance?.kind === "granted";
+				if (!g.hasDockingComputer)
+					g.commander = {
+						...g.commander,
+						ownedEquipment: [
+							...g.commander.ownedEquipment,
+							g.dockingComputerName,
+						],
+					};
+				const before = g.audio.buses.ship.gain.value;
+				const from = window.__sent.length;
+				g.toggleDockingComputer();
+				await new Promise((r) => setTimeout(r, 3000));
+				const ctx = g.audio.context;
+				const tap = ctx.createAnalyser();
+				tap.fftSize = 2048;
+				g.audio.musicInput.connect(tap);
+				let heard = 0;
+				for (let i = 0; i < 10; i++) {
+					await new Promise((r) => setTimeout(r, 100));
+					const x = new Float32Array(tap.fftSize);
+					tap.getFloatTimeDomainData(x);
+					heard = Math.max(
+						heard,
+						Math.sqrt(x.reduce((s, v) => s + v * v, 0) / x.length),
+					);
+				}
+				g.audio.musicInput.disconnect(tap);
+				return {
+					id,
+					granted,
+					engaged: g.dockingComputer.engaged,
+					sent: window.__sent.slice(from),
+					waltz: g.musicState.waltz,
+					heard,
+					before,
+					ducked: g.audio.buses.ship.gain.value,
+					errors: [...g.music.errors],
+				};
+			});
+		const { DANUBE_CANCEL_FADE_S } = await game.evaluate(
+			() => import("/src/music-danube.ts"),
+		);
+		const { WALTZ_CADENCE_S, WALTZ_DUCK_DB } = await game.evaluate(
+			() => import("/src/music-director.ts"),
+		);
+		const duck = 10 ** (-WALTZ_DUCK_DB / 20);
+		const run = await engage();
+		const types = (sent) =>
+			sent
+				.filter((c) => c.type !== "stem" && c.type !== "tempo")
+				.map((c) => `${c.type}${c.id ? ` ${c.id}` : ""}${c.to ? ` ${c.to}` : ""}`);
+		check(
+			"engaging the docking computer plays the waltz, and the ship bus ducks (#603, #547 D5)",
+			run.granted &&
+				run.engaged &&
+				run.waltz === "playing" &&
+				types(run.sent).join(",") === "load danube,play danube" &&
+				run.heard > 1e-3 &&
+				Math.abs(run.ducked / run.before - duck) < 0.05 &&
+				run.errors.length === 0,
+			`cleared ${run.granted}, engaged ${run.engaged}; sent ${types(run.sent).join(", ")}; waltz ${run.waltz}; rms ${run.heard.toFixed(4)}; ship bus ${run.before} -> ${run.ducked.toFixed(3)} against x${duck.toFixed(3)}; errors ${run.errors.join("; ") || 0}`,
+		);
+		// The intro is ~19 s and every real run is longer (#547 F1): let it
+		// pass before the plane, so the resolve lands in the loop as it does in
+		// play. Then the rest of the run in sim steps, to the plane.
+		const plane = await game.evaluate(
+			async ([id]) => {
+				const g = window.__seelite;
+				await new Promise((r) => setTimeout(r, 17000));
+				const dt = 1 / 60;
+				for (let i = 0; i < 60 * 240 && g.dockPhase === "flying"; i++) {
+					g.step(dt);
+					if (g.dockPhase === "flying" && !g.dockingComputer.engaged)
+						return { refused: g.dockingSnapshot(id).computerRefusal };
+				}
+				const from = window.__sent.length;
+				const atPlane = performance.now();
+				// The arrival runs on the game's own frames from here.
+				await new Promise((r) => setTimeout(r, 1500));
+				const resolved = window.__sent.slice(from);
+				const midDuck = g.audio.buses.ship.gain.value;
+				const errors = [...g.music.errors];
+				for (let i = 0; i < 120 && g.musicState.bed !== "station"; i++)
+					await new Promise((r) => setTimeout(r, 100));
+				const station = window.__sent
+					.slice(from)
+					.find((c) => c.type === "crossfade" && c.to === "station");
+				return {
+					phase: g.dockPhase,
+					resolved,
+					midDuck,
+					errors,
+					waitS: station ? (station.ms - atPlane) / 1000 : null,
+					bed: g.musicState.bed,
+					lateErrors: [...g.music.errors],
+				};
+			},
+			[run.id],
+		);
+		check(
+			"the plane resolves the waltz on the bar, with a waltz playing to resolve (#547 D1)",
+			!plane.refused &&
+				plane.resolved[0]?.type === "resolve" &&
+				plane.resolved[0]?.at === "bar" &&
+				plane.errors.length === 0,
+			plane.refused
+				? `the computer let go: ${plane.refused}`
+				: `${plane.phase}; sent ${types(plane.resolved).join(", ")}; errors ${plane.errors.join("; ") || 0}`,
+		);
+		check(
+			"the ship bus comes back at the plane, and the station bed waits for the cadence",
+			plane.midDuck / run.before > 0.9 &&
+				plane.bed === "station" &&
+				plane.waitS !== null &&
+				plane.waitS >= WALTZ_CADENCE_S - 0.25 &&
+				plane.lateErrors.length === 0,
+			`ship bus x${(plane.midDuck / run.before).toFixed(3)} 1.5 s after; station bed ${plane.waitS?.toFixed(2)} s after the plane against a ${WALTZ_CADENCE_S.toFixed(2)} s cadence; bed ${plane.bed}; errors ${plane.lateErrors.join("; ") || 0}`,
+		);
+		// A second run, and the pilot takes the stick: a held throttle key is
+		// control input (§7), through the game's own keyboard path.
+		await game.evaluate(async () => {
+			const g = window.__seelite;
+			const dt = 1 / 60;
+			for (let i = 0; i < 60 * 60 && g.dockPhase !== "flying"; i++) {
+				if (g.dockPhase === "docked") g.launch();
+				g.skipDockTraversal();
+				g.step(dt);
+			}
+		});
+		const again = await engage();
+		const mark = await game.evaluate(() => window.__sent.length);
+		await game.keyboard.down("Shift");
+		await game.waitForTimeout(400);
+		await game.keyboard.up("Shift");
+		const cancel = await game.evaluate(
+			async ([from]) => {
+				const g = window.__seelite;
+				await new Promise((r) => setTimeout(r, 3000));
+				return {
+					engaged: g.dockingComputer.engaged,
+					sent: window.__sent.slice(from),
+					waltz: g.musicState.waltz,
+					bed: g.musicState.bed,
+					ship: g.audio.buses.ship.gain.value,
+					errors: [...g.music.errors],
+				};
+			},
+			[mark],
+		);
+		const stop = cancel.sent.find((c) => c.type === "stop");
+		check(
+			"the pilot's stick fades the waltz over two bars, and the flight bed is back on the bar (#547 D2)",
+			again.waltz === "playing" &&
+				!cancel.engaged &&
+				stop?.at === "now" &&
+				stop?.fadeS === DANUBE_CANCEL_FADE_S &&
+				types(cancel.sent)[0] === "stop" &&
+				/^crossfade flight-/.test(types(cancel.sent)[1] ?? "") &&
+				cancel.bed === "flight" &&
+				cancel.waltz === "none" &&
+				cancel.ship / run.before > 0.9 &&
+				cancel.errors.length === 0,
+			`second run ${again.waltz}; engaged ${cancel.engaged} after the key; sent ${types(cancel.sent).join(", ")}; stop ${stop?.at} over ${stop?.fadeS} s against ${DANUBE_CANCEL_FADE_S}; bed ${cancel.bed}; ship bus x${(cancel.ship / run.before).toFixed(3)}; errors ${cancel.errors.join("; ") || 0}`,
 		);
 		await game.close();
 	}
