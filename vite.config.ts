@@ -19,6 +19,11 @@ export default defineConfig({
 	 * module, which the dependency pre-bundler moves away from it.
 	 */
 	optimizeDeps: { exclude: ["onnxruntime-web"] },
+	/**
+	 * The neural voice's worker imports its runtime on demand, which splits
+	 * it into chunks; only an ES-module worker can load them (#604).
+	 */
+	worker: { format: "es" },
 	server: {
 		/**
 		 * No browser on `npm run dev`. Pass `--open` when you want one.

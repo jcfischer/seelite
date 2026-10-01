@@ -29,6 +29,8 @@
  *   gated: on WebGPU the model shares the GPU with the game, and #604
  *   measured the p95 at 16 ms idle and 58 ms generating on an M1 Pro.
  */
+// A default-layout probe (#381 D11): it presses keys by name, as the shipped
+// layout binds them, and a moved default turns it red for that reason.
 import { STANDARD_INDEX, installFakePad } from "./lib/fake-pad.mjs";
 import { gameUrl } from "./lib/game-url.mjs";
 import {
