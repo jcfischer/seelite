@@ -46,7 +46,8 @@
  */
 import type { NoteEvent, PartSpec, Song } from "./music-score";
 
-/** The waltz's tempo, quarter notes a minute: a bar is 0.375 s. */
+/** The waltz's tempo, quarter notes a minute: a beat is 0.375 s and a
+ *  bar 1.125 s. */
 export const WALTZ_BPM = 160;
 
 /** The Andantino's, in the quarter-note beats its 6/8 is written in: a
@@ -361,8 +362,8 @@ const HYBRID: Voicing = {
 };
 
 /** Every voicing, by name: `orchestra` is D8's and what `BLUE_DANUBE` is.
- *  Which voicing the docking computer plays is not yet ruled (D12), and
- *  nothing in the game plays the waltz yet. */
+ *  The docking computer plays `hybrid`, by the principal's ruling on #603
+ *  (`DEFAULT_MUSIC_ARMS` in `music-director.ts`); `?music=` picks another. */
 export const DANUBE_VOICINGS = {
 	orchestra: ORCHESTRA,
 	oxygene: OXYGENE,
@@ -671,8 +672,8 @@ const SCORE: Song = {
 	space: { reverbS: 3.5 },
 };
 
-/** The waltz in D8's orchestra: what a caller gets by default. It is not a
- *  ruling on which voicing the docking computer plays (D12). */
+/** The waltz in D8's orchestra: the offline renders' `danube`. It is not
+ *  what the docking computer plays, which is `hybrid` (#603). */
 export const BLUE_DANUBE: Song = SCORE;
 
 /** Every render of the waltz by the id the sound set loads it under: the

@@ -11,6 +11,7 @@ import {
 	CUE_LENGTH_S,
 	LIMITER,
 	busGain,
+	duckGain,
 } from "../src/audio";
 import {
 	CUE_BUS,
@@ -226,5 +227,48 @@ describe("the offline seam", () => {
 		const audio = new AudioFX();
 		audio.attach(new FakeContext() as unknown as BaseAudioContext);
 		expect(audio.silent).toBe(true);
+	});
+});
+
+describe("a bus ducked under the music (#603, after #547 D5)", () => {
+	test("a duck is a gain in dB, and 0 dB is no duck", () => {
+		expect(duckGain(0)).toBe(1);
+		expect(duckGain(6)).toBeCloseTo(0.501187, 6);
+		expect(duckGain(20)).toBeCloseTo(0.1, 12);
+	});
+
+	test("ducking the ship bus eases it to its level times the duck, and back", () => {
+		const { audio, ctx, buses } = unlocked();
+		audio.duck("ship", 6);
+		expect(buses.ship.gain.target).toBeCloseTo(duckGain(6), 12);
+		const at = buses.ship.gain.events.at(-1);
+		expect(at?.[2]).toBe(ctx.currentTime);
+		// No other bus moves.
+		for (const b of [buses.combat, buses.console, buses.music])
+			expect(b.gain.events).toEqual([]);
+		audio.duck("ship", 0);
+		expect(buses.ship.gain.target).toBe(1);
+	});
+
+	test("the same duck every frame writes once", () => {
+		const { audio, buses } = unlocked();
+		for (let i = 0; i < 60; i++) audio.duck("ship", 6);
+		expect(buses.ship.gain.events).toHaveLength(1);
+	});
+
+	test("a level set under a duck keeps the duck, and a duck set before a context is in place when one opens", () => {
+		const { audio, buses } = unlocked();
+		audio.duck("ship", 6);
+		audio.setLevel("ship", 0.5);
+		expect(buses.ship.gain.target).toBeCloseTo(0.25 * duckGain(6), 12);
+		const early = new AudioFX();
+		early.duck("ship", 6);
+		early.ensure();
+		const ctx = FakeContext.made.at(-1) as FakeContext;
+		const master = ctx.gains.find((g) =>
+			g.outputs.includes(ctx.compressors[0]),
+		) as FakeGain;
+		const ship = ctx.gains.filter((g) => g.outputs.includes(master))[0];
+		expect(ship.gain.value).toBeCloseTo(duckGain(6), 12);
 	});
 });

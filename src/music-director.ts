@@ -6,10 +6,21 @@
  *
  * **What plays (D2, D3).** In flight, the system's generative bed
  * (`flightBed`), held on the section its danger level names. Docked, the
- * station bed. Witchspace (#534), the docking computer (#547) and death own
- * their sound, so the music fades out under them — read before the hold,
- * because death holds the clock. A pause holds everything else: no command
- * and no clock. A synth whose worklet is not running is sent nothing at all.
+ * station bed. Witchspace (#534) and death own their sound, so the music
+ * fades out under them — read before the hold, because death holds the
+ * clock. A pause holds everything else: no command and no clock. A synth
+ * whose worklet is not running is sent nothing at all.
+ *
+ * **The docking computer plays the waltz (#603, after #547).** Engaging it
+ * loads the Blue Danube once and plays it on the bed's next bar line, so the
+ * bed's last notes ring out under the intro. Crossing the plane is the frame
+ * the dock disengages the computer, so the scene goes straight from the
+ * computer to docked: a `resolve` on the bar takes the loop into the
+ * cadence (D1), and the station bed waits `WALTZ_CADENCE_S` for it. Any other
+ * way out — the pilot's stick or toggle, a refusal, a bounce, death,
+ * witchspace — fades the waltz over two of its bars and the bed comes back
+ * on the bar (D2). The ship bus ducks by `WALTZ_DUCK_DB` while it plays (D5,
+ * `waltzDuckDb`).
  *
  * **The ladder (D4).** `dangerLevel` reads the highest signal: taking fire is
  * combat, a contest or a duel is threat, an inbound raider or a Wanted
@@ -37,7 +48,14 @@ import {
 } from "./music-generate-legacy";
 import { berlinFlightBed, berlinStationBed } from "./music-generate-berlin";
 import { numbersPhrase } from "./comms";
+import {
+	DANUBE_CANCEL_FADE_S,
+	type DanubeVoicing,
+	danubeSong,
+	WALTZ_BPM,
+} from "./music-danube";
 import type { MusicCommand, Song } from "./music-score";
+import { beatSeconds, bpmAt } from "./music-sequencer";
 import type { StationType } from "./station";
 
 /** Who owns the sound this frame. */
@@ -90,6 +108,30 @@ export const REFRESH_S = 180;
 /** The cruise lift (D7). */
 export const CRUISE_TEMPO = 1.06;
 
+/** The ship bus under the waltz (#547 D5): about 6 dB. */
+export const WALTZ_DUCK_DB = 6;
+
+/**
+ * From the plane to the cadence's end (#547 D1): one waltz bar at most to
+ * reach the line the `resolve` lands on, then the cadence on the score's own
+ * tempo map, which broadens it. The station bed comes in after it. Read off
+ * the score, so a retuned cadence moves it.
+ */
+export const WALTZ_CADENCE_S = ((song: Song): number => {
+	const at = song.sections.findIndex((x) => x.name === song.resolve);
+	if (at < 0) throw new Error(`${song.name} has no resolve section`);
+	const first = song.sections
+		.slice(0, at)
+		.reduce((n, x) => n + x.bars, 0);
+	const beats = song.beatsPerBar;
+	let s = (beats * 60) / WALTZ_BPM;
+	for (let bar = first; bar < first + song.sections[at].bars; bar++) {
+		const b0 = bpmAt(song.tempo, bar, false);
+		s += beatSeconds(b0, bpmAt(song.tempo, bar, true), beats, beats);
+	}
+	return s;
+})(danubeSong("hybrid"));
+
 /** Whether these arms play the numbers station at all (#600): the one
  *  gate the director says them by and the host renders them ahead by. */
 export const numbersOn = (arms: MusicArms) =>
@@ -125,6 +167,9 @@ export interface MusicArms {
 	/** The numbers station in Berlin calm (#600); `?voices=off` or
 	 *  `nomusic` turns it off. */
 	readonly voice: boolean;
+	/** The waltz's voicing (#547 D12). `hybrid` by the principal's ruling on
+	 *  #603; the other two stay on `?music=` to compare in flight. */
+	readonly waltz: DanubeVoicing;
 }
 export type MusicBed = "legacy" | "second" | "berlin";
 
@@ -148,6 +193,7 @@ export const DEFAULT_MUSIC_ARMS: MusicArms = {
 	lowHull: "threat",
 	bed: "berlin",
 	voice: true,
+	waltz: "hybrid",
 };
 
 export function musicArms(value: string | null): {
@@ -162,6 +208,8 @@ export function musicArms(value: string | null): {
 		else if (token === "lowhull-always") arms = { ...arms, lowHull: "always" };
 		else if (token === "legacy" || token === "second" || token === "berlin")
 			arms = { ...arms, bed: token };
+		else if (token === "orchestra" || token === "oxygene" || token === "hybrid")
+			arms = { ...arms, waltz: token };
 		else if ((FLIGHT_LEVELS as readonly string[]).includes(token))
 			arms = { ...arms, force: token as MusicLevel };
 		else unknown.push(token);
@@ -227,6 +275,13 @@ export interface MusicState {
 	 *  been heard (#600). */
 	readonly voiceS: number;
 	readonly voiceN: number;
+	/** The docking computer's waltz (#603): playing through the run, or
+	 *  resolving into its cadence after the plane. */
+	readonly waltz: "none" | "playing" | "resolving";
+	/** Time since the resolve, while the cadence plays. */
+	readonly waltzS: number;
+	/** The voicing loaded as `danube`, once a waltz has been. */
+	readonly waltzKey: DanubeVoicing | null;
 }
 
 export const initialMusicState = (): MusicState => ({
@@ -241,6 +296,9 @@ export const initialMusicState = (): MusicState => ({
 	cruise: false,
 	voiceS: 0,
 	voiceN: 0,
+	waltz: "none",
+	waltzS: 0,
+	waltzKey: null,
 });
 
 const other = (id: FlightId | null): FlightId =>
@@ -253,14 +311,61 @@ const settle = (cruise: boolean): MusicCommand[] => [
 	{ type: "tempo", scale: cruise ? CRUISE_TEMPO : 1, at: "bar", rampBars: 0 },
 ];
 
+/**
+ * How far the ship bus is ducked under the waltz (D5): `WALTZ_DUCK_DB` while
+ * it plays, nothing once the plane or a cancel has ended the run.
+ */
+export const waltzDuckDb = (s: MusicState): number =>
+	s.waltz === "playing" ? WALTZ_DUCK_DB : 0;
+
 export function stepMusic(
-	s: MusicState,
+	state: MusicState,
 	r: MusicReading,
 	dt: number,
 	arms: MusicArms = DEFAULT_MUSIC_ARMS,
 ): { state: MusicState; commands: MusicCommand[]; voice?: string } {
+	let s = state;
 	const cmds: MusicCommand[] = [];
 	if (!r.ready) return { state: s, commands: cmds };
+
+	// The waltz (#603). A run ends one of two ways, and both are read before
+	// the hold, because death holds the clock and still owes its fade.
+	if (s.waltz === "playing" && (arms.off || r.scene !== "dockingComputer")) {
+		if (r.scene === "docked" && !arms.off) {
+			// The plane (D1): the loop goes to the cadence on the bar.
+			cmds.push({ type: "resolve", at: "bar" });
+			return {
+				state: { ...s, waltz: "resolving", waltzS: 0 },
+				commands: cmds,
+			};
+		}
+		// Anything else (D2): two bars' fade, then whatever the scene plays.
+		cmds.push({ type: "stop", at: "now", fadeS: DANUBE_CANCEL_FADE_S });
+		s = { ...s, waltz: "none" };
+	}
+	if (s.waltz === "resolving") {
+		// The cadence plays out into the berth; the station bed waits for it.
+		// Out of the dock early (a launch), the bed's crossfade takes it.
+		if (r.scene === "docked" && !arms.off && s.waltzS < WALTZ_CADENCE_S) {
+			const waltzS = r.held ? s.waltzS : s.waltzS + dt;
+			if (waltzS < WALTZ_CADENCE_S)
+				return { state: { ...s, waltzS }, commands: cmds };
+		}
+		s = { ...s, waltz: "none", waltzS: 0 };
+	}
+	if (r.scene === "dockingComputer" && !arms.off) {
+		// Held — the opening, a menu — nothing starts.
+		if (s.waltz === "playing" || r.held) return { state: s, commands: cmds };
+		if (s.waltzKey !== arms.waltz)
+			cmds.push({ type: "load", id: "danube", song: danubeSong(arms.waltz) });
+		// `play`, not a crossfade: the bed stops starting notes on its line and
+		// the ones sounding ring out, so the intro's chord bows in whole.
+		cmds.push({ type: "play", id: "danube", at: "bar" });
+		return {
+			state: { ...s, bed: "none", waltz: "playing", waltzKey: arms.waltz },
+			commands: cmds,
+		};
+	}
 
 	// Before the hold: death holds the clock as the ship dies, and the fade is
 	// what it owes (D2).
