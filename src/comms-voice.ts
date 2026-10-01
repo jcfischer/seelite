@@ -3,9 +3,15 @@
  * per line and kept, because the same few lines are said again and again and
  * a render is tens of milliseconds. The music's numbers are rendered each
  * time, since each is new.
+ *
+ * **The neural voice speaks when it is ready (#604)** — Kokoro, in the
+ * browser, on the player's consent (`neural-voice.ts`) — and the formant
+ * voice in every other state, so there is always a voice. A neural line comes
+ * from the browser's line cache when an earlier session said it.
  */
 import type { AudioFX, SpeechSpace } from "./audio";
 import { COMMS_LINES, type CommsLineId } from "./comms";
+import { NEURAL_ROLE, type NeuralVoice } from "./neural-voice";
 import { RADIO, radio } from "./radio";
 import { SPEECH_RATE, speak, VOICES } from "./speech";
 import { textToTokens } from "./speech-lexicon";
@@ -68,6 +74,9 @@ const AHEAD_KEEP = 4;
  * `numbersPhrase(seed, state.voiceN)`.
  */
 export function renderNumbersAhead(text: string) {
+	// In the neural voice too, into the line cache, behind anything urgent.
+	if (neural && neuralReady())
+		void neural.line(text, NEURAL_ROLE.machine).catch(() => null);
 	if (ahead.has(text) || pending.has(text)) return;
 	pending.add(text);
 	whenIdle(() => {
@@ -104,8 +113,45 @@ export function prewarmComms() {
 	whenIdle(next);
 }
 
+/** The neural voice the game speaks with when it is ready; `null` keeps
+ *  every line on the formant voice. */
+let neural: NeuralVoice | null = null;
+export function useNeuralVoice(nv: NeuralVoice | null) {
+	neural = nv;
+}
+const neuralReady = () => neural !== null && neural.state.kind === "ready";
+
+/** A comms line on the console bus: the neural voice's, urgent in its
+ *  queue, or the formant voice's when the neural one is not ready. */
+export async function sayLine(fx: AudioFX, id: CommsLineId) {
+	const line = COMMS_LINES[id];
+	const n =
+		neural && neuralReady()
+			? await neural
+					.line(line.text, NEURAL_ROLE[line.voice], 1, true)
+					.catch(() => null)
+			: null;
+	fx.speak(n ? radio(n) : renderLine(id), SPEECH_RATE);
+}
+
+/** Every comms line in the neural voice, into the line cache, one after
+ *  another behind anything urgent: run when the voice becomes ready. */
+export async function prewarmNeural() {
+	for (const id of Object.keys(COMMS_LINES) as CommsLineId[]) {
+		if (!neural || !neuralReady()) return;
+		const line = COMMS_LINES[id];
+		await neural.line(line.text, NEURAL_ROLE[line.voice]).catch(() => null);
+	}
+}
+
 /** The numbers station, far off in the music: the game's and the lab's one
- *  way of saying it. */
-export function sayNumbers(fx: AudioFX, text: string) {
-	fx.speak(takeNumbers(text), SPEECH_RATE, "music", MUSIC_VOICE_SPACE);
+ *  way of saying it. In the neural voice from the line cache when it was
+ *  rendered ahead, else the formant voice's. */
+export async function sayNumbers(fx: AudioFX, text: string) {
+	const n =
+		neural && neuralReady()
+			? await neural.line(text, NEURAL_ROLE.machine).catch(() => null)
+			: null;
+	const out = n ? radio(n, { ...RADIO, beepHz: 0 }) : takeNumbers(text);
+	fx.speak(out, SPEECH_RATE, "music", MUSIC_VOICE_SPACE);
 }

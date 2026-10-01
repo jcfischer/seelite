@@ -82,17 +82,43 @@ export function numbersPhrase(systemSeed: number, n: number): string {
 	return `${group()}. ${group()}. ${group()}.`;
 }
 
-/** Which voices speak: `?voices=off`, `nocomms` or `nomusic`. */
+/**
+ * Which voices speak: `?voices=off`, `nocomms` or `nomusic`; and which
+ * engine, over the player's setting (#604): `neural` or `formant`, for
+ * probes and listening; `ask` puts the Commander screen's question even on
+ * a direct boot.
+ */
 export interface VoiceArms {
 	readonly comms: boolean;
 	readonly music: boolean;
+	readonly engine: "setting" | "neural" | "formant";
+	readonly ask: boolean;
 }
+
+/**
+ * Which engine speaks (#604): the natural voice when `?voices=neural` forces
+ * it, or when the settings row chose it and no arm overrides the row.
+ * `ask` is not a yes: nothing downloads until the player answers.
+ */
+export const neuralWanted = (
+	setting: "ask" | "neural" | "formant",
+	engine: VoiceArms["engine"],
+) => engine === "neural" || (engine === "setting" && setting === "neural");
 
 export function voiceArms(value: string | null): VoiceArms {
 	const tokens = (value ?? "").split(",").map((t) => t.trim());
-	if (tokens.includes("off")) return { comms: false, music: false };
+	const engine = tokens.includes("formant")
+		? "formant"
+		: tokens.includes("neural")
+			? "neural"
+			: "setting";
+	const ask = tokens.includes("ask");
+	if (tokens.includes("off"))
+		return { comms: false, music: false, engine, ask };
 	return {
 		comms: !tokens.includes("nocomms"),
 		music: !tokens.includes("nomusic"),
+		engine,
+		ask,
 	};
 }

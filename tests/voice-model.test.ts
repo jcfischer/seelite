@@ -53,7 +53,12 @@ describe("the parts", () => {
 describe("the manifest", () => {
 	const entries = [
 		{ id: "model-wasm", name: "m.onnx", bytes: 90e6, sha256: "a".repeat(64) },
-		{ id: "model-webgpu", name: "f.onnx", bytes: 160e6, sha256: "b".repeat(64) },
+		{
+			id: "model-webgpu",
+			name: "f.onnx",
+			bytes: 160e6,
+			sha256: "b".repeat(64),
+		},
 		{ id: "ort-wasm", name: "o.wasm", bytes: 11e6, sha256: "c".repeat(64) },
 		{ id: "ort-webgpu", name: "j.wasm", bytes: 21e6, sha256: "d".repeat(64) },
 		...VOICE_IDS.map((v, i) => ({

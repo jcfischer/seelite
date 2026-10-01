@@ -177,6 +177,13 @@ export class NeuralVoice {
 	manifest: VoiceManifest | null = null;
 	onChange: ((s: NeuralState) => void) | null = null;
 	private worker: Worker | null = null;
+	/** Bumped by `stop`: a start begun before it gives up at its next step,
+	 *  so choosing Synthesised mid-download does not load the voice anyway. */
+	private gen = 0;
+	/** The start in flight, so two callers share one download. */
+	private starting: Promise<NeuralState> | null = null;
+	/** Settles the load in flight `false` when its worker is stopped. */
+	private settle: ((ok: boolean) => void) | null = null;
 	private next = 1;
 	private waiting = new Map<
 		number,
@@ -222,10 +229,19 @@ export class NeuralVoice {
 
 	/** Load the voice, falling back WebGPU → WASM; settles `ready` or
 	 *  `failed`. `force` picks a backend, for the lab. */
-	async start(force?: NeuralBackend): Promise<NeuralState> {
+	start(force?: NeuralBackend): Promise<NeuralState> {
 		if (this.state.kind === "ready" || this.state.kind === "loading")
-			return this.state;
+			return Promise.resolve(this.state);
+		this.starting ??= this.begin(force).finally(() => {
+			this.starting = null;
+		});
+		return this.starting;
+	}
+
+	private async begin(force?: NeuralBackend): Promise<NeuralState> {
+		const gen = this.gen;
 		const m = await this.readManifest();
+		if (gen !== this.gen) return this.state;
 		if (!m) {
 			this.set({ kind: "failed", reason: "this server has no voice" });
 			return this.state;
@@ -242,7 +258,7 @@ export class NeuralVoice {
 		} catch {
 			// Storage the browser will not describe: try anyway.
 		}
-		while (b) {
+		while (b && gen === this.gen) {
 			if (await this.load(m, b)) return this.state;
 			b = force ? null : fallbackAfter(b);
 		}
@@ -250,7 +266,7 @@ export class NeuralVoice {
 	}
 
 	private load(m: VoiceManifest, backend: NeuralBackend): Promise<boolean> {
-		this.stop(false);
+		this.halt();
 		this.set({
 			kind: "loading",
 			backend,
@@ -262,7 +278,12 @@ export class NeuralVoice {
 			{ type: "module" },
 		);
 		this.worker = worker;
-		return new Promise((resolve) => {
+		return new Promise((settle) => {
+			const resolve = (ok: boolean) => {
+				if (this.settle === resolve) this.settle = null;
+				settle(ok);
+			};
+			this.settle = resolve;
 			worker.onmessage = (e: MessageEvent<Reply>) => {
 				const r = e.data;
 				if (r.type === "progress")
@@ -289,6 +310,7 @@ export class NeuralVoice {
 			};
 			worker.onerror = (e) => {
 				this.set({ kind: "failed", reason: `${backend}: ${e.message}` });
+				worker.terminate();
 				resolve(false);
 			};
 			worker.postMessage({
@@ -308,6 +330,7 @@ export class NeuralVoice {
 		text: string,
 		voice: NeuralVoiceId,
 		speed = 1,
+		urgent = false,
 	): Promise<Float32Array | null> {
 		const worker = this.worker;
 		if (this.state.kind !== "ready" || !this.manifest || !worker) return null;
@@ -319,18 +342,25 @@ export class NeuralVoice {
 		const id = this.next++;
 		const samples = await new Promise<Float32Array>((ok, no) => {
 			this.waiting.set(id, { ok, no });
-			worker.postMessage({ type: "say", id, ids, voice, speed });
+			worker.postMessage({ type: "say", id, ids, voice, speed, urgent });
 		});
 		await storeLine(key, samples);
 		return samples;
 	}
 
-	/** Stop the worker; `off` unless it is being replaced. */
-	stop(toOff = true) {
+	/** Stop the voice and any start in flight; `off`. */
+	stop() {
+		this.gen++;
+		this.halt();
+		this.set({ kind: "off" });
+	}
+
+	/** The worker gone, its lines refused and its load settled `false`. */
+	private halt() {
 		this.worker?.terminate();
 		this.worker = null;
 		for (const w of this.waiting.values()) w.no(new Error("the voice stopped"));
 		this.waiting.clear();
-		if (toOff) this.set({ kind: "off" });
+		this.settle?.(false);
 	}
 }

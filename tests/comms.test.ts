@@ -10,6 +10,7 @@ import {
 	COMMS_LINES,
 	clearanceLine,
 	type CommsLineId,
+	neuralWanted,
 	numbersPhrase,
 	voiceArms,
 } from "../src/comms";
@@ -117,10 +118,41 @@ describe("rendering off the frame", () => {
 
 describe("the ?voices= arm", () => {
 	test("on by default; off silences both; each can go alone", () => {
-		expect(voiceArms(null)).toEqual({ comms: true, music: true });
-		expect(voiceArms("off")).toEqual({ comms: false, music: false });
-		expect(voiceArms("nocomms")).toEqual({ comms: false, music: true });
-		expect(voiceArms("nomusic")).toEqual({ comms: true, music: false });
+		const base = { engine: "setting" as const, ask: false };
+		expect(voiceArms(null)).toEqual({ comms: true, music: true, ...base });
+		expect(voiceArms("off")).toEqual({ comms: false, music: false, ...base });
+		expect(voiceArms("nocomms")).toEqual({
+			comms: false,
+			music: true,
+			...base,
+		});
+		expect(voiceArms("nomusic")).toEqual({
+			comms: true,
+			music: false,
+			...base,
+		});
+		// #604: the engine over the player's setting, and the question on a
+		// direct boot.
+		expect(voiceArms("neural").engine).toBe("neural");
+		expect(voiceArms("formant,nomusic")).toEqual({
+			comms: true,
+			music: false,
+			engine: "formant",
+			ask: false,
+		});
+		expect(voiceArms("ask").ask).toBe(true);
+	});
+
+	test("#604: the natural voice starts on a yes, never on Ask", () => {
+		// The row decides unless an arm forces an engine.
+		expect(neuralWanted("neural", "setting")).toBe(true);
+		expect(neuralWanted("ask", "setting")).toBe(false);
+		expect(neuralWanted("formant", "setting")).toBe(false);
+		// `?voices=neural` downloads whatever the row says; `formant` never.
+		for (const row of ["ask", "neural", "formant"] as const) {
+			expect(neuralWanted(row, "neural")).toBe(true);
+			expect(neuralWanted(row, "formant")).toBe(false);
+		}
 	});
 });
 

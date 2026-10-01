@@ -5,9 +5,9 @@
  * `load` downloads every file the backend needs — its model, its runtime
  * binary and every voice — through the cache (`voice-store.ts`), checks each
  * against the manifest's checksum, and hands the runtime its binary
- * directly, so the runtime fetches nothing itself. `say` runs **one at a
- * time**: the game asks for a line while it renders others ahead, and two
- * runs overlapping in one session fail. Each line leaves at 16 kHz, the
+ * directly, so the runtime fetches nothing itself. Lines run **one at a
+ * time**, urgent first: two runs overlapping in one session fail, and a
+ * comms answer must not wait behind a phrase rendered ahead. Each line leaves at 16 kHz, the
  * radio's rate, so the main thread does no resampling.
  */
 import { KOKORO_RATE, resample, styleRow } from "./neural-voice";
@@ -30,7 +30,37 @@ interface Manifest {
 let ort: Ort;
 let session: import("onnxruntime-web/wasm").InferenceSession | null = null;
 const voices = new Map<string, Float32Array>();
-let queue: Promise<void> = Promise.resolve();
+/** Lines waiting, the urgent first: a comms answer is said before a phrase
+ *  rendered ahead for the music, which could hold the worker for seconds. */
+type SayMessage = {
+	id: number;
+	ids: number[];
+	voice: string;
+	speed: number;
+	urgent: boolean;
+};
+const waiting: SayMessage[] = [];
+let busy = false;
+
+async function pump() {
+	if (busy) return;
+	busy = true;
+	while (waiting.length) {
+		const at = waiting.findIndex((m) => m.urgent);
+		const [m] = waiting.splice(at >= 0 ? at : 0, 1);
+		try {
+			await say(m);
+		} catch (err) {
+			self.postMessage({
+				type: "error",
+				id: m.id,
+				stage: "say",
+				message: String(err),
+			});
+		}
+	}
+	busy = false;
+}
 
 const hex = (buf: ArrayBuffer) =>
 	[...new Uint8Array(buf)].map((b) => b.toString(16).padStart(2, "0")).join("");
@@ -102,12 +132,7 @@ async function load(m: {
 	self.postMessage({ type: "ready", ep, loadMs: performance.now() - t0 });
 }
 
-async function say(m: {
-	id: number;
-	ids: number[];
-	voice: string;
-	speed: number;
-}) {
+async function say(m: SayMessage) {
 	if (!session) throw new Error("the model is not loaded");
 	const voice = voices.get(m.voice);
 	if (!voice) throw new Error(`no voice ${m.voice}`);
@@ -136,15 +161,8 @@ self.onmessage = (e: MessageEvent) => {
 		load(m).catch((err) =>
 			self.postMessage({ type: "error", stage: "load", message: String(err) }),
 		);
-	else if (m.type === "say")
-		queue = queue
-			.then(() => say(m))
-			.catch((err) =>
-				self.postMessage({
-					type: "error",
-					id: m.id,
-					stage: "say",
-					message: String(err),
-				}),
-			);
+	else if (m.type === "say") {
+		waiting.push(m);
+		void pump();
+	}
 };

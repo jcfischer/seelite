@@ -318,7 +318,9 @@ describe("the volume rows (#552, after #542 D2)", () => {
 	});
 
 	test("the rows come after every existing row, so no cursor index moves", () => {
+		// #604's Voice row came after them for the same reason, and is last.
 		const volume = BUSES.map((b) => VOLUME_KEY[b]);
-		expect(SETTING_KEYS.slice(-volume.length)).toEqual(volume);
+		expect(SETTING_KEYS.slice(-volume.length - 1, -1)).toEqual(volume);
+		expect(SETTING_KEYS.at(-1)).toBe("voice");
 	});
 });

@@ -67,7 +67,10 @@ export async function cachedPart(
 export async function dropOldModels(keep: string | null) {
 	try {
 		for (const name of await caches.keys())
-			if (name.startsWith(MODEL_CACHE_PREFIX) && name !== MODEL_CACHE_PREFIX + keep)
+			if (
+				name.startsWith(MODEL_CACHE_PREFIX) &&
+				name !== MODEL_CACHE_PREFIX + keep
+			)
 				await caches.delete(name);
 	} catch {
 		// Nothing to drop where there is no Cache Storage.
@@ -101,7 +104,9 @@ const request = <T>(req: IDBRequest<T>) =>
 export async function loadLine(key: string): Promise<Float32Array | null> {
 	try {
 		const db = await openLines();
-		const store = db.transaction(LINE_STORE, "readwrite").objectStore(LINE_STORE);
+		const store = db
+			.transaction(LINE_STORE, "readwrite")
+			.objectStore(LINE_STORE);
 		const hit = (await request(store.get(key))) as StoredLine | undefined;
 		if (!hit) return null;
 		store.put({ ...hit, used: Date.now() });
@@ -120,7 +125,9 @@ export async function storeLine(key: string, samples: Float32Array) {
 		for (let i = 0; i < pcm.length; i++)
 			pcm[i] = Math.round(Math.max(-1, Math.min(1, samples[i])) * 32767);
 		const db = await openLines();
-		const store = db.transaction(LINE_STORE, "readwrite").objectStore(LINE_STORE);
+		const store = db
+			.transaction(LINE_STORE, "readwrite")
+			.objectStore(LINE_STORE);
 		store.put({ key, samples: pcm, bytes: pcm.byteLength, used: Date.now() });
 		const all = (await request(store.getAll())) as StoredLine[];
 		for (const k of evictionPlan(all, LINE_STORE_BYTES)) store.delete(k);
