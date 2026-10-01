@@ -15,8 +15,12 @@ export default defineConfig({
 	 */
 	plugins: [treeDeclaration()],
 	/**
-	 * The neural voice's runtime loads a sibling file relative to its own
-	 * module, which the dependency pre-bundler moves away from it.
+	 * The neural voice's runtime resolves its files by its own module's URL,
+	 * and the dependency pre-bundler moved the module away from them: the
+	 * #604 prototype's worker could not load it pre-bundled. The worker now
+	 * hands the runtime its WASM binary (`wasmBinary`), so that resolution
+	 * fetches nothing; `probe-neural-voice` records every request the voice
+	 * makes and holds them to this origin.
 	 */
 	optimizeDeps: { exclude: ["onnxruntime-web"] },
 	/**

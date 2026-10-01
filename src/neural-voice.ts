@@ -10,7 +10,9 @@
  *
  * Pure helpers here for the headless tier; `NeuralVoice` is the browser's.
  */
+import { fetchBundled } from "./bundle-fetch";
 import { IPA_GB, IPA_US, KOKORO_VOCAB } from "./voice-ipa";
+import { lineKey, loadLine, storeLine } from "./voice-store";
 
 /** The model's output rate, and the length of one style row. */
 export const KOKORO_RATE = 24000;
@@ -134,7 +136,7 @@ export type NeuralBackend = "wasm" | "webgpu";
 /** Bytes a backend downloads: its files and every voice. */
 export const backendBytes = (m: VoiceManifest, b: NeuralBackend) =>
 	[...m.backends[b], ...m.voices.map((v) => `voice:${v}`)].reduce(
-		(n, id) => n + (m.files[id]?.bytes ?? 0),
+		(n, id) => n + m.files[id].bytes,
 		0,
 	);
 
@@ -185,6 +187,11 @@ export class NeuralVoice {
 	/** Settles the load in flight `false` when its worker is stopped. */
 	private settle: ((ok: boolean) => void) | null = null;
 	private next = 1;
+	/** Lines being generated, by line key. */
+	private inflight = new Map<
+		string,
+		{ samples: Promise<Float32Array | null> }
+	>();
 	private waiting = new Map<
 		number,
 		{ ok: (s: Float32Array) => void; no: (e: Error) => void }
@@ -200,7 +207,6 @@ export class NeuralVoice {
 	async readManifest(): Promise<VoiceManifest | null> {
 		if (this.manifest) return this.manifest;
 		try {
-			const { fetchBundled } = await import("./bundle-fetch");
 			const res = await fetchBundled(`${VOICE_BASE}manifest.json`);
 			if (!res.ok) return null;
 			this.manifest = (await res.json()) as VoiceManifest;
@@ -326,26 +332,61 @@ export class NeuralVoice {
 	 * A line at 16 kHz in `voice`: from the line cache, or generated and kept;
 	 * `null` while the voice is not ready, when the formant voice speaks.
 	 */
-	async line(
+	line(
 		text: string,
 		voice: NeuralVoiceId,
 		speed = 1,
 		urgent = false,
 	): Promise<Float32Array | null> {
 		const worker = this.worker;
-		if (this.state.kind !== "ready" || !this.manifest || !worker) return null;
-		const { lineKey, loadLine, storeLine } = await import("./voice-store");
+		if (this.state.kind !== "ready" || !this.manifest || !worker)
+			return Promise.resolve(null);
 		const key = lineKey(text, voice, speed, this.manifest.version);
+		// One generation per line: the numbers station's phrase is asked for
+		// ahead and again when it is said (sage round 1 on #606). A later
+		// urgent asking moves the queued one to the front.
+		const running = this.inflight.get(key);
+		if (running) {
+			if (urgent) worker.postMessage({ type: "urgent", key });
+			return running.samples;
+		}
+		const samples = this.generate(worker, key, text, voice, speed, urgent);
+		this.inflight.set(key, { samples });
+		void samples.finally(() => this.inflight.delete(key));
+		return samples;
+	}
+
+	private async generate(
+		worker: Worker,
+		key: string,
+		text: string,
+		voice: NeuralVoiceId,
+		speed: number,
+		urgent: boolean,
+	): Promise<Float32Array | null> {
 		const kept = await loadLine(key);
 		if (kept) return kept;
+		// Stopped during the lookup: that worker is gone and would never answer.
+		if (this.worker !== worker || this.state.kind !== "ready") return null;
 		const ids = tokenize(textToIpa(text, voice).ipa);
 		const id = this.next++;
 		const samples = await new Promise<Float32Array>((ok, no) => {
 			this.waiting.set(id, { ok, no });
-			worker.postMessage({ type: "say", id, ids, voice, speed, urgent });
+			worker.postMessage({ type: "say", id, key, ids, voice, speed, urgent });
 		});
 		await storeLine(key, samples);
 		return samples;
+	}
+
+	/** A line from the line cache only, or `null`: for a caller that would
+	 *  rather speak the formant voice now than wait for a generation. */
+	async kept(
+		text: string,
+		voice: NeuralVoiceId,
+		speed = 1,
+	): Promise<Float32Array | null> {
+		if (this.state.kind !== "ready" || !this.manifest) return null;
+		return loadLine(lineKey(text, voice, speed, this.manifest.version));
 	}
 
 	/** Stop the voice and any start in flight; `off`. */

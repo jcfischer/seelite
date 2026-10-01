@@ -8,7 +8,7 @@
  *   line sound different — text, voice, speed and model version — and kept
  *   under `LINE_STORE_BYTES` by dropping the least recently used.
  *
- * Both are the player's to delete: the settings row's Formant frees them
+ * Both are the player's to delete: the settings row's Synthesised frees them
  * (`deleteVoiceData`). The browser may evict either under storage pressure;
  * the voice then downloads again or the formant voice speaks.
  */
@@ -18,6 +18,7 @@ import { fetchBundled } from "./bundle-fetch";
 export const MODEL_CACHE_PREFIX = "seelite-voice-";
 const LINE_DB = "seelite-voice-lines";
 const LINE_STORE = "lines";
+const LINE_META = "meta";
 /** The spoken lines' budget: about 150 lines of four seconds. */
 export const LINE_STORE_BYTES = 20 * 1024 * 1024;
 
@@ -92,19 +93,50 @@ export async function dropOldModels(keep: string | null) {
 	}
 }
 
+/**
+ * The one connection this page holds, opened on first use. One, because a
+ * connection per line was never closed and left `deleteVoiceData`'s delete
+ * blocked behind them (sage round 1 on #606); and it closes itself when
+ * another tab upgrades or deletes the database.
+ */
+let lineDb: Promise<IDBDatabase> | null = null;
+
 function openLines(): Promise<IDBDatabase> {
-	return new Promise((resolve, reject) => {
-		const req = indexedDB.open(LINE_DB, 1);
-		req.onupgradeneeded = () =>
-			req.result.createObjectStore(LINE_STORE, { keyPath: "key" });
-		req.onsuccess = () => resolve(req.result);
-		req.onerror = () => reject(req.error);
+	lineDb ??= new Promise<IDBDatabase>((resolve, reject) => {
+		const req = indexedDB.open(LINE_DB, 2);
+		// Version 1 kept the samples and the bookkeeping in one record, so
+		// eviction read every sample back; it only ever existed on dev
+		// servers, and its lines are dropped rather than migrated.
+		req.onupgradeneeded = () => {
+			const db = req.result;
+			for (const name of [...db.objectStoreNames]) db.deleteObjectStore(name);
+			db.createObjectStore(LINE_STORE, { keyPath: "key" });
+			db.createObjectStore(LINE_META, { keyPath: "key" });
+		};
+		req.onsuccess = () => {
+			const db = req.result;
+			db.onversionchange = () => {
+				db.close();
+				lineDb = null;
+			};
+			resolve(db);
+		};
+		req.onerror = () => {
+			lineDb = null;
+			reject(req.error);
+		};
 	});
+	return lineDb;
 }
 
+/** A line's samples; its size and last use live beside it in `LINE_META`,
+ *  so eviction reads a few numbers per line rather than every sample. */
 interface StoredLine {
 	key: string;
 	samples: Int16Array;
+}
+interface LineMeta {
+	key: string;
 	bytes: number;
 	used: number;
 }
@@ -119,12 +151,16 @@ const request = <T>(req: IDBRequest<T>) =>
 export async function loadLine(key: string): Promise<Float32Array | null> {
 	try {
 		const db = await openLines();
-		const store = db
-			.transaction(LINE_STORE, "readwrite")
-			.objectStore(LINE_STORE);
-		const hit = (await request(store.get(key))) as StoredLine | undefined;
+		const tx = db.transaction([LINE_STORE, LINE_META], "readwrite");
+		const hit = (await request(tx.objectStore(LINE_STORE).get(key))) as
+			| StoredLine
+			| undefined;
 		if (!hit) return null;
-		store.put({ ...hit, used: Date.now() });
+		tx.objectStore(LINE_META).put({
+			key,
+			bytes: hit.samples.byteLength,
+			used: Date.now(),
+		} satisfies LineMeta);
 		const out = new Float32Array(hit.samples.length);
 		for (let i = 0; i < out.length; i++) out[i] = hit.samples[i] / 32767;
 		return out;
@@ -140,26 +176,43 @@ export async function storeLine(key: string, samples: Float32Array) {
 		for (let i = 0; i < pcm.length; i++)
 			pcm[i] = Math.round(Math.max(-1, Math.min(1, samples[i])) * 32767);
 		const db = await openLines();
-		const store = db
-			.transaction(LINE_STORE, "readwrite")
-			.objectStore(LINE_STORE);
-		store.put({ key, samples: pcm, bytes: pcm.byteLength, used: Date.now() });
-		const all = (await request(store.getAll())) as StoredLine[];
-		for (const k of evictionPlan(all, LINE_STORE_BYTES)) store.delete(k);
+		const tx = db.transaction([LINE_STORE, LINE_META], "readwrite");
+		const lines = tx.objectStore(LINE_STORE);
+		const meta = tx.objectStore(LINE_META);
+		lines.put({ key, samples: pcm } satisfies StoredLine);
+		meta.put({
+			key,
+			bytes: pcm.byteLength,
+			used: Date.now(),
+		} satisfies LineMeta);
+		const all = (await request(meta.getAll())) as LineMeta[];
+		for (const k of evictionPlan(all, LINE_STORE_BYTES)) {
+			lines.delete(k);
+			meta.delete(k);
+		}
 	} catch {
 		// A line not kept is rendered again next time.
 	}
 }
 
-/** Everything the neural voice keeps: the settings row's Formant. */
-export async function deleteVoiceData() {
+/**
+ * Everything the neural voice keeps: the settings row's Synthesised. `true`
+ * when both are gone; `false` when the browser refused or another tab holds
+ * the lines open — the delete then completes when that tab closes them.
+ */
+export async function deleteVoiceData(): Promise<boolean> {
 	await dropOldModels(null);
-	await new Promise<void>((resolve) => {
+	// This page's own connection first, or the delete waits behind it.
+	const open = lineDb;
+	lineDb = null;
+	if (open) (await open.catch(() => null))?.close();
+	return new Promise<boolean>((resolve) => {
 		try {
 			const req = indexedDB.deleteDatabase(LINE_DB);
-			req.onsuccess = req.onerror = req.onblocked = () => resolve();
+			req.onsuccess = () => resolve(true);
+			req.onerror = req.onblocked = () => resolve(false);
 		} catch {
-			resolve();
+			resolve(false);
 		}
 	});
 }

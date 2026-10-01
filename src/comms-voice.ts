@@ -75,8 +75,9 @@ const AHEAD_KEEP = 4;
  */
 export function renderNumbersAhead(text: string) {
 	// In the neural voice too, into the line cache, behind anything urgent.
-	if (neural && neuralReady())
-		void neural.line(text, NEURAL_ROLE.machine).catch(() => null);
+	void readyVoice()
+		?.line(text, NEURAL_ROLE.machine)
+		.catch(() => null);
 	if (ahead.has(text) || pending.has(text)) return;
 	pending.add(text);
 	whenIdle(() => {
@@ -119,28 +120,37 @@ let neural: NeuralVoice | null = null;
 export function useNeuralVoice(nv: NeuralVoice | null) {
 	neural = nv;
 }
-const neuralReady = () => neural !== null && neural.state.kind === "ready";
+/** The voice, while it is ready; `null` otherwise. */
+const readyVoice = () =>
+	neural !== null && neural.state.kind === "ready" ? neural : null;
 
-/** A comms line on the console bus: the neural voice's, urgent in its
- *  queue, or the formant voice's when the neural one is not ready. */
+/**
+ * A comms line on the console bus: the neural voice's when the line cache
+ * has it, else the formant voice's **at once** — an answer is not held for a
+ * generation, which runs about three times slower than speech on WASM (sage
+ * round 1 on #606). A miss is generated, urgent, for the next time.
+ */
 export async function sayLine(fx: AudioFX, id: CommsLineId) {
 	const line = COMMS_LINES[id];
-	const n =
-		neural && neuralReady()
-			? await neural
-					.line(line.text, NEURAL_ROLE[line.voice], 1, true)
-					.catch(() => null)
-			: null;
+	const voice = readyVoice();
+	const n = voice
+		? await voice.kept(line.text, NEURAL_ROLE[line.voice]).catch(() => null)
+		: null;
 	fx.speak(n ? radio(n) : renderLine(id), SPEECH_RATE);
+	if (voice && !n)
+		void voice
+			.line(line.text, NEURAL_ROLE[line.voice], 1, true)
+			.catch(() => null);
 }
 
 /** Every comms line in the neural voice, into the line cache, one after
  *  another behind anything urgent: run when the voice becomes ready. */
 export async function prewarmNeural() {
 	for (const id of Object.keys(COMMS_LINES) as CommsLineId[]) {
-		if (!neural || !neuralReady()) return;
+		const voice = readyVoice();
+		if (!voice) return;
 		const line = COMMS_LINES[id];
-		await neural.line(line.text, NEURAL_ROLE[line.voice]).catch(() => null);
+		await voice.line(line.text, NEURAL_ROLE[line.voice]).catch(() => null);
 	}
 }
 
@@ -148,10 +158,12 @@ export async function prewarmNeural() {
  *  way of saying it. In the neural voice from the line cache when it was
  *  rendered ahead, else the formant voice's. */
 export async function sayNumbers(fx: AudioFX, text: string) {
+	// The cache only: a phrase still generating is said by the formant voice
+	// now rather than seconds after its step (sage round 1 on #606).
 	const n =
-		neural && neuralReady()
-			? await neural.line(text, NEURAL_ROLE.machine).catch(() => null)
-			: null;
+		(await readyVoice()
+			?.kept(text, NEURAL_ROLE.machine)
+			.catch(() => null)) ?? null;
 	const out = n ? radio(n, { ...RADIO, beepHz: 0 }) : takeNumbers(text);
 	fx.speak(out, SPEECH_RATE, "music", MUSIC_VOICE_SPACE);
 }

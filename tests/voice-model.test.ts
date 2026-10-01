@@ -3,13 +3,12 @@
  * accepts, the manifest's version, the guard on the one same-origin fetch,
  * the line cache's key and eviction, and the lexicon's IPA. How the voice
  * sounds is the principal's ear; that it ships, loads and is cached is here
- * and in `probe-voices`.
+ * and in `probe-neural-voice`.
  */
 import { describe, expect, test } from "bun:test";
 import { createHash } from "node:crypto";
 import {
 	BACKEND_FILES,
-	backendBytes,
 	buildManifest,
 	PART_BYTES,
 	partName,
@@ -18,6 +17,11 @@ import {
 	VOICE_IDS,
 } from "../scripts/lib/voice-model.mjs";
 import { isBundlePath } from "../src/bundle-fetch";
+import {
+	backendBytes,
+	NEURAL_VOICES,
+	type VoiceManifest,
+} from "../src/neural-voice";
 import { LEXICON } from "../src/speech-lexicon";
 import { IPA_GB, IPA_US } from "../src/voice-ipa";
 import { evictionPlan, lineKey } from "../src/voice-store";
@@ -80,11 +84,18 @@ describe("the manifest", () => {
 	});
 
 	test("each backend's download is its model, its runtime and every voice", () => {
-		const m = buildManifest(entries, sha);
+		// The script's manifest, read the way the game reads `manifest.json`.
+		const m = buildManifest(entries, sha) as unknown as VoiceManifest;
 		const voices = VOICE_IDS.length * 522240;
 		expect(backendBytes(m, "wasm")).toBe(90e6 + 11e6 + voices);
 		expect(backendBytes(m, "webgpu")).toBe(160e6 + 21e6 + voices);
 		expect(Object.keys(BACKEND_FILES).sort()).toEqual(["wasm", "webgpu"]);
+	});
+
+	test("the game offers exactly the voices the manifest ships", () => {
+		// Two lists, one in the fetch script and one in the bundle: a voice in
+		// one only is downloaded and never offered, or offered and never there.
+		expect([...NEURAL_VOICES] as string[]).toEqual([...VOICE_IDS]);
 	});
 });
 

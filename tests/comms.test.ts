@@ -119,28 +119,40 @@ describe("rendering off the frame", () => {
 describe("the ?voices= arm", () => {
 	test("on by default; off silences both; each can go alone", () => {
 		const base = { engine: "setting" as const, ask: false };
-		expect(voiceArms(null)).toEqual({ comms: true, music: true, ...base });
-		expect(voiceArms("off")).toEqual({ comms: false, music: false, ...base });
-		expect(voiceArms("nocomms")).toEqual({
+		expect(voiceArms(null, true)).toEqual({
+			comms: true,
+			music: true,
+			...base,
+		});
+		expect(voiceArms("off", true)).toEqual({
+			comms: false,
+			music: false,
+			...base,
+		});
+		expect(voiceArms("nocomms", true)).toEqual({
 			comms: false,
 			music: true,
 			...base,
 		});
-		expect(voiceArms("nomusic")).toEqual({
+		expect(voiceArms("nomusic", true)).toEqual({
 			comms: true,
 			music: false,
 			...base,
 		});
 		// #604: the engine over the player's setting, and the question on a
 		// direct boot.
-		expect(voiceArms("neural").engine).toBe("neural");
-		expect(voiceArms("formant,nomusic")).toEqual({
+		expect(voiceArms("neural", true).engine).toBe("neural");
+		expect(voiceArms("formant,nomusic", true)).toEqual({
 			comms: true,
 			music: false,
 			engine: "formant",
 			ask: false,
 		});
-		expect(voiceArms("ask").ask).toBe(true);
+		expect(voiceArms("ask", true).ask).toBe(true);
+		// Off a dev server, a link cannot start the download (sage round 1 on
+		// #606); the formant arm downloads nothing and stays.
+		expect(voiceArms("neural", false).engine).toBe("setting");
+		expect(voiceArms("formant", false).engine).toBe("formant");
 	});
 
 	test("#604: the natural voice starts on a yes, never on Ask", () => {

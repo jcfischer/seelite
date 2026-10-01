@@ -148,12 +148,3 @@ export function buildManifest(entries, versionOf, partBytes = PART_BYTES) {
 		files,
 	};
 }
-
-/** Bytes a backend downloads: its files and every voice. */
-export function backendBytes(manifest, backend) {
-	const ids = [
-		...manifest.backends[backend],
-		...manifest.voices.map((v) => `voice:${v}`),
-	];
-	return ids.reduce((n, id) => n + manifest.files[id].bytes, 0);
-}

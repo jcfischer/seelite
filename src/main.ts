@@ -1160,6 +1160,7 @@ if (MUSIC_ARMS.unknown.length)
  */
 const VOICE_ARMS = voiceArms(
 	new URLSearchParams(window.location.search).get("voices"),
+	import.meta.env?.DEV === true,
 );
 /** The director's arms: `?music=`'s, with `?voices=`'s say on the numbers. */
 const DIRECTOR_ARMS = { ...MUSIC_ARMS.arms, voice: VOICE_ARMS.music };

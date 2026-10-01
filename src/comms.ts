@@ -87,6 +87,11 @@ export function numbersPhrase(systemSeed: number, n: number): string {
  * engine, over the player's setting (#604): `neural` or `formant`, for
  * probes and listening; `ask` puts the Commander screen's question even on
  * a direct boot.
+ *
+ * **`neural` is honoured only on a dev server** (`dev`). On the site it
+ * would let a shared link start a 110–190 MB download the player never
+ * agreed to, which is the one thing the Trust page says is the player's
+ * choice (sage round 1 on #606). `formant` stays: it downloads nothing.
  */
 export interface VoiceArms {
 	readonly comms: boolean;
@@ -105,11 +110,11 @@ export const neuralWanted = (
 	engine: VoiceArms["engine"],
 ) => engine === "neural" || (engine === "setting" && setting === "neural");
 
-export function voiceArms(value: string | null): VoiceArms {
+export function voiceArms(value: string | null, dev: boolean): VoiceArms {
 	const tokens = (value ?? "").split(",").map((t) => t.trim());
 	const engine = tokens.includes("formant")
 		? "formant"
-		: tokens.includes("neural")
+		: dev && tokens.includes("neural")
 			? "neural"
 			: "setting";
 	const ask = tokens.includes("ask");

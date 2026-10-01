@@ -241,8 +241,16 @@ try {
 	);
 	if (served) {
 		// ── The game speaks approach control in the natural voice ───────────
-		const context = await browser.newContext();
-		contexts.push(context);
+		// Every request either page makes, workers' included: the voice's
+		// files come from this origin and nothing else (sage round 1 on #606).
+		const requests = [];
+		const recorded = async () => {
+			const c = await browser.newContext();
+			contexts.push(c);
+			c.on("request", (q) => requests.push(q.url()));
+			return c;
+		};
+		const context = await recorded();
 		const game = await context.newPage();
 		watch(game);
 		await game.goto(gameUrl(origin, { raider: "off", voices: "neural" }));
@@ -255,6 +263,10 @@ try {
 		const spoken = await game.evaluate(async () => {
 			const g = window.__seelite;
 			const { renderLine } = await import("/src/comms-voice.ts");
+			const { COMMS_LINES } = await import("/src/comms.ts");
+			const { NEURAL_ROLE } = await import("/src/neural-voice.ts");
+			// Kept first: a line the cache lacks is said by the formant voice.
+			await g.neural.line(COMMS_LINES.granted.text, NEURAL_ROLE.approach);
 			const said = new Promise((res) => {
 				const speak = g.audio.speak.bind(g.audio);
 				g.audio.speak = (x, rate, bus, space) => {
@@ -279,8 +291,9 @@ try {
 		);
 
 		// ── Kept lines, the queue and the cadence, per backend ──────────────
-		// `nocomms`: no prewarm running behind the measurement.
-		const bench = await context.newPage();
+		// `nocomms`: no prewarm running behind the measurement. Its own
+		// context, so its line cache starts empty.
+		const bench = await (await recorded()).newPage();
 		watch(bench);
 		await bench.goto(
 			gameUrl(origin, { raider: "off", voices: "neural,nocomms" }),
@@ -290,6 +303,44 @@ try {
 			() => ["ready", "failed"].includes(window.__seelite.neural.state.kind),
 			null,
 			{ timeout: 240000, polling: 500 },
+		);
+		// ── A line the cache lacks: the formant voice now, Kokoro next time ──
+		const miss = await bench.evaluate(async () => {
+			const g = window.__seelite;
+			const cv = await import("/src/comms-voice.ts");
+			const { COMMS_LINES } = await import("/src/comms.ts");
+			const { NEURAL_ROLE } = await import("/src/neural-voice.ts");
+			const said = [];
+			const speak = g.audio.speak.bind(g.audio);
+			g.audio.speak = (x, rate, bus, space) => {
+				said.push(x.length);
+				return speak(x, rate, bus, space);
+			};
+			const t0 = performance.now();
+			await cv.sayLine(g.audio, "granted");
+			const firstMs = performance.now() - t0;
+			const text = COMMS_LINES.granted.text;
+			const voice = NEURAL_ROLE.approach;
+			for (let i = 0; i < 600 && !(await g.neural.kept(text, voice)); i++)
+				await new Promise((r) => setTimeout(r, 100));
+			await cv.sayLine(g.audio, "granted");
+			g.audio.speak = speak;
+			return {
+				state: g.neural.state.kind,
+				said,
+				firstMs,
+				formant: cv.renderLine("granted").length,
+			};
+		});
+		check(
+			"a comms line the cache lacks is said at once by the formant voice, and in Kokoro once kept",
+			miss.state === "ready" &&
+				miss.said.length === 2 &&
+				miss.said[0] === miss.formant &&
+				miss.firstMs < 250 &&
+				miss.said[1] !== miss.formant &&
+				miss.said[1] > 8000,
+			`said ${miss.said.join(" then ")} samples (the formant line ${miss.formant}); the first after ${miss.firstMs.toFixed(0)} ms`,
 		);
 		const first = await bench.evaluate(
 			() => window.__seelite.neural.state.backend,
@@ -373,6 +424,17 @@ try {
 				`idle median ${r.idle.median.toFixed(1)} ms p95 ${r.idle.p95.toFixed(1)} (${r.idle.n}); generating median ${r.busy.median.toFixed(1)} p95 ${r.busy.p95.toFixed(1)} (${r.busy.n})`,
 			);
 		}
+
+		// ── Every request the voice made stayed on this origin ─────────────
+		// Not vacuous: the parts are fetched by the worker, so a recorder
+		// that could not see the worker would hold no part at all.
+		const foreign = requests.filter((u) => !u.startsWith(`${origin}/`));
+		const parts = requests.filter((u) => /\/voice-model\/.+\.part$/.test(u));
+		check(
+			"every request the voice made, its worker's included, stayed on this origin",
+			foreign.length === 0 && parts.length > 0,
+			`${requests.length} requests, ${parts.length} model parts; off-origin: ${foreign.slice(0, 3).join(", ") || "none"}`,
+		);
 	}
 } finally {
 	for (const context of contexts) await context.close().catch(() => {});

@@ -691,7 +691,7 @@ export function mountCommanderOverlay(
 								: "Import a Commander from a file";
 			const lead =
 				v.kind === "voice"
-					? `<div class="info" data-voice-question>Station control and other ships can speak with a natural voice: a speech model that runs in your browser. It downloads once from this site and stays in your browser; you can delete it under Settings, Voice. Without it the game speaks with its own small synthesised voice.</div>`
+					? `<div class="info" data-voice-question>Approach control and other ships can speak with a natural voice: a speech model that runs in your browser. It downloads once from this site and stays in your browser; you can delete it under Settings, Voice. Without it the game speaks with its own small synthesised voice.</div>`
 					: "";
 			body =
 				`<div class="heading">${title}</div>${lead}` +

@@ -7,25 +7,22 @@
  * against the manifest's checksum, and hands the runtime its binary
  * directly, so the runtime fetches nothing itself. Lines run **one at a
  * time**, urgent first: two runs overlapping in one session fail, and a
- * comms answer must not wait behind a phrase rendered ahead. Each line leaves at 16 kHz, the
+ * comms answer should not wait behind phrases rendered ahead. It still waits
+ * for the one line running, which cannot be interrupted; `sayLine` speaks
+ * the formant voice rather than wait at all. Each line leaves at 16 kHz, the
  * radio's rate, so the main thread does no resampling.
  */
-import { KOKORO_RATE, resample, styleRow } from "./neural-voice";
+import {
+	backendBytes,
+	KOKORO_RATE,
+	resample,
+	styleRow,
+	type VoiceManifest,
+} from "./neural-voice";
 import { SPEECH_RATE } from "./speech";
 import { cachedPart, dropOldModels, dropParts } from "./voice-store";
 
 type Ort = typeof import("onnxruntime-web/wasm");
-interface ManifestFile {
-	bytes: number;
-	sha256: string;
-	parts: string[];
-}
-interface Manifest {
-	version: string;
-	backends: Record<"wasm" | "webgpu", string[]>;
-	voices: string[];
-	files: Record<string, ManifestFile>;
-}
 
 let ort: Ort;
 let session: import("onnxruntime-web/wasm").InferenceSession | null = null;
@@ -34,6 +31,8 @@ const voices = new Map<string, Float32Array>();
  *  rendered ahead for the music, which could hold the worker for seconds. */
 type SayMessage = {
 	id: number;
+	/** The line's cache key, by which a later urgent asking finds it. */
+	key: string;
 	ids: number[];
 	voice: string;
 	speed: number;
@@ -67,7 +66,7 @@ const hex = (buf: ArrayBuffer) =>
 
 /** A whole file from its parts, checked against its checksum. */
 async function assemble(
-	manifest: Manifest,
+	manifest: VoiceManifest,
 	base: string,
 	id: string,
 	progress: (bytes: number) => void,
@@ -101,7 +100,7 @@ async function assemble(
 }
 
 async function load(m: {
-	manifest: Manifest;
+	manifest: VoiceManifest;
 	base: string;
 	ep: "wasm" | "webgpu";
 }) {
@@ -111,7 +110,7 @@ async function load(m: {
 		...manifest.backends[ep],
 		...manifest.voices.map((v) => `voice:${v}`),
 	];
-	const total = ids.reduce((n, id) => n + manifest.files[id].bytes, 0);
+	const total = backendBytes(manifest, ep);
 	let done = 0;
 	const tick = (b: number) => {
 		done += b;
@@ -173,5 +172,8 @@ self.onmessage = (e: MessageEvent) => {
 	else if (m.type === "say") {
 		waiting.push(m);
 		void pump();
-	}
+	} else if (m.type === "urgent")
+		// A line asked for ahead is now wanted at once. One already running
+		// cannot be stopped; one still waiting moves up.
+		for (const w of waiting) if (w.key === m.key) w.urgent = true;
 };
