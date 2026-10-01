@@ -26,6 +26,7 @@
 // layout binds them, and a moved default turns it red for that reason.
 import { STANDARD_INDEX, installFakePad } from "./lib/fake-pad.mjs";
 import { gameUrl } from "./lib/game-url.mjs";
+import { installSpeakSpy, waitForVoiceSize } from "./lib/voice-probe.mjs";
 import {
 	bootedGame,
 	guardedOrigin,
@@ -67,25 +68,6 @@ const FAKE_BYTES = [
 	...FAKE.voices.map((v) => `voice:${v}`),
 ].reduce((n, id) => n + FAKE.files[id].bytes, 0);
 
-/**
- * An init script: `window.__spySpeak(on)` reports every line handed to the
- * engine — its length, its bus and whether it has a room — and returns a
- * restore. One copy, so a change to `speak`'s signature is made once.
- */
-const installSpeakSpy = () => {
-	window.__spySpeak = (on) => {
-		const audio = window.__seelite.audio;
-		const speak = audio.speak.bind(audio);
-		audio.speak = (x, rate, bus, space) => {
-			on({ n: x.length, bus: bus ?? "console", space: !!space });
-			return speak(x, rate, bus, space);
-		};
-		return () => {
-			audio.speak = speak;
-		};
-	};
-};
-
 const browser = await launchChromium();
 const { check, watch, exit } = tally();
 const contexts = [];
@@ -118,15 +100,7 @@ try {
 		await bootedGame(page, 60000);
 		await page.waitForSelector("[data-voice-question]", { timeout: 20000 });
 		// The size arrives after the view: wait for the figure.
-		await page.waitForFunction(
-			() =>
-				/\d MB/.test(
-					document.querySelector('#seelite-commander [data-row="0"]')
-						?.textContent ?? "",
-				),
-			null,
-			{ timeout: 20000 },
-		);
+		await waitForVoiceSize(page);
 		return page;
 	};
 	const state = (page) =>

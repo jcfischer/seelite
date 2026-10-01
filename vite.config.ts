@@ -41,8 +41,8 @@ export default defineConfig({
 	 * and the dependency pre-bundler moved the module away from them: the
 	 * #604 prototype's worker could not load it pre-bundled. The worker hands
 	 * the runtime its WASM binary (`wasmBinary`), so no binary is fetched by
-	 * that resolution; `probe-neural-voice` records every request the voice
-	 * makes and holds them to this origin.
+	 * that resolution; `scripts/measure-neural-voice.mjs` (by hand) records
+	 * every request the voice makes and holds them to this origin.
 	 */
 	optimizeDeps: { exclude: ["onnxruntime-web"] },
 	/**

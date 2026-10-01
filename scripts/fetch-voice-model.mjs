@@ -1,8 +1,10 @@
 /**
  * Fetch the neural voice's files into `public/voice-model/` (#604): the model
- * and voices from their repository at the pinned revision, the runtime's
- * binaries from `node_modules`, each checked against its checksum, cut into
- * parts and listed in `manifest.json`. Git-ignored output; the deploy job
+ * and voices from their repository at the pinned revision, each checked
+ * against its pinned checksum; the runtime's binaries from `node_modules`,
+ * which the lockfile's integrity pins and nothing here re-checks — their
+ * checksum in the manifest is taken from the installed file, for the
+ * browser's check; then cut into parts and listed in `manifest.json`. Git-ignored output; the deploy job
  * runs this on `main`, and a developer runs it once to hear the voice.
  *
  *   node scripts/fetch-voice-model.mjs

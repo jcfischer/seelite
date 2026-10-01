@@ -27,11 +27,18 @@ export {
 	backendFileIds,
 	KOKORO_RATE,
 	type NeuralBackend,
+	RADIO_RATE,
 	resample,
 	styleRow,
 	type VoiceManifest,
 } from "./neural-voice-core";
-import { dropParts, lineKey, loadLine, storeLine } from "./voice-store";
+import {
+	dropParts,
+	hasLine,
+	lineKey,
+	loadLine,
+	storeLine,
+} from "./voice-store";
 
 /**
  * Which engine speaks (#604): the natural voice when `?voices=neural` forces
@@ -224,6 +231,8 @@ export class NeuralVoice {
 	/** Settles the load in flight `false` when its worker is stopped. */
 	private settle: ((ok: boolean) => void) | null = null;
 	private next = 1;
+	/** WebGPU could not run here this page: `localStorage` may not keep it. */
+	private webGpuRefused = false;
 	/** Lines being generated, by line key. */
 	private inflight = new Map<
 		string,
@@ -257,7 +266,9 @@ export class NeuralVoice {
 	async backend(m?: VoiceManifest): Promise<NeuralBackend> {
 		// WebGPU already failed here on this build: the question quotes, and
 		// the start loads, what will actually run.
-		if (m && webGpuFailed(m.version)) return "wasm";
+		// The page's own memory first: without storage, the stored one is
+		// lost and a failing WebGPU would be tried again on every start.
+		if (this.webGpuRefused || (m && webGpuFailed(m.version))) return "wasm";
 		try {
 			const adapter = await (navigator as GpuNavigator).gpu?.requestAdapter();
 			if (adapter?.features.has("shader-f16")) return "webgpu";
@@ -322,7 +333,10 @@ export class NeuralVoice {
 			// WebGPU cannot run (sage round 4 on #606).
 			if (gen !== this.gen) return this.state;
 			const next: NeuralBackend | null = force ? null : fallbackAfter(b);
-			if (b === "webgpu" && next) forgetWebGpu(m);
+			if (b === "webgpu" && next) {
+				this.webGpuRefused = true;
+				forgetWebGpu(m);
+			}
 			b = next;
 		}
 		return this.state;
@@ -385,6 +399,7 @@ export class NeuralVoice {
 					// rather than keep a ready voice that never speaks (sage
 					// round 4 on #606). One bad line after others spoke is a line.
 					if (backend === "webgpu" && !spoke && this.worker === worker) {
+						this.webGpuRefused = true;
 						forgetWebGpu(m);
 						fail(r.message);
 						void this.start();
@@ -451,6 +466,18 @@ export class NeuralVoice {
 		await storeLine(key, samples);
 		this.remember(key, samples);
 		return samples;
+	}
+
+	/**
+	 * Make sure a line is in the line cache, without decoding it: the
+	 * background preparation runs every line in every speaker voice on each
+	 * start, and most are kept already (sage round 5 on #606).
+	 */
+	async prepare(text: string, voice: NeuralVoiceId): Promise<void> {
+		if (this.state.kind !== "ready" || !this.manifest) return;
+		const key = lineKey(text, voice, 1, this.manifest.version);
+		if (this.memo.has(key) || (await hasLine(key))) return;
+		await this.line(text, voice);
 	}
 
 	/** A line from the line cache only, or `null`: for a caller that would

@@ -147,6 +147,17 @@ const request = <T>(req: IDBRequest<T>) =>
 		req.onerror = () => reject(req.error);
 	});
 
+/** Whether a line is kept: its key alone, read-only, nothing decoded. */
+export async function hasLine(key: string): Promise<boolean> {
+	try {
+		const db = await openLines();
+		const meta = db.transaction(LINE_META, "readonly").objectStore(LINE_META);
+		return (await request(meta.getKey(key))) !== undefined;
+	} catch {
+		return false;
+	}
+}
+
 /** A stored line as 16 kHz samples, or `null`; a hit is marked used. */
 export async function loadLine(key: string): Promise<Float32Array | null> {
 	try {

@@ -20,12 +20,14 @@ import { fetchBundled, isBundlePath } from "../src/bundle-fetch";
 import {
 	backendBytes,
 	NEURAL_ROLE,
+	RADIO_RATE,
 	NEURAL_VOICES,
 	resample,
 	SPEAKER_VOICES,
 	speakerVoice,
 	type VoiceManifest,
 } from "../src/neural-voice";
+import { SPEECH_RATE } from "../src/speech";
 import { LEXICON } from "../src/speech-lexicon";
 import { IPA_GB, IPA_US } from "../src/voice-ipa";
 import { evictionPlan, lineKey } from "../src/voice-store";
@@ -110,6 +112,12 @@ describe("the manifest", () => {
 			expect(files[0]).toStartWith("model-");
 			expect(files[1]).toStartWith("ort-");
 		}
+	});
+});
+
+describe("the rate a line leaves the worker at", () => {
+	test("is the radio's: the core's copy and the formant voice's agree", () => {
+		expect(RADIO_RATE).toBe(SPEECH_RATE);
 	});
 });
 

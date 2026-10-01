@@ -39,6 +39,7 @@
  */
 import { readFileSync } from "node:fs";
 import { gameUrl } from "./lib/game-url.mjs";
+import { installSpeakSpy, waitForVoiceSize } from "./lib/voice-probe.mjs";
 import {
 	bootedGame,
 	guardedOrigin,
@@ -61,21 +62,6 @@ if (!(manifest.headers.get("content-type") ?? "").includes("json")) {
 	process.exit(1);
 }
 
-/** `window.__spySpeak(on)`: every line handed to the engine, and a restore. */
-const installSpeakSpy = () => {
-	window.__spySpeak = (on) => {
-		const audio = window.__seelite.audio;
-		const speak = audio.speak.bind(audio);
-		audio.speak = (x, rate, bus, space) => {
-			on({ n: x.length, bus: bus ?? "console", space: !!space });
-			return speak(x, rate, bus, space);
-		};
-		return () => {
-			audio.speak = speak;
-		};
-	};
-};
-
 const browser = await launchChromium();
 const { check, watch, exit } = tally();
 const contexts = [];
@@ -91,15 +77,7 @@ try {
 		watch(page);
 		await page.goto(gameUrl(origin, { raider: "off", voices }));
 		await bootedGame(page, 60000);
-		await page.waitForFunction(
-			() =>
-				/\d MB/.test(
-					document.querySelector('#seelite-commander [data-row="0"]')
-						?.textContent ?? "",
-				),
-			null,
-			{ timeout: 30000 },
-		);
+		await waitForVoiceSize(page);
 		await page.click('#seelite-commander [data-row="0"]');
 		await page.waitForFunction(
 			() => ["ready", "failed"].includes(window.__seelite.neural.state.kind),

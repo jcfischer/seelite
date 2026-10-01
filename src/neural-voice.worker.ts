@@ -2,7 +2,7 @@
  * The neural voice's worker (#604): Kokoro-82M on onnxruntime-web, off the
  * main thread, so a line generating does not hold the frame loop. It can
  * still slow frames on WebGPU, where the model shares the GPU with the game:
- * `probe-neural-voice` prints the p95.
+ * `scripts/measure-neural-voice.mjs` prints the p95.
  *
  * `load` downloads every file the backend needs — its model, its runtime
  * binary and every voice — through the cache (`voice-store.ts`), checks each
@@ -18,13 +18,13 @@ import {
 	backendBytes,
 	KOKORO_RATE,
 	type NeuralBackend,
+	RADIO_RATE,
 	type Reply,
 	type Request,
 	resample,
 	styleRow,
 	type VoiceManifest,
 } from "./neural-voice-core";
-import { SPEECH_RATE } from "./speech";
 import { cachedPart, dropOldModels, dropParts } from "./voice-store";
 
 type Ort = typeof import("onnxruntime-web/wasm");
@@ -75,6 +75,15 @@ async function assemble(
 		const buf = new Uint8Array(
 			await cachedPart(manifest.version, `${base}${part}`),
 		);
+		// A part longer than the room left is a bad part: forget it like a
+		// checksum failure, or every later start fails on it (sage round 5).
+		if (at + buf.length > file.bytes) {
+			await dropParts(
+				manifest.version,
+				file.parts.map((p) => `${base}${p}`),
+			);
+			throw new Error(`${id}: more than ${file.bytes} bytes`);
+		}
 		out.set(buf, at);
 		at += buf.length;
 		progress(buf.length);
@@ -163,7 +172,7 @@ async function say(m: SayMessage) {
 		speed: new ort.Tensor("float32", new Float32Array([m.speed]), [1]),
 	});
 	const wave = (out.waveform ?? Object.values(out)[0]).data as Float32Array;
-	const samples = resample(wave, KOKORO_RATE, SPEECH_RATE);
+	const samples = resample(wave, KOKORO_RATE, RADIO_RATE);
 	post({ type: "audio", id: m.id, samples, ms: performance.now() - t0 }, [
 		samples.buffer,
 	]);

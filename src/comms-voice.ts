@@ -155,7 +155,7 @@ export async function prewarmNeural() {
 		for (const id of Object.keys(COMMS_LINES) as CommsLineId[]) {
 			const voice = readyVoice();
 			if (!voice) return;
-			await voice.line(COMMS_LINES[id].text, who).catch(() => null);
+			await voice.prepare(COMMS_LINES[id].text, who).catch(() => {});
 		}
 }
 

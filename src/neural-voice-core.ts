@@ -9,6 +9,11 @@
 /** The model's output rate, and the length of one style row. */
 export const KOKORO_RATE = 24000;
 const STYLE = 256;
+/** The rate the radio runs at, and so the rate a line leaves the worker
+ *  at: the formant voice's `SPEECH_RATE`, declared here so the worker does
+ *  not import the formant synthesiser for one number (a test holds them
+ *  equal). */
+export const RADIO_RATE = 16000;
 /** Kokoro's longest input, in tokens between the two pads. */
 export const MAX_TOKENS = 510;
 

@@ -9,7 +9,10 @@
  * `tests/public-site.test.ts` allows only this module, beside the visit
  * counter, to call `fetch` in `src/`; `tests/voice-model.test.ts` holds the
  * refusal; and the runtime's own loaders, which no source scan can see, are
- * held to the origin by `probe-neural-voice`, which records every request.
+ * held to the origin only by `scripts/measure-neural-voice.mjs`, which
+ * records every request — **run by hand** (the principal's ruling, D5 on
+ * #606), so a runtime bump that fetched off-origin would pass every gate
+ * until someone runs it.
  */
 
 /** Any origin will do: the question is only whether a path leaves it. */
