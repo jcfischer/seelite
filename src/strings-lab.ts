@@ -197,7 +197,9 @@ export function mountStringsLab() {
 		if (pending !== null) window.clearTimeout(pending);
 		pending = window.setTimeout(() => {
 			pending = null;
-			playWaltz(true);
+			// Read again when it fires: Stop, or a note, inside the 400 ms ends
+			// the waltz, and the edit must not bring it back (sage round 2).
+			if (waltzOn) playWaltz(true);
 		}, 400);
 	};
 

@@ -165,7 +165,7 @@ const introSeconds = () => {
 test(
 	"resolved at the plane, it plays every part, ends, and falls silent (D1)",
 	() => {
-		// A 62 s run: the shortest measured on #547.
+		// A 62 s run: inside the shortest measured on #547, 61–65 s from 4 km.
 		const resolveAt = 62 * SR - ((62 * SR) % 128);
 		const r = render(75, (e, f) => {
 			if (f === resolveAt) e.command({ type: "resolve", at: "bar" }, f);

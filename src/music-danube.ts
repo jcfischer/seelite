@@ -360,8 +360,9 @@ const HYBRID: Voicing = {
 	chords: ORCHESTRA.chords,
 };
 
-/** Every voicing, by name: `orchestra` is D8's and the one the docking
- *  computer will play. Nothing in the game plays the waltz yet. */
+/** Every voicing, by name: `orchestra` is D8's and what `BLUE_DANUBE` is.
+ *  Which voicing the docking computer plays is not yet ruled (D12), and
+ *  nothing in the game plays the waltz yet. */
 export const DANUBE_VOICINGS = {
 	orchestra: ORCHESTRA,
 	oxygene: OXYGENE,
@@ -670,7 +671,8 @@ const SCORE: Song = {
 	space: { reverbS: 3.5 },
 };
 
-/** The waltz as the docking computer will play it: D8's orchestra. */
+/** The waltz in D8's orchestra: what a caller gets by default. It is not a
+ *  ruling on which voicing the docking computer plays (D12). */
 export const BLUE_DANUBE: Song = SCORE;
 
 /** Every render of the waltz by the id the sound set loads it under: the
