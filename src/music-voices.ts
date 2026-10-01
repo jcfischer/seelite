@@ -1097,7 +1097,12 @@ export class VoiceBank {
 			this.vel[i] += LEGATO_VEL * (this.velTo[i] - this.vel[i]);
 		}
 		if (part.vibrato <= 0 || t < part.vibratoOnsetS) return 0;
-		const depth = Math.min(1, (t - part.vibratoOnsetS) / part.vibratoRiseS);
+		// Guarded as the swell is: a rise of 0 divides 0 by 0 at the onset, and
+		// the NaN reaches the filter's state and silences the voice for good.
+		const depth = Math.min(
+			1,
+			(t - part.vibratoOnsetS) / Math.max(1e-3, part.vibratoRiseS),
+		);
 		return (
 			part.vibrato *
 			depth *
