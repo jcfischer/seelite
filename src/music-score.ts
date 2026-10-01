@@ -99,7 +99,7 @@ export interface TempoPoint {
  * - `spread` — analog, drone: how wide across the field they sit, `0`..`1`.
  * - `envAmount`, `envDecayS` — analog, acid: the filter envelope, in octaves
  *   above `cutoffHz` at its peak, and its 60 dB fall.
- * - `resonance` — analog, acid: the filter's peak at its cutoff, `0`..`1`.
+ * - `resonance` — analog, acid, noise: the filter's peak at its cutoff, `0`..`1`.
  * - `drive` — acid: saturation, `0`..`1`. Strings: the same after the
  *   lowpass, its level kept — the grit (#547 D16).
  * - `glideS` — acid: a note that overlaps the next slides to it, on this
@@ -115,6 +115,12 @@ export interface TempoPoint {
  *   **flute** (#547 D10), `index` is how much breath the tone carries —
  *   more at the onset, a little under the held note — `cutoffHz` is where
  *   that breath's band sits, and `glideS` makes it legato as for strings.
+ * - `sweepS`, `sweepOct` — analog, acid, noise: a slow sweep of the
+ *   filter, one period in `sweepS` seconds, opening up to `sweepOct`
+ *   octaves above where it would be and closing again. Its phase is the
+ *   part's, on the synth's clock, so a run of short notes hears one
+ *   continuous movement: the Berlin-school sequence, and the noise wash.
+ *   For noise the band's centre moves.
  * - `cutoffHz` — pad: the lowpass. Pluck: the brightness of the pluck's first
  *   moment. Noise has none: its band is centred on the note's pitch.
  * - `pan` — `-1` left .. `1` right; 0, the centre, is the default.
@@ -143,6 +149,8 @@ export interface PartSpec {
 	readonly drive?: number;
 	readonly glideS?: number;
 	readonly vibrato?: number;
+	readonly sweepS?: number;
+	readonly sweepOct?: number;
 	readonly cutoffHz?: number;
 	readonly pan?: number;
 	readonly reverb?: number;

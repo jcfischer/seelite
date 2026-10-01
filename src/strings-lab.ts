@@ -197,7 +197,9 @@ export function mountStringsLab() {
 		if (pending !== null) window.clearTimeout(pending);
 		pending = window.setTimeout(() => {
 			pending = null;
-			playWaltz(true);
+			// Read again when it fires: Stop, or a note, inside the 400 ms ends
+			// the waltz, and the edit must not bring it back (sage round 2).
+			if (waltzOn) playWaltz(true);
 		}, 400);
 	};
 
@@ -251,8 +253,11 @@ export function mountStringsLab() {
 		const edits = { ...(state.edits[key()] ?? {}), [k]: v };
 		state.edits[key()] = edits;
 		if (ab === "shipped") {
+			// Back to the edited desk: every slider shows it, not only this one
+			// (sage round 1 — the others went on showing the shipped values).
 			ab = "edited";
 			$("ab").textContent = "A/B: edited";
+			renderSliders();
 		}
 		const out = root.querySelector(`output[data-out="${k}"]`);
 		if (out) out.textContent = fmt(p, v);

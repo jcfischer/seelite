@@ -70,7 +70,8 @@ function arg(name) {
 const label = arg("label");
 // `--only a,b`: render just those entries — a re-render of what one change
 // moved, rather than the whole set.
-const only = arg("only")?.split(",");
+// De-duplicated, so a repeated name is not read as a missing one.
+const only = arg("only") ? [...new Set(arg("only").split(","))] : undefined;
 const ref = arg("ref");
 // `--set classical`: #589's set-pieces instead of the cue set. They are a
 // listening pass for the grilling, so no probe bands them.

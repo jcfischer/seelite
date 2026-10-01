@@ -104,6 +104,20 @@ export const PROBE_CATALOG = Object.freeze(
 			],
 		),
 		entry(
+			"probe-voices.mjs",
+			"Renders the synthesised voices offline through the engine's buses: a comms line on the console bus with the console row as its only level, the numbers station on the music bus with an echo that outlasts it against a dry control, a second line waiting for the first; and the running game saying approach control's answer on a clearance request, silent under ?voices=nocomms, and saying the director's numbers on the music bus.",
+			[
+				"audio",
+				"voices",
+				"speech",
+				"comms",
+				"radio",
+				"music",
+				"console bus",
+				"music bus",
+			],
+		),
+		entry(
 			"probe-boot.mjs",
 			"Checks that the normal page boots cleanly and exposes the renderer, world, and deterministic seed contract.",
 			["application boot", "renderer", "seed", "window handle", "page errors"],

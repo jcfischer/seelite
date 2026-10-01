@@ -35,7 +35,9 @@ import {
 	flightBed as legacyFlightBed,
 	stationBed as legacyStationBed,
 } from "./music-generate-legacy";
-import type { MusicCommand } from "./music-score";
+import { berlinFlightBed, berlinStationBed } from "./music-generate-berlin";
+import { numbersPhrase } from "./comms";
+import type { MusicCommand, Song } from "./music-score";
 import type { StationType } from "./station";
 
 /** Who owns the sound this frame. */
@@ -88,6 +90,16 @@ export const REFRESH_S = 180;
 /** The cruise lift (D7). */
 export const CRUISE_TEMPO = 1.06;
 
+/** Whether these arms play the numbers station at all (#600): the one
+ *  gate the director says them by and the host renders them ahead by. */
+export const numbersOn = (arms: MusicArms) =>
+	arms.voice && arms.bed === "berlin";
+
+/** The numbers station's first phrase in calm, and the gap after each. By
+ *  ear, and a placeholder until it is heard: rare enough to be an event. */
+export const VOICE_FIRST_S = 40;
+export const VOICE_EVERY_S = 95;
+
 const FADE_IN_S = 3;
 const HAND_OVER_S = 4;
 const FADE_OUT_S = 2.5;
@@ -100,20 +112,42 @@ const rank = (l: MusicLevel) => FLIGHT_LEVELS.indexOf(l);
  * The prototype's arms, flown by ear from `?music=`: `off`; a level name,
  * which holds the music at that level whatever the signals say, for
  * listening; `lowhull-always`, the arm the principal did not choose —
- * low condition is combat even with no threat; and `legacy`, the first bed
- * the principal heard as boring (D12), kept to compare against.
+ * low condition is combat even with no threat; and which bed plays —
+ * `legacy`, the first bed the principal heard as boring (D12), `second`,
+ * the authored-fragment bed heard as too slow (2026-09-30), or the Berlin-
+ * school prototype, the default, kept side by side to compare by ear.
  */
 export interface MusicArms {
 	readonly off: boolean;
 	readonly force: MusicLevel | null;
 	readonly lowHull: "threat" | "always";
-	readonly legacy: boolean;
+	readonly bed: MusicBed;
+	/** The numbers station in Berlin calm (#600); `?voices=off` or
+	 *  `nomusic` turns it off. */
+	readonly voice: boolean;
 }
+export type MusicBed = "legacy" | "second" | "berlin";
+
+/** Each bed's two songs: a system's flight bed and a station's. */
+const BEDS: Readonly<
+	Record<
+		MusicBed,
+		{
+			flight: (systemSeed: number, variant: number) => Song;
+			station: (systemSeed: number, role: StationType, variant: number) => Song;
+		}
+	>
+> = {
+	legacy: { flight: legacyFlightBed, station: legacyStationBed },
+	second: { flight: flightBed, station: stationBed },
+	berlin: { flight: berlinFlightBed, station: berlinStationBed },
+};
 export const DEFAULT_MUSIC_ARMS: MusicArms = {
 	off: false,
 	force: null,
 	lowHull: "threat",
-	legacy: false,
+	bed: "berlin",
+	voice: true,
 };
 
 export function musicArms(value: string | null): {
@@ -126,7 +160,8 @@ export function musicArms(value: string | null): {
 		if (!token) continue;
 		if (token === "off") arms = { ...arms, off: true };
 		else if (token === "lowhull-always") arms = { ...arms, lowHull: "always" };
-		else if (token === "legacy") arms = { ...arms, legacy: true };
+		else if (token === "legacy" || token === "second" || token === "berlin")
+			arms = { ...arms, bed: token };
 		else if ((FLIGHT_LEVELS as readonly string[]).includes(token))
 			arms = { ...arms, force: token as MusicLevel };
 		else unknown.push(token);
@@ -188,6 +223,10 @@ export interface MusicState {
 	/** Time at calm since the last variant came in. */
 	readonly calmS: number;
 	readonly cruise: boolean;
+	/** Time at Berlin calm since the last numbers phrase, and how many have
+	 *  been heard (#600). */
+	readonly voiceS: number;
+	readonly voiceN: number;
 }
 
 export const initialMusicState = (): MusicState => ({
@@ -200,6 +239,8 @@ export const initialMusicState = (): MusicState => ({
 	fallS: 0,
 	calmS: 0,
 	cruise: false,
+	voiceS: 0,
+	voiceN: 0,
 });
 
 const other = (id: FlightId | null): FlightId =>
@@ -217,7 +258,7 @@ export function stepMusic(
 	r: MusicReading,
 	dt: number,
 	arms: MusicArms = DEFAULT_MUSIC_ARMS,
-): { state: MusicState; commands: MusicCommand[] } {
+): { state: MusicState; commands: MusicCommand[]; voice?: string } {
 	const cmds: MusicCommand[] = [];
 	if (!r.ready) return { state: s, commands: cmds };
 
@@ -232,18 +273,14 @@ export function stepMusic(
 
 	if (r.scene === "docked") {
 		const role = r.stationRole ?? "trade";
-		const key = `${r.systemSeed >>> 0}/${role}/${arms.legacy ? "legacy" : "second"}`;
+		const key = `${r.systemSeed >>> 0}/${role}/${arms.bed}`;
 		if (s.bed === "station" && s.stationKey === key)
 			return { state: s, commands: cmds };
 		if (s.stationKey !== key)
 			cmds.push({
 				type: "load",
 				id: "station",
-				song: (arms.legacy ? legacyStationBed : stationBed)(
-					r.systemSeed,
-					role,
-					0,
-				),
+				song: BEDS[arms.bed].station(r.systemSeed, role, 0),
 			});
 		cmds.push({
 			type: "crossfade",
@@ -259,7 +296,7 @@ export function stepMusic(
 
 	const target = dangerLevel(r, arms);
 	// Into flight: from silence, from the station, or into a new system.
-	const flightKey = `${r.systemSeed >>> 0}/${arms.legacy ? "legacy" : "second"}`;
+	const flightKey = `${r.systemSeed >>> 0}/${arms.bed}`;
 	if (s.bed !== "flight" || s.flightKey !== flightKey) {
 		let { flightId, variant } = s;
 		if (s.flightKey !== flightKey || flightId === null) {
@@ -268,10 +305,7 @@ export function stepMusic(
 			cmds.push({
 				type: "load",
 				id: flightId,
-				song: (arms.legacy ? legacyFlightBed : flightBed)(
-					r.systemSeed,
-					variant,
-				),
+				song: BEDS[arms.bed].flight(r.systemSeed, variant),
 			});
 		}
 		cmds.push(
@@ -296,6 +330,9 @@ export function stepMusic(
 				fallS: 0,
 				calmS: 0,
 				cruise: r.cruise,
+				// A new system starts its own numbers from the first:
+				// `numbersPhrase` is the system's, and so is their order.
+				...(s.flightKey === flightKey ? {} : { voiceS: 0, voiceN: 0 }),
 			},
 			commands: cmds,
 		};
@@ -344,10 +381,7 @@ export function stepMusic(
 			{
 				type: "load",
 				id: flightId,
-				song: (arms.legacy ? legacyFlightBed : flightBed)(
-					r.systemSeed,
-					variant,
-				),
+				song: BEDS[arms.bed].flight(r.systemSeed, variant),
 			},
 			{
 				type: "crossfade",
@@ -364,8 +398,33 @@ export function stepMusic(
 		);
 	}
 
+	// A numbers station overheard, far off (#600): in Berlin calm only, the
+	// first after `VOICE_FIRST_S` and then every `VOICE_EVERY_S`. The host says
+	// it; the director only says when and what.
+	let { voiceS, voiceN } = s;
+	let voice: string | undefined;
+	if (numbersOn(arms) && level === "calm") {
+		voiceS += dt;
+		if (voiceS >= (voiceN === 0 ? VOICE_FIRST_S : VOICE_EVERY_S)) {
+			voiceS = 0;
+			voice = numbersPhrase(r.systemSeed, voiceN);
+			voiceN += 1;
+		}
+	} else voiceS = 0;
+
 	return {
-		state: { ...s, level, fallS, calmS, cruise, flightId, variant },
+		state: {
+			...s,
+			level,
+			fallS,
+			calmS,
+			cruise,
+			flightId,
+			variant,
+			voiceS,
+			voiceN,
+		},
 		commands: cmds,
+		...(voice ? { voice } : {}),
 	};
 }

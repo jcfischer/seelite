@@ -94,6 +94,10 @@ import {
 	stockResponse,
 } from "../src/market";
 import { BERTH_CELL } from "../src/station-interior";
+import {
+	HULL_TRADE_IN_FRACTION,
+	STARTING_CREDITS,
+} from "../src/station-commerce";
 import { derivedCeiling, m3PerTonneOfHold } from "../tests/helpers/hull-math";
 import {
 	CLOSABLE_RATIO,
@@ -886,19 +890,186 @@ for (const cap of CAPITAL_CAPS) {
 	);
 }
 {
-	// **Not the claim #182 made here.** It read "the cheapest hull costs more
-	// than the kit, so a player who can buy a hull at all is past the range
-	// where this bias bites". The kit grew past the interceptor's 20,000 Cr
-	// before #383 touched a price, and #383's re-price added the prospector:
-	// printed from the roster, so the next change cannot make it false silently.
-	const cheaper = underKit((h) => hullPriceCr(h) as number);
-	console.log(
-		cheaper.length === 0
-			? "  Every hull in section F costs more than the kit, so a player who can buy\n  one outright is past the range where this bias bites."
-			: `  ${cheaper.join(" and ")} cost less than the kit, so a pilot who buys one` +
-					"\n  outright can still be inside the range where it bites. This sweep does" +
-					"\n  not measure what that costs them, and §7.1 records it as open.",
-	);
+	// **#594: what the bias costs a pilot who buys a hull below the kit.** #182
+	// closed this section on "the cheapest hull costs more than the kit, so a
+	// player who can buy a hull at all is past the range where this bias bites".
+	// The kit grew past the interceptor before #383 touched a price, and #383's
+	// re-price added the prospector — so the roster is read here, and the next
+	// change cannot make that sentence false silently.
+	//
+	// The law is anchored at the baseline hold, so what it asserts about a
+	// sub-kit hull is one ratio — its price over the baseline's — and that is
+	// what is measured, paired per world: `r(h, C) / r(baseline, C)` at one
+	// capital `C`, against section C's same ratio at the kit. A slope fitted on
+	// these holds would differ from section C's lower segment by the holds
+	// alone, before capital entered at all. And the lower segment's own ±1σ is
+	// not the yardstick: it is the fit's error on `b`, and section C's own kit
+	// ratio sits outside it at 8 t with no capital cap anywhere — that gap is
+	// the fit's residual. The first draft printed "out" beside every row for it.
+	//
+	// Two arms, because a capital is two different things. `cap` is section I's:
+	// one hop may never spend more than `C`, so the wallet never grows — a bound,
+	// not a pilot. `start` opens at `C` and compounds, which is a pilot who has
+	// just bought the hull. The capitals are section I's sweep plus what a pilot
+	// holds after the trade-in from the baseline hull with an empty wallet —
+	// every purchase carries a trade-in, because a pilot always flies a hull —
+	// derived from the prices rather than typed in, because they moved once
+	// already the day this was written.
+	const subKit = underKit((h) => hullPriceCr(h) as number);
+	if (subKit.length === 0) {
+		console.log(
+			"  Every hull in section F costs more than the kit, so a player who can buy" +
+				"\n  one outright is past the range where this bias bites.",
+		);
+	} else {
+		const baseT = HOLD_REFERENCE_T;
+		// The shipyard's own arithmetic (`hullOffer`): the rows' list prices and
+		// the trade-in rounded — not the law, though the suite holds them equal.
+		const listOf = (id: HullId) => HULL_SPECS[id].priceCr as number;
+		const tradeInOf = (id: HullId) =>
+			Math.round(listOf(id) * HULL_TRADE_IN_FRACTION);
+		// Every route into a sub-kit hull from every hull a pilot can fly, and
+		// what the pilot holds after it from an empty wallet. Not the baseline
+		// hull alone: the prospector into the interceptor leaves 3,220 Cr, under
+		// either of the baseline's routes, and a floor read off the baseline
+		// would print a pass that the next retune could make false silently.
+		const routes = subKit.flatMap((to) =>
+			PURCHASABLE_HULL_IDS.filter((from) => from !== to).map((from) => ({
+				name: `${from} -> ${to}`,
+				cr: tradeInOf(from) - listOf(to),
+			})),
+		);
+		// A route that leaves more than the kit is past section C's own capital.
+		const tradeInCaps = routes.filter((r) => r.cr > 0 && r.cr < fullKitCr());
+		// **Not every route in is paid by the trade-in.** Where the new hull's
+		// list exceeds the trade-in, the pilot pays the difference in cash and
+		// can leave the yard with nothing. An empty wallet cannot be flown — the
+		// trader buys nothing, every rate is zero and the ratio is undefined — so
+		// the lowest balance flown is a new game's own opening, and what a pilot
+		// holds between that and nothing is not measured.
+		const cashRoutes = routes.filter((r) => r.cr <= 0).map((r) => r.name);
+		const crText = (c: number) => `${Math.round(c).toLocaleString("en-GB")} Cr`;
+		const caps = [
+			...new Set([
+				STARTING_CREDITS,
+				...CAPITAL_CAPS.filter((c) => c < fullKitCr()),
+				...tradeInCaps.map((c) => c.cr),
+				fullKitCr(),
+			]),
+		].sort((a, b) => a - b);
+		const capLabel = (c: number) => {
+			const from = tradeInCaps.filter((t) => t.cr === c).map((t) => t.name);
+			if (from.length > 0) return from.join(", ");
+			if (c === STARTING_CREDITS) return "a new game's opening";
+			return c === fullKitCr() ? "the kit" : "section I";
+		};
+		const labelWidth = Math.max(...caps.map((c) => capLabel(c).length));
+		console.log(
+			`  ${subKit.join(" and ")} cost less than the kit, so a pilot who buys one` +
+				"\n  can hold less than section C's capital. What that costs them, as the" +
+				`\n  ratio the law asserts: r(h) / r(${baseT} t) at one capital, per world, median` +
+				"\n  [p10–p90], and the per-world ratio of each arm to section C's at the kit." +
+				`\n  A trade-in capital is ${HULL_TRADE_IN_FRACTION} x the ${PLAYER_BASELINE_HULL}'s list less the new hull's,` +
+				"\n  from an empty wallet.",
+		);
+		// Each arm flown once per hold and options; the baseline's arm is shared
+		// by every sub-kit hold rather than re-flown for each.
+		const flown = new Map<string, number[]>();
+		const armRates = (opts: RunOptions) => (x: number) => {
+			const key = `${x}:${JSON.stringify(opts)}`;
+			let rates = flown.get(key);
+			if (!rates) {
+				rates = armAt(x, opts).map(rateOf);
+				flown.set(key, rates);
+			}
+			return rates;
+		};
+		const ratios = (rates: (x: number) => number[], h: number) =>
+			WORLDS.map((_, wi) => finite("ratio", rates(h)[wi] / rates(baseT)[wi]));
+		const cell = (r: readonly number[]) =>
+			`${median(r).toFixed(3)} [${quantile(r, 0.1).toFixed(3)}–${quantile(r, 0.9).toFixed(3)}]`;
+		/** The worst median drift from the kit's ratio at each capital, over both
+		 *  arms and every sub-kit hold. */
+		const drift = new Map<number, number>();
+		/** The same, on the start arm alone: the pilot, without the cap's bound. */
+		const startDrift = new Map<number, number>();
+		for (const h of subKit.map((id) => HULL_SPECS[id].holdT)) {
+			const kit = ratios(curveAt, h);
+			console.log(
+				`\n  ${h} t: the law says ${((h / baseT) ** HULL_PRICE_EXPONENT).toFixed(3)}; ` +
+					`section C at the kit: ${cell(kit)}`,
+			);
+			console.log(
+				`${rightAlign("capital", 17)}  ${"from".padEnd(labelWidth)}` +
+					`${rightAlign("cap arm", 25)}${rightAlign("/kit", 7)}` +
+					`${rightAlign("start arm", 26)}${rightAlign("/kit", 7)}`,
+			);
+			for (const c of caps) {
+				const capped = ratios(armRates({ capitalCapCr: c }), h);
+				// The start arm at the kit *is* section C's arm, so it is read back.
+				const started =
+					c === fullKitCr() ? kit : ratios(armRates({ startCr: c }), h);
+				const toKit = (r: readonly number[]) =>
+					median(r.map((x, wi) => x / kit[wi]));
+				const [capKit, startKit] = [toKit(capped), toKit(started)];
+				drift.set(
+					c,
+					Math.max(
+						drift.get(c) ?? 0,
+						Math.abs(capKit - 1),
+						Math.abs(startKit - 1),
+					),
+				);
+				startDrift.set(
+					c,
+					Math.max(startDrift.get(c) ?? 0, Math.abs(startKit - 1)),
+				);
+				console.log(
+					`${rightAlign(crText(c), 17)}  ${capLabel(c).padEnd(labelWidth)}` +
+						`${rightAlign(cell(capped), 25)}${rightAlign(capKit.toFixed(3), 7)}` +
+						`${rightAlign(cell(started), 26)}${rightAlign(startKit.toFixed(3), 7)}`,
+				);
+			}
+		}
+		// **Read off the sweep, not asserted beside it**, on section I's own
+		// tolerance scaled to a ratio: a 1% median drift, either arm, either hold.
+		const TOLERANCE = 0.01;
+		const settledFrom = (by: Map<number, number>) => {
+			const settled = caps.filter((c) =>
+				caps.filter((d) => d >= c).every((d) => (by.get(d) ?? 0) < TOLERANCE),
+			);
+			return settled.length > 0 ? Math.min(...settled) : Number.NaN;
+		};
+		const stopsAt = settledFrom(drift);
+		// No route paid by its trade-in means a pilot can arrive with nothing on
+		// every one: the floor is zero, which no swept capital clears.
+		const lowestTradeIn =
+			tradeInCaps.length > 0 ? Math.min(...tradeInCaps.map((t) => t.cr)) : 0;
+		console.log(
+			Number.isFinite(stopsAt) && stopsAt <= lowestTradeIn
+				? `\n  **The bias has stopped by ${crText(stopsAt)}** — within ${100 * TOLERANCE}% of the kit on both arms` +
+						`\n  from there up — and the lowest trade-in capital is ${crText(lowestTradeIn)}. So a pilot who` +
+						"\n  arrives by a route the trade-in pays for is past it."
+				: `\n  **The bias reaches a trade-in capital** (settled from ${Number.isFinite(stopsAt) ? crText(stopsAt) : "no capital swept"}` +
+						`\n  against the lowest trade-in's ${crText(lowestTradeIn)}), so §7.1's no-move reading owes a re-check.`,
+		);
+		if (cashRoutes.length > 0) {
+			const atOpening = startDrift.get(STARTING_CREDITS) ?? Number.NaN;
+			const pilotFrom = settledFrom(startDrift);
+			// Read off the sweep: the cap arm's bound is named as unsettled only
+			// where it is.
+			const capSettled = stopsAt <= STARTING_CREDITS;
+			console.log(
+				`\n  **Not every route in is covered by that.** ${cashRoutes.join(", ")} ${cashRoutes.length === 1 ? "costs" : "cost"}` +
+					"\n  more than the trade-in, so a pilot can leave the yard with an empty wallet," +
+					(capSettled
+						? "\n  and both arms have settled by a new game's opening. On the pilot's arm:"
+						: "\n  where the cap arm's bound does not settle. Read on the pilot's arm alone:") +
+					`\n  it is within ${100 * TOLERANCE}% of the kit from ${Number.isFinite(pilotFrom) ? crText(pilotFrom) : "no capital swept"}, and ${(100 * finite("opening drift", atOpening)).toFixed(1)}% off it` +
+					`\n  at a new game's ${crText(STARTING_CREDITS)} opening, the worst over both sub-kit holds.`,
+			);
+		}
+	}
 }
 console.log(
 	"\n  One known bias is left and it is #7's ruling rather than this file's: a hop",

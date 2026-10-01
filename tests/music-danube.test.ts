@@ -68,7 +68,9 @@ test("the loop is the waltz's 32 bars, every one at the waltz tempo", () => {
 	expect(seconds).toBeCloseTo((32 * 3 * 60) / WALTZ_BPM, 6);
 });
 
-test("the theme opens as the Breitkopf score has it: D F# A | A A' | A' F#' | F#' D", () => {
+// Pins the encoding against change: typed from the same reading of the
+// Breitkopf score as `THEME`, so it is not independent evidence of it.
+test("the theme opens as encoded from the Breitkopf score: D F# A | A A' | A' F#' | F#' D", () => {
 	const opening = line("waltz", "melody")
 		.filter((e) => e.bar < 4)
 		.map((e) => e.pitch);
@@ -163,7 +165,7 @@ const introSeconds = () => {
 test(
 	"resolved at the plane, it plays every part, ends, and falls silent (D1)",
 	() => {
-		// A 62 s run: the shortest measured on #547.
+		// A 62 s run: inside the shortest measured on #547, 61–65 s from 4 km.
 		const resolveAt = 62 * SR - ((62 * SR) % 128);
 		const r = render(75, (e, f) => {
 			if (f === resolveAt) e.command({ type: "resolve", at: "bar" }, f);

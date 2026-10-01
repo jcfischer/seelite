@@ -306,9 +306,11 @@ function adaptiveTimelines() {
 			[36, { encounter: "contest" }],
 			[54, { raiderFiring: true }],
 		]),
-		// The second bed against the first (D12): the same system held at calm
-		// for 100 s, and the same station, each way. `legacy` is the first bed.
+		// The Berlin bed (#600, the default) against the second and the first
+		// (D12): the same system held at calm for 100 s, and the same station,
+		// each way. `second` is the second bed, `legacy` the first.
 		tune("music-calm", 100, [[0, { systemSeed: 1234 }]], "calm"),
+		tune("music-calm-second", 100, [[0, { systemSeed: 1234 }]], "calm,second"),
 		tune("music-calm-legacy", 100, [[0, { systemSeed: 1234 }]], "calm,legacy"),
 		// Each danger section held for a minute: long enough to hear its form.
 		...["wary", "threat", "combat"].map((level) =>
@@ -634,16 +636,11 @@ export async function renderInPage({
 							...(await import("/src/music-test-score.ts")).TEST_SONGS,
 							// #547's waltz, where the served tree has it.
 							...(await import("/src/music-danube.ts")
-								.then((m) => ({
-									danube: m.BLUE_DANUBE,
-									// #547 D12's voicings, where the served tree has them.
-									...(m.danubeSong
-										? {
-												"danube-oxygene": m.danubeSong("oxygene"),
-												"danube-hybrid": m.danubeSong("hybrid"),
-											}
-										: {}),
-								}))
+								// One map in the module (sage round 1); an older tree has
+								// only the waltz.
+								.then((m) =>
+									m.danubeSongs ? m.danubeSongs() : { danube: m.BLUE_DANUBE },
+								)
 								.catch(() => ({}))),
 							// #589's classical set-pieces, where the served tree has them.
 							...(await import("/src/music-classical/index.ts")

@@ -29,6 +29,11 @@ export type ChangelogEntry = {
 
 export const CHANGELOG: readonly ChangelogEntry[] = [
 	{
+		date: "2026-10-01",
+		text: "Stations now answer docking requests over the radio, a ship under fire calls for a cease-fire, and the music has a new, faster sound of sequencers and sweeping noise.",
+		node: 600,
+	},
+	{
 		date: "2026-09-30",
 		text: "Some distant planets are now rocky ice worlds, and rocky planets can have moons.",
 		node: 590,

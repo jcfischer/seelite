@@ -353,3 +353,23 @@ describe("flute", () => {
 		expect(b.pitches()).toEqual([A3 + 7]);
 	});
 });
+
+test("a vibrato rise of 0 does not silence the voice (sage round 3)", () => {
+	// 0 / 0 at the vibrato's onset was a NaN that reached the filter's state
+	// and stayed there.
+	for (const kind of ["strings", "brass", "flute"] as const) {
+		const b = new VoiceBank(4, SR);
+		b.noteOn(
+			0,
+			part(kind, { vibrato: 0.2, vibratoRiseS: 0 }),
+			0,
+			0,
+			A3,
+			1,
+			SR * 2,
+		);
+		const { L } = render(b, SR * 2);
+		expect([kind, L.every(Number.isFinite)]).toEqual([kind, true]);
+		expect([kind, rms(L, SR, SR * 2) > 1e-3]).toEqual([kind, true]);
+	}
+});
