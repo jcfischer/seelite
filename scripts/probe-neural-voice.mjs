@@ -446,11 +446,17 @@ try {
 		// Not vacuous: the parts are fetched by the worker, so a recorder
 		// that could not see the worker would hold no part at all.
 		const foreign = requests.filter((u) => !u.startsWith(`${origin}/`));
+		// And the runtime fetched no binary of its own: every `.wasm` came
+		// through the parts (sage round 4 on #606). Its JavaScript is imported
+		// as a module, as every module of the game is.
+		const ownWasm = requests.filter(
+			(u) => /\.wasm(\?|$)/.test(u) && !u.includes("/voice-model/"),
+		);
 		const parts = requests.filter((u) => /\/voice-model\/.+\.part$/.test(u));
 		check(
-			"every request the voice made, its worker's included, stayed on this origin",
-			foreign.length === 0 && parts.length > 0,
-			`${requests.length} requests, ${parts.length} model parts; off-origin: ${foreign.slice(0, 3).join(", ") || "none"}`,
+			"every request the voice made, its worker's included, stayed on this origin, and no runtime binary was fetched outside the parts",
+			foreign.length === 0 && ownWasm.length === 0 && parts.length > 0,
+			`${requests.length} requests, ${parts.length} model parts; off-origin: ${foreign.slice(0, 3).join(", ") || "none"}; a runtime .wasm of its own: ${ownWasm.slice(0, 3).join(", ") || "none"}`,
 		);
 	}
 } finally {

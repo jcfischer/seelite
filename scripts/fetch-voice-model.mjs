@@ -15,7 +15,7 @@
  *
  * It also writes `LICENSES.txt` beside the parts, because both works ship
  * under licences that travel with them: Kokoro-82M under Apache-2.0 (its
- * text read from `node_modules/typescript`, which carries it verbatim) and
+ * text vendored as `scripts/lib/apache-2.0.txt`, the licence verbatim) and
  * onnxruntime-web under MIT.
  */
 import { execFileSync } from "node:child_process";
@@ -40,7 +40,7 @@ import {
 } from "./lib/voice-model.mjs";
 
 const OUT = "public/voice-model";
-const APACHE = readFileSync("node_modules/typescript/LICENSE.txt", "utf8");
+const APACHE = readFileSync("scripts/lib/apache-2.0.txt", "utf8");
 if (!APACHE.includes("Apache License") || !APACHE.includes("END OF TERMS"))
 	throw new Error("voice model: the Apache-2.0 text was not where it was");
 const MIT = `MIT License

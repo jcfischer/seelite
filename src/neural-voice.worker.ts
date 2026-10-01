@@ -17,10 +17,13 @@
 import {
 	backendBytes,
 	KOKORO_RATE,
+	type NeuralBackend,
+	type Reply,
+	type Request,
 	resample,
 	styleRow,
 	type VoiceManifest,
-} from "./neural-voice";
+} from "./neural-voice-core";
 import { SPEECH_RATE } from "./speech";
 import { cachedPart, dropOldModels, dropParts } from "./voice-store";
 
@@ -31,15 +34,11 @@ let session: import("onnxruntime-web/wasm").InferenceSession | null = null;
 const voices = new Map<string, Float32Array>();
 /** Lines waiting, the urgent first: a comms answer is said before a phrase
  *  rendered ahead for the music, which could hold the worker for seconds. */
-type SayMessage = {
-	id: number;
-	/** The line's cache key, by which a later urgent asking finds it. */
-	key: string;
-	ids: number[];
-	voice: string;
-	speed: number;
-	urgent: boolean;
-};
+type SayMessage = Extract<Request, { type: "say" }>;
+
+/** Every message to the main thread, typed against the one protocol. */
+const post = (r: Reply, transfer?: Transferable[]) =>
+	self.postMessage(r, transfer ? { transfer } : undefined);
 const waiting: SayMessage[] = [];
 let busy = false;
 
@@ -52,12 +51,7 @@ async function pump() {
 		try {
 			await say(m);
 		} catch (err) {
-			self.postMessage({
-				type: "error",
-				id: m.id,
-				stage: "say",
-				message: String(err),
-			});
+			post({ type: "error", id: m.id, stage: "say", message: String(err) });
 		}
 	}
 	busy = false;
@@ -104,7 +98,7 @@ async function assemble(
 async function load(m: {
 	manifest: VoiceManifest;
 	base: string;
-	ep: "wasm" | "webgpu";
+	ep: NeuralBackend;
 }) {
 	const t0 = performance.now();
 	const { manifest, base, ep } = m;
@@ -112,7 +106,7 @@ async function load(m: {
 	let done = 0;
 	const tick = (b: number) => {
 		done += b;
-		self.postMessage({ type: "progress", bytes: done, total });
+		post({ type: "progress", bytes: done, total });
 	};
 	const [modelId, runtimeId] = manifest.backends[ep];
 	const model = await assemble(manifest, base, modelId, tick);
@@ -135,7 +129,7 @@ async function load(m: {
 	session = await ort.InferenceSession.create(new Uint8Array(model), {
 		executionProviders: [ep],
 	});
-	self.postMessage({ type: "ready", ep, loadMs: performance.now() - t0 });
+	post({ type: "ready", backend: ep, loadMs: performance.now() - t0 });
 }
 
 async function say(m: SayMessage) {
@@ -155,17 +149,16 @@ async function say(m: SayMessage) {
 	});
 	const wave = (out.waveform ?? Object.values(out)[0]).data as Float32Array;
 	const samples = resample(wave, KOKORO_RATE, SPEECH_RATE);
-	self.postMessage(
-		{ type: "audio", id: m.id, samples, ms: performance.now() - t0 },
-		{ transfer: [samples.buffer] },
-	);
+	post({ type: "audio", id: m.id, samples, ms: performance.now() - t0 }, [
+		samples.buffer,
+	]);
 }
 
-self.onmessage = (e: MessageEvent) => {
+self.onmessage = (e: MessageEvent<Request>) => {
 	const m = e.data;
 	if (m.type === "load")
 		load(m).catch((err) =>
-			self.postMessage({ type: "error", stage: "load", message: String(err) }),
+			post({ type: "error", stage: "load", message: String(err) }),
 		);
 	else if (m.type === "say") {
 		waiting.push(m);

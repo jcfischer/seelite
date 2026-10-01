@@ -12,12 +12,27 @@
  */
 import { fetchBundled } from "./bundle-fetch";
 import type { VoiceArms } from "./comms";
+import {
+	backendBytes,
+	MAX_TOKENS,
+	type NeuralBackend,
+	type Reply,
+	type Request,
+	type VoiceManifest,
+} from "./neural-voice-core";
 import { IPA_GB, IPA_US, KOKORO_VOCAB } from "./voice-ipa";
+
+export {
+	backendBytes,
+	backendFileIds,
+	KOKORO_RATE,
+	type NeuralBackend,
+	resample,
+	styleRow,
+	type VoiceManifest,
+} from "./neural-voice-core";
 import { dropParts, lineKey, loadLine, storeLine } from "./voice-store";
 
-/** The model's output rate, and the length of one style row. */
-export const KOKORO_RATE = 24000;
-const STYLE = 256;
 /**
  * Which engine speaks (#604): the natural voice when `?voices=neural` forces
  * it, or when the settings row chose it and no arm overrides the row.
@@ -30,8 +45,6 @@ export const neuralWanted = (
 
 /** Decoded lines held in memory: every comms line and a few phrases. */
 const MEMO_LINES = 24;
-/** Kokoro's longest input, in tokens between the two pads. */
-const MAX_TOKENS = 510;
 
 /** The voices the prototype ships, by Kokoro's id: the first letter is the
  *  accent (`a` American, `b` British). */
@@ -93,59 +106,6 @@ export function tokenize(ipa: string): number[] {
 	return [0, ...ids.slice(0, MAX_TOKENS), 0];
 }
 
-/** The style row a voice gives an input of `tokens` ids (pads included):
- *  Kokoro's voices are one row per input length. */
-export function styleRow(voice: Float32Array, tokens: number): Float32Array {
-	const row = Math.min(Math.max(tokens - 2, 0), MAX_TOKENS - 1);
-	return voice.slice(row * STYLE, (row + 1) * STYLE);
-}
-
-/** 24 kHz to `to` Hz: a windowed-sinc lowpass under the new Nyquist, then
- *  resampled. The radio runs at 16 kHz. */
-export function resample(x: Float32Array, from: number, to: number) {
-	const ratio = from / to;
-	const n = Math.floor(x.length / ratio);
-	const out = new Float32Array(n);
-	const fc = (0.45 * to) / from;
-	const H = 24;
-	// The taps depend only on where the output sample falls between two
-	// input samples, and 24 kHz to 16 kHz has two such places: the weights
-	// are worked out once per place rather than per sample (sage round 3 on
-	// #606). A ratio with many places stops caching and stays correct.
-	const kernels = new Map<number, { first: number; w: Float64Array }>();
-	const kernel = (frac: number) => {
-		const hit = kernels.get(frac);
-		if (hit) return hit;
-		const first = Math.ceil(frac - H);
-		const last = Math.floor(frac + H);
-		const w = new Float64Array(last - first + 1);
-		for (let o = first; o <= last; o++) {
-			const t = o - frac;
-			const sinc =
-				t === 0 ? 2 * fc : Math.sin(2 * Math.PI * fc * t) / (Math.PI * t);
-			w[o - first] = sinc * (0.5 + 0.5 * Math.cos((Math.PI * t) / H));
-		}
-		const k = { first, w };
-		if (kernels.size < 64) kernels.set(frac, k);
-		return k;
-	};
-	for (let i = 0; i < n; i++) {
-		const c = i * ratio;
-		const base = Math.floor(c);
-		const { first, w } = kernel(c - base);
-		let s = 0;
-		let sum = 0;
-		for (let j = 0; j < w.length; j++) {
-			const k = base + first + j;
-			if (k < 0 || k >= x.length) continue;
-			s += x[k] * w[j];
-			sum += w[j];
-		}
-		out[i] = sum ? s / sum : 0;
-	}
-	return out;
-}
-
 /** Who speaks with which neural voice. **The agent's defaults, not the
  *  principal's choice** — the principal heard the set and chose none; the
  *  voice lab lets every role be heard in every voice. */
@@ -155,26 +115,6 @@ export const NEURAL_ROLE = {
 	pirate: "am_michael",
 	machine: "af_nicole",
 } as const satisfies Record<string, NeuralVoiceId>;
-
-/** The manifest's shape, as the browser reads it (`scripts/lib/voice-model.mjs`
- *  writes it). */
-export interface VoiceManifest {
-	version: string;
-	backends: Record<NeuralBackend, string[]>;
-	voices: string[];
-	files: Record<string, { bytes: number; sha256: string; parts: string[] }>;
-}
-export type NeuralBackend = "wasm" | "webgpu";
-
-/** The files a backend loads: its model, its runtime and every voice. */
-export const backendFileIds = (m: VoiceManifest, b: NeuralBackend) => [
-	...m.backends[b],
-	...m.voices.map((v) => `voice:${v}`),
-];
-
-/** Bytes a backend downloads. */
-export const backendBytes = (m: VoiceManifest, b: NeuralBackend) =>
-	backendFileIds(m, b).reduce((n, id) => n + m.files[id].bytes, 0);
 
 /** Where the neural voice is. `failed` carries why, for the settings row
  *  and the lab; the formant voice speaks meanwhile in every state but
@@ -206,17 +146,29 @@ function rememberWebGpuFailed(version: string) {
 	}
 }
 
+/**
+ * WebGPU cannot run this build here: remember it, so the next start and the
+ * question go straight to WASM, and free its files rather than keep both
+ * (sage round 3 on #606).
+ */
+function forgetWebGpu(m: VoiceManifest) {
+	rememberWebGpuFailed(m.version);
+	void dropParts(
+		m.version,
+		m.backends.webgpu.flatMap((id) =>
+			m.files[id].parts.map((p) => `${VOICE_BASE}${p}`),
+		),
+	);
+}
+
 /** The fallback chain's next step after a backend fails. */
 export const fallbackAfter = (b: NeuralBackend): NeuralBackend | null =>
 	b === "webgpu" ? "wasm" : null;
 
-type Reply =
-	| { type: "progress"; bytes: number; total: number }
-	| { type: "ready"; backend: NeuralBackend; loadMs: number }
-	| { type: "audio"; id: number; samples: Float32Array; ms: number }
-	| { type: "error"; id?: number; stage: string; message: string };
-
 export const VOICE_BASE = "/voice-model/";
+
+/** Every message to the worker, typed against the one protocol. */
+const send = (worker: Worker, message: Request) => worker.postMessage(message);
 
 type GpuNavigator = {
 	gpu?: { requestAdapter(): Promise<{ features: Set<string> } | null> };
@@ -296,9 +248,12 @@ export class NeuralVoice {
 	/** Load the voice, falling back WebGPU → WASM; settles `ready` or
 	 *  `failed`. `force` picks a backend, for the lab. */
 	start(force?: NeuralBackend): Promise<NeuralState> {
+		// A second caller during a start waits for the same one (sage round 4
+		// on #606: the lab read "loading" back as "not ready").
+		if (this.starting) return this.starting;
 		if (this.state.kind === "ready" || this.state.kind === "loading")
 			return Promise.resolve(this.state);
-		if (!this.starting) {
+		{
 			// Cleared only if it is still this start: `stop` drops a start it
 			// cancels, so a new one is not handed the cancelled promise
 			// (sage round 3 on #606).
@@ -334,19 +289,12 @@ export class NeuralVoice {
 		}
 		while (b && gen === this.gen) {
 			if (await this.load(m, b)) return this.state;
+			// Stopped, not failed: `stop` settles the load `false` too, and a
+			// player who chose Synthesised mid-download has not shown that
+			// WebGPU cannot run (sage round 4 on #606).
+			if (gen !== this.gen) return this.state;
 			const next: NeuralBackend | null = force ? null : fallbackAfter(b);
-			// WebGPU failed here: remember it for this build, so the next
-			// start and the question go straight to WASM, and free its files
-			// rather than keep both (sage round 3 on #606).
-			if (b === "webgpu" && next) {
-				rememberWebGpuFailed(m.version);
-				void dropParts(
-					m.version,
-					m.backends.webgpu.flatMap((id) =>
-						m.files[id].parts.map((p) => `${VOICE_BASE}${p}`),
-					),
-				);
-			}
+			if (b === "webgpu" && next) forgetWebGpu(m);
 			b = next;
 		}
 		return this.state;
@@ -365,6 +313,8 @@ export class NeuralVoice {
 			{ type: "module" },
 		);
 		this.worker = worker;
+		/** Whether a line has come back from this worker yet. */
+		let spoke = false;
 		return new Promise((settle) => {
 			const resolve = (ok: boolean) => {
 				if (this.settle === resolve) this.settle = null;
@@ -396,15 +346,25 @@ export class NeuralVoice {
 					this.set({ kind: "ready", backend });
 					resolve(true);
 				} else if (r.type === "audio") {
+					spoke = true;
 					this.waiting.get(r.id)?.ok(r.samples);
 					this.waiting.delete(r.id);
 				} else if (r.id !== undefined) {
 					this.waiting.get(r.id)?.no(new Error(r.message));
 					this.waiting.delete(r.id);
+					// A WebGPU session that loads but cannot speak a single line
+					// is a backend that cannot run here: fall back to WASM
+					// rather than keep a ready voice that never speaks (sage
+					// round 4 on #606). One bad line after others spoke is a line.
+					if (backend === "webgpu" && !spoke && this.worker === worker) {
+						forgetWebGpu(m);
+						fail(r.message);
+						void this.start();
+					}
 				} else fail(r.message);
 			};
 			worker.onerror = (e) => fail(e.message);
-			worker.postMessage({
+			send(worker, {
 				type: "load",
 				manifest: m,
 				base: VOICE_BASE,
@@ -432,10 +392,10 @@ export class NeuralVoice {
 		// urgent asking moves the queued one to the front.
 		const running = this.inflight.get(key);
 		if (running) {
-			if (urgent) worker.postMessage({ type: "urgent", key });
+			if (urgent) send(worker, { type: "urgent", key });
 			return running.samples;
 		}
-		const samples = this.generate(worker, key, text, voice, speed, urgent);
+		const samples = this.generate(worker, key, { text, voice, speed, urgent });
 		this.inflight.set(key, { samples });
 		// Settled either way; a rejection is the caller's to handle, and the
 		// bookkeeping must not raise a second, unhandled one.
@@ -447,11 +407,9 @@ export class NeuralVoice {
 	private async generate(
 		worker: Worker,
 		key: string,
-		text: string,
-		voice: NeuralVoiceId,
-		speed: number,
-		urgent: boolean,
+		ask: { text: string; voice: NeuralVoiceId; speed: number; urgent: boolean },
 	): Promise<Float32Array | null> {
+		const { text, voice, speed, urgent } = ask;
 		const kept = await loadLine(key);
 		if (kept) return kept;
 		// Stopped during the lookup: that worker is gone and would never answer.
@@ -460,7 +418,7 @@ export class NeuralVoice {
 		const id = this.next++;
 		const samples = await new Promise<Float32Array>((ok, no) => {
 			this.waiting.set(id, { ok, no });
-			worker.postMessage({ type: "say", id, key, ids, voice, speed, urgent });
+			send(worker, { type: "say", id, key, ids, voice, speed, urgent });
 		});
 		await storeLine(key, samples);
 		this.remember(key, samples);

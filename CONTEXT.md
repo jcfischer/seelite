@@ -366,7 +366,7 @@ A station's voice on the radio in flight: it answers each change of a docking cl
 _Avoid_: tower
 
 **Natural voice**:
-The speech model the game can speak with, run in the player's browser and downloaded once from the site when the player says yes (#604): Kokoro-82M through onnxruntime-web. The settings row Voice holds the answer, and the synthesised voice speaks whenever it is not ready. `src/neural-voice.ts` owns it; the map's Constraints carry the ruling that makes it the one trained asset.
+The speech model the game can speak with, run in the player's browser and downloaded from the site when the player says yes (#604): Kokoro-82M through onnxruntime-web. The settings row Voice holds the answer, and the synthesised voice speaks whenever it is not ready. `src/neural-voice.ts` owns it; the map's Constraints carry the ruling that makes it the one trained asset.
 _Avoid_: neural voice (in player-facing text), TTS
 
 **Numbers station**:
