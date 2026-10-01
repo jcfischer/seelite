@@ -583,6 +583,7 @@ import {
 	HULL_VARIANTS,
 	buildShipMesh,
 	fleetLayout,
+	measureMuzzles,
 	shipMuzzlesKm,
 	updateShipVisuals,
 } from "./ship-mesh";
@@ -5512,7 +5513,7 @@ class Game {
 		).root;
 		// The muzzles, measured off this mesh before it is placed: here, with
 		// the hull's, rather than on the first chase shot (sage rounds 1, 2).
-		shipMuzzlesKm(
+		measureMuzzles(
 			this.flownHull,
 			HULL_SPECS[this.flownHull].variant,
 			this.shipMesh,
@@ -5561,7 +5562,7 @@ class Game {
 		this.condition = this.flownFullCondition();
 		const old = this.shipMesh;
 		const mesh = buildShipMesh(hull, HULL_SPECS[hull].variant).root;
-		shipMuzzlesKm(hull, HULL_SPECS[hull].variant, mesh);
+		measureMuzzles(hull, HULL_SPECS[hull].variant, mesh);
 		mesh.name = "ship";
 		mesh.position.copy(old.position);
 		mesh.quaternion.copy(old.quaternion);
@@ -17410,6 +17411,8 @@ class Game {
 				// camera sees it (#607 D3). Not the cockpit's ports on a glass
 				// chase does not have.
 				const segments = this.chaseBeamPx(w, h);
+				// `glassBottom` is a fraction of the height: 1 is the whole
+				// canvas, since chase has no glass.
 				drawTracerSegments(ctx, w, h, 1, segments);
 				this.beamRender = segments;
 			} else
@@ -17419,7 +17422,7 @@ class Game {
 					h,
 					glassBottom,
 					beamOnGlass ?? undefined,
-					this.gunTracer.ports,
+					tracerPorts(HULL_SPECS[this.flownHull].hardpoints),
 				);
 		}
 		this.combatRig?.drawTracer(ctx, w, h, this.view, GLASS_BOTTOM_FRACTION);

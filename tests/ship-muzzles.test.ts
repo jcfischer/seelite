@@ -14,11 +14,13 @@ import {
 } from "../src/hull";
 import { buildShipMesh, shipMuzzlesKm } from "../src/ship-mesh";
 
-function boxOf(id: (typeof HULL_IDS)[number], variant: HullVariantId) {
+function built(id: (typeof HULL_IDS)[number], variant: HullVariantId) {
 	const root = buildShipMesh(id, variant).root;
 	root.updateMatrixWorld(true);
-	return new THREE.Box3().setFromObject(root);
+	return { root, box: new THREE.Box3().setFromObject(root) };
 }
+const boxOf = (id: (typeof HULL_IDS)[number], variant: HullVariantId) =>
+	built(id, variant).box;
 
 describe("a hull's muzzles (#607)", () => {
 	for (const id of HULL_IDS)
@@ -54,9 +56,7 @@ describe("a hull's muzzles (#607)", () => {
 		const caster = new THREE.Raycaster();
 		for (const id of HULL_IDS)
 			for (const variant of HULL_VARIANT_IDS) {
-				const root = buildShipMesh(id, variant).root;
-				root.updateMatrixWorld(true);
-				const box = new THREE.Box3().setFromObject(root);
+				const { root, box } = built(id, variant);
 				const size = box.getSize(new THREE.Vector3());
 				const eps = Math.max(size.x, size.y, size.z) * 2e-3;
 				for (const m of shipMuzzlesKm(id, variant)) {

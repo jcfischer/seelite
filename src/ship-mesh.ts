@@ -6620,6 +6620,17 @@ const muzzleCache = new Map<string, readonly Vec3[]>();
  * line across the beam at the hull's mid-height, mirrored about the centre
  * line, each found by a ray from in front, as a nav light is.
  */
+/** Measure a hull's muzzles off the mesh just built for it, before it is
+ *  placed, so the first chase shot reads them from the cache rather than
+ *  building a second hull mid-frame (sage rounds 1–3 on #608). */
+export function measureMuzzles(
+	id: HullId,
+	variant: HullVariantId,
+	built: THREE.Group,
+): void {
+	shipMuzzlesKm(id, variant, built);
+}
+
 export function shipMuzzlesKm(
 	id: HullId,
 	variant: HullVariantId,
@@ -6654,14 +6665,18 @@ export function shipMuzzlesKm(
 			const c = b.getCenter(new THREE.Vector3());
 			return { x: c.x, y: c.y, z: b.min.z };
 		});
-	} else muzzles = raycastMuzzles(root, count);
+	} else muzzles = raycastMuzzles(root, count, key);
 	const frozen = Object.freeze(muzzles.map((m) => Object.freeze(m)));
 	muzzleCache.set(key, frozen);
 	return frozen;
 }
 
 /** `shipMuzzlesKm`'s mounts for a hull with no gun parts. */
-function raycastMuzzles(root: THREE.Group, count: number): Vec3[] {
+function raycastMuzzles(
+	root: THREE.Group,
+	count: number,
+	hull: string,
+): Vec3[] {
 	const box = new THREE.Box3().setFromObject(root);
 	const size = box.getSize(new THREE.Vector3());
 	const centre = box.getCenter(new THREE.Vector3());
@@ -6704,7 +6719,7 @@ function raycastMuzzles(root: THREE.Group, count: number): Vec3[] {
 	// No metal ahead on some gun line at any height: refused, never a gun on
 	// an empty box face. `tests/ship-muzzles.test.ts` builds every hull.
 	if (found.some((m) => m === null))
-		throw new Error(`${root.name}: no metal ahead for a gun`);
+		throw new Error(`${hull}: no metal ahead for a gun`);
 	return found as Vec3[];
 }
 

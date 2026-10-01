@@ -263,8 +263,11 @@ await page.keyboard.up("Space");
 	);
 	// Independent of the muzzle data the draw and the row above both read: a
 	// ray from the camera through each drawn start strikes the drawn hull.
+	// This is **image overlap**, not position: a start floating in front of
+	// the nose on the same camera ray passes it (sage round 3). Position on
+	// the metal is `tests/ship-muzzles.test.ts`'s ray row.
 	check(
-		"each beam starts on the drawn hull's image, not in space beside it (sage round 2 on #608)",
+		"each beam starts on the drawn hull's image (sage round 2 on #608)",
 		beam.onHull.length === beam.hardpoints && beam.onHull.every(Boolean),
 		`ray through each start hits the hull: ${JSON.stringify(beam.onHull)}`,
 	);
