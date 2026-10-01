@@ -96,6 +96,13 @@ export const busGain = (bus: Bus, step: number): number => {
 	return BUS_FULL_GAIN[bus] * s * s;
 };
 
+/** A duck of `db` decibels as a gain: 0 dB is 1, 6 dB about a half. */
+export const duckGain = (db: number): number => 10 ** (-db / 20);
+
+/** How fast a duck eases in and out: about a second to settle, so the
+ *  engine sinks under the waltz rather than dropping (#603). */
+const DUCK_TAU_S = 0.3;
+
 /**
  * The limiter on master (D4): a `DynamicsCompressorNode` set to act only near
  * full scale, so it stops a sum of loud buses clipping and leaves any one cue
@@ -244,6 +251,17 @@ export class AudioFX {
 		console: 1,
 		music: 1,
 	};
+	/** Each cue bus's duck, in dB (#603): the game's, under the player's row. */
+	private readonly ducks: Record<Exclude<Bus, "master">, number> = {
+		ship: 0,
+		combat: 0,
+		console: 0,
+		music: 0,
+	};
+	/** A cue bus's gain: the player's step, then the game's duck. */
+	private busValue(bus: Exclude<Bus, "master">): number {
+		return busGain(bus, this.levels[bus]) * duckGain(this.ducks[bus]);
+	}
 
 	private readonly pool = new VoicePool<VoiceClass>(
 		VOICE_CAPS,
@@ -313,7 +331,7 @@ export class AudioFX {
 		this.master.connect(limiter);
 		const bus = (name: Exclude<Bus, "master">) => {
 			const g = ctx.createGain();
-			g.gain.value = busGain(name, this.levels[name]);
+			g.gain.value = this.busValue(name);
 			g.connect(this.master as GainNode);
 			return g;
 		};
@@ -471,15 +489,35 @@ export class AudioFX {
 		const node = bus === "master" ? this.master : this.buses?.[bus];
 		if (!node || !this.ctx) return;
 		node.gain.setTargetAtTime(
-			busGain(bus, this.levels[bus]),
+			bus === "master" ? busGain(bus, this.levels[bus]) : this.busValue(bus),
 			this.ctx.currentTime,
 			0.03,
 		);
 	}
 
+	/**
+	 * Duck a cue bus by `db` under something the game is playing over it —
+	 * the ship bus under the docking computer's waltz (#603, #547 D5); 0 lets
+	 * it back. Called every frame, and written on change only.
+	 *
+	 * A duck is the game's, not the player's: it multiplies the bus's row and
+	 * never moves it, so the Sound tab still reads what the player set.
+	 */
+	duck(bus: Exclude<Bus, "master">, db: number) {
+		if (this.ducks[bus] === db) return;
+		this.ducks[bus] = db;
+		const node = this.buses?.[bus];
+		if (!node || !this.ctx) return;
+		node.gain.setTargetAtTime(
+			this.busValue(bus),
+			this.ctx.currentTime,
+			DUCK_TAU_S,
+		);
+	}
+
 	/** Whether a cue on `bus` can be heard at all. A cue that cannot is not
 	 *  built, as a muted one was not before #552. */
-	private audible(bus: CueBus): boolean {
+	audible(bus: Bus): boolean {
 		return this.levels.master > 0 && this.levels[bus] > 0;
 	}
 

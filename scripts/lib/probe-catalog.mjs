@@ -92,7 +92,7 @@ export const PROBE_CATALOG = Object.freeze(
 		),
 		entry(
 			"probe-music.mjs",
-			"Renders the music synth offline through the music bus: the test score in bands, a quantised start and a crossfade on the bar line to the sample against an unquantised control, a request held until the worklet is ready, a failed load that says why and retries, a stop that fades, a crossfade's tail and a stem swap by colour, the bus as the only music level, and the game loading the synth on the gesture that opens its sound and sounding it live.",
+			"Renders the music synth offline through the music bus: the test score in bands, a quantised start and a crossfade on the bar line to the sample against an unquantised control, a request held until the worklet is ready, a failed load that says why and retries, a stop that fades, a crossfade's tail and a stem swap by colour, the bus as the only music level, and the game loading the synth on the gesture that opens its sound and sounding it live; and a docking-computer run playing the Blue Danube, ducking the ship bus, resolving at the plane before the station bed, and fading on a throttle key.",
 			[
 				"audio",
 				"music",
@@ -101,6 +101,9 @@ export const PROBE_CATALOG = Object.freeze(
 				"sequencer",
 				"music bus",
 				"volume settings",
+				"docking computer",
+				"waltz",
+				"ship bus",
 			],
 		),
 		entry(

@@ -10,6 +10,10 @@ import {
 	dangerLevel,
 	FALL_HOLD_S,
 	initialMusicState,
+	WALTZ_CADENCE_S,
+	WALTZ_DUCK_DB,
+	waltzCadenceS,
+	waltzDuckDb,
 	LOW_HULL_SHARE,
 	LOW_SHIELD_SHARE,
 	type MusicArms,
@@ -20,6 +24,7 @@ import {
 	STRUCK_WINDOW_S,
 	stepMusic,
 } from "../src/music-director";
+import { DANUBE_CANCEL_FADE_S } from "../src/music-danube";
 import type { MusicCommand } from "../src/music-score";
 import { fullCondition } from "../src/ship-condition";
 import { MusicEngine } from "../src/music-engine";
@@ -145,8 +150,10 @@ describe("beds and hand-overs (D2, D3)", () => {
 		expect(moves[4]).toMatchObject({ to: "flight-a", section: "calm" });
 	});
 
-	test("witchspace, the docking computer and death fade the music out", () => {
-		for (const scene of ["witchspace", "dockingComputer", "dead"] as const) {
+	test("witchspace and death fade the music out", () => {
+		// The docking computer was a third scene here until #603: it plays
+		// the waltz now (`the docking computer's waltz`, below).
+		for (const scene of ["witchspace", "dead"] as const) {
 			const { steps } = fly([
 				[1, calm],
 				[0.1, at({ scene })],
@@ -254,6 +261,7 @@ describe("the prototype's arms, from ?music=", () => {
 			lowHull: "always",
 			bed: "berlin",
 			voice: true,
+			waltz: "hybrid",
 		});
 		expect(musicArms("legacy").arms.bed).toBe("legacy");
 		expect(musicArms("second").arms.bed).toBe("second");
@@ -362,4 +370,233 @@ test("switching between two beds loads the other one", () => {
 	if (load?.type !== "load") throw new Error("no load");
 	expect(load.song.sections[0].bars).toBe(16);
 	expect(r.commands.some((c) => c.type === "crossfade")).toBe(true);
+});
+
+describe("the docking computer's waltz (#603)", () => {
+	const computer = at({ scene: "dockingComputer" });
+	const arriving = at({ scene: "docked", stationRole: "trade" });
+	const moves = (cmds: readonly MusicCommand[]) =>
+		cmds.filter((c) => c.type !== "stem" && c.type !== "tempo");
+
+	test("engaging loads the waltz in the ruled voicing and plays it on the bar", () => {
+		const { steps } = fly([
+			[1, calm],
+			[0.1, computer],
+		]);
+		const engage = steps.at(-1) ?? [];
+		expect(engage.map((c) => c.type)).toEqual(["load", "play"]);
+		const [load, play] = engage;
+		if (load.type !== "load") throw new Error(load.type);
+		expect(load.id).toBe("danube");
+		// The principal's ruling on #603: hybrid, D12's B.
+		expect(load.song.name).toContain("(hybrid)");
+		// `play`, not a stop: the bed's notes ring out under the intro.
+		expect(play).toEqual({ type: "play", id: "danube", at: "bar" });
+	});
+
+	test("the run sends nothing more, and a second run does not load again", () => {
+		const { steps, commands } = fly([
+			[1, calm],
+			[20, computer],
+			[3, arriving],
+			[2, at({ scene: "docked", stationRole: "trade" })],
+			[1, calm],
+			[5, computer],
+		]);
+		// One load for the whole session, one play for each engage.
+		const danube = commands.filter(
+			(c) =>
+				(c.type === "load" && c.id === "danube") ||
+				(c.type === "play" && c.id === "danube"),
+		);
+		expect(danube.map((c) => c.type)).toEqual(["load", "play", "play"]);
+		// Nothing in the 199 frames between the engage and the plane.
+		expect(steps.slice(11, 210).flat()).toEqual([]);
+	});
+
+	test("the plane resolves on the bar, and the station bed waits for the cadence (D1)", () => {
+		const { steps } = fly([
+			[1, calm],
+			[20, computer],
+			[WALTZ_CADENCE_S + 1, arriving],
+		]);
+		const plane = 10 + 200;
+		expect(steps[plane]).toEqual([{ type: "resolve", at: "bar" }]);
+		const after = steps.slice(plane + 1);
+		const first = after.findIndex((cmds) => cmds.length > 0);
+		// The station bed, from silence: the waltz ended on its own.
+		expect(moves(after[first]).map((c) => c.type)).toEqual([
+			"load",
+			"crossfade",
+		]);
+		expect(after[first][1]).toMatchObject({ to: "station", fadeS: 3 });
+		expect((first + 1) * 0.1).toBeGreaterThanOrEqual(WALTZ_CADENCE_S - 1e-9);
+		expect((first + 1) * 0.1).toBeLessThan(WALTZ_CADENCE_S + 0.1 + 1e-9);
+	});
+
+	test("the cadence's hold is one waltz bar to reach the line, then the cadence", () => {
+		// D1's figures off the score: the cadence is four bars of three beats
+		// broadening from 160 to 120 a minute, so between 4 x 1.125 s and
+		// 4 x 1.5 s, after at most one 1.125 s bar of the waltz to its line.
+		expect(WALTZ_CADENCE_S).toBeGreaterThan(5 * 1.125);
+		expect(WALTZ_CADENCE_S).toBeLessThan(1.125 + 4 * 1.5);
+	});
+
+	test("the cadence's hold is the playing voicing's, read off its own song (sage round 1)", () => {
+		expect(WALTZ_CADENCE_S).toBe(waltzCadenceS("hybrid"));
+		// The three share Strauss's tempo map today; each is still read off
+		// its own song, so a voicing that changed it would move its own hold.
+		for (const v of ["orchestra", "oxygene"] as const)
+			expect(waltzCadenceS(v)).toBeCloseTo(WALTZ_CADENCE_S, 9);
+		// The state keeps the voicing that was loaded, which is the key the
+		// resolving branch reads. Which hold it reads cannot be told apart by
+		// duration while the three share one tempo map (sage round 2).
+		const oxygene = { ...DEFAULT_MUSIC_ARMS, waltz: "oxygene" as const };
+		let state = fly([
+			[1, calm],
+			[20, computer],
+		]).state;
+		state = stepMusic(state, arriving, 0.1, oxygene).state;
+		expect(state.waltz).toBe("resolving");
+		expect(state.waltzKey).toBe("hybrid");
+	});
+
+	test("the pilot takes the stick: a two-bar fade, and the bed is back on the bar (D2)", () => {
+		const { steps, state } = fly([
+			[1, calm],
+			[20, computer],
+			[0.1, calm],
+		]);
+		const cancel = steps.at(-1) ?? [];
+		expect(cancel[0]).toEqual({
+			type: "stop",
+			at: "now",
+			fadeS: DANUBE_CANCEL_FADE_S,
+		});
+		// The same system's bed, already loaded, from silence: no load.
+		expect(moves(cancel.slice(1))).toEqual([
+			expect.objectContaining({
+				type: "crossfade",
+				to: "flight-a",
+				section: "calm",
+				at: "bar",
+			}),
+		]);
+		expect(state.bed).toBe("flight");
+		expect(state.waltz).toBe("none");
+	});
+
+	test("death and witchspace under the waltz fade it as a cancel does, once", () => {
+		for (const scene of ["dead", "witchspace"] as const) {
+			const { steps } = fly([
+				[1, calm],
+				[20, computer],
+				[0.1, at({ scene, held: scene === "dead" })],
+			]);
+			expect(steps.at(-1)).toEqual([
+				{ type: "stop", at: "now", fadeS: DANUBE_CANCEL_FADE_S },
+			]);
+		}
+	});
+
+	test("the ship bus ducks while the waltz plays, and returns at the plane or the cancel (D5)", () => {
+		expect(WALTZ_DUCK_DB).toBe(6);
+		const playing = fly([
+			[1, calm],
+			[5, computer],
+		]).state;
+		expect(waltzDuckDb(playing, true)).toBe(WALTZ_DUCK_DB);
+		expect(waltzDuckDb(stepMusic(playing, arriving, 0.1).state, true)).toBe(0);
+		expect(waltzDuckDb(stepMusic(playing, calm, 0.1).state, true)).toBe(0);
+		expect(waltzDuckDb(fly([[1, calm]]).state, true)).toBe(0);
+		// Music off in the Sound tab: no waltz is heard, so nothing ducks.
+		expect(waltzDuckDb(playing, false)).toBe(0);
+	});
+
+	test("a synth that becomes ready mid-run starts the waltz then, and a pause holds it", () => {
+		const waiting = fly([[5, at({ scene: "dockingComputer", ready: false })]]);
+		expect(waiting.commands).toEqual([]);
+		const r = stepMusic(waiting.state, computer, 0.1);
+		expect(r.commands.map((c) => c.type)).toEqual(["load", "play"]);
+		// A run that never started the waltz has nothing to resolve.
+		const plane = stepMusic(waiting.state, arriving, 0.1);
+		expect(plane.commands.some((c) => c.type === "resolve")).toBe(false);
+		// Held: the opening, a menu. Nothing starts, and nothing ends.
+		expect(
+			stepMusic(waiting.state, at({ ...computer, held: true }), 0.1).commands,
+		).toEqual([]);
+		const held = stepMusic(r.state, at({ ...computer, held: true }), 0.1);
+		expect(held.commands).toEqual([]);
+	});
+
+	test("off plays no waltz", () => {
+		const off = { ...DEFAULT_MUSIC_ARMS, off: true };
+		expect(stepMusic(initialMusicState(), computer, 0.1, off).commands).toEqual(
+			[],
+		);
+	});
+
+	test("?music= picks the voicing, and hybrid is the default", () => {
+		expect(DEFAULT_MUSIC_ARMS.waltz).toBe("hybrid");
+		for (const v of ["orchestra", "oxygene", "hybrid"] as const) {
+			const { arms } = musicArms(v);
+			expect(arms.waltz).toBe(v);
+			const load = stepMusic(initialMusicState(), computer, 0.1, arms)
+				.commands[0];
+			if (load.type !== "load") throw new Error(load.type);
+			expect(load.song.name).toContain(`(${v})`);
+		}
+	});
+
+	test("through the real engine: the cadence is heard after the plane, and the station bed only after it", () => {
+		const SR = 48000;
+		const heard: { id: string; frame: number; part: string }[] = [];
+		const engine = new MusicEngine(SR, undefined, (id, frame, part) =>
+			heard.push({ id, frame, part }),
+		);
+		const out = new Float32Array(128);
+		let frame = 0;
+		let state = initialMusicState();
+		let planeAt = -1;
+		let engageAt = -1;
+		const legs: [number, MusicReading][] = [
+			[3, calm],
+			[40, computer],
+			[WALTZ_CADENCE_S + 6, arriving],
+		];
+		let t = 0;
+		for (const [seconds, r] of legs)
+			for (let end = t + seconds; t < end - 1e-9; t += 0.1) {
+				if (r === computer && engageAt < 0) engageAt = frame;
+				if (r === arriving && planeAt < 0) planeAt = frame;
+				const s = stepMusic(state, r, 0.1);
+				state = s.state;
+				for (const cmd of s.commands) engine.command(cmd, frame);
+				for (
+					const stop = Math.round((t + 0.1) * SR);
+					frame < stop;
+					frame += 128
+				)
+					engine.render(out, frame);
+			}
+		// `engine.command` throws on a move it cannot honour: a resolve with
+		// nothing playing would have ended this test there.
+		const danube = heard.filter((h) => h.id === "danube");
+		// It started within a bar of the bed's line after the engage.
+		expect(danube[0].frame - engageAt).toBeLessThan(4 * SR);
+		// The cadence's held tonic, on the melody and the answer, after the plane.
+		const lastDanube = danube.at(-1);
+		expect(lastDanube && lastDanube.frame).toBeGreaterThan(planeAt);
+		expect(
+			danube.filter((h) => h.frame > planeAt && h.part === "answer").length,
+		).toBeGreaterThan(0);
+		const station = heard.filter((h) => h.id === "station");
+		expect(station.length).toBeGreaterThan(0);
+		// The station bed's first note comes after the waltz's last.
+		expect(station[0].frame).toBeGreaterThan(lastDanube?.frame ?? Infinity);
+		// And after the plane by at least the cadence's own length.
+		expect(station[0].frame - planeAt).toBeGreaterThanOrEqual(
+			Math.round((WALTZ_CADENCE_S - 1.125) * SR),
+		);
+	}, 30000);
 });

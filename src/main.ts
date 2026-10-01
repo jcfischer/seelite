@@ -133,6 +133,7 @@ import {
 	musicArms,
 	numbersOn,
 	stepMusic,
+	waltzDuckDb,
 } from "./music-director";
 import {
 	type CommsLineId,
@@ -2131,7 +2132,7 @@ class Game {
 	 * The music synth (#560). Its worklet is loaded into the audio context on
 	 * the gesture that opens it, and its readiness is a promise (#543 D8), so
 	 * no cue waits on it. #548's director sends it the system's bed each frame
-	 * (`stepMusicDirector`); #547's waltz will send it the docking run's.
+	 * (`stepMusicDirector`), and the docking computer's waltz (#603).
 	 */
 	readonly music = new Music();
 	/**
@@ -12410,6 +12411,11 @@ class Game {
 		);
 		this.musicState = step.state;
 		for (const cmd of step.commands) this.music.send(cmd);
+		// The engine and thrusters sink under the waltz (#547 D5).
+		this.audio.duck(
+			"ship",
+			waltzDuckDb(step.state, this.audio.audible("music")),
+		);
 		// The numbers station, far off in the music (#600). The next phrase is
 		// rendered ahead, in idle time, never inside this step.
 		// Only where it will be said, and worked out only when it changes.
