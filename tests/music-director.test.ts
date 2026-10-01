@@ -500,14 +500,18 @@ describe("the docking computer's waltz (#603)", () => {
 		const plane = stepMusic(waiting.state, arriving, 0.1);
 		expect(plane.commands.some((c) => c.type === "resolve")).toBe(false);
 		// Held: the opening, a menu. Nothing starts, and nothing ends.
-		expect(stepMusic(waiting.state, at({ ...computer, held: true }), 0.1).commands).toEqual([]);
+		expect(
+			stepMusic(waiting.state, at({ ...computer, held: true }), 0.1).commands,
+		).toEqual([]);
 		const held = stepMusic(r.state, at({ ...computer, held: true }), 0.1);
 		expect(held.commands).toEqual([]);
 	});
 
 	test("off plays no waltz", () => {
 		const off = { ...DEFAULT_MUSIC_ARMS, off: true };
-		expect(stepMusic(initialMusicState(), computer, 0.1, off).commands).toEqual([]);
+		expect(stepMusic(initialMusicState(), computer, 0.1, off).commands).toEqual(
+			[],
+		);
 	});
 
 	test("?music= picks the voicing, and hybrid is the default", () => {
@@ -515,7 +519,8 @@ describe("the docking computer's waltz (#603)", () => {
 		for (const v of ["orchestra", "oxygene", "hybrid"] as const) {
 			const { arms } = musicArms(v);
 			expect(arms.waltz).toBe(v);
-			const load = stepMusic(initialMusicState(), computer, 0.1, arms).commands[0];
+			const load = stepMusic(initialMusicState(), computer, 0.1, arms)
+				.commands[0];
 			if (load.type !== "load") throw new Error(load.type);
 			expect(load.song.name).toContain(`(${v})`);
 		}
@@ -545,7 +550,11 @@ describe("the docking computer's waltz (#603)", () => {
 				const s = stepMusic(state, r, 0.1);
 				state = s.state;
 				for (const cmd of s.commands) engine.command(cmd, frame);
-				for (const stop = Math.round((t + 0.1) * SR); frame < stop; frame += 128)
+				for (
+					const stop = Math.round((t + 0.1) * SR);
+					frame < stop;
+					frame += 128
+				)
 					engine.render(out, frame);
 			}
 		// `engine.command` throws on a move it cannot honour: a resolve with

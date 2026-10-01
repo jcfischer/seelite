@@ -120,9 +120,7 @@ export const WALTZ_DUCK_DB = 6;
 export const WALTZ_CADENCE_S = ((song: Song): number => {
 	const at = song.sections.findIndex((x) => x.name === song.resolve);
 	if (at < 0) throw new Error(`${song.name} has no resolve section`);
-	const first = song.sections
-		.slice(0, at)
-		.reduce((n, x) => n + x.bars, 0);
+	const first = song.sections.slice(0, at).reduce((n, x) => n + x.bars, 0);
 	const beats = song.beatsPerBar;
 	let s = (beats * 60) / WALTZ_BPM;
 	for (let bar = first; bar < first + song.sections[at].bars; bar++) {

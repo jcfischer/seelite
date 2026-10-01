@@ -904,7 +904,9 @@ try {
 		const types = (sent) =>
 			sent
 				.filter((c) => c.type !== "stem" && c.type !== "tempo")
-				.map((c) => `${c.type}${c.id ? ` ${c.id}` : ""}${c.to ? ` ${c.to}` : ""}`);
+				.map(
+					(c) => `${c.type}${c.id ? ` ${c.id}` : ""}${c.to ? ` ${c.to}` : ""}`,
+				);
 		check(
 			"engaging the docking computer plays the waltz, and the ship bus ducks (#603, #547 D5)",
 			run.granted &&
@@ -973,7 +975,10 @@ try {
 			`ship bus x${(plane.midDuck / run.before).toFixed(3)} 1.5 s after; station bed ${plane.waitS?.toFixed(2)} s after the plane against a ${WALTZ_CADENCE_S.toFixed(2)} s cadence; bed ${plane.bed}; errors ${plane.lateErrors.join("; ") || 0}`,
 		);
 		// A second run, and the pilot takes the stick: a held throttle key is
-		// control input (§7), through the game's own keyboard path.
+		// control input (§7), through the game's own keyboard path. This is a
+		// default-layout probe (#381 D11): Shift is throttle up in the shipped
+		// layout, and the row also asserts the computer let go, so a dead key
+		// would fail it rather than pass.
 		await game.evaluate(async () => {
 			const g = window.__seelite;
 			const dt = 1 / 60;
