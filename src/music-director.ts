@@ -50,6 +50,7 @@ import { berlinFlightBed, berlinStationBed } from "./music-generate-berlin";
 import { numbersPhrase } from "./comms";
 import {
 	DANUBE_CANCEL_FADE_S,
+	DANUBE_VOICINGS,
 	type DanubeVoicing,
 	danubeSong,
 	WALTZ_BPM,
@@ -216,8 +217,8 @@ export function musicArms(value: string | null): {
 		else if (token === "lowhull-always") arms = { ...arms, lowHull: "always" };
 		else if (token === "legacy" || token === "second" || token === "berlin")
 			arms = { ...arms, bed: token };
-		else if (token === "orchestra" || token === "oxygene" || token === "hybrid")
-			arms = { ...arms, waltz: token };
+		else if (Object.hasOwn(DANUBE_VOICINGS, token))
+			arms = { ...arms, waltz: token as DanubeVoicing };
 		else if ((FLIGHT_LEVELS as readonly string[]).includes(token))
 			arms = { ...arms, force: token as MusicLevel };
 		else unknown.push(token);
@@ -321,10 +322,13 @@ const settle = (cruise: boolean): MusicCommand[] => [
 
 /**
  * How far the ship bus is ducked under the waltz (D5): `WALTZ_DUCK_DB` while
- * it plays, nothing once the plane or a cancel has ended the run.
+ * it plays and can be heard, nothing once the plane or a cancel has ended the
+ * run. `heard` is whether the music bus reaches the speakers: a pilot who
+ * turned the music off keeps the engine at full under a waltz nobody hears
+ * (sage round 2).
  */
-export const waltzDuckDb = (s: MusicState): number =>
-	s.waltz === "playing" ? WALTZ_DUCK_DB : 0;
+export const waltzDuckDb = (s: MusicState, heard: boolean): number =>
+	heard && s.waltz === "playing" ? WALTZ_DUCK_DB : 0;
 
 /**
  * The docking computer's waltz (#603), ahead of the beds: `done` when this
@@ -358,8 +362,9 @@ function stepWaltz(
 	if (s.waltz === "resolving") {
 		// The cadence plays out into the berth; the station bed waits for it.
 		// Out of the dock early (a launch), the bed's crossfade takes it.
-		// The voicing that is playing: `waltzKey` is set by the load.
-		const hold = waltzCadenceS(s.waltzKey ?? arms.waltz);
+		// The voicing that is playing: `waltzKey` is set by the load that
+		// started it, so it is never null here, and the arms are not read.
+		const hold = waltzCadenceS(s.waltzKey ?? DEFAULT_MUSIC_ARMS.waltz);
 		if (r.scene === "docked" && !arms.off && s.waltzS < hold) {
 			const waltzS = r.held ? s.waltzS : s.waltzS + dt;
 			if (waltzS < hold)

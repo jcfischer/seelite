@@ -57,8 +57,10 @@
  *   the one realtime row: the test march read at the music bus by an analyser.
  *   It does not load the page, so it is not evidence for D4's stall claim.
  *
- * - **the docking computer plays the waltz** (#603) — a real run on the
- *   game's own frame loop: engaging sends `load` and `play` for `danube`
+ * - **the docking computer plays the waltz** (#603) — a docking-computer
+ *   run with traffic stopped and the computer fitted by the probe. The
+ *   engage, the arrival and the cancel run on the game's own frame loop; the
+ *   approach to the plane is flown in sim steps (sage round 2). Engaging sends `load` and `play` for `danube`
  *   and ducks the ship bus by `WALTZ_DUCK_DB`; the plane sends `resolve`
  *   with a waltz playing to take it (the synth refuses one without), lets
  *   the bus back, and holds the station bed for `WALTZ_CADENCE_S`; a held
@@ -798,8 +800,9 @@ try {
 		await game.close();
 	}
 	// ── In the game: the docking computer plays the waltz (#603) ────────────
-	// A real run on the game's own frame loop, which is what steps the
-	// director. What this can show is the **command stream** the director
+	// A docking-computer run. The engage, the arrival and the cancel are on
+	// the game's own frame loop, which is what steps the director; the
+	// approach to the plane is sim steps, and traffic is stopped. What this can show is the **command stream** the director
 	// sent, the ship bus's gain and the synth's refusals — a `resolve` with no
 	// waltz playing is one. Whether it sounds right is the offline renders'
 	// and the principal's ear.
@@ -836,6 +839,26 @@ try {
 		// Outside §7's standoff, cleared, the computer fitted and engaged, and
 		// the game's own frames left to fly it. Traffic is stopped as
 		// `__parkInBerth` stops it, so the clearance is not a lane's to refuse.
+		// The loudest rms at a node over `ms`, read by an analyser tapped on.
+		await game.evaluate(() => {
+			window.peakRms = async (node, ms) => {
+				const tap = node.context.createAnalyser();
+				tap.fftSize = 2048;
+				node.connect(tap);
+				const x = new Float32Array(tap.fftSize);
+				let peak = 0;
+				for (let t = 0; t < ms; t += 100) {
+					await new Promise((r) => setTimeout(r, 100));
+					tap.getFloatTimeDomainData(x);
+					peak = Math.max(
+						peak,
+						Math.sqrt(x.reduce((s, v) => s + v * v, 0) / x.length),
+					);
+				}
+				node.disconnect(tap);
+				return peak;
+			};
+		});
 		const engage = async () =>
 			game.evaluate(async () => {
 				const g = window.__seelite;
@@ -866,21 +889,7 @@ try {
 				const from = window.__sent.length;
 				g.toggleDockingComputer();
 				await new Promise((r) => setTimeout(r, 3000));
-				const ctx = g.audio.context;
-				const tap = ctx.createAnalyser();
-				tap.fftSize = 2048;
-				g.audio.musicInput.connect(tap);
-				let heard = 0;
-				for (let i = 0; i < 10; i++) {
-					await new Promise((r) => setTimeout(r, 100));
-					const x = new Float32Array(tap.fftSize);
-					tap.getFloatTimeDomainData(x);
-					heard = Math.max(
-						heard,
-						Math.sqrt(x.reduce((s, v) => s + v * v, 0) / x.length),
-					);
-				}
-				g.audio.musicInput.disconnect(tap);
+				const heard = await window.peakRms(g.audio.musicInput, 1000);
 				return {
 					id,
 					granted,

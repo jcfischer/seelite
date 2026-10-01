@@ -517,7 +517,7 @@ export class AudioFX {
 
 	/** Whether a cue on `bus` can be heard at all. A cue that cannot is not
 	 *  built, as a muted one was not before #552. */
-	private audible(bus: CueBus): boolean {
+	audible(bus: Bus): boolean {
 		return this.levels.master > 0 && this.levels[bus] > 0;
 	}
 

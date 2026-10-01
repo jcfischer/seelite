@@ -448,8 +448,9 @@ describe("the docking computer's waltz (#603)", () => {
 		// its own song, so a voicing that changed it would move its own hold.
 		for (const v of ["orchestra", "oxygene"] as const)
 			expect(waltzCadenceS(v)).toBeCloseTo(WALTZ_CADENCE_S, 9);
-		// And the resolving branch reads the voicing that was loaded, not the
-		// arms of the step: the station bed waits the same with arms changed.
+		// The state keeps the voicing that was loaded, which is the key the
+		// resolving branch reads. Which hold it reads cannot be told apart by
+		// duration while the three share one tempo map (sage round 2).
 		const oxygene = { ...DEFAULT_MUSIC_ARMS, waltz: "oxygene" as const };
 		let state = fly([
 			[1, calm],
@@ -504,10 +505,12 @@ describe("the docking computer's waltz (#603)", () => {
 			[1, calm],
 			[5, computer],
 		]).state;
-		expect(waltzDuckDb(playing)).toBe(WALTZ_DUCK_DB);
-		expect(waltzDuckDb(stepMusic(playing, arriving, 0.1).state)).toBe(0);
-		expect(waltzDuckDb(stepMusic(playing, calm, 0.1).state)).toBe(0);
-		expect(waltzDuckDb(fly([[1, calm]]).state)).toBe(0);
+		expect(waltzDuckDb(playing, true)).toBe(WALTZ_DUCK_DB);
+		expect(waltzDuckDb(stepMusic(playing, arriving, 0.1).state, true)).toBe(0);
+		expect(waltzDuckDb(stepMusic(playing, calm, 0.1).state, true)).toBe(0);
+		expect(waltzDuckDb(fly([[1, calm]]).state, true)).toBe(0);
+		// Music off in the Sound tab: no waltz is heard, so nothing ducks.
+		expect(waltzDuckDb(playing, false)).toBe(0);
 	});
 
 	test("a synth that becomes ready mid-run starts the waltz then, and a pause holds it", () => {

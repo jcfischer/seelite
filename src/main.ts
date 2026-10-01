@@ -12412,7 +12412,10 @@ class Game {
 		this.musicState = step.state;
 		for (const cmd of step.commands) this.music.send(cmd);
 		// The engine and thrusters sink under the waltz (#547 D5).
-		this.audio.duck("ship", waltzDuckDb(step.state));
+		this.audio.duck(
+			"ship",
+			waltzDuckDb(step.state, this.audio.audible("music")),
+		);
 		// The numbers station, far off in the music (#600). The next phrase is
 		// rendered ahead, in idle time, never inside this step.
 		// Only where it will be said, and worked out only when it changes.
