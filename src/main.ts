@@ -354,7 +354,12 @@ import {
 	sideStruck,
 	stepCondition,
 } from "./ship-condition";
-import { type DuelPilot, type PlayerShot, raiderInSights } from "./duel";
+import {
+	type DuelPilot,
+	PLAYER_LASER_RANGE_KM,
+	type PlayerShot,
+	raiderInSights,
+} from "./duel";
 import {
 	type Engagement,
 	chargedOffence,
@@ -433,6 +438,7 @@ import {
 	TRACER_HOLD_S,
 	TRACER_PORTS,
 	drawGunTracer,
+	drawTracerSegments,
 	stepGunFeedback,
 } from "./gun-feedback";
 import {
@@ -579,8 +585,16 @@ import {
 	HULL_VARIANTS,
 	buildShipMesh,
 	fleetLayout,
+	shipMuzzlesKm,
 	updateShipVisuals,
 } from "./ship-mesh";
+import {
+	beamSegments,
+	muzzlesWorld,
+	projectSegment,
+	shipCuesShown,
+	weaponRay,
+} from "./chase-view";
 import { ArrivalRift } from "./arrival-rift";
 import {
 	WITCHSPACE,
@@ -1724,6 +1738,10 @@ interface DirectorRender {
 	 * drew one and it read as arcs running off every edge.
 	 */
 	funnelRadiusPx: number;
+	/** Whether the funnel, its marker and the nose datum were drawn: the
+	 *  cockpit's gauge, absent in chase (#607 D2). The corridor is drawn in
+	 *  both. */
+	gauge: boolean;
 	/** Where the nose marker was drawn: the true on-glass *direction* of the
 	 *  docking axis, at a radius that is the error as a fraction of tolerance.
 	 *  Whether that radius still means anything is `markerOffScale`, not a
@@ -2808,6 +2826,14 @@ class Game {
 	 * pass against a director that was never painted.
 	 */
 	directorRender: DirectorRender | null = null;
+	/** Chase's boresight pip, where it was drawn this frame, or `null` (#607
+	 *  D4). Written by the draw, as `directorRender` is. */
+	boresightRender: { x: number; y: number } | null = null;
+	/** Chase's beams as drawn this frame, one per muzzle in canvas pixels, or
+	 *  `null` with no tracer or in the cockpit (#607 D3). */
+	beamRender:
+		| { from: { x: number; y: number }; to: { x: number; y: number } }[]
+		| null = null;
 	/**
 	 * Whether the raider fired on the player this frame (#324). The hostile cue
 	 * turns red while it does, by the principal's ruling.
@@ -6469,7 +6495,7 @@ class Game {
 		const pilot: DuelPilot = {
 			ship: this.world.ship,
 			nose: this.nose(),
-			aimOrigin: this.cameraPos(),
+			aimOrigin: this.weaponOrigin(),
 			aimNose: this.beamAim(),
 			hull: this.condition.hull,
 			frame: this.localFrameMotion(dt),
@@ -7352,12 +7378,12 @@ class Game {
 	/** Whether a shot along the beam lands on the selected ordinary carrier now.
 	 *  No actor, no mark — as `engageStruckTraffic` lands no shot without one,
 	 *  rather than a hit radius from a hull nobody named (sage #368). */
-	private trafficOnTarget(camPos: Vec3, selected: Body): boolean {
+	private trafficOnTarget(origin: Vec3, selected: Body): boolean {
 		if (!this.trafficSelected()) return false;
 		const actor = this.trafficActorByKey(selected.id as CarrierKey);
 		return (
 			actor !== undefined &&
-			trafficInSights(camPos, this.beamAim(), selected.pos, actor.hullId)
+			trafficInSights(origin, this.beamAim(), selected.pos, actor.hullId)
 		);
 	}
 
@@ -9945,11 +9971,67 @@ class Game {
 		return forwardOf(this.orientation);
 	}
 
-	/** The weapon ray is the sightline through the cockpit's central reticle —
-	 *  `nose()`'s arithmetic against the camera's rotation rather than the
-	 *  ship's, which is the whole of the difference between the two. */
+	/** The weapon ray. In the cockpit, the sightline through the central
+	 *  reticle — `nose()`'s arithmetic against the camera's rotation rather
+	 *  than the ship's. In chase the gun is bolted to the hull (#607 D1): the
+	 *  ship's nose, so orbiting the camera does not turn it. */
 	private weaponAim() {
-		return forwardOf(this.cameraRotation());
+		return this.weaponRay().aim;
+	}
+
+	/** Where a shot is resolved from: the cockpit eye, or in chase the ship,
+	 *  not the camera 140 m behind it (#607 D1). */
+	private weaponOrigin() {
+		return this.weaponRay().origin;
+	}
+
+	private weaponRay() {
+		return weaponRay(
+			this.view,
+			{ pos: this.world.ship.pos, nose: this.nose() },
+			{ pos: this.cameraPos(), forward: forwardOf(this.cameraRotation()) },
+		);
+	}
+
+	/**
+	 * The chase beams on the canvas (#607 D3): from each of the flown hull's
+	 * muzzles, `PLAYER_LASER_RANGE_KM` along the gimballed beam, projected
+	 * through the camera and cut at its plane. A muzzle is the hull's own, so a
+	 * shipyard trade moves it with the hull.
+	 */
+	private chaseBeamPx(w: number, h: number) {
+		const muzzles = muzzlesWorld(
+			this.world.ship.pos,
+			this.orientation,
+			shipMuzzlesKm(this.flownHull, HULL_SPECS[this.flownHull].variant),
+		);
+		const camPos = this.cameraPos();
+		const camRot = this.cameraRotation();
+		const fov = (this.nearCamera.fov * Math.PI) / 180;
+		const px = (m: { ndcX: number; ndcY: number }) => ({
+			x: (m.ndcX * 0.5 + 0.5) * w,
+			y: (1 - (m.ndcY * 0.5 + 0.5)) * h,
+		});
+		const out: {
+			from: { x: number; y: number };
+			to: { x: number; y: number };
+		}[] = [];
+		for (const [a, b] of beamSegments(
+			muzzles,
+			this.beamAim(),
+			PLAYER_LASER_RANGE_KM,
+		)) {
+			const seg = projectSegment(
+				a,
+				b,
+				camPos,
+				camRot,
+				fov,
+				this.nearCamera.aspect,
+			);
+			if (seg) out.push({ from: px(seg[0]), to: px(seg[1]) });
+		}
+		return out;
 	}
 
 	/** Where the gimballed beam points (#324): the boresight turned toward the
@@ -9981,7 +10063,9 @@ class Game {
 			this.trafficSelected()
 				? this.targetBody()
 				: null;
-		const targetDir = target ? directionTo(this.cameraPos(), target.pos) : null;
+		const targetDir = target
+			? directionTo(this.weaponOrigin(), target.pos)
+			: null;
 		this.gunAim = stepGimbal(this.gunAim ?? bore, bore, targetDir, dt);
 	}
 
@@ -11544,7 +11628,7 @@ class Game {
 			pilot: {
 				ship: this.world.ship,
 				nose: this.nose(),
-				aimOrigin: this.cameraPos(),
+				aimOrigin: this.weaponOrigin(),
 				// The gimballed beam, not the boresight (#324).
 				aimNose: this.beamAim(),
 				hull: this.condition.hull,
@@ -11904,7 +11988,7 @@ class Game {
 			carrier.condition === "operational" &&
 			shot.fired &&
 			shot.damage > 0 &&
-			relayInSights(this.cameraPos(), this.beamAim(), pos)
+			relayInSights(this.weaponOrigin(), this.beamAim(), pos)
 		) {
 			this.relayHull = Math.max(0, this.relayHull - shot.damage);
 			this.callDefender(key, carrier.instanceOrdinal);
@@ -11988,7 +12072,7 @@ class Game {
 		if (
 			shot.fired &&
 			shot.damage > 0 &&
-			tenderInSights(this.cameraPos(), this.beamAim(), pos)
+			tenderInSights(this.weaponOrigin(), this.beamAim(), pos)
 		) {
 			// The pool the shot meets is the side it comes from, as a raider's: the
 			// tug faces the wreck, nose along `-entry`.
@@ -13236,7 +13320,7 @@ class Game {
 			mouseFiring: this.mouseFiring,
 			// The sightline through the reticle, not the ship's attitude: a player
 			// looking off the nose aims where they are looking.
-			aimOrigin: this.cameraPos(),
+			aimOrigin: this.weaponOrigin(),
 			aimNose: this.weaponAim(),
 		});
 		// The pad's sticks sit **beside** the key set rather than through it, so
@@ -16819,9 +16903,12 @@ class Game {
 	 * marker that is internally consistent and still in the wrong place.
 	 */
 	markerNdc(dir: Vec3) {
+		// The camera's rotation, not the ship's (#607 F1). The two agree in the
+		// cockpit with the head forward, the only cockpit frame the glass is
+		// drawn on; in chase the orbit turns the camera off the ship.
 		return projectDirection(
 			dir,
-			this.orientation,
+			this.cameraRotation(),
 			(this.nearCamera.fov * Math.PI) / 180,
 			this.nearCamera.aspect,
 		);
@@ -16860,8 +16947,10 @@ class Game {
 		// third of the frame is physical cockpit hardware — the dash deck, the
 		// scanner well, the console housings — and the director is glass. The
 		// first build had no clip and drew its rings straight down over the radar.
+		// Chase has no cockpit, and no clip (#607).
+		const gauge = shipCuesShown(this.view);
 		ctx.beginPath();
-		ctx.rect(0, 0, w, h * GLASS_BOTTOM_FRACTION);
+		ctx.rect(0, 0, w, gauge ? h * GLASS_BOTTOM_FRACTION : h);
 		ctx.clip();
 
 		const cx = w / 2;
@@ -16944,9 +17033,13 @@ class Game {
 				: "off-axis";
 		ctx.strokeStyle = funnelColour;
 		ctx.lineWidth = 1.5;
-		ctx.beginPath();
-		ctx.arc(cx, cy, funnelRadiusPx, 0, Math.PI * 2);
-		ctx.stroke();
+		// The funnel, its marker and its datum are a gauge about the glass's
+		// centre, the cockpit's nose: in chase they are not drawn (#607 D2).
+		if (gauge) {
+			ctx.beginPath();
+			ctx.arc(cx, cy, funnelRadiusPx, 0, Math.PI * 2);
+			ctx.stroke();
+		}
 
 		const inward = scale(state.axisOut, -1);
 		const projected = this.markerNdc(inward);
@@ -16968,23 +17061,27 @@ class Game {
 			const radius = Math.min(fraction, MARKER_MAX_FRACTION) * funnelRadiusPx;
 			const x = cx + ux * radius;
 			const y = cy + uy * radius;
-			axisMarker = { x, y };
-			ctx.beginPath();
-			ctx.moveTo(x, y - 7);
-			ctx.lineTo(x + 7, y);
-			ctx.lineTo(x, y + 7);
-			ctx.lineTo(x - 7, y);
-			ctx.closePath();
-			ctx.stroke();
+			if (gauge) {
+				axisMarker = { x, y };
+				ctx.beginPath();
+				ctx.moveTo(x, y - 7);
+				ctx.lineTo(x + 7, y);
+				ctx.lineTo(x, y + 7);
+				ctx.lineTo(x - 7, y);
+				ctx.closePath();
+				ctx.stroke();
+			}
 		}
 
 		// The nose itself, so the gauge has a datum to be read against.
-		ctx.beginPath();
-		ctx.moveTo(cx - 5, cy);
-		ctx.lineTo(cx + 5, cy);
-		ctx.moveTo(cx, cy - 5);
-		ctx.lineTo(cx, cy + 5);
-		ctx.stroke();
+		if (gauge) {
+			ctx.beginPath();
+			ctx.moveTo(cx - 5, cy);
+			ctx.lineTo(cx + 5, cy);
+			ctx.moveTo(cx, cy - 5);
+			ctx.lineTo(cx, cy + 5);
+			ctx.stroke();
+		}
 
 		// §3: a positive state and the remaining window, or the refusal *with its
 		// reason* — a red mark alone never carries the consequence.
@@ -17021,6 +17118,7 @@ class Game {
 			state,
 			centre: { x: cx, y: cy },
 			funnelRadiusPx,
+			gauge,
 			axisMarker,
 			markerOffScale,
 			tunnelRingsDrawn,
@@ -17094,7 +17192,10 @@ class Game {
 		// reference plane. Faint, because it is a background fact rather than
 		// something to look at — but present, because in cockpit view there is no
 		// hull left to read attitude off.
-		const roll = horizonRoll(this.orientation, SYSTEM_PLANE_NORMAL);
+		const shipCues = shipCuesShown(this.view);
+		const roll = shipCues
+			? horizonRoll(this.orientation, SYSTEM_PLANE_NORMAL)
+			: null;
 		if (roll !== null) {
 			ctx.save();
 			ctx.translate(w / 2, h / 2);
@@ -17111,16 +17212,34 @@ class Game {
 		}
 
 		// The nose: where the ship points, which in cruise is also where it goes.
+		// In the cockpit a cross at the centre of the glass. In chase the centre
+		// is the camera's axis, so the nose is a pip where the ship's nose
+		// points, projected through the camera (#607 D2, D4).
+		this.boresightRender = null;
 		ctx.strokeStyle = "rgba(200, 230, 255, 0.55)";
 		ctx.lineWidth = 1;
-		ctx.beginPath();
-		ctx.moveTo(w / 2 - 7, h / 2);
-		ctx.lineTo(w / 2 - 2, h / 2);
-		ctx.moveTo(w / 2 + 2, h / 2);
-		ctx.lineTo(w / 2 + 7, h / 2);
-		ctx.moveTo(w / 2, h / 2 - 7);
-		ctx.lineTo(w / 2, h / 2 - 2);
-		ctx.stroke();
+		if (shipCues) {
+			ctx.beginPath();
+			ctx.moveTo(w / 2 - 7, h / 2);
+			ctx.lineTo(w / 2 - 2, h / 2);
+			ctx.moveTo(w / 2 + 2, h / 2);
+			ctx.lineTo(w / 2 + 7, h / 2);
+			ctx.moveTo(w / 2, h / 2 - 7);
+			ctx.lineTo(w / 2, h / 2 - 2);
+			ctx.stroke();
+		} else {
+			const bore = place(this.nose());
+			if (bore?.on) {
+				ctx.beginPath();
+				ctx.arc(bore.x, bore.y, 4, 0, Math.PI * 2);
+				ctx.moveTo(bore.x - 9, bore.y);
+				ctx.lineTo(bore.x - 5, bore.y);
+				ctx.moveTo(bore.x + 5, bore.y);
+				ctx.lineTo(bore.x + 9, bore.y);
+				ctx.stroke();
+				this.boresightRender = { x: bore.x, y: bore.y };
+			}
+		}
 
 		// #324 part d: cargo canisters, a small green diamond with the good and
 		// range, so a pilot can find them after a kill. **Canisters that land
@@ -17286,8 +17405,17 @@ class Game {
 			ctx.arc(beamAt.x, beamAt.y, 5, 0, Math.PI * 2);
 			ctx.stroke();
 		}
-		if (this.gunFeedback.tracerLeftS > 0)
-			drawGunTracer(ctx, w, h, glassBottom, beamOnGlass ?? undefined);
+		this.beamRender = null;
+		if (this.gunFeedback.tracerLeftS > 0) {
+			if (this.view === "chase") {
+				// From the hull's muzzles, its range along the beam, as the
+				// camera sees it (#607 D3). Not the cockpit's ports on a glass
+				// chase does not have.
+				const segments = this.chaseBeamPx(w, h);
+				drawTracerSegments(ctx, w, h, 1, segments);
+				this.beamRender = segments;
+			} else drawGunTracer(ctx, w, h, glassBottom, beamOnGlass ?? undefined);
+		}
 		this.combatRig?.drawTracer(ctx, w, h, this.view, GLASS_BOTTOM_FRACTION);
 		// Not folded into the call above: outgoing fire is gated on the trigger
 		// being held and incoming fire is not, and a player being shot while not
@@ -17327,7 +17455,8 @@ class Game {
 		}
 
 		this.drawDockingDirector(ctx, w, h, camPos);
-		this.drawFlightFloor(ctx, w, h);
+		if (shipCues) this.drawFlightFloor(ctx, w, h);
+		else this.floorRender = null;
 
 		// The prompt, on the glass rather than only in the corner: the mechanic it
 		// names is the one the whole prototype is about, and the first flight of
@@ -17402,16 +17531,21 @@ class Game {
 			(raiderSelected &&
 				onTargetMark(
 					this.encounter?.phase ?? null,
-					raiderInSights(camPos, this.beamAim(), selectedBody.pos),
+					raiderInSights(this.weaponOrigin(), this.beamAim(), selectedBody.pos),
 				)) ||
 			(relaySelected &&
-				relayInSights(camPos, this.beamAim(), selectedBody.pos)) ||
+				relayInSights(this.weaponOrigin(), this.beamAim(), selectedBody.pos)) ||
 			(selectedBody !== null &&
 				this.tenderSelected() &&
-				tenderInSights(camPos, this.beamAim(), selectedBody.pos)) ||
+				tenderInSights(
+					this.weaponOrigin(),
+					this.beamAim(),
+					selectedBody.pos,
+				)) ||
 			// An ordinary carrier (civilian-combat H3) earns it as the relay does:
 			// `stepTrafficEngagements` lands a shot whenever this test passes.
-			(selectedBody !== null && this.trafficOnTarget(camPos, selectedBody));
+			(selectedBody !== null &&
+				this.trafficOnTarget(this.weaponOrigin(), selectedBody));
 		// Read once for the frame, not at each of the two places that needs them.
 		// The declutter reservation and the paint have to agree about what is drawn
 		// here, and deriving the same string twice across a hundred lines of draw

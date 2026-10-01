@@ -97,6 +97,34 @@ export function drawGunTracer(
 	ctx.restore();
 }
 
+/** Draw tracer segments in canvas pixels, clipped above `glassBottom`: the
+ *  chase view's beams, one from each muzzle (#607 D3). In the tracer's own
+ *  colour and weight, so a chase shot reads as the same gun. */
+export function drawTracerSegments(
+	ctx: CanvasRenderingContext2D,
+	w: number,
+	h: number,
+	glassBottom: number,
+	segments: readonly {
+		readonly from: { readonly x: number; readonly y: number };
+		readonly to: { readonly x: number; readonly y: number };
+	}[],
+): void {
+	ctx.save();
+	ctx.beginPath();
+	ctx.rect(0, 0, w, h * glassBottom);
+	ctx.clip();
+	ctx.strokeStyle = TRACER_COLOUR;
+	ctx.lineWidth = 3;
+	ctx.beginPath();
+	for (const { from, to } of segments) {
+		ctx.moveTo(from.x, from.y);
+		ctx.lineTo(to.x, to.y);
+	}
+	ctx.stroke();
+	ctx.restore();
+}
+
 /** How long the canopy rim glows after a hit lands on the player, s. */
 export const STRUCK_FLASH_S = 0.22;
 
