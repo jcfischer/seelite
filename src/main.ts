@@ -138,7 +138,6 @@ import {
 import {
 	type CommsLineId,
 	clearanceLine,
-	neuralWanted,
 	numbersPhrase,
 	voiceArms,
 } from "./comms";
@@ -150,7 +149,7 @@ import {
 	sayNumbers,
 	useNeuralVoice,
 } from "./comms-voice";
-import { NeuralVoice } from "./neural-voice";
+import { NeuralVoice, neuralWanted } from "./neural-voice";
 import { deleteVoiceData } from "./voice-store";
 import {
 	type WeaponSoundState,

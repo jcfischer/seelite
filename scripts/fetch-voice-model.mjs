@@ -126,10 +126,11 @@ rmSync(OUT, { recursive: true, force: true });
 mkdirSync(OUT, { recursive: true });
 for (const [id, file] of Object.entries(manifest.files)) {
 	const buf = buffers.get(id);
-	planParts(buf.length, manifest.partBytes).forEach(([a, b], i) =>
+	const ranges = planParts(buf.length, manifest.partBytes);
+	ranges.forEach(([a, b], i) =>
 		writeFileSync(join(OUT, partName(id, i)), buf.subarray(a, b)),
 	);
-	if (file.parts.length !== planParts(buf.length, manifest.partBytes).length)
+	if (file.parts.length !== ranges.length)
 		throw new Error(`voice model: ${id}: the manifest and the parts disagree`);
 }
 writeFileSync(

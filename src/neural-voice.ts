@@ -11,12 +11,25 @@
  * Pure helpers here for the headless tier; `NeuralVoice` is the browser's.
  */
 import { fetchBundled } from "./bundle-fetch";
+import type { VoiceArms } from "./comms";
 import { IPA_GB, IPA_US, KOKORO_VOCAB } from "./voice-ipa";
 import { lineKey, loadLine, storeLine } from "./voice-store";
 
 /** The model's output rate, and the length of one style row. */
 export const KOKORO_RATE = 24000;
 const STYLE = 256;
+/**
+ * Which engine speaks (#604): the natural voice when `?voices=neural` forces
+ * it, or when the settings row chose it and no arm overrides the row.
+ * `ask` is not a yes: nothing downloads until the player answers.
+ */
+export const neuralWanted = (
+	setting: "ask" | "neural" | "formant",
+	engine: VoiceArms["engine"],
+) => engine === "neural" || (engine === "setting" && setting === "neural");
+
+/** Decoded lines held in memory: every comms line and a few phrases. */
+const MEMO_LINES = 24;
 /** Kokoro's longest input, in tokens between the two pads. */
 const MAX_TOKENS = 510;
 
@@ -134,11 +147,15 @@ export interface VoiceManifest {
 export type NeuralBackend = "wasm" | "webgpu";
 
 /** Bytes a backend downloads: its files and every voice. */
+/** The files a backend loads: its model, its runtime and every voice. */
+export const backendFileIds = (m: VoiceManifest, b: NeuralBackend) => [
+	...m.backends[b],
+	...m.voices.map((v) => `voice:${v}`),
+];
+
+/** Bytes a backend downloads. */
 export const backendBytes = (m: VoiceManifest, b: NeuralBackend) =>
-	[...m.backends[b], ...m.voices.map((v) => `voice:${v}`)].reduce(
-		(n, id) => n + m.files[id].bytes,
-		0,
-	);
+	backendFileIds(m, b).reduce((n, id) => n + m.files[id].bytes, 0);
 
 /** Where the neural voice is. `failed` carries why, for the settings row
  *  and the lab; the formant voice speaks meanwhile in every state but
@@ -259,7 +276,9 @@ export class NeuralVoice {
 				room?.quota !== undefined && room.usage !== undefined
 					? room.quota - room.usage
 					: Number.POSITIVE_INFINITY;
-			if (b === "webgpu" && free < backendBytes(m, b) * 1.1) b = "wasm";
+			// Not over the lab's explicit choice.
+			if (!force && b === "webgpu" && free < backendBytes(m, b) * 1.1)
+				b = "wasm";
 			await navigator.storage?.persist?.();
 		} catch {
 			// Storage the browser will not describe: try anyway.
@@ -352,7 +371,10 @@ export class NeuralVoice {
 		}
 		const samples = this.generate(worker, key, text, voice, speed, urgent);
 		this.inflight.set(key, { samples });
-		void samples.finally(() => this.inflight.delete(key));
+		// Settled either way; a rejection is the caller's to handle, and the
+		// bookkeeping must not raise a second, unhandled one.
+		const drop = () => this.inflight.delete(key);
+		samples.then(drop, drop);
 		return samples;
 	}
 
@@ -375,6 +397,7 @@ export class NeuralVoice {
 			worker.postMessage({ type: "say", id, key, ids, voice, speed, urgent });
 		});
 		await storeLine(key, samples);
+		this.remember(key, samples);
 		return samples;
 	}
 
@@ -386,7 +409,30 @@ export class NeuralVoice {
 		speed = 1,
 	): Promise<Float32Array | null> {
 		if (this.state.kind !== "ready" || !this.manifest) return null;
-		return loadLine(lineKey(text, voice, speed, this.manifest.version));
+		const key = lineKey(text, voice, speed, this.manifest.version);
+		const hit = this.memo.get(key);
+		if (hit) {
+			this.remember(key, hit);
+			return hit;
+		}
+		const kept = await loadLine(key);
+		if (kept) this.remember(key, kept);
+		return kept;
+	}
+
+	/**
+	 * The last few lines, decoded, in front of the line cache: the same comms
+	 * lines are said again and again, and each IndexedDB read is a
+	 * transaction and a conversion (sage round 2 on #606). A line read from
+	 * here does not refresh its last use in the store, so eviction there
+	 * runs on when it was last *read from the store*.
+	 */
+	private memo = new Map<string, Float32Array>();
+	private remember(key: string, samples: Float32Array) {
+		this.memo.delete(key);
+		this.memo.set(key, samples);
+		if (this.memo.size > MEMO_LINES)
+			this.memo.delete(this.memo.keys().next().value as string);
 	}
 
 	/** Stop the voice and any start in flight; `off`. */

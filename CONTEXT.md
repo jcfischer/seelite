@@ -543,6 +543,10 @@ are; this entry governs what a player reads, not what the store calls its keys.
 page — the three **Ladders** — and not the save slot. The two never meet on one
 surface: the overlay is out of fiction, the tab is a cockpit wall, and the
 tab's label names who the page is about.
+**One guest (#604):** the overlay also asks, once, whether to download the
+**Natural voice**, before its menu at boot. That answer is a settings row and
+never part of a save; the overlay hosts the question because it is the screen a
+player meets first, not because the voice belongs to a Commander.
 _Avoid_: save game, save file, profile (in player-facing text)
 
 **Ladder**:

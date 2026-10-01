@@ -10,7 +10,6 @@ import {
 	COMMS_LINES,
 	clearanceLine,
 	type CommsLineId,
-	neuralWanted,
 	numbersPhrase,
 	voiceArms,
 } from "../src/comms";
@@ -21,6 +20,7 @@ import {
 	renderNumbersAhead,
 	takeNumbers,
 } from "../src/comms-voice";
+import { neuralWanted } from "../src/neural-voice";
 import { textToTokens } from "../src/speech-lexicon";
 import { SPEECH_ECHO_MAX_TAIL_S } from "../src/audio";
 import { reaches, unlocked, withFakeWindow } from "./lib/fake-audio";

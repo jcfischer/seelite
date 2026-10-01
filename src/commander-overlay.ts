@@ -314,6 +314,32 @@ type FormRow =
 	| { kind: "toggle"; label: string; field: "guided" | "permadeath" }
 	| { kind: "button"; label: string; run: () => void; enabled?: boolean };
 
+/** Which footer each view draws. */
+const HINT_KIND = {
+	menu: "menu",
+	"new-game": "form",
+	rename: "form",
+	delete: "form",
+	import: "form",
+	voice: "question",
+} as const satisfies Record<View["kind"], Parameters<typeof commanderHint>[0]>;
+
+/** A form view's heading. */
+function formTitle(v: Exclude<View, { kind: "menu" }>): string {
+	switch (v.kind) {
+		case "new-game":
+			return "New game";
+		case "rename":
+			return `Rename Commander "${escapeHtml(v.from)}"`;
+		case "delete":
+			return `Delete Commander "${escapeHtml(v.slot)}"?`;
+		case "voice":
+			return "The ship's voice";
+		case "import":
+			return "Import a Commander from a file";
+	}
+}
+
 type View =
 	| { kind: "menu" }
 	| {
@@ -679,16 +705,7 @@ export function mountCommanderOverlay(
 				.join("");
 		} else {
 			const v = view;
-			const title =
-				v.kind === "new-game"
-					? "New game"
-					: v.kind === "rename"
-						? `Rename Commander "${escapeHtml(v.from)}"`
-						: v.kind === "delete"
-							? `Delete Commander "${escapeHtml(v.slot)}"?`
-							: v.kind === "voice"
-								? "The ship's voice"
-								: "Import a Commander from a file";
+			const title = formTitle(v);
 			const lead =
 				v.kind === "voice"
 					? `<div class="info" data-voice-question>Approach control and other ships can speak with a natural voice: a speech model that runs in your browser. It downloads once from this site and stays in your browser; you can delete it under Settings, Voice. Without it the game speaks with its own small synthesised voice.</div>`
@@ -708,15 +725,7 @@ export function mountCommanderOverlay(
 					.join("");
 		}
 		const hint = escapeHtml(
-			commanderHint(
-				view.kind === "menu"
-					? "menu"
-					: view.kind === "voice"
-						? "question"
-						: "form",
-				running,
-				options.ownKey.names(),
-			),
+			commanderHint(HINT_KIND[view.kind], running, options.ownKey.names()),
 		);
 		root.innerHTML = `<div class="box" role="dialog" aria-label="Commander" aria-busy="${busy}">
   <h2>Commander</h2>
@@ -810,13 +819,17 @@ export function mountCommanderOverlay(
 		// #604: the voice question first, once; the menu after it.
 		view = voiceView() ?? { kind: "menu" };
 		if (view.kind === "voice")
-			void options.voiceQuestion?.bytes().then((bytes) => {
-				if (view.kind !== "voice") return;
-				// No voice on this server: there is nothing to ask.
-				if (bytes === null) return leaveVoice(null);
-				view.bytes = bytes;
-				draw();
-			});
+			void options.voiceQuestion
+				?.bytes()
+				.catch(() => null)
+				.then((bytes) => {
+					if (view.kind !== "voice") return;
+					// No voice on this server, or a manifest it cannot read:
+					// there is nothing to offer, so nothing is asked.
+					if (bytes === null) return leaveVoice(null);
+					view.bytes = bytes;
+					draw();
+				});
 		if (running) {
 			refusal = options.fault();
 			info = null;

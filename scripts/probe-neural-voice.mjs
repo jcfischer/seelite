@@ -70,6 +70,33 @@ const FAKE = {
 };
 const FAKE_BYTES = 50_000_000 + 11_000_000 + 522_240;
 
+/**
+ * An init script: `window.__spySpeak(on)` reports every line handed to the
+ * engine — its length, its bus and whether it has a room — and returns a
+ * restore. One copy, so a change to `speak`'s signature is made once.
+ */
+const installSpeakSpy = () => {
+	window.__spySpeak = (on) => {
+		const audio = window.__seelite.audio;
+		const speak = audio.speak.bind(audio);
+		audio.speak = (x, rate, bus, space) => {
+			on({ n: x.length, bus: bus ?? "console", space: !!space });
+			return speak(x, rate, bus, space);
+		};
+		return () => {
+			audio.speak = speak;
+		};
+	};
+};
+
+/** The voice has settled, ready or failed: a load from localhost's parts. */
+const voiceSettled = (page) =>
+	page.waitForFunction(
+		() => ["ready", "failed"].includes(window.__seelite.neural.state.kind),
+		null,
+		{ timeout: 240000, polling: 500 },
+	);
+
 const browser = await launchChromium();
 const { check, watch, exit } = tally();
 const contexts = [];
@@ -82,6 +109,7 @@ try {
 	const askPage = async ({ pad = false, playerBoot = false } = {}) => {
 		const context = await browser.newContext();
 		contexts.push(context);
+		await context.addInitScript(installSpeakSpy);
 		await context.route("**/voice-model/manifest.json", (r) =>
 			r.fulfill({
 				contentType: "application/json",
@@ -179,12 +207,9 @@ try {
 	const fallback = await padPage.evaluate(() => {
 		const g = window.__seelite;
 		const out = [];
-		const speak = g.audio.speak.bind(g.audio);
-		g.audio.speak = (x, rate, bus, space) => {
-			out.push(bus ?? "console");
-			return speak(x, rate, bus, space);
-		};
+		const restore = window.__spySpeak((c) => out.push(c.bus));
 		g.sayComms("granted");
+		restore();
 		return { out, reason: g.neural.state.reason };
 	});
 	check(
@@ -247,6 +272,7 @@ try {
 		const recorded = async () => {
 			const c = await browser.newContext();
 			contexts.push(c);
+			await c.addInitScript(installSpeakSpy);
 			c.on("request", (q) => requests.push(q.url()));
 			return c;
 		};
@@ -255,11 +281,7 @@ try {
 		watch(game);
 		await game.goto(gameUrl(origin, { raider: "off", voices: "neural" }));
 		await bootedGame(game, 60000);
-		await game.waitForFunction(
-			() => ["ready", "failed"].includes(window.__seelite.neural.state.kind),
-			null,
-			{ timeout: 240000, polling: 500 },
-		);
+		await voiceSettled(game);
 		const spoken = await game.evaluate(async () => {
 			const g = window.__seelite;
 			const { renderLine } = await import("/src/comms-voice.ts");
@@ -267,17 +289,16 @@ try {
 			const { NEURAL_ROLE } = await import("/src/neural-voice.ts");
 			// Kept first: a line the cache lacks is said by the formant voice.
 			await g.neural.line(COMMS_LINES.granted.text, NEURAL_ROLE.approach);
+			let restore = () => {};
 			const said = new Promise((res) => {
-				const speak = g.audio.speak.bind(g.audio);
-				g.audio.speak = (x, rate, bus, space) => {
-					res({ n: x.length, bus: bus ?? "console" });
-					return speak(x, rate, bus, space);
-				};
+				restore = window.__spySpeak(res);
 			});
 			g.sayComms("granted");
+			const line = await said;
+			restore();
 			return {
 				state: g.neural.state,
-				said: await said,
+				said: line,
 				formant: renderLine("granted").length,
 			};
 		});
@@ -299,11 +320,7 @@ try {
 			gameUrl(origin, { raider: "off", voices: "neural,nocomms" }),
 		);
 		await bootedGame(bench, 60000);
-		await bench.waitForFunction(
-			() => ["ready", "failed"].includes(window.__seelite.neural.state.kind),
-			null,
-			{ timeout: 240000, polling: 500 },
-		);
+		await voiceSettled(bench);
 		// ── A line the cache lacks: the formant voice now, Kokoro next time ──
 		const miss = await bench.evaluate(async () => {
 			const g = window.__seelite;
@@ -311,11 +328,7 @@ try {
 			const { COMMS_LINES } = await import("/src/comms.ts");
 			const { NEURAL_ROLE } = await import("/src/neural-voice.ts");
 			const said = [];
-			const speak = g.audio.speak.bind(g.audio);
-			g.audio.speak = (x, rate, bus, space) => {
-				said.push(x.length);
-				return speak(x, rate, bus, space);
-			};
+			const restore = window.__spySpeak((c) => said.push(c.n));
 			const t0 = performance.now();
 			await cv.sayLine(g.audio, "granted");
 			const firstMs = performance.now() - t0;
@@ -324,7 +337,7 @@ try {
 			for (let i = 0; i < 600 && !(await g.neural.kept(text, voice)); i++)
 				await new Promise((r) => setTimeout(r, 100));
 			await cv.sayLine(g.audio, "granted");
-			g.audio.speak = speak;
+			restore();
 			return {
 				state: g.neural.state.kind,
 				said,

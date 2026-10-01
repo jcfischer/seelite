@@ -4,8 +4,10 @@ A browser-playable classic-Elite (1984) trade–fight–explore loop. TypeScript
 Vite + Three.js, static bundle, no backend, no runtime network requests beyond
 Counterscale pageview analytics on each public page load and game launch (#569,
 `src/visit-count.ts`) — and the natural voice's files from this site's own
-origin, once, when a player chooses it (#604, `src/bundle-fetch.ts`). The
-voice is the one trained asset; the map's Constraints carry the ruling.
+origin (#604, `src/bundle-fetch.ts`): its manifest when the question is asked
+and on each start with the voice on, and its model once, when the player
+chooses it. The voice is the one trained asset; the map's Constraints carry
+the ruling.
 
 ## Read the map first
 

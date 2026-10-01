@@ -100,16 +100,6 @@ export interface VoiceArms {
 	readonly ask: boolean;
 }
 
-/**
- * Which engine speaks (#604): the natural voice when `?voices=neural` forces
- * it, or when the settings row chose it and no arm overrides the row.
- * `ask` is not a yes: nothing downloads until the player answers.
- */
-export const neuralWanted = (
-	setting: "ask" | "neural" | "formant",
-	engine: VoiceArms["engine"],
-) => engine === "neural" || (engine === "setting" && setting === "neural");
-
 export function voiceArms(value: string | null, dev: boolean): VoiceArms {
 	const tokens = (value ?? "").split(",").map((t) => t.trim());
 	const engine = tokens.includes("formant")

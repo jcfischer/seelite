@@ -16,7 +16,7 @@ import {
 	REMOTE_FILES,
 	VOICE_IDS,
 } from "../scripts/lib/voice-model.mjs";
-import { isBundlePath } from "../src/bundle-fetch";
+import { fetchBundled, isBundlePath } from "../src/bundle-fetch";
 import {
 	backendBytes,
 	NEURAL_VOICES,
@@ -106,6 +106,18 @@ describe("the one same-origin fetch", () => {
 		expect(isBundlePath("https://huggingface.co/x")).toBe(false);
 		expect(isBundlePath("voice-model/x")).toBe(false);
 		expect(isBundlePath("/\\evil.example")).toBe(false);
+		// The URL parser drops tabs and newlines first: these are `//host`.
+		expect(isBundlePath("/\t/evil.example/x")).toBe(false);
+		expect(isBundlePath("/\n/evil.example/x")).toBe(false);
+	});
+
+	test("the fetch refuses anything else before it reaches the network", () => {
+		for (const p of [
+			"//evil.example/x",
+			"/\t/evil.example",
+			"https://x.example/",
+		])
+			expect(() => fetchBundled(p)).toThrow("is not a path of this origin");
 	});
 });
 

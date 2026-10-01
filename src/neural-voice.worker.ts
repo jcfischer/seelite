@@ -1,6 +1,8 @@
 /**
  * The neural voice's worker (#604): Kokoro-82M on onnxruntime-web, off the
- * main thread so a line never costs a frame.
+ * main thread, so a line generating does not hold the frame loop. It can
+ * still slow frames on WebGPU, where the model shares the GPU with the game:
+ * `probe-neural-voice` prints the p95.
  *
  * `load` downloads every file the backend needs — its model, its runtime
  * binary and every voice — through the cache (`voice-store.ts`), checks each
@@ -106,10 +108,6 @@ async function load(m: {
 }) {
 	const t0 = performance.now();
 	const { manifest, base, ep } = m;
-	const ids = [
-		...manifest.backends[ep],
-		...manifest.voices.map((v) => `voice:${v}`),
-	];
 	const total = backendBytes(manifest, ep);
 	let done = 0;
 	const tick = (b: number) => {
