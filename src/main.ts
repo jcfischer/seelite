@@ -436,10 +436,10 @@ import {
 	drawStruckRim,
 	TRACER_AIM,
 	TRACER_HOLD_S,
-	TRACER_PORTS,
 	drawGunTracer,
 	drawTracerSegments,
 	stepGunFeedback,
+	tracerPorts,
 } from "./gun-feedback";
 import {
 	GIMBAL_CONE_RAD,
@@ -2906,13 +2906,16 @@ class Game {
 	/** The gimballed beam's direction, or `null` before the first step, when it
 	 *  is the boresight (`gimbal.ts`). */
 	gunAim: Vec3 | null = null;
-	/** The tracer's geometry and pacing, for a probe to read rather than restate. */
-	readonly gunTracer = {
-		ports: TRACER_PORTS,
-		aim: TRACER_AIM,
-		holdS: TRACER_HOLD_S,
-		soundGapS: SHOT_SOUND_GAP_S,
-	} as const;
+	/** The tracer's geometry and pacing, for a probe to read rather than
+	 *  restate. The ports are the flown hull's, one per gun (#607). */
+	get gunTracer() {
+		return {
+			ports: tracerPorts(HULL_SPECS[this.flownHull].hardpoints),
+			aim: TRACER_AIM,
+			holdS: TRACER_HOLD_S,
+			soundGapS: SHOT_SOUND_GAP_S,
+		};
+	}
 	/**
 	 * The hostile firing cue as drawn this frame, or `null` when no raider is
 	 * the selected target. Written by the draw, like `floorRender`.
@@ -10007,7 +10010,7 @@ class Game {
 		);
 		const camPos = this.cameraPos();
 		const camRot = this.cameraRotation();
-		const fov = (this.nearCamera.fov * Math.PI) / 180;
+		const fovYRad = (this.nearCamera.fov * Math.PI) / 180;
 		const px = (m: { ndcX: number; ndcY: number }) => ({
 			x: (m.ndcX * 0.5 + 0.5) * w,
 			y: (1 - (m.ndcY * 0.5 + 0.5)) * h,
@@ -10026,7 +10029,7 @@ class Game {
 				b,
 				camPos,
 				camRot,
-				fov,
+				fovYRad,
 				this.nearCamera.aspect,
 			);
 			if (seg) out.push({ from: px(seg[0]), to: px(seg[1]) });
@@ -17414,7 +17417,15 @@ class Game {
 				const segments = this.chaseBeamPx(w, h);
 				drawTracerSegments(ctx, w, h, 1, segments);
 				this.beamRender = segments;
-			} else drawGunTracer(ctx, w, h, glassBottom, beamOnGlass ?? undefined);
+			} else
+				drawGunTracer(
+					ctx,
+					w,
+					h,
+					glassBottom,
+					beamOnGlass ?? undefined,
+					this.gunTracer.ports,
+				);
 		}
 		this.combatRig?.drawTracer(ctx, w, h, this.view, GLASS_BOTTOM_FRACTION);
 		// Not folded into the call above: outgoing fire is gated on the trigger
