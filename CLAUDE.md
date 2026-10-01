@@ -3,7 +3,9 @@
 A browser-playable classic-Elite (1984) trade–fight–explore loop. TypeScript +
 Vite + Three.js, static bundle, no backend, no runtime network requests beyond
 Counterscale pageview analytics on each public page load and game launch (#569,
-`src/visit-count.ts`).
+`src/visit-count.ts`) — and the natural voice's files from this site's own
+origin, once, when a player chooses it (#604, `src/bundle-fetch.ts`). The
+voice is the one trained asset; the map's Constraints carry the ruling.
 
 ## Read the map first
 
@@ -705,4 +707,7 @@ merge.
 
 TypeScript, bun for tests, npm-compatible lockfile, biome for formatting,
 Playwright for probes. No Python. Procedural everything — no downloaded assets;
-audio synthesised via WebAudio, textures generated at load.
+audio synthesised via WebAudio, textures generated at load. The one exception
+is the natural voice (#604), by the principal's ruling in the map's
+Constraints: `node scripts/fetch-voice-model.mjs` puts it in
+`public/voice-model/` (git-ignored), and `probe-neural-voice` needs it there.

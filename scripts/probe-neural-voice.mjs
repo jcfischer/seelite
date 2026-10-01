@@ -74,8 +74,12 @@ const browser = await launchChromium();
 const { check, watch, exit } = tally();
 const contexts = [];
 try {
-	/** A fresh context with the fake manifest and every part refused. */
-	const askPage = async ({ pad = false } = {}) => {
+	/**
+	 * A fresh context with the fake manifest and every part refused, on the
+	 * question: under `?voices=ask` on a direct boot, or on the player's own
+	 * boot, `/?boot=overlay` as the site's Play link has it.
+	 */
+	const askPage = async ({ pad = false, playerBoot = false } = {}) => {
 		const context = await browser.newContext();
 		contexts.push(context);
 		await context.route("**/voice-model/manifest.json", (r) =>
@@ -90,7 +94,11 @@ try {
 		const page = await context.newPage();
 		watch(page);
 		if (pad) await page.addInitScript(installFakePad);
-		await page.goto(gameUrl(origin, { raider: "off", voices: "ask" }));
+		await page.goto(
+			playerBoot
+				? gameUrl(origin, { raider: "off" }, { boot: "overlay" })
+				: gameUrl(origin, { raider: "off", voices: "ask" }),
+		);
 		await bootedGame(page, 60000);
 		await page.waitForSelector("[data-voice-question]", { timeout: 20000 });
 		// The size arrives after the view: wait for the figure.
@@ -187,6 +195,39 @@ try {
 			fallback.out.length === 1 &&
 			fallback.out[0] === "console",
 		`${JSON.stringify(chosen)}; ${fallback.reason}; said on ${fallback.out.join(", ") || "nothing"}`,
+	);
+
+	// ── The player's boot: the question, the menu, then a new game ────────
+	const boot = await askPage({ playerBoot: true });
+	const asked = await state(boot);
+	await boot.keyboard.press("Escape");
+	const menu = await boot.evaluate(
+		() =>
+			document.querySelector('#seelite-commander [data-kind="new-game"]') !==
+			null,
+	);
+	// New game is the first cursor in a browser with no Commander; its form's
+	// last row, five down from the name, starts it, and the page reloads.
+	await boot.keyboard.press("Enter");
+	await boot.waitForSelector('[data-field="name"]', { timeout: 10000 });
+	for (let i = 0; i < 5; i++) await boot.keyboard.press("ArrowDown");
+	const reloaded = boot.waitForEvent("load", { timeout: 30000 });
+	await boot.keyboard.press("Enter");
+	await reloaded;
+	await bootedGame(boot, 60000);
+	const flying = {
+		...(await state(boot)),
+		clockHeld: await boot.evaluate(() => window.__seelite.clockHeld),
+	};
+	check(
+		"on the player's boot the question comes before the menu, and New game reaches flight without asking again",
+		asked.asking &&
+			menu &&
+			!flying.asking &&
+			!flying.open &&
+			flying.voice === "ask" &&
+			!flying.clockHeld,
+		`first ${JSON.stringify(asked)}; menu after Esc ${menu}; after New game ${JSON.stringify(flying)}`,
 	);
 
 	// ── The model itself ───────────────────────────────────────────────────

@@ -28,7 +28,11 @@
  * 9. **The pad drives the overlay as `modal`.**
  *
  * The URLs are built with `boot: null`, which is `gameUrl`'s option for a probe
- * of the overlay itself and for nothing else.
+ * of the overlay itself and for nothing else. They carry `?voices=formant`
+ * (#604): with the Voice row at Ask the overlay puts the natural-voice
+ * question before its menu, but only where the dev server has the model, so
+ * these rows would read a different first screen on a checkout that fetched
+ * it. `probe-neural-voice` walks the question on this same boot.
  */
 // A default-layout probe (#381 D11): it presses keys by name, as the shipped
 // layout binds them, and a moved default turns it red for that reason.
@@ -49,7 +53,11 @@ const SEED = 42;
 const OTHER_SEED = 777;
 
 /** A player's boot of the default route with another seed: no `?boot=direct`. */
-const OTHER_SEED_URL = gameUrl(ORIGIN, { seed: OTHER_SEED }, { boot: null });
+const OTHER_SEED_URL = gameUrl(
+	ORIGIN,
+	{ seed: OTHER_SEED, voices: "formant" },
+	{ boot: null },
+);
 
 await guardedOrigin(ORIGIN);
 const browser = await launchChromium();
@@ -73,9 +81,12 @@ const openPage = async (context, { pad = false } = {}) => {
 	const page = await context.newPage();
 	watch(page);
 	if (pad) await page.addInitScript(installFakePad);
-	await page.goto(gameUrl(ORIGIN, { seed: SEED }, { boot: null }), {
-		waitUntil: "load",
-	});
+	await page.goto(
+		gameUrl(ORIGIN, { seed: SEED, voices: "formant" }, { boot: null }),
+		{
+			waitUntil: "load",
+		},
+	);
 	await bootedGame(page);
 	return page;
 };

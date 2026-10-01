@@ -8,7 +8,9 @@
  *   node scripts/fetch-voice-model.mjs
  *
  * Downloads are kept in `.voice-model-cache/` by checksum, so a second run
- * and a cached CI run fetch nothing. **A checksum that does not match stops
+ * and a cached CI run fetch nothing. The cache is the **main checkout's**,
+ * found through git's common directory: every node gets a fresh worktree, and
+ * a cache inside each one would download 280 MiB again for every node. **A checksum that does not match stops
  * the run** — a file that changed under a pinned revision is not one to ship.
  *
  * It also writes `LICENSES.txt` beside the parts, because both works ship
@@ -16,6 +18,7 @@
  * text read from `node_modules/typescript`, which carries it verbatim) and
  * onnxruntime-web under MIT.
  */
+import { execFileSync } from "node:child_process";
 import { createHash } from "node:crypto";
 import {
 	existsSync,
@@ -24,7 +27,7 @@ import {
 	rmSync,
 	writeFileSync,
 } from "node:fs";
-import { join } from "node:path";
+import { dirname, join, resolve } from "node:path";
 import {
 	buildManifest,
 	MODEL_REPO,
@@ -62,7 +65,18 @@ LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 `;
-const CACHE = ".voice-model-cache";
+/** The main checkout's cache; this tree's own outside a git checkout. */
+function cacheDir() {
+	try {
+		const common = execFileSync("git", ["rev-parse", "--git-common-dir"], {
+			encoding: "utf8",
+		}).trim();
+		return join(dirname(resolve(common)), ".voice-model-cache");
+	} catch {
+		return ".voice-model-cache";
+	}
+}
+const CACHE = cacheDir();
 const ORT_VERSION = JSON.parse(
 	readFileSync("node_modules/onnxruntime-web/package.json", "utf8"),
 ).version;
