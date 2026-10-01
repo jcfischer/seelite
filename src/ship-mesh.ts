@@ -6623,11 +6623,24 @@ const muzzleCache = new Map<string, readonly Vec3[]>();
 export function shipMuzzlesKm(
 	id: HullId,
 	variant: HullVariantId,
+	built?: THREE.Group,
 ): readonly Vec3[] {
+	// A mesh the caller has just built is measured rather than a second one
+	// (sage round 2 on #608). It must not be placed yet: the measure is in the
+	// hull's own frame. Checked before the cache, so a placed mesh is refused
+	// whether or not this hull was measured already.
+	if (
+		built &&
+		(built.parent !== null ||
+			built.position.lengthSq() !== 0 ||
+			!built.quaternion.equals(new THREE.Quaternion()) ||
+			!built.scale.equals(new THREE.Vector3(1, 1, 1)))
+	)
+		throw new Error(`${id}: muzzles are measured off an unplaced mesh`);
 	const key = `${id}/${variant}`;
 	const known = muzzleCache.get(key);
 	if (known) return known;
-	const root = buildShipMesh(id, variant).root;
+	const root = built ?? buildShipMesh(id, variant).root;
 	root.updateMatrixWorld(true);
 	const count = HULL_SPECS[id].hardpoints;
 	const parts: THREE.Object3D[] = [];
@@ -6647,47 +6660,52 @@ export function shipMuzzlesKm(
 	return frozen;
 }
 
-/**
- * A hull with no gun parts: `count` mounts on its forward surface, in line
- * across the beam at mid-height and mirrored about the centre line, each found
- * by a ray from in front, as a nav light is.
- */
+/** `shipMuzzlesKm`'s mounts for a hull with no gun parts. */
 function raycastMuzzles(root: THREE.Group, count: number): Vec3[] {
-	{
-		const box = new THREE.Box3().setFromObject(root);
-		const size = box.getSize(new THREE.Vector3());
-		const centre = box.getCenter(new THREE.Vector3());
-		const standoff = Math.max(size.x, size.y, size.z) * NAV_LIGHT_STANDOFF;
-		const caster = new THREE.Raycaster();
-		const mounts = (spread: number) =>
-			Array.from({ length: count }, (_, i) => {
-				const x =
-					centre.x + (count === 1 ? 0 : spread * (2 * (i / (count - 1)) - 1));
-				caster.set(
-					new THREE.Vector3(x, centre.y, box.min.z - standoff),
-					new THREE.Vector3(0, 0, 1),
-				);
-				const hit = caster.intersectObject(root, true).find((h) => h.face);
-				return {
-					x,
-					y: centre.y,
-					z: hit ? hit.point.z : Number.POSITIVE_INFINITY,
-				};
-			});
-		// From a quarter of the beam either side, inward by halves until every
-		// mount lands on the forward half. A narrow nose ahead of swept wings
-		// otherwise put a pair on the wing roots, far aft (the interceptor, the
-		// raider and two capitals did).
-		let spread = size.x / 4;
-		let found = mounts(spread);
-		for (let i = 0; i < 6 && found.some((m) => !(m.z < centre.z)); i++) {
-			spread /= 2;
-			found = mounts(spread);
+	const box = new THREE.Box3().setFromObject(root);
+	const size = box.getSize(new THREE.Vector3());
+	const centre = box.getCenter(new THREE.Vector3());
+	const standoff = Math.max(size.x, size.y, size.z) * NAV_LIGHT_STANDOFF;
+	const caster = new THREE.Raycaster();
+	// Mid-height first, then out from it an eighth of the height at a time:
+	// two hulls have no metal ahead at mid-height on their gun lines, and a
+	// mount placed on the empty box face there floated in space (sage round
+	// 2 on #608).
+	const heights = [0, 1, -1, 2, -2, 3, -3].map(
+		(k) => centre.y + (k * size.y) / 8,
+	);
+	const onMetal = (x: number): Vec3 | null => {
+		for (const y of heights) {
+			caster.set(
+				new THREE.Vector3(x, y, box.min.z - standoff),
+				new THREE.Vector3(0, 0, 1),
+			);
+			const hit = caster.intersectObject(root, true).find((h) => h.face);
+			if (hit && hit.point.z < centre.z) return { x, y, z: hit.point.z };
 		}
-		// Still no metal ahead on some line, a gap in the nose: the box's front
-		// face, which is ahead of the hull and on its centre line's span.
-		return found.map((m) => (m.z < centre.z ? m : { ...m, z: box.min.z }));
+		return null;
+	};
+	const mounts = (spread: number) =>
+		Array.from({ length: count }, (_, i) =>
+			onMetal(
+				centre.x + (count === 1 ? 0 : spread * (2 * (i / (count - 1)) - 1)),
+			),
+		);
+	// From a quarter of the beam either side, inward by halves until every
+	// mount lands on the forward half. A narrow nose ahead of swept wings
+	// otherwise put a pair on the wing roots, far aft (the interceptor, the
+	// raider and two capitals did).
+	let spread = size.x / 4;
+	let found = mounts(spread);
+	for (let i = 0; i < 6 && found.some((m) => m === null); i++) {
+		spread /= 2;
+		found = mounts(spread);
 	}
+	// No metal ahead on some gun line at any height: refused, never a gun on
+	// an empty box face. `tests/ship-muzzles.test.ts` builds every hull.
+	if (found.some((m) => m === null))
+		throw new Error(`${root.name}: no metal ahead for a gun`);
+	return found as Vec3[];
 }
 
 export function buildShipMesh(

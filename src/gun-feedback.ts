@@ -78,7 +78,10 @@ export function tracerPorts(
 	guns: number,
 ): readonly { readonly x: number; readonly y: number }[] {
 	const [left, right] = TRACER_PORTS;
-	if (guns <= 1) return [{ x: 0.5, y: left.y }];
+	// No gun, no beam: chase draws none for a hull with no muzzles, and the
+	// cockpit agrees (sage round 2 on #608).
+	if (guns <= 0) return [];
+	if (guns === 1) return [{ x: 0.5, y: left.y }];
 	return Array.from({ length: guns }, (_, i) => ({
 		x: left.x + ((right.x - left.x) * i) / (guns - 1),
 		y: left.y,
@@ -112,6 +115,12 @@ export function drawGunTracer(
 	);
 }
 
+/** One beam on the canvas, in pixels. */
+export interface TracerSegment {
+	readonly from: { readonly x: number; readonly y: number };
+	readonly to: { readonly x: number; readonly y: number };
+}
+
 /** Draw tracer segments in canvas pixels, clipped above `glassBottom`: the
  *  chase view's beams, one from each muzzle (#607 D3). In the tracer's own
  *  colour and weight, so a chase shot reads as the same gun. */
@@ -120,10 +129,7 @@ export function drawTracerSegments(
 	w: number,
 	h: number,
 	glassBottom: number,
-	segments: readonly {
-		readonly from: { readonly x: number; readonly y: number };
-		readonly to: { readonly x: number; readonly y: number };
-	}[],
+	segments: readonly TracerSegment[],
 ): void {
 	ctx.save();
 	ctx.beginPath();

@@ -66,6 +66,10 @@ describe("the shot sound", () => {
 });
 
 describe("one port on the glass per gun (#607, the principal: the cockpit too)", () => {
+	test("no gun, no port: the cockpit agrees with chase's no muzzle", () => {
+		expect(tracerPorts(0)).toEqual([]);
+	});
+
 	test("one gun, one port, low on the glass's centre line", () => {
 		expect(tracerPorts(1)).toEqual([{ x: 0.5, y: 0.64 }]);
 	});

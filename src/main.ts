@@ -436,6 +436,7 @@ import {
 	drawGunTracer,
 	drawTracerSegments,
 	stepGunFeedback,
+	type TracerSegment,
 	tracerPorts,
 } from "./gun-feedback";
 import {
@@ -2828,9 +2829,7 @@ class Game {
 	boresightRender: { x: number; y: number } | null = null;
 	/** Chase's beams as drawn this frame, one per muzzle in canvas pixels, or
 	 *  `null` with no tracer or in the cockpit (#607 D3). */
-	beamRender:
-		| { from: { x: number; y: number }; to: { x: number; y: number } }[]
-		| null = null;
+	beamRender: TracerSegment[] | null = null;
 	/**
 	 * Whether the raider fired on the player this frame (#324). The hostile cue
 	 * turns red while it does, by the principal's ruling.
@@ -5511,9 +5510,13 @@ class Game {
 			this.flownHull,
 			HULL_SPECS[this.flownHull].variant,
 		).root;
-		// The muzzles are measured off a mesh of their own: here, with the
-		// hull's, rather than on the first chase shot (sage round 1 on #608).
-		shipMuzzlesKm(this.flownHull, HULL_SPECS[this.flownHull].variant);
+		// The muzzles, measured off this mesh before it is placed: here, with
+		// the hull's, rather than on the first chase shot (sage rounds 1, 2).
+		shipMuzzlesKm(
+			this.flownHull,
+			HULL_SPECS[this.flownHull].variant,
+			this.shipMesh,
+		);
 		// Every role's station maps now, beside the hull's: built lazily they
 		// land inside a jump's populate, 32-47 ms a role under `worn`.
 		warmStationMaps();
@@ -5558,7 +5561,7 @@ class Game {
 		this.condition = this.flownFullCondition();
 		const old = this.shipMesh;
 		const mesh = buildShipMesh(hull, HULL_SPECS[hull].variant).root;
-		shipMuzzlesKm(hull, HULL_SPECS[hull].variant);
+		shipMuzzlesKm(hull, HULL_SPECS[hull].variant, mesh);
 		mesh.name = "ship";
 		mesh.position.copy(old.position);
 		mesh.quaternion.copy(old.quaternion);
@@ -10013,10 +10016,7 @@ class Game {
 		const camRot = this.cameraRotation();
 		const fovYRad = (this.nearCamera.fov * Math.PI) / 180;
 		const px = (m: { ndcX: number; ndcY: number }) => ndcToPx(m, w, h);
-		const out: {
-			from: { x: number; y: number };
-			to: { x: number; y: number };
-		}[] = [];
+		const out: TracerSegment[] = [];
 		for (const [a, b] of beamSegments(
 			muzzles,
 			this.beamAim(),
@@ -17148,6 +17148,10 @@ class Game {
 		// Written again below only if a raider is selected and drawn this frame.
 		this.cueRender = null;
 		this.selectedRender = null;
+		// Cleared before any early return, so a frame that drew neither does not
+		// leave the last one's readable (sage round 2 on #608).
+		this.boresightRender = null;
+		this.beamRender = null;
 		this.hostileFireRender = { beam: null, rim: 0 };
 		// §8 M4/M10: arrival and launch are scripted, and a docked ship is not
 		// flyable. The forward station console owns the docked glass; no stale
@@ -17211,7 +17215,6 @@ class Game {
 		// In the cockpit a cross at the centre of the glass. In chase the centre
 		// is the camera's axis, so the nose is a pip where the ship's nose
 		// points, projected through the camera (#607 D2, D4).
-		this.boresightRender = null;
 		ctx.strokeStyle = "rgba(200, 230, 255, 0.55)";
 		ctx.lineWidth = 1;
 		if (shipCues) {
@@ -17401,7 +17404,6 @@ class Game {
 			ctx.arc(beamAt.x, beamAt.y, 5, 0, Math.PI * 2);
 			ctx.stroke();
 		}
-		this.beamRender = null;
 		if (this.gunFeedback.tracerLeftS > 0) {
 			if (this.view === "chase") {
 				// From the hull's muzzles, its range along the beam, as the

@@ -47,6 +47,43 @@ describe("a hull's muzzles (#607)", () => {
 			});
 		}
 
+	test("every muzzle is on metal: a ray from ahead meets the hull there first (sage round 2 on #608)", () => {
+		// The box check cannot see a mount on the box's empty front face, the
+		// ray fallback's last resort. This can: the first metal on the line
+		// through the muzzle, from ahead, must be the muzzle itself.
+		const caster = new THREE.Raycaster();
+		for (const id of HULL_IDS)
+			for (const variant of HULL_VARIANT_IDS) {
+				const root = buildShipMesh(id, variant).root;
+				root.updateMatrixWorld(true);
+				const box = new THREE.Box3().setFromObject(root);
+				const size = box.getSize(new THREE.Vector3());
+				const eps = Math.max(size.x, size.y, size.z) * 2e-3;
+				for (const m of shipMuzzlesKm(id, variant)) {
+					caster.set(
+						new THREE.Vector3(m.x, m.y, box.min.z - size.z),
+						new THREE.Vector3(0, 0, 1),
+					);
+					const hit = caster.intersectObject(root, true).find((h) => h.face);
+					expect({ id, variant, z: hit?.point.z ?? null }).toEqual({
+						id,
+						variant,
+						z: expect.closeTo(m.z, -Math.log10(eps)),
+					});
+				}
+			}
+	});
+
+	test("a mesh the caller built is measured, and must be unplaced", () => {
+		const fresh = buildShipMesh("tug", "b").root;
+		const muzzles = shipMuzzlesKm("tug", "b", fresh);
+		expect(muzzles).toHaveLength(HULL_SPECS.tug.hardpoints);
+		const placed = buildShipMesh("tug", "c").root;
+		placed.position.set(5, 0, 0);
+		placed.updateMatrix();
+		expect(() => shipMuzzlesKm("tug", "c", placed)).toThrow(/unplaced/);
+	});
+
 	test("the courier's one gun is on its centre line (D5)", () => {
 		const [m] = shipMuzzlesKm("courier", HULL_SPECS.courier.variant);
 		const box = boxOf("courier", HULL_SPECS.courier.variant);

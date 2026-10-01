@@ -169,6 +169,7 @@ const cues = await page.evaluate(async (pipOrbit) => {
 		await new Promise((r) => requestAnimationFrame(() => r()));
 	const ship = g.nearScene.getObjectByName("ship");
 	const overlay = document.getElementById("overlay");
+	const { ndcToPx } = await import("/src/hud.ts");
 	const nose = ship.position.clone();
 	const forward = ship.position
 		.clone()
@@ -179,10 +180,7 @@ const cues = await page.evaluate(async (pipOrbit) => {
 	return {
 		floor: g.floorRender,
 		pip: g.boresightRender,
-		three: {
-			x: (far.x * 0.5 + 0.5) * overlay.width,
-			y: (1 - (far.y * 0.5 + 0.5)) * overlay.height,
-		},
+		three: ndcToPx({ ndcX: far.x, ndcY: far.y }, overlay.width, overlay.height),
 		width: overlay.width,
 	};
 }, PIP_ORBIT);
@@ -214,6 +212,7 @@ const beam = await page.evaluate(async () => {
 	const ship = g.nearScene.getObjectByName("ship");
 	ship.updateMatrixWorld(true);
 	const overlay = document.getElementById("overlay");
+	const { ndcToPx } = await import("/src/hud.ts");
 	const muzzles = shipMuzzlesKm(
 		g.flownHull,
 		HULL_SPECS[g.flownHull].variant,
@@ -221,16 +220,30 @@ const beam = await page.evaluate(async () => {
 		const p = ship
 			.localToWorld(ship.position.clone().set(m.x, m.y, m.z))
 			.project(g.nearCamera);
-		return {
-			x: (p.x * 0.5 + 0.5) * overlay.width,
-			y: (1 - (p.y * 0.5 + 0.5)) * overlay.height,
-		};
+		return ndcToPx({ ndcX: p.x, ndcY: p.y }, overlay.width, overlay.height);
+	});
+	// The route that does not share the muzzles' data: a ray from the camera
+	// through each drawn start must strike the drawn hull. A beam starting in
+	// empty space beside the ship misses it. The optimised dep, the app's own
+	// instance (`measure-mouth-flicker.mjs`).
+	const THREE = await import("/node_modules/.vite/deps/three.js");
+	const caster = new THREE.Raycaster();
+	const onHull = (g.beamRender ?? []).map((s) => {
+		caster.setFromCamera(
+			new THREE.Vector2(
+				(s.from.x / overlay.width) * 2 - 1,
+				1 - (s.from.y / overlay.height) * 2,
+			),
+			g.nearCamera,
+		);
+		return caster.intersectObject(ship, true).some((h) => h.face);
 	});
 	return {
 		hull: g.flownHull,
 		hardpoints: HULL_SPECS[g.flownHull].hardpoints,
 		drawn: g.beamRender,
 		muzzles,
+		onHull,
 		width: overlay.width,
 	};
 });
@@ -247,6 +260,13 @@ await page.keyboard.up("Space");
 		beam.drawn
 			? `${beam.hull}: ${starts.length} beams for ${beam.hardpoints} hardpoints; ${offs.map((o) => o.toFixed(2)).join(", ")} px from the muzzles`
 			: "no beam drawn",
+	);
+	// Independent of the muzzle data the draw and the row above both read: a
+	// ray from the camera through each drawn start strikes the drawn hull.
+	check(
+		"each beam starts on the drawn hull's image, not in space beside it (sage round 2 on #608)",
+		beam.onHull.length === beam.hardpoints && beam.onHull.every(Boolean),
+		`ray through each start hits the hull: ${JSON.stringify(beam.onHull)}`,
 	);
 }
 
