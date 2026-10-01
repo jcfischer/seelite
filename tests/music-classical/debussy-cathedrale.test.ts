@@ -26,14 +26,16 @@ test("bar 14 as printed: the rising chords D–G–D, E–A–E, B–E–B, D–
 	).toEqual([24, 31, 36]);
 });
 
+// The page prints C–E–G–C and D–F–A–D; the top octave doubling is left out
+// to keep the synth under its voice cap.
 test("the chorale opens C major then D minor over the low C", () => {
 	const chorale = byTime("chorale").filter((e) => e.bar === 14);
 	expect(
 		chorale.filter((e) => e.beat === 1 && e.pitch >= 60).map((e) => e.pitch),
-	).toEqual([60, 64, 67, 72]);
+	).toEqual([60, 64, 67]);
 	expect(
 		chorale.filter((e) => e.beat === 2 && e.pitch >= 60).map((e) => e.pitch),
-	).toEqual([62, 65, 69, 74]);
+	).toEqual([62, 65, 69]);
 });
 
 test("about a minute", () => {

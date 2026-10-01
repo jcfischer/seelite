@@ -207,7 +207,10 @@ const LOW: NoteEvent[] = [
 		(bar) => (bar < 4 ? 0.4 : bar < 14 ? 0.5 : bar < 17 ? 0.7 : 0.9),
 	),
 	// Bars 19–22: the organ's full chord, held to the end.
-	...chord("organ", 18, 0, [24, 36, 48, 55, 60, 64, 67, 72], 16, 0.7),
+	// Without the G3, E4 and C5 the tutti holds at the same pitches: eight
+	// organ voices over the tutti's twelve passed the synth's cap and stole
+	// the held C.
+	...chord("organ", 18, 0, [24, 36, 48, 60, 67], 16, 0.7),
 ];
 
 const TIMPANI: NoteEvent[] = [
@@ -255,7 +258,9 @@ const PARTS: Readonly<Record<string, PartSpec>> = {
 		voice: "strings",
 		level: 0.2,
 		attackS: 0.04,
-		releaseS: 1,
+		// 0.6, not 1: at 1 the tutti's tails filled the synth's cap at the
+		// final chord and stole the organ's held C.
+		releaseS: 0.6,
 		unison: 3,
 		cutoffHz: 1500,
 		envAmount: 1.6,

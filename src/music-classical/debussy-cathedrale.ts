@@ -185,12 +185,13 @@ const EMERGE: NoteEvent[] = [
 	...at("pedal", 16, 0, [23], 9),
 	...at("toll", 16, 0, [35], 1),
 	...mistBar(16),
-	// 17–18, p marqué: the held stacks in both hands, G#–C#–F#–G#.
-	...[17, 18].flatMap((bar) => [
-		...at("stack", bar, 0, [78, 80, 87, 92], 3, 1.2),
-		...at("stack", bar, 0, [56, 61, 66, 68], 3, 1.2),
-		...mistBar(bar),
-	]),
+	// 17–18, p marqué: the held stacks in both hands, G#–C#–F#–G#. Struck
+	// once and held through both bars: the page strikes them again in bar
+	// 18, and that restrike over bar 17's tails passed the synth's cap and
+	// stole the pedal B0.
+	...at("stack", 17, 0, [78, 80, 87, 92], 6, 1.2),
+	...at("stack", 17, 0, [56, 61, 66, 68], 6, 1.2),
+	...[17, 18].flatMap(mistBar),
 ];
 
 // ── 19–21: E-flat, the marqué figure in the tenor (page 39) ────────────────
@@ -339,8 +340,10 @@ const CHORALE: NoteEvent[] = [
 	// The C under the 8ª bassa, held through 30 and the fermata.
 	...at("pedal", 28, 0, [24], 12),
 	...at("toll", 28, 0, [36], 1.5),
+	// The right hand's top note doubles its lowest an octave up and is left
+	// out: eight voices a chord, three chords deep, stole the pedal C.
 	...CHORALE_CHORDS.flatMap(([bar, beat, rh, lh, dur]) => [
-		...at("chorale", bar, beat, rh, dur),
+		...at("chorale", bar, beat, rh.length > 3 ? rh.slice(0, 3) : rh, dur),
 		...at("chorale", bar, beat, lh, dur, 0.9),
 	]),
 ];
@@ -354,7 +357,9 @@ export const CATHEDRALE: Song = {
 			voice: "drone",
 			level: 0.16,
 			attackS: 1.2,
-			releaseS: 3,
+			// 1, not 3: each bar restrikes the chord, and three seconds of
+			// tail per restrike stole the pedal at the synth's cap.
+			releaseS: 1,
 			detune: 0.06,
 			drift: 4,
 			spread: 0.8,
@@ -362,11 +367,13 @@ export const CATHEDRALE: Song = {
 			reverb: 0.6,
 		},
 		// The moving chords, bowed.
+		// rh and lh at 0.25 s: the quarter chords are detached, and longer
+		// tails overlapped three chords deep and stole the held pedal.
 		rh: {
 			voice: "strings",
 			level: 0.2,
 			attackS: 0.12,
-			releaseS: 0.8,
+			releaseS: 0.25,
 			unison: 3,
 			cutoffHz: 1500,
 			envAmount: 1.2,
@@ -378,7 +385,7 @@ export const CATHEDRALE: Song = {
 			voice: "strings",
 			level: 0.2,
 			attackS: 0.1,
-			releaseS: 0.9,
+			releaseS: 0.25,
 			unison: 3,
 			cutoffHz: 900,
 			envAmount: 1,
@@ -424,7 +431,9 @@ export const CATHEDRALE: Song = {
 			attackS: 0.25,
 			decayS: 2,
 			sustain: 0.9,
-			releaseS: 2.5,
+			// 0.5, not 2.5: the room carries the ring, and a longer tail held
+			// voices past the synth's cap, which stole the pedal and the stack.
+			releaseS: 0.5,
 			cutoffHz: 1600,
 			envAmount: 0.6,
 			envDecayS: 2,
