@@ -136,6 +136,7 @@ import {
 	waltzDuckDb,
 } from "./music-director";
 import {
+	COMMS_LINES,
 	type CommsLineId,
 	clearanceLine,
 	numbersPhrase,
@@ -143,11 +144,20 @@ import {
 } from "./comms";
 import {
 	prewarmComms,
+	prewarmNeural,
 	renderLine,
 	renderNumbersAhead,
-	SPEECH_RATE,
+	sayLine,
 	sayNumbers,
+	useNeuralVoice,
 } from "./comms-voice";
+import {
+	NEURAL_ROLE,
+	NeuralVoice,
+	neuralWanted,
+	speakerVoice,
+} from "./neural-voice";
+import { deleteVoiceData } from "./voice-store";
 import {
 	type WeaponSoundState,
 	QUIET_WEAPONS,
@@ -1156,6 +1166,7 @@ if (MUSIC_ARMS.unknown.length)
  */
 const VOICE_ARMS = voiceArms(
 	new URLSearchParams(window.location.search).get("voices"),
+	import.meta.env?.DEV === true,
 );
 /** The director's arms: `?music=`'s, with `?voices=`'s say on the numbers. */
 const DIRECTOR_ARMS = { ...MUSIC_ARMS.arms, voice: VOICE_ARMS.music };
@@ -4256,7 +4267,17 @@ class Game {
 		// The five volume rows (#542 D2), at boot and on every change. The engine
 		// holds a level before it has a context, so this needs no gesture.
 		for (const bus of BUSES) this.audio.setLevel(bus, applied[VOLUME_KEY[bus]]);
+		// #604: the natural voice, when the row or `?voices=neural` wants it.
+		// Every line speaks in the formant voice until it is ready.
+		useNeuralVoice(this.neural);
+		this.neural.onChange = (s) => {
+			if (s.kind === "ready" && VOICE_ARMS.comms) void prewarmNeural();
+		};
+		if (neuralWanted(applied.voice, VOICE_ARMS.engine))
+			void this.neural.start();
 		this.settings.subscribe((next) => {
+			if (next.voice !== applied.voice && VOICE_ARMS.engine === "setting")
+				this.applyVoice(next.voice);
 			for (const bus of BUSES) {
 				const key = VOLUME_KEY[bus];
 				if (next[key] !== applied[key]) this.audio.setLevel(bus, next[key]);
@@ -6856,7 +6877,7 @@ class Game {
 		// `?consolesound=legacy`.
 		this.consoleNotify("message", "hail");
 		// The struck carrier, on the radio (#600).
-		this.sayComms("ceaseFire");
+		this.sayComms("ceaseFire", actor.key);
 	}
 
 	/**
@@ -10154,7 +10175,7 @@ class Game {
 		if (answer) this.consoleNotify(answer);
 		// And says it (#600), on the same changes of answer.
 		const line = clearanceLine(prev.clearance, next.clearance);
-		if (line) this.sayComms(line);
+		if (line) this.sayComms(line, chosen.id);
 		if (next.clearance.kind === "queued")
 			this.openPlayerTrafficEvent(
 				chosen.id,
@@ -10600,7 +10621,7 @@ class Game {
 			);
 			this.openPlayerTrafficEvent(id, "lane", this.world.gameTime, "arrival");
 			// Approach control's welcome as the arrival begins (#600).
-			this.sayComms("welcome");
+			this.sayComms("welcome", id);
 			this.world.ship.vel = stationVel;
 			// #183 D7: the dock banks what the flight earned, and the station's
 			// first dock. **Before the flush below**, which writes `lastDocked`
@@ -12427,16 +12448,32 @@ class Game {
 				renderNumbersAhead(numbersPhrase(seed, n));
 			}
 		}
-		if (step.voice) sayNumbers(this.audio, step.voice);
+		if (step.voice) void sayNumbers(this.audio, step.voice);
 	}
 
 	/** The numbers phrase last rendered ahead: its system and index (#600). */
 	private numbersAhead = { seed: Number.NaN, n: -1 };
 
-	/** A comms line through the radio, on the console bus (#600). Rendered
-	 *  once per line and kept (`comms-voice.ts`). */
-	private sayComms(id: CommsLineId) {
-		if (VOICE_ARMS.comms) this.audio.speak(renderLine(id), SPEECH_RATE);
+	/** A comms line through the radio, on the console bus (#600), in the
+	 *  voice of whoever says it: a station's or a carrier's id picks it
+	 *  (#604), so each sounds its own. */
+	private sayComms(id: CommsLineId, speaker?: string) {
+		if (VOICE_ARMS.comms) void sayLine(this.audio, id, speaker);
+	}
+
+	/** The natural voice (#604): started by the settings row, or by
+	 *  `?voices=neural`; the formant voice speaks whenever it is not ready. */
+	readonly neural = new NeuralVoice();
+
+	/** The voice row changed (#604). Natural downloads and starts; Synthesised
+	 *  stops it and deletes the model and every line it kept, which is what
+	 *  the row's note promises; Ask changes nothing. */
+	private applyVoice(voice: "ask" | "neural" | "formant") {
+		if (voice === "neural") void this.neural.start();
+		else if (voice === "formant") {
+			this.neural.stop();
+			void deleteVoiceData();
+		}
 	}
 	/** The director's memory: bed, level, its hold and the variant (#548). */
 	private musicState: MusicState = initialMusicState();
@@ -18195,6 +18232,13 @@ if (postcard) {
 	// overlay's footer and close, and the save-fault badge. It reads the layout
 	// each time it is asked, so one built here follows every rebind.
 	const commanderKey = game.ownKey("system.commander");
+	// #604: whether to download the natural voice, asked on the Commander
+	// screen at boot while the row says Ask — and under `?voices=ask` on a
+	// direct boot as well, which is how a probe reaches the question.
+	const askVoice =
+		VOICE_ARMS.engine === "setting" &&
+		game.settings.value.voice === "ask" &&
+		(openAtBoot || VOICE_ARMS.ask);
 	game.commanderOverlay = mountCommanderOverlay({
 		catalog: plan.writesNothing ? null : catalog,
 		switcher: plan.writesNothing
@@ -18244,7 +18288,19 @@ if (postcard) {
 		},
 		releaseHeldKeys: () => game.releaseHeldKeys(),
 		ownKey: commanderKey,
+		voiceQuestion: askVoice
+			? {
+					bytes: () => game.neural.downloadBytes(),
+					// The answer is the row's: the settings subscription starts or
+					// clears the voice. "Not now" leaves Ask, so it is asked again.
+					answer: (a) => {
+						if (a === "download") game.settings.set("voice", "neural");
+						else if (a === "no") game.settings.set("voice", "formant");
+					},
+				}
+			: null,
 	});
+	if (askVoice && !openAtBoot) game.commanderOverlay.open();
 	game.saveBadge = mountSaveBadge(
 		() => game.commanderOverlay?.open(),
 		commanderKey.names,
@@ -18256,6 +18312,20 @@ if (postcard) {
 	// Read off the page by `scripts/probe-save.mjs` rather than restated there:
 	// a probe with its own copy of the debounce goes falsely red the day the
 	// module moves it.
+	// The voice's lines and its routing, for `measure-neural-voice.mjs`
+	// (#604), which runs against a built page as well, where there is no
+	// `/src` to import them from.
+	(
+		window as unknown as {
+			__seelite: { voiceKit: Record<string, unknown> };
+		}
+	).__seelite.voiceKit = {
+		lines: COMMS_LINES,
+		role: NEURAL_ROLE,
+		speakerVoice,
+		renderLine,
+		sayLine,
+	};
 	(
 		window as unknown as {
 			__seelite: { save: Record<string, unknown> };

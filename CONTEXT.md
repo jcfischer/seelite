@@ -362,11 +362,15 @@ The voice that speaks to a guided pilot on the docked station console and in the
 _Avoid_: Dockmaster, tutorial prompt
 
 **Approach control**:
-A station's voice on the radio in flight: it answers each change of a docking clearance and welcomes an arrival. A synthesised voice through the ship's radio (#600); `src/comms.ts` owns what it says and when. Not **Station control**, which is the first day's voice on the docked console.
+A station's voice on the radio in flight: it answers each change of a docking clearance and welcomes an arrival. Spoken through the ship's radio in the **Natural voice** when the player has it, else the synthesised voice (#600); `src/comms.ts` owns what it says and when. Not **Station control**, which is the first day's voice on the docked console.
 _Avoid_: tower
 
+**Natural voice**:
+The speech model the game can speak with, run in the player's browser and downloaded from the site when the player says yes (#604): Kokoro-82M through onnxruntime-web. The settings row Voice holds the answer, and the synthesised voice speaks whenever it is not ready. `src/neural-voice.ts` owns it; the map's Constraints carry the ruling that makes it the one trained asset.
+_Avoid_: neural voice (in player-facing text), TTS
+
 **Numbers station**:
-A transmission overheard far off in the Berlin bed's calm: groups of digits in a machine voice, the system's own and in the system's order, played through an echo on the music bus (#600). The director says when and what; `src/comms.ts` owns the phrases.
+A transmission overheard far off in the Berlin bed's calm: groups of digits in a machine voice (the **Natural voice** when the player has it, else the synthesised one), the system's own and in the system's order, played through an echo on the music bus (#600). The director says when and what; `src/comms.ts` owns the phrases.
 _Avoid_: Radio chatter (it is not addressed to the pilot)
 
 **Accepted request**:
@@ -539,6 +543,10 @@ are; this entry governs what a player reads, not what the store calls its keys.
 page — the three **Ladders** — and not the save slot. The two never meet on one
 surface: the overlay is out of fiction, the tab is a cockpit wall, and the
 tab's label names who the page is about.
+**One guest (#604):** the overlay also asks, once, whether to download the
+**Natural voice**, before its menu at boot. That answer is a settings row and
+never part of a save; the overlay hosts the question because it is the screen a
+player meets first, not because the voice belongs to a Commander.
 _Avoid_: save game, save file, profile (in player-facing text)
 
 **Ladder**:

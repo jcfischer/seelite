@@ -217,7 +217,24 @@ export interface CommanderOverlayOptions {
 	/** `system.commander` in the layout in force: the key that closes the
 	 *  overlay in play and the name its footer prints (#381 S5). */
 	ownKey: OwnKey;
+	/**
+	 * #604: the question whether to download the natural voice, asked once,
+	 * before the menu. `null` when the player has answered (the settings row)
+	 * or the page cannot ask. `bytes` is what this browser would download, or
+	 * `null` when the server has no voice — then nothing is asked.
+	 */
+	voiceQuestion?: {
+		bytes: () => Promise<number | null>;
+		answer: (a: VoiceAnswer) => void;
+	} | null;
 }
+
+/** #604: the voice question's three answers. `later` asks again next time. */
+export type VoiceAnswer = "download" | "later" | "no";
+
+/** Megabytes as the question prints them. */
+export const voiceSize = (bytes: number) =>
+	`${Math.round(bytes / 1_000_000)} MB`;
 
 /**
  * The line under the rows.
@@ -228,12 +245,14 @@ export interface CommanderOverlayOptions {
  * the pad reads `Esc` alone.
  */
 export function commanderHint(
-	kind: "menu" | "form",
+	kind: "menu" | "form" | "question",
 	running: boolean,
 	closeKeys: readonly string[],
 ): string {
 	if (kind === "form")
 		return "↑↓ choose · type in a field · Enter do it · Esc back";
+	// #604: the voice question has no field, and Esc is its "Not now".
+	if (kind === "question") return "↑↓ choose · Enter do it · Esc not now";
 	const close = running
 		? ` · ${["Esc", ...closeKeys].join(" or ")} to close`
 		: "";
@@ -295,6 +314,32 @@ type FormRow =
 	| { kind: "toggle"; label: string; field: "guided" | "permadeath" }
 	| { kind: "button"; label: string; run: () => void; enabled?: boolean };
 
+/** Which footer each view draws. */
+const HINT_KIND = {
+	menu: "menu",
+	"new-game": "form",
+	rename: "form",
+	delete: "form",
+	import: "form",
+	voice: "question",
+} as const satisfies Record<View["kind"], Parameters<typeof commanderHint>[0]>;
+
+/** A form view's heading. */
+function formTitle(v: Exclude<View, { kind: "menu" }>): string {
+	switch (v.kind) {
+		case "new-game":
+			return "New game";
+		case "rename":
+			return `Rename Commander "${escapeHtml(v.from)}"`;
+		case "delete":
+			return `Delete Commander "${escapeHtml(v.slot)}"?`;
+		case "voice":
+			return "The ship's voice";
+		case "import":
+			return "Import a Commander from a file";
+	}
+}
+
 type View =
 	| { kind: "menu" }
 	| {
@@ -308,7 +353,8 @@ type View =
 	  }
 	| { kind: "rename"; from: string; name: string; seed: string }
 	| { kind: "delete"; slot: string; name: string; seed: string }
-	| { kind: "import"; text: string; name: string; seed: string };
+	| { kind: "import"; text: string; name: string; seed: string }
+	| { kind: "voice"; bytes: number | null };
 
 /**
  * A fault as the overlay draws it: one block per fault (a blank line apart),
@@ -386,6 +432,12 @@ export function mountCommanderOverlay(
 	let info: string | null = options.boot.notice;
 	/** The clock runs, so the overlay may close. */
 	let running = !options.openAtBoot;
+	/** #604: the voice question has had its answer this page. */
+	let voiceAsked = false;
+	const voiceView = (): View | null =>
+		options.voiceQuestion && !voiceAsked
+			? { kind: "voice", bytes: null }
+			: null;
 	let busy = false;
 	let cursorPlaced = false;
 
@@ -432,6 +484,16 @@ export function mountCommanderOverlay(
 	const toMenu = () => {
 		view = { kind: "menu" };
 		cursor = Math.min(cursor, menuRows().length - 1);
+		draw();
+	};
+
+	/** #604: the voice question is answered (or there is nothing to ask);
+	 *  the menu, with its own first cursor, follows. Asked once a page. */
+	const leaveVoice = (a: VoiceAnswer | null) => {
+		voiceAsked = true;
+		if (a) options.voiceQuestion?.answer(a);
+		view = { kind: "menu" };
+		cursor = initialCursor(menuRows());
 		draw();
 	};
 
@@ -513,6 +575,24 @@ export function mountCommanderOverlay(
 							}),
 					},
 				];
+			case "voice": {
+				const answer = (a: VoiceAnswer) => () => leaveVoice(a);
+				const size = v.bytes === null ? "…" : voiceSize(v.bytes);
+				return [
+					{
+						kind: "button",
+						label: `Download the natural voice (${size})`,
+						run: answer("download"),
+						enabled: v.bytes !== null,
+					},
+					{ kind: "button", label: "Not now", run: answer("later") },
+					{
+						kind: "button",
+						label: "No, keep the synthesised voice",
+						run: answer("no"),
+					},
+				];
+			}
 			case "import":
 				return [
 					{ kind: "input", label: "Name", field: "name" },
@@ -625,34 +705,27 @@ export function mountCommanderOverlay(
 				.join("");
 		} else {
 			const v = view;
-			const title =
-				v.kind === "new-game"
-					? "New game"
-					: v.kind === "rename"
-						? `Rename Commander "${escapeHtml(v.from)}"`
-						: v.kind === "delete"
-							? `Delete Commander "${escapeHtml(v.slot)}"?`
-							: "Import a Commander from a file";
+			const title = formTitle(v);
+			const lead =
+				v.kind === "voice"
+					? `<div class="info" data-voice-question>Approach control and other ships can speak with a natural voice: a speech model that runs in your browser. It downloads from this site and stays in your browser; you can delete it under Settings, Voice. Without it the game speaks with its own small synthesised voice.</div>`
+					: "";
 			body =
-				`<div class="heading">${title}</div>` +
+				`<div class="heading">${title}</div>${lead}` +
 				formRows()
 					.map((row, i) => {
 						if (row.kind === "input") {
-							const value = v[row.field];
+							const value = v.kind === "voice" ? "" : v[row.field];
 							return `<div class="row" data-row="${i}" ${selected(i)}><span class="name">${row.label}</span><input type="text" data-field="${row.field}" value="${escapeHtml(value)}" spellcheck="false" autocomplete="off"></div>`;
 						}
 						if (row.kind === "toggle")
 							return `<div class="row" data-row="${i}" data-kind="toggle" data-toggle="${row.field}" ${selected(i)}><span class="name">${row.label}</span><span class="action" data-chosen="true">← ${v.kind === "new-game" && v[row.field] ? "on" : "off"} →</span></div>`;
-						return `<div class="row" data-row="${i}" data-kind="button" ${selected(i)}><span class="name">${escapeHtml(row.label)}</span></div>`;
+						return `<div class="row" data-row="${i}" data-kind="button" ${selected(i)} aria-disabled="${row.enabled === false}"><span class="name">${escapeHtml(row.label)}</span></div>`;
 					})
 					.join("");
 		}
 		const hint = escapeHtml(
-			commanderHint(
-				view.kind === "menu" ? "menu" : "form",
-				running,
-				options.ownKey.names(),
-			),
+			commanderHint(HINT_KIND[view.kind], running, options.ownKey.names()),
 		);
 		root.innerHTML = `<div class="box" role="dialog" aria-label="Commander" aria-busy="${busy}">
   <h2>Commander</h2>
@@ -691,7 +764,7 @@ export function mountCommanderOverlay(
 			"input[data-field]",
 		))
 			input.addEventListener("input", () => {
-				if (view.kind === "menu") return;
+				if (view.kind === "menu" || view.kind === "voice") return;
 				const field = input.dataset.field as "name" | "seed";
 				view[field] = input.value;
 			});
@@ -743,12 +816,25 @@ export function mountCommanderOverlay(
 		root.id = "seelite-commander";
 		root.dataset.commanderOverlay = "";
 		document.body.append(root);
-		view = { kind: "menu" };
+		// #604: the voice question first, once; the menu after it.
+		view = voiceView() ?? { kind: "menu" };
+		if (view.kind === "voice")
+			void options.voiceQuestion
+				?.bytes()
+				.catch(() => null)
+				.then((bytes) => {
+					if (view.kind !== "voice") return;
+					// No voice on this server, or a manifest it cannot read:
+					// there is nothing to offer, so nothing is asked.
+					if (bytes === null) return leaveVoice(null);
+					view.bytes = bytes;
+					draw();
+				});
 		if (running) {
 			refusal = options.fault();
 			info = null;
 		}
-		cursor = initialCursor(menuRows());
+		cursor = view.kind === "voice" ? 0 : initialCursor(menuRows());
 		draw();
 		void refresh();
 	};
@@ -761,6 +847,8 @@ export function mountCommanderOverlay(
 	/** Esc: a form goes back to the menu; the menu closes once the game runs. */
 	const back = () => {
 		if (!root || busy) return;
+		// Esc on the voice question is "not now": it is asked again next time.
+		if (view.kind === "voice") return leaveVoice("later");
 		if (view.kind !== "menu") return toMenu();
 		if (running) close();
 	};
@@ -804,8 +892,9 @@ export function mountCommanderOverlay(
 		}
 		const row = formRows()[cursor];
 		if (!row) return;
-		if (row.kind === "button") row.run();
-		else if (row.kind === "toggle") stepValue(1);
+		if (row.kind === "button") {
+			if (row.enabled !== false) row.run();
+		} else if (row.kind === "toggle") stepValue(1);
 		else moveCursor(1);
 	};
 

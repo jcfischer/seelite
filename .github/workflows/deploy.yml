@@ -77,6 +77,21 @@ jobs:
           bun-version: latest
       - run: npm test
 
+      # #604: the natural voice's files into `public/voice-model/`, which the
+      # build copies into `dist`. Only where it deploys: a pull request
+      # builds and ships nothing, so it does not fetch 280 MiB to check that.
+      # The downloads are kept by checksum, so a cached run fetches nothing;
+      # the key moves when the pinned files do.
+      - name: Cache the voice model
+        if: github.event_name != 'pull_request'
+        uses: actions/cache@v4
+        with:
+          path: .voice-model-cache
+          key: voice-model-${{ hashFiles('scripts/lib/voice-model.mjs') }}
+      - name: Fetch the voice model
+        if: github.event_name != 'pull_request'
+        run: node scripts/fetch-voice-model.mjs
+
       # `npm run build` is `tsc --noEmit && vite build`, so a type error fails
       # the job before anything is published.
       - run: npm run build

@@ -82,17 +82,38 @@ export function numbersPhrase(systemSeed: number, n: number): string {
 	return `${group()}. ${group()}. ${group()}.`;
 }
 
-/** Which voices speak: `?voices=off`, `nocomms` or `nomusic`. */
+/**
+ * Which voices speak: `?voices=off`, `nocomms` or `nomusic`; and which
+ * engine, over the player's setting (#604): `neural` or `formant`, for
+ * probes and listening; `ask` puts the Commander screen's question even on
+ * a direct boot.
+ *
+ * **`neural` is honoured only on a dev server** (`dev`). On the site it
+ * would let a shared link start a 110–190 MB download the player never
+ * agreed to, which is the one thing the Trust page says is the player's
+ * choice (sage round 1 on #606). `formant` stays: it downloads nothing.
+ */
 export interface VoiceArms {
 	readonly comms: boolean;
 	readonly music: boolean;
+	readonly engine: "setting" | "neural" | "formant";
+	readonly ask: boolean;
 }
 
-export function voiceArms(value: string | null): VoiceArms {
+export function voiceArms(value: string | null, dev: boolean): VoiceArms {
 	const tokens = (value ?? "").split(",").map((t) => t.trim());
-	if (tokens.includes("off")) return { comms: false, music: false };
+	const engine = tokens.includes("formant")
+		? "formant"
+		: dev && tokens.includes("neural")
+			? "neural"
+			: "setting";
+	const ask = tokens.includes("ask");
+	if (tokens.includes("off"))
+		return { comms: false, music: false, engine, ask };
 	return {
 		comms: !tokens.includes("nocomms"),
 		music: !tokens.includes("nomusic"),
+		engine,
+		ask,
 	};
 }

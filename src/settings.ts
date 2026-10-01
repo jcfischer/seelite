@@ -311,6 +311,19 @@ const SCHEMA = {
 		"Music",
 		"The music, which is not in the ship and not heard through its hull: each system's own theme in flight, darker in a fight, and a calmer one while docked.",
 	),
+	/**
+	 * #604: the voice on the radio. `ask` is a new commander's state, and the
+	 * Commander screen asks it once; the answer lives here, in the browser's
+	 * settings, and never in a save.
+	 */
+	voice: {
+		fallback: "ask" as const,
+		allowed: ["ask", "neural", "formant"] as const,
+		label: "Voice",
+		describe: (v: string) =>
+			v === "neural" ? "Natural" : v === "formant" ? "Synthesised" : "Ask",
+		note: "Natural is a speech model that runs in your browser: about 110 to 190 MB, downloaded from this site and kept in your browser, and downloaded again only when the game ships a new version of it. A private window keeps nothing, so there it downloads again each time the game starts. If your browser cannot run the larger version, the smaller one is downloaded instead and the larger one deleted. Until it is ready, the synthesised voice speaks. Synthesised is the game's own small voice, with nothing to download. Choosing Synthesised deletes the downloaded voice and every line it kept. Ask puts the question on the Commander screen.",
+	},
 } as const;
 
 /** Which settings row sets which bus. */

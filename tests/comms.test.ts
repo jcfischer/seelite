@@ -20,6 +20,7 @@ import {
 	renderNumbersAhead,
 	takeNumbers,
 } from "../src/comms-voice";
+import { neuralWanted } from "../src/neural-voice";
 import { textToTokens } from "../src/speech-lexicon";
 import { SPEECH_ECHO_MAX_TAIL_S } from "../src/audio";
 import { reaches, unlocked, withFakeWindow } from "./lib/fake-audio";
@@ -117,10 +118,53 @@ describe("rendering off the frame", () => {
 
 describe("the ?voices= arm", () => {
 	test("on by default; off silences both; each can go alone", () => {
-		expect(voiceArms(null)).toEqual({ comms: true, music: true });
-		expect(voiceArms("off")).toEqual({ comms: false, music: false });
-		expect(voiceArms("nocomms")).toEqual({ comms: false, music: true });
-		expect(voiceArms("nomusic")).toEqual({ comms: true, music: false });
+		const base = { engine: "setting" as const, ask: false };
+		expect(voiceArms(null, true)).toEqual({
+			comms: true,
+			music: true,
+			...base,
+		});
+		expect(voiceArms("off", true)).toEqual({
+			comms: false,
+			music: false,
+			...base,
+		});
+		expect(voiceArms("nocomms", true)).toEqual({
+			comms: false,
+			music: true,
+			...base,
+		});
+		expect(voiceArms("nomusic", true)).toEqual({
+			comms: true,
+			music: false,
+			...base,
+		});
+		// #604: the engine over the player's setting, and the question on a
+		// direct boot.
+		expect(voiceArms("neural", true).engine).toBe("neural");
+		expect(voiceArms("formant,nomusic", true)).toEqual({
+			comms: true,
+			music: false,
+			engine: "formant",
+			ask: false,
+		});
+		expect(voiceArms("ask", true).ask).toBe(true);
+		// Off a dev server, a link cannot start the download (sage round 1 on
+		// #606); the formant arm downloads nothing and stays.
+		expect(voiceArms("neural", false).engine).toBe("setting");
+		expect(voiceArms("formant", false).engine).toBe("formant");
+	});
+
+	test("#604: the natural voice starts on a yes, never on Ask", () => {
+		// The row decides unless an arm forces an engine.
+		expect(neuralWanted("neural", "setting")).toBe(true);
+		expect(neuralWanted("ask", "setting")).toBe(false);
+		expect(neuralWanted("formant", "setting")).toBe(false);
+		// `?voices=neural` downloads whatever the row says; `formant` never.
+		for (const row of ["ask", "neural", "formant"] as const) {
+			expect(neuralWanted(row, "neural")).toBe(true);
+			expect(neuralWanted(row, "formant")).toBe(false);
+		}
 	});
 });
 

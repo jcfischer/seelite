@@ -121,18 +121,28 @@ describe("the quiet public threshold", () => {
 	 * reaches by adding a script tag rather than by calling anything below — so
 	 * the pattern also looks for a created script element, or the one module
 	 * that reaches the network would be the one module this row cannot see.
+	 *
+	 * **And one module fetches the game's own files (#604).** The neural voice
+	 * downloads its model from the bundle, on the player's consent, and the
+	 * map's ruling allows that because no request leaves the bundle's origin.
+	 * `bundle-fetch.ts` refuses any path that is not this origin's, and
+	 * `tests/voice-model.test.ts` holds that refusal.
 	 */
-	test("only the visit counter can reach the network", () => {
+	test("only the visit counter and the bundle's own fetch can reach the network", () => {
 		const reaches =
 			/\bfetch\s*\(|\bXMLHttpRequest\b|\bWebSocket\b|\bEventSource\b|sendBeacon|createElement\(\s*["'`]script/;
 		const offenders = srcFiles().filter((rel) => reaches.test(codeOf(rel)));
-		expect(offenders).toEqual(["src/visit-count.ts"]);
+		expect([...offenders].sort()).toEqual([
+			"src/bundle-fetch.ts",
+			"src/visit-count.ts",
+		]);
 	});
 
 	/**
 	 * Counterscale's tracker also reports on `history.pushState` and on
 	 * `popstate`, which any move to a fragment fires too. So the Trust line
-	 * "Nothing the game does after launch leaves your machine" holds only while
+	 * "Nothing the game does after launch leaves your machine" (save the natural
+	 * voice's download, which the line names, #604) holds only while
 	 * no module does either (#569). A `location.assign` to another URL is a new
 	 * page load and is counted as one, which is what the Trust line says.
 	 *

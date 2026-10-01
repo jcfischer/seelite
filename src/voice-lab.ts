@@ -8,6 +8,13 @@
  */
 import { AudioFX } from "./audio";
 import { MUSIC_VOICE_SPACE } from "./comms-voice";
+import {
+	NEURAL_VOICES,
+	type NeuralBackend,
+	NeuralVoice,
+	type NeuralVoiceId,
+	textToIpa,
+} from "./neural-voice";
 import { RADIO, radio } from "./radio";
 import { SPEECH_RATE, speak, VOICES } from "./speech";
 import { LEXICON, textToTokens } from "./speech-lexicon";
@@ -40,7 +47,12 @@ export function mountVoiceLab() {
 <p><select id="preset" style="width:100%">${PRESETS.map((p) => `<option>${p}</option>`).join("")}</select></p>
 <p><textarea id="text" rows="3" style="width:100%;box-sizing:border-box;font:15px ui-monospace,monospace;background:#12171d;color:#dde3ea;border:1px solid #2a323c">${PRESETS[0]}</textarea></p>
 <p>
-  <label>Voice <select id="voice">${Object.keys(VOICES)
+  <label>Engine <select id="engine"><option value="neural">neural (Kokoro, in the browser)</option><option value="formant">formant</option></select></label>
+  <label style="margin-left:12px">Backend <select id="ep"><option value="wasm">WASM, q8 (88 MB)</option><option value="webgpu">WebGPU, fp16 (156 MB)</option></select></label>
+  <label style="margin-left:12px">Neural voice <select id="nvoice">${NEURAL_VOICES.map((v) => `<option>${v}</option>`).join("")}</select></label>
+</p>
+<p>
+  <label>Formant voice <select id="voice">${Object.keys(VOICES)
 		.map((v) => `<option>${v}</option>`)
 		.join("")}</select></label>
   <label style="margin-left:12px">Rate <input id="rate" type="range" min="0.7" max="1.4" step="0.05" value="1"> <span id="rateV">1.00</span></label>
@@ -76,8 +88,83 @@ export function mountVoiceLab() {
 		};
 
 	const fx = new AudioFX();
+	let neural = new NeuralVoice();
+	let neuralEp: NeuralBackend | null = null;
+	let loadMs: number | null = null;
+
+	/** Through the radio, dry, or far off, as the radio buttons say. */
+	function play(dry: Float32Array): Float32Array {
+		const through = (
+			root.querySelector("input[name=through]:checked") as HTMLInputElement
+		).value;
+		const out =
+			through === "dry"
+				? dry
+				: radio(dry, {
+						...RADIO,
+						lowHz: Number($<HTMLInputElement>("low").value),
+						highHz: Number($<HTMLInputElement>("high").value),
+						beepHz: $<HTMLInputElement>("beep").checked ? RADIO.beepHz : 0,
+					});
+		if (through === "space")
+			fx.speak(out, SPEECH_RATE, "music", MUSIC_VOICE_SPACE);
+		else fx.speak(out, SPEECH_RATE, "console");
+		return out;
+	}
+
+	async function sayNeural() {
+		fx.ensure();
+		const info = $("info");
+		const ep = $<HTMLSelectElement>("ep").value as NeuralBackend;
+		if (neuralEp !== ep) {
+			neural.stop();
+			neural = new NeuralVoice();
+			neuralEp = ep;
+		}
+		if (neural.state.kind !== "ready") {
+			const t0 = performance.now();
+			neural.onChange = (st) => {
+				if (st.kind === "loading")
+					info.textContent = `${st.backend}: loading ${(st.bytes / 1048576).toFixed(0)} of ${(st.total / 1048576).toFixed(0)} MB…`;
+			};
+			const st = await neural.start(ep);
+			if (st.kind !== "ready") {
+				info.textContent = `neural voice not ready: ${st.kind === "failed" ? st.reason : st.kind}`;
+				return;
+			}
+			loadMs = performance.now() - t0;
+		}
+		info.textContent = "speaking…";
+		const voice = $<HTMLSelectElement>("nvoice").value as NeuralVoiceId;
+		const { ipa, unknown } = textToIpa(text.value, voice);
+		const t1 = performance.now();
+		const samples = await neural.line(
+			text.value,
+			voice,
+			Number($<HTMLInputElement>("rate").value),
+		);
+		const ms = performance.now() - t1;
+		if (!samples) return;
+		const audioS = samples.length / SPEECH_RATE;
+		const out = play(samples);
+		info.textContent = [
+			`${neuralEp}: ready in ${((loadMs ?? 0) / 1000).toFixed(1)} s`,
+			`${audioS.toFixed(2)} s of speech in ${(ms / 1000).toFixed(2)} s — ${(audioS / (ms / 1000)).toFixed(2)}× real time (a kept line reads back in milliseconds)`,
+			`${(out.length / SPEECH_RATE).toFixed(2)} s played`,
+			unknown.length
+				? `not in the lexicon, skipped: ${unknown.join(", ")}`
+				: "every word known",
+			`IPA: ${ipa}`,
+		].join("\n");
+	}
 
 	function say() {
+		if ($<HTMLSelectElement>("engine").value === "neural") {
+			sayNeural().catch((e) => {
+				$("info").textContent = `neural voice failed: ${e}`;
+			});
+			return;
+		}
 		fx.ensure();
 		const { tokens, unknown } = textToTokens(text.value);
 		const base = VOICES[$<HTMLSelectElement>("voice").value];

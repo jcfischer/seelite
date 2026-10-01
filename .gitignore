@@ -48,3 +48,9 @@ sound-set/
 
 # capture-sounds.mjs dependency cache (#552)
 .vite-sounds/
+
+# The neural voice prototype: model, voices and runtime, fetched at build
+# time and never committed (about 280 MiB: two models, eight voices, two
+# runtime binaries).
+public/voice-model/
+.voice-model-cache/

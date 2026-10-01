@@ -3,9 +3,20 @@
  * per line and kept, because the same few lines are said again and again and
  * a render is tens of milliseconds. The music's numbers are rendered each
  * time, since each is new.
+ *
+ * **The neural voice speaks when it is ready (#604)** — Kokoro, in the
+ * browser, on the player's consent (`neural-voice.ts`) — and the formant
+ * voice in every other state, so there is always a voice. A neural line comes
+ * from the browser's line cache when an earlier session said it.
  */
 import type { AudioFX, SpeechSpace } from "./audio";
 import { COMMS_LINES, type CommsLineId } from "./comms";
+import {
+	NEURAL_ROLE,
+	type NeuralVoice,
+	SPEAKER_VOICES,
+	speakerVoice,
+} from "./neural-voice";
 import { RADIO, radio } from "./radio";
 import { SPEECH_RATE, speak, VOICES } from "./speech";
 import { textToTokens } from "./speech-lexicon";
@@ -60,6 +71,8 @@ const whenIdle = (fn: () => void) => {
 const ahead = new Map<string, Float32Array>();
 const pending = new Set<string>();
 const AHEAD_KEEP = 4;
+/** The same phrases in the neural voice, once generated. */
+const aheadNeural = new Map<string, Float32Array>();
 
 /**
  * Render `text` when the page is idle, so the phrase the director asks for
@@ -68,6 +81,20 @@ const AHEAD_KEEP = 4;
  * `numbersPhrase(seed, state.voiceN)`.
  */
 export function renderNumbersAhead(text: string) {
+	// In the neural voice too, behind anything urgent — held here and not
+	// in the line cache: each phrase is said once, and kept it would age the
+	// comms lines out of the store (sage round 6 on #606).
+	const voice = readyVoice();
+	if (voice && !aheadNeural.has(text))
+		void voice
+			.line(text, NEURAL_ROLE.machine, 1, false, false)
+			.then((n) => {
+				if (!n) return;
+				if (aheadNeural.size >= AHEAD_KEEP)
+					aheadNeural.delete(aheadNeural.keys().next().value as string);
+				aheadNeural.set(text, n);
+			})
+			.catch(() => null);
 	if (ahead.has(text) || pending.has(text)) return;
 	pending.add(text);
 	whenIdle(() => {
@@ -104,8 +131,54 @@ export function prewarmComms() {
 	whenIdle(next);
 }
 
+/** The neural voice the game speaks with when it is ready; `null` keeps
+ *  every line on the formant voice. */
+let neural: NeuralVoice | null = null;
+export function useNeuralVoice(nv: NeuralVoice | null) {
+	neural = nv;
+}
+/** The voice, while it is ready; `null` otherwise. */
+const readyVoice = () =>
+	neural !== null && neural.state.kind === "ready" ? neural : null;
+
+/**
+ * A comms line on the console bus: the neural voice's when the line cache
+ * has it, else the formant voice's **at once** — an answer is not held for a
+ * generation, which runs about three times slower than speech on WASM (sage
+ * round 1 on #606). A miss is generated, urgent, for the next time.
+ */
+export async function sayLine(fx: AudioFX, id: CommsLineId, speaker?: string) {
+	const line = COMMS_LINES[id];
+	const voice = readyVoice();
+	const who = speakerVoice(line.voice, speaker);
+	const n = voice ? await voice.kept(line.text, who).catch(() => null) : null;
+	fx.speak(n ? radio(n) : renderLine(id), SPEECH_RATE);
+	if (voice && !n) void voice.line(line.text, who, 1, true).catch(() => null);
+}
+
+/**
+ * Every comms line in every voice its speakers may have, into the line
+ * cache, one after another behind anything urgent: run when the voice
+ * becomes ready. Voices rotate by speaker (#604), so a line is prepared once
+ * per voice rather than once — a few dozen lines, a few megabytes kept.
+ */
+export async function prewarmNeural() {
+	for (const who of SPEAKER_VOICES)
+		for (const id of Object.keys(COMMS_LINES) as CommsLineId[]) {
+			const voice = readyVoice();
+			if (!voice) return;
+			await voice.prepare(COMMS_LINES[id].text, who).catch(() => {});
+		}
+}
+
 /** The numbers station, far off in the music: the game's and the lab's one
- *  way of saying it. */
-export function sayNumbers(fx: AudioFX, text: string) {
-	fx.speak(takeNumbers(text), SPEECH_RATE, "music", MUSIC_VOICE_SPACE);
+ *  way of saying it. In the neural voice from the line cache when it was
+ *  rendered ahead, else the formant voice's. */
+export async function sayNumbers(fx: AudioFX, text: string) {
+	// Rendered ahead only: a phrase still generating is said by the formant
+	// voice now rather than seconds after its step (sage round 1 on #606).
+	const n = readyVoice() ? (aheadNeural.get(text) ?? null) : null;
+	aheadNeural.delete(text);
+	const out = n ? radio(n, { ...RADIO, beepHz: 0 }) : takeNumbers(text);
+	fx.speak(out, SPEECH_RATE, "music", MUSIC_VOICE_SPACE);
 }

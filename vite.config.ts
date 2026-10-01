@@ -1,6 +1,41 @@
-import { defineConfig } from "vite";
+import { defineConfig, type Plugin } from "vite";
 import { resolve } from "node:path";
 import { treeDeclaration } from "./scripts/lib/tree-declaration.mjs";
+
+/**
+ * Drop onnxruntime-web's own `.wasm` from the build (#604, the principal's
+ * D6). The runtime's bundle names its binary by `new URL(…, import.meta.url)`,
+ * so vite emits a copy — 21.9 MB never fetched, because the worker hands
+ * the runtime its binary from the voice's checked parts (`wasmBinary`).
+ * The build fails if a runtime binary would still ship, so a runtime bump
+ * that renames it cannot quietly bring the copy back.
+ */
+function dropRuntimeWasm(): Plugin {
+	return {
+		name: "seelite-drop-runtime-wasm",
+		apply: "build",
+		generateBundle(_, bundle) {
+			for (const name of Object.keys(bundle))
+				if (/(^|\/)ort-[^/]*\.wasm$/.test(name)) delete bundle[name];
+			const left = Object.keys(bundle).filter((n) => n.endsWith(".wasm"));
+			if (left.length)
+				this.error(`a runtime binary would ship: ${left.join(", ")}`);
+			// The worker's chunk names the WASM backend's loader by a path into
+			// the package's private layout: if a runtime bump moved it, the
+			// built WASM voice would fail and only a manual run would see it
+			// (sage round 6 on #606). The chunk with the voice in it must ship
+			// the loader beside it.
+			const voiced = Object.keys(bundle).some((n) =>
+				/ort\.wasm\.bundle/.test(n),
+			);
+			const loader = Object.keys(bundle).some((n) =>
+				/(^|\/)ort-wasm-simd-threaded-[^/]*\.mjs$/.test(n),
+			);
+			if (voiced && !loader)
+				this.error("the WASM backend's loader module would not ship");
+		},
+	};
+}
 
 export default defineConfig({
 	/**
@@ -14,6 +49,20 @@ export default defineConfig({
 	 * reads it.
 	 */
 	plugins: [treeDeclaration()],
+	/**
+	 * The neural voice's runtime resolves its files by its own module's URL,
+	 * and the dependency pre-bundler moved the module away from them: the
+	 * #604 prototype's worker could not load it pre-bundled. The worker hands
+	 * the runtime its WASM binary (`wasmBinary`), so no binary is fetched by
+	 * that resolution; `scripts/measure-neural-voice.mjs` (by hand) records
+	 * every request the voice makes and holds them to this origin.
+	 */
+	optimizeDeps: { exclude: ["onnxruntime-web"] },
+	/**
+	 * The neural voice's worker imports its runtime on demand, which splits
+	 * it into chunks; only an ES-module worker can load them (#604).
+	 */
+	worker: { format: "es", plugins: () => [dropRuntimeWasm()] },
 	server: {
 		/**
 		 * No browser on `npm run dev`. Pass `--open` when you want one.

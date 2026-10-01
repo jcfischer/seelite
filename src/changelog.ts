@@ -30,6 +30,11 @@ export type ChangelogEntry = {
 export const CHANGELOG: readonly ChangelogEntry[] = [
 	{
 		date: "2026-10-01",
+		text: "The radio can now speak with a natural voice, made in your browser by a speech model you download once if you want it; the game asks at the start, and Settings can change your answer.",
+		node: 604,
+	},
+	{
+		date: "2026-10-01",
 		text: "The docking computer now plays the Blue Danube.",
 		node: 603,
 	},
