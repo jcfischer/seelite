@@ -52,3 +52,4 @@ sound-set/
 # The neural voice prototype: model, voices and runtime, fetched at build
 # time and never committed (88 MiB of weights).
 public/voice-model/
+.voice-model-cache/
