@@ -18,8 +18,14 @@ import {
 	renderLine,
 	renderNumbers,
 	renderNumbersAhead,
+	sayLine,
+	sayNumbers,
 	takeNumbers,
+	useNeuralVoice,
 } from "../src/comms-voice";
+import type { AudioFX } from "../src/audio";
+import type { NeuralVoice } from "../src/neural-voice";
+import { RADIO, RADIO_NEURAL, radio } from "../src/radio";
 import { neuralWanted } from "../src/neural-voice";
 import { textToTokens } from "../src/speech-lexicon";
 import { SPEECH_ECHO_MAX_TAIL_S } from "../src/audio";
@@ -113,6 +119,51 @@ describe("rendering off the frame", () => {
 		const taken = takeNumbers(text);
 		expect(aheadReady(text)).toBe(false);
 		expect(taken).toEqual(renderNumbers(text));
+	});
+});
+
+describe("the natural voice through the radio", () => {
+	// A line as Kokoro hands it over: a vowel at Kokoro's measured peak.
+	const natural = Float32Array.from(
+		{ length: 4000 },
+		(_, i) => 0.6 * Math.sin((2 * Math.PI * 440 * i) / 16000),
+	);
+	const fake = {
+		state: { kind: "ready" },
+		kept: async () => natural,
+		line: async () => natural,
+	} as unknown as NeuralVoice;
+	const heard: Float32Array[] = [];
+	const fx = {
+		speak: (x: Float32Array) => heard.push(x),
+	} as unknown as AudioFX;
+	afterEach(() => {
+		useNeuralVoice(null);
+		heard.length = 0;
+	});
+
+	test("its speaker is driven less hard than the formant voice's", () => {
+		expect(RADIO_NEURAL.drive).toBeLessThan(RADIO.drive);
+		expect({ ...RADIO_NEURAL, drive: RADIO.drive, gain: RADIO.gain }).toEqual(
+			RADIO,
+		);
+	});
+
+	test("a comms line goes through the natural voice's radio", async () => {
+		useNeuralVoice(fake);
+		await sayLine(fx, "granted");
+		expect(heard).toHaveLength(1);
+		expect(heard[0]).toEqual(radio(natural, RADIO_NEURAL));
+	});
+
+	test("a numbers phrase goes through it too, with no beep", async () => {
+		useNeuralVoice(fake);
+		const text = numbersPhrase(77, 3);
+		renderNumbersAhead(text);
+		await new Promise((r) => setTimeout(r, 5));
+		await sayNumbers(fx, text);
+		expect(heard).toHaveLength(1);
+		expect(heard[0]).toEqual(radio(natural, { ...RADIO_NEURAL, beepHz: 0 }));
 	});
 });
 

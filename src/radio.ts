@@ -14,6 +14,9 @@ export interface RadioSettings {
 	readonly highHz: number;
 	/** Speaker drive, 0..1. */
 	readonly drive: number;
+	/** The voice's level after the speaker: makeup for a light drive, which
+	 *  compresses less. The hiss and the squelch do not take it. */
+	readonly gain: number;
 	/** Hiss under the keyed carrier, against the voice's peak. An FM receiver
 	 *  is captured by the carrier, not by the voice: while the transmitter is
 	 *  keyed the hiss stays this low through every word and gap, and it is
@@ -42,10 +45,19 @@ export const RADIO: RadioSettings = {
 	lowHz: 300,
 	highHz: 3400,
 	drive: 0.5,
+	gain: 1,
 	hiss: HISS_KEYED,
 	squelch: true,
 	beepHz: 2475,
 };
+
+/** The same radio for the natural voice (#604), with the speaker driven less
+ *  hard. The drive is there to hide a formant synthesiser's roughness, and
+ *  Kokoro has none to hide: the principal heard the radio's distortion on it
+ *  as making the lines hard to follow. Less drive is also less compression,
+ *  so the gain makes up part of the level it costs. By ear; the figures it
+ *  was chosen from are in the change that set it. */
+export const RADIO_NEURAL: RadioSettings = { ...RADIO, drive: 0.15, gain: 1.4 };
 
 /** An RBJ biquad, high- or low-pass, Butterworth. */
 function biquad(kind: "lp" | "hp", hz: number) {
@@ -123,7 +135,7 @@ export function radio(
 		const x = voiceBand(v) + b;
 		const carrier = i < end ? s.hiss : 0;
 		const n = hissBand(rand()) * (carrier + burst) * 3;
-		out[i] = (Math.tanh(k * x) / norm) * 0.8 + n;
+		out[i] = (Math.tanh(k * x) / norm) * 0.8 * s.gain + n;
 		if (noiseBuf) noiseBuf[i] = n;
 	}
 	if (noiseOut && noiseBuf) noiseOut(noiseBuf);
