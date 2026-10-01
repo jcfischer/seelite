@@ -94,6 +94,10 @@ export interface ResolvedPart {
 	/** The state-variable filter's damping, from the resonance. */
 	readonly damp: number;
 	readonly drive: number;
+	/** Strings: the drive's gain into its `tanh` and the `1 / tanh` that
+	 *  keeps its level — constants of the part, so not worked per sample. */
+	readonly driveK: number;
+	readonly driveNorm: number;
 	/** Per frame, toward a slide's target; 1 for no glide. */
 	readonly glideCoef: number;
 	readonly vibrato: number;
@@ -336,6 +340,8 @@ export function resolvePart(spec: PartSpec, sampleRate: number): ResolvedPart {
 		envDecayCoef: fall60(d.envDecayS, sampleRate),
 		damp: 2 - 1.9 * Math.max(0, Math.min(1, d.resonance)),
 		drive: d.drive,
+		driveK: 1 + 8 * d.drive,
+		driveNorm: 1 / Math.tanh(1 + 8 * d.drive),
 		glideCoef: d.glideS > 0 ? 1 - Math.exp(-1 / (d.glideS * sampleRate)) : 1,
 		vibrato: d.vibrato,
 		sweepInc:
@@ -1161,10 +1167,8 @@ export class VoiceBank {
 		// behind the drive takes away what the drive adds; after it, the
 		// clipped edges are the grit.
 		if (part.drive > 0) {
-			const k = 1 + 8 * part.drive;
-			const norm = 1 / Math.tanh(k);
-			yl = Math.tanh(k * yl) * norm;
-			yr = Math.tanh(k * yr) * norm;
+			yl = Math.tanh(part.driveK * yl) * part.driveNorm;
+			yr = Math.tanh(part.driveK * yr) * part.driveNorm;
 		}
 		this.sideR = yr * vel;
 		return yl * vel;

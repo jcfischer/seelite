@@ -636,16 +636,11 @@ export async function renderInPage({
 							...(await import("/src/music-test-score.ts")).TEST_SONGS,
 							// #547's waltz, where the served tree has it.
 							...(await import("/src/music-danube.ts")
-								.then((m) => ({
-									danube: m.BLUE_DANUBE,
-									// #547 D12's voicings, where the served tree has them.
-									...(m.danubeSong
-										? {
-												"danube-oxygene": m.danubeSong("oxygene"),
-												"danube-hybrid": m.danubeSong("hybrid"),
-											}
-										: {}),
-								}))
+								// One map in the module (sage round 1); an older tree has
+								// only the waltz.
+								.then((m) =>
+									m.danubeSongs ? m.danubeSongs() : { danube: m.BLUE_DANUBE },
+								)
 								.catch(() => ({}))),
 						},
 					}))

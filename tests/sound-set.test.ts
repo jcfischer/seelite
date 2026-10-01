@@ -22,7 +22,7 @@ import {
 } from "../src/witchspace-sound";
 import type { MusicCommand } from "../src/music-score";
 import { TEST_SONGS } from "../src/music-test-score";
-import { BLUE_DANUBE, danubeSong } from "../src/music-danube";
+import { danubeSongs } from "../src/music-danube";
 
 /** One entry, loosely: the list is a script's, and its inferred union has no
  *  field common to every shape. */
@@ -191,12 +191,7 @@ test("every transport move is rendered for the ear, or says why not (#560)", () 
 		expect([move, sent.has(move)]).toEqual([move, why === true]);
 	// And every song a render names is one `renderInPage` can load: the test
 	// score's, or #547's waltz.
-	const songs: Record<string, unknown> = {
-		...TEST_SONGS,
-		danube: BLUE_DANUBE,
-		"danube-oxygene": danubeSong("oxygene"),
-		"danube-hybrid": danubeSong("hybrid"),
-	};
+	const songs: Record<string, unknown> = { ...TEST_SONGS, ...danubeSongs() };
 	for (const m of music)
 		for (const song of Object.values(m.songs ?? {}))
 			if (typeof song === "string")
@@ -227,4 +222,17 @@ test("every witchspace arm is flown by some jump, one question at a time", () =>
 		);
 		expect([e.name, flipped.length <= 1]).toEqual([e.name, true]);
 	}
+});
+
+test("every render of the waltz is played by some timeline (#547)", () => {
+	// `danubeTimelines` names its voicings by hand, being a script that cannot
+	// import the score; a voicing added to `DANUBE_VOICINGS` without a row is
+	// one nobody listened to.
+	const played = new Set(
+		SOUND_SET.flatMap((e) =>
+			Object.values(e.music?.songs ?? {}).filter((s) => typeof s === "string"),
+		),
+	);
+	for (const id of Object.keys(danubeSongs()))
+		expect([id, played.has(id)]).toEqual([id, true]);
 });

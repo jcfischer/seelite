@@ -68,7 +68,9 @@ test("the loop is the waltz's 32 bars, every one at the waltz tempo", () => {
 	expect(seconds).toBeCloseTo((32 * 3 * 60) / WALTZ_BPM, 6);
 });
 
-test("the theme opens as the Breitkopf score has it: D F# A | A A' | A' F#' | F#' D", () => {
+// Pins the encoding against change: typed from the same reading of the
+// Breitkopf score as `THEME`, so it is not independent evidence of it.
+test("the theme opens as encoded from the Breitkopf score: D F# A | A A' | A' F#' | F#' D", () => {
 	const opening = line("waltz", "melody")
 		.filter((e) => e.bar < 4)
 		.map((e) => e.pitch);

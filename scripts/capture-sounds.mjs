@@ -70,7 +70,8 @@ function arg(name) {
 const label = arg("label");
 // `--only a,b`: render just those entries — a re-render of what one change
 // moved, rather than the whole set.
-const only = arg("only")?.split(",");
+// De-duplicated, so a repeated name is not read as a missing one.
+const only = arg("only") ? [...new Set(arg("only").split(","))] : undefined;
 const ref = arg("ref");
 const out = resolve(arg("out") ?? join(HERE, "sound-set"));
 const seed =

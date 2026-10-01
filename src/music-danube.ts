@@ -360,7 +360,8 @@ const HYBRID: Voicing = {
 	chords: ORCHESTRA.chords,
 };
 
-/** Every voicing, by name: `orchestra` is D8's and the one the game plays. */
+/** Every voicing, by name: `orchestra` is D8's and the one the docking
+ *  computer will play. Nothing in the game plays the waltz yet. */
 export const DANUBE_VOICINGS = {
 	orchestra: ORCHESTRA,
 	oxygene: OXYGENE,
@@ -543,29 +544,18 @@ const G6 = [55, 59, 64];
 const PAD_D = [57, 62, 66];
 const PAD_A7 = [55, 61, 64];
 const PAD_G = [55, 59, 64];
-const HARMONY: readonly (
-	| readonly [number, readonly number[], readonly number[], How]
-	| null
-)[] = [
+/** One bar of `HARMONY`. */
+type Bar = readonly [number, readonly number[], readonly number[], How];
+/** `n` bars of one harmony. */
+const bars = (n: number, h: Bar): Bar[] => Array<Bar>(n).fill(h);
+const HARMONY: readonly (Bar | null)[] = [
 	null, // the upbeat
-	...Array<readonly [number, readonly number[], readonly number[], How]>(
-		4,
-	).fill([38, D, PAD_D, "oom"]),
-	...Array<readonly [number, readonly number[], readonly number[], How]>(
-		4,
-	).fill([40, A7, PAD_A7, "oom"]),
-	...Array<readonly [number, readonly number[], readonly number[], How]>(
-		4,
-	).fill([33, A7, PAD_A7, "oom"]),
-	...Array<readonly [number, readonly number[], readonly number[], How]>(
-		4,
-	).fill([38, D, PAD_D, "oom"]),
-	...Array<readonly [number, readonly number[], readonly number[], How]>(
-		4,
-	).fill([42, D6, PAD_D, "oom"]),
-	...Array<readonly [number, readonly number[], readonly number[], How]>(
-		3,
-	).fill([43, G6, PAD_G, "oom"]),
+	...bars(4, [38, D, PAD_D, "oom"]),
+	...bars(4, [40, A7, PAD_A7, "oom"]),
+	...bars(4, [33, A7, PAD_A7, "oom"]),
+	...bars(4, [38, D, PAD_D, "oom"]),
+	...bars(4, [42, D6, PAD_D, "oom"]),
+	...bars(3, [43, G6, PAD_G, "oom"]),
 	[43, G6, PAD_G, "pah"],
 	[40, [57, 64, 67], [57, 64, 67], "oom"],
 	[33, [57, 61, 67], PAD_A7, "oom"],
@@ -577,11 +567,7 @@ const HARMONY: readonly (
 ];
 
 /** The accompaniment for one bar of `HARMONY`, at `vel`. */
-function accompany(
-	bar: number,
-	h: readonly [number, readonly number[], readonly number[], How],
-	vel: number,
-): NoteEvent[] {
+function accompany(bar: number, h: Bar, vel: number): NoteEvent[] {
 	const [bass, pluck, pad, how] = h;
 	const out: NoteEvent[] = [...chord("strings", bar, 0, pad, 3, vel * 0.8)];
 	if (how === "held")
@@ -648,12 +634,6 @@ const CADENCE: NoteEvent[] = [
 	...line("kick", [[3, 0, KICK_PITCH, 0.5]], 0.8),
 ];
 
-/**
- * The song. Score bars: the intro 0–8, the waltz 9–40, the cadence 41–44.
- * The intro holds its tempo for six bars and slows over two into its last;
- * the waltz is at `WALTZ_BPM` throughout, so every loop is the same length;
- * the cadence broadens from its second bar to its last.
- */
 /** The waltz in one voicing: the same score, other instruments. */
 export const danubeSong = (voicing: DanubeVoicing): Song => {
 	const parts: Voicing | undefined = DANUBE_VOICINGS[voicing];
@@ -661,6 +641,12 @@ export const danubeSong = (voicing: DanubeVoicing): Song => {
 	return { ...SCORE, name: `${SCORE.name} (${voicing})`, parts };
 };
 
+/**
+ * The song. Score bars: the intro 0–8, the waltz 9–40, the cadence 41–44.
+ * The intro holds its tempo for six bars and slows over two into its last;
+ * the waltz is at `WALTZ_BPM` throughout, so every loop is the same length;
+ * the cadence broadens from its second bar to its last.
+ */
 const SCORE: Song = {
 	name: "An der schönen blauen Donau",
 	beatsPerBar: 3,
@@ -684,5 +670,17 @@ const SCORE: Song = {
 	space: { reverbS: 3.5 },
 };
 
-/** The waltz as the game plays it: D8's orchestra. */
+/** The waltz as the docking computer will play it: D8's orchestra. */
 export const BLUE_DANUBE: Song = SCORE;
+
+/** Every render of the waltz by the id the sound set loads it under: the
+ *  game's, and each voicing as `danube-<voicing>`. One map, so a voicing
+ *  added here reaches `renderInPage` and the sound-set test together. */
+export const danubeSongs = (): Readonly<Record<string, Song>> => ({
+	danube: BLUE_DANUBE,
+	...Object.fromEntries(
+		(Object.keys(DANUBE_VOICINGS) as DanubeVoicing[])
+			.filter((v) => v !== "orchestra")
+			.map((v) => [`danube-${v}`, danubeSong(v)]),
+	),
+});
