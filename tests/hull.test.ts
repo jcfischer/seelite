@@ -350,7 +350,10 @@ describe("handling derives from mass and thrust, and nothing else", () => {
 		expect(perf.thrustKms2).toBe(REFERENCE_THRUST_KMS2);
 		expect(perf.assistLateralTauS).toBe(REFERENCE_ASSIST_LATERAL_TAU_S);
 		expect(perf.angularMax).toEqual(REFERENCE_ANGULAR_MAX);
-		expect(perf.angularAccel).toBe(REFERENCE_ANGULAR_ACCEL);
+		// The one figure that is the vents' rather than a ratio against the
+		// baseline (#619): what the courier's attitude couples deliver, solved to
+		// #5's 3 rad/s² at the six figures `hull.ts` stores its shares to.
+		expect(perf.angularAccel).toBeCloseTo(REFERENCE_ANGULAR_ACCEL, 5);
 		expect(perf.angularDampTauS).toBe(REFERENCE_ANGULAR_DAMP_TAU_S);
 	});
 

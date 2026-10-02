@@ -830,3 +830,27 @@ _Avoid_: Intensity, alert level, threat level — *threat* is one of the four.
 What a system's seed fixes about its music under `DOMAIN.MUSIC`: tonic, bright
 mode, tempo and palette (`musicTheme`). A **variant** draws new notes inside
 the same theme.
+
+**Vent**:
+One thruster on a hull: a slot, a position, a direction and a share of the
+hull's `thrustMN`, in the hull frame (`flight-model.md` §3.1, §3.4). Every hull
+names its vents from one slot vocabulary, `VENT_SLOTS` in `src/hull.ts`, so a
+binding or a health factor means the same vent on every hull.
+_Avoid_: Thruster bank, RCS jet — *as a name for one vent*.
+
+**Translation pair** / **Attitude pair**:
+The two vent families (#619, `flight-model.md` §3.2). A translation pair sits a
+short arm either side of the centre of mass and strafes; an attitude pair sits
+at the extremities and turns the hull. Fired the same way a pair is pure force,
+fired opposite it is a pure couple.
+
+**Demand**:
+What an author — the pilot, the assist, the docking computer, a raider — asks
+of an axis (`LinearDemand`, the stick to `stepAngular`). The sim composes
+demands into vent firings, and nothing fires a vent another way (§3.6).
+_Avoid_: Command — *for the composed vent levels*; those are the **Firing table**.
+
+**Firing table**:
+How hard each vent fired in one step, 0…1 by slot (`VentLevels`). `stepFlight`
+returns it; the flight sound reads it through `thrustShares`, and the plumes
+#621 draws will read it.

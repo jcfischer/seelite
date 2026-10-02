@@ -334,7 +334,8 @@ describe("the tolerances hold for the whole roster, with margin", () => {
 		// than as "it passed": the margin is what says §3's tolerances stay one
 		// table rather than becoming a per-hull one.
 		//
-		// The bound is **1.5x and the measurement is 2.0x**, deliberately apart.
+		// The bound is **1.5x and the measurement is 1.67x** (2.0x until #619
+		// turned the computer through the vents), deliberately apart.
 		// A threshold set at the measured value is not a measurement (#25) — it
 		// would go red on a retune that changed nothing about the answer, and a
 		// later session would loosen it on the prose. What 1.5x catches is the

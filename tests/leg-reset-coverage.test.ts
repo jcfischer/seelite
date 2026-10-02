@@ -66,6 +66,9 @@ const LEG_PATH = [
 	"stepCruise",
 	"advanceNormalFlight",
 	"step",
+	// Where `step` turns the ship since #619: the attitude vents' step and the
+	// quaternion it moves.
+	"turnShip",
 	"masses",
 	"updateEtaEstimate",
 	"updateInstruments",

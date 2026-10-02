@@ -169,7 +169,10 @@ test("the nose's turn rate does not snap from one frame to the next", () => {
 test("each body rate grows by at most the hull's angular acceleration, and that limit binds", () => {
 	const player = { pos: v3(), vel: v3() };
 	const playerNose = v3(0, 0, -1);
-	const step = RAIDER.angularAccel * DT;
+	// Per axis since #619: each couple delivers its own authority, solved
+	// equal to #181's figure at six significant figures.
+	const step = (axis: "pitch" | "yaw" | "roll") =>
+		RAIDER.angularAuthority[axis] * DT;
 	let largest = 0;
 	for (const seed of [1, 99, 777, 12345]) {
 		let enemy = createCombatEnemy(player, playerNose, seed);
@@ -186,13 +189,13 @@ test("each body rate grows by at most the hull's angular acceleration, and that 
 			for (const axis of ["pitch", "yaw", "roll"] as const)
 				largest = Math.max(
 					largest,
-					Math.abs(enemy.rates[axis]) - Math.abs(before[axis]),
+					(Math.abs(enemy.rates[axis]) - Math.abs(before[axis])) / step(axis),
 				);
 		}
 	}
-	expect(largest).toBeLessThanOrEqual(step + 1e-12);
+	expect(largest).toBeLessThanOrEqual(1 + 1e-9);
 	// A raider that never spun up at full acceleration would pass on nothing.
-	expect(largest).toBeGreaterThan(0.9 * step);
+	expect(largest).toBeGreaterThan(0.9);
 });
 
 test("a turn settles on its heading instead of hunting around it", () => {
@@ -224,6 +227,14 @@ test("a turn settles on its heading instead of hunting around it", () => {
 	}
 	expect(enemy.phase).toBe("flee");
 	expect(arrived).toBe(true);
-	expect(worstAfter).toBeLessThan((2 * Math.PI) / 180);
+	// 3°, and why not 2 (#619): the heading this raider wants is *away from
+	// the player*, and it moves for as long as the raider slides sideways. The
+	// assist's old clamp to the cap also deleted that slide in a hard turn;
+	// the vents remove it at the translation pairs' rate (`flight-model.md`
+	// §3.10), so the target moves for longer. Measured on this seed: 1.79° on
+	// `main` before vents, 2.55° on them, at the same instant of the same
+	// turn. A hunt would overshoot both ways and grow; the last row holds the
+	// settle.
+	expect(worstAfter).toBeLessThan((3 * Math.PI) / 180);
 	expect(last).toBeLessThan((0.5 * Math.PI) / 180);
 });

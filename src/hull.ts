@@ -92,6 +92,161 @@ export interface HullEnvelope {
 	heightKm: number;
 }
 
+/**
+ * The vent slots every hull is described in (`flight-model.md` §3.4.1).
+ *
+ * **One vocabulary across the roster**, so a binding (§3.5) or a health factor
+ * (§3.7) names the same vent on every hull. A hull fills a slot or leaves it
+ * empty; today every hull fills all of them.
+ *
+ * **Two families, by the principal's ruling on #619 (2026-10-02).** One
+ * fore/aft pair cannot carry both of #5's figures: sized to remove drift at the
+ * cap it turns the courier at ~97 rad/s², and sized to turn it at 3 it removes
+ * drift ~30x slower than #5 does. So a *translation* pair (`strafe-*`, a short
+ * arm either side of the centre of mass) does the strafing and the assist's
+ * drift removal, and an *attitude* pair at the extremities (`*-lateral`,
+ * `*-vertical`, `*-roll`) makes the couples. Fired the same way a pair is pure
+ * force and fired opposite it is a pure couple, in both families (§3.2).
+ */
+export const VENT_SLOTS = [
+	"main",
+	"retro-port",
+	"retro-starboard",
+	"strafe-fore-port",
+	"strafe-aft-port",
+	"strafe-fore-starboard",
+	"strafe-aft-starboard",
+	"strafe-fore-dorsal",
+	"strafe-aft-dorsal",
+	"strafe-fore-ventral",
+	"strafe-aft-ventral",
+	"fore-port-lateral",
+	"fore-starboard-lateral",
+	"aft-port-lateral",
+	"aft-starboard-lateral",
+	"fore-dorsal-vertical",
+	"fore-ventral-vertical",
+	"aft-dorsal-vertical",
+	"aft-ventral-vertical",
+	"port-dorsal-roll",
+	"port-ventral-roll",
+	"starboard-dorsal-roll",
+	"starboard-ventral-roll",
+] as const;
+export type VentSlot = (typeof VENT_SLOTS)[number];
+
+/** Which share a slot draws: the main drive, the retro pair, the translation
+ *  pairs, or the attitude pair for one axis. */
+export type VentFamily = "main" | "retro" | "strafe" | "pitch" | "yaw" | "roll";
+
+/**
+ * One vent, in the **hull frame**: kilometres from the centre of the envelope,
+ * which is taken as the centre of mass; `x` to starboard, `y` dorsal, `z` aft
+ * (the mesh's nose is `-Z`, `ship-mesh.ts`). `dir` is the unit direction of the
+ * force the vent puts on the hull, so its exhaust points the other way.
+ */
+export interface VentRow {
+	readonly slot: VentSlot;
+	readonly family: VentFamily;
+	readonly posKm: readonly [number, number, number];
+	readonly dir: readonly [number, number, number];
+	/** Thrust as a share of the hull's `thrustMN` (§3.4). */
+	readonly share: number;
+}
+
+/**
+ * A hull's shares, one per family — the per-hull **shape** §3.4 adds to the one
+ * magnitude dial `thrustMN`.
+ *
+ * Each is the thrust of **one** vent as a share of `thrustMN`. They are solved,
+ * not chosen: `scripts/measure-vent-shares.ts` derives each row from #181's
+ * handling law so that every hull flies exactly as it did before vents (the
+ * principal's ruling on #619: no retune), prints them, and
+ * `tests/vents.test.ts` holds every row to that law.
+ */
+export interface VentShares {
+	readonly main: number;
+	readonly retro: number;
+	readonly strafe: number;
+	readonly pitch: number;
+	readonly yaw: number;
+	readonly roll: number;
+}
+
+/** Where each slot sits, as a fraction of the envelope's half-extents
+ *  (`x` half-beam, `y` half-height, `z` half-length), and which way it
+ *  pushes. The translation pairs sit a quarter of the half-length either side
+ *  of the centre of mass; the attitude pairs at the extremities. */
+const SLOT_GEOMETRY: Readonly<
+	Record<
+		VentSlot,
+		{
+			family: VentFamily;
+			at: readonly [number, number, number];
+			dir: readonly [number, number, number];
+		}
+	>
+> = {
+	main: { family: "main", at: [0, 0, 1], dir: [0, 0, -1] },
+	"retro-port": { family: "retro", at: [-0.5, 0, -1], dir: [0, 0, 1] },
+	"retro-starboard": { family: "retro", at: [0.5, 0, -1], dir: [0, 0, 1] },
+	"strafe-fore-port": { family: "strafe", at: [-1, 0, -0.25], dir: [1, 0, 0] },
+	"strafe-aft-port": { family: "strafe", at: [-1, 0, 0.25], dir: [1, 0, 0] },
+	"strafe-fore-starboard": {
+		family: "strafe",
+		at: [1, 0, -0.25],
+		dir: [-1, 0, 0],
+	},
+	"strafe-aft-starboard": {
+		family: "strafe",
+		at: [1, 0, 0.25],
+		dir: [-1, 0, 0],
+	},
+	"strafe-fore-dorsal": {
+		family: "strafe",
+		at: [0, 1, -0.25],
+		dir: [0, -1, 0],
+	},
+	"strafe-aft-dorsal": { family: "strafe", at: [0, 1, 0.25], dir: [0, -1, 0] },
+	"strafe-fore-ventral": {
+		family: "strafe",
+		at: [0, -1, -0.25],
+		dir: [0, 1, 0],
+	},
+	"strafe-aft-ventral": { family: "strafe", at: [0, -1, 0.25], dir: [0, 1, 0] },
+	"fore-port-lateral": { family: "yaw", at: [-1, 0, -1], dir: [1, 0, 0] },
+	"fore-starboard-lateral": { family: "yaw", at: [1, 0, -1], dir: [-1, 0, 0] },
+	"aft-port-lateral": { family: "yaw", at: [-1, 0, 1], dir: [1, 0, 0] },
+	"aft-starboard-lateral": { family: "yaw", at: [1, 0, 1], dir: [-1, 0, 0] },
+	"fore-dorsal-vertical": { family: "pitch", at: [0, 1, -1], dir: [0, -1, 0] },
+	"fore-ventral-vertical": { family: "pitch", at: [0, -1, -1], dir: [0, 1, 0] },
+	"aft-dorsal-vertical": { family: "pitch", at: [0, 1, 1], dir: [0, -1, 0] },
+	"aft-ventral-vertical": { family: "pitch", at: [0, -1, 1], dir: [0, 1, 0] },
+	"port-dorsal-roll": { family: "roll", at: [-1, 0, 0], dir: [0, -1, 0] },
+	"port-ventral-roll": { family: "roll", at: [-1, 0, 0], dir: [0, 1, 0] },
+	"starboard-dorsal-roll": { family: "roll", at: [1, 0, 0], dir: [0, -1, 0] },
+	"starboard-ventral-roll": { family: "roll", at: [1, 0, 0], dir: [0, 1, 0] },
+};
+
+/** A hull's vent table, as plain data: the shared slot geometry scaled to its
+ *  envelope, each vent carrying its family's share. */
+export const ventTable = (
+	env: HullEnvelope,
+	shares: VentShares,
+): readonly VentRow[] => {
+	const half = [env.beamKm / 2, env.heightKm / 2, env.lengthKm / 2] as const;
+	return VENT_SLOTS.map((slot) => {
+		const { family, at, dir } = SLOT_GEOMETRY[slot];
+		return {
+			slot,
+			family,
+			posKm: [at[0] * half[0], at[1] * half[1], at[2] * half[2]] as const,
+			dir,
+			share: shares[family],
+		};
+	});
+};
+
 export interface HullSpec {
 	readonly role: HullRole;
 	/**
@@ -127,6 +282,11 @@ export interface HullSpec {
 	 */
 	readonly massT: number;
 	readonly thrustMN: number;
+	/** The hull's vent shares (§3.4) — see `VentShares`. */
+	readonly ventShares: VentShares;
+	/** The hull's vent table, built from `env` and `ventShares` by
+	 *  `ventTable`: plain data, one row per filled slot (§3.3). */
+	readonly vents: readonly VentRow[];
 	/** Cargo capacity, tonnes. The courier's is `economy-trade.md` §6's 20 t and
 	 *  is the reference the stock deficit's response is stated against — #26's D6
 	 *  defers the *multiplier* to the pricing node, not the capacities. */
@@ -349,13 +509,21 @@ export const purchasableHullNamed = (asked: string | null): HullId | null =>
  * what a kill of that hull pays, which `kill-credit.ts` reads; the seven
  * civilian rows are this node's answer.
  */
-export const HULL_SPECS: Readonly<Record<HullId, HullSpec>> = {
+const HULL_ROWS: Readonly<Record<HullId, Omit<HullSpec, "vents">>> = {
 	courier: {
 		role: "player-baseline",
 		variant: "a",
 		env: { lengthKm: 0.0575, beamKm: 0.0513, heightKm: 0.0117 },
 		massT: 60,
 		thrustMN: 120,
+		ventShares: {
+			main: 1,
+			retro: 0.5,
+			strafe: 0.416667,
+			pitch: 0.00748509,
+			yaw: 0.0129086,
+			roll: 0.00674605,
+		},
 		holdT: 20,
 		hardpoints: 1,
 		integrity: 100,
@@ -369,6 +537,14 @@ export const HULL_SPECS: Readonly<Record<HullId, HullSpec>> = {
 		env: { lengthKm: 0.0624, beamKm: 0.0253, heightKm: 0.0252 },
 		massT: 55,
 		thrustMN: 154,
+		ventShares: {
+			main: 1,
+			retro: 0.5,
+			strafe: 0.416667,
+			pitch: 0.00835972,
+			yaw: 0.00836904,
+			roll: 0.00580533,
+		},
 		holdT: 8,
 		hardpoints: 2,
 		integrity: 95,
@@ -382,6 +558,14 @@ export const HULL_SPECS: Readonly<Record<HullId, HullSpec>> = {
 		env: { lengthKm: 0.0697, beamKm: 0.0463, heightKm: 0.0197 },
 		massT: 140,
 		thrustMN: 168,
+		ventShares: {
+			main: 1,
+			retro: 0.5,
+			strafe: 0.416667,
+			pitch: 0.00776168,
+			yaw: 0.0103591,
+			roll: 0.00563884,
+		},
 		// Three times the reference, which is the case #26's D6 names by number:
 		// a 60 t hold leans three times as hard on a market that remembers it.
 		holdT: 60,
@@ -397,6 +581,14 @@ export const HULL_SPECS: Readonly<Record<HullId, HullSpec>> = {
 		env: { lengthKm: 0.0782, beamKm: 0.0519, heightKm: 0.0332 },
 		massT: 215,
 		thrustMN: 215,
+		ventShares: {
+			main: 1,
+			retro: 0.5,
+			strafe: 0.416667,
+			pitch: 0.00848301,
+			yaw: 0.0103534,
+			roll: 0.00672222,
+		},
 		holdT: 40,
 		hardpoints: 1,
 		integrity: 215,
@@ -418,6 +610,14 @@ export const HULL_SPECS: Readonly<Record<HullId, HullSpec>> = {
 		// thrust-to-mass. The two are different questions, and `security` gets the
 		// one its short hull earns.
 		thrustMN: 126,
+		ventShares: {
+			main: 1,
+			retro: 0.5,
+			strafe: 0.416667,
+			pitch: 0.00744076,
+			yaw: 0.0102899,
+			roll: 0.00510765,
+		},
 		holdT: 6,
 		hardpoints: 2,
 		integrity: 85,
@@ -431,6 +631,14 @@ export const HULL_SPECS: Readonly<Record<HullId, HullSpec>> = {
 		env: { lengthKm: 0.0738, beamKm: 0.0385, heightKm: 0.0397 },
 		massT: 165,
 		thrustMN: 248,
+		ventShares: {
+			main: 1,
+			retro: 0.5,
+			strafe: 0.416667,
+			pitch: 0.00926742,
+			yaw: 0.00914358,
+			roll: 0.00773654,
+		},
 		holdT: 30,
 		hardpoints: 1,
 		integrity: 183,
@@ -446,6 +654,14 @@ export const HULL_SPECS: Readonly<Record<HullId, HullSpec>> = {
 		env: { lengthKm: 0.0635, beamKm: 0.0344, heightKm: 0.0109 },
 		massT: 42,
 		thrustMN: 113,
+		ventShares: {
+			main: 1,
+			retro: 0.5,
+			strafe: 0.416667,
+			pitch: 0.00739928,
+			yaw: 0.00929684,
+			roll: 0.00428463,
+		},
 		holdT: 10,
 		hardpoints: 2,
 		integrity: 81,
@@ -459,6 +675,14 @@ export const HULL_SPECS: Readonly<Record<HullId, HullSpec>> = {
 		env: { lengthKm: 0.3797, beamKm: 0.1764, heightKm: 0.145 },
 		massT: 14000,
 		thrustMN: 8400,
+		ventShares: {
+			main: 1,
+			retro: 0.5,
+			strafe: 0.416667,
+			pitch: 0.00823567,
+			yaw: 0.00873879,
+			roll: 0.00559533,
+		},
 		holdT: 400,
 		hardpoints: 6,
 		integrity: 2635,
@@ -472,6 +696,14 @@ export const HULL_SPECS: Readonly<Record<HullId, HullSpec>> = {
 		env: { lengthKm: 0.0585, beamKm: 0.0457, heightKm: 0.0257 },
 		massT: 120,
 		thrustMN: 168,
+		ventShares: {
+			main: 1,
+			retro: 0.5,
+			strafe: 0.416667,
+			pitch: 0.00857468,
+			yaw: 0.0115738,
+			roll: 0.00739056,
+		},
 		holdT: 24,
 		hardpoints: 1,
 		integrity: 152,
@@ -485,6 +717,14 @@ export const HULL_SPECS: Readonly<Record<HullId, HullSpec>> = {
 		env: { lengthKm: 0.0665, beamKm: 0.0253, heightKm: 0.0192 },
 		massT: 58,
 		thrustMN: 110,
+		ventShares: {
+			main: 1,
+			retro: 0.5,
+			strafe: 0.416667,
+			pitch: 0.00778665,
+			yaw: 0.00822784,
+			roll: 0.00430934,
+		},
 		holdT: 12,
 		hardpoints: 1,
 		integrity: 98,
@@ -498,6 +738,14 @@ export const HULL_SPECS: Readonly<Record<HullId, HullSpec>> = {
 		env: { lengthKm: 0.4066, beamKm: 0.1331, heightKm: 0.1111 },
 		massT: 12000,
 		thrustMN: 8400,
+		ventShares: {
+			main: 1,
+			retro: 0.5,
+			strafe: 0.416667,
+			pitch: 0.00772413,
+			yaw: 0.00795769,
+			roll: 0.00399213,
+		},
 		holdT: 200,
 		hardpoints: 8,
 		integrity: 2402,
@@ -522,6 +770,14 @@ export const HULL_SPECS: Readonly<Record<HullId, HullSpec>> = {
 		massT: 380,
 		// 0.5 km/s², under the carrier's 0.6: an expedition hull is not a warship.
 		thrustMN: 190,
+		ventShares: {
+			main: 1,
+			retro: 0.5,
+			strafe: 0.416667,
+			pitch: 0.007366,
+			yaw: 0.00735896,
+			roll: 0.00226584,
+		},
 		holdT: 240,
 		hardpoints: 1,
 		integrity: 303,
@@ -530,6 +786,16 @@ export const HULL_SPECS: Readonly<Record<HullId, HullSpec>> = {
 		priceCr: null,
 	},
 };
+
+/** The roster with each hull's vent table built from its envelope and
+ *  shares: plain data by the time anything reads it (§3.3). */
+export const HULL_SPECS: Readonly<Record<HullId, HullSpec>> =
+	Object.fromEntries(
+		HULL_IDS.map((id) => {
+			const row = HULL_ROWS[id];
+			return [id, { ...row, vents: ventTable(row.env, row.ventShares) }];
+		}),
+	) as Record<HullId, HullSpec>;
 
 /** The hull a new game flies until a shipyard sells another: #26's ratified
  *  `player-baseline`, read off the roster rather than restated as a constant in

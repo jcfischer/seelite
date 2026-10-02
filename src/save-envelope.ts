@@ -115,8 +115,14 @@ import {
  * marks visited (§7's flags, per galaxy) and the station it is docked at, and
  * keeps everything it owns. Credit earned since
  * the last dock is not here at all: it is lost with the ship (#183 D7).
+ *
+ * **8 adds `commander.flight.rates` (#619)**, the ship's pitch, yaw and roll
+ * rates. Under the vent substrate rotation carries momentum that no held key
+ * implies, so a save taken tumbling resumes tumbling (`flight-model.md`
+ * §3.9). Every older record loads at rest: before #619 a released axis eased
+ * to a stop with the assist on, and nothing recorded a spin to resume.
  */
-export const SAVE_SCHEMA_VERSION = 7;
+export const SAVE_SCHEMA_VERSION = 8;
 /**
  * Versions this parser still reads but no longer writes.
  *
@@ -136,10 +142,12 @@ export const SAVE_SCHEMA_VERSION = 7;
  *
  * **5 is every save written between #453 and #408.**
  *
- * **6 is every save written between #408 and #564**, so it is the population a
+ * **6 is every save written between #408 and #564.**
+ *
+ * **7 is every save written between #564 and #619**, so it is the population a
  * player most likely holds.
  */
-export const LEGACY_SAVE_SCHEMA_VERSIONS = [2, 3, 4, 5, 6] as const;
+export const LEGACY_SAVE_SCHEMA_VERSIONS = [2, 3, 4, 5, 6, 7] as const;
 
 /**
  * What a legacy version may not contain.
@@ -273,6 +281,9 @@ export interface SavedFlight {
 	 * than as a missing field.
 	 */
 	throttle: number;
+	/** Pitch, yaw and roll rates, radians per second, in the hull's own axes
+	 *  (`sim.ts`'s `Angular`). Since version 8 (#619). */
+	rates: readonly [number, number, number];
 }
 
 /** The player half of a save. */
@@ -363,6 +374,7 @@ export const newCommanderRecord = (
 		orientation: [0, 0, 0, 1],
 		regime: "normal",
 		throttle: 0,
+		rates: [0, 0, 0],
 	},
 });
 
@@ -420,6 +432,7 @@ const canonicalCommander = (record: CommanderRecord) => {
 			orientation: [...record.flight.orientation],
 			regime: record.flight.regime,
 			throttle: record.flight.throttle,
+			rates: [...record.flight.rates],
 		},
 	};
 };
@@ -476,7 +489,7 @@ const tuple = <N extends number>(
 	return value as number[];
 };
 
-const parseFlight = (raw: unknown): SavedFlight => {
+const parseFlight = (raw: unknown, version: number): SavedFlight => {
 	const o = asObject(raw, "commander.flight");
 	const regime = o.regime;
 	if (regime !== "normal" && regime !== "cruise")
@@ -487,12 +500,20 @@ const parseFlight = (raw: unknown): SavedFlight => {
 	const throttle = num(o, "throttle", "commander.flight");
 	if (throttle < 0 || throttle > 1)
 		fail(`commander.flight: ${throttle} is not a throttle`);
+	// Present from 8 and required there — an absent field is a truncated
+	// record — and refused below it, where a record carrying it was assembled
+	// rather than saved (`LEGACY_SCHEMA_FORBIDS`'s rule, one level down).
+	if (version < 8 && o.rates !== undefined)
+		fail(`commander.flight: rates is not a version ${version} field`);
+	const [rp, ry, rr] =
+		version >= 8 ? tuple(o, "rates", 3, "commander.flight") : [0, 0, 0];
 	return {
 		pos: [px, py, pz],
 		vel: [vx, vy, vz],
 		orientation: [ox, oy, oz, ow],
 		regime: regime as SavedRegime,
 		throttle,
+		rates: [rp, ry, rr],
 	};
 };
 
@@ -650,7 +671,7 @@ const parseCommander = (
 		permadeath: o.permadeath as boolean,
 		firstDay,
 		ladders,
-		flight: parseFlight(o.flight),
+		flight: parseFlight(o.flight, version),
 	};
 };
 

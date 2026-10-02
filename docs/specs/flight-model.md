@@ -4,6 +4,9 @@ Author: Ivy · 2026-10-02
 Status: §3's decisions were taken with the principal on 2026-10-02. §3.9 was
 flown and kept on 2026-10-02 (§6), with one rule added. Ratified on
 principal-approved merge, recorded in the decision node's resolution.
+§3.2, §3.4, §3.8 and §3.10 were amended by the principal on 2026-10-02 while
+the substrate was built ([#619](https://github.com/jcfischer/seelite/issues/619)).
+Each amendment is marked where it lands.
 Decision node: [Fly the hull from its vents: six held thrusters, the couples
 they make, and the assist as a controller on top](https://github.com/jcfischer/seelite/issues/398).
 
@@ -57,6 +60,25 @@ pure couple. A strafe or a yaw command fires **pairs**, so it is clean. One vent
 fired alone both translates and turns the hull. That coupling stays, but it
 comes only from a single vent fired on purpose (§3.5) or from a dead vent (§3.7).
 
+**Amended on #619: a strafe and a turn fire different pairs.** One pair cannot
+carry both of #5's figures. A translation pair has to remove drift at
+`ASSIST_CAP_KMS / assistLateralTauS`, 1.67 km/s² on the courier. The same pair
+fired opposite at the hull's extremities then turns the courier at about
+97 rad/s², against #5's 3. Sized for 3 rad/s² instead, it removes drift about
+30 times slower than #5. Every hull has the same problem. So a hull has
+**translation pairs**, a short arm either side of the centre of mass, for the
+strafe and the assist's drift removal, and **attitude pairs** at the
+extremities for the couples. Each pair is still clean: fired the same way it is
+pure force, fired opposite it is pure couple. The principal chose this over
+three alternatives:
+
+- shared pairs with the rotation capped on the demand side: an assist-off held
+  key or a dead vent would spin the courier at about 97 rad/s², which breaks
+  §3.6;
+- shared pairs sized for rotation: drift removal 30 times slower than #5;
+- a fitted moment of inertia: a second dial, which §5 says needs an argument
+  against #181.
+
 ### 3.3 Each hull declares its vents
 
 Every hull in `src/hull.ts` carries its own vent table. The table is plain data,
@@ -73,10 +95,20 @@ and a fixed shape, rather than one dial alone.
 `flightPerformance` does now. This spec gives no share values. They are derived
 and measured by the implementation, never written here first.
 
+**Amended on #619: no hull is retuned.** The principal ruled that every hull's
+shares reproduce the figures #181's law gave it, not only the courier's.
+`scripts/measure-vent-shares.ts` keeps that law runnable, solves each row
+against it and a solid-box moment of inertia, and prints the solved rows beside
+the ones `src/hull.ts` stores. `tests/vents.test.ts` holds the two equal. So the
+inertia model decides nothing a pilot feels on a whole hull. It decides what a
+lone or dead vent does, which is §7's. The rejected arm, the courier's shape on
+every hull, would have turned the raider 1.4 to 1.6 times faster and the
+voyager's roll 3 times faster.
+
 #### 3.4.1 Vents are named by shared slots
 
 There is one fixed slot vocabulary across all hulls, for example
-`fore-port-lateral`. A hull fills a slot or leaves it empty. Bindings (§3.5) and
+`fore-port-lateral`; `VENT_SLOTS` in `src/hull.ts` owns it. A hull fills a slot or leaves it empty. Bindings (§3.5) and
 health (§3.7) address slots, so a command means the same vent on every hull, and
 a slot a hull leaves empty does nothing.
 
@@ -135,6 +167,29 @@ follow:
   throat, never a cone (`src/station-mesh.ts` rejects a cone for the refinery's
   vent bank). The firing table is the sim's, and `src/ship-mesh.ts` draws from it.
 
+#### 3.8.2 Two departures from #5 (amended on #619)
+
+A bounded assist cannot reproduce two things #5 did. The principal accepted both.
+
+- **The ease-out is bounded.** #5 stopped a released turn with
+  `rate × e^(−dt/0.28)` at any authority. At the courier's peak roll rate that
+  asks for 5 rad/s². Bounded by the couple's authority, a stop from the peak
+  rate to 5% of it takes 3.9% to 5.9% longer on the courier's roll, by frame
+  step from 1/120 s to 0.05 s, and no longer on pitch and yaw.
+  `tests/vents.test.ts` holds it under 6% at 1/120 s.
+- **The pointer is a demand.** A mouse delta used to add to the rate directly.
+  Now it asks the attitude vents for that change of rate and gets at most the
+  couple's authority in one step. The principal has not yet flown this on the
+  assist-on arm.
+
+#### 3.8.3 Every author turns a hull this way
+
+The docking computer used to place the attitude: it slewed the nose and the up
+at the hull's peak rate, with no acceleration, and zeroed the rates. Now it asks
+for a stick (`src/attitude-hold.ts`), with the slot's own spin asked for on top,
+and `stepAngular` turns the hull through its attitude vents. `docking.md` §4 and
+§7 carry what that costs.
+
 ### 3.9 Assist-off rotation is Newtonian and uncapped
 
 With the assist off, torque gives angular acceleration and that gives rate. There
@@ -162,6 +217,12 @@ It becomes the **limit of the assist's speed demand**. The renormalisation in
 `assistedRelative` is removed: under vents a force that fires no vent is one the
 display cannot show.
 
+**Amended on #619: the speed demand along the nose is held to
+`√(cap² − lateral²)`.** So a hard turn at the cap stays at the cap while the
+translation pairs remove the drift. The renormalisation also removed that drift
+faster than any vent could, so a hull now slides through a hard turn for longer
+than it did under #5.
+
 **Turning the assist on above the cap gives a retro burn.** The assist fires the
 retro vents until the hull is at the cap, bounded by their authority. This takes
 time, and the saturation cue shows while it does. With the assist off there is
@@ -186,7 +247,8 @@ in force inside it. No vent is drawn for it, and no momentum accounting applies.
   hears the vents that fire.
 - **Docking at spin is re-measured.** Roll authority now comes from the vents,
   so `scripts/measure-computer-approach.ts` is re-run, and the #26 roster fit at
-  check 4's limit is re-checked.
+  check 4's limit is re-checked. #619 did both: `docking.md` §4 and §7 carry the
+  figures. The roster fit reads envelopes, which the vents do not move.
 - **Rotation can tunnel.** Uncapped rotation at `MAX_DT` means an attitude, not
   only a position, can cross a thin structure in one step. The collision spec
   owed by #302 must cover the angular case.
@@ -199,6 +261,10 @@ in force inside it. No vent is drawn for it, and no momentum accounting applies.
 - What damages a vent (§7).
 - Whether a hull's handling character needs a second dial. That would amend
   §3.4 and needs an argument against #181.
+- **Whether the berth traversal flies through the vents.** A launch and an
+  arrival are scripted: `main.ts` places the ship along the berth's path and
+  zeroes its rates, as it did before #619. It is a placement, like the cruise
+  exit (§3.11), and no vent fires for it. #619 found it and did not change it.
 
 ## 6. Flying §3.9 first
 
@@ -207,10 +273,10 @@ with no other change, for the principal to fly (`?rotation=newtonian`, #618).
 It held, and §3.9 is no longer provisional. The flight added §3.9's rule for
 turning the assist on above the rate cap.
 
-The flag stays until the vent substrate replaces today's rotation law. On
-today's model, `control` with the assist off only closes the throttle: there are
-no translation vents yet, so a pilot brakes by turning the nose to retrograde
-and burning. §3.6's retro force arrives with the substrate.
+The flag stayed until the vent substrate replaced the rotation law. #619
+retired it, and §3.9's law is now the only one. §3.6's retro force is in the
+substrate (a negative `LinearDemand.surge`); the keys that ask for it are
+#620's.
 
 ## 7. Owed on map #460
 

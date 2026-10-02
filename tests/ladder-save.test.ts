@@ -47,8 +47,8 @@ const saved = () => {
 describe("#183 D9 — the ladders in the save", () => {
 	test("the schema is 7", () => {
 		// A literal, so the next bump has to come through here.
-		expect(SAVE_SCHEMA_VERSION).toBe(7);
-		expect([...LEGACY_SAVE_SCHEMA_VERSIONS]).toEqual([2, 3, 4, 5, 6]);
+		expect(SAVE_SCHEMA_VERSION).toBe(8);
+		expect([...LEGACY_SAVE_SCHEMA_VERSIONS]).toEqual([2, 3, 4, 5, 6, 7]);
 	});
 
 	test("a new commander starts at zero, seeded with where it starts", () => {
@@ -83,6 +83,7 @@ describe("#183 D9 — the ladders in the save", () => {
 		const v6 = resealed(serializeSave(saved()), (body) => {
 			body.saveSchemaVersion = 6;
 			delete body.commander.ladders;
+			delete body.commander.flight.rates;
 		});
 		const { commander } = parseSave(v6);
 		expect(commander.ladders.banked).toEqual({
@@ -113,6 +114,7 @@ describe("#183 D9 — the ladders in the save", () => {
 		const v6 = resealed(serializeSave(save), (body) => {
 			body.saveSchemaVersion = 6;
 			delete body.commander.ladders;
+			delete body.commander.flight.rates;
 		});
 		const { commander } = parseSave(v6);
 		expect(commander.ladders.banked.exploration).toBe(0);
@@ -137,6 +139,7 @@ describe("#183 D9 — the ladders in the save", () => {
 	test("a v7 record without the key is truncated, not zero", () => {
 		const truncated = resealed(serializeSave(saved()), (body) => {
 			delete body.commander.ladders;
+			delete body.commander.flight.rates;
 		});
 		expect(() => parseSave(truncated)).toThrow(/ladders/);
 	});

@@ -1,6 +1,7 @@
 /**
- * A headless flight harness: §7's autopilot command, slewed at the **hull's**
- * angular limits and integrated by `sim.ts`'s own assisted flight law.
+ * A headless flight harness: §7's autopilot command, turned through the
+ * **hull's** attitude vents and integrated by `sim.ts`'s own assisted flight
+ * law, as `main.ts`'s computer flies it (#619).
  *
  * Everything runs in the station's frame with no `frame` passed, which is
  * exactly the conversion `docking.md` §1 requires of every caller — so this
@@ -35,11 +36,25 @@ import {
 	orthonormalise,
 	planeCrossing,
 	requestClearance,
-	slewToward,
 	slotBasis,
 } from "../../src/docking";
 import { HULL_SPECS, type HullId } from "../../src/hull";
-import { ASSIST_CAP_KMS, flightPerformance, stepFlight } from "../../src/sim";
+import {
+	attitudeSpin,
+	attitudeStick,
+	turnAttitude,
+} from "../../src/attitude-hold";
+import {
+	ASSIST_CAP_KMS,
+	type Angular,
+	addRates,
+	flightPerformance,
+	speedDemand,
+	stepAngular,
+	stepFlight,
+} from "../../src/sim";
+
+const NO_TURN: Angular = Object.freeze({ pitch: 0, yaw: 0, roll: 0 });
 import {
 	STATION_GEOMETRY,
 	type StationType,
@@ -174,6 +189,8 @@ export function flyTheComputer(opts: FlightOptions): FlightRun {
 	const ship = { pos: add(scale(axis, 20), scale(basis.up, 12)), vel: v3() };
 	let nose = scale(axis, -1);
 	let up = basis.up;
+	let rates: Angular = { ...NO_TURN };
+	let lastWant: { nose: Vec3; up: Vec3 } | null = null;
 
 	let gameTime = 0;
 	let docked = false;
@@ -208,21 +225,24 @@ export function flyTheComputer(opts: FlightOptions): FlightRun {
 			refused = cmd.refused;
 			break;
 		}
-		// **The hull's rates, not the model's reference rates.** This is the line
-		// that makes the sweep mean anything: a freighter slews at about half the
-		// courier's peak and a miner at about a third, so the line-up turn and the
-		// roll tracking are genuinely harder for them.
-		nose = slewToward(nose, cmd.nose, perf.angularMax.yaw * dt);
-		up = slewToward(up, cmd.up, perf.angularMax.roll * dt);
-		// Through the module's own law, not a copy of it: `main.ts`'s
-		// `setAttitude` calls the same function, so this harness flies the
-		// autopilot the way the renderer does rather than the way a test author
-		// remembered it.
-		const attitude = orthonormalise(nose, up);
-		if (attitude) {
-			nose = attitude.nose;
-			up = attitude.up;
-		}
+		// **Through the hull's own vents** (#619): the computer asks for a stick
+		// and `stepAngular` turns the hull at what its attitude couples deliver,
+		// the way `main.ts`'s computer does. A freighter turns at about half the
+		// courier's authority and a miner at about a third, so the line-up turn
+		// and the roll tracking are genuinely harder for them.
+		const want = orthonormalise(cmd.nose, cmd.up) ?? { nose: cmd.nose, up };
+		const spin = lastWant ? attitudeSpin(lastWant, want, dt) : v3();
+		lastWant = want;
+		const attitude = stepAngular(
+			rates,
+			attitudeStick({ nose, up }, want, perf, dt, spin),
+			NO_TURN,
+			true,
+			dt,
+			perf,
+		);
+		rates = attitude.rates;
+		({ nose, up } = turnAttitude({ nose, up }, rates, dt));
 
 		const speedKms =
 			opts.holdRunIn && cmd.phase === "run-in" ? 0 : cmd.speedKms;
@@ -242,7 +262,13 @@ export function flyTheComputer(opts: FlightOptions): FlightRun {
 		}
 
 		const before: EntryPose = { rel: ship.pos, vRel: ship.vel, nose, up };
-		stepFlight(ship, { nose, throttle, assist: true }, dt, perf);
+		const flown = stepFlight(
+			ship,
+			{ nose, up, demand: speedDemand(throttle), assist: true, attitude },
+			dt,
+			perf,
+		);
+		rates = addRates(rates, flown.angularKick);
 		gameTime += dt;
 		steps++;
 

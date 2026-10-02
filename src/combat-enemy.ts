@@ -43,12 +43,15 @@ import { mix, seedFor } from "./rng";
 import {
 	ASSIST_CAP_KMS,
 	type Angular,
+	type AngularStep,
+	addRates,
 	flightPerformance,
 	type FlightPerformance,
 	type FrameMotion,
 	stepAngular,
 	stepFlight,
 	type Ship,
+	speedDemand,
 } from "./sim";
 import {
 	add,
@@ -370,7 +373,7 @@ function turnToward(
 	desired: Vec3,
 	dt: number,
 	perf: FlightPerformance,
-): { nose: Vec3; up: Vec3; rates: Angular } {
+): { nose: Vec3; up: Vec3; rates: Angular; attitude: AngularStep } {
 	const { nose, up } = state;
 	const right = cross(nose, up);
 	const off = Math.acos(clamp(dot(nose, desired), -1, 1));
@@ -395,7 +398,7 @@ function turnToward(
 				Math.sign(bank) *
 				stoppingStick(Math.abs(bank), perf.angularAccel, perf.angularMax.roll);
 	}
-	const rates = stepAngular(
+	const attitude = stepAngular(
 		state.rates,
 		{ pitch, yaw, roll },
 		NO_ROTATION,
@@ -403,9 +406,10 @@ function turnToward(
 		dt,
 		perf,
 	);
+	const { rates } = attitude;
 	const spin = bodySpin(right, up, nose, rates);
 	const rate = length(spin);
-	if (rate === 0 || dt <= 0) return { nose, up, rates };
+	if (rate === 0 || dt <= 0) return { nose, up, rates, attitude };
 	const axis = scale(spin, 1 / rate);
 	const nextNose = unit(rotateAbout(nose, axis, rate * dt), nose);
 	const spunUp = rotateAbout(up, axis, rate * dt);
@@ -413,7 +417,7 @@ function turnToward(
 		sub(spunUp, scale(nextNose, dot(spunUp, nextNose))),
 		perpBasis(nextNose)[1],
 	);
-	return { nose: nextNose, up: nextUp, rates };
+	return { nose: nextNose, up: nextUp, rates, attitude };
 }
 
 /**
@@ -732,7 +736,19 @@ export function stepEnemyShip(
 	const ship = { pos: { ...state.ship.pos }, vel: { ...state.ship.vel } };
 	// `step`, not `dt`: the clamp above is what stops a negative frame delta
 	// running the integrator backwards, and it has to reach the integrator too.
-	stepFlight(ship, { nose, throttle, assist: true, frame }, step, performance);
+	const flown = stepFlight(
+		ship,
+		{
+			nose,
+			up,
+			demand: speedDemand(throttle),
+			assist: true,
+			attitude: turned.attitude,
+			frame,
+		},
+		step,
+		performance,
+	);
 
 	// Firing follows pointing, in any phase but a rout: a snapshot as the nose
 	// sweeps across the player during a break is a shot a pilot would take.
@@ -749,7 +765,7 @@ export function stepEnemyShip(
 			ship,
 			nose,
 			up,
-			rates: turned.rates,
+			rates: addRates(turned.rates, flown.angularKick),
 			phase,
 			phaseSeconds,
 			maneuverSeconds,

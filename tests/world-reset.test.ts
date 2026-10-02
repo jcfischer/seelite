@@ -37,6 +37,7 @@ import {
 	flightPerformance,
 } from "../src/sim";
 import { PLAYER_BASELINE_HULL } from "../src/hull";
+import { speedControl } from "./helpers/speed-control";
 
 /** The baseline hull's handling — see `tests/sim.test.ts` for why these rows
  *  pass a hull's performance and why the courier's is the one they pass. */
@@ -154,7 +155,11 @@ describe("resetWorldToStart", () => {
 		const flown = flyForward(SEED, 900);
 		resetWorldToStart(flown);
 		const fresh = makeWorld(SEED);
-		const control = { throttle: 1, nose: { x: 1, y: 0, z: 0 }, assist: true };
+		const control = speedControl({
+			throttle: 1,
+			nose: { x: 1, y: 0, z: 0 },
+			assist: true,
+		});
 		for (let i = 0; i < 200; i++) {
 			stepWorld(flown, control, 0.05, BASELINE);
 			stepWorld(fresh, control, 0.05, BASELINE);

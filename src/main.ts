@@ -298,15 +298,17 @@ import {
 	restoreWorld,
 	canResetWorldToStart,
 	resetWorldToStart,
-	rotationShare,
 	stationOf,
 	stationPose,
-	type RotationLaw,
-	rotationLaw,
-	stepPlayerAngular,
+	type AngularStep,
+	NO_ATTITUDE,
+	addRates,
+	speedDemand,
+	stepAngular,
 	stepWorld,
 	thrustShares,
 } from "./sim";
+import { type Attitude, attitudeSpin, attitudeStick } from "./attitude-hold";
 import type { SurfaceClass } from "./planet-appearance";
 import {
 	type BodyVisual,
@@ -350,7 +352,6 @@ import {
 	planeCrossing,
 	releaseBerth,
 	requestClearance,
-	slewToward,
 	slotBasis,
 	tickDocking,
 	offAxisKm,
@@ -1101,18 +1102,6 @@ const ASKED_HULL = new URLSearchParams(window.location.search).get("hull");
  * `forceRaider`. With neither, the leg law runs as a player meets it.
  */
 const RAIDER_PARAM = new URLSearchParams(window.location.search).get("raider");
-
-/**
- * The rotation law the player flies with the assist off (#618), from
- * `?rotation=`. `newtonian` is the arm that flies `flight-model.md` §3.9;
- * anything else is `main`'s law. A typo is `main` silently, so the law that
- * was actually read is logged at boot and readable as
- * `__seelite.rotationLaw` — a flight report is checked against what was flown.
- */
-const ROTATION_LAW: RotationLaw = rotationLaw(
-	new URLSearchParams(window.location.search).get("rotation"),
-);
-console.info(`seelite: rotation law ${ROTATION_LAW}`);
 
 /**
  * The flight sound's arms (#544), from `?flightsound=`: comma-separated
@@ -2520,10 +2509,17 @@ class Game {
 	 *  across a view toggle, because a look you set up is a look you meant. */
 	chaseYaw = 0;
 	/** How fast the ship is turning, radians per second — rotation has momentum,
-	 *  and `sim.ts`'s `stepAngular` owns the dynamics. */
+	 *  and `sim.ts`'s `stepAngular` owns the dynamics. Saved state since #619:
+	 *  a save taken tumbling resumes tumbling (`flight-model.md` §3.9). */
 	rates: Angular = { pitch: 0, yaw: 0, roll: 0 };
-	/** The assist-off rotation law this page flies (#618), from `?rotation=`. */
-	readonly rotationLaw: RotationLaw = ROTATION_LAW;
+	/** This frame's attitude step, handed to the translation step so a lone
+	 *  or dead attitude vent pushes the hull as well as turning it, and spent
+	 *  there (`FlightControl.attitude`). */
+	private attitudeStep: AngularStep = NO_ATTITUDE;
+	/** The attitude the docking computer wanted last frame: its spin is what
+	 *  the computer asks for on top, so a spinning slot is followed rather
+	 *  than chased (`attitudeStick`). `null` whenever it is not flying. */
+	private lastComputerWant: Attitude | null = null;
 	/** Pointer movement accumulated since the last step, in pixels. Consumed
 	 *  each frame — a delta applied twice is a ship that turns at the frame
 	 *  rate rather than at the hand's speed. */
@@ -3859,6 +3855,14 @@ class Game {
 				} else {
 					this.regime = f.regime;
 					this.throttle = f.throttle;
+					// A save taken tumbling resumes tumbling (`flight-model.md`
+					// §3.9): angular momentum is state, as velocity is. A cruise
+					// leg is nose-locked and resumes at rest, rates and all.
+					this.rates = {
+						pitch: f.rates[0],
+						yaw: f.rates[1],
+						roll: f.rates[2],
+					};
 				}
 				this.restoredAttitude = true;
 			}
@@ -9899,8 +9903,10 @@ class Game {
 	private control(dt: number): FlightControl {
 		return {
 			nose: this.nose(),
-			throttle: this.throttle,
+			up: this.shipUp(),
+			demand: speedDemand(this.throttle),
 			assist: this.assist,
+			attitude: this.attitudeStep,
 			frame: this.assistFrameMotion(dt),
 		};
 	}
@@ -11139,10 +11145,31 @@ class Game {
 			});
 			return false;
 		}
-		const rate = this.flownPerformance.angularMax;
-		const nose = slewToward(this.nose(), command.nose, rate.yaw * dt);
-		const up = slewToward(this.shipUp(), command.up, rate.roll * dt);
-		this.setAttitude(nose, up);
+		// **Through the hull's vents** (#619, `flight-model.md` §3.6): the
+		// computer asks for a stick and the attitude couples turn the hull, on
+		// the assist's rate law whatever the player's toggle says — the
+		// computer is a controller, and its law is written for one. It used to
+		// place the attitude by slewing it, which turned a hull no vent turned.
+		const want = orthonormalise(command.nose, command.up) ?? {
+			nose: command.nose,
+			up: this.shipUp(),
+		};
+		const spin = this.lastComputerWant
+			? attitudeSpin(this.lastComputerWant, want, dt)
+			: v3();
+		this.lastComputerWant = want;
+		this.turnShip(
+			dt,
+			attitudeStick(
+				{ nose: this.nose(), up: this.shipUp() },
+				want,
+				this.flownPerformance,
+				dt,
+				spin,
+			),
+			{ pitch: 0, yaw: 0, roll: 0 },
+			true,
+		);
 		let speedKms = command.speedKms;
 		if (command.phase === "run-in") {
 			if (awaitingBerth) speedKms = 0;
@@ -11164,11 +11191,51 @@ class Game {
 			}
 		}
 		this.throttle = Math.min(1, speedKms / ASSIST_CAP_KMS);
-		// The rates are zeroed rather than left running: the computer is placing
-		// the attitude directly, and a momentum term still turning underneath it
-		// would fight the slew every frame.
-		this.rates = { pitch: 0, yaw: 0, roll: 0 };
 		return true;
+	}
+
+	/**
+	 * One frame of rotation through the attitude vents (`flight-model.md`
+	 * §3.8): `stepAngular` composes the stick and the pointer into firings,
+	 * the rates take what the couples delivered, and the quaternion turns by
+	 * them. The step is kept for the translation step, which owes the hull the
+	 * push a lone or dead attitude vent gives (`FlightControl.attitude`).
+	 *
+	 * `assist` is the player's toggle for the player's stick, and `true` for
+	 * the docking computer, whose law is a rate controller's.
+	 */
+	private turnShip(
+		dt: number,
+		command: Angular,
+		impulse: Angular,
+		assist: boolean,
+	) {
+		const step = stepAngular(
+			this.rates,
+			command,
+			impulse,
+			assist,
+			dt,
+			this.flownPerformance,
+		);
+		this.attitudeStep = step;
+		this.rates = step.rates;
+		this.rotationShare = thrustShares(
+			step.firing,
+			this.flownPerformance,
+		).rotation;
+		// Rotations composed in the ship's own frame — multiply on the right —
+		// so pitch is about the wing axis wherever the nose happens to point,
+		// rather than about a world axis the player cannot see.
+		const turn = new THREE.Quaternion().setFromEuler(
+			new THREE.Euler(
+				this.rates.pitch * dt,
+				this.rates.yaw * dt,
+				this.rates.roll * dt,
+				"XYZ",
+			),
+		);
+		this.orientation.multiply(turn).normalize();
 	}
 
 	/**
@@ -11398,6 +11465,8 @@ class Game {
 		// field existed, which is the scan doing its job.
 		this.pendingJump = null;
 		this.rates = { pitch: 0, yaw: 0, roll: 0 };
+		this.attitudeStep = NO_ATTITUDE;
+		this.lastComputerWant = null;
 		this.mouseDx = 0;
 		this.mouseDy = 0;
 		this.chaseYaw = 0;
@@ -13568,6 +13637,7 @@ class Game {
 			this.advanceNormalFlight(dt, approaches);
 			return;
 		}
+		this.lastComputerWant = null;
 
 		// The mouse, when it has been captured, and the keyboard always — the
 		// principal's choice of "both, mouse on by default". A pointer delta is a
@@ -13602,37 +13672,10 @@ class Game {
 
 		// Rotation carries momentum (`stepAngular`): the ship eases into a turn
 		// and, with the assist on, eases out of it. Setting the rate straight from
-		// the key state is what made this feel like 1984. Under `?rotation=newtonian`
-		// with the assist off, it is §3.9's uncapped law instead (#618).
-		const ratesBefore = this.rates;
-		this.rates = stepPlayerAngular(
-			this.rotationLaw,
-			this.rates,
-			{ pitch, yaw, roll },
-			impulse,
-			this.assist,
-			dt,
-			this.flownPerformance,
-		);
-		this.rotationShare = rotationShare(
-			ratesBefore,
-			this.rates,
-			dt,
-			this.flownPerformance,
-		);
-
-		// Rotations composed in the ship's own frame — multiply on the right —
-		// so pitch is about the wing axis wherever the nose happens to point,
-		// rather than about a world axis the player cannot see.
-		const turn = new THREE.Quaternion().setFromEuler(
-			new THREE.Euler(
-				this.rates.pitch * dt,
-				this.rates.yaw * dt,
-				this.rates.roll * dt,
-				"XYZ",
-			),
-		);
-		this.orientation.multiply(turn).normalize();
+		// the key state is what made this feel like 1984. With the assist off it
+		// is §3.9's uncapped law, flown under `?rotation=newtonian` (#618) and
+		// the only law since the vents (#619).
+		this.turnShip(dt, { pitch, yaw, roll }, impulse, this.assist);
 
 		// Held rather than stepped, for the same reason throttle is: an angle the
 		// player is choosing by eye wants a rate, not a ladder of fixed stops.
@@ -13708,16 +13751,17 @@ class Game {
 		// are on orbits driven by the same clock. Stepping the ship alone would
 		// freeze the system around it, which is the state the scaffold was in.
 		const control = this.control(dt);
-		// Before the step it predicts, off the control it will be given (#544).
-		const shares = thrustShares(
-			this.world.ship,
-			control,
-			dt,
-			this.flownPerformance,
-		);
+		const flown = stepWorld(this.world, control, dt, this.flownPerformance);
+		// The attitude step is spent: its push is in this step's velocity, and a
+		// frame that flies without turning (cruise's exit, a placed attitude)
+		// must not hand it to the next one.
+		this.attitudeStep = NO_ATTITUDE;
+		this.rates = addRates(this.rates, flown.angularKick);
+		// Off the vents that fired (#544, `flight-model.md` §4): the sound
+		// hears what the firing table says, not a figure beside it.
+		const shares = thrustShares(flown.firing, this.flownPerformance);
 		this.driveShare = shares.main;
 		this.lateralShare = shares.lateral;
-		stepWorld(this.world, control, dt, this.flownPerformance);
 		// After the world moved, because the hold is measured against where the
 		// target *is* this frame: a carrier that drove out of range mid-charge
 		// breaks it, and reading the old position would hold it forever.
@@ -15391,6 +15435,7 @@ class Game {
 				],
 				regime: this.regime,
 				throttle: this.throttle,
+				rates: [this.rates.pitch, this.rates.yaw, this.rates.roll],
 			},
 		};
 	}

@@ -222,10 +222,12 @@ merge.
   what the two capitals carry.
 - **`src/hull.ts` is the third leaf, and it is where a hull's numbers live.**
   Role, selected variant, measured envelope, mass, thrust, hold, hardpoints,
-  integrity and fuel — one row per hull, imports nothing. `sim.ts` derives every
-  handling figure from mass and thrust (`flightPerformance`), so **thrust is the
-  one handling dial a hull has** — back-solved from the acceleration the role
-  should feel — and nothing else about the feel is separately tunable;
+  integrity, fuel and the vent table — one row per hull, imports nothing.
+  `sim.ts` derives every handling figure from the vents (`flightPerformance`),
+  and every row's vent shares are solved from #181's mass-and-thrust law by
+  `scripts/measure-vent-shares.ts` (#619), so **thrust is the one handling dial
+  a hull has** — back-solved from the acceleration the role should feel — and
+  nothing else about the feel is separately tunable;
   `ship-mesh.ts` keeps `HULL_REACH_KM`, which
   is display reach and is never what a berth's fit predicate reads. The envelope
   is the **selected variant's built box**, and `tests/hull.test.ts` rebuilds the

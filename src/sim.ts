@@ -52,7 +52,15 @@ import {
 	generateGalaxy,
 	startSystem,
 } from "./galaxy";
-import { HULL_SPECS, type HullId, PLAYER_BASELINE_HULL } from "./hull";
+import {
+	HULL_SPECS,
+	type HullEnvelope,
+	type HullId,
+	PLAYER_BASELINE_HULL,
+	type VentFamily,
+	type VentRow,
+	type VentSlot,
+} from "./hull";
 import { mix, seededRand } from "./rng";
 import { STATION_GEOMETRY, slotPhaseRad } from "./station";
 import {
@@ -796,6 +804,49 @@ export const REFERENCE_ANGULAR_ACCEL = 3.0;
 export const REFERENCE_ANGULAR_DAMP_TAU_S = 0.28;
 
 /**
+ * A hull's moments of inertia about its own pitch, yaw and roll axes, t·km²:
+ * a solid box of its mass filling its envelope, `m(a² + b²)/12` over the two
+ * dimensions across each axis.
+ *
+ * A model, and stated as one: no hull is a solid box. It decides nothing a
+ * pilot feels, because every hull's attitude shares are solved against it to
+ * reproduce #181's handling (`scripts/measure-vent-shares.ts`); what it does
+ * decide is the turn a lone or dead vent gives, which is §7's to price.
+ */
+export function boxInertia(massT: number, env: HullEnvelope): Angular {
+	const { lengthKm: l, beamKm: b, heightKm: h } = env;
+	return {
+		pitch: (massT * (l * l + h * h)) / 12,
+		yaw: (massT * (l * l + b * b)) / 12,
+		roll: (massT * (b * b + h * h)) / 12,
+	};
+}
+
+/**
+ * A vent's health, 0…1, by slot (`flight-model.md` §3.7). A slot that is not
+ * named is whole. A vent's force and torque scale by it; what sets it is map
+ * #460's (§7), so nothing in the game writes one yet.
+ */
+export type VentHealth = Partial<Record<VentSlot, number>>;
+
+/** How hard each vent fires in one step, 0…1, by slot. A slot that is not
+ *  named does not fire. This is the **firing table** §3.8.1 draws from. */
+export type VentLevels = Partial<Record<VentSlot, number>>;
+
+/** The six axes a demand is stated on, in the hull frame: `surge` forward,
+ *  `sway` to starboard, `heave` dorsal; `pitch` nose-up, `yaw` nose to port,
+ *  `roll` about the nose — the sense of `main.ts`'s quaternion step. */
+export type LinearAxis = "surge" | "sway" | "heave";
+export type AngularAxis = keyof Angular;
+
+/** Which slots fire for each sign of each axis, read off the hull's own table
+ *  so a slot a hull leaves empty is simply absent (§3.4.1). */
+type AxisSlots = Record<
+	LinearAxis | AngularAxis,
+	{ plus: VentSlot[]; minus: VentSlot[] }
+>;
+
+/**
  * Everything a hull's handling is, as one struct — #26's D5 made concrete.
  *
  * `stepFlight` and `stepAngular` take one of these rather than reading module
@@ -803,6 +854,13 @@ export const REFERENCE_ANGULAR_DAMP_TAU_S = 0.28;
  * an interceptor. **It is a parameter and not a default**: a default here would
  * let a caller that forgot to name a hull silently fly the courier, and the two
  * are indistinguishable in a diff.
+ *
+ * **Every figure in it comes from the vents** (`flight-model.md` §4): the
+ * authorities are what the hull's own vent table delivers on each axis, and
+ * the figures #5 tuned — the peak rates, the two e-folding times — are scaled
+ * from them against the baseline hull's. The table is solved so that each
+ * hull's figures are the ones #181's law gave it (`scripts/measure-vent-
+ * shares.ts`, the principal's ruling on #619 that no hull is retuned).
  *
  * The assist **cap** is deliberately not in it. 2 km/s is the game's one combat
  * speed — the map's "nothing is crossable at combat speeds" is stated against
@@ -813,74 +871,240 @@ export const REFERENCE_ANGULAR_DAMP_TAU_S = 0.28;
  * mass.
  */
 export interface FlightPerformance {
-	/** Linear acceleration along the nose, km/s² — `thrustMN / massT`. */
+	/** The main drive's acceleration along the nose, km/s². */
 	thrustKms2: number;
-	/** The assist's drift-removal e-folding time, seconds. */
+	/** The retro pair's, km/s². */
+	retroKms2: number;
+	/** One translation pair's, km/s² — the assist's drift authority. */
+	strafeKms2: number;
+	/** The assist's drift-removal e-folding time, seconds — a demand-side dial
+	 *  (§3.8): it asks, and `strafeKms2` bounds what it gets. */
 	assistLateralTauS: number;
-	/** Peak rate on each axis, radians per second. */
+	/** Peak rate on each axis, radians per second: the assist's rate demand
+	 *  limit. With the assist off there is none (§3.9). */
 	angularMax: Angular;
-	/** Angular acceleration, radians per second². */
+	/** What each attitude couple delivers, radians per second². */
+	angularAuthority: Angular;
+	/** The smallest of the three: the one figure a planner reads. Solved equal
+	 *  on every hull today, so it is each axis's. */
 	angularAccel: number;
-	/** How fast the assist stops a turn, seconds. */
+	/** How fast the assist stops a turn, seconds — demand-side, like
+	 *  `assistLateralTauS`. */
 	angularDampTauS: number;
+	massT: number;
+	thrustMN: number;
+	inertia: Angular;
+	vents: readonly VentRow[];
+	health: VentHealth;
+	axisSlots: AxisSlots;
+}
+
+/** The hull-frame force (MN) and torque (MN·km) a firing puts on the hull. */
+export interface VentLoads {
+	force: Vec3;
+	torque: Vec3;
 }
 
 /**
- * A hull's handling, derived from its mass, its thrust and its length.
- *
- * Three derivations and no free parameters, which is what keeps D5 honest — the
- * table declares two numbers per hull and everything a pilot feels comes out of
- * them:
- *
- * - **Linear acceleration** is `thrustMN / massT`. Meganewtons over tonnes is
- *   km/s² exactly, which is why those units and not others.
- * - **Angular authority** scales as `acceleration / length`. Thrusters sit at
- *   the extremities, so the couple they make is `thrust × length`, while the
- *   pitch and yaw inertia goes as `mass × length²`; the length cancels once and
- *   what is left is `(thrust / mass) / length`. A longer, heavier hull is
- *   therefore slower to turn *and* slower to start turning, which is the whole
- *   of what "sluggish" means.
- *
- *   **Roll takes the same factor, and that is a simplification stated rather
- *   than derived.** Roll inertia goes as the beam and not the length, so the
- *   physics above does not reach it; what the roster gets is one angular
- *   authority per hull, scaled by the pitch and yaw figure. A separate roll term
- *   would be a fourth number for a difference no check in the repo can currently
- *   see, and the place it would first matter is a hull whose beam and length
- *   disagree far more than any of these eleven do.
- * - **Both e-folding times** scale inversely with the authority they express:
- *   the lateral one with linear acceleration, the angular one with angular.
- *
- * The courier reproduces #5's tuned figures exactly rather than nearly — its
- * ratio is the reference divided by itself — so the baseline hull is not
- * retuned by this node at all.
+ * Force and torque summed over every vent that fires (§3.1): each vent pushes
+ * along its `dir` at `level × health × share × thrustMN`, and turns the hull by
+ * its position crossed with that push. A pair fired the same way cancels its
+ * torque and fired opposite cancels its force (§3.2); one vent alone, or one of
+ * a pair dead, does both.
  */
-export function flightPerformance(id: HullId): FlightPerformance {
+export function ventLoads(
+	levels: VentLevels,
+	vents: readonly VentRow[],
+	thrustMN: number,
+	health: VentHealth,
+): VentLoads {
+	let force = v3();
+	let torque = v3();
+	for (const vent of vents) {
+		const level = clamp(levels[vent.slot] ?? 0, 0, 1);
+		if (level === 0) continue;
+		const thrust =
+			level * clamp(health[vent.slot] ?? 1, 0, 1) * vent.share * thrustMN;
+		const push = scale(v3(vent.dir[0], vent.dir[1], vent.dir[2]), thrust);
+		force = add(force, push);
+		torque = add(
+			torque,
+			cross(v3(vent.posKm[0], vent.posKm[1], vent.posKm[2]), push),
+		);
+	}
+	return { force, torque };
+}
+
+/** A hull-frame vector's component on one axis. Surge is forward, which is
+ *  `-z` in the hull frame. */
+const linearOf = (v: Vec3, axis: LinearAxis): number =>
+	axis === "surge" ? -v.z : axis === "sway" ? v.x : v.y;
+const angularOf = (v: Vec3, axis: AngularAxis): number =>
+	axis === "pitch" ? v.x : axis === "yaw" ? v.y : v.z;
+
+const LINEAR_AXES: readonly LinearAxis[] = ["surge", "sway", "heave"];
+const ANGULAR_AXES: readonly AngularAxis[] = ["pitch", "yaw", "roll"];
+
+/** Sorts a table's slots onto the axes they drive, by the sign of what each
+ *  one does alone: translation vents by their push, attitude vents by their
+ *  couple. */
+function axisSlotsOf(vents: readonly VentRow[]): AxisSlots {
+	const slots = Object.fromEntries(
+		[...LINEAR_AXES, ...ANGULAR_AXES].map((axis) => [
+			axis,
+			{ plus: [], minus: [] },
+		]),
+	) as unknown as AxisSlots;
+	for (const vent of vents) {
+		const alone = ventLoads({ [vent.slot]: 1 }, [vent], 1, {});
+		const translation =
+			vent.family === "main" ||
+			vent.family === "retro" ||
+			vent.family === "strafe";
+		const axis = translation
+			? LINEAR_AXES.find((a) => linearOf(alone.force, a) !== 0)
+			: (vent.family as AngularAxis);
+		if (!axis) continue;
+		const sense = translation
+			? linearOf(alone.force, axis as LinearAxis)
+			: angularOf(alone.torque, axis as AngularAxis);
+		if (sense > 0) slots[axis].plus.push(vent.slot);
+		else if (sense < 0) slots[axis].minus.push(vent.slot);
+	}
+	return slots;
+}
+
+/** Fire one axis's slots at `fraction` of its authority, −1…1: the plus set
+ *  for a positive demand, the minus set for a negative one. Adds into
+ *  `levels`, so demands on several axes compose and a vent two axes share
+ *  fires at their sum, capped at full. */
+function fireAxis(
+	levels: VentLevels,
+	slots: { plus: VentSlot[]; minus: VentSlot[] },
+	fraction: number,
+): void {
+	if (fraction === 0) return;
+	for (const slot of fraction > 0 ? slots.plus : slots.minus)
+		levels[slot] = Math.min(1, (levels[slot] ?? 0) + Math.abs(fraction));
+}
+
+/**
+ * A hull's handling, derived from its vent table, mass and envelope.
+ *
+ * - **Linear authority** is what the main drive, the retro pair and one
+ *   translation pair deliver at full, over the mass. Meganewtons over tonnes is
+ *   km/s² exactly, which is why those units and not others.
+ * - **Angular authority** is each attitude couple over the matching moment of
+ *   `boxInertia` (§4: from the vents' arms and shares, not from `acceleration /
+ *   length`).
+ * - **#5's figures scale from those against the baseline hull's**: the peak
+ *   rates and the turn-stopping time with the angular authority, the drift time
+ *   with the main drive's. That keeps the courier on #5's numbers exactly.
+ *
+ * Authority is read off a **whole** hull: `health` scales what the vents
+ * deliver in `ventLoads`, never what the assist believes it has, so a dead vent
+ * is a demand the hull cannot meet rather than a quieter assist (§3.7).
+ */
+export function flightPerformance(
+	id: HullId,
+	health: VentHealth = {},
+): FlightPerformance {
+	const own = ventAuthority(id);
+	const baseline = ventAuthority(PLAYER_BASELINE_HULL);
+	const agility = (axis: AngularAxis) =>
+		own.angular[axis] / baseline.angular[axis];
 	const spec = HULL_SPECS[id];
-	const reference = HULL_SPECS[PLAYER_BASELINE_HULL];
-	const thrustKms2 = spec.thrustMN / spec.massT;
-	const referenceThrustKms2 = reference.thrustMN / reference.massT;
-	// The turn-rate ratio, normalised so the baseline hull is exactly 1.
-	const agility =
-		thrustKms2 /
-		spec.env.lengthKm /
-		(referenceThrustKms2 / reference.env.lengthKm);
 	return {
-		thrustKms2,
+		thrustKms2: own.linear.main,
+		retroKms2: own.linear.retro,
+		strafeKms2: own.linear.strafe,
 		assistLateralTauS:
-			(REFERENCE_ASSIST_LATERAL_TAU_S * referenceThrustKms2) / thrustKms2,
+			(REFERENCE_ASSIST_LATERAL_TAU_S * baseline.linear.main) / own.linear.main,
 		angularMax: {
-			pitch: REFERENCE_ANGULAR_MAX.pitch * agility,
-			yaw: REFERENCE_ANGULAR_MAX.yaw * agility,
-			roll: REFERENCE_ANGULAR_MAX.roll * agility,
+			pitch: REFERENCE_ANGULAR_MAX.pitch * agility("pitch"),
+			yaw: REFERENCE_ANGULAR_MAX.yaw * agility("yaw"),
+			roll: REFERENCE_ANGULAR_MAX.roll * agility("roll"),
 		},
-		angularAccel: REFERENCE_ANGULAR_ACCEL * agility,
-		angularDampTauS: REFERENCE_ANGULAR_DAMP_TAU_S / agility,
+		angularAuthority: own.angular,
+		angularAccel: Math.min(
+			own.angular.pitch,
+			own.angular.yaw,
+			own.angular.roll,
+		),
+		angularDampTauS: REFERENCE_ANGULAR_DAMP_TAU_S / agility("yaw"),
+		massT: spec.massT,
+		thrustMN: spec.thrustMN,
+		inertia: own.inertia,
+		vents: spec.vents,
+		health,
+		axisSlots: own.axisSlots,
 	};
 }
 
+/** What a whole hull's vents deliver on each axis at full. */
+function ventAuthority(id: HullId) {
+	const spec = HULL_SPECS[id];
+	const inertia = boxInertia(spec.massT, spec.env);
+	const axisSlots = axisSlotsOf(spec.vents);
+	const at = (slots: VentSlot[]) =>
+		ventLoads(
+			Object.fromEntries(slots.map((slot) => [slot, 1])),
+			spec.vents,
+			spec.thrustMN,
+			{},
+		);
+	const angular = (axis: AngularAxis) =>
+		angularOf(at(axisSlots[axis].plus).torque, axis) / inertia[axis];
+	return {
+		inertia,
+		axisSlots,
+		linear: {
+			main: linearOf(at(axisSlots.surge.plus).force, "surge") / spec.massT,
+			retro: -linearOf(at(axisSlots.surge.minus).force, "surge") / spec.massT,
+			strafe: linearOf(at(axisSlots.sway.plus).force, "sway") / spec.massT,
+		},
+		angular: {
+			pitch: angular("pitch"),
+			yaw: angular("yaw"),
+			roll: angular("roll"),
+		},
+	};
+}
+
+/** No axis saturated. */
+const CLEAR_ANGULAR: Record<AngularAxis, boolean> = {
+	pitch: false,
+	yaw: false,
+	roll: false,
+};
+
 /**
- * One frame of rotation: the rates the renderer then applies to the quaternion.
+ * One step of the attitude vents: the rates the renderer then applies to the
+ * quaternion, and the firing that produced them.
+ */
+export interface AngularStep {
+	rates: Angular;
+	/** The attitude vents this step fired, and any vent fired directly. */
+	firing: VentLevels;
+	/** Each axis the assist could not meet this step (§3.8). */
+	saturated: Record<AngularAxis, boolean>;
+	/** The hull-frame acceleration, km/s², the same firing put on the hull. A
+	 *  couple from whole vents has none; a lone or a dead vent does (§3.2), and
+	 *  `stepFlight` adds it to the velocity (`FlightControl.attitude`). */
+	linearKms2: Vec3;
+}
+
+/** The angular step of a hull that fired nothing: for a caller that turns no
+ *  vent this step (a placed attitude, a test of translation alone). */
+export const NO_ATTITUDE: AngularStep = Object.freeze({
+	rates: { pitch: 0, yaw: 0, roll: 0 },
+	firing: {},
+	saturated: CLEAR_ANGULAR,
+	linearKms2: v3(),
+});
+
+/**
+ * One frame of rotation, composed into attitude-vent firings (§3.6, §3.8).
  *
  * Pure, and here rather than in the renderer, for the same reason the flight
  * model is: it is dynamics, it decides how the ship *feels*, and something that
@@ -888,12 +1112,25 @@ export function flightPerformance(id: HullId): FlightPerformance {
  * itself stays in the renderer — a quaternion is a thing Three.js already has a
  * good type for, and this module holds no quaternion of its own.
  *
- * `command` is the stick, −1…1 per axis. `impulse` is the mouse: a relative
- * pointer delta is not a stick position, it is a nudge, so it adds straight to
- * the rate and is then subject to the same damping.
+ * `command` is the stick, −1…1 per axis. `impulse` is the pointer's change of
+ * rate, radians per second. Both are **demands**: what reaches the rate is
+ * what the attitude couples deliver, at most `angularAuthority × dt` a step,
+ * so a pointer flick is a turn the vents paid for rather than a spin from
+ * nowhere.
  *
- * `perf` is the hull's, and it is required rather than defaulted for the reason
- * `FlightPerformance` states.
+ * - **Assist on** — the assist is a rate controller. Inside the envelope it
+ *   asks for #5's law: toward `command × angularMax` at the axis's authority,
+ *   and with the stick released, an ease-out at `angularDampTauS`. Above
+ *   `angularMax` it brings the rate back at the axis's authority and the stick
+ *   and pointer wait (§3.9). Whatever it asks beyond what the couple can give
+ *   in the step is cut there and that axis is `saturated`.
+ * - **Assist off** — a held axis is a torque, `command` of the axis's
+ *   authority; the pointer adds to it within the same bound. No rate cap and no
+ *   damping: a spin continues until a counter-couple stops it (§3.9).
+ *
+ * `direct` fires single vents by slot (§3.5), on top of everything the axes
+ * ask for. `perf` is the hull's, and it is required rather than defaulted for
+ * the reason `FlightPerformance` states.
  */
 export function stepAngular(
 	rates: Angular,
@@ -902,125 +1139,96 @@ export function stepAngular(
 	assist: boolean,
 	dt: number,
 	perf: FlightPerformance,
-): Angular {
-	if (dt <= 0) return rates;
+	direct: VentLevels = {},
+): AngularStep {
+	if (dt <= 0) return { ...NO_ATTITUDE, rates };
 	const decay = Math.exp(-dt / perf.angularDampTauS);
-	const axis = (rate: number, want: number, kick: number, max: number) => {
-		// Above the envelope with the assist on, the rate comes back at
-		// `angularAccel` until it is inside, and stick and pointer wait. The
-		// principal ruled this after flying the assist-off Newtonian arm (#618):
-		// the assist returns a spin by the normal physics, not by the clamp below
-		// cutting it in one frame. It applies to any rate above the envelope,
-		// whatever left it there. Inside the envelope this branch is never taken.
-		if (assist && Math.abs(rate) > max)
-			return (
-				Math.sign(rate) * Math.max(max, Math.abs(rate) - perf.angularAccel * dt)
-			);
-		let next = rate + kick;
-		if (want !== 0) {
-			// Toward the commanded rate at a bounded acceleration — the ease-in.
-			const target = clamp(want, -1, 1) * max;
-			next += clamp(
-				target - next,
-				-perf.angularAccel * dt,
-				perf.angularAccel * dt,
-			);
-		} else if (assist) {
-			// The ease-*out*, which is the half that was missing.
-			next *= decay;
+	const firing: VentLevels = { ...direct };
+	const saturated = { ...CLEAR_ANGULAR };
+	for (const axis of ANGULAR_AXES) {
+		const rate = rates[axis];
+		const want = clamp(command[axis], -1, 1);
+		const kick = impulse[axis];
+		const max = perf.angularMax[axis];
+		const authority = perf.angularAuthority[axis] * dt;
+		if (!(authority > 0)) continue;
+		let change: number;
+		if (!assist) change = want * authority + kick;
+		else if (Math.abs(rate) > max)
+			// Above the envelope the rate comes back at the couple's authority
+			// until it is inside, and stick and pointer wait — the principal's
+			// ruling after flying #618: the assist returns a spin by the normal
+			// physics, not by a clamp cutting it in one frame.
+			change = -Math.sign(rate) * (Math.abs(rate) - max);
+		else {
+			// #5's law, as what the assist asks for.
+			let next = rate + kick;
+			if (want !== 0) next += clamp(want * max - next, -authority, authority);
+			else next *= decay;
+			change = clamp(next, -max, max) - rate;
 		}
-		return clamp(next, -max, max);
-	};
+		const fraction = change / authority;
+		if (assist && Math.abs(fraction) > 1 + 1e-9) saturated[axis] = true;
+		fireAxis(firing, perf.axisSlots[axis], clamp(fraction, -1, 1));
+	}
+	const loads = ventLoads(firing, perf.vents, perf.thrustMN, perf.health);
 	return {
-		pitch: axis(
-			rates.pitch,
-			command.pitch,
-			impulse.pitch,
-			perf.angularMax.pitch,
-		),
-		yaw: axis(rates.yaw, command.yaw, impulse.yaw, perf.angularMax.yaw),
-		roll: axis(rates.roll, command.roll, impulse.roll, perf.angularMax.roll),
+		rates: {
+			pitch: rates.pitch + (loads.torque.x / perf.inertia.pitch) * dt,
+			yaw: rates.yaw + (loads.torque.y / perf.inertia.yaw) * dt,
+			roll: rates.roll + (loads.torque.z / perf.inertia.roll) * dt,
+		},
+		firing,
+		saturated,
+		linearKms2: scale(loads.force, 1 / perf.massT),
 	};
 }
 
 /**
- * Which rotation law the player flies with the assist off (#618).
+ * What the pilot — or a computer, or a raider — asks of the translation
+ * vents, per axis (§3.6). The two regimes read it differently, by the
+ * principal's ruling:
  *
- * `rate` is `stepAngular`, which is `main`. `newtonian` is the arm that flies
- * `flight-model.md` §3.9 before the vent substrate is built on it.
+ * - **Assist on**: `surge` is a speed demand, 0…1 of `ASSIST_CAP_KMS` along the
+ *   nose; `sway` and `heave` are a velocity demand across it, −1…1 of the cap.
+ * - **Assist off**: every axis is a force, −1…1 of that axis's authority; a
+ *   negative `surge` fires the retro pair.
  */
-export type RotationLaw = "rate" | "newtonian";
-
-/**
- * `?rotation=` read as a law. Only the exact token `newtonian` selects the arm;
- * anything else, a typo included, is `main`'s law — which is why `main.ts`
- * reports the law it read rather than trusting the URL.
- */
-export function rotationLaw(param: string | null): RotationLaw {
-	return param === "newtonian" ? "newtonian" : "rate";
+export interface LinearDemand {
+	surge: number;
+	sway: number;
+	heave: number;
 }
 
-/**
- * §3.9 on today's model: with the assist off, torque gives angular
- * acceleration and that gives rate. A held axis accelerates at
- * `perf.angularAccel` — today's figure, so the arm differs from `main` in this
- * one law — there is no `angularMax`, and a released axis keeps its rate.
- *
- * **The pointer is a demand here, not a rate.** `stepAngular` adds a mouse
- * delta straight to the rate and lets the clamp bound it; with no clamp that
- * would be a spin no thruster paid for. So stick and pointer are summed and the
- * sum is bounded by `angularAccel × dt` per axis per step.
- */
-export function stepAngularNewtonian(
-	rates: Angular,
-	command: Angular,
-	impulse: Angular,
-	dt: number,
-	perf: FlightPerformance,
-): Angular {
-	if (dt <= 0) return rates;
-	const authority = perf.angularAccel * dt;
-	const axis = (rate: number, want: number, kick: number) =>
-		rate + clamp(clamp(want, -1, 1) * authority + kick, -authority, authority);
-	return {
-		pitch: axis(rates.pitch, command.pitch, impulse.pitch),
-		yaw: axis(rates.yaw, command.yaw, impulse.yaw),
-		roll: axis(rates.roll, command.roll, impulse.roll),
-	};
-}
-
-/**
- * The player's rotation step. The Newtonian arm applies only with the assist
- * off; with it on, or under `rate`, this is `stepAngular` unchanged. NPCs and
- * the scoop pilot call `stepAngular` directly and never fly the arm.
- */
-export function stepPlayerAngular(
-	law: RotationLaw,
-	rates: Angular,
-	command: Angular,
-	impulse: Angular,
-	assist: boolean,
-	dt: number,
-	perf: FlightPerformance,
-): Angular {
-	return law === "newtonian" && !assist
-		? stepAngularNewtonian(rates, command, impulse, dt, perf)
-		: stepAngular(rates, command, impulse, assist, dt, perf);
-}
+/** A demand that asks for nothing but a speed: the shape every author but the
+ *  player's strafe keys emits today. */
+export const speedDemand = (surge: number): LinearDemand => ({
+	surge,
+	sway: 0,
+	heave: 0,
+});
 
 /**
  * What the player is asking the ship to do this frame.
  *
- * `nose` is a unit vector in sim space — orientation lives in the renderer (see
- * the module docstring), so the flight model is handed the direction rather
- * than the quaternion. `throttle` is 0…1 and means different things in the two
- * regimes, which is the point of the flag beside it.
+ * `nose` and `up` are unit vectors in sim space — orientation lives in the
+ * renderer (see the module docstring), so the flight model is handed the
+ * hull's axes rather than the quaternion. Starboard is `nose × up`.
  */
 export interface FlightControl {
 	nose: Vec3;
-	throttle: number;
+	up: Vec3;
+	demand: LinearDemand;
 	/** #5's flight assist, a player toggle defaulting on. */
 	assist: boolean;
+	/**
+	 * This frame's `stepAngular`, whose firing joins the table and whose force
+	 * joins the sum: a lone or dead attitude vent pushes the hull as well as
+	 * turning it. **Required**, so a caller cannot drop that push by
+	 * forgetting it; a caller that fired no attitude vent passes
+	 * `NO_ATTITUDE`.
+	 */
+	attitude: AngularStep;
 	/**
 	 * The frame the ship flies in, across this step. Omit for the star's frame,
 	 * which is what the sim's coordinates are stated in.
@@ -1078,20 +1286,46 @@ export const steadyFrame = (vel: Vec3): FrameMotion => ({
 export const frameMean = (frame: FrameMotion): Vec3 =>
 	scale(add(frame.start, frame.end), 0.5);
 
+/** Two changes of rate, summed: a step's rates and `FlightStep.angularKick`. */
+export const addRates = (a: Angular, b: Angular): Angular => ({
+	pitch: a.pitch + b.pitch,
+	yaw: a.yaw + b.yaw,
+	roll: a.roll + b.roll,
+});
+
+/** One step of the translation vents. */
+export interface FlightStep {
+	/** Every vent that fired this step: the translation vents and
+	 *  `control.attitude`'s. What the sound hears and the plumes draw. */
+	firing: VentLevels;
+	/** Each axis the assist could not meet this step (§3.8). */
+	saturated: Record<LinearAxis, boolean>;
+	/** The change of rate the translation firing's torque gave, rad/s: zero
+	 *  from whole pairs, a turn from a lone or dead one. The caller adds it to
+	 *  its rates. */
+	angularKick: Angular;
+}
+
 /**
- * #5's model, built: assisted Newtonian, with the assist a toggle.
+ * #5's model on vents: assisted Newtonian, with the assist a toggle and a
+ * controller (§3.8).
  *
- * **Assist on** — the throttle commands a *speed*, not a thrust: the ship
- * accelerates toward `throttle × ASSIST_CAP_KMS` along the nose at the hull's
- * own `thrustKms2` and holds it, and sideways velocity decays with its
+ * **Assist on** — the throttle commands a *speed*, not a thrust: the assist
+ * fires the main drive or the retro pair toward `surge × ASSIST_CAP_KMS` along
+ * the nose, and the translation pairs against sideways velocity with
  * `assistLateralTauS`. The cap is the *game's* and the rate is the *hull's*
  * (#181): every ship tops out at 2 km/s and they take different times to get
- * there, which is #26's D5 as the pilot feels it. That
- * is what makes it fly like a modern space sim rather than like 1984: releasing
- * the stick mid-turn settles onto the new heading instead of continuing to
- * drift sideways forever.
+ * there. That is what makes it fly like a modern space sim rather than like
+ * 1984: releasing the stick mid-turn settles onto the new heading instead of
+ * continuing to drift sideways forever.
  *
- * **Assist off** — thrust along the nose and nothing else. No cap, no damping,
+ * **The cap is a demand, not a clamp (§3.10).** The along-nose demand is held
+ * to `√(cap² − lateral²)`, so a hard turn at the cap stays at it while the
+ * drift is burned off; a ship above the cap gets a retro burn bounded by its
+ * vents, and is `saturated` until it is back. The old renormalisation deleted
+ * momentum no vent removed, and a force the display cannot show is gone.
+ *
+ * **Assist off** — every axis is a force (`LinearDemand`). No cap, no damping,
  * no help: velocity and nose disagree permanently, which is the whole reason
  * the map's HUD constraint requires a velocity-vector marker. It is Newtonian
  * **in the frame**: the ship shares the frame's acceleration and never its
@@ -1101,8 +1335,7 @@ export const frameMean = (frame: FrameMotion): Vec3 =>
  *
  * Semi-implicit Euler in both cases — the relative velocity first, then
  * position from the *new* one, carried on the frame's mean across the step
- * (`FrameMotion`). One line's difference from the explicit form, and
- * noticeably better behaved under the varying frame delta a browser gives you.
+ * (`FrameMotion`).
  *
  * `dt` is passed in rather than read from a clock, so a probe can step this
  * with a fixed delta and get the same answer twice.
@@ -1112,9 +1345,14 @@ export function stepFlight(
 	control: FlightControl,
 	dt: number,
 	perf: FlightPerformance,
-): void {
-	if (dt <= 0) return;
-	const throttle = Math.min(1, Math.max(0, control.throttle));
+): FlightStep {
+	const clear = { surge: false, sway: false, heave: false };
+	if (dt <= 0)
+		return {
+			firing: { ...control.attitude.firing },
+			saturated: clear,
+			angularKick: { pitch: 0, yaw: 0, roll: 0 },
+		};
 
 	// Everything happens in the frame — see `FrameMotion`. The velocity is
 	// taken relative to the frame where the step starts and handed back
@@ -1125,99 +1363,126 @@ export function stepFlight(
 	const end = control.frame?.end ?? start;
 	const carried = frameMean({ start, end });
 	const relative = sub(ship.vel, start);
-	const next = control.assist
-		? assistedRelative(relative, control.nose, throttle, dt, perf)
-		: add(relative, scale(control.nose, perf.thrustKms2 * throttle * dt));
+
+	const { nose, up } = control;
+	const right = cross(nose, up);
+	const fractions = control.assist
+		? assistDemand(relative, nose, right, up, control.demand, dt, perf)
+		: {
+				surge: clamp(control.demand.surge, -1, 1),
+				sway: clamp(control.demand.sway, -1, 1),
+				heave: clamp(control.demand.heave, -1, 1),
+			};
+
+	const translation: VentLevels = {};
+	const saturated = { ...clear };
+	for (const axis of LINEAR_AXES) {
+		const fraction = fractions[axis];
+		if (control.assist && Math.abs(fraction) > 1 + 1e-9) saturated[axis] = true;
+		fireAxis(translation, perf.axisSlots[axis], clamp(fraction, -1, 1));
+	}
+	const loads = ventLoads(translation, perf.vents, perf.thrustMN, perf.health);
+	// The hull-frame acceleration of everything that fired, into sim space:
+	// `x` starboard, `y` dorsal, `z` aft.
+	const a = add(
+		scale(loads.force, 1 / perf.massT),
+		control.attitude.linearKms2,
+	);
+	const accel = add(add(scale(right, a.x), scale(up, a.y)), scale(nose, -a.z));
+	const next = add(relative, scale(accel, dt));
 	ship.vel = add(end, next);
 	ship.pos = add(ship.pos, scale(add(carried, next), dt));
-}
 
-/** The assist's step on a velocity relative to the frame: #5's law. */
-function assistedRelative(
-	relative: Vec3,
-	nose: Vec3,
-	throttle: number,
-	dt: number,
-	perf: FlightPerformance,
-): Vec3 {
-	// Split it about the nose: the component along it is what the throttle
-	// governs, and everything perpendicular is drift the assist exists to remove.
-	const along = dot(relative, nose);
-	const lateral = sub(relative, scale(nose, along));
-	const damped = scale(lateral, Math.exp(-dt / perf.assistLateralTauS));
-
-	const want = throttle * ASSIST_CAP_KMS;
-	const authority = perf.thrustKms2 * dt;
-	const next = along + clamp(want - along, -authority, authority);
-
-	const assisted = add(scale(nose, next), damped);
-	// The cap is on the *total*, not on the commanded component: a ship that
-	// enters a turn at the cap would otherwise briefly exceed it, since the
-	// lateral remainder is still there while it decays.
-	const speed = length(assisted);
-	return speed > ASSIST_CAP_KMS
-		? scale(assisted, ASSIST_CAP_KMS / speed)
-		: assisted;
-}
-
-/**
- * How hard the drive and the thrusters work in the step `stepFlight` is about
- * to take, each as a share of full authority, `0`..`1` (#544).
- *
- * Read off the same law, not measured off the result, because the result mixes
- * in the frame: a ship holding its speed beside a station still has its
- * absolute velocity changed every step, and none of that is the drive.
- *
- * - **Assist on**: `main` is the along-nose change the assist commands against
- *   `thrustKms2 × dt`, so a ship at its setpoint is 0 and one accelerating or
- *   braking is 1. `lateral` is the drift the assist removes this step, against
- *   the same authority: the thrusters doing the assist's work.
- * - **Assist off**: `main` is the lever, which is exactly the thrust applied,
- *   and `lateral` is 0 — nothing removes drift.
- *
- * It is a prediction of the step, so call it with the control the step will
- * be given, before the step.
- */
-export function thrustShares(
-	ship: Pick<Ship, "vel">,
-	control: FlightControl,
-	dt: number,
-	perf: FlightPerformance,
-): { main: number; lateral: number } {
-	const throttle = clamp(control.throttle, 0, 1);
-	if (!control.assist) return { main: throttle, lateral: 0 };
-	const authority = perf.thrustKms2 * dt;
-	if (!(authority > 0)) return { main: 0, lateral: 0 };
-	const relative = sub(ship.vel, control.frame?.start ?? v3());
-	const along = dot(relative, control.nose);
-	const lateral = length(sub(relative, scale(control.nose, along)));
-	const removed = lateral * (1 - Math.exp(-dt / perf.assistLateralTauS));
+	const firing: VentLevels = { ...control.attitude.firing };
+	for (const [slot, level] of Object.entries(translation) as [
+		VentSlot,
+		number,
+	][])
+		firing[slot] = Math.min(1, (firing[slot] ?? 0) + level);
 	return {
-		main: clamp(Math.abs(throttle * ASSIST_CAP_KMS - along) / authority, 0, 1),
-		lateral: clamp(removed / authority, 0, 1),
+		firing,
+		saturated,
+		angularKick: {
+			pitch: (loads.torque.x / perf.inertia.pitch) * dt,
+			yaw: (loads.torque.y / perf.inertia.yaw) * dt,
+			roll: (loads.torque.z / perf.inertia.roll) * dt,
+		},
 	};
 }
 
 /**
- * How hard the rotation thrusters worked in one `stepAngular` step: the
- * largest change of rate on any axis, against `angularAccel × dt`, `0`..`1`
- * (#544). A steady turn is 0; easing in or out of one is the thrusters firing.
- * A mouse impulse can exceed the authority in one step, and is clamped.
+ * What the assist asks of each translation axis this step, as a fraction of
+ * that axis's authority — above 1 where it cannot be met.
+ *
+ * #5's law, read as demands. Across the nose, the velocity eases toward the
+ * strafe demand with `assistLateralTauS`; along it, toward `surge × cap`, held
+ * to `√(cap² − lateral²)` so the total stays inside the cap, at the main
+ * drive's authority speeding up and the retro pair's slowing down.
  */
-export function rotationShare(
-	before: Angular,
-	after: Angular,
+function assistDemand(
+	relative: Vec3,
+	nose: Vec3,
+	right: Vec3,
+	up: Vec3,
+	demand: LinearDemand,
 	dt: number,
 	perf: FlightPerformance,
-): number {
-	const authority = perf.angularAccel * dt;
-	if (!(authority > 0)) return 0;
-	const change = Math.max(
-		Math.abs(after.pitch - before.pitch),
-		Math.abs(after.yaw - before.yaw),
-		Math.abs(after.roll - before.roll),
+): Record<LinearAxis, number> {
+	const ease = 1 - Math.exp(-dt / perf.assistLateralTauS);
+	const strafe = perf.strafeKms2 * dt;
+	// A strafe demand is a velocity across the nose, inside the cap.
+	const across = Math.hypot(demand.sway, demand.heave);
+	const fit = across > 1 ? 1 / across : 1;
+	const sway = dot(relative, right);
+	const heave = dot(relative, up);
+	const swayChange =
+		(clamp(demand.sway * fit, -1, 1) * ASSIST_CAP_KMS - sway) * ease;
+	const heaveChange =
+		(clamp(demand.heave * fit, -1, 1) * ASSIST_CAP_KMS - heave) * ease;
+	const lateralAfter = Math.hypot(
+		sway + clamp(swayChange, -strafe, strafe),
+		heave + clamp(heaveChange, -strafe, strafe),
 	);
-	return clamp(change / authority, 0, 1);
+
+	const along = dot(relative, nose);
+	const room = Math.sqrt(Math.max(0, ASSIST_CAP_KMS ** 2 - lateralAfter ** 2));
+	const want = Math.min(clamp(demand.surge, 0, 1) * ASSIST_CAP_KMS, room);
+	const alongChange = want - along;
+	const surgeAuthority =
+		(alongChange >= 0 ? perf.thrustKms2 : perf.retroKms2) * dt;
+	return {
+		surge: alongChange / surgeAuthority,
+		sway: swayChange / strafe,
+		heave: heaveChange / strafe,
+	};
+}
+
+/**
+ * How hard the drive and the thrusters work in one step, each as a share of
+ * full, `0`..`1` (#544) — read off the step's firing table (§4), so the flight
+ * sound hears the vents that fired.
+ *
+ * - `main` is the main drive or the retro pair, whichever fired harder.
+ * - `lateral` is the hardest-firing translation vent.
+ * - `rotation` is the hardest-firing attitude vent.
+ */
+export function thrustShares(
+	firing: VentLevels,
+	perf: FlightPerformance,
+): { main: number; lateral: number; rotation: number } {
+	const hardest = (families: readonly VentFamily[]) =>
+		perf.vents.reduce(
+			(most, vent) =>
+				families.includes(vent.family)
+					? Math.max(most, firing[vent.slot] ?? 0)
+					: most,
+			0,
+		);
+	return {
+		main: hardest(["main", "retro"]),
+		lateral: hardest(["strafe"]),
+		rotation: hardest(["pitch", "yaw", "roll"]),
+	};
 }
 
 const clamp = (v: number, lo: number, hi: number): number =>
@@ -1239,7 +1504,7 @@ export function stepWorld(
 	control: FlightControl,
 	dt: number,
 	perf: FlightPerformance,
-): void {
+): FlightStep {
 	const from = { ...world.ship.pos };
 	const planetStarts = new Map(
 		world.system.bodies
@@ -1247,8 +1512,8 @@ export function stepWorld(
 			.map((body) => [body.id, { ...body.pos }]),
 	);
 	advanceWorldClock(world, dt);
-	stepFlight(world.ship, control, dt, perf);
-	if (dt <= 0) return;
+	const step = stepFlight(world.ship, control, dt, perf);
+	if (dt <= 0) return step;
 	let earliest: { time: number; body: Body; start: Vec3 } | null = null;
 	for (const body of world.system.bodies) {
 		if (body.kind !== "planet") continue;
@@ -1265,12 +1530,13 @@ export function stepWorld(
 		if (time === null || (earliest && time > earliest.time)) continue;
 		earliest = { time, body, start };
 	}
-	if (!earliest) return;
+	if (!earliest) return step;
 	const carryVelocity = scale(sub(earliest.body.pos, earliest.start), 1 / dt);
 	const shipVelocity = scale(sub(world.ship.pos, from), 1 / dt);
 	const boundaryPos = add(from, scale(shipVelocity, earliest.time));
 	world.ship.pos = add(boundaryPos, scale(carryVelocity, dt - earliest.time));
 	world.ship.vel = bodyVelocity(world.system, earliest.body.id, world.gameTime);
+	return step;
 }
 
 /**

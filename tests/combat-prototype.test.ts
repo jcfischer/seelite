@@ -366,6 +366,7 @@ function flyDuel({
 		up: Vec3;
 		aspect: number;
 		turnRate: number;
+		rates: { pitch: number; yaw: number; roll: number };
 		firing: boolean;
 	}[] = [];
 	for (let elapsed = 0; elapsed < seconds; elapsed += dt) {
@@ -416,6 +417,7 @@ function flyDuel({
 			aspect: dot(enemy.nose, bearing),
 			turnRate:
 				Math.acos(Math.min(1, Math.max(-1, dot(beforeNose, enemy.nose)))) / dt,
+			rates: enemy.rates,
 			firing: step.enemyFiring,
 		});
 	}
@@ -576,11 +578,23 @@ test("the nose turns no faster than the hull allows and the ceiling actually bin
 	// through `stepAngular` as the player's ship does. Its own slew had been
 	// 1.2 rad/s, above what the raider hull allows. How the turn builds is
 	// `tests/raider-flight-rules.test.ts`'s question.
-	const ceiling = flightPerformance(STRIKER_HULL_ID).angularMax.yaw;
-	expect(fastest).toBeLessThanOrEqual(ceiling + 1e-6);
+	//
+	// **The cap is per axis, so the nose's bound is their hypotenuse** (#619).
+	// The nose swings on pitch and yaw together, each held to its own peak; a
+	// turn on the diagonal with both near it is faster than either. Measured
+	// on this fight: 1.133 rad/s against a 1.096 yaw peak once the vents'
+	// translation law moved the fight, never above the 1.550 the two axes
+	// allow. Before, the trace happened to stay under one axis's peak.
+	const { pitch, yaw } = flightPerformance(STRIKER_HULL_ID).angularMax;
+	expect(fastest).toBeLessThanOrEqual(Math.hypot(pitch, yaw) + 1e-6);
 	// Without this the test would pass on a ship that never turns hard, which
 	// is the failure mode a rate limit is supposed to make impossible to hide.
-	expect(fastest).toBeGreaterThan(ceiling * 0.95);
+	expect(fastest).toBeGreaterThan(yaw * 0.95);
+	// And the per-axis rule itself, on the rates the controller carries.
+	for (const row of trace) {
+		expect(Math.abs(row.rates.pitch)).toBeLessThanOrEqual(pitch + 1e-9);
+		expect(Math.abs(row.rates.yaw)).toBeLessThanOrEqual(yaw + 1e-9);
+	}
 });
 
 test("two seeds fly two different fights", () => {
