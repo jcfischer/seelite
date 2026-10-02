@@ -285,6 +285,38 @@ describe("the offer's clock is the journal's clock", () => {
 			}).ok,
 		).toBe(true);
 	});
+
+	// #485. A stamp rounded to the nearest second lands in the future for the
+	// back half of every second, and the gate above then refuses the offer the
+	// pilot is looking at as "no longer available". The clock here is the
+	// game's own: `main.ts` binds with `world.gameTime / 60`.
+	describe("an offer is never stamped later than the clock that bound it", () => {
+		const nowS = 3600.9;
+		const late = firstOffer(SYSTEMS, "courier", { gameTimeMin: nowS / 60 });
+
+		test("the stamp is not after the clock", () => {
+			expect(late.offer.observedAt).toBeLessThanOrEqual(nowS);
+		});
+
+		test("the offer can be accepted at the moment it was bound", () => {
+			const result = requestAction(
+				emptyRequests(),
+				late.offers,
+				"accept",
+				late.offer.id,
+				{
+					now: nowS,
+					docked: at(late.offer.requester),
+					cargo: {},
+					holdRoomT: 40,
+					standing: "clean" as const,
+					equipment: [] as readonly string[],
+				},
+			);
+			expect(result.message).not.toContain("no longer available");
+			expect(result.ok).toBe(true);
+		});
+	});
 });
 
 describe("§4 — cancelling keeps the obligation it created", () => {
