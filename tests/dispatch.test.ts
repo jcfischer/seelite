@@ -73,7 +73,7 @@ describe("a key event reaches the command the table gives it", () => {
 		// Held off the surface, the same key still flies.
 		expect(
 			resolveKey(DEFAULT_BINDINGS, { key: "arrowup", hold: true, ...cockpit }),
-		).toEqual(["fly.pitchDown"]);
+		).toEqual(["fly.strafeDorsal"]);
 	});
 });
 
@@ -292,13 +292,13 @@ describe("a rebind reaches the simulation", () => {
 
 	test("nothing else moved with it", () => {
 		const layout = moved();
-		// The other half of the same axis is untouched, and so is the arrow that
-		// shares the command.
+		// The other half of the same axis is untouched, and so is the arrow
+		// below the moved key, which strafes since #620 rather than pitching.
 		expect(isHeld(layout, "fly.pitchDown", new Set(["w"]), "cockpit")).toBe(
 			true,
 		);
 		expect(
-			isHeld(layout, "fly.pitchUp", new Set(["arrowdown"]), "cockpit"),
+			isHeld(layout, "fly.strafeVentral", new Set(["arrowdown"]), "cockpit"),
 		).toBe(true);
 		expect(layout.length).toBe(DEFAULT_BINDINGS.length);
 	});

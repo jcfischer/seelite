@@ -311,7 +311,8 @@ export function padIntents(
 }
 
 /**
- * The continuous half: three rotation commands and a throttle trim.
+ * The continuous half: three rotation commands, a throttle trim and the
+ * vertical strafe (#620).
  *
  * **These are `command` values, not the mouse's `impulse`.** `stepAngular`
  * clamps a command to [-1, 1] and scales it by the axis maximum, so a stick a
@@ -353,9 +354,26 @@ export interface PadFlightAxes {
 	 * speed.
 	 */
 	readonly throttleTrim: number;
+	/**
+	 * The vertical strafe, −1…1, positive up (#620, `flight-model.md` §3.5).
+	 *
+	 * **The left stick's vertical axis, because it was the one free axis.**
+	 * The right stick is pitch and yaw, the left stick's horizontal is roll and
+	 * the triggers are the throttle, all flown and accepted on #283, so the
+	 * strafe takes what was left rather than moving any of them. That leaves
+	 * the lateral strafe with no axis on the pad at all, and where it goes is
+	 * the principal's to rule (#620); until then it is the arrows' alone.
+	 */
+	readonly heave: number;
 }
 
-const NO_AXES: PadFlightAxes = { yaw: 0, pitch: 0, roll: 0, throttleTrim: 0 };
+const NO_AXES: PadFlightAxes = {
+	yaw: 0,
+	pitch: 0,
+	roll: 0,
+	throttleTrim: 0,
+	heave: 0,
+};
 
 /**
  * Negate, and give back positive zero.
@@ -456,6 +474,7 @@ export function padFlightAxes(
 		// `values`, not `held`: rule 3 of the module's header exists for this
 		// line. A trigger read as a switch is a key with extra steps.
 		throttleTrim: frame.values.r2 - frame.values.l2,
+		heave: negate(frame.axes.leftY),
 	};
 }
 
