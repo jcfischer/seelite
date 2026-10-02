@@ -153,10 +153,15 @@ export interface HoldSignals {
 }
 
 export interface HoldOutcome {
+	/** The event this answers, which the adopt point reads (#631). */
+	kind: HoldEvent["kind"];
 	holdings: Holdings;
 	world: WorldState;
 	signals: HoldSignals;
 }
+
+/** An outcome before the event names it: what each event's law returns. */
+type Applied = Omit<HoldOutcome, "kind">;
 
 /**
  * The hold as both owners of it see it: ordinary cargo on the commander and
@@ -172,7 +177,7 @@ const unchanged = (
 	holdings: Holdings,
 	world: WorldState,
 	signals: HoldSignals = QUIET,
-): HoldOutcome => ({ holdings, world, signals });
+): Applied => ({ holdings, world, signals });
 
 const withCargoDelta = (
 	commander: CommanderState,
@@ -192,7 +197,7 @@ function settle(
 	holdings: Holdings,
 	world: WorldState,
 	event: Extract<HoldEvent, { kind: "settlement" }>,
-): HoldOutcome {
+): Applied {
 	const hold = holdOf(holdings);
 	const result = requestAction(
 		holdings.requests,
@@ -260,7 +265,7 @@ function trade(
 	holdings: Holdings,
 	world: WorldState,
 	event: Extract<HoldEvent, { kind: "market" }>,
-): HoldOutcome {
+): Applied {
 	const { action, result } = event;
 	// #183 D3: a buy records its basis, a sale banks its margin at once. Both
 	// read the hold as it stood before the press.
@@ -295,7 +300,7 @@ function scoop(
 	holdings: Holdings,
 	world: WorldState,
 	event: Extract<HoldEvent, { kind: "scoop" }>,
-): HoldOutcome {
+): Applied {
 	const took = scoopCargo(
 		holdings.commander,
 		event.commodity,
@@ -327,7 +332,7 @@ function transition(
 	holdings: Holdings,
 	world: WorldState,
 	event: Extract<HoldEvent, { kind: "carrier" }>,
-): HoldOutcome {
+): Applied {
 	const { galaxyIndex, key, transition: change } = event;
 	// The world first, then the credit: the order every kill site had.
 	const next = applyTransition(world, galaxyIndex, key, change);
@@ -372,7 +377,7 @@ function arrive(
 	holdings: Holdings,
 	world: WorldState,
 	event: Extract<HoldEvent, { kind: "arrival" }>,
-): HoldOutcome {
+): Applied {
 	const { galaxyIndex, systemIndex } = event;
 	return {
 		holdings: {
@@ -395,7 +400,7 @@ function dock(
 	holdings: Holdings,
 	world: WorldState,
 	event: Extract<HoldEvent, { kind: "dock" }>,
-): HoldOutcome {
+): Applied {
 	return {
 		holdings: {
 			...holdings,
@@ -411,12 +416,11 @@ function dock(
 	};
 }
 
-/** One hold event, applied whole or not at all. */
-export function applyHoldEvent(
+function applied(
 	holdings: Holdings,
 	world: WorldState,
 	event: HoldEvent,
-): HoldOutcome {
+): Applied {
 	switch (event.kind) {
 		case "settlement":
 			return settle(holdings, world, event);
@@ -431,4 +435,82 @@ export function applyHoldEvent(
 		case "dock":
 			return dock(holdings, world, event);
 	}
+}
+
+/** One hold event, applied whole or not at all. */
+export function applyHoldEvent(
+	holdings: Holdings,
+	world: WorldState,
+	event: HoldEvent,
+): HoldOutcome {
+	return { kind: event.kind, ...applied(holdings, world, event) };
+}
+
+/**
+ * What adopting a state did to the pilot, as `Game` acts on it (#626 D4,
+ * #631). A closed set: `Game` applies each one once and pairs nothing by hand.
+ */
+export interface AdoptEffects {
+	/** Mark the save dirty (#89 D4): a saved field moved. */
+	save: boolean;
+	/** Bump the station console's revision, which its cache key and the
+	 *  Requests board's both read. */
+	consoleRevision: boolean;
+	/** Bump the Requests board's revision. */
+	requestRevision: boolean;
+	/** Repaint the cockpit now, in the frame of the press, rather than on the
+	 *  next frame's update. */
+	redraw: boolean;
+}
+
+/** What an adoption came from: a hold event, or `"world"` — a world write
+ *  made outside Holdings, which the law owns (an offence, its lazy clear). */
+export type AdoptCause = HoldEvent["kind"] | "world";
+
+/** The state an adoption compares: the four Holdings fields and the world. */
+export interface Adopted {
+	holdings: Holdings;
+	world: WorldState;
+}
+
+/**
+ * The effects of moving from `before` to `after`, derived from which
+ * references changed — never from a site remembering them.
+ *
+ * - **save** is any reference: every module here returns the very objects it
+ *   was given when nothing moved, so a refusal saves nothing.
+ * - **requestRevision** is the journal, and every press on the Requests
+ *   board, accepted or refused: its sentence is on the board.
+ * - **consoleRevision** is an accepted press at a console — a settlement or a
+ *   till trade. It is not every change while docked: the board's cache key
+ *   reads it and the clock deliberately does not, so a bump is a re-roll of
+ *   the board on the next dock (#321). A scoop, a kill, an arrival and a dock
+ *   happen with no console up and have never bumped it.
+ * - **redraw** is any press at a console, so the press is answered in its
+ *   own frame. Everything else repaints on the frame loop's update.
+ *
+ * Pure, and the one copy of the rule: `tests/holdings.test.ts` holds it
+ * against every event.
+ */
+export function adoptEffects(
+	cause: AdoptCause,
+	before: Adopted,
+	after: Adopted,
+): AdoptEffects {
+	const was = before.holdings;
+	const now = after.holdings;
+	const requests = now.requests !== was.requests;
+	const moved =
+		requests ||
+		now.commander !== was.commander ||
+		now.ladders !== was.ladders ||
+		now.ladderPending !== was.ladderPending ||
+		after.world !== before.world;
+	const press = cause === "settlement" || cause === "market";
+	return {
+		save: moved,
+		consoleRevision: press && moved,
+		requestRevision: requests || cause === "settlement",
+		redraw: press,
+	};
 }

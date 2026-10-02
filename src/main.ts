@@ -785,7 +785,16 @@ const MODIFIER_KEYS: ReadonlySet<string> = new Set([
 	"CapsLock",
 ]);
 import { readDeficit } from "./deficits";
-import { type HoldOutcome, type Holdings, applyHoldEvent } from "./holdings";
+import {
+	type AdoptCause,
+	type AdoptEffects,
+	type Adopted,
+	type HoldOutcome,
+	type HoldSignals,
+	type Holdings,
+	adoptEffects,
+	applyHoldEvent,
+} from "./holdings";
 import { type LadderView, ladderInputKey, ladderView } from "./ladder-view";
 import {
 	type LadderRecord,
@@ -793,6 +802,7 @@ import {
 	type Rungs,
 	emptyLadderRecord,
 	emptyPending,
+	ladderAfterPlay,
 	reconcileBasis,
 	rungsOf,
 	seededLadderRecord,
@@ -6835,15 +6845,11 @@ class Game {
 			this.earshotStations(),
 			engagement.flight.ship.pos,
 		);
-		const worldBefore = this.commerceWorld;
-		this.commerceWorld = withOffence(
-			this.commerceWorld,
-			record.galaxy,
-			heat,
-			now,
-			heardBy,
+		// Saved only when it wrote: a lawful act with no hearer hands back the
+		// world it was given (#631).
+		this.adoptWorld(
+			withOffence(this.commerceWorld, record.galaxy, heat, now, heardBy),
 		);
-		if (this.commerceWorld !== worldBefore) this.saveDirty();
 		return heat;
 	}
 
@@ -7556,9 +7562,9 @@ class Game {
 	 */
 	private settleIncidentLists() {
 		const galaxy = this.world.system.record.galaxy;
-		const before = this.commerceWorld;
-		this.commerceWorld = settleIncident(before, galaxy, this.world.gameTime);
-		if (this.commerceWorld !== before) this.saveDirty();
+		this.adoptWorld(
+			settleIncident(this.commerceWorld, galaxy, this.world.gameTime),
+		);
 		// **The hail guard expires on the law's own reading, and not as a side
 		// effect of the write above.** Those are different conditions:
 		// `settleIncident` returns the *same* world whenever both lists are
@@ -11574,7 +11580,9 @@ class Game {
 	 * this handle exists to prevent.
 	 */
 	set fuelLy(ly: number) {
-		this.commander.fuelLy = ly;
+		// A new commander rather than an edit of the live one, for
+		// `ladderAfterPlay`'s reason (#631). It has never saved.
+		this.commander = { ...this.commander, fuelLy: ly };
 	}
 
 	/**
@@ -11905,6 +11913,9 @@ class Game {
 					tonnes: canister.tonnes,
 				});
 				if (outcome.holdings === before) return 0;
+				// The adopt point saves an accepted canister (#631): one dirty
+				// mark per canister rather than one per step, which the store's
+				// debounce reads as the same instant.
 				this.adoptHoldings(outcome);
 				// What went aboard, read off the hold: a tonne good, so exact.
 				return (
@@ -11942,7 +11953,6 @@ class Game {
 			this.scoop = next.notice;
 			if (next.cue) this.play(next.cue);
 		}
-		if (step.scoops.some((s) => s.accepted)) this.saveDirty();
 	}
 
 	/**
@@ -13172,7 +13182,8 @@ class Game {
 
 		// What the plan left in the Hyperspace tank, §7's visited flag and a
 		// first arrival's pending kind (#183 D4), in one event. The start
-		// system is recorded at boot; this is every system after it.
+		// system is recorded at boot; this is every system after it. The adopt
+		// point marks the save dirty here (#631); the flush below is #89's.
 		this.adoptHoldings(
 			applyHoldEvent(this.holdings(), this.commerceWorld, {
 				kind: "arrival",
@@ -14611,8 +14622,9 @@ class Game {
 				opening.frame(this.openingSim, dt);
 				if (opening.done) this.endOpening();
 			} else this.step(dt);
-			// #562 D2's play log: seconds with the clock running.
-			this.ladders.playedS += dt;
+			// #562 D2's play log: seconds with the clock running. A new record
+			// and no save (#631): `ladderAfterPlay` says why.
+			this.ladders = ladderAfterPlay(this.ladders, dt);
 		}
 		// Every frame, paused ones too: a paused burn does not keep its drive
 		// (the principal's ruling on #544), which needs the sound to hear the
@@ -15105,20 +15117,67 @@ class Game {
 		};
 	}
 
-	/** Takes a hold event's outcome: the four fields and the world it wrote. */
-	private adoptHoldings(outcome: HoldOutcome): void {
-		this.commander = outcome.holdings.commander;
-		this.requests = outcome.holdings.requests;
-		this.ladders = outcome.holdings.ladders;
-		this.ladderPending = outcome.holdings.ladderPending;
-		this.commerceWorld = outcome.world;
+	/** Takes a hold event's outcome: the four fields, the world it wrote and
+	 *  its signals, through the one adopt point. */
+	private adoptHoldings(outcome: HoldOutcome): AdoptEffects {
+		return this.adopt(outcome.kind, outcome, outcome.signals);
+	}
+
+	/**
+	 * Takes a world write made outside Holdings — the law's offence and its
+	 * lazy clear — through the same adopt point, so it saves exactly when it
+	 * changed the world. Hand it a `world-state.ts` writer's result:
+	 * `tests/world-state-wiring.test.ts` reads every call's argument.
+	 */
+	private adoptWorld(world: WorldState): AdoptEffects {
+		return this.adopt("world", { holdings: this.holdings(), world }, null);
+	}
+
+	/**
+	 * **The one adopt point** (#626 D4, #631). It writes the five fields, then
+	 * applies what `adoptEffects` derives from which references changed — the
+	 * save, the two revisions, the repaint — and the outcome's closed set of
+	 * signals. No site pairs any of them by hand, so an event added later saves
+	 * because it changed something rather than because its author remembered.
+	 *
+	 * The order is the one the sites had: the fields, the press's sentence and
+	 * the delivered hull before anything that reads them, the bumps, the
+	 * readied cue, the dirty mark, and the repaint last.
+	 */
+	private adopt(
+		cause: AdoptCause,
+		next: Adopted,
+		signals: HoldSignals | null,
+	): AdoptEffects {
+		const effects = adoptEffects(
+			cause,
+			{ holdings: this.holdings(), world: this.commerceWorld },
+			next,
+		);
+		this.commander = next.holdings.commander;
+		this.requests = next.holdings.requests;
+		this.ladders = next.holdings.ladders;
+		this.ladderPending = next.holdings.ladderPending;
+		this.commerceWorld = next.world;
+		// Only a press carries a sentence; every other event leaves the board's
+		// last one standing, as it always did.
+		if (signals?.message != null) this.requestMessage = signals.message;
+		if (signals?.hullChanged) this.receiveHull(signals.hullChanged);
+		if (effects.consoleRevision) this.stationConsoleRevision += 1;
+		if (effects.requestRevision) this.requestRevision += 1;
+		// A request is ready to report: nothing else says so (#546).
+		if (signals?.readied) this.consoleNotify("good");
+		if (effects.save) this.saveDirty();
+		if (effects.redraw) this.updateCockpit();
+		return effects;
 	}
 
 	/** Whether the board did what was asked: the press's sound reads it (#546). */
 	private actOnRequest(action: string, id: string): boolean {
 		const view = this.requestsView();
-		let ok = true;
 		if (action === "details") {
+			// The board's own state (#626 D5), not a hold event: it repaints
+			// itself.
 			if (
 				!view.offers.some((o) => o.id === id) &&
 				!this.requests.byId[id] &&
@@ -15127,33 +15186,29 @@ class Game {
 				return false;
 			this.requestSelectedId = id;
 			this.requestMessage = "";
-		} else {
-			// The board is this method's (#626 D5): the event carries the offer
-			// the press acted on, and the module judges it against the hold.
-			const before = this.holdings();
-			const outcome = applyHoldEvent(before, this.commerceWorld, {
-				kind: "settlement",
-				action,
-				id,
-				offer: view.offers.find((o) => o.id === id) ?? null,
-				docked: view.docked,
-				standing: this.legalStanding(),
-				galaxyIndex: this.world.system.record.galaxy,
-				at: this.world.gameTime,
-			});
-			this.requestMessage = outcome.signals.message ?? "";
-			ok = outcome.holdings !== before;
-			if (ok) {
-				this.adoptHoldings(outcome);
-				// A settled job changes what this requester posts next, and the
-				// console revision below is what the board's cache key reads.
-				this.stationConsoleRevision += 1;
-				this.saveDirty();
-			}
+			this.requestRevision += 1;
+			this.updateCockpit();
+			return true;
 		}
-		this.requestRevision += 1;
-		this.updateCockpit();
-		return ok;
+		// The board is this method's (#626 D5): the event carries the offer the
+		// press acted on, and the module judges it against the hold. The adopt
+		// point prints the sentence, accepted or refused, and derives the rest
+		// (#631): an accepted press saves and bumps the console revision the
+		// board's cache key reads — a settled job changes what this requester
+		// posts next.
+		const before = this.holdings();
+		const outcome = applyHoldEvent(before, this.commerceWorld, {
+			kind: "settlement",
+			action,
+			id,
+			offer: view.offers.find((o) => o.id === id) ?? null,
+			docked: view.docked,
+			standing: this.legalStanding(),
+			galaxyIndex: this.world.system.record.galaxy,
+			at: this.world.gameTime,
+		});
+		this.adoptHoldings(outcome);
+		return outcome.holdings !== before;
 	}
 
 	/**
@@ -15363,7 +15418,6 @@ class Game {
 				at: this.world.gameTime,
 			}),
 		);
-		this.saveDirty();
 	}
 
 	/**
@@ -15397,8 +15451,7 @@ class Game {
 			chargeAu: this.chargeAu,
 			permadeath: this.permadeath,
 			firstDay: this.firstDay,
-			// A copy (`playedS` moves in place every frame), and a basis brought
-			// into line with the hold. **A guard, not a known path**: today the one
+			// The record with its basis brought into line with the hold. **A guard, not a known path**: today the one
 			// non-sale removal is a job hand-over, which reconciles as it settles.
 			// The parser refuses a basis covering more than is aboard, so a later
 			// path that forgets — `combat-model.md` §4's confiscation is specified
@@ -16106,22 +16159,20 @@ class Game {
 		// Bounty naming the carrier hears it (#508 D1), and the kill is priced
 		// pending until the next dock (#562 D3). `hull` is the struck carrier's
 		// row, required because `CarrierKey` does not carry it.
-		const before = this.holdings();
-		const outcome = applyHoldEvent(before, this.commerceWorld, {
-			kind: "carrier",
-			galaxyIndex: this.world.system.record.galaxy,
-			key,
-			transition: event,
-			hull,
-		});
+		//
 		// Adopted whatever the holdings say: a transition that is not the
-		// player's kill moves only the world.
-		this.adoptHoldings(outcome);
-		if (outcome.holdings.requests !== before.requests)
-			this.requestRevision += 1;
-		// A request is ready to report: nothing else says so (#546).
-		if (outcome.signals.readied) this.consoleNotify("good");
-		this.saveDirty();
+		// player's kill moves only the world, and a world write saves. The adopt
+		// point bumps the board when the journal heard the kill and sounds the
+		// readied cue (#631).
+		this.adoptHoldings(
+			applyHoldEvent(this.holdings(), this.commerceWorld, {
+				kind: "carrier",
+				galaxyIndex: this.world.system.record.galaxy,
+				key,
+				transition: event,
+				hull,
+			}),
+		);
 	}
 
 	/** The effective condition of one carrier right now, for the same caller. */
@@ -16147,10 +16198,20 @@ class Game {
 	 *
 	 * `advanceTo` is the module's own verb and materializes any completion the
 	 * advance passes, so this cannot step over one.
+	 *
+	 * **The advance is the snapshot's, not the live world's** (#631). This is
+	 * a read: the store calls it on every write, so a world it adopted would be
+	 * a changed reference at the adopt point — a dirty mark per write, each one
+	 * arming the next. The live world keeps its last event's clock, which every
+	 * reader already projects from (recovery is derived, never ticked, and
+	 * every writer advances first), and `advanceTo` is idempotent, so the
+	 * snapshot is the same bytes it was when this wrote the advance back.
 	 */
 	saveEnvelope(): SaveEnvelope {
-		this.commerceWorld = advanceTo(this.commerceWorld, this.world.gameTime);
-		return { world: this.commerceWorld, commander: this.commanderRecord() };
+		return {
+			world: advanceTo(this.commerceWorld, this.world.gameTime),
+			commander: this.commanderRecord(),
+		};
 	}
 
 	/**
@@ -16290,19 +16351,17 @@ class Game {
 			return false;
 		}
 		this.clearStationRefusal();
-		const outcome = applyHoldEvent(this.holdings(), this.commerceWorld, {
-			kind: "market",
-			action,
-			result,
-			galaxyIndex,
-			at: this.world.gameTime,
-		});
-		this.adoptHoldings(outcome);
-		if (outcome.signals.hullChanged)
-			this.receiveHull(outcome.signals.hullChanged);
-		this.saveDirty();
-		this.stationConsoleRevision += 1;
-		this.updateCockpit();
+		// The adopt point delivers a bought hull, saves, bumps the console and
+		// repaints (#631).
+		this.adoptHoldings(
+			applyHoldEvent(this.holdings(), this.commerceWorld, {
+				kind: "market",
+				action,
+				result,
+				galaxyIndex,
+				at: this.world.gameTime,
+			}),
+		);
 		return true;
 	}
 

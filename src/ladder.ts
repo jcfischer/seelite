@@ -599,6 +599,23 @@ export const parseLadders = (raw: unknown): LadderRecord => {
 	};
 };
 
+/**
+ * #562 D2's play log, one running frame of it: a new record, and the very
+ * record back when no time passed.
+ *
+ * **A new record, not an edit** (#631). It was `playedS += dt` on the live
+ * record, which moved a value under every reference an outcome had been
+ * compared against — a refused event hands back the objects it was given, so
+ * the edit reached those too. It is still no save trigger: the store's dirty
+ * mark reschedules its debounce, so a mark per frame would hold the write off
+ * for as long as the clock runs. The log rides on the next write.
+ */
+export const ladderAfterPlay = (
+	record: LadderRecord,
+	dt: number,
+): LadderRecord =>
+	dt === 0 ? record : { ...record, playedS: record.playedS + dt };
+
 // ---------------------------------------------------------------------------
 // What a console transaction does to the record
 // ---------------------------------------------------------------------------
