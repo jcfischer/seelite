@@ -12541,10 +12541,17 @@ class Game {
 	private numbersAhead = { seed: Number.NaN, n: -1 };
 
 	/** A comms line through the radio, on the console bus (#600), in the
-	 *  voice of whoever says it: a station's or a carrier's id picks it
-	 *  (#604), so each sounds its own. */
+	 *  voice of whoever says it: a station's or a carrier's id, in this
+	 *  system, picks it (#604), so each sounds its own and a system draws its
+	 *  own. Every line is said by someone in the system the ship is in. */
 	private sayComms(id: CommsLineId, speaker?: string) {
-		if (VOICE_ARMS.comms) void sayLine(this.audio, id, speaker);
+		if (!VOICE_ARMS.comms) return;
+		const system = this.world.system.record.seed;
+		void sayLine(
+			this.audio,
+			id,
+			speaker === undefined ? undefined : { system, id: speaker },
+		);
 	}
 
 	/** The natural voice (#604): started by the settings row, or by

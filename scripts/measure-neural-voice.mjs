@@ -109,18 +109,14 @@ try {
 		await g.neural.line(text, kit.role.approach, 1, true);
 		const approach = await say();
 		// Two stations whose ids draw different voices.
+		// The game draws a voice per system (2026-10-02), so the prediction
+		// names the system the ship is in, as `sayComms` does.
+		const system = g.world.system.record.seed;
+		const heard = (id) => kit.speakerVoice("approach", { system, id });
 		const a = "probe-station-a";
 		let b = "probe-station-b";
-		for (
-			let i = 0;
-			kit.speakerVoice("approach", b) === kit.speakerVoice("approach", a);
-			i++
-		)
-			b = `probe-station-b${i}`;
-		const voices = [
-			kit.speakerVoice("approach", a),
-			kit.speakerVoice("approach", b),
-		];
+		for (let i = 0; heard(b) === heard(a); i++) b = `probe-station-b${i}`;
+		const voices = [heard(a), heard(b)];
 		for (const v of voices) await g.neural.line(text, v, 1, true);
 		const lines = [await say(a), await say(b)];
 		return {

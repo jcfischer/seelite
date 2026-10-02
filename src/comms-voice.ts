@@ -15,6 +15,7 @@ import {
 	NEURAL_ROLE,
 	type NeuralVoice,
 	SPEAKER_VOICES,
+	type Speaker,
 	speakerVoice,
 } from "./neural-voice";
 import { RADIO, RADIO_NEURAL, radio } from "./radio";
@@ -147,7 +148,7 @@ const readyVoice = () =>
  * generation, which runs about three times slower than speech on WASM (sage
  * round 1 on #606). A miss is generated, urgent, for the next time.
  */
-export async function sayLine(fx: AudioFX, id: CommsLineId, speaker?: string) {
+export async function sayLine(fx: AudioFX, id: CommsLineId, speaker?: Speaker) {
 	const line = COMMS_LINES[id];
 	const voice = readyVoice();
 	const who = speakerVoice(line.voice, speaker);
