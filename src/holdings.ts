@@ -127,7 +127,8 @@ export type HoldEvent =
 			 *  destroy. */
 			hull: HullId | null;
 	  }
-	/** A jump that arrived: the plan's fuel, the visit, and a first arrival's
+	/** A jump that arrived: what the plan left in the **Hyperspace tank**, the
+	 *  visit, and a first arrival's
 	 *  exploration kind, pending until the next dock (#183 D4). */
 	| {
 			kind: "arrival";

@@ -10,7 +10,7 @@
  * browser probe reached any of them. These rows are that step.
  */
 import { describe, expect, test } from "bun:test";
-import { carrierKey } from "../src/carrier-key";
+import { type CarrierKey, carrierKey } from "../src/carrier-key";
 import { readDeficit, recordTrade } from "../src/deficits";
 import { generateGalaxy } from "../src/galaxy";
 import {
@@ -47,6 +47,8 @@ import {
 } from "../src/raider-wreck";
 import { RAIDER_HULL_ID } from "../src/raider-slots";
 import { relaySlot } from "../src/relay-slot";
+import { tenderKill } from "../src/relay-tender";
+import { trafficKillTransitions } from "../src/traffic-engagement";
 import {
 	type RequestOffer,
 	emptyRequests,
@@ -62,6 +64,7 @@ import {
 } from "../src/station-commerce";
 import { generateContents } from "../src/system";
 import {
+	type TransitionEvent,
 	type WorldState,
 	applyTransition,
 	newWorld,
@@ -515,7 +518,7 @@ describe("a canister scoop", () => {
  * #627: the other three events — every carrier transition, a jump arrival and
  * a dock. Before this node `Game` credited a kill's bounty in
  * `applyCarrierTransition` and its combat ladder in `creditKill`, called by
- * hand at four sites that nothing checked, and applied an arrival's fuel,
+ * hand at four sites that nothing checked, and applied an arrival's Hyperspace tank,
  * visit and pending kind and a dock's bank by hand.
  */
 
@@ -569,32 +572,39 @@ const withBounty = (): Holdings => {
 	return out.holdings;
 };
 
+/** The one carrier event shape, in galaxy 0. */
+const carrierEvent = (
+	key: CarrierKey,
+	transition: TransitionEvent,
+	hull: HullId | null,
+): HoldEvent => ({ kind: "carrier", galaxyIndex: 0, key, transition, hull });
+
 const killRelay = (
 	h: Holdings,
 	world: WorldState = newWorld(0x5ee11e),
 	hull: HullId | null = null,
 ) =>
-	applyHoldEvent(h, world, {
-		kind: "carrier",
-		galaxyIndex: 0,
-		key: RELAY_KEY,
-		transition: relayDestruction(
-			RELAY_HOME.record.index,
-			KILL_AT,
-			RELAY_HOME.station.id,
+	applyHoldEvent(
+		h,
+		world,
+		carrierEvent(
+			RELAY_KEY,
+			relayDestruction(RELAY_HOME.record.index, KILL_AT, RELAY_HOME.station.id),
+			hull,
 		),
-		hull,
-	});
+	);
 
 const RAIDER_KEY = carrierKey(RELAY_HOME.record.index, "raider-00");
 const killRaider = (h: Holdings, world: WorldState = newWorld(0x5ee11e)) =>
-	applyHoldEvent(h, world, {
-		kind: "carrier",
-		galaxyIndex: 0,
-		key: RAIDER_KEY,
-		transition: raiderDestruction(RELAY_HOME.record.index, KILL_AT),
-		hull: RAIDER_HULL_ID,
-	});
+	applyHoldEvent(
+		h,
+		world,
+		carrierEvent(
+			RAIDER_KEY,
+			raiderDestruction(RELAY_HOME.record.index, KILL_AT),
+			RAIDER_HULL_ID,
+		),
+	);
 
 describe("a carrier transition", () => {
 	test("a player's destroy writes the world through the module's writer", () => {
@@ -666,13 +676,11 @@ describe("a carrier transition", () => {
 			),
 			cause: raiderReplacementActor(RELAY_HOME.record.index),
 		};
-		const out = applyHoldEvent(start, world, {
-			kind: "carrier",
-			galaxyIndex: 0,
-			key: RELAY_KEY,
-			transition,
-			hull: RAIDER_HULL_ID,
-		});
+		const out = applyHoldEvent(
+			start,
+			world,
+			carrierEvent(RELAY_KEY, transition, RAIDER_HULL_ID),
+		);
 		expect(out.holdings).toBe(start);
 		expect(out.world).toEqual(applyTransition(world, 0, RELAY_KEY, transition));
 		expect(out.signals.readied).toBe(false);
@@ -683,13 +691,15 @@ describe("a carrier transition", () => {
 		// still no kill.
 		const start = withBounty();
 		const world = newWorld(0x5ee11e);
-		const out = applyHoldEvent(start, world, {
-			kind: "carrier",
-			galaxyIndex: 0,
-			key: RAIDER_KEY,
-			transition: { kind: "disable", occurredAt: KILL_AT, cause: PLAYER_KILL },
-			hull: RAIDER_HULL_ID,
-		});
+		const out = applyHoldEvent(
+			start,
+			world,
+			carrierEvent(
+				RAIDER_KEY,
+				{ kind: "disable", occurredAt: KILL_AT, cause: PLAYER_KILL },
+				RAIDER_HULL_ID,
+			),
+		);
 		expect(out.holdings).toBe(start);
 		expect(out.world).not.toBe(world);
 		expect(out.signals.readied).toBe(false);
@@ -704,6 +714,38 @@ describe("a carrier transition", () => {
 		const twice = killRaider(once.holdings, once.world);
 		expect(twice.holdings.ladderPending).not.toBe(once.holdings.ladderPending);
 		expect(twice.signals.readied).toBe(false);
+	});
+
+	/**
+	 * The ladder credit used to be paid once per site, after the site's loop;
+	 * it is paid per player's destroy now. So each kill's transitions must
+	 * hold exactly one, or a loop would price one kill twice (sage #629).
+	 */
+	test("every kill a site applies holds exactly one player's destroy", () => {
+		const system = RELAY_HOME.record.index;
+		const station = RELAY_HOME.station.id;
+		const kills: [string, TransitionEvent[]][] = [
+			...(["operational", "disabled", "repairing"] as const).map(
+				(from): [string, TransitionEvent[]] => [
+					`traffic from ${from}`,
+					trafficKillTransitions(
+						system,
+						{ homeStationId: station },
+						from,
+						KILL_AT,
+					),
+				],
+			),
+			["raider", [raiderDestruction(system, KILL_AT)]],
+			["relay", [relayDestruction(system, KILL_AT, station)]],
+			["tender", tenderKill(system, KILL_AT, station).map((t) => t.event)],
+		];
+		for (const [name, events] of kills) {
+			const destroys = events.filter(
+				(e) => e.kind === "destroy" && e.cause.actorId === PLAYER_KILL.actorId,
+			);
+			expect([name, destroys.length]).toEqual([name, 1]);
+		}
 	});
 
 	test("a carrier event that names no hull does not compile", () => {
@@ -723,7 +765,7 @@ describe("a carrier transition", () => {
 describe("a jump arrival", () => {
 	const SYSTEM = 7;
 
-	test("the first arrival marks the visit, takes the plan's fuel and is one pending kind", () => {
+	test("the first arrival marks the visit, leaves the plan's Hyperspace tank and is one pending kind", () => {
 		const start = holdings();
 		const world = newWorld(1);
 		const out = applyHoldEvent(start, world, {

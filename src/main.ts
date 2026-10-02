@@ -12113,7 +12113,7 @@ class Game {
 			this.relayHull = Math.max(0, this.relayHull - shot.damage);
 			this.callDefender(key, carrier.instanceOrdinal);
 			if (this.relayHull === 0) {
-				// No hull row and no gun: it pays in the bounty, not in rank.
+				// No hull row and no gun: it pays in the Bounty, not on the Ladder.
 				this.applyCarrierTransition(
 					key,
 					relayDestruction(record.index, now, plan.watchedStationId),
@@ -13111,7 +13111,8 @@ class Game {
 		jumpWorldTo(this.world, to);
 		this.rebuildSystem();
 
-		// The plan's fuel, §7's visited flag and a first arrival's pending
+		// What the plan left in the Hyperspace tank, §7's visited flag and a
+		// first arrival's pending
 		// kind (#183 D4), in one event. The start system is recorded at boot;
 		// this is every system after it.
 		this.adoptHoldings(

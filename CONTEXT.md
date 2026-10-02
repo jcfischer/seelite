@@ -198,7 +198,10 @@ carrier transition, a jump arrival and a dock since #627 — so the rule that th
 purchase basis follows the cargo has one copy, and so does a settlement's mark
 with the flown hull's **Hold** (the till's own mark is
 `transactAtStation`'s). A player's kill pays its Bounty and its combat ladder
-credit in that one carrier event. `Game` keeps the four fields (one save
+credit in that one carrier event, and the carrier event is the one write
+for **every** carrier transition, whoever's act it is: one that is not the
+player's kill is only the world write, so the module's reach is a little wider
+than what a pilot owns. `Game` keeps the four fields (one save
 schema, #437) and adopts what the module returns; a refusal returns the very
 objects it was given, and a carrier transition that is not the player's kill
 returns the same holdings beside a new world.

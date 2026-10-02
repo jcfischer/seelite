@@ -14,12 +14,12 @@
  *   `applyCarrierTransition` and the Holdings module's carrier event (#627),
  *   the one path every kill goes through;
  * - back at the same station, Report pays once, and a second report pays
- *   nothing.
+ *   nothing;
+ * - with the relay down, the board posts no Bounty.
  *
- * The figures — the pinned reward, a refusal taking nothing — are
+ * The figures — the Bounty's pinned pay, a refusal taking nothing — are
  * `tests/holdings.test.ts`'s since #627 (D8). The rows here are coarse: they
  * show that this `Game`'s presses reached the module, which no bun test can.
- * - with the relay down, the board posts no Bounty.
  *
  * Seed 56 starts in ESLAIN, whose relay rolled active (`probe-relay.mjs` says
  * why that seed, and asserts it). This probe asserts it too rather than
