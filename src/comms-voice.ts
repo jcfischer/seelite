@@ -159,8 +159,11 @@ export async function sayLine(fx: AudioFX, id: CommsLineId, speaker?: Speaker) {
 }
 
 /** The voices a system's stations answer in: what `sayLine` draws for an
- *  approach line from each, so the preparation and the speaking cannot
- *  disagree about who a station is (sage round 1 on #616). */
+ *  approach line from each, so the preparation and the speaking share one
+ *  derivation of who a station is (sage round 1 on #616). They agree while
+ *  their callers pass the same system and id: `sayComms` passes the seed of
+ *  the system the ship is in and the station's id, and so does the
+ *  preparation's callback in `main.ts`. */
 export const stationVoices = (
 	system: number,
 	stationIds: readonly string[],

@@ -23,8 +23,8 @@ const LINE_META = "meta";
 export const LINE_STORE_BYTES = 20 * 1024 * 1024;
 
 /** A line's key: everything that makes two renders of it differ — the
- *  backend too, since WebGPU's fp16 model renders a line rougher than WASM's
- *  q8, and a line kept from one played on after the other took over. Adding
+ *  backend too, since WebGPU's fp16 model and WASM's q8 render a line
+ *  differently, and a line kept from one played on after the other took over. Adding
  *  it orphaned every line kept before, WASM's included: a key without a
  *  backend cannot say which one rendered it. They are generated again, and
  *  the orphans leave the store as the budget evicts them. */

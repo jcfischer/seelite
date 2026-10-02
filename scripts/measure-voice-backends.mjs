@@ -100,7 +100,7 @@ try {
 				if (Math.abs(d) > 0.5) clicks++;
 			}
 		}
-		return { hf: hf / e, clicks };
+		return { hf: e ? hf / e : null, clicks };
 	};
 	const corr = (a, b) => {
 		const n = Math.min(a.length, b.length);
@@ -112,7 +112,7 @@ try {
 			aa += a[i] * a[i];
 			bb += b[i] * b[i];
 		}
-		return ab / Math.sqrt(aa * bb);
+		return aa && bb ? ab / Math.sqrt(aa * bb) : null;
 	};
 	console.log(`line: ${JSON.stringify(r.text)}; WebGPU shader-f16: ${r.f16}`);
 	for (const [run, v] of Object.entries(r.runs))
@@ -123,8 +123,10 @@ try {
 			const b = r.runs[`${ep}#2`]?.lines?.[voice];
 			if (!a || typeof a === "string") return `${ep} — ${a ?? "no line"}`;
 			const s = rough(a);
-			const rep = b ? corr(a, b).toFixed(3) : "—";
-			return `${ep} hf ${s.hf.toFixed(3)} clicks ${s.clicks} repeat ${rep}`;
+			const r = b && typeof b !== "string" ? corr(a, b) : null;
+			const rep = r === null ? "—" : r.toFixed(3);
+			const hf = s.hf === null ? "silent" : s.hf.toFixed(3);
+			return `${ep} hf ${hf} clicks ${s.clicks} repeat ${rep}`;
 		});
 		console.log(`${voice.padEnd(9)} ${cells.join("  |  ")}`);
 	}

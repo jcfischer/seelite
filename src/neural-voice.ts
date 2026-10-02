@@ -183,10 +183,6 @@ function forgetWebGpu(m: VoiceManifest) {
 	);
 }
 
-/** The fallback chain's next step after a backend fails. */
-export const fallbackAfter = (b: NeuralBackend): NeuralBackend | null =>
-	b === "webgpu" ? "wasm" : null;
-
 export const VOICE_BASE = "/voice-model/";
 
 /** Every message to the worker, typed against the one protocol. */
@@ -260,12 +256,15 @@ export class NeuralVoice {
 	}
 
 	/**
-	 * The backend the game uses: WASM, everywhere (2026-10-02). WebGPU's fp16
-	 * model rendered every voice measured rougher than WASM's q8 —
-	 * `scripts/measure-voice-backends.mjs` prints which and by how much — and the
-	 * principal heard it as distortion the lab, on WASM, did not have. WASM is about 2.5x
-	 * slower than real time, which the line cache and the background
-	 * preparation absorb. The lab can still force WebGPU.
+	 * The backend the game uses: WASM, everywhere (2026-10-02). The principal
+	 * heard the game's voice, on WebGPU, as distorted, and the lab's, on WASM,
+	 * as clean. What was measured is narrower: WebGPU's fp16 model put more of
+	 * every measured voice in the high band than WASM's q8, and clicks into
+	 * one of three (`scripts/measure-voice-backends.mjs`). WASM generates
+	 * slower than real time (`scripts/measure-neural-voice.mjs` prints by how
+	 * much), so until a line is kept the formant voice says it; the
+	 * preparation, the current system's voices first, shortens that wait. The
+	 * lab can still force WebGPU.
 	 */
 	async backend(): Promise<NeuralBackend> {
 		return "wasm";
@@ -303,22 +302,15 @@ export class NeuralVoice {
 			this.set({ kind: "failed", reason: "this server has no voice" });
 			return this.state;
 		}
-		let b: NeuralBackend | null = force ?? (await this.backend());
+		const b = force ?? (await this.backend());
 		try {
 			await navigator.storage?.persist?.();
 		} catch {
 			// Storage the browser will not keep: try anyway.
 		}
-		while (b && gen === this.gen) {
-			if (await this.load(m, b)) return this.state;
-			// Stopped, not failed: `stop` settles the load `false` too, and a
-			// player who chose Synthesised mid-download has not shown that
-			// WebGPU cannot run (sage round 4 on #606).
-			if (gen !== this.gen) return this.state;
-			const next: NeuralBackend | null = force ? null : fallbackAfter(b);
-			if (b === "webgpu" && next) forgetWebGpu(m);
-			b = next;
-		}
+		// One attempt: the game asks for WASM, which has nothing to fall back
+		// to, and the lab's forced backend is the one it asked to hear.
+		if (gen === this.gen) await this.load(m, b);
 		return this.state;
 	}
 
