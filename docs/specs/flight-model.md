@@ -144,9 +144,11 @@ assist on, the controller commands a rate and is bounded by the vents.
 Angular momentum becomes state that persists: rates go into #89's envelope, and
 a save taken while tumbling resumes tumbling.
 
-**Turning the assist on above the rate cap brings the rate back by the vents.**
-The assist reduces each axis above `angularMax` at `angularAccel` until it is
-inside, and does not cut it in one frame. Stick and pointer wait until the axis
+**Turning the assist on above the rate cap brings the rate back by the vents'
+authority.** The assist reduces each axis above `angularMax` at the hull's
+angular authority until it is inside, and does not cut it in one frame. Today
+that authority is `angularAccel`, a scalar stand-in; under the substrate it is
+the rotational vents' couple (§3.8). Stick and pointer wait until the axis
 is inside. This is the rotational form of §3.10's retro burn. The principal,
 after flying it: *"newtonian movement works. Turning assist on should use the
 normal physics to bring ship into envelope."*
@@ -207,8 +209,8 @@ turning the assist on above the rate cap.
 
 The flag stays until the vent substrate replaces today's rotation law. On
 today's model, `control` with the assist off only closes the throttle: there are
-no retro vents yet, so a pilot brakes by turning the nose to retrograde and
-burning. §3.6's retro force arrives with the substrate.
+no translation vents yet, so a pilot brakes by turning the nose to retrograde
+and burning. §3.6's retro force arrives with the substrate.
 
 ## 7. Owed on map #460
 
