@@ -92,18 +92,15 @@ export function buildTunnelLines(rings: number): TunnelLines {
 	return { root, throat, corridor };
 }
 
-const put = (
-	array: Float32Array,
-	at: number,
-	p: Vec3,
-	lift = 0,
-	dir?: Vec3,
-) => {
-	array[at] = p.x + (dir ? dir.x * lift : 0);
-	array[at + 1] = p.y + (dir ? dir.y * lift : 0);
-	array[at + 2] = p.z + (dir ? dir.z * lift : 0);
+const put = (array: Float32Array, at: number, p: Vec3) => {
+	array[at] = p.x;
+	array[at + 1] = p.y;
+	array[at + 2] = p.z;
 	return at + 3;
 };
+
+/** The throat's corners stood off the plane, rewritten in place each frame. */
+const lifted: Vec3[] = [0, 1, 2, 3].map(() => ({ x: 0, y: 0, z: 0 }));
 
 /**
  * Copy `tunnel` into the line buffers, the throat stood `THROAT_STANDOFF_KM`
@@ -135,13 +132,17 @@ export function writeTunnelLines(
 				`the corridor needs ${counts.throat}/${counts.corridor}`,
 		);
 
-	const lift = THROAT_STANDOFF_KM;
-	const throat = tunnel.throat.corners;
+	for (let k = 0; k < 4; k++) {
+		const corner = tunnel.throat.corners[k];
+		lifted[k].x = corner.x + axisOut.x * THROAT_STANDOFF_KM;
+		lifted[k].y = corner.y + axisOut.y * THROAT_STANDOFF_KM;
+		lifted[k].z = corner.z + axisOut.z * THROAT_STANDOFF_KM;
+	}
 	const t = throatAttr.array as Float32Array;
 	let at = 0;
 	for (let k = 0; k < 4; k++) {
-		at = put(t, at, throat[k], lift, axisOut);
-		at = put(t, at, throat[(k + 1) % 4], lift, axisOut);
+		at = put(t, at, lifted[k]);
+		at = put(t, at, lifted[(k + 1) % 4]);
 	}
 
 	const c = corridorAttr.array as Float32Array;
@@ -156,10 +157,7 @@ export function writeTunnelLines(
 	// The rails start at the drawn throat, not at the plane, so they meet it.
 	for (let k = 0; k < 4; k++)
 		for (let r = 1; r < rings.length; r++) {
-			at =
-				r === 1
-					? put(c, at, throat[k], lift, axisOut)
-					: put(c, at, rings[r - 1].corners[k]);
+			at = put(c, at, r === 1 ? lifted[k] : rings[r - 1].corners[k]);
 			at = put(c, at, rings[r].corners[k]);
 		}
 

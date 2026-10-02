@@ -44,6 +44,9 @@ describe("the corridor's world lines", () => {
 	const tunnel = dockingTunnel(frame, { mouthKm: frame.planeKm + 3 });
 	const lines = buildTunnelLines(TUNNEL_RINGS);
 	writeTunnelLines(lines, tunnel, frame.axis, STYLE);
+	const lifted = tunnel.throat.corners.map((c) =>
+		add(c, scale(frame.axis, THROAT_STANDOFF_KM)),
+	);
 
 	test("the hull hides them, and they hide nothing", () => {
 		for (const part of [lines.throat, lines.corridor]) {
@@ -55,9 +58,6 @@ describe("the corridor's world lines", () => {
 	test("the throat is the aperture, stood off the plane along the axis", () => {
 		const drawn = vertices(lines.throat.geometry.getAttribute("position"));
 		expect(drawn).toHaveLength(8);
-		const lifted = tunnel.throat.corners.map((c) =>
-			add(c, scale(frame.axis, THROAT_STANDOFF_KM)),
-		);
 		for (let k = 0; k < 4; k++) {
 			expect(near(drawn[k * 2], lifted[k])).toBe(true);
 			expect(near(drawn[k * 2 + 1], lifted[(k + 1) % 4])).toBe(true);
@@ -76,9 +76,6 @@ describe("the corridor's world lines", () => {
 
 	test("each rail runs from the drawn throat out through every ring", () => {
 		const drawn = vertices(lines.corridor.geometry.getAttribute("position"));
-		const lifted = tunnel.throat.corners.map((c) =>
-			add(c, scale(frame.axis, THROAT_STANDOFF_KM)),
-		);
 		const segmentsOf = (from: Vec3, to: Vec3) =>
 			drawn.some(
 				(p, i) => i % 2 === 0 && near(p, from) && near(drawn[i + 1], to),

@@ -999,10 +999,16 @@ async function directorAt(setup) {
 				};
 				const shown = read();
 				const parts = [g.tunnelLines.throat, g.tunnelLines.corridor];
-				for (const part of parts) part.material.visible = false;
-				g.render(0);
-				const hidden = read();
-				for (const part of parts) part.material.visible = true;
+				let hidden;
+				// Restored even if the hidden arm throws, so no later row on this
+				// page measures a frame without the lines.
+				try {
+					for (const part of parts) part.material.visible = false;
+					g.render(0);
+					hidden = read();
+				} finally {
+					for (const part of parts) part.material.visible = true;
+				}
 				let moved = 0;
 				for (let i = 0; i < shown.length; i += 4) {
 					const d = Math.max(
