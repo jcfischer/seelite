@@ -580,7 +580,12 @@ import {
 	entryNotice,
 	stepDockingNotice,
 } from "./docking-notice";
-import { tunnelRailSegments } from "./docking-tunnel";
+import { TUNNEL_RINGS } from "./docking-tunnel";
+import {
+	type TunnelLineStyle,
+	buildTunnelLines,
+	writeTunnelLines,
+} from "./docking-tunnel-mesh";
 import {
 	type StationMesh,
 	buildStationMesh,
@@ -1730,11 +1735,28 @@ function laneWaitText(wait: DirectorLaneWait): string {
 	return withLaneWait(`WAIT · ${LANE_WAIT_REASON[wait.refusal]}`, wait.waitS);
 }
 
-function throatColour(state: DirectorState): string {
-	if (state.blocking) return "rgba(255, 110, 96, 0.95)";
-	return state.aligned
-		? "rgba(150, 255, 190, 0.95)"
-		: "rgba(255, 209, 122, 0.9)";
+/**
+ * The corridor's two line styles. **Cool, and not the cue's colour**: §4 gives
+ * cyan to "passive instrumentation and stable reference" and reserves amber and
+ * green for the actionable prompt and the confirmed state, which is what the
+ * throat carries. Red wins both, because §4 puts blocking danger above
+ * everything.
+ */
+function tunnelStyle(state: DirectorState): {
+	throat: TunnelLineStyle;
+	corridor: TunnelLineStyle;
+} {
+	if (state.blocking)
+		return {
+			throat: { color: 0xff6e60, opacity: 0.95 },
+			corridor: { color: 0xff6e60, opacity: 0.5 },
+		};
+	return {
+		throat: state.aligned
+			? { color: 0x96ffbe, opacity: 0.95 }
+			: { color: 0xffd17a, opacity: 0.9 },
+		corridor: { color: 0x78cdf5, opacity: 0.4 },
+	};
 }
 
 /**
@@ -1775,11 +1797,14 @@ interface DirectorRender {
 	/** True when the nose error is past the gauge's range, so the marker has
 	 *  stopped moving and no longer reads as a distance. */
 	markerOffScale: boolean;
-	/** How many of the corridor's rectangles were fully on screen and stroked. */
+	/** How many of the corridor's rings are wholly in front of the eye. The
+	 *  rings are world lines, so this is where they project, not what the
+	 *  composer drew: the hull may hide any of them. */
 	tunnelRingsDrawn: number;
 	/**
-	 * The throat's four corners as drawn, in canvas pixels, or `null` when it did
-	 * not project.
+	 * The throat's four corners projected to canvas pixels, or `null` when it
+	 * did not project. A projection, not a draw: the hull may hide the throat
+	 * there, and only the rendered frame says whether it did.
 	 *
 	 * Here because the corridor is what carries check 4 now that the roll ticks
 	 * are gone, and "the rectangle turns with the slot" is a fact about the
@@ -2851,6 +2876,14 @@ class Game {
 	 * pass against a director that was never painted.
 	 */
 	directorRender: DirectorRender | null = null;
+	/**
+	 * The docking corridor as depth-tested world lines (`docking-tunnel-mesh.ts`).
+	 * Written each frame by `presentDirector` before the composer draws.
+	 */
+	readonly tunnelLines = buildTunnelLines(TUNNEL_RINGS);
+	/** `directorState()` for this frame, or `null` where the glass is not
+	 *  shown. One evaluation serves the world lines and the overlay. */
+	private directorFrame: DirectorState | null = null;
 	/** Chase's boresight pip, where it was drawn this frame, or `null` (#607
 	 *  D4). Written by the draw, as `directorRender` is. */
 	boresightRender: { x: number; y: number } | null = null;
@@ -7818,6 +7851,7 @@ class Game {
 		// `MeshBasicMaterial` — so what is left casting is the fittings.
 		this.markedOcclusion.push(["cockpit", markOcclusion(cockpit)]);
 		this.nearScene.add(cockpit);
+		this.nearScene.add(this.tunnelLines.root);
 	}
 
 	/**
@@ -13989,6 +14023,7 @@ class Game {
 		this.updateEncounterPresentation(camPos);
 		this.updateRelayPresentation(camPos);
 		this.updateTenderPresentation(camPos);
+		this.presentDirector(camPos);
 
 		// §5: the streaks are a marker on the regime, keyed to the *log* of the
 		// speed. A linear fraction of `v_max` sits at nearly zero for the whole
@@ -17052,7 +17087,7 @@ class Game {
 		h: number,
 		camPos: Vec3,
 	) {
-		const state = this.directorState();
+		const state = this.directorFrame;
 		if (!state) {
 			this.directorRender = null;
 			return;
@@ -17077,47 +17112,22 @@ class Game {
 		};
 
 		// ---------------------------------------------------------------------
-		// The corridor. World geometry, projected — see `docking-tunnel.ts`.
+		// The corridor is world lines now (`docking-tunnel-mesh.ts`), drawn by
+		// the composer and hidden by the hull. This only records where its
+		// rings land: the throat's corners, so a probe can read the rolled
+		// rectangle's tilt, and how many rings are wholly in front of the eye.
 		// ---------------------------------------------------------------------
-		// **Cool, and not the cue's colour.** §4 gives cyan to "passive
-		// instrumentation and stable reference" and reserves amber and green for
-		// the actionable prompt and the confirmed state. The corridor is the
-		// reference the pilot flies against; painting it in the cue's own green
-		// made the two read as one instrument and lost the ring inside the rails.
-		// Red still wins, because §4 puts blocking danger above everything.
-		const tunnelColour = state.blocking
-			? "rgba(255, 110, 96, 0.5)"
-			: "rgba(120, 205, 245, 0.4)";
 		let tunnelRingsDrawn = 0;
 		let throatCornersPx: DirectorRender["throatCornersPx"] = null;
-		const projectedRings: ({ x: number; y: number } | null)[][] = [];
 		for (const ring of state.tunnel.rings) {
 			const corners = ring.corners.map((corner) =>
 				place(sub(add(state.stationPos, corner), camPos)),
 			);
-			projectedRings.push(corners);
 			if (corners.some((corner) => corner === null)) continue;
-			const points = corners as { x: number; y: number }[];
-			if (ring === state.tunnel.throat) throatCornersPx = points;
-			ctx.strokeStyle =
-				ring === state.tunnel.throat ? throatColour(state) : tunnelColour;
-			ctx.lineWidth = ring === state.tunnel.throat ? 2 : 1;
-			ctx.beginPath();
-			ctx.moveTo(points[3].x, points[3].y);
-			for (const point of points) ctx.lineTo(point.x, point.y);
-			ctx.stroke();
+			if (ring === state.tunnel.throat)
+				throatCornersPx = corners as { x: number; y: number }[];
 			tunnelRingsDrawn++;
 		}
-		// The four rails, so it reads as one tunnel rather than a stack of frames.
-		ctx.strokeStyle = tunnelColour;
-		ctx.lineWidth = 1;
-		for (const rail of tunnelRailSegments(projectedRings))
-			for (const segment of rail) {
-				ctx.beginPath();
-				ctx.moveTo(segment[0].x, segment[0].y);
-				for (const point of segment.slice(1)) ctx.lineTo(point.x, point.y);
-				ctx.stroke();
-			}
 
 		// ---------------------------------------------------------------------
 		// The nose cue. Glass, and on a compressed scale.
@@ -17242,6 +17252,45 @@ class Game {
 	}
 
 	/**
+	 * Whether this frame has flight glass at all — the gate on every overlay
+	 * mark and on the docking corridor's world lines, which are the director's
+	 * even though they are drawn in the world.
+	 *
+	 * §8 M4/M10: arrival and launch are scripted, and a docked ship is not
+	 * flyable. The forward station console owns the docked glass; no stale
+	 * flight-floor, scanner, director, or attitude marks may leak through it.
+	 * #535: nobody is flying during the opening, and a bracket on the shot would
+	 * be glass the frame has no cockpit for. And a focused console replaces the
+	 * forward glass: leaving target brackets there would make an HTML panel look
+	 * like an accidental overlay rather than the deliberate head-turn view the
+	 * cockpit contract calls for.
+	 */
+	private flightGlassShown(): boolean {
+		if (this.openingActive) return false;
+		if (this.view !== "cockpit") return true;
+		return this.dock.phase === "flying" && this.headLook === "forward";
+	}
+
+	/**
+	 * Evaluate the director once for this frame and write the corridor's world
+	 * lines from it. Runs before the composer, because the lines are in the
+	 * near layer; `drawDockingDirector` reads the same evaluation after it.
+	 */
+	private presentDirector(camPos: Vec3) {
+		const state = this.flightGlassShown() ? this.directorState() : null;
+		this.directorFrame = state;
+		const lines = this.tunnelLines;
+		lines.root.visible = state !== null;
+		if (!state) return;
+		writeTunnelLines(lines, state.tunnel, state.axisOut, tunnelStyle(state));
+		lines.root.position.set(
+			state.stationPos.x - camPos.x,
+			state.stationPos.y - camPos.y,
+			state.stationPos.z - camPos.z,
+		);
+	}
+
+	/**
 	 * Draw the HUD markers over the rendered frame.
 	 *
 	 * The overlay is a 2D canvas rather than geometry in the near scene, and the
@@ -17267,30 +17316,12 @@ class Game {
 		this.boresightRender = null;
 		this.beamRender = null;
 		this.hostileFireRender = { beam: null, rim: 0 };
-		// §8 M4/M10: arrival and launch are scripted, and a docked ship is not
-		// flyable. The forward station console owns the docked glass; no stale
-		// flight-floor, scanner, director, or attitude marks may leak through it.
-		// #535: nobody is flying during the opening, and a bracket on the shot
-		// would be glass the frame has no cockpit for.
-		if (
-			(this.view === "cockpit" && this.dock.phase !== "flying") ||
-			this.openingActive
-		) {
+		if (!this.flightGlassShown()) {
 			this.cockpitPrompt.reset();
 			this.combatRig?.clearOverlay();
-			this.directorRender = null;
-			this.floorRender = null;
-			return;
-		}
-		// A focused console replaces the forward glass. Leaving target brackets
-		// here would make an HTML panel look like an accidental overlay rather
-		// than the deliberate head-turn view the cockpit contract calls for.
-		if (this.view === "cockpit" && this.headLook !== "forward") {
-			this.cockpitPrompt.reset();
-			this.combatRig?.clearOverlay();
-			// The director is glass, and a focused console has replaced the glass.
-			// Leaving either record standing would let a probe assert a funnel or
-			// a strip that this frame deliberately did not paint.
+			// The director is glass, and this frame has no glass. Leaving either
+			// record standing would let a probe assert a funnel or a strip that
+			// this frame deliberately did not paint.
 			this.directorRender = null;
 			this.floorRender = null;
 			return;

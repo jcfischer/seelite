@@ -885,7 +885,9 @@ async function directorAt(setup) {
 			D.place(
 				id,
 				D.add(
-					D.scale(snap.axis, snap.planeKm + setup.standoffKm),
+					// `axialKm` is from the station centre, for a row that has to
+					// stand behind the station rather than off its plane.
+					D.scale(snap.axis, setup.axialKm ?? snap.planeKm + setup.standoffKm),
 					// The **unrolled** reference: a lateral offset stated in the slot's
 					// own basis would orbit the axis as the station turns.
 					D.scale(snap.reference, setup.lateralKm ?? 0),
@@ -938,6 +940,92 @@ async function directorAt(setup) {
 
 			g.render(dt);
 			const drawn = g.directorRender;
+
+			// **The corridor is world lines, so only the frame says what the hull
+			// hid.** Same framing twice, lines shown and lines hidden, and the
+			// throat's pixel box differenced between the two: no other ink is in
+			// either arm's difference, which is what the overlay read could not
+			// promise at screen centre. The box is projected here from the
+			// station's own geometry, not taken from `throatCornersPx`.
+			// `material.visible` is the arm because the frame loop rewrites the
+			// root's `visible` from the gate every frame and never this.
+			const throatAB = (() => {
+				if (!setup.throatAB) return null;
+				const canvas = g.renderer.domElement;
+				const gl = g.renderer.getContext();
+				const body = g.world.system.byId.get(id);
+				const eye = g.world.ship.pos;
+				const sx = gl.drawingBufferWidth / canvas.clientWidth;
+				const sy = gl.drawingBufferHeight / canvas.clientHeight;
+				let x0 = Number.POSITIVE_INFINITY;
+				let y0 = Number.POSITIVE_INFINITY;
+				let x1 = Number.NEGATIVE_INFINITY;
+				let y1 = Number.NEGATIVE_INFINITY;
+				for (const [a, u] of [
+					[1, 1],
+					[-1, 1],
+					[-1, -1],
+					[1, -1],
+				]) {
+					const rel = D.add(
+						D.scale(snap.axis, snap.planeKm),
+						D.add(
+							D.scale(snap.basis.across, (a * snap.apertureWidthKm) / 2),
+							D.scale(snap.basis.up, (u * snap.apertureHeightKm) / 2),
+						),
+					);
+					const m = g.markerNdc(D.add(D.add(body.pos, rel), D.scale(eye, -1)));
+					if (m.behind) return { behind: true };
+					// Buffer pixels, origin bottom-left, as `readPixels` counts them.
+					const bx = (m.ndcX * 0.5 + 0.5) * gl.drawingBufferWidth;
+					const by = (m.ndcY * 0.5 + 0.5) * gl.drawingBufferHeight;
+					x0 = Math.min(x0, bx);
+					y0 = Math.min(y0, by);
+					x1 = Math.max(x1, bx);
+					y1 = Math.max(y1, by);
+				}
+				const marginPx = Math.ceil(3 * Math.max(sx, sy));
+				const bx0 = Math.max(0, Math.floor(x0) - marginPx);
+				const by0 = Math.max(0, Math.floor(y0) - marginPx);
+				const bw =
+					Math.min(gl.drawingBufferWidth, Math.ceil(x1) + marginPx) - bx0;
+				const bh =
+					Math.min(gl.drawingBufferHeight, Math.ceil(y1) + marginPx) - by0;
+				if (bw <= 0 || bh <= 0) return { offscreen: true };
+				const read = () => {
+					const px = new Uint8Array(bw * bh * 4);
+					gl.readPixels(bx0, by0, bw, bh, gl.RGBA, gl.UNSIGNED_BYTE, px);
+					return px;
+				};
+				const shown = read();
+				const parts = [g.tunnelLines.throat, g.tunnelLines.corridor];
+				let hidden;
+				// Restored even if the hidden arm throws, so no later row on this
+				// page measures a frame without the lines.
+				try {
+					for (const part of parts) part.material.visible = false;
+					g.render(0);
+					hidden = read();
+				} finally {
+					for (const part of parts) part.material.visible = true;
+				}
+				let moved = 0;
+				for (let i = 0; i < shown.length; i += 4) {
+					const d = Math.max(
+						Math.abs(shown[i] - hidden[i]),
+						Math.abs(shown[i + 1] - hidden[i + 1]),
+						Math.abs(shown[i + 2] - hidden[i + 2]),
+					);
+					// Above the output stage's ±0.5/255 dither by a wide margin.
+					if (d > 8) moved++;
+				}
+				return {
+					moved,
+					pixels: bw * bh,
+					box: [bx0, by0, bw, bh],
+					rootVisible: g.tunnelLines.root.visible,
+				};
+			})();
 
 			// **What the record cannot honestly self-report.** `directorRender` is
 			// assembled at the end of the draw whether or not the strokes landed, so
@@ -1055,6 +1143,7 @@ async function directorAt(setup) {
 				overlayHeight: overlay ? overlay.height : 0,
 				ringSample,
 				belowSample,
+				throatAB,
 				aboveSample,
 				drawn: drawn
 					? {
@@ -1127,6 +1216,29 @@ check(
 		inside.drawn.mouthHalfWidthKm > inside.drawn.throatHalfWidthKm,
 	`${inside.drawn?.tunnelRingsDrawn}/${inside.drawn?.tunnelRings} rings drawn; ` +
 		`throat ${inside.drawn?.throatHalfWidthKm?.toFixed(4)} km, mouth ${inside.drawn?.mouthHalfWidthKm?.toFixed(4)} km`,
+);
+
+// **The hull hides the corridor.** It is world lines in the near layer, so
+// the depth buffer decides; from behind the station, on its axis and facing
+// it, the throat lies behind the hull. The front framing is the control: the
+// same A/B on the same box moves pixels when nothing is in the way.
+const throatFront = await directorAt({ ...APPROACH, throatAB: true });
+const throatBehind = await directorAt({
+	...APPROACH,
+	axialKm: -3,
+	noseDeg: 180,
+	throatAB: true,
+});
+check(
+	"the throat is drawn from in front and hidden by the hull from behind",
+	throatFront.throatAB?.rootVisible === true &&
+		throatFront.throatAB.moved > 0 &&
+		throatBehind.throatAB?.rootVisible === true &&
+		Boolean(throatBehind.drawn) &&
+		typeof throatBehind.throatAB.moved === "number" &&
+		throatBehind.throatAB.moved === 0,
+	`front ${JSON.stringify(throatFront.throatAB)}; behind ${JSON.stringify(throatBehind.throatAB)}, ` +
+		`range ${throatBehind.drawn?.rangeKm?.toFixed(2)} km`,
 );
 
 /**
