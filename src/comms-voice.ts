@@ -158,6 +158,15 @@ export async function sayLine(fx: AudioFX, id: CommsLineId, speaker?: Speaker) {
 	if (voice && !n) void voice.line(line.text, who, 1, true).catch(() => null);
 }
 
+/** The voices a system's stations answer in: what `sayLine` draws for an
+ *  approach line from each, so the preparation and the speaking cannot
+ *  disagree about who a station is (sage round 1 on #616). */
+export const stationVoices = (
+	system: number,
+	stationIds: readonly string[],
+): NeuralVoiceId[] =>
+	stationIds.map((id) => speakerVoice("approach", { system, id }));
+
 /** The voices to prepare first: the current system's stations' (O1,
  *  2026-10-02). Asked again before every line, so a jump reorders a
  *  preparation already running. */

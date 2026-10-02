@@ -207,7 +207,7 @@ describe("the one same-origin fetch", () => {
 
 describe("the game's backend (2026-10-02)", () => {
 	test("the game runs WASM even where WebGPU offers half floats", async () => {
-		// WebGPU's fp16 model renders every voice rougher than WASM's q8
+		// WebGPU's fp16 model rendered every voice measured rougher than WASM's q8
 		// (`scripts/measure-voice-backends.mjs`), and the principal heard it as
 		// distortion the lab, on WASM, did not have.
 		const nav = globalThis.navigator as unknown as Record<string, unknown>;

@@ -213,8 +213,22 @@ export class NeuralVoice {
 	/** Settles the load in flight `false` when its worker is stopped. */
 	private settle: ((ok: boolean) => void) | null = null;
 	private next = 1;
-	private refuseWebGpu(m: VoiceManifest) {
-		forgetWebGpu(m);
+	/** A line's cache key on the voice as loaded, or `null` while it is not
+	 *  ready. One place builds it, so a field added to the key reaches every
+	 *  reader: the backend was added to three copies (sage round 1 on #616). */
+	private keyFor(
+		text: string,
+		voice: NeuralVoiceId,
+		speed: number,
+	): string | null {
+		if (this.state.kind !== "ready" || !this.manifest) return null;
+		return lineKey(
+			text,
+			voice,
+			speed,
+			this.manifest.version,
+			this.state.backend,
+		);
 	}
 	/** Lines being generated, by line key. */
 	private inflight = new Map<
@@ -247,8 +261,8 @@ export class NeuralVoice {
 
 	/**
 	 * The backend the game uses: WASM, everywhere (2026-10-02). WebGPU's fp16
-	 * model renders every voice rougher than WASM's q8 —
-	 * `scripts/measure-voice-backends.mjs` prints by how much — and the
+	 * model rendered every voice measured rougher than WASM's q8 —
+	 * `scripts/measure-voice-backends.mjs` prints which and by how much — and the
 	 * principal heard it as distortion the lab, on WASM, did not have. WASM is about 2.5x
 	 * slower than real time, which the line cache and the background
 	 * preparation absorb. The lab can still force WebGPU.
@@ -302,7 +316,7 @@ export class NeuralVoice {
 			// WebGPU cannot run (sage round 4 on #606).
 			if (gen !== this.gen) return this.state;
 			const next: NeuralBackend | null = force ? null : fallbackAfter(b);
-			if (b === "webgpu" && next) this.refuseWebGpu(m);
+			if (b === "webgpu" && next) forgetWebGpu(m);
 			b = next;
 		}
 		return this.state;
@@ -365,7 +379,7 @@ export class NeuralVoice {
 					// rather than keep a ready voice that never speaks (sage
 					// round 4 on #606). One bad line after others spoke is a line.
 					if (backend === "webgpu" && !spoke && this.worker === worker) {
-						this.refuseWebGpu(m);
+						forgetWebGpu(m);
 						fail(r.message);
 						void this.start();
 					}
@@ -393,15 +407,8 @@ export class NeuralVoice {
 		keep = true,
 	): Promise<Float32Array | null> {
 		const worker = this.worker;
-		if (this.state.kind !== "ready" || !this.manifest || !worker)
-			return Promise.resolve(null);
-		const key = lineKey(
-			text,
-			voice,
-			speed,
-			this.manifest.version,
-			this.state.backend,
-		);
+		const key = this.keyFor(text, voice, speed);
+		if (!key || !worker) return Promise.resolve(null);
 		// One generation per line: the numbers station's phrase is asked for
 		// ahead and again when it is said (sage round 1 on #606). A later
 		// urgent asking moves the queued one to the front.
@@ -462,14 +469,8 @@ export class NeuralVoice {
 	 * start, and most are kept already (sage round 5 on #606).
 	 */
 	async prepare(text: string, voice: NeuralVoiceId): Promise<void> {
-		if (this.state.kind !== "ready" || !this.manifest) return;
-		const key = lineKey(
-			text,
-			voice,
-			1,
-			this.manifest.version,
-			this.state.backend,
-		);
+		const key = this.keyFor(text, voice, 1);
+		if (!key) return;
 		if (this.memo.has(key) || (await hasLine(key))) return;
 		await this.line(text, voice);
 	}
@@ -481,14 +482,8 @@ export class NeuralVoice {
 		voice: NeuralVoiceId,
 		speed = 1,
 	): Promise<Float32Array | null> {
-		if (this.state.kind !== "ready" || !this.manifest) return null;
-		const key = lineKey(
-			text,
-			voice,
-			speed,
-			this.manifest.version,
-			this.state.backend,
-		);
+		const key = this.keyFor(text, voice, speed);
+		if (!key) return null;
 		const hit = this.memo.get(key);
 		if (hit) {
 			this.remember(key, hit);

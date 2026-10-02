@@ -22,6 +22,7 @@ import {
 	renderNumbersAhead,
 	sayLine,
 	sayNumbers,
+	stationVoices,
 	takeNumbers,
 	useNeuralVoice,
 } from "../src/comms-voice";
@@ -214,6 +215,36 @@ describe("the background preparation (O1, 2026-10-02)", () => {
 		// And then every other voice, each pair once.
 		expect(new Set(prepared).size).toBe(SPEAKER_VOICES.length * lines);
 		expect(prepared).toHaveLength(SPEAKER_VOICES.length * lines);
+	});
+
+	test("the voices prepared first are the ones the stations speak in", async () => {
+		// `stationVoices` is what the game prepares first; this is what
+		// `sayLine` actually asks the voice for, line by line.
+		const asked: NeuralVoiceId[] = [];
+		const listener = {
+			state: { kind: "ready" },
+			kept: async (_t: string, who: NeuralVoiceId) => {
+				asked.push(who);
+				return null;
+			},
+			line: async () => null,
+		} as unknown as NeuralVoice;
+		const fx = { speak: () => 0 } as unknown as AudioFX;
+		useNeuralVoice(listener);
+		const stations = ["station-trade", "station-refinery", "station-shipyard"];
+		const station = (Object.keys(COMMS_LINES) as CommsLineId[]).filter(
+			(id) => COMMS_LINES[id].voice === "approach",
+		);
+		expect(station.length).toBeGreaterThan(0);
+		for (const system of [1, 7919, 104729]) {
+			const first = stationVoices(system, stations);
+			for (const [i, id] of stations.entries())
+				for (const line of station) {
+					asked.length = 0;
+					await sayLine(fx, line, { system, id });
+					expect(asked).toEqual([first[i]]);
+				}
+		}
 	});
 
 	test("a jump to another system moves its voices to the front", async () => {

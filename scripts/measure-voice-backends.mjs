@@ -74,8 +74,10 @@ try {
 			}
 			runs[run] = { lines: {} };
 			for (const v of voices) {
-				// Urgent, and not kept: a render of this backend, never a line
-				// another backend left in the cache.
+				// A fresh render, never a kept line: `line` reads only the
+				// line store, never the memo; `keep = false` stores nothing;
+				// and `?voices=off` turns off the preparation that would. So
+				// a `repeat` of 1.000 is two renders, not one read twice.
 				const x = await g.neural
 					.line(text, v, 1, true, false)
 					.catch((e) => String(e));
