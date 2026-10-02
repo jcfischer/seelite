@@ -17573,6 +17573,8 @@ class Game {
 		const prompt = this.cruisePrompt(
 			promptTarget ? length(sub(promptTarget.pos, camPos)) : null,
 		);
+		// The docking notice's plate, reserved below against the marker labels.
+		let noticePlate: MarkerLabelBounds | null = null;
 		if (prompt) {
 			const x = w / 2;
 			// **Above the floor's bands, derived from them.** This was `h * 0.62`,
@@ -17595,15 +17597,21 @@ class Game {
 			// notice: every other prompt kept its look.
 			if (this.dockingNotice?.text === prompt) {
 				const m = ctx.measureText(prompt);
-				ctx.fillStyle = PROMPT_PLATE_FILL;
-				ctx.fillRect(
-					x - promptWidth / 2 - PROMPT_PLATE_PAD_PX,
-					y - m.actualBoundingBoxAscent - PROMPT_PLATE_PAD_PX / 2,
-					promptWidth + 2 * PROMPT_PLATE_PAD_PX,
+				const left = x - promptWidth / 2 - PROMPT_PLATE_PAD_PX;
+				const top = y - m.actualBoundingBoxAscent - PROMPT_PLATE_PAD_PX / 2;
+				const width = promptWidth + 2 * PROMPT_PLATE_PAD_PX;
+				const height =
 					m.actualBoundingBoxAscent +
-						m.actualBoundingBoxDescent +
-						PROMPT_PLATE_PAD_PX,
-				);
+					m.actualBoundingBoxDescent +
+					PROMPT_PLATE_PAD_PX;
+				ctx.fillStyle = PROMPT_PLATE_FILL;
+				ctx.fillRect(left, top, width, height);
+				noticePlate = {
+					left,
+					top,
+					right: left + width,
+					bottom: top + height,
+				};
 			}
 			ctx.fillStyle = this.promptFill(prompt);
 			ctx.fillText(prompt, x, y);
@@ -17630,6 +17638,11 @@ class Game {
 			bottom: y + 5,
 		});
 		const occupiedLabels: MarkerLabelBounds[] = [];
+		// **The labels draw after the prompt**, so a carrier's name printed
+		// straight through the plate on the first sheet (#597). Reserved here,
+		// the declutter pass moves context off it the way it does off the
+		// selected label.
+		if (noticePlate) occupiedLabels.push(noticePlate);
 		const selectedBody = this.targetBody();
 		const selectedDir = selectedBody && directionTo(camPos, selectedBody.pos);
 		const selectedAt = selectedDir && place(selectedDir);
