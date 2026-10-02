@@ -481,9 +481,18 @@ export interface JobOffer {
 	observedAt: number;
 }
 
-/** The binder's minute clock as the journal's second clock. */
+/**
+ * The binder's minute clock as the journal's second clock.
+ *
+ * **Floored, never rounded** (#485). `requestAction` refuses an offer while
+ * `now < observedAt`, and every board action rebinds, so a stamp rounded up
+ * refused the offer on screen as "no longer available" for the back half of
+ * every second. The minute clock is `gameTime / 60`, and the round trip can
+ * land below an integer and stamp a second early — which the gate and the
+ * load's `x <= now` both admit. Unrounded can land above it, which they do not.
+ */
 const observedAtOf = (ctx: BindContext): number =>
-	Math.round(ctx.gameTimeMin * 60);
+	Math.floor(ctx.gameTimeMin * 60);
 
 /** §4's mark, less the two numbers only the caller knows. */
 export interface JobMark {
