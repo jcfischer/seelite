@@ -15,7 +15,10 @@ export interface RadioSettings {
 	/** Speaker drive, 0..1. */
 	readonly drive: number;
 	/** The voice's level after the speaker: makeup for a light drive, which
-	 *  compresses less. The hiss and the squelch do not take it. */
+	 *  compresses less. The hiss and the squelch do not take it. Above 1 the
+	 *  voice can pass full scale, as the squelch bursts already do at any
+	 *  gain; the master limiter (`LIMITER` in `audio.ts`, at 0 dBFS) holds
+	 *  both, so a sample over 1 is limited rather than clipped. */
 	readonly gain: number;
 	/** Hiss under the keyed carrier, against the voice's peak. An FM receiver
 	 *  is captured by the carrier, not by the voice: while the transmitter is

@@ -260,12 +260,21 @@ describe("the radio", () => {
 		expect(
 			Math.max(...twice.map((x, i) => Math.abs(x - 2 * once[i]))),
 		).toBeLessThan(1e-30);
-		// The beep goes through the speaker with the voice, and takes it too.
+		// On silence the hiss and the squelch are all there is, and they keep
+		// their level.
 		const silence = new Float32Array(v.length);
 		const carrier = { ...RADIO, beepHz: 0 };
 		expect(radio(silence, { ...carrier, gain: 2 })).toEqual(
 			radio(silence, carrier),
 		);
+		// The beep goes through the speaker with the voice, and takes it too.
+		const beep = { ...RADIO, hiss: 0, squelch: false };
+		const beepOnce = radio(silence, beep);
+		const beepTwice = radio(silence, { ...beep, gain: 2 });
+		expect(Math.max(...beepOnce.map(Math.abs))).toBeGreaterThan(0.1);
+		expect(
+			Math.max(...beepTwice.map((x, i) => Math.abs(x - 2 * beepOnce[i]))),
+		).toBeLessThan(1e-30);
 	});
 
 	test("the squelch and the beep lengthen the transmission", () => {
