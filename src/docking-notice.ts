@@ -33,12 +33,9 @@ export interface DockingNotice {
 	/** §4: amber for something to act on, red only for a refusal. */
 	tone: Extract<FloorTone, "action" | "refused">;
 	stationId: string;
-	/**
-	 * Whether leaving the director's range clears it. Only a notice posted
-	 * inside that range: an out-of-range let-go is written beyond it, and a
-	 * range rule would clear it on the frame it was written.
-	 */
-	clearsOnLeaving: boolean;
+	/** How far from the station it was posted, km: `stepDockingNotice` reads
+	 *  it to decide when the ship has left the approach it is about. */
+	postedRangeKm: number;
 }
 
 /** Where the notice was posted, and how far from the station it is about. */
@@ -59,7 +56,7 @@ function notice(
 		text,
 		tone,
 		stationId: at.stationId,
-		clearsOnLeaving: at.rangeKm <= DIRECTOR_RANGE_KM,
+		postedRangeKm: at.rangeKm,
 	};
 }
 
@@ -79,6 +76,9 @@ function failedReasons(outcome: EntryOutcome): string[] {
 			);
 		if (ev.noseAngleDeg > AXIS_TOLERANCE_DEG)
 			reasons.push(`nose ${degOver(ev.noseAngleDeg, AXIS_TOLERANCE_DEG)}`);
+		// The check failed and neither half reads over its tolerance — at the
+		// boundary itself. The row is still named rather than dropped.
+		if (reasons.length === 0) reasons.push("off axis");
 	}
 	if (!checks.inbound) reasons.push("not inbound");
 	if (!checks.rollMatch)
@@ -135,11 +135,26 @@ export function computerNotice(
 	return notice(text, tone, at);
 }
 
-/** One frame: the notice, or `null` once the ship has left its station. */
+/**
+ * One frame: the notice, or `null` once the ship has left the approach it is
+ * about.
+ *
+ * Posted inside the director's range, it clears on leaving that range. Posted
+ * beyond it — an out-of-range let-go, or §11.7's grant expiring at the far edge
+ * of `VICINITY_KM` — a range rule would clear it on the frame it was written,
+ * so it clears once the ship has moved a director's range from where it was
+ * posted, either way: further out, or in to where the director takes over.
+ * Sage round 1 found the first build gave such a notice no exit at all.
+ */
 export function stepDockingNotice(
 	current: DockingNotice | null,
 	rangeKm: number,
 ): DockingNotice | null {
-	if (current?.clearsOnLeaving && rangeKm > DIRECTOR_RANGE_KM) return null;
-	return current;
+	if (!current) return null;
+	if (current.postedRangeKm <= DIRECTOR_RANGE_KM)
+		return rangeKm > DIRECTOR_RANGE_KM ? null : current;
+	return Math.abs(rangeKm - current.postedRangeKm) > DIRECTOR_RANGE_KM ||
+		rangeKm <= DIRECTOR_RANGE_KM
+		? null
+		: current;
 }

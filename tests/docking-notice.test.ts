@@ -149,6 +149,19 @@ describe("entryNotice", () => {
 		);
 	});
 
+	test("a failed axis check at exactly its tolerance still names the axis", () => {
+		const n = entryNotice(
+			outcome(
+				evaluation(
+					{ axisAlignment: false },
+					{ positionAngleDeg: AXIS_TOLERANCE_DEG, noseAngleDeg: 1 },
+				),
+			),
+			AT,
+		);
+		expect(n?.text).toBe("ENTRY FAILED · off axis");
+	});
+
 	test("containment and inbound name what happened, not a number", () => {
 		expect(
 			entryNotice(outcome(evaluation({ containment: false })), AT)?.text,
@@ -222,12 +235,28 @@ describe("stepDockingNotice", () => {
 		expect(stepDockingNotice(near, DIRECTOR_RANGE_KM + 1)).toBeNull();
 	});
 
-	test("a notice posted beyond the director's range is not cleared by range", () => {
+	// Sage round 1: a let-go posted beyond the director's range had no exit
+	// but an engage or a request, and held the prompt line for a whole flight.
+	describe("a notice posted beyond the director's range", () => {
+		const POSTED_KM = 2e4;
 		const far = computerNotice("out-of-range", {
 			stationId: "s1",
-			rangeKm: 2e4,
+			rangeKm: POSTED_KM,
 		});
-		expect(stepDockingNotice(far, 3e4)).toBe(far);
+
+		test("is not cleared by the range it was posted at", () => {
+			expect(stepDockingNotice(far, POSTED_KM)).toBe(far);
+		});
+
+		test("clears once the ship has moved a director's range further out", () => {
+			expect(
+				stepDockingNotice(far, POSTED_KM + DIRECTOR_RANGE_KM + 1),
+			).toBeNull();
+		});
+
+		test("clears once the ship has closed into the director's range", () => {
+			expect(stepDockingNotice(far, DIRECTOR_RANGE_KM)).toBeNull();
+		});
 	});
 
 	test("no notice stays no notice", () => {

@@ -9724,13 +9724,6 @@ class Game {
 		return id === this.targetId;
 	}
 
-	/**
-	 * What to do next, in one phrase, or "" when there is nothing to say.
-	 *
-	 * Shown whenever normal flight cannot reasonably reach the selected target —
-	 * which at the 2 km/s assist cap is anything past a few thousand kilometres,
-	 * and is *most of a system*.
-	 */
 	/** §4's tone for the prompt line: a docking notice's own, else amber. */
 	private promptFill(prompt: string): string {
 		const notice = this.dockingNotice;
@@ -9739,6 +9732,13 @@ class Game {
 			: PROMPT_FILL;
 	}
 
+	/**
+	 * What to do next, in one phrase, or "" when there is nothing to say.
+	 *
+	 * Shown whenever normal flight cannot reasonably reach the selected target —
+	 * which at the 2 km/s assist cap is anything past a few thousand kilometres,
+	 * and is *most of a system*.
+	 */
 	private cruisePrompt(targetKm: number | null): string {
 		// §8's window and its outcome outrank everything below (#187). The pilot
 		// is committed for three seconds and then in another star system; a line
@@ -9748,13 +9748,15 @@ class Game {
 		// jump key that sometimes does nothing is indistinguishable from one that
 		// is not bound, and the MODE cell can only show a window that opened.
 		if (charging(this.jumpCharge) || this.jumpNotice) return this.jumpNotice;
-		// A failed entry or a computer let-go (#597), below the jump's window
-		// because a pilot committed to leaving is not reading about the slot.
-		if (this.dockingNotice) return this.dockingNotice.text;
 		if (this.spoolLeftS > 0) return "";
 		if (this.detour?.targetId === this.targetId)
 			return `DETOUR AROUND ${this.bodyFor(this.detour.bodyId)?.name ?? this.detour.bodyId}`;
 		if (this.regime === "cruise") return "";
+		// A failed entry or a computer let-go (#597): normal flight only, and
+		// below the jump's window, the spool-up and a detour, because each of
+		// those is a pilot already doing something else. Above them it hid the
+		// detour line for as long as a far notice stood (sage round 1).
+		if (this.dockingNotice) return this.dockingNotice.text;
 		// **The same predicate the strip's tone reads.** As `chargeAu <= 0` this
 		// and the strip disagreed on the frame after a starve-out: regeneration
 		// lifts the raw value off zero immediately, so the prompt returned to
@@ -17590,13 +17592,13 @@ class Game {
 			const y = floorTopY(h) - PROMPT_ABOVE_FLOOR_PX;
 			ctx.font = PROMPT_FONT;
 			ctx.textAlign = "center";
-			const promptWidth = ctx.measureText(prompt).width;
+			const m = ctx.measureText(prompt);
+			const promptWidth = m.width;
 			// **A plate behind a docking notice** (#597, the principal's ruling on
 			// the sheet). The line lands on the slot whenever a station is near,
 			// and red over lit plating and a nameplate did not read. Only for the
 			// notice: every other prompt kept its look.
 			if (this.dockingNotice?.text === prompt) {
-				const m = ctx.measureText(prompt);
 				const left = x - promptWidth / 2 - PROMPT_PLATE_PAD_PX;
 				const top = y - m.actualBoundingBoxAscent - PROMPT_PLATE_PAD_PX / 2;
 				const width = promptWidth + 2 * PROMPT_PLATE_PAD_PX;

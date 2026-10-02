@@ -145,8 +145,11 @@ in the pilot's words and with `evaluateEntry`'s figures — `ENTRY FAILED · rol
 lane are amber; an entry refused as hostile or barged, and a let-go for want of
 a grant or for hostility, are red. It stays up until the next approach event —
 a crossing replaces it, an engage or a clearance request clears it — or until
-the ship leaves the director's range of that station. Not the next key: a pilot
-flying an approach by hand is pressing keys the whole time.
+the ship leaves the approach it is about: the director's range of that station
+for a notice posted inside it, and a director's range of movement either way
+for one posted beyond it. Not the next key: a pilot flying an approach by hand
+is pressing keys the whole time. It draws in normal flight only, below the
+jump's window, a spool-up and a detour.
 
 ## 4. Attention and visual grammar
 
