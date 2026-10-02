@@ -511,7 +511,6 @@ import {
 	driftCanister,
 	dropCanisters,
 	dropManifestCanisters,
-	PLAYER_KILL,
 	raiderDestruction,
 	stepCanisters,
 } from "./raider-wreck";
@@ -786,18 +785,14 @@ const MODIFIER_KEYS: ReadonlySet<string> = new Set([
 	"CapsLock",
 ]);
 import { readDeficit } from "./deficits";
-import { killCredit } from "./kill-credit";
 import { type HoldOutcome, type Holdings, applyHoldEvent } from "./holdings";
 import { type LadderView, ladderInputKey, ladderView } from "./ladder-view";
 import {
 	type LadderRecord,
 	type PendingCredit,
 	type Rungs,
-	bankOnDock,
 	emptyLadderRecord,
 	emptyPending,
-	pendingArrival,
-	pendingKill,
 	reconcileBasis,
 	rungsOf,
 	seededLadderRecord,
@@ -806,8 +801,6 @@ import {
 	emptyRequests,
 	entrustedTonnesAboard,
 	isRunning,
-	readiedBy,
-	recordKill,
 	settledAt,
 } from "./requests";
 import {
@@ -913,7 +906,6 @@ import {
 	observeDocking,
 	observeScan,
 	advanceTo,
-	applyTransition,
 	effectiveCarrier,
 	type EffectiveCarrier,
 	observe,
@@ -7038,7 +7030,7 @@ class Game {
 		const carrier = this.carrierCondition(actor.key);
 		if (carrier.condition !== "operational") return;
 		for (const event of trafficDiversion(record.index, actor, now))
-			this.applyCarrierTransition(actor.key, event);
+			this.applyCarrierTransition(actor.key, event, actor.hullId);
 		const heat = this.chargeTrafficOffence(
 			actor,
 			carrier,
@@ -7082,8 +7074,7 @@ class Game {
 			carrier.condition,
 			now,
 		))
-			this.applyCarrierTransition(actor.key, event);
-		this.creditKill(actor.hullId);
+			this.applyCarrierTransition(actor.key, event, actor.hullId);
 		this.canisters = [
 			...this.canisters,
 			...dropManifestCanisters({
@@ -11790,13 +11781,13 @@ class Game {
 			if (step.encounter.end === "destroyed" && step.wreck) {
 				const record = this.world.system.record;
 				const now = this.world.gameTime;
+				// The relay's defender (#515) is a raider from a slot, so it is
+				// priced here too.
 				this.applyCarrierTransition(
 					encounter.slot.key,
 					raiderDestruction(record.index, now),
+					RAIDER_HULL_ID,
 				);
-				// The relay's defender (#515) is a raider from a slot, so it is
-				// priced here too.
-				this.creditKill(RAIDER_HULL_ID);
 				this.canisters = [
 					...this.canisters,
 					...dropCanisters({
@@ -12122,12 +12113,12 @@ class Game {
 			this.relayHull = Math.max(0, this.relayHull - shot.damage);
 			this.callDefender(key, carrier.instanceOrdinal);
 			if (this.relayHull === 0) {
+				// No hull row and no gun: it pays in the bounty, not in rank.
 				this.applyCarrierTransition(
 					key,
 					relayDestruction(record.index, now, plan.watchedStationId),
+					null,
 				);
-				// No hull row and no gun: it pays in the bounty, not in rank.
-				this.creditKill(null);
 				this.play({ kind: "explosion" });
 				this.lastExit = "pirate relay destroyed";
 			}
@@ -12217,11 +12208,11 @@ class Game {
 				tenderVisitInstance(tender.instanceOrdinal, since),
 			);
 			if (!isAlive(this.tenderCondition)) {
-				for (const t of tenderKill(record.index, now, plan.watchedStationId))
-					this.applyCarrierTransition(t.key, t.event);
 				// Unarmed, so it pays 0 (#562 D4); priced rather than skipped so
-				// every kill path reads the same.
-				this.creditKill(RELAY_TENDER_HULL_ID);
+				// every kill path reads the same. The relay's set-back rides the
+				// same hull, which only a player's destroy reads.
+				for (const t of tenderKill(record.index, now, plan.watchedStationId))
+					this.applyCarrierTransition(t.key, t.event, RELAY_TENDER_HULL_ID);
 				this.play({ kind: "explosion" });
 				this.lastExit = "relay tender destroyed";
 				this.tenderView = null;
@@ -13117,23 +13108,19 @@ class Game {
 			this.setWitchspace(abortWitchspace(this.witchspace));
 			return;
 		}
-		this.commander = {
-			...this.commander,
-			fuelLy: decision.plan.fuelLeftLy,
-		};
-
 		jumpWorldTo(this.world, to);
 		this.rebuildSystem();
 
-		// §7's visited flag, per galaxy (`persistent-world-state.md` §7). The
-		// start system is recorded at boot; this is every system after it.
-		this.commerceWorld = visit(this.commerceWorld, to.galaxy, to.index);
-		// #183 D4: a first arrival is a kind, pending until the next dock.
-		this.ladderPending = pendingArrival(
-			this.ladders,
-			this.ladderPending,
-			to.galaxy,
-			to.index,
+		// The plan's fuel, §7's visited flag and a first arrival's pending
+		// kind (#183 D4), in one event. The start system is recorded at boot;
+		// this is every system after it.
+		this.adoptHoldings(
+			applyHoldEvent(this.holdings(), this.commerceWorld, {
+				kind: "arrival",
+				galaxyIndex: to.galaxy,
+				systemIndex: to.index,
+				fuelLy: decision.plan.fuelLeftLy,
+			}),
 		);
 		this.observeCurrentSystemRelay();
 
@@ -15333,34 +15320,15 @@ class Game {
 	 * records the capstone if this dock reached it (D8).
 	 */
 	private bankLadders(station: CarrierKey): void {
-		this.ladders = bankOnDock(this.ladders, this.ladderPending, {
-			galaxyIndex: this.world.system.record.galaxy,
-			station,
-			gameTime: this.world.gameTime,
-		});
-		this.ladderPending = emptyPending();
-		this.saveDirty();
-	}
-
-	/**
-	 * A player's kill, priced on the combat ladder (#562 D3): pending until the
-	 * next dock. `null` is a target with no hull row — the relay — and pays
-	 * nothing, as an unarmed hull does (D4). Called at each of the four kill
-	 * sites — traffic, raider (its defender included), relay, tender — by hand,
-	 * and nothing checks that list: `probe-raider-consequence` reads the
-	 * raider's credit and `probe-traffic-engagement` an unarmed kill's zero, so
-	 * a relay or tender call that went missing would pay what it pays anyway,
-	 * which is nothing.
-	 */
-	private creditKill(target: HullId | null): void {
-		if (target === null) return;
-		this.ladderPending = pendingKill(
-			this.ladderPending,
-			killCredit(
-				{ hull: this.commander.hull, equipment: this.commander.ownedEquipment },
-				target,
-			),
+		this.adoptHoldings(
+			applyHoldEvent(this.holdings(), this.commerceWorld, {
+				kind: "dock",
+				galaxyIndex: this.world.system.record.galaxy,
+				station,
+				at: this.world.gameTime,
+			}),
 		);
+		this.saveDirty();
 	}
 
 	/**
@@ -16092,34 +16060,31 @@ class Game {
 	 * bound and `materializeDue` all apply, so a debug hook cannot put the
 	 * world in a state a real writer could not.
 	 */
-	applyCarrierTransition(key: CarrierKey, event: TransitionEvent): void {
-		this.commerceWorld = applyTransition(
-			this.commerceWorld,
-			this.world.system.record.galaxy,
+	applyCarrierTransition(
+		key: CarrierKey,
+		event: TransitionEvent,
+		hull: HullId | null,
+	): void {
+		// **A player's kill pays its bounty and its combat ladder in this one
+		// event** (#627 D3), so no kill site can forget either: every accepted
+		// Bounty naming the carrier hears it (#508 D1), and the kill is priced
+		// pending until the next dock (#562 D3). `hull` is the struck carrier's
+		// row, required because `CarrierKey` does not carry it.
+		const before = this.holdings();
+		const outcome = applyHoldEvent(before, this.commerceWorld, {
+			kind: "carrier",
+			galaxyIndex: this.world.system.record.galaxy,
 			key,
-			event,
-		);
-		// **Every accepted Bounty naming this carrier hears the kill** (#508 D1),
-		// here rather than in `stepRelay` so a second target kind (#509) cannot
-		// be destroyed down a path that forgets its bounty. Only the player's
-		// own gun qualifies — H8's "`destroy` with the player's provenance".
-		if (
-			event.kind === "destroy" &&
-			event.cause.actorId === PLAYER_KILL.actorId
-		) {
-			const requests = recordKill(
-				this.requests,
-				{ galaxyIndex: this.world.system.record.galaxy, carrierKey: key },
-				event.occurredAt,
-			);
-			if (requests !== this.requests) {
-				// A request is ready to report: nothing else says so (#546). Not
-				// every change: a kill can advance a stage without readying one.
-				if (readiedBy(this.requests, requests)) this.consoleNotify("good");
-				this.requests = requests;
-				this.requestRevision += 1;
-			}
-		}
+			transition: event,
+			hull,
+		});
+		// Adopted whatever the holdings say: a transition that is not the
+		// player's kill moves only the world.
+		this.adoptHoldings(outcome);
+		if (outcome.holdings.requests !== before.requests)
+			this.requestRevision += 1;
+		// A request is ready to report: nothing else says so (#546).
+		if (outcome.signals.readied) this.consoleNotify("good");
 		this.saveDirty();
 	}
 

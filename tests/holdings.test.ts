@@ -711,11 +711,11 @@ describe("a carrier transition", () => {
 		// the ladder and read exactly like an unarmed kill.
 		// @ts-expect-error — no `hull`.
 		const event: HoldEvent = {
-				kind: "carrier",
-				galaxyIndex: 0,
-				key: RAIDER_KEY,
-				transition: raiderDestruction(RELAY_HOME.record.index, KILL_AT),
-			};
+			kind: "carrier",
+			galaxyIndex: 0,
+			key: RAIDER_KEY,
+			transition: raiderDestruction(RELAY_HOME.record.index, KILL_AT),
+		};
 		expect(event.kind).toBe("carrier");
 	});
 });
