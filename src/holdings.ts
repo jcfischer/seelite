@@ -1,7 +1,7 @@
 /**
- * What a pilot's act does to their **Holdings** (#626): the commander, the
- * Requests journal, the ladder record and its pending credit — and the world
- * writes the act causes.
+ * What a pilot's act does to their **Holdings** (#626, #627): the commander,
+ * the Requests journal, the ladder record and its pending credit — and the
+ * world writes the act causes.
  *
  * The reducers this applies were already pure: `requestAction`,
  * `transactAtStation`, `scoopCargo`. Applying their results was not. `Game`
@@ -9,34 +9,49 @@
  * wrote the deficit mark by hand at three sites, and the rule that **the basis
  * follows the cargo** was written once per site. This is the one copy.
  *
+ * #627 brought the other three: a carrier transition, a jump arrival and a
+ * dock. A kill paid its bounty in one place and its combat ladder in another,
+ * called by hand at four sites that nothing checked; one event now pays both.
+ *
  * Pure: no Three.js, no DOM. The world is an input and comes back as an
  * output; nothing here reads a clock or a renderer. `Game` keeps the fields
  * (#437: one save schema, state on the Commander record) and adopts what this
  * returns, and derives its save and repaint from a change in reference — so
- * **a refusal returns the very objects it was given**, and an accepted event
- * always returns a new `Holdings`.
+ * **a refusal returns the very objects it was given**, and an event that moves
+ * nothing a pilot owns returns the `Holdings` it was given. A carrier
+ * transition other than the player's kill is that case and still changes the
+ * world, so `Game` adopts the world whatever the holdings say.
  *
  * The board (`requestsView`, its cache) is `Game`'s: a settlement carries the
  * acted-on offer rather than the board.
  */
 
+import type { CarrierKey } from "./carrier-key";
 import type { HullId } from "./hull";
+import { killCredit } from "./kill-credit";
 import {
 	type LadderRecord,
 	type PendingCredit,
+	bankOnDock,
 	basisAfterScoop,
+	emptyPending,
 	ladderAfterHullSale,
 	ladderAfterMarket,
 	ladderAfterSettlement,
+	pendingArrival,
+	pendingKill,
 	withCapstone,
 } from "./ladder";
 import { recordTrade } from "./deficits";
 import type { Standing } from "./legal";
+import { PLAYER_KILL } from "./raider-wreck";
 import {
 	type RequestOffer,
 	type RequestStation,
 	type RequestsState,
 	entrustedTonnesAboard,
+	readiedBy,
+	recordKill,
 	requestAction,
 } from "./requests";
 import {
@@ -46,7 +61,13 @@ import {
 	commanderHold,
 	scoopCargo,
 } from "./station-commerce";
-import { type WorldState, setDeficits } from "./world-state";
+import {
+	type TransitionEvent,
+	type WorldState,
+	applyTransition,
+	setDeficits,
+	visit,
+} from "./world-state";
 
 /** Everything a pilot owns that an act at a console or in space can move. */
 export interface Holdings {
@@ -88,7 +109,36 @@ export type HoldEvent =
 			at: number;
 	  }
 	/** A canister the ship passed close and slow. */
-	| { kind: "scoop"; commodity: string; tonnes: number };
+	| { kind: "scoop"; commodity: string; tonnes: number }
+	/** Any carrier transition (#627 D3). A destroy with the player's
+	 *  provenance is a kill: it pays every accepted Bounty naming the carrier
+	 *  and prices the kill on the combat ladder. Anything else is only the
+	 *  world write. */
+	| {
+			kind: "carrier";
+			galaxyIndex: number;
+			key: CarrierKey;
+			transition: TransitionEvent;
+			/** The struck carrier's hull row, or null for a target with none —
+			 *  the relay — which pays nothing on the ladder. **Required** on
+			 *  every transition, because `CarrierKey` does not carry it and a
+			 *  default would let a kill site that forgot it pay nothing, which
+			 *  reads exactly like an unarmed kill. Read only on a player's
+			 *  destroy. */
+			hull: HullId | null;
+	  }
+	/** A jump that arrived: the plan's fuel, the visit, and a first arrival's
+	 *  exploration kind, pending until the next dock (#183 D4). */
+	| {
+			kind: "arrival";
+			galaxyIndex: number;
+			systemIndex: number;
+			/** What the jump plan left in the tank. */
+			fuelLy: number;
+	  }
+	/** A dock: the pending credit banks and the station's first dock is a
+	 *  kind (#183 D7), and the capstone is checked (D8). */
+	| { kind: "dock"; galaxyIndex: number; station: CarrierKey; at: number };
 
 /** What `Game` has to act on beyond adopting the state. A closed set. */
 export interface HoldSignals {
@@ -96,6 +146,9 @@ export interface HoldSignals {
 	hullChanged: HullId | null;
 	/** The sentence a Requests press prints, accepted or refused. */
 	message: string | null;
+	/** A request became ready to report (#546). Not every change to the
+	 *  journal: a kill can advance a stage without readying one. */
+	readied: boolean;
 }
 
 export interface HoldOutcome {
@@ -112,7 +165,7 @@ export interface HoldOutcome {
 export const holdOf = (h: Pick<Holdings, "commander" | "requests">) =>
 	commanderHold(h.commander, entrustedTonnesAboard(h.requests));
 
-const QUIET: HoldSignals = { hullChanged: null, message: null };
+const QUIET: HoldSignals = { hullChanged: null, message: null, readied: false };
 
 const unchanged = (
 	holdings: Holdings,
@@ -269,6 +322,94 @@ function scoop(
 	};
 }
 
+function transition(
+	holdings: Holdings,
+	world: WorldState,
+	event: Extract<HoldEvent, { kind: "carrier" }>,
+): HoldOutcome {
+	const { galaxyIndex, key, transition: change } = event;
+	// The world first, then the credit: the order every kill site had.
+	const next = applyTransition(world, galaxyIndex, key, change);
+	// H8: only the player's own gun is a kill. Not gated on the world having
+	// accepted the change, which the sites never were either.
+	if (change.kind !== "destroy" || change.cause.actorId !== PLAYER_KILL.actorId)
+		return unchanged(holdings, next);
+	// Every accepted Bounty naming this carrier hears the kill (#508 D1).
+	const requests = recordKill(
+		holdings.requests,
+		{ galaxyIndex, carrierKey: key },
+		change.occurredAt,
+	);
+	// Priced on the combat ladder (#562 D3), pending until the next dock. A
+	// target with no hull row pays nothing, as an unarmed hull does (D4).
+	const ladderPending =
+		event.hull === null
+			? holdings.ladderPending
+			: pendingKill(
+					holdings.ladderPending,
+					killCredit(
+						{
+							hull: holdings.commander.hull,
+							equipment: holdings.commander.ownedEquipment,
+						},
+						event.hull,
+					),
+				);
+	if (
+		requests === holdings.requests &&
+		ladderPending === holdings.ladderPending
+	)
+		return unchanged(holdings, next);
+	return {
+		holdings: { ...holdings, requests, ladderPending },
+		world: next,
+		signals: { ...QUIET, readied: readiedBy(holdings.requests, requests) },
+	};
+}
+
+function arrive(
+	holdings: Holdings,
+	world: WorldState,
+	event: Extract<HoldEvent, { kind: "arrival" }>,
+): HoldOutcome {
+	const { galaxyIndex, systemIndex } = event;
+	return {
+		holdings: {
+			...holdings,
+			commander: { ...holdings.commander, fuelLy: event.fuelLy },
+			ladderPending: pendingArrival(
+				holdings.ladders,
+				holdings.ladderPending,
+				galaxyIndex,
+				systemIndex,
+			),
+		},
+		// §7's visited flag, per galaxy (`persistent-world-state.md` §7).
+		world: visit(world, galaxyIndex, systemIndex),
+		signals: QUIET,
+	};
+}
+
+function dock(
+	holdings: Holdings,
+	world: WorldState,
+	event: Extract<HoldEvent, { kind: "dock" }>,
+): HoldOutcome {
+	return {
+		holdings: {
+			...holdings,
+			ladders: bankOnDock(holdings.ladders, holdings.ladderPending, {
+				galaxyIndex: event.galaxyIndex,
+				station: event.station,
+				gameTime: event.at,
+			}),
+			ladderPending: emptyPending(),
+		},
+		world,
+		signals: QUIET,
+	};
+}
+
 /** One hold event, applied whole or not at all. */
 export function applyHoldEvent(
 	holdings: Holdings,
@@ -282,5 +423,11 @@ export function applyHoldEvent(
 			return trade(holdings, world, event);
 		case "scoop":
 			return scoop(holdings, world, event);
+		case "carrier":
+			return transition(holdings, world, event);
+		case "arrival":
+			return arrive(holdings, world, event);
+		case "dock":
+			return dock(holdings, world, event);
 	}
 }
