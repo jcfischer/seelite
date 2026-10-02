@@ -190,7 +190,7 @@ _Avoid_: Inventory, cargo bay, hold contents (for the manifest)
 
 **Holdings**:
 Everything a pilot owns that an act can move: the commander (credits, cargo,
-equipment, fuel, hull), the Requests journal, the **Ladder** record with its
+equipment, **Hyperspace tank**, hull), the Requests journal, the **Ladder** record with its
 purchase basis, and the pending ladder credit. `src/holdings.ts` owns what a
 hold event does to them and to the world it marks — a Request settlement, a
 market trade (hull sale included) and a canister scoop since #626 — so the rule

@@ -5,7 +5,7 @@
  *
  * The reducers this applies were already pure: `requestAction`,
  * `transactAtStation`, `scoopCargo`. Applying their results was not. `Game`
- * credited the reward, folded the cargo delta, moved the purchase basis and
+ * credited the job's pay, folded the cargo delta, moved the purchase basis and
  * wrote the deficit mark by hand at three sites, and the rule that **the basis
  * follows the cargo** was written once per site. This is the one copy.
  *

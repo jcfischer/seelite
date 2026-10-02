@@ -71,8 +71,9 @@ describe("the Game's world writes", () => {
 				// pattern, so a hand-built object literal cannot hide behind it.
 				rhs !== "save.world;" &&
 				// A hold event's outcome (#626), adopted in `adoptHoldings`.
-				// `holdings.ts` writes through `setDeficits` and its own rows
-				// prove it; the exact expression, for `save.world`'s reason.
+				// What `holdings.ts` puts there is held by the row below that
+				// scans that module; the exact expression, for `save.world`'s
+				// reason.
 				rhs !== "outcome.world;" &&
 				!WRITERS.some((w) => rhs.startsWith(`${w}(`)),
 		);
@@ -288,7 +289,9 @@ describe("the Game's world writes", () => {
 			const start = MAIN.indexOf(head);
 			expect(start).toBeGreaterThan(-1);
 			// The method body: up to the next member's doc comment.
-			const body = MAIN.slice(start, MAIN.indexOf("\n\t/**", start));
+			const end = MAIN.indexOf("\n\t/**", start);
+			expect(end).toBeGreaterThan(start);
+			const body = MAIN.slice(start, end);
 			expect(body).toContain("applyHoldEvent(");
 			expect(body).toContain(kind);
 			for (const law of [
@@ -303,6 +306,34 @@ describe("the Game's world writes", () => {
 				expect(body).not.toContain(law);
 		},
 	);
+
+	test("every world holdings.ts hands back is the one it was given or a writer's", async () => {
+		// The other half of the `outcome.world;` exemption above: `Game`
+		// adopts whatever world the module returns, so the module is where a
+		// hand-built world would come from. Each `world:` property and each
+		// `unchanged(…)` call is either the world passed in or a call to one of
+		// `world-state.ts`'s writers.
+		const HOLDINGS = await Bun.file(
+			new URL("../src/holdings.ts", import.meta.url),
+		).text();
+		const values = [...HOLDINGS.matchAll(/^\s+world:\s*(.*)$/gm)].map((m) =>
+			m[1].trim(),
+		);
+		// Settlement's mark and the till's deficits: the two writes it makes.
+		// If this drops the regex has drifted and the check below is vacuous.
+		expect(values.filter((v) => v.startsWith("setDeficits(")).length).toBe(2);
+		const byHand = values.filter(
+			(v) =>
+				v !== "world," &&
+				// A parameter or field's type, not a value.
+				v !== "WorldState," &&
+				v !== "WorldState;" &&
+				!WRITERS.some((w) => v.startsWith(`${w}(`)),
+		);
+		expect(byHand).toEqual([]);
+		// Shorthand `{ holdings: next, world, signals }` is the world passed in.
+		expect(HOLDINGS).not.toMatch(/world:\s*\{/);
+	});
 
 	test("the renderer never converts the world clock into minutes", () => {
 		// `this.world.gameTime / 60` is game minutes, which is the right unit for

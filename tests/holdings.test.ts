@@ -4,7 +4,7 @@
  *
  * `requestAction`, `transactAtStation` and `scoopCargo` were already pure and
  * already tested (`requests`, `station-commerce`, `ladder`). What had no test
- * was the step after them: crediting the reward, folding the cargo delta,
+ * was the step after them: crediting the job's pay, folding the cargo delta,
  * moving the purchase basis with the cargo, writing the world's mark with the
  * flown hull's hold. `Game` did that by hand at three sites, and only a
  * browser probe reached any of them. These rows are that step.
@@ -29,7 +29,11 @@ import {
 	ladderAfterMarket,
 } from "../src/ladder";
 import { DEFICIT_MAX, marketStationOf } from "../src/market";
-import { emptyRequests, entrustedTonnesAboard } from "../src/requests";
+import {
+	type RequestOffer,
+	emptyRequests,
+	entrustedTonnesAboard,
+} from "../src/requests";
 import {
 	type CommanderState,
 	type StationAction,
@@ -74,17 +78,15 @@ const station = (where: { galaxyIndex: number; carrierKey: string }) => ({
  *  offer if the board shows it, the station the ship is docked at. */
 const press = (
 	action: string,
-	offer: typeof purchase,
-	board: readonly (typeof purchase)[] | readonly unknown[],
+	offer: RequestOffer,
+	board: readonly RequestOffer[],
 	docked = station(offer.requester),
 	at = AT,
 ): HoldEvent => ({
 	kind: "settlement",
 	action,
 	id: offer.id,
-	offer:
-		(board as readonly (typeof purchase)[]).find((o) => o.id === offer.id) ??
-		null,
+	offer: board.find((o) => o.id === offer.id) ?? null,
 	docked,
 	standing: "clean",
 	galaxyIndex: GALAXY,
@@ -142,12 +144,12 @@ describe("a Request settlement", () => {
 			units: 2,
 			cr: 20,
 		});
-		const reward = purchase.rewardCr;
-		expect(reward).toBeGreaterThan(0);
+		const pay = purchase.rewardCr;
+		expect(pay).toBeGreaterThan(0);
 		expect(reported.holdings.commander.credits).toBe(
-			start.commander.credits + reward,
+			start.commander.credits + pay,
 		);
-		expect(reported.holdings.ladders.banked.trade).toBe(reward);
+		expect(reported.holdings.ladders.banked.trade).toBe(pay);
 	});
 
 	test("the report's mark is written with the flown hull's hold, stamped in minutes", () => {
