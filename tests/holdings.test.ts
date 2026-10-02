@@ -14,8 +14,11 @@ import { type CarrierKey, carrierKey } from "../src/carrier-key";
 import { readDeficit, recordTrade } from "../src/deficits";
 import { generateGalaxy } from "../src/galaxy";
 import {
+	type AdoptEffects,
 	type Holdings,
 	type HoldEvent,
+	type HoldOutcome,
+	adoptEffects,
 	applyHoldEvent,
 	holdOf,
 } from "../src/holdings";
@@ -26,6 +29,7 @@ import {
 	emptyLadderRecord,
 	emptyPending,
 	ladderAfterHullSale,
+	ladderAfterPlay,
 	ladderAfterMarket,
 } from "../src/ladder";
 import { type JobOffer, bindBounty } from "../src/jobs";
@@ -66,6 +70,7 @@ import { generateContents } from "../src/system";
 import {
 	type TransitionEvent,
 	type WorldState,
+	advanceTo,
 	applyTransition,
 	newWorld,
 	setDeficits,
@@ -880,5 +885,198 @@ describe("the figures the probes used to pin", () => {
 		expect(holdOf(out.holdings).usedT - holdOf(start).usedT).toBe(
 			courier.operand.tonnes,
 		);
+	});
+});
+
+/*
+ * #631: what `Game` does with an outcome — the save, the two revisions and
+ * the repaint — derived at one adopt point from what changed, instead of
+ * paired by hand after each of the six sites. Every row is built from a real
+ * `applyHoldEvent` outcome, so the table is the old per-site behaviour read
+ * through the new rule: a row that differs from what the site did before is
+ * a behaviour change, and this node makes none.
+ */
+describe("the adopt point (#631)", () => {
+	const effectsOf = (before: Holdings, world: WorldState, out: HoldOutcome) =>
+		adoptEffects(out.kind, { holdings: before, world }, out);
+	/** The effects that fire, by name, so a red row says which. */
+	const firing = (effects: AdoptEffects) =>
+		Object.entries(effects)
+			.filter(([, on]) => on)
+			.map(([name]) => name)
+			.sort();
+
+	test("each event's effects are what its site applied by hand before", () => {
+		const world = newWorld(0x5ee11e);
+		const start = holdings({ credits: 1000 });
+		const accepted = applyHoldEvent(
+			start,
+			world,
+			press("retain", purchase, shelf),
+		);
+		const refused = applyHoldEvent(
+			start,
+			world,
+			press("accept", purchase, shelf, null as never),
+		);
+		const { out: bought } = sale(start, world, {
+			type: "buy-commodity",
+			commodity: "Food",
+			quantity: 3,
+		});
+		const scooped = applyHoldEvent(start, world, {
+			kind: "scoop",
+			commodity: "Food",
+			tonnes: 2,
+		});
+		const full = holdings({ cargo: { Food: holdOf(holdings()).capacityT } });
+		const spilled = applyHoldEvent(full, world, {
+			kind: "scoop",
+			commodity: "Food",
+			tonnes: 2,
+		});
+		const arrived = applyHoldEvent(start, world, arrivalEvent());
+		const docked = applyHoldEvent(start, world, {
+			kind: "dock",
+			galaxyIndex: 0,
+			station: carrierKey(3, "station-00"),
+			at: AT,
+		});
+		const hunter = withBounty();
+		const killed = killRelay(hunter, world, RAIDER_HULL_ID);
+		const struck = applyHoldEvent(
+			start,
+			world,
+			carrierEvent(
+				RAIDER_KEY,
+				{ kind: "disable", occurredAt: KILL_AT, cause: PLAYER_KILL },
+				RAIDER_HULL_ID,
+			),
+		);
+		const rows: Record<string, string[]> = {
+			// Saved, bumped both counters, repainted (`actOnRequest`'s accepted arm).
+			"accepted settlement": firing(effectsOf(start, world, accepted)),
+			// Every press repaints its sentence; a refusal saves nothing.
+			"refused settlement": firing(effectsOf(start, world, refused)),
+			// Saved, bumped the console, repainted (`transactStation`).
+			"accepted market": firing(effectsOf(start, world, bought)),
+			// Saved, and nothing drawn: the scoop is in flight.
+			"accepted scoop": firing(effectsOf(start, world, scooped)),
+			"refused scoop": firing(effectsOf(full, world, spilled)),
+			// `performJump` and the dock flush after these; the adopt saves.
+			arrival: firing(effectsOf(start, world, arrived)),
+			dock: firing(effectsOf(start, world, docked)),
+			// The board heard the kill; the console is not up in flight.
+			"player's kill": firing(effectsOf(hunter, world, killed)),
+			// Only the world moved, and a world write saves.
+			"player's strike": firing(effectsOf(start, world, struck)),
+		};
+		expect(rows).toEqual({
+			"accepted settlement": [
+				"consoleRevision",
+				"redraw",
+				"requestRevision",
+				"save",
+			],
+			"refused settlement": ["redraw", "requestRevision"],
+			"accepted market": ["consoleRevision", "redraw", "save"],
+			"accepted scoop": ["save"],
+			"refused scoop": [],
+			arrival: ["save"],
+			dock: ["save"],
+			"player's kill": ["requestRevision", "save"],
+			"player's strike": ["save"],
+		});
+	});
+
+	test("an accepted event saves once: the same outcome adopted again changes nothing", () => {
+		const world = newWorld(1);
+		const start = holdings();
+		const out = applyHoldEvent(start, world, arrivalEvent());
+		expect(effectsOf(start, world, out).save).toBe(true);
+		// Adopted, the outcome is the state; a second adoption of it moves no
+		// reference, so nothing marks the save dirty twice for one event.
+		expect(firing(adoptEffects(out.kind, out, out))).toEqual([]);
+	});
+
+	test("a refused event does not save", () => {
+		const world = newWorld(1);
+		const start = holdings();
+		for (const out of [
+			applyHoldEvent(
+				start,
+				world,
+				press("accept", purchase, shelf, null as never),
+			),
+			applyHoldEvent(
+				holdings({ cargo: { Food: holdOf(holdings()).capacityT } }),
+				world,
+				{ kind: "scoop", commodity: "Food", tonnes: 1 },
+			),
+		]) {
+			expect(effectsOf(out.holdings, world, out).save).toBe(false);
+			expect(effectsOf(out.holdings, world, out).consoleRevision).toBe(false);
+		}
+	});
+
+	test("a paused frame moves no reference, so it has nothing to save", () => {
+		const record = emptyLadderRecord();
+		// The clock held: no play, and the very record back.
+		expect(ladderAfterPlay(record, 0)).toBe(record);
+		const h = holdings({}, { ladders: ladderAfterPlay(record, 0) });
+		const world = newWorld(1);
+		expect(
+			firing(
+				adoptEffects("world", { holdings: h, world }, { holdings: h, world }),
+			),
+		).toEqual([]);
+	});
+
+	test("a running frame's play log is a new record, and a record read before it is untouched", () => {
+		const record = emptyLadderRecord();
+		const played = ladderAfterPlay(record, 0.25);
+		expect(played).not.toBe(record);
+		expect(played.playedS).toBe(0.25);
+		// The leak #631 names: an outcome's `before` must not move under it.
+		expect(record.playedS).toBe(0);
+		expect(ladderAfterPlay(played, 0.5).playedS).toBe(0.75);
+	});
+
+	test("a world write outside Holdings saves exactly when it changes the world", () => {
+		const h = holdings();
+		const world = newWorld(1);
+		const written = visit(world, 0, SYSTEM);
+		expect(
+			firing(
+				adoptEffects(
+					"world",
+					{ holdings: h, world },
+					{ holdings: h, world: written },
+				),
+			),
+		).toEqual(["save"]);
+		// A writer that hands back the world it was given — `settleIncident` on
+		// empty lists, `withOffence` on a lawful act — is no write.
+		expect(
+			firing(
+				adoptEffects("world", { holdings: h, world }, { holdings: h, world }),
+			),
+		).toEqual([]);
+	});
+
+	test("a save's advanced world is a new reference, so a save read must not be adopted", () => {
+		// Why `saveEnvelope` reads and does not write: the store calls it on
+		// every write, `markDirty` reschedules the debounce, and adopting this
+		// world would mark the save dirty on every save — a write that arms
+		// the next one.
+		const h = holdings();
+		const world = newWorld(1);
+		expect(
+			adoptEffects(
+				"world",
+				{ holdings: h, world },
+				{ holdings: h, world: advanceTo(world, 60) },
+			).save,
+		).toBe(true);
 	});
 });

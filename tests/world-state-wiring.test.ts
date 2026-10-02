@@ -70,11 +70,12 @@ describe("the Game's world writes", () => {
 				// says. Spelled as the exact expression rather than as a
 				// pattern, so a hand-built object literal cannot hide behind it.
 				rhs !== "save.world;" &&
-				// A hold event's outcome (#626), adopted in `adoptHoldings`.
-				// What `holdings.ts` puts there is held by the row below that
-				// scans that module; the exact expression, for `save.world`'s
-				// reason.
-				rhs !== "outcome.world;" &&
+				// The adopt point (#631), which takes a hold event's outcome
+				// and a world write made outside Holdings. What `holdings.ts`
+				// puts there is held by the row below that scans that module,
+				// and what `adoptWorld` is handed by the row that scans its
+				// callers; the exact expression, for `save.world`'s reason.
+				rhs !== "next.world;" &&
 				!WRITERS.some((w) => rhs.startsWith(`${w}(`)),
 		);
 		expect(byHand).toEqual([]);
@@ -327,27 +328,58 @@ describe("the Game's world writes", () => {
 		);
 	});
 
+	/** A method's body: from its head to the next member's doc comment. */
+	const methodBody = (head: string): string => {
+		const start = MAIN.indexOf(head);
+		expect(start).toBeGreaterThan(-1);
+		const end = MAIN.indexOf("\n\t/**", start);
+		expect(end).toBeGreaterThan(start);
+		return MAIN.slice(start, end);
+	};
+
+	/** What a site used to pair by hand after its hold event (#631). */
+	const HAND_PAIRS = [
+		"saveDirty(",
+		"Revision += 1",
+		"updateCockpit(",
+		"consoleNotify(",
+		"receiveHull(",
+		"requestMessage =",
+	];
+
 	/**
-	 * #626: the three sites that change the hold hand the act to
+	 * #626 and #627: the six sites that apply a hold event hand the act to
 	 * `holdings.ts` and apply none of its law themselves. What the law does is
-	 * `tests/holdings.test.ts`'s; this row is only that each site reaches it,
+	 * `tests/holdings.test.ts`'s; this row is that each site reaches it,
 	 * because `Game` is not constructible headless.
+	 *
+	 * #631: and each hands the outcome to the one adopt point, which derives
+	 * the save, the revisions and the repaint. **After the event nothing is
+	 * paired by hand.** What a site does *before* its event is its own: the
+	 * till's refusal and the board's `details` press are not hold events, and
+	 * they repaint themselves. The jump's and the dock's `saveDirty(); saveFlush`
+	 * are #89's flush cadence and not an adopt pair: the jump's is in the body
+	 * and is cut out by its exact text, and the dock's is in the dock method,
+	 * which calls `bankLadders`.
 	 */
 	test.each([
 		["actOnRequest", "private actOnRequest(", 'kind: "settlement"'],
 		["the till", "private transactStation(", 'kind: "market"'],
 		["the scoop", "private stepCargoCanisters(", 'kind: "scoop"'],
+		["the jump", "private performJump(", 'kind: "arrival"'],
+		["the dock", "private bankLadders(", 'kind: "dock"'],
+		[
+			"the carrier hook",
+			"applyCarrierTransition(\n\t\tkey: CarrierKey,",
+			'kind: "carrier"',
+		],
 	])(
-		"%s applies its hold event through the Holdings module",
+		"%s applies its hold event through the Holdings module and adopts it at the one point",
 		(_, head, kind) => {
-			const start = MAIN.indexOf(head);
-			expect(start).toBeGreaterThan(-1);
-			// The method body: up to the next member's doc comment.
-			const end = MAIN.indexOf("\n\t/**", start);
-			expect(end).toBeGreaterThan(start);
-			const body = MAIN.slice(start, end);
+			const body = methodBody(head);
 			expect(body).toContain("applyHoldEvent(");
 			expect(body).toContain(kind);
+			expect(body).toContain("this.adoptHoldings(");
 			for (const law of [
 				"ladderAfter",
 				"withCapstone(",
@@ -356,10 +388,144 @@ describe("the Game's world writes", () => {
 				"recordTrade(",
 				"scoopCargo(",
 				"requestAction(",
+				"applyTransition(",
+				"recordKill(",
+				"pendingKill(",
+				"pendingArrival(",
+				"bankOnDock(",
 			])
 				expect(body).not.toContain(law);
+			const flush = 'this.saveDirty();\n\t\tthis.saveFlush("jump");';
+			const after = body
+				.slice(body.indexOf("applyHoldEvent("))
+				.replace(flush, "");
+			for (const pair of HAND_PAIRS) expect(after).not.toContain(pair);
 		},
 	);
+
+	test("the jump keeps its flush and the dock its flush, after the adopt", () => {
+		// Removing the adopt pairs must not take #89's cadence with them.
+		expect(methodBody("private performJump(")).toContain(
+			'this.saveDirty();\n\t\tthis.saveFlush("jump");',
+		);
+		const dock = MAIN.indexOf("this.bankLadders(this.stationKey(");
+		expect(dock).toBeGreaterThan(-1);
+		const flush = MAIN.indexOf('this.saveFlush("dock");', dock);
+		expect(flush).toBeGreaterThan(dock);
+		expect(MAIN.slice(dock, flush)).toContain("this.saveDirty();");
+	});
+
+	test("the adopt point derives every effect it applies", () => {
+		const body = methodBody("private adopt(");
+		expect(body).toContain("adoptEffects(");
+		for (const applied of [
+			"if (effects.save) this.saveDirty();",
+			"if (effects.consoleRevision) this.stationConsoleRevision += 1;",
+			"if (effects.requestRevision) this.requestRevision += 1;",
+			"if (effects.redraw) this.updateCockpit();",
+		])
+			expect(body).toContain(applied);
+		// The closed set of signals is applied here too, so no site can forget
+		// one: the press's sentence, the delivered hull, a readied request.
+		expect(body).toContain("this.requestMessage = ");
+		expect(body).toContain("this.receiveHull(");
+		expect(body).toContain('this.consoleNotify("good")');
+	});
+
+	test("every revision bump is the adopt point's, or a repaint that is not an adoption", () => {
+		// Where a bump may stand, and why it is not an adopt pair: the clock's
+		// market tick (#321), the till's refusal (#443) and the board's own
+		// `details` press (#626 D5). Each of the last two is read before its
+		// method's hold event, so a bump after the event is still refused.
+		const allowed: [head: string, beforeEvent: boolean][] = [
+			["private adopt(", false],
+			["private stationConsoleState(", false],
+			["private transactStation(", true],
+			["private actOnRequest(", true],
+		];
+		const bumps = [
+			...MAIN.matchAll(/(stationConsoleRevision|requestRevision) \+= 1/g),
+		];
+		expect(bumps.length).toBeGreaterThanOrEqual(4);
+		const stray = bumps.filter((bump) => {
+			const at = bump.index ?? -1;
+			return !allowed.some(([head, beforeEvent]) => {
+				const start = MAIN.lastIndexOf(head, at);
+				if (start < 0) return false;
+				const end = MAIN.indexOf("\n\t/**", start);
+				if (at > end) return false;
+				if (!beforeEvent) return true;
+				const event = MAIN.indexOf("applyHoldEvent(", start);
+				return event > at && event < end;
+			});
+		});
+		expect(stray.map((b) => b[0])).toEqual([]);
+	});
+
+	test("every world adopted outside Holdings is a world-state writer's", () => {
+		// The `this.commerceWorld =` row above cannot see these: the assignment
+		// is the adopt point's. So their writer guarantee is read here, at the
+		// argument (#631; #633 routes the offence charge through the same door).
+		const calls = [...MAIN.matchAll(/this\.adoptWorld\(\s*([^\s(]*)/g)].map(
+			(m) => m[1],
+		);
+		// The offence and its lazy clear. If this drops, the regex has drifted.
+		expect(calls.length).toBeGreaterThanOrEqual(2);
+		expect(calls.filter((call) => !WRITERS.includes(call))).toEqual([]);
+	});
+
+	test("the Holdings fields are written at the adopt point and nowhere that should save", () => {
+		// A new event that wrote a field by hand would have to remember its own
+		// save, which is what #631 removes. Every other right-hand side is named
+		// with the reason it is not an adoption.
+		const rhs = [
+			...MAIN.matchAll(
+				/this\.(commander|requests|ladders|ladderPending) = (.*)$/gm,
+			),
+		].map((m) => `${m[1]} = ${m[2].trim()}`);
+		const allowed = [
+			// The adopt point.
+			"commander = next.holdings.commander;",
+			"requests = next.holdings.requests;",
+			"ladders = next.holdings.ladders;",
+			"ladderPending = next.holdings.ladderPending;",
+			// The load arm: a parsed save is adopted whole and already saved.
+			"commander = save.commander.state;",
+			"requests = save.commander.requests;",
+			"ladders = save.commander.ladders;",
+			"ladderPending = emptyPending();",
+			// A new game's seed, before any store is attached.
+			"ladders = seededLadderRecord(",
+			// #562 D2's play log: every running frame, and never a save — a dirty
+			// mark per frame would reschedule the debounce for ever.
+			"ladders = ladderAfterPlay(this.ladders, dt);",
+			// The probe handle's tank, which has never saved.
+			"commander = { ...this.commander, fuelLy: ly };",
+		];
+		expect(rhs.length).toBeGreaterThanOrEqual(allowed.length);
+		expect(rhs.filter((line) => !allowed.includes(line))).toEqual([]);
+		// And nothing edits one of them in place, which moves a value under every
+		// reference an outcome compared against (#631's first precondition).
+		expect(
+			MAIN.match(
+				/this\.(commander|requests|ladders|ladderPending)\.\w+\s*[-+*/]?=(?!=)/g,
+			) ?? [],
+		).toEqual([]);
+	});
+
+	test("a save read writes nothing", () => {
+		// #631's second precondition: the store calls this on every write, so a
+		// world it adopted would mark the save dirty on every save. The advance
+		// is the snapshot's; the live world keeps its last event's clock, and
+		// `advanceTo`'s idempotence makes the bytes the same either way.
+		const body = methodBody("saveEnvelope(): SaveEnvelope {");
+		expect(body).toContain(
+			"advanceTo(this.commerceWorld, this.world.gameTime)",
+		);
+		expect(body).not.toMatch(/this\.\w+ = /);
+		expect(body).not.toContain("adopt");
+		expect(body).not.toContain("saveDirty(");
+	});
 
 	test("every world holdings.ts hands back is the one it was given or a writer's", async () => {
 		// The other half of the `outcome.world;` exemption above: `Game`
