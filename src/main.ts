@@ -785,26 +785,22 @@ const MODIFIER_KEYS: ReadonlySet<string> = new Set([
 	"AltGraph",
 	"CapsLock",
 ]);
-import { readDeficit, recordTrade } from "./deficits";
+import { readDeficit } from "./deficits";
 import { killCredit } from "./kill-credit";
+import { type HoldOutcome, type Holdings, applyHoldEvent } from "./holdings";
 import { type LadderView, ladderInputKey, ladderView } from "./ladder-view";
 import {
 	type LadderRecord,
 	type PendingCredit,
 	type Rungs,
 	bankOnDock,
-	basisAfterScoop,
 	emptyLadderRecord,
 	emptyPending,
-	ladderAfterHullSale,
-	ladderAfterMarket,
-	ladderAfterSettlement,
 	pendingArrival,
 	pendingKill,
 	reconcileBasis,
 	rungsOf,
 	seededLadderRecord,
-	withCapstone,
 } from "./ladder";
 import {
 	emptyRequests,
@@ -812,7 +808,6 @@ import {
 	isRunning,
 	readiedBy,
 	recordKill,
-	requestAction,
 	settledAt,
 } from "./requests";
 import {
@@ -908,7 +903,6 @@ import { disposeSubtree } from "./gpu-teardown";
 import {
 	commanderHold,
 	newCommander,
-	scoopCargo,
 	shipyardScreen,
 	transactAtStation,
 	type StationAction,
@@ -926,7 +920,6 @@ import {
 	observeSystemRelay,
 	readKnowledge,
 	type OperationalCondition,
-	setDeficits,
 	type TransitionEvent,
 	visit,
 	type WorldState,
@@ -11852,27 +11845,22 @@ class Game {
 			this.world.ship,
 			dt,
 			this.world.gameTime,
+			// Applied per canister, inside the step: a second canister scooped
+			// in the same step is judged against the hold the first one left.
 			(canister) => {
-				const took = scoopCargo(
-					this.commander,
-					canister.commodity,
-					canister.tonnes,
-					entrustedTonnesAboard(this.requests),
+				const before = this.holdings();
+				const outcome = applyHoldEvent(before, this.commerceWorld, {
+					kind: "scoop",
+					commodity: canister.commodity,
+					tonnes: canister.tonnes,
+				});
+				if (outcome.holdings === before) return 0;
+				this.adoptHoldings(outcome);
+				// What went aboard, read off the hold: a tonne good, so exact.
+				return (
+					(outcome.holdings.commander.cargo[canister.commodity] ?? 0) -
+					(before.commander.cargo[canister.commodity] ?? 0)
 				);
-				if (took.accepted) {
-					this.commander = took.commander;
-					// Scooped goods cost nothing, so their sale is all margin
-					// (the principal's ruling on #564).
-					this.ladders = {
-						...this.ladders,
-						basis: basisAfterScoop(
-							this.ladders.basis,
-							canister.commodity,
-							took.tonnes,
-						),
-					};
-				}
-				return took.tonnes;
 			},
 			// Each canister's own frame, as it stands (#324), across the step
 			// (#529). Not `localFrame()`: that is the *observer's* nearest body,
@@ -15080,26 +15068,28 @@ class Game {
 	}
 
 	/**
-	 * What a request action is judged against: the commander's own hold and
-	 * cargo.
+	 * The pilot's Holdings (#626), read off the four fields that hold them.
 	 *
-	 * **Built here rather than read off the view.** The view is a projection
-	 * for the screen; routing commerce state through it would make every later
-	 * consumer of `RequestsView` fabricate a hold to call this.
+	 * The fields stay on `Game` (#437: one save schema), so this is a fresh
+	 * object each call: compare an outcome against the one it was given, never
+	 * against a second read.
 	 */
-	private requestContext(docked: RequestsView["docked"]) {
-		const hold = commanderHold(
-			this.commander,
-			entrustedTonnesAboard(this.requests),
-		);
+	private holdings(): Holdings {
 		return {
-			now: this.world.gameTime,
-			docked,
-			cargo: this.commander.cargo,
-			holdRoomT: Math.max(0, hold.capacityT - hold.usedT),
-			standing: this.legalStanding(),
-			equipment: this.commander.ownedEquipment,
+			commander: this.commander,
+			requests: this.requests,
+			ladders: this.ladders,
+			ladderPending: this.ladderPending,
 		};
+	}
+
+	/** Takes a hold event's outcome: the four fields and the world it wrote. */
+	private adoptHoldings(outcome: HoldOutcome): void {
+		this.commander = outcome.holdings.commander;
+		this.requests = outcome.holdings.requests;
+		this.ladders = outcome.holdings.ladders;
+		this.ladderPending = outcome.holdings.ladderPending;
+		this.commerceWorld = outcome.world;
 	}
 
 	/** Whether the board did what was asked: the press's sound reads it (#546). */
@@ -15116,63 +15106,23 @@ class Game {
 			this.requestSelectedId = id;
 			this.requestMessage = "";
 		} else {
-			const result = requestAction(
-				this.requests,
-				view.offers,
+			// The board is this method's (#626 D5): the event carries the offer
+			// the press acted on, and the module judges it against the hold.
+			const before = this.holdings();
+			const outcome = applyHoldEvent(before, this.commerceWorld, {
+				kind: "settlement",
 				action,
 				id,
-				this.requestContext(view.docked),
-			);
-			this.requestMessage = result.message;
-			ok = result.ok;
-			if (result.ok) {
-				this.requests = result.state;
-				if (result.rewardCr)
-					this.commander = {
-						...this.commander,
-						credits: this.commander.credits + result.rewardCr,
-					};
-				if (Object.keys(result.cargoDelta).length > 0) {
-					const cargo = { ...this.commander.cargo };
-					for (const [good, delta] of Object.entries(result.cargoDelta)) {
-						const amount = (cargo[good] ?? 0) + delta;
-						if (amount <= 0) delete cargo[good];
-						else cargo[good] = amount;
-					}
-					this.commander = { ...this.commander, cargo };
-				}
-				// #183 D3: a settlement's pay banks at once — a report happens
-				// docked — and goods a job took take their basis with them.
-				this.ladders = withCapstone(
-					ladderAfterSettlement(
-						this.ladders,
-						result.rewardCr ?? 0,
-						this.commander.cargo,
-					),
-					this.world.gameTime,
-				);
-				if (result.mark) {
-					// §4's mark, through the module's own writer and with the
-					// **flown** hull's hold (#182) — the same figure the till uses.
-					const galaxyIndex = this.world.system.record.galaxy;
-					this.commerceWorld = setDeficits(
-						this.commerceWorld,
-						galaxyIndex,
-						recordTrade(
-							this.commerceWorld.galaxies[galaxyIndex].deficits,
-							result.mark.key,
-							{
-								...result.mark.trade,
-								gameTimeMin: this.world.gameTime / 60,
-								holdT: commanderHold(
-									this.commander,
-									entrustedTonnesAboard(this.requests),
-								).capacityT,
-							},
-						),
-						this.world.gameTime,
-					);
-				}
+				offer: view.offers.find((o) => o.id === id) ?? null,
+				docked: view.docked,
+				standing: this.legalStanding(),
+				galaxyIndex: this.world.system.record.galaxy,
+				at: this.world.gameTime,
+			});
+			this.requestMessage = outcome.signals.message ?? "";
+			ok = outcome.holdings !== before;
+			if (ok) {
+				this.adoptHoldings(outcome);
 				// A settled job changes what this requester posts next, and the
 				// console revision below is what the board's cache key reads.
 				this.stationConsoleRevision += 1;
@@ -16339,36 +16289,16 @@ class Game {
 			return false;
 		}
 		this.clearStationRefusal();
-		// #183 D3: a buy records its basis, a sale banks its margin at once.
-		this.ladders = withCapstone(
-			action.type === "buy-hull"
-				? ladderAfterHullSale(
-						this.ladders,
-						this.commander.cargo,
-						result.sold ?? [],
-					)
-				: ladderAfterMarket(
-						this.ladders,
-						action,
-						this.commander,
-						result.commander,
-					),
-			this.world.gameTime,
-		);
-		this.commander = result.commander;
-		if (action.type === "buy-hull") this.receiveHull(result.commander.hull);
-		// Through the module's own writer, not by hand. `setDeficits` carries
-		// the galaxy bound, the "no write before the clock" refusal and
-		// `materializeDue`, and it takes the world clock in **seconds** — the
-		// spread this replaced set `gameTime` to the *minutes* figure beside it,
-		// which is the unit a deficit row's `updatedAt` wants and the clock
-		// never does.
-		this.commerceWorld = setDeficits(
-			this.commerceWorld,
+		const outcome = applyHoldEvent(this.holdings(), this.commerceWorld, {
+			kind: "market",
+			action,
+			result,
 			galaxyIndex,
-			result.deficits,
-			this.world.gameTime,
-		);
+			at: this.world.gameTime,
+		});
+		this.adoptHoldings(outcome);
+		if (outcome.signals.hullChanged)
+			this.receiveHull(outcome.signals.hullChanged);
 		this.saveDirty();
 		this.stationConsoleRevision += 1;
 		this.updateCockpit();
