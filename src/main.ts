@@ -1496,6 +1496,11 @@ const DUEL_BAND = 3;
  * always.
  */
 const FLOOR_BANDS = DUEL_BAND;
+/** The plate behind a docking notice (#597): dark enough that §4's red reads
+ *  over a lit station face, and translucent so the slot stays visible. */
+const PROMPT_PLATE_FILL = "rgba(4, 10, 18, 0.78)";
+const PROMPT_PLATE_PAD_PX = 8;
+
 /** A `PROMPT_FONT` line's own band, which both lines below occupy. */
 const PROMPT_LINE_HEIGHT_PX = 18;
 /**
@@ -17583,9 +17588,25 @@ class Game {
 			const y = floorTopY(h) - PROMPT_ABOVE_FLOOR_PX;
 			ctx.font = PROMPT_FONT;
 			ctx.textAlign = "center";
+			const promptWidth = ctx.measureText(prompt).width;
+			// **A plate behind a docking notice** (#597, the principal's ruling on
+			// the sheet). The line lands on the slot whenever a station is near,
+			// and red over lit plating and a nameplate did not read. Only for the
+			// notice: every other prompt kept its look.
+			if (this.dockingNotice?.text === prompt) {
+				const m = ctx.measureText(prompt);
+				ctx.fillStyle = PROMPT_PLATE_FILL;
+				ctx.fillRect(
+					x - promptWidth / 2 - PROMPT_PLATE_PAD_PX,
+					y - m.actualBoundingBoxAscent - PROMPT_PLATE_PAD_PX / 2,
+					promptWidth + 2 * PROMPT_PLATE_PAD_PX,
+					m.actualBoundingBoxAscent +
+						m.actualBoundingBoxDescent +
+						PROMPT_PLATE_PAD_PX,
+				);
+			}
 			ctx.fillStyle = this.promptFill(prompt);
 			ctx.fillText(prompt, x, y);
-			const promptWidth = ctx.measureText(prompt).width;
 			this.cockpitPrompt.setCenteredPrompt(prompt, x, y, promptWidth);
 			ctx.textAlign = "left";
 		} else {
