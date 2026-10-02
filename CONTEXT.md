@@ -194,8 +194,9 @@ equipment, **Hyperspace tank**, hull), the Requests journal, the **Ladder** reco
 purchase basis, and the pending ladder credit. `src/holdings.ts` owns what a
 hold event does to them and to the world it marks — a Request settlement, a
 market trade (hull sale included) and a canister scoop since #626 — so the rule
-that the purchase basis follows the cargo, and that a mark carries the flown
-hull's **Hold**, has one copy. `Game` keeps the four fields (one save schema,
+that the purchase basis follows the cargo has one copy, and so does a
+settlement's mark with the flown hull's **Hold** (the till's own mark is
+`transactAtStation`'s). `Game` keeps the four fields (one save schema,
 #437) and adopts what the module returns; a refusal returns the very objects it
 was given.
 _Avoid_: purse (`ladder.ts`'s local credits and cargo), ledger (an
