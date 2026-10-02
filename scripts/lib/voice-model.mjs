@@ -25,7 +25,6 @@ export const PART_BYTES = 20 * 1024 * 1024;
  *  offered or offered without being fetched. Kokoro's first letter is the
  *  accent: `a` American, `b` British. */
 export const VOICE_SHA256 = {
-	bm_george: "c4b235a4c1f2cd3b939fed08b899ce9385638b763f7b73a59616c4fc9bd6c9bc",
 	bm_lewis: "b8f671cef828c30e66fdf0b0756a76bba58f6bb3398cbbf27058642acbcedb97",
 	am_michael:
 		"1d1f21dd8da39c30705cd4c75d039d265e9bc4a2a93ed09bc9e1b1225eb95ba1",
@@ -34,7 +33,12 @@ export const VOICE_SHA256 = {
 	bf_isabella:
 		"3754352c4aaa46d17f27654ab7518d65b62ad6163a0f55a5f4330c2da2c4e94f",
 	af_nicole: "cd2191ab31b914ed7b318416b0e4440fdf392ddad9106a060819aa600a64f59a",
-	bf_alice: "08afa6ba24da61ea5e8efa139e5aadc938d83f0a6da5a900adaf763ac1da5573",
+	// On trial (2026-10-02), from Kokoro's VOICES.md grades of C and above.
+	af_heart: "d583ccff3cdca2f7fae535cb998ac07e9fcb90f09737b9a41fa2734ec44a8f0b",
+	am_fenrir: "c27989f741f7ee34d273a39d8a595cc0837d35f5ced9a29b7cc162614616df43",
+	am_puck: "fcf73c989033e9233e0b98713eca600c8c74dcc1614b37009d5450ff4a2274a0",
+	bm_fable: "f889083196807b4adb15e9204252165f503b8d33d3982e681c52443c49d798f1",
+	af_sarah: "4409fbc125afabacc615d94db5398d847006a737b0247d6892b7a9a0007a2f0a",
 };
 
 /** The voices, in the order the lab offers them. */

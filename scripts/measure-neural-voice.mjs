@@ -109,18 +109,14 @@ try {
 		await g.neural.line(text, kit.role.approach, 1, true);
 		const approach = await say();
 		// Two stations whose ids draw different voices.
+		// The game draws a voice per system (2026-10-02), so the prediction
+		// names the system the ship is in, as `sayComms` does.
+		const system = g.world.system.record.seed;
+		const heard = (id) => kit.speakerVoice("approach", { system, id });
 		const a = "probe-station-a";
 		let b = "probe-station-b";
-		for (
-			let i = 0;
-			kit.speakerVoice("approach", b) === kit.speakerVoice("approach", a);
-			i++
-		)
-			b = `probe-station-b${i}`;
-		const voices = [
-			kit.speakerVoice("approach", a),
-			kit.speakerVoice("approach", b),
-		];
+		for (let i = 0; heard(b) === heard(a); i++) b = `probe-station-b${i}`;
+		const voices = [heard(a), heard(b)];
 		for (const v of voices) await g.neural.line(text, v, 1, true);
 		const lines = [await say(a), await say(b)];
 		return {
@@ -221,14 +217,14 @@ try {
 			const idle = stats(await frames(() => performance.now() - t0 > 2000));
 			let done = false;
 			const g0 = performance.now();
-			const line = g.neural.line(long, "bm_george", speed).finally(() => {
+			const line = g.neural.line(long, "bm_lewis", speed).finally(() => {
 				done = true;
 			});
 			const busy = stats(await frames(() => done));
 			const samples = await line;
 			const genMs = performance.now() - g0;
 			const k0 = performance.now();
-			const again = await g.neural.line(long, "bm_george", speed);
+			const again = await g.neural.line(long, "bm_lewis", speed);
 			const keptMs = performance.now() - k0;
 			const pair = await Promise.all([
 				g.neural.line(texts[0], "af_bella", speed, true),

@@ -238,28 +238,61 @@ describe("the lexicon's IPA", () => {
 });
 
 describe("who speaks with which voice (#604, the principal's ruling)", () => {
-	const ids = Array.from({ length: 200 }, (_, i) => `station:${i * 7919}`);
+	// A station's id is local to its system — every system has a
+	// `station-trade` — so the system is half of who is speaking.
+	const systems = Array.from({ length: 200 }, (_, i) => 1000 + i * 7919);
+	const trade = (system: number) => ({ system, id: "station-trade" });
 
-	test("the same speaker always has the same voice", () => {
-		for (const id of ids.slice(0, 20))
-			expect(speakerVoice("approach", id)).toBe(speakerVoice("approach", id));
+	test("the same speaker in the same system always has the same voice", () => {
+		for (const system of systems.slice(0, 20))
+			expect(speakerVoice("approach", trade(system))).toBe(
+				speakerVoice("approach", trade(system)),
+			);
 	});
 
-	test("voices rotate from speaker to speaker over every voice but the machine's", () => {
-		const heard = new Set(ids.map((id) => speakerVoice("approach", id)));
+	test("one station id speaks with a voice drawn per system, over every voice but the machine's", () => {
+		// The principal's ruling of 2026-10-02: every voice but the ship's,
+		// drawn per system. Before it, the id alone picked the voice, and every
+		// trade station in the galaxy spoke with one.
+		const heard = new Set(
+			systems.map((system) => speakerVoice("approach", trade(system))),
+		);
 		expect([...heard].sort()).toEqual([...SPEAKER_VOICES].sort());
 		expect(SPEAKER_VOICES).not.toContain(NEURAL_ROLE.machine);
 		expect(SPEAKER_VOICES).toHaveLength(NEURAL_VOICES.length - 1);
 		// A pilot is drawn the same way, by its own id.
 		const pilots = new Set(
-			ids.map((id) => speakerVoice("pilot", id.replace("station", "carrier"))),
+			systems.map((system) =>
+				speakerVoice("pilot", { system, id: "carrier-0" }),
+			),
 		);
 		expect(pilots.size).toBe(SPEAKER_VOICES.length);
 	});
 
+	test("the five voices on trial are kept (2026-10-02)", () => {
+		for (const v of [
+			"af_heart",
+			"am_fenrir",
+			"am_puck",
+			"bm_fable",
+			"af_sarah",
+		]) {
+			expect(VOICE_IDS).toContain(v);
+			expect(SPEAKER_VOICES as readonly string[]).toContain(v);
+		}
+	});
+
+	test("a voice the principal could not understand is not downloaded", () => {
+		// 2026-10-02: bm_george and bf_alice, through the radio.
+		for (const v of ["bm_george", "bf_alice"]) {
+			expect(VOICE_IDS).not.toContain(v);
+			expect(NEURAL_VOICES as readonly string[]).not.toContain(v);
+		}
+	});
+
 	test("the machine keeps one voice, and a line with no speaker its role's", () => {
-		for (const id of ids.slice(0, 20))
-			expect(speakerVoice("machine", id)).toBe(NEURAL_ROLE.machine);
+		for (const system of systems.slice(0, 20))
+			expect(speakerVoice("machine", trade(system))).toBe(NEURAL_ROLE.machine);
 		expect(speakerVoice("approach")).toBe(NEURAL_ROLE.approach);
 		expect(speakerVoice("pilot")).toBe(NEURAL_ROLE.pilot);
 	});

@@ -15,9 +15,10 @@ import {
 	NEURAL_ROLE,
 	type NeuralVoice,
 	SPEAKER_VOICES,
+	type Speaker,
 	speakerVoice,
 } from "./neural-voice";
-import { RADIO, radio } from "./radio";
+import { RADIO, RADIO_NEURAL, radio } from "./radio";
 import { SPEECH_RATE, speak, VOICES } from "./speech";
 import { textToTokens } from "./speech-lexicon";
 
@@ -147,12 +148,12 @@ const readyVoice = () =>
  * generation, which runs about three times slower than speech on WASM (sage
  * round 1 on #606). A miss is generated, urgent, for the next time.
  */
-export async function sayLine(fx: AudioFX, id: CommsLineId, speaker?: string) {
+export async function sayLine(fx: AudioFX, id: CommsLineId, speaker?: Speaker) {
 	const line = COMMS_LINES[id];
 	const voice = readyVoice();
 	const who = speakerVoice(line.voice, speaker);
 	const n = voice ? await voice.kept(line.text, who).catch(() => null) : null;
-	fx.speak(n ? radio(n) : renderLine(id), SPEECH_RATE);
+	fx.speak(n ? radio(n, RADIO_NEURAL) : renderLine(id), SPEECH_RATE);
 	if (voice && !n) void voice.line(line.text, who, 1, true).catch(() => null);
 }
 
@@ -179,6 +180,6 @@ export async function sayNumbers(fx: AudioFX, text: string) {
 	// voice now rather than seconds after its step (sage round 1 on #606).
 	const n = readyVoice() ? (aheadNeural.get(text) ?? null) : null;
 	aheadNeural.delete(text);
-	const out = n ? radio(n, { ...RADIO, beepHz: 0 }) : takeNumbers(text);
+	const out = n ? radio(n, { ...RADIO_NEURAL, beepHz: 0 }) : takeNumbers(text);
 	fx.speak(out, SPEECH_RATE, "music", MUSIC_VOICE_SPACE);
 }

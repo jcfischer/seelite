@@ -1,3 +1,4 @@
+import { isPageRoute } from "./page-routes";
 import { decodePostcard, isPostcardFragment } from "./postcard";
 import { countVisit } from "./visit-count";
 
@@ -18,6 +19,10 @@ if (isPostcardFragment(window.location.hash)) {
 else if (query.has("boot") || query.has("seed")) {
 	countVisit("launch");
 	await import("./main");
-} else await import("./public-entry");
+}
+// A lab, a viewer or the galaxy map: `main.ts` serves it, and it is not a
+// launch of the game.
+else if (isPageRoute(query)) await import("./main");
+else await import("./public-entry");
 
 export {};

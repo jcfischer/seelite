@@ -53,14 +53,17 @@ const MEMO_LINES = 24;
 /** The voices the prototype ships, by Kokoro's id: the first letter is the
  *  accent (`a` American, `b` British). */
 export const NEURAL_VOICES = [
-	"bm_george",
 	"bm_lewis",
 	"am_michael",
 	"bf_emma",
 	"af_bella",
 	"bf_isabella",
 	"af_nicole",
-	"bf_alice",
+	"af_heart",
+	"am_fenrir",
+	"am_puck",
+	"bm_fable",
+	"af_sarah",
 ] as const;
 export type NeuralVoiceId = (typeof NEURAL_VOICES)[number];
 
@@ -113,7 +116,7 @@ export function tokenize(ipa: string): number[] {
 /** Each role's voice when no speaker is named — the lab, a probe, a line
  *  with nobody behind it. The machine's is the only one the game keeps. */
 export const NEURAL_ROLE = {
-	approach: "bm_george",
+	approach: "bm_lewis",
 	pilot: "af_bella",
 	pirate: "am_michael",
 	machine: "af_nicole",
@@ -125,24 +128,34 @@ export const SPEAKER_VOICES: readonly NeuralVoiceId[] = NEURAL_VOICES.filter(
 	(v) => v !== NEURAL_ROLE.machine,
 );
 
+/** Who is speaking: an id — a station's, a carrier's — and the seed of the
+ *  system it speaks in. A station's id is local to its system (every system
+ *  has a `station-trade`), so the id alone names a kind of station, not one. */
+export interface Speaker {
+	readonly system: number;
+	readonly id: string;
+}
+
 /**
- * Who speaks with which voice, by the principal's ruling on #604: the voice
- * **rotates from station to station and from pilot to pilot**, and the
- * machine stays one voice. A speaker is its id — a station's, a carrier's —
- * so the same station always answers in the same voice, this session and
- * the next, and the next station is drawn afresh. A role with no speaker
- * named takes its default.
+ * Who speaks with which voice, by the principal's rulings on #604 and of
+ * 2026-10-02: every voice but the ship's is **drawn per system**, for each
+ * station and each pilot in it, and the machine stays one voice. The draw is
+ * a hash rather than a stream, so a station answers in the same voice each
+ * time the system is visited, this session and the next. The system is not
+ * optional: without it every trade station in the galaxy spoke with one
+ * voice. A role with no speaker named takes its default.
  */
 export function speakerVoice(
 	role: keyof typeof NEURAL_ROLE,
-	speaker?: string,
+	speaker?: Speaker,
 ): NeuralVoiceId {
 	if (role === "machine" || speaker === undefined) return NEURAL_ROLE[role];
-	// FNV-1a: a stable spread of ids over the voices, with no draw from any
-	// of the world's streams.
+	// FNV-1a over the system and the id: a stable spread over the voices,
+	// with no draw from any of the world's streams.
+	const key = `${speaker.system}:${speaker.id}`;
 	let h = 0x811c9dc5;
-	for (let i = 0; i < speaker.length; i++) {
-		h ^= speaker.charCodeAt(i);
+	for (let i = 0; i < key.length; i++) {
+		h ^= key.charCodeAt(i);
 		h = Math.imul(h, 0x01000193) >>> 0;
 	}
 	return SPEAKER_VOICES[h % SPEAKER_VOICES.length];

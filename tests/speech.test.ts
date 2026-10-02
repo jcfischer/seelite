@@ -250,6 +250,33 @@ describe("the radio", () => {
 		expect(bandEnergy(x, 5000, 7500) / inBand).toBeLessThan(0.02);
 	});
 
+	test("the gain scales the voice, and not the hiss or the squelch", () => {
+		const v = speak(textToTokens("Roger.").tokens, VOICES.pilot);
+		const dry = { ...RADIO, hiss: 0, squelch: false, beepHz: 0 };
+		const once = radio(v, dry);
+		const twice = radio(v, { ...dry, gain: 2 });
+		// Equal to float32 rounding, which differs only among subnormals.
+		expect(twice.length).toBe(once.length);
+		expect(
+			Math.max(...twice.map((x, i) => Math.abs(x - 2 * once[i]))),
+		).toBeLessThan(1e-30);
+		// On silence the hiss and the squelch are all there is, and they keep
+		// their level.
+		const silence = new Float32Array(v.length);
+		const carrier = { ...RADIO, beepHz: 0 };
+		expect(radio(silence, { ...carrier, gain: 2 })).toEqual(
+			radio(silence, carrier),
+		);
+		// The beep goes through the speaker with the voice, and takes it too.
+		const beep = { ...RADIO, hiss: 0, squelch: false };
+		const beepOnce = radio(silence, beep);
+		const beepTwice = radio(silence, { ...beep, gain: 2 });
+		expect(Math.max(...beepOnce.map(Math.abs))).toBeGreaterThan(0.1);
+		expect(
+			Math.max(...beepTwice.map((x, i) => Math.abs(x - 2 * beepOnce[i]))),
+		).toBeLessThan(1e-30);
+	});
+
 	test("the squelch and the beep lengthen the transmission", () => {
 		const v = speak(textToTokens("Roger.").tokens, VOICES.pilot);
 		expect(radio(v).length).toBeGreaterThan(v.length + 0.3 * SPEECH_RATE);

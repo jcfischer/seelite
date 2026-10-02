@@ -15,7 +15,7 @@ import {
 	type NeuralVoiceId,
 	textToIpa,
 } from "./neural-voice";
-import { RADIO, radio } from "./radio";
+import { RADIO, RADIO_NEURAL, type RadioSettings, radio } from "./radio";
 import { SPEECH_RATE, speak, VOICES } from "./speech";
 import { LEXICON, textToTokens } from "./speech-lexicon";
 
@@ -67,6 +67,8 @@ export function mountVoiceLab() {
 <p>
   <label>Radio band <input id="low" type="range" min="100" max="600" step="50" value="${RADIO.lowHz}"> <span id="lowV">${RADIO.lowHz}</span></label>
   <label style="margin-left:12px">to <input id="high" type="range" min="2000" max="5000" step="100" value="${RADIO.highHz}"> <span id="highV">${RADIO.highHz}</span> Hz</label>
+  <label style="margin-left:12px">Drive <input id="drive" type="range" min="0" max="1" step="0.05" value="${RADIO_NEURAL.drive}"> <span id="driveV">${RADIO_NEURAL.drive.toFixed(2)}</span></label>
+  <label style="margin-left:12px">Gain <input id="gain" type="range" min="0.5" max="3" step="0.1" value="${RADIO_NEURAL.gain}"> <span id="gainV">${RADIO_NEURAL.gain.toFixed(2)}</span></label>
 </p>
 <p><button id="say" style="font-size:16px;padding:6px 18px">Say it</button></p>
 <pre id="info" style="font:13px ui-monospace,monospace;color:#8a96a3;background:#12171d;padding:10px;white-space:pre-wrap"></pre>
@@ -80,7 +82,29 @@ export function mountVoiceLab() {
 		text.value = (e.target as HTMLSelectElement).value;
 		say();
 	};
-	for (const id of ["rate", "pitch", "low", "high"])
+	// Each engine starts at the drive and gain the game gives it, from the
+	// first frame as well as on a change.
+	const presetDrive = () => {
+		const preset =
+			$<HTMLSelectElement>("engine").value === "neural" ? RADIO_NEURAL : RADIO;
+		for (const id of ["drive", "gain"] as const) {
+			$<HTMLInputElement>(id).value = `${preset[id]}`;
+			$(`${id}V`).textContent = preset[id].toFixed(2);
+		}
+	};
+	$<HTMLSelectElement>("engine").onchange = presetDrive;
+	presetDrive();
+	/** The radio as the sliders set it. The two presets differ only in what
+	 *  the sliders carry, so either engine's chain is `RADIO` and these. */
+	const labRadio = (): RadioSettings => ({
+		...RADIO,
+		lowHz: Number($<HTMLInputElement>("low").value),
+		highHz: Number($<HTMLInputElement>("high").value),
+		drive: Number($<HTMLInputElement>("drive").value),
+		gain: Number($<HTMLInputElement>("gain").value),
+		beepHz: $<HTMLInputElement>("beep").checked ? RADIO.beepHz : 0,
+	});
+	for (const id of ["rate", "pitch", "low", "high", "drive", "gain"])
 		$<HTMLInputElement>(id).oninput = () => {
 			const v = Number($<HTMLInputElement>(id).value);
 			$(`${id}V`).textContent =
@@ -97,15 +121,7 @@ export function mountVoiceLab() {
 		const through = (
 			root.querySelector("input[name=through]:checked") as HTMLInputElement
 		).value;
-		const out =
-			through === "dry"
-				? dry
-				: radio(dry, {
-						...RADIO,
-						lowHz: Number($<HTMLInputElement>("low").value),
-						highHz: Number($<HTMLInputElement>("high").value),
-						beepHz: $<HTMLInputElement>("beep").checked ? RADIO.beepHz : 0,
-					});
+		const out = through === "dry" ? dry : radio(dry, labRadio());
 		if (through === "space")
 			fx.speak(out, SPEECH_RATE, "music", MUSIC_VOICE_SPACE);
 		else fx.speak(out, SPEECH_RATE, "console");
@@ -178,15 +194,7 @@ export function mountVoiceLab() {
 		const through = (
 			root.querySelector("input[name=through]:checked") as HTMLInputElement
 		).value;
-		const out =
-			through === "dry"
-				? dry
-				: radio(dry, {
-						...RADIO,
-						lowHz: Number($<HTMLInputElement>("low").value),
-						highHz: Number($<HTMLInputElement>("high").value),
-						beepHz: $<HTMLInputElement>("beep").checked ? RADIO.beepHz : 0,
-					});
+		const out = through === "dry" ? dry : radio(dry, labRadio());
 		const ms = performance.now() - t0;
 		if (through === "space")
 			fx.speak(out, SPEECH_RATE, "music", MUSIC_VOICE_SPACE);
