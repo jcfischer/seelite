@@ -934,6 +934,71 @@ export function stepAngular(
 }
 
 /**
+ * Which rotation law the player flies with the assist off (#618).
+ *
+ * `rate` is `stepAngular`, which is `main`. `newtonian` is the arm that flies
+ * `flight-model.md` §3.9 before the vent substrate is built on it.
+ */
+export type RotationLaw = "rate" | "newtonian";
+
+/**
+ * `?rotation=` read as a law. Only the exact token `newtonian` selects the arm;
+ * anything else, a typo included, is `main`'s law — which is why `main.ts`
+ * reports the law it read rather than trusting the URL.
+ */
+export function rotationLaw(param: string | null): RotationLaw {
+	return param === "newtonian" ? "newtonian" : "rate";
+}
+
+/**
+ * §3.9 on today's model: with the assist off, torque gives angular
+ * acceleration and that gives rate. A held axis accelerates at
+ * `perf.angularAccel` — today's figure, so the arm differs from `main` in this
+ * one law — there is no `angularMax`, and a released axis keeps its rate.
+ *
+ * **The pointer is a demand here, not a rate.** `stepAngular` adds a mouse
+ * delta straight to the rate and lets the clamp bound it; with no clamp that
+ * would be a spin no thruster paid for. So stick and pointer are summed and the
+ * sum is bounded by `angularAccel × dt` per axis per step.
+ */
+export function stepAngularNewtonian(
+	rates: Angular,
+	command: Angular,
+	impulse: Angular,
+	dt: number,
+	perf: FlightPerformance,
+): Angular {
+	if (dt <= 0) return rates;
+	const authority = perf.angularAccel * dt;
+	const axis = (rate: number, want: number, kick: number) =>
+		rate + clamp(clamp(want, -1, 1) * authority + kick, -authority, authority);
+	return {
+		pitch: axis(rates.pitch, command.pitch, impulse.pitch),
+		yaw: axis(rates.yaw, command.yaw, impulse.yaw),
+		roll: axis(rates.roll, command.roll, impulse.roll),
+	};
+}
+
+/**
+ * The player's rotation step. The Newtonian arm applies only with the assist
+ * off; with it on, or under `rate`, this is `stepAngular` unchanged. NPCs and
+ * the scoop pilot call `stepAngular` directly and never fly the arm.
+ */
+export function stepPlayerAngular(
+	law: RotationLaw,
+	rates: Angular,
+	command: Angular,
+	impulse: Angular,
+	assist: boolean,
+	dt: number,
+	perf: FlightPerformance,
+): Angular {
+	return law === "newtonian" && !assist
+		? stepAngularNewtonian(rates, command, impulse, dt, perf)
+		: stepAngular(rates, command, impulse, assist, dt, perf);
+}
+
+/**
  * What the player is asking the ship to do this frame.
  *
  * `nose` is a unit vector in sim space — orientation lives in the renderer (see
