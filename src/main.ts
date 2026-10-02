@@ -301,7 +301,9 @@ import {
 	rotationShare,
 	stationOf,
 	stationPose,
-	stepAngular,
+	type RotationLaw,
+	rotationLaw,
+	stepPlayerAngular,
 	stepWorld,
 	thrustShares,
 } from "./sim";
@@ -1114,6 +1116,18 @@ const ASKED_HULL = new URLSearchParams(window.location.search).get("hull");
  * `forceRaider`. With neither, the leg law runs as a player meets it.
  */
 const RAIDER_PARAM = new URLSearchParams(window.location.search).get("raider");
+
+/**
+ * The rotation law the player flies with the assist off (#618), from
+ * `?rotation=`. `newtonian` is the arm that flies `flight-model.md` §3.9;
+ * anything else is `main`'s law. A typo is `main` silently, so the law that
+ * was actually read is logged at boot and readable as
+ * `__seelite.rotationLaw` — a flight report is checked against what was flown.
+ */
+const ROTATION_LAW: RotationLaw = rotationLaw(
+	new URLSearchParams(window.location.search).get("rotation"),
+);
+console.info(`seelite: rotation law ${ROTATION_LAW}`);
 
 /**
  * The flight sound's arms (#544), from `?flightsound=`: comma-separated
@@ -2523,6 +2537,8 @@ class Game {
 	/** How fast the ship is turning, radians per second — rotation has momentum,
 	 *  and `sim.ts`'s `stepAngular` owns the dynamics. */
 	rates: Angular = { pitch: 0, yaw: 0, roll: 0 };
+	/** The assist-off rotation law this page flies (#618), from `?rotation=`. */
+	readonly rotationLaw: RotationLaw = ROTATION_LAW;
 	/** Pointer movement accumulated since the last step, in pixels. Consumed
 	 *  each frame — a delta applied twice is a ship that turns at the frame
 	 *  rate rather than at the hand's speed. */
@@ -13611,9 +13627,11 @@ class Game {
 
 		// Rotation carries momentum (`stepAngular`): the ship eases into a turn
 		// and, with the assist on, eases out of it. Setting the rate straight from
-		// the key state is what made this feel like 1984.
+		// the key state is what made this feel like 1984. Under `?rotation=newtonian`
+		// with the assist off, it is §3.9's uncapped law instead (#618).
 		const ratesBefore = this.rates;
-		this.rates = stepAngular(
+		this.rates = stepPlayerAngular(
+			this.rotationLaw,
 			this.rates,
 			{ pitch, yaw, roll },
 			impulse,
