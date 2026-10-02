@@ -10665,7 +10665,7 @@ class Game {
 
 	/** One crossing, applied: the outcome, the ship, and the session state that
 	 *  follows from it. Split from the tick loop above because this is the half
-	 *  that grows — the HUD node's cues and #8's pools both land here. */
+	 *  that grows — the pilot's notice (#597) and #8's pools both land here. */
 	private resolveCrossing(
 		id: string,
 		frame: ApertureFrame,
@@ -11080,13 +11080,11 @@ class Game {
 		});
 		this.dockingComputer.recordPhase(command.phase);
 		if (!command.engaged) {
-			// **Silent disengagement is the failure mode here.** §8's HUD cues are
-			// not this node's, so nothing tells the player the autopilot stopped —
-			// and a grant taken at the far edge of `VICINITY_KM` expires mid-approach
-			// (§11.7), which is precisely when this fires. Leaving the throttle
-			// where the computer put it would hand back a ship still closing at a
-			// speed nobody chose, so the throttle goes to zero and the reason is
-			// recorded for the HUD node to read.
+			// **Silent disengagement is the failure mode here** — a grant taken at
+			// the far edge of `VICINITY_KM` expires mid-approach (§11.7), which is
+			// precisely when this fires. Leaving the throttle where the computer
+			// put it would hand back a ship still closing at a speed nobody chose,
+			// so the throttle goes to zero, and the prompt line says why (#597).
 			this.cancelComputerApproach({ refused: command.refused });
 			this.throttle = 0;
 			this.dockingNotice = computerNotice(command.refused, {

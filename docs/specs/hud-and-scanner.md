@@ -137,6 +137,17 @@ Granted clearance uses a positive state and the remaining window. Denial or
 hostility is blocking: the director says **do not enter** and writes the reason,
 so a red mark alone never carries the consequence.
 
+**A failed entry and a docking-computer let-go are told on the prompt line**
+(#597, `docking-notice.ts`), not in the director: the computer can let go
+beyond the director's range, where there is no director to write in. One line,
+in the pilot's words and with `evaluateEntry`'s figures — `ENTRY FAILED · roll
+62° of 50°`, `AUTOPILOT OFF · no live clearance`. A piloting bounce and a busy
+lane are amber; an entry refused as hostile or barged, and a let-go for want of
+a grant or for hostility, are red. It stays up until the next approach event —
+a crossing replaces it, an engage or a clearance request clears it — or until
+the ship leaves the director's range of that station. Not the next key: a pilot
+flying an approach by hand is pressing keys the whole time.
+
 ## 4. Attention and visual grammar
 
 Attention order is: blocking danger or failed clearance; immediate flight or
