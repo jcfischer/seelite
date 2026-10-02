@@ -1113,11 +1113,6 @@ const ASKED_HULL = new URLSearchParams(window.location.search).get("hull");
 const RAIDER_PARAM = new URLSearchParams(window.location.search).get("raider");
 
 /**
- * The flight sound's arms (#544), from `?flightsound=`: comma-separated
- * tokens, or `legacy` for the throttle-driven bed before #544.
- * `flight-sound.ts` lists them. A prototype's open questions, flown by ear.
- */
-/**
  * The rotation law the player flies with the assist off (#618), from
  * `?rotation=`. `newtonian` is the arm that flies `flight-model.md` §3.9;
  * anything else is `main`'s law. A typo is `main` silently, so the law that
@@ -1129,6 +1124,11 @@ const ROTATION_LAW: RotationLaw = rotationLaw(
 );
 console.info(`seelite: rotation law ${ROTATION_LAW}`);
 
+/**
+ * The flight sound's arms (#544), from `?flightsound=`: comma-separated
+ * tokens, or `legacy` for the throttle-driven bed before #544.
+ * `flight-sound.ts` lists them. A prototype's open questions, flown by ear.
+ */
 const FLIGHT_SOUND = flightSoundArms(
 	new URLSearchParams(window.location.search).get("flightsound"),
 );
