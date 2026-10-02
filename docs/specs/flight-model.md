@@ -4,9 +4,12 @@ Author: Ivy · 2026-10-02
 Status: §3's decisions were taken with the principal on 2026-10-02. §3.9 was
 flown and kept on 2026-10-02 (§6), with one rule added. Ratified on
 principal-approved merge, recorded in the decision node's resolution.
-§3.2, §3.4, §3.8 and §3.10 were amended by the principal on 2026-10-02 while
-the substrate was built ([#619](https://github.com/jcfischer/seelite/issues/619)).
-Each amendment is marked where it lands.
+The principal ruled four amendments on 2026-10-02 while the substrate was built
+([#619](https://github.com/jcfischer/seelite/issues/619)): two vent families
+(§3.2), no hull retuned (§3.4), a bounded ease-out (§3.8.2) and the speed
+demand held to the cap in a turn (§3.10). Each is marked where it lands.
+§3.8.2's pointer item and §3.8.3 follow from §3.6 and §3.8; they are not
+rulings, and the pointer waits for the principal to fly it.
 Decision node: [Fly the hull from its vents: six held thrusters, the couples
 they make, and the assist as a controller on top](https://github.com/jcfischer/seelite/issues/398).
 
@@ -169,9 +172,9 @@ follow:
 
 #### 3.8.2 Two departures from #5 (amended on #619)
 
-A bounded assist cannot reproduce two things #5 did. The principal accepted both.
+A bounded assist cannot reproduce two things #5 did.
 
-- **The ease-out is bounded.** #5 stopped a released turn with
+- **The ease-out is bounded** (ruled by the principal). #5 stopped a released turn with
   `rate × e^(−dt/0.28)` at any authority. At the courier's peak roll rate that
   asks for 5 rad/s². Bounded by the couple's authority, a stop from the peak
   rate to 5% of it takes 3.9% to 5.9% longer on the courier's roll, by frame
@@ -179,8 +182,8 @@ A bounded assist cannot reproduce two things #5 did. The principal accepted both
   `tests/vents.test.ts` holds it under 6% at 1/120 s.
 - **The pointer is a demand.** A mouse delta used to add to the rate directly.
   Now it asks the attitude vents for that change of rate and gets at most the
-  couple's authority in one step. The principal has not yet flown this on the
-  assist-on arm.
+  couple's authority in one step. **Not ruled:** it follows from §3.8, and it
+  waits for the principal to fly it on the assist-on arm and say yes.
 
 #### 3.8.3 Every author turns a hull this way
 
