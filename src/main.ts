@@ -302,13 +302,12 @@ import {
 	stationPose,
 	type AngularStep,
 	NO_ATTITUDE,
-	addRates,
 	speedDemand,
 	stepAngular,
 	stepWorld,
 	thrustShares,
 } from "./sim";
-import { type Attitude, attitudeSpin, attitudeStick } from "./attitude-hold";
+import { AttitudeFollower } from "./attitude-hold";
 import type { SurfaceClass } from "./planet-appearance";
 import {
 	type BodyVisual,
@@ -2516,10 +2515,10 @@ class Game {
 	 *  or dead attitude vent pushes the hull as well as turning it, and spent
 	 *  there (`FlightControl.attitude`). */
 	private attitudeStep: AngularStep = NO_ATTITUDE;
-	/** The attitude the docking computer wanted last frame: its spin is what
-	 *  the computer asks for on top, so a spinning slot is followed rather
-	 *  than chased (`attitudeStick`). `null` whenever it is not flying. */
-	private lastComputerWant: Attitude | null = null;
+	/** The docking computer's attitude hold. It remembers the attitude the
+	 *  computer wanted last frame, whose spin it asks for on top, so it is
+	 *  reset on every frame the computer does not fly (`AttitudeFollower`). */
+	private readonly computerFollower = new AttitudeFollower();
 	/** Pointer movement accumulated since the last step, in pixels. Consumed
 	 *  each frame — a delta applied twice is a ship that turns at the frame
 	 *  rate rather than at the hand's speed. */
@@ -11150,22 +11149,13 @@ class Game {
 		// the assist's rate law whatever the player's toggle says — the
 		// computer is a controller, and its law is written for one. It used to
 		// place the attitude by slewing it, which turned a hull no vent turned.
-		const want = orthonormalise(command.nose, command.up) ?? {
-			nose: command.nose,
-			up: this.shipUp(),
-		};
-		const spin = this.lastComputerWant
-			? attitudeSpin(this.lastComputerWant, want, dt)
-			: v3();
-		this.lastComputerWant = want;
 		this.turnShip(
 			dt,
-			attitudeStick(
+			this.computerFollower.stick(
 				{ nose: this.nose(), up: this.shipUp() },
-				want,
+				{ nose: command.nose, up: command.up },
 				this.flownPerformance,
 				dt,
-				spin,
 			),
 			{ pitch: 0, yaw: 0, roll: 0 },
 			true,
@@ -11466,7 +11456,7 @@ class Game {
 		this.pendingJump = null;
 		this.rates = { pitch: 0, yaw: 0, roll: 0 };
 		this.attitudeStep = NO_ATTITUDE;
-		this.lastComputerWant = null;
+		this.computerFollower.reset();
 		this.mouseDx = 0;
 		this.mouseDy = 0;
 		this.chaseYaw = 0;
@@ -13637,7 +13627,7 @@ class Game {
 			this.advanceNormalFlight(dt, approaches);
 			return;
 		}
-		this.lastComputerWant = null;
+		this.computerFollower.reset();
 
 		// The mouse, when it has been captured, and the keyboard always — the
 		// principal's choice of "both, mouse on by default". A pointer delta is a
@@ -13756,7 +13746,8 @@ class Game {
 		// frame that flies without turning (cruise's exit, a placed attitude)
 		// must not hand it to the next one.
 		this.attitudeStep = NO_ATTITUDE;
-		this.rates = addRates(this.rates, flown.angularKick);
+		// The attitude step's rates and the translation firing's kick (#619).
+		this.rates = flown.rates;
 		// Off the vents that fired (#544, `flight-model.md` §4): the sound
 		// hears what the firing table says, not a figure beside it.
 		const shares = thrustShares(flown.firing, this.flownPerformance);

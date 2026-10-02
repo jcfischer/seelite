@@ -20,7 +20,17 @@
  */
 
 import type { Angular, FlightPerformance } from "./sim";
-import { type Vec3, add, cross, dot, length, scale, sub } from "./vec3";
+import {
+	type Vec3,
+	add,
+	cross,
+	dot,
+	length,
+	rotateAbout,
+	scale,
+	sub,
+	v3,
+} from "./vec3";
 
 /** A hull's attitude as its two axes, unit and orthogonal. */
 export interface Attitude {
@@ -31,14 +41,13 @@ export interface Attitude {
 const clamp = (v: number, lo: number, hi: number): number =>
 	Math.min(hi, Math.max(lo, v));
 
-/** Rotate `v` about the unit `axis` by `angle` (Rodrigues). */
-const rotate = (v: Vec3, axis: Vec3, angle: number): Vec3 => {
-	const c = Math.cos(angle);
-	const s = Math.sin(angle);
-	return add(
-		add(scale(v, c), scale(cross(axis, v), s)),
-		scale(axis, dot(axis, v) * (1 - c)),
-	);
+/** The nose's arc onto `want`: a unit axis and an angle. Half a turn away
+ *  the axis vanishes and any perpendicular will do, so `up` stands in. */
+const noseArc = (from: Attitude, want: Vec3): { axis: Vec3; angle: number } => {
+	const c = clamp(dot(from.nose, want), -1, 1);
+	const arc = cross(from.nose, want);
+	const n = length(arc);
+	return { axis: n > 1e-12 ? scale(arc, 1 / n) : from.up, angle: Math.acos(c) };
 };
 
 /**
@@ -47,12 +56,8 @@ const rotate = (v: Vec3, axis: Vec3, angle: number): Vec3 => {
  * wanted up.
  */
 export function attitudeError(from: Attitude, want: Attitude): Vec3 {
-	const c = clamp(dot(from.nose, want.nose), -1, 1);
-	const off = Math.acos(c);
-	let arc = cross(from.nose, want.nose);
-	// Half a turn away the arc's axis vanishes and any perpendicular will do.
-	arc = length(arc) > 1e-12 ? scale(arc, 1 / length(arc)) : from.up;
-	const swung = off > 0 ? rotate(from.up, arc, off) : from.up;
+	const { axis: arc, angle: off } = noseArc(from, want.nose);
+	const swung = off > 0 ? rotateAbout(from.up, arc, off) : from.up;
 	// The wanted up, laid in the plane across the wanted nose.
 	const wantUp = sub(want.up, scale(want.nose, dot(want.up, want.nose)));
 	const aft = scale(want.nose, -1);
@@ -81,7 +86,7 @@ export function attitudeStick(
 	want: Attitude,
 	perf: FlightPerformance,
 	dt: number,
-	wantSpin: Vec3 = { x: 0, y: 0, z: 0 },
+	wantSpin: Vec3 = v3(),
 ): Angular {
 	const right = cross(from.nose, from.up);
 	const aft = scale(from.nose, -1);
@@ -89,15 +94,8 @@ export function attitudeStick(
 	// nose that lays up on the wanted up. Taken about the wanted nose instead,
 	// an unmet bank leaks into pitch and yaw while the nose is off, and a hull
 	// that cannot match a fast spin cones round its heading for good.
-	const c = clamp(dot(from.nose, want.nose), -1, 1);
-	const arc = cross(from.nose, want.nose);
-	const arcLength = length(arc);
-	const nose =
-		arcLength > 1e-12
-			? scale(arc, Math.acos(c) / arcLength)
-			: c < 0
-				? scale(from.up, Math.PI)
-				: { x: 0, y: 0, z: 0 };
+	const arc = noseArc(from, want.nose);
+	const nose = scale(arc.axis, arc.angle);
 	const wantUp = sub(want.up, scale(from.nose, dot(want.up, from.nose)));
 	const bank = Math.atan2(
 		dot(cross(from.up, wantUp), aft),
@@ -125,8 +123,44 @@ export const attitudeSpin = (
 	before: Attitude,
 	after: Attitude,
 	dt: number,
-): Vec3 =>
-	dt > 0 ? scale(attitudeError(before, after), 1 / dt) : { x: 0, y: 0, z: 0 };
+): Vec3 => (dt > 0 ? scale(attitudeError(before, after), 1 / dt) : v3());
+
+/**
+ * A computer following a wanted attitude from one frame to the next: the
+ * stick, with the wanted attitude's own spin read off its last sample (#619).
+ *
+ * One object for `main.ts`'s docking computer and the harness that flies
+ * it headlessly, so the two cannot drift apart. `reset` on every frame the
+ * computer does not fly: a sample from before a release, read against one
+ * after it, is a spin nobody asked for.
+ */
+export class AttitudeFollower {
+	private last: Attitude | null = null;
+
+	/** `asked` need not be orthogonal: a computer states a nose and an up
+	 *  separately. Its up is laid across its nose here, and one parallel to
+	 *  the nose keeps the hull's own. */
+	stick(
+		from: Attitude,
+		asked: Attitude,
+		perf: FlightPerformance,
+		dt: number,
+	): Angular {
+		const nose = scale(asked.nose, 1 / length(asked.nose));
+		const across = sub(asked.up, scale(nose, dot(asked.up, nose)));
+		const want = {
+			nose,
+			up: length(across) < 1e-12 ? from.up : scale(across, 1 / length(across)),
+		};
+		const spin = this.last ? attitudeSpin(this.last, want, dt) : v3();
+		this.last = want;
+		return attitudeStick(from, want, perf, dt, spin);
+	}
+
+	reset(): void {
+		this.last = null;
+	}
+}
 
 /**
  * Turn an attitude by body rates over `dt`: the world rotation `main.ts`'s
@@ -146,8 +180,8 @@ export function turnAttitude(
 	const w = length(spin);
 	if (w === 0 || dt <= 0) return from;
 	const axis = scale(spin, 1 / w);
-	const nose = rotate(from.nose, axis, w * dt);
-	const up = rotate(from.up, axis, w * dt);
+	const nose = rotateAbout(from.nose, axis, w * dt);
+	const up = rotateAbout(from.up, axis, w * dt);
 	const n = scale(nose, 1 / length(nose));
 	const u = sub(up, scale(n, dot(up, n)));
 	return { nose: n, up: scale(u, 1 / length(u)) };

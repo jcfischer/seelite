@@ -36,7 +36,6 @@ import {
 import {
 	ASSIST_CAP_KMS,
 	type Angular,
-	addRates,
 	flightPerformance,
 	speedDemand,
 	stepAngular,
@@ -205,7 +204,7 @@ export function flyToCargo(
 			PILOT_DT,
 			COURIER,
 		);
-		rates = addRates(rates, flown.angularKick);
+		rates = flown.rates;
 	}
 	return { dropped, scooped, allScoopedS: null };
 }

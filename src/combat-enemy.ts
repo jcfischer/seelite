@@ -44,7 +44,6 @@ import {
 	ASSIST_CAP_KMS,
 	type Angular,
 	type AngularStep,
-	addRates,
 	flightPerformance,
 	type FlightPerformance,
 	type FrameMotion,
@@ -59,6 +58,7 @@ import {
 	dot,
 	length,
 	lengthSq,
+	rotateAbout,
 	scale,
 	sub,
 	type Vec3,
@@ -312,16 +312,6 @@ function perpBasis(dir: Vec3): [Vec3, Vec3] {
 function perpAt(dir: Vec3, angle: number): Vec3 {
 	const [a, b] = perpBasis(dir);
 	return add(scale(a, Math.cos(angle)), scale(b, Math.sin(angle)));
-}
-
-/** Rodrigues: spin `v` about a unit `axis`. */
-function rotateAbout(v: Vec3, axis: Vec3, angle: number): Vec3 {
-	const c = Math.cos(angle);
-	const s = Math.sin(angle);
-	return add(
-		add(scale(v, c), scale(cross(axis, v), s)),
-		scale(axis, dot(axis, v) * (1 - c)),
-	);
 }
 
 /** Re-seat a stored direction into the plane perpendicular to `dir`, which the
@@ -765,7 +755,7 @@ export function stepEnemyShip(
 			ship,
 			nose,
 			up,
-			rates: addRates(turned.rates, flown.angularKick),
+			rates: flown.rates,
 			phase,
 			phaseSeconds,
 			maneuverSeconds,

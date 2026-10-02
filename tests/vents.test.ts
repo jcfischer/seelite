@@ -32,6 +32,7 @@ import {
 import { MAX_DT } from "../src/units";
 import { type Vec3, cross, dot, length, scale, sub, v3 } from "../src/vec3";
 import {
+	easeOutCost,
 	referenceHandling,
 	roundShare,
 	solveVentShares,
@@ -391,28 +392,26 @@ describe("§3.9: rotation", () => {
 			}
 		});
 
-	test("the ease-out is #5's but for its bound: stopping takes at most 6% longer", () => {
-		const dt = 1 / 120;
-		const timeTo5 = (step: (r: Angular) => Angular, axis: keyof Angular) => {
-			let rates = { ...STILL, [axis]: COURIER.angularMax[axis] };
-			let t = 0;
-			while (Math.abs(rates[axis]) > 0.05 * COURIER.angularMax[axis]) {
-				rates = step(rates);
-				t += dt;
+	// The principal ruled the bounded ease-out on the courier's 5.9% and
+	// re-confirmed it on the roster's figures (#619, 2026-10-02): worst the
+	// patrol's roll at 15.4%. The bound is 20% so a retune that only moves the
+	// figures stays green; a change that makes some hull's stop markedly
+	// slower, or one that stops *faster* than #5, goes red.
+	for (const id of HULL_IDS)
+		test(`${id}: the ease-out is #5's but for its bound, at most 20% slower`, () => {
+			const cost = easeOutCost(id);
+			for (const axis of ["pitch", "yaw", "roll"] as const) {
+				expect(cost[axis]).toBeGreaterThanOrEqual(-1e-9);
+				expect(cost[axis]).toBeLessThan(0.2);
 			}
-			return t;
-		};
-		for (const axis of ["pitch", "yaw", "roll"] as const) {
-			const vents = timeTo5(
-				(r) => stepAngular(r, STILL, STILL, true, dt, COURIER).rates,
-				axis,
-			);
-			const legacy = timeTo5(
-				(r) => legacyAngular(r, STILL, STILL, true, dt, COURIER),
-				axis,
-			);
-			expect(vents / legacy).toBeGreaterThanOrEqual(1);
-			expect(vents / legacy).toBeLessThan(1.06);
+		});
+
+	test("the bound bites where the ease-out asks more than the couple: not on the slow hulls", () => {
+		expect(easeOutCost("courier").pitch).toBeLessThan(1e-9);
+		expect(easeOutCost("courier").roll).toBeGreaterThan(0.03);
+		for (const id of ["freighter", "miner", "explorer", "tug"] as const) {
+			const cost = easeOutCost(id);
+			expect(Math.max(cost.pitch, cost.yaw, cost.roll)).toBeLessThan(1e-9);
 		}
 	});
 
@@ -501,7 +500,7 @@ describe("§3.5 and §3.7: a single vent, and a vent's health", () => {
 			0.1,
 			hurt,
 		);
-		expect(step.angularKick.yaw).not.toBe(0);
+		expect(step.rates.yaw).not.toBe(0);
 	});
 
 	test("health scales force linearly", () => {

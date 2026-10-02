@@ -2,6 +2,7 @@ import { expect, test } from "bun:test";
 import { readFileSync } from "node:fs";
 import ts from "typescript";
 import { projectNavTargets } from "../src/cockpit";
+import { AttitudeFollower } from "../src/attitude-hold";
 import { DockingComputer } from "../src/docking-computer";
 import {
 	NO_ATTITUDE,
@@ -377,6 +378,7 @@ test("a jump or a reset takes the cargo contacts with the canisters", () => {
 			contacts: [] as DisplayContact[],
 			// The teardown disengages it (#596); a plain field once took the write.
 			dockingComputer: new DockingComputer(),
+			computerFollower: new AttitudeFollower(),
 			selectableCache: null,
 			targetId: null as string | null,
 		},

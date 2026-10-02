@@ -174,12 +174,19 @@ follow:
 
 A bounded assist cannot reproduce two things #5 did.
 
-- **The ease-out is bounded** (ruled by the principal). #5 stopped a released turn with
-  `rate × e^(−dt/0.28)` at any authority. At the courier's peak roll rate that
-  asks for 5 rad/s². Bounded by the couple's authority, a stop from the peak
-  rate to 5% of it takes 3.9% to 5.9% longer on the courier's roll, by frame
-  step from 1/120 s to 0.05 s, and no longer on pitch and yaw.
-  `tests/vents.test.ts` holds it under 6% at 1/120 s.
+- **The ease-out is bounded** (ruled by the principal, and re-confirmed on the
+  roster's figures). #5 stopped a released turn with
+  `rate × e^(−dt/0.28)` at any authority. That asks more of an agile hull than
+  its couple gives, because the peak rate scales with agility and the stopping
+  time inversely: the courier's roll asks 1.7 times its couple, the patrol's
+  2.2 times. Bounded by the couple, a stop from the peak rate to 5% of it
+  takes up to 5.9% longer on the courier's roll and up to 15.4% on the
+  patrol's, the worst on the roster; the interceptor, the one agile hull a
+  shipyard sells, takes 12.7%. The slow hulls are not touched.
+  `scripts/measure-vent-shares.ts` prints every hull and axis, and
+  `tests/vents.test.ts` holds each under 20%. The principal ruled first on the
+  courier's figure; sage found that it did not hold for the agile hulls, and
+  the principal accepted the roster's figures as measured.
 - **The pointer is a demand.** A mouse delta used to add to the rate directly.
   Now it asks the attitude vents for that change of rate and gets at most the
   couple's authority in one step. **Not ruled:** it follows from §3.8, and it

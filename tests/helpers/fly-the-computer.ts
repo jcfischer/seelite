@@ -33,21 +33,15 @@ import {
 	dockingComputerStep,
 	newDockingState,
 	offAxisKm,
-	orthonormalise,
 	planeCrossing,
 	requestClearance,
 	slotBasis,
 } from "../../src/docking";
 import { HULL_SPECS, type HullId } from "../../src/hull";
-import {
-	attitudeSpin,
-	attitudeStick,
-	turnAttitude,
-} from "../../src/attitude-hold";
+import { AttitudeFollower, turnAttitude } from "../../src/attitude-hold";
 import {
 	ASSIST_CAP_KMS,
 	type Angular,
-	addRates,
 	flightPerformance,
 	speedDemand,
 	stepAngular,
@@ -190,7 +184,7 @@ export function flyTheComputer(opts: FlightOptions): FlightRun {
 	let nose = scale(axis, -1);
 	let up = basis.up;
 	let rates: Angular = { ...NO_TURN };
-	let lastWant: { nose: Vec3; up: Vec3 } | null = null;
+	const follower = new AttitudeFollower();
 
 	let gameTime = 0;
 	let docked = false;
@@ -230,12 +224,9 @@ export function flyTheComputer(opts: FlightOptions): FlightRun {
 		// the way `main.ts`'s computer does. A freighter turns at about half the
 		// courier's authority and a miner at about a third, so the line-up turn
 		// and the roll tracking are genuinely harder for them.
-		const want = orthonormalise(cmd.nose, cmd.up) ?? { nose: cmd.nose, up };
-		const spin = lastWant ? attitudeSpin(lastWant, want, dt) : v3();
-		lastWant = want;
 		const attitude = stepAngular(
 			rates,
-			attitudeStick({ nose, up }, want, perf, dt, spin),
+			follower.stick({ nose, up }, { nose: cmd.nose, up: cmd.up }, perf, dt),
 			NO_TURN,
 			true,
 			dt,
@@ -268,7 +259,7 @@ export function flyTheComputer(opts: FlightOptions): FlightRun {
 			dt,
 			perf,
 		);
-		rates = addRates(rates, flown.angularKick);
+		rates = flown.rates;
 		gameTime += dt;
 		steps++;
 

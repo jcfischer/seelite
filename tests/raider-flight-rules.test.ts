@@ -233,8 +233,12 @@ test("a turn settles on its heading instead of hunting around it", () => {
 	// the vents remove it at the translation pairs' rate (`flight-model.md`
 	// §3.10), so the target moves for longer. Measured on this seed: 1.79° on
 	// `main` before vents, 2.55° on them, at the same instant of the same
-	// turn. A hunt would overshoot both ways and grow; the last row holds the
-	// settle.
+	// turn. **The cause was isolated, not assumed (sage round 1):** an arm
+	// that put #5's translation back — the clamp to the cap, and no speed
+	// demand held under it — on top of the vents' rotation read 1.785° on this
+	// seed, `main`'s figure, and 1.51–1.91° over seeds 1, 2, 3, 5, 8, 13, 21
+	// and 34, against 2.11–2.55° as built. A hunt would overshoot both ways
+	// and grow; the last row holds the settle.
 	expect(worstAfter).toBeLessThan((3 * Math.PI) / 180);
 	expect(last).toBeLessThan((0.5 * Math.PI) / 180);
 });

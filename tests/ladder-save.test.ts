@@ -45,7 +45,7 @@ const saved = () => {
 };
 
 describe("#183 D9 — the ladders in the save", () => {
-	test("the schema is 7", () => {
+	test("the schema is 8, and carries the ladders since 7", () => {
 		// A literal, so the next bump has to come through here.
 		expect(SAVE_SCHEMA_VERSION).toBe(8);
 		expect([...LEGACY_SAVE_SCHEMA_VERSIONS]).toEqual([2, 3, 4, 5, 6, 7]);
@@ -136,7 +136,7 @@ describe("#183 D9 — the ladders in the save", () => {
 		);
 	});
 
-	test("a v7 record without the key is truncated, not zero", () => {
+	test("a current record without the key is truncated, not zero", () => {
 		const truncated = resealed(serializeSave(saved()), (body) => {
 			delete body.commander.ladders;
 			delete body.commander.flight.rates;

@@ -895,9 +895,24 @@ export interface FlightPerformance {
 	thrustMN: number;
 	inertia: Angular;
 	vents: readonly VentRow[];
+	/**
+	 * The hull's condition, read by `ventLoads` and never by the authorities
+	 * above. Nothing writes it yet: what damages a vent is #622's. **A writer
+	 * owes a rebuild** — `main.ts` caches the player's performance by hull
+	 * alone (`flownPerformance`), so health set on a cached struct's source
+	 * would not reach it.
+	 */
 	health: VentHealth;
 	axisSlots: AxisSlots;
 }
+
+/** What a hull-frame torque, MN·km, changes a hull's rates by over `dt`:
+ *  `x` is pitch, `y` yaw and `z` roll, each over its own moment. */
+const rateChange = (torque: Vec3, inertia: Angular, dt: number): Angular => ({
+	pitch: (torque.x / inertia.pitch) * dt,
+	yaw: (torque.y / inertia.yaw) * dt,
+	roll: (torque.z / inertia.roll) * dt,
+});
 
 /** The hull-frame force (MN) and torque (MN·km) a firing puts on the hull. */
 export interface VentLoads {
@@ -918,21 +933,33 @@ export function ventLoads(
 	thrustMN: number,
 	health: VentHealth,
 ): VentLoads {
-	let force = v3();
-	let torque = v3();
+	// Summed in scalars: this runs twice a step for every hull in flight and
+	// for every approach a docking sweep flies, so it allocates once.
+	let fx = 0;
+	let fy = 0;
+	let fz = 0;
+	let tx = 0;
+	let ty = 0;
+	let tz = 0;
 	for (const vent of vents) {
 		const level = clamp(levels[vent.slot] ?? 0, 0, 1);
 		if (level === 0) continue;
 		const thrust =
 			level * clamp(health[vent.slot] ?? 1, 0, 1) * vent.share * thrustMN;
-		const push = scale(v3(vent.dir[0], vent.dir[1], vent.dir[2]), thrust);
-		force = add(force, push);
-		torque = add(
-			torque,
-			cross(v3(vent.posKm[0], vent.posKm[1], vent.posKm[2]), push),
-		);
+		const [dx, dy, dz] = vent.dir;
+		const [px, py, pz] = vent.posKm;
+		const ux = dx * thrust;
+		const uy = dy * thrust;
+		const uz = dz * thrust;
+		fx += ux;
+		fy += uy;
+		fz += uz;
+		// The vent's position crossed with its push.
+		tx += py * uz - pz * uy;
+		ty += pz * ux - px * uz;
+		tz += px * uy - py * ux;
 	}
-	return { force, torque };
+	return { force: v3(fx, fy, fz), torque: v3(tx, ty, tz) };
 }
 
 /** A hull-frame vector's component on one axis. Surge is forward, which is
@@ -1173,11 +1200,7 @@ export function stepAngular(
 	}
 	const loads = ventLoads(firing, perf.vents, perf.thrustMN, perf.health);
 	return {
-		rates: {
-			pitch: rates.pitch + (loads.torque.x / perf.inertia.pitch) * dt,
-			yaw: rates.yaw + (loads.torque.y / perf.inertia.yaw) * dt,
-			roll: rates.roll + (loads.torque.z / perf.inertia.roll) * dt,
-		},
+		rates: addRates(rates, rateChange(loads.torque, perf.inertia, dt)),
 		firing,
 		saturated,
 		linearKms2: scale(loads.force, 1 / perf.massT),
@@ -1286,7 +1309,7 @@ export const steadyFrame = (vel: Vec3): FrameMotion => ({
 export const frameMean = (frame: FrameMotion): Vec3 =>
 	scale(add(frame.start, frame.end), 0.5);
 
-/** Two changes of rate, summed: a step's rates and `FlightStep.angularKick`. */
+/** Two changes of rate, summed. */
 export const addRates = (a: Angular, b: Angular): Angular => ({
 	pitch: a.pitch + b.pitch,
 	yaw: a.yaw + b.yaw,
@@ -1300,10 +1323,13 @@ export interface FlightStep {
 	firing: VentLevels;
 	/** Each axis the assist could not meet this step (§3.8). */
 	saturated: Record<LinearAxis, boolean>;
-	/** The change of rate the translation firing's torque gave, rad/s: zero
-	 *  from whole pairs, a turn from a lone or dead one. The caller adds it to
-	 *  its rates. */
-	angularKick: Angular;
+	/**
+	 * The hull's rates after the whole step, rad/s: `control.attitude`'s,
+	 * plus what the translation firing's torque gave — nothing from whole
+	 * pairs, a turn from a lone or dead one. A caller **assigns** it rather
+	 * than composing the kick itself, so none can forget it.
+	 */
+	rates: Angular;
 }
 
 /**
@@ -1351,7 +1377,7 @@ export function stepFlight(
 		return {
 			firing: { ...control.attitude.firing },
 			saturated: clear,
-			angularKick: { pitch: 0, yaw: 0, roll: 0 },
+			rates: control.attitude.rates,
 		};
 
 	// Everything happens in the frame — see `FrameMotion`. The velocity is
@@ -1402,11 +1428,10 @@ export function stepFlight(
 	return {
 		firing,
 		saturated,
-		angularKick: {
-			pitch: (loads.torque.x / perf.inertia.pitch) * dt,
-			yaw: (loads.torque.y / perf.inertia.yaw) * dt,
-			roll: (loads.torque.z / perf.inertia.roll) * dt,
-		},
+		rates: addRates(
+			control.attitude.rates,
+			rateChange(loads.torque, perf.inertia, dt),
+		),
 	};
 }
 

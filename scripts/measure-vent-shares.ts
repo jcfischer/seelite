@@ -21,6 +21,12 @@
  * whose mass, thrust or envelope moves shows here as a row to re-solve.
  * `tests/vents.test.ts` holds the table to the same law.
  *
+ * And it prints what the one departure the shares cannot remove costs each
+ * hull (`flight-model.md` §3.8.2): #5 eased a released turn out at any
+ * authority, the vents at their couple's, so a stop from the peak rate to 5%
+ * of it takes longer wherever the ease-out asks more than the couple gives.
+ * The figure is the worst over three frame steps.
+ *
  *   bun scripts/measure-vent-shares.ts
  */
 
@@ -31,6 +37,7 @@ import {
 	PLAYER_BASELINE_HULL,
 	type VentShares,
 } from "../src/hull";
+import { legacyAngular } from "../tests/helpers/legacy-flight";
 import {
 	ASSIST_CAP_KMS,
 	type Angular,
@@ -39,6 +46,8 @@ import {
 	REFERENCE_ANGULAR_MAX,
 	REFERENCE_ASSIST_LATERAL_TAU_S,
 	boxInertia,
+	flightPerformance,
+	stepAngular,
 } from "../src/sim";
 
 /**
@@ -97,6 +106,43 @@ export function solveVentShares(id: HullId): VentShares {
 	};
 }
 
+/** The frame steps the ease-out cost is measured over. */
+export const EASE_OUT_STEPS = [1 / 120, 1 / 60, 0.05];
+
+/**
+ * How much longer a released turn takes to fall from the peak rate to 5% of
+ * it on the vents than under #5's unbounded ease-out: the stop-time ratio
+ * minus one, by axis, the worst over `EASE_OUT_STEPS`.
+ */
+export function easeOutCost(id: HullId): Angular {
+	const perf = flightPerformance(id);
+	const still: Angular = { pitch: 0, yaw: 0, roll: 0 };
+	const cost = { ...still };
+	for (const axis of ["pitch", "yaw", "roll"] as const)
+		for (const dt of EASE_OUT_STEPS) {
+			const stop = (step: (r: Angular) => Angular) => {
+				let rates = { ...still, [axis]: perf.angularMax[axis] };
+				let t = 0;
+				while (Math.abs(rates[axis]) > 0.05 * perf.angularMax[axis]) {
+					rates = step(rates);
+					t += dt;
+				}
+				return t;
+			};
+			const vents = stop(
+				(r) => stepAngular(r, still, still, true, dt, perf).rates,
+			);
+			const legacy = stop((r) =>
+				legacyAngular(r, still, still, true, dt, {
+					...perf,
+					angularAccel: perf.angularAuthority[axis],
+				}),
+			);
+			cost[axis] = Math.max(cost[axis], vents / legacy - 1);
+		}
+	return cost;
+}
+
 /** Six significant figures: what `src/hull.ts` stores. */
 export const roundShare = (share: number): number =>
 	Number(share.toPrecision(6));
@@ -118,6 +164,19 @@ if (import.meta.main) {
 		};
 	});
 	console.table(rows);
+	console.log("\nease-out: how much longer a released turn takes to stop");
+	console.table(
+		HULL_IDS.map((id) => {
+			const cost = easeOutCost(id);
+			const pct = (x: number) => `${(100 * x).toFixed(1)}%`;
+			return {
+				id,
+				pitch: pct(cost.pitch),
+				yaw: pct(cost.yaw),
+				roll: pct(cost.roll),
+			};
+		}),
+	);
 	console.log("\nrows for src/hull.ts:");
 	for (const id of HULL_IDS) {
 		const s = solveVentShares(id);
