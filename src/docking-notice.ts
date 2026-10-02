@@ -15,7 +15,8 @@
  * by hand is pressing keys the whole time, so that rule would clear a bounce on
  * the frame it was written. A notice clears on the next approach event — a
  * crossing replaces it, an engage or a clearance request clears it — or once
- * the ship leaves the director's range of the station it is about.
+ * the ship leaves the approach it is about, which `stepDockingNotice` defines
+ * for a notice posted inside the director's range and for one posted beyond it.
  */
 
 import {
@@ -60,9 +61,18 @@ function notice(
 	};
 }
 
-/** Rounded up, so a failed value never reads as equal to its tolerance. */
-function degOver(deg: number, toleranceDeg: number): string {
-	return `${Math.ceil(deg)}° of ${toleranceDeg}°`;
+/**
+ * Rounded up, so a failed value never reads as equal to its tolerance — and
+ * `null` for a value that is not over it at all: a check failed at its own
+ * boundary names the row without a figure that would read as a pass.
+ */
+function degOver(deg: number, toleranceDeg: number): string | null {
+	return deg > toleranceDeg ? `${Math.ceil(deg)}° of ${toleranceDeg}°` : null;
+}
+
+/** A row's name, with its figure when it has one. */
+function named(row: string, figure: string | null): string {
+	return figure ? `${row} ${figure}` : row;
 }
 
 /** The failed checks in §3's order, each against its own tolerance. */
@@ -70,23 +80,23 @@ function failedReasons(outcome: EntryOutcome): string[] {
 	const { checks, ...ev } = outcome.evaluation;
 	const reasons: string[] = [];
 	if (!checks.axisAlignment) {
-		if (ev.positionAngleDeg > AXIS_TOLERANCE_DEG)
-			reasons.push(
-				`off axis ${degOver(ev.positionAngleDeg, AXIS_TOLERANCE_DEG)}`,
-			);
-		if (ev.noseAngleDeg > AXIS_TOLERANCE_DEG)
-			reasons.push(`nose ${degOver(ev.noseAngleDeg, AXIS_TOLERANCE_DEG)}`);
+		const position = degOver(ev.positionAngleDeg, AXIS_TOLERANCE_DEG);
+		const nose = degOver(ev.noseAngleDeg, AXIS_TOLERANCE_DEG);
+		if (position) reasons.push(named("off axis", position));
+		if (nose) reasons.push(named("nose", nose));
 		// The check failed and neither half reads over its tolerance — at the
 		// boundary itself. The row is still named rather than dropped.
-		if (reasons.length === 0) reasons.push("off axis");
+		if (!position && !nose) reasons.push("off axis");
 	}
 	if (!checks.inbound) reasons.push("not inbound");
 	if (!checks.rollMatch)
-		reasons.push(`roll ${degOver(ev.rollAngleDeg, ROLL_TOLERANCE_DEG)}`);
+		reasons.push(named("roll", degOver(ev.rollAngleDeg, ROLL_TOLERANCE_DEG)));
 	if (!checks.containment) reasons.push("missed the slot");
 	if (!checks.closingSpeed)
+		// Less a hair before rounding up: `0.14 * 100` is 14.000000000000002,
+		// and a bare ceil printed 0.15 for a 0.14 km/s crossing.
 		reasons.push(
-			`speed ${(Math.ceil(ev.speedKms * 100) / 100).toFixed(2)} of ${V_GATE_KMS.toFixed(2)} km/s`,
+			`speed ${(Math.ceil(ev.speedKms * 100 - 1e-9) / 100).toFixed(2)} of ${V_GATE_KMS.toFixed(2)} km/s`,
 		);
 	return reasons.slice(0, MAX_REASONS);
 }
@@ -108,7 +118,13 @@ export function entryNotice(
 	// A busy lane refuses a clean entry without damage; a bad entry into a busy
 	// lane is still a bad entry, and that is what the pilot can fix.
 	if (outcome.laneBlocked && outcome.evaluation.passed)
-		return notice("TURNED BACK · lane busy · no damage", "action", at);
+		return notice(
+			outcome.damage === 0
+				? "TURNED BACK · lane busy · no damage"
+				: "TURNED BACK · lane busy",
+			"action",
+			at,
+		);
 	return notice(
 		["ENTRY FAILED", ...failedReasons(outcome)].join(" · "),
 		"action",
@@ -151,10 +167,11 @@ export function stepDockingNotice(
 	rangeKm: number,
 ): DockingNotice | null {
 	if (!current) return null;
-	if (current.postedRangeKm <= DIRECTOR_RANGE_KM)
-		return rangeKm > DIRECTOR_RANGE_KM ? null : current;
-	return Math.abs(rangeKm - current.postedRangeKm) > DIRECTOR_RANGE_KM ||
-		rangeKm <= DIRECTOR_RANGE_KM
-		? null
-		: current;
+	const posted = current.postedRangeKm;
+	const left =
+		posted <= DIRECTOR_RANGE_KM
+			? rangeKm > DIRECTOR_RANGE_KM
+			: rangeKm <= DIRECTOR_RANGE_KM ||
+				Math.abs(rangeKm - posted) > DIRECTOR_RANGE_KM;
+	return left ? null : current;
 }

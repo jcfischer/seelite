@@ -162,6 +162,34 @@ describe("entryNotice", () => {
 		expect(n?.text).toBe("ENTRY FAILED · off axis");
 	});
 
+	test("a failed roll at exactly its tolerance does not read as equal to it", () => {
+		const n = entryNotice(
+			outcome(
+				evaluation({ rollMatch: false }, { rollAngleDeg: ROLL_TOLERANCE_DEG }),
+			),
+			AT,
+		);
+		expect(n?.text).toBe("ENTRY FAILED · roll");
+	});
+
+	test("a speed on a hundredth reads as that hundredth", () => {
+		const n = entryNotice(
+			outcome(evaluation({ closingSpeed: false }, { speedKms: 0.14 })),
+			AT,
+		);
+		expect(n?.text).toBe(
+			`ENTRY FAILED · speed 0.14 of ${V_GATE_KMS.toFixed(2)} km/s`,
+		);
+	});
+
+	test("a busy lane that still cost damage does not say no damage", () => {
+		const n = entryNotice(
+			outcome(evaluation(), { laneBlocked: true, damage: 1 }),
+			AT,
+		);
+		expect(n?.text).not.toContain("no damage");
+	});
+
 	test("containment and inbound name what happened, not a number", () => {
 		expect(
 			entryNotice(outcome(evaluation({ containment: false })), AT)?.text,

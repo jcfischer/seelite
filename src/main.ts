@@ -3534,7 +3534,8 @@ class Game {
 	 * What the last crossing or the computer's last let-go says, on the prompt
 	 * line (#597). `lastEntry` and the computer's refusal were recorded for a
 	 * probe and drawn nowhere. Cleared by the next approach event and by
-	 * leaving the director's range — `docking-notice.ts` says why not by a key.
+	 * leaving the approach it is about — `stepDockingNotice` defines that, and
+	 * `docking-notice.ts` says why not by a key.
 	 */
 	dockingNotice: DockingNotice | null = null;
 
@@ -9722,14 +9723,6 @@ class Game {
 	 */
 	private isSelectedTarget(id: string): boolean {
 		return id === this.targetId;
-	}
-
-	/** §4's tone for the prompt line: a docking notice's own, else amber. */
-	private promptFill(prompt: string): string {
-		const notice = this.dockingNotice;
-		return notice && prompt === notice.text
-			? FLOOR_TONE_FILL[notice.tone]
-			: PROMPT_FILL;
 	}
 
 	/**
@@ -17598,7 +17591,10 @@ class Game {
 			// the sheet). The line lands on the slot whenever a station is near,
 			// and red over lit plating and a nameplate did not read. Only for the
 			// notice: every other prompt kept its look.
-			if (this.dockingNotice?.text === prompt) {
+			// One predicate for the plate and the tone, so the two cannot disagree.
+			const notice =
+				this.dockingNotice?.text === prompt ? this.dockingNotice : null;
+			if (notice) {
 				const left = x - promptWidth / 2 - PROMPT_PLATE_PAD_PX;
 				const top = y - m.actualBoundingBoxAscent - PROMPT_PLATE_PAD_PX / 2;
 				const width = promptWidth + 2 * PROMPT_PLATE_PAD_PX;
@@ -17615,7 +17611,8 @@ class Game {
 					bottom: top + height,
 				};
 			}
-			ctx.fillStyle = this.promptFill(prompt);
+			// §4's tone: the notice's own, else the prompt's amber.
+			ctx.fillStyle = notice ? FLOOR_TONE_FILL[notice.tone] : PROMPT_FILL;
 			ctx.fillText(prompt, x, y);
 			this.cockpitPrompt.setCenteredPrompt(prompt, x, y, promptWidth);
 			ctx.textAlign = "left";
