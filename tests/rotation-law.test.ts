@@ -243,10 +243,15 @@ describe("the player's step is wired to the flag and the assist", () => {
 		const calls = callArguments(main, /\bstepPlayerAngular\(/g);
 		expect(calls).toHaveLength(1);
 		const args = calls[0].args.map((a) => a.trim());
-		expect(args[0]).toBe("this.rotationLaw");
-		expect(args[1]).toBe("this.rates");
-		expect(args[4]).toBe("this.assist");
-		expect(args[6]).toBe("this.flownPerformance");
+		expect(args).toEqual([
+			"this.rotationLaw",
+			"this.rates",
+			"{ pitch, yaw, roll }",
+			"impulse",
+			"this.assist",
+			"dt",
+			"this.flownPerformance",
+		]);
 	});
 
 	test("main.ts no longer calls stepAngular for the player", () => {
