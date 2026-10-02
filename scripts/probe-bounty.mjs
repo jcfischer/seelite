@@ -11,10 +11,15 @@
  * - fitted but Wanted, Accept is refused with its reason and nothing is taken;
  * - fitted and Clean, Accept takes it;
  * - the relay destroyed by the pulse laser readies the job — through
- *   `applyCarrierTransition`, the one writer every kill goes through;
- * - back at the same station, Report pays the pinned figure once, and a second
- *   report pays nothing;
+ *   `applyCarrierTransition` and the Holdings module's carrier event (#627),
+ *   the one path every kill goes through;
+ * - back at the same station, Report pays once, and a second report pays
+ *   nothing;
  * - with the relay down, the board posts no Bounty.
+ *
+ * The figures — the Bounty's pinned pay, a refusal taking nothing — are
+ * `tests/holdings.test.ts`'s since #627 (D8). The rows here are coarse: they
+ * show that this `Game`'s presses reached the module, which no bun test can.
  *
  * Seed 56 starts in ESLAIN, whose relay rolled active (`probe-relay.mjs` says
  * why that seed, and asserts it). This probe asserts it too rather than
@@ -361,8 +366,8 @@ const creditsAfter = await page.evaluate(() => window.__bountyProbe.credits());
 const paid = (await message()) ?? "";
 await capture("08-reported-paid");
 check(
-	"Report at the posting station pays the pinned figure and names the kill",
-	creditsAfter - creditsBefore === offer.rewardCr &&
+	"Report at the posting station pays and names the kill",
+	creditsAfter > creditsBefore &&
 		paid ===
 			`Paid ${offer.rewardCr} Cr for destroying the ${probe.RELAY_NAME}.`,
 	`${creditsBefore} → ${creditsAfter} · "${paid}"`,

@@ -10,7 +10,7 @@
  * browser probe reached any of them. These rows are that step.
  */
 import { describe, expect, test } from "bun:test";
-import { carrierKey } from "../src/carrier-key";
+import { type CarrierKey, carrierKey } from "../src/carrier-key";
 import { readDeficit, recordTrade } from "../src/deficits";
 import { generateGalaxy } from "../src/galaxy";
 import {
@@ -28,7 +28,27 @@ import {
 	ladderAfterHullSale,
 	ladderAfterMarket,
 } from "../src/ladder";
-import { DEFICIT_MAX, marketStationOf } from "../src/market";
+import { type JobOffer, bindBounty } from "../src/jobs";
+import { killCredit } from "../src/kill-credit";
+import {
+	DEFICIT_MAX,
+	LONG_RANGE_SCANNER,
+	marketStationOf,
+} from "../src/market";
+import {
+	bountyTargetOf,
+	relayActive,
+	relayDestruction,
+} from "../src/pirate-relay";
+import {
+	PLAYER_KILL,
+	raiderDestruction,
+	raiderReplacementActor,
+} from "../src/raider-wreck";
+import { RAIDER_HULL_ID } from "../src/raider-slots";
+import { relaySlot } from "../src/relay-slot";
+import { tenderKill } from "../src/relay-tender";
+import { trafficKillTransitions } from "../src/traffic-engagement";
 import {
 	type RequestOffer,
 	emptyRequests,
@@ -42,8 +62,21 @@ import {
 	scoopCargo,
 	transactAtStation,
 } from "../src/station-commerce";
-import { type WorldState, newWorld, setDeficits } from "../src/world-state";
-import { firstOffer, firstProcurementOffer } from "./helpers/job-board";
+import { generateContents } from "../src/system";
+import {
+	type TransitionEvent,
+	type WorldState,
+	applyTransition,
+	newWorld,
+	setDeficits,
+	visit,
+} from "../src/world-state";
+import {
+	boardContext,
+	firstOffer,
+	firstProcurementOffer,
+	postingStations,
+} from "./helpers/job-board";
 
 const SYSTEMS = generateGalaxy(0x5ee11e, 0).systems;
 const { offers: shelf, offer: purchase } = firstProcurementOffer(
@@ -313,7 +346,11 @@ describe("a market trade", () => {
 			cr: start.commander.credits - result.commander.credits,
 		});
 		expect(out.world.galaxies[GALAXY].deficits).toBe(result.deficits);
-		expect(out.signals).toEqual({ hullChanged: null, message: null });
+		expect(out.signals).toEqual({
+			hullChanged: null,
+			message: null,
+			readied: false,
+		});
 		expectBasisWithinCargo(out.holdings);
 	});
 
@@ -414,7 +451,11 @@ describe("a canister scoop", () => {
 		expect(out.world).toBe(world);
 		expect(out.holdings.commander.cargo.Food).toBe(5);
 		expect(out.holdings.ladders.basis.Food).toEqual({ units: 5, cr: 30 });
-		expect(out.signals).toEqual({ hullChanged: null, message: null });
+		expect(out.signals).toEqual({
+			hullChanged: null,
+			message: null,
+			readied: false,
+		});
 		expectBasisWithinCargo(out.holdings);
 	});
 
@@ -470,5 +511,374 @@ describe("a canister scoop", () => {
 		const capacity = holdOf(holdings()).capacityT;
 		const full = holdings({ cargo: { Food: capacity } });
 		expect(scoop(full, newWorld(1), 1).holdings).toBe(full);
+	});
+});
+
+/*
+ * #627: the other three events — every carrier transition, a jump arrival and
+ * a dock. Before this node `Game` credited a kill's bounty in
+ * `applyCarrierTransition` and its combat ladder in `creditKill`, called by
+ * hand at four sites that nothing checked, and applied an arrival's Hyperspace tank,
+ * visit and pending kind and a dock's bank by hand.
+ */
+
+/** An active relay with a Bounty posted on it, accepted by a fitted pilot:
+ *  the fixture `tests/bounty.test.ts` builds, through the module. */
+const RELAY_HOME = (() => {
+	for (const record of SYSTEMS) {
+		if (!relayActive(record)) continue;
+		const stations = postingStations(record);
+		if (stations.length > 0) return { record, station: stations[0] };
+	}
+	throw new Error("no active-relay system with a posting station");
+})();
+const RELAY_KEY = relaySlot(RELAY_HOME.record.index).key;
+const BOUNTY = bindBounty(
+	boardContext(SYSTEMS, RELAY_HOME.record, RELAY_HOME.station, {
+		bountyTarget: bountyTargetOf(
+			RELAY_HOME.record,
+			generateContents(RELAY_HOME.record),
+			newWorld(0x5ee11e).galaxies[0],
+			0,
+		),
+	}),
+) as JobOffer;
+const FITTED = { ownedEquipment: [LONG_RANGE_SCANNER] };
+const KILL_AT = 100;
+
+const bountyPress = (
+	action: string,
+	at: number,
+	standing: "clean" | "wanted" = "clean",
+): HoldEvent => ({
+	kind: "settlement",
+	action,
+	id: BOUNTY.id,
+	offer: BOUNTY,
+	docked: station(BOUNTY.requester),
+	standing,
+	galaxyIndex: 0,
+	at,
+});
+
+/** A fitted pilot with the relay's Bounty accepted at `at` 60. */
+const withBounty = (): Holdings => {
+	const out = applyHoldEvent(
+		holdings(FITTED),
+		newWorld(0x5ee11e),
+		bountyPress("accept", 60),
+	);
+	expect(out.holdings.requests.byId[BOUNTY.id]?.status).toBe("accepted");
+	return out.holdings;
+};
+
+/** The one carrier event shape, in galaxy 0. */
+const carrierEvent = (
+	key: CarrierKey,
+	transition: TransitionEvent,
+	hull: HullId | null,
+): HoldEvent => ({ kind: "carrier", galaxyIndex: 0, key, transition, hull });
+
+const killRelay = (
+	h: Holdings,
+	world: WorldState = newWorld(0x5ee11e),
+	hull: HullId | null,
+) =>
+	applyHoldEvent(
+		h,
+		world,
+		carrierEvent(
+			RELAY_KEY,
+			relayDestruction(RELAY_HOME.record.index, KILL_AT, RELAY_HOME.station.id),
+			hull,
+		),
+	);
+
+const RAIDER_KEY = carrierKey(RELAY_HOME.record.index, "raider-00");
+const killRaider = (h: Holdings, world: WorldState = newWorld(0x5ee11e)) =>
+	applyHoldEvent(
+		h,
+		world,
+		carrierEvent(
+			RAIDER_KEY,
+			raiderDestruction(RELAY_HOME.record.index, KILL_AT),
+			RAIDER_HULL_ID,
+		),
+	);
+
+describe("a carrier transition", () => {
+	test("a player's destroy writes the world through the module's writer", () => {
+		const world = newWorld(0x5ee11e);
+		const out = killRaider(holdings(), world);
+		expect(out.world).toEqual(
+			applyTransition(
+				world,
+				0,
+				RAIDER_KEY,
+				raiderDestruction(RELAY_HOME.record.index, KILL_AT),
+			),
+		);
+	});
+
+	test("a player's destroy credits the combat ladder with the kill's price, pending until a dock", () => {
+		const start = holdings();
+		const out = killRaider(start);
+		expect(out.holdings.ladderPending.combat).toBe(
+			killCredit(
+				{
+					hull: start.commander.hull,
+					equipment: start.commander.ownedEquipment,
+				},
+				RAIDER_HULL_ID,
+			),
+		);
+		expect(out.holdings.ladderPending.combat).toBeGreaterThan(0);
+		// Pending, not banked: a kill pays at the next dock (#562 D3).
+		expect(out.holdings.ladders).toBe(start.ladders);
+	});
+
+	test("a player's destroy readies the Bounty naming it, in the same event", () => {
+		const out = killRelay(withBounty(), newWorld(0x5ee11e), null);
+		const request = out.holdings.requests.byId[BOUNTY.id];
+		expect(request.status).toBe("ready-to-report");
+		expect(request.evidence).toEqual([
+			{ stageId: "destroy", occurredAt: KILL_AT, source: "kill" },
+		]);
+		expect(out.signals.readied).toBe(true);
+	});
+
+	test("a target with no hull row pays the bounty and nothing on the ladder", () => {
+		const start = withBounty();
+		const out = killRelay(start, newWorld(0x5ee11e), null);
+		expect(out.holdings.requests).not.toBe(start.requests);
+		expect(out.holdings.ladderPending).toBe(start.ladderPending);
+	});
+
+	test("both credits land in one event: bounty and ladder from one destroy", () => {
+		const start = withBounty();
+		// The relay is not a hull row, so price this destroy as a raider's to
+		// see both halves move together.
+		const out = killRelay(start, newWorld(0x5ee11e), RAIDER_HULL_ID);
+		expect(out.holdings.requests.byId[BOUNTY.id].status).toBe(
+			"ready-to-report",
+		);
+		expect(out.holdings.ladderPending.combat).toBeGreaterThan(0);
+	});
+
+	test("a destroy without the player's provenance credits neither", () => {
+		const start = withBounty();
+		const world = newWorld(0x5ee11e);
+		const transition = {
+			...relayDestruction(
+				RELAY_HOME.record.index,
+				KILL_AT,
+				RELAY_HOME.station.id,
+			),
+			cause: raiderReplacementActor(RELAY_HOME.record.index),
+		};
+		const out = applyHoldEvent(
+			start,
+			world,
+			carrierEvent(RELAY_KEY, transition, RAIDER_HULL_ID),
+		);
+		expect(out.holdings).toBe(start);
+		expect(out.world).toEqual(applyTransition(world, 0, RELAY_KEY, transition));
+		expect(out.signals.readied).toBe(false);
+	});
+
+	test("a player's transition that is not a destroy is only the world write", () => {
+		// The strike that diverts a carrier home: the player's provenance, and
+		// still no kill.
+		const start = withBounty();
+		const world = newWorld(0x5ee11e);
+		const out = applyHoldEvent(
+			start,
+			world,
+			carrierEvent(
+				RAIDER_KEY,
+				{ kind: "disable", occurredAt: KILL_AT, cause: PLAYER_KILL },
+				RAIDER_HULL_ID,
+			),
+		);
+		expect(out.holdings).toBe(start);
+		expect(out.world).not.toBe(world);
+		expect(out.signals.readied).toBe(false);
+	});
+
+	test("readied fires only when a request becomes ready", () => {
+		// No Bounty accepted: the kill moves the ladder and readies nothing.
+		expect(killRaider(holdings()).signals.readied).toBe(false);
+		// Already ready: the next kill moves the ladder and readies nothing new.
+		const once = killRelay(withBounty(), newWorld(0x5ee11e), null);
+		expect(once.signals.readied).toBe(true);
+		const twice = killRaider(once.holdings, once.world);
+		expect(twice.holdings.ladderPending).not.toBe(once.holdings.ladderPending);
+		expect(twice.signals.readied).toBe(false);
+	});
+
+	/**
+	 * The ladder credit used to be paid once per site, after the site's loop;
+	 * it is paid per player's destroy now. So each kill's transitions must
+	 * hold exactly one, or a loop would price one kill twice (sage #629).
+	 */
+	test("every kill a site applies holds exactly one player's destroy", () => {
+		const system = RELAY_HOME.record.index;
+		const station = RELAY_HOME.station.id;
+		const kills: [string, TransitionEvent[]][] = [
+			...(["operational", "disabled", "repairing"] as const).map(
+				(from): [string, TransitionEvent[]] => [
+					`traffic from ${from}`,
+					trafficKillTransitions(
+						system,
+						{ homeStationId: station },
+						from,
+						KILL_AT,
+					),
+				],
+			),
+			["raider", [raiderDestruction(system, KILL_AT)]],
+			["relay", [relayDestruction(system, KILL_AT, station)]],
+			["tender", tenderKill(system, KILL_AT, station).map((t) => t.event)],
+		];
+		for (const [name, events] of kills) {
+			const destroys = events.filter(
+				(e) => e.kind === "destroy" && e.cause.actorId === PLAYER_KILL.actorId,
+			);
+			expect([name, destroys.length]).toEqual([name, 1]);
+		}
+	});
+
+	test("a carrier event that names no hull does not compile", () => {
+		// `hull` is required: a kill site that forgot it would pay nothing on
+		// the ladder and read exactly like an unarmed kill.
+		// @ts-expect-error — no `hull`.
+		const event: HoldEvent = {
+			kind: "carrier",
+			galaxyIndex: 0,
+			key: RAIDER_KEY,
+			transition: raiderDestruction(RELAY_HOME.record.index, KILL_AT),
+		};
+		expect(event.kind).toBe("carrier");
+	});
+});
+
+const SYSTEM = 7;
+/** A jump arrival in galaxy 0. */
+const arrivalEvent = (systemIndex = SYSTEM, fuelLy = 2.5): HoldEvent => ({
+	kind: "arrival",
+	galaxyIndex: 0,
+	systemIndex,
+	fuelLy,
+});
+
+describe("a jump arrival", () => {
+	test("the first arrival marks the visit, leaves the plan's Hyperspace tank and is one pending kind", () => {
+		const start = holdings();
+		const world = newWorld(1);
+		const out = applyHoldEvent(start, world, arrivalEvent());
+		expect(out.world).toEqual(visit(world, 0, SYSTEM));
+		expect(out.world.galaxies[0].visited).toContain(SYSTEM);
+		expect(out.holdings.commander.fuelLy).toBe(2.5);
+		expect(out.holdings.ladderPending.systems).toEqual([
+			{ galaxyIndex: 0, systemIndex: SYSTEM },
+		]);
+	});
+
+	test("a second arrival is no second kind", () => {
+		const event = arrivalEvent();
+		const once = applyHoldEvent(holdings(), newWorld(1), event);
+		const twice = applyHoldEvent(once.holdings, once.world, event);
+		expect(twice.holdings.ladderPending).toBe(once.holdings.ladderPending);
+		// `visit` re-stamps the envelope and changes nothing in it.
+		expect(twice.world).toEqual(once.world);
+	});
+});
+
+describe("a dock", () => {
+	const YARD = carrierKey(3, "station-00");
+	const dock = (at = AT): HoldEvent => ({
+		kind: "dock",
+		galaxyIndex: 0,
+		station: YARD,
+		at,
+	});
+
+	test("banks the pending kill credit and clears what was pending", () => {
+		const killed = killRaider(holdings());
+		const credit = killed.holdings.ladderPending.combat;
+		const out = applyHoldEvent(killed.holdings, killed.world, dock());
+		expect(out.holdings.ladders.banked.combat).toBe(credit);
+		expect(out.holdings.ladderPending).toEqual(emptyPending());
+		// A dock writes no world.
+		expect(out.world).toBe(killed.world);
+	});
+
+	test("a station's first dock is one exploration kind, and its second none", () => {
+		const once = applyHoldEvent(holdings(), newWorld(1), dock());
+		expect(once.holdings.ladders.banked.exploration).toBe(1);
+		const twice = applyHoldEvent(once.holdings, once.world, dock());
+		expect(twice.holdings.ladders.banked.exploration).toBe(1);
+	});
+
+	test("a pending arrival banks at the dock as a kind of its own", () => {
+		const arrived = applyHoldEvent(holdings(), newWorld(1), arrivalEvent());
+		const out = applyHoldEvent(arrived.holdings, arrived.world, dock());
+		// The system and the station: two kinds.
+		expect(out.holdings.ladders.banked.exploration).toBe(2);
+		expect(out.holdings.ladderPending).toEqual(emptyPending());
+	});
+});
+
+/*
+ * #627 D8: the exact figures the browser probes used to carry. Each probe row
+ * keeps a coarse fact that shows the event reached the module in a running
+ * game; the figure is held here.
+ */
+describe("the figures the probes used to pin", () => {
+	test("Report pays the Bounty's pinned figure once, and a second report changes nothing", () => {
+		const ready = killRelay(withBounty(), newWorld(0x5ee11e), null);
+		const before = ready.holdings.commander.credits;
+		const paid = applyHoldEvent(
+			ready.holdings,
+			ready.world,
+			bountyPress("report", 120),
+		);
+		expect(paid.holdings.commander.credits - before).toBe(BOUNTY.rewardCr);
+		const again = applyHoldEvent(
+			paid.holdings,
+			paid.world,
+			bountyPress("report", 130),
+		);
+		expect(again.holdings).toBe(paid.holdings);
+		expect(again.world).toBe(paid.world);
+	});
+
+	test("a Wanted pilot's Accept is refused and nothing is taken", () => {
+		const start = holdings(FITTED);
+		const world = newWorld(0x5ee11e);
+		const out = applyHoldEvent(
+			start,
+			world,
+			bountyPress("accept", 60, "wanted"),
+		);
+		expect(out.holdings).toBe(start);
+		expect(out.world).toBe(world);
+		expect(out.signals.message).toMatch(/Clean/);
+	});
+
+	test("an entrusted consignment goes aboard at its tonnes, costs hold and is not the pilot's cargo", () => {
+		const start = holdings();
+		const out = applyHoldEvent(
+			start,
+			newWorld(1),
+			press("accept", courier, courierBoard),
+		);
+		const lots = Object.values(out.holdings.requests.entrustedByLotId);
+		expect(lots.length).toBe(1);
+		expect(lots[0].aboardT).toBe(courier.operand.tonnes);
+		expect(out.holdings.commander.cargo).toEqual(start.commander.cargo);
+		expect(holdOf(out.holdings).usedT - holdOf(start).usedT).toBe(
+			courier.operand.tonnes,
+		);
 	});
 });

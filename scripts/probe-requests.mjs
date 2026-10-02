@@ -281,18 +281,21 @@ try {
 				window.__seelite.commanderRecord().requests.trackedRequestId === null,
 		),
 	);
+	// Coarse on purpose (#627 D8): the tonnes aboard and the hold they cost
+	// are `tests/holdings.test.ts`'s. This row shows the accept reached the
+	// module in a running game.
 	check(
 		"an entrusted consignment is aboard, and it costs hold",
-		await page.evaluate((t) => {
+		await page.evaluate(() => {
 			const g = window.__seelite;
 			const lots = Object.values(g.commanderRecord().requests.entrustedByLotId);
 			return (
 				lots.length === 1 &&
-				lots[0].aboardT === t &&
+				lots[0].aboardT > 0 &&
 				// It is the requester's, so it is not in the pilot's cargo.
 				!(lots[0].goodName in g.commanderRecord().state.cargo)
 			);
-		}, offer.operand.tonnes),
+		}),
 	);
 	check(
 		"no Deliver action at the requester — delivery is at the other end",

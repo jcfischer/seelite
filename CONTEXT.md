@@ -192,13 +192,19 @@ _Avoid_: Inventory, cargo bay, hold contents (for the manifest)
 Everything a pilot owns that an act can move: the commander (credits, cargo,
 equipment, **Hyperspace tank**, hull), the Requests journal, the **Ladder** record with its
 purchase basis, and the pending ladder credit. `src/holdings.ts` owns what a
-hold event does to them and to the world it marks — a Request settlement, a
-market trade (hull sale included) and a canister scoop since #626 — so the rule
-that the purchase basis follows the cargo has one copy, and so does a
-settlement's mark with the flown hull's **Hold** (the till's own mark is
-`transactAtStation`'s). `Game` keeps the four fields (one save schema,
-#437) and adopts what the module returns; a refusal returns the very objects it
-was given.
+pilot's act does to them and to the world it writes — a Request settlement, a
+market trade (hull sale included) and a canister scoop since #626, and a
+carrier transition, a jump arrival and a dock since #627 — so the rule that the
+purchase basis follows the cargo has one copy, and so does a settlement's mark
+with the flown hull's **Hold** (the till's own mark is
+`transactAtStation`'s). A player's kill pays its Bounty and its combat ladder
+credit in that one carrier event, and the carrier event is the one write
+for **every** carrier transition, whoever's act it is: one that is not the
+player's kill is only the world write, so the module's reach is a little wider
+than what a pilot owns. `Game` keeps the four fields (one save
+schema, #437) and adopts what the module returns; a refusal returns the very
+objects it was given, and a carrier transition that is not the player's kill
+returns the same holdings beside a new world.
 _Avoid_: purse (`ladder.ts`'s local credits and cargo), ledger (an
 **Incident**'s record of offences)
 

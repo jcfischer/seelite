@@ -96,15 +96,62 @@ describe("the Game's world writes", () => {
 		// Split on the **declaration**, not the first occurrence: the kill's call
 		// comes earlier in the file than the method, and the first version of this
 		// row read the call site as the body.
-		const declaration =
-			"applyCarrierTransition(key: CarrierKey, event: TransitionEvent)";
+		//
+		// **#627: the module is `holdings.ts` now**, which applies the
+		// transition through `world-state.ts`'s writer and pays a player's kill
+		// in the same event. That the event does both is `holdings.test.ts`'s;
+		// this row is that the hook reaches it and applies no law itself.
+		const declaration = "applyCarrierTransition(\n\t\tkey: CarrierKey,";
 		expect(MAIN).toContain(declaration);
 		expect(MAIN).toContain("carrierCondition(");
-		const body = MAIN.split(declaration)[1] ?? "";
-		expect(body.slice(0, 400)).toContain("applyTransition(");
+		const body = (MAIN.split(declaration)[1] ?? "").split("\n\t/**")[0];
+		expect(body).toContain("hull: HullId | null");
+		expect(body).toContain("applyHoldEvent(");
+		expect(body).toContain('kind: "carrier"');
+		for (const law of ["applyTransition(", "recordKill(", "pendingKill("])
+			expect(body).not.toContain(law);
 		const kill = MAIN.split('step.encounter.end === "destroyed"')[1] ?? "";
-		expect(kill.slice(0, 400)).toContain("this.applyCarrierTransition(");
-		expect(kill.slice(0, 400)).toContain("raiderDestruction(");
+		expect(kill.slice(0, 600)).toContain("this.applyCarrierTransition(");
+		expect(kill.slice(0, 600)).toContain("raiderDestruction(");
+	});
+
+	/**
+	 * #627 D3: every kill site makes one call, and the call names the struck
+	 * hull. `creditKill` — the ladder half, called by hand at four sites that
+	 * nothing checked — is gone, so no site can pay one half of a kill.
+	 */
+	test.each([
+		// The anchor names the site; the call follows it (the traffic, raider
+		// and tender sites open on their anchor) or encloses it (the relay site
+		// names its transition inside the call).
+		["traffic", "private destroyTrafficCarrier(", "after", "actor.hullId"],
+		["raider", 'step.encounter.end === "destroyed"', "after", "RAIDER_HULL_ID"],
+		["relay", "relayDestruction(record.index, now", "before", "null"],
+		["tender", "tenderKill(record.index, now", "after", "RELAY_TENDER_HULL_ID"],
+	])(
+		"the %s kill pays through the one carrier event",
+		(_, head, side, hull) => {
+			/** A kill site is one method's span; a call farther than this from its
+			 *  anchor belongs to some other site. */
+			const SITE_CHARS = 1600;
+			const start = MAIN.indexOf(head);
+			expect(start).toBeGreaterThan(-1);
+			const at =
+				side === "after"
+					? MAIN.indexOf("this.applyCarrierTransition(", start)
+					: MAIN.lastIndexOf("this.applyCarrierTransition(", start);
+			expect(at).toBeGreaterThan(-1);
+			expect(Math.abs(at - start)).toBeLessThan(SITE_CHARS);
+			const call = MAIN.slice(at, MAIN.indexOf(");", at));
+			// The hull is the call's last argument.
+			expect(call.trimEnd().replace(/,$/, "").trimEnd().endsWith(hull)).toBe(
+				true,
+			);
+		},
+	);
+
+	test("creditKill is gone, so no site can pay one half of a kill", () => {
+		expect(MAIN).not.toContain("creditKill");
 	});
 
 	test("#366 and #396: an offence names every station that heard it, and every berth asks the law", () => {
@@ -226,7 +273,14 @@ describe("the Game's world writes", () => {
 		expect(jump).toBeGreaterThan(0);
 		expect(
 			MAIN.lastIndexOf("this.clearFlightSession();", jump),
-		).toBeGreaterThan(MAIN.lastIndexOf("visit(this.commerceWorld", jump));
+		).toBeGreaterThan(
+			// The arrival's visit is a hold event since #627, so it is read by
+			// its kind: `visit(this.commerceWorld` now finds only the boot's.
+			MAIN.lastIndexOf('kind: "arrival"', jump),
+		);
+		expect(MAIN.lastIndexOf('kind: "arrival"', jump)).toBeGreaterThan(
+			MAIN.lastIndexOf("private performJump(", jump),
+		);
 	});
 
 	test("a refused save is never given a store aimed at it (#89 D9)", () => {
@@ -319,12 +373,19 @@ describe("the Game's world writes", () => {
 		const values = [...HOLDINGS.matchAll(/^\s+world:\s*(.*)$/gm)].map((m) =>
 			m[1].trim(),
 		);
+		// A local bound to a writer's result is that writer's world (#627: a
+		// carrier transition is applied once and returned on both arms).
+		const bound = [...HOLDINGS.matchAll(/\bconst (\w+) = (\w+)\(/g)].flatMap(
+			(m) => (WRITERS.includes(m[2]) ? [m[1]] : []),
+		);
+		expect(bound.length).toBeGreaterThanOrEqual(1);
 		// Settlement's mark and the till's deficits: the two writes it makes.
 		// If this drops the regex has drifted and the check below is vacuous.
 		expect(values.filter((v) => v.startsWith("setDeficits(")).length).toBe(2);
 		const byHand = values.filter(
 			(v) =>
 				v !== "world," &&
+				!bound.some((b) => v === `${b},`) &&
 				// A parameter or field's type, not a value.
 				v !== "WorldState," &&
 				v !== "WorldState;" &&
@@ -337,7 +398,9 @@ describe("the Game's world writes", () => {
 			...HOLDINGS.matchAll(/\bunchanged\(\s*\w+,\s*([^,)]+)/g),
 		].map((m) => m[1].trim());
 		expect(refused.length).toBeGreaterThanOrEqual(2);
-		expect(refused.filter((w) => w !== "world")).toEqual([]);
+		expect(refused.filter((w) => w !== "world" && !bound.includes(w))).toEqual(
+			[],
+		);
 		// Shorthand `{ holdings: next, world, signals }` is the world passed in.
 		expect(HOLDINGS).not.toMatch(/world:\s*\{/);
 	});

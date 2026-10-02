@@ -287,9 +287,12 @@ async function boot() {
 		const all = slots.raiderSlots(record.index, record.government);
 		const slot = all[drawn.slotIndex].key;
 		// The drawn slot destroyed, as a kill leaves it; the others stay up.
+		// The struck hull is the call's third argument since #627, and a kill
+		// of a slot's raider names the raider's.
 		g.applyCarrierTransition(
 			slot,
 			wreck.raiderDestruction(record.index, g.world.gameTime),
+			slots.RAIDER_HULL_ID,
 		);
 		window.__defenderProbe.placeBeside("relay", 2);
 		const shot = window.__defenderProbe.shootTarget("relay", 400);
