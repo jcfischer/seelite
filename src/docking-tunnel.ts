@@ -55,8 +55,9 @@ export const TUNNEL_FLARE_DEG = 6;
 /** The fixed distance from the aperture plane to the corridor mouth, km.
  *
  * The corridor is a station-side runway, not a glass-relative funnel: it holds
- * its world size as the player flies through it. The renderer omits frames that
- * pass behind the camera, so this fixed length never becomes screen-edge rails.
+ * its world size as the player flies through it. It is drawn as world lines
+ * (`docking-tunnel-mesh.ts`), so the near clip cuts a ring the ship has passed
+ * and this fixed length never becomes screen-edge rails.
  */
 export const TUNNEL_MOUTH_OFFSET_KM = 3;
 
@@ -78,40 +79,6 @@ export interface TunnelGeometry {
 	/** The ring at the aperture plane — the aperture itself. Identical to
 	 *  `rings[0]`, named because it is the thing the ship goes through. */
 	throat: TunnelRing;
-}
-
-export interface TunnelScreenPoint {
-	x: number;
-	y: number;
-}
-
-/**
- * Split each rail wherever an entire ring is omitted by projection.
- *
- * A screen-space rail may join only neighbouring drawn rings. A skipped ring is
- * a real discontinuity — joining across it would draw a bridge through the
- * camera plane, the exact edge-rail artifact the fixed corridor must avoid.
- */
-export function tunnelRailSegments(
-	rings: readonly (readonly (TunnelScreenPoint | null)[])[],
-): TunnelScreenPoint[][][] {
-	const rails: TunnelScreenPoint[][][] = [];
-	for (let corner = 0; corner < 4; corner++) {
-		const segments: TunnelScreenPoint[][] = [];
-		let segment: TunnelScreenPoint[] = [];
-		for (const ring of rings) {
-			const point = ring[corner];
-			if (point === null || ring.some((candidate) => candidate === null)) {
-				if (segment.length > 1) segments.push(segment);
-				segment = [];
-				continue;
-			}
-			segment.push(point);
-		}
-		if (segment.length > 1) segments.push(segment);
-		rails.push(segments);
-	}
-	return rails;
 }
 
 /**
