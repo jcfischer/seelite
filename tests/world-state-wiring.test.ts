@@ -147,9 +147,12 @@ describe("the Game's world writes", () => {
 			expect(call.trimEnd().replace(/,$/, "").trimEnd().endsWith(hull)).toBe(
 				true,
 			);
-			expect(MAIN).not.toContain("creditKill");
 		},
 	);
+
+	test("creditKill is gone, so no site can pay one half of a kill", () => {
+		expect(MAIN).not.toContain("creditKill");
+	});
 
 	test("#366 and #396: an offence names every station that heard it, and every berth asks the law", () => {
 		// `Game` builds a renderer, so this is a source check — the same reason

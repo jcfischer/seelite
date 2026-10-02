@@ -13112,9 +13112,8 @@ class Game {
 		this.rebuildSystem();
 
 		// What the plan left in the Hyperspace tank, §7's visited flag and a
-		// first arrival's pending
-		// kind (#183 D4), in one event. The start system is recorded at boot;
-		// this is every system after it.
+		// first arrival's pending kind (#183 D4), in one event. The start
+		// system is recorded at boot; this is every system after it.
 		this.adoptHoldings(
 			applyHoldEvent(this.holdings(), this.commerceWorld, {
 				kind: "arrival",

@@ -582,7 +582,7 @@ const carrierEvent = (
 const killRelay = (
 	h: Holdings,
 	world: WorldState = newWorld(0x5ee11e),
-	hull: HullId | null = null,
+	hull: HullId | null,
 ) =>
 	applyHoldEvent(
 		h,
@@ -638,7 +638,7 @@ describe("a carrier transition", () => {
 	});
 
 	test("a player's destroy readies the Bounty naming it, in the same event", () => {
-		const out = killRelay(withBounty());
+		const out = killRelay(withBounty(), newWorld(0x5ee11e), null);
 		const request = out.holdings.requests.byId[BOUNTY.id];
 		expect(request.status).toBe("ready-to-report");
 		expect(request.evidence).toEqual([
@@ -709,7 +709,7 @@ describe("a carrier transition", () => {
 		// No Bounty accepted: the kill moves the ladder and readies nothing.
 		expect(killRaider(holdings()).signals.readied).toBe(false);
 		// Already ready: the next kill moves the ladder and readies nothing new.
-		const once = killRelay(withBounty());
+		const once = killRelay(withBounty(), newWorld(0x5ee11e), null);
 		expect(once.signals.readied).toBe(true);
 		const twice = killRaider(once.holdings, once.world);
 		expect(twice.holdings.ladderPending).not.toBe(once.holdings.ladderPending);
@@ -762,18 +762,20 @@ describe("a carrier transition", () => {
 	});
 });
 
-describe("a jump arrival", () => {
-	const SYSTEM = 7;
+const SYSTEM = 7;
+/** A jump arrival in galaxy 0. */
+const arrivalEvent = (systemIndex = SYSTEM, fuelLy = 2.5): HoldEvent => ({
+	kind: "arrival",
+	galaxyIndex: 0,
+	systemIndex,
+	fuelLy,
+});
 
+describe("a jump arrival", () => {
 	test("the first arrival marks the visit, leaves the plan's Hyperspace tank and is one pending kind", () => {
 		const start = holdings();
 		const world = newWorld(1);
-		const out = applyHoldEvent(start, world, {
-			kind: "arrival",
-			galaxyIndex: 0,
-			systemIndex: SYSTEM,
-			fuelLy: 2.5,
-		});
+		const out = applyHoldEvent(start, world, arrivalEvent());
 		expect(out.world).toEqual(visit(world, 0, SYSTEM));
 		expect(out.world.galaxies[0].visited).toContain(SYSTEM);
 		expect(out.holdings.commander.fuelLy).toBe(2.5);
@@ -783,12 +785,7 @@ describe("a jump arrival", () => {
 	});
 
 	test("a second arrival is no second kind", () => {
-		const event: HoldEvent = {
-			kind: "arrival",
-			galaxyIndex: 0,
-			systemIndex: SYSTEM,
-			fuelLy: 2.5,
-		};
+		const event = arrivalEvent();
 		const once = applyHoldEvent(holdings(), newWorld(1), event);
 		const twice = applyHoldEvent(once.holdings, once.world, event);
 		expect(twice.holdings.ladderPending).toBe(once.holdings.ladderPending);
@@ -824,12 +821,7 @@ describe("a dock", () => {
 	});
 
 	test("a pending arrival banks at the dock as a kind of its own", () => {
-		const arrived = applyHoldEvent(holdings(), newWorld(1), {
-			kind: "arrival",
-			galaxyIndex: 0,
-			systemIndex: 7,
-			fuelLy: 2,
-		});
+		const arrived = applyHoldEvent(holdings(), newWorld(1), arrivalEvent());
 		const out = applyHoldEvent(arrived.holdings, arrived.world, dock());
 		// The system and the station: two kinds.
 		expect(out.holdings.ladders.banked.exploration).toBe(2);
@@ -844,7 +836,7 @@ describe("a dock", () => {
  */
 describe("the figures the probes used to pin", () => {
 	test("Report pays the Bounty's pinned figure once, and a second report changes nothing", () => {
-		const ready = killRelay(withBounty());
+		const ready = killRelay(withBounty(), newWorld(0x5ee11e), null);
 		const before = ready.holdings.commander.credits;
 		const paid = applyHoldEvent(
 			ready.holdings,
