@@ -156,6 +156,7 @@ export const LEVERS = Object.freeze({
 	583: "the Shipyard tab: one row per hull, carrying its one reason, or its net price and how far it reaches from here",
 	590: "an outer rung's formation family and its visible ice surface",
 	597: "the prompt line's docking notice: a failed entry in amber, a docking-computer let-go in red",
+	621: "the firing vents drawn as plumes at their throats, and the saturated assist's marker pulsing in its own tone",
 });
 
 /**
@@ -236,6 +237,14 @@ export const LEVERS = Object.freeze({
  *   engages the docking computer with no grant, so it is the red refusal.
  *   Both run the game's own crossing and computer step. The frame is the
  *   line's tone, place and legibility over a station.
+ * - `vents` — #621's two cues (`flight-model.md` §3.8.1), at the start's own
+ *   heading with no target, the assist on, the ship handed `overCap` times the
+ *   cap along its nose and `spin` times its peak rate in yaw and roll, then
+ *   flown `steps` steps of 1/60 s through the game's own `step` and held
+ *   (`scripts/lib/vent-state.mjs`). The retro, translation and attitude vents
+ *   fire and both families saturate because the sim says so; nothing writes a
+ *   level or a cue. `orbit` swings the chase camera off the stern, where the
+ *   hull hides every vent but the drive.
  */
 export const SHOT_KINDS = Object.freeze([
 	"station-axis",
@@ -251,6 +260,7 @@ export const SHOT_KINDS = Object.freeze([
 	"chart",
 	"shipyard-tab",
 	"docking-notice",
+	"vents",
 ]);
 
 /**
@@ -1004,6 +1014,34 @@ export const VIEWS = Object.freeze([
 		shot: { kind: "docking-notice", notice: "let-go", view: "cockpit" },
 	},
 	/**
+	 * #621's two frames, one state. **A still shows one phase of a pulse**, so
+	 * the cockpit row is held at the trough — half a period after onset, the
+	 * marker at `SATURATION_PULSE_FLOOR` of its alpha — which is the frame
+	 * that differs from the `before` arm; the caption reads the drawn alpha
+	 * back rather than claiming it. The markers are 6 px rings, so this row is
+	 * judged by clicking through, not at the sheet's half size (#134). The
+	 * chase row is held earlier, six steps in, and orbited to the hull's flank.
+	 */
+	{
+		name: "vent-plumes-chase",
+		covers: [621],
+		what: "Chase, orbited to the flank: the courier above the cap and spinning, the assist burning it back — retro, translation and attitude vents firing, each a glow at its throat and a short puff thinning away from it.",
+		shot: {
+			kind: "vents",
+			overCap: 2,
+			spin: 2.5,
+			steps: 6,
+			orbit: 0.9,
+			view: "chase",
+		},
+	},
+	{
+		name: "vent-cue-cockpit",
+		covers: [621],
+		what: "Cockpit, the same state held at the pulse's trough: the prograde and retrograde markers and the nose cross dimmed in their own tones while the assist cannot meet the speed or the spin.",
+		shot: { kind: "vents", overCap: 2, spin: 2.5, steps: 13, view: "cockpit" },
+	},
+	/**
 	 * #532's fixed-phase strip (#195 D4). The wind-up runs on wall-clock time,
 	 * so an ordinary capture cannot land on the same frame twice; each row holds
 	 * the transition at a phase through `holdWitchspace` and holds the clock, so
@@ -1403,6 +1441,16 @@ const SHOT_REQUIREMENTS = {
 	"shipyard-tab": (s) => s.rungs === "new-game" || s.rungs === "top",
 	// Which of #597's two notices the frame shows.
 	"docking-notice": (s) => s.notice === "bounce" || s.notice === "let-go",
+	// #621: above the cap and above the envelope, or nothing saturates and the
+	// frame is a quiet ship under a caption about a saturated one.
+	vents: (s) =>
+		finite(s.overCap) &&
+		s.overCap > 1 &&
+		finite(s.spin) &&
+		s.spin > 1 &&
+		Number.isInteger(s.steps) &&
+		s.steps > 0 &&
+		(s.orbit === undefined || finite(s.orbit)),
 	duel: (s) =>
 		["forward", "right", "left"].includes(s.headLook) &&
 		(s.aftermath === undefined ||

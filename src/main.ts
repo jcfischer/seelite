@@ -3342,6 +3342,9 @@ class Game {
 	 * own arithmetic — `tests/headless.test.ts` and `sim.test.ts`'s float32 budget.
 	 */
 	readonly units = units;
+	/** The assist cap, for a probe that places a ship above it (#621). It is
+	 *  `sim.ts`'s and not a unit, so `units` does not carry it. */
+	readonly assistCapKms = ASSIST_CAP_KMS;
 
 	/** #5's assist cap, reachable from the handle for the same reason the unit
 	 *  scheme is: a probe that restated it would assert against its own copy and

@@ -60,6 +60,7 @@ import { assertPlayersRenderer } from "./lib/players-renderer.mjs";
 import { installViewFraming } from "./lib/view-placement.mjs";
 import { installCruiseLeg } from "./lib/cruise-page.mjs";
 import { installChargeToNearest } from "./lib/witchspace-page.mjs";
+import { holdVentState } from "./lib/vent-state.mjs";
 import {
 	bootedGame,
 	guardedTree,
@@ -984,6 +985,42 @@ const PLACERS = {
 			return `${result.id} · no Shipyard tab on this build`;
 		await tab.click();
 		return `${result.id} · Shipyard tab at ${shot.rungs} rungs`;
+	},
+	/**
+	 * #621's two cues, in one state the real sim was flown into: the assist
+	 * on, the ship above the cap and spinning above its envelope, so the
+	 * retro and attitude vents fire and both families saturate. The clock is
+	 * held, so the plumes and the pulse are the same frame every run.
+	 *
+	 * **Read back, not assumed**: a build with the cue that fired nothing or
+	 * flagged nothing throws rather than capturing a quiet frame under this
+	 * caption. A build before #621 is its honest `before` and says so.
+	 */
+	vents: async (page, shot) => {
+		// The ship is moved and spun; the next row boots clean.
+		worldWritten = true;
+		const state = await page.evaluate(holdVentState, {
+			overCap: shot.overCap,
+			spin: shot.spin,
+			steps: shot.steps,
+		});
+		await page.evaluate((yaw) => {
+			window.__seelite.chaseYaw = yaw;
+		}, shot.orbit ?? 0);
+		if (state.absent)
+			return `${state.hull} · this build keeps no firing table: no plumes, no pulse`;
+		if (state.lit.length === 0 || !state.cue?.linear || !state.cue?.angular)
+			throw new Error(
+				`vents placer: ${state.lit.length} vents fired, cue ${JSON.stringify(state.cue)}`,
+			);
+		const drawn = await page.evaluate(async () => {
+			await new Promise((r) => requestAnimationFrame(() => r()));
+			return window.__seelite.saturationRender;
+		});
+		const pulse = drawn
+			? `markers at ${drawn.linear.toFixed(2)} (velocity) and ${drawn.angular.toFixed(2)} (nose) of their alpha`
+			: "no glass this frame";
+		return `${state.hull} at ${state.speedOverCap.toFixed(2)}× the cap, spinning · ${state.lit.length} vents firing · ${pulse}`;
 	},
 	/**
 	 * #537's cruise light shift. A real leg to the farthest body, then the

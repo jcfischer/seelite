@@ -66,12 +66,12 @@ export interface Throat {
  *  main drive throws the longest; a translation or attitude vent a short puff,
  *  which is what reads as a thruster rather than as a second drive. */
 export const PLUME_REACH: Readonly<Record<VentFamily, number>> = {
-	main: 0.32,
-	retro: 0.14,
-	strafe: 0.11,
-	pitch: 0.1,
-	yaw: 0.1,
-	roll: 0.1,
+	main: 0.45,
+	retro: 0.22,
+	strafe: 0.2,
+	pitch: 0.18,
+	yaw: 0.18,
+	roll: 0.18,
 };
 
 /** How long one puff lives, seconds of game clock. */
@@ -87,10 +87,10 @@ export const PLUME_LIFE_S: Readonly<Record<VentFamily, number>> = {
 /** Particles per throat, the glow at the throat not counted. */
 export const PLUME_PARTICLES = 10;
 
-/** The brightest a plume point is allowed to emit, against the shared
- *  exposure ceiling — the bowl's own figure (`SHIP_EMISSIVE_INTENSITIES`), so
- *  a puff is no hotter than the drive it came from (#199). */
-export const PLUME_PEAK = EMISSIVE_CEILING * 0.55;
+/** The brightest one plume point emits, against the shared exposure ceiling
+ *  (#199): under it, so a lone puff is shaped by the tone map and does not
+ *  halo. Overlapping puffs add, which is what makes a throat read hot. */
+export const PLUME_PEAK = EMISSIVE_CEILING * 0.9;
 
 /** A cheap, fixed hash in 0…1: the per-particle scatter is a property of the
  *  index, not a draw, so no `Math.random` reaches the frame. */
@@ -248,10 +248,10 @@ export interface VentPlumes {
 const PER_THROAT = 1 + PLUME_PARTICLES;
 
 /** The throat glow's size against the throat's reach. */
-const GLOW_SIZE = 0.32;
+const GLOW_SIZE = 0.55;
 /** A puff's size at birth and at the end of its life, against the reach. */
-const PUFF_SIZE_BIRTH = 0.14;
-const PUFF_SIZE_DEATH = 0.42;
+const PUFF_SIZE_BIRTH = 0.25;
+const PUFF_SIZE_DEATH = 0.7;
 
 let plumeMaterial: THREE.ShaderMaterial | undefined;
 
