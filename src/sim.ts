@@ -906,6 +906,16 @@ export function stepAngular(
 	if (dt <= 0) return rates;
 	const decay = Math.exp(-dt / perf.angularDampTauS);
 	const axis = (rate: number, want: number, kick: number, max: number) => {
+		// Above the envelope with the assist on, the rate comes back at
+		// `angularAccel` until it is inside, and stick and pointer wait. The
+		// principal ruled this after flying the assist-off Newtonian arm (#618):
+		// the assist returns a spin by the normal physics, not by the clamp below
+		// cutting it in one frame. It applies to any rate above the envelope,
+		// whatever left it there. Inside the envelope this branch is never taken.
+		if (assist && Math.abs(rate) > max)
+			return (
+				Math.sign(rate) * Math.max(max, Math.abs(rate) - perf.angularAccel * dt)
+			);
 		let next = rate + kick;
 		if (want !== 0) {
 			// Toward the commanded rate at a bounded acceleration — the ease-in.

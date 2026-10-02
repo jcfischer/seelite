@@ -1,9 +1,9 @@
 # Flight model
 
 Author: Ivy · 2026-10-02
-Status: §3's decisions were taken with the principal on 2026-10-02. **§3.9 is
-provisional** until it is flown (§6). Ratified on principal-approved merge,
-recorded in the decision node's resolution.
+Status: §3's decisions were taken with the principal on 2026-10-02. §3.9 was
+flown and kept on 2026-10-02 (§6), with one rule added. Ratified on
+principal-approved merge, recorded in the decision node's resolution.
 Decision node: [Fly the hull from its vents: six held thrusters, the couples
 they make, and the assist as a controller on top](https://github.com/jcfischer/seelite/issues/398).
 
@@ -135,7 +135,7 @@ follow:
   throat, never a cone (`src/station-mesh.ts` rejects a cone for the refinery's
   vent bank). The firing table is the sim's, and `src/ship-mesh.ts` draws from it.
 
-### 3.9 Assist-off rotation is Newtonian and uncapped — PROVISIONAL
+### 3.9 Assist-off rotation is Newtonian and uncapped
 
 With the assist off, torque gives angular acceleration and that gives rate. There
 is no rate cap. A spin continues until a counter-couple stops it. With the
@@ -144,8 +144,16 @@ assist on, the controller commands a rate and is bounded by the vents.
 Angular momentum becomes state that persists: rates go into #89's envelope, and
 a save taken while tumbling resumes tumbling.
 
-**Provisional** because it was ruled on paper. A flag-gated build is flown
-first (§6).
+**Turning the assist on above the rate cap brings the rate back by the vents'
+authority.** The assist reduces each axis above `angularMax` at the hull's
+angular authority until it is inside, and does not cut it in one frame. Today
+that authority is `angularAccel`, a scalar stand-in; under the substrate it is
+the rotational vents' couple (§3.8). Stick and pointer wait until the axis
+is inside. This is the rotational form of §3.10's retro burn. The principal,
+after flying it: *"newtonian movement works. Turning assist on should use the
+normal physics to bring ship into envelope."*
+
+Flown on 2026-10-02 behind `?rotation=newtonian` (#618, PR #624), and kept.
 
 ### 3.10 The 2 km/s cap stays; the clamp goes
 
@@ -194,9 +202,15 @@ in force inside it. No vent is drawn for it, and no momentum accounting applies.
 
 ## 6. Flying §3.9 first
 
-A flag-gated build puts uncapped Newtonian assist-off rotation on today's model,
-with no other change, for the principal to fly. If it holds, §3.9 loses its
-provisional mark. If it does not, §3.9 is re-ruled before the substrate is built.
+A flag-gated build put uncapped Newtonian assist-off rotation on today's model,
+with no other change, for the principal to fly (`?rotation=newtonian`, #618).
+It held, and §3.9 is no longer provisional. The flight added §3.9's rule for
+turning the assist on above the rate cap.
+
+The flag stays until the vent substrate replaces today's rotation law. On
+today's model, `control` with the assist off only closes the throttle: there are
+no translation vents yet, so a pilot brakes by turning the nose to retrograde
+and burning. §3.6's retro force arrives with the substrate.
 
 ## 7. Owed on map #460
 

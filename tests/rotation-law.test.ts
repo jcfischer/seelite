@@ -265,3 +265,73 @@ describe("the player's step is wired to the flag and the assist", () => {
 		expect(main).toMatch(/readonly rotationLaw: RotationLaw = ROTATION_LAW;/);
 	});
 });
+
+describe("assist on above the envelope — the vents bring the rate back (#618 ruling)", () => {
+	// The principal, flying the arm on 2026-10-02: "Turning assist on should use
+	// the normal physics to bring ship into envelope." So a rate above
+	// `angularMax` is brought down at `angularAccel`, never cut in one frame.
+	const max = BASELINE.angularMax.yaw;
+
+	test("a spin above the cap comes down at angularAccel, not in one frame", () => {
+		for (const dt of DTS)
+			for (const command of [NONE, { ...NONE, yaw: 1 }, { ...NONE, yaw: -1 }])
+				for (const impulse of [NONE, { ...NONE, yaw: 0.5 }]) {
+					const start = { pitch: 0, yaw: 4 * max, roll: 0 };
+					const next = stepAngular(start, command, impulse, true, dt, BASELINE);
+					expect(next.yaw).toBeCloseTo(
+						4 * max - BASELINE.angularAccel * dt,
+						12,
+					);
+				}
+	});
+
+	test("it reaches the cap in (rate − cap) / angularAccel, then flies today's law", () => {
+		for (const dt of DTS) {
+			let rates = { pitch: 0, yaw: -3 * max, roll: 0 };
+			const authority = BASELINE.angularAccel * dt;
+			let steps = 0;
+			while (rates.yaw < -max && steps < 1e6) {
+				const before = rates.yaw;
+				rates = stepAngular(rates, NONE, NONE, true, dt, BASELINE);
+				steps++;
+				// Never faster than the vents, and never past the cap.
+				expect(rates.yaw - before).toBeLessThanOrEqual(authority + 1e-12);
+				expect(rates.yaw).toBeLessThanOrEqual(-max);
+			}
+			// One step of slack: a float residue can leave the rate 1e-15 past the
+			// cap after an exact count, and the next step lands it.
+			expect(Math.abs(steps - (2 * max) / authority)).toBeLessThanOrEqual(
+				1 + 1e-9,
+			);
+			expect(rates.yaw).toBe(-max);
+			const inside = stepAngular(rates, NONE, NONE, true, dt, BASELINE);
+			expect(inside.yaw).toBeCloseTo(
+				-max * Math.exp(-dt / BASELINE.angularDampTauS),
+				12,
+			);
+		}
+	});
+
+	test("each axis is its own: one over the cap does not touch the others", () => {
+		const start = { pitch: 0.2, yaw: 5 * max, roll: -0.1 };
+		const dt = 0.016;
+		const next = stepAngular(start, NONE, NONE, true, dt, BASELINE);
+		const within = stepAngular(
+			{ pitch: 0.2, yaw: 0, roll: -0.1 },
+			NONE,
+			NONE,
+			true,
+			dt,
+			BASELINE,
+		);
+		expect(next.pitch).toBe(within.pitch);
+		expect(next.roll).toBe(within.roll);
+	});
+
+	test("with the assist off the rate above the cap is left alone under the arm", () => {
+		const start = { pitch: 0, yaw: 4 * max, roll: 0 };
+		expect(
+			stepPlayerAngular("newtonian", start, NONE, NONE, false, 0.016, BASELINE),
+		).toEqual(start);
+	});
+});
