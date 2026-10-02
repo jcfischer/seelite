@@ -130,6 +130,24 @@ and the mouse and `w`/`s`/`a`/`d` keep pitch and yaw.
 **no default key**. It is reachable for a pilot who binds it, and absent from the
 default layout.
 
+**Built by #620.** The four strafe commands are `fly.strafePort`,
+`fly.strafeStarboard`, `fly.strafeDorsal` and `fly.strafeVentral`; the slot
+commands are `vent.<slot>` in camel case, one per `VENT_SLOTS` entry. A slot
+command ships an `unbound` placeholder row, because a rebind moves a trigger and
+the store saves moves, so a command with no row could never be bound. It is
+held, and binds to a key only: a held pad button has no reader yet (#496).
+
+**Not ruled, and taken as the conservative reading by #620:**
+
+- **The pad.** The left stick's vertical axis was the one free axis, so it
+  carries the vertical strafe (up is up). The lateral strafe has no pad axis
+  without moving a binding #283 accepted, so it is on the arrows only.
+- **The speed lever with the assist off.** It does not move: `shift` and
+  `control` fire the drive and the retro vents while held, and the lever keeps
+  the speed the assist holds when it is switched back on.
+- **The triggers with the assist off.** They are an analog force on the same
+  axis as `shift` and `control`, rather than a trim of a lever that does not act.
+
 ### 3.6 Keys mean different things in the two regimes (stated exception)
 
 #398 asked for a demand whose meaning is the same in both regimes. The principal
@@ -287,8 +305,7 @@ turning the assist on above the rate cap.
 
 The flag stayed until the vent substrate replaced the rotation law. #619
 retired it, and §3.9's law is now the only one. §3.6's retro force is in the
-substrate (a negative `LinearDemand.surge`); the keys that ask for it are
-#620's.
+substrate (a negative `LinearDemand.surge`); #620 put it on `control` (§3.5).
 
 ## 7. Owed on map #460
 

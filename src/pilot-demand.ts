@@ -82,7 +82,8 @@ export interface PilotHands {
 }
 
 const unit = (x: number) => Math.max(-1, Math.min(1, x));
-const pair = (plus: boolean, minus: boolean) => (plus ? 1 : 0) - (minus ? 1 : 0);
+const pair = (plus: boolean, minus: boolean) =>
+	(plus ? 1 : 0) - (minus ? 1 : 0);
 
 /**
  * §3.6's two meanings, by the principal's ruling:

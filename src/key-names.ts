@@ -144,7 +144,8 @@ export function boundNames(
 ): string[] {
 	const names = layout
 		.filter(
-			(b) => b.command === id && b.trigger.kind !== "unbound" && keep(b.trigger),
+			(b) =>
+				b.command === id && b.trigger.kind !== "unbound" && keep(b.trigger),
 		)
 		.map((b) => triggerLabel(b.trigger));
 	return [...new Set(names)];

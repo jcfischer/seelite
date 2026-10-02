@@ -29,6 +29,11 @@ export type ChangelogEntry = {
 
 export const CHANGELOG: readonly ChangelogEntry[] = [
 	{
+		date: "2026-10-03",
+		text: "The arrow keys now slide the ship sideways, up and down; with flight assist off, Shift and Ctrl fire the main drive and the retro thrusters while you hold them, and any single thruster can be bound to a key of your own.",
+		node: 620,
+	},
+	{
 		date: "2026-10-02",
 		text: "Ships now fly on their thrusters: with flight assist off a spin keeps going until you stop it, and a saved game keeps the spin.",
 		node: 619,

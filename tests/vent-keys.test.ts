@@ -167,9 +167,9 @@ describe("§3.5: one command per vent slot, with no default key", () => {
 		const loaded = parseLayout(raw);
 		expect(loaded.layout).toBe(DEFAULT_BINDINGS);
 		expect(loaded.notices.map((n) => n.kind)).toEqual(["rejected"]);
-		expect(
-			(loaded.notices[0] as { reason?: string } | undefined)?.reason,
-		).toBe("moved-default");
+		expect((loaded.notices[0] as { reason?: string } | undefined)?.reason).toBe(
+			"moved-default",
+		);
 	});
 });
 
@@ -241,21 +241,13 @@ describe("§3.6: what the hands ask for", () => {
 
 describe("#283's law: the vertical strafe on the left stick's free axis", () => {
 	test("pushed up the ship rises, pushed down it sinks", () => {
-		expect(
-			padFlightAxes(sticks([0, -1, 0, 0]), "flight").heave,
-		).toBe(1);
-		expect(
-			padFlightAxes(sticks([0, 1, 0, 0]), "flight").heave,
-		).toBe(-1);
+		expect(padFlightAxes(sticks([0, -1, 0, 0]), "flight").heave).toBe(1);
+		expect(padFlightAxes(sticks([0, 1, 0, 0]), "flight").heave).toBe(-1);
 	});
 
 	test("a resting stick is exactly zero, and a console suspends it", () => {
-		expect(Object.is(padFlightAxes(rest(), "flight").heave, 0)).toBe(
-			true,
-		);
-		expect(
-			padFlightAxes(sticks([0, -1, 0, 0]), "console").heave,
-		).toBe(0);
+		expect(Object.is(padFlightAxes(rest(), "flight").heave, 0)).toBe(true);
+		expect(padFlightAxes(sticks([0, -1, 0, 0]), "console").heave).toBe(0);
 	});
 
 	test("the registry derives the stick's rows rather than authoring them", () => {
