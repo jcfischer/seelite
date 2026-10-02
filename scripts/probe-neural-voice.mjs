@@ -48,14 +48,14 @@ const FAKE = {
 		wasm: ["model-wasm", "ort-wasm"],
 		webgpu: ["model-webgpu", "ort-webgpu"],
 	},
-	voices: ["bm_george"],
+	voices: ["bm_lewis"],
 	files: Object.fromEntries(
 		[
 			["model-wasm", 50_000_000],
 			["ort-wasm", 11_000_000],
 			["model-webgpu", 50_000_000],
 			["ort-webgpu", 11_000_000],
-			["voice:bm_george", 522_240],
+			["voice:bm_lewis", 522_240],
 		].map(([id, bytes]) => [
 			id,
 			{ name: id, bytes, sha256: "0".repeat(64), parts: [`${id}.0.part`] },

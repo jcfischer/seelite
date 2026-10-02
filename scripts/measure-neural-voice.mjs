@@ -221,14 +221,14 @@ try {
 			const idle = stats(await frames(() => performance.now() - t0 > 2000));
 			let done = false;
 			const g0 = performance.now();
-			const line = g.neural.line(long, "bm_george", speed).finally(() => {
+			const line = g.neural.line(long, "bm_lewis", speed).finally(() => {
 				done = true;
 			});
 			const busy = stats(await frames(() => done));
 			const samples = await line;
 			const genMs = performance.now() - g0;
 			const k0 = performance.now();
-			const again = await g.neural.line(long, "bm_george", speed);
+			const again = await g.neural.line(long, "bm_lewis", speed);
 			const keptMs = performance.now() - k0;
 			const pair = await Promise.all([
 				g.neural.line(texts[0], "af_bella", speed, true),

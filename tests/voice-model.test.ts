@@ -257,6 +257,14 @@ describe("who speaks with which voice (#604, the principal's ruling)", () => {
 		expect(pilots.size).toBe(SPEAKER_VOICES.length);
 	});
 
+	test("a voice the principal could not understand is not downloaded", () => {
+		// 2026-10-02: bm_george and bf_alice, through the radio.
+		for (const v of ["bm_george", "bf_alice"]) {
+			expect(VOICE_IDS).not.toContain(v);
+			expect(NEURAL_VOICES as readonly string[]).not.toContain(v);
+		}
+	});
+
 	test("the machine keeps one voice, and a line with no speaker its role's", () => {
 		for (const id of ids.slice(0, 20))
 			expect(speakerVoice("machine", id)).toBe(NEURAL_ROLE.machine);

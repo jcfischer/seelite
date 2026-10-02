@@ -25,7 +25,6 @@ export const PART_BYTES = 20 * 1024 * 1024;
  *  offered or offered without being fetched. Kokoro's first letter is the
  *  accent: `a` American, `b` British. */
 export const VOICE_SHA256 = {
-	bm_george: "c4b235a4c1f2cd3b939fed08b899ce9385638b763f7b73a59616c4fc9bd6c9bc",
 	bm_lewis: "b8f671cef828c30e66fdf0b0756a76bba58f6bb3398cbbf27058642acbcedb97",
 	am_michael:
 		"1d1f21dd8da39c30705cd4c75d039d265e9bc4a2a93ed09bc9e1b1225eb95ba1",
@@ -34,7 +33,6 @@ export const VOICE_SHA256 = {
 	bf_isabella:
 		"3754352c4aaa46d17f27654ab7518d65b62ad6163a0f55a5f4330c2da2c4e94f",
 	af_nicole: "cd2191ab31b914ed7b318416b0e4440fdf392ddad9106a060819aa600a64f59a",
-	bf_alice: "08afa6ba24da61ea5e8efa139e5aadc938d83f0a6da5a900adaf763ac1da5573",
 };
 
 /** The voices, in the order the lab offers them. */

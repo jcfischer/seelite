@@ -53,14 +53,12 @@ const MEMO_LINES = 24;
 /** The voices the prototype ships, by Kokoro's id: the first letter is the
  *  accent (`a` American, `b` British). */
 export const NEURAL_VOICES = [
-	"bm_george",
 	"bm_lewis",
 	"am_michael",
 	"bf_emma",
 	"af_bella",
 	"bf_isabella",
 	"af_nicole",
-	"bf_alice",
 ] as const;
 export type NeuralVoiceId = (typeof NEURAL_VOICES)[number];
 
@@ -113,7 +111,7 @@ export function tokenize(ipa: string): number[] {
 /** Each role's voice when no speaker is named — the lab, a probe, a line
  *  with nobody behind it. The machine's is the only one the game keeps. */
 export const NEURAL_ROLE = {
-	approach: "bm_george",
+	approach: "bm_lewis",
 	pilot: "af_bella",
 	pirate: "am_michael",
 	machine: "af_nicole",
