@@ -33,6 +33,12 @@ export const VOICE_SHA256 = {
 	bf_isabella:
 		"3754352c4aaa46d17f27654ab7518d65b62ad6163a0f55a5f4330c2da2c4e94f",
 	af_nicole: "cd2191ab31b914ed7b318416b0e4440fdf392ddad9106a060819aa600a64f59a",
+	// On trial (2026-10-02), from Kokoro's VOICES.md grades of C and above.
+	af_heart: "d583ccff3cdca2f7fae535cb998ac07e9fcb90f09737b9a41fa2734ec44a8f0b",
+	am_fenrir: "c27989f741f7ee34d273a39d8a595cc0837d35f5ced9a29b7cc162614616df43",
+	am_puck: "fcf73c989033e9233e0b98713eca600c8c74dcc1614b37009d5450ff4a2274a0",
+	bm_fable: "f889083196807b4adb15e9204252165f503b8d33d3982e681c52443c49d798f1",
+	af_sarah: "4409fbc125afabacc615d94db5398d847006a737b0247d6892b7a9a0007a2f0a",
 };
 
 /** The voices, in the order the lab offers them. */

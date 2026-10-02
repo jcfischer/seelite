@@ -59,6 +59,11 @@ export const NEURAL_VOICES = [
 	"af_bella",
 	"bf_isabella",
 	"af_nicole",
+	"af_heart",
+	"am_fenrir",
+	"am_puck",
+	"bm_fable",
+	"af_sarah",
 ] as const;
 export type NeuralVoiceId = (typeof NEURAL_VOICES)[number];
 
