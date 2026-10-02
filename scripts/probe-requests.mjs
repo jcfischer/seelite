@@ -223,8 +223,8 @@ try {
 			.click();
 	await click("retain");
 	// **Kept, and not accepted** — both halves (#485). A refused retain also
-	// accepts nothing, so a count alone was green on the refusal this row's
-	// sibling below was red on for a fortnight.
+	// accepts nothing, so a count alone passes on a refusal. The accept below
+	// was refused by the same gate, so this row could have been too.
 	check(
 		"retain keeps the offer and does not accept it",
 		(await count()) === 0 &&

@@ -294,8 +294,9 @@ describe("the offer's clock is the journal's clock", () => {
 		const nowS = 3600.9;
 		const late = firstOffer(SYSTEMS, "courier", { gameTimeMin: nowS / 60 });
 
-		test("the stamp is not after the clock", () => {
+		test("the stamp is the bind clock's second: not after it, not a second before it", () => {
 			expect(late.offer.observedAt).toBeLessThanOrEqual(nowS);
+			expect(late.offer.observedAt).toBeGreaterThan(nowS - 1);
 		});
 
 		test("the offer can be accepted at the moment it was bound", () => {
