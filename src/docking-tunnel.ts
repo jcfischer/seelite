@@ -56,8 +56,10 @@ export const TUNNEL_FLARE_DEG = 6;
  *
  * The corridor is a station-side runway, not a glass-relative funnel: it holds
  * its world size as the player flies through it. It is drawn as world lines
- * (`docking-tunnel-mesh.ts`), so the near clip cuts a ring the ship has passed
- * and this fixed length never becomes screen-edge rails.
+ * (`docking-tunnel-mesh.ts`), so a ring the ship has passed is behind the
+ * camera and is not drawn. The rails beside a ship flying inside the corridor
+ * do run out to the frame's edges: those are the corridor's walls seen from
+ * inside it, which is what world geometry looks like there.
  */
 export const TUNNEL_MOUTH_OFFSET_KM = 3;
 

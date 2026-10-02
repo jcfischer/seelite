@@ -984,11 +984,13 @@ async function directorAt(setup) {
 					x1 = Math.max(x1, bx);
 					y1 = Math.max(y1, by);
 				}
-				const pad = Math.ceil(3 * Math.max(sx, sy));
-				const bx0 = Math.max(0, Math.floor(x0) - pad);
-				const by0 = Math.max(0, Math.floor(y0) - pad);
-				const bw = Math.min(gl.drawingBufferWidth, Math.ceil(x1) + pad) - bx0;
-				const bh = Math.min(gl.drawingBufferHeight, Math.ceil(y1) + pad) - by0;
+				const marginPx = Math.ceil(3 * Math.max(sx, sy));
+				const bx0 = Math.max(0, Math.floor(x0) - marginPx);
+				const by0 = Math.max(0, Math.floor(y0) - marginPx);
+				const bw =
+					Math.min(gl.drawingBufferWidth, Math.ceil(x1) + marginPx) - bx0;
+				const bh =
+					Math.min(gl.drawingBufferHeight, Math.ceil(y1) + marginPx) - by0;
 				if (bw <= 0 || bh <= 0) return { offscreen: true };
 				const read = () => {
 					const px = new Uint8Array(bw * bh * 4);

@@ -1,12 +1,14 @@
 /**
  * The docking corridor as world lines in the near layer.
  *
- * The corridor was drawn on the 2D overlay, which has no depth buffer, so the
- * station, the traffic in its lane and the cabin itself could hide none of it:
- * from behind a station the throat and the rings were painted over its hull.
- * Here it is two `LineSegments` that depth-test against the near layer and
- * write no depth of their own, so anything solid in front of a line hides it
- * and nothing is hidden by a line.
+ * The corridor was drawn on the 2D overlay, which has no depth buffer, so
+ * nothing could hide any of it: from behind a station the throat and the rings
+ * were painted over its hull. Here it is two `LineSegments` that depth-test
+ * against the near layer and write no depth of their own, so whatever that
+ * layer has already written in front of a line hides it, and a line hides
+ * nothing. `probe-docking` measures the station's hull doing that; the cabin
+ * and traffic are near-layer meshes under the same depth test and are not
+ * measured.
  *
  * `docking-tunnel.ts` stays the one source of the shape. This module copies its
  * corners into a buffer each frame and authors no dimension except
@@ -24,8 +26,10 @@ import type { Vec3 } from "./vec3";
  *
  * The throat lies exactly on the aperture frame's face, and a line has no
  * `polygonOffset`, so on the plane it z-fights the face it outlines. Five
- * metres is under a pixel at any range the corridor is drawn at, and far more
- * than the depth buffer resolves at that range.
+ * metres lifts it clear of that face; at the last tens of metres of an
+ * approach, seen off the axis, the lift is visible as an outline standing just
+ * proud of the frame. Neither the depth resolution nor the visible lift has
+ * been measured.
  */
 export const THROAT_STANDOFF_KM = 0.005;
 
@@ -88,22 +92,25 @@ export function buildTunnelLines(rings: number): TunnelLines {
 	return { root, throat, corridor };
 }
 
-const put = (array: Float32Array, at: number, p: Vec3) => {
-	array[at] = p.x;
-	array[at + 1] = p.y;
-	array[at + 2] = p.z;
+const put = (
+	array: Float32Array,
+	at: number,
+	p: Vec3,
+	lift = 0,
+	dir?: Vec3,
+) => {
+	array[at] = p.x + (dir ? dir.x * lift : 0);
+	array[at + 1] = p.y + (dir ? dir.y * lift : 0);
+	array[at + 2] = p.z + (dir ? dir.z * lift : 0);
 	return at + 3;
 };
-
-/** Two corners of a ring, in drawing order: edge `k` runs from `k` to `k+1`. */
-const edge = (corners: readonly Vec3[], k: number): [Vec3, Vec3] => [
-	corners[k],
-	corners[(k + 1) % 4],
-];
 
 /**
  * Copy `tunnel` into the line buffers, the throat stood `THROAT_STANDOFF_KM`
  * outward along `axisOut`, and apply the two styles.
+ *
+ * Runs every frame the director is up, so it writes straight into the buffers
+ * and allocates nothing. Edge `k` of a ring runs from corner `k` to `k + 1`.
  */
 export function writeTunnelLines(
 	lines: TunnelLines,
@@ -111,7 +118,8 @@ export function writeTunnelLines(
 	axisOut: Vec3,
 	style: { throat: TunnelLineStyle; corridor: TunnelLineStyle },
 ): void {
-	const counts = tunnelLineCounts(tunnel.rings.length);
+	const rings = tunnel.rings;
+	const counts = tunnelLineCounts(rings.length);
 	const throatAttr = lines.throat.geometry.getAttribute(
 		"position",
 	) as THREE.BufferAttribute;
@@ -127,32 +135,33 @@ export function writeTunnelLines(
 				`the corridor needs ${counts.throat}/${counts.corridor}`,
 		);
 
-	const s = THROAT_STANDOFF_KM;
-	const throatCorners = tunnel.throat.corners.map((c) => ({
-		x: c.x + axisOut.x * s,
-		y: c.y + axisOut.y * s,
-		z: c.z + axisOut.z * s,
-	}));
-
+	const lift = THROAT_STANDOFF_KM;
+	const throat = tunnel.throat.corners;
 	const t = throatAttr.array as Float32Array;
 	let at = 0;
-	for (let k = 0; k < 4; k++)
-		for (const p of edge(throatCorners, k)) at = put(t, at, p);
+	for (let k = 0; k < 4; k++) {
+		at = put(t, at, throat[k], lift, axisOut);
+		at = put(t, at, throat[(k + 1) % 4], lift, axisOut);
+	}
 
 	const c = corridorAttr.array as Float32Array;
 	at = 0;
-	for (const ring of tunnel.rings.slice(1))
-		for (let k = 0; k < 4; k++)
-			for (const p of edge(ring.corners, k)) at = put(c, at, p);
-	// The rails start at the drawn throat, not at the plane, so they meet it.
-	for (let k = 0; k < 4; k++) {
-		let from = throatCorners[k];
-		for (const ring of tunnel.rings.slice(1)) {
-			at = put(c, at, from);
-			at = put(c, at, ring.corners[k]);
-			from = ring.corners[k];
+	for (let r = 1; r < rings.length; r++) {
+		const corners = rings[r].corners;
+		for (let k = 0; k < 4; k++) {
+			at = put(c, at, corners[k]);
+			at = put(c, at, corners[(k + 1) % 4]);
 		}
 	}
+	// The rails start at the drawn throat, not at the plane, so they meet it.
+	for (let k = 0; k < 4; k++)
+		for (let r = 1; r < rings.length; r++) {
+			at =
+				r === 1
+					? put(c, at, throat[k], lift, axisOut)
+					: put(c, at, rings[r - 1].corners[k]);
+			at = put(c, at, rings[r].corners[k]);
+		}
 
 	throatAttr.needsUpdate = true;
 	corridorAttr.needsUpdate = true;

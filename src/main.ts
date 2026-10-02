@@ -17252,18 +17252,6 @@ class Game {
 	}
 
 	/**
-	 * Draw the HUD markers over the rendered frame.
-	 *
-	 * The overlay is a 2D canvas rather than geometry in the near scene, and the
-	 * reason is the layering: a marker drawn as a world object would have to pick
-	 * a layer and a scale, and a reticle is neither near nor far — it is on the
-	 * glass. `hud.ts` does the projection, which is why it can be checked without
-	 * any of this.
-	 *
-	 * Everything is placed by **direction**, so a body draws its bracket in the
-	 * same place whichever layer rendered it — see that module's docstring.
-	 */
-	/**
 	 * Whether this frame has flight glass at all — the gate on every overlay
 	 * mark and on the docking corridor's world lines, which are the director's
 	 * even though they are drawn in the world.
@@ -17302,6 +17290,18 @@ class Game {
 		);
 	}
 
+	/**
+	 * Draw the HUD markers over the rendered frame.
+	 *
+	 * The overlay is a 2D canvas rather than geometry in the near scene, and the
+	 * reason is the layering: a marker drawn as a world object would have to pick
+	 * a layer and a scale, and a reticle is neither near nor far — it is on the
+	 * glass. `hud.ts` does the projection, which is why it can be checked without
+	 * any of this.
+	 *
+	 * Everything is placed by **direction**, so a body draws its bracket in the
+	 * same place whichever layer rendered it — see that module's docstring.
+	 */
 	private drawMarkers(camPos: Vec3) {
 		const ctx = this.overlayCtx;
 		if (!ctx) return;

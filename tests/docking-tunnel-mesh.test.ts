@@ -74,6 +74,27 @@ describe("the corridor's world lines", () => {
 		expect(tunnel.rings.at(-1)?.axialKm).toBeCloseTo(frame.planeKm + 3, 9);
 	});
 
+	test("each rail runs from the drawn throat out through every ring", () => {
+		const drawn = vertices(lines.corridor.geometry.getAttribute("position"));
+		const lifted = tunnel.throat.corners.map((c) =>
+			add(c, scale(frame.axis, THROAT_STANDOFF_KM)),
+		);
+		const segmentsOf = (from: Vec3, to: Vec3) =>
+			drawn.some(
+				(p, i) => i % 2 === 0 && near(p, from) && near(drawn[i + 1], to),
+			);
+		for (let k = 0; k < 4; k++) {
+			expect(segmentsOf(lifted[k], tunnel.rings[1].corners[k])).toBe(true);
+			for (let r = 2; r < tunnel.rings.length; r++)
+				expect(
+					segmentsOf(
+						tunnel.rings[r - 1].corners[k],
+						tunnel.rings[r].corners[k],
+					),
+				).toBe(true);
+		}
+	});
+
 	test("the styles land on the materials", () => {
 		expect(lines.throat.material.opacity).toBe(0.9);
 		expect(lines.corridor.material.opacity).toBe(0.4);
