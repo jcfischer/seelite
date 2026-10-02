@@ -14,6 +14,8 @@
  *   held with the assist off it both pushes and turns the hull, because one
  *   attitude vent fired alone does both (§3.2).
  */
+// A default-layout probe (#381 D11): it presses keys by name, as the shipped
+// layout binds them — the arrows, Shift, Ctrl and `x` for the assist.
 import { flightHarness, HOLD_MS } from "./lib/flight-harness.mjs";
 import { gameUrl } from "./lib/game-url.mjs";
 import {
