@@ -313,8 +313,8 @@ import { AttitudeFollower } from "./attitude-hold";
 import {
 	heldVents,
 	pilotDemand,
+	pilotHands,
 	STRAFE_COMMANDS,
-	VENT_COMMANDS,
 } from "./pilot-demand";
 import type { SurfaceClass } from "./planet-appearance";
 import {
@@ -772,6 +772,7 @@ import {
 	resolveKey,
 	resolvePad,
 	type Trigger,
+	VENT_COMMANDS,
 } from "./commands";
 import { keyDispatch } from "./key-dispatch";
 
@@ -9359,7 +9360,7 @@ class Game {
 			this.held("fly.throttleDown") ||
 			// A strafe and a vent fired by hand are the pilot taking the ship
 			// as surely as a turn is (#620).
-			STRAFE_COMMANDS.some(this.held) ||
+			STRAFE_COMMANDS.some((id) => this.held(id)) ||
 			VENT_COMMANDS.some(({ id }) => this.held(id)) ||
 			padFlightAxes(this.padFrame, this.padContext()).heave !== 0 ||
 			// The pad's trim counts for the same reason the keys do. The sticks
@@ -13687,13 +13688,15 @@ class Game {
 		// the only law since the vents (#619).
 		// A vent slot's command fires that vent alone, on top of what the axes
 		// ask (#620, §3.5): it turns the hull and pushes it at once.
-		const hands = !handsHeld;
+		// What the pilot's hands hold, or nothing while they are held off the
+		// ship (#532, #535).
+		const pilotHeld = (id: CommandId) => !handsHeld && this.held(id);
 		this.turnShip(
 			dt,
 			{ pitch, yaw, roll },
 			impulse,
 			this.assist,
-			hands ? heldVents(this.held) : {},
+			heldVents(pilotHeld),
 		);
 
 		// Held rather than stepped, for the same reason throttle is: an angle the
@@ -13755,18 +13758,14 @@ class Game {
 		this.advanceNormalFlight(
 			dt,
 			approaches,
-			pilotDemand({
-				assist: this.assist,
-				throttle: this.throttle,
-				fore: hands && this.held("fly.throttleUp"),
-				aft: hands && this.held("fly.throttleDown"),
-				port: hands && this.held("fly.strafePort"),
-				starboard: hands && this.held("fly.strafeStarboard"),
-				dorsal: hands && this.held("fly.strafeDorsal"),
-				ventral: hands && this.held("fly.strafeVentral"),
-				padTrim: hands ? padAxes.throttleTrim : 0,
-				padHeave: hands ? padAxes.heave : 0,
-			}),
+			pilotDemand(
+				pilotHands(pilotHeld, {
+					assist: this.assist,
+					throttle: this.throttle,
+					padTrim: handsHeld ? 0 : padAxes.throttleTrim,
+					padHeave: handsHeld ? 0 : padAxes.heave,
+				}),
+			),
 		);
 	}
 

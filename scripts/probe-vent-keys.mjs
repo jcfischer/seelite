@@ -194,50 +194,96 @@ check(
 // ---------------------------------------------------------------------------
 const VENT = "vent.forePortLateral";
 const KEY = "8";
-const unbound = await pushedWhileHolding(KEY);
-const unboundTurn = Math.hypot(
-	unbound.after.rates.pitch,
-	unbound.after.rates.yaw,
-	unbound.after.rates.roll,
-);
-check(
-	`\`${KEY}\` fires nothing before ${VENT} is bound to it`,
-	Math.abs(unbound.across) < 10 * floor && unboundTurn < 0.01,
-	`${fmt(unbound)}; rate ${unboundTurn.toFixed(4)} rad/s`,
-);
-const bound = await page.evaluate(
-	([id, key]) => {
-		try {
-			window.__seelite.rebindCommand(
-				id,
-				{ kind: "unbound", hold: true },
-				{ kind: "key", key, hold: true },
-			);
-			return "accepted";
-		} catch (e) {
-			return `refused: ${e instanceof Error ? e.message : String(e)}`;
-		}
-	},
-	[VENT, KEY],
-);
-check(`${VENT} binds onto \`${KEY}\``, bound === "accepted", bound);
-const vent = await pushedWhileHolding(KEY);
-const ventTurn = Math.hypot(
-	vent.after.rates.pitch,
-	vent.after.rates.yaw,
-	vent.after.rates.roll,
-);
+const turnRate = (p) =>
+	Math.hypot(p.after.rates.pitch, p.after.rates.yaw, p.after.rates.roll);
 // **The push is small, and it is read against the null arm rather than the
 // floor.** An attitude vent is sized to turn the hull at #5's figures, not to
 // move it, so its push over one hold is metres per second — about a fiftieth
 // of the strafe's on the courier. The floor above is sized for the strafe;
-// this arm owes the measured null instead, and a millimetre per second
-// beneath it.
+// both vent arms owe the measured null instead, and a millimetre per second
+// beneath it — so the unbound arm's push half can go red too (sage round 1).
 const pushFloor = Math.max(0.001, 10 * Math.abs(still.across));
+const unbound = await pushedWhileHolding(KEY);
+check(
+	`\`${KEY}\` fires nothing before ${VENT} is bound to it`,
+	Math.abs(unbound.across) < pushFloor && turnRate(unbound) < 0.01,
+	`${fmt(unbound)} against ${pushFloor.toFixed(3)}; rate ${turnRate(unbound).toFixed(4)} rad/s`,
+);
+
+// **Bound the way a player binds it** (sage round 1): the Controls tab's own
+// row, the capture modal listening on the placeholder, the key pressed into
+// it, and the modal's confirm. `rebindCommand` would prove the registry and
+// not the screen, and a screen that cannot capture onto an unbound row is a
+// vent no player can reach.
+const shown = (selector) =>
+	page.evaluate(
+		(sel) => document.querySelector(sel)?.checkVisibility() === true,
+		selector,
+	);
+const clickIfShown = async (selector) => {
+	if (!(await shown(selector))) return false;
+	await page.click(selector);
+	await settle();
+	return true;
+};
+await page.keyboard.press("?");
+await settle();
+const rowLabel = await page.evaluate(
+	(id) =>
+		document
+			.querySelector(`[data-live-controls-row="${id}"] .lc-controls-keys`)
+			?.textContent?.trim() ?? null,
+	VENT,
+);
+check(
+	"the Controls tab draws the vent's row as unbound",
+	rowLabel === "unbound",
+	`row reads ${JSON.stringify(rowLabel)}`,
+);
+const opened = await clickIfShown(`[data-live-controls-row="${VENT}"]`);
+check(
+	"selecting the row opens the capture modal on it",
+	opened && (await shown("[data-capture-modal]")),
+	opened ? "modal drawn" : "no row to select",
+);
+await page.keyboard.press(KEY);
+await settle();
+const caught = await page.evaluate(
+	() =>
+		document
+			.querySelector("[data-capture-modal] .capture-caught")
+			?.textContent?.replace(/\s+/g, " ")
+			.trim() ?? "",
+);
+const confirmed = await clickIfShown("[data-capture-confirm]");
+const boundNow = await page.evaluate(
+	([id, key]) =>
+		window.__seelite
+			.layoutInForce()
+			.some(
+				(b) =>
+					b.command === id &&
+					b.trigger.kind === "key" &&
+					b.trigger.key === key &&
+					b.trigger.hold === true,
+			),
+	[VENT, KEY],
+);
+check(
+	`the modal catches \`${KEY}\` as a held key and binds ${VENT} to it`,
+	confirmed && boundNow,
+	`caught "${caught}"; confirmed ${confirmed}; in the layout ${boundNow}`,
+);
+// The tab closes the way it opened, and the head comes back forward, so the
+// next arm flies rather than reads a console.
+await page.keyboard.press("?");
+await page.keyboard.press("2");
+await settle();
+const vent = await pushedWhileHolding(KEY);
 check(
 	"held, the one vent pushes the hull sideways and turns it — a lone vent does both (§3.2)",
-	Math.abs(vent.across) > pushFloor && ventTurn > 0.01,
-	`${fmt(vent)} against ${pushFloor.toFixed(3)}; rate ${ventTurn.toFixed(4)} rad/s`,
+	Math.abs(vent.across) > pushFloor && turnRate(vent) > 0.01,
+	`${fmt(vent)} against ${pushFloor.toFixed(3)}; rate ${turnRate(vent).toFixed(4)} rad/s`,
 );
 
 // Back to the boot's state, so nothing here leaks into a rerun of the page.

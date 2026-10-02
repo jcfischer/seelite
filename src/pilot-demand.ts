@@ -7,41 +7,14 @@
  * bound slot command fires directly. Pure, so the two regimes' meanings are
  * checked headless rather than read off a flown frame.
  *
+ * The slot commands themselves are the registry's (`VENT_COMMANDS` in
+ * `commands.ts`): this module reads the registry and the registry reads
+ * nothing of it.
+ *
  * Headless, and on the list in `tests/headless.test.ts`.
  */
-import type { CommandId } from "./commands";
-import { VENT_SLOTS, type VentSlot } from "./hull";
+import { type CommandId, VENT_COMMANDS } from "./commands";
 import type { LinearDemand, VentLevels } from "./sim";
-
-/** `fore-port-lateral` as `forePortLateral`: a command id is namespaced and
- *  camel-cased (#369 D1), and the slot's hyphens would be the one exception. */
-type Camel<S extends string> = S extends `${infer A}-${infer B}`
-	? `${A}${Capitalize<Camel<B>>}`
-	: S;
-
-/** A vent slot's own command: `vent.main`, `vent.forePortLateral`, … */
-export type VentCommandId = `vent.${Camel<VentSlot>}`;
-
-export const ventCommand = (slot: VentSlot): VentCommandId =>
-	`vent.${slot.replace(/-([a-z])/g, (_, c: string) => c.toUpperCase())}` as VentCommandId;
-
-/**
- * One command per vent slot (§3.5), in `VENT_SLOTS`' order. The registry
- * authors its rows from this list, so a slot added to the leaf gains a command
- * with no edit there.
- *
- * Named by the slot, because the slot vocabulary is the one name a vent has on
- * every hull (§3.4.1).
- */
-export const VENT_COMMANDS: readonly {
-	readonly slot: VentSlot;
-	readonly id: VentCommandId;
-	readonly name: string;
-}[] = VENT_SLOTS.map((slot) => ({
-	slot,
-	id: ventCommand(slot),
-	name: `Fire one vent: ${slot.replaceAll("-", " ")}`,
-}));
 
 /** The four strafe commands, on the arrows on the shipped layout (§3.5). */
 export const STRAFE_COMMANDS = [
@@ -79,6 +52,26 @@ export interface PilotHands {
 	readonly padTrim: number;
 	/** The left stick's vertical axis, positive up. */
 	readonly padHeave: number;
+}
+
+/**
+ * The hands as the layout holds them: one predicate per command, the same
+ * one `heldVents` takes, so the command-to-field table is here once rather
+ * than in `main.ts` beside a gate on every field.
+ */
+export function pilotHands(
+	held: (id: CommandId) => boolean,
+	rest: Pick<PilotHands, "assist" | "throttle" | "padTrim" | "padHeave">,
+): PilotHands {
+	return {
+		...rest,
+		fore: held("fly.throttleUp"),
+		aft: held("fly.throttleDown"),
+		port: held("fly.strafePort"),
+		starboard: held("fly.strafeStarboard"),
+		dorsal: held("fly.strafeDorsal"),
+		ventral: held("fly.strafeVentral"),
+	};
 }
 
 const unit = (x: number) => Math.max(-1, Math.min(1, x));

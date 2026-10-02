@@ -135,7 +135,9 @@ export function triggerLabel(t: Trigger): string {
  *
  * **An unbound placeholder is not a name** (#620): a vent slot's command ships
  * one so it can be bound, and a surface that printed it would offer
- * `unbound` as a key to press.
+ * `unbound` as a key to press. Spelled out rather than through
+ * `isPlaceholder`, because this module imports nothing but types from the
+ * registry (#499 D3's reason, in `OwnKey`'s doc).
  */
 export function boundNames(
 	layout: Layout,

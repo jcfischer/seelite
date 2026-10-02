@@ -67,7 +67,7 @@
  * Headless, and on the list in `tests/headless.test.ts`.
  */
 import { COMMANDER_KEY } from "./commander-overlay";
-import { VENT_COMMANDS } from "./pilot-demand";
+import { VENT_SLOTS, type VentSlot } from "./hull";
 import { type PadButtonName, type PadFrame, STANDARD_BUTTONS } from "./gamepad";
 import {
 	ANALOG_TRIGGERS,
@@ -273,8 +273,47 @@ export type Trigger =
 			readonly hold?: true;
 	  };
 
+/** `fore-port-lateral` as `forePortLateral`: a command id is namespaced and
+ *  camel-cased (#369 D1), and the slot's hyphens would be the one exception. */
+type Camel<S extends string> = S extends `${infer A}-${infer B}`
+	? `${A}${Capitalize<Camel<B>>}`
+	: S;
+
+/** A vent slot's own command: `vent.main`, `vent.forePortLateral`, … */
+export type VentCommandId = `vent.${Camel<VentSlot>}`;
+
+export const ventCommand = (slot: VentSlot): VentCommandId =>
+	`vent.${slot.replace(/-([a-z])/g, (_, c: string) => c.toUpperCase())}` as VentCommandId;
+
+/**
+ * One command per vent slot (§3.5), in `VENT_SLOTS`' order. The registry
+ * authors its rows from this list below, so a slot added to the leaf gains a command
+ * with no edit there.
+ *
+ * Named by the slot, because the slot vocabulary is the one name a vent has on
+ * every hull (§3.4.1).
+ */
+export const VENT_COMMANDS: readonly {
+	readonly slot: VentSlot;
+	readonly id: VentCommandId;
+	readonly name: string;
+}[] = VENT_SLOTS.map((slot) => ({
+	slot,
+	id: ventCommand(slot),
+	name: `Fire one vent: ${slot.replaceAll("-", " ")}`,
+}));
+
 /** The one placeholder a command with no default key ships (#620). */
 const UNBOUND_HELD: Trigger = { kind: "unbound", hold: true };
+
+/**
+ * Whether a trigger is that placeholder rather than something to press.
+ *
+ * One owner, because three readers ask it — `collisions`, `boundNames` and
+ * the tab's row — and a fourth that forgot would print `unbound` as a key or
+ * report every slot command colliding with every other (sage round 1).
+ */
+export const isPlaceholder = (t: Trigger): boolean => t.kind === "unbound";
 
 // ---------------------------------------------------------------------------
 // The pad, asked
@@ -1579,7 +1618,7 @@ export interface Collision {
 export function collisions(bindings: readonly Binding[]): Collision[] {
 	const byTrigger = new Map<string, Binding[]>();
 	for (const b of bindings) {
-		if (b.trigger.kind === "unbound") continue;
+		if (isPlaceholder(b.trigger)) continue;
 		const key = triggerKey(b.trigger);
 		byTrigger.set(key, [...(byTrigger.get(key) ?? []), b]);
 	}

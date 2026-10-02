@@ -20,6 +20,8 @@ import {
 	RebindRefused,
 	rebind,
 	type Trigger,
+	VENT_COMMANDS,
+	ventCommand,
 } from "../src/commands";
 import { controlsCatalogue } from "../src/controls-catalogue";
 import { VENT_SLOTS } from "../src/hull";
@@ -29,8 +31,7 @@ import {
 	heldVents,
 	type PilotHands,
 	pilotDemand,
-	VENT_COMMANDS,
-	ventCommand,
+	pilotHands,
 } from "../src/pilot-demand";
 import { rest, sticks } from "./lib/pad-frames";
 
@@ -38,6 +39,10 @@ const keysOf = (id: CommandId) =>
 	DEFAULT_BINDINGS.filter(
 		(b) => b.command === id && b.trigger.kind === "key",
 	).map((b) => b.trigger);
+
+/** The one trigger a command ships first: a slot command's placeholder. */
+const defaultTrigger = (id: CommandId): Trigger =>
+	DEFAULT_BINDINGS.find((b) => b.command === id)?.trigger as Trigger;
 
 const heldOn = (id: CommandId, ...keys: string[]) =>
 	isHeld(DEFAULT_BINDINGS, id, new Set(keys), "cockpit");
@@ -106,8 +111,7 @@ describe("§3.5: one command per vent slot, with no default key", () => {
 
 	test("a pilot who binds one holds it on that key", () => {
 		const id = ventCommand("fore-port-lateral");
-		const from = DEFAULT_BINDINGS.find((b) => b.command === id)
-			?.trigger as Trigger;
+		const from = defaultTrigger(id);
 		const layout = rebind(DEFAULT_BINDINGS, id, from, {
 			kind: "key",
 			key: "7",
@@ -121,16 +125,14 @@ describe("§3.5: one command per vent slot, with no default key", () => {
 
 	test("a vent is held: a press is refused, not stored and dead", () => {
 		const id = ventCommand("main");
-		const from = DEFAULT_BINDINGS.find((b) => b.command === id)
-			?.trigger as Trigger;
+		const from = defaultTrigger(id);
 		expect(() =>
 			rebind(DEFAULT_BINDINGS, id, from, { kind: "key", key: "7" }),
 		).toThrow(RebindRefused);
 	});
 
 	test("nothing can be moved onto the placeholder", () => {
-		const from = DEFAULT_BINDINGS.find((b) => b.command === "fly.cruise")
-			?.trigger as Trigger;
+		const from = defaultTrigger("fly.cruise");
 		expect(() =>
 			rebind(DEFAULT_BINDINGS, "fly.cruise", from, {
 				kind: "unbound",
@@ -141,8 +143,7 @@ describe("§3.5: one command per vent slot, with no default key", () => {
 
 	test("a bound vent survives the store", () => {
 		const id = ventCommand("main");
-		const from = DEFAULT_BINDINGS.find((b) => b.command === id)
-			?.trigger as Trigger;
+		const from = defaultTrigger(id);
 		const layout = rebind(DEFAULT_BINDINGS, id, from, {
 			kind: "key",
 			key: "8",
@@ -236,6 +237,32 @@ describe("§3.6: what the hands ask for", () => {
 		expect(
 			pilotDemand(hands({ assist: false, padHeave: -1, dorsal: true })).heave,
 		).toBe(0);
+	});
+});
+
+describe("the hands, read off the layout", () => {
+	test("each field is its command's, and the pad's figures pass through", () => {
+		const held = (id: CommandId) =>
+			id === "fly.strafeStarboard" || id === "fly.throttleDown";
+		expect(
+			pilotHands(held, {
+				assist: false,
+				throttle: 0.5,
+				padTrim: 0.25,
+				padHeave: -0.5,
+			}),
+		).toEqual({
+			assist: false,
+			throttle: 0.5,
+			padTrim: 0.25,
+			padHeave: -0.5,
+			fore: false,
+			aft: true,
+			port: false,
+			starboard: true,
+			dorsal: false,
+			ventral: false,
+		});
 	});
 });
 
