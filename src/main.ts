@@ -572,6 +572,12 @@ import {
 	LANE_WAIT_REASON,
 	withLaneWait,
 } from "./docking-director";
+import {
+	type DockingNotice,
+	computerNotice,
+	entryNotice,
+	stepDockingNotice,
+} from "./docking-notice";
 import { tunnelRailSegments } from "./docking-tunnel";
 import {
 	type StationMesh,
@@ -1421,6 +1427,8 @@ interface DockingSnapshot {
 	/** A full condition for the flown hull, for a probe that resets to it. */
 	conditionFull: ShipCondition;
 	lastEntry: EntryOutcome | null;
+	/** The prompt line's docking notice (#597), whichever station it is about. */
+	notice: DockingNotice | null;
 }
 
 interface DockingApproach {
@@ -3517,6 +3525,13 @@ class Game {
 	 * measuring the repel rather than the verdict.
 	 */
 	lastEntry: EntryOutcome | null = null;
+	/**
+	 * What the last crossing or the computer's last let-go says, on the prompt
+	 * line (#597). `lastEntry` and the computer's refusal were recorded for a
+	 * probe and drawn nowhere. Cleared by the next approach event and by
+	 * leaving the director's range — `docking-notice.ts` says why not by a key.
+	 */
+	dockingNotice: DockingNotice | null = null;
 
 	/**
 	 * The pose the renderer is mirroring for one station, at the current clock.
@@ -9711,6 +9726,14 @@ class Game {
 	 * which at the 2 km/s assist cap is anything past a few thousand kilometres,
 	 * and is *most of a system*.
 	 */
+	/** §4's tone for the prompt line: a docking notice's own, else amber. */
+	private promptFill(prompt: string): string {
+		const notice = this.dockingNotice;
+		return notice && prompt === notice.text
+			? FLOOR_TONE_FILL[notice.tone]
+			: PROMPT_FILL;
+	}
+
 	private cruisePrompt(targetKm: number | null): string {
 		// §8's window and its outcome outrank everything below (#187). The pilot
 		// is committed for three seconds and then in another star system; a line
@@ -9720,6 +9743,9 @@ class Game {
 		// jump key that sometimes does nothing is indistinguishable from one that
 		// is not bound, and the MODE cell can only show a window that opened.
 		if (charging(this.jumpCharge) || this.jumpNotice) return this.jumpNotice;
+		// A failed entry or a computer let-go (#597), below the jump's window
+		// because a pilot committed to leaving is not reading about the slot.
+		if (this.dockingNotice) return this.dockingNotice.text;
 		if (this.spoolLeftS > 0) return "";
 		if (this.detour?.targetId === this.targetId)
 			return `DETOUR AROUND ${this.bodyFor(this.detour.bodyId)?.name ?? this.detour.bodyId}`;
@@ -10255,6 +10281,8 @@ class Game {
 			refusedByLaw: this.refusedByLaw(chosen.id),
 		});
 		this.dockingStates.set(chosen.id, next);
+		// A request starts an approach, so the last one's notice is done (#597).
+		this.dockingNotice = null;
 		// Station control answers (#546): on a change of answer only, because
 		// the docking computer asks again and again.
 		const answer = clearanceTone(prev.clearance, next.clearance);
@@ -10456,6 +10484,7 @@ class Game {
 			poolMax: headOnPool(full),
 			conditionFull: full,
 			lastEntry: this.lastEntry,
+			notice: this.dockingNotice,
 		};
 	}
 
@@ -10464,10 +10493,30 @@ class Game {
 	toggleDockingComputer() {
 		if (!this.hasDockingComputer) return;
 		if (!this.dockingComputer.engaged) {
-			this.dockingComputer.engage();
+			this.engageDockingComputer();
 			return;
 		}
 		this.cancelComputerApproach({ idle: true });
+	}
+
+	/** Leaving the director's range of the station a notice is about ends it. */
+	private stepDockingNoticeRange() {
+		const notice = this.dockingNotice;
+		if (!notice) return;
+		const body = this.world.system.byId.get(notice.stationId);
+		this.dockingNotice = stepDockingNotice(
+			notice,
+			body
+				? length(sub(body.pos, this.world.ship.pos))
+				: Number.POSITIVE_INFINITY,
+		);
+	}
+
+	/** Every engage: a new approach, so the last one's notice no longer applies
+	 *  (#597) — the same pairing `DockingComputer.engage` keeps for its refusal. */
+	private engageDockingComputer() {
+		this.dockingComputer.engage();
+		this.dockingNotice = null;
 	}
 
 	/**
@@ -10645,6 +10694,10 @@ class Game {
 			this.playerLaneRequests.delete(id);
 		this.dockingStates.set(id, outcome.state);
 		this.lastEntry = outcome;
+		this.dockingNotice = entryNotice(outcome, {
+			stationId: id,
+			rangeKm: length(crossing.rel),
+		});
 		// Whatever happens next, the ship ends up in the station's frame or
 		// bouncing out of it, so the velocity is wanted either way.
 		const stationVel = this.stationVelocity(id);
@@ -11036,6 +11089,10 @@ class Game {
 			// recorded for the HUD node to read.
 			this.cancelComputerApproach({ refused: command.refused });
 			this.throttle = 0;
+			this.dockingNotice = computerNotice(command.refused, {
+				stationId: nearestId,
+				rangeKm: length(approach.pose.rel),
+			});
 			return false;
 		}
 		const rate = this.flownPerformance.angularMax;
@@ -11290,6 +11347,7 @@ class Game {
 		this.frameBody = null;
 		this.proximityFrameBodyId = null;
 		this.dockingComputer.disengage();
+		this.dockingNotice = null;
 		// An armed jump does not survive arriving somewhere. `takePendingJump`
 		// clears it before it calls `performJump`, so this is the reset's case
 		// and any later one — the coverage scan asked for it the moment the
@@ -13284,6 +13342,7 @@ class Game {
 		// not the pilot is flying, and it costs one array length on the frames
 		// where there is nothing to clear.
 		this.settleIncidentLists();
+		this.stepDockingNoticeRange();
 		// **§12's three states come first, and they return.** E5 suspends
 		// flight: the throttle, the stick and the docking computer are all
 		// inert, so none of the input handling below runs — and neither does
@@ -15447,7 +15506,7 @@ class Game {
 		this.targetId = id;
 		if (this.requestDockingClearance().state?.clearance.kind !== "granted")
 			return giveUp();
-		this.dockingComputer.engage();
+		this.engageDockingComputer();
 		const dt = 1 / 60;
 		for (
 			let i = 0;
@@ -15459,7 +15518,7 @@ class Game {
 			if (this.dockPhase === "flying" && !this.dockingComputer.engaged) {
 				if (!this.dockingSnapshot(id)?.grantLive)
 					this.requestDockingClearance();
-				this.dockingComputer.engage();
+				this.engageDockingComputer();
 			}
 			if (this.dockPhase === "arriving") this.skipDockTraversal();
 		}
@@ -15696,7 +15755,7 @@ class Game {
 			this.requestDockingClearance();
 		},
 		"engage-computer": () => {
-			this.dockingComputer.engage();
+			this.engageDockingComputer();
 		},
 		"skip-traversal": () => {
 			this.skipDockTraversal();
@@ -17526,7 +17585,7 @@ class Game {
 			const y = floorTopY(h) - PROMPT_ABOVE_FLOOR_PX;
 			ctx.font = PROMPT_FONT;
 			ctx.textAlign = "center";
-			ctx.fillStyle = PROMPT_FILL;
+			ctx.fillStyle = this.promptFill(prompt);
 			ctx.fillText(prompt, x, y);
 			const promptWidth = ctx.measureText(prompt).width;
 			this.cockpitPrompt.setCenteredPrompt(prompt, x, y, promptWidth);
