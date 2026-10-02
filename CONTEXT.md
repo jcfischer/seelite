@@ -188,6 +188,20 @@ _Avoid_: Inventory, cargo bay, hold contents (for the manifest)
 
 > **Scope of the `hold` alias** (added by [#486](https://github.com/jcfischer/seelite/pull/486), the same reading as the `Command` note below). A fifth English sense is a **held key**: `Trigger.hold` in `src/commands.ts` says a binding is flown by keeping a key down rather than by pressing it — #369 D3 splits `x` pressed from `x` held on exactly that — and #381's storage slice writes it into `seelite:bindings`. It is a property of an input and never of cargo, a carrier or a launch, so it takes no canonical name here; it is listed because it is durable now, and a reader meeting `{ kind: "key", hold: true }` in a stored blob should find it rather than wonder which of the four it is. The `_Avoid_` line above is **Hold**'s and not this note's.
 
+**Holdings**:
+Everything a pilot owns that an act can move: the commander (credits, cargo,
+equipment, fuel, hull), the Requests journal, the **Ladder** record with its
+purchase basis, and the pending ladder credit. `src/holdings.ts` owns what a
+hold event does to them and to the world it marks — a Request settlement, a
+market trade (hull sale included) and a canister scoop since #626 — so the rule
+that the purchase basis follows the cargo, and that a mark carries the flown
+hull's **Hold**, has one copy. `Game` keeps the four fields (one save schema,
+#437) and adopts what the module returns; a refusal returns the very objects it
+was given.
+_Avoid_: Commander (the save slot and the console tab already take two senses),
+purse (`ladder.ts`'s local credits and cargo), ledger (an **Incident**'s
+record of offences)
+
 **Legal heat**:
 The player's per-galaxy offence score: an offence adds to it, it decays lazily
 on a 30-minute half-life, and it reads as Clean, Wanted or Fugitive at its

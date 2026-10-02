@@ -70,6 +70,10 @@ describe("the Game's world writes", () => {
 				// says. Spelled as the exact expression rather than as a
 				// pattern, so a hand-built object literal cannot hide behind it.
 				rhs !== "save.world;" &&
+				// A hold event's outcome (#626), adopted in `adoptHoldings`.
+				// `holdings.ts` writes through `setDeficits` and its own rows
+				// prove it; the exact expression, for `save.world`'s reason.
+				rhs !== "outcome.world;" &&
 				!WRITERS.some((w) => rhs.startsWith(`${w}(`)),
 		);
 		expect(byHand).toEqual([]);
@@ -267,6 +271,38 @@ describe("the Game's world writes", () => {
 			'permadeathAtAttach(plan, slot, query.has("permadeath"))',
 		);
 	});
+
+	/**
+	 * #626: the three sites that change the hold hand the act to
+	 * `holdings.ts` and apply none of its law themselves. What the law does is
+	 * `tests/holdings.test.ts`'s; this row is only that each site reaches it,
+	 * because `Game` is not constructible headless.
+	 */
+	test.each([
+		["actOnRequest", "private actOnRequest(", 'kind: "settlement"'],
+		["the till", "private transactStation(", 'kind: "market"'],
+		["the scoop", "private stepCargoCanisters(", 'kind: "scoop"'],
+	])(
+		"%s applies its hold event through the Holdings module",
+		(_, head, kind) => {
+			const start = MAIN.indexOf(head);
+			expect(start).toBeGreaterThan(-1);
+			// The method body: up to the next member's doc comment.
+			const body = MAIN.slice(start, MAIN.indexOf("\n\t/**", start));
+			expect(body).toContain("applyHoldEvent(");
+			expect(body).toContain(kind);
+			for (const law of [
+				"ladderAfter",
+				"withCapstone(",
+				"basisAfterScoop(",
+				"setDeficits(",
+				"recordTrade(",
+				"scoopCargo(",
+				"requestAction(",
+			])
+				expect(body).not.toContain(law);
+		},
+	);
 
 	test("the renderer never converts the world clock into minutes", () => {
 		// `this.world.gameTime / 60` is game minutes, which is the right unit for

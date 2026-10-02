@@ -46,10 +46,7 @@ const { offers: shelf, offer: purchase } = firstProcurementOffer(
 	"Food",
 	0,
 );
-const { offers: courierBoard, offer: courier } = firstOffer(
-	SYSTEMS,
-	"courier",
-);
+const { offers: courierBoard, offer: courier } = firstOffer(SYSTEMS, "courier");
 const GOOD = purchase.operand.goodName;
 const TONNES = purchase.operand.tonnes;
 const GALAXY = purchase.reportAt.galaxyIndex;
@@ -201,7 +198,7 @@ describe("a Request settlement", () => {
 		expect(freighter[key]?.updatedAt).toBe(AT / 60);
 	});
 
-	test("the hold room the board reads counts the entrusted tonnes", () => {
+	test("a job is judged against the flown hold less what is already aboard", () => {
 		const capacity = holdOf(holdings()).capacityT;
 		const tonnes = courier.operand.tonnes;
 		const full = holdings({ cargo: { Food: capacity - tonnes + 1 } });
@@ -377,9 +374,12 @@ describe("a market trade", () => {
 		const start = holdings(
 			{ cargo: { Food: 5 } },
 			{
+				// A zero-cost basis, so the sale has a margin: units with no
+				// basis are sold first and bank nothing.
 				ladders: {
 					...emptyLadderRecord(),
 					banked: { ...LADDER_TOP, trade: LADDER_TOP.trade - 1 },
+					basis: { Food: { units: 5, cr: 0 } },
 				},
 			},
 		);
