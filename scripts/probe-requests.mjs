@@ -222,7 +222,17 @@ try {
 			)
 			.click();
 	await click("retain");
-	check("retain does not accept", (await count()) === 0);
+	// **Kept, and not accepted** — both halves (#485). A refused retain also
+	// accepts nothing, so a count alone passes on a refusal. The accept below
+	// was refused by the same gate, so this row could have been too.
+	check(
+		"retain keeps the offer and does not accept it",
+		(await count()) === 0 &&
+			(await page.evaluate(
+				(i) => i in window.__seelite.commanderRecord().requests.leadsById,
+				id,
+			)),
+	);
 
 	// **Real key events, on the public dispatch.** `Enter` on a focused row
 	// opens its details and nothing else; the walk below is what accepts.
