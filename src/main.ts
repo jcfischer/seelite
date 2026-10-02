@@ -144,6 +144,7 @@ import {
 } from "./comms";
 import {
 	prewarmComms,
+	prewarmFirst,
 	prewarmNeural,
 	renderLine,
 	renderNumbersAhead,
@@ -4317,6 +4318,15 @@ class Game {
 		// #604: the natural voice, when the row or `?voices=neural` wants it.
 		// Every line speaks in the formant voice until it is ready.
 		useNeuralVoice(this.neural);
+		// The voices of this system's stations are prepared first (O1),
+		// read afresh before every line, so a jump reorders the preparation.
+		// The speaker is the one `sayComms` names: the station's id here.
+		prewarmFirst(() => {
+			const system = this.world.system.record.seed;
+			return this.world.system.bodies
+				.filter((b) => b.kind === "station")
+				.map((b) => speakerVoice("approach", { system, id: b.id }));
+		});
 		this.neural.onChange = (s) => {
 			if (s.kind === "ready" && VOICE_ARMS.comms) void prewarmNeural();
 		};

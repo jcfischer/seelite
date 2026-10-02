@@ -170,34 +170,11 @@ export type NeuralState =
 	| { kind: "ready"; backend: NeuralBackend }
 	| { kind: "failed"; reason: string };
 
-/** Where a WebGPU failure is remembered, by the build it failed on. */
-const WEBGPU_FAILED_KEY = "seelite-voice-webgpu-failed";
-
-/** Whether WebGPU failed to run this build's model here before. */
-function webGpuFailed(version: string): boolean {
-	try {
-		return localStorage.getItem(WEBGPU_FAILED_KEY) === version;
-	} catch {
-		return false;
-	}
-}
-
-/** Remember that WebGPU could not run this build's model here. */
-function rememberWebGpuFailed(version: string) {
-	try {
-		localStorage.setItem(WEBGPU_FAILED_KEY, version);
-	} catch {
-		// Unremembered: the next start tries WebGPU again.
-	}
-}
-
 /**
- * WebGPU cannot run this build here: remember it, so the next start and the
- * question go straight to WASM, and free its files rather than keep both
- * (sage round 3 on #606).
+ * WebGPU cannot run this build here: free its files rather than keep both
+ * (sage round 3 on #606). Only the lab asks for WebGPU now.
  */
 function forgetWebGpu(m: VoiceManifest) {
-	rememberWebGpuFailed(m.version);
 	void dropParts(
 		m.version,
 		m.backends.webgpu.flatMap((id) =>
@@ -215,17 +192,12 @@ export const VOICE_BASE = "/voice-model/";
 /** Every message to the worker, typed against the one protocol. */
 const send = (worker: Worker, message: Request) => worker.postMessage(message);
 
-type GpuNavigator = {
-	gpu?: { requestAdapter(): Promise<{ features: Set<string> } | null> };
-};
-
 /**
  * The game's neural voice: the manifest read, a backend chosen, the files
  * downloaded and kept, lines spoken and kept (#604).
  *
- * `start` walks the fallback chain — WebGPU where the browser offers an
- * adapter with half floats, else WASM, and WASM again if WebGPU fails to
- * load — and settles `ready` or `failed`. Every line goes through the line
+ * `start` loads WASM, or the backend the lab forces — WASM again if a
+ * forced WebGPU loads and cannot speak — and settles `ready` or `failed`. Every line goes through the line
  * cache first, so a line said in an earlier session is not generated again.
  */
 export class NeuralVoice {
@@ -241,10 +213,7 @@ export class NeuralVoice {
 	/** Settles the load in flight `false` when its worker is stopped. */
 	private settle: ((ok: boolean) => void) | null = null;
 	private next = 1;
-	/** WebGPU could not run here this page: `localStorage` may not keep it. */
-	private webGpuRefused = false;
 	private refuseWebGpu(m: VoiceManifest) {
-		this.webGpuRefused = true;
 		forgetWebGpu(m);
 	}
 	/** Lines being generated, by line key. */
@@ -276,45 +245,26 @@ export class NeuralVoice {
 		}
 	}
 
-	/** The backend this browser would use: WebGPU with half floats, or WASM. */
-	async backend(m?: VoiceManifest): Promise<NeuralBackend> {
-		// WebGPU already failed here on this build: the question quotes, and
-		// the start loads, what will actually run.
-		// The page's own memory first: without storage, the stored one is
-		// lost and a failing WebGPU would be tried again on every start.
-		if (this.webGpuRefused || (m && webGpuFailed(m.version))) return "wasm";
-		try {
-			const adapter = await (navigator as GpuNavigator).gpu?.requestAdapter();
-			if (!adapter?.features.has("shader-f16")) return "wasm";
-		} catch {
-			return "wasm";
-		}
-		// Too little room for the larger model: the smaller, here as well as
-		// in the start, so the question quotes what will download (sage
-		// round 6 on #606).
-		try {
-			const room = await navigator.storage?.estimate?.();
-			if (
-				m &&
-				room?.quota !== undefined &&
-				room.usage !== undefined &&
-				room.quota - room.usage < backendBytes(m, "webgpu") * 1.1
-			)
-				return "wasm";
-		} catch {
-			// Storage the browser will not describe: try WebGPU.
-		}
-		return "webgpu";
+	/**
+	 * The backend the game uses: WASM, everywhere (2026-10-02). WebGPU's fp16
+	 * model renders every voice rougher than WASM's q8 —
+	 * `scripts/measure-voice-backends.mjs` prints by how much — and the
+	 * principal heard it as distortion the lab, on WASM, did not have. WASM is about 2.5x
+	 * slower than real time, which the line cache and the background
+	 * preparation absorb. The lab can still force WebGPU.
+	 */
+	async backend(): Promise<NeuralBackend> {
+		return "wasm";
 	}
 
 	/** What starting would download here, bytes, or `null` with no voice. */
 	async downloadBytes(): Promise<number | null> {
 		const m = await this.readManifest();
-		return m ? backendBytes(m, await this.backend(m)) : null;
+		return m ? backendBytes(m, await this.backend()) : null;
 	}
 
-	/** Load the voice, falling back WebGPU → WASM; settles `ready` or
-	 *  `failed`. `force` picks a backend, for the lab. */
+	/** Load the voice — WASM, or what the lab forces — and settle `ready` or
+	 *  `failed`. */
 	start(force?: NeuralBackend): Promise<NeuralState> {
 		// A second caller during a start waits for the same one (sage round 4
 		// on #606: the lab read "loading" back as "not ready").
@@ -339,7 +289,7 @@ export class NeuralVoice {
 			this.set({ kind: "failed", reason: "this server has no voice" });
 			return this.state;
 		}
-		let b: NeuralBackend | null = force ?? (await this.backend(m));
+		let b: NeuralBackend | null = force ?? (await this.backend());
 		try {
 			await navigator.storage?.persist?.();
 		} catch {
@@ -445,7 +395,13 @@ export class NeuralVoice {
 		const worker = this.worker;
 		if (this.state.kind !== "ready" || !this.manifest || !worker)
 			return Promise.resolve(null);
-		const key = lineKey(text, voice, speed, this.manifest.version);
+		const key = lineKey(
+			text,
+			voice,
+			speed,
+			this.manifest.version,
+			this.state.backend,
+		);
 		// One generation per line: the numbers station's phrase is asked for
 		// ahead and again when it is said (sage round 1 on #606). A later
 		// urgent asking moves the queued one to the front.
@@ -507,7 +463,13 @@ export class NeuralVoice {
 	 */
 	async prepare(text: string, voice: NeuralVoiceId): Promise<void> {
 		if (this.state.kind !== "ready" || !this.manifest) return;
-		const key = lineKey(text, voice, 1, this.manifest.version);
+		const key = lineKey(
+			text,
+			voice,
+			1,
+			this.manifest.version,
+			this.state.backend,
+		);
 		if (this.memo.has(key) || (await hasLine(key))) return;
 		await this.line(text, voice);
 	}
@@ -520,7 +482,13 @@ export class NeuralVoice {
 		speed = 1,
 	): Promise<Float32Array | null> {
 		if (this.state.kind !== "ready" || !this.manifest) return null;
-		const key = lineKey(text, voice, speed, this.manifest.version);
+		const key = lineKey(
+			text,
+			voice,
+			speed,
+			this.manifest.version,
+			this.state.backend,
+		);
 		const hit = this.memo.get(key);
 		if (hit) {
 			this.remember(key, hit);

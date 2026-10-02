@@ -14,6 +14,7 @@ import { COMMS_LINES, type CommsLineId } from "./comms";
 import {
 	NEURAL_ROLE,
 	type NeuralVoice,
+	type NeuralVoiceId,
 	SPEAKER_VOICES,
 	type Speaker,
 	speakerVoice,
@@ -157,19 +158,44 @@ export async function sayLine(fx: AudioFX, id: CommsLineId, speaker?: Speaker) {
 	if (voice && !n) void voice.line(line.text, who, 1, true).catch(() => null);
 }
 
+/** The voices to prepare first: the current system's stations' (O1,
+ *  2026-10-02). Asked again before every line, so a jump reorders a
+ *  preparation already running. */
+let firstVoices: () => readonly NeuralVoiceId[] = () => [];
+export function prewarmFirst(voices: () => readonly NeuralVoiceId[]) {
+	firstVoices = voices;
+}
+
 /**
  * Every comms line in every voice its speakers may have, into the line
  * cache, one after another behind anything urgent: run when the voice
  * becomes ready. Voices rotate by speaker (#604), so a line is prepared once
- * per voice rather than once — a few dozen lines, a few megabytes kept.
+ * per voice rather than once — a few dozen lines, a few megabytes kept. On
+ * WASM that is minutes, and a line not yet kept is said by the formant
+ * voice, so the voices of the system the ship is in go first.
  */
 export async function prewarmNeural() {
-	for (const who of SPEAKER_VOICES)
-		for (const id of Object.keys(COMMS_LINES) as CommsLineId[]) {
-			const voice = readyVoice();
-			if (!voice) return;
-			await voice.prepare(COMMS_LINES[id].text, who).catch(() => {});
+	const ids = Object.keys(COMMS_LINES) as CommsLineId[];
+	const done = new Set<string>();
+	for (;;) {
+		const voice = readyVoice();
+		if (!voice) return;
+		const order = [
+			...firstVoices().filter((v) => SPEAKER_VOICES.includes(v)),
+			...SPEAKER_VOICES,
+		];
+		let next: { who: NeuralVoiceId; id: CommsLineId } | null = null;
+		for (const who of order) {
+			const id = ids.find((i) => !done.has(`${who}|${i}`));
+			if (id) {
+				next = { who, id };
+				break;
+			}
 		}
+		if (!next) return;
+		done.add(`${next.who}|${next.id}`);
+		await voice.prepare(COMMS_LINES[next.id].text, next.who).catch(() => {});
+	}
 }
 
 /** The numbers station, far off in the music: the game's and the lab's one

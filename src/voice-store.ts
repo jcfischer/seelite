@@ -22,13 +22,16 @@ const LINE_META = "meta";
 /** The spoken lines' budget: about 150 lines of four seconds. */
 export const LINE_STORE_BYTES = 20 * 1024 * 1024;
 
-/** A line's key: everything that makes two renders of it differ. */
+/** A line's key: everything that makes two renders of it differ — the
+ *  backend too, since WebGPU's fp16 model renders a line rougher than WASM's
+ *  q8, and a line kept from one played on after the other took over. */
 export const lineKey = (
 	text: string,
 	voice: string,
 	speed: number,
 	version: string,
-) => `${version}|${voice}|${speed.toFixed(3)}|${text}`;
+	backend: string,
+) => `${version}|${backend}|${voice}|${speed.toFixed(3)}|${text}`;
 
 /** The keys to drop, least recently used first, until the rest fit `cap`. */
 export function evictionPlan(
