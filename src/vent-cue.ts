@@ -54,7 +54,8 @@ const stepLatch = (
 	saturated: boolean,
 	nowS: number,
 ): CueLatch | null => {
-	if (saturated) return latch ? { ...latch, lastS: nowS } : { onsetS: nowS, lastS: nowS };
+	if (saturated)
+		return latch ? { ...latch, lastS: nowS } : { onsetS: nowS, lastS: nowS };
 	if (latch && nowS - latch.lastS < SATURATION_HOLD_S) return latch;
 	return null;
 };
