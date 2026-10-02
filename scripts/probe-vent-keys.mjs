@@ -61,10 +61,34 @@ const read = () =>
 const dot = (a, b) => a.x * b.x + a.y * b.y + a.z * b.z;
 const sub = (a, b) => ({ x: a.x - b.x, y: a.y - b.y, z: a.z - b.z });
 
+let coastFailed = false;
+
+/**
+ * Wait until the velocity stops changing, as `atRest` waits for the nose.
+ *
+ * **Without it an arm reads the arm before it.** With the assist on, a
+ * released strafe is a drift the assist is still burning off, and the first
+ * red run of this probe read that decay into the next arm: ← measured
+ * −0.190 km/s on a build where the arrows did nothing, a tenth under the
+ * threshold. A constant drift with the assist off is coasting, and passes.
+ */
+async function coasting() {
+	let prev = (await read()).vel;
+	for (let i = 0; i < 100; i++) {
+		await page.waitForTimeout(50);
+		const now = (await read()).vel;
+		const d = sub(now, prev);
+		if (Math.hypot(d.x, d.y, d.z) < 1e-3) return;
+		prev = now;
+	}
+	coastFailed = true;
+}
+
 /** Hold `key` (or nothing) for `HOLD_MS`, and say how the velocity changed
  *  along the hull's axes as they stood when the hold began, km/s. */
 async function pushedWhileHolding(key) {
 	await atRest();
+	await coasting();
 	const before = await read();
 	if (key !== null) await page.keyboard.down(key);
 	await page.waitForTimeout(HOLD_MS);
@@ -218,8 +242,8 @@ check(
 await page.keyboard.press("x");
 check(
 	"and the rest gate settled every arm rather than running out of patience",
-	restFailed() === false,
-	`atRest exhausted its ticks on at least one arm: ${restFailed()}`,
+	restFailed() === false && coastFailed === false,
+	`atRest exhausted: ${restFailed()}; the velocity never settled: ${coastFailed}`,
 );
 
 await browser.close();
