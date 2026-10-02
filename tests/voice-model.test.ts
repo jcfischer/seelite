@@ -21,6 +21,7 @@ import { fetchBundled, isBundlePath } from "../src/bundle-fetch";
 import {
 	backendBytes,
 	NEURAL_ROLE,
+	NeuralVoice,
 	RADIO_RATE,
 	NEURAL_VOICES,
 	resample,
@@ -204,14 +205,39 @@ describe("the one same-origin fetch", () => {
 	});
 });
 
+describe("the game's backend (2026-10-02)", () => {
+	test("the game runs WASM even where WebGPU offers half floats", async () => {
+		// The principal heard the game, on WebGPU, as distorted and the lab, on
+		// WASM, as clean; `scripts/measure-voice-backends.mjs` prints how the
+		// two backends' renders differ.
+		const nav = globalThis.navigator as unknown as Record<string, unknown>;
+		const had = Object.getOwnPropertyDescriptor(nav, "gpu");
+		Object.defineProperty(nav, "gpu", {
+			configurable: true,
+			value: {
+				requestAdapter: async () => ({ features: new Set(["shader-f16"]) }),
+			},
+		});
+		try {
+			expect(await new NeuralVoice().backend()).toBe("wasm");
+		} finally {
+			if (had) Object.defineProperty(nav, "gpu", had);
+			else delete nav.gpu;
+		}
+	});
+});
+
 describe("the line cache", () => {
 	test("a line is keyed by what makes it sound different", () => {
-		const k = lineKey("Hello.", "bm_george", 1, "v1");
-		expect(lineKey("Hello.", "bm_george", 1, "v1")).toBe(k);
-		expect(lineKey("Hello.", "bf_emma", 1, "v1")).not.toBe(k);
-		expect(lineKey("Hello.", "bm_george", 1.1, "v1")).not.toBe(k);
-		expect(lineKey("Hello.", "bm_george", 1, "v2")).not.toBe(k);
-		expect(lineKey("Hello!", "bm_george", 1, "v1")).not.toBe(k);
+		const k = lineKey("Hello.", "bm_george", 1, "v1", "wasm");
+		expect(lineKey("Hello.", "bm_george", 1, "v1", "wasm")).toBe(k);
+		expect(lineKey("Hello.", "bf_emma", 1, "v1", "wasm")).not.toBe(k);
+		expect(lineKey("Hello.", "bm_george", 1.1, "v1", "wasm")).not.toBe(k);
+		expect(lineKey("Hello.", "bm_george", 1, "v2", "wasm")).not.toBe(k);
+		expect(lineKey("Hello!", "bm_george", 1, "v1", "wasm")).not.toBe(k);
+		// 2026-10-02: the same line on WebGPU's fp16 model is a different render,
+		// and one kept from it played on in the game after the backend changed.
+		expect(lineKey("Hello.", "bm_george", 1, "v1", "webgpu")).not.toBe(k);
 	});
 
 	test("eviction drops the least recently used until the store fits", () => {

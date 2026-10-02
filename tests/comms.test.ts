@@ -17,14 +17,21 @@ import {
 	aheadReady,
 	renderLine,
 	renderNumbers,
+	prewarmFirst,
+	prewarmNeural,
 	renderNumbersAhead,
 	sayLine,
 	sayNumbers,
+	stationVoices,
 	takeNumbers,
 	useNeuralVoice,
 } from "../src/comms-voice";
 import type { AudioFX } from "../src/audio";
-import type { NeuralVoice } from "../src/neural-voice";
+import {
+	type NeuralVoice,
+	type NeuralVoiceId,
+	SPEAKER_VOICES,
+} from "../src/neural-voice";
 import { RADIO, RADIO_NEURAL, radio } from "../src/radio";
 import { neuralWanted } from "../src/neural-voice";
 import { textToTokens } from "../src/speech-lexicon";
@@ -164,6 +171,95 @@ describe("the natural voice through the radio", () => {
 		await sayNumbers(fx, text);
 		expect(heard).toHaveLength(1);
 		expect(heard[0]).toEqual(radio(natural, { ...RADIO_NEURAL, beepHz: 0 }));
+	});
+});
+
+describe("the background preparation (O1, 2026-10-02)", () => {
+	// A ready voice whose preparations are recorded, and held until released,
+	// so a test can change the system between two of them.
+	const prepared: string[] = [];
+	let release: (() => void) | null = null;
+	const fake = {
+		state: { kind: "ready" },
+		prepare: (text: string, voice: NeuralVoiceId) => {
+			prepared.push(`${voice}|${text}`);
+			return new Promise<void>((r) => {
+				release = r;
+			});
+		},
+	} as unknown as NeuralVoice;
+	const step = async () => {
+		const r = release;
+		release = null;
+		r?.();
+		await new Promise((r) => setTimeout(r, 0));
+	};
+	const lines = Object.keys(COMMS_LINES).length;
+	afterEach(() => {
+		useNeuralVoice(null);
+		prewarmFirst(() => []);
+		prepared.length = 0;
+	});
+
+	test("the current system's voices are prepared first, every line of them", async () => {
+		useNeuralVoice(fake);
+		prewarmFirst(() => ["bm_fable", "af_sarah"]);
+		const done = prewarmNeural();
+		for (let i = 0; i < SPEAKER_VOICES.length * lines; i++) await step();
+		await done;
+		const voices = prepared.map((k) => k.split("|")[0]);
+		expect(voices.slice(0, lines).every((v) => v === "bm_fable")).toBe(true);
+		expect(voices.slice(lines, 2 * lines).every((v) => v === "af_sarah")).toBe(
+			true,
+		);
+		// And then every other voice, each pair once.
+		expect(new Set(prepared).size).toBe(SPEAKER_VOICES.length * lines);
+		expect(prepared).toHaveLength(SPEAKER_VOICES.length * lines);
+	});
+
+	test("the voices prepared first are the ones the stations speak in", async () => {
+		// `stationVoices` is what the game prepares first; this is what
+		// `sayLine` actually asks the voice for, line by line.
+		const asked: NeuralVoiceId[] = [];
+		const listener = {
+			state: { kind: "ready" },
+			kept: async (_t: string, who: NeuralVoiceId) => {
+				asked.push(who);
+				return null;
+			},
+			line: async () => null,
+		} as unknown as NeuralVoice;
+		const fx = { speak: () => 0 } as unknown as AudioFX;
+		useNeuralVoice(listener);
+		const stations = ["station-trade", "station-refinery", "station-shipyard"];
+		const station = (Object.keys(COMMS_LINES) as CommsLineId[]).filter(
+			(id) => COMMS_LINES[id].voice === "approach",
+		);
+		expect(station.length).toBeGreaterThan(0);
+		for (const system of [1, 7919, 104729]) {
+			const first = stationVoices(system, stations);
+			for (const [i, id] of stations.entries())
+				for (const line of station) {
+					asked.length = 0;
+					await sayLine(fx, line, { system, id });
+					expect(asked).toEqual([first[i]]);
+				}
+		}
+	});
+
+	test("a jump to another system moves its voices to the front", async () => {
+		useNeuralVoice(fake);
+		let system: NeuralVoiceId[] = ["bm_fable"];
+		prewarmFirst(() => system);
+		const done = prewarmNeural();
+		await step();
+		await step();
+		system = ["am_puck"];
+		await step();
+		expect(prepared[3].split("|")[0]).toBe("am_puck");
+		for (let i = 0; i < SPEAKER_VOICES.length * lines; i++) await step();
+		await done;
+		expect(new Set(prepared).size).toBe(SPEAKER_VOICES.length * lines);
 	});
 });
 
