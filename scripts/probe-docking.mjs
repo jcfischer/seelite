@@ -289,6 +289,11 @@ async function fly(setup) {
 				conditionBefore: before,
 				conditionAfter: after.condition,
 				entry: after.lastEntry,
+				// #597: what the crossing told the pilot, and whether the line the
+				// render loop drew is that text — a notice in the snapshot that no
+				// frame drew is the defect this node exists to close.
+				notice: after.notice,
+				prompt: g.cockpitPrompt.text,
 				trace,
 				poolMax: after.poolMax,
 				// The crossing's own measured speed, so §9.2's record is a
@@ -319,6 +324,7 @@ const tolerances = await page.evaluate(() => {
 	return {
 		gateKms: g.dockingTolerances.V_GATE_KMS,
 		axisDeg: g.dockingTolerances.AXIS_TOLERANCE_DEG,
+		rollDeg: g.dockingTolerances.ROLL_TOLERANCE_DEG,
 	};
 });
 
@@ -682,6 +688,12 @@ check(
 		face.entry?.evaluation?.checks?.axisAlignment === true,
 	JSON.stringify(face.entry?.evaluation?.checks ?? null),
 );
+check(
+	"the hull-face bounce tells the pilot it missed the slot",
+	face.notice?.text === "ENTRY FAILED · missed the slot" &&
+		face.prompt === face.notice.text,
+	JSON.stringify({ notice: face.notice, prompt: face.prompt }),
+);
 
 // ---------------------------------------------------------------------------
 // §9.2.5 — a mis-rolled approach fails and survives
@@ -748,6 +760,59 @@ check(
 check(
 	"a piloting error is not a protocol violation: the grant survived",
 	rolled.grantLive && !rolled.hostile,
+);
+// #597: the bounce is on the glass, amber, and names the row it failed on.
+check(
+	"the mis-rolled bounce writes an amber notice naming the roll",
+	rolled.notice?.tone === "action" &&
+		rolled.notice.text.startsWith("ENTRY FAILED") &&
+		rolled.notice.text.includes(`of ${tolerances.rollDeg}°`),
+	JSON.stringify(rolled.notice),
+);
+check(
+	"and the prompt line drew it",
+	rolled.prompt === rolled.notice?.text,
+	JSON.stringify({ prompt: rolled.prompt, notice: rolled.notice?.text }),
+);
+
+// #597: the computer letting go is on the glass too. Engaged with no grant, it
+// refuses on its first step — the case §11.7 reaches when a grant expires
+// mid-approach — and the refusal is red, because §4 keeps red for refusal.
+const letGo = await page.evaluate(() => {
+	const g = window.__seelite;
+	const D = window.__dock;
+	const id = D.spinner().id;
+	g.dockingComputer.disengage();
+	g.dockingStates.delete(id);
+	g.resetDock();
+	g.lastEntry = null;
+	const snap = g.dockingSnapshot(id);
+	D.place(id, D.scale(snap.axis, snap.planeKm + 2), { x: 0, y: 0, z: 0 });
+	g.targetId = id;
+	if (!g.hasDockingComputer)
+		g.commander = {
+			...g.commander,
+			ownedEquipment: [...g.commander.ownedEquipment, g.dockingComputerName],
+		};
+	g.toggleDockingComputer();
+	g.step(1 / 60);
+	g.render(1 / 60);
+	const after = g.dockingSnapshot(id);
+	return {
+		engaged: after.computerEngaged,
+		refusal: after.computerRefusal,
+		notice: after.notice,
+		prompt: g.cockpitPrompt.text,
+	};
+});
+check(
+	"a computer that lets go for want of a grant says so, in red",
+	!letGo.engaged &&
+		letGo.refusal === "no-clearance" &&
+		letGo.notice?.tone === "refused" &&
+		letGo.notice.text === "AUTOPILOT OFF · no live clearance" &&
+		letGo.prompt === letGo.notice.text,
+	JSON.stringify(letGo),
 );
 
 // `in-system-travel.md` §4: re-entering cruise is a spool-up **cancelled by

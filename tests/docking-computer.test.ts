@@ -103,9 +103,13 @@ describe("main.ts routes every engage through DockingComputer", () => {
 
 	test("every engage is a call on the one session", () => {
 		// The premise, so a renamed field cannot pass by finding nothing.
+		// One call on the session, inside `engageDockingComputer`, which also
+		// clears the last approach's notice (#597).
 		const engages = main.match(/this\.dockingComputer\.engage\(\)/g) ?? [];
+		expect(engages.length).toBe(1);
 		// The toggle, the guided start twice and the opening's order.
-		expect(engages.length).toBe(4);
+		const sites = main.match(/this\.engageDockingComputer\(\)/g) ?? [];
+		expect(sites.length).toBe(4);
 		expect(main).not.toMatch(/dockingComputer\.(?:engaged|refusal)\s*=(?!=)/);
 	});
 

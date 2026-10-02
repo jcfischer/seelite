@@ -572,6 +572,12 @@ import {
 	LANE_WAIT_REASON,
 	withLaneWait,
 } from "./docking-director";
+import {
+	type DockingNotice,
+	computerNotice,
+	entryNotice,
+	stepDockingNotice,
+} from "./docking-notice";
 import { tunnelRailSegments } from "./docking-tunnel";
 import {
 	type StationMesh,
@@ -1421,6 +1427,8 @@ interface DockingSnapshot {
 	/** A full condition for the flown hull, for a probe that resets to it. */
 	conditionFull: ShipCondition;
 	lastEntry: EntryOutcome | null;
+	/** The prompt line's docking notice (#597), whichever station it is about. */
+	notice: DockingNotice | null;
 }
 
 interface DockingApproach {
@@ -1488,6 +1496,11 @@ const DUEL_BAND = 3;
  * always.
  */
 const FLOOR_BANDS = DUEL_BAND;
+/** The plate behind a docking notice (#597): dark enough that §4's red reads
+ *  over a lit station face, and translucent so the slot stays visible. */
+const PROMPT_PLATE_FILL = "rgba(4, 10, 18, 0.78)";
+const PROMPT_PLATE_PAD_PX = 8;
+
 /** A `PROMPT_FONT` line's own band, which both lines below occupy. */
 const PROMPT_LINE_HEIGHT_PX = 18;
 /**
@@ -3517,6 +3530,14 @@ class Game {
 	 * measuring the repel rather than the verdict.
 	 */
 	lastEntry: EntryOutcome | null = null;
+	/**
+	 * What the last crossing or the computer's last let-go says, on the prompt
+	 * line (#597). `lastEntry` and the computer's refusal were recorded for a
+	 * probe and drawn nowhere. Cleared by the next approach event and by
+	 * leaving the approach it is about — `stepDockingNotice` defines that, and
+	 * `docking-notice.ts` says why not by a key.
+	 */
+	dockingNotice: DockingNotice | null = null;
 
 	/**
 	 * The pose the renderer is mirroring for one station, at the current clock.
@@ -9724,6 +9745,11 @@ class Game {
 		if (this.detour?.targetId === this.targetId)
 			return `DETOUR AROUND ${this.bodyFor(this.detour.bodyId)?.name ?? this.detour.bodyId}`;
 		if (this.regime === "cruise") return "";
+		// A failed entry or a computer let-go (#597): normal flight only, and
+		// below the jump's window, the spool-up and a detour, because each of
+		// those is a pilot already doing something else. Above them it hid the
+		// detour line for as long as a far notice stood (sage round 1).
+		if (this.dockingNotice) return this.dockingNotice.text;
 		// **The same predicate the strip's tone reads.** As `chargeAu <= 0` this
 		// and the strip disagreed on the frame after a starve-out: regeneration
 		// lifts the raw value off zero immediately, so the prompt returned to
@@ -10255,6 +10281,8 @@ class Game {
 			refusedByLaw: this.refusedByLaw(chosen.id),
 		});
 		this.dockingStates.set(chosen.id, next);
+		// A request starts an approach, so the last one's notice is done (#597).
+		this.dockingNotice = null;
 		// Station control answers (#546): on a change of answer only, because
 		// the docking computer asks again and again.
 		const answer = clearanceTone(prev.clearance, next.clearance);
@@ -10456,6 +10484,7 @@ class Game {
 			poolMax: headOnPool(full),
 			conditionFull: full,
 			lastEntry: this.lastEntry,
+			notice: this.dockingNotice,
 		};
 	}
 
@@ -10464,10 +10493,30 @@ class Game {
 	toggleDockingComputer() {
 		if (!this.hasDockingComputer) return;
 		if (!this.dockingComputer.engaged) {
-			this.dockingComputer.engage();
+			this.engageDockingComputer();
 			return;
 		}
 		this.cancelComputerApproach({ idle: true });
+	}
+
+	/** Leaving the director's range of the station a notice is about ends it. */
+	private stepDockingNoticeRange() {
+		const notice = this.dockingNotice;
+		if (!notice) return;
+		const body = this.world.system.byId.get(notice.stationId);
+		this.dockingNotice = stepDockingNotice(
+			notice,
+			body
+				? length(sub(body.pos, this.world.ship.pos))
+				: Number.POSITIVE_INFINITY,
+		);
+	}
+
+	/** Every engage: a new approach, so the last one's notice no longer applies
+	 *  (#597) — the same pairing `DockingComputer.engage` keeps for its refusal. */
+	private engageDockingComputer() {
+		this.dockingComputer.engage();
+		this.dockingNotice = null;
 	}
 
 	/**
@@ -10616,7 +10665,7 @@ class Game {
 
 	/** One crossing, applied: the outcome, the ship, and the session state that
 	 *  follows from it. Split from the tick loop above because this is the half
-	 *  that grows — the HUD node's cues and #8's pools both land here. */
+	 *  that grows — the pilot's notice (#597) and #8's pools both land here. */
 	private resolveCrossing(
 		id: string,
 		frame: ApertureFrame,
@@ -10645,6 +10694,10 @@ class Game {
 			this.playerLaneRequests.delete(id);
 		this.dockingStates.set(id, outcome.state);
 		this.lastEntry = outcome;
+		this.dockingNotice = entryNotice(outcome, {
+			stationId: id,
+			rangeKm: length(crossing.rel),
+		});
 		// Whatever happens next, the ship ends up in the station's frame or
 		// bouncing out of it, so the velocity is wanted either way.
 		const stationVel = this.stationVelocity(id);
@@ -11027,15 +11080,17 @@ class Game {
 		});
 		this.dockingComputer.recordPhase(command.phase);
 		if (!command.engaged) {
-			// **Silent disengagement is the failure mode here.** §8's HUD cues are
-			// not this node's, so nothing tells the player the autopilot stopped —
-			// and a grant taken at the far edge of `VICINITY_KM` expires mid-approach
-			// (§11.7), which is precisely when this fires. Leaving the throttle
-			// where the computer put it would hand back a ship still closing at a
-			// speed nobody chose, so the throttle goes to zero and the reason is
-			// recorded for the HUD node to read.
+			// **Silent disengagement is the failure mode here** — a grant taken at
+			// the far edge of `VICINITY_KM` expires mid-approach (§11.7), which is
+			// precisely when this fires. Leaving the throttle where the computer
+			// put it would hand back a ship still closing at a speed nobody chose,
+			// so the throttle goes to zero, and the prompt line says why (#597).
 			this.cancelComputerApproach({ refused: command.refused });
 			this.throttle = 0;
+			this.dockingNotice = computerNotice(command.refused, {
+				stationId: nearestId,
+				rangeKm: length(approach.pose.rel),
+			});
 			return false;
 		}
 		const rate = this.flownPerformance.angularMax;
@@ -11290,6 +11345,7 @@ class Game {
 		this.frameBody = null;
 		this.proximityFrameBodyId = null;
 		this.dockingComputer.disengage();
+		this.dockingNotice = null;
 		// An armed jump does not survive arriving somewhere. `takePendingJump`
 		// clears it before it calls `performJump`, so this is the reset's case
 		// and any later one — the coverage scan asked for it the moment the
@@ -13291,6 +13347,7 @@ class Game {
 		// not the pilot is flying, and it costs one array length on the frames
 		// where there is nothing to clear.
 		this.settleIncidentLists();
+		this.stepDockingNoticeRange();
 		// **§12's three states come first, and they return.** E5 suspends
 		// flight: the throttle, the stick and the docking computer are all
 		// inert, so none of the input handling below runs — and neither does
@@ -15454,7 +15511,7 @@ class Game {
 		this.targetId = id;
 		if (this.requestDockingClearance().state?.clearance.kind !== "granted")
 			return giveUp();
-		this.dockingComputer.engage();
+		this.engageDockingComputer();
 		const dt = 1 / 60;
 		for (
 			let i = 0;
@@ -15466,7 +15523,7 @@ class Game {
 			if (this.dockPhase === "flying" && !this.dockingComputer.engaged) {
 				if (!this.dockingSnapshot(id)?.grantLive)
 					this.requestDockingClearance();
-				this.dockingComputer.engage();
+				this.engageDockingComputer();
 			}
 			if (this.dockPhase === "arriving") this.skipDockTraversal();
 		}
@@ -15703,7 +15760,7 @@ class Game {
 			this.requestDockingClearance();
 		},
 		"engage-computer": () => {
-			this.dockingComputer.engage();
+			this.engageDockingComputer();
 		},
 		"skip-traversal": () => {
 			this.skipDockTraversal();
@@ -17518,6 +17575,8 @@ class Game {
 		const prompt = this.cruisePrompt(
 			promptTarget ? length(sub(promptTarget.pos, camPos)) : null,
 		);
+		// The docking notice's plate, reserved below against the marker labels.
+		let noticePlate: MarkerLabelBounds | null = null;
 		if (prompt) {
 			const x = w / 2;
 			// **Above the floor's bands, derived from them.** This was `h * 0.62`,
@@ -17533,9 +17592,35 @@ class Game {
 			const y = floorTopY(h) - PROMPT_ABOVE_FLOOR_PX;
 			ctx.font = PROMPT_FONT;
 			ctx.textAlign = "center";
-			ctx.fillStyle = PROMPT_FILL;
+			const m = ctx.measureText(prompt);
+			const promptWidth = m.width;
+			// **A plate behind a docking notice** (#597, the principal's ruling on
+			// the sheet). The line lands on the slot whenever a station is near,
+			// and red over lit plating and a nameplate did not read. Only for the
+			// notice: every other prompt kept its look.
+			// One predicate for the plate and the tone, so the two cannot disagree.
+			const notice =
+				this.dockingNotice?.text === prompt ? this.dockingNotice : null;
+			if (notice) {
+				const left = x - promptWidth / 2 - PROMPT_PLATE_PAD_PX;
+				const top = y - m.actualBoundingBoxAscent - PROMPT_PLATE_PAD_PX / 2;
+				const width = promptWidth + 2 * PROMPT_PLATE_PAD_PX;
+				const height =
+					m.actualBoundingBoxAscent +
+					m.actualBoundingBoxDescent +
+					PROMPT_PLATE_PAD_PX;
+				ctx.fillStyle = PROMPT_PLATE_FILL;
+				ctx.fillRect(left, top, width, height);
+				noticePlate = {
+					left,
+					top,
+					right: left + width,
+					bottom: top + height,
+				};
+			}
+			// §4's tone: the notice's own, else the prompt's amber.
+			ctx.fillStyle = notice ? FLOOR_TONE_FILL[notice.tone] : PROMPT_FILL;
 			ctx.fillText(prompt, x, y);
-			const promptWidth = ctx.measureText(prompt).width;
 			this.cockpitPrompt.setCenteredPrompt(prompt, x, y, promptWidth);
 			ctx.textAlign = "left";
 		} else {
@@ -17559,6 +17644,11 @@ class Game {
 			bottom: y + 5,
 		});
 		const occupiedLabels: MarkerLabelBounds[] = [];
+		// **The labels draw after the prompt**, so a carrier's name printed
+		// straight through the plate on the first sheet (#597). Reserved here,
+		// the declutter pass moves context off it the way it does off the
+		// selected label.
+		if (noticePlate) occupiedLabels.push(noticePlate);
 		const selectedBody = this.targetBody();
 		const selectedDir = selectedBody && directionTo(camPos, selectedBody.pos);
 		const selectedAt = selectedDir && place(selectedDir);

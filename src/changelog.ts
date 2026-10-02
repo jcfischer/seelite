@@ -29,6 +29,11 @@ export type ChangelogEntry = {
 
 export const CHANGELOG: readonly ChangelogEntry[] = [
 	{
+		date: "2026-10-02",
+		text: "The cockpit now tells you why an entry into a station failed, and why the docking computer let go.",
+		node: 597,
+	},
+	{
 		date: "2026-10-01",
 		text: "The radio can now speak with a natural voice, made in your browser by a speech model you download once if you want it; the game asks at the start, and Settings can change your answer.",
 		node: 604,

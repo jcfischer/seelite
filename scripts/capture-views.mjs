@@ -401,6 +401,70 @@ const PLACERS = {
 		);
 		return `workbench · ${shot.asset} ${shot.variant ?? "a"} interior`;
 	},
+	"docking-notice": async (page, shot) => {
+		// The crossing damages the ship and the let-go spends no grant, but both
+		// leave a docking state and a notice the next row must not inherit.
+		worldWritten = true;
+		const id = "station-trade";
+		await page.evaluate(
+			async ([bodyId, radii]) =>
+				window.__viewAlongAxis(bodyId, window.__radiusOf(bodyId) * radii, {
+					comoving: true,
+				}),
+			[id, 3],
+		);
+		const text = await page.evaluate(
+			([stationId, notice]) => {
+				const g = window.__seelite;
+				const dt = g.units.MAX_DT;
+				const add = (a, b) => ({ x: a.x + b.x, y: a.y + b.y, z: a.z + b.z });
+				const scale = (a, k) => ({ x: a.x * k, y: a.y * k, z: a.z * k });
+				g.targetId = stationId;
+				g.dockingComputer.disengage();
+				g.dockingStates.delete(stationId);
+				if (notice === "bounce") {
+					g.requestDockingClearance();
+					const snap = g.dockingSnapshot(stationId);
+					const body = g.world.system.byId.get(stationId);
+					const vel = g.stationVelocity(stationId);
+					const inward = scale(snap.axis, -0.05);
+					// 90° off the slot's own up: check 4's failure and nothing else.
+					const across = snap.basis.across;
+					const place = (axialKm) => {
+						g.world.ship.pos = add(body.pos, scale(snap.axis, axialKm));
+						g.world.ship.vel = add(vel, inward);
+					};
+					g.setAttitude(scale(snap.axis, -1), across);
+					place(snap.planeKm + 0.01);
+					const before = g.dockingApproaches();
+					place(snap.planeKm - 0.01);
+					g.stepDocking(before);
+				} else {
+					if (!g.hasDockingComputer)
+						g.commander = {
+							...g.commander,
+							ownedEquipment: [
+								...g.commander.ownedEquipment,
+								g.dockingComputerName,
+							],
+						};
+					g.toggleDockingComputer();
+					g.step(dt);
+				}
+				g.render(dt);
+				const snap = g.dockingSnapshot(stationId);
+				// A build from before #597 has no notice to draw: the before arm,
+				// captioned as such the way the witchspace rows caption a hard cut.
+				if (!snap || !("notice" in snap)) return { absent: true };
+				return { text: snap.notice?.text ?? null };
+			},
+			[id, shot.notice],
+		);
+		if (text.absent) return `${id} · this build draws no docking notice`;
+		if (!text.text)
+			throw new Error(`docking-notice placer: no notice for ${shot.notice}`);
+		return `${id} · ${text.text}`;
+	},
 	duel: async (page, shot) => {
 		// **The next view boots on a fresh world** (sage #330). A duel leaves the
 		// page changed — an encounter, a kill with a destroyed slot, and for the

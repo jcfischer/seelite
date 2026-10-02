@@ -28,7 +28,7 @@ settled that at two, and this spec builds two. Nor the legal-status predicate
 behind the shipyard scan or the absolute damage scale (both #8), nor station
 traffic (#148);
 nor the equipment price table (#7 §equipment, unamended by this spec); nor the
-HUD (fog — §8 records what it owes docking without designing it); nor the
+HUD (`hud-and-scanner.md`; §8 records what it owes docking); nor the
 **collision system** (§12.3 states the boundary and hands it on); nor what the
 player *sees* once docked, which is the market-screen question (#70).
 
@@ -311,7 +311,10 @@ What can honestly be said for them:
   hidden (#5), flies on mouse (#21), and — until the HUD node lands (§8) — offers
   **no visual referent for either angle at all**. Tolerances set against
   instruments that do not exist yet should be set wide and tightened later, not
-  the reverse.
+  the reverse. **That condition has lapsed** (#597): the docking director (#69)
+  draws both angles against their tolerances, so the re-check this bullet
+  defers is owed. Whether to tighten is the principal's, and nothing here
+  retunes.
 - 50° survives §4's arithmetic as a test: at the fastest spinner it is still a
   5.6 s non-tracking window, so widening it did not remove the skill.
 - Check 5's containment row (new in §3) takes some load off check 2 that the
@@ -889,7 +892,10 @@ before merge.
   second, derived hostility rather than a replacement of the flip. It inherits §9.1.10 as a test it must satisfy, not author.
 - **#148 (station traffic)** — owns the Traffic actors and replaces §6.1's
   injected occupancy with real berth and Transit-lane queues.
-- **The HUD node** — inherits §8's two cues.
+- **The HUD node (#69)** — inherited §8's two cues and drew them as the docking
+  director (`docking-director.ts`). A failed entry and a docking-computer
+  let-go are told on the prompt line (#597, `hud-and-scanner.md` §3); neither is
+  §8's.
 - **#26 (ship roster)** — the slot at 0.12 × 0.07 km must admit the largest hull
   it introduces **at check 4's 50° roll limit**, not merely axis-aligned: a hull
   that fits the 70 m short dimension square does not fit it rolled 50°. If it
@@ -1273,7 +1279,7 @@ is rolled.
 
 **It is not a HUD cue and #69 may not treat it as one.** A sign is legible at a few
 kilometres at best; check 2's cone opens 0.42 km of lateral offset at the plane. It
-orients, it does not measure. §8's two cues are still owed.
+orients, it does not measure. §8's two cues are the director's (#69).
 
 ### 12.6 Verification obligations
 
