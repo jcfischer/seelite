@@ -1,0 +1,48 @@
+/**
+ * Where every vent's throat is drawn, and how far it is from metal (#621).
+ *
+ *   bun scripts/measure-vent-throats.ts
+ *
+ * `ventThroats` slides each vent along its own line of action to where that
+ * line leaves the hull, and where the line only passes the hull, to its
+ * closest approach (`src/vent-plumes.ts`). This prints the gap that leaves for
+ * every hull and slot, so the claim in `flight-model.md` §3.8.1 — the attitude
+ * lines miss every hull, the roll pairs by tens of metres on the larger ones —
+ * is a reading and not a sentence.
+ */
+
+import { HULL_IDS, HULL_SPECS } from "../src/hull";
+import { buildShipMesh } from "../src/ship-mesh";
+import { ventThroats } from "../src/vent-plumes";
+
+const metres = (km: number): string => {
+	if (!Number.isFinite(km)) throw new Error(`non-finite gap: ${km}`);
+	return (km * 1000).toFixed(1);
+};
+
+const missed = new Map<string, string[]>();
+for (const id of HULL_IDS) {
+	const root = buildShipMesh(id, HULL_SPECS[id].variant).root;
+	const throats = ventThroats(root, id);
+	const cells = throats
+		.filter((t) => t.placed === "line")
+		.map((t) => {
+			if (t.gapKm > 0) {
+				const hulls = missed.get(t.slot) ?? [];
+				hulls.push(id);
+				missed.set(t.slot, hulls);
+			}
+			return `${t.slot} ${t.gapKm > 0 ? metres(t.gapKm) : "on"}`;
+		});
+	const bells = throats.filter((t) => t.placed === "bell").length;
+	console.log(
+		`${id.padEnd(12)} ${metres(HULL_SPECS[id].env.lengthKm).padStart(6)} m long, ${bells} bells`,
+	);
+	console.log(`  ${cells.join(" · ")}`);
+}
+
+console.log("\nslots whose line of action meets no metal, by hull:");
+for (const [slot, hulls] of missed)
+	console.log(
+		`  ${slot.padEnd(24)} ${hulls.length === HULL_IDS.length ? "every hull" : hulls.join(", ")}`,
+	);

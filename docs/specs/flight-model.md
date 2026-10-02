@@ -186,7 +186,27 @@ follow:
   (`hud-and-scanner.md` §4).
 - **The firing vents are drawn.** A plume is particles or an emissive at the
   throat, never a cone (`src/station-mesh.ts` rejects a cone for the refinery's
-  vent bank). The firing table is the sim's, and `src/ship-mesh.ts` draws from it.
+  vent bank). The firing table is the sim's, and the display draws from it.
+
+**Built by #621.** `hud-and-scanner.md` §4.1 owns the pulse: which marker
+answers which family, and what counts as saturated. `src/vent-plumes.ts` draws
+the plumes, beside the hull's root and not inside it, so a plume cannot move
+the envelope. Two things it settled:
+
+- **A full burn toward a commanded speed is not saturation.** `assistDemand`
+  flagged every throttle change, because the demand was larger than one step's
+  authority. #5's law was always a burn at the drive's authority, so inside
+  the envelope the surge demand is clamped like the stick's, and only a return
+  from above the cap flags. The firing is unchanged.
+- **A throat is drawn on its vent's line of action.** The table puts every
+  vent on its envelope's box. A vent slid along the line its push acts on keeps
+  its force and its torque, so the drawn throat is placed where that line leaves
+  the metal, or, where it only passes the hull, at its closest approach. The
+  main drive is drawn at the hull's own bells, whose resultant it is.
+  `scripts/measure-vent-throats.ts` prints how far each throat is from metal.
+  The attitude vents' lines miss every hull, and the roll pairs pass tens of
+  metres clear of the larger ones. Fixing that moves the table's geometry and
+  so re-solves the shares (§3.4), which is not a display node's to do.
 
 #### 3.8.2 Two departures from #5 (amended on #619)
 

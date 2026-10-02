@@ -23,6 +23,9 @@
  *   peak against its trough, at the nose cross and at the prograde marker —
  *   the trough's alpha is the floor's share of the peak's and the colour of
  *   the strongest pixel does not move.
+ *
+ * This is a default-layout probe (#381 D11): `v` is the view toggle in the
+ * shipped layout, and the rows read the view back, so a dead key fails them.
  */
 import {
 	bootedGame,

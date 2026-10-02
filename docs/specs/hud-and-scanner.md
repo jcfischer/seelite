@@ -165,6 +165,49 @@ states use shape, text, and restrained motion as well as colour:
 The design deliberately carries meaning through shape and text as well as
 colour; a future accessibility pass must validate contrast and non-colour cues.
 
+### 4.1 A saturated assist pulses a marker in its own tone
+
+Built under [#621](https://github.com/jcfischer/seelite/issues/621), for
+`flight-model.md` §3.8.1. The assist is bounded by its vents (§3.8 there), so
+it can fail to meet a demand. That must show on the glass, or it reads as lag.
+
+**The rule.** While the assist cannot meet a demand, the marker for the
+saturated family **pulses in its current tone**. The pulse changes the
+marker's alpha and nothing else. It needs no new colour: amber and red are
+taken above, and a cue that changed a marker's hue would be a new word in this
+grammar.
+
+| family | what failed | marker that pulses |
+| --- | --- | --- |
+| translation: surge, sway, heave | drift the assist cannot kill, or a speed above the cap it is still burning off | prograde and retrograde (§5) |
+| rotation: pitch, yaw, roll | a turn the assist cannot stop or make in one step | the nose: the cockpit cross, or the chase pip |
+
+**What counts as saturated is the sim's**, not the HUD's: `FlightStep.saturated`
+and `AngularStep.saturated`. A full burn toward a commanded speed is #5's law,
+not a failure, so it never flags. A held stick inside the rate envelope never
+flags either. What flags is a return the vents cannot make in one step: above
+the speed cap or the rate envelope, the ease-out of a turn on an agile hull
+(`flight-model.md` §3.8.2), and a pointer demand larger than the couple.
+
+**The shape of the pulse** (`src/vent-cue.ts` owns the figures):
+
+- It runs on the game clock. A held clock holds the phase.
+- It starts at full strength, so the first frame of a cue looks like the
+  marker. It falls to `SATURATION_PULSE_FLOOR` of the marker's alpha, never to
+  zero, because the marker is still the instrument while it pulses.
+- One saturated step keeps the cue up for `SATURATION_HOLD_S`. The sim's flag
+  can set and clear on alternate steps, and a pulse that restarted on each would
+  flicker.
+- Only with the assist on. With it off nothing is demanded of the assist, so
+  nothing can saturate.
+
+**Not ruled: the pointer on the slow hulls.** A mouse move asks the attitude
+vents for a change of rate (`flight-model.md` §3.8.2). It saturates when one
+frame's move asks for more than the couple gives in that frame, and the couple
+is smallest on the heaviest hulls. So on the slow hulls, brisk mouse flying
+pulses the nose marker. That follows from the rule, and the principal has not
+yet flown it.
+
 ## 5. Persistent floor and side panels
 
 The persistent flight floor contains attitude/nose/prograde-retrograde, the

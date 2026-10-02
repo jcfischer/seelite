@@ -30,6 +30,11 @@ export type ChangelogEntry = {
 export const CHANGELOG: readonly ChangelogEntry[] = [
 	{
 		date: "2026-10-03",
+		text: "You can now see your ship's thrusters fire, and the velocity and nose markers pulse when the flight assist cannot keep up.",
+		node: 621,
+	},
+	{
+		date: "2026-10-03",
 		text: "The arrow keys now slide the ship sideways, up and down; with flight assist off, Shift and Ctrl fire the main drive and the retro thrusters while you hold them, and each of a ship's thrusters can be bound to a key of your own.",
 		node: 620,
 	},

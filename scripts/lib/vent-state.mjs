@@ -36,9 +36,7 @@ export function holdVentState({ overCap, spin, steps, slipDeg = 10 }) {
 	g.clockHeld = false;
 	if (!g.assist) g.assist = true;
 	g.throttle = 1;
-	// A build before #621 has no handle; 2 km/s is the cap it shipped with,
-	// and its `before` frame owes the same state.
-	const cap = g.assistCapKms ?? 2;
+	const cap = g.assistCapKms;
 	const nose = g.nose();
 	const up = g.shipUp();
 	const slip = (slipDeg * Math.PI) / 180;
