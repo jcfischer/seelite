@@ -71,9 +71,10 @@ try {
 	const credit = await page.evaluate(async () => {
 		const L = await import("/src/ladder.ts");
 		const g = window.__seelite;
+		const banked = { ...g.ladders.banked };
 		g.ladderPending = L.pendingKill(g.ladderPending, 0.75);
 		g.updateCockpit();
-		return g.ladderPending.combat;
+		return { pending: g.ladderPending.combat, banked };
 	});
 	await openCommander();
 	check(
@@ -112,15 +113,20 @@ try {
 		};
 	});
 	check("the ship is docked at the shipyard", yard.phase === "docked", yard.id);
+	// **Coarse on purpose (#627 D8).** What a dock banks, to the figure, is
+	// `tests/holdings.test.ts`'s: these rows show only that this `Game`'s
+	// dock reached the Holdings module at all, which no bun test can.
 	check(
 		"the dock banked the kill credit and cleared what was pending",
-		Math.abs(yard.banked.combat - credit) < 1e-9 && yard.pending === 0,
-		JSON.stringify(yard),
+		credit.pending > 0 &&
+			yard.banked.combat > credit.banked.combat &&
+			yard.pending === 0,
+		JSON.stringify({ before: credit, yard }),
 	);
 	check(
-		"and the station's first dock is one exploration kind",
-		yard.banked.exploration === 1,
-		`${yard.banked.exploration}`,
+		"and the station's first dock banked an exploration kind",
+		yard.banked.exploration > credit.banked.exploration,
+		`${credit.banked.exploration} → ${yard.banked.exploration}`,
 	);
 	await openCommander();
 	const combatDocked = await ladderRow("combat");
