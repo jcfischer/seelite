@@ -27,9 +27,13 @@ import {
 	bodyVelocity,
 	makeSystem,
 	makeWorld,
-	stepAngular,
-	stepFlight,
-	stepWorld,
+	type Angular,
+	type FlightPerformance,
+	type Ship,
+	type World,
+	stepAngular as stepVentAngular,
+	stepFlight as stepVentFlight,
+	stepWorld as stepVentWorld,
 	flightPerformance,
 	frameMean,
 	steadyFrame,
@@ -47,6 +51,31 @@ import { add, length, scale, sub, v3 } from "../src/vec3";
 import { codeOf } from "./lib/source-scan";
 import * as orbiting from "./helpers/orbiting-frame";
 import { PLAYER_BASELINE_HULL } from "../src/hull";
+import { type SpeedControl, speedControl } from "./helpers/speed-control";
+
+// The rows below were written against a nose, a throttle and the assist, and
+// are about the laws under them — the clock, the frame, the cap — rather than
+// the control's shape, which `tests/vents.test.ts` owns (#619).
+const stepFlight = (
+	ship: Ship,
+	c: SpeedControl,
+	dt: number,
+	perf: FlightPerformance,
+) => stepVentFlight(ship, speedControl(c), dt, perf);
+const stepWorld = (
+	world: World,
+	c: SpeedControl,
+	dt: number,
+	perf: FlightPerformance,
+) => stepVentWorld(world, speedControl(c), dt, perf);
+const stepAngular = (
+	rates: Angular,
+	command: Angular,
+	impulse: Angular,
+	assist: boolean,
+	dt: number,
+	perf: FlightPerformance,
+) => stepVentAngular(rates, command, impulse, assist, dt, perf).rates;
 
 /**
  * The baseline hull's handling.
@@ -442,11 +471,20 @@ describe("stepFlight — #5's model, both regimes", () => {
 		expect(ship.vel.z).toBeCloseTo(-ASSIST_CAP_KMS * 0.5, 6);
 	});
 
-	test("assisted flight never exceeds #5's cap", () => {
+	test("assisted flight above #5's cap burns back to it and holds it there", () => {
 		// The cap cruise's exit clamp is stated against (#10 §1), so it is not a
-		// number to be approximately right about.
+		// number to be approximately right about. Since #619 it is reached by a
+		// retro burn at the vents' authority (`flight-model.md` §3.10), not by
+		// a clamp that deleted the excess in one step.
 		const ship = { pos: v3(), vel: v3(0, 0, -50) };
-		for (let i = 0; i < 200; i++) stepFlight(ship, assisted(1), 0.1, BASELINE);
+		let speed = 50;
+		for (let i = 0; i < 300; i++) {
+			stepFlight(ship, assisted(1), 0.1, BASELINE);
+			expect(speed - length(ship.vel)).toBeLessThanOrEqual(
+				BASELINE.retroKms2 * 0.1 + 1e-9,
+			);
+			speed = length(ship.vel);
+		}
 		expect(length(ship.vel)).toBeLessThanOrEqual(ASSIST_CAP_KMS + 1e-9);
 	});
 
@@ -698,7 +736,8 @@ describe("stepAngular — rotation with momentum", () => {
 			BASELINE,
 		);
 		expect(kicked.yaw).toBeGreaterThan(0);
-		// A flicked pointer cannot exceed the axis's peak rate.
+		// A flicked pointer is a demand on the attitude vents (#619): it moves
+		// the rate by at most what the couple delivers in the step.
 		const flicked = stepAngular(
 			still,
 			none,
@@ -707,7 +746,8 @@ describe("stepAngular — rotation with momentum", () => {
 			0.016,
 			BASELINE,
 		);
-		expect(flicked.yaw).toBe(REFERENCE_ANGULAR_MAX.yaw);
+		expect(flicked.yaw).toBeCloseTo(BASELINE.angularAuthority.yaw * 0.016, 12);
+		expect(flicked.yaw).toBeLessThan(REFERENCE_ANGULAR_MAX.yaw);
 	});
 
 	test("a zero delta changes nothing", () => {

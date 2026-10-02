@@ -894,6 +894,9 @@ try {
 					orientation,
 					regime: "cruise",
 					throttle: 1,
+					// A cruise leg is nose-locked and resumes at rest, rates and
+					// all (#619): these must not come back.
+					rates: [0.31, -0.42, 0.53],
 				},
 			};
 			return {
@@ -934,6 +937,7 @@ try {
 				vel: { ...g.world.ship.vel },
 				regime: g.regime,
 				throttle: g.throttle,
+				rates: { ...g.rates },
 				orientation: [
 					g.orientation.x,
 					g.orientation.y,
@@ -978,6 +982,9 @@ try {
 			"a cruise save comes back at rest in normal flight, keeping its place",
 			inFlight.regime === "normal" &&
 				inFlight.throttle === 0 &&
+				inFlight.rates.pitch === 0 &&
+				inFlight.rates.yaw === 0 &&
+				inFlight.rates.roll === 0 &&
 				near(inFlight.vel.x, 0) &&
 				near(inFlight.vel.y, 0) &&
 				near(inFlight.vel.z, 0),
@@ -985,9 +992,65 @@ try {
 				regime: inFlight.regime,
 				throttle: inFlight.throttle,
 				vel: inFlight.vel,
+				rates: inFlight.rates,
 			}),
 		);
+
+		// **A tumble survives a save (#619, `flight-model.md` §3.9).** Rates
+		// are angular momentum under the vents, so a normal-flight record
+		// carries them and the restore puts them back. Seeded the same way as
+		// the cruise record above. The page is flying by the time it is read
+		// (`bootedGame` releases the clock), and with the assist on a frame or
+		// two has eased the rates: measured, 0.96 of the seed. So each axis is
+		// held to its sign and to within 15% — a restore that dropped them
+		// reads exactly zero, which is what a fresh page starts at.
+		const tumble = [0.31, -0.42, 0.53];
+		const tumbling = await third.evaluate((rates) => {
+			const g = window.__seelite;
+			const env = g.saveEnvelope();
+			return {
+				berth: g.save.defaultSlot,
+				blob: g.save.serialize({
+					world: env.world,
+					commander: {
+						...env.commander,
+						dockedAt: null,
+						flight: { ...env.commander.flight, regime: "normal", rates },
+					},
+				}),
+			};
+		}, tumble);
 		await third.close();
+		const tumbleSeed = await context.newPage();
+		watch(tumbleSeed, "tumble seed");
+		await tumbleSeed.goto(gameUrl(ORIGIN, { "no-save": true }), {
+			waitUntil: "load",
+		});
+		await bootedGame(tumbleSeed);
+		await tumbleSeed.evaluate(async ({ berth, blob }) => {
+			const { indexedDbSaveBackend } = await import("/src/save-store.ts");
+			await indexedDbSaveBackend().write(berth, "live", blob);
+		}, tumbling);
+		await tumbleSeed.close();
+		const fourth = await context.newPage();
+		watch(fourth);
+		await fourth.goto(gameUrl(ORIGIN, { seed: SEED }), { waitUntil: "load" });
+		await bootedGame(fourth);
+		const resumed = await fourth.evaluate(() => ({
+			fault: window.__seelite.saveFault,
+			held: window.__seelite.clockHeld,
+			rates: { ...window.__seelite.rates },
+		}));
+		check(
+			"a save taken tumbling resumes tumbling",
+			resumed.fault === null &&
+				["pitch", "yaw", "roll"].every((axis, i) => {
+					const share = resumed.rates[axis] / tumble[i];
+					return share > 0.85 && share <= 1 + 1e-9;
+				}),
+			JSON.stringify({ ...resumed, want: tumble }),
+		);
+		await fourth.close();
 	} else {
 		await page.close();
 	}

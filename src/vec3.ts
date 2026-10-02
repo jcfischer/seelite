@@ -85,3 +85,18 @@ export const frameAcross = (nose: Vec3): Vec3 =>
 		cross(nose, Math.abs(nose.y) < 0.85 ? v3(0, 1, 0) : v3(1, 0, 0)),
 		v3(1, 0, 0),
 	);
+
+/** Rodrigues: spin `v` about a unit `axis` by `angle`. One copy since #619,
+ *  where the raider and the attitude hold each carried their own. */
+export const rotateAbout = (v: Vec3, axis: Vec3, angle: number): Vec3 => {
+	const c = Math.cos(angle);
+	const s = Math.sin(angle);
+	return add(
+		add(scale(v, c), scale(cross(axis, v), s)),
+		scale(axis, dot(axis, v) * (1 - c)),
+	);
+};
+
+/** `v` held to `[lo, hi]`. */
+export const clamp = (v: number, lo: number, hi: number): number =>
+	Math.min(hi, Math.max(lo, v));

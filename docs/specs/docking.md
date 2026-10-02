@@ -355,9 +355,20 @@ is the baseline hull's margin and not the roster's. The miner peaks at 29.5°/s,
 flies every hull at every role across the whole 0.6–3.0 rpm range, and then — at
 **both** turning roles, because a trade station and a shipyard cut their
 apertures at different planes into different interiors — finds the spin at which each hull
-**first** fails. The worst is the freighter, which first fails at 6.5 rpm at a
-trade station and so holds 6.0 — two times the fastest station the generator
+**first** fails. The worst is the miner, which first fails at 5.5 rpm at a
+trade station and so holds 5.0 — 1.67 times the fastest station the generator
 builds.
+
+**Since #619 the computer turns the hull through its attitude vents**
+(`flight-model.md` §3.6, `attitude-hold.ts`), asking on top for the slot's
+own spin. It used to place the attitude, slewing it at the hull's peak rate
+with no acceleration. Six of the nine ceilings now sit within 0.4 rpm of the
+hull's roll cap; the interceptor (22.0 against 17.2), the freighter (10.0
+against 6.6) and the tug (11.0 against 9.2) dock above theirs, inside check
+4's ±50°. The miner was 7.0 against a 4.9 cap and is 5.0 now, so the worst
+hull moved from the freighter to the miner and the margin fell from 2.0x to
+1.67x. The bound it is asserted against is 1.5x. `tests/hull-docking.test.ts`
+prints every row.
 
 *First* failure, because the curve is not monotone: flown out to 24 rpm the
 courier fails at 13.5 and then docks again at thirteen scattered rungs above it.
@@ -733,10 +744,13 @@ the same sweep:
 |---|---|---|---|
 | the slot, before #315 | 4 of 432 (45 min orbit, 0.1 s) | 73 s | 198 |
 | the slot, #315's first build | 36 of 432 | 469 s | 31 |
-| a quarter of the distance ahead | 0 of 432 | 77 s | 0 |
+| a quarter of the distance ahead, attitude placed | 0 of 432 | 77 s | 0 |
+| the same, attitude through the vents (#619) | 0 of 432 | 78 s | 0 |
 
-In that last row the widest run-in came to 0.75 of the corridor's half-width,
-at the 45 min orbit. A faster orbit, or a lower speed floor, spends that margin.
+In that last row the widest run-in came to 0.79 of the corridor's half-width
+(0.75 before #619), at the 45 min orbit. A faster orbit, or a lower speed floor,
+spends that margin. The worst roll at the crossing fell from 1.8° to 0.0°: the
+computer asks for the slot's spin as well as for the error.
 
 **The run-in aim sits a hair inside the plane, not on it** (implementation
 finding, node #32). The slot centre is *at* the plane, so an aim exactly on it

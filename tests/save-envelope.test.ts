@@ -65,6 +65,7 @@ const commander = (): CommanderRecord => {
 			orientation: [0, 0, 0, 1],
 			regime: "cruise",
 			throttle: 1,
+			rates: [0.1, -0.2, 0.3],
 		},
 	};
 };

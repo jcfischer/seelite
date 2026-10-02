@@ -552,7 +552,7 @@ _Avoid_: Touchdown deck, apron, exterior pad
 **Berth**:
 Where one ship parks in a station interior, addressed as **interior face × depth band** — deck, port wall, starboard wall or overhead; near or deep. In a bay the face is the wall the berth is bolted to; on a landing pad there is one surface, so the face is the *side of the landing lane* the berth stands on and every berth is in the `near` band, because a deck has no depth. Its **family** (open deck pad, wall-side berth, recessed service cradle) changes presentation and parked pose and never the docking interaction. It accepts a hull when its declared clear length, beam and height contain that hull's envelope; there is no S/M/L class. `docs/specs/docking.md` §13.2 owns the catalogue, the fit predicate and the allocation.
 _Avoid_: Docking bay, slot, pad, landing pad
-These are aliases for **a berth** and nothing else. **The scope note is the point of the entry, not a footnote to it**, and it has grown once already: the repo has had to correct one alias that read as banning an English word. "Slot" is an aperture kind — `aperture.kind === "slot"` is code. "Pad" now carries **four** senses that are not this one — a berth *family* (open deck pad), the surface a ship settles onto (`berth-pad`), since #165 an aperture kind and the interior presentation that goes with it (**Landing pad** above), and since #283 the **game controller**: `src/gamepad.ts`, `PadFrame`, `padIntents`, `docs/gamepad.md`. That fourth one arrived as a *copy* — the module is byte-identical to seekolous's and says "pad" throughout — so it could not have been renamed here even if the sense were worth renaming, and it is not: a controller is what every player calls a pad. Since #90 "slot" carries a **second** sense of its own: a **save slot** is one named save — `src/save-store.ts`, `CommanderCatalog.slots()`, `exportSlot`, and #89's D6, which ratified the word. It holds two records, `live` and `lastDocked`, and has nothing to do with where a ship parks. The player never sees the word: what a player sees of a save slot is a **Commander** (below). The first version of this sentence claimed the two senses "do not meet in any one file", and the change that introduced it refuted that six lines apart: `releaseBerth` and `saveDirty` sit in the same block of `main.ts`, because releasing a berth is exactly when a save stops describing a parked ship. They meet, and it does not matter — the disambiguation is the word beside it, and `saveSlot`, `exportSlot` and `SaveRecordKind` never read as a place to park. A reviewer flagging one of those has found the alias rule firing on an English word rather than on a synonym for a berth.
+These are aliases for **a berth** and nothing else. **The scope note is the point of the entry, not a footnote to it**, and it has grown once already: the repo has had to correct one alias that read as banning an English word. "Slot" is an aperture kind — `aperture.kind === "slot"` is code. "Pad" now carries **four** senses that are not this one — a berth *family* (open deck pad), the surface a ship settles onto (`berth-pad`), since #165 an aperture kind and the interior presentation that goes with it (**Landing pad** above), and since #283 the **game controller**: `src/gamepad.ts`, `PadFrame`, `padIntents`, `docs/gamepad.md`. That fourth one arrived as a *copy* — the module is byte-identical to seekolous's and says "pad" throughout — so it could not have been renamed here even if the sense were worth renaming, and it is not: a controller is what every player calls a pad. Since #90 "slot" carries a **second** sense of its own: a **save slot** is one named save — `src/save-store.ts`, `CommanderCatalog.slots()`, `exportSlot`, and #89's D6, which ratified the word. It holds two records, `live` and `lastDocked`, and has nothing to do with where a ship parks. The player never sees the word: what a player sees of a save slot is a **Commander** (below). The first version of this sentence claimed the two senses "do not meet in any one file", and the change that introduced it refuted that six lines apart: `releaseBerth` and `saveDirty` sit in the same block of `main.ts`, because releasing a berth is exactly when a save stops describing a parked ship. They meet, and it does not matter — the disambiguation is the word beside it, and `saveSlot`, `exportSlot` and `SaveRecordKind` never read as a place to park. Since #619 "slot" has a **third** sense: a **vent slot** (`VENT_SLOTS`, `VentSlot`) names a thruster's place on a hull, one vocabulary across the roster (`flight-model.md` §3.4.1). It is never a berth and never an aperture. A reviewer flagging one of those has found the alias rule firing on an English word rather than on a synonym for a berth.
 
 **Commander**:
 What the player sees of one **save slot**: a named save, with its galaxy seed and
@@ -830,3 +830,27 @@ _Avoid_: Intensity, alert level, threat level — *threat* is one of the four.
 What a system's seed fixes about its music under `DOMAIN.MUSIC`: tonic, bright
 mode, tempo and palette (`musicTheme`). A **variant** draws new notes inside
 the same theme.
+
+**Vent**:
+One thruster on a hull: a slot, a position, a direction and a share of the
+hull's `thrustMN`, in the hull frame (`flight-model.md` §3.1, §3.4). Every hull
+names its vents from one slot vocabulary, `VENT_SLOTS` in `src/hull.ts`, so a
+binding or a health factor means the same vent on every hull.
+_Avoid_: Thruster bank, RCS jet — *as a name for one vent*.
+
+**Translation pair** / **Attitude pair**:
+The two vent families (#619, `flight-model.md` §3.2). A translation pair sits a
+short arm either side of the centre of mass and strafes; an attitude pair sits
+at the extremities and turns the hull. Fired the same way a pair is pure force,
+fired opposite it is a pure couple.
+
+**Demand**:
+What an author — the pilot, the assist, the docking computer, a raider — asks
+of an axis (`LinearDemand`, the stick to `stepAngular`). The sim composes
+demands into vent firings, and nothing fires a vent another way (§3.6).
+_Avoid_: Command — *for the composed vent levels*; those are the **Firing table**.
+
+**Firing table**:
+How hard each vent fired in one step, 0…1 by slot (`VentLevels`). `stepFlight`
+returns it; the flight sound reads it through `thrustShares`, and the plumes
+#621 draws will read it.

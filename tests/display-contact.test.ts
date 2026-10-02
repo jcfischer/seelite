@@ -2,8 +2,14 @@ import { expect, test } from "bun:test";
 import { readFileSync } from "node:fs";
 import ts from "typescript";
 import { projectNavTargets } from "../src/cockpit";
+import { AttitudeFollower } from "../src/attitude-hold";
 import { DockingComputer } from "../src/docking-computer";
-import { bodyAccelerationBound, bodyVelocity, makeWorld } from "../src/sim";
+import {
+	NO_ATTITUDE,
+	bodyAccelerationBound,
+	bodyVelocity,
+	makeWorld,
+} from "../src/sim";
 import {
 	type DisplayContact,
 	DIVERT_LABEL,
@@ -356,6 +362,7 @@ test("a jump or a reset takes the cargo contacts with the canisters", () => {
 				{
 					CANISTER_RADIUS_KM,
 					CARGO_CONTACT_COLOUR,
+					NO_ATTITUDE,
 					QUIET_GUN: null,
 					QUIET_WEAPONS: null,
 					SILENT_WEAPONS: null,
@@ -371,6 +378,7 @@ test("a jump or a reset takes the cargo contacts with the canisters", () => {
 			contacts: [] as DisplayContact[],
 			// The teardown disengages it (#596); a plain field once took the write.
 			dockingComputer: new DockingComputer(),
+			computerFollower: new AttitudeFollower(),
 			selectableCache: null,
 			targetId: null as string | null,
 		},

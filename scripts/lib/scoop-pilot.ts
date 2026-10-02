@@ -37,6 +37,7 @@ import {
 	ASSIST_CAP_KMS,
 	type Angular,
 	flightPerformance,
+	speedDemand,
 	stepAngular,
 	stepFlight,
 	steadyFrame,
@@ -169,7 +170,7 @@ export function flyToCargo(
 			pitch = dot(arc, right) * stick;
 			yaw = dot(arc, up) * stick;
 		}
-		rates = stepAngular(
+		const attitude = stepAngular(
 			rates,
 			{ pitch, yaw, roll: 0 },
 			{ pitch: 0, yaw: 0, roll: 0 },
@@ -177,6 +178,7 @@ export function flyToCargo(
 			PILOT_DT,
 			COURIER,
 		);
+		rates = attitude.rates;
 		const spin = add(scale(right, rates.pitch), scale(up, rates.yaw));
 		const w = length(spin);
 		if (w > 0) {
@@ -189,12 +191,20 @@ export function flyToCargo(
 			(off * 180) / Math.PI > FACE_FIRST_DEG
 				? 0
 				: Math.min(1, (0.5 * km + 0.05) / ASSIST_CAP_KMS);
-		stepFlight(
+		const flown = stepFlight(
 			ship,
-			{ nose, throttle, assist: true, frame: steadyFrame(frameVel) },
+			{
+				nose,
+				up,
+				demand: speedDemand(throttle),
+				assist: true,
+				attitude,
+				frame: steadyFrame(frameVel),
+			},
 			PILOT_DT,
 			COURIER,
 		);
+		rates = flown.rates;
 	}
 	return { dropped, scooped, allScoopedS: null };
 }

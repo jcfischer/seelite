@@ -1,147 +1,131 @@
 /**
  * How hard the drive and the thrusters work in one step (#544): what the
- * flight sound's `thrust` arm hears. Read off the same laws `stepFlight` and
- * `stepAngular` fly, so a ship holding its speed is a silent drive.
+ * flight sound's `thrust` arm hears. Since #619 it is read off the step's
+ * firing table (`flight-model.md` §4), so a ship holding its speed is a silent
+ * drive because no vent fired, not because a second law said so.
  */
 import { expect, test } from "bun:test";
 import {
 	ASSIST_CAP_KMS,
-	type FlightPerformance,
-	rotationShare,
+	type Angular,
+	type FlightControl,
+	NO_ATTITUDE,
+	flightPerformance,
+	speedDemand,
+	stepAngular,
 	stepFlight,
 	thrustShares,
 } from "../src/sim";
+import { type Vec3, v3 } from "../src/vec3";
 
-const perf: FlightPerformance = {
-	thrustKms2: 0.2,
-	assistLateralTauS: 1.5,
-	angularMax: { pitch: 1, yaw: 1, roll: 1.5 },
-	angularAccel: 2,
-	angularDampTauS: 0.4,
-};
-const nose = { x: 0, y: 0, z: 1 };
+const perf = flightPerformance("courier");
+const nose = v3(0, 0, -1);
+const up = v3(0, 1, 0);
 const dt = 1 / 60;
-const ship = (vel: { x: number; y: number; z: number }) => ({
-	pos: { x: 0, y: 0, z: 0 },
-	vel,
+const STILL: Angular = { pitch: 0, yaw: 0, roll: 0 };
+
+const control = (over: Partial<FlightControl> = {}): FlightControl => ({
+	nose,
+	up,
+	demand: speedDemand(0),
+	assist: true,
+	attitude: NO_ATTITUDE,
+	...over,
 });
+/** The shares of one step flown from `vel`. */
+const sharesOf = (vel: Vec3, over: Partial<FlightControl> = {}) =>
+	thrustShares(
+		stepFlight({ pos: v3(), vel }, control(over), dt, perf).firing,
+		perf,
+	);
 
 test("assist on: accelerating is full drive, holding speed is none", () => {
-	const control = { nose, throttle: 1, assist: true };
-	expect(thrustShares(ship({ x: 0, y: 0, z: 0 }), control, dt, perf).main).toBe(
-		1,
-	);
-	expect(
-		thrustShares(ship({ x: 0, y: 0, z: ASSIST_CAP_KMS }), control, dt, perf)
-			.main,
-	).toBe(0);
-	// Braking fires the drive as hard as accelerating does.
-	expect(
-		thrustShares(
-			ship({ x: 0, y: 0, z: ASSIST_CAP_KMS }),
-			{ ...control, throttle: 0 },
-			dt,
-			perf,
-		).main,
-	).toBe(1);
+	const full = { demand: speedDemand(1) };
+	expect(sharesOf(v3(), full).main).toBe(1);
+	expect(sharesOf(v3(0, 0, -ASSIST_CAP_KMS), full).main).toBe(0);
+	// Braking fires the retro pair as hard as accelerating fires the drive.
+	expect(sharesOf(v3(0, 0, -ASSIST_CAP_KMS)).main).toBe(1);
 	// The last sliver before the setpoint is a share, not all or nothing.
 	const near = ASSIST_CAP_KMS - 0.5 * perf.thrustKms2 * dt;
-	expect(
-		thrustShares(ship({ x: 0, y: 0, z: near }), control, dt, perf).main,
-	).toBeCloseTo(0.5, 9);
+	expect(sharesOf(v3(0, 0, -near), full).main).toBeCloseTo(0.5, 9);
 });
 
-test("assist on: removing drift is the thrusters' work", () => {
-	const control = { nose, throttle: 0, assist: true };
-	expect(
-		thrustShares(ship({ x: 0, y: 0, z: 0 }), control, dt, perf).lateral,
-	).toBe(0);
-	const drifting = thrustShares(ship({ x: 1, y: 0, z: 0 }), control, dt, perf);
+test("assist on: removing drift is the translation pairs' work", () => {
+	expect(sharesOf(v3()).lateral).toBe(0);
+	const drifting = sharesOf(v3(1, 0, 0));
 	expect(drifting.lateral).toBeGreaterThan(0);
 	expect(drifting.lateral).toBeLessThanOrEqual(1);
 });
 
 test("assist off: the drive is the lever, and no one removes drift", () => {
-	const control = { nose, throttle: 0.4, assist: false };
-	const s = thrustShares(ship({ x: 1, y: 0, z: 2 }), control, dt, perf);
+	const s = sharesOf(v3(1, 0, -2), { assist: false, demand: speedDemand(0.4) });
 	expect(s.main).toBe(0.4);
 	expect(s.lateral).toBe(0);
 });
 
 test("the frame is what the drive works against", () => {
 	// Holding speed in a moving frame is still holding speed.
-	const frameVel = { x: 30, y: 0, z: 0 };
-	const control = {
-		nose,
-		throttle: 1,
-		assist: true,
+	const frameVel = v3(30, 0, 0);
+	const s = sharesOf(v3(30, 0, -ASSIST_CAP_KMS), {
+		demand: speedDemand(1),
 		frame: { start: frameVel, end: frameVel },
-	};
-	const s = thrustShares(
-		ship({ x: 30, y: 0, z: ASSIST_CAP_KMS }),
-		control,
-		dt,
-		perf,
-	);
+	});
 	expect(s.main).toBe(0);
 	expect(s.lateral).toBe(0);
 });
 
-test("rotation: the change of rate against full authority", () => {
-	const still = { pitch: 0, yaw: 0, roll: 0 };
-	expect(rotationShare(still, still, dt, perf)).toBe(0);
-	const full = { pitch: perf.angularAccel * dt, yaw: 0, roll: 0 };
-	expect(rotationShare(still, full, dt, perf)).toBeCloseTo(1, 9);
-	// A steady turn fires nothing; a mouse kick past authority is clamped.
-	expect(rotationShare(full, full, dt, perf)).toBe(0);
-	expect(rotationShare(still, { pitch: 0, yaw: 0.5, roll: 0 }, dt, perf)).toBe(
-		1,
-	);
-	expect(rotationShare(still, full, 0, perf)).toBe(0);
+test("rotation: the attitude vents' level", () => {
+	const rotation = (rates: Angular, stick: Angular, impulse = STILL) =>
+		thrustShares(
+			stepAngular(rates, stick, impulse, true, dt, perf).firing,
+			perf,
+		).rotation;
+	expect(rotation(STILL, STILL)).toBe(0);
+	expect(rotation(STILL, { pitch: 1, yaw: 0, roll: 0 })).toBe(1);
+	// A steady turn at the commanded rate fires nothing; a pointer kick past
+	// the couple's authority fires it at full.
+	const steady = { pitch: perf.angularMax.pitch, yaw: 0, roll: 0 };
+	expect(rotation(steady, { pitch: 1, yaw: 0, roll: 0 })).toBe(0);
+	expect(rotation(STILL, STILL, { pitch: 0, yaw: 0.5, roll: 0 })).toBe(1);
+	expect(
+		thrustShares(stepAngular(STILL, STILL, STILL, true, 0, perf).firing, perf)
+			.rotation,
+	).toBe(0);
 });
 
-test("the shares match what stepFlight applies", () => {
-	// Sage round 1: `thrustShares` restates the assist's law, so a change to
-	// the law could leave the drive sound out of step with flight. This flies
-	// the step and holds the share to the change it actually made.
-	const cases = [
-		{ vel: { x: 0, y: 0, z: 0 }, throttle: 1, assist: true },
-		{ vel: { x: 0, y: 0, z: ASSIST_CAP_KMS }, throttle: 0.5, assist: true },
-		{ vel: { x: 0, y: 0, z: 1.99 }, throttle: 1, assist: true },
-		// Half a step short of the setpoint: the one case no clamp hides, so
-		// a share that moved off the law's setpoint reads differently here.
+test("the shares are the change each step applied", () => {
+	// Sage round 1 on #544: a share restated beside the law could leave the
+	// drive sound out of step with flight. It is the firing now, and this
+	// holds the firing to the change the step actually made.
+	const cases: { vel: Vec3; throttle: number; assist: boolean }[] = [
+		{ vel: v3(), throttle: 1, assist: true },
+		{ vel: v3(0, 0, -ASSIST_CAP_KMS), throttle: 0.5, assist: true },
+		{ vel: v3(0, 0, -1.99), throttle: 1, assist: true },
 		{
-			vel: { x: 0, y: 0, z: ASSIST_CAP_KMS - 0.5 * perf.thrustKms2 * dt },
+			vel: v3(0, 0, -(ASSIST_CAP_KMS - 0.5 * perf.thrustKms2 * dt)),
 			throttle: 1,
 			assist: true,
 		},
-		{ vel: { x: 0.8, y: 0, z: 0.5 }, throttle: 0.5, assist: true },
-		// Drift under saturation (sage round 2): 0.2 km/s removes about two
-		// thirds of the drive's authority, so the lateral law is compared as a
-		// figure and not as a clamped 1.
-		{ vel: { x: 0.2, y: 0, z: 0.5 }, throttle: 0.25, assist: true },
-		{ vel: { x: 1, y: 0, z: 2 }, throttle: 0.4, assist: false },
+		{ vel: v3(0.8, 0, -0.5), throttle: 0.5, assist: true },
+		{ vel: v3(0.2, 0, -0.5), throttle: 0.25, assist: true },
+		{ vel: v3(1, 0, -2), throttle: 0.4, assist: false },
 	];
 	for (const c of cases) {
-		const control = { nose, throttle: c.throttle, assist: c.assist };
-		const s = ship({ ...c.vel });
-		const shares = thrustShares(s, control, dt, perf);
-		const before = { ...s.vel };
-		stepFlight(s, control, dt, perf);
-		const authority = perf.thrustKms2 * dt;
-		const along = (s.vel.z - before.z) / authority;
-		const lateral =
-			Math.hypot(s.vel.x - before.x, s.vel.y - before.y) / authority;
-		// The assist's total cap can trim the step below the law's intent only
-		// when the sum is over the cap, which none of these cases reaches.
-		// A share is a level, clamped at full authority. The assist's drift
-		// removal is not thrust-limited in the law — at 0.8 km/s of drift it
-		// removes 2.65x the drive's authority in a step — so it reads as 1.
-		expect(Math.min(1, Math.abs(along))).toBeCloseTo(shares.main, 9);
-		expect(Math.min(1, lateral)).toBeCloseTo(shares.lateral, 9);
-		if (c.vel.x === 0.2) {
-			expect(shares.lateral).toBeGreaterThan(0.3);
-			expect(shares.lateral).toBeLessThan(0.9);
-		}
+		const ship = { pos: v3(), vel: { ...c.vel } };
+		const step = stepFlight(
+			ship,
+			control({ demand: speedDemand(c.throttle), assist: c.assist }),
+			dt,
+			perf,
+		);
+		const shares = thrustShares(step.firing, perf);
+		const along = -(ship.vel.z - c.vel.z);
+		const authority = (along >= 0 ? perf.thrustKms2 : perf.retroKms2) * dt;
+		expect(Math.abs(along) / authority).toBeCloseTo(shares.main, 9);
+		const lateral = Math.max(
+			Math.abs(ship.vel.x - c.vel.x),
+			Math.abs(ship.vel.y - c.vel.y),
+		);
+		expect(lateral / (perf.strafeKms2 * dt)).toBeCloseTo(shares.lateral, 9);
 	}
 });

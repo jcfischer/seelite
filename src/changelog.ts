@@ -30,6 +30,11 @@ export type ChangelogEntry = {
 export const CHANGELOG: readonly ChangelogEntry[] = [
 	{
 		date: "2026-10-02",
+		text: "Ships now fly on their thrusters: with flight assist off a spin keeps going until you stop it, and a saved game keeps the spin.",
+		node: 619,
+	},
+	{
+		date: "2026-10-02",
 		text: "The cockpit now tells you why an entry into a station failed, and why the docking computer let go.",
 		node: 597,
 	},

@@ -37,16 +37,17 @@ const resealed = (
 };
 
 describe("#408 D4 — the saved first-day choice", () => {
-	test("the schema is 7, and 6 is the first version that carries the key", () => {
+	test("the schema is 8, and 6 is the first version that carries the key", () => {
 		// A literal, so the next bump has to come through here.
-		expect(SAVE_SCHEMA_VERSION).toBe(7);
-		expect([...LEGACY_SAVE_SCHEMA_VERSIONS]).toEqual([2, 3, 4, 5, 6]);
+		expect(SAVE_SCHEMA_VERSION).toBe(8);
+		expect([...LEGACY_SAVE_SCHEMA_VERSIONS]).toEqual([2, 3, 4, 5, 6, 7]);
 	});
 
 	test("a version 6 record keeps its choice (#564 made 6 legacy)", () => {
 		const v6 = resealed(serializeSave(saveOf("guided")), (body) => {
 			body.saveSchemaVersion = 6;
 			delete body.commander.ladders;
+			delete body.commander.flight.rates;
 		});
 		expect(parseSave(v6).commander.firstDay).toBe("guided");
 	});
@@ -70,6 +71,7 @@ describe("#408 D4 — the saved first-day choice", () => {
 			body.saveSchemaVersion = 5;
 			delete body.commander.firstDay;
 			delete body.commander.ladders;
+			delete body.commander.flight.rates;
 		});
 		expect(parseSave(v5).commander.firstDay).toBe("free");
 	});
@@ -83,6 +85,7 @@ describe("#408 D4 — the saved first-day choice", () => {
 			const grafted = resealed(serializeSave(saveOf("free")), (body) => {
 				body.saveSchemaVersion = version;
 				delete body.commander.ladders;
+				delete body.commander.flight.rates;
 				if (version === 2) delete body.commander.requests;
 			});
 			expect(() => parseSave(grafted)).toThrow(
