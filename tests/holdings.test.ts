@@ -39,6 +39,7 @@ import {
 	type StationAction,
 	type StationCommerceInput,
 	newCommander,
+	scoopCargo,
 	transactAtStation,
 } from "../src/station-commerce";
 import { type WorldState, newWorld, setDeficits } from "../src/world-state";
@@ -426,6 +427,43 @@ describe("a canister scoop", () => {
 		const { capacityT, usedT } = holdOf(accepted);
 		const out = scoop(accepted, newWorld(1), capacityT);
 		expect(out.holdings.commander.cargo.Food).toBe(capacityT - usedT);
+	});
+
+	/**
+	 * `Game`'s scoop callback returns what went aboard as the hold's gain in
+	 * that good. That equals `scoopCargo`'s own `tonnes` because it takes
+	 * tonne goods only and adds exactly what it took — a partial take and a
+	 * refused kilogram good included.
+	 */
+	test("what the hold gains is what scoopCargo took", () => {
+		const capacity = holdOf(holdings()).capacityT;
+		const cases: [Holdings, string, number][] = [
+			[holdings(), "Food", 3],
+			[holdings({ cargo: { Food: capacity - 2 } }), "Food", 5],
+			[holdings(), "Gold", 1],
+		];
+		for (const [start, commodity, tonnes] of cases) {
+			const out = applyHoldEvent(start, newWorld(1), {
+				kind: "scoop",
+				commodity,
+				tonnes,
+			});
+			const gained =
+				(out.holdings.commander.cargo[commodity] ?? 0) -
+				(start.commander.cargo[commodity] ?? 0);
+			const took = scoopCargo(
+				start.commander,
+				commodity,
+				tonnes,
+				entrustedTonnesAboard(start.requests),
+			);
+			expect(gained).toBe(took.tonnes);
+			expect(out.holdings === start).toBe(!took.accepted);
+		}
+		// The three cases are a full take, a partial one and a refusal.
+		expect(
+			cases.map(([h, c, t]) => scoopCargo(h.commander, c, t, 0).tonnes),
+		).toEqual([3, 2, 0]);
 	});
 
 	test("a full hold leaves the canister in space and the holdings as they were", () => {

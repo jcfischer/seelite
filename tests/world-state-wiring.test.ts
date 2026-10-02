@@ -310,9 +310,9 @@ describe("the Game's world writes", () => {
 	test("every world holdings.ts hands back is the one it was given or a writer's", async () => {
 		// The other half of the `outcome.world;` exemption above: `Game`
 		// adopts whatever world the module returns, so the module is where a
-		// hand-built world would come from. Each `world:` property and each
-		// `unchanged(…)` call is either the world passed in or a call to one of
-		// `world-state.ts`'s writers.
+		// hand-built world would come from. Each `world:` property and the
+		// world argument of each `unchanged(…)` call is either the world passed
+		// in or a call to one of `world-state.ts`'s writers.
 		const HOLDINGS = await Bun.file(
 			new URL("../src/holdings.ts", import.meta.url),
 		).text();
@@ -331,6 +331,13 @@ describe("the Game's world writes", () => {
 				!WRITERS.some((w) => v.startsWith(`${w}(`)),
 		);
 		expect(byHand).toEqual([]);
+		// A refusal's world is `unchanged`'s second argument, which no
+		// `world:` property shows. Both of today's refusals pass `world`.
+		const refused = [
+			...HOLDINGS.matchAll(/\bunchanged\(\s*\w+,\s*([^,)]+)/g),
+		].map((m) => m[1].trim());
+		expect(refused.length).toBeGreaterThanOrEqual(2);
+		expect(refused.filter((w) => w !== "world")).toEqual([]);
 		// Shorthand `{ holdings: next, world, signals }` is the world passed in.
 		expect(HOLDINGS).not.toMatch(/world:\s*\{/);
 	});

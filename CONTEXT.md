@@ -198,9 +198,13 @@ that the purchase basis follows the cargo, and that a mark carries the flown
 hull's **Hold**, has one copy. `Game` keeps the four fields (one save schema,
 #437) and adopts what the module returns; a refusal returns the very objects it
 was given.
-_Avoid_: Commander (the save slot and the console tab already take two senses),
-purse (`ladder.ts`'s local credits and cargo), ledger (an **Incident**'s
-record of offences)
+_Avoid_: purse (`ladder.ts`'s local credits and cargo), ledger (an
+**Incident**'s record of offences)
+
+**Scope note, not an _Avoid_ line.** **Commander** is canonical, so it does not
+belong on the _Avoid_ line above. It already names two things a player meets —
+the save in the overlay and the console tab — and the commander *state*
+(`CommanderState`) is one of the four parts of Holdings, not the whole.
 
 **Legal heat**:
 The player's per-galaxy offence score: an offence adds to it, it decays lazily
