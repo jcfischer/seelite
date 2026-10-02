@@ -155,6 +155,7 @@ export const LEVERS = Object.freeze({
 	537: "the cruise light shift: the star field crowding to the nose and coloured into #532's starbow, keyed to cruise speed, with the bodies and markers left true",
 	583: "the Shipyard tab: one row per hull, carrying its one reason, or its net price and how far it reaches from here",
 	590: "an outer rung's formation family and its visible ice surface",
+	597: "the prompt line's docking notice: a failed entry in amber, a docking-computer let-go in red",
 });
 
 /**
@@ -229,6 +230,12 @@ export const LEVERS = Object.freeze({
  *   pointer there and reads `hovered()` back by index; a `null` or another
  *   index fails the run (#177 D4). The frame holds the label's look only —
  *   hold, switch and release are `probe-navigation-console.mjs`'s (D3).
+ * - `docking-notice` — #597's prompt line, on the trade station's aperture
+ *   axis in cockpit view. `notice: "bounce"` crosses the plane mis-rolled
+ *   under a live grant, so the line is the amber failed entry; `"let-go"`
+ *   engages the docking computer with no grant, so it is the red refusal.
+ *   Both run the game's own crossing and computer step. The frame is the
+ *   line's tone, place and legibility over a station.
  */
 export const SHOT_KINDS = Object.freeze([
 	"station-axis",
@@ -243,6 +250,7 @@ export const SHOT_KINDS = Object.freeze([
 	"cruise",
 	"chart",
 	"shipyard-tab",
+	"docking-notice",
 ]);
 
 /**
@@ -979,6 +987,23 @@ export const VIEWS = Object.freeze([
 		shot: { kind: "duel", headLook: "left", aftermath: "log", view: "cockpit" },
 	},
 	/**
+	 * #597's two notices. Before the witchspace rows, which jump, and after the
+	 * duel, whose placer resets the flight; this placer marks the world written,
+	 * so the next row boots clean.
+	 */
+	{
+		name: "docking-notice-bounce",
+		covers: [597],
+		what: "A mis-rolled entry at the trade station, just bounced: ENTRY FAILED and the roll against its tolerance, amber, on the prompt line above the floor.",
+		shot: { kind: "docking-notice", notice: "bounce", view: "cockpit" },
+	},
+	{
+		name: "docking-notice-let-go",
+		covers: [597],
+		what: "The docking computer engaged without clearance off the trade station's axis: AUTOPILOT OFF · no live clearance, red, on the prompt line.",
+		shot: { kind: "docking-notice", notice: "let-go", view: "cockpit" },
+	},
+	/**
 	 * #532's fixed-phase strip (#195 D4). The wind-up runs on wall-clock time,
 	 * so an ordinary capture cannot land on the same frame twice; each row holds
 	 * the transition at a phase through `holdWitchspace` and holds the clock, so
@@ -1376,6 +1401,8 @@ const SHOT_REQUIREMENTS = {
 	chart: (s) => CHART_SPOTS.includes(s.spot),
 	// Which rungs the rows are read at (#583): a new game's, or the top.
 	"shipyard-tab": (s) => s.rungs === "new-game" || s.rungs === "top",
+	// Which of #597's two notices the frame shows.
+	"docking-notice": (s) => s.notice === "bounce" || s.notice === "let-go",
 	duel: (s) =>
 		["forward", "right", "left"].includes(s.headLook) &&
 		(s.aftermath === undefined ||
