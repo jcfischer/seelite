@@ -3,7 +3,7 @@
  *
  * Every law is swept over frame deltas — a law that only holds at one `dt` is
  * not a law — and the reproduction rows run against #5's laws as they were,
- * kept in `tests/helpers/legacy-flight.ts`, and against #181's handling law,
+ * kept in `scripts/lib/legacy-flight.ts`, and against #181's handling law,
  * kept in `scripts/measure-vent-shares.ts`.
  */
 
@@ -37,7 +37,7 @@ import {
 	roundShare,
 	solveVentShares,
 } from "../scripts/measure-vent-shares";
-import { legacyAngular, legacyAssisted } from "./helpers/legacy-flight";
+import { legacyAngular, legacyAssisted } from "../scripts/lib/legacy-flight";
 
 const STEPS = [1 / 120, 1 / 60, 0.05, MAX_DT];
 const COURIER = flightPerformance("courier");

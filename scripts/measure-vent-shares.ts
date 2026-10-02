@@ -37,7 +37,7 @@ import {
 	PLAYER_BASELINE_HULL,
 	type VentShares,
 } from "../src/hull";
-import { legacyAngular } from "../tests/helpers/legacy-flight";
+import { legacyAngular } from "./lib/legacy-flight";
 import {
 	ASSIST_CAP_KMS,
 	type Angular,

@@ -1,5 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import {
+	AttitudeFollower,
 	type Attitude,
 	attitudeError,
 	attitudeStick,
@@ -87,6 +88,16 @@ describe("holding an attitude through the vents (#619)", () => {
 			const { worst } = hold(LEVEL, () => target, id, 90, 0.05);
 			expect(worst).toBeLessThan(1e-6);
 		});
+
+	test("a follower asked for no nose at all keeps the hull's, and asks nothing", () => {
+		const stick = new AttitudeFollower().stick(
+			LEVEL,
+			{ nose: v3(), up: v3(0, 1, 0) },
+			flightPerformance("courier"),
+			0.05,
+		);
+		expect(stick).toEqual({ pitch: 0, yaw: 0, roll: 0 });
+	});
 
 	test("a slot spinning at 3 rpm is followed with a lag under a degree", () => {
 		const spin = (3 * 2 * Math.PI) / 60;

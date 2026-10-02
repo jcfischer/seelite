@@ -96,3 +96,7 @@ export const rotateAbout = (v: Vec3, axis: Vec3, angle: number): Vec3 => {
 		scale(axis, dot(axis, v) * (1 - c)),
 	);
 };
+
+/** `v` held to `[lo, hi]`. */
+export const clamp = (v: number, lo: number, hi: number): number =>
+	Math.min(hi, Math.max(lo, v));

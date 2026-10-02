@@ -23,6 +23,7 @@ import type { Angular, FlightPerformance } from "./sim";
 import {
 	type Vec3,
 	add,
+	clamp,
 	cross,
 	dot,
 	length,
@@ -38,9 +39,6 @@ export interface Attitude {
 	up: Vec3;
 }
 
-const clamp = (v: number, lo: number, hi: number): number =>
-	Math.min(hi, Math.max(lo, v));
-
 /** The nose's arc onto `want`: a unit axis and an angle. Half a turn away
  *  the axis vanishes and any perpendicular will do, so `up` stands in. */
 const noseArc = (from: Attitude, want: Vec3): { axis: Vec3; angle: number } => {
@@ -55,14 +53,18 @@ const noseArc = (from: Attitude, want: Vec3): { axis: Vec3; angle: number } => {
  * the nose's arc first, then the roll about the nose that lays `up` on the
  * wanted up.
  */
+/** The roll about `nose` that lays `up` on `wantUp` once that is laid across
+ *  `nose`, radians, signed about aft (`-nose`), the sense `main.ts` rolls. */
+const bankAbout = (up: Vec3, wantUp: Vec3, nose: Vec3): number => {
+	const across = sub(wantUp, scale(nose, dot(wantUp, nose)));
+	return Math.atan2(dot(cross(up, across), scale(nose, -1)), dot(up, across));
+};
+
 export function attitudeError(from: Attitude, want: Attitude): Vec3 {
 	const { axis: arc, angle: off } = noseArc(from, want.nose);
 	const swung = off > 0 ? rotateAbout(from.up, arc, off) : from.up;
-	// The wanted up, laid in the plane across the wanted nose.
-	const wantUp = sub(want.up, scale(want.nose, dot(want.up, want.nose)));
-	const aft = scale(want.nose, -1);
-	const bank = Math.atan2(dot(cross(swung, wantUp), aft), dot(swung, wantUp));
-	return add(scale(arc, off), scale(aft, bank));
+	const bank = bankAbout(swung, want.up, want.nose);
+	return add(scale(arc, off), scale(want.nose, -bank));
 }
 
 /**
@@ -96,11 +98,7 @@ export function attitudeStick(
 	// that cannot match a fast spin cones round its heading for good.
 	const arc = noseArc(from, want.nose);
 	const nose = scale(arc.axis, arc.angle);
-	const wantUp = sub(want.up, scale(from.nose, dot(want.up, from.nose)));
-	const bank = Math.atan2(
-		dot(cross(from.up, wantUp), aft),
-		dot(from.up, wantUp),
-	);
+	const bank = bankAbout(from.up, want.up, from.nose);
 	const stick = (e: number, carry: number, axis: keyof Angular) => {
 		const close =
 			Math.sign(e) *
@@ -139,14 +137,16 @@ export class AttitudeFollower {
 
 	/** `asked` need not be orthogonal: a computer states a nose and an up
 	 *  separately. Its up is laid across its nose here, and one parallel to
-	 *  the nose keeps the hull's own. */
+	 *  the nose keeps the hull's own; a zero nose keeps the hull's nose. */
 	stick(
 		from: Attitude,
 		asked: Attitude,
 		perf: FlightPerformance,
 		dt: number,
 	): Angular {
-		const nose = scale(asked.nose, 1 / length(asked.nose));
+		// A degenerate command keeps the hull's own nose rather than a NaN.
+		const asks = length(asked.nose);
+		const nose = asks < 1e-12 ? from.nose : scale(asked.nose, 1 / asks);
 		const across = sub(asked.up, scale(nose, dot(asked.up, nose)));
 		const want = {
 			nose,

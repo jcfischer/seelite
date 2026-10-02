@@ -258,7 +258,9 @@ in force inside it. No vent is drawn for it, and no momentum accounting applies.
 - **Docking at spin is re-measured.** Roll authority now comes from the vents,
   so `scripts/measure-computer-approach.ts` is re-run, and the #26 roster fit at
   check 4's limit is re-checked. #619 did both: `docking.md` §4 and §7 carry the
-  figures. The roster fit reads envelopes, which the vents do not move.
+  approach figures, and `tests/aperture-fit.test.ts` re-run on #619's branch
+  reads the same tightest margin, 6.6 m on the miner rolled 50° through a slot,
+  as `docking.md` states. It reads envelopes, which the vents do not move.
 - **Rotation can tunnel.** Uncapped rotation at `MAX_DT` means an attitude, not
   only a position, can cross a thin structure in one step. The collision spec
   owed by #302 must cover the angular case.

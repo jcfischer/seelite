@@ -1,6 +1,9 @@
 /**
  * #5's flight laws as `src/sim.ts` ran them before the vent substrate (#619),
- * kept runnable as the reference `tests/vents.test.ts` holds the vents to.
+ * kept runnable as the reference `tests/vents.test.ts` holds the vents to and
+ * `scripts/measure-vent-shares.ts` prints the ease-out cost against. Here,
+ * beside the script, so a tidy-up of the test helpers cannot break the tool
+ * that re-solves a hull's shares.
  *
  * Copied, not imported: the module they lived in no longer has them. Two
  * things in them are gone on purpose, and the tests say where the vents part
@@ -9,10 +12,7 @@
  */
 
 import { ASSIST_CAP_KMS, type Angular } from "../../src/sim";
-import { type Vec3, add, dot, length, scale, sub } from "../../src/vec3";
-
-const clamp = (v: number, lo: number, hi: number): number =>
-	Math.min(hi, Math.max(lo, v));
+import { type Vec3, add, clamp, dot, length, scale, sub } from "../../src/vec3";
 
 export interface LegacyPerformance {
 	thrustKms2: number;

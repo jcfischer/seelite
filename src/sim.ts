@@ -1012,7 +1012,13 @@ function fireAxis(
 ): void {
 	if (fraction === 0) return;
 	for (const slot of fraction > 0 ? slots.plus : slots.minus)
-		levels[slot] = Math.min(1, (levels[slot] ?? 0) + Math.abs(fraction));
+		addLevel(levels, slot, Math.abs(fraction));
+}
+
+/** Fire `slot` `level` harder: two demands on one vent sum, capped at full.
+ *  The one copy of that rule. */
+function addLevel(levels: VentLevels, slot: VentSlot, level: number): void {
+	levels[slot] = Math.min(1, (levels[slot] ?? 0) + level);
 }
 
 /**
@@ -1068,8 +1074,21 @@ export function flightPerformance(
 	};
 }
 
-/** What a whole hull's vents deliver on each axis at full. */
-function ventAuthority(id: HullId) {
+/** What a whole hull's vents deliver on each axis at full: a property of the
+ *  hull's table alone, so worked out once per hull. */
+const ventAuthority = (() => {
+	const cache = new Map<HullId, ReturnType<typeof ventAuthorityOf>>();
+	return (id: HullId) => {
+		let hit = cache.get(id);
+		if (!hit) {
+			hit = ventAuthorityOf(id);
+			cache.set(id, hit);
+		}
+		return hit;
+	};
+})();
+
+function ventAuthorityOf(id: HullId) {
 	const spec = HULL_SPECS[id];
 	const inertia = boxInertia(spec.massT, spec.env);
 	const axisSlots = axisSlotsOf(spec.vents);
@@ -1124,10 +1143,10 @@ export interface AngularStep {
 /** The angular step of a hull that fired nothing: for a caller that turns no
  *  vent this step (a placed attitude, a test of translation alone). */
 export const NO_ATTITUDE: AngularStep = Object.freeze({
-	rates: { pitch: 0, yaw: 0, roll: 0 },
-	firing: {},
-	saturated: CLEAR_ANGULAR,
-	linearKms2: v3(),
+	rates: Object.freeze({ pitch: 0, yaw: 0, roll: 0 }),
+	firing: Object.freeze({}),
+	saturated: Object.freeze({ ...CLEAR_ANGULAR }),
+	linearKms2: Object.freeze(v3()),
 });
 
 /**
@@ -1377,7 +1396,7 @@ export function stepFlight(
 		return {
 			firing: { ...control.attitude.firing },
 			saturated: clear,
-			rates: control.attitude.rates,
+			rates: { ...control.attitude.rates },
 		};
 
 	// Everything happens in the frame — see `FrameMotion`. The velocity is
@@ -1424,7 +1443,7 @@ export function stepFlight(
 		VentSlot,
 		number,
 	][])
-		firing[slot] = Math.min(1, (firing[slot] ?? 0) + level);
+		addLevel(firing, slot, level);
 	return {
 		firing,
 		saturated,
