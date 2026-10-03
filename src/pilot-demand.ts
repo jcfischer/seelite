@@ -79,6 +79,18 @@ export function pilotHands(
 	};
 }
 
+/**
+ * Whether the held throttle keys and the triggers move the speed lever.
+ *
+ * With the assist on, yes, as before #620. With it off, no: they fire the
+ * drive instead (`pilotDemand`). **Cruise is the exception, and it is the
+ * map's:** the assist toggle is not in force inside cruise (#10), and cruise
+ * reads the lever as its own throttle, so a pilot who engaged cruise with the
+ * assist off still sets the cruise throttle with the same keys (sage round 3).
+ */
+export const leverMoves = (assist: boolean, cruising: boolean): boolean =>
+	assist || cruising;
+
 const unit = (x: number) => Math.max(-1, Math.min(1, x));
 const pair = (plus: boolean, minus: boolean) =>
 	(plus ? 1 : 0) - (minus ? 1 : 0);

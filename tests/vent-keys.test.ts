@@ -29,6 +29,7 @@ import { boundNames } from "../src/key-names";
 import { padFlightAxes } from "../src/pad-bindings";
 import {
 	heldVents,
+	leverMoves,
 	type PilotHands,
 	pilotDemand,
 	pilotHands,
@@ -238,6 +239,63 @@ describe("§3.6: what the hands ask for", () => {
 		expect(
 			pilotDemand(hands({ assist: false, padHeave: -1, dorsal: true })).heave,
 		).toBe(0);
+	});
+});
+
+describe("§3.6 and cruise: who moves the speed lever", () => {
+	test("the keys move it with the assist on, and fire the drive with it off", () => {
+		expect(leverMoves(true, false)).toBe(true);
+		expect(leverMoves(false, false)).toBe(false);
+	});
+
+	test("in cruise the assist is not in force, so the keys set the cruise throttle", () => {
+		expect(leverMoves(false, true)).toBe(true);
+		expect(leverMoves(true, true)).toBe(true);
+	});
+});
+
+describe("the vent commands' ids are a stored schema", () => {
+	test("each id is pinned, so renaming a slot cannot orphan a saved binding unseen", () => {
+		// A bound vent is saved in `seelite:bindings` under this id. A slot
+		// renamed in `VENT_SLOTS` renames its command, and a player's saved
+		// binding then loads as an unknown control: this row goes red first.
+		expect(VENT_COMMANDS.map((c) => c.id)).toEqual([
+			"vent.main",
+			"vent.retroPort",
+			"vent.retroStarboard",
+			"vent.strafeForePort",
+			"vent.strafeAftPort",
+			"vent.strafeForeStarboard",
+			"vent.strafeAftStarboard",
+			"vent.strafeForeDorsal",
+			"vent.strafeAftDorsal",
+			"vent.strafeForeVentral",
+			"vent.strafeAftVentral",
+			"vent.forePortLateral",
+			"vent.foreStarboardLateral",
+			"vent.aftPortLateral",
+			"vent.aftStarboardLateral",
+			"vent.foreDorsalVertical",
+			"vent.foreVentralVertical",
+			"vent.aftDorsalVertical",
+			"vent.aftVentralVertical",
+			"vent.portDorsalRoll",
+			"vent.portVentralRoll",
+			"vent.starboardDorsalRoll",
+			"vent.starboardVentralRoll",
+		]);
+	});
+
+	test("a held pad button is refused for a vent, not stored and dead (#496)", () => {
+		const id = ventCommand("main");
+		expect(() =>
+			rebind(DEFAULT_BINDINGS, id, defaultTrigger(id), {
+				kind: "pad-button",
+				button: "home",
+				hold: true,
+				contexts: [],
+			}),
+		).toThrow(RebindRefused);
 	});
 });
 

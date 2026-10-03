@@ -312,6 +312,7 @@ import {
 import { AttitudeFollower } from "./attitude-hold";
 import {
 	heldVents,
+	leverMoves,
 	pilotDemand,
 	pilotHands,
 	STRAFE_COMMANDS,
@@ -13711,7 +13712,8 @@ class Game {
 		// §3.6). Off, the same keys and triggers fire the main drive and the
 		// retro vents while held (`pilotDemand`), and the lever keeps the speed
 		// the assist will hold when it is switched back on.
-		const lever = !handsHeld && this.assist;
+		const lever =
+			!handsHeld && leverMoves(this.assist, this.regime === "cruise");
 		if (lever && this.held("fly.throttleUp"))
 			this.throttle = Math.min(1, this.throttle + dt * throttleRate);
 		if (lever && this.held("fly.throttleDown"))
