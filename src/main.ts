@@ -16204,8 +16204,10 @@ class Game {
 	 * a changed reference at the adopt point — a dirty mark per write, each one
 	 * arming the next. The live world keeps its last event's clock, which every
 	 * reader already projects from (recovery is derived, never ticked, and
-	 * every writer advances first), and `advanceTo` is idempotent, so the
-	 * snapshot is the same bytes it was when this wrote the advance back.
+	 * every writer advances first). The snapshot is the same bytes it was when
+	 * this wrote the advance back, because `advanceTo` is path-independent —
+	 * advancing in two steps equals advancing once — which
+	 * `tests/world-state.test.ts` holds across a completion.
 	 */
 	saveEnvelope(): SaveEnvelope {
 		return {

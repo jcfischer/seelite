@@ -500,11 +500,10 @@ export function adoptEffects(
 	const was = before.holdings;
 	const now = after.holdings;
 	const requests = now.requests !== was.requests;
+	// Every Holdings field, read off the type's own keys: a field added later
+	// saves without anybody adding it here.
 	const moved =
-		requests ||
-		now.commander !== was.commander ||
-		now.ladders !== was.ladders ||
-		now.ladderPending !== was.ladderPending ||
+		(Object.keys(now) as (keyof Holdings)[]).some((k) => now[k] !== was[k]) ||
 		after.world !== before.world;
 	const press = cause === "settlement" || cause === "market";
 	return {

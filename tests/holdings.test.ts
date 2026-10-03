@@ -991,6 +991,36 @@ describe("the adopt point (#631)", () => {
 			"player's kill": ["requestRevision", "save"],
 			"player's strike": ["save"],
 		});
+		// And the signals the adopt point applies for every cause: only a press
+		// on the board carries a sentence, only a kill readies a request (a hull
+		// purchase is the one `hullChanged`, held in "a market trade" above), so
+		// widening where `adopt` reads them cannot sound a new cue or print a
+		// new sentence.
+		const signalled = (out: HoldOutcome) =>
+			Object.entries(out.signals)
+				.filter(([, value]) => value !== null && value !== false)
+				.map(([name]) => name);
+		expect({
+			"accepted settlement": signalled(accepted),
+			"refused settlement": signalled(refused),
+			"accepted market": signalled(bought),
+			"accepted scoop": signalled(scooped),
+			"refused scoop": signalled(spilled),
+			arrival: signalled(arrived),
+			dock: signalled(docked),
+			"player's kill": signalled(killed),
+			"player's strike": signalled(struck),
+		}).toEqual({
+			"accepted settlement": ["message"],
+			"refused settlement": ["message"],
+			"accepted market": [],
+			"accepted scoop": [],
+			"refused scoop": [],
+			arrival: [],
+			dock: [],
+			"player's kill": ["readied"],
+			"player's strike": [],
+		});
 	});
 
 	test("an accepted event saves once: the same outcome adopted again changes nothing", () => {

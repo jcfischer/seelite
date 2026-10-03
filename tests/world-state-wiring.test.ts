@@ -533,7 +533,7 @@ describe("the Game's world writes", () => {
 	});
 
 	test("every world holdings.ts hands back is the one it was given or a writer's", async () => {
-		// The other half of the `outcome.world;` exemption above: `Game`
+		// The other half of the `next.world;` exemption above: `Game`
 		// adopts whatever world the module returns, so the module is where a
 		// hand-built world would come from. Each `world:` property and the
 		// world argument of each `unchanged(…)` call is either the world passed
