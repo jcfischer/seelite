@@ -248,6 +248,25 @@ twice `V_GATE`. A ship that holds still while a Coriolis corner turns into it
 is struck at that speed. That follows from the rotating-frame Constraint. It is
 named here so that it is a known behaviour and not a reported bug.
 
+### 3.1 Resting on a surface, at any dt
+
+The closing speed is read at the **time of impact within the step**, not at
+the end of the step. The step's velocity change is spread over the step, so a
+ship that starts a gap `g` from a surface and accelerates at `a` meets it at
+about `sqrt(v0² + 2·a·g)`, whatever dt is.
+
+A pair that is already **touching** at the start of a step is in **resting
+contact**: the inward normal component of the relative velocity is removed,
+and there is no damage and no bounce. Touching means a separation no larger
+than the placement separation the bounce uses, so a ship the bounce has just
+placed is touching on the next step. Damage and the bounce apply only to a pair
+that was apart at the start of the step.
+
+The two rules together make §9.1.4 passable. A ship held against a surface by
+thrust is in resting contact on every step, at any dt. A ship that bounces off
+returns at a lower speed each time, and resting contact catches it once a
+bounce no longer carries it clear of the placement separation (derived).
+
 ---
 
 ## 4. How an impact is found within one tick (C3)
@@ -356,7 +375,7 @@ line.
 
 **Owed, and not built by this spec:**
 
-1. **Traffic must not hit its own world.** A route that can be interrupted by a
+1. **Traffic must not hit its own world.** A route that can be interrupted by an
    impact needs one of two things: avoidance in the route law, or a corpus row
    proving that no projected route outside its exempt phases brings a carrier's
    box into a proxy, a body's sphere, or another carrier's box. Without either,
@@ -418,12 +437,13 @@ browser probe.
    is at most a quarter of the smallest `headOnPool`. At the 2 km/s assist cap
    it is at least the largest. The rows read `DOCKING_DAMAGE_SCALE` and the
    hull table, not a parameter.
-4. **A ship resting on a surface pays nothing, and dt does not change it.** A hull holding full
-   thrust into a surface for ten seconds takes zero damage at `dt` = 1/144,
-   1/60 and `MAX_DT`. A ram at 0.5 km/s costs the same damage at all three.
-   The interceptor accelerates at 2.8 km/s², so a threshold sized from one
-   tick of thrust would be above the gate and would depend on dt. This row
-   forbids that design.
+4. **A ship resting on a surface pays nothing, and dt does not change it**
+   (§3.1). A hull holding full thrust into a surface for ten seconds takes
+   zero damage at `dt` = 1/144, 1/60 and `MAX_DT`. A ram at 0.5 km/s costs the
+   same damage at all three, within a stated tolerance. The interceptor
+   accelerates at 2.8 km/s², so one tick of its thrust at `MAX_DT` is
+   0.28 km/s. A law that read the end-of-step velocity would bill that every
+   tick and would depend on dt. This row forbids that design.
 5. **No tunnelling.** At the 2 km/s cap and at assist-off speeds above it, a
    box swept at a primitive thinner than one tick's travel makes an impact. A
    box turned through a thin boom in one tick at a rate above any hull's makes
@@ -463,7 +483,7 @@ browser probe.
     courier.
 14. **Traffic** (§6). A hull-reaching impact on a carrier writes `disable`
     then `repair-start`, as a shot would. A shield-only impact writes nothing.
-    The corpus row of §6.1 is green, or avoidance exists.
+    The corpus row of §6, item 1, is green, or avoidance exists.
 15. **The docking computer makes no impact.** `docking.md` §9.1.11's run, from
     the vicinity to docked, asserts that no impact occurred as well as that no
     check was broken.
@@ -471,7 +491,8 @@ browser probe.
 ### 9.2 Browser probe (Playwright)
 
 1. **A ship stops at a hull.** A scripted approach at a station's face stops
-   at the proxy, bounces and survives at a speed under the lethal bound. This
+   at the proxy, bounces and survives when it meets the face at `V_GATE`,
+   which bound 1 of §3 makes survivable for every hull. This
    replaces `docking.md` §9.2.4's subject (§10).
 2. **A ship stops at a pad berth** and at a shipyard boom, which are the
    sparse forms where a too-generous proxy would show as an invisible wall.
@@ -487,7 +508,7 @@ before merge.
 
 ## 10. What this makes false, and where it is amended
 
-Each spec line is amended in this change. A code line is amended by #303.
+Each spec line is amended in this change, except where its own table says otherwise. A code line is amended by #303.
 
 | Rule | Owner | Change |
 |---|---|---|
@@ -499,7 +520,7 @@ Each spec line is amended in this change. A code line is amended by #303.
 | "#75 made Traffic collidable" with no law behind it | `in-system-route-traffic.md` §5 | Points here; an impact is a landed hit (§6) |
 | "#75 and #362 have since added both" | `station-traffic.md` §3.1 | Collision is decided, not added. #303 builds it. |
 | "Swept collision at `MAX_DT` — the collision spec owed by #302" | `flight-model.md` §1, §4 | Points here; §4.1 answers the angular case |
-| The false-rules table's first row | `civilian-combat.md` | Notes that an impact uses H3d's route |
+| The false-rules table's first row | `civilian-combat.md` | Not here. That table is amended by the change that builds its rows, so #303 adds that an impact uses H3d's route. |
 | "A contact is a saved Carrier deviation" | Map #1 Constraints | Only a hull-reaching impact. Amended on the map when this merges. |
 | `collisionExempt`'s comment: "#75 inherits the other half of obligation 8" | `src/dock-session.ts` | §9.1.8 here. A code comment, so #303 amends it. |
 
@@ -536,7 +557,8 @@ rules for every combat ship.
 5. **The proxy is checked as a container and not as a fit** (§2.2). A proxy
    that wraps a sparse form in a box passes every headless row. Only flying
    it (§9.2.2) shows the invisible wall.
-6. **A ship placed inside is a ghost until it leaves** (§4.3). That is safe
-   for every placement path today. A future path that places a ship deep
-   inside a solid could leave it there, flying through the structure until it
-   comes out. §9.1.7 counts the paths so that a new one is seen.
+6. **A ship placed inside is a ghost until it leaves** (§4.3). Whether any
+   placement path starts a ship inside today is not measured; §9.1.7 measures
+   it. A path that places a ship deep inside a solid would leave it there,
+   flying through the structure until it comes out. Counting the paths is what
+   makes such a path visible.

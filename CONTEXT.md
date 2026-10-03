@@ -30,8 +30,9 @@ One collision event: a ship's hull box meeting a body's sphere, a station's
 **Collision proxy** or another ship's box during normal flight. Its closing
 speed is relative to the surface met, in that body's rotating frame where it
 spins. `docs/specs/collision.md` owns the law (#75, #302); #303 builds it.
-_Avoid_: contact (a **Display contact** is a targetable identity, not an event),
-collision (the system, not one event).
+**Scope note, not an _Avoid_ line.** "Contact" is a **Display contact**, a
+targetable identity rather than an event; "collision" names the system; one
+event is an impact.
 
 **Collision proxy**:
 A station form's declared set of convex primitives that collision reads in
