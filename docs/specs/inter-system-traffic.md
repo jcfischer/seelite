@@ -4,8 +4,8 @@
 > [“Inter-system traffic: derived hyperspace departures and
 > arrivals”](https://github.com/jcfischer/seelite/issues/262). D1–D16 are the
 > principal's rulings from the grilling recorded on that node; this document
-> states them as law and adds nothing they did not decide, except where a
-> section says it derives a consequence.
+> states them as law. A section or paragraph marked *(derived)* is a consequence
+> drawn from those rulings and the shipped specs, not a ruling itself.
 
 ## 1. A hauler is a home-owned Traffic actor that leaves the system (D1, D2, D3)
 
@@ -27,7 +27,7 @@ every roster — is always local, so a station's signature ship is the one
 always seen in its own system. Every other slot is a hauler when two things
 hold: its vocation draw falls under the hauler share (§10), and its static
 eligible set (§2) is not empty. Otherwise it is a local. The draw uses the
-roster's existing idiom, `fnv1a(`${localCarrierId}|vocation|${berthSeed}`)`,
+roster's existing idiom, ``fnv1a(`${localCarrierId}|vocation|${berthSeed}`)``,
 so a slot's vocation is independent of every other slot and of visit order.
 
 Rejected: transferring an actor to the destination's roster (it breaks the
@@ -96,12 +96,12 @@ tOut)` and `arrivalPoint(destRecord, destContents, homePos, tOut)`; on the
 way home they are the same pair with the roles swapped, at `tBack`.
 
 The two points pair up. Haulers leaving `A` for `B` wait at the point where
-haulers and the player arriving in `A` from `B` appear. Lanes form at real
+haulers and the player arriving in `A` from `B` appear. Lane points are real
 places that a pilot can fly to.
 
 Each hauler's actual lane point is the exact point plus an offset in the plane
 perpendicular to the bearing: a point in an annulus (§10) drawn from
-`fnv1a(`${carrierKey}|lane|${awayOrdinal}`)`. The same offset serves both ends
+``fnv1a(`${carrierKey}|lane|${awayOrdinal}`)``. The same offset serves both ends
 of one voyage. The player keeps the exact point, so no hauler is ever placed on
 a player's arrival. Two haulers can still overlap by rare chance, and a hauler
 can overlap a player who flew onto its point. That is `collision.md` §4.3's
@@ -130,7 +130,7 @@ uncontended time from that system's Berth to its lane point, wind-up included.
   times its wind-up so the jump fires at that instant. Ships idling at lane points are
   therefore normal, and visible.
 - The far side always sees the jump at the jump instant. `B` derives an inbound hauler
-  from `A`'s *schedule* alone, never from `A`'s queues, lane or player history.
+  from `A`'s *schedule* alone, never from `A`'s queues, Transit lane or player history.
   That is what removes the recursion: `A`'s queues hold visitors from `C`, whose
   departures would depend on `C`'s queues, and so on across the galaxy. With
   anchored instants, every inbound time is a pure function of seed, schedule and overlay,
@@ -145,10 +145,32 @@ uncontended time from that system's Berth to its lane point, wind-up included.
   fly home. This spec adds nothing to that: it is H3c's rule for every struck
   carrier, and an in-system divert shows the same jump today.
 
-The world-state overlay is the one input from `A` that `B` reads: a hauler
-whose row is `destroyed`, or `repairing`, is absent from `B` (§8). Rows are
-keyed by `CarrierKey` in the per-galaxy overlay, so `B` reads them directly and
-evaluates nothing in `A`.
+The world-state overlay is the one *mutable* input from `A` that `B` reads: a
+hauler whose row is `destroyed`, or `repairing`, is absent from `B` (§8). Rows
+are keyed by `CarrierKey` in the per-galaxy overlay, so `B` reads them
+directly. Everything else `B` needs from `A` — its seed, contents, rosters and
+schedules — is regenerated from the seed. `B` never evaluates `A`'s queues,
+Transit lane or history.
+
+### 4.1 Overrun *(derived)*
+
+On the observed side a hauler obeys `in-system-route-traffic.md` §2 like any
+Traffic actor; the jump instant adds no exception to it.
+
+- A late hauler completes the leg it is on. It never speeds up, skips a queue
+  or reverses a leg to make up its jump instant.
+- At most one movement intent is pending, with the original boundary as its
+  `readyAt`. A boundary that passes while the hauler is still on an earlier
+  voyage coalesces into the current desired state and is not queued behind it:
+  a voyage whose interval ends before the hauler is free to fly it is skipped,
+  and its `awayOrdinal` is never renumbered. The voyage it does fly is the one
+  for the interval it is free in, flown late.
+- A hauler still queued at `B` past `tBack` stays in `B` under `B`'s laws and
+  jumps when it is free. The unobserved home side meanwhile shows it on its
+  anchored schedule (§4).
+- This live divergence is current-system state, like every routine delay in
+  #261 §4.1. When the player leaves the observed system, or reloads, the hauler
+  is derived from its anchored schedule again.
 
 ## 5. The hauler cycle and its bounds (D8, D16b)
 
@@ -161,7 +183,10 @@ upper bound (its orbit, plus its parent's for a moon or a station), written
 `r̂(body)`. `arrivalPoint` starts at `ARRIVAL_DISTANCE_AU` and only ever pushes
 outward to the far edge of a body's clearance sphere, so its distance is at most
 `âS = max(ARRIVAL_DISTANCE_AU, max over bodies of r̂ + ARRIVAL_CLEARANCE_AU)`.
-The distance from a lane point to station `s` is then at most `âS + r̂(s)`.
+The distance from a lane point to station `s` is then at most
+`âS + annulusMaxAU + r̂(s)`, where `annulusMaxAU` is §10's outer annulus
+radius in AU, because the offset is perpendicular to the bearing and adds at
+most its own length.
 This is the `d` of §2 clause 3 and of the time bounds below. The implementation
 must pin `âS` in a test over seeds and clock values. The bound is derived here
 from `system.ts`'s solver and has not been measured.
@@ -180,7 +205,7 @@ from `system.ts`'s solver and has not been measured.
 `nominalInS(system)` is the mirror: cruise from the lane point at the distance
 bound, local approach to the Traffic hold, the hold-to-aperture tunnel at the
 aperture gate, and the arrival traversal for the slowest fitting Berth.
-Clearance and lane are counted as immediate, the uncontended case. Detours are
+Clearance and the Transit lane are counted as immediate, the uncontended case. Detours are
 not in either bound. `slackS` absorbs them, and when it does not, the hauler is
 late (§4).
 
@@ -214,6 +239,14 @@ An inbound hauler is an ordinary visiting Carrier at its destination. It goes
 through the shared Clearance queue and Transit lane, and it can only be dealt a
 Traffic Berth (`docking.md` §6.1, #277). The visitor berth stays the player's,
 so inbound haulers can never queue the player out of a station.
+
+*(derived)* They can delay the player in the Transit lane. Oldest-ready
+arbitration (`station-traffic.md` §5) runs every traversal promoted before the
+player first. That wait has a bound: a hauler that is waiting for a Berth
+holds no lane claim, so only requests that already reserved a Berth are
+ahead, and those are at most the station's Traffic Berths plus its pending
+launches. The cockpit's `WAIT · <reason> · ~Ns` readout (#521) already
+reports it.
 
 When more haulers arrive than a station has free Traffic Berths, the extras
 queue at their Traffic holds under the shared oldest-ready policy. A queue at a
@@ -286,12 +319,12 @@ the annulus radii (§10) are judged on them.
 | --- | --- | --- |
 | Hauler share of non-signature Carrier slots | 1/3 | §6's instrument |
 | `slackS` | 60 s | lateness against idle time at lane points |
-| Lane annulus | 2–20 km | the view rows of §9 |
+| Lane-point annulus | 2–20 km | the view rows of §9 |
 
 One share for every station role. A per-role share would say what each role is
 *for*, which is #460's to decide.
 
-## 11. Persistence
+## 11. Persistence *(derived)*
 
 Nothing routine is saved. A hauler's vocation, eligible set, destination, jump instants,
 phase, charge and fuel are all derived from seed, schedule and `gameTime`.
@@ -302,13 +335,14 @@ changes none of them. A saved `completesAt` is an absolute instant, so a slot
 that becomes a hauler under an old save still completes its repair at that
 instant and rejoins at its next hauler departure.
 
-## 12. Ownership and seam
+## 12. Ownership and seam *(derived)*
 
 - This spec owns vocation, static eligibility, lane points, jump instants, the
   hauler cycle and the inbound query.
 - `in-system-route-traffic.md` keeps every in-system leg a hauler flies; a
   hauler's in-system legs are #261 routes with a lane point at one end.
-- `station-traffic.md` keeps rosters, schedules, holds, queues and the lane.
+- `station-traffic.md` keeps rosters, schedules, holds, queues and the Transit
+  lane.
 - `hyperspace.ts`, `system.ts`'s `arrivalPoint` and `arrival-rift.ts` are
   consumed, not changed in law.
 
@@ -326,7 +360,7 @@ within the largest Traffic `tankLy` (derived from `TRAFFIC_HULL_POOLS` and
 `HULL_SPECS`, never restated) whose current voyage names one of its stations.
 `Game` owns only current-system caches and presentation, as #261 §7 rules.
 
-## 13. Acceptance
+## 13. Acceptance *(derived)*
 
 ### 13.1 Headless
 
@@ -346,7 +380,8 @@ within the largest Traffic `tankLy` (derived from `TRAFFIC_HULL_POOLS` and
    unchanged, and an uncontended voyage to the worst destination fits both
    intervals.
 7. `âS` holds over seeds × clock values, and `dHome + dAway ≤ chargeAu` holds
-   for every eligible pair.
+   for every eligible pair, measured from the offset lane point rather than
+   the exact one.
 8. Identity: the name, manifest and standing of one hauler are equal in its home
    and destination systems. A control seeded on the current system must fail.
 9. A `destroyed` or `repairing` row removes the hauler from every inbound
@@ -379,7 +414,7 @@ A deterministic fixture shows one named hauler:
 NPC arrival and NPC departure rows in `scripts/lib/view-set.mjs`, and the
 principal's yes on the sheet.
 
-## 14. Known risks
+## 14. Known risks *(derived)*
 
 - The inbound query is **two hops** of generation: `B` rebuilds the rosters of
   every system in Traffic reach, and each of those rosters' vocations needs the

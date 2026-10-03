@@ -320,6 +320,13 @@ vocation is a **local**, which keeps the in-system **Traffic route**; a role's
 signature slot is always local.
 _Avoid_: Roster transfer, inter-system spawn
 
+**Local**:
+A **Traffic actor** whose **Carrier slot**'s vocation keeps it in its home
+system: it flies the in-system **Traffic route**, or the abstract away interval
+where it has no eligible station (`inter-system-traffic.md` §1). The other
+vocation is a **Hauler**. Not a **Local run**, which is a courier job.
+_Avoid_: In-system hauler
+
 **Lane point**:
 Where a **Hauler** leaves or enters a system: this system's **Jump** arrival
 point for ships coming from the system at the other end — 1 AU out on the
@@ -327,6 +334,7 @@ bearing between the two, or further where a body is in the way — offset by a
 per-voyage annulus so no hauler stands on the player's own arrival. The point a
 hauler leaves `A` for `B` from is the point ships arriving in `A` from `B`
 appear at.
+Not the **Transit lane**: bare "lane" stays the Transit lane's.
 _Avoid_: Jump gate (none exists)
 
 **Jump instant**:
