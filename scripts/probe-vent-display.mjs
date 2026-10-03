@@ -23,6 +23,11 @@
  *   peak against its trough, at the nose cross and at the prograde marker —
  *   the trough's alpha is the floor's share of the peak's and the colour of
  *   the strongest pixel does not move.
+ * - **a turn in cruise is a vent turn (#647)**: in a real cruise leg, a spin
+ *   past the envelope with the assist on fires the attitude vents and nothing
+ *   else, the game's own table carries them, the angular cue latches and the
+ *   linear one does not, and the plumes paint them. Before #647 a cruise turn
+ *   was heard and neither drawn nor cued.
  *
  * This is a default-layout probe (#381 D11): `v` is the view toggle in the
  * shipped layout, and the rows read the view back, so a dead key fails them.
@@ -34,7 +39,7 @@ import {
 	tally,
 } from "./probe-guard.mjs";
 import { gameUrl } from "./lib/game-url.mjs";
-import { holdVentState } from "./lib/vent-state.mjs";
+import { holdCruiseTurnState, holdVentState } from "./lib/vent-state.mjs";
 
 const ORIGIN =
 	process.env.PROBE_ORIGIN ?? process.argv[2] ?? "http://localhost:5173";
@@ -306,6 +311,47 @@ const pulse = await page.evaluate(async () => {
 			`peak ${peak.a}, steady ${steady.a}`,
 		);
 	}
+}
+
+// A turn in cruise (#647, `flight-model.md` §3.11): the same spin, flown in a
+// real cruise leg by the game's own `step`.
+const cruise = await page.evaluate(holdCruiseTurnState, {
+	spin: 2.5,
+	steps: 6,
+});
+check(
+	"a cruise turn past the envelope fires the attitude vents, and only those (#647)",
+	cruise.engaged &&
+		cruise.stillCruising &&
+		cruise.lit.length > 0 &&
+		cruise.lit.every((v) => ["pitch", "yaw", "roll"].includes(v.family)),
+	`engaged ${cruise.engaged}, still cruising ${cruise.stillCruising}, firing: ${cruise.lit.map((v) => `${v.slot} (${v.family})`).join(", ") || "none"}`,
+);
+check(
+	"a cruise turn past the envelope latches the angular cue and not the linear one (#647)",
+	cruise.cue.angular && !cruise.cue.linear,
+	`cue ${JSON.stringify(cruise.cue)}`,
+);
+await setView("chase");
+await page.evaluate((orbit) => {
+	window.__seelite.chaseYaw = orbit;
+}, ORBIT);
+await frames();
+{
+	const painted = await page.evaluate(
+		([firing, litDelta]) => {
+			const { rise } = window.__ventRise(firing);
+			let rose = 0;
+			for (const d of rise) if (d >= litDelta) rose++;
+			return rose;
+		},
+		[cruise.firing, LIT_DELTA],
+	);
+	check(
+		"the plumes paint a cruise turn's vents in chase (#647)",
+		cruise.lit.length > 0 && painted > 0,
+		`${cruise.lit.length} vents firing, ${painted} pixels rose ≥ ${LIT_DELTA} codes`,
+	);
 }
 
 await browser.close();

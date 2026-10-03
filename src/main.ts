@@ -2619,9 +2619,8 @@ class Game {
 	rates: Angular = { pitch: 0, yaw: 0, roll: 0 };
 	/** Every vent the last step fired: the sim's firing table, which the
 	 *  plumes draw (`flight-model.md` §3.8.1, #621). Empty on every path that
-	 *  flies no vent — docked, a placed attitude — and in cruise, whose turn
-	 *  does fly the attitude vents and is drawn only once #647 lands
-	 *  (`turnInCruise`). */
+	 *  flies no vent — docked, a placed attitude. A cruise turn fires the
+	 *  attitude vents and is drawn like any other (#647). */
 	ventFiring: VentLevels = {};
 	/** §3.8.1's cue: which family's marker is pulsing, and since when
 	 *  (`vent-cue.ts`). On the game clock, so a held clock holds it. */
@@ -11378,13 +11377,10 @@ class Game {
 
 	/**
 	 * A turn in cruise (§1, #10): the attitude vents turn the hull and cruise
-	 * moves it. The flight sound hears the turn.
-	 *
-	 * **Neither the plumes nor the cue see it yet, and that is today's
-	 * behaviour kept on purpose (#646).** Before the Hull step a cruise turn
-	 * set `rotationShare` and nothing else, because the firing table was only
-	 * written in normal flight. Whether a cruise turn is drawn and cued is
-	 * #647's, which deletes the two lines this leaves out.
+	 * moves it. It is a vent turn like any other (`flight-model.md` §3.11,
+	 * #647): the sound hears it, the plumes draw it and the cue reads its
+	 * Saturation. Only the translation is cruise's, so the linear family never
+	 * saturates here.
 	 */
 	private turnInCruise(dt: number, hands: HullHands): HullStep {
 		const step = stepHull(
@@ -11399,6 +11395,12 @@ class Game {
 			step.firing,
 			this.flownPerformance,
 		).rotation;
+		this.ventFiring = step.firing;
+		this.saturationCue = stepSaturationCue(
+			this.saturationCue,
+			step.saturated,
+			this.world.gameTime,
+		);
 		return step;
 	}
 
@@ -13599,8 +13601,7 @@ class Game {
 	step(dt: number) {
 		// What the drive and thrusters do this step, set where they fly (#544).
 		// Zero on every path that flies no vent: docked, and a placed attitude.
-		// A cruise turn flies the attitude vents and sets `rotationShare` only
-		// (`turnInCruise`).
+		// A cruise turn flies the attitude vents (`turnInCruise`, #647).
 		this.driveShare = 0;
 		this.lateralShare = 0;
 		this.rotationShare = 0;

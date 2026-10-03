@@ -60,7 +60,7 @@ import { assertPlayersRenderer } from "./lib/players-renderer.mjs";
 import { installViewFraming } from "./lib/view-placement.mjs";
 import { installCruiseLeg } from "./lib/cruise-page.mjs";
 import { installChargeToNearest } from "./lib/witchspace-page.mjs";
-import { holdVentState } from "./lib/vent-state.mjs";
+import { holdCruiseTurnState, holdVentState } from "./lib/vent-state.mjs";
 import {
 	bootedGame,
 	guardedTree,
@@ -1021,6 +1021,34 @@ const PLACERS = {
 			? `markers at ${drawn.linear.toFixed(2)} (velocity) and ${drawn.angular.toFixed(2)} (nose) of their alpha`
 			: "no glass this frame";
 		return `${state.hull} at ${state.speedOverCap.toFixed(2)}× the cap, spinning · ${state.lit.length} vents firing · ${pulse}`;
+	},
+	/**
+	 * #647's cruise turn: a real cruise leg, the hull spinning past its yaw
+	 * envelope with the assist on, flown by the game's own `step` and held.
+	 *
+	 * **Read back, not assumed**: a leg that never reached cruise throws. A
+	 * build before #647 records no firing in cruise; that is its honest
+	 * `before`, and the caption says so rather than the run failing.
+	 */
+	"cruise-turn": async (page, shot) => {
+		worldWritten = true;
+		const state = await page.evaluate(holdCruiseTurnState, {
+			spin: shot.spin,
+			steps: shot.steps,
+		});
+		await page.evaluate((yaw) => {
+			window.__seelite.chaseYaw = yaw;
+		}, shot.orbit ?? 0);
+		if (!state.engaged || !state.stillCruising)
+			throw new Error(
+				`cruise-turn placer: engaged ${state.engaged}, still cruising ${state.stillCruising}`,
+			);
+		await page.evaluate(
+			() => new Promise((r) => requestAnimationFrame(() => r())),
+		);
+		if (state.lit.length === 0)
+			return `${state.hull} in cruise, spinning · this build draws no vent for a cruise turn`;
+		return `${state.hull} in cruise, spinning · ${state.lit.length} attitude vents firing (${state.lit.map((v) => v.slot).join(", ")}) · angular cue ${state.cue?.angular ? "latched" : "clear"}`;
 	},
 	/**
 	 * #537's cruise light shift. A real leg to the farthest body, then the

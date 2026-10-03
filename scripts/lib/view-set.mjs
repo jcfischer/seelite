@@ -157,6 +157,7 @@ export const LEVERS = Object.freeze({
 	590: "an outer rung's formation family and its visible ice surface",
 	597: "the prompt line's docking notice: a failed entry in amber, a docking-computer let-go in red",
 	621: "the firing vents drawn as plumes at their throats, and the saturated assist's marker pulsing in its own tone",
+	647: "a turn in cruise drawn as the attitude vents' plumes, like a turn in normal flight",
 	651: "the cabin drawn in its own pass, so no world geometry enters it",
 });
 
@@ -246,6 +247,11 @@ export const LEVERS = Object.freeze({
  *   fire and both families saturate because the sim says so; nothing writes a
  *   level or a cue. `orbit` swings the chase camera off the stern, where the
  *   hull hides every vent but the drive.
+ * - `cruise-turn` — #647's cruise turn: a real cruise leg to the farthest
+ *   body, the hull handed `spin` times its peak yaw rate with the assist on,
+ *   then flown `steps` steps of 1/60 s through the game's own `step` and held
+ *   (`holdCruiseTurnState`). The attitude vents fire and saturate because
+ *   the sim says so; cruise moves the hull, so no translation vent does.
  */
 export const SHOT_KINDS = Object.freeze([
 	"station-axis",
@@ -262,6 +268,7 @@ export const SHOT_KINDS = Object.freeze([
 	"shipyard-tab",
 	"docking-notice",
 	"vents",
+	"cruise-turn",
 ]);
 
 /**
@@ -1042,6 +1049,18 @@ export const VIEWS = Object.freeze([
 		what: "Cockpit, the same state held at the pulse's trough: the prograde marker (the green ring) and the nose cross dimmed in their own tones while the assist cannot meet the speed or the spin. The retrograde marker pulses too, but it is behind the camera here.",
 		shot: { kind: "vents", overCap: 2, spin: 2.5, steps: 13, view: "cockpit" },
 	},
+	{
+		name: "vent-plumes-cruise",
+		covers: [647],
+		what: "Chase, orbited to the flank, in a cruise leg: the courier spinning past its yaw envelope and the assist braking it — the yaw vents firing as plumes at their throats, and no drive or translation plume, because cruise moves the hull.",
+		shot: {
+			kind: "cruise-turn",
+			spin: 2.5,
+			steps: 6,
+			orbit: 0.9,
+			view: "chase",
+		},
+	},
 	/**
 	 * #532's fixed-phase strip (#195 D4). The wind-up runs on wall-clock time,
 	 * so an ordinary capture cannot land on the same frame twice; each row holds
@@ -1467,6 +1486,14 @@ const SHOT_REQUIREMENTS = {
 	"shipyard-tab": (s) => s.rungs === "new-game" || s.rungs === "top",
 	// Which of #597's two notices the frame shows.
 	"docking-notice": (s) => s.notice === "bounce" || s.notice === "let-go",
+	// #647: above the envelope, or the attitude vents fire nothing past the
+	// ease-out and the frame is a quiet leg under a caption about a turn.
+	"cruise-turn": (s) =>
+		finite(s.spin) &&
+		s.spin > 1 &&
+		Number.isInteger(s.steps) &&
+		s.steps > 0 &&
+		(s.orbit === undefined || finite(s.orbit)),
 	// #621: above the cap and above the envelope, or nothing saturates and the
 	// frame is a quiet ship under a caption about a saturated one.
 	vents: (s) =>
