@@ -110,6 +110,14 @@ describe("failureKind on what tally() really prints", () => {
 		expect(failureKind(r)).toBe("pageerror");
 	});
 
+	test("a shader that failed to link reads `pageerror`", () => {
+		const r = tallyRun(
+			`t.watch(page); handlers.console({ type: () => "error", text: () => "THREE.WebGLProgram: Shader Error 0 - VALIDATE_STATUS false" }); t.exit();`,
+		);
+		expect(r.code).toBe(1);
+		expect(failureKind(r)).toBe("pageerror");
+	});
+
 	test("a throw before the tail reads `crash`", () => {
 		const r = tallyRun(
 			`t.check("holds", true); throw new Error("navigation timed out");`,

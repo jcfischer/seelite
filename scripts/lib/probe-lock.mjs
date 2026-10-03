@@ -116,7 +116,7 @@ export function readHolder(path) {
 }
 
 /** @param {number} pid */
-function pidAlive(pid) {
+export function pidAlive(pid) {
 	try {
 		process.kill(pid, 0);
 		return true;
@@ -144,12 +144,14 @@ function tryLink(path, record) {
 	// `wx`: never write through a name someone else planted in /tmp. A file
 	// already there is this pid's own leftover or a trap; either way it goes,
 	// and a second refusal is an error rather than a write through it.
-	try {
+	const write = () =>
 		writeFileSync(mine, JSON.stringify(record), { flag: "wx", mode: 0o644 });
+	try {
+		write();
 	} catch (e) {
 		if (errCode(e) !== "EEXIST") throw e;
 		unlinkSync(mine);
-		writeFileSync(mine, JSON.stringify(record), { flag: "wx", mode: 0o644 });
+		write();
 	}
 	try {
 		linkSync(mine, path);
@@ -351,8 +353,10 @@ export async function holdProbeLockOrExit(label, { stopFirst } = {}) {
  * Stop child processes: SIGTERM, then SIGKILL for any still running after
  * `graceMs`. Resolves once every one has exited.
  *
- * SIGTERM first because a probe's Playwright closes its browser on it, and a
- * probe killed outright can leave that browser behind.
+ * SIGTERM first because a probe's Playwright closes its browser on it. A
+ * probe that ignores it for `graceMs` is killed outright, and that can leave
+ * its browser running after the lock is released — the bound on "stopped
+ * before the release" is a probe that honours SIGTERM.
  *
  * @param {Iterable<import("node:child_process").ChildProcess>} children
  * @param {number} [graceMs]

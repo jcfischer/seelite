@@ -28,6 +28,7 @@ import {
 	lockWaitMs,
 	MACHINE_LOCK_PATH,
 	notRunMessage,
+	pidAlive,
 	readHolder,
 } from "../scripts/lib/probe-lock.mjs";
 
@@ -51,16 +52,6 @@ afterEach(() => {
 function deadPid() {
 	const r = spawnSync(process.execPath, ["-e", ""]);
 	return r.pid as number;
-}
-
-/** Whether a process is running. */
-function alive(pid: number) {
-	try {
-		process.kill(pid, 0);
-		return true;
-	} catch {
-		return false;
-	}
 }
 
 /**
@@ -310,10 +301,10 @@ describe("a holder stopped by a signal stops its children first", () => {
 		`);
 		await h.held;
 		const sleeper = Number(/^sleeper (\d+)$/m.exec(h.out())?.[1]);
-		expect(alive(sleeper)).toBe(true);
+		expect(pidAlive(sleeper)).toBe(true);
 		h.child.kill("SIGTERM");
 		// while the sleeper still runs, the lock must still be held
-		while (alive(sleeper)) {
+		while (pidAlive(sleeper)) {
 			expect(readHolder(path)?.pid).toBe(h.pid);
 			await new Promise((r) => setTimeout(r, 20));
 		}
