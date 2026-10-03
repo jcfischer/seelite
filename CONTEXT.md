@@ -841,8 +841,9 @@ _Avoid_: Thruster bank, RCS jet — *as a name for one vent*.
 **Translation pair** / **Attitude pair**:
 The two vent families (#619, `flight-model.md` §3.2). A translation pair sits a
 short arm either side of the centre of mass and strafes; an attitude pair sits
-at the extremities and turns the hull. Fired the same way a pair is pure force,
-fired opposite it is a pure couple.
+toward the extremities and turns the hull. Fired the same way a pair is pure
+force, fired opposite it is a pure couple. Each pair stands where its lines of
+action meet the hull's metal (§3.2.1).
 
 **Demand**:
 What an author — the pilot, the assist, the docking computer, a raider — asks

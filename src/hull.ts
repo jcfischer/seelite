@@ -104,9 +104,10 @@ export interface HullEnvelope {
  * cap it turns the courier at ~97 rad/s², and sized to turn it at 3 it removes
  * drift ~30x slower than #5 does. So a *translation* pair (`strafe-*`, a short
  * arm either side of the centre of mass) does the strafing and the assist's
- * drift removal, and an *attitude* pair at the extremities (`*-lateral`,
+ * drift removal, and an *attitude* pair toward the extremities (`*-lateral`,
  * `*-vertical`, `*-roll`) makes the couples. Fired the same way a pair is pure
  * force and fired opposite it is a pure couple, in both families (§3.2).
+ * Where on the hull each pair stands is `VentPlacement`'s (§3.2.1).
  */
 export const VENT_SLOTS = [
 	"main",

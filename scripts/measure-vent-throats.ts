@@ -6,9 +6,10 @@
  * `ventThroats` slides each vent along its own line of action to where that
  * line leaves the hull, and where the line only passes the hull, to its
  * closest approach (`src/vent-plumes.ts`). This prints the gap that leaves for
- * every hull and slot, so the claim in `flight-model.md` §3.8.1 — the attitude
- * lines miss every hull, the roll pairs by tens of metres on the larger ones —
- * is a reading and not a sentence.
+ * every hull and slot. When #621 shipped, every attitude line missed every
+ * hull; since #636 (`flight-model.md` §3.2.1) every line meets metal, and the
+ * list of misses at the foot is empty. `tests/vent-placement.test.ts` holds
+ * it so.
  */
 
 import { HULL_IDS, HULL_SPECS } from "../src/hull";
