@@ -13,6 +13,18 @@ export type PublicPage = {
 const play =
 	'<a class="button button--primary" href="/?boot=overlay">Play now <span aria-hidden="true">→</span></a>';
 
+/**
+ * The home trailer's player, built only when the poster is pressed. The page
+ * draws its own poster, so nothing loads from YouTube until the player asks:
+ * the principal's click-to-play ruling of 2026-10-03, and the Trust page names
+ * it. A thumbnail from YouTube would be a request on load, which is the thing
+ * the poster exists to avoid.
+ */
+const TRAILER_EMBED =
+	"https://www.youtube-nocookie.com/embed/cExmJYQ-cwQ?autoplay=1&rel=0";
+
+const trailer = `<figure class="trailer"><button type="button" class="trailer-play" aria-label="Play the trailer. This loads YouTube’s player."><span class="trailer-glyph" aria-hidden="true">▶</span><span class="trailer-label">Play the trailer</span><span class="trailer-note">Loads YouTube’s player</span></button></figure>`;
+
 export const PUBLIC_PAGES: readonly PublicPage[] = [
 	{
 		slug: "",
@@ -25,6 +37,7 @@ export const PUBLIC_PAGES: readonly PublicPage[] = [
 			<p class="threshold-note">No accounts. No cookies. No advertising.</p>
 			<div class="instrument" aria-label="A quiet frontier transmission"><span>SECTOR: UNCHARTED</span><span>LOCAL: 03:17</span><span>SIGNAL: FAINT</span></div>
 			<div class="channels"><a href="https://www.youtube.com/@the-far-between" rel="noreferrer">Watch on YouTube <span aria-hidden="true">→</span></a><a href="https://discord.gg/qRVgSqMkh8" rel="noreferrer">Join the Discord <span aria-hidden="true">→</span></a></div>
+			${trailer}
 			<section class="changelog-home" aria-labelledby="changelog-home"><h2 id="changelog-home">Recent changes</h2>${changelogList(CHANGELOG.slice(0, HOME_CHANGELOG_COUNT))}<a class="changelog-more" href="/field-notes/">All changes <span aria-hidden="true">→</span></a></section>`,
 	},
 	{
@@ -78,7 +91,7 @@ export const PUBLIC_PAGES: readonly PublicPage[] = [
 		eyebrow: "Trust",
 		title: "Your flight is yours.",
 		dek: "The Far Between is private by default, immediate by design, and intentionally small in what it asks of you.",
-		content: `<ul class="promise"><li>No accounts, cookies, or advertising.</li><li>Each page load and each game launch is counted once, by a self-hosted Counterscale counter. Like any web request, it arrives with your IP address and browser headers. The counter records the page’s path, the site you came from, your browser, device type and country — not your IP address. Nothing the game does after launch leaves your machine, with one exception you choose: the natural voice. To show you its size, the game reads a short list of its files from this site; if you take it, your browser downloads it from this site and keeps it (a private window keeps nothing, so there it is downloaded at each start), and on each start reads that list again: when the game ships a new version of the voice, that version is downloaded in its place. Every line it speaks is made in your browser.</li><li>Saves live locally in your browser and can be exported as portable data.</li></ul>
+		content: `<ul class="promise"><li>No accounts, cookies, or advertising.</li><li>Each page load and each game launch is counted once, by a self-hosted Counterscale counter. Like any web request, it arrives with your IP address and browser headers. The counter records the page’s path, the site you came from, your browser, device type and country — not your IP address. Nothing the game does after launch leaves your machine, with one exception you choose: the natural voice. To show you its size, the game reads a short list of its files from this site; if you take it, your browser downloads it from this site and keeps it (a private window keeps nothing, so there it is downloaded at each start), and on each start reads that list again: when the game ships a new version of the voice, that version is downloaded in its place. Every line it speaks is made in your browser.</li><li>The trailer on the home page is a picture this site draws until you press it. Pressing it loads YouTube’s player from youtube-nocookie.com, and from then on YouTube’s privacy policy applies to that player.</li><li>Saves live locally in your browser and can be exported as portable data.</li></ul>
 			<p>There is no behavioural telemetry. The project learns through direct feedback and conversation.</p>`,
 	},
 	{
@@ -135,6 +148,22 @@ export function mountPublicSite(slug: string): void {
 	const page = PUBLIC_PAGES.find((candidate) => candidate.slug === slug);
 	if (!page) throw new Error(`Unknown public page: ${slug}`);
 	mountShell({ ...page, modifier: page.slug || "home" }, page);
+	const poster = document.querySelector<HTMLButtonElement>(".trailer-play");
+	if (poster)
+		poster.addEventListener(
+			"click",
+			() => {
+				const frame = document.createElement("iframe");
+				frame.src = TRAILER_EMBED;
+				frame.title = "The Far Between — trailer";
+				frame.allow =
+					"autoplay; encrypted-media; picture-in-picture; fullscreen";
+				frame.allowFullscreen = true;
+				poster.replaceWith(frame);
+				frame.focus();
+			},
+			{ once: true },
+		);
 	const search = document.querySelector<HTMLInputElement>(
 		".manual-search input",
 	);

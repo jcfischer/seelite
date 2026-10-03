@@ -146,15 +146,36 @@ describe("the quiet public threshold", () => {
 	 * map's ruling allows that because no request leaves the bundle's origin.
 	 * `bundle-fetch.ts` refuses any path that is not this origin's, and
 	 * `tests/voice-model.test.ts` holds that refusal.
+	 *
+	 * **And the home trailer reaches YouTube, but only on a press (2026-10-03).**
+	 * The principal ruled for click-to-play: the home page draws its own poster
+	 * and `public-site.ts` builds the player's frame in the press handler, so
+	 * nothing loads from YouTube until the player asks. A frame is a request the
+	 * patterns above could not see, so the pattern looks for one too; the row
+	 * below holds that the page does not start with it.
 	 */
-	test("only the visit counter and the bundle's own fetch can reach the network", () => {
+	test("only the visit counter, the bundle's own fetch and the pressed trailer can reach the network", () => {
 		const reaches =
-			/\bfetch\s*\(|\bXMLHttpRequest\b|\bWebSocket\b|\bEventSource\b|sendBeacon|createElement\(\s*["'`]script/;
+			/\bfetch\s*\(|\bXMLHttpRequest\b|\bWebSocket\b|\bEventSource\b|sendBeacon|createElement\(\s*["'`](script|iframe)|<iframe/;
 		const offenders = srcFiles().filter((rel) => reaches.test(codeOf(rel)));
 		expect([...offenders].sort()).toEqual([
 			"src/bundle-fetch.ts",
+			"src/public-site.ts",
 			"src/visit-count.ts",
 		]);
+	});
+
+	test("the home trailer is a poster until it is pressed", () => {
+		const home = PUBLIC_PAGES.find((page) => page.slug === "");
+		const markup = home?.content ?? "";
+		expect(markup).toContain('class="trailer-play"');
+		expect(markup).not.toContain("<iframe");
+		expect(markup).not.toContain("youtube-nocookie");
+		expect(markup).not.toContain("ytimg");
+		const source = codeOf("src/public-site.ts");
+		expect(source).toContain(
+			"https://www.youtube-nocookie.com/embed/cExmJYQ-cwQ",
+		);
 	});
 
 	/**

@@ -7,8 +7,9 @@ Counterscale pageview analytics on each public page load and game launch (#569,
 origin (#604, `src/bundle-fetch.ts`): its manifest when the question is asked
 and on each start with the voice on, and its model when the player
 chooses it — once per version where the browser keeps it, at every start in
-a private window. The voice is the one trained asset; the map's Constraints carry
-the ruling.
+a private window — and YouTube's player for the home trailer, loaded only when
+the player presses its poster (click-to-play, 2026-10-03, `src/public-site.ts`).
+The voice is the one trained asset; the map's Constraints carry both rulings.
 
 ## Read the map first
 
