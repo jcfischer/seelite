@@ -18,6 +18,7 @@ import {
 	isHeld,
 	type Layout,
 	LAYOUT_NAMES,
+	layoutOf,
 	layoutMoves,
 	MOUSE_FLIGHT_BINDINGS,
 	rebind,
@@ -135,6 +136,12 @@ describe("the mouse-flight table (#639)", () => {
 		expect(DEFAULT_BINDINGS.base).toBe("default");
 	});
 
+	test("a frozen table keeps its name, and refuses another (sage round 1)", () => {
+		expect(layoutOf(MOUSE, "mouse-flight")).toBe(MOUSE);
+		expect(() => layoutOf(MOUSE, "default")).toThrow();
+		expect(() => layoutOf(Object.freeze([...DEFAULT_BINDINGS]))).toThrow();
+	});
+
 	test("a rebind keeps the layout it was made on", () => {
 		const from = MOUSE.find((b) => b.command === "fly.cruise")
 			?.trigger as Trigger;
@@ -221,6 +228,15 @@ describe("switching layout drops the player's moves, and says so (#639)", () => 
 			key: "k",
 		});
 		expect(switchLayout(moved, "mouse-flight").dropped).toBe(1);
+	});
+
+	test("the note reads its keys off the table it names (sage round 1)", () => {
+		expect(layoutChoiceNote("mouse-flight", 0, "MacIntel")).toContain(
+			"w/s fore and aft, a/d strafe, Ctrl/Space up and down, ↑/↓ and ←/→ pitch and yaw",
+		);
+		expect(layoutChoiceNote("default", 0, "MacIntel")).toContain(
+			"Shift/Ctrl fore and aft, ←/→ strafe, ↑/↓ up and down, w/s and a/d pitch and yaw",
+		);
 	});
 
 	test("the note names the loss before the switch", () => {

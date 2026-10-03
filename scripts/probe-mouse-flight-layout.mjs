@@ -237,6 +237,12 @@ check(
 // ---------------------------------------------------------------------------
 // The three-axis burn: all three translations held at once.
 // ---------------------------------------------------------------------------
+// **What this cannot see:** Chrome's reserved Ctrl+W, which closes the tab on
+// Windows and Linux before any page handler runs. Playwright's keys do not
+// reach the browser's own shortcuts, and this lane runs on macOS, where the
+// chord is not Chrome's. The settings row's warning is the answer to that
+// platform, and `tests/mouse-flight-layout.test.ts` holds it (sage round 1).
+//
 // Ctrl first, as a pilot climbing presses it: `w` and `d` pressed under it are
 // held and run no command (`key-dispatch.ts`), which is the rule this burn
 // rests on.

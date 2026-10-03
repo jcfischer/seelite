@@ -86,14 +86,32 @@ const STYLE = `
 `;
 
 /**
- * A row the settings store does not hold (#639).
+ * One row's markup, for the settings rows and the layout row alike, so a
+ * style or ARIA change is made once (sage round 1). Every argument is markup
+ * already: a setting's label and note are authored, and the layout row escapes
+ * its own strings before it gets here.
+ */
+const rowMarkup = (r: {
+	readonly selected: boolean;
+	readonly label: string;
+	readonly value: string;
+	readonly note: string;
+	readonly attrs?: string;
+}): string => `<div class="row" role="option" aria-selected="${r.selected}"${r.attrs ? ` ${r.attrs}` : ""}>
+  <span class="name">${r.label}</span>
+  <span class="value">← ${r.value} →</span>
+</div>
+<div class="note">${r.note}</div>`;
+
+/**
+ * The keyboard layout row, which the settings store does not hold (#639).
  *
  * The keyboard layout is chosen on this screen and stored in the binding
  * blob, beside the moves it is the base of, so its value is read and changed
  * through the game rather than through `SettingsStore`. It is drawn and walked
  * as one more row, after the settings.
  */
-export interface ExtraRow {
+export interface LayoutRow {
 	readonly label: string;
 	readonly value: () => string;
 	readonly note: () => string;
@@ -159,7 +177,7 @@ export function mountSettingsPanel(
 		value: Settings[K],
 	) => string | null,
 	/** The keyboard layout row (#639), after the settings. */
-	layoutRow?: ExtraRow,
+	layoutRow?: LayoutRow,
 ): SettingsPanelHandle {
 	if (!document.getElementById(STYLE_ID)) {
 		const style = document.createElement("style");
@@ -200,18 +218,21 @@ export function mountSettingsPanel(
 			const describe = spec.describe as (v: Settings[typeof key]) => string;
 			const value = describe(store.value[key]);
 			const actual = granted?.(key, store.value[key]);
-			return `<div class="row" role="option" aria-selected="${i === cursor}">
-  <span class="name">${spec.label}</span>
-  <span class="value">← ${value}${actual ? ` <span class="granted">(${actual})</span>` : ""} →</span>
-</div>
-<div class="note">${spec.note}</div>`;
+			return rowMarkup({
+				selected: i === cursor,
+				label: spec.label,
+				value: `${value}${actual ? ` <span class="granted">(${actual})</span>` : ""}`,
+				note: spec.note,
+			});
 		}).join("");
 		const extra = layoutRow
-			? `<div class="row" role="option" aria-selected="${cursor === SETTING_KEYS.length}" data-settings-layout>
-  <span class="name">${escapeHtml(layoutRow.label)}</span>
-  <span class="value">← ${escapeHtml(layoutRow.value())} →</span>
-</div>
-<div class="note">${escapeHtml(layoutRow.note())}</div>`
+			? rowMarkup({
+					selected: cursor === SETTING_KEYS.length,
+					label: escapeHtml(layoutRow.label),
+					value: escapeHtml(layoutRow.value()),
+					note: escapeHtml(layoutRow.note()),
+					attrs: "data-settings-layout",
+				})
 			: "";
 		root.innerHTML = `<div class="box" role="dialog" aria-label="Settings">
   <h2>Settings</h2>

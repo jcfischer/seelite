@@ -8,11 +8,13 @@
  * Headless, and on the list in `tests/headless.test.ts`.
  */
 import {
+	type CommandId,
 	type Layout,
 	type LayoutName,
 	layoutMoves,
-	SHIPPED_LAYOUTS,
+	shippedOf,
 } from "./commands";
+import { boundNames, onKeyboard } from "./key-names";
 
 /** What the settings row and the `Controls` tab call each shipped layout. */
 export const LAYOUT_LABELS: Readonly<Record<LayoutName, string>> = {
@@ -31,7 +33,7 @@ export function switchLayout(
 	current: Layout,
 	to: LayoutName,
 ): { readonly layout: Layout; readonly dropped: number } {
-	return { layout: SHIPPED_LAYOUTS[to], dropped: layoutMoves(current).length };
+	return { layout: shippedOf(to), dropped: layoutMoves(current).length };
 }
 
 /**
@@ -57,10 +59,15 @@ export function layoutChoiceNote(
 	moves: number,
 	platform: string,
 ): string {
+	// Read off the shipped table rather than typed (sage round 1), so a key
+	// moved in `MOUSE_FLIGHT_KEYS` moves this line with it.
+	const table = shippedOf(selected);
+	const key = (id: CommandId) =>
+		(boundNames(table, id, onKeyboard)[0] ?? "unbound").replace(/^hold /, "");
+	const pair = (a: CommandId, b: CommandId) => `${key(a)}/${key(b)}`;
+	const keys = `${pair("fly.throttleUp", "fly.throttleDown")} fore and aft, ${pair("fly.strafePort", "fly.strafeStarboard")} strafe, ${pair("fly.strafeDorsal", "fly.strafeVentral")} up and down, ${pair("fly.pitchDown", "fly.pitchUp")} and ${pair("fly.yawPort", "fly.yawStarboard")} pitch and yaw.`;
 	const what =
-		selected === "default"
-			? "W/S/A/D pitch and yaw, the arrows strafe, Shift/Ctrl fore and aft."
-			: "For the mouse on pitch and yaw: W/S fore and aft, A/D strafe, Ctrl/Space up and down, the arrows pitch and yaw.";
+		selected === "default" ? keys : `For the mouse on pitch and yaw: ${keys}`;
 	const loss =
 		moves === 0
 			? ""

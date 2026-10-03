@@ -103,7 +103,7 @@ import {
 	type LayoutName,
 	layoutMoves,
 	rebind,
-	SHIPPED_LAYOUTS,
+	shippedOf,
 	type Surface,
 	SURFACES,
 	type Trigger,
@@ -355,7 +355,7 @@ function applyMove(
 	layout: Layout,
 	entry: unknown,
 ): { layout: Layout } | { notice: LayoutNotice } {
-	const shipped = SHIPPED_LAYOUTS[layout.base];
+	const shipped = shippedOf(layout.base);
 	const named =
 		isRecord(entry) && typeof entry.command === "string" ? entry.command : null;
 	const rejected = (
@@ -469,7 +469,7 @@ export function parseLayout(raw: string | null): LoadedLayout {
 		return unreadable(
 			`no layout this game ships is called ${String(parsed.base).slice(0, 40)}`,
 		);
-	const shipped = SHIPPED_LAYOUTS[(parsed.base ?? "default") as LayoutName];
+	const shipped = shippedOf((parsed.base ?? "default") as LayoutName);
 	// **Capped at the size of the table it is a diff of**, which bounds the
 	// *merge*: a legitimate diff cannot name more rows than the layout has,
 	// and every row costs two full scans plus a `rebind` that copies the whole

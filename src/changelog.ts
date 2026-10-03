@@ -30,7 +30,7 @@ export type ChangelogEntry = {
 export const CHANGELOG: readonly ChangelogEntry[] = [
 	{
 		date: "2026-10-03",
-		text: "Settings now offers a Mouse flight keyboard layout: W and S thrust forward and back, A and D slide sideways, Ctrl and Space lift and drop the ship, so you can thrust on all three at once while the mouse steers.",
+		text: "Settings now offers a Mouse flight keyboard layout: W and S thrust forward and back, A and D slide sideways, Ctrl and Space lift and drop the ship, so you can thrust on all three at once while the mouse steers; on Windows and Linux, Chrome closes the tab on Ctrl+W, and Settings warns you.",
 		node: 639,
 	},
 	{

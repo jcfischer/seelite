@@ -1531,10 +1531,17 @@ export const layoutOf = (
 	base: LayoutName = "default",
 ): Layout => {
 	// Non-enumerable, so a spread or a `JSON.stringify` of the rows sees rows
-	// only. A table already frozen is one this function made — `holdRows`
-	// re-freezes what it is handed — and keeps the name it was given then.
+	// only. A frozen table cannot take a name, so it must already carry this
+	// one: `holdRows` re-freezes a table this function made and passes its own
+	// name back. Anything else — a frozen array that never came through here,
+	// or a table asked to change its name — throws rather than returning a
+	// `Layout` whose `base` is not what the call said (sage round 1).
 	if (!Object.isFrozen(rows))
 		Object.defineProperty(rows, "base", { value: base, enumerable: false });
+	else if ((rows as Partial<Layout>).base !== base)
+		throw new Error(
+			`a frozen table is ${String((rows as Partial<Layout>).base)}, not ${base}`,
+		);
 	for (const b of rows) {
 		Object.freeze(b.trigger);
 		if ("contexts" in b.trigger) Object.freeze(b.trigger.contexts);
@@ -1621,6 +1628,20 @@ export const MOUSE_FLIGHT_BINDINGS: Layout = layoutOf(
 export const SHIPPED_LAYOUTS: Readonly<Record<LayoutName, Layout>> = {
 	default: DEFAULT_BINDINGS,
 	"mouse-flight": MOUSE_FLIGHT_BINDINGS,
+};
+
+/**
+ * The shipped table a name stands for, or a throw.
+ *
+ * One lookup for every caller (sage round 1): the store validates a stored
+ * name before it asks, so a throw here is a name that reached the registry
+ * without passing through `LAYOUT_NAMES` — a programming error, said loudly.
+ */
+export const shippedOf = (name: LayoutName): Layout => {
+	const shipped = SHIPPED_LAYOUTS[name];
+	if (shipped === undefined)
+		throw new Error(`no layout ships as ${String(name)}`);
+	return shipped;
 };
 
 // ---------------------------------------------------------------------------
@@ -2111,9 +2132,7 @@ export interface LayoutMove {
  * wrong diff would be saved as a blob that loads as a different layout.
  */
 export function layoutMoves(layout: Layout): LayoutMove[] {
-	const shipped = SHIPPED_LAYOUTS[layout.base];
-	if (shipped === undefined)
-		throw new Error(`no layout ships as ${String(layout.base)}`);
+	const shipped = shippedOf(layout.base);
 	if (layout.length !== shipped.length)
 		throw new Error(
 			`a layout has ${shipped.length} rows, not ${layout.length}`,
