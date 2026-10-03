@@ -2548,13 +2548,6 @@ class Game {
 	saturationRender: { linear: number; angular: number } | null = null;
 	/** The flown hull's plumes, a sibling of `shipMesh` in the near scene. */
 	ventPlumes!: VentPlumes;
-	/** No vent fired and nothing saturated, with `cue` as the cue: the one
-	 *  place a new piece of per-step vent state is cleared (#621). */
-	private clearVentStep(cue: SaturationCue) {
-		this.ventFiring = {};
-		this.attitudeSaturated = false;
-		this.saturationCue = cue;
-	}
 	/** The docking computer's attitude hold. It remembers the attitude the
 	 *  computer wanted last frame, whose spin it asks for on top, so it is
 	 *  reset on every frame the computer does not fly (`AttitudeFollower`). */
@@ -11570,8 +11563,12 @@ class Game {
 		this.driveShare = 0;
 		this.lateralShare = 0;
 		this.rotationShare = 0;
-		// A ship at rest fires nothing and has no cue up (#621).
-		this.clearVentStep(quietCue());
+		// A ship at rest fires nothing and has no cue up (#621). Assigned here
+		// rather than through a helper: `leg-reset-coverage` reads this body's
+		// own assignments against the flight path's.
+		this.ventFiring = {};
+		this.attitudeSaturated = false;
+		this.saturationCue = quietCue();
 		// And its memory (sage round 3): a reset taken in cruise would cue a
 		// drop on the next frame, and a hot hull would carry its cooling clicks
 		// into the fresh start.
@@ -13488,12 +13485,12 @@ class Game {
 		// And the firing table and the cue's two flags, for the same reason:
 		// a step that flies no vent fires none and saturates nothing, and a
 		// cue left up by the last one runs out its hold on the clock.
-		this.clearVentStep(
-			stepSaturationCue(
-				this.saturationCue,
-				{ linear: false, angular: false },
-				this.world.gameTime,
-			),
+		this.ventFiring = {};
+		this.attitudeSaturated = false;
+		this.saturationCue = stepSaturationCue(
+			this.saturationCue,
+			{ linear: false, angular: false },
+			this.world.gameTime,
 		);
 		this.updateTrafficAuthority();
 		// Before the phase branch, so a hold is retried while docked and ended in
