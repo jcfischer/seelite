@@ -176,13 +176,15 @@ const compare = (page, mode) =>
 						child.visible = false;
 					}
 				}
+			// Both scenes: the cabin has its own since #651.
 			if (how === "refused-only")
-				game.nearScene.traverse((object) => {
-					if (object.isMesh && object.castShadow) {
-						hidden.push([object, object.visible]);
-						object.visible = false;
-					}
-				});
+				for (const scene of [game.nearScene, game.cabinScene])
+					scene.traverse((object) => {
+						if (object.isMesh && object.castShadow) {
+							hidden.push([object, object.visible]);
+							object.visible = false;
+						}
+					});
 
 			game.setOcclusion(false, false);
 			const none = frame();
@@ -333,7 +335,7 @@ t.check(
 const idle = await page.evaluate(() => {
 	const game = window.__seelite;
 	const kept = game.settings.value.quality;
-	const light = () => game.nearScene.getObjectByName("sun");
+	const light = () => game.shadowSun;
 	/**
 	 * Both arms enter in the **same** state — shadow down, idle raised, subjects
 	 * present — so the only thing that differs is the lighting row.
@@ -405,7 +407,7 @@ const resurrect = await page.evaluate(() => {
 		quality: game.settings.value.quality,
 		ao: game.settings.value.ao,
 	};
-	const light = () => game.nearScene.getObjectByName("sun");
+	const light = () => game.shadowSun;
 	game.settings.set("quality", "high");
 	game.render(0);
 	light().castShadow = false;
@@ -497,7 +499,7 @@ const coldBootAt = async (settings) => {
 			// separately.
 			wanted: game.occlusionState.wanted,
 			gateOpen: game.occlusionState.open,
-			castShadow: !!game.nearScene.getObjectByName("sun")?.castShadow,
+			castShadow: !!game.shadowSun?.castShadow,
 			ao: game.gtaoPass?.enabled ?? null,
 		};
 	});
@@ -716,7 +718,7 @@ const bayGate = await page.evaluate(() => {
 	const game = window.__seelite;
 	return {
 		...game.occlusionState,
-		drawnShadow: !!game.nearScene.getObjectByName("sun")?.castShadow,
+		drawnShadow: !!game.shadowSun?.castShadow,
 		drawnAo: game.gtaoPass?.enabled ?? null,
 	};
 });

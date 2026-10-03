@@ -107,6 +107,10 @@ let callers = 0;
  */
 const EXEMPT = new Map([
 	[
+		"measure-cabin-pass-cost.mjs",
+		"#651's headed cabin-pass instrument, two builds against each other on two servers; a sibling of #201's and exempt for the same reason — #98 settled that there is no frame-time floor in this game, so it prints build-against-build deltas and a separation count for a receipt and gates on nothing. It refuses a software rasteriser, a base server that declares no tree or the same commit, and a non-finite block, each by throwing out of the run",
+	],
+	[
 		"capture-sounds.mjs",
 		"#552's sound capture, the audio twin of `npm run views`: it renders every cue to WAV at a labelled ref for the principal's ear and asserts nothing; a page error throws out of the run rather than into a tally",
 	],

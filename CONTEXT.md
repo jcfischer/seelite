@@ -25,6 +25,22 @@ meaning. `ship-visuals.md` §2 owns the review fleet's use of it; the other
 producers include the raider, Traffic actors, the combat rig, the **Pirate
 relay**, its **Relay tender** (a `ship` contact) and the **Cargo canister**.
 
+**Impact**:
+One collision event: a ship's hull box meeting a body's sphere, a station's
+**Collision proxy** or another ship's box during normal flight. Its closing
+speed is relative to the surface met, in that body's rotating frame where it
+spins. `docs/specs/collision.md` owns the law (#75, #302); #303 builds it.
+**Scope note, not an _Avoid_ line.** "Contact" is a **Display contact**, a
+targetable identity rather than an event; "collision" names the system; one
+event is an impact.
+
+**Collision proxy**:
+A station form's declared set of convex primitives that collision reads in
+place of the drawn mesh, with the aperture's opening left out. It is
+Three-free and is a function of the form and its seeds. No drawn vertex may
+lie outside it. `docs/specs/collision.md` §2.2 owns it.
+_Avoid_: hitbox, collision mesh.
+
 **Review fleet slot**:
 A `FleetSlot` layout position in the query-gated showroom avenue. Its `slot`
 identifier describes the model and its placement; it has no Berth reservation,

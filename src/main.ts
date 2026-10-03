@@ -725,6 +725,13 @@ import {
 	registerKeyLight,
 } from "./cockpit-surface";
 import {
+	CABIN_FAR_KM,
+	CABIN_NEAR_KM,
+	type CabinLightState,
+	cabinLightInto,
+	newCabinLightState,
+} from "./cabin-pass";
+import {
 	CANOPY_FRAME,
 	CANOPY_RAIL_RADIUS_KM,
 	CANOPY_SIDE_RAILS,
@@ -1315,6 +1322,10 @@ const browserPlatform = (): string =>
 /** The cockpit camera's offset from the hull's centre, kilometres — 8 metres
  *  forward, so the view is from the nose rather than from inside the cube. */
 const COCKPIT_FORWARD_KM = 0.008;
+/** `syncCabinMirrors`'s scratch, so a frame allocates nothing per light. */
+const MIRROR_SCRATCH = new THREE.Vector3();
+const MIRROR_LIGHT: CabinLightState = newCabinLightState();
+const MIRROR_CARRIED: CabinLightState = newCabinLightState();
 
 /** Below this speed the prograde marker is hidden: the velocity is noise, and a
  *  marker chasing it would swing around a screen belonging to a ship that is
@@ -2041,11 +2052,25 @@ class Game {
 	}
 	/** Near: ships, stations, anything at 1:1 kilometres. */
 	readonly nearScene = new THREE.Scene();
+	/** The cabin, alone, drawn last over a cleared depth buffer (#651).
+	 *  `cabin-pass.ts` has why it is a scene of its own. */
+	readonly cabinScene = new THREE.Scene();
 
 	readonly backdropCamera: THREE.PerspectiveCamera;
 	readonly farCamera: THREE.PerspectiveCamera;
 	readonly approachCamera: THREE.PerspectiveCamera;
 	readonly nearCamera: THREE.PerspectiveCamera;
+	/** The near camera's pose and field of view, with planes that bracket the
+	 *  cabin rather than the near layer (#651). */
+	readonly cabinCamera: THREE.PerspectiveCamera;
+	/** The cabin's pass, enabled only on a frame that draws the cabin. */
+	private cabinPass!: RenderPass;
+	/** Each world light the cabin is lit by, and its copy in the cabin's frame
+	 *  (#651, the principal's ruling: the bay lights the cabin). */
+	private readonly cabinMirrors = new Map<
+		THREE.PointLight,
+		{ copy: THREE.PointLight; holders: number }
+	>();
 
 	/** Ship orientation. Positions live in `sim.ts`; this does not, and the
 	 *  module docstring there says why. */
@@ -4065,6 +4090,12 @@ class Game {
 			NEAR_NEAR_KM,
 			NEAR_FAR_KM,
 		);
+		this.cabinCamera = new THREE.PerspectiveCamera(
+			fov,
+			aspect,
+			CABIN_NEAR_KM,
+			CABIN_FAR_KM,
+		);
 
 		this.buildBackdrop();
 		this.buildBodies();
@@ -4165,13 +4196,25 @@ class Game {
 		this.composer.addPass(approachPass);
 		// #532's transition, **between the approach layer and the near one**: it
 		// reads the sky and the bodies composited so far and draws the tunnel over
-		// them, and the near pass then draws the cabin and the hull over it, so
-		// the tunnel is outside the canopy. `witchspace-pass.ts` says why. Disabled
+		// them, and the near pass then draws the hull over it and the cabin's
+		// pass the cabin (#651), so the tunnel is outside the canopy. `witchspace-pass.ts` says why. Disabled
 		// until a jump, and the composer skips a disabled pass without a swap.
 		this.witchspacePass = new WitchspacePass(this.settings.value.quality);
 		this.composer.addPass(this.witchspacePass);
 		this.composer.addPass(nearPass);
-		// **#201's ambient occlusion, between the near pass and the bloom.**
+		// **#651's pass: the cabin, after every world layer, over cleared depth.**
+		// The cabin is authored at about a hundred times life size and a berth
+		// cell is 58 m across, so drawn in the near layer the bay's structure
+		// stood inside it. Clearing depth here is what makes that impossible:
+		// nothing of the world is in the buffer the cabin is tested against, so
+		// every pixel the cabin covers is the cabin's. Disabled on any frame that
+		// does not draw the cabin, so chase pays nothing for it.
+		this.cabinPass = new RenderPass(this.cabinScene, this.cabinCamera);
+		this.cabinPass.clear = false;
+		this.cabinPass.clearDepth = true;
+		this.composer.addPass(this.cabinPass);
+		// **#201's ambient occlusion, after the near and cabin passes and before
+		// the bloom.**
 		//
 		// Between them and not after, because bloom reads luminance: AO applied
 		// afterwards would darken a contact the halo had already been computed
@@ -4179,12 +4222,14 @@ class Game {
 		// dark. Before the near pass is not an option either — there is nothing
 		// to occlude yet.
 		//
-		// **It is scoped to the near scene by construction, which is what
-		// answers the node's worry about `clearDepth`.** `GTAOPass` does not read
-		// the composite's depth at all: it renders its *own* normal-and-depth
-		// buffer from the scene and camera handed to it here, so the depth it
-		// samples is the near layer's whether or not the near pass cleared
-		// anything. The fallback to `SAOPass` the node allowed for is not needed
+		// **It is scoped to one scene by construction, which is what answers
+		// the node's worry about `clearDepth`.** `GTAOPass` does not read the
+		// composite's depth at all: it renders its *own* normal-and-depth buffer
+		// from the scene and camera it holds, so the depth it samples is that
+		// scene's whether or not any pass cleared anything. Since #651 `render`
+		// hands it the cabin's scene on a frame that draws the cabin and the near
+		// layer's otherwise — the principal's ruling that the AO follows the
+		// view. The fallback to `SAOPass` the node allowed for is not needed
 		// and is not taken. Where the near layer drew nothing the depth is the
 		// far plane and the AO shader discards, leaving the far layer's planets
 		// exactly as the near pass composited them.
@@ -5208,7 +5253,16 @@ class Game {
 		// here, and its falloff would be wrong in whichever scene it was not
 		// authored for. Directional light sidesteps that: it has no position, only
 		// a direction, and the direction is the same in both.
-		for (const scene of [this.farScene, this.approachScene, this.nearScene]) {
+		// **And the cabin's scene, which is lit as it was in the near layer
+		// (#651).** It left that layer so the bay could not stand inside it, not
+		// so it could be lit differently: the same sun, hemisphere and fill, and
+		// below, the same environment.
+		for (const scene of [
+			this.farScene,
+			this.approachScene,
+			this.nearScene,
+			this.cabinScene,
+		]) {
 			const sun = new THREE.DirectionalLight(
 				LIGHT_RIG.sun.color,
 				LIGHT_RIG.sun.intensity,
@@ -5263,6 +5317,10 @@ class Game {
 		);
 		fill.name = "fill";
 		this.nearScene.add(fill);
+		// The cabin had this fill while it was in the near layer, and keeps it.
+		const cabinFill = fill.clone();
+		this.cabinScene.add(cabinFill);
+		this.fills = [fill, cabinFill];
 
 		// **#201: one shadow-casting light in the game, and it is the near
 		// layer's sun.** The far and approach suns are left alone — a planet
@@ -5278,9 +5336,21 @@ class Game {
 		const nearSun = this.layerLights.find(
 			(rig) => rig.scene === this.nearScene,
 		);
+		// **#651: the cabin's own sun casts in cockpit view, and only there.**
+		// In cockpit view the fitted subject was already the cabin alone
+		// (`fitShadowCamera`), so the shadow a player saw was the cabin's on
+		// itself — and the cabin is in its own scene now, where the near sun's
+		// map cannot reach. One sun casts per frame, so the map count a frame
+		// renders is unchanged; `shadowSun` names whichever it is.
+		const cabinSun = this.layerLights.find(
+			(rig) => rig.scene === this.cabinScene,
+		);
+		if (cabinSun) {
+			this.cabinShadowSun = cabinSun.sun;
+			this.armShadowSun(cabinSun.sun, this.cabinShadowTarget, this.cabinScene);
+		}
 		if (nearSun) {
-			this.shadowSun = nearSun.sun;
-			this.shadowSun.shadow.mapSize.set(SHADOW_MAP_TEXELS, SHADOW_MAP_TEXELS);
+			this.nearShadowSun = nearSun.sun;
 			// **A target of its own, in the scene.** Every other light here aims
 			// by `position` alone against the default target at the origin, which
 			// works because a directional light's *direction* is all three layers
@@ -5289,9 +5359,7 @@ class Game {
 			// origin — a station four kilometres away — needs the pair moved
 			// together. `render` sets both, and the direction between them stays
 			// exactly `STAR_DIR`, so nothing about the lighting changes.
-			this.shadowTarget.name = "sun-shadow-target";
-			this.nearScene.add(this.shadowTarget);
-			this.shadowSun.target = this.shadowTarget;
+			this.armShadowSun(nearSun.sun, this.nearShadowTarget, this.nearScene);
 			// `up` is set per frame in `fitShadowCamera`, not here: three's
 			// shadow camera is aimed with `lookAt`, which is degenerate when the
 			// view direction is parallel to `up` — and the view direction here is
@@ -5312,12 +5380,30 @@ class Game {
 		}
 	}
 
-	/** The near layer's sun, once `buildLights` has given it a shadow camera —
-	 *  the one shadow-casting light in the game (#201). */
-	private shadowSun: THREE.DirectionalLight | null = null;
+	/** The near layer's sun, once `buildLights` has given it a shadow camera
+	 *  (#201). It casts in chase view. */
+	private nearShadowSun: THREE.DirectionalLight | null = null;
 	/** What that sun looks at. Moved to the fitted subject's centre each frame;
 	 *  `buildLights` says why a target object is needed at all. */
-	private readonly shadowTarget = new THREE.Object3D();
+	private readonly nearShadowTarget = new THREE.Object3D();
+	/** The cabin scene's sun and its target: the caster in cockpit view (#651). */
+	private cabinShadowSun: THREE.DirectionalLight | null = null;
+	private readonly cabinShadowTarget = new THREE.Object3D();
+	/** Whether this frame draws the cabin: the one rule the cabin pass, its
+	 *  shadow caster and the AO target all read (#651). */
+	private get drawsCabin() {
+		return this.view === "cockpit" && !this.cabinHidden;
+	}
+	/** The one sun that may cast this frame (#201, #651). */
+	private get shadowSun(): THREE.DirectionalLight | null {
+		return this.drawsCabin ? this.cabinShadowSun : this.nearShadowSun;
+	}
+	/** The target of `shadowSun`. */
+	private get shadowTarget(): THREE.Object3D {
+		return this.drawsCabin ? this.cabinShadowTarget : this.nearShadowTarget;
+	}
+	/** The camera-side fill, near layer and cabin, aimed together each frame. */
+	private fills: THREE.DirectionalLight[] = [];
 	/** Scratch for the frame's subject list, so a render allocates no array. */
 	private readonly shadowCandidates: ShadowSubject[] = [];
 
@@ -5544,8 +5630,17 @@ class Game {
 	 */
 	private applyOcclusion() {
 		const gated = this.occlusionPinned || this.occlusionGate.open;
-		if (this.shadowSun)
-			this.shadowSun.castShadow = this.occlusionWanted.shadows && gated;
+		const casting = this.shadowSun;
+		for (const sun of [this.nearShadowSun, this.cabinShadowSun]) {
+			if (!sun || sun === casting) continue;
+			// **And its target home**, for `fitShadowCamera`'s reason: a sun's
+			// direction is `position - target` and only the casting sun is
+			// fitted, so a target left on the other view's subject would swing
+			// this sun onto a new bearing for as long as the view lasts.
+			sun.castShadow = false;
+			sun.target.position.set(0, 0, 0);
+		}
+		if (casting) casting.castShadow = this.occlusionWanted.shadows && gated;
 		if (this.gtaoPass) this.gtaoPass.enabled = this.occlusionWanted.ao && gated;
 	}
 
@@ -7722,11 +7817,12 @@ class Game {
 		keyLight.name = "cockpit-key-light";
 		keyLight.position.set(...COCKPIT_KEY_LIGHT.position);
 		cockpit.add(keyLight);
-		// **Gated, and this is the term #105 added.** A point light here is
-		// evaluated for every standard material in `nearScene`, so leaving it
-		// ungated would make every hull and station fragment pay for a cabin
-		// gradient. `cockpit-surface.ts` owns which side of `quality` it is on
-		// and puts it in the state the current setting asks for.
+		// **Gated, and this is the term #105 added.** A point light is evaluated
+		// for every standard material in its scene; until #651 that was
+		// `nearScene` and every hull and station fragment paid for a cabin
+		// gradient. Since #651 only the cabin's fittings do. `cockpit-surface.ts`
+		// owns which side of `quality` it is on and puts it in the state the
+		// current setting asks for.
 		registerKeyLight(keyLight);
 		const addBox = (
 			size: [number, number, number],
@@ -7779,9 +7875,10 @@ class Game {
 			if (name) mesh.name = name;
 			cockpit.add(mesh);
 		};
-		// These are kilometres because they live in the normal near scene. The
-		// closest face stays beyond the 10 m near plane, which avoids the camera
-		// slicing the cockpit open as a pilot turns their head.
+		// These are kilometres at about a hundred times life size, which is how
+		// the cabin cleared the near layer's 10 m near plane while it was drawn
+		// there. Since #651 it has its own scene and camera and the scale stays —
+		// `cabin-pass.ts` says why.
 		// A real windscreen frame: the former rails did not meet a sill or header,
 		// so they read as objects floating in space. The glass stays subtle, while
 		// the connected trapezoid gives the player a stable cockpit boundary.
@@ -7917,7 +8014,9 @@ class Game {
 		// canopy glass fall out of the walk by the rule — they are
 		// `MeshBasicMaterial` — so what is left casting is the fittings.
 		this.markedOcclusion.push(["cockpit", markOcclusion(cockpit)]);
-		this.nearScene.add(cockpit);
+		// Into its own scene (#651), and `cabin-pass.ts` has why. The tunnel
+		// lines are not the cabin's and stay in the near layer.
+		this.cabinScene.add(cockpit);
 		this.nearScene.add(this.tunnelLines.root);
 	}
 
@@ -14236,12 +14335,22 @@ class Game {
 			this.farCamera,
 			this.approachCamera,
 			this.nearCamera,
+			this.cabinCamera,
 		]) {
 			cam.position.set(0, 0, 0);
 			cam.quaternion.copy(viewRotation);
 		}
 		this.cockpit.mesh.quaternion.copy(this.orientation);
-		this.cockpit.mesh.visible = this.view === "cockpit" && !this.cabinHidden;
+		this.cockpit.mesh.visible = this.drawsCabin;
+		// #651: the cabin's pass runs only on a frame that draws the cabin, and
+		// the ambient occlusion follows what is drawn — on the cabin when it is
+		// there, on the near layer when it is not. That is the principal's
+		// ruling; the cabin's own corners were 22.5% of a `cockpit-arrival`
+		// frame and the near layer's share of it was small (#241).
+		this.cabinPass.enabled = this.cockpit.mesh.visible;
+		if (this.cockpit.mesh.visible)
+			this.aimAo(this.cabinScene, this.cabinCamera);
+		else this.aimAo(this.nearScene, this.nearCamera);
 		// After the cameras are aimed, so the rift's lens sits on the rift in
 		// this frame rather than the last one.
 		this.updateRiftLens();
@@ -14499,10 +14608,7 @@ class Game {
 		// The fill follows the camera's orientation, so it stays over the viewer's
 		// left shoulder however the ship is pointed — which is what makes it read
 		// as lighting rather than as a second sun the player can fly around.
-		const fill = this.nearScene.getObjectByName(
-			"fill",
-		) as THREE.DirectionalLight;
-		if (fill)
+		for (const fill of this.fills)
 			fill.position
 				.fromArray(LIGHT_RIG.fill.direction)
 				.normalize()
@@ -14573,6 +14679,8 @@ class Game {
 		// frame spreads a system over about two seconds at 60 Hz, during which
 		// every body is drawn procedurally exactly as it is today.
 		this.stepBakes();
+
+		this.syncCabinMirrors();
 
 		this.occlusionGate = stepOcclusionGate(
 			this.occlusionGate,
@@ -14737,6 +14845,116 @@ class Game {
 		// was fitted from one that was left at three's 5-unit default — both
 		// render, and only one of them renders the right thing.
 		this.shadowTexelKm = fit.texelKm;
+	}
+
+	/**
+	 * Point the ambient occlusion at one scene and its camera (#651, D6).
+	 *
+	 * `scene` and `camera` are public fields of `GTAOPass`, and the pass
+	 * derives everything else from them on every render rather than once:
+	 * its normal-and-depth buffer is a fresh `renderer.render(this.scene,
+	 * this.camera)`, and the AO and denoise materials' near, far, projection,
+	 * inverse projection and world matrix are copied off `this.camera` before
+	 * each draw (three's `GTAOPass.render`). The one camera-derived state it
+	 * keeps is `depthRenderMaterial`'s near and far, which only its debug
+	 * output reads. `probe-cabin-pass` checks that the AO lands on the cabin.
+	 */
+	private aimAo(scene: THREE.Scene, camera: THREE.PerspectiveCamera) {
+		if (!this.gtaoPass) return;
+		this.gtaoPass.scene = scene;
+		this.gtaoPass.camera = camera;
+	}
+
+	/** Give a sun a shadow map and a target of its own in `scene` — the near
+	 *  sun and the cabin's sun both, so a shadow setting lands on both (#651). */
+	private armShadowSun(
+		sun: THREE.DirectionalLight,
+		target: THREE.Object3D,
+		scene: THREE.Scene,
+	) {
+		sun.shadow.mapSize.set(SHADOW_MAP_TEXELS, SHADOW_MAP_TEXELS);
+		target.name = "sun-shadow-target";
+		scene.add(target);
+		sun.target = target;
+	}
+
+	/**
+	 * Light the cabin with a world point light (#651).
+	 *
+	 * The cabin is in its own scene, so no world light reaches it unless asked;
+	 * the principal's ruling is that the bay's lights do. This puts a copy of
+	 * `light` in the cabin's scene, carried into the cabin's frame by
+	 * `cabinLight` every frame — a lamp 30 m from the eye has to stand 3 km
+	 * from the cabin's origin, or it stands inside the cabin. The copy is drawn
+	 * only while `light` is: visible, and in the near layer. Returns the undo.
+	 *
+	 * **Nothing in the game calls this yet.** The bay has no point lights until
+	 * #205 adds them, and #205 is where they are registered here; until then the
+	 * principal's ruling is a mechanism with no light behind it, which
+	 * `probe-cabin-pass` exercises with a lamp of its own. A copy is a light in
+	 * the cabin's scene, so three recompiles the cabin's programs when one is
+	 * added — and only then: a copy whose source is not drawn goes dark by
+	 * intensity rather than by `visible`, so the cabin's light count stays put.
+	 */
+	mirrorIntoCabin(light: THREE.PointLight): () => void {
+		// **Counted, so one caller's undo cannot dark another's light.** Two
+		// registrations of one lamp share one copy, and the copy goes only when
+		// the last of them is undone; each undo counts once however often it
+		// is called.
+		let mirror = this.cabinMirrors.get(light);
+		if (!mirror) {
+			const copy = new THREE.PointLight();
+			copy.name = `cabin-mirror:${light.name}`;
+			this.cabinScene.add(copy);
+			mirror = { copy, holders: 0 };
+			this.cabinMirrors.set(light, mirror);
+		}
+		mirror.holders++;
+		let held = true;
+		return () => {
+			if (!held) return;
+			held = false;
+			this.unmirrorFromCabin(light);
+		};
+	}
+
+	private unmirrorFromCabin(light: THREE.PointLight) {
+		const mirror = this.cabinMirrors.get(light);
+		if (!mirror || --mirror.holders > 0) return;
+		mirror.copy.removeFromParent();
+		mirror.copy.dispose();
+		this.cabinMirrors.delete(light);
+	}
+
+	/** Put each mirrored light where `cabinLight` says, after the world is
+	 *  placed for this frame and before anything is drawn. */
+	private syncCabinMirrors() {
+		for (const [light, { copy }] of this.cabinMirrors) {
+			let drawn = light.visible;
+			let root: THREE.Object3D = light;
+			while (drawn && root.parent) {
+				root = root.parent;
+				drawn = root.visible;
+			}
+			if (!drawn || root !== this.nearScene) {
+				copy.intensity = 0;
+				continue;
+			}
+			light.getWorldPosition(MIRROR_SCRATCH);
+			const w = MIRROR_LIGHT;
+			w.positionKm[0] = MIRROR_SCRATCH.x;
+			w.positionKm[1] = MIRROR_SCRATCH.y;
+			w.positionKm[2] = MIRROR_SCRATCH.z;
+			w.distanceKm = light.distance;
+			w.intensity = light.intensity;
+			w.decay = light.decay;
+			const carried = cabinLightInto(w, MIRROR_CARRIED);
+			copy.position.fromArray(carried.positionKm);
+			copy.distance = carried.distanceKm;
+			copy.intensity = carried.intensity;
+			copy.decay = carried.decay;
+			copy.color.copy(light.color);
+		}
 	}
 
 	/** Whether `fitShadowCamera` turned the sun's shadow off for want of a
@@ -18167,6 +18385,7 @@ class Game {
 			this.farCamera,
 			this.approachCamera,
 			this.nearCamera,
+			this.cabinCamera,
 		]) {
 			cam.aspect = w / h;
 			cam.updateProjectionMatrix();

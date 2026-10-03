@@ -130,17 +130,19 @@ const SCHEMA = {
 	 * **The cabin's lamps and its two interior lights stay on at both settings,
 	 * and that is a declaration rather than an omission** (#98: every expensive
 	 * visual term must say which side of this it is on). The lamps are
-	 * `MeshBasicMaterial` and genuinely free. The lights are **not**: a
-	 * `PointLight` parented to the cockpit group is still a light in
-	 * `nearScene`, so three evaluates it for every `MeshStandardMaterial` in
-	 * that scene — hulls and station plating included — and `distance` clamps
-	 * the contribution rather than the arithmetic. An earlier version of this
-	 * paragraph said they "cost nothing per fragment", which was simply wrong.
+	 * `MeshBasicMaterial` and genuinely free. The lights are **not**: three
+	 * evaluates a `PointLight` for every `MeshStandardMaterial` in its scene,
+	 * and `distance` clamps the contribution rather than the arithmetic. Until
+	 * #651 that scene was `nearScene`, so hulls and station plating paid for
+	 * them; since #651 the cabin has a scene of its own and only the cabin's
+	 * fittings do. An earlier version of this paragraph said they "cost nothing
+	 * per fragment", which was simply wrong.
 	 *
 	 * So the two are split. **Low drops #105's key light** — the term this node
-	 * added, and an ungated one would make every hull and station fragment in
-	 * the game pay for a cabin gradient. Dropping it returns low to the light
-	 * count that shipped before.
+	 * added, gated when an ungated one made every hull and station fragment in
+	 * the game pay for a cabin gradient. #651 narrowed that cost to the cabin's
+	 * own fragments and left the gate where it was. Dropping it returns low to
+	 * the light count that shipped before.
 	 *
 	 * **Low keeps the pre-existing interior fill**, because dropping that is not
 	 * a degraded cabin but an unlit one: #105's finding is that the cabin is lit

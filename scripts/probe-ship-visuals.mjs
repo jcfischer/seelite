@@ -49,9 +49,9 @@ function state() {
 			cockpit instanceof HTMLElement &&
 			getComputedStyle(cockpit).display !== "none",
 		physicalCockpit:
-			Boolean(game.nearScene.getObjectByName("cockpit")?.visible) &&
+			Boolean(game.cabinScene.getObjectByName("cockpit")?.visible) &&
 			["flight-instrument", "target-instrument", "scanner"].every((name) =>
-				Boolean(game.nearScene.getObjectByName(name)),
+				Boolean(game.cabinScene.getObjectByName(name)),
 			),
 		duplicateDomFloor: Boolean(document.querySelector("[data-live-floor]")),
 	};

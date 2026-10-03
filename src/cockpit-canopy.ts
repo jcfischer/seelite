@@ -11,7 +11,8 @@
  *
  * #204 proposed a `MeshPhysicalMaterial` pane so `scene.environment` would reach
  * it. Its own "Do not" list then forbids the key light reaching the glass — and
- * a standard-family pane is lit by **every** light in `nearScene`. The key
+ * a standard-family pane is lit by **every** light in its scene — the cabin's
+ * own scene since #651, which holds the key light and the fill. The key
  * (`COCKPIT_KEY_LIGHT`) sits about 27 m from the canopy header against a 50 m
  * range and the cabin fill about 36 m from the pane against 65, so both would
  * land on it. A physical pane would also join #201's occlusion walk, which

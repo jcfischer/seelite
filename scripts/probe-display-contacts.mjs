@@ -174,7 +174,7 @@ try {
 				await page.evaluate(
 					(id) =>
 						Boolean(
-							window.__seelite.nearScene.getObjectByName(
+							window.__seelite.cabinScene.getObjectByName(
 								`scanner-contact-diamond-${id}`,
 							)?.visible,
 						),

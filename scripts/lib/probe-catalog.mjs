@@ -193,6 +193,17 @@ export const PROBE_CATALOG = Object.freeze(
 			],
 		),
 		entry(
+			"probe-cabin-pass.mjs",
+			"Reads flat-colour frames near a berth to prove no world fragment is drawn inside the cabin footprint.",
+			[
+				"cockpit",
+				"cabin pass",
+				"render layers",
+				"station interior",
+				"composer",
+			],
+		),
+		entry(
 			"probe-cockpit-surface.mjs",
 			"Verifies live cockpit surface geometry, plating materials, and reversible renderer controls.",
 			["cockpit", "surface", "plating", "materials", "scene graph"],

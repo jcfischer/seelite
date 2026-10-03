@@ -269,6 +269,13 @@ footer {
 	color: #b6c8ce;
 	font-size: 0.92rem;
 }
+.channels {
+	display: flex;
+	flex-wrap: wrap;
+	gap: 0.7rem 1.6rem;
+	margin-top: 1.4rem;
+}
+.channels a,
 .changelog-more {
 	color: #9fb8c2;
 	font:
@@ -277,6 +284,7 @@ footer {
 	letter-spacing: 0.11em;
 	text-transform: uppercase;
 }
+.channels a:hover,
 .changelog-more:hover {
 	color: #f0ca76;
 }

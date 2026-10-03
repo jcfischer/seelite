@@ -24,6 +24,7 @@ export const PUBLIC_PAGES: readonly PublicPage[] = [
 		content: `<div class="threshold-actions">${play}<a class="button button--quiet" href="/about/">Find your bearings</a></div>
 			<p class="threshold-note">No accounts. No cookies. No advertising.</p>
 			<div class="instrument" aria-label="A quiet frontier transmission"><span>SECTOR: UNCHARTED</span><span>LOCAL: 03:17</span><span>SIGNAL: FAINT</span></div>
+			<div class="channels"><a href="https://www.youtube.com/@the-far-between" rel="noreferrer">Watch on YouTube <span aria-hidden="true">→</span></a><a href="https://discord.gg/qRVgSqMkh8" rel="noreferrer">Join the Discord <span aria-hidden="true">→</span></a></div>
 			<section class="changelog-home" aria-labelledby="changelog-home"><h2 id="changelog-home">Recent changes</h2>${changelogList(CHANGELOG.slice(0, HOME_CHANGELOG_COUNT))}<a class="changelog-more" href="/field-notes/">All changes <span aria-hidden="true">→</span></a></section>`,
 	},
 	{
