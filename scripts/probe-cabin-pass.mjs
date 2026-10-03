@@ -364,7 +364,15 @@ await startLoop(page);
 const casters = () =>
 	page.evaluate(() => {
 		const g = window.__seelite;
+		// **Read off a frame drawn now, not the last one the loop drew.** The
+		// ship docks during this trip, and docked in cockpit view with the head
+		// forward the loop draws no scene at all (`sceneRenderEligible`: the
+		// console covers it) — so the flags `render` writes were the previous
+		// chase frame's, and the row read them one run in three. What a drawn
+		// frame in this view uses is the question, so draw one.
+		g.render(0);
 		return {
+			dock: g.dockPhase,
 			view: g.view,
 			gate: g.occlusionState.open,
 			near: !!g.nearShadowSun?.castShadow,
@@ -436,7 +444,7 @@ t.check(
 );
 
 const show = (c) =>
-	`${c.view}: near ${c.near ? "casts" : "idle"}, cabin ${c.cabin ? "casts" : "idle"}, ${c.programs} programs`;
+	`${c.view} (${c.dock}): near ${c.near ? "casts" : "idle"}, cabin ${c.cabin ? "casts" : "idle"}, ${c.programs} programs`;
 t.check(
 	"the shadow gate is open for the view switch",
 	trip.every((c) => c.gate),
