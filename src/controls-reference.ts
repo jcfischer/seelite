@@ -12,6 +12,7 @@
  */
 import type { LayoutNotice, RejectReason } from "./layout-notice";
 import { escapeHtml } from "./escape-html";
+import { LAYOUT_LABELS } from "./layout-choice";
 import type { RebindRefusal, TaskGroup, Trigger } from "./commands";
 import {
 	COMMANDS,
@@ -355,8 +356,15 @@ export function controlsBody(
 	catalogue: ControlsCatalogue,
 	collapsed: ReadonlySet<TaskGroup>,
 ): string {
+	// The shipped layout by its own name, and a moved one as the player's with
+	// the layout it was moved from (#639).
+	const shipped = LAYOUT_LABELS[catalogue.base].toUpperCase();
 	const owner =
-		catalogue.layout === "default" ? "DEFAULT LAYOUT" : "PLAYER LAYOUT";
+		catalogue.layout === "default"
+			? `${shipped} LAYOUT`
+			: catalogue.base === "default"
+				? "PLAYER LAYOUT"
+				: `PLAYER LAYOUT · FROM ${shipped}`;
 	return `<div class="lc-panel-body lc-controls" data-live-controls-body><header class="lc-controls-head"><b data-live-controls-owner>${owner}</b><span>F1 or ${CONTROLS_CHORD} opens and closes this tab</span><span>The chord assumes a US layout; every other key prints as the character you type</span></header>${noticesMarkup(catalogue.notices)}<div class="lc-controls-tree" data-live-controls-tree>${controlsTreeMarkup(catalogue, collapsed)}</div></div>`;
 }
 

@@ -465,6 +465,19 @@ export const PROBE_CATALOG = Object.freeze(
 			["model viewer", "workbench", "procedural models", "Game isolation"],
 		),
 		entry(
+			"probe-mouse-flight-layout.mjs",
+			"Selects the Mouse flight keyboard layout on the settings screen and checks it flies the hull: a/d and Ctrl/Space strafe without turning the nose, the arrows pitch and yaw, w/s fire the main drive and retro vents with flight assist off, w, d and Ctrl push along three axes at once, and the selection survives a reload.",
+			[
+				"keyboard layout",
+				"mouse flight",
+				"settings",
+				"strafe",
+				"flight assist",
+				"rebind",
+				"flight controls",
+			],
+		),
+		entry(
 			"probe-moving-guard.mjs",
 			"Checks the moving-body cruise stop and the handoff into the correct local flight frame.",
 			["moving body", "cruise guard", "local frame", "collision avoidance"],

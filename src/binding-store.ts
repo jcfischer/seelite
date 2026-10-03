@@ -68,6 +68,20 @@
  * asserted it was nobody (sage round 6 on #497). The cost is named here
  * rather than discovered.
  *
+ * **The blob names the shipped layout its moves are from** (#639). A player
+ * who selects the mouse-flight layout stores `base: "mouse-flight"` and a diff
+ * against *that* table, so a later build that moves a mouse-flight key reaches
+ * them, for the reason the diff exists at all. The default layout writes no
+ * `base`, so its blob is the one this store wrote before #639. Switching
+ * layout drops the moves rather than carrying them across, by the
+ * principal's ruling on #639, and the settings row says how many first.
+ *
+ * **The field did not bump the version, and a downgrade is silent** (#639).
+ * An older build ignores `base`, so a mouse-flight blob loads there as the
+ * default layout with every move off a mouse-flight key refused, and one with
+ * no moves loads with no notice at all. The principal ruled it out of scope:
+ * one player so far, and no downgrade to protect. Revisit before a second.
+ *
  * **There is no `migrate()`, and that is the honest answer rather than a
  * gap.** Version 1 is the first version this game has ever written, so a
  * migration function here would be a path no red build can reach — and this
@@ -85,8 +99,11 @@ import {
 	COMMANDS,
 	collisions,
 	DEFAULT_BINDINGS,
+	LAYOUT_NAMES,
+	type LayoutName,
 	layoutMoves,
 	rebind,
+	shippedOf,
 	type Surface,
 	SURFACES,
 	type Trigger,
@@ -153,6 +170,9 @@ const COMMAND_IDS = new Set<string>(COMMANDS.map((c) => c.id));
 export function serializeLayout(layout: Layout): string {
 	return JSON.stringify({
 		version: LAYOUT_VERSION,
+		// Absent on the default layout, so that blob is byte for byte the one
+		// this store wrote before a second layout shipped.
+		...(layout.base === "default" ? {} : { base: layout.base }),
 		moves: layoutMoves(layout).map((move) => ({
 			...move,
 			from: withoutContexts(move.from),
@@ -335,6 +355,7 @@ function applyMove(
 	layout: Layout,
 	entry: unknown,
 ): { layout: Layout } | { notice: LayoutNotice } {
+	const shipped = shippedOf(layout.base);
 	const named =
 		isRecord(entry) && typeof entry.command === "string" ? entry.command : null;
 	const rejected = (
@@ -377,7 +398,7 @@ function applyMove(
 	const wanted = triggerKey(from);
 	const on = (rows: Layout) =>
 		rows.some((b) => b.command === named && triggerKey(b.trigger) === wanted);
-	if (!on(DEFAULT_BINDINGS))
+	if (!on(shipped))
 		return rejected("moved-default", `${named} no longer ships on ${wanted}`);
 	if (!on(layout))
 		return rejected(
@@ -438,18 +459,29 @@ export function parseLayout(raw: string | null): LoadedLayout {
 		};
 	if (!Array.isArray(parsed.moves))
 		return unreadable("the stored layout holds no list of changes");
+	// A missing name is the default layout, which is every blob written before
+	// #639. A name this build does not ship is the blob's refusal, not a row's:
+	// every move in it is a move off a table this build cannot name.
+	if (
+		parsed.base !== undefined &&
+		!LAYOUT_NAMES.includes(parsed.base as LayoutName)
+	)
+		return unreadable(
+			`no layout this game ships is called ${String(parsed.base).slice(0, 40)}`,
+		);
+	const shipped = shippedOf((parsed.base ?? "default") as LayoutName);
 	// **Capped at the size of the table it is a diff of**, which bounds the
 	// *merge*: a legitimate diff cannot name more rows than the layout has,
 	// and every row costs two full scans plus a `rebind` that copies the whole
 	// array. The parse itself is bounded by `RAW_MAX` above, because this cap
 	// necessarily runs after it.
-	if (parsed.moves.length > DEFAULT_BINDINGS.length)
+	if (parsed.moves.length > shipped.length)
 		return unreadable(
 			`the stored layout names more changes than this game has controls`,
 		);
 
 	const notices: LayoutNotice[] = [];
-	let layout = DEFAULT_BINDINGS;
+	let layout = shipped;
 	for (const entry of parsed.moves as unknown[]) {
 		const applied = applyMove(layout, entry);
 		if ("notice" in applied) notices.push(applied.notice);

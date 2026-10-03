@@ -8,7 +8,11 @@
  */
 
 import { describe, expect, test } from "bun:test";
-import { DEFAULT_BINDINGS, rebind } from "../src/commands";
+import {
+	DEFAULT_BINDINGS,
+	MOUSE_FLIGHT_BINDINGS,
+	rebind,
+} from "../src/commands";
 import { flightControls } from "../src/key-names";
 
 describe("#408 — the flight controls, as bound", () => {
@@ -19,6 +23,12 @@ describe("#408 — the flight controls, as bound", () => {
 		);
 		expect(lines.controller).toBe(
 			"THROTTLE R2/L2 · PITCH right stick up/down · YAW right stick left/right · ROLL left stick left/right",
+		);
+	});
+
+	test("the mouse-flight layout reads as its own keys (#639)", () => {
+		expect(flightControls(MOUSE_FLIGHT_BINDINGS).keyboard).toBe(
+			"THROTTLE w/s · PITCH ↑/↓ · YAW ←/→ · ROLL q/e",
 		);
 	});
 
