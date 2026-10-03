@@ -23,8 +23,8 @@ controller (`combat-enemy.ts`)
 the principal on 2026-10-03, because #75 left them open and each one changes
 what a pilot feels: the ship's own shape against a body, the scrape threshold
 and bounce, and which constant carries the damage scale. Their answers are
-**P1–P3** below. Everything else here is **derived** and is marked as derived,
-so a later reader can tell a choice from a consequence.
+**P1–P3** below. Every other rule that #75 did not state is marked
+**derived**, so a later reader can tell a choice from a consequence.
 
 ---
 
@@ -171,7 +171,7 @@ is inside the 0.1 m rounding. A row decides which (§9.1.10).
 |---|---|---|
 | The player, a raider, a relay defender, a Traffic carrier | Yes | C4a, C4b, `combat-model.md` §1 |
 | Any ship whose phase is exempt (§5) | No | `docking.md` §12.3 |
-| A cargo canister or a wreck canister | No | It is scooped when the ship reaches it. A bounce would make it unscoopable. |
+| A cargo canister or a wreck canister | No (derived) | It is scooped when the ship reaches it. A bounce would make it unscoopable. |
 | A laser beam or a missile | No | Weapons have their own hit test (`combat-model.md` §2.1) |
 | The pirate relay, Rama, Voyager | No, until each declares a proxy | No decision has given any of them a solid shape. Adding one adds a row here. |
 | A drawn object with no sim entry (`?fleet`, the workbench) | No | Collision is a sim-tier law. `ship-visuals.md` §2 gives the scaffold no sim entry. |
@@ -259,8 +259,8 @@ the end of the step. The step's velocity change is spread over the step, so a
 ship that starts a gap `g` from a surface and accelerates at `a` meets it at
 about `sqrt(v0² + 2·a·g)`, whatever dt is.
 
-A pair that is already **touching** at the start of a step is in **resting
-contact**. Touching means a separation no larger than the placement separation
+A pair that is already **touching** at the start of a step is a **resting
+pair**. Touching means a separation no larger than the placement separation
 the bounce uses, so a ship the bounce has just placed is touching on the next
 step. A resting pair is **still swept and still resolved**; it is never
 handed to §4.3's ghost rule. Two things differ for it (derived):
@@ -284,7 +284,7 @@ So every resolved impact, resting or not, ends with the pair apart by the
 placement separation, and a pair can only overlap at the start of a step by
 being placed there (§4.3). A ship held against a surface by thrust stays at
 the surface on every step at no cost, and a ship that bounces off returns at a
-lower speed each time until resting contact holds it.
+lower speed each time until it is a resting pair.
 
 ---
 
@@ -362,7 +362,8 @@ whether launches ever do is measured rather than assumed.
   That is `flying`.
 - **A Traffic carrier** is exempt in the states that mirror those three: its
   scripted hold-to-plane and traversal, and parked in a berth. It is keyed on
-  its route phase. The same argument applies: a position law with a known
+  its route phase (derived — #75's C4a makes Traffic collide like the player,
+  so it gets the player's exemption). The same argument applies: a position law with a known
   start and end, inside a lane that `docking.md` §6's clearance protocol keeps
   clear of other ships.
 - **The boundaries in time** are §12.3's. The exemption starts on the tick
@@ -456,13 +457,13 @@ browser probe.
    is at most a quarter of the smallest `headOnPool`. At the 2 km/s assist cap
    it is at least the largest. The rows read `DOCKING_DAMAGE_SCALE` and the
    hull table, not a parameter.
-4. **A ship resting on a surface pays nothing, stays outside it, and dt does
-   not change either** (§3.1). A hull holding full thrust into a surface for
+4. **Thrust against a surface pays nothing, the ship stays outside it, and dt
+   does not change either** (§3.1). A hull holding full thrust into a surface for
    ten seconds takes zero damage at `dt` = 1/144, 1/60 and `MAX_DT`, **and at
    the end of every step its box is outside the surface**. The same holds for
-   a hull resting on a surface while turning at its largest rate, and for a
-   ship touching a station face while a corner turns into it — which is
-   billed at `ω × r`, not let through. A red build: a resolver that hands a
+   a hull resting on a surface while turning at its largest rate. **A moving
+   surface is the exception, and it is billed:** a ship touching a station
+   face while a corner turns into it takes §3's damage at `ω × r`. A red build: a resolver that hands a
    resting pair to §4.3's ghost rule passes the damage half and fails the
    outside half. A ram at 0.5 km/s costs the
    same damage at all three, within a stated tolerance. The interceptor
@@ -481,10 +482,22 @@ browser probe.
    until it separates. A launch on every slot and pad role, for every hull its
    berths admit, flies out without an impact. Each placement path is counted.
 8. **The exemption honoured** — `docking.md` §12.6 obligation 8's physical
-   half. Fly the arrival, the parked interval and the launch on every
-   slot-bearing and pad role **with the exemption removed**, and watch the
-   throat or the deck make impacts. That is the red build. With the
-   exemption in place, the same runs make none.
+   half. Fly the arrival, the parked interval and the launch on every role,
+   for every hull its berths admit, with the exemption in place, and assert no
+   impact. The red build differs by aperture kind, because §2.2 leaves a
+   slot's bay open in the proxy:
+   - **Pad roles:** the deck and the berths are solid. Removing the exemption
+     must make impacts. That is the red build.
+   - **Slot roles:** removing the exemption may make **no** impacts, because
+     the open bay already keeps the traversal clear. That outcome is not a
+     pass of the exemption; it is a check that every traversal's swept box
+     stays inside the open volume, and the row asserts exactly that. Its red
+     build closes the bay in the proxy, which must make impacts. On a slot
+     the exemption is defence in depth, as check 5 is at the plane.
+   - **What the open bay does not cover:** a berth's own fixtures inside the
+     bay are not in the proxy. A ship flying in the bay — only a placement
+     can put it there (§4.3), such as #293's restore — passes through them.
+     §11 records it.
 9. **The aperture as a physical fit** (P1). For every ordinary hull, print the
    largest check-2 angle (pitch and yaw separately) at which a centred entry,
    rolled to check 4's limit, clears the proxy. Assert that every hull clears
@@ -582,7 +595,9 @@ rules for every combat ship.
 5. **The proxy is checked as a container and not as a fit** (§2.2). A proxy
    that wraps a sparse form in a box passes every headless row. Only flying
    it (§9.2.2) shows the invisible wall.
-6. **A ship placed inside is a ghost until it leaves** (§4.3). Whether any
+6. **Berth fixtures inside a slot's bay are not solid** (§9.1.8). Only a
+   ship placed in the bay can reach them, and it passes through them.
+7. **A ship placed inside is a ghost until it leaves** (§4.3). Whether any
    placement path starts a ship inside today is not measured; §9.1.7 measures
    it. A path that places a ship deep inside a solid would leave it there,
    flying through the structure until it comes out. Counting the paths is what
