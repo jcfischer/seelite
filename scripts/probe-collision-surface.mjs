@@ -14,8 +14,9 @@
  * can answer is the wiring — that `Game` hands the flown hull's box to
  * `stepWorld` while flying, lands the impact through its one damage path, and
  * that the camera the player looks through is not inside the moon on the frame
- * the ship meets it. Three rows: assist off at the docking gate, assist on
- * under a small throttle, and a fast hit that kills.
+ * the ship meets it. Four rows: assist off at the docking gate, assist on
+ * under a small throttle, a fast hit that kills, and a ship placed inside the
+ * moon, which §4.3 leaves a ghost and `Game` records.
  *
  * Every row prints what it read, so the same probe at two refs is the
  * before/after.
@@ -275,6 +276,68 @@ const approach = async ({ assist, throttle, gates, startKm, afterS }) => {
 	check(
 		"the cockpit camera is outside the moon on the frame of that impact too",
 		r.cameraGapAtImpactKm !== null && r.cameraGapAtImpactKm > 0,
+		JSON.stringify(r),
+	);
+}
+
+// Row 4: a ship placed inside the moon is a ghost (§4.3) — no damage, no
+// push-out — and the step says so on the handle rather than passing silently.
+{
+	const page = await browser.newPage({ viewport: { width: 900, height: 620 } });
+	watch(page);
+	await page.goto(gameUrl(origin, { seed: SEED, system: SYSTEM }));
+	await bootedGame(page);
+	const r = await page.evaluate((moonId) => {
+		const g = window.__seelite;
+		const moon = g.world.system.byId.get(moonId);
+		if (!moon) return { error: `no ${moonId} at seed/system` };
+		const out = { x: 0.2, y: -0.4, z: 0.9 };
+		const n = Math.hypot(out.x, out.y, out.z);
+		const depth = moon.radiusKm - 0.5;
+		g.world.ship.pos = {
+			x: moon.pos.x + (out.x / n) * depth,
+			y: moon.pos.y + (out.y / n) * depth,
+			z: moon.pos.z + (out.z / n) * depth,
+		};
+		g.world.ship.vel = { ...g.stationVelocity(moonId) };
+		g.rates = { pitch: 0, yaw: 0, roll: 0 };
+		g.throttle = 0;
+		const before = {
+			steps: g.collisionGhostSteps,
+			fore: g.condition.fore,
+			aft: g.condition.aft,
+			hull: g.condition.hull,
+		};
+		g.step(g.units.MAX_DT);
+		const gap =
+			Math.hypot(
+				g.world.ship.pos.x - moon.pos.x,
+				g.world.ship.pos.y - moon.pos.y,
+				g.world.ship.pos.z - moon.pos.z,
+			) - moon.radiusKm;
+		return {
+			stepsBefore: before.steps,
+			steps: g.collisionGhostSteps,
+			last: g.lastCollisionGhost,
+			spent:
+				before.fore -
+				g.condition.fore +
+				(before.aft - g.condition.aft) +
+				(before.hull - g.condition.hull),
+			gapKm: gap,
+			dead: g.dead,
+		};
+	}, MOON);
+	await page.close();
+	console.log(`placed inside: ${JSON.stringify(r)}`);
+	check(
+		"a ship stepped from inside the moon is a ghost, and the handle records it",
+		!r.error &&
+			r.steps === r.stepsBefore + 1 &&
+			r.last === MOON &&
+			r.spent === 0 &&
+			!r.dead &&
+			r.gapKm < 0,
 		JSON.stringify(r),
 	);
 }
