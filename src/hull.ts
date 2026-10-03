@@ -173,70 +173,181 @@ export interface VentShares {
 	readonly roll: number;
 }
 
-/** Where each slot sits, as a fraction of the envelope's half-extents
- *  (`x` half-beam, `y` half-height, `z` half-length), and which way it
- *  pushes. The translation pairs sit a quarter of the half-length either side
- *  of the centre of mass; the attitude pairs at the extremities. */
-const SLOT_GEOMETRY: Readonly<
-	Record<
-		VentSlot,
-		{
-			family: VentFamily;
-			at: readonly [number, number, number];
-			dir: readonly [number, number, number];
-		}
-	>
-> = {
-	main: { family: "main", at: [0, 0, 1], dir: [0, 0, -1] },
-	"retro-port": { family: "retro", at: [-0.5, 0, -1], dir: [0, 0, 1] },
-	"retro-starboard": { family: "retro", at: [0.5, 0, -1], dir: [0, 0, 1] },
-	"strafe-fore-port": { family: "strafe", at: [-1, 0, -0.25], dir: [1, 0, 0] },
-	"strafe-aft-port": { family: "strafe", at: [-1, 0, 0.25], dir: [1, 0, 0] },
-	"strafe-fore-starboard": {
-		family: "strafe",
-		at: [1, 0, -0.25],
-		dir: [-1, 0, 0],
-	},
-	"strafe-aft-starboard": {
-		family: "strafe",
-		at: [1, 0, 0.25],
-		dir: [-1, 0, 0],
-	},
-	"strafe-fore-dorsal": {
-		family: "strafe",
-		at: [0, 1, -0.25],
-		dir: [0, -1, 0],
-	},
-	"strafe-aft-dorsal": { family: "strafe", at: [0, 1, 0.25], dir: [0, -1, 0] },
-	"strafe-fore-ventral": {
-		family: "strafe",
-		at: [0, -1, -0.25],
-		dir: [0, 1, 0],
-	},
-	"strafe-aft-ventral": { family: "strafe", at: [0, -1, 0.25], dir: [0, 1, 0] },
-	"fore-port-lateral": { family: "yaw", at: [-1, 0, -1], dir: [1, 0, 0] },
-	"fore-starboard-lateral": { family: "yaw", at: [1, 0, -1], dir: [-1, 0, 0] },
-	"aft-port-lateral": { family: "yaw", at: [-1, 0, 1], dir: [1, 0, 0] },
-	"aft-starboard-lateral": { family: "yaw", at: [1, 0, 1], dir: [-1, 0, 0] },
-	"fore-dorsal-vertical": { family: "pitch", at: [0, 1, -1], dir: [0, -1, 0] },
-	"fore-ventral-vertical": { family: "pitch", at: [0, -1, -1], dir: [0, 1, 0] },
-	"aft-dorsal-vertical": { family: "pitch", at: [0, 1, 1], dir: [0, -1, 0] },
-	"aft-ventral-vertical": { family: "pitch", at: [0, -1, 1], dir: [0, 1, 0] },
-	"port-dorsal-roll": { family: "roll", at: [-1, 0, 0], dir: [0, -1, 0] },
-	"port-ventral-roll": { family: "roll", at: [-1, 0, 0], dir: [0, 1, 0] },
-	"starboard-dorsal-roll": { family: "roll", at: [1, 0, 0], dir: [0, -1, 0] },
-	"starboard-ventral-roll": { family: "roll", at: [1, 0, 0], dir: [0, 1, 0] },
+/**
+ * Where a hull's vent pairs sit (#636, `flight-model.md` §3.2.1), as fractions
+ * of the envelope's half-extents (`x` half-beam, `y` half-height, `z`
+ * half-length).
+ *
+ * A pair may move in any direction that leaves it pure — a translation pair
+ * force and no torque, an attitude pair a couple about its own axis alone — so
+ * these are the only freedoms a pair has. A vent's place *along* its own line
+ * of action changes nothing it does, so the table keeps it on the box face and
+ * the display slides it to the metal (`vent-plumes.ts`).
+ *
+ * **Measured, not chosen.** `scripts/measure-vent-placement.ts` finds each row
+ * on the selected variant's mesh so every line of action meets metal, and
+ * `tests/vent-placement.test.ts` holds the stored row to it. A moved attitude
+ * pair moves its arm, so the shares are solved against `coupleArms` rather
+ * than against the envelope.
+ */
+export interface VentPlacement {
+	/** The retro pair's lines, either side of the centreline: half-beam. */
+	readonly retroX: number;
+	/** The translation pairs, either side of the centre of mass: half-length. */
+	readonly strafeZ: number;
+	/** The yaw lines' height (half-height), and how far fore and aft their two
+	 *  ends stand (half-length). */
+	readonly yaw: {
+		readonly y: number;
+		readonly fore: number;
+		readonly aft: number;
+	};
+	/** The pitch lines' offset to starboard (half-beam), and their two ends. */
+	readonly pitch: {
+		readonly x: number;
+		readonly fore: number;
+		readonly aft: number;
+	};
+	/** The roll lines' station fore and aft (half-length; aft positive), and
+	 *  how far out to port and to starboard they stand (half-beam). */
+	readonly roll: {
+		readonly z: number;
+		readonly port: number;
+		readonly starboard: number;
+	};
+}
+
+/** The envelope's own box: the placement every hull had before #636, the
+ *  attitude pairs at the extremities and the translation pairs a quarter of
+ *  the half-length either side of the centre of mass. What a measured arm is
+ *  read against. */
+export const BOX_PLACEMENT: VentPlacement = {
+	retroX: 0.5,
+	strafeZ: 0.25,
+	yaw: { y: 0, fore: 1, aft: 1 },
+	pitch: { x: 0, fore: 1, aft: 1 },
+	roll: { z: 0, port: 1, starboard: 1 },
 };
 
-/** A hull's vent table, as plain data: the shared slot geometry scaled to its
- *  envelope, each vent carrying its family's share. */
+/** Each couple's arm, kilometres: the torque one attitude pair makes per unit
+ *  thrust of one vent. What `scripts/measure-vent-shares.ts` solves against. */
+export const coupleArms = (
+	env: HullEnvelope,
+	p: VentPlacement,
+): { readonly pitch: number; readonly yaw: number; readonly roll: number } => ({
+	pitch: ((p.pitch.fore + p.pitch.aft) * env.lengthKm) / 2,
+	yaw: ((p.yaw.fore + p.yaw.aft) * env.lengthKm) / 2,
+	roll: ((p.roll.port + p.roll.starboard) * env.beamKm) / 2,
+});
+
+type Fractions = readonly [number, number, number];
+
+/** Where each slot sits under a placement, and which way it pushes. A vent's
+ *  coordinate along its own push is the box face's; see `VentPlacement`. */
+const slotGeometry = (
+	p: VentPlacement,
+): Readonly<
+	Record<VentSlot, { family: VentFamily; at: Fractions; dir: Fractions }>
+> => {
+	const { retroX: r, strafeZ: s, yaw, pitch, roll } = p;
+	return {
+		main: { family: "main", at: [0, 0, 1], dir: [0, 0, -1] },
+		"retro-port": { family: "retro", at: [-r, 0, -1], dir: [0, 0, 1] },
+		"retro-starboard": { family: "retro", at: [r, 0, -1], dir: [0, 0, 1] },
+		"strafe-fore-port": { family: "strafe", at: [-1, 0, -s], dir: [1, 0, 0] },
+		"strafe-aft-port": { family: "strafe", at: [-1, 0, s], dir: [1, 0, 0] },
+		"strafe-fore-starboard": {
+			family: "strafe",
+			at: [1, 0, -s],
+			dir: [-1, 0, 0],
+		},
+		"strafe-aft-starboard": {
+			family: "strafe",
+			at: [1, 0, s],
+			dir: [-1, 0, 0],
+		},
+		"strafe-fore-dorsal": { family: "strafe", at: [0, 1, -s], dir: [0, -1, 0] },
+		"strafe-aft-dorsal": { family: "strafe", at: [0, 1, s], dir: [0, -1, 0] },
+		"strafe-fore-ventral": {
+			family: "strafe",
+			at: [0, -1, -s],
+			dir: [0, 1, 0],
+		},
+		"strafe-aft-ventral": { family: "strafe", at: [0, -1, s], dir: [0, 1, 0] },
+		"fore-port-lateral": {
+			family: "yaw",
+			at: [-1, yaw.y, -yaw.fore],
+			dir: [1, 0, 0],
+		},
+		"fore-starboard-lateral": {
+			family: "yaw",
+			at: [1, yaw.y, -yaw.fore],
+			dir: [-1, 0, 0],
+		},
+		"aft-port-lateral": {
+			family: "yaw",
+			at: [-1, yaw.y, yaw.aft],
+			dir: [1, 0, 0],
+		},
+		"aft-starboard-lateral": {
+			family: "yaw",
+			at: [1, yaw.y, yaw.aft],
+			dir: [-1, 0, 0],
+		},
+		"fore-dorsal-vertical": {
+			family: "pitch",
+			at: [pitch.x, 1, -pitch.fore],
+			dir: [0, -1, 0],
+		},
+		"fore-ventral-vertical": {
+			family: "pitch",
+			at: [pitch.x, -1, -pitch.fore],
+			dir: [0, 1, 0],
+		},
+		"aft-dorsal-vertical": {
+			family: "pitch",
+			at: [pitch.x, 1, pitch.aft],
+			dir: [0, -1, 0],
+		},
+		"aft-ventral-vertical": {
+			family: "pitch",
+			at: [pitch.x, -1, pitch.aft],
+			dir: [0, 1, 0],
+		},
+		"port-dorsal-roll": {
+			family: "roll",
+			at: [-roll.port, 0, roll.z],
+			dir: [0, -1, 0],
+		},
+		"port-ventral-roll": {
+			family: "roll",
+			at: [-roll.port, 0, roll.z],
+			dir: [0, 1, 0],
+		},
+		"starboard-dorsal-roll": {
+			family: "roll",
+			at: [roll.starboard, 0, roll.z],
+			dir: [0, -1, 0],
+		},
+		"starboard-ventral-roll": {
+			family: "roll",
+			at: [roll.starboard, 0, roll.z],
+			dir: [0, 1, 0],
+		},
+	};
+};
+
+/** A hull's vent table, as plain data: its placement scaled to its envelope,
+ *  each vent carrying its family's share. */
 export const ventTable = (
 	env: HullEnvelope,
 	shares: VentShares,
+	placement: VentPlacement,
 ): readonly VentRow[] => {
 	const half = [env.beamKm / 2, env.heightKm / 2, env.lengthKm / 2] as const;
+	const geometry = slotGeometry(placement);
 	return VENT_SLOTS.map((slot) => {
-		const { family, at, dir } = SLOT_GEOMETRY[slot];
+		const { family, at, dir } = geometry[slot];
 		return {
 			slot,
 			family,
@@ -284,8 +395,10 @@ export interface HullSpec {
 	readonly thrustMN: number;
 	/** The hull's vent shares (§3.4) — see `VentShares`. */
 	readonly ventShares: VentShares;
-	/** The hull's vent table, built from `env` and `ventShares` by
-	 *  `ventTable`: plain data, one row per filled slot (§3.3). */
+	/** Where the hull's vent pairs sit (§3.2.1) — see `VentPlacement`. */
+	readonly ventPlacement: VentPlacement;
+	/** The hull's vent table, built from `env`, `ventShares` and
+	 *  `ventPlacement` by `ventTable`: plain data, one row per filled slot (§3.3). */
 	readonly vents: readonly VentRow[];
 	/** Cargo capacity, tonnes. The courier's is `economy-trade.md` §6's 20 t and
 	 *  is the reference the stock deficit's response is stated against — #26's D6
@@ -520,9 +633,16 @@ const HULL_ROWS: Readonly<Record<HullId, Omit<HullSpec, "vents">>> = {
 			main: 1,
 			retro: 0.5,
 			strafe: 0.416667,
-			pitch: 0.00748509,
-			yaw: 0.0129086,
-			roll: 0.00674605,
+			pitch: 0.00756069,
+			yaw: 0.0129409,
+			roll: 0.00676296,
+		},
+		ventPlacement: {
+			retroX: 0.5,
+			strafeZ: 0.25,
+			yaw: { y: -0.05, fore: 0.9975, aft: 0.9975 },
+			pitch: { x: 0, fore: 0.9975, aft: 0.9825 },
+			roll: { z: 0.325, port: 0.9975, starboard: 0.9975 },
 		},
 		holdT: 20,
 		hardpoints: 1,
@@ -541,9 +661,16 @@ const HULL_ROWS: Readonly<Record<HullId, Omit<HullSpec, "vents">>> = {
 			main: 1,
 			retro: 0.5,
 			strafe: 0.416667,
-			pitch: 0.00835972,
-			yaw: 0.00836904,
-			roll: 0.00580533,
+			pitch: 0.00838067,
+			yaw: 0.00839002,
+			roll: 0.00593896,
+		},
+		ventPlacement: {
+			retroX: 0.5,
+			strafeZ: 0.25,
+			yaw: { y: 0, fore: 0.9975, aft: 0.9975 },
+			pitch: { x: 0, fore: 0.9975, aft: 0.9975 },
+			roll: { z: 0.725, port: 0.9775, starboard: 0.9775 },
 		},
 		holdT: 8,
 		hardpoints: 2,
@@ -562,9 +689,16 @@ const HULL_ROWS: Readonly<Record<HullId, Omit<HullSpec, "vents">>> = {
 			main: 1,
 			retro: 0.5,
 			strafe: 0.416667,
-			pitch: 0.00776168,
-			yaw: 0.0103591,
-			roll: 0.00563884,
+			pitch: 0.00778113,
+			yaw: 0.010385,
+			roll: 0.00573199,
+		},
+		ventPlacement: {
+			retroX: 0.5,
+			strafeZ: 0.25,
+			yaw: { y: 0, fore: 0.9975, aft: 0.9975 },
+			pitch: { x: -0.4, fore: 0.9975, aft: 0.9975 },
+			roll: { z: 0.45, port: 0.995, starboard: 0.9725 },
 		},
 		// Three times the reference, which is the case #26's D6 names by number:
 		// a 60 t hold leans three times as hard on a market that remembers it.
@@ -585,9 +719,16 @@ const HULL_ROWS: Readonly<Record<HullId, Omit<HullSpec, "vents">>> = {
 			main: 1,
 			retro: 0.5,
 			strafe: 0.416667,
-			pitch: 0.00848301,
-			yaw: 0.0103534,
-			roll: 0.00672222,
+			pitch: 0.00850427,
+			yaw: 0.0103794,
+			roll: 0.00673907,
+		},
+		ventPlacement: {
+			retroX: 0.4225,
+			strafeZ: 0.22,
+			yaw: { y: 0.125, fore: 0.9975, aft: 0.9975 },
+			pitch: { x: 0, fore: 0.9975, aft: 0.9975 },
+			roll: { z: 0.75, port: 0.9975, starboard: 0.9975 },
 		},
 		holdT: 40,
 		hardpoints: 1,
@@ -614,9 +755,16 @@ const HULL_ROWS: Readonly<Record<HullId, Omit<HullSpec, "vents">>> = {
 			main: 1,
 			retro: 0.5,
 			strafe: 0.416667,
-			pitch: 0.00744076,
-			yaw: 0.0102899,
-			roll: 0.00510765,
+			pitch: 0.00745941,
+			yaw: 0.0103157,
+			roll: 0.00519862,
+		},
+		ventPlacement: {
+			retroX: 0.5,
+			strafeZ: 0.25,
+			yaw: { y: -0.025, fore: 0.9975, aft: 0.9975 },
+			pitch: { x: 0, fore: 0.9975, aft: 0.9975 },
+			roll: { z: 0.625, port: 0.9825, starboard: 0.9825 },
 		},
 		holdT: 6,
 		hardpoints: 2,
@@ -635,9 +783,16 @@ const HULL_ROWS: Readonly<Record<HullId, Omit<HullSpec, "vents">>> = {
 			main: 1,
 			retro: 0.5,
 			strafe: 0.416667,
-			pitch: 0.00926742,
-			yaw: 0.00914358,
-			roll: 0.00773654,
+			pitch: 0.00929064,
+			yaw: 0.0091665,
+			roll: 0.00777541,
+		},
+		ventPlacement: {
+			retroX: 0.5,
+			strafeZ: 0.25,
+			yaw: { y: 0, fore: 0.9975, aft: 0.9975 },
+			pitch: { x: 0, fore: 0.9975, aft: 0.9975 },
+			roll: { z: -0.125, port: 0.995, starboard: 0.995 },
 		},
 		holdT: 30,
 		hardpoints: 1,
@@ -658,9 +813,16 @@ const HULL_ROWS: Readonly<Record<HullId, Omit<HullSpec, "vents">>> = {
 			main: 1,
 			retro: 0.5,
 			strafe: 0.416667,
-			pitch: 0.00739928,
-			yaw: 0.00929684,
-			roll: 0.00428463,
+			pitch: 0.00741782,
+			yaw: 0.00932014,
+			roll: 0.00429537,
+		},
+		ventPlacement: {
+			retroX: 0.5,
+			strafeZ: 0.25,
+			yaw: { y: 0, fore: 0.9975, aft: 0.9975 },
+			pitch: { x: 0.075, fore: 0.9975, aft: 0.9975 },
+			roll: { z: 0.7, port: 0.9975, starboard: 0.9975 },
 		},
 		holdT: 10,
 		hardpoints: 2,
@@ -679,9 +841,16 @@ const HULL_ROWS: Readonly<Record<HullId, Omit<HullSpec, "vents">>> = {
 			main: 1,
 			retro: 0.5,
 			strafe: 0.416667,
-			pitch: 0.00823567,
-			yaw: 0.00873879,
-			roll: 0.00559533,
+			pitch: 0.00825631,
+			yaw: 0.00876069,
+			roll: 0.00568054,
+		},
+		ventPlacement: {
+			retroX: 0.5,
+			strafeZ: 0.25,
+			yaw: { y: -0.05, fore: 0.9975, aft: 0.9975 },
+			pitch: { x: 0, fore: 0.9975, aft: 0.9975 },
+			roll: { z: 0.775, port: 0.985, starboard: 0.985 },
 		},
 		holdT: 400,
 		hardpoints: 6,
@@ -700,9 +869,16 @@ const HULL_ROWS: Readonly<Record<HullId, Omit<HullSpec, "vents">>> = {
 			main: 1,
 			retro: 0.5,
 			strafe: 0.416667,
-			pitch: 0.00857468,
-			yaw: 0.0115738,
-			roll: 0.00739056,
+			pitch: 0.00859617,
+			yaw: 0.0116028,
+			roll: 0.00740908,
+		},
+		ventPlacement: {
+			retroX: 0.5,
+			strafeZ: 0.25,
+			yaw: { y: 0, fore: 0.9975, aft: 0.9975 },
+			pitch: { x: -0.425, fore: 0.9975, aft: 0.9975 },
+			roll: { z: -0.225, port: 0.9975, starboard: 0.9975 },
 		},
 		holdT: 24,
 		hardpoints: 1,
@@ -721,9 +897,16 @@ const HULL_ROWS: Readonly<Record<HullId, Omit<HullSpec, "vents">>> = {
 			main: 1,
 			retro: 0.5,
 			strafe: 0.416667,
-			pitch: 0.00778665,
-			yaw: 0.00822784,
-			roll: 0.00430934,
+			pitch: 0.00810055,
+			yaw: 0.00899218,
+			roll: 0.00433099,
+		},
+		ventPlacement: {
+			retroX: 0.5,
+			strafeZ: 0.25,
+			yaw: { y: 0.075, fore: 0.8325, aft: 0.9975 },
+			pitch: { x: 0, fore: 0.9975, aft: 0.925 },
+			roll: { z: 0.5, port: 0.995, starboard: 0.995 },
 		},
 		holdT: 12,
 		hardpoints: 1,
@@ -742,9 +925,16 @@ const HULL_ROWS: Readonly<Record<HullId, Omit<HullSpec, "vents">>> = {
 			main: 1,
 			retro: 0.5,
 			strafe: 0.416667,
-			pitch: 0.00772413,
-			yaw: 0.00795769,
-			roll: 0.00399213,
+			pitch: 0.00774348,
+			yaw: 0.00797764,
+			roll: 0.00406323,
+		},
+		ventPlacement: {
+			retroX: 0.5,
+			strafeZ: 0.25,
+			yaw: { y: 0, fore: 0.9975, aft: 0.9975 },
+			pitch: { x: 0, fore: 0.9975, aft: 0.9975 },
+			roll: { z: 0.775, port: 0.9825, starboard: 0.9825 },
 		},
 		holdT: 200,
 		hardpoints: 8,
@@ -774,9 +964,16 @@ const HULL_ROWS: Readonly<Record<HullId, Omit<HullSpec, "vents">>> = {
 			main: 1,
 			retro: 0.5,
 			strafe: 0.416667,
-			pitch: 0.007366,
-			yaw: 0.00735896,
-			roll: 0.00226584,
+			pitch: 0.00743102,
+			yaw: 0.00740524,
+			roll: 0.00227722,
+		},
+		ventPlacement: {
+			retroX: 0.5,
+			strafeZ: 0.25,
+			yaw: { y: 0, fore: 0.99, aft: 0.9975 },
+			pitch: { x: 0, fore: 0.9975, aft: 0.985 },
+			roll: { z: 0.7, port: 0.995, starboard: 0.995 },
 		},
 		holdT: 240,
 		hardpoints: 1,
@@ -793,7 +990,13 @@ export const HULL_SPECS: Readonly<Record<HullId, HullSpec>> =
 	Object.fromEntries(
 		HULL_IDS.map((id) => {
 			const row = HULL_ROWS[id];
-			return [id, { ...row, vents: ventTable(row.env, row.ventShares) }];
+			return [
+				id,
+				{
+					...row,
+					vents: ventTable(row.env, row.ventShares, row.ventPlacement),
+				},
+			];
 		}),
 	) as Record<HullId, HullSpec>;
 
