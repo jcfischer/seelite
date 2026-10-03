@@ -31,8 +31,12 @@ export interface PointerRate {
 
 const clampAbs = (v: number, max: number) => Math.max(-max, Math.min(max, v));
 
+/** The pointer speed, px/s, above which a couple of `authority` rad/s²
+ *  stops paying a delta in full. Frame-rate invariant. */
+export const couplePxS = (authority: number) => authority / MOUSE_RAD_PER_PX;
+
 /** What a raw delta asks for, rad/s: the nose follows the pointer. */
-export const asked = (dxPx: number, dyPx: number): PointerRate => ({
+const asked = (dxPx: number, dyPx: number): PointerRate => ({
 	pitch: -dyPx * MOUSE_RAD_PER_PX,
 	yaw: -dxPx * MOUSE_RAD_PER_PX,
 });
@@ -49,7 +53,7 @@ export function pointerImpulse(dxPx: number, dyPx: number): Angular {
 
 /** One flick, as the readout reports it. */
 export interface Flick {
-	/** The fastest frame, pixels a second. */
+	/** The fastest movement over any `FLICK_PEAK_WINDOW_S`, pixels a second. */
 	peakPxS: number;
 	/** The rate change the pointer asked for over the flick, rad/s summed
 	 *  over pitch and yaw. */
@@ -66,6 +70,11 @@ export interface Flick {
 /** A flick ends this long after the pointer stops. */
 const FLICK_QUIET_S = 0.15;
 
+/** A flick's peak is read over this much time, not over one frame: a single
+ *  event can carry hundreds of pixels (a re-focused window, a hitch), and a
+ *  one-frame peak would be that event rather than the hand. */
+export const FLICK_PEAK_WINDOW_S = 0.05;
+
 /**
  * Reads flicks for a flight test: the console readout the principal pastes
  * (`__seelite.pointerReadout`), so a limit is compared with their own hand
@@ -75,6 +84,8 @@ const FLICK_QUIET_S = 0.15;
 export class FlickMeter {
 	private current: Flick | null = null;
 	private quietS = 0;
+	/** The frames inside the peak window, newest last. */
+	private recent: { px: number; dt: number }[] = [];
 	last: Flick | null = null;
 	/** The fastest flick since the page loaded: a small correction after a
 	 *  hard spin replaces `last` but not this. */
@@ -99,7 +110,15 @@ export class FlickMeter {
 				assisted: false,
 			};
 		const f = this.current;
-		f.peakPxS = Math.max(f.peakPxS, Math.hypot(dxPx, dyPx) / dt);
+		this.recent.push({ px: Math.hypot(dxPx, dyPx), dt });
+		let windowS = this.recent.reduce((t, r) => t + r.dt, 0);
+		while (windowS - this.recent[0].dt >= FLICK_PEAK_WINDOW_S)
+			windowS -= this.recent.shift()?.dt ?? 0;
+		const px = this.recent.reduce((t, r) => t + r.px, 0);
+		f.peakPxS = Math.max(
+			f.peakPxS,
+			px / Math.max(windowS, FLICK_PEAK_WINDOW_S),
+		);
 		const askedNow = asked(dxPx, dyPx);
 		f.askedRadS += Math.abs(askedNow.pitch) + Math.abs(askedNow.yaw);
 		f.deliveredRadS += Math.abs(delivered.pitch) + Math.abs(delivered.yaw);
@@ -112,11 +131,13 @@ export class FlickMeter {
 			if (!this.hardest || f.peakPxS > this.hardest.peakPxS) this.hardest = f;
 			this.current = null;
 			this.quietS = 0;
+			this.recent = [];
 		}
 	}
 
 	reset() {
 		this.current = null;
 		this.quietS = 0;
+		this.recent = [];
 	}
 }

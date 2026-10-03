@@ -309,12 +309,7 @@ import {
 	stepWorld,
 	thrustShares,
 } from "./sim";
-import {
-	type Flick,
-	FlickMeter,
-	MOUSE_RAD_PER_PX,
-	pointerImpulse,
-} from "./pointer";
+import { type Flick, FlickMeter, couplePxS, pointerImpulse } from "./pointer";
 import { AttitudeFollower } from "./attitude-hold";
 import {
 	heldVents,
@@ -2373,8 +2368,8 @@ class Game {
 			hull: this.flownHull,
 			assist: this.assist,
 			couplePxS: {
-				pitch: Math.round(a.pitch / MOUSE_RAD_PER_PX),
-				yaw: Math.round(a.yaw / MOUSE_RAD_PER_PX),
+				pitch: Math.round(couplePxS(a.pitch)),
+				yaw: Math.round(couplePxS(a.yaw)),
 			},
 			lastFlick: read(this.flickMeter.last),
 			hardestFlick: read(this.flickMeter.hardest),

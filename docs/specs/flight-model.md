@@ -270,24 +270,27 @@ A bounded assist cannot reproduce two things #5 did.
   `tests/vents.test.ts` holds each under 20%. The principal ruled first on the
   courier's figure; sage found that it did not hold for the agile hulls, and
   the principal accepted the roster's figures as measured.
-- **The pointer is a demand** (ruled by the principal on 2026-10-03, #641,
-  with the assist on and off). A mouse delta used to add to the rate directly.
+- **The pointer is a demand** (ruled by the principal on 2026-10-03, #641: with
+  the assist off by keeping this law over a carry arm in Mechan's test below,
+  and with the assist on by ruling this item as written). A mouse delta used to add to the rate directly.
   Now it asks the attitude vents for that change of rate and gets at most the
   couple's authority in one step. **What the step cannot pay is lost**, not
   carried. So a pointer faster than `angularAuthority / MOUSE_RAD_PER_PX`
   pixels a second loses the rest. That limit does not change with frame rate.
   Below about 25–34 fps on the agile hulls, `MOUSE_MAX_STEP` binds first, per
-  frame. `tests/pointer.test.ts` prints the limit per hull. The principal's
-  hardest flicks read 22,000–24,000 px/s against the courier's 1364, so a hard
-  flick is well inside the loss. A `carry` arm banked the unpaid part,
+  frame. `tests/pointer.test.ts` prints the limit per hull. On the courier,
+  whose limit is 1364 px/s, the principal's hardest flick on this law asked
+  for 7.57 rad/s over about a second, which is roughly 3,000 px/s for the whole
+  flick, and the vents paid 35% of it. Its one-frame peak read 22,035 px/s.
+  So a hard flick is well inside the loss. A `carry` arm banked the unpaid part,
   decaying at 0.25 s and capped at 1 rad/s an axis, and asked for it again.
   The principal flew Mechan's test (spin hard, then stop the nose on a star in
   two or three movements) on both arms and kept this law. The carry arm was
   removed. It was not Elite's virtual stick (a deflection that returns to
   centre), and that law was not flown. How hot a pixel is belongs to the
   sensitivity node ([#640](https://github.com/jcfischer/seelite/issues/640)).
-  `__seelite.pointerReadout` reads a flick's peak speed and, with the
-  assist off, the part the vents paid.
+  `__seelite.pointerReadout` reads a flick's peak speed over 50 ms and,
+  with the assist off, the part the vents paid.
 
 #### 3.8.3 Every author turns a hull this way
 
