@@ -16,6 +16,7 @@ import {
 	mkdtempSync,
 	readFileSync,
 	rmSync,
+	symlinkSync,
 	writeFileSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
@@ -52,17 +53,21 @@ function deadPid() {
 	return r.pid as number;
 }
 
+/** Whether a process is running. */
+function alive(pid: number) {
+	try {
+		process.kill(pid, 0);
+		return true;
+	} catch {
+		return false;
+	}
+}
+
 /**
- * A separate process that takes the lock through the same entry point the
- * scripts use, prints `held`, and keeps it for `holdMs` before exiting.
+ * A separate process running `code` (an ES module body that prints `held`
+ * once it holds the lock) against this test's lock path.
  */
-function holder(holdMs: number, env: Record<string, string> = {}) {
-	const code = `
-		import { holdProbeLockOrExit } from ${JSON.stringify(LIB)};
-		await holdProbeLockOrExit("holder-under-test");
-		console.log("held");
-		setTimeout(() => process.exit(0), ${holdMs});
-	`;
+function spawnHolder(code: string, env: Record<string, string> = {}) {
 	const child = spawn("node", ["--input-type=module", "-e", code], {
 		env: { ...process.env, PROBE_LOCK_PATH: path, ...env },
 		stdio: ["ignore", "pipe", "pipe"],
@@ -82,6 +87,22 @@ function holder(holdMs: number, env: Record<string, string> = {}) {
 		(done) => child.on("exit", (code, signal) => done({ code, signal })),
 	);
 	return { child, pid: child.pid as number, held, exited, out: () => out };
+}
+
+/**
+ * A holder that takes the lock through the same entry point the scripts use,
+ * prints `held`, and keeps it for `holdMs` before exiting.
+ */
+function holder(holdMs: number, env: Record<string, string> = {}) {
+	return spawnHolder(
+		`
+		import { holdProbeLockOrExit } from ${JSON.stringify(LIB)};
+		await holdProbeLockOrExit("holder-under-test");
+		console.log("held");
+		setTimeout(() => process.exit(0), ${holdMs});
+	`,
+		env,
+	);
 }
 
 describe("taking the lock", () => {
@@ -109,6 +130,17 @@ describe("taking the lock", () => {
 		writeFileSync(path, "not json");
 		const r = await acquireProbeLock({ path, label: "next", waitMs: 0 });
 		expect(r.ok).toBe(true);
+		if (r.ok) r.release();
+	});
+
+	test("a symlink planted at the temp name is not written through", async () => {
+		const victim = join(dir, "victim");
+		writeFileSync(victim, "untouched");
+		symlinkSync(victim, `${path}.${process.pid}.tmp`);
+		const r = await acquireProbeLock({ path, label: "next", waitMs: 0 });
+		expect(r.ok).toBe(true);
+		expect(readFileSync(victim, "utf8")).toBe("untouched");
+		expect(readHolder(path)?.pid).toBe(process.pid);
 		if (r.ok) r.release();
 	});
 
@@ -267,7 +299,7 @@ describe("how long a run waits", () => {
 describe("a holder stopped by a signal stops its children first", () => {
 	test("the lock is not released while a child the holder started still runs", async () => {
 		// the child ignores SIGTERM, so this also covers the escalation to SIGKILL
-		const code = `
+		const h = spawnHolder(`
 			import { spawn } from "node:child_process";
 			import { holdProbeLockOrExit, stopChildren } from ${JSON.stringify(LIB)};
 			const sleeper = spawn("node", ["-e", "process.on('SIGTERM', () => {}); setTimeout(() => {}, 60000)"], { stdio: "ignore" });
@@ -275,36 +307,17 @@ describe("a holder stopped by a signal stops its children first", () => {
 			console.log("sleeper " + sleeper.pid);
 			console.log("held");
 			setTimeout(() => process.exit(0), 60000);
-		`;
-		const child = spawn("node", ["--input-type=module", "-e", code], {
-			env: { ...process.env, PROBE_LOCK_PATH: path },
-			stdio: ["ignore", "pipe", "pipe"],
-		});
-		children.push(child);
-		let out = "";
-		child.stdout?.on("data", (d) => (out += d));
-		child.stderr?.on("data", (d) => (out += d));
-		await new Promise<void>((done) =>
-			child.stdout?.on("data", () => /^held$/m.test(out) && done()),
-		);
-		const sleeper = Number(/^sleeper (\d+)$/m.exec(out)?.[1]);
-		const alive = (pid: number) => {
-			try {
-				process.kill(pid, 0);
-				return true;
-			} catch {
-				return false;
-			}
-		};
+		`);
+		await h.held;
+		const sleeper = Number(/^sleeper (\d+)$/m.exec(h.out())?.[1]);
 		expect(alive(sleeper)).toBe(true);
-		const exited = new Promise((done) => child.on("exit", done));
-		child.kill("SIGTERM");
+		h.child.kill("SIGTERM");
 		// while the sleeper still runs, the lock must still be held
 		while (alive(sleeper)) {
-			expect(readHolder(path)?.pid).toBe(child.pid as number);
+			expect(readHolder(path)?.pid).toBe(h.pid);
 			await new Promise((r) => setTimeout(r, 20));
 		}
-		await exited;
+		await h.exited;
 		expect(existsSync(path)).toBe(false);
 	});
 });

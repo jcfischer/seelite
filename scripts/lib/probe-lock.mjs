@@ -141,7 +141,16 @@ function unlinkQuiet(path) {
  */
 function tryLink(path, record) {
 	const mine = `${path}.${process.pid}.tmp`;
-	writeFileSync(mine, JSON.stringify(record));
+	// `wx`: never write through a name someone else planted in /tmp. A file
+	// already there is this pid's own leftover or a trap; either way it goes,
+	// and a second refusal is an error rather than a write through it.
+	try {
+		writeFileSync(mine, JSON.stringify(record), { flag: "wx", mode: 0o644 });
+	} catch (e) {
+		if (errCode(e) !== "EEXIST") throw e;
+		unlinkSync(mine);
+		writeFileSync(mine, JSON.stringify(record), { flag: "wx", mode: 0o644 });
+	}
 	try {
 		linkSync(mine, path);
 		return true;

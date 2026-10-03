@@ -180,9 +180,21 @@ if (!probes.length) {
 // second run waits, and a wait that runs out exits 75 with NOT RUN, not 1.
 /** The probes running now, so a signal can stop them before the lock goes. */
 const live = new Set();
+/**
+ * Set by a signal before the running probes are stopped, so no worker starts
+ * another one in the grace period: with `PROBE_CONCURRENCY` above one, a
+ * probe that closes during it would otherwise hand its worker the next file,
+ * and that probe would outlive the lock.
+ */
+let stopping = false;
 await holdProbeLockOrExit(
 	`probe-all, ${probes.length} probe${probes.length === 1 ? "" : "s"}`,
-	{ stopFirst: () => stopChildren(live) },
+	{
+		stopFirst: () => {
+			stopping = true;
+			return stopChildren(live);
+		},
+	},
 );
 
 /**
@@ -255,6 +267,7 @@ async function runAll(files) {
 	const results = [];
 	const worker = async () => {
 		for (;;) {
+			if (stopping) return;
 			const file = queue.shift();
 			if (!file) return;
 			const r = await run(file);
