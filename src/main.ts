@@ -363,7 +363,6 @@ import {
 	V_GATE_KMS,
 	apertureFrame,
 	attemptEntry,
-	dockingComputerStep,
 	grantLive,
 	newDockingState,
 	orthonormalise,
@@ -374,7 +373,11 @@ import {
 	tickDocking,
 	offAxisKm,
 } from "./docking";
-import { DockingComputer, type DisengageHow } from "./docking-computer";
+import {
+	DockingComputer,
+	type DisengageHow,
+	flyComputer,
+} from "./docking-computer";
 import {
 	type ConditionPrint,
 	type ShieldSide,
@@ -11295,58 +11298,23 @@ class Game {
 		if (!nearestId || !approach) return null;
 		const previousPhase = this.dockingComputer.phaseAt(nearestId);
 		const { frame } = approach;
-		const stationState = this.dockingStateOf(nearestId);
-		const awaitingBerth = stationState.clearance.kind === "queued";
-		const command = dockingComputerStep({
+		// One step of the computer, flown (#648): the controller, the follower
+		// and the throttle are `flyComputer`'s, and the harness flies the same
+		// function. What stays here is the lane, the notice and the cancel.
+		const flight = flyComputer({
 			frame,
 			pose: approach.pose,
-			// A queued request is permission to line up and wait, not to enter.
-			// Feed the geometric controller a temporary live grant so it can track
-			// the rotating corridor; the run-in speed is held at zero below until
-			// the real protocol state promotes the request and names its berth.
-			state: awaitingBerth
-				? {
-						...stationState,
-						clearance: {
-							kind: "granted",
-							expiresAtS: Number.POSITIVE_INFINITY,
-						},
-					}
-				: stationState,
+			state: this.dockingStateOf(nearestId),
 			gameTime: this.world.gameTime,
-			maxSpeedKms: ASSIST_CAP_KMS,
 			previousPhase,
-		});
-		this.dockingComputer.recordPhase(command.phase);
-		if (!command.engaged) {
-			// **Silent disengagement is the failure mode here** — a grant taken at
-			// the far edge of `VICINITY_KM` expires mid-approach (§11.7), which is
-			// precisely when this fires. Leaving the throttle where the computer
-			// put it would hand back a ship still closing at a speed nobody chose,
-			// so the throttle goes to zero, and the prompt line says why (#597).
-			this.cancelComputerApproach({ refused: command.refused });
-			this.throttle = 0;
-			this.dockingNotice = computerNotice(command.refused, {
-				stationId: nearestId,
-				rangeKm: length(approach.pose.rel),
-			});
-			return null;
-		}
-		// **Through the hull's vents** (#619, `flight-model.md` §3.6): the
-		// computer asks for a stick and the attitude couples turn the hull, on
-		// the assist's rate law whatever the player's toggle says — the
-		// computer is a controller, and its law is written for one. It used to
-		// place the attitude by slewing it, which turned a hull no vent turned.
-		const stick = this.computerFollower.stick(
-			{ nose: this.nose(), up: this.shipUp() },
-			{ nose: command.nose, up: command.up },
-			this.flownPerformance,
+			follower: this.computerFollower,
+			perf: this.flownPerformance,
 			dt,
-		);
-		let speedKms = command.speedKms;
-		if (command.phase === "run-in") {
-			if (awaitingBerth) speedKms = 0;
-			else {
+			// The computer waits at the corridor entrance instead of testing a busy
+			// aperture and bouncing. An older non-preemptive movement still
+			// finishes; once it does, Traffic sees this request and later actors
+			// queue behind it.
+			runInHeld: () => {
 				const pending = this.playerLaneRequests.get(nearestId);
 				const readyAt =
 					pending?.movement === "arrival"
@@ -11356,15 +11324,26 @@ class Game {
 					readyAt,
 					movement: "arrival",
 				});
-				// The computer waits at the corridor entrance instead of testing a busy
-				// aperture and bouncing. An older non-preemptive movement still finishes;
-				// once it does, Traffic sees this request and later actors queue behind it.
-				if (!this.playerWinsTrafficLane(nearestId, readyAt, "arrival"))
-					speedKms = 0;
-			}
+				return !this.playerWinsTrafficLane(nearestId, readyAt, "arrival");
+			},
+		});
+		this.dockingComputer.recordPhase(flight.phase);
+		if (!flight.engaged) {
+			// **Silent disengagement is the failure mode here** — a grant taken at
+			// the far edge of `VICINITY_KM` expires mid-approach (§11.7), which is
+			// precisely when this fires. Leaving the throttle where the computer
+			// put it would hand back a ship still closing at a speed nobody chose,
+			// so the throttle goes to zero, and the prompt line says why (#597).
+			this.cancelComputerApproach({ refused: flight.refused });
+			this.throttle = 0;
+			this.dockingNotice = computerNotice(flight.refused, {
+				stationId: nearestId,
+				rangeKm: length(approach.pose.rel),
+			});
+			return null;
 		}
-		this.throttle = Math.min(1, speedKms / ASSIST_CAP_KMS);
-		return { stick, turnAssist: true };
+		this.throttle = flight.throttle;
+		return { stick: flight.stick, turnAssist: true };
 	}
 
 	/**
