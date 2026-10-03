@@ -269,7 +269,10 @@ The build should put pure roster generation, desired schedule state, pending
 intent reconciliation, queue and lane arbitration, station-relative terminal
 laws, and contact projection in `src/station-traffic.ts`. That module may consume
 hull, station-interior, docking, Carrier-key and clock types; it must not import
-Three.js or own a second berth-fit or traversal implementation.
+Three.js or own a second berth-fit or traversal implementation. Each slot's
+vocation and hauler cycle multiple are inputs it receives from the inter-system
+module (`inter-system-traffic.md` §12), which owns everything that reads
+another system; this module stays system-local.
 
 `Game` owns the transient runtime for the current system and materializes the
 pure projection as ship meshes and `DisplayContact`s. Rendering mirrors those

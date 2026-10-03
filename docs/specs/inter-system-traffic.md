@@ -312,14 +312,16 @@ instant and rejoins at its next hauler departure.
 - `hyperspace.ts`, `system.ts`'s `arrivalPoint` and `arrival-rift.ts` are
   consumed, not changed in law.
 
-The implementation is pure and imports no Three.js. Vocation, static
-eligibility and the cycle multiple need other systems' stations, so they live
-in a new inter-system module that takes the galaxy and the contents it needs as
-input. `src/station-traffic.ts` stays system-local: it receives each slot's
-vocation and cycle multiple and builds the schedule from them.
-`src/station-route.ts` gains the lane-point legs and jump instants, and the new
-module adds an inbound query. That query, given a
-system and `gameTime`, enumerates the haulers of every same-galaxy system
+The implementation is pure and imports no Three.js. Everything that needs
+another system's stations lives in a new inter-system module that takes the
+galaxy and the contents it needs as input: vocation, static eligibility, the
+cycle multiple, the `nominalOutS` and `nominalInS` bounds, each voyage's
+destination and its two jump instants, and an inbound query. The system-local
+modules receive those as inputs and import nothing from it.
+`src/station-traffic.ts` receives each slot's vocation and cycle multiple and
+builds the schedule from them. `src/station-route.ts` receives a voyage's lane
+points and jump instants and flies the legs between them under #261's laws.
+The inbound query, given a system and `gameTime`, enumerates the haulers of every same-galaxy system
 within the largest Traffic `tankLy` (derived from `TRAFFIC_HULL_POOLS` and
 `HULL_SPECS`, never restated) whose current voyage names one of its stations.
 `Game` owns only current-system caches and presentation, as #261 §7 rules.
@@ -384,8 +386,11 @@ principal's yes on the sheet.
   contents of *its* systems in reach. §13.1 row 11 measures that cost. A current-galaxy cache is
   acceleration only and may not make visit order observable.
 - `station-traffic.md` §2's full-station departure bound is false today and its
-  test cannot fail. #677 owns it. Hauler cycles do not change that answer.
-  They only add haulers, which fly less often.
+  test cannot fail. #677 owns it, and haulers bear on its answer in two
+  directions. A hauler parks less often than a local, but inbound haulers take
+  a destination's free Traffic Berths and, with no cap (§6), queue at its holds,
+  so a hub is full more often and its visitors wait longer. Whatever bound #677
+  rules must count inbound haulers, and §6's instrument is its input.
 - `arrivalPoint` takes the galaxy-space bearing as a system-frame direction. The
   game ships that law, and both ends here use it, so they agree. #100's missing
   galactic-frame transform would move every lane point if it ever changed that
