@@ -201,7 +201,11 @@ describe("the Game's world writes", () => {
 		expect(MAIN.match(/\bchargeOffence\(/g) ?? []).toHaveLength(3);
 		for (const [head, offence, transition] of [
 			["private assaultTrafficCarrier(", "assault", null],
-			["private divertTrafficCarrier(", "struck", "this.applyCarrierTransition("],
+			[
+				"private divertTrafficCarrier(",
+				"struck",
+				"this.applyCarrierTransition(",
+			],
 			[
 				"private destroyTrafficCarrier(",
 				"destroyed",

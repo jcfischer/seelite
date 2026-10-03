@@ -12,6 +12,14 @@
  * (H9): the two figures are what an offence costs on its own, not what it adds
  * to an incident that already carries one.
  *
+ * **An offence is one event, `chargeOffence`** (#633). It takes the raw facts
+ * of the act and returns the next world and the heat, and the steps it is
+ * composed of — the incident's arithmetic, the heat-and-hearer write, the
+ * assault mark — are this module's own and not exported. So the law is written
+ * here once, and `Game` hands over facts and adopts a world rather than putting
+ * the charge together from the parts. The session around it — the hail guard,
+ * the charge notice, the Communications log — stays `Game`'s (#72).
+ *
  * **What is saved is `LegalStatus` and nothing else** — the heat, its stamp, and
  * the stations that saw an offence. A standing label and a station's hostility
  * are §8 projections, derived here on read
@@ -152,15 +160,16 @@ export const offenceHeat = (target: Standing, offence: Offence): number =>
  * file changing. Ordering by `OFFENCE_LADDER` makes that a contradiction between
  * two things in one module rather than a quiet behaviour.
  *
- * `already` is read off the world (`traffic-engagement.ts`'s `chargedOffence`),
- * never off a counter — an incident outlives the session that opened it. The
- * strike and the kill come from the carrier's **row**, which is the copy that
- * survives the reload; the assault comes from this module's own list, for the
+ * `already` is read off the world (`chargedOffence`, below), never off a
+ * counter — an incident outlives the session that opened it. The strike and the
+ * kill come from the carrier's **row**, which is the copy that survives the
+ * reload, handed over as the strike's clock (`OffenceFacts.carrier.struckAt`);
+ * the assault comes from this module's own list, for the
  * reason given under "Why the assault charge is remembered here". Not the episode
  * ledger: §4 keeps only the latest episode, and the kill's `interrupt` closes the
  * strike's before its `destroy` opens one that replaces it.
  */
-export const marginalOffenceHeat = (
+const marginalOffenceHeat = (
 	target: Standing,
 	offence: Offence,
 	already: Offence | null,
@@ -191,13 +200,14 @@ export const legalStandingAt = (
  * Add `heat` to a galaxy's `LegalStatus` at `gameTime`, and file every station
  * that heard it (H5, H6, as amended by #396).
  *
- * `heardBy` is **required, and an empty list is an answer**: it means the caller
- * computed the earshot and nobody was in it. A default of `[]` would put back the
+ * `heardBy` is **required, and an empty list is an answer**: it means the
+ * earshot was computed and nobody was in it. A default of `[]` would put back the
  * ambiguity that `witnessed: CarrierKey | null` was originally required to keep —
- * "nobody heard" against "the caller never looked" — and the caller that never
- * looked is the one that gets H5's refusal wrong in the direction that reads as
- * the law working. `distress.ts`'s `stationsInEarshot` is the computation, and it
- * returns `[]` honestly.
+ * "nobody heard" against "nobody looked" — and a charge that never looked is the
+ * one that gets H5's refusal wrong in the direction that reads as the law
+ * working. `distress.ts`'s `stationsInEarshot` is the computation, and it returns
+ * `[]` honestly; since #633 its one caller is `chargeOffence`, which takes every
+ * station as a required fact and computes the earshot itself.
  *
  * **The two halves are written separately, and neither may write the other.**
  * Heat is written decayed-and-stamped; the list is written without touching the
@@ -209,7 +219,7 @@ export const legalStandingAt = (
  * Nothing is written at all when there is neither heat nor a new witness, so a
  * lawful act in open space neither restamps the row nor marks the save dirty.
  */
-export const withOffence = (
+const withOffence = (
 	world: WorldState,
 	galaxyIndex: number,
 	heat: number,
@@ -246,8 +256,8 @@ export const withOffence = (
  * Record that this carrier's **sustained-fire charge** has been paid, so a reload
  * into the same fight cannot charge it again (#396 §2's binding obligation).
  *
- * **Only when the charge cost heat** (`charged` below), which is the caller's
- * figure and not a fact this module can derive. A mark is the record of a charge,
+ * **Only when the charge cost heat** (`charged` below), which is
+ * `chargeOffence`'s figure, priced in the same event. A mark is the record of a charge,
  * and a five seconds judged lawful at its tick (F7) is not one — the pilot was
  * never billed, and a later strike on the same carrier whose rotation has since
  * turned it Clean would read the mark as "the assault rung is already paid" and
@@ -261,7 +271,7 @@ export const withOffence = (
  * touches the list only, for `withOffence`'s reason: a mark that restamped the
  * row would hold a pilot Wanted past the duration the last real offence set.
  */
-export const markAssaultCharged = (
+const markAssaultCharged = (
 	world: WorldState,
 	galaxyIndex: number,
 	carrier: CarrierKey,

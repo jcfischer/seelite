@@ -317,7 +317,9 @@ mandatory positional argument — `[]` means "looked, nobody was in earshot" and
 there is no third spelling — because the difference between "nobody heard" and
 "the caller never looked" is the one `witnessed: CarrierKey | null` was originally
 required to keep, and an optional argument erases it in the direction that reads
-as the law working.
+as the law working. Since #633 the set is computed inside `chargeOffence`, which
+takes every station in the system as a required fact, so no caller hands the law
+a hearer list at all.
 
 ### H6 — Witnesses are saved on `LegalStatus`
 
@@ -608,10 +610,11 @@ The same rule, on the diversion.
   `interrupt` closes the strike's episode and the `destroy` that follows opens a
   new one which replaces `episodes[key]` wholesale — H9's supersession is not
   recoverable from it, and a read taken before the write can be stale besides.
-  So the charge is read off the carrier's own row: `chargedOffence` asks where
-  the ship is *and what the strike it is standing for cost* — which it can answer
-  because the row keeps the strike's clock (`recovery.startedAt`) and standing is
-  a pure derivation from a clock. A strike on a carrier that was Wanted then
+  So the charge is read off the carrier's own row: `strikeClock` asks where the
+  ship is, and `chargeOffence` asks *what the strike it is standing for cost* —
+  which it can answer because the row keeps the strike's clock
+  (`recovery.startedAt`) and standing is a pure derivation from a clock (#633
+  moved the second question into `legal.ts`). A strike on a carrier that was Wanted then
   charged nothing, and the kill after it is a full 40; the rule is right straight
   after a reload with no engagement flag carried across a save.
   `tests/legal.test.ts` holds the arithmetic, and the row of

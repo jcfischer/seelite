@@ -32,7 +32,6 @@ import {
 } from "./combat-enemy";
 import { type DuelPilot, type PlayerShot, stepCombatShip } from "./duel";
 import { HULL_SPECS, type HullId } from "./hull";
-import { type Offence, type Standing, offenceHeat } from "./legal";
 import {
 	PLAYER_KILL,
 	RAIDER_REPAIR_S,
@@ -150,7 +149,8 @@ export interface Engagement {
 	 *
 	 * It latches whether or not the charge cost anything, so a lawful five seconds
 	 * (F7) cannot be run again inside the same fight; the world records nothing
-	 * for it, and `markAssaultCharged` says why that is the correct asymmetry.
+	 * for it, and `legal.ts`'s `chargeOffence` says why that is the correct
+	 * asymmetry: a mark is the record of a charge, written only when it cost.
 	 */
 	assaultCharged: boolean;
 	/** Whether any of this pilot's fire has landed on it at all (the hail's mark). */
@@ -459,64 +459,6 @@ export const strikeClock = (carrier: {
 	trafficPresence(carrier) === "parked-home"
 		? (carrier.recovery?.startedAt ?? null)
 		: null;
-
-/** H9: the offence this carrier's row says the pilot has already paid for.
- *
- *  The divert *is* the strike's incident: `disable` opened it, the repair is
- *  running, and the kill that interrupts it closes it. So a carrier sitting in
- *  its home berth under a repair the player's own fire caused has already cost
- *  them H4's strike heat, and the kill that finishes it owes the difference and
- *  not a second offence. Read off the row rather than a counter, because the
- *  incident outlives the session that opened it.
- *
- *  **`standingAtStrike` is not decoration, and `null` does not mean "clean".**
- *  Only an offence against a Clean carrier costs anything (H4), so a strike on a
- *  carrier that was Wanted charged nothing, and the kill that follows it is
- *  worth its full 40 even if the rotation has since made the target Clean again
- *  — the rotation runs six hours and the repair 1200 s plus up to a cycle, so
- *  those two clocks do disagree sometimes. The row carries the strike's own clock
- *  (`recovery.startedAt`), and standing is a pure derivation from a clock, so a
- *  caller can hand over the standing the strike was judged on. `null` says that
- *  cannot be established, and the answer to that is that nothing has been paid:
- *  the safe direction, because the alternative is a discount for a hit the
- *  player was never charged for.
- *
- *  **This reads presence, not provenance.** `recovery.initiatedBy` is the home
- *  station's — a `disable` names the shooter and a `repair-start` cannot carry
- *  two causes — so nothing on the row says the strike was the player's doing.
- *  Today the player's own fire is the only thing that diverts a carrier. The day
- *  another actor can (a raider, station fire), this rule has to read that
- *  provenance instead, or it hands the player a discount on a fight they did not
- *  start.
- */
-export const chargedOffence = (
-	carrier: CarrierConditionRow,
-	standingAtStrike: Standing | null,
-	assaultPaid: boolean,
-): Offence | null => {
-	if (
-		trafficPresence(carrier) === "parked-home" &&
-		standingAtStrike !== null &&
-		offenceHeat(standingAtStrike, "struck") > 0
-	)
-		return "struck";
-	// **The second source, and the reason the signature grew.** A sub-hull
-	// offence leaves no trace on the carrier's row — an ordinary carrier under
-	// fire gets exactly one transition, H3d's `disable`, and the sustained-fire
-	// rung charges the pilot *before* the hull point that earns it is spent. So
-	// the fact lives beside `witnesses` in `LegalStatus` (`legal.ts` owns why),
-	// and it needs no standing of its own to be reported where the strike does:
-	// an assault mark is written only when it cost heat, and heat means the
-	// target was Clean at the tick it was judged (F7). A strike on a carrier that
-	// was Wanted then charged nothing, and must not supersede a later kill.
-	//
-	// `assaultPaid` is required rather than optional for `FlightPerformance`'s
-	// reason: a caller that forgot it would treat every assault as unpaid, and a
-	// charge the pilot has already served arriving again is the exact double
-	// #396 rules out by name — invisible in a diff, because nothing about a
-	// missing argument looks wrong.
-	return assaultPaid ? "assault" : null;
-};
 
 /** The actors standing in a home berth instead of flying a route (H3b): the
  *  struck ones, drawn where the world says they are. */
