@@ -46,7 +46,7 @@ const { check, watch, exit } = tally();
 function state() {
 	const game = window.__seelite;
 	let cockpit = null;
-	game.nearScene.traverse((object) => {
+	game.cabinScene.traverse((object) => {
 		if (object.name === "cockpit") cockpit = object;
 	});
 	if (!cockpit) return { found: false };
@@ -131,7 +131,7 @@ function state() {
 		if (object.name !== "canopy-glass") return;
 		const m = object.material;
 		const a = m.envMapRotation;
-		const b = game.nearScene.environmentRotation;
+		const b = game.cabinScene.environmentRotation;
 		glass = {
 			envMap: Boolean(m.envMap),
 			reflectivity: m.reflectivity,
@@ -318,9 +318,10 @@ for (const viewport of VIEWPORTS) {
 	);
 	check(
 		// **The term this node added, and the one it did not.** #105's key light
-		// is a point light in `nearScene`, so it costs every standard material in
-		// the frame and is gated; the pre-existing fill is the cabin's own
-		// lighting and stays, which is what `settings.ts` promises the player.
+		// was gated when it was a point light in `nearScene` and cost every
+		// standard material in the frame (since #651 only the cabin's); the
+		// pre-existing fill is the cabin's own lighting and stays, which is what
+		// `settings.ts` promises the player.
 		`${viewport.name}: low drops #105's key light and keeps the cabin's fill`,
 		low.lights.some((l) => l.name === "cockpit-key-light" && !l.visible) &&
 			low.lights.some((l) => l.name === "cockpit-light" && l.visible),

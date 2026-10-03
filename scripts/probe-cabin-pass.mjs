@@ -96,7 +96,10 @@ const read = () =>
 		const world = [];
 		for (const o of cabin) {
 			if (o === game.cockpit.mesh) continue;
-			if (o.isMesh && o.name !== "canopy-glass") {
+			// Opaque fittings only: the glass and the additive lamp pools let the
+			// world show through, as they are meant to, so they are no footprint.
+			const m = Array.isArray(o.material) ? o.material[0] : o.material;
+			if (o.isMesh && o.name !== "canopy-glass" && !m?.transparent) {
 				swapped.push([o, o.material]);
 				o.material = GREEN;
 			} else if (o.isMesh || o.isLine || o.isPoints || o.isSprite) hide(o);
@@ -173,6 +176,114 @@ const read = () =>
 		};
 	}, ERODE_PX);
 
+/**
+ * The principal's ruling for #651: the bay's lights light the cabin. A world
+ * lamp 18 m from the eye, overhead and behind it, in three arms over one pose — none, the lamp
+ * alone, the lamp mirrored into the cabin — and the cabin's footprint read in
+ * each. The lamp alone must leave the cabin untouched, which is the pass's
+ * isolation seen in light; mirrored, it must light it. Bloom, dither and the
+ * occlusion passes are off, so a bright wall cannot bleed into the cabin.
+ */
+const readLamp = () =>
+	page.evaluate(() => {
+		const game = window.__seelite;
+		const canvas = game.renderer.domElement;
+		const W = canvas.width;
+		const H = canvas.height;
+		const scratch = document.createElement("canvas");
+		scratch.width = W;
+		scratch.height = H;
+		const ctx = scratch.getContext("2d", { willReadFrequently: true });
+		const frame = () => {
+			game.render(0);
+			ctx.drawImage(canvas, 0, 0);
+			return ctx.getImageData(0, 0, W, H).data;
+		};
+		const PointLight =
+			game.cockpit.mesh.getObjectByName("cockpit-light").constructor;
+		const Basic = game.canopyGlass.constructor;
+		const bloomWas = game.bloom?.enabled;
+		if (game.bloom) game.bloom.enabled = false;
+		const dither = game.settings.value.dither;
+		game.outputPass.setDither(false);
+		game.setOcclusion(false, false);
+
+		// The footprint, as `read` takes it: the cabin alone, flat.
+		const swapped = [];
+		const GREEN = new Basic({ color: 0x00ff00, toneMapped: false });
+		const NOTHING = new Basic({ colorWrite: false, depthWrite: false });
+		const cabin = new Set();
+		game.cockpit.mesh.traverse((o) => cabin.add(o));
+		const hidden = [];
+		for (const o of cabin) {
+			if (o === game.cockpit.mesh) continue;
+			const m = Array.isArray(o.material) ? o.material[0] : o.material;
+			if (o.isMesh && o.name !== "canopy-glass" && !m?.transparent) {
+				swapped.push([o, o.material]);
+				o.material = GREEN;
+			} else if (o.isMesh || o.isLine || o.isPoints || o.isSprite) {
+				hidden.push([o, o.visible]);
+				o.visible = false;
+			}
+		}
+		game.nearScene.traverse((o) => {
+			if (!cabin.has(o) && o.isMesh) {
+				swapped.push([o, o.material]);
+				o.material = NOTHING;
+			}
+		});
+		const mask = frame();
+		for (const [o, m] of swapped) o.material = m;
+		for (const [o, v] of hidden) o.visible = v;
+		GREEN.dispose();
+		NOTHING.dispose();
+		const inside = [];
+		for (let p = 0; p < W * H; p++) {
+			const i = p * 4;
+			if (mask[i + 1] > mask[i] + 40 && mask[i + 1] > mask[i + 2] + 40)
+				inside.push(i);
+		}
+
+		const lamp = new PointLight(0xffe0b0, 0.002, 0.09, 2);
+		lamp.name = "probe-bay-lamp";
+		// Overhead and behind the pilot, in the ship's frame (−z is the nose):
+		// where a lamp reaches the deck tops that face up and back, rather than
+		// only the few faces that look forward.
+		lamp.position.set(0, 0.015, 0.01).applyQuaternion(game.orientation);
+		const none = frame();
+		game.nearScene.add(lamp);
+		const alone = frame();
+		const undo = game.mirrorIntoCabin(lamp);
+		const mirrored = frame();
+		undo();
+		const undone = frame();
+		lamp.removeFromParent();
+		lamp.dispose();
+
+		if (game.bloom) game.bloom.enabled = bloomWas;
+		game.outputPass.setDither(dither === "on");
+		game.setOcclusion();
+
+		const luma = (d, i) =>
+			0.2126 * d[i] + 0.7152 * d[i + 1] + 0.0722 * d[i + 2];
+		const meanDelta = (a, b) => {
+			let sum = 0;
+			let worst = 0;
+			for (const i of inside) {
+				const d = luma(b, i) - luma(a, i);
+				sum += d;
+				worst = Math.max(worst, Math.abs(d));
+			}
+			return { mean: sum / Math.max(1, inside.length), worst };
+		};
+		return {
+			footprintPx: inside.length,
+			alone: meanDelta(none, alone),
+			mirrored: meanDelta(none, mirrored),
+			undone: meanDelta(none, undone),
+		};
+	});
+
 // The frame `berth-arrival-cabin` shows: 0.9 of the deep-berth traversal.
 await page.evaluate(async () => {
 	window.__seelite.view = "cockpit";
@@ -187,6 +298,7 @@ await page.evaluate(() => {
 	g.animationFrame = 0;
 });
 const near = await read();
+const lamp = await readLamp();
 await page.evaluate(() => window.__seelite.animate());
 
 t.check(
@@ -203,6 +315,22 @@ t.check(
 	"no world fragment is written inside the cabin's footprint",
 	near.entered === 0,
 	`${near.entered} px` + (near.first ? `, first at ${near.first}` : ""),
+);
+
+t.check(
+	"a world lamp alone does not light the cabin",
+	lamp.footprintPx > 0 && lamp.alone.worst < 0.5,
+	`worst ${lamp.alone.worst.toFixed(2)} codes over ${lamp.footprintPx} px`,
+);
+t.check(
+	"the same lamp mirrored into the cabin lights it",
+	lamp.mirrored.mean > 3,
+	`mean +${lamp.mirrored.mean.toFixed(2)} codes, worst ${lamp.mirrored.worst.toFixed(1)}`,
+);
+t.check(
+	"undoing the mirror takes the light away again",
+	lamp.undone.worst < 0.5,
+	`worst ${lamp.undone.worst.toFixed(2)} codes`,
 );
 
 await browser.close();
