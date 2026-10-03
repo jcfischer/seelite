@@ -372,20 +372,43 @@ const palettes = new Map<string, Palette>();
  * throttle and the workbench already drive.
  */
 let exhaustGradient: THREE.DataTexture | undefined;
+
+/**
+ * The exhaust's colour `v` of the way from the throat (0) to the lip (1),
+ * sRGB, 0…1 a channel. The one ramp every drive glow reads: the bowl's map
+ * below, and the vent plumes (`vent-plumes.ts`, #621), where `v` is how far a
+ * puff has travelled from its throat.
+ */
+export function exhaustRamp(v: number): [number, number, number] {
+	// Cubed, so the heat is a core rather than a wash: most of the bowl is
+	// the drive's blue, and only the throat is white.
+	const hot = (1 - v) ** 3;
+	const fade = 0.35 + 0.65 * (1 - v) ** 1.2;
+	return [
+		fade * (0.3 + 0.7 * hot),
+		fade * (0.62 + 0.38 * hot),
+		fade * (0.9 + 0.1 * hot),
+	];
+}
+
+/** The suffix every drive bell's glow mesh is named with, disc or bowl. */
+const EXHAUST_SUFFIX = "-exhaust";
+
+/** Is `object` a drive bell's glow? The one test of the naming, for
+ *  `vent-plumes.ts`, which draws the main drive at the bells (#621). */
+export const isDriveBell = (object: THREE.Object3D): boolean =>
+	object.name.endsWith(EXHAUST_SUFFIX);
+
 function exhaustGradientMap() {
 	if (exhaustGradient) return exhaustGradient;
 	const width = 4;
 	const height = 64;
 	const data = new Uint8Array(width * height * 4);
 	for (let y = 0; y < height; y++) {
-		const v = y / (height - 1);
-		// Cubed, so the heat is a core rather than a wash: most of the bowl is
-		// the drive's blue, and only the throat is white.
-		const hot = (1 - v) ** 3;
-		const fade = 0.35 + 0.65 * (1 - v) ** 1.2;
-		const r = Math.round(255 * fade * (0.3 + 0.7 * hot));
-		const g = Math.round(255 * fade * (0.62 + 0.38 * hot));
-		const b = Math.round(255 * fade * (0.9 + 0.1 * hot));
+		const [fr, fg, fb] = exhaustRamp(y / (height - 1));
+		const r = Math.round(255 * fr);
+		const g = Math.round(255 * fg);
+		const b = Math.round(255 * fb);
 		for (let x = 0; x < width; x++) {
 			const i = (y * width + x) * 4;
 			data[i] = r;
@@ -638,7 +661,7 @@ function engineBell(
 	);
 	add(
 		root,
-		name + "-exhaust",
+		name + EXHAUST_SUFFIX,
 		new THREE.CircleGeometry(radius * 0.55, 14),
 		p.exhaust,
 		[position[0], position[1], position[2] + length * 0.13],
@@ -730,7 +753,7 @@ function openBell(
 	}
 	uv.needsUpdate = true;
 	setUvUnits(bowl, "plate");
-	add(root, name + "-exhaust", bowl, p.exhaust, position);
+	add(root, name + EXHAUST_SUFFIX, bowl, p.exhaust, position);
 }
 
 /**
