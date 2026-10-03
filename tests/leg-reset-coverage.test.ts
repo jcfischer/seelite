@@ -148,9 +148,7 @@ const NOT_RESET: Record<string, string> = {
  */
 const RESTORED_BY: Record<string, string> = {
 	orientation: "faceTheStar",
-	// #641: the pointer's delta, its `carry` bank and the flick being read go
-	// together, so no reset can drop one and leave another.
-	pointerBank: "dropPointer",
+	// #641: the pointer's delta and the flick being read go together.
 	flickMeter: "dropPointer",
 };
 

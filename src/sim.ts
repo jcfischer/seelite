@@ -1138,9 +1138,10 @@ export interface AngularStep {
 	 *  couple from whole vents has none; a lone or a dead vent does (§3.2), and
 	 *  `stepFlight` adds it to the velocity (`FlightControl.attitude`). */
 	linearKms2: Vec3;
-	/** The part of `impulse` the couple could not pay this step, rad/s (#641).
-	 *  Assist off only: with the assist on the pointer is a nudge to a rate
-	 *  controller, and nothing is left to carry. */
+	/** The part of `impulse` the couple could not pay this step, rad/s, and
+	 *  lost (#641): what the pointer readout reports as unpaid. Assist off
+	 *  only: with the assist on the kick is a nudge to a rate controller that
+	 *  also eases it out, so "unpaid" has no single meaning there. */
 	pointerUnspent: Angular;
 }
 

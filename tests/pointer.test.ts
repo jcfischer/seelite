@@ -1,6 +1,5 @@
 /**
- * The pointer's turn (#641): how much of a mouse movement reaches the rate,
- * and the `carry` arm that banks what the vents could not pay in one step.
+ * The pointer's turn (#641): how much of a mouse movement reaches the rate.
  *
  * The measurement row prints, per hull and regime, the pointer speed at which
  * the attitude couples stop paying a delta in full. It is swept over frame
@@ -16,12 +15,8 @@ import {
 	FlickMeter,
 	MOUSE_MAX_STEP,
 	MOUSE_RAD_PER_PX,
-	POINTER_DEFAULTS,
-	type PointerTuning,
 	asked,
 	pointerImpulse,
-	pointerTuningFrom,
-	settleBank,
 } from "../src/pointer";
 import {
 	type Angular,
@@ -33,17 +28,15 @@ import { MAX_DT } from "../src/units";
 
 const STILL: Angular = { pitch: 0, yaw: 0, roll: 0 };
 const DTS = [1 / 240, 1 / 144, 1 / 60, 1 / 30, MAX_DT];
-const DROP: PointerTuning = { ...POINTER_DEFAULTS, law: "drop" };
-const CARRY: PointerTuning = { ...POINTER_DEFAULTS, law: "carry" };
 
-/** The pitch-rate change one frame of `px` delivers from rest, today's law. */
+/** The pitch-rate change one frame of `px` delivers from rest. */
 function oneFrame(
 	perf: FlightPerformance,
 	px: number,
 	dt: number,
 	assist: boolean,
 ) {
-	const impulse = pointerImpulse(DROP, { pitch: 0, yaw: 0 }, 0, -px);
+	const impulse = pointerImpulse(0, -px);
 	return stepAngular(STILL, STILL, impulse, assist, dt, perf).rates.pitch;
 }
 
@@ -147,7 +140,7 @@ describe("stepAngular reports the pointer kick it could not pay", () => {
 		);
 		expect(s.pointerUnspent.pitch).toBe(0);
 	});
-	test("the assist on leaves nothing to carry: the arm is assist-off only", () => {
+	test("the assist on reports nothing: the readout is the assist off's", () => {
 		const s = stepAngular(
 			STILL,
 			STILL,
@@ -160,102 +153,15 @@ describe("stepAngular reports the pointer kick it could not pay", () => {
 	});
 });
 
-/** Fly `frames` steps of `law` from one frame of `px`, assist off; the
- *  pitch rate it ends at. */
-function flick(
-	perf: FlightPerformance,
-	tuning: PointerTuning,
-	px: number,
-	dt: number,
-	seconds = 2,
-) {
-	let bank = { pitch: 0, yaw: 0 };
-	let rates = STILL;
-	for (let t = 0, first = true; t < seconds; t += dt, first = false) {
-		const dy = first ? -px : 0;
-		const impulse = pointerImpulse(tuning, bank, 0, dy);
-		const s = stepAngular(rates, STILL, impulse, false, dt, perf);
-		rates = s.rates;
-		bank = settleBank(tuning, s.pointerUnspent, dt);
-	}
-	return { rate: rates.pitch, bank };
-}
-
-describe("the carry arm", () => {
-	test("today's law banks nothing", () => {
-		const perf = flightPerformance("courier");
-		expect(flick(perf, DROP, 200, 1 / 60).bank).toEqual({ pitch: 0, yaw: 0 });
-	});
-
-	test("a delta inside the limit turns the same on both arms", () => {
-		for (const id of HULL_IDS) {
-			const perf = flightPerformance(id);
-			const dt = 1 / 60;
-			const px = (perf.angularAuthority.pitch * dt * 0.5) / MOUSE_RAD_PER_PX;
-			expect(flick(perf, CARRY, px, dt).rate).toBeCloseTo(
-				flick(perf, DROP, px, dt).rate,
-				12,
-			);
-		}
-	});
-
-	test("a delta beyond it turns more with carry, and never more than was asked", () => {
-		for (const id of HULL_IDS) {
-			const perf = flightPerformance(id);
-			for (const dt of DTS) {
-				const px = 200;
-				const drop = flick(perf, DROP, px, dt).rate;
-				const carry = flick(perf, CARRY, px, dt).rate;
-				expect(carry).toBeGreaterThan(drop);
-				expect(carry).toBeLessThanOrEqual(px * MOUSE_RAD_PER_PX + 1e-12);
-			}
-		}
-	});
-
-	test("the bank empties: a flick is over within a few time constants", () => {
-		const perf = flightPerformance("miner");
-		const { bank } = flick(
-			perf,
-			CARRY,
-			400,
-			1 / 60,
-			POINTER_DEFAULTS.tauS * 20,
-		);
-		expect(Math.abs(bank.pitch)).toBeLessThan(1e-6);
-	});
-
-	test("the bank is capped: a re-focused window's spike cannot bank a spin", () => {
-		const impulse = pointerImpulse(
-			CARRY,
-			{ pitch: 0, yaw: 0 },
-			50_000,
-			-50_000,
-		);
-		expect(Math.abs(impulse.pitch)).toBe(CARRY.capRadS);
-		expect(Math.abs(impulse.yaw)).toBe(CARRY.capRadS);
-	});
-
-	test("the carry turn barely depends on the frame rate", () => {
-		const perf = flightPerformance("courier");
-		// `MAX_DT` is left out: at 10 Hz the first step alone pays 0.3 rad/s.
-		const rates = DTS.filter((dt) => dt < MAX_DT).map(
-			(dt) => flick(perf, CARRY, 200, dt).rate,
-		);
-		const lo = Math.min(...rates);
-		const hi = Math.max(...rates);
-		expect((hi - lo) / hi).toBeLessThan(0.1);
-	});
-});
-
 describe("the flick meter", () => {
 	test("reads peak speed, asked and delivered, and closes on quiet", () => {
 		const m = new FlickMeter();
 		const dt = 1 / 60;
 		m.frame(30, 40, dt, asked(30, 40), { pitch: 0.05, yaw: 0.04 });
-		m.frame(0, 0, dt, asked(0, 0), { pitch: 0, yaw: 0 }, 0);
+		m.frame(0, 0, dt, asked(0, 0), { pitch: 0, yaw: 0 });
 		expect(m.last).toBeNull();
 		for (let i = 0; i < 20; i++)
-			m.frame(0, 0, dt, asked(0, 0), { pitch: 0, yaw: 0 }, 0);
+			m.frame(0, 0, dt, asked(0, 0), { pitch: 0, yaw: 0 });
 		const last = m.last;
 		expect(last).not.toBeNull();
 		expect(last?.peakPxS).toBeCloseTo(50 / dt, 6);
@@ -265,29 +171,9 @@ describe("the flick meter", () => {
 		// A slower flick after it replaces `last` and keeps `hardest`.
 		m.frame(3, 0, dt, asked(3, 0), { pitch: 0, yaw: 0.006 });
 		for (let i = 0; i < 20; i++)
-			m.frame(0, 0, dt, asked(0, 0), { pitch: 0, yaw: 0 }, 0);
+			m.frame(0, 0, dt, asked(0, 0), { pitch: 0, yaw: 0 });
 		expect(m.last?.peakPxS).toBeCloseTo(3 / dt, 6);
 		expect(m.hardest).toBe(last);
-	});
-});
-
-describe("the flight test's URL", () => {
-	test("reads the law and its tuning, and keeps a default for anything unreadable", () => {
-		expect(pointerTuningFrom("")).toEqual(POINTER_DEFAULTS);
-		expect(
-			pointerTuningFrom("?pointer=carry&pointerTau=0.5&pointerCap=0.4"),
-		).toEqual({
-			law: "carry",
-			tauS: 0.5,
-			capRadS: 0.4,
-		});
-		expect(
-			pointerTuningFrom("?pointer=carry&pointerTau=-1&pointerCap=x"),
-		).toEqual({
-			...POINTER_DEFAULTS,
-			law: "carry",
-		});
-		expect(pointerTuningFrom("?pointer=elite").law).toBe("drop");
 	});
 });
 
@@ -302,8 +188,7 @@ describe("main.ts drops the pointer in one place", () => {
 		for (const name of ["dropPointer", "takePointer"])
 			expect((body(name).match(/this\.mouseD[xy] = 0;/g) ?? []).length).toBe(2);
 	});
-	test("dropping the pointer empties the bank and the flick", () => {
-		expect(body("dropPointer")).toContain("this.pointerBank = EMPTY_BANK");
+	test("dropping the pointer drops the flick being read", () => {
 		expect(body("dropPointer")).toContain("this.flickMeter.reset()");
 	});
 });

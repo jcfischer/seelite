@@ -8,8 +8,9 @@ The principal ruled four amendments on 2026-10-02 while the substrate was built
 ([#619](https://github.com/jcfischer/seelite/issues/619)): two vent families
 (§3.2), no hull retuned (§3.4), a bounded ease-out (§3.8.2) and the speed
 demand held to the cap in a turn (§3.10). Each is marked where it lands.
-§3.8.2's pointer item and §3.8.3 follow from §3.6 and §3.8; they are not
-rulings, and the pointer waits for the principal to fly it.
+§3.8.2's pointer item was flown and ruled on 2026-10-03
+([#641](https://github.com/jcfischer/seelite/issues/641)). §3.8.3 follows
+from §3.6 and §3.8 and is not a ruling.
 Decision node: [Fly the hull from its vents: six held thrusters, the couples
 they make, and the assist as a controller on top](https://github.com/jcfischer/seelite/issues/398).
 
@@ -269,10 +270,24 @@ A bounded assist cannot reproduce two things #5 did.
   `tests/vents.test.ts` holds each under 20%. The principal ruled first on the
   courier's figure; sage found that it did not hold for the agile hulls, and
   the principal accepted the roster's figures as measured.
-- **The pointer is a demand.** A mouse delta used to add to the rate directly.
+- **The pointer is a demand** (ruled by the principal on 2026-10-03, #641,
+  with the assist on and off). A mouse delta used to add to the rate directly.
   Now it asks the attitude vents for that change of rate and gets at most the
-  couple's authority in one step. **Not ruled:** it follows from §3.8, and it
-  waits for the principal to fly it on the assist-on arm and say yes.
+  couple's authority in one step. **What the step cannot pay is lost**, not
+  carried. So a pointer faster than `angularAuthority / MOUSE_RAD_PER_PX`
+  pixels a second loses the rest. That limit does not change with frame rate.
+  Below about 25–34 fps on the agile hulls, `MOUSE_MAX_STEP` binds first, per
+  frame. `tests/pointer.test.ts` prints the limit per hull. The principal's
+  hardest flicks read 22,000–24,000 px/s against the courier's 1364, so a hard
+  flick is well inside the loss. A `carry` arm banked the unpaid part,
+  decaying at 0.25 s and capped at 1 rad/s an axis, and asked for it again.
+  The principal flew Mechan's test (spin hard, then stop the nose on a star in
+  two or three movements) on both arms and kept this law. The carry arm was
+  removed. It was not Elite's virtual stick (a deflection that returns to
+  centre), and that law was not flown. How hot a pixel is belongs to the
+  sensitivity node ([#640](https://github.com/jcfischer/seelite/issues/640)).
+  `__seelite.pointerReadout` reads a flick's peak speed and the part the
+  vents paid.
 
 #### 3.8.3 Every author turns a hull this way
 

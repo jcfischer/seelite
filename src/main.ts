@@ -310,15 +310,11 @@ import {
 	thrustShares,
 } from "./sim";
 import {
-	EMPTY_BANK,
 	type Flick,
 	FlickMeter,
 	MOUSE_RAD_PER_PX,
-	type PointerBank,
 	asked,
 	pointerImpulse,
-	pointerTuningFrom,
-	settleBank,
 } from "./pointer";
 import { AttitudeFollower } from "./attitude-hold";
 import {
@@ -1322,13 +1318,6 @@ const STATION_THROTTLE_RATE_SCALE = 0.1;
 const browserPlatform = (): string =>
 	(navigator as Navigator & { userAgentData?: { platform?: string } })
 		.userAgentData?.platform || navigator.platform;
-
-/**
- * The pointer's law (#641), from `?pointer=carry` with `pointerTau` and
- * `pointerCap`: `src/pointer.ts` owns both arms. A prototype's open
- * question, flown by hand; the default is the law that shipped.
- */
-const POINTER_TUNING = pointerTuningFrom(window.location.search);
 
 /** The cockpit camera's offset from the hull's centre, kilometres — 8 metres
  *  forward, so the view is from the nose rather than from inside the cube. */
@@ -2347,13 +2336,11 @@ class Game {
 		perf: flightPerformance(this.flownHull),
 	};
 
-	/** Everything the pointer holds, gone: the delta, the `carry` bank and the
-	 *  flick being read. The one place besides `takePointer` that zeroes the
-	 *  delta, so no reset can leave a bank behind (#641). */
+	/** Everything the pointer holds, gone: the delta and the flick being read.
+	 *  The one place besides `takePointer` that zeroes the delta (#641). */
 	private dropPointer() {
 		this.mouseDx = 0;
 		this.mouseDy = 0;
-		this.pointerBank = EMPTY_BANK;
 		this.flickMeter.reset();
 	}
 
@@ -2366,7 +2353,7 @@ class Game {
 	}
 
 	/**
-	 * #641's flight-test readout: the pointer law, the speed at which this
+	 * #641's flight-test readout: the speed at which this
 	 * hull's couple stops paying a delta in full, and the last flick — its
 	 * peak speed and how much of what it asked for the vents paid. Pasted from
 	 * the console as `__seelite.pointerReadout`.
@@ -2382,9 +2369,6 @@ class Game {
 				durationS: +f.durationS.toFixed(2),
 			};
 		return {
-			law: POINTER_TUNING.law,
-			tauS: POINTER_TUNING.tauS,
-			capRadS: POINTER_TUNING.capRadS,
 			hull: this.flownHull,
 			assist: this.assist,
 			couplePxS: {
@@ -2638,8 +2622,6 @@ class Game {
 	 *  rate rather than at the hand's speed. */
 	private mouseDx = 0;
 	private mouseDy = 0;
-	/** What the `carry` arm still asks for (#641); empty on `drop`. */
-	private pointerBank: PointerBank = EMPTY_BANK;
 	private readonly flickMeter = new FlickMeter();
 	/** The selectable bodies, in display order. Invalidated by changing system,
 	 *  which is why this is a field rather than a `readonly` built in the
@@ -13644,7 +13626,7 @@ class Game {
 			// delivered it as a `MOUSE_MAX_STEP` kick on the first frame after
 			// launch. Docked at the station console is exactly the case this
 			// branch's reversal is about, and the comment there claimed the
-			// delta was consumed. Sage found it. The `carry` bank goes with it.
+			// delta was consumed. Sage found it.
 			this.dropPointer();
 			// Same reason as the delta above: `stepScan` runs on the flight tail,
 			// so this branch is a way off it. A charge banked before docking would
@@ -13826,10 +13808,9 @@ class Game {
 		// other direction; sage caught that.
 		const flying = !handsHeld && contextFliesShip(this.padContext());
 		const { dx, dy } = this.takePointer();
-		// A suspended pointer suspends the `carry` bank with it (#641).
 		if (!flying) this.dropPointer();
 		const impulse = flying
-			? pointerImpulse(POINTER_TUNING, this.pointerBank, dx, dy)
+			? pointerImpulse(dx, dy)
 			: { pitch: 0, yaw: 0, roll: 0 };
 
 		// Rotation carries momentum (`stepAngular`): the ship eases into a turn
@@ -13851,18 +13832,10 @@ class Game {
 		);
 		if (flying) {
 			const unspent = this.attitudeStep.pointerUnspent;
-			this.pointerBank = settleBank(POINTER_TUNING, unspent, dt);
-			this.flickMeter.frame(
-				dx,
-				dy,
-				dt,
-				asked(dx, dy),
-				{
-					pitch: impulse.pitch - unspent.pitch,
-					yaw: impulse.yaw - unspent.yaw,
-				},
-				Math.abs(this.pointerBank.pitch) + Math.abs(this.pointerBank.yaw),
-			);
+			this.flickMeter.frame(dx, dy, dt, asked(dx, dy), {
+				pitch: impulse.pitch - unspent.pitch,
+				yaw: impulse.yaw - unspent.yaw,
+			});
 		}
 
 		// Held rather than stepped, for the same reason throttle is: an angle the

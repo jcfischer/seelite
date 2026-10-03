@@ -320,7 +320,7 @@ describe("the axis law names which key is which", () => {
 		const main = codeOf("src/main.ts");
 		const passedThrough =
 			/dx: this\.mouseDx, dy: this\.mouseDy/.test(main) &&
-			/pointerImpulse\(POINTER_TUNING, this\.pointerBank, dx, dy\)/.test(main);
+			/pointerImpulse\(dx, dy\)/.test(main);
 		const negated = (field: string, px: string) =>
 			passedThrough &&
 			new RegExp(`${field}:\\s*-${px}\\s*\\*\\s*MOUSE_RAD_PER_PX`).test(
