@@ -69,7 +69,7 @@ export const FIXTURE_AXIS: Vec3 = (() => {
 })();
 
 /**
- * The slot's phase-zero direction, a fixed perpendicular to `FIXTURE_AXIS`.
+ * The aperture's phase-zero direction, a fixed perpendicular to `FIXTURE_AXIS`.
  * In the game it is the station's along-track direction; what the tests check
  * is the arithmetic against *some* reference.
  */
