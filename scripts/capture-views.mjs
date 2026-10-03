@@ -1153,6 +1153,15 @@ async function rebuildSheet(out) {
 }
 
 /**
+ * The probe suite's lock, held for the whole capture (#84). The mid-traversal
+ * views run on wall-clock time, so a capture beside a running suite puts the
+ * ship somewhere else — the same failure a starved probe has, in a frame a
+ * person then judges. Taken before the tree guard below, so the guard reads
+ * the server as it is when the capture starts and not before a wait.
+ */
+await holdProbeLockOrExit(`capture-views --label ${LABEL}`);
+
+/**
  * Which tree the server is serving — refused if it is not this one, and kept,
  * because the sheet prints it.
  *
@@ -1180,14 +1189,6 @@ async function rebuildSheet(out) {
  * is a property of the server, so that gap closed with it.
  */
 const { origin: SERVING, served } = await guardedTree(ORIGIN);
-
-/**
- * The probe suite's lock, held for the whole capture (#84). The mid-traversal
- * views run on wall-clock time, so a capture beside a running suite puts the
- * ship somewhere else — the same failure a starved probe has, in a frame a
- * person then judges.
- */
-await holdProbeLockOrExit(`capture-views --label ${LABEL}`);
 
 const browser = await launchChromium({ headless: false });
 const page = await browser.newPage({ viewport: VIEWPORT });
