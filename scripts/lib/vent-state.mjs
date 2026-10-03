@@ -111,6 +111,8 @@ export function holdCruiseTurnState({ spin, steps }) {
 			farKm = d;
 		}
 	}
+	if (!far)
+		throw new Error("holdCruiseTurnState: no body but the star to cruise to");
 	g.targetId = far.id;
 	g.faceTarget?.();
 	g.engageCruise();

@@ -347,9 +347,12 @@ in force inside it. No vent is drawn for it, and no momentum accounting applies.
 **A turn in cruise is not part of the exception (#647, the principal's ruling of
 2026-10-03).** Cruise supplies the hull's translation, never its rotation: the
 attitude vents turn the hull in cruise exactly as in normal flight, through the
-Hull step, under the rotation law the pilot's assist toggle selects. So a cruise
-turn is heard, drawn as plumes and cued like any other, and only its linear
-Saturation is always clear, because no translation vent fires in cruise.
+Hull step, under the rotation law the pilot's assist toggle selects — the same
+`hands.turnAssist` in both regimes (`Game.step`). So a cruise turn is heard,
+drawn as plumes and cued like any other, and only its linear Saturation is
+always clear: a step with no translation fires no translation vent and reports
+none (`stepHull`, `tests/hull-step.test.ts`). `probe-vent-display` flies the
+assist-on case in a real leg.
 
 ## 4. What every implementation owes
 

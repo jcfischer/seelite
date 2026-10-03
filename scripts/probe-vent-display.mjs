@@ -329,7 +329,7 @@ check(
 );
 check(
 	"a cruise turn past the envelope latches the angular cue and not the linear one (#647)",
-	cruise.cue.angular && !cruise.cue.linear,
+	cruise.cue?.angular === true && cruise.cue?.linear === false,
 	`cue ${JSON.stringify(cruise.cue)}`,
 );
 await setView("chase");
