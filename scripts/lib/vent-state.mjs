@@ -78,3 +78,68 @@ export function holdVentState({ overCap, spin, steps, slipDeg = 10 }) {
 			: null,
 	};
 }
+
+/**
+ * #647's state: a turn in a real cruise leg, through the real sim.
+ *
+ * The leg runs to the farthest body that is not the star, so it lasts. Once
+ * the game reports cruise, the hull is handed `spin` times its peak yaw rate,
+ * with the assist on, and the game's own `step` flies `steps` steps of 1/60 s:
+ * the attitude vents bring the spin back and saturate, and cruise moves the
+ * hull, so no translation vent fires. Then the clock is held.
+ *
+ * Runs **in the page**, so it may reference nothing outside itself.
+ *
+ * @param {{ spin: number, steps: number }} args
+ */
+export function holdCruiseTurnState({ spin, steps }) {
+	const g = window.__seelite;
+	g.resetFlightToStart();
+	g.clockHeld = false;
+	if (!g.assist) g.assist = true;
+	let far = null;
+	let farKm = 0;
+	for (const b of g.world.system.bodies) {
+		if (b.kind === "star") continue;
+		const d = Math.hypot(
+			b.pos.x - g.world.ship.pos.x,
+			b.pos.y - g.world.ship.pos.y,
+			b.pos.z - g.world.ship.pos.z,
+		);
+		if (d > farKm) {
+			far = b;
+			farKm = d;
+		}
+	}
+	if (!far)
+		throw new Error("holdCruiseTurnState: no body but the star to cruise to");
+	g.targetId = far.id;
+	g.faceTarget?.();
+	g.engageCruise();
+	const dt = 1 / 60;
+	for (let i = 0; i < 600 && g.regime !== "cruise"; i++) g.step(dt);
+	const engaged = g.regime === "cruise";
+	const max = g.flownPerformance.angularMax;
+	g.rates = { pitch: 0, yaw: max.yaw * spin, roll: 0 };
+	for (let i = 0; i < steps; i++) g.step(dt);
+	g.clockHeld = true;
+	const family = new Map(
+		g.flownPerformance.vents.map((v) => [v.slot, v.family]),
+	);
+	const firing = { ...(g.ventFiring ?? {}) };
+	return {
+		hull: g.flownHull,
+		engaged,
+		stillCruising: g.regime === "cruise",
+		firing,
+		lit: Object.entries(firing)
+			.filter(([, level]) => level > 0)
+			.map(([slot]) => ({ slot, family: family.get(slot) })),
+		cue: g.saturationCue
+			? {
+					linear: g.saturationCue.linear !== null,
+					angular: g.saturationCue.angular !== null,
+				}
+			: null,
+	};
+}
