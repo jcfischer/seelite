@@ -2349,9 +2349,10 @@ class Game {
 	/**
 	 * #641's flight-test readout: the speed at which this hull's couple stops
 	 * paying a delta in full, and the last and the hardest flick — its peak
-	 * speed and how much of what it asked for the vents paid. `paid` is null for
-	 * a flick flown with the assist on, because `stepAngular` reports nothing
-	 * unpaid there. Pasted from the console as `__seelite.pointerReadout`.
+	 * speed and how much of what it asked for reached the rate, after the spike
+	 * guard and the couple. `deliveredRadS` and `paid` are null for a flick
+	 * flown with the assist on, because `stepAngular` reports nothing unpaid
+	 * there. Pasted from the console as `__seelite.pointerReadout`.
 	 */
 	get pointerReadout() {
 		const a = this.flownPerformance.angularAuthority;
@@ -2359,7 +2360,7 @@ class Game {
 			f && {
 				peakPxS: Math.round(f.peakPxS),
 				askedRadS: +f.askedRadS.toFixed(3),
-				deliveredRadS: +f.deliveredRadS.toFixed(3),
+				deliveredRadS: f.assisted ? null : +f.deliveredRadS.toFixed(3),
 				assisted: f.assisted,
 				paid: f.assisted ? null : +(f.deliveredRadS / f.askedRadS).toFixed(2),
 				durationS: +f.durationS.toFixed(2),
@@ -13804,7 +13805,7 @@ class Game {
 		// other direction; sage caught that.
 		const flying = !handsHeld && contextFliesShip(this.padContext());
 		const { dx, dy } = this.takePointer();
-		if (!flying) this.dropPointer();
+		if (!flying) this.flickMeter.reset();
 		const impulse = flying
 			? pointerImpulse(dx, dy)
 			: { pitch: 0, yaw: 0, roll: 0 };

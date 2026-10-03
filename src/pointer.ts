@@ -58,7 +58,8 @@ export interface Flick {
 	/** The rate change the pointer asked for over the flick, rad/s summed
 	 *  over pitch and yaw. */
 	askedRadS: number;
-	/** The rate change the vents paid toward it. */
+	/** The rate change that reached the rate toward it, after the spike
+	 *  guard and the couple. */
 	deliveredRadS: number;
 	/** From the first move to the last, seconds; the quiet that closes the
 	 *  flick is not in it. */
@@ -78,8 +79,8 @@ export const FLICK_PEAK_WINDOW_S = 0.05;
 /**
  * Reads flicks for a flight test: the console readout the principal pastes
  * (`__seelite.pointerReadout`), so a limit is compared with their own hand
- * rather than with an assumed one. #641 read a hard flick at 22,000–24,000
- * px/s against the courier's 1364.
+ * rather than with an assumed one. `deliveredRadS` is what reached the rate:
+ * the spike guard's clip and the couple's together.
  */
 export class FlickMeter {
 	private current: Flick | null = null;
@@ -129,9 +130,7 @@ export class FlickMeter {
 			f.durationS -= this.quietS;
 			this.last = f;
 			if (!this.hardest || f.peakPxS > this.hardest.peakPxS) this.hardest = f;
-			this.current = null;
-			this.quietS = 0;
-			this.recent = [];
+			this.reset();
 		}
 	}
 

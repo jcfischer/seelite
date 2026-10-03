@@ -1222,8 +1222,8 @@ export function stepAngular(
 		}
 		const fraction = change / authority;
 		if (assist && Math.abs(fraction) > 1 + 1e-9) saturated[axis] = true;
-		// What the couple could not pay, charged to the pointer up to its own
-		// kick: a stick already at full the same way leaves the whole kick.
+		// What the couple could not pay, charged to the impulse up to its own
+		// size: a stick already at full the same way leaves the whole impulse.
 		const excess = change - clamp(change, -authority, authority);
 		if (!assist && kick !== 0 && Math.sign(excess) === Math.sign(kick))
 			impulseUnpaid[axis] =

@@ -281,8 +281,7 @@ A bounded assist cannot reproduce two things #5 did.
   frame. `tests/pointer.test.ts` prints the limit per hull. On the courier,
   whose limit is 1364 px/s, the principal's hardest flick on this law asked
   for 7.57 rad/s over about a second, which is roughly 3,000 px/s for the whole
-  flick, and the vents paid 35% of it. Its one-frame peak read 22,035 px/s.
-  So a hard flick is well inside the loss. A `carry` arm banked the unpaid part,
+  flick, and 35% of it reached the rate. So a hard flick is well inside the loss. A `carry` arm banked the unpaid part,
   decaying at 0.25 s and capped at 1 rad/s an axis, and asked for it again.
   The principal flew Mechan's test (spin hard, then stop the nose on a star in
   two or three movements) on both arms and kept this law. The carry arm was
@@ -290,7 +289,8 @@ A bounded assist cannot reproduce two things #5 did.
   centre), and that law was not flown. How hot a pixel is belongs to the
   sensitivity node ([#640](https://github.com/jcfischer/seelite/issues/640)).
   `__seelite.pointerReadout` reads a flick's peak speed over 50 ms and,
-  with the assist off, the part the vents paid.
+  with the assist off, the part that reached the rate after the spike guard
+  and the couple.
 
 #### 3.8.3 Every author turns a hull this way
 
