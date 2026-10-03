@@ -1099,7 +1099,7 @@ describe("the adopt point (#631)", () => {
 			),
 		).toEqual(["save"]);
 		// A writer that hands back the world it was given — `settleIncident` on
-		// empty lists, `withOffence` on a lawful act — is no write.
+		// empty lists, `chargeOffence` on a lawful act nobody heard — is no write.
 		expect(
 			firing(
 				adoptEffects("world", { holdings: h, world }, { holdings: h, world }),

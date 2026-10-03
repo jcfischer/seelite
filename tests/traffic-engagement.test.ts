@@ -3,16 +3,16 @@
  * condition model, its own hull's handling, and a reaction per role.
  */
 import { describe, expect, test } from "bun:test";
-import { carrierKey } from "../src/carrier-key";
+import { type CarrierKey, carrierKey } from "../src/carrier-key";
 import {
 	ARMED_TRAFFIC_HULLS,
 	type Engagement,
-	chargedOffence,
 	engage,
 	flownVoyageOrdinal,
 	flyingTrafficActors,
 	parkedHomeTrafficActors,
 	stepEngagement,
+	strikeClock,
 	type EngagementStep,
 	ASSAULT_FIRE_S,
 	trafficDestruction,
@@ -50,7 +50,15 @@ import { add, length, normalizeOr, scale, sub, v3 } from "../src/vec3";
 import { carrierManifest } from "../src/carrier-manifest";
 import { generateGalaxy } from "../src/galaxy";
 import { generateContents } from "../src/system";
-import { marginalOffenceHeat, offenceHeat, OFFENCE_HEAT } from "../src/legal";
+import {
+	OFFENCE_HEAT,
+	type Offence,
+	type OffenceFacts,
+	type Standing,
+	assaultCharged,
+	chargeOffence,
+} from "../src/legal";
+import { carrierStanding } from "../src/carrier-standing";
 
 /** Every hull any station roster flies, so a row is not a hand-picked subset. */
 const ROSTER_HULLS = [
@@ -670,44 +678,95 @@ describe("a kill on the way home stays reachable (H3c)", () => {
 	});
 });
 
+/**
+ * A system seed under which `key`'s first instance reads each standing at each
+ * clock. Standing is derived from the system seed (`carrier-standing.ts`), and
+ * the world-state rows below do not read it, so the seed the law is handed is
+ * free to pick — and picking it by search is what keeps a row from restating a
+ * draw.
+ */
+const seedWhere = (
+	key: CarrierKey,
+	...wanted: [Standing, number][]
+): number => {
+	for (let seed = 1; seed < 500_000; seed++)
+		if (wanted.every(([s, at]) => carrierStanding(seed, key, 0, at) === s))
+			return seed;
+	throw new Error(`no seed reads ${JSON.stringify(wanted)} for ${key}`);
+};
+
+/**
+ * The facts `Game` hands `chargeOffence` for one act against `key`, read off
+ * the carrier's row as it stood before the act's own transition (#633 D2):
+ * the instance, and the strike's clock through `strikeClock`.
+ */
+const offenceAgainst = (
+	offence: Offence,
+	now: number,
+	row: { instanceOrdinal: number } & Parameters<typeof strikeClock>[0],
+	systemSeed: number,
+	key: CarrierKey = DIVERT_ACTOR.key,
+): OffenceFacts => ({
+	offence,
+	galaxy: 0,
+	now,
+	systemSeed,
+	carrier: {
+		key,
+		instanceOrdinal: row.instanceOrdinal,
+		struckAt: strikeClock(row),
+	},
+	victim: v3(),
+	stations: [],
+});
+
 describe("H9: a kill supersedes the strike that preceded it", () => {
 	/** The row the pilot's offence is judged against: read at the clock the
 	 *  offence lands, exactly as `main.ts` reads it. */
 	const rowAt = (world: ReturnType<typeof newWorld>, at: number) =>
 		effectiveCarrier(world.galaxies[0], DIVERT_ACTOR.key, at);
+	const KILL_AT = DIVERT_AT + 10;
+	/** Clean at the strike and at the kill. */
+	const CLEAN = seedWhere(
+		DIVERT_ACTOR.key,
+		["clean", DIVERT_AT],
+		["clean", KILL_AT],
+	);
 
 	test("a strike on a carrier nobody has fired on yet costs the whole 15", () => {
+		const world = newWorld(1);
+		const before = rowAt(world, DIVERT_AT);
+		expect(strikeClock(before)).toBe(null);
 		expect(
-			marginalOffenceHeat(
-				"clean",
-				"struck",
-				chargedOffence({ condition: "operational" }, "clean", false),
-			),
+			chargeOffence(world, offenceAgainst("struck", DIVERT_AT, before, CLEAN))
+				.heat,
 		).toBe(15);
 	});
 
 	test("strike then kill on one Clean carrier costs 40, not 55", () => {
-		const world = divertOne(newWorld(1));
-		const first = marginalOffenceHeat("clean", "struck", null);
-		// The kill lands while the divert is still running, which is what makes it
-		// the same incident rather than a second offence.
-		expect(chargedOffence(rowAt(world, DIVERT_AT + 10), "clean", false)).toBe(
-			"struck",
+		// The strike is charged against the row before its divert, as the
+		// game does; the kill lands while the divert is still running, which
+		// is what makes it the same incident rather than a second offence.
+		const fresh = newWorld(1);
+		const strike = chargeOffence(
+			divertOne(fresh),
+			offenceAgainst("struck", DIVERT_AT, rowAt(fresh, DIVERT_AT), CLEAN),
 		);
-		const second = marginalOffenceHeat(
-			"clean",
-			"destroyed",
-			chargedOffence(rowAt(world, DIVERT_AT + 10), "clean", false),
+		const home = rowAt(strike.world, KILL_AT);
+		expect(trafficPresence(home)).toBe("parked-home");
+		expect(strikeClock(home)).toBe(DIVERT_AT);
+		const kill = chargeOffence(
+			strike.world,
+			offenceAgainst("destroyed", KILL_AT, home, CLEAN),
 		);
-		expect(first).toBe(15);
-		expect(second).toBe(25);
-		expect(first + second).toBe(offenceHeat("clean", "destroyed"));
+		expect(strike.heat).toBe(15);
+		expect(kill.heat).toBe(25);
+		expect(strike.heat + kill.heat).toBe(OFFENCE_HEAT.destroyed);
 	});
 
 	test("a strike that cost nothing is not credited to the kill that follows it", () => {
 		const world = divertOne(newWorld(1));
-		const repairing = rowAt(world, DIVERT_AT + 10);
-		expect(trafficPresence(repairing)).toBe("parked-home");
+		const completes = divertStart().completesAt;
 		// H4 writes no heat for an offence against a Wanted carrier, so a strike
 		// that landed while the target was Wanted charged nothing — and the kill
 		// is worth its full 40 even though the row still shows the divert
@@ -715,27 +774,45 @@ describe("H9: a kill supersedes the strike that preceded it", () => {
 		// own clock, which the row carries: `startedAt` is the `repair-start`'s
 		// `occurredAt`, which is the `disable`'s, because H3c writes both in one
 		// tick. Standing is never saved, so that clock is the whole record.
+		//
+		// The rotation has to turn inside the repair for this to be a test of
+		// the clock at all — Wanted at the strike, Clean by the kill — so the kill
+		// is taken at the last second the carrier is still at home.
+		const killAt = completes - 1;
+		const repairing = rowAt(world, killAt);
+		expect(trafficPresence(repairing)).toBe("parked-home");
 		expect(repairing.recovery?.startedAt).toBe(DIVERT_AT);
-		expect(chargedOffence(repairing, "wanted", false)).toBe(null);
+		const turned = seedWhere(
+			DIVERT_ACTOR.key,
+			["wanted", DIVERT_AT],
+			["clean", killAt],
+		);
 		expect(
-			marginalOffenceHeat(
-				"clean",
-				"destroyed",
-				chargedOffence(repairing, "wanted", false),
-			),
+			chargeOffence(
+				world,
+				offenceAgainst("destroyed", killAt, repairing, turned),
+			).heat,
 		).toBe(40);
-		// And a clock that cannot be named charges nothing as paid either.
-		expect(chargedOffence(repairing, null, false)).toBe(null);
+		// And a carrier at home with no strike clock to read — a disable with
+		// no repair written — charges nothing as paid either.
+		const unclocked = { instanceOrdinal: 0, condition: "disabled" as const };
+		expect(trafficPresence(unclocked)).toBe("parked-home");
+		expect(strikeClock(unclocked)).toBe(null);
+		expect(
+			chargeOffence(
+				newWorld(1),
+				offenceAgainst("destroyed", KILL_AT, unclocked, CLEAN),
+			).heat,
+		).toBe(40);
 	});
 
 	test("a second strike in the same incident adds nothing", () => {
 		const world = divertOne(newWorld(1));
 		expect(
-			marginalOffenceHeat(
-				"clean",
-				"struck",
-				chargedOffence(rowAt(world, DIVERT_AT + 10), "clean", false),
-			),
+			chargeOffence(
+				world,
+				offenceAgainst("struck", KILL_AT, rowAt(world, KILL_AT), CLEAN),
+			).heat,
 		).toBe(0);
 	});
 
@@ -743,15 +820,18 @@ describe("H9: a kill supersedes the strike that preceded it", () => {
 		const world = divertOne(newWorld(1));
 		// The completion closes the incident lazily, on the read — and a kill
 		// against the ship that came back is a fresh 40, not a 25 top-up.
-		const back = rowAt(world, divertStart().completesAt);
+		const completes = divertStart().completesAt;
+		const back = rowAt(world, completes);
 		expect(back.condition).toBe("operational");
-		expect(chargedOffence(back, "clean", false)).toBe(null);
+		expect(strikeClock(back)).toBe(null);
+		const steady = seedWhere(
+			DIVERT_ACTOR.key,
+			["clean", DIVERT_AT],
+			["clean", completes],
+		);
 		expect(
-			marginalOffenceHeat(
-				"clean",
-				"destroyed",
-				chargedOffence(back, "clean", false),
-			),
+			chargeOffence(world, offenceAgainst("destroyed", completes, back, steady))
+				.heat,
 		).toBe(40);
 	});
 
@@ -772,8 +852,8 @@ describe("H9: a kill supersedes the strike that preceded it", () => {
 		// §5's accepted cost of the bound: the kill's own episode replaces the
 		// strike's summary wholesale. Nothing in `episodes` still says a strike
 		// happened — which is why H9's supersession is read from the carrier's
-		// condition (`chargedOffence`), where the divert is still standing, and
-		// not from the episode ledger.
+		// condition (`strikeClock`, handed to `chargeOffence`), where the divert
+		// is still standing, and not from the episode ledger.
 		expect(world.galaxies[0].episodes[DIVERT_ACTOR.key].initiating.kind).toBe(
 			"destroy",
 		);
@@ -867,9 +947,6 @@ describe("H4's sustained-fire clock (#396)", () => {
 		// One hit, and nothing charged for it: the hail is not an accusation, and
 		// a pilot who grazed a citizen on the way past is not yet an offender.
 		expect(e.assaultCharged).toBe(false);
-		expect(chargedOffence({ condition: "operational" }, null, false)).toBe(
-			null,
-		);
 	});
 
 	test("it charges at the seconds it declares, and not a frame sooner", () => {
@@ -951,15 +1028,24 @@ describe("H4's sustained-fire clock (#396)", () => {
 		expect(hailed).toBe(1);
 		expect(charged).toBe(0);
 		expect(e.landedFireS).toBeLessThan(ASSAULT_FIRE_S);
-		expect(
-			chargedOffence({ condition: "operational" }, null, e.assaultCharged),
-		).toBe(null);
+		expect(e.assaultCharged).toBe(false);
 	});
 
 	test("a fight resumed after a reload is the same incident, not a fresh clock", () => {
-		// The double charge #396 rules out by name. Reload into a fight whose
-		// assault the world says is paid and the engagement starts latched: the
-		// clock never crosses again, because it never started.
+		// The double charge #396 rules out by name. The world says the assault on
+		// this carrier is paid — it was charged, and the charge left its mark —
+		// so a fight resumed after a reload starts latched: the clock never
+		// crosses again, because it never started.
+		const operational = {
+			instanceOrdinal: 0,
+			condition: "operational" as const,
+		};
+		const clean = seedWhere(KEY, ["clean", 0], ["clean", 60]);
+		const paid = chargeOffence(
+			newWorld(1),
+			offenceAgainst("assault", 0, operational, clean, KEY),
+		);
+		expect(paid.heat).toBe(13);
 		const resumed = engage(
 			{
 				key: KEY,
@@ -971,7 +1057,12 @@ describe("H4's sustained-fire clock (#396)", () => {
 				voyageOrdinal: 0,
 			},
 			5,
-			{ assaultAlreadyCharged: true },
+			{
+				assaultAlreadyCharged: assaultCharged(
+					paid.world.galaxies[0].legalStatus,
+					KEY,
+				),
+			},
 		);
 		expect(resumed.landedFireS).toBe(0);
 		expect(resumed.assaultCharged).toBe(true);
@@ -986,40 +1077,52 @@ describe("H4's sustained-fire clock (#396)", () => {
 		// of the readout should see the fight, not a clock frozen at zero.
 		expect(e.landedFireS).toBeGreaterThan(ASSAULT_FIRE_S);
 		// And the law reads it as paid, whatever the carrier's own row says. Its
-		// row has nothing to say: it is an operational ship under fire.
+		// row has nothing to say — an operational ship under fire, no strike
+		// clock — and the five seconds are still not billed twice.
+		expect(strikeClock(operational)).toBe(null);
 		expect(
-			chargedOffence(
-				{ condition: "operational" },
-				null,
-				resumed.assaultCharged,
-			),
-		).toBe("assault");
+			chargeOffence(
+				paid.world,
+				offenceAgainst("assault", 60, operational, clean, KEY),
+			).heat,
+		).toBe(0);
 	});
 
 	test("a strike on top of a paid assault is charged the difference", () => {
-		// The lattice the other way round: an ordinary carrier struck while the
-		// assault is already paid is `parked-home`, and `chargedOffence` reports
-		// the worse of the two so the divert costs 2 and the kill costs the rest.
-		const world = divertOne(newWorld(1));
-		const row = effectiveCarrier(
-			world.galaxies[0],
+		// **The whole ladder, as the three legs a pilot actually walks**, each
+		// charged against the row `Game` would read: five seconds of fire on the
+		// flying carrier, the strike that diverts it, the kill that finishes it
+		// at home. The divert and the kill read their row before their own
+		// transition, and the kill's row is the divert's, carrying its clock.
+		const ASSAULT_AT = DIVERT_AT - 10;
+		const KILL_AT = DIVERT_AT + 10;
+		const seed = seedWhere(
 			DIVERT_ACTOR.key,
-			DIVERT_AT + 10,
+			["clean", ASSAULT_AT],
+			["clean", DIVERT_AT],
+			["clean", KILL_AT],
 		);
-		expect(chargedOffence(row, "clean", true)).toBe("struck");
-		expect(marginalOffenceHeat("clean", "struck", "assault")).toBe(2);
-		expect(marginalOffenceHeat("clean", "destroyed", "assault")).toBe(27);
-		// **And the whole ladder, as three legs a pilot actually walks.** The legs
-		// are taken *through* the pricing function rather than written as literals:
-		// a sum of literals next to a constant is an arithmetic identity that only
-		// moves when the constant moves, and the whole claim here is that the
-		// marginals add up to the kill's own rung. Retune any one of the three and
-		// this is red on the sum as well as on the leg.
-		const legs = [
-			marginalOffenceHeat("clean", "assault", null),
-			marginalOffenceHeat("clean", "struck", "assault"),
-			marginalOffenceHeat("clean", "destroyed", "struck"),
-		];
+		const rowAt = (world: ReturnType<typeof newWorld>, at: number) =>
+			effectiveCarrier(world.galaxies[0], DIVERT_ACTOR.key, at);
+		const fresh = newWorld(1);
+		const assault = chargeOffence(
+			fresh,
+			offenceAgainst("assault", ASSAULT_AT, rowAt(fresh, ASSAULT_AT), seed),
+		);
+		const struckBefore = rowAt(assault.world, DIVERT_AT);
+		const strike = chargeOffence(
+			divertOne(assault.world),
+			offenceAgainst("struck", DIVERT_AT, struckBefore, seed),
+		);
+		const home = rowAt(strike.world, KILL_AT);
+		expect(trafficPresence(home)).toBe("parked-home");
+		const kill = chargeOffence(
+			strike.world,
+			offenceAgainst("destroyed", KILL_AT, home, seed),
+		);
+		// Literals, for the H9 rows' reason in `tests/legal.test.ts`: a figure
+		// derived through the module passes on the module's own mistake.
+		const legs = [assault.heat, strike.heat, kill.heat];
 		expect(legs).toEqual([13, 2, 25]);
 		expect(legs.reduce((a, b) => a + b, 0)).toBe(OFFENCE_HEAT.destroyed);
 	});
