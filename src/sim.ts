@@ -1139,10 +1139,10 @@ export interface AngularStep {
 	 *  `stepFlight` adds it to the velocity (`FlightControl.attitude`). */
 	linearKms2: Vec3;
 	/** The part of `impulse` the couple could not pay this step, rad/s, and
-	 *  lost (#641): what the pointer readout reports as unpaid. Assist off
-	 *  only: with the assist on the kick is a nudge to a rate controller that
-	 *  also eases it out, so "unpaid" has no single meaning there. */
-	pointerUnspent: Angular;
+	 *  lost (#641). Assist off only: with the assist on the kick is a nudge to
+	 *  a rate controller that also eases it out, so "unpaid" has no single
+	 *  meaning there, and this is zero. */
+	impulseUnpaid: Angular;
 }
 
 /** The angular step of a hull that fired nothing: for a caller that turns no
@@ -1152,7 +1152,7 @@ export const NO_ATTITUDE: AngularStep = Object.freeze({
 	firing: Object.freeze({}),
 	saturated: Object.freeze({ ...CLEAR_ANGULAR }),
 	linearKms2: Object.freeze(v3()),
-	pointerUnspent: Object.freeze({ pitch: 0, yaw: 0, roll: 0 }),
+	impulseUnpaid: Object.freeze({ pitch: 0, yaw: 0, roll: 0 }),
 });
 
 /**
@@ -1197,7 +1197,7 @@ export function stepAngular(
 	const decay = Math.exp(-dt / perf.angularDampTauS);
 	const firing: VentLevels = { ...direct };
 	const saturated = { ...CLEAR_ANGULAR };
-	const pointerUnspent: Angular = { pitch: 0, yaw: 0, roll: 0 };
+	const impulseUnpaid: Angular = { pitch: 0, yaw: 0, roll: 0 };
 	for (const axis of ANGULAR_AXES) {
 		const rate = rates[axis];
 		const want = clamp(command[axis], -1, 1);
@@ -1226,7 +1226,7 @@ export function stepAngular(
 		// kick: a stick already at full the same way leaves the whole kick.
 		const excess = change - clamp(change, -authority, authority);
 		if (!assist && kick !== 0 && Math.sign(excess) === Math.sign(kick))
-			pointerUnspent[axis] =
+			impulseUnpaid[axis] =
 				Math.sign(kick) * Math.min(Math.abs(excess), Math.abs(kick));
 		fireAxis(firing, perf.axisSlots[axis], clamp(fraction, -1, 1));
 	}
@@ -1236,7 +1236,7 @@ export function stepAngular(
 		firing,
 		saturated,
 		linearKms2: scale(loads.force, 1 / perf.massT),
-		pointerUnspent,
+		impulseUnpaid,
 	};
 }
 

@@ -286,8 +286,8 @@ A bounded assist cannot reproduce two things #5 did.
   removed. It was not Elite's virtual stick (a deflection that returns to
   centre), and that law was not flown. How hot a pixel is belongs to the
   sensitivity node ([#640](https://github.com/jcfischer/seelite/issues/640)).
-  `__seelite.pointerReadout` reads a flick's peak speed and the part the
-  vents paid.
+  `__seelite.pointerReadout` reads a flick's peak speed and, with the
+  assist off, the part the vents paid.
 
 #### 3.8.3 Every author turns a hull this way
 

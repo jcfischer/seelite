@@ -56,7 +56,11 @@ export interface Flick {
 	askedRadS: number;
 	/** The rate change the vents paid toward it. */
 	deliveredRadS: number;
+	/** From the first move to the last, seconds; the quiet that closes the
+	 *  flick is not in it. */
 	durationS: number;
+	/** Whether the assist was on for any frame of it. */
+	assisted: boolean;
 }
 
 /** A flick ends this long after the pointer stops. */
@@ -80,8 +84,8 @@ export class FlickMeter {
 		dxPx: number,
 		dyPx: number,
 		dt: number,
-		askedNow: PointerRate,
 		delivered: PointerRate,
+		assist: boolean,
 	) {
 		if (!(dt > 0)) return;
 		const moving = dxPx !== 0 || dyPx !== 0;
@@ -92,14 +96,18 @@ export class FlickMeter {
 				askedRadS: 0,
 				deliveredRadS: 0,
 				durationS: 0,
+				assisted: false,
 			};
 		const f = this.current;
 		f.peakPxS = Math.max(f.peakPxS, Math.hypot(dxPx, dyPx) / dt);
+		const askedNow = asked(dxPx, dyPx);
 		f.askedRadS += Math.abs(askedNow.pitch) + Math.abs(askedNow.yaw);
 		f.deliveredRadS += Math.abs(delivered.pitch) + Math.abs(delivered.yaw);
 		f.durationS += dt;
+		f.assisted ||= assist;
 		this.quietS = moving ? 0 : this.quietS + dt;
 		if (this.quietS >= FLICK_QUIET_S) {
+			f.durationS -= this.quietS;
 			this.last = f;
 			if (!this.hardest || f.peakPxS > this.hardest.peakPxS) this.hardest = f;
 			this.current = null;

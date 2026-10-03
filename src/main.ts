@@ -313,7 +313,6 @@ import {
 	type Flick,
 	FlickMeter,
 	MOUSE_RAD_PER_PX,
-	asked,
 	pointerImpulse,
 } from "./pointer";
 import { AttitudeFollower } from "./attitude-hold";
@@ -2345,7 +2344,7 @@ class Game {
 	}
 
 	/** This frame's pointer delta, consumed. */
-	private takePointer(): { dx: number; dy: number } {
+	private takePointer() {
 		const taken = { dx: this.mouseDx, dy: this.mouseDy };
 		this.mouseDx = 0;
 		this.mouseDy = 0;
@@ -2353,10 +2352,11 @@ class Game {
 	}
 
 	/**
-	 * #641's flight-test readout: the speed at which this
-	 * hull's couple stops paying a delta in full, and the last flick — its
-	 * peak speed and how much of what it asked for the vents paid. Pasted from
-	 * the console as `__seelite.pointerReadout`.
+	 * #641's flight-test readout: the speed at which this hull's couple stops
+	 * paying a delta in full, and the last and the hardest flick — its peak
+	 * speed and how much of what it asked for the vents paid. `paid` is null for
+	 * a flick flown with the assist on, because `stepAngular` reports nothing
+	 * unpaid there. Pasted from the console as `__seelite.pointerReadout`.
 	 */
 	get pointerReadout() {
 		const a = this.flownPerformance.angularAuthority;
@@ -2365,7 +2365,8 @@ class Game {
 				peakPxS: Math.round(f.peakPxS),
 				askedRadS: +f.askedRadS.toFixed(3),
 				deliveredRadS: +f.deliveredRadS.toFixed(3),
-				paid: +(f.deliveredRadS / f.askedRadS).toFixed(2),
+				assisted: f.assisted,
+				paid: f.assisted ? null : +(f.deliveredRadS / f.askedRadS).toFixed(2),
 				durationS: +f.durationS.toFixed(2),
 			};
 		return {
@@ -13831,11 +13832,14 @@ class Game {
 			heldVents(pilotHeld),
 		);
 		if (flying) {
-			const unspent = this.attitudeStep.pointerUnspent;
-			this.flickMeter.frame(dx, dy, dt, asked(dx, dy), {
-				pitch: impulse.pitch - unspent.pitch,
-				yaw: impulse.yaw - unspent.yaw,
-			});
+			const unpaid = this.attitudeStep.impulseUnpaid;
+			this.flickMeter.frame(
+				dx,
+				dy,
+				dt,
+				{ pitch: impulse.pitch - unpaid.pitch, yaw: impulse.yaw - unpaid.yaw },
+				this.assist,
+			);
 		}
 
 		// Held rather than stepped, for the same reason throttle is: an angle the

@@ -39,7 +39,7 @@
  * tier that runs on every push.
  */
 import { expect, test } from "bun:test";
-import { codeOf } from "./lib/source-scan";
+import { codeOf, methodBodyOf } from "./lib/source-scan";
 
 const SUBJECT = "src/main.ts";
 const main = codeOf(SUBJECT);
@@ -90,26 +90,9 @@ const LEG_PATH = [
  */
 const DISPLAY_PATH = ["render"];
 
-/** The body of a one-tab-indented method, by brace matching. */
-function methodBody(source: string, name: string): string {
-	const head = new RegExp(
-		`^\\t(?:private |readonly |private readonly )?(?:async )?${name}\\([^)]*\\)\\s*(?::[^{\\n]+)?\\{`,
-		"m",
-	);
-	const at = source.match(head);
-	if (at?.index === undefined)
-		throw new Error(
-			`${SUBJECT} has no method ${name}() at class-member indentation — ` +
-				`if it was renamed or removed, LEG_PATH is the thing to update`,
-		);
-	const open = at.index + at[0].length - 1;
-	let depth = 0;
-	for (let i = open; i < source.length; i++) {
-		if (source[i] === "{") depth++;
-		else if (source[i] === "}" && --depth === 0) return source.slice(open, i);
-	}
-	throw new Error(`${name}() in ${SUBJECT} has no closing brace`);
-}
+/** The body of a one-tab-indented method of `main`. */
+const methodBody = (source: string, name: string) =>
+	methodBodyOf(source, name, SUBJECT);
 
 /**
  * Fields the flight path touches that the reset deliberately leaves alone, with
