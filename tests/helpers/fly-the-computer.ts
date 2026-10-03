@@ -25,6 +25,7 @@
 import {
 	type ApertureFrame,
 	type ComputerPhase,
+	type DockingState,
 	type EntryPose,
 	apertureFrame,
 	attemptEntry,
@@ -151,6 +152,33 @@ export interface FlightOptions {
 	trace?: ComputerTraceStep[];
 }
 
+/** The clearance a run starts under: none, queued, or a live grant. Every
+ *  case carries `hostile` (sage, #648 round 1). */
+function initialState(
+	opts: FlightOptions,
+	interior: ReturnType<typeof stationInterior>,
+	envelope: (typeof HULL_SPECS)[HullId]["env"],
+): DockingState {
+	const hostile = opts.hostile ?? false;
+	if (opts.granted === false) return { ...newDockingState(), hostile };
+	if (opts.queued)
+		return {
+			...newDockingState(),
+			clearance: { kind: "queued", position: 0 },
+			hostile,
+		};
+	return {
+		...requestClearance(newDockingState(), {
+			gameTime: 0,
+			rangeKm: 500,
+			interior,
+			hull: envelope,
+			occupied: new Set<string>(),
+		}),
+		hostile,
+	};
+}
+
 export function flyTheComputer(opts: FlightOptions): FlightRun {
 	const type = opts.type ?? "trade";
 	const { axis, reference } = opts;
@@ -165,24 +193,7 @@ export function flyTheComputer(opts: FlightOptions): FlightRun {
 		STATION_GEOMETRY[type].aperturePlaneKm,
 		1,
 	);
-	const state =
-		opts.granted === false
-			? newDockingState()
-			: opts.queued
-				? {
-						...newDockingState(),
-						clearance: { kind: "queued" as const, position: 0 },
-					}
-				: {
-						...requestClearance(newDockingState(), {
-							gameTime: 0,
-							rangeKm: 500,
-							interior,
-							hull: envelope,
-							occupied: new Set<string>(),
-						}),
-						hostile: opts.hostile ?? false,
-					};
+	const state = initialState(opts, interior, envelope);
 
 	// Start well off the axis, so the line-up phase is genuinely exercised: a
 	// start already on the corridor would never test the half of §7 that keeps

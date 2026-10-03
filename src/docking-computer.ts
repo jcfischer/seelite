@@ -149,13 +149,7 @@ export interface ComputerFlightInput {
  *  the Hull step and a throttle for the assist. */
 export type ComputerFlight =
 	| { engaged: false; refused: ComputerRefusal; phase: ComputerPhase }
-	| {
-			engaged: true;
-			phase: ComputerPhase;
-			stick: Angular;
-			throttle: number;
-			command: ComputerCommand;
-	  };
+	| { engaged: true; phase: ComputerPhase; stick: Angular; throttle: number };
 
 /**
  * The docking computer flown one step (#648, `docking.md` §7, §13.2).
@@ -200,6 +194,5 @@ export function flyComputer(input: ComputerFlightInput): ComputerFlight {
 		phase: command.phase,
 		stick,
 		throttle: Math.min(1, speedKms / ASSIST_CAP_KMS),
-		command,
 	};
 }

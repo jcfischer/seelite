@@ -20,6 +20,7 @@ import { codeOf, scriptFiles, srcFiles, testFiles } from "./lib/source-scan";
 
 const AXIS: Vec3 = v3(0, 0, 1);
 const REFERENCE: Vec3 = v3(0, 1, 0);
+const BASE = { hull: PLAYER_BASELINE_HULL, axis: AXIS, reference: REFERENCE };
 
 describe("the docking computer step", () => {
 	test("a queued clearance lines up and waits at the corridor, at zero speed", () => {
@@ -29,9 +30,7 @@ describe("the docking computer step", () => {
 		const trace: ComputerTraceStep[] = [];
 		const run = flyTheComputer({
 			spinRpm: 2,
-			hull: PLAYER_BASELINE_HULL,
-			axis: AXIS,
-			reference: REFERENCE,
+			...BASE,
 			queued: true,
 			limitS: 120,
 			trace,
@@ -49,9 +48,7 @@ describe("the docking computer step", () => {
 		const trace: ComputerTraceStep[] = [];
 		flyTheComputer({
 			spinRpm: 2,
-			hull: PLAYER_BASELINE_HULL,
-			axis: AXIS,
-			reference: REFERENCE,
+			...BASE,
 			trace,
 		});
 		const runIn = trace.filter((step) => step.phase === "run-in");
@@ -62,9 +59,7 @@ describe("the docking computer step", () => {
 	test("with no clearance it refuses and does not fly", () => {
 		const run = flyTheComputer({
 			spinRpm: 0,
-			hull: PLAYER_BASELINE_HULL,
-			axis: AXIS,
-			reference: REFERENCE,
+			...BASE,
 			granted: false,
 		});
 		expect(run.refused).toBe("no-clearance");
@@ -73,27 +68,28 @@ describe("the docking computer step", () => {
 });
 
 describe("no caller flies the computer by hand (#648)", () => {
-	// Before #648 `Game` and the harness each paired the controller with an
-	// attitude follower and a throttle of their own. Reading the controller's
-	// command alone is fine — the law's own rows and a probe that reports
-	// what the computer would command do — but pairing it with a follower is
-	// flying it, and that is `flyComputer`'s.
+	// Before #648 `Game` and the harness each turned the controller's command
+	// into a stick and a throttle of their own. Every caller of the controller
+	// is named here with its reason; flying it is `flyComputer`'s, and a new
+	// caller — one with a follower, or one that makes its own throttle from
+	// `speedKms` — is a red run rather than a review finding (sage round 1).
 	const CONTROLLER = /\bdockingComputerStep\(/;
-	const FOLLOWER = /\bAttitudeFollower\b/;
-	const ALLOWED = ["src/docking-computer.ts"];
+	const ALLOWED: Record<string, string> = {
+		"src/docking.ts": "the controller's own definition",
+		"src/docking-computer.ts": "flyComputer, the one place it is flown",
+		"tests/docking.test.ts": "the controller law's own rows",
+		"tests/roll-reference.test.ts": "the commanded roll reference, read alone",
+		"scripts/probe-docking-traffic.mjs":
+			"reports what the computer would command beside the game's lane state",
+	};
 	const files = [
 		...srcFiles(),
 		...scriptFiles([".ts", ".mjs"]),
 		...testFiles(),
 	];
 
-	test("only flyComputer pairs the controller with a follower", () => {
-		const pairs = files
-			.filter((f) => {
-				const code = codeOf(f);
-				return CONTROLLER.test(code) && FOLLOWER.test(code);
-			})
-			.sort();
-		expect(pairs).toEqual(ALLOWED);
+	test("only the allowed files call the controller", () => {
+		const callers = files.filter((f) => CONTROLLER.test(codeOf(f))).sort();
+		expect(callers).toEqual(Object.keys(ALLOWED).sort());
 	});
 });
