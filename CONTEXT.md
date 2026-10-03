@@ -307,8 +307,35 @@ roster; the slot's **CarrierKey** identifies the visitor everywhere, and the
 destination may hold its Berth for that key without adopting the slot. The
 route composes the shared launch, cruise, Traffic hold, Clearance, Transit-lane
 and arrival laws, and derives routine progress from the game clock.
-A system with no eligible other station retains an abstract away interval.
+A system with no eligible other station retains an abstract away interval —
+for a local; a **Hauler**'s away interval is spent in another system.
 _Avoid_: Spawn path, roster transfer, timetable
+
+**Hauler**:
+A **Traffic actor** whose roster slot's vocation sends every away interval to a
+station in another system, one jump within its hull's `tankLy`, and home again
+(`inter-system-traffic.md`, #262). Its slot, **CarrierKey** and saved row stay
+at home; its destinations are fixed when the roster is built. The other
+vocation is a **local**, which keeps the in-system **Traffic route**; a role's
+signature slot is always local.
+_Avoid_: Roster transfer, inter-system spawn
+
+**Lane point**:
+Where a **Hauler** leaves or enters a system: the **Jump** arrival point for the
+system at the other end — 1 AU out on the bearing between the two — offset by a
+per-voyage annulus so no hauler stands on the player's own arrival. The point a
+hauler leaves `A` for `B` from is the point ships arriving in `A` from `B`
+appear at.
+_Avoid_: Jump gate, beacon (neither exists)
+
+**Jump slot**:
+The game-clock instant a **Hauler** jumps, fixed by its schedule rather than by
+its progress: the interval boundary plus a static bound on the uncontended
+trip to the **Lane point** plus a fixed slack. An early hauler waits for it;
+the system at the far end always sees the jump at the slot, which is what lets
+one system derive another's arrivals without replaying its queues
+(`inter-system-traffic.md` §4).
+_Avoid_: Timetable, departure time (a schedule boundary is not a jump)
 
 **Traffic hold**:
 A deterministic station-relative point outside the docking cone where a
@@ -681,7 +708,8 @@ light one hull length behind the arriving ship, facing along its nose, that
 opens with the new system's light and closes a few seconds later. It is the
 ring a lens makes, and the sky behind it bends round it — **the player's rift
 only** today, because the witchspace pass carries one lens. Owned by
-`src/arrival-rift.ts`; #530's opening and #262's NPC arrivals reuse it.
+`src/arrival-rift.ts`; #530's opening reuses it, and a **Hauler**'s jump
+draws its ring at both ends, without the lens (`inter-system-traffic.md` §9).
 _Avoid_: portal, wormhole (as an object)
 
 **Light shift**:

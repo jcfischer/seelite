@@ -45,7 +45,12 @@ through the eligible alternatives without a mutable random stream.
 A one-station system, or an actor with no eligible destination, keeps #148's
 abstract-away behavior. It may perform the existing visible home launch and
 scheduled return, but #261 invents no hidden station, local waypoint, or
-impossible route. Inter-system destinations remain #262's.
+impossible route. Inter-system destinations are #262's
+(`inter-system-traffic.md`). That spec splits a roster by **vocation**: this
+section governs **locals**, while a **hauler** takes a static eligible set fixed
+at roster build in place of the crossing snapshot above, because its crossing
+time depends on home contention and a destination chosen from it would couple
+systems (`inter-system-traffic.md` §2).
 
 ## 2. The schedule expresses intent
 
@@ -229,11 +234,13 @@ mutate either station market.
   arbitration and local terminal laws.
 - `in-system-travel.md` and `cruise.ts` own cruise dynamics, charge, detours and
   moving-body safety.
-- This spec owns Traffic destination selection, the route lifecycle, canonical
+- This spec owns a local's destination selection, the route lifecycle, canonical
   replay and the composition between those two domains.
 - `display-contact.ts` remains the presentation shape; route identity is the
   home slot's `CarrierKey`.
-- Hyperspace, combat AI, faction simulation and NPC market mutation remain out
+- Hyperspace journeys are `inter-system-traffic.md`'s (#262). Its haulers fly
+  this spec's legs with a lane point at one end.
+- Combat AI, faction simulation and NPC market mutation remain out
   of scope.
 
 The implementation seam is a pure `station-route` module consuming Traffic,

@@ -363,6 +363,14 @@ system seed settles it and a separate galaxy parameter adds nothing. That is
 precisely why the shipped precedent — `mix(mix(kill.systemSeed, fnv1a(key)), …)`
 in `raider-wreck.ts:185-188` — does not have the problem.
 
+**The system seed is the carrier's home system's, not the system it is in
+(#262).** A Traffic **hauler** (`inter-system-traffic.md`) docks in other
+systems, and a draw seeded on the system the player is in would rename it and
+reload its hold at the border. Every identity draw — name, standing, manifest,
+and the manifest's `government` input — takes `systemSeedFor` of the galaxy
+and the `systemIndex` the carrier's own key names. For every carrier that
+never leaves home the two are the same seed, so nothing shipped moves.
+
 Roster size is
 conditional — on the berth catalogue, on government, on which station types a
 system generated — so an ordered pass lets a conditional carrier shift every
