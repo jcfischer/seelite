@@ -576,6 +576,7 @@ import {
 	type DockSession,
 	berthOf,
 	canSkipTraversal,
+	collisionExempt,
 	enterArrival,
 	interiorOfStation,
 	flightLive,
@@ -584,6 +585,7 @@ import {
 	skipTraversal,
 	stepDockedWorld,
 } from "./dock-session";
+import { type Primitive, hullBox } from "./collision";
 import {
 	DIRECTOR_RANGE_KM,
 	type DirectorLaneWait,
@@ -2400,6 +2402,22 @@ class Game {
 			lastFlick: read(this.flickMeter.last),
 			hardestFlick: read(this.flickMeter.hardest),
 		};
+	}
+
+	/** The flown hull's collision solid (`collision.md` §2.3, P1): its box,
+	 *  about its measured centre. Cached on the hull like the performance. */
+	private flownSolidOf: { hull: HullId; solid: readonly Primitive[] } | null =
+		null;
+
+	private get flownSolid(): readonly Primitive[] {
+		if (this.flownSolidOf?.hull !== this.flownHull) {
+			const spec = HULL_SPECS[this.flownHull];
+			this.flownSolidOf = {
+				hull: this.flownHull,
+				solid: [hullBox(spec.env, spec.envCentre)],
+			};
+		}
+		return this.flownSolidOf.solid;
 	}
 
 	private get flownPerformance(): FlightPerformance {
@@ -13995,7 +14013,19 @@ class Game {
 			{ ...hands, translation: this.translation(dt, demand) },
 			dt,
 			this.flownPerformance,
+			// `collision.md` §5: solid exactly when the phase is not exempt.
+			// This tail only runs while flying, so the gate is the predicate
+			// read rather than a second statement of which phase that is.
+			collisionExempt(this.dock.phase) ? null : this.flownSolid,
 		);
+		// §3: every surface met lands through the one damage path, so a hull at
+		// zero dies the way a kill by fire does.
+		for (const impact of flown.impacts)
+			this.takeDamage(
+				impact.damage,
+				impact.side,
+				`struck ${this.world.system.byId.get(impact.bodyId)?.name ?? "a body"}`,
+			);
 		// The attitude step's rates and the translation firing's kick (#619).
 		this.applyHullTurn(flown);
 		// Off the vents that fired (#544, `flight-model.md` §4): the sound
