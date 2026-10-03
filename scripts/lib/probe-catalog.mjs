@@ -209,6 +209,20 @@ export const PROBE_CATALOG = Object.freeze(
 			["cockpit", "surface", "plating", "materials", "scene graph"],
 		),
 		entry(
+			"probe-collision-surface.mjs",
+			"Flies the player nose first into a moon with the assist off and on and checks the ship stops and bounces at its surface, the cockpit camera stays outside it on the frame of impact, the damage lands through the one damage path, and a hit at the assist cap destroys the ship.",
+			[
+				"collision",
+				"impact",
+				"bounce",
+				"moon",
+				"flight assist",
+				"assist off",
+				"ship condition",
+				"cockpit camera",
+			],
+		),
+		entry(
 			"probe-commander.mjs",
 			"Exercises the Commander overlay, new/load choices, held game clock, and store attachment in a page.",
 			["Commander", "new game", "load", "save store", "overlay", "game clock"],

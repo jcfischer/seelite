@@ -585,7 +585,14 @@ import {
 	skipTraversal,
 	stepDockedWorld,
 } from "./dock-session";
-import { type Primitive, hullBox } from "./collision";
+import {
+	type Primitive,
+	RESTITUTION,
+	SEPARATION_KM,
+	V_SCRAPE_KMS,
+	hullBox,
+	impactDamage,
+} from "./collision";
 import {
 	DIRECTOR_RANGE_KM,
 	type DirectorLaneWait,
@@ -3545,6 +3552,21 @@ class Game {
 	/** Where the flying glass ends, as a fraction of the frame — on the handle so
 	 *  a probe measuring the clip reads the renderer's line, not its own. */
 	readonly glassBottomFraction = GLASS_BOTTOM_FRACTION;
+
+	/** `collision.md` §3's law, on the handle for the tolerances' reason: a
+	 *  probe that restated a figure would go falsely red when it is retuned. */
+	readonly collisionLaw = Object.freeze({
+		V_SCRAPE_KMS,
+		RESTITUTION,
+		SEPARATION_KM,
+		impactDamage,
+	});
+
+	/** Where the camera is in sim space this frame — what `collision.md`
+	 *  §9.2.3 holds outside a surface on the frame of impact. */
+	get cameraSimPos(): Vec3 {
+		return this.cameraPos();
+	}
 
 	readonly dockingTolerances = Object.freeze({
 		V_GATE_KMS,

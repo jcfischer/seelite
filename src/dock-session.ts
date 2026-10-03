@@ -73,10 +73,12 @@ export type DockPhase = "flying" | "arriving" | "docked" | "launching";
  * §12.3's third row, as a predicate.
  *
  * The three states in which the ship "is not a collidable body" — neither §2's
- * aperture rectangle nor the collision system's. #75 inherits the other half of
- * obligation 8: that its system honours this. Until then, §12.7's joint 5
- * records that the physical claim has no check and only this — the state being
- * *visible* — is live.
+ * aperture rectangle nor the collision system's. The collision system reads it
+ * now (node #661): `Game.advanceNormalFlight` hands `stepWorld` no ship solid
+ * while this is true (`collision.md` §5). The other half of obligation 8 — that
+ * an arrival, a parked interval and a launch fly with no impact — is
+ * `collision.md` §9.1.8's, and it waits for the station slice, because until
+ * stations declare a proxy there is nothing in the throat to meet.
  */
 export const collisionExempt = (phase: DockPhase): boolean =>
 	phase !== "flying";
