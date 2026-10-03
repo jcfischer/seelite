@@ -47,6 +47,8 @@ import {
 import { gameUrl } from "./lib/game-url.mjs";
 import {
 	installViewFraming,
+	setView,
+	settleFrames,
 	startLoop,
 	stopLoop,
 } from "./lib/view-placement.mjs";
@@ -280,6 +282,12 @@ const r = await page.evaluate(
 		const lampAlone = frame();
 		const undo = game.mirrorIntoCabin(lamp);
 		const mirrored = frame();
+		// A second registration of the same lamp, undone twice: the copy is
+		// shared and counted, so the first holder's light must survive it.
+		const undoSecond = game.mirrorIntoCabin(lamp);
+		undoSecond();
+		undoSecond();
+		const stillHeld = frame();
 		undo();
 		const undone = frame();
 		lamp.removeFromParent();
@@ -317,12 +325,42 @@ const r = await page.evaluate(
 			aoOutsidePct: (100 * darkOutside) / Math.max(1, outCount),
 			lampAlone: delta(unlit, lampAlone),
 			mirrored: delta(unlit, mirrored),
+			stillHeld: delta(mirrored, stillHeld),
 			undone: delta(unlit, undone),
 		};
 	},
 	[ERODE_PX, MOVED],
 );
 await startLoop(page);
+
+/**
+ * ## The shadow caster across a view switch, and what the switch compiles
+ *
+ * One sun casts per frame: the cabin's in cockpit view, the near layer's in
+ * chase. So a view switch hands the map from one scene to the other, and the
+ * near scene's count of shadowing lights changes with it — which three keys
+ * its programs on. Three r170 keeps every program a material has compiled
+ * until the material is disposed (`WebGLRenderer.getProgram`), so the
+ * variant is compiled once and not on every switch; the second round trip
+ * must add no program at all.
+ */
+const casters = () =>
+	page.evaluate(() => {
+		const g = window.__seelite;
+		return {
+			view: g.view,
+			gate: g.occlusionState.open,
+			near: !!g.nearShadowSun?.castShadow,
+			cabin: !!g.cabinShadowSun?.castShadow,
+			programs: g.renderer.info.programs.length,
+		};
+	});
+const trip = [];
+for (const view of ["chase", "cockpit", "chase", "cockpit"]) {
+	await setView(page, view);
+	await settleFrames(page, 10);
+	trip.push(await casters());
+}
 
 t.check(
 	"the cabin's footprint is a real share of the frame near the berth",
@@ -370,9 +408,37 @@ t.check(
 	`mean +${r.mirrored.mean.toFixed(2)} codes, worst ${r.mirrored.worst.toFixed(1)}`,
 );
 t.check(
+	"a second registration's undo leaves the first one's light on",
+	r.stillHeld.worst < 0.5,
+	`worst ${r.stillHeld.worst.toFixed(2)} codes against the mirrored frame`,
+);
+t.check(
 	"undoing the mirror takes the light away again",
 	r.undone.worst < 0.5,
 	`worst ${r.undone.worst.toFixed(2)} codes`,
+);
+
+const show = (c) =>
+	`${c.view}: near ${c.near ? "casts" : "idle"}, cabin ${c.cabin ? "casts" : "idle"}, ${c.programs} programs`;
+t.check(
+	"the shadow gate is open for the view switch",
+	trip.every((c) => c.gate),
+	trip.map(show).join("; "),
+);
+t.check(
+	"chase: the near sun casts and the cabin's does not",
+	trip.filter((c) => c.view === "chase").every((c) => c.near && !c.cabin),
+	trip.map(show).join("; "),
+);
+t.check(
+	"cockpit: the cabin's sun casts and the near sun does not",
+	trip.filter((c) => c.view === "cockpit").every((c) => c.cabin && !c.near),
+	trip.map(show).join("; "),
+);
+t.check(
+	"a second round trip between the views compiles nothing",
+	trip[3].programs === trip[1].programs,
+	`${trip[1].programs} programs after the first trip, ${trip[3].programs} after the second`,
 );
 
 await browser.close();

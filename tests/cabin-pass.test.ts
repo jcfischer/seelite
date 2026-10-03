@@ -48,7 +48,7 @@ describe("the cabin camera brackets the cabin", () => {
 	});
 
 	// What the near plane must clear is the nearest *built* vertex, and the
-	// cabin is built in `main.ts`, which the headless tier cannot load — so
+	// cabin is built in `main.ts`, which a bun test cannot load — so
 	// `probe-cabin-pass` measures it on the live cabin. This row holds the
 	// depth ratio the two planes buy.
 	test("the two planes keep the depth ratio at 200 or under", () => {

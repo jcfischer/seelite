@@ -728,6 +728,7 @@ import {
 	CABIN_NEAR_KM,
 	type CabinLightState,
 	cabinLightInto,
+	newCabinLightState,
 } from "./cabin-pass";
 import {
 	CANOPY_FRAME,
@@ -1329,18 +1330,8 @@ const MOUSE_MAX_STEP = 0.12;
 const COCKPIT_FORWARD_KM = 0.008;
 /** `syncCabinMirrors`'s scratch, so a frame allocates nothing per light. */
 const MIRROR_SCRATCH = new THREE.Vector3();
-const MIRROR_LIGHT: CabinLightState = {
-	positionKm: [0, 0, 0],
-	distanceKm: 0,
-	intensity: 0,
-	decay: 2,
-};
-const MIRROR_CARRIED: CabinLightState = {
-	positionKm: [0, 0, 0],
-	distanceKm: 0,
-	intensity: 0,
-	decay: 2,
-};
+const MIRROR_LIGHT: CabinLightState = newCabinLightState();
+const MIRROR_CARRIED: CabinLightState = newCabinLightState();
 
 /** Below this speed the prograde marker is hidden: the velocity is noise, and a
  *  marker chasing it would swing around a screen belonging to a ship that is
@@ -2082,7 +2073,10 @@ class Game {
 	private cabinPass!: RenderPass;
 	/** Each world light the cabin is lit by, and its copy in the cabin's frame
 	 *  (#651, the principal's ruling: the bay lights the cabin). */
-	private readonly cabinMirrors = new Map<THREE.PointLight, THREE.PointLight>();
+	private readonly cabinMirrors = new Map<
+		THREE.PointLight,
+		{ copy: THREE.PointLight; holders: number }
+	>();
 
 	/** Ship orientation. Positions live in `sim.ts`; this does not, and the
 	 *  module docstring there says why. */
@@ -14859,27 +14853,39 @@ class Game {
 	 * intensity rather than by `visible`, so the cabin's light count stays put.
 	 */
 	mirrorIntoCabin(light: THREE.PointLight): () => void {
-		const existing = this.cabinMirrors.get(light);
-		if (existing) return () => this.unmirrorFromCabin(light);
-		const copy = new THREE.PointLight();
-		copy.name = `cabin-mirror:${light.name}`;
-		this.cabinScene.add(copy);
-		this.cabinMirrors.set(light, copy);
-		return () => this.unmirrorFromCabin(light);
+		// **Counted, so one caller's undo cannot dark another's light.** Two
+		// registrations of one lamp share one copy, and the copy goes only when
+		// the last of them is undone; each undo counts once however often it
+		// is called.
+		let mirror = this.cabinMirrors.get(light);
+		if (!mirror) {
+			const copy = new THREE.PointLight();
+			copy.name = `cabin-mirror:${light.name}`;
+			this.cabinScene.add(copy);
+			mirror = { copy, holders: 0 };
+			this.cabinMirrors.set(light, mirror);
+		}
+		mirror.holders++;
+		let held = true;
+		return () => {
+			if (!held) return;
+			held = false;
+			this.unmirrorFromCabin(light);
+		};
 	}
 
 	private unmirrorFromCabin(light: THREE.PointLight) {
-		const copy = this.cabinMirrors.get(light);
-		if (!copy) return;
-		copy.removeFromParent();
-		copy.dispose();
+		const mirror = this.cabinMirrors.get(light);
+		if (!mirror || --mirror.holders > 0) return;
+		mirror.copy.removeFromParent();
+		mirror.copy.dispose();
 		this.cabinMirrors.delete(light);
 	}
 
 	/** Put each mirrored light where `cabinLight` says, after the world is
 	 *  placed for this frame and before anything is drawn. */
 	private syncCabinMirrors() {
-		for (const [light, copy] of this.cabinMirrors) {
+		for (const [light, { copy }] of this.cabinMirrors) {
 			let drawn = light.visible;
 			let root: THREE.Object3D = light;
 			while (drawn && root.parent) {

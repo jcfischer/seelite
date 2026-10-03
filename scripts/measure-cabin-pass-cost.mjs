@@ -28,6 +28,16 @@
  * frame of world, occlusion gate open), and `berth-free-look` in chase, where
  * the cabin is not drawn and the two builds should not differ — the control.
  *
+ * **What a reading can and cannot say.** No arm isolates one of the three
+ * terms: the build is the switch, so a delta is all three at once. What the
+ * arms *do* separate is the sample count — the extra render and the lost
+ * early-Z exist at 0 samples too, the resolve only when the target is
+ * multisampled — so a delta that appears at 2 and not at 0 is read as the
+ * resolve, by arm rather than by measurement. A delta that favours the head
+ * build at 0 with no separation (the bay, first run) is a lean, and its
+ * candidates — the AO drawing the cabin's scene instead of the whole near
+ * layer, the two point lights leaving it — are untested.
+ *
  * Each figure is a median of blocks, each block a drained run of `FRAMES`
  * `render(0)` calls after a drained warm-up; `measure-occlusion-cost.mjs` has
  * why both drains. Headed, 1440x900 at device scale 2, renderer checked.

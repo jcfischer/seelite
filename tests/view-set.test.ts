@@ -171,8 +171,8 @@ describe("the view set itself", () => {
 		// principal split its approach into a planet fly-by and a station approach,
 		// forty-nine with the rift forming before the arrival, fifty-two with
 		// #537's cruise rows, fifty-four since #540 added the galaxy chart's
-		// crowded and isolated hover, sixty-two with #651's cabin frame near the
-		// berth. (#432 added a twenty-ninth and removed it
+		// crowded and isolated hover — sixty-one by the time #651 added its cabin
+		// frame near the berth, which made it sixty-two. (#432 added a twenty-ninth and removed it
 		// in the same PR; #480 put one back, in the other role. Why both happened is
 		// told once, in the note beside `sky-at-the-rim`, and not here.) A literal and
 		// not `VIEWS.length`, which is the whole point: a view deleted by accident

@@ -45,16 +45,26 @@ export const CABIN_NEAR_KM = 0.001;
  */
 export const CABIN_FAR_KM = 0.2;
 
-/** A point light as the cabin pass needs it: where, how far, how bright. */
-export type CabinLight = {
+/** A point light as the cabin pass needs it, in a form a caller can write. */
+export type CabinLightState = {
 	/** Position relative to the camera, kilometres. */
-	positionKm: readonly [number, number, number];
+	positionKm: [number, number, number];
 	/** Three's `distance` cut-off, kilometres; 0 means none. */
 	distanceKm: number;
 	intensity: number;
 	/** Three's `decay` exponent. */
 	decay: number;
 };
+
+/** The same light, read only: what `cabinLight` takes and gives. */
+export type CabinLight = Readonly<Omit<CabinLightState, "positionKm">> & {
+	readonly positionKm: readonly [number, number, number];
+};
+
+/** A zeroed `CabinLightState`, for a caller's scratch. */
+export function newCabinLightState(): CabinLightState {
+	return { positionKm: [0, 0, 0], distanceKm: 0, intensity: 0, decay: 2 };
+}
 
 /**
  * Carry a world point light into the cabin's frame, so it lights the cabin as
@@ -78,20 +88,8 @@ export type CabinLight = {
  * the floor is reached only within a real metre.
  */
 export function cabinLight(world: CabinLight, k = CABIN_SCALE): CabinLight {
-	return cabinLightInto(
-		world,
-		{ positionKm: [0, 0, 0], distanceKm: 0, intensity: 0, decay: 0 },
-		k,
-	);
+	return cabinLightInto(world, newCabinLightState(), k);
 }
-
-/** A `CabinLight` a caller owns and lets `cabinLightInto` write. */
-export type CabinLightState = {
-	positionKm: [number, number, number];
-	distanceKm: number;
-	intensity: number;
-	decay: number;
-};
 
 /**
  * `cabinLight`, written into `out` rather than a new object: the frame loop
