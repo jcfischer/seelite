@@ -108,6 +108,13 @@ export const scriptFiles = (extensions: string[] = [".mjs"]): string[] =>
 		.filter((f) => extensions.some((ext) => f.endsWith(ext)))
 		.map((f) => `scripts/${f}`);
 
+/** Every TypeScript file under `tests/`, helpers included, as repo-relative
+ *  paths — recursive for {@link srcFiles}'s reason. */
+export const testFiles = (): string[] =>
+	(readdirSync(repoPath("tests"), { recursive: true }) as string[])
+		.filter((f) => f.endsWith(".ts"))
+		.map((f) => `tests/${f}`);
+
 /**
  * Every call matched by `head`, with the text of each top-level argument.
  *

@@ -43,12 +43,11 @@ import { mix, seedFor } from "./rng";
 import {
 	ASSIST_CAP_KMS,
 	type Angular,
-	type AngularStep,
 	flightPerformance,
 	type FlightPerformance,
 	type FrameMotion,
-	stepAngular,
-	stepFlight,
+	bodySpin,
+	stepHull,
 	type Ship,
 	speedDemand,
 } from "./sim";
@@ -327,12 +326,6 @@ export const NO_ROTATION: Angular = Object.freeze({
 	roll: 0,
 });
 
-/** Body rates as a world-space angular velocity, in the ship's own axes. */
-const bodySpin = (right: Vec3, up: Vec3, nose: Vec3, rates: Angular): Vec3 =>
-	add(
-		add(scale(right, rates.pitch), scale(up, rates.yaw)),
-		scale(nose, rates.roll),
-	);
 /** Closer than this the nose is on its heading and the stick is released, so
  *  the assist's damping finishes the stop rather than the command hunting. */
 const SETTLED_RAD = 1e-3;
@@ -348,22 +341,22 @@ const stoppingStick = (errorRad: number, accel: number, max: number) =>
 	Math.min(1, Math.sqrt(2 * accel * errorRad) / max);
 
 /**
- * Turn the ship toward `desired` through the player's `stepAngular` (#324).
+ * The stick that turns the ship toward `desired` (#324): the raider's pilot.
  *
  * The controller decides a heading and a bank; this turns them into a stick,
- * and the rates, the limits and the angular acceleration are the hull's, by the
- * same function the player's ship turns through. Pitch and yaw take the
- * shortest arc to the heading in the body's own axes. Roll lays the up axis
- * into the turn, which is the bank the old slew drew. `STRIKER_PERFORMANCE`'s
- * pitch and yaw limits are one figure (`flightPerformance` scales both by one
- * agility), so one stick scale keeps the arc's direction.
+ * and the Hull step turns the hull by it — the rates, the limits and the
+ * angular acceleration are the hull's, by the same step the player's ship
+ * turns through (#646). Pitch and yaw take the shortest arc to the heading in
+ * the body's own axes. Roll lays the up axis into the turn, which is the bank
+ * the old slew drew. `STRIKER_PERFORMANCE`'s pitch and yaw limits are one
+ * figure (`flightPerformance` scales both by one agility), so one stick scale
+ * keeps the arc's direction.
  */
-function turnToward(
+function aimStick(
 	state: CombatEnemyState,
 	desired: Vec3,
-	dt: number,
 	perf: FlightPerformance,
-): { nose: Vec3; up: Vec3; rates: Angular; attitude: AngularStep } {
+): Angular {
 	const { nose, up } = state;
 	const right = cross(nose, up);
 	const off = Math.acos(clamp(dot(nose, desired), -1, 1));
@@ -378,36 +371,19 @@ function turnToward(
 	}
 	// The way the nose is swinging now, and the up axis rolled toward it. Roll
 	// spins about the nose and swings nothing, so it drops out of the cross.
-	const swing = cross(bodySpin(right, up, nose, state.rates), nose);
+	const swing = cross(bodySpin(state, state.rates), nose);
 	let roll = 0;
 	if (length(swing) > TURNING_RAD_S) {
 		const inside = unit(swing, up);
 		const bank = Math.atan2(dot(cross(up, inside), nose), dot(up, inside));
+		// `bank` is a turn about the nose and a roll rate turns about aft
+		// (`bodySpin`), so the stick is the bank's negative.
 		if (Math.abs(bank) > SETTLED_RAD)
 			roll =
-				Math.sign(bank) *
+				-Math.sign(bank) *
 				stoppingStick(Math.abs(bank), perf.angularAccel, perf.angularMax.roll);
 	}
-	const attitude = stepAngular(
-		state.rates,
-		{ pitch, yaw, roll },
-		NO_ROTATION,
-		true,
-		dt,
-		perf,
-	);
-	const { rates } = attitude;
-	const spin = bodySpin(right, up, nose, rates);
-	const rate = length(spin);
-	if (rate === 0 || dt <= 0) return { nose, up, rates, attitude };
-	const axis = scale(spin, 1 / rate);
-	const nextNose = unit(rotateAbout(nose, axis, rate * dt), nose);
-	const spunUp = rotateAbout(up, axis, rate * dt);
-	const nextUp = unit(
-		sub(spunUp, scale(nextNose, dot(spunUp, nextNose))),
-		perpBasis(nextNose)[1],
-	);
-	return { nose: nextNose, up: nextUp, rates, attitude };
+	return { pitch, yaw, roll };
 }
 
 /**
@@ -707,13 +683,6 @@ export function stepEnemyShip(
 						? unit(add(awayFromPlayer, scale(pullAxis, 0.3)), awayFromPlayer)
 						: attackNose;
 
-	// **Turned through the player's own `stepAngular`** (#324): the hull's rate
-	// limits and its angular acceleration, not a slew that reached full rate in
-	// one frame. The slew had first been faster than the hull allows, and the
-	// first playtest found the raider unhittable.
-	const turned = turnToward(state, desired, step, performance);
-	const { nose, up } = turned;
-
 	// Throttle is closure control in the envelope and everything elsewhere: a
 	// gun run at the speed cap flies past before the guns have paid for it.
 	const throttle =
@@ -726,19 +695,22 @@ export function stepEnemyShip(
 	const ship = { pos: { ...state.ship.pos }, vel: { ...state.ship.vel } };
 	// `step`, not `dt`: the clamp above is what stops a negative frame delta
 	// running the integrator backwards, and it has to reach the integrator too.
-	const flown = stepFlight(
+	// **Turned through the player's own Hull step** (#324, #646): the hull's rate
+	// limits and its angular acceleration, not a slew that reached full rate in
+	// one frame. The slew had first been faster than the hull allows, and the
+	// first playtest found the raider unhittable.
+	const flown = stepHull(
 		ship,
+		state,
 		{
-			nose,
-			up,
-			demand: speedDemand(throttle),
-			assist: true,
-			attitude: turned.attitude,
-			frame,
+			stick: aimStick(state, desired, performance),
+			turnAssist: true,
+			translation: { demand: speedDemand(throttle), assist: true, frame },
 		},
 		step,
 		performance,
 	);
+	const { nose, up } = flown;
 
 	// Firing follows pointing, in any phase but a rout: a snapshot as the nose
 	// sweeps across the player during a break is a shot a pilot would take.

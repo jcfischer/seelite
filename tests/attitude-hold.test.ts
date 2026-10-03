@@ -1,13 +1,17 @@
 import { describe, expect, test } from "bun:test";
 import {
 	AttitudeFollower,
-	type Attitude,
 	attitudeError,
 	attitudeStick,
-	turnAttitude,
 } from "../src/attitude-hold";
 import { HULL_IDS } from "../src/hull";
-import { type Angular, flightPerformance, stepAngular } from "../src/sim";
+import {
+	type Angular,
+	type Attitude,
+	flightPerformance,
+	stepAngular,
+	turnAttitude,
+} from "../src/sim";
 import { dot, length, v3 } from "../src/vec3";
 
 const STILL: Angular = { pitch: 0, yaw: 0, roll: 0 };

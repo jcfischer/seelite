@@ -395,8 +395,8 @@ export class CombatPrototypeRig {
 	 * It replaces the scripted bearing this rig used to place the target on.
 	 * That bearing was two sines and a fixed -12 km, and `duelTargetInCone` was
 	 * a third sine standing in for aim — which made the rig a *pacing* rig and
-	 * nothing else. The striker flies through `stepFlight`, the player's own
-	 * integrator, and the cone is now a real ray against its hull, so what the
+	 * nothing else. The striker flies through the Hull step, the player's own
+	 * (#646), and the cone is now a real ray against its hull, so what the
 	 * duel measures is aim as well as pacing.
 	 */
 	enemy: CombatEnemyState;

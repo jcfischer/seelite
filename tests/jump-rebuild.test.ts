@@ -158,7 +158,7 @@ describe("the jump itself", () => {
 		// to run before the jump is taken or a clip on the terminal frame
 		// cannot cancel it.
 		const frame = methodBody("advanceNormalFlight");
-		inOrder(frame, "stepWorld(this.world", "this.stepDocking(before)");
+		inOrder(frame, "stepWorld(", "this.stepDocking(before)");
 		inOrder(frame, "this.stepDocking(before)", "this.takePendingJump()");
 	});
 

@@ -38,14 +38,13 @@ import {
 	slotBasis,
 } from "../../src/docking";
 import { HULL_SPECS, type HullId } from "../../src/hull";
-import { AttitudeFollower, turnAttitude } from "../../src/attitude-hold";
+import { AttitudeFollower } from "../../src/attitude-hold";
 import {
 	ASSIST_CAP_KMS,
 	type Angular,
 	flightPerformance,
 	speedDemand,
-	stepAngular,
-	stepFlight,
+	stepHull,
 } from "../../src/sim";
 
 const NO_TURN: Angular = Object.freeze({ pitch: 0, yaw: 0, roll: 0 });
@@ -219,47 +218,51 @@ export function flyTheComputer(opts: FlightOptions): FlightRun {
 			refused = cmd.refused;
 			break;
 		}
-		// **Through the hull's own vents** (#619): the computer asks for a stick
-		// and `stepAngular` turns the hull at what its attitude couples deliver,
-		// the way `main.ts`'s computer does. A freighter turns at about half the
-		// courier's authority and a miner at about a third, so the line-up turn
-		// and the roll tracking are genuinely harder for them.
-		const attitude = stepAngular(
-			rates,
-			follower.stick({ nose, up }, { nose: cmd.nose, up: cmd.up }, perf, dt),
-			NO_TURN,
-			true,
-			dt,
-			perf,
-		);
-		rates = attitude.rates;
-		({ nose, up } = turnAttitude({ nose, up }, rates, dt));
-
 		const speedKms =
 			opts.holdRunIn && cmd.phase === "run-in" ? 0 : cmd.speedKms;
 		const throttle = speedKms / ASSIST_CAP_KMS;
+
+		// **Through the hull's own vents** (#619), by the game's Hull step (#646):
+		// the computer asks for a stick, the attitude couples turn the hull at
+		// what they deliver, and the drive moves it along the nose it has just
+		// turned to. A freighter turns at about half the courier's authority and
+		// a miner at about a third, so the line-up turn and the roll tracking are
+		// genuinely harder for them.
+		const start = { rel: { ...ship.pos }, vRel: { ...ship.vel } };
+		({ nose, up, rates } = stepHull(
+			ship,
+			{ nose, up, rates },
+			{
+				stick: follower.stick(
+					{ nose, up },
+					{ nose: cmd.nose, up: cmd.up },
+					perf,
+					dt,
+				),
+				turnAssist: true,
+				translation: { demand: speedDemand(throttle), assist: true },
+			},
+			dt,
+			perf,
+		));
+		// The crossing is read between the step's two ends at the attitude it
+		// turned to, as it was before the Hull step.
+		const before: EntryPose = { ...start, nose, up };
 		if (opts.trace) {
-			const axialKm = dot(ship.pos, frame.axis);
+			// Where the step started, and the attitude it turned to.
+			const axialKm = dot(before.rel, frame.axis);
 			opts.trace.push({
 				phase: cmd.phase,
 				nose,
 				throttle,
-				rel: ship.pos,
+				rel: before.rel,
 				gameTime,
 				axialKm,
-				offAxisKm: offAxisKm(frame, ship.pos),
+				offAxisKm: offAxisKm(frame, before.rel),
 				corridorKm: corridorHalfWidthKm(frame, axialKm),
 			});
 		}
 
-		const before: EntryPose = { rel: ship.pos, vRel: ship.vel, nose, up };
-		const flown = stepFlight(
-			ship,
-			{ nose, up, demand: speedDemand(throttle), assist: true, attitude },
-			dt,
-			perf,
-		);
-		rates = flown.rates;
 		gameTime += dt;
 		steps++;
 
