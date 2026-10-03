@@ -220,7 +220,11 @@ The threshold is the inverse of a floor. This is #75's reason, unchanged.
 
 **P3 (principal, 2026-10-03): collision reads `DOCKING_DAMAGE_SCALE`.** There
 is one constant for what meeting a surface costs. A retune of docking's scale
-retunes collision, on purpose. Two bounds hold the **exported** constant, as
+retunes collision, on purpose. The constant keeps its docking name and its
+home in `src/docking.ts` on purpose: renaming a shipped constant is a code
+change, and the sharing is the decision rather than the name. If #303 finds
+the import direction awkward, moving it to a neutral module is a rename that
+changes no figure. Two bounds hold the **exported** constant, as
 `docking.md` §10 requires for docking:
 
 1. **Survivable at the gate.** An impact at `V_GATE` costs at most a quarter of
@@ -256,16 +260,31 @@ ship that starts a gap `g` from a surface and accelerates at `a` meets it at
 about `sqrt(v0² + 2·a·g)`, whatever dt is.
 
 A pair that is already **touching** at the start of a step is in **resting
-contact**: the inward normal component of the relative velocity is removed,
-and there is no damage and no bounce. Touching means a separation no larger
-than the placement separation the bounce uses, so a ship the bounce has just
-placed is touching on the next step. Damage and the bounce apply only to a pair
-that was apart at the start of the step.
+contact**. Touching means a separation no larger than the placement separation
+the bounce uses, so a ship the bounce has just placed is touching on the next
+step. A resting pair is **still swept and still resolved**; it is never
+handed to §4.3's ghost rule. Two things differ for it (derived):
 
-The two rules together make §9.1.4 passable. A ship held against a surface by
-thrust is in resting contact on every step, at any dt. A ship that bounces off
-returns at a lower speed each time, and resting contact catches it once a
-bounce no longer carries it clear of the placement separation (derived).
+- **Its closing speed is read at the start of the step**, before this step's
+  own acceleration — thrust and the frame's — is applied. A ship that the last
+  step stopped at the surface starts this step with no inward speed, so thrust
+  pressing it in costs nothing at any dt. A surface that is itself moving in
+  is still billed: a Coriolis corner turning into a ship that already touches
+  a face meets it at `ω × r` at the start of the step, and §3's law charges
+  that.
+- **Its inward motion during the step is stopped at the surface.** Whatever
+  the step adds — thrust, the frame, the ship's own rotation carrying a corner
+  of its box in — the ship ends the step at the placement separation, outside
+  the surface. Rotation into a surface is resolved by moving the ship out, not
+  by stopping its rotation, so §3's "a bounce imparts no spin" stands. The
+  bounce applies only when the start-of-step closing speed is above
+  `V_SCRAPE`; below it the inward normal velocity is removed.
+
+So every resolved impact, resting or not, ends with the pair apart by the
+placement separation, and a pair can only overlap at the start of a step by
+being placed there (§4.3). A ship held against a surface by thrust stays at
+the surface on every step at no cost, and a ship that bounces off returns at a
+lower speed each time until resting contact holds it.
 
 ---
 
@@ -437,9 +456,15 @@ browser probe.
    is at most a quarter of the smallest `headOnPool`. At the 2 km/s assist cap
    it is at least the largest. The rows read `DOCKING_DAMAGE_SCALE` and the
    hull table, not a parameter.
-4. **A ship resting on a surface pays nothing, and dt does not change it**
-   (§3.1). A hull holding full thrust into a surface for ten seconds takes
-   zero damage at `dt` = 1/144, 1/60 and `MAX_DT`. A ram at 0.5 km/s costs the
+4. **A ship resting on a surface pays nothing, stays outside it, and dt does
+   not change either** (§3.1). A hull holding full thrust into a surface for
+   ten seconds takes zero damage at `dt` = 1/144, 1/60 and `MAX_DT`, **and at
+   the end of every step its box is outside the surface**. The same holds for
+   a hull resting on a surface while turning at its largest rate, and for a
+   ship touching a station face while a corner turns into it — which is
+   billed at `ω × r`, not let through. A red build: a resolver that hands a
+   resting pair to §4.3's ghost rule passes the damage half and fails the
+   outside half. A ram at 0.5 km/s costs the
    same damage at all three, within a stated tolerance. The interceptor
    accelerates at 2.8 km/s², so one tick of its thrust at `MAX_DT` is
    0.28 km/s. A law that read the end-of-step velocity would bill that every

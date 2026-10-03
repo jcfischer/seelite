@@ -172,7 +172,7 @@ sign and the gate, and docks through solid structure.
 §12.3). Once the hull is solid, the ship in the paragraph above stops at the
 hull and never reaches the plane, so check 5 stops being the thing that prevents
 the failure and becomes defence in depth behind a system that prevents it
-earlier. Keep it: the plane is a mathematical construct and a collision mesh is
+earlier. Keep it: the plane is a mathematical construct and a collision proxy is
 an approximation of a drawn shape, and the two agreeing everywhere is an
 assumption rather than a guarantee. But once collision is built, the browser
 probe for this row (§9.2.4) measures a collision, not a failed entry. So it is
