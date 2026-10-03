@@ -2398,13 +2398,16 @@ class Game {
 	}
 	/**
 	 * The three ladders' banked record (#183), saved beside `commander` so a
-	 * death's revert to `lastDocked` moves credits and rungs together.
+	 * death's revert to the last dock's commander (#654) moves credits and
+	 * rungs together. Its play log is the exception: `playedS` keeps the time
+	 * flown before the death.
 	 */
 	private ladders: LadderRecord = emptyLadderRecord();
 	/**
 	 * Credit earned since the last dock (#183 D7): kills and first arrivals.
 	 * **Never saved** — `commanderRecord` has nowhere to put it — so a death,
-	 * which restores `lastDocked`, and a mid-flight save both lose it. The next
+	 * which restores the last dock's commander, and a mid-flight save both lose
+	 * it. The next
 	 * dock banks it.
 	 */
 	private ladderPending: PendingCredit = emptyPending();
@@ -3898,8 +3901,9 @@ class Game {
 			this.firstDay = save.commander.firstDay;
 			this.ladders = save.commander.ladders;
 			// Explicit, though a restore builds a fresh `Game` and it is empty
-			// already: a death reloads the page into `lastDocked`, and credit
-			// earned before it must not ride into the dock it restores (D7).
+			// already: a death reloads the page into the last dock's commander,
+			// and credit earned before it must not ride into the dock it restores
+			// (D7).
 			this.ladderPending = emptyPending();
 			// **A docked save resumes in flight at the arrival point, and that
 			// is a deliberate scale-down rather than an omission.** Re-entering
@@ -18581,9 +18585,10 @@ if (postcard) {
 		if (result.fault !== null) console.warn(`save: ${result.fault}`);
 		return result.attached ? null : result.fault;
 	};
-	// **A death (#324, the principal's ruling O5).** With a store attached and a
-	// commander who is not permadeath, the last dock is copied over `live`, the
-	// one-shot continue names the Commander, and the page reloads into the dock.
+	// **A death (#324, the principal's ruling O5; #654).** With a store attached
+	// and a commander who is not permadeath, `live` becomes the world at the
+	// death beside the last dock's commander, the one-shot continue names the
+	// Commander, and the page reloads into the dock.
 	// Otherwise — permadeath, `?no-save`, or a restore that failed — the ship
 	// stays destroyed and the Commander overlay opens.
 	game.onDeath = async () => {

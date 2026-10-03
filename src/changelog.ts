@@ -30,6 +30,11 @@ export type ChangelogEntry = {
 export const CHANGELOG: readonly ChangelogEntry[] = [
 	{
 		date: "2026-10-03",
+		text: "A death no longer undoes your last flight: the ships you destroyed, the systems you visited and the heat you earned all stay, and only your ship, cargo and credits go back to your last dock.",
+		node: 654,
+	},
+	{
+		date: "2026-10-03",
 		text: "Settings now offers a Mouse flight keyboard layout: W and S thrust forward and back, A and D slide sideways, Ctrl and Space lift and drop the ship, so you can thrust on all three at once while the mouse steers; on Windows and Linux, Chrome closes the tab on Ctrl+W, and Settings warns you.",
 		node: 639,
 	},

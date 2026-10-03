@@ -601,7 +601,7 @@ _Avoid_: tier (that is #26's hull tier), grade
 **Banked credit**:
 Ladder credit the save carries. Credit earned in flight — a kill, a first
 arrival — is **unbanked** until the next dock banks it, and is lost with the
-ship before that (#183 D7): a death restores the last dock's record, and a save
+ship before that (#183 D7): a death restores the last dock's commander (#654), and a save
 taken in flight does not carry it. Trade credit is earned docked, so it banks
 at once.
 _Avoid_: score, XP

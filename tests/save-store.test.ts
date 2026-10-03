@@ -114,6 +114,24 @@ const harness = (
 				},
 			};
 		},
+		/** A leg flown: a system visited, the clock moved on and the play log
+		 *  with it — world state and commander state a death treats apart. */
+		leg(systemIndex: number, seconds: number) {
+			const world = visit(state.world, 0, systemIndex);
+			state = {
+				world: { ...world, gameTime: world.gameTime + seconds },
+				commander: {
+					...state.commander,
+					ladders: {
+						...state.commander.ladders,
+						playedS: state.commander.ladders.playedS + seconds,
+					},
+				},
+			};
+		},
+		get world() {
+			return state.world;
+		},
 		get commander(): CommanderRecord {
 			return state.commander;
 		},
@@ -291,15 +309,16 @@ describe("#324 O5 — a death reverts live to the last dock", () => {
 		await h.store.flush("jump");
 	};
 
-	test("live becomes the last dock, byte for byte", async () => {
+	test("the commander becomes the last dock's commander", async () => {
 		const h = harness();
 		await docked(h);
+		const dock = (await h.store.load("default", "lastDocked")).commander;
 		const restored = await h.store.revertToLastDocked(h.commander);
 		expect(restored?.commander.state.credits).toBe(100);
-		expect((await h.store.load("default")).commander.state.credits).toBe(100);
-		expect(await h.backend.raw("default", "live")).toEqual(
-			await h.backend.raw("default", "lastDocked"),
-		);
+		const live = await h.store.load("default");
+		expect(live.commander.state).toEqual(dock.state);
+		expect(live.commander.dockedAt).toBe(dock.dockedAt);
+		expect(live.commander.requests).toEqual(dock.requests);
 	});
 
 	test("a permadeath commander gets nothing back, and nothing is written", async () => {
@@ -389,6 +408,70 @@ describe("#324 O5 — a death reverts live to the last dock", () => {
 		await h.store.revertToLastDocked(h.commander);
 		await h.catalog.chooseCommander("default");
 		expect(await h.catalog.takeOneShot()).toBe("default");
+	});
+});
+
+/**
+ * #654, the principal's Q2 ruling on #238 (2026-10-03): **a death keeps the
+ * world.** Only the commander goes back to the last dock; every world change
+ * from the fatal leg stays, so the galaxy remembers what the pilot did before
+ * they died. This replaces #324's "live becomes the last dock, byte for byte".
+ */
+describe("#654 — a death keeps the world and reverts only the commander", () => {
+	/** A dock, then a leg the death ends: system 9 visited, ten minutes on. */
+	const fatalLeg = async (h: ReturnType<typeof harness>) => {
+		h.store.markDirty();
+		await h.store.flush("dock");
+		h.set(555);
+		h.leg(9, 600);
+		h.store.markDirty();
+		await h.store.flush("jump");
+	};
+
+	test("every world change from the fatal leg stays", async () => {
+		const h = harness();
+		await fatalLeg(h);
+		const dying = h.world;
+		const restored = await h.store.revertToLastDocked(h.commander);
+		const live = await h.store.load("default");
+		for (const save of [restored, live]) {
+			expect(save?.world).toEqual(dying);
+			expect(save?.world.galaxies[0].visited).toContain(9);
+		}
+		expect(
+			(await h.store.load("default", "lastDocked")).world.galaxies[0].visited,
+		).not.toContain(9);
+	});
+
+	test("the world is the one current at the death, not the last write", async () => {
+		// A change after the last flush is still the world's: the death reads
+		// `current`, so a kill made inside the debounce window is not lost.
+		const h = harness();
+		await fatalLeg(h);
+		h.leg(11, 30);
+		const dying = h.world;
+		await h.store.revertToLastDocked(h.commander);
+		expect((await h.store.load("default")).world).toEqual(dying);
+	});
+
+	test("the time flown before the death stays in the play log (#581)", async () => {
+		const h = harness();
+		await fatalLeg(h);
+		const flown = h.commander.ladders.playedS;
+		expect(flown).toBe(600);
+		const restored = await h.store.revertToLastDocked(h.commander);
+		expect(restored?.commander.ladders.playedS).toBe(flown);
+		expect((await h.store.load("default")).commander.ladders.playedS).toBe(
+			flown,
+		);
+	});
+
+	test("the last dock record itself is left alone", async () => {
+		const h = harness();
+		await fatalLeg(h);
+		const before = await h.backend.raw("default", "lastDocked");
+		await h.store.revertToLastDocked(h.commander);
+		expect(await h.backend.raw("default", "lastDocked")).toEqual(before);
 	});
 });
 
