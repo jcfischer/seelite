@@ -56,7 +56,7 @@ import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { createServer } from "vite";
 import { cueStats, roundStats } from "./lib/audio-stats.mjs";
-import { renderInPage, SOUND_SET } from "./lib/sound-set.mjs";
+import { CLASSICAL_SET, renderInPage, SOUND_SET } from "./lib/sound-set.mjs";
 import { TREE_ENDPOINT } from "./lib/tree-declaration.mjs";
 import { launchChromium } from "./probe-guard.mjs";
 
@@ -73,6 +73,9 @@ const label = arg("label");
 // De-duplicated, so a repeated name is not read as a missing one.
 const only = arg("only") ? [...new Set(arg("only").split(","))] : undefined;
 const ref = arg("ref");
+// `--set classical`: #589's set-pieces instead of the cue set. They are a
+// listening pass for the grilling, so no probe bands them.
+const SET = arg("set") === "classical" ? CLASSICAL_SET : SOUND_SET;
 const out = resolve(arg("out") ?? join(HERE, "sound-set"));
 const seed =
 	process.env.SEED === "off" ? null : Number(process.env.SEED ?? 552);
@@ -136,11 +139,9 @@ try {
 	mkdirSync(dir, { recursive: true });
 	const entries = [];
 	let modern = null;
-	const chosen = only
-		? SOUND_SET.filter((e) => only.includes(e.name))
-		: SOUND_SET;
+	const chosen = only ? SET.filter((e) => only.includes(e.name)) : SET;
 	if (only && chosen.length !== only.length) {
-		const known = new Set(SOUND_SET.map((e) => e.name));
+		const known = new Set(SET.map((e) => e.name));
 		throw new Error(
 			`--only names no entry: ${only.filter((n) => !known.has(n))}`,
 		);
