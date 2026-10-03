@@ -119,6 +119,10 @@ function readChangelog() {
 		playBottom: play ? play.getBoundingClientRect().bottom : null,
 		viewport: window.innerHeight,
 		tracker: document.body.innerHTML.includes("github.com"),
+		channels: Array.from(document.querySelectorAll(".channels a"), (link) => ({
+			href: link.getAttribute("href"),
+			visible: link.checkVisibility(),
+		})),
 	};
 }
 
@@ -192,6 +196,16 @@ for (const [label, viewport] of [
 		`Play now stays above the fold on the threshold (${label})`,
 		home.playBottom !== null && home.playBottom <= home.viewport,
 		`bottom=${home.playBottom} viewport=${home.viewport}`,
+	);
+	check(
+		`home shows its YouTube and Discord links (${label})`,
+		home.channels.length === 2 &&
+			home.channels.every(
+				(link) =>
+					link.visible &&
+					/^https:\/\/(www\.youtube\.com|discord\.gg)\//.test(link.href),
+			),
+		JSON.stringify(home.channels),
 	);
 	check(
 		`no page links a player to the private tracker (${label})`,

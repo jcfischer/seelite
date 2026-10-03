@@ -99,6 +99,25 @@ describe("the quiet public threshold", () => {
 		}
 	});
 
+	/**
+	 * The channel and the server are links a player follows, not requests the
+	 * page makes. The YouTube share link arrived with an `si` parameter, which
+	 * is a share tracker and is dropped; `noreferrer` keeps the site's own path
+	 * out of either service's logs.
+	 */
+	test("links the home threshold to the YouTube channel and the Discord server", () => {
+		const home = PUBLIC_PAGES.find((page) => page.slug === "");
+		const links = Array.from(
+			home?.content.matchAll(/<a [^>]*href="(https:[^"]+)"[^>]*>/g) ?? [],
+			(match) => ({ href: match[1], tag: match[0] }),
+		);
+		expect(links.map((link) => link.href)).toEqual([
+			"https://www.youtube.com/@the-far-between",
+			"https://discord.gg/qRVgSqMkh8",
+		]);
+		for (const link of links) expect(link.tag).toContain('rel="noreferrer"');
+	});
+
 	test("keeps the home threshold private and hands play to the existing game boot", () => {
 		const source = readFileSync(repoPath("src/public-site.ts"), "utf8");
 		expect(source).toContain('href="/?boot=overlay"');
