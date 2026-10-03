@@ -775,13 +775,17 @@ import {
 	type PadAnalog,
 	commandById,
 	type Layout,
+	LAYOUT_NAMES,
+	type LayoutName,
 	isHeld,
 	rebind,
 	resolveKey,
 	resolvePad,
+	shippedOf,
 	type Trigger,
 	VENT_COMMANDS,
 } from "./commands";
+import { LAYOUT_LABELS, layoutChoiceNote } from "./layout-choice";
 import { keyDispatch } from "./key-dispatch";
 
 /**
@@ -1298,6 +1302,14 @@ function wrapAngle(radians: number) {
 const CHART_ORBIT_PX_PER_S = 420;
 /** Ten seconds from idle to full inside the station zone, rather than one. */
 const STATION_THROTTLE_RATE_SCALE = 0.1;
+
+/**
+ * The platform the Ctrl warning is asked about (#639): the client hint where
+ * the browser has one, `navigator.platform` where it does not.
+ */
+const browserPlatform = (): string =>
+	(navigator as Navigator & { userAgentData?: { platform?: string } })
+		.userAgentData?.platform || navigator.platform;
 
 const MOUSE_RAD_PER_PX = 0.0022;
 
@@ -9181,6 +9193,18 @@ class Game {
 	 */
 	rebindCommand(command: CommandId, from: Trigger, to: Trigger) {
 		this.commitLayout(rebind(this.bindings, command, from, to));
+	}
+
+	/**
+	 * Put a shipped layout in force, and drop the player's moves (#639) —
+	 * the principal's ruling: a move is a diff against one table.
+	 *
+	 * The settings row's step, and reachable as `__seelite.selectLayout(...)`
+	 * so a probe flies the layout the player selects rather than one it built.
+	 * The row's note names what a switch drops before the player makes it.
+	 */
+	selectLayout(name: LayoutName) {
+		this.commitLayout(shippedOf(name));
 	}
 
 	/**
@@ -18830,6 +18854,20 @@ if (postcard) {
 					: got === 0
 						? "unsupported here"
 						: `${got}x here`;
+			},
+			// The keyboard layout (#639). Stored in the binding blob, not in
+			// `game.settings`, so the row reads and steps it through the game.
+			{
+				label: "Keyboard layout",
+				value: () => LAYOUT_LABELS[game.layoutInForce().base],
+				note: () => layoutChoiceNote(game.layoutInForce(), browserPlatform()),
+				step: (direction) => {
+					const at = LAYOUT_NAMES.indexOf(game.layoutInForce().base);
+					const n = LAYOUT_NAMES.length;
+					game.selectLayout(
+						LAYOUT_NAMES[(at + direction + n) % n] as LayoutName,
+					);
+				},
 			},
 		);
 	});

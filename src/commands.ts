@@ -1479,7 +1479,29 @@ export const commandById = (id: CommandId): Command => {
  * that answers *that*, and it throws when the answer is no.
  */
 declare const LAYOUT: unique symbol;
-export type Layout = readonly Binding[] & { readonly [LAYOUT]: true };
+export type Layout = readonly Binding[] & {
+	readonly [LAYOUT]: true;
+	/**
+	 * The shipped table this one is a move away from (#639).
+	 *
+	 * **On the table rather than beside it**, because every question that
+	 * needs it is asked of a table: `layoutMoves` pairs a layout with the
+	 * shipped one it came from, and a `rebind` that dropped the name would
+	 * hand the next save a diff against the wrong table. `rebound` carries
+	 * it across, so a move cannot lose it.
+	 */
+	readonly base: LayoutName;
+};
+
+/**
+ * The layouts that ship, by name (#639).
+ *
+ * `default` is `flight-model.md` §3.5's. `mouse-flight` is for a pilot who
+ * flies pitch and yaw on the mouse with the assist off: every translation key
+ * under the left hand, so fore/aft, strafe and the vertical hold together.
+ */
+export const LAYOUT_NAMES = ["default", "mouse-flight"] as const;
+export type LayoutName = (typeof LAYOUT_NAMES)[number];
 
 /**
  * The one constructor, which freezes **through** rather than at the surface.
@@ -1504,7 +1526,25 @@ export type Layout = readonly Binding[] & { readonly [LAYOUT]: true };
  * on purpose — and `tests/commands.test.ts`'s guard row has always scanned
  * `src/` and said so.
  */
-export const layoutOf = (rows: readonly Binding[]): Layout => {
+export const layoutOf = (
+	rows: readonly Binding[],
+	// The rows' own name when they carry one, so a caller that rebuilds a
+	// named table cannot relabel it by omission (sage round 2); a plain array
+	// is the default layout's.
+	base: LayoutName = (rows as Partial<Layout>).base ?? "default",
+): Layout => {
+	// Non-enumerable, so a spread or a `JSON.stringify` of the rows sees rows
+	// only. A frozen table cannot take a name, so it must already carry this
+	// one: `holdRows` re-freezes a table this function made and passes its own
+	// name back. Anything else — a frozen array that never came through here,
+	// or a table asked to change its name — throws rather than returning a
+	// `Layout` whose `base` is not what the call said (sage round 1).
+	if (!Object.isFrozen(rows))
+		Object.defineProperty(rows, "base", { value: base, enumerable: false });
+	else if ((rows as Partial<Layout>).base !== base)
+		throw new Error(
+			`a frozen table is ${String((rows as Partial<Layout>).base)}, not ${base}`,
+		);
 	for (const b of rows) {
 		Object.freeze(b.trigger);
 		if ("contexts" in b.trigger) Object.freeze(b.trigger.contexts);
@@ -1525,6 +1565,87 @@ export const DEFAULT_BINDINGS: Layout = layoutOf(
 		})),
 	),
 );
+
+/**
+ * The mouse-flight layout's keys, as moves off the default table (#639).
+ *
+ * The source is CMDR Mechan's "Fixing Your M&K Controls" keyboard overlay,
+ * and #639 holds the table. **A key keeps its axis in both regimes**: `w`/`s`
+ * carry §3.6's two meanings exactly as `shift`/`control` do on the default
+ * layout, and the strafe keys are a velocity demand with the assist on and a
+ * force with it off. The arrows take pitch and yaw in the sense they had
+ * before #620 gave them to the strafe.
+ *
+ * `shift` is free here and stays unbound, and the pulse laser keeps the mouse
+ * and loses `space` to the vertical strafe. Both become the placeholder, so
+ * the table stays row for row the default one — which is what `layoutMoves`
+ * pairs on — and a player can still bind a key to the pulse laser.
+ *
+ * **`control` holds strafe up, and a key pressed under it runs no command**
+ * (`key-dispatch.ts`): a held key still flies, so the three-axis burn holds,
+ * but `x`, `j` and the jump key do nothing while the pilot climbs.
+ */
+const MOUSE_FLIGHT_KEYS: readonly {
+	readonly command: CommandId;
+	readonly from: string;
+	readonly to: string | null;
+}[] = [
+	{ command: "fly.pitchUp", from: "s", to: "arrowdown" },
+	{ command: "fly.pitchDown", from: "w", to: "arrowup" },
+	{ command: "fly.yawPort", from: "a", to: "arrowleft" },
+	{ command: "fly.yawStarboard", from: "d", to: "arrowright" },
+	{ command: "fly.strafePort", from: "arrowleft", to: "a" },
+	{ command: "fly.strafeStarboard", from: "arrowright", to: "d" },
+	{ command: "fly.strafeDorsal", from: "arrowup", to: "control" },
+	{ command: "fly.strafeVentral", from: "arrowdown", to: " " },
+	{ command: "fly.throttleUp", from: "shift", to: "w" },
+	{ command: "fly.throttleDown", from: "control", to: "s" },
+	{ command: "fight.firePulse", from: " ", to: null },
+];
+
+/** One default row, moved if the mouse-flight table names it. */
+const mouseFlightRow = (b: Binding): Binding => {
+	if (b.trigger.kind !== "key" || b.trigger.surface !== undefined) return b;
+	const { key } = b.trigger;
+	const move = MOUSE_FLIGHT_KEYS.find(
+		(m) => m.command === b.command && m.from === key,
+	);
+	if (move === undefined) return b;
+	// Every row this table moves is a held flight key with no chord, so the
+	// qualifier it keeps is `hold` and nothing else.
+	const trigger =
+		move.to === null ? UNBOUND_HELD : keyTrigger({ key: move.to, hold: true });
+	return {
+		command: b.command,
+		trigger,
+		scope: scopeOf(trigger, commandById(b.command).views),
+	};
+};
+
+export const MOUSE_FLIGHT_BINDINGS: Layout = layoutOf(
+	DEFAULT_BINDINGS.map(mouseFlightRow),
+	"mouse-flight",
+);
+
+/** Every shipped table, by the name a stored layout records. */
+export const SHIPPED_LAYOUTS: Readonly<Record<LayoutName, Layout>> = {
+	default: DEFAULT_BINDINGS,
+	"mouse-flight": MOUSE_FLIGHT_BINDINGS,
+};
+
+/**
+ * The shipped table a name stands for, or a throw.
+ *
+ * One lookup for every caller (sage round 1): the store validates a stored
+ * name before it asks, so a throw here is a name that reached the registry
+ * without passing through `LAYOUT_NAMES` — a programming error, said loudly.
+ */
+export const shippedOf = (name: LayoutName): Layout => {
+	const shipped = SHIPPED_LAYOUTS[name];
+	if (shipped === undefined)
+		throw new Error(`no layout ships as ${String(name)}`);
+	return shipped;
+};
 
 // ---------------------------------------------------------------------------
 // D5's two predicates
@@ -2014,14 +2135,15 @@ export interface LayoutMove {
  * wrong diff would be saved as a blob that loads as a different layout.
  */
 export function layoutMoves(layout: Layout): LayoutMove[] {
-	if (layout.length !== DEFAULT_BINDINGS.length)
+	const shipped = shippedOf(layout.base);
+	if (layout.length !== shipped.length)
 		throw new Error(
-			`a layout has ${DEFAULT_BINDINGS.length} rows, not ${layout.length}`,
+			`a layout has ${shipped.length} rows, not ${layout.length}`,
 		);
 	const out: LayoutMove[] = [];
 	for (let i = 0; i < layout.length; i++) {
 		const live = layout[i] as Binding;
-		const base = DEFAULT_BINDINGS[i] as Binding;
+		const base = shipped[i] as Binding;
 		if (live.command !== base.command)
 			throw new Error(
 				`layout row ${i} is ${live.command}, not ${base.command}`,
@@ -2083,7 +2205,7 @@ export function rebound(
 		trigger: moved,
 		scope: scopeOf(moved, commandById(command).views),
 	};
-	return { layout: layoutOf(next), stored: moved };
+	return { layout: layoutOf(next, bindings.base), stored: moved };
 }
 
 /**

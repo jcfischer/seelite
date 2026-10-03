@@ -15,6 +15,7 @@ import {
 	DEFAULT_BINDINGS,
 	type Layout,
 	layoutOf,
+	MOUSE_FLIGHT_BINDINGS,
 	RebindRefused,
 	rebind,
 	type Trigger,
@@ -252,6 +253,12 @@ describe("the combat rig's legend (#381 S5)", () => {
 					contexts: [],
 				}),
 			).toThrow(RebindRefused);
+	});
+
+	test("a pulse with no key says so, on the mouse-flight layout (#639)", () => {
+		expect(rigLegend(MOUSE_FLIGHT_BINDINGS)).toBe(
+			"unbound pulse · hold x or left mouse button beam · / warning · q ECM",
+		);
 	});
 
 	test("the mouse is the rig's reading, printed in triggerLabel's words", () => {
