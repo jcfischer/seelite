@@ -332,10 +332,11 @@ export const PAD_HOLE_FACTOR = 1.02;
  * the cylinder nothing of a station may stand in
  * (`tests/station-mesh.test.ts`).
  *
- * One expression, read by the standoff that keeps berths out of it and by the
- * hole a pad's deck is cut to.
+ * One expression, read by the standoff that keeps berths out of it, by the
+ * hole a refinery's or an outpost's deck is cut to, and by `station-proxy.ts`, whose corridor
+ * opening is this cylinder (`collision.md` §2.2: read, not restated).
  */
-const corridorRadiusKm = (aperture: StationAperture): number =>
+export const corridorRadiusKm = (aperture: StationAperture): number =>
 	Math.hypot(aperture.widthKm, aperture.heightKm) / 2;
 
 /** Which way a face points in the deck plane, measured out from the lane — the

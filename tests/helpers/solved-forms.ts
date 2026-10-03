@@ -24,3 +24,12 @@ export const PLAN_SEEDS = [0, 1, 2, 3, 17, 42];
 
 export const isSolvedForm = (type: StationType, id: StationFormId) =>
 	SOLVED_FORMS.some(([t, f]) => t === type && f === id);
+
+/**
+ * The same list read under the name §2.2 uses: a **seeded** form is one whose
+ * shape is drawn from the assembly seed, solved by `placementsOf` (the Works)
+ * or grown (the Salvage). `SOLVED_FORMS` and `isSolvedForm` predate that
+ * split and already hold both kinds, so the proxy rows and their instrument,
+ * which turn on the split, read this name instead. It is not a narrower set.
+ */
+export const isSeededForm = isSolvedForm;

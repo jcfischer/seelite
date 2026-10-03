@@ -74,6 +74,7 @@ import {
 	STATION_GEOMETRY,
 	STATION_TYPES,
 	type StationAperture,
+	type StationFormId,
 	type StationType,
 } from "./station";
 import { type GreebleZone, buildGreebles } from "./station-greebles";
@@ -110,6 +111,8 @@ import {
 	REFINERY_RADIUS,
 	REFINERY_VOCABULARY,
 	SALVAGE_CORE,
+	WORKS_CELL_KM,
+	WORKS_FLOOR_KM,
 } from "./station-plant";
 import { DIRECTIONS } from "./wfc";
 import { mix, seededRand } from "./rng";
@@ -1192,7 +1195,7 @@ export interface StationForm {
 	) => BuiltPart;
 }
 
-export type StationFormId = "a" | "b" | "c" | "d" | "e";
+export type { StationFormId };
 export const STATION_FORM_IDS: StationFormId[] = ["a", "b", "c", "d", "e"];
 
 /** One flat-shaded clone per base material, kept. */
@@ -4319,14 +4322,9 @@ function buildTradeModular(
 }
 
 /**
- * The cell pitch of the refinery Works, kilometres. 0.19 km carries a 60 m
- * unit with a clear lane between neighbours, and the two-cell diamond spans
- * 0.76 km — the width of floor a 0.62 km rock can be quarried to without
- * cutting through its own flanks.
- */
-const WORKS_CELL_KM = 0.16;
-/**
- * The rock's nominal radius, and the floor its +Z face is machined to.
+ * The rock's nominal radius. The cell pitch and the floor its +Z face is
+ * machined to — `WORKS_CELL_KM`, `WORKS_FLOOR_KM` — are `station-plant.ts`'s,
+ * because the collision proxy reads the same plan.
  *
  * **The floor is high on the rock and the plant is taller than the rim.**
  * Flown once at a 0.62 km rock cut to 0.2: the rock displaces to 0.43 km at
@@ -4337,7 +4335,6 @@ const WORKS_CELL_KM = 0.16;
  * What a pilot sees is a machined mesa with plant standing off it.
  */
 const WORKS_ROCK_KM = 0.55;
-const WORKS_FLOOR_KM = 0.16;
 
 /**
  * Refinery D — Works. **The rock is the station**, quarried flat across its
