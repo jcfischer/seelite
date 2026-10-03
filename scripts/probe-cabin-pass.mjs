@@ -39,8 +39,9 @@
  * **It runs on the build before #651 too, and goes red there.** That build has
  * no cabin camera, no `mirrorIntoCabin` and no cabin scene, so the rows that
  * need them report what is missing as a failure instead of throwing — which
- * keeps row 1's red reproducible: run against `45f09d8` it reads 312,460 px
- * of world inside a 32.5% footprint. The AO rows' red was shown another way,
+ * keeps row 1's red reproducible: run against `45f09d8` it read 312,460 and
+ * 310,293 px of world inside a 32.5% footprint in two runs — the frame is
+ * mid-traversal, so the pose moves a little from run to run. The AO rows' red was shown another way,
  * by a source mutation forcing the AO onto the near scene (the outside read
  * 18.379%); there is no arm for that here, because it is not a state the
  * shipped build can be put in.
