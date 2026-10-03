@@ -57,6 +57,7 @@ import {
 	type StationProxy,
 	proxyContains,
 	proxyReachKm,
+	refineryPlantProxy,
 	stationProxy,
 } from "../src/station-proxy";
 import { ASSEMBLY_SEEDS, isSolvedForm } from "./helpers/solved-forms";
@@ -411,29 +412,40 @@ describe("station proxy budget (collision.md §9.1.11)", () => {
 		}
 	});
 
-	test("thinnest primitive figure matches the declared value", () => {
+	test("the thinnest primitive is the declared figure, at every plan", () => {
+		// §4.1's sub-step bound reads `thinnestKm`, so a rework that cuts a
+		// 1 m sliver off a box changes how finely every tick is swept. Each
+		// figure is pinned, and it is the thinnest full extent in the set:
+		// - trade: the 32 m box in front of the +Z face that carries the collar;
+		// - shipyard: the drum's 28 m lip between the plane and its frame;
+		// - refinery: a plant cell's 26 m sliver left beside the corridor where
+		//   a diagonal cell is cut round it (0.08 km to the corridor's radius);
+		// - outpost: the core section's 90 m depth (`SALVAGE_CORE.halfHeightKm`).
+		const DECLARED: Record<StationType, number> = {
+			trade: 0.032,
+			shipyard: 0.028,
+			refinery: 0.026066,
+			outpost: 0.09,
+		};
 		for (const type of TYPES) {
 			const form = SELECTED_FORM[type];
-			const proxy = stationProxy(type, form, 0, 0);
-			expect(proxy).not.toBeNull();
-			// Recompute the thinnest from the primitives
-			const allPrims = [...proxy!.spinning, ...proxy!.static];
-			let min = Infinity;
-			for (const p of allPrims) {
-				switch (p.kind) {
-					case "box":
-						min = Math.min(min, p.hx * 2, p.hy * 2, p.hz * 2);
-						break;
-					case "sphere":
-						min = Math.min(min, p.radiusKm * 2);
-						break;
-					case "capsule":
-						min = Math.min(min, p.radiusKm * 2);
-						break;
+			for (const [berthSeed, assemblySeed] of seedPairs(type, form)) {
+				const proxy = stationProxy(type, form, berthSeed, assemblySeed)!;
+				let min = Infinity;
+				for (const p of [...proxy.spinning, ...proxy.static]) {
+					switch (p.kind) {
+						case "box":
+							min = Math.min(min, p.hx * 2, p.hy * 2, p.hz * 2);
+							break;
+						case "sphere":
+						case "capsule":
+							min = Math.min(min, p.radiusKm * 2);
+							break;
+					}
 				}
+				expect(proxy.thinnestKm).toBeCloseTo(min, 9);
+				expect(proxy.thinnestKm).toBeCloseTo(DECLARED[type], 6);
 			}
-			expect(proxy!.thinnestKm).toBeCloseTo(min, 6);
-			expect(proxy!.thinnestKm).toBeGreaterThan(0);
 		}
 	});
 
@@ -477,6 +489,33 @@ describe("station proxy budget (collision.md §9.1.11)", () => {
 		walk("src/station-proxy.ts");
 		expect(seen.size).toBeGreaterThan(1);
 		expect(reachesThree).toEqual([]);
+	});
+
+	test("the refinery's cells carry its plant: without them the plant is outside", () => {
+		// The proxy is derived from the solve cell by cell (§2.2), and this is
+		// what makes that more than a name: with every cell's box taken out, the
+		// rock and the deck leave the plant's tall units uncovered at every plan.
+		// A proxy whose cells were decorative would stay green here.
+		const form = SELECTED_FORM.refinery;
+		const opening = openingOf("refinery");
+		for (const assemblySeed of ASSEMBLY_SEEDS) {
+			const proxy = stationProxy("refinery", form, 0, assemblySeed)!;
+			const cells = new Set(
+				refineryPlantProxy(assemblySeed).map((b) => JSON.stringify(b)),
+			);
+			const withoutCells: StationProxy = {
+				...proxy,
+				spinning: proxy.spinning.filter((p) => !cells.has(JSON.stringify(p))),
+			};
+			expect(withoutCells.spinning.length).toBeLessThan(proxy.spinning.length);
+			const mesh = buildStationForm("refinery", form, GREY, 0, assemblySeed);
+			const uncovered = extractVertices(mesh.root, "refinery").filter(
+				({ v }) =>
+					!inOpening(opening, v) &&
+					!vertexInsideProxy(withoutCells, v, VERTEX_TOLERANCE_KM),
+			);
+			expect(uncovered.length).toBeGreaterThan(0);
+		}
 	});
 
 	test("the refinery's proxy reads the assembly seed, cell by cell", () => {

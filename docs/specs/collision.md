@@ -99,7 +99,9 @@ A station collides on a **proxy**: a small set of convex primitives — spheres,
 capsules and oriented boxes — in the station's own frame, in kilometres.
 
 - **Where it lives.** A Three-free module beside `STATION_GEOMETRY` and the
-  interior catalogue. The renderer never reads it. The build names the module.
+  interior catalogue. The renderer never reads it. The build names the module:
+  `src/station-proxy.ts` (node #662), measured by `tests/station-proxy.test.ts`
+  and, over a wider seed spread by hand, `scripts/measure-station-proxy.ts`.
 - **What it is a function of.** `(type, form, berthSeed, assemblySeed)`. For a
   solved form, the proxy is derived from **the same placement solve the mesh
   reads**, cell by cell. It is never a second copy of the plan.

@@ -23,8 +23,16 @@
  * proxy is identical across berth seeds, so a form that starts to read it is
  * a red row rather than a surprise. For the refinery's solved form the proxy
  * reads the same placement solve the mesh reads (`placementsOf`), cell by
- * cell. The outpost's Salvage is solved from its own draw rather than from a
- * placement grid, and its proxy bounds every plan instead of following one.
+ * cell, and a row shows the cells carry the plant. The outpost's Salvage is
+ * solved from its own draw rather than from a placement grid, so its proxy is
+ * one set of primitives sized to contain the plans it was measured over
+ * instead of following one.
+ *
+ * **Which plans that is.** `npm test` gates every row on `ASSEMBLY_SEEDS`,
+ * twelve plans. `scripts/measure-station-proxy.ts` is the hand-run half: at
+ * assembly seeds 0–2399 it read no plan of either seeded form with a vertex
+ * past the test's 60 m tolerance — the Works' worst 44.1 m, the Salvage's
+ * 36.1 m (2026-10-03). A plan outside that range is not measured.
  *
  * **What it turns with.** `spinning` primitives are in the spinning member's
  * frame. `static` primitives are in the static frame — only non-empty for the
@@ -49,8 +57,8 @@ import {
 	stationInterior,
 } from "./station-interior";
 import type { StationFormId } from "./station-mesh";
-import { type Placement, placementsOf } from "./station-modular";
-import { REFINERY_VOCABULARY, SALVAGE_CORE } from "./station-plant";
+import { placementsOf } from "./station-modular";
+import { REFINERY, REFINERY_VOCABULARY, SALVAGE_CORE } from "./station-plant";
 
 // ---------------------------------------------------------------------------
 // Primitive types
@@ -444,34 +452,76 @@ function shipyardGantryProxy(): StationProxy {
 }
 
 // ---------------------------------------------------------------------------
-// Solved forms: shared helpers
-// ---------------------------------------------------------------------------
-
-/**
- * Build a box per occupied cell in a solved plan. Each cell centre is at
- * `(dx * cellKm, dy * cellKm, z)`, and each box is a cell wide and `2 × halfZ`
- * tall, centred at the cell.
- */
-function cellBoxes(
-	placements: readonly Placement[],
-	cellKm: number,
-	z: number,
-	halfZ: number,
-): Bounds[] {
-	const half = cellKm / 2;
-	return placements.map((p) => ({
-		x0: p.dx * cellKm - half,
-		x1: p.dx * cellKm + half,
-		y0: p.dy * cellKm - half,
-		y1: p.dy * cellKm + half,
-		z0: z - halfZ,
-		z1: z + halfZ,
-	}));
-}
-
-// ---------------------------------------------------------------------------
 // Refinery D — Works (solved form)
 // ---------------------------------------------------------------------------
+
+/** `WORKS_CELL_KM` and `WORKS_FLOOR_KM` (`station-mesh.ts`): the plant's cell
+ *  pitch and the quarried floor every cell's centre stands on. */
+const WORKS_CELL_KM = 0.16;
+const WORKS_FLOOR_KM = 0.16;
+
+/**
+ * `STATION_SILHOUETTE_KM.refinery`, which lives in the renderer and so cannot
+ * be imported here. The reach row holds every primitive to the real figure,
+ * so a copy that drifted above it is a red row rather than a quiet overshoot.
+ */
+const WORKS_REACH_KM = 0.68;
+
+/**
+ * How far above the floor each unit the plant can place stands, kilometres —
+ * the tallest part `buildRefineryWorks` draws on that module's cell: a
+ * column's cap, a flare's vent bank, the headframe's sheave and lamp, a
+ * cracker's stacks. The head house is the block the deck stands on, so its
+ * cell runs to the plane and the deck above it is the deck's.
+ */
+const WORKS_UNIT_TOP_KM: Readonly<Record<number, number>> = {
+	[REFINERY.PIPE_X]: 0.05,
+	[REFINERY.PIPE_Y]: 0.05,
+	[REFINERY.COLUMN]: 0.37,
+	[REFINERY.CRACKER]: 0.27,
+	[REFINERY.SHAFT]: 0.29,
+	[REFINERY.TANKS]: 0.09,
+	[REFINERY.FLARE]: 0.39,
+	[REFINERY.RADIATOR]: 0.09,
+};
+
+/** Every unit is drawn from 0.05 km under its cell's centre. */
+const WORKS_UNIT_FOOT_KM = 0.05;
+
+/**
+ * The plant, cell by cell from the placement solve the mesh reads: one box per
+ * occupied cell, a cell wide, from the foot of its unit to the top of the
+ * unit that cell holds — trimmed, at the field's outer cells, to where its
+ * outer corner meets the reach. Cut round the corridor, which the tall units
+ * beside the head house would otherwise cross.
+ *
+ * Exported for the row that holds the cells to carrying the plant: without
+ * them the rock and the deck leave the tall units outside the proxy.
+ */
+export function refineryPlantProxy(assemblySeed: number): ProxyBox[] {
+	const plane = STATION_GEOMETRY.refinery.aperturePlaneKm;
+	const half = WORKS_CELL_KM / 2;
+	const { placements } = placementsOf(REFINERY_VOCABULARY, assemblySeed);
+	const cells = placements.map((p): Bounds => {
+		const x = p.dx * WORKS_CELL_KM;
+		const y = p.dy * WORKS_CELL_KM;
+		const corner = Math.hypot(Math.abs(x) + half, Math.abs(y) + half);
+		const unitTop =
+			p.module === REFINERY.HEAD
+				? plane
+				: WORKS_FLOOR_KM + (WORKS_UNIT_TOP_KM[p.module] ?? 0);
+		const z1 = Math.min(unitTop, Math.sqrt(WORKS_REACH_KM ** 2 - corner ** 2));
+		return {
+			x0: x - half,
+			x1: x + half,
+			y0: y - half,
+			y1: y + half,
+			z0: WORKS_FLOOR_KM - WORKS_UNIT_FOOT_KM,
+			z1,
+		};
+	});
+	return cutAround(cells, [corridorHole("refinery")]);
+}
 
 /**
  * The Works: a quarried asteroid with a WFC-solved plant on its flat top and
@@ -480,33 +530,29 @@ function cellBoxes(
  *
  * - **The rock** is a sphere centred below the origin, as large as the reach
  *   allows with its top under the plane, plus a ring of capsules round its
- *   flanks where the lumps stand furthest out.
- * - **The plant** is one box per occupied cell of the placement solve, from
- *   the quarry floor up, cut round the corridor.
- * - **The deck and what stands above it** — head house, sheave, the tall
- *   columns — is a ring of capsules round the corridor, its inner edge outside
- *   `corridorRadiusKm`.
+ *   flanks where the lumps stand furthest out. Neither reaches the tall
+ *   units; those are the plant's.
+ * - **The plant** is `refineryPlantProxy`: the solve, cell by cell.
+ * - **The deck** is a slab at the plane round the head house, cut round the
+ *   corridor, and it carries the berths that stand on it.
  */
 function refineryWorksProxy(assemblySeed: number): StationProxy {
-	const g = STATION_GEOMETRY.refinery;
-	const plane = g.aperturePlaneKm; // 0.396
-	const cellKm = 0.16; // WORKS_CELL_KM
-	const floorZ = 0.16; // WORKS_FLOOR_KM
+	const plane = STATION_GEOMETRY.refinery.aperturePlaneKm;
 
-	const ROCK_CENTRE = -0.15;
-	const rock = sphere({ x: 0, y: 0, z: ROCK_CENTRE }, 0.53);
+	const rock = sphere({ x: 0, y: 0, z: -0.15 }, 0.53);
 	const flanks = ring(0.4, 0, 0.27);
-
-	const { placements } = placementsOf(REFINERY_VOCABULARY, assemblySeed);
-	const unitHalfZ = 0.1;
-	const plant = cutAround(
-		cellBoxes(placements, cellKm, floorZ + unitHalfZ, unitHalfZ),
+	const DECK_HALF = 0.215;
+	const deck = cutAround(
+		[axial(DECK_HALF, DECK_HALF, plane - 0.045, plane + 0.03)],
 		[corridorHole("refinery")],
 	);
 
-	const deck = ring(0.25, plane + 0.054, 0.13);
-
-	return proxyOf([rock, ...flanks, ...plant, ...deck]);
+	return proxyOf([
+		rock,
+		...flanks,
+		...refineryPlantProxy(assemblySeed),
+		...deck,
+	]);
 }
 
 // ---------------------------------------------------------------------------
@@ -516,8 +562,9 @@ function refineryWorksProxy(assemblySeed: number): StationProxy {
 /**
  * The Salvage: a boxy freighter section (the core) carrying the deck, with
  * welded debris round it. The debris is drawn from the assembly seed by the
- * form's own generator rather than by a placement grid, so the proxy bounds
- * every plan rather than following one:
+ * form's own generator rather than by a placement grid, so the proxy is one
+ * set of primitives sized to the plans the module header names, rather than
+ * one that follows a plan:
  *
  * - the core section as a box from its keel to the underside of the deck;
  * - a sphere centred below the origin, its top under the plane, for the
@@ -525,7 +572,8 @@ function refineryWorksProxy(assemblySeed: number): StationProxy {
  * - a ring of capsules round its flanks for the hull sections that stand
  *   furthest out;
  * - a ring round the corridor for the deck, its inner edge outside
- *   `corridorRadiusKm`.
+ *   `corridorRadiusKm`, and a wider one under it for the sections welded at
+ *   deck height.
  */
 function outpostSalvageProxy(): StationProxy {
 	const g = STATION_GEOMETRY.outpost;
@@ -542,10 +590,11 @@ function outpostSalvageProxy(): StationProxy {
 		),
 	);
 	const debris = sphere({ x: 0, y: 0, z: -0.1275 }, 0.2925);
-	const flanks = ring(0.2, 0, 0.12);
-	const deck = ring(0.16, plane + 0.005, 0.07);
+	const flanks = ring(0.24, -0.05, 0.17);
+	const deck = ring(0.2, plane + 0.005, 0.11);
+	const deckRim = ring(0.28, plane - 0.025, 0.1);
 
-	return proxyOf([core, debris, ...flanks, ...deck]);
+	return proxyOf([core, debris, ...flanks, ...deck, ...deckRim]);
 }
 
 // ---------------------------------------------------------------------------
@@ -577,8 +626,13 @@ export function stationProxy(
 			return form === "d" ? refineryWorksProxy(assemblySeed) : null;
 		case "outpost":
 			return form === "e" ? outpostSalvageProxy() : null;
-		default:
-			return type satisfies never;
+		default: {
+			// Exhaustive at compile time: a station type added later is a type
+			// error here, and at runtime it has no proxy.
+			const unhandled: never = type;
+			void unhandled;
+			return null;
+		}
 	}
 }
 
