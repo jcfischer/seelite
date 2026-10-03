@@ -258,6 +258,8 @@ describe("no caller composes the step by hand (#646 D9)", () => {
 		"tests/vent-cue.test.ts": "the cue read off each half's flags",
 		"tests/attitude-hold.test.ts":
 			"the follower's stick turned by the attitude law alone",
+		"tests/pointer.test.ts":
+			"the attitude law's unpaid pointer impulse (#641), read off that half alone",
 	};
 	const files = [
 		...srcFiles(),

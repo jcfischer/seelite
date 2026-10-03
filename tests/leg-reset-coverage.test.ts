@@ -39,7 +39,7 @@
  * tier that runs on every push.
  */
 import { expect, test } from "bun:test";
-import { codeOf } from "./lib/source-scan";
+import { codeOf, methodBodyOf } from "./lib/source-scan";
 
 const SUBJECT = "src/main.ts";
 const main = codeOf(SUBJECT);
@@ -92,26 +92,9 @@ const LEG_PATH = [
  */
 const DISPLAY_PATH = ["render"];
 
-/** The body of a one-tab-indented method, by brace matching. */
-function methodBody(source: string, name: string): string {
-	const head = new RegExp(
-		`^\\t(?:private |readonly |private readonly )?(?:async )?${name}\\([^)]*\\)\\s*(?::[^{\\n]+)?\\{`,
-		"m",
-	);
-	const at = source.match(head);
-	if (at?.index === undefined)
-		throw new Error(
-			`${SUBJECT} has no method ${name}() at class-member indentation — ` +
-				`if it was renamed or removed, LEG_PATH is the thing to update`,
-		);
-	const open = at.index + at[0].length - 1;
-	let depth = 0;
-	for (let i = open; i < source.length; i++) {
-		if (source[i] === "{") depth++;
-		else if (source[i] === "}" && --depth === 0) return source.slice(open, i);
-	}
-	throw new Error(`${name}() in ${SUBJECT} has no closing brace`);
-}
+/** The body of a one-tab-indented method of `main`. */
+const methodBody = (source: string, name: string) =>
+	methodBodyOf(source, name, SUBJECT);
 
 /**
  * Fields the flight path touches that the reset deliberately leaves alone, with
@@ -148,7 +131,15 @@ const NOT_RESET: Record<string, string> = {
  * spelling of the boot rule. The indirection is declared rather than allowed
  * for, so the scan still knows which field each call is answering for.
  */
-const RESTORED_BY: Record<string, string> = { orientation: "faceTheStar" };
+const RESTORED_BY: Record<string, string> = {
+	orientation: "faceTheStar",
+	// #641: the pointer's delta and the flick being read go together.
+	flickMeter: "dropPointer",
+};
+
+/** A field the reset restores by calling the method declared for it. */
+const restoredByCall = (field: string, body: string) =>
+	Boolean(RESTORED_BY[field]) && body.includes(`this.${RESTORED_BY[field]}()`);
 
 /**
  * `this.foo =`, and every compound form: `+= -= *= /= ??= ||= &&=`, `++`, `--`.
@@ -248,9 +239,14 @@ test("resetFlightToStart assigns every field the flight path assigns", () => {
 	// where a green run means the check has stopped running.
 	expect(written.size).toBeGreaterThan(10);
 
-	const restored = assignedFields(resetBody());
+	const body = resetBody();
+	const restored = assignedFields(body);
 	expect(
-		[...written].filter((f) => !NOT_RESET[f] && !restored.has(f)).sort(),
+		[...written]
+			.filter(
+				(f) => !NOT_RESET[f] && !restored.has(f) && !restoredByCall(f, body),
+			)
+			.sort(),
 	).toEqual([]);
 });
 
@@ -266,9 +262,7 @@ test("resetFlightToStart deals with every field the flight path mutates in place
 
 	const body = resetBody();
 	const handled = (f: string) =>
-		NOT_RESET[f] ||
-		body.includes(`this.${f}`) ||
-		(RESTORED_BY[f] && body.includes(`this.${RESTORED_BY[f]}()`));
+		NOT_RESET[f] || body.includes(`this.${f}`) || restoredByCall(f, body);
 	expect([...fields].filter((f) => !handled(f)).sort()).toEqual([]);
 });
 
@@ -280,7 +274,7 @@ test("every declared restorer is a real method the reset calls", () => {
 	for (const [field, method] of Object.entries(RESTORED_BY)) {
 		expect(() => methodBody(main, method)).not.toThrow();
 		expect(body).toContain(`this.${method}()`);
-		expect(mutated().has(field)).toBe(true);
+		expect(mutated().has(field) || assigned().has(field)).toBe(true);
 	}
 });
 

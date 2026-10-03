@@ -302,3 +302,32 @@ export function dispatchSites(source: string): {
 	// reader's puzzle. They are one line away when one wants them.
 	return { held, all: new Set([...cases, ...held, ...commanded]) };
 }
+
+/**
+ * The body of a one-tab-indented class method, by brace matching. Throws when
+ * `name` is not a method at class-member indentation, so a renamed method
+ * fails the scan that names it rather than leaving it guarding nothing.
+ */
+export function methodBodyOf(
+	source: string,
+	name: string,
+	subject = "the source",
+): string {
+	const head = new RegExp(
+		`^\\t(?:private |readonly |private readonly )?(?:async )?${name}\\([^)]*\\)\\s*(?::[^{\\n]+)?\\{`,
+		"m",
+	);
+	const at = source.match(head);
+	if (at?.index === undefined)
+		throw new Error(
+			`${subject} has no method ${name}() at class-member indentation — ` +
+				`if it was renamed or removed, the scan naming it is the thing to update`,
+		);
+	const open = at.index + at[0].length - 1;
+	let depth = 0;
+	for (let i = open; i < source.length; i++) {
+		if (source[i] === "{") depth++;
+		else if (source[i] === "}" && --depth === 0) return source.slice(open, i);
+	}
+	throw new Error(`${name}() in ${subject} has no closing brace`);
+}
