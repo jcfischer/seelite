@@ -26,8 +26,9 @@
 import type { StationType } from "../src/station";
 import { SELECTED_FORM, buildStationForm } from "../src/station-mesh";
 import { PROXY_VERTEX_TOLERANCE_KM, stationProxy } from "../src/station-proxy";
-import { isSolvedForm } from "../tests/helpers/solved-forms";
+import { isSeededForm } from "../tests/helpers/solved-forms";
 import {
+	BERTH_SIDES,
 	forEachVertex,
 	inOpening,
 	openingOf,
@@ -35,7 +36,6 @@ import {
 } from "../tests/helpers/station-proxy-measure";
 
 const TOLERANCE_KM = PROXY_VERTEX_TOLERANCE_KM;
-const BERTH_SIDES = [0, 1];
 const SEEDED: readonly StationType[] = ["refinery", "outpost"];
 
 function finite(label: string, value: number): number {
@@ -45,7 +45,7 @@ function finite(label: string, value: number): number {
 
 function sweep(type: StationType, start: number, count: number): void {
 	const form = SELECTED_FORM[type];
-	if (!isSolvedForm(type, form))
+	if (!isSeededForm(type, form))
 		throw new Error(`${type} ${form} is not a seeded form`);
 	const opening = openingOf(type);
 	let over = 0;

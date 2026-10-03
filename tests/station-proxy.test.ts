@@ -41,11 +41,7 @@
 
 import { describe, expect, test } from "bun:test";
 import * as THREE from "three";
-import {
-	STATION_GEOMETRY,
-	STATION_TYPES,
-	type StationType,
-} from "../src/station";
+import { STATION_TYPES, type StationType } from "../src/station";
 import {
 	SELECTED_FORM,
 	STATION_FORMS,
@@ -61,14 +57,13 @@ import {
 	refineryPlantProxy,
 	stationProxy,
 } from "../src/station-proxy";
-import { ASSEMBLY_SEEDS, isSolvedForm } from "./helpers/solved-forms";
+import { ASSEMBLY_SEEDS, isSeededForm } from "./helpers/solved-forms";
 import {
-	extractVertices,
-	inOpening,
+	BERTH_SIDES,
 	openingOf,
 	sampleCylinder,
 	spinningOpeningPoints,
-	vertexInsideProxy,
+	verticesOutsideProxy,
 } from "./helpers/station-proxy-measure";
 import { codeOf } from "./lib/source-scan";
 
@@ -81,7 +76,7 @@ const VERTEX_TOLERANCE_KM = PROXY_VERTEX_TOLERANCE_KM;
 
 /**
  * The rows that build a mesh per plan or sample the whole opening run for
- * for seconds, so bun's 5 s default would fail them on a slower machine for
+ * seconds, so bun's 5 s default would fail them on a slower machine for
  * load rather than for a defect.
  */
 const HEAVY_ROW_MS = 30_000;
@@ -89,15 +84,9 @@ const HEAVY_ROW_MS = 30_000;
 /** Berth seeds swept on their own, at assembly seed zero. */
 const BERTH_SEEDS = [0, 1, 2, 7];
 
-/**
- * The berth seeds the vertex row pairs with **every** plan: one of each
- * parity, because the outpost's seeded berth stands port on an even seed and
- * starboard on an odd one (`stationInterior`), and a plan measured with its
- * berth on one side says nothing about the other. The rows that read only the
- * proxy pair each plan with berth seed 0: the proxy does not read the berth
- * seed, and a row below says so.
- */
-const BERTH_SIDES = [0, 1];
+// The vertex row pairs every plan with `BERTH_SIDES`, one berth seed of each
+// parity. The rows that read only the proxy pair each plan with berth seed 0:
+// the proxy does not read the berth seed, and a row below says so.
 
 /** `[berthSeed, assemblySeed]` pairs a form is measured at. */
 function seedPairs(
@@ -105,7 +94,7 @@ function seedPairs(
 	form: (typeof SELECTED_FORM)[StationType],
 	sides: readonly number[] = [0],
 ): [number, number][] {
-	const assembly = isSolvedForm(type, form) ? ASSEMBLY_SEEDS : [0];
+	const assembly = isSeededForm(type, form) ? ASSEMBLY_SEEDS : [0];
 	return [
 		...assembly.flatMap((seed) =>
 			sides.map((side): [number, number] => [side, seed]),
@@ -168,10 +157,12 @@ describe("station proxy budget (collision.md §9.1.11)", () => {
 						berthSeed,
 						assemblySeed,
 					);
-					const offenders = extractVertices(mesh, type).filter(
-						(vertex) =>
-							!inOpening(opening, vertex.v) &&
-							!vertexInsideProxy(proxy!, type, vertex, VERTEX_TOLERANCE_KM),
+					const offenders = verticesOutsideProxy(
+						mesh,
+						type,
+						proxy!,
+						opening,
+						VERTEX_TOLERANCE_KM,
 					);
 					if (offenders.length > 0) {
 						const sample = offenders
@@ -298,7 +289,7 @@ describe("station proxy budget (collision.md §9.1.11)", () => {
 		// If a form starts reading it, this row says so.
 		for (const type of TYPES) {
 			const form = SELECTED_FORM[type];
-			const assembly = isSolvedForm(type, form) ? ASSEMBLY_SEEDS : [0];
+			const assembly = isSeededForm(type, form) ? ASSEMBLY_SEEDS : [0];
 			for (const assemblySeed of assembly) {
 				const base = JSON.stringify(stationProxy(type, form, 0, assemblySeed));
 				for (const berthSeed of BERTH_SEEDS) {
@@ -355,15 +346,12 @@ describe("station proxy budget (collision.md §9.1.11)", () => {
 					proxy.spinning.length,
 				);
 				const mesh = buildStationForm("refinery", form, GREY, 0, assemblySeed);
-				const uncovered = extractVertices(mesh, "refinery").filter(
-					(vertex) =>
-						!inOpening(opening, vertex.v) &&
-						!vertexInsideProxy(
-							withoutCells,
-							"refinery",
-							vertex,
-							VERTEX_TOLERANCE_KM,
-						),
+				const uncovered = verticesOutsideProxy(
+					mesh,
+					"refinery",
+					withoutCells,
+					opening,
+					VERTEX_TOLERANCE_KM,
 				);
 				expect(uncovered.length).toBeGreaterThan(0);
 			}

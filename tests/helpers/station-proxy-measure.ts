@@ -4,7 +4,7 @@
  * it in `tests/station-proxy.test.ts` and by `scripts/measure-station-proxy.ts`,
  * which reprints it over a wider seed spread. It lives under `tests/helpers/`
  * for the reason `station-rows.ts` gives: the dependency points from the
- * operator tooling into the guarded tier, never the other way — and a script
+ * operator tooling into the gated suite, never the other way — and a script
  * with its own copy of the vertex walk, the opening or the frame rule would be
  * measuring something the test does not.
  */
@@ -20,9 +20,16 @@ import { STATION_SILHOUETTE_KM } from "../../src/station-mesh";
 import {
 	type ProxyPrimitive,
 	type StationProxy,
-	proxyContains,
 	proxyDistanceKm,
 } from "../../src/station-proxy";
+
+/**
+ * The berth seeds a vertex measurement pairs with **every** plan: one of each
+ * parity, because the outpost's seeded berth stands port on an even seed and
+ * starboard on an odd one (`stationInterior`), and a plan measured with its
+ * berth on one side says nothing about the other.
+ */
+export const BERTH_SIDES: readonly number[] = [0, 1];
 
 // ---------------------------------------------------------------------------
 // The opening, read from the interior catalogue — never from the proxy
@@ -243,16 +250,10 @@ export function framePrimitives(
 export function vertexInsideProxy(
 	proxy: StationProxy,
 	type: StationType,
-	{ v, spun }: NamedVertex,
+	vertex: NamedVertex,
 	tolerance: number,
 ): boolean {
-	return proxyContains(
-		framePrimitives(proxy, type, spun),
-		v.x,
-		v.y,
-		v.z,
-		tolerance,
-	);
+	return vertexOvershootKm(proxy, type, vertex) <= tolerance;
 }
 
 /**
@@ -269,4 +270,23 @@ export function vertexOvershootKm(
 	for (const p of framePrimitives(proxy, type, spun))
 		d = Math.min(d, proxyDistanceKm(p, v.x, v.y, v.z));
 	return d;
+}
+
+/**
+ * The drawn vertices outside the opening that no primitive of their own frame
+ * holds within the tolerance: what the vertex rows count. One copy, so the
+ * rows that read it cannot disagree about what the opening exempts.
+ */
+export function verticesOutsideProxy(
+	built: { root: THREE.Object3D; spinner: THREE.Object3D },
+	type: StationType,
+	proxy: StationProxy,
+	opening: Opening,
+	tolerance: number,
+): NamedVertex[] {
+	return extractVertices(built, type).filter(
+		(vertex) =>
+			!inOpening(opening, vertex.v) &&
+			!vertexInsideProxy(proxy, type, vertex, tolerance),
+	);
 }

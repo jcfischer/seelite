@@ -5,7 +5,9 @@
  * `docs/specs/collision.md` §2.2 is the contract. This module is Three-free
  * and imports nothing from the renderer, for the reason `station.ts`'s header
  * gives — the authoritative world is float64 kilometres outside the scene
- * graph. The renderer never reads it; the sim does.
+ * graph. The renderer never reads it. Nothing in `src/` reads it yet either:
+ * it is data with no caller until the collision build reads it, and until
+ * then only the rows that measure it hold it.
  *
  * **Where it lives.** Beside `STATION_GEOMETRY` (`station.ts`) and the
  * interior catalogue (`station-interior.ts`). Each form's solid is written down
@@ -34,10 +36,10 @@
  * The hand-run half is `scripts/measure-station-proxy.ts`, which shares the
  * test's vertex walk, opening and frame rule. Run as
  * `bun scripts/measure-station-proxy.ts 1200 <0|1200> <refinery|outpost>` —
- * four runs, 2–3.5 minutes each — it read no plan at assembly seeds 0–2399,
- * berth on either side, with a vertex past the test's 60 m tolerance: the
- * Works' worst 44.1 m, the Salvage's 36.1 m (2026-10-03, on the commit that
- * carries this paragraph). A plan outside that range is not measured.
+ * four runs over assembly seeds 0–2399. The figures are not restated here:
+ * `docs/findings/station-proxy-wide-sweep.md` records the commit they were
+ * taken on, the commands and the output verbatim, and a re-run replaces it. A
+ * plan outside the range it names is not measured.
  *
  * **What it turns with.** `spinning` primitives are in the spinning member's
  * frame. `static` primitives are in the static frame — only non-empty for the
@@ -575,7 +577,7 @@ function refineryWorksProxy(assemblySeed: number): StationProxy {
 }
 
 // ---------------------------------------------------------------------------
-// Outpost E — Salvage (solved form, selected)
+// Outpost E — Salvage (grown form, selected)
 // ---------------------------------------------------------------------------
 
 /**

@@ -104,7 +104,8 @@ capsules and oriented boxes — in the station's own frame, in kilometres.
 - **Where it lives.** A Three-free module beside `STATION_GEOMETRY` and the
   interior catalogue. The renderer never reads it. The build names the module:
   `src/station-proxy.ts` (node #662), measured by `tests/station-proxy.test.ts`
-  and, over a wider seed spread by hand, `scripts/measure-station-proxy.ts`.
+  and, over a wider seed spread by hand, `scripts/measure-station-proxy.ts`,
+  whose last run `docs/findings/station-proxy-wide-sweep.md` records.
 - **What it is a function of.** `(type, form, berthSeed, assemblySeed)`. What
   a seeded form's proxy reads depends on where its plan lives:
   - A form solved by `placementsOf` (the Works) has its proxy derived from
