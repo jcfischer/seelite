@@ -110,8 +110,19 @@ only where its box line, or one of the two lines a step inward of it, misses. `s
 `ventPlacement`. `tests/vent-placement.test.ts` holds the stored row to a fresh
 measurement, holds every line to the metal, and holds every pair pure on every
 hull. A moved arm moves the couple, so §3.4's shares are solved against
-`coupleArms` and not against the envelope. No hull's handling moved. The
-instrument prints each arm as a share of the box's.
+`coupleArms` and not against the envelope. Every composed demand is unchanged:
+a pair fires as a pure couple or a pure force, as before. The instrument prints
+each arm as a share of the box's.
+
+**A lone vent is no longer pure, by the principal's ruling (O4, 2026-10-03).**
+A roll pair slid fore or aft is still a couple. But one roll vent fired alone
+now pitches as well as rolls, by up to 4.6 times its roll torque on the
+voyager. One yaw or pitch vent off the centreline also rolls a little (up to
+0.33 times, on the tug). Before #636 every lone vent's torque was on its own
+axis. Only §3.5's per-vent commands and §3.7's vent health reach a lone vent.
+The alternative kept the roll pair at the centre station and stood it in from
+the box. A lone vent stayed pure, but the roll share rose by up to 413%
+(interceptor). The principal chose the slide.
 
 ### 3.3 Each hull declares its vents
 
