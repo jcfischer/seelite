@@ -137,7 +137,7 @@ command ships an `unbound` placeholder row, because a rebind moves a trigger and
 the store saves moves, so a command with no row could never be bound. It is
 held, and binds to a key only: a held pad button has no reader yet (#496).
 
-**Not ruled, and taken as the conservative reading by #620:**
+**Ruled by the principal on 2026-10-03, accepting what #620 built:**
 
 - **The pad.** The left stick's vertical axis was the one free axis, so it
   carries the vertical strafe (up is up). The lateral strafe has no pad axis

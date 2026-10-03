@@ -105,7 +105,7 @@ const pair = (plus: boolean, minus: boolean) =>
  *   main drive and `control` the retro vents while held, and released the
  *   drive stops — the lever is not a force.
  *
- * **Not ruled, and taken here as the conservative reading (#620):** with the
+ * **Ruled by the principal on 2026-10-03, as #620 built it:** with the
  * assist off the lever does not move, so turning the assist back on resumes
  * the speed it was set to; and the triggers are an analog force on the same
  * axis as the keys, because a trim of a lever that does not act would be an

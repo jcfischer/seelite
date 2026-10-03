@@ -363,7 +363,7 @@ describe("#283's law: the vertical strafe on the left stick's free axis", () => 
 			},
 		]);
 		expect(stick("fly.strafeVentral")[0]).toMatchObject({ half: "+" });
-		// Not ruled: the pad has no free axis for the lateral strafe (#620).
+		// Ruled 2026-10-03: the lateral strafe is on the arrows only (#620).
 		expect(stick("fly.strafePort")).toEqual([]);
 		expect(stick("fly.strafeStarboard")).toEqual([]);
 	});

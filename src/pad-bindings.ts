@@ -361,8 +361,8 @@ export interface PadFlightAxes {
 	 * The right stick is pitch and yaw, the left stick's horizontal is roll and
 	 * the triggers are the throttle, all flown and accepted on #283, so the
 	 * strafe takes what was left rather than moving any of them. That leaves
-	 * the lateral strafe with no axis on the pad at all, and where it goes is
-	 * the principal's to rule (#620); until then it is the arrows' alone.
+	 * the lateral strafe with no axis on the pad at all, and the principal
+	 * ruled it the arrows' alone (2026-10-03, #620).
 	 */
 	readonly heave: number;
 }

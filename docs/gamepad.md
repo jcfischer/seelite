@@ -276,8 +276,8 @@ evidence, and #283 does not close without it.
   cursor rather than through their letters.
 - **Strafe sideways, or fire one vent.** The left stick's vertical axis was
   the one free axis, and it strafes up and down (#620). The lateral strafe has
-  no axis left without moving one #283 accepted, so it stays on the arrows
-  until the principal rules where it goes. A vent slot's own command is held,
+  no axis left without moving one #283 accepted, so it is on the arrows
+  only, by the principal's ruling (2026-10-03). A vent slot's own command is held,
   and a held pad button has no reader yet (#496), so those bind to keys only.
 - **Rebind a stick, a trigger or a held button.** The `Controls` tab rebinds
   since #381 S4, and a pad button can be moved there like a key — but the
