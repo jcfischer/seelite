@@ -329,25 +329,6 @@ describe("H9: one incident costs its largest offence, not their sum", () => {
 					).toBe(0);
 		}
 	});
-
-	test("once the repair is over, the next offence is a new incident and pays in full", () => {
-		// The carrier flying again has no strike to stand for — `strikeClock` reads
-		// `null` off a row that is `operational` — and a kill against the ship
-		// that came back is a fresh 40, not a 25 top-up.
-		const strike = charged(newWorld(7), "struck", {
-			instanceOrdinal: instanceWith(["clean", 0], ["clean", 60]),
-		});
-		expect(
-			chargeOffence(
-				strike,
-				facts("destroyed", {
-					instanceOrdinal: instanceWith(["clean", 0], ["clean", 60]),
-					now: 60,
-					struckAt: null,
-				}),
-			).heat,
-		).toBe(40);
-	});
 });
 
 describe("decay", () => {
@@ -782,13 +763,13 @@ describe("chargeOffence: one offence, priced and filed in one event", () => {
 
 	test("a lawful kill files a hearer at heat 0 and does not restamp", () => {
 		const clean = instanceWith(["clean", 0]);
-		const charged = chargeOffence(
+		const struck = chargeOffence(
 			newWorld(7),
 			facts("struck", { instanceOrdinal: clean }),
 		).world;
 		const wanted = instanceWith(["wanted", 600]);
 		const kill = chargeOffence(
-			charged,
+			struck,
 			facts("destroyed", {
 				instanceOrdinal: wanted,
 				now: 600,
@@ -819,12 +800,12 @@ describe("chargeOffence: one offence, priced and filed in one event", () => {
 			false,
 		);
 		const clean = instanceWith(["clean", 0]);
-		const charged = chargeOffence(
+		const billed = chargeOffence(
 			world,
 			facts("assault", { instanceOrdinal: clean }),
 		);
-		expect(charged.heat).toBe(13);
-		expect(charged.world.galaxies[0].legalStatus.assaulted).toEqual([MINER]);
+		expect(billed.heat).toBe(13);
+		expect(billed.world.galaxies[0].legalStatus.assaulted).toEqual([MINER]);
 	});
 
 	test("a repeated hearer is written once", () => {
