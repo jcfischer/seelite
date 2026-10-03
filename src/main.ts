@@ -309,6 +309,16 @@ import {
 	stepWorld,
 	thrustShares,
 } from "./sim";
+import {
+	EMPTY_BANK,
+	FlickMeter,
+	MOUSE_RAD_PER_PX,
+	type PointerBank,
+	asked,
+	pointerImpulse,
+	pointerTuningFrom,
+	settleBank,
+} from "./pointer";
 import { AttitudeFollower } from "./attitude-hold";
 import {
 	heldVents,
@@ -1312,12 +1322,12 @@ const browserPlatform = (): string =>
 	(navigator as Navigator & { userAgentData?: { platform?: string } })
 		.userAgentData?.platform || navigator.platform;
 
-const MOUSE_RAD_PER_PX = 0.0022;
-
-/** How far a single frame's mouse movement may turn the ship, radians. A
- *  flicked pointer or a re-focused window can deliver a delta of hundreds of
- *  pixels in one event, and without this the ship spins. */
-const MOUSE_MAX_STEP = 0.12;
+/**
+ * The pointer's law (#641), from `?pointer=carry` with `pointerTau` and
+ * `pointerCap`: `src/pointer.ts` owns both arms. A prototype's open
+ * question, flown by hand; the default is the law that shipped.
+ */
+const POINTER_TUNING = pointerTuningFrom(window.location.search);
 
 /** The cockpit camera's offset from the hull's centre, kilometres — 8 metres
  *  forward, so the view is from the nose rather than from inside the cube. */
@@ -2336,6 +2346,53 @@ class Game {
 		perf: flightPerformance(this.flownHull),
 	};
 
+	/** Everything the pointer holds, gone: the delta, the `carry` bank and the
+	 *  flick being read. The one place besides `takePointer` that zeroes the
+	 *  delta, so no reset can leave a bank behind (#641). */
+	private dropPointer() {
+		this.mouseDx = 0;
+		this.mouseDy = 0;
+		this.pointerBank = EMPTY_BANK;
+		this.flickMeter.reset();
+	}
+
+	/** This frame's pointer delta, consumed. */
+	private takePointer(): { dx: number; dy: number } {
+		const taken = { dx: this.mouseDx, dy: this.mouseDy };
+		this.mouseDx = 0;
+		this.mouseDy = 0;
+		return taken;
+	}
+
+	/**
+	 * #641's flight-test readout: the pointer law, the speed at which this
+	 * hull's couple stops paying a delta in full, and the last flick — its
+	 * peak speed and how much of what it asked for the vents paid. Pasted from
+	 * the console as `__seelite.pointerReadout`.
+	 */
+	get pointerReadout() {
+		const a = this.flownPerformance.angularAuthority;
+		const last = this.flickMeter.last;
+		return {
+			law: POINTER_TUNING.law,
+			tauS: POINTER_TUNING.tauS,
+			capRadS: POINTER_TUNING.capRadS,
+			hull: this.flownHull,
+			assist: this.assist,
+			couplePxS: {
+				pitch: Math.round(a.pitch / MOUSE_RAD_PER_PX),
+				yaw: Math.round(a.yaw / MOUSE_RAD_PER_PX),
+			},
+			lastFlick: last && {
+				peakPxS: Math.round(last.peakPxS),
+				askedRadS: +last.askedRadS.toFixed(3),
+				deliveredRadS: +last.deliveredRadS.toFixed(3),
+				paid: +(last.deliveredRadS / last.askedRadS).toFixed(2),
+				durationS: +last.durationS.toFixed(2),
+			},
+		};
+	}
+
 	private get flownPerformance(): FlightPerformance {
 		if (this.flownPerformanceOf.hull !== this.flownHull)
 			this.flownPerformanceOf = {
@@ -2578,6 +2635,9 @@ class Game {
 	 *  rate rather than at the hand's speed. */
 	private mouseDx = 0;
 	private mouseDy = 0;
+	/** What the `carry` arm still asks for (#641); empty on `drop`. */
+	private pointerBank: PointerBank = EMPTY_BANK;
+	private readonly flickMeter = new FlickMeter();
 	/** The selectable bodies, in display order. Invalidated by changing system,
 	 *  which is why this is a field rather than a `readonly` built in the
 	 *  constructor — `performJump` clears it (#187). */
@@ -11549,8 +11609,7 @@ class Game {
 		this.rates = { pitch: 0, yaw: 0, roll: 0 };
 		this.attitudeStep = NO_ATTITUDE;
 		this.computerFollower.reset();
-		this.mouseDx = 0;
-		this.mouseDy = 0;
+		this.dropPointer();
 		this.chaseYaw = 0;
 	}
 
@@ -13582,9 +13641,8 @@ class Game {
 			// delivered it as a `MOUSE_MAX_STEP` kick on the first frame after
 			// launch. Docked at the station console is exactly the case this
 			// branch's reversal is about, and the comment there claimed the
-			// delta was consumed. Sage found it.
-			this.mouseDx = 0;
-			this.mouseDy = 0;
+			// delta was consumed. Sage found it. The `carry` bank goes with it.
+			this.dropPointer();
 			// Same reason as the delta above: `stepScan` runs on the flight tail,
 			// so this branch is a way off it. A charge banked before docking would
 			// otherwise wait out the whole visit and complete on the first frame
@@ -13734,8 +13792,7 @@ class Game {
 			: 1;
 
 		if (this.stepDockingComputer(dt, approaches)) {
-			this.mouseDx = 0;
-			this.mouseDy = 0;
+			this.dropPointer();
 			if (FLIGHT_SOUND.arms === "legacy") this.audio.ambient(this.throttle);
 			// The computer flies the lever, as it did before the strafe keys:
 			// a key held while it flies has already cancelled it above.
@@ -13765,15 +13822,12 @@ class Game {
 		// said the reason "was never about the device", which overreached in the
 		// other direction; sage caught that.
 		const flying = !handsHeld && contextFliesShip(this.padContext());
+		const { dx, dy } = this.takePointer();
+		// A suspended pointer suspends the `carry` bank with it (#641).
+		if (!flying) this.dropPointer();
 		const impulse = flying
-			? {
-					pitch: clampAbs(-this.mouseDy * MOUSE_RAD_PER_PX, MOUSE_MAX_STEP),
-					yaw: clampAbs(-this.mouseDx * MOUSE_RAD_PER_PX, MOUSE_MAX_STEP),
-					roll: 0,
-				}
+			? pointerImpulse(POINTER_TUNING, this.pointerBank, dx, dy)
 			: { pitch: 0, yaw: 0, roll: 0 };
-		this.mouseDx = 0;
-		this.mouseDy = 0;
 
 		// Rotation carries momentum (`stepAngular`): the ship eases into a turn
 		// and, with the assist on, eases out of it. Setting the rate straight from
@@ -13792,6 +13846,21 @@ class Game {
 			this.assist,
 			heldVents(pilotHeld),
 		);
+		if (flying) {
+			const unspent = this.attitudeStep.pointerUnspent;
+			this.pointerBank = settleBank(POINTER_TUNING, unspent, dt);
+			this.flickMeter.frame(
+				dx,
+				dy,
+				dt,
+				asked(dx, dy),
+				{
+					pitch: impulse.pitch - unspent.pitch,
+					yaw: impulse.yaw - unspent.yaw,
+				},
+				Math.abs(this.pointerBank.pitch) + Math.abs(this.pointerBank.yaw),
+			);
+		}
 
 		// Held rather than stepped, for the same reason throttle is: an angle the
 		// player is choosing by eye wants a rate, not a ladder of fixed stops.
@@ -18313,10 +18382,6 @@ function bloomResolution() {
 		quantised(window.innerHeight / 2),
 	);
 }
-
-/** Clamp a signed value to ±`limit` — the mouse's per-frame guard. */
-const clampAbs = (v: number, limit: number): number =>
-	Math.min(limit, Math.max(-limit, v));
 
 /** Sim seconds as `h:mm:ss`. The clock is authoritative for body positions
  *  (spec §7.3), so it is worth being able to read it off the screen. */
