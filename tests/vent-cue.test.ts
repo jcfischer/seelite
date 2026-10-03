@@ -96,6 +96,24 @@ describe("§3.8.1 a full burn toward a commanded speed is not saturation", () =>
 			}
 		});
 
+	for (const dt of STEPS)
+		test(`astern above the cap is saturated too, dt ${dt.toFixed(4)}`, () => {
+			// Sage round 1: a one-sided guard clamped an astern overspeed and
+			// never flagged it, and the only over-cap row ran forward.
+			for (const id of HULL_IDS) {
+				const perf = flightPerformance(id);
+				const ship: Ship = { pos: v3(), vel: scale(NOSE, -4) };
+				const first = stepFlight(
+					ship,
+					control({ demand: speedDemand(1) }),
+					dt,
+					perf,
+				);
+				expect(first.saturated.surge).toBe(true);
+				expect(first.firing.main).toBe(1);
+			}
+		});
+
 	test("the firing is the same as before the clamp: the clamp moved only the flag", () => {
 		// A throttle step on the courier fires the main drive at full, which
 		// is what `fireAxis` gave the unclamped fraction too.

@@ -158,18 +158,37 @@ export function ventThroats(root: THREE.Object3D, id: HullId): Throat[] {
 	// The vertices, in the root's frame, for the lines that pass the hull
 	// without meeting it. Instanced detail is left out: it is greeble, not the
 	// metal a vent is mounted through.
-	const vertices: THREE.Vector3[] = [];
-	for (const mesh of meshes) {
-		if ((mesh as THREE.InstancedMesh).isInstancedMesh) continue;
-		const position = mesh.geometry.getAttribute("position");
-		if (!position) continue;
-		for (let i = 0; i < position.count; i++)
-			vertices.push(
-				new THREE.Vector3()
-					.fromBufferAttribute(position as THREE.BufferAttribute, i)
-					.applyMatrix4(mesh.matrixWorld),
-			);
-	}
+	// One flat array, read only if some line misses the hull: a hull has tens
+	// of thousands of vertices, and a `Vector3` each was the hull swap's cost.
+	let vertices: Float64Array | null = null;
+	const vertexArray = (): Float64Array => {
+		if (vertices) return vertices;
+		const solid = meshes.filter(
+			(m) =>
+				!(m as THREE.InstancedMesh).isInstancedMesh &&
+				m.geometry.getAttribute("position"),
+		);
+		const total = solid.reduce(
+			(n, m) => n + m.geometry.getAttribute("position").count,
+			0,
+		);
+		const out = new Float64Array(total * 3);
+		const q = new THREE.Vector3();
+		let k = 0;
+		for (const mesh of solid) {
+			const position = mesh.geometry.getAttribute(
+				"position",
+			) as THREE.BufferAttribute;
+			for (let i = 0; i < position.count; i++, k += 3) {
+				q.fromBufferAttribute(position, i).applyMatrix4(mesh.matrixWorld);
+				out[k] = q.x;
+				out[k + 1] = q.y;
+				out[k + 2] = q.z;
+			}
+		}
+		vertices = out;
+		return out;
+	};
 
 	const caster = new THREE.Raycaster();
 	const throats: Throat[] = [];
@@ -178,21 +197,16 @@ export function ventThroats(root: THREE.Object3D, id: HullId): Throat[] {
 		const exhaust = dir.clone().negate();
 		const reachKm = PLUME_REACH[vent.family] * lengthKm;
 		if (vent.family === "main" && bells.length > 0) {
-			for (const bell of bells) {
-				bell.geometry.computeBoundingBox();
-				const bellBox = (bell.geometry.boundingBox as THREE.Box3)
-					.clone()
-					.applyMatrix4(bell.matrixWorld);
+			for (const at of bellCentres(bells))
 				throats.push({
 					slot: vent.slot,
 					family: vent.family,
-					at: bellBox.getCenter(new THREE.Vector3()),
+					at,
 					exhaust: exhaust.clone(),
 					reachKm,
 					placed: "bell",
 					gapKm: 0,
 				});
-			}
 			continue;
 		}
 		const table = new THREE.Vector3(...vent.posKm).add(centre);
@@ -200,28 +214,9 @@ export function ventThroats(root: THREE.Object3D, id: HullId): Throat[] {
 		// first metal met is where the gas leaves the hull.
 		caster.set(table.clone().addScaledVector(dir, -2 * reach), dir);
 		const hit = caster.intersectObjects(meshes, false).find((h) => h.face);
-		let along: number;
-		let gapKm = 0;
-		if (hit) along = hit.point.clone().sub(table).dot(dir);
-		else {
-			// The line passes the hull. Its closest approach to the metal, and of
-			// the vertices that close, the one furthest out on the exhaust side.
-			// Loops, not spreads: a hull has tens of thousands of vertices.
-			const r = new THREE.Vector3();
-			const ts = new Float64Array(vertices.length);
-			const perps = new Float64Array(vertices.length);
-			gapKm = Number.POSITIVE_INFINITY;
-			vertices.forEach((q, i) => {
-				r.copy(q).sub(table);
-				ts[i] = r.dot(dir);
-				perps[i] = r.addScaledVector(dir, -ts[i]).length();
-				gapKm = Math.min(gapKm, perps[i]);
-			});
-			const band = gapKm + 0.01 * reach;
-			along = Number.POSITIVE_INFINITY;
-			for (let i = 0; i < ts.length; i++)
-				if (perps[i] <= band) along = Math.min(along, ts[i]);
-		}
+		const { along, gapKm } = hit
+			? { along: hit.point.clone().sub(table).dot(dir), gapKm: 0 }
+			: closestApproach(vertexArray(), table, dir, 0.01 * reach);
 		throats.push({
 			slot: vent.slot,
 			family: vent.family,
@@ -233,6 +228,49 @@ export function ventThroats(root: THREE.Object3D, id: HullId): Throat[] {
 		});
 	}
 	return throats;
+}
+
+/** The centre of each drive bell's glow, in the root's frame. */
+function bellCentres(bells: readonly THREE.Mesh[]): THREE.Vector3[] {
+	return bells.map((bell) => {
+		bell.geometry.computeBoundingBox();
+		return (bell.geometry.boundingBox as THREE.Box3)
+			.clone()
+			.applyMatrix4(bell.matrixWorld)
+			.getCenter(new THREE.Vector3());
+	});
+}
+
+/**
+ * Where a line that passes the hull comes closest to it: `gapKm` is its
+ * closest approach to any vertex, and `along` — distance from `from` along
+ * `dir` — is, of the vertices within `slackKm` of that, the one furthest out
+ * on the exhaust side, so the gas leaves past the metal rather than through it.
+ * `xyz` is a flat vertex array.
+ */
+function closestApproach(
+	xyz: Float64Array,
+	from: THREE.Vector3,
+	dir: THREE.Vector3,
+	slackKm: number,
+): { along: number; gapKm: number } {
+	const n = xyz.length / 3;
+	const ts = new Float64Array(n);
+	const perps = new Float64Array(n);
+	let gapKm = Number.POSITIVE_INFINITY;
+	for (let i = 0; i < n; i++) {
+		const rx = xyz[3 * i] - from.x;
+		const ry = xyz[3 * i + 1] - from.y;
+		const rz = xyz[3 * i + 2] - from.z;
+		const t = rx * dir.x + ry * dir.y + rz * dir.z;
+		ts[i] = t;
+		perps[i] = Math.hypot(rx - t * dir.x, ry - t * dir.y, rz - t * dir.z);
+		gapKm = Math.min(gapKm, perps[i]);
+	}
+	let along = Number.POSITIVE_INFINITY;
+	for (let i = 0; i < n; i++)
+		if (perps[i] <= gapKm + slackKm) along = Math.min(along, ts[i]);
+	return { along, gapKm };
 }
 
 /** The plume set for one hull: the object the renderer places, and the step
@@ -322,7 +360,7 @@ export function buildVentPlumes(root: THREE.Object3D, id: HullId): VentPlumes {
 	points.frustumCulled = false;
 	points.castShadow = false;
 	points.receiveShadow = false;
-	points.userData.hullId = id;
+	points.userData.plumesOf = id;
 	const target = new THREE.Vector2();
 	points.onBeforeRender = (renderer, _scene, camera) => {
 		const rt = renderer.getRenderTarget();
@@ -348,23 +386,30 @@ export function buildVentPlumes(root: THREE.Object3D, id: HullId): VentPlumes {
 		return [u, w] as const;
 	});
 	const colour = new THREE.Color();
-	const linear = (v: number, k: number): [number, number, number] => {
+	/** The ramp at `v`, linear and scaled by `k`, written into `heats` at `i`. */
+	const writeHeat = (i: number, v: number, k: number) => {
 		const [r, g, b] = exhaustRamp(v);
 		colour.setRGB(r, g, b, THREE.SRGBColorSpace);
-		return [colour.r * k, colour.g * k, colour.b * k];
+		heats[i] = colour.r * k;
+		heats[i + 1] = colour.g * k;
+		heats[i + 2] = colour.b * k;
 	};
+	const at = new THREE.Vector3();
+	let litBefore = -1;
 
 	const update = (firing: VentLevels, t: number): number => {
-		let lit = 0;
+		const lit = throats.filter((th) => (firing[th.slot] ?? 0) > 0).length;
+		// Nothing firing now or last time: the buffers already say so.
+		if (lit === 0 && litBefore === 0) return 0;
+		litBefore = lit;
 		throats.forEach((throat, n) => {
 			const level = Math.max(0, Math.min(1, firing[throat.slot] ?? 0));
-			if (level > 0) lit++;
 			const base = n * PER_THROAT;
 			const [u, w] = across[n];
 			// The glow at the throat: the vent's own heat, steady while it fires.
-			positions.set([throat.at.x, throat.at.y, throat.at.z], base * 3);
+			throat.at.toArray(positions, base * 3);
 			sizes[base] = GLOW_SIZE * throat.reachKm * Math.sqrt(level);
-			heats.set(linear(0, PLUME_PEAK * level), base * 3);
+			writeHeat(base * 3, 0, PLUME_PEAK * level);
 			for (let i = 0; i < PLUME_PARTICLES; i++) {
 				const p = plumeParticle(
 					i,
@@ -374,28 +419,15 @@ export function buildVentPlumes(root: THREE.Object3D, id: HullId): VentPlumes {
 					level,
 				);
 				const k = (base + 1 + i) * 3;
-				positions[k] =
-					throat.at.x +
-					throat.reachKm *
-						(throat.exhaust.x * p.along +
-							u.x * p.across[0] +
-							w.x * p.across[1]);
-				positions[k + 1] =
-					throat.at.y +
-					throat.reachKm *
-						(throat.exhaust.y * p.along +
-							u.y * p.across[0] +
-							w.y * p.across[1]);
-				positions[k + 2] =
-					throat.at.z +
-					throat.reachKm *
-						(throat.exhaust.z * p.along +
-							u.z * p.across[0] +
-							w.z * p.across[1]);
+				at.copy(throat.at)
+					.addScaledVector(throat.exhaust, throat.reachKm * p.along)
+					.addScaledVector(u, throat.reachKm * p.across[0])
+					.addScaledVector(w, throat.reachKm * p.across[1])
+					.toArray(positions, k);
 				sizes[base + 1 + i] =
 					throat.reachKm *
 					(PUFF_SIZE_BIRTH + (PUFF_SIZE_DEATH - PUFF_SIZE_BIRTH) * p.age);
-				heats.set(linear(p.age, PLUME_PEAK * p.strength), k);
+				writeHeat(k, p.age, PLUME_PEAK * p.strength);
 			}
 		});
 		for (const name of ["position", "sizeKm", "heat"])

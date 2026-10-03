@@ -70,11 +70,27 @@ describe("every throat is the vent the table names", () => {
 		}
 	});
 
-	test("a line that meets the hull puts its throat on the metal", () => {
-		for (const id of HULL_IDS)
-			for (const t of ventThroats(rootOf(id), id))
-				if (t.placed === "line" && t.gapKm === 0)
-					expect(Number.isFinite(t.at.x)).toBe(true);
+	test("a line that meets the hull puts its throat on the metal, on the exhaust side", () => {
+		// A ray from just outside the throat, along the push, meets metal at
+		// once; the same ray started a hair further out meets nothing sooner.
+		let met = 0;
+		const caster = new THREE.Raycaster();
+		const eps = 1e-6;
+		for (const id of HULL_IDS) {
+			const root = rootOf(id);
+			for (const t of ventThroats(root, id)) {
+				if (t.placed !== "line" || t.gapKm !== 0) continue;
+				met++;
+				const push = t.exhaust.clone().negate();
+				caster.set(t.at.clone().addScaledVector(t.exhaust, eps), push);
+				const hit = caster.intersectObject(root, true).find((h) => h.face);
+				expect(hit).toBeDefined();
+				expect(hit?.distance ?? 1).toBeLessThan(2 * eps);
+			}
+		}
+		// The translation pairs meet metal on most hulls (F1 is about the
+		// attitude pairs), so the row has subjects.
+		expect(met).toBeGreaterThan(50);
 	});
 });
 

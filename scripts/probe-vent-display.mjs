@@ -184,11 +184,44 @@ check(
 
 await setView("cockpit");
 await frames();
-check(
-	"the plumes hide with the hull in the cockpit",
-	(await page.evaluate(() => window.__seelite.ventPlumes.object.visible)) ===
-		false,
-);
+{
+	// Painted, not read off a flag (sage round 1): the cockpit frame drawn
+	// from the firing table against the same frame with nothing firing.
+	const cockpit = await page.evaluate((litDelta) => {
+		const g = window.__seelite;
+		const src = g.renderer.domElement;
+		const W = src.width;
+		const H = src.height;
+		const scratch = document.createElement("canvas");
+		scratch.width = W;
+		scratch.height = H;
+		const ctx = scratch.getContext("2d", { willReadFrequently: true });
+		const firing = { ...g.ventFiring };
+		const frame = (table) => {
+			g.ventFiring = table;
+			g.render(0);
+			ctx.drawImage(src, 0, 0, W, H);
+			return ctx.getImageData(0, 0, W, H).data;
+		};
+		const lit = frame(firing);
+		const quiet = frame({});
+		g.ventFiring = firing;
+		let rose = 0;
+		for (let i = 0; i < lit.length; i += 4) {
+			const d =
+				0.2126 * (lit[i] - quiet[i]) +
+				0.7152 * (lit[i + 1] - quiet[i + 1]) +
+				0.0722 * (lit[i + 2] - quiet[i + 2]);
+			if (d >= litDelta) rose++;
+		}
+		return { firing: Object.keys(firing).length, rose };
+	}, LIT_DELTA);
+	check(
+		"the plumes hide with the hull in the cockpit",
+		cockpit.firing > 0 && cockpit.rose === 0,
+		`${cockpit.firing} vents firing, ${cockpit.rose} pixels rose ≥ ${LIT_DELTA} codes`,
+	);
+}
 
 const pulse = await page.evaluate(async () => {
 	const g = window.__seelite;
@@ -233,7 +266,7 @@ const pulse = await page.evaluate(async () => {
 	const peak = read(latched(now));
 	const trough = read(latched(now - 0.5 / SATURATION_PULSE_HZ));
 	const steady = read({ linear: null, angular: null });
-	return { peak, trough, steady, prograde };
+	return { peak, trough, steady };
 });
 {
 	// Off the page, as every constant a probe compares against is.
