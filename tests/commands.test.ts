@@ -314,10 +314,22 @@ describe("the axis law names which key is which", () => {
 		// sign as pressing a key from the **negative** list, and the mouse half
 		// must land on that list's command. Read the negation out of the
 		// source rather than restating it.
-		const source = codeOf("src/main.ts");
-		const negated = (field: string) =>
-			new RegExp(`${field}:\\s*clampAbs\\(\\s*-this\\.mouse`).test(source);
-		expect({ pitch: negated("pitch"), yaw: negated("yaw") }).toEqual({
+		// Since #641 the negation lives in `src/pointer.ts`'s `asked`, and
+		// `main.ts` hands it the delta as `dx`/`dy` unchanged.
+		const pointer = codeOf("src/pointer.ts");
+		const main = codeOf("src/main.ts");
+		const passedThrough =
+			/dx: this\.mouseDx, dy: this\.mouseDy/.test(main) &&
+			/pointerImpulse\(dx, dy\)/.test(main);
+		const negated = (field: string, px: string) =>
+			passedThrough &&
+			new RegExp(`${field}:\\s*-${px}\\s*\\*\\s*MOUSE_RAD_PER_PX`).test(
+				pointer,
+			);
+		expect({
+			pitch: negated("pitch", "dyPx"),
+			yaw: negated("yaw", "dxPx"),
+		}).toEqual({
 			pitch: true,
 			yaw: true,
 		});
