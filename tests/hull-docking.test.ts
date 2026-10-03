@@ -52,20 +52,12 @@ import {
 } from "../src/station";
 import { berthFits, stationInterior } from "../src/station-interior";
 import { MAX_DT } from "../src/units";
-import { cross, length, scale, v3 } from "../src/vec3";
-import { flyTheComputer } from "./helpers/fly-the-computer";
-
-/** The same deliberately awkward fixture `tests/docking.test.ts` uses: an axis
- *  that agrees with no world axis, so a sign error in `slotBasis` cannot hide
- *  behind convenient coordinates. */
-const AXIS = ((): ReturnType<typeof v3> => {
-	const a = v3(0.37, -0.82, 0.44);
-	return scale(a, 1 / length(a));
-})();
-const REFERENCE = ((): ReturnType<typeof v3> => {
-	const p = cross(AXIS, v3(0, 0, 1));
-	return scale(p, 1 / length(p));
-})();
+import {
+	FIXTURE_AXIS as AXIS,
+	FIXTURE_REFERENCE as REFERENCE,
+	FASTEST_ORBIT_SWING_RAD_PER_S,
+	flyTheComputer,
+} from "./helpers/fly-the-computer";
 
 const fly = (
 	hull: HullId,
@@ -132,7 +124,7 @@ describe("every hull docks while the orbit swings the axis, at MAX_DT (#315)", (
 				axis: AXIS,
 				reference: REFERENCE,
 				dt: MAX_DT,
-				axisSwingRadPerS: (2 * Math.PI) / (90 * 60),
+				axisSwingRadPerS: FASTEST_ORBIT_SWING_RAD_PER_S,
 			});
 			expect({
 				hull,

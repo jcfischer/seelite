@@ -741,8 +741,11 @@ shrinks linearly, as the cone does. So the margin is a measurement over the
 orbits flown, not a law. `scripts/measure-computer-approach.ts` flies every hull
 with a berth at a trade station, at three steps (1/60, 0.05, 0.1 s), four spins
 and orbits from fixed to 45 min (the generator's fastest is 90), and reprints
-the last row below. The first two rows were measured on the builds named, with
-the same sweep:
+only the last row below. The "#315's first build" row is 4ae8704's `docking.ts`
+flown by #318's flier. The "before #315" row was flown on #318's `docking.ts`
+with a temporary switch that turned off both the hysteresis and the thrust gate,
+which leaves `main`'s point-aim law — it was not `main`'s flier, which has no
+`dt` or swing:
 
 | run-in aim | approaches that failed to dock | worst dock | most corridor exits in one run |
 |---|---|---|---|

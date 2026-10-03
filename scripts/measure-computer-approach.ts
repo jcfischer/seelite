@@ -22,27 +22,20 @@ import { HULL_SPECS, type HullId } from "../src/hull";
 import { STATION_GEOMETRY } from "../src/station";
 import { berthFits, stationInterior } from "../src/station-interior";
 import { MAX_DT } from "../src/units";
-import { cross, length, scale, v3 } from "../src/vec3";
 import {
 	type ComputerTraceStep,
+	FASTEST_ORBIT_SWING_RAD_PER_S,
+	FIXTURE_AXIS as AXIS,
+	FIXTURE_REFERENCE as REFERENCE,
 	flyTheComputer,
 } from "../tests/helpers/fly-the-computer";
-
-const AXIS = (() => {
-	const a = v3(0.37, -0.82, 0.44);
-	return scale(a, 1 / length(a));
-})();
-const REFERENCE = (() => {
-	const p = cross(AXIS, v3(0, 0, 1));
-	return scale(p, 1 / length(p));
-})();
 
 const STEPS = [1 / 60, 0.05, MAX_DT];
 const SPINS = [0.6, 1.14, 2, 3];
 const ORBITS: [string, number][] = [
 	["fixed", 0],
 	["240 min", (2 * Math.PI) / (240 * 60)],
-	["90 min", (2 * Math.PI) / (90 * 60)],
+	["90 min", FASTEST_ORBIT_SWING_RAD_PER_S],
 	["45 min", (2 * Math.PI) / (45 * 60)],
 ];
 
