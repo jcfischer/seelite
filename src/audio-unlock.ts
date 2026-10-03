@@ -30,6 +30,14 @@
  * unlock — attaching the music, which is final for the session if it fails —
  * must not run three times.
  *
+ * **The answer may come after the event.** `resume()` is asynchronous, so the
+ * context reads `running` only once its promise settles, never inside the
+ * listener that called it. On a touch that is the only path: the press makes
+ * a suspended context, and the release resumes it. So `tryUnlock` may answer
+ * with a promise, and a promise that settles `true` unlocks exactly as a
+ * synchronous `true` does. One that settles `false`, or rejects, removes
+ * nothing.
+ *
  * **What can check this, and what cannot.** No browser probe in this repo can
  * see the gesture rule: #541 measured that Playwright's Chromium creates an
  * `AudioContext` `running` before any input, and headless WebKit does too, so
@@ -37,7 +45,7 @@
  * The headless half is the listener set, held by `tests/audio-unlock.test.ts`.
  * The rest rests on the specification cited above.
  *
- * This module imports nothing, so the headless tier reads it whole.
+ * This module imports nothing, so a headless test reads it whole.
  */
 
 /** Every event the game listens on to open the sound. */
@@ -52,28 +60,40 @@ export type AudioUnlockEvent = (typeof AUDIO_UNLOCK_EVENTS)[number];
 
 /** The two calls the unlock makes on its target — `window` in the game. */
 export type UnlockTarget = {
-	addEventListener(type: string, listener: () => void): void;
-	removeEventListener(type: string, listener: () => void): void;
+	addEventListener(type: AudioUnlockEvent, listener: () => void): void;
+	removeEventListener(type: AudioUnlockEvent, listener: () => void): void;
 };
 
 /**
  * Listen on `target` for every {@link AUDIO_UNLOCK_EVENTS} event. Each one
  * calls `tryUnlock`, which tries to open the context and answers whether it is
- * running now. On the first `true`, every listener is removed and `onUnlocked`
- * runs, once.
+ * running — now, or by a promise once its `resume()` has settled. On the first
+ * `true`, every listener is removed and `onUnlocked` runs, once.
  */
 export function armAudioUnlock(
 	target: UnlockTarget,
-	tryUnlock: () => boolean,
+	tryUnlock: () => boolean | PromiseLike<boolean>,
 	onUnlocked: () => void,
 ): void {
 	let done = false;
-	const listener = () => {
-		if (done || !tryUnlock()) return;
+	const finish = () => {
+		if (done) return;
 		done = true;
 		for (const type of AUDIO_UNLOCK_EVENTS)
 			target.removeEventListener(type, listener);
 		onUnlocked();
+	};
+	const listener = () => {
+		if (done) return;
+		const answer = tryUnlock();
+		if (answer === true) finish();
+		else if (answer !== false)
+			Promise.resolve(answer).then(
+				(running) => {
+					if (running) finish();
+				},
+				() => {},
+			);
 	};
 	for (const type of AUDIO_UNLOCK_EVENTS)
 		target.addEventListener(type, listener);

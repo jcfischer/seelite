@@ -4586,10 +4586,12 @@ class Game {
 		armAudioUnlock(
 			window,
 			() => {
-				this.audio.ensure();
+				const resumed = this.audio.ensure();
 				// `silent` is the context's own state, so this asks whether the
-				// unlock happened rather than whether it was attempted.
-				return !this.audio.silent;
+				// unlock happened rather than whether it was attempted — now, or
+				// once the `resume()` this input started has settled.
+				if (!this.audio.silent) return true;
+				return resumed ? resumed.then(() => !this.audio.silent) : false;
 			},
 			() => {
 				const ctx = this.audio.context;

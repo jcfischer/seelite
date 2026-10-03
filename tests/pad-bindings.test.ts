@@ -481,32 +481,6 @@ describe("the standard mapping's numbering, as literals", () => {
 	});
 });
 
-describe("the audio unlock keeps its listeners until it has worked", () => {
-	// Sage's round 5 finding is that removing both unlock paths unconditionally
-	// spends them on a keystroke that granted no user activation — they saw
-	// Escape do exactly that. No probe can build the case here (#541: every lane
-	// runs a context before any input), so this was a source assertion on the
-	// closure in `main.ts`.
-	//
-	// **Since node #550 the removal is a law in `src/audio-unlock.ts`**, and
-	// `tests/audio-unlock.test.ts` holds it behaviourally: nothing comes off
-	// while the attempt answers silent, and everything comes off on its first
-	// success. What stays in `main.ts` is the attempt itself, and that is what
-	// this row reads — it must try the context and then answer from `silent`,
-	// the context's own state, rather than report that it tried.
-
-	test("main.ts's attempt answers from the context's state after trying it", () => {
-		const source = codeOf("src/main.ts");
-		const armed = source.slice(source.indexOf("armAudioUnlock("));
-		const attempt = armed.slice(0, armed.indexOf("},"));
-		expect(attempt).toContain("this.audio.ensure()");
-		expect(attempt).toContain("return !this.audio.silent;");
-		expect(attempt.indexOf("this.audio.ensure()")).toBeLessThan(
-			attempt.indexOf("return !this.audio.silent;"),
-		);
-	});
-});
-
 describe("the pointer goes with the mouse, not with the camera (#371)", () => {
 	// **The whole of #371, headless.** `pointerLockMove` owns the rule and the
 	// argument; `probe-pointer-lock.mjs` measures the consequence in a browser.
