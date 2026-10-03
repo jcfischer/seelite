@@ -916,6 +916,20 @@ describe("§9.4 lazy recovery boundaries", () => {
 		expect(a).toBe(c);
 	});
 
+	test("advancing in two steps is the same world as advancing once", () => {
+		// What lets `Game.saveEnvelope` advance only its snapshot (#631): the
+		// live world keeps its last event's clock, and a save taken from it must
+		// be the world an advance written back on every earlier save would have
+		// given — across the completion and on either side of it.
+		const base = underRepair();
+		const once = advanceTo(base, 500);
+		for (const step of [base.gameTime, 60, 70, 300]) {
+			const twice = advanceTo(advanceTo(base, step), 500);
+			expect(twice).toEqual(once);
+			expect(JSON.stringify(twice)).toBe(JSON.stringify(once));
+		}
+	});
+
 	test("an explicit completion at `completesAt` arrives after the lazy one", () => {
 		// §4 materializes the due completion *before* a new event at the same
 		// timestamp, so by the time this is validated there is nothing left to

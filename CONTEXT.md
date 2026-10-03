@@ -204,7 +204,12 @@ player's kill is only the world write, so the module's reach is a little wider
 than what a pilot owns. `Game` keeps the four fields (one save
 schema, #437) and adopts what the module returns; a refusal returns the very
 objects it was given, and a carrier transition that is not the player's kill
-returns the same holdings beside a new world.
+returns the same holdings beside a new world. Since #631 the module also owns
+`adoptEffects`, the rule for what `Game` does once it adopts an outcome at its
+one adopt point: the save, the two console revisions and the repaint, derived
+from which references changed. That rule also takes a world write made outside
+Holdings (the cause `"world"`: an offence and its lazy clear), so its reach is
+wider again than what a pilot owns.
 _Avoid_: purse (`ladder.ts`'s local credits and cargo), ledger (an
 **Incident**'s record of offences)
 
