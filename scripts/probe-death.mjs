@@ -1,15 +1,17 @@
 /**
  * Node #324 part (b)'s death path in the running game, by the principal's
- * ruling O5 (2026-09-14).
+ * ruling O5 (2026-09-14), narrowed by #654 (the principal's Q2 ruling on
+ * #238, 2026-10-03): a death keeps the world and reverts only the commander.
  *
  * The headless rows in `tests/save-store.test.ts` own the store's half: the
- * copy is byte for byte, a permadeath commander is refused, and a retired
- * store writes nothing more. What only the running game can answer is the
- * wiring and the reload:
+ * world at the death beside the last dock's commander, a permadeath
+ * commander refused, and a retired store writing nothing more. What only the
+ * running game can answer is the wiring and the reload:
  *
- * 1. **With a save attached**, a hull at zero reverts `live` to the last dock
- *    and the page reloads into it — the leg's gains are gone and the ship is
- *    whole again.
+ * 1. **With a save attached**, a hull at zero reverts the commander to the
+ *    last dock and the page reloads into it — the leg's credits are gone and
+ *    the ship is whole again, while the leg's world change (heat, written
+ *    through the world's own writer) is still there.
  * 2. **Under `?no-save`**, there is nothing to restore: the ship stays
  *    destroyed, the clock holds, and the Commander overlay opens.
  *
@@ -50,11 +52,21 @@ const armed = await page.evaluate(
 	async ({ dock, leg }) => {
 		const g = window.__seelite;
 		if (!g.saveStore) return { store: false };
-		// The dock checkpoint, then a leg that moved on from it.
+		const ws = await import("/src/world-state.ts");
+		const legal = await import("/src/legal.ts");
+		// The dock checkpoint, then a leg that moved on from it — in the
+		// commander (credits) and in the world (Wanted heat, #654).
 		g.commander.credits = dock;
 		g.saveStore.markDirty();
 		g.saveFlush("dock");
 		await g.saveStore.settled();
+		const standingAtDock = g.legalStanding();
+		g.commerceWorld = ws.setLegalHeat(
+			g.commerceWorld,
+			g.world.system.record.galaxy,
+			(legal.WANTED_HEAT + legal.FUGITIVE_HEAT) / 2,
+			g.world.gameTime,
+		);
 		g.commander.credits = leg;
 		g.saveStore.markDirty();
 		g.saveFlush("jump");
@@ -66,16 +78,20 @@ const armed = await page.evaluate(
 			store: true,
 			live: await read("live"),
 			lastDocked: await read("lastDocked"),
+			standingAtDock,
+			standingOnLeg: g.legalStanding(),
 		};
 	},
 	{ dock: DOCK_CREDITS, leg: LEG_CREDITS },
 );
 
 check(
-	"the fixture: a dock checkpoint behind a leg that moved on",
+	"the fixture: a dock checkpoint behind a leg that moved on, in both halves",
 	armed.store &&
 		armed.lastDocked === DOCK_CREDITS &&
-		armed.live === LEG_CREDITS,
+		armed.live === LEG_CREDITS &&
+		armed.standingAtDock === "clean" &&
+		armed.standingOnLeg === "wanted",
 	JSON.stringify(armed),
 );
 
@@ -106,16 +122,25 @@ if (reloadSeen) {
 			dead: g.dead,
 			whole: c.hull === c.hullMax && c.fore > 0 && c.aft > 0,
 			liveCredits: live?.commander?.state?.credits ?? null,
+			standing: g.legalStanding(),
 		};
 	});
 }
 check(
-	// **Which record boots, not where the ship is.** The fixture writes the
+	// **Which commander boots, not where the ship is.** The fixture writes the
 	// dock record from flight with `saveFlush("dock")`, so the ship it restores
-	// is in flight too; this row proves the reload loads `lastDocked`'s bytes
-	// (sage round 1). A boot parked at a station is `probe-save.mjs`'s.
-	"the reload boots the last-dock record: the leg's credits are gone",
+	// is in flight too; this row proves the reload loads `lastDocked`'s
+	// commander (sage round 1 on #324). A boot parked at a station is
+	// `probe-save.mjs`'s.
+	"the reload boots the last dock's commander: the leg's credits are gone",
 	after?.credits === DOCK_CREDITS && after?.liveCredits === DOCK_CREDITS,
+	JSON.stringify(after),
+);
+check(
+	// #654: the world half is the one the death happened in. The heat the leg
+	// earned is still on the pilot after the reload, as the ruling says.
+	"the world keeps the leg: the heat earned before the death stands",
+	after?.standing === "wanted",
 	JSON.stringify(after),
 );
 check(

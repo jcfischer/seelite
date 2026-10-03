@@ -20,8 +20,10 @@ import {
 	type HoldOutcome,
 	adoptEffects,
 	applyHoldEvent,
+	commanderAfterDeath,
 	holdOf,
 } from "../src/holdings";
+import { newCommanderRecord } from "../src/save-envelope";
 import { HULL_SPECS, type HullId, PLAYER_BASELINE_HULL } from "../src/hull";
 import {
 	LADDER_TOP,
@@ -1121,5 +1123,29 @@ describe("the adopt point (#631)", () => {
 				{ holdings: h, world: advanceTo(world, 60) },
 			).save,
 		).toBe(true);
+	});
+});
+
+describe("#654 — the commander record a death restores", () => {
+	test("the last dock's record, with the play log flown up to the death", () => {
+		const dock = newCommanderRecord("courier");
+		const docked = {
+			...dock,
+			state: { ...dock.state, credits: 100 },
+			ladders: { ...dock.ladders, playedS: 1200 },
+		};
+		const dying = {
+			...docked,
+			state: { ...docked.state, credits: 555 },
+			ladders: {
+				...docked.ladders,
+				banked: { combat: 9, trade: 9, exploration: 9 },
+				playedS: 1800,
+			},
+		};
+		expect(commanderAfterDeath(docked, dying)).toEqual({
+			...docked,
+			ladders: { ...docked.ladders, playedS: 1800 },
+		});
 	});
 });

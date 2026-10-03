@@ -248,6 +248,17 @@ export interface LadderRecord {
 	capstoneAt: number | null;
 }
 
+/**
+ * The record a death restores (#654): the last dock's, so credit and rungs
+ * go back with the credits that bought them — except the play log, which is
+ * the dying record's (#581, closed into #654). `playedS` measures real hours
+ * to a rung, and the seconds flown before a death were played.
+ */
+export const ladderAfterDeath = (
+	dock: LadderRecord,
+	dying: LadderRecord,
+): LadderRecord => ({ ...dock, playedS: dying.playedS });
+
 export const emptyLadderRecord = (): LadderRecord => ({
 	banked: { combat: 0, trade: 0, exploration: 0 },
 	visited: {},

@@ -27,6 +27,7 @@ import {
 	emptyPending,
 	gateOf,
 	gateRefusal,
+	ladderAfterDeath,
 	ladderAfterMarket,
 	ladderAfterSettlement,
 	parseLadders,
@@ -421,5 +422,22 @@ describe("the capstone on a docked sale (#183 D8)", () => {
 		const sold = withCapstone(bankTrade(nearTop, 5), 42);
 		expect(sold.capstoneAt).toBe(42);
 		expect(withCapstone(sold, 99).capstoneAt).toBe(42);
+	});
+});
+
+describe("#654 — the ladder record a death restores", () => {
+	test("the last dock's record, with the play log flown up to the death (#581)", () => {
+		const dock: LadderRecord = {
+			...emptyLadderRecord(),
+			banked: { combat: 3, trade: 5, exploration: 7 },
+			playedS: 1200,
+		};
+		const dying: LadderRecord = {
+			...emptyLadderRecord(),
+			banked: { combat: 9, trade: 9, exploration: 9 },
+			playedS: 1800,
+		};
+		const after = ladderAfterDeath(dock, dying);
+		expect(after).toEqual({ ...dock, playedS: 1800 });
 	});
 });

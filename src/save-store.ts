@@ -43,6 +43,7 @@
  */
 
 import { type FirstDayChoice, isFirstDayChoice } from "./first-day-choice";
+import { commanderAfterDeath } from "./holdings";
 import { parseSave, type SaveEnvelope, serializeSave } from "./save-envelope";
 
 /**
@@ -533,8 +534,23 @@ export class SaveStore {
 	}
 
 	/**
-	 * #324's death path (principal's ruling O5, 2026-09-14): copy the last dock
-	 * over `live`, so the reload boots into it, and stop writing.
+	 * #324's death path (principal's ruling O5, 2026-09-14), narrowed by #654
+	 * (the principal's Q2 ruling on #238, 2026-10-03): **a death keeps the
+	 * world.** `live` becomes the world as it stands at the death beside the
+	 * last dock's commander, so the reload boots the pilot back at the dock
+	 * into a galaxy that remembers the fatal leg — its kills, strikes, scans,
+	 * trades, visits and heat. Then the store stops writing.
+	 *
+	 * **The world is `current`'s, not the last write's**: a change made inside
+	 * the debounce window is the world's too. **And the play log is the dying
+	 * commander's** (#581, closed into #654). `commanderAfterDeath` in
+	 * `holdings.ts` owns which fields a death restores; this store only pairs
+	 * that record with the world, serializes and writes.
+	 *
+	 * The envelope is serialized fresh, so its integrity hash covers the pair
+	 * it actually is, and it is parsed before it is written: a mixed pair the
+	 * parser would refuse is a named error here, with `live` untouched, rather
+	 * than a save that fails on the reload.
 	 *
 	 * **A death-time write, on purpose.** #89 left death unflushed, and
 	 * `restoreAfterDeath` above still reads only. This is the separate act the
@@ -565,9 +581,15 @@ export class SaveStore {
 		let raw: unknown;
 		let restored: SaveEnvelope;
 		try {
-			raw = await this.backend.read(this.slot, "lastDocked");
-			if (raw === null || raw === undefined)
+			const docked = await this.backend.read(this.slot, "lastDocked");
+			if (docked === null || docked === undefined)
 				fail(`Commander "${this.slot}" has no lastDocked record`);
+			const dock = parseSave(docked).commander;
+			const dying = this.current();
+			raw = serializeSave({
+				world: dying.world,
+				commander: commanderAfterDeath(dock, dying.commander),
+			});
 			restored = parseSave(raw);
 		} catch (error) {
 			// Not retired, and the save the death interrupted is still owed: quieting
