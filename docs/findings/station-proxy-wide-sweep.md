@@ -42,6 +42,9 @@ outpost e: assembly 1200–2399, berth sides 0, 1, 0 plans past 60 m, worst 28.9
 - The Works' worst is its asteroid in both ranges. The script names the first
   plan that reached the worst figure, so "assembly 0" and "assembly 1200" are
   where the scan met it first, not where it is uniquely worst.
+- The commit that adds this file, `Address sage review round 4`, changes no
+  geometry, no proxy primitive and not the script's path through
+  `vertexOvershootKm`, so the figures stand for it too.
 - A plan outside 0–2399 is not measured. A change to either form's geometry or
   to its proxy makes these figures stale; the script reprints them, and a
   re-run on the new commit replaces this file rather than appending a second
