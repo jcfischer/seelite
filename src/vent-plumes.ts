@@ -34,7 +34,7 @@ import {
 	type VentSlot,
 } from "./hull";
 import { EMISSIVE_CEILING } from "./light-rig";
-import { exhaustRamp } from "./ship-mesh";
+import { exhaustRamp, isDriveBell } from "./ship-mesh";
 import type { VentLevels } from "./sim";
 
 /**
@@ -153,7 +153,7 @@ export function ventThroats(root: THREE.Object3D, id: HullId): Throat[] {
 		const mesh = o as THREE.Mesh;
 		if (!mesh.isMesh) return;
 		meshes.push(mesh);
-		if (mesh.name.endsWith("-exhaust")) bells.push(mesh);
+		if (isDriveBell(mesh)) bells.push(mesh);
 	});
 	// The vertices, in the root's frame, for the lines that pass the hull
 	// without meeting it. Instanced detail is left out: it is greeble, not the

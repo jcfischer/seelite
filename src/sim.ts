@@ -1497,10 +1497,11 @@ function assistDemand(
 	// Inside the room, #5's law *is* a burn at the drive's authority toward the
 	// commanded speed, so asking for more than one step's worth is a demand the
 	// vents meet in full and not a failure — the stick's law in `stepAngular`
-	// says the same. Above it — ahead or astern — the assist is returning
-	// the hull into the envelope and the whole of the return is the demand, so the axis reads
-	// saturated until it is back (§3.10, §3.8.1). The firing is the same either
-	// way: `stepFlight` clamps the fraction before it fires anything.
+	// says the same. Above it — ahead or astern — the assist is returning the
+	// hull into the envelope and the whole of the return is the demand, so the
+	// axis reads saturated until it is back (§3.10, §3.8.1). The firing is the
+	// same either way: `stepFlight` clamps the fraction before it fires
+	// anything.
 	const surge = alongChange / surgeAuthority;
 	return {
 		surge: Math.abs(along) > room ? surge : clamp(surge, -1, 1),

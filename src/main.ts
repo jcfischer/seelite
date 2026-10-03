@@ -5650,9 +5650,7 @@ class Game {
 		// class after it is built, and the walk is a full traverse.
 		this.markedOcclusion.push(["ship", markOcclusion(this.shipMesh)]);
 		this.nearScene.add(this.shipMesh);
-		// Off the hull's own root, before anything has placed it (#621).
-		this.ventPlumes = buildVentPlumes(this.shipMesh, this.flownHull);
-		this.nearScene.add(this.ventPlumes.object);
+		this.mountVentPlumes(this.shipMesh, this.flownHull);
 		if (this.fleetReview) {
 			this.buildFleetReview();
 			// **After the review's hulls exist, and it is not decoration.** An
@@ -5667,6 +5665,21 @@ class Game {
 					markOcclusion(parked.mesh),
 				]);
 		}
+	}
+
+	/**
+	 * The plumes for a hull root `buildShipMesh` just returned, in place of
+	 * any set already mounted (#621). Read off the root **before** anything
+	 * places it: the throats are measured in the root's own frame.
+	 */
+	private mountVentPlumes(root: THREE.Group, hull: HullId) {
+		const plumes = buildVentPlumes(root, hull);
+		if (this.ventPlumes) {
+			this.ventPlumes.object.removeFromParent();
+			this.ventPlumes.object.geometry.dispose();
+		}
+		this.ventPlumes = plumes;
+		this.nearScene.add(plumes.object);
 	}
 
 	/**
@@ -5690,12 +5703,7 @@ class Game {
 		const old = this.shipMesh;
 		const mesh = buildShipMesh(hull, HULL_SPECS[hull].variant).root;
 		measureMuzzles(hull, HULL_SPECS[hull].variant, mesh);
-		// The new hull's throats, read off its root before it is placed.
-		const plumes = buildVentPlumes(mesh, hull);
-		this.ventPlumes.object.removeFromParent();
-		this.ventPlumes.object.geometry.dispose();
-		this.ventPlumes = plumes;
-		this.nearScene.add(plumes.object);
+		this.mountVentPlumes(mesh, hull);
 		mesh.name = "ship";
 		mesh.position.copy(old.position);
 		mesh.quaternion.copy(old.quaternion);

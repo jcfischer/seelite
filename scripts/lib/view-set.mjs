@@ -1038,7 +1038,7 @@ export const VIEWS = Object.freeze([
 	{
 		name: "vent-cue-cockpit",
 		covers: [621],
-		what: "Cockpit, the same state held at the pulse's trough: the prograde and retrograde markers and the nose cross dimmed in their own tones while the assist cannot meet the speed or the spin.",
+		what: "Cockpit, the same state held at the pulse's trough: the prograde marker (the green ring) and the nose cross dimmed in their own tones while the assist cannot meet the speed or the spin. The retrograde marker pulses too, but it is behind the camera here.",
 		shot: { kind: "vents", overCap: 2, spin: 2.5, steps: 13, view: "cockpit" },
 	},
 	/**

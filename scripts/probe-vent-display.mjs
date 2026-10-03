@@ -93,40 +93,59 @@ await page.evaluate((orbit) => {
 }, ORBIT);
 await frames();
 
+/**
+ * One harness for every pixel row (sage round 2): a frame drawn from a firing
+ * table, read in the task that drew it — the drawing buffer is not preserved —
+ * against the same frame with nothing firing, as a per-pixel luma rise. The
+ * game's own table is put back after.
+ */
+await page.evaluate(() => {
+	const g = window.__seelite;
+	const scratch = document.createElement("canvas");
+	const ctx = scratch.getContext("2d", { willReadFrequently: true });
+	const frame = (table) => {
+		const src = g.renderer.domElement;
+		scratch.width = src.width;
+		scratch.height = src.height;
+		g.ventFiring = table;
+		g.render(0);
+		ctx.drawImage(src, 0, 0);
+		return ctx.getImageData(0, 0, src.width, src.height).data;
+	};
+	window.__ventRise = (table) => {
+		const kept = g.ventFiring;
+		const lit = frame(table);
+		const quiet = frame({});
+		g.ventFiring = kept;
+		const W = scratch.width;
+		const H = scratch.height;
+		const rise = new Float32Array(W * H);
+		for (let i = 0; i < rise.length; i++) {
+			const k = 4 * i;
+			rise[i] =
+				0.2126 * (lit[k] - quiet[k]) +
+				0.7152 * (lit[k + 1] - quiet[k + 1]) +
+				0.0722 * (lit[k + 2] - quiet[k + 2]);
+		}
+		return { rise, W, H };
+	};
+});
+
 const plumes = await page.evaluate(
 	([samplePx, clearPx]) => {
 		const g = window.__seelite;
-		const src = g.renderer.domElement;
-		const W = src.width;
-		const H = src.height;
-		const scratch = document.createElement("canvas");
-		scratch.width = W;
-		scratch.height = H;
-		const ctx = scratch.getContext("2d", { willReadFrequently: true });
 		const firing = { ...g.ventFiring };
-		// Render and read in one task: the drawing buffer is not preserved.
-		const frame = (table) => {
-			g.ventFiring = table;
-			g.render(0);
-			ctx.drawImage(src, 0, 0, W, H);
-			return ctx.getImageData(0, 0, W, H).data;
-		};
-		const lit = frame(firing);
-		const quiet = frame({});
-		g.ventFiring = firing;
 		const object = g.ventPlumes.object;
 		object.updateMatrixWorld(true);
-		const luma = (d, i) =>
-			0.2126 * d[i] + 0.7152 * d[i + 1] + 0.0722 * d[i + 2];
-		const rise = (x, y) => {
+		const { W, H } = window.__ventRise({});
+		const near = ({ rise }, x, y) => {
 			let most = 0;
 			for (let dy = -samplePx; dy <= samplePx; dy++)
 				for (let dx = -samplePx; dx <= samplePx; dx++) {
 					const px = Math.round(x) + dx;
 					const py = Math.round(y) + dy;
 					if (px < 0 || py < 0 || px >= W || py >= H) continue;
-					const i = (py * W + px) * 4;
-					most = Math.max(most, luma(lit, i) - luma(quiet, i));
+					most = Math.max(most, rise[py * W + px]);
 				}
 			return most;
 		};
@@ -150,10 +169,22 @@ const plumes = await page.evaluate(
 				!t.on &&
 				litThroats.every((l) => Math.hypot(l.x - t.x, l.y - t.y) > clearPx),
 		);
+		// Every lit slot fired **alone**, so a rise at its throat is its own
+		// light and not a neighbour's (sage round 2). A slot with two throats
+		// is the main drive's bells, read at each.
+		const alone = [...new Set(litThroats.map((t) => t.slot))].flatMap(
+			(slot) => {
+				const diff = window.__ventRise({ [slot]: firing[slot] });
+				return litThroats
+					.filter((t) => t.slot === slot)
+					.map((t) => ({ slot, rise: near(diff, t.x, t.y) }));
+			},
+		);
+		const all = window.__ventRise(firing);
 		return {
 			visible: object.visible,
-			lit: litThroats.map((t) => ({ slot: t.slot, rise: rise(t.x, t.y) })),
-			unlit: unlit.map((t) => ({ slot: t.slot, rise: rise(t.x, t.y) })),
+			lit: alone,
+			unlit: unlit.map((t) => ({ slot: t.slot, rise: near(all, t.x, t.y) })),
 		};
 	},
 	[SAMPLE_PX, CLEAR_OF_LIT_PX],
@@ -168,7 +199,7 @@ check(
 	// Some throats are behind the hull from this side, and a point is
 	// depth-tested; most of those in frame are not.
 	check(
-		"a firing vent lights its own throat's pixels",
+		"a firing vent, fired alone, lights its own throat's pixels",
 		plumes.lit.length > 0 && brightened.length * 2 >= plumes.lit.length,
 		`${brightened.length} of ${plumes.lit.length} lit throats in frame rose ≥ ${LIT_DELTA} codes: ${plumes.lit.map((t) => `${t.slot} ${t.rise.toFixed(0)}`).join(", ")}`,
 	);
@@ -185,35 +216,12 @@ check(
 await setView("cockpit");
 await frames();
 {
-	// Painted, not read off a flag (sage round 1): the cockpit frame drawn
-	// from the firing table against the same frame with nothing firing.
+	// Painted, not read off a flag (sage round 1).
 	const cockpit = await page.evaluate((litDelta) => {
-		const g = window.__seelite;
-		const src = g.renderer.domElement;
-		const W = src.width;
-		const H = src.height;
-		const scratch = document.createElement("canvas");
-		scratch.width = W;
-		scratch.height = H;
-		const ctx = scratch.getContext("2d", { willReadFrequently: true });
-		const firing = { ...g.ventFiring };
-		const frame = (table) => {
-			g.ventFiring = table;
-			g.render(0);
-			ctx.drawImage(src, 0, 0, W, H);
-			return ctx.getImageData(0, 0, W, H).data;
-		};
-		const lit = frame(firing);
-		const quiet = frame({});
-		g.ventFiring = firing;
+		const firing = { ...window.__seelite.ventFiring };
+		const { rise } = window.__ventRise(firing);
 		let rose = 0;
-		for (let i = 0; i < lit.length; i += 4) {
-			const d =
-				0.2126 * (lit[i] - quiet[i]) +
-				0.7152 * (lit[i + 1] - quiet[i + 1]) +
-				0.0722 * (lit[i + 2] - quiet[i + 2]);
-			if (d >= litDelta) rose++;
-		}
+		for (const d of rise) if (d >= litDelta) rose++;
 		return { firing: Object.keys(firing).length, rose };
 	}, LIT_DELTA);
 	check(

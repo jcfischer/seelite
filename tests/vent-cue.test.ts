@@ -114,6 +114,36 @@ describe("§3.8.1 a full burn toward a commanded speed is not saturation", () =>
 			}
 		});
 
+	for (const dt of STEPS)
+		test(`with the assist off nothing saturates, dt ${dt.toFixed(4)}`, () => {
+			// §4.1's "only with the assist on" rests on the sim, so it is held
+			// here: above the cap, spinning past the envelope, every axis full.
+			for (const id of HULL_IDS) {
+				const perf = flightPerformance(id);
+				const ship: Ship = { pos: v3(), vel: scale(NOSE, -4) };
+				const turn = stepAngular(
+					{ pitch: 9, yaw: -9, roll: 9 },
+					{ pitch: 1, yaw: -1, roll: 1 },
+					{ pitch: 5, yaw: 5, roll: 5 },
+					false,
+					dt,
+					perf,
+				);
+				expect(Object.values(turn.saturated).some(Boolean)).toBe(false);
+				const step = stepFlight(
+					ship,
+					control({
+						assist: false,
+						attitude: turn,
+						demand: { surge: 1, sway: -1, heave: 1 },
+					}),
+					dt,
+					perf,
+				);
+				expect(Object.values(step.saturated).some(Boolean)).toBe(false);
+			}
+		});
+
 	test("the firing is the same as before the clamp: the clamp moved only the flag", () => {
 		// A throttle step on the courier fires the main drive at full, which
 		// is what `fireAxis` gave the unclamped fraction too.

@@ -391,6 +391,14 @@ export function exhaustRamp(v: number): [number, number, number] {
 	];
 }
 
+/** The suffix every drive bell's glow mesh is named with, disc or bowl. */
+const EXHAUST_SUFFIX = "-exhaust";
+
+/** Is `object` a drive bell's glow? The one test of the naming, for
+ *  `vent-plumes.ts`, which draws the main drive at the bells (#621). */
+export const isDriveBell = (object: THREE.Object3D): boolean =>
+	object.name.endsWith(EXHAUST_SUFFIX);
+
 function exhaustGradientMap() {
 	if (exhaustGradient) return exhaustGradient;
 	const width = 4;
@@ -653,7 +661,7 @@ function engineBell(
 	);
 	add(
 		root,
-		name + "-exhaust",
+		name + EXHAUST_SUFFIX,
 		new THREE.CircleGeometry(radius * 0.55, 14),
 		p.exhaust,
 		[position[0], position[1], position[2] + length * 0.13],
@@ -745,7 +753,7 @@ function openBell(
 	}
 	uv.needsUpdate = true;
 	setUvUnits(bowl, "plate");
-	add(root, name + "-exhaust", bowl, p.exhaust, position);
+	add(root, name + EXHAUST_SUFFIX, bowl, p.exhaust, position);
 }
 
 /**
