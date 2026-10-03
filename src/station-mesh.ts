@@ -5885,7 +5885,191 @@ function buildTradeWheel(color: number, berthSeed: number): BuiltPart {
 			group,
 		),
 	);
+	group.add(wheelDetail(color, inner, outer, fore, aft, width, hubRadiusAt));
 	return { group, fixtures };
+}
+
+/**
+ * The Wheel's detail pass (film round): what turns a drawing of two hoops into
+ * a place people live in. Everything stays inside the 0.98 km reach and roots
+ * in the structure it sits on.
+ *
+ * - **Window bands** on the finished rim's outer face and front face, laid
+ *   along the ring with the game's own pane run.
+ * - **Ribs**: radial bulkheads standing proud of the finished rim, so the sun
+ *   draws a line of shadow at every frame and the rim reads as built.
+ * - **Habitat blisters** under the finished rim between the spokes.
+ * - **Transit tubes** beside each fore spoke, hub to rim.
+ * - **Radiator fins** off the hub between the collars, and a mast with a dish
+ *   off the aft cap.
+ */
+function wheelDetail(
+	color: number,
+	inner: number,
+	outer: number,
+	fore: number,
+	aft: number,
+	width: number,
+	hubRadiusAt: (theta: number) => number,
+): THREE.Group {
+	const detailGroup = new THREE.Group();
+	detailGroup.name = "wheel-detail";
+	const depth = outer - inner;
+	const ribMaterial = plainMaterial(0x6f7a85, 0.55, 0.55);
+	const box = (sx: number, sy: number, sz: number, m: THREE.Matrix4) =>
+		new THREE.BoxGeometry(sx, sy, sz).applyMatrix4(m);
+	const at = (theta: number, radius: number, z: number) =>
+		new THREE.Matrix4().compose(
+			new THREE.Vector3(Math.cos(theta) * radius, Math.sin(theta) * radius, z),
+			new THREE.Quaternion().setFromAxisAngle(
+				new THREE.Vector3(0, 0, 1),
+				theta,
+			),
+			new THREE.Vector3(1, 1, 1),
+		);
+
+	// Ribs: on the front face (radial bars) and round the outer face (hoops).
+	const ribs: THREE.BufferGeometry[] = [];
+	const RIBS = 36;
+	for (let k = 0; k < RIBS; k++) {
+		const theta = (k / RIBS) * Math.PI * 2;
+		ribs.push(
+			box(
+				depth * 0.96,
+				0.007,
+				0.006,
+				at(theta, (inner + outer) / 2, fore + width / 2 + 0.002),
+			),
+		);
+		ribs.push(box(0.008, 0.007, width * 1.02, at(theta, outer + 0.002, fore)));
+		ribs.push(
+			box(
+				depth * 0.96,
+				0.007,
+				0.006,
+				at(theta, (inner + outer) / 2, fore - width / 2 - 0.002),
+			),
+		);
+	}
+	const ribMesh = new THREE.Mesh(mergeGeometries(ribs), ribMaterial);
+	ribMesh.name = "wheel-ribs";
+	detailGroup.add(ribMesh);
+
+	// Window bands: two along the outer face, two more round the front face.
+	const PANES = 132;
+	for (const zRow of [-0.22, 0.22]) {
+		detailGroup.add(
+			portRun("trade", PANES, (i, count, position, normal, tangent) => {
+				const theta = ((i + 0.5) / count) * Math.PI * 2;
+				normal.set(Math.cos(theta), Math.sin(theta), 0);
+				tangent.set(-Math.sin(theta), Math.cos(theta), 0);
+				position.set(
+					Math.cos(theta) * (outer + 0.0006),
+					Math.sin(theta) * (outer + 0.0006),
+					fore + zRow * width,
+				);
+			}),
+		);
+	}
+	for (const radial of [0.12, 0.88]) {
+		detailGroup.add(
+			portRun("trade", PANES, (i, count, position, normal, tangent) => {
+				const theta = ((i + 0.25) / count) * Math.PI * 2;
+				const radius = inner + depth * radial;
+				normal.set(0, 0, 1);
+				tangent.set(-Math.sin(theta), Math.cos(theta), 0);
+				position.set(
+					Math.cos(theta) * radius,
+					Math.sin(theta) * radius,
+					fore + width / 2 + 0.0006,
+				);
+			}),
+		);
+	}
+
+	// Habitat blisters under the finished rim, between the spokes.
+	const blisterMaterial = hullMaterial(color, "trade");
+	for (let k = 0; k < 8; k++) {
+		const theta = Math.PI / 8 + (k * Math.PI) / 4;
+		const blister = new THREE.Mesh(
+			new THREE.BoxGeometry(0.035, 0.11, width * 0.8),
+			blisterMaterial,
+		);
+		blister.applyMatrix4(at(theta, inner - 0.0165, fore));
+		blister.name = `wheel-blister-${k}`;
+		detailGroup.add(blister);
+	}
+	detailGroup.add(
+		portRun("trade", 48, (i, count, position, normal, tangent) => {
+			const k = i % 8;
+			const along =
+				(Math.floor(i / 8) / Math.max(1, Math.ceil(count / 8) - 1) - 0.5) *
+				0.08;
+			const theta = Math.PI / 8 + (k * Math.PI) / 4;
+			normal.set(-Math.cos(theta), -Math.sin(theta), 0);
+			tangent.set(-Math.sin(theta), Math.cos(theta), 0);
+			const r = inner - 0.0335;
+			position.set(
+				Math.cos(theta) * r - Math.sin(theta) * along,
+				Math.sin(theta) * r + Math.cos(theta) * along,
+				fore,
+			);
+		}),
+	);
+
+	// Transit tubes beside the fore spokes.
+	const tubeMaterial = plainMaterial(0xa9b2bb, 0.5, 0.45);
+	for (let k = 0; k < 4; k++) {
+		const theta = (k * Math.PI) / 2 + 0.045;
+		const from = hubRadiusAt(theta) - 0.01;
+		const to = inner + 0.004;
+		const tube = new THREE.Mesh(
+			new THREE.CylinderGeometry(0.0075, 0.0075, to - from, 12),
+			tubeMaterial,
+		);
+		tube.rotation.z = theta - Math.PI / 2;
+		tube.position.set(
+			(Math.cos(theta) * (from + to)) / 2,
+			(Math.sin(theta) * (from + to)) / 2,
+			fore + 0.018,
+		);
+		tube.name = `wheel-tube-${k}`;
+		detailGroup.add(tube);
+	}
+
+	// Radiator fins off the hub, between the spokes and the collars.
+	const finMaterial = plainMaterial(0xd5dbe0, 0.35, 0.2);
+	for (let k = 0; k < 4; k++) {
+		const theta = Math.PI / 4 + (k * Math.PI) / 2;
+		const root = hubRadiusAt(theta) - 0.012;
+		const fin = new THREE.Mesh(
+			new THREE.BoxGeometry(0.17, 0.004, 0.18),
+			finMaterial,
+		);
+		fin.applyMatrix4(at(theta, root + 0.085, (fore + aft) / 2));
+		fin.name = `wheel-radiator-${k}`;
+		detailGroup.add(fin);
+	}
+
+	// The aft mast and its dish.
+	const mast = new THREE.Mesh(
+		new THREE.CylinderGeometry(0.006, 0.009, 0.22, 10),
+		tubeMaterial,
+	);
+	mast.rotation.x = Math.PI / 2;
+	mast.position.set(0, 0, WHEEL.hubAftKm - 0.1);
+	mast.name = "wheel-mast";
+	detailGroup.add(mast);
+	const dish = new THREE.Mesh(
+		new THREE.SphereGeometry(0.05, 24, 8, 0, Math.PI * 2, 0, Math.PI / 5),
+		plainMaterial(0xc8ced4, 0.4, 0.3),
+	);
+	// apex toward the hub, seated 5 m into the mast tip; the bowl opens aft
+	dish.rotation.x = Math.PI / 2;
+	dish.position.set(0, 0, WHEEL.hubAftKm - 0.21 - 0.045);
+	dish.name = "wheel-dish";
+	detailGroup.add(dish);
+	return detailGroup;
 }
 
 /**
