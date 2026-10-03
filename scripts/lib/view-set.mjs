@@ -157,6 +157,7 @@ export const LEVERS = Object.freeze({
 	590: "an outer rung's formation family and its visible ice surface",
 	597: "the prompt line's docking notice: a failed entry in amber, a docking-computer let-go in red",
 	621: "the firing vents drawn as plumes at their throats, and the saturated assist's marker pulsing in its own tone",
+	651: "the cabin drawn in its own pass, so no world geometry enters it",
 });
 
 /**
@@ -343,7 +344,7 @@ export const CHART_SPOTS = Object.freeze(["crowded", "isolated"]);
 export const VIEWS = Object.freeze([
 	{
 		name: "cockpit-arrival",
-		covers: [105, 103, 99, 200, 201, 204],
+		covers: [105, 103, 99, 200, 201, 204, 651],
 		what: "The interior and the HUD, station ahead at arrival range. ~40% of this frame is cockpit.",
 		shot: {
 			kind: "station-axis",
@@ -365,7 +366,7 @@ export const VIEWS = Object.freeze([
 		// view is the whole set; the figures live there rather than being
 		// restated here, which is how this comment came to carry a superseded
 		// pair through a round of review.
-		covers: [199, 105, 103, 102, 99, 201, 203, 204],
+		covers: [199, 105, 103, 102, 99, 201, 203, 204, 651],
 		what: "The same interior with the star beyond the station: the case the camera-side fill was added for, and the dark side that only reads because it emits.",
 		shot: {
 			kind: "body-offset",
@@ -1224,13 +1225,38 @@ export const VIEWS = Object.freeze([
 	 */
 	{
 		name: "berth-arrival",
-		covers: [147, 105, 99, 201, 204],
+		covers: [147, 105, 99, 201, 204, 651],
 		what: "§13.6.1 — a trade station's bay mid-transfer to a deep overhead berth, in the cockpit. The scripted traversal, at the leg that leaves the lane.",
 		shot: {
 			kind: "berth",
 			station: "trade",
 			berth: "overhead-deep",
 			at: 0.75,
+			view: "cockpit",
+		},
+	},
+	{
+		name: "berth-arrival-cabin",
+		covers: [651, 147, 105],
+		/**
+		 * **Later in the same traversal, and it is the frame #651 was opened on.**
+		 * The cabin is authored at about a hundred times life size and a berth
+		 * cell is 58 m across, so near the berth the bay's structure stands
+		 * *inside* the cabin: at 0.9 a berth beam cuts across the dash, in front
+		 * of the scanner. The principal saw it arriving, not docked — a docked
+		 * cockpit has a console on every wall (#143) and shows no bay at all.
+		 *
+		 * It is a mid-traversal frame, so `berth-arrival`'s caveat holds here
+		 * too: a build with a different frame cost lands the ship elsewhere by the
+		 * time the frame is taken. Judge it by whether anything of the bay stands
+		 * in front of the cabin, never by a pixel count.
+		 */
+		what: "§13.6.1 near the berth, in the cockpit: the frame where the bay's structure stood inside the cabin until #651 drew the cabin in its own pass.",
+		shot: {
+			kind: "berth",
+			station: "trade",
+			berth: "overhead-deep",
+			at: 0.9,
 			view: "cockpit",
 		},
 	},

@@ -171,13 +171,14 @@ describe("the view set itself", () => {
 		// principal split its approach into a planet fly-by and a station approach,
 		// forty-nine with the rift forming before the arrival, fifty-two with
 		// #537's cruise rows, fifty-four since #540 added the galaxy chart's
-		// crowded and isolated hover. (#432 added a twenty-ninth and removed it
+		// crowded and isolated hover, sixty-two with #651's cabin frame near the
+		// berth. (#432 added a twenty-ninth and removed it
 		// in the same PR; #480 put one back, in the other role. Why both happened is
 		// told once, in the note beside `sky-at-the-rim`, and not here.) A literal and
 		// not `VIEWS.length`, which is the whole point: a view deleted by accident
 		// has to be a red run, and a check derived from its own subject cannot be
 		// one.
-		expect(VIEWS.length).toBe(61);
+		expect(VIEWS.length).toBe(62);
 		const names = VIEWS.map((v) => v.name);
 		expect(new Set(names).size).toBe(names.length);
 		for (const name of names) expect(name).toMatch(/^[a-z]+(-[a-z]+)*$/);
@@ -361,7 +362,9 @@ describe("the view set itself", () => {
 	 */
 	test("coverage goes red when a lever loses its only views", () => {
 		const without = VIEWS.filter((v) => !v.covers.includes(105));
-		expect(uncoveredLevers(without)).toEqual([105]);
+		// #651 goes with it: the cabin pass is judged only on frames that show
+		// the cabin, and every one of those is also a frame of the cabin itself.
+		expect(uncoveredLevers(without)).toEqual([105, 651]);
 	});
 
 	/**
@@ -521,7 +524,7 @@ describe("the contact sheet", () => {
 		// The fixture spaces its frames 0.4 s apart, so the span is fixed by how
 		// many views the set declares — which is the count row's business, not this
 		// one's, and this literal moves with it.
-		expect(html).toContain("· clock 0.6–24.6s");
+		expect(html).toContain("· clock 0.6–25.0s");
 		expect(html).not.toContain("pinned");
 	});
 
