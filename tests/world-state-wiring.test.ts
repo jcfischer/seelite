@@ -328,11 +328,17 @@ describe("the Game's world writes", () => {
 		);
 	});
 
-	/** A method's body: from its head to the next member's doc comment. */
+	/** A method's span: from its head to the next member's doc comment. The
+	 *  one copy of that rule, for `methodBody` and the revision scan. */
+	const methodSpan = (start: number): [number, number] => [
+		start,
+		MAIN.indexOf("\n\t/**", start),
+	];
+
+	/** A method's body, found by its head. */
 	const methodBody = (head: string): string => {
-		const start = MAIN.indexOf(head);
+		const [start, end] = methodSpan(MAIN.indexOf(head));
 		expect(start).toBeGreaterThan(-1);
-		const end = MAIN.indexOf("\n\t/**", start);
 		expect(end).toBeGreaterThan(start);
 		return MAIN.slice(start, end);
 	};
@@ -450,9 +456,8 @@ describe("the Game's world writes", () => {
 		const stray = bumps.filter((bump) => {
 			const at = bump.index ?? -1;
 			return !allowed.some(([head, beforeEvent]) => {
-				const start = MAIN.lastIndexOf(head, at);
+				const [start, end] = methodSpan(MAIN.lastIndexOf(head, at));
 				if (start < 0) return false;
-				const end = MAIN.indexOf("\n\t/**", start);
 				if (at > end) return false;
 				if (!beforeEvent) return true;
 				const event = MAIN.indexOf("applyHoldEvent(", start);

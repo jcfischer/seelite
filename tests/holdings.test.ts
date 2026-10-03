@@ -892,9 +892,13 @@ describe("the figures the probes used to pin", () => {
  * #631: what `Game` does with an outcome — the save, the two revisions and
  * the repaint — derived at one adopt point from what changed, instead of
  * paired by hand after each of the six sites. Every row is built from a real
- * `applyHoldEvent` outcome, so the table is the old per-site behaviour read
- * through the new rule: a row that differs from what the site did before is
- * a behaviour change, and this node makes none.
+ * `applyHoldEvent` outcome, and each expected set is transcribed from the
+ * pairs that site wrote by hand before #631 (`e2ba4d1`) — a transcription, so
+ * it is as good as the reading, and the PR lists the sites it was read from.
+ * Two cases the old code could reach that are not rows: a settlement with no
+ * sentence (`RequestResult.message` is a `string`, so there is none) and a
+ * carrier transition that moves no world (`applyTransition` throws or returns
+ * a fresh world, so there is none).
  */
 describe("the adopt point (#631)", () => {
 	const effectsOf = (before: Holdings, world: WorldState, out: HoldOutcome) =>
@@ -1002,20 +1006,29 @@ describe("the adopt point (#631)", () => {
 	test("a refused event does not save", () => {
 		const world = newWorld(1);
 		const start = holdings();
-		for (const out of [
-			applyHoldEvent(
+		const full = holdings({ cargo: { Food: holdOf(holdings()).capacityT } });
+		// Read against the holdings the event was **given**, so a refusal that
+		// handed back fresh objects would save here and go red.
+		for (const [before, out] of [
+			[
 				start,
-				world,
-				press("accept", purchase, shelf, null as never),
-			),
-			applyHoldEvent(
-				holdings({ cargo: { Food: holdOf(holdings()).capacityT } }),
-				world,
-				{ kind: "scoop", commodity: "Food", tonnes: 1 },
-			),
-		]) {
-			expect(effectsOf(out.holdings, world, out).save).toBe(false);
-			expect(effectsOf(out.holdings, world, out).consoleRevision).toBe(false);
+				applyHoldEvent(
+					start,
+					world,
+					press("accept", purchase, shelf, null as never),
+				),
+			],
+			[
+				full,
+				applyHoldEvent(full, world, {
+					kind: "scoop",
+					commodity: "Food",
+					tonnes: 1,
+				}),
+			],
+		] as const) {
+			expect(effectsOf(before, world, out).save).toBe(false);
+			expect(effectsOf(before, world, out).consoleRevision).toBe(false);
 		}
 	});
 

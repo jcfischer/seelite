@@ -787,7 +787,6 @@ const MODIFIER_KEYS: ReadonlySet<string> = new Set([
 import { readDeficit } from "./deficits";
 import {
 	type AdoptCause,
-	type AdoptEffects,
 	type Adopted,
 	type HoldOutcome,
 	type HoldSignals,
@@ -15119,8 +15118,8 @@ class Game {
 
 	/** Takes a hold event's outcome: the four fields, the world it wrote and
 	 *  its signals, through the one adopt point. */
-	private adoptHoldings(outcome: HoldOutcome): AdoptEffects {
-		return this.adopt(outcome.kind, outcome, outcome.signals);
+	private adoptHoldings(outcome: HoldOutcome): void {
+		this.adopt(outcome.kind, outcome, outcome.signals);
 	}
 
 	/**
@@ -15129,8 +15128,8 @@ class Game {
 	 * changed the world. Hand it a `world-state.ts` writer's result:
 	 * `tests/world-state-wiring.test.ts` reads every call's argument.
 	 */
-	private adoptWorld(world: WorldState): AdoptEffects {
-		return this.adopt("world", { holdings: this.holdings(), world }, null);
+	private adoptWorld(world: WorldState): void {
+		this.adopt("world", { holdings: this.holdings(), world }, null);
 	}
 
 	/**
@@ -15148,7 +15147,7 @@ class Game {
 		cause: AdoptCause,
 		next: Adopted,
 		signals: HoldSignals | null,
-	): AdoptEffects {
+	): void {
 		const effects = adoptEffects(
 			cause,
 			{ holdings: this.holdings(), world: this.commerceWorld },
@@ -15159,9 +15158,10 @@ class Game {
 		this.ladders = next.holdings.ladders;
 		this.ladderPending = next.holdings.ladderPending;
 		this.commerceWorld = next.world;
-		// Only a press carries a sentence; every other event leaves the board's
-		// last one standing, as it always did.
-		if (signals?.message != null) this.requestMessage = signals.message;
+		// A Requests press always prints its sentence, accepted or refused, and
+		// an empty one clears the last; every other event leaves the board's
+		// last sentence standing, as it always did.
+		if (cause === "settlement") this.requestMessage = signals?.message ?? "";
 		if (signals?.hullChanged) this.receiveHull(signals.hullChanged);
 		if (effects.consoleRevision) this.stationConsoleRevision += 1;
 		if (effects.requestRevision) this.requestRevision += 1;
@@ -15169,7 +15169,6 @@ class Game {
 		if (signals?.readied) this.consoleNotify("good");
 		if (effects.save) this.saveDirty();
 		if (effects.redraw) this.updateCockpit();
-		return effects;
 	}
 
 	/** Whether the board did what was asked: the press's sound reads it (#546). */
@@ -15451,8 +15450,9 @@ class Game {
 			chargeAu: this.chargeAu,
 			permadeath: this.permadeath,
 			firstDay: this.firstDay,
-			// The record with its basis brought into line with the hold. **A guard, not a known path**: today the one
-			// non-sale removal is a job hand-over, which reconciles as it settles.
+			// The record with its basis brought into line with the hold. **A
+			// guard, not a known path**: today the one non-sale removal is a job
+			// hand-over, which reconciles as it settles.
 			// The parser refuses a basis covering more than is aboard, so a later
 			// path that forgets — `combat-model.md` §4's confiscation is specified
 			// and not built — would otherwise make a written save unloadable.
