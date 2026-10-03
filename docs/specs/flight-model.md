@@ -82,6 +82,48 @@ three alternatives:
 - a fitted moment of inertia: a second dial, which §5 says needs an argument
   against #181.
 
+#### 3.2.1 Every line of action meets the hull's metal (#636)
+
+The table first put every vent on its envelope's box, and the box is not the
+hull. No attitude vent's line of action met metal on any hull, and the roll
+pairs passed 9 to 28 m clear of the five larger ones. The principal ruled that
+the vents move onto the metal (2026-10-03).
+
+A pair may move only in a direction that keeps it pure:
+
+- **An attitude pair** stays a couple about its own axis. It slides along the
+  axis its couple does not use: roll fore and aft, yaw up and down, pitch port
+  and starboard. Each end may also stand in from the box, which shortens the
+  arm.
+- **A translation pair** stays a force with no torque. The retro pair moves
+  toward the centreline symmetrically, and the strafe pairs move toward the
+  centre of mass symmetrically.
+
+A vent's place along its own line changes nothing it does, so the table keeps
+that coordinate on the box face and the display slides the throat to the metal
+(§3.8.1).
+
+**The placement is measured, not chosen.** `scripts/measure-vent-placement.ts`
+searches those freedoms on the selected variant's mesh. It takes the slide that
+gives the longest arm whose lines meet metal, and it moves a translation pair
+only where its box line, or one of the two lines a step inward of it, misses. `src/hull.ts` stores the result as each hull's
+`ventPlacement`. `tests/vent-placement.test.ts` holds the stored row to a fresh
+measurement, holds every line to the metal, and holds every pair pure on every
+hull. A moved arm moves the couple, so §3.4's shares are solved against
+`coupleArms` and not against the envelope. Every composed demand is unchanged:
+a pair fires as a pure couple or a pure force, as before. The instrument prints
+each arm as a share of the box's.
+
+**A lone vent is no longer pure, by the principal's ruling (O4, 2026-10-03).**
+A roll pair slid fore or aft is still a couple. But one roll vent fired alone
+now pitches as well as rolls, by up to 4.6 times its roll torque on the
+voyager. One yaw or pitch vent off the centreline also rolls a little (up to
+0.33 times, on the tug). Before #636 every lone vent's torque was on its own
+axis. Only §3.5's per-vent commands and §3.7's vent health reach a lone vent.
+The alternative kept the roll pair at the centre station and stood it in from
+the box. A lone vent stayed pure, but the roll share rose by up to 413%
+(interceptor). The principal chose the slide.
+
 ### 3.3 Each hull declares its vents
 
 Every hull in `src/hull.ts` carries its own vent table. The table is plain data,
@@ -204,9 +246,11 @@ the envelope. Two things it settled:
   the metal, or, where it only passes the hull, at its closest approach. The
   main drive is drawn at the hull's own bells, whose resultant it is.
   `scripts/measure-vent-throats.ts` prints how far each throat is from metal.
-  The attitude vents' lines miss every hull, and the roll pairs pass tens of
-  metres clear of the larger ones. Fixing that moves the table's geometry and
-  so re-solves the shares (§3.4), which is not a display node's to do.
+  When #621 shipped, the attitude vents' lines missed every hull. #636 moved
+  the pairs onto the metal (§3.2.1), so every line now meets the hull's
+  selected variant, which is the mesh the game draws for it. The closest
+  approach is kept as a fallback for a mesh that changes before its placement
+  is measured again.
 
 #### 3.8.2 Two departures from #5 (amended on #619)
 
