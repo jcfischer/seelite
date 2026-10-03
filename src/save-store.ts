@@ -43,7 +43,7 @@
  */
 
 import { type FirstDayChoice, isFirstDayChoice } from "./first-day-choice";
-import { ladderAfterDeath } from "./ladder";
+import { commanderAfterDeath } from "./holdings";
 import { parseSave, type SaveEnvelope, serializeSave } from "./save-envelope";
 
 /**
@@ -543,7 +543,9 @@ export class SaveStore {
 	 *
 	 * **The world is `current`'s, not the last write's**: a change made inside
 	 * the debounce window is the world's too. **And the play log is the dying
-	 * commander's** (#581, closed into #654); `ladderAfterDeath` owns that rule.
+	 * commander's** (#581, closed into #654). `commanderAfterDeath` in
+	 * `holdings.ts` owns which fields a death restores; this store only pairs
+	 * that record with the world, serializes and writes.
 	 *
 	 * The envelope is serialized fresh, so its integrity hash covers the pair
 	 * it actually is, and it is parsed before it is written: a mixed pair the
@@ -586,10 +588,7 @@ export class SaveStore {
 			const dying = this.current();
 			raw = serializeSave({
 				world: dying.world,
-				commander: {
-					...dock,
-					ladders: ladderAfterDeath(dock.ladders, dying.commander.ladders),
-				},
+				commander: commanderAfterDeath(dock, dying.commander),
 			});
 			restored = parseSave(raw);
 		} catch (error) {

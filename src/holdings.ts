@@ -27,6 +27,7 @@
  */
 
 import type { CarrierKey } from "./carrier-key";
+import type { CommanderRecord } from "./save-envelope";
 import type { HullId } from "./hull";
 import { killCredit } from "./kill-credit";
 import {
@@ -35,6 +36,7 @@ import {
 	bankOnDock,
 	basisAfterScoop,
 	emptyPending,
+	ladderAfterDeath,
 	ladderAfterHullSale,
 	ladderAfterMarket,
 	ladderAfterSettlement,
@@ -70,6 +72,20 @@ import {
 } from "./world-state";
 
 /** Everything a pilot owns that an act at a console or in space can move. */
+/**
+ * The commander record a death restores (#654, the principal's Q2 ruling on
+ * #238): the last dock's, so the pilot wakes with what they had there, with
+ * the ladder record's own exception (`ladderAfterDeath`). The world is not
+ * an input: a death keeps it whole, and only the store pairs the two.
+ */
+export const commanderAfterDeath = (
+	dock: CommanderRecord,
+	dying: CommanderRecord,
+): CommanderRecord => ({
+	...dock,
+	ladders: ladderAfterDeath(dock.ladders, dying.ladders),
+});
+
 export interface Holdings {
 	readonly commander: CommanderState;
 	readonly requests: RequestsState;
