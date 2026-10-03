@@ -295,15 +295,20 @@ export class AudioFX {
 		return this.live === null || this.live.state !== "running";
 	}
 
-	/** Must be called after a user gesture to unlock audio. */
-	ensure() {
+	/**
+	 * Must be called after a user gesture to unlock audio. Answers the
+	 * `resume()` it started, if it started one: the context's state changes
+	 * when that settles, not inside the call (node #550).
+	 */
+	ensure(): Promise<void> | undefined {
 		if (!this.live) {
 			const AC = window.AudioContext || (window as any).webkitAudioContext;
-			if (!AC) return;
+			if (!AC) return undefined;
 			this.live = new AC() as AudioContext;
 			this.attach(this.live);
 		}
-		if (this.live.state === "suspended") this.live.resume();
+		if (this.live.state === "suspended") return this.live.resume();
+		return undefined;
 	}
 
 	/**
