@@ -27,9 +27,12 @@
  *    corridor cylinder, and the bay's own swept cylinder. Without this row a
  *    sphere over the whole reach passes rows 1 and 2.
  *
- * For a seeded form every row runs over `ASSEMBLY_SEEDS` with the berth on each
- * side, and the berth seed is also swept on its own, because a dependency on it
- * is never isolated when both seeds move together.
+ * For a seeded form every row runs over `ASSEMBLY_SEEDS`. The vertex row builds
+ * each plan with the berth on both sides, because the mesh reads the berth
+ * seed; the rows that read only the proxy stay on berth seed 0, because the
+ * proxy reads none, and a row asserts that. The berth seed is also swept on its
+ * own, because a dependency on it is never isolated when both seeds move
+ * together.
  *
  * The thinnest-primitive figure is declared and asserted.
  *
@@ -78,8 +81,8 @@ const VERTEX_TOLERANCE_KM = PROXY_VERTEX_TOLERANCE_KM;
 
 /**
  * The rows that build a mesh per plan or sample the whole opening run for
- * for seconds — the opening row reached 6.8 s once — so bun's 5 s default
- * would fail them on a slower machine for load rather than for a defect.
+ * for seconds, so bun's 5 s default would fail them on a slower machine for
+ * load rather than for a defect.
  */
 const HEAVY_ROW_MS = 30_000;
 

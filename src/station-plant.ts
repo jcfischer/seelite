@@ -117,8 +117,7 @@ export const REFINERY_RADIUS = 2;
  * rather than in the builder because two modules read them — the drawing
  * (`buildRefineryWorks`) and the collision proxy (`station-proxy.ts`), which
  * follows the same plan cell by cell and must not hold a second copy of where
- * a cell is. A 0.16 km cell carries a 60 m unit with a clear lane between
- * neighbours; why the floor is high on the rock is the builder's to say.
+ * a cell is. Why the floor is high on the rock is the builder's to say.
  */
 export const WORKS_CELL_KM = 0.16;
 export const WORKS_FLOOR_KM = 0.16;
