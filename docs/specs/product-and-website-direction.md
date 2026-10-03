@@ -32,7 +32,8 @@ world has enough depth to reward attention.
    combat, exploration, or progression.
 5. **Private and immediate are product qualities.** Browser play, local and
    portable saves, no login, and nothing tracked beyond Counterscale pageviews
-   (#569) are strengths, not omissions.
+   (#569) are strengths, not omissions. The home trailer reaches YouTube only
+   when a player presses it (2026-10-03).
 
 ## Player journey
 
@@ -98,6 +99,8 @@ The Trust page promises:
   Counterscale records the path, the referrer, browser, device type and
   country but not the IP — and nothing the game does after launch leaves the
   machine;
+- the home trailer is a poster this site draws, and YouTube's player loads
+  from youtube-nocookie.com only when the player presses it;
 - saves are local and portable; and
 - feedback leaves a player's machine only through a deliberately chosen
   external channel.
@@ -118,6 +121,14 @@ browser headers; upstream Counterscale records path, referrer, user agent,
 browser, device type and country, and not the IP. It sets no cookie and
 stores nothing in the browser. `src/visit-count.ts`
 owns the mechanism.
+
+**And a second line on 2026-10-03:** the principal asked for the trailer to be
+embedded beside the home title and chose click-to-play over a plain embed and
+over a link. The home page draws its own poster — a YouTube thumbnail would be
+a request on load — and `src/public-site.ts` builds the
+`youtube-nocookie.com` player only in the poster's press handler. Until that
+press the home page asks nothing of another origin, and
+`scripts/probe-public-site.mjs` holds it.
 
 ## Development horizons
 

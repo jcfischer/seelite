@@ -214,5 +214,102 @@ for (const [label, viewport] of [
 	);
 }
 
+/**
+ * The home trailer (2026-10-03) is click-to-play: the page draws its own
+ * poster and asks YouTube for nothing until the poster is pressed. So the
+ * page is read twice — after load, when no request may have left its origin,
+ * and after the press, when the player's frame must be YouTube's no-cookie
+ * embed. YouTube's hosts are answered here with an empty page, so the probe
+ * needs no network and a press is still a request the page made.
+ */
+const YOUTUBE =
+	/^https:\/\/([a-z0-9-]+\.)*(youtube-nocookie\.com|youtube\.com|ytimg\.com|googlevideo\.com|google\.com|gstatic\.com|doubleclick\.net)\//;
+for (const [label, viewport] of [
+	["desktop", { width: 1100, height: 740 }],
+	["phone", { width: 390, height: 844 }],
+]) {
+	const page = await browser.newPage({ viewport });
+	watch(page);
+	const requests = [];
+	page.on("request", (request) => requests.push(request.url()));
+	await page.route(YOUTUBE, (route) =>
+		route.fulfill({
+			status: 200,
+			contentType: "text/html",
+			body: "<!doctype html><title>stub</title>",
+		}),
+	);
+	await page.goto(publicUrl(ORIGIN, ""), { waitUntil: "load" });
+	await page.waitForSelector(".trailer-play");
+	await page.waitForTimeout(500);
+	const origin = new URL(page.url()).origin;
+	const foreign = () =>
+		requests.filter(
+			(url) => /^https?:/.test(url) && new URL(url).origin !== origin,
+		);
+	const before = await page.evaluate(() => {
+		const box = (selector) =>
+			document.querySelector(selector)?.getBoundingClientRect().toJSON() ??
+			null;
+		return {
+			frames: document.querySelectorAll("iframe").length,
+			poster: box(".trailer-play"),
+			title: box("h1"),
+			play: box('a[href="/?boot=overlay"]'),
+		};
+	});
+	const foreignBefore = foreign();
+	check(
+		`the home page asks nothing of another origin before the trailer is pressed (${label})`,
+		foreignBefore.length === 0 && before.frames === 0,
+		`frames=${before.frames} ${JSON.stringify(foreignBefore)}`,
+	);
+	if (label === "desktop")
+		check(
+			"the trailer stands to the right of the title (desktop)",
+			before.poster !== null &&
+				before.title !== null &&
+				before.poster.left >= before.title.right &&
+				before.poster.top < before.title.bottom &&
+				before.poster.bottom > before.title.top,
+			`poster=${JSON.stringify(before.poster)} title=${JSON.stringify(before.title)}`,
+		);
+	else
+		check(
+			"the trailer follows Play now (phone)",
+			before.poster !== null &&
+				before.play !== null &&
+				before.poster.top >= before.play.bottom,
+			`poster=${before.poster?.top} play=${before.play?.bottom}`,
+		);
+	if (out)
+		await page.screenshot({ path: `${out}/home-trailer-${label}-before.png` });
+	await page.click(".trailer-play");
+	await page.waitForSelector(".trailer iframe");
+	const after = await page.evaluate(() => {
+		const frame = document.querySelector(".trailer iframe");
+		return {
+			src: frame?.getAttribute("src") ?? null,
+			poster: document.querySelectorAll(".trailer-play").length,
+			focused: document.activeElement === frame,
+		};
+	});
+	check(
+		`pressing the poster swaps it for YouTube's no-cookie player (${label})`,
+		after.poster === 0 &&
+			after.focused &&
+			after.src?.startsWith(
+				"https://www.youtube-nocookie.com/embed/cExmJYQ-cwQ",
+			) === true &&
+			foreign().some((url) =>
+				url.startsWith("https://www.youtube-nocookie.com/"),
+			),
+		JSON.stringify(after),
+	);
+	if (out)
+		await page.screenshot({ path: `${out}/home-trailer-${label}-after.png` });
+	await page.close();
+}
+
 await browser.close();
 exit();
