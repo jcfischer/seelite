@@ -859,4 +859,21 @@ _Avoid_: Command — *for the composed vent levels*; those are the **Firing tabl
 **Firing table**:
 How hard each vent fired in one step, 0…1 by slot (`VentLevels`). `stepFlight`
 returns it; the flight sound reads it through `thrustShares`, and the plumes
-#621 draws will read it.
+(`vent-plumes.ts`) draw it.
+
+**Hull step**:
+One call that turns and moves a hull by its vents for one step: a stick and a
+**Demand** go in; the hull's rates, attitude, motion, its **Firing table** and
+the two **Saturation** flags come out. The attitude half runs first and its
+push lands in the same step's velocity. In cruise only the attitude half is
+flown, because cruise supplies its own translation. The pilot, the raider and
+the scoop pilot each fly through it, and each makes its own stick — the pilot's
+hands, the docking computer, `turnToward` — outside it. Decided on #636's
+follow-up nodes (#646, #647); until they land, the step is still composed by each caller.
+_Avoid_: Flight step — *that is `stepFlight`, the translation half only*.
+
+**Saturation**:
+A **Demand** the vents cannot meet in a step, read as two families: linear and
+angular. The sim decides it (`FlightStep.saturated`, `AngularStep.saturated`);
+the saturation cue (`vent-cue.ts`) latches and pulses it, and nothing else
+re-decides what saturated means (`flight-model.md` §3.8.1).
