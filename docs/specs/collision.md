@@ -74,7 +74,10 @@ remembered.
   refinery's is the Works (`d`), a **solved** form: its shape comes from
   `Station.assemblySeed` through `placementsOf`, and its berth side from the
   berth seed. The solve (`src/wfc.ts`, `src/station-modular.ts`) imports no
-  Three.js.
+  Three.js. The outpost's is the Salvage (`e`), also a function of the
+  assembly seed but **grown, not solved**: `buildOutpostSalvage` accretes its
+  pieces from its own draw, and that plan exists only inside the renderer's
+  builder.
 - `corridorRadiusKm` and `interiorAxialSpanKm` (`src/station-interior.ts`)
   are the pad corridor's radius and the interior's axial span. Both are
   Three-free.
@@ -102,9 +105,17 @@ capsules and oriented boxes — in the station's own frame, in kilometres.
   interior catalogue. The renderer never reads it. The build names the module:
   `src/station-proxy.ts` (node #662), measured by `tests/station-proxy.test.ts`
   and, over a wider seed spread by hand, `scripts/measure-station-proxy.ts`.
-- **What it is a function of.** `(type, form, berthSeed, assemblySeed)`. For a
-  solved form, the proxy is derived from **the same placement solve the mesh
-  reads**, cell by cell. It is never a second copy of the plan.
+- **What it is a function of.** `(type, form, berthSeed, assemblySeed)`. What
+  a seeded form's proxy reads depends on where its plan lives:
+  - A form solved by `placementsOf` (the Works) has its proxy derived from
+    **the same placement solve the mesh reads**, cell by cell. It is never a
+    second copy of the plan.
+  - A grown form (the Salvage) has no Three-free plan to read. Its proxy is
+    **one seed-independent envelope** sized to contain the plans it was
+    measured over. It does not follow a plan, so it is only as good as that
+    measurement: gated on `ASSEMBLY_SEEDS`, measured over a wider spread by
+    hand, and a plan outside both is not measured. Making it follow its plan
+    means moving the Salvage's plan out of the renderer first.
 - **What it turns with.** The proxy is stated in the spinning member's frame,
   as the drawn interior is (`docking.md` §13). Static structure — the
   shipyard's keel — is stated in the static frame.
@@ -131,8 +142,8 @@ would pass any check against that mesh by construction. Two rows hold it, as
    group.
 2. **No proxy outside the reach.** Every primitive lies inside `reachKm`.
 
-For a solved form, both rows run over `ASSEMBLY_SEEDS`. A row on a solved form
-at seed zero checks one plan (#257).
+For a seeded form, solved or grown, both rows run over `ASSEMBLY_SEEDS`. A row
+on a seeded form at seed zero checks one plan (#257).
 
 What the budget does **not** prove is that the proxy is tight. A proxy can
 pass row 1 and still be an invisible wall wherever a form is sparse. #75
@@ -511,8 +522,9 @@ browser probe.
     offset.
 11. **The proxy budget** (§2.2). No drawn vertex outside the proxy, within the
     declared tolerance. No primitive outside `reachKm`. The pad opening is the
-    corridor row's cylinder. A selected form with no proxy is red. Solved forms
-    run over `ASSEMBLY_SEEDS`. The thinnest-primitive figure is asserted.
+    corridor row's cylinder. A selected form with no proxy is red. Seeded forms
+    run over `ASSEMBLY_SEEDS`; a grown form's envelope is measured wider by
+    hand (§2.2). The thinnest-primitive figure is asserted.
 12. **Cruise never reaches a proxy** (C5). Every cruise keep-out sphere
     contains its body's collision sphere. No cruise exit places a ship inside a
     proxy, over the corpus `in-system-travel.md` measures. The count of legs

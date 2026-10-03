@@ -130,6 +130,14 @@ export interface StationGeometry {
 }
 
 /**
+ * A station form's id within its role. The forms themselves are drawings and
+ * live in `station-mesh.ts`, which re-exports this; the id is here so a
+ * Three-free module — the collision proxy — can name a form without its
+ * dependency arrow pointing at the renderer.
+ */
+export type StationFormId = "a" | "b" | "c" | "d" | "e";
+
+/**
  * **The display budget is not here.** How far a station's *drawn* object
  * reaches — the drydock frame, the asteroid, the flare stacks — is
  * `STATION_SILHOUETTE_KM` in `station-mesh.ts`, keyed on the same union.

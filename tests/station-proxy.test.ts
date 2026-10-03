@@ -27,9 +27,9 @@
  *    corridor cylinder, and the bay's own swept cylinder. Without this row a
  *    sphere over the whole reach passes rows 1 and 2.
  *
- * For a solved form every row runs over `ASSEMBLY_SEEDS`, and the berth seed
- * is swept on its own, because a dependency on it is never isolated when both
- * seeds move together.
+ * For a seeded form every row runs over `ASSEMBLY_SEEDS` with the berth on each
+ * side, and the berth seed is also swept on its own, because a dependency on it
+ * is never isolated when both seeds move together.
  *
  * The thinnest-primitive figure is declared and asserted.
  *
@@ -43,11 +43,6 @@ import {
 	STATION_TYPES,
 	type StationType,
 } from "../src/station";
-import {
-	corridorRadiusKm,
-	interiorAxialSpanKm,
-	stationInterior,
-} from "../src/station-interior";
 import {
 	SELECTED_FORM,
 	STATION_FORMS,
@@ -64,6 +59,14 @@ import {
 	stationProxy,
 } from "../src/station-proxy";
 import { ASSEMBLY_SEEDS, isSolvedForm } from "./helpers/solved-forms";
+import {
+	extractVertices,
+	inOpening,
+	openingOf,
+	sampleCylinder,
+	spinningOpeningPoints,
+	vertexInsideProxy,
+} from "./helpers/station-proxy-measure";
 import { codeOf } from "./lib/source-scan";
 
 const TYPES: StationType[] = STATION_TYPES;
@@ -73,145 +76,41 @@ const GREY = 0x9aa6b2;
  *  declaration in `station-proxy.ts` says what it lets through. */
 const VERTEX_TOLERANCE_KM = PROXY_VERTEX_TOLERANCE_KM;
 
+/**
+ * The rows that build a mesh per plan or sample the whole opening run for
+ * for seconds — the opening row reached 6.8 s once — so bun's 5 s default
+ * would fail them on a slower machine for load rather than for a defect.
+ */
+const HEAVY_ROW_MS = 30_000;
+
 /** Berth seeds swept on their own, at assembly seed zero. */
 const BERTH_SEEDS = [0, 1, 2, 7];
+
+/**
+ * The berth seeds the vertex row pairs with **every** plan: one of each
+ * parity, because the outpost's seeded berth stands port on an even seed and
+ * starboard on an odd one (`stationInterior`), and a plan measured with its
+ * berth on one side says nothing about the other. The rows that read only the
+ * proxy pair each plan with berth seed 0: the proxy does not read the berth
+ * seed, and a row below says so.
+ */
+const BERTH_SIDES = [0, 1];
 
 /** `[berthSeed, assemblySeed]` pairs a form is measured at. */
 function seedPairs(
 	type: StationType,
 	form: (typeof SELECTED_FORM)[StationType],
+	sides: readonly number[] = [0],
 ): [number, number][] {
 	const assembly = isSolvedForm(type, form) ? ASSEMBLY_SEEDS : [0];
 	return [
-		...assembly.map((seed): [number, number] => [0, seed]),
-		...BERTH_SEEDS.filter((seed) => seed !== 0).map(
+		...assembly.flatMap((seed) =>
+			sides.map((side): [number, number] => [side, seed]),
+		),
+		...BERTH_SEEDS.filter((seed) => !sides.includes(seed)).map(
 			(seed): [number, number] => [seed, 0],
 		),
 	];
-}
-
-// ---------------------------------------------------------------------------
-// The opening, read from the interior catalogue — never from the proxy
-// ---------------------------------------------------------------------------
-
-interface AxialBox {
-	hx: number;
-	hy: number;
-	z0: number;
-	z1: number;
-}
-
-interface AxialCylinder {
-	radiusKm: number;
-	z0: number;
-	z1: number;
-}
-
-/**
- * What §2.2 leaves open for one role. A bay role has the bay and the prism in
- * the spinning frame; every role has the corridor and (bay roles) the bay's
- * swept cylinder in the static frame.
- */
-interface Opening {
-	/** Open in the spinning frame. */
-	boxes: AxialBox[];
-	cylinders: AxialCylinder[];
-	/** Open in the static frame: what the spinning openings sweep. */
-	sweptCylinders: AxialCylinder[];
-}
-
-function openingOf(type: StationType): Opening {
-	const g = STATION_GEOMETRY[type];
-	const plane = g.aperturePlaneKm;
-	const reach = STATION_SILHOUETTE_KM[type];
-	const interior = stationInterior(type, plane, 0);
-	const corridor: AxialCylinder = {
-		radiusKm: corridorRadiusKm(g.aperture),
-		z0: plane,
-		z1: reach,
-	};
-	if (interior.presentation !== "bay") {
-		return { boxes: [], cylinders: [corridor], sweptCylinders: [corridor] };
-	}
-	const [z0, z1] = interiorAxialSpanKm(interior);
-	const bay: AxialBox = {
-		hx: interior.halfAcrossKm,
-		hy: interior.halfUpKm,
-		z0,
-		z1,
-	};
-	const prism: AxialBox = {
-		hx: interior.laneHalfAcrossKm,
-		hy: interior.laneHalfUpKm,
-		z0: plane,
-		z1: reach,
-	};
-	return {
-		boxes: [bay, prism],
-		cylinders: [],
-		sweptCylinders: [
-			corridor,
-			{ radiusKm: Math.hypot(bay.hx, bay.hy), z0: bay.z0, z1: bay.z1 },
-		],
-	};
-}
-
-const insideBox = (b: AxialBox, v: THREE.Vector3) =>
-	Math.abs(v.x) < b.hx && Math.abs(v.y) < b.hy && v.z > b.z0 && v.z < b.z1;
-
-const insideCylinder = (c: AxialCylinder, v: THREE.Vector3) =>
-	Math.hypot(v.x, v.y) < c.radiusKm && v.z > c.z0 && v.z < c.z1;
-
-/** Is this vertex strictly inside the spinning frame's opening? */
-function inOpening(opening: Opening, v: THREE.Vector3): boolean {
-	return (
-		opening.boxes.some((b) => insideBox(b, v)) ||
-		opening.cylinders.some((c) => insideCylinder(c, v))
-	);
-}
-
-/**
- * Coordinates across `[lo, hi]`: cell midpoints about 5 m apart, plus one a
- * millionth of the span inside each end. The grid alone stands 2.5 m off every
- * face, so a primitive that crossed a boundary by less than that would be
- * missed; the end values sit on the boundary for every other coordinate.
- */
-function span(lo: number, hi: number): number[] {
-	const step = 0.005;
-	const n = Math.max(2, Math.ceil((hi - lo) / step));
-	const eps = (hi - lo) * 1e-6;
-	return [
-		lo + eps,
-		...Array.from({ length: n }, (_, i) => lo + ((i + 0.5) * (hi - lo)) / n),
-		hi - eps,
-	];
-}
-
-/** Points strictly inside an axial box, faces included. */
-function sampleBox(b: AxialBox): THREE.Vector3[] {
-	const out: THREE.Vector3[] = [];
-	const zs = span(b.z0, b.z1);
-	for (const x of span(-b.hx, b.hx))
-		for (const y of span(-b.hy, b.hy))
-			for (const z of zs) out.push(new THREE.Vector3(x, y, z));
-	return out;
-}
-
-/** Points strictly inside an axial cylinder, its curved wall included. */
-function sampleCylinder(c: AxialCylinder): THREE.Vector3[] {
-	const out: THREE.Vector3[] = [];
-	const step = 0.005;
-	const radii = span(0, c.radiusKm);
-	for (const z of span(c.z0, c.z1)) {
-		for (const r of radii) {
-			const na = Math.max(8, Math.ceil((2 * Math.PI * r) / step));
-			for (let a = 0; a < na; a++) {
-				const t = (a / na) * 2 * Math.PI;
-				out.push(new THREE.Vector3(r * Math.cos(t), r * Math.sin(t), z));
-			}
-		}
-	}
-	return out;
 }
 
 /** How many sample points a primitive list holds strictly inside it. */
@@ -220,79 +119,6 @@ function intrusions(
 	points: readonly THREE.Vector3[],
 ): THREE.Vector3[] {
 	return points.filter((p) => proxyContains(primitives, p.x, p.y, p.z, -1e-9));
-}
-
-// ---------------------------------------------------------------------------
-// The built mesh's vertices, in kilometres
-// ---------------------------------------------------------------------------
-
-interface NamedVertex {
-	v: THREE.Vector3;
-	name: string;
-	/** Drawn under the spinning member, so it turns with the station. */
-	spun: boolean;
-}
-
-function extractVertices(
-	built: { root: THREE.Object3D; spinner: THREE.Object3D },
-	type: StationType,
-): NamedVertex[] {
-	const { root, spinner } = built;
-	root.updateMatrixWorld(true);
-	const out: NamedVertex[] = [];
-	const v = new THREE.Vector3();
-	const instance = new THREE.Matrix4();
-	const core = STATION_GEOMETRY[type].coreRadiusKm;
-
-	root.traverse((object) => {
-		const mesh = object as THREE.Mesh;
-		const position = mesh.geometry?.getAttribute?.("position");
-		if (!position) return;
-		let spun = false;
-		for (let a: THREE.Object3D | null = object; a; a = a.parent)
-			if (a === spinner) spun = true;
-		const instanced = object as THREE.InstancedMesh;
-		const count = instanced.isInstancedMesh ? instanced.count : 1;
-		for (let n = 0; n < count; n++) {
-			if (instanced.isInstancedMesh) instanced.getMatrixAt(n, instance);
-			else instance.identity();
-			for (let i = 0; i < position.count; i++) {
-				v.fromBufferAttribute(position as THREE.BufferAttribute, i);
-				v.applyMatrix4(instance);
-				mesh.localToWorld(v);
-				// The root is normalised to core radii — convert back to km
-				out.push({
-					v: v.clone().multiplyScalar(core),
-					name: object.name || object.type,
-					spun,
-				});
-			}
-		}
-	});
-	return out;
-}
-
-/**
- * Check whether a vertex is inside a primitive **of its own frame**. On a
- * station that spins, a vertex drawn under the spinning member is held to
- * `proxy.spinning` alone and every other vertex to `proxy.static` alone: at
- * phase 0 the two frames coincide, so testing against both at once would let
- * a turning part be covered by a primitive that does not turn with it — a
- * contact in the wrong frame once the station moves. A station that does not
- * spin has one frame, and both lists are it.
- */
-function vertexInsideProxy(
-	proxy: StationProxy,
-	type: StationType,
-	{ v, spun }: NamedVertex,
-	tolerance: number,
-): boolean {
-	const primitives = !STATION_GEOMETRY[type].spins
-		? [...proxy.spinning, ...proxy.static]
-		: spun
-			? proxy.spinning
-			: proxy.static;
-	return proxyContains(primitives, v.x, v.y, v.z, tolerance);
 }
 
 const fmt = (v: THREE.Vector3) =>
@@ -319,39 +145,47 @@ describe("station proxy budget (collision.md §9.1.11)", () => {
 		}
 	});
 
-	test("no drawn vertex outside the proxy, within tolerance", () => {
-		for (const type of TYPES) {
-			const form = SELECTED_FORM[type];
-			const opening = openingOf(type);
-			for (const [berthSeed, assemblySeed] of seedPairs(type, form)) {
-				const proxy = stationProxy(type, form, berthSeed, assemblySeed);
-				expect(proxy).not.toBeNull();
-				const mesh = buildStationForm(
+	test(
+		"no drawn vertex outside the proxy, within tolerance",
+		() => {
+			for (const type of TYPES) {
+				const form = SELECTED_FORM[type];
+				const opening = openingOf(type);
+				for (const [berthSeed, assemblySeed] of seedPairs(
 					type,
 					form,
-					GREY,
-					berthSeed,
-					assemblySeed,
-				);
-				const offenders = extractVertices(mesh, type).filter(
-					(vertex) =>
-						!inOpening(opening, vertex.v) &&
-						!vertexInsideProxy(proxy!, type, vertex, VERTEX_TOLERANCE_KM),
-				);
-				if (offenders.length > 0) {
-					const sample = offenders
-						.slice(0, 6)
-						.map(({ v, name }) => `${name} ${fmt(v)}`)
-						.join("; ");
-					console.log(
-						`${type} form ${form} berth ${berthSeed} assembly ${assemblySeed}: ` +
-							`${offenders.length} vertices outside the proxy — ${sample}`,
+					BERTH_SIDES,
+				)) {
+					const proxy = stationProxy(type, form, berthSeed, assemblySeed);
+					expect(proxy).not.toBeNull();
+					const mesh = buildStationForm(
+						type,
+						form,
+						GREY,
+						berthSeed,
+						assemblySeed,
 					);
+					const offenders = extractVertices(mesh, type).filter(
+						(vertex) =>
+							!inOpening(opening, vertex.v) &&
+							!vertexInsideProxy(proxy!, type, vertex, VERTEX_TOLERANCE_KM),
+					);
+					if (offenders.length > 0) {
+						const sample = offenders
+							.slice(0, 6)
+							.map(({ v, name }) => `${name} ${fmt(v)}`)
+							.join("; ");
+						console.log(
+							`${type} form ${form} berth ${berthSeed} assembly ${assemblySeed}: ` +
+								`${offenders.length} vertices outside the proxy — ${sample}`,
+						);
+					}
+					expect(offenders.length).toBe(0);
 				}
-				expect(offenders.length).toBe(0);
 			}
-		}
-	});
+		},
+		HEAVY_ROW_MS,
+	);
 
 	test("no primitive outside reachKm", () => {
 		for (const type of TYPES) {
@@ -372,41 +206,38 @@ describe("station proxy budget (collision.md §9.1.11)", () => {
 		}
 	});
 
-	test("the opening is clear: no primitive holds a point of it", () => {
-		for (const type of TYPES) {
-			const form = SELECTED_FORM[type];
-			const opening = openingOf(type);
-			const spinningPoints = [
-				...opening.boxes.flatMap(sampleBox),
-				...opening.cylinders.flatMap(sampleCylinder),
-			];
-			const staticPoints = opening.sweptCylinders.flatMap(sampleCylinder);
-			for (const [berthSeed, assemblySeed] of seedPairs(type, form)) {
-				const proxy = stationProxy(type, form, berthSeed, assemblySeed)!;
-				const spun = intrusions(proxy.spinning, spinningPoints);
-				const fixed = intrusions(proxy.static, staticPoints);
-				if (spun.length + fixed.length > 0) {
-					console.log(
-						`${type} form ${form} assembly ${assemblySeed}: ` +
-							`${spun.length} spinning and ${fixed.length} static intrusions — ` +
-							[...spun, ...fixed].slice(0, 4).map(fmt).join("; "),
-					);
+	test(
+		"the opening is clear: no primitive holds a point of it",
+		() => {
+			for (const type of TYPES) {
+				const form = SELECTED_FORM[type];
+				const opening = openingOf(type);
+				const spinningPoints = spinningOpeningPoints(opening);
+				const staticPoints = opening.sweptCylinders.flatMap(sampleCylinder);
+				for (const [berthSeed, assemblySeed] of seedPairs(type, form)) {
+					const proxy = stationProxy(type, form, berthSeed, assemblySeed)!;
+					const spun = intrusions(proxy.spinning, spinningPoints);
+					const fixed = intrusions(proxy.static, staticPoints);
+					if (spun.length + fixed.length > 0) {
+						console.log(
+							`${type} form ${form} assembly ${assemblySeed}: ` +
+								`${spun.length} spinning and ${fixed.length} static intrusions — ` +
+								[...spun, ...fixed].slice(0, 4).map(fmt).join("; "),
+						);
+					}
+					expect(spun.length).toBe(0);
+					expect(fixed.length).toBe(0);
 				}
-				expect(spun.length).toBe(0);
-				expect(fixed.length).toBe(0);
 			}
-		}
-	});
+		},
+		HEAVY_ROW_MS,
+	);
 
 	test("the opening row goes red on a proxy that closes the opening", () => {
 		// The row above must be able to fail: a sphere over the whole reach is
 		// what this module shipped first, and it passed rows 1 and 2.
 		for (const type of TYPES) {
-			const opening = openingOf(type);
-			const points = [
-				...opening.boxes.flatMap(sampleBox),
-				...opening.cylinders.flatMap(sampleCylinder),
-			];
+			const points = spinningOpeningPoints(openingOf(type));
 			const closed: ProxyPrimitive[] = [
 				{
 					kind: "sphere",
@@ -499,37 +330,43 @@ describe("station proxy budget (collision.md §9.1.11)", () => {
 		expect(reachesThree).toEqual([]);
 	});
 
-	test("the refinery's cells carry its plant: without them the plant is outside", () => {
-		// The proxy is derived from the solve cell by cell (§2.2), and this is
-		// what makes that more than a name: with every cell's box taken out, the
-		// rock and the deck leave the plant's tall units uncovered at every plan.
-		// A proxy whose cells were decorative would stay green here.
-		const form = SELECTED_FORM.refinery;
-		const opening = openingOf("refinery");
-		for (const assemblySeed of ASSEMBLY_SEEDS) {
-			const proxy = stationProxy("refinery", form, 0, assemblySeed)!;
-			const cells = new Set(
-				refineryPlantProxy(assemblySeed).map((b) => JSON.stringify(b)),
-			);
-			const withoutCells: StationProxy = {
-				...proxy,
-				spinning: proxy.spinning.filter((p) => !cells.has(JSON.stringify(p))),
-			};
-			expect(withoutCells.spinning.length).toBeLessThan(proxy.spinning.length);
-			const mesh = buildStationForm("refinery", form, GREY, 0, assemblySeed);
-			const uncovered = extractVertices(mesh, "refinery").filter(
-				(vertex) =>
-					!inOpening(opening, vertex.v) &&
-					!vertexInsideProxy(
-						withoutCells,
-						"refinery",
-						vertex,
-						VERTEX_TOLERANCE_KM,
-					),
-			);
-			expect(uncovered.length).toBeGreaterThan(0);
-		}
-	});
+	test(
+		"the refinery's cells carry its plant: without them the plant is outside",
+		() => {
+			// The proxy is derived from the solve cell by cell (§2.2), and this is
+			// what makes that more than a name: with every cell's box taken out, the
+			// rock and the deck leave the plant's tall units uncovered at every plan.
+			// A proxy whose cells were decorative would stay green here.
+			const form = SELECTED_FORM.refinery;
+			const opening = openingOf("refinery");
+			for (const assemblySeed of ASSEMBLY_SEEDS) {
+				const proxy = stationProxy("refinery", form, 0, assemblySeed)!;
+				const cells = new Set(
+					refineryPlantProxy(assemblySeed).map((b) => JSON.stringify(b)),
+				);
+				const withoutCells: StationProxy = {
+					...proxy,
+					spinning: proxy.spinning.filter((p) => !cells.has(JSON.stringify(p))),
+				};
+				expect(withoutCells.spinning.length).toBeLessThan(
+					proxy.spinning.length,
+				);
+				const mesh = buildStationForm("refinery", form, GREY, 0, assemblySeed);
+				const uncovered = extractVertices(mesh, "refinery").filter(
+					(vertex) =>
+						!inOpening(opening, vertex.v) &&
+						!vertexInsideProxy(
+							withoutCells,
+							"refinery",
+							vertex,
+							VERTEX_TOLERANCE_KM,
+						),
+				);
+				expect(uncovered.length).toBeGreaterThan(0);
+			}
+		},
+		HEAVY_ROW_MS,
+	);
 
 	test("the refinery's proxy reads the assembly seed, cell by cell", () => {
 		// The Works is the selected form whose proxy derives from the placement

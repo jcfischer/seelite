@@ -112,6 +112,18 @@ export const REFINERY_GRID = 7;
 export const REFINERY_RADIUS = 2;
 
 /**
+ * Where the Works' plan stands, kilometres: the cell pitch, and the floor the
+ * rock's +Z face is quarried to, which every cell's centre stands on. Here
+ * rather than in the builder because two modules read them — the drawing
+ * (`buildRefineryWorks`) and the collision proxy (`station-proxy.ts`), which
+ * follows the same plan cell by cell and must not hold a second copy of where
+ * a cell is. A 0.16 km cell carries a 60 m unit with a clear lane between
+ * neighbours; why the floor is high on the rock is the builder's to say.
+ */
+export const WORKS_CELL_KM = 0.16;
+export const WORKS_FLOOR_KM = 0.16;
+
+/**
  * The plants: the head house at the centre, a pipe line running from it to
  * the −Y tip and the mine head at the end of it. The line is what gives
  * every plan a direction — a plant has an intake — and the rest is the

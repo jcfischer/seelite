@@ -24,15 +24,20 @@
  * a red row rather than a surprise. For the refinery's solved form the proxy
  * reads the same placement solve the mesh reads (`placementsOf`), cell by
  * cell, and a row shows the cells carry the plant. The outpost's Salvage is
- * solved from its own draw rather than from a placement grid, so its proxy is
- * one set of primitives sized to contain the plans it was measured over
- * instead of following one.
+ * **grown, not solved** (§2.2): `buildOutpostSalvage` accretes it from its own
+ * draw, and that plan exists only inside the renderer. So its proxy does not
+ * follow a plan; it is one seed-independent envelope sized to contain the
+ * plans it was measured over, and it is only as good as that measurement.
  *
  * **Which plans that is.** `npm test` gates every row on `ASSEMBLY_SEEDS`,
- * twelve plans. `scripts/measure-station-proxy.ts` is the hand-run half: at
- * assembly seeds 0–2399 it read no plan of either seeded form with a vertex
- * past the test's 60 m tolerance — the Works' worst 44.1 m, the Salvage's
- * 36.1 m (2026-10-03). A plan outside that range is not measured.
+ * twelve plans, and the vertex row builds each with the berth on both sides.
+ * The hand-run half is `scripts/measure-station-proxy.ts`, which shares the
+ * test's vertex walk, opening and frame rule. Run as
+ * `bun scripts/measure-station-proxy.ts 1200 <0|1200> <refinery|outpost>` —
+ * four runs, 2–3.5 minutes each — it read no plan at assembly seeds 0–2399,
+ * berth on either side, with a vertex past the test's 60 m tolerance: the
+ * Works' worst 44.1 m, the Salvage's 36.1 m (2026-10-03, on the commit that
+ * carries this paragraph). A plan outside that range is not measured.
  *
  * **What it turns with.** `spinning` primitives are in the spinning member's
  * frame. `static` primitives are in the static frame — only non-empty for the
@@ -49,16 +54,21 @@
  * that would cross one is cut into the pieces around it (`cutAround`).
  */
 
-import type { StationType } from "./station";
+import type { StationFormId, StationType } from "./station";
 import { STATION_GEOMETRY } from "./station";
 import {
 	corridorRadiusKm,
 	interiorAxialSpanKm,
 	stationInterior,
 } from "./station-interior";
-import type { StationFormId } from "./station-mesh";
 import { placementsOf } from "./station-modular";
-import { REFINERY, REFINERY_VOCABULARY, SALVAGE_CORE } from "./station-plant";
+import {
+	REFINERY,
+	REFINERY_VOCABULARY,
+	SALVAGE_CORE,
+	WORKS_CELL_KM,
+	WORKS_FLOOR_KM,
+} from "./station-plant";
 
 // ---------------------------------------------------------------------------
 // Primitive types
@@ -260,8 +270,6 @@ function computeThinnest(primitives: readonly ProxyPrimitive[]): number {
 				min = Math.min(min, p.hx, p.hy, p.hz);
 				break;
 			case "sphere":
-				min = Math.min(min, p.radiusKm);
-				break;
 			case "capsule":
 				min = Math.min(min, p.radiusKm);
 				break;
@@ -455,15 +463,12 @@ function shipyardGantryProxy(): StationProxy {
 // Refinery D — Works (solved form)
 // ---------------------------------------------------------------------------
 
-/** `WORKS_CELL_KM` and `WORKS_FLOOR_KM` (`station-mesh.ts`): the plant's cell
- *  pitch and the quarried floor every cell's centre stands on. */
-const WORKS_CELL_KM = 0.16;
-const WORKS_FLOOR_KM = 0.16;
-
 /**
  * `STATION_SILHOUETTE_KM.refinery`, which lives in the renderer and so cannot
- * be imported here. The reach row holds every primitive to the real figure,
- * so a copy that drifted above it is a red row rather than a quiet overshoot.
+ * be imported here — the map's #28 keeps the display budget in the renderer
+ * module on purpose, so that docking reading it is a fact about imports. The
+ * reach row holds every primitive to the real figure, so a copy that drifted
+ * above it is a red row rather than a quiet overshoot.
  */
 const WORKS_REACH_KM = 0.68;
 
@@ -510,13 +515,27 @@ export function refineryPlantProxy(assemblySeed: number): ProxyBox[] {
 			p.module === REFINERY.HEAD
 				? plane
 				: WORKS_FLOOR_KM + (WORKS_UNIT_TOP_KM[p.module] ?? 0);
-		const z1 = Math.min(unitTop, Math.sqrt(WORKS_REACH_KM ** 2 - corner ** 2));
+		const z0 = WORKS_FLOOR_KM - WORKS_UNIT_FOOT_KM;
+		// A cell whose outer corner stands at or past the reach, or whose trim
+		// would put its top under its foot, is a plan this proxy cannot hold:
+		// skipping it would drop coverage without a word, and a NaN box would
+		// poison `thinnestKm`. Neither can happen inside `REFINERY_RADIUS` 2,
+		// whose worst corner is about 0.41 km; this is the tripwire for the day
+		// the field grows.
+		const headroom = WORKS_REACH_KM ** 2 - corner ** 2;
+		const z1 =
+			headroom > 0 ? Math.min(unitTop, Math.sqrt(headroom)) : Number.NaN;
+		if (!(z1 > z0))
+			throw new Error(
+				`refinery plan at assembly seed ${assemblySeed}: the cell at ` +
+					`(${p.dx}, ${p.dy}) has no room inside the ${WORKS_REACH_KM} km reach`,
+			);
 		return {
 			x0: x - half,
 			x1: x + half,
 			y0: y - half,
 			y1: y + half,
-			z0: WORKS_FLOOR_KM - WORKS_UNIT_FOOT_KM,
+			z0,
 			z1,
 		};
 	});
@@ -561,10 +580,10 @@ function refineryWorksProxy(assemblySeed: number): StationProxy {
 
 /**
  * The Salvage: a boxy freighter section (the core) carrying the deck, with
- * welded debris round it. The debris is drawn from the assembly seed by the
- * form's own generator rather than by a placement grid, so the proxy is one
- * set of primitives sized to the plans the module header names, rather than
- * one that follows a plan:
+ * welded debris round it. The debris is grown from the assembly seed by the
+ * form's own generator rather than solved on a placement grid, and that plan
+ * lives only in the renderer, so the proxy is one set of primitives sized to
+ * the plans the module header names, rather than one that follows a plan:
  *
  * - the core section as a box from its keel to the underside of the deck;
  * - a sphere centred below the origin, its top under the plane, for the
