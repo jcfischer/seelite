@@ -30,10 +30,8 @@ import {
 	type Angular,
 	type FlightPerformance,
 	type Ship,
-	type World,
 	stepAngular as stepVentAngular,
 	stepFlight as stepVentFlight,
-	stepWorld as stepVentWorld,
 	flightPerformance,
 	frameMean,
 	steadyFrame,
@@ -51,7 +49,11 @@ import { add, length, scale, sub, v3 } from "../src/vec3";
 import { codeOf } from "./lib/source-scan";
 import * as orbiting from "./helpers/orbiting-frame";
 import { PLAYER_BASELINE_HULL } from "../src/hull";
-import { type SpeedControl, speedControl } from "./helpers/speed-control";
+import {
+	type SpeedControl,
+	speedControl,
+	stepSpeedWorld,
+} from "./helpers/speed-control";
 
 // The rows below were written against a nose, a throttle and the assist, and
 // are about the laws under them — the clock, the frame, the cap — rather than
@@ -62,12 +64,7 @@ const stepFlight = (
 	dt: number,
 	perf: FlightPerformance,
 ) => stepVentFlight(ship, speedControl(c), dt, perf);
-const stepWorld = (
-	world: World,
-	c: SpeedControl,
-	dt: number,
-	perf: FlightPerformance,
-) => stepVentWorld(world, speedControl(c), dt, perf);
+const stepWorld = stepSpeedWorld;
 const stepAngular = (
 	rates: Angular,
 	command: Angular,

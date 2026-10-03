@@ -242,3 +242,44 @@ test("a turn settles on its heading instead of hunting around it", () => {
 	expect(worstAfter).toBeLessThan((3 * Math.PI) / 180);
 	expect(last).toBeLessThan((0.5 * Math.PI) / 180);
 });
+
+test("a raider banks into its turn: its up leans toward the side it turns to (#646)", () => {
+	// `aimStick` rolls the up axis into the turn, which is the bank the old
+	// slew drew. The raider's own integrator rolled about the nose and the
+	// Hull step's rolls about aft, as the player's always did (#646), so the
+	// roll command changed sign with the move. This row holds the bank's
+	// sense: a flipped roll command flies a raider that banks out of every
+	// turn, and nothing else here would notice.
+	const player = { pos: v3(), vel: v3() };
+	const playerNose = v3(0, 0, -1);
+	const start = createCombatEnemy(player, playerNose, 99);
+	const nose = v3(0, 0, -1);
+	const up = v3(0, 1, 0);
+	const right = cross(nose, up);
+	// The player stands off the raider's starboard beam, level with it.
+	let enemy = {
+		...start,
+		ship: { pos: v3(), vel: v3() },
+		nose,
+		up,
+		rates: { pitch: 0, yaw: 0, roll: 0 },
+	};
+	player.pos = scale(right, 3);
+	let lean = 0;
+	for (let t = 0; t < 1; t += DT) {
+		enemy = stepCombatEnemy(
+			enemy,
+			player,
+			playerNose,
+			createCombatPrototype(),
+			false,
+			DT,
+		).state;
+		const toward = scale(
+			sub(player.pos, enemy.ship.pos),
+			1 / length(sub(player.pos, enemy.ship.pos)),
+		);
+		lean = Math.max(lean, dot(enemy.up, toward));
+	}
+	expect(lean).toBeGreaterThan(0.2);
+});

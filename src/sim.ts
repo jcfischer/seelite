@@ -76,7 +76,17 @@ import {
 } from "./system";
 import { type PlanetAppearance, appearanceOf } from "./planet-appearance";
 import { planetApproachEntryTime } from "./planet-approach-boundary";
-import { type Vec3, add, cross, dot, length, scale, sub, v3 } from "./vec3";
+import {
+	type Vec3,
+	add,
+	cross,
+	dot,
+	length,
+	rotateAbout,
+	scale,
+	sub,
+	v3,
+} from "./vec3";
 
 /**
  * What a body is for rendering purposes.
@@ -1541,6 +1551,152 @@ export function thrustShares(
 const clamp = (v: number, lo: number, hi: number): number =>
 	Math.min(hi, Math.max(lo, v));
 
+/** A hull's attitude as its two axes, unit and orthogonal, in sim space. */
+export interface Attitude {
+	nose: Vec3;
+	up: Vec3;
+}
+
+/**
+ * Turn an attitude by body rates over `dt`, as an axis and an angle: the one
+ * attitude integrator (#646 D10).
+ *
+ * The body axes are the player's quaternion's: pitch about starboard
+ * (`nose × up`), yaw about dorsal, roll about aft (`-nose`). Axis-angle is
+ * what a hull spinning at constant rates does over a step, and it does not
+ * depend on an axis order. The Euler composition the player used before #646
+ * agrees with it on every single axis exactly, and with all three at once to
+ * second order in `rate × dt` (`tests/hull-step.test.ts`).
+ */
+export function turnAttitude(
+	from: Attitude,
+	rates: Angular,
+	dt: number,
+): Attitude {
+	const right = cross(from.nose, from.up);
+	const spin = add(
+		add(scale(right, rates.pitch), scale(from.up, rates.yaw)),
+		scale(from.nose, -rates.roll),
+	);
+	const w = length(spin);
+	if (w === 0 || dt <= 0) return from;
+	const axis = scale(spin, 1 / w);
+	const nose = rotateAbout(from.nose, axis, w * dt);
+	const up = rotateAbout(from.up, axis, w * dt);
+	const n = scale(nose, 1 / length(nose));
+	const u = sub(up, scale(n, dot(up, n)));
+	return { nose: n, up: scale(u, 1 / length(u)) };
+}
+
+/** An attitude and the rates it is turning at: what a hull carries from one
+ *  Hull step to the next besides its position and velocity. */
+export interface HullAttitude extends Attitude {
+	rates: Angular;
+}
+
+/**
+ * What a pilot hands the Hull step (#646 D2): a stick, and what the
+ * translation vents are asked. Every pilot — the player's hands, the docking
+ * computer, a raider, the scoop harness — makes its own stick outside the
+ * step, and the step is the only thing that turns it into firings.
+ */
+export interface HullControl {
+	/** `stepAngular`'s `command`: −1…1 per axis. */
+	stick: Angular;
+	/** `stepAngular`'s `impulse`: the pointer's change of rate, rad/s. */
+	impulse?: Angular;
+	/** Vents fired alone by slot (§3.5), on top of what the axes ask. */
+	direct?: VentLevels;
+	/** The assist on the attitude axes: the player's toggle under the
+	 *  player's stick, on for a controller, whose law is written for one. */
+	turnAssist: boolean;
+	/**
+	 * What the translation vents are asked across the step, or `null` when the
+	 * regime moves the hull itself. Cruise does (§3.11, #10): the step then
+	 * turns the hull and leaves its position and velocity to the regime.
+	 */
+	translation: {
+		demand: LinearDemand;
+		assist: boolean;
+		frame?: FrameMotion;
+	} | null;
+}
+
+/** One Hull step: where the hull points and how it spins afterwards, every
+ *  vent it fired, and the two Saturation families (CONTEXT "Saturation"). */
+export interface HullStep extends HullAttitude {
+	/** The attitude and the translation vents together: the Firing table the
+	 *  plumes draw and `thrustShares` reads. */
+	firing: VentLevels;
+	saturated: { linear: boolean; angular: boolean };
+}
+
+const anyOf = (flags: Record<string, boolean>): boolean =>
+	Object.values(flags).some(Boolean);
+
+/**
+ * One step of a hull flown by its vents (CONTEXT "Hull step", #646): the
+ * attitude vents turn it, then the translation vents move it along the
+ * attitude it has just turned to.
+ *
+ * The order is the law, and it is here so no caller can get it wrong. The
+ * turn's firing is handed to the translation step whole: a lone or a dead
+ * attitude vent pushes the hull as well as turning it (§3.2), and that push
+ * lands in **this** step's velocity. Callers used to hold the turn's result in
+ * a field between two calls; a frame that turned without translating could
+ * leave it for the next one.
+ *
+ * `ship` is moved in place, as `stepFlight` moves it, and left alone when
+ * `control.translation` is `null`. `perf` is the hull's.
+ */
+export function stepHull(
+	ship: Ship,
+	from: HullAttitude,
+	control: HullControl,
+	dt: number,
+	perf: FlightPerformance,
+): HullStep {
+	const turned = stepAngular(
+		from.rates,
+		control.stick,
+		control.impulse ?? { pitch: 0, yaw: 0, roll: 0 },
+		control.turnAssist,
+		dt,
+		perf,
+		control.direct,
+	);
+	const { nose, up } = turnAttitude(from, turned.rates, dt);
+	const angular = anyOf(turned.saturated);
+	if (!control.translation)
+		return {
+			nose,
+			up,
+			rates: turned.rates,
+			firing: turned.firing,
+			saturated: { linear: false, angular },
+		};
+	const flown = stepFlight(
+		ship,
+		{
+			nose,
+			up,
+			demand: control.translation.demand,
+			assist: control.translation.assist,
+			attitude: turned,
+			frame: control.translation.frame,
+		},
+		dt,
+		perf,
+	);
+	return {
+		nose,
+		up,
+		rates: flown.rates,
+		firing: flown.firing,
+		saturated: { linear: anyOf(flown.saturated), angular },
+	};
+}
+
 /**
  * One step of the whole world: the clock, then the bodies, then the ship.
  *
@@ -1550,14 +1706,18 @@ const clamp = (v: number, lo: number, hi: number): number =>
  * error that shows up as a station wobbling rather than as anything obviously
  * broken.
  *
+ * The ship is flown by the Hull step, so the player's turn and its push land
+ * in the same step as everyone else's (#646).
+ *
  * `dt` is seconds of **sim** time and is never scaled (#10).
  */
 export function stepWorld(
 	world: World,
-	control: FlightControl,
+	attitude: HullAttitude,
+	control: HullControl,
 	dt: number,
 	perf: FlightPerformance,
-): FlightStep {
+): HullStep {
 	const from = { ...world.ship.pos };
 	const planetStarts = new Map(
 		world.system.bodies
@@ -1565,7 +1725,7 @@ export function stepWorld(
 			.map((body) => [body.id, { ...body.pos }]),
 	);
 	advanceWorldClock(world, dt);
-	const step = stepFlight(world.ship, control, dt, perf);
+	const step = stepHull(world.ship, attitude, control, dt, perf);
 	if (dt <= 0) return step;
 	let earliest: { time: number; body: Body; start: Vec3 } | null = null;
 	for (const body of world.system.bodies) {

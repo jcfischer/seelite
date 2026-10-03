@@ -283,7 +283,6 @@ import {
 	type FlightPerformance,
 	flightPerformance,
 	type Body,
-	type FlightControl,
 	type FrameMotion,
 	type System,
 	type World,
@@ -300,12 +299,12 @@ import {
 	resetWorldToStart,
 	stationOf,
 	stationPose,
-	type AngularStep,
+	type HullControl,
+	type HullStep,
 	type LinearDemand,
-	NO_ATTITUDE,
 	type VentLevels,
 	speedDemand,
-	stepAngular,
+	stepHull,
 	stepWorld,
 	thrustShares,
 } from "./sim";
@@ -2546,20 +2545,15 @@ class Game {
 	 *  across a view toggle, because a look you set up is a look you meant. */
 	chaseYaw = 0;
 	/** How fast the ship is turning, radians per second — rotation has momentum,
-	 *  and `sim.ts`'s `stepAngular` owns the dynamics. Saved state since #619:
+	 *  and `sim.ts`'s Hull step owns the dynamics. Saved state since #619:
 	 *  a save taken tumbling resumes tumbling (`flight-model.md` §3.9). */
 	rates: Angular = { pitch: 0, yaw: 0, roll: 0 };
-	/** This frame's attitude step, handed to the translation step so a lone
-	 *  or dead attitude vent pushes the hull as well as turning it, and spent
-	 *  there (`FlightControl.attitude`). */
-	private attitudeStep: AngularStep = NO_ATTITUDE;
 	/** Every vent the last step fired: the sim's firing table, which the
 	 *  plumes draw (`flight-model.md` §3.8.1, #621). Empty on every path that
-	 *  flies no vent — docked, cruise, a placed attitude. */
+	 *  flies no vent — docked, a placed attitude — and in cruise, whose turn
+	 *  does fly the attitude vents and is drawn only once #647 lands
+	 *  (`turnInCruise`). */
 	ventFiring: VentLevels = {};
-	/** Whether this step's attitude vents could not meet the assist's demand,
-	 *  read off `stepAngular` before the step is spent. */
-	private attitudeSaturated = false;
 	/** §3.8.1's cue: which family's marker is pulsing, and since when
 	 *  (`vent-cue.ts`). On the game clock, so a held clock holds it. */
 	saturationCue: SaturationCue = quietCue();
@@ -9942,21 +9936,17 @@ class Game {
 		return bodyVelocity(this.world.system, id, this.world.gameTime);
 	}
 
-	/** What the player is asking of the flight model over the next `dt` (#5's
-	 *  model, in `sim.ts`). The assist is a toggle and its state is remembered
-	 *  through cruise, which does not honour it (#10 §1).
+	/** What the player asks of the translation vents over the next `dt`
+	 *  (#5's model, in `sim.ts`). The assist is a toggle and its state is
+	 *  remembered through cruise, which does not honour it (#10 §1).
 	 *
 	 *  `demand` is the hands' (`pilotDemand`, #620) when the pilot flies, and
 	 *  the lever's alone when the docking computer does. */
-	private control(dt: number, demand: LinearDemand): FlightControl {
-		return {
-			nose: this.nose(),
-			up: this.shipUp(),
-			demand,
-			assist: this.assist,
-			attitude: this.attitudeStep,
-			frame: this.assistFrameMotion(dt),
-		};
+	private translation(
+		dt: number,
+		demand: LinearDemand,
+	): NonNullable<HullControl["translation"]> {
+		return { demand, assist: this.assist, frame: this.assistFrameMotion(dt) };
 	}
 
 	/**
@@ -11142,18 +11132,20 @@ class Game {
 		return true;
 	}
 
+	/** The docking computer's stick for this frame, or `null` when it is not
+	 *  flying. It sets the throttle itself; the Hull step turns the hull. */
 	private stepDockingComputer(
 		dt: number,
 		approaches: Map<string, DockingApproach>,
-	): boolean {
+	): Pick<HullControl, "stick" | "turnAssist"> | null {
 		// Taken before anything can return. Every early exit leaves the corridor,
 		// so the stored phase is idle unless a step runs and records its own.
 		this.dockingComputer.beginStep();
-		if (!this.dockingComputer.engaged || this.dockedAt) return false;
+		if (!this.dockingComputer.engaged || this.dockedAt) return null;
 		// The first entry is the nearest station: `dockingApproaches` walks in
 		// range order.
 		const [nearestId, approach] = approaches.entries().next().value ?? [];
-		if (!nearestId || !approach) return false;
+		if (!nearestId || !approach) return null;
 		const previousPhase = this.dockingComputer.phaseAt(nearestId);
 		const { frame } = approach;
 		const stationState = this.dockingStateOf(nearestId);
@@ -11191,23 +11183,18 @@ class Game {
 				stationId: nearestId,
 				rangeKm: length(approach.pose.rel),
 			});
-			return false;
+			return null;
 		}
 		// **Through the hull's vents** (#619, `flight-model.md` §3.6): the
 		// computer asks for a stick and the attitude couples turn the hull, on
 		// the assist's rate law whatever the player's toggle says — the
 		// computer is a controller, and its law is written for one. It used to
 		// place the attitude by slewing it, which turned a hull no vent turned.
-		this.turnShip(
+		const stick = this.computerFollower.stick(
+			{ nose: this.nose(), up: this.shipUp() },
+			{ nose: command.nose, up: command.up },
+			this.flownPerformance,
 			dt,
-			this.computerFollower.stick(
-				{ nose: this.nose(), up: this.shipUp() },
-				{ nose: command.nose, up: command.up },
-				this.flownPerformance,
-				dt,
-			),
-			{ pitch: 0, yaw: 0, roll: 0 },
-			true,
 		);
 		let speedKms = command.speedKms;
 		if (command.phase === "run-in") {
@@ -11230,54 +11217,43 @@ class Game {
 			}
 		}
 		this.throttle = Math.min(1, speedKms / ASSIST_CAP_KMS);
-		return true;
+		return { stick, turnAssist: true };
 	}
 
 	/**
-	 * One frame of rotation through the attitude vents (`flight-model.md`
-	 * §3.8): `stepAngular` composes the stick and the pointer into firings,
-	 * the rates take what the couples delivered, and the quaternion turns by
-	 * them. The step is kept for the translation step, which owes the hull the
-	 * push a lone or dead attitude vent gives (`FlightControl.attitude`).
-	 *
-	 * `assist` is the player's toggle for the player's stick, and `true` for
-	 * the docking computer, whose law is a rate controller's.
+	 * Where the ship points and how it spins after a Hull step (#646). The
+	 * quaternion stays the truth (#646 D3): the step is handed its nose and up
+	 * and its result is written back through `setAttitude`, the one place an
+	 * attitude becomes a quaternion.
 	 */
-	private turnShip(
-		dt: number,
-		command: Angular,
-		impulse: Angular,
-		assist: boolean,
-		direct: VentLevels = {},
-	) {
-		const step = stepAngular(
-			this.rates,
-			command,
-			impulse,
-			assist,
+	private applyHullTurn(step: HullStep) {
+		this.setAttitude(step.nose, step.up);
+		this.rates = step.rates;
+	}
+
+	/**
+	 * A turn in cruise (§1, #10): the attitude vents turn the hull and cruise
+	 * moves it. The flight sound hears the turn.
+	 *
+	 * **Neither the plumes nor the cue see it yet, and that is today's
+	 * behaviour kept on purpose (#646).** Before the Hull step a cruise turn
+	 * set `rotationShare` and nothing else, because the firing table was only
+	 * written in normal flight. Whether a cruise turn is drawn and cued is
+	 * #647's, which deletes the two lines this leaves out.
+	 */
+	private turnInCruise(dt: number, hands: Omit<HullControl, "translation">) {
+		const step = stepHull(
+			this.world.ship,
+			{ nose: this.nose(), up: this.shipUp(), rates: this.rates },
+			{ ...hands, translation: null },
 			dt,
 			this.flownPerformance,
-			direct,
 		);
-		this.attitudeStep = step;
-		this.attitudeSaturated = Object.values(step.saturated).some(Boolean);
-		this.rates = step.rates;
+		this.applyHullTurn(step);
 		this.rotationShare = thrustShares(
 			step.firing,
 			this.flownPerformance,
 		).rotation;
-		// Rotations composed in the ship's own frame — multiply on the right —
-		// so pitch is about the wing axis wherever the nose happens to point,
-		// rather than about a world axis the player cannot see.
-		const turn = new THREE.Quaternion().setFromEuler(
-			new THREE.Euler(
-				this.rates.pitch * dt,
-				this.rates.yaw * dt,
-				this.rates.roll * dt,
-				"XYZ",
-			),
-		);
-		this.orientation.multiply(turn).normalize();
 	}
 
 	/**
@@ -11507,7 +11483,6 @@ class Game {
 		// field existed, which is the scan doing its job.
 		this.pendingJump = null;
 		this.rates = { pitch: 0, yaw: 0, roll: 0 };
-		this.attitudeStep = NO_ATTITUDE;
 		this.computerFollower.reset();
 		this.mouseDx = 0;
 		this.mouseDy = 0;
@@ -11564,7 +11539,6 @@ class Game {
 		// rather than through a helper: `leg-reset-coverage` reads this body's
 		// own assignments against the flight path's.
 		this.ventFiring = {};
-		this.attitudeSaturated = false;
 		this.saturationCue = quietCue();
 		// And its memory (sage round 3): a reset taken in cruise would cue a
 		// drop on the next frame, and a hot hull would carry its cooling clicks
@@ -13479,16 +13453,16 @@ class Game {
 	 */
 	step(dt: number) {
 		// What the drive and thrusters do this step, set where they fly (#544).
-		// Zero on every path that does not fly them: docked, cruise, and the
-		// docking computer's rotation.
+		// Zero on every path that flies no vent: docked, and a placed attitude.
+		// A cruise turn flies the attitude vents and sets `rotationShare` only
+		// (`turnInCruise`).
 		this.driveShare = 0;
 		this.lateralShare = 0;
 		this.rotationShare = 0;
-		// And the firing table and the cue's two flags, for the same reason:
-		// a step that flies no vent fires none and saturates nothing, and a
-		// cue left up by the last one runs out its hold on the clock.
+		// And the firing table and the cue, for the same reason: a step that
+		// flies no vent fires none and saturates nothing, and a cue left up by
+		// the last one runs out its hold on the clock.
 		this.ventFiring = {};
-		this.attitudeSaturated = false;
 		this.saturationCue = stepSaturationCue(
 			this.saturationCue,
 			{ linear: false, angular: false },
@@ -13693,13 +13667,19 @@ class Game {
 			? STATION_THROTTLE_RATE_SCALE
 			: 1;
 
-		if (this.stepDockingComputer(dt, approaches)) {
+		const computer = this.stepDockingComputer(dt, approaches);
+		if (computer) {
 			this.mouseDx = 0;
 			this.mouseDy = 0;
 			if (FLIGHT_SOUND.arms === "legacy") this.audio.ambient(this.throttle);
 			// The computer flies the lever, as it did before the strafe keys:
 			// a key held while it flies has already cancelled it above.
-			this.advanceNormalFlight(dt, approaches, speedDemand(this.throttle));
+			this.advanceNormalFlight(
+				dt,
+				approaches,
+				computer,
+				speedDemand(this.throttle),
+			);
 			return;
 		}
 		this.computerFollower.reset();
@@ -13735,23 +13715,24 @@ class Game {
 		this.mouseDx = 0;
 		this.mouseDy = 0;
 
-		// Rotation carries momentum (`stepAngular`): the ship eases into a turn
-		// and, with the assist on, eases out of it. Setting the rate straight from
-		// the key state is what made this feel like 1984. With the assist off it
-		// is §3.9's uncapped law, flown under `?rotation=newtonian` (#618) and
-		// the only law since the vents (#619).
+		// Rotation carries momentum (`stepAngular`, inside the Hull step): the
+		// ship eases into a turn and, with the assist on, eases out of it.
+		// Setting the rate straight from the key state is what made this feel
+		// like 1984. With the assist off it is §3.9's uncapped law, flown under
+		// `?rotation=newtonian` (#618) and the only law since the vents (#619).
 		// What the pilot's hands hold, or nothing while they are held off the
 		// ship (#532, #535).
 		const pilotHeld = (id: CommandId) => !handsHeld && this.held(id);
 		// A vent slot's command fires that vent alone, on top of what the axes
-		// ask (#620, §3.5): it turns the hull and pushes it at once.
-		this.turnShip(
-			dt,
-			{ pitch, yaw, roll },
+		// ask (#620, §3.5): it turns the hull and pushes it at once. Flown below,
+		// in one Hull step with the translation (#646): nothing between here and
+		// there reads the attitude or the rates.
+		const hands = {
+			stick: { pitch, yaw, roll },
 			impulse,
-			this.assist,
-			heldVents(pilotHeld),
-		);
+			turnAssist: this.assist,
+			direct: heldVents(pilotHeld),
+		};
 
 		// Held rather than stepped, for the same reason throttle is: an angle the
 		// player is choosing by eye wants a rate, not a ladder of fixed stops.
@@ -13806,6 +13787,7 @@ class Game {
 		}
 
 		if (this.regime === "cruise") {
+			this.turnInCruise(dt, hands);
 			this.stepCruise(dt, contactTargetAtFrameStart);
 			return;
 		}
@@ -13813,6 +13795,7 @@ class Game {
 		this.advanceNormalFlight(
 			dt,
 			approaches,
+			hands,
 			pilotDemand(
 				pilotHands(pilotHeld, {
 					assist: this.assist,
@@ -13834,6 +13817,7 @@ class Game {
 	private advanceNormalFlight(
 		dt: number,
 		before: Map<string, DockingApproach>,
+		hands: Omit<HullControl, "translation">,
 		demand: LinearDemand,
 	) {
 		// `before` is the approaches from the top of the step, for every station
@@ -13844,28 +13828,32 @@ class Game {
 		// The whole world, not just the ship: `dt` is sim seconds and the bodies
 		// are on orbits driven by the same clock. Stepping the ship alone would
 		// freeze the system around it, which is the state the scaffold was in.
-		const control = this.control(dt, demand);
-		const flown = stepWorld(this.world, control, dt, this.flownPerformance);
-		// The attitude step is spent: its push is in this step's velocity, and a
-		// frame that flies without turning (cruise's exit, a placed attitude)
-		// must not hand it to the next one.
-		this.attitudeStep = NO_ATTITUDE;
+		// One Hull step (#646): the hands' stick turns the hull, and the
+		// translation vents move it along the nose it has just turned to. The
+		// turn's push is in this step's velocity, inside the step.
+		const flown = stepWorld(
+			this.world,
+			{ nose: this.nose(), up: this.shipUp(), rates: this.rates },
+			{ ...hands, translation: this.translation(dt, demand) },
+			dt,
+			this.flownPerformance,
+		);
 		// The attitude step's rates and the translation firing's kick (#619).
-		this.rates = flown.rates;
+		this.applyHullTurn(flown);
 		// Off the vents that fired (#544, `flight-model.md` §4): the sound
-		// hears what the firing table says, not a figure beside it.
+		// hears what the firing table says, not a figure beside it. One table,
+		// so one read: a translation axis fires no attitude vent and an
+		// attitude axis no translation vent (`tests/hull-step.test.ts`).
 		const shares = thrustShares(flown.firing, this.flownPerformance);
 		this.driveShare = shares.main;
 		this.lateralShare = shares.lateral;
+		this.rotationShare = shares.rotation;
 		// §3.8.1: the same table the plumes draw, and the cue off the sim's
 		// own flags — nothing here decides what saturated means.
 		this.ventFiring = flown.firing;
 		this.saturationCue = stepSaturationCue(
 			this.saturationCue,
-			{
-				linear: Object.values(flown.saturated).some(Boolean),
-				angular: this.attitudeSaturated,
-			},
+			flown.saturated,
 			this.world.gameTime,
 		);
 		// After the world moved, because the hold is measured against where the

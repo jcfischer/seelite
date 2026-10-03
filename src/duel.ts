@@ -9,8 +9,8 @@
  * being on the player, and is the controller's trigger discipline rather than
  * a different weapon. A hit selects the pool facing the shooter on either
  * side, and the raider is hit-tested at its hull's true size rather than the
- * rig's drawn 3x. It also flies by the player's flight rules: it turns through
- * `stepAngular`, and its assist holds speed in the player's local frame
+ * rig's drawn 3x. It also flies by the player's flight rules: it turns and
+ * moves through the player's Hull step (#646), and its assist holds speed in the player's local frame
  * (`DuelPilot.frame`), so the 2 km/s cap is one speed for both ships.
  *
  * **What it returns rather than does.** The raider's hit on the player comes

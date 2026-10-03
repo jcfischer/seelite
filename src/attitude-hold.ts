@@ -15,11 +15,12 @@
  * spinning with its station — is followed with the small lag that rate needs:
  * `ω² / 2α`, under a degree for the courier at 3 rpm.
  *
- * Pure, no Three.js: the body axes follow `main.ts`'s quaternion step, pitch
- * about starboard, yaw about dorsal and roll about aft (`-nose`).
+ * Pure, no Three.js: the body axes are the Hull step's (`sim.ts`
+ * `turnAttitude`), pitch about starboard, yaw about dorsal and roll about aft
+ * (`-nose`).
  */
 
-import type { Angular, FlightPerformance } from "./sim";
+import type { Angular, Attitude, FlightPerformance } from "./sim";
 import {
 	type Vec3,
 	add,
@@ -32,12 +33,6 @@ import {
 	sub,
 	v3,
 } from "./vec3";
-
-/** A hull's attitude as its two axes, unit and orthogonal. */
-export interface Attitude {
-	nose: Vec3;
-	up: Vec3;
-}
 
 /** The nose's arc onto `want`: a unit axis and an angle. Half a turn away
  *  the axis vanishes and any perpendicular will do, so `up` stands in. */
@@ -160,29 +155,4 @@ export class AttitudeFollower {
 	reset(): void {
 		this.last = null;
 	}
-}
-
-/**
- * Turn an attitude by body rates over `dt`: the world rotation `main.ts`'s
- * quaternion step makes, as an axis and an angle. For a harness that flies a
- * hull without a quaternion.
- */
-export function turnAttitude(
-	from: Attitude,
-	rates: Angular,
-	dt: number,
-): Attitude {
-	const right = cross(from.nose, from.up);
-	const spin = add(
-		add(scale(right, rates.pitch), scale(from.up, rates.yaw)),
-		scale(from.nose, -rates.roll),
-	);
-	const w = length(spin);
-	if (w === 0 || dt <= 0) return from;
-	const axis = scale(spin, 1 / w);
-	const nose = rotateAbout(from.nose, axis, w * dt);
-	const up = rotateAbout(from.up, axis, w * dt);
-	const n = scale(nose, 1 / length(nose));
-	const u = sub(up, scale(n, dot(up, n)));
-	return { nose: n, up: scale(u, 1 / length(u)) };
 }

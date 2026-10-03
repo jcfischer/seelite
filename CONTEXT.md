@@ -868,8 +868,8 @@ the two **Saturation** flags come out. The attitude half runs first and its
 push lands in the same step's velocity. In cruise only the attitude half is
 flown, because cruise supplies its own translation. The pilot, the raider and
 the scoop pilot each fly through it, and each makes its own stick — the pilot's
-hands, the docking computer, `turnToward` — outside it. Decided on #636's
-follow-up nodes (#646, #647); until they land, the step is still composed by each caller.
+hands, the docking computer, the raider's `aimStick` — outside it
+(`stepHull` in `src/sim.ts`, #646).
 _Avoid_: Flight step — *that is `stepFlight`, the translation half only*.
 
 **Saturation**:

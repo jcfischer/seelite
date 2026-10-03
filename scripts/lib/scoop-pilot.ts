@@ -9,7 +9,8 @@
  *
  * - the canister's marker: its bearing and range, not its velocity;
  * - the ship's own speed readout, through the assist's throttle;
- * - the courier's turn, through `stepAngular` at its hull's limits.
+ * - the courier's turn and drive, through the game's Hull step at its hull's
+ *   limits (#646).
  *
  * It flies **stop, face, creep**: no throttle while the nearest canister is
  * more than 8° off the nose, and otherwise a speed that falls with range.
@@ -38,8 +39,7 @@ import {
 	type Angular,
 	flightPerformance,
 	speedDemand,
-	stepAngular,
-	stepFlight,
+	stepHull,
 	steadyFrame,
 } from "../../src/sim";
 import {
@@ -170,41 +170,27 @@ export function flyToCargo(
 			pitch = dot(arc, right) * stick;
 			yaw = dot(arc, up) * stick;
 		}
-		const attitude = stepAngular(
-			rates,
-			{ pitch, yaw, roll: 0 },
-			{ pitch: 0, yaw: 0, roll: 0 },
-			true,
-			PILOT_DT,
-			COURIER,
-		);
-		rates = attitude.rates;
-		const spin = add(scale(right, rates.pitch), scale(up, rates.yaw));
-		const w = length(spin);
-		if (w > 0) {
-			const axis = scale(spin, 1 / w);
-			nose = unit(rotate(nose, axis, w * PILOT_DT), nose);
-			const turnedUp = rotate(up, axis, w * PILOT_DT);
-			up = unit(sub(turnedUp, scale(nose, dot(turnedUp, nose))), up);
-		}
 		const throttle =
 			(off * 180) / Math.PI > FACE_FIRST_DEG
 				? 0
 				: Math.min(1, (0.5 * km + 0.05) / ASSIST_CAP_KMS);
-		const flown = stepFlight(
+		// The game's own Hull step (#646): the pilot's stick turns the hull by its
+		// vents and the drive moves it along the nose it has just turned to.
+		({ nose, up, rates } = stepHull(
 			ship,
+			{ nose, up, rates },
 			{
-				nose,
-				up,
-				demand: speedDemand(throttle),
-				assist: true,
-				attitude,
-				frame: steadyFrame(frameVel),
+				stick: { pitch, yaw, roll: 0 },
+				turnAssist: true,
+				translation: {
+					demand: speedDemand(throttle),
+					assist: true,
+					frame: steadyFrame(frameVel),
+				},
 			},
 			PILOT_DT,
 			COURIER,
-		);
-		rates = flown.rates;
+		));
 	}
 	return { dropped, scooped, allScoopedS: null };
 }

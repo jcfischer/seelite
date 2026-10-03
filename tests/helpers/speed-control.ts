@@ -12,7 +12,11 @@
 import {
 	type FlightControl,
 	type FrameMotion,
+	type HullAttitude,
+	type HullControl,
 	NO_ATTITUDE,
+	type World,
+	stepWorld,
 	speedDemand,
 } from "../../src/sim";
 import { type Vec3, cross, length, scale, v3 } from "../../src/vec3";
@@ -39,3 +43,31 @@ export const speedControl = (c: SpeedControl): FlightControl => ({
 	attitude: NO_ATTITUDE,
 	frame: c.frame,
 });
+
+/**
+ * `stepWorld` flown with a `SpeedControl`: a Hull step whose stick is
+ * released and whose hull is not turning (#646), so it fires no attitude vent
+ * and flies exactly the speed control's translation.
+ */
+export const stepSpeedWorld = (
+	world: World,
+	c: SpeedControl,
+	dt: number,
+	perf: Parameters<typeof stepWorld>[4],
+) => {
+	const attitude: HullAttitude = {
+		nose: c.nose,
+		up: upAcross(c.nose),
+		rates: { pitch: 0, yaw: 0, roll: 0 },
+	};
+	const control: HullControl = {
+		stick: { pitch: 0, yaw: 0, roll: 0 },
+		turnAssist: true,
+		translation: {
+			demand: speedDemand(c.throttle),
+			assist: c.assist,
+			frame: c.frame,
+		},
+	};
+	return stepWorld(world, attitude, control, dt, perf);
+};

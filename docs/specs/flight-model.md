@@ -330,9 +330,13 @@ in force inside it. No vent is drawn for it, and no momentum accounting applies.
 
 - `FlightControl` becomes a per-axis demand (§3.6). `stepFlight` and
   `stepAngular` compose demands into vent firings and sum force and torque.
-  Every caller goes through that path: `Game.control()`, the autopilot,
-  `src/combat-enemy.ts`, `src/combat-rig.ts`, `src/duel.ts`,
-  `src/interdiction.ts`.
+  Every caller goes through that path, and since #646 through one call that
+  composes the two in order, `stepHull` (CONTEXT "Hull step"): the player's
+  hands and the docking computer in `Game`, the raider
+  (`src/combat-enemy.ts`, which `src/combat-rig.ts` and `src/duel.ts` fly
+  through), and the scoop and docking harnesses. `src/interdiction.ts` steps
+  no hull: it reads the same `angularMax` the step caps a turn at.
+  `tests/hull-step.test.ts` refuses a new caller of either half.
 - `flightPerformance` derives angular authority from each hull's actual vent
   arms and shares, not from `acceleration / length`.
 - `thrustShares` (#544) reads from the vent firing table, so the flight sound
