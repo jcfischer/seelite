@@ -1,7 +1,7 @@
 /**
  * `flight-model.md` §3.8.1's two cues (#621): what saturation means on the
- * sim's side, the latch and pulse the HUD draws it with, and where each
- * firing vent's throat is drawn.
+ * sim's side, and the latch and pulse the HUD draws it with. Where each
+ * firing vent's throat is drawn is `tests/vent-plumes.test.ts`'s.
  *
  * Every law here is swept over frame deltas, for `vents.test.ts`'s reason.
  */
