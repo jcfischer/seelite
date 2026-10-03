@@ -15238,7 +15238,8 @@ class Game {
 	/**
 	 * Takes a world write made outside Holdings — the law's offence and its
 	 * lazy clear — through the same adopt point, so it saves exactly when it
-	 * changed the world. Hand it a `world-state.ts` writer's result:
+	 * changed the world. Hand it a `world-state.ts` writer's result, or
+	 * `chargeOffence`'s world bound in the same method (#633):
 	 * `tests/world-state-wiring.test.ts` reads every call's argument.
 	 */
 	private adoptWorld(world: WorldState): void {
