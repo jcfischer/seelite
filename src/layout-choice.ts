@@ -23,20 +23,6 @@ export const LAYOUT_LABELS: Readonly<Record<LayoutName, string>> = {
 };
 
 /**
- * Put another shipped layout in force, and count what that drops.
- *
- * **The player's moves do not come across**, by the principal's ruling on
- * #639: a move is a diff against one table and means nothing against
- * another. `dropped` is how many there were, so the screen can say so.
- */
-export function switchLayout(
-	current: Layout,
-	to: LayoutName,
-): { readonly layout: Layout; readonly dropped: number } {
-	return { layout: shippedOf(to), dropped: layoutMoves(current).length };
-}
-
-/**
  * Whether Chrome takes `Ctrl`+`W` before the page sees it.
  *
  * Everywhere but macOS, where the browser's shortcuts are on `Cmd`. The
@@ -54,11 +40,12 @@ export const ctrlChordsReachBrowser = (platform: string): boolean =>
  * strafe up and `W` is forward, so the chord is half the three-axis burn, and
  * Chrome reserves it: no page handler runs before the tab closes.
  */
-export function layoutChoiceNote(
-	selected: LayoutName,
-	moves: number,
-	platform: string,
-): string {
+export function layoutChoiceNote(current: Layout, platform: string): string {
+	const selected = current.base;
+	// **A switch drops the player's moves**, by the principal's ruling on #639:
+	// a move is a diff against one table and means nothing against another.
+	// Counted here, the one place, so the line says so before the step.
+	const moves = layoutMoves(current).length;
 	// Read off the shipped table rather than typed (sage round 1), so a key
 	// moved in `MOUSE_FLIGHT_KEYS` moves this line with it.
 	const table = shippedOf(selected);

@@ -233,6 +233,11 @@ check(
 	aft.along < -10 * floor,
 	fmt(aft),
 );
+check(
+	"and s left the speed lever alone too (sage round 2)",
+	aft.after.throttle === lever,
+	`lever ${lever} -> ${aft.after.throttle}`,
+);
 
 // ---------------------------------------------------------------------------
 // The three-axis burn: all three translations held at once.

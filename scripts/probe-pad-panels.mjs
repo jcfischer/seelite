@@ -994,13 +994,20 @@ try {
 		// Cross advances the focused row, which is what clicking it does on that
 		// screen. The modal branch ignored `activate` entirely, so the one button
 		// a pad player reaches for first did nothing. Sage found it, round 5.
-		const beforeCross = await page.evaluate(() => ({
-			...window.__seelite.settings.value,
-		}));
+		//
+		// **The layout is a row too** (#639). The keyboard layout is the
+		// screen's last row and is stored with the bindings, not in
+		// `settings`, so a walk that lands on it changes a value this read
+		// would otherwise not see — the first run of #639 read that as
+		// "changed nothing".
+		const rowValues = () =>
+			page.evaluate(() => ({
+				...window.__seelite.settings.value,
+				layout: window.__seelite.layoutInForce().base,
+			}));
+		const beforeCross = await rowValues();
 		await tap(B.a);
-		const afterCross = await page.evaluate(() => ({
-			...window.__seelite.settings.value,
-		}));
+		const afterCross = await rowValues();
 		const crossChanged = Object.keys(beforeCross).filter(
 			(k) => beforeCross[k] !== afterCross[k],
 		);
@@ -1015,6 +1022,9 @@ try {
 			() => !document.querySelector("[data-settings-panel]"),
 		);
 		check("Circle closes it", closed, `closed ${closed}`);
+		// Back to the shipped layout if Cross moved it, so no later page in
+		// this browser flies another one.
+		await page.evaluate(() => window.__seelite.selectLayout("default"));
 	}
 } finally {
 	await browser.close();

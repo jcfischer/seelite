@@ -18,24 +18,33 @@ import {
 	isHeld,
 	type Layout,
 	LAYOUT_NAMES,
+	type LayoutName,
 	layoutOf,
 	layoutMoves,
 	MOUSE_FLIGHT_BINDINGS,
 	rebind,
 	resolveKey,
 	SHIPPED_LAYOUTS,
+	shippedOf,
 	type Trigger,
 	triggerKey,
 } from "../src/commands";
 import { controlsCatalogue } from "../src/controls-catalogue";
 import { controlsBody } from "../src/controls-reference";
-import {
-	ctrlChordsReachBrowser,
-	layoutChoiceNote,
-	switchLayout,
-} from "../src/layout-choice";
+import { ctrlChordsReachBrowser, layoutChoiceNote } from "../src/layout-choice";
 
 const MOUSE = MOUSE_FLIGHT_BINDINGS;
+
+/** The first trigger a command has in a layout (sage round 2's nit). */
+const triggerOf = (layout: Layout, id: CommandId): Trigger =>
+	layout.find((b) => b.command === id)?.trigger as Trigger;
+
+/** `fly.cruise` moved onto `key`, the rebind these rows use. */
+const moveCruise = (layout: Layout, key: string): Layout =>
+	rebind(layout, "fly.cruise", triggerOf(layout, "fly.cruise"), {
+		kind: "key",
+		key,
+	});
 
 const heldOn = (layout: Layout, id: CommandId, ...keys: string[]) =>
 	isHeld(layout, id, new Set(keys), "cockpit");
@@ -143,9 +152,7 @@ describe("the mouse-flight table (#639)", () => {
 	});
 
 	test("a rebind keeps the layout it was made on", () => {
-		const from = MOUSE.find((b) => b.command === "fly.cruise")
-			?.trigger as Trigger;
-		const moved = rebind(MOUSE, "fly.cruise", from, { kind: "key", key: "k" });
+		const moved = moveCruise(MOUSE, "k");
 		expect(moved.base).toBe("mouse-flight");
 		expect(layoutMoves(moved)).toHaveLength(1);
 	});
@@ -173,13 +180,16 @@ describe("the store keeps the selection beside the moves (#639)", () => {
 	});
 
 	test("a move is stored off the mouse layout's key, and round-trips", () => {
-		const from = MOUSE.find((b) => b.command === "fly.strafeVentral")
-			?.trigger as Trigger;
-		const moved = rebind(MOUSE, "fly.strafeVentral", from, {
-			kind: "key",
-			key: "c",
-			hold: true,
-		});
+		const moved = rebind(
+			MOUSE,
+			"fly.strafeVentral",
+			triggerOf(MOUSE, "fly.strafeVentral"),
+			{
+				kind: "key",
+				key: "c",
+				hold: true,
+			},
+		);
 		const stored = JSON.parse(serializeLayout(moved));
 		expect(stored.moves).toHaveLength(1);
 		expect(stored.moves[0].from.key).toBe(" ");
@@ -214,34 +224,32 @@ describe("the store keeps the selection beside the moves (#639)", () => {
 });
 
 describe("switching layout drops the player's moves, and says so (#639)", () => {
-	test("a switch puts the other shipped table in force", () => {
-		const { layout, dropped } = switchLayout(DEFAULT_BINDINGS, "mouse-flight");
-		expect(layout).toBe(MOUSE);
-		expect(dropped).toBe(0);
-	});
-
-	test("it counts the rebinds it drops", () => {
-		const from = DEFAULT_BINDINGS.find((b) => b.command === "fly.cruise")
-			?.trigger as Trigger;
-		const moved = rebind(DEFAULT_BINDINGS, "fly.cruise", from, {
-			kind: "key",
-			key: "k",
-		});
-		expect(switchLayout(moved, "mouse-flight").dropped).toBe(1);
+	test("each name stands for its shipped table, and an unknown one throws", () => {
+		expect(shippedOf("mouse-flight")).toBe(MOUSE);
+		expect(shippedOf("default")).toBe(DEFAULT_BINDINGS);
+		expect(() => shippedOf("joystick" as LayoutName)).toThrow();
 	});
 
 	test("the note reads its keys off the table it names (sage round 1)", () => {
-		expect(layoutChoiceNote("mouse-flight", 0, "MacIntel")).toContain(
+		expect(layoutChoiceNote(MOUSE, "MacIntel")).toContain(
 			"w/s fore and aft, a/d strafe, Ctrl/Space up and down, ↑/↓ and ←/→ pitch and yaw",
 		);
-		expect(layoutChoiceNote("default", 0, "MacIntel")).toContain(
+		expect(layoutChoiceNote(DEFAULT_BINDINGS, "MacIntel")).toContain(
 			"Shift/Ctrl fore and aft, ←/→ strafe, ↑/↓ up and down, w/s and a/d pitch and yaw",
 		);
 	});
 
 	test("the note names the loss before the switch", () => {
-		expect(layoutChoiceNote("default", 2, "MacIntel")).toContain("2 rebinds");
-		expect(layoutChoiceNote("default", 0, "MacIntel")).not.toContain("rebind");
+		const once = moveCruise(DEFAULT_BINDINGS, "k");
+		const twice = rebind(once, "fly.jump", triggerOf(once, "fly.jump"), {
+			kind: "key",
+			key: "l",
+		});
+		expect(layoutChoiceNote(once, "MacIntel")).toContain("1 rebind.");
+		expect(layoutChoiceNote(twice, "MacIntel")).toContain("2 rebinds");
+		expect(layoutChoiceNote(DEFAULT_BINDINGS, "MacIntel")).not.toContain(
+			"rebind",
+		);
 	});
 });
 
@@ -255,11 +263,9 @@ describe("the Ctrl warning (#639)", () => {
 	});
 
 	test("the mouse layout warns off macOS, and only there", () => {
-		expect(layoutChoiceNote("mouse-flight", 0, "Win32")).toContain("Ctrl+W");
-		expect(layoutChoiceNote("mouse-flight", 0, "MacIntel")).not.toContain(
-			"Ctrl+W",
-		);
-		expect(layoutChoiceNote("default", 0, "Win32")).not.toContain("Ctrl+W");
+		expect(layoutChoiceNote(MOUSE, "Win32")).toContain("Ctrl+W");
+		expect(layoutChoiceNote(MOUSE, "MacIntel")).not.toContain("Ctrl+W");
+		expect(layoutChoiceNote(DEFAULT_BINDINGS, "Win32")).not.toContain("Ctrl+W");
 	});
 });
 
@@ -272,9 +278,7 @@ describe("the Controls tab names the layout it prints (#639)", () => {
 	});
 
 	test("a moved mouse layout reads as the player's, and says which", () => {
-		const from = MOUSE.find((b) => b.command === "fly.cruise")
-			?.trigger as Trigger;
-		const moved = rebind(MOUSE, "fly.cruise", from, { kind: "key", key: "k" });
+		const moved = moveCruise(MOUSE, "k");
 		const body = controlsBody(controlsCatalogue(moved), new Set());
 		expect(body).toContain("PLAYER LAYOUT");
 		expect(body).toContain("MOUSE FLIGHT");

@@ -113,10 +113,14 @@ export function rigLegend(layout: Layout): string {
 	const beam = anyOf([...keys("fight.fireBeam"), triggerLabel(RIG_MOUSE)]);
 	// The mouse-flight layout gives the pulse laser's key to the vertical
 	// strafe (#639), and the rig's mouse is the beam's, so the pulse has no
-	// trigger here at all. The segment says so in the tab's word rather than
-	// printing a blank in front of "pulse".
-	const pulse = keys("fight.firePulse");
-	return `${pulse.length > 0 ? anyOf(pulse) : "unbound"} pulse · ${beam} beam · ${anyOf(keys("fight.rigIncoming"))} warning · ${anyOf(keys("fight.rigEcm"))} ECM`;
+	// trigger here at all. A segment with no key says so in the tab's word
+	// rather than printing a blank — every segment, so the next one to lose
+	// its key does too (sage round 2).
+	const named = (id: CommandId) => {
+		const found = keys(id);
+		return found.length > 0 ? anyOf(found) : "unbound";
+	};
+	return `${named("fight.firePulse")} pulse · ${beam} beam · ${named("fight.rigIncoming")} warning · ${named("fight.rigEcm")} ECM`;
 }
 
 /** The font a line was fitted at, and the width its widest text takes there. */

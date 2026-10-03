@@ -1528,7 +1528,10 @@ export type LayoutName = (typeof LAYOUT_NAMES)[number];
  */
 export const layoutOf = (
 	rows: readonly Binding[],
-	base: LayoutName = "default",
+	// The rows' own name when they carry one, so a caller that rebuilds a
+	// named table cannot relabel it by omission (sage round 2); a plain array
+	// is the default layout's.
+	base: LayoutName = (rows as Partial<Layout>).base ?? "default",
 ): Layout => {
 	// Non-enumerable, so a spread or a `JSON.stringify` of the rows sees rows
 	// only. A frozen table cannot take a name, so it must already carry this
@@ -2065,7 +2068,7 @@ const holdRows = (bindings: Layout): Map<CommandId, HeldBinding[]> => {
 	// `Layout` carries it now, so every argument here has already been through
 	// `layoutOf` — and this stays, because the brand is a compile-time claim
 	// and the probe tier calls into this module from JavaScript.
-	layoutOf(bindings, bindings.base);
+	layoutOf(bindings);
 	const index = new Map<CommandId, HeldBinding[]>();
 	for (const b of bindings) {
 		const keyed = keyBinding(b);

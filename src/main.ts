@@ -779,14 +779,14 @@ import {
 	LAYOUT_NAMES,
 	type LayoutName,
 	isHeld,
-	layoutMoves,
 	rebind,
 	resolveKey,
 	resolvePad,
+	shippedOf,
 	type Trigger,
 	VENT_COMMANDS,
 } from "./commands";
-import { LAYOUT_LABELS, layoutChoiceNote, switchLayout } from "./layout-choice";
+import { LAYOUT_LABELS, layoutChoiceNote } from "./layout-choice";
 import { keyDispatch } from "./key-dispatch";
 
 /**
@@ -9231,14 +9231,15 @@ class Game {
 	}
 
 	/**
-	 * Put a shipped layout in force, and drop the player's moves (#639).
+	 * Put a shipped layout in force, and drop the player's moves (#639) —
+	 * the principal's ruling: a move is a diff against one table.
 	 *
 	 * The settings row's step, and reachable as `__seelite.selectLayout(...)`
 	 * so a probe flies the layout the player selects rather than one it built.
 	 * The row's note names what a switch drops before the player makes it.
 	 */
 	selectLayout(name: LayoutName) {
-		this.commitLayout(switchLayout(this.bindings, name).layout);
+		this.commitLayout(shippedOf(name));
 	}
 
 	/**
@@ -18838,12 +18839,7 @@ if (postcard) {
 			{
 				label: "Keyboard layout",
 				value: () => LAYOUT_LABELS[game.layoutInForce().base],
-				note: () =>
-					layoutChoiceNote(
-						game.layoutInForce().base,
-						layoutMoves(game.layoutInForce()).length,
-						browserPlatform(),
-					),
+				note: () => layoutChoiceNote(game.layoutInForce(), browserPlatform()),
 				step: (direction) => {
 					const at = LAYOUT_NAMES.indexOf(game.layoutInForce().base);
 					const n = LAYOUT_NAMES.length;
