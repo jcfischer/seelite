@@ -37,15 +37,15 @@ const WRITERS = [
 	"observeSystemRelay",
 	"setDeficits",
 	"setLegalHeat",
-	// `legal.ts`'s offence write: the decayed heat plus the offence, through
-	// `setLegalHeat` (civilian-combat H4). A writer by composition, not a new one.
-	"withOffence",
-	// `legal.ts`'s witness write and its lazy clear (H6), through
-	// `setLegalWitnesses`. Also a writer by composition.
+	// `legal.ts`'s lazy clear of the witnesses and the assault marks (H6),
+	// through `setLegalWitnesses` and `setLegalAssaulted`. A writer by
+	// composition, not a new one.
 	"settleIncident",
-	// `legal.ts`'s sustained-fire charge (#396), through `setLegalAssaulted`.
-	// A third writer by composition, and the one that had no row until this one.
-	"markAssaultCharged",
+	// **`withOffence` and `markAssaultCharged` are not here since #633**, and
+	// that is a tightening: they are `legal.ts`'s own steps inside
+	// `chargeOffence` and no longer exported, so `Game` has no business naming
+	// them. The offence reaches `Game` as `chargeOffence`'s `world`, which is
+	// held by the `adoptWorld` row below.
 	"visit",
 ];
 
@@ -161,15 +161,17 @@ describe("the Game's world writes", () => {
 		// ship green and do nothing: an offence that charges heat and never names
 		// a witness (H5 unwritten), and a `refusedByLaw` computed by a helper
 		// nobody calls (H5 and H7 unread).
-		const charge = MAIN.split("private chargeTrafficOffence(")[1] ?? "";
-		const chargeBody = charge.slice(0, 1600);
-		expect(chargeBody).toContain("stationsInEarshot(");
-		expect(chargeBody).toContain("withOffence(");
+		//
+		// **#633 moved the charge into `legal.ts`'s `chargeOffence`**, so what
+		// this row holds of `Game` is the facts it hands over and the one door
+		// the result comes back through. The law itself — the earshot, the
+		// incident, the mark — is `tests/legal.test.ts`'s, at the event.
+		//
 		// **#396 amended which end the reach is measured from**, and these two
 		// assertions are that amendment rather than the frame body's rule it
 		// replaced: the candidates are this system's stations, and the position
-		// the distance is taken from is the victim's — passed in as a required
-		// argument, so no call site can quietly measure from the player again.
+		// the distance is taken from is the victim's — a required fact, so no
+		// call site can quietly measure from the player again.
 		const earshot = MAIN.split("private earshotStations()")[1] ?? "";
 		expect(earshot.slice(0, 400)).toContain('body.kind === "station"');
 		// The key comes from the one derivation of it, not a spelling of it.
@@ -177,16 +179,63 @@ describe("the Game's world writes", () => {
 		expect(MAIN).toContain("private stationKey(station: Station): CarrierKey");
 		// Every charge names where the **carrier** stood. The fight is passed
 		// rather than a position plucked out at each call site, so the rule this
-		// assertion holds is where the earshot is measured *from* inside the
-		// charge: the victim's own row. A charge that read the player's position
-		// instead — through `world.ship` or a parameter default — is #396's
-		// amendment quietly undone, and it would still compile.
-		expect(MAIN.match(/this\.chargeTrafficOffence\(/g) ?? []).toHaveLength(3);
-		expect(charge.slice(0, 1600)).toContain("engagement.flight.ship.pos");
-		expect(charge.slice(0, 1600)).not.toContain("world.ship.pos");
-		// And the sustained-fire charge is marked written, not only priced.
-		const assault = MAIN.split("private assaultTrafficCarrier(")[1] ?? "";
-		expect(assault.slice(0, 900)).toContain("markAssaultCharged(");
+		// assertion holds is where the earshot is measured *from*: the victim's
+		// own row. Facts that read the player's position instead — through
+		// `world.ship` or a parameter default — are #396's amendment quietly
+		// undone, and they would still compile.
+		const facts = methodBody("private offenceFacts(");
+		expect(facts).toContain("victim: engagement.flight.ship.pos,");
+		expect(facts).toContain("stations: this.earshotStations(),");
+		expect(facts).not.toContain("world.ship.pos");
+		// The instance and the strike's clock come off one row, the one each
+		// site read before its transition.
+		expect(facts).toContain("instanceOrdinal: before.instanceOrdinal,");
+		expect(facts).toContain("struckAt: strikeClock(before),");
+
+		// **Three sites, one call each, one door** (#633 D1, D3). Each reads the
+		// carrier's row, applies its own transition through Holdings if it has
+		// one, then charges against the row it read — the order H9 needs, since
+		// a row read after the divert already describes the strike. And no site
+		// saves by hand: the result goes through `adoptWorld`, which saves on a
+		// change in reference (#631), so an assault is one write and not two.
+		expect(MAIN.match(/\bchargeOffence\(/g) ?? []).toHaveLength(3);
+		for (const [head, offence, transition] of [
+			["private assaultTrafficCarrier(", "assault", null],
+			["private divertTrafficCarrier(", "struck", "this.applyCarrierTransition("],
+			[
+				"private destroyTrafficCarrier(",
+				"destroyed",
+				"this.applyCarrierTransition(",
+			],
+		] as const) {
+			const body = methodBody(head);
+			const read = body.indexOf("const carrier = this.carrierCondition(");
+			const call = body.indexOf("const charge = chargeOffence(");
+			expect(read).toBeGreaterThan(-1);
+			expect(call).toBeGreaterThan(read);
+			expect(body.match(/\bchargeOffence\(/g) ?? []).toHaveLength(1);
+			expect(body.slice(call, call + 200)).toContain(
+				`this.offenceFacts(actor, carrier, "${offence}", engagement)`,
+			);
+			expect(body.slice(call)).toContain("this.adoptWorld(charge.world);");
+			expect(body).not.toContain("saveDirty(");
+			if (transition !== null) {
+				const at = body.indexOf(transition);
+				expect(at).toBeGreaterThan(read);
+				expect(at).toBeLessThan(call);
+			}
+		}
+		// **And `Game` composes none of it.** The four functions the charge used
+		// to be assembled from are `legal.ts`'s own now (#633 D5); a name
+		// reappearing here — even in a comment, which is where a stale claim
+		// about who reads what would live — is the composition coming back.
+		for (const name of [
+			"chargedOffence",
+			"marginalOffenceHeat",
+			"withOffence",
+			"markAssaultCharged",
+		])
+			expect(MAIN).not.toMatch(new RegExp(`\\b${name}\\b`));
 
 		// Three consumers, each named by the call it has to feed. A count over the
 		// file was the first version and it is the wrong shape: it moves when a
@@ -471,12 +520,26 @@ describe("the Game's world writes", () => {
 		// The `this.commerceWorld =` row above cannot see these: the assignment
 		// is the adopt point's. So their writer guarantee is read here, at the
 		// argument (#631; #633 routes the offence charge through the same door).
-		const calls = [...MAIN.matchAll(/this\.adoptWorld\(\s*([^\s(]*)/g)].map(
-			(m) => m[1],
-		);
-		// The offence and its lazy clear. If this drops, the regex has drifted.
-		expect(calls.length).toBeGreaterThanOrEqual(2);
-		expect(calls.filter((call) => !WRITERS.includes(call))).toEqual([]);
+		const calls = [...MAIN.matchAll(/this\.adoptWorld\(\s*([^\s(]*)/g)];
+		// The three offences and the lazy clear. If this drops, the regex has
+		// drifted.
+		expect(calls.length).toBeGreaterThanOrEqual(4);
+		const stray = calls.filter((m) => {
+			if (WRITERS.includes(m[1])) return false;
+			// **The one extension, made on purpose (#633).** `chargeOffence`
+			// returns the world beside the heat, so its site adopts
+			// `<name>.world` — accepted only when `<name>` is bound to a
+			// `chargeOffence(` call earlier in the **same method**. Any other
+			// `.world` — a hand-built object, an outcome from somewhere else —
+			// is still stray.
+			const field = /^(\w+)\.world\)/.exec(m[1]);
+			if (field === null) return true;
+			const at = m.index ?? -1;
+			const [start] = methodSpan(MAIN.lastIndexOf("\n\t/**", at));
+			const bound = MAIN.indexOf(`const ${field[1]} = chargeOffence(`, start);
+			return !(bound > start && bound < at);
+		});
+		expect(stray.map((m) => m[0])).toEqual([]);
 	});
 
 	test("the Holdings fields are written at the adopt point and nowhere that should save", () => {

@@ -70,7 +70,10 @@
  * §6 refuses, arriving by the door that was installed to prevent it.
  */
 import type { CarrierKey } from "./carrier-key";
+import { carrierStanding } from "./carrier-standing";
+import { type EarshotStation, stationsInEarshot } from "./distress";
 import type { StationType } from "./station";
+import type { Vec3 } from "./vec3";
 import {
 	type LegalStatus,
 	type WorldState,
@@ -283,6 +286,140 @@ export const assaultCharged = (
 	status: LegalStatus,
 	carrier: CarrierKey,
 ): boolean => status.assaulted.includes(carrier);
+
+/** H9: the offence this carrier's incident says the pilot has already paid for.
+ *
+ *  The divert *is* the strike's incident: `disable` opened it, the repair is
+ *  running, and the kill that interrupts it closes it. So a carrier standing in
+ *  its home berth under a repair the player's own fire caused has already cost
+ *  them H4's strike heat, and the kill that finishes it owes the difference and
+ *  not a second offence. Read off the world rather than a counter, because the
+ *  incident outlives the session that opened it.
+ *
+ *  **`standingAtStrike` is not decoration, and `null` does not mean "clean".**
+ *  Only an offence against a Clean carrier costs anything (H4), so a strike on a
+ *  carrier that was Wanted charged nothing, and the kill that follows it is
+ *  worth its full 40 even if the rotation has since made the target Clean again
+ *  — the rotation runs six hours and the repair 1200 s plus up to a cycle, so
+ *  those two clocks do disagree sometimes. `null` says there is no strike to
+ *  stand for, or that its standing cannot be established, and the answer to
+ *  both is that nothing has been paid: the safe direction, because the
+ *  alternative is a discount for a hit the player was never charged for.
+ *
+ *  **The second source is this module's own list.** A sub-hull offence leaves no
+ *  trace on the carrier's row — an ordinary carrier under fire gets exactly one
+ *  transition, H3c's `disable`, and the sustained-fire rung charges the pilot
+ *  *before* the hull point that earns it is spent. So the fact lives beside
+ *  `witnesses` in `LegalStatus` (the header says why), and it needs no standing
+ *  of its own to be reported where the strike does: an assault mark is written
+ *  only when it cost heat, and heat means the target was Clean at the tick it
+ *  was judged (F7).
+ *
+ *  Moved here from `traffic-engagement.ts` by #633. It used to take the
+ *  carrier's row and ask `trafficPresence` where the ship stands; that question
+ *  is the caller's now (`strikeClock`), answered as the strike's clock, which is
+ *  what lets this module price the incident without importing the module that
+ *  imports it. */
+const chargedOffence = (
+	standingAtStrike: Standing | null,
+	assaultPaid: boolean,
+): Offence | null => {
+	if (standingAtStrike !== null && offenceHeat(standingAtStrike, "struck") > 0)
+		return "struck";
+	return assaultPaid ? "assault" : null;
+};
+
+/**
+ * One offence against one ordinary carrier, as raw facts (#633's D2): what was
+ * done, where and when, to which carrier, and where every station in the system
+ * stood. Nothing in it is a judgement — the standings, the incident, the heat
+ * and the hearers are all derived inside `chargeOffence`.
+ */
+export interface OffenceFacts {
+	offence: Offence;
+	galaxy: number;
+	/** The clock the act is judged at, and the stamp it is written with. */
+	now: number;
+	/** The system seed, which carries the galaxy: what a standing derives from. */
+	systemSeed: number;
+	carrier: {
+		key: CarrierKey;
+		/** The instance that was fired on — read **before** any transition the
+		 *  act applied, because a kill's replacement is the next instance. */
+		instanceOrdinal: number;
+		/** The clock of the strike the carrier is standing in its home berth for
+		 *  (`traffic-engagement.ts`'s `strikeClock`), or `null` when it is not
+		 *  standing for one. Required for `FlightPerformance`'s reason: a caller
+		 *  that forgot it would bill every kill after a strike its full 40. */
+		struckAt: number | null;
+	};
+	/** Where the **victim** stood: the earshot is measured from it, never from
+	 *  the pilot (#396's amendment of H5). */
+	victim: Vec3;
+	/** Every station in the system. `[]` is an answer — a system with no
+	 *  station — and the earshot is computed here from it, so no caller can
+	 *  hand over a hearer list it never looked for. */
+	stations: readonly EarshotStation[];
+}
+
+/**
+ * Charge one offence (H4, H5, H9, #396), as one event: the next world and what
+ * the act cost (#633).
+ *
+ * **The standing is read at two clocks.** The target's at `now`, because an
+ * offence is judged on true standing (F7), and the target's at the strike it is
+ * standing for, because standing is never saved — it is a pure derivation from
+ * the instance and the clock — and the repair's `startedAt` *is* the strike's
+ * clock, H3c writing both in one tick. So the kill can ask what the earlier hit
+ * actually cost without a field in the save.
+ *
+ * **An incident is charged once, as its largest rung** (H9): `chargedOffence`
+ * names what the incident has already paid — the strike from the carrier's
+ * clock, the assault from this module's list — and `marginalOffenceHeat` charges
+ * the difference.
+ *
+ * **The hearers are filed whether or not the act cost heat.** A kill of a
+ * Wanted carrier is lawful and free (F7), and a station that heard one heard
+ * it; H6's hostility is the list *and* Wanted heat, so filing it can no more
+ * make a Clean pilot hostile than the kill did. Gating the write on `heat > 0`
+ * is what #366's first pass did, and it drops the third of H5 that is not about
+ * heat.
+ *
+ * **An assault leaves its mark in the same event**, and only when it cost heat:
+ * the mark is the record of a charge, and a free five seconds leaves no
+ * discount behind. So an assault is one write and not two.
+ *
+ * **It hands back the world it was given when it wrote nothing** — a lawful act
+ * with nobody in earshot, or a rung the incident had already paid — which is
+ * what lets the caller save on a change in reference and on nothing else.
+ */
+export const chargeOffence = (
+	world: WorldState,
+	facts: OffenceFacts,
+): { world: WorldState; heat: number } => {
+	const { offence, galaxy, now, systemSeed, carrier } = facts;
+	const standingAt = (atS: number) =>
+		carrierStanding(systemSeed, carrier.key, carrier.instanceOrdinal, atS);
+	// Read off the world as it was handed over, before this event writes it.
+	const heat = marginalOffenceHeat(
+		standingAt(now),
+		offence,
+		chargedOffence(
+			carrier.struckAt === null ? null : standingAt(carrier.struckAt),
+			assaultCharged(world.galaxies[galaxy].legalStatus, carrier.key),
+		),
+	);
+	let next = withOffence(
+		world,
+		galaxy,
+		heat,
+		now,
+		stationsInEarshot(facts.stations, facts.victim),
+	);
+	if (offence === "assault")
+		next = markAssaultCharged(next, galaxy, carrier.key, heat, now);
+	return { world: next, heat };
+};
 
 /**
  * H5: the station an offence happened beside, seen.

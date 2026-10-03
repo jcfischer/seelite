@@ -433,6 +433,33 @@ export const trafficPresence = (
 	return "absent";
 };
 
+/**
+ * The clock of the strike this carrier is standing in its home berth for, or
+ * `null` (H9; #633's D2). What `legal.ts`'s `chargeOffence` takes as
+ * `carrier.struckAt`.
+ *
+ * A carrier `parked-home` under a recovery is a strike's incident still open:
+ * the divert booked the repair in the strike's tick, so the recovery's
+ * `startedAt` is the clock the strike's standing derives from. Anywhere else —
+ * flying, absent, or a disable with no recovery written — there is no strike to
+ * stand for, and `null` makes the law charge in full rather than discount.
+ *
+ * **This reads presence, not provenance.** `recovery.initiatedBy` is the home
+ * station's — a `disable` names the shooter and a `repair-start` cannot carry
+ * two causes — so nothing on the row says the strike was the player's doing.
+ * Today the player's own fire is the only thing that diverts a carrier. The day
+ * another actor can (a raider, station fire), this rule has to read that
+ * provenance instead, or it hands the player a discount on a fight they did not
+ * start.
+ */
+export const strikeClock = (carrier: {
+	condition: OperationalCondition;
+	recovery?: { kind: RecoveryKind; startedAt: number } | undefined;
+}): number | null =>
+	trafficPresence(carrier) === "parked-home"
+		? (carrier.recovery?.startedAt ?? null)
+		: null;
+
 /** H9: the offence this carrier's row says the pilot has already paid for.
  *
  *  The divert *is* the strike's incident: `disable` opened it, the repair is

@@ -390,13 +390,13 @@ import { type DuelPilot, type PlayerShot, raiderInSights } from "./duel";
 import { PLAYER_LASER_RANGE_KM } from "./laser";
 import {
 	type Engagement,
-	chargedOffence,
 	engage,
 	fliesItsRoute,
 	flownVoyageOrdinal,
 	flyingTrafficActors,
 	parkedHomeTrafficActors,
 	stepEngagement,
+	strikeClock,
 	trafficDiversion,
 	trafficInSights,
 	trafficKillTransitions,
@@ -430,18 +430,17 @@ import {
 } from "./carrier-scan";
 import {
 	type Offence,
+	type OffenceFacts,
+	chargeOffence,
 	dockingRefusedByLaw,
 	heatAt,
 	legalStandingAt,
-	marginalOffenceHeat,
 	settleIncident,
-	withOffence,
 	assaultCharged,
-	markAssaultCharged,
 } from "./legal";
 // #396: who heard it, and what the victim said. Its own module because the
 // question is the victim's, and `legal.ts` is the law's.
-import { type EarshotStation, hailText, stationsInEarshot } from "./distress";
+import { type EarshotStation, hailText } from "./distress";
 import {
 	DUEL_ROW_LABELS,
 	duelConsoleReadout,
@@ -6826,14 +6825,17 @@ class Game {
 	}
 
 	/**
-	 * What one offence against one carrier costs the pilot, and which stations
-	 * heard it, written (H4, H5, H9, and #396's amendment of H5's reach).
+	 * The raw facts of one offence against one carrier, for `legal.ts`'s
+	 * `chargeOffence` (H4, H5, H9, #396's amendment of H5's reach, #633's D2).
+	 * The law is the event's; this only says what happened.
 	 *
-	 * `before` is the carrier's row as it stood **before** the offence was
-	 * applied. That ordering is the rule, not a preference: the divert books its
-	 * own repair in the same tick as the disable, so a row read afterwards
+	 * `before` is the carrier's row as it stood **before** the act applied its
+	 * transition. That ordering is the rule, not a preference: the divert books
+	 * its own repair in the same tick as the disable, so a row read afterwards
 	 * already describes a struck carrier and the strike would credit itself its
-	 * own charge.
+	 * own charge — and a kill's row afterwards is the replacement, the next
+	 * instance, whose standing is a different draw. Both the instance and the
+	 * strike's clock (`strikeClock`) are read off that one row.
 	 *
 	 * `victim` is where the **carrier** stood, and the earshot is measured from
 	 * it and not from the player. That is the whole of #396's amendment to H5:
@@ -6843,63 +6845,30 @@ class Game {
 	 * victim is filed even though no frame body would have been standing that far
 	 * from a ship beside it — where the old rule filed exactly one berth, the one
 	 * the *attacker* happened to be parked at.
-	 *
-	 * **The standing the strike was judged on is re-derived, not remembered.**
-	 * Standing is never saved — it is a pure derivation from the instance and the
-	 * clock — and the repair's `startedAt` *is* the strike's clock, because H3c
-	 * writes both in one tick. So the kill can ask what the earlier hit actually
-	 * cost: a strike on a carrier that was Wanted then charged nothing (H4), and
-	 * the kill that finishes it is worth its full 40 even if the six-hour
-	 * rotation has since turned the target Clean. Standing off the row's own clock
-	 * is how that is known without adding a field to the save. The assault charge
-	 * needs no clock of its own, because the fight keeps one: `assaultCharged`
-	 * says whether the five seconds have been crossed, and `markAssaultCharged`
-	 * records the crossing **only when it cost heat**. The two are different
-	 * claims and the asymmetry is the rule — an uncharged five seconds is
-	 * lawfully spent and must not come back later as a discount on a strike
-	 * against the same carrier. So the premise priced below is exact: if the list
-	 * names this carrier, 13 was paid.
 	 */
-	private chargeTrafficOffence(
+	private offenceFacts(
 		actor: TrafficActor,
 		before: EffectiveCarrier,
 		offence: Offence,
-		/** Where the victim stood when the act was done, and what the earshot is
-		 *  measured from. The fight is passed rather than a position plucked out
-		 *  of it at each of the three call sites, all of which pass the same one. */
+		/** Where the victim stood when the act was done. The fight is passed
+		 *  rather than a position plucked out of it at each of the three call
+		 *  sites, all of which pass the same one. */
 		engagement: Engagement,
-	): number {
+	): OffenceFacts {
 		const record = this.world.system.record;
-		const now = this.world.gameTime;
-		const standingOf = (atS: number) =>
-			carrierStanding(record.seed, actor.key, before.instanceOrdinal, atS);
-		const heat = marginalOffenceHeat(
-			standingOf(now),
+		return {
 			offence,
-			chargedOffence(
-				before,
-				before.recovery === undefined
-					? null
-					: standingOf(before.recovery.startedAt),
-				assaultCharged(this.legalStatus(), actor.key),
-			),
-		);
-		// **The hearers are filed whether or not the offence cost heat.** A kill
-		// of a Wanted carrier is lawful and free (F7) and a station hearing one
-		// heard it; H6's hostility is the list *and* Wanted heat, so filing it can
-		// no more make a Clean pilot hostile than the kill did. Gating the whole
-		// write on `heat > 0` is what #366's first pass did and it silently drops
-		// the third of H5 that is not about heat.
-		const heardBy = stationsInEarshot(
-			this.earshotStations(),
-			engagement.flight.ship.pos,
-		);
-		// Saved only when it wrote: a lawful act with no hearer hands back the
-		// world it was given (#631).
-		this.adoptWorld(
-			withOffence(this.commerceWorld, record.galaxy, heat, now, heardBy),
-		);
-		return heat;
+			galaxy: record.galaxy,
+			now: this.world.gameTime,
+			systemSeed: record.seed,
+			carrier: {
+				key: actor.key,
+				instanceOrdinal: before.instanceOrdinal,
+				struckAt: strikeClock(before),
+			},
+			victim: engagement.flight.ship.pos,
+			stations: this.earshotStations(),
+		};
 	}
 
 	/**
@@ -6931,31 +6900,20 @@ class Game {
 	 * the pilot was never billed 13 for.
 	 */
 	private assaultTrafficCarrier(actor: TrafficActor, engagement: Engagement) {
-		const record = this.world.system.record;
 		const now = this.world.gameTime;
 		const carrier = this.carrierCondition(actor.key);
-		const heat = this.chargeTrafficOffence(
-			actor,
-			carrier,
-			"assault",
-			engagement,
+		// **One event, one write** (#633): the heat, the hearers and the mark
+		// that this carrier's assault is paid. The mark is written only when the
+		// charge cost anything — a mark for a lawful five seconds would discount
+		// a later strike against a carrier whose rotation has since turned it
+		// Clean — and the law owns that rule, not this site. Saved only when it
+		// wrote (#631).
+		const charge = chargeOffence(
+			this.commerceWorld,
+			this.offenceFacts(actor, carrier, "assault", engagement),
 		);
-		// **Only a charge that cost anything is recorded**: the guard is here so a
-		// free act does not dirty the save for a write that will not happen, and
-		// `markAssaultCharged` refuses the zero anyway, because the invariant
-		// belongs to the module that owns the list. A mark for a lawful five
-		// seconds would discount a later strike against a carrier whose rotation
-		// has since turned it Clean.
-		if (heat > 0) {
-			this.commerceWorld = markAssaultCharged(
-				this.commerceWorld,
-				record.galaxy,
-				actor.key,
-				heat,
-				now,
-			);
-			this.saveDirty();
-		}
+		this.adoptWorld(charge.world);
+		const { heat } = charge;
 		const event = { callsign: actor.callsign };
 		this.lastExit = chargeExit(event, heat > 0);
 		// **And the pilot is told, which is the whole of #457.** Only a charge
@@ -7089,12 +7047,13 @@ class Game {
 		if (carrier.condition !== "operational") return;
 		for (const event of trafficDiversion(record.index, actor, now))
 			this.applyCarrierTransition(actor.key, event, actor.hullId);
-		const heat = this.chargeTrafficOffence(
-			actor,
-			carrier,
-			"struck",
-			engagement,
+		// Charged against the row read before the transition above (#633).
+		const charge = chargeOffence(
+			this.commerceWorld,
+			this.offenceFacts(actor, carrier, "struck", engagement),
 		);
+		this.adoptWorld(charge.world);
+		const { heat } = charge;
 		this.lastExit =
 			heat > 0
 				? `${actor.callsign} disabled — running home, and that is an offence`
@@ -7146,12 +7105,13 @@ class Game {
 				frameBodyId: this.frameBody?.id ?? null,
 			}),
 		];
-		const heat = this.chargeTrafficOffence(
-			actor,
-			carrier,
-			"destroyed",
-			engagement,
+		// Charged against the row read before the transition above (#633).
+		const charge = chargeOffence(
+			this.commerceWorld,
+			this.offenceFacts(actor, carrier, "destroyed", engagement),
 		);
+		this.adoptWorld(charge.world);
+		const { heat } = charge;
 		this.play({ kind: "explosion" });
 		this.lastExit =
 			heat > 0
