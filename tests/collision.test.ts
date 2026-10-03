@@ -68,10 +68,38 @@ const solidOf = (hull: HullId): Primitive[] => {
 };
 
 /**
- * The box's gap to a sphere, written from the hull table and the attitude
- * alone — not through the resolver's own query — so a resolver that left the
- * box inside the surface cannot also be the thing that says it did not.
+ * A hull's box posed at `pos` with the nose and up given: its centre and its
+ * three axes with their half-extents. Written from the hull table and the
+ * attitude alone — not through the resolver's own placement — so a resolver
+ * that left the box inside a surface cannot also be the thing that says it
+ * did not.
  */
+function posedHullBox(
+	hull: HullId,
+	pos: Vec3,
+	nose: Vec3,
+	up: Vec3,
+): { centre: Vec3; axes: [Vec3, number][] } {
+	const spec = HULL_SPECS[hull];
+	const right = cross(nose, up);
+	const c = spec.envCentre;
+	return {
+		centre: add(
+			pos,
+			add(
+				add(scale(right, c.rightKm), scale(up, c.upKm)),
+				scale(nose, c.foreKm),
+			),
+		),
+		axes: [
+			[right, spec.env.beamKm / 2],
+			[up, spec.env.heightKm / 2],
+			[nose, spec.env.lengthKm / 2],
+		],
+	};
+}
+
+/** The box's gap to a sphere, through `posedHullBox`. */
 function boxGapToSphere(
 	pos: Vec3,
 	nose: Vec3,
@@ -80,25 +108,23 @@ function boxGapToSphere(
 	centre: Vec3,
 	radiusKm: number,
 ): number {
-	const spec = HULL_SPECS[hull];
-	const right = cross(nose, up);
-	const c = spec.envCentre;
-	const boxCentre = add(
-		pos,
-		add(add(scale(right, c.rightKm), scale(up, c.upKm)), scale(nose, c.foreKm)),
-	);
-	const toCentre = sub(centre, boxCentre);
-	let nearest = boxCentre;
-	for (const [axis, half] of [
-		[right, spec.env.beamKm / 2],
-		[up, spec.env.heightKm / 2],
-		[nose, spec.env.lengthKm / 2],
-	] as const) {
+	const box = posedHullBox(hull, pos, nose, up);
+	const toCentre = sub(centre, box.centre);
+	let nearest = box.centre;
+	for (const [axis, half] of box.axes) {
 		const t = Math.max(-half, Math.min(half, dot(toCentre, axis)));
 		nearest = add(nearest, scale(axis, t));
 	}
 	return length(sub(centre, nearest)) - radiusKm;
 }
+
+/** The roster's largest angular rate on any axis, rad/s. */
+const LARGEST_RATE = Math.max(
+	...HULL_IDS.flatMap((id) => {
+		const m = flightPerformance(id).angularMax;
+		return [m.pitch, m.yaw, m.roll];
+	}),
+);
 
 // ---------------------------------------------------------------------------
 // The moon every flight row flies at: seed 47, system 0, a 1,813 km moon
@@ -173,19 +199,9 @@ function overMoon(
 	at: HullAttitude = facing(scale(outward, -1)),
 ): HullAttitude {
 	// The box's lowest point along `outward`, measured from the ship origin.
-	const spec = HULL_SPECS[hull];
-	const right = cross(at.nose, at.up);
-	const c = spec.envCentre;
-	const centre = add(
-		add(scale(right, c.rightKm), scale(at.up, c.upKm)),
-		scale(at.nose, c.foreKm),
-	);
-	let low = dot(centre, outward);
-	for (const [axis, half] of [
-		[right, spec.env.beamKm / 2],
-		[at.up, spec.env.heightKm / 2],
-		[at.nose, spec.env.lengthKm / 2],
-	] as const)
+	const box = posedHullBox(hull, v3(), at.nose, at.up);
+	let low = dot(box.centre, outward);
+	for (const [axis, half] of box.axes)
 		low -= half * Math.abs(dot(axis, outward));
 	world.ship.pos = add(moon.pos, scale(outward, moon.radiusKm + gapKm - low));
 	world.ship.vel = bodyVelocity(world.system, moon.id, world.gameTime);
@@ -350,12 +366,6 @@ describe("collision.md §9.1.4: thrust against a surface pays nothing and stays 
 	test.each(STEPS)(
 		"resting on a moon while turning at the roster's largest rate, dt %p",
 		(dt) => {
-			const largest = Math.max(
-				...HULL_IDS.flatMap((id) => {
-					const m = flightPerformance(id).angularMax;
-					return [m.pitch, m.yaw, m.roll];
-				}),
-			);
 			const { world, moon } = moonWorld();
 			const outward = unit(v3(-1, 0.3, 2));
 			const start = facing(scale(outward, -1));
@@ -367,7 +377,7 @@ describe("collision.md §9.1.4: thrust against a surface pays nothing and stays 
 				SEPARATION_KM,
 				{
 					...start,
-					rates: { pitch: largest, yaw: largest * 0.5, roll: 0 },
+					rates: { pitch: LARGEST_RATE, yaw: LARGEST_RATE * 0.5, roll: 0 },
 				},
 			);
 			let damage = 0;
@@ -525,13 +535,7 @@ describe("collision.md §9.1.5: no tunnelling", () => {
 	test("a box turned through a thin boom in one tick, faster than any hull turns, meets it", () => {
 		const dt = 0.1;
 		const angle = (150 * Math.PI) / 180;
-		const largest = Math.max(
-			...HULL_IDS.flatMap((id) => {
-				const m = flightPerformance(id).angularMax;
-				return [m.pitch, m.yaw, m.roll];
-			}),
-		);
-		expect(angle / dt).toBeGreaterThan(largest);
+		expect(angle / dt).toBeGreaterThan(LARGEST_RATE);
 		// The voyager: 191 m long, so a yaw sweeps its ends a long way.
 		const voyager = solidOf("voyager")[0];
 		const boom: Primitive = {

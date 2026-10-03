@@ -1876,7 +1876,10 @@ function collideShip(
 		const start = starts.get(body.id);
 		if (!start) continue;
 		if (
-			!mayMeet(from, world.ship.pos, shipReach, start, body.pos, body.radiusKm)
+			!mayMeet(
+				{ start: from, end: world.ship.pos, reachKm: shipReach },
+				{ start, end: body.pos, reachKm: body.radiusKm },
+			)
 		)
 			continue;
 		met.push(body);

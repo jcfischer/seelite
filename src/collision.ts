@@ -229,20 +229,14 @@ type Placed =
 	| { kind: "segment"; a: Vec3; b: Vec3; r: number }
 	| { kind: "box"; c: Vec3; u: [Vec3, Vec3, Vec3]; h: readonly number[] };
 
-const toWorld = (pose: Pose, local: Vec3): Vec3 =>
-	add(
-		pose.origin,
-		add(
-			add(scale(pose.x, local.x), scale(pose.y, local.y)),
-			scale(pose.z, local.z),
-		),
-	);
-
 const turn = (pose: Pose, local: Vec3): Vec3 =>
 	add(
 		add(scale(pose.x, local.x), scale(pose.y, local.y)),
 		scale(pose.z, local.z),
 	);
+
+const toWorld = (pose: Pose, local: Vec3): Vec3 =>
+	add(pose.origin, turn(pose, local));
 
 function place(p: Primitive, pose: Pose): Placed {
 	if (p.kind === "sphere")
@@ -478,10 +472,7 @@ function nearestOnTetrahedron(s: Vertex[]): Nearest | null {
  * intersect. Polytopes and segments only, so it terminates on a vertex of the
  * difference; the tolerances guard rounding, not convergence.
  */
-function gjk(
-	A: Placed,
-	B: Placed,
-): { a: Vec3; b: Vec3; distanceKm: number } | null {
+function gjk(A: Placed, B: Placed): { a: Vec3; b: Vec3 } | null {
 	const vertex = (d: Vec3): Vertex => {
 		const a = support(A, d);
 		const b = support(B, scale(d, -1));
@@ -517,7 +508,7 @@ function gjk(
 		a = add(a, scale(s.a, nearest.weights[k]));
 		b = add(b, scale(s.b, nearest.weights[k]));
 	});
-	return { a, b, distanceKm: length(nearest.v) };
+	return { a, b };
 }
 
 // ---------------------------------------------------------------------------
@@ -650,26 +641,27 @@ function pointVelocity(
 	return add(v, cross(omega, sub(point, pose.origin)));
 }
 
+/** A solid's bounding sphere across one step: its origin at both ends, and
+ *  how far any of its primitives reaches from that origin. */
+export interface Reach {
+	start: Vec3;
+	end: Vec3;
+	reachKm: number;
+}
+
 /**
  * Whether two solids' bounding spheres can meet within the step at all
  * (§4.1's last sentence). Their origins' relative path is a straight segment,
  * so the test is the segment's distance from the origin.
  */
-export function mayMeet(
-	shipStart: Vec3,
-	shipEnd: Vec3,
-	shipReachKm: number,
-	solidStart: Vec3,
-	solidEnd: Vec3,
-	solidReachKm: number,
-): boolean {
-	const r0 = sub(shipStart, solidStart);
-	const r1 = sub(shipEnd, solidEnd);
+export function mayMeet(ship: Reach, solid: Reach): boolean {
+	const r0 = sub(ship.start, solid.start);
+	const r1 = sub(ship.end, solid.end);
 	const d = sub(r1, r0);
 	const dd = lengthSq(d);
 	const t = dd > 0 ? Math.max(0, Math.min(1, -dot(r0, d) / dd)) : 0;
 	const nearest = length(add(r0, scale(d, t)));
-	return nearest <= shipReachKm + solidReachKm + 2 * RESTING_KM;
+	return nearest <= ship.reachKm + solid.reachKm + 2 * RESTING_KM;
 }
 
 /** What one step's sweep found and did. */
@@ -718,6 +710,32 @@ interface PairState {
 	reach: number;
 }
 
+/** A pair the ship ends the step against, and how it met it. */
+interface Touching {
+	pair: PairState;
+	normal: Vec3;
+	/** The start-of-step closing speed: a resting pair bounces on it. */
+	closingKms: number;
+}
+
+/** What every stage of one sweep reads, fixed for the step. */
+interface Sweep {
+	ship: SolidMotion;
+	shipBox: Primitive;
+	shipReach: number;
+	shipSpin: Spin;
+	solids: readonly SolidMotion[];
+	/** Each solid's turn across the step, by index — computed once. */
+	spins: readonly Spin[];
+	dt: number;
+}
+
+/** The ship's end translation, as each stage corrects it. */
+interface End {
+	origin: Vec3;
+	vel: Vec3;
+}
+
 /**
  * One step of the ship against a list of solids: §3.1, §4.1 and §4.3.
  *
@@ -729,6 +747,10 @@ interface PairState {
  * is swept**, and the earliest impact owns the tick (§4.2): the ship is left
  * at the separation outside it, carried with the met solid for the rest of
  * the step, and bounced.
+ *
+ * Four stages, in order: `classifyPairs`, `stopResting`, `resolveEarliest`
+ * and `settleTouching`. Each takes the ship's end translation as the stage
+ * before left it and hands back its own correction.
  *
  * The ship's attitude is never touched — a bounce imparts no spin (§3) — so
  * the end pose's axes are the step's own.
@@ -747,41 +769,59 @@ export function sweepShip(
 	if (!(dt > 0) || solids.length === 0) return result;
 	const shipBox = ship.primitives.find((p) => p.kind === "box");
 	if (!shipBox) throw new Error("a ship collides on its hull box (P1)");
-	const shipReach = reachKm(ship.primitives);
-	const shipSpin = spinBetween(ship.start, ship.end);
+	const sweep: Sweep = {
+		ship,
+		shipBox,
+		shipReach: reachKm(ship.primitives),
+		shipSpin: spinBetween(ship.start, ship.end),
+		solids,
+		spins: solids.map((solid) => spinBetween(solid.start, solid.end)),
+		dt,
+	};
+	const { touching, swept } = classifyPairs(sweep, result);
+	let end = stopResting(sweep, touching, {
+		origin: ship.end.origin,
+		vel: ship.velEnd,
+	});
+	const met = resolveEarliest(sweep, swept, end, result);
+	if (met) {
+		end = met.end;
+		touching.push(met.touching);
+	}
+	end = settleTouching(sweep, touching, end, met !== null);
+	result.pos = end.origin;
+	result.vel = end.vel;
+	return result;
+}
 
-	// The ship's end translation, as later stages correct it.
-	let endOrigin = ship.end.origin;
-	let endVel = ship.velEnd;
-	const touching: {
-		pair: PairState;
-		normal: Vec3;
-		/** The start-of-step closing speed: a resting pair bounces on it. */
-		closingKms: number;
-	}[] = [];
-	const sweptPairs: PairState[] = [];
-
-	// §4.3 and §3.1: classify every pair at the start of the step.
-	solids.forEach((solid, index) => {
+/**
+ * §4.3 and §3.1: every pair at the start of the step is a ghost, resting or
+ * swept. Ghosts and resting impacts go onto `result` as they are found.
+ */
+function classifyPairs(
+	sweep: Sweep,
+	result: SweepResult,
+): { touching: Touching[]; swept: PairState[] } {
+	const { ship, shipBox, dt } = sweep;
+	const touching: Touching[] = [];
+	const swept: PairState[] = [];
+	sweep.solids.forEach((solid, index) => {
 		const reach = reachKm(solid.primitives);
 		if (
 			!mayMeet(
-				ship.start.origin,
-				ship.end.origin,
-				shipReach,
-				solid.start.origin,
-				solid.end.origin,
-				reach,
+				{
+					start: ship.start.origin,
+					end: ship.end.origin,
+					reachKm: sweep.shipReach,
+				},
+				{ start: solid.start.origin, end: solid.end.origin, reachKm: reach },
 			)
 		)
 			return;
 		const ref = solid.start.origin;
-		const shipAt = placeBox(shipBox, {
-			...ship.start,
-			origin: sub(ship.start.origin, ref),
-		});
+		const shipOrigin = sub(ship.start.origin, ref);
+		const shipAt = placeBox(shipBox, { ...ship.start, origin: shipOrigin });
 		const solidPose = { ...solid.start, origin: v3() };
-		const solidSpin = spinBetween(solid.start, solid.end);
 		for (const primitive of solid.primitives) {
 			const pair = { solid: index, primitive, reach };
 			const gap = separation(shipAt, place(primitive, solidPose));
@@ -790,7 +830,7 @@ export function sweepShip(
 				continue;
 			}
 			if (gap.distanceKm > RESTING_KM) {
-				sweptPairs.push(pair);
+				swept.push(pair);
 				continue;
 			}
 			// A resting pair: closing read at the start of the step, on the
@@ -798,7 +838,7 @@ export function sweepShip(
 			// out, not billed (§3.1). The surface's own motion is billed.
 			const surfaceVel = pointVelocity(
 				solid,
-				solidSpin,
+				sweep.spins[index],
 				dt,
 				0,
 				solidPose,
@@ -815,117 +855,140 @@ export function sweepShip(
 					closingKms: closing,
 					damage: impactDamage(closing),
 					// §3: measured from the ship's position, as the swept branch is.
-					side: sideStruck(
-						ship.start.z,
-						sub(gap.onShip, sub(ship.start.origin, ref)),
-					),
+					side: sideStruck(ship.start.z, sub(gap.onShip, shipOrigin)),
 					resting: true,
 				});
 		}
 	});
+	return { touching, swept };
+}
 
-	// §3.1: a resting pair's inward motion is stopped at the surface. The
-	// relative displacement loses its inward component along the pair's normal;
-	// what is left — a turn carrying a corner in, a surface curving under a
-	// slide — is pushed out at the end.
+/**
+ * §3.1: a resting pair's inward motion is stopped at the surface. The
+ * relative displacement loses its inward component along the pair's normal;
+ * what is left — a turn carrying a corner in, a surface curving under a
+ * slide — is pushed out by `settleTouching`.
+ */
+function stopResting(
+	sweep: Sweep,
+	touching: readonly Touching[],
+	end: End,
+): End {
+	let origin = end.origin;
 	for (const r of touching) {
-		const solid = solids[r.pair.solid];
+		const solid = sweep.solids[r.pair.solid];
 		const relative = sub(
-			sub(endOrigin, ship.start.origin),
+			sub(origin, sweep.ship.start.origin),
 			sub(solid.end.origin, solid.start.origin),
 		);
 		const inward = dot(relative, r.normal);
-		if (inward < 0) endOrigin = sub(endOrigin, scale(r.normal, inward));
+		if (inward < 0) origin = sub(origin, scale(r.normal, inward));
 	}
+	return { origin, vel: end.vel };
+}
+
+/**
+ * §4.1, §4.2: sweep every other pair; the earliest impact owns the tick. The
+ * ship is left at the separation outside it, carried with the met solid for
+ * the rest of the step, and bounced; the impact goes onto `result`. `null`
+ * when no pair is met.
+ */
+function resolveEarliest(
+	sweep: Sweep,
+	swept: readonly PairState[],
+	end: End,
+	result: SweepResult,
+): { end: End; touching: Touching } | null {
+	const { ship, shipBox, shipSpin, dt } = sweep;
 	const motion: SolidMotion = {
 		...ship,
-		end: { ...ship.end, origin: endOrigin },
+		end: { ...ship.end, origin: end.origin },
 	};
-
-	// §4.1, §4.2: sweep every other pair; the earliest impact owns the tick.
 	let earliest: { pair: PairState; s: number } | null = null;
-	for (const pair of sweptPairs) {
-		const s = advance(
-			motion,
-			shipBox,
-			shipSpin,
-			shipReach,
-			solids[pair.solid],
-			pair,
-			dt,
-		);
+	for (const pair of swept) {
+		const s = advance(sweep, motion, pair);
 		if (s === null) continue;
 		if (!earliest || s < earliest.s) earliest = { pair, s };
 	}
+	if (!earliest) return null;
 
-	let bounced: Vec3 | null = null;
-	if (earliest) {
-		const solid = solids[earliest.pair.solid];
-		const ref = solid.start.origin;
-		const solidSpin = spinBetween(solid.start, solid.end);
-		const s = earliest.s;
-		const shipAt = poseAt(motion, shipSpin, s, ref);
-		const solidAt = poseAt(solid, solidSpin, s, ref);
-		const shipBoxAt = placeBox(shipBox, shipAt);
-		const gap = separation(shipBoxAt, place(earliest.pair.primitive, solidAt));
-		// The advance stops short of the surface, so an overlap here is a bound
-		// that failed; take the way the ship came *relative to the solid* as the
-		// normal — a moon carried at 32 km/s would otherwise lift it along the
-		// moon's own path — and, with no relative motion, out from the
-		// primitive's centre.
-		const normal = gap.overlap
-			? overlapNormal(
-					sub(
-						sub(ship.start.origin, endOrigin),
-						sub(solid.start.origin, solid.end.origin),
-					),
-					sub(shipBoxAt.c, centreOf(place(earliest.pair.primitive, solidAt))),
-				)
-			: gap.normal;
-		const onShip = gap.overlap ? shipBoxAt.c : gap.onShip;
-		const onSurface = gap.overlap ? shipBoxAt.c : gap.onSurface;
-		const u = sub(
-			pointVelocity(motion, shipSpin, dt, s, shipAt, onShip),
-			pointVelocity(solid, solidSpin, dt, s, solidAt, onSurface),
-		);
-		const closing = closingSpeed(u, normal);
-		// The bounce changes the ship's linear velocity only (§3), and the
-		// frame's change across the rest of the step rides along with it.
-		const kick = sub(bounce(u, normal), u);
-		const carried = sub(solid.velEnd, lerp(solid.velStart, solid.velEnd, s));
-		endVel = add(add(lerp(motion.velStart, motion.velEnd, s), kick), carried);
-		bounced = normal;
-		// Left at the separation outside the surface, then carried with the
-		// solid — turned with it where it spins — for the rest of the step.
-		const lift = gap.overlap ? SEPARATION_KM : SEPARATION_KM - gap.distanceKm;
-		const local = sub(add(shipAt.origin, scale(normal, lift)), solidAt.origin);
-		const remaining = solidSpin.angle * (1 - s);
-		endOrigin = add(
-			solid.end.origin,
-			remaining === 0 ? local : rotateAbout(local, solidSpin.axis, remaining),
-		);
-		result.impacts.push({
-			solid: earliest.pair.solid,
-			timeS: s * dt,
-			point: add(onSurface, ref),
-			normal,
-			closingKms: closing,
-			damage: impactDamage(closing),
-			side: sideStruck(shipAt.z, sub(onShip, shipAt.origin)),
-			resting: false,
-		});
-		touching.push({ pair: earliest.pair, normal, closingKms: 0 });
-	}
+	const { pair, s } = earliest;
+	const solid = sweep.solids[pair.solid];
+	const solidSpin = sweep.spins[pair.solid];
+	const ref = solid.start.origin;
+	const shipAt = poseAt(motion, shipSpin, s, ref);
+	const solidAt = poseAt(solid, solidSpin, s, ref);
+	const shipBoxAt = placeBox(shipBox, shipAt);
+	const surfaceAt = place(pair.primitive, solidAt);
+	const gap = separation(shipBoxAt, surfaceAt);
+	// The advance stops short of the surface, so an overlap here is a bound
+	// that failed; take the way the ship came *relative to the solid* as the
+	// normal — a moon carried at 32 km/s would otherwise lift it along the
+	// moon's own path — and, with no relative motion, out from the
+	// primitive's centre.
+	const normal = gap.overlap
+		? overlapNormal(
+				sub(
+					sub(ship.start.origin, end.origin),
+					sub(solid.start.origin, solid.end.origin),
+				),
+				sub(shipBoxAt.c, centreOf(surfaceAt)),
+			)
+		: gap.normal;
+	const onShip = gap.overlap ? shipBoxAt.c : gap.onShip;
+	const onSurface = gap.overlap ? shipBoxAt.c : gap.onSurface;
+	const u = sub(
+		pointVelocity(motion, shipSpin, dt, s, shipAt, onShip),
+		pointVelocity(solid, solidSpin, dt, s, solidAt, onSurface),
+	);
+	const closing = closingSpeed(u, normal);
+	// The bounce changes the ship's linear velocity only (§3), and the
+	// frame's change across the rest of the step rides along with it.
+	const kick = sub(bounce(u, normal), u);
+	const carried = sub(solid.velEnd, lerp(solid.velStart, solid.velEnd, s));
+	const vel = add(add(lerp(motion.velStart, motion.velEnd, s), kick), carried);
+	// Left at the separation outside the surface, then carried with the
+	// solid — turned with it where it spins — for the rest of the step.
+	const lift = gap.overlap ? SEPARATION_KM : SEPARATION_KM - gap.distanceKm;
+	const local = sub(add(shipAt.origin, scale(normal, lift)), solidAt.origin);
+	const remaining = solidSpin.angle * (1 - s);
+	const origin = add(
+		solid.end.origin,
+		remaining === 0 ? local : rotateAbout(local, solidSpin.axis, remaining),
+	);
+	result.impacts.push({
+		solid: pair.solid,
+		timeS: s * dt,
+		point: add(onSurface, ref),
+		normal,
+		closingKms: closing,
+		damage: impactDamage(closing),
+		side: sideStruck(shipAt.z, sub(onShip, shipAt.origin)),
+		resting: false,
+	});
+	return { end: { origin, vel }, touching: { pair, normal, closingKms: 0 } };
+}
 
-	// The end of the step: every touched pair apart by the separation, with no
-	// inward velocity left against it (§3.1). A resting pair that closed faster
-	// than `V_SCRAPE_KMS` bounces on the speed it closed at.
+/**
+ * The end of the step: every touched pair apart by the separation, with no
+ * inward velocity left against it (§3.1). A resting pair that closed faster
+ * than `V_SCRAPE_KMS` bounces on the speed it closed at — unless a swept
+ * impact has already bounced the ship this step.
+ */
+function settleTouching(
+	sweep: Sweep,
+	touching: readonly Touching[],
+	end: End,
+	bounced: boolean,
+): End {
+	const { ship, shipBox, dt } = sweep;
+	let { origin, vel } = end;
 	for (const r of touching) {
-		const solid = solids[r.pair.solid];
+		const solid = sweep.solids[r.pair.solid];
 		const ref = solid.start.origin;
 		const shipEnd = placeBox(shipBox, {
 			...ship.end,
-			origin: sub(endOrigin, ref),
+			origin: sub(origin, ref),
 		});
 		const solidEnd = { ...solid.end, origin: sub(solid.end.origin, ref) };
 		const surface = place(r.pair.primitive, solidEnd);
@@ -940,19 +1003,19 @@ export function sweepShip(
 			normal = gap.normal;
 			push = SEPARATION_KM - gap.distanceKm;
 		}
-		if (push > 0) endOrigin = add(endOrigin, scale(normal, push));
+		if (push > 0) origin = add(origin, scale(normal, push));
 		const surfaceVel = pointVelocity(
 			solid,
-			spinBetween(solid.start, solid.end),
+			sweep.spins[r.pair.solid],
 			dt,
 			1,
 			solidEnd,
 			gap.overlap ? shipEnd.c : gap.onSurface,
 		);
-		const u = sub(endVel, surfaceVel);
+		const u = sub(vel, surfaceVel);
 		const un = dot(u, normal);
-		if (r.closingKms > V_SCRAPE_KMS && bounced === null) {
-			endVel = add(
+		if (r.closingKms > V_SCRAPE_KMS && !bounced) {
+			vel = add(
 				surfaceVel,
 				add(
 					sub(u, scale(normal, un)),
@@ -960,13 +1023,10 @@ export function sweepShip(
 				),
 			);
 		} else if (un < 0) {
-			endVel = sub(endVel, scale(normal, un));
+			vel = sub(vel, scale(normal, un));
 		}
 	}
-
-	result.pos = endOrigin;
-	result.vel = endVel;
-	return result;
+	return { origin, vel };
 }
 
 /** The first of `back` and `out` that has a direction, as a unit vector;
@@ -989,16 +1049,14 @@ function overlapNormal(back: Vec3, out: Vec3): Vec3 {
  * `gap / bound` therefore never steps past a surface, however thin (§4.1).
  */
 function advance(
+	sweep: Sweep,
 	ship: SolidMotion,
-	shipBox: Primitive,
-	shipSpin: Spin,
-	shipReach: number,
-	solid: SolidMotion,
 	pair: PairState,
-	dt: number,
 ): number | null {
+	const { shipBox, shipSpin, dt } = sweep;
+	const solid = sweep.solids[pair.solid];
+	const solidSpin = sweep.spins[pair.solid];
 	const ref = solid.start.origin;
-	const solidSpin = spinBetween(solid.start, solid.end);
 	const translation = scale(
 		sub(
 			sub(ship.end.origin, ship.start.origin),
@@ -1007,12 +1065,11 @@ function advance(
 		1 / dt,
 	);
 	const turning =
-		(shipSpin.angle / dt) * shipReach + (solidSpin.angle / dt) * pair.reach;
+		(shipSpin.angle / dt) * sweep.shipReach +
+		(solidSpin.angle / dt) * pair.reach;
 	let s = 0;
 	for (let i = 0; i < MAX_ADVANCES; i++) {
-		const shipAt = place(shipBox, poseAt(ship, shipSpin, s, ref)) as Placed & {
-			kind: "box";
-		};
+		const shipAt = placeBox(shipBox, poseAt(ship, shipSpin, s, ref));
 		const solidAt = place(pair.primitive, poseAt(solid, solidSpin, s, ref));
 		const gap = separation(shipAt, solidAt);
 		if (gap.overlap || gap.distanceKm <= CONTACT_KM) return s;
