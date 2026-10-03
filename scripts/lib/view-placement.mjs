@@ -482,6 +482,28 @@ export function settleFrames(page, frames = 3) {
 }
 
 /**
+ * Stop the game's frame loop, so a measurement's arms are of one pose.
+ *
+ * Nothing moves between two `render(0)` calls once the loop is stopped; with
+ * it running, the sim steps between evaluates and a station 30 km/s away is
+ * somewhere else by the second arm. `startLoop` gives the loop back. Here
+ * because #651 wrote both a probe and an instrument that needed it.
+ */
+export const stopLoop = (page) =>
+	page.evaluate(() => {
+		const g = window.__seelite;
+		cancelAnimationFrame(g.animationFrame);
+		g.animationFrame = 0;
+	});
+
+/** Restart the loop `stopLoop` stopped; a running loop is left alone. */
+export const startLoop = (page) =>
+	page.evaluate(() => {
+		const g = window.__seelite;
+		if (!g.animationFrame) g.animate();
+	});
+
+/**
  * The two framings #201's probe and its cost instrument both take, in one
  * place.
  *

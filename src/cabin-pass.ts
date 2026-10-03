@@ -68,17 +68,49 @@ export type CabinLight = {
  * light gives at the eye. Three's window `(1 − (d/cutoff)⁴)²` is a ratio of
  * two distances that both scale by `k`, so it is unchanged.
  *
- * #205's bay lights are the first producer, on the principal's ruling for
- * #651: the bay lights the cabin.
+ * The principal's ruling for #651 is that the bay lights the cabin. The bay
+ * has no point lights until #205 adds them, so nothing calls this yet but
+ * `Game.mirrorIntoCabin` and the probe that exercises it.
+ *
+ * **Three's attenuation floor is in scene units.** `getDistanceAttenuation`
+ * divides by `max(d^decay, 0.01)`, so in this game's kilometre world a lamp
+ * within 100 m of what it lights is flattened; carried into the cabin's frame
+ * the floor is reached only within a real metre.
  */
 export function cabinLight(world: CabinLight, k = CABIN_SCALE): CabinLight {
+	return cabinLightInto(
+		world,
+		{ positionKm: [0, 0, 0], distanceKm: 0, intensity: 0, decay: 0 },
+		k,
+	);
+}
+
+/** A `CabinLight` a caller owns and lets `cabinLightInto` write. */
+export type CabinLightState = {
+	positionKm: [number, number, number];
+	distanceKm: number;
+	intensity: number;
+	decay: number;
+};
+
+/**
+ * `cabinLight`, written into `out` rather than a new object: the frame loop
+ * carries every mirrored lamp every frame, and an object per lamp per frame is
+ * garbage the moment it is read. Returns `out`.
+ */
+export function cabinLightInto(
+	world: CabinLight,
+	out: CabinLightState,
+	k = CABIN_SCALE,
+): CabinLightState {
 	if (!(k > 0) || !Number.isFinite(k))
 		throw new Error(`cabinLight: scale must be finite and positive, got ${k}`);
-	const [x, y, z] = world.positionKm;
-	return {
-		positionKm: [x * k, y * k, z * k],
-		distanceKm: world.distanceKm * k,
-		intensity: world.intensity * k ** world.decay,
-		decay: world.decay,
-	};
+	const p = world.positionKm;
+	out.positionKm[0] = p[0] * k;
+	out.positionKm[1] = p[1] * k;
+	out.positionKm[2] = p[2] * k;
+	out.distanceKm = world.distanceKm * k;
+	out.intensity = world.intensity * k ** world.decay;
+	out.decay = world.decay;
+	return out;
 }

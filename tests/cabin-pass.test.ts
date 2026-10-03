@@ -3,14 +3,15 @@ import {
 	CABIN_FAR_KM,
 	CABIN_NEAR_KM,
 	CABIN_SCALE,
+	type CabinLightState,
 	cabinLight,
+	cabinLightInto,
 } from "../src/cabin-pass";
 import {
 	CANOPY_FRAME,
 	CANOPY_OUTLINE,
 	CANOPY_Z_KM,
 } from "../src/cockpit-canopy";
-import { COCKPIT_KEY_LIGHT } from "../src/cockpit-surface";
 
 /**
  * Three's punctual-light attenuation, `getDistanceAttenuation` — with its
@@ -46,10 +47,12 @@ describe("the cabin camera brackets the cabin", () => {
 		expect(Math.max(...corners)).toBeLessThan(CABIN_FAR_KM);
 	});
 
-	test("the near plane is closer than the nearest fitting the key light sits by", () => {
-		expect(CABIN_NEAR_KM).toBeLessThan(
-			Math.hypot(...COCKPIT_KEY_LIGHT.position) / 10,
-		);
+	// What the near plane must clear is the nearest *built* vertex, and the
+	// cabin is built in `main.ts`, which the headless tier cannot load — so
+	// `probe-cabin-pass` measures it on the live cabin. This row holds the
+	// depth ratio the two planes buy.
+	test("the two planes keep the depth ratio at 200 or under", () => {
+		expect(CABIN_NEAR_KM).toBeGreaterThan(0);
 		expect(CABIN_FAR_KM / CABIN_NEAR_KM).toBeLessThanOrEqual(200);
 	});
 });
@@ -101,5 +104,25 @@ describe("a world light carried into the cabin", () => {
 	test("refuses a scale that is not a scale", () => {
 		for (const k of [0, -1, Number.NaN, Number.POSITIVE_INFINITY])
 			expect(() => cabinLight(lamp, k)).toThrow();
+	});
+});
+
+describe("the frame loop's form of it", () => {
+	test("writes what cabinLight returns into the object it is given", () => {
+		const world = {
+			positionKm: [0.01, 0.02, -0.03] as const,
+			distanceKm: 0.05,
+			intensity: 3,
+			decay: 2,
+		};
+		const out: CabinLightState = {
+			positionKm: [9, 9, 9],
+			distanceKm: 9,
+			intensity: 9,
+			decay: 9,
+		};
+		const returned = cabinLightInto(world, out);
+		expect(returned).toBe(out);
+		expect(out).toEqual(cabinLight(world) as CabinLightState);
 	});
 });

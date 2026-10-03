@@ -46,6 +46,8 @@ import {
 	installViewFraming,
 	setView,
 	settleFrames,
+	startLoop,
+	stopLoop,
 } from "./lib/view-placement.mjs";
 import { SEED, VIEWPORT } from "./lib/view-set.mjs";
 import { gameUrl } from "./lib/game-url.mjs";
@@ -126,18 +128,6 @@ console.log(
 	`  ${VIEWPORT.width}x${VIEWPORT.height} at device scale 2, seed ${SEED}; ` +
 		`${BLOCKS} blocks per arm, ${FRAMES} frames per block, order seed ${ORDER_SEED}`,
 );
-
-const stopLoop = (page) =>
-	page.evaluate(() => {
-		const g = window.__seelite;
-		cancelAnimationFrame(g.animationFrame);
-		g.animationFrame = 0;
-	});
-const startLoop = (page) =>
-	page.evaluate(() => {
-		const g = window.__seelite;
-		if (!g.animationFrame) g.animate();
-	});
 
 const block = async (page, samples) => {
 	await page.bringToFront();

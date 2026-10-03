@@ -723,7 +723,12 @@ import {
 	railLamps,
 	registerKeyLight,
 } from "./cockpit-surface";
-import { CABIN_FAR_KM, CABIN_NEAR_KM, cabinLight } from "./cabin-pass";
+import {
+	CABIN_FAR_KM,
+	CABIN_NEAR_KM,
+	type CabinLightState,
+	cabinLightInto,
+} from "./cabin-pass";
 import {
 	CANOPY_FRAME,
 	CANOPY_RAIL_RADIUS_KM,
@@ -1322,8 +1327,20 @@ const MOUSE_MAX_STEP = 0.12;
 /** The cockpit camera's offset from the hull's centre, kilometres — 8 metres
  *  forward, so the view is from the nose rather than from inside the cube. */
 const COCKPIT_FORWARD_KM = 0.008;
-/** `syncCabinMirrors`'s world position, so a frame allocates no vector. */
+/** `syncCabinMirrors`'s scratch, so a frame allocates nothing per light. */
 const MIRROR_SCRATCH = new THREE.Vector3();
+const MIRROR_LIGHT: CabinLightState = {
+	positionKm: [0, 0, 0],
+	distanceKm: 0,
+	intensity: 0,
+	decay: 2,
+};
+const MIRROR_CARRIED: CabinLightState = {
+	positionKm: [0, 0, 0],
+	distanceKm: 0,
+	intensity: 0,
+	decay: 2,
+};
 
 /** Below this speed the prograde marker is hidden: the velocity is noise, and a
  *  marker chasing it would swing around a screen belonging to a ship that is
@@ -5299,20 +5316,10 @@ class Game {
 		);
 		if (cabinSun) {
 			this.cabinShadowSun = cabinSun.sun;
-			this.cabinShadowSun.shadow.mapSize.set(
-				SHADOW_MAP_TEXELS,
-				SHADOW_MAP_TEXELS,
-			);
-			this.cabinShadowTarget.name = "sun-shadow-target";
-			this.cabinScene.add(this.cabinShadowTarget);
-			this.cabinShadowSun.target = this.cabinShadowTarget;
+			this.armShadowSun(cabinSun.sun, this.cabinShadowTarget, this.cabinScene);
 		}
 		if (nearSun) {
 			this.nearShadowSun = nearSun.sun;
-			this.nearShadowSun.shadow.mapSize.set(
-				SHADOW_MAP_TEXELS,
-				SHADOW_MAP_TEXELS,
-			);
 			// **A target of its own, in the scene.** Every other light here aims
 			// by `position` alone against the default target at the origin, which
 			// works because a directional light's *direction* is all three layers
@@ -5321,9 +5328,7 @@ class Game {
 			// origin — a station four kilometres away — needs the pair moved
 			// together. `render` sets both, and the direction between them stays
 			// exactly `STAR_DIR`, so nothing about the lighting changes.
-			this.nearShadowTarget.name = "sun-shadow-target";
-			this.nearScene.add(this.nearShadowTarget);
-			this.nearShadowSun.target = this.nearShadowTarget;
+			this.armShadowSun(nearSun.sun, this.nearShadowTarget, this.nearScene);
 			// `up` is set per frame in `fitShadowCamera`, not here: three's
 			// shadow camera is aimed with `lookAt`, which is degenerate when the
 			// view direction is parallel to `up` — and the view direction here is
@@ -14305,13 +14310,9 @@ class Game {
 		// ruling; the cabin's own corners were 22.5% of a `cockpit-arrival`
 		// frame and the near layer's share of it was small (#241).
 		this.cabinPass.enabled = this.cockpit.mesh.visible;
-		const aoOnCabin = this.cockpit.mesh.visible;
-		const ao = this.gtaoPass as unknown as {
-			scene: THREE.Scene;
-			camera: THREE.Camera;
-		};
-		ao.scene = aoOnCabin ? this.cabinScene : this.nearScene;
-		ao.camera = aoOnCabin ? this.cabinCamera : this.nearCamera;
+		if (this.cockpit.mesh.visible)
+			this.aimAo(this.cabinScene, this.cabinCamera);
+		else this.aimAo(this.nearScene, this.nearCamera);
 		// After the cameras are aimed, so the rift's lens sits on the rift in
 		// this frame rather than the last one.
 		this.updateRiftLens();
@@ -14809,6 +14810,37 @@ class Game {
 	}
 
 	/**
+	 * Point the ambient occlusion at one scene and its camera (#651, D6).
+	 *
+	 * `scene` and `camera` are public fields of `GTAOPass`, and the pass
+	 * derives everything else from them on every render rather than once:
+	 * its normal-and-depth buffer is a fresh `renderer.render(this.scene,
+	 * this.camera)`, and the AO and denoise materials' near, far, projection,
+	 * inverse projection and world matrix are copied off `this.camera` before
+	 * each draw (three's `GTAOPass.render`). The one camera-derived state it
+	 * keeps is `depthRenderMaterial`'s near and far, which only its debug
+	 * output reads. `probe-cabin-pass` checks that the AO lands on the cabin.
+	 */
+	private aimAo(scene: THREE.Scene, camera: THREE.PerspectiveCamera) {
+		if (!this.gtaoPass) return;
+		this.gtaoPass.scene = scene;
+		this.gtaoPass.camera = camera;
+	}
+
+	/** Give a sun a shadow map and a target of its own in `scene` — the near
+	 *  sun and the cabin's sun both, so a shadow setting lands on both (#651). */
+	private armShadowSun(
+		sun: THREE.DirectionalLight,
+		target: THREE.Object3D,
+		scene: THREE.Scene,
+	) {
+		sun.shadow.mapSize.set(SHADOW_MAP_TEXELS, SHADOW_MAP_TEXELS);
+		target.name = "sun-shadow-target";
+		scene.add(target);
+		sun.target = target;
+	}
+
+	/**
 	 * Light the cabin with a world point light (#651).
 	 *
 	 * The cabin is in its own scene, so no world light reaches it unless asked;
@@ -14818,8 +14850,13 @@ class Game {
 	 * from the cabin's origin, or it stands inside the cabin. The copy is drawn
 	 * only while `light` is: visible, and in the near layer. Returns the undo.
 	 *
-	 * #205's bay lights are the first caller. A copy is a light in the cabin's
-	 * scene, so three recompiles the cabin's programs when one is added.
+	 * **Nothing in the game calls this yet.** The bay has no point lights until
+	 * #205 adds them, and #205 is where they are registered here; until then the
+	 * principal's ruling is a mechanism with no light behind it, which
+	 * `probe-cabin-pass` exercises with a lamp of its own. A copy is a light in
+	 * the cabin's scene, so three recompiles the cabin's programs when one is
+	 * added — and only then: a copy whose source is not drawn goes dark by
+	 * intensity rather than by `visible`, so the cabin's light count stays put.
 	 */
 	mirrorIntoCabin(light: THREE.PointLight): () => void {
 		const existing = this.cabinMirrors.get(light);
@@ -14849,16 +14886,20 @@ class Game {
 				root = root.parent;
 				drawn = root.visible;
 			}
-			copy.visible = drawn && root === this.nearScene;
-			if (!copy.visible) continue;
+			if (!drawn || root !== this.nearScene) {
+				copy.intensity = 0;
+				continue;
+			}
 			light.getWorldPosition(MIRROR_SCRATCH);
-			const carried = cabinLight({
-				positionKm: [MIRROR_SCRATCH.x, MIRROR_SCRATCH.y, MIRROR_SCRATCH.z],
-				distanceKm: light.distance,
-				intensity: light.intensity,
-				decay: light.decay,
-			});
-			copy.position.set(...carried.positionKm);
+			const w = MIRROR_LIGHT;
+			w.positionKm[0] = MIRROR_SCRATCH.x;
+			w.positionKm[1] = MIRROR_SCRATCH.y;
+			w.positionKm[2] = MIRROR_SCRATCH.z;
+			w.distanceKm = light.distance;
+			w.intensity = light.intensity;
+			w.decay = light.decay;
+			const carried = cabinLightInto(w, MIRROR_CARRIED);
+			copy.position.fromArray(carried.positionKm);
 			copy.distance = carried.distanceKm;
 			copy.intensity = carried.intensity;
 			copy.decay = carried.decay;
