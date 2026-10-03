@@ -30,6 +30,7 @@ import {
 	COMMANDS,
 	DEFAULT_BINDINGS,
 	type Layout,
+	type LayoutName,
 	layoutMoves,
 	type Trigger,
 } from "./commands";
@@ -58,6 +59,14 @@ export interface ControlsCatalogue {
 	 * from the ones that shipped.
 	 */
 	readonly layout: "default" | "player";
+	/**
+	 * Which shipped layout the rows are, or are a move away from (#639).
+	 *
+	 * Beside `layout` rather than folded into it: a player who rebound a key
+	 * on the mouse-flight layout is flying a player layout *and* that one, and
+	 * the tab says both.
+	 */
+	readonly base: LayoutName;
 	readonly commands: readonly ControlCommand[];
 	/** What the store could not do, for the band above the tree (#381 S3).
 	 *  Empty on the shipped layout, which is the common case. */
@@ -111,6 +120,7 @@ export function controlsCatalogue(
 	}
 	return {
 		layout: moves.length > 0 ? "player" : "default",
+		base: bindings.base,
 		commands: COMMANDS.map((c) => row(c, bound)),
 		notices,
 		bindings,

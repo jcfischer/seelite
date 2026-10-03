@@ -86,6 +86,21 @@ const STYLE = `
 `;
 
 /**
+ * A row the settings store does not hold (#639).
+ *
+ * The keyboard layout is chosen on this screen and stored in the binding
+ * blob, beside the moves it is the base of, so its value is read and changed
+ * through the game rather than through `SettingsStore`. It is drawn and walked
+ * as one more row, after the settings.
+ */
+export interface ExtraRow {
+	readonly label: string;
+	readonly value: () => string;
+	readonly note: () => string;
+	readonly step: (direction: number) => void;
+}
+
+/**
  * What a mounted settings screen can be asked to do.
  *
  * The panel kept its own integer cursor rather than adopting `panel-focus`
@@ -143,6 +158,8 @@ export function mountSettingsPanel(
 		key: K,
 		value: Settings[K],
 	) => string | null,
+	/** The keyboard layout row (#639), after the settings. */
+	layoutRow?: ExtraRow,
 ): SettingsPanelHandle {
 	if (!document.getElementById(STYLE_ID)) {
 		const style = document.createElement("style");
@@ -157,6 +174,15 @@ export function mountSettingsPanel(
 	// A setting's value can be a number or a mode name, so the panel steps
 	// through `allowed` positionally and never looks at what a value *is*. That
 	// is what keeps this screen from growing a branch per setting kind.
+	const rowCount = SETTING_KEYS.length + (layoutRow ? 1 : 0);
+
+	/** Step row `i`, whichever store holds it. */
+	const stepRow = (i: number, direction: number) => {
+		const key = SETTING_KEYS[i];
+		if (key !== undefined) step(key, direction);
+		else layoutRow?.step(direction);
+	};
+
 	const step = (key: keyof Settings, direction: number) => {
 		const allowed = settingSpec(key).allowed as readonly Settings[typeof key][];
 		const at = allowed.indexOf(store.value[key]);
@@ -180,15 +206,22 @@ export function mountSettingsPanel(
 </div>
 <div class="note">${spec.note}</div>`;
 		}).join("");
+		const extra = layoutRow
+			? `<div class="row" role="option" aria-selected="${cursor === SETTING_KEYS.length}" data-settings-layout>
+  <span class="name">${escapeHtml(layoutRow.label)}</span>
+  <span class="value">← ${escapeHtml(layoutRow.value())} →</span>
+</div>
+<div class="note">${escapeHtml(layoutRow.note())}</div>`
+			: "";
 		root.innerHTML = `<div class="box" role="dialog" aria-label="Settings">
   <h2>Settings</h2>
-  <div role="listbox">${rows}</div>
+  <div role="listbox">${rows}${extra}</div>
   <div class="hint">${escapeHtml(settingsHint(ownKey.names()))}</div>
 </div>`;
 		for (const [i, el] of [...root.querySelectorAll(".row")].entries())
 			el.addEventListener("click", () => {
 				cursor = i;
-				step(SETTING_KEYS[i] as keyof Settings, 1);
+				stepRow(i, 1);
 				draw();
 			});
 	};
@@ -220,9 +253,7 @@ export function mountSettingsPanel(
 	 */
 	const moveCursor = (delta: number) => {
 		if (!root || delta === 0) return;
-		cursor =
-			(((cursor + delta) % SETTING_KEYS.length) + SETTING_KEYS.length) %
-			SETTING_KEYS.length;
+		cursor = (((cursor + delta) % rowCount) + rowCount) % rowCount;
 		draw();
 		// **The screen scrolls, and the pad has no other way to scroll it.** At
 		// 700x480 the last three rows sit below the viewport, so a cursor walked
@@ -234,7 +265,7 @@ export function mountSettingsPanel(
 
 	const stepValue = (delta: number) => {
 		if (!root || delta === 0) return;
-		step(SETTING_KEYS[cursor] as keyof Settings, delta);
+		stepRow(cursor, delta);
 		draw();
 	};
 
