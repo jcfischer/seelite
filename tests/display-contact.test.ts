@@ -350,6 +350,7 @@ test("a jump or a reset takes the cargo contacts with the canisters", () => {
 			methods(
 				[
 					"clearFlightSession",
+					"dropPointer",
 					"syncCargoContacts",
 					"registerContact",
 					"unregisterContact",
@@ -379,6 +380,7 @@ test("a jump or a reset takes the cargo contacts with the canisters", () => {
 			// The teardown disengages it (#596); a plain field once took the write.
 			dockingComputer: new DockingComputer(),
 			computerFollower: new AttitudeFollower(),
+			flickMeter: { reset() {} },
 			selectableCache: null,
 			targetId: null as string | null,
 		},
