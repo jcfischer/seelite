@@ -106,7 +106,7 @@ that coordinate on the box face and the display slides the throat to the metal
 **The placement is measured, not chosen.** `scripts/measure-vent-placement.ts`
 searches those freedoms on the selected variant's mesh. It takes the slide that
 gives the longest arm whose lines meet metal, and it moves a translation pair
-only where its box line misses. `src/hull.ts` stores the result as each hull's
+only where its box line, or one of the two lines a step inward of it, misses. `src/hull.ts` stores the result as each hull's
 `ventPlacement`. `tests/vent-placement.test.ts` holds the stored row to a fresh
 measurement, holds every line to the metal, and holds every pair pure on every
 hull. A moved arm moves the couple, so §3.4's shares are solved against

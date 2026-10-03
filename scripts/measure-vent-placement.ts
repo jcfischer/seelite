@@ -13,8 +13,8 @@
  *   fore and aft, yaw up and down, pitch port and starboard — to wherever its
  *   arm is longest, and each end stands as far out as metal still meets the
  *   line. An arm shortens only where no slide reaches metal at the box.
- * - **A translation pair** keeps its box position where that meets metal and
- *   otherwise moves in, symmetrically, as far as it must: the retro pair
+ * - **A translation pair** keeps its box position where that line, and the
+ *   two a step inward of it, meet metal (below), and otherwise moves in, symmetrically, as far as it must: the retro pair
  *   toward the centreline, the strafe pairs toward the centre of mass.
  *
  * A line counts as meeting metal when it and the two lines a step inward of
@@ -97,20 +97,14 @@ function bestSlide(ends: (slide: number) => readonly [number, number]): {
 	slide: number;
 	ends: readonly [number, number];
 } {
-	let best = {
-		slide: 0,
-		ends: [Number.NaN, Number.NaN] as readonly [number, number],
-	};
-	let longest = 0;
+	let best: { slide: number; ends: readonly [number, number] } | undefined;
 	for (const slide of SLIDES) {
 		const at = ends(slide);
-		const arm = at[0] + at[1];
-		if (arm > longest) {
-			longest = arm;
-			best = { slide, ends: at };
-		}
+		// A missed end is NaN, and a NaN arm never wins.
+		if (!best || at[0] + at[1] > best.ends[0] + best.ends[1])
+			if (at[0] + at[1] > 0) best = { slide, ends: at };
 	}
-	if (!(longest > 0)) throw new Error("no slide meets metal at both ends");
+	if (!best) throw new Error("no slide meets metal at both ends");
 	return best;
 }
 
