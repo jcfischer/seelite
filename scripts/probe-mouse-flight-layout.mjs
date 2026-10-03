@@ -203,6 +203,12 @@ for (const key of ["ArrowUp", "ArrowLeft"]) {
 // ---------------------------------------------------------------------------
 // Assist off: w and s are forces, held, and the lever stays put.
 // ---------------------------------------------------------------------------
+// **At rest before the assist goes off.** The yaw arm above ends with the
+// nose still turning, and with the assist off nothing damps it: the first run
+// carried that turn through every later arm, read a lone `w` as pushing
+// 0.14 km/s sideways and the burn as turning the nose 20°, and exhausted the
+// rest gate.
+await atRest();
 await page.keyboard.press("x");
 await settle();
 const off = await read();
