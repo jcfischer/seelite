@@ -142,9 +142,11 @@ at `/tmp/seelite-probe.lock`, shared by every worktree and clone. A second run
 waits and names the holder. **Exit 75 with `NOT RUN` is a wait that ran out,
 not a red**; `scripts/lib/probe-lock.mjs` owns the limit and the rules. A probe
 run directly does not take the lock, which is how a red is re-run alone. Each
-red prints its kind and the peak load it ran under — read those before the
-code: `crash` and `killed` under a high load are the machine until a rerun
-alone says otherwise. Load from outside a suite (a `sage review`, `npm test`)
+red prints its kind and the peak load it ran under. Neither names a cause —
+no load threshold has been measured, and a regression that throws reads
+`crash` as readily as a starved navigation does — so a `crash` or `killed` red
+is unattributed until it is rerun alone: green alone points at the machine,
+red alone at the code. Load from outside a suite (a `sage review`, `npm test`)
 is reported, not locked out, so run sage after the suite and not beside it.
 
 ### Visual work has a third tier, and it is a person

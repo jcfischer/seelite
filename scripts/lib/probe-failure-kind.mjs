@@ -18,22 +18,24 @@
  *
  * - `killed` — the harness's own timeout. Its output is cut off wherever the
  *   kill landed, so nothing in it is evidence.
- * - `crash` — exited without the tail: a throw outside a check, such as a
- *   navigation timeout or a destroyed execution context. Usually load or a
- *   page left behind; the code under test is possible, never established.
- * - `pageerror` — the game threw, or a shader did not link. Before `assert`
- *   because a game that threw answers later checks with plausible garbage.
+ * - `pageerror` — the game threw, or a shader did not link. Before `crash`
+ *   because a game that threw can take the probe down before its tail, and
+ *   before `assert` because it answers later checks with plausible garbage.
+ * - `crash` — exited without the tail: a throw outside a check. That is a
+ *   navigation timeout or a destroyed execution context on a starved machine,
+ *   and equally a regression that throws inside `page.evaluate`. The kind
+ *   names no cause; a rerun alone does.
  * - `assert` — a check failed on a probe that ran to the end.
  * - `exit` — none of the above: a non-zero exit after a clean tail. Nothing
  *   prints that today, so it is named rather than folded into another kind.
  *
  * @param {{ code: number | string, out: string }} result
- * @returns {"killed" | "crash" | "pageerror" | "assert" | "exit"}
+ * @returns {"killed" | "pageerror" | "crash" | "assert" | "exit"}
  */
 export function failureKind({ code, out }) {
 	if (typeof code === "string" && code.startsWith("killed")) return "killed";
-	if (!/^-?\d+\/\d+ checks passed$/m.test(out)) return "crash";
 	if (/^(PAGEERROR|SHADERERROR) /m.test(out)) return "pageerror";
+	if (!/^-?\d+\/\d+ checks passed$/m.test(out)) return "crash";
 	if (/^ FAIL /m.test(out)) return "assert";
 	return "exit";
 }

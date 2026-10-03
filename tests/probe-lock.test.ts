@@ -24,6 +24,7 @@ import {
 	acquireProbeLock,
 	defaultLockPath,
 	LOCK_EXIT_CODE,
+	lockWaitMs,
 	MACHINE_LOCK_PATH,
 	notRunMessage,
 	readHolder,
@@ -236,5 +237,29 @@ describe("where the lock lives", () => {
 			startedAt: "s",
 		});
 		expect(readFileSync(path, "utf8")).toContain('"pid":7');
+	});
+});
+
+describe("how long a run waits", () => {
+	const HOUR = 3_600_000;
+	const quiet = () => {};
+
+	test("unset is an hour", () => {
+		expect(lockWaitMs({}, quiet)).toBe(HOUR);
+	});
+
+	test("a whole number of milliseconds is taken as given, zero included", () => {
+		expect(lockWaitMs({ PROBE_LOCK_WAIT_MS: "300" }, quiet)).toBe(300);
+		expect(lockWaitMs({ PROBE_LOCK_WAIT_MS: "0" }, quiet)).toBe(0);
+	});
+
+	test("anything else is the hour, said out loud, never NaN or an instant refusal", () => {
+		for (const raw of ["1h", "", "-5", "1e3", "abc"]) {
+			const lines: string[] = [];
+			expect(
+				lockWaitMs({ PROBE_LOCK_WAIT_MS: raw }, (l) => lines.push(l)),
+			).toBe(HOUR);
+			expect(lines.join()).toContain("PROBE_LOCK_WAIT_MS");
+		}
 	});
 });

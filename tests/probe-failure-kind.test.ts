@@ -9,6 +9,8 @@
  * `N/M checks passed` — so a probe that exits without that tail did not finish.
  */
 import { describe, expect, test } from "bun:test";
+import { spawnSync } from "node:child_process";
+import { resolve } from "node:path";
 import { failureKind } from "../scripts/lib/probe-failure-kind.mjs";
 
 const TAIL = "\n21/23 checks passed\n";
@@ -41,6 +43,12 @@ describe("failureKind", () => {
 		expect(failureKind({ code: 1, out })).toBe("pageerror");
 	});
 
+	test("a page error that took the probe down before its tail is `pageerror`", () => {
+		const out =
+			"  ok  boots\nPAGEERROR boom\nTimeoutError: page.evaluate: Timeout 30000ms exceeded\n";
+		expect(failureKind({ code: 1, out })).toBe("pageerror");
+	});
+
 	test("a shader that failed to link is `pageerror`", () => {
 		const out = `SHADERERROR THREE.WebGLProgram: Shader Error${TAIL}`;
 		expect(failureKind({ code: 1, out })).toBe("pageerror");
@@ -53,5 +61,60 @@ describe("failureKind", () => {
 
 	test("a non-zero exit with a tail and no failure line is `exit`", () => {
 		expect(failureKind({ code: 2, out: `  ok  a${TAIL}` })).toBe("exit");
+	});
+});
+
+/**
+ * The fixtures above are hand-written, so a rewording of `tally()` would leave
+ * them green while every real red turned into `crash`. These read what the
+ * real `tally()` prints, in a process of its own because `exit()` exits.
+ */
+describe("failureKind on what tally() really prints", () => {
+	const GUARD = resolve(import.meta.dir, "../scripts/probe-guard.mjs");
+
+	/** Run `body` against a real tally in a child; its exit code and output. */
+	function tallyRun(body: string) {
+		const code = `
+			import { tally } from ${JSON.stringify(GUARD)};
+			const t = tally();
+			/** a page stand-in: \`watch\` only registers listeners on it */
+			const handlers = {};
+			const page = { on: (event, fn) => (handlers[event] = fn) };
+			${body}
+		`;
+		const r = spawnSync("node", ["--input-type=module", "-e", code], {
+			encoding: "utf8",
+		});
+		return { code: r.status ?? `killed:${r.signal}`, out: r.stdout + r.stderr };
+	}
+
+	test("a failed check reads `assert`", () => {
+		const r = tallyRun(
+			`t.check("holds", true); t.check("fails", false, "got 3"); t.exit();`,
+		);
+		expect(r.code).toBe(1);
+		expect(failureKind(r)).toBe("assert");
+	});
+
+	test("a page error reads `pageerror`", () => {
+		const r = tallyRun(
+			`t.watch(page); handlers.pageerror(new Error("boom")); t.exit();`,
+		);
+		expect(r.code).toBe(1);
+		expect(failureKind(r)).toBe("pageerror");
+	});
+
+	test("a throw before the tail reads `crash`", () => {
+		const r = tallyRun(
+			`t.check("holds", true); throw new Error("navigation timed out");`,
+		);
+		expect(r.code).toBe(1);
+		expect(failureKind(r)).toBe("crash");
+	});
+
+	test("a clean run prints the tail the classifier looks for", () => {
+		const r = tallyRun(`t.check("holds", true); t.exit();`);
+		expect(r.code).toBe(0);
+		expect(r.out).toMatch(/^1\/1 checks passed$/m);
 	});
 });

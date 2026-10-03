@@ -41,8 +41,9 @@
  *
  * ## How long it waits
  *
- * `PROBE_LOCK_WAIT_MS`, default an hour: about 3.5× a clean suite and less than
- * the 5598 s a suite took beside a sage review. A wait that runs out exits
+ * `PROBE_LOCK_WAIT_MS`, default an hour: 3.4× the 1069 s a full suite took
+ * alone on 2026-09-28 (#568), 2.3× the 1585 s it took under a load of 26 on
+ * #84's own branch, and less than the 5598 s it took beside a sage review. A wait that runs out exits
  * `LOCK_EXIT_CODE` and says `NOT RUN`, never a red — a run that did not happen
  * is not evidence about the code. While waiting it names the holder once a
  * minute, so a log being watched does not read as a hang.
@@ -60,6 +61,9 @@ import { constants } from "node:os";
 export const LOCK_EXIT_CODE = 75;
 
 const HOUR_MS = 3_600_000;
+
+/** @param {unknown} e */
+const errCode = (e) => /** @type {NodeJS.ErrnoException} */ (e).code;
 
 /**
  * @typedef {{ pid: number, label: string, tree: string, startedAt: string }} Holder
@@ -89,7 +93,7 @@ function readRecord(path) {
 	try {
 		text = readFileSync(path, "utf8");
 	} catch (e) {
-		if (/** @type {NodeJS.ErrnoException} */ (e).code === "ENOENT") return null;
+		if (errCode(e) === "ENOENT") return null;
 		throw e;
 	}
 	try {
@@ -118,7 +122,7 @@ function pidAlive(pid) {
 		return true;
 	} catch (e) {
 		// EPERM: it exists and belongs to someone else
-		return /** @type {NodeJS.ErrnoException} */ (e).code === "EPERM";
+		return errCode(e) === "EPERM";
 	}
 }
 
@@ -142,8 +146,7 @@ function tryLink(path, record) {
 		linkSync(mine, path);
 		return true;
 	} catch (e) {
-		if (/** @type {NodeJS.ErrnoException} */ (e).code === "EEXIST")
-			return false;
+		if (errCode(e) === "EEXIST") return false;
 		throw e;
 	} finally {
 		unlinkQuiet(mine);
@@ -163,7 +166,7 @@ function clearStale(path, stale, log) {
 		renameSync(path, aside);
 	} catch (e) {
 		// someone else cleared it first
-		if (/** @type {NodeJS.ErrnoException} */ (e).code === "ENOENT") return;
+		if (errCode(e) === "ENOENT") return;
 		throw e;
 	}
 	const moved = readRecord(aside);
@@ -224,8 +227,6 @@ export async function acquireProbeLock({
 		startedAt: new Date(started).toISOString(),
 	};
 	let lastStatus = -Infinity;
-	/** @type {Holder | null} */
-	let lastHolder = null;
 	for (;;) {
 		if (tryLink(path, record)) {
 			let released = false;
@@ -244,10 +245,9 @@ export async function acquireProbeLock({
 			clearStale(path, current, log);
 			continue;
 		}
-		lastHolder = current;
 		const waited = Date.now() - started;
 		if (waited >= waitMs)
-			return { ok: false, waitedMs: waited, holder: lastHolder };
+			return { ok: false, waitedMs: waited, holder: current };
 		if (waited - lastStatus >= statusEveryMs) {
 			lastStatus = waited;
 			log(
@@ -279,6 +279,25 @@ export function notRunMessage(holder, waitedMs, path) {
 }
 
 /**
+ * How long a run waits: `PROBE_LOCK_WAIT_MS` when it is a whole number of
+ * milliseconds, else an hour. `Number("1h")` is NaN and no wait ever reaches
+ * NaN, so a typo would wait forever — and an empty value would be 0, which
+ * refuses at once. Both fall back to the default, with a line saying so.
+ *
+ * @param {Record<string, string | undefined>} env
+ * @param {(line: string) => void} [log]
+ */
+export function lockWaitMs(env, log = console.log) {
+	const raw = env.PROBE_LOCK_WAIT_MS;
+	if (raw === undefined) return HOUR_MS;
+	if (/^\d+$/.test(raw.trim())) return Number(raw.trim());
+	log(
+		`probe lock: PROBE_LOCK_WAIT_MS=${JSON.stringify(raw)} is not milliseconds; waiting the default hour`,
+	);
+	return HOUR_MS;
+}
+
+/**
  * Take the lock for the rest of this process, or exit `LOCK_EXIT_CODE`.
  *
  * Released on any exit, and on SIGINT, SIGTERM and SIGHUP, which then exit
@@ -289,7 +308,7 @@ export function notRunMessage(holder, waitedMs, path) {
  */
 export async function holdProbeLockOrExit(label) {
 	const path = defaultLockPath();
-	const waitMs = Number(process.env.PROBE_LOCK_WAIT_MS ?? HOUR_MS);
+	const waitMs = lockWaitMs(process.env);
 	const r = await acquireProbeLock({ path, label, waitMs });
 	if (!r.ok) {
 		console.log(notRunMessage(r.holder, r.waitedMs, path));
