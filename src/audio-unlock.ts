@@ -25,7 +25,7 @@
  * **Removal waits for the unlock, not for the attempt.** The listeners go only
  * once `tryUnlock` reports the context running. Removing them on any input
  * spent them on Escape and left every later key and click with nothing to
- * hear it (sage, round 5 on #283). And `onUnlocked` runs once: a single tap now
+ * hear it (sage, round 5 on PR #285, node #283). And `onUnlocked` runs once: a single tap now
  * fires `pointerdown`, `pointerup` and `touchend` in turn, and what follows an
  * unlock — attaching the music, which is final for the session if it fails —
  * must not run three times.
