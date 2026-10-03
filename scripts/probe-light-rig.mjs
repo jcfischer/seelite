@@ -316,6 +316,7 @@ async function measureHullChase(page) {
 				game.farScene,
 				game.approachScene,
 				game.nearScene,
+				game.cabinScene,
 			])
 				for (const object of scene.children) {
 					if (object === ship || object.isLight) continue;
@@ -418,6 +419,7 @@ const liveEmissives = await page.evaluate(() => {
 		game.farScene,
 		game.approachScene,
 		game.nearScene,
+		game.cabinScene,
 	])
 		scene.traverse((object) => {
 			if (!("material" in object)) return;

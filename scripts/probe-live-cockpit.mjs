@@ -129,9 +129,9 @@ function measureLiveCockpit() {
 		};
 	};
 	const game = window.__seelite;
-	const scanner = game.nearScene.getObjectByName("scanner");
-	const deck = game.nearScene.getObjectByName("scanner-deck");
-	const scannerReferenceLine = game.nearScene.getObjectByName(
+	const scanner = game.cabinScene.getObjectByName("scanner");
+	const deck = game.cabinScene.getObjectByName("scanner-deck");
+	const scannerReferenceLine = game.cabinScene.getObjectByName(
 		"scanner-reference-line",
 	);
 	const targetInstrumentCanvas = game.cockpit.targetInstrument?.ctx?.canvas;
@@ -155,7 +155,7 @@ function measureLiveCockpit() {
 	const expectedContacts =
 		game.world.system.bodies.filter(inScannerRange).length +
 		game.contacts.filter(inScannerRange).length;
-	const rangeRingFootprint = game.nearScene
+	const rangeRingFootprint = game.cabinScene
 		.getObjectsByProperty("name", "scanner-range-ring")
 		.map((ring) => {
 			const points = ring.geometry.getAttribute("position");
@@ -171,7 +171,7 @@ function measureLiveCockpit() {
 		headLook: document
 			.querySelector("[data-live-cockpit]")
 			?.getAttribute("data-live-head-look"),
-		cockpitMesh: Boolean(game.nearScene.getObjectByName("cockpit")?.visible),
+		cockpitMesh: Boolean(game.cabinScene.getObjectByName("cockpit")?.visible),
 		rendererIsOnlyVisibleCanvas:
 			game.renderer.domElement.parentElement === document.body &&
 			document.querySelectorAll("canvas:not(#overlay)").length === 1,
@@ -220,7 +220,7 @@ function measureLiveCockpit() {
 			"flight-instrument",
 			"throttle-track",
 			"target-instrument",
-		].filter((name) => Boolean(game.nearScene.getObjectByName(name))).length,
+		].filter((name) => Boolean(game.cabinScene.getObjectByName(name))).length,
 		forwardFloor: Boolean(document.querySelector("[data-live-floor]")),
 		scannerReferenceLine: referenceLinePoints
 			? Array.from({ length: referenceLinePoints.count }, (_, index) => ({
@@ -229,25 +229,26 @@ function measureLiveCockpit() {
 					z: referenceLinePoints.getZ(index),
 				}))
 			: null,
-		throttleFill: game.nearScene.getObjectByName("throttle-fill")?.scale.z ?? 0,
+		throttleFill:
+			game.cabinScene.getObjectByName("throttle-fill")?.scale.z ?? 0,
 		throttleFillZ:
-			game.nearScene.getObjectByName("throttle-fill")?.position.z ?? 0,
+			game.cabinScene.getObjectByName("throttle-fill")?.position.z ?? 0,
 		canopyHeaderBraces: [
 			"canopy-header-brace-port",
 			"canopy-header-brace-starboard",
-		].filter((name) => Boolean(game.nearScene.getObjectByName(name))).length,
-		scannerWell: Boolean(game.nearScene.getObjectByName("scanner-well")),
-		scannerBezels: game.nearScene.getObjectsByProperty("name", "scanner-bezel")
+		].filter((name) => Boolean(game.cabinScene.getObjectByName(name))).length,
+		scannerWell: Boolean(game.cabinScene.getObjectByName("scanner-well")),
+		scannerBezels: game.cabinScene.getObjectsByProperty("name", "scanner-bezel")
 			.length,
 		hologramRings:
-			game.nearScene.getObjectByName("scanner-hologram")?.children.length ?? 0,
+			game.cabinScene.getObjectByName("scanner-hologram")?.children.length ?? 0,
 		hologramContacts:
-			game.nearScene
+			game.cabinScene
 				.getObjectByName("scanner-contact-glyphs")
 				?.children.filter((glyph) => glyph.visible).length ?? 0,
 		rangeRingFootprint,
 		selectedMastY:
-			game.nearScene.getObjectByName(`scanner-contact-mast-${game.targetId}`)
+			game.cabinScene.getObjectByName(`scanner-contact-mast-${game.targetId}`)
 				?.position.y ?? null,
 		contacts: game.scannerContacts.length,
 		expectedContacts,
@@ -341,14 +342,14 @@ for (const viewport of VIEWPORTS) {
 	await page.evaluate(() => window.__seelite.setThrottle(0));
 	await page.waitForFunction(
 		() =>
-			window.__seelite.nearScene.getObjectByName("throttle-fill")?.scale.z <
+			window.__seelite.cabinScene.getObjectByName("throttle-fill")?.scale.z <
 			0.1,
 	);
 	const throttleClosed = await page.evaluate(measureLiveCockpit);
 	await page.evaluate(() => window.__seelite.setThrottle(1));
 	await page.waitForFunction(
 		() =>
-			window.__seelite.nearScene.getObjectByName("throttle-fill")?.scale.z >
+			window.__seelite.cabinScene.getObjectByName("throttle-fill")?.scale.z >
 			0.99,
 	);
 	const throttleOpen = await page.evaluate(measureLiveCockpit);
@@ -444,7 +445,7 @@ for (const viewport of VIEWPORTS) {
 	await page.waitForFunction(() => {
 		const game = window.__seelite;
 		const contact = game.scannerContacts.find((item) => item.selected);
-		const mast = game.nearScene.getObjectByName(
+		const mast = game.cabinScene.getObjectByName(
 			`scanner-contact-mast-${game.targetId}`,
 		);
 		return contact?.tipOffsetPx < 0 && mast?.position.y < 0;

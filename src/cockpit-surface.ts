@@ -19,12 +19,14 @@
  * its oversized frame, and their *contribution* dying well before anything
  * outside it.
  *
- * **Their cost does not stop there, and an earlier draft of this said it did.**
- * A `PointLight` parented to the cockpit group is still a light in `nearScene`,
- * so three evaluates it for every `MeshStandardMaterial` in that scene — hulls
- * and station plating included. `distance` clamps what it adds, not the
- * arithmetic that adds nothing. `settings.ts` carries which side of the quality
- * gate each one is on, and #105's key light is gated for exactly this reason.
+ * **Their cost is per fragment of their scene, and an earlier draft of this
+ * said they had none.** Three evaluates a `PointLight` for every
+ * `MeshStandardMaterial` in its scene; `distance` clamps what it adds, not
+ * the arithmetic that adds nothing. Until #651 that scene was `nearScene`, so
+ * hulls and station plating paid for the cabin's two lights, and #105's key
+ * light was gated for exactly that reason. Since #651 the cabin is drawn in a
+ * scene of its own (`cabin-pass.ts`) and only its fittings pay. `settings.ts`
+ * carries which side of the quality gate each one is on.
  *
  * ## What #105 found before it changed anything
  *
@@ -377,10 +379,11 @@ export const COCKPIT_KEY_LIGHT = {
  * every plated surface in the game rather than one per surface.
  *
  * Low also drops **#105's key light**, which is the term this node *added*.
- * A point light in `nearScene` is evaluated for every standard material there,
- * so an ungated one would make every hull and station fragment in the game pay
- * for a cabin gradient; #98 requires each new expensive term to declare a side,
- * and this is that declaration. Dropping it returns low to the light count that
+ * A point light is evaluated for every standard material in its scene, and the
+ * cabin's scene was `nearScene` until #651, so an ungated one made every hull
+ * and station fragment in the game pay for a cabin gradient; #98 requires each
+ * new expensive term to declare a side, and this is that declaration. Since
+ * #651 only the cabin's fittings pay, and the gate stands. Dropping it returns low to the light count that
  * shipped before this node.
  *
  * What low does **not** drop is the pre-existing interior fill or the lamps.
@@ -787,7 +790,7 @@ export function railLamps(
  * surface — so the canopy frame carried six bright dots on an unlit rail. The
  * node offered two routes: a short-range `PointLight` per lamp, gated at
  * `high`, or a gradient on the rail. Six point lights would be six more terms
- * every standard fragment in `nearScene` evaluates (the key light's lesson),
+ * every standard fragment in the cabin's scene evaluates (the key light's lesson),
  * so this is the gradient: a flat strip on the rail's face toward the pilot,
  * additive, warm, brightest at the lamp and gone by `lengthKm` below it, and
  * fading to nothing at both long edges. Free, and lit by nothing, like the lamp.
