@@ -18,7 +18,9 @@
  *   which is what the layout is for;
  * - the selection survives a reload, because it is stored with the moves.
  */
-// A mouse-flight probe: it presses keys by name, as that layout binds them.
+// A default-layout probe (#381 D11) until the settings row selects mouse
+// flight — `z` opens the screen as the shipped layout binds it — and from then
+// on it presses keys by name as the mouse-flight layout binds them.
 import {
 	degreesBetween,
 	flightHarness,
