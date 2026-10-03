@@ -34,8 +34,16 @@
  *
  * **Both halves of each comparison must register.** The footprint must be a
  * real share of the frame and the world must draw red somewhere, or a frame
- * that drew nothing would pass. Row 1 was watched red on the build before
- * #651: 312,460 px of world inside a 32.5% footprint.
+ * that drew nothing would pass.
+ *
+ * **It runs on the build before #651 too, and goes red there.** That build has
+ * no cabin camera, no `mirrorIntoCabin` and no cabin scene, so the rows that
+ * need them report what is missing as a failure instead of throwing — which
+ * keeps row 1's red reproducible: run against `45f09d8` it reads 312,460 px
+ * of world inside a 32.5% footprint. The AO rows' red was shown another way,
+ * by a source mutation forcing the AO onto the near scene (the outside read
+ * 18.379%); there is no arm for that here, because it is not a state the
+ * shipped build can be put in.
  */
 import {
 	bootedGame,
@@ -246,7 +254,8 @@ const r = await page.evaluate(
 		}
 
 		// ---- 3. the ambient occlusion, on the cabin and only there ----
-		const aoScene = game.gtaoPass.scene === game.cabinScene;
+		const aoScene =
+			game.cabinScene !== undefined && game.gtaoPass.scene === game.cabinScene;
 		game.setOcclusion(false, false);
 		const aoOff = frame();
 		game.setOcclusion(false, true);
@@ -280,11 +289,17 @@ const r = await page.evaluate(
 		const unlit = frame();
 		game.nearScene.add(lamp);
 		const lampAlone = frame();
-		const undo = game.mirrorIntoCabin(lamp);
+		// A build without the mirror reports it rather than throwing, so row 1
+		// still reads on the build before #651.
+		const canMirror = typeof game.mirrorIntoCabin === "function";
+		const mirrorIntoCabin = canMirror
+			? (l) => game.mirrorIntoCabin(l)
+			: () => () => {};
+		const undo = mirrorIntoCabin(lamp);
 		const mirrored = frame();
 		// A second registration of the same lamp, undone twice: the copy is
 		// shared and counted, so the first holder's light must survive it.
-		const undoSecond = game.mirrorIntoCabin(lamp);
+		const undoSecond = mirrorIntoCabin(lamp);
 		undoSecond();
 		undoSecond();
 		const stillHeld = frame();
@@ -318,8 +333,9 @@ const r = await page.evaluate(
 			dockPhase: game.dockPhase,
 			nearestKm,
 			farthestKm,
-			cameraNearKm: game.cabinCamera.near,
-			cameraFarKm: game.cabinCamera.far,
+			cameraNearKm: game.cabinCamera?.near ?? Number.NaN,
+			cameraFarKm: game.cabinCamera?.far ?? Number.NaN,
+			canMirror,
 			aoScene,
 			aoInsidePct: (100 * darkInside) / Math.max(1, inCount),
 			aoOutsidePct: (100 * darkOutside) / Math.max(1, outCount),
@@ -404,12 +420,12 @@ t.check(
 );
 t.check(
 	"the same lamp mirrored into the cabin lights it",
-	r.mirrored.mean > 3,
+	r.canMirror && r.mirrored.mean > 3,
 	`mean +${r.mirrored.mean.toFixed(2)} codes, worst ${r.mirrored.worst.toFixed(1)}`,
 );
 t.check(
 	"a second registration's undo leaves the first one's light on",
-	r.stillHeld.worst < 0.5,
+	r.canMirror && r.stillHeld.worst < 0.5,
 	`worst ${r.stillHeld.worst.toFixed(2)} codes against the mirrored frame`,
 );
 t.check(

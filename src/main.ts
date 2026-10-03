@@ -5352,17 +5352,18 @@ class Game {
 	/** The cabin scene's sun and its target: the caster in cockpit view (#651). */
 	private cabinShadowSun: THREE.DirectionalLight | null = null;
 	private readonly cabinShadowTarget = new THREE.Object3D();
-	/** Whether this frame's shadow is the cabin's: the cabin is drawn. */
-	private get shadowIsCabin() {
+	/** Whether this frame draws the cabin: the one rule the cabin pass, its
+	 *  shadow caster and the AO target all read (#651). */
+	private get drawsCabin() {
 		return this.view === "cockpit" && !this.cabinHidden;
 	}
 	/** The one sun that may cast this frame (#201, #651). */
 	private get shadowSun(): THREE.DirectionalLight | null {
-		return this.shadowIsCabin ? this.cabinShadowSun : this.nearShadowSun;
+		return this.drawsCabin ? this.cabinShadowSun : this.nearShadowSun;
 	}
 	/** The target of `shadowSun`. */
 	private get shadowTarget(): THREE.Object3D {
-		return this.shadowIsCabin ? this.cabinShadowTarget : this.nearShadowTarget;
+		return this.drawsCabin ? this.cabinShadowTarget : this.nearShadowTarget;
 	}
 	/** The camera-side fill, near layer and cabin, aimed together each frame. */
 	private fills: THREE.DirectionalLight[] = [];
@@ -14297,7 +14298,7 @@ class Game {
 			cam.quaternion.copy(viewRotation);
 		}
 		this.cockpit.mesh.quaternion.copy(this.orientation);
-		this.cockpit.mesh.visible = this.view === "cockpit" && !this.cabinHidden;
+		this.cockpit.mesh.visible = this.drawsCabin;
 		// #651: the cabin's pass runs only on a frame that draws the cabin, and
 		// the ambient occlusion follows what is drawn — on the cabin when it is
 		// there, on the near layer when it is not. That is the principal's
