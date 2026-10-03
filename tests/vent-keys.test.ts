@@ -32,6 +32,7 @@ import {
 	type PilotHands,
 	pilotDemand,
 	pilotHands,
+	STRAFE_COMMANDS,
 } from "../src/pilot-demand";
 import { rest, sticks } from "./lib/pad-frames";
 
@@ -241,6 +242,20 @@ describe("§3.6: what the hands ask for", () => {
 });
 
 describe("the hands, read off the layout", () => {
+	test("pilotHands reads exactly the four strafe commands STRAFE_COMMANDS lists", () => {
+		const asked = new Set<string>();
+		pilotHands(
+			(id) => {
+				asked.add(id);
+				return false;
+			},
+			{ assist: true, throttle: 0, padTrim: 0, padHeave: 0 },
+		);
+		expect(
+			[...asked].filter((id) => id.startsWith("fly.strafe")).sort(),
+		).toEqual([...STRAFE_COMMANDS].sort());
+	});
+
 	test("each field is its command's, and the pad's figures pass through", () => {
 		const held = (id: CommandId) =>
 			id === "fly.strafeStarboard" || id === "fly.throttleDown";

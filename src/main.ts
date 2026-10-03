@@ -9349,6 +9349,8 @@ class Game {
 		// A held throttle key during the opening is not the pilot taking the
 		// stick: it would cancel the station's computer mid-run-in (#535).
 		if (this.openingActive) return false;
+		// Read once for both of the pad's terms below.
+		const pad = padFlightAxes(this.padFrame, this.padContext());
 		return (
 			yaw !== 0 ||
 			pitch !== 0 ||
@@ -9362,13 +9364,13 @@ class Game {
 			// as surely as a turn is (#620).
 			STRAFE_COMMANDS.some((id) => this.held(id)) ||
 			VENT_COMMANDS.some(({ id }) => this.held(id)) ||
-			padFlightAxes(this.padFrame, this.padContext()).heave !== 0 ||
+			pad.heave !== 0 ||
 			// The pad's trim counts for the same reason the keys do. The sticks
 			// are already in `yaw`/`pitch`/`roll` above, and they reach here
 			// **deadzoned** — `applyRadialDeadzone` returns a hard zero inside
 			// the zone, so a resting stick cannot disengage an autopilot the
 			// player never touched (#283's F3).
-			padFlightAxes(this.padFrame, this.padContext()).throttleTrim !== 0 ||
+			pad.throttleTrim !== 0 ||
 			// **Only while flying.** A panel swallows the pointer delta below, so
 			// counting it here would let a mouse moved over an open console
 			// disengage the docking computer without touching the ship.
@@ -13686,11 +13688,11 @@ class Game {
 		// the key state is what made this feel like 1984. With the assist off it
 		// is §3.9's uncapped law, flown under `?rotation=newtonian` (#618) and
 		// the only law since the vents (#619).
-		// A vent slot's command fires that vent alone, on top of what the axes
-		// ask (#620, §3.5): it turns the hull and pushes it at once.
 		// What the pilot's hands hold, or nothing while they are held off the
 		// ship (#532, #535).
 		const pilotHeld = (id: CommandId) => !handsHeld && this.held(id);
+		// A vent slot's command fires that vent alone, on top of what the axes
+		// ask (#620, §3.5): it turns the hull and pushes it at once.
 		this.turnShip(
 			dt,
 			{ pitch, yaw, roll },

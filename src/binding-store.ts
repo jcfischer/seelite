@@ -245,7 +245,7 @@ function acceptTrigger(v: unknown): Trigger | string {
 	}
 	if (v.kind !== "key")
 		return typeof v.kind === "string"
-			? `only a key or a pad button may be stored here, not a ${v.kind}`
+			? `only a key, a pad button or an unbound placeholder may be stored here, not a ${v.kind}`
 			: "a trigger names its kind";
 	if (typeof v.key !== "string" || v.key.length === 0)
 		return "a key trigger carries the character it was recorded with";

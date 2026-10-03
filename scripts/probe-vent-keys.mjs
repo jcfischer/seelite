@@ -16,7 +16,11 @@
  */
 // A default-layout probe (#381 D11): it presses keys by name, as the shipped
 // layout binds them — the arrows, Shift, Ctrl and `x` for the assist.
-import { flightHarness, HOLD_MS } from "./lib/flight-harness.mjs";
+import {
+	degreesBetween,
+	flightHarness,
+	HOLD_MS,
+} from "./lib/flight-harness.mjs";
 import { gameUrl } from "./lib/game-url.mjs";
 import {
 	bootedGame,
@@ -36,7 +40,7 @@ watch(page);
 await page.goto(gameUrl(origin, { seed: 42 }), { waitUntil: "load" });
 await bootedGame(page);
 
-const { settle, atRest, turnedWhileHolding, restFailed } = flightHarness(page);
+const { settle, atRest, restFailed } = flightHarness(page);
 
 /** The ship's velocity, its three hull axes, its rates and the lever. */
 const read = () =>
@@ -102,6 +106,7 @@ async function pushedWhileHolding(key) {
 		along: dot(dv, before.nose),
 		across: dot(dv, before.right),
 		vertical: dot(dv, before.up),
+		turnedDeg: degreesBetween(before.nose, after.nose),
 		before,
 		after,
 	};
@@ -132,30 +137,26 @@ check(
 // ---------------------------------------------------------------------------
 // The arrows strafe.
 // ---------------------------------------------------------------------------
-const right = await pushedWhileHolding("ArrowRight");
-check(
-	"→ strafes to starboard: the velocity grows across the nose, not along it",
-	right.across > 10 * floor && Math.abs(right.along) < right.across / 4,
-	fmt(right),
-);
-const left = await pushedWhileHolding("ArrowLeft");
-check(
-	"← strafes to port",
-	left.across < -10 * floor && Math.abs(left.along) < -left.across / 4,
-	fmt(left),
-);
-const upward = await pushedWhileHolding("ArrowUp");
-check(
-	"↑ strafes up",
-	upward.vertical > 10 * floor && Math.abs(upward.along) < upward.vertical / 4,
-	fmt(upward),
-);
-const turnedOnArrow = await turnedWhileHolding("ArrowDown");
-check(
-	"↓ turns the nose no more than the rest gate's residual: the arrows stopped pitching",
-	turnedOnArrow < 1,
-	`held ${turnedOnArrow.toFixed(2)}°`,
-);
+// Each arrow is read twice from one hold: the velocity grows along its own
+// axis and not along the nose, and the nose turns no more than the rest gate's
+// residual — the arrows stopped pitching and yawing (sage round 2 asked for
+// both halves on every arrow, and for ↓'s strafe at all).
+const ARROWS = [
+	["ArrowRight", "→ strafes to starboard", (p) => p.across],
+	["ArrowLeft", "← strafes to port", (p) => -p.across],
+	["ArrowUp", "↑ strafes up", (p) => p.vertical],
+	["ArrowDown", "↓ strafes down", (p) => -p.vertical],
+];
+for (const [key, name, gained] of ARROWS) {
+	const p = await pushedWhileHolding(key);
+	check(
+		`${name}, and does not turn the nose`,
+		gained(p) > 10 * floor &&
+			Math.abs(p.along) < gained(p) / 4 &&
+			p.turnedDeg < 1,
+		`${fmt(p)}; nose turned ${p.turnedDeg.toFixed(2)}°`,
+	);
+}
 
 // ---------------------------------------------------------------------------
 // Assist off: Shift and Ctrl are forces, held, and the lever stays put.

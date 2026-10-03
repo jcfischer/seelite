@@ -24,6 +24,11 @@ export const STRAFE_COMMANDS = [
 	"fly.strafeVentral",
 ] as const satisfies readonly CommandId[];
 
+// `pilotHands` below spells the same four ids as literal `held(...)` reads,
+// on purpose: the catalogue's source scan (`dispatchSites`) finds a held
+// command by that shape, and a lookup through this list would hide all four
+// from it. `tests/vent-keys.test.ts` holds the two in agreement.
+
 /** The vents whose commands are held this frame, each at full (§3.5). A slot
  *  the flown hull leaves empty does nothing in the sim. */
 export function heldVents(held: (id: CommandId) => boolean): VentLevels {

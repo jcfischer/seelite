@@ -379,6 +379,7 @@ describe("the axis law names which key is which", () => {
 			...axisCalls().flatMap((c) => [...c.negative, ...c.positive]),
 			...dispatchSites(codeOf("src/main.ts")).held,
 			...dispatchSites(codeOf("src/combat-rig.ts")).held,
+			...dispatchSites(codeOf("src/pilot-demand.ts")).held,
 		]);
 		// Guard the guard: all three scans found something.
 		expect([
