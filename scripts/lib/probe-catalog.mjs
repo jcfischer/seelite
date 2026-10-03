@@ -412,6 +412,19 @@ export const PROBE_CATALOG = Object.freeze(
 			],
 		),
 		entry(
+			"probe-vent-keys.mjs",
+			"Checks flight-model §3.5's keys reach the hull: the arrow keys strafe instead of pitching and yawing, Shift and Ctrl fire the main drive and retro vents only while held with flight assist off and leave the speed lever alone, and a vent slot's command fires nothing until bound, then pushes and turns the hull.",
+			[
+				"strafe",
+				"arrow keys",
+				"flight assist",
+				"vent",
+				"thruster",
+				"rebind",
+				"flight controls",
+			],
+		),
+		entry(
 			"probe-light-rig.mjs",
 			"Checks live baked-environment orientation, star lighting, material response, and light-rig exposure.",
 			[

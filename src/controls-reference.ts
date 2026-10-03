@@ -13,7 +13,13 @@
 import type { LayoutNotice, RejectReason } from "./layout-notice";
 import { escapeHtml } from "./escape-html";
 import type { RebindRefusal, TaskGroup, Trigger } from "./commands";
-import { COMMANDS, PAD_CONTEXTS, TASK_GROUPS, VIEW_MODES } from "./commands";
+import {
+	COMMANDS,
+	isPlaceholder,
+	PAD_CONTEXTS,
+	TASK_GROUPS,
+	VIEW_MODES,
+} from "./commands";
 import type { ControlCommand, ControlsCatalogue } from "./controls-catalogue";
 import type { DockPhase } from "./dock-session";
 import type { FocusCursor, FocusItem } from "./panel-focus";
@@ -301,10 +307,11 @@ export function contextNote(
 }
 
 function rowMarkup(catalogue: ControlsCatalogue, command: ControlCommand) {
-	const triggers = command.currentTriggers.length
-		? command.currentTriggers
-				.map((t) => `<kbd>${escapeHtml(triggerLabel(t))}</kbd>`)
-				.join("")
+	// A placeholder prints as no trigger at all, which is what it is (#620):
+	// the row stays a row, and selecting it opens the capture on it.
+	const bound = command.currentTriggers.filter((t) => !isPlaceholder(t));
+	const triggers = bound.length
+		? bound.map((t) => `<kbd>${escapeHtml(triggerLabel(t))}</kbd>`).join("")
 		: "<em>unbound</em>";
 	const note = contextNote(catalogue, command);
 	return `<div class="lc-controls-row" data-live-controls-row="${command.id}"><span class="lc-controls-name">${escapeHtml(command.name)}</span><span class="lc-controls-keys">${triggers}</span>${note ? `<small class="lc-controls-note">${escapeHtml(note)}</small>` : ""}</div>`;

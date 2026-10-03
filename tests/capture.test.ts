@@ -59,6 +59,7 @@ describe("the capture context admits the pad and flies nothing", () => {
 			pitch: 0,
 			roll: 0,
 			throttleTrim: 0,
+			heave: 0,
 		});
 	});
 

@@ -301,13 +301,22 @@ import {
 	stationOf,
 	stationPose,
 	type AngularStep,
+	type LinearDemand,
 	NO_ATTITUDE,
+	type VentLevels,
 	speedDemand,
 	stepAngular,
 	stepWorld,
 	thrustShares,
 } from "./sim";
 import { AttitudeFollower } from "./attitude-hold";
+import {
+	heldVents,
+	leverMoves,
+	pilotDemand,
+	pilotHands,
+	STRAFE_COMMANDS,
+} from "./pilot-demand";
 import type { SurfaceClass } from "./planet-appearance";
 import {
 	type BodyVisual,
@@ -764,6 +773,7 @@ import {
 	resolveKey,
 	resolvePad,
 	type Trigger,
+	VENT_COMMANDS,
 } from "./commands";
 import { keyDispatch } from "./key-dispatch";
 
@@ -9345,6 +9355,8 @@ class Game {
 		// A held throttle key during the opening is not the pilot taking the
 		// stick: it would cancel the station's computer mid-run-in (#535).
 		if (this.openingActive) return false;
+		// Read once for both of the pad's terms below.
+		const pad = padFlightAxes(this.padFrame, this.padContext());
 		return (
 			yaw !== 0 ||
 			pitch !== 0 ||
@@ -9354,12 +9366,17 @@ class Game {
 			// so a player pushing the throttle got neither a cancel nor an effect.
 			this.held("fly.throttleUp") ||
 			this.held("fly.throttleDown") ||
+			// A strafe and a vent fired by hand are the pilot taking the ship
+			// as surely as a turn is (#620).
+			STRAFE_COMMANDS.some((id) => this.held(id)) ||
+			VENT_COMMANDS.some(({ id }) => this.held(id)) ||
+			pad.heave !== 0 ||
 			// The pad's trim counts for the same reason the keys do. The sticks
 			// are already in `yaw`/`pitch`/`roll` above, and they reach here
 			// **deadzoned** — `applyRadialDeadzone` returns a hard zero inside
 			// the zone, so a resting stick cannot disengage an autopilot the
 			// player never touched (#283's F3).
-			padFlightAxes(this.padFrame, this.padContext()).throttleTrim !== 0 ||
+			pad.throttleTrim !== 0 ||
 			// **Only while flying.** A panel swallows the pointer delta below, so
 			// counting it here would let a mouse moved over an open console
 			// disengage the docking computer without touching the ship.
@@ -9903,12 +9920,15 @@ class Game {
 
 	/** What the player is asking of the flight model over the next `dt` (#5's
 	 *  model, in `sim.ts`). The assist is a toggle and its state is remembered
-	 *  through cruise, which does not honour it (#10 §1). */
-	private control(dt: number): FlightControl {
+	 *  through cruise, which does not honour it (#10 §1).
+	 *
+	 *  `demand` is the hands' (`pilotDemand`, #620) when the pilot flies, and
+	 *  the lever's alone when the docking computer does. */
+	private control(dt: number, demand: LinearDemand): FlightControl {
 		return {
 			nose: this.nose(),
 			up: this.shipUp(),
-			demand: speedDemand(this.throttle),
+			demand,
 			assist: this.assist,
 			attitude: this.attitudeStep,
 			frame: this.assistFrameMotion(dt),
@@ -11204,6 +11224,7 @@ class Game {
 		command: Angular,
 		impulse: Angular,
 		assist: boolean,
+		direct: VentLevels = {},
 	) {
 		const step = stepAngular(
 			this.rates,
@@ -11212,6 +11233,7 @@ class Game {
 			assist,
 			dt,
 			this.flownPerformance,
+			direct,
 		);
 		this.attitudeStep = step;
 		this.rates = step.rates;
@@ -13634,7 +13656,9 @@ class Game {
 			this.mouseDx = 0;
 			this.mouseDy = 0;
 			if (FLIGHT_SOUND.arms === "legacy") this.audio.ambient(this.throttle);
-			this.advanceNormalFlight(dt, approaches);
+			// The computer flies the lever, as it did before the strafe keys:
+			// a key held while it flies has already cancelled it above.
+			this.advanceNormalFlight(dt, approaches, speedDemand(this.throttle));
 			return;
 		}
 		this.computerFollower.reset();
@@ -13675,7 +13699,18 @@ class Game {
 		// the key state is what made this feel like 1984. With the assist off it
 		// is §3.9's uncapped law, flown under `?rotation=newtonian` (#618) and
 		// the only law since the vents (#619).
-		this.turnShip(dt, { pitch, yaw, roll }, impulse, this.assist);
+		// What the pilot's hands hold, or nothing while they are held off the
+		// ship (#532, #535).
+		const pilotHeld = (id: CommandId) => !handsHeld && this.held(id);
+		// A vent slot's command fires that vent alone, on top of what the axes
+		// ask (#620, §3.5): it turns the hull and pushes it at once.
+		this.turnShip(
+			dt,
+			{ pitch, yaw, roll },
+			impulse,
+			this.assist,
+			heldVents(pilotHeld),
+		);
 
 		// Held rather than stepped, for the same reason throttle is: an angle the
 		// player is choosing by eye wants a rate, not a ladder of fixed stops.
@@ -13683,9 +13718,15 @@ class Game {
 		if (orbit !== 0)
 			this.chaseYaw = wrapAngle(this.chaseYaw + orbit * CHASE_ORBIT_RATE * dt);
 
-		if (!handsHeld && this.held("fly.throttleUp"))
+		// **The lever moves only with the assist on** (#620, `flight-model.md`
+		// §3.6). Off, the same keys and triggers fire the main drive and the
+		// retro vents while held (`pilotDemand`), and the lever keeps the speed
+		// the assist will hold when it is switched back on.
+		const lever =
+			!handsHeld && leverMoves(this.assist, this.regime === "cruise");
+		if (lever && this.held("fly.throttleUp"))
 			this.throttle = Math.min(1, this.throttle + dt * throttleRate);
-		if (!handsHeld && this.held("fly.throttleDown"))
+		if (lever && this.held("fly.throttleDown"))
 			this.throttle = Math.max(0, this.throttle - dt * throttleRate);
 		// The triggers **trim** the throttle rather than setting it (#283's F2).
 		// A pull is a speed, not a position: let go and the throttle stays where
@@ -13693,7 +13734,7 @@ class Game {
 		// which is scaled down near a station so docking stays flyable, and
 		// keeps every existing writer of `this.throttle` from being fought on
 		// the next frame. `pad-bindings.ts` argues the rejected arm.
-		if (!handsHeld && padAxes.throttleTrim !== 0)
+		if (lever && padAxes.throttleTrim !== 0)
 			this.throttle = Math.min(
 				1,
 				Math.max(0, this.throttle + padAxes.throttleTrim * dt * throttleRate),
@@ -13728,7 +13769,18 @@ class Game {
 			return;
 		}
 
-		this.advanceNormalFlight(dt, approaches);
+		this.advanceNormalFlight(
+			dt,
+			approaches,
+			pilotDemand(
+				pilotHands(pilotHeld, {
+					assist: this.assist,
+					throttle: this.throttle,
+					padTrim: handsHeld ? 0 : padAxes.throttleTrim,
+					padHeave: handsHeld ? 0 : padAxes.heave,
+				}),
+			),
+		);
 	}
 
 	/**
@@ -13741,6 +13793,7 @@ class Game {
 	private advanceNormalFlight(
 		dt: number,
 		before: Map<string, DockingApproach>,
+		demand: LinearDemand,
 	) {
 		// `before` is the approaches from the top of the step, for every station
 		// close enough to be flown into: a plane crossing is a property of the
@@ -13750,7 +13803,7 @@ class Game {
 		// The whole world, not just the ship: `dt` is sim seconds and the bodies
 		// are on orbits driven by the same clock. Stepping the ship alone would
 		// freeze the system around it, which is the state the scaffold was in.
-		const control = this.control(dt);
+		const control = this.control(dt, demand);
 		const flown = stepWorld(this.world, control, dt, this.flownPerformance);
 		// The attitude step is spent: its push is in this step's velocity, and a
 		// frame that flies without turning (cruise's exit, a placed attitude)

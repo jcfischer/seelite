@@ -234,9 +234,18 @@ const acceptSurface = (v: unknown): Accepted<Surface> =>
 function acceptTrigger(v: unknown): Trigger | string {
 	if (!isRecord(v)) return "a trigger is an object";
 	if (v.kind === "pad-button") return acceptPadButton(v);
+	// A vent slot's command ships this as its one row, so a move *off* it is a
+	// stored `from` (#620). As a `to`, the registry refuses it.
+	if (v.kind === "unbound") {
+		const hold = acceptFlag("hold", v.hold);
+		if (typeof hold === "string") return hold;
+		return hold.value === undefined
+			? { kind: "unbound" }
+			: { kind: "unbound", hold: hold.value };
+	}
 	if (v.kind !== "key")
 		return typeof v.kind === "string"
-			? `only a key or a pad button may be stored here, not a ${v.kind}`
+			? `only a key, a pad button or an unbound placeholder may be stored here, not a ${v.kind}`
 			: "a trigger names its kind";
 	if (typeof v.key !== "string" || v.key.length === 0)
 		return "a key trigger carries the character it was recorded with";
