@@ -68,6 +68,7 @@ import {
 	launchChromium,
 } from "./probe-guard.mjs";
 import { gameUrl, workbenchUrl } from "./lib/game-url.mjs";
+import { holdProbeLockOrExit } from "./lib/probe-lock.mjs";
 
 const ORIGIN = process.env.PROBE_ORIGIN ?? "http://localhost:5173";
 
@@ -1179,6 +1180,14 @@ async function rebuildSheet(out) {
  * is a property of the server, so that gap closed with it.
  */
 const { origin: SERVING, served } = await guardedTree(ORIGIN);
+
+/**
+ * The probe suite's lock, held for the whole capture (#84). The mid-traversal
+ * views run on wall-clock time, so a capture beside a running suite puts the
+ * ship somewhere else — the same failure a starved probe has, in a frame a
+ * person then judges.
+ */
+await holdProbeLockOrExit(`capture-views --label ${LABEL}`);
 
 const browser = await launchChromium({ headless: false });
 const page = await browser.newPage({ viewport: VIEWPORT });
