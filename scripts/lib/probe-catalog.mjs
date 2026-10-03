@@ -107,6 +107,20 @@ export const PROBE_CATALOG = Object.freeze(
 			],
 		),
 		entry(
+			"probe-vent-display.mjs",
+			"Flies the ship above the assist cap and its rate envelope through the real step, then reads painted pixels: a firing vent lights its own throat in chase, a vent the firing table left out stays dark, the plumes hide with the hull in the cockpit, and the saturated nose and prograde markers pulse to the floor's share of their alpha without changing colour.",
+			[
+				"vent plumes",
+				"thrusters",
+				"firing table",
+				"flight assist",
+				"saturation cue",
+				"prograde marker",
+				"nose marker",
+				"chase view",
+			],
+		),
+		entry(
 			"probe-voices.mjs",
 			"Renders the synthesised voices offline through the engine's buses: a comms line on the console bus with the console row as its only level, the numbers station on the music bus with an echo that outlasts it against a dry control, a second line waiting for the first; and the running game saying approach control's answer on a clearance request, silent under ?voices=nocomms, and saying the director's numbers on the music bus.",
 			[

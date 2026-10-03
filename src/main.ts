@@ -317,6 +317,14 @@ import {
 	pilotHands,
 	STRAFE_COMMANDS,
 } from "./pilot-demand";
+import {
+	type SaturationCue,
+	cueAlpha,
+	quietCue,
+	stepSaturationCue,
+	withAlpha,
+} from "./vent-cue";
+import { type VentPlumes, buildVentPlumes } from "./vent-plumes";
 import type { SurfaceClass } from "./planet-appearance";
 import {
 	type BodyVisual,
@@ -2534,6 +2542,21 @@ class Game {
 	 *  or dead attitude vent pushes the hull as well as turning it, and spent
 	 *  there (`FlightControl.attitude`). */
 	private attitudeStep: AngularStep = NO_ATTITUDE;
+	/** Every vent the last step fired: the sim's firing table, which the
+	 *  plumes draw (`flight-model.md` §3.8.1, #621). Empty on every path that
+	 *  flies no vent — docked, cruise, a placed attitude. */
+	ventFiring: VentLevels = {};
+	/** Whether this step's attitude vents could not meet the assist's demand,
+	 *  read off `stepAngular` before the step is spent. */
+	private attitudeSaturated = false;
+	/** §3.8.1's cue: which family's marker is pulsing, and since when
+	 *  (`vent-cue.ts`). On the game clock, so a held clock holds it. */
+	saturationCue: SaturationCue = quietCue();
+	/** What the markers last drew the cue at — each family's alpha multiplier,
+	 *  1 when its marker is steady — for a probe that reads pixels against it. */
+	saturationRender: { linear: number; angular: number } | null = null;
+	/** The flown hull's plumes, a sibling of `shipMesh` in the near scene. */
+	ventPlumes!: VentPlumes;
 	/** The docking computer's attitude hold. It remembers the attitude the
 	 *  computer wanted last frame, whose spin it asks for on top, so it is
 	 *  reset on every frame the computer does not fly (`AttitudeFollower`). */
@@ -5636,6 +5659,7 @@ class Game {
 		// class after it is built, and the walk is a full traverse.
 		this.markedOcclusion.push(["ship", markOcclusion(this.shipMesh)]);
 		this.nearScene.add(this.shipMesh);
+		this.mountVentPlumes(this.shipMesh, this.flownHull);
 		if (this.fleetReview) {
 			this.buildFleetReview();
 			// **After the review's hulls exist, and it is not decoration.** An
@@ -5650,6 +5674,21 @@ class Game {
 					markOcclusion(parked.mesh),
 				]);
 		}
+	}
+
+	/**
+	 * The plumes for a hull root `buildShipMesh` just returned, in place of
+	 * any set already mounted (#621). Read off the root **before** anything
+	 * places it: the throats are measured in the root's own frame.
+	 */
+	private mountVentPlumes(root: THREE.Group, hull: HullId) {
+		const plumes = buildVentPlumes(root, hull);
+		if (this.ventPlumes) {
+			this.ventPlumes.object.removeFromParent();
+			this.ventPlumes.object.geometry.dispose();
+		}
+		this.ventPlumes = plumes;
+		this.nearScene.add(plumes.object);
 	}
 
 	/**
@@ -5673,6 +5712,7 @@ class Game {
 		const old = this.shipMesh;
 		const mesh = buildShipMesh(hull, HULL_SPECS[hull].variant).root;
 		measureMuzzles(hull, HULL_SPECS[hull].variant, mesh);
+		this.mountVentPlumes(mesh, hull);
 		mesh.name = "ship";
 		mesh.position.copy(old.position);
 		mesh.quaternion.copy(old.quaternion);
@@ -11236,6 +11276,7 @@ class Game {
 			direct,
 		);
 		this.attitudeStep = step;
+		this.attitudeSaturated = Object.values(step.saturated).some(Boolean);
 		this.rates = step.rates;
 		this.rotationShare = thrustShares(
 			step.firing,
@@ -11535,6 +11576,12 @@ class Game {
 		this.driveShare = 0;
 		this.lateralShare = 0;
 		this.rotationShare = 0;
+		// A ship at rest fires nothing and has no cue up (#621). Assigned here
+		// rather than through a helper: `leg-reset-coverage` reads this body's
+		// own assignments against the flight path's.
+		this.ventFiring = {};
+		this.attitudeSaturated = false;
+		this.saturationCue = quietCue();
 		// And its memory (sage round 3): a reset taken in cruise would cue a
 		// drop on the next frame, and a hot hull would carry its cooling clicks
 		// into the fresh start.
@@ -13453,6 +13500,16 @@ class Game {
 		this.driveShare = 0;
 		this.lateralShare = 0;
 		this.rotationShare = 0;
+		// And the firing table and the cue's two flags, for the same reason:
+		// a step that flies no vent fires none and saturates nothing, and a
+		// cue left up by the last one runs out its hold on the clock.
+		this.ventFiring = {};
+		this.attitudeSaturated = false;
+		this.saturationCue = stepSaturationCue(
+			this.saturationCue,
+			{ linear: false, angular: false },
+			this.world.gameTime,
+		);
 		this.updateTrafficAuthority();
 		// Before the phase branch, so a hold is retried while docked and ended in
 		// every other phase (#314).
@@ -13816,6 +13873,17 @@ class Game {
 		const shares = thrustShares(flown.firing, this.flownPerformance);
 		this.driveShare = shares.main;
 		this.lateralShare = shares.lateral;
+		// §3.8.1: the same table the plumes draw, and the cue off the sim's
+		// own flags — nothing here decides what saturated means.
+		this.ventFiring = flown.firing;
+		this.saturationCue = stepSaturationCue(
+			this.saturationCue,
+			{
+				linear: Object.values(flown.saturated).some(Boolean),
+				angular: this.attitudeSaturated,
+			},
+			this.world.gameTime,
+		);
 		// After the world moved, because the hold is measured against where the
 		// target *is* this frame: a carrier that drove out of range mid-charge
 		// breaks it, and reading the old position would hold it forever.
@@ -14454,6 +14522,14 @@ class Game {
 		// #535's prologue is empty space: the ship has not arrived yet.
 		this.shipMesh.visible =
 			this.view === "chase" && this.opening?.shot !== "forming";
+		// The plumes ride the hull and are seen when it is (#621).
+		const plumes = this.ventPlumes.object;
+		plumes.position.copy(this.shipMesh.position);
+		plumes.quaternion.copy(this.shipMesh.quaternion);
+		plumes.visible = this.shipMesh.visible;
+		// Hidden, it draws nothing, so it is not written either.
+		if (plumes.visible)
+			this.ventPlumes.update(this.ventFiring, this.world.gameTime);
 
 		// **#241's gate, then #201's shadow camera** — in that order, because the
 		// gate decides whether there is a shadow to fit at all and
@@ -17387,6 +17463,7 @@ class Game {
 			// this frame deliberately did not paint.
 			this.directorRender = null;
 			this.floorRender = null;
+			this.saturationRender = null;
 			return;
 		}
 		const toPixels = (ndcX: number, ndcY: number) =>
@@ -17423,7 +17500,14 @@ class Game {
 		// In the cockpit a cross at the centre of the glass. In chase the centre
 		// is the camera's axis, so the nose is a pip where the ship's nose
 		// points, projected through the camera (#607 D2, D4).
-		ctx.strokeStyle = "rgba(200, 230, 255, 0.55)";
+		// §3.8.1 (#621): a turn the assist cannot meet pulses the nose marker,
+		// and drift or speed it cannot meet the velocity markers — in their own
+		// tones, alpha alone, because §4 has given every hue a word.
+		const cueNow = this.world.gameTime;
+		const angularPulse = cueAlpha(this.saturationCue, "angular", cueNow);
+		const linearPulse = cueAlpha(this.saturationCue, "linear", cueNow);
+		this.saturationRender = { linear: linearPulse, angular: angularPulse };
+		ctx.strokeStyle = withAlpha("rgba(200, 230, 255, 0.55)", angularPulse);
 		ctx.lineWidth = 1;
 		if (shipCues) {
 			ctx.beginPath();
@@ -17646,7 +17730,7 @@ class Game {
 		if (vel) {
 			const fwd = place(vel);
 			if (fwd?.on) {
-				ctx.strokeStyle = "rgba(150, 255, 190, 0.85)";
+				ctx.strokeStyle = withAlpha("rgba(150, 255, 190, 0.85)", linearPulse);
 				ctx.beginPath();
 				ctx.arc(fwd.x, fwd.y, 6, 0, Math.PI * 2);
 				ctx.moveTo(fwd.x - 10, fwd.y);
@@ -17659,7 +17743,7 @@ class Game {
 			}
 			const back = place(scale(vel, -1));
 			if (back?.on) {
-				ctx.strokeStyle = "rgba(255, 160, 150, 0.7)";
+				ctx.strokeStyle = withAlpha("rgba(255, 160, 150, 0.7)", linearPulse);
 				ctx.beginPath();
 				ctx.arc(back.x, back.y, 6, 0, Math.PI * 2);
 				ctx.moveTo(back.x - 4, back.y - 4);
