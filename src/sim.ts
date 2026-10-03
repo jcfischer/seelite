@@ -1630,6 +1630,10 @@ export interface HullControl {
 	} | null;
 }
 
+/** What a pilot's hands give the Hull step: everything but the translation,
+ *  which the regime decides (`HullControl.translation`). */
+export type HullHands = Omit<HullControl, "translation">;
+
 /** One Hull step: where the hull points and how it spins afterwards, every
  *  vent it fired, and the two Saturation families (CONTEXT "Saturation"). */
 export interface HullStep extends HullAttitude {
@@ -1674,34 +1678,30 @@ export function stepHull(
 		control.direct,
 	);
 	const { nose, up } = turnAttitude(from, turned.rates, dt);
-	const angular = anyOf(turned.saturated);
-	if (!control.translation)
-		return {
-			nose,
-			up,
-			rates: turned.rates,
-			firing: turned.firing,
-			saturated: { linear: false, angular },
-		};
-	const flown = stepFlight(
-		ship,
-		{
-			nose,
-			up,
-			demand: control.translation.demand,
-			assist: control.translation.assist,
-			attitude: turned,
-			frame: control.translation.frame,
-		},
-		dt,
-		perf,
-	);
+	const flown = control.translation
+		? stepFlight(
+				ship,
+				{
+					nose,
+					up,
+					demand: control.translation.demand,
+					assist: control.translation.assist,
+					attitude: turned,
+					frame: control.translation.frame,
+				},
+				dt,
+				perf,
+			)
+		: null;
 	return {
 		nose,
 		up,
-		rates: flown.rates,
-		firing: flown.firing,
-		saturated: { linear: anyOf(flown.saturated), angular },
+		rates: flown?.rates ?? turned.rates,
+		firing: flown?.firing ?? turned.firing,
+		saturated: {
+			linear: flown ? anyOf(flown.saturated) : false,
+			angular: anyOf(turned.saturated),
+		},
 	};
 }
 

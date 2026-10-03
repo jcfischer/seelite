@@ -874,6 +874,7 @@ _Avoid_: Flight step — *that is `stepFlight`, the translation half only*.
 
 **Saturation**:
 A **Demand** the vents cannot meet in a step, read as two families: linear and
-angular. The sim decides it (`FlightStep.saturated`, `AngularStep.saturated`);
+angular. The sim decides it (`HullStep.saturated`, which `stepHull` collapses
+from `FlightStep.saturated` and `AngularStep.saturated`);
 the saturation cue (`vent-cue.ts`) latches and pulses it, and nothing else
 re-decides what saturated means (`flight-model.md` §3.8.1).

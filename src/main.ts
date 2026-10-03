@@ -300,6 +300,7 @@ import {
 	stationOf,
 	stationPose,
 	type HullControl,
+	type HullHands,
 	type HullStep,
 	type LinearDemand,
 	type VentLevels,
@@ -11137,7 +11138,7 @@ class Game {
 	private stepDockingComputer(
 		dt: number,
 		approaches: Map<string, DockingApproach>,
-	): Pick<HullControl, "stick" | "turnAssist"> | null {
+	): HullHands | null {
 		// Taken before anything can return. Every early exit leaves the corridor,
 		// so the stored phase is idle unless a step runs and records its own.
 		this.dockingComputer.beginStep();
@@ -11241,7 +11242,7 @@ class Game {
 	 * written in normal flight. Whether a cruise turn is drawn and cued is
 	 * #647's, which deletes the two lines this leaves out.
 	 */
-	private turnInCruise(dt: number, hands: Omit<HullControl, "translation">) {
+	private turnInCruise(dt: number, hands: HullHands) {
 		const step = stepHull(
 			this.world.ship,
 			{ nose: this.nose(), up: this.shipUp(), rates: this.rates },
@@ -13817,7 +13818,7 @@ class Game {
 	private advanceNormalFlight(
 		dt: number,
 		before: Map<string, DockingApproach>,
-		hands: Omit<HullControl, "translation">,
+		hands: HullHands,
 		demand: LinearDemand,
 	) {
 		// `before` is the approaches from the top of the step, for every station

@@ -228,7 +228,7 @@ export function flyTheComputer(opts: FlightOptions): FlightRun {
 		// turned to. A freighter turns at about half the courier's authority and
 		// a miner at about a third, so the line-up turn and the roll tracking are
 		// genuinely harder for them.
-		const start = { rel: ship.pos, vRel: ship.vel };
+		const start = { rel: { ...ship.pos }, vRel: { ...ship.vel } };
 		({ nose, up, rates } = stepHull(
 			ship,
 			{ nose, up, rates },
