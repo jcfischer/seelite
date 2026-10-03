@@ -124,6 +124,7 @@ import type {
 	FrameAttributionSnapshot,
 } from "./frame-attribution";
 import { AudioFX } from "./audio";
+import { armAudioUnlock } from "./audio-unlock";
 import { BUSES, type WeaponMix, type Cue, type NotifyTone } from "./audio-cue";
 import { Music } from "./music";
 import {
@@ -4578,30 +4579,30 @@ class Game {
 		// notice tells the player so: "press any key or click once to enable
 		// sound". Only the pointer path existed, so a player who did what the
 		// line said got no context and no second notice — the once-only flag was
-		// already spent. Sage found it, round 4. Both are *activation triggering
-		// input events* as the HTML specification lists them, which is exactly
-		// what a gamepad button is not.
-		const unlockAudio = () => {
-			this.audio.ensure();
-			// **Only once it worked.** Removing both paths unconditionally spent
-			// them on any keystroke — Escape first, and every later key and click
-			// found no listener while the context stayed suspended. Sage found it,
-			// round 5. `silent` is the context's own state, so this asks whether
-			// the unlock happened rather than whether it was attempted.
-			if (this.audio.silent) return;
-			const ctx = this.audio.context;
-			const bus = this.audio.musicInput;
-			// A failed load is kept in `music.errors` and is final for this session:
-			// these listeners are removed below, so nothing here attaches again.
-			// Whether a later `attach` retries is #547's and #548's to decide.
-			if (ctx && bus) this.music.attach(ctx, bus).catch(() => {});
-			// The comms lines, rendered in idle time before one is needed (#600).
-			if (VOICE_ARMS.comms) prewarmComms();
-			window.removeEventListener("pointerdown", unlockAudio);
-			window.removeEventListener("keydown", unlockAudio);
-		};
-		window.addEventListener("pointerdown", unlockAudio);
-		window.addEventListener("keydown", unlockAudio);
+		// already spent. Sage found it, round 4. A touch unlocks on its release
+		// (node #550): which events the browser honours, and why the listeners
+		// stay until the unlock works, are `audio-unlock.ts`'s. A gamepad button
+		// is none of them.
+		armAudioUnlock(
+			window,
+			() => {
+				this.audio.ensure();
+				// `silent` is the context's own state, so this asks whether the
+				// unlock happened rather than whether it was attempted.
+				return !this.audio.silent;
+			},
+			() => {
+				const ctx = this.audio.context;
+				const bus = this.audio.musicInput;
+				// A failed load is kept in `music.errors` and is final for this
+				// session: the listeners are gone once this runs, so nothing here
+				// attaches again. Whether a later `attach` retries is #547's and
+				// #548's to decide.
+				if (ctx && bus) this.music.attach(ctx, bus).catch(() => {});
+				// The comms lines, rendered in idle time before one is needed (#600).
+				if (VOICE_ARMS.comms) prewarmComms();
+			},
+		);
 		// Pointer lock on click, Escape to release — the browser's own contract,
 		// and the only way to get relative mouse deltas that do not stop at the
 		// edge of the window. Keyboard steering stays live throughout, so a

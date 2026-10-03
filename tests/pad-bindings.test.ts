@@ -482,32 +482,27 @@ describe("the standard mapping's numbering, as literals", () => {
 });
 
 describe("the audio unlock keeps its listeners until it has worked", () => {
-	// **A source assertion, and the reason is that the state cannot be reached
-	// from a probe here.** Sage's round 5 finding is that removing both unlock
-	// paths unconditionally spends them on a keystroke that granted no user
-	// activation — they saw Escape do exactly that. In this repo's Chromium
-	// Escape *does* grant activation, so `probe-gamepad.mjs` cannot build the
-	// case: it presses Escape, the context opens, and the check passes with the
-	// guard removed. Asserting the guard's presence is what is left, and
-	// `tests/output-stage.test.ts` sets the precedent — it reads the spliced
-	// shader source for the same reason.
+	// Sage's round 5 finding is that removing both unlock paths unconditionally
+	// spends them on a keystroke that granted no user activation — they saw
+	// Escape do exactly that. No probe can build the case here (#541: every lane
+	// runs a context before any input), so this was a source assertion on the
+	// closure in `main.ts`.
 	//
-	// It is a weaker check than a behavioural one and says so. What it cannot
-	// see is whether the guard is correct, only that the removal is not
-	// unconditional.
+	// **Since node #550 the removal is a law in `src/audio-unlock.ts`**, and
+	// `tests/audio-unlock.test.ts` holds it behaviourally: nothing comes off
+	// while the attempt answers silent, and everything comes off on its first
+	// success. What stays in `main.ts` is the attempt itself, and that is what
+	// this row reads — it must try the context and then answer from `silent`,
+	// the context's own state, rather than report that it tried.
 
-	test("the removal sits behind a silence check", () => {
+	test("main.ts's attempt answers from the context's state after trying it", () => {
 		const source = codeOf("src/main.ts");
-		const unlock = source.slice(source.indexOf("const unlockAudio = () => {"));
-		const body = unlock.slice(0, unlock.indexOf("};"));
-		expect(body).toContain("this.audio.ensure()");
-		expect(body).toContain("if (this.audio.silent) return;");
-		// And the guard precedes both removals, which is the whole of it.
-		expect(body.indexOf("if (this.audio.silent) return;")).toBeLessThan(
-			body.indexOf('removeEventListener("pointerdown"'),
-		);
-		expect(body.indexOf("if (this.audio.silent) return;")).toBeLessThan(
-			body.indexOf('removeEventListener("keydown"'),
+		const armed = source.slice(source.indexOf("armAudioUnlock("));
+		const attempt = armed.slice(0, armed.indexOf("},"));
+		expect(attempt).toContain("this.audio.ensure()");
+		expect(attempt).toContain("return !this.audio.silent;");
+		expect(attempt.indexOf("this.audio.ensure()")).toBeLessThan(
+			attempt.indexOf("return !this.audio.silent;"),
 		);
 	});
 });
