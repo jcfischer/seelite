@@ -45,7 +45,10 @@ const SLIDE_STEPS = 40;
 type Vec = readonly [number, number, number];
 
 /** The hull frame's lines against one built mesh: does the line through `p`
- *  along `dir` meet metal? `p` in kilometres from the envelope's centre. */
+ *  along `dir` meet metal? `p` in kilometres from the envelope's centre,
+ *  which is the whole root's box centre: the frame `ventThroats` draws in,
+ *  and the box `tests/hull.test.ts` holds `env` to. The metal set is smaller
+ *  than that box on purpose; the origin is not. */
 function lineTester(root: THREE.Object3D) {
 	root.updateMatrixWorld(true);
 	const box = new THREE.Box3().setFromObject(root);
@@ -107,7 +110,7 @@ function bestSlide(ends: (slide: number) => readonly [number, number]): {
 			best = { slide, ends: at };
 		}
 	}
-	if (!(longest > 0)) throw new Error("no slide meets metal at either end");
+	if (!(longest > 0)) throw new Error("no slide meets metal at both ends");
 	return best;
 }
 

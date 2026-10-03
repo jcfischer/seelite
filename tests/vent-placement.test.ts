@@ -14,6 +14,7 @@ import * as THREE from "three";
 import {
 	HULL_IDS,
 	HULL_SPECS,
+	type CoupleArms,
 	type HullId,
 	type VentSlot,
 	coupleArms,
@@ -62,15 +63,25 @@ describe("§3.2.1 every line of action meets metal", () => {
 });
 
 describe("§3.2 every pair stays pure on every hull, wherever it was moved", () => {
+	// Every pair the table has, both senses of every couple: the purity of the
+	// ones not listed would otherwise rest on a symmetry nothing pins.
 	const FORCES: [string, VentSlot[]][] = [
 		["the port strafe pair", ["strafe-fore-port", "strafe-aft-port"]],
+		[
+			"the starboard strafe pair",
+			["strafe-fore-starboard", "strafe-aft-starboard"],
+		],
 		["the dorsal strafe pair", ["strafe-fore-dorsal", "strafe-aft-dorsal"]],
+		["the ventral strafe pair", ["strafe-fore-ventral", "strafe-aft-ventral"]],
 		["the retro pair", ["retro-port", "retro-starboard"]],
 	];
-	const COUPLES: [keyof ReturnType<typeof coupleArms>, VentSlot[]][] = [
+	const COUPLES: [keyof CoupleArms, VentSlot[]][] = [
 		["yaw", ["fore-starboard-lateral", "aft-port-lateral"]],
+		["yaw", ["fore-port-lateral", "aft-starboard-lateral"]],
 		["pitch", ["fore-ventral-vertical", "aft-dorsal-vertical"]],
+		["pitch", ["fore-dorsal-vertical", "aft-ventral-vertical"]],
 		["roll", ["port-dorsal-roll", "starboard-ventral-roll"]],
+		["roll", ["port-ventral-roll", "starboard-dorsal-roll"]],
 	];
 	const AXIS = { pitch: "x", yaw: "y", roll: "z" } as const;
 

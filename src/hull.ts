@@ -230,111 +230,73 @@ export const BOX_PLACEMENT: VentPlacement = {
 	roll: { z: 0, port: 1, starboard: 1 },
 };
 
+/** Each couple's arm, kilometres. */
+export interface CoupleArms {
+	readonly pitch: number;
+	readonly yaw: number;
+	readonly roll: number;
+}
+
 /** Each couple's arm, kilometres: the torque one attitude pair makes per unit
  *  thrust of one vent. What `scripts/measure-vent-shares.ts` solves against. */
 export const coupleArms = (
 	env: HullEnvelope,
 	p: VentPlacement,
-): { readonly pitch: number; readonly yaw: number; readonly roll: number } => ({
+): CoupleArms => ({
 	pitch: ((p.pitch.fore + p.pitch.aft) * env.lengthKm) / 2,
 	yaw: ((p.yaw.fore + p.yaw.aft) * env.lengthKm) / 2,
 	roll: ((p.roll.port + p.roll.starboard) * env.beamKm) / 2,
 });
 
 type Fractions = readonly [number, number, number];
+type SlotGeometry = { family: VentFamily; at: Fractions; dir: Fractions };
+
+/** The six pushes, by the axis and sense of the force on the hull. */
+const PUSH = {
+	fore: [0, 0, -1],
+	aft: [0, 0, 1],
+	starboard: [1, 0, 0],
+	port: [-1, 0, 0],
+	up: [0, 1, 0],
+	down: [0, -1, 0],
+} as const satisfies Record<string, Fractions>;
 
 /** Where each slot sits under a placement, and which way it pushes. A vent's
  *  coordinate along its own push is the box face's; see `VentPlacement`. */
 const slotGeometry = (
 	p: VentPlacement,
-): Readonly<
-	Record<VentSlot, { family: VentFamily; at: Fractions; dir: Fractions }>
-> => {
-	const { retroX: r, strafeZ: s, yaw, pitch, roll } = p;
+): Readonly<Record<VentSlot, SlotGeometry>> => {
+	const { retroX: r, strafeZ: s, yaw: w, pitch: h, roll: o } = p;
+	const v = (family: VentFamily, at: Fractions, dir: Fractions) => ({
+		family,
+		at,
+		dir,
+	});
+	const { fore, aft, starboard, port, up, down } = PUSH;
 	return {
-		main: { family: "main", at: [0, 0, 1], dir: [0, 0, -1] },
-		"retro-port": { family: "retro", at: [-r, 0, -1], dir: [0, 0, 1] },
-		"retro-starboard": { family: "retro", at: [r, 0, -1], dir: [0, 0, 1] },
-		"strafe-fore-port": { family: "strafe", at: [-1, 0, -s], dir: [1, 0, 0] },
-		"strafe-aft-port": { family: "strafe", at: [-1, 0, s], dir: [1, 0, 0] },
-		"strafe-fore-starboard": {
-			family: "strafe",
-			at: [1, 0, -s],
-			dir: [-1, 0, 0],
-		},
-		"strafe-aft-starboard": {
-			family: "strafe",
-			at: [1, 0, s],
-			dir: [-1, 0, 0],
-		},
-		"strafe-fore-dorsal": { family: "strafe", at: [0, 1, -s], dir: [0, -1, 0] },
-		"strafe-aft-dorsal": { family: "strafe", at: [0, 1, s], dir: [0, -1, 0] },
-		"strafe-fore-ventral": {
-			family: "strafe",
-			at: [0, -1, -s],
-			dir: [0, 1, 0],
-		},
-		"strafe-aft-ventral": { family: "strafe", at: [0, -1, s], dir: [0, 1, 0] },
-		"fore-port-lateral": {
-			family: "yaw",
-			at: [-1, yaw.y, -yaw.fore],
-			dir: [1, 0, 0],
-		},
-		"fore-starboard-lateral": {
-			family: "yaw",
-			at: [1, yaw.y, -yaw.fore],
-			dir: [-1, 0, 0],
-		},
-		"aft-port-lateral": {
-			family: "yaw",
-			at: [-1, yaw.y, yaw.aft],
-			dir: [1, 0, 0],
-		},
-		"aft-starboard-lateral": {
-			family: "yaw",
-			at: [1, yaw.y, yaw.aft],
-			dir: [-1, 0, 0],
-		},
-		"fore-dorsal-vertical": {
-			family: "pitch",
-			at: [pitch.x, 1, -pitch.fore],
-			dir: [0, -1, 0],
-		},
-		"fore-ventral-vertical": {
-			family: "pitch",
-			at: [pitch.x, -1, -pitch.fore],
-			dir: [0, 1, 0],
-		},
-		"aft-dorsal-vertical": {
-			family: "pitch",
-			at: [pitch.x, 1, pitch.aft],
-			dir: [0, -1, 0],
-		},
-		"aft-ventral-vertical": {
-			family: "pitch",
-			at: [pitch.x, -1, pitch.aft],
-			dir: [0, 1, 0],
-		},
-		"port-dorsal-roll": {
-			family: "roll",
-			at: [-roll.port, 0, roll.z],
-			dir: [0, -1, 0],
-		},
-		"port-ventral-roll": {
-			family: "roll",
-			at: [-roll.port, 0, roll.z],
-			dir: [0, 1, 0],
-		},
-		"starboard-dorsal-roll": {
-			family: "roll",
-			at: [roll.starboard, 0, roll.z],
-			dir: [0, -1, 0],
-		},
-		"starboard-ventral-roll": {
-			family: "roll",
-			at: [roll.starboard, 0, roll.z],
-			dir: [0, 1, 0],
-		},
+		main: v("main", [0, 0, 1], fore),
+		"retro-port": v("retro", [-r, 0, -1], aft),
+		"retro-starboard": v("retro", [r, 0, -1], aft),
+		"strafe-fore-port": v("strafe", [-1, 0, -s], starboard),
+		"strafe-aft-port": v("strafe", [-1, 0, s], starboard),
+		"strafe-fore-starboard": v("strafe", [1, 0, -s], port),
+		"strafe-aft-starboard": v("strafe", [1, 0, s], port),
+		"strafe-fore-dorsal": v("strafe", [0, 1, -s], down),
+		"strafe-aft-dorsal": v("strafe", [0, 1, s], down),
+		"strafe-fore-ventral": v("strafe", [0, -1, -s], up),
+		"strafe-aft-ventral": v("strafe", [0, -1, s], up),
+		"fore-port-lateral": v("yaw", [-1, w.y, -w.fore], starboard),
+		"fore-starboard-lateral": v("yaw", [1, w.y, -w.fore], port),
+		"aft-port-lateral": v("yaw", [-1, w.y, w.aft], starboard),
+		"aft-starboard-lateral": v("yaw", [1, w.y, w.aft], port),
+		"fore-dorsal-vertical": v("pitch", [h.x, 1, -h.fore], down),
+		"fore-ventral-vertical": v("pitch", [h.x, -1, -h.fore], up),
+		"aft-dorsal-vertical": v("pitch", [h.x, 1, h.aft], down),
+		"aft-ventral-vertical": v("pitch", [h.x, -1, h.aft], up),
+		"port-dorsal-roll": v("roll", [-o.port, 0, o.z], down),
+		"port-ventral-roll": v("roll", [-o.port, 0, o.z], up),
+		"starboard-dorsal-roll": v("roll", [o.starboard, 0, o.z], down),
+		"starboard-ventral-roll": v("roll", [o.starboard, 0, o.z], up),
 	};
 };
 

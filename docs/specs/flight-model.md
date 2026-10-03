@@ -236,7 +236,8 @@ the envelope. Two things it settled:
   main drive is drawn at the hull's own bells, whose resultant it is.
   `scripts/measure-vent-throats.ts` prints how far each throat is from metal.
   When #621 shipped, the attitude vents' lines missed every hull. #636 moved
-  the pairs onto the metal (§3.2.1), so every line now meets it. The closest
+  the pairs onto the metal (§3.2.1), so every line now meets the hull's
+  selected variant, which is the mesh the game draws for it. The closest
   approach is kept as a fallback for a mesh that changes before its placement
   is measured again.
 
