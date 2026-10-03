@@ -160,12 +160,8 @@ check(
 	parity(otherHalf),
 	`held ${otherHalf.toFixed(2)}°, ${bandText}`,
 );
-const arrow = await turnedWhileHolding("ArrowDown");
-check(
-	"and so is the arrow that shared the command with the key that moved",
-	parity(arrow),
-	`held ${arrow.toFixed(2)}°, ${bandText}`,
-);
+// The arrow that shared the command until #620 strafes now, so it is no
+// longer a second half of this axis: `probe-vent-keys.mjs` flies it.
 
 // ---------------------------------------------------------------------------
 // And a *pressed* command, which is the other path entirely.

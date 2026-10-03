@@ -114,6 +114,8 @@ export function triggerLabel(t: Trigger): string {
 			return t.trigger.toUpperCase();
 		case "pad-intent":
 			return padButton(t.button);
+		case "unbound":
+			return "unbound";
 	}
 }
 
@@ -130,6 +132,12 @@ export function triggerLabel(t: Trigger): string {
  * `keep` narrows it to the triggers a surface can name — a keyboard footer
  * has no use for a pad button, and the pad hint only for what a console
  * reads. Repeats are dropped, in the layout's order.
+ *
+ * **An unbound placeholder is not a name** (#620): a vent slot's command ships
+ * one so it can be bound, and a surface that printed it would offer
+ * `unbound` as a key to press. Spelled out rather than through
+ * `isPlaceholder`, because this module imports nothing but types from the
+ * registry (#499 D3's reason, in `OwnKey`'s doc).
  */
 export function boundNames(
 	layout: Layout,
@@ -137,7 +145,10 @@ export function boundNames(
 	keep: (t: Trigger) => boolean = () => true,
 ): string[] {
 	const names = layout
-		.filter((b) => b.command === id && keep(b.trigger))
+		.filter(
+			(b) =>
+				b.command === id && b.trigger.kind !== "unbound" && keep(b.trigger),
+		)
 		.map((b) => triggerLabel(b.trigger));
 	return [...new Set(names)];
 }

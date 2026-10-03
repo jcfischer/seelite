@@ -119,14 +119,16 @@ and triggers are analog.
 
 | on the pad | does | keyboard and mouse |
 | --- | --- | --- |
-| right stick down | Pitch: nose up | `hold s or ↓` |
-| right stick up | Pitch: nose down | `hold w or ↑` |
-| right stick left | Yaw: nose to port | `hold a or ←` |
-| right stick right | Yaw: nose to starboard | `hold d or →` |
+| right stick down | Pitch: nose up | `hold s` |
+| right stick up | Pitch: nose down | `hold w` |
+| right stick left | Yaw: nose to port | `hold a` |
+| right stick right | Yaw: nose to starboard | `hold d` |
 | left stick left | Roll to port | `hold q` |
 | left stick right | Roll to starboard | `hold e` |
-| R2 | Throttle up | `hold Shift` |
-| L2 | Throttle down | `hold Ctrl` |
+| left stick up | Strafe up | `hold ↑` |
+| left stick down | Strafe down | `hold ↓` |
+| R2 | Throttle up; assist off, fire the main drive | `hold Shift` |
+| L2 | Throttle down; assist off, fire the retro vents | `hold Ctrl` |
 | Y | Engage or drop cruise | `j` |
 | Select | Wind up the jump | `` ` `` |
 | hold X | Fire the pulse laser | `hold Space or left mouse button` |
@@ -272,6 +274,11 @@ evidence, and #283 does not close without it.
   `SETTINGS_KEY`. What the pad claims is the flight-critical set; the dials stay
   on the keyboard, and the instrument's switches are reachable through its
   cursor rather than through their letters.
+- **Strafe sideways, or fire one vent.** The left stick's vertical axis was
+  the one free axis, and it strafes up and down (#620). The lateral strafe has
+  no axis left without moving one #283 accepted, so it is on the arrows
+  only, by the principal's ruling (2026-10-03). A vent slot's own command is held,
+  and a held pad button has no reader yet (#496), so those bind to keys only.
 - **Rebind a stick, a trigger or a held button.** The `Controls` tab rebinds
   since #381 S4, and a pad button can be moved there like a key — but the
   sticks, the two triggers and the held fire button are read in fixed

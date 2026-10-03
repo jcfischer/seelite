@@ -153,6 +153,9 @@ describe("the catalogue is complete against the source", () => {
 		const reached = new Set([
 			...dispatchSites(codeOf("src/main.ts")).all,
 			...dispatchSites(codeOf("src/combat-rig.ts")).all,
+			// The hands' table moved out of `main.ts` (#620): `pilotHands` asks
+			// the held predicate for the throttle and the four strafes.
+			...dispatchSites(codeOf("src/pilot-demand.ts")).all,
 		]);
 		// Guard the guard: each shape found something, so a renamed helper
 		// cannot make the loop below pass on a set built from four dead regexes.

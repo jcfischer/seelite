@@ -67,6 +67,7 @@
  * Headless, and on the list in `tests/headless.test.ts`.
  */
 import { COMMANDER_KEY } from "./commander-overlay";
+import { VENT_SLOTS, type VentSlot } from "./hull";
 import { type PadButtonName, type PadFrame, STANDARD_BUTTONS } from "./gamepad";
 import {
 	ANALOG_TRIGGERS,
@@ -257,7 +258,62 @@ export type Trigger =
 			readonly button: PadButtonName;
 			readonly half?: Half;
 			readonly contexts: readonly PadContext[];
+	  }
+	| {
+			/**
+			 * **A place for a trigger, with none in it** (#620). §3.5 gives each
+			 * vent slot a command with no default key, and a rebind *moves* a
+			 * trigger: `layoutMoves` pairs a layout with the shipped one row by
+			 * row, and the store saves the moves. A command with no row could
+			 * never be bound at all, so it ships this one, which nothing
+			 * resolves and the capture modal moves onto a key like any other.
+			 * Held, because a vent fires while its key is down.
+			 */
+			readonly kind: "unbound";
+			readonly hold?: true;
 	  };
+
+/** `fore-port-lateral` as `forePortLateral`: a command id is namespaced and
+ *  camel-cased (#369 D1), and the slot's hyphens would be the one exception. */
+type Camel<S extends string> = S extends `${infer A}-${infer B}`
+	? `${A}${Capitalize<Camel<B>>}`
+	: S;
+
+/** A vent slot's own command: `vent.main`, `vent.forePortLateral`, … */
+export type VentCommandId = `vent.${Camel<VentSlot>}`;
+
+export const ventCommand = (slot: VentSlot): VentCommandId =>
+	`vent.${slot.replace(/-([a-z])/g, (_, c: string) => c.toUpperCase())}` as VentCommandId;
+
+/**
+ * One command per vent slot (§3.5), in `VENT_SLOTS`' order. The registry
+ * authors its rows from this list below, so a slot added to the leaf gains a command
+ * with no edit there.
+ *
+ * Named by the slot, because the slot vocabulary is the one name a vent has on
+ * every hull (§3.4.1).
+ */
+export const VENT_COMMANDS: readonly {
+	readonly slot: VentSlot;
+	readonly id: VentCommandId;
+	readonly name: string;
+}[] = VENT_SLOTS.map((slot) => ({
+	slot,
+	id: ventCommand(slot),
+	name: `Fire one vent: ${slot.replaceAll("-", " ")}`,
+}));
+
+/** The one placeholder a command with no default key ships (#620). */
+const UNBOUND_HELD: Trigger = { kind: "unbound", hold: true };
+
+/**
+ * Whether a trigger is that placeholder rather than something to press.
+ *
+ * One owner, because three readers ask it — `collisions`, `boundNames` and
+ * the tab's row — and a fourth that forgot would print `unbound` as a key or
+ * report every slot command colliding with every other (sage round 1).
+ */
+export const isPlaceholder = (t: Trigger): boolean => t.kind === "unbound";
 
 // ---------------------------------------------------------------------------
 // The pad, asked
@@ -329,7 +385,7 @@ const PRESSES = padPresses();
 const liveIn = (live: (context: PadContext) => boolean) =>
 	PAD_CONTEXTS.filter(live);
 
-type Axis = "yaw" | "pitch" | "roll";
+type Axis = "yaw" | "pitch" | "roll" | "heave";
 
 /**
  * The stick push that drives `axis` in the direction `sign` names, found by
@@ -472,10 +528,7 @@ const AUTHORED = [
 		id: "fly.pitchUp",
 		name: "Pitch: nose up",
 		group: "fly",
-		keys: [
-			{ key: "s", hold: true },
-			{ key: "arrowdown", hold: true },
-		],
+		keys: [{ key: "s", hold: true }],
 		// `pitch` is negated off `mouseDy` in `main.ts`, so the nose comes up as
 		// the mouse comes back — and `tests/commands.test.ts` reads that
 		// negation out of the source rather than trusting this sentence.
@@ -488,10 +541,7 @@ const AUTHORED = [
 		id: "fly.pitchDown",
 		name: "Pitch: nose down",
 		group: "fly",
-		keys: [
-			{ key: "w", hold: true },
-			{ key: "arrowup", hold: true },
-		],
+		keys: [{ key: "w", hold: true }],
 		more: [
 			{ kind: "mouse-move", axis: "y", half: "-" },
 			...stickFor("pitch", 1),
@@ -501,20 +551,14 @@ const AUTHORED = [
 		id: "fly.yawPort",
 		name: "Yaw: nose to port",
 		group: "fly",
-		keys: [
-			{ key: "a", hold: true },
-			{ key: "arrowleft", hold: true },
-		],
+		keys: [{ key: "a", hold: true }],
 		more: [{ kind: "mouse-move", axis: "x", half: "-" }, ...stickFor("yaw", 1)],
 	},
 	{
 		id: "fly.yawStarboard",
 		name: "Yaw: nose to starboard",
 		group: "fly",
-		keys: [
-			{ key: "d", hold: true },
-			{ key: "arrowright", hold: true },
-		],
+		keys: [{ key: "d", hold: true }],
 		more: [
 			{ kind: "mouse-move", axis: "x", half: "+" },
 			...stickFor("yaw", -1),
@@ -538,16 +582,49 @@ const AUTHORED = [
 		keys: [{ key: "e", hold: true }],
 		more: stickFor("roll", -1),
 	},
+	// The arrows strafe (#620, `flight-model.md` §3.5): they stopped repeating
+	// pitch and yaw, which the letters and the mouse keep. Assist on, a held
+	// strafe is a lateral velocity demand; off, a force (§3.6). The pad has
+	// one free axis, the left stick's vertical, so the vertical strafe is
+	// derived onto it and the lateral one has none (`PadFlightAxes.heave`).
 	{
+		id: "fly.strafePort",
+		name: "Strafe to port",
+		group: "fly",
+		keys: [{ key: "arrowleft", hold: true }],
+	},
+	{
+		id: "fly.strafeStarboard",
+		name: "Strafe to starboard",
+		group: "fly",
+		keys: [{ key: "arrowright", hold: true }],
+	},
+	{
+		id: "fly.strafeDorsal",
+		name: "Strafe up",
+		group: "fly",
+		keys: [{ key: "arrowup", hold: true }],
+		more: stickFor("heave", 1),
+	},
+	{
+		id: "fly.strafeVentral",
+		name: "Strafe down",
+		group: "fly",
+		keys: [{ key: "arrowdown", hold: true }],
+		more: stickFor("heave", -1),
+	},
+	{
+		// §3.6's two meanings across the assist, in the name the tab prints:
+		// a speed lever with the assist on, the main drive held with it off.
 		id: "fly.throttleUp",
-		name: "Throttle up",
+		name: "Throttle up; assist off, fire the main drive",
 		group: "fly",
 		keys: [{ key: "shift", hold: true }],
 		more: triggerFor(1),
 	},
 	{
 		id: "fly.throttleDown",
-		name: "Throttle down",
+		name: "Throttle down; assist off, fire the retro vents",
 		group: "fly",
 		keys: [{ key: "control", hold: true }],
 		more: triggerFor(-1),
@@ -581,6 +658,14 @@ const AUTHORED = [
 		// Unscoped, because the glass *is* the ship's own surface — see `Scope`.
 		more: [{ kind: "mouse-button", action: "click" }],
 	},
+	// One command per vent slot, with no default key (#620, §3.5): reachable
+	// for a pilot who binds one, absent from the shipped layout.
+	...VENT_COMMANDS.map(({ id, name }) => ({
+		id,
+		name,
+		group: "fly" as const,
+		more: [UNBOUND_HELD],
+	})),
 	// fight -------------------------------------------------------------
 	{
 		id: "fight.firePulse",
@@ -1470,6 +1555,10 @@ export function triggerKey(t: Trigger): string {
 			return `pad-trigger:${t.trigger}`;
 		case "pad-button":
 			return `pad:${t.button}:${t.hold ? "hold" : "press"}`;
+		case "unbound":
+			// Every placeholder hashes alike, and `collisions` skips the kind:
+			// two commands with nothing bound do not share a trigger.
+			return `unbound:${t.hold ? "hold" : "press"}`;
 		case "pad-intent":
 			// One namespace with `pad-button`, because they are one button: the
 			// d-pad's ↑ presses a key in flight and steps a cursor in a console,
@@ -1529,6 +1618,7 @@ export interface Collision {
 export function collisions(bindings: readonly Binding[]): Collision[] {
 	const byTrigger = new Map<string, Binding[]>();
 	for (const b of bindings) {
+		if (isPlaceholder(b.trigger)) continue;
 		const key = triggerKey(b.trigger);
 		byTrigger.set(key, [...(byTrigger.get(key) ?? []), b]);
 	}
@@ -2135,6 +2225,12 @@ function movedTrigger(from: Trigger, to: Trigger): Trigger {
 				to,
 				"a panel intent is the console's grammar and is not offered for rebinding",
 			);
+		case "unbound":
+			throw unstorable(
+				"not-offered",
+				to,
+				"an unbound placeholder is where a control starts, not a trigger to move onto",
+			);
 	}
 }
 
@@ -2228,8 +2324,12 @@ const sameHold = (from: Trigger, to: Trigger) =>
  * on #497).
  */
 export const heldRather = (t: Trigger): true | undefined =>
-	t.kind === "key" || t.kind === "pad-button" ? t.hold : undefined;
+	t.kind === "key" || t.kind === "pad-button" || t.kind === "unbound"
+		? t.hold
+		: undefined;
 
 /** Whether a command's existing trigger is one a player may move at all. */
 const movable = (t: Trigger): boolean =>
-	t.kind === "key" || (t.kind === "pad-button" && t.hold !== true);
+	t.kind === "key" ||
+	t.kind === "unbound" ||
+	(t.kind === "pad-button" && t.hold !== true);

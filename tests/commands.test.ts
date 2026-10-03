@@ -54,6 +54,10 @@ import { keyDispatch } from "../src/key-dispatch";
  * why this row carries each binding's **scope** rather than its trigger
  * alone: dropping `surface` from a panel key would otherwise leave the row
  * unchanged while moving the key onto the ship's surface.
+ *
+ * **One move since, and it was ratified rather than a side effect:** #620 put
+ * `flight-model.md` §3.5's strafe on the four held arrows, which stopped
+ * repeating pitch and yaw.
  */
 const RATIFIED_LAYOUT: readonly string[] = [
 	"key: ::hold → fight.firePulse @ flight/instrument/console/modal cockpit/chase -",
@@ -78,15 +82,15 @@ const RATIFIED_LAYOUT: readonly string[] = [
 	"key:]::press → tune.exponentUp @ flight/instrument/console/modal cockpit/chase -",
 	"key:`::press → fly.jump @ flight/instrument/console/modal cockpit/chase -",
 	"key:a::hold → fly.yawPort @ flight/instrument/console/modal cockpit/chase -",
-	"key:arrowdown::hold → fly.pitchUp @ flight/instrument/console/modal cockpit/chase -",
+	"key:arrowdown::hold → fly.strafeVentral @ flight/instrument/console/modal cockpit/chase -",
 	"key:arrowdown::press → panel.cursorDown @ flight/instrument/console/modal cockpit/chase requests",
-	"key:arrowleft::hold → fly.yawPort @ flight/instrument/console/modal cockpit/chase -",
+	"key:arrowleft::hold → fly.strafePort @ flight/instrument/console/modal cockpit/chase -",
 	"key:arrowleft::press → panel.tabPrevious @ flight/instrument/console/modal cockpit/chase requests",
 	"key:arrowleft:alt:press → view.headPort @ flight/instrument/console/modal cockpit -",
-	"key:arrowright::hold → fly.yawStarboard @ flight/instrument/console/modal cockpit/chase -",
+	"key:arrowright::hold → fly.strafeStarboard @ flight/instrument/console/modal cockpit/chase -",
 	"key:arrowright::press → panel.tabNext @ flight/instrument/console/modal cockpit/chase requests",
 	"key:arrowright:alt:press → view.headStarboard @ flight/instrument/console/modal cockpit -",
-	"key:arrowup::hold → fly.pitchDown @ flight/instrument/console/modal cockpit/chase -",
+	"key:arrowup::hold → fly.strafeDorsal @ flight/instrument/console/modal cockpit/chase -",
 	"key:arrowup::press → panel.cursorUp @ flight/instrument/console/modal cockpit/chase requests",
 	"key:arrowup:alt:press → view.headForward @ flight/instrument/console/modal cockpit -",
 	"key:b::press → perf.bloom @ flight/instrument/console/modal cockpit/chase -",
@@ -206,6 +210,7 @@ describe("the catalogue #369 ratified", () => {
 			.sort();
 		expect(pairs).toEqual([
 			"left-stick-x: fly.rollPort | fly.rollStarboard",
+			"left-stick-y: fly.strafeDorsal | fly.strafeVentral",
 			"mouse-x: fly.yawPort | fly.yawStarboard",
 			"mouse-y: fly.pitchDown | fly.pitchUp",
 			"right-stick-x: fly.yawPort | fly.yawStarboard",
@@ -374,6 +379,7 @@ describe("the axis law names which key is which", () => {
 			...axisCalls().flatMap((c) => [...c.negative, ...c.positive]),
 			...dispatchSites(codeOf("src/main.ts")).held,
 			...dispatchSites(codeOf("src/combat-rig.ts")).held,
+			...dispatchSites(codeOf("src/pilot-demand.ts")).held,
 		]);
 		// Guard the guard: all three scans found something.
 		expect([
@@ -837,10 +843,10 @@ describe("D5's two predicates", () => {
 			"1: view.headPort + view.orbitPort",
 			"2: view.headForward + view.orbitCentre",
 			"3: view.headStarboard + view.orbitStarboard",
-			"arrowdown: fly.pitchUp + panel.cursorDown",
-			"arrowleft: fly.yawPort + panel.tabPrevious",
-			"arrowright: fly.yawStarboard + panel.tabNext",
-			"arrowup: fly.pitchDown + panel.cursorUp",
+			"arrowdown: fly.strafeVentral + panel.cursorDown",
+			"arrowleft: fly.strafePort + panel.tabPrevious",
+			"arrowright: fly.strafeStarboard + panel.tabNext",
+			"arrowup: fly.strafeDorsal + panel.cursorUp",
 			"enter: dock.launch + panel.activate",
 			"q: fight.rigEcm + fly.rollPort",
 			"x: fight.fireBeam + fly.assist",

@@ -193,6 +193,7 @@ describe("the sticks are a command, and they carry their own magnitude", () => {
 			pitch: 0,
 			roll: 0,
 			throttleTrim: 0,
+			heave: 0,
 		});
 	});
 
@@ -202,6 +203,7 @@ describe("the sticks are a command, and they carry their own magnitude", () => {
 			pitch: 0,
 			roll: 0,
 			throttleTrim: 0,
+			heave: 0,
 		});
 	});
 
@@ -250,6 +252,7 @@ describe("the sticks are a command, and they carry their own magnitude", () => {
 			pitch: 0,
 			roll: 0,
 			throttleTrim: 0,
+			heave: 0,
 		});
 	});
 
@@ -270,6 +273,7 @@ describe("the sticks are a command, and they carry their own magnitude", () => {
 			pitch: 0,
 			roll: 0,
 			throttleTrim: 0,
+			heave: 0,
 		});
 	});
 
