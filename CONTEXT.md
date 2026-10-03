@@ -204,7 +204,12 @@ player's kill is only the world write, so the module's reach is a little wider
 than what a pilot owns. `Game` keeps the four fields (one save
 schema, #437) and adopts what the module returns; a refusal returns the very
 objects it was given, and a carrier transition that is not the player's kill
-returns the same holdings beside a new world.
+returns the same holdings beside a new world. Since #631 the module also owns
+`adoptEffects`, the rule for what `Game` does once it adopts an outcome at its
+one adopt point: the save, the two console revisions and the repaint, derived
+from which references changed. That rule also takes a world write made outside
+Holdings (the cause `"world"`: an offence and its lazy clear), so its reach is
+wider again than what a pilot owns.
 _Avoid_: purse (`ladder.ts`'s local credits and cargo), ledger (an
 **Incident**'s record of offences)
 
@@ -841,8 +846,9 @@ _Avoid_: Thruster bank, RCS jet — *as a name for one vent*.
 **Translation pair** / **Attitude pair**:
 The two vent families (#619, `flight-model.md` §3.2). A translation pair sits a
 short arm either side of the centre of mass and strafes; an attitude pair sits
-at the extremities and turns the hull. Fired the same way a pair is pure force,
-fired opposite it is a pure couple.
+toward the extremities and turns the hull. Fired the same way a pair is pure
+force, fired opposite it is a pure couple. Each pair stands where its lines of
+action meet the hull's metal (§3.2.1).
 
 **Demand**:
 What an author — the pilot, the assist, the docking computer, a raider — asks

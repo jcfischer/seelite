@@ -88,8 +88,8 @@ describe("every throat is the vent the table names", () => {
 				expect(hit?.distance ?? 1).toBeLessThan(2 * eps);
 			}
 		}
-		// The translation pairs meet metal on most hulls (F1 is about the
-		// attitude pairs), so the row has subjects.
+		// Every line meets metal since #636 (`tests/vent-placement.test.ts`
+		// holds that), so the row has subjects.
 		expect(met).toBeGreaterThan(50);
 	});
 });

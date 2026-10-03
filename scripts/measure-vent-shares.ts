@@ -35,7 +35,9 @@ import {
 	HULL_SPECS,
 	type HullId,
 	PLAYER_BASELINE_HULL,
+	type CoupleArms,
 	type VentShares,
+	coupleArms,
 } from "../src/hull";
 import { legacyAngular } from "./lib/legacy-flight";
 import {
@@ -79,13 +81,11 @@ export function referenceHandling(id: HullId) {
 	};
 }
 
-/** The separation of each attitude pair, kilometres: the couple is one vent's
- *  thrust times it. Pitch and yaw pairs sit at the two ends of the length,
- *  roll's at the two ends of the beam (`SLOT_GEOMETRY` in `hull.ts`). */
-const coupleArm = (id: HullId): Angular => {
-	const { lengthKm, beamKm } = HULL_SPECS[id].env;
-	return { pitch: lengthKm, yaw: lengthKm, roll: beamKm };
-};
+/** The arm of each attitude couple, kilometres: the couple is one vent's
+ *  thrust times it. Read off the hull's placement (`coupleArms` in `hull.ts`),
+ *  which #636 moved off the envelope's box so every line meets metal. */
+const coupleArm = (id: HullId): CoupleArms =>
+	coupleArms(HULL_SPECS[id].env, HULL_SPECS[id].ventPlacement);
 
 /** The shares that reproduce `referenceHandling(id)`. */
 export function solveVentShares(id: HullId): VentShares {
@@ -94,7 +94,7 @@ export function solveVentShares(id: HullId): VentShares {
 	const inertia = boxInertia(spec.massT, spec.env);
 	const arm = coupleArm(id);
 	const drift = ASSIST_CAP_KMS / ref.assistLateralTauS;
-	const attitude = (axis: keyof Angular) =>
+	const attitude = (axis: keyof CoupleArms) =>
 		(ref.angularAccel * inertia[axis]) / (arm[axis] * spec.thrustMN);
 	return {
 		main: 1,
