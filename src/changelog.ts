@@ -30,7 +30,7 @@ export type ChangelogEntry = {
 export const CHANGELOG: readonly ChangelogEntry[] = [
 	{
 		date: "2026-10-03",
-		text: "A death no longer undoes your last flight: the ships you destroyed, the systems you visited and the heat you earned all stay, and only your ship, cargo and credits go back to your last dock.",
+		text: "A death no longer undoes the world: the ships you destroyed, the systems you visited and the heat you earned stay in the galaxy, while you go back to your last dock with what you had there.",
 		node: 654,
 	},
 	{

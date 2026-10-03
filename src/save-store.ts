@@ -43,6 +43,7 @@
  */
 
 import { type FirstDayChoice, isFirstDayChoice } from "./first-day-choice";
+import { ladderAfterDeath } from "./ladder";
 import { parseSave, type SaveEnvelope, serializeSave } from "./save-envelope";
 
 /**
@@ -542,8 +543,7 @@ export class SaveStore {
 	 *
 	 * **The world is `current`'s, not the last write's**: a change made inside
 	 * the debounce window is the world's too. **And the play log is the dying
-	 * commander's** (#581, closed into #654): `playedS` measures real hours to a
-	 * rung, and the seconds flown before a death were played.
+	 * commander's** (#581, closed into #654); `ladderAfterDeath` owns that rule.
 	 *
 	 * The envelope is serialized fresh, so its integrity hash covers the pair
 	 * it actually is, and it is parsed before it is written: a mixed pair the
@@ -588,10 +588,7 @@ export class SaveStore {
 				world: dying.world,
 				commander: {
 					...dock,
-					ladders: {
-						...dock.ladders,
-						playedS: dying.commander.ladders.playedS,
-					},
+					ladders: ladderAfterDeath(dock.ladders, dying.commander.ladders),
 				},
 			});
 			restored = parseSave(raw);

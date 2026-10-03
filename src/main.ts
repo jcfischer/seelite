@@ -2407,8 +2407,7 @@ class Game {
 	 * Credit earned since the last dock (#183 D7): kills and first arrivals.
 	 * **Never saved** — `commanderRecord` has nowhere to put it — so a death,
 	 * which restores the last dock's commander, and a mid-flight save both lose
-	 * it. The next
-	 * dock banks it.
+	 * it. The next dock banks it.
 	 */
 	private ladderPending: PendingCredit = emptyPending();
 	/** The game-owned per-galaxy state holds the station deficit map. */
