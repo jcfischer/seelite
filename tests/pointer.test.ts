@@ -261,6 +261,13 @@ describe("the flick meter", () => {
 		expect(last?.peakPxS).toBeCloseTo(50 / dt, 6);
 		expect(last?.askedRadS).toBeCloseTo(70 * MOUSE_RAD_PER_PX, 12);
 		expect(last?.deliveredRadS).toBeCloseTo(0.09, 12);
+		expect(m.hardest).toBe(last);
+		// A slower flick after it replaces `last` and keeps `hardest`.
+		m.frame(3, 0, dt, asked(3, 0), { pitch: 0, yaw: 0.006 });
+		for (let i = 0; i < 20; i++)
+			m.frame(0, 0, dt, asked(0, 0), { pitch: 0, yaw: 0 }, 0);
+		expect(m.last?.peakPxS).toBeCloseTo(3 / dt, 6);
+		expect(m.hardest).toBe(last);
 	});
 });
 

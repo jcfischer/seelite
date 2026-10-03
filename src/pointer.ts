@@ -126,6 +126,9 @@ export class FlickMeter {
 	private current: Flick | null = null;
 	private quietS = 0;
 	last: Flick | null = null;
+	/** The fastest flick since the page loaded: a small correction after a
+	 *  hard spin replaces `last` but not this. */
+	hardest: Flick | null = null;
 
 	frame(
 		dxPx: number,
@@ -153,6 +156,7 @@ export class FlickMeter {
 		this.quietS = moving || bankRadS > 1e-6 ? 0 : this.quietS + dt;
 		if (this.quietS >= FLICK_QUIET_S) {
 			this.last = f;
+			if (!this.hardest || f.peakPxS > this.hardest.peakPxS) this.hardest = f;
 			this.current = null;
 			this.quietS = 0;
 		}

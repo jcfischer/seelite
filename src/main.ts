@@ -311,6 +311,7 @@ import {
 } from "./sim";
 import {
 	EMPTY_BANK,
+	type Flick,
 	FlickMeter,
 	MOUSE_RAD_PER_PX,
 	type PointerBank,
@@ -2372,7 +2373,14 @@ class Game {
 	 */
 	get pointerReadout() {
 		const a = this.flownPerformance.angularAuthority;
-		const last = this.flickMeter.last;
+		const read = (f: Flick | null) =>
+			f && {
+				peakPxS: Math.round(f.peakPxS),
+				askedRadS: +f.askedRadS.toFixed(3),
+				deliveredRadS: +f.deliveredRadS.toFixed(3),
+				paid: +(f.deliveredRadS / f.askedRadS).toFixed(2),
+				durationS: +f.durationS.toFixed(2),
+			};
 		return {
 			law: POINTER_TUNING.law,
 			tauS: POINTER_TUNING.tauS,
@@ -2383,13 +2391,8 @@ class Game {
 				pitch: Math.round(a.pitch / MOUSE_RAD_PER_PX),
 				yaw: Math.round(a.yaw / MOUSE_RAD_PER_PX),
 			},
-			lastFlick: last && {
-				peakPxS: Math.round(last.peakPxS),
-				askedRadS: +last.askedRadS.toFixed(3),
-				deliveredRadS: +last.deliveredRadS.toFixed(3),
-				paid: +(last.deliveredRadS / last.askedRadS).toFixed(2),
-				durationS: +last.durationS.toFixed(2),
-			},
+			lastFlick: read(this.flickMeter.last),
+			hardestFlick: read(this.flickMeter.hardest),
 		};
 	}
 
