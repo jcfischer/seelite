@@ -17,7 +17,10 @@ own `npm ci`:
 `scripts/probe-traffic-mouth.mjs` and `scripts/probe-guard.mjs` are the same in
 both arms (`git diff 7208996^ 7208996` touches neither), so the instrument is
 the same. What differs is #284's change to `src/station-interior-mesh.ts` and
-`src/station-mesh.ts`. Both arms lock Playwright 1.62.1, and #284 does not
+`src/station-mesh.ts`. #284 also adds `scripts/probe-station-mouth.mjs`,
+`scripts/measure-mouth-flicker.mjs` and `scripts/lib/flicker-detector.mjs`, and
+edits `scripts/check-launcher-wiring.mjs`, but this probe loads none of them.
+Both arms lock Playwright 1.62.1, and #284 does not
 touch `package.json` or the lockfile.
 
 The probe is the one from those commits, not `main`'s. It counts a pixel as
@@ -160,9 +163,11 @@ residuals are never seen.
 
 The two distributions **do not overlap**. The lowest #284 reading (2.000) is
 above the highest parent reading (0.886), so 400 of 400 cross-arm pairings put
-#284 higher. At #284 the readings fall into two groups. The passing runs read
-2.000–4.000 and the failing runs read 4.114–8.815, each failure a single pixel over
-the threshold.
+#284 higher. At #284 the passing runs read 2.000–4.000 and the failing runs read
+4.114–8.815, and each failure is a single pixel over the threshold. The
+readings do not form two clusters. The spread runs continuously through the
+threshold (4.000 passes, 4.114 fails), and its widest gap is 5.402 → 7.402,
+not at 4.
 
 #287 quotes four failing magnitudes from 2026-09-10: 4.114, 4.815, 8.516 and
 8.815. All four occur exactly in the #284 arm above: 4.114 in run 13, 4.815 in run 6,
@@ -170,13 +175,16 @@ the threshold.
 channel steps, so the same few figures recur. None of those four values occurs
 in the parent arm.
 
-**The pose does not explain the spread.** Across all 40 runs the chosen bar's
-projected position stayed within about 1.4 × 10⁻⁴ NDC on each axis. At the
-probe's 720 px readback that is about 0.05 px. Within the #284 arm the failing
-and passing runs share the same bar positions. The probe reports nothing else
-about the frame, such as the station's spin phase or the boot clock, so this
-measurement does not show what drives the run-to-run variation inside the #284
-arm.
+**The chosen bar's screen position does not explain the spread.** Across all
+40 runs the bar's projected position stayed within about 1.4 × 10⁻⁴ NDC on each
+axis. At the probe's 720 px readback that is about 0.05 px. Within the #284 arm
+the failing and passing runs share the same bar positions. The frames are still
+not identical from run to run: `overlap` varies between 99 and 102, and parent
+runs 11–15 read 99 as one contiguous block. So something in the rendered frame
+changes between runs that this instrument does not identify. The probe reports
+nothing else about the frame, such as the station's spin phase or the boot
+clock, so this measurement does not show what drives the run-to-run variation
+inside the #284 arm.
 
 ### Step 2 of the node: not owed
 
@@ -213,7 +221,7 @@ fully separated. The failure rate moved from 0/20 to 12/20, with two-sided
 p = 4.5 × 10⁻⁵. Answer A, a 4/255 threshold sitting in the measurement's own
 noise, does not fit the parent arm, where the noise stays under 0.9 on this
 lane. A does describe one feature of the post-#284 build: its residual varies
-from run to run between 2.0 and 8.8 while the pose stays fixed, and the
+from run to run between 2.0 and 8.8 while the chosen bar's screen position stays fixed, and the
 threshold of 4 falls inside that range. That is why the leak shows up as a
 flake rather than as a red on every run. But the residual that varies is the
 one #284 created. The data does not say whether that residual is a defect in
@@ -222,8 +230,11 @@ question, and so is any tolerance.
 
 ## Appendix: the driver
 
-This is the script that took every run, kept outside the repo so the branch
-commits only this file. It is invoked as
+This is the script that took the 40 counted runs, kept outside the repo so the
+branch commits only this file. It is abridged: the header comment, the console
+echo of each record and the final `process.exit(0)` are omitted. The two smoke
+runs used an earlier version that had no `barScreen` or `failed` fields. It is
+invoked as
 `node run-once.mjs <arm-dir> <label> <out.jsonl> <run>`, and the arms
 alternated as described above.
 
