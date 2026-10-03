@@ -93,6 +93,24 @@ export interface HullEnvelope {
 }
 
 /**
+ * Where a hull's box is centred, kilometres, in the ship's body frame:
+ * starboard (`cross(nose, up)`), dorsal (`up`) and forward (`nose`).
+ *
+ * `collision.md` §2.3 (P1) puts the box on the ship, and a selected mesh is not
+ * built about its origin: the carrier's box sits 13.5 m above the ship's sim
+ * position and the freighter's 3 m to starboard. A box centred on the origin
+ * would leave that much hull outside it, so the box carries the offset
+ * (§9.1.10). Measured off the selected variant's built mesh, as `env` is, and
+ * rounded to the nearest 0.1 m; `tests/collision.test.ts` rebuilds every mesh
+ * and holds the posed box around its vertices.
+ */
+export interface HullBoxCentre {
+	rightKm: number;
+	upKm: number;
+	foreKm: number;
+}
+
+/**
  * The vent slots every hull is described in (`flight-model.md` §3.4.1).
  *
  * **One vocabulary across the roster**, so a binding (§3.5) or a health factor
@@ -344,6 +362,8 @@ export interface HullSpec {
 	 *  Up, because a berth's fit predicate reads it: rounding down would admit a
 	 *  hull that does not fit by up to 5 cm. */
 	readonly env: HullEnvelope;
+	/** Where that box is centred in the ship's body frame (`HullBoxCentre`). */
+	readonly envCentre: HullBoxCentre;
 	/**
 	 * Mass, tonnes, and thrust, meganewtons — #26's D5, and the two numbers every
 	 * handling figure in `sim.ts` derives from.
@@ -590,6 +610,7 @@ const HULL_ROWS: Readonly<Record<HullId, Omit<HullSpec, "vents">>> = {
 		role: "player-baseline",
 		variant: "a",
 		env: { lengthKm: 0.0575, beamKm: 0.0513, heightKm: 0.0117 },
+		envCentre: { rightKm: 0, upKm: 0.001, foreKm: 0.0018 },
 		massT: 60,
 		thrustMN: 120,
 		ventShares: {
@@ -618,6 +639,7 @@ const HULL_ROWS: Readonly<Record<HullId, Omit<HullSpec, "vents">>> = {
 		role: "fast",
 		variant: "a",
 		env: { lengthKm: 0.0624, beamKm: 0.0253, heightKm: 0.0252 },
+		envCentre: { rightKm: 0, upKm: 0, foreKm: 0.0013 },
 		massT: 55,
 		thrustMN: 154,
 		ventShares: {
@@ -646,6 +668,7 @@ const HULL_ROWS: Readonly<Record<HullId, Omit<HullSpec, "vents">>> = {
 		role: "cargo",
 		variant: "b",
 		env: { lengthKm: 0.0697, beamKm: 0.0463, heightKm: 0.0197 },
+		envCentre: { rightKm: 0.003, upKm: 0.0012, foreKm: -0.0013 },
 		massT: 140,
 		thrustMN: 168,
 		ventShares: {
@@ -676,6 +699,7 @@ const HULL_ROWS: Readonly<Record<HullId, Omit<HullSpec, "vents">>> = {
 		role: "industrial",
 		variant: "b",
 		env: { lengthKm: 0.0782, beamKm: 0.0519, heightKm: 0.0332 },
+		envCentre: { rightKm: 0, upKm: -0.0062, foreKm: -0.0017 },
 		massT: 215,
 		thrustMN: 215,
 		ventShares: {
@@ -704,6 +728,7 @@ const HULL_ROWS: Readonly<Record<HullId, Omit<HullSpec, "vents">>> = {
 		role: "security",
 		variant: "a",
 		env: { lengthKm: 0.0586, beamKm: 0.0385, heightKm: 0.011 },
+		envCentre: { rightKm: 0, upKm: 0.0009, foreKm: 0.0002 },
 		massT: 46,
 		// Under the interceptor's 2.800 km/s², deliberately: **the `fast` role
 		// accelerates hardest**, and a police hull that out-accelerated it would
@@ -740,6 +765,7 @@ const HULL_ROWS: Readonly<Record<HullId, Omit<HullSpec, "vents">>> = {
 		role: "survey",
 		variant: "a",
 		env: { lengthKm: 0.0738, beamKm: 0.0385, heightKm: 0.0397 },
+		envCentre: { rightKm: 0, upKm: 0.0008, foreKm: -0.0044 },
 		massT: 165,
 		thrustMN: 248,
 		ventShares: {
@@ -770,6 +796,7 @@ const HULL_ROWS: Readonly<Record<HullId, Omit<HullSpec, "vents">>> = {
 		role: "outlaw",
 		variant: "a",
 		env: { lengthKm: 0.0635, beamKm: 0.0344, heightKm: 0.0109 },
+		envCentre: { rightKm: 0, upKm: 0.0005, foreKm: 0.0027 },
 		massT: 42,
 		thrustMN: 113,
 		ventShares: {
@@ -798,6 +825,7 @@ const HULL_ROWS: Readonly<Record<HullId, Omit<HullSpec, "vents">>> = {
 		role: "capital",
 		variant: "a",
 		env: { lengthKm: 0.3797, beamKm: 0.1764, heightKm: 0.145 },
+		envCentre: { rightKm: 0, upKm: 0.0135, foreKm: -0.0048 },
 		massT: 14000,
 		thrustMN: 8400,
 		ventShares: {
@@ -826,6 +854,7 @@ const HULL_ROWS: Readonly<Record<HullId, Omit<HullSpec, "vents">>> = {
 		role: "salvage",
 		variant: "a",
 		env: { lengthKm: 0.0585, beamKm: 0.0457, heightKm: 0.0257 },
+		envCentre: { rightKm: 0, upKm: 0, foreKm: -0.0005 },
 		massT: 120,
 		thrustMN: 168,
 		ventShares: {
@@ -854,6 +883,7 @@ const HULL_ROWS: Readonly<Record<HullId, Omit<HullSpec, "vents">>> = {
 		role: "prospect",
 		variant: "a",
 		env: { lengthKm: 0.0665, beamKm: 0.0253, heightKm: 0.0192 },
+		envCentre: { rightKm: 0, upKm: -0.0023, foreKm: 0.0013 },
 		massT: 58,
 		thrustMN: 110,
 		ventShares: {
@@ -882,6 +912,7 @@ const HULL_ROWS: Readonly<Record<HullId, Omit<HullSpec, "vents">>> = {
 		role: "battle-line",
 		variant: "a",
 		env: { lengthKm: 0.4066, beamKm: 0.1331, heightKm: 0.1111 },
+		envCentre: { rightKm: 0, upKm: 0.0091, foreKm: 0.0007 },
 		massT: 12000,
 		thrustMN: 8400,
 		ventShares: {
@@ -918,6 +949,7 @@ const HULL_ROWS: Readonly<Record<HullId, Omit<HullSpec, "vents">>> = {
 		role: "expedition",
 		variant: "a",
 		env: { lengthKm: 0.191, beamKm: 0.0295, heightKm: 0.0301 },
+		envCentre: { rightKm: 0, upKm: 0.002, foreKm: 0.002 },
 		// 2.24 t per 1,000 m³ of its box: a spine and a sphere enclose little of
 		// the box they span, so the density sits high in the band.
 		massT: 380,

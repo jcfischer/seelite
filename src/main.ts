@@ -579,6 +579,7 @@ import {
 	type DockSession,
 	berthOf,
 	canSkipTraversal,
+	collisionExempt,
 	enterArrival,
 	interiorOfStation,
 	flightLive,
@@ -587,6 +588,14 @@ import {
 	skipTraversal,
 	stepDockedWorld,
 } from "./dock-session";
+import {
+	type Primitive,
+	RESTITUTION,
+	SEPARATION_KM,
+	V_SCRAPE_KMS,
+	hullBox,
+	impactDamage,
+} from "./collision";
 import {
 	DIRECTOR_RANGE_KM,
 	type DirectorLaneWait,
@@ -2405,6 +2414,22 @@ class Game {
 		};
 	}
 
+	/** The flown hull's collision solid (`collision.md` §2.3, P1): its box,
+	 *  about its measured centre. Cached on the hull like the performance. */
+	private flownSolidOf: { hull: HullId; solid: readonly Primitive[] } | null =
+		null;
+
+	private get flownSolid(): readonly Primitive[] {
+		if (this.flownSolidOf?.hull !== this.flownHull) {
+			const spec = HULL_SPECS[this.flownHull];
+			this.flownSolidOf = {
+				hull: this.flownHull,
+				solid: [hullBox(spec.env, spec.envCentre)],
+			};
+		}
+		return this.flownSolidOf.solid;
+	}
+
 	private get flownPerformance(): FlightPerformance {
 		if (this.flownPerformanceOf.hull !== this.flownHull)
 			this.flownPerformanceOf = {
@@ -3530,6 +3555,31 @@ class Game {
 	/** Where the flying glass ends, as a fraction of the frame — on the handle so
 	 *  a probe measuring the clip reads the renderer's line, not its own. */
 	readonly glassBottomFraction = GLASS_BOTTOM_FRACTION;
+
+	/** `collision.md` §3's law, on the handle for the tolerances' reason: a
+	 *  probe that restated a figure would go falsely red when it is retuned. */
+	readonly collisionLaw = Object.freeze({
+		V_SCRAPE_KMS,
+		RESTITUTION,
+		SEPARATION_KM,
+		impactDamage,
+	});
+
+	/**
+	 * Steps flown starting inside a solid body, and the last body that was
+	 * (`collision.md` §4.3). The ghost rule leaves such a ship flying through
+	 * that body with no damage and no push-out, by design; this is where a
+	 * placement that put a ship inside shows rather than passing silently.
+	 * Not a pilot's line (#447): a probe's and a reader's.
+	 */
+	collisionGhostSteps = 0;
+	lastCollisionGhost: string | null = null;
+
+	/** Where the camera is in sim space this frame — what `collision.md`
+	 *  §9.2.3 holds outside a surface on the frame of impact. */
+	get cameraSimPos(): Vec3 {
+		return this.cameraPos();
+	}
 
 	readonly dockingTolerances = Object.freeze({
 		V_GATE_KMS,
@@ -11648,6 +11698,10 @@ class Game {
 		// A reset is a boot, and a boot has a whole ship. Here and not in
 		// `clearFlightSession`, which a jump shares: a jump repairs nothing.
 		this.condition = this.flownFullCondition();
+		// `collision.md` §4.3's ghost record is the flight's, and a reset is a
+		// new flight: a second leg reads only its own placements.
+		this.collisionGhostSteps = 0;
+		this.lastCollisionGhost = null;
 
 		// **#241's gate goes back to shut, which is where a boot in open space
 		// finds it.** Left open, a reset would draw both passes for the whole
@@ -13974,7 +14028,23 @@ class Game {
 			{ ...hands, translation: this.translation(dt, demand) },
 			dt,
 			this.flownPerformance,
+			// `collision.md` §5: solid exactly when the phase is not exempt.
+			// This tail only runs while flying, so the gate is the predicate
+			// read rather than a second statement of which phase that is.
+			collisionExempt(this.dock.phase) ? null : this.flownSolid,
 		);
+		// §3: every surface met lands through the one damage path, so a hull at
+		// zero dies the way a kill by fire does.
+		for (const impact of flown.impacts)
+			this.takeDamage(
+				impact.damage,
+				impact.side,
+				`struck ${this.world.system.byId.get(impact.bodyId)?.name ?? "a body"}`,
+			);
+		if (flown.ghosts.length > 0) {
+			this.collisionGhostSteps++;
+			this.lastCollisionGhost = flown.ghosts[flown.ghosts.length - 1];
+		}
 		// The attitude step's rates and the translation firing's kick (#619).
 		this.applyHullTurn(flown);
 		// Off the vents that fired (#544, `flight-model.md` §4): the sound

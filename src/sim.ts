@@ -77,6 +77,17 @@ import {
 import { type PlanetAppearance, appearanceOf } from "./planet-appearance";
 import { planetApproachEntryTime } from "./planet-approach-boundary";
 import {
+	type Impact,
+	type Primitive,
+	type SolidMotion,
+	IDENTITY_AXES,
+	bodySphere,
+	mayMeet,
+	reachKm,
+	shipPose,
+	sweepShip,
+} from "./collision";
+import {
 	type Vec3,
 	add,
 	cross,
@@ -1724,6 +1735,37 @@ export function stepHull(
 }
 
 /**
+ * What `stepWorld` hands back: the Hull step, plus every surface the ship met
+ * (`collision.md`), earliest first.
+ */
+export interface WorldStep extends HullStep {
+	/** Empty when nothing was met, and always when no ship solid was given. */
+	impacts: WorldImpact[];
+	/**
+	 * Every body the ship started this step inside, by id (`collision.md`
+	 * §4.3). The ghost rule leaves such a ship flying with that body untested,
+	 * so this is the one place it shows: empty whenever no solid was given.
+	 */
+	ghosts: string[];
+}
+
+/** A collision `Impact`, naming the body met by id. */
+export interface WorldImpact extends Impact {
+	bodyId: string;
+}
+
+/**
+ * The bodies that are solid in normal flight: a sphere at `radiusKm` for a
+ * star, a planet and a moon (`collision.md` §2.1, C1). Stations wait for their
+ * proxies (§2.2), and a contact is never a body.
+ */
+const SOLID_BODY_KINDS: ReadonlySet<BodyKind> = new Set([
+	"star",
+	"planet",
+	"moon",
+]);
+
+/**
  * One step of the whole world: the clock, then the bodies, then the ship.
  *
  * The order is the point. Bodies move to the *new* time before the ship
@@ -1735,6 +1777,15 @@ export function stepHull(
  * The ship is flown by the Hull step, so the player's turn and its push land
  * in the same step as everyone else's (#646).
  *
+ * **`solid` turns collision on** (`collision.md`, node #661): the ship's
+ * primitives in its own frame — its hull box, `hullBox`. Omitted, the ship
+ * meets nothing, which is what a caller passes for a collision-exempt phase
+ * (§5) and what every row written before collision still flies. Given, the
+ * step's motion — after #514's planet boundary has had its say — is swept
+ * against every star, planet and moon sphere, and the ship is left outside
+ * what it met. The damage is reported, not applied: `applyDamage` is the
+ * caller's, through its one damage path.
+ *
  * `dt` is seconds of **sim** time and is never scaled (#10).
  */
 export function stepWorld(
@@ -1743,20 +1794,44 @@ export function stepWorld(
 	control: HullControl,
 	dt: number,
 	perf: FlightPerformance,
-): HullStep {
+	solid?: readonly Primitive[] | null,
+): WorldStep {
 	const from = { ...world.ship.pos };
-	const planetStarts = new Map(
+	const fromVel = { ...world.ship.vel };
+	const fromTime = world.gameTime;
+	const starts = new Map(
 		world.system.bodies
-			.filter((body) => body.kind === "planet")
+			.filter(
+				(body) =>
+					body.kind === "planet" || (solid && SOLID_BODY_KINDS.has(body.kind)),
+			)
 			.map((body) => [body.id, { ...body.pos }]),
 	);
 	advanceWorldClock(world, dt);
 	const step = stepHull(world.ship, attitude, control, dt, perf);
-	if (dt <= 0) return step;
+	if (dt <= 0) return { ...step, impacts: [], ghosts: [] };
+	holdPlanetBoundary(world, from, starts, dt);
+	const met = solid
+		? collideShip(world, solid, from, fromVel, attitude, step, starts, {
+				fromTime,
+				dt,
+			})
+		: { impacts: [], ghosts: [] };
+	return { ...step, ...met };
+}
+
+/** #514: normal flight stops at a planet's 1.2-radius boundary, riding with
+ *  the planet for the rest of the step. */
+function holdPlanetBoundary(
+	world: World,
+	from: Vec3,
+	starts: ReadonlyMap<string, Vec3>,
+	dt: number,
+): void {
 	let earliest: { time: number; body: Body; start: Vec3 } | null = null;
 	for (const body of world.system.bodies) {
 		if (body.kind !== "planet") continue;
-		const start = planetStarts.get(body.id);
+		const start = starts.get(body.id);
 		if (!start) continue;
 		const time = planetApproachEntryTime({
 			from,
@@ -1769,13 +1844,74 @@ export function stepWorld(
 		if (time === null || (earliest && time > earliest.time)) continue;
 		earliest = { time, body, start };
 	}
-	if (!earliest) return step;
+	if (!earliest) return;
 	const carryVelocity = scale(sub(earliest.body.pos, earliest.start), 1 / dt);
 	const shipVelocity = scale(sub(world.ship.pos, from), 1 / dt);
 	const boundaryPos = add(from, scale(shipVelocity, earliest.time));
 	world.ship.pos = add(boundaryPos, scale(carryVelocity, dt - earliest.time));
 	world.ship.vel = bodyVelocity(world.system, earliest.body.id, world.gameTime);
-	return step;
+}
+
+/**
+ * The step's ship motion against every solid body (`collision.md` §2.1),
+ * through `sweepShip`. A body's velocity is read at both ends of the step only
+ * once its bounding sphere can be reached, because `bodyVelocity` walks the
+ * contents.
+ */
+function collideShip(
+	world: World,
+	solid: readonly Primitive[],
+	from: Vec3,
+	fromVel: Vec3,
+	attitude: HullAttitude,
+	step: HullStep,
+	starts: ReadonlyMap<string, Vec3>,
+	clock: { fromTime: number; dt: number },
+): { impacts: WorldImpact[]; ghosts: string[] } {
+	const shipReach = reachKm(solid);
+	const met: Body[] = [];
+	const motions: SolidMotion[] = [];
+	for (const body of world.system.bodies) {
+		if (!SOLID_BODY_KINDS.has(body.kind)) continue;
+		const start = starts.get(body.id);
+		if (!start) continue;
+		if (
+			!mayMeet(
+				{ start: from, end: world.ship.pos, reachKm: shipReach },
+				{ start, end: body.pos, reachKm: body.radiusKm },
+			)
+		)
+			continue;
+		met.push(body);
+		motions.push({
+			primitives: [bodySphere(body.radiusKm)],
+			start: { origin: start, ...IDENTITY_AXES },
+			end: { origin: { ...body.pos }, ...IDENTITY_AXES },
+			velStart: bodyVelocity(world.system, body.id, clock.fromTime),
+			velEnd: bodyVelocity(world.system, body.id, world.gameTime),
+		});
+	}
+	if (motions.length === 0) return { impacts: [], ghosts: [] };
+	const swept = sweepShip(
+		{
+			primitives: solid,
+			start: shipPose(from, attitude.nose, attitude.up),
+			end: shipPose(world.ship.pos, step.nose, step.up),
+			velStart: fromVel,
+			velEnd: world.ship.vel,
+		},
+		motions,
+		clock.dt,
+	);
+	world.ship.pos = swept.pos;
+	world.ship.vel = swept.vel;
+	return {
+		impacts: swept.impacts.map((impact) => ({
+			...impact,
+			bodyId: met[impact.solid].id,
+		})),
+		ghosts: swept.ghosts.map((index) => met[index].id),
+	};
 }
 
 /**
