@@ -21,8 +21,8 @@
  * frame. `static` primitives are in the static frame — only non-empty for
  * the shipyard, whose keel is static while the hub spins.
  *
- * **The openings.** On a slot role, the proxy leaves the aperture prism and
- * the interior volume open. On a pad role, the opening is the corridor
+ * **The openings.** On a slot role, the proxy leaves the aperture prism and // glossary-ignore: slot (aperture kind)
+ * the interior volume open. On a pad role, the opening is the corridor // glossary-ignore: pad (aperture kind)
  * cylinder at `corridorRadiusKm`, extended outward from the plane. Those
  * are gaps — no primitives in that region — not modelled holes.
  */
@@ -281,7 +281,7 @@ function cellBoxes(
 // ---------------------------------------------------------------------------
 
 /**
- * The Assembly: a compact hub carrying the slot plus a WFC-solved grid of
+ * The Assembly: a compact hub carrying the slot plus a WFC-solved grid of // glossary-ignore: slot (aperture kind)
  * modules on a diamond field. The hub spins, the modules do not; for the
  * proxy all structure goes into `spinning` since the whole group spins in
  * the trade role.
@@ -364,12 +364,12 @@ function tradeAssemblyProxy(assemblySeed: number): StationProxy {
 
 /**
  * The Works: a quarried asteroid with a WFC-solved plant on its flat top.
- * The pad role does not spin, so everything goes in `spinning` (which is
- * an empty-group equivalent for a non-spinning pad).
+ * The pad role does not spin, so everything goes in `spinning` (which is // glossary-ignore: pad (aperture kind)
+ * an empty-group equivalent for a non-spinning pad). // glossary-ignore: pad (aperture kind)
  *
  * Rock: an asteroid at radius ~ cellKm*(RADIUS+0.9), floor at 0.16 km.
  * Plant: units on a 7×7 grid (diamond radius 2), cellKm = 0.16, at z = 0.16.
- * Pad deck at the aperture plane (0.396), corridor cylinder open.
+ * Pad deck at the aperture plane (0.396), corridor cylinder open. // glossary-ignore: pad (aperture kind)
  */
 function refineryWorksProxy(assemblySeed: number): StationProxy {
 	const g = STATION_GEOMETRY.refinery;
@@ -393,7 +393,7 @@ function refineryWorksProxy(assemblySeed: number): StationProxy {
 	const unitZ = floorZ + unitHalfZ;
 	const moduleBoxes = cellBoxes(placements, cellKm, unitZ, unitHalfZ);
 
-	// Head house and pad deck: a box from the floor to the plane, spanning
+	// Head house and deck: a box from the floor to the plane, spanning // glossary-ignore: pad (aperture kind)
 	// the deck's half-width (about 0.222 km).
 	const deckHalf = 0.222;
 	const deckBox = box(
@@ -406,8 +406,8 @@ function refineryWorksProxy(assemblySeed: number): StationProxy {
 	);
 
 	// Combine, but exclude module boxes whose centres fall inside the
-	// corridor cylinder (the pad opening). The corridor runs outward from
-	// the plane along +Z. Pad berths outside the corridor ARE solid.
+	// corridor cylinder (the opening). The corridor runs outward from // glossary-ignore: pad (aperture kind)
+	// the plane along +Z. Berths outside the corridor ARE solid.
 	// However, the module boxes are at z=floorZ+unitHalfZ which is below
 	// the plane, so they don't intersect the outward corridor.
 	// The corridor is relevant for anything at or above the plane extending
@@ -443,7 +443,7 @@ function outpostClusterProxy(assemblySeed: number): StationProxy {
 	const deckUnder = plane - r * 0.16;
 	const coreCap = capsule(0, 0, coreBottom, 0, 0, deckUnder, coreR);
 
-	// Pad deck
+	// Landing deck // glossary-ignore: pad (aperture kind)
 	const deckBox = box(
 		0,
 		0,
@@ -472,7 +472,7 @@ function outpostClusterProxy(assemblySeed: number): StationProxy {
 // ---------------------------------------------------------------------------
 
 /**
- * The Salvage: a boxy freighter section (the core) carrying the pad, with
+ * The Salvage: a boxy freighter section (the core) carrying the deck, with // glossary-ignore: pad (aperture kind)
  * welded debris pieces around it. The debris is seeded and extends out to
  * REACH (0.4 km). The form is not grid-based like the others; it uses
  * a seeded random placement of hull pieces around the core.
@@ -499,7 +499,7 @@ function outpostSalvageProxy(): StationProxy {
 		(deckUnder - coreBottom) / 2,
 	);
 
-	// Pad deck
+	// Landing deck // glossary-ignore: pad (aperture kind)
 	const deckBox = box(
 		0,
 		0,

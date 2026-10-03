@@ -31,6 +31,7 @@ import {
 	SELECTED_FORM,
 	STATION_SILHOUETTE_KM,
 	buildStationForm,
+	type StationFormId,
 } from "../src/station-mesh";
 import {
 	stationProxy,
@@ -56,7 +57,7 @@ const VERTEX_TOLERANCE_KM = 0.06;
  * each as "interior" (inside the aperture group's interior fittings) or
  * "exterior" (everything else).
  *
- * Interior vertices are inside the bay / pad volume and are excluded from
+ * Interior vertices are inside the bay / landing-deck volume and are excluded from // glossary-ignore: pad (aperture kind)
  * the proxy containment check — the proxy deliberately leaves that volume
  * open.
  */
@@ -210,21 +211,29 @@ describe("station proxy budget (collision.md §9.1.11)", () => {
 
 	test("solved forms produce different proxies at different seeds", () => {
 		// Verify that the proxy actually reads the assembly seed for solved forms
-		for (const type of TYPES) {
-			const form = SELECTED_FORM[type];
-			if (!isSolvedForm(type, form)) continue;
+		// whose proxy is derived from the placement solve. The two seeds must
+		// produce proxies that differ — either in primitive count or in position —
+		// so a regression where the seed is ignored goes red.
+		//
+		// The Salvage (outpost/e) is excluded: its proxy bounds all debris
+		// configurations with a fixed sphere, so it is intentionally
+		// seed-independent.
+		const GRID_SOLVED: [StationType, StationFormId][] = [
+			["trade", "d"],
+			["refinery", "d"],
+			["outpost", "d"],
+		];
+		for (const [type, form] of GRID_SOLVED) {
 			const p0 = stationProxy(type, form, 0, 0);
 			const p1 = stationProxy(type, form, 0, 42);
 			expect(p0).not.toBeNull();
 			expect(p1).not.toBeNull();
-			// The number of spinning primitives should differ between seeds
-			// (different placements produce different cell boxes)
-			const count0 = p0!.spinning.length;
-			const count1 = p1!.spinning.length;
-			// They may have the same count but different positions; at minimum
-			// check that both are non-empty
-			expect(count0).toBeGreaterThan(0);
-			expect(count1).toBeGreaterThan(0);
+			expect(p0!.spinning.length).toBeGreaterThan(0);
+			expect(p1!.spinning.length).toBeGreaterThan(0);
+			// The proxies must actually differ between seeds
+			expect(JSON.stringify(p0!.spinning)).not.toEqual(
+				JSON.stringify(p1!.spinning),
+			);
 		}
 	});
 });
