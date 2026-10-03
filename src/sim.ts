@@ -1741,6 +1741,12 @@ export function stepHull(
 export interface WorldStep extends HullStep {
 	/** Empty when nothing was met, and always when no ship solid was given. */
 	impacts: WorldImpact[];
+	/**
+	 * Every body the ship started this step inside, by id (`collision.md`
+	 * §4.3). The ghost rule leaves such a ship flying with that body untested,
+	 * so this is the one place it shows: empty whenever no solid was given.
+	 */
+	ghosts: string[];
 }
 
 /** A collision `Impact`, naming the body met by id. */
@@ -1803,15 +1809,15 @@ export function stepWorld(
 	);
 	advanceWorldClock(world, dt);
 	const step = stepHull(world.ship, attitude, control, dt, perf);
-	if (dt <= 0) return { ...step, impacts: [] };
+	if (dt <= 0) return { ...step, impacts: [], ghosts: [] };
 	holdPlanetBoundary(world, from, starts, dt);
-	const impacts = solid
+	const met = solid
 		? collideShip(world, solid, from, fromVel, attitude, step, starts, {
 				fromTime,
 				dt,
 			})
-		: [];
-	return { ...step, impacts };
+		: { impacts: [], ghosts: [] };
+	return { ...step, ...met };
 }
 
 /** #514: normal flight stops at a planet's 1.2-radius boundary, riding with
@@ -1861,7 +1867,7 @@ function collideShip(
 	step: HullStep,
 	starts: ReadonlyMap<string, Vec3>,
 	clock: { fromTime: number; dt: number },
-): WorldImpact[] {
+): { impacts: WorldImpact[]; ghosts: string[] } {
 	const shipReach = reachKm(solid);
 	const met: Body[] = [];
 	const motions: SolidMotion[] = [];
@@ -1882,7 +1888,7 @@ function collideShip(
 			velEnd: bodyVelocity(world.system, body.id, world.gameTime),
 		});
 	}
-	if (motions.length === 0) return [];
+	if (motions.length === 0) return { impacts: [], ghosts: [] };
 	const swept = sweepShip(
 		{
 			primitives: solid,
@@ -1896,10 +1902,13 @@ function collideShip(
 	);
 	world.ship.pos = swept.pos;
 	world.ship.vel = swept.vel;
-	return swept.impacts.map((impact) => ({
-		...impact,
-		bodyId: met[impact.solid].id,
-	}));
+	return {
+		impacts: swept.impacts.map((impact) => ({
+			...impact,
+			bodyId: met[impact.solid].id,
+		})),
+		ghosts: swept.ghosts.map((index) => met[index].id),
+	};
 }
 
 /**

@@ -94,6 +94,13 @@ const approach = async ({ assist, throttle, gates, startKm, afterS }) => {
 			let lowestShipGapKm = Number.POSITIVE_INFINITY;
 			let outwardAfterKms = null;
 			let lastRadial = -speedKms;
+			// A cost after the frame of impact: any later step on which a shield
+			// or the hull fell. Read step to step rather than against the start,
+			// because a shield recharges once it has gone unstruck long enough.
+			let laterHits = 0;
+			let metStep = null;
+			let prevFore = start.fore;
+			let prevHull = start.hull;
 			const frames = new Set();
 			const limit = Math.round((startKm / speedKms + afterS + 5) / dt);
 			let i = 0;
@@ -120,10 +127,20 @@ const approach = async ({ assist, throttle, gates, startKm, afterS }) => {
 						g.dead)
 				) {
 					metAt = i * dt;
+					metStep = i;
 					cameraGapAtImpact = cameraGapKm;
 					outwardAfterKms = radial;
 				}
 				lastRadial = radial;
+				if (
+					metStep !== null &&
+					i > metStep &&
+					(g.condition.fore < prevFore - 1e-9 ||
+						g.condition.hull < prevHull - 1e-9)
+				)
+					laterHits++;
+				prevFore = g.condition.fore;
+				prevHull = g.condition.hull;
 				if (g.dead) break;
 				if (metAt !== null && i * dt > metAt + afterS) break;
 			}
@@ -142,6 +159,8 @@ const approach = async ({ assist, throttle, gates, startKm, afterS }) => {
 				outwardAfterKms,
 				foreSpent: start.fore - g.condition.fore,
 				hullSpent: start.hull - g.condition.hull,
+				hullLeft: g.condition.hull,
+				laterHits,
 				dead: g.dead,
 				lastExit: g.lastExit,
 				law: {
@@ -197,7 +216,8 @@ const approach = async ({ assist, throttle, gates, startKm, afterS }) => {
 
 // Row 2: assist on, a small throttle held toward the moon in its frame. The
 // assist keeps pushing after the impact, so the ship ends resting on the
-// surface — outside it, at no further cost.
+// surface — outside it, at no further cost: nothing falls after the frame of
+// impact, and the hull is never touched.
 {
 	const r = await approach({
 		assist: true,
@@ -219,6 +239,11 @@ const approach = async ({ assist, throttle, gates, startKm, afterS }) => {
 		JSON.stringify(r),
 	);
 	check(
+		"assist on: resting under thrust costs nothing after the frame of impact",
+		r.metAtS !== null && r.laterHits === 0 && r.hullSpent === 0,
+		JSON.stringify(r),
+	);
+	check(
 		"assist on: the cockpit camera never enters the moon",
 		r.cameraGapAtImpactKm !== null && r.lowestCameraGapKm > 0,
 		JSON.stringify(r),
@@ -237,7 +262,14 @@ const approach = async ({ assist, throttle, gates, startKm, afterS }) => {
 	console.log(`assist off at 2 km/s: ${JSON.stringify(r)}`);
 	check(
 		"a moon met at the assist cap destroys the ship, through the kill path",
-		!r.error && r.metAtS !== null && r.dead && r.lowestShipGapKm > 0,
+		// `takeDamage` is the one damage path and the only writer of "ship
+		// destroyed"; a death any other way would leave a different line.
+		!r.error &&
+			r.metAtS !== null &&
+			r.dead &&
+			r.hullLeft === 0 &&
+			r.lastExit === "ship destroyed" &&
+			r.lowestShipGapKm > 0,
 		JSON.stringify(r),
 	);
 	check(

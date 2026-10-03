@@ -3562,6 +3562,16 @@ class Game {
 		impactDamage,
 	});
 
+	/**
+	 * Steps flown starting inside a solid body, and the last body that was
+	 * (`collision.md` §4.3). The ghost rule leaves such a ship flying through
+	 * that body with no damage and no push-out, by design; this is where a
+	 * placement that put a ship inside shows rather than passing silently.
+	 * Not a pilot's line (#447): a probe's and a reader's.
+	 */
+	collisionGhostSteps = 0;
+	lastCollisionGhost: string | null = null;
+
 	/** Where the camera is in sim space this frame — what `collision.md`
 	 *  §9.2.3 holds outside a surface on the frame of impact. */
 	get cameraSimPos(): Vec3 {
@@ -11709,6 +11719,10 @@ class Game {
 		// A reset is a boot, and a boot has a whole ship. Here and not in
 		// `clearFlightSession`, which a jump shares: a jump repairs nothing.
 		this.condition = this.flownFullCondition();
+		// `collision.md` §4.3's ghost record is the flight's, and a reset is a
+		// new flight: a second leg reads only its own placements.
+		this.collisionGhostSteps = 0;
+		this.lastCollisionGhost = null;
 
 		// **#241's gate goes back to shut, which is where a boot in open space
 		// finds it.** Left open, a reset would draw both passes for the whole
@@ -14048,6 +14062,10 @@ class Game {
 				impact.side,
 				`struck ${this.world.system.byId.get(impact.bodyId)?.name ?? "a body"}`,
 			);
+		if (flown.ghosts.length > 0) {
+			this.collisionGhostSteps++;
+			this.lastCollisionGhost = flown.ghosts[flown.ghosts.length - 1];
+		}
 		// The attitude step's rates and the translation firing's kick (#619).
 		this.applyHullTurn(flown);
 		// Off the vents that fired (#544, `flight-model.md` §4): the sound

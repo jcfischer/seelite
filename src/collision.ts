@@ -703,8 +703,13 @@ export interface SweepResult {
 	 * on its own side, so a caller lands every one through `applyDamage`.
 	 */
 	impacts: Impact[];
-	/** Pairs that overlapped at the start and were not tested (§4.3). */
-	ghosts: number;
+	/**
+	 * The solids, by index, with a primitive that overlapped the ship at the
+	 * start and so was not tested (§4.3) — once each, however many of its
+	 * primitives overlapped. The rule fails open by design, so this list is
+	 * how a caller sees that it did.
+	 */
+	ghosts: number[];
 }
 
 interface PairState {
@@ -737,7 +742,7 @@ export function sweepShip(
 		pos: ship.end.origin,
 		vel: ship.velEnd,
 		impacts: [],
-		ghosts: 0,
+		ghosts: [],
 	};
 	if (!(dt > 0) || solids.length === 0) return result;
 	const shipBox = ship.primitives.find((p) => p.kind === "box");
@@ -781,7 +786,7 @@ export function sweepShip(
 			const pair = { solid: index, primitive, reach };
 			const gap = separation(shipAt, place(primitive, solidPose));
 			if (gap.overlap) {
-				result.ghosts++;
+				if (!result.ghosts.includes(index)) result.ghosts.push(index);
 				continue;
 			}
 			if (gap.distanceKm > RESTING_KM) {
@@ -809,7 +814,11 @@ export function sweepShip(
 					normal: gap.normal,
 					closingKms: closing,
 					damage: impactDamage(closing),
-					side: sideStruck(ship.start.z, sub(gap.onShip, shipAt.c)),
+					// §3: measured from the ship's position, as the swept branch is.
+					side: sideStruck(
+						ship.start.z,
+						sub(gap.onShip, sub(ship.start.origin, ref)),
+					),
 					resting: true,
 				});
 		}
@@ -860,11 +869,18 @@ export function sweepShip(
 		const shipBoxAt = placeBox(shipBox, shipAt);
 		const gap = separation(shipBoxAt, place(earliest.pair.primitive, solidAt));
 		// The advance stops short of the surface, so an overlap here is a bound
-		// that failed; take the way the ship came as the normal rather than
-		// none.
-		const back = sub(ship.start.origin, endOrigin);
+		// that failed; take the way the ship came *relative to the solid* as the
+		// normal — a moon carried at 32 km/s would otherwise lift it along the
+		// moon's own path — and, with no relative motion, out from the
+		// primitive's centre.
 		const normal = gap.overlap
-			? scale(back, 1 / (length(back) || 1))
+			? overlapNormal(
+					sub(
+						sub(ship.start.origin, endOrigin),
+						sub(solid.start.origin, solid.end.origin),
+					),
+					sub(shipBoxAt.c, centreOf(place(earliest.pair.primitive, solidAt))),
+				)
 			: gap.normal;
 		const onShip = gap.overlap ? shipBoxAt.c : gap.onShip;
 		const onSurface = gap.overlap ? shipBoxAt.c : gap.onSurface;
@@ -951,6 +967,16 @@ export function sweepShip(
 	result.pos = endOrigin;
 	result.vel = endVel;
 	return result;
+}
+
+/** The first of `back` and `out` that has a direction, as a unit vector;
+ *  `+x` when neither has. */
+function overlapNormal(back: Vec3, out: Vec3): Vec3 {
+	for (const d of [back, out]) {
+		const n = length(d);
+		if (n > 1e-12) return scale(d, 1 / n);
+	}
+	return v3(1, 0, 0);
 }
 
 /**

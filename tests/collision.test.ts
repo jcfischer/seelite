@@ -2,8 +2,8 @@
  * `docs/specs/collision.md` §9.1, the rows node #661 owes: 9.1.1 (the law),
  * 9.1.2 rows 1–2 (the frame), 9.1.3 (the scale bounds), 9.1.4 (resting on a
  * static surface), 9.1.5 (no tunnelling, on synthetic thin primitives),
- * 9.1.10 (the box is where the ship is) and 9.1.12's first sentence (every
- * cruise keep-out contains its collision sphere). Plus §4.3's ghost rule and
+ * 9.1.10 (the box is where the ship is) and 9.1.12's first sentence (a
+ * cruise keep-out contains its collision sphere, over one whole galaxy). Plus §4.3's ghost rule and
  * §4.2's earliest-first, which the resolver builds.
  *
  * The flight rows go through the real `stepWorld` on a real moon with a real
@@ -610,10 +610,78 @@ describe("collision.md §4.2, §4.3", () => {
 			[sphereAt(0, 0.05)],
 			0.1,
 		);
-		expect(swept.ghosts).toBe(1);
+		expect(swept.ghosts).toEqual([0]);
 		expect(swept.impacts).toEqual([]);
 		expect(swept.pos).toEqual(end.origin);
 		expect(swept.vel).toEqual(v3(0.1, 0, 0));
+	});
+
+	test("a ship stepped from inside a moon reports the moon, and flies as if collision were off", () => {
+		const place = (world: World, moon: Body) => {
+			const outward = unit(v3(0.2, -0.4, 0.9));
+			world.ship.pos = add(moon.pos, scale(outward, moon.radiusKm - 0.5));
+			world.ship.vel = bodyVelocity(world.system, moon.id, world.gameTime);
+			return facing(outward);
+		};
+		const step = (solid: Primitive[] | null) => {
+			const { world, moon } = moonWorld();
+			const at = place(world, moon);
+			const out = stepWorld(
+				world,
+				at,
+				{
+					stick: { pitch: 0, yaw: 0, roll: 0 },
+					turnAssist: true,
+					translation: { demand: speedDemand(0.5), assist: false },
+				},
+				0.1,
+				flightPerformance("courier"),
+				solid,
+			);
+			return { out, pos: { ...world.ship.pos }, vel: { ...world.ship.vel } };
+		};
+		const ghosted = step(solidOf("courier"));
+		const unsolid = step(null);
+		expect(ghosted.out.ghosts).toEqual([MOON_ID]);
+		expect(ghosted.out.impacts).toEqual([]);
+		expect(ghosted.pos).toEqual(unsolid.pos);
+		expect(ghosted.vel).toEqual(unsolid.vel);
+		expect(unsolid.out.ghosts).toEqual([]);
+	});
+
+	test("a resting and a swept impact bill the same side, measured from the ship's position (§3)", () => {
+		// A box whose centre sits 10 m aft of the ship's origin, met on its
+		// flank 5 m aft of the origin: aft from the origin, fore from the box
+		// centre. Nose +x, so right is +z.
+		const offset = hullBox(
+			{ lengthKm: 0.04, beamKm: 0.02, heightKm: 0.01 },
+			{ rightKm: 0, upKm: 0, foreKm: -0.01 },
+		);
+		const radiusKm = 0.05;
+		const flankZ = 0.01 + radiusKm;
+		const sphere = {
+			primitives: [{ kind: "sphere", centre: v3(), radiusKm } as Primitive],
+			start: { origin: v3(-0.005, 0, flankZ), ...IDENTITY_AXES },
+			end: { origin: v3(-0.005, 0, flankZ), ...IDENTITY_AXES },
+			velStart: v3(),
+			velEnd: v3(),
+		};
+		const meet = (startZ: number) =>
+			sweepShip(
+				{
+					primitives: [offset],
+					start: shipPose(v3(0, 0, startZ), nose, up),
+					end: shipPose(v3(0, 0, startZ + 0.02), nose, up),
+					velStart: v3(0, 0, 0.2),
+					velEnd: v3(0, 0, 0.2),
+				},
+				[sphere],
+				0.1,
+			).impacts;
+		const resting = meet(-SEPARATION_KM);
+		const swept = meet(-0.01);
+		expect(resting.map((i) => [i.resting, i.side])).toEqual([[true, "aft"]]);
+		expect(swept.map((i) => [i.resting, i.side])).toEqual([[false, "aft"]]);
 	});
 });
 
@@ -706,8 +774,8 @@ describe("collision.md §9.1.10: the box is where the ship is", () => {
 // 9.1.12, first sentence — cruise never reaches a collision sphere
 // ---------------------------------------------------------------------------
 
-describe("collision.md §9.1.12: every cruise keep-out contains its collision sphere", () => {
-	test("over 64 systems, every star and planet guard clears the largest hull's box", () => {
+describe("collision.md §9.1.12: a cruise keep-out contains its collision sphere", () => {
+	test("in every system of seed 47's first galaxy, every star and planet guard clears the largest hull's box", () => {
 		// The furthest any hull's box reaches from the ship's origin: the guard
 		// must hold the whole box off the sphere, not just its centre.
 		const shipReach = Math.max(...HULL_IDS.map((id) => reachKm(solidOf(id))));
@@ -715,7 +783,7 @@ describe("collision.md §9.1.12: every cruise keep-out contains its collision sp
 		const galaxy = makeWorld(MOON_SEED).galaxy;
 		let checked = 0;
 		let tightest = Number.POSITIVE_INFINITY;
-		for (const record of galaxy.systems.slice(0, 64)) {
+		for (const record of galaxy.systems) {
 			for (const body of makeSystem(record, 0).bodies) {
 				// Cruise's masses are its stars and planets (`in-system-travel.md`
 				// §2.1); a moon has no keep-out of its own to contain anything.
@@ -733,7 +801,10 @@ describe("collision.md §9.1.12: every cruise keep-out contains its collision sp
 				}
 			}
 		}
-		expect(checked).toBeGreaterThan(500);
+		// One galaxy of one seed, all of it: a sample of the generator, not
+		// every galaxy it can make.
+		expect(galaxy.systems.length).toBe(256);
+		expect(checked).toBeGreaterThan(2000);
 		expect(tightest).toBeGreaterThan(0);
 	});
 });

@@ -78,7 +78,7 @@ export type DockPhase = "flying" | "arriving" | "docked" | "launching";
  * while this is true (`collision.md` §5). The other half of obligation 8 — that
  * an arrival, a parked interval and a launch fly with no impact — is
  * `collision.md` §9.1.8's, and it waits for the station slice, because until
- * stations declare a proxy there is nothing in the throat to meet.
+ * stations declare a proxy there is nothing in the station interior to meet.
  */
 export const collisionExempt = (phase: DockPhase): boolean =>
 	phase !== "flying";
