@@ -13842,8 +13842,10 @@ class Game {
 		this.applyHullTurn(flown);
 		// Off the vents that fired (#544, `flight-model.md` §4): the sound
 		// hears what the firing table says, not a figure beside it. One table,
-		// so one read: a translation axis fires no attitude vent and an
-		// attitude axis no translation vent (`tests/hull-step.test.ts`).
+		// so one read: the translation half fires translation vents only
+		// (`tests/hull-step.test.ts`), so every attitude vent's level — a
+		// directly fired one included — is the attitude half's, as the old
+		// read off that half alone gave.
 		const shares = thrustShares(flown.firing, this.flownPerformance);
 		this.driveShare = shares.main;
 		this.lateralShare = shares.lateral;

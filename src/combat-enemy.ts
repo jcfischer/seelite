@@ -46,6 +46,7 @@ import {
 	flightPerformance,
 	type FlightPerformance,
 	type FrameMotion,
+	bodySpin,
 	stepHull,
 	type Ship,
 	speedDemand,
@@ -325,14 +326,6 @@ export const NO_ROTATION: Angular = Object.freeze({
 	roll: 0,
 });
 
-/** Body rates as a world-space angular velocity, in the ship's own axes:
- *  pitch about starboard, yaw about dorsal, roll about aft — `turnAttitude`'s
- *  axes, which are the player's. */
-const bodySpin = (right: Vec3, up: Vec3, nose: Vec3, rates: Angular): Vec3 =>
-	add(
-		add(scale(right, rates.pitch), scale(up, rates.yaw)),
-		scale(nose, -rates.roll),
-	);
 /** Closer than this the nose is on its heading and the stick is released, so
  *  the assist's damping finishes the stop rather than the command hunting. */
 const SETTLED_RAD = 1e-3;
@@ -378,7 +371,7 @@ function aimStick(
 	}
 	// The way the nose is swinging now, and the up axis rolled toward it. Roll
 	// spins about the nose and swings nothing, so it drops out of the cross.
-	const swing = cross(bodySpin(right, up, nose, state.rates), nose);
+	const swing = cross(bodySpin(state, state.rates), nose);
 	let roll = 0;
 	if (length(swing) > TURNING_RAD_S) {
 		const inside = unit(swing, up);

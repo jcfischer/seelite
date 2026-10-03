@@ -1558,6 +1558,18 @@ export interface Attitude {
 }
 
 /**
+ * Body rates as a world-space angular velocity, rad/s: pitch about starboard
+ * (`nose × up`), yaw about dorsal, roll about aft (`-nose`). The one place
+ * that sign convention is written; `turnAttitude` turns by it and a pilot
+ * that predicts its own swing reads it here.
+ */
+export const bodySpin = (at: Attitude, rates: Angular): Vec3 =>
+	add(
+		add(scale(cross(at.nose, at.up), rates.pitch), scale(at.up, rates.yaw)),
+		scale(at.nose, -rates.roll),
+	);
+
+/**
  * Turn an attitude by body rates over `dt`, as an axis and an angle: the one
  * attitude integrator (#646 D10).
  *
@@ -1573,11 +1585,7 @@ export function turnAttitude(
 	rates: Angular,
 	dt: number,
 ): Attitude {
-	const right = cross(from.nose, from.up);
-	const spin = add(
-		add(scale(right, rates.pitch), scale(from.up, rates.yaw)),
-		scale(from.nose, -rates.roll),
-	);
+	const spin = bodySpin(from, rates);
 	const w = length(spin);
 	if (w === 0 || dt <= 0) return from;
 	const axis = scale(spin, 1 / w);

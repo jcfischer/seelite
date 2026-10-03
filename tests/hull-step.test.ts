@@ -11,7 +11,6 @@
  */
 
 import { describe, expect, test } from "bun:test";
-import { readdirSync } from "node:fs";
 import * as THREE from "three";
 import { HULL_IDS, PLAYER_BASELINE_HULL } from "../src/hull";
 import {
@@ -28,7 +27,7 @@ import {
 } from "../src/sim";
 import { MAX_DT } from "../src/units";
 import { cross, dot, length, sub, v3 } from "../src/vec3";
-import { codeOf, repoPath, scriptFiles, srcFiles } from "./lib/source-scan";
+import { codeOf, scriptFiles, srcFiles, testFiles } from "./lib/source-scan";
 
 const STILL: Angular = { pitch: 0, yaw: 0, roll: 0 };
 const LEVEL: Attitude = { nose: v3(0, 0, -1), up: v3(0, 1, 0) };
@@ -109,9 +108,8 @@ describe("the Hull step", () => {
 	});
 
 	test("each Saturation family comes out as one flag", () => {
-		// The assist cannot return a hull far above the cap in one step, and
-		// it cannot meet a full stick from rest above the couple's authority
-		// when the rate is past the envelope.
+		// The assist cannot return a hull far above the cap in one step, nor
+		// brake a spin far past the envelope in one step.
 		const fast = { pos: v3(), vel: v3(0, 0, -10 * ASSIST_CAP_KMS) };
 		const linear = stepHull(
 			fast,
@@ -241,7 +239,14 @@ describe("no caller composes the step by hand (#646 D9)", () => {
 	// is a red run here rather than a review finding. The halves stay exported
 	// for the law's own rows and for one instrument that reads rates alone.
 	const HALVES = ["stepAngular", "stepFlight"];
-	const CALL = new RegExp(`\\b(?:${HALVES.join("|")})\\(`);
+	const NAME = HALVES.join("|");
+	// A call by name — `sim.stepFlight(` included — or an import of either
+	// half under any name, because `stepFlight as fly` composes the step as
+	// well as the bare name does (sage, round 1).
+	const CALL = new RegExp(`\\b(?:${NAME})\\(`);
+	const IMPORT = new RegExp(
+		`import\\s*(?:type\\s*)?\\{[^}]*\\b(?:${NAME})\\b[^}]*\\}\\s*from`,
+	);
 	const ALLOWED: Record<string, string> = {
 		"src/sim.ts": "the Hull step and the halves it composes",
 		"scripts/measure-vent-shares.ts":
@@ -254,18 +259,19 @@ describe("no caller composes the step by hand (#646 D9)", () => {
 		"tests/attitude-hold.test.ts":
 			"the follower's stick turned by the attitude law alone",
 	};
-	const readDir = (dir: string, ext: string[]) =>
-		(readdirSync(repoPath(dir), { recursive: true }) as string[])
-			.filter((f) => ext.some((e) => f.endsWith(e)))
-			.map((f) => `${dir}/${f}`);
 	const files = [
 		...srcFiles(),
 		...scriptFiles([".ts", ".mjs"]),
-		...readDir("tests", [".ts"]),
+		...testFiles(),
 	];
 
-	test("only the allowed files call either half", () => {
-		const callers = files.filter((f) => CALL.test(codeOf(f))).sort();
+	test("only the allowed files call or import either half", () => {
+		const callers = files
+			.filter((f) => {
+				const code = codeOf(f);
+				return CALL.test(code) || IMPORT.test(code);
+			})
+			.sort();
 		expect(callers).toEqual(Object.keys(ALLOWED).sort());
 	});
 });
