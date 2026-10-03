@@ -307,8 +307,44 @@ roster; the slot's **CarrierKey** identifies the visitor everywhere, and the
 destination may hold its Berth for that key without adopting the slot. The
 route composes the shared launch, cruise, Traffic hold, Clearance, Transit-lane
 and arrival laws, and derives routine progress from the game clock.
-A system with no eligible other station retains an abstract away interval.
+A system with no eligible other station retains an abstract away interval —
+for a local; a **Hauler**'s away interval is spent in another system.
 _Avoid_: Spawn path, roster transfer, timetable
+
+**Hauler**:
+A **Traffic actor** whose **Carrier slot**'s vocation sends every away interval to a
+station in another system, one jump within its hull's `tankLy`, and home again
+(`inter-system-traffic.md`, #262). Its slot, **CarrierKey** and saved row stay
+at home; its destinations are fixed when the roster is built. The other
+vocation is a **local**, which keeps the in-system **Traffic route**; a role's
+signature slot is always local.
+_Avoid_: Roster transfer, inter-system spawn
+
+**Local**:
+A **Traffic actor** whose **Carrier slot**'s vocation keeps it in its home
+system: it flies the in-system **Traffic route**, or the abstract away interval
+where it has no eligible station (`inter-system-traffic.md` §1). The other
+vocation is a **Hauler**. Not a **Local run**, which is a courier job.
+_Avoid_: In-system hauler
+
+**Lane point**:
+Where a **Hauler** leaves or enters a system: this system's **Jump** arrival
+point for ships coming from the system at the other end — 1 AU out on the
+bearing between the two, or further where a body is in the way — offset by a
+per-voyage annulus so no hauler stands on the player's own arrival. The point a
+hauler leaves `A` for `B` from is the point ships arriving in `A` from `B`
+appear at.
+Not the **Transit lane**: bare "lane" stays the Transit lane's.
+_Avoid_: Jump gate (none exists)
+
+**Jump instant**:
+The game-clock instant a **Hauler** jumps, fixed by its schedule rather than by
+its progress: the interval boundary plus a static bound on the uncontended
+trip to the **Lane point** plus a fixed slack. An early hauler waits for it;
+the system at the far end always sees the jump at this instant, which is what lets
+one system derive another's arrivals without replaying its queues
+(`inter-system-traffic.md` §4).
+_Avoid_: Departure time (a schedule boundary is not a jump), jump slot (the **Berth** entry's scope note already gives "slot" its senses)
 
 **Traffic hold**:
 A deterministic station-relative point outside the docking cone where a
@@ -681,7 +717,8 @@ light one hull length behind the arriving ship, facing along its nose, that
 opens with the new system's light and closes a few seconds later. It is the
 ring a lens makes, and the sky behind it bends round it — **the player's rift
 only** today, because the witchspace pass carries one lens. Owned by
-`src/arrival-rift.ts`; #530's opening and #262's NPC arrivals reuse it.
+`src/arrival-rift.ts`; #530's opening reuses it, and a **Hauler**'s jump
+draws its ring at both ends, without the lens (`inter-system-traffic.md` §9).
 _Avoid_: portal, wormhole (as an object)
 
 **Light shift**:

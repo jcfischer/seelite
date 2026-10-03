@@ -146,8 +146,10 @@ destination enters its abstract away interval and has no local position or
 contact. It reappears at a **Traffic hold** for its scheduled return. An actor
 with an eligible destination instead follows the home-owned **Traffic route**
 in `in-system-route-traffic.md`: the route supplies a real position and contact
-inside scanner range without transferring roster ownership. #262 may later
-replace the abstract interval with an inter-system journey.
+inside scanner range without transferring roster ownership. That abstract
+interval is now a **local's** only: a **hauler** flies every away interval to a
+station in another system and back (`inter-system-traffic.md`, #262), so it has
+a real position at both ends of its voyage.
 
 Unvisited systems require no background ticking. Loading the same system seed,
 world-state overlay and `gameTime` produces the same actor states regardless of
@@ -257,8 +259,8 @@ Station traffic reuses berth fit, reservations, clearance and Transit-lane
 occupancy from `docking.md`; it does not create a second docking model. Combat
 AI and interdiction remain `combat-model.md`'s. In-system Traffic journeys are
 specified in `in-system-route-traffic.md` by
-[#261](https://github.com/jcfischer/seelite/issues/261), followed by
-inter-system journeys in
+[#261](https://github.com/jcfischer/seelite/issues/261), and inter-system
+journeys in `inter-system-traffic.md` by
 [#262](https://github.com/jcfischer/seelite/issues/262).
 
 ## 7. Implementation seam
@@ -267,7 +269,10 @@ The build should put pure roster generation, desired schedule state, pending
 intent reconciliation, queue and lane arbitration, station-relative terminal
 laws, and contact projection in `src/station-traffic.ts`. That module may consume
 hull, station-interior, docking, Carrier-key and clock types; it must not import
-Three.js or own a second berth-fit or traversal implementation.
+Three.js or own a second berth-fit or traversal implementation. Each slot's
+vocation and hauler cycle multiple are inputs it receives from the inter-system
+module (`inter-system-traffic.md` §12), which owns everything that reads
+another system; this module stays system-local.
 
 `Game` owns the transient runtime for the current system and materializes the
 pure projection as ship meshes and `DisplayContact`s. Rendering mirrors those
