@@ -18,33 +18,13 @@ import * as THREE from "three";
 import { STATION_GEOMETRY, type StationType } from "../src/station";
 import { corridorRadiusKm } from "../src/station-interior";
 import { SELECTED_FORM, buildStationForm } from "../src/station-mesh";
-import { type ProxyPrimitive, stationProxy } from "../src/station-proxy";
+import {
+	PROXY_VERTEX_TOLERANCE_KM,
+	proxyDistanceKm,
+	stationProxy,
+} from "../src/station-proxy";
 
-/** `VERTEX_TOLERANCE_KM` in the test. */
-const TOLERANCE_KM = 0.06;
-
-/** Signed distance from a point to one primitive: negative inside. */
-function distanceKm(p: ProxyPrimitive, v: THREE.Vector3): number {
-	switch (p.kind) {
-		case "box": {
-			const dx = Math.abs(v.x - p.cx) - p.hx;
-			const dy = Math.abs(v.y - p.cy) - p.hy;
-			const dz = Math.abs(v.z - p.cz) - p.hz;
-			return (
-				Math.hypot(Math.max(dx, 0), Math.max(dy, 0), Math.max(dz, 0)) +
-				Math.min(Math.max(dx, dy, dz), 0)
-			);
-		}
-		case "sphere":
-			return Math.hypot(v.x - p.cx, v.y - p.cy, v.z - p.cz) - p.radiusKm;
-		case "capsule": {
-			const ab = new THREE.Vector3(p.bx - p.ax, p.by - p.ay, p.bz - p.az);
-			const ap = new THREE.Vector3(v.x - p.ax, v.y - p.ay, v.z - p.az);
-			const t = Math.max(0, Math.min(1, ap.dot(ab) / ab.lengthSq()));
-			return ap.sub(ab.multiplyScalar(t)).length() - p.radiusKm;
-		}
-	}
-}
+const TOLERANCE_KM = PROXY_VERTEX_TOLERANCE_KM;
 
 function finite(label: string, value: number): number {
 	if (!Number.isFinite(value)) throw new Error(`${label} is ${value}`);
@@ -84,7 +64,8 @@ function sweep(type: StationType, count: number): void {
 					if (Math.hypot(v.x, v.y) < corridor && v.z > g.aperturePlaneKm)
 						continue;
 					let d = Infinity;
-					for (const p of primitives) d = Math.min(d, distanceKm(p, v));
+					for (const p of primitives)
+						d = Math.min(d, proxyDistanceKm(p, v.x, v.y, v.z));
 					seedWorst = Math.max(seedWorst, d);
 					if (d > worst) {
 						worst = d;

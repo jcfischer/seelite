@@ -10,7 +10,9 @@
  *    opening (§2.2) is not owed a primitive, and every other vertex is —
  *    including the berths and booms of a refinery or an outpost, which stand
  *    outside the corridor and are solid. The bay's walls lie on the opening's
- *    boundary and pass on the tolerance.
+ *    boundary and pass on the tolerance. On a station that spins, each vertex
+ *    is held to the primitives of its own frame: a part drawn under the
+ *    spinning member to `spinning`, the shipyard's keel to `static`.
  *
  * 2. **No proxy outside the reach.** Every primitive lies inside `reachKm`.
  *
@@ -53,6 +55,7 @@ import {
 	buildStationForm,
 } from "../src/station-mesh";
 import {
+	PROXY_VERTEX_TOLERANCE_KM,
 	type ProxyPrimitive,
 	type StationProxy,
 	proxyContains,
@@ -66,18 +69,9 @@ import { codeOf } from "./lib/source-scan";
 const TYPES: StationType[] = STATION_TYPES;
 const GREY = 0x9aa6b2;
 
-/**
- * Tolerance for the vertex-inside-proxy check, in kilometres.
- *
- * This is slack in the budget, not float rounding — float32 at a kilometre is
- * about a tenth of a metre. It is what lets a lamp, a greeble or a bay wall sit
- * on or just past a primitive's face without a primitive of its own, and it is
- * the figure a reader should hold a drawn part to: anything standing more than
- * this far outside the proxy is red. The proxy is a budget, not a shrinkwrap,
- * and §11 joint 5 says what the headless rows cannot see — only flying it shows
- * an invisible wall.
- */
-const VERTEX_TOLERANCE_KM = 0.06;
+/** `PROXY_VERTEX_TOLERANCE_KM`: budget slack, not float rounding — the
+ *  declaration in `station-proxy.ts` says what it lets through. */
+const VERTEX_TOLERANCE_KM = PROXY_VERTEX_TOLERANCE_KM;
 
 /** Berth seeds swept on their own, at assembly seed zero. */
 const BERTH_SEEDS = [0, 1, 2, 7];
@@ -176,37 +170,40 @@ function inOpening(opening: Opening, v: THREE.Vector3): boolean {
 	);
 }
 
-/** A grid of points strictly inside an axial box, about 5 m apart. */
+/**
+ * Coordinates across `[lo, hi]`: cell midpoints about 5 m apart, plus one a
+ * millionth of the span inside each end. The grid alone stands 2.5 m off every
+ * face, so a primitive that crossed a boundary by less than that would be
+ * missed; the end values sit on the boundary for every other coordinate.
+ */
+function span(lo: number, hi: number): number[] {
+	const step = 0.005;
+	const n = Math.max(2, Math.ceil((hi - lo) / step));
+	const eps = (hi - lo) * 1e-6;
+	return [
+		lo + eps,
+		...Array.from({ length: n }, (_, i) => lo + ((i + 0.5) * (hi - lo)) / n),
+		hi - eps,
+	];
+}
+
+/** Points strictly inside an axial box, faces included. */
 function sampleBox(b: AxialBox): THREE.Vector3[] {
 	const out: THREE.Vector3[] = [];
-	const step = 0.005;
-	const nx = Math.max(2, Math.ceil((2 * b.hx) / step));
-	const ny = Math.max(2, Math.ceil((2 * b.hy) / step));
-	const nz = Math.max(2, Math.ceil((b.z1 - b.z0) / step));
-	for (let i = 0; i < nx; i++)
-		for (let j = 0; j < ny; j++)
-			for (let k = 0; k < nz; k++)
-				out.push(
-					new THREE.Vector3(
-						-b.hx + ((i + 0.5) * 2 * b.hx) / nx,
-						-b.hy + ((j + 0.5) * 2 * b.hy) / ny,
-						b.z0 + ((k + 0.5) * (b.z1 - b.z0)) / nz,
-					),
-				);
+	const zs = span(b.z0, b.z1);
+	for (const x of span(-b.hx, b.hx))
+		for (const y of span(-b.hy, b.hy))
+			for (const z of zs) out.push(new THREE.Vector3(x, y, z));
 	return out;
 }
 
-/** Points strictly inside an axial cylinder, about 5 m apart. */
+/** Points strictly inside an axial cylinder, its curved wall included. */
 function sampleCylinder(c: AxialCylinder): THREE.Vector3[] {
 	const out: THREE.Vector3[] = [];
 	const step = 0.005;
-	const nr = Math.max(2, Math.ceil(c.radiusKm / step));
-	const nz = Math.max(2, Math.ceil((c.z1 - c.z0) / step));
-	for (let k = 0; k < nz; k++) {
-		const z = c.z0 + ((k + 0.5) * (c.z1 - c.z0)) / nz;
-		out.push(new THREE.Vector3(0, 0, z));
-		for (let i = 1; i <= nr; i++) {
-			const r = ((i - 0.5) * c.radiusKm) / nr;
+	const radii = span(0, c.radiusKm);
+	for (const z of span(c.z0, c.z1)) {
+		for (const r of radii) {
 			const na = Math.max(8, Math.ceil((2 * Math.PI * r) / step));
 			for (let a = 0; a < na; a++) {
 				const t = (a / na) * 2 * Math.PI;
@@ -232,12 +229,15 @@ function intrusions(
 interface NamedVertex {
 	v: THREE.Vector3;
 	name: string;
+	/** Drawn under the spinning member, so it turns with the station. */
+	spun: boolean;
 }
 
 function extractVertices(
-	root: THREE.Object3D,
+	built: { root: THREE.Object3D; spinner: THREE.Object3D },
 	type: StationType,
 ): NamedVertex[] {
+	const { root, spinner } = built;
 	root.updateMatrixWorld(true);
 	const out: NamedVertex[] = [];
 	const v = new THREE.Vector3();
@@ -248,6 +248,9 @@ function extractVertices(
 		const mesh = object as THREE.Mesh;
 		const position = mesh.geometry?.getAttribute?.("position");
 		if (!position) return;
+		let spun = false;
+		for (let a: THREE.Object3D | null = object; a; a = a.parent)
+			if (a === spinner) spun = true;
 		const instanced = object as THREE.InstancedMesh;
 		const count = instanced.isInstancedMesh ? instanced.count : 1;
 		for (let n = 0; n < count; n++) {
@@ -261,6 +264,7 @@ function extractVertices(
 				out.push({
 					v: v.clone().multiplyScalar(core),
 					name: object.name || object.type,
+					spun,
 				});
 			}
 		}
@@ -269,22 +273,26 @@ function extractVertices(
 }
 
 /**
- * Check whether a vertex is inside any primitive of the proxy. The mesh is
- * built at phase 0, where the spinning frame is the static frame, so the
- * vertex is tested against both lists at once.
+ * Check whether a vertex is inside a primitive **of its own frame**. On a
+ * station that spins, a vertex drawn under the spinning member is held to
+ * `proxy.spinning` alone and every other vertex to `proxy.static` alone: at
+ * phase 0 the two frames coincide, so testing against both at once would let
+ * a turning part be covered by a primitive that does not turn with it — a
+ * contact in the wrong frame once the station moves. A station that does not
+ * spin has one frame, and both lists are it.
  */
 function vertexInsideProxy(
 	proxy: StationProxy,
-	v: THREE.Vector3,
+	type: StationType,
+	{ v, spun }: NamedVertex,
 	tolerance: number,
 ): boolean {
-	return proxyContains(
-		[...proxy.spinning, ...proxy.static],
-		v.x,
-		v.y,
-		v.z,
-		tolerance,
-	);
+	const primitives = !STATION_GEOMETRY[type].spins
+		? [...proxy.spinning, ...proxy.static]
+		: spun
+			? proxy.spinning
+			: proxy.static;
+	return proxyContains(primitives, v.x, v.y, v.z, tolerance);
 }
 
 const fmt = (v: THREE.Vector3) =>
@@ -325,10 +333,10 @@ describe("station proxy budget (collision.md §9.1.11)", () => {
 					berthSeed,
 					assemblySeed,
 				);
-				const offenders = extractVertices(mesh.root, type).filter(
-					({ v }) =>
-						!inOpening(opening, v) &&
-						!vertexInsideProxy(proxy!, v, VERTEX_TOLERANCE_KM),
+				const offenders = extractVertices(mesh, type).filter(
+					(vertex) =>
+						!inOpening(opening, vertex.v) &&
+						!vertexInsideProxy(proxy!, type, vertex, VERTEX_TOLERANCE_KM),
 				);
 				if (offenders.length > 0) {
 					const sample = offenders
@@ -412,7 +420,7 @@ describe("station proxy budget (collision.md §9.1.11)", () => {
 		}
 	});
 
-	test("the thinnest primitive is the declared figure, at every plan", () => {
+	test("the thinnest primitive is the declared figure, at every seed pair", () => {
 		// §4.1's sub-step bound reads `thinnestKm`, so a rework that cuts a
 		// 1 m sliver off a box changes how finely every tick is swept. Each
 		// figure is pinned, and it is the thinnest full extent in the set:
@@ -509,10 +517,15 @@ describe("station proxy budget (collision.md §9.1.11)", () => {
 			};
 			expect(withoutCells.spinning.length).toBeLessThan(proxy.spinning.length);
 			const mesh = buildStationForm("refinery", form, GREY, 0, assemblySeed);
-			const uncovered = extractVertices(mesh.root, "refinery").filter(
-				({ v }) =>
-					!inOpening(opening, v) &&
-					!vertexInsideProxy(withoutCells, v, VERTEX_TOLERANCE_KM),
+			const uncovered = extractVertices(mesh, "refinery").filter(
+				(vertex) =>
+					!inOpening(opening, vertex.v) &&
+					!vertexInsideProxy(
+						withoutCells,
+						"refinery",
+						vertex,
+						VERTEX_TOLERANCE_KM,
+					),
 			);
 			expect(uncovered.length).toBeGreaterThan(0);
 		}

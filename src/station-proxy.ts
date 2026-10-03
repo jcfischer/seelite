@@ -673,6 +673,63 @@ export function proxyReachKm(proxy: StationProxy): number {
 }
 
 /**
+ * How far outside a drawn vertex may stand from the proxy, kilometres — the
+ * budget's slack (`collision.md` §9.1.11's "declared tolerance").
+ *
+ * Not float rounding: float32 at a kilometre is about a tenth of a metre. It is
+ * what lets a lamp, a greeble or a bay wall sit on or just past a primitive's
+ * face without a primitive of its own, and the figure a drawn part is held to:
+ * anything further outside the proxy than this is a red row. The proxy is a
+ * budget, not a shrinkwrap; §11 joint 5 says what the headless rows cannot
+ * see — only flying it shows an invisible wall.
+ */
+export const PROXY_VERTEX_TOLERANCE_KM = 0.06;
+
+/**
+ * Signed distance from a point (in the primitive's frame, km) to one
+ * primitive: positive outside, negative inside by the depth to its surface.
+ * A box's is the true distance, so a point past two faces at once is further
+ * away than either overshoot alone.
+ */
+export function proxyDistanceKm(
+	p: ProxyPrimitive,
+	x: number,
+	y: number,
+	z: number,
+): number {
+	switch (p.kind) {
+		case "box": {
+			const dx = Math.abs(x - p.cx) - p.hx;
+			const dy = Math.abs(y - p.cy) - p.hy;
+			const dz = Math.abs(z - p.cz) - p.hz;
+			return (
+				Math.hypot(Math.max(dx, 0), Math.max(dy, 0), Math.max(dz, 0)) +
+				Math.min(Math.max(dx, dy, dz), 0)
+			);
+		}
+		case "sphere":
+			return Math.hypot(x - p.cx, y - p.cy, z - p.cz) - p.radiusKm;
+		case "capsule": {
+			// Distance from the point to the segment (a, b), less the radius
+			const abx = p.bx - p.ax;
+			const aby = p.by - p.ay;
+			const abz = p.bz - p.az;
+			const apx = x - p.ax;
+			const apy = y - p.ay;
+			const apz = z - p.az;
+			const ab2 = abx * abx + aby * aby + abz * abz;
+			const t =
+				ab2 > 0
+					? Math.max(0, Math.min(1, (apx * abx + apy * aby + apz * abz) / ab2))
+					: 0;
+			return (
+				Math.hypot(apx - t * abx, apy - t * aby, apz - t * abz) - p.radiusKm
+			);
+		}
+	}
+}
+
+/**
  * Test whether a point (in the proxy's frame, in km) lies inside any
  * primitive of the proxy, within a tolerance. A negative tolerance asks
  * whether the point is strictly inside by at least that much.
@@ -684,58 +741,5 @@ export function proxyContains(
 	z: number,
 	toleranceKm: number,
 ): boolean {
-	for (const p of primitives) {
-		switch (p.kind) {
-			case "box": {
-				const dx = Math.abs(x - p.cx) - p.hx;
-				const dy = Math.abs(y - p.cy) - p.hy;
-				const dz = Math.abs(z - p.cz) - p.hz;
-				// Distance outside the box, not the largest axis overshoot: a
-				// point past two faces at once is further away than either.
-				const outside = Math.hypot(
-					Math.max(dx, 0),
-					Math.max(dy, 0),
-					Math.max(dz, 0),
-				);
-				const inside = Math.min(Math.max(dx, dy, dz), 0);
-				if (outside + inside <= toleranceKm) return true;
-				break;
-			}
-			case "sphere": {
-				const dx = x - p.cx;
-				const dy = y - p.cy;
-				const dz = z - p.cz;
-				if (Math.sqrt(dx * dx + dy * dy + dz * dz) <= p.radiusKm + toleranceKm)
-					return true;
-				break;
-			}
-			case "capsule": {
-				// Distance from point to the line segment (a, b)
-				const abx = p.bx - p.ax;
-				const aby = p.by - p.ay;
-				const abz = p.bz - p.az;
-				const apx = x - p.ax;
-				const apy = y - p.ay;
-				const apz = z - p.az;
-				const ab2 = abx * abx + aby * aby + abz * abz;
-				const t =
-					ab2 > 0
-						? Math.max(
-								0,
-								Math.min(1, (apx * abx + apy * aby + apz * abz) / ab2),
-							)
-						: 0;
-				const cx = p.ax + t * abx;
-				const cy = p.ay + t * aby;
-				const cz = p.az + t * abz;
-				const dx = x - cx;
-				const dy = y - cy;
-				const dz = z - cz;
-				if (Math.sqrt(dx * dx + dy * dy + dz * dz) <= p.radiusKm + toleranceKm)
-					return true;
-				break;
-			}
-		}
-	}
-	return false;
+	return primitives.some((p) => proxyDistanceKm(p, x, y, z) <= toleranceKm);
 }
