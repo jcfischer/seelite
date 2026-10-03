@@ -1,0 +1,542 @@
+# Spec: collision
+
+**Status:** written from a resolved decision node —
+[#75](https://github.com/jcfischer/seelite/issues/75) (C1–C6, 2026-09-13), by
+[#302](https://github.com/jcfischer/seelite/issues/302)
+**Date:** 2026-10-03
+**Inputs:** [#73](https://github.com/jcfischer/seelite/issues/73) (`docking.md`
+§12.3, E6 — the boundary), [#8](https://github.com/jcfischer/seelite/issues/8) /
+[#324](https://github.com/jcfischer/seelite/issues/324) (`combat-model.md`, the
+pools), [#181](https://github.com/jcfischer/seelite/issues/181) (hull envelopes),
+[#529](https://github.com/jcfischer/seelite/issues/529) (the frame law),
+[#362](https://github.com/jcfischer/seelite/issues/362) /
+[#365](https://github.com/jcfischer/seelite/issues/365) (`civilian-combat.md`,
+the divert), [#10](https://github.com/jcfischer/seelite/issues/10) /
+[#30](https://github.com/jcfischer/seelite/issues/30) (cruise's keep-out),
+[#619](https://github.com/jcfischer/seelite/issues/619) (`flight-model.md` §4,
+rotation can tunnel)
+**Binds:** [#303](https://github.com/jcfischer/seelite/issues/303) (the build),
+Traffic (`station-traffic.md`, `in-system-route-traffic.md`), the NPC
+controller (`combat-enemy.ts`)
+
+#75 decided six things with the principal. #302 put three further questions to
+the principal on 2026-10-03, because #75 left them open and each one changes
+what a pilot feels: the ship's own shape against a body, the scrape threshold
+and bounce, and which constant carries the damage scale. Their answers are
+**P1–P3** below. Everything else here is **derived** and is marked as derived,
+so a later reader can tell a choice from a consequence.
+
+---
+
+## 0. What this owns, and what it does not
+
+**Owns:** which objects are solid and in what shape; what an impact does to
+speed, position and condition; how an impact is found within one tick; and the
+order of an impact and the aperture plane inside one tick.
+
+**Does not own:**
+
+| Fact | Owner |
+|---|---|
+| The boundary between docking and collision, including the exempt states | `docking.md` §12.3 — the authority. §5 below reads it and does not copy it. |
+| The aperture rectangle at the plane: the six checks and the failed entry | `docking.md` §2, §3 |
+| The pools, `applyDamage`, the side a hit selects | `combat-model.md` §2, `src/ship-condition.ts` |
+| The damage scale's figure | `docking.md` §10 and #8 — shared under P3 |
+| What a struck carrier does, and what a hull strike diverts | `civilian-combat.md` H2, H3, H3b–H3d |
+| Whether an impact is an **offence** (heat, witnesses, hostility) | Not decided. See §10. |
+| Cruise's keep-out and drop-out | `in-system-travel.md` §11.4, §12.1, `cruise.ts` |
+| What the pilot is told about an impact | `hud-and-scanner.md` §3 (the prompt line). See §10. |
+
+---
+
+## 1. The code this is written against
+
+As of `origin/main` at `cfb9e1b`. Each fact was read in the file, not
+remembered.
+
+- `MAX_DT = 0.1` s (`src/units.ts`). At the 2 km/s assist cap a tick is 200 m,
+  and assist-off flight has no speed cap.
+- `src/sim.ts` must not import Three.js, so the sim cannot ray-cast a drawn
+  mesh. Everything collision reads is authored without Three.
+- `collisionExempt(phase)` (`src/dock-session.ts`) is `phase !== "flying"`.
+  It is §12.3's third row as a predicate, and today nothing reads it.
+- The pools have shipped (#324). `ShipCondition` carries fore and aft shields
+  and hull; `applyDamage(c, amount, side)` is the one writer of hull;
+  `sideStruck(nose, toSource)` selects the side; `headOnPool` is fore plus
+  hull. #75's receipt named `INTERIM_DAMAGE_SCALE` and `Game.interimCondition`.
+  Neither exists now, and nothing in this spec refers to them.
+- `DOCKING_DAMAGE_SCALE = 40` (`src/docking.ts`), asserted by
+  `tests/ship-condition.test.ts` against a quarter of every hull's head-on
+  pool. `V_GATE_KMS = 0.10`.
+- `HULL_SPECS[id].env` (`src/hull.ts`) is the selected variant's measured box,
+  rounded **up** to 0.1 m (#181).
+- `SELECTED_FORM` (`src/station-mesh.ts`) picks one form per role. The
+  refinery's is the Works (`d`), a **solved** form: its shape comes from
+  `Station.assemblySeed` through `placementsOf`, and its berth side from the
+  berth seed. The solve (`src/wfc.ts`, `src/station-modular.ts`) imports no
+  Three.js.
+- `corridorRadiusKm` and `interiorAxialSpanKm` (`src/station-interior.ts`)
+  are the pad corridor's radius and the interior's axial span. Both are
+  Three-free.
+- A frame handed to flight is a `FrameMotion` (`src/sim.ts`, #529): the
+  frame's velocity at both ends of the step.
+- A struck carrier already leaves its projection
+  (`civilian-combat.md` H3, H3b): while materialized it is flown from the pose
+  it is drawn in, and a hit that reaches hull diverts it home (H3d).
+
+---
+
+## 2. What is solid, and in what shape
+
+### 2.1 Bodies: a sphere at the radius (C1)
+
+A star, a planet and a moon collide as a sphere at `radiusKm`. A planet's ring
+is not solid. A belt is not a body and has nothing to collide with.
+
+### 2.2 Stations: a declared proxy per form (C1)
+
+A station collides on a **proxy**: a small set of convex primitives — spheres,
+capsules and oriented boxes — in the station's own frame, in kilometres.
+
+- **Where it lives.** A Three-free module beside `STATION_GEOMETRY` and the
+  interior catalogue. The renderer never reads it. The build names the module.
+- **What it is a function of.** `(type, form, berthSeed, assemblySeed)`. For a
+  solved form, the proxy is derived from **the same placement solve the mesh
+  reads**, cell by cell. It is never a second copy of the plan.
+- **What it turns with.** The proxy is stated in the spinning member's frame,
+  as the drawn interior is (`docking.md` §13). Static structure — the
+  shipyard's keel — is stated in the static frame.
+- **The openings.** On a **slot** role, the proxy leaves open (a) the prism
+  that the aperture rectangle sweeps outward from the plane, and (b) the
+  interior volume over `interiorAxialSpanKm`. On a **pad** role, the opening is
+  the corridor cylinder at `corridorRadiusKm`, extended outward from the plane.
+  That is the corridor row's own cylinder. It is read, not restated. A pad's
+  berths and booms stand outside it and are solid.
+- **Which forms need one.** Only the forms in `SELECTED_FORM`, because only
+  they can be drawn by a running game. A workbench alternate may have no proxy.
+  A row refuses a **selected** form that has none, so #260 (an individual form
+  per station) and #491 (placing outposts) cannot select one by accident.
+
+**The budget, declared first and then measured (derived).** A proxy is written
+down before it is checked against the mesh. A proxy generated from the mesh
+would pass any check against that mesh by construction. Two rows hold it, as
+`STATION_SILHOUETTE_KM` holds `reachKm` (#28):
+
+1. **No drawn vertex outside the proxy.** Every vertex of the built station
+   lies inside the proxy, or within a stated tolerance of its boundary. The
+   bay's walls are the boundary of the open interior volume, so they pass on
+   the tolerance. Every vertex inside the open volume belongs to the interior
+   group.
+2. **No proxy outside the reach.** Every primitive lies inside `reachKm`.
+
+For a solved form, both rows run over `ASSEMBLY_SEEDS`. A row on a solved form
+at seed zero checks one plan (#257).
+
+What the budget does **not** prove is that the proxy is tight. A proxy can
+pass row 1 and still be an invisible wall wherever a form is sparse. #75
+rejected the reach sphere for that reason. Whether a proxy is too generous is
+checked by flying it (§9.2).
+
+### 2.3 Ships: the hull box (C4b, P1)
+
+**P1 (principal, 2026-10-03): a ship meets everything on its hull box.** That
+includes another ship (C4b, decided by #75), a station and a body. The box is
+`HULL_SPECS[id].env`, in the ship's body frame, turning with its attitude.
+
+The alternative was the ship's centre as a point. It was declined because a
+point lets a hull sink half its length into a station, and lets the cockpit
+camera enter structure. Keeping the camera out of a surface is what
+`SURFACE_MARGIN` and `HOST_CLEARANCE_KM` exist for.
+
+**What P1 costs, named here so it is not rediscovered in play.** Under C3 a
+wing that touches the slot's rim before the ship's centre crosses the plane is
+an impact. So the aperture is now a **physical fit** as well as §3's six
+checks:
+
+- **Roll.** At check 4's 50° limit, the tightest hull clears a slot by 6.6 m
+  (the miner, `tests/aperture-fit.test.ts`). A centred entry within the limit
+  still fits. An entry off centre by more than the margin does not.
+- **Pitch and yaw.** `tests/aperture-fit.test.ts` measures a hull whose nose
+  is on the axis. A hull pitched against the axis is wider in the slot's short
+  dimension, so a long hull may clip the rim inside check 2's 35°. **This was
+  not measured when P1 was chosen.** §9.1.9 owes the table and §11 records it.
+
+The box is centred on the ship's sim position. If a selected mesh's box is not
+centred on its origin, the build either carries the offset or shows the error
+is inside the 0.1 m rounding. A row decides which (§9.1.10).
+
+### 2.4 What does not collide
+
+| Object | Collides? | Why |
+|---|---|---|
+| The player, a raider, a relay defender, a Traffic carrier | Yes | C4a, C4b, `combat-model.md` §1 |
+| Any ship whose phase is exempt (§5) | No | `docking.md` §12.3 |
+| A cargo canister or a wreck canister | No | It is scooped when the ship reaches it. A bounce would make it unscoopable. |
+| A laser beam or a missile | No | Weapons have their own hit test (`combat-model.md` §2.1) |
+| The pirate relay, Rama, Voyager | No, until each declares a proxy | No decision has given any of them a solid shape. Adding one adds a row here. |
+| A drawn object with no sim entry (`?fleet`, the workbench) | No | Collision is a sim-tier law. `ship-visuals.md` §2 gives the scaffold no sim entry. |
+
+---
+
+## 3. What an impact does (C2, P2, P3)
+
+**One law for every body, with a bounce.** At an impact, let `n` be the
+surface's outward normal and `p` the impact point.
+
+```
+u     = v_ship(p) − v_surface(p)          relative velocity of the two points
+v_n   = max(0, −dot(u, n))                 closing speed
+damage = DOCKING_DAMAGE_SCALE · max(0, v_n² − V_SCRAPE²) / V_GATE²
+```
+
+- **`v_surface(p)`** is the body's velocity from the **same `FrameMotion` the
+  step moved the ship on** (#529), plus `ω × r` where the body spins. That is
+  the map's Constraint *"closing speed is relative to the body met, in its
+  rotating frame where it spins"*. It is not an inertial velocity: a ship
+  parked beside a station is not struck at 30 km/s.
+- **The side** is `sideStruck(nose, p − shipPosition)`, and the damage goes
+  through `applyDamage`. Shields first, hull after. Nothing else writes hull.
+- **The bounce.** The normal component of `u` is reversed and multiplied by
+  `RESTITUTION`. The tangential component is kept. The ship is placed just
+  outside the surface, by a separation small against every primitive. Attitude
+  and angular velocity are unchanged (derived — a bounce imparts no spin,
+  which keeps the law to one number).
+- **Destruction.** A hull at zero is a destroyed ship, through the same path a
+  kill by fire takes.
+
+**P2 (principal, 2026-10-03): `V_SCRAPE = 0.05` km/s, `RESTITUTION = 0.5`.**
+Both are chosen and nobody has flown them yet.
+
+- 0.05 km/s is half the docking gate. Below it an impact costs nothing.
+- The damage uses `v_n² − V_SCRAPE²`, not `v_n²` behind a threshold. So
+  damage rises from zero at the threshold, with no step at it (derived).
+- 0.5 is `docking.md` §2.0's repel, which reverses `v_axial` and halves it.
+  The game then has one meaning for "bounced".
+
+**Why a threshold where docking has a floor.** `docking.md` §2.1 has a floor
+so that a crawling pilot cannot fail checks for free. A ship can rest against
+a surface and touch it every tick, and a floor would bill it every tick.
+The threshold is the inverse of a floor. This is #75's reason, unchanged.
+
+**P3 (principal, 2026-10-03): collision reads `DOCKING_DAMAGE_SCALE`.** There
+is one constant for what meeting a surface costs. A retune of docking's scale
+retunes collision, on purpose. Two bounds hold the **exported** constant, as
+`docking.md` §10 requires for docking:
+
+1. **Survivable at the gate.** An impact at `V_GATE` costs at most a quarter of
+   the smallest hull's head-on pool. Today that is 30 against 46.75, on the
+   raider.
+2. **Lethal at combat speed.** An impact at the 2 km/s assist cap costs at
+   least the largest hull's head-on pool. Today that is about 15,990 against
+   2,741, on the carrier. This is C2's argument made checkable: a planet met
+   at combat speed kills without a second rule. Capitals do not dock (#56),
+   but they collide, so they are in the bound.
+
+The figures above are a reading of today's constants, not a second copy. The
+test owns them.
+
+**Ship against ship (C4b).** `u` is the relative velocity of the two impact
+points. Both ships take the same `damage`, each on the side `sideStruck` gives
+it. The bounce is an impulse along `n` that conserves momentum, so it is split
+by `massT` (derived). After the bounce the normal relative velocity is
+`−RESTITUTION · v_n`. A courier that hits a carrier moves; the carrier barely
+does.
+
+**What a spinning station does to a ship holding beside it (consequence).** A
+point on a 3 rpm station at 0.6 km moves at about 0.19 km/s, which is almost
+twice `V_GATE`. A ship that holds still while a Coriolis corner turns into it
+is struck at that speed. That follows from the rotating-frame Constraint. It is
+named here so that it is a known behaviour and not a reported bug.
+
+---
+
+## 4. How an impact is found within one tick (C3)
+
+### 4.1 Swept, never point-in-volume
+
+The map's Constraint: a test at `MAX_DT` is swept. The sweep runs in the
+**body's own frame** — rotating where it spins — between the ship's pose at the
+start of the step and its pose at the end. Both ends come from the step's
+`FrameMotion`.
+
+**Rotation can tunnel too** (`flight-model.md` §4). Under P1 the ship is a box,
+so turning is motion. Angular rates are not capped, and a spinning station's
+surface moves as well. The requirement (derived):
+
+> Within a sub-step, no point of the ship's box moves more than the thinnest
+> primitive in the proxy it is tested against. That motion includes
+> translation, the ship's rotation (at the box's half-diagonal), and the body's
+> spin (at the impact radius).
+
+The build chooses how to meet it: conservative advancement, or a sub-step count
+from that bound. The thinnest primitive is a declared figure in the proxy
+module, and a row asserts it. A pair whose bounding spheres the swept motion
+does not reach is not tested. The bounding spheres are `reachKm`, `radiusKm`
+and the box's half-diagonal.
+
+### 4.2 The earliest impact owns the tick (C3)
+
+On the tick's swept motion, the **earliest** event in time wins. The events are
+a proxy impact, a body impact, a ship impact, and the ship's **centre**
+crossing the aperture plane inside the rectangle.
+
+- **The plane first:** `docking.md` §3's six checks run at the crossing, and
+  §12.3's ordering is unchanged. A pass is exempt from the next tick. A failure
+  is §2's in full.
+- **An impact first:** this spec's law runs, and the plane is not crossed this
+  tick.
+- **An exact tie:** the impact wins (derived). A surface is a promise to keep
+  out, so it beats an inclusion promise. `cruise.ts` makes the same ruling for
+  a surface and an arrival.
+
+Two orders were rejected by #75. "Docking first" treats a ship that clips a rim
+bar on its way in as a clean entry. "Collision first" bounces an entry that
+crossed the plane properly and would only have met structure later in the
+tick. Time of impact is the only order that matches what was flown.
+
+### 4.3 A tick that starts inside (derived)
+
+The map says a sweep that starts inside a volume owes the case its own answer
+(#30). **A pair that overlaps at the start of a tick is not tested until it has
+separated.** There is no damage and no push-out.
+
+A flying ship can only start inside a proxy by being placed there:
+
+- a spawn, a hyperspace arrival or a cruise exit;
+- a save restored in flight (#293);
+- the end of a launch. At the tick the exemption ends, the centre has just
+  cleared the plane and the rear of the hull has not. On a slot the bay is
+  open in the proxy, so a hull that fits the aperture overlaps nothing. On a
+  pad, or with a hull near its fit margin, it may.
+
+A push-out would throw a restored ship through a hull, and would bill or bounce
+a launch off the station it is leaving. A ghost lets the ship fly out the way
+it came. §9.1.7 counts how often each placement path starts a ship inside, so
+whether launches ever do is measured rather than assumed.
+
+---
+
+## 5. The exemption
+
+`docking.md` §12.3 owns it, and this section reads it.
+
+- **The player** is collidable exactly when `collisionExempt(phase)` is false.
+  That is `flying`.
+- **A Traffic carrier** is exempt in the states that mirror those three: its
+  scripted hold-to-plane and traversal, and parked in a berth. It is keyed on
+  its route phase. The same argument applies: a position law with a known
+  start and end, inside a lane that `docking.md` §6's clearance protocol keeps
+  clear of other ships.
+- **The boundaries in time** are §12.3's. The exemption starts on the tick
+  after the six checks pass, and ends when the launching ship's centre clears
+  the plane outward. §4.3 covers the hull that is still in the throat at that
+  tick.
+
+---
+
+## 6. Traffic and the NPCs (C4a, C4b)
+
+**A Traffic carrier collides like any ship.** It has a `ShipCondition` (H2), so
+§3's law applies unchanged.
+
+**What an impact does to a carrier's route.** An impact is a landed hit as
+`civilian-combat.md` uses the term, for its mechanics and nothing else:
+
+- While materialized, the carrier is flown from the pose the bounce left it in,
+  with its H3 intent. A projected pose cannot express a bounce.
+- An impact that reaches hull is H3d's trigger, and H3c records it: `disable`,
+  then `repair-start`. That is the saved Carrier deviation #75 asked for. The
+  route already exists; this spec does not add a second one.
+- An impact that spends only shields writes nothing, as a shot that spends
+  only shields writes nothing (H3d).
+
+The map's Constraint says *"a contact is a saved Carrier deviation"*. Read with
+H3d, only an impact that reaches hull is saved. §10 lists the change to that
+line.
+
+**Owed, and not built by this spec:**
+
+1. **Traffic must not hit its own world.** A route that can be interrupted by a
+   impact needs one of two things: avoidance in the route law, or a corpus row
+   proving that no projected route outside its exempt phases brings a carrier's
+   box into a proxy, a body's sphere, or another carrier's box. Without either,
+   Traffic damages itself on its own stations and diverts itself home. #303
+   builds the row first, and avoidance only if the row is red.
+2. **The NPC controller has no body awareness.** `combat-enemy.ts` steers on
+   its target alone. Under symmetric collision a raider flies into a station
+   or a planet until its controller avoids them. `combat-model.md` §1 forbids
+   exempting it, so the avoidance is the controller's to build. Until it is
+   built, an NPC can die on a surface. That is the honest outcome, not a
+   defect to hide.
+
+---
+
+## 7. Cruise (C5)
+
+**Collision sits under `SURFACE_MARGIN`.** Cruise keeps its keep-out and its
+drop-out unchanged. Collision is evaluated in normal flight only, with the
+assist on and with it off. At 20 c a tick covers 600,000 km, so an impact under
+§3 would always kill. Cruise's guards exist so that cruise never reaches one.
+Two regimes give two answers, each one right for its speed.
+
+**What C5 does not cover (derived).** Cruise guards stars and planets, and
+`HOST_CLEARANCE_KM` guards a target's host. It has **no station keep-out**. A
+leg that passes through a station other than its target goes through it, as it
+does today. That is accepted under C5's "two regimes" and is recorded in §11.
+§9.1.12 measures how often it happens.
+
+---
+
+## 8. What the pilot sees and hears
+
+Not decided here. An impact is a new event the pilot must be told about, as a
+failed entry is told on the prompt line (#597). The words, the tone and the
+sound belong to `hud-and-scanner.md` §3 and the audio owner. §10 hands it on.
+Until it is built, an impact shows as a change in condition and a change in
+velocity, and nothing else.
+
+---
+
+## 9. Verification obligations
+
+Two tiers. Anything arithmetic gets a headless test. Anything spatial gets a
+browser probe.
+
+### 9.1 Headless (`bun`)
+
+1. **The law, table-driven.** Closing speed is the normal component of the
+   relative velocity of the two points. It is zero for a ship moving away and
+   zero at a purely tangential graze. Damage is zero at `V_SCRAPE`, positive
+   above it, and continuous through it. The bounce reverses the normal and
+   multiplies it by `RESTITUTION`, and keeps the tangential.
+2. **The frame regression.** A ship co-moving with a station at 30 km/s,
+   touching at 0.03 km/s relative, takes no damage. A ship at rest in star
+   coordinates that meets the same station is struck at about 30 km/s.
+   A third row: a ship at rest beside a spinning station, met by its turning
+   surface, is struck at `ω × r`.
+3. **The scale bounds, on the exported constant** (P3). At `V_GATE` the damage
+   is at most a quarter of the smallest `headOnPool`. At the 2 km/s assist cap
+   it is at least the largest. The rows read `DOCKING_DAMAGE_SCALE` and the
+   hull table, not a parameter.
+4. **A ship resting on a surface pays nothing, and dt does not change it.** A hull holding full
+   thrust into a surface for ten seconds takes zero damage at `dt` = 1/144,
+   1/60 and `MAX_DT`. A ram at 0.5 km/s costs the same damage at all three.
+   The interceptor accelerates at 2.8 km/s², so a threshold sized from one
+   tick of thrust would be above the gate and would depend on dt. This row
+   forbids that design.
+5. **No tunnelling.** At the 2 km/s cap and at assist-off speeds above it, a
+   box swept at a primitive thinner than one tick's travel makes an impact. A
+   box turned through a thin boom in one tick at a rate above any hull's makes
+   an impact (§4.1). A red build: a point-in-volume test fails both rows.
+6. **The earliest impact owns the tick** (C3). A segment that clips a rim
+   primitive and then crosses the plane inside the rectangle is an impact, and
+   the six checks do not run. A segment that crosses the plane first and would
+   meet structure later in the tick runs the checks. An exact tie is an impact.
+7. **A tick that starts inside** (§4.3). An overlapping pair is not tested
+   until it separates. A launch on every slot and pad role, for every hull its
+   berths admit, flies out without an impact. Each placement path is counted.
+8. **The exemption honoured** — `docking.md` §12.6 obligation 8's physical
+   half. Fly the arrival, the parked interval and the launch on every
+   slot-bearing and pad role **with the exemption removed**, and watch the
+   throat or the deck make impacts. That is the red build. With the
+   exemption in place, the same runs make none.
+9. **The aperture as a physical fit** (P1). For every ordinary hull, print the
+   largest check-2 angle (pitch and yaw separately) at which a centred entry,
+   rolled to check 4's limit, clears the proxy. Assert that every hull clears
+   at zero angle and at the 50° roll limit, which is what
+   `tests/aperture-fit.test.ts` already holds against the slot. The angle
+   table is printed for the principal to judge (§11).
+10. **The box is where the ship is.** Each selected mesh's box centre lies
+    within the 0.1 m rounding of the ship's origin, or the box carries the
+    offset.
+11. **The proxy budget** (§2.2). No drawn vertex outside the proxy, within the
+    declared tolerance. No primitive outside `reachKm`. The pad opening is the
+    corridor row's cylinder. A selected form with no proxy is red. Solved forms
+    run over `ASSEMBLY_SEEDS`. The thinnest-primitive figure is asserted.
+12. **Cruise never reaches a proxy** (C5). Every cruise keep-out sphere
+    contains its body's collision sphere. No cruise exit places a ship inside a
+    proxy, over the corpus `in-system-travel.md` measures. The count of legs
+    whose swept path crosses a non-target station's proxy is printed, with its
+    N.
+13. **Ship against ship** (C4b). Momentum is conserved. Both ships take the
+    same damage, each on its own side. A courier against a carrier moves the
+    courier.
+14. **Traffic** (§6). A hull-reaching impact on a carrier writes `disable`
+    then `repair-start`, as a shot would. A shield-only impact writes nothing.
+    The corpus row of §6.1 is green, or avoidance exists.
+15. **The docking computer makes no impact.** `docking.md` §9.1.11's run, from
+    the vicinity to docked, asserts that no impact occurred as well as that no
+    check was broken.
+
+### 9.2 Browser probe (Playwright)
+
+1. **A ship stops at a hull.** A scripted approach at a station's face stops
+   at the proxy, bounces and survives at a speed under the lethal bound. This
+   replaces `docking.md` §9.2.4's subject (§10).
+2. **A ship stops at a pad berth** and at a shipyard boom, which are the
+   sparse forms where a too-generous proxy would show as an invisible wall.
+3. **A ship stops at a planet's surface** in normal flight, and the cockpit
+   camera is still outside the surface on the frame of impact.
+4. **A docking run still docks** — `docking.md` §9.2.3, re-run with collision
+   live.
+
+Per the map, the probes do not run in CI. Running them is the author's job
+before merge.
+
+---
+
+## 10. What this makes false, and where it is amended
+
+Each spec line is amended in this change. A code line is amended by #303.
+
+| Rule | Owner | Change |
+|---|---|---|
+| Check 5's paragraph: "once the hull is solid … must be re-pointed" | `docking.md` §3 | Points here; the probe's re-pointing is §9.2.4's |
+| "A hull-face approach is refused" — check 5 as the probe's subject | `docking.md` §9.2.4 | Re-pointed: the browser row becomes §9.2.1 here, under a collision name. Check 5 keeps its headless row, §9.1.1. Renaming the probe is #303's. |
+| §12.3's hand-off to "the collision system" | `docking.md` §0, §12.3 | Points here, and keeps the boundary table |
+| Obligation 8's other half "inherited by #75" | `docking.md` §12.6 | Addressed to §9.1.8 here, built by #303 |
+| Joints 3 and 5: "collision is decided and unbuilt", "obligation 8 cannot fail" | `docking.md` §12.7 | Specified here, built by #303. Still green for a dead reason until #303 lands. |
+| "#75 made Traffic collidable" with no law behind it | `in-system-route-traffic.md` §5 | Points here; an impact is a landed hit (§6) |
+| "#75 and #362 have since added both" | `station-traffic.md` §3.1 | Collision is decided, not added. #303 builds it. |
+| "Swept collision at `MAX_DT` — the collision spec owed by #302" | `flight-model.md` §1, §4 | Points here; §4.1 answers the angular case |
+| The false-rules table's first row | `civilian-combat.md` | Notes that an impact uses H3d's route |
+| "A contact is a saved Carrier deviation" | Map #1 Constraints | Only a hull-reaching impact. Amended on the map when this merges. |
+| `collisionExempt`'s comment: "#75 inherits the other half of obligation 8" | `src/dock-session.ts` | §9.1.8 here. A code comment, so #303 amends it. |
+
+**Handed on, and not decided:**
+
+- **Whether an impact is an offence.** Ramming a carrier spends its hull. Who
+  was at fault, whether it costs heat, and whether a witness hears it is
+  `civilian-combat.md`'s (H4–H6) and the fiction map's (#460). Until that is
+  decided, an impact writes no heat and no witness.
+- **What the pilot is told.** `hud-and-scanner.md` §3 and the audio owner (§8).
+- **The NPC controller's avoidance** (§6, item 2).
+
+`combat-model.md` §1 needs no change. It already requires the same collision
+rules for every combat ship.
+
+---
+
+## 11. Weak joints, recorded and not reopened
+
+1. **Two figures are chosen and nobody has flown them** — `V_SCRAPE` and
+   `RESTITUTION` (P2). They are where this spec is most likely to be wrong.
+   §9.2 is where that shows.
+2. **P1 makes docking harder, and the pitch half was not measured when it was
+   chosen.** The roll half was known: 6.6 m on the miner at 50°. Whether a
+   long hull can still use check 2's full 35° is §9.1.9's table. If it cannot,
+   the principal decides whether that is the intended skill tax or a reason to
+   revisit P1. It is not a reason to cut the rim out of the proxy.
+3. **Cruise passes through stations that are not its target** (§7). C5
+   accepts it, and §9.1.12 counts it.
+4. **Traffic and NPCs are collidable before they can avoid anything** (§6).
+   Until #303's corpus row is green, or avoidance exists, a carrier can divert
+   itself on its own station. Until the controller is built, a raider can die
+   on a planet.
+5. **The proxy is checked as a container and not as a fit** (§2.2). A proxy
+   that wraps a sparse form in a box passes every headless row. Only flying
+   it (§9.2.2) shows the invisible wall.
+6. **A ship placed inside is a ghost until it leaves** (§4.3). That is safe
+   for every placement path today. A future path that places a ship deep
+   inside a solid could leave it there, flying through the structure until it
+   comes out. §9.1.7 counts the paths so that a new one is seen.

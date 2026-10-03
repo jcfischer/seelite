@@ -29,7 +29,8 @@ behind the shipyard scan or the absolute damage scale (both #8), nor station
 traffic (#148);
 nor the equipment price table (#7 §equipment, unamended by this spec); nor the
 HUD (`hud-and-scanner.md`; §8 records what it owes docking); nor the
-**collision system** (§12.3 states the boundary and hands it on); nor what the
+**collision system** (§12.3 states the boundary and hands it on to
+`collision.md`); nor what the
 player *sees* once docked, which is the market-screen question (#70).
 
 **§12 was added after this spec was built and flown** (#73, 2026-08-27). The
@@ -173,9 +174,12 @@ hull and never reaches the plane, so check 5 stops being the thing that prevents
 the failure and becomes defence in depth behind a system that prevents it
 earlier. Keep it: the plane is a mathematical construct and a collision mesh is
 an approximation of a drawn shape, and the two agreeing everywhere is an
-assumption rather than a guarantee. But when collision lands, the browser probe
-for this row (§9.2.4) is measuring a collision, not a failed entry, and it must
-be re-pointed rather than left to pass for a reason that has moved.
+assumption rather than a guarantee. But once collision is built, the browser
+probe for this row (§9.2.4) measures a collision, not a failed entry. So it is
+re-pointed: `collision.md` (#302) specifies the collision, and its §9.2.1 is
+the browser row for a hull-face approach. Check 5 keeps its headless rows in
+§9.1.1. [#303](https://github.com/jcfischer/seelite/issues/303) builds both,
+and until it does, §9.2.4 still runs as written below.
 
 **Check 4 compares against the axis-*line*, not an oriented vector.** The slot is
 a 0.12 × 0.07 km rectangle, so a ship rolled 180° is a geometrically identical
@@ -870,6 +874,16 @@ anything rendered or spatial gets a browser probe.
    station's face, inside check 2's cone but outside the aperture, asserts a
    failed entry rather than a dock. This is round 2's blocker as a probe: it is
    a spatial claim, so it gets the spatial tier.
+
+   **Re-pointed by `collision.md` (#302).** Once the hull is solid, this run
+   stops at the hull and never reaches the plane, so it proves that collision
+   works and not that check 5 refuses. Its browser half becomes `collision.md`
+   §9.2.1, under a collision name. Check 5 stays as defence in depth, and the
+   0.42 km lateral-offset row of §9.1.1 is the check that still reads it.
+   Renaming and rewriting the probe is
+   [#303](https://github.com/jcfischer/seelite/issues/303)'s. Until #303 lands
+   this row runs as written above, and is green for the reason §3 says has
+   moved (§12.7, joint 3).
 5. **A scripted mis-rolled approach fails and survives** — the same profile with
    the roll deliberately 90° out asserts a failed entry, non-zero damage, and a
    living ship. D1 is a rendered, spatial claim and gets a probe, not a unit
@@ -1167,9 +1181,14 @@ exactly how the market screen ended up owned by nobody.
 ### 12.3 Collision: a second system, and the boundary between them
 
 **Decision E6: collision is real, it is a separate system, and it is not this
-spec's.** Flying into a station is a collision. Today nothing collides with
-anything — `SURFACE_MARGIN` is cruise-only (#10's) and normal flight passes
-through every body in the game.
+spec's.** Flying into a station is a collision. That system's spec is
+`collision.md`, written by #302 from #75's decisions, and
+[#303](https://github.com/jcfischer/seelite/issues/303) builds it. Until #303
+lands nothing collides with anything — `SURFACE_MARGIN` is cruise-only (#10's)
+and normal flight passes through every body in the game.
+
+**This table stays the authority on the boundary.** `collision.md` §5 reads it
+and does not copy it.
 
 The boundary, stated so neither system has to guess:
 
@@ -1221,8 +1240,8 @@ floor, **keeps its clearance grant**, and is guaranteed never to leave the ship
 inside the station. A generic collision reproduces none of that, and all of it was
 decided in #9's grilling.
 
-§3 records what collision does to check 5's *justification*, and §9.2.4 is the
-probe that has to be re-pointed when it lands.
+§3 records what collision does to check 5's *justification*, and §9.2.4
+records where its probe is re-pointed (`collision.md` §9.2.1).
 
 ### 12.4 What the arrival is made of
 
@@ -1333,9 +1352,11 @@ Two tiers, as everywhere else in this spec.
    can see.** The tempting form — "assert the ship is not collidable" — is
    **vacuous**, because §12.3 records that nothing collides with anything today,
    so it passes for the same reason everything else does. What is checkable now
-   is the thing #75 will actually read: that the three exempt states are
-   *distinguishable* from ordinary flight and are exposed as such. #75 inherits
-   the other half — that its system honours them — and until it lands, the
+   is the thing collision will actually read: that the three exempt states are
+   *distinguishable* from ordinary flight and are exposed as such
+   (`collisionExempt`, `src/dock-session.ts`). The other half — that collision
+   honours them — is `collision.md` §9.1.8, which flies all three with the
+   exemption removed as its red build. #303 builds it, and until then the
    physical claim in §12.3's third row has no check. §12.7 records that.
 9. **A parked ship holds station over a long interval.** Obligation 4 has the
    world running while docked, so the station translates at orbital speed and
@@ -1363,14 +1384,13 @@ Two tiers, as everywhere else in this spec.
    **no starfield pixels**. The approach and traversal remain open; the seal is
    a docked-state payoff, not a second entry gate.
 
-**Inherited by [#75](https://github.com/jcfischer/seelite/issues/75), not by this
-node.** When collision lands, §9.2.4's hull-face probe is measuring a collision
-rather than a failed entry (§3), and #75 owes a re-pointing of it — it is written
-into that node's body as an inherited obligation, so it has a holder rather than
-being an obligation addressed to nobody. It is recorded here as well because a
-probe that stays green for a reason its own spec has declared dead is the shape
-of check that stops being evidence, and §12.7 records that it fails open until
-#75 is taken.
+**Inherited by collision, not by this node.** When collision is built,
+§9.2.4's hull-face probe measures a collision rather than a failed entry (§3).
+#75 inherited the re-pointing, and `collision.md` (#302) now specifies it:
+§9.2.4 records where it goes, and #303 builds it. It is recorded here as well
+because a probe that stays green for a reason its own spec has declared dead is
+the shape of check that stops being evidence, and §12.7 records that it fails
+open until #303 lands.
 
 ### 12.7 Weak joints in this section
 
@@ -1381,16 +1401,18 @@ of check that stops being evidence, and §12.7 records that it fails open until
    first-times against one shared interior is a compromise, not a resolution: the
    honest alternatives were distinct interiors per form, or no gate at all. E9's
    shield is what carries per-station identity instead.
-3. **Collision is decided and unbuilt** (E6). This section states that it exists
-   and where its boundary is, and nothing here builds it;
-   [#75](https://github.com/jcfischer/seelite/issues/75) owns it. Until that node
-   lands, flying at a station's hull still passes through it — **and §9.2.4 stays
-   green for a justification §3 has already declared dead.** That probe currently
-   proves a hull-face approach is refused by check 5; once the hull is solid it
-   will be proving that collision works, under a name that says otherwise. The
-   obligation to re-point it is #75's and is written into that node — so it has
-   an addressee — but **an obligation on an open node is not a check**, and this
-   one stays green until #75 is taken.
+3. **Collision is specified and unbuilt** (E6). This section states that it
+   exists and where its boundary is, and nothing here builds it.
+   [#75](https://github.com/jcfischer/seelite/issues/75) decided it,
+   `collision.md` (#302) specifies it, and
+   [#303](https://github.com/jcfischer/seelite/issues/303) builds it. Until #303
+   lands, flying at a station's hull still passes through it — **and §9.2.4
+   stays green for a justification §3 has already declared dead.** That probe
+   currently proves a hull-face approach is refused by check 5; once the hull is
+   solid it will be proving that collision works, under a name that says
+   otherwise. Its re-pointing is now written down (§9.2.4, `collision.md`
+   §9.2.1), but **a written obligation on an open node is not a check**, and
+   this one stays green until #303 lands.
 4. **Resolved by work-graph #109/#110:** generated names now ride every body
    record, Navigation, target HUD, docking director, and station shield; ids
    remain selection and persistence handles and are display-invisible.
@@ -1400,7 +1422,8 @@ of check that stops being evidence, and §12.7 records that it fails open until
    outpost as a form and a geometry and #13 has not decided what one *is* — so
    the fourth skip flag is dead until something places one, and E4 is in practice
    three first-times. And obligation 8's physical claim cannot fail while nothing
-   collides; only its state-visibility half is live until #75 lands.
+   collides; only its state-visibility half is live until #303 builds
+   `collision.md` §9.1.8.
 6. **E4's flag is an unmet precondition on #46.** §12.1 says the skip gate is a
    typed domain that node "must approve and bound", and then this section is
    where a reader would look for the dependency and would not have found it. So:
