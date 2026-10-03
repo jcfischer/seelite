@@ -121,6 +121,8 @@ describe("the settings key is driven only after the screen exists", () => {
 			// reason.
 			"scripts/probe-capture.mjs",
 			"scripts/probe-commander.mjs",
+			// #639 selects the mouse-flight layout on the screen, as a player does.
+			"scripts/probe-mouse-flight-layout.mjs",
 			"scripts/probe-pad-panels.mjs",
 			"scripts/probe-pointer-lock.mjs",
 		]);
