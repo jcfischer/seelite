@@ -24,7 +24,7 @@ model lived in `src/sim.ts`'s comments and in #5, which closed with no receipt.
 | --- | --- |
 | The three regimes (assist on, assist off, cruise) and that each is permanent | Map #1 Constraints |
 | Cruise itself: spool, nose-lock, exit conditions | `in-system-travel.md` |
-| Swept collision at `MAX_DT` | #75, and the collision spec owed by #302 |
+| Swept collision at `MAX_DT` | `collision.md` (#75's decisions, written by #302) |
 | HUD tones, the velocity-vector marker, the attitude reference | `hud-and-scanner.md` |
 | The key-dispatch law: Shift/Ctrl are the throttle, Alt is the only chord prefix | #369, #377, `src/key-dispatch.ts` |
 | What damages a vent, and what a damaged vent costs a pilot | Map #460 (§7) |
@@ -362,8 +362,9 @@ in force inside it. No vent is drawn for it, and no momentum accounting applies.
   reads the same tightest margin, 6.6 m on the miner rolled 50° through a slot,
   as `docking.md` states. It reads envelopes, which the vents do not move.
 - **Rotation can tunnel.** Uncapped rotation at `MAX_DT` means an attitude, not
-  only a position, can cross a thin structure in one step. The collision spec
-  owed by #302 must cover the angular case.
+  only a position, can cross a thin structure in one step. `collision.md` §4.1
+  covers the angular case: a ship meets bodies on its hull box, and a sub-step
+  bounds how far any point of that box moves.
 - The frame law (#529) holds: every vent force acts on the velocity relative to
   the frame, and the ship shares the frame's acceleration in both regimes.
 
