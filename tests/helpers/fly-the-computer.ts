@@ -30,7 +30,6 @@ import {
 	attemptEntry,
 	GRANT_WINDOW_S,
 	corridorHalfWidthKm,
-	dockingComputerStep,
 	newDockingState,
 	offAxisKm,
 	planeCrossing,
@@ -39,8 +38,8 @@ import {
 } from "../../src/docking";
 import { HULL_SPECS, type HullId } from "../../src/hull";
 import { AttitudeFollower } from "../../src/attitude-hold";
+import { flyComputer } from "../../src/docking-computer";
 import {
-	ASSIST_CAP_KMS,
 	type Angular,
 	flightPerformance,
 	speedDemand,
@@ -100,6 +99,12 @@ export interface FlightOptions {
 	type?: StationType;
 	hostile?: boolean;
 	granted?: boolean;
+	/**
+	 * Fly under a queued clearance (`docking.md` §13.2): the computer lines up
+	 * as if granted and holds the run-in at zero, because a queued request is
+	 * permission to wait and not to enter (#648).
+	 */
+	queued?: boolean;
 	/** Whose handling and whose envelope. Required: a default here would let a
 	 *  sweep over the roster quietly fly one hull eleven times. */
 	hull: HullId;
@@ -163,16 +168,21 @@ export function flyTheComputer(opts: FlightOptions): FlightRun {
 	const state =
 		opts.granted === false
 			? newDockingState()
-			: {
-					...requestClearance(newDockingState(), {
-						gameTime: 0,
-						rangeKm: 500,
-						interior,
-						hull: envelope,
-						occupied: new Set<string>(),
-					}),
-					hostile: opts.hostile ?? false,
-				};
+			: opts.queued
+				? {
+						...newDockingState(),
+						clearance: { kind: "queued" as const, position: 0 },
+					}
+				: {
+						...requestClearance(newDockingState(), {
+							gameTime: 0,
+							rangeKm: 500,
+							interior,
+							hull: envelope,
+							occupied: new Set<string>(),
+						}),
+						hostile: opts.hostile ?? false,
+					};
 
 	// Start well off the axis, so the line-up phase is genuinely exercised: a
 	// start already on the corridor would never test the half of §7 that keeps
@@ -205,40 +215,39 @@ export function flyTheComputer(opts: FlightOptions): FlightRun {
 	while (gameTime < limitS && !docked) {
 		const frame = frameAt(gameTime);
 		const pose: EntryPose = { rel: ship.pos, vRel: ship.vel, nose, up };
-		const cmd = dockingComputerStep({
+		// The game's own computer step (#648): the controller, the follower and
+		// the throttle, the queued-clearance rule among them. `holdRunIn` stands
+		// in for the lane, which is `Game`'s and Traffic's.
+		const flight = flyComputer({
 			frame,
 			pose,
 			state,
 			gameTime,
-			maxSpeedKms: ASSIST_CAP_KMS,
 			previousPhase,
+			follower,
+			perf,
+			dt,
+			runInHeld: () => opts.holdRunIn === true,
 		});
-		previousPhase = cmd.phase;
-		if (!cmd.engaged) {
-			refused = cmd.refused;
+		previousPhase = flight.phase;
+		if (!flight.engaged) {
+			refused = flight.refused;
 			break;
 		}
-		const speedKms =
-			opts.holdRunIn && cmd.phase === "run-in" ? 0 : cmd.speedKms;
-		const throttle = speedKms / ASSIST_CAP_KMS;
+		const { throttle } = flight;
 
 		// **Through the hull's own vents** (#619), by the game's Hull step (#646):
-		// the computer asks for a stick, the attitude couples turn the hull at
-		// what they deliver, and the drive moves it along the nose it has just
-		// turned to. A freighter turns at about half the courier's authority and
-		// a miner at about a third, so the line-up turn and the roll tracking are
-		// genuinely harder for them.
+		// the computer's stick turns the hull at what the attitude couples
+		// deliver, and the drive moves it along the nose it has just turned to. A
+		// freighter turns at about half the courier's authority and a miner at
+		// about a third, so the line-up turn and the roll tracking are genuinely
+		// harder for them.
 		const start = { rel: { ...ship.pos }, vRel: { ...ship.vel } };
 		({ nose, up, rates } = stepHull(
 			ship,
 			{ nose, up, rates },
 			{
-				stick: follower.stick(
-					{ nose, up },
-					{ nose: cmd.nose, up: cmd.up },
-					perf,
-					dt,
-				),
+				stick: flight.stick,
 				turnAssist: true,
 				translation: { demand: speedDemand(throttle), assist: true },
 			},
@@ -252,7 +261,7 @@ export function flyTheComputer(opts: FlightOptions): FlightRun {
 			// Where the step started, and the attitude it turned to.
 			const axialKm = dot(before.rel, frame.axis);
 			opts.trace.push({
-				phase: cmd.phase,
+				phase: flight.phase,
 				nose,
 				throttle,
 				rel: before.rel,

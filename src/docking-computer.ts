@@ -14,8 +14,22 @@
  * lane state, and two disengages do not clear them: the dock or bounce that
  * ends a flight, and the flight-session teardown. `Game.cancelComputerApproach`
  * pairs the two for every other site.
+ *
+ * `flyComputer` is the computer flown one step (#648): the controller, the
+ * attitude follower and the throttle, for `Game` and the docking harness
+ * alike, so the figures `docking.md` quotes come from the computer the game
+ * runs.
  */
-import type { ComputerCommand, ComputerPhase } from "./docking";
+import type { AttitudeFollower } from "./attitude-hold";
+import {
+	type ApertureFrame,
+	type ComputerCommand,
+	type ComputerPhase,
+	type DockingState,
+	type EntryPose,
+	dockingComputerStep,
+} from "./docking";
+import { ASSIST_CAP_KMS, type Angular, type FlightPerformance } from "./sim";
 
 export type ComputerRefusal = ComputerCommand["refused"];
 
@@ -104,4 +118,88 @@ export class DockingComputer {
 	recordPhase(phase: ComputerPhase): void {
 		this.#phase = phase;
 	}
+}
+
+/** What `flyComputer` is handed: one station's approach, and the pilot's
+ *  follower and hull. */
+export interface ComputerFlightInput {
+	frame: ApertureFrame;
+	/** The ship against the station, and its attitude: what the follower turns
+	 *  from. */
+	pose: EntryPose;
+	state: DockingState;
+	gameTime: number;
+	/** `DockingComputer.phaseAt`'s, or `"idle"` on the first step (#315). */
+	previousPhase: ComputerPhase;
+	/** The follower's memory is the caller's: `Game` resets it on every frame
+	 *  the computer does not fly. */
+	follower: AttitudeFollower;
+	perf: FlightPerformance;
+	dt: number;
+	/**
+	 * Whether the caller's lane holds this run-in at the corridor entrance.
+	 * Asked once, and only on a run-in under a live grant: `Game` registers
+	 * its arrival request with Traffic then, and the route spec gives the lane
+	 * to Traffic alone, so this step owns no queue and no allocator.
+	 */
+	runInHeld: () => boolean;
+}
+
+/** One step of the computer, flown: refused with its reason, or a stick for
+ *  the Hull step and a throttle for the assist. */
+export type ComputerFlight =
+	| { engaged: false; refused: ComputerRefusal; phase: ComputerPhase }
+	| {
+			engaged: true;
+			phase: ComputerPhase;
+			stick: Angular;
+			throttle: number;
+			command: ComputerCommand;
+	  };
+
+/**
+ * The docking computer flown one step (#648, `docking.md` §7, §13.2).
+ *
+ * - **A queued clearance lines up and waits.** It is permission to line up,
+ *   not to enter, so the controller is fed a live grant to track the rotating
+ *   corridor and the run-in speed is held at zero until a berth is named.
+ * - **The run-in otherwise asks the caller's lane** (`runInHeld`).
+ * - **Through the hull's vents** (#619, `flight-model.md` §3.6): the follower
+ *   asks for a stick toward the commanded attitude, on the assist's rate law
+ *   whatever the pilot's toggle says, and the Hull step turns the hull by it.
+ * - The throttle is the commanded speed over the assist's cap.
+ */
+export function flyComputer(input: ComputerFlightInput): ComputerFlight {
+	const awaitingBerth = input.state.clearance.kind === "queued";
+	const command = dockingComputerStep({
+		frame: input.frame,
+		pose: input.pose,
+		state: awaitingBerth
+			? {
+					...input.state,
+					clearance: { kind: "granted", expiresAtS: Number.POSITIVE_INFINITY },
+				}
+			: input.state,
+		gameTime: input.gameTime,
+		maxSpeedKms: ASSIST_CAP_KMS,
+		previousPhase: input.previousPhase,
+	});
+	if (!command.engaged)
+		return { engaged: false, refused: command.refused, phase: command.phase };
+	const stick = input.follower.stick(
+		{ nose: input.pose.nose, up: input.pose.up },
+		{ nose: command.nose, up: command.up },
+		input.perf,
+		input.dt,
+	);
+	const held =
+		command.phase === "run-in" && (awaitingBerth || input.runInHeld());
+	const speedKms = held ? 0 : command.speedKms;
+	return {
+		engaged: true,
+		phase: command.phase,
+		stick,
+		throttle: Math.min(1, speedKms / ASSIST_CAP_KMS),
+		command,
+	};
 }
