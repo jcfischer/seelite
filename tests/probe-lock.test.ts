@@ -312,3 +312,17 @@ describe("a holder stopped by a signal stops its children first", () => {
 		expect(existsSync(path)).toBe(false);
 	});
 });
+
+describe("a lock that cannot be written", () => {
+	test("exits 75 with one NOT RUN line naming the path, not a stack", async () => {
+		const bad = join(dir, "no-such-dir", "probe.lock");
+		const h = holder(0, { PROBE_LOCK_PATH: bad });
+		const { code } = await h.exited;
+		expect(code).toBe(75);
+		expect(h.out()).toMatch(
+			/^NOT RUN: cannot write the probe lock at .*ENOENT/m,
+		);
+		expect(h.out()).toContain(bad);
+		expect(h.out()).not.toContain("    at ");
+	});
+});

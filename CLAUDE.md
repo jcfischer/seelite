@@ -150,7 +150,7 @@ no load threshold has been measured, and a regression that throws reads
 `crash` as readily as a starved navigation does — so a `crash` or `killed` red
 is unattributed until it is rerun alone: green alone points at the machine,
 red alone at the code. Load from outside a suite (a `sage review`, `npm test`)
-is reported, not locked out, so run sage after the suite and not beside it.
+is reported, not locked out; when sage runs is the delivery SOP's to say.
 
 ### Visual work has a third tier, and it is a person
 

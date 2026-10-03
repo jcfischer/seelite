@@ -329,7 +329,18 @@ export function lockWaitMs(env, log = console.log) {
 export async function holdProbeLockOrExit(label, { stopFirst } = {}) {
 	const path = defaultLockPath();
 	const waitMs = lockWaitMs(process.env);
-	const r = await acquireProbeLock({ path, label, waitMs });
+	let r;
+	try {
+		r = await acquireProbeLock({ path, label, waitMs });
+	} catch (e) {
+		// a session whose sandbox cannot write /tmp would otherwise end in a
+		// stack trace and exit 1, which is a red that says nothing about code
+		console.log(
+			`NOT RUN: cannot write the probe lock at ${path} (${errCode(e) ?? e}). ` +
+				"Set PROBE_LOCK_PATH to a writable path every run on this machine shares.",
+		);
+		process.exit(LOCK_EXIT_CODE);
+	}
 	if (!r.ok) {
 		console.log(notRunMessage(r.holder, r.waitedMs, path));
 		process.exit(LOCK_EXIT_CODE);
