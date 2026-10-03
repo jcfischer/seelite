@@ -23,7 +23,14 @@ import {
 	settleIncident,
 	stationHostile,
 	withOffence,
+	chargeOffence,
+	type Offence,
+	type OffenceFacts,
+	type Standing,
 } from "../src/legal";
+import { STANDING_ROTATION_S, carrierStanding } from "../src/carrier-standing";
+import { DISTRESS_RANGE_KM, type EarshotStation } from "../src/distress";
+import { v3 } from "../src/vec3";
 import { newWorld } from "../src/world-state";
 import { type LegalStatus } from "../src/world-state";
 import { type StationType } from "../src/station";
@@ -599,5 +606,201 @@ describe("the hearer list is computed, never assumed", () => {
 		// the first optional one, so this row goes red the moment the list
 		// becomes optional, which is the only way the distinction can be lost.
 		expect(withOffence.length).toBe(5);
+	});
+});
+
+/**
+ * #633: an offence is one event. `chargeOffence` takes the raw facts — the act,
+ * the clock, the carrier with the clock of the strike it stands for, where the
+ * victim was and where every station is — and hands back the next world and
+ * what the act cost. Each row below is one rule the event owns, written at its
+ * interface, and every figure is a literal for the reason the H9 rows above
+ * give: an expectation derived through the module passes on its own mistake.
+ */
+describe("chargeOffence: one offence, priced and filed in one event", () => {
+	/** The system the carriers below fly in. Standing is derived from it, so a
+	 *  row picks its carrier by what that derivation answers rather than by a
+	 *  standing written into the fixture. */
+	const SEED = 0x5ee11e;
+
+	/** An instance of `MINER` whose true standing reads `standing` at each of
+	 *  the clocks given — the search is the fixture, so no row restates a draw. */
+	const instanceWith = (...wanted: [Standing, number][]): number => {
+		for (let ordinal = 0; ordinal < 5000; ordinal++)
+			if (
+				wanted.every(
+					([standing, at]) =>
+						carrierStanding(SEED, MINER, ordinal, at) === standing,
+				)
+			)
+				return ordinal;
+		throw new Error(`no instance reads ${JSON.stringify(wanted)}`);
+	};
+
+	/** A station inside the victim's earshot, and one outside it. */
+	const near = (key: CarrierKey): EarshotStation => ({
+		key,
+		pos: v3(DISTRESS_RANGE_KM / 2, 0, 0),
+	});
+	const far = (key: CarrierKey): EarshotStation => ({
+		key,
+		pos: v3(DISTRESS_RANGE_KM * 2, 0, 0),
+	});
+
+	const facts = (
+		offence: Offence,
+		{
+			now = 0,
+			galaxy = 0,
+			instanceOrdinal = 0,
+			struckAt = null,
+			stations = [],
+		}: {
+			now?: number;
+			galaxy?: number;
+			instanceOrdinal?: number;
+			struckAt?: number | null;
+			stations?: EarshotStation[];
+		} = {},
+	): OffenceFacts => ({
+		offence,
+		galaxy,
+		now,
+		systemSeed: SEED,
+		carrier: { key: MINER, instanceOrdinal, struckAt },
+		victim: v3(),
+		stations,
+	});
+
+	test("15 then 25 is 40, never 55", () => {
+		const clean = instanceWith(["clean", 0]);
+		const strike = chargeOffence(
+			newWorld(7),
+			facts("struck", { instanceOrdinal: clean }),
+		);
+		expect(strike.heat).toBe(15);
+		// The divert booked the repair in the strike's tick, so the kill is
+		// judged against a carrier standing at home under a strike at 0.
+		const kill = chargeOffence(
+			strike.world,
+			facts("destroyed", { instanceOrdinal: clean, struckAt: 0 }),
+		);
+		expect(kill.heat).toBe(25);
+		expect(kill.world.galaxies[0].legalStatus.heat).toBe(40);
+	});
+
+	test("an assault is charged once", () => {
+		const clean = instanceWith(["clean", 0], ["clean", 60]);
+		const first = chargeOffence(
+			newWorld(7),
+			facts("assault", { instanceOrdinal: clean }),
+		);
+		expect(first.heat).toBe(13);
+		expect(assaultCharged(first.world.galaxies[0].legalStatus, MINER)).toBe(
+			true,
+		);
+		// A reload into the same fight, the double #396 refuses by name: nothing
+		// is owed, and with nobody in earshot nothing is written — the same world
+		// back, which is what keeps the save clean.
+		const again = chargeOffence(
+			first.world,
+			facts("assault", { instanceOrdinal: clean, now: 60 }),
+		);
+		expect(again.heat).toBe(0);
+		expect(again.world).toBe(first.world);
+	});
+
+	test("a lawful kill files a hearer at heat 0 and does not restamp", () => {
+		const clean = instanceWith(["clean", 0]);
+		const charged = chargeOffence(
+			newWorld(7),
+			facts("struck", { instanceOrdinal: clean }),
+		).world;
+		const wanted = instanceWith(["wanted", 600]);
+		const kill = chargeOffence(
+			charged,
+			facts("destroyed", {
+				instanceOrdinal: wanted,
+				now: 600,
+				stations: [near(TRADE)],
+			}),
+		);
+		expect(kill.heat).toBe(0);
+		expect(kill.world.galaxies[0].legalStatus).toMatchObject({
+			heat: 15,
+			updatedAt: 0,
+			witnesses: [TRADE],
+		});
+	});
+
+	test("a mark is written only when the charge cost heat", () => {
+		// A five seconds judged lawful (F7) is not a charge, and a mark left for
+		// it would discount the next strike on the same carrier by 13 the pilot
+		// was never billed.
+		const wanted = instanceWith(["wanted", 0]);
+		const world = newWorld(7);
+		const lawful = chargeOffence(
+			world,
+			facts("assault", { instanceOrdinal: wanted }),
+		);
+		expect(lawful.heat).toBe(0);
+		expect(lawful.world).toBe(world);
+		expect(assaultCharged(lawful.world.galaxies[0].legalStatus, MINER)).toBe(
+			false,
+		);
+		const clean = instanceWith(["clean", 0]);
+		const charged = chargeOffence(
+			world,
+			facts("assault", { instanceOrdinal: clean }),
+		);
+		expect(charged.heat).toBe(13);
+		expect(charged.world.galaxies[0].legalStatus.assaulted).toEqual([MINER]);
+	});
+
+	test("a repeated hearer is written once", () => {
+		const clean = instanceWith(["clean", 0], ["clean", 60]);
+		// Twice in one list — two bodies answering to one key — and again on a
+		// second offence: one station heard, so one row says so.
+		const first = chargeOffence(
+			newWorld(7),
+			facts("assault", {
+				instanceOrdinal: clean,
+				stations: [near(TRADE), { key: TRADE, pos: v3(0, 1, 0) }],
+			}),
+		).world;
+		expect(first.galaxies[0].legalStatus.witnesses).toEqual([TRADE]);
+		const second = chargeOffence(
+			first,
+			facts("struck", {
+				instanceOrdinal: clean,
+				now: 60,
+				stations: [near(TRADE), far(YARD)],
+			}),
+		).world;
+		expect(second.galaxies[0].legalStatus.witnesses).toEqual([TRADE]);
+	});
+
+	test("the standing at the strike is read on the strike's clock", () => {
+		// The rotation turns between the strike and the kill. A strike on a
+		// carrier that was Wanted then cost nothing, so the kill owes its whole
+		// 40 — reading the strike's standing at the kill's clock would discount
+		// it to 25 for a hit the pilot was never charged for.
+		const later = STANDING_ROTATION_S;
+		const turned = instanceWith(["wanted", 0], ["clean", later]);
+		const kill = chargeOffence(
+			newWorld(7),
+			facts("destroyed", { instanceOrdinal: turned, now: later, struckAt: 0 }),
+		);
+		expect(kill.heat).toBe(40);
+		// The control: Clean at both clocks, the same facts otherwise, is the
+		// 25 top-up — so the 40 above is the strike's clock and not a kill that
+		// ignored the strike.
+		const steady = instanceWith(["clean", 0], ["clean", later]);
+		expect(
+			chargeOffence(
+				newWorld(7),
+				facts("destroyed", { instanceOrdinal: steady, now: later, struckAt: 0 }),
+			).heat,
+		).toBe(25);
 	});
 });
