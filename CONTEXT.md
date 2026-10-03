@@ -312,7 +312,7 @@ for a local; a **Hauler**'s away interval is spent in another system.
 _Avoid_: Spawn path, roster transfer, timetable
 
 **Hauler**:
-A **Traffic actor** whose roster slot's vocation sends every away interval to a
+A **Traffic actor** whose **Carrier slot**'s vocation sends every away interval to a
 station in another system, one jump within its hull's `tankLy`, and home again
 (`inter-system-traffic.md`, #262). Its slot, **CarrierKey** and saved row stay
 at home; its destinations are fixed when the roster is built. The other
@@ -321,21 +321,22 @@ signature slot is always local.
 _Avoid_: Roster transfer, inter-system spawn
 
 **Lane point**:
-Where a **Hauler** leaves or enters a system: the **Jump** arrival point for the
-system at the other end — 1 AU out on the bearing between the two — offset by a
+Where a **Hauler** leaves or enters a system: this system's **Jump** arrival
+point for ships coming from the system at the other end — 1 AU out on the
+bearing between the two, or further where a body is in the way — offset by a
 per-voyage annulus so no hauler stands on the player's own arrival. The point a
 hauler leaves `A` for `B` from is the point ships arriving in `A` from `B`
 appear at.
-_Avoid_: Jump gate, beacon (neither exists)
+_Avoid_: Jump gate (none exists)
 
-**Jump slot**:
+**Jump instant**:
 The game-clock instant a **Hauler** jumps, fixed by its schedule rather than by
 its progress: the interval boundary plus a static bound on the uncontended
 trip to the **Lane point** plus a fixed slack. An early hauler waits for it;
-the system at the far end always sees the jump at the slot, which is what lets
+the system at the far end always sees the jump at this instant, which is what lets
 one system derive another's arrivals without replaying its queues
 (`inter-system-traffic.md` §4).
-_Avoid_: Timetable, departure time (a schedule boundary is not a jump)
+_Avoid_: Departure time (a schedule boundary is not a jump), jump slot (the **Berth** entry's scope note already gives "slot" its senses)
 
 **Traffic hold**:
 A deterministic station-relative point outside the docking cone where a

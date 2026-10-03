@@ -15,7 +15,7 @@ Its Carrier slot, `CarrierKey`, saved row and schedule stay at home the whole
 time, exactly as `in-system-route-traffic.md` §1 keeps them for an in-system
 visit. No roster ever adopts a visitor, and nothing transfers between systems.
 
-Every Traffic roster slot has a fixed **vocation**, decided when the roster is
+Every Traffic **Carrier slot** has a fixed **vocation**, decided when the roster is
 built:
 
 - a **local** keeps `in-system-route-traffic.md` unchanged: in-system visits,
@@ -79,15 +79,21 @@ destination.
 
 A hauler leaves and enters systems at the place the player does.
 
-- **Departure.** It cruises to its home system's arrival point *for the
-  destination*: `arrivalPoint(homeRecord, homeContents, destPos, t)`, 1 AU from
-  the star on the bearing toward the destination, pushed outward past any body
-  as `galaxy-generation.md` §7.4 rules. There it drops to normal flight, flies
+- **Departure.** It cruises to the arrival point, in the system it is leaving,
+  for the system it is going to: 1 AU from the star on the bearing toward that
+  system, pushed outward past any body as `galaxy-generation.md` §7.4 rules.
+  The point is evaluated once, at the jump instant the leg ends on (§4), and is
+  the leg's fixed cruise target. There the hauler drops to normal flight, flies
   the 3 s wind-up (`JUMP_CHARGE_S`), and jumps.
-- **Arrival.** It appears at rest at `arrivalPoint(destRecord, destContents,
-  homePos, tJump)`, the point the player's own jump from home would use, and
-  flies #261's route from there: cruise to the destination's Traffic hold,
-  Clearance queue, Transit lane, arrival traversal.
+- **Arrival.** It appears at rest at the arrival point, in the system it is
+  entering, for the system it came from — the point the player's own jump on
+  that pair would use — evaluated at the same instant. It then flies #261's
+  route: cruise to the Traffic hold, Clearance queue, Transit lane, arrival
+  traversal.
+
+Outward, the two ends are `arrivalPoint(homeRecord, homeContents, destPos,
+tOut)` and `arrivalPoint(destRecord, destContents, homePos, tOut)`; on the
+way home they are the same pair with the roles swapped, at `tBack`.
 
 The two points pair up. Haulers leaving `A` for `B` wait at the point where
 haulers and the player arriving in `A` from `B` appear. Lanes form at real
@@ -106,7 +112,7 @@ The lane point is a star-centric cruise target: `advanceCruise`'s `target` is a
 point with a radius, and `targetParentId: null` is its declared star-centric
 case. No second cruise law is introduced.
 
-## 4. The jump slot (D7)
+## 4. The jump instant (D7)
 
 The jump instant is anchored to the schedule, not to the hauler's physical
 progress:
@@ -120,20 +126,24 @@ tBack = parkedBoundaryS + nominalOutS(dest)  + slackS   // destination → home
 already returns. `nominalOutS(system)` is §5's static upper bound on the
 uncontended time from that system's Berth to its lane point, wind-up included.
 
-- A hauler that reaches its lane point before its slot holds there and times its
-  wind-up so the jump fires at the slot. Ships idling at lane points are
+- A hauler that reaches its lane point before its jump instant holds there and
+  times its wind-up so the jump fires at that instant. Ships idling at lane points are
   therefore normal, and visible.
-- The far side always sees the jump at the slot. `B` derives an inbound hauler
+- The far side always sees the jump at the jump instant. `B` derives an inbound hauler
   from `A`'s *schedule* alone, never from `A`'s queues, lane or player history.
   That is what removes the recursion: `A`'s queues hold visitors from `C`, whose
   departures would depend on `C`'s queues, and so on across the galaxy. With
-  slots, every inbound time is a pure function of seed, schedule and overlay,
+  anchored instants, every inbound time is a pure function of seed, schedule and overlay,
   and each system's laws govern only its own side.
 - **The accepted inconsistency.** Contention in the *observed* system can make a
-  hauler late there, and it then jumps late. The unobserved side keeps the slot.
+  hauler late there, and it then jumps late. The unobserved side keeps the jump instant.
   A player who watches a late jump and follows at once can find the hauler
   already in `B`, earlier by up to its lateness. Nothing reconciles the two. The
   ruling accepts it because only a pilot chasing that one ship can see it.
+- **The inherited inconsistency.** A hauler struck away is projected parked at
+  its home Berth as soon as it leaves the band (§8, H3c), sooner than it could
+  fly home. This spec adds nothing to that: it is H3c's rule for every struck
+  carrier, and an in-system divert shows the same jump today.
 
 The world-state overlay is the one input from `A` that `B` reads: a hauler
 whose row is `destroyed`, or `repairing`, is absent from `B` (§8). Rows are
@@ -188,9 +198,12 @@ interval covers the outbound voyage and the stay. The return leg starts at the
 keeps its station's `departureAtS` and `parkedDuty`. Its cycle is
 `m × cycleS`, the smallest integer multiple of its station's cycle for which
 `m·cycleS·(1 − parkedDuty) ≥ awayNeedS` and `m·cycleS·parkedDuty ≥ parkedNeedS`.
-The hauler stays on its ordinal's slot in the station's departure grid and flies
+The hauler keeps its ordinal's place in the station's departure grid and flies
 on every m-th pass. `trafficScheduleAt` and `nextTrafficDepartureAtS` apply
-unchanged.
+unchanged, because both read only the actor's own `cycleS`, `departureAtS`
+and `awayS`: a hauler's schedule is the same shape with `cycleS` set to `m`
+station cycles, and its departures `departureAtS + k·m·cycleS` are a subset of
+the station grid's `departureAtS + j·cycleS`.
 
 A hauler parks less often per hour than a local. That is intended: it reads as
 long-haul.
@@ -222,13 +235,14 @@ hauler share (§10) goes down. Neither figure is predicted here.
 
 Every draw that makes a carrier *that* carrier uses its **home** system's seed:
 `systemSeedFor` of the galaxy and the `systemIndex` its `CarrierKey` names. This
-covers the name, callsign, hull variant, manifest and standing. The manifest's
-`government` input is the home system's too. A hauler scanned in `A` and in `B`
+covers the name, manifest and standing; the manifest's `government` input is
+the home system's too. The callsign and hull variant need no rule: they come
+from the home station's roster build (`stationTrafficRoster`), which only ever
+runs for the home station. A hauler scanned in `A` and in `B`
 on one voyage shows one name and one manifest. `carrier-identity.md` §2 states
 the seed rule.
 
-How a destination's law treats a foreign carrier — its legal status, its
-standing there, whether a patrol may cross borders — is fiction, and belongs
+How a destination's law treats a foreign carrier — its standing there, whether a patrol may cross borders — is fiction, and belongs
 to #460.
 
 ## 8. Strikes and losses away from home (D11)
@@ -252,7 +266,7 @@ A jump is drawn at both ends with `arrival-rift.ts`'s ring, sized from the
 hauler's hull reach as for the player. NPC rifts have no lens
 (`arrival-rift.ts`: the witchspace pass carries one lens, the player's).
 
-- **Arrival:** at `tJump` the ring opens one reach behind the ship's nose, the
+- **Arrival:** at the jump instant the ring opens one reach behind the ship's nose, the
   ship is there at rest, and the ring closes on `WITCHSPACE`'s exit timeline.
   This is `arriveWitchspace()`'s exit with no entry.
 - **Departure:** after the wind-up the ring opens one reach ahead of the nose.
@@ -270,7 +284,7 @@ the annulus radii (§10) are judged on them.
 
 | Dial | Start | Tuned by |
 | --- | --- | --- |
-| Hauler share of non-signature slots | 1/3 | §6's instrument |
+| Hauler share of non-signature Carrier slots | 1/3 | §6's instrument |
 | `slackS` | 60 s | lateness against idle time at lane points |
 | Lane annulus | 2–20 km | the view rows of §9 |
 
@@ -279,7 +293,7 @@ One share for every station role. A per-role share would say what each role is
 
 ## 11. Persistence
 
-Nothing routine is saved. A hauler's vocation, eligible set, destination, slot,
+Nothing routine is saved. A hauler's vocation, eligible set, destination, jump instants,
 phase, charge and fuel are all derived from seed, schedule and `gameTime`.
 
 The generator version does not move. `persistent-world-state.md` §2 ties it to
@@ -290,7 +304,7 @@ instant and rejoins at its next hauler departure.
 
 ## 12. Ownership and seam
 
-- This spec owns vocation, static eligibility, lane points, jump slots, the
+- This spec owns vocation, static eligibility, lane points, jump instants, the
   hauler cycle and the inbound query.
 - `in-system-route-traffic.md` keeps every in-system leg a hauler flies; a
   hauler's in-system legs are #261 routes with a lane point at one end.
@@ -298,9 +312,13 @@ instant and rejoins at its next hauler departure.
 - `hyperspace.ts`, `system.ts`'s `arrivalPoint` and `arrival-rift.ts` are
   consumed, not changed in law.
 
-The implementation is pure and imports no Three.js. It extends
-`src/station-traffic.ts` (vocation, cycle) and `src/station-route.ts` (the
-lane-point legs and slots) and adds an inbound query. That query, given a
+The implementation is pure and imports no Three.js. Vocation, static
+eligibility and the cycle multiple need other systems' stations, so they live
+in a new inter-system module that takes the galaxy and the contents it needs as
+input. `src/station-traffic.ts` stays system-local: it receives each slot's
+vocation and cycle multiple and builds the schedule from them.
+`src/station-route.ts` gains the lane-point legs and jump instants, and the new
+module adds an inbound query. That query, given a
 system and `gameTime`, enumerates the haulers of every same-galaxy system
 within the largest Traffic `tankLy` (derived from `TRAFFIC_HULL_POOLS` and
 `HULL_SPECS`, never restated) whose current voyage names one of its stations.
@@ -319,9 +337,9 @@ within the largest Traffic `tankLy` (derived from `TRAFFIC_HULL_POOLS` and
    across a jump in both directions.
 4. `B`'s inbound set at `t` is identical whether `A` was visited, unvisited, or
    visited with injected player contention.
-5. A hauler early at its lane point jumps exactly at its slot. A hauler made
+5. A hauler early at its lane point jumps exactly at its jump instant. A hauler made
    late by injected contention on the observed side jumps late there, and the
-   far side still sees the slot.
+   far side still sees the anchored instant.
 6. The cycle is an integer multiple of the station cycle with `departureAtS`
    unchanged, and an uncontended voyage to the worst destination fits both
    intervals.
@@ -335,8 +353,8 @@ within the largest Traffic `tankLy` (derived from `TRAFFIC_HULL_POOLS` and
     and the carrier fingerprints are unchanged. An old-save fixture holding a
     repairing slot that becomes a hauler loads and rejoins at its next hauler
     departure.
-11. A measured cold-cost row for the inbound query at one and 365 game days,
-    independent of epoch age.
+11. A measured cold-cost row for the inbound query, two hops of generation
+    included, at one and 365 game days, independent of epoch age.
 
 ### 13.2 Instrument
 
@@ -347,7 +365,7 @@ receipt.
 
 A deterministic fixture shows one named hauler:
 
-1. leaving its home Berth and holding at its lane point until its slot;
+1. leaving its home Berth and holding at its lane point until its jump instant;
 2. jumping through the departure ring, after which its contact is gone;
 3. after the player follows, arriving at the destination lane point through
    the arrival ring with the same name and hull;
@@ -361,12 +379,13 @@ principal's yes on the sheet.
 
 ## 14. Known risks
 
-- The inbound query generates every neighbour system's stations to rebuild its
-  rosters. §13.1 row 11 measures that cost. A current-galaxy cache is
+- The inbound query is **two hops** of generation: `B` rebuilds the rosters of
+  every system in Traffic reach, and each of those rosters' vocations needs the
+  contents of *its* systems in reach. §13.1 row 11 measures that cost. A current-galaxy cache is
   acceleration only and may not make visit order observable.
 - `station-traffic.md` §2's full-station departure bound is false today and its
-  test cannot fail (F1). #677 owns it. Hauler cycles do not change that answer.
-  They only add slots that fly less often.
+  test cannot fail. #677 owns it. Hauler cycles do not change that answer.
+  They only add haulers, which fly less often.
 - `arrivalPoint` takes the galaxy-space bearing as a system-frame direction. The
   game ships that law, and both ends here use it, so they agree. #100's missing
   galactic-frame transform would move every lane point if it ever changed that
