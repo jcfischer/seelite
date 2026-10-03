@@ -68,6 +68,7 @@ import {
 	launchChromium,
 } from "./probe-guard.mjs";
 import { gameUrl, workbenchUrl } from "./lib/game-url.mjs";
+import { holdProbeLockOrExit } from "./lib/probe-lock.mjs";
 
 const ORIGIN = process.env.PROBE_ORIGIN ?? "http://localhost:5173";
 
@@ -1150,6 +1151,15 @@ async function rebuildSheet(out) {
 	await writeFile(join(out, "index.html"), contactSheet(runs));
 	return runs;
 }
+
+/**
+ * The probe suite's lock, held for the whole capture (#84). The mid-traversal
+ * views run on wall-clock time, so a capture beside a running suite puts the
+ * ship somewhere else — the same failure a starved probe has, in a frame a
+ * person then judges. Taken before the tree guard below, so the guard reads
+ * the server as it is when the capture starts and not before a wait.
+ */
+await holdProbeLockOrExit(`capture-views --label ${LABEL}`);
 
 /**
  * Which tree the server is serving — refused if it is not this one, and kept,

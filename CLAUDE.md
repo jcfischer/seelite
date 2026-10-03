@@ -137,6 +137,21 @@ identifies a non-software renderer; every child probe repeats that check.
 `npm run probe:cpu` preserves the former renderer-unasserted command for a
 displayless or portability check.
 
+**One suite per machine (#84).** `probe-all` and `npm run views` hold a lock
+at `/tmp/seelite-probe.lock`, shared by every worktree and clone that carries
+it — a checkout from before #84 runs unlocked, and only its load shows. A second run
+waits and names the holder. **Exit 75 with `NOT RUN` is a wait that ran out,
+not a red**; `scripts/lib/probe-lock.mjs` owns the limit and the rules. A probe
+run directly does not take the lock, which is how a red is re-run alone — and
+it does not check it either, so a rerun is alone only while
+`/tmp/seelite-probe.lock` is absent; look before reading it. Each
+red prints its kind and the peak load it ran under. Neither names a cause —
+no load threshold has been measured, and a regression that throws reads
+`crash` as readily as a starved navigation does — so a `crash` or `killed` red
+is unattributed until it is rerun alone: green alone points at the machine,
+red alone at the code. Load from outside a suite (a `sage review`, `npm test`)
+is reported, not locked out; when sage runs is the delivery SOP's to say.
+
 ### Visual work has a third tier, and it is a person
 
 A probe cannot fail on *this looks flat*. #35 and #36 both closed green and

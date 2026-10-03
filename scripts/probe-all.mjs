@@ -68,11 +68,15 @@
  * Like `--only`, it is a visibly partial local run and is refused in CI.
  */
 import { spawn } from "node:child_process";
+import { availableParallelism } from "node:os";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
 import { createServer } from "vite";
 import { freePort } from "./lib/free-port.mjs";
 import { parseArgs, resolveOnly } from "./lib/probe-args.mjs";
+import { failureKind, killedCode } from "./lib/probe-failure-kind.mjs";
+import { loadSampler } from "./lib/probe-load.mjs";
+import { holdProbeLockOrExit, stopChildren } from "./lib/probe-lock.mjs";
 import { discoverProbeFiles } from "./lib/probe-inventory.mjs";
 import {
 	HARDWARE_RENDERER,
@@ -171,6 +175,36 @@ if (!probes.length) {
 	process.exit(1);
 }
 
+// One suite on this machine at a time, taken before anything boots a browser:
+// two suites starve each other into reds that read like defects (#84). A
+// second run waits, and a wait that runs out exits 75 with NOT RUN, not 1.
+/** The probes running now, so a signal can stop them before the lock goes. */
+const live = new Set();
+/**
+ * Set by a signal before the running probes are stopped, so no worker starts
+ * another one in the grace period: with `PROBE_CONCURRENCY` above one, a
+ * probe that closes during it would otherwise hand its worker the next file,
+ * and that probe would outlive the lock.
+ */
+let stopping = false;
+await holdProbeLockOrExit(
+	`probe-all, ${probes.length} probe${probes.length === 1 ? "" : "s"}`,
+	{
+		stopFirst: () => {
+			stopping = true;
+			return stopChildren(live);
+		},
+	},
+);
+
+/**
+ * The machine's load through the run, reported beside every red and in the
+ * summary rather than gated on (#84): load from outside the suite — a sage
+ * review, a test run, another session's dev server — is not something the lock
+ * can see, and no threshold for refusing has been measured.
+ */
+const load = loadSampler();
+
 // Fail before starting a dev server or any probe if the opt-in local lane cannot
 // actually reach a player renderer. Each child verifies again in launchChromium.
 if (probeRendererMode() === HARDWARE_RENDERER) {
@@ -191,6 +225,7 @@ function run(file) {
 			env,
 			stdio: ["ignore", "pipe", "pipe"],
 		});
+		live.add(child);
 		let out = "";
 		child.stdout.on("data", (d) => (out += d));
 		child.stderr.on("data", (d) => (out += d));
@@ -205,12 +240,16 @@ function run(file) {
 
 		child.on("close", (code, signal) => {
 			clearTimeout(timer);
+			live.delete(child);
+			// a killed probe has a null exit code; that is a failure with a
+			// name, not an absent result
+			const exit = code ?? killedCode(signal);
 			resolve({
 				file,
-				// a killed probe has a null exit code; that is a failure with a
-				// name, not an absent result
 				ok: code === 0,
-				code: code ?? `killed:${signal}`,
+				code: exit,
+				kind: code === 0 ? null : failureKind({ code: exit, out }),
+				started,
 				ms: Date.now() - started,
 				out,
 			});
@@ -218,21 +257,30 @@ function run(file) {
 	});
 }
 
+/** A load average as printed, or `?` where none could be read. */
+const fmtLoad = (/** @type {number | null} */ l) =>
+	l === null ? "?" : l.toFixed(1);
+
 /** Run the list `CONCURRENCY` at a time, in order, reporting as each lands. */
 async function runAll(files) {
 	const queue = [...files];
 	const results = [];
 	const worker = async () => {
 		for (;;) {
+			if (stopping) return;
 			const file = queue.shift();
 			if (!file) return;
 			const r = await run(file);
 			results.push(r);
 			const gating = !REPORTERS.has(file) && !QUARANTINED.has(file);
 			const mark = r.ok ? "ok  " : gating ? "FAIL" : "warn";
-			console.log(
-				`${mark} ${file} (${(r.ms / 1000).toFixed(1)}s)${r.ok ? "" : ` exit=${r.code}`}`,
-			);
+			// a red names its kind and the load it ran under, so a navigation
+			// that timed out on a starved machine does not read like an
+			// assertion that caught a regression (#84)
+			const why = r.ok
+				? ""
+				: ` exit=${r.code} ${r.kind} peak load ${fmtLoad(load.peakBetween(r.started, r.started + r.ms))}`;
+			console.log(`${mark} ${file} (${(r.ms / 1000).toFixed(1)}s)${why}`);
 			if (!r.ok) {
 				// the failing probe's own output, indented — the whole point of a
 				// gate is that it says what broke without a second run
@@ -308,6 +356,7 @@ try {
 } finally {
 	// closed even when a probe throws, so a failed run leaves no server behind
 	await server.close();
+	load.stop();
 }
 
 const gating = results.filter(
@@ -317,8 +366,18 @@ const failed = gating.filter((r) => !r.ok);
 
 console.log(
 	`\n${gating.length - failed.length}/${gating.length} gating probes passed in ${((Date.now() - started) / 1000).toFixed(0)}s` +
+		` · peak load ${fmtLoad(load.peak())} on ${availableParallelism()} cores` +
 		partialSummary(),
 );
+if (failed.length) {
+	/** @type {Map<string, number>} */
+	const kinds = new Map();
+	for (const r of failed) kinds.set(r.kind, (kinds.get(r.kind) ?? 0) + 1);
+	console.log(
+		`     failed by kind: ${[...kinds].map(([k, n]) => `${k} ${n}`).join(" · ")}` +
+			" (scripts/lib/probe-failure-kind.mjs says what each means)",
+	);
+}
 
 // A filter selecting nothing that gates is refused up in `resolveOnly`, before
 // a browser is booted — a check that fired here instead would have printed
