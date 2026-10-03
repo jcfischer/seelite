@@ -263,3 +263,48 @@ describe("how long a run waits", () => {
 		}
 	});
 });
+
+describe("a holder stopped by a signal stops its children first", () => {
+	test("the lock is not released while a child the holder started still runs", async () => {
+		// the child ignores SIGTERM, so this also covers the escalation to SIGKILL
+		const code = `
+			import { spawn } from "node:child_process";
+			import { holdProbeLockOrExit, stopChildren } from ${JSON.stringify(LIB)};
+			const sleeper = spawn("node", ["-e", "process.on('SIGTERM', () => {}); setTimeout(() => {}, 60000)"], { stdio: "ignore" });
+			await holdProbeLockOrExit("parent", { stopFirst: () => stopChildren([sleeper], 300) });
+			console.log("sleeper " + sleeper.pid);
+			console.log("held");
+			setTimeout(() => process.exit(0), 60000);
+		`;
+		const child = spawn("node", ["--input-type=module", "-e", code], {
+			env: { ...process.env, PROBE_LOCK_PATH: path },
+			stdio: ["ignore", "pipe", "pipe"],
+		});
+		children.push(child);
+		let out = "";
+		child.stdout?.on("data", (d) => (out += d));
+		child.stderr?.on("data", (d) => (out += d));
+		await new Promise<void>((done) =>
+			child.stdout?.on("data", () => /^held$/m.test(out) && done()),
+		);
+		const sleeper = Number(/^sleeper (\d+)$/m.exec(out)?.[1]);
+		const alive = (pid: number) => {
+			try {
+				process.kill(pid, 0);
+				return true;
+			} catch {
+				return false;
+			}
+		};
+		expect(alive(sleeper)).toBe(true);
+		const exited = new Promise((done) => child.on("exit", done));
+		child.kill("SIGTERM");
+		// while the sleeper still runs, the lock must still be held
+		while (alive(sleeper)) {
+			expect(readHolder(path)?.pid).toBe(child.pid as number);
+			await new Promise((r) => setTimeout(r, 20));
+		}
+		await exited;
+		expect(existsSync(path)).toBe(false);
+	});
+});

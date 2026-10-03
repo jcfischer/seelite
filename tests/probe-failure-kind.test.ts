@@ -11,14 +11,20 @@
 import { describe, expect, test } from "bun:test";
 import { spawnSync } from "node:child_process";
 import { resolve } from "node:path";
-import { failureKind } from "../scripts/lib/probe-failure-kind.mjs";
+import {
+	failureKind,
+	isKilled,
+	killedCode,
+} from "../scripts/lib/probe-failure-kind.mjs";
 
 const TAIL = "\n21/23 checks passed\n";
 
 describe("failureKind", () => {
 	test("a probe the harness killed is `killed`, whatever it printed", () => {
 		const out = "  ok  boots\n[probe-all] killed after 600000ms\n";
-		expect(failureKind({ code: "killed:SIGKILL", out })).toBe("killed");
+		expect(failureKind({ code: killedCode("SIGKILL"), out })).toBe("killed");
+		expect(isKilled(killedCode("SIGTERM"))).toBe(true);
+		expect(isKilled(1)).toBe(false);
 	});
 
 	test("a probe that exited before its tally tail is `crash`", () => {
@@ -85,7 +91,7 @@ describe("failureKind on what tally() really prints", () => {
 		const r = spawnSync("node", ["--input-type=module", "-e", code], {
 			encoding: "utf8",
 		});
-		return { code: r.status ?? `killed:${r.signal}`, out: r.stdout + r.stderr };
+		return { code: r.status ?? killedCode(r.signal), out: r.stdout + r.stderr };
 	}
 
 	test("a failed check reads `assert`", () => {

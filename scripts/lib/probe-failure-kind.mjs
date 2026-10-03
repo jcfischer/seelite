@@ -1,4 +1,17 @@
 /**
+ * The exit code `probe-all` records for a probe ended by a signal, which has
+ * no numeric code. One definition, so the runner that writes it and the
+ * classifier that reads it cannot drift apart.
+ *
+ * @param {string | null} signal
+ */
+export const killedCode = (signal) => `killed:${signal}`;
+
+/** @param {number | string} code */
+export const isKilled = (code) =>
+	typeof code === "string" && code.startsWith("killed:");
+
+/**
  * What kind of red a failed probe is (#84).
  *
  * `probe-all` reported every failure the same way, so a navigation that timed
@@ -16,8 +29,10 @@
  *
  * In order, first match wins:
  *
- * - `killed` — the harness's own timeout. Its output is cut off wherever the
- *   kill landed, so nothing in it is evidence.
+ * - `killed` — ended by a signal. Usually the harness's own timeout, which
+ *   appends `[probe-all] killed after …` to the output; without that line it
+ *   was something else (an OOM kill, another session's `pkill`). The output
+ *   is cut off wherever the signal landed, so nothing in it is evidence.
  * - `pageerror` — the game threw, or a shader did not link. Before `crash`
  *   because a game that threw can take the probe down before its tail, and
  *   before `assert` because it answers later checks with plausible garbage.
@@ -33,7 +48,7 @@
  * @returns {"killed" | "pageerror" | "crash" | "assert" | "exit"}
  */
 export function failureKind({ code, out }) {
-	if (typeof code === "string" && code.startsWith("killed")) return "killed";
+	if (isKilled(code)) return "killed";
 	if (/^(PAGEERROR|SHADERERROR) /m.test(out)) return "pageerror";
 	if (!/^-?\d+\/\d+ checks passed$/m.test(out)) return "crash";
 	if (/^ FAIL /m.test(out)) return "assert";

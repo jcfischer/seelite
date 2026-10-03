@@ -74,9 +74,9 @@ import { dirname, join } from "node:path";
 import { createServer } from "vite";
 import { freePort } from "./lib/free-port.mjs";
 import { parseArgs, resolveOnly } from "./lib/probe-args.mjs";
-import { failureKind } from "./lib/probe-failure-kind.mjs";
+import { failureKind, killedCode } from "./lib/probe-failure-kind.mjs";
 import { loadSampler } from "./lib/probe-load.mjs";
-import { holdProbeLockOrExit } from "./lib/probe-lock.mjs";
+import { holdProbeLockOrExit, stopChildren } from "./lib/probe-lock.mjs";
 import { discoverProbeFiles } from "./lib/probe-inventory.mjs";
 import {
 	HARDWARE_RENDERER,
@@ -178,8 +178,11 @@ if (!probes.length) {
 // One suite on this machine at a time, taken before anything boots a browser:
 // two suites starve each other into reds that read like defects (#84). A
 // second run waits, and a wait that runs out exits 75 with NOT RUN, not 1.
+/** The probes running now, so a signal can stop them before the lock goes. */
+const live = new Set();
 await holdProbeLockOrExit(
 	`probe-all, ${probes.length} probe${probes.length === 1 ? "" : "s"}`,
+	{ stopFirst: () => stopChildren(live) },
 );
 
 /**
@@ -210,6 +213,7 @@ function run(file) {
 			env,
 			stdio: ["ignore", "pipe", "pipe"],
 		});
+		live.add(child);
 		let out = "";
 		child.stdout.on("data", (d) => (out += d));
 		child.stderr.on("data", (d) => (out += d));
@@ -224,9 +228,10 @@ function run(file) {
 
 		child.on("close", (code, signal) => {
 			clearTimeout(timer);
+			live.delete(child);
 			// a killed probe has a null exit code; that is a failure with a
 			// name, not an absent result
-			const exit = code ?? `killed:${signal}`;
+			const exit = code ?? killedCode(signal);
 			resolve({
 				file,
 				ok: code === 0,
@@ -261,7 +266,7 @@ async function runAll(files) {
 			// assertion that caught a regression (#84)
 			const why = r.ok
 				? ""
-				: ` exit=${r.code} ${r.kind} load≤${fmtLoad(load.peakBetween(r.started, r.started + r.ms))}`;
+				: ` exit=${r.code} ${r.kind} peak load ${fmtLoad(load.peakBetween(r.started, r.started + r.ms))}`;
 			console.log(`${mark} ${file} (${(r.ms / 1000).toFixed(1)}s)${why}`);
 			if (!r.ok) {
 				// the failing probe's own output, indented — the whole point of a

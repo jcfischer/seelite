@@ -138,7 +138,8 @@ identifies a non-software renderer; every child probe repeats that check.
 displayless or portability check.
 
 **One suite per machine (#84).** `probe-all` and `npm run views` hold a lock
-at `/tmp/seelite-probe.lock`, shared by every worktree and clone. A second run
+at `/tmp/seelite-probe.lock`, shared by every worktree and clone that carries
+it — a checkout from before #84 runs unlocked, and only its load shows. A second run
 waits and names the holder. **Exit 75 with `NOT RUN` is a wait that ran out,
 not a red**; `scripts/lib/probe-lock.mjs` owns the limit and the rules. A probe
 run directly does not take the lock, which is how a red is re-run alone. Each

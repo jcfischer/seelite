@@ -28,11 +28,13 @@ function manual() {
 describe("loadSampler", () => {
 	test("the peak over a window is the largest sample inside it", () => {
 		const { s, at } = manual();
+		// in milliseconds, read 5 s after the window closed: too late for a
+		// fresh sample to speak for it
 		at(0, 1);
-		at(10, 9);
-		at(20, 4);
-		at(30, 30);
-		expect(s.peakBetween(5, 25)).toBe(9);
+		at(10_000, 9);
+		at(20_000, 4);
+		at(30_000, 30);
+		expect(s.peakBetween(5_000, 25_000)).toBe(9);
 	});
 
 	test("the sample just before the window counts, so a short probe has one", () => {
@@ -50,6 +52,15 @@ describe("loadSampler", () => {
 		state.t = 50;
 		state.load = 20;
 		expect(s.peakBetween(0, 50)).toBe(20);
+	});
+
+	test("a window read after it closed still counts the sample taken for it", () => {
+		// probe-all reads a probe's window a few ms after the probe closed
+		const { s, at, state } = manual();
+		at(0, 1);
+		state.t = 53;
+		state.load = 20;
+		expect(s.peakBetween(10, 50)).toBe(20);
 	});
 
 	test("the run's peak is the largest sample of all", () => {

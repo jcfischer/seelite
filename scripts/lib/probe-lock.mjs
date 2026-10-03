@@ -304,9 +304,18 @@ export function lockWaitMs(env, log = console.log) {
  * with the shell's `128 + signal` code. A run stopped by SIGKILL leaves its
  * record behind, and the next run takes it over because its pid is gone.
  *
+ * **A holder that started processes of its own stops them before it lets
+ * go.** `probe-all` runs each probe as a child, and a SIGTERM sent to the
+ * runner alone does not reach that child: releasing at once would start the
+ * next suite beside a probe still driving its browser, which is the overlap
+ * this lock exists to prevent. `stopFirst` runs before the release. A second
+ * signal while it runs gets the default action, so a repeated Ctrl-C still
+ * kills at once — and leaves a record the next run takes over.
+ *
  * @param {string} label what holds it, as a waiting run will print it
+ * @param {{ stopFirst?: () => Promise<void> }} [options]
  */
-export async function holdProbeLockOrExit(label) {
+export async function holdProbeLockOrExit(label, { stopFirst } = {}) {
 	const path = defaultLockPath();
 	const waitMs = lockWaitMs(process.env);
 	const r = await acquireProbeLock({ path, label, waitMs });
@@ -318,9 +327,36 @@ export async function holdProbeLockOrExit(label) {
 		console.log(`probe lock: taken after ${Math.round(r.waitedMs / 1000)}s`);
 	process.on("exit", r.release);
 	for (const sig of /** @type {const} */ (["SIGINT", "SIGTERM", "SIGHUP"]))
-		process.once(sig, () => {
-			r.release();
-			process.exit(128 + constants.signals[sig]);
+		process.once(sig, async () => {
+			try {
+				await stopFirst?.();
+			} finally {
+				r.release();
+				process.exit(128 + constants.signals[sig]);
+			}
 		});
 	return r.release;
+}
+
+/**
+ * Stop child processes: SIGTERM, then SIGKILL for any still running after
+ * `graceMs`. Resolves once every one has exited.
+ *
+ * SIGTERM first because a probe's Playwright closes its browser on it, and a
+ * probe killed outright can leave that browser behind.
+ *
+ * @param {Iterable<import("node:child_process").ChildProcess>} children
+ * @param {number} [graceMs]
+ */
+export async function stopChildren(children, graceMs = 5_000) {
+	await Promise.all(
+		[...children].map(async (child) => {
+			if (child.exitCode !== null || child.signalCode !== null) return;
+			const exited = new Promise((done) => child.once("exit", done));
+			child.kill("SIGTERM");
+			const timer = setTimeout(() => child.kill("SIGKILL"), graceMs);
+			await exited;
+			clearTimeout(timer);
+		}),
+	);
 }

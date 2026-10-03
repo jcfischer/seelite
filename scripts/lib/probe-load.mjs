@@ -16,6 +16,9 @@
  */
 import { loadavg } from "node:os";
 
+/** How soon after a window closes a fresh sample still speaks for it. */
+const FRESH_MS = 1_000;
+
 /**
  * @param {{
  *   everyMs?: number,
@@ -31,10 +34,13 @@ export function loadSampler({
 } = {}) {
 	/** @type {{ t: number, load: number }[]} */
 	const samples = [];
+	/** Take a sample; the one taken, or null if nothing could be read. */
 	const sample = () => {
 		const load = read();
-		if (typeof load === "number" && Number.isFinite(load))
-			samples.push({ t: now(), load });
+		if (typeof load !== "number" || !Number.isFinite(load)) return null;
+		const s = { t: now(), load };
+		samples.push(s);
+		return s;
 	};
 	const timer = everyMs > 0 ? setInterval(sample, everyMs) : null;
 	// a sampler must never be what keeps a finished run alive
@@ -47,11 +53,20 @@ export function loadSampler({
 
 	return {
 		sample,
-		/** The peak from the last sample before `t0` up to a fresh one at `t1`. */
+		/**
+		 * The peak from the last sample before `t0` to a fresh one taken now,
+		 * when the window closed within `FRESH_MS`. The fresh one is counted by
+		 * reference, not by its stamp: a window is read a few milliseconds after
+		 * it closes, so a stamp test would drop the very sample taken for it. A
+		 * window read later than that gets no fresh sample, because the load now
+		 * says nothing about it.
+		 */
 		peakBetween(/** @type {number} */ t0, /** @type {number} */ t1) {
-			if (now() >= t1) sample();
+			const late = now() - t1;
+			const fresh = late >= 0 && late <= FRESH_MS ? sample() : null;
 			const before = samples.filter((s) => s.t < t0).at(-1);
 			const inside = samples.filter((s) => s.t >= t0 && s.t <= t1);
+			if (fresh && !inside.includes(fresh)) inside.push(fresh);
 			return max(before ? [before, ...inside] : inside);
 		},
 		/** The largest sample of the whole run. */
