@@ -50,7 +50,7 @@ small driver (appendix) that does what the arm's `probe-all.mjs --only` does:
 
 - start a fresh vite dev server from the arm's own `node_modules`, on an
   OS-assigned port with `strictPort`;
-- spawn `node scripts/probe-traffic-mouth.mjs <base>` with `PROBE_ORIGIN` set
+- launch `node scripts/probe-traffic-mouth.mjs <base>` with `PROBE_ORIGIN` set
   and `PROBE_URL` dropped;
 - read the check lines whether the probe passes or fails.
 
@@ -58,8 +58,8 @@ Every run started its own server and its own browser. Runs were serial and
 isolated: nothing else was probing, and the full suite was not running.
 
 **Order.** There were 20 pairs. Even-numbered pairs ran parent first and
-odd-numbered pairs ran #284 first, so neither arm always held the same slot as
-the machine warmed. Before these 40 runs, one smoke run per arm checked the
+odd-numbered pairs ran #284 first, so neither arm always held the same place in
+the order as the machine warmed. Before these 40 runs, one smoke run per arm checked the
 driver: parent read `maxLeak` 0 and #284 read 3.000, both passing. The smoke
 runs are not counted below.
 
@@ -79,8 +79,8 @@ missing its bars. Every red was the leak check.
 
 `leaked` and `maxLeak` come from the probe's own output, for both of its passes.
 `overlap` is the number of pixels compared. `bar x/y` is the chosen bar's
-projected position in NDC, as the probe reports it. `ms` is the wall time of the
-whole run, server start included.
+projected position in NDC, as the probe reports it. `s` is the wall time of the
+whole run in seconds, server start included.
 
 ### parent `f163ac9`
 
@@ -176,8 +176,9 @@ channel steps, so the same few figures recur. None of those four values occurs
 in the parent arm.
 
 **The chosen bar's screen position does not explain the spread.** Across all
-40 runs the bar's projected position stayed within about 1.4 × 10⁻⁴ NDC on each
-axis. At the probe's 720 px readback that is about 0.05 px. Within the #284 arm
+40 runs the bar's projected position stayed within 1.4 × 10⁻⁴ NDC in x and
+1.9 × 10⁻⁴ in y. At the probe's 720 × 450 readback that is about 0.05 px across
+and 0.04 px down. Within the #284 arm
 the failing and passing runs share the same bar positions. The frames are still
 not identical from run to run: `overlap` varies between 99 and 102, and parent
 runs 11–15 read 99 as one contiguous block. So something in the rendered frame
@@ -236,7 +237,8 @@ echo of each record and the final `process.exit(0)` are omitted. The two smoke
 runs used an earlier version that had no `barScreen` or `failed` fields. It is
 invoked as
 `node run-once.mjs <arm-dir> <label> <out.jsonl> <run>`, and the arms
-alternated as described above.
+alternated as described above. `spawn` in it is Node's `child_process` API, quoted
+as it ran, not the game's vocabulary.
 
 ```js
 import { spawn } from "node:child_process";
