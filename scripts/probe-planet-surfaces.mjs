@@ -56,6 +56,11 @@ import {
 	tally,
 } from "./probe-guard.mjs";
 import { bandMetrics } from "./lib/band-tones.mjs";
+import {
+	airlessContrastPasses,
+	airlessControlRejectionPasses,
+} from "./lib/airless-contrast.mjs";
+import { raySourcePasses } from "./lib/airless-ray-source.mjs";
 import { installViewFraming } from "./lib/view-placement.mjs";
 import { gameUrl } from "./lib/game-url.mjs";
 
@@ -2069,6 +2074,91 @@ if (jovianA?.b && jovianB?.b) {
 			"normal 0.333 — reported, not gated; see the comment above",
 	);
 }
+
+/* Node #213: actual linear albedo and normal outputs, held against the parent
+ * shader with identical geometry, seed and face-on sampling. Variance is
+ * divided by mean albedo squared: a uniform brightness gain cancels. Require
+ * at least 50% more contrast, bounded at 6x, and reject brightness-only and
+ * feature-off controls. Lighting and tone mapping never enter these readings.
+ */
+const airlessAlbedo = await page.evaluate(async () => {
+	const { airlessAlbedoReadings } = await import(
+		"/scripts/lib/airless-albedo.mjs"
+	);
+	return airlessAlbedoReadings(window.__seelite);
+});
+for (const row of airlessAlbedo) {
+	check(
+		`airless seed ${row.seed} has greater relative albedo variance from sparse features`,
+		airlessContrastPasses(row),
+		`${row.samples} lit-face samples: relative variance ${row.beforeRelativeVariance.toFixed(6)} → ${row.afterRelativeVariance.toFixed(6)}, ratio ${row.ratio.toFixed(2)} (band 1.5–6), feature-on/off ${row.featureRatio.toFixed(2)}`,
+	);
+	check(
+		`airless seed ${row.seed} contrast gate rejects brightness-only and feature-off controls`,
+		airlessControlRejectionPasses(row.controls) &&
+			// A rendered production arm offered as a negative control must
+			// defeat rejection. This exposes a gate that rejects every input.
+			!airlessControlRejectionPasses([row, row.controls[1]]),
+		`rendered controls (parent, feature-on/off): ${row.controls.map((c) => `(${c.ratio.toFixed(3)}, ${c.featureRatio.toFixed(3)})`).join(", ")}`,
+	);
+	check(
+		`airless seed ${row.seed} near-star highlands remain darker than cold frost`,
+		row.nearFarRatio > 0.5 && row.nearFarRatio < 0.6,
+		`same highland samples at warmth 0/7: ${row.nearFarRatio.toFixed(3)} (band 0.5–0.6)`,
+	);
+	check(
+		`airless seed ${row.seed} has dark flat basin floors beside crater relief`,
+		// A control patch can already be almost planar, so an absolute
+		// roughness floor would test its location rather than the flattening.
+		// Require the rendered floor to lose 98% of its own control's slope and
+		// require that control to be nonzero; a shader with no relief fails both.
+		row.floorRatio < 0.65 &&
+			row.floorTilt < row.craterTilt * 0.02 &&
+			row.craterTilt > 0.0001,
+		`floor/highland albedo ${row.floorRatio.toFixed(3)}, normal tilt ${row.floorTilt.toFixed(5)} / ${row.craterTilt.toFixed(3)}`,
+	);
+	check(
+		`airless seed ${row.seed} rays brighten albedo without changing relief`,
+		row.rayPixels > 40 && row.rayNormalDelta < 0.00001,
+		`${row.rayPixels} bright ejecta samples; normal delta ${row.rayNormalDelta}`,
+	);
+	check(
+		`airless seed ${row.seed} GPU ray sources match surviving fine-field craters`,
+		row.raySources.length >= 2 &&
+			row.raySources.length <= 3 &&
+			row.raySources.every(raySourcePasses),
+		JSON.stringify(
+			row.raySources.map(({ cell, cpu, ray, walk, eligibility }) => ({
+				cell,
+				cpu,
+				ray,
+				walk,
+				eligibility,
+			})),
+		),
+	);
+	check(
+		`airless seed ${row.seed} ray-source gate rejects rendered displaced anchors`,
+		row.raySources.length >= 2 &&
+			row.raySources.every((source) => !raySourcePasses(source.mutated)),
+		"the actual ray helper shifted by 0.02 body radii must fail the same geometry/eligibility gate",
+	);
+}
+const [seedA, seedB] = airlessAlbedo;
+const basinShift = Math.min(
+	...seedA.basins.map((a) =>
+		Math.min(
+			...seedB.basins.map((b) =>
+				Math.hypot(...a.slice(0, 3).map((v, i) => v - b[i])),
+			),
+		),
+	),
+);
+check(
+	"two airless seeds put their measured basin floors in different directions",
+	basinShift > 0.1 && seedA.floorRatio < 0.65 && seedB.floorRatio < 0.65,
+	`seeds ${seedA.seed}/${seedB.seed}: closest centre chord ${basinShift.toFixed(3)}, both floor readings dark and flat`,
+);
 
 /* 4. The budget, per layer, on the class that costs the most. */
 const RANGES = [

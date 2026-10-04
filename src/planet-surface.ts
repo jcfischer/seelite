@@ -21,6 +21,8 @@
  */
 
 import * as THREE from "three";
+import { airlessFeatures, applyAirlessFeatures } from "./airless-features";
+import { planetSeedOffset } from "./planet-appearance";
 import type { PlanetAppearance, SurfaceClass } from "./planet-appearance";
 import { CLOUD_SHELL_RADIUS } from "./planet-clouds";
 import {
@@ -505,7 +507,11 @@ export function buildBodyVisual(
 		// A thick atmosphere carries light well past the geometric terminator;
 		// an airless body does not carry it at all.
 		wrapAmount: { value: look.atmosphere * 0.32 },
-		seedOffset: { value: (look.seed % 997) / 97 },
+		seedOffset: { value: planetSeedOffset(look.seed) },
+		basinCount: { value: 0 },
+		basins: { value: Array.from({ length: 4 }, () => new THREE.Vector4()) },
+		rayCount: { value: 0 },
+		rayCells: { value: Array.from({ length: 3 }, () => new THREE.Vector3()) },
 		// 0 normally; 1 drops the normal perturbation, 2 drops the surface noise
 		// entirely. Read by every class through `RELIEF`.
 		perfAblate: { value: 0 },
@@ -562,6 +568,26 @@ export function buildBodyVisual(
 	};
 
 	const group = new THREE.Group();
+	let airlessReady = false;
+	const prepareAirless = () => {
+		if (airlessReady) return;
+		const features = airlessFeatures(look.seed);
+		if (features.exhausted)
+			console.warn(
+				`airless seed ${look.seed}: ${features.exhausted} selection exhausted; retained crater terrain`,
+			);
+		applyAirlessFeatures(
+			{
+				basinCount: uniforms.basinCount,
+				basins: uniforms.basins,
+				rayCount: uniforms.rayCount,
+				rayCells: uniforms.rayCells,
+			},
+			features,
+		);
+		airlessReady = true;
+	};
+	if (look.surface === "airless") prepareAirless();
 	const planet = new THREE.Mesh(
 		sphere,
 		new THREE.ShaderMaterial({
@@ -782,6 +808,7 @@ export function buildBodyVisual(
 			: (planet.userData.reliefPath as ReliefPath);
 
 	const setSurfaceClass = (next: SurfaceClass) => {
+		if (next === "airless") prepareAirless();
 		uniforms.cloudCoherent.value = next === "terran" ? 1 : 0;
 		// A star keeps its own shader. It is not a planet surface, it is the
 		// brightest thing in the frame and therefore what the bloom pass is

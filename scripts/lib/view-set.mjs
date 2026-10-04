@@ -143,6 +143,7 @@ export const LEVERS = Object.freeze({
 	208: "the baked cube a planet is drawn from below two radii",
 	211: "the half-resolution planet surface beneath a full-resolution limb",
 	212: "terran clouds that cast a shadow on the ground, a cirrus scale, and a thicker limb",
+	213: "airless basins with flat dark floors, floor-bound maria and young crater rays",
 	257: "the refinery and outpost forms solved by wave function collapse, and selected",
 	210: "the planet's shadow across its ring, and the ring's back across the planet",
 	209: "the gas giant's band tones, its storm's interior, and its limb",
@@ -706,6 +707,20 @@ export const VIEWS = Object.freeze([
 		shot: {
 			kind: "body-offset",
 			body: "planet-5",
+			radii: 2,
+			sunAngleDeg: 60,
+			view: "chase",
+		},
+	},
+	// The existing planet rows show terran/desert, so neither can judge node
+	// #213. The canonical world's generated moon needs its own surface frame.
+	{
+		name: "airless-fill",
+		covers: [213],
+		what: "The airless moon at two radii: large flat dark basin floors beside small crater relief, floor-bound maria and bright radial ejecta from young impacts.",
+		shot: {
+			kind: "body-offset",
+			body: "planet-5-moon-0",
 			radii: 2,
 			sunAngleDeg: 60,
 			view: "chase",

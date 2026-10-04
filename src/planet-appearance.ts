@@ -347,3 +347,5 @@ export function appearanceOf(
 	if (!host) throw new Error(`moon ${body.id} is not in the contents`);
 	return appearanceFor("moon", body.id, warmthOf(host));
 }
+/** Seed phase shared by every procedural surface and its CPU feature selection. */
+export const planetSeedOffset = (seed: number) => (seed % 997) / 97;
