@@ -540,7 +540,7 @@ orbits, at the geometric mean of the two, width ±10%.
 | **trade station** | the system has a planet — see the note below | orbit of the primary planet |
 | **refinery** | the system has a belt (§6.3) | inside the belt |
 | **shipyard** | `displayTL ≥ 10` | orbit of the primary or a gas giant |
-| **raider outpost** | the system's raider slot count is at its height — government 0 or 1 ([#491](https://github.com/jcfischer/seelite/issues/491)) | a Trojan point of a drawn planet's orbit: star-centric, 60° ahead of or behind it |
+| **raider outpost** | the system's `raiderSlotCount` is at its height — government 0 or 1 ([#491](https://github.com/jcfischer/seelite/issues/491)) | a Trojan point of a drawn planet's orbit: star-centric, 60° ahead of or behind it |
 
 > **The raider outpost, since node #491.** #490 made it a station — Wanted-only
 > berths, its own law, the haven raider pressure comes from — and ruled its
@@ -557,8 +557,10 @@ orbits, at the geometric mean of the two, width ±10%.
 > planet-hosted alternative was measured and set aside: 670 of those 4,590
 > systems have no planet without a station on it already, so it needs a second
 > mode for one case in seven. The cost of the star-centric form is the arrival
-> point: in 10 of the 4,590 systems the arrival is pushed out past the outpost
-> (§7.4's clearance), where a planet-hosted station would have moved none.
+> point: in 10 of the 4,590 systems the new-game arrival (no origin, game time
+> zero) is pushed out past the outpost (§7.4's clearance), where a
+> planet-hosted station would have moved none. A jump arrival's bearing and a
+> later clock were not measured.
 > `scripts/measure-raider-outpost.ts` reprints all of these.
 >
 > **Its draws are its own.** Host, side, berth seed and assembly seed come from

@@ -19,6 +19,8 @@
  *
  * Headless and generator-only: no renderer, no browser.
  */
+// A module name: the relay's Carrier slot, not a berth.
+// glossary-ignore: slot
 import { relayPlan } from "../src/relay-slot";
 import {
 	type SystemContents,

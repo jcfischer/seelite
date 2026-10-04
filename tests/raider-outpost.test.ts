@@ -20,6 +20,8 @@ import { DOMAIN } from "../src/domains";
 import { stream } from "../src/galaxy";
 import { HULL_SPECS } from "../src/hull";
 import { hasMarket } from "../src/market";
+// Module names: a raider's and the relay's Carrier slot, not a berth.
+// glossary-ignore: slot
 import { RAIDER_SLOT_MAX, raiderSlotCount } from "../src/raider-slots";
 import { RELAY_REGION_KM, relayPlan } from "../src/relay-slot";
 import {
@@ -54,7 +56,7 @@ const outpostOf = (contents: SystemContents): Station | undefined =>
 	contents.stations.find((s) => s.type === "outpost");
 
 describe("incidence (#490 D4)", () => {
-	test("exactly one outpost where the raider slot count is at its height, and none elsewhere", () => {
+	test("exactly one outpost where raiderSlotCount is at its height, and none elsewhere", () => {
 		let lawless = 0;
 		let lawful = 0;
 		const wrong: string[] = [];
@@ -77,7 +79,7 @@ describe("incidence (#490 D4)", () => {
 		expect(lawful).toBeGreaterThan(1000);
 	});
 
-	test("the rule is the two most lawless governments, read off the slot ramp", () => {
+	test("the rule is the two most lawless governments, read off raiderSlotCount's ramp", () => {
 		// Pinned per government so a retuned ramp is a visible change here, not
 		// a silent move of every haven in the galaxy.
 		expect([0, 1, 2, 3, 4, 5, 6, 7].map(hasRaiderOutpost)).toEqual([
@@ -139,7 +141,7 @@ describe("placement: a Trojan point on a planet's own orbit", () => {
 		}
 	});
 
-	test("it is a pad that does not spin and is not a fence, with its slot's name", () => {
+	test("it does not spin, is not a fence, and carries the name reserved for it", () => {
 		expect(STATION_GEOMETRY.outpost.spins).toBe(false);
 		expect(STATION_FENCE_ELIGIBLE.outpost).toBe(false);
 		for (const { record, contents } of lawlessRecords(1)) {

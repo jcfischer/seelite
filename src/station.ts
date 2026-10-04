@@ -297,9 +297,12 @@ export const STATION_BERTHS_OPEN: Record<StationType, boolean> = {
  * different question about it:
  *
  * - **It witnesses (#490 D10).** `distress.ts`'s `stationsInEarshot` files only
- *   a lawful station, so an offence beside an outpost costs no standing with it
- *   or anywhere, and the witness list a save carries never names one. A pilot
- *   cannot be barred by the one station that wants them Wanted.
+ *   a lawful station, so the witness list a save carries never names an
+ *   outpost. That is the witness half and nothing more: `legal.ts`'s
+ *   `chargeOffence` prices the heat from the act, not from who heard it, so an
+ *   offence beside an outpost still costs heat and can still make the pilot
+ *   Wanted, and every shipyard refuses that on standing alone. What it cannot
+ *   do is put the outpost among the stations that refuse for what they saw.
  * - **It posts the Bounty (#495 D4).** "Every lawful in-system station";
  *   `jobs.ts`'s `bindBounty` reads this, because a raider haven does not pay to
  *   kill raiders' equipment.

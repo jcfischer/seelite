@@ -128,8 +128,8 @@ describe("§9.1 namespace and baseline stability", () => {
 		// of these are still those, and the rest are raiders. #351 added a relay
 		// and its tender to each of the 2048 systems, 4096 more; the row below
 		// the pin says so by kind rather than by arithmetic on this figure.
-		// Node #491 added the raider outpost and its one Traffic slot (two berths,
-		// less the visitor's) in every system `hasRaiderOutpost` admits, 1,148
+		// Node #491 added the raider outpost and its one Traffic carrier (two
+		// berths, less the visitor's) in every system `hasRaiderOutpost` admits, 1,148
 		// more; that too is said by kind below.
 		expect(carriers).toBe(33046);
 		// #351 enrolled the relay and its tender: one of each in every system
@@ -200,7 +200,7 @@ describe("§9.1 namespace and baseline stability", () => {
 		// Three station carriers and fifteen Traffic ones — the widest system's
 		// roster since #277 reserved a visitor berth at each of its stations —
 		// and #324's four raider slots, and #351's relay and its tender, and node
-		// #491's outpost with its one Traffic slot.
+		// #491's outpost with its one Traffic carrier.
 		expect(globalIds.size).toBe(26);
 	});
 
@@ -398,8 +398,8 @@ describe("§9.1 namespace and baseline stability", () => {
  *   shipyards off them. Station keys and carrier types remain fixed; the
  *   migration identity goldens above pin that narrower invariant. Saved
  *   overlays rebase onto newly generated placements.
- * - 8 → 9: node #491 placed the raider outpost, with its one Traffic slot, in
- *   every system at the lawless end of the government scale — every galaxy
+ * - 8 → 9: node #491 placed the raider outpost, with its one Traffic carrier,
+ *   in every system at the lawless end of the government scale — every galaxy
  *   holds some, so all eight hashes move. Nothing else did: the identity
  *   goldens above hash every carrier but the outpost's and still read
  *   version 8's, and `station-orbits.test.ts` holds every other station's

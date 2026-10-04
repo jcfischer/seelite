@@ -89,13 +89,13 @@ export const SHIPYARD_MIN_TL = 10;
 
 /**
  * Whether a system holds a raider outpost (#490 D4, node #491): exactly where
- * its raider slot count is already at its height — the two most lawless
+ * its `raiderSlotCount` is already at its height — the two most lawless
  * governments — and never elsewhere. One at most, so this is a predicate rather
  * than a count.
  *
  * **Read off `raiderSlotCount`, not restated as `government <= 1`.** D4's rule
  * is that incidence rides the law gradient the raiders already have, so a
- * retuned slot ramp moves the outpost with it rather than leaving the haven in
+ * retuned `raiderSlotCount` ramp moves the outpost with it rather than leaving the haven in
  * systems that no longer hold the raiders it is the home of. No chance draw:
  * nothing ruled one, and a system's outpost is then readable off its
  * government before the pilot flies there, which is D4's point.
@@ -123,11 +123,14 @@ export const hasRaiderOutpost = (government: number): boolean =>
  * for a seventh of its cases; this one cannot run out of hosts, because every
  * system has a primary.
  *
- * **What it costs elsewhere: ten arrivals move.** `arrivalPoint` clears every
+ * **What it costs elsewhere: arrivals can move.** `arrivalPoint` clears every
  * placed body, and a star-centric station is not inside a planet's clearance
- * the way a planet-hosted one is, so in 10 of those 4,590 systems the new-game
- * and jump arrival is pushed out past the outpost. A planet-hosted outpost would
- * have moved none; that is the price of a rule with no second mode.
+ * the way a planet-hosted one is. Measured at the new-game arrival — no origin,
+ * game time zero — the point is pushed out past the outpost in 10 of those
+ * 4,590 systems; a jump arrival's bearing and a later clock were not measured,
+ * and can move it in systems that figure does not count. A planet-hosted
+ * outpost would have moved none; that is the price of a rule with no second
+ * mode.
  *
  * `scripts/measure-raider-outpost.ts` reprints every figure in this comment.
  */
@@ -943,12 +946,12 @@ function generateStations(
  * Two fields are answers rather than draws. `blackMarket` is `false` because
  * `STATION_FENCE_ELIGIBLE.outpost` is — #490 D6's fence waits on the outpost's
  * market, and a fence flag on a station with no market would be a lie the
- * market's node inherits. `spinRpm` is `0` because the outpost is a pad and
- * does not spin; `drawSpinRpm` discards a draw for the refinery only because
+ * market's node inherits. `spinRpm` is `0` because the outpost does not
+ * spin (`STATION_GEOMETRY.outpost.spins`); `drawSpinRpm` discards a draw for the refinery only because
  * the refinery shares a stream with stations that do.
  *
- * Its name is `stationNames`' outpost slot, which that function has reserved
- * in every system since #110, so naming it draws nothing either.
+ * Its name is the one `stationNames` has reserved for an outpost in every
+ * system since #110, so naming it draws nothing either.
  */
 function raiderOutpost(
 	record: SystemRecord,

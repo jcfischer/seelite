@@ -130,6 +130,10 @@ Every other row names the section that owns it, for the same reason.
 | Docking → §6 | rotating slot | pad | rotating slot | pad — **closed to every pilot** until it has a market |
 | Silhouette → §7 | three forms, Coriolis selected | three forms on a rock, Warren selected | three forms, Gantry selected | five forms, Salvage (E) selected |
 
+<!-- glossary-ignore: slot -->
+<!-- glossary-ignore: pad -->
+<!-- The Docking row names aperture kinds (`aperture.kind`), not berths. -->
+
 ---
 
 ## 3. Commodity markets: type as a price offset
@@ -582,8 +586,11 @@ carries, and the explicit absence of what it does not:
   refuses one below (#490 D5): the witness rule inverted, available because an
   outpost is never a system's only station. `legal.ts`'s `dockingRefusedByLaw`
   holds that arm. It **witnesses nothing** (D10): `stationsInEarshot` skips any
-  station `STATION_LAWFUL` marks unlawful, so an offence beside it costs no
-  standing and no save's witness list names one. And it posts no Bounty
+  station `STATION_LAWFUL` marks unlawful, so no save's witness list names one.
+  That is the witness half only — `chargeOffence` prices heat from the act, not
+  from who heard it, so an offence beside an outpost still costs heat and can
+  still make the pilot Wanted, which every shipyard refuses on standing alone.
+  And it posts no Bounty
   (#495 D4's "every lawful station").
 - **Market — absent.** D6 makes it a fence with a thin, punitive general list,
   and reopens §5.2's geography to do it; none of that is built. A single signed
@@ -602,8 +609,8 @@ carries, and the explicit absence of what it does not:
   law is asked, so a clean pilot is not told they are hostile. The market's node
   opens the berth as an act; `tests/raider-outpost.test.ts` refuses an open
   berth without a market behind it.
-- **Traffic — on its own side of the line.** Its roster is the table's (one
-  slot: two berths, less the visitor's). A lawful station's carriers are never
+- **Traffic — on its own side of the line.** Its roster is the table's: one
+  carrier, with two berths less the visitor's. A lawful station's carriers are never
   routed to it and its own to no lawful berth (`STATION_LAWFUL` in
   `station-route.ts`), so placing it moved no existing carrier's schedule; its
   courier leaves the system abstractly and comes home.

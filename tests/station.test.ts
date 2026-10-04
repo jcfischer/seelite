@@ -178,14 +178,14 @@ describe("both new fields draw once per station, from their own tags", () => {
 });
 
 describe("the spin range (docking.md §4)", () => {
-	test("Coriolis types land inside [0.6, 3.0] and the pad types are exactly 0", () => {
+	test("Coriolis types land inside [0.6, 3.0] and the non-spinning types are exactly 0", () => {
 		let coriolis = 0;
 		let refineries = 0;
 		let outposts = 0;
 		forEachSystem(worldSeeds(1)[0], [0, 1], (_record, contents) => {
 			for (const station of contents.stations) {
-				// Node #491's outpost is a pad too; read off the geometry rather
-				// than off a type, so a pad cannot be counted as Coriolis.
+				// Node #491's outpost does not spin either; read off the geometry
+				// rather than off a type, so it cannot be counted as Coriolis.
 				if (!STATION_GEOMETRY[station.type].spins) {
 					// Exactly zero, not "small": the pad does not rotate at all, and a
 					// tiny non-zero value would read as a drift rather than as a rule.
