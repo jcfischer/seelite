@@ -165,9 +165,9 @@ const STAR_CLEARANCE_DEG = 60;
  * measured its bloom halo instead). Nearest +Y so that a bake mirrored through
  * its equator — rows uploaded the wrong way up — carries the haze over to the
  * other face too. Held exactly edge-on to the star, which was the first
- * choice, that face was 51° off +Y at seed 47's station, the mirror moved the
- * haze 90° rather than 180°, and a bake uploaded upside down read 1.06× and
- * 1.14× and stayed green. The two faces then meet the sun at different
+ * choice, that face sat far enough off +Y at seed 47's station that the mirror
+ * did not carry the haze across, and a bake uploaded upside down read 1.06×
+ * and 1.14× and stayed green. The two faces then meet the sun at different
  * angles, which the comparison below does not mind: it never compares one
  * face with the other.
  *
@@ -283,10 +283,9 @@ const pickFramings = (page, bodyId) =>
  * **Off by unassigning `scene.environment`, not by `quality: low`.** This probe
  * used to difference `high` against `low` on the strength of "low drops the
  * environment and changes nothing else", which stopped being true when `low`
- * also began dropping the shadows and the hull and cabin surface terms. Measured
- * on node #433's build with the environment never assigned at all, high minus
- * low still read Δ 0.38 and 0.16 on the two framings — green on a reach check
- * whose subject was missing. Unassigning the environment on the four layer
+ * also began dropping the shadows. Measured on node #433's build with the
+ * environment never assigned at all, high minus low still read Δ 0.38 and 0.16
+ * on the two framings — green on a reach check whose subject was missing. Unassigning the environment on the four layer
  * scenes for one frame changes exactly the term being measured.
  *
  * One evaluate for `probe-station-visuals.mjs`'s reason: between two the frame
