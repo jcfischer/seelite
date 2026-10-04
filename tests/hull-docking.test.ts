@@ -131,7 +131,14 @@ describe("every hull docks while the orbit swings the axis, at MAX_DT (#315)", (
 				refused: run.refused,
 				docked: run.docked,
 				failedChecks: failedChecksOf(run),
-			}).toEqual({ hull, refused: null, docked: true, failedChecks: "" });
+				impacts: run.impacts.length,
+			}).toEqual({
+				hull,
+				refused: null,
+				docked: true,
+				failedChecks: "",
+				impacts: 0,
+			});
 		});
 	}
 });
@@ -167,6 +174,11 @@ describe("every hull docks at every role it has a berth at", () => {
 						violations: run.violations,
 						docked: run.docked,
 						failedChecks: failedChecksOf(run),
+						// `collision.md` §9.1.15 over the roster: the computer's
+						// approach meets nothing of the station's proxy, and never
+						// starts a step inside it.
+						impacts: run.impacts.length,
+						ghostSteps: run.ghostSteps,
 						// A run that "docked" on step one would satisfy `docked`
 						// without having flown anything.
 						flewSomething: run.steps > 50,
@@ -178,6 +190,8 @@ describe("every hull docks at every role it has a berth at", () => {
 						violations: 0,
 						docked: true,
 						failedChecks: "",
+						impacts: 0,
+						ghostSteps: 0,
 						flewSomething: true,
 					});
 				}
@@ -250,7 +264,10 @@ function spinCeiling(
 			throw new Error(
 				`${hull} at ${type} ${rpm} rpm was refused: ${run.refused}`,
 			);
-		if (run.crossing === null)
+		// An impact is a failed run (`collision.md` §9.1.9): above the roll
+		// limit a mis-rolled hull meets the slot's rim before its centre reaches
+		// the plane, which is P1's physical fit failing where check 4 used to.
+		if (run.crossing === null && run.impacts.length === 0)
 			throw new Error(
 				`${hull} at ${type} ${rpm} rpm never reached the plane in ` +
 					`${run.gameTime.toFixed(0)} s — a timeout, not a roll ceiling`,
@@ -304,89 +321,109 @@ const ceilingOf = (() => {
 	};
 })();
 
+/**
+ * The three rows below share one cached sweep of up to 47 approaches per hull
+ * per turning role, and the first to run pays for all of it. Since node #663
+ * every step of every approach is also swept against the station's proxy, so
+ * the sweep runs past bun's 5 s default for its cost, not for a defect.
+ */
+const ROSTER_SWEEP_MS = 60_000;
+
 describe("the tolerances hold for the whole roster, with margin", () => {
-	test("the worst-handling hull still docks at twice the fastest station", () => {
-		const ceilings = DOCKABLE_HULL_IDS.map((hull) => ({
-			hull,
-			...ceilingOf(hull),
-			rollRpm: (flightPerformance(hull).angularMax.roll * 60) / (2 * Math.PI),
-		}));
-		for (const row of ceilings)
-			console.log(
-				`${row.hull.padEnd(12)} docks to ${row.rpm.toFixed(1)} rpm ` +
-					`(worst role ${row.type}, roll cap ${row.rollRpm.toFixed(1)} rpm)`,
-			);
-		const worst = ceilings.reduce((a, b) => (a.rpm <= b.rpm ? a : b));
-		console.log(
-			`worst ${worst.hull} at ${worst.rpm} rpm against a fastest station of ` +
-				`${SPIN_RPM_RANGE.maxRpm} rpm`,
-		);
-		console.log(`margin ${(worst.rpm / SPIN_RPM_RANGE.maxRpm).toFixed(2)}x`);
-		// **This is the node's answer**, and it is asserted as a factor rather
-		// than as "it passed": the margin is what says §3's tolerances stay one
-		// table rather than becoming a per-hull one.
-		//
-		// The bound is **1.5x and the measurement is 1.67x** (2.0x until #619
-		// turned the computer through the vents), deliberately apart.
-		// A threshold set at the measured value is not a measurement (#25) — it
-		// would go red on a retune that changed nothing about the answer, and a
-		// later session would loosen it on the prose. What 1.5x catches is the
-		// regression that matters: a hull sluggish enough to be marginal at a
-		// station the generator actually builds.
-		expect(worst.rpm).toBeGreaterThanOrEqual(SPIN_RPM_RANGE.maxRpm * 1.5);
-	});
-
-	test("the sweep can go red — every hull has a spin that beats it", () => {
-		// Before offering a check as verification, build the defect it names and
-		// watch it fail (#11). The defect here is a station spinning faster than
-		// the hull can track, and every hull has one inside the search range: a
-		// sweep that could not fail would be a ritual.
-		for (const hull of DOCKABLE_HULL_IDS) {
-			const { rpm, type, firstFailure, unbrokenBelow, recovered } =
-				ceilingOf(hull);
-			// A hull that never failed inside the search range would report the top
-			// of the range as its ceiling, which is a broken harness rather than a
-			// limit — so the failure has to be *observed*, not inferred from where
-			// a loop stopped.
-			expect([hull, Number.isFinite(firstFailure)]).toEqual([hull, true]);
-			expect([hull, firstFailure]).toEqual([hull, rpm + 0.5]);
-			// **Not "every rung below the first failure docks"** — that is true by
-			// construction, since the first failure is by definition the lowest rung
-			// that does not, and asserting it would be asserting a definition. What
-			// can fail, and what the margin actually rests on, is that the first
-			// failure is **above the whole shipped spin range**: every hull holds
-			// every station the generator builds, with room over.
-			expect([hull, firstFailure > SPIN_RPM_RANGE.maxRpm]).toEqual([
+	test(
+		"the worst-handling hull still docks at twice the fastest station",
+		() => {
+			const ceilings = DOCKABLE_HULL_IDS.map((hull) => ({
 				hull,
-				true,
-			]);
-			// `unbrokenBelow` is printed rather than asserted, for the same reason.
+				...ceilingOf(hull),
+				rollRpm: (flightPerformance(hull).angularMax.roll * 60) / (2 * Math.PI),
+			}));
+			for (const row of ceilings)
+				console.log(
+					`${row.hull.padEnd(12)} docks to ${row.rpm.toFixed(1)} rpm ` +
+						`(worst role ${row.type}, roll cap ${row.rollRpm.toFixed(1)} rpm)`,
+				);
+			const worst = ceilings.reduce((a, b) => (a.rpm <= b.rpm ? a : b));
 			console.log(
-				`${hull.padEnd(12)} first fails at ${firstFailure} rpm after ` +
-					`${unbrokenBelow} unbroken rungs; ` +
-					`${recovered.length} coincidental crossings above it`,
+				`worst ${worst.hull} at ${worst.rpm} rpm against a fastest station of ` +
+					`${SPIN_RPM_RANGE.maxRpm} rpm`,
 			);
-		}
-	});
+			console.log(`margin ${(worst.rpm / SPIN_RPM_RANGE.maxRpm).toFixed(2)}x`);
+			// **This is the node's answer**, and it is asserted as a factor rather
+			// than as "it passed": the margin is what says §3's tolerances stay one
+			// table rather than becoming a per-hull one.
+			//
+			// The bound is **1.5x and the measurement is 1.67x** (2.0x until #619
+			// turned the computer through the vents), deliberately apart.
+			// A threshold set at the measured value is not a measurement (#25) — it
+			// would go red on a retune that changed nothing about the answer, and a
+			// later session would loosen it on the prose. What 1.5x catches is the
+			// regression that matters: a hull sluggish enough to be marginal at a
+			// station the generator actually builds.
+			expect(worst.rpm).toBeGreaterThanOrEqual(SPIN_RPM_RANGE.maxRpm * 1.5);
+		},
+		ROSTER_SWEEP_MS,
+	);
 
-	test("the spread is D5's and nothing else's", () => {
-		// The control arm, and **what it holds fixed is the handling alone.** Each
-		// hull keeps its own envelope, so it keeps its own berth and its own
-		// allocation; only `perfHull` is pinned to the baseline. That is the right
-		// shape for the claim: if the envelope or the berth were producing the
-		// spread, it would survive here. It collapses to zero, so what is left is
-		// mass and thrust — #26's D5 and nothing else.
-		const controlled = DOCKABLE_HULL_IDS.map(
-			(hull) => ceilingOf(hull, PLAYER_BASELINE_HULL).rpm,
-		);
-		const spread = Math.max(...controlled) - Math.min(...controlled);
-		const live = DOCKABLE_HULL_IDS.map((hull) => ceilingOf(hull).rpm);
-		const liveSpread = Math.max(...live) - Math.min(...live);
-		console.log(
-			`ceiling spread: ${liveSpread.toFixed(1)} rpm live against ` +
-				`${spread.toFixed(1)} rpm at one hull's handling`,
-		);
-		expect(spread).toBe(0);
-		expect(liveSpread).toBeGreaterThan(0);
-	});
+	test(
+		"the sweep can go red — every hull has a spin that beats it",
+		() => {
+			// Before offering a check as verification, build the defect it names and
+			// watch it fail (#11). The defect here is a station spinning faster than
+			// the hull can track, and every hull has one inside the search range: a
+			// sweep that could not fail would be a ritual.
+			for (const hull of DOCKABLE_HULL_IDS) {
+				const { rpm, type, firstFailure, unbrokenBelow, recovered } =
+					ceilingOf(hull);
+				// A hull that never failed inside the search range would report the top
+				// of the range as its ceiling, which is a broken harness rather than a
+				// limit — so the failure has to be *observed*, not inferred from where
+				// a loop stopped.
+				expect([hull, Number.isFinite(firstFailure)]).toEqual([hull, true]);
+				expect([hull, firstFailure]).toEqual([hull, rpm + 0.5]);
+				// **Not "every rung below the first failure docks"** — that is true by
+				// construction, since the first failure is by definition the lowest rung
+				// that does not, and asserting it would be asserting a definition. What
+				// can fail, and what the margin actually rests on, is that the first
+				// failure is **above the whole shipped spin range**: every hull holds
+				// every station the generator builds, with room over.
+				expect([hull, firstFailure > SPIN_RPM_RANGE.maxRpm]).toEqual([
+					hull,
+					true,
+				]);
+				// `unbrokenBelow` is printed rather than asserted, for the same reason.
+				console.log(
+					`${hull.padEnd(12)} first fails at ${firstFailure} rpm after ` +
+						`${unbrokenBelow} unbroken rungs; ` +
+						`${recovered.length} coincidental crossings above it`,
+				);
+			}
+		},
+		ROSTER_SWEEP_MS,
+	);
+
+	test(
+		"the spread is D5's and nothing else's",
+		() => {
+			// The control arm, and **what it holds fixed is the handling alone.** Each
+			// hull keeps its own envelope, so it keeps its own berth and its own
+			// allocation; only `perfHull` is pinned to the baseline. That is the right
+			// shape for the claim: if the envelope or the berth were producing the
+			// spread, it would survive here. It collapses to zero, so what is left is
+			// mass and thrust — #26's D5 and nothing else.
+			const controlled = DOCKABLE_HULL_IDS.map(
+				(hull) => ceilingOf(hull, PLAYER_BASELINE_HULL).rpm,
+			);
+			const spread = Math.max(...controlled) - Math.min(...controlled);
+			const live = DOCKABLE_HULL_IDS.map((hull) => ceilingOf(hull).rpm);
+			const liveSpread = Math.max(...live) - Math.min(...live);
+			console.log(
+				`ceiling spread: ${liveSpread.toFixed(1)} rpm live against ` +
+					`${spread.toFixed(1)} rpm at one hull's handling`,
+			);
+			expect(spread).toBe(0);
+			expect(liveSpread).toBeGreaterThan(0);
+		},
+		ROSTER_SWEEP_MS,
+	);
 });

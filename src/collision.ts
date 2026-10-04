@@ -702,6 +702,24 @@ export interface SweepResult {
 	 * how a caller sees that it did.
 	 */
 	ghosts: number[];
+	/**
+	 * §4.2: the aperture plane owned the tick. The ship's centre crossed a plane
+	 * at `planeS` before any impact (a tie goes to the impact), so nothing was
+	 * resolved: `impacts` is empty, and `pos` and `vel` are the step's own,
+	 * for the caller's six checks to place. Always `false` without a plane.
+	 */
+	planeOwns: boolean;
+}
+
+/** What a step's sweep is told about the rest of the tick (§4.2). */
+export interface SweepOptions {
+	/**
+	 * Seconds into the step at which the ship's centre crosses an aperture
+	 * plane, or `null` when it crosses none. An impact at or before it owns the
+	 * tick; one after it is never reached, because the plane's checks place
+	 * the ship (`docking.md` §2, §12).
+	 */
+	planeS?: number | null;
 }
 
 interface PairState {
@@ -754,19 +772,31 @@ interface End {
  *
  * The ship's attitude is never touched — a bounce imparts no spin (§3) — so
  * the end pose's axes are the step's own.
+ *
+ * **The plane** (§4.2, node #663): given `options.planeS`, the earliest event
+ * owns the tick. A resting impact is at the start of the step and a swept one
+ * at its own time; either at or before the plane wins, and the step resolves
+ * as above. Neither at or before it, the plane wins: nothing is resolved, and
+ * the result says so (`planeOwns`).
  */
 export function sweepShip(
 	ship: SolidMotion,
 	solids: readonly SolidMotion[],
 	dt: number,
+	options: SweepOptions = {},
 ): SweepResult {
 	const result: SweepResult = {
 		pos: ship.end.origin,
 		vel: ship.velEnd,
 		impacts: [],
 		ghosts: [],
+		planeOwns: false,
 	};
-	if (!(dt > 0) || solids.length === 0) return result;
+	const planeS = options.planeS ?? null;
+	if (!(dt > 0) || solids.length === 0) {
+		result.planeOwns = planeS !== null;
+		return result;
+	}
 	const shipBox = ship.primitives.find((p) => p.kind === "box");
 	if (!shipBox) throw new Error("a ship collides on its hull box (P1)");
 	const sweep: Sweep = {
@@ -783,15 +813,66 @@ export function sweepShip(
 		origin: ship.end.origin,
 		vel: ship.velEnd,
 	});
-	const met = resolveEarliest(sweep, swept, end, result);
+	const met = resolveEarliest(sweep, swept, end);
+	const impactFirst =
+		result.impacts.length > 0 ||
+		(met !== null && (planeS === null || met.impact.timeS <= planeS));
+	if (planeS !== null && !impactFirst) {
+		result.planeOwns = true;
+		return result;
+	}
 	if (met) {
 		end = met.end;
 		touching.push(met.touching);
+		result.impacts.push(met.impact);
 	}
 	end = settleTouching(sweep, touching, end, met !== null);
 	result.pos = end.origin;
 	result.vel = end.vel;
 	return result;
+}
+
+/** A primitive's bounding sphere in its solid's frame. */
+function primitiveBound(p: Primitive): { centre: Vec3; radiusKm: number } {
+	if (p.kind === "sphere") return { centre: p.centre, radiusKm: p.radiusKm };
+	if (p.kind === "capsule")
+		return {
+			centre: scale(add(p.a, p.b), 0.5),
+			radiusKm: length(sub(p.b, p.a)) / 2 + p.radiusKm,
+		};
+	return {
+		centre: p.centre,
+		radiusKm: Math.hypot(p.half[0], p.half[1], p.half[2]),
+	};
+}
+
+/**
+ * Whether one primitive's bounding sphere can meet the ship's within the step.
+ * The primitive's centre is taken at both ends of the step and joined by a
+ * chord; a solid that turns carries it on an arc instead, which leaves the
+ * chord by at most its sagitta, `|c| · (1 − cos(θ / 2))`, so that is added to
+ * the radius. Conservative: a primitive this rejects cannot be met.
+ */
+function primitiveMayMeet(
+	sweep: Sweep,
+	solid: SolidMotion,
+	spin: Spin,
+	primitive: Primitive,
+): boolean {
+	const { centre, radiusKm } = primitiveBound(primitive);
+	const sagitta = length(centre) * (1 - Math.cos(spin.angle / 2));
+	return mayMeet(
+		{
+			start: sweep.ship.start.origin,
+			end: sweep.ship.end.origin,
+			reachKm: sweep.shipReach,
+		},
+		{
+			start: toWorld(solid.start, centre),
+			end: toWorld(solid.end, centre),
+			reachKm: radiusKm + sagitta,
+		},
+	);
 }
 
 /**
@@ -822,7 +903,11 @@ function classifyPairs(
 		const shipOrigin = sub(ship.start.origin, ref);
 		const shipAt = placeBox(shipBox, { ...ship.start, origin: shipOrigin });
 		const solidPose = { ...solid.start, origin: v3() };
+		const spin = sweep.spins[index];
 		for (const primitive of solid.primitives) {
+			// §4.1's last sentence, per primitive: a station's proxy is tens of
+			// pieces, and a ship beside one face cannot reach the far side's.
+			if (!primitiveMayMeet(sweep, solid, spin, primitive)) continue;
 			const pair = { solid: index, primitive, reach };
 			const gap = separation(shipAt, place(primitive, solidPose));
 			if (gap.overlap) {
@@ -888,17 +973,16 @@ function stopResting(
 }
 
 /**
- * §4.1, §4.2: sweep every other pair; the earliest impact owns the tick. The
+ * §4.1, §4.2: sweep every other pair; the earliest impact among them. The
  * ship is left at the separation outside it, carried with the met solid for
- * the rest of the step, and bounced; the impact goes onto `result`. `null`
- * when no pair is met.
+ * the rest of the step, and bounced; the impact is handed back for the caller
+ * to weigh against the plane. `null` when no pair is met.
  */
 function resolveEarliest(
 	sweep: Sweep,
 	swept: readonly PairState[],
 	end: End,
-	result: SweepResult,
-): { end: End; touching: Touching } | null {
+): { end: End; touching: Touching; impact: Impact } | null {
 	const { ship, shipBox, shipSpin, dt } = sweep;
 	const motion: SolidMotion = {
 		...ship,
@@ -956,17 +1040,20 @@ function resolveEarliest(
 		solid.end.origin,
 		remaining === 0 ? local : rotateAbout(local, solidSpin.axis, remaining),
 	);
-	result.impacts.push({
-		solid: pair.solid,
-		timeS: s * dt,
-		point: add(onSurface, ref),
-		normal,
-		closingKms: closing,
-		damage: impactDamage(closing),
-		side: sideStruck(shipAt.z, sub(onShip, shipAt.origin)),
-		resting: false,
-	});
-	return { end: { origin, vel }, touching: { pair, normal, closingKms: 0 } };
+	return {
+		end: { origin, vel },
+		touching: { pair, normal, closingKms: 0 },
+		impact: {
+			solid: pair.solid,
+			timeS: s * dt,
+			point: add(onSurface, ref),
+			normal,
+			closingKms: closing,
+			damage: impactDamage(closing),
+			side: sideStruck(shipAt.z, sub(onShip, shipAt.origin)),
+			resting: false,
+		},
+	};
 }
 
 /**

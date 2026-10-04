@@ -49,16 +49,21 @@
  * restated. On a trade station or a shipyard the proxy leaves the bay open over
  * `interiorAxialSpanKm`, and the prism the aperture rectangle sweeps outward
  * from the plane. On a refinery or an outpost it leaves the corridor cylinder
- * at `corridorRadiusKm` open, outward from the plane. A static primitive must
+ * at `corridorRadiusKm` open, outward from the plane **and down into the
+ * landing well below it** (`padWellDepthKm`, node #663). A static primitive must
  * clear what the rectangle sweeps as the station turns, so the shipyard's keel
  * clears the corridor cylinder and the bay's swept cylinder. The openings are
  * gaps — no primitive holds a point of them — not modelled holes, and a box
  * that would cross one is cut into the pieces around it (`cutAround`).
  */
 
+import type { Pose, Primitive, SolidMotion } from "./collision";
+import { type ApertureFrame, frameAtPhase, slotBasis } from "./docking";
 import type { StationFormId, StationType } from "./station";
-import { STATION_GEOMETRY } from "./station";
+import { SELECTED_FORM, STATION_GEOMETRY } from "./station";
+import { HULL_IDS, HULL_SPECS } from "./hull";
 import {
+	berthFits,
 	corridorRadiusKm,
 	interiorAxialSpanKm,
 	stationInterior,
@@ -71,6 +76,7 @@ import {
 	WORKS_CELL_KM,
 	WORKS_FLOOR_KM,
 } from "./station-plant";
+import { type Vec3, cross, v3 } from "./vec3";
 
 // ---------------------------------------------------------------------------
 // Primitive types
@@ -311,16 +317,68 @@ function bayHoles(type: StationType): Bounds[] {
 }
 
 /**
+ * How far a pad's opening runs **below** its plane: the landing well
+ * (node #663, `collision.md` §2.2 — derived, and the principal's to ratify).
+ *
+ * **Why a pad needs one and a slot does not.** A docking ship's nose is within
+ * check 2's 35° of the inward axis, so when its centre reaches the plane the
+ * front half of its hull box is already past it. Behind a slot's plane that is
+ * the open bay (`interiorAxialSpanKm`). Behind a pad's it was solid — the deck
+ * under its hole, the Works' head house, the Salvage's core and rock all reach
+ * the plane on the axis — so with stations solid the nose met the pad before
+ * the centre could cross, an impact owned every tick (§4.2), and no hull could
+ * dock at a pad at all. The docking-computer harness measured it: every hull at
+ * both pad roles stopped at the deck with no crossing.
+ *
+ * **The depth is the deepest a docking hull can reach**, read off the hulls
+ * rather than written down: the half-diagonal of each hull's box plus its
+ * offset from the ship's origin (`HULL_SPECS[id].envCentre`), over every hull
+ * a berth of this role admits — a hull no berth admits cannot be granted, so
+ * it never crosses. That bounds the box below the plane at any attitude, so a
+ * centred entry fits whatever its angle, and an entry off the axis is P1's
+ * physical fit: a wing past the corridor meets the deck, as a slot's rim does.
+ *
+ * Zero for a slot role: its bay is the opening behind its plane.
+ */
+export function padWellDepthKm(type: StationType): number {
+	if (STATION_GEOMETRY[type].aperture.kind !== "pad") return 0;
+	const cached = wellDepthCache.get(type);
+	if (cached !== undefined) return cached;
+	const interior = stationInterior(
+		type,
+		STATION_GEOMETRY[type].aperturePlaneKm,
+		0,
+	);
+	let depth = 0;
+	for (const id of HULL_IDS) {
+		const { env, envCentre } = HULL_SPECS[id];
+		if (!interior.berths.some((berth) => berthFits(berth, env))) continue;
+		const reach =
+			Math.hypot(env.lengthKm, env.beamKm, env.heightKm) / 2 +
+			Math.hypot(envCentre.rightKm, envCentre.upKm, envCentre.foreKm);
+		depth = Math.max(depth, reach);
+	}
+	wellDepthCache.set(type, depth);
+	return depth;
+}
+
+const wellDepthCache = new Map<StationType, number>();
+
+/** The floor of a pad's opening: its plane less the well (`padWellDepthKm`). */
+export const padOpeningFloorKm = (type: StationType): number =>
+	STATION_GEOMETRY[type].aperturePlaneKm - padWellDepthKm(type);
+
+/**
  * What a box may not cross on a refinery or an outpost: the corridor
- * cylinder, as the square prism that circumscribes it, outward from the plane.
- * A box cut to the square clears the cylinder; the corners it leaves open are
- * open space outside the corridor, and the ring a form carries round the axis
- * covers them.
+ * cylinder, as the square prism that circumscribes it, from the landing
+ * well's floor outward. A box cut to the square clears the cylinder; the
+ * corners it leaves open are open space outside the corridor, and the ring a
+ * form carries round the axis covers them.
  */
 function corridorHole(type: StationType): Bounds {
 	const g = STATION_GEOMETRY[type];
 	const r = corridorRadiusKm(g.aperture);
-	return axial(r, r, g.aperturePlaneKm, Infinity);
+	return axial(r, r, padOpeningFloorKm(type), Infinity);
 }
 
 // ---------------------------------------------------------------------------
@@ -560,7 +618,13 @@ export function refineryPlantProxy(assemblySeed: number): ProxyBox[] {
 function refineryWorksProxy(assemblySeed: number): StationProxy {
 	const plane = STATION_GEOMETRY.refinery.aperturePlaneKm;
 
-	const rock = sphere({ x: 0, y: 0, z: -0.15 }, 0.53);
+	// Its top stands on the landing well's floor rather than over it: the one
+	// primitive here a cut cannot shorten.
+	const ROCK_Z = -0.15;
+	const rock = sphere(
+		{ x: 0, y: 0, z: ROCK_Z },
+		Math.min(0.53, padOpeningFloorKm("refinery") - ROCK_Z),
+	);
 	const flanks = ring(0.4, 0, 0.27);
 	const DECK_HALF = 0.215;
 	const deck = cutAround(
@@ -602,20 +666,31 @@ function outpostSalvageProxy(): StationProxy {
 	const plane = g.aperturePlaneKm;
 
 	const deckUnder = plane - r * 0.16;
-	const core = boxOf(
-		axial(
-			SALVAGE_CORE.halfWidthKm,
-			SALVAGE_CORE.halfHeightKm,
-			SALVAGE_CORE.bottomKm,
-			deckUnder,
-		),
+	const core = cutAround(
+		[
+			axial(
+				SALVAGE_CORE.halfWidthKm,
+				SALVAGE_CORE.halfHeightKm,
+				SALVAGE_CORE.bottomKm,
+				deckUnder,
+			),
+		],
+		[corridorHole("outpost")],
 	);
-	const debris = sphere({ x: 0, y: 0, z: -0.1275 }, 0.2925);
-	const flanks = ring(0.24, -0.05, 0.17);
+	// The debris and the flank ring stand on the landing well's floor rather
+	// than over it, as the Works' rock does: neither can be cut.
+	const floor = padOpeningFloorKm("outpost");
+	const DEBRIS_Z = -0.1275;
+	const debris = sphere(
+		{ x: 0, y: 0, z: DEBRIS_Z },
+		Math.min(0.2925, floor - DEBRIS_Z),
+	);
+	const FLANK_TUBE = 0.17;
+	const flanks = ring(0.24, Math.min(-0.05, floor - FLANK_TUBE), FLANK_TUBE);
 	const deck = ring(0.2, plane + 0.005, 0.11);
 	const deckRim = ring(0.28, plane - 0.025, 0.1);
 
-	return proxyOf([core, debris, ...flanks, ...deck, ...deckRim]);
+	return proxyOf([...core, debris, ...flanks, ...deck, ...deckRim]);
 }
 
 // ---------------------------------------------------------------------------
@@ -763,4 +838,164 @@ export function proxyContains(
 	toleranceKm: number,
 ): boolean {
 	return primitives.some((p) => proxyDistanceKm(p, x, y, z) <= toleranceKm);
+}
+
+// ---------------------------------------------------------------------------
+// The proxy in the world (node #663)
+// ---------------------------------------------------------------------------
+
+/**
+ * The proxy of the form a running game draws for this station: its type's
+ * `SELECTED_FORM`, at the station's own seeds. Memoised on the seeds — the
+ * refinery's runs the placement solve, and the sim asks every step a station
+ * is within reach — so a jump to another system reads new keys rather than
+ * stale proxies, and nothing has to be cleared.
+ *
+ * Throws on a selected form with no proxy: the budget row already refuses
+ * one, and a station that silently collided as nothing would be the invisible
+ * hole that row exists to prevent.
+ */
+export function selectedStationProxy(station: {
+	type: StationType;
+	berthSeed: number;
+	assemblySeed: number;
+}): StationProxy {
+	const key = `${station.type}:${station.berthSeed}:${station.assemblySeed}`;
+	const cached = selectedCache.get(key);
+	if (cached) return cached;
+	const proxy = stationProxy(
+		station.type,
+		SELECTED_FORM[station.type],
+		station.berthSeed,
+		station.assemblySeed,
+	);
+	if (!proxy)
+		throw new Error(
+			`selected ${station.type} form ${SELECTED_FORM[station.type]} has no proxy`,
+		);
+	// A handful of stations per system; a long session of jumps is bounded by
+	// dropping the lot rather than tracking recency.
+	if (selectedCache.size >= SELECTED_CACHE_LIMIT) selectedCache.clear();
+	selectedCache.set(key, proxy);
+	return proxy;
+}
+
+const SELECTED_CACHE_LIMIT = 64;
+const selectedCache = new Map<string, StationProxy>();
+
+/** One proxy primitive as the collision resolver's (`collision.ts`). */
+export function resolverPrimitive(p: ProxyPrimitive): Primitive {
+	switch (p.kind) {
+		case "box":
+			return {
+				kind: "box",
+				centre: v3(p.cx, p.cy, p.cz),
+				axes: [v3(1, 0, 0), v3(0, 1, 0), v3(0, 0, 1)],
+				half: [p.hx, p.hy, p.hz],
+			};
+		case "sphere":
+			return {
+				kind: "sphere",
+				centre: v3(p.cx, p.cy, p.cz),
+				radiusKm: p.radiusKm,
+			};
+		case "capsule":
+			return {
+				kind: "capsule",
+				a: v3(p.ax, p.ay, p.az),
+				b: v3(p.bx, p.by, p.bz),
+				radiusKm: p.radiusKm,
+			};
+	}
+}
+
+/**
+ * The proxy's two frames as resolver primitives. `static` is empty except on
+ * the shipyard; a station that does not spin has one frame, and both lists
+ * are posed on it.
+ */
+export function proxySolids(proxy: StationProxy): {
+	spinning: Primitive[];
+	static: Primitive[];
+} {
+	const cached = solidCache.get(proxy);
+	if (cached) return cached;
+	const out = {
+		spinning: proxy.spinning.map(resolverPrimitive),
+		static: proxy.static.map(resolverPrimitive),
+	};
+	solidCache.set(proxy, out);
+	return out;
+}
+
+const solidCache = new WeakMap<
+	StationProxy,
+	{ spinning: Primitive[]; static: Primitive[] }
+>();
+
+/**
+ * Where the proxy's two frames stand in the world, for one aperture frame and
+ * the station's centre: **the one posing** the sim, the docking harness and
+ * the rows all read (node #663).
+ *
+ * The proxy's local `z` is the aperture axis, out of the station, and its
+ * `x` and `y` are `slotBasis`'s `across` and `up` — the contract the
+ * renderer aims a station by (`main.ts`: local X on the phase-zero
+ * `across`, local Y on its `up`, `spinner.rotation.z = phaseRad`). So the
+ * spinning frame is the basis **at the frame's phase**, and the static frame —
+ * the shipyard's keel, which does not turn — is the basis at phase zero.
+ * `slotBasis` re-orthogonalises the reference, so `(across, up, axis)` is
+ * right-handed by construction (`across × up = axis`).
+ */
+export function proxyPoses(
+	frame: ApertureFrame,
+	origin: Vec3,
+): { spinning: Pose; static: Pose } {
+	const pose = (f: ApertureFrame): Pose => {
+		const { across, up } = slotBasis(f);
+		return { origin, x: across, y: up, z: cross(across, up) };
+	};
+	return { spinning: pose(frame), static: pose(frameAtPhase(frame, 0)) };
+}
+
+/** One end of a station's step: its aperture frame, centre and velocity. */
+export interface StationEnd {
+	frame: ApertureFrame;
+	origin: Vec3;
+	vel: Vec3;
+}
+
+/**
+ * A station's proxy across one step, as the solids `sweepShip` meets: the
+ * spinning member, and the static keel where the form has one. Both carry the
+ * station's centre and velocity at the step's two ends, and their axes from
+ * `proxyPoses`, so the spinning one turns through the step's phase change and
+ * a point on it moves at `ω × r` (`collision.md` §3, §4.1).
+ */
+export function stationMotions(
+	proxy: StationProxy,
+	start: StationEnd,
+	end: StationEnd,
+): SolidMotion[] {
+	const solids = proxySolids(proxy);
+	const from = proxyPoses(start.frame, start.origin);
+	const to = proxyPoses(end.frame, end.origin);
+	const motions: SolidMotion[] = [
+		{
+			primitives: solids.spinning,
+			start: from.spinning,
+			end: to.spinning,
+			velStart: start.vel,
+			velEnd: end.vel,
+		},
+	];
+	if (solids.static.length > 0)
+		motions.push({
+			primitives: solids.static,
+			start: from.static,
+			end: to.static,
+			velStart: start.vel,
+			velEnd: end.vel,
+		});
+	return motions;
 }

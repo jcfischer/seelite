@@ -22,18 +22,19 @@
  * Nothing else about a hull reaches the approach.
  */
 
+import { type Impact, hullBox, shipPose, sweepShip } from "../../src/collision";
 import {
 	type ApertureFrame,
 	type ComputerPhase,
 	type DockingState,
 	type EntryPose,
+	apertureCrossing,
 	apertureFrame,
 	attemptEntry,
 	GRANT_WINDOW_S,
 	corridorHalfWidthKm,
 	newDockingState,
 	offAxisKm,
-	planeCrossing,
 	requestClearance,
 	slotBasis,
 } from "../../src/docking";
@@ -54,6 +55,11 @@ import {
 	slotPhaseRad,
 } from "../../src/station";
 import { stationInterior } from "../../src/station-interior";
+import {
+	type StationProxy,
+	selectedStationProxy,
+	stationMotions,
+} from "../../src/station-proxy";
 import { type Vec3, add, cross, dot, length, scale, v3 } from "../../src/vec3";
 
 /**
@@ -119,6 +125,16 @@ export interface FlightRun {
 	/** The evaluation at the crossing, when there was one — so a failing row can
 	 *  print which of the six rows went red rather than a boolean. */
 	crossing: ReturnType<typeof attemptEntry> | null;
+	/**
+	 * The impacts the flown hull's box made with the station's proxy while
+	 * flying (`collision.md` §9.1.15): collision is live here as in the game,
+	 * and the run ends at the first, so this holds at most one step's. Empty is
+	 * the claim.
+	 */
+	impacts: Impact[];
+	/** Steps that began with the box overlapping the proxy (§4.3). A computer
+	 *  run is never placed, so zero is the claim here too. */
+	ghostSteps: number;
 }
 
 export interface FlightOptions {
@@ -176,6 +192,12 @@ export interface FlightOptions {
 	axisSwingRadPerS?: number;
 	/** Filled with one entry per step, when given. */
 	trace?: ComputerTraceStep[];
+	/**
+	 * The station the hull meets (`collision.md` §2.2), when it is not the
+	 * selected form's proxy at berth seed 1 and assembly seed 0 — for a row
+	 * that builds a red proxy on purpose.
+	 */
+	proxy?: StationProxy;
 }
 
 /** The clearance a run starts under: none, queued, or a live grant. Every
@@ -238,6 +260,14 @@ export function flyTheComputer(opts: FlightOptions): FlightRun {
 	let violations = 0;
 	let steps = 0;
 	let crossingOutcome: FlightRun["crossing"] = null;
+	const impacts: Impact[] = [];
+	let ghostSteps = 0;
+	// The station stands at the origin of its own frame, which is the frame
+	// this harness flies in: a proxy at rest, turning with the slot.
+	const proxy =
+		opts.proxy ?? selectedStationProxy({ type, berthSeed: 1, assemblySeed: 0 });
+	const spec = HULL_SPECS[opts.hull];
+	const box = [hullBox(spec.env, spec.envCentre)];
 	const limitS = opts.limitS ?? GRANT_WINDOW_S;
 	let previousPhase: ComputerPhase = "idle";
 
@@ -280,6 +310,7 @@ export function flyTheComputer(opts: FlightOptions): FlightRun {
 		// about a third, so the line-up turn and the roll tracking are genuinely
 		// harder for them.
 		const start = { rel: { ...ship.pos }, vRel: { ...ship.vel } };
+		const attitudeBefore = { nose, up };
 		({ nose, up, rates } = stepHull(
 			ship,
 			{ nose, up, rates },
@@ -314,7 +345,39 @@ export function flyTheComputer(opts: FlightOptions): FlightRun {
 
 		const after: EntryPose = { rel: ship.pos, vRel: ship.vel, nose, up };
 		const nextFrame = frameAt(gameTime);
-		const crossing = planeCrossing(nextFrame, before, after);
+		// `collision.md` §4.2, decided as `stepWorld` decides it: the plane's
+		// time against the earliest impact's, a tie to the impact.
+		const found = apertureCrossing(
+			nextFrame,
+			before,
+			after,
+			STATION_GEOMETRY[type].coreRadiusKm,
+		);
+		const swept = sweepShip(
+			{
+				primitives: box,
+				start: shipPose(start.rel, attitudeBefore.nose, attitudeBefore.up),
+				end: shipPose(ship.pos, nose, up),
+				velStart: start.vRel,
+				velEnd: ship.vel,
+			},
+			stationMotions(
+				proxy,
+				{ frame: frameAt(gameTime - dt), origin: v3(), vel: v3() },
+				{ frame: nextFrame, origin: v3(), vel: v3() },
+			),
+			dt,
+			{ planeS: found ? found.fraction * dt : null },
+		);
+		if (swept.ghosts.length > 0) ghostSteps++;
+		impacts.push(...swept.impacts);
+		ship.pos = swept.pos;
+		ship.vel = swept.vel;
+		// **An impact ends the run, as a failed check does.** The hull met the
+		// station instead of the plane, which is a run that failed; flying on
+		// would bounce it to the grant window's end and report a timeout.
+		if (swept.impacts.length > 0) break;
+		const crossing = swept.planeOwns ? (found?.pose ?? null) : null;
 		if (crossing) {
 			const outcome = attemptEntry({
 				frame: nextFrame,
@@ -335,5 +398,7 @@ export function flyTheComputer(opts: FlightOptions): FlightRun {
 		steps,
 		gameTime,
 		crossing: crossingOutcome,
+		impacts,
+		ghostSteps,
 	};
 }

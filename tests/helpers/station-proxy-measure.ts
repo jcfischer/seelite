@@ -20,6 +20,7 @@ import { STATION_SILHOUETTE_KM } from "../../src/station-mesh";
 import {
 	type ProxyPrimitive,
 	type StationProxy,
+	padOpeningFloorKm,
 	proxyDistanceKm,
 } from "../../src/station-proxy";
 
@@ -72,7 +73,14 @@ export function openingOf(type: StationType): Opening {
 		z1: reach,
 	};
 	if (interior.presentation !== "bay") {
-		return { boxes: [], cylinders: [corridor], sweptCylinders: [corridor] };
+		// A pad's corridor runs on down into its landing well (node #663): the
+		// floor is the proxy's own expression, read rather than restated, so
+		// the opening this row samples is the one the proxy was cut to.
+		const well: AxialCylinder = {
+			...corridor,
+			z0: padOpeningFloorKm(type),
+		};
+		return { boxes: [], cylinders: [well], sweptCylinders: [well] };
 	}
 	const [z0, z1] = interiorAxialSpanKm(interior);
 	const bay: AxialBox = {
