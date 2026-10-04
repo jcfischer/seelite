@@ -354,6 +354,17 @@ describe("§9.1 namespace and baseline stability", () => {
 			}).toEqual({ version, hashes: goldens });
 	});
 
+	test("version 9 moves no version-8 carrier: parent and placement too", () => {
+		// The identity goldens above hash system, slot and type only; this is the
+		// row that holds parent and placement. Version 8's full baseline
+		// fingerprints, hashed over every carrier but the outpost's.
+		expect(
+			[0, 1, 2, 3, 4, 5, 6, 7].map((g) =>
+				carrierBaselineFingerprint(WORLD, g, (c) => !isOutpostCarrier(c)),
+			),
+		).toEqual(VERSION_8_BASELINE_FINGERPRINTS);
+	});
+
 	test("every supported old generator version has an identity golden", () => {
 		for (const version of LEGACY_WORLD_GENERATOR_VERSIONS)
 			expect(MIGRATION_IDENTITY_GOLDENS[version]?.goldens).toHaveLength(8);
@@ -400,12 +411,9 @@ describe("§9.1 namespace and baseline stability", () => {
  *   overlays rebase onto newly generated placements.
  * - 8 → 9: node #491 placed the raider outpost, with its one Traffic carrier,
  *   in every system at the lawless end of the government scale — every galaxy
- *   holds some, so all eight hashes move. Nothing else did: the identity
- *   goldens above hash every carrier but the outpost's and still read
- *   version 8's, and `station-orbits.test.ts` holds every other station's
- *   placement against its committed baseline. Version 8 read 1163733963,
- *   1672146284, 3852086902, 2162345770, 2887711080, 3286766929, 4125920552
- *   and 2160286286.
+ *   holds some, so all eight hashes move. Nothing else did: hashed over every
+ *   carrier but the outpost's, this fingerprint still reads version 8's,
+ *   which `VERSION_8_BASELINE_FINGERPRINTS` keeps and a row above checks.
  *
  * Version 4 changed all eight hashes because every generated station gained
  * Traffic Carrier slots; version 5 changes all eight again because every one of
@@ -424,6 +432,13 @@ describe("§9.1 namespace and baseline stability", () => {
  * saved wreck now points at a different station than it did — which is a
  * migration, and §2 says so.
  */
+/** Version 8's `GOLDEN_FINGERPRINTS`, kept as the oracle for the row that
+ *  holds every non-outpost carrier's parent and placement through 8 → 9. */
+const VERSION_8_BASELINE_FINGERPRINTS = [
+	1163733963, 1672146284, 3852086902, 2162345770, 2887711080, 3286766929,
+	4125920552, 2160286286,
+];
+
 const GOLDEN_FINGERPRINTS = [
 	2672329271, 4074845572, 1545285557, 3911845246, 1787093879, 1921536928,
 	1159651322, 1021027989,

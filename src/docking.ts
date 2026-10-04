@@ -753,6 +753,24 @@ export interface ClearanceRequest {
 }
 
 /**
+ * Whether the station treats this pilot as hostile at its mouth: the flip, or
+ * the law's refusal **unless the berth is closed**. At a closed berth the
+ * law's verdict is moot — the raider outpost's would mark every clean pilot
+ * who flew near it hostile without their asking anything — while a pilot who
+ * barged it earned `state.hostile` like anywhere else. One rule, read by
+ * `attemptEntry` and by the director that presents it, so the two cannot
+ * disagree about which of closure and law wins.
+ */
+export function hostileAtMouth(
+	state: Pick<DockingState, "hostile">,
+	input: { refusedByLaw?: boolean; closed?: boolean },
+): boolean {
+	return (
+		state.hostile || (input.refusedByLaw === true && input.closed !== true)
+	);
+}
+
+/**
  * §6's protocol: granted, queued, or denied.
  *
  * Out of range is not one of the three replies — it is not a reply at all. A
@@ -967,8 +985,7 @@ export function attemptEntry(input: {
 	// changed is the station's reason for admitting them. So `barged` stays false
 	// — and the flip, with its cooldown, is not started for them.
 	const evaluation = evaluateEntry(frame, pose, {
-		hostile:
-			state.hostile || (input.refusedByLaw === true && input.closed !== true),
+		hostile: hostileAtMouth(state, input),
 	});
 	// A barge is a failed entry whatever the geometry says: the checks are
 	// evaluated so the diagnostics are complete, and the verdict is not theirs.
