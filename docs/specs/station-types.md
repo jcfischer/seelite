@@ -95,9 +95,10 @@ withdrawn.**
 
   It was written for both retired words and said it should return exactly one
   line, `ctx.destination` in `src/audio.ts`, the WebAudio API. **It no longer
-  does, and #491 did not make it a gate:** run on 2026-10-04 it returns 403
-  lines, because "destination" has come back as an ordinary word in job and
-  route code (`destinationStationId`, a courier's destination). Whether each is
+  does, and #491 did not make it a gate:** "destination" has come back as an
+  ordinary word in job and route code (`destinationStationId`, a courier's
+  destination); run the pattern for today's count rather than trusting one
+  written here. Whether each is
   the retired sense is a sweep of its own, not #491's. The pattern stays as the
   audit's definition, case-insensitive because the sweep had capitalised
   occurrences ("Destination-only law"). This file is excluded by name
