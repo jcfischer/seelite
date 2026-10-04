@@ -423,6 +423,7 @@ import {
 	trafficPresence,
 } from "./traffic-engagement";
 import {
+	type TrafficSweptEnd,
 	presentedTrafficPos,
 	presentedTrafficStep,
 } from "./traffic-presentation";
@@ -6233,6 +6234,7 @@ class Game {
 		}
 		this.trafficContacts.clear();
 		this.trafficMeshes.clear();
+		this.trafficSweptEnds.clear();
 	}
 
 	/** Reset presentation and transient authority when its system changes. */
@@ -14421,6 +14423,12 @@ class Game {
 	private fleetStarts = new Map<string, FleetPose>();
 
 	/**
+	 * Where the last step's sweep left each collidable projected carrier, at
+	 * the clock it ended on (`presentedTrafficStep`'s `from`, node #664).
+	 */
+	private readonly trafficSweptEnds = new Map<CarrierKey, TrafficSweptEnd>();
+
+	/**
 	 * The ships this frame flies other than the player (node #664): the
 	 * raider in its duel — a relay's defender is one — and every engaged
 	 * carrier, keyed by their carrier keys.
@@ -14511,6 +14519,9 @@ class Game {
 				end: ship.motion.end.origin,
 			})),
 		];
+		// Only this step's collidable carriers carry an end into the next.
+		const sweptBefore = new Map(this.trafficSweptEnds);
+		this.trafficSweptEnds.clear();
 		// The materialised contacts: a carrier not drawn near the player is
 		// not posed for a meeting at all.
 		for (const key of this.trafficContacts.keys()) {
@@ -14526,6 +14537,9 @@ class Game {
 			// step that moved kilometres (the corpus row's finding). A phase
 			// that collides is never settled in a berth (§5 exempts all three),
 			// so no parked resample is owed here.
+			// Started where the last sweep ended, so the jump an authority tick
+			// draws between two frames is swept too (`presentedTrafficStep`);
+			// recorded before the reach cut, so a step not posed still carries.
 			const drawn = presentedTrafficStep(
 				{
 					current: route,
@@ -14535,7 +14549,12 @@ class Game {
 				},
 				this.world.gameTime,
 				dt,
+				sweptBefore.get(key) ?? null,
 			);
+			this.trafficSweptEnds.set(key, {
+				atS: this.world.gameTime + dt,
+				pos: drawn.end,
+			});
 			// Reachable this step by anything flown at all, taken early so a
 			// system's Traffic is not posed every frame for nothing.
 			if (

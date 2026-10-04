@@ -67,19 +67,44 @@ export function presentedTrafficPos(
 	return add(before, scale(sub(now, before), blend));
 }
 
+/** Where the last sweep left a carrier: its drawn end, and the clock of it. */
+export interface TrafficSweptEnd {
+	atS: number;
+	pos: Vec3;
+}
+
+/** Two clocks this close are one: a step's end and the next step's start are
+ *  each `gameTime + dt`, summed the same way, so this only absorbs rounding. */
+const SAME_CLOCK_S = 1e-9;
+
 /**
- * A projected carrier across one step: drawn at `fromS` and at `fromS + dt`,
- * and the velocity that displacement is (node #664). Each end is evaluated at
- * its own clock, blend and prediction alike, so a step's end is the next
- * step's start and nothing the carrier is drawn crossing falls between two
- * sweeps. With no step to divide by, the velocity is the current sample's.
+ * A projected carrier across one step: drawn at `fromS + dt`, from where the
+ * step began, and the velocity that displacement is (node #664). Each end is
+ * evaluated at its own clock, blend and prediction alike.
+ *
+ * **`from` carries the previous sweep's end across an authority tick.** Within
+ * one tick's samples a step's end is the next step's start by construction.
+ * Across a tick it is not: the step before the tick ended on the old samples,
+ * and the new ones draw the carrier somewhere else at the same clock — on a
+ * local approach a correction of up to a kilometre, spread by the blend, so
+ * up to about 0.1 km on the first 60 Hz frame. The render path draws both
+ * poses, one frame apart. Given the last sweep's end at `fromS`, the step
+ * starts there, so that jump is swept rather than skipped, and its velocity
+ * spikes on a tick's frame by exactly the jump: that is the drawn motion. A
+ * `from` at any other clock — a carrier not swept last step, a rewound clock
+ * — is ignored, and the step starts where it is drawn now. With no step to
+ * divide by, the velocity is the current sample's.
  */
 export function presentedTrafficStep(
 	samples: TrafficSamples,
 	fromS: number,
 	dt: number,
+	from: TrafficSweptEnd | null = null,
 ): { start: Vec3; end: Vec3; vel: Vec3 } {
-	const start = presentedTrafficPos(samples, fromS);
+	const start =
+		from && Math.abs(from.atS - fromS) <= SAME_CLOCK_S
+			? { ...from.pos }
+			: presentedTrafficPos(samples, fromS);
 	if (!(dt > 0)) return { start, end: start, vel: { ...samples.current.vel } };
 	const end = presentedTrafficPos(samples, fromS + dt);
 	return { start, end, vel: scale(sub(end, start), 1 / dt) };

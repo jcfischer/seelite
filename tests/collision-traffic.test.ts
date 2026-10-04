@@ -30,6 +30,7 @@ import {
 	hullBox,
 	impactDamage,
 	pairSeparation,
+	reachKm,
 	shipImpulse,
 	SEPARATION_KM,
 	bodySphere,
@@ -877,7 +878,7 @@ describe("presentedTrafficStep: a projection is swept along what is drawn (node 
 		).toBe(CORRECTION_KM);
 	});
 
-	test("a step's velocity is its drawn displacement, and one step ends where the next starts", () => {
+	test("a step's velocity is its drawn displacement, and within one tick a step ends where the next starts", () => {
 		const s = samples(v3());
 		const a = presentedTrafficStep(s, 0.125, 0.05);
 		const b = presentedTrafficStep(s, 0.175, 0.05);
@@ -887,6 +888,80 @@ describe("presentedTrafficStep: a projection is swept along what is drawn (node 
 		);
 		// The correction is the motion: ten kilometres a second, not 0.082.
 		expect(a.vel.x).toBeGreaterThan(100 * LAW_KMS);
+	});
+
+	test("across an authority tick, a step starts where the last sweep ended, and a ship in the jump is met", () => {
+		const dt = 1 / 60;
+		const vel = v3(LAW_KMS, 0, 0);
+		const origin = makeWorld(47).ship.pos;
+		// Tick 0.1's samples, and tick 0.2's, whose correction moves the
+		// carrier 4 km from where tick 0.1 predicted it.
+		const a: TrafficSamples = {
+			prior: { pos: add(origin, v3(-0.01, 0, 0)), vel },
+			priorAtS: 0,
+			current: { pos: origin, vel },
+			currentAtS: 0.1,
+		};
+		const b: TrafficSamples = {
+			prior: a.current,
+			priorAtS: 0.1,
+			current: { pos: add(origin, v3(4, 0, 0)), vel },
+			currentAtS: 0.2,
+		};
+		// The step before the tick ends on tick 0.1's samples; the step after
+		// starts on tick 0.2's, at the same clock.
+		const before = presentedTrafficStep(a, 0.2 - dt / 2, dt);
+		const t = 0.2 - dt / 2 + dt;
+		const fresh = presentedTrafficStep(b, t, dt);
+		const carried = presentedTrafficStep(b, t, dt, {
+			atS: t,
+			pos: before.end,
+		});
+		// Drawn on consecutive frames, a hull and more apart: what the red
+		// build skipped.
+		const reach = reachKm(box("courier")) + reachKm(box("freighter")) + 0.01;
+		const jump = length(sub(fresh.start, before.end));
+		expect(jump).toBeGreaterThan(2 * reach);
+		expect(carried.start).toEqual(before.end);
+		expect(carried.end).toEqual(fresh.end);
+		// A `from` at another clock is ignored.
+		expect(
+			presentedTrafficStep(b, t, dt, { atS: t - dt, pos: before.end }).start,
+		).toEqual(fresh.start);
+		// The player at rest in the middle of the jump: no sweep that starts
+		// where the carrier is drawn reaches it; the carried one does.
+		const mid = scale(add(before.end, fresh.start), 0.5);
+		const meet = (m: { start: Vec3; end: Vec3; vel: Vec3 }) => {
+			const world = makeWorld(47);
+			world.ship.pos = mid;
+			world.ship.vel = v3();
+			return stepWorld(
+				world,
+				still(),
+				HANDS_OFF,
+				dt,
+				flightPerformance("courier"),
+				box("courier"),
+				[],
+				[
+					{
+						id: "carrier",
+						projected: true,
+						motion: {
+							massT: HULL_SPECS.freighter.massT,
+							primitives: box("freighter"),
+							start: shipPose(m.start, v3(1, 0, 0), v3(0, 1, 0)),
+							end: shipPose(m.end, v3(1, 0, 0), v3(0, 1, 0)),
+							velStart: m.vel,
+							velEnd: m.vel,
+						},
+					},
+				],
+			).shipImpacts.map((i) => i.with);
+		};
+		expect(meet(before)).toEqual([]);
+		expect(meet(fresh)).toEqual([]);
+		expect(meet(carried)).toEqual(["carrier"]);
 	});
 
 	test("a carrier drawn crossing the player is met; swept on its `vel`, it was not", () => {
