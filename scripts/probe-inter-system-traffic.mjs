@@ -22,6 +22,19 @@ try {
 		waitUntil: "load",
 	});
 	await bootedGame(page);
+	await page.evaluate(() => {
+		const g = window.__seelite,
+			play = g.play.bind(g);
+		window.__npcJumpCues = [];
+		g.play = (cue) => {
+			if (
+				["witchspaceUnfold", "witchspaceRift"].includes(cue.kind) &&
+				cue.spatial
+			)
+				window.__npcJumpCues.push(cue);
+			play(cue);
+		};
+	});
 	const fixture = await page.evaluate(installHaulerFixture);
 	const sample = (at) =>
 		page.evaluate((at) => window.__haulerFixture.sample(at), at);
@@ -80,7 +93,10 @@ try {
 	check("departure ring paints the frame", departurePixels > 30, {
 		departurePixels,
 	});
-	await page.evaluate(() => window.__haulerFixture.follow());
+	await page.evaluate(() => {
+		window.__haulerFixture.follow();
+		window.__npcJumpCues.length = 0;
+	});
 	const arrived = await sample(fixture.tOut + 0.5);
 	check(
 		"following the player meets the same name and hull",
@@ -92,6 +108,26 @@ try {
 	);
 	const arrivalPixels = await pixels();
 	check("arrival ring paints the frame", arrivalPixels > 30, { arrivalPixels });
+	const arrivalCues = await page.evaluate(() => {
+		const g = window.__seelite,
+			cues = [...window.__npcJumpCues];
+		const nearby = { ...g.world.ship.pos };
+		// Move out of the materialization band and return during the same ring.
+		g.world.ship.pos = { x: nearby.x + 20000, y: nearby.y, z: nearby.z };
+		g.updateTrafficRifts(g.world.ship.pos);
+		g.world.ship.pos = nearby;
+		g.updateTrafficRifts(nearby);
+		return { cues, countAfterReentry: window.__npcJumpCues.length };
+	});
+	check(
+		"Game emits one spatial arrival cue pair and does not replay on ring re-entry",
+		arrivalCues.cues.length === 2 &&
+			arrivalCues.countAfterReentry === 2 &&
+			arrivalCues.cues.every(
+				(cue) => Number.isFinite(cue.spatial.pan) && cue.spatial.gain > 0,
+			),
+		arrivalCues,
+	);
 	const queued = await page.evaluate(() => {
 		const g = window.__seelite,
 			f = window.__haulerFixture;
@@ -116,31 +152,23 @@ try {
 			queued.queue?.participant?.key === fixture.key,
 		queued,
 	);
-	const spatial = await page.evaluate(async () => {
+	const spatial = await page.evaluate(async (cues) => {
 		const { AudioFX } = await import("/src/audio.ts");
 		const render = async (pan) => {
 			const ctx = new OfflineAudioContext(2, 48000, 48000),
 				fx = new AudioFX();
 			fx.attach(ctx);
-			fx.play({
-				kind: "witchspaceUnfold",
-				seconds: 0.8,
-				spatial: { pan, gain: 0.5 },
-			});
-			fx.play({
-				kind: "witchspaceRift",
-				seconds: 0.8,
-				spatial: { pan, gain: 0.5 },
-			});
+			for (const cue of cues)
+				fx.play({ ...cue, seconds: 0.8, spatial: { ...cue.spatial, pan } });
 			const b = await ctx.startRendering();
 			return [0, 1].map((c) =>
 				b.getChannelData(c).reduce((sum, x) => sum + x * x, 0),
 			);
 		};
 		return { left: await render(-1), right: await render(1) };
-	});
+	}, arrivalCues.cues);
 	check(
-		"arrival sound arm is audible and follows the spatial pan",
+		"Game-emitted arrival cues are audible through AudioFX with spatial pan",
 		spatial.left[0] > 0.01 &&
 			spatial.right[1] > 0.01 &&
 			spatial.left[0] > 10 * spatial.left[1] &&

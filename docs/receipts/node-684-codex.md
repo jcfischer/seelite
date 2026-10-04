@@ -72,3 +72,31 @@ Bounded cleanup also removes oscillator-frequency-dependent teardown, reuses the
 - The round's `probe:select` expanded to all probes because the capture harness is shared infrastructure. The worker SOP reserves that full run for the supervisor; `probe:pr` was therefore not used to launch it. The full browser suite, Sage's next verdict, principal approval of the sheet and changelog sentence, merge and checkpoint closure remain outstanding supervisor/principal gates.
 
 The capacity instrument and canonical sheet above are the initial implementation's artifacts; this repair changes no vocation draw, eligible set, cycle law, annulus or ring appearance. It does not claim a new principal judgment on them.
+
+## Sage round 2 repair
+
+All six important review rows are addressed (the continuity defect was reported twice):
+
+- The continuity probe no longer reads peak-speed windows or grants a whole peak-speed step. `advanceCruise.onSegment` now accumulates independent displacement vectors for each physical leg. Adjoining cruise samples are checked against their integrated displacement with a 50 m tolerance, including fractional display queries. A vector residual also rejects a backwards or sideways rewrite whose total distance stays below the allowance. Non-cruise terminal rows retain their endpoint-velocity gate.
+- Game's `trafficActors` is the home roster; `trafficInbound` holds foreign candidates. Authority explicitly combines them; home-divert readers and generic roster consumers no longer need to filter absent foreign carriers. The regression executes the production Game methods and checks both sets' key namespaces.
+- The Lane point API is `projectTrafficLanePointDeparture`, its annulus is `LANE_POINT_ANNULUS_KM`, and the endpoint sentinel is `traffic-lane-point`. The spec's deterministic `|lane|` hash input stays unchanged.
+- `routeVoyages` performs no foreign flight replay and imports only the route's type. Arrival charge reserves the static departure-distance bound: hull capacity minus the leaving station's bound. This is a conservative anchored-side budget, rather than a measured foreign leg's consumption; static eligibility leaves the receiving leg's full bound available. Both directions have numerical regression assertions. The process-global charge cache is removed, and a tick reuses each actor's voyage inputs across baseline and arbitration projections.
+- The unapproved player-visible changelog entry is removed. Its proposed sentence above remains for the principal to ratify and the supervisor to add before merge.
+
+The small optional fixes filter the fallback home berth by hull fit, share the Lane point up vector, and retain heard-jump keys until the ring's time-based expiry. The inter-system probe captures cues emitted through Game.play for the NPC arrival, passes those cues through the offline AudioFX mix, and verifies that moving outside the band and back during the same ring emits no second pair.
+
+The affected hardware run passed ten of eleven probes first. The route probe's two failures were fixture assumptions about the formerly mixed roster: its warm-work counter only watched the home count, and its single-actor fixture left inbound candidates active. The corrected fixture includes both counts for warm work, measures a separate cold query during flight (a parked query legitimately integrates no cruise ticks), and clears inbound candidates when isolating one actor. Its rerun passed 40/40 checks. Together these are eleven affected probes passing, not a full-suite result. Renderer: ANGLE Metal / Apple M1 Pro.
+
+A real negative continuity run, `SEELITE_TRAFFIC_CONTINUITY_CONTROL=rewrite`, exited 1 on a powered cruise sample at 118.6 s with a 1.05 km vector residual against 50 m. The control was exercised; the other four assertions passed. The production baseline continuity probe passed. Headless controls additionally reject backwards, sideways, non-finite and missing-motion inputs.
+
+The selector again selected all 86 probes due to shared infrastructure. The worker contract reserves that full run for the supervisor. An initial exact-file runner invocation omitted its required `PROBE_SELECTION=1` flag and unexpectedly began an unfiltered run; it was stopped after four completed probes, with the active audio probe interrupted. That attempt supplies no full-suite verdict. The corrected runner named its eleven files, reported 75 unrun probes, and completed before the isolated route rerun and continuity negative control. A sandboxed preflight could not launch Chromium; hardware runs succeeded outside the execution sandbox with the tree guard and machine lock intact.
+
+Optional berth-helper consolidation, parked-home helper extraction, home/away state-machine splitting, a typed endpoint-origin union, and Lane point-arrival initializer memoization are deferred: the first four are structural cleanup and the last would add a cache lifecycle to this bounded correctness repair. Existing fit checks and bounded local cruise replay remain covered. No vocation, eligible set, cycle, identity, save schema, generator version, annulus or ring geometry changes in this round. The capacity report and original canonical sheet remain the prior handoff artifacts; the principal's visual yes and changelog approval remain outstanding.
+
+Round 2 worker gates:
+
+- `npm test`: **4,904 passed, 0 failed**, 271 files, 243.74 seconds. The production-source baseline and three rejected mutants remain in this gate.
+- Focused Traffic, route, cruise, world-state and contact run: **308 passed, 0 failed**, 9 files, 12.13 seconds; the additional continuity-oracle file passed **3/3**. Persistence suites ran in the full test gate.
+- Final format, lint, launcher wiring, typecheck and Vite build: passed. Build retains its existing chunk-size advisory. No test timeout was changed.
+- Eleven affected hardware probes passed across the initial partial run and corrected route-probe rerun; the separate injected continuity rewrite was rejected as required. These runs were sequential, with no Sage or headless suite run beside them by this worker.
+- Full browser run, next Sage verdict, the principal's sheet/changelog approvals, merge and checkpoint closure remain supervisor/principal gates.

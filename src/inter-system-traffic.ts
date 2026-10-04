@@ -33,17 +33,14 @@ import {
 } from "./system";
 import { AU_KM } from "./units";
 import { type Vec3, add, sub, scale, cross, normalizeOr } from "./vec3";
-import {
-	projectTrafficLaneDeparture,
-	type TrafficHaulerVoyage,
-} from "./station-route";
+import type { TrafficHaulerVoyage } from "./station-route";
 import { type GalaxyEnvelope, effectiveCarrier } from "./world-state";
 
 const normalize = (v: Vec3) => normalizeOr(v, { x: 0, y: 0, z: 1 });
 
 export const HAULER_SHARE = 1 / 3;
 export const HAULER_SLACK_S = 60;
-export const LANE_ANNULUS_KM = [2, 20] as const;
+export const LANE_POINT_ANNULUS_KM = [2, 20] as const;
 export const TRAFFIC_TANK_LY = Math.max(
 	...Object.values(TRAFFIC_HULL_POOLS)
 		.flat()
@@ -109,7 +106,7 @@ export function haulerBounds(
 ): HaulerBounds {
 	const distanceAu =
 		arrivalRadiusBoundAu(c) +
-		LANE_ANNULUS_KM[1] / AU_KM +
+		LANE_POINT_ANNULUS_KM[1] / AU_KM +
 		bodyRadiusBoundsKm(c).get(s.id)! / AU_KM;
 	const interior = stationInterior(
 		s.type,
@@ -299,8 +296,9 @@ export function lanePoint(
 	const up = cross(planeBearing, across);
 	const hash = fnv1a(`${key}|lane|${ordinal}`);
 	const radius =
-		LANE_ANNULUS_KM[0] +
-		((LANE_ANNULUS_KM[1] - LANE_ANNULUS_KM[0]) * hash) / 0x1_0000_0000;
+		LANE_POINT_ANNULUS_KM[0] +
+		((LANE_POINT_ANNULUS_KM[1] - LANE_POINT_ANNULUS_KM[0]) * hash) /
+			0x1_0000_0000;
 	const angle = 2 * Math.PI * (fnv1a(`${hash}|angle`) / 0x1_0000_0000);
 	return {
 		pos: add(
@@ -366,7 +364,6 @@ export function inboundHaulers(
 	});
 }
 
-const jumpChargeCache = new WeakMap<HaulerPlan, Map<string, number>>();
 /** Only local lane endpoints cross the route seam; no foreign body/queue does. */
 export function routeVoyages(
 	galaxy: Galaxy,
@@ -398,38 +395,18 @@ export function routeVoyages(
 			: p.homeRecord;
 		const jumpInAtS = home ? v.tBack : v.tOut;
 		const jumpOutAtS = home ? v.tOut : v.tBack;
-		const chargeKey = n + "|" + currentIndex;
-		let charges = jumpChargeCache.get(p);
-		if (!charges) {
-			charges = new Map();
-			jumpChargeCache.set(p, charges);
-		}
-		let arrivalChargeAu = charges.get(chargeKey);
-		if (arrivalChargeAu === undefined && atS >= jumpInAtS) {
-			const lane = {
-				...lanePoint(
-					other,
-					contentsFor(other.index),
-					current.pos,
-					jumpInAtS,
-					p.actor.key,
-					n,
-				),
-				atS: jumpInAtS,
-				chargeAu: HULL_SPECS[p.actor.hullId].chargeAu,
-			};
-			arrivalChargeAu = projectTrafficLaneDeparture({
-				record: other,
-				actor: p.actor,
-				gameTime: jumpInAtS,
-				stationId: home ? v.destinationStationId : p.actor.homeStationId,
-				readyAtS: home ? v.parkedBoundaryS : v.awayBoundaryS,
-				awayOrdinal: n,
-				lane,
-			}).chargeAu;
-			if (charges.size >= 4) charges.delete(charges.keys().next().value!);
-			charges.set(chargeKey, arrivalChargeAu);
-		}
+		// The unobserved side reserves the static departure-distance bound. This
+		// conservative charge budget needs no foreign cruise or queue replay, and
+		// leaves the eligible destination's full bound available (§2 clause 3).
+		const departureBounds = home
+			? p.eligible.find(
+					(d) =>
+						d.systemIndex === v.destinationSystemIndex &&
+						d.stationId === v.destinationStationId,
+				)!.bounds
+			: p.homeBounds;
+		const arrivalChargeAu =
+			HULL_SPECS[p.actor.hullId].chargeAu - departureBounds.distanceAu;
 		return [
 			{
 				awayOrdinal: n,
@@ -459,7 +436,7 @@ export function routeVoyages(
 						n,
 					),
 					atS: jumpInAtS,
-					chargeAu: arrivalChargeAu ?? HULL_SPECS[p.actor.hullId].chargeAu,
+					chargeAu: arrivalChargeAu,
 				},
 			},
 		];

@@ -76,6 +76,20 @@ test("Game reuses cold foreign contents in warm voyage queries and clears them o
 		refreshColdTraffic() {},
 	});
 	subject.ensureTrafficActors();
+	expect(subject.trafficActors.length).toBeGreaterThan(0);
+	expect(
+		subject.trafficActors.every(
+			(a: TrafficActor) =>
+				systemIndexOfKey(a.key) === world.system.record.index,
+		),
+	).toBe(true);
+	expect(subject.trafficInbound.length).toBeGreaterThan(0);
+	expect(
+		subject.trafficInbound.every(
+			(a: TrafficActor) =>
+				systemIndexOfKey(a.key) !== world.system.record.index,
+		),
+	).toBe(true);
 	const actor: TrafficActor = [...subject.trafficHaulers.values()][0].actor;
 	const first = subject.trafficVoyages(actor, 1000);
 	const coldGenerations = generations;

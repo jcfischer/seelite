@@ -19,7 +19,13 @@ try {
 	watch(page);
 	await page.goto(gameUrl(origin, { seed: 54 }), { waitUntil: "load" });
 	await bootedGame(page);
-	const result = await page.evaluate(async () => {
+	const injectRewrite =
+		process.env.SEELITE_TRAFFIC_CONTINUITY_CONTROL === "rewrite";
+	const result = await page.evaluate(async (injectRewrite) => {
+		const { continuityAllowanceKm, cruiseContinuityResidualKm } = await import(
+			"/scripts/lib/traffic-continuity.mjs"
+		);
+		let controlApplied = false;
 		const g = window.__seelite;
 		cancelAnimationFrame(g.animationFrame);
 		const sim = await import("/src/sim.ts");
@@ -33,23 +39,6 @@ try {
 			warmCalls++;
 		} while (!g.trafficAuthorityReady() && warmCalls < 2_000);
 
-		const canonicalSpeed = (key, t) =>
-			Math.max(
-				0,
-				...[...g.trafficCruiseCache]
-					.filter(
-						([id, state]) =>
-							id.split("|")[1] === key &&
-							state.phase === "cruise" &&
-							state.atS >= t - 0.1 - 1e-8 &&
-							state.atS <= t + 1e-8,
-					)
-					.map(
-						([, state]) =>
-							state.stepPeakSpeedKms ??
-							Math.hypot(state.vel.x, state.vel.y, state.vel.z),
-					),
-			);
 		const previous = new Map();
 		const jumps = [];
 		const berthChanges = [];
@@ -112,42 +101,44 @@ try {
 							berthId: route.berthId,
 						});
 				}
-				const speed = Math.max(
-					canonicalSpeed(route.key, t),
-					route.stepPeakSpeedKms ?? 0,
-				);
 				const prior = previous.get(route.key);
 				if (prior) {
-					const deltaKm = dist(route.pos, prior.pos);
-					const expectedKm =
-						(Math.hypot(prior.vel.x, prior.vel.y, prior.vel.z) +
-							Math.hypot(route.vel.x, route.vel.y, route.vel.z)) *
-						0.05;
-					// Position samples are 0.1 s apart. Fifty metres covers integration
-					// and moving-frame curvature at phase boundaries; 2x the trapezoid
-					// distance covers guided acceleration. A cruise leg can spend its
-					// previous sample steering at zero, then decelerate within this one,
-					// so its average speed can exceed the ending velocity by a small,
-					// bounded amount. The 5% envelope admits that physical first powered
-					// step while retaining a finite jump allowance for this probe.
-					// Fractional display queries can finish steering at zero after the
-					// canonical part already powered and decelerated. Include the actual
-					// adjoining canonical speeds, rather than calling that motion a rewrite.
-					const allowedKm = Math.max(
-						0.05,
-						Math.max(speed, prior.canonicalSpeed) * 0.105,
-						expectedKm * 2,
-						Math.max(
-							Math.hypot(prior.vel.x, prior.vel.y, prior.vel.z),
-							Math.hypot(route.vel.x, route.vel.y, route.vel.z),
-						) * 0.105,
-					);
-					if (deltaKm > allowedKm)
+					const allowedKm = continuityAllowanceKm(prior, route);
+					let sampledPos = route.pos;
+					if (
+						injectRewrite &&
+						!controlApplied &&
+						prior.phase === "cruise" &&
+						route.phase === "cruise" &&
+						route.cruisePathKm > prior.cruisePathKm
+					) {
+						const delta = {
+							x: route.pos.x - prior.pos.x,
+							y: route.pos.y - prior.pos.y,
+							z: route.pos.z - prior.pos.z,
+						};
+						const distance = dist(route.pos, prior.pos);
+						// Move the sampled pose one kilometre beyond this step's complete
+						// path budget. Do not touch the independently integrated path.
+						const factor = (allowedKm + 1) / distance;
+						sampledPos = {
+							x: prior.pos.x + delta.x * factor,
+							y: prior.pos.y + delta.y * factor,
+							z: prior.pos.z + delta.z * factor,
+						};
+						controlApplied = true;
+					}
+					const deltaKm = dist(sampledPos, prior.pos);
+					const residualKm = cruiseContinuityResidualKm(prior, {
+						...route,
+						pos: sampledPos,
+					});
+					if (deltaKm > allowedKm || residualKm > 0.05)
 						jumps.push({
 							t,
 							key: route.key,
 							deltaKm,
-							expectedKm,
+							residualKm,
 							allowedKm,
 							from: prior.phase,
 							to: route.phase,
@@ -191,7 +182,9 @@ try {
 				}
 				previous.set(route.key, {
 					phase: route.phase,
-					canonicalSpeed: speed,
+					cruisePathKm: route.cruisePathKm,
+					cruiseDisplacementKm: route.cruiseDisplacementKm,
+					cruiseStartedAtS: route.cruiseStartedAtS,
 					visit: {
 						launch: route.visitLaunchReadyAtS,
 						departure: route.visitOutboundDepartureAtS,
@@ -209,6 +202,7 @@ try {
 		}
 		return {
 			warmCalls,
+			controlApplied,
 			jumpCount: jumps.length,
 			largestJumps: jumps.sort((a, b) => b.deltaKm - a.deltaKm).slice(0, 5),
 			berthChangeCount: berthChanges.length,
@@ -220,9 +214,9 @@ try {
 			playerBerthConflicts: playerBerthConflicts.slice(0, 5),
 			carrierEventCount: g.trafficCarrierTimeline.length,
 			berthCacheSize: g.trafficBerthCache.size,
-			actorCount: g.trafficActors.length,
+			actorCount: g.trafficActors.length + g.trafficInbound.length,
 		};
-	});
+	}, injectRewrite);
 	check(
 		"live Traffic never rewrites one Carrier onto a discontinuous route",
 		result.jumpCount === 0,
@@ -254,6 +248,12 @@ try {
 			berthAssignments: result.berthCacheSize,
 		}),
 	);
+	if (injectRewrite)
+		check(
+			"rewrite control exercised a powered cruise sample",
+			result.controlApplied,
+			result,
+		);
 	await page.close();
 } finally {
 	await browser.close();

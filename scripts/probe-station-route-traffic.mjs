@@ -39,7 +39,8 @@ try {
 			let attempts = 0;
 			do {
 				g.trafficTick = Number.NaN;
-				const wasWarming = g.trafficWarmIndex < g.trafficActors.length;
+				const wasWarming =
+					g.trafficWarmIndex < g.trafficActors.length + g.trafficInbound.length;
 				const beforeWork = cachedWork();
 				g.updateTrafficAuthority();
 				if (wasWarming)
@@ -58,6 +59,7 @@ try {
 		g.clearTrafficPresentation();
 		g.trafficSystemIndex = -1;
 		g.trafficActors = [];
+		g.trafficInbound = [];
 		g.world.gameTime = coldProbeAt;
 		sim.advanceSystem(g.world.system, coldProbeAt);
 		g.updateTrafficAuthority();
@@ -275,7 +277,7 @@ try {
 		g.targetId = savedTargetId;
 		g.trafficTick = Number.NaN;
 		g.updateTrafficAuthority();
-		const coldActorCount = g.trafficActors.length;
+		const coldActorCount = g.trafficActors.length + g.trafficInbound.length;
 		const settledBerths = g.trafficRoutes
 			.filter(
 				(item) =>
@@ -313,8 +315,14 @@ try {
 				samples.set(projected.phase, { t, projected });
 			if (projected.phase === "docked-away") break;
 		}
+		// Measure a real cold flight replay, separately from the pre-departure
+		// parked fixture: a parked query legitimately integrates no cruise ticks.
+		g.clearTrafficPresentation();
+		g.world.gameTime = samples.get("cruise").t;
+		sim.advanceSystem(g.world.system, g.world.gameTime);
+		const replayWarmCalls = refreshTraffic();
 		// Prime and measure a short 10 Hz window inside every physical phase while
-		// all 18 actors and their real arbitration remain active. This includes the
+		// both home and inbound candidates and their real arbitration remain active. This includes the
 		// cruise replay and terminal contention work that parked startup ticks omit.
 		const authorityTickSamples = [];
 		for (const [phase, sample] of [...samples].sort(
@@ -346,6 +354,7 @@ try {
 		// deciding which frame the named actor enters a shared queue; player
 		// contention is injected below.
 		g.trafficActors = [actor];
+		g.trafficInbound = [];
 		g.clearTrafficPresentation();
 		g.trafficSystemIndex = g.world.system.record.index;
 
@@ -815,6 +824,7 @@ try {
 		return {
 			stationCount: g.world.system.contents.stations.length,
 			coldWarmCalls,
+			replayWarmCalls,
 			coldActorCount,
 			coldStartIndex,
 			coldRoutes,
@@ -896,7 +906,7 @@ try {
 				const stationId = destination;
 				const frame = g.apertureFrameOf(stationId);
 				const berthId = g.berthIdsOfStation(stationId)[0];
-				g.trafficWarmIndex = g.trafficActors.length;
+				g.trafficWarmIndex = g.trafficActors.length + g.trafficInbound.length;
 				g.trafficRoutes.length = 0;
 				g.trafficRoutes.push({
 					...holdProjection,
@@ -1060,12 +1070,12 @@ try {
 	);
 	check(
 		"cold route replay is split across fixed-budget presentation calls",
-		result.coldWarmCalls > 1 &&
-			result.coldWarmCalls <= 2_000 &&
+		result.replayWarmCalls > 1 &&
+			result.replayWarmCalls <= 2_000 &&
 			result.maxWarmTicksPerCall > 0 &&
 			result.maxWarmTicksPerCall <= 100,
 		JSON.stringify({
-			calls: result.coldWarmCalls,
+			calls: result.replayWarmCalls,
 			actors: result.coldActorCount,
 			start: result.coldStartIndex,
 			maxTicks: result.maxWarmTicksPerCall,

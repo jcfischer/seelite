@@ -11,7 +11,7 @@ import {
 	haulerVoyage,
 	arrivalRadiusBoundAu,
 	HAULER_SLACK_S,
-	LANE_ANNULUS_KM,
+	LANE_POINT_ANNULUS_KM,
 	lanePoint,
 } from "../src/inter-system-traffic";
 import {
@@ -37,6 +37,7 @@ import {
 import { nextTrafficDepartureAtS } from "../src/station-traffic";
 import { readFileSync } from "node:fs";
 import { runTrafficControl } from "./inter-system-traffic-mutations";
+import { continuityAllowanceKm } from "../scripts/lib/traffic-continuity.mjs";
 import { npcRiftStrength, WITCHSPACE } from "../src/witchspace";
 
 const galaxy = generateGalaxy(47, 0);
@@ -51,6 +52,46 @@ const home = galaxy.systems.find((r) =>
 )!;
 const plans = () => buildHaulerPlans(galaxy, home.index, getContents);
 const hauler = () => plans().find((p) => p.vocation === "hauler")!;
+
+test("jump arrival charge comes from the static departure bound without foreign flight replay", () => {
+	const p = hauler(),
+		v = haulerVoyage(p, 0);
+	const outbound = routeVoyages(
+		galaxy,
+		p,
+		v.destinationSystemIndex,
+		v.tOut,
+		getContents,
+	)[0];
+	expect(outbound.arrival.chargeAu).toBe(
+		HULL_SPECS[p.actor.hullId].chargeAu - p.homeBounds.distanceAu,
+	);
+	const destination = p.eligible.find(
+		(d) =>
+			d.systemIndex === v.destinationSystemIndex &&
+			d.stationId === v.destinationStationId,
+	)!;
+	const returning = routeVoyages(
+		galaxy,
+		p,
+		home.index,
+		v.tBack,
+		getContents,
+	).find((r) => r.awayOrdinal === 0)!;
+	expect(returning.arrival.chargeAu).toBe(
+		HULL_SPECS[p.actor.hullId].chargeAu - destination.bounds.distanceAu,
+	);
+	// A value import of the route projector could put an unbudgeted foreign
+	// replay back on the frame path even if the returned budget stayed correct.
+	expect(
+		readFileSync(
+			new URL("../src/inter-system-traffic.ts", import.meta.url),
+			"utf8",
+		),
+	).not.toMatch(
+		/import\s*{(?!\s*type\b)[^}]*}\s*from ["']\.\/station-route["']/s,
+	);
+});
 
 describe("inter-system Traffic static contract", () => {
 	test("vocation and destinations ignore collection order; signature and empty sets are local", () => {
@@ -138,8 +179,10 @@ describe("inter-system Traffic static contract", () => {
 		);
 		const exact = arrivalPoint(home, getContents(home.index), d.pos, v.tOut);
 		const offset = sub(point.pos, exact);
-		expect(length(offset)).toBeGreaterThanOrEqual(LANE_ANNULUS_KM[0] - 1e-7);
-		expect(length(offset)).toBeLessThanOrEqual(LANE_ANNULUS_KM[1] + 1e-7);
+		expect(length(offset)).toBeGreaterThanOrEqual(
+			LANE_POINT_ANNULUS_KM[0] - 1e-7,
+		);
+		expect(length(offset)).toBeLessThanOrEqual(LANE_POINT_ANNULUS_KM[1] + 1e-7);
 		expect(Math.abs(dot(offset, sub(d.pos, home.pos)))).toBeLessThan(1e-5);
 	});
 	test("inbound derives schedule alone and rejects destroyed and repairing home rows", () => {
@@ -443,6 +486,7 @@ test("the inbound steering/powered boundary agrees with a direct canonical repla
 		p.actor.key.endsWith("trade/traffic-05"),
 	)!;
 	const cache = new Map();
+	let prior: ReturnType<typeof projectSystemTrafficAuthority> | undefined;
 	for (let tick = 13060; tick <= 13573; tick++) {
 		const t = tick / 10,
 			input = {
@@ -455,6 +499,13 @@ test("the inbound steering/powered boundary agrees with a direct canonical repla
 			...input,
 			cruiseCache: cache,
 		});
+		if (prior?.phase === "cruise" && live.phase === "cruise") {
+			expect(Number.isFinite(live.cruisePathKm)).toBe(true);
+			expect(length(sub(live.pos, prior.pos))).toBeLessThanOrEqual(
+				continuityAllowanceKm(prior, live),
+			);
+		}
+		prior = live;
 		if (tick === 13572)
 			expect(live.stepPeakSpeedKms!).toBeGreaterThan(length(live.vel) * 3);
 		if (tick >= 13570) {

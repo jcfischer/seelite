@@ -2802,14 +2802,16 @@ class Game {
 		SystemTrafficProjection
 	>();
 	private trafficPreviousProjectionAtS = Number.NaN;
+	/** Home roster only; foreign candidates are kept separately. */
 	private trafficActors: TrafficActor[] = [];
+	private trafficInbound: TrafficActor[] = [];
 	private readonly trafficHaulers = new Map<CarrierKey, HaulerPlan>();
 	private readonly trafficContentsCache = new Map<
 		number,
 		ReturnType<typeof generateContents>
 	>();
 	private readonly trafficRifts = new Map<string, ArrivalRift>();
-	private readonly trafficJumpSounds = new Set<string>();
+	private readonly trafficJumpSounds = new Map<string, number>();
 	private readonly trafficContacts = new Map<CarrierKey, DisplayContact>();
 	private readonly trafficMeshes = new Map<CarrierKey, THREE.Group>();
 	/**
@@ -3640,7 +3642,7 @@ class Game {
 	private trafficAuthorityReady(): boolean {
 		return (
 			Number.isFinite(this.trafficTick) &&
-			this.trafficWarmIndex >= this.trafficActors.length &&
+			this.trafficWarmIndex >= this.trafficCandidates().length &&
 			// **The carriers Traffic draws, not the roster** (civilian-combat H1,
 			// H3b). A destroyed carrier has no route, so against the roster a kill
 			// left authority "warming" until the replacement completed, and every
@@ -6031,7 +6033,7 @@ class Game {
 	/** Retain exactly the event horizon the pure current/previous-visit replay can read. */
 	private pruneTrafficTimelines(gameTime: number) {
 		let oldestReplayS = gameTime;
-		for (const actor of this.trafficActors) {
+		for (const actor of this.trafficCandidates()) {
 			const schedule = trafficScheduleAt(actor, gameTime);
 			const departureAtS =
 				schedule.desired === "away"
@@ -6149,6 +6151,11 @@ class Game {
 		}
 		return contents;
 	}
+	private trafficCandidates(): TrafficActor[] {
+		return [...this.trafficActors, ...this.trafficInbound].sort((a, b) =>
+			compareCarrierKeys(a.key, b.key),
+		);
+	}
 	private trafficVoyages(actor: TrafficActor, atS: number) {
 		const plan = this.trafficHaulers.get(actor.key);
 		if (!plan) return undefined;
@@ -6174,27 +6181,26 @@ class Game {
 		this.trafficContentsCache.clear();
 		this.trafficContentsCache.set(index, this.world.system.contents);
 		const contentsFor = (i: number) => this.trafficContentsFor(i);
-		const plans = [
-			...buildHaulerPlans(this.world.galaxy, index, contentsFor),
-			...inboundCandidates(this.world.galaxy, index, contentsFor),
-		];
+		const homePlans = buildHaulerPlans(this.world.galaxy, index, contentsFor);
+		const inboundPlans = inboundCandidates(
+			this.world.galaxy,
+			index,
+			contentsFor,
+		);
+		const plans = [...homePlans, ...inboundPlans];
 		this.trafficHaulers.clear();
 		for (const plan of plans)
 			if (plan.vocation === "hauler")
 				this.trafficHaulers.set(plan.actor.key, plan);
-		this.trafficActors = plans
-			.map((p) => p.actor)
-			.sort((a, b) => compareCarrierKeys(a.key, b.key));
+		this.trafficActors = homePlans.map((p) => p.actor);
+		this.trafficInbound = inboundPlans.map((p) => p.actor);
 		// Before the first scheduled departure is the only parked state the
 		// base schedule proves without replaying a physical visit. A later
 		// `desired: parked` boundary is only intent: a delayed outbound trip may
 		// still be away, so presenting it at home would invent both a ship and
 		// an occupied berth until authority finishes warming.
 		for (const actor of this.trafficActors)
-			if (
-				systemIndexOfKey(actor.key) === index &&
-				this.world.gameTime < actor.schedule.departureAtS
-			)
+			if (this.world.gameTime < actor.schedule.departureAtS)
 				this.trafficColdActors.add(actor.key);
 		this.refreshColdTraffic(this.world.gameTime);
 	}
@@ -6255,7 +6261,7 @@ class Game {
 	private updateTrafficAuthority() {
 		this.ensureTrafficActors();
 		const tick = Math.floor(this.world.gameTime * 10 + 1e-8);
-		if (this.trafficWarmIndex < this.trafficActors.length) {
+		if (this.trafficWarmIndex < this.trafficCandidates().length) {
 			const projectionSystem = makeSystem(this.world.system.record, tick / 10);
 			this.refreshColdTraffic(tick / 10, projectionSystem);
 			// Four equal slices share one 100-tick frame ceiling. Finishing a cheap
@@ -6263,10 +6269,10 @@ class Game {
 			// least one whole frame per roster entry.
 			for (
 				let slice = 0;
-				slice < 4 && this.trafficWarmIndex < this.trafficActors.length;
+				slice < 4 && this.trafficWarmIndex < this.trafficCandidates().length;
 				slice++
 			) {
-				const actor = this.trafficActors[this.trafficWarmIndex];
+				const actor = this.trafficCandidates()[this.trafficWarmIndex];
 				const warmed = projectSystemTrafficAuthority({
 					haulerVoyages: this.trafficVoyages(actor, tick / 10),
 					record: this.world.system.record,
@@ -6304,7 +6310,7 @@ class Game {
 			>();
 			for (const route of this.trafficPreviousRoutes.values()) {
 				if (!route.berthId) continue;
-				const routeActor = this.trafficActors.find(
+				const routeActor = this.trafficCandidates().find(
 					(candidate) => candidate.key === route.key,
 				);
 				const stationId =
@@ -6414,10 +6420,16 @@ class Game {
 				const held = this.holdBerth(projection, occupied);
 				if (held) divertedBerths.add(held);
 			}
+			const voyagesByActor = new Map(
+				this.flyingTraffic().map((actor) => [
+					actor.key,
+					this.trafficVoyages(actor, tick / 10),
+				]),
+			);
 			const baselines = this.flyingTraffic().map((actor) => ({
 				actor,
 				projection: projectSystemTrafficAuthority({
-					haulerVoyages: this.trafficVoyages(actor, tick / 10),
+					haulerVoyages: voyagesByActor.get(actor.key),
 					record: this.world.system.record,
 					actor,
 					gameTime: tick / 10,
@@ -6459,7 +6471,7 @@ class Game {
 				let activeVisit = activeVisitFor(actor.key);
 				const projectActor = () =>
 					projectSystemTrafficAuthority({
-						haulerVoyages: this.trafficVoyages(actor, tick / 10),
+						haulerVoyages: voyagesByActor.get(actor.key),
 						record: this.world.system.record,
 						actor,
 						gameTime: tick / 10,
@@ -6693,7 +6705,7 @@ class Game {
 				: 1;
 		this.trafficExactParked.clear();
 		for (const projection of this.trafficRoutes) {
-			const actor = this.trafficActors.find(
+			const actor = this.trafficCandidates().find(
 				(candidate) => candidate.key === projection.key,
 			);
 			if (!actor) continue;
@@ -6873,6 +6885,8 @@ class Game {
 		return { x: v.x, y: v.y, z: v.z };
 	}
 	private updateTrafficRifts(cameraPos: Vec3) {
+		for (const [id, expiresAtS] of this.trafficJumpSounds)
+			if (this.world.gameTime >= expiresAtS) this.trafficJumpSounds.delete(id);
 		const shown = new Set<string>();
 		for (const route of this.trafficRoutes) {
 			const jump = route.jump;
@@ -6904,7 +6918,7 @@ class Game {
 			const strength = npcRiftStrength(age);
 			rift.update(strength, age, cameraPos);
 			if (!this.trafficJumpSounds.has(id)) {
-				this.trafficJumpSounds.add(id);
+				this.trafficJumpSounds.set(id, jump.atS + WITCHSPACE.riftEndS);
 				const rel = sub(jump.pos, cameraPos),
 					distance = length(rel);
 				const right = this.shipRightForSound();
@@ -6932,12 +6946,11 @@ class Game {
 				rift.object.removeFromParent();
 				disposeSubtree(rift.object);
 				this.trafficRifts.delete(id);
-				this.trafficJumpSounds.delete(id);
 			}
 	}
 	/** The Traffic actors flying their projection now: the operational ones. */
 	private flyingTraffic(): TrafficActor[] {
-		return flyingTrafficActors(this.trafficActors, (key) =>
+		return flyingTrafficActors(this.trafficCandidates(), (key) =>
 			this.carrierCondition(key),
 		);
 	}
@@ -6953,11 +6966,8 @@ class Game {
 	 * what makes the divert need no new form of its own.
 	 */
 	private divertedTraffic(): TrafficActor[] {
-		return parkedHomeTrafficActors(
-			this.trafficActors.filter(
-				(a) => systemIndexOfKey(a.key) === this.world.system.record.index,
-			),
-			(key) => this.carrierCondition(key),
+		return parkedHomeTrafficActors(this.trafficActors, (key) =>
+			this.carrierCondition(key),
 		);
 	}
 
@@ -7108,7 +7118,10 @@ class Game {
 	}
 
 	private trafficActorByKey(key: CarrierKey): TrafficActor | undefined {
-		return this.trafficActors.find((a) => a.key === key);
+		return (
+			this.trafficActors.find((a) => a.key === key) ??
+			this.trafficInbound.find((a) => a.key === key)
+		);
 	}
 
 	/** Take one carrier out of what the player can look at: the scanner's list,
