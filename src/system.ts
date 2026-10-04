@@ -112,10 +112,11 @@ export const hasRaiderOutpost = (government: number): boolean =>
  * the planet for ever and is never nearer it than the orbit's own radius —
  * at least `MIN_ORBIT_AU`, and a cruise target of its own. That is #482's
  * ruling made geometry: the concentration reads as **somewhere else**, not as
- * the watched station with a warning on it. Every one of the 4,590 outposts
- * over `worldSeeds(8)` stood at least 0.026 AU from every other station over
- * ten simulated years, which is millions of kilometres against the relay's
- * 1,000 km search region about the station it watches.
+ * the watched station with a warning on it. Sampled every five days over ten
+ * simulated years, none of the 4,590 outposts over `worldSeeds(8)` came within
+ * 0.026 AU of another station — a sampled minimum, not a continuous bound, but
+ * millions of kilometres against the relay's 1,000 km search region about the
+ * station it watches.
  *
  * **One placement rule for every system, rather than "orbit a free planet".**
  * The planet-hosted form was measured first and 670 of those 4,590 lawless

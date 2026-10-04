@@ -355,7 +355,8 @@ describe("§9.1 namespace and baseline stability", () => {
 	});
 
 	test("version 9 moves no version-8 carrier: parent and placement too", () => {
-		// The identity goldens above hash system, slot and type only; this is the
+		// glossary-ignore: slot
+		// The identity goldens above hash system, Carrier slot and type only; this is the
 		// row that holds parent and placement. Version 8's full baseline
 		// fingerprints, hashed over every carrier but the outpost's.
 		expect(

@@ -86,12 +86,12 @@ export const WORLD_GENERATOR_VERSION = 9;
  * A docked commander keeps its station key and resumes at arrival, as the
  * loader already does; an in-flight commander keeps its saved position.
  * Version 8 → 9 (node #491) only **adds**: a raider outpost and its Traffic
- * slots in every system at the lawless end of the government scale. No version-8
- * carrier changes identity, type, parent or placement, which
+ * Carrier slots in every system at the lawless end of the government scale. No
+ * version-8 carrier changes identity, type, parent or placement, which
  * `tests/world-state.test.ts` pins twice over every carrier but the outpost's:
- * the identity goldens for system, slot and type, and version 8's full
+ * the identity goldens for system, Carrier slot and type, and version 8's full
  * baseline fingerprints for parent and placement. So an 8 save rebases exactly
- * as a 7 does.
+ * as a 7 does. glossary-ignore: slot
  * Version 5 is not here, and listing it would open nothing: saves
  * shipped on 2026-09-11 at version 5, but `WORLD_SCHEMA_VERSION` 3 arrived on
  * 09-18 after version 6, so every version-5 snapshot carries schema 2 and the
