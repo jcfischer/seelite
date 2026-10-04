@@ -107,10 +107,11 @@ describe("main.ts routes every engage through DockingComputer", () => {
 		// clears the last approach's notice (#597).
 		const engages = main.match(/this\.dockingComputer\.engage\(\)/g) ?? [];
 		expect(engages.length).toBe(1);
-		// The toggle, the guided start twice, the opening's order, and the
-		// docked restore twice (initial + re-engage in the loop).
+		// The toggle, `dockByProtocol` twice (initial + re-engage in the
+		// loop), and the opening's order. The guided start and docked
+		// restore both go through `dockByProtocol`.
 		const sites = main.match(/this\.engageDockingComputer\(\)/g) ?? [];
-		expect(sites.length).toBe(6);
+		expect(sites.length).toBe(4);
 		expect(main).not.toMatch(/dockingComputer\.(?:engaged|refusal)\s*=(?!=)/);
 	});
 
@@ -120,10 +121,10 @@ describe("main.ts routes every engage through DockingComputer", () => {
 		const bare = main.match(/this\.dockingComputer\.disengage\(\)/g) ?? [];
 		expect(bare.length).toBe(2);
 		// Everything else cancels the approach: the toggle, a refusal, control
-		// input, the guided start's give-up, the opening's fallback and the
-		// docked restore's give-up.
+		// input, `dockByProtocol`'s give-up (shared by guided start and docked
+		// restore), and the opening's fallback.
 		const cancels = main.match(/this\.cancelComputerApproach\(/g) ?? [];
-		expect(cancels.length).toBe(6);
+		expect(cancels.length).toBe(5);
 		// And the one place both happen together is the helper itself.
 		const inside = main.match(/this\.dockingComputer\.disengage\(how\)/g) ?? [];
 		expect(inside.length).toBe(1);

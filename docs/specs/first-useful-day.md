@@ -70,7 +70,9 @@ playtests, on `?permadeath`'s rule.
 A save taken docked **re-enters its station through the docking protocol**
 (node #658, building #293): `restoreDockedAt` docks the ship at the saved
 station before the clock runs. So a guided pilot who reloads before launching
-is docked, on the same step they saved at.
+is docked, on the same step they saved at. If the re-dock fails (station
+absent after a generator change, or no free berth), the ship resumes in
+flight at its saved position.
 
 The principal chose this on 2026-09-25 over an in-flight start with or
 without a start checkpoint, and over docking every new game.
