@@ -50,7 +50,12 @@ import {
 	inboundCandidates,
 	routeVoyages,
 } from "../../src/inter-system-traffic";
-import { type System, makeSystem, worldSolids, worldStarts } from "../../src/sim";
+import {
+	type System,
+	makeSystem,
+	worldSolids,
+	worldStarts,
+} from "../../src/sim";
 import {
 	type SystemTrafficProjection,
 	type TrafficArbitrationEvent,
@@ -346,8 +351,7 @@ export function trafficCollisionCorpus(
 			// Collidable at both ends: a phase boundary inside the interval is a
 			// placement (a launch end, a cruise exit) and is judged from the
 			// first interval that starts in the new phase.
-			if (!swept(a.cls, includeExempt) || !swept(b.cls, includeExempt))
-				return;
+			if (!swept(a.cls, includeExempt) || !swept(b.cls, includeExempt)) return;
 			if (a.cls !== b.cls) return;
 			const motion = motionOf(actor, a.projection, b.projection, options.stepS);
 			if (!motion) throw new Error(`${actor.key} has no attitude at ${atS}`);
@@ -358,8 +362,7 @@ export function trafficCollisionCorpus(
 			// sample after `departing`.
 			const prior = previousPhase.get(actor.key);
 			const phaseAgeS = atS - (phaseSince.get(actor.key) ?? options.fromS);
-			const launchEnd =
-				phase === "local-departure" && prior === "departing";
+			const launchEnd = phase === "local-departure" && prior === "departing";
 			const { owner, motions } = worldSolids(
 				systemB,
 				{
@@ -421,7 +424,7 @@ export function trafficCollisionCorpus(
 				const sweep = sweepShip(a.motion, [b.motion], options.stepS);
 				const keyA = actors[a.index].key;
 				const keyB = actors[b.index].key;
-					const meeting = (kind: "impact" | "ghost", closingKms: number) => ({
+				const meeting = (kind: "impact" | "ghost", closingKms: number) => ({
 					key: keyA,
 					atS,
 					phase: a.phase,
@@ -499,9 +502,17 @@ export const LAUNCH_THROAT_S = 10;
 
 export function meetingClass(m: Meeting): MeetingClass {
 	const carrier = m.met.startsWith("carrier:");
-	if (m.phase === "local-departure" && carrier && m.met.endsWith(":local-departure"))
+	if (
+		m.phase === "local-departure" &&
+		carrier &&
+		m.met.endsWith(":local-departure")
+	)
 		return "release-point";
-	if (m.phase === "local-departure" && !carrier && m.phaseAgeS < LAUNCH_THROAT_S)
+	if (
+		m.phase === "local-departure" &&
+		!carrier &&
+		m.phaseAgeS < LAUNCH_THROAT_S
+	)
 		return "launch-throat";
 	if (m.phase === "local-approach" && !carrier && m.met.includes("station-"))
 		return "approach-through";

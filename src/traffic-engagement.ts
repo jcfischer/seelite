@@ -41,6 +41,7 @@ import {
 	type ShieldSide,
 	type ShipCondition,
 	fullCondition,
+	isAlive,
 } from "./ship-condition";
 import {
 	type TrafficSchedule,
@@ -348,8 +349,10 @@ export const trafficDiversion = (
 	systemIndex: number,
 	actor: { schedule: TrafficSchedule; homeStationId: string },
 	now: number,
+	/** Who struck it: the player's gun unless named (node #664's impacts). */
+	cause: Provenance = PLAYER_KILL,
 ): TransitionEvent[] => [
-	{ kind: "disable", occurredAt: now, cause: PLAYER_KILL },
+	{ kind: "disable", occurredAt: now, cause },
 	{
 		kind: "repair-start",
 		occurredAt: now,
@@ -379,14 +382,21 @@ export const trafficKillTransitions = (
 	actor: { homeStationId: string },
 	from: OperationalCondition,
 	now: number,
+	/** Who killed it: the player's gun unless named (node #664's impacts). */
+	cause: Provenance = PLAYER_KILL,
 ): TransitionEvent[] => {
-	const destroy = trafficDestruction(systemIndex, actor.homeStationId, now);
+	const destroy = trafficDestruction(
+		systemIndex,
+		actor.homeStationId,
+		now,
+		cause,
+	);
 	if (from !== "repairing") return [destroy];
 	return [
 		{
 			kind: "interrupt",
 			occurredAt: now,
-			cause: PLAYER_KILL,
+			cause,
 			resulting: "disabled",
 		},
 		destroy,
@@ -491,11 +501,13 @@ export const trafficDestruction = (
 	systemIndex: number,
 	homeStationId: string,
 	now: number,
+	cause: Provenance = PLAYER_KILL,
 ): TransitionEvent =>
 	playerKillDestruction(
 		systemIndex,
 		now,
 		trafficReplacementActor(systemIndex, homeStationId),
+		cause,
 	);
 
 /**
@@ -514,3 +526,72 @@ export const flyingTrafficActors = <T extends { key: CarrierKey }>(
 /** The one rule for who flies a route, read off the three-way answer above. */
 export const fliesItsRoute = (carrier: CarrierConditionRow): boolean =>
 	trafficPresence(carrier) === "flying";
+
+// ---------------------------------------------------------------------------
+// An impact (`collision.md` §6, node #664)
+// ---------------------------------------------------------------------------
+
+/**
+ * Who an impact's transitions name (node #664). `causeKind` is a free field
+ * on the row, so this needs no schema term.
+ *
+ * **The player's when the player was a party**, as a direct role: they flew
+ * into it, and a direct cause is witnessed (`persistent-world-state.md`
+ * §3.1). **Anyone else's otherwise** — a carrier that met a station, a body,
+ * a raider or another carrier — named by what it met, with role `none`, so it
+ * writes no knowledge row and, above all, does not claim the player's gun:
+ * `PLAYER_KILL` on a strike nobody fired would hand `strikeClock` a strike
+ * the player never made.
+ */
+export const impactCause = (met: string | null): Provenance =>
+	met === null
+		? { causeKind: "collision", actorId: "player", playerRole: "direct" }
+		: { causeKind: "collision", actorId: met, playerRole: "none" };
+
+/** What an impact did to a carrier, read off its condition either side. */
+export type ImpactOutcome = "nothing" | "shields" | "divert" | "kill";
+
+/**
+ * An impact on an ordinary carrier as H3d reads it (`collision.md` §6): an
+ * impact is a landed hit for its mechanics and nothing else.
+ *
+ * - **A hull at zero** is the kill, through the kill's transitions.
+ * - **Hull spent** is H3d's trigger — but only from `operational`, because
+ *   `disable` is legal from there alone and a carrier already diverted has
+ *   nothing left to divert.
+ * - **Shields only** writes nothing, as a shot that spends only shields
+ *   writes nothing.
+ */
+export function impactOutcome(
+	before: ShipCondition,
+	after: ShipCondition,
+	from: OperationalCondition,
+): ImpactOutcome {
+	if (!isAlive(after)) return "kill";
+	if (after.hull < before.hull)
+		return from === "operational" ? "divert" : "nothing";
+	if (after.fore < before.fore || after.aft < before.aft) return "shields";
+	return "nothing";
+}
+
+/**
+ * The world-state transitions an impact applies to an ordinary carrier
+ * (`collision.md` §6, H3c, H3d): the divert's `disable` then `repair-start`,
+ * or the kill's, named for `cause` — and **nothing else**. An impact is not
+ * yet an offence (#659 decided it is; #675 builds it), so this charges no
+ * heat, files no witness and hails nobody; those stay with the gun.
+ */
+export function trafficImpactTransitions(
+	systemIndex: number,
+	actor: { schedule: TrafficSchedule; homeStationId: string },
+	outcome: ImpactOutcome,
+	from: OperationalCondition,
+	now: number,
+	cause: Provenance,
+): TransitionEvent[] {
+	if (outcome === "kill")
+		return trafficKillTransitions(systemIndex, actor, from, now, cause);
+	if (outcome === "divert")
+		return trafficDiversion(systemIndex, actor, now, cause);
+	return [];
+}

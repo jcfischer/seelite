@@ -1177,3 +1177,134 @@ function advance(
 	}
 	return s;
 }
+
+// ---------------------------------------------------------------------------
+// 4. Ship against ship (C4b, node #664)
+// ---------------------------------------------------------------------------
+
+/** A ship across one step, as the pair resolver reads it: its motion and its
+ *  mass, which the impulse is split by. */
+export interface ShipMotion extends SolidMotion {
+	massT: number;
+}
+
+/**
+ * §3's ship-against-ship impulse (C4b): the change to each ship's velocity
+ * that takes their relative normal velocity from `unBefore` to `unAfter`,
+ * along `normal` (from B toward A), with momentum conserved — so it is split
+ * by mass (derived). `J = (unAfter − unBefore) · mₐm_b / (mₐ + m_b)`; A gains
+ * `J / mₐ` along the normal and B loses `J / m_b`. A courier that meets a
+ * carrier moves; the carrier barely does.
+ */
+export function shipImpulse(
+	normal: Vec3,
+	unBefore: number,
+	unAfter: number,
+	massA: number,
+	massB: number,
+): { a: Vec3; b: Vec3 } {
+	if (!(massA > 0) || !(massB > 0))
+		throw new Error("a ship's mass is positive");
+	const j = ((unAfter - unBefore) * massA * massB) / (massA + massB);
+	return { a: scale(normal, j / massA), b: scale(normal, -j / massB) };
+}
+
+/** One meeting of two ships, as each lands it. */
+export interface ShipPairImpact {
+	/** Seconds into the step. A resting pair is met at 0. */
+	timeS: number;
+	/** Where they met, world coordinates. */
+	point: Vec3;
+	/** From B toward A. */
+	normal: Vec3;
+	/** §3's `v_n`: the closing speed of the two points, km/s. */
+	closingKms: number;
+	/** §3's damage, the same on each side (C4b). */
+	damage: number;
+	/** The side each ship is struck on, each by its own `sideStruck`. */
+	sideA: ShieldSide;
+	sideB: ShieldSide;
+	resting: boolean;
+}
+
+export interface ShipPairResult {
+	a: { pos: Vec3; vel: Vec3 };
+	b: { pos: Vec3; vel: Vec3 };
+	impacts: ShipPairImpact[];
+	/** The two overlapped at the start, so were not tested (§4.3). */
+	ghost: boolean;
+}
+
+/**
+ * One step of two ships against each other (§3, C4b): A's box swept against
+ * B's along both their motions, exactly as `sweepShip` sweeps a ship against
+ * any solid, and then the meeting landed on both.
+ *
+ * - **The same damage on each side**, each on the side its own `sideStruck`
+ *   gives it from where it was met.
+ * - **The impulse is computed, not re-split.** `sweepShip`'s own bounce treats
+ *   the met solid as immovable and carries the ship with the solid's own
+ *   acceleration for the rest of the step — for a ship, the other ship's
+ *   thrust — so its velocity is not the one a two-body bounce leaves. Each
+ *   ship keeps the velocity its own step gave it, and `shipImpulse` takes the
+ *   pair's relative normal velocity to `RESTITUTION · v_n` separating, with
+ *   momentum conserved. A resting pair closing at or under `V_SCRAPE_KMS`
+ *   only stops closing, as §3.1 has a resting ship stop.
+ * - **The separation is split by mass as well.** `sweepShip` leaves A outside
+ *   B's end pose; that correction is shared in the impulse's proportions, so
+ *   the two still end the step apart by the same gap and a carrier is not
+ *   shoved aside by a courier's step.
+ */
+export function sweepShipPair(
+	a: ShipMotion,
+	b: ShipMotion,
+	dt: number,
+): ShipPairResult {
+	const swept = sweepShip(a, [b], dt);
+	const result: ShipPairResult = {
+		a: { pos: a.end.origin, vel: a.velEnd },
+		b: { pos: b.end.origin, vel: b.velEnd },
+		impacts: [],
+		ghost: swept.ghosts.length > 0,
+	};
+	if (swept.impacts.length === 0) return result;
+	const total = a.massT + b.massT;
+	const correction = sub(swept.pos, a.end.origin);
+	result.a.pos = add(a.end.origin, scale(correction, b.massT / total));
+	result.b.pos = sub(b.end.origin, scale(correction, a.massT / total));
+	for (const impact of swept.impacts) {
+		const n = impact.normal;
+		const unBefore = dot(sub(result.a.vel, result.b.vel), n);
+		const unAfter =
+			impact.resting && impact.closingKms <= V_SCRAPE_KMS
+				? Math.max(unBefore, 0)
+				: Math.max(unBefore, RESTITUTION * impact.closingKms);
+		if (unAfter > unBefore) {
+			const kick = shipImpulse(n, unBefore, unAfter, a.massT, b.massT);
+			result.a.vel = add(result.a.vel, kick.a);
+			result.b.vel = add(result.b.vel, kick.b);
+		}
+		const s = dt > 0 ? impact.timeS / dt : 0;
+		const bAt = add(
+			b.start.origin,
+			scale(sub(b.end.origin, b.start.origin), s),
+		);
+		const bNose = normalizeOrKeep(lerp(b.start.z, b.end.z, s), b.end.z);
+		result.impacts.push({
+			timeS: impact.timeS,
+			point: impact.point,
+			normal: n,
+			closingKms: impact.closingKms,
+			damage: impact.damage,
+			sideA: impact.side,
+			sideB: sideStruck(bNose, sub(impact.point, bAt)),
+			resting: impact.resting,
+		});
+	}
+	return result;
+}
+
+const normalizeOrKeep = (v: Vec3, fallback: Vec3): Vec3 => {
+	const n = length(v);
+	return n > 1e-12 ? scale(v, 1 / n) : fallback;
+};

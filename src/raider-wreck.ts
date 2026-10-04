@@ -75,11 +75,14 @@ export function playerKillDestruction(
 	systemIndex: number,
 	now: number,
 	replacedBy: Provenance,
+	/** Who destroyed it: the player's gun unless named — an impact names
+	 *  itself (`collision.md` §6, node #664). */
+	cause: Provenance = PLAYER_KILL,
 ): TransitionEvent {
 	return {
 		kind: "destroy",
 		occurredAt: now,
-		cause: PLAYER_KILL,
+		cause,
 		schedule: {
 			startsAt: now + RAIDER_WRECK_S,
 			completesAt: now + RAIDER_WRECK_S + RAIDER_REPAIR_S,

@@ -80,7 +80,10 @@ for (const record of records) {
 	launchGhosts += run.launchGhosts.length;
 	for (const [phase, n] of Object.entries(run.steps))
 		steps[phase] = (steps[phase] ?? 0) + n;
-	const tag = (m: Meeting): Meeting => ({ ...m, key: `${record.index}#${m.key}` });
+	const tag = (m: Meeting): Meeting => ({
+		...m,
+		key: `${record.index}#${m.key}`,
+	});
 	met.push(...encounters(run.meetings).map(tag));
 	cruise.push(...encounters(run.cruiseMeetings).map(tag));
 }
@@ -120,6 +123,4 @@ const table = (label: string, list: readonly Meeting[]) => {
 };
 table("collidable phases", met);
 table("cruise phases (C5, not judged)", cruise);
-console.log(
-	`${((performance.now() - startedAt) / 1000).toFixed(1)} s`,
-);
+console.log(`${((performance.now() - startedAt) / 1000).toFixed(1)} s`);

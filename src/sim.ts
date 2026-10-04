@@ -62,6 +62,7 @@ import {
 	type VentSlot,
 } from "./hull";
 import { mix, seededRand } from "./rng";
+import type { ShieldSide } from "./ship-condition";
 import { STATION_GEOMETRY, slotPhaseRad } from "./station";
 import {
 	accelerationBoundOnOrbit,
@@ -80,6 +81,7 @@ import {
 	type Impact,
 	type Primitive,
 	type Reach,
+	type ShipMotion,
 	type SolidMotion,
 	IDENTITY_AXES,
 	bodySphere,
@@ -87,6 +89,7 @@ import {
 	reachKm,
 	shipPose,
 	sweepShip,
+	sweepShipPair,
 } from "./collision";
 import {
 	type ApertureFrame,
@@ -1768,7 +1771,57 @@ export interface WorldStep extends HullStep {
 	 * no watched plane was crossed, or an impact came first.
 	 */
 	plane: WorldPlane | null;
+	/**
+	 * The player's meetings with other ships this step (`collision.md` §3,
+	 * C4b, node #664), each naming the fleet ship met. Empty without a solid
+	 * or a fleet.
+	 */
+	shipImpacts: ShipImpact[];
+	/** Every fleet ship as the step left it, in the order it was handed in. */
+	fleet: FleetStep[];
 }
+
+/**
+ * Another ship across this step (node #664): a raider, a relay defender, an
+ * engaged carrier, or a carrier still on its projection.
+ *
+ * `motion` is where its own step took it — its pose and velocity at both
+ * ends, already flown — and its mass, which an impulse is split by.
+ * **`projected`** marks a carrier drawn from its route rather than flown: a
+ * projected pose cannot express a bounce (§6), so it is met by the ships that
+ * are flown and is never swept against the world itself — whether its route
+ * enters the world is the corpus row's question, not a tick's.
+ */
+export interface FleetShip {
+	id: string;
+	motion: ShipMotion;
+	projected: boolean;
+}
+
+/** One meeting a ship had this step, from its own side. */
+export interface ShipImpact {
+	/** What it met: a body or station id, `PLAYER_SHIP_ID`, or a fleet id. */
+	with: string;
+	/** Whether `with` is a ship (the player or a fleet ship) rather than a body. */
+	ship: boolean;
+	closingKms: number;
+	damage: number;
+	side: ShieldSide;
+	resting: boolean;
+}
+
+/** A fleet ship as the step left it. */
+export interface FleetStep {
+	id: string;
+	pos: Vec3;
+	vel: Vec3;
+	impacts: ShipImpact[];
+	/** Bodies it started inside (§4.3), untested this step. */
+	ghosts: string[];
+}
+
+/** The id a fleet ship's meeting names the player by. */
+export const PLAYER_SHIP_ID = "player";
 
 /**
  * A station whose aperture plane a step should watch (`collision.md` §4.2):
@@ -1868,6 +1921,7 @@ export function stepWorld(
 	perf: FlightPerformance,
 	solid?: readonly Primitive[] | null,
 	planes: readonly PlaneWatch[] = [],
+	fleet: readonly FleetShip[] = [],
 ): WorldStep {
 	const from = { ...world.ship.pos };
 	const fromVel = { ...world.ship.vel };
@@ -1887,26 +1941,209 @@ export function stepWorld(
 			};
 	advanceWorldClock(world, dt);
 	const step = stepHull(world.ship, attitude, control, dt, perf);
-	if (dt <= 0) return { ...step, impacts: [], ghosts: [], plane: null };
+	const untouched = (): FleetStep[] =>
+		fleet.map((ship) => ({
+			id: ship.id,
+			pos: ship.motion.end.origin,
+			vel: ship.motion.velEnd,
+			impacts: [],
+			ghosts: [],
+		}));
+	if (dt <= 0)
+		return {
+			...step,
+			impacts: [],
+			ghosts: [],
+			plane: null,
+			shipImpacts: [],
+			fleet: untouched(),
+		};
 	holdPlanetBoundary(world, from, starts.bodies, dt);
 	const found = crossedPlane(world, planes, step, dt);
-	if (!solid) return { ...step, impacts: [], ghosts: [], plane: found };
-	const met = collideShip(
+	if (!solid)
+		return {
+			...step,
+			impacts: [],
+			ghosts: [],
+			plane: found,
+			shipImpacts: [],
+			fleet: untouched(),
+		};
+	const met = collideShip(world, solid, from, fromVel, attitude, step, starts, {
+		fromTime,
+		dt,
+		planeS: found ? found.timeS : null,
+	});
+	const ships = collideFleet(
 		world,
-		solid,
-		from,
-		fromVel,
-		attitude,
-		step,
+		{
+			massT: perf.massT,
+			primitives: solid,
+			start: shipPose(from, attitude.nose, attitude.up),
+			end: shipPose(world.ship.pos, step.nose, step.up),
+			velStart: fromVel,
+			velEnd: world.ship.vel,
+		},
+		// The plane owns the tick: the ship is left unresolved for the six
+		// checks to place, so it meets no ship on this step either (§4.2).
+		met.planeOwns,
+		fleet,
 		starts,
-		{ fromTime, dt, planeS: found ? found.timeS : null },
+		{ fromTime, dt },
 	);
 	return {
 		...step,
 		impacts: met.impacts,
 		ghosts: met.ghosts,
 		plane: met.planeOwns ? found : null,
+		shipImpacts: ships.player,
+		fleet: ships.fleet,
 	};
+}
+
+/**
+ * The step's ships against the world and each other (`collision.md` §3, C4b,
+ * §6; node #664), after the player has met the world.
+ *
+ * 1. **Every flown fleet ship against the world** — the same `worldSolids`
+ *    the player meets, from the same starts, so a raider meets a planet and a
+ *    station's proxy exactly as the player does. A projected carrier is not:
+ *    its pose is a route's, and cannot be bounced.
+ * 2. **The player against every fleet ship**, then **every pair of fleet
+ *    ships** with at least one flown — through `sweepShipPair`, so momentum
+ *    is conserved, the impulse is split by `massT`, and both take the same
+ *    damage on their own sides. Two projected carriers are never paired: a
+ *    route against a route is the corpus row's (§6 item 1).
+ *
+ * Pairs are resolved in that order, each from the state the one before left,
+ * which is exact for one meeting a step and an ordering for more.
+ */
+function collideFleet(
+	world: World,
+	player: ShipMotion,
+	playerHeld: boolean,
+	fleet: readonly FleetShip[],
+	starts: WorldStarts,
+	clock: { fromTime: number; dt: number },
+): { player: ShipImpact[]; fleet: FleetStep[] } {
+	const shipImpacts: ShipImpact[] = [];
+	const steps: FleetStep[] = [];
+	const motions: ShipMotion[] = [];
+	for (const ship of fleet) {
+		const out: FleetStep = {
+			id: ship.id,
+			pos: ship.motion.end.origin,
+			vel: ship.motion.velEnd,
+			impacts: [],
+			ghosts: [],
+		};
+		if (!ship.projected) {
+			const { owner, motions: solids } = worldSolids(
+				world.system,
+				{
+					start: ship.motion.start.origin,
+					end: ship.motion.end.origin,
+					reachKm: reachKm(ship.motion.primitives),
+				},
+				starts,
+				{ fromTime: clock.fromTime, toTime: world.gameTime },
+			);
+			if (solids.length > 0) {
+				const swept = sweepShip(ship.motion, solids, clock.dt);
+				out.pos = swept.pos;
+				out.vel = swept.vel;
+				out.ghosts = [...new Set(swept.ghosts.map((i) => owner[i]))];
+				for (const impact of swept.impacts)
+					out.impacts.push({
+						with: owner[impact.solid],
+						ship: false,
+						closingKms: impact.closingKms,
+						damage: impact.damage,
+						side: impact.side,
+						resting: impact.resting,
+					});
+			}
+		}
+		steps.push(out);
+		motions.push({
+			...ship.motion,
+			end: { ...ship.motion.end, origin: out.pos },
+			velEnd: out.vel,
+		});
+	}
+	/** One pair, A then B, each landing what it met and where it ends. */
+	const meet = (
+		a: ShipMotion,
+		b: ShipMotion,
+		landA: (pos: Vec3, vel: Vec3, impact: ShipImpact) => void,
+		landB: (pos: Vec3, vel: Vec3, impact: ShipImpact) => void,
+		idA: string,
+		idB: string,
+	): { a: ShipMotion; b: ShipMotion } => {
+		const pair = sweepShipPair(a, b, clock.dt);
+		if (pair.impacts.length === 0) return { a, b };
+		for (const impact of pair.impacts) {
+			const common = {
+				ship: true,
+				closingKms: impact.closingKms,
+				damage: impact.damage,
+				resting: impact.resting,
+			};
+			landA(pair.a.pos, pair.a.vel, {
+				...common,
+				with: idB,
+				side: impact.sideA,
+			});
+			landB(pair.b.pos, pair.b.vel, {
+				...common,
+				with: idA,
+				side: impact.sideB,
+			});
+		}
+		return {
+			a: { ...a, end: { ...a.end, origin: pair.a.pos }, velEnd: pair.a.vel },
+			b: { ...b, end: { ...b.end, origin: pair.b.pos }, velEnd: pair.b.vel },
+		};
+	};
+	const landFleet =
+		(index: number) => (pos: Vec3, vel: Vec3, impact: ShipImpact) => {
+			steps[index].pos = pos;
+			steps[index].vel = vel;
+			steps[index].impacts.push(impact);
+		};
+	let you = player;
+	if (!playerHeld)
+		fleet.forEach((ship, index) => {
+			const met = meet(
+				you,
+				motions[index],
+				(pos, vel, impact) => {
+					world.ship.pos = pos;
+					world.ship.vel = vel;
+					shipImpacts.push(impact);
+				},
+				landFleet(index),
+				PLAYER_SHIP_ID,
+				ship.id,
+			);
+			you = met.a;
+			motions[index] = met.b;
+		});
+	for (let i = 0; i < fleet.length; i++)
+		for (let j = i + 1; j < fleet.length; j++) {
+			if (fleet[i].projected && fleet[j].projected) continue;
+			const met = meet(
+				motions[i],
+				motions[j],
+				landFleet(i),
+				landFleet(j),
+				fleet[i].id,
+				fleet[j].id,
+			);
+			motions[i] = met.a;
+			motions[j] = met.b;
+		}
+	return { player: shipImpacts, fleet: steps };
 }
 
 /** A station at the top of a step: its place and its aperture frame. */
