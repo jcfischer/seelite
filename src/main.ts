@@ -83,6 +83,7 @@ import {
 	EXPOSURE,
 	LIGHT_RIG,
 	equirectEnvironment,
+	gasParamsFrom,
 	type SkyBakeParams,
 } from "./light-rig";
 import {
@@ -5550,19 +5551,9 @@ class Game {
 		const hazeStrength = Math.min(1, rLy / GALAXY_RADIUS_LY);
 
 		// Gas: per-system nebula colour and density, from DOMAIN.GAS.
-		const gasRand = stream(record.seed, DOMAIN.GAS);
 		const starColor = this.world.system.contents.star.color;
-		const sr = ((starColor >> 16) & 255) / 255;
-		const sg = ((starColor >> 8) & 255) / 255;
-		const sb = (starColor & 255) / 255;
-		// Gas colour: a shifted version of the star tint, saturated and dimmed.
-		const gasColor: [number, number, number] = [
-			0.3 + 0.7 * sr * gasRand(),
-			0.3 + 0.7 * sg * gasRand(),
-			0.3 + 0.7 * sb * gasRand(),
-		];
-		const gasDensity = gasRand() * 0.6 + 0.1; // 0.1..0.7
-		const gasSeed = Math.floor(gasRand() * 0x7fffffff);
+		const gasRand = stream(record.seed, DOMAIN.GAS);
+		const gas = gasParamsFrom(starColor, gasRand);
 
 		const bakeParams: SkyBakeParams = {
 			starColor,
@@ -5570,7 +5561,7 @@ class Game {
 			haze: core
 				? { coreBearing: [core.x, core.y, core.z], strength: hazeStrength }
 				: null,
-			gas: { color: gasColor, density: gasDensity, seed: gasSeed },
+			gas,
 			includeHaze: true,
 		};
 		const { data, width, height } = equirectEnvironment(bakeParams);

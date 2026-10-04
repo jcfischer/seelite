@@ -52,9 +52,10 @@
  * integrated glow, strongest toward the galactic core. `gasRadiance` adds
  * per-system procedural nebula colour from fBm noise on the unit sphere.
  *
- * `low` quality drops the haze and gas fill and keeps every point — the star
- * lobe and floor remain so reflections are not black, but the backdrop shows
- * only the point layers.
+ * `low` quality nulls `scene.environment` entirely, so reflections are black
+ * and the backdrop drops to the point layers alone. The IBL is the term #99
+ * measured at 0.21–0.27 ms/frame; keeping a star-only bake would save the
+ * haze fill but not that per-frame cost.
  *
  * ## `envRotation` — retired from the render path, kept for tests
  *
@@ -300,6 +301,27 @@ export interface GasParams {
 	seed: number;
 }
 
+/**
+ * Derive the gas parameters for one system from its star colour and a
+ * domain-tagged RNG stream. The colour is a shifted version of the star
+ * tint, saturated and dimmed; three sequential draws set R, G, B (order
+ * dependent).
+ */
+export function gasParamsFrom(
+	starColor: number,
+	gasRand: () => number,
+): GasParams {
+	const [sr, sg, sb] = tintOf(starColor);
+	const color: [number, number, number] = [
+		0.3 + 0.7 * sr * gasRand(),
+		0.3 + 0.7 * sg * gasRand(),
+		0.3 + 0.7 * sb * gasRand(),
+	];
+	const density = gasRand() * 0.6 + 0.1; // 0.1..0.7
+	const seed = Math.floor(gasRand() * 0x7fffffff);
+	return { color, density, seed };
+}
+
 /** Frequency of the noise on the unit sphere. 2.0 gives features ~90° wide,
  *  which reads as a nebula rather than as a gradient. */
 const GAS_FREQUENCY = 2.0;
@@ -309,8 +331,8 @@ const GAS_GAIN = 0.025;
 
 // -- Noise primitives (headless, no imports) --
 
-/** Integer avalanche — the same construction as `rng.ts`, duplicated here so
- *  the module stays a leaf. */
+/** Integer avalanche — the same construction as `rng.ts`, duplicated here to
+ *  keep the noise section self-contained with no coupling to the RNG module. */
 function ihash(x: number): number {
 	let h = x >>> 0;
 	h ^= h >>> 16;
@@ -474,8 +496,9 @@ export interface SkyBakeParams {
 	haze: HazeParams | null;
 	/** Per-system gas. `null` to omit. */
 	gas: GasParams | null;
-	/** When false (the `low` quality setting), drops the haze and gas fill.
-	 *  The star lobe and floor remain so reflections are not black. */
+	/** When false, drops the haze and gas fill from the bake image. The star
+	 *  lobe and floor remain. Production always passes `true`; the flag exists
+	 *  so `equirectEnvironment` can be tested on the star-only path. */
 	includeHaze: boolean;
 }
 
