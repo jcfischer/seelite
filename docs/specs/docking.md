@@ -1408,7 +1408,7 @@ through arrival, parking and launch, with a red build for each aperture kind.
    the fourth skip flag is dead until something places one, and E4 is in practice
    three first-times. Obligation 8's physical half is now covered by
    `tests/collision-stations.test.ts` (`collision.md` §9.1.8, node #663),
-   including the outpost through a re-typed pad fixture.
+   including the outpost through a re-typed pad fixture. <!-- glossary-ignore: pad -->
 6. **E4's flag is an unmet precondition on #46.** §12.1 says the skip gate is a
    typed domain that node "must approve and bound", and then this section is
    where a reader would look for the dependency and would not have found it. So:

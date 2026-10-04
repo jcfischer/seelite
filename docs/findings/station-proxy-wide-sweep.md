@@ -1,7 +1,7 @@
 # The seeded station proxies over 2,400 plans: the hand-run half of §9.1.11
 
 Node #662, measured 2026-10-03; re-measured by node #663 on 2026-10-04, after
-the pad proxies were cut down into their landing well (`padWellDepthKm`). `collision.md` §2.2 says the outpost's Salvage
+the pad proxies were cut down into their landing well (`padWellDepthKm`). `collision.md` §2.2 says the outpost's Salvage <!-- glossary-ignore: pad -->
 is a grown form whose proxy is one seed-independent envelope, gated on the
 twelve plans of `ASSEMBLY_SEEDS` in `npm test` and "measured over a wider
 spread by hand". This file is that measurement, so the figure has a ref and an

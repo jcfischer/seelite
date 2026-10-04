@@ -126,9 +126,9 @@ capsules and oriented boxes — in the station's own frame, in kilometres.
   the corridor cylinder at `corridorRadiusKm`, extended outward from the plane.
   That is the corridor row's own cylinder. It is read, not restated. A pad's
   berths and booms stand outside it and are solid.
-  **Derived for the hull-box build (node #663):** the pad opening also runs
+  **Derived for the hull-box build (node #663):** the pad opening also runs <!-- glossary-ignore: pad -->
   below the plane into a landing well. Otherwise the nose meets the deck
-  before the centre can cross, so C3 prevents every pad entry. The well's
+  before the centre can cross, so C3 prevents every pad entry. The well's <!-- glossary-ignore: pad -->
   depth (`padWellDepthKm`, `src/station-proxy.ts`) is the largest box
   half-diagonal plus its origin offset over hulls the role's berths admit.
   This clears a centred hull up to the plane without exempting the approach;
@@ -621,7 +621,7 @@ rules for every combat ship.
 6. **Berth fixtures inside a slot's bay are not solid** (§9.1.8). Only a
    ship placed in the bay can reach them, and it passes through them.
 7. **A ship placed inside is a ghost until it leaves** (§4.3). Node #663's
-   `tests/collision-stations.test.ts` counts spawn, hyperspace, restore
+   `tests/collision-stations.test.ts` counts spawn, hyperspace, restore <!-- glossary-ignore: Spawn -->
    fallback, cruise exit and launch placements. A saved flight pose can be
    arbitrary; deliberately inside restores on every role are also tested,
    including collision becoming live again after separation. A path that

@@ -614,9 +614,9 @@ export function planeCrossingAt(
  *
  * **Or the aperture's own corner, where that is further** (node #663). The
  * outpost's plane stands at 0.165 km on a 0.15 km core, so a centred crossing
- * lay outside the body and no crossing there was ever answered — an outpost was
- * undockable the day #491 placed one, and the docking harness found it once it
- * read this gate. The refinery's pad corners stand 0.41 km out on a 0.4 km
+ * lay outside the body and no crossing there was ever answered. The docking
+ * harness found this for the unplaced outpost role; node #491 owns placing
+ * outposts in the game. The refinery's pad corners stand 0.41 km out on a 0.4 km // glossary-ignore: pad
  * core, so a crossing there was a pass-through rather than an entry. The bound
  * is the larger of the two, so the 1.6 km fly-by above is still no crossing.
  *

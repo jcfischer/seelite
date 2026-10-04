@@ -265,7 +265,7 @@ function spinCeiling(
 				`${hull} at ${type} ${rpm} rpm was refused: ${run.refused}`,
 			);
 		// An impact is a failed run (`collision.md` §9.1.9): above the roll
-		// limit a mis-rolled hull meets the slot's rim before its centre reaches
+		// limit a mis-rolled hull meets the slot's rim before its centre reaches // glossary-ignore: slot
 		// the plane, which is P1's physical fit failing where check 4 used to.
 		if (run.crossing === null && run.impacts.length === 0)
 			throw new Error(
@@ -353,8 +353,8 @@ describe("the tolerances hold for the whole roster, with margin", () => {
 			// than as "it passed": the margin is what says §3's tolerances stay one
 			// table rather than becoming a per-hull one.
 			//
-			// The bound is **1.5x and the measurement is 1.67x** (2.0x until #619
-			// turned the computer through the vents), deliberately apart.
+			// The bound is **1.5x**; the current collision-enabled measurement
+			// is printed above rather than copied into this comment.
 			// A threshold set at the measured value is not a measurement (#25) — it
 			// would go red on a retune that changed nothing about the answer, and a
 			// later session would loosen it on the prose. What 1.5x catches is the

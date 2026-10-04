@@ -1,5 +1,5 @@
 /**
- * Stations are solid: a ship stops at a station's hull, at a pad berth and at a
+ * Stations are solid: a ship stops at a station's hull, at a pad berth and at a // glossary-ignore: pad
  * shipyard boom (`collision.md` §9.2.1, §9.2.2, node #663).
  *
  *   npm run dev                         # in one shell
@@ -11,13 +11,13 @@
  * stops at the hull and never reaches the plane, so it proves that collision
  * works, under the name that says so. Check 5 keeps its headless rows.
  *
- * **§9.2.2 is where a too-generous proxy would show**: the pad's deck and its
+ * **§9.2.2 is where a too-generous proxy would show**: the pad's deck and its // glossary-ignore: pad
  * berths, and the Gantry's booms, are the sparse parts of the selected forms,
  * and a box that wraps them is an invisible wall nothing headless can see
- * (§11, joint 5). So each row also casts a ray from the stopped ship's lowest
- * point down onto the **drawn** station and prints how far below the surface
- * that stopped it the nearest drawn face is — the figure a person judges a wall
- * by. The probe asserts the stop; it prints the gap.
+ * (§11, joint 5). So each row casts from the stopped hull box's fore-face
+ * centre along the ship's nose onto the **drawn** station, then prints the
+ * distance to that face — the figure a person judges a wall by. The probe
+ * asserts the stop; it prints the gap.
  *
  * Seed 42, system 8: a trade station, a refinery and a shipyard. Each run is
  * flown by the game's own `step` with the assist off and the throttle shut, so
@@ -45,7 +45,7 @@ const { check, watch, exit } = tally();
 /**
  * Coast at a station of `type` from a station-relative start, nose down the
  * docking axis, and step until the ship has met it and a second has passed.
- * `where` names the start: `face` (§9.2.1), `berth` (a pad's first berth) or
+ * `where` names the start: `face` (§9.2.1), `berth` (a pad's first berth) or // glossary-ignore: pad
  * `boom` (the Gantry's dorsal boom, in the static frame).
  */
 const coast = async ({ type, where, gates }) => {
@@ -75,7 +75,7 @@ const coast = async ({ type, where, gates }) => {
 			const snap = g.dockingSnapshot(id);
 			if (!snap) return { error: `no snapshot of ${id}` };
 			const axis = snap.axis;
-			// The phase-zero basis: the static frame, and a pad's only one.
+			// The phase-zero basis: the static frame, and a pad's only one. // glossary-ignore: pad
 			const across0 = unit(
 				sub(snap.reference, scale(axis, dot(snap.reference, axis))),
 			);
@@ -86,7 +86,7 @@ const coast = async ({ type, where, gates }) => {
 			let label;
 			if (where === "face") {
 				// Three quarters of the way to check 2's cone edge, as §9.2.4 flew
-				// it: inside the cone, four times outside the slot.
+				// it: inside the cone, four times outside the slot. // glossary-ignore: slot
 				const off = 0.75 * snap.planeKm * Math.tan((deg * Math.PI) / 180);
 				rel = add(scale(axis, snap.planeKm + 0.5), scale(across0, off));
 				label = `${(off * 1000).toFixed(0)} m off the axis`;
@@ -136,7 +136,7 @@ const coast = async ({ type, where, gates }) => {
 				if (metAt === null && g.collisionImpacts > impactsBefore) {
 					metAt = i * dt;
 					outwardAfterKms = dot(vRel, axis);
-					// Down from the ship's lowest point, onto what is drawn. The
+					// Along the ship's nose from its fore-face centre. The
 					// near layer draws at 1:1, placed about the camera.
 					const box = g.flownSolid[0];
 					if (box.kind !== "box") throw new Error("player has no hull box");
@@ -144,7 +144,7 @@ const coast = async ({ type, where, gates }) => {
 					const shipUp = g.shipUp();
 					// The fore face's centre, including the measured origin offset.
 					// Casting only against the station needs no self-hit offset.
-					const lowest = add(
+					const foreFace = add(
 						g.world.ship.pos,
 						add(
 							add(
@@ -155,7 +155,7 @@ const coast = async ({ type, where, gates }) => {
 						),
 					);
 					const cam = g.cameraSimPos;
-					const from = sub(lowest, cam);
+					const from = sub(foreFace, cam);
 					const root = g.stationVisuals.get(id)?.root;
 					if (root) {
 						root.updateMatrixWorld(true);
@@ -248,13 +248,13 @@ function stopped(what, r) {
 		`${r.lowestAxialKm} km against a ${r.planeKm} km plane`,
 	);
 	console.log(
-		`  the nearest drawn face below the ship's lowest point: ${fmt(r.gapKm)}`,
+		`  the ray from the hull box's fore-face centre along the nose: ${fmt(r.gapKm)}`,
 	);
 }
 
-// §9.2.2 — a ship stops at a pad berth, and at a shipyard boom.
+// §9.2.2 — a ship stops at a pad berth, and at a shipyard boom. // glossary-ignore: pad
 for (const [type, where, what] of [
-	["refinery", "berth", "a pad berth"],
+	["refinery", "berth", "a pad berth"], // glossary-ignore: pad
 	["shipyard", "boom", "a shipyard boom"],
 ]) {
 	console.log(`\n§9.2.2 a ship stops at ${what}:`);
@@ -264,10 +264,10 @@ for (const [type, where, what] of [
 	// The figure §11's joint 5 is about: how far above the drawn station the
 	// proxy stopped it. Printed, not gated — it is the principal's to judge.
 	console.log(
-		`  the nearest drawn face below the ship's lowest point: ${fmt(r.gapKm)}`,
+		`  the ray from the hull box's fore-face centre along the nose: ${fmt(r.gapKm)}`,
 	);
 	check(
-		`${what}: there is drawn station below the ship, so the gap is a reading`,
+		`${what}: the fore-face ray meets the drawn station, so the gap is a reading`,
 		r.gapKm !== null,
 		JSON.stringify(r.gapKm),
 	);

@@ -79,8 +79,8 @@ export type DockPhase = "flying" | "arriving" | "docked" | "launching";
  * parked interval and a launch fly with no impact — is `collision.md` §9.1.8,
  * built with the stations' proxies (node #663) in
  * `tests/collision-stations.test.ts`: every role, every hull its berths admit,
- * exempt throughout, with a red build per aperture kind — on a pad, removing
- * this makes impacts; on a slot, closing the bay does.
+ * exempt throughout, with a red build per aperture kind — on a pad, removing // glossary-ignore: pad
+ * this makes impacts; on a slot, closing the bay does. // glossary-ignore: slot
  */
 export const collisionExempt = (phase: DockPhase): boolean =>
 	phase !== "flying";

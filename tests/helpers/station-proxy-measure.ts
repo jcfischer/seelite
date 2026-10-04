@@ -73,7 +73,7 @@ export function openingOf(type: StationType): Opening {
 		z1: reach,
 	};
 	if (interior.presentation !== "bay") {
-		// A pad's corridor runs on down into its landing well (node #663): the
+		// A pad's corridor runs on down into its landing well (node #663): the // glossary-ignore: pad
 		// floor is the proxy's own expression, read rather than restated, so
 		// the opening this row samples is the one the proxy was cut to.
 		const well: AxialCylinder = {

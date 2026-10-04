@@ -151,16 +151,16 @@ export type StationFormId = "a" | "b" | "c" | "d" | "e";
  * yet. Pretending otherwise is how a placeholder becomes the shipped answer.
  *
  * **Selecting trade E is not one line yet.** The Wheel's `core` is its
- * finished rim and its slot is cut into `hub`, so the selected-form rows that
+ * finished rim and its slot is cut into `hub`, so the selected-form rows that // glossary-ignore: slot
  * measure the bay against `core`'s box would read a rim that ends in front of
- * the bay. A round that selects it owes those rows the part the slot is cut
+ * the bay. A round that selects it owes those rows the part the slot is cut // glossary-ignore: slot
  * into (#334's review); `tests/station-wheel.test.ts` holds the hub against
  * the bay meanwhile.
  */
 export const SELECTED_FORM: Record<StationType, StationFormId> = {
 	trade: "a",
 	shipyard: "a",
-	// **D, on the principal's yes to #257's sheet (2026-09-06).** Both pad
+	// **D, on the principal's yes to #257's sheet (2026-09-06).** Both pad // glossary-ignore: pad
 	// roles were placeholders for two rounds — `a` was first in the list and
 	// nothing more, and the Warren's old justification had outlived the
 	// outline gate it reasoned about. The Works and the Cluster were built
@@ -175,7 +175,7 @@ export const SELECTED_FORM: Record<StationType, StationFormId> = {
 	// **E, on the principal's yes to #518's sheet (2026-09-24).** The Cluster
 	// was taken above as an industrial machine, and #490 then made the outpost
 	// a raider's haven; E is the form built for that role — salvage welded
-	// round the pad — ranked beside A–D at three plans under five finishes
+	// round the pad — ranked beside A–D at three plans under five finishes // glossary-ignore: pad
 	// and four framings. Still nothing a running game draws until #491 places
 	// outposts.
 	outpost: "e",

@@ -210,14 +210,14 @@ export const PROBE_CATALOG = Object.freeze(
 		),
 		entry(
 			"probe-collision.mjs",
-			"Coasts the player at a station's hull face, onto a refinery pad berth and onto a shipyard boom at the docking gate, and checks each stops at the station's collision proxy without crossing the aperture plane, bounces at the restitution, survives with the damage on the fore shield, and prints how far above the drawn station the proxy stopped it.",
+			"Coasts the player at a station's hull face, onto a refinery pad berth and onto a shipyard boom at the docking gate, and checks each stops at the station's collision proxy without crossing the aperture plane, bounces at the restitution, survives with the damage on the fore shield, and prints how far above the drawn station the proxy stopped it.", // glossary-ignore: pad
 			[
 				"collision",
 				"station proxy",
 				"impact",
 				"bounce",
 				"station hull",
-				"pad berth",
+				"pad berth", // glossary-ignore: pad
 				"shipyard boom",
 				"aperture plane",
 				"ship condition",

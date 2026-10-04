@@ -1881,11 +1881,7 @@ export function stepWorld(
 	// A station's start is its pose as well as its place: the frame is read
 	// off the bodies, so it has to be read before they move.
 	const stations: StationStart[] = solid
-		? world.system.contents.stations.map((station) => ({
-				station,
-				origin: { ...bodyOf(world.system, station.id).pos },
-				frame: stationApertureFrame(world.system, station.id, fromTime),
-			}))
+		? stationStarts(world.system, fromTime)
 		: [];
 	advanceWorldClock(world, dt);
 	const step = stepHull(world.ship, attitude, control, dt, perf);
@@ -1912,10 +1908,25 @@ export function stepWorld(
 }
 
 /** A station at the top of a step: its place and its aperture frame. */
-interface StationStart {
+export interface StationStart {
 	station: Station;
 	origin: Vec3;
 	frame: ApertureFrame;
+}
+
+/** Snapshot placed stations before the world clock moves them. Like the plane
+ *  search, the collision collector only reads stations with a placed body. */
+export function stationStarts(
+	system: System,
+	gameTime: number,
+): StationStart[] {
+	return system.contents.stations
+		.filter((station) => system.byId.has(station.id))
+		.map((station) => ({
+			station,
+			origin: { ...bodyOf(system, station.id).pos },
+			frame: stationApertureFrame(system, station.id, gameTime),
+		}));
 }
 
 function bodyOf(system: System, id: string): Body {

@@ -1,5 +1,5 @@
 /**
- * Docking, the spatial tier — `docs/specs/docking.md` §9.2.3 and §9.2.5;
+ * Docking, the spatial checks — `docs/specs/docking.md` §9.2.3 and §9.2.5;
  * §9.2.4 moved to `probe-collision.mjs` (node #663).
  *
  *   npm run dev                       # in one shell

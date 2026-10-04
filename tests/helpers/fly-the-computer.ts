@@ -263,7 +263,7 @@ export function flyTheComputer(opts: FlightOptions): FlightRun {
 	const impacts: Impact[] = [];
 	let ghostSteps = 0;
 	// The station stands at the origin of its own frame, which is the frame
-	// this harness flies in: a proxy at rest, turning with the slot.
+	// this harness flies in: a proxy at rest, turning with the slot. // glossary-ignore: slot
 	const proxy =
 		opts.proxy ?? selectedStationProxy({ type, berthSeed: 1, assemblySeed: 0 });
 	const spec = HULL_SPECS[opts.hull];

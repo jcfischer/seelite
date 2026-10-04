@@ -64,7 +64,7 @@ import type { StationFormId, StationType } from "./station";
 import { SELECTED_FORM, STATION_GEOMETRY } from "./station";
 import { HULL_IDS, HULL_SPECS } from "./hull";
 import {
-	berthFits,
+	admittedHulls,
 	corridorRadiusKm,
 	interiorAxialSpanKm,
 	stationInterior,
@@ -318,18 +318,18 @@ function bayHoles(type: StationType): Bounds[] {
 }
 
 /**
- * How far a pad's opening runs **below** its plane: the landing well
+ * How far a pad's opening runs **below** its plane: the landing well // glossary-ignore: pad
  * (node #663, `collision.md` §2.2 — derived, and the principal's to ratify).
  *
- * **Why a pad needs one and a slot does not.** A docking ship's nose is within
+ * **Why a pad needs one and a slot does not.** A docking ship's nose is within // glossary-ignore: pad, slot
  * check 2's 35° of the inward axis, so when its centre reaches the plane the
- * front half of its hull box is already past it. Behind a slot's plane that is
- * the open bay (`interiorAxialSpanKm`). Behind a pad's it was solid — the deck
+ * front half of its hull box is already past it. Behind a slot's plane that is // glossary-ignore: slot
+ * the open bay (`interiorAxialSpanKm`). Behind a pad's it was solid — the deck // glossary-ignore: pad
  * under its hole, the Works' head house, the Salvage's core and rock all reach
- * the plane on the axis — so with stations solid the nose met the pad before
+ * the plane on the axis — so with stations solid the nose met the pad before // glossary-ignore: pad
  * the centre could cross, an impact owned every tick (§4.2), and no hull could
- * dock at a pad at all. The docking-computer harness measured it: every hull at
- * both pad roles stopped at the deck with no crossing.
+ * dock at a pad at all. The docking-computer harness measured it: every hull at // glossary-ignore: pad
+ * both pad roles stopped at the deck with no crossing. // glossary-ignore: pad
  *
  * **The depth is the deepest a docking hull can reach**, read off the hulls
  * rather than written down: the half-diagonal of each hull's box plus its
@@ -337,23 +337,17 @@ function bayHoles(type: StationType): Bounds[] {
  * a berth of this role admits — a hull no berth admits cannot be granted, so
  * it never crosses. That bounds the box below the plane at any attitude, so a
  * centred entry fits whatever its angle, and an entry off the axis is P1's
- * physical fit: a wing past the corridor meets the deck, as a slot's rim does.
+ * physical fit: a wing past the corridor meets the deck, as a slot's rim does. // glossary-ignore: slot
  *
- * Zero for a slot role: its bay is the opening behind its plane.
+ * Zero for a slot role: its bay is the opening behind its plane. // glossary-ignore: slot
  */
 export function padWellDepthKm(type: StationType): number {
-	if (STATION_GEOMETRY[type].aperture.kind !== "pad") return 0;
+	if (STATION_GEOMETRY[type].aperture.kind !== "pad") return 0; // glossary-ignore: pad
 	const cached = wellDepthCache.get(type);
 	if (cached !== undefined) return cached;
-	const interior = stationInterior(
-		type,
-		STATION_GEOMETRY[type].aperturePlaneKm,
-		0,
-	);
 	let depth = 0;
-	for (const id of HULL_IDS) {
+	for (const id of admittedHulls(type, HULL_IDS)) {
 		const { env, envCentre } = HULL_SPECS[id];
-		if (!interior.berths.some((berth) => berthFits(berth, env))) continue;
 		const reach =
 			Math.hypot(env.lengthKm, env.beamKm, env.heightKm) / 2 +
 			Math.hypot(envCentre.rightKm, envCentre.upKm, envCentre.foreKm);
@@ -365,7 +359,7 @@ export function padWellDepthKm(type: StationType): number {
 
 const wellDepthCache = new Map<StationType, number>();
 
-/** The floor of a pad's opening: its plane less the well (`padWellDepthKm`). */
+/** The floor of a pad's opening: its plane less the well (`padWellDepthKm`). */ // glossary-ignore: pad
 export const padOpeningFloorKm = (type: StationType): number =>
 	STATION_GEOMETRY[type].aperturePlaneKm - padWellDepthKm(type);
 

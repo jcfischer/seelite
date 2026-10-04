@@ -9,12 +9,12 @@
  * `station-proxy-measure.ts` gives — the dependency points from the operator
  * tooling into the gated suite, never the other way.
  *
- * **What a centred entry is.** The station is held at one slot phase and the
- * ship's roll is measured against that slot, which is what a pilot matching the
- * spin flies: relative to the slot, nothing turns. The ship's centre runs down
+ * **What a centred entry is.** The station is held at one slot phase and the // glossary-ignore: slot
+ * ship's roll is measured against that slot, which is what a pilot matching the // glossary-ignore: slot
+ * spin flies: relative to the slot, nothing turns. The ship's centre runs down // glossary-ignore: slot
  * the axis from well outside the proxy to the plane, the instant §3's checks
  * run and the exemption begins (§5); past the plane it is not collidable, so a
- * fit is owed only up to it. Pitch turns the nose toward the slot's short side
+ * fit is owed only up to it. Pitch turns the nose toward the slot's short side // glossary-ignore: slot
  * (about the ship's starboard axis), yaw toward its long side (about the ship's
  * up), and the roll is then taken about the docking axis, so it is the angle
  * check 4 reads.

@@ -17,7 +17,7 @@ the contact costs nothing. `Game` resolves only the crossing the step returns.
 
 Arrival, parking and launch remain exempt under `collisionExempt`. Released
 ships are collidable; an initially overlapping pair ghosts until separation.
-Pad proxies have a derived landing well below the plane, so the hull's nose
+Pad proxies have a derived landing well below the plane, so the hull's nose <!-- glossary-ignore: pad -->
 can reach the centre crossing without hitting the deck first.
 
 `docking.md` §9.2.4 and its stale handoffs now name `probe-collision.mjs`.
@@ -34,12 +34,13 @@ under their current subjects.
 | §9.1.2 row 3; §9.1.4 moving surface | `collision-stations.test.ts`: turning face strikes at the `ω × r` band; away/stopped-spin controls; resting surface bills the turn and leaves the hull outside. Static-keel misposing makes its control red. |
 | §9.1.6 | Rim first, plane first and exact tie; zero-speed resting thrust cannot pass the rim. The latter failed before the resolver correction and passes afterward. Departing a resting surface remains free to cross a plane. |
 | §9.1.7 | 40 spawns, 40 real hyperspace arrivals, 40 restore fallback placements: zero inside proxies. Deliberate saved-flight placements inside all four roles ghost without damage or push; return after separation makes contact. These are controlled saved-pose fixtures, not a survey of players' saves. |
-| §9.1.7 launch; §9.1.8 | Every admitted hull, every role: arrival, parked interval and launch are exempt. All 34 release cases fly 90 subsequent steps with zero impacts and zero ghost steps. Pad red arm removes the exemption and meets solids. Slot red arm closes the bay and meets its bulkhead. |
+| §9.1.7 launch; §9.1.8 | Every admitted hull, every role: arrival, parked interval and launch are exempt. All 34 release cases fly 90 subsequent steps with zero impacts and zero ghost steps. Pad red arm removes the exemption and meets solids. Slot red arm closes the bay and meets its bulkhead. | <!-- glossary-ignore: pad, slot -->
 | §9.1.9 | `bun scripts/measure-aperture-fit.ts` reproduces `aperture-physical-fit.md`'s table exactly. Centred zero pitch/yaw passes at both roll 0 and roll 50° for every admitted hull. |
-| §9.1.12 remainder | Seeds 1–200, the travel instrument's full default corpus: 416 cruise legs, 416 exits; zero exits inside a proxy. Nearest exit to any station: 41.3 km. Zero of 416 legs cross a non-target proxy. The count now sweeps actual moving primitives after broad-phase rejection. Its regression rejects empty space inside the Gantry's bounding sphere while counting a boom crossing; the reach-only version failed. The 200-seed coverage assertion failed on the previous 40-seed sample before expansion. |
+| §9.1.12 remainder | Seeds 1–200, the travel instrument's full default corpus: 416 cruise legs, 416 exits; zero exits inside a proxy. Nearest exit to any station: 41.3 km. Zero of 416 legs cross a non-target proxy. The count now sweeps actual moving primitives after broad-phase rejection. Its regression rejects empty space inside the Gantry's bounding sphere while counting a boom crossing; the reach-only version failed. The measured 416-leg and 416-exit totals and the empty non-target crossing list are asserted. The former literal seed-length assertion did not prove the measured coverage. |
 | §9.1.15 | `hull-docking.test.ts` flies the computer with collision live across its admitted roster, roles and spin samples, asserting no impacts or ghosts in addition to docking and the six checks. Together with `docking-computer.test.ts`: 58 tests passed. |
 
-The focused collision files pass 75 tests. The final `npm test` passes
+Before the review repair, the focused collision files passed 75 tests. That
+`npm test` passed
 **4,907 tests, zero failures**, across 268 files. Typecheck, format, lint,
 launcher wiring and production build pass. Browser results follow below.
 
@@ -90,10 +91,10 @@ the berth and boom readings to the principal to judge the invisible wall.
 ## Principal judgment still required
 
 - **P1 physical fit:** [the pitch/yaw table](aperture-physical-fit.md). At
-  50° roll the miner clears only 0.5° of pitch or yaw at either slot role;
+  50° roll the miner clears only 0.5° of pitch or yaw at either slot role; <!-- glossary-ignore: slot -->
   check 2 permits 35°. The principal judges whether that is the intended skill
   tax. No tolerance or rim was widened to hide it.
-- **Derived pad well:** refinery depth 56.2 m, outpost 46.5 m. The depth is
+- **Derived pad well:** refinery depth 56.2 m, outpost 46.5 m. The depth is <!-- glossary-ignore: pad -->
   derived from admitted hull boxes and their measured offsets. It is documented
   in `collision.md` §2.2; the proxy budget remains green over its gated plans,
   with the earlier wide sweep in `station-proxy-wide-sweep.md`.
@@ -102,13 +103,70 @@ the berth and boom readings to the principal to judge the invisible wall.
   bounce checks is not approval of an invisible wall.
 - **Major-change copy (#573):** the station mechanic qualifies under
   `src/changelog.ts`'s definition. The proposed entry is: “Stations are now
-  solid: your ship bounces off hulls, landing decks and shipyard booms, while
-  cleared docking and launch keep their safe passage.” The principal approves
-  the sentence before merge.
-- **Known berth offset:** the miner overhangs a slot berth cell by 2.8 m and
+  solid: your ship bounces off hulls, landing decks and shipyard booms, so a
+  docking approach must keep the whole ship clear of the rim.” The principal
+  approves the sentence before merge. Its presence on this worker branch is a
+  proposal, not a record of approval.
+- **Known berth offset:** the miner overhangs a slot berth cell by 2.8 m and <!-- glossary-ignore: slot -->
   the explorer by 0.6 m because berth placement uses the ship origin. The
   exemption protects both; the unexempt measurements record their wall
   contacts. Carrying the box offset in berth placement is separate work.
 
 No graph state, other branch, remote, PR or GitHub comment was changed by this
 worker. The checkpoint remains the supervisor's and principal's gate.
+
+## Sage round 1 repair
+
+The station-start collector now filters to placed stations before reading their
+poses. Its regression preserves every placed pose and the real station's impact;
+removing the filter fails with `no placed body station-trade-unplaced`.
+`advanceSystem` independently requires a complete placed-body set, so this is
+a defensive collector rule, not a claim that arbitrary incomplete worlds can
+advance normally.
+
+The cruise census now asserts its measured 416 legs, 416 exits and zero
+non-target crossings. Red builds confirmed both assertions discriminate:
+reducing the sample to 40 seeds reports 81 legs and fails the 416-leg pin;
+injecting a nonzero crossing report fails the empty-list assertion. Both
+mutations were restored. The earlier claim about a literal 200-seed assertion
+proving measured coverage has been corrected above.
+
+Hull admission is shared by the proxy, the fit instrument and the collision
+rows through `admittedHulls`. Exit overlap checks reuse `overlapsStation` and
+`uprightFor`. The fit instrument's output remains byte-identical to the
+principal's table. The collision-enabled roster sweep still measures the miner
+at 5 rpm against the generator's 3 rpm maximum, a 1.67× margin. The comment now
+points to the printed measurement instead of retaining a copied number.
+
+The changelog proposal no longer promises a cleared approach safe passage;
+clearance does not exempt the approach. The ray's header, local variable and
+printed label all describe the hull box's fore-face centre along the nose.
+The outpost comment now describes the unplaced harness fixture rather than
+claiming an outpost had shipped.
+
+Glossary annotations preserve aperture-kind terminology under `CONTEXT.md`'s
+explicit Berth scope note. The player-placement uses of `spawn` and the
+interior route's `staging point` likewise do not name anonymous Traffic or a
+Traffic hold. <!-- glossary-ignore: Spawn, Staging point -->
+
+Round 1 headless verification: **4,908 tests passed, zero failures**, across
+268 files in 266.85 seconds. Typecheck, formatting, lint, launcher wiring and
+production build passed. This run also reprinted the 416-leg census and the
+spin margin above.
+
+The mandatory selector again returned all 86 probes because the branch changes
+shared capture infrastructure. Under the worker's targeted-only contract, the
+same seven affected probes listed above passed in 43 seconds on
+`ANGLE (Apple, ANGLE Metal Renderer: Apple M1 Pro, Unspecified Version)`.
+Peak load was 29.8 on 10 cores. The canonical runner held the shared lock and
+checked the serving tree and renderer. This remains **partial evidence, 7/86**;
+the supervisor owes the full suite on the final reviewed head. The initial
+sandboxed attempt aborted Chromium before any checks and returned `EPERM`
+during cleanup; only the approved retry outside that process sandbox supplies
+browser evidence.
+
+Optional restructuring remains separate: extracting shared plane arbitration
+from the world step and the synthetic computer harness would change their
+interfaces; deferring station frame construction needs measured cost evidence;
+lifting the whole cruise leg is unnecessary after removing the duplicate overlap
+arithmetic. This repair leaves those three suggestions out.

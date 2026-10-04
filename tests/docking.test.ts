@@ -1039,9 +1039,9 @@ describe("§9.1.11 the docking computer", () => {
 		const run = flyTheComputer({ spinRpm: 0, type: "refinery" });
 		expect(run.docked).toBe(true);
 		expect(run.violations).toBe(0);
-		// §9.1.15 on a pad: the nose is past the plane before the centre is, so
+		// §9.1.15 on a pad: the nose is past the plane before the centre is, so // glossary-ignore: pad
 		// this row went red — no crossing, an impact on the deck — until the
-		// pad's opening ran down into its landing well (`padWellDepthKm`).
+		// pad's opening ran down into its landing well (`padWellDepthKm`). // glossary-ignore: pad
 		expect(run.impacts).toEqual([]);
 		expect(run.ghostSteps).toBe(0);
 	});

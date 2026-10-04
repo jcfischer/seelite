@@ -4,9 +4,9 @@
  * §9.1.9, §11 joint 2).
  *
  * P1 makes a ship meet a station on its hull box, so a wing that touches the
- * slot's rim before the ship's centre crosses the plane is an impact, not an
+ * slot's rim before the ship's centre crosses the plane is an impact, not an // glossary-ignore: slot
  * entry. `tests/aperture-fit.test.ts` measured a hull with its nose on the axis;
- * a hull pitched against the axis is wider in the slot's short dimension, and
+ * a hull pitched against the axis is wider in the slot's short dimension, and // glossary-ignore: slot
  * whether a long hull can still use check 2's full 35° was not measured when P1
  * was chosen. **This table goes to the principal to judge** — whether a hull's
  * margin is the intended skill tax or a reason to revisit P1 — so it prints and
@@ -25,9 +25,8 @@
  */
 
 import { AXIS_TOLERANCE_DEG, ROLL_TOLERANCE_DEG } from "../src/docking";
-import { DOCKABLE_HULL_IDS, HULL_SPECS } from "../src/hull";
 import { STATION_GEOMETRY, STATION_TYPES } from "../src/station";
-import { berthFits, stationInterior } from "../src/station-interior";
+import { admittedHulls } from "../src/station-interior";
 import { padWellDepthKm } from "../src/station-proxy";
 import { largestClearAngleDeg } from "../tests/helpers/aperture-physical-fit";
 
@@ -53,35 +52,30 @@ console.log(
 );
 for (const type of STATION_TYPES) {
 	const g = STATION_GEOMETRY[type];
-	const interior = stationInterior(type, g.aperturePlaneKm, 0);
 	const note =
-		g.aperture.kind === "pad"
-			? ` (pad, landing well ${(padWellDepthKm(type) * 1000).toFixed(1)} m)`
-			: ` (slot ${g.aperture.widthKm * 1000} × ${g.aperture.heightKm * 1000} m)`;
+		g.aperture.kind === "pad" // glossary-ignore: pad
+			? ` (pad, landing well ${(padWellDepthKm(type) * 1000).toFixed(1)} m)` // glossary-ignore: pad
+			: ` (slot ${g.aperture.widthKm * 1000} × ${g.aperture.heightKm * 1000} m)`; // glossary-ignore: slot
 	console.log(`-- ${type}${note}`);
-	for (const hull of DOCKABLE_HULL_IDS) {
-		const { env } = HULL_SPECS[hull];
-		if (!interior.berths.some((berth) => berthFits(berth, env))) continue;
-		const row = [
-			largestClearAngleDeg(type, hull, "pitch", 0, AXIS_TOLERANCE_DEG, stepDeg),
-			largestClearAngleDeg(type, hull, "yaw", 0, AXIS_TOLERANCE_DEG, stepDeg),
-			largestClearAngleDeg(
-				type,
-				hull,
-				"pitch",
-				ROLL_TOLERANCE_DEG,
-				AXIS_TOLERANCE_DEG,
-				stepDeg,
+	for (const hull of admittedHulls(type)) {
+		const samples = [
+			["pitch", 0],
+			["yaw", 0],
+			["pitch", ROLL_TOLERANCE_DEG],
+			["yaw", ROLL_TOLERANCE_DEG],
+		] as const;
+		const row = samples.map(([axis, roll]) =>
+			cell(
+				largestClearAngleDeg(
+					type,
+					hull,
+					axis,
+					roll,
+					AXIS_TOLERANCE_DEG,
+					stepDeg,
+				),
 			),
-			largestClearAngleDeg(
-				type,
-				hull,
-				"yaw",
-				ROLL_TOLERANCE_DEG,
-				AXIS_TOLERANCE_DEG,
-				stepDeg,
-			),
-		].map(cell);
+		);
 		console.log(
 			`${type.padEnd(9)}${hull.padEnd(12)}${row[0].padStart(9)}${row[1].padStart(8)}` +
 				`${row[2].padStart(10)}${row[3].padStart(9)}`,
