@@ -142,6 +142,7 @@ export const LEVERS = Object.freeze({
 	204: "the cabin read as the front of a ship: a canopy pane with thickness, the face mid-tone on the console tops, lamp pools",
 	208: "the baked cube a planet is drawn from below two radii",
 	211: "the half-resolution planet surface beneath a full-resolution limb",
+	212: "terran clouds that cast a shadow on the ground, a cirrus scale, and a thicker limb",
 	257: "the refinery and outpost forms solved by wave function collapse, and selected",
 	210: "the planet's shadow across its ring, and the ring's back across the planet",
 	209: "the gas giant's band tones, its storm's interior, and its limb",
@@ -649,7 +650,7 @@ export const VIEWS = Object.freeze([
 	},
 	{
 		name: "planet-terminator",
-		covers: [208, 211, 99, 206, 200, 207],
+		covers: [208, 211, 212, 99, 206, 200, 207],
 		what: "The largest planet at a crescent. The far layer takes no fill on purpose, and this is why.",
 		shot: {
 			kind: "body-offset",
@@ -700,7 +701,7 @@ export const VIEWS = Object.freeze([
 	 */
 	{
 		name: "planet-fill",
-		covers: [208, 211, 206, 207],
+		covers: [208, 211, 212, 206, 207],
 		what: "A rocky planet spanning the frame at two radii, limb on the top and bottom edges. Surface detail at the largest apparent size it still resolves at, and the frame the planet-cost table prices.",
 		shot: {
 			kind: "body-offset",

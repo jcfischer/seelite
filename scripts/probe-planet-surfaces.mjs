@@ -2448,5 +2448,96 @@ if (airless) {
 	await halfPage.close();
 }
 
+/* 7. Cloud shadow on the ground (node #212).
+ *
+ * With clouds forced to a single blob at a known direction, the surface pixel
+ * under it is darker than the same pixel with clouds off by a banded ratio;
+ * the cloud shell itself is unchanged.
+ *
+ * The test direction is set via `cloudTestDir` — when non-zero, the TERRAN
+ * shader replaces its procedural cloud field with a deterministic blob centred
+ * at that direction. The comparison is the same pixel with `cloudCover` zeroed.
+ */
+{
+	const shadowPage = await browser.newPage({ viewport: VIEW });
+	watch(shadowPage);
+	await installHelpers(shadowPage);
+	await installViewPlacement(shadowPage);
+	await installViewFraming(shadowPage);
+	await shadowPage.goto(URL, { waitUntil: "domcontentloaded" });
+	await bootedGame(shadowPage);
+
+	const result = await shadowPage.evaluate(async () => {
+		const g = window.__seelite;
+		// Find a terran body.
+		const terran = g.world.system.bodies.find(
+			(b) => g.bodyVisuals.get(b.id)?.surface === "terran",
+		);
+		if (!terran) return { skip: true };
+
+		const vis = g.bodyVisuals.get(terran.id);
+		const uniforms = vis.group.children[0]?.material?.uniforms;
+		if (!uniforms) return { skip: true };
+
+		// Force the body to the procedural path so the shadow is live.
+		g.setSurfacePin("four-tap");
+
+		// Set a test blob direction: use the sun direction so the shadow is
+		// directly under where the sun points at the cloud layer.
+		const testDir = uniforms.sunDir.value.clone();
+		uniforms.cloudTestDir.value.copy(testDir);
+		uniforms.cloudCover.value = 0.7;
+
+		// Place camera on the sun side, looking at the lit surface.
+		await window.__sunOffset(terran.id, 3, 55);
+		g.render(0);
+		g.render(0);
+
+		// Read surface brightness with cloud shadow on.
+		const withShadow = window.__innerDiscStats(terran.id, 0.25);
+
+		// Now turn clouds off — same pixel, no shadow.
+		uniforms.cloudCover.value = 0.0;
+		g.render(0);
+		const noShadow = window.__innerDiscStats(terran.id, 0.25);
+
+		// Check the cloud shell: find the cloud mesh, confirm it is still present.
+		let cloudShellPresent = false;
+		vis.group.traverse((o) => {
+			if (o.userData?.shell === "cloud") cloudShellPresent = true;
+		});
+
+		// Restore.
+		uniforms.cloudTestDir.value.set(0, 0, 0);
+		uniforms.cloudCover.value = 0.7;
+		g.setSurfacePin(null);
+
+		return {
+			skip: false,
+			withShadow: withShadow.mean,
+			noShadow: noShadow.mean,
+			ratio: noShadow.mean > 0 ? withShadow.mean / noShadow.mean : 1,
+			pixels: withShadow.pixels,
+			cloudShellPresent,
+		};
+	});
+
+	if (result.skip) {
+		console.log("  ⊘ no terran body in seed 6 — cloud shadow check skipped");
+	} else {
+		check(
+			"a terran surface under a forced cloud blob is darker than with clouds off",
+			result.ratio < 0.96 && result.ratio > 0.5,
+			`with shadow ${result.withShadow.toFixed(1)}, without ${result.noShadow.toFixed(1)}, ratio ${result.ratio.toFixed(3)} (expected 0.50–0.96), ${result.pixels} px`,
+		);
+		check(
+			"the cloud shell mesh is still present after the shadow test",
+			result.cloudShellPresent,
+			`cloudShellPresent: ${result.cloudShellPresent}`,
+		);
+	}
+	await shadowPage.close();
+}
+
 await browser.close();
 exit();

@@ -517,6 +517,10 @@ export function buildBodyVisual(
 		// Set below, once the shell's scale is known.
 		atmoInnerRatio: { value: 1 },
 		cloudCover: { value: look.cloudCover },
+		// When non-zero, the terran surface shader replaces its cloud field with
+		// a single deterministic blob at this direction. Zero in production; the
+		// probe sets it to test the cloud shadow (node #212).
+		cloudTestDir: { value: new THREE.Vector3(0, 0, 0) },
 		// Water cloud is neutral; a dust haze is the colour of the ground it
 		// was lifted from.
 		cloudTint: {
@@ -828,8 +832,9 @@ export function buildBodyVisual(
 		// leaves the exponential falloff no room to fall off in, so the haze had
 		// to be steep to fit — and steep is the thing being fixed. The glow
 		// fades well inside the new silhouette, so a thicker shell does not read
-		// as a bigger planet.
-		const shellScale = 1.06 + look.atmosphere * 0.05;
+		// as a bigger planet. Raised from 1.06 + 0.05a in #212 so the limb
+		// reads at 3 radii.
+		const shellScale = 1.1 + look.atmosphere * 0.06;
 		shell.scale.setScalar(shellScale);
 		// The surface is the unit sphere and the shell is that scaled, so the
 		// fraction of the shell the solid body fills is one over the scale. The

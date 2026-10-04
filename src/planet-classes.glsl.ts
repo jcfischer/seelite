@@ -140,6 +140,46 @@ vec3 reliefNormal(vec3 p, vec3 N, float strength) {
 export const TERRAN = /* glsl */ `
 uniform float seaLevel;
 uniform float seedOffset;
+uniform float cloudCover;
+// When non-zero, replaces the cloud field with a single deterministic blob
+// centred at this direction. Zero in production; the probe sets it.
+uniform vec3  cloudTestDir;
+
+// Cloud shadow on the ground (node #212).
+//
+// Evaluates the cloud field at the surface point offset along the sun direction
+// by the cloud shell's height (1.014 - 1.0 = 0.014 radii). Static — no clock
+// drift — so the shadow bakes into the cubemap and costs nothing per frame.
+//
+// The field matches CLOUD_FRAGMENT's two scales plus the cirrus added in #212,
+// without the clock-based drift that the shell applies. The visual mismatch is
+// invisible at planetary viewing distances.
+const float CLOUD_SHADOW_STRENGTH = 0.40;
+
+float cloudField(vec3 p) {
+  // Test mode: a single blob at a known direction for the probe.
+  if (dot(cloudTestDir, cloudTestDir) > 0.01) {
+    return smoothstep(0.30, 0.70, dot(normalize(p), normalize(cloudTestDir)));
+  }
+  vec3 slow = p + seedOffset;
+  float broad = fbm4(warp(slow * 2.3, 1.1, 0.75));
+  float wisp  = fbm5(p * 8.5 + seedOffset);
+  // Cirrus: coarser scale, streaked along the rotation axis (y compressed).
+  vec3 cirrusP = vec3(p.x * 2.8, p.y * 0.7, p.z * 2.8) + seedOffset + 31.0;
+  float cirrus = fbm3(cirrusP * 1.2);
+
+  float lat = abs(p.y);
+  float zonal = 0.58 + 0.42 * cos(lat * 8.2 + 0.4);
+  float field = broad * 0.55 + wisp * 0.25 + cirrus * 0.20;
+  return smoothstep(0.54 - cloudCover * 0.16, 0.56 + 0.10, field) * zonal;
+}
+
+float cloudShadow(vec3 p) {
+  if (cloudCover < 0.01) return 0.0;
+  // Project the surface point to the cloud altitude along the sun direction.
+  vec3 cloudP = normalize(p + sunDir * 0.014);
+  return cloudField(cloudP) * CLOUD_SHADOW_STRENGTH;
+}
 
 // Domain-warped continents. The warp is what turns blobs into landmasses with
 // peninsulas and inland seas; without it every ocean world looks like the same
@@ -198,6 +238,9 @@ void surface(vec3 p, inout vec3 albedo, inout vec3 N,
   // Snow line on high ground at any latitude, and only near the summits: a low
   // threshold paints the whole range white and the relief disappears into it.
   albedo = mix(albedo, vec3(0.58, 0.61, 0.64), land * smoothstep(0.74, 0.96, h));
+
+  // Cloud shadow darkens the ground under the weather (node #212).
+  albedo *= 1.0 - cloudShadow(p);
 
   N = reliefNormal(p, N, 4.5 * land);
   // Tight and dim. A broad lobe puts a headlight blob in the middle of the

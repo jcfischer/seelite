@@ -531,9 +531,11 @@ void main() {
   float graze = sqrt(max(d2, 0.0));
   // Zero at the ground, one at the top of the shell.
   float altitude = clamp((graze - inner) / max(outer - inner, 1e-6), 0.0, 1.0);
-  // A scale height of 3.5 leaves about 3% of the ground value at the top,
-  // which reads as a tail rather than a border.
-  float density = exp(-altitude * 3.5);
+  // A scale height of 2.8 leaves about 6% of the ground value at the top,
+  // giving a thicker limb that reads at 3 radii rather than vanishing (node
+  // #212). The previous 3.5 left too little air at altitude for the limb to
+  // carry any weight.
+  float density = exp(-altitude * 2.8);
   // Multiplied out to exactly zero at the silhouette, so the small remainder
   // the exponential still carries does not leave a step of its own.
   float rim = density * (1.0 - altitude);
@@ -542,8 +544,10 @@ void main() {
   // Only the lit limb glows, and it fades through the terminator rather than
   // stopping at it.
   float day = smoothstep(-0.45, 0.30, dot(N, sunDir));
-  // Forward scattering: looking towards the star through the shell.
-  float forward = pow(max(dot(V, -sunDir), 0.0), 5.0);
+  // Forward scattering: looking towards the star through the shell. Exponent
+  // 3.5 rather than the previous 5.0 spreads the glow wider so the limb reads
+  // at 3 radii (node #212).
+  float forward = pow(max(dot(V, -sunDir), 0.0), 3.5);
   // Longer path at grazing angles scatters out the blue first — grazing is now
   // "a long way through the air", which is what it always meant.
   float grazing = pow(clamp(depth, 0.0, 1.0), 2.5);
@@ -580,12 +584,18 @@ void main() {
   float broad = fbm4(warp(slow * 2.3, 1.1, 0.75));
   float wisp  = fbm5(fast * 8.5);
 
+  // Cirrus (node #212): a coarser scale streaked along the rotation axis by
+  // compressing y in the noise domain. Drifts at its own rate.
+  vec3 cirrusP = vec3(p.x * 2.8, p.y * 0.7, p.z * 2.8)
+               + vec3(time * 0.0018, 0.0, time * 0.0006) + seedOffset + 31.0;
+  float cirrus = fbm3(cirrusP * 1.2);
+
   // Weather is banded on a rotating world: wet at the equator, dry in the horse
   // latitudes, wet again at the polar front. Uniform coverage looks like fog.
   float lat = abs(p.y);
   float zonal = 0.58 + 0.42 * cos(lat * 8.2 + 0.4);
 
-  float field = broad * 0.68 + wisp * 0.32;
+  float field = broad * 0.55 + wisp * 0.25 + cirrus * 0.20;
   float mask = smoothstep(0.54 - cloudCover * 0.16, 0.56 + 0.10, field) * zonal;
 
   vec3 N = normalize(vWorldN);
@@ -593,8 +603,10 @@ void main() {
   // Same lighting as the ground, so the cloud terminator lines up with it.
   float lit = wrappedDiffuse(N);
   float rim = pow(1.0 - max(dot(N, V), 0.0), 2.2);
+  // Lower overall opacity than the pre-#212 shell: clouds that read as weather
+  // over a ground, not as a grey smear.
   gl_FragColor = sane4(vec4(cloudTint * (lit * 1.30 * sunColor + 0.025),
-                            clamp(mask, 0.0, 1.0) * (0.62 + 0.30 * rim)));
+                            clamp(mask, 0.0, 1.0) * (0.48 + 0.22 * rim)));
 }
 `;
 
@@ -908,6 +920,10 @@ uniform mat3 faceBasis;
 varying vec2 vNdc;
 ${SANITISE_GLSL}
 ${NOISE_GLSL}
+// sunDir is needed by terran's cloud shadow (node #212). Already in the
+// uniform block via the body's shared record; unused by other classes'
+// bake programs, where the compiler strips it.
+uniform vec3 sunDir;
 float height(vec3 p);
 ${RELIEF}
 ${CLASS_GLSL[surface]}
