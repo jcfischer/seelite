@@ -69,6 +69,24 @@ This remains a **partial run**: 79 of 86 probes were not run. The supervisor
 still owes the full suite on the final reviewed head. The final headless run,
 after expanding the cruise corpus, passed 4,907 tests in 277.33 seconds.
 
+The collision probe was also run separately with its stdout retained, under
+the same shared lock and hardware guard: **15/15 checks passed**. Seed 42,
+system 8; assist off, coasting inward at `V_GATE` (0.1 km/s). All three cases
+bounced, took about 30 points from the fore shield, spent no hull and evaluated
+no docking entry.
+
+| Subject | Closing speed (km/s) | Outward speed after impact (km/s) | Ray to drawn face |
+|---|---:|---:|---:|
+| Trade hull, 225 m off axis | 0.100136 | 0.050204 | 57.1 m |
+| Refinery, over berth `deck-near` | 0.100000 | 0.050000 | 23.3 m |
+| Shipyard, over dorsal boom | 0.100030 | 0.050044 | 10.2 m |
+
+The ray starts at the measured hull box's fore-face centre after the impact
+tick. These are point readings of the rendered station, including any remaining
+tick's bounce, not a maximum deviation between the proxy and mesh. The gap
+figures are printed rather than approved by a threshold; §11's joint 5 sends
+the berth and boom readings to the principal to judge the invisible wall.
+
 ## Principal judgment still required
 
 - **P1 physical fit:** [the pitch/yaw table](aperture-physical-fit.md). At
@@ -79,6 +97,9 @@ after expanding the cruise corpus, passed 4,907 tests in 277.33 seconds.
   derived from admitted hull boxes and their measured offsets. It is documented
   in `collision.md` §2.2; the proxy budget remains green over its gated plans,
   with the earlier wide sweep in `station-proxy-wide-sweep.md`.
+- **Drawn-surface gaps:** the point readings above, particularly the berth and
+  boom, are the principal's judgment under §11 joint 5. Passing the stop and
+  bounce checks is not approval of an invisible wall.
 - **Major-change copy (#573):** the station mechanic qualifies under
   `src/changelog.ts`'s definition. The proposed entry is: “Stations are now
   solid: your ship bounces off hulls, landing decks and shipyard booms, while
