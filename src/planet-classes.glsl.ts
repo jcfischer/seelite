@@ -148,12 +148,14 @@ uniform vec3  cloudTestDir;
 // Cloud shadow on the ground (node #212).
 //
 // Evaluates the cloud field at the surface point offset along the sun direction
-// by the cloud shell's height (1.014 - 1.0 = 0.014 radii). Static — no clock
-// drift — so the shadow bakes into the cubemap and costs nothing per frame.
+// by the CLOUD shell's height. The cloud mesh is SphereGeometry(1.014) in
+// planet-surface.ts — distinct from the atmosphere shell at 1.1+. So the
+// projection height is 1.014 - 1.0 = 0.014 radii.
 //
-// The field matches CLOUD_FRAGMENT's two scales plus the cirrus added in #212,
-// without the clock-based drift that the shell applies. The visual mismatch is
-// invisible at planetary viewing distances.
+// Static — no clock drift — so the shadow bakes into the cubemap and costs
+// nothing per frame. The three terms (broad, wisp, cirrus) are evaluated
+// through cloudFieldFromInputs (planet-shaders.ts) so the bake path and the
+// live shell cannot drift.
 const float CLOUD_SHADOW_STRENGTH = 0.40;
 
 float cloudField(vec3 p) {
@@ -161,21 +163,16 @@ float cloudField(vec3 p) {
   if (dot(cloudTestDir, cloudTestDir) > 0.01) {
     return smoothstep(0.30, 0.70, dot(normalize(p), normalize(cloudTestDir)));
   }
-  vec3 slow = p + seedOffset;
-  float broad = fbm4(warp(slow * 2.3, 1.1, 0.75));
-  float wisp  = fbm5(p * 8.5 + seedOffset);
-  // Cirrus: coarser scale, streaked along the rotation axis (y compressed).
+  vec3 broadP  = p + seedOffset;
+  vec3 wispP   = p + seedOffset;
   vec3 cirrusP = vec3(p.x * 2.8, p.y * 0.7, p.z * 2.8) + seedOffset + 31.0;
-  float cirrus = fbm3(cirrusP * 1.2);
-
-  float lat = abs(p.y);
-  float zonal = 0.58 + 0.42 * cos(lat * 8.2 + 0.4);
-  float field = broad * 0.55 + wisp * 0.25 + cirrus * 0.20;
-  return smoothstep(0.54 - cloudCover * 0.16, 0.56 + 0.10, field) * zonal;
+  return cloudFieldFromInputs(broadP, wispP, cirrusP, abs(p.y), cloudCover);
 }
 
 float cloudShadow(vec3 p) {
   if (cloudCover < 0.01) return 0.0;
+  // No shadow on the night side — the sun is below the local horizon.
+  if (dot(normalize(p), sunDir) < 0.0) return 0.0;
   // Project the surface point to the cloud altitude along the sun direction.
   vec3 cloudP = normalize(p + sunDir * 0.014);
   return cloudField(cloudP) * CLOUD_SHADOW_STRENGTH;

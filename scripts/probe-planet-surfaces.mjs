@@ -2523,7 +2523,11 @@ if (airless) {
 	});
 
 	if (result.skip) {
-		console.log("  ⊘ no terran body in seed 6 — cloud shadow check skipped");
+		check(
+			"seed 6 has a terran body for the cloud shadow test",
+			false,
+			"no terran body or missing uniforms — the cloud shadow contract is unverified",
+		);
 	} else {
 		check(
 			"a terran surface under a forced cloud blob is darker than with clouds off",

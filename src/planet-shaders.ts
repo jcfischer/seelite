@@ -231,6 +231,28 @@ ${CRATER_PROFILE}
 `;
 
 /**
+ * Shared cloud field recipe (node #212).
+ *
+ * The three noise terms, their weights, the smoothstep mask and the zonal band
+ * are one copy here so the bake path (TERRAN in planet-classes.glsl.ts) and the
+ * live shell (CLOUD_FRAGMENT) cannot drift.
+ *
+ * Callers compute their own input positions — the live shell adds clock drift,
+ * the bake path evaluates at t = 0 — and pass them in.
+ */
+export const CLOUD_FIELD_GLSL = /* glsl */ `
+float cloudFieldFromInputs(vec3 broadP, vec3 wispP, vec3 cirrusP,
+                           float lat, float cover) {
+  float broad  = fbm4(warp(broadP * 2.3, 1.1, 0.75));
+  float wisp   = fbm5(wispP * 8.5);
+  float cirrus = fbm3(cirrusP * 1.2);
+  float zonal  = 0.58 + 0.42 * cos(lat * 8.2 + 0.4);
+  float field  = broad * 0.55 + wisp * 0.25 + cirrus * 0.20;
+  return smoothstep(0.54 - cover * 0.16, 0.56 + 0.10, field) * zonal;
+}
+`;
+
+/**
  * Lighting shared by every class.
  *
  * Three terms the previous prototype was missing, and each fixes one way a
@@ -424,6 +446,7 @@ ${relief === "none" ? "#define RELIEF_NONE 1" : ""}
 ${SANITISE_GLSL}
 ${VARYINGS_GLSL}
 ${NOISE_GLSL}
+${CLOUD_FIELD_GLSL}
 ${LIGHT_GLSL}
 float height(vec3 p);
 ${RELIEF}
@@ -570,6 +593,7 @@ precision highp float;
 ${VARYINGS_GLSL}
 ${SANITISE_GLSL}
 ${NOISE_GLSL}
+${CLOUD_FIELD_GLSL}
 ${LIGHT_GLSL}
 uniform float time;
 uniform float cloudCover;
@@ -579,24 +603,14 @@ void main() {
   vec3 p = normalize(vObjP);
   // Two rates: the deck drifts and the detail shears across it, which reads as
   // one system moving rather than a texture sliding.
-  vec3 slow = p + vec3(time * 0.0030, 0.0, 0.0) + seedOffset;
-  vec3 fast = p + vec3(time * 0.0068, 0.0, time * 0.0011) + seedOffset;
-  float broad = fbm4(warp(slow * 2.3, 1.1, 0.75));
-  float wisp  = fbm5(fast * 8.5);
-
+  vec3 broadP = p + vec3(time * 0.0030, 0.0, 0.0) + seedOffset;
+  vec3 wispP  = p + vec3(time * 0.0068, 0.0, time * 0.0011) + seedOffset;
   // Cirrus (node #212): a coarser scale streaked along the rotation axis by
   // compressing y in the noise domain. Drifts at its own rate.
   vec3 cirrusP = vec3(p.x * 2.8, p.y * 0.7, p.z * 2.8)
                + vec3(time * 0.0018, 0.0, time * 0.0006) + seedOffset + 31.0;
-  float cirrus = fbm3(cirrusP * 1.2);
-
-  // Weather is banded on a rotating world: wet at the equator, dry in the horse
-  // latitudes, wet again at the polar front. Uniform coverage looks like fog.
-  float lat = abs(p.y);
-  float zonal = 0.58 + 0.42 * cos(lat * 8.2 + 0.4);
-
-  float field = broad * 0.55 + wisp * 0.25 + cirrus * 0.20;
-  float mask = smoothstep(0.54 - cloudCover * 0.16, 0.56 + 0.10, field) * zonal;
+  float mask = cloudFieldFromInputs(broadP, wispP, cirrusP,
+                                    abs(p.y), cloudCover);
 
   vec3 N = normalize(vWorldN);
   vec3 V = normalize(cameraPosition - vWorldP);
