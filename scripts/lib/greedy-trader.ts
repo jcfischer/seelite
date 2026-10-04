@@ -72,6 +72,7 @@ import {
 	marketEpoch,
 	marketQuote,
 	marketRow,
+	hasMarket,
 	marketStationOf,
 	type QuoteFn,
 	shelfQuantity,
@@ -252,7 +253,8 @@ export function portsOf(
 	record: SystemRecord,
 	contents: SystemContents,
 ): Port[] {
-	return contents.stations.map((station) => ({
+	// A raider outpost has no market (node #491; #490 D6), so it is no port.
+	return contents.stations.filter(hasMarket).map((station) => ({
 		record,
 		contents,
 		station,
@@ -1066,7 +1068,7 @@ export function run(
 	// N−1's placements at the same instant.
 	clearPlacements();
 	const berthable = world.systems.filter(
-		(r) => world.contentsFor(r).stations.length >= 2,
+		(r) => world.contentsFor(r).stations.filter(hasMarket).length >= 2,
 	);
 	if (berthable.length === 0)
 		throw new Error("no multi-station system in this galaxy");

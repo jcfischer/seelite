@@ -8,9 +8,9 @@
  *
  * ## Two decisions from the spec drive everything here
  *
- * **Systems are multi-station.** 0–3 typed stations — 0 only through the
- * undockable defect noted on `generateStations` below — and the types are not
- * interchangeable: two identical trade stations 200,000 km apart is just a
+ * **Systems are multi-station.** 1–4 typed stations — a trade station always,
+ * a refinery, a shipyard and a raider outpost by their own rules on
+ * `generateStations` below — and the types are not interchangeable: two identical trade stations 200,000 km apart is just a
  * longer commute for the same transaction. That is what turns in-system travel
  * (#10) from a single crossing into a routing problem and obliges #7 to price
  * per station rather than per system.
@@ -65,6 +65,7 @@ import {
 	fenceProbability,
 } from "./station";
 import { stationNames } from "./station-name";
+import { RAIDER_SLOT_MAX, raiderSlotCount } from "./raider-slots";
 import { AU_KM } from "./units";
 
 /** Seconds in a Julian year, the unit Kepler III is written in below. */
@@ -85,6 +86,50 @@ export const ARRIVAL_CLEARANCE_AU = 0.25;
 /** Shipyards exist only from here up (spec §6.4) — which is what gives the
  *  radial tech gradient teeth, since tech tracks radius. */
 export const SHIPYARD_MIN_TL = 10;
+
+/**
+ * Whether a system holds a raider outpost (#490 D4, node #491): exactly where
+ * its raider slot count is already at its height — the two most lawless
+ * governments — and never elsewhere. One at most, so this is a predicate rather
+ * than a count.
+ *
+ * **Read off `raiderSlotCount`, not restated as `government <= 1`.** D4's rule
+ * is that incidence rides the law gradient the raiders already have, so a
+ * retuned slot ramp moves the outpost with it rather than leaving the haven in
+ * systems that no longer hold the raiders it is the home of. No chance draw:
+ * nothing ruled one, and a system's outpost is then readable off its
+ * government before the pilot flies there, which is D4's point.
+ */
+export const hasRaiderOutpost = (government: number): boolean =>
+	raiderSlotCount(government) === RAIDER_SLOT_MAX;
+
+/**
+ * How far round its host planet's orbit a raider outpost stands, radians:
+ * a Trojan point, ahead of or behind the planet by a sixth of a turn (node #491).
+ *
+ * **Star-centric, and on a planet's own orbit.** It shares the host's radius,
+ * period, inclination and node with its phase moved, so it keeps station with
+ * the planet for ever and is never nearer it than the orbit's own radius —
+ * at least `MIN_ORBIT_AU`, and a cruise target of its own. That is #482's
+ * ruling made geometry: the concentration reads as **somewhere else**, not as
+ * the watched station with a warning on it. Every one of the 4,590 outposts
+ * over `worldSeeds(8)` stood at least 0.026 AU from every other station over
+ * ten simulated years, which is millions of kilometres against the relay's
+ * 1,000 km search region about the station it watches.
+ *
+ * **One placement rule for every system, rather than "orbit a free planet".**
+ * The planet-hosted form was measured first and 670 of those 4,590 lawless
+ * systems have no planet without a station on it, so it needs a second mode
+ * for a seventh of its cases; this one cannot run out of hosts, because every
+ * system has a primary.
+ *
+ * **What it costs elsewhere: ten arrivals move.** `arrivalPoint` clears every
+ * placed body, and a star-centric station is not inside a planet's clearance
+ * the way a planet-hosted one is, so in 10 of those 4,590 systems the new-game
+ * and jump arrival is pushed out past the outpost. A planet-hosted outpost would
+ * have moved none; that is the price of a rule with no second mode.
+ */
+export const RAIDER_OUTPOST_LEAD_RAD = Math.PI / 3;
 
 /** Moons per gas giant (spec §6.2), and how many draws each one costs. One
  *  constant for both the count's upper bound and the size of the roll table, so
@@ -677,7 +722,7 @@ function buildMoons({
 }
 
 /**
- * 1–3 stations, typed (spec §6.4).
+ * 1–4 stations, typed (spec §6.4, and node #491 for the fourth).
  *
  * **What the count actually keys off.** §6.4's prose says "population and tech";
  * the rules it then gives — and this code — read `displayTL` and whether the
@@ -876,7 +921,59 @@ function generateStations(
 		}
 	}
 
+	const outpost = raiderOutpost(record, planets, names.outpost);
+	if (outpost) stations.push(outpost);
+
 	return stations;
+}
+
+/**
+ * The raider outpost (#490, node #491), or `null` where the law keeps none.
+ *
+ * **Every number it needs comes from `DOMAIN.RAIDER_OUTPOST` and from nowhere
+ * else** — its host, its side, and the berth and assembly seeds `fields` would
+ * otherwise draw from the shared per-station streams. Appended last, a draw on
+ * those streams would shift no earlier station; drawn here, it touches no
+ * stream any other station reads, which is the stronger claim and the one
+ * `tests/station-orbits.test.ts` and `tests/station-fields.test.ts` hold by
+ * comparing every other station to its committed baseline.
+ *
+ * Two fields are answers rather than draws. `blackMarket` is `false` because
+ * `STATION_FENCE_ELIGIBLE.outpost` is — #490 D6's fence waits on the outpost's
+ * market, and a fence flag on a station with no market would be a lie the
+ * market's node inherits. `spinRpm` is `0` because the outpost is a pad and
+ * does not spin; `drawSpinRpm` discards a draw for the refinery only because
+ * the refinery shares a stream with stations that do.
+ *
+ * Its name is `stationNames`' outpost slot, which that function has reserved
+ * in every system since #110, so naming it draws nothing either.
+ */
+function raiderOutpost(
+	record: SystemRecord,
+	planets: readonly Planet[],
+	name: string,
+): Station | null {
+	// No guard for a planetless system: every system has a primary (#51), and
+	// if that ever broke the trade station would be missing first, by name.
+	if (!hasRaiderOutpost(record.government)) return null;
+	const rand = stream(record.seed, DOMAIN.RAIDER_OUTPOST);
+	const host = planets[Math.floor(rand() * planets.length)];
+	const side = rand() < 0.5 ? -1 : 1;
+	return {
+		id: "station-outpost",
+		name,
+		type: "outpost",
+		localCarrierId: LOCAL_CARRIER_ID.outpost,
+		parentId: null,
+		orbit: {
+			...host.orbit,
+			theta0: host.orbit.theta0 + side * RAIDER_OUTPOST_LEAD_RAD,
+		},
+		blackMarket: false,
+		spinRpm: 0,
+		berthSeed: Math.floor(rand() * 0x100000000),
+		assemblySeed: Math.floor(rand() * 0x100000000),
+	};
 }
 
 /** Every body in the system, positioned, at `gameTime` seconds. The star sits

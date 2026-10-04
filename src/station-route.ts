@@ -39,7 +39,7 @@ import {
 	stationOf,
 	stationPose,
 } from "./sim";
-import { STATION_GEOMETRY } from "./station";
+import { STATION_GEOMETRY, STATION_LAWFUL } from "./station";
 import { berthFits, stationInterior, trafficBerths } from "./station-interior";
 import {
 	type ClearanceQueueRequest,
@@ -805,26 +805,34 @@ function projectTrafficLeg(input: TrafficLegInput): SystemTrafficProjection {
 	const crossingRel = arrivalRel(launch, 1, crossingFrame.pose.phaseRad);
 	const crossingPos = add(crossingBody.pos, crossingRel);
 	const contents = crossingFrame.system.contents;
-	const candidates = contents.stations.map((station) => {
-		const interior = stationInterior(
-			station.type,
-			STATION_GEOMETRY[station.type].aperturePlaneKm,
-			station.berthSeed,
-		);
-		return {
-			id: station.id,
-			fits: interior.berths.some((berth) =>
-				berthFits(berth, HULL_SPECS[actor.hullId].env),
-			),
-			hold: trafficHoldProjection(
-				crossingFrame.system,
-				station.id,
-				actor.key,
-				launchEndS,
-			).pos,
-			parentId: station.parentId,
-		};
-	});
+	// Traffic trades with its own side of #490's line (`STATION_LAWFUL`): a
+	// lawful station's carriers never fly to the raider outpost, and its own to
+	// no lawful berth, so placing one moved no existing schedule (node #491).
+	const home = contents.stations.find((s) => s.id === actor.homeStationId);
+	if (!home) throw new Error(`no home station ${actor.homeStationId}`);
+	const homeLawful = STATION_LAWFUL[home.type];
+	const candidates = contents.stations
+		.filter((station) => STATION_LAWFUL[station.type] === homeLawful)
+		.map((station) => {
+			const interior = stationInterior(
+				station.type,
+				STATION_GEOMETRY[station.type].aperturePlaneKm,
+				station.berthSeed,
+			);
+			return {
+				id: station.id,
+				fits: interior.berths.some((berth) =>
+					berthFits(berth, HULL_SPECS[actor.hullId].env),
+				),
+				hold: trafficHoldProjection(
+					crossingFrame.system,
+					station.id,
+					actor.key,
+					launchEndS,
+				).pos,
+				parentId: station.parentId,
+			};
+		});
 	const selectable = input.destinationStationId
 		? candidates.filter(
 				(candidate) => candidate.id === input.destinationStationId,

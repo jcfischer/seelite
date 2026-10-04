@@ -635,7 +635,10 @@ export type Clearance =
 	| { kind: "none" }
 	| { kind: "granted"; expiresAtS: number }
 	| { kind: "queued"; position: number }
-	| { kind: "denied"; reason: "hostile" | "contraband" | "no berth that fits" };
+	| {
+			kind: "denied";
+			reason: "hostile" | "contraband" | "no berth that fits" | "closed";
+	  };
 
 export interface DockingState {
 	clearance: Clearance;
@@ -735,6 +738,18 @@ export interface ClearanceRequest {
 	 * three call sites, and a module test cannot see whether they pass it.
 	 */
 	refusedByLaw?: boolean;
+	/**
+	 * Whether this station's berths admit nobody at all
+	 * (`station.ts`'s `STATION_BERTHS_OPEN`, node #491) — the raider outpost's,
+	 * until it has a market to dock into.
+	 *
+	 * **Its own reason, and asked before the law.** It is not hostility: a clean
+	 * pilot refused there has done nothing, and "You are hostile" would tell them
+	 * they had. And it is not a timed state either, so it writes nothing into
+	 * `state.hostile`; a pilot who flies in anyway has no grant and is turned
+	 * back by the barge rule like anyone else.
+	 */
+	closed?: boolean;
 }
 
 /**
@@ -750,6 +765,8 @@ export function requestClearance(
 ): DockingState {
 	const interior = req.interior;
 	if (req.rangeKm > VICINITY_KM) return state;
+	if (req.closed)
+		return { ...state, clearance: { kind: "denied", reason: "closed" } };
 	// Either reason answers the same way, and neither may write the other: the
 	// flip is `state.hostile` with a cooldown, the law is `refusedByLaw` with
 	// none. See `ClearanceRequest.refusedByLaw`.

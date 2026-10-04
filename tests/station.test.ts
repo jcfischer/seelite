@@ -20,6 +20,7 @@ import {
 	SPIN_RPM_RANGE,
 	STATION_FENCE_ELIGIBLE,
 	STATION_GEOMETRY,
+	STATION_TYPES,
 	type StationType,
 	fenceProbability,
 	slotPhaseRad,
@@ -31,6 +32,8 @@ import {
 	ALL_GALAXIES,
 	fenceTally,
 	forEachSystem,
+	notOutpostRow,
+	outpostSystems,
 	sigmaOff,
 	stationFieldRows,
 	worldSeeds,
@@ -113,8 +116,8 @@ describe("placeBodies reads the table, and draws nothing to do it", () => {
 			}
 		});
 		// A corpus that happened to contain no shipyard would pass the assertion
-		// above by never running it.
-		expect(seen.size).toBe(3);
+		// above by never running it. All four since node #491 placed the outpost.
+		expect(seen.size).toBe(STATION_TYPES.length);
 		expect(checked).toBeGreaterThan(200);
 	});
 });
@@ -175,16 +178,20 @@ describe("both new fields draw once per station, from their own tags", () => {
 });
 
 describe("the spin range (docking.md §4)", () => {
-	test("Coriolis types land inside [0.6, 3.0] and the refinery is exactly 0", () => {
+	test("Coriolis types land inside [0.6, 3.0] and the pad types are exactly 0", () => {
 		let coriolis = 0;
 		let refineries = 0;
+		let outposts = 0;
 		forEachSystem(worldSeeds(1)[0], [0, 1], (_record, contents) => {
 			for (const station of contents.stations) {
-				if (station.type === "refinery") {
+				// Node #491's outpost is a pad too; read off the geometry rather
+				// than off a type, so a pad cannot be counted as Coriolis.
+				if (!STATION_GEOMETRY[station.type].spins) {
 					// Exactly zero, not "small": the pad does not rotate at all, and a
 					// tiny non-zero value would read as a drift rather than as a rule.
 					expect(station.spinRpm).toBe(0);
-					refineries++;
+					if (station.type === "refinery") refineries++;
+					else outposts++;
 				} else {
 					expect(station.spinRpm).toBeGreaterThanOrEqual(SPIN_RPM_RANGE.minRpm);
 					expect(station.spinRpm).toBeLessThan(SPIN_RPM_RANGE.maxRpm);
@@ -194,6 +201,7 @@ describe("the spin range (docking.md §4)", () => {
 		});
 		expect(coriolis).toBeGreaterThan(400);
 		expect(refineries).toBeGreaterThan(100);
+		expect(outposts).toBeGreaterThan(50);
 	});
 
 	/**
@@ -371,9 +379,19 @@ describe("the generated fields are stable", () => {
 	});
 
 	test("every station's spin and flag match the fixture", () => {
-		const now = stationFieldRows(baseline.worldSeed, baseline.galaxies);
-		expect(now.length).toBe(baseline.rows.length);
-		expect(now).toEqual(baseline.rows);
+		// The raider outpost (node #491) is new since the capture, so it is
+		// compared on neither side; every other station must be unmoved, which
+		// is the evidence its draws landed on its own stream. The count of what
+		// was set aside is pinned too, so the filter cannot hide a station of
+		// another type.
+		const all = stationFieldRows(baseline.worldSeed, baseline.galaxies);
+		const now = all.filter(notOutpostRow);
+		expect(all.length - now.length).toBe(
+			outpostSystems(baseline.worldSeed, baseline.galaxies),
+		);
+		const before = baseline.rows.filter(notOutpostRow);
+		expect(now.length).toBe(before.length);
+		expect(now).toEqual(before);
 	});
 
 	test("regenerating a system reproduces its stations exactly", () => {
@@ -452,7 +470,14 @@ describe("stationPose", () => {
 			for (const record of galaxy.systems) {
 				const system = makeSystem(record, 0);
 				const types = new Set(system.contents.stations.map((s) => s.type));
-				if (types.size === 3) return system;
+				// The three named, not a count: a lawless system's outpost
+				// (node #491) makes three types without all of these.
+				if (
+					["trade", "refinery", "shipyard"].every((t) =>
+						types.has(t as StationType),
+					)
+				)
+					return system;
 			}
 		}
 		throw new Error("no system with all three station types in six worlds");
@@ -461,7 +486,7 @@ describe("stationPose", () => {
 	test("a Coriolis station faces the body it orbits", () => {
 		const system = systemWithAllThree();
 		for (const station of system.contents.stations) {
-			if (station.type === "refinery") continue;
+			if (STATION_GEOMETRY[station.type].axis !== "parent") continue;
 			const pose = stationPose(system, station.id, 0);
 			const body = system.byId.get(station.id);
 			const parent = system.byId.get(station.parentId ?? "");
@@ -509,9 +534,28 @@ describe("stationPose", () => {
 			const t = 17.5;
 			const pose = stationPose(system, station.id, t);
 			expect(pose.phaseRad).toBe(slotPhaseRad(station.spinRpm, t));
-			if (station.type === "refinery") expect(pose.phaseRad).toBe(0);
+			if (!STATION_GEOMETRY[station.type].spins) expect(pose.phaseRad).toBe(0);
 			else expect(pose.phaseRad).toBeGreaterThan(0);
 		}
+	});
+
+	test("a raider outpost faces radially outward from the star, like the refinery", () => {
+		// Node #491 places it star-centric on a planet's orbit, and its geometry
+		// declares `outward`; this is the pose reading that on a placed one.
+		for (const record of generateGalaxy(worldSeeds(1)[0], 0).systems) {
+			const system = makeSystem(record, 0);
+			const outpost = system.contents.stations.find(
+				(s) => s.type === "outpost",
+			);
+			if (!outpost) continue;
+			const pose = stationPose(system, outpost.id, 0);
+			const body = system.byId.get(outpost.id);
+			if (!body) throw new Error("placement is missing the outpost");
+			expect(dot(pose.axis, body.pos) / length(body.pos)).toBeCloseTo(1, 12);
+			expect(pose.phaseRad).toBe(0);
+			return;
+		}
+		throw new Error("no outpost in galaxy 0");
 	});
 
 	test("an unknown station throws rather than posing nothing", () => {

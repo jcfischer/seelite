@@ -46,10 +46,12 @@ import {
 	type Commodity,
 	LONG_RANGE_SCANNER,
 	marketRowAt,
+	hasMarket,
 	marketStationOf,
 	stationCommodities,
 } from "./market";
 import { mix, seededRand } from "./rng";
+import { STATION_LAWFUL } from "./station";
 import type { Station, SystemContents } from "./system";
 
 export type JobFamily = "courier" | "procurement" | "bounty";
@@ -526,14 +528,13 @@ export const jobMark = (offer: JobOffer): JobMark | null => {
  * A station can post or receive market-derived work only if the market can
  * price it — `station-types.md` §3 still owes the outpost a price offset.
  *
- * **Nothing in a generated galaxy fails this today**, and that is measured
- * rather than assumed: `system.ts` places no outposts at all (the spec says so
- * in as many words at §7.1's ranking). So this is the guard that holds when one
- * is placed, not a filter doing work now — a red build that put the old
- * per-draw decline back stayed green for exactly that reason.
+ * **This does work now.** Node #491 places a raider outpost in every system at
+ * the lawless end of the government scale, and it has no market (#490 D6), so
+ * it posts nothing and is never a courier's or a procurement's destination.
+ * Read through `hasMarket` rather than a named type, so the day the outpost is
+ * priced this opens with it — which is a separate question from Bounty's, below.
  */
-export const canPostJobs = (station: Station): boolean =>
-	station.type !== "outpost";
+export const canPostJobs = (station: Station): boolean => hasMarket(station);
 
 const stationKeyOf = (systemIndex: number, station: Station): CarrierKey =>
 	carrierKey(systemIndex, station.localCarrierId);
@@ -898,7 +899,7 @@ export function bindProcurement(ctx: BindContext): JobOffer | null {
  */
 export function bindBounty(ctx: BindContext): JobOffer | null {
 	const target = ctx.bountyTarget;
-	if (!target || ctx.station.type === "outpost") return null;
+	if (!target || !STATION_LAWFUL[ctx.station.type]) return null;
 	const key = stationKeyOf(ctx.system.index, ctx.station);
 	const episode = episodeOf(ctx, "bounty");
 	const row = pickRow(ctx, "bounty", episode);

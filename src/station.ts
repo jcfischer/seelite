@@ -31,12 +31,11 @@
 /**
  * The three types #6 named and #13 specified, plus #56's outpost.
  *
- * **The outpost is a form and a geometry, not yet an economy.** #13 fixed what
- * a station type means for the market, for equipment and for law, and it did so
- * for three types; nothing here decides what an outpost sells, whether it can
- * be a fence, or how often the generator places one. Those are #13's and #6's
- * questions and they need their own node. Until then `system.ts` places none,
- * so no outpost exists in a running game and every table below answers for it
+ * **The outpost is the raider's haven (#490), and it is placed but not yet
+ * an economy.** #490 ruled what it is; node #491 puts one in every system at
+ * the lawless end of the government scale (`system.ts`'s `hasRaiderOutpost`).
+ * What it sells (#490 D6) is still unbuilt, so its berths are closed to every
+ * pilot (`STATION_BERTHS_OPEN`) and every economy table below answers for it
  * conservatively — which is visible rather than assumed, because a
  * `Record<StationType, …>` cannot compile without an answer.
  */
@@ -259,10 +258,61 @@ export const STATION_FENCE_ELIGIBLE: Record<StationType, boolean> = {
 	trade: false,
 	shipyard: false,
 	refinery: true,
-	// Conservative, and deliberately so: #13 made the refinery *the* seeded
-	// contraband market, and a second fence would change the geography that
-	// decision rests on. Whether a remote industrial outpost is the better fence
-	// is a real question and it belongs to #13, not to a visual round.
+	// #490 D6 makes the raider outpost a fence, and reopens §5.2's geography
+	// to do it. It stays `false` until the outpost has a market at all
+	// (`TYPE_OFFSET` in `market.ts` has no row for it): a fence flag on a
+	// station that trades nothing is a lie the market's node would inherit.
+	outpost: false,
+};
+
+/**
+ * Whether a type's berths admit anybody (node #491).
+ *
+ * **The raider outpost's are closed, and that is the explicit absence of its
+ * docking contract rather than an oversight.** #490 D5 rules that only a Wanted
+ * pilot may dock there — `dockingRefusedByLaw` carries that arm — but a pilot
+ * admitted would dock into a console whose market, equipment and fuel all read
+ * a `TYPE_OFFSET` row the outpost does not have (#490 D6). So until that market
+ * exists the berth refuses every pilot, with its own reason (`docking.ts`'s
+ * `"closed"`), rather than a clean pilot being told they are hostile or a Wanted
+ * one docking into a throw.
+ *
+ * A table rather than a read of `TYPE_OFFSET`, so the market's node has to open
+ * the berth as an act: an offset added for pricing alone would otherwise open it
+ * silently. `tests/raider-outpost.test.ts` holds the other direction — no type's
+ * berths are open without a market behind them.
+ */
+export const STATION_BERTHS_OPEN: Record<StationType, boolean> = {
+	trade: true,
+	shipyard: true,
+	refinery: true,
+	outpost: false,
+};
+
+/**
+ * Whether a type is a lawful station — every one but the raider outpost (#490).
+ *
+ * One table for the line #490 draws, read in three places that each answer a
+ * different question about it:
+ *
+ * - **It witnesses (#490 D10).** `distress.ts`'s `stationsInEarshot` files only
+ *   a lawful station, so an offence beside an outpost costs no standing with it
+ *   or anywhere, and the witness list a save carries never names one. A pilot
+ *   cannot be barred by the one station that wants them Wanted.
+ * - **It posts the Bounty (#495 D4).** "Every lawful in-system station";
+ *   `jobs.ts`'s `bindBounty` reads this, because a raider haven does not pay to
+ *   kill raiders' equipment.
+ * - **Its Traffic trades with its own side (node #491).** A carrier homed at a
+ *   lawful station is never routed to the outpost, and the outpost's own Traffic
+ *   to none of them (`station-route.ts`), so placing an outpost moved no
+ *   existing carrier's schedule: the lanes and queues at every lawful berth are
+ *   what they were. With no second outpost in a system its Traffic leaves the
+ *   system abstractly and comes home.
+ */
+export const STATION_LAWFUL: Record<StationType, boolean> = {
+	trade: true,
+	shipyard: true,
+	refinery: true,
 	outpost: false,
 };
 

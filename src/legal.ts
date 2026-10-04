@@ -461,13 +461,24 @@ export const stationHostile = (
  * H7's second half, with H5 inside it: whether this station's berth refuses this
  * pilot right now, for a reason of law rather than of the protocol.
  *
- * Two rules, one gate in front of them. **A shipyard refuses on standing
- * alone** — `combat-model.md` §4's "thresholds determine … shipyard hostility" —
- * while a trade station, a refinery and an outpost refuse only what they saw.
- * Both need Wanted heat, so the heat test comes first and both halves read as
+ * Three rules. **A shipyard refuses on standing alone** — `combat-model.md`
+ * §4's "thresholds determine … shipyard hostility" — while a trade station and
+ * a refinery refuse only what they saw. Both need Wanted heat, so both read as
  * the exit it gives them: decay.
  *
- * It takes the station as key **and** type because the two halves ask different
+ * **The raider outpost is the witness rule inverted (#490 D5): it refuses a
+ * pilot *below* Wanted and admits one at or above it.** It is available because
+ * of what the other two are written to protect — no save can be locked out of
+ * its only station — and an outpost is never a system's only station: every
+ * system has a trade station on its primary (#51). Its exit is the other
+ * direction, so standing is a key there rather than only a penalty. It
+ * witnesses nothing (D10), so the witness half never reaches it.
+ *
+ * **Today this arm is behind a closed berth.** The outpost has no market yet
+ * (#490 D6), so `STATION_BERTHS_OPEN.outpost` refuses every pilot before the
+ * law is asked; this is the rule that governs the berth the day that opens.
+ *
+ * It takes the station as key **and** type because the halves ask different
  * questions about it, and a caller that passed a type it had guessed would ship
  * a refusal at the wrong berths.
  */
@@ -478,10 +489,12 @@ export const dockingRefusedByLaw = (
 ): boolean =>
 	station.type === "shipyard"
 		? heatAt(status, gameTime) >= WANTED_HEAT
-		: // The witness half is `stationHostile`'s, called rather than restated:
-			// the two are one rule, and a berth that drifts from the other would
-			// refuse for a reason nothing else in the file agrees to.
-			stationHostile(status, station.key, gameTime);
+		: station.type === "outpost"
+			? heatAt(status, gameTime) < WANTED_HEAT
+			: // The witness half is `stationHostile`'s, called rather than restated:
+				// the two are one rule, and a berth that drifts from the other would
+				// refuse for a reason nothing else in the file agrees to.
+				stationHostile(status, station.key, gameTime);
 
 /**
  * H6: drop the saved offence memory once heat has decayed below Wanted — the

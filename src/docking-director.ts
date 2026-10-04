@@ -335,7 +335,9 @@ function blockingOf(
 			text:
 				state.clearance.reason === "no berth that fits"
 					? "DO NOT ENTER · clearance denied · no berth that fits this hull"
-					: `DO NOT ENTER · clearance denied · ${state.clearance.reason} scan`,
+					: state.clearance.reason === "closed"
+						? "DO NOT ENTER · clearance denied · no berth open to you"
+						: `DO NOT ENTER · clearance denied · ${state.clearance.reason} scan`,
 		};
 	if (live) return null;
 	if (state.clearance.kind === "queued")

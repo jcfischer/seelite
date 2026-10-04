@@ -29,7 +29,7 @@ import { generateGalaxy } from "../src/galaxy";
 import { carrierStanding } from "../src/carrier-standing";
 import { HOLD_REFERENCE_T } from "../src/market";
 import { LOCAL_CARRIER_ID } from "../src/station";
-import { generateContents } from "../src/system";
+import { generateContents, hasRaiderOutpost } from "../src/system";
 import {
 	advanceTo,
 	applyTransition,
@@ -128,29 +128,42 @@ describe("§9.1 namespace and baseline stability", () => {
 		// of these are still those, and the rest are raiders. #351 added a relay
 		// and its tender to each of the 2048 systems, 4096 more; the row below
 		// the pin says so by kind rather than by arithmetic on this figure.
-		expect(carriers).toBe(31898);
+		// Node #491 added the raider outpost and its one Traffic slot (two berths,
+		// less the visitor's) in every system `hasRaiderOutpost` admits, 1,148
+		// more; that too is said by kind below.
+		expect(carriers).toBe(33046);
 		// #351 enrolled the relay and its tender: one of each in every system
 		// with a station to watch.
 		let raiders = 0;
 		let relays = 0;
 		let tenders = 0;
+		let outpostCarriers = 0;
 		let expectedRaiders = 0;
 		let expectedRelays = 0;
+		let expectedOutposts = 0;
 		for (let galaxy = 0; galaxy < 8; galaxy++) {
 			for (const c of enumerateCarriers(WORLD, galaxy)) {
 				if (c.kind === "raider") raiders++;
 				if (c.kind === "relay") relays++;
 				if (c.kind === "relay-tender") tenders++;
+				if (
+					(c.kind === "station" && c.stationType === "outpost") ||
+					(c.kind === "traffic" && c.homeStationType === "outpost")
+				)
+					outpostCarriers++;
 			}
 			for (const record of generateGalaxy(WORLD, galaxy).systems) {
 				expectedRaiders += raiderSlotCount(record.government);
 				if (relayPlan(generateContents(record), record.seed)) expectedRelays++;
+				if (hasRaiderOutpost(record.government)) expectedOutposts++;
 			}
 		}
 		expect(raiders).toBe(expectedRaiders);
 		expect(relays).toBe(expectedRelays);
 		expect(tenders).toBe(expectedRelays);
-		expect(carriers - raiders - relays - tenders).toBe(21736);
+		expect(outpostCarriers).toBe(2 * expectedOutposts);
+		// 21736 is version 5's station and Traffic set, still unmoved.
+		expect(carriers - raiders - relays - tenders - outpostCarriers).toBe(21736);
 		let systemsWithStations = 0;
 		let widest = 0;
 		for (let galaxy = 0; galaxy < 8; galaxy++) {
@@ -163,9 +176,10 @@ describe("§9.1 namespace and baseline stability", () => {
 		expect(widest).toBe(23);
 		expect(systemsWithStations).toBe(8 * 256);
 		// Eight station and Traffic carriers at the least plus one raider slot;
-		// eighteen at the most plus four; and the relay and its tender in each.
+		// eighteen at the most plus four, and an outpost's two beside those;
+		// and the relay and its tender in each.
 		expect(carriers).toBeGreaterThanOrEqual(8 * 256 * (8 + 1 + 2));
-		expect(carriers).toBeLessThanOrEqual(8 * 256 * (18 + 4 + 2));
+		expect(carriers).toBeLessThanOrEqual(8 * 256 * (18 + 2 + 4 + 2));
 	});
 
 	test("a local id repeats across systems and never inside one", () => {
@@ -185,8 +199,9 @@ describe("§9.1 namespace and baseline stability", () => {
 		expect(repeatsAcrossSystems).toBeGreaterThan(200);
 		// Three station carriers and fifteen Traffic ones — the widest system's
 		// roster since #277 reserved a visitor berth at each of its stations —
-		// and #324's four raider slots, and #351's relay and its tender.
-		expect(globalIds.size).toBe(24);
+		// and #324's four raider slots, and #351's relay and its tender, and node
+		// #491's outpost with its one Traffic slot.
+		expect(globalIds.size).toBe(26);
 	});
 
 	test("station and Traffic carrier metadata stay structurally discriminated", () => {
@@ -252,14 +267,22 @@ describe("§9.1 namespace and baseline stability", () => {
 
 	/** Captured from the version-7 generator, before #590 moved shipyards.
 	 * Persisted rows key by system, local carrier id and type; parent and
-	 * placement are regenerated. This is the narrower migration guarantee. */
+	 * placement are regenerated. This is the narrower migration guarantee.
+	 *
+	 * **The raider outpost's carriers are left out of every version's hash**
+	 * (node #491): version 9 adds them and no older save can name one, so the
+	 * guarantee is that every *old* identity survives, and the outpost's are
+	 * additions beside them rather than a change to any of them. */
+	const isOutpostCarrier = (c: GeneratedCarrier): boolean =>
+		(c.kind === "station" && c.stationType === "outpost") ||
+		(c.kind === "traffic" && c.homeStationType === "outpost");
 	const migrationIdentityFingerprint = (
 		galaxy: number,
 		keep: (c: GeneratedCarrier) => boolean,
 	): number => {
 		const parts: string[] = [];
 		for (const c of enumerateCarriers(WORLD, galaxy)) {
-			if (!keep(c)) continue;
+			if (!keep(c) || isOutpostCarrier(c)) continue;
 			const generatedType =
 				c.kind === "station"
 					? c.stationType
@@ -294,9 +317,32 @@ describe("§9.1 namespace and baseline stability", () => {
 				3863013389, 4286568612,
 			],
 		},
+		// Computed on the version-8 generator (main at 1c20486) with the same
+		// hash: equal to version 7's, because #590 moved placements and kept
+		// every identity, and the outpost's carriers are the only ones version 9
+		// adds.
+		8: {
+			kinds: ["station", "traffic", "raider", "relay", "relay-tender"],
+			goldens: [
+				4019261657, 2620491408, 1543164142, 1310966715, 1616386912, 2463802301,
+				3863013389, 4286568612,
+			],
+		},
 	};
 
-	test("versions 6 and 7 keep every carrier identity and type through the rebase", () => {
+	test("the outpost's carriers are what version 9 adds, and they are there", () => {
+		// The exclusion above would make every golden vacuous for these
+		// carriers if none were generated; this world holds them in every galaxy.
+		for (let g = 0; g < 8; g++) {
+			const added = Array.from(enumerateCarriers(WORLD, g)).filter(
+				isOutpostCarrier,
+			);
+			expect(added.some((c) => c.kind === "station")).toBe(true);
+			expect(added.some((c) => c.kind === "traffic")).toBe(true);
+		}
+	});
+
+	test("versions 6, 7 and 8 keep every carrier identity and type through the rebase", () => {
 		for (const [version, { kinds, goldens }] of Object.entries(
 			MIGRATION_IDENTITY_GOLDENS,
 		))
@@ -317,7 +363,7 @@ describe("§9.1 namespace and baseline stability", () => {
 		// Identity, type, parent and generated placement, hashed. It goes red on
 		// any generator change that moves a station — which is exactly when
 		// `WORLD_GENERATOR_VERSION` owes a bump and a migration.
-		expect(WORLD_GENERATOR_VERSION).toBe(8);
+		expect(WORLD_GENERATOR_VERSION).toBe(9);
 		const fingerprints = [0, 1, 2, 3, 4, 5, 6, 7].map((g) =>
 			carrierBaselineFingerprint(WORLD, g),
 		);
@@ -327,7 +373,7 @@ describe("§9.1 namespace and baseline stability", () => {
 });
 
 /**
- * Pinned at `WORLD_GENERATOR_VERSION` 8 against world seed `0x5ee11e`.
+ * Pinned at `WORLD_GENERATOR_VERSION` 9 against world seed `0x5ee11e`.
  *
  * - 1 → 2: node #32's orbit floor moved every floored station's generated
  *   placement — the set this hashes — so the baseline moved with it.
@@ -352,6 +398,14 @@ describe("§9.1 namespace and baseline stability", () => {
  *   shipyards off them. Station keys and carrier types remain fixed; the
  *   migration identity goldens above pin that narrower invariant. Saved
  *   overlays rebase onto newly generated placements.
+ * - 8 → 9: node #491 placed the raider outpost, with its one Traffic slot, in
+ *   every system at the lawless end of the government scale — every galaxy
+ *   holds some, so all eight hashes move. Nothing else did: the identity
+ *   goldens above hash every carrier but the outpost's and still read
+ *   version 8's, and `station-orbits.test.ts` holds every other station's
+ *   placement against its committed baseline. Version 8 read 1163733963,
+ *   1672146284, 3852086902, 2162345770, 2887711080, 3286766929, 4125920552
+ *   and 2160286286.
  *
  * Version 4 changed all eight hashes because every generated station gained
  * Traffic Carrier slots; version 5 changes all eight again because every one of
@@ -371,8 +425,8 @@ describe("§9.1 namespace and baseline stability", () => {
  * migration, and §2 says so.
  */
 const GOLDEN_FINGERPRINTS = [
-	1163733963, 1672146284, 3852086902, 2162345770, 2887711080, 3286766929,
-	4125920552, 2160286286,
+	2672329271, 4074845572, 1545285557, 3911845246, 1787093879, 1921536928,
+	1159651322, 1021027989,
 ];
 
 // ---------------------------------------------------------------------------
@@ -2365,7 +2419,7 @@ describe("§9.9 atomicity and integrity", () => {
 		).toBe("destroyed");
 	});
 
-	test("a version-6 snapshot rebases onto version 8, rows and all (#351/#590)", () => {
+	test("a version-6 snapshot rebases onto the current version, rows and all (#351/#590)", () => {
 		// 6 → 7 added carriers and moved none (the row "every version-6 slot is
 		// version 6's"), so a version-6 row still names the carrier it named. The
 		// migration is a relabel. The prototype's relay rows come across because
@@ -2389,43 +2443,48 @@ describe("§9.9 atomicity and integrity", () => {
 		expect(loaded.galaxies[0].objective[relayKey]).toEqual(
 			destroyed.galaxies[0].objective[relayKey],
 		);
-		// And the next write is a version-8 body, whose hash is its own.
+		// And the next write is a current-version body, whose hash is its own.
 		const rewritten = serializeWorld(loaded) as {
 			worldGeneratorVersion: number;
 		};
-		expect(rewritten.worldGeneratorVersion).toBe(8);
-		expect(parseWorld(rewritten).worldGeneratorVersion).toBe(8);
+		expect(rewritten.worldGeneratorVersion).toBe(WORLD_GENERATOR_VERSION);
+		expect(parseWorld(rewritten).worldGeneratorVersion).toBe(
+			WORLD_GENERATOR_VERSION,
+		);
 	});
 
-	test("a version-7 station overlay rebases without losing its stable key", () => {
-		const record = generateGalaxy(WORLD, 0).systems.find((candidate) =>
-			generateContents(candidate).stations.some(
-				(station) => station.type === "shipyard",
-			),
-		);
-		if (!record) throw new Error("corpus has no shipyard");
-		const key = carrierKey(record.index, LOCAL_CARRIER_ID.shipyard);
-		const world = visit(newWorld(WORLD), 0, record.index);
-		world.worldGeneratorVersion = 7;
-		const changed = applyTransition(world, 0, key, {
-			kind: "disable",
-			occurredAt: 10,
-			cause: PLAYER,
-		});
-		const raw = serializeWorld(changed);
-		const loaded = parseWorld(raw);
-		expect(loaded.worldGeneratorVersion).toBe(8);
-		expect(loaded.galaxies[0].objective[key]).toEqual(
-			changed.galaxies[0].objective[key],
-		);
-		expect(
-			[...enumerateCarriers(WORLD, 0)].some(
-				(carrier) =>
-					carrier.systemIndex === record.index &&
-					carrier.localCarrierId === LOCAL_CARRIER_ID.shipyard,
-			),
-		).toBe(true);
-	});
+	test.each([7, 8])(
+		"a version-%i station overlay rebases without losing its stable key",
+		(version) => {
+			const record = generateGalaxy(WORLD, 0).systems.find((candidate) =>
+				generateContents(candidate).stations.some(
+					(station) => station.type === "shipyard",
+				),
+			);
+			if (!record) throw new Error("corpus has no shipyard");
+			const key = carrierKey(record.index, LOCAL_CARRIER_ID.shipyard);
+			const world = visit(newWorld(WORLD), 0, record.index);
+			world.worldGeneratorVersion = version;
+			const changed = applyTransition(world, 0, key, {
+				kind: "disable",
+				occurredAt: 10,
+				cause: PLAYER,
+			});
+			const raw = serializeWorld(changed);
+			const loaded = parseWorld(raw);
+			expect(loaded.worldGeneratorVersion).toBe(WORLD_GENERATOR_VERSION);
+			expect(loaded.galaxies[0].objective[key]).toEqual(
+				changed.galaxies[0].objective[key],
+			);
+			expect(
+				[...enumerateCarriers(WORLD, 0)].some(
+					(carrier) =>
+						carrier.systemIndex === record.index &&
+						carrier.localCarrierId === LOCAL_CARRIER_ID.shipyard,
+				),
+			).toBe(true);
+		},
+	);
 
 	test("the relabel does not excuse a version-6 body from its hash (#351)", () => {
 		// The hash is over the object that arrived (`o`), not over the relabelled

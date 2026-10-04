@@ -74,7 +74,7 @@ export const WORLD_SCHEMA_VERSION = 3;
  * exactly the set `carrierBaselineFingerprint` hashes, so the pinned
  * fingerprints in `world-state.test.ts` go red at the same moment.
  */
-export const WORLD_GENERATOR_VERSION = 8;
+export const WORLD_GENERATOR_VERSION = 9;
 
 /**
  * Generator versions a snapshot may still carry. Version 6 → 7 was a pure
@@ -85,12 +85,17 @@ export const WORLD_GENERATOR_VERSION = 8;
  * those identities against fingerprints captured on the version-7 generator.
  * A docked commander keeps its station key and resumes at arrival, as the
  * loader already does; an in-flight commander keeps its saved position.
+ * Version 8 → 9 (node #491) only **adds**: a raider outpost and its Traffic
+ * slots in every system at the lawless end of the government scale. No version-8
+ * carrier changes identity, type, parent or placement, which
+ * `tests/world-state.test.ts` pins by hashing every carrier but the outpost's
+ * against the version-8 golden, so an 8 save rebases exactly as a 7 does.
  * Version 5 is not here, and listing it would open nothing: saves
  * shipped on 2026-09-11 at version 5, but `WORLD_SCHEMA_VERSION` 3 arrived on
  * 09-18 after version 6, so every version-5 snapshot carries schema 2 and the
  * schema check refuses it first.
  */
-export const LEGACY_WORLD_GENERATOR_VERSIONS: readonly number[] = [7, 6];
+export const LEGACY_WORLD_GENERATOR_VERSIONS: readonly number[] = [8, 7, 6];
 
 export const GALAXY_COUNT = 8;
 
@@ -2250,9 +2255,9 @@ export function parseWorld(raw: unknown): WorldState {
 
 	const world: WorldState = {
 		worldSchemaVersion,
-		// Rebase old overlays onto the generated version-8 catalog. The integrity
-		// hash below still checks the body that arrived; the next write hashes an
-		// explicitly version-8 one. Old physical placements are not stored.
+		// Rebase old overlays onto the generated current catalog. The integrity
+		// hash below still checks the body that arrived; the next write hashes one
+		// stamped with the current version. Old physical placements are not stored.
 		worldGeneratorVersion: WORLD_GENERATOR_VERSION,
 		seed: num(o, "seed", "snapshot"),
 		gameTime: num(o, "gameTime", "snapshot"),
