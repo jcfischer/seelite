@@ -148,9 +148,10 @@ uniform vec3  cloudTestDir;
 // Cloud shadow on the ground (node #212).
 //
 // Evaluates the cloud field at the surface point offset along the sun direction
-// by the CLOUD shell's height. The cloud mesh is SphereGeometry(1.014) in
-// planet-surface.ts — distinct from the atmosphere shell at 1.1+. So the
-// projection height is 1.014 - 1.0 = 0.014 radii.
+// by the cloud shell's height. The shell is SphereGeometry(1.014, ...) at
+// planet-surface.ts:422 — distinct from the atmosphere shell at 1.1+. So the
+// projection height is 1.014 - 1.0 = 0.014 radii. If that radius changes,
+// this literal must follow.
 //
 // Static — no clock drift — so the shadow bakes into the cubemap and costs
 // nothing per frame. The three terms (broad, wisp, cirrus) are evaluated
@@ -165,7 +166,7 @@ float cloudField(vec3 p) {
   }
   vec3 broadP  = p + seedOffset;
   vec3 wispP   = p + seedOffset;
-  vec3 cirrusP = vec3(p.x * 2.8, p.y * 0.7, p.z * 2.8) + seedOffset + 31.0;
+  vec3 cirrusP = cirrusDomain(p) + seedOffset + 31.0;
   return cloudFieldFromInputs(broadP, wispP, cirrusP, abs(p.y), cloudCover);
 }
 

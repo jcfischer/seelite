@@ -241,6 +241,12 @@ ${CRATER_PROFILE}
  * the bake path evaluates at t = 0 — and pass them in.
  */
 export const CLOUD_FIELD_GLSL = /* glsl */ `
+// The cirrus domain compresses y to streak noise along the rotation axis.
+// One definition, called from both the bake path (planet-classes.glsl.ts)
+// and the live cloud shell (CLOUD_FRAGMENT below); each caller adds its
+// own offset (seedOffset + 31.0, plus time drift on the live path).
+vec3 cirrusDomain(vec3 p) { return vec3(p.x * 2.8, p.y * 0.7, p.z * 2.8); }
+
 float cloudFieldFromInputs(vec3 broadP, vec3 wispP, vec3 cirrusP,
                            float lat, float cover) {
   float broad  = fbm4(warp(broadP * 2.3, 1.1, 0.75));
@@ -607,7 +613,7 @@ void main() {
   vec3 wispP  = p + vec3(time * 0.0068, 0.0, time * 0.0011) + seedOffset;
   // Cirrus (node #212): a coarser scale streaked along the rotation axis by
   // compressing y in the noise domain. Drifts at its own rate.
-  vec3 cirrusP = vec3(p.x * 2.8, p.y * 0.7, p.z * 2.8)
+  vec3 cirrusP = cirrusDomain(p)
                + vec3(time * 0.0018, 0.0, time * 0.0006) + seedOffset + 31.0;
   float mask = cloudFieldFromInputs(broadP, wispP, cirrusP,
                                     abs(p.y), cloudCover);
@@ -934,6 +940,7 @@ uniform mat3 faceBasis;
 varying vec2 vNdc;
 ${SANITISE_GLSL}
 ${NOISE_GLSL}
+${CLOUD_FIELD_GLSL}
 // sunDir is needed by terran's cloud shadow (node #212). Already in the
 // uniform block via the body's shared record; unused by other classes'
 // bake programs, where the compiler strips it.

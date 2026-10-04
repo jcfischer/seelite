@@ -2479,7 +2479,11 @@ if (airless) {
 		const uniforms = vis.group.children[0]?.material?.uniforms;
 		if (!uniforms) return { skip: true };
 
-		// Force the body to the procedural path so the shadow is live.
+		// Force the body to the procedural path so the shadow is live —
+		// the bake path freezes the shadow into the cubemap, so per-frame
+		// toggling (clouds on vs off) is not possible there. Bake-path
+		// compilation for terran (including CLOUD_FIELD_GLSL) is covered
+		// by the bake section above, which loops over every bakeable class.
 		g.setSurfacePin("four-tap");
 
 		// Set a test blob direction: use the sun direction so the shadow is
