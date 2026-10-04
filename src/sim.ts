@@ -2107,8 +2107,10 @@ function fleetAgainstWorld(
 /**
  * Whether the player's unresolved step meets a fleet ship at or before
  * `planeS` seconds into it (§4.2): a billed meeting by then, or a resting
- * hold with nothing billed, which stops this step's motion at its start as
- * `sweepShip`'s resting contact does. Read-only — nothing is landed.
+ * hold with nothing billed that stopped the player closing on it — its
+ * velocity changed — which is at the start of the step. A hold that only
+ * nudged the player out along a graze stopped nothing, and leaves the plane
+ * the tick. Read-only: nothing is landed.
  */
 function fleetMeetsBy(
 	player: ShipMotion,
@@ -2123,7 +2125,7 @@ function fleetMeetsBy(
 		});
 		if (pair.impacts.length > 0)
 			return pair.impacts.some((impact) => impact.timeS <= planeS);
-		return length(sub(pair.a.pos, player.end.origin)) > 0;
+		return length(sub(pair.a.vel, player.velEnd)) > 0;
 	});
 }
 
