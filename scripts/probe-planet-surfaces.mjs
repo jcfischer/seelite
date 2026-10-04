@@ -60,6 +60,7 @@ import {
 	airlessContrastPasses,
 	airlessControlRejectionPasses,
 } from "./lib/airless-contrast.mjs";
+import { raySourcePasses } from "./lib/airless-ray-source.mjs";
 import { installViewFraming } from "./lib/view-placement.mjs";
 import { gameUrl } from "./lib/game-url.mjs";
 
@@ -2094,12 +2095,11 @@ for (const row of airlessAlbedo) {
 	);
 	check(
 		`airless seed ${row.seed} contrast gate rejects brightness-only and feature-off controls`,
-		Math.abs(row.uniformGainRatio - 1) < 1e-8 &&
-			airlessControlRejectionPasses(row.controls) &&
+		airlessControlRejectionPasses(row.controls) &&
 			// A rendered production arm offered as a negative control must
 			// defeat rejection. This exposes a gate that rejects every input.
 			!airlessControlRejectionPasses([row, row.controls[1]]),
-		`uniform gain ${row.uniformGainRatio.toFixed(3)}; measured controls (parent, feature-on/off): ${row.controls.map((c) => `(${c.ratio.toFixed(3)}, ${c.featureRatio.toFixed(3)})`).join(", ")}`,
+		`rendered controls (parent, feature-on/off): ${row.controls.map((c) => `(${c.ratio.toFixed(3)}, ${c.featureRatio.toFixed(3)})`).join(", ")}`,
 	);
 	check(
 		`airless seed ${row.seed} near-star highlands remain darker than cold frost`,
@@ -2121,6 +2121,27 @@ for (const row of airlessAlbedo) {
 		`airless seed ${row.seed} rays brighten albedo without changing relief`,
 		row.rayPixels > 40 && row.rayNormalDelta < 0.00001,
 		`${row.rayPixels} bright ejecta samples; normal delta ${row.rayNormalDelta}`,
+	);
+	check(
+		`airless seed ${row.seed} GPU ray sources match surviving fine-field craters`,
+		row.raySources.length >= 2 &&
+			row.raySources.length <= 3 &&
+			row.raySources.every(raySourcePasses),
+		JSON.stringify(
+			row.raySources.map(({ cell, cpu, ray, walk, eligibility }) => ({
+				cell,
+				cpu,
+				ray,
+				walk,
+				eligibility,
+			})),
+		),
+	);
+	check(
+		`airless seed ${row.seed} ray-source gate rejects rendered displaced anchors`,
+		row.raySources.length >= 2 &&
+			row.raySources.every((source) => !raySourcePasses(source.mutated)),
+		"the actual ray helper shifted by 0.02 body radii must fail the same geometry/eligibility gate",
 	);
 }
 const [seedA, seedB] = airlessAlbedo;

@@ -540,15 +540,37 @@ float basinFloor(vec3 p, out float rimMask) {
   return floorMask;
 }
 
+// Reconstruct the selected cell with the fine crater field's geometry. The
+// browser probe compares this helper with CRATER_CELL on the actual renderer.
+vec4 airlessRayCrater(vec3 cell) {
+  vec3 centre = cell + vec3(hash31(cell), hash31(cell + 61.7), hash31(cell + 13.3));
+  centre = centre / 8.0 - seedOffset * 1.7;
+  float radius = (0.16 + 0.34 * hash31(cell + 3.1)) / 8.0;
+  return vec4(centre, radius);
+}
+
+// CPU selection is approximate. Refuse a source on the GPU if rounding puts
+// it away from the shell or inside a flooded basin, rather than paint a ray
+// whose crater has disappeared. This can reduce the selected ray count.
+bool airlessRayEligible(vec4 source) {
+  if (abs(length(source.xyz) - 1.0) >= source.w * 0.25) return false;
+  vec3 c = normalize(source.xyz);
+  for (int i = 0; i < 4; ++i) {
+    if (i >= basinCount) break;
+    if (distance(c, basins[i].xyz) <= basins[i].w + source.w) return false;
+  }
+  return true;
+}
+
 float airlessRays(vec3 p) {
   float rays = 0.0;
   for (int i = 0; i < 3; ++i) {
     if (i >= rayCount) break;
     vec3 cell = rayCells[i];
-    vec3 centre = cell + vec3(hash31(cell), hash31(cell + 61.7), hash31(cell + 13.3));
-    centre = centre / 8.0 - seedOffset * 1.7;
-    float radius = (0.16 + 0.34 * hash31(cell + 3.1)) / 8.0;
-    vec3 c = normalize(centre);
+    vec4 source = airlessRayCrater(cell);
+    if (!airlessRayEligible(source)) continue;
+    float radius = source.w;
+    vec3 c = normalize(source.xyz);
     vec3 axis = abs(c.y) < 0.94 ? vec3(0,1,0) : vec3(1,0,0);
     vec3 t = normalize(cross(axis, c)), b = cross(c, t);
     vec2 q = vec2(dot(p, t), dot(p, b));

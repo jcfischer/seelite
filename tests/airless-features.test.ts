@@ -3,7 +3,6 @@ import * as featureModule from "../src/airless-features";
 import {
 	airlessFeatures,
 	smallCrater,
-	planetSeedOffset,
 	selectBasins,
 } from "../src/airless-features";
 import { AIRLESS } from "../src/planet-classes.glsl";
@@ -15,8 +14,58 @@ import {
 } from "../src/planet-shaders";
 import { VIEWS } from "../scripts/lib/view-set.mjs";
 import * as THREE from "three";
-import { appearanceFor } from "../src/planet-appearance";
+import { appearanceFor, planetSeedOffset } from "../src/planet-appearance";
 import { buildBodyVisual } from "../src/planet-surface";
+
+test("shell pruning preserves the existing selected fine-field cells", () => {
+	const expected: { seed: number; cells: [number, number, number][] }[] = [
+		{
+			seed: 0,
+			cells: [
+				[-9, 0, -1],
+				[5, -6, 1],
+			],
+		},
+		{
+			seed: 1,
+			cells: [
+				[7, 2, 2],
+				[6, 0, 5],
+				[-6, 5, -2],
+			],
+		},
+		{
+			seed: 47,
+			cells: [
+				[5, 1, 0],
+				[11, 11, 2],
+			],
+		},
+		{
+			seed: 48,
+			cells: [
+				[-1, 5, 9],
+				[2, 1, 2],
+			],
+		},
+		{
+			seed: 179,
+			cells: [
+				[32, 21, 23],
+				[26, 29, 18],
+			],
+		},
+		{
+			seed: 0xffffffff,
+			cells: [
+				[141, 139, 133],
+				[138, 131, 128],
+			],
+		},
+	];
+	for (const { seed, cells } of expected)
+		expect(airlessFeatures(seed).rayCells).toEqual(cells);
+});
 
 test("basin placement refuses an exhausted work budget", () => {
 	// All pairs fit, but no triple does: backtracking must hit the budget,

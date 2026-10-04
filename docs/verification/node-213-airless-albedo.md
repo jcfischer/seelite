@@ -31,8 +31,12 @@ the parent reflectances (0.235/0.225/0.210 and 0.400/0.415/0.440).
 
 The youngest 2–3 surviving small impacts are selected by a seeded age ordering
 among surface-intersecting fine-field cells outside the flooded floors.
-The shader reconstructs their anchors with the crater field's own hash;
-CPU float rounding therefore cannot separate a ray from its source crater.
+The shader reconstructs their anchors with the crater field's own hash. CPU
+float arithmetic only selects candidates: it cannot guarantee GPU eligibility.
+Round 4 adds a GPU guard that rejects reconstructed sources away from the shell
+or inside a flooded basin (including one source-radius of clearance). Rejection
+can reduce the displayed population below the CPU-selected 2–3 rays. The earlier
+claim that CPU rounding cannot affect source survival is withdrawn.
 Two angular harmonics make irregular radial streaks, fading between two and
 nine crater radii. Rays change albedo only.
 
@@ -81,9 +85,11 @@ and a repeat of the feature-off control, then computes both ratios through
 the same helper as the production subject. The probe feeds these measured
 rows into the same gate and also offers the rendered production subject as
 a positive control, which must defeat negative-control rejection. The
-uniform-gain control reads 1.000, and the current shader with sparse
-features off reads 0.014–0.018 relative to the parent. These actual controls
-are required probe rows, alongside unit tests for the shared gate.
+current shader with sparse features off reads 0.014–0.018 relative to the parent.
+These rendered controls are required probe rows. The uniform-gain ratio of
+1.000 was computed by scaling parent samples in JavaScript, so it is an
+arithmetic identity, not a rendered control. Round 4 removes that computation
+from the browser instrument; the unit test retains the gain-invariance check.
 
 At identical directions with sparse features disabled, warmth 0/7 reads
 0.547 near-star/cold highland luma for every seed, inside the 0.5–0.6 band
@@ -129,8 +135,9 @@ worker's explicit instruction forbids the full suite; the supervisor owns
   assertion failure at peak load 37.5. Its assertion name was lost in
   truncated output; its cause is unestablished. The rerun passed at peak
   load 32.1, but that does not rule out flakiness or a defect and does not
-  clear the first run. The passing rerun log is
-  `/private/tmp/node213-round2-surfaces.log`.
+  clear the first run. The raw logs were not retained in the repository, so
+  these historical outcomes cannot be audited from this tree and are not the
+  reproducible evidence for the current repair.
 - Round 2 hardware `planets`: pass on the same renderer.
 - The rim uses a signed distance multiplied by itself, avoiding GLSL's
   undefined negative-base `pow`. Its regression test also pins the crater
@@ -141,11 +148,10 @@ worker's explicit instruction forbids the full suite; the supervisor owns
   across all five seeds. Their parent ratios remain 1.57–1.60 for
   highland-only brightening and 0.014–0.018 for feature-off. Their gate
   rejection no longer receives a literal feature ratio.
-- A browser mutation replaced the highland-only control material with
-  the production material while retaining the same sampling and ablation.
-  All five mutated controls defeated rejection: parent ratios 1.54–3.49,
-  feature ratios 104.60–223.25. The normal probe also offers its rendered
-  production comparison to the rejection helper as a positive control.
+- An earlier note cited an uncommitted browser mutation; that run and its
+  numerical claims are withdrawn as reproducible evidence. The committed
+  normal probe offers its rendered production comparison to the rejection
+  helper as a positive control.
   Synthetic unit tests prove either control can defeat rejection and
   invalid/empty measurements cannot pass.
 
@@ -164,16 +170,84 @@ worker's explicit instruction forbids the full suite; the supervisor owns
   The explicit worker contract reserves the full suite for the supervisor.
   `npm run probe:one -- planet` passes **2/2 gating probes** (`planet-surfaces`
   and `planets`) on **ANGLE Metal / Apple M1 Pro**, peak load 29.6 on ten cores.
-  Output: `/private/tmp/node213-round3-planets-unsandboxed.log`.
+  The raw output was not retained in the repository; this is historical
+  reporting, not an auditable record of the current head.
 - The first attempt aborted Chromium with `SIGABRT` in the sandbox during
-  renderer preflight, before any assertions. Its complete launch log is
-  `/private/tmp/node213-round3-planets.log`. The same focused invocation passed
+  renderer preflight, before any assertions. The same focused invocation passed
   after a sandbox escalation. Neither this pass nor the round 2 rerun explains
   the historical 103/104 assertion failure; that result remains unresolved.
 - This repair changes exhaustion handling and evidence, with no shader edits.
   Successful populations retain their existing layout and shading. Optional
   shader optimizations and helper refactors were deferred; the hash guard's
   description now states its source-text-only limit.
+
+### Round 4 repair
+
+`scripts/lib/airless-ray-source.mjs` builds a float-target diagnostic from the
+production bake program. It reads the actual ray helper's centre/radius and,
+independently, the exported `CRATER_CELL` geometry that both crater walks use.
+It also reads the crater distance at the GPU anchor, basin floor mask, the
+production GPU guard's answer, and membership in the walk's 3×3×3 neighbourhood.
+Every selected source on the five albedo-probe seeds must pass: GPU geometry
+agreement within 1e-6 body radii; CPU selection agreement within 5% of the source
+radius; distance below one quarter of the crater radius; floor mask zero; and
+both eligibility and neighbourhood membership true. This is numerical
+agreement on those seeds and the measured renderer, not bit parity or a proof
+over all uint32 seeds and backends.
+
+The diagnostic also compiles a committed mutation of the actual ray helper,
+displacing each anchor by 0.02 body radii. Rendered mutated sources must fail
+the same gate that accepts the production sources. Unit tests separately reject
+wrong CPU/GPU centres, radii, off-shell/flooded sources, missing neighbourhoods,
+and missing/non-finite readbacks. Neither control uses a hard-coded pass result.
+
+The shared seed phase now belongs to `planet-appearance.ts`; live body and probe
+uploads use `applyAirlessFeatures`. The CPU ray scan skips cells whose midpoint
+is outside 1 ± 0.15. Jitter can move that point by at most √3/16, and shell
+eligibility adds at most 0.0625/4: their sum is below 0.15. Six captured seed
+fixtures retain their original selected cells; the 4,096-seed corpus still
+checks completion and counts. `craterRelief` and the crater cell walk remain
+unchanged.
+
+- `rtk test npm test`: **4,910 pass, 0 fail**, exit 0 (288.18 s).
+  The passing reporter fixture containing `FAIL` still gives RTK a misleading
+  failure heading; Bun's summary and the command exit status are green.
+- `npx tsc --noEmit`, `rtk lint npm run format:check`,
+  `rtk lint npm run lint`, and `rtk err npm run build`: pass.
+  The build retains the existing chunk-size warning. Wiring passes as the
+  focused hardware runner's entry gate.
+
+The focused hardware run passed both gating probes (`planet-surfaces` and
+`planets`), 2/2, with peak load 10.3 on ten cores. The retained runner summary is
+[node-213-round4-probes.txt](node-213-round4-probes.txt). The selector requested
+all probes because it treats `scripts/lib` as shared infrastructure; the worker
+contract restricts this run to the two covering probes and reserves the full
+suite for the supervisor.
+
+The scoped headed diagnostic also passed. Its raw source/eligibility readbacks
+and all timing samples are retained in
+[node-213-round4-measurements.json](node-213-round4-measurements.json), produced
+by `node scripts/measure-airless-albedo.mjs`. On ANGLE Metal / Apple M1 Pro,
+all 11 sources across seeds 0, 1, 47, 48 and 179 passed the shared gate; all 11
+rendered displacement mutations failed it. Maximum GPU centre/radius difference
+between the ray helper and the crater geometry was zero. Maximum CPU centre
+difference was 0.0002461 body radii. The largest GPU shell distance was 0.2262
+crater radii (rounded upward here), below the 0.25 cutoff. Every source had a
+zero basin-floor mask and both eligibility/membership flags equal to one.
+
+Round 4's 1440×900 headed `?fps` diagnostic used the same interleaved shader-arm
+basis, settings and vsync-off flags as the earlier instrument runs. Nine
+readings per arm; same ANGLE Metal / Apple M1 Pro renderer:
+
+| Quality | Parent shader median (range), ms | Current shader median (range), ms |
+| --- | --- | --- |
+| High | 5.10 (4.94–5.35) | 5.17 (4.93–5.41) |
+| Low | 5.13 (4.87–5.35) | 5.22 (5.14–6.72) |
+
+The 200-radii control spans 4.90–5.25 ms; the refresh-clamp refusal passed.
+The arms overlap, establishing no attributable cost change. All four High/Low
+parent/current PNGs were opened. This is shader-control evidence, not two
+canonical builds or the principal's visual approval.
 
 ## Visual and delivery gates still owned by the supervisor
 

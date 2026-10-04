@@ -21,7 +21,8 @@
  */
 
 import * as THREE from "three";
-import { airlessFeatures, planetSeedOffset } from "./airless-features";
+import { airlessFeatures, applyAirlessFeatures } from "./airless-features";
+import { planetSeedOffset } from "./planet-appearance";
 import type { PlanetAppearance, SurfaceClass } from "./planet-appearance";
 import { CLOUD_SHELL_RADIUS } from "./planet-clouds";
 import {
@@ -575,13 +576,14 @@ export function buildBodyVisual(
 			console.warn(
 				`airless seed ${look.seed}: ${features.exhausted} selection exhausted; retained crater terrain`,
 			);
-		uniforms.basinCount.value = features.basins.length;
-		features.basins.forEach((basin, i) =>
-			uniforms.basins.value[i].fromArray(basin),
-		);
-		uniforms.rayCount.value = features.rayCells.length;
-		features.rayCells.forEach((cell, i) =>
-			uniforms.rayCells.value[i].fromArray(cell),
+		applyAirlessFeatures(
+			{
+				basinCount: uniforms.basinCount,
+				basins: uniforms.basins,
+				rayCount: uniforms.rayCount,
+				rayCells: uniforms.rayCells,
+			},
+			features,
 		);
 		airlessReady = true;
 	};

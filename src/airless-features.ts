@@ -1,8 +1,8 @@
 import { mix, seededRand } from "./rng";
+import { planetSeedOffset } from "./planet-appearance";
 
 type V3 = [number, number, number];
 type Basin = [number, number, number, number];
-export const planetSeedOffset = (seed: number) => (seed % 997) / 97;
 
 /** Seed-order clique search. At most 500 shell candidates, 124,750 scalar
  * pair checks, and 10,000 search visits per body. Return null on exhaustion
@@ -54,8 +54,9 @@ export function selectBasins(
 }
 
 // Float32 approximation of NOISE_GLSL.hash31, used only to select candidate
-// cells. The shader reconstructs ray anchors from the cells with its own hash,
-// so CPU/GPU rounding cannot move a ray away from the crater it names.
+// cells. The GPU reconstructs anchors and rechecks eligibility independently;
+// rounding can reject a selected source. Probe evidence covers sampled seeds,
+// not agreement on every seed or renderer.
 const f = Math.fround;
 const fract = (v: number) => v - Math.floor(v);
 function hash(cell: V3, add = 0): number {
@@ -124,11 +125,21 @@ export function airlessFeatures(
 	for (let x = Math.floor(origin - 9); x <= Math.ceil(origin + 8); x++)
 		for (let y = Math.floor(origin - 9); y <= Math.ceil(origin + 8); y++)
 			for (let z = Math.floor(origin - 9); z <= Math.ceil(origin + 8); z++) {
+				// Jitter can move a cell's midpoint by at most sqrt(3)/16;
+				// eligibility adds at most 0.0625/4. Their sum is < 0.15,
+				// so no eligible source can start outside this shell.
+				const midpointNorm = Math.hypot(
+					(x + 0.5 - origin) / 8,
+					(y + 0.5 - origin) / 8,
+					(z + 0.5 - origin) / 8,
+				);
+				if (Math.abs(midpointNorm - 1) > 0.15) continue;
 				const cell: V3 = [x, y, z];
 				const crater = smallCrater(cell, offset);
 				const n = Math.hypot(...crater.centre);
 				// Flooded small impacts no longer have relief: date only the
-				// surviving highland craters, so every ray has a visible source.
+				// CPU candidates on the highlands. The shader also checks that
+				// its own reconstructed source survives before painting rays.
 				if (
 					Math.abs(n - 1) < crater.radius * 0.25 &&
 					basins.every(
@@ -148,4 +159,24 @@ export function airlessFeatures(
 		.map((c) => c.cell);
 	if (rayCells.length < 2) return { basins, rayCells: [], exhausted: "rays" };
 	return { basins, rayCells, exhausted: null };
+}
+
+/** Shared by the live body builder and the bake-reading instrument. */
+export function applyAirlessFeatures(
+	uniforms: {
+		basinCount: { value: number };
+		basins: { value: { fromArray(values: number[]): unknown }[] };
+		rayCount: { value: number };
+		rayCells: { value: { fromArray(values: number[]): unknown }[] };
+	},
+	features: ReturnType<typeof airlessFeatures>,
+) {
+	uniforms.basinCount.value = features.basins.length;
+	features.basins.forEach((basin, i) =>
+		uniforms.basins.value[i].fromArray(basin),
+	);
+	uniforms.rayCount.value = features.rayCells.length;
+	features.rayCells.forEach((cell, i) =>
+		uniforms.rayCells.value[i].fromArray(cell),
+	);
 }

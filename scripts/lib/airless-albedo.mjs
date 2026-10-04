@@ -11,11 +11,15 @@ export async function airlessAlbedoReadings(game) {
 	const { AIRLESS: before } = await import(
 		"/scripts/lib/fixtures/airless-before-213.ts"
 	);
-	const { relativeAlbedoVariance, albedoContrastReading } = await import(
+	const { albedoContrastReading } = await import(
 		"/scripts/lib/airless-contrast.mjs"
 	);
-	const { airlessFeatures, planetSeedOffset, smallCrater } = await import(
+	const { airlessFeatures, applyAirlessFeatures, smallCrater } = await import(
 		"/src/airless-features.ts"
+	);
+	const { planetSeedOffset } = await import("/src/planet-appearance.ts");
+	const { raySourceFragment } = await import(
+		"/scripts/lib/airless-ray-source.mjs"
 	);
 	const { cubeFaceBasis } = await import("/src/planet-bake.ts");
 	const sourceUniforms = [...game.bodyVisuals.values()].find(
@@ -25,6 +29,9 @@ export async function airlessAlbedoReadings(game) {
 		throw new Error("airless measurement has no live airless body");
 	const px = 160;
 	const target = new THREE.WebGLRenderTarget(px, px, { type: THREE.FloatType });
+	const rayTarget = new THREE.WebGLRenderTarget(1, 1, {
+		type: THREE.FloatType,
+	});
 	const scene = new THREE.Scene();
 	const camera = new THREE.OrthographicCamera(-1, 1, 1, -1, 0.1, 10);
 	camera.position.z = 1;
@@ -39,6 +46,7 @@ export async function airlessAlbedoReadings(game) {
 		basins: { value: Array.from({ length: 4 }, () => new THREE.Vector4()) },
 		rayCount: { value: 0 },
 		rayCells: { value: Array.from({ length: 3 }, () => new THREE.Vector3()) },
+		rayCell: { value: new THREE.Vector3() },
 		faceBasis: { value: new THREE.Matrix3() },
 	};
 	const makeMaterial = (channel, old = false, brighter = false) => {
@@ -67,6 +75,30 @@ export async function airlessAlbedoReadings(game) {
 		baseline = makeMaterial("albedo", true),
 		brightnessOnly = makeMaterial("albedo", true, true),
 		normal = makeMaterial("normal");
+	const rayMaterials = {};
+	for (const mode of ["ray", "walk", "eligibility"]) {
+		const fragment = raySourceFragment(
+			current.fragmentShader,
+			shaders.CRATER_CELL,
+			mode,
+		);
+		const marker = "return vec4(centre, radius);";
+		if (!fragment.includes(marker))
+			throw new Error("ray-source mutation splice missed");
+		for (const mutated of [false, true]) {
+			rayMaterials[`${mode}${mutated ? "Mutated" : ""}`] =
+				new THREE.ShaderMaterial({
+					vertexShader: shaders.BAKE_VERTEX,
+					fragmentShader: mutated
+						? fragment.replace(
+								marker,
+								"return vec4(centre + vec3(0.02, 0.0, 0.0), radius);",
+							)
+						: fragment,
+					uniforms: u,
+				});
+		}
+	}
 	const mesh = new THREE.Mesh(geometry, current);
 	scene.add(mesh);
 	const renderer = game.renderer;
@@ -84,6 +116,27 @@ export async function airlessAlbedoReadings(game) {
 		return data;
 	};
 	const luma = (a, i) => a[i] * 0.2126 + a[i + 1] * 0.7152 + a[i + 2] * 0.0722;
+	const measureRaySources = (features) => {
+		const readSource = (key) => {
+			mesh.material = rayMaterials[key];
+			renderer.setRenderTarget(rayTarget);
+			renderer.render(scene, camera);
+			const data = new Float32Array(4);
+			renderer.readRenderTargetPixels(rayTarget, 0, 0, 1, 1, data);
+			return Array.from(data);
+		};
+		return features.rayCells.map((cell) => {
+			u.rayCell.value.fromArray(cell);
+			const cpu = smallCrater(cell, u.seedOffset.value);
+			const reading = (suffix) => ({
+				cpu,
+				ray: readSource(`ray${suffix}`),
+				walk: readSource(`walk${suffix}`),
+				eligibility: readSource(`eligibility${suffix}`),
+			});
+			return { cell, ...reading(""), mutated: reading("Mutated") };
+		});
+	};
 	const variance = (a) => {
 		const mean = a.reduce((s, v) => s + v, 0) / a.length;
 		return a.reduce((s, v) => s + (v - mean) ** 2, 0) / a.length;
@@ -93,14 +146,12 @@ export async function airlessAlbedoReadings(game) {
 		renderer.autoClear = true;
 		renderer.setClearColor(0, 0);
 		// 0/1 supply the two/three-basin buckets; 47/48 exercise seed movement,
-		// and 179 also supplies three ray sources. The corpus covers all counts.
+		// and 1 also supplies three ray sources. The corpus covers all counts.
 		for (const seed of [47, 48, 179, 0, 1]) {
 			const features = airlessFeatures(seed);
 			u.seedOffset.value = planetSeedOffset(seed);
-			u.basinCount.value = features.basins.length;
-			features.basins.forEach((v, i) => u.basins.value[i].fromArray(v));
-			u.rayCount.value = features.rayCells.length;
-			features.rayCells.forEach((v, i) => u.rayCells.value[i].fromArray(v));
+			applyAirlessFeatures(u, features);
+			const raySources = measureRaySources(features);
 			const a = [],
 				b = [],
 				featureOff = [],
@@ -229,12 +280,10 @@ export async function airlessAlbedoReadings(game) {
 				afterVariance: variance(a),
 				...comparison,
 				controls: [brightnessControl, featureOffControl],
-				uniformGainRatio:
-					relativeAlbedoVariance(b.map((v) => v * (0.4 / 0.235))) /
-					comparison.beforeRelativeVariance,
 				nearFarRatio: nearLuma / farLuma,
 				rayPixels,
 				rayNormalDelta,
+				raySources,
 				floorRatio: floorLuma / highlandLuma,
 				floorTilt: floorTilt / n,
 				craterTilt: craterTilt / n,
@@ -249,9 +298,16 @@ export async function airlessAlbedoReadings(game) {
 		renderer.setRenderTarget(oldTarget);
 		renderer.setClearColor(oldClear, oldAlpha);
 		renderer.autoClear = oldAuto;
-		for (const material of [current, baseline, brightnessOnly, normal])
+		for (const material of [
+			current,
+			baseline,
+			brightnessOnly,
+			normal,
+			...Object.values(rayMaterials),
+		])
 			material.dispose();
 		geometry.dispose();
 		target.dispose();
+		rayTarget.dispose();
 	}
 }
