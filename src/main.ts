@@ -650,10 +650,19 @@ import {
 } from "./chase-view";
 import { ArrivalRift } from "./arrival-rift";
 import {
+	buildHaulerPlans,
+	inboundCandidates,
+	routeVoyages,
+	haulerAvailability,
+	trafficIdentityRecord,
+	type HaulerPlan,
+} from "./inter-system-traffic";
+import {
 	WITCHSPACE,
 	type WitchspaceState,
 	abortWitchspace,
 	arriveWitchspace,
+	npcRiftStrength,
 	beginWitchspace,
 	entryWitchspace,
 	idleWitchspace,
@@ -2794,6 +2803,9 @@ class Game {
 	>();
 	private trafficPreviousProjectionAtS = Number.NaN;
 	private trafficActors: TrafficActor[] = [];
+	private readonly trafficHaulers = new Map<CarrierKey, HaulerPlan>();
+	private readonly trafficRifts = new Map<string, ArrivalRift>();
+	private readonly trafficJumpSounds = new Set<string>();
 	private readonly trafficContacts = new Map<CarrierKey, DisplayContact>();
 	private readonly trafficMeshes = new Map<CarrierKey, THREE.Group>();
 	/**
@@ -6078,6 +6090,12 @@ class Game {
 	}
 
 	private disposeTrafficPresentation() {
+		for (const rift of this.trafficRifts.values()) {
+			rift.object.removeFromParent();
+			disposeSubtree(rift.object);
+		}
+		this.trafficRifts.clear();
+		this.trafficJumpSounds.clear();
 		for (const contact of this.trafficContacts.values())
 			this.unregisterContact(contact);
 		for (const mesh of this.trafficMeshes.values()) {
@@ -6110,13 +6128,57 @@ class Game {
 		this.markerLabels.reset();
 	}
 
+	private trafficHomeRecord(actor: Pick<TrafficActor, "key">) {
+		return trafficIdentityRecord(this.world.galaxy, actor.key);
+	}
+	private trafficVoyages(actor: TrafficActor, atS: number) {
+		const plan = this.trafficHaulers.get(actor.key);
+		if (!plan) return undefined;
+		return routeVoyages(
+			this.world.galaxy,
+			plan,
+			this.world.system.record.index,
+			atS,
+			(i) =>
+				i === this.world.system.record.index
+					? this.world.system.contents
+					: generateContents(
+							this.world.galaxy.systems.find((r) => r.index === i)!,
+						),
+			this.trafficPreviousRoutes.get(actor.key)?.visitAwayOrdinal,
+			haulerAvailability(
+				plan,
+				this.commerceWorld.galaxies[this.world.system.record.galaxy],
+				atS,
+			).rejoinsAtS,
+		);
+	}
 	private ensureTrafficActors() {
 		const index = this.world.system.record.index;
 		if (this.trafficSystemIndex === index) return;
 		this.clearTrafficPresentation();
 		this.trafficSystemIndex = index;
-		this.trafficActors = this.world.system.contents.stations
-			.flatMap((station) => stationTrafficRoster(index, station))
+		const contents = new Map<number, ReturnType<typeof generateContents>>();
+		const contentsFor = (i: number) => {
+			let c = contents.get(i);
+			if (!c) {
+				c = generateContents(
+					this.world.galaxy.systems.find((r) => r.index === i)!,
+				);
+				contents.set(i, c);
+			}
+			return c;
+		};
+		const plans = [
+			...buildHaulerPlans(this.world.galaxy, index, contentsFor),
+			...inboundCandidates(this.world.galaxy, index, contentsFor),
+		];
+		this.trafficHaulers.clear();
+		for (const plan of plans)
+			if (plan.vocation === "hauler")
+				this.trafficHaulers.set(plan.actor.key, plan);
+		this.trafficActors = plans
+			.map((p) => p.actor)
 			.sort((a, b) => compareCarrierKeys(a.key, b.key));
 		// Before the first scheduled departure is the only parked state the
 		// base schedule proves without replaying a physical visit. A later
@@ -6124,7 +6186,10 @@ class Game {
 		// still be away, so presenting it at home would invent both a ship and
 		// an occupied berth until authority finishes warming.
 		for (const actor of this.trafficActors)
-			if (this.world.gameTime < actor.schedule.departureAtS)
+			if (
+				systemIndexOfKey(actor.key) === index &&
+				this.world.gameTime < actor.schedule.departureAtS
+			)
 				this.trafficColdActors.add(actor.key);
 		this.refreshColdTraffic(this.world.gameTime);
 	}
@@ -6198,6 +6263,7 @@ class Game {
 			) {
 				const actor = this.trafficActors[this.trafficWarmIndex];
 				const warmed = projectSystemTrafficAuthority({
+					haulerVoyages: this.trafficVoyages(actor, tick / 10),
 					record: this.world.system.record,
 					actor,
 					gameTime: tick / 10,
@@ -6346,6 +6412,7 @@ class Game {
 			const baselines = this.flyingTraffic().map((actor) => ({
 				actor,
 				projection: projectSystemTrafficAuthority({
+					haulerVoyages: this.trafficVoyages(actor, tick / 10),
 					record: this.world.system.record,
 					actor,
 					gameTime: tick / 10,
@@ -6387,6 +6454,7 @@ class Game {
 				let activeVisit = activeVisitFor(actor.key);
 				const projectActor = () =>
 					projectSystemTrafficAuthority({
+						haulerVoyages: this.trafficVoyages(actor, tick / 10),
 						record: this.world.system.record,
 						actor,
 						gameTime: tick / 10,
@@ -6704,6 +6772,7 @@ class Game {
 				: TRAFFIC_MATERIALIZE_KM;
 			const visible =
 				projection.phase !== "abstract-away" &&
+				projection.phase !== "hyperspace-away" &&
 				dx * dx + dy * dy + dz * dz <= rangeKm * rangeKm;
 			if (!visible) {
 				if (previous) {
@@ -6792,6 +6861,81 @@ class Game {
 		}
 	}
 
+	private shipRightForSound(): Vec3 {
+		const v = new THREE.Vector3(1, 0, 0).applyQuaternion(
+			this.shipMesh.quaternion,
+		);
+		return { x: v.x, y: v.y, z: v.z };
+	}
+	private updateTrafficRifts(cameraPos: Vec3) {
+		const shown = new Set<string>();
+		for (const route of this.trafficRoutes) {
+			const jump = route.jump;
+			const actor = this.trafficActorByKey(route.key);
+			if (!jump || !actor || !this.trafficShown(route.key)) continue;
+			const age = this.world.gameTime - jump.atS;
+			const id = route.key + "|" + jump.kind + "|" + jump.atS;
+			const range = this.trafficRifts.has(id)
+				? TRAFFIC_DEMATERIALIZE_KM
+				: TRAFFIC_MATERIALIZE_KM;
+			if (
+				age < 0 ||
+				age >= WITCHSPACE.riftEndS ||
+				length(sub(jump.pos, this.world.ship.pos)) > range
+			)
+				continue;
+			shown.add(id);
+			let rift = this.trafficRifts.get(id);
+			if (!rift) {
+				rift = new ArrivalRift({
+					pos: jump.pos,
+					nose: jump.kind === "departure" ? scale(jump.nose, -1) : jump.nose,
+					reachKm: HULL_REACH_KM[actor.hullId],
+				});
+				rift.object.name = "traffic-" + jump.kind + "-rift";
+				this.trafficRifts.set(id, rift);
+				this.nearScene.add(rift.object);
+			}
+			const strength = npcRiftStrength(age);
+			rift.update(strength, age, cameraPos);
+			if (!this.trafficJumpSounds.has(id)) {
+				this.trafficJumpSounds.add(id);
+				const rel = sub(jump.pos, cameraPos),
+					distance = length(rel);
+				const right = this.shipRightForSound();
+				const spatial = {
+					pan:
+						distance > 0
+							? Math.max(-1, Math.min(1, dot(rel, right) / distance))
+							: 0,
+					gain: 1 / (1 + distance),
+				};
+				this.play({
+					kind: "witchspaceUnfold",
+					seconds: WITCHSPACE.exitS - WITCHSPACE.unfoldAtS,
+					spatial,
+				});
+				this.play({
+					kind: "witchspaceRift",
+					seconds: WITCHSPACE.riftEndS,
+					spatial: {
+						pan:
+							distance > 0
+								? Math.max(-1, Math.min(1, dot(rel, right) / distance))
+								: 0,
+						gain: 1 / (1 + distance),
+					},
+				});
+			}
+		}
+		for (const [id, rift] of this.trafficRifts)
+			if (!shown.has(id)) {
+				rift.object.removeFromParent();
+				disposeSubtree(rift.object);
+				this.trafficRifts.delete(id);
+				this.trafficJumpSounds.delete(id);
+			}
+	}
 	/** The Traffic actors flying their projection now: the operational ones. */
 	private flyingTraffic(): TrafficActor[] {
 		return flyingTrafficActors(this.trafficActors, (key) =>
@@ -6810,8 +6954,11 @@ class Game {
 	 * what makes the divert need no new form of its own.
 	 */
 	private divertedTraffic(): TrafficActor[] {
-		return parkedHomeTrafficActors(this.trafficActors, (key) =>
-			this.carrierCondition(key),
+		return parkedHomeTrafficActors(
+			this.trafficActors.filter(
+				(a) => systemIndexOfKey(a.key) === this.world.system.record.index,
+			),
+			(key) => this.carrierCondition(key),
 		);
 	}
 
@@ -6895,7 +7042,7 @@ class Game {
 						voyageOrdinal: this.trafficVoyage(actor),
 					},
 					carrierInstanceSeed(
-						record.seed,
+						this.trafficHomeRecord({ key }).seed,
 						key,
 						this.carrierCondition(key).instanceOrdinal,
 						DOMAIN.TRAFFIC_ENGAGEMENT,
@@ -6999,7 +7146,7 @@ class Game {
 		instanceOrdinal: number,
 		voyageOrdinal: number,
 	) {
-		const record = this.world.system.record;
+		const record = this.trafficHomeRecord(actor);
 		return carrierManifest(
 			record.seed,
 			actor.key,
@@ -7059,7 +7206,7 @@ class Game {
 			offence,
 			galaxy: record.galaxy,
 			now: this.world.gameTime,
-			systemSeed: record.seed,
+			systemSeed: this.trafficHomeRecord(actor).seed,
 			carrier: {
 				key: actor.key,
 				instanceOrdinal: before.instanceOrdinal,
@@ -7158,7 +7305,7 @@ class Game {
 		const carrier = this.carrierCondition(actor.key);
 		if (
 			carrierStanding(
-				record.seed,
+				this.trafficHomeRecord(actor).seed,
 				actor.key,
 				carrier.instanceOrdinal,
 				this.world.gameTime,
@@ -7244,7 +7391,11 @@ class Game {
 		const now = this.world.gameTime;
 		const carrier = this.carrierCondition(actor.key);
 		if (carrier.condition !== "operational") return;
-		for (const event of trafficDiversion(record.index, actor, now))
+		for (const event of trafficDiversion(
+			systemIndexOfKey(actor.key),
+			actor,
+			now,
+		))
 			this.applyCarrierTransition(actor.key, event, actor.hullId);
 		// Charged against the row read before the transition above (#633).
 		const charge = chargeOffence(
@@ -7274,7 +7425,7 @@ class Game {
 		const carrier = this.carrierCondition(actor.key);
 		const { instanceOrdinal } = carrier;
 		const standing = carrierStanding(
-			record.seed,
+			this.trafficHomeRecord(actor).seed,
 			actor.key,
 			instanceOrdinal,
 			now,
@@ -7285,7 +7436,7 @@ class Game {
 			engagement.voyageOrdinal,
 		);
 		for (const event of trafficKillTransitions(
-			record.index,
+			systemIndexOfKey(actor.key),
 			actor,
 			carrier.condition,
 			now,
@@ -7294,7 +7445,7 @@ class Game {
 		this.canisters = [
 			...this.canisters,
 			...dropManifestCanisters({
-				systemSeed: record.seed,
+				systemSeed: this.trafficHomeRecord(actor).seed,
 				key: actor.key,
 				manifest,
 				killedAt: now,
@@ -7353,7 +7504,7 @@ class Game {
 					presence: trafficPresence(carrier),
 					repairCompletesAt: carrier.recovery?.completesAt ?? null,
 					standing: carrierStanding(
-						record.seed,
+						this.trafficHomeRecord({ key }).seed,
 						key,
 						carrier.instanceOrdinal,
 						now,
@@ -7427,6 +7578,18 @@ class Game {
 				homeStationId: actor.homeStationId,
 				backAtS: this.carrierCondition(actor.key).recovery?.completesAt ?? null,
 			})),
+			haulers: [...this.trafficHaulers.values()].map((p) => ({
+				key: p.actor.key,
+				homeIndex: p.homeRecord.index,
+				hullId: p.actor.hullId,
+				name: this.drawnName(p.actor),
+				voyages: this.trafficVoyages(p.actor, this.world.gameTime),
+			})),
+			rifts: [...this.trafficRifts].map(([id, r]) => ({
+				id,
+				anchor: r.anchor,
+				strength: r.strength,
+			})),
 			authorityReady: this.trafficAuthorityReady(),
 		};
 	}
@@ -7493,7 +7656,7 @@ class Game {
 	/** What the pilot has recorded about this carrier, re-derived from the row's
 	 *  own clock and voyage. `null` is F8's `UNKNOWN`. */
 	private recordedReading(actor: TrafficActor): CarrierReading | null {
-		const record = this.world.system.record;
+		const record = this.trafficHomeRecord(actor);
 		return carrierReading({
 			systemSeed: record.seed,
 			key: actor.key,
@@ -7520,7 +7683,7 @@ class Game {
 		const scan = row?.scan;
 		if (!scan) return null;
 		return carrierStanding(
-			record.seed,
+			this.trafficHomeRecord(actor).seed,
 			actor.key,
 			scan.observedInstanceOrdinal,
 			scan.observedAt,
@@ -7681,7 +7844,7 @@ class Game {
 	 *  from the instrument and the console naming different ships. */
 	private drawnName(actor: TrafficActor): string {
 		return carrierName(
-			this.world.system.record.seed,
+			this.trafficHomeRecord(actor).seed,
 			actor.key,
 			this.carrierCondition(actor.key).instanceOrdinal,
 		);
@@ -14358,6 +14521,7 @@ class Game {
 		const shotCam = this.openingCamera();
 		const camPos = shotCam?.pos ?? this.cameraPos();
 		this.updateTrafficPresentation(camPos);
+		this.updateTrafficRifts(camPos);
 		this.updateEncounterPresentation(camPos);
 		this.updateRelayPresentation(camPos);
 		this.updateTenderPresentation(camPos);
@@ -17314,7 +17478,11 @@ class Game {
 	 *  digits the pilot is reading. One label, one origin. */
 	private homeStationKm(key: CarrierKey, from: Vec3): number | null {
 		const actor = this.trafficActorByKey(key);
-		if (!actor) return null;
+		if (
+			!actor ||
+			systemIndexOfKey(actor.key) !== this.world.system.record.index
+		)
+			return null;
 		// The live body, not a cached one. A station is carried around its star at
 		// some tens of km/s, and the figure is read every frame the mark is up.
 		const home = this.world.system.bodies.find(

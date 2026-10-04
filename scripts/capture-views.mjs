@@ -1,3 +1,4 @@
+import { installHaulerFixture } from "./lib/hauler-fixture.mjs";
 /**
  * Capture the canonical view set — the second half of #98's gate.
  *
@@ -323,6 +324,22 @@ async function assertChartHover(page, where, shot, aimed) {
 
 /** One placer per shot kind. Each returns the subject it framed, for the log. */
 const PLACERS = {
+	"npc-jump": async (page, shot) => {
+		await page.evaluate(installHaulerFixture);
+		const sampled = await page.evaluate((event) => {
+			const f = window.__haulerFixture;
+			f.sample(f.plan.actor.schedule.departureAtS + 1, false);
+			f.sample(f.voyage.tOut - 3.1, false);
+			f.sample(f.voyage.tOut + 0.5);
+			if (event.event === "arrival") f.follow();
+			return f.sample(f.voyage.tOut + 0.5, true, event.framing ?? "ring");
+		}, shot);
+		if (sampled.jump?.kind !== shot.event || sampled.rift <= 0)
+			throw new Error(
+				`NPC ${shot.event} fixture did not draw its ring: ${JSON.stringify(sampled)}`,
+			);
+		return `${sampled.name} · ${sampled.hull} · ${shot.event} · camera ${sampled.cameraRangeKm.toFixed(3)} km`;
+	},
 	"station-axis": async (page, shot) => {
 		const id = `station-${shot.station}`;
 		await page.evaluate(
@@ -1364,6 +1381,9 @@ try {
 			// earlier row flushed, its clock ahead of the one `__startClockAt`
 			// puts back, and the dock's first write throws (#583).
 			if (view.shot.kind === "shipyard-tab") worldWritten = true;
+			// A follow jump saves its new system. Every NPC row needs a fresh home
+			// boot, including the first one after the docked Shipyard fixtures.
+			if (view.shot.kind === "npc-jump") worldWritten = true;
 			// Before the view is set, because a page load resets the game to the
 			// cockpit and would undo it.
 			await ensureFixture(

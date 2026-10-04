@@ -33,6 +33,23 @@ try {
 			warmCalls++;
 		} while (!g.trafficAuthorityReady() && warmCalls < 2_000);
 
+		const canonicalSpeed = (key, t) =>
+			Math.max(
+				0,
+				...[...g.trafficCruiseCache]
+					.filter(
+						([id, state]) =>
+							id.split("|")[1] === key &&
+							state.phase === "cruise" &&
+							state.atS >= t - 0.1 - 1e-8 &&
+							state.atS <= t + 1e-8,
+					)
+					.map(
+						([, state]) =>
+							state.stepPeakSpeedKms ??
+							Math.hypot(state.vel.x, state.vel.y, state.vel.z),
+					),
+			);
 		const previous = new Map();
 		const jumps = [];
 		const berthChanges = [];
@@ -95,6 +112,10 @@ try {
 							berthId: route.berthId,
 						});
 				}
+				const speed = Math.max(
+					canonicalSpeed(route.key, t),
+					route.stepPeakSpeedKms ?? 0,
+				);
 				const prior = previous.get(route.key);
 				if (prior) {
 					const deltaKm = dist(route.pos, prior.pos);
@@ -109,8 +130,12 @@ try {
 					// so its average speed can exceed the ending velocity by a small,
 					// bounded amount. The 5% envelope admits that physical first powered
 					// step while retaining a finite jump allowance for this probe.
+					// Fractional display queries can finish steering at zero after the
+					// canonical part already powered and decelerated. Include the actual
+					// adjoining canonical speeds, rather than calling that motion a rewrite.
 					const allowedKm = Math.max(
 						0.05,
+						Math.max(speed, prior.canonicalSpeed) * 0.105,
 						expectedKm * 2,
 						Math.max(
 							Math.hypot(prior.vel.x, prior.vel.y, prior.vel.z),
@@ -129,6 +154,14 @@ try {
 							fromBerth: prior.berthId,
 							toBerth: route.berthId,
 							fromTerminal: prior.terminalStationId,
+							priorVisit: prior.visit,
+							visit: {
+								launch: route.visitLaunchReadyAtS,
+								departure: route.visitOutboundDepartureAtS,
+								arrival: route.visitReturnArrivalAtS,
+								ordinal: route.visitAwayOrdinal,
+								charge: route.chargeAu,
+							},
 							toTerminal: route.terminalStationId,
 						});
 					const priorSettled = [
@@ -158,6 +191,14 @@ try {
 				}
 				previous.set(route.key, {
 					phase: route.phase,
+					canonicalSpeed: speed,
+					visit: {
+						launch: route.visitLaunchReadyAtS,
+						departure: route.visitOutboundDepartureAtS,
+						arrival: route.visitReturnArrivalAtS,
+						ordinal: route.visitAwayOrdinal,
+						charge: route.chargeAu,
+					},
 					pos: { ...route.pos },
 					vel: { ...route.vel },
 					berthId: route.berthId,

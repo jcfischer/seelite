@@ -133,9 +133,17 @@ try {
 			attempt++
 		)
 			g.updateTrafficAuthority();
-		const flying = [...g.trafficRoutes].sort((a, b) =>
-			a.key < b.key ? -1 : 1,
-		);
+		// Inbound candidate rosters include ships currently outside this system.
+		// This local scanner fixture selects a present home carrier, not a hidden
+		// foreign candidate whose zero pose cannot be materialized.
+		const flying = g.trafficRoutes
+			.filter(
+				(r) =>
+					r.key.startsWith(`${g.world.system.record.index}:`) &&
+					r.phase !== "hyperspace-away" &&
+					r.phase !== "abstract-away",
+			)
+			.sort((a, b) => (a.key < b.key ? -1 : 1));
 		const route = flying[0];
 		const actor = g.trafficActors.find(
 			(candidate) => candidate.key === route?.key,
