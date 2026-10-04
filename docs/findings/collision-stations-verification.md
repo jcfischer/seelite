@@ -221,3 +221,44 @@ The #573 major-change check remains yes for solid stations; this review repair
 adds no separate changelog entry. The existing node #663 sentence remains a
 proposal awaiting the principal's approval, as do the updated physical-fit table
 and drawn-surface gap judgments.
+
+## Sage round 3 repair
+
+Every release case now explicitly asserts zero ghost steps as well as zero
+impacts, and asserts the full 90 subsequent steps. The earlier evidence row
+above overstated the gate: zero ghosts was printed but not asserted until this
+repair. The release rows passed with the new assertions. A red arm that adds
+one ghost step to the traversal's returned report fails all four role rows at
+the new assertion; the mutation was restored.
+
+The fit table was re-measured with its script and dependencies unchanged from
+committed revision `1bb3ec6ce6de4b557fbbc488c3206e186510b60b`. Its stdout matches
+the published table byte-for-byte. The table's provenance now names that
+revision rather than a parent plus an uncommitted repair.
+
+The hands-off controls share one helper, and the collision probe separates its
+start selection and drawn-face ray from the step loop. The placed-crossing seam
+uses Game's existing **Probe affordance, not an input path** convention.
+
+Optional cruise prefiltering is left out: a start-distance rejection must also
+bound station translation during the tick, not only the ship's step, to preserve
+the moving-proxy census. The two floor-clamped sphere expressions remain at
+their form sites; extracting them adds no gate or behavior change in this repair.
+
+The mandatory selector returned all 86 probes because the branch includes
+shared capture infrastructure. Under the worker's targeted-only contract,
+`probe-collision` and `probe-collision-surface` passed through the canonical
+runner in **11 seconds**, on
+`ANGLE (Apple, ANGLE Metal Renderer: Apple M1 Pro, Unspecified Version)`,
+peak load 22.6 on 10 cores. The sandboxed launch aborted before checks with
+SIGABRT and EPERM; the automatically approved retry outside that process
+sandbox supplies the evidence. This is **partial evidence, 2/86** for this
+repair. The supervisor still owes the full suite on the final reviewed head.
+
+Round 3 headless verification: `npm test` passed **4,910 tests, zero failures**,
+across 268 files in 267.44 seconds. Formatting, script lint, launcher wiring,
+typecheck and production build passed.
+
+The #573 major-change check remains yes for the node's solid-station mechanic.
+This oracle and helper repair adds no separate major change or changelog entry;
+the proposed node #663 sentence still awaits the principal's approval.

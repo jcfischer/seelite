@@ -492,6 +492,22 @@ const DOCK_DT = 1 / 30;
 const PARK_S = 3;
 const AFTER_RELEASE_S = 3;
 
+/** Coast with no pilot demand in the station's accelerating frame. */
+function handsOff(world: World, id: string, t: number, assist: boolean) {
+	return {
+		stick: { pitch: 0, yaw: 0, roll: 0 },
+		turnAssist: true,
+		translation: {
+			demand: speedDemand(0),
+			assist,
+			frame: {
+				start: bodyVelocity(world.system, id, t),
+				end: bodyVelocity(world.system, id, t + DOCK_DT),
+			},
+		},
+	};
+}
+
 interface Traversal {
 	ticks: DockTick[];
 	released: boolean;
@@ -579,18 +595,7 @@ function traverse(type: StationType, hull: HullId, berthId: string): Traversal {
 		const step = stepWorld(
 			world,
 			at,
-			{
-				stick: { pitch: 0, yaw: 0, roll: 0 },
-				turnAssist: true,
-				translation: {
-					demand: speedDemand(0),
-					assist: true,
-					frame: {
-						start: bodyVelocity(world.system, id, t),
-						end: bodyVelocity(world.system, id, t + DOCK_DT),
-					},
-				},
-			},
+			handsOff(world, id, t, true),
 			DOCK_DT,
 			flightPerformance(hull),
 			hullSolid(hull),
@@ -714,6 +719,14 @@ describe("collision.md §9.1.7, §9.1.8: arrival, parked and launch on every rol
 					expect({ hull, impacts: t.afterRelease.impacts }).toEqual({
 						hull,
 						impacts: 0,
+					});
+					expect({ hull, ghostSteps: t.afterRelease.ghostSteps }).toEqual({
+						hull,
+						ghostSteps: 0,
+					});
+					expect({ hull, steps: t.afterRelease.steps }).toEqual({
+						hull,
+						steps: 90,
 					});
 					rows.push(
 						`${type.padEnd(8)} ${hull.padEnd(11)} ${berthId.padEnd(16)} ` +
@@ -1288,18 +1301,7 @@ describe("stepWorld: a real station is solid, and the plane it watches is handed
 			const step = stepWorld(
 				world,
 				att,
-				{
-					stick: { pitch: 0, yaw: 0, roll: 0 },
-					turnAssist: true,
-					translation: {
-						demand: speedDemand(0),
-						assist: false,
-						frame: {
-							start: bodyVelocity(world.system, id, t),
-							end: bodyVelocity(world.system, id, t + DOCK_DT),
-						},
-					},
-				},
+				handsOff(world, id, t, false),
 				DOCK_DT,
 				flightPerformance("courier"),
 				hullSolid("courier"),

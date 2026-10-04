@@ -68,35 +68,75 @@ const coast = async ({ type, where, gates }) => {
 			const unit = (a) => scale(a, 1 / length(a));
 			const snap = g.dockingSnapshot(id);
 			if (!snap) return { error: `no snapshot of ${id}` };
-			const axis = snap.axis;
-			// The phase-zero basis: the static frame, and a pad's only one. // glossary-ignore: pad
-			const across0 = unit(
-				sub(snap.reference, scale(axis, dot(snap.reference, axis))),
-			);
-			const up0 = cross(axis, across0);
-			const gate = g.dockingTolerances.V_GATE_KMS;
-			const deg = g.dockingTolerances.AXIS_TOLERANCE_DEG;
-			let rel;
-			let label;
-			if (where === "face") {
-				// Three quarters of the way to check 2's cone edge, as §9.2.4 flew
-				// it: inside the cone, four times outside the slot. // glossary-ignore: slot
-				const off = 0.75 * snap.planeKm * Math.tan((deg * Math.PI) / 180);
-				rel = add(scale(axis, snap.planeKm + 0.5), scale(across0, off));
-				label = `${(off * 1000).toFixed(0)} m off the axis`;
-			} else if (where === "berth") {
-				const berth = g.interiorOf(id).berths[0];
-				const c = berth.centre;
-				rel = add(
-					add(scale(across0, c.across), scale(up0, c.up)),
-					scale(axis, c.axial + 0.3),
+			function startOf(where, snap, g) {
+				const axis = snap.axis;
+				// The phase-zero basis: the static frame, and a pad's only one. // glossary-ignore: pad
+				const across0 = unit(
+					sub(snap.reference, scale(axis, dot(snap.reference, axis))),
 				);
-				label = `over berth ${berth.id}`;
-			} else {
-				// The dorsal boom stands 0.37–0.58 km out along the static `up`
-				// and runs forward to 1.15 km; come down onto its front end.
-				rel = add(scale(axis, 1.5), scale(up0, 0.475));
-				label = "over the dorsal boom";
+				const up0 = cross(axis, across0);
+				const deg = g.dockingTolerances.AXIS_TOLERANCE_DEG;
+				let rel;
+				let label;
+				if (where === "face") {
+					// Three quarters of the way to check 2's cone edge, as §9.2.4 flew
+					// it: inside the cone, four times outside the slot. // glossary-ignore: slot
+					const off = 0.75 * snap.planeKm * Math.tan((deg * Math.PI) / 180);
+					rel = add(scale(axis, snap.planeKm + 0.5), scale(across0, off));
+					label = `${(off * 1000).toFixed(0)} m off the axis`;
+				} else if (where === "berth") {
+					const berth = g.interiorOf(id).berths[0];
+					const c = berth.centre;
+					rel = add(
+						add(scale(across0, c.across), scale(up0, c.up)),
+						scale(axis, c.axial + 0.3),
+					);
+					label = `over berth ${berth.id}`;
+				} else {
+					// The dorsal boom stands 0.37–0.58 km out along the static `up`
+					// and runs forward to 1.15 km; come down onto its front end.
+					rel = add(scale(axis, 1.5), scale(up0, 0.475));
+					label = "over the dorsal boom";
+				}
+				return { rel, label };
+			}
+			const { rel, label } = startOf(where, snap, g);
+			const axis = snap.axis;
+			const gate = g.dockingTolerances.V_GATE_KMS;
+			function foreFaceGapKm(g, id) {
+				// Along the ship's nose from its fore-face centre. The
+				// near layer draws at 1:1, placed about the camera.
+				const box = g.flownSolid[0];
+				if (box.kind !== "box") throw new Error("player has no hull box");
+				const shipNose = g.nose();
+				const shipUp = g.shipUp();
+				// The fore face's centre, including the measured origin offset.
+				// Casting only against the station needs no self-hit offset.
+				const foreFace = add(
+					g.world.ship.pos,
+					add(
+						add(
+							scale(cross(shipNose, shipUp), box.centre.x),
+							scale(shipUp, box.centre.y),
+						),
+						scale(shipNose, box.centre.z + box.half[2]),
+					),
+				);
+				const cam = g.cameraSimPos;
+				const from = sub(foreFace, cam);
+				const root = g.stationVisuals.get(id)?.root;
+				if (root) {
+					root.updateMatrixWorld(true);
+					const caster = new THREE.Raycaster(
+						new THREE.Vector3(from.x, from.y, from.z),
+						new THREE.Vector3(shipNose.x, shipNose.y, shipNose.z),
+					);
+					const hit = caster
+						.intersectObject(root, true)
+						.find((h) => h.face && h.object.visible);
+					return hit ? hit.distance : null;
+				}
+				return null;
 			}
 			const body = g.world.system.byId.get(id);
 			const carried = g.stationVelocity(id);
@@ -130,38 +170,7 @@ const coast = async ({ type, where, gates }) => {
 				if (metAt === null && g.collisionImpacts > impactsBefore) {
 					metAt = i * dt;
 					outwardAfterKms = dot(vRel, axis);
-					// Along the ship's nose from its fore-face centre. The
-					// near layer draws at 1:1, placed about the camera.
-					const box = g.flownSolid[0];
-					if (box.kind !== "box") throw new Error("player has no hull box");
-					const shipNose = g.nose();
-					const shipUp = g.shipUp();
-					// The fore face's centre, including the measured origin offset.
-					// Casting only against the station needs no self-hit offset.
-					const foreFace = add(
-						g.world.ship.pos,
-						add(
-							add(
-								scale(cross(shipNose, shipUp), box.centre.x),
-								scale(shipUp, box.centre.y),
-							),
-							scale(shipNose, box.centre.z + box.half[2]),
-						),
-					);
-					const cam = g.cameraSimPos;
-					const from = sub(foreFace, cam);
-					const root = g.stationVisuals.get(id)?.root;
-					if (root) {
-						root.updateMatrixWorld(true);
-						const caster = new THREE.Raycaster(
-							new THREE.Vector3(from.x, from.y, from.z),
-							new THREE.Vector3(shipNose.x, shipNose.y, shipNose.z),
-						);
-						const hit = caster
-							.intersectObject(root, true)
-							.find((h) => h.face && h.object.visible);
-						gapKm = hit ? hit.distance : null;
-					}
+					gapKm = foreFaceGapKm(g, id);
 				}
 				if (g.dead || g.dockedAt) break;
 				if (metAt !== null && i * dt > metAt + 1) break;

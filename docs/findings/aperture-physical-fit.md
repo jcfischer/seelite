@@ -10,8 +10,10 @@ proxy. This file records data and makes no judgement.
 
 ## What was run
 
-Round 2 measurement on parent commit `692e8a4` plus the local seeded-corpus
-repair (2026-10-04), M1 Pro, headless bun:
+Round 3 re-measurement on committed revision
+`1bb3ec6ce6de4b557fbbc488c3206e186510b60b` (2026-10-04), M1 Pro, headless bun.
+The measurement script and its dependency modules are unchanged from that
+revision; stdout matches the table below byte-for-byte:
 
 ```bash
 bun scripts/measure-aperture-fit.ts

@@ -14095,6 +14095,7 @@ class Game {
 	}
 
 	/**
+	 * **Probe affordance, not an input path.** No game flow calls this seam.
 	 * The crossing a ship placed on both sides of a plane makes, for a probe
 	 * that puts it there rather than flying it: `before` is
 	 * `dockingApproaches` taken on the outer side, and the ship is where it
