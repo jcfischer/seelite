@@ -23,7 +23,12 @@
  * hull was retuned.
  */
 
-import type { HullEnvelope } from "./hull";
+import {
+	DOCKABLE_HULL_IDS,
+	HULL_SPECS,
+	type HullEnvelope,
+	type HullId,
+} from "./hull";
 import {
 	STATION_GEOMETRY,
 	type StationAperture,
@@ -590,6 +595,22 @@ export function berthFits(berth: Berth, hull: HullEnvelope): boolean {
 		hull.lengthKm <= berth.clearLengthKm &&
 		hull.beamKm <= berth.clearBeamKm &&
 		hull.heightKm <= berth.clearHeightKm
+	);
+}
+
+/** The hulls admitted by at least one berth of this role. Admission is an
+ *  envelope comparison, independent of the catalogue's seed and occupancy. */
+export function admittedHulls(
+	type: StationType,
+	ids: readonly HullId[] = DOCKABLE_HULL_IDS,
+): HullId[] {
+	const interior = stationInterior(
+		type,
+		STATION_GEOMETRY[type].aperturePlaneKm,
+		0,
+	);
+	return ids.filter((id) =>
+		interior.berths.some((berth) => berthFits(berth, HULL_SPECS[id].env)),
 	);
 }
 

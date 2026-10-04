@@ -35,6 +35,11 @@ export const CHANGELOG: readonly ChangelogEntry[] = [
 		node: 213,
 	},
 	{
+		date: "2026-10-04",
+		text: "Stations are now solid: your ship bounces off hulls, landing decks and shipyard booms, so a docking approach must keep the whole ship clear of the rim.",
+		node: 663,
+	},
+	{
 		date: "2026-10-03",
 		text: "Moons and stars are now solid: fly into one and your ship bounces off its surface, and a fast enough hit destroys it.",
 		node: 661,

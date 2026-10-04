@@ -126,6 +126,14 @@ capsules and oriented boxes — in the station's own frame, in kilometres.
   the corridor cylinder at `corridorRadiusKm`, extended outward from the plane.
   That is the corridor row's own cylinder. It is read, not restated. A pad's
   berths and booms stand outside it and are solid.
+  **Derived for the hull-box build (node #663):** the pad opening also runs <!-- glossary-ignore: pad -->
+  below the plane into a landing well. Otherwise the nose meets the deck
+  before the centre can cross, so C3 prevents every pad entry. The well's <!-- glossary-ignore: pad -->
+  depth (`padWellDepthKm`, `src/station-proxy.ts`) is the largest box
+  half-diagonal plus its origin offset over hulls the role's berths admit.
+  This clears a centred hull up to the plane without exempting the approach;
+  an off-axis hull can still meet the deck. The change and its measured
+  depths are handed to the principal with §9.1.9's table.
 - **Which forms need one.** Only the forms in `SELECTED_FORM`, because only
   they can be drawn by a running game. A workbench alternate may have no proxy.
   A row refuses a **selected** form that has none, so #260 (an individual form
@@ -612,8 +620,11 @@ rules for every combat ship.
    it (§9.2.2) shows the invisible wall.
 6. **Berth fixtures inside a slot's bay are not solid** (§9.1.8). Only a
    ship placed in the bay can reach them, and it passes through them.
-7. **A ship placed inside is a ghost until it leaves** (§4.3). Whether any
-   placement path starts a ship inside today is not measured; §9.1.7 measures
-   it. A path that places a ship deep inside a solid would leave it there,
+7. **A ship placed inside is a ghost until it leaves** (§4.3). Node #663's
+   `tests/collision-stations.test.ts` counts spawn, hyperspace, restore <!-- glossary-ignore: Spawn -->
+   fallback, cruise exit and launch placements. A saved flight pose can be
+   arbitrary; deliberately inside restores on every role are also tested,
+   including collision becoming live again after separation. A path that
+   places a ship deep inside a solid would leave it there,
    flying through the structure until it comes out. Counting the paths is what
    makes such a path visible.

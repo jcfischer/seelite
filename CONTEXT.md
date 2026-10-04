@@ -37,7 +37,9 @@ event is an impact.
 **Collision proxy**:
 A station form's declared set of convex primitives that collision reads in
 place of the drawn mesh, with the aperture's opening left out. It is
-Three-free and is a function of the form and its seeds. No drawn vertex may
+Three-free and is a function of the form and its seeds. For an aperture of
+kind `pad`, the landing well also derives from the admitted hull envelopes <!-- glossary-ignore: pad -->
+through `padWellDepthKm` (collision.md §2.2). No drawn vertex may
 lie outside it. `docs/specs/collision.md` §2.2 owns it.
 _Avoid_: hitbox, collision mesh.
 

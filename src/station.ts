@@ -138,6 +138,50 @@ export interface StationGeometry {
 export type StationFormId = "a" | "b" | "c" | "d" | "e";
 
 /**
+ * Which form each role is currently built with in the game. The forms are
+ * drawings in `station-mesh.ts`, which re-exports this; the choice is here so
+ * the collision proxy (`station-proxy.ts`) reads the same table (node #663).
+ *
+ * One line per role, so a ranking round changes three lines.
+ *
+ * Round one's ranking put `A` first for both trade and shipyard, so those two
+ * are choices rather than placeholders. The refinery's is a placeholder and
+ * says so: that role was not ranked — it was sent back with an instruction —
+ * so its three forms are all round two's and none of them has been looked at
+ * yet. Pretending otherwise is how a placeholder becomes the shipped answer.
+ *
+ * **Selecting trade E is not one line yet.** The Wheel's `core` is its
+ * finished rim and its slot is cut into `hub`, so the selected-form rows that // glossary-ignore: slot
+ * measure the bay against `core`'s box would read a rim that ends in front of
+ * the bay. A round that selects it owes those rows the part the slot is cut // glossary-ignore: slot
+ * into (#334's review); `tests/station-wheel.test.ts` holds the hub against
+ * the bay meanwhile.
+ */
+export const SELECTED_FORM: Record<StationType, StationFormId> = {
+	trade: "a",
+	shipyard: "a",
+	// **D, on the principal's yes to #257's sheet (2026-09-06).** Both pad // glossary-ignore: pad
+	// roles were placeholders for two rounds — `a` was first in the list and
+	// nothing more, and the Warren's old justification had outlived the
+	// outline gate it reasoned about. The Works and the Cluster were built
+	// for a ranking round, shown at four plans under three finishes and four
+	// framings, and taken. These are choices now, and the first the two roles
+	// have had.
+	//
+	// The refinery's changes what a running game draws: `system.ts` places
+	// refineries. The outpost's does not — it places no outposts, because
+	// what one sells and how often one exists are #13's and #6's questions.
+	refinery: "d",
+	// **E, on the principal's yes to #518's sheet (2026-09-24).** The Cluster
+	// was taken above as an industrial machine, and #490 then made the outpost
+	// a raider's haven; E is the form built for that role — salvage welded
+	// round the pad — ranked beside A–D at three plans under five finishes // glossary-ignore: pad
+	// and four framings. Still nothing a running game draws until #491 places
+	// outposts.
+	outpost: "e",
+};
+
+/**
  * **The display budget is not here.** How far a station's *drawn* object
  * reaches — the drydock frame, the asteroid, the flare stacks — is
  * `STATION_SILHOUETTE_KM` in `station-mesh.ts`, keyed on the same union.
