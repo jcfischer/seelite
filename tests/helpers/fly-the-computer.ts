@@ -56,6 +56,32 @@ import {
 import { stationInterior } from "../../src/station-interior";
 import { type Vec3, add, cross, dot, length, scale, v3 } from "../../src/vec3";
 
+/**
+ * A deliberately awkward axis, not a world axis.
+ *
+ * Every check is stated in the aperture frame, so an axis-aligned fixture
+ * would let a sign error in `slotBasis` hide behind coordinates that happen to
+ * agree. This one agrees with nothing.
+ */
+export const FIXTURE_AXIS: Vec3 = (() => {
+	const a = v3(0.37, -0.82, 0.44);
+	return scale(a, 1 / length(a));
+})();
+
+/**
+ * The aperture's phase-zero direction, a fixed perpendicular to `FIXTURE_AXIS`.
+ * In the game it is the station's along-track direction; what the tests check
+ * is the arithmetic against *some* reference.
+ */
+export const FIXTURE_REFERENCE: Vec3 = (() => {
+	const p = cross(FIXTURE_AXIS, v3(0, 0, 1));
+	return scale(p, 1 / length(p));
+})();
+
+/** The docking axis's swing at the fastest orbit the generator makes, 90 min —
+ *  in the game the axis points at the parent body, so it turns once per orbit. */
+export const FASTEST_ORBIT_SWING_RAD_PER_S = (2 * Math.PI) / (90 * 60);
+
 /** One step of the computer's flying, for a caller asking how it flew. */
 export interface ComputerTraceStep {
 	phase: ComputerPhase;

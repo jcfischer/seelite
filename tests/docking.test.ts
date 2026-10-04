@@ -59,20 +59,14 @@ import {
 import { HULL_SPECS } from "../src/hull";
 import { STATION_GEOMETRY, slotPhaseRad } from "../src/station";
 import { stationInterior } from "../src/station-interior";
-import {
-	type Vec3,
-	add,
-	cross,
-	dot,
-	length,
-	scale,
-	sub,
-	v3,
-} from "../src/vec3";
+import { type Vec3, add, dot, length, scale, sub, v3 } from "../src/vec3";
 import { PLAYER_BASELINE_HULL } from "../src/hull";
 import { MAX_DT } from "../src/units";
 import {
 	type ComputerTraceStep,
+	FASTEST_ORBIT_SWING_RAD_PER_S,
+	FIXTURE_AXIS,
+	FIXTURE_REFERENCE,
 	flyTheComputer as fly,
 	// Built from the tolerances rather than from hand-typed vectors.
 	rotateAbout,
@@ -100,29 +94,8 @@ const TRAFFIC = {
 
 const DEG = Math.PI / 180;
 
-/**
- * A deliberately awkward axis, not a world axis.
- *
- * Every check below is stated in the aperture frame, so an axis-aligned fixture
- * would let a sign error in `slotBasis` hide behind coordinates that happen to
- * agree. This one agrees with nothing.
- */
-const AXIS = ((): Vec3 => {
-	const a = v3(0.37, -0.82, 0.44);
-	return scale(a, 1 / length(a));
-})();
-
-/**
- * The slot's phase-zero direction, which `apertureFrame` now takes rather than
- * deriving (#126). A fixed perpendicular to `AXIS`: in the game it is the
- * station's along-track direction, and what these rows test is the checks'
- * arithmetic against *some* reference, which is what it always was.
- */
-const REFERENCE = ((): Vec3 => {
-	const seed = v3(0, 0, 1);
-	const p = cross(AXIS, seed);
-	return scale(p, 1 / length(p));
-})();
+const AXIS = FIXTURE_AXIS;
+const REFERENCE = FIXTURE_REFERENCE;
 
 const frameFor = (
 	type: "trade" | "refinery" = "trade",
@@ -1044,10 +1017,6 @@ describe("§7's two tuning surfaces, pinned without flying anything", () => {
 		expect(noseAngleDeg).toBeLessThan(10);
 	});
 });
-
-/** The docking axis's swing at the fastest orbit the generator makes, 90 min —
- *  in the game the axis points at the parent body, so it turns once per orbit. */
-const FASTEST_ORBIT_SWING_RAD_PER_S = (2 * Math.PI) / (90 * 60);
 
 describe("§9.1.11 the docking computer", () => {
 	test.each([0.6, 2.0, 3.0])(
