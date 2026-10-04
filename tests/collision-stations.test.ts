@@ -854,9 +854,10 @@ describe("collision.md §9.1.9: the aperture is a physical fit (P1)", () => {
 // 9.1.12's rest: cruise never leaves a ship inside a proxy
 // ---------------------------------------------------------------------------
 
-/** Seeds whose start systems are the corpus — `scripts/measure-cruise-arrival.ts`'s
- *  legs (arrival point to every station), over its first seeds. */
-const CRUISE_SEEDS = Array.from({ length: 40 }, (_, i) => i + 1);
+/** `scripts/measure-cruise-arrival.ts`'s full default corpus: the arrival point
+ *  to every station in the start systems of seeds 1–200. */
+const CRUISE_SEEDS = Array.from({ length: 200 }, (_, i) => i + 1);
+const PLACEMENT_SEEDS = CRUISE_SEEDS.slice(0, 40);
 const CRUISE_TIMEOUT_S = 600;
 
 /** Count placements against the actual proxy, including the static keel. */
@@ -881,7 +882,7 @@ describe("collision.md §9.1.7: placement paths are counted", () => {
 			hyperspace: { N: 0, inside: 0 },
 			restoreFallback: { N: 0, inside: 0 },
 		};
-		for (const seed of CRUISE_SEEDS) {
+		for (const seed of PLACEMENT_SEEDS) {
 			const world = makeWorld(seed);
 			counts.spawn.N++;
 			if (overlapsStation(world, "miner")) counts.spawn.inside++;
@@ -1149,6 +1150,7 @@ describe("collision.md §9.1.12: cruise and the station proxies (C5)", () => {
 		);
 		// A leg that runs out of time was stopped by nothing and is not an
 		// exit; the corpus's own instrument reports those separately.
+		expect(CRUISE_SEEDS.length).toBe(200);
 		expect(legs).toBeGreaterThan(50);
 		expect(exits).toBeGreaterThan(50);
 		expect(insideAtExit).toBe(0);

@@ -36,7 +36,7 @@ under their current subjects.
 | §9.1.7 | 40 spawns, 40 real hyperspace arrivals, 40 restore fallback placements: zero inside proxies. Deliberate saved-flight placements inside all four roles ghost without damage or push; return after separation makes contact. These are controlled saved-pose fixtures, not a survey of players' saves. |
 | §9.1.7 launch; §9.1.8 | Every admitted hull, every role: arrival, parked interval and launch are exempt. All 34 release cases fly 90 subsequent steps with zero impacts and zero ghost steps. Pad red arm removes the exemption and meets solids. Slot red arm closes the bay and meets its bulkhead. |
 | §9.1.9 | `bun scripts/measure-aperture-fit.ts` reproduces `aperture-physical-fit.md`'s table exactly. Centred zero pitch/yaw passes at both roll 0 and roll 50° for every admitted hull. |
-| §9.1.12 remainder | Seeds 1–40, 81 cruise legs, 81 exits; zero exits inside a proxy. Nearest exit to any station: 46.1 km. Zero of 81 legs cross a non-target proxy. The count now sweeps actual moving primitives after broad-phase rejection. Its regression rejects empty space inside the Gantry's bounding sphere while counting a boom crossing; the reach-only version failed. |
+| §9.1.12 remainder | Seeds 1–200, the travel instrument's full default corpus: 416 cruise legs, 416 exits; zero exits inside a proxy. Nearest exit to any station: 41.3 km. Zero of 416 legs cross a non-target proxy. The count now sweeps actual moving primitives after broad-phase rejection. Its regression rejects empty space inside the Gantry's bounding sphere while counting a boom crossing; the reach-only version failed. The 200-seed coverage assertion failed on the previous 40-seed sample before expansion. |
 | §9.1.15 | `hull-docking.test.ts` flies the computer with collision live across its admitted roster, roles and spin samples, asserting no impacts or ghosts in addition to docking and the six checks. Together with `docking-computer.test.ts`: 58 tests passed. |
 
 The focused collision files pass 75 tests. The final `npm test` passes
@@ -57,10 +57,17 @@ The worker's targeted hardware run covers `probe-collision.mjs`,
 canonical runner and its shared machine lock, server identity and renderer
 guards. This is partial evidence, regardless of its result.
 
-Status at this commit: queued behind the shared machine lock. The first attempt
-waited 1,021 seconds, then Chromium aborted before any checks and sandbox
-process control returned `EPERM`. An approved retry outside that process sandbox
-is waiting for the lock. No browser pass is claimed here yet.
+**All seven selected probes passed**, sequentially in 44 seconds, on
+`ANGLE (Apple, ANGLE Metal Renderer: Apple M1 Pro, Unspecified Version)`.
+The runner verified the serving tree and hardware renderer. Peak machine load
+was 31.1 on 10 cores. The approved retry took the shared lock after 1,514 seconds.
+The first attempt had waited 1,021 seconds, then Chromium aborted before any
+checks and sandbox process control returned `EPERM`; that attempt is not
+browser evidence. The retry ran outside that process sandbox.
+
+This remains a **partial run**: 79 of 86 probes were not run. The supervisor
+still owes the full suite on the final reviewed head. The final headless run,
+after expanding the cruise corpus, passed 4,907 tests in 277.33 seconds.
 
 ## Principal judgment still required
 
