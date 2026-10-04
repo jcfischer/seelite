@@ -612,7 +612,7 @@ const passiveFlyby = await page.evaluate(() => {
 	const before = g.dockingApproaches();
 	const afterRel = D.add(D.scale(snap.axis, snap.planeKm - 0.01), lateral);
 	D.place(id, afterRel, D.scale(snap.axis, -0.2));
-	g.stepDocking(before);
+	g.stepDocking(g.crossingFrom(before));
 	const after = g.dockingSnapshot(id);
 	return {
 		rangeKm: after.rangeKm,

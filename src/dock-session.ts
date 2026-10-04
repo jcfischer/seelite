@@ -74,11 +74,13 @@ export type DockPhase = "flying" | "arriving" | "docked" | "launching";
  *
  * The three states in which the ship "is not a collidable body" — neither §2's
  * aperture rectangle nor the collision system's. The collision system reads it
- * now (node #661): `Game.advanceNormalFlight` hands `stepWorld` no ship solid
- * while this is true (`collision.md` §5). The other half of obligation 8 — that
- * an arrival, a parked interval and a launch fly with no impact — is
- * `collision.md` §9.1.8's, and it waits for the station slice, because until
- * stations declare a proxy there is nothing in the station interior to meet.
+ * (`collision.md` §5): `Game.advanceNormalFlight` hands `stepWorld` no ship
+ * solid while this is true. The other half of obligation 8 — that an arrival, a
+ * parked interval and a launch fly with no impact — is `collision.md` §9.1.8,
+ * built with the stations' proxies (node #663) in
+ * `tests/collision-stations.test.ts`: every role, every hull its berths admit,
+ * exempt throughout, with a red build per aperture kind — on a pad, removing
+ * this makes impacts; on a slot, closing the bay does.
  */
 export const collisionExempt = (phase: DockPhase): boolean =>
 	phase !== "flying";

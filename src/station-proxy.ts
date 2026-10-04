@@ -5,9 +5,10 @@
  * `docs/specs/collision.md` §2.2 is the contract. This module is Three-free
  * and imports nothing from the renderer, for the reason `station.ts`'s header
  * gives — the authoritative world is float64 kilometres outside the scene
- * graph. The renderer never reads it. Nothing in `src/` reads it yet either:
- * it is data with no caller until the collision build reads it, and until
- * then only the rows that measure it hold it.
+ * graph. The renderer never reads it. The sim does (node #663): `stepWorld`
+ * sweeps the flown hull against the selected form's proxy of every station in
+ * reach, posed by `stationMotions` below, and the docking harness and the
+ * collision rows pose it through the same call.
  *
  * **Where it lives.** Beside `STATION_GEOMETRY` (`station.ts`) and the
  * interior catalogue (`station-interior.ts`). Each form's solid is written down

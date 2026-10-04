@@ -298,13 +298,17 @@ import {
 	restoreWorld,
 	canResetWorldToStart,
 	resetWorldToStart,
+	stationApertureFrame,
 	stationOf,
 	stationPose,
 	type HullControl,
 	type HullHands,
 	type HullStep,
 	type LinearDemand,
+	type PlaneWatch,
 	type VentLevels,
+	type WorldPlane,
+	crossedPlane,
 	speedDemand,
 	stepHull,
 	stepWorld,
@@ -361,12 +365,10 @@ import {
 	ROLL_TOLERANCE_DEG,
 	VICINITY_KM,
 	V_GATE_KMS,
-	apertureFrame,
 	attemptEntry,
 	grantLive,
 	newDockingState,
 	orthonormalise,
-	planeCrossing,
 	releaseBerth,
 	requestClearance,
 	slotBasis,
@@ -10444,13 +10446,9 @@ class Game {
 	 * nothing here reads an `Object3D`, and the renderer mirrors the same call.
 	 */
 	apertureFrameOf(id: string): ApertureFrame {
-		const pose = stationPose(this.world.system, id, this.world.gameTime);
-		return apertureFrame(
-			stationOf(this.world.system, id).type,
-			pose.axis,
-			pose.phaseRad,
-			pose.reference,
-		);
+		// The sim's builder, so the frame a crossing is checked in and the frame
+		// the station's proxy is posed in are one call (node #663).
+		return stationApertureFrame(this.world.system, id, this.world.gameTime);
 	}
 
 	/**
@@ -10898,12 +10896,15 @@ class Game {
 	 * The docking half of one simulation step: the clock's effect on every
 	 * protocol state, then the crossing test against the nearest station.
 	 *
-	 * Called with the pose from *before* the flight step, because a crossing is
-	 * a property of the pair of frames rather than of either one. Sampling the
-	 * nearer frame instead makes every tolerance a function of the frame rate —
-	 * the class of error §4.1 already refuses for the slot phase.
+	 * **The crossing is the step's, not found here** (node #663). `stepWorld`
+	 * watched every plane in reach from the pose *before* the flight step —
+	 * a crossing is a property of the pair of frames rather than of either one,
+	 * and sampling the nearer frame makes every tolerance a function of the
+	 * frame rate — and handed back the crossing only if it came before any
+	 * impact (`collision.md` §4.2). A second search here could disagree with
+	 * it once a sweep had moved the ship's end, so there is none.
 	 */
-	private stepDocking(before: Map<string, DockingApproach>) {
+	private stepDocking(plane: WorldPlane | null) {
 		this.stepDockingProtocol();
 		this.stepArrivalTurns();
 
@@ -10915,42 +10916,14 @@ class Game {
 		// outside the plane, so the state ends deliberately rather than by the
 		// ship wandering out of a radius.
 
-		// **At most one crossing is resolved per step: the first, in
-		// start-of-step range order.** `dockingApproaches` sorts by the range the
-		// ship had *before* it moved, so this is not strictly the nearest
-		// crossing — over one 0.1 s step it is the same station in every case
-		// that can arise, since two stations close enough for the order to flip
-		// mid-step would be inside each other. A ship cannot dock at two stations
-		// at once, and resolving a farther one after a nearer one would apply a
-		// repel to a position the nearer outcome had already rewritten.
-		for (const [id, from] of before) {
-			// A ship in any of §12.3's three exempt states does not re-cross its
-			// own plane — `step` does not reach this loop at all while it is in
-			// one, and the guard stays as the statement of the rule rather than
-			// as the thing enforcing it.
-			if (this.dock.stationId === id) continue;
-			// **The cached frame, not a fresh one.** `dockingApproaches` built it
-			// at the top of the step and `planeCrossing` already documents that it
-			// evaluates one frame for both endpoints; rebuilding it here was the
-			// dedup this pair exists for, not happening.
-			const crossing = planeCrossing(
-				from.frame,
-				from.pose,
-				this.entryPoseOf(id),
-			);
-			if (!crossing) continue;
-			// `planeCrossing` intentionally solves an infinite mathematical plane.
-			// It says when a trajectory reaches the aperture depth, not whether the
-			// station occupies that point. Without this physical-volume gate, an
-			// ordinary fly-by 1.6 km off a 0.6 km station counted as barging through
-			// its entrance and silently made the station hostile. The body's radius
-			// is the authored bound of the dockable core; outside it there is neither
-			// hull nor aperture to enter.
-			const body = this.world.system.byId.get(id);
-			if (!body || length(crossing.rel) > body.radiusKm) continue;
-			this.resolveCrossing(id, from.frame, crossing);
-			return;
-		}
+		// **At most one crossing is resolved per step: the earliest.** A ship
+		// cannot dock at two stations at once, and `stepWorld` picks the
+		// crossing that came first in the step. A ship in any of §12.3's three
+		// exempt states does not re-cross its own plane — `step` does not reach
+		// this at all while it is in one, and `advanceNormalFlight` watches no
+		// plane of the station the session names.
+		if (plane)
+			this.resolveCrossing(plane.stationId, plane.frame, plane.crossing);
 	}
 
 	/** One crossing, applied: the outcome, the ship, and the session state that
@@ -14032,6 +14005,10 @@ class Game {
 			// This tail only runs while flying, so the gate is the predicate
 			// read rather than a second statement of which phase that is.
 			collisionExempt(this.dock.phase) ? null : this.flownSolid,
+			// §4.2: every plane in reach, from the top of the step. The step
+			// weighs the crossing against its impacts and hands back the one
+			// that owned the tick.
+			this.planesOf(before),
 		);
 		// §3: every surface met lands through the one damage path, so a hull at
 		// zero dies the way a kill by fire does.
@@ -14072,12 +14049,41 @@ class Game {
 		// §7: the tank refills passively in normal flight, and that is the
 		// anti-stranding rule rather than a convenience.
 		this.chargeAu = chargeAfterRegen(this.chargeAu, dt, this.chargeCapacityAu);
-		this.stepDocking(before);
+		this.stepDocking(flown.plane);
 		// Last, because §8's wind-up is only vulnerable if the frame it fires on
 		// is flown first — `stepDocking` is what applies a failed entry's damage,
 		// and damage cancels the charge.
 		this.takePendingJump();
 		return flown;
+	}
+
+	/** The planes a step watches (`collision.md` §4.2): every approach in
+	 *  reach but the station the session names. */
+	private planesOf(before: Map<string, DockingApproach>): PlaneWatch[] {
+		return [...before]
+			.filter(([id]) => id !== this.dock.stationId)
+			.map(([stationId, { frame, pose }]) => ({
+				stationId,
+				frame,
+				before: pose,
+			}));
+	}
+
+	/**
+	 * The crossing a ship placed on both sides of a plane makes, for a probe
+	 * that puts it there rather than flying it: `before` is
+	 * `dockingApproaches` taken on the outer side, and the ship is where it
+	 * stands now. The search `stepWorld` makes, without the sweep — a
+	 * placement is not motion — so `stepDocking` of the result reaches the six
+	 * checks the way a flown crossing does.
+	 */
+	crossingFrom(before: Map<string, DockingApproach>): WorldPlane | null {
+		return crossedPlane(
+			this.world,
+			this.planesOf(before),
+			{ nose: this.nose(), up: this.shipUp() },
+			1,
+		);
 	}
 
 	/**

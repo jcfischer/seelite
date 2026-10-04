@@ -88,6 +88,17 @@ import {
 	sweepShip,
 } from "./collision";
 import {
+	type ApertureFrame,
+	type EntryPose,
+	apertureCrossing,
+	apertureFrame,
+} from "./docking";
+import {
+	proxyReachKm,
+	selectedStationProxy,
+	stationMotions,
+} from "./station-proxy";
+import {
 	type Vec3,
 	add,
 	cross,
@@ -1747,6 +1758,57 @@ export interface WorldStep extends HullStep {
 	 * so this is the one place it shows: empty whenever no solid was given.
 	 */
 	ghosts: string[];
+	/**
+	 * The aperture crossing that owned this step (§4.2), for the caller's six
+	 * checks: the ship's centre crossed a watched plane before any impact. The
+	 * ship is left where the step put it, unresolved, because what happens next
+	 * is `docking.md` §2's or §12's — a dock or a repel places it. `null` when
+	 * no watched plane was crossed, or an impact came first.
+	 */
+	plane: WorldPlane | null;
+}
+
+/**
+ * A station whose aperture plane a step should watch (`collision.md` §4.2):
+ * its frame and the ship's pose in it, both at the top of the step — what
+ * `Game.dockingApproaches` already builds for every station in reach.
+ */
+export interface PlaneWatch {
+	stationId: string;
+	frame: ApertureFrame;
+	before: EntryPose;
+}
+
+/** The crossing that owned a step: `apertureCrossing`'s pose, its time into
+ *  the step, and the frame it was found in. */
+export interface WorldPlane {
+	stationId: string;
+	frame: ApertureFrame;
+	crossing: EntryPose;
+	timeS: number;
+}
+
+/**
+ * One station's aperture frame at a clock: `stationPose`'s axis, phase and
+ * reference, through `docking.ts`'s one builder. The game's
+ * `apertureFrameOf` and the step's station solids both read it.
+ *
+ * `stationPose` reads the bodies where the system last placed them, so this
+ * is the frame *at the system's clock* — call it before `advanceWorldClock`
+ * for a step's start and after for its end.
+ */
+export function stationApertureFrame(
+	system: System,
+	stationId: string,
+	gameTime: number,
+): ApertureFrame {
+	const pose = stationPose(system, stationId, gameTime);
+	return apertureFrame(
+		stationOf(system, stationId).type,
+		pose.axis,
+		pose.phaseRad,
+		pose.reference,
+	);
 }
 
 /** A collision `Impact`, naming the body met by id. */
@@ -1755,9 +1817,10 @@ export interface WorldImpact extends Impact {
 }
 
 /**
- * The bodies that are solid in normal flight: a sphere at `radiusKm` for a
- * star, a planet and a moon (`collision.md` §2.1, C1). Stations wait for their
- * proxies (§2.2), and a contact is never a body.
+ * The bodies that are solid in normal flight as a sphere at `radiusKm`: a
+ * star, a planet and a moon (`collision.md` §2.1, C1). A station is solid on
+ * its proxy instead (§2.2, node #663) and is swept from its own start pose
+ * (`StationStart`), and a contact is never a body.
  */
 const SOLID_BODY_KINDS: ReadonlySet<BodyKind> = new Set([
 	"star",
@@ -1782,9 +1845,16 @@ const SOLID_BODY_KINDS: ReadonlySet<BodyKind> = new Set([
  * meets nothing, which is what a caller passes for a collision-exempt phase
  * (§5) and what every row written before collision still flies. Given, the
  * step's motion — after #514's planet boundary has had its say — is swept
- * against every star, planet and moon sphere, and the ship is left outside
- * what it met. The damage is reported, not applied: `applyDamage` is the
- * caller's, through its one damage path.
+ * against every star, planet and moon sphere and every station's proxy, in
+ * the station's rotating frame (node #663), and the ship is left outside what
+ * it met. The damage is reported, not applied: `applyDamage` is the caller's,
+ * through its one damage path.
+ *
+ * **`planes` are the aperture planes the step watches** (§4.2, node #663).
+ * The earliest event owns the tick: a crossing found by `apertureCrossing`
+ * before any impact is handed back as `plane`, with the ship left unresolved
+ * for the six checks to place; an impact at or before it wins, and the plane
+ * is not crossed this step. Omitted, nothing is watched.
  *
  * `dt` is seconds of **sim** time and is never scaled (#10).
  */
@@ -1795,6 +1865,7 @@ export function stepWorld(
 	dt: number,
 	perf: FlightPerformance,
 	solid?: readonly Primitive[] | null,
+	planes: readonly PlaneWatch[] = [],
 ): WorldStep {
 	const from = { ...world.ship.pos };
 	const fromVel = { ...world.ship.vel };
@@ -1807,17 +1878,100 @@ export function stepWorld(
 			)
 			.map((body) => [body.id, { ...body.pos }]),
 	);
+	// A station's start is its pose as well as its place: the frame is read
+	// off the bodies, so it has to be read before they move.
+	const stations: StationStart[] = solid
+		? world.system.contents.stations.map((station) => ({
+				station,
+				origin: { ...bodyOf(world.system, station.id).pos },
+				frame: stationApertureFrame(world.system, station.id, fromTime),
+			}))
+		: [];
 	advanceWorldClock(world, dt);
 	const step = stepHull(world.ship, attitude, control, dt, perf);
-	if (dt <= 0) return { ...step, impacts: [], ghosts: [] };
+	if (dt <= 0) return { ...step, impacts: [], ghosts: [], plane: null };
 	holdPlanetBoundary(world, from, starts, dt);
-	const met = solid
-		? collideShip(world, solid, from, fromVel, attitude, step, starts, {
-				fromTime,
-				dt,
-			})
-		: { impacts: [], ghosts: [] };
-	return { ...step, ...met };
+	const found = crossedPlane(world, planes, step, dt);
+	if (!solid) return { ...step, impacts: [], ghosts: [], plane: found };
+	const met = collideShip(
+		world,
+		solid,
+		from,
+		fromVel,
+		attitude,
+		step,
+		{ bodies: starts, stations },
+		{ fromTime, dt, planeS: found ? found.timeS : null },
+	);
+	return {
+		...step,
+		impacts: met.impacts,
+		ghosts: met.ghosts,
+		plane: met.planeOwns ? found : null,
+	};
+}
+
+/** A station at the top of a step: its place and its aperture frame. */
+interface StationStart {
+	station: Station;
+	origin: Vec3;
+	frame: ApertureFrame;
+}
+
+function bodyOf(system: System, id: string): Body {
+	const body = system.byId.get(id);
+	if (!body) throw new Error(`no placed body ${id}`);
+	return body;
+}
+
+/**
+ * The earliest crossing of a watched plane, from each watch's `before` to
+ * where the ship is now — in `stepWorld`, on the step's own motion before any
+ * collision has corrected it, because §4.2 weighs the crossing against the
+ * impacts on the same motion. The after-pose is the game's `entryPoseOf`: the
+ * ship from the station's centre, its velocity relative to the station's, and
+ * `attitude`, the one the step turned to. `timeS` is the crossing's fraction
+ * of `dt`.
+ *
+ * Exported for `Game.crossingFrom`, the probes' seam that places a ship on
+ * both sides of a plane rather than flying it: one search for both.
+ */
+export function crossedPlane(
+	world: World,
+	planes: readonly PlaneWatch[],
+	attitude: { nose: Vec3; up: Vec3 },
+	dt: number,
+): WorldPlane | null {
+	let earliest: WorldPlane | null = null;
+	for (const watch of planes) {
+		const body = world.system.byId.get(watch.stationId);
+		if (!body) continue;
+		const after: EntryPose = {
+			rel: sub(world.ship.pos, body.pos),
+			vRel: sub(
+				world.ship.vel,
+				bodyVelocity(world.system, watch.stationId, world.gameTime),
+			),
+			nose: attitude.nose,
+			up: attitude.up,
+		};
+		const crossing = apertureCrossing(
+			watch.frame,
+			watch.before,
+			after,
+			body.radiusKm,
+		);
+		if (!crossing) continue;
+		const timeS = crossing.fraction * dt;
+		if (earliest && timeS >= earliest.timeS) continue;
+		earliest = {
+			stationId: watch.stationId,
+			frame: watch.frame,
+			crossing: crossing.pose,
+			timeS,
+		};
+	}
+	return earliest;
 }
 
 /** #514: normal flight stops at a planet's 1.2-radius boundary, riding with
@@ -1853,10 +2007,19 @@ function holdPlanetBoundary(
 }
 
 /**
- * The step's ship motion against every solid body (`collision.md` §2.1),
- * through `sweepShip`. A body's velocity is read at both ends of the step only
- * once its bounding sphere can be reached, because `bodyVelocity` walks the
- * contents.
+ * The step's ship motion against every solid body (`collision.md` §2.1) and
+ * every station's proxy (§2.2, node #663), through `sweepShip`. A body's
+ * velocity is read at both ends of the step only once its bounding sphere can
+ * be reached, because `bodyVelocity` walks the contents.
+ *
+ * A station is two solids where its form has a static keel (the shipyard's):
+ * the spinning member, turning through the step's phase change, and the keel
+ * on the phase-zero basis — both from `stationMotions`, the one posing. Its
+ * bounding sphere is the proxy's own reach, not the body's radius: the Gantry's
+ * keel stands 1.66 km out on a 0.6 km core.
+ *
+ * `clock.planeS` is the watched plane's time (§4.2): the sweep weighs it
+ * against every impact, and `planeOwns` says which won.
  */
 function collideShip(
 	world: World,
@@ -1865,24 +2028,24 @@ function collideShip(
 	fromVel: Vec3,
 	attitude: HullAttitude,
 	step: HullStep,
-	starts: ReadonlyMap<string, Vec3>,
-	clock: { fromTime: number; dt: number },
-): { impacts: WorldImpact[]; ghosts: string[] } {
+	starts: {
+		bodies: ReadonlyMap<string, Vec3>;
+		stations: readonly StationStart[];
+	},
+	clock: { fromTime: number; dt: number; planeS: number | null },
+): { impacts: WorldImpact[]; ghosts: string[]; planeOwns: boolean } {
 	const shipReach = reachKm(solid);
-	const met: Body[] = [];
+	const shipPath = { start: from, end: world.ship.pos, reachKm: shipReach };
+	/** The body each solid belongs to, by the solid's index. */
+	const owner: string[] = [];
 	const motions: SolidMotion[] = [];
 	for (const body of world.system.bodies) {
 		if (!SOLID_BODY_KINDS.has(body.kind)) continue;
-		const start = starts.get(body.id);
+		const start = starts.bodies.get(body.id);
 		if (!start) continue;
-		if (
-			!mayMeet(
-				{ start: from, end: world.ship.pos, reachKm: shipReach },
-				{ start, end: body.pos, reachKm: body.radiusKm },
-			)
-		)
+		if (!mayMeet(shipPath, { start, end: body.pos, reachKm: body.radiusKm }))
 			continue;
-		met.push(body);
+		owner.push(body.id);
 		motions.push({
 			primitives: [bodySphere(body.radiusKm)],
 			start: { origin: start, ...IDENTITY_AXES },
@@ -1891,7 +2054,34 @@ function collideShip(
 			velEnd: bodyVelocity(world.system, body.id, world.gameTime),
 		});
 	}
-	if (motions.length === 0) return { impacts: [], ghosts: [] };
+	for (const { station, origin, frame } of starts.stations) {
+		const proxy = selectedStationProxy(station);
+		const body = bodyOf(world.system, station.id);
+		if (
+			!mayMeet(shipPath, {
+				start: origin,
+				end: body.pos,
+				reachKm: proxyReachKm(proxy),
+			})
+		)
+			continue;
+		for (const motion of stationMotions(
+			proxy,
+			{
+				frame,
+				origin,
+				vel: bodyVelocity(world.system, station.id, clock.fromTime),
+			},
+			{
+				frame: stationApertureFrame(world.system, station.id, world.gameTime),
+				origin: { ...body.pos },
+				vel: bodyVelocity(world.system, station.id, world.gameTime),
+			},
+		)) {
+			owner.push(station.id);
+			motions.push(motion);
+		}
+	}
 	const swept = sweepShip(
 		{
 			primitives: solid,
@@ -1902,15 +2092,18 @@ function collideShip(
 		},
 		motions,
 		clock.dt,
+		{ planeS: clock.planeS },
 	);
 	world.ship.pos = swept.pos;
 	world.ship.vel = swept.vel;
 	return {
 		impacts: swept.impacts.map((impact) => ({
 			...impact,
-			bodyId: met[impact.solid].id,
+			bodyId: owner[impact.solid],
 		})),
-		ghosts: swept.ghosts.map((index) => met[index].id),
+		// A station's spinning member and its keel are one body met.
+		ghosts: [...new Set(swept.ghosts.map((index) => owner[index]))],
+		planeOwns: swept.planeOwns,
 	};
 }
 

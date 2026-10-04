@@ -440,7 +440,14 @@ const PLACERS = {
 					place(snap.planeKm + 0.01);
 					const before = g.dockingApproaches();
 					place(snap.planeKm - 0.01);
-					g.stepDocking(before);
+					// A build before node #663 resolved the crossing inside
+					// `stepDocking`; since, `stepWorld` finds it and this seam
+					// finds it for a placed ship.
+					g.stepDocking(
+						typeof g.crossingFrom === "function"
+							? g.crossingFrom(before)
+							: before,
+					);
 				} else {
 					if (!g.hasDockingComputer)
 						g.commander = {

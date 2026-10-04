@@ -158,8 +158,8 @@ describe("the jump itself", () => {
 		// to run before the jump is taken or a clip on the terminal frame
 		// cannot cancel it.
 		const frame = methodBody("advanceNormalFlight");
-		inOrder(frame, "stepWorld(", "this.stepDocking(before)");
-		inOrder(frame, "this.stepDocking(before)", "this.takePendingJump()");
+		inOrder(frame, "stepWorld(", "this.stepDocking(flown.plane)");
+		inOrder(frame, "this.stepDocking(flown.plane)", "this.takePendingJump()");
 	});
 
 	test("a reset that replaces the system rebuilds the renderer with it", () => {

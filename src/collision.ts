@@ -2,13 +2,13 @@
  * Collision: what meeting a surface does, and how the meeting is found inside
  * one tick (`docs/specs/collision.md`).
  *
- * **What this slice turns on (node #661).** The player against star, planet
- * and moon spheres (§2.1), in normal flight with the assist on and off. Nothing
- * else is handed to the resolver yet: raiders and Traffic stay non-colliding
- * until the ships-and-Traffic slice, and stations until they declare a proxy
- * (§2.2). The resolver is written against a **generic primitive** — sphere,
- * capsule, oriented box — in a solid's own frame, so a station proxy is data
- * handed to the same sweep and not a second resolver.
+ * **What is turned on.** The player against star, planet and moon spheres
+ * (§2.1, node #661) and against every station's proxy (§2.2, node #663), in
+ * normal flight with the assist on and off, with the aperture plane weighed
+ * against the impacts (§4.2). Raiders and Traffic stay non-colliding until the
+ * ships-and-Traffic slice. The resolver is written against a **generic
+ * primitive** — sphere, capsule, oriented box — in a solid's own frame, so a
+ * station proxy is data handed to the same sweep and not a second resolver.
  *
  * **No Three.js, and no import of `sim.ts`.** `sim.ts` imports this, and the
  * sim may not import a renderer (CLAUDE.md). Everything is float64 kilometres.
