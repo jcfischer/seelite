@@ -184,9 +184,11 @@ produce duplicate meshes or contacts.
 
 A visible Traffic route adds no combat physics of its own, and mere visibility
 does not hand authority over. Two decisions do. #75 made Traffic collidable (the
-map's Constraints; the law is `collision.md`, built by #303): an impact is a
-landed hit in the sense below, so it uses the same route out of the projection
-and adds none of its own (`collision.md` §6). #362 made it fireable (`civilian-combat.md` H2, H3): a shot
+map's Constraints; the law is `collision.md`, built for Traffic by node #664):
+an impact is a landed hit in the sense below, so it uses the same route out of
+the projection and adds none of its own (`collision.md` §6). Only the route's
+normal-flight phases collide; parked, launching and arriving are exempt
+(`collision.md` §5). #362 made it fireable (`civilian-combat.md` H2, H3): a shot
 that lands flies the carrier from the pose it is drawn in, and a destroyed
 carrier flies no route and holds no berth until its replacement is operational
 (H1) — and a replacement under construction is not drawn in the dead ship's

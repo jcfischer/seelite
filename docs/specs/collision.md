@@ -392,6 +392,16 @@ whether launches ever do is measured rather than assumed.
   after the six checks pass, and ends when the launching ship's centre clears
   the plane outward. §4.3 covers the hull that is still in the throat at that
   tick.
+- **As Traffic's route phases** (node #664, `trafficCollisionClass` in
+  `src/dock-session.ts`). Exempt: `parked-home`, `launch-queued` and
+  `docked-away` (parked), `departing` (the launch, which releases twenty
+  metres past the plane, so the centre has cleared it) and `arriving` (from
+  the tick the lane is granted at the hold, through the traversal). Collidable:
+  `local-departure`, `local-approach`, the two queues' holds, and a hauler's
+  `lane-point-hold` and `jump-windup`. `cruise` and `regenerating` are the
+  cruise regime and are C5's (derived: the player's two regimes, applied to
+  Traffic). `tests/collision-traffic.test.ts` holds the table and reads the two
+  boundaries off the route law.
 
 ---
 
@@ -423,6 +433,14 @@ line.
    box into a proxy, a body's sphere, or another carrier's box. Without either,
    Traffic damages itself on its own stations and diverts itself home. #303
    builds the row first, and avoidance only if the row is red.
+   **The row is red** (node #664, `docs/findings/traffic-collision-corpus.md`).
+   Over 40 systems of seed 47 it finds a local approach whose straight line
+   runs through a trade station at up to 8.96 km/s, and touches under
+   `V_SCRAPE` at a launch's throat and at the shared release point. The
+   avoidance is owed by a node below #664, not built past it. Until then a
+   projected route is not swept against the world at runtime — it is met only
+   by the ships that are flown — so the defect costs Traffic nothing it can
+   see, and the row is what keeps it visible.
 2. **The NPC controller has no body awareness.** `combat-enemy.ts` steers on
    its target alone. Under symmetric collision a raider flies into a station
    or a planet until its controller avoids them. `combat-model.md` §1 forbids
@@ -581,7 +599,7 @@ Each spec line is amended in this change, except where its own table says otherw
 | "#75 made Traffic collidable" with no law behind it | `in-system-route-traffic.md` §5 | Points here; an impact is a landed hit (§6) |
 | "#75 and #362 have since added both" | `station-traffic.md` §3.1 | Collision is decided, not added. #303 builds it. |
 | "Swept collision at `MAX_DT` — the collision spec owed by #302" | `flight-model.md` §1, §4 | Points here; §4.1 answers the angular case |
-| The false-rules table's first row | `civilian-combat.md` | Not here. That table is amended by the change that builds its rows, so #303 adds that an impact uses H3d's route. |
+| The false-rules table's first row | `civilian-combat.md` | Not here. That table is amended by the change that builds its rows, so #303 adds that an impact uses H3d's route. Done by node #664. |
 | "A contact is a saved Carrier deviation" | Map #1 Constraints | Only a hull-reaching impact. Amended on the map when this merges. |
 | `collisionExempt`'s comment: "#75 inherits the other half of obligation 8" | `src/dock-session.ts` | §9.1.8 here. A code comment, so #303 amends it. |
 
@@ -614,7 +632,17 @@ rules for every combat ship.
 4. **Traffic and NPCs are collidable before they can avoid anything** (§6).
    Until #303's corpus row is green, or avoidance exists, a carrier can divert
    itself on its own station. Until the controller is built, a raider can die
-   on a planet.
+   on a planet. Node #664 found the row red and recorded it
+   (`docs/findings/traffic-collision-corpus.md`); a carrier on its projection
+   is not swept against the world, so only a flown one — engaged, or handed to
+   flight by a meeting — can divert itself today.
+8. **An impact's divert discounts a later strike** (node #664). An impact
+   writes H3c's pair under a `collision` cause, never `PLAYER_KILL`, but
+   `strikeClock` reads presence and not provenance: a carrier standing in its
+   berth for an impact reads, to `chargeOffence`, as a carrier the player has
+   already been charged for striking. And a carrier an impact has diverted is
+   no longer `operational`, so the gun's later hull strike writes no divert and
+   charges no `struck`. Both are the offence's to settle, which is #675's.
 5. **The proxy is checked as a container and not as a fit** (§2.2). A proxy
    that wraps a sparse form in a box passes every headless row. Only flying
    it (§9.2.2) shows the invisible wall.

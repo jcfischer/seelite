@@ -5,8 +5,10 @@
  * **What is turned on.** The player against star, planet and moon spheres
  * (§2.1, node #661) and against every station's proxy (§2.2, node #663), in
  * normal flight with the assist on and off, with the aperture plane weighed
- * against the impacts (§4.2). Raiders and Traffic stay non-colliding until the
- * ships-and-Traffic slice. The resolver is written against a **generic
+ * against the impacts (§4.2) — and since node #664, every other ship: raiders,
+ * a relay's defender and Traffic carriers against bodies, proxies, the player
+ * and each other (C4b, §6), through `sweepShipPair` below. The resolver is
+ * written against a **generic
  * primitive** — sphere, capsule, oriented box — in a solid's own frame, so a
  * station proxy is data handed to the same sweep and not a second resolver.
  *
@@ -16,7 +18,7 @@
  * star-centred coordinate at an AU never meets a 0.1 m separation in one
  * subtraction.
  *
- * Three parts, in this order:
+ * Four parts, in this order:
  *
  * 1. **The law** (§3, P2, P3) — closing speed, damage, bounce. Pure functions,
  *    no geometry.
@@ -30,6 +32,9 @@
  *    bound below, so an advance by `gap / bound` cannot step over any
  *    primitive however thin. That is §4.1's requirement met by construction
  *    rather than by a sub-step count.
+ * 4. **Ship against ship** (C4b) — the same sweep, with the meeting landed on
+ *    both ships: one damage, each its own side, and a momentum-conserving
+ *    impulse split by mass.
  */
 
 import { DOCKING_DAMAGE_SCALE, V_GATE_KMS } from "./docking";
