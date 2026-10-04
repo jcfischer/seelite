@@ -307,10 +307,13 @@ import {
 	stationApertureFrame,
 	stationOf,
 	stationPose,
+	type FleetShip,
+	type FleetStep,
 	type HullControl,
 	type HullHands,
 	type HullStep,
 	type LinearDemand,
+	PLAYER_SHIP_ID,
 	type PlaneWatch,
 	type VentLevels,
 	type WorldPlane,
@@ -405,6 +408,8 @@ import {
 	type Engagement,
 	engage,
 	fliesItsRoute,
+	impactCause,
+	impactOutcome,
 	flownVoyageOrdinal,
 	flyingTrafficActors,
 	parkedHomeTrafficActors,
@@ -412,6 +417,7 @@ import {
 	strikeClock,
 	trafficDiversion,
 	trafficInSights,
+	trafficImpactTransitions,
 	trafficKillTransitions,
 	trafficPresence,
 } from "./traffic-engagement";
@@ -589,6 +595,7 @@ import {
 	canSkipTraversal,
 	collisionExempt,
 	enterArrival,
+	trafficCollides,
 	interiorOfStation,
 	flightLive,
 	newDockSession,
@@ -603,6 +610,8 @@ import {
 	V_SCRAPE_KMS,
 	hullBox,
 	impactDamage,
+	reachKm,
+	shipPose,
 } from "./collision";
 import {
 	DIRECTOR_RANGE_KM,
@@ -634,6 +643,7 @@ import {
 } from "./station-mesh";
 import { SPEC_FIXTURE_NAMES, stationFinishId } from "./station-visuals";
 import {
+	HULL_IDS,
 	HULL_SPECS,
 	purchasableHullNamed,
 	type HullEnvelope,
@@ -982,6 +992,7 @@ import {
 	observeSystemRelay,
 	readKnowledge,
 	type OperationalCondition,
+	type Provenance,
 	type TransitionEvent,
 	visit,
 	type WorldState,
@@ -1956,6 +1967,28 @@ interface ScanFrame {
 	stamp: number;
 	facts: ScanFacts;
 }
+
+/** A flown fleet ship's pose at one end of a step (node #664). */
+interface FleetPose {
+	pos: Vec3;
+	vel: Vec3;
+	nose: Vec3;
+	up: Vec3;
+}
+
+/**
+ * How near a projected carrier must be, beyond a step's closing travel, for
+ * the player's sweep to be handed it (`Game.fleetOf`): the reach of the two
+ * largest hull boxes in the roster, so the early cut never drops a pair the
+ * sweep could meet.
+ */
+const FLEET_REACH_KM =
+	2 *
+	Math.max(
+		...HULL_IDS.map((id) =>
+			reachKm([hullBox(HULL_SPECS[id].env, HULL_SPECS[id].envCentre)]),
+		),
+	);
 
 class Game {
 	readonly world: World;
@@ -7530,23 +7563,15 @@ class Game {
 	 * canisters, and the offence judged on its true standing and written.
 	 */
 	private destroyTrafficCarrier(actor: TrafficActor, engagement: Engagement) {
-		const record = this.world.system.record;
 		const now = this.world.gameTime;
 		// Read once, before anything is written: the instance that is about to
 		// die, the condition the kill has to be legal from, and — if the pilot
 		// finished off a carrier they had already struck — the offence this
 		// episode has already cost them (H9).
 		const carrier = this.carrierCondition(actor.key);
-		const { instanceOrdinal } = carrier;
-		const standing = carrierStanding(
-			this.trafficHomeRecord(actor).seed,
-			actor.key,
-			instanceOrdinal,
-			now,
-		);
 		const manifest = this.trafficManifest(
 			actor,
-			instanceOrdinal,
+			carrier.instanceOrdinal,
 			engagement.voyageOrdinal,
 		);
 		for (const event of trafficKillTransitions(
@@ -7556,19 +7581,7 @@ class Game {
 			now,
 		))
 			this.applyCarrierTransition(actor.key, event, actor.hullId);
-		this.canisters = [
-			...this.canisters,
-			...dropManifestCanisters({
-				systemSeed: this.trafficHomeRecord(actor).seed,
-				key: actor.key,
-				manifest,
-				killedAt: now,
-				pos: engagement.flight.ship.pos,
-				vel: engagement.flight.ship.vel,
-				frameVel: this.localFrame(),
-				frameBodyId: this.frameBody?.id ?? null,
-			}),
-		];
+		this.scrapTrafficCarrier(actor, engagement, manifest);
 		// Charged against the row read before the transition above (#633).
 		const charge = chargeOffence(
 			this.commerceWorld,
@@ -7576,11 +7589,65 @@ class Game {
 		);
 		this.adoptWorld(charge.world);
 		const { heat } = charge;
-		this.play({ kind: "explosion" });
 		this.lastExit =
 			heat > 0
 				? `${actor.callsign} destroyed — an offence`
 				: `${actor.callsign} destroyed`;
+	}
+
+	/**
+	 * A kill by impact (`collision.md` §3, §6; node #664): the kill's
+	 * transitions, named for the impact rather than the gun, and the wreck a
+	 * kill by fire leaves — and **no charge**, because an impact is not yet an
+	 * offence (`collision.md` §10; #675 builds that).
+	 */
+	private impactKillTrafficCarrier(
+		actor: TrafficActor,
+		engagement: Engagement,
+		cause: Provenance,
+	) {
+		const carrier = this.carrierCondition(actor.key);
+		const manifest = this.trafficManifest(
+			actor,
+			carrier.instanceOrdinal,
+			engagement.voyageOrdinal,
+		);
+		for (const event of trafficKillTransitions(
+			systemIndexOfKey(actor.key),
+			actor,
+			carrier.condition,
+			this.world.gameTime,
+			cause,
+		))
+			this.applyCarrierTransition(actor.key, event, actor.hullId);
+		this.scrapTrafficCarrier(actor, engagement, manifest);
+		this.lastExit = `${actor.callsign} destroyed in a collision`;
+	}
+
+	/**
+	 * What every kill of an ordinary carrier leaves, whoever made it: the
+	 * manifest a scan would have shown dropped as canisters, the explosion, and
+	 * the ship, its engagement, its contact and the lock on it gone.
+	 */
+	private scrapTrafficCarrier(
+		actor: TrafficActor,
+		engagement: Engagement,
+		manifest: ReturnType<Game["trafficManifest"]>,
+	) {
+		this.canisters = [
+			...this.canisters,
+			...dropManifestCanisters({
+				systemSeed: this.trafficHomeRecord(actor).seed,
+				key: actor.key,
+				manifest,
+				killedAt: this.world.gameTime,
+				pos: engagement.flight.ship.pos,
+				vel: engagement.flight.ship.vel,
+				frameVel: this.localFrame(),
+				frameBodyId: this.frameBody?.id ?? null,
+			}),
+		];
+		this.play({ kind: "explosion" });
 		this.trafficEngagements.delete(actor.key);
 		this.forgetTrafficContact(actor.key);
 		// The lock goes with the ship, as the raider's, relay's and canister's
@@ -13981,6 +14048,9 @@ class Game {
 		this.scoop.left = Math.max(0, this.scoop.left - dt);
 		this.charged.left = Math.max(0, this.charged.left - dt);
 		this.stepGunGimbal(dt);
+		// The flown ships' poses before their own steps move them: the start of
+		// each one's motion across this step (`collision.md` §4.1, node #664).
+		this.fleetStarts = this.flownFleetPoses();
 		this.stepRaider(dt, shot);
 		this.stepRelay(shot, dt);
 		this.stepTrafficEngagements(dt, shot);
@@ -14263,6 +14333,7 @@ class Game {
 		// pair of frames, and the "before" half stops existing the moment the
 		// ship moves.
 
+		const fleet = this.fleetOf(dt);
 		// The whole world, not just the ship: `dt` is sim seconds and the bodies
 		// are on orbits driven by the same clock. Stepping the ship alone would
 		// freeze the system around it, which is the state the scaffold was in.
@@ -14283,6 +14354,8 @@ class Game {
 			// weighs the crossing against its impacts and hands back the one
 			// that owned the tick.
 			this.planesOf(before),
+			// C4b, §6 (node #664): every other ship this step can meet.
+			fleet,
 		);
 		// §3: every surface met lands through the one damage path, so a hull at
 		// zero dies the way a kill by fire does.
@@ -14304,6 +14377,22 @@ class Game {
 			this.collisionGhostSteps++;
 			this.lastCollisionGhost = flown.ghosts[flown.ghosts.length - 1];
 		}
+		// C4b: another ship met, through the same damage path.
+		for (const impact of flown.shipImpacts) {
+			this.collisionImpacts++;
+			this.lastCollisionImpact = {
+				bodyId: impact.with,
+				closingKms: impact.closingKms,
+				damage: impact.damage,
+				resting: impact.resting,
+			};
+			this.takeDamage(
+				impact.damage,
+				impact.side,
+				`struck ${this.fleetName(impact.with)}`,
+			);
+		}
+		this.landFleet(flown.fleet, fleet);
 		// The attitude step's rates and the translation firing's kick (#619).
 		this.applyHullTurn(flown);
 		// Off the vents that fired (#544, `flight-model.md` §4): the sound
@@ -14337,6 +14426,245 @@ class Game {
 		// and damage cancels the charge.
 		this.takePendingJump();
 		return flown;
+	}
+
+	/** Where each flown fleet ship stood before this step moved it. */
+	private fleetStarts = new Map<string, FleetPose>();
+
+	/**
+	 * The ships this frame flies other than the player (node #664): the
+	 * raider in its duel — a relay's defender is one — and every engaged
+	 * carrier, keyed by their carrier keys.
+	 */
+	private flownFleetPoses(): Map<string, FleetPose> {
+		const poses = new Map<string, FleetPose>();
+		const flight = this.duelRaider()?.flight;
+		if (flight && this.encounter)
+			poses.set(this.encounter.slot.key, {
+				pos: { ...flight.ship.pos },
+				vel: { ...flight.ship.vel },
+				nose: flight.nose,
+				up: flight.up,
+			});
+		for (const [key, engagement] of this.trafficEngagements)
+			poses.set(key, {
+				pos: { ...engagement.flight.ship.pos },
+				vel: { ...engagement.flight.ship.vel },
+				nose: engagement.flight.nose,
+				up: engagement.flight.up,
+			});
+		return poses;
+	}
+
+	/** The raider flown in a duel now, or `null`. */
+	private duelRaider() {
+		return this.encounter?.phase === "duel" ? this.encounter.raider : null;
+	}
+
+	/**
+	 * Every ship the player's step can meet this frame (`collision.md` §2.4,
+	 * §5, §6; node #664).
+	 *
+	 * The **flown** ones — the raider and the engaged carriers — from where
+	 * they stood before their own steps to where those left them. A carrier on
+	 * its **projection** is met only while its route phase collides (§5): from
+	 * where it is drawn, along the velocity it is drawn with, and only near
+	 * enough to be reached this step. It is `projected`, so the step never
+	 * sweeps it against the world — a route cannot be bounced — and a meeting
+	 * hands it to flight (`landFleet`).
+	 */
+	private fleetOf(dt: number): FleetShip[] {
+		const ships: FleetShip[] = [];
+		const flown = (id: string, hull: HullId, end: FleetPose) => {
+			const start = this.fleetStarts.get(id) ?? {
+				...end,
+				pos: sub(end.pos, scale(end.vel, dt)),
+			};
+			ships.push({
+				id,
+				projected: false,
+				motion: {
+					massT: HULL_SPECS[hull].massT,
+					primitives: this.hullSolidOf(hull),
+					start: shipPose(start.pos, start.nose, start.up),
+					end: shipPose(end.pos, end.nose, end.up),
+					velStart: start.vel,
+					velEnd: end.vel,
+				},
+			});
+		};
+		const raider = this.duelRaider();
+		if (raider && this.encounter)
+			flown(this.encounter.slot.key, RAIDER_HULL_ID, {
+				pos: raider.flight.ship.pos,
+				vel: raider.flight.ship.vel,
+				nose: raider.flight.nose,
+				up: raider.flight.up,
+			});
+		for (const [key, engagement] of this.trafficEngagements)
+			flown(key, engagement.hullId, {
+				pos: engagement.flight.ship.pos,
+				vel: engagement.flight.ship.vel,
+				nose: engagement.flight.nose,
+				up: engagement.flight.up,
+			});
+		const player = this.world.ship;
+		for (const [key, contact] of this.trafficContacts) {
+			if (this.trafficEngagements.has(key)) continue;
+			const route = this.trafficRouteByKey(key);
+			const actor = this.trafficActorByKey(key);
+			if (!route || !actor || !route.nose || !route.up) continue;
+			if (route.present === false || !trafficCollides(route.phase)) continue;
+			// Reachable this step at all: the two closing for the whole of it,
+			// plus room for both hulls — the sweep's own bound, taken early so a
+			// system's Traffic is not posed every frame for nothing.
+			const reach =
+				length(sub(player.vel, contact.velocity)) * dt + FLEET_REACH_KM;
+			if (length(sub(contact.pos, player.pos)) > reach) continue;
+			const end = add(contact.pos, scale(contact.velocity, dt));
+			ships.push({
+				id: key,
+				projected: true,
+				motion: {
+					massT: HULL_SPECS[actor.hullId].massT,
+					primitives: this.hullSolidOf(actor.hullId),
+					start: shipPose(contact.pos, route.nose, route.up),
+					end: shipPose(end, route.nose, route.up),
+					velStart: contact.velocity,
+					velEnd: contact.velocity,
+				},
+			});
+		}
+		return ships;
+	}
+
+	/** A hull's collision box (P1), cached per hull. */
+	private readonly hullSolids = new Map<HullId, readonly Primitive[]>();
+	private hullSolidOf(hull: HullId): readonly Primitive[] {
+		let solid = this.hullSolids.get(hull);
+		if (!solid) {
+			const spec = HULL_SPECS[hull];
+			solid = [hullBox(spec.env, spec.envCentre)];
+			this.hullSolids.set(hull, solid);
+		}
+		return solid;
+	}
+
+	/** What a meeting names a ship by, for the reason a damage carries. */
+	private fleetName(id: string): string {
+		if (this.encounter?.slot.key === id) return this.encounter.name;
+		const actor = this.trafficActorByKey(id as CarrierKey);
+		return actor?.callsign ?? "a ship";
+	}
+
+	/**
+	 * Land what the step did to every fleet ship (node #664): where it ended,
+	 * and every meeting through the one damage path a ship has.
+	 *
+	 * - **The raider** takes its damage on its own condition. A hull at zero is
+	 *   picked up by its next duel step as a destroyed raider, through the path
+	 *   a kill by fire takes (§3).
+	 * - **A carrier** — flown already, or handed to flight now at the pose the
+	 *   bounce left it in (§6: a projected pose cannot express a bounce) —
+	 *   takes it on its engagement's condition, and the world hears H3d's
+	 *   answer: a kill, a divert, or nothing for shields alone. **No heat**:
+	 *   an impact is not yet an offence (#675 builds that).
+	 */
+	private landFleet(steps: readonly FleetStep[], fleet: readonly FleetShip[]) {
+		steps.forEach((step, index) => {
+			const ship = fleet[index];
+			const raider = this.duelRaider();
+			if (raider && this.encounter?.slot.key === step.id) {
+				let condition = raider.condition;
+				for (const impact of step.impacts)
+					condition = applyDamage(condition, impact.damage, impact.side);
+				this.encounter = {
+					...this.encounter,
+					raider: {
+						flight: {
+							...raider.flight,
+							ship: { pos: step.pos, vel: step.vel },
+						},
+						condition,
+					},
+				};
+				return;
+			}
+			if (ship.projected && step.impacts.length === 0) return;
+			const key = step.id as CarrierKey;
+			const actor = this.trafficActorByKey(key);
+			if (!actor) return;
+			const flying =
+				this.trafficEngagements.get(key) ??
+				this.engageByImpact(actor, ship, step);
+			if (!flying) return;
+			const before = flying.condition;
+			let after = before;
+			for (const impact of step.impacts)
+				after = applyDamage(after, impact.damage, impact.side);
+			const engagement: Engagement = {
+				...flying,
+				flight: { ...flying.flight, ship: { pos: step.pos, vel: step.vel } },
+				condition: after,
+			};
+			this.trafficEngagements.set(key, engagement);
+			if (step.impacts.length === 0) return;
+			const from = this.carrierCondition(key).condition;
+			const outcome = impactOutcome(before, after, from);
+			const first = step.impacts[0].with;
+			const cause = impactCause(first === PLAYER_SHIP_ID ? null : first);
+			if (outcome === "kill") {
+				this.impactKillTrafficCarrier(actor, engagement, cause);
+				return;
+			}
+			for (const event of trafficImpactTransitions(
+				systemIndexOfKey(key),
+				actor,
+				outcome,
+				from,
+				this.world.gameTime,
+				cause,
+			))
+				this.applyCarrierTransition(key, event, actor.hullId);
+			if (outcome === "divert")
+				this.lastExit = `${actor.callsign} disabled in a collision — running home`;
+		});
+	}
+
+	/**
+	 * A projected carrier a meeting hands to flight (§6), at the pose the
+	 * bounce left it in and with its H3 intent — as a shot hands one over
+	 * (`engageStruckTraffic`), with the same seed and the same assault clock,
+	 * so a fight that follows is the same incident.
+	 */
+	private engageByImpact(
+		actor: TrafficActor,
+		ship: FleetShip,
+		step: FleetStep,
+	): Engagement | null {
+		if (!this.trafficOperational(actor.key)) return null;
+		const engagement = engage(
+			{
+				key: actor.key,
+				hullId: actor.hullId,
+				pos: step.pos,
+				vel: step.vel,
+				nose: ship.motion.end.z,
+				up: ship.motion.end.y,
+				voyageOrdinal: this.trafficVoyage(actor),
+			},
+			carrierInstanceSeed(
+				this.trafficHomeRecord({ key: actor.key }).seed,
+				actor.key,
+				this.carrierCondition(actor.key).instanceOrdinal,
+				DOMAIN.TRAFFIC_ENGAGEMENT,
+			),
+			{
+				assaultAlreadyCharged: assaultCharged(this.legalStatus(), actor.key),
+			},
+		);
+		this.trafficEngagements.set(actor.key, engagement);
+		return engagement;
 	}
 
 	/** The planes a step watches (`collision.md` §4.2): every approach in
