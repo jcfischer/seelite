@@ -11,6 +11,26 @@ import {
 } from "../src/planet-shaders";
 import { buildBodyVisual } from "../src/planet-surface";
 
+test("dust haze retains the pre-node two-scale field and opacity", () => {
+	// Pin the pre-node dust contract (d6d6133), including its moving inputs.
+	// A terran-only cirrus or opacity change must not spill into this branch.
+	const dust = CLOUD_FRAGMENT.split("} else {")[1]?.split("\n  }")[0];
+	expect(dust).toBeDefined();
+	expect(dust).toContain("vec3(time * 0.0030, 0.0, 0.0)");
+	expect(dust).toContain("vec3(time * 0.0068, 0.0, time * 0.0011)");
+	expect(dust).toContain("fbm4(warp(slow * 2.3, 1.1, 0.75))");
+	expect(dust).toContain("fbm5(fast * 8.5)");
+	expect(dust).toContain("broad * 0.68 + wisp * 0.32");
+	expect(dust).toContain("0.58 + 0.42 * cos(lat * 8.2 + 0.4)");
+	expect(dust).toContain(
+		"smoothstep(0.54 - cloudCover * 0.16, 0.56 + 0.10, field) * zonal",
+	);
+	expect(dust).not.toMatch(/cirrusDomain\(|cloudField\w*\(|fbm3\(/);
+	expect(CLOUD_FRAGMENT).toContain(
+		"cloudCoherent > 0.5 ? (0.48 + 0.22 * rim) : (0.62 + 0.30 * rim)",
+	);
+});
+
 test("terran albedo is independent of weather, light, and clock", () => {
 	expect(CLASS_GLSL.terran).not.toMatch(/sunDir|cloudShadow|\btime\b/);
 	for (const channel of ["normal", "albedo"] as const) {

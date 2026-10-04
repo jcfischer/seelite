@@ -1187,6 +1187,9 @@ await settleBakes();
 		 * The planet simply stops moving.
 		 */
 		await pathAt(8, baker);
+		// The last class-cycle cube belongs to the final class in that loop,
+		// at 512px. Start both determinism arms with the restored bakerClass at
+		// 256px; otherwise this compares different classes or resolutions.
 		await page.evaluate((id) => window.__seelite.rebake(id, 256), baker);
 		await settleBakes();
 		const face = async () =>
@@ -2454,7 +2457,8 @@ if (airless) {
  *
  * With clouds forced to a single blob at a known direction, the surface pixel
  * under it is darker than the same pixel with clouds off by a banded ratio;
- * the cloud shell itself is unchanged.
+ * the shells are hidden identically in both arms, so the measured difference
+ * comes from the ground shadow, not from changing the cloud shell's opacity.
  *
  * Both four-tap and baked programs are measured. Every baked arm requests a
  * new cube after changing cloudCover, waits for it, and reads the drawn path
@@ -2584,11 +2588,13 @@ if (airless) {
 						cloudMaterial.uniforms = u;
 						// Keep the production field and motion. Only replace the final
 						// lighting/opacity output, so coverage can be read linearly.
+						const outputIndex =
+							cloudMaterial.fragmentShader.lastIndexOf("  gl_FragColor =");
+						if (outputIndex < 0)
+							throw new Error("cloud readout splice missed gl_FragColor");
 						cloudMaterial.fragmentShader =
-							cloudMaterial.fragmentShader.slice(
-								0,
-								cloudMaterial.fragmentShader.lastIndexOf("  gl_FragColor ="),
-							) + "  gl_FragColor = vec4(vec3(mask), 1.0);\n}\n";
+							cloudMaterial.fragmentShader.slice(0, outputIndex) +
+							"  gl_FragColor = vec4(vec3(mask), 1.0);\n}\n";
 						cloudMaterial.transparent = false;
 						const cloud = new THREE.Mesh(shell.geometry, cloudMaterial);
 						group.add(ground, cloud);

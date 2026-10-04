@@ -604,11 +604,15 @@ void main() {
     // Terran weather moves coherently with its baked coverage field.
     mask = cloudField(cloudMotion(p, time), cloudCover, seedOffset, cloudTestDir);
   } else {
-    // Dust haze keeps its multi-rate shear.
-    vec3 broadP = p + vec3(time * 0.0030, 0.0, 0.0) + seedOffset;
-    vec3 wispP = p + vec3(time * 0.0068, 0.0, time * 0.0011) + seedOffset;
-    vec3 cirrusP = cirrusDomain(p, seedOffset) + vec3(time * 0.0018, 0.0, time * 0.0006);
-    mask = cloudFieldFromInputs(broadP, wispP, cirrusP, abs(p.y), cloudCover);
+    // Preserve the pre-node dust field: two shearing scales, no cirrus.
+    vec3 slow = p + vec3(time * 0.0030, 0.0, 0.0) + seedOffset;
+    vec3 fast = p + vec3(time * 0.0068, 0.0, time * 0.0011) + seedOffset;
+    float broad = fbm4(warp(slow * 2.3, 1.1, 0.75));
+    float wisp = fbm5(fast * 8.5);
+    float lat = abs(p.y);
+    float zonal = 0.58 + 0.42 * cos(lat * 8.2 + 0.4);
+    float field = broad * 0.68 + wisp * 0.32;
+    mask = smoothstep(0.54 - cloudCover * 0.16, 0.56 + 0.10, field) * zonal;
   }
 
   vec3 N = normalize(vWorldN);
@@ -616,10 +620,10 @@ void main() {
   // Same lighting as the ground, so the cloud terminator lines up with it.
   float lit = wrappedDiffuse(N);
   float rim = pow(1.0 - max(dot(N, V), 0.0), 2.2);
-  // Lower overall opacity than the pre-#212 shell: clouds that read as weather
-  // over a ground, not as a grey smear.
+  // Only terran weather gets the lower opacity; dust keeps its original value.
+  float opacity = cloudCoherent > 0.5 ? (0.48 + 0.22 * rim) : (0.62 + 0.30 * rim);
   gl_FragColor = sane4(vec4(cloudTint * (lit * 1.30 * sunColor + 0.025),
-                            clamp(mask, 0.0, 1.0) * (0.48 + 0.22 * rim)));
+                            clamp(mask, 0.0, 1.0) * opacity));
 }
 `;
 

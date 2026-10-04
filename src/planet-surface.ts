@@ -850,8 +850,8 @@ export function buildBodyVisual(
 		// leaves the exponential falloff no room to fall off in, so the haze had
 		// to be steep to fit — and steep is the thing being fixed. The glow
 		// fades well inside the new silhouette, so a thicker shell does not read
-		// as a bigger planet. Raised from 1.06 + 0.05a in #212 so the limb
-		// reads at 3 radii.
+		// as a bigger planet. Node #212 raises the scale from 1.06 + 0.05a;
+		// three-radius legibility awaits the principal's judgement on the sheet.
 		const shellScale = 1.1 + look.atmosphere * 0.06;
 		shell.scale.setScalar(shellScale);
 		// The surface is the unit sphere and the shell is that scaled, so the
