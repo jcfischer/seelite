@@ -79,6 +79,7 @@ import { planetApproachEntryTime } from "./planet-approach-boundary";
 import {
 	type Impact,
 	type Primitive,
+	type Reach,
 	type SolidMotion,
 	IDENTITY_AXES,
 	bodySphere,
@@ -1871,23 +1872,23 @@ export function stepWorld(
 	const from = { ...world.ship.pos };
 	const fromVel = { ...world.ship.vel };
 	const fromTime = world.gameTime;
-	const starts = new Map(
-		world.system.bodies
-			.filter(
-				(body) =>
-					body.kind === "planet" || (solid && SOLID_BODY_KINDS.has(body.kind)),
-			)
-			.map((body) => [body.id, { ...body.pos }]),
-	);
 	// A station's start is its pose as well as its place: the frame is read
-	// off the bodies, so it has to be read before they move.
-	const stations: StationStart[] = solid
-		? stationStarts(world.system, fromTime)
-		: [];
+	// off the bodies, so it has to be read before they move. Without a solid
+	// only the planets are read, for #514's boundary.
+	const starts: WorldStarts = solid
+		? worldStarts(world.system, fromTime)
+		: {
+				bodies: new Map(
+					world.system.bodies
+						.filter((body) => body.kind === "planet")
+						.map((body) => [body.id, { ...body.pos }]),
+				),
+				stations: [],
+			};
 	advanceWorldClock(world, dt);
 	const step = stepHull(world.ship, attitude, control, dt, perf);
 	if (dt <= 0) return { ...step, impacts: [], ghosts: [], plane: null };
-	holdPlanetBoundary(world, from, starts, dt);
+	holdPlanetBoundary(world, from, starts.bodies, dt);
 	const found = crossedPlane(world, planes, step, dt);
 	if (!solid) return { ...step, impacts: [], ghosts: [], plane: found };
 	const met = collideShip(
@@ -1897,7 +1898,7 @@ export function stepWorld(
 		fromVel,
 		attitude,
 		step,
-		{ bodies: starts, stations },
+		starts,
 		{ fromTime, dt, planeS: found ? found.timeS : null },
 	);
 	return {
@@ -2032,11 +2033,31 @@ function holdPlanetBoundary(
 	world.ship.vel = bodyVelocity(world.system, earliest.body.id, world.gameTime);
 }
 
+/** The world at the top of a step: every solid body's place, and every
+ *  placed station's place and pose. Snapshot before the clock moves. */
+export interface WorldStarts {
+	bodies: ReadonlyMap<string, Vec3>;
+	stations: readonly StationStart[];
+}
+
+/** Snapshot `WorldStarts` before the clock moves. */
+export function worldStarts(system: System, gameTime: number): WorldStarts {
+	return {
+		bodies: new Map(
+			system.bodies
+				.filter((body) => SOLID_BODY_KINDS.has(body.kind))
+				.map((body) => [body.id, { ...body.pos }]),
+		),
+		stations: stationStarts(system, gameTime),
+	};
+}
+
 /**
- * The step's ship motion against every solid body (`collision.md` §2.1) and
- * every station's proxy (§2.2, node #663), through `sweepShip`. A body's
- * velocity is read at both ends of the step only once its bounding sphere can
- * be reached, because `bodyVelocity` walks the contents.
+ * Every solid one ship's step can reach (`collision.md` §2.1, §2.2): each
+ * star, planet and moon sphere, and each station's proxy (node #663), from
+ * `starts` to where `system` stands now. A body's velocity is read at both
+ * ends of the step only once its bounding sphere can be reached, because
+ * `bodyVelocity` walks the contents.
  *
  * A station is two solids where its form has a static keel (the shipyard's):
  * the spinning member, turning through the step's phase change, and the keel
@@ -2044,47 +2065,39 @@ function holdPlanetBoundary(
  * bounding sphere is the proxy's own reach, not the body's radius: the Gantry's
  * keel stands 1.66 km out on a 0.6 km core.
  *
- * `clock.planeS` is the watched plane's time (§4.2): the sweep weighs it
- * against every impact, and `planeOwns` says which won.
+ * `owner[i]` names the body `motions[i]` belongs to. One builder for every
+ * ship the sim sweeps — the player, a raider, a carrier (node #664) — so a
+ * change to what is solid lands once.
  */
-function collideShip(
-	world: World,
-	solid: readonly Primitive[],
-	from: Vec3,
-	fromVel: Vec3,
-	attitude: HullAttitude,
-	step: HullStep,
-	starts: {
-		bodies: ReadonlyMap<string, Vec3>;
-		stations: readonly StationStart[];
-	},
-	clock: { fromTime: number; dt: number; planeS: number | null },
-): { impacts: WorldImpact[]; ghosts: string[]; planeOwns: boolean } {
-	const shipReach = reachKm(solid);
-	const shipPath = { start: from, end: world.ship.pos, reachKm: shipReach };
-	/** The body each solid belongs to, by the solid's index. */
+export function worldSolids(
+	system: System,
+	ship: Reach,
+	starts: WorldStarts,
+	clock: { fromTime: number; toTime: number },
+): { owner: string[]; motions: SolidMotion[] } {
 	const owner: string[] = [];
 	const motions: SolidMotion[] = [];
-	for (const body of world.system.bodies) {
+	for (const body of system.bodies) {
 		if (!SOLID_BODY_KINDS.has(body.kind)) continue;
 		const start = starts.bodies.get(body.id);
 		if (!start) continue;
-		if (!mayMeet(shipPath, { start, end: body.pos, reachKm: body.radiusKm }))
+		if (!mayMeet(ship, { start, end: body.pos, reachKm: body.radiusKm }))
 			continue;
 		owner.push(body.id);
 		motions.push({
 			primitives: [bodySphere(body.radiusKm)],
 			start: { origin: start, ...IDENTITY_AXES },
 			end: { origin: { ...body.pos }, ...IDENTITY_AXES },
-			velStart: bodyVelocity(world.system, body.id, clock.fromTime),
-			velEnd: bodyVelocity(world.system, body.id, world.gameTime),
+			velStart: bodyVelocity(system, body.id, clock.fromTime),
+			velEnd: bodyVelocity(system, body.id, clock.toTime),
 		});
 	}
 	for (const { station, origin, frame } of starts.stations) {
+		if (!system.byId.has(station.id)) continue;
 		const proxy = selectedStationProxy(station);
-		const body = bodyOf(world.system, station.id);
+		const body = bodyOf(system, station.id);
 		if (
-			!mayMeet(shipPath, {
+			!mayMeet(ship, {
 				start: origin,
 				end: body.pos,
 				reachKm: proxyReachKm(proxy),
@@ -2096,14 +2109,40 @@ function collideShip(
 			{
 				frame,
 				origin,
-				vel: bodyVelocity(world.system, station.id, clock.fromTime),
+				vel: bodyVelocity(system, station.id, clock.fromTime),
 			},
-			stationEndAt(world.system, station.id, world.gameTime),
+			stationEndAt(system, station.id, clock.toTime),
 		)) {
 			owner.push(station.id);
 			motions.push(motion);
 		}
 	}
+	return { owner, motions };
+}
+
+/**
+ * The step's ship motion against every solid `worldSolids` names, through
+ * `sweepShip`.
+ *
+ * `clock.planeS` is the watched plane's time (§4.2): the sweep weighs it
+ * against every impact, and `planeOwns` says which won.
+ */
+function collideShip(
+	world: World,
+	solid: readonly Primitive[],
+	from: Vec3,
+	fromVel: Vec3,
+	attitude: HullAttitude,
+	step: HullStep,
+	starts: WorldStarts,
+	clock: { fromTime: number; dt: number; planeS: number | null },
+): { impacts: WorldImpact[]; ghosts: string[]; planeOwns: boolean } {
+	const { owner, motions } = worldSolids(
+		world.system,
+		{ start: from, end: world.ship.pos, reachKm: reachKm(solid) },
+		starts,
+		{ fromTime: clock.fromTime, toTime: world.gameTime },
+	);
 	const swept = sweepShip(
 		{
 			primitives: solid,
