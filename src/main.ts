@@ -16080,6 +16080,7 @@ class Game {
 			if (this.dockPhase === "flying" && !this.dockingComputer.engaged) {
 				if (!this.dockingSnapshot(id)?.grantLive)
 					this.requestDockingClearance();
+				// Re-read: requestDockingClearance may have granted.
 				if (this.dockingSnapshot(id)?.grantLive) this.engageDockingComputer();
 			}
 			if (this.dockPhase === "arriving") this.skipDockTraversal();
@@ -18953,9 +18954,7 @@ if (postcard) {
 			// restore (#654) goes through this same arm.
 			if (plan.loaded.commander.dockedAt !== null) {
 				if (!game.restoreDockedAt(plan.loaded.commander.dockedAt))
-					console.warn(
-						"docked restore failed; resuming in flight at saved position",
-					);
+					console.warn("docked restore failed; resuming in flight");
 				return;
 			}
 			const commander = {
