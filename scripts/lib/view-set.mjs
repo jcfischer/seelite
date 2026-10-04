@@ -1424,7 +1424,7 @@ export const VIEWS = Object.freeze([
 	{
 		name: "npc-departure",
 		covers: [684],
-		what: "Seed 47, system 0: the first hauler's departure ring, half a second after its contact leaves the lane point. Exterior camera 0.24 km from the ring; the companion player-lane row judges the annulus.",
+		what: "Seed 47, system 0: the first hauler's departure ring, half a second after its contact leaves the lane point. Exterior camera 0.24 km from the ring; the companion player-lane-point row judges the annulus.",
 		shot: { kind: "npc-jump", event: "departure", system: 0, view: "cockpit" },
 	},
 	{
@@ -1434,25 +1434,25 @@ export const VIEWS = Object.freeze([
 		shot: { kind: "npc-jump", event: "arrival", system: 0, view: "cockpit" },
 	},
 	{
-		name: "npc-departure-at-player-lane",
+		name: "npc-departure-at-player-lane-point",
 		covers: [684],
 		what: "The departing hauler seen from the player's un-offset lane point: the carrier's 2–20 km annulus, at the same jump clock as the close view.",
 		shot: {
 			kind: "npc-jump",
 			event: "departure",
-			framing: "player-lane",
+			framing: "player-lane-point",
 			system: 0,
 			view: "cockpit",
 		},
 	},
 	{
-		name: "npc-arrival-at-player-lane",
+		name: "npc-arrival-at-player-lane-point",
 		covers: [684],
 		what: "After following, the hauler seen from the player's exact arrival point: the same annulus offset, with the selected name and range on the glass.",
 		shot: {
 			kind: "npc-jump",
 			event: "arrival",
-			framing: "player-lane",
+			framing: "player-lane-point",
 			system: 0,
 			view: "cockpit",
 		},
@@ -1503,7 +1503,7 @@ const SHOT_REQUIREMENTS = {
 		(s.event === "arrival" || s.event === "departure") &&
 		(s.framing === undefined ||
 			s.framing === "ring" ||
-			s.framing === "player-lane"),
+			s.framing === "player-lane-point"),
 	"station-axis": (s) => typeof s.station === "string" && finite(s.radii),
 	"body-offset": (s) =>
 		typeof s.body === "string" && finite(s.radii) && finite(s.sunAngleDeg),

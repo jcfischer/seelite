@@ -1,4 +1,5 @@
-/** Home-owned haulers: static cross-system facts only. No foreign queue replay. */
+/** Home-owned haulers: static cross-system facts only. No foreign queue replay;
+ *  saved carrier condition is read through `world-state`, never here. */
 import { beginArrival, beginLaunch } from "./arrival";
 import {
 	type CarrierKey,
@@ -13,7 +14,7 @@ import { JUMP_CHARGE_S } from "./hyperspace";
 import { fnv1a } from "./rng";
 import { stationPose, makeSystem } from "./sim";
 import { STATION_GEOMETRY } from "./station";
-import { stationInterior, trafficBerths, berthFits } from "./station-interior";
+import { stationInterior, fittingTrafficBerths } from "./station-interior";
 import {
 	stationTrafficRoster,
 	TRAFFIC_HULL_POOLS,
@@ -22,7 +23,6 @@ import {
 	TRAFFIC_STATION_RELEASE_MARGIN_KM,
 	TRAFFIC_STATION_LOCAL_SPEED_KM_S,
 	type TrafficActor,
-	nextTrafficDepartureAtS,
 } from "./station-traffic";
 import {
 	type SystemContents,
@@ -34,7 +34,6 @@ import {
 import { AU_KM } from "./units";
 import { type Vec3, add, sub, scale, cross, normalizeOr } from "./vec3";
 import type { TrafficHaulerVoyage } from "./station-route";
-import { type GalaxyEnvelope, effectiveCarrier } from "./world-state";
 
 const normalize = (v: Vec3) => normalizeOr(v, { x: 0, y: 0, z: 1 });
 
@@ -113,9 +112,7 @@ export function haulerBounds(
 		STATION_GEOMETRY[s.type].aperturePlaneKm,
 		s.berthSeed,
 	);
-	const fitting = trafficBerths(interior).filter((b) =>
-		berthFits(b, HULL_SPECS[hull].env),
-	);
+	const fitting = fittingTrafficBerths(interior, HULL_SPECS[hull].env);
 	if (!fitting.length)
 		throw new Error(`no Traffic berth for ${hull} at ${s.id}`);
 	const pose = stationPose(makeSystem(record, 0), s.id, 0);
@@ -155,11 +152,36 @@ export function haulerBounds(
 	};
 }
 
+/** Bounds depend on (system, station, hull) only; null where no berth fits. */
+type HaulerBoundsCache = Map<string, HaulerBounds | null>;
+
 export function buildHaulerPlans(
 	galaxy: Galaxy,
 	homeIndex: number,
 	contentsFor: ContentsQuery,
+	boundsCache: HaulerBoundsCache = new Map(),
 ): HaulerPlan[] {
+	const boundsIfFits = (
+		r: SystemRecord,
+		c: SystemContents,
+		s: Station,
+		hull: HullId,
+	): HaulerBounds | null => {
+		const key = `${r.index}|${s.id}|${hull}`;
+		let bounds = boundsCache.get(key);
+		if (bounds === undefined) {
+			const interior = stationInterior(
+				s.type,
+				STATION_GEOMETRY[s.type].aperturePlaneKm,
+				s.berthSeed,
+			);
+			bounds = fittingTrafficBerths(interior, HULL_SPECS[hull].env).length
+				? haulerBounds(r, c, s, hull)
+				: null;
+			boundsCache.set(key, bounds);
+		}
+		return bounds;
+	};
 	const home = galaxy.systems.find((r) => r.index === homeIndex);
 	if (!home) throw new Error(`no system ${homeIndex}`);
 	const c = contentsFor(homeIndex);
@@ -172,7 +194,9 @@ export function buildHaulerPlans(
 	return c.stations
 		.flatMap((s) =>
 			stationTrafficRoster(homeIndex, s).map((base) => {
-				const homeBounds = haulerBounds(home, c, s, base.hullId);
+				const homeBounds = boundsIfFits(home, c, s, base.hullId);
+				if (!homeBounds)
+					throw new Error(`no Traffic berth for ${base.hullId} at ${s.id}`);
 				const eligible: HaulerDestination[] = [];
 				if (
 					base.ordinal > 0 &&
@@ -190,21 +214,11 @@ export function buildHaulerPlans(
 						for (const dest of [...away.stations].sort((a, b) =>
 							a.id < b.id ? -1 : a.id > b.id ? 1 : 0,
 						)) {
-							const interior = stationInterior(
-								dest.type,
-								STATION_GEOMETRY[dest.type].aperturePlaneKm,
-								dest.berthSeed,
-							);
+							const bounds = boundsIfFits(r, away, dest, base.hullId);
 							if (
-								!trafficBerths(interior).some((b) =>
-									berthFits(b, HULL_SPECS[base.hullId].env),
-								)
-							)
-								continue;
-							const bounds = haulerBounds(r, away, dest, base.hullId);
-							if (
+								bounds &&
 								homeBounds.distanceAu + bounds.distanceAu <=
-								HULL_SPECS[base.hullId].chargeAu
+									HULL_SPECS[base.hullId].chargeAu
 							)
 								eligible.push({
 									systemIndex: r.index,
@@ -253,6 +267,12 @@ export function buildHaulerPlans(
 			}),
 		)
 		.sort((a, b) => compareCarrierKeys(a.actor.key, b.actor.key));
+}
+/** The away ordinal whose cycle holds `atS`; negative before the first departure. */
+export function awayOrdinalAt(p: HaulerPlan, atS: number): number {
+	return Math.floor(
+		(atS - p.actor.schedule.departureAtS) / p.actor.schedule.cycleS,
+	);
 }
 export function haulerVoyage(p: HaulerPlan, awayOrdinal: number): HaulerVoyage {
 	if (!p.eligible.length)
@@ -318,6 +338,7 @@ export function inboundCandidates(
 	contentsFor: ContentsQuery,
 ): HaulerPlan[] {
 	const current = galaxy.systems.find((r) => r.index === currentIndex)!;
+	const boundsCache: HaulerBoundsCache = new Map();
 	return galaxy.systems
 		.filter(
 			(r) =>
@@ -325,7 +346,7 @@ export function inboundCandidates(
 				r.index !== currentIndex &&
 				distanceLy(r.pos, current.pos) <= TRAFFIC_TANK_LY,
 		)
-		.flatMap((r) => buildHaulerPlans(galaxy, r.index, contentsFor))
+		.flatMap((r) => buildHaulerPlans(galaxy, r.index, contentsFor, boundsCache))
 		.filter(
 			(p) =>
 				p.vocation === "hauler" &&
@@ -351,9 +372,7 @@ export function inboundHaulers(
 			(typeof row !== "string" && atS < row.rejoinsAtS)
 		)
 			return false;
-		const ordinal = Math.floor(
-			(atS - p.actor.schedule.departureAtS) / p.actor.schedule.cycleS,
-		);
+		const ordinal = awayOrdinalAt(p, atS);
 		if (ordinal < 0) return false;
 		const v = haulerVoyage(p, ordinal);
 		return (
@@ -375,9 +394,7 @@ export function routeVoyages(
 	rejoinsAtS = 0,
 ): TrafficHaulerVoyage[] {
 	const current = galaxy.systems.find((r) => r.index === currentIndex)!;
-	const ordinal = Math.floor(
-		(atS - p.actor.schedule.departureAtS) / p.actor.schedule.cycleS,
-	);
+	const ordinal = awayOrdinalAt(p, atS);
 	const ordinals = [
 		...new Set(
 			[activeOrdinal, ordinal - 1, Math.max(0, ordinal)].filter(
@@ -443,26 +460,6 @@ export function routeVoyages(
 	});
 }
 
-export function haulerAvailability(
-	p: HaulerPlan,
-	env: GalaxyEnvelope,
-	atS: number,
-): { condition: string; rejoinsAtS: number } {
-	const row = env.objective[p.actor.key],
-		latest = env.episodes[p.actor.key]?.latest;
-	const completesAt =
-		row?.recovery?.completesAt ??
-		(latest && ["repair-complete", "replacement-complete"].includes(latest.kind)
-			? latest.occurredAt
-			: 0);
-	return {
-		condition: effectiveCarrier(env, p.actor.key, atS).condition,
-		rejoinsAtS:
-			completesAt > 0
-				? nextTrafficDepartureAtS(p.actor.schedule, completesAt)
-				: 0,
-	};
-}
 export function trafficIdentityRecord(
 	galaxy: Galaxy,
 	key: CarrierKey,

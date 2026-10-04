@@ -653,7 +653,6 @@ import {
 	buildHaulerPlans,
 	inboundCandidates,
 	routeVoyages,
-	haulerAvailability,
 	trafficIdentityRecord,
 	type HaulerPlan,
 } from "./inter-system-traffic";
@@ -731,6 +730,7 @@ import {
 	projectParkedTrafficActor,
 	projectSystemTrafficAuthority,
 	type TrafficCruiseCache,
+	type TrafficLanePointArrivalCache,
 	type SystemTrafficProjection,
 	type TrafficBerthCache,
 	type TrafficArbitrationEvent,
@@ -969,6 +969,7 @@ import {
 	advanceTo,
 	effectiveCarrier,
 	type EffectiveCarrier,
+	haulerAvailability,
 	observe,
 	observeSystemRelay,
 	readKnowledge,
@@ -2882,6 +2883,8 @@ class Game {
 		TrafficProjection
 	>();
 	private readonly trafficCruiseCache: TrafficCruiseCache = new Map();
+	private readonly trafficLanePointArrivalCache: TrafficLanePointArrivalCache =
+		new Map();
 	/** Berths already granted to physical visits; prevents historical route rewrites. */
 	private readonly trafficBerthCache: TrafficBerthCache = new Map();
 	/** Actors shown parked while their authoritative canonical replay warms. */
@@ -6120,6 +6123,7 @@ class Game {
 		this.trafficPlayerTimeline.length = 0;
 		this.trafficCarrierTimeline.length = 0;
 		this.trafficCruiseCache.clear();
+		this.trafficLanePointArrivalCache.clear();
 		this.trafficBerthCache.clear();
 		this.trafficColdActors.clear();
 		this.trafficWarmIndex = 0;
@@ -6185,7 +6189,7 @@ class Game {
 			(i) => this.trafficContentsFor(i),
 			this.trafficPreviousRoutes.get(actor.key)?.visitAwayOrdinal,
 			haulerAvailability(
-				plan,
+				plan.actor,
 				this.commerceWorld.galaxies[this.world.system.record.galaxy],
 				atS,
 			).rejoinsAtS,
@@ -6299,6 +6303,7 @@ class Game {
 					gameTime: tick / 10,
 					playerTimeline: this.trafficPlayerTimeline,
 					cruiseCache: this.trafficCruiseCache,
+					lanePointArrivalCache: this.trafficLanePointArrivalCache,
 					projectionSystem,
 					cruiseTickBudget: 25,
 				});
@@ -6453,6 +6458,7 @@ class Game {
 					playerTimeline: arbitrationTimeline,
 					occupiedByStation: occupiedWithoutOwnPreviousBerth(actor.key),
 					cruiseCache: this.trafficCruiseCache,
+					lanePointArrivalCache: this.trafficLanePointArrivalCache,
 					berthCache: this.trafficBerthCache,
 					recordBerthAssignments: false,
 					projectionSystem,
@@ -6495,6 +6501,7 @@ class Game {
 						playerTimeline: arbitrationTimeline,
 						occupiedByStation: occupied,
 						cruiseCache: this.trafficCruiseCache,
+						lanePointArrivalCache: this.trafficLanePointArrivalCache,
 						berthCache: this.trafficBerthCache,
 						berthCacheTouched: touchedBerthAssignments,
 						projectionSystem,
@@ -6803,6 +6810,7 @@ class Game {
 				? TRAFFIC_DEMATERIALIZE_KM
 				: TRAFFIC_MATERIALIZE_KM;
 			const visible =
+				projection.present !== false &&
 				projection.phase !== "abstract-away" &&
 				projection.phase !== "hyperspace-away" &&
 				dx * dx + dy * dy + dz * dz <= rangeKm * rangeKm;
@@ -6893,13 +6901,11 @@ class Game {
 		}
 	}
 
-	private shipRightForSound(): Vec3 {
-		const v = new THREE.Vector3(1, 0, 0).applyQuaternion(
-			this.shipMesh.quaternion,
-		);
-		return { x: v.x, y: v.y, z: v.z };
-	}
-	private updateTrafficRifts(cameraPos: Vec3) {
+	/** The listener is the camera: its right axis, not the hull's, pans a ring. */
+	private updateTrafficRifts(
+		cameraPos: Vec3,
+		cameraRotation: THREE.Quaternion,
+	) {
 		for (const [id, expiresAtS] of this.trafficJumpSounds)
 			if (this.world.gameTime >= expiresAtS) this.trafficJumpSounds.delete(id);
 		const shown = new Set<string>();
@@ -6936,7 +6942,8 @@ class Game {
 				this.trafficJumpSounds.set(id, jump.atS + WITCHSPACE.riftEndS);
 				const rel = sub(jump.pos, cameraPos),
 					distance = length(rel);
-				const right = this.shipRightForSound();
+				const r = new THREE.Vector3(1, 0, 0).applyQuaternion(cameraRotation);
+				const right = { x: r.x, y: r.y, z: r.z };
 				const spatial = {
 					pan:
 						distance > 0
@@ -14546,7 +14553,10 @@ class Game {
 		const shotCam = this.openingCamera();
 		const camPos = shotCam?.pos ?? this.cameraPos();
 		this.updateTrafficPresentation(camPos);
-		this.updateTrafficRifts(camPos);
+		this.updateTrafficRifts(
+			camPos,
+			shotCam ? this.shotRotation(shotCam) : this.cameraRotation(),
+		);
 		this.updateEncounterPresentation(camPos);
 		this.updateRelayPresentation(camPos);
 		this.updateTenderPresentation(camPos);

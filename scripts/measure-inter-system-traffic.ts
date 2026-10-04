@@ -4,6 +4,7 @@ import { generateContents } from "../src/system";
 import { stationInterior, trafficBerths } from "../src/station-interior";
 import { STATION_GEOMETRY } from "../src/station";
 import {
+	awayOrdinalAt,
 	buildHaulerPlans,
 	haulerVoyage,
 	HAULER_SHARE,
@@ -76,10 +77,7 @@ for (const seed of seeds)
 					const at = 86400 + k * 30;
 					let inbound = 0;
 					for (const p of candidates) {
-						const n = Math.floor(
-							(at - p.actor.schedule.departureAtS) / p.actor.schedule.cycleS,
-						);
-						const v = haulerVoyage(p, n);
+						const v = haulerVoyage(p, awayOrdinalAt(p, at));
 						if (
 							v.destinationSystemIndex === record.index &&
 							v.destinationStationId === station.id &&

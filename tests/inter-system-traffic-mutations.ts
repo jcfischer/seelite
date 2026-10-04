@@ -31,7 +31,7 @@ function crossingEligible(galaxy: Galaxy, p: HaulerPlan, contentsFor: ContentsQu
 		const c = contentsFor(away.index);
 		for (const station of c.stations) {
 			const interior = stationInterior(station.type, STATION_GEOMETRY[station.type].aperturePlaneKm, station.berthSeed);
-			if (!trafficBerths(interior).some(b => berthFits(b, HULL_SPECS[p.actor.hullId].env))) continue;
+			if (!fittingTrafficBerths(interior, HULL_SPECS[p.actor.hullId].env).length) continue;
 			const body = placeBodies(c, atS).find(b => b.id === station.id)!;
 			const dHome = length(sub(arrivalPoint(home, homeContents, away.pos, atS), homeStation.pos));
 			const dAway = length(sub(arrivalPoint(away, c, home.pos, atS), body.pos));
@@ -70,9 +70,10 @@ export function runTrafficControl(
 					"if (currentRecord) return currentRecord;",
 				);
 			} else if (control === "late") {
-				// Remove contention at the production leg seam. The test still
+				// Remove contention at the production leg seam: the home and away
+				// legs, which follow the Lane point arrival in the file. The test still
 				// supplies its committed player lane and expects the observed delay.
-				const start = source.indexOf("function projectHaulerInSystem(");
+				const start = source.indexOf("function projectHomeVoyage(");
 				if (start < 0)
 					throw new Error("Hauler projection mutation target missing");
 				const body = source.slice(start);

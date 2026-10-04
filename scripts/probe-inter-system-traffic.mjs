@@ -114,9 +114,9 @@ try {
 		const nearby = { ...g.world.ship.pos };
 		// Move out of the materialization band and return during the same ring.
 		g.world.ship.pos = { x: nearby.x + 20000, y: nearby.y, z: nearby.z };
-		g.updateTrafficRifts(g.world.ship.pos);
+		g.updateTrafficRifts(g.world.ship.pos, g.cameraRotation());
 		g.world.ship.pos = nearby;
-		g.updateTrafficRifts(nearby);
+		g.updateTrafficRifts(nearby, g.cameraRotation());
 		return { cues, countAfterReentry: window.__npcJumpCues.length };
 	});
 	check(

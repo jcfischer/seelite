@@ -19,10 +19,7 @@ import {
 	projectSystemTrafficAuthority,
 } from "../src/station-route";
 import { routeVoyages } from "../src/inter-system-traffic";
-import {
-	haulerAvailability,
-	trafficIdentityRecord,
-} from "../src/inter-system-traffic";
+import { trafficIdentityRecord } from "../src/inter-system-traffic";
 import { carrierName } from "../src/carrier-name";
 import { carrierManifest } from "../src/carrier-manifest";
 import { carrierStanding } from "../src/carrier-standing";
@@ -33,6 +30,7 @@ import {
 	canonicalSnapshot,
 	WORLD_GENERATOR_VERSION,
 	applyTransition,
+	haulerAvailability,
 } from "../src/world-state";
 import { nextTrafficDepartureAtS } from "../src/station-traffic";
 import { readFileSync } from "node:fs";
@@ -260,6 +258,7 @@ describe("hauler physical legs", () => {
 		]) {
 			const record = galaxy.systems.find((r) => r.index === index)!;
 			const cache = new Map();
+			const arrivals = new Map();
 			for (const t of [at, at + 0.1, at + 1, at + 10, at + 100]) {
 				const input = {
 					record,
@@ -270,6 +269,7 @@ describe("hauler physical legs", () => {
 				const cached = projectSystemTrafficAuthority({
 						...input,
 						cruiseCache: cache,
+						lanePointArrivalCache: arrivals,
 					}),
 					direct = projectSystemTrafficActor(input);
 				expect(cached.phase).toBe(direct.phase);
@@ -277,7 +277,28 @@ describe("hauler physical legs", () => {
 				expect(cached.chargeAu).toBeCloseTo(direct.chargeAu, 9);
 				expect(cached.workTicks).toBe(direct.workTicks);
 			}
+			// One held start per arrival leg, reused by every later tick of it.
+			expect(arrivals.size).toBe(1);
 		}
+	});
+	test("a hauler in another system says so instead of standing at the origin", () => {
+		const p = hauler(),
+			v = haulerVoyage(p, 0);
+		const destination = galaxy.systems.find(
+			(r) => r.index === v.destinationSystemIndex,
+		)!;
+		const at = (record: typeof home, t: number) =>
+			projectSystemTrafficActor({
+				record,
+				actor: p.actor,
+				gameTime: t,
+				haulerVoyages: routeVoyages(galaxy, p, record.index, t, getContents),
+			});
+		const notYetArrived = at(destination, v.tOut - 1);
+		expect(notYetArrived.phase).toBe("hyperspace-away");
+		expect(notYetArrived.present).toBe(false);
+		expect(at(destination, v.tOut + 1).present).toBeUndefined();
+		expect(at(home, v.awayBoundaryS - 1).present).toBeUndefined();
 	});
 });
 
@@ -342,7 +363,7 @@ describe("identity persistence and query cost", () => {
 			recovery.completesAt,
 		);
 		const availability = haulerAvailability(
-			plan,
+			plan.actor,
 			loaded.galaxies[0],
 			recovery.completesAt,
 		);
@@ -375,7 +396,7 @@ describe("identity persistence and query cost", () => {
 				getContents,
 				(key) =>
 					key === plan.actor.key
-						? haulerAvailability(plan, loaded.galaxies[0], at)
+						? haulerAvailability(plan.actor, loaded.galaxies[0], at)
 						: "operational",
 			).some((p) => p.actor.key === plan.actor.key),
 		).toBe(true);

@@ -133,13 +133,14 @@ try {
 			attempt++
 		)
 			g.updateTrafficAuthority();
-		// Inbound candidate rosters include ships currently outside this system.
-		// This local scanner fixture selects a present home carrier, not a hidden
-		// foreign candidate whose zero pose cannot be materialized.
+		// Inbound candidate rosters include ships currently outside this system;
+		// their routes say so with `present: false`. This local scanner fixture
+		// selects a present home carrier that is not mid-jump or abstracted.
 		const flying = g.trafficRoutes
 			.filter(
 				(r) =>
 					r.key.startsWith(`${g.world.system.record.index}:`) &&
+					r.present !== false &&
 					r.phase !== "hyperspace-away" &&
 					r.phase !== "abstract-away",
 			)

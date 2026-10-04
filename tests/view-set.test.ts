@@ -799,8 +799,8 @@ describe("the rim look row #480 added", () => {
 			"sky-at-the-rim",
 			"npc-departure",
 			"npc-arrival",
-			"npc-departure-at-player-lane",
-			"npc-arrival-at-player-lane",
+			"npc-departure-at-player-lane-point",
+			"npc-arrival-at-player-lane-point",
 		]);
 	});
 });

@@ -652,6 +652,15 @@ export function trafficBerths(interior: StationInterior): readonly Berth[] {
 	);
 }
 
+/** The Traffic berths a hull fits — one fit rule for the hauler planner's
+ *  bounds, its destinations and a hauler's home berth. */
+export function fittingTrafficBerths(
+	interior: StationInterior,
+	hull: HullEnvelope,
+): readonly Berth[] {
+	return trafficBerths(interior).filter((b) => berthFits(b, hull));
+}
+
 /** `chooseBerth` over a caller's own subset of the catalogue — Traffic's, in
  *  practice, which may not reach the visitor berth. The player's path goes
  *  through `chooseBerth` and sees every berth, reserved one included. */

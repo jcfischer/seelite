@@ -53,7 +53,7 @@ export async function installHaulerFixture() {
 				y: pos.y - nose.y * range + up.y * range * 0.25,
 				z: pos.z - nose.z * range + up.z * range * 0.25,
 			};
-			if (framing === "player-lane") {
+			if (framing === "player-lane-point") {
 				const current = g.world.system.record,
 					other =
 						current.index === plan.homeRecord.index
@@ -85,7 +85,7 @@ export async function installHaulerFixture() {
 				(child) => [child, child.visible],
 			);
 			for (const [child, visible] of window.__haulerCabinVisibility)
-				child.visible = framing === "player-lane" ? visible : false;
+				child.visible = framing === "player-lane-point" ? visible : false;
 			for (const child of g.shipMesh.children) child.visible = false;
 			// Clock sampling is discontinuous; presentation interpolation is meaningful
 			// only between adjacent authority ticks.

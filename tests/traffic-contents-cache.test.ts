@@ -4,12 +4,11 @@ import ts from "typescript";
 import { compareCarrierKeys, systemIndexOfKey } from "../src/carrier-key";
 import {
 	buildHaulerPlans,
-	haulerAvailability,
 	inboundCandidates,
 } from "../src/inter-system-traffic";
 import { makeWorld } from "../src/sim";
 import { generateContents, type SystemContents } from "../src/system";
-import { newWorld } from "../src/world-state";
+import { haulerAvailability, newWorld } from "../src/world-state";
 import { type TrafficActor } from "../src/station-traffic";
 
 test("Game reuses cold foreign contents in warm voyage queries and clears them on system entry", () => {
