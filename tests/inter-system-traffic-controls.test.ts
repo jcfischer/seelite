@@ -1,4 +1,4 @@
-/** The parent suite launches these same assertions with each rejected control. */
+/** Unchanged acceptance assertions run against isolated production mutants. */
 import { expect, test } from "bun:test";
 import { generateGalaxy, distanceLy } from "../src/galaxy";
 import { HULL_SPECS } from "../src/hull";
@@ -34,14 +34,14 @@ const fixture = buildHaulerPlans(galaxy, 0, get).find(
 	(p) => p.vocation === "hauler",
 )!;
 const voyage = haulerVoyage(fixture, 0);
-const mutant = process.env.TRAFFIC_FAILING_CONTROL;
 
 test("identity: equal home/destination name manifest standing", () => {
 	const identity = (currentIndex: number) => {
-		const r =
-			mutant === "identity"
-				? galaxy.systems.find((r) => r.index === currentIndex)!
-				: trafficIdentityRecord(galaxy, fixture.actor.key);
+		const r = trafficIdentityRecord(
+			galaxy,
+			fixture.actor.key,
+			galaxy.systems.find((r) => r.index === currentIndex)!,
+		);
 		return {
 			name: carrierName(r.seed, fixture.actor.key, 0),
 			manifest: carrierManifest(r.seed, fixture.actor.key, 0, 0, {
@@ -69,10 +69,19 @@ test("late: injected committed home lane delays observed jump but not inbound", 
 		record: fixture.homeRecord,
 		actor: fixture.actor,
 		gameTime: voyage.tOut,
-		playerTimeline: mutant === "late" ? [] : timeline,
+		playerTimeline: timeline,
 		haulerVoyages: routeVoyages(galaxy, fixture, 0, voyage.tOut, get),
 	});
 	expect(projection.phase).toBe("launch-queued");
+	const late = projectSystemTrafficActor({
+		record: fixture.homeRecord,
+		actor: fixture.actor,
+		gameTime: voyage.tOut + 800,
+		playerTimeline: timeline,
+		haulerVoyages: routeVoyages(galaxy, fixture, 0, voyage.tOut + 800, get),
+	});
+	expect(late.phase).toBe("hyperspace-away");
+	expect(late.jump?.atS).toBeGreaterThan(voyage.tOut);
 	expect(
 		inboundHaulers(
 			galaxy,
@@ -85,13 +94,13 @@ test("late: injected committed home lane delays observed jump but not inbound", 
 });
 test("crossing: recomputing actual charge eligibility at a delayed outward crossing changes inbound destinations", () => {
 	// A distant circular station makes actual-distance eligibility clock-dependent.
-	// Its conservative bound still rejects it at every clock.
+	// Its static bound still rejects it at every clock.
 	const distant = get(1);
 	for (const station of distant.stations) {
 		station.parentId = null;
 		station.orbit = {
 			radiusKm: 9 * AU_KM,
-			periodS: 2e7,
+			periodS: 2000,
 			theta0: 0,
 			inclination: 0,
 			node: 0,
@@ -152,11 +161,12 @@ test("crossing: recomputing actual charge eligibility at a delayed outward cross
 				const d = list[p.actor.ordinal % list.length];
 				return d ? `${d.systemIndex}:${d.stationId}` : "absent";
 			};
-			const normal = selectedAt(p.actor.schedule.departureAtS);
-			const delayed = selectedAt(p.actor.schedule.departureAtS + 1e7);
-			if (normal !== delayed) {
-				const v = haulerVoyage(p, 0);
-				const lateAt = p.actor.schedule.departureAtS + 1e7;
+			const v = haulerVoyage(p, 0);
+			const lateAt = v.tOut + Math.min(30, (v.tBack - v.tOut) / 2);
+			const normal = selectedAt(v.tOut);
+			const delayed = selectedAt(lateAt);
+			const staticDestination = `${v.destinationSystemIndex}:${v.destinationStationId}`;
+			if (normal !== delayed && delayed !== staticDestination) {
 				const observed = projectSystemTrafficAuthority({
 					record: p.homeRecord,
 					actor: p.actor,
@@ -187,10 +197,26 @@ test("crossing: recomputing actual charge eligibility at a delayed outward cross
 					],
 				});
 				expect(observed.departureStartedAtS).toBe(lateAt);
+				const destinationAt = (atS: number) => {
+					const inbound = inboundHaulers(
+						galaxy,
+						v.destinationSystemIndex,
+						atS,
+						get,
+						() => "operational",
+					).find((candidate) => candidate.actor.key === p.actor.key);
+					if (!inbound) return "absent";
+					const received = haulerVoyage(inbound, 0);
+					return `${received.destinationSystemIndex}:${received.destinationStationId}`;
+				};
+				// The far side receives the same voyage before and after the observed
+				// home crossing is delayed. Assert the query's output, not the fixture.
+				expect(destinationAt(v.tOut)).toBe(staticDestination);
+				expect(destinationAt(lateAt)).toBe(staticDestination);
 				witness = {
 					normal,
 					delayed,
-					static: `${v.destinationSystemIndex}:${v.destinationStationId}`,
+					static: staticDestination,
 				};
 				break;
 			}
@@ -198,9 +224,5 @@ test("crossing: recomputing actual charge eligibility at a delayed outward cross
 		if (witness) break;
 	}
 	expect(witness).toBeDefined();
-	// The destination names the inbound set for this voyage. Injected home
-	// contention moves the crossing clock by 1e7 s; the static path reads none of it.
-	expect(mutant === "crossing" ? witness!.normal : witness!.static).toBe(
-		mutant === "crossing" ? witness!.delayed : witness!.static,
-	);
+	expect(witness!.normal).not.toBe(witness!.delayed);
 });

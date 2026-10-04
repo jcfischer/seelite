@@ -2325,14 +2325,16 @@ export class AudioFX {
 		soft.type = "lowpass";
 		soft.frequency.setValueAtTime(900, t);
 		soft.connect(env);
-		for (const [hz, type, vol] of [
+		const partials = [
 			[73.4, "triangle", 0.07],
 			[73.9, "triangle", 0.07],
 			[110.2, "triangle", 0.05],
 			[146.9, "sine", 0.04],
 			[1760, "sine", 0.012],
 			[1767, "sine", 0.012],
-		] as const) {
+		] as const;
+		let remaining = partials.length;
+		for (const [hz, type, vol] of partials) {
 			const o = ctx.createOscillator();
 			o.type = type;
 			o.frequency.setValueAtTime(hz, t);
@@ -2347,7 +2349,7 @@ export class AudioFX {
 			o.onended = () => {
 				o.disconnect();
 				g.disconnect();
-				if (hz === 1767) {
+				if (--remaining === 0) {
 					soft.disconnect();
 					env.disconnect();
 					finished?.();

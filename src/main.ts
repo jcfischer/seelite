@@ -2804,6 +2804,10 @@ class Game {
 	private trafficPreviousProjectionAtS = Number.NaN;
 	private trafficActors: TrafficActor[] = [];
 	private readonly trafficHaulers = new Map<CarrierKey, HaulerPlan>();
+	private readonly trafficContentsCache = new Map<
+		number,
+		ReturnType<typeof generateContents>
+	>();
 	private readonly trafficRifts = new Map<string, ArrivalRift>();
 	private readonly trafficJumpSounds = new Set<string>();
 	private readonly trafficContacts = new Map<CarrierKey, DisplayContact>();
@@ -6129,7 +6133,21 @@ class Game {
 	}
 
 	private trafficHomeRecord(actor: Pick<TrafficActor, "key">) {
-		return trafficIdentityRecord(this.world.galaxy, actor.key);
+		return trafficIdentityRecord(
+			this.world.galaxy,
+			actor.key,
+			this.world.system.record,
+		);
+	}
+	private trafficContentsFor(index: number) {
+		let contents = this.trafficContentsCache.get(index);
+		if (!contents) {
+			const record = this.world.galaxy.systems.find((r) => r.index === index);
+			if (!record) throw new Error(`Traffic system ${index} missing`);
+			contents = generateContents(record);
+			this.trafficContentsCache.set(index, contents);
+		}
+		return contents;
 	}
 	private trafficVoyages(actor: TrafficActor, atS: number) {
 		const plan = this.trafficHaulers.get(actor.key);
@@ -6139,12 +6157,7 @@ class Game {
 			plan,
 			this.world.system.record.index,
 			atS,
-			(i) =>
-				i === this.world.system.record.index
-					? this.world.system.contents
-					: generateContents(
-							this.world.galaxy.systems.find((r) => r.index === i)!,
-						),
+			(i) => this.trafficContentsFor(i),
 			this.trafficPreviousRoutes.get(actor.key)?.visitAwayOrdinal,
 			haulerAvailability(
 				plan,
@@ -6158,17 +6171,9 @@ class Game {
 		if (this.trafficSystemIndex === index) return;
 		this.clearTrafficPresentation();
 		this.trafficSystemIndex = index;
-		const contents = new Map<number, ReturnType<typeof generateContents>>();
-		const contentsFor = (i: number) => {
-			let c = contents.get(i);
-			if (!c) {
-				c = generateContents(
-					this.world.galaxy.systems.find((r) => r.index === i)!,
-				);
-				contents.set(i, c);
-			}
-			return c;
-		};
+		this.trafficContentsCache.clear();
+		this.trafficContentsCache.set(index, this.world.system.contents);
+		const contentsFor = (i: number) => this.trafficContentsFor(i);
 		const plans = [
 			...buildHaulerPlans(this.world.galaxy, index, contentsFor),
 			...inboundCandidates(this.world.galaxy, index, contentsFor),
@@ -6918,13 +6923,7 @@ class Game {
 				this.play({
 					kind: "witchspaceRift",
 					seconds: WITCHSPACE.riftEndS,
-					spatial: {
-						pan:
-							distance > 0
-								? Math.max(-1, Math.min(1, dot(rel, right) / distance))
-								: 0,
-						gain: 1 / (1 + distance),
-					},
+					spatial,
 				});
 			}
 		}

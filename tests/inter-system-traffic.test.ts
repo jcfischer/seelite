@@ -14,6 +14,30 @@ import {
 	LANE_ANNULUS_KM,
 	lanePoint,
 } from "../src/inter-system-traffic";
+import {
+	projectSystemTrafficActor,
+	projectSystemTrafficAuthority,
+} from "../src/station-route";
+import { routeVoyages } from "../src/inter-system-traffic";
+import {
+	haulerAvailability,
+	trafficIdentityRecord,
+} from "../src/inter-system-traffic";
+import { carrierName } from "../src/carrier-name";
+import { carrierManifest } from "../src/carrier-manifest";
+import { carrierStanding } from "../src/carrier-standing";
+import {
+	newWorld,
+	parseWorld,
+	serializeWorld,
+	canonicalSnapshot,
+	WORLD_GENERATOR_VERSION,
+	applyTransition,
+} from "../src/world-state";
+import { nextTrafficDepartureAtS } from "../src/station-traffic";
+import { readFileSync } from "node:fs";
+import { runTrafficControl } from "./inter-system-traffic-mutations";
+import { npcRiftStrength, WITCHSPACE } from "../src/witchspace";
 
 const galaxy = generateGalaxy(47, 0);
 const contents = new Map(
@@ -145,12 +169,6 @@ describe("inter-system Traffic static contract", () => {
 	});
 });
 
-import {
-	projectSystemTrafficActor,
-	projectSystemTrafficAuthority,
-} from "../src/station-route";
-import { routeVoyages } from "../src/inter-system-traffic";
-
 describe("hauler physical legs", () => {
 	test("early holds then jumps on anchor; actual contention delays only the observed side", () => {
 		const p = hauler(),
@@ -163,7 +181,7 @@ describe("hauler physical legs", () => {
 				playerTimeline: timeline,
 				haulerVoyages: routeVoyages(galaxy, p, home.index, t, getContents),
 			});
-		expect(route(v.tOut - 3.1).phase).toBe("lane-hold");
+		expect(route(v.tOut - 3.1).phase).toBe("lane-point-hold");
 		expect(route(v.tOut - 0.1).phase).toBe("jump-windup");
 		expect(route(v.tOut).phase).toBe("hyperspace-away");
 		const contention = [
@@ -220,25 +238,6 @@ describe("hauler physical legs", () => {
 		}
 	});
 });
-
-import {
-	haulerAvailability,
-	trafficIdentityRecord,
-} from "../src/inter-system-traffic";
-import { carrierName } from "../src/carrier-name";
-import { carrierManifest } from "../src/carrier-manifest";
-import { carrierStanding } from "../src/carrier-standing";
-import {
-	newWorld,
-	parseWorld,
-	serializeWorld,
-	canonicalSnapshot,
-	WORLD_GENERATOR_VERSION,
-	applyTransition,
-} from "../src/world-state";
-import { nextTrafficDepartureAtS } from "../src/station-traffic";
-import { readFileSync } from "node:fs";
-import { spawnSync } from "node:child_process";
 
 describe("identity persistence and query cost", () => {
 	test("home identity reads one seed, government and voyage at either end", () => {
@@ -405,21 +404,11 @@ describe("identity persistence and query cost", () => {
 		expect(counts).toEqual([33, 33]);
 	});
 	test("three real failing control runs are rejected by the same acceptance assertions", () => {
-		for (const control of ["crossing", "identity", "late"]) {
-			const child = spawnSync(
-				process.execPath,
-				[
-					"test",
-					"tests/inter-system-traffic-controls.test.ts",
-					"--test-name-pattern",
-					control,
-				],
-				{
-					cwd: process.cwd(),
-					env: { ...process.env, TRAFFIC_FAILING_CONTROL: control },
-					encoding: "utf8",
-				},
-			);
+		const baseline = runTrafficControl("baseline");
+		expect(baseline.status).toBe(0);
+		expect(baseline.stderr).toContain("3 pass");
+		for (const control of ["crossing", "identity", "late"] as const) {
+			const child = runTrafficControl(control);
 			expect(child.status).toBe(1);
 			expect(child.stderr).toContain("1 fail");
 			expect(child.stderr).toContain("error: expect");
@@ -439,7 +428,6 @@ describe("identity persistence and query cost", () => {
 	});
 });
 
-import { npcRiftStrength, WITCHSPACE } from "../src/witchspace";
 test("NPC rings open on the jump and close on the existing exit clock", () => {
 	expect(npcRiftStrength(-0.1)).toBe(0);
 	expect(npcRiftStrength(0.1)).toBeGreaterThan(0);

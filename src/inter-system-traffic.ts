@@ -33,6 +33,11 @@ import {
 } from "./system";
 import { AU_KM } from "./units";
 import { type Vec3, add, sub, scale, cross, normalizeOr } from "./vec3";
+import {
+	projectTrafficLaneDeparture,
+	type TrafficHaulerVoyage,
+} from "./station-route";
+import { type GalaxyEnvelope, effectiveCarrier } from "./world-state";
 
 const normalize = (v: Vec3) => normalizeOr(v, { x: 0, y: 0, z: 1 });
 
@@ -361,10 +366,6 @@ export function inboundHaulers(
 	});
 }
 
-import {
-	projectTrafficLaneDeparture,
-	type TrafficHaulerVoyage,
-} from "./station-route";
 const jumpChargeCache = new WeakMap<HaulerPlan, Map<string, number>>();
 /** Only local lane endpoints cross the route seam; no foreign body/queue does. */
 export function routeVoyages(
@@ -395,8 +396,8 @@ export function routeVoyages(
 		const other = home
 			? galaxy.systems.find((r) => r.index === v.destinationSystemIndex)!
 			: p.homeRecord;
-		const arrivalS = home ? v.tBack : v.tOut;
-		const departureS = home ? v.tOut : v.tBack;
+		const jumpInAtS = home ? v.tBack : v.tOut;
+		const jumpOutAtS = home ? v.tOut : v.tBack;
 		const chargeKey = n + "|" + currentIndex;
 		let charges = jumpChargeCache.get(p);
 		if (!charges) {
@@ -404,23 +405,23 @@ export function routeVoyages(
 			jumpChargeCache.set(p, charges);
 		}
 		let arrivalChargeAu = charges.get(chargeKey);
-		if (arrivalChargeAu === undefined && atS >= arrivalS) {
+		if (arrivalChargeAu === undefined && atS >= jumpInAtS) {
 			const lane = {
 				...lanePoint(
 					other,
 					contentsFor(other.index),
 					current.pos,
-					arrivalS,
+					jumpInAtS,
 					p.actor.key,
 					n,
 				),
-				atS: arrivalS,
+				atS: jumpInAtS,
 				chargeAu: HULL_SPECS[p.actor.hullId].chargeAu,
 			};
 			arrivalChargeAu = projectTrafficLaneDeparture({
 				record: other,
 				actor: p.actor,
-				gameTime: arrivalS,
+				gameTime: jumpInAtS,
 				stationId: home ? v.destinationStationId : p.actor.homeStationId,
 				readyAtS: home ? v.parkedBoundaryS : v.awayBoundaryS,
 				awayOrdinal: n,
@@ -441,11 +442,11 @@ export function routeVoyages(
 						current,
 						contentsFor(currentIndex),
 						other.pos,
-						departureS,
+						jumpOutAtS,
 						p.actor.key,
 						n,
 					),
-					atS: departureS,
+					atS: jumpOutAtS,
 					chargeAu: HULL_SPECS[p.actor.hullId].chargeAu,
 				},
 				arrival: {
@@ -453,11 +454,11 @@ export function routeVoyages(
 						current,
 						contentsFor(currentIndex),
 						other.pos,
-						arrivalS,
+						jumpInAtS,
 						p.actor.key,
 						n,
 					),
-					atS: arrivalS,
+					atS: jumpInAtS,
 					chargeAu: arrivalChargeAu ?? HULL_SPECS[p.actor.hullId].chargeAu,
 				},
 			},
@@ -465,7 +466,6 @@ export function routeVoyages(
 	});
 }
 
-import { type GalaxyEnvelope, effectiveCarrier } from "./world-state";
 export function haulerAvailability(
 	p: HaulerPlan,
 	env: GalaxyEnvelope,
@@ -489,8 +489,13 @@ export function haulerAvailability(
 export function trafficIdentityRecord(
 	galaxy: Galaxy,
 	key: CarrierKey,
+	currentRecord?: SystemRecord,
 ): SystemRecord {
-	const record = galaxy.systems.find((r) => r.index === systemIndexOfKey(key));
+	const homeIndex = systemIndexOfKey(key);
+	// Local identity reads avoid a galaxy lookup; foreign carriers still draw
+	// every identity field from the record their home key names.
+	if (currentRecord?.index === homeIndex) return currentRecord;
+	const record = galaxy.systems.find((r) => r.index === homeIndex);
 	if (!record) throw new Error("Traffic home record missing");
 	return record;
 }

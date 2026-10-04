@@ -34,7 +34,7 @@ try {
 	const early = await sample(fixture.tOut - 3.1);
 	check(
 		"early hauler holds at the star-centric lane point",
-		early.phase === "lane-hold" && early.contact,
+		early.phase === "lane-point-hold" && early.contact,
 		early,
 	);
 	const windup = await sample(fixture.tOut - 0.1);
