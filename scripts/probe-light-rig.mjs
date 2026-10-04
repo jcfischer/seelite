@@ -285,8 +285,9 @@ const pickFramings = (page, bodyId) =>
  * environment and changes nothing else", which stopped being true when `low`
  * also began dropping the shadows. Measured on node #433's build with the
  * environment never assigned at all, high minus low still read Δ 0.38 and 0.16
- * on the two framings — green on a reach check whose subject was missing. Unassigning the environment on the four layer
- * scenes for one frame changes exactly the term being measured.
+ * on the two framings — green on a reach check whose subject was missing.
+ * Unassigning the environment on the four layer scenes for one frame changes
+ * exactly the term being measured.
  *
  * One evaluate for `probe-station-visuals.mjs`'s reason: between two the frame
  * loop runs, the station spins and its orbit carries it, and the drift is the
