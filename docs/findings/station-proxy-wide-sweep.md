@@ -1,7 +1,8 @@
 # The seeded station proxies over 2,400 plans: the hand-run half of §9.1.11
 
 Node #662, measured 2026-10-03; re-measured by node #663 on 2026-10-04, after
-the pad proxies were cut down into their landing well (`padWellDepthKm`). `collision.md` §2.2 says the outpost's Salvage <!-- glossary-ignore: pad -->
+Sage round 2 changed the landing well's depth input to the dockable admitted
+roster (`padWellDepthKm`). `collision.md` §2.2 says the outpost's Salvage
 is a grown form whose proxy is one seed-independent envelope, gated on the
 twelve plans of `ASSEMBLY_SEEDS` in `npm test` and "measured over a wider
 spread by hand". This file is that measurement, so the figure has a ref and an
@@ -9,8 +10,10 @@ output behind it rather than a sentence. It records data only.
 
 ## What was run
 
-On commit `f0231ab` ("Print the aperture's physical-fit table for the
-principal"), on an M1 Pro, headless bun, four runs one after another:
+On committed revision `0b40f3b985a9221c9d4f86c937a89744cf3b7b78`
+("Address sage review round 3 (node #663)"), headless bun on Apple silicon,
+four runs one after another. The script and its dependencies were unchanged
+from that revision throughout the re-run:
 
 ```bash
 bun scripts/measure-station-proxy.ts 1200 0 refinery
@@ -22,8 +25,7 @@ bun scripts/measure-station-proxy.ts 1200 1200 outpost
 Each run builds every plan in its assembly-seed range with the berth on each
 side (berth seeds 0 and 1) and holds every drawn vertex outside the opening to
 the primitives of its own frame — the walk, the opening and the frame rule are
-`tests/helpers/station-proxy-measure.ts`, the same ones the test rows use. A
-refinery run took 3 min 24 s, an outpost run 1 min 57 s.
+`tests/helpers/station-proxy-measure.ts`, the same ones the test rows use.
 
 ## Output, verbatim
 
@@ -33,6 +35,11 @@ refinery d: assembly 1200–2399, berth sides 0, 1, 0 plans past 60 m, worst 44.
 outpost e: assembly 0–1199, berth sides 0, 1, 0 plans past 60 m, worst 44.4 m (salvage-section-1 at assembly 353, berth 0)
 outpost e: assembly 1200–2399, berth sides 0, 1, 0 plans past 60 m, worst 48.3 m (salvage-section-1 at assembly 2060, berth 0)
 ```
+
+All four re-run output lines match the earlier `f0231ab` report at the printed
+0.1 m precision. This measurement supersedes that report's provenance: the
+figures above were measured after the admitted-roster depth change, on the
+committed revision named here.
 
 ## What it does and does not say
 

@@ -39,10 +39,12 @@ under their current subjects.
 | §9.1.12 remainder | Seeds 1–200, the travel instrument's full default corpus: 416 cruise legs, 416 exits; zero exits inside a proxy. Nearest exit to any station: 41.3 km. Zero of 416 legs cross a non-target proxy. The count now sweeps actual moving primitives after broad-phase rejection. Its regression rejects empty space inside the Gantry's bounding sphere while counting a boom crossing; the reach-only version failed. The measured 416-leg and 416-exit totals and the empty non-target crossing list are asserted. The former literal seed-length assertion did not prove the measured coverage. |
 | §9.1.15 | `hull-docking.test.ts` flies the computer with collision live across its admitted roster, roles and spin samples, asserting no impacts or ghosts in addition to docking and the six checks. Those historical handling rows retain the fixed plan; the new seeded pad rows fly 18 refinery plans × 9 hulls and 12 outpost plans × 7 hulls (246 runs), asserting docking, no violations or refusal, no impacts or ghosts, and a nontrivial flight. |
 
-Before the review repair, the focused collision files passed 75 tests. That
-`npm test` passed
-**4,907 tests, zero failures**, across 268 files. Typecheck, format, lint,
-launcher wiring and production build pass. Browser results follow below.
+Before Sage round 1, the focused collision files passed 75 tests. The full
+pre-review `npm test` run, recorded in `22ff162` after expanding the cruise
+corpus, passed **4,907 tests, zero failures**, across 268 files. Typecheck,
+format, lint, launcher wiring and production build also passed in that
+pre-review verification pass.
+Later review rounds' results are recorded in their own sections below.
 
 ## Browser selection
 
@@ -97,7 +99,7 @@ the berth and boom readings to the principal to judge the invisible wall.
 - **Derived pad well:** refinery depth 56.2 m, outpost 46.5 m. The depth is <!-- glossary-ignore: pad -->
   derived from admitted hull boxes and their measured offsets. It is documented
   in `collision.md` §2.2; the proxy budget remains green over its gated plans,
-  with the earlier wide sweep in `station-proxy-wide-sweep.md`.
+  with the post-round-2 wide sweep in `station-proxy-wide-sweep.md`.
 - **Drawn-surface gaps:** the point readings above, particularly the berth and
   boom, are the principal's judgment under §11 joint 5. Passing the stop and
   bounce checks is not approval of an invisible wall.
@@ -262,3 +264,34 @@ typecheck and production build passed.
 The #573 major-change check remains yes for the node's solid-station mechanic.
 This oracle and helper repair adds no separate major change or changelog entry;
 the proposed node #663 sentence still awaits the principal's approval.
+
+## Sage round 4 repair
+
+The wide proxy sweep was re-run on committed revision
+`0b40f3b985a9221c9d4f86c937a89744cf3b7b78`, after round 2 changed the well-depth
+input to the dockable admitted roster. All four documented commands completed
+sequentially: each role's assembly seeds 0–2399, with berth seeds 0 and 1.
+The script and its dependencies stayed unchanged throughout the measurement.
+The full stdout is in [the current wide-sweep report](station-proxy-wide-sweep.md).
+All four lines match the earlier report at its printed 0.1 m precision:
+zero plans past 60 m, refinery worst 44.5 m, outpost worst 48.3 m. The latter's
+11.7 m margin now has post-round-2 evidence. The well-depth helper also
+reprinted refinery 56.2 m and outpost 46.5 m.
+
+The pre-review 4,907-test result above now names its record, `22ff162`, and
+points to each later round's separate result.
+
+Optional suggestions remain deferred: shared arbitration needs a world/harness
+interface refactor; lazy start frames need a cost measurement and verification
+of their moving-frame boundary. The catalogue-interior and fixture-proxy
+extractions are convenience changes with no new behavior or gate, so this
+evidence repair leaves them for a separate change.
+
+This repair changes only findings prose. Under the doc-only SOP it runs no
+browser probes; the supervisor still owns the full-suite gate. The #573 check
+adds no separate changelog entry for this evidence repair; the existing solid
+station proposal remains subject to the principal's approval.
+
+Round 4 verification: the worker-required `npm test` passed **4,910 tests,
+zero failures**, across 268 files in 268.85 seconds. Readback confirms both
+prose edits landed, and `git diff --check` passed.
