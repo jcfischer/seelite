@@ -942,12 +942,12 @@ describe("the world-frame bake carries no star (node #433, decision 2026-10-04)"
 
 	test("its brightest texel is the haze and gas peak, not a star", () => {
 		// A star lobe peaks at CORE_GAIN — 26 — at its centre texel. The sky's
-		// own terms are three orders of magnitude below that.
+		// own terms, at the principal's ×5 level, stay under a few tenths.
 		const { data } = equirectEnvironment({ haze, gas });
 		let peak = 0;
 		for (let i = 0; i < data.length; i += 4)
 			peak = Math.max(peak, data[i], data[i + 1], data[i + 2]);
-		expect(peak).toBeLessThan(0.1);
+		expect(peak).toBeLessThan(1);
 	});
 
 	test("the parameters cannot carry a star", () => {

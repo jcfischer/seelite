@@ -229,9 +229,10 @@ const DEEP_SKY: readonly [number, number, number] = [0.008, 0.011, 0.018];
 const HAZE_POWER = 3;
 
 /** Peak brightness of the directional haze term, per channel, at full
- *  strength. About 3× the DEEP_SKY floor — visible as a soft cone, not as a
- *  lamp. */
-const HAZE_CONE_GAIN = 0.04;
+ *  strength. About 11× the DEEP_SKY floor's brightest channel at full
+ *  strength; a soft cone, not a lamp. */
+// Principal's ×5, 2026-10-04 (was 0.04): seed 47's sky median luma per view 13.4–17.6 → 14.6–33.0.
+const HAZE_CONE_GAIN = 0.2;
 
 /** The isotropic component of the haze, per channel. Present everywhere and
  *  independent of the core direction — the part of the cluster's light that
@@ -332,8 +333,10 @@ export function gasParamsFrom(
  *  which reads as a nebula rather than as a gradient. */
 const GAS_FREQUENCY = 2.0;
 
-/** Peak brightness of a fully dense gas cloud, per channel. About 2× DEEP_SKY. */
-const GAS_GAIN = 0.025;
+/** Peak brightness of a fully dense gas cloud, per channel. About 7× DEEP_SKY's
+ *  brightest channel. */
+// Principal's ×5, 2026-10-04 (was 0.025): seed 47's sky median luma per view 13.4–17.6 → 14.6–33.0.
+const GAS_GAIN = 0.125;
 
 // -- Noise primitives (headless, no imports) --
 
