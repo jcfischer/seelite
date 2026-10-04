@@ -517,8 +517,8 @@ dwarf, 1.0 AU for a G star, 4.5 AU for an A star.
   floating-point rescale lands just outside it. Shipyards host on that primary
   or a remaining gas giant, never an outer rocky ice world. Station IDs and
   carrier keys stay fixed; a shipyard can move hosts when an old giant becomes
-  rocky. A docked save still records its station key and resumes in flight at
-  arrival, as the existing loader contract specifies.
+  rocky. A docked save records its station key and re-enters its station
+  through the docking protocol on load (node #658, building #293).
 
 `bun run scripts/measure-cold-rocky-moons.ts` repeats the 24-galaxy census
 (three world seeds × eight galaxies). On this generator: 1,451 ice worlds out

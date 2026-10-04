@@ -66,6 +66,11 @@ const splitCarrierKey = (key: string): [number, string] => {
 export const systemIndexOfKey = (key: CarrierKey): number =>
 	splitCarrierKey(key)[0];
 
+/** The local carrier id a key names — the half a caller resolving a station
+ *  from a saved `dockedAt` needs (node #658). */
+export const localCarrierIdOfKey = (key: CarrierKey): string =>
+	splitCarrierKey(key)[1];
+
 /**
  * The canonical carrier order: system index **numerically**, then the local id.
  *

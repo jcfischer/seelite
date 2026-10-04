@@ -849,6 +849,11 @@ try {
 					food: env.deficits[key]?.goods?.Food ?? null,
 					galaxy: g.world.system.record.galaxy,
 					system: g.world.system.record.index,
+					// Node #658: a docked save re-enters its station through the
+					// protocol. The reload above flushed while docked, so the
+					// commander has `dockedAt` set and `restoreDockedAt` runs.
+					dockPhase: g.dock.phase,
+					dockedAt: g.dockedAt,
 				};
 			},
 			[trade.station],
@@ -871,6 +876,17 @@ try {
 			"and the world clock came back in seconds, not minutes",
 			after.gameTime > 60,
 			`clock ${after.gameTime}`,
+		);
+		// Node #658: a docked save re-enters its station through the protocol,
+		// so the reloaded page is docked at the same station.
+		check(
+			"a docked save reloads docked at the same station",
+			after.dockPhase === "docked" && after.dockedAt === trade.station,
+			JSON.stringify({
+				dockPhase: after.dockPhase,
+				dockedAt: after.dockedAt,
+				want: trade.station,
+			}),
 		);
 		// -------------------------------------------------------------------
 		// The in-flight restore arm, which nothing else reaches

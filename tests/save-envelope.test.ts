@@ -10,7 +10,7 @@
 
 import { describe, expect, test } from "bun:test";
 import { readFileSync } from "node:fs";
-import { carrierKey } from "../src/carrier-key";
+import { carrierKey, localCarrierIdOfKey } from "../src/carrier-key";
 import { recordTrade } from "../src/deficits";
 import { HOLD_REFERENCE_T } from "../src/market";
 import {
@@ -102,6 +102,20 @@ describe("#89 D5 — the save envelope", () => {
 		);
 		expect(shipyard?.id).toBe(LOCAL_CARRIER_ID.shipyard);
 		expect(shipyard?.parentId).toBe("planet-2");
+	});
+
+	test("localCarrierIdOfKey resolves a dockedAt key back to the station that made it", () => {
+		// Node #658: `restoreDockedAt` splits the key and finds the station by
+		// its local carrier id. This row proves the split and the lookup agree.
+		const key = carrierKey(42, LOCAL_CARRIER_ID.trade);
+		const localId = localCarrierIdOfKey(key);
+		expect(localId).toBe(LOCAL_CARRIER_ID.trade);
+		const restored = restoreWorld(47, 0, 42, 0);
+		const station = restored.system.contents.stations.find(
+			(s) => s.localCarrierId === localId,
+		);
+		expect(station).toBeDefined();
+		expect(station?.type).toBe("trade");
 	});
 
 	test("obligation 1: every field of both halves survives a round trip", () => {

@@ -940,6 +940,7 @@ import {
 	type CarrierKey,
 	carrierKey,
 	compareCarrierKeys,
+	localCarrierIdOfKey,
 	systemIndexOfKey,
 } from "./carrier-key";
 import { NO_KNOWLEDGE } from "./knowledge-labels";
@@ -3977,16 +3978,12 @@ class Game {
 			// and credit earned before it must not ride into the dock it restores
 			// (D7).
 			this.ladderPending = emptyPending();
-			// **A docked save resumes in flight at the arrival point, and that
-			// is a deliberate scale-down rather than an omission.** Re-entering
-			// a berth means rebuilding a whole dock session — the grant, the
-			// reservation, the interior, the on-rails placement — inside state
-			// #72 is open to extract from this class. Restoring `flight.pos`
-			// without that session would be worse than not trying: the berth
-			// pose is *inside* the station, so the ship would resume in flight
-			// inside the hull. `dockedAt` is recorded, round-trips, and is
-			// honoured by the node that extracts the session.
-			if (save.commander.dockedAt === null) {
+			// Always restore flight state from the save, even when `dockedAt`
+			// is set: `restoreDockedAt` overrides pos/vel on success, and its
+			// D2 fallback leaves the ship beside the station, but if it fails
+			// at an early guard (station absent after a generator change) the
+			// ship needs a valid position rather than the constructor's default.
+			{
 				const f = save.commander.flight;
 				this.world.ship.pos = v3(f.pos[0], f.pos[1], f.pos[2]);
 				this.world.ship.vel = v3(f.vel[0], f.vel[1], f.vel[2]);
@@ -15971,22 +15968,83 @@ class Game {
 		const id = this.world.system.contents.stations.find(
 			(s) => s.type === "trade",
 		)?.id;
-		if (!id || this.dock.phase !== "flying") return false;
-		const body = this.world.system.byId.get(id);
-		const snap = this.dockingSnapshot(id);
-		if (!body || !snap) return false;
-		const { axis } = this.poseOfStation(id);
-		const rangeKm = snap.planeKm + FIRST_DAY_STANDOFF_KM;
+		if (!id) return false;
 		const from = {
 			pos: { ...this.world.ship.pos },
 			vel: { ...this.world.ship.vel },
 			orientation: this.orientation.clone(),
 			targetId: this.targetId,
 		};
-		const giveUp = (): false => {
+		return this.dockByProtocol(id, () => {
 			// An unused grant ends the way its expiry ends it (`docking.ts`): back
 			// to none, and the berth it reserved released, so a failed start does
 			// not hold a berth for a ship that went back to the arrival point.
+			this.world.ship.pos = v3(from.pos.x, from.pos.y, from.pos.z);
+			this.world.ship.vel = v3(from.vel.x, from.vel.y, from.vel.z);
+			this.orientation.copy(from.orientation);
+			this.targetId = from.targetId;
+			return false;
+		});
+	}
+
+	/**
+	 * **Docked restore** (node #658, building #293's decisions): a save taken
+	 * docked loads back into the station, by the docking protocol.
+	 *
+	 * **D2**: a failed re-dock leaves the ship **beside the station** — on the
+	 * axis outside the standoff, co-moving, grant released, computer off — not
+	 * at the arrival point. If the station is absent (generator change), the
+	 * ship stays at its saved position in flight.
+	 *
+	 * **D3**: the clock moves on by the run-in. Printed.
+	 *
+	 * **D4**: any free berth; no schema change.
+	 *
+	 * Called after the store attaches, so the dock flush inside the sub-stepped
+	 * loop writes `lastDocked`. A death restore (#654) goes through the same
+	 * load arm: after a death the pilot wakes in a berth.
+	 */
+	restoreDockedAt(key: CarrierKey): boolean {
+		const localId = localCarrierIdOfKey(key);
+		const station = this.world.system.contents.stations.find(
+			(s) => s.localCarrierId === localId,
+		);
+		if (!station) return false;
+		const id = station.id;
+		const t0 = this.world.gameTime;
+		const ok = this.dockByProtocol(id, () => {
+			// D2: a failed re-dock is not undone — the ship stays beside the
+			// station, not at the arrival point.
+			return false;
+		});
+		// D3: the clock moved on by the run-in.
+		const elapsed = this.world.gameTime - t0;
+		console.log(
+			`docked restore: ${elapsed.toFixed(1)} s run-in at ${station.name} (${id})`,
+		);
+		return ok;
+	}
+
+	/**
+	 * Shared docking-protocol sequence used by both `startDockedAtHome` and
+	 * `restoreDockedAt`: place the ship on the aperture axis outside the
+	 * standoff, co-moving, request clearance, engage the docking computer,
+	 * sub-step until docked, skip the traversal.
+	 *
+	 * `onFail` is called when the dock does not succeed (grant refused or
+	 * sub-step loop timed out). The grant and computer are already released
+	 * before it runs. Each caller defines what "failure" means for position:
+	 * the guided start restores the arrival point; a docked restore leaves the
+	 * ship beside the station (D2).
+	 */
+	private dockByProtocol(id: string, onFail: () => false): boolean {
+		if (this.dock.phase !== "flying") return false;
+		const body = this.world.system.byId.get(id);
+		const snap = this.dockingSnapshot(id);
+		if (!body || !snap) return false;
+		const { axis } = this.poseOfStation(id);
+		const rangeKm = snap.planeKm + FIRST_DAY_STANDOFF_KM;
+		const giveUp = (): false => {
 			const held = this.dockingStateOf(id);
 			if (held.clearance.kind === "granted")
 				this.dockingStates.set(
@@ -15995,11 +16053,7 @@ class Game {
 				);
 			this.cancelComputerApproach();
 			this.throttle = 0;
-			this.world.ship.pos = v3(from.pos.x, from.pos.y, from.pos.z);
-			this.world.ship.vel = v3(from.vel.x, from.vel.y, from.vel.z);
-			this.orientation.copy(from.orientation);
-			this.targetId = from.targetId;
-			return false;
+			return onFail();
 		};
 		this.world.ship.pos = v3(
 			body.pos.x + axis.x * rangeKm,
@@ -18893,6 +18947,15 @@ if (postcard) {
 		// guided start still docks. Before the clock runs, as the opening does.
 		if (plan.loaded !== null) {
 			if (slot === null) return;
+			// Node #658, building #293: a docked save re-enters its station
+			// through the protocol, before the clock runs for the pilot. After
+			// the store attaches, so its dock flush writes `lastDocked`. A death
+			// restore (#654) goes through this same arm.
+			if (plan.loaded.commander.dockedAt !== null) {
+				if (!game.restoreDockedAt(plan.loaded.commander.dockedAt))
+					console.warn("docked restore failed; resuming in flight");
+				return;
+			}
 			const commander = {
 				firstDay: game.firstDay,
 				docked: game.dockPhase === "docked",
