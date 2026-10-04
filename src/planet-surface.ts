@@ -22,6 +22,7 @@
 
 import * as THREE from "three";
 import type { PlanetAppearance, SurfaceClass } from "./planet-appearance";
+import { CLOUD_SHELL_RADIUS } from "./planet-clouds";
 import {
 	ATMOSPHERE_FRAGMENT,
 	BAKED_SURFACE_VERTEX,
@@ -419,7 +420,9 @@ function coronaTexture(): THREE.Texture {
  */
 let cloudGeometry: THREE.SphereGeometry | undefined;
 const cloudShell = () => {
-	cloudGeometry ??= shared(new THREE.SphereGeometry(1.014, 128, 84));
+	cloudGeometry ??= shared(
+		new THREE.SphereGeometry(CLOUD_SHELL_RADIUS, 128, 84),
+	);
 	return cloudGeometry;
 };
 let shellGeometry: THREE.SphereGeometry | undefined;
@@ -494,6 +497,8 @@ export function buildBodyVisual(
 		// scale — which is what lets one uniform serve the far, approach and near
 		// layers without a per-layer copy.
 		sunDir: { value: (opts.sunDir ?? DEFAULT_SUN_DIRECTION).clone() },
+		cloudSunDir: { value: new THREE.Vector3() },
+		cloudCoherent: { value: look.surface === "terran" ? 1 : 0 },
 		sunColor: { value: new THREE.Color(opts.sunColor ?? 0xfff7eb) },
 		// A thick atmosphere carries light well past the geometric terminator;
 		// an airless body does not carry it at all.
@@ -517,9 +522,8 @@ export function buildBodyVisual(
 		// Set below, once the shell's scale is known.
 		atmoInnerRatio: { value: 1 },
 		cloudCover: { value: look.cloudCover },
-		// When non-zero, the terran surface shader replaces its cloud field with
-		// a single deterministic blob at this direction. Zero in production; the
-		// probe sets it to test the cloud shadow (node #212).
+		// When non-zero, coverage bake, procedural shadow, and terran shell share
+		// a single blob in the rotating weather frame. Zero in production.
 		cloudTestDir: { value: new THREE.Vector3(0, 0, 0) },
 		// Water cloud is neutral; a dust haze is the colour of the ground it
 		// was lifted from.
@@ -766,6 +770,7 @@ export function buildBodyVisual(
 			: (planet.userData.reliefPath as ReliefPath);
 
 	const setSurfaceClass = (next: SurfaceClass) => {
+		uniforms.cloudCoherent.value = next === "terran" ? 1 : 0;
 		// A star keeps its own shader. It is not a planet surface, it is the
 		// brightest thing in the frame and therefore what the bloom pass is
 		// mostly working on, and drawing it as a desert would change the one
@@ -892,6 +897,15 @@ export function buildBodyVisual(
 	// body rather than as a ball. Per-body tilt would be a generator question —
 	// the axis decides seasons — and nothing in the sim has an axis yet.
 	group.rotation.z = 0.18;
+	const cloudFrame = new THREE.Quaternion();
+	const updateCloudSun = (direction: THREE.Vector3) => {
+		group.getWorldQuaternion(cloudFrame).invert();
+		(uniforms.cloudSunDir.value as THREE.Vector3)
+			.copy(direction)
+			.applyQuaternion(cloudFrame)
+			.normalize();
+	};
+	updateCloudSun(uniforms.sunDir.value as THREE.Vector3);
 
 	return {
 		group,
@@ -900,6 +914,7 @@ export function buildBodyVisual(
 		surface: look.surface,
 		setSunDirection(direction, starAngularRadius) {
 			(uniforms.sunDir.value as THREE.Vector3).copy(direction);
+			updateCloudSun(direction);
 			uniforms.sunAngularRadius.value = starAngularRadius;
 			// `getWorldDirection` updates the ring's world matrix from the root
 			// before reading its +Z, so this is exact rather than a frame stale —

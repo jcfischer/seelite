@@ -13,6 +13,11 @@
 
 import { RINGED_CLASSES, type SurfaceClass } from "./planet-appearance";
 import { CLASS_GLSL, RELIEF } from "./planet-classes.glsl";
+import {
+	CLOUD_FIELD_GLSL,
+	CLOUD_MOTION_GLSL,
+	CLOUD_PROJECTION_GLSL,
+} from "./planet-clouds";
 
 /**
  * One cell of a crater field, and the profile of the crater in it.
@@ -231,34 +236,6 @@ ${CRATER_PROFILE}
 `;
 
 /**
- * Shared cloud field recipe (node #212).
- *
- * The three noise terms, their weights, the smoothstep mask and the zonal band
- * are one copy here so the bake path (TERRAN in planet-classes.glsl.ts) and the
- * live shell (CLOUD_FRAGMENT) cannot drift.
- *
- * Callers compute their own input positions — the live shell adds clock drift,
- * the bake path evaluates at t = 0 — and pass them in.
- */
-export const CLOUD_FIELD_GLSL = /* glsl */ `
-// The cirrus domain compresses y to streak noise along the rotation axis.
-// One definition, called from both the bake path (planet-classes.glsl.ts)
-// and the live cloud shell (CLOUD_FRAGMENT below); each caller adds its
-// own offset (seedOffset + 31.0, plus time drift on the live path).
-vec3 cirrusDomain(vec3 p) { return vec3(p.x * 2.8, p.y * 0.7, p.z * 2.8); }
-
-float cloudFieldFromInputs(vec3 broadP, vec3 wispP, vec3 cirrusP,
-                           float lat, float cover) {
-  float broad  = fbm4(warp(broadP * 2.3, 1.1, 0.75));
-  float wisp   = fbm5(wispP * 8.5);
-  float cirrus = fbm3(cirrusP * 1.2);
-  float zonal  = 0.58 + 0.42 * cos(lat * 8.2 + 0.4);
-  float field  = broad * 0.55 + wisp * 0.25 + cirrus * 0.20;
-  return smoothstep(0.54 - cover * 0.16, 0.56 + 0.10, field) * zonal;
-}
-`;
-
-/**
  * Lighting shared by every class.
  *
  * Three terms the previous prototype was missing, and each fixes one way a
@@ -452,7 +429,7 @@ ${relief === "none" ? "#define RELIEF_NONE 1" : ""}
 ${SANITISE_GLSL}
 ${VARYINGS_GLSL}
 ${NOISE_GLSL}
-${CLOUD_FIELD_GLSL}
+${surface === "terran" ? CLOUD_FIELD_GLSL + CLOUD_PROJECTION_GLSL : ""}
 ${LIGHT_GLSL}
 float height(vec3 p);
 ${RELIEF}
@@ -469,6 +446,15 @@ void main() {
   // ?perf=flat: a plain lit sphere, so the whole class shader can be priced
   // against the rest of the frame. Diagnostic; see planet-surface.ts.
   if (perfAblate < 1.5) surface(p, albedo, N, emissive, specPower, specMask);
+${
+	surface === "terran"
+		? `  // Before the bake: one weather evaluation per pixel, never per relief tap.
+  if (perfAblate < 1.5 && cloudCover > 0.01 && dot(p, cloudSunDir) > 0.0) {
+    vec3 cloudP = cloudDirection(p);
+    albedo *= 1.0 - CLOUD_SHADOW_STRENGTH * cloudField(cloudP, cloudCover, seedOffset, cloudTestDir);
+  }`
+		: ""
+}
 
 ${
 	RINGED_CLASSES.includes(surface)
@@ -560,10 +546,8 @@ void main() {
   float graze = sqrt(max(d2, 0.0));
   // Zero at the ground, one at the top of the shell.
   float altitude = clamp((graze - inner) / max(outer - inner, 1e-6), 0.0, 1.0);
-  // A scale height of 2.8 leaves about 6% of the ground value at the top,
-  // giving a thicker limb that reads at 3 radii rather than vanishing (node
-  // #212). The previous 3.5 left too little air at altitude for the limb to
-  // carry any weight.
+  // A scale height of 2.8 leaves about 6% of the ground value at the top.
+  // Node #212 widens the falloff; readability is judged on the sheet.
   float density = exp(-altitude * 2.8);
   // Multiplied out to exactly zero at the silhouette, so the small remainder
   // the exponential still carries does not leave a step of its own.
@@ -574,8 +558,7 @@ void main() {
   // stopping at it.
   float day = smoothstep(-0.45, 0.30, dot(N, sunDir));
   // Forward scattering: looking towards the star through the shell. Exponent
-  // 3.5 rather than the previous 5.0 spreads the glow wider so the limb reads
-  // at 3 radii (node #212).
+  // 3.5 rather than the previous 5.0 spreads the glow wider (node #212).
   float forward = pow(max(dot(V, -sunDir), 0.0), 3.5);
   // Longer path at grazing angles scatters out the blue first — grazing is now
   // "a long way through the air", which is what it always meant.
@@ -600,23 +583,27 @@ ${VARYINGS_GLSL}
 ${SANITISE_GLSL}
 ${NOISE_GLSL}
 ${CLOUD_FIELD_GLSL}
+${CLOUD_MOTION_GLSL}
 ${LIGHT_GLSL}
 uniform float time;
+uniform vec3 cloudTestDir;
+uniform float cloudCoherent;
 uniform float cloudCover;
 uniform float seedOffset;
 uniform vec3  cloudTint;
 void main() {
   vec3 p = normalize(vObjP);
-  // Two rates: the deck drifts and the detail shears across it, which reads as
-  // one system moving rather than a texture sliding.
-  vec3 broadP = p + vec3(time * 0.0030, 0.0, 0.0) + seedOffset;
-  vec3 wispP  = p + vec3(time * 0.0068, 0.0, time * 0.0011) + seedOffset;
-  // Cirrus (node #212): a coarser scale streaked along the rotation axis by
-  // compressing y in the noise domain. Drifts at its own rate.
-  vec3 cirrusP = cirrusDomain(p)
-               + vec3(time * 0.0018, 0.0, time * 0.0006) + seedOffset + 31.0;
-  float mask = cloudFieldFromInputs(broadP, wispP, cirrusP,
-                                    abs(p.y), cloudCover);
+  float mask;
+  if (cloudCoherent > 0.5) {
+    // Terran weather moves coherently with its baked coverage field.
+    mask = cloudField(cloudMotion(p, time), cloudCover, seedOffset, cloudTestDir);
+  } else {
+    // Dust haze keeps its multi-rate shear.
+    vec3 broadP = p + vec3(time * 0.0030, 0.0, 0.0) + seedOffset;
+    vec3 wispP = p + vec3(time * 0.0068, 0.0, time * 0.0011) + seedOffset;
+    vec3 cirrusP = cirrusDomain(p, seedOffset) + vec3(time * 0.0018, 0.0, time * 0.0006);
+    mask = cloudFieldFromInputs(broadP, wispP, cirrusP, abs(p.y), cloudCover);
+  }
 
   vec3 N = normalize(vWorldN);
   vec3 V = normalize(cameraPosition - vWorldP);
@@ -840,7 +827,11 @@ export interface BakeDescriptor {
 }
 
 export const BAKE_DESCRIPTORS: Partial<Record<SurfaceClass, BakeDescriptor>> = {
-	terran: { aux: "0.0", perFrame: "", specPower: 230 },
+	terran: {
+		aux: "cloudField(p, cloudCover, seedOffset, cloudTestDir)",
+		perFrame: "",
+		specPower: 230,
+	},
 	desert: { aux: "0.0", perFrame: "", specPower: 0 },
 	ice: { aux: "0.0", perFrame: "", specPower: 46 },
 	airless: { aux: "0.0", perFrame: "", specPower: 0 },
@@ -940,11 +931,7 @@ uniform mat3 faceBasis;
 varying vec2 vNdc;
 ${SANITISE_GLSL}
 ${NOISE_GLSL}
-${CLOUD_FIELD_GLSL}
-// sunDir is needed by terran's cloud shadow (node #212). Already in the
-// uniform block via the body's shared record; unused by other classes'
-// bake programs, where the compiler strips it.
-uniform vec3 sunDir;
+${surface === "terran" && channel === "normal" ? CLOUD_FIELD_GLSL : ""}
 float height(vec3 p);
 ${RELIEF}
 ${CLASS_GLSL[surface]}
@@ -1013,7 +1000,8 @@ ${SURFACE_VERTEX_BODY}
 /**
  * Draw a body from its two cubes — the cheap program the whole node is for.
  *
- * Two texture fetches and the shared lighting, against the 100 to 150 noise
+ * Two terrain texture fetches and shared lighting, plus terran's sun-projected
+ * cloud-coverage fetch, against the 100 to 150 noise
  * calls a fragment the procedural program makes. There is **no relief path
  * here**: the normal comes out of a texture, so #207's three programs have
  * nothing to select between and `SurfacePath` keeps `"baked"` outside the
@@ -1056,6 +1044,7 @@ uniform samplerCube bakedAlbedo;
 uniform samplerCube bakedNormal;
 ${d.perFrame ? "" : "uniform float perfAblate;"}
 ${prelude}
+${surface === "terran" ? CLOUD_PROJECTION_GLSL + "\nuniform float cloudCover;" : ""}
 void main() {
   vec3 p = normalize(vObjP);
   vec3 V = normalize(cameraPosition - vWorldP);
@@ -1078,6 +1067,16 @@ ${d.perFrame ? `  ${d.perFrame}` : ""}
   }
   if (perfAblate > 0.5) N = normalize(vWorldN);
 
+${
+	surface === "terran"
+		? `  // Coverage is normal-cube alpha: one extra fetch, no per-frame noise.
+  // Lighting and weather motion stay live, independent of the terrain bake.
+  if (perfAblate < 1.5 && cloudCover > 0.01 && dot(p, cloudSunDir) > 0.0) {
+    vec3 cloudP = cloudDirection(p);
+    albedo *= 1.0 - CLOUD_SHADOW_STRENGTH * textureCube(bakedNormal, cloudP).a;
+  }`
+		: ""
+}
   vec3 col = shade(albedo, N, V);
 ${
 	d.specPower > 0

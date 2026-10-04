@@ -145,40 +145,6 @@ uniform float cloudCover;
 // centred at this direction. Zero in production; the probe sets it.
 uniform vec3  cloudTestDir;
 
-// Cloud shadow on the ground (node #212).
-//
-// Evaluates the cloud field at the surface point offset along the sun direction
-// by the cloud shell's height. The shell is SphereGeometry(1.014, ...) at
-// planet-surface.ts:422 — distinct from the atmosphere shell at 1.1+. So the
-// projection height is 1.014 - 1.0 = 0.014 radii. If that radius changes,
-// this literal must follow.
-//
-// Static — no clock drift — so the shadow bakes into the cubemap and costs
-// nothing per frame. The three terms (broad, wisp, cirrus) are evaluated
-// through cloudFieldFromInputs (planet-shaders.ts) so the bake path and the
-// live shell cannot drift.
-const float CLOUD_SHADOW_STRENGTH = 0.40;
-
-float cloudField(vec3 p) {
-  // Test mode: a single blob at a known direction for the probe.
-  if (dot(cloudTestDir, cloudTestDir) > 0.01) {
-    return smoothstep(0.30, 0.70, dot(normalize(p), normalize(cloudTestDir)));
-  }
-  vec3 broadP  = p + seedOffset;
-  vec3 wispP   = p + seedOffset;
-  vec3 cirrusP = cirrusDomain(p) + seedOffset + 31.0;
-  return cloudFieldFromInputs(broadP, wispP, cirrusP, abs(p.y), cloudCover);
-}
-
-float cloudShadow(vec3 p) {
-  if (cloudCover < 0.01) return 0.0;
-  // No shadow on the night side — the sun is below the local horizon.
-  if (dot(normalize(p), sunDir) < 0.0) return 0.0;
-  // Project the surface point to the cloud altitude along the sun direction.
-  vec3 cloudP = normalize(p + sunDir * 0.014);
-  return cloudField(cloudP) * CLOUD_SHADOW_STRENGTH;
-}
-
 // Domain-warped continents. The warp is what turns blobs into landmasses with
 // peninsulas and inland seas; without it every ocean world looks like the same
 // ocean world.
@@ -236,9 +202,6 @@ void surface(vec3 p, inout vec3 albedo, inout vec3 N,
   // Snow line on high ground at any latitude, and only near the summits: a low
   // threshold paints the whole range white and the relief disappears into it.
   albedo = mix(albedo, vec3(0.58, 0.61, 0.64), land * smoothstep(0.74, 0.96, h));
-
-  // Cloud shadow darkens the ground under the weather (node #212).
-  albedo *= 1.0 - cloudShadow(p);
 
   N = reliefNormal(p, N, 4.5 * land);
   // Tight and dim. A broad lobe puts a headlight blob in the middle of the

@@ -146,10 +146,10 @@ describe("which classes bake", () => {
 });
 
 describe("the two programs a bake needs", () => {
-	test("terran bake defines shared cloud helpers before the shadow calls them", () => {
-		// Guard the missing-include compile failure from node #212. Both cube
-		// channels assemble the terran class, even though only albedo stores shade.
-		for (const channel of ["albedo", "normal"] as const) {
+	test("terran coverage bake defines helpers before writing normal-cube alpha", () => {
+		// Coverage is light-free and belongs only to the normal cube's spare alpha.
+		{
+			const channel = "normal";
 			const source = stripComments(bakeFragmentFor("terran", channel));
 			for (const helper of ["cloudFieldFromInputs", "cirrusDomain"]) {
 				const definition = source.search(
@@ -205,16 +205,15 @@ describe("the two programs a bake needs", () => {
 		}
 	});
 
-	test("the per-frame hook is inert on every class in the table", () => {
-		// `aux` and `perFrame` are the node's "emissive lava stays a per-frame
-		// term", and nothing uses them: lava is the only class that ever wanted
-		// one and it is out of the table on a measurement (`BAKE_DESCRIPTORS`
-		// records the figures). The fields stay because the mechanism is what a
-		// second attempt would need, and this asserts the claim that they are
-		// currently doing nothing rather than leaving it to be inferred — so a
-		// class that quietly acquires one has to come past this line.
+	test("the emissive hook stays inert and only terran stores weather coverage", () => {
+		// Node #212 uses normal-cube alpha for static coverage, separately from
+		// the emissive hook. Motion and sun projection belong to the draw program.
 		for (const surface of BAKEABLE_CLASSES) {
-			expect(BAKE_DESCRIPTORS[surface]?.aux, surface).toBe("0.0");
+			expect(BAKE_DESCRIPTORS[surface]?.aux, surface).toBe(
+				surface === "terran"
+					? "cloudField(p, cloudCover, seedOffset, cloudTestDir)"
+					: "0.0",
+			);
 			expect(BAKE_DESCRIPTORS[surface]?.perFrame, surface).toBe("");
 		}
 	});
