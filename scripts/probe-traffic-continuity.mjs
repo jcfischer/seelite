@@ -29,6 +29,9 @@ try {
 		const g = window.__seelite;
 		cancelAnimationFrame(g.animationFrame);
 		const sim = await import("/src/sim.ts");
+		const { evaluateTrafficCruise, trafficCruiseEnvironment } = await import(
+			"/src/station-route.ts"
+		);
 		const dist = (a, b) => Math.hypot(a.x - b.x, a.y - b.y, a.z - b.z);
 		g.world.gameTime = 4;
 		sim.advanceSystem(g.world.system, 4);
@@ -51,6 +54,23 @@ try {
 			const t = tick / 10;
 			g.world.gameTime = t;
 			sim.advanceSystem(g.world.system, t);
+			// Rewrite the LIVE canonical cache, preserving the leg timestamp and
+			// moving pose and integrated displacement together. The frozen prior
+			// prediction is untouched; the actual projector consumes this rewrite.
+			if (injectRewrite && !controlApplied) {
+				for (const prior of previous.values()) {
+					if (prior.phase !== "cruise" || !(prior.cruisePathKm > 0)) continue;
+					const live = g.trafficCruiseCache.get(prior.canonicalKey);
+					if (!live?.displacementKm) continue;
+					live.pos = { ...live.pos, y: live.pos.y + 1 };
+					live.displacementKm = {
+						...live.displacementKm,
+						y: live.displacementKm.y + 1,
+					};
+					controlApplied = true;
+					break;
+				}
+			}
 			g.updateTrafficAuthority();
 			if (!playerReservation && t >= 120) {
 				for (const station of g.world.system.contents.stations) {
@@ -103,36 +123,17 @@ try {
 				}
 				const prior = previous.get(route.key);
 				if (prior) {
-					const allowedKm = continuityAllowanceKm(prior, route);
-					let sampledPos = route.pos;
-					if (
-						injectRewrite &&
-						!controlApplied &&
-						prior.phase === "cruise" &&
-						route.phase === "cruise" &&
-						route.cruisePathKm > prior.cruisePathKm
-					) {
-						const delta = {
-							x: route.pos.x - prior.pos.x,
-							y: route.pos.y - prior.pos.y,
-							z: route.pos.z - prior.pos.z,
-						};
-						const distance = dist(route.pos, prior.pos);
-						// Move the sampled pose one kilometre beyond this step's complete
-						// path budget. Do not touch the independently integrated path.
-						const factor = (allowedKm + 1) / distance;
-						sampledPos = {
-							x: prior.pos.x + delta.x * factor,
-							y: prior.pos.y + delta.y * factor,
-							z: prior.pos.z + delta.z * factor,
-						};
-						controlApplied = true;
-					}
-					const deltaKm = dist(sampledPos, prior.pos);
-					const residualKm = cruiseContinuityResidualKm(prior, {
-						...route,
-						pos: sampledPos,
-					});
+					const predicted =
+						prior.canonical && prior.environment
+							? evaluateTrafficCruise(prior.canonical, t, prior.environment)
+							: undefined;
+					const allowedKm = continuityAllowanceKm(prior, route, predicted);
+					const deltaKm = dist(route.pos, prior.pos);
+					const residualKm = cruiseContinuityResidualKm(
+						prior,
+						route,
+						predicted,
+					);
 					if (deltaKm > allowedKm || residualKm > 0.05)
 						jumps.push({
 							t,
@@ -180,7 +181,64 @@ try {
 							to: route.berthId,
 						});
 				}
+				let canonicalKey, canonical, environment;
+				if (route.phase === "cruise") {
+					const entry = [...g.trafficCruiseCache].find(
+						([key, state]) =>
+							key.startsWith(
+								g.world.system.record.index +
+									"|" +
+									route.key +
+									"|" +
+									route.destinationStationId +
+									"|",
+							) &&
+							state.startedAtS === route.cruiseStartedAtS &&
+							state.atS <= t + 1e-9,
+					);
+					if (!entry)
+						throw new Error(
+							"Missing previous canonical cruise state for " + route.key,
+						);
+					canonicalKey = entry[0];
+					canonical = structuredClone(entry[1]);
+					if (
+						prior?.cruiseStartedAtS === route.cruiseStartedAtS &&
+						prior.environment
+					)
+						environment = prior.environment;
+					else {
+						const actor = g.trafficActorByKey(route.key);
+						const lane = route.destinationStationId === "traffic-lane-point";
+						const endLanePoint = lane
+							? g
+									.trafficVoyages(actor, t)
+									.find((v) => v.awayOrdinal === route.visitAwayOrdinal)
+									?.departure
+							: undefined;
+						if (lane && !endLanePoint)
+							throw new Error("Missing retained Lane point");
+						const station = lane
+							? null
+							: sim.stationOf(g.world.system, route.destinationStationId);
+						environment = trafficCruiseEnvironment({
+							record: g.world.system.record,
+							actor,
+							atS: canonical.atS,
+							selected: {
+								id: route.destinationStationId,
+								fits: true,
+								hold: route.pos,
+								parentId: station?.parentId ?? null,
+							},
+							endLanePoint: endLanePoint && structuredClone(endLanePoint),
+						});
+					}
+				}
 				previous.set(route.key, {
+					canonicalKey,
+					canonical,
+					environment,
 					phase: route.phase,
 					cruisePathKm: route.cruisePathKm,
 					cruiseDisplacementKm: route.cruiseDisplacementKm,

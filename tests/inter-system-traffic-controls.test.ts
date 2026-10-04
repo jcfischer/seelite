@@ -95,6 +95,9 @@ test("late: injected committed home lane delays observed jump but not inbound", 
 test("crossing: recomputing actual charge eligibility at a delayed outward crossing changes inbound destinations", () => {
 	// A distant circular station makes actual-distance eligibility clock-dependent.
 	// Its static bound still rejects it at every clock.
+	const localContents = new Map(contents);
+	localContents.set(1, structuredClone(contents.get(1)!));
+	const get = (i: number) => localContents.get(i)!;
 	const distant = get(1);
 	for (const station of distant.stations) {
 		station.parentId = null;

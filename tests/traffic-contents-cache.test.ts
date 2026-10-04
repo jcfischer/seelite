@@ -25,7 +25,13 @@ test("Game reuses cold foreign contents in warm voyage queries and clears them o
 		(node): node is ts.ClassDeclaration =>
 			ts.isClassDeclaration(node) && node.name?.text === "Game",
 	)!;
-	const names = ["ensureTrafficActors", "trafficVoyages", "trafficContentsFor"];
+	const names = [
+		"ensureTrafficActors",
+		"trafficVoyages",
+		"trafficContentsFor",
+		"trafficCandidates",
+		"trafficActorByKey",
+	];
 	const members = names.map((name) => {
 		const member = game.members.find(
 			(node) =>
@@ -39,6 +45,7 @@ test("Game reuses cold foreign contents in warm voyage queries and clears them o
 		(r) => r.index !== world.system.record.index,
 	)!;
 	let generations = 0;
+	let comparisons = 0;
 	const bindings = {
 		generateContents: (record: Parameters<typeof generateContents>[0]) => {
 			generations++;
@@ -47,7 +54,13 @@ test("Game reuses cold foreign contents in warm voyage queries and clears them o
 		buildHaulerPlans,
 		inboundCandidates,
 		haulerAvailability,
-		compareCarrierKeys,
+		compareCarrierKeys: (
+			a: Parameters<typeof compareCarrierKeys>[0],
+			b: Parameters<typeof compareCarrierKeys>[1],
+		) => {
+			comparisons++;
+			return compareCarrierKeys(a, b);
+		},
 		systemIndexOfKey,
 		routeVoyages: (
 			_g: unknown,
@@ -93,11 +106,17 @@ test("Game reuses cold foreign contents in warm voyage queries and clears them o
 	const actor: TrafficActor = [...subject.trafficHaulers.values()][0].actor;
 	const first = subject.trafficVoyages(actor, 1000);
 	const coldGenerations = generations;
+	const candidates = subject.trafficCandidates();
+	const coldComparisons = comparisons;
+	for (const candidate of candidates)
+		expect(subject.trafficActorByKey(candidate.key)).toBe(candidate);
 	for (let tick = 1; tick <= 40; tick++) {
 		expect(subject.trafficVoyages(actor, 1000 + tick / 10)).toBe(first);
 		subject.ensureTrafficActors();
+		expect(subject.trafficCandidates()).toBe(candidates);
 	}
 	expect(generations).toBe(coldGenerations);
+	expect(comparisons).toBe(coldComparisons);
 	expect(subject.trafficContentsFor(world.system.record.index)).toBe(
 		world.system.contents,
 	);
@@ -110,6 +129,9 @@ test("Game reuses cold foreign contents in warm voyage queries and clears them o
 		contents: generateContents(foreign),
 	};
 	subject.ensureTrafficActors();
+	expect(subject.trafficCandidates()).not.toBe(candidates);
+	for (const candidate of subject.trafficCandidates())
+		expect(subject.trafficActorByKey(candidate.key)).toBe(candidate);
 	expect(subject.trafficContentsFor(foreign.index)).toBe(world.system.contents);
 	for (const [index, contents] of subject.trafficContentsCache)
 		expect(contents).not.toBe(previous.get(index));

@@ -6151,10 +6151,28 @@ class Game {
 		}
 		return contents;
 	}
+	private trafficCandidateHomes?: TrafficActor[];
+	private trafficCandidateInbound?: TrafficActor[];
+	private trafficCombined: TrafficActor[] = [];
+	private trafficByKey = new Map<CarrierKey, TrafficActor>();
 	private trafficCandidates(): TrafficActor[] {
-		return [...this.trafficActors, ...this.trafficInbound].sort((a, b) =>
-			compareCarrierKeys(a.key, b.key),
-		);
+		// System entry replaces the roster arrays. Reference checks also allow
+		// isolated browser fixtures to replace a roster without stale candidates.
+		if (
+			this.trafficCandidateHomes !== this.trafficActors ||
+			this.trafficCandidateInbound !== this.trafficInbound
+		) {
+			this.trafficCandidateHomes = this.trafficActors;
+			this.trafficCandidateInbound = this.trafficInbound;
+			this.trafficCombined = [
+				...this.trafficActors,
+				...this.trafficInbound,
+			].sort((a, b) => compareCarrierKeys(a.key, b.key));
+			this.trafficByKey = new Map(
+				this.trafficCombined.map((actor) => [actor.key, actor]),
+			);
+		}
+		return this.trafficCombined;
 	}
 	private trafficVoyages(actor: TrafficActor, atS: number) {
 		const plan = this.trafficHaulers.get(actor.key);
@@ -6194,6 +6212,7 @@ class Game {
 				this.trafficHaulers.set(plan.actor.key, plan);
 		this.trafficActors = homePlans.map((p) => p.actor);
 		this.trafficInbound = inboundPlans.map((p) => p.actor);
+		this.trafficCandidates();
 		// Before the first scheduled departure is the only parked state the
 		// base schedule proves without replaying a physical visit. A later
 		// `desired: parked` boundary is only intent: a delayed outbound trip may
@@ -6310,9 +6329,7 @@ class Game {
 			>();
 			for (const route of this.trafficPreviousRoutes.values()) {
 				if (!route.berthId) continue;
-				const routeActor = this.trafficCandidates().find(
-					(candidate) => candidate.key === route.key,
-				);
+				const routeActor = this.trafficActorByKey(route.key);
 				const stationId =
 					route.terminalStationId ??
 					(route.phase === "parked-home"
@@ -6705,9 +6722,7 @@ class Game {
 				: 1;
 		this.trafficExactParked.clear();
 		for (const projection of this.trafficRoutes) {
-			const actor = this.trafficCandidates().find(
-				(candidate) => candidate.key === projection.key,
-			);
+			const actor = this.trafficActorByKey(projection.key);
 			if (!actor) continue;
 			// Flown, not projected, while engaged; and a carrier that is not in the
 			// world any more — destroyed, or a replacement still being built — is
@@ -7118,10 +7133,8 @@ class Game {
 	}
 
 	private trafficActorByKey(key: CarrierKey): TrafficActor | undefined {
-		return (
-			this.trafficActors.find((a) => a.key === key) ??
-			this.trafficInbound.find((a) => a.key === key)
-		);
+		this.trafficCandidates();
+		return this.trafficByKey.get(key);
 	}
 
 	/** Take one carrier out of what the player can look at: the scanner's list,

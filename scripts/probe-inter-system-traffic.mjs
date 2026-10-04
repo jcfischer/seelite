@@ -134,6 +134,9 @@ try {
 		// An older, live player grant occupies the shared clearance/lane. The hauler
 		// reaches the hold and queues behind it through the ordinary authority.
 		const from = f.voyage.tOut;
+		g.clearTrafficPresentation();
+		const baseline = f.sample(from + 180);
+		g.clearTrafficPresentation();
 		g.trafficPlayerTimeline.push({
 			stationId: f.voyage.destinationStationId,
 			kind: "lane",
@@ -143,36 +146,45 @@ try {
 			movement: "arrival",
 			committed: true,
 		});
-		return f.sample(from + 180);
+		return { baseline, held: f.sample(from + 180) };
 	});
 	check(
 		"destination hold reads the shared live terminal lane",
-		["arrival-queued", "clearance-queued", "holding"].includes(queued.phase) &&
-			queued.contact &&
-			queued.queue?.participant?.key === fixture.key,
+		["lane-queued", "arrival-queued", "clearance-queued", "holding"].includes(
+			queued.held.phase,
+		) &&
+			["arriving", "docked-away"].includes(queued.baseline.phase) &&
+			queued.held.contact &&
+			queued.held.queue?.participant?.key === fixture.key,
 		queued,
 	);
 	const spatial = await page.evaluate(async (cues) => {
 		const { AudioFX } = await import("/src/audio.ts");
-		const render = async (pan) => {
+		const render = async () => {
 			const ctx = new OfflineAudioContext(2, 48000, 48000),
 				fx = new AudioFX();
 			fx.attach(ctx);
-			for (const cue of cues)
-				fx.play({ ...cue, seconds: 0.8, spatial: { ...cue.spatial, pan } });
+			for (const cue of cues) fx.play({ ...cue, seconds: 0.8 });
 			const b = await ctx.startRendering();
 			return [0, 1].map((c) =>
 				b.getChannelData(c).reduce((sum, x) => sum + x * x, 0),
 			);
 		};
-		return { left: await render(-1), right: await render(1) };
+		return {
+			energy: await render(),
+			pan: cues[0].spatial.pan,
+			gain: cues[0].spatial.gain,
+		};
 	}, arrivalCues.cues);
 	check(
 		"Game-emitted arrival cues are audible through AudioFX with spatial pan",
-		spatial.left[0] > 0.01 &&
-			spatial.right[1] > 0.01 &&
-			spatial.left[0] > 10 * spatial.left[1] &&
-			spatial.right[1] > 10 * spatial.right[0],
+		spatial.energy[0] + spatial.energy[1] > 0.01 &&
+			Math.abs(
+				Math.sqrt(spatial.energy[0] / spatial.energy[1]) -
+					Math.cos(((spatial.pan + 1) * Math.PI) / 4) /
+						Math.sin(((spatial.pan + 1) * Math.PI) / 4),
+			) < 0.02 &&
+			spatial.gain > 0,
 		JSON.stringify(spatial),
 	);
 	console.log(

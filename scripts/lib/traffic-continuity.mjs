@@ -1,35 +1,36 @@
-/** Integrated motion for adjoining samples of one physical cruise leg. */
-export function continuityAllowanceKm(prior, route) {
-	if (prior.phase === "cruise" && route.phase === "cruise") {
-		if (
-			!route.cruiseDisplacementKm ||
-			!prior.cruiseDisplacementKm ||
-			!Number.isFinite(route.cruiseStartedAtS) ||
-			route.cruiseStartedAtS !== prior.cruiseStartedAtS
+/** Prediction must come from the frozen previous canonical state and endpoint,
+ * never the current replay's position or cumulative displacement. */
+function validPrediction(prior, route, predicted) {
+	return (
+		predicted &&
+		Number.isFinite(prior.cruiseStartedAtS) &&
+		route.cruiseStartedAtS === prior.cruiseStartedAtS &&
+		predicted.startedAtS === prior.cruiseStartedAtS &&
+		[predicted.pos, prior.pos, route.pos].every(
+			(p) => p && [p.x, p.y, p.z].every(Number.isFinite),
 		)
-			return 0;
-		const a = prior.cruiseDisplacementKm,
-			b = route.cruiseDisplacementKm;
-		// Fractional display queries replay their canonical prefix, so subtract
-		// independently integrated vectors rather than scalar arc lengths.
-		const integratedKm = Math.hypot(b.x - a.x, b.y - a.y, b.z - a.z);
-		return Number.isFinite(integratedKm) ? integratedKm + 0.05 : 0;
+	);
+}
+export function continuityAllowanceKm(prior, route, predicted) {
+	if (prior.phase === "cruise" && route.phase === "cruise") {
+		if (!validPrediction(prior, route, predicted)) return 0;
+		const km = Math.hypot(
+			predicted.pos.x - prior.pos.x,
+			predicted.pos.y - prior.pos.y,
+			predicted.pos.z - prior.pos.z,
+		);
+		return Number.isFinite(km) ? km + 0.05 : 0;
 	}
-	// Terminal traversal and moving-station motion retain the existing
-	// endpoint-velocity gate, including transitions out of cruise.
 	const speed = (v) => Math.hypot(v.x, v.y, v.z);
 	return Math.max(0.05, (speed(prior.vel) + speed(route.vel)) * 0.1);
 }
-
-/** Catch sideways and backwards rewrites as well as excess distance. */
-export function cruiseContinuityResidualKm(prior, route) {
+/** Includes sideways/backwards rewrites even when their distance is plausible. */
+export function cruiseContinuityResidualKm(prior, route, predicted) {
 	if (prior.phase !== "cruise" || route.phase !== "cruise") return 0;
-	if (continuityAllowanceKm(prior, route) === 0) return Infinity;
-	const a = prior.cruiseDisplacementKm,
-		b = route.cruiseDisplacementKm;
+	if (!validPrediction(prior, route, predicted)) return Infinity;
 	return Math.hypot(
-		route.pos.x - prior.pos.x - (b.x - a.x),
-		route.pos.y - prior.pos.y - (b.y - a.y),
-		route.pos.z - prior.pos.z - (b.z - a.z),
+		route.pos.x - predicted.pos.x,
+		route.pos.y - predicted.pos.y,
+		route.pos.z - predicted.pos.z,
 	);
 }

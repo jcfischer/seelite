@@ -37,7 +37,6 @@ import {
 import { nextTrafficDepartureAtS } from "../src/station-traffic";
 import { readFileSync } from "node:fs";
 import { runTrafficControl } from "./inter-system-traffic-mutations";
-import { continuityAllowanceKm } from "../scripts/lib/traffic-continuity.mjs";
 import { npcRiftStrength, WITCHSPACE } from "../src/witchspace";
 
 const galaxy = generateGalaxy(47, 0);
@@ -287,7 +286,11 @@ describe("identity persistence and query cost", () => {
 		const p = hauler(),
 			v = haulerVoyage(p, 0);
 		const reading = (current: number) => {
-			const r = trafficIdentityRecord(galaxy, p.actor.key);
+			const r = trafficIdentityRecord(
+				galaxy,
+				p.actor.key,
+				galaxy.systems.find((r) => r.index === current),
+			);
 			expect(r.index).toBe(home.index);
 			expect(galaxy.systems.some((r) => r.index === current)).toBe(true);
 			return {
@@ -501,13 +504,8 @@ test("the inbound steering/powered boundary agrees with a direct canonical repla
 		});
 		if (prior?.phase === "cruise" && live.phase === "cruise") {
 			expect(Number.isFinite(live.cruisePathKm)).toBe(true);
-			expect(length(sub(live.pos, prior.pos))).toBeLessThanOrEqual(
-				continuityAllowanceKm(prior, live),
-			);
 		}
 		prior = live;
-		if (tick === 13572)
-			expect(live.stepPeakSpeedKms!).toBeGreaterThan(length(live.vel) * 3);
 		if (tick >= 13570) {
 			const direct = projectSystemTrafficActor(input);
 			expect(length(sub(live.pos, direct.pos))).toBeLessThan(1e-5);
