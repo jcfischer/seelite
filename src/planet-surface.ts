@@ -571,6 +571,10 @@ export function buildBodyVisual(
 	const prepareAirless = () => {
 		if (airlessReady) return;
 		const features = airlessFeatures(look.seed);
+		if (features.exhausted)
+			console.warn(
+				`airless seed ${look.seed}: ${features.exhausted} selection exhausted; retained crater terrain`,
+			);
 		uniforms.basinCount.value = features.basins.length;
 		features.basins.forEach((basin, i) =>
 			uniforms.basins.value[i].fromArray(basin),

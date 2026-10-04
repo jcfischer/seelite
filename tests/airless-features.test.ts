@@ -1,4 +1,5 @@
-import { expect, test } from "bun:test";
+import { expect, test, spyOn } from "bun:test";
+import * as featureModule from "../src/airless-features";
 import {
 	airlessFeatures,
 	smallCrater,
@@ -24,9 +25,59 @@ test("basin placement refuses an exhausted work budget", () => {
 		{ length: 200 },
 		(_, i) => [i % 2 ? -1 : 1, 0, 0, 0.7],
 	);
-	expect(() => selectBasins(candidates, 4, 100)).toThrow("budget exhausted");
+	expect(selectBasins(candidates, 4, 100)).toBeNull();
+	expect(selectBasins([], 2)).toBeNull();
 	expect(selectBasins(candidates, 2, 100)).toHaveLength(2);
 });
+
+test("exhausted sparse populations leave a drawable body and report the seed", () => {
+	const look = appearanceFor("moon", "planet-5-moon-0", 3);
+	const exhausted = airlessFeatures(look.seed, 1);
+	expect(exhausted).toEqual({ basins: [], rayCells: [], exhausted: "basins" });
+	const generator = spyOn(featureModule, "airlessFeatures").mockReturnValue(
+		exhausted,
+	);
+	const warning = spyOn(console, "warn").mockImplementation(() => {});
+	const geometry = new THREE.SphereGeometry(1, 8, 6);
+	try {
+		const visual = buildBodyVisual(look, geometry);
+		try {
+			expect(visual.uniforms.basinCount.value).toBe(0);
+			expect(visual.uniforms.rayCount.value).toBe(0);
+			expect(visual.surfaceMesh.material).toBeDefined();
+			expect(warning).toHaveBeenCalledWith(
+				`airless seed ${look.seed}: basins selection exhausted; retained crater terrain`,
+			);
+		} finally {
+			visual.dispose();
+		}
+	} finally {
+		geometry.dispose();
+		generator.mockRestore();
+		warning.mockRestore();
+	}
+});
+
+test("4096-seed corpus completes within the population search cap", () => {
+	// Include the first 2048 seeds, then a uint32-stratified half. These are
+	// reproducible corpus evidence, not a proof over all 2^32 possible seeds.
+	const seeds = [
+		...Array.from({ length: 2048 }, (_, i) => i),
+		...Array.from({ length: 2048 }, (_, i) => i * 0x20_0000 + 0x1f_ffff),
+	];
+	expect(new Set(seeds).size).toBe(4096);
+	const buckets = new Set<number>();
+	for (const seed of seeds) {
+		const features = airlessFeatures(seed);
+		expect(features.exhausted, `seed ${seed}`).toBeNull();
+		expect(features.basins.length).toBeGreaterThanOrEqual(2);
+		expect(features.basins.length).toBeLessThanOrEqual(4);
+		expect(features.rayCells.length).toBeGreaterThanOrEqual(2);
+		expect(features.rayCells.length).toBeLessThanOrEqual(3);
+		buckets.add(features.basins.length);
+	}
+	expect([...buckets].sort()).toEqual([2, 3, 4]);
+}, 120_000);
 
 test("basin rim squares its signed distance without GLSL negative-base pow", () => {
 	const floor = AIRLESS.slice(

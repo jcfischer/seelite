@@ -5,14 +5,15 @@ type Basin = [number, number, number, number];
 export const planetSeedOffset = (seed: number) => (seed % 997) / 97;
 
 /** Seed-order clique search. At most 500 shell candidates, 124,750 scalar
- * pair checks, and 10,000 search visits per body. Refuse rather than stall boot.
+ * pair checks, and 10,000 search visits per body. Return null on exhaustion
+ * rather than stall or abort boot.
  * The lower budget argument exercises exhaustion without a timing assertion.
  */
 export function selectBasins(
 	candidates: Basin[],
 	count: number,
 	budget = 10_000,
-): Basin[] {
+): Basin[] | null {
 	if (
 		candidates.length > 500 ||
 		!Number.isInteger(budget) ||
@@ -39,16 +40,16 @@ export function selectBasins(
 	const place = (start: number): boolean => {
 		if (chosen.length === count) return true;
 		for (let i = start; i < n; i++) {
-			if (++visits > budget)
-				throw new Error("airless basin search budget exhausted");
+			if (++visits > budget) return false;
 			if (chosen.some((j) => !compatible[i * n + j])) continue;
 			chosen.push(i);
 			if (place(i + 1)) return true;
 			chosen.pop();
+			if (visits > budget) return false;
 		}
 		return false;
 	};
-	if (!place(0)) throw new Error("airless basin cell walk exhausted");
+	if (!place(0)) return null;
 	return chosen.map((i) => candidates[i]);
 }
 
@@ -81,9 +82,13 @@ export function smallCrater(cell: V3, seedOffset: number) {
  * Rays: the youngest surface-intersecting cells of the existing 8x field.
  * Age is a seeded display property; neither population changes world state.
  */
-export function airlessFeatures(seed: number): {
+export function airlessFeatures(
+	seed: number,
+	basinBudget = 10_000,
+): {
 	basins: Basin[];
 	rayCells: V3[];
+	exhausted: "basins" | "rays" | null;
 } {
 	const rand = seededRand(mix(seed, 0x213ba51));
 	const count = 2 + Math.floor(rand() * 3);
@@ -107,7 +112,11 @@ export function airlessFeatures(seed: number): {
 	const basins = selectBasins(
 		candidates.map((c) => c.basin),
 		count,
+		basinBudget,
 	);
+	// Sparse decoration cannot make a seeded body unbuildable. The caller
+	// reports the seed; zero counts keep the existing crater terrain drawable.
+	if (!basins) return { basins: [], rayCells: [], exhausted: "basins" };
 
 	const offset = planetSeedOffset(seed);
 	const origin = f(f(offset) * f(1.7)) * 8;
@@ -137,7 +146,6 @@ export function airlessFeatures(seed: number): {
 	const rayCells = young
 		.slice(0, 2 + Math.floor(rand() * 2))
 		.map((c) => c.cell);
-	if (rayCells.length < 2)
-		throw new Error("airless young crater cell walk exhausted");
-	return { basins, rayCells };
+	if (rayCells.length < 2) return { basins, rayCells: [], exhausted: "rays" };
+	return { basins, rayCells, exhausted: null };
 }

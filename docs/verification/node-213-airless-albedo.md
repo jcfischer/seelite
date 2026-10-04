@@ -7,9 +7,19 @@ body, takes four jittered candidates per cell, selects 2–4 separated basins
 with a bounded backtracking search, and uploads centre/radius descriptors.
 Round 2 precomputes scalar pair compatibility for at most 500 candidates
 (at most 124,750 pair checks) and caps backtracking at 10,000 candidate visits.
-Exhaustion throws explicitly instead of continuing combinatorial work on the
-main thread. An adversarial candidate menu exercises that refusal with a
-smaller test budget; a separate 4,096-seed sweep completed under the normal cap.
+Round 3 makes exhaustion a reported result rather than a body-build exception:
+an exhausted basin search disables both sparse populations, and fewer than two
+eligible ray sources disables rays while retaining the basins. The surface
+builder warns with the seed and exhausted population, uploads zero for the
+affected counts, and keeps the existing crater terrain drawable. These are
+degraded pictures, not successful population generation. The cap still bounds
+the search; it does not prove that every uint32 seed succeeds.
+An adversarial candidate menu exercises budget and candidate exhaustion, and a
+forced-exhaustion test builds the production moon with both counts at zero.
+`tests/airless-features.test.ts` now includes the reproducible 4,096-seed sweep:
+seeds 0–2047 plus 2,048 seeds spaced across uint32, ending at `0xffffffff`.
+Every corpus seed must complete without degradation with 2–4 basins and 2–3
+rays. This replaces the earlier uncommitted sweep as the safety evidence.
 Their chord radii are 0.70–0.80 (smaller with four basins for packing room);
 small impacts retain the existing 8x field's 0.020–0.0625 radii. Basin interiors
 suppress crater slope, carry dark basalt,
@@ -111,19 +121,22 @@ worker's explicit instruction forbids the full suite; the supervisor owns
 
 - `rtk test npm test`: **4,904 pass, 0 fail**, exit 0 (250.01 s).
   RTK again labels the passing reporter fixture containing `FAIL` as a
-  failure heading; Bun's summary and the command exit are green.
+  failure heading; Bun's summary and the exit status are green.
 - `npx tsc --noEmit`, `rtk lint npm run format:check`,
   `rtk lint npm run lint`, `rtk err npm run build`, and wiring: pass.
-- Focused hardware `planet-surfaces` and `planets` runs: pass on **ANGLE
-  Metal / Apple M1 Pro**. The first surface run reported 103/104 checks
-  with an assertion failure at peak load 37.5; its rerun passed at peak
-  load 32.1. The failed assertion's name was lost in truncated tool output;
-  its cause is unestablished. The rerun log is
+- Round 2 hardware `planet-surfaces`: **unresolved failure**, on **ANGLE
+  Metal / Apple M1 Pro**. The first run reported 103/104 checks with an
+  assertion failure at peak load 37.5. Its assertion name was lost in
+  truncated output; its cause is unestablished. The rerun passed at peak
+  load 32.1, but that does not rule out flakiness or a defect and does not
+  clear the first run. The passing rerun log is
   `/private/tmp/node213-round2-surfaces.log`.
+- Round 2 hardware `planets`: pass on the same renderer.
 - The rim uses a signed distance multiplied by itself, avoiding GLSL's
   undefined negative-base `pow`. Its regression test also pins the crater
-  walk and two-octave height policy. The CPU candidate hash now has a
-  parity guard against the exact GLSL hash body it mirrors.
+  walk and two-octave height policy. A source-text pin detects changes to the
+  GLSL hash body that the CPU candidate selector mirrors. It does not compare
+  CPU and GPU hash outputs numerically and is not a parity test.
 - Both negative controls' **rendered** feature-on/off ratios are 1.000
   across all five seeds. Their parent ratios remain 1.57–1.60 for
   highland-only brightening and 0.014–0.018 for feature-off. Their gate
@@ -135,6 +148,32 @@ worker's explicit instruction forbids the full suite; the supervisor owns
   production comparison to the rejection helper as a positive control.
   Synthetic unit tests prove either control can defeat rejection and
   invalid/empty measurements cannot pass.
+
+### Round 3 repair
+
+- `rtk test npm test`: **4,906 pass, 0 fail**, exit 0 (277.90 s).
+  The passing reporter fixture still triggers RTK's misleading `FAIL` heading.
+- `npx tsc --noEmit`, `rtk lint npm run format:check`,
+  `rtk lint npm run lint`, and `rtk err npm run build`: pass.
+  The build retains the existing chunk-size warning.
+- The focused generator file passes all nine tests, including the committed
+  4,096-seed corpus and forced-exhaustion production body build. All corpus
+  seeds complete with both requested population counts; the sweep is sample
+  evidence, not an exhaustive guarantee over uint32.
+- The selector still returns `all` for the branch's shared probe library.
+  The explicit worker contract reserves the full suite for the supervisor.
+  `npm run probe:one -- planet` passes **2/2 gating probes** (`planet-surfaces`
+  and `planets`) on **ANGLE Metal / Apple M1 Pro**, peak load 29.6 on ten cores.
+  Output: `/private/tmp/node213-round3-planets-unsandboxed.log`.
+- The first attempt aborted Chromium with `SIGABRT` in the sandbox during
+  renderer preflight, before any assertions. Its complete launch log is
+  `/private/tmp/node213-round3-planets.log`. The same focused invocation passed
+  after a sandbox escalation. Neither this pass nor the round 2 rerun explains
+  the historical 103/104 assertion failure; that result remains unresolved.
+- This repair changes exhaustion handling and evidence, with no shader edits.
+  Successful populations retain their existing layout and shading. Optional
+  shader optimizations and helper refactors were deferred; the hash guard's
+  description now states its source-text-only limit.
 
 ## Visual and delivery gates still owned by the supervisor
 
