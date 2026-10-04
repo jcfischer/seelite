@@ -508,6 +508,16 @@ async function measureHullChase(page) {
 					hidden.push({ object, visible: object.visible });
 					object.visible = false;
 				}
+			// And the sky's picture, which is the scene's background rather than a
+			// child, so the loop above does not reach it. Since node #433 draws the
+			// bake behind everything, leaving it up put the hull against a lit sky
+			// instead of the black clear this reader is written for: at the ×5 sky
+			// the subtraction mask kept 22,879 of the hull's 25,567 pixels (it
+			// drops the dark ones, within 3 codes of the sky) and the lower quartile
+			// read 51.17 against 41.69 for the same hull against black. The
+			// environment still lights the hull; only the picture leaves the frame.
+			const background = game.backdropScene.background;
+			game.backdropScene.background = null;
 			const frame = () => {
 				game.render(0);
 				ctx.drawImage(canvas, 0, 0);
@@ -566,6 +576,7 @@ async function measureHullChase(page) {
 			for (const mesh of meshes) mesh.object.visible = mesh.visible;
 			if (navLights) navLights.visible = navLightsVisible;
 			for (const entry of hidden) entry.object.visible = entry.visible;
+			game.backdropScene.background = background;
 			game.bloom.enabled = bloomEnabled;
 			game.render(0);
 			return {
