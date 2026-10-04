@@ -28,6 +28,12 @@ export type ChangelogEntry = {
 };
 
 export const CHANGELOG: readonly ChangelogEntry[] = [
+	// Node #664: proposed copy; principal approval and the main date are pending.
+	{
+		date: "2026-10-05",
+		text: "Ships are now solid to each other: ram a raider or a passing freighter and you both take the hit, the lighter ship is thrown further, and a freighter struck through its shields turns for home to repair.",
+		node: 664,
+	},
 	// Node #213: proposed copy; principal approval and the main date are pending.
 	{
 		date: "2026-10-04",
