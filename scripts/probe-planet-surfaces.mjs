@@ -1187,6 +1187,16 @@ await settleBakes();
 		 * The planet simply stops moving.
 		 */
 		await pathAt(8, baker);
+		// Terran's baked cloud shadow reads sunDir (node #212). Hold the world
+		// so both new bakes receive the same light direction, not two orbit times.
+		const clockWasHeld = await page.evaluate(() => {
+			const g = window.__seelite;
+			const held = g.clockHeld;
+			g.clockHeld = true;
+			return held;
+		});
+		await page.evaluate((id) => window.__seelite.rebake(id, 256), baker);
+		await settleBakes();
 		const face = async () =>
 			page.evaluate((id) => {
 				const g = window.__seelite;
@@ -1263,6 +1273,9 @@ await settleBakes();
 			differing === 0,
 			`${differing} of ${first ? first.albedo.length * 2 : 0} channel bytes differ across two bakes`,
 		);
+		await page.evaluate((held) => {
+			window.__seelite.clockHeld = held;
+		}, clockWasHeld);
 	}
 }
 
@@ -2454,9 +2467,13 @@ if (airless) {
  * under it is darker than the same pixel with clouds off by a banded ratio;
  * the cloud shell itself is unchanged.
  *
- * The test direction is set via `cloudTestDir` — when non-zero, the TERRAN
- * shader replaces its procedural cloud field with a deterministic blob centred
- * at that direction. The comparison is the same pixel with `cloudCover` zeroed.
+ * Both four-tap and baked programs are measured. Every baked arm requests a
+ * new cube after changing cloudCover, waits for it, and reads the drawn path
+ * back. A procedural fallback cannot stand in for a broken bake.
+ *
+ * Hide the shells while reading the ground, so changing cloudCover cannot
+ * change these pixels by removing the translucent deck itself. The test blob
+ * is supplied by cloudTestDir; the camera and clock stay fixed between arms.
  */
 {
 	const shadowPage = await browser.newPage({ viewport: VIEW });
@@ -2467,81 +2484,119 @@ if (airless) {
 	await shadowPage.goto(URL, { waitUntil: "domcontentloaded" });
 	await bootedGame(shadowPage);
 
-	const result = await shadowPage.evaluate(async () => {
+	const subject = await shadowPage.evaluate(async () => {
 		const g = window.__seelite;
 		// Find a terran body.
 		const terran = g.world.system.bodies.find(
 			(b) => g.bodyVisuals.get(b.id)?.surface === "terran",
 		);
-		if (!terran) return { skip: true };
+		if (!terran) return null;
 
 		const vis = g.bodyVisuals.get(terran.id);
-		const uniforms = vis.group.children[0]?.material?.uniforms;
-		if (!uniforms) return { skip: true };
-
-		// Force the body to the procedural path so the shadow is live —
-		// the bake path freezes the shadow into the cubemap, so per-frame
-		// toggling (clouds on vs off) is not possible there. Bake-path
-		// compilation for terran (including CLOUD_FIELD_GLSL) is covered
-		// by the bake section above, which loops over every bakeable class.
-		g.setSurfacePin("four-tap");
-
-		// Set a test blob direction: use the sun direction so the shadow is
-		// directly under where the sun points at the cloud layer.
-		const testDir = uniforms.sunDir.value.clone();
-		uniforms.cloudTestDir.value.copy(testDir);
-		uniforms.cloudCover.value = 0.7;
+		const uniforms = vis.uniforms;
+		const saved = {
+			id: terran.id,
+			cover: uniforms.cloudCover.value,
+			testDir: uniforms.cloudTestDir.value.toArray(),
+			held: g.clockHeld,
+		};
+		const mod = await import("/src/perf-panel.ts");
+		mod.setShells([g.nearScene, g.approachScene, g.farScene], {
+			atmosphere: false,
+			clouds: false,
+		});
+		await window.__startClockAt(4000);
+		// Hold simulation, while leaving rAF/render running to finish the cubes.
+		g.clockHeld = true;
 
 		// Place camera on the sun side, looking at the lit surface.
 		await window.__sunOffset(terran.id, 3, 55);
 		g.render(0);
 		g.render(0);
 
-		// Read surface brightness with cloud shadow on.
-		const withShadow = window.__innerDiscStats(terran.id, 0.25);
-
-		// Now turn clouds off — same pixel, no shadow.
-		uniforms.cloudCover.value = 0.0;
-		g.render(0);
-		const noShadow = window.__innerDiscStats(terran.id, 0.25);
-
-		// Check the cloud shell: find the cloud mesh, confirm it is still present.
-		let cloudShellPresent = false;
-		vis.group.traverse((o) => {
-			if (o.userData?.shell === "cloud") cloudShellPresent = true;
-		});
-
-		// Restore.
-		uniforms.cloudTestDir.value.set(0, 0, 0);
-		uniforms.cloudCover.value = 0.7;
-		g.setSurfacePin(null);
-
-		return {
-			skip: false,
-			withShadow: withShadow.mean,
-			noShadow: noShadow.mean,
-			ratio: noShadow.mean > 0 ? withShadow.mean / noShadow.mean : 1,
-			pixels: withShadow.pixels,
-			cloudShellPresent,
-		};
+		uniforms.cloudTestDir.value.copy(uniforms.sunDir.value);
+		return saved;
 	});
 
-	if (result.skip) {
+	if (!subject) {
 		check(
 			"seed 6 has a terran body for the cloud shadow test",
 			false,
 			"no terran body or missing uniforms — the cloud shadow contract is unverified",
 		);
 	} else {
-		check(
-			"a terran surface under a forced cloud blob is darker than with clouds off",
-			result.ratio < 0.96 && result.ratio > 0.5,
-			`with shadow ${result.withShadow.toFixed(1)}, without ${result.noShadow.toFixed(1)}, ratio ${result.ratio.toFixed(3)} (expected 0.50–0.96), ${result.pixels} px`,
-		);
+		try {
+			for (const path of ["four-tap", "baked"]) {
+				const capture = async (cover) => {
+					await shadowPage.evaluate(
+						({ id, cover, path }) => {
+							const g = window.__seelite;
+							g.bodyVisuals.get(id).uniforms.cloudCover.value = cover;
+							g.setSurfacePin(path);
+							if (path === "baked") g.rebake(id, 512);
+						},
+						{ id: subject.id, cover, path },
+					);
+					await shadowPage.waitForFunction(
+						() => window.__seelite.bakeQueue.length === 0,
+						undefined,
+						{ timeout: 60_000 },
+					);
+					return shadowPage.evaluate((id) => {
+						const g = window.__seelite;
+						g.render(0);
+						g.render(0);
+						return {
+							...window.__innerDiscStats(id, 0.25),
+							path: g.bodyVisuals.get(id).surfacePath(),
+						};
+					}, subject.id);
+				};
+				const withShadow = await capture(0.7);
+				const noShadow = await capture(0);
+				check(
+					`cloud shadow controls actually draw the ${path} program`,
+					withShadow.path === path && noShadow.path === path,
+					`on: ${withShadow.path}, off: ${noShadow.path}`,
+				);
+				const ratio = withShadow.mean / noShadow.mean;
+				check(
+					`${path}: a terran surface under a forced cloud blob is darker than with clouds off`,
+					withShadow.pixels > 0 &&
+						withShadow.pixels === noShadow.pixels &&
+						noShadow.mean > 1 &&
+						ratio < 0.96 &&
+						ratio > 0.5,
+					`with shadow ${withShadow.mean.toFixed(1)}, without ${noShadow.mean.toFixed(1)}, ratio ${ratio.toFixed(3)} (expected 0.50–0.96), ${withShadow.pixels}/${noShadow.pixels} px`,
+				);
+			}
+		} finally {
+			await shadowPage.evaluate(async ({ id, cover, testDir, held }) => {
+				const g = window.__seelite;
+				const uniforms = g.bodyVisuals.get(id).uniforms;
+				uniforms.cloudTestDir.value.fromArray(testDir);
+				uniforms.cloudCover.value = cover;
+				g.setSurfacePin(null);
+				g.rebake(id, 512);
+				g.clockHeld = held;
+				const mod = await import("/src/perf-panel.ts");
+				mod.setShells([g.nearScene, g.approachScene, g.farScene], {
+					atmosphere: true,
+					clouds: true,
+				});
+			}, subject);
+		}
+		const cloudShellPresent = await shadowPage.evaluate((id) => {
+			let present = false;
+			window.__seelite.bodyVisuals.get(id).group.traverse((o) => {
+				if (o.userData?.shell === "cloud") present = true;
+			});
+			return present;
+		}, subject.id);
 		check(
 			"the cloud shell mesh is still present after the shadow test",
-			result.cloudShellPresent,
-			`cloudShellPresent: ${result.cloudShellPresent}`,
+			cloudShellPresent,
+			`cloudShellPresent: ${cloudShellPresent}`,
 		);
 	}
 	await shadowPage.close();

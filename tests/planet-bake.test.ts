@@ -10,7 +10,7 @@
 import { describe, expect, test } from "bun:test";
 import { readFileSync } from "node:fs";
 import { radiusAtTexelRatio } from "./lib/texel-radius";
-import { codeOf } from "./lib/source-scan";
+import { codeOf, stripComments } from "./lib/source-scan";
 import { CLASS_GLSL } from "../src/planet-classes.glsl";
 import type { SurfaceClass } from "../src/planet-appearance";
 import {
@@ -146,6 +146,24 @@ describe("which classes bake", () => {
 });
 
 describe("the two programs a bake needs", () => {
+	test("terran bake defines shared cloud helpers before the shadow calls them", () => {
+		// Guard the missing-include compile failure from node #212. Both cube
+		// channels assemble the terran class, even though only albedo stores shade.
+		for (const channel of ["albedo", "normal"] as const) {
+			const source = stripComments(bakeFragmentFor("terran", channel));
+			for (const helper of ["cloudFieldFromInputs", "cirrusDomain"]) {
+				const definition = source.search(
+					new RegExp(`(?:float|vec3)\\s+${helper}\\s*\\(`),
+				);
+				expect(definition, `${channel}: ${helper} defined`).toBeGreaterThan(-1);
+				expect(
+					definition,
+					`${channel}: ${helper} before cloudField`,
+				).toBeLessThan(source.indexOf("float cloudField("));
+			}
+		}
+	});
+
 	test("the bake writes both channels and never shades", () => {
 		for (const surface of BAKEABLE_CLASSES) {
 			const albedo = bakeFragmentFor(surface, "albedo");
