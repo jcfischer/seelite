@@ -16,20 +16,16 @@
  * buffer is *oriented* the way `three` samples it. The mapping from a pixel to
  * a direction is stated once, in `light-rig.ts`, and any test here that
  * restated it would agree with it by construction — including a flipped one.
- * What it *can* check, since #99's first review round, is the **rotation**. It
- * lived in `main.ts` as `setFromUnitVectors(BAKE_STAR_UNIT, STAR_DIR)`, where
- * swapping the two arguments — the inverse rotation — left every check in the
- * repo green: the inverse lands the lobe 2θ from the star, and θ was small for
- * the seed the probe flies. Moved into `envRotation` it has a property that a
- * swap breaks and this file sweeps, below.
+ * The shared quaternion properties are held in `tests/quat.test.ts`;
+ * the per-system sky no longer rotates the environment onto a star.
  *
- * A bake handed to the renderer back-to-front puts the reflection on the side
- * away from the star, which looks wrong and measures fine. That is
- * `probe-light-rig.mjs`'s job: it renders one station front-lit and once more
- * backlit, differences each against the same frame with the environment
- * dropped, and requires the front-lit difference to be the larger. Both halves
- * of that were watched go red on a build with the defect — reversed on a
- * flipped bake, zero on both arms with no bake at all.
+ * A bake handed to the renderer back-to-front lights the face turned away from
+ * its bright side, which looks wrong and measures fine. That is
+ * `probe-light-rig.mjs`'s job: since node #433's sky carries no star, it bakes
+ * a haze toward one face of a station and then toward the opposite face, and
+ * requires each face to read brighter under the haze aimed at it. It was
+ * watched go red on a point-reflected bake, on rows uploaded upside down, and
+ * on no environment at all.
  */
 import { describe, expect, test } from "bun:test";
 import {
@@ -52,9 +48,14 @@ import {
 	ENV_WIDTH,
 	EXPOSURE,
 	envRadiance,
-	envRotation,
 	equirectEnvironment,
+	gasRadiance,
+	hazeRadiance,
+	skyRadiance,
 	LIGHT_RIG,
+	type GasParams,
+	type HazeParams,
+	type SkyBakeParams,
 } from "../src/light-rig";
 import { DEFAULT_SETTINGS, settingSpec } from "../src/settings";
 import { SHIP_EMISSIVE_INTENSITIES } from "../src/ship-mesh";
@@ -94,30 +95,6 @@ function atAngle(deg: number, samples = 8): [number, number, number][] {
 
 const luma = ([r, g, b]: [number, number, number]) =>
 	0.2126 * r + 0.7152 * g + 0.0722 * b;
-
-// **A few ulps is the wrong unit for this, and the history says why.** Two platforms
-// have run this comparison. Observed on macOS: 4.2·10⁻¹⁶ (1.9 ulps); observed on
-// GitHub's Linux runner: 9.2·10⁻¹⁶ (4.1) — and *observed* is the whole of what is
-// known, because a row that throws on its first exceedance reports only what it saw
-// before quitting, so neither platform's maximum has been measured. `acos` and then `sin(a/2)`, `cos(a/2)` is not the same
-// sequence of roundings as the half-angle construction, so two correct forms of a
-// shortest arc land a few ulps apart, and *which* few is a property of the libm. The
-// bound here was `2 ** -51` — two ulps — for three rounds, and the row was **red on CI
-// at two of this PR's pushes while green locally**: the machine that wrote the row had
-// the luckier `sqrt`. That is this file's own warned-about failure mode, reached.
-//
-// `1e-14` is the same claim told in units the row is about, which no platform has to
-// agree about: twelve orders below the smallest difference this file treats as real
-// (the band's tightest aim error, 1.4·10⁻⁶) and fifteen below a wrong rotation (order
-// 1), so no refactor hides under it and no libm's rounding reaches it. Two assumptions
-// the first fix got wrong, both corrected by something rather than by luck: it
-// assumed the exceedance came from the sweep's near-antiparallel directions and
-// filtered them out, and the row's own count assertion reddened — this spread holds
-// one such direction, by name — so the exceedance was at ordinary directions all
-// along; and it treated the antiparallel decade as part of this margin, when there the
-// disagreement is the cancellation the closing arm documents (2.4·10⁻¹² at
-// ε = 1.1·10⁻⁹) and not rounding.
-const REFACTOR_TOLERANCE = 1e-14;
 
 describe("the radiance model is a star and a floor", () => {
 	test("the star direction is the brightest direction there is", () => {
@@ -342,316 +319,6 @@ describe("the rig's constants", () => {
 	});
 });
 
-describe("the rotation onto the star", () => {
-	/** Apply a quaternion to a vector, the standard `v + 2q_v × (q_v × v + w v)`.
-	 *  Written here rather than imported because `light-rig.ts` returns a plain
-	 *  tuple on purpose — a `THREE.Quaternion` in the leaf would be the Three.js
-	 *  import the module exists without. */
-	const apply = (
-		[x, y, z, w]: [number, number, number, number],
-		v: readonly [number, number, number],
-	): [number, number, number] => {
-		const cx = y * v[2] - z * v[1] + w * v[0];
-		const cy = z * v[0] - x * v[2] + w * v[1];
-		const cz = x * v[1] - y * v[0] + w * v[2];
-		return [
-			v[0] + 2 * (y * cz - z * cy),
-			v[1] + 2 * (z * cx - x * cz),
-			v[2] + 2 * (x * cy - y * cx),
-		];
-	};
-
-	/** A spread of directions that does not favour any axis, plus the two
-	 *  degenerate ones by name. A grid over latitude and longitude would put
-	 *  most of its samples near the poles and test the easy cases hardest. */
-	function directions(count = 200): [number, number, number][] {
-		const out: [number, number, number][] = [
-			BAKE_STAR_DIR as [number, number, number],
-			[-1, 0, 0],
-		];
-		const golden = Math.PI * (3 - Math.sqrt(5));
-		for (let i = 0; i < count; i++) {
-			const y = 1 - (2 * (i + 0.5)) / count;
-			const ring = Math.sqrt(Math.max(0, 1 - y * y));
-			const theta = golden * i;
-			out.push([Math.cos(theta) * ring, y, Math.sin(theta) * ring]);
-		}
-		return out;
-	}
-
-	test("takes the bake's star direction onto the real one, everywhere", () => {
-		// The property the renderer's line asserted and nothing checked. It is
-		// false for the inverse rotation at every direction except the two poles,
-		// which is exactly the defect that shipped green.
-		for (const dir of directions()) {
-			const landed = apply(envRotation(dir), BAKE_STAR_DIR);
-			for (let i = 0; i < 3; i++) expect(landed[i]).toBeCloseTo(dir[i], 9);
-		}
-	});
-
-	test("the inverse rotation fails that, so the check is not free", () => {
-		// Building the defect rather than trusting the assertion above to be
-		// about something. `q⁻¹` is the conjugate.
-		// The whole vector, not one component. The inverse rotates by −θ about the
-		// same axis, which leaves the component *along* the bake's own star
-		// direction unchanged — so an assertion on `landed[0]` alone passes on the
-		// defect it was written to catch. Found by watching this test go green.
-		const dir: [number, number, number] = [
-			0.3,
-			0.5,
-			Math.sqrt(1 - 0.09 - 0.25),
-		];
-		const [x, y, z, w] = envRotation(dir);
-		const landed = apply([-x, -y, -z, w], BAKE_STAR_DIR);
-		const apart = Math.hypot(
-			landed[0] - dir[0],
-			landed[1] - dir[1],
-			landed[2] - dir[2],
-		);
-		expect(apart).toBeGreaterThan(0.5);
-	});
-
-	test("every rotation is a unit quaternion, including the antiparallel one", () => {
-		// A non-unit quaternion scales as well as rotates, so the environment
-		// would be sampled from a stretched direction — which shows up as a
-		// gradient that is subtly wrong rather than as an error.
-		for (const dir of directions())
-			expect(Math.hypot(...envRotation(dir))).toBeCloseTo(1, 12);
-	});
-
-	test("an unnormalised direction gives the same rotation as its unit", () => {
-		// The renderer already has a normalised vector, so this is about the
-		// function being safe to call from anywhere rather than about a caller
-		// that exists.
-		const dir: [number, number, number] = [0.6, -0.48, 0.64];
-		const big = dir.map((v) => v * 1e6) as [number, number, number];
-		const a = envRotation(dir);
-		const b = envRotation(big);
-		for (let i = 0; i < 4; i++) expect(b[i]).toBeCloseTo(a[i], 9);
-	});
-
-	/** The arithmetic this function carried until #430 delegated it to
-	 *  `quat.ts`, transcribed rather than imported so the row below has a second
-	 *  implementation to compare against and not its own subject. */
-	function legacyEnvRotation(
-		starDir: readonly [number, number, number],
-	): [number, number, number, number] {
-		const l = Math.hypot(starDir[0], starDir[1], starDir[2]);
-		const to: [number, number, number] = [
-			starDir[0] / l,
-			starDir[1] / l,
-			starDir[2] / l,
-		];
-		const from = BAKE_STAR_DIR;
-		const d = from[0] * to[0] + from[1] * to[1] + from[2] * to[2];
-		if (d < -1 + 1e-9) {
-			const away: [number, number, number] =
-				Math.abs(from[0]) < 0.9 ? [1, 0, 0] : [0, 1, 0];
-			const ax = from[1] * away[2] - from[2] * away[1];
-			const ay = from[2] * away[0] - from[0] * away[2];
-			const az = from[0] * away[1] - from[1] * away[0];
-			const al = Math.hypot(ax, ay, az);
-			return [ax / al, ay / al, az / al, 0];
-		}
-		const x = from[1] * to[2] - from[2] * to[1];
-		const y = from[2] * to[0] - from[0] * to[2];
-		const z = from[0] * to[1] - from[1] * to[0];
-		const w = 1 + d;
-		const n = Math.hypot(x, y, z, w);
-		return [x / n, y / n, z / n, w / n];
-	}
-
-	/** A direction `eps` short of straight behind the bake's own star, on the great
-	 *  circle through it and +Y. The band's rows are stated in ε because that is
-	 *  the quantity the two thresholds are compared on. */
-	function antiparallelDir(eps: number): [number, number, number] {
-		return [-(1 - eps), Math.sqrt(Math.max(0, 1 - (1 - eps) * (1 - eps))), 0];
-	}
-
-	/** The rotation that undoes `q`: a unit quaternion's inverse is its conjugate.
-	 *  One place spells it, because the band arm and the closing arm have to turn
-	 *  back through their inverses the same way or their comparison is nothing. */
-	function inv(
-		q: [number, number, number, number],
-	): [number, number, number, number] {
-		return [-q[0], -q[1], -q[2], q[3]];
-	}
-
-	/** How far the two rotations make the sampled environment disagree, each turned
-	 *  back through its own inverse first — which is how the renderer's map is read
-	 *  — over the 202 directions this file already sweeps. One copy, for the same
-	 *  reason the band arm and the closing arm share `antiparallelDir`. */
-	function worstRadianceDelta(
-		a: [number, number, number, number],
-		b: [number, number, number, number],
-	): number {
-		const aInv = inv(a);
-		const bInv = inv(b);
-		let worst = 0;
-		for (const w of directions(200)) {
-			const x = envRadiance(apply(aInv, w), WARM);
-			const y = envRadiance(apply(bInv, w), WARM);
-			for (let i = 0; i < 3; i++)
-				worst = Math.max(worst, Math.abs(x[i] - y[i]));
-		}
-		return worst;
-	}
-
-	/** How far a rotation leaves the environment's own star from the direction it
-	 *  was meant to land — the aim error, in units of direction. */
-	function aimError(
-		q: [number, number, number, number],
-		want: readonly [number, number, number],
-	): number {
-		const landed = apply(q, BAKE_STAR_DIR);
-		return Math.hypot(
-			landed[0] - want[0],
-			landed[1] - want[1],
-			landed[2] - want[2],
-		);
-	}
-
-	/** A measured figure checked to a relative band: the literal is a witness and
-	 *  not the authority, so the arithmetic owns the claim and a moved measurement
-	 *  reddens a row rather than invalidating a paragraph somewhere else. */
-	function within(got: number, want: number, rel = 0.02): void {
-		expect(Math.abs(got - want)).toBeLessThanOrEqual(rel * Math.abs(want));
-	}
-
-	test("a star direction with no direction in it is refused, not rotated", () => {
-		// The one behaviour change in this refactor that is not an aim correction:
-		// where the deleted inline form divided by a length of zero and handed back a
-		// quaternion of NaNs, `envRotation` throws.
-		//
-		// Both halves are asserted, because the throw is only worth having if the
-		// thing it replaced really was unseeable. The old arithmetic on a zero
-		// direction is right here — `0 / 0` into all four components — and a NaN
-		// quaternion is not an error anywhere in the pipeline: `main.ts` reads this
-		// function's answer into `ENV_EULER` and then into
-		// `scene.environmentRotation`, so the NaN becomes a rotation applied to every
-		// direction the environment is sampled along. Chrome plating reading a
-		// direction that does not exist is not an error anything downstream can see;
-		// it is a picture with nothing in it and nothing printed.
-		//
-		// The case is geometric, not a fuzz artifact: a camera standing exactly on its
-		// own star has no direction *to* it. #430 found the render path's caller
-		// dividing by a clamped length, which turned that into a zero vector and let
-		// the NaNs through, and the fix went to the caller — it keeps the previous
-		// frame's rotation when there is no direction to ask about. This row is the
-		// other half: what the function itself owes a caller that does ask, which is a
-		// named refusal and not four NaNs wearing a quaternion's shape.
-		expect(() => envRotation([0, 0, 0])).toThrow(
-			"envRotation: the star direction carries no direction",
-		);
-		const stale = legacyEnvRotation([0, 0, 0]);
-		for (const component of stale) expect(Number.isNaN(component)).toBe(true);
-	});
-
-	test("the shared primitive returns the rotation this function computed itself", () => {
-		// The claim "#430 changed the shipped rotation for no direction" is worth
-		// nothing as prose, so the deleted body is here as a second implementation
-		// and compared against what ships, over the spread the rows above sweep.
-		//
-		// **All 202 of them, including both degenerates, because the bound — not the
-		// sweep — is where the platform belongs.** This row compared components at
-		// `2 ** -51`, two ulps, for three rounds, and was red on the Linux runner and
-		// green on macOS: `acos` then `sin(a/2)`, `cos(a/2)` is not the same sequence of
-		// roundings as the half-angle construction, and two correct forms of a shortest
-		// arc differ by a few ulps that no platform is obliged to share. The first
-		// version of this fix filtered the near-antiparallel directions out of the sweep;
-		// the row's own count assertion reddened, because this spread holds exactly one
-		// such direction by name and the exceedance was never there — it sits at ordinary
-		// directions, where `acos` amplifies a unit in the last place by up to 1/sin θ.
-		// So the sweep stays whole and the bound is told in the units the claim is about.
-		for (const dir of directions()) {
-			const got = envRotation(dir);
-			const want = legacyEnvRotation(dir);
-			for (let i = 0; i < 4; i++)
-				expect(Math.abs(got[i] - want[i])).toBeLessThanOrEqual(
-					REFACTOR_TOLERANCE,
-				);
-		}
-		// And exactly equal at the one direction where both branches agree by
-		// construction: the fallback axis for a star sitting behind the bake's own
-		// is the world axis `from` is least parallel to, which both pick as +Z.
-		expect(envRotation([-1, 0, 0])).toEqual([0, 0, 1, 0]);
-	});
-
-	test("near exact antiparallel the old arm misses the star and the new one does not", () => {
-		// Where this refactor *does* change something, so it is sized rather than
-		// waved at. The branch deleted from `envRotation` fired at
-		// `dot < −1 + 1e-9`; `shortestArc`'s fires at `−1 + 1e-12`. Between those
-		// three decades the old code answered with a half turn about a fixed world
-		// axis, and a half turn about a fixed axis is **not** a shortest arc to a
-		// direction that is merely nearly antiparallel: it leaves the environment's
-		// star off the requested direction by the perpendicular part, √(2ε).
-		//
-		// **The figures live here, as assertions.** A measured number copied into a
-		// comment goes stale the first time the measurement is repeated, and this
-		// one has been wrong twice for exactly that reason. Each row of `BAND` is
-		// checked two ways — against the closed form the geometry predicts, and
-		// against the number a run produced — so the literals are not the authority,
-		// the arithmetic is, and anything that moves them reddens this row instead of
-		// quietly invalidating a paragraph somewhere else.
-		const BAND = [
-			{ eps: 1e-12, oldAim: 1.4142e-6, radiance: 9.4709e-6 },
-			{ eps: 1e-11, oldAim: 4.4721e-6, radiance: 2.9947e-5 },
-			{ eps: 1e-10, oldAim: 1.4142e-5, radiance: 9.4673e-5 },
-			{ eps: 5e-10, oldAim: 3.1623e-5, radiance: 2.1158e-4 },
-			{ eps: 9e-10, oldAim: 4.2426e-5, radiance: 2.8377e-4 },
-		];
-		for (const { eps, oldAim: pinned, radiance: pinnedRadiance } of BAND) {
-			const dir = antiparallelDir(eps);
-			const fresh = envRotation(dir);
-			const stale = legacyEnvRotation(dir);
-			// Aim: how far each arm leaves the environment's star from the direction
-			// it was handed, read off where the rotation actually puts it.
-			const old = aimError(stale, dir);
-			const fresh_ = aimError(fresh, dir);
-			within(old, Math.sqrt(2 * eps), 0.001);
-			within(old, pinned);
-			// The new arm hits it to machine precision, and orders of magnitude
-			// better than the arm this refactor replaced — which is the whole
-			// argument for the narrower threshold, stated as a measurement.
-			expect(fresh_).toBeLessThan(1e-13);
-			expect(fresh_).toBeLessThan(old / 100);
-			// And what the difference costs on the thing the rotation is for.
-			const worst = worstRadianceDelta(fresh, stale);
-			within(worst, pinnedRadiance);
-			// Under one eight-bit code of a unit-scale field, so under every pixel
-			// threshold in the browser tier — and nonzero, because the arms genuinely
-			// differ and this row is not going to be the one that says they don't.
-			expect(worst).toBeGreaterThan(0);
-			expect(worst).toBeLessThan(1 / 255);
-		}
-		// **The band closes, and "closes" is a narrower claim than it first said.**
-		// This is the row standing behind "the refactor changed nothing else", and
-		// past the old threshold what it can honestly say is that the two arms make
-		// the same *decision* — both take a shortest arc — not that they compute it
-		// identically. Their components differ by the conditioning above, one unit in
-		// the last place divided by ε: 2.4·10⁻¹² measured on the runner against 10⁻¹⁶
-		// here, which is exactly why an ulp-level claim about components at this ε is
-		// a claim about a platform. What closes is the difference the row is about: the
-		// environment the rotation bakes cannot tell the two apart.
-		const closedDir = antiparallelDir(1.1e-9);
-		const closedFresh = envRotation(closedDir);
-		const closedStale = legacyEnvRotation(closedDir);
-		// `1 + d` is 1.1·10⁻⁹ here, so the scalar carries relative error ~10⁻⁷ and
-		// the components ~10⁻¹¹. Four orders of magnitude below the smallest thing the
-		// band row measures as a real difference — a wrong rotation is order 1.
-		for (let i = 0; i < 4; i++)
-			expect(Math.abs(closedFresh[i] - closedStale[i])).toBeLessThanOrEqual(
-				1e-11,
-			);
-		// And the reading that decides whether the band has finished: the environment
-		// these two rotations bake. A 2.4·10⁻¹² difference in a quaternion moves the
-		// sampled radiance ~7× that (the gain the band's own rows print), so 10⁻⁹ is
-		// four decades under the smallest radiance figure this file calls a difference.
-		const closedWorst = worstRadianceDelta(closedFresh, closedStale);
-		expect(closedWorst).toBeLessThanOrEqual(1e-9);
-	});
-});
-
 /**
  * The painted-hull calibration, and why it is derived rather than typed.
  *
@@ -807,5 +474,166 @@ describe("the painted-hull luma calibration", () => {
 		expect(HULL_LUMA_MARGINS.lowerQuartile).toBeLessThan(
 			SUBJECT_CHANGE_QUARTILE_DROP / 2,
 		);
+	});
+});
+
+// ---------------------------------------------------------------------------
+// Node #433: haze, gas, and the world-frame bake
+// ---------------------------------------------------------------------------
+
+describe("the haze model (node #433)", () => {
+	const core: [number, number, number] = [0, 0, 1];
+	const haze: HazeParams = { coreBearing: core, strength: 1.0 };
+
+	test("brightest toward the core bearing", () => {
+		const toward = luma(hazeRadiance(core, haze));
+		const away = luma(hazeRadiance([0, 0, -1], haze));
+		const side = luma(hazeRadiance([1, 0, 0], haze));
+		expect(toward).toBeGreaterThan(away);
+		expect(toward).toBeGreaterThan(side);
+	});
+
+	test("never negative or non-finite", () => {
+		for (const dir of [
+			[1, 0, 0],
+			[0, 1, 0],
+			[0, 0, 1],
+			[0, 0, -1],
+			[-1, -1, -1],
+		] as const)
+			for (const c of hazeRadiance(dir, haze)) {
+				expect(Number.isFinite(c)).toBe(true);
+				expect(c).toBeGreaterThanOrEqual(0);
+			}
+	});
+
+	test("strength zero gives a minimal uniform glow", () => {
+		const weak: HazeParams = { coreBearing: core, strength: 0 };
+		const toward = luma(hazeRadiance(core, weak));
+		const away = luma(hazeRadiance([0, 0, -1], weak));
+		expect(toward).toBeGreaterThan(0);
+		expect(toward).toBeCloseTo(away, 5);
+	});
+
+	test("null coreBearing gives a uniform glow, no crash", () => {
+		const noCore: HazeParams = { coreBearing: null, strength: 1.0 };
+		const a = hazeRadiance([1, 0, 0], noCore);
+		const b = hazeRadiance([0, 0, -1], noCore);
+		expect(a).toEqual(b);
+		for (const c of a) expect(c).toBeGreaterThan(0);
+	});
+});
+
+describe("the gas model (node #433)", () => {
+	const gas: GasParams = { color: [1, 0.8, 0.6], density: 0.5, seed: 42 };
+
+	test("deterministic: same seed gives same result", () => {
+		const a = gasRadiance([1, 0, 0], gas);
+		const b = gasRadiance([1, 0, 0], gas);
+		expect(a).toEqual(b);
+	});
+
+	test("different seeds give different results", () => {
+		const a = gasRadiance([1, 0, 0], gas);
+		const b = gasRadiance([1, 0, 0], { ...gas, seed: 99 });
+		// At least one channel differs.
+		const differ = a.some((v, i) => v !== b[i]);
+		expect(differ).toBe(true);
+	});
+
+	test("zero density gives zero", () => {
+		const zero = gasRadiance([1, 0, 0], { ...gas, density: 0 });
+		expect(zero).toEqual([0, 0, 0]);
+	});
+
+	test("never negative", () => {
+		for (const dir of [
+			[1, 0, 0],
+			[0, 1, 0],
+			[0, 0, 1],
+			[-1, -1, -1],
+		] as const)
+			for (const c of gasRadiance(dir, gas))
+				expect(c).toBeGreaterThanOrEqual(0);
+	});
+});
+
+describe("the world-frame bake carries no star (node #433, decision 2026-10-04)", () => {
+	// The principal's ruling: a star at finite distance cannot be right in one
+	// world-frame image when a system spans AUs, so the per-system bake is haze,
+	// gas and the floor only, and star light comes from the direct sun alone.
+	const haze: HazeParams = { coreBearing: [1, 0, 0], strength: 0.8 };
+	const gas: GasParams = { color: [0.8, 0.7, 1.0], density: 0.5, seed: 42 };
+
+	test("the sky is the floor plus the haze plus the gas, and nothing else", () => {
+		for (const dir of [
+			[1, 0, 0],
+			[0, 1, 0],
+			[0, 0, -1],
+			[-0.3, 0.5, 0.8],
+		] as const) {
+			const sky = skyRadiance(dir, { haze, gas });
+			const floor = skyRadiance(dir, { haze: null, gas: null });
+			const h = hazeRadiance(dir, haze);
+			const g = gasRadiance(dir, gas);
+			for (let c = 0; c < 3; c++)
+				expect(sky[c]).toBeCloseTo(floor[c] + h[c] + g[c], 12);
+		}
+	});
+
+	test("the floor is the same floor the star-lit bake stands on", () => {
+		// One constant rather than a second copy of it: directly away from the
+		// star the old model's lobe is exactly zero, so what is left is its floor.
+		const away = envRadiance([-1, 0, 0], WARM);
+		expect(skyRadiance([0, 1, 0], { haze: null, gas: null })).toEqual(away);
+	});
+
+	test("with no haze and no gas the bake is uniform — no lobe anywhere", () => {
+		const { data } = equirectEnvironment({ haze: null, gas: null });
+		const [r, g, b] = [data[0], data[1], data[2]];
+		expect(r).toBeGreaterThan(0);
+		for (let i = 0; i < data.length; i += 4)
+			expect([data[i], data[i + 1], data[i + 2], data[i + 3]]).toEqual([
+				r,
+				g,
+				b,
+				1,
+			]);
+	});
+
+	test("its brightest texel is the haze and gas peak, not a star", () => {
+		// A star lobe peaks at CORE_GAIN — 26 — at its centre texel. The sky's
+		// own terms, at the principal's ×5 strength, stay under a few tenths.
+		const { data } = equirectEnvironment({ haze, gas });
+		let peak = 0;
+		for (let i = 0; i < data.length; i += 4)
+			peak = Math.max(peak, data[i], data[i + 1], data[i + 2]);
+		expect(peak).toBeLessThan(1);
+	});
+
+	test("the parameters cannot carry a star", () => {
+		const withStar = {
+			haze,
+			gas,
+			// @ts-expect-error — the world-frame bake has no star direction
+			starDir: [0, 0, 1],
+		} satisfies SkyBakeParams;
+		expect(withStar.haze).toBe(haze);
+	});
+
+	test("the bake is the sky model at the texel the mapping names", () => {
+		// +X is u = 0.5, v = 0.5: the two columns either side of the seam carry
+		// it (see the buffer test above for why both are named).
+		const { data, width, height } = equirectEnvironment({ haze, gas });
+		const i = ((height / 2) * width + width / 2) * 4;
+		const mid = skyRadiance(
+			[
+				Math.cos(Math.PI / width) * Math.cos(Math.PI / (2 * height)),
+				Math.sin(Math.PI / (2 * height)),
+				Math.sin(Math.PI / width) * Math.cos(Math.PI / (2 * height)),
+			],
+			{ haze, gas },
+		);
+		for (let c = 0; c < 3; c++) expect(data[i + c]).toBeCloseTo(mid[c], 6);
 	});
 });

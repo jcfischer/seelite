@@ -281,12 +281,28 @@ const installHelpers = (page) =>
 			// signatures were once taken with a ringed giant's 4.8-radius ring
 			// plane in the box, and the star's with its corona sprite in it.
 			window.__setDecorVisible(bodyId, false);
+			// The sky's picture off for the capture too, so the body is differenced
+			// against the black clear and the starfield, as it was before node
+			// #433 drew the baked sky behind it. Against a lit sky the mask stops
+			// being the body: wherever the night side or the limb comes within
+			// `CHANGED` of the sky behind it, a pixel's membership turns on the
+			// few codes the surface moves while the frame loop runs between two
+			// reads, and a cell that limb crosses can hold about the 8 pixels a
+			// patch needs. Measured on #433's build: one cell dropped out between
+			// two reads of one class (24 filled patches, then 23), and the
+			// same-class repeat read 5.6 on iceGiant and 10.0 on jovian, against
+			// under 0.3 for both with the picture off. The sky is not what this
+			// file measures, so it leaves the frame rather than the gate moving.
+			const sky = window.__seelite.backdropScene;
+			const background = sky.background;
+			sky.background = null;
 			const frame = window.__framePixels;
 			const mesh = window.__meshOf(bodyId);
 			const shown = frame();
 			mesh.visible = false;
 			const hidden = frame();
 			mesh.visible = true;
+			sky.background = background;
 
 			const moved = (i) =>
 				Math.abs(shown[i] - hidden[i]) +

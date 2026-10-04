@@ -7,9 +7,9 @@
  * same construction `light-rig.ts`'s `envRotation` had already grown, degenerate
  * case and all, for `BAKE_STAR_DIR`. A second copy of a 180°-safe shortest arc
  * is the failure this repo has repeatedly paid for: one copy fixes the
- * antiparallel case and the other does not, and nothing links the two. So
- * `envRotation` builds through `shortestArc` here, and this file holds the
- * primitive rather than trusting that two files agree about it.
+ * antiparallel case and the other does not, and nothing links the two. Node #433
+ * retired the lighting wrapper; this file holds the useful properties directly on
+ * `shortestArc`, which still carries the galactic frame.
  *
  * Two claims matter more than the algebra, because they are the ones a mistake
  * hides behind:
@@ -79,9 +79,40 @@ describe("quatMul", () => {
 });
 
 describe("shortestArc", () => {
+	test("maps a sphere spread with unit quaternions regardless of input scale", () => {
+		// Preserve the useful properties from the retired lighting wrapper on
+		// the primitive that the galactic frame still uses.
+		const from = v3(1, 0, 0);
+		const golden = Math.PI * (3 - Math.sqrt(5));
+		const spread = [from, v3(-1, 0, 0)];
+		for (let i = 0; i < 200; i++) {
+			const y = 1 - (2 * (i + 0.5)) / 200;
+			const ring = Math.sqrt(Math.max(0, 1 - y * y));
+			spread.push(
+				v3(Math.cos(golden * i) * ring, y, Math.sin(golden * i) * ring),
+			);
+		}
+		for (const to of spread) {
+			const q = arc(from, to);
+			expectVec(rotateBy(q, from), to);
+			expect(Math.hypot(...q)).toBeCloseTo(1, 12);
+			const scaled = arc(from, v3(to.x * 1e6, to.y * 1e6, to.z * 1e6));
+			for (let i = 0; i < 4; i++) expect(scaled[i]).toBeCloseTo(q[i], 9);
+		}
+	});
+
+	test("the inverse fails to carry from onto to at an ordinary direction", () => {
+		const from = v3(1, 0, 0);
+		const to = v3(0.3, 0.5, Math.sqrt(1 - 0.09 - 0.25));
+		const [x, y, z, w] = arc(from, to);
+		const landed = rotateBy([-x, -y, -z, w], from);
+		expect(
+			Math.hypot(landed.x - to.x, landed.y - to.y, landed.z - to.z),
+		).toBeGreaterThan(0.5);
+	});
+
 	test("carries `from` onto `to` for every direction, antiparallel included", () => {
-		// The property `envRotation` was extracted for in #99, held here for the
-		// primitive so it cannot be true in one caller and false in the other.
+		// The primitive carries the requested direction, including the half turn.
 		const from = v3(0, 1, 0);
 		for (const to of DIRECTIONS) expectVec(rotateBy(arc(from, to), from), to);
 	});
