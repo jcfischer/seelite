@@ -54,7 +54,12 @@ import {
 	envRadiance,
 	envRotation,
 	equirectEnvironment,
+	gasRadiance,
+	hazeRadiance,
 	LIGHT_RIG,
+	type GasParams,
+	type HazeParams,
+	type SkyBakeParams,
 } from "../src/light-rig";
 import { DEFAULT_SETTINGS, settingSpec } from "../src/settings";
 import { SHIP_EMISSIVE_INTENSITIES } from "../src/ship-mesh";
@@ -807,5 +812,139 @@ describe("the painted-hull luma calibration", () => {
 		expect(HULL_LUMA_MARGINS.lowerQuartile).toBeLessThan(
 			SUBJECT_CHANGE_QUARTILE_DROP / 2,
 		);
+	});
+});
+
+// ---------------------------------------------------------------------------
+// Node #433: haze, gas, and the world-frame bake
+// ---------------------------------------------------------------------------
+
+describe("the haze model (node #433)", () => {
+	const core: [number, number, number] = [0, 0, 1];
+	const haze: HazeParams = { coreBearing: core, strength: 1.0 };
+
+	test("brightest toward the core bearing", () => {
+		const toward = luma(hazeRadiance(core, haze));
+		const away = luma(hazeRadiance([0, 0, -1], haze));
+		const side = luma(hazeRadiance([1, 0, 0], haze));
+		expect(toward).toBeGreaterThan(away);
+		expect(toward).toBeGreaterThan(side);
+	});
+
+	test("never negative or non-finite", () => {
+		for (const dir of [
+			[1, 0, 0],
+			[0, 1, 0],
+			[0, 0, 1],
+			[0, 0, -1],
+			[-1, -1, -1],
+		] as const)
+			for (const c of hazeRadiance(dir, haze)) {
+				expect(Number.isFinite(c)).toBe(true);
+				expect(c).toBeGreaterThanOrEqual(0);
+			}
+	});
+
+	test("strength zero gives a minimal uniform glow", () => {
+		const weak: HazeParams = { coreBearing: core, strength: 0 };
+		const toward = luma(hazeRadiance(core, weak));
+		const away = luma(hazeRadiance([0, 0, -1], weak));
+		expect(toward).toBeGreaterThan(0);
+		expect(toward).toBeCloseTo(away, 5);
+	});
+
+	test("null coreBearing gives a uniform glow, no crash", () => {
+		const noCore: HazeParams = { coreBearing: null, strength: 1.0 };
+		const a = hazeRadiance([1, 0, 0], noCore);
+		const b = hazeRadiance([0, 0, -1], noCore);
+		expect(a).toEqual(b);
+		for (const c of a) expect(c).toBeGreaterThan(0);
+	});
+});
+
+describe("the gas model (node #433)", () => {
+	const gas: GasParams = { color: [1, 0.8, 0.6], density: 0.5, seed: 42 };
+
+	test("deterministic: same seed gives same result", () => {
+		const a = gasRadiance([1, 0, 0], gas);
+		const b = gasRadiance([1, 0, 0], gas);
+		expect(a).toEqual(b);
+	});
+
+	test("different seeds give different results", () => {
+		const a = gasRadiance([1, 0, 0], gas);
+		const b = gasRadiance([1, 0, 0], { ...gas, seed: 99 });
+		// At least one channel differs.
+		const differ = a.some((v, i) => v !== b[i]);
+		expect(differ).toBe(true);
+	});
+
+	test("zero density gives zero", () => {
+		const zero = gasRadiance([1, 0, 0], { ...gas, density: 0 });
+		expect(zero).toEqual([0, 0, 0]);
+	});
+
+	test("never negative", () => {
+		for (const dir of [
+			[1, 0, 0],
+			[0, 1, 0],
+			[0, 0, 1],
+			[-1, -1, -1],
+		] as const)
+			for (const c of gasRadiance(dir, gas))
+				expect(c).toBeGreaterThanOrEqual(0);
+	});
+});
+
+describe("the world-frame bake (node #433)", () => {
+	const starDir: [number, number, number] = [0, 0, 1];
+
+	test("envRadiance accepts a custom starDir", () => {
+		const atStar = luma(envRadiance(starDir, WARM, starDir));
+		const away = luma(envRadiance([0, 0, -1], WARM, starDir));
+		expect(atStar).toBeGreaterThan(away);
+	});
+
+	test("envRadiance with default starDir matches BAKE_STAR_DIR", () => {
+		const a = envRadiance([1, 0, 0], WARM);
+		const b = envRadiance([1, 0, 0], WARM, BAKE_STAR_DIR);
+		expect(a).toEqual(b);
+	});
+
+	test("full bake with SkyBakeParams is brighter than the old bake", () => {
+		const old = equirectEnvironment(WARM);
+		const params: SkyBakeParams = {
+			starColor: WARM,
+			starDir,
+			haze: { coreBearing: [1, 0, 0], strength: 0.8 },
+			gas: { color: [0.8, 0.7, 1.0], density: 0.5, seed: 42 },
+			includeHaze: true,
+		};
+		const full = equirectEnvironment(params);
+		expect(full.width).toBe(old.width);
+		expect(full.height).toBe(old.height);
+		// The haze and gas add light, so the average brightness is higher.
+		let oldSum = 0;
+		let fullSum = 0;
+		for (let i = 0; i < old.data.length; i += 4) {
+			oldSum += old.data[i] + old.data[i + 1] + old.data[i + 2];
+			fullSum += full.data[i] + full.data[i + 1] + full.data[i + 2];
+		}
+		expect(fullSum).toBeGreaterThan(oldSum);
+	});
+
+	test("includeHaze false drops the haze and gas fill", () => {
+		const params: SkyBakeParams = {
+			starColor: WARM,
+			starDir: BAKE_STAR_DIR,
+			haze: { coreBearing: [1, 0, 0], strength: 0.8 },
+			gas: { color: [0.8, 0.7, 1.0], density: 0.5, seed: 42 },
+			includeHaze: false,
+		};
+		const low = equirectEnvironment(params);
+		const old = equirectEnvironment(WARM);
+		// With includeHaze false and starDir at BAKE_STAR_DIR, the bake is the
+		// same as the old path — star lobe + floor, no haze, no gas.
+		expect(Array.from(low.data)).toEqual(Array.from(old.data));
 	});
 });

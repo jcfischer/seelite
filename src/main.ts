@@ -82,8 +82,8 @@ import {
 import {
 	EXPOSURE,
 	LIGHT_RIG,
-	envRotation,
 	equirectEnvironment,
+	type SkyBakeParams,
 } from "./light-rig";
 import {
 	CLOSED_GATE,
@@ -228,13 +228,18 @@ import {
 	stepCruiseGuidance,
 	type CruiseGuidanceState,
 } from "./cruise-guidance";
-import { GOVERNMENT_NAMES, type SystemRecord } from "./galaxy";
+import {
+	GALAXY_RADIUS_LY,
+	GOVERNMENT_NAMES,
+	type SystemRecord,
+	stream,
+} from "./galaxy";
 // The plane a system's bodies orbit near, and the plane the horizon line is
 // rolled against, in one declaration (#430). Authored in `galaxy-frame.ts` because
 // that module's whole subject is the relation between this plane and the
 // cluster's; the roll below is its consumer, and the one in `hud.ts` reads the
 // vector handed to it.
-import { SYSTEM_PLANE_NORMAL } from "./galaxy-frame";
+import { SYSTEM_PLANE_NORMAL, coreBearing, skyFrame } from "./galaxy-frame";
 import { type Course, courseProgress, setCourse } from "./galaxy-route";
 import { type HullReach, hullReachFrom } from "./hull-reach";
 import { bootHull, deliverHull } from "./flown-hull";
@@ -1067,12 +1072,10 @@ const ORIGIN = v3(0, 0, 0);
 
 const STATION_AXIS = new THREE.Vector3();
 
-/** The camera's unit direction to the star, and the rotation carrying the
- *  bake's own star direction onto it. Allocated once for the reason above: they
- *  are written every frame and read in the same statement. */
+/** The camera's unit direction to the star — still aimed per-frame for the
+ *  direct sun and hemisphere lights. The per-frame environment rotation is
+ *  retired by node #433: the bake is in the world frame now. */
 const STAR_DIR = new THREE.Vector3();
-const ENV_QUAT = new THREE.Quaternion();
-const ENV_EULER = new THREE.Euler();
 /** Local +Z, which `station-mesh.ts` builds every station's aperture axis
  *  along — the vector a station's mesh is rotated *from* when it is aimed. */
 /** Scratch for the aperture basis a station is aimed with — allocated once,
@@ -5496,8 +5499,19 @@ class Game {
 	 *  assuming it is the first call. */
 	private environmentMap: THREE.Texture | null = null;
 
+	/** The pre-PMREM equirectangular source, kept so it can serve as both
+	 *  `scene.environment` (convolved) and `backdropScene.background` (raw).
+	 *  Disposed and rebuilt on every jump alongside `environmentMap`. */
+	private environmentSource: THREE.DataTexture | null = null;
+
 	/**
-	 * Bake the star's environment once and hand it to all three layers.
+	 * Bake the sky once per system in the world frame (node #433, closing #100).
+	 *
+	 * The same equirectangular image serves as both the drawn backdrop
+	 * (`backdropScene.background`) and the reflection environment
+	 * (`scene.environment` via PMREM). The star lobe is placed at the star's
+	 * world-frame direction from the ship's arrival position, so there is no
+	 * per-frame `Scene.environmentRotation`.
 	 *
 	 * `PMREMGenerator` convolves the equirectangular image into the roughness
 	 * chain every `MeshStandardMaterial` samples. It is a handful of small
@@ -5513,9 +5527,54 @@ class Game {
 		// cube is a GPU texture, and a second bake that dropped the first would
 		// leak it silently.
 		this.environmentMap?.dispose();
-		const { data, width, height } = equirectEnvironment(
-			this.world.system.contents.star.color,
-		);
+		this.environmentSource?.dispose();
+
+		// Star direction in world frame, from the ship's current position.
+		const star = this.starBody;
+		const starPos = star ? star.pos : { x: 0, y: 0, z: 0 };
+		const shipPos = this.world.ship.pos;
+		const dx = starPos.x - shipPos.x;
+		const dy = starPos.y - shipPos.y;
+		const dz = starPos.z - shipPos.z;
+		const dl = Math.hypot(dx, dy, dz) || 1;
+		const starDir: [number, number, number] = [dx / dl, dy / dl, dz / dl];
+
+		// Haze: direction toward the galactic core, in world frame.
+		const record = this.world.system.record;
+		const frame = skyFrame(record.seed);
+		const core = coreBearing(frame, record.pos);
+		// Strength: how far from the cluster centre this system is. Systems near
+		// the centre see an almost uniform sky; rim systems see a bright core
+		// direction. Normalised by the galaxy radius so it ranges ~0..1.
+		const rLy = Math.hypot(record.pos.x, record.pos.y, record.pos.z);
+		const hazeStrength = Math.min(1, rLy / GALAXY_RADIUS_LY);
+
+		// Gas: per-system nebula colour and density, from DOMAIN.GAS.
+		const gasRand = stream(record.seed, DOMAIN.GAS);
+		const starColor = this.world.system.contents.star.color;
+		const sr = ((starColor >> 16) & 255) / 255;
+		const sg = ((starColor >> 8) & 255) / 255;
+		const sb = (starColor & 255) / 255;
+		// Gas colour: a shifted version of the star tint, saturated and dimmed.
+		const gasColor: [number, number, number] = [
+			0.3 + 0.7 * sr * gasRand(),
+			0.3 + 0.7 * sg * gasRand(),
+			0.3 + 0.7 * sb * gasRand(),
+		];
+		const gasDensity = gasRand() * 0.6 + 0.1; // 0.1..0.7
+		const gasSeed = Math.floor(gasRand() * 0x7fffffff);
+
+		const bakeParams: SkyBakeParams = {
+			starColor,
+			starDir,
+			haze: core
+				? { coreBearing: [core.x, core.y, core.z], strength: hazeStrength }
+				: null,
+			gas: { color: gasColor, density: gasDensity, seed: gasSeed },
+			includeHaze: true,
+		};
+		const { data, width, height } = equirectEnvironment(bakeParams);
+
 		const source = new THREE.DataTexture(
 			data,
 			width,
@@ -5526,13 +5585,12 @@ class Game {
 		source.mapping = THREE.EquirectangularReflectionMapping;
 		source.colorSpace = THREE.LinearSRGBColorSpace;
 		source.needsUpdate = true;
+		this.environmentSource = source;
 		const pmrem = new THREE.PMREMGenerator(this.renderer);
 		this.environmentMap = pmrem.fromEquirectangular(source).texture;
-		// Both are done once the cube exists: the generator's own render targets
-		// and the source image are not read again, and holding them would keep a
-		// float texture per system jumped to alive for the session.
+		// The PMREM's own render targets are done; the source is kept for the
+		// backdrop background and disposed on the next bake.
 		pmrem.dispose();
-		source.dispose();
 		// Once, here: it is a constant, and `applyQuality` runs on every quality
 		// change — writing it there dirtied every material's uniforms for a value
 		// that cannot have changed.
@@ -5554,6 +5612,12 @@ class Game {
 		for (const { scene } of this.layerLights)
 			scene.environment = mode.environment ? this.environmentMap : null;
 		this.renderer.toneMappingExposure = mode.exposure;
+		// Node #433: the baked equirectangular is the backdrop when the haze fill
+		// is on. `low` drops it so only the star points remain. Three.js draws
+		// `scene.background` with equirectangular mapping before anything else.
+		this.backdropScene.background = mode.environment
+			? this.environmentSource
+			: null;
 		// The hull half of the same gate (#101): low drops the seam normal map.
 		// It is a separate call rather than a second field on `LIGHT_RIG`,
 		// because that record is the lighting model and a texture on a material
@@ -14287,64 +14351,29 @@ class Game {
 		return add(this.world.ship.pos, v3(offset.x, offset.y, offset.z));
 	}
 
-	/** Aim the per-layer lights at the star, in every scene the rig owns.
+	/** Aim the per-layer direct lights at the star. The sun and hemisphere still
+	 *  track the star per-frame; the environment map is baked in the world frame
+	 *  by node #433 and no longer rotated here.
 	 *
-	 *  A camera standing exactly on its own star has no direction to it, and then
-	 *  this changes nothing at all: `envRotation` refuses to invent a rotation out of
-	 *  a zero vector (#430), so all three aims — the sun's position, the hemisphere's
-	 *  axis and the environment's rotation — hold at whatever the last frame set them
-	 *  to. That is the right answer for one degenerate frame, and the case ends as
-	 *  soon as the ship moves. There is no previous frame to hold on the first frame
-	 *  after a rig is built, and there the rig's own initial values stand.
-	 *
-	 *  The clamp this replaced, `Math.max(1e-9, length)`, is not the guard it looks
-	 *  like. It kept the division finite without keeping the result a direction, and
-	 *  it still handed `envRotation` the zero vector, which is the case #430's throw
-	 *  was written for. `toStar` is kilometres, so the region where the clamp itself
-	 *  bit — a distance under 10⁻⁹ km, a micrometre off the star's centre — is not a
-	 *  place a camera is flown.
-	 *
-	 *  A method rather than a nesting level inside `render`, because `render` is the
-	 *  float64-to-float32 boundary and every line of it is about placing something
-	 *  relative to the camera. This is one decision with one degenerate case.
-	 */
+	 *  A camera at zero distance from its star changes nothing: the `d === 0`
+	 *  guard keeps the previous frame's aim, which is right for one degenerate
+	 *  frame and ends as soon as the ship moves. */
 	private aimLayerLights(starPos: Vec3, camPos: Vec3): void {
 		const toStar = sub(starPos, camPos);
 		const d = length(toStar);
 		if (d === 0) return;
 		STAR_DIR.set(toStar.x / d, toStar.y / d, toStar.z / d);
-		// The bake put its star at `BAKE_STAR_DIR`; this is the rotation that
-		// carries it onto the real one. A rotation rather than a rebake because
-		// the star direction changes continuously as the ship crosses the
-		// system, and a PMREM pass per frame is not a thing to spend a frame on.
-		//
-		// `envRotation` picks the shortest arc, so the environment also rolls
-		// about the star axis as the ship moves. Nothing in the bake varies
-		// about that axis — the model is a lobe and a floor — so the roll is
-		// unobservable, and it stops being so the day #100's haze arrives.
-		// That is the seam, named where the rotation is applied.
-		//
-		// It is derived in `light-rig.ts` and not here, and that is the fix
-		// for #99's review blocker rather than a tidiness point: written here
-		// as `setFromUnitVectors(BAKE_STAR_UNIT, STAR_DIR)` it was
-		// indistinguishable from its own inverse by anything the repo could
-		// run. As a function it has a round trip a headless test sweeps.
-		ENV_QUAT.fromArray(envRotation([STAR_DIR.x, STAR_DIR.y, STAR_DIR.z]));
-		ENV_EULER.setFromQuaternion(ENV_QUAT);
-		// Cached at build rather than looked up: `getObjectByName` walks every
-		// descendant, and the near scene holds every drawn body — so the two
-		// name lookups this replaced cost six recursive traversals a frame,
-		// scaling with the scene rather than with the two lights being found.
+		// Node #433: the environment is baked in the world frame and no longer
+		// rotated per frame. `Scene.environmentRotation` stays at identity. The
+		// star lobe in the bake was placed at bake time and does not track the
+		// star as the ship moves — the haze and gas being fixed in the world
+		// frame is the reason (#100's closing: one shortest-arc quaternion cannot
+		// carry a star *and* a band). The direct sun and hemisphere still track
+		// the star, which is what the lines below do.
 		for (const rig of this.layerLights) {
 			rig.sun.position.copy(STAR_DIR);
-			// The hemisphere's axis is its position, so aiming it at the star is
-			// what turns a flat lift into a star-side gradient.
 			rig.hemisphere.position.copy(STAR_DIR);
-			rig.scene.environmentRotation.copy(ENV_EULER);
 		}
-		// The canopy glass is a basic material and reads no `scene` field, so
-		// its environment is turned onto the star here, beside the scenes'.
-		this.canopyGlass?.envMapRotation.copy(ENV_EULER);
 	}
 
 	/**
