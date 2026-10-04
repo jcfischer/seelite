@@ -62,16 +62,10 @@ const coast = async ({ type, where, gates }) => {
 			);
 			if (!station) return { error: `no ${type} at seed/system` };
 			const id = station.id;
-			const add = (a, b) => ({ x: a.x + b.x, y: a.y + b.y, z: a.z + b.z });
-			const sub = (a, b) => ({ x: a.x - b.x, y: a.y - b.y, z: a.z - b.z });
-			const scale = (a, k) => ({ x: a.x * k, y: a.y * k, z: a.z * k });
-			const dot = (a, b) => a.x * b.x + a.y * b.y + a.z * b.z;
-			const cross = (a, b) => ({
-				x: a.y * b.z - a.z * b.y,
-				y: a.z * b.x - a.x * b.z,
-				z: a.x * b.y - a.y * b.x,
-			});
-			const unit = (a) => scale(a, 1 / Math.hypot(a.x, a.y, a.z));
+			const { add, sub, scale, dot, cross, length } = await import(
+				"/src/vec3.ts"
+			);
+			const unit = (a) => scale(a, 1 / length(a));
 			const snap = g.dockingSnapshot(id);
 			if (!snap) return { error: `no snapshot of ${id}` };
 			const axis = snap.axis;

@@ -19,10 +19,13 @@
  * The hull enters through exactly two doors and they are the two D5 names: its
  * `FlightPerformance`, which decides how fast it turns and accelerates, and its
  * envelope, which decides whether the station has a berth to reserve for it.
- * Nothing else about a hull reaches the approach.
+ * Nothing else about a hull reaches the approach. Collision rows can also
+ * supply the station's own seeds, used by its interior and proxy together.
  */
 
-import { type Impact, hullBox, shipPose, sweepShip } from "../../src/collision";
+import { type Impact, shipPose, sweepShip } from "../../src/collision";
+import { hullSolid } from "./hull-solid";
+import type { StationSeeds } from "./station-plan-corpus";
 import {
 	type ApertureFrame,
 	type ComputerPhase,
@@ -194,10 +197,14 @@ export interface FlightOptions {
 	trace?: ComputerTraceStep[];
 	/**
 	 * The station the hull meets (`collision.md` §2.2), when it is not the
-	 * selected form's proxy at berth seed 1 and assembly seed 0 — for a row
+	 * selected form's proxy at `stationSeeds` (berth 1, assembly 0 if omitted) — for a row
 	 * that builds a red proxy on purpose.
 	 */
 	proxy?: StationProxy;
+	/** Explicit plan for seeded collision rows. Historical handling fixtures
+	 * retain berth 1, assembly 0 when omitted. The berth catalogue and proxy
+	 * must read the same pair. */
+	stationSeeds?: StationSeeds;
 }
 
 /** The clearance a run starts under: none, queued, or a live grant. Every
@@ -235,11 +242,12 @@ export function flyTheComputer(opts: FlightOptions): FlightRun {
 	const dt = opts.dt ?? 0.05;
 	const swing = opts.axisSwingRadPerS ?? 0;
 	const pivot = cross(axis, reference);
+	const seeds = opts.stationSeeds ?? { berthSeed: 1, assemblySeed: 0 };
 
 	const interior = stationInterior(
 		type,
 		STATION_GEOMETRY[type].aperturePlaneKm,
-		1,
+		seeds.berthSeed,
 	);
 	const state = initialState(opts, interior, envelope);
 
@@ -264,10 +272,8 @@ export function flyTheComputer(opts: FlightOptions): FlightRun {
 	let ghostSteps = 0;
 	// The station stands at the origin of its own frame, which is the frame
 	// this harness flies in: a proxy at rest, turning with the slot. // glossary-ignore: slot
-	const proxy =
-		opts.proxy ?? selectedStationProxy({ type, berthSeed: 1, assemblySeed: 0 });
-	const spec = HULL_SPECS[opts.hull];
-	const box = [hullBox(spec.env, spec.envCentre)];
+	const proxy = opts.proxy ?? selectedStationProxy({ type, ...seeds });
+	const box = hullSolid(opts.hull);
 	const limitS = opts.limitS ?? GRANT_WINDOW_S;
 	let previousPhase: ComputerPhase = "idle";
 

@@ -20,14 +20,11 @@
  * check 4 reads.
  */
 
-import {
-	hullBox,
-	shipPose,
-	type SolidMotion,
-	sweepShip,
-} from "../../src/collision";
+import { shipPose, type SolidMotion, sweepShip } from "../../src/collision";
 import { apertureFrame, slotBasis } from "../../src/docking";
-import { HULL_SPECS, type HullId } from "../../src/hull";
+import type { HullId } from "../../src/hull";
+import { hullSolid } from "./hull-solid";
+import type { StationSeeds } from "./station-plan-corpus";
 import type { StationType } from "../../src/station";
 import { selectedStationProxy, stationMotions } from "../../src/station-proxy";
 import { type Vec3, cross, scale, v3 } from "../../src/vec3";
@@ -79,13 +76,13 @@ export function clearsAperture(
 	type: StationType,
 	hull: HullId,
 	angles: EntryAngles,
+	seeds: StationSeeds,
 ): boolean {
 	const frame = apertureFrame(type, FIXTURE_AXIS, 0, FIXTURE_REFERENCE);
-	const proxy = selectedStationProxy({ type, berthSeed: 1, assemblySeed: 0 });
+	const proxy = selectedStationProxy({ type, ...seeds });
 	const still = { frame, origin: v3(), vel: v3() };
 	const solids = stationMotions(proxy, still, still);
-	const { env, envCentre } = HULL_SPECS[hull];
-	const box = [hullBox(env, envCentre)];
+	const box = hullSolid(hull);
 	const { nose, up } = entryAttitude(type, angles);
 	const at = (k: number): Vec3 =>
 		scale(frame.axis, frame.planeKm + RUN_IN_KM * (1 - k / SUB_STEPS));
@@ -115,16 +112,22 @@ export function largestClearAngleDeg(
 	axis: "pitch" | "yaw",
 	rollDeg: number,
 	maxDeg: number,
+	seeds: StationSeeds,
 	stepDeg = 0.5,
 ): number | null {
 	let best: number | null = null;
 	for (let deg = 0; deg <= maxDeg + 1e-9; deg += stepDeg) {
 		const fits = [deg, -deg].every((signed) =>
-			clearsAperture(type, hull, {
-				pitchDeg: axis === "pitch" ? signed : 0,
-				yawDeg: axis === "yaw" ? signed : 0,
-				rollDeg,
-			}),
+			clearsAperture(
+				type,
+				hull,
+				{
+					pitchDeg: axis === "pitch" ? signed : 0,
+					yawDeg: axis === "yaw" ? signed : 0,
+					rollDeg,
+				},
+				seeds,
+			),
 		);
 		if (!fits) break;
 		best = deg;

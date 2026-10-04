@@ -94,6 +94,7 @@ import {
 	apertureFrame,
 } from "./docking";
 import {
+	type StationEnd,
 	proxyReachKm,
 	selectedStationProxy,
 	stationMotions,
@@ -1929,6 +1930,20 @@ export function stationStarts(
 		}));
 }
 
+/** A placed station's frame, origin and velocity at the supplied clock. The
+ * body's position must already have been advanced to that clock. */
+export function stationEndAt(
+	system: System,
+	id: string,
+	gameTime: number,
+): StationEnd {
+	return {
+		frame: stationApertureFrame(system, id, gameTime),
+		origin: { ...bodyOf(system, id).pos },
+		vel: bodyVelocity(system, id, gameTime),
+	};
+}
+
 function bodyOf(system: System, id: string): Body {
 	const body = system.byId.get(id);
 	if (!body) throw new Error(`no placed body ${id}`);
@@ -2083,11 +2098,7 @@ function collideShip(
 				origin,
 				vel: bodyVelocity(world.system, station.id, clock.fromTime),
 			},
-			{
-				frame: stationApertureFrame(world.system, station.id, world.gameTime),
-				origin: { ...body.pos },
-				vel: bodyVelocity(world.system, station.id, world.gameTime),
-			},
+			stationEndAt(world.system, station.id, world.gameTime),
 		)) {
 			owner.push(station.id);
 			motions.push(motion);

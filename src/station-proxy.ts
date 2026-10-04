@@ -62,7 +62,7 @@ import type { Pose, Primitive, SolidMotion } from "./collision";
 import { type ApertureFrame, frameAtPhase, slotBasis } from "./docking";
 import type { StationFormId, StationType } from "./station";
 import { SELECTED_FORM, STATION_GEOMETRY } from "./station";
-import { HULL_IDS, HULL_SPECS } from "./hull";
+import { HULL_SPECS } from "./hull";
 import {
 	admittedHulls,
 	corridorRadiusKm,
@@ -335,9 +335,11 @@ function bayHoles(type: StationType): Bounds[] {
  * rather than written down: the half-diagonal of each hull's box plus its
  * offset from the ship's origin (`HULL_SPECS[id].envCentre`), over every hull
  * a berth of this role admits — a hull no berth admits cannot be granted, so
- * it never crosses. That bounds the box below the plane at any attitude, so a
- * centred entry fits whatever its angle, and an entry off the axis is P1's
- * physical fit: a wing past the corridor meets the deck, as a slot's rim does. // glossary-ignore: slot
+ * it never crosses. That bounds axial reach below the plane at any attitude;
+ * lateral fit against `corridorRadiusKm` is a separate question, measured by
+ * the seeded physical-fit table and its gated centred-entry rows. An entry
+ * off the axis is P1's physical fit: a wing past the corridor meets the deck,
+ * as a slot's rim does. // glossary-ignore: slot
  *
  * Zero for a slot role: its bay is the opening behind its plane. // glossary-ignore: slot
  */
@@ -346,7 +348,7 @@ export function padWellDepthKm(type: StationType): number {
 	const cached = wellDepthCache.get(type);
 	if (cached !== undefined) return cached;
 	let depth = 0;
-	for (const id of admittedHulls(type, HULL_IDS)) {
+	for (const id of admittedHulls(type)) {
 		const { env, envCentre } = HULL_SPECS[id];
 		const reach =
 			Math.hypot(env.lengthKm, env.beamKm, env.heightKm) / 2 +

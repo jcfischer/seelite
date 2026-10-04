@@ -33,11 +33,11 @@ under their current subjects.
 |---|---|
 | §9.1.2 row 3; §9.1.4 moving surface | `collision-stations.test.ts`: turning face strikes at the `ω × r` band; away/stopped-spin controls; resting surface bills the turn and leaves the hull outside. Static-keel misposing makes its control red. |
 | §9.1.6 | Rim first, plane first and exact tie; zero-speed resting thrust cannot pass the rim. The latter failed before the resolver correction and passes afterward. Departing a resting surface remains free to cross a plane. |
-| §9.1.7 | 40 spawns, 40 real hyperspace arrivals, 40 restore fallback placements: zero inside proxies. Deliberate saved-flight placements inside all four roles ghost without damage or push; return after separation makes contact. These are controlled saved-pose fixtures, not a survey of players' saves. |
+| §9.1.7 | 40 world seeds × all 12 hull boxes for each of spawn, real hyperspace arrival and restore fallback: 480 hull placements per path, zero inside proxies. Attitude reconstructs Game's star-facing placement (World carries no attitude); an additional reach-sphere bound proves clearance for any attitude. Deliberate saved-flight placements inside all four roles ghost without damage or push; return after separation makes contact. These are controlled saved-pose fixtures, not a survey of players' saves. |
 | §9.1.7 launch; §9.1.8 | Every admitted hull, every role: arrival, parked interval and launch are exempt. All 34 release cases fly 90 subsequent steps with zero impacts and zero ghost steps. Pad red arm removes the exemption and meets solids. Slot red arm closes the bay and meets its bulkhead. | <!-- glossary-ignore: pad, slot -->
-| §9.1.9 | `bun scripts/measure-aperture-fit.ts` reproduces `aperture-physical-fit.md`'s table exactly. Centred zero pitch/yaw passes at both roll 0 and roll 50° for every admitted hull. |
+| §9.1.9 | `bun scripts/measure-aperture-fit.ts` prints the worst angle across 18 refinery plans (12 budget seeds + 6 generated station seed pairs), 12 outpost plans, and one fixture per non-seeded role. Centred zero pitch/yaw passes at roll 0 and 50° for every admitted hull. Seeded pad rows additionally check ±35° pitch and yaw at both rolls; the full 0.5° scan is the principal's updated table. |
 | §9.1.12 remainder | Seeds 1–200, the travel instrument's full default corpus: 416 cruise legs, 416 exits; zero exits inside a proxy. Nearest exit to any station: 41.3 km. Zero of 416 legs cross a non-target proxy. The count now sweeps actual moving primitives after broad-phase rejection. Its regression rejects empty space inside the Gantry's bounding sphere while counting a boom crossing; the reach-only version failed. The measured 416-leg and 416-exit totals and the empty non-target crossing list are asserted. The former literal seed-length assertion did not prove the measured coverage. |
-| §9.1.15 | `hull-docking.test.ts` flies the computer with collision live across its admitted roster, roles and spin samples, asserting no impacts or ghosts in addition to docking and the six checks. Together with `docking-computer.test.ts`: 58 tests passed. |
+| §9.1.15 | `hull-docking.test.ts` flies the computer with collision live across its admitted roster, roles and spin samples, asserting no impacts or ghosts in addition to docking and the six checks. Those historical handling rows retain the fixed plan; the new seeded pad rows fly 18 refinery plans × 9 hulls and 12 outpost plans × 7 hulls (246 runs), asserting docking, no violations or refusal, no impacts or ghosts, and a nontrivial flight. |
 
 Before the review repair, the focused collision files passed 75 tests. That
 `npm test` passed
@@ -133,8 +133,8 @@ proving measured coverage has been corrected above.
 
 Hull admission is shared by the proxy, the fit instrument and the collision
 rows through `admittedHulls`. Exit overlap checks reuse `overlapsStation` and
-`uprightFor`. The fit instrument's output remains byte-identical to the
-principal's table. The collision-enabled roster sweep still measures the miner
+`uprightFor`. The round 1 fit instrument's output remained byte-identical to the
+then-current principal table; round 2 below expands its measured seed scope. The collision-enabled roster sweep still measures the miner
 at 5 rpm against the generator's 3 rpm maximum, a 1.67× margin. The comment now
 points to the printed measurement instead of retaining a copied number.
 
@@ -170,3 +170,54 @@ from the world step and the synthetic computer harness would change their
 interfaces; deferring station frame construction needs measured cost evidence;
 lifting the whole cruise leg is unnecessary after removing the duplicate overlap
 arithmetic. This repair leaves those three suggestions out.
+
+## Sage round 2 repair
+
+The physical-fit helper now requires a station seed pair. The computer harness
+accepts the pair and uses its berth seed for the interior and both seeds for
+the proxy. The bounded corpus is shared by the seeded gate and the updated
+principal table, which prints every plan and each column's first worst sample.
+Both pad roles still clear 35° across the measured plans; this statement is
+bounded to that corpus. No generated outpost is claimed: its twelve plans are
+fixtures for the currently unplaced form. <!-- glossary-ignore: pad -->
+
+A red build closes only refinery assembly seed 745705128's landing well, leaving
+seed zero intact. The seeded row fails with 90 rejected fit poses and 9 actual computer impacts;
+restoring the proxy returns it to green. The first attempted injection was
+malformed and crashed; it is excluded from this evidence. The test-first typecheck also rejected
+the missing seed input interfaces before the helpers were changed.
+
+The placement census now checks all 12 hulls and reconstructs the star-facing
+pose used by Game for each placement path. It also requires the hull's full
+reach sphere to clear every proxy reach sphere, conservatively proving every
+attitude clear at those positions. Arbitrary saved-flight positions remain the
+separate deliberately-inside fixtures; this is not a census of player saves.
+
+Well depth now reads the dockable admitted roster; its comment states axial
+reach only and points to measured lateral fit. A shared test hull-solid helper
+replaces three box constructions. `stationEndAt` owns the end snapshot in the
+world step and tests. The collision probe imports the existing vector leaf
+in-page rather than spelling those primitives again. The admitted-hull alias
+is removed. The optional eager-frame optimization is left out: changing start
+snapshots or prefiltering can alter the moving-frame boundary and needs its own
+performance measurement and verification.
+
+Round 2 verification: `npm test` passed **4,910 tests, zero failures**, across
+268 files in 269.60 seconds. Typecheck, formatting, script lint, launcher wiring
+and production build passed. The seeded red build was restored byte-for-byte
+and the two seeded rows passed again. The updated table was measured with the
+current corpus; its angle values remain unchanged across that corpus.
+
+The mandatory selector returned all 86 probes due to shared infrastructure.
+Under this worker's targeted-only contract, the seven affected probes listed
+above passed through the canonical runner in **43 seconds**, on
+`ANGLE (Apple, ANGLE Metal Renderer: Apple M1 Pro, Unspecified Version)`,
+peak load 10.3 on 10 cores. The sandboxed launch aborted before any checks with
+SIGABRT and EPERM; the automatically approved retry outside that process
+sandbox supplies the evidence. This is **partial evidence, 7/86**. The supervisor
+still owes the full browser suite on the final reviewed head.
+
+The #573 major-change check remains yes for solid stations; this review repair
+adds no separate changelog entry. The existing node #663 sentence remains a
+proposal awaiting the principal's approval, as do the updated physical-fit table
+and drawn-surface gap judgments.
