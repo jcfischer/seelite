@@ -178,8 +178,8 @@ assumption rather than a guarantee. But once collision is built, the browser
 probe for this row (§9.2.4) measures a collision, not a failed entry. So it is
 re-pointed: `collision.md` (#302) specifies the collision, and its §9.2.1 is
 the browser row for a hull-face approach. Check 5 keeps its headless rows in
-§9.1.1. [#303](https://github.com/jcfischer/seelite/issues/303) builds both,
-and until it does, §9.2.4 still runs as written below.
+§9.1.1. Node #663 builds the station collision and re-points §9.2.4 to
+`scripts/probe-collision.mjs`.
 
 **Check 4 compares against the axis-*line*, not an oriented vector.** The slot is
 a 0.12 × 0.07 km rectangle, so a ship rolled 180° is a geometrically identical
@@ -873,20 +873,13 @@ anything rendered or spatial gets a browser probe.
    `spinRpm` over a measured interval, at both ends of the range.
 3. **A scripted approach docks** — driven from the vicinity through a correct
    profile, asserting `docked`.
-4. **A hull-face approach is refused** — a scripted run aimed squarely at the
-   station's face, inside check 2's cone but outside the aperture, asserts a
-   failed entry rather than a dock. This is round 2's blocker as a probe: it is
-   a spatial claim, so it gets the spatial tier.
-
-   **Re-pointed by `collision.md` (#302).** Once the hull is solid, this run
-   stops at the hull and never reaches the plane, so it proves that collision
-   works and not that check 5 refuses. Its browser half becomes `collision.md`
-   §9.2.1, under a collision name. Check 5 stays as defence in depth, and the
-   0.42 km lateral-offset row of §9.1.1 is the check that still reads it.
-   Renaming and rewriting the probe is
-   [#303](https://github.com/jcfischer/seelite/issues/303)'s. Until #303 lands
-   this row runs as written above, and is green for the reason §3 says has
-   moved (§12.7, joint 3).
+4. **A hull-face approach stops at the station** — re-pointed by node #663 to
+   `collision.md` §9.2.1, in `scripts/probe-collision.mjs`. A scripted run aimed
+   squarely at the station's face, inside check 2's cone but outside the
+   aperture, stops at the proxy before reaching the plane, bounces and survives
+   at `V_GATE`. It asserts that no entry was evaluated. Check 5 stays as
+   defence in depth; §9.1.1's 0.42 km lateral-offset row still checks its
+   containment refusal headlessly.
 5. **A scripted mis-rolled approach fails and survives** — the same profile with
    the roll deliberately 90° out asserts a failed entry, non-zero damage, and a
    living ship. D1 is a rendered, spatial claim and gets a probe, not a unit
@@ -1387,13 +1380,10 @@ Two tiers, as everywhere else in this spec.
    **no starfield pixels**. The approach and traversal remain open; the seal is
    a docked-state payoff, not a second entry gate.
 
-**Inherited by collision, not by this node.** When collision is built,
-§9.2.4's hull-face probe measures a collision rather than a failed entry (§3).
-#75 inherited the re-pointing, and `collision.md` (#302) now specifies it:
-§9.2.4 records where it goes, and #303 builds it. It is recorded here as well
-because a probe that stays green for a reason its own spec has declared dead is
-the shape of check that stops being evidence, and §12.7 records that it fails
-open until #303 lands.
+**Built with station collision (node #663).** §9.2.4's hull-face probe now
+measures collision in `scripts/probe-collision.mjs`, rather than a failed entry
+in `probe-docking.mjs`. `collision.md` §9.1.8 also tests the physical exemption
+through arrival, parking and launch, with a red build for each aperture kind.
 
 ### 12.7 Weak joints in this section
 
@@ -1404,29 +1394,21 @@ open until #303 lands.
    first-times against one shared interior is a compromise, not a resolution: the
    honest alternatives were distinct interiors per form, or no gate at all. E9's
    shield is what carries per-station identity instead.
-3. **Collision is specified and unbuilt** (E6). This section states that it
-   exists and where its boundary is, and nothing here builds it.
-   [#75](https://github.com/jcfischer/seelite/issues/75) decided it,
-   `collision.md` (#302) specifies it, and
-   [#303](https://github.com/jcfischer/seelite/issues/303) builds it. Until #303
-   lands, flying at a station's hull still passes through it — **and §9.2.4
-   stays green for a justification §3 has already declared dead.** That probe
-   currently proves a hull-face approach is refused by check 5; once the hull is
-   solid it will be proving that collision works, under a name that says
-   otherwise. Its re-pointing is now written down (§9.2.4, `collision.md`
-   §9.2.1), but **a written obligation on an open node is not a check**, and
-   this one stays green until #303 lands.
+3. **Station collision is built by node #663** (E6). `collision.md` owns the
+   law and proxy; §12.3 still owns the boundary. §9.2.4 now runs under a
+   collision name and asserts a stop before the plane. The hull-box rule makes
+   pitch and yaw a physical fit as well as a docking check; its measured table
+   (`docs/findings/aperture-physical-fit.md`) goes to the principal to judge.
 4. **Resolved by work-graph #109/#110:** generated names now ride every body
    record, Navigation, target HUD, docking director, and station shield; ids
    remain selection and persistence handles and are display-invisible.
-5. **The fourth gate is unreachable, and the third row of §12.3 is unchecked.**
-   Two things §12.6 counts as coverage that currently prove nothing. `system.ts`
+5. **The fourth gate is unreachable.** `system.ts`
    places **no outpost** — `station.ts` says so outright, because #56 shipped the
    outpost as a form and a geometry and #13 has not decided what one *is* — so
    the fourth skip flag is dead until something places one, and E4 is in practice
-   three first-times. And obligation 8's physical claim cannot fail while nothing
-   collides; only its state-visibility half is live until #303 builds
-   `collision.md` §9.1.8.
+   three first-times. Obligation 8's physical half is now covered by
+   `tests/collision-stations.test.ts` (`collision.md` §9.1.8, node #663),
+   including the outpost through a re-typed pad fixture.
 6. **E4's flag is an unmet precondition on #46.** §12.1 says the skip gate is a
    typed domain that node "must approve and bound", and then this section is
    where a reader would look for the dependency and would not have found it. So:

@@ -29,6 +29,11 @@ export type ChangelogEntry = {
 
 export const CHANGELOG: readonly ChangelogEntry[] = [
 	{
+		date: "2026-10-04",
+		text: "Stations are now solid: your ship bounces off hulls, landing decks and shipyard booms, while cleared docking and launch keep their safe passage.",
+		node: 663,
+	},
+	{
 		date: "2026-10-03",
 		text: "Moons and stars are now solid: fly into one and your ship bounces off its surface, and a fast enough hit destroys it.",
 		node: 661,

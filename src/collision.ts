@@ -809,12 +809,18 @@ export function sweepShip(
 		dt,
 	};
 	const { touching, swept } = classifyPairs(sweep, result);
-	let end = stopResting(sweep, touching, {
+	const stopped = stopResting(sweep, touching, {
 		origin: ship.end.origin,
 		vel: ship.velEnd,
 	});
+	// A resting pair can stop this step's thrust without a billed impact:
+	// its start speed is zero (§3.1). The unconstrained path's crossing is
+	// then unreachable, so that contact still owns the tick (§4.2). A ship
+	// departing the surface is not constrained and may cross another plane.
+	let end: End = stopped;
 	const met = resolveEarliest(sweep, swept, end);
 	const impactFirst =
+		stopped.constrained ||
 		result.impacts.length > 0 ||
 		(met !== null && (planeS === null || met.impact.timeS <= planeS));
 	if (planeS !== null && !impactFirst) {
@@ -958,8 +964,9 @@ function stopResting(
 	sweep: Sweep,
 	touching: readonly Touching[],
 	end: End,
-): End {
+): End & { constrained: boolean } {
 	let origin = end.origin;
+	let constrained = false;
 	for (const r of touching) {
 		const solid = sweep.solids[r.pair.solid];
 		const relative = sub(
@@ -967,9 +974,12 @@ function stopResting(
 			sub(solid.end.origin, solid.start.origin),
 		);
 		const inward = dot(relative, r.normal);
-		if (inward < 0) origin = sub(origin, scale(r.normal, inward));
+		if (inward < 0) {
+			origin = sub(origin, scale(r.normal, inward));
+			constrained = true;
+		}
 	}
-	return { origin, vel: end.vel };
+	return { origin, vel: end.vel, constrained };
 }
 
 /**

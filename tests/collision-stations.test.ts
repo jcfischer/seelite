@@ -31,16 +31,13 @@ import {
 	V_SCRAPE_KMS,
 	hullBox,
 	impactDamage,
+	mayMeet,
 	pairSeparation,
 	reachKm,
 	shipPose,
 	sweepShip,
 } from "../src/collision";
-import {
-	DEFAULT_CRUISE,
-	advanceCruise,
-	closestApproachKm,
-} from "../src/cruise";
+import { DEFAULT_CRUISE, advanceCruise } from "../src/cruise";
 import {
 	type DockSession,
 	berthOf,
@@ -64,7 +61,9 @@ import {
 	advanceWorldClock,
 	bodyVelocity,
 	flightPerformance,
+	jumpWorldTo,
 	makeWorld,
+	restoreWorld,
 	speedDemand,
 	stationApertureFrame,
 	stationHostIdOf,
@@ -417,6 +416,55 @@ describe("collision.md §9.1.6: the earliest impact owns the tick (C3)", () => {
 		const before = tick(WING_X, plane + 0.12, plane - 0.03, at - 1e-9);
 		expect(before.swept.planeOwns).toBe(true);
 		expect(before.swept.impacts).toEqual([]);
+	});
+
+	test("thrust into a resting rim cannot hand an unreachable crossing to the plane", () => {
+		const box: Primitive = {
+			kind: "box",
+			centre: v3(),
+			axes: [v3(1, 0, 0), v3(0, 1, 0), v3(0, 0, 1)],
+			half: [0.01, 0.01, 0.01],
+		};
+		const start = shipPose(
+			v3(0, 0, 0.02 + SEPARATION_KM),
+			v3(0, 0, -1),
+			v3(0, 1, 0),
+		);
+		const rim: SolidMotion = {
+			primitives: [{ ...box, half: [1, 1, 0.01] }],
+			start: shipPose(v3(), v3(0, 0, 1), v3(0, 1, 0)),
+			end: shipPose(v3(), v3(0, 0, 1), v3(0, 1, 0)),
+			velStart: v3(),
+			velEnd: v3(),
+		};
+		const thrust = sweepShip(
+			{
+				primitives: [box],
+				start,
+				end: shipPose(v3(0, 0, -0.02), start.z, start.y),
+				velStart: v3(),
+				velEnd: v3(0, 0, -0.4),
+			},
+			[rim],
+			MAX_DT,
+			{ planeS: MAX_DT / 2 },
+		);
+		expect(thrust.planeOwns).toBe(false);
+		expect(thrust.pos.z).toBeGreaterThanOrEqual(start.origin.z - 1e-9);
+		expect(thrust.impacts.every((impact) => impact.damage === 0)).toBe(true);
+		const away = sweepShip(
+			{
+				primitives: [box],
+				start,
+				end: shipPose(v3(0, 0, 0.1), start.z, start.y),
+				velStart: v3(0, 0, 0.4),
+				velEnd: v3(0, 0, 0.4),
+			},
+			[rim],
+			MAX_DT,
+			{ planeS: MAX_DT / 2 },
+		);
+		expect(away.planeOwns).toBe(true);
 	});
 });
 
@@ -811,7 +859,174 @@ describe("collision.md §9.1.9: the aperture is a physical fit (P1)", () => {
 const CRUISE_SEEDS = Array.from({ length: 40 }, (_, i) => i + 1);
 const CRUISE_TIMEOUT_S = 600;
 
+/** Count placements against the actual proxy, including the static keel. */
+function overlapsStation(world: World, hull: HullId): boolean {
+	const box = solidOf(hull)[0];
+	const ship = shipPose(world.ship.pos, v3(0, 0, -1), v3(0, 1, 0));
+	return world.system.contents.stations.some((station) => {
+		const end = stationEndOf(world, station.id);
+		return stationMotions(selectedStationProxy(station), end, end).some(
+			(solid) =>
+				solid.primitives.some(
+					(p) => pairSeparation(box, ship, p, solid.start).overlap,
+				),
+		);
+	});
+}
+
+describe("collision.md §9.1.7: placement paths are counted", () => {
+	test("spawn, hyperspace arrival and restore fallback start outside station proxies", () => {
+		const counts = {
+			spawn: { N: 0, inside: 0 },
+			hyperspace: { N: 0, inside: 0 },
+			restoreFallback: { N: 0, inside: 0 },
+		};
+		for (const seed of CRUISE_SEEDS) {
+			const world = makeWorld(seed);
+			counts.spawn.N++;
+			if (overlapsStation(world, "miner")) counts.spawn.inside++;
+			// Exercise the real inbound-bearing path at a nonzero clock.
+			advanceWorldClock(world, 120);
+			const target = world.galaxy.systems.find(
+				(s) => s.index !== world.system.record.index,
+			);
+			if (!target) throw new Error("no hyperspace target");
+			jumpWorldTo(world, target);
+			counts.hyperspace.N++;
+			if (overlapsStation(world, "miner")) counts.hyperspace.inside++;
+			const restored = restoreWorld(
+				seed,
+				world.galaxy.index,
+				target.index,
+				world.gameTime,
+			);
+			counts.restoreFallback.N++;
+			if (overlapsStation(restored, "miner")) counts.restoreFallback.inside++;
+		}
+		console.log(
+			`station placement census: ${JSON.stringify(counts)}; launch counted per hull above; cruise counted below`,
+		);
+		expect(counts).toEqual({
+			spawn: { N: 40, inside: 0 },
+			hyperspace: { N: 40, inside: 0 },
+			restoreFallback: { N: 40, inside: 0 },
+		});
+	});
+
+	test("a saved flight can restore inside a proxy on every role and ghosts out without a push or charge", () => {
+		let placedInside = 0;
+		for (const type of STATION_TYPES) {
+			const { world, id } = worldWith(type);
+			const end = stationEndOf(world, id);
+			const solids = stationMotions(
+				selectedStationProxy(stationOf(world.system, id)),
+				end,
+				end,
+			);
+			const primitive = solids[0].primitives[0];
+			const c =
+				primitive.kind === "capsule"
+					? scale(add(primitive.a, primitive.b), 0.5)
+					: primitive.centre;
+			const pose = solids[0].start;
+			// Game's saved-flight arm copies the saved position after restoreWorld;
+			// unlike the fallback placement, it can be anywhere, including metal.
+			const pos = add(
+				pose.origin,
+				add(add(scale(pose.x, c.x), scale(pose.y, c.y)), scale(pose.z, c.z)),
+			);
+			const motion = atRest("courier", pos, pose.z, pose.y);
+			const swept = sweepShip(motion, solids, MAX_DT);
+			expect(swept.ghosts.length).toBeGreaterThan(0);
+			expect(swept.impacts).toEqual([]);
+			expect(swept.pos).toEqual(pos);
+			expect(swept.vel).toEqual(v3());
+			// §4.3 is per overlapping pair: once that primitive is left,
+			// it is solid on a return. Isolate the pair so another primitive
+			// along the escape route cannot mask the ghost being tested.
+			const pair = [{ ...solids[0], primitives: [primitive] }];
+			const outside = add(pos, scale(pose.z, 4));
+			const away: SolidMotion = {
+				...motion,
+				end: shipPose(outside, pose.z, pose.y),
+				velStart: scale(pose.z, 4 / MAX_DT),
+				velEnd: scale(pose.z, 4 / MAX_DT),
+			};
+			const escaped = sweepShip(away, pair, MAX_DT);
+			expect(escaped.impacts).toEqual([]);
+			expect(escaped.pos).toEqual(outside);
+			const returned = sweepShip(
+				{
+					...away,
+					start: away.end,
+					end: away.start,
+					velStart: scale(away.velStart, -1),
+					velEnd: scale(away.velEnd, -1),
+				},
+				pair,
+				MAX_DT,
+			);
+			expect(returned.ghosts).toEqual([]);
+			expect(returned.impacts).toHaveLength(1);
+			placedInside++;
+		}
+		console.log(
+			`saved flight deliberately placed inside: ${placedInside}/${STATION_TYPES.length} roles ghost, no damage or push`,
+		);
+	});
+});
+
+/** A cruise chord meets the proxy, rather than merely its bounding reach. */
+function crossesStation(
+	ship: SolidMotion,
+	solids: SolidMotion[],
+	dt: number,
+): boolean {
+	if (
+		!solids.some((solid) =>
+			mayMeet(
+				{
+					start: ship.start.origin,
+					end: ship.end.origin,
+					reachKm: reachKm(ship.primitives),
+				},
+				{
+					start: solid.start.origin,
+					end: solid.end.origin,
+					reachKm: reachKm(solid.primitives),
+				},
+			),
+		)
+	)
+		return false;
+	const swept = sweepShip(ship, solids, dt);
+	return swept.impacts.length > 0 || swept.ghosts.length > 0;
+}
+
 describe("collision.md §9.1.12: cruise and the station proxies (C5)", () => {
+	test("the crossing count excludes empty space inside a sparse station's reach", () => {
+		const frame = frameAt("shipyard", 0, 0);
+		const { up } = slotBasis(frame);
+		const proxy = selectedStationProxy({
+			type: "shipyard",
+			berthSeed: 0,
+			assemblySeed: 0,
+		});
+		const solids = stationMotions(proxy, still(frame), still(frame));
+		const chord = (x: number, y: number): SolidMotion => ({
+			...atRest(
+				"courier",
+				local("shipyard", x, y, 2),
+				scale(frame.axis, -1),
+				up,
+			),
+			end: shipPose(local("shipyard", x, y, -2), scale(frame.axis, -1), up),
+		});
+		// Both chords enter the Gantry's bounding sphere. Only the second
+		// crosses metal: its dorsal boom at y = 0.37–0.58 km.
+		expect(crossesStation(chord(1.5, 0), solids, MAX_DT)).toBe(false);
+		expect(crossesStation(chord(0, 0.47), solids, MAX_DT)).toBe(true);
+	});
 	test("no cruise exit places a ship inside a proxy, and the legs through a non-target station are counted", () => {
 		const shipBox = solidOf("miner")[0];
 		let legs = 0;
@@ -829,6 +1044,14 @@ describe("collision.md §9.1.12: cruise and the station proxies (C5)", () => {
 				let crossedOther = false;
 				const parentId = stationHostIdOf(world.system, target.id);
 				for (let t = 0; t < CRUISE_TIMEOUT_S; t += MAX_DT) {
+					const starts = new Map(
+						world.system.contents.stations
+							.filter(
+								(station) =>
+									station.id !== target.id && world.system.byId.has(station.id),
+							)
+							.map((station) => [station.id, stationEndOf(world, station.id)]),
+					);
 					advanceWorldClock(world, MAX_DT);
 					const body = world.system.byId.get(target.id);
 					if (!body) throw new Error(`no ${target.id}`);
@@ -850,15 +1073,35 @@ describe("collision.md §9.1.12: cruise and the station proxies (C5)", () => {
 						params: DEFAULT_CRUISE,
 						targetParentId: parentId,
 					});
-					// The frame's chord against every other station's reach: C5
-					// accepts the pass-through, and this counts it.
+					// C5 accepts pass-throughs. Count the swept hull against the
+					// actual moving proxy; reach is only the broad-phase rejection.
+					const up = cross(
+						nose,
+						Math.abs(nose.y) < 0.9 ? v3(0, 1, 0) : v3(1, 0, 0),
+					);
+					const attitudeUp = scale(up, 1 / length(up));
+					const chord: SolidMotion = {
+						primitives: [shipBox],
+						start: shipPose(pos, nose, attitudeUp),
+						end: shipPose(step.pos, nose, attitudeUp),
+						velStart: scale(sub(step.pos, pos), 1 / MAX_DT),
+						velEnd: scale(sub(step.pos, pos), 1 / MAX_DT),
+					};
 					for (const other of world.system.contents.stations) {
 						if (other.id === target.id) continue;
-						const ob = world.system.byId.get(other.id);
-						if (!ob) continue;
-						const reach =
-							proxyReachKm(selectedStationProxy(other)) + reachKm([shipBox]);
-						if (closestApproachKm(pos, nose, step.travelledKm, ob.pos) < reach)
+						const start = starts.get(other.id);
+						if (!start) continue;
+						if (
+							crossesStation(
+								chord,
+								stationMotions(
+									selectedStationProxy(other),
+									start,
+									stationEndOf(world, other.id),
+								),
+								MAX_DT,
+							)
+						)
 							crossedOther = true;
 					}
 					pos = step.pos;
@@ -901,7 +1144,7 @@ describe("collision.md §9.1.12: cruise and the station proxies (C5)", () => {
 		console.log(
 			`cruise corpus: start systems of seeds 1–${CRUISE_SEEDS.length}, ${legs} legs, ` +
 				`${exits} exits (${legs - exits} ran out of time); nearest exit to any station ${nearestExitKm.toFixed(1)} km; ` +
-				`${throughOther.length} of ${legs} legs pass within a non-target station's proxy reach` +
+				`${throughOther.length} of ${legs} legs cross a non-target station's proxy` +
 				(throughOther.length ? ` (${throughOther.join(", ")})` : ""),
 		);
 		// A leg that runs out of time was stopped by nothing and is not an
