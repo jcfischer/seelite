@@ -11,7 +11,7 @@ export async function airlessAlbedoReadings(game) {
 	const { AIRLESS: before } = await import(
 		"/scripts/lib/fixtures/airless-before-213.ts"
 	);
-	const { relativeAlbedoVariance } = await import(
+	const { relativeAlbedoVariance, albedoContrastReading } = await import(
 		"/scripts/lib/airless-contrast.mjs"
 	);
 	const { airlessFeatures, planetSeedOffset, smallCrater } = await import(
@@ -93,8 +93,7 @@ export async function airlessAlbedoReadings(game) {
 		renderer.autoClear = true;
 		renderer.setClearColor(0, 0);
 		// 0/1 supply the two/three-basin buckets; 47/48 exercise seed movement,
-		// and 179 also supplies three ray sources. A count of subjects alone
-		// must not conceal that every measured body had four basins.
+		// and 179 also supplies three ray sources. The corpus covers all counts.
 		for (const seed of [47, 48, 179, 0, 1]) {
 			const features = airlessFeatures(seed);
 			u.seedOffset.value = planetSeedOffset(seed);
@@ -105,7 +104,9 @@ export async function airlessAlbedoReadings(game) {
 			const a = [],
 				b = [],
 				featureOff = [],
-				brightOnly = [];
+				brightOnly = [],
+				brightOnlyOff = [],
+				featureOffRepeat = [];
 			let nearLuma = 0,
 				farLuma = 0;
 			let rayPixels = 0,
@@ -121,6 +122,10 @@ export async function airlessAlbedoReadings(game) {
 					withoutRayNormal = read(normal, basis);
 				u.basinCount.value = 0;
 				const withoutFeatures = read(current, basis);
+				// Render the ablated arm of each negative control, just as for
+				// current. No feature ratio is supplied by the instrument.
+				const brighterWithoutFeatures = read(brightnessOnly, basis);
+				const withoutFeaturesRepeat = read(current, basis);
 				u.warmth.value = 7;
 				const coldHighlands = read(current, basis);
 				u.warmth.value = 0;
@@ -137,6 +142,8 @@ export async function airlessAlbedoReadings(game) {
 							b.push(luma(beforePixels, i));
 							featureOff.push(luma(withoutFeatures, i));
 							brightOnly.push(luma(brighterPixels, i));
+							brightOnlyOff.push(luma(brighterWithoutFeatures, i));
+							featureOffRepeat.push(luma(withoutFeaturesRepeat, i));
 							nearLuma += luma(withoutFeatures, i);
 							farLuma += luma(coldHighlands, i);
 						}
@@ -204,24 +211,27 @@ export async function airlessAlbedoReadings(game) {
 					craterTilt += tilt(controlNormal);
 					n++;
 				}
-			const beforeRelativeVariance = relativeAlbedoVariance(b),
-				afterRelativeVariance = relativeAlbedoVariance(a),
-				featureOffRelativeVariance = relativeAlbedoVariance(featureOff);
+			const comparison = albedoContrastReading(b, a, featureOff);
+			const brightnessControl = albedoContrastReading(
+				b,
+				brightOnly,
+				brightOnlyOff,
+			);
+			const featureOffControl = albedoContrastReading(
+				b,
+				featureOff,
+				featureOffRepeat,
+			);
 			rows.push({
 				seed,
 				samples: a.length,
 				beforeVariance: variance(b),
 				afterVariance: variance(a),
-				beforeRelativeVariance,
-				afterRelativeVariance,
-				ratio: afterRelativeVariance / beforeRelativeVariance,
-				featureRatio: afterRelativeVariance / featureOffRelativeVariance,
-				featureOffRatio: featureOffRelativeVariance / beforeRelativeVariance,
-				brightnessOnlyRatio:
-					relativeAlbedoVariance(brightOnly) / beforeRelativeVariance,
+				...comparison,
+				controls: [brightnessControl, featureOffControl],
 				uniformGainRatio:
 					relativeAlbedoVariance(b.map((v) => v * (0.4 / 0.235))) /
-					beforeRelativeVariance,
+					comparison.beforeRelativeVariance,
 				nearFarRatio: nearLuma / farLuma,
 				rayPixels,
 				rayNormalDelta,

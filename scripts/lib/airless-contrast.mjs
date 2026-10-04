@@ -20,3 +20,31 @@ export function airlessContrastPasses({ ratio, featureRatio }) {
 		featureRatio >= 1.5
 	);
 }
+
+/** The same measured comparison for the subject and every negative control. */
+export function albedoContrastReading(parent, on, off) {
+	const beforeRelativeVariance = relativeAlbedoVariance(parent);
+	const afterRelativeVariance = relativeAlbedoVariance(on);
+	const featureOffRelativeVariance = relativeAlbedoVariance(off);
+	if (beforeRelativeVariance <= 0 || featureOffRelativeVariance <= 0)
+		throw new Error("airless contrast denominator must be positive");
+	return {
+		beforeRelativeVariance,
+		afterRelativeVariance,
+		featureOffRelativeVariance,
+		ratio: afterRelativeVariance / beforeRelativeVariance,
+		featureRatio: afterRelativeVariance / featureOffRelativeVariance,
+	};
+}
+
+export function airlessControlRejectionPasses(controls) {
+	return (
+		controls.length === 2 &&
+		controls.every(
+			(row) =>
+				Number.isFinite(row.ratio) &&
+				Number.isFinite(row.featureRatio) &&
+				!airlessContrastPasses(row),
+		)
+	);
+}

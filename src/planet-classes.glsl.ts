@@ -534,7 +534,8 @@ float basinFloor(vec3 p, out float rimMask) {
     if (i >= basinCount) break;
     float d = distance(p, basins[i].xyz) / basins[i].w;
     floorMask = max(floorMask, 1.0 - smoothstep(0.94, 1.0, d));
-    rimMask = max(rimMask, exp(-pow((d - 0.98) * 18.0, 2.0)));
+    float k = (d - 0.98) * 18.0;
+    rimMask = max(rimMask, exp(-k * k));
   }
   return floorMask;
 }

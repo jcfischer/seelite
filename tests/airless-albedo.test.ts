@@ -2,8 +2,26 @@ import { expect, test } from "bun:test";
 import {
 	relativeAlbedoVariance,
 	airlessContrastPasses,
+	airlessControlRejectionPasses,
+	albedoContrastReading,
 } from "../scripts/lib/airless-contrast.mjs";
 import { AIRLESS } from "../src/planet-classes.glsl";
+
+test("control rejection can fail when a rendered control contains sparse contrast", () => {
+	const parent = [0.18, 0.2, 0.22, 0.24];
+	const sparse = [0.15, 0.2, 0.22, 0.27];
+	const inert = albedoContrastReading(parent, parent, [...parent]);
+	const active = albedoContrastReading(parent, sparse, [...parent]);
+	expect(airlessControlRejectionPasses([inert, inert])).toBe(true);
+	expect(airlessContrastPasses(active)).toBe(true);
+	expect(airlessControlRejectionPasses([active, inert])).toBe(false);
+	expect(airlessControlRejectionPasses([inert, active])).toBe(false);
+	// Missing/broken arms cannot pass by returning an empty menu or NaNs.
+	expect(airlessControlRejectionPasses([])).toBe(false);
+	expect(
+		airlessControlRejectionPasses([{ ratio: NaN, featureRatio: NaN }, inert]),
+	).toBe(false);
+});
 
 test("albedo contrast rejects brightness gain and absent sparse features", () => {
 	const before = [0.18, 0.2, 0.22, 0.24];

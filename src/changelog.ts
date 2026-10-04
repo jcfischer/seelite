@@ -28,6 +28,7 @@ export type ChangelogEntry = {
 };
 
 export const CHANGELOG: readonly ChangelogEntry[] = [
+	// Node #213: proposed copy; principal approval and the main date are pending.
 	{
 		date: "2026-10-04",
 		text: "Airless moons now show broad dark basins and bright rays from young craters.",

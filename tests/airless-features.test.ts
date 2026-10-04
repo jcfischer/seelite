@@ -3,14 +3,47 @@ import {
 	airlessFeatures,
 	smallCrater,
 	planetSeedOffset,
+	selectBasins,
 } from "../src/airless-features";
 import { AIRLESS } from "../src/planet-classes.glsl";
 import { AIRLESS as BEFORE } from "../scripts/lib/fixtures/airless-before-213";
-import { bakeFragmentFor, bakedFragmentFor } from "../src/planet-shaders";
+import {
+	bakeFragmentFor,
+	bakedFragmentFor,
+	NOISE_GLSL,
+} from "../src/planet-shaders";
 import { VIEWS } from "../scripts/lib/view-set.mjs";
 import * as THREE from "three";
 import { appearanceFor } from "../src/planet-appearance";
 import { buildBodyVisual } from "../src/planet-surface";
+
+test("basin placement refuses an exhausted work budget", () => {
+	// All pairs fit, but no triple does: backtracking must hit the budget,
+	// rather than traverse the combinatorial candidate menu.
+	const candidates: [number, number, number, number][] = Array.from(
+		{ length: 200 },
+		(_, i) => [i % 2 ? -1 : 1, 0, 0, 0.7],
+	);
+	expect(() => selectBasins(candidates, 4, 100)).toThrow("budget exhausted");
+	expect(selectBasins(candidates, 2, 100)).toHaveLength(2);
+});
+
+test("basin rim squares its signed distance without GLSL negative-base pow", () => {
+	const floor = AIRLESS.slice(
+		AIRLESS.indexOf("float basinFloor("),
+		AIRLESS.indexOf("float airlessRays("),
+	);
+	expect(floor).not.toContain("pow(");
+	expect(floor).toContain("exp(-k * k)");
+});
+
+test("CPU crater selector's hash port tracks the GLSL body", () => {
+	expect(NOISE_GLSL).toContain(`float hash31(vec3 p) {
+  p = fract(p * 0.1031);
+  p += dot(p, p.yzx + 33.33);
+  return fract((p.x + p.y) * p.z);
+}`);
+});
 
 test("airless populations are bounded, separated, and repeatable across seeds", () => {
 	const counts = new Set<number>();

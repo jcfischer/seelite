@@ -5,6 +5,11 @@ Implementation evidence, not a graph-close receipt. Parent: `8017a887`.
 `src/airless-features.ts` walks a jittered low-frequency cell shell once per
 body, takes four jittered candidates per cell, selects 2–4 separated basins
 with a bounded backtracking search, and uploads centre/radius descriptors.
+Round 2 precomputes scalar pair compatibility for at most 500 candidates
+(at most 124,750 pair checks) and caps backtracking at 10,000 candidate visits.
+Exhaustion throws explicitly instead of continuing combinatorial work on the
+main thread. An adversarial candidate menu exercises that refusal with a
+smaller test budget; a separate 4,096-seed sweep completed under the normal cap.
 Their chord radii are 0.70–0.80 (smaller with four basins for packing room);
 small impacts retain the existing 8x field's 0.020–0.0625 radii. Basin interiors
 suppress crater slope, carry dark basalt,
@@ -59,8 +64,14 @@ the difference, rather than raising every highland's brightness.
 
 The rendered highland-only brightening control has a relative parent ratio
 of 1.57–1.60: normalisation alone does **not** reject it because its basalt
-remains fixed. The full gate rejects it because its feature-on/off ratio is
-1. The uniform-gain control reads 1.000, and the current shader with sparse
+remains fixed. Round 1 prescribed its feature-on/off ratio as a literal 1,
+so its claimed control-rejection evidence was invalid. Round 2 renders both
+the enabled and disabled feature-uniform arms of the highland-only control
+and a repeat of the feature-off control, then computes both ratios through
+the same helper as the production subject. The probe feeds these measured
+rows into the same gate and also offers the rendered production subject as
+a positive control, which must defeat negative-control rejection. The
+uniform-gain control reads 1.000, and the current shader with sparse
 features off reads 0.014–0.018 relative to the parent. These actual controls
 are required probe rows, alongside unit tests for the shared gate.
 
@@ -96,6 +107,35 @@ The selector returned `all` for shared `scripts/lib` infrastructure. The
 worker's explicit instruction forbids the full suite; the supervisor owns
 `npm run probe` on the final reviewed head.
 
+### Round 2 repair
+
+- `rtk test npm test`: **4,904 pass, 0 fail**, exit 0 (250.01 s).
+  RTK again labels the passing reporter fixture containing `FAIL` as a
+  failure heading; Bun's summary and the command exit are green.
+- `npx tsc --noEmit`, `rtk lint npm run format:check`,
+  `rtk lint npm run lint`, `rtk err npm run build`, and wiring: pass.
+- Focused hardware `planet-surfaces` and `planets` runs: pass on **ANGLE
+  Metal / Apple M1 Pro**. The first surface run reported 103/104 checks
+  with an assertion failure at peak load 37.5; its rerun passed at peak
+  load 32.1. The failed assertion's name was lost in truncated tool output;
+  its cause is unestablished. The rerun log is
+  `/private/tmp/node213-round2-surfaces.log`.
+- The rim uses a signed distance multiplied by itself, avoiding GLSL's
+  undefined negative-base `pow`. Its regression test also pins the crater
+  walk and two-octave height policy. The CPU candidate hash now has a
+  parity guard against the exact GLSL hash body it mirrors.
+- Both negative controls' **rendered** feature-on/off ratios are 1.000
+  across all five seeds. Their parent ratios remain 1.57–1.60 for
+  highland-only brightening and 0.014–0.018 for feature-off. Their gate
+  rejection no longer receives a literal feature ratio.
+- A browser mutation replaced the highland-only control material with
+  the production material while retaining the same sampling and ablation.
+  All five mutated controls defeated rejection: parent ratios 1.54–3.49,
+  feature ratios 104.60–223.25. The normal probe also offers its rendered
+  production comparison to the rejection helper as a positive control.
+  Synthetic unit tests prove either control can defeat rejection and
+  invalid/empty measurements cannot pass.
+
 ## Visual and delivery gates still owned by the supervisor
 
 The named `planet-fill` and `planet-terminator` rows are desert and terran,
@@ -124,6 +164,20 @@ these overlapping readings. An earlier run spanned 8.43–24.21 ms across its
 arms under load; that dispersion is why no performance gain is claimed.
 The structural zero for the baked path is the unchanged draw program, not a
 timing subtraction. JSON retains every reading and the renderer identity.
+
+Round 2 reran the headed diagnostic with per-quality source caching and
+restoration of the production shader before each quality switch. All four
+High/Low parent/current PNGs were inspected. Same renderer and diagnostic
+basis as above, nine readings per arm:
+
+| Quality | Parent shader median (range), ms | Current shader median (range), ms |
+| --- | --- | --- |
+| High | 5.14 (4.88–5.44) | 5.12 (4.95–5.30) |
+| Low | 5.07 (4.86–5.14) | 5.08 (4.97–5.27) |
+
+The 200-radii control spans 4.94–5.03 ms. The refresh-clamp refusal passed.
+These overlapping arms establish no attributable frame-cost change, and
+the figures must not be compared across diagnostic runs as a build delta.
 
 The supervisor still owes the canonical before/after contact sheet from two
 builds, its headed cost comparison, the principal's yes, Sage review, the

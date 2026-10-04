@@ -71,15 +71,18 @@ try {
 					"/scripts/lib/fixtures/airless-before-213.ts"
 				);
 				const material = vis.surfaceMesh.material;
-				window.__airlessCurrent ??= material.fragmentShader;
-				if (!window.__airlessCurrent.includes(AIRLESS))
+				const quality = window.__seelite.settings.value.quality;
+				window.__airlessCurrentByQuality ??= {};
+				const sources = window.__airlessCurrentByQuality;
+				sources[quality] ??= material.fragmentShader;
+				if (!sources[quality].includes(AIRLESS))
 					throw new Error(
 						"airless cost comparison has no procedural AIRLESS source",
 					);
 				material.fragmentShader =
 					arm === "before"
-						? window.__airlessCurrent.replace(AIRLESS, before)
-						: window.__airlessCurrent;
+						? sources[quality].replace(AIRLESS, before)
+						: sources[quality];
 				material.needsUpdate = true;
 			},
 			{ id: shot.body, arm },
@@ -88,10 +91,10 @@ try {
 	const rows = [],
 		controls = [];
 	for (const quality of ["high", "low"]) {
-		await page.evaluate(
-			(q) => window.__seelite.settings.set("quality", q),
-			quality,
-		);
+		await page.evaluate(async (q) => {
+			window.__seelite.settings.set("quality", q);
+			await new Promise(requestAnimationFrame);
+		}, quality);
 		// Alternate the order by block, so a drift is not always priced as after.
 		for (let block = 0; block < 3; block++)
 			for (const arm of block % 2 ? ["after", "before"] : ["before", "after"]) {
@@ -110,6 +113,8 @@ try {
 						path: `view-set/airless-${quality}-${arm}.png`,
 					});
 			}
+		// Restore the production arm before applyQuality can rebuild its source.
+		await switchArm("after");
 	}
 	await switchArm("after");
 	await page.evaluate(async (id) => window.__sunOffset(id, 200, 60), shot.body);

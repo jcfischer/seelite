@@ -56,7 +56,10 @@ import {
 	tally,
 } from "./probe-guard.mjs";
 import { bandMetrics } from "./lib/band-tones.mjs";
-import { airlessContrastPasses } from "./lib/airless-contrast.mjs";
+import {
+	airlessContrastPasses,
+	airlessControlRejectionPasses,
+} from "./lib/airless-contrast.mjs";
 import { installViewFraming } from "./lib/view-placement.mjs";
 import { gameUrl } from "./lib/game-url.mjs";
 
@@ -2092,13 +2095,11 @@ for (const row of airlessAlbedo) {
 	check(
 		`airless seed ${row.seed} contrast gate rejects brightness-only and feature-off controls`,
 		Math.abs(row.uniformGainRatio - 1) < 1e-8 &&
-			row.featureOffRatio < 1.5 &&
-			!airlessContrastPasses({
-				ratio: row.brightnessOnlyRatio,
-				featureRatio: 1,
-			}) &&
-			!airlessContrastPasses({ ratio: row.featureOffRatio, featureRatio: 1 }),
-		`uniform gain ${row.uniformGainRatio.toFixed(3)}, highland-only ${row.brightnessOnlyRatio.toFixed(3)}, feature-off ${row.featureOffRatio.toFixed(3)}`,
+			airlessControlRejectionPasses(row.controls) &&
+			// A rendered production arm offered as a negative control must
+			// defeat rejection. This exposes a gate that rejects every input.
+			!airlessControlRejectionPasses([row, row.controls[1]]),
+		`uniform gain ${row.uniformGainRatio.toFixed(3)}; measured controls (parent, feature-on/off): ${row.controls.map((c) => `(${c.ratio.toFixed(3)}, ${c.featureRatio.toFixed(3)})`).join(", ")}`,
 	);
 	check(
 		`airless seed ${row.seed} near-star highlands remain darker than cold frost`,

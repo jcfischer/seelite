@@ -4,6 +4,54 @@ type V3 = [number, number, number];
 type Basin = [number, number, number, number];
 export const planetSeedOffset = (seed: number) => (seed % 997) / 97;
 
+/** Seed-order clique search. At most 500 shell candidates, 124,750 scalar
+ * pair checks, and 10,000 search visits per body. Refuse rather than stall boot.
+ * The lower budget argument exercises exhaustion without a timing assertion.
+ */
+export function selectBasins(
+	candidates: Basin[],
+	count: number,
+	budget = 10_000,
+): Basin[] {
+	if (
+		candidates.length > 500 ||
+		!Number.isInteger(budget) ||
+		budget < 1 ||
+		budget > 10_000 ||
+		!Number.isInteger(count) ||
+		count < 2 ||
+		count > 4
+	)
+		throw new Error("invalid airless basin search budget");
+	const n = candidates.length;
+	const compatible = new Uint8Array(n * n);
+	for (let i = 0; i < n; i++)
+		for (let j = i + 1; j < n; j++) {
+			const a = candidates[i],
+				b = candidates[j];
+			const fits = Number(
+				Math.hypot(a[0] - b[0], a[1] - b[1], a[2] - b[2]) > a[3] + b[3] + 0.06,
+			);
+			compatible[i * n + j] = compatible[j * n + i] = fits;
+		}
+	const chosen: number[] = [];
+	let visits = 0;
+	const place = (start: number): boolean => {
+		if (chosen.length === count) return true;
+		for (let i = start; i < n; i++) {
+			if (++visits > budget)
+				throw new Error("airless basin search budget exhausted");
+			if (chosen.some((j) => !compatible[i * n + j])) continue;
+			chosen.push(i);
+			if (place(i + 1)) return true;
+			chosen.pop();
+		}
+		return false;
+	};
+	if (!place(0)) throw new Error("airless basin cell walk exhausted");
+	return chosen.map((i) => candidates[i]);
+}
+
 // Float32 approximation of NOISE_GLSL.hash31, used only to select candidate
 // cells. The shader reconstructs ray anchors from the cells with its own hash,
 // so CPU/GPU rounding cannot move a ray away from the crater it names.
@@ -56,30 +104,10 @@ export function airlessFeatures(seed: number): {
 						});
 				}
 	candidates.sort((a, b) => a.age - b.age);
-	const basins: Basin[] = [];
-	// Wide basins can leave a greedy choice no room for the fourth. Search
-	// the bounded low-frequency candidate set, preserving seeded age order.
-	const place = (start: number): boolean => {
-		if (basins.length === count) return true;
-		for (let i = start; i < candidates.length; i++) {
-			const { basin } = candidates[i];
-			if (
-				basins.some(
-					(other) =>
-						Math.hypot(...basin.slice(0, 3).map((v, j) => v - other[j])) <=
-						basin[3] + other[3] + 0.06,
-				)
-			)
-				continue;
-			basins.push(basin);
-			if (place(i + 1)) return true;
-			basins.pop();
-		}
-		return false;
-	};
-	place(0);
-	if (basins.length !== count)
-		throw new Error("airless basin cell walk exhausted");
+	const basins = selectBasins(
+		candidates.map((c) => c.basin),
+		count,
+	);
 
 	const offset = planetSeedOffset(seed);
 	const origin = f(f(offset) * f(1.7)) * 8;
