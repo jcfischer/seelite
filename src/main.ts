@@ -3577,6 +3577,21 @@ class Game {
 	collisionGhostSteps = 0;
 	lastCollisionGhost: string | null = null;
 
+	/**
+	 * Impacts this flight has made, and the last one: what was met, how fast it
+	 * closed, what it cost (`collision.md` §3, node #663). An impact otherwise
+	 * shows only as a change in condition and velocity (§8), and one under
+	 * `V_SCRAPE` costs nothing — so a probe asserting that a run met nothing
+	 * reads this rather than the pools. Not a pilot's line (#447).
+	 */
+	collisionImpacts = 0;
+	lastCollisionImpact: {
+		bodyId: string;
+		closingKms: number;
+		damage: number;
+		resting: boolean;
+	} | null = null;
+
 	/** Where the camera is in sim space this frame — what `collision.md`
 	 *  §9.2.3 holds outside a surface on the frame of impact. */
 	get cameraSimPos(): Vec3 {
@@ -11675,6 +11690,8 @@ class Game {
 		// new flight: a second leg reads only its own placements.
 		this.collisionGhostSteps = 0;
 		this.lastCollisionGhost = null;
+		this.collisionImpacts = 0;
+		this.lastCollisionImpact = null;
 
 		// **#241's gate goes back to shut, which is where a boot in open space
 		// finds it.** Left open, a reset would draw both passes for the whole
@@ -14012,12 +14029,20 @@ class Game {
 		);
 		// §3: every surface met lands through the one damage path, so a hull at
 		// zero dies the way a kill by fire does.
-		for (const impact of flown.impacts)
+		for (const impact of flown.impacts) {
+			this.collisionImpacts++;
+			this.lastCollisionImpact = {
+				bodyId: impact.bodyId,
+				closingKms: impact.closingKms,
+				damage: impact.damage,
+				resting: impact.resting,
+			};
 			this.takeDamage(
 				impact.damage,
 				impact.side,
 				`struck ${this.world.system.byId.get(impact.bodyId)?.name ?? "a body"}`,
 			);
+		}
 		if (flown.ghosts.length > 0) {
 			this.collisionGhostSteps++;
 			this.lastCollisionGhost = flown.ghosts[flown.ghosts.length - 1];

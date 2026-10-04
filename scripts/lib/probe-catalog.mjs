@@ -209,6 +209,21 @@ export const PROBE_CATALOG = Object.freeze(
 			["cockpit", "surface", "plating", "materials", "scene graph"],
 		),
 		entry(
+			"probe-collision.mjs",
+			"Coasts the player at a station's hull face, onto a refinery pad berth and onto a shipyard boom at the docking gate, and checks each stops at the station's collision proxy without crossing the aperture plane, bounces at the restitution, survives with the damage on the fore shield, and prints how far above the drawn station the proxy stopped it.",
+			[
+				"collision",
+				"station proxy",
+				"impact",
+				"bounce",
+				"station hull",
+				"pad berth",
+				"shipyard boom",
+				"aperture plane",
+				"ship condition",
+			],
+		),
+		entry(
 			"probe-collision-surface.mjs",
 			"Flies the player nose first into a moon with the assist off and on and checks the ship stops and bounces at its surface, the cockpit camera stays outside it on the frame of impact, the damage lands through the one damage path, and a hit at the assist cap destroys the ship.",
 			[
@@ -294,8 +309,15 @@ export const PROBE_CATALOG = Object.freeze(
 		),
 		entry(
 			"probe-docking.mjs",
-			"Flies successful and refused docking approaches through clearance, alignment, containment, and crossing checks.",
-			["docking", "clearance", "aperture", "alignment", "containment"],
+			"Flies a docking-computer approach that docks without meeting the solid station, and a mis-rolled approach that fails at the plane and survives, through clearance, alignment and crossing checks.",
+			[
+				"docking",
+				"clearance",
+				"aperture",
+				"alignment",
+				"collision",
+				"docking computer",
+			],
 		),
 		entry(
 			"probe-duel-hud.mjs",

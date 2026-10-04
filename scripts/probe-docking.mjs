@@ -1,19 +1,22 @@
 /**
- * Docking, the spatial tier — `docs/specs/docking.md` §9.2.3, §9.2.4, §9.2.5.
+ * Docking, the spatial tier — `docs/specs/docking.md` §9.2.3 and §9.2.5;
+ * §9.2.4 moved to `probe-collision.mjs` (node #663).
  *
  *   npm run dev                       # in one shell
  *   node scripts/probe-docking.mjs    # in another
  *
- * Three scripted approaches, all of them flown by the game's own `step`:
+ * Two scripted approaches, both flown by the game's own `step`:
  *
  * 3. **A correct profile docks.** Cleared, the docking computer engaged, driven
- *    from a few kilometres out until the aperture plane is crossed.
- * 4. **A hull-face approach is refused.** Aimed squarely at the hull *inside*
- *    check 2's 35° cone and outside the aperture. §3 records this as the hole
- *    that check 5 closes, and it is a spatial claim, so it gets the spatial tier
- *    rather than only the unit one.
+ *    from a few kilometres out until the aperture plane is crossed — with the
+ *    station solid, and meeting nothing of it on the way (`collision.md`
+ *    §9.2.4: this run, re-run with collision live).
  * 5. **A mis-rolled approach fails and survives.** D1's whole content: a failed
  *    entry damages the ship rather than destroying it.
+ *
+ * **§9.2.4 is not here.** A hull-face approach stops at the solid hull and
+ * never reaches the plane, so the run that asserted check 5 there proves
+ * collision now; `probe-collision.mjs` flies it as `collision.md` §9.2.1.
  *
  * **§9.2's other two rows are already shipped elsewhere and are not repeated
  * here.** §9.2.1's layering and §9.2.2's spin tracking are both in
@@ -240,6 +243,7 @@ async function fly(setup) {
 			let elapsed = 0;
 			const trace = [];
 			const before = { ...g.condition };
+			const impactsBefore = g.collisionImpacts;
 			for (let i = 0; i < limitS / dt; i++) {
 				if (g.lastEntry || g.dockedAt) break;
 				if (!setup.computer) D.reaim(id, setup);
@@ -300,6 +304,11 @@ async function fly(setup) {
 				// measurement rather than the setpoint that was asked for.
 				entrySpeedKms: after.lastEntry?.evaluation?.speedKms ?? null,
 				computerEngaged: after.computerEngaged,
+				// `collision.md` §9.2.4: impacts the run made with anything — the
+				// station included — while flying. A crossing is exempt from its
+				// next tick, so these are the approach's.
+				impacts: g.collisionImpacts - impactsBefore,
+				lastImpact: g.lastCollisionImpact,
 				apertureWidthKm: after.apertureWidthKm,
 				apertureHeightKm: after.apertureHeightKm,
 				planeKm: after.planeKm,
@@ -329,13 +338,13 @@ const tolerances = await page.evaluate(() => {
 });
 
 /**
- * The three rows both failure runs share: a crossing happened, it did not dock,
+ * The three rows a failure run checks: a crossing happened, it did not dock,
  * and speed is not what refused it.
  *
- * One helper because the two blocks had it spelled out twice and differing only
- * by label — and because the third row is the one that makes the other two mean
- * anything. A run that failed on the gate would refuse for a reason neither
- * §9.2.4 nor §9.2.5 is about.
+ * A helper because §9.2.4's hull-face run shared it until node #663 moved that
+ * run to `probe-collision.mjs` — and because the third row is the one that
+ * makes the other two mean anything. A run that failed on the gate would refuse
+ * for a reason §9.2.5 is not about.
  */
 function failedEntryUnderGate(what, run) {
 	check(`${what}: a crossing happened at all`, run.entry !== null);
@@ -381,6 +390,14 @@ check(
 check(
 	"docking cost the ship nothing",
 	good.conditionAfter.hull === good.conditionBefore.hull,
+);
+check(
+	// `collision.md` §9.2.4: the same run, with the station solid. An impact
+	// under V_SCRAPE costs nothing, so the pools above cannot see one; the
+	// count can.
+	"and the docking computer's approach met nothing of the solid station",
+	good.impacts === 0,
+	JSON.stringify({ impacts: good.impacts, last: good.lastImpact }),
 );
 
 // Docking has an exit, and since #77 the exit is §12.2's launch rather than a
@@ -629,71 +646,13 @@ check(
 );
 
 // ---------------------------------------------------------------------------
-// §9.2.4 — a hull-face approach is refused
+// §9.2.4 — re-pointed to `collision.md` §9.2.1 (node #663)
 // ---------------------------------------------------------------------------
 //
-// Inside check 2's cone and outside the aperture. The offset is derived from
-// the page's own core radius and tolerance rather than typed: at 0.6 km and 35°
-// the cone admits about 0.42 km, four times the slot's half-length.
-
-console.log("\n§9.2.4 a hull-face approach is refused:");
-const faceOffsetKm = await page.evaluate((deg) => {
-	const g = window.__seelite;
-	// The **spinner**, which is the station `fly` actually flies. Taking the
-	// nearest station's core radius instead would scale the offset off a body
-	// this run never approaches, and the two differing would make §9.2.4 fail on
-	// `axisAlignment` rather than on the containment claim it is making.
-	const snap = g.dockingSnapshot(window.__dock.spinner().id);
-	// Three quarters of the way to the cone's edge: comfortably inside check 2,
-	// six times outside check 5, and not sitting on either boundary — a probe
-	// that measured a boundary would be re-testing what the headless rows own.
-	// Nine tenths was the first figure and it was too close to the edge to
-	// survive the axis swinging over a 60 s approach.
-	return 0.75 * snap.planeKm * Math.tan((deg * Math.PI) / 180);
-}, tolerances.axisDeg);
-const face = await fly({
-	...BASE,
-	offsetKm: faceOffsetKm,
-	closingKms: tolerances.gateKms * 0.5,
-	rollDeg: 0,
-});
-if (!face.entry) for (const line of face.trace) console.log(`    ${line}`);
-console.log(
-	`  offset ${(faceOffsetKm * 1000).toFixed(0)} m against a ` +
-		`${(face.apertureWidthKm * 500).toFixed(0)} × ${(face.apertureHeightKm * 500).toFixed(0)} m ` +
-		`half-aperture: docked=${face.docked}`,
-);
-const cornerKm = Math.hypot(
-	face.apertureWidthKm / 2,
-	face.apertureHeightKm / 2,
-);
-check(
-	// Against the rectangle's **corner radius**, which is the only bound that
-	// holds whichever way the reference direction points. Two earlier versions
-	// were weaker: the width half alone (which may be the larger of the two
-	// while containment judges the smaller), then the larger half-extent (which
-	// still leaves the diagonal unproved).
-	"the offset really is outside the aperture, in any direction",
-	faceOffsetKm > cornerKm,
-	`${(faceOffsetKm * 1000).toFixed(0)} m against a ${(cornerKm * 1000).toFixed(0)} m corner radius`,
-);
-console.log(
-	`  at the plane: ${face.entry?.evaluation?.positionAngleDeg?.toFixed(1)}° off the axis by position, ` +
-		`${face.entry?.evaluation?.noseAngleDeg?.toFixed(1)}° by nose, against a ${tolerances.axisDeg}° tolerance`,
-);
-failedEntryUnderGate("the hull-face approach", face);
-check(
-	"and it failed on containment, not on an angle",
-	face.entry?.evaluation?.checks?.containment === false &&
-		face.entry?.evaluation?.checks?.axisAlignment === true,
-	JSON.stringify(face.entry?.evaluation?.checks ?? null),
-);
-check(
-	"the hull-face bounce tells the pilot it missed the slot",
-	face.notice?.text === "ENTRY FAILED · missed the slot" &&
-		face.prompt === face.notice.text,
-	JSON.stringify({ notice: face.notice, prompt: face.prompt }),
-);
+// The hull-face approach lived here and asserted a failed entry on check 5.
+// With the hull solid it stops at the hull and never reaches the plane, so the
+// run proves collision rather than containment: it is `probe-collision.mjs`'s
+// §9.2.1 now. Check 5 keeps its headless rows (`docking.md` §9.1.1).
 
 // ---------------------------------------------------------------------------
 // §9.2.5 — a mis-rolled approach fails and survives
