@@ -63,18 +63,7 @@
  * measured at 0.21–0.27 ms/frame; keeping a star-only bake would save the
  * haze fill but not that per-frame cost.
  *
- * ## `envRotation` — retired from the render path, kept for tests
- *
- * Before #433, the star sat at `BAKE_STAR_DIR` and `Scene.environmentRotation`
- * carried it onto the real star each frame. One shortest-arc quaternion cannot
- * carry a star *and* a band: keeping it would make every system's nebula happen
- * to pass near its own star. So `main.ts` no longer calls `envRotation` or sets
- * `environmentRotation`. The function stays exported because its headless tests
- * still hold the rotation's properties.
  */
-
-import { shortestArc } from "./quat";
-import { v3 } from "./vec3";
 
 /** The bake's own star direction: +X, so `atan2(z, x)` puts it at u = 0.5 and
  *  `asin(y)` at v = 0.5 — the centre texel, which is what the buffer test pins. */
@@ -586,57 +575,4 @@ export function equirectEnvironment(
 		}
 	}
 	return { data, width, height };
-}
-
-/**
- * The quaternion that carries `BAKE_STAR_DIR` onto `starDir`, as `[x, y, z, w]`.
- *
- * The shortest arc, which is the same thing `THREE.Quaternion.setFromUnitVectors`
- * builds — reimplemented here rather than called there because `light-rig.ts`
- * imports no Three.js, and because a rotation that lives in the renderer is a
- * rotation nothing headless can check. See this file's header for what that
- * cost: the inverse rotation passed every check the repo had.
- *
- * `starDir` need not be normalised; it must not be zero.
- *
- * **The antiparallel case is the one worth reading.** When `starDir` is exactly
- * opposite the bake's axis there is no shortest arc — every half-turn about
- * every perpendicular axis is equally short — so an axis has to be *chosen*,
- * and `cross` is zero and cannot choose it. Any perpendicular is correct, since
- * the bake is rotationally symmetric about its own star axis and a half-turn
- * about any of them lands the lobe in the same place. Picking one arbitrarily
- * rather than leaving the branch out is the difference between a defined answer
- * and a NaN quaternion, which renders as an unlit scene rather than as an error.
- */
-export function envRotation(
-	starDir: readonly [number, number, number],
-): [number, number, number, number] {
-	// The arithmetic is `quat.ts`'s `shortestArc`, which #430 moved out of this
-	// function rather than let a second copy of a 180°-safe shortest arc arrive in
-	// the sky. What that changed, by how much, and what it costs in the sampled
-	// environment are measured rather than described, by two rows in
-	// `tests/light-rig.test.ts` — `the shared primitive returns the rotation this
-	// function computed itself` and `near exact antiparallel the old arm misses the
-	// star and the new one does not`. The refactor's history belongs in those rows
-	// and in the commit that made it; a comment above a call is the wrong place for
-	// a changelog, and the wrong place for numbers that can go stale.
-	const q = shortestArc(
-		v3(BAKE_STAR_DIR[0], BAKE_STAR_DIR[1], BAKE_STAR_DIR[2]),
-		v3(starDir[0], starDir[1], starDir[2]),
-	);
-	// A star direction with no direction in it throws, where the old inline form
-	// produced a quaternion of NaNs. That propagates: `main.ts` reads this back into
-	// `ENV_EULER` and then into `scene.environmentRotation`, so a NaN here is a NaN
-	// rotation applied to every direction the environment is sampled along — chrome
-	// plating reading a direction that does not exist, with nothing printed.
-	//
-	// #430 did not leave it to this line to decide what happens in that case. The
-	// one caller in the render path has the direction's length in hand and skips the
-	// update when it is zero — a camera standing exactly on its own star has no
-	// direction *to* the star, and last frame's aim is the answer for that frame.
-	// So this is the tripwire for a second caller, and the row named below is why it
-	// is a refusal rather than a comment about being careful.
-	if (q === null)
-		throw new Error("envRotation: the star direction carries no direction");
-	return [q[0], q[1], q[2], q[3]];
 }

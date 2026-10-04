@@ -1,6 +1,6 @@
 /**
  * The one thing about the light rig's environment that no headless test can
- * reach: whether the baked sky reaches a hull **pointing the right way** in the
+ * reach: whether the baked sky lights the expected side of a hull in the
  * world frame.
  *
  * `tests/light-rig.test.ts` holds the sky model and says in its own header why
@@ -24,7 +24,7 @@
  *
  * - **It reaches the scene.** The system's own sky, on minus off, adds light
  *   to the station from both framings.
- * - **It is in the world frame, the right way round.** A haze the bake puts on
+ * - **Its bright side lights the expected face.** A haze the bake puts on
  *   one side of the sky lights the hull face turned toward that side.
  *
  * The second cannot be read off the system's own sky at the canonical seed:
@@ -73,10 +73,13 @@
  * being the station, so the fill keeps the coverage it had before #99 — none,
  * beyond the frame a person looks at.
  *
- * **Whether the system's own sky is the right sky is not tested here** — only
- * that whatever sky is baked arrives the right way round. What the haze and gas
- * look like, and whether seed 47's evenness is what #100 wanted, is the
- * canonical view set's question and the principal's yes.
+ * **Full world-frame orientation is not tested here.** Both synthetic skies
+ * are symmetric about the same axis, so a roll around that axis leaves them
+ * unchanged. The checks establish which side lights each face and reject the
+ * measured point reflection and row flip; they cannot detect that roll.
+ * **Whether the system's own sky is the right sky is not tested here.** What
+ * the haze and gas look like, and whether seed 47's evenness is what #100 wanted,
+ * is the canonical view set's question and the principal's yes.
  *
  * ## Which rasteriser, said plainly
  *
