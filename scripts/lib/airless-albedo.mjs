@@ -9,7 +9,10 @@ export async function airlessAlbedoReadings(game) {
 	const shaders = await import("/src/planet-shaders.ts");
 	const { AIRLESS } = await import("/src/planet-classes.glsl.ts");
 	const { AIRLESS: before } = await import(
-		"/tests/fixtures/airless-before-213.ts"
+		"/scripts/lib/fixtures/airless-before-213.ts"
+	);
+	const { relativeAlbedoVariance } = await import(
+		"/scripts/lib/airless-contrast.mjs"
 	);
 	const { airlessFeatures, planetSeedOffset, smallCrater } = await import(
 		"/src/airless-features.ts"
@@ -38,12 +41,21 @@ export async function airlessAlbedoReadings(game) {
 		rayCells: { value: Array.from({ length: 3 }, () => new THREE.Vector3()) },
 		faceBasis: { value: new THREE.Matrix3() },
 	};
-	const makeMaterial = (channel, old = false) => {
+	const makeMaterial = (channel, old = false, brighter = false) => {
 		let fragmentShader = shaders.bakeFragmentFor("airless", channel);
 		if (old) {
 			if (!fragmentShader.includes(AIRLESS))
 				throw new Error("airless baseline splice missed");
 			fragmentShader = fragmentShader.replace(AIRLESS, before);
+			if (brighter) {
+				const highland = "vec3 highland = vec3(0.235, 0.225, 0.210)";
+				if (!fragmentShader.includes(highland))
+					throw new Error("airless brightness control splice missed");
+				fragmentShader = fragmentShader.replace(
+					highland,
+					"vec3 highland = vec3(0.400, 0.385, 0.360)",
+				);
+			}
 		}
 		return new THREE.ShaderMaterial({
 			vertexShader: shaders.BAKE_VERTEX,
@@ -53,6 +65,7 @@ export async function airlessAlbedoReadings(game) {
 	};
 	const current = makeMaterial("albedo"),
 		baseline = makeMaterial("albedo", true),
+		brightnessOnly = makeMaterial("albedo", true, true),
 		normal = makeMaterial("normal");
 	const mesh = new THREE.Mesh(geometry, current);
 	scene.add(mesh);
@@ -90,17 +103,28 @@ export async function airlessAlbedoReadings(game) {
 			u.rayCount.value = features.rayCells.length;
 			features.rayCells.forEach((v, i) => u.rayCells.value[i].fromArray(v));
 			const a = [],
-				b = [];
+				b = [],
+				featureOff = [],
+				brightOnly = [];
+			let nearLuma = 0,
+				farLuma = 0;
 			let rayPixels = 0,
 				rayNormalDelta = 0;
 			for (let face = 0; face < 6; face++) {
 				const basis = cubeFaceBasis(face);
 				const after = read(current, basis),
 					beforePixels = read(baseline, basis);
+				const brighterPixels = read(brightnessOnly, basis);
 				const withRayNormal = read(normal, basis);
 				u.rayCount.value = 0;
 				const withoutRays = read(current, basis),
 					withoutRayNormal = read(normal, basis);
+				u.basinCount.value = 0;
+				const withoutFeatures = read(current, basis);
+				u.warmth.value = 7;
+				const coldHighlands = read(current, basis);
+				u.warmth.value = 0;
+				u.basinCount.value = features.basins.length;
 				u.rayCount.value = features.rayCells.length;
 				for (let y = 0; y < px; y++)
 					for (let x = 0; x < px; x++) {
@@ -111,6 +135,10 @@ export async function airlessAlbedoReadings(game) {
 						if (cos > 0.65) {
 							a.push(luma(after, i));
 							b.push(luma(beforePixels, i));
+							featureOff.push(luma(withoutFeatures, i));
+							brightOnly.push(luma(brighterPixels, i));
+							nearLuma += luma(withoutFeatures, i);
+							farLuma += luma(coldHighlands, i);
 						}
 						if (luma(after, i) - luma(withoutRays, i) > 0.015) rayPixels++;
 						for (let j = 0; j < 3; j++)
@@ -176,12 +204,25 @@ export async function airlessAlbedoReadings(game) {
 					craterTilt += tilt(controlNormal);
 					n++;
 				}
+			const beforeRelativeVariance = relativeAlbedoVariance(b),
+				afterRelativeVariance = relativeAlbedoVariance(a),
+				featureOffRelativeVariance = relativeAlbedoVariance(featureOff);
 			rows.push({
 				seed,
 				samples: a.length,
 				beforeVariance: variance(b),
 				afterVariance: variance(a),
-				ratio: variance(a) / variance(b),
+				beforeRelativeVariance,
+				afterRelativeVariance,
+				ratio: afterRelativeVariance / beforeRelativeVariance,
+				featureRatio: afterRelativeVariance / featureOffRelativeVariance,
+				featureOffRatio: featureOffRelativeVariance / beforeRelativeVariance,
+				brightnessOnlyRatio:
+					relativeAlbedoVariance(brightOnly) / beforeRelativeVariance,
+				uniformGainRatio:
+					relativeAlbedoVariance(b.map((v) => v * (0.4 / 0.235))) /
+					beforeRelativeVariance,
+				nearFarRatio: nearLuma / farLuma,
 				rayPixels,
 				rayNormalDelta,
 				floorRatio: floorLuma / highlandLuma,
@@ -198,7 +239,8 @@ export async function airlessAlbedoReadings(game) {
 		renderer.setRenderTarget(oldTarget);
 		renderer.setClearColor(oldClear, oldAlpha);
 		renderer.autoClear = oldAuto;
-		for (const material of [current, baseline, normal]) material.dispose();
+		for (const material of [current, baseline, brightnessOnly, normal])
+			material.dispose();
 		geometry.dispose();
 		target.dispose();
 	}

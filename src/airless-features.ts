@@ -42,30 +42,42 @@ export function airlessFeatures(seed: number): {
 	const candidates: { basin: Basin; age: number }[] = [];
 	for (let x = -2; x <= 2; x++)
 		for (let y = -2; y <= 2; y++)
-			for (let z = -2; z <= 2; z++) {
-				const c = [x + rand(), y + rand(), z + rand()];
-				const n = Math.hypot(...c);
-				const radius = 0.5 + rand() * 0.14;
-				const age = rand();
-				if (n > 1.2 && n < 2.2)
-					candidates.push({
-						basin: [...c.map((v) => v / n), radius] as Basin,
-						age,
-					});
-			}
+			for (let z = -2; z <= 2; z++)
+				for (let sample = 0; sample < 4; sample++) {
+					const c = [x + rand(), y + rand(), z + rand()];
+					const n = Math.hypot(...c);
+					// Four basins need more packing room than two on a unit sphere.
+					const radius = 0.78 - (count - 2) * 0.04 + rand() * 0.02;
+					const age = rand();
+					if (n > 1.2 && n < 2.2)
+						candidates.push({
+							basin: [...c.map((v) => v / n), radius] as Basin,
+							age,
+						});
+				}
 	candidates.sort((a, b) => a.age - b.age);
 	const basins: Basin[] = [];
-	for (const { basin } of candidates) {
-		if (
-			basins.every(
-				(other) =>
-					Math.hypot(...basin.slice(0, 3).map((v, j) => v - other[j])) >
-					basin[3] + other[3] + 0.06,
+	// Wide basins can leave a greedy choice no room for the fourth. Search
+	// the bounded low-frequency candidate set, preserving seeded age order.
+	const place = (start: number): boolean => {
+		if (basins.length === count) return true;
+		for (let i = start; i < candidates.length; i++) {
+			const { basin } = candidates[i];
+			if (
+				basins.some(
+					(other) =>
+						Math.hypot(...basin.slice(0, 3).map((v, j) => v - other[j])) <=
+						basin[3] + other[3] + 0.06,
+				)
 			)
-		)
+				continue;
 			basins.push(basin);
-		if (basins.length === count) break;
-	}
+			if (place(i + 1)) return true;
+			basins.pop();
+		}
+		return false;
+	};
+	place(0);
 	if (basins.length !== count)
 		throw new Error("airless basin cell walk exhausted");
 

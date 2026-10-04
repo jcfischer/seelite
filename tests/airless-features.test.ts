@@ -5,7 +5,7 @@ import {
 	planetSeedOffset,
 } from "../src/airless-features";
 import { AIRLESS } from "../src/planet-classes.glsl";
-import { AIRLESS as BEFORE } from "./fixtures/airless-before-213";
+import { AIRLESS as BEFORE } from "../scripts/lib/fixtures/airless-before-213";
 import { bakeFragmentFor, bakedFragmentFor } from "../src/planet-shaders";
 import { VIEWS } from "../scripts/lib/view-set.mjs";
 import * as THREE from "three";
@@ -29,8 +29,8 @@ test("airless populations are bounded, separated, and repeatable across seeds", 
 		expect(f.rayCells.length).toBeLessThanOrEqual(3);
 		for (const [i, basin] of f.basins.entries()) {
 			expect(Math.hypot(...basin.slice(0, 3))).toBeCloseTo(1, 6);
-			expect(basin[3]).toBeGreaterThanOrEqual(0.5);
-			expect(basin[3]).toBeLessThanOrEqual(0.64);
+			expect(basin[3]).toBeGreaterThanOrEqual(0.7);
+			expect(basin[3]).toBeLessThanOrEqual(0.8);
 			for (const other of f.basins.slice(i + 1))
 				expect(
 					Math.hypot(...basin.slice(0, 3).map((v, j) => v - other[j])),

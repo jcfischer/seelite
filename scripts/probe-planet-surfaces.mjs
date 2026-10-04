@@ -56,6 +56,7 @@ import {
 	tally,
 } from "./probe-guard.mjs";
 import { bandMetrics } from "./lib/band-tones.mjs";
+import { airlessContrastPasses } from "./lib/airless-contrast.mjs";
 import { installViewFraming } from "./lib/view-placement.mjs";
 import { gameUrl } from "./lib/game-url.mjs";
 
@@ -2071,8 +2072,10 @@ if (jovianA?.b && jovianB?.b) {
 }
 
 /* Node #213: actual linear albedo and normal outputs, held against the parent
- * shader with identical geometry, seed and face-on sampling. Bands below are
- * derived from the seeded corpus; they do not include lighting or tone mapping.
+ * shader with identical geometry, seed and face-on sampling. Variance is
+ * divided by mean albedo squared: a uniform brightness gain cancels. Require
+ * at least 50% more contrast, bounded at 6x, and reject brightness-only and
+ * feature-off controls. Lighting and tone mapping never enter these readings.
  */
 const airlessAlbedo = await page.evaluate(async () => {
 	const { airlessAlbedoReadings } = await import(
@@ -2082,14 +2085,30 @@ const airlessAlbedo = await page.evaluate(async () => {
 });
 for (const row of airlessAlbedo) {
 	check(
-		`airless seed ${row.seed} has greater albedo variance than the parent`,
-		Number.isFinite(row.ratio) && row.ratio >= 1.5 && row.ratio <= 3.5,
-		`${row.samples} lit-face samples: ${row.beforeVariance.toFixed(6)} → ${row.afterVariance.toFixed(6)}, ratio ${row.ratio.toFixed(2)} (band 1.5–3.5)`,
+		`airless seed ${row.seed} has greater relative albedo variance from sparse features`,
+		airlessContrastPasses(row),
+		`${row.samples} lit-face samples: relative variance ${row.beforeRelativeVariance.toFixed(6)} → ${row.afterRelativeVariance.toFixed(6)}, ratio ${row.ratio.toFixed(2)} (band 1.5–6), feature-on/off ${row.featureRatio.toFixed(2)}`,
+	);
+	check(
+		`airless seed ${row.seed} contrast gate rejects brightness-only and feature-off controls`,
+		Math.abs(row.uniformGainRatio - 1) < 1e-8 &&
+			row.featureOffRatio < 1.5 &&
+			!airlessContrastPasses({
+				ratio: row.brightnessOnlyRatio,
+				featureRatio: 1,
+			}) &&
+			!airlessContrastPasses({ ratio: row.featureOffRatio, featureRatio: 1 }),
+		`uniform gain ${row.uniformGainRatio.toFixed(3)}, highland-only ${row.brightnessOnlyRatio.toFixed(3)}, feature-off ${row.featureOffRatio.toFixed(3)}`,
+	);
+	check(
+		`airless seed ${row.seed} near-star highlands remain darker than cold frost`,
+		row.nearFarRatio > 0.5 && row.nearFarRatio < 0.6,
+		`same highland samples at warmth 0/7: ${row.nearFarRatio.toFixed(3)} (band 0.5–0.6)`,
 	);
 	check(
 		`airless seed ${row.seed} has dark flat basin floors beside crater relief`,
-		// Seed 0's control is already almost level (tilt 0.003), so an absolute
-		// roughness floor of 0.01 failed on its location, not on the flattening.
+		// A control patch can already be almost planar, so an absolute
+		// roughness floor would test its location rather than the flattening.
 		// Require the rendered floor to lose 98% of its own control's slope and
 		// require that control to be nonzero; a shader with no relief fails both.
 		row.floorRatio < 0.65 &&

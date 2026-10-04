@@ -13,7 +13,7 @@ uniform float craterSlow;
  * in the set, and it is worth saying what was tried: moving the second octave
  * out to tint albedo only ran 35% faster and cost the moon its small craters —
  * the relief *is* the read on an airless body, and shading it from albedo alone
- * looked like a different, worse planet. Both octaves stay; the third tier of
+ * looked like a different, worse planet. Both octaves stay; the third scale of
  * detail is ridged noise in surface(), which is far cheaper than a third
  * neighbourhood walk and reads the same at that scale.
  *
@@ -62,7 +62,7 @@ float height(vec3 p) {
  * 3x3x3 crater walks — so a normal that the walks already contain was costing
  * ten of them. cratersAndGradient accumulates each crater's slope in the loop
  * that accumulates its depth, which is exact rather than approximate: this is
- * the analytic derivative of the same profile, not a cheaper lookalike, and it
+ * the analytic derivative of the same curve, not a cheaper lookalike, and it
  * visits every cell the path it replaces visited. That is true of the *crater*
  * term only: the fine fbm octave below keeps its central differences, so the
  * composite normal is analytic in its dominant part and differenced in its
@@ -86,7 +86,7 @@ float height(vec3 p) {
  *
  * It is not pixel-identical, and that should not be claimed. A central
  * difference over 2e smooths whatever it straddles; the analytic derivative
- * does not. Where the profile is smooth the two agree to O(e^2) and the frame
+ * does not. Where the curve is smooth the two agree to O(e^2) and the frame
  * is the same frame. Where it breaks they differ, and it breaks in two known
  * places: step(d, 1.0) cuts the bowl at the rim, and the walk is culled at
  * d < 1.2 with the rim gaussian still worth about 0.009. Both are documented

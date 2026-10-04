@@ -68,7 +68,7 @@ try {
 				const vis = window.__seelite.bodyVisuals.get(id);
 				const { AIRLESS } = await import("/src/planet-classes.glsl.ts");
 				const { AIRLESS: before } = await import(
-					"/tests/fixtures/airless-before-213.ts"
+					"/scripts/lib/fixtures/airless-before-213.ts"
 				);
 				const material = vis.surfaceMesh.material;
 				window.__airlessCurrent ??= material.fragmentShader;

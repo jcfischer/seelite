@@ -716,7 +716,7 @@ export const VIEWS = Object.freeze([
 	// #213. The canonical world's generated moon needs its own surface frame.
 	{
 		name: "airless-fill",
-		covers: [213, 208, 211, 206, 207],
+		covers: [213],
 		what: "The airless moon at two radii: large flat dark basin floors beside small crater relief, floor-bound maria and bright radial ejecta from young impacts.",
 		shot: {
 			kind: "body-offset",

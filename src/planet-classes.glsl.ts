@@ -525,7 +525,7 @@ vec3 craterRelief(vec3 p, vec3 N, float strength) {
 }
 
 // Chord distance on the sphere avoids a pole or texture seam. A flat floor
-// occupies the inner 72% of each basin; the rim is an albedo ring, not another
+// occupies the inner 94% of each basin; the rim is an albedo ring, not another
 // height octave. The original crater walks above remain untouched.
 float basinFloor(vec3 p, out float rimMask) {
   float floorMask = 0.0;
@@ -533,7 +533,7 @@ float basinFloor(vec3 p, out float rimMask) {
   for (int i = 0; i < 4; ++i) {
     if (i >= basinCount) break;
     float d = distance(p, basins[i].xyz) / basins[i].w;
-    floorMask = max(floorMask, 1.0 - smoothstep(0.72, 0.92, d));
+    floorMask = max(floorMask, 1.0 - smoothstep(0.94, 1.0, d));
     rimMask = max(rimMask, exp(-pow((d - 0.98) * 18.0, 2.0)));
   }
   return floorMask;
@@ -576,10 +576,10 @@ void surface(vec3 p, inout vec3 albedo, inout vec3 N,
   // Low-frequency basalt variation cannot leak onto the highlands. Floor
   // smoothing is independent of its colour, so the population has flat floors
   // even where the basalt is lighter. The bake stores both terms.
-  float mare = floorMask * (0.78 + 0.22 * fbm3(p * 2.0 + seedOffset));
+  float mare = floorMask * (0.96 + 0.04 * fbm3(p * 2.0 + seedOffset));
 
-  vec3 highland = vec3(0.400, 0.385, 0.360);
-  vec3 basalt   = vec3(0.070, 0.068, 0.072);
+  vec3 highland = vec3(0.235, 0.225, 0.210);
+  vec3 basalt   = vec3(0.015, 0.014, 0.017);
   // A moon close to its star is baked darker; a far one keeps its frost.
   vec3 frost    = vec3(0.400, 0.415, 0.440);
   highland = mix(highland, frost, smoothstep(3.0, 7.0, warmth));
