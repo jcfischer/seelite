@@ -395,9 +395,14 @@ export const AIRLESS = /* glsl */ `
 uniform float seedOffset;
 uniform float warmth;
 uniform float craterSlow;
+uniform int basinCount;
+uniform vec4 basins[4];
+uniform int rayCount;
+uniform vec3 rayCells[3];
 
 /*
- * Relief comes from the large basins only.
+ * Two crater octaves supply the existing relief. Node #213 flattens the
+ * sparse basin floors below without adding a height octave.
  *
  * craters() walks a 3x3x3 neighbourhood and reliefNormal() evaluates height()
  * four more times for its central differences, so each impact octave here costs
@@ -519,32 +524,75 @@ vec3 craterRelief(vec3 p, vec3 N, float strength) {
   return normalize(N - strength * (slope * (2.0 * e) + dt * t + db * b));
 }
 
+// Chord distance on the sphere avoids a pole or texture seam. A flat floor
+// occupies the inner 72% of each basin; the rim is an albedo ring, not another
+// height octave. The original crater walks above remain untouched.
+float basinFloor(vec3 p, out float rimMask) {
+  float floorMask = 0.0;
+  rimMask = 0.0;
+  for (int i = 0; i < 4; ++i) {
+    if (i >= basinCount) break;
+    float d = distance(p, basins[i].xyz) / basins[i].w;
+    floorMask = max(floorMask, 1.0 - smoothstep(0.72, 0.92, d));
+    rimMask = max(rimMask, exp(-pow((d - 0.98) * 18.0, 2.0)));
+  }
+  return floorMask;
+}
+
+float airlessRays(vec3 p) {
+  float rays = 0.0;
+  for (int i = 0; i < 3; ++i) {
+    if (i >= rayCount) break;
+    vec3 cell = rayCells[i];
+    vec3 centre = cell + vec3(hash31(cell), hash31(cell + 61.7), hash31(cell + 13.3));
+    centre = centre / 8.0 - seedOffset * 1.7;
+    float radius = (0.16 + 0.34 * hash31(cell + 3.1)) / 8.0;
+    vec3 c = normalize(centre);
+    vec3 axis = abs(c.y) < 0.94 ? vec3(0,1,0) : vec3(1,0,0);
+    vec3 t = normalize(cross(axis, c)), b = cross(c, t);
+    vec2 q = vec2(dot(p, t), dot(p, b));
+    float d = distance(p, c);
+    if (d < radius || d > radius * 9.0) continue;
+    float angle = atan(q.y, q.x);
+    // Unequal harmonics break a regular spoke wheel; the envelope dies before
+    // the antipode. Ejecta changes reflectance only, never height or normal.
+    float streak = pow(max(0.0, sin(angle * 17.0 + hash31(cell + 9.7) * 6.28)
+                       * sin(angle * 11.0 + 1.7)), 4.0);
+    float fade = (1.0 - smoothstep(radius * 2.0, radius * 9.0, d))
+               * smoothstep(radius, radius * 1.5, d);
+    rays = max(rays, streak * fade);
+  }
+  return rays;
+}
+
 void surface(vec3 p, inout vec3 albedo, inout vec3 N,
              inout vec3 emissive, inout float specPower, inout float specMask) {
-  float h = height(p);
   // Sub-crater roughness. Ridged noise rather than a third impact octave: at
   // this scale the pits read as texture, and 4 noise octaves cost a fraction of
   // 27 cell tests multiplied by reliefNormal's five height evaluations.
   float grit = ridged(p * 26.0 + seedOffset);
-  // Maria: flood basalt that drowned the old cratering, so they are both darker
-  // and smoother than the highlands.
-  float mare = smoothstep(0.52, 0.63, fbm4(warp(p * 1.3 + seedOffset, 1.0, 0.6)));
+  float rimMask;
+  float floorMask = basinFloor(p, rimMask);
+  // Low-frequency basalt variation cannot leak onto the highlands. Floor
+  // smoothing is independent of its colour, so the population has flat floors
+  // even where the basalt is lighter. The bake stores both terms.
+  float mare = floorMask * (0.78 + 0.22 * fbm3(p * 2.0 + seedOffset));
 
-  vec3 highland = vec3(0.235, 0.225, 0.210);
+  vec3 highland = vec3(0.400, 0.385, 0.360);
   vec3 basalt   = vec3(0.070, 0.068, 0.072);
   // A moon close to its star is baked darker; a far one keeps its frost.
   vec3 frost    = vec3(0.400, 0.415, 0.440);
   highland = mix(highland, frost, smoothstep(3.0, 7.0, warmth));
 
   albedo = mix(highland, basalt, mare);
-  // Fresh craters throw bright rays across everything, including the maria.
-  albedo = mix(albedo, albedo * 2.2,
-               smoothstep(0.28, 0.80, h) * (1.0 - mare * 0.6));
   albedo *= 0.82 + 0.36 * fbm4(p * 14.0 + seedOffset);
   albedo *= 0.86 + 0.28 * grit;
+  albedo = mix(albedo, highland * 1.24, rimMask * 0.5);
+  // Replaces the old height-based brightening, which asked height() for another
+  // pair of crater walks. Radial ejecta does not need that height sample.
+  albedo = mix(albedo, vec3(0.48, 0.46, 0.43), airlessRays(p) * 0.75);
 
-  // The relief is the whole read on an airless body: no air, no cloud, no
-  // ocean, nothing but the shape the impacts left.
+  // Outside the basin floors the original small impacts keep their relief.
   // The perf panel's o key restores the five-walk path, so the two can be
   // compared in place, without reloading. #59 could measure this
   // class only on a software rasteriser and said so; what it licensed was "no
@@ -552,8 +600,8 @@ void surface(vec3 p, inout vec3 albedo, inout vec3 N,
   // that lets a GPU answer it, and it costs a uniform branch that is uniform
   // across the draw.
   N = craterSlow > 0.5
-    ? reliefNormal(p, N, 2.6 * (1.0 - mare * 0.7))
-    : craterRelief(p, N, 2.6 * (1.0 - mare * 0.7));
+    ? normalize(mix(reliefNormal(p, N, 2.6), N, floorMask))
+    : normalize(mix(craterRelief(p, N, 2.6), N, floorMask));
   specPower = 0.0;
   specMask  = 0.0;
 }

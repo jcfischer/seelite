@@ -2070,6 +2070,55 @@ if (jovianA?.b && jovianB?.b) {
 	);
 }
 
+/* Node #213: actual linear albedo and normal outputs, held against the parent
+ * shader with identical geometry, seed and face-on sampling. Bands below are
+ * derived from the seeded corpus; they do not include lighting or tone mapping.
+ */
+const airlessAlbedo = await page.evaluate(async () => {
+	const { airlessAlbedoReadings } = await import(
+		"/scripts/lib/airless-albedo.mjs"
+	);
+	return airlessAlbedoReadings(window.__seelite);
+});
+for (const row of airlessAlbedo) {
+	check(
+		`airless seed ${row.seed} has greater albedo variance than the parent`,
+		Number.isFinite(row.ratio) && row.ratio >= 1.5 && row.ratio <= 3.5,
+		`${row.samples} lit-face samples: ${row.beforeVariance.toFixed(6)} → ${row.afterVariance.toFixed(6)}, ratio ${row.ratio.toFixed(2)} (band 1.5–3.5)`,
+	);
+	check(
+		`airless seed ${row.seed} has dark flat basin floors beside crater relief`,
+		// Seed 0's control is already almost level (tilt 0.003), so an absolute
+		// roughness floor of 0.01 failed on its location, not on the flattening.
+		// Require the rendered floor to lose 98% of its own control's slope and
+		// require that control to be nonzero; a shader with no relief fails both.
+		row.floorRatio < 0.65 &&
+			row.floorTilt < row.craterTilt * 0.02 &&
+			row.craterTilt > 0.0001,
+		`floor/highland albedo ${row.floorRatio.toFixed(3)}, normal tilt ${row.floorTilt.toFixed(5)} / ${row.craterTilt.toFixed(3)}`,
+	);
+	check(
+		`airless seed ${row.seed} rays brighten albedo without changing relief`,
+		row.rayPixels > 40 && row.rayNormalDelta < 0.00001,
+		`${row.rayPixels} bright ejecta samples; normal delta ${row.rayNormalDelta}`,
+	);
+}
+const [seedA, seedB] = airlessAlbedo;
+const basinShift = Math.min(
+	...seedA.basins.map((a) =>
+		Math.min(
+			...seedB.basins.map((b) =>
+				Math.hypot(...a.slice(0, 3).map((v, i) => v - b[i])),
+			),
+		),
+	),
+);
+check(
+	"two airless seeds put their measured basin floors in different directions",
+	basinShift > 0.1 && seedA.floorRatio < 0.65 && seedB.floorRatio < 0.65,
+	`seeds ${seedA.seed}/${seedB.seed}: closest centre chord ${basinShift.toFixed(3)}, both floor readings dark and flat`,
+);
+
 /* 4. The budget, per layer, on the class that costs the most. */
 const RANGES = [
 	["near (a body filling the screen)", 3],

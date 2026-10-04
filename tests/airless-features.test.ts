@@ -1,0 +1,106 @@
+import { expect, test } from "bun:test";
+import {
+	airlessFeatures,
+	smallCrater,
+	planetSeedOffset,
+} from "../src/airless-features";
+import { AIRLESS } from "../src/planet-classes.glsl";
+import { AIRLESS as BEFORE } from "./fixtures/airless-before-213";
+import { bakeFragmentFor, bakedFragmentFor } from "../src/planet-shaders";
+import { VIEWS } from "../scripts/lib/view-set.mjs";
+import * as THREE from "three";
+import { appearanceFor } from "../src/planet-appearance";
+import { buildBodyVisual } from "../src/planet-surface";
+
+test("airless populations are bounded, separated, and repeatable across seeds", () => {
+	const counts = new Set<number>();
+	for (const seed of [
+		...Array.from({ length: 80 }, (_, i) => i),
+		0xffffffff,
+		0xdeadbeef,
+		589011,
+	]) {
+		const f = airlessFeatures(seed);
+		expect(airlessFeatures(seed)).toEqual(f);
+		counts.add(f.basins.length);
+		expect(f.basins.length).toBeGreaterThanOrEqual(2);
+		expect(f.basins.length).toBeLessThanOrEqual(4);
+		expect(f.rayCells.length).toBeGreaterThanOrEqual(2);
+		expect(f.rayCells.length).toBeLessThanOrEqual(3);
+		for (const [i, basin] of f.basins.entries()) {
+			expect(Math.hypot(...basin.slice(0, 3))).toBeCloseTo(1, 6);
+			expect(basin[3]).toBeGreaterThanOrEqual(0.5);
+			expect(basin[3]).toBeLessThanOrEqual(0.64);
+			for (const other of f.basins.slice(i + 1))
+				expect(
+					Math.hypot(...basin.slice(0, 3).map((v, j) => v - other[j])),
+				).toBeGreaterThan(basin[3] + other[3]);
+		}
+		for (const cell of f.rayCells) {
+			const crater = smallCrater(cell, planetSeedOffset(seed));
+			// Rays belong to an existing fine-octave crater intersecting the surface,
+			// never a randomly chosen point with no crater beneath it.
+			expect(Math.abs(Math.hypot(...crater.centre) - 1)).toBeLessThan(
+				crater.radius * 0.3,
+			);
+			expect(crater.radius).toBeLessThan(0.063);
+			const n = Math.hypot(...crater.centre);
+			for (const basin of f.basins)
+				expect(
+					Math.hypot(...crater.centre.map((v, i) => v / n - basin[i])),
+				).toBeGreaterThan(basin[3] + crater.radius);
+		}
+	}
+	expect([...counts].sort()).toEqual([2, 3, 4]);
+	expect(airlessFeatures(47).basins).not.toEqual(airlessFeatures(48).basins);
+});
+
+test("the generated moon supplies its sparse features to the shared surface/bake uniforms", () => {
+	const look = appearanceFor("moon", "planet-5-moon-0", 3);
+	const geometry = new THREE.SphereGeometry(1, 8, 6);
+	const visual = buildBodyVisual(look, geometry);
+	try {
+		const expected = airlessFeatures(look.seed);
+		expect(visual.uniforms.basinCount.value).toBe(expected.basins.length);
+		expect(visual.uniforms.rayCount.value).toBe(expected.rayCells.length);
+		expect(visual.uniforms.seedOffset.value).toBe(planetSeedOffset(look.seed));
+		for (const [i, basin] of expected.basins.entries())
+			expect(visual.uniforms.basins.value[i].toArray()).toEqual(basin);
+		for (const [i, cell] of expected.rayCells.entries())
+			expect(visual.uniforms.rayCells.value[i].toArray()).toEqual(cell);
+	} finally {
+		visual.dispose();
+		geometry.dispose();
+	}
+});
+
+test("airless keeps two height octaves; sparse terms reach the bake only", () => {
+	const height = AIRLESS.slice(
+		AIRLESS.indexOf("float height("),
+		AIRLESS.indexOf("\n}", AIRLESS.indexOf("float height(")),
+	);
+	expect(height.match(/craters\(/g)?.length).toBe(2);
+	const walkEnd = (s: string) =>
+		s.indexOf("\n}", s.indexOf("vec3 craterRelief(")) + 2;
+	const walk = AIRLESS.slice(
+		AIRLESS.indexOf("vec3 craterRelief("),
+		walkEnd(AIRLESS),
+	);
+	expect(walk.match(/cratersAndGradient\(/g)?.length).toBe(2);
+	expect(walk).toBe(
+		BEFORE.slice(BEFORE.indexOf("vec3 craterRelief("), walkEnd(BEFORE)),
+	);
+	expect(bakeFragmentFor("airless", "albedo")).toContain("airlessRays(p)");
+	expect(bakeFragmentFor("airless", "normal")).toContain("basinFloor(p,");
+	expect(bakedFragmentFor("airless")).not.toContain("airlessRays");
+});
+
+test("node 213 has a canonical view of a generated airless body", () => {
+	const views = VIEWS.filter((v) => v.covers.includes(213));
+	expect(views.length).toBeGreaterThan(0);
+	for (const v of views) {
+		expect(v.shot.kind).toBe("body-offset");
+		expect(v.shot.body).toContain("moon");
+		expect(v.what).toContain("basin");
+	}
+});
