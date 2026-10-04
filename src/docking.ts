@@ -946,6 +946,10 @@ export function attemptEntry(input: {
 	 *  it belongs to the pilot and the station, not to this session's state, and
 	 *  it must not be written into `state.hostile`. */
 	refusedByLaw?: boolean;
+	/** `ClearanceRequest.closed`: at a closed berth the law's refusal is moot and
+	 *  is not reported as hostility. The entry fails anyway — nobody holds a
+	 *  grant there, so it is a barge. */
+	closed?: boolean;
 }): EntryOutcome {
 	const { frame, pose, gameTime } = input;
 	const barged = !grantLive(input.state, gameTime);
@@ -963,7 +967,8 @@ export function attemptEntry(input: {
 	// changed is the station's reason for admitting them. So `barged` stays false
 	// — and the flip, with its cooldown, is not started for them.
 	const evaluation = evaluateEntry(frame, pose, {
-		hostile: state.hostile || input.refusedByLaw === true,
+		hostile:
+			state.hostile || (input.refusedByLaw === true && input.closed !== true),
 	});
 	// A barge is a failed entry whatever the geometry says: the checks are
 	// evaluated so the diagnostics are complete, and the verdict is not theirs.

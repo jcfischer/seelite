@@ -248,11 +248,19 @@ export function dockingDirector(input: {
 	 *  so the mark arrives before the denial does, rather than after a run the
 	 *  pilot could not have known to abort. */
 	refusedByLaw?: boolean;
+	/** Whether this station's berths admit nobody (`ClearanceRequest.closed`,
+	 *  node #491). **It silences the law's mark and not the flip's.** At a closed
+	 *  berth the law's verdict is moot — the raider outpost's would mark every
+	 *  clean pilot who flew near it hostile without their asking anything — while
+	 *  a pilot who barged it earned `state.hostile` like anywhere else. The
+	 *  closure itself is spoken by the denial a request gets. */
+	closed?: boolean;
 	/** Traffic's answer for this station's lane, read only under a live grant. */
 	laneWait?: DirectorLaneWait | null;
 }): DirectorState {
 	const { stationId, stationPos, frame, pose, state, gameTime } = input;
-	const hostile = state.hostile || input.refusedByLaw === true;
+	const hostile =
+		state.hostile || (input.refusedByLaw === true && input.closed !== true);
 	const evaluation = evaluateEntry(frame, pose, { hostile });
 	const live = grantLive(state, gameTime);
 	const rangeKm = length(pose.rel);

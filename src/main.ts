@@ -7820,6 +7820,16 @@ class Game {
 		return carrierKey(this.world.system.record.index, station.localCarrierId);
 	}
 
+	/**
+	 * Whether this station's berths admit nobody at all — the raider outpost's,
+	 * until it has a market (node #491, `STATION_BERTHS_OPEN`). Read by the
+	 * three protocol doors beside `refusedByLaw`, and outranking it: the law's
+	 * verdict at a berth nobody may use is not spoken as hostility.
+	 */
+	private berthClosed(stationId: string): boolean {
+		return !STATION_BERTHS_OPEN[stationOf(this.world.system, stationId).type];
+	}
+
 	private refusedByLaw(stationId: string): boolean {
 		const station = stationOf(this.world.system, stationId);
 		return dockingRefusedByLaw(
@@ -10641,8 +10651,7 @@ class Game {
 			refusedByLaw: this.refusedByLaw(chosen.id),
 			// Node #491: a raider outpost's berths admit nobody until it has a
 			// market to dock into, and it says so as its own reason.
-			closed:
-				!STATION_BERTHS_OPEN[stationOf(this.world.system, chosen.id).type],
+			closed: this.berthClosed(chosen.id),
 		});
 		this.dockingStates.set(chosen.id, next);
 		// A request starts an approach, so the last one's notice is done (#597).
@@ -10704,6 +10713,7 @@ class Game {
 				state: this.dockingStateOf(id),
 				gameTime: this.world.gameTime,
 				refusedByLaw: this.refusedByLaw(id),
+				closed: this.berthClosed(id),
 				// #521: the turn a crossing would be judged on now, so the wait on
 				// the glass and the bounce at the plane cannot disagree. The grant
 				// test here only saves the Traffic query; `dockingDirector` owns the
@@ -11051,6 +11061,7 @@ class Game {
 			// before the offence did not barge, and must not be given the flip's
 			// cooldown for someone else's act.
 			refusedByLaw: this.refusedByLaw(id),
+			closed: this.berthClosed(id),
 		});
 		// A dock spends the turn; a bounce keeps it, so a pilot turned back at
 		// the plane is not sent to the back of the lane as well (#521).

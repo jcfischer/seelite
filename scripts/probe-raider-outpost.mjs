@@ -143,12 +143,21 @@ const ask = (id) =>
 			g.stationVelocity(stationId),
 		);
 		g.targetId = stationId;
+		const blockOf = (d) =>
+			d && d.stationId === stationId ? (d.blocking ?? null) : null;
+		// Unasked first: the law's verdict must not reach the glass here.
+		const before = blockOf(g.directorState());
 		const asked = g.requestDockingClearance();
 		const state = g.dockingStateOf(stationId);
 		return {
 			askedOf: asked.id,
 			clearance: state.clearance,
 			hostile: state.hostile,
+			refusedByLaw: g
+				.trafficReadout()
+				.stations.find((st) => st.id === stationId)?.refusedByLaw,
+			blockBefore: before,
+			blockAfter: blockOf(g.directorState()),
 		};
 	}, id);
 
@@ -159,6 +168,16 @@ check(
 		outpost.clearance?.kind === "denied" &&
 		outpost.clearance?.reason === "closed" &&
 		outpost.hostile === false,
+	JSON.stringify(outpost),
+);
+check(
+	"a clean pilot beside it is never told they are hostile: the law refuses them there (#490 D5), and the glass says the berth is closed instead",
+	// The readout keeps the law honest — D5's arm does refuse a clean pilot —
+	// while the director, before and after the request, does not speak it.
+	outpost.refusedByLaw === true &&
+		outpost.blockBefore?.kind !== "hostile" &&
+		outpost.blockAfter?.kind === "denied" &&
+		outpost.blockAfter?.text.includes("no berth open to you"),
 	JSON.stringify(outpost),
 );
 const trade = await ask("station-trade");
