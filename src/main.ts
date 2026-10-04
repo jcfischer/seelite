@@ -5505,10 +5505,8 @@ class Game {
 	 *  Disposed and rebuilt on every jump alongside `environmentMap`. */
 	private environmentSource: THREE.DataTexture | null = null;
 
-	/** What the current system's sky was baked from. Public for
-	 *  `probe-light-rig.mjs`, which predicts from it — through `skyRadiance`, in
-	 *  world directions — which face of a station the bake should light more,
-	 *  rather than reading the texture back and restating its mapping. */
+	/** What the sky on screen was baked from. Public for `probe-light-rig.mjs`,
+	 *  which reads it to put the system's own sky back after baking its own. */
 	skyBake: SkyBakeParams | null = null;
 
 	/**
@@ -5530,15 +5528,10 @@ class Game {
 	 * sample rather than about this call.
 	 *
 	 * The source is `light-rig.ts`, which knows nothing about Three.js, so the
-	 * model is testable and this is three lines and no decisions.
+	 * model is testable; this derives the system's parameters and `bakeSky`
+	 * turns them into textures.
 	 */
 	private buildEnvironment() {
-		// Idempotent by disposal rather than by assuming a single call: a PMREM
-		// cube is a GPU texture, and a second bake that dropped the first would
-		// leak it silently.
-		this.environmentMap?.dispose();
-		this.environmentSource?.dispose();
-
 		// Haze: direction toward the galactic core, in world frame.
 		const record = this.world.system.record;
 		const frame = skyFrame(record.seed);
@@ -5560,8 +5553,28 @@ class Game {
 				: null,
 			gas,
 		};
-		this.skyBake = bakeParams;
-		const { data, width, height } = equirectEnvironment(bakeParams);
+		this.bakeSky(bakeParams);
+	}
+
+	/**
+	 * Bake `sky` and hand it to the backdrop and all three layers.
+	 *
+	 * Public for `probe-light-rig.mjs`, and nothing in the game calls it but
+	 * `buildEnvironment`. The probe's question is whether the bake reaches a
+	 * hull *pointing the right way* in the world frame, and a system's own sky
+	 * may be too even to answer it — seed 47's lights the two faces it compares
+	 * within 4% of each other. So the probe bakes a haze it chose, through this
+	 * same path, and reads which face it lit; the system's `skyBake` goes back
+	 * through here afterwards.
+	 */
+	bakeSky(sky: SkyBakeParams) {
+		// Idempotent by disposal rather than by assuming a single call: a PMREM
+		// cube is a GPU texture, and a second bake that dropped the first would
+		// leak it silently.
+		this.environmentMap?.dispose();
+		this.environmentSource?.dispose();
+		this.skyBake = sky;
+		const { data, width, height } = equirectEnvironment(sky);
 
 		const source = new THREE.DataTexture(
 			data,

@@ -23,13 +23,13 @@
  * the seed the probe flies. Moved into `envRotation` it has a property that a
  * swap breaks and this file sweeps, below.
  *
- * A bake handed to the renderer back-to-front puts the reflection on the side
- * away from the star, which looks wrong and measures fine. That is
- * `probe-light-rig.mjs`'s job: it renders one station front-lit and once more
- * backlit, differences each against the same frame with the environment
- * dropped, and requires the front-lit difference to be the larger. Both halves
- * of that were watched go red on a build with the defect — reversed on a
- * flipped bake, zero on both arms with no bake at all.
+ * A bake handed to the renderer back-to-front lights the face turned away from
+ * its bright side, which looks wrong and measures fine. That is
+ * `probe-light-rig.mjs`'s job: since node #433's sky carries no star, it bakes
+ * a haze toward one face of a station and then toward the opposite face, and
+ * requires each face to read brighter under the haze aimed at it. It was
+ * watched go red on a point-reflected bake, on rows uploaded upside down, and
+ * on no environment at all.
  */
 import { describe, expect, test } from "bun:test";
 import {
