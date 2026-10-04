@@ -25,6 +25,7 @@ import {
 	TRAFFIC_STATION_LOCAL_SPEED_KM_S,
 	trafficScheduleAt,
 } from "../src/station-traffic";
+import { STATION_LAWFUL } from "../src/station";
 import { generateContents } from "../src/system";
 import { AU_KM } from "../src/units";
 
@@ -1131,5 +1132,85 @@ describe("canonical Traffic cruise", () => {
 		expect(phases[0]).toBe("blocked");
 		expect(replayed.phase).toBe("blocked");
 		expect(replayed.blockedById).toBe("planet");
+	});
+});
+
+/**
+ * Node #491: Traffic trades on its own side of #490's line (`STATION_LAWFUL`).
+ *
+ * The rule is a choice this node made, not one #490 ruled, and it is here so it
+ * can be reversed on purpose: it is what kept every existing carrier's
+ * schedule where it was when the outpost was placed. A lawful station's
+ * carriers are never sent to the raider outpost, and the outpost's own — with
+ * no other outpost in the system — leave abstractly and come home.
+ */
+describe("node #491: Traffic stays on its own side of the line", () => {
+	const record = required(
+		generateGalaxy(0x5ee11e, 0).systems.find((candidate) => {
+			const stations = generateContents(candidate).stations;
+			return (
+				stations.some((s) => s.type === "outpost") &&
+				stations.filter((s) => STATION_LAWFUL[s.type]).length >= 2
+			);
+		}),
+		"a lawless system with two lawful stations beside its outpost",
+	);
+	const stations = generateContents(record).stations;
+
+	/** Where an actor's `cycle`th away leg goes, or null for abstract-away. */
+	const destinationOf = (
+		actor: ReturnType<typeof stationTrafficRoster>[number],
+		cycle: number,
+	) => {
+		const departure =
+			actor.schedule.departureAtS + cycle * actor.schedule.cycleS;
+		for (let t = departure; t <= departure + 900; t += 5) {
+			const projection = projectSystemTrafficActor({
+				record,
+				actor,
+				gameTime: t,
+			});
+			if (projection.destinationStationId)
+				return projection.destinationStationId;
+			if (projection.phase === "abstract-away") return null;
+		}
+		return null;
+	};
+
+	test("no lawful station's carrier is routed to the outpost", () => {
+		let legs = 0;
+		for (const home of stations.filter((s) => STATION_LAWFUL[s.type]))
+			for (const actor of stationTrafficRoster(record.index, home).slice(0, 3))
+				for (let cycle = 0; cycle < 3; cycle++) {
+					const to = destinationOf(actor, cycle);
+					if (to === null) continue;
+					legs++;
+					expect(to).not.toBe("station-outpost");
+				}
+		// The rule above over no legs passes anything.
+		expect(legs).toBeGreaterThan(5);
+	});
+
+	test("the outpost's own carrier goes away abstractly and comes home", () => {
+		const outpost = required(
+			stations.find((s) => s.type === "outpost"),
+			"outpost",
+		);
+		const actor = required(
+			stationTrafficRoster(record.index, outpost)[0],
+			"outpost Traffic",
+		);
+		const departure = actor.schedule.departureAtS;
+		expect(
+			projectSystemTrafficActor({ record, actor, gameTime: departure + 20 })
+				.phase,
+		).toBe("abstract-away");
+		expect(
+			projectSystemTrafficActor({
+				record,
+				actor,
+				gameTime: departure + actor.schedule.awayS + 0.01,
+			}).phase,
+		).toBe("parked-home");
 	});
 });
