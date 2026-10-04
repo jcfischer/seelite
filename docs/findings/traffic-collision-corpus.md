@@ -160,6 +160,11 @@ This node files nothing on the graph. What a later node would take from here:
   only.
 - **The queue hold** that an approach crossed is one case and is billed.
 
+One consequence of building §6 as written goes to the principal with this:
+a touch under `V_SCRAPE` costs nothing, yet it still hands a projected carrier
+to flight with its H3 intent, so a gentle bump starts a fight with a patrol or
+interceptor (`collision.md` §11, joint 9).
+
 Until then, a carrier on its projection is not swept against the world at
 runtime. Only a flown one is: engaged by the gun, or handed to flight by a
 meeting with a flown ship. So the defects above cost Traffic nothing in play

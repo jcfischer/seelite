@@ -548,6 +548,22 @@ export const impactCause = (met: string | null): Provenance =>
 		? { causeKind: "collision", actorId: "player", playerRole: "direct" }
 		: { causeKind: "collision", actorId: met, playerRole: "none" };
 
+/**
+ * The cause one step's meetings name (node #664): the meeting that did the
+ * most damage, so a carrier resting on a station at no cost and rammed in the
+ * same step is named for the ram. `player` is the id the step names the
+ * player by (`sim.ts`'s `PLAYER_SHIP_ID`), passed in so this module needs no
+ * value from the sim's collision half.
+ */
+export function impactCauseOf(
+	impacts: readonly { with: string; damage: number }[],
+	player: string,
+): Provenance {
+	if (impacts.length === 0) throw new Error("an impact cause needs an impact");
+	const worst = impacts.reduce((a, b) => (b.damage > a.damage ? b : a));
+	return impactCause(worst.with === player ? null : worst.with);
+}
+
 /** What an impact did to a carrier, read off its condition either side. */
 export type ImpactOutcome = "nothing" | "shields" | "divert" | "kill";
 

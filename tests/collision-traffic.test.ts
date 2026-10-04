@@ -40,8 +40,20 @@ import {
 	trafficCollides,
 } from "../src/dock-session";
 import { generateGalaxy } from "../src/galaxy";
-import { HULL_SPECS, type HullId } from "../src/hull";
-import { PLAYER_KILL } from "../src/raider-wreck";
+import { HULL_SPECS, type HullId, PLAYER_BASELINE_HULL } from "../src/hull";
+import { carrierKey } from "../src/carrier-key";
+import { raiderAtDrop } from "../src/duel";
+import {
+	type Encounter,
+	forceEncounter,
+	stepEncounter,
+} from "../src/encounter";
+import { type Holdings, applyHoldEvent } from "../src/holdings";
+import { emptyLadderRecord, emptyPending } from "../src/ladder";
+import { PLAYER_KILL, raiderDestruction } from "../src/raider-wreck";
+import { RAIDER_HULL_ID } from "../src/raider-slots";
+import { emptyRequests } from "../src/requests";
+import { newCommander } from "../src/station-commerce";
 import { applyDamage, fullCondition, headOnPool } from "../src/ship-condition";
 import {
 	type FleetShip,
@@ -66,6 +78,7 @@ import {
 import { generateContents } from "../src/system";
 import {
 	impactCause,
+	impactCauseOf,
 	impactOutcome,
 	trafficImpactTransitions,
 } from "../src/traffic-engagement";
@@ -653,4 +666,93 @@ describe("collision.md §9.1.14: §6 item 1's corpus row", () => {
 		// hides nothing in a collidable phase.
 		expect(met.length).toBeGreaterThan(20);
 	}, 30_000);
+});
+
+describe("collision.md §3: a kill by impact names the impact, and pays only the player's own ram", () => {
+	test("the cause is the meeting that did the most damage, and the player's id names the player", () => {
+		expect(
+			impactCauseOf(
+				[
+					{ with: "station-trade", damage: 0 },
+					{ with: PLAYER_SHIP_ID, damage: 40 },
+				],
+				PLAYER_SHIP_ID,
+			),
+		).toEqual(impactCause(null));
+		expect(
+			impactCauseOf(
+				[
+					{ with: PLAYER_SHIP_ID, damage: 1 },
+					{ with: "planet-2", damage: 900 },
+				],
+				PLAYER_SHIP_ID,
+			),
+		).toEqual(impactCause("planet-2"));
+	});
+
+	const holdingsAt = (): Holdings => ({
+		commander: newCommander(PLAYER_BASELINE_HULL),
+		requests: emptyRequests(),
+		ladders: emptyLadderRecord(),
+		ladderPending: emptyPending(),
+	});
+	const raiderKill = (cause: ReturnType<typeof impactCause> | undefined) =>
+		applyHoldEvent(holdingsAt(), newWorld(0x5ee11e), {
+			kind: "carrier",
+			galaxyIndex: 0,
+			key: carrierKey(3, "raider-00"),
+			transition: raiderDestruction(3, 5_000, cause),
+			hull: RAIDER_HULL_ID,
+		});
+
+	test("a raider that flew into a station alone is destroyed, and pays nobody", () => {
+		const out = raiderKill(impactCause("station-trade"));
+		expect(out.holdings.ladderPending.combat).toBe(0);
+		// The world still hears the destroy, named for what it met.
+		expect(
+			effectiveCarrier(out.world.galaxies[0], carrierKey(3, "raider-00"), 5_001)
+				.condition,
+		).toBe("destroyed");
+	});
+
+	test("the player's own ram pays as the gun does: the same path a kill by fire takes", () => {
+		const rammed = raiderKill(impactCause(null));
+		const shot = raiderKill(undefined);
+		expect(rammed.holdings.ladderPending.combat).toBeGreaterThan(0);
+		expect(rammed.holdings.ladderPending.combat).toBe(
+			shot.holdings.ladderPending.combat,
+		);
+	});
+
+	test("a raider a collision left at no hull is destroyed on its next duel step, even into cruise", () => {
+		const start = forceEncounter(() => true, 3, 0, "ahead", 10, 3);
+		if (!start) throw new Error("no raider");
+		const pilotShip = { pos: v3(), vel: v3() };
+		const dead: Encounter = {
+			...start,
+			phase: "duel",
+			raider: {
+				flight: raiderAtDrop(v3(0, 0, -3), pilotShip, 7),
+				condition: { ...fullCondition("raider"), fore: 0, aft: 0, hull: 0 },
+			},
+		};
+		for (const inCruise of [false, true]) {
+			const step = stepEncounter(dead, {
+				gameTime: 20,
+				dt: 0.1,
+				inCruise,
+				pilot: {
+					ship: pilotShip,
+					nose: v3(0, 0, -1),
+					aimOrigin: v3(),
+					aimNose: v3(0, 0, -1),
+					hull: 100,
+					frame: { start: v3(), end: v3() },
+				},
+				shot: { fired: false, damage: 0 },
+			});
+			expect([inCruise, step.encounter.end]).toEqual([inCruise, "destroyed"]);
+			expect(step.wreck?.pos.z).toBeCloseTo(-3, 6);
+		}
+	});
 });

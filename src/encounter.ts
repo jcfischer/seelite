@@ -56,7 +56,7 @@ import {
 import { defenderDraw } from "./relay-defender";
 import { mix } from "./rng";
 import type { ShieldSide } from "./ship-condition";
-import { fullCondition } from "./ship-condition";
+import { fullCondition, isAlive } from "./ship-condition";
 import { flightPerformance } from "./sim";
 import {
 	type Vec3,
@@ -416,7 +416,15 @@ export function stepEncounter(e: Encounter, f: EncounterFrame): EncounterStep {
 		};
 	}
 
-	// The duel.
+	// The duel. **A raider already at no hull is destroyed** before anything
+	// else is asked of it (node #664): a collision lands between duel steps,
+	// so the step after it is where the kill is read — and a pilot whose cruise
+	// engaged on that step has not let a dead raider escape.
+	if (e.raider && !isAlive(e.raider.condition))
+		return {
+			...over(e, "destroyed"),
+			wreck: { pos: e.raider.flight.ship.pos, vel: e.raider.flight.ship.vel },
+		};
 	if (f.inCruise) return over(e, "escaped");
 	const raider: Raider = e.raider ?? {
 		flight: raiderAtDrop(

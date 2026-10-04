@@ -408,7 +408,7 @@ import {
 	type Engagement,
 	engage,
 	fliesItsRoute,
-	impactCause,
+	impactCauseOf,
 	impactOutcome,
 	flownVoyageOrdinal,
 	flyingTrafficActors,
@@ -11350,6 +11350,7 @@ class Game {
 			// A dock ends any encounter: a station is not a place a raider follows.
 			this.encounter = null;
 			this.encounterView = null;
+			this.raiderImpactCause = null;
 			this.raiderFiring = false;
 			this.dock = enterArrival(
 				id,
@@ -11929,6 +11930,7 @@ class Game {
 		// behind. Render drops its contact and hull on the next frame.
 		this.encounter = null;
 		this.encounterView = null;
+		this.raiderImpactCause = null;
 		// A charge belongs to the leg it was held on, exactly as a raider does.
 		// Without this, five seconds spent on a carrier in one system would arrive
 		// part-way banked in the next, where a stranger's scan finishes under the
@@ -12375,7 +12377,11 @@ class Game {
 				// priced here too.
 				this.applyCarrierTransition(
 					encounter.slot.key,
-					raiderDestruction(record.index, now),
+					raiderDestruction(
+						record.index,
+						now,
+						this.raiderImpactCause ?? undefined,
+					),
 					RAIDER_HULL_ID,
 				);
 				this.canisters = [
@@ -12400,6 +12406,7 @@ class Game {
 				: null;
 			if (notice) this.lastExit = notice(name);
 			this.encounter = null;
+			this.raiderImpactCause = null;
 			// A raider that fired on its last step would otherwise leave the cue
 			// red until the next encounter's first step.
 			this.raiderFiring = false;
@@ -14428,6 +14435,13 @@ class Game {
 		return flown;
 	}
 
+	/**
+	 * What finished the raider, when a collision did (node #664): read by the
+	 * kill block on the duel step after, so the world names the impact rather
+	 * than the gun. `null` for a kill by fire.
+	 */
+	private raiderImpactCause: Provenance | null = null;
+
 	/** Where each flown fleet ship stood before this step moved it. */
 	private fleetStarts = new Map<string, FleetPose>();
 
@@ -14578,6 +14592,12 @@ class Game {
 				let condition = raider.condition;
 				for (const impact of step.impacts)
 					condition = applyDamage(condition, impact.damage, impact.side);
+				// A raider a collision finishes dies on its next duel step,
+				// through the kill block a kill by fire takes (§3) — named for
+				// what it met. The player's own ram pays as the gun does; a
+				// raider that flew into a station alone pays nobody.
+				if (isAlive(raider.condition) && !isAlive(condition))
+					this.raiderImpactCause = impactCauseOf(step.impacts, PLAYER_SHIP_ID);
 				this.encounter = {
 					...this.encounter,
 					raider: {
@@ -14611,8 +14631,7 @@ class Game {
 			if (step.impacts.length === 0) return;
 			const from = this.carrierCondition(key).condition;
 			const outcome = impactOutcome(before, after, from);
-			const first = step.impacts[0].with;
-			const cause = impactCause(first === PLAYER_SHIP_ID ? null : first);
+			const cause = impactCauseOf(step.impacts, PLAYER_SHIP_ID);
 			if (outcome === "kill") {
 				this.impactKillTrafficCarrier(actor, engagement, cause);
 				return;

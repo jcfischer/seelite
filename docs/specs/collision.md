@@ -643,6 +643,20 @@ rules for every combat ship.
    already been charged for striking. And a carrier an impact has diverted is
    no longer `operational`, so the gun's later hull strike writes no divert and
    charges no `struck`. Both are the offence's to settle, which is #675's.
+9. **A bump hands a carrier to flight, and to its H3 intent** (node #664).
+   §6 has a projected carrier leave its projection on any meeting, because a
+   route cannot express a bounce — including a touch under `V_SCRAPE` that
+   costs nothing. A civilian then flees. An armed hull (patrol, interceptor)
+   takes the attacker's intent, so a pilot who nudges one at 0.01 km/s has
+   started a fight, which reads against H3's "never starts a fight". Built as
+   §6 is written; whether a costless touch should engage at all is the
+   principal's to rule.
+10. **A raider's kill by impact pays only the player's own ram** (node #664).
+    A raider that a collision finishes dies on its next duel step through the
+    kill block a kill by fire takes, named for the meeting that did the most
+    damage: the player's ram is a direct cause and pays bounty and ladder as
+    the gun does; a raider that flew into a station or planet alone names what
+    it met and pays nobody (`tests/collision-traffic.test.ts`).
 5. **The proxy is checked as a container and not as a fit** (§2.2). A proxy
    that wraps a sparse form in a box passes every headless row. Only flying
    it (§9.2.2) shows the invisible wall.
