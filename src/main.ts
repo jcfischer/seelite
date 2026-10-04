@@ -16080,8 +16080,7 @@ class Game {
 			if (this.dockPhase === "flying" && !this.dockingComputer.engaged) {
 				if (!this.dockingSnapshot(id)?.grantLive)
 					this.requestDockingClearance();
-				// Re-read: requestDockingClearance may have granted.
-				if (this.dockingSnapshot(id)?.grantLive) this.engageDockingComputer();
+				this.engageDockingComputer();
 			}
 			if (this.dockPhase === "arriving") this.skipDockTraversal();
 		}

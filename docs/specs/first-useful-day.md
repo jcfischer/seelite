@@ -71,10 +71,10 @@ A save taken docked **re-enters its station through the docking protocol**
 (node #658, building #293): `restoreDockedAt` docks the ship at the saved
 station before the clock runs. So a guided pilot who reloads before launching
 is docked, on the same step they saved at. If the station is absent after a
-generator change, the ship stays at its saved position in flight. If the
-station exists but the re-dock fails (no free berth), the ship is left
-**beside the station** — on the axis outside the standoff, co-moving — not at
-the saved position (D2).
+generator change, or the ship is not in flight, the ship stays at its saved
+position in flight. If the station exists and the protocol reaches it but the
+grant is refused (no free berth), the ship is left **beside the station** — on
+the axis outside the standoff, co-moving — not at the saved position (D2).
 
 The principal chose this on 2026-09-25 over an in-flight start with or
 without a start checkpoint, and over docking every new game.
