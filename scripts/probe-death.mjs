@@ -151,6 +151,107 @@ check(
 await page.close();
 
 // ---------------------------------------------------------------------------
+// Arm 1b: a death with a docked `lastDocked` re-docks on reload (node #658).
+// ---------------------------------------------------------------------------
+// The fixture above writes the dock record from flight, so `dockedAt` is null.
+// A real dock sets `dockedAt` in `commanderRecord()`, and `restoreDockedAt`
+// picks it up on reload. This arm seeds a `lastDocked` with `dockedAt` set by
+// modifying the record directly, then kills the ship and checks the reload
+// comes back docked.
+
+const dockPage = await browser.newPage({
+	viewport: { width: 900, height: 620 },
+});
+watch(dockPage, "docked-death");
+await dockPage.goto(gameUrl(origin, { seed: 42 }));
+await bootedGame(dockPage);
+
+const dockArmed = await dockPage.evaluate(
+	async ({ dock }) => {
+		const g = window.__seelite;
+		if (!g.saveStore) return { store: false };
+		// Find the trade station's carrier key.
+		const station = g.world.system.contents.stations.find(
+			(s) => s.type === "trade",
+		);
+		if (!station) return { store: true, station: false };
+		const key = `${g.world.system.record.index}:${station.localCarrierId}`;
+		// Write a dock checkpoint with `dockedAt` set, as a real dock flush would.
+		g.commander.credits = dock;
+		const env = g.saveEnvelope();
+		const record = { ...env.commander, dockedAt: key };
+		const blob = g.save.serialize({ world: env.world, commander: record });
+		await g.save.backend.write(g.save.defaultSlot, "lastDocked", blob);
+		// Move credits on for the leg, then flush `live`.
+		g.commander.credits = dock + 1000;
+		g.saveStore.markDirty();
+		g.saveFlush("jump");
+		await g.saveStore.settled();
+		return { store: true, station: station.id, key };
+	},
+	{ dock: DOCK_CREDITS },
+);
+
+check(
+	"arm 1b fixture: a docked lastDocked is seeded",
+	dockArmed.store && dockArmed.station,
+	JSON.stringify(dockArmed),
+);
+
+if (dockArmed.store && dockArmed.station) {
+	const dockReloaded = dockPage.waitForEvent("load", { timeout: 20000 });
+	await dockPage.evaluate(() => {
+		setTimeout(() => window.__seelite.takeDamage(1e6, "fore", "probe"), 0);
+	});
+	let dockReloadSeen = false;
+	try {
+		await dockReloaded;
+		dockReloadSeen = true;
+	} catch {
+		dockReloadSeen = false;
+	}
+	check("a docked death reloads the page", dockReloadSeen);
+
+	if (dockReloadSeen) {
+		await bootedGame(dockPage);
+		const dockAfter = await dockPage.evaluate(() => {
+			const g = window.__seelite;
+			return {
+				credits: g.commander.credits,
+				dockPhase: g.dock.phase,
+				dockedAt: g.dockedAt,
+				dead: g.dead,
+				whole:
+					g.condition.hull === g.condition.hullMax &&
+					g.condition.fore > 0 &&
+					g.condition.aft > 0,
+			};
+		});
+		check(
+			"a death with a docked lastDocked re-enters the station",
+			dockAfter.dockPhase === "docked" &&
+				dockAfter.dockedAt === dockArmed.station,
+			JSON.stringify({
+				dockPhase: dockAfter.dockPhase,
+				dockedAt: dockAfter.dockedAt,
+				want: dockArmed.station,
+			}),
+		);
+		check(
+			"and the restored commander has the dock's credits, not the leg's",
+			dockAfter.credits === DOCK_CREDITS,
+			JSON.stringify({ credits: dockAfter.credits, want: DOCK_CREDITS }),
+		);
+		check(
+			"and the restored ship is alive",
+			!dockAfter.dead && dockAfter.whole,
+			JSON.stringify(dockAfter),
+		);
+	}
+}
+await dockPage.close();
+
+// ---------------------------------------------------------------------------
 // Arm 2: ?no-save. Nothing to restore: destroyed, held, overlay open.
 // ---------------------------------------------------------------------------
 

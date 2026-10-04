@@ -67,9 +67,10 @@ A free new game, `?boot=direct` and `?system=` keep the in-flight start.
 `?guided` on a direct boot with nothing loaded opts in, for probes and
 playtests, on `?permadeath`'s rule.
 
-A save taken docked still **resumes in flight at the arrival point**
-(`main.ts`'s load arm, pending #72's dock-session extraction). So a guided
-pilot who reloads before launching is in flight, on the Dock at a station step.
+A save taken docked **re-enters its station through the docking protocol**
+(node #658, building #293): `restoreDockedAt` docks the ship at the saved
+station before the clock runs. So a guided pilot who reloads before launching
+is docked, on the same step they saved at.
 
 The principal chose this on 2026-09-25 over an in-flight start with or
 without a start checkpoint, and over docking every new game.
