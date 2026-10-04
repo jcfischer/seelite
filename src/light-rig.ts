@@ -38,19 +38,25 @@
  *
  * ## What the sky is a picture of
  *
- * Node #433 (closing #100): the bake is the sky — a star, a haze from the
- * cluster's integrated light, and per-system gas — baked once per system in
+ * Node #433 (closing #100): the bake is the sky — a haze from the cluster's
+ * integrated light, per-system gas, and the floor — baked once per system in
  * the **world frame**. The same equirectangular image serves as both the drawn
  * backdrop (`scene.background`) and the reflection environment
- * (`scene.environment` via PMREM). There is no per-frame rotation: the star
- * lobe sits at whatever direction the star is at bake time, and the haze and
- * gas are fixed in the world frame. The direct sun and hemisphere lights still
- * track the star per-frame for direct illumination.
+ * (`scene.environment` via PMREM), with no per-frame rotation. `skyRadiance`
+ * is that sky at one direction: `hazeRadiance`, strongest toward the galactic
+ * core, plus `gasRadiance`, procedural nebula colour from fBm noise on the unit
+ * sphere, plus the floor.
  *
- * `envRadiance` gained an optional `starDir` parameter so the star lobe can be
- * placed at any world-frame direction. `hazeRadiance` adds the cluster's
- * integrated glow, strongest toward the galactic core. `gasRadiance` adds
- * per-system procedural nebula colour from fBm noise on the unit sphere.
+ * **It carries no star**, by the principal's decision of 2026-10-04 on #433.
+ * A star at finite distance cannot be right in one world-frame image when a
+ * system spans AUs: a lobe baked toward the star from the arrival point sat up
+ * to 65.7° off the true star at the station. So the star's light comes from the
+ * direct sun alone, which `main.ts` aims at the star every frame, and
+ * `SkyBakeParams` has no field a star could be passed in.
+ *
+ * `envRadiance` — a star lobe at `BAKE_STAR_DIR` over the same floor — stays
+ * for the model viewer's workbench, which lights one model by a fixed star and
+ * has no system to bake a sky for.
  *
  * `low` quality nulls `scene.environment` entirely, so reflections are black
  * and the backdrop drops to the point layers alone. The IBL is the term #99
@@ -444,25 +450,23 @@ function tintOf(hex: number): [number, number, number] {
 /**
  * The radiance arriving from direction `dir`, for a star of colour `starColor`.
  *
- * When `starDir` is omitted it defaults to `BAKE_STAR_DIR`, which is the
- * pre-#433 behaviour — `dir` is then in the bake's own frame. When provided,
- * the star lobe is placed at `starDir` (a world-frame unit vector), and the
- * bake is authored in world space with no per-frame rotation.
+ * `dir` is in the bake's frame, where the star is at `BAKE_STAR_DIR`. It need
+ * not be normalised exactly — it is normalised here — but it must not be zero.
  *
- * `dir` need not be normalised exactly — it is normalised here — but it must
- * not be zero.
+ * The model viewer's light, not the sky's: the per-system bake carries no star
+ * (node #433) and is `skyRadiance` below.
  */
 export function envRadiance(
 	dir: readonly [number, number, number],
 	starColor: number,
-	starDir: readonly [number, number, number] = BAKE_STAR_DIR,
 ): [number, number, number] {
 	const l = Math.hypot(dir[0], dir[1], dir[2]) || 1;
-	const sl = Math.hypot(starDir[0], starDir[1], starDir[2]) || 1;
 	const cos = Math.max(
 		0,
-		(dir[0] * starDir[0] + dir[1] * starDir[1] + dir[2] * starDir[2]) /
-			(l * sl),
+		(dir[0] * BAKE_STAR_DIR[0] +
+			dir[1] * BAKE_STAR_DIR[1] +
+			dir[2] * BAKE_STAR_DIR[2]) /
+			l,
 	);
 	const star = CORE_GAIN * cos ** CORE_POWER + HALO_GAIN * cos ** HALO_POWER;
 	const tint = tintOf(starColor);
@@ -471,6 +475,47 @@ export function envRadiance(
 		DEEP_SKY[1] + star * tint[1],
 		DEEP_SKY[2] + star * tint[2],
 	];
+}
+
+/**
+ * What the per-system sky bake is made of (node #433): the haze and the gas,
+ * over the floor. **No star field, deliberately** — see this file's header for
+ * the principal's ruling, and `tests/light-rig.test.ts` for the check that a
+ * star direction cannot be passed in.
+ */
+export interface SkyBakeParams {
+	/** Cluster haze. `null` to omit. */
+	haze: HazeParams | null;
+	/** Per-system gas. `null` to omit. */
+	gas: GasParams | null;
+}
+
+/**
+ * The sky's radiance from direction `dir`, in the system's world frame: the
+ * floor, plus the haze, plus the gas. What `equirectEnvironment` bakes per
+ * texel for a {@link SkyBakeParams}, exported so a probe can predict what the
+ * bake should put on a surface from the model rather than from the texture.
+ */
+export function skyRadiance(
+	dir: readonly [number, number, number],
+	sky: SkyBakeParams,
+): [number, number, number] {
+	let r = DEEP_SKY[0];
+	let g = DEEP_SKY[1];
+	let b = DEEP_SKY[2];
+	if (sky.haze) {
+		const [hr, hg, hb] = hazeRadiance(dir, sky.haze);
+		r += hr;
+		g += hg;
+		b += hb;
+	}
+	if (sky.gas) {
+		const [gr, gg, gb] = gasRadiance(dir, sky.gas);
+		r += gr;
+		g += gg;
+		b += gb;
+	}
+	return [r, g, b];
 }
 
 /** What `equirectEnvironment` hands back: an RGBA float image and its shape. */
@@ -485,21 +530,6 @@ export interface EquirectEnvironment {
 	data: Float32Array<ArrayBuffer>;
 	width: number;
 	height: number;
-}
-
-/** Full sky bake parameters for the world-frame path (node #433). */
-export interface SkyBakeParams {
-	starColor: number;
-	/** Star direction in the system's world frame. Unit vector. */
-	starDir: readonly [number, number, number];
-	/** Cluster haze. `null` to omit. */
-	haze: HazeParams | null;
-	/** Per-system gas. `null` to omit. */
-	gas: GasParams | null;
-	/** When false, drops the haze and gas fill from the bake image. The star
-	 *  lobe and floor remain. Production always passes `true`; the flag exists
-	 *  so `equirectEnvironment` can be tested on the star-only path. */
-	includeHaze: boolean;
 }
 
 /**
@@ -517,22 +547,21 @@ export interface SkyBakeParams {
  * why the check that matters is a probe reading a lit hull rather than anything
  * in this file.
  *
- * Accepts either a plain `starColor` (pre-#433 path: star at `BAKE_STAR_DIR`,
- * no haze, no gas) or a full {@link SkyBakeParams} (world-frame path: star at
- * the caller's direction, with haze and gas).
+ * Takes either a plain `starColor` — a star lobe at `BAKE_STAR_DIR` over the
+ * floor, the model viewer's light — or a {@link SkyBakeParams}, the per-system
+ * sky in the world frame, which carries no star (node #433).
  */
 export function equirectEnvironment(
 	paramsOrColor: number | SkyBakeParams,
 	width = ENV_WIDTH,
 	height = ENV_HEIGHT,
 ): EquirectEnvironment {
-	const full = typeof paramsOrColor === "object";
-	const starColor = full ? paramsOrColor.starColor : paramsOrColor;
-	const starDir: readonly [number, number, number] = full
-		? paramsOrColor.starDir
-		: BAKE_STAR_DIR;
-	const haze = full && paramsOrColor.includeHaze ? paramsOrColor.haze : null;
-	const gas = full && paramsOrColor.includeHaze ? paramsOrColor.gas : null;
+	const radiance =
+		typeof paramsOrColor === "object"
+			? (dir: readonly [number, number, number]) =>
+					skyRadiance(dir, paramsOrColor)
+			: (dir: readonly [number, number, number]) =>
+					envRadiance(dir, paramsOrColor);
 
 	const data = new Float32Array(width * height * 4);
 	for (let y = 0; y < height; y++) {
@@ -545,23 +574,7 @@ export function equirectEnvironment(
 			const lon = (u - 0.5) * Math.PI * 2;
 			const dz = Math.sin(lon) * ring;
 			const dx = Math.cos(lon) * ring;
-			const dir: [number, number, number] = [dx, dy, dz];
-			const [sr, sg, sb] = envRadiance(dir, starColor, starDir);
-			let r = sr;
-			let g = sg;
-			let b = sb;
-			if (haze) {
-				const [hr, hg, hb] = hazeRadiance(dir, haze);
-				r += hr;
-				g += hg;
-				b += hb;
-			}
-			if (gas) {
-				const [gr, gg, gb] = gasRadiance(dir, gas);
-				r += gr;
-				g += gg;
-				b += gb;
-			}
+			const [r, g, b] = radiance([dx, dy, dz]);
 			const i = (y * width + x) * 4;
 			data[i] = r;
 			data[i + 1] = g;

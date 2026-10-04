@@ -56,6 +56,7 @@ import {
 	equirectEnvironment,
 	gasRadiance,
 	hazeRadiance,
+	skyRadiance,
 	LIGHT_RIG,
 	type GasParams,
 	type HazeParams,
@@ -896,55 +897,82 @@ describe("the gas model (node #433)", () => {
 	});
 });
 
-describe("the world-frame bake (node #433)", () => {
-	const starDir: [number, number, number] = [0, 0, 1];
+describe("the world-frame bake carries no star (node #433, decision 2026-10-04)", () => {
+	// The principal's ruling: a star at finite distance cannot be right in one
+	// world-frame image when a system spans AUs, so the per-system bake is haze,
+	// gas and the floor only, and star light comes from the direct sun alone.
+	const haze: HazeParams = { coreBearing: [1, 0, 0], strength: 0.8 };
+	const gas: GasParams = { color: [0.8, 0.7, 1.0], density: 0.5, seed: 42 };
 
-	test("envRadiance accepts a custom starDir", () => {
-		const atStar = luma(envRadiance(starDir, WARM, starDir));
-		const away = luma(envRadiance([0, 0, -1], WARM, starDir));
-		expect(atStar).toBeGreaterThan(away);
-	});
-
-	test("envRadiance with default starDir matches BAKE_STAR_DIR", () => {
-		const a = envRadiance([1, 0, 0], WARM);
-		const b = envRadiance([1, 0, 0], WARM, BAKE_STAR_DIR);
-		expect(a).toEqual(b);
-	});
-
-	test("full bake with SkyBakeParams is brighter than the old bake", () => {
-		const old = equirectEnvironment(WARM);
-		const params: SkyBakeParams = {
-			starColor: WARM,
-			starDir,
-			haze: { coreBearing: [1, 0, 0], strength: 0.8 },
-			gas: { color: [0.8, 0.7, 1.0], density: 0.5, seed: 42 },
-			includeHaze: true,
-		};
-		const full = equirectEnvironment(params);
-		expect(full.width).toBe(old.width);
-		expect(full.height).toBe(old.height);
-		// The haze and gas add light, so the average brightness is higher.
-		let oldSum = 0;
-		let fullSum = 0;
-		for (let i = 0; i < old.data.length; i += 4) {
-			oldSum += old.data[i] + old.data[i + 1] + old.data[i + 2];
-			fullSum += full.data[i] + full.data[i + 1] + full.data[i + 2];
+	test("the sky is the floor plus the haze plus the gas, and nothing else", () => {
+		for (const dir of [
+			[1, 0, 0],
+			[0, 1, 0],
+			[0, 0, -1],
+			[-0.3, 0.5, 0.8],
+		] as const) {
+			const sky = skyRadiance(dir, { haze, gas });
+			const floor = skyRadiance(dir, { haze: null, gas: null });
+			const h = hazeRadiance(dir, haze);
+			const g = gasRadiance(dir, gas);
+			for (let c = 0; c < 3; c++)
+				expect(sky[c]).toBeCloseTo(floor[c] + h[c] + g[c], 12);
 		}
-		expect(fullSum).toBeGreaterThan(oldSum);
 	});
 
-	test("includeHaze false drops the haze and gas fill", () => {
-		const params: SkyBakeParams = {
-			starColor: WARM,
-			starDir: BAKE_STAR_DIR,
-			haze: { coreBearing: [1, 0, 0], strength: 0.8 },
-			gas: { color: [0.8, 0.7, 1.0], density: 0.5, seed: 42 },
-			includeHaze: false,
-		};
-		const low = equirectEnvironment(params);
-		const old = equirectEnvironment(WARM);
-		// With includeHaze false and starDir at BAKE_STAR_DIR, the bake is the
-		// same as the old path — star lobe + floor, no haze, no gas.
-		expect(Array.from(low.data)).toEqual(Array.from(old.data));
+	test("the floor is the same floor the star-lit bake stands on", () => {
+		// One constant rather than a second copy of it: directly away from the
+		// star the old model's lobe is exactly zero, so what is left is its floor.
+		const away = envRadiance([-1, 0, 0], WARM);
+		expect(skyRadiance([0, 1, 0], { haze: null, gas: null })).toEqual(away);
+	});
+
+	test("with no haze and no gas the bake is uniform — no lobe anywhere", () => {
+		const { data } = equirectEnvironment({ haze: null, gas: null });
+		const [r, g, b] = [data[0], data[1], data[2]];
+		expect(r).toBeGreaterThan(0);
+		for (let i = 0; i < data.length; i += 4)
+			expect([data[i], data[i + 1], data[i + 2], data[i + 3]]).toEqual([
+				r,
+				g,
+				b,
+				1,
+			]);
+	});
+
+	test("its brightest texel is the haze and gas peak, not a star", () => {
+		// A star lobe peaks at CORE_GAIN — 26 — at its centre texel. The sky's
+		// own terms are three orders of magnitude below that.
+		const { data } = equirectEnvironment({ haze, gas });
+		let peak = 0;
+		for (let i = 0; i < data.length; i += 4)
+			peak = Math.max(peak, data[i], data[i + 1], data[i + 2]);
+		expect(peak).toBeLessThan(0.1);
+	});
+
+	test("the parameters cannot carry a star", () => {
+		const withStar = {
+			haze,
+			gas,
+			// @ts-expect-error — the world-frame bake has no star direction
+			starDir: [0, 0, 1],
+		} satisfies SkyBakeParams;
+		expect(withStar.haze).toBe(haze);
+	});
+
+	test("the bake is the sky model at the texel the mapping names", () => {
+		// +X is u = 0.5, v = 0.5: the two columns either side of the seam carry
+		// it (see the buffer test above for why both are named).
+		const { data, width, height } = equirectEnvironment({ haze, gas });
+		const i = ((height / 2) * width + width / 2) * 4;
+		const mid = skyRadiance(
+			[
+				Math.cos(Math.PI / width) * Math.cos(Math.PI / (2 * height)),
+				Math.sin(Math.PI / (2 * height)),
+				Math.sin(Math.PI / width) * Math.cos(Math.PI / (2 * height)),
+			],
+			{ haze, gas },
+		);
+		for (let c = 0; c < 3; c++) expect(data[i + c]).toBeCloseTo(mid[c], 6);
 	});
 });

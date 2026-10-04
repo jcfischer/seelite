@@ -5505,14 +5505,23 @@ class Game {
 	 *  Disposed and rebuilt on every jump alongside `environmentMap`. */
 	private environmentSource: THREE.DataTexture | null = null;
 
+	/** What the current system's sky was baked from. Public for
+	 *  `probe-light-rig.mjs`, which predicts from it — through `skyRadiance`, in
+	 *  world directions — which face of a station the bake should light more,
+	 *  rather than reading the texture back and restating its mapping. */
+	skyBake: SkyBakeParams | null = null;
+
 	/**
 	 * Bake the sky once per system in the world frame (node #433, closing #100).
 	 *
 	 * The same equirectangular image serves as both the drawn backdrop
 	 * (`backdropScene.background`) and the reflection environment
-	 * (`scene.environment` via PMREM). The star lobe is placed at the star's
-	 * world-frame direction from the ship's arrival position, so there is no
-	 * per-frame `Scene.environmentRotation`.
+	 * (`scene.environment` via PMREM), with no per-frame
+	 * `Scene.environmentRotation`. It is haze, gas and the floor, and **no star**
+	 * (the principal's decision of 2026-10-04): a lobe baked toward the star from
+	 * wherever the ship stood at bake time sat up to 65.7° off the true star at
+	 * the station. The star's light is the direct sun's, aimed every frame by
+	 * `aimLayerLights`.
 	 *
 	 * `PMREMGenerator` convolves the equirectangular image into the roughness
 	 * chain every `MeshStandardMaterial` samples. It is a handful of small
@@ -5530,16 +5539,6 @@ class Game {
 		this.environmentMap?.dispose();
 		this.environmentSource?.dispose();
 
-		// Star direction in world frame, from the ship's current position.
-		const star = this.starBody;
-		const starPos = star ? star.pos : { x: 0, y: 0, z: 0 };
-		const shipPos = this.world.ship.pos;
-		const dx = starPos.x - shipPos.x;
-		const dy = starPos.y - shipPos.y;
-		const dz = starPos.z - shipPos.z;
-		const dl = Math.hypot(dx, dy, dz) || 1;
-		const starDir: [number, number, number] = [dx / dl, dy / dl, dz / dl];
-
 		// Haze: direction toward the galactic core, in world frame.
 		const record = this.world.system.record;
 		const frame = skyFrame(record.seed);
@@ -5556,14 +5555,12 @@ class Game {
 		const gas = gasParamsFrom(starColor, gasRand);
 
 		const bakeParams: SkyBakeParams = {
-			starColor,
-			starDir,
 			haze: core
 				? { coreBearing: [core.x, core.y, core.z], strength: hazeStrength }
 				: null,
 			gas,
-			includeHaze: true,
 		};
+		this.skyBake = bakeParams;
 		const { data, width, height } = equirectEnvironment(bakeParams);
 
 		const source = new THREE.DataTexture(
@@ -14355,12 +14352,11 @@ class Game {
 		if (d === 0) return;
 		STAR_DIR.set(toStar.x / d, toStar.y / d, toStar.z / d);
 		// Node #433: the environment is baked in the world frame and no longer
-		// rotated per frame. `Scene.environmentRotation` stays at identity. The
-		// star lobe in the bake was placed at bake time and does not track the
-		// star as the ship moves — the haze and gas being fixed in the world
-		// frame is the reason (#100's closing: one shortest-arc quaternion cannot
-		// carry a star *and* a band). The direct sun and hemisphere still track
-		// the star, which is what the lines below do.
+		// rotated per frame. `Scene.environmentRotation` stays at identity: the
+		// haze and gas are fixed in the world frame (#100's closing: one
+		// shortest-arc quaternion cannot carry a star *and* a band), and the bake
+		// carries no star to track. The star's light is these two lights, which
+		// is why they are the only thing aimed here.
 		for (const rig of this.layerLights) {
 			rig.sun.position.copy(STAR_DIR);
 			rig.hemisphere.position.copy(STAR_DIR);
