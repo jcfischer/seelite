@@ -1203,6 +1203,11 @@ await settleBakes();
 		 * The planet simply stops moving.
 		 */
 		await pathAt(8, baker);
+		// The last class-cycle cube belongs to the final class in that loop,
+		// at 512px. Start both determinism arms with the restored bakerClass at
+		// 256px; otherwise this compares different classes or resolutions.
+		await page.evaluate((id) => window.__seelite.rebake(id, 256), baker);
+		await settleBakes();
 		const face = async () =>
 			page.evaluate((id) => {
 				const g = window.__seelite;
@@ -2462,6 +2467,412 @@ if (airless) {
 		);
 	}
 	await halfPage.close();
+}
+
+/* 7. Cloud shadow on the ground (node #212).
+ *
+ * With clouds forced to a single blob at a known direction, the surface pixel
+ * under it is darker than the same pixel with clouds off by a banded ratio;
+ * the shells are hidden identically in both arms, so the measured difference
+ * comes from the ground shadow, not from changing the cloud shell's opacity.
+ *
+ * Both four-tap and baked programs are measured. Every baked arm requests a
+ * new cube after changing cloudCover, waits for it, and reads the drawn path
+ * back. A procedural fallback cannot stand in for a broken bake.
+ *
+ * Hide the shells while reading the ground, so changing cloudCover cannot
+ * change these pixels by removing the translucent deck itself. The test blob
+ * is supplied by cloudTestDir; the camera and clock stay fixed between arms.
+ */
+{
+	const shadowPage = await browser.newPage({ viewport: VIEW });
+	watch(shadowPage);
+	await installHelpers(shadowPage);
+	await installViewPlacement(shadowPage);
+	await installViewFraming(shadowPage);
+	await shadowPage.goto(URL, { waitUntil: "domcontentloaded" });
+	await bootedGame(shadowPage);
+
+	const subject = await shadowPage.evaluate(async () => {
+		const g = window.__seelite;
+		// Find a terran body.
+		const terran = g.world.system.bodies.find(
+			(b) => g.bodyVisuals.get(b.id)?.surface === "terran",
+		);
+		if (!terran) return null;
+
+		const vis = g.bodyVisuals.get(terran.id);
+		const uniforms = vis.uniforms;
+		const saved = {
+			id: terran.id,
+			cover: uniforms.cloudCover.value,
+			testDir: uniforms.cloudTestDir.value.toArray(),
+			held: g.clockHeld,
+			shells: [],
+		};
+		for (const scene of [g.nearScene, g.approachScene, g.farScene])
+			scene.traverse((o) => {
+				if (o.userData?.shell)
+					saved.shells.push({ uuid: o.uuid, visible: o.visible });
+			});
+		const mod = await import("/src/perf-panel.ts");
+		mod.setShells([g.nearScene, g.approachScene, g.farScene], {
+			atmosphere: false,
+			clouds: false,
+		});
+		await window.__startClockAt(4000);
+		// Hold simulation, while leaving rAF/render running to finish the cubes.
+		g.clockHeld = true;
+
+		// Place camera on the sun side, looking at the lit surface.
+		await window.__sunOffset(terran.id, 3, 55);
+		g.render(0);
+		g.render(0);
+
+		// The fixture lives in the rotating weather frame, rather than world space.
+		const angle = (uniforms.time.value * 0.003) % (Math.PI * 2);
+		const dir = uniforms.cloudSunDir.value.clone();
+		dir.applyAxisAngle({ x: 0, y: 1, z: 0 }, angle);
+		uniforms.cloudTestDir.value.copy(dir);
+		return saved;
+	});
+
+	if (!subject) {
+		check(
+			"seed 6 has a terran body for the cloud shadow test",
+			false,
+			"no terran body or missing uniforms — the cloud shadow contract is unverified",
+		);
+	} else {
+		try {
+			// Production field, without the forced-blob hook. Draw the real surface
+			// programs into a float target and read the shell's coverage at the same
+			// pixels. An orthographic sunward camera makes its rays exactly the sun
+			// rays, so shell altitude/parallax must agree with the projected shadow.
+			await shadowPage.evaluate((id) => {
+				const g = window.__seelite;
+				const u = g.bodyVisuals.get(id).uniforms;
+				u.cloudTestDir.value.set(0, 0, 0);
+				u.cloudCover.value = 0.7;
+				g.rebake(id, 512);
+			}, subject.id);
+			await shadowPage.waitForFunction(
+				() => window.__seelite.bakeQueue.length === 0,
+				undefined,
+				{ timeout: 60_000 },
+			);
+			for (const [label, path, coverageReady] of [
+				["four-tap before bake", "four-tap", 0],
+				["four-tap with coverage cube", "four-tap", 1],
+				["baked", "baked", 1],
+			]) {
+				await shadowPage.evaluate(
+					(path) => window.__seelite.setSurfacePin(path),
+					path,
+				);
+				const rows = await shadowPage.evaluate(
+					async ({ id, coverageReady }) => {
+						const THREE = await import(
+							"/node_modules/three/build/three.module.js"
+						);
+						const g = window.__seelite;
+						const vis = g.bodyVisuals.get(id);
+						const shell = vis.group.children.find(
+							(o) => o.userData.shell === "cloud",
+						);
+						const scene = new THREE.Scene();
+						const group = new THREE.Group();
+						group.rotation.copy(vis.group.rotation);
+						scene.add(group);
+						const u = {
+							...vis.surfaceMesh.material.uniforms,
+							cloudTestDir: { value: new THREE.Vector3() },
+							cloudCover: { value: 0.7 },
+							cloudCoherent: { value: 1 },
+							cloudCoverageReady: { value: coverageReady },
+							time: { value: 0 },
+							sunDir: { value: new THREE.Vector3() },
+							cloudSunDir: { value: new THREE.Vector3() },
+						};
+						const groundMaterial = vis.surfaceMesh.material.clone();
+						groundMaterial.uniforms = u;
+						const ground = new THREE.Mesh(
+							vis.surfaceMesh.geometry,
+							groundMaterial,
+						);
+						const cloudMaterial = shell.material.clone();
+						cloudMaterial.uniforms = u;
+						// Keep the production field and motion. Only replace the final
+						// lighting/opacity output, so coverage can be read linearly.
+						const outputIndex =
+							cloudMaterial.fragmentShader.lastIndexOf("  gl_FragColor =");
+						if (outputIndex < 0)
+							throw new Error("cloud readout splice missed gl_FragColor");
+						cloudMaterial.fragmentShader =
+							cloudMaterial.fragmentShader.slice(0, outputIndex) +
+							"  gl_FragColor = vec4(vec3(mask), 1.0);\n}\n";
+						cloudMaterial.transparent = false;
+						const cloud = new THREE.Mesh(shell.geometry, cloudMaterial);
+						group.add(ground, cloud);
+						const camera = new THREE.OrthographicCamera(
+							-1.1,
+							1.1,
+							1.1,
+							-1.1,
+							0.1,
+							10,
+						);
+						const px = 128;
+						const target = new THREE.WebGLRenderTarget(px, px, {
+							type: THREE.FloatType,
+						});
+						const renderer = g.renderer;
+						const oldTarget = renderer.getRenderTarget();
+						const oldClear = renderer.getClearColor(new THREE.Color());
+						const oldAlpha = renderer.getClearAlpha();
+						const oldAutoClear = renderer.autoClear;
+						const read = () => {
+							renderer.setRenderTarget(target);
+							renderer.render(scene, camera);
+							const pixels = new Float32Array(px * px * 4);
+							renderer.readRenderTargetPixels(target, 0, 0, px, px, pixels);
+							return pixels;
+						};
+						const rows = [];
+						let previousCoverage;
+						try {
+							renderer.autoClear = true;
+							renderer.setClearColor(0, 1);
+							for (const [seconds, light] of [
+								[0, [0.6, 0.3, 0.8]],
+								[4000, [0.6, 0.3, 0.8]],
+								[8000, [-0.5, 0.4, 0.8]],
+							]) {
+								u.time.value = seconds;
+								u.sunDir.value.fromArray(light).normalize();
+								u.cloudSunDir.value
+									.copy(u.sunDir.value)
+									.applyQuaternion(
+										group.getWorldQuaternion(new THREE.Quaternion()).invert(),
+									);
+								camera.position.copy(u.sunDir.value).multiplyScalar(3);
+								camera.lookAt(0, 0, 0);
+								ground.visible = true;
+								cloud.visible = false;
+								const on = read();
+								u.cloudCover.value = 0;
+								const off = read();
+								u.cloudCover.value = 0.7;
+								ground.visible = false;
+								cloud.visible = true;
+								const coverage = read();
+								let frozen;
+								if (seconds === 4000) {
+									// Inject the round-3 defect: shadow fixed at t=0 while
+									// the real shell keeps moving. The oracle must reject it.
+									const source = groundMaterial.fragmentShader;
+									const broken = source.replace(
+										"normalize(p + cloudSunDir * distance), time",
+										"normalize(p + cloudSunDir * distance), 0.0",
+									);
+									if (broken === source)
+										throw new Error(
+											"cloud drift defect injection missed its target",
+										);
+									groundMaterial.fragmentShader = broken;
+									groundMaterial.needsUpdate = true;
+									ground.visible = true;
+									cloud.visible = false;
+									frozen = read();
+									groundMaterial.fragmentShader = source;
+									groundMaterial.needsUpdate = true;
+								}
+								let weatherChange = 0;
+								if (previousCoverage)
+									for (let i = 0; i < coverage.length; i += 4)
+										weatherChange += Math.abs(
+											coverage[i] - previousCoverage[i],
+										);
+								previousCoverage = coverage;
+								let n = 0,
+									sx = 0,
+									sy = 0,
+									sxx = 0,
+									syy = 0,
+									sxy = 0,
+									maxShadow = 0,
+									maxCloud = 0;
+								let sf = 0,
+									sff = 0,
+									sxf = 0;
+								for (let y = 0; y < px; y++)
+									for (let x = 0; x < px; x++) {
+										if (
+											Math.hypot(
+												((x + 0.5 - px / 2) * 2.2) / px,
+												((y + 0.5 - px / 2) * 2.2) / px,
+											) > 0.65
+										)
+											continue;
+										const i = (y * px + x) * 4;
+										const luma = (a) =>
+											0.2126 * a[i] + 0.7152 * a[i + 1] + 0.0722 * a[i + 2];
+										if (luma(off) < 0.005) continue;
+										const a = coverage[i];
+										const b = 1 - luma(on) / luma(off);
+										n++;
+										sx += a;
+										sy += b;
+										sxx += a * a;
+										syy += b * b;
+										sxy += a * b;
+										maxShadow = Math.max(maxShadow, b);
+										maxCloud = Math.max(maxCloud, a);
+										if (frozen) {
+											const f = 1 - luma(frozen) / luma(off);
+											sf += f;
+											sff += f * f;
+											sxf += a * f;
+										}
+									}
+								const correlation =
+									(n * sxy - sx * sy) /
+									Math.sqrt((n * sxx - sx * sx) * (n * syy - sy * sy));
+								rows.push({
+									seconds,
+									light,
+									n,
+									correlation,
+									maxShadow,
+									maxCloud,
+									weatherChange: weatherChange / (px * px),
+									frozenCorrelation: frozen
+										? (n * sxf - sx * sf) /
+											Math.sqrt((n * sxx - sx * sx) * (n * sff - sf * sf))
+										: null,
+									path: vis.surfacePath(),
+								});
+							}
+						} finally {
+							renderer.setRenderTarget(oldTarget);
+							renderer.setClearColor(oldClear, oldAlpha);
+							renderer.autoClear = oldAutoClear;
+							target.dispose();
+							groundMaterial.dispose();
+							cloudMaterial.dispose();
+						}
+						return rows;
+					},
+					{ id: subject.id, coverageReady },
+				);
+				for (const row of rows)
+					check(
+						`${label}: production cloud coverage overlaps its ground shadow at t=${row.seconds}`,
+						row.path === path &&
+							row.n > 1000 &&
+							row.correlation > 0.9 &&
+							row.maxShadow > 0.03 &&
+							row.maxCloud > 0.1,
+						JSON.stringify(row),
+					);
+				check(
+					`${label}: production weather moves between t=0 and t=4000`,
+					rows[1].weatherChange > 0.01,
+					JSON.stringify(rows[1]),
+				);
+				check(
+					`${label}: overlap oracle rejects a shadow frozen at t=0`,
+					Number.isFinite(rows[1].frozenCorrelation) &&
+						rows[1].frozenCorrelation < 0.7,
+					JSON.stringify(rows[1]),
+				);
+			}
+			// Restore the deterministic blob before its banded on/off arms.
+			await shadowPage.evaluate(({ id }) => {
+				const u = window.__seelite.bodyVisuals.get(id).uniforms;
+				const angle = (u.time.value * 0.003) % (Math.PI * 2);
+				u.cloudTestDir.value
+					.copy(u.cloudSunDir.value)
+					.applyAxisAngle({ x: 0, y: 1, z: 0 }, angle);
+			}, subject);
+			for (const path of ["four-tap", "baked"]) {
+				const capture = async (cover) => {
+					await shadowPage.evaluate(
+						({ id, cover, path }) => {
+							const g = window.__seelite;
+							g.bodyVisuals.get(id).uniforms.cloudCover.value = cover;
+							g.setSurfacePin(path);
+							// Both programs reuse ready coverage; the fixture changed.
+							g.rebake(id, 512);
+						},
+						{ id: subject.id, cover, path },
+					);
+					await shadowPage.waitForFunction(
+						() => window.__seelite.bakeQueue.length === 0,
+						undefined,
+						{ timeout: 60_000 },
+					);
+					return shadowPage.evaluate((id) => {
+						const g = window.__seelite;
+						g.render(0);
+						g.render(0);
+						return {
+							...window.__innerDiscStats(id, 0.25),
+							path: g.bodyVisuals.get(id).surfacePath(),
+						};
+					}, subject.id);
+				};
+				const withShadow = await capture(0.7);
+				const noShadow = await capture(0);
+				check(
+					`cloud shadow controls actually draw the ${path} program`,
+					withShadow.path === path && noShadow.path === path,
+					`on: ${withShadow.path}, off: ${noShadow.path}`,
+				);
+				const ratio = withShadow.mean / noShadow.mean;
+				check(
+					`${path}: a terran surface under a forced cloud blob is darker than with clouds off`,
+					withShadow.pixels > 0 &&
+						withShadow.pixels === noShadow.pixels &&
+						noShadow.mean > 1 &&
+						ratio < 0.96 &&
+						ratio > 0.5,
+					`with shadow ${withShadow.mean.toFixed(1)}, without ${noShadow.mean.toFixed(1)}, ratio ${ratio.toFixed(3)} (expected 0.50–0.96), ${withShadow.pixels}/${noShadow.pixels} px`,
+				);
+			}
+		} finally {
+			await shadowPage.evaluate(
+				async ({ id, cover, testDir, held, shells }) => {
+					const g = window.__seelite;
+					const uniforms = g.bodyVisuals.get(id).uniforms;
+					uniforms.cloudTestDir.value.fromArray(testDir);
+					uniforms.cloudCover.value = cover;
+					g.setSurfacePin(null);
+					g.rebake(id, 512);
+					g.clockHeld = held;
+					for (const scene of [g.nearScene, g.approachScene, g.farScene])
+						scene.traverse((o) => {
+							const prior = shells.find((s) => s.uuid === o.uuid);
+							if (prior) o.visible = prior.visible;
+						});
+				},
+				subject,
+			);
+		}
+		const cloudShellPresent = await shadowPage.evaluate((id) => {
+			let present = false;
+			window.__seelite.bodyVisuals.get(id).group.traverse((o) => {
+				if (o.userData?.shell === "cloud") present = true;
+			});
+			return present;
+		}, subject.id);
+		check(
+			"the cloud shell mesh is still present after the shadow test",
+			cloudShellPresent,
+			`cloudShellPresent: ${cloudShellPresent}`,
+		);
+	}
+	await shadowPage.close();
 }
 
 await browser.close();

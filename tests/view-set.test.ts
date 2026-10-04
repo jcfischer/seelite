@@ -329,6 +329,13 @@ describe("the view set itself", () => {
 		};
 		const fill = planetView("planet-fill");
 		const terminator = planetView("planet-terminator");
+		// Node #212 owes a limb judgement at three radii on an existing row.
+		expect(terminator.covers).toContain(212);
+		expect(terminator.shot.radii).toBe(3);
+		const terran = makeWorld(SEED).system.bodies.find(
+			(b) => b.id === terminator.shot.body,
+		);
+		expect(terran?.appearance?.surface).toBe("terran");
 		for (const view of [fill, terminator]) {
 			expect(view.covers).toContain(206);
 			expect(view.shot.kind).toBe("body-offset");

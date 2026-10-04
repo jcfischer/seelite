@@ -140,6 +140,10 @@ vec3 reliefNormal(vec3 p, vec3 N, float strength) {
 export const TERRAN = /* glsl */ `
 uniform float seaLevel;
 uniform float seedOffset;
+uniform float cloudCover;
+// When non-zero, replaces the cloud field with a single deterministic blob
+// centred at this direction. Zero in production; the probe sets it.
+uniform vec3  cloudTestDir;
 
 // Domain-warped continents. The warp is what turns blobs into landmasses with
 // peninsulas and inland seas; without it every ocean world looks like the same

@@ -53,8 +53,8 @@
  *   `CONTEXT.md` asks to be avoided — that entry's own scope note names
  *   `aperture.kind === "slot"` as the case where the alias rule fires on an
  *   English word.
- * - **No gas giant.** The largest planet is a 5,473 km rocky world, so the two
- *   `largest-planet` views below no longer caption their subject as one.
+ * - **No gas giant.** The largest planet is a 5,473 km desert world. The terran
+ *   weather row uses the other rocky planet, `planet-4`, by id.
  *
  * `GAME_TIME_S` is pinned because **bodies move**: positions are
  * `f(systemSeed, gameTime)` (`src/sim.ts:23`), so an unpinned clock draws a
@@ -142,6 +142,7 @@ export const LEVERS = Object.freeze({
 	204: "the cabin read as the front of a ship: a canopy pane with thickness, the face mid-tone on the console tops, lamp pools",
 	208: "the baked cube a planet is drawn from below two radii",
 	211: "the half-resolution planet surface beneath a full-resolution limb",
+	212: "terran clouds that cast a shadow on the ground, a cirrus scale, and a thicker limb",
 	257: "the refinery and outpost forms solved by wave function collapse, and selected",
 	210: "the planet's shadow across its ring, and the ring's back across the planet",
 	209: "the gas giant's band tones, its storm's interior, and its limb",
@@ -649,12 +650,12 @@ export const VIEWS = Object.freeze([
 	},
 	{
 		name: "planet-terminator",
-		covers: [208, 211, 99, 206, 200, 207],
-		what: "The largest planet at a crescent. The far layer takes no fill on purpose, and this is why.",
+		covers: [208, 211, 212, 99, 206, 200, 207],
+		what: "A terran planet at a crescent, three radii from its centre: cloud weather and atmospheric limb for the principal's visual judgement. The far layer takes no fill on purpose.",
 		shot: {
 			kind: "body-offset",
-			body: "largest-planet",
-			radii: 4,
+			body: "planet-4",
+			radii: 3,
 			sunAngleDeg: 70,
 			view: "cockpit",
 		},
@@ -681,9 +682,9 @@ export const VIEWS = Object.freeze([
 	 * which is `green-is-not-legible` one more time — the view captured, the
 	 * suite stayed green, and the picture was useless.
 	 *
-	 * The pair with `planet-terminator` is what makes a surface judgeable at
-	 * both ends: four radii out at a crescent for the silhouette and the
-	 * atmosphere edge, two radii for the surface itself.
+	 * The pair with `planet-terminator` covers two apparent sizes: three radii
+	 * out at a terran crescent for weather and the atmosphere edge (node #212),
+	 * two radii on this desert world for the surface itself.
 	 *
 	 * It is also the one frame in the set that #206's sweep prices directly —
 	 * 2 is a column in `RADII` for that reason, and 1.2 stays a column too
@@ -700,7 +701,7 @@ export const VIEWS = Object.freeze([
 	 */
 	{
 		name: "planet-fill",
-		covers: [208, 211, 206, 207],
+		covers: [208, 211, 212, 206, 207],
 		what: "A rocky planet spanning the frame at two radii, limb on the top and bottom edges. Surface detail at the largest apparent size it still resolves at, and the frame the planet-cost table prices.",
 		shot: {
 			kind: "body-offset",
