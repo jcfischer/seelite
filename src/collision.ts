@@ -1259,11 +1259,22 @@ export interface ShipPairResult {
  *   B's end pose; that correction is shared in the impulse's proportions, so
  *   the two still end the step apart by the same gap and a carrier is not
  *   shoved aside by a courier's step.
+ * - **A resting pair is held apart even when nothing is billed.** Two ships
+ *   touching at rest that thrust together close at zero at the start of the
+ *   step, so §3.1 bills nothing — but `sweepShip` still holds A at the
+ *   surface and takes the inward part off its velocity. Both corrections are
+ *   split by mass, momentum kept, so the pair ends touching and not closing
+ *   rather than overlapped, which the next step would read as a ghost.
+ * - **`options.bProjected`**: B is a carrier on its projection (§6), a pose
+ *   only a billed meeting can move, because a meeting hands it to flight. A
+ *   hold with nothing billed is then put wholly on A, the one ship there is
+ *   to move; a billed meeting splits as above.
  */
 export function sweepShipPair(
 	a: ShipMotion,
 	b: ShipMotion,
 	dt: number,
+	options: { bProjected?: boolean } = {},
 ): ShipPairResult {
 	const swept = sweepShip(a, [b], dt);
 	const result: ShipPairResult = {
@@ -1272,11 +1283,22 @@ export function sweepShipPair(
 		impacts: [],
 		ghost: swept.ghosts.length > 0,
 	};
-	if (swept.impacts.length === 0) return result;
-	const total = a.massT + b.massT;
+	if (result.ghost) return result;
+	const billed = swept.impacts.length > 0;
+	/** A's share of what `sweepShip` did to A against an immovable B. */
+	const shareA =
+		options.bProjected && !billed ? 1 : b.massT / (a.massT + b.massT);
 	const correction = sub(swept.pos, a.end.origin);
-	result.a.pos = add(a.end.origin, scale(correction, b.massT / total));
-	result.b.pos = sub(b.end.origin, scale(correction, a.massT / total));
+	result.a.pos = add(a.end.origin, scale(correction, shareA));
+	result.b.pos = sub(b.end.origin, scale(correction, 1 - shareA));
+	if (!billed) {
+		// Resting, nothing billed: the hold's velocity change, split the way
+		// the separation is, so momentum is kept.
+		const dv = sub(swept.vel, a.velEnd);
+		result.a.vel = add(a.velEnd, scale(dv, shareA));
+		result.b.vel = sub(b.velEnd, scale(dv, 1 - shareA));
+		return result;
+	}
 	for (const impact of swept.impacts) {
 		const n = impact.normal;
 		const unBefore = dot(sub(result.a.vel, result.b.vel), n);

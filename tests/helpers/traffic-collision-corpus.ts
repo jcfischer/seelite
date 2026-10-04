@@ -80,7 +80,7 @@ export interface CorpusOptions {
 	toS: number;
 	/**
 	 * The red build (§9.1.8's split): treat the exempt phases as collidable
-	 * too. A pad's deck and berths are solid, so this must meet something.
+	 * too. A pad role's deck and berths are solid, so this must meet something. // glossary-ignore: pad
 	 */
 	includeExempt?: boolean;
 	/** Restrict to these actor keys; all actors when absent. */
@@ -111,7 +111,7 @@ export interface CorpusResult {
 	meetings: Meeting[];
 	/** Meetings in a cruise phase: counted under C5, not judged. */
 	cruiseMeetings: Meeting[];
-	/** §4.3's sanctioned case: the hull still in the throat at launch end. */
+	/** §4.3's sanctioned case: the hull still in the aperture at launch end. */
 	launchGhosts: Meeting[];
 	/** Carrier-against-carrier pairs tested (both collidable on one step). */
 	pairSteps: number;
@@ -167,7 +167,7 @@ function motionOf(
 
 /**
  * Run the corpus over one system. `contentsFor` is shared across systems so
- * the inbound candidates are generated once per neighbour.
+ * the inbound candidates are generated once per system in range.
  */
 export function trafficCollisionCorpus(
 	galaxy: Galaxy,
@@ -481,9 +481,9 @@ export function firstDepartureS(
  * The classes the first runs found (`docs/findings/traffic-collision-corpus.md`),
  * so a run reports which of them it met and anything new stands apart.
  *
- * - **`launch-throat`** — a station met in the first `LAUNCH_THROAT_S` of a
+ * - **`launch-aperture`** — a station met in the first `LAUNCH_APERTURE_S` of a
  *   local departure: the hull released with its rear still in a spinning
- *   slot, which turns into it once the carrier stops turning with it.
+ *   bay, which turns into it once the carrier stops turning with it.
  * - **`release-point`** — two carriers both in local departure: every launch
  *   from one station ends at one point on its axis, and a hauler holds there
  *   for its jump charge while the next launch arrives.
@@ -492,13 +492,13 @@ export function firstDepartureS(
  * - **`other`** — anything else, which no class explains.
  */
 export type MeetingClass =
-	| "launch-throat"
+	| "launch-aperture"
 	| "release-point"
 	| "approach-through"
 	| "other";
 
-/** How long after a launch a station met is still the throat. */
-export const LAUNCH_THROAT_S = 10;
+/** How long after a launch a station met is still the aperture's. */
+export const LAUNCH_APERTURE_S = 10;
 
 export function meetingClass(m: Meeting): MeetingClass {
 	const carrier = m.met.startsWith("carrier:");
@@ -511,20 +511,21 @@ export function meetingClass(m: Meeting): MeetingClass {
 	if (
 		m.phase === "local-departure" &&
 		!carrier &&
-		m.phaseAgeS < LAUNCH_THROAT_S
+		m.phaseAgeS < LAUNCH_APERTURE_S
 	)
-		return "launch-throat";
+		return "launch-aperture";
 	if (m.phase === "local-approach" && !carrier && m.met.includes("station-"))
 		return "approach-through";
 	return "other";
 }
 
 /**
- * One meeting per encounter: a carrier stays met, step after step, until its
- * phase ends, so the first step of each (carrier, what it met, phase entry)
- * stands for the encounter and the steps after it are not new events.
+ * One meeting per distinct meeting: a carrier stays met, step after step,
+ * until its phase ends, so the first step of each (carrier, what it met,
+ * phase entry) stands for the meeting and the steps after it are not new
+ * events.
  */
-export function encounters(meetings: readonly Meeting[]): Meeting[] {
+export function distinctMeetings(meetings: readonly Meeting[]): Meeting[] {
 	const seen = new Set<string>();
 	const out: Meeting[] = [];
 	for (const m of meetings) {

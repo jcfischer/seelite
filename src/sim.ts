@@ -1820,6 +1820,32 @@ export interface FleetStep {
 	ghosts: string[];
 }
 
+/**
+ * Whether a carrier on its projection — at `contact.pos`, moving at
+ * `contact.vel` — can be met this step by any of `movers`, each a ship moving
+ * in a straight line from `start` to `end` (node #664). `reachKm` is room for
+ * both hull boxes.
+ *
+ * The cut `Game.fleetOf` takes before posing a system's Traffic: the pair's
+ * separation changes by at most their relative travel over the step, so a
+ * pair further apart than that plus `reachKm` cannot touch. It is exact for
+ * the straight lines it is given. A flown ship's world meeting can still move
+ * it off its line within the step; that is not bounded here.
+ */
+export function projectedMayMeet(
+	contact: { pos: Vec3; vel: Vec3 },
+	movers: readonly { start: Vec3; end: Vec3 }[],
+	dt: number,
+	reachKm: number,
+): boolean {
+	const travel = scale(contact.vel, dt);
+	return movers.some(
+		(m) =>
+			length(sub(contact.pos, m.start)) <=
+			length(sub(sub(m.end, m.start), travel)) + reachKm,
+	);
+}
+
 /** The id a fleet ship's meeting names the player by. */
 export const PLAYER_SHIP_ID = "player";
 
@@ -1969,27 +1995,43 @@ export function stepWorld(
 			shipImpacts: [],
 			fleet: untouched(),
 		};
-	const met = collideShip(world, solid, from, fromVel, attitude, step, starts, {
+	const fleetWorld = fleetAgainstWorld(world, fleet, starts, { fromTime, dt });
+	const playerMotion = (): ShipMotion => ({
+		massT: perf.massT,
+		primitives: solid,
+		start: shipPose(from, attitude.nose, attitude.up),
+		end: shipPose(world.ship.pos, step.nose, step.up),
+		velStart: fromVel,
+		velEnd: world.ship.vel,
+	});
+	let met = collideShip(world, solid, from, fromVel, attitude, step, starts, {
 		fromTime,
 		dt,
 		planeS: found ? found.timeS : null,
 	});
-	const ships = collideFleet(
+	// The plane beat every world solid, and left the ship unresolved. A ship
+	// met at or before it owns the tick instead (§4.2, the tie to the impact):
+	// the plane is not crossed this step, and the world is swept again
+	// without it, as for a world impact that came first.
+	if (
+		met.planeOwns &&
+		found &&
+		fleetMeetsBy(playerMotion(), fleet, fleetWorld.motions, dt, found.timeS)
+	)
+		met = collideShip(world, solid, from, fromVel, attitude, step, starts, {
+			fromTime,
+			dt,
+			planeS: null,
+		});
+	// The plane owns the tick: the ship is left unresolved for the six checks
+	// to place, and no ship was met before it, so it meets none this step.
+	const ships = collidePairs(
 		world,
-		{
-			massT: perf.massT,
-			primitives: solid,
-			start: shipPose(from, attitude.nose, attitude.up),
-			end: shipPose(world.ship.pos, step.nose, step.up),
-			velStart: fromVel,
-			velEnd: world.ship.vel,
-		},
-		// The plane owns the tick: the ship is left unresolved for the six
-		// checks to place, so it meets no ship on this step either (§4.2).
+		playerMotion(),
 		met.planeOwns,
 		fleet,
-		starts,
-		{ fromTime, dt },
+		fleetWorld,
+		dt,
 	);
 	return {
 		...step,
@@ -2002,31 +2044,19 @@ export function stepWorld(
 }
 
 /**
- * The step's ships against the world and each other (`collision.md` §3, C4b,
- * §6; node #664), after the player has met the world.
- *
- * 1. **Every flown fleet ship against the world** — the same `worldSolids`
- *    the player meets, from the same starts, so a raider meets a planet and a
- *    station's proxy exactly as the player does. A projected carrier is not:
- *    its pose is a route's, and cannot be bounced.
- * 2. **The player against every fleet ship**, then **every pair of fleet
- *    ships** with at least one flown — through `sweepShipPair`, so momentum
- *    is conserved, the impulse is split by `massT`, and both take the same
- *    damage on their own sides. Two projected carriers are never paired: a
- *    route against a route is the corpus row's (§6 item 1).
- *
- * Pairs are resolved in that order, each from the state the one before left,
- * which is exact for one meeting a step and an ordering for more.
+ * Every flown fleet ship against the world (`collision.md` §3, §6; node
+ * #664) — the same `worldSolids` the player meets, from the same starts, so a
+ * raider meets a planet and a station's proxy exactly as the player does. A
+ * projected carrier is not: its pose is a route's, and cannot be bounced.
+ * Each ship's motion comes back ending where its own meeting left it, for
+ * the pairs to sweep.
  */
-function collideFleet(
+function fleetAgainstWorld(
 	world: World,
-	player: ShipMotion,
-	playerHeld: boolean,
 	fleet: readonly FleetShip[],
 	starts: WorldStarts,
 	clock: { fromTime: number; dt: number },
-): { player: ShipImpact[]; fleet: FleetStep[] } {
-	const shipImpacts: ShipImpact[] = [];
+): { steps: FleetStep[]; motions: ShipMotion[] } {
 	const steps: FleetStep[] = [];
 	const motions: ShipMotion[] = [];
 	for (const ship of fleet) {
@@ -2071,17 +2101,79 @@ function collideFleet(
 			velEnd: out.vel,
 		});
 	}
-	/** One pair, A then B, each landing what it met and where it ends. */
+	return { steps, motions };
+}
+
+/**
+ * Whether the player's unresolved step meets a fleet ship at or before
+ * `planeS` seconds into it (§4.2): a billed meeting by then, or a resting
+ * hold with nothing billed, which stops this step's motion at its start as
+ * `sweepShip`'s resting contact does. Read-only — nothing is landed.
+ */
+function fleetMeetsBy(
+	player: ShipMotion,
+	fleet: readonly FleetShip[],
+	motions: readonly ShipMotion[],
+	dt: number,
+	planeS: number,
+): boolean {
+	return fleet.some((ship, index) => {
+		const pair = sweepShipPair(player, motions[index], dt, {
+			bProjected: ship.projected,
+		});
+		if (pair.impacts.length > 0)
+			return pair.impacts.some((impact) => impact.timeS <= planeS);
+		return length(sub(pair.a.pos, player.end.origin)) > 0;
+	});
+}
+
+/**
+ * The step's ships against each other (`collision.md` §3, C4b, §6; node
+ * #664), after each has met the world (`fleetAgainstWorld`).
+ *
+ * **The player against every fleet ship**, then **every pair of fleet ships**
+ * with at least one flown — through `sweepShipPair`, so momentum is
+ * conserved, the impulse is split by `massT`, and both take the same damage
+ * on their own sides. A resting hold with nothing billed still lands where
+ * it left both ships, so a touching pair is never left overlapped. A
+ * projected carrier is always the pair's B (`bProjected`), so a hold it
+ * cannot take goes to the ship that can. Two projected carriers are never
+ * paired: a route against a route is the corpus row's (§6 item 1).
+ *
+ * Pairs are resolved in that order, each from the state the one before left,
+ * which is exact for one meeting a step and an ordering for more.
+ */
+function collidePairs(
+	world: World,
+	player: ShipMotion,
+	playerHeld: boolean,
+	fleet: readonly FleetShip[],
+	againstWorld: { steps: FleetStep[]; motions: ShipMotion[] },
+	dt: number,
+): { player: ShipImpact[]; fleet: FleetStep[] } {
+	const shipImpacts: ShipImpact[] = [];
+	const { steps } = againstWorld;
+	const motions = [...againstWorld.motions];
+	/** Where a pair left one ship, and what it met, if anything. */
+	type Land = (pos: Vec3, vel: Vec3, impact: ShipImpact | null) => void;
+	/** One pair, A then B, each landing where it ends and what it met. */
 	const meet = (
 		a: ShipMotion,
 		b: ShipMotion,
-		landA: (pos: Vec3, vel: Vec3, impact: ShipImpact) => void,
-		landB: (pos: Vec3, vel: Vec3, impact: ShipImpact) => void,
+		landA: Land,
+		landB: Land,
 		idA: string,
 		idB: string,
+		bProjected: boolean,
 	): { a: ShipMotion; b: ShipMotion } => {
-		const pair = sweepShipPair(a, b, clock.dt);
-		if (pair.impacts.length === 0) return { a, b };
+		const pair = sweepShipPair(a, b, dt, { bProjected });
+		const moved =
+			pair.impacts.length > 0 ||
+			length(sub(pair.a.pos, a.end.origin)) > 0 ||
+			length(sub(pair.b.pos, b.end.origin)) > 0;
+		if (!moved) return { a, b };
+		landA(pair.a.pos, pair.a.vel, null);
+		landB(pair.b.pos, pair.b.vel, null);
 		for (const impact of pair.impacts) {
 			const common = {
 				ship: true,
@@ -2106,10 +2198,11 @@ function collideFleet(
 		};
 	};
 	const landFleet =
-		(index: number) => (pos: Vec3, vel: Vec3, impact: ShipImpact) => {
+		(index: number): Land =>
+		(pos, vel, impact) => {
 			steps[index].pos = pos;
 			steps[index].vel = vel;
-			steps[index].impacts.push(impact);
+			if (impact) steps[index].impacts.push(impact);
 		};
 	let you = player;
 	if (!playerHeld)
@@ -2120,11 +2213,12 @@ function collideFleet(
 				(pos, vel, impact) => {
 					world.ship.pos = pos;
 					world.ship.vel = vel;
-					shipImpacts.push(impact);
+					if (impact) shipImpacts.push(impact);
 				},
 				landFleet(index),
 				PLAYER_SHIP_ID,
 				ship.id,
+				ship.projected,
 			);
 			you = met.a;
 			motions[index] = met.b;
@@ -2132,16 +2226,19 @@ function collideFleet(
 	for (let i = 0; i < fleet.length; i++)
 		for (let j = i + 1; j < fleet.length; j++) {
 			if (fleet[i].projected && fleet[j].projected) continue;
+			// A projected carrier is B, so a hold it cannot take is A's.
+			const [x, y] = fleet[i].projected ? [j, i] : [i, j];
 			const met = meet(
-				motions[i],
-				motions[j],
-				landFleet(i),
-				landFleet(j),
-				fleet[i].id,
-				fleet[j].id,
+				motions[x],
+				motions[y],
+				landFleet(x),
+				landFleet(y),
+				fleet[x].id,
+				fleet[y].id,
+				fleet[y].projected,
 			);
-			motions[i] = met.a;
-			motions[j] = met.b;
+			motions[x] = met.a;
+			motions[y] = met.b;
 		}
 	return { player: shipImpacts, fleet: steps };
 }

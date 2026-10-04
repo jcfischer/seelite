@@ -436,7 +436,7 @@ line.
    **The row is red** (node #664, `docs/findings/traffic-collision-corpus.md`).
    Over 40 systems of seed 47 it finds a local approach whose straight line
    runs through a trade station at up to 8.96 km/s, and touches under
-   `V_SCRAPE` at a launch's throat and at the shared release point. The
+   `V_SCRAPE` at a launch's aperture and at the shared release point. The
    avoidance is owed by a node below #664, not built past it. Until then a
    projected route is not swept against the world at runtime — it is met only
    by the ships that are flown — so the defect costs Traffic nothing it can

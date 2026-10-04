@@ -31,7 +31,9 @@ import {
 	impactDamage,
 	pairSeparation,
 	shipImpulse,
+	SEPARATION_KM,
 	shipPose,
+	sweepShip,
 	sweepShipPair,
 } from "../src/collision";
 import {
@@ -63,6 +65,7 @@ import {
 	flightPerformance,
 	makeSystem,
 	makeWorld,
+	projectedMayMeet,
 	speedDemand,
 	stationApertureFrame,
 	stepWorld,
@@ -82,6 +85,8 @@ import {
 	impactOutcome,
 	trafficImpactTransitions,
 } from "../src/traffic-engagement";
+import { type EntryPose, slotBasis } from "../src/docking";
+import { STATION_GEOMETRY } from "../src/station";
 import { type Vec3, add, dot, length, scale, sub, v3 } from "../src/vec3";
 import {
 	applyTransition,
@@ -91,7 +96,7 @@ import {
 import {
 	type CorpusResult,
 	contentsCache,
-	encounters,
+	distinctMeetings,
 	firstDepartureS,
 	meetingClass,
 	trafficCollisionCorpus,
@@ -136,6 +141,54 @@ const HANDS_OFF = {
 	turnAssist: true,
 	translation: { demand: speedDemand(0), assist: false },
 };
+
+/**
+ * A ship that starts the step at rest and ends it at `velEnd` — thrust
+ * applied within the step — with its start placed so its box stands
+ * `gapKm` short of `other`'s along −z. §3.1 reads a resting pair's closing
+ * at the start of the step, so a pair touching like this bills nothing.
+ */
+function thrustingInto(
+	hull: HullId,
+	other: ShipMotion,
+	gapKm: number,
+	velEnd: Vec3,
+	dt: number,
+): ShipMotion {
+	const { x, y } = other.start.origin;
+	const probe = (z: number) =>
+		pairSeparation(
+			box(hull)[0],
+			shipPose(v3(x, y, z), v3(0, 0, 1), v3(0, 1, 0)),
+			other.primitives[0],
+			other.start,
+		);
+	const z0 = other.start.origin.z - 1;
+	const first = probe(z0);
+	if (first.overlap) throw new Error("the probe pose overlaps");
+	const start = v3(x, y, z0 + first.distanceKm - gapKm);
+	return {
+		massT: HULL_SPECS[hull].massT,
+		primitives: box(hull),
+		start: shipPose(start, v3(0, 0, 1), v3(0, 1, 0)),
+		end: shipPose(add(start, scale(velEnd, dt)), v3(0, 0, 1), v3(0, 1, 0)),
+		velStart: v3(),
+		velEnd,
+	};
+}
+
+/** The next step from where a pair left a ship, flying on straight. */
+const onward = (
+	m: ShipMotion,
+	end: { pos: Vec3; vel: Vec3 },
+	dt: number,
+): ShipMotion => ({
+	...m,
+	start: { ...m.end, origin: end.pos },
+	end: { ...m.end, origin: add(end.pos, scale(end.vel, dt)) },
+	velStart: end.vel,
+	velEnd: end.vel,
+});
 
 describe("collision.md §9.1.13: ship against ship (C4b)", () => {
 	test("the impulse conserves momentum and leaves the pair separating at RESTITUTION · v_n", () => {
@@ -251,6 +304,71 @@ describe("collision.md §9.1.13: ship against ship (C4b)", () => {
 		expect([hit.sideA, hit.sideB]).toEqual(["fore", "aft"]);
 	});
 
+	test("a resting pair thrusting together bills nothing, and is held apart by mass", () => {
+		const dt = 0.1;
+		const carrier = flying("carrier", v3(), v3(), dt, v3(0, 0, -1));
+		const b: ShipMotion = {
+			...carrier,
+			end: { ...carrier.end, origin: v3(0, 0, -0.002) },
+			velEnd: v3(0, 0, -0.02),
+		};
+		const a = thrustingInto("courier", b, SEPARATION_KM, v3(0, 0, 0.05), dt);
+		// The precondition: the single-ship sweep holds A without billing it.
+		const alone = sweepShip(a, [b], dt);
+		expect(alone.impacts).toEqual([]);
+		expect(alone.ghosts).toEqual([]);
+		expect(length(sub(alone.pos, a.end.origin))).toBeGreaterThan(1e-4);
+
+		const pair = sweepShipPair(a, b, dt);
+		expect(pair.impacts).toEqual([]);
+		expect(pair.ghost).toBe(false);
+		// Both moved, in the mass's proportions, and neither left overlapped.
+		const apart = pairSeparation(
+			a.primitives[0],
+			{ ...a.end, origin: pair.a.pos },
+			b.primitives[0],
+			{ ...b.end, origin: pair.b.pos },
+		);
+		expect(apart.overlap).toBe(false);
+		const movedA = length(sub(pair.a.pos, a.end.origin));
+		const movedB = length(sub(pair.b.pos, b.end.origin));
+		expect(movedA / movedB).toBeCloseTo(b.massT / a.massT, 6);
+		// Momentum kept, and the pair no longer closing.
+		const before = add(
+			momentum(a.massT, a.velEnd),
+			momentum(b.massT, b.velEnd),
+		);
+		const after = add(
+			momentum(a.massT, pair.a.vel),
+			momentum(b.massT, pair.b.vel),
+		);
+		expect(length(sub(after, before))).toBeLessThan(1e-9);
+		expect(dot(sub(pair.a.vel, pair.b.vel), v3(0, 0, -1))).toBeGreaterThan(
+			-1e-12,
+		);
+		// The next step starts touching, not inside: no ghost, nothing billed.
+		const next = sweepShipPair(
+			onward(a, pair.a, dt),
+			onward(b, pair.b, dt),
+			dt,
+		);
+		expect(next.ghost).toBe(false);
+		expect(next.impacts).toEqual([]);
+	});
+
+	test("a projected B takes no share of a hold with nothing billed: A is moved out alone", () => {
+		const dt = 0.1;
+		const b = flying("carrier", v3(), v3(), dt, v3(0, 0, -1));
+		const a = thrustingInto("courier", b, SEPARATION_KM, v3(0, 0, 0.05), dt);
+		const alone = sweepShip(a, [b], dt);
+		const pair = sweepShipPair(a, b, dt, { bProjected: true });
+		expect(pair.impacts).toEqual([]);
+		expect(pair.b.pos).toEqual(b.end.origin);
+		expect(pair.b.vel).toEqual(b.velEnd);
+		expect(pair.a.pos).toEqual(alone.pos);
+		expect(pair.a.vel).toEqual(alone.vel);
+	});
+
 	test("two ships that never close never meet", () => {
 		const dt = 0.1;
 		const a = flying("courier", v3(-1, 0, 0), v3(0, 0, 1), dt);
@@ -346,6 +464,57 @@ describe("stepWorld: a fleet ship meets the world and the player (node #664)", (
 		expect(length(sub(after, before))).toBeLessThan(1e-6);
 	});
 
+	test("a raider resting against the player and thrusting into it is held apart, and nothing is billed", () => {
+		const world = makeWorld(47);
+		const dt = 0.1;
+		world.ship.vel = v3();
+		const you: ShipMotion = {
+			massT: HULL_SPECS.courier.massT,
+			primitives: box("courier"),
+			start: shipPose(world.ship.pos, v3(0, 0, -1), v3(0, 1, 0)),
+			end: shipPose(world.ship.pos, v3(0, 0, -1), v3(0, 1, 0)),
+			velStart: v3(),
+			velEnd: v3(),
+		};
+		const motion = thrustingInto(
+			"raider",
+			you,
+			SEPARATION_KM,
+			v3(0, 0, 0.05),
+			dt,
+		);
+		const flown = stepWorld(
+			world,
+			still(),
+			HANDS_OFF,
+			dt,
+			flightPerformance("courier"),
+			box("courier"),
+			[],
+			[{ id: "raider", projected: false, motion }],
+		);
+		expect(flown.shipImpacts).toEqual([]);
+		const [step] = flown.fleet;
+		expect(step.impacts).toEqual([]);
+		// The hold landed on both ships: neither ends where its own step put
+		// it, and the two are not left overlapped for the next step's ghost.
+		expect(length(sub(step.pos, motion.end.origin))).toBeGreaterThan(0);
+		expect(length(sub(world.ship.pos, you.end.origin))).toBeGreaterThan(0);
+		const apart = pairSeparation(
+			box("courier")[0],
+			{ ...you.end, origin: world.ship.pos },
+			box("raider")[0],
+			{ ...motion.end, origin: step.pos },
+		);
+		expect(apart.overlap).toBe(false);
+		const before = momentum(HULL_SPECS.raider.massT, motion.velEnd);
+		const after = add(
+			momentum(HULL_SPECS.courier.massT, world.ship.vel),
+			momentum(HULL_SPECS.raider.massT, step.vel),
+		);
+		expect(length(sub(after, before))).toBeLessThan(1e-9);
+	});
+
 	test("two projected carriers are never paired: a route against a route is the corpus row's", () => {
 		const world = makeWorld(47);
 		const dt = 0.1;
@@ -384,6 +553,133 @@ describe("stepWorld: a fleet ship meets the world and the player (node #664)", (
 		);
 		expect(met.fleet[0].impacts.map((i) => i.with)).toEqual(["b"]);
 		expect(met.fleet[1].impacts.map((i) => i.with)).toEqual(["a"]);
+	});
+});
+
+describe("projectedMayMeet: a projection is met by anything flown (node #664)", () => {
+	const dt = 0.1;
+	const parked = (at: Vec3) => ({ start: at, end: at });
+
+	test("a carrier far from the player but beside a raider is handed to the step", () => {
+		const carrier = { pos: v3(3, 0, 0), vel: v3() };
+		const player = parked(v3());
+		const raider = parked(v3(3, 0, -0.1));
+		expect(projectedMayMeet(carrier, [player], dt, 0.5)).toBe(false);
+		expect(projectedMayMeet(carrier, [player, raider], dt, 0.5)).toBe(true);
+	});
+
+	test("the bound is the pair's relative travel: a frame both share adds nothing", () => {
+		// Both carried at 30 km/s in a station's frame, 1 km apart: 3 km of
+		// travel each, none of it toward the other.
+		const frame = v3(30, 0, 0);
+		const carrier = { pos: v3(0, 1, 0), vel: frame };
+		const mover = { start: v3(), end: scale(frame, dt) };
+		expect(projectedMayMeet(carrier, [mover], dt, 0.5)).toBe(false);
+		// Closing at 6 km/s for the step closes 0.6 km of the 1: met.
+		const closing = { pos: v3(0, 1, 0), vel: add(frame, v3(0, -6, 0)) };
+		expect(projectedMayMeet(closing, [mover], dt, 0.5)).toBe(true);
+	});
+});
+
+describe("stepWorld: a ship met before the aperture plane owns the tick (§4.2, node #664)", () => {
+	const dt = 0.1;
+	const SPEED = 1.0;
+	const LEAD_KM = 0.06;
+
+	/** The player on a trade station's axis, its centre `LEAD_KM` outside the
+	 *  plane and closing at `SPEED`, so it crosses mid-step; and, given
+	 *  `gapKm`, a raider riding with the station that far ahead of its box. */
+	function enter(gapKm: number | null) {
+		const world = makeWorld(47);
+		const station = world.system.contents.stations.find(
+			(s) => s.type === "trade" && world.system.byId.has(s.id),
+		);
+		if (!station) throw new Error("seed 47 has no placed trade station");
+		const id = station.id;
+		const body = world.system.byId.get(id);
+		if (!body) throw new Error(`no ${id}`);
+		const t = world.gameTime;
+		const frame = stationApertureFrame(world.system, id, t);
+		const vStation = bodyVelocity(world.system, id, t);
+		world.ship.pos = add(
+			body.pos,
+			scale(frame.axis, STATION_GEOMETRY.trade.aperturePlaneKm + LEAD_KM),
+		);
+		world.ship.vel = add(vStation, scale(frame.axis, -SPEED));
+		const nose = scale(frame.axis, -1);
+		const { up } = slotBasis(frame);
+		const at: HullAttitude = {
+			nose,
+			up,
+			rates: { pitch: 0, yaw: 0, roll: 0 },
+		};
+		const before: EntryPose = {
+			rel: sub(world.ship.pos, body.pos),
+			vRel: sub(world.ship.vel, vStation),
+			nose,
+			up,
+		};
+		const fleet: FleetShip[] = [];
+		if (gapKm !== null) {
+			// Ahead along the nose, its box `gapKm` from the player's, found by
+			// probing the gap rather than adding up half-lengths.
+			const you = shipPose(world.ship.pos, nose, up);
+			const probeAt = add(world.ship.pos, nose);
+			const gap = pairSeparation(
+				box("raider")[0],
+				shipPose(probeAt, frame.axis, up),
+				box("courier")[0],
+				you,
+			);
+			if (gap.overlap) throw new Error("the probe pose overlaps");
+			const pos = sub(probeAt, scale(nose, gap.distanceKm - gapKm));
+			fleet.push({
+				id: "raider",
+				projected: false,
+				motion: {
+					massT: HULL_SPECS.raider.massT,
+					primitives: box("raider"),
+					start: shipPose(pos, frame.axis, up),
+					end: shipPose(add(pos, scale(vStation, dt)), frame.axis, up),
+					velStart: vStation,
+					velEnd: vStation,
+				},
+			});
+		}
+		const step = stepWorld(
+			world,
+			at,
+			HANDS_OFF,
+			dt,
+			flightPerformance("courier"),
+			box("courier"),
+			[{ stationId: id, frame, before }],
+			fleet,
+		);
+		return { step, id };
+	}
+
+	test("the control: with no ship in the way the plane is crossed mid-step", () => {
+		const { step, id } = enter(null);
+		expect(step.plane?.stationId).toBe(id);
+		expect(step.plane?.timeS ?? 0).toBeCloseTo(LEAD_KM / SPEED, 2);
+		expect(step.impacts).toEqual([]);
+	});
+
+	test("a raider met before the crossing owns the tick: the plane is not crossed, the meeting lands", () => {
+		// Met at about 0.01 s, the plane at about 0.06 s.
+		const { step } = enter(0.01);
+		expect(step.plane).toBeNull();
+		expect(step.shipImpacts.map((i) => i.with)).toEqual(["raider"]);
+		expect(step.fleet[0].impacts.map((i) => i.with)).toEqual([PLAYER_SHIP_ID]);
+	});
+
+	test("a raider the step would meet only after the crossing is not met: the plane owns it", () => {
+		// Met at about 0.08 s, after the plane's 0.06 s.
+		const { step, id } = enter(0.08);
+		expect(step.plane?.stationId).toBe(id);
+		expect(step.shipImpacts).toEqual([]);
+		expect(step.fleet[0].impacts.filter((i) => i.ship)).toEqual([]);
 	});
 });
 
@@ -616,7 +912,7 @@ describe("collision.md §9.1.14: §6 item 1's corpus row", () => {
 	};
 	const classes = (result: CorpusResult) => {
 		const out: Record<string, number> = {};
-		for (const m of encounters(result.meetings))
+		for (const m of distinctMeetings(result.meetings))
 			out[meetingClass(m)] = (out[meetingClass(m)] ?? 0) + 1;
 		return out;
 	};
@@ -627,33 +923,34 @@ describe("collision.md §9.1.14: §6 item 1's corpus row", () => {
 		expect(result.steps["local-approach"]).toBeGreaterThan(200);
 		expect(result.steps["local-departure"]).toBeGreaterThan(400);
 		expect(classes(result)).toEqual({ "approach-through": 1 });
-		const [through] = encounters(result.meetings);
+		const [through] = distinctMeetings(result.meetings);
 		expect(through.met).toContain("station-trade");
 		// Billed, and far past what a hull survives: a divert at best.
 		expect(through.closingKms).toBeGreaterThan(8.9);
 		expect(through.closingKms).toBeGreaterThan(V_SCRAPE_KMS);
 	}, 30_000);
 
-	test("RED, pinned: system 0's launches touch the throat and the release point, under V_SCRAPE", () => {
+	test("RED, pinned: system 0's launches touch at the aperture and at the release point, under V_SCRAPE", () => {
 		const result = run(0, 1800);
 		expect(result.steps["local-departure"]).toBeGreaterThan(4000);
 		expect(result.steps["lane-queued"]).toBeGreaterThan(1000);
 		expect(result.pairSteps).toBeGreaterThan(0);
 		expect(classes(result)).toEqual({
-			"launch-throat": 3,
+			"launch-aperture": 3,
 			"release-point": 1,
 		});
 		// Both classes are touches: they cost nothing and divert nothing.
-		for (const m of encounters(result.meetings))
+		for (const m of distinctMeetings(result.meetings))
 			expect(m.closingKms).toBeLessThan(V_SCRAPE_KMS);
 		// Cruise is counted apart under C5, and here met nothing.
 		expect(result.cruiseMeetings).toEqual([]);
 	}, 60_000);
 
-	test("the red build: sweeping the exempt phases meets the pad's deck and berths", () => {
+	// glossary-ignore: pad
+	test("the red build: sweeping the exempt phases meets the pad role's deck and berths", () => {
 		const result = run(0, 600, true);
-		const met = encounters(result.meetings);
-		// §9.1.8's split: a pad role's deck and berths are solid, so a
+		const met = distinctMeetings(result.meetings);
+		// §9.1.8's split: a pad role's deck and berths are solid, so a // glossary-ignore: pad
 		// parked, launching or arriving carrier meets them without §5.
 		expect(
 			met.some(

@@ -47,7 +47,7 @@ measure the same thing:
 - **A ghost counts as a meeting.** `sweepShip` fails open on a pair that
   overlaps at the start (§4.3). §4.3's one sanctioned case is the end of a
   launch, and it is counted apart.
-- **An encounter is the first step of each meeting.** A projection does not
+- **A distinct meeting is counted on its first step.** A projection does not
   respond, so a carrier that meets something stays met until its phase ends.
 
 ## The row: 40 systems of seed 47, galaxy 0, 1,800 s each
@@ -66,20 +66,20 @@ each bucket:
 
 182,639 carrier pairs were tested on a shared step. There were 0 launch ghosts.
 
-**Collidable phases: 55 encounters.**
+**Collidable phases: 55 distinct meetings.**
 
 | Class | Phase | Met | n | Worst closing | Billed (> `V_SCRAPE`) |
 |---|---|---|---|---|---|
-| `launch-throat` | `local-departure` | a trade station | 35 | 0.005 km/s | 0 |
+| `launch-aperture` | `local-departure` | a trade station | 35 | 0.005 km/s | 0 |
 | `release-point` | `local-departure` | a carrier in `local-departure` | 17 | 0.028 km/s | 0 |
 | `approach-through` | `local-approach` | a trade station | 2 | 8.959 km/s | 2 |
 | `other` | `lane-queued` | a carrier in `local-approach` | 1 | 0.939 km/s | 1 |
 
-**Cruise phases: 3 encounters**, all at a trade station, two of them billed
+**Cruise phases: 3 distinct meetings**, all at a trade station, two of them billed
 (31.502 and 21.350 km/s). They are counted and not judged, because C5 leaves
 cruise to its own guards.
 
-The billed encounters, one per line:
+The billed meetings, one per line:
 
 | Kind | System | Carrier | Class | Met | Closing | At |
 |---|---|---|---|---|---|---|
@@ -91,14 +91,14 @@ The billed encounters, one per line:
 
 ## The classes, and what each one is in the route law
 
-1. **`launch-throat`: the hull is released in a spinning slot.** Traffic's
+1. **`launch-aperture`: the hull is released in a spinning bay.** Traffic's
    launch releases twenty metres past the plane (`beginLaunch` with `clearKm`
    0; #408 moved only the player's release out by `LAUNCH_CLEAR_HULL_LENGTHS`).
-   A hull longer than about forty metres still has its rear inside the slot.
+   A hull longer than about forty metres still has its rear inside the bay.
    From that tick on, `local-departure` holds the carrier's `up` fixed while
-   the slot keeps turning, so the slot's walls rotate into the box. The
+   the bay keeps turning, so the bay's walls rotate into the box. The
    meeting is a touch at up to 0.005 km/s, a tenth of `V_SCRAPE`, and costs
-   nothing. Every case was at a trade station, the role whose slot spins.
+   nothing. Every case was at a trade station, the role whose bay spins.
 2. **`release-point`: every launch from a station ends at one point.**
    `local-departure` runs from the release along the station's axis to
    `TRAFFIC_STATION_EXCLUSION_KM + TRAFFIC_STATION_RELEASE_MARGIN_KM`, 5.5 km,
@@ -128,12 +128,12 @@ The billed encounters, one per line:
 ## The red build: the exemption does work
 
 The same corpus over 10 systems, with the exempt phases swept as well
-(`red`), finds 724 encounters, most of them in the exempt phases: `parked-home`,
+(`red`), finds 724 distinct meetings, most of them in the exempt phases: `parked-home`,
 `launch-queued` and `docked-away` meeting their own berths' structure, and
 `departing` and `arriving` meeting the refinery's deck and the trade station's
 bay. The green run over the same 10 systems finds 15. So the exemption is what
 keeps the parked and scripted intervals out of the row, and the row can go red
-without it. The gated test holds one pad case of this (system 0, 600 s).
+without it. The gated test holds one pad-role case of this (system 0, 600 s). <!-- glossary-ignore: pad -->
 
 ## What is gated in `npm test`
 
@@ -142,7 +142,7 @@ without it. The gated test holds one pad case of this (system 0, 600 s).
 change that moves a route, mends a class or opens a new one turns it red.
 
 - **System 9, 1,800 s:** one `approach-through` at more than 8.9 km/s.
-- **System 0, 1,800 s:** three `launch-throat` and one `release-point`, both
+- **System 0, 1,800 s:** three `launch-aperture` and one `release-point`, both
   under `V_SCRAPE`, and nothing in cruise.
 - **The red build, system 0, 600 s:** an exempt phase meets the refinery.
 
@@ -154,7 +154,7 @@ This node files nothing on the graph. What a later node would take from here:
 - **`approach-through`** is the class with a cost. It is a route-law fix: an
   approach that does not cross its own station, or a guard around the
   destination's proxy on the drop-to-hold leg.
-- **`release-point`** and **`launch-throat`** cost nothing under §3, but they
+- **`release-point`** and **`launch-aperture`** cost nothing under §3, but they
   are what the row asks about. They also point at a shared release point per
   station and at Traffic's release distance, which #408 changed for the player
   only.

@@ -314,6 +314,7 @@ import {
 	type HullStep,
 	type LinearDemand,
 	PLAYER_SHIP_ID,
+	projectedMayMeet,
 	type PlaneWatch,
 	type VentLevels,
 	type WorldPlane,
@@ -1978,9 +1979,9 @@ interface FleetPose {
 
 /**
  * How near a projected carrier must be, beyond a step's closing travel, for
- * the player's sweep to be handed it (`Game.fleetOf`): the reach of the two
- * largest hull boxes in the roster, so the early cut never drops a pair the
- * sweep could meet.
+ * the step to be handed it (`Game.fleetOf`, `projectedMayMeet`): the reach of
+ * the two largest hull boxes in the roster, so the early cut drops no pair
+ * whose straight-line poses could meet.
  */
 const FLEET_REACH_KM =
 	2 *
@@ -14483,7 +14484,9 @@ class Game {
 	 * they stood before their own steps to where those left them. A carrier on
 	 * its **projection** is met only while its route phase collides (§5): from
 	 * where it is drawn, along the velocity it is drawn with, and only near
-	 * enough to be reached this step. It is `projected`, so the step never
+	 * enough to be reached this step by the player or by any flown ship
+	 * (`projectedMayMeet`) — a raider or an engaged carrier meets a projected
+	 * one the player is nowhere near. It is `projected`, so the step never
 	 * sweeps it against the world — a route cannot be bounced — and a meeting
 	 * hands it to flight (`landFleet`).
 	 */
@@ -14523,18 +14526,33 @@ class Game {
 				up: engagement.flight.up,
 			});
 		const player = this.world.ship;
+		// Everything flown this step is what a projection can be met by: the
+		// player, on the velocity it starts the step with, and each flown fleet
+		// ship along its own step.
+		const movers = [
+			{ start: player.pos, end: add(player.pos, scale(player.vel, dt)) },
+			...ships.map((ship) => ({
+				start: ship.motion.start.origin,
+				end: ship.motion.end.origin,
+			})),
+		];
 		for (const [key, contact] of this.trafficContacts) {
 			if (this.trafficEngagements.has(key)) continue;
 			const route = this.trafficRouteByKey(key);
 			const actor = this.trafficActorByKey(key);
 			if (!route || !actor || !route.nose || !route.up) continue;
 			if (route.present === false || !trafficCollides(route.phase)) continue;
-			// Reachable this step at all: the two closing for the whole of it,
-			// plus room for both hulls — the sweep's own bound, taken early so a
+			// Reachable this step by anything flown at all, taken early so a
 			// system's Traffic is not posed every frame for nothing.
-			const reach =
-				length(sub(player.vel, contact.velocity)) * dt + FLEET_REACH_KM;
-			if (length(sub(contact.pos, player.pos)) > reach) continue;
+			if (
+				!projectedMayMeet(
+					{ pos: contact.pos, vel: contact.velocity },
+					movers,
+					dt,
+					FLEET_REACH_KM,
+				)
+			)
+				continue;
 			const end = add(contact.pos, scale(contact.velocity, dt));
 			ships.push({
 				id: key,

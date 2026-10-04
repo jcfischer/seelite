@@ -11,9 +11,9 @@
  *
  * - the N of every bucket: carrier-steps swept per phase, and the systems and
  *   actors behind them;
- * - every encounter (`encounters`) by class and by what was met, with the
+ * - every distinct meeting (`distinctMeetings`) by class and by what was met, with the
  *   worst closing speed and how many were billed (closing above `V_SCRAPE`);
- * - the cruise phases' encounters, counted under C5 and not judged;
+ * - the cruise phases' distinct meetings, counted under C5 and not judged;
  * - §4.3's sanctioned launch ghosts.
  *
  *   bun scripts/measure-traffic-collision.ts [systems] [windowS] [seed] [galaxy] [red]
@@ -28,7 +28,7 @@ import { generateGalaxy } from "../src/galaxy";
 import {
 	type Meeting,
 	contentsCache,
-	encounters,
+	distinctMeetings,
 	firstDepartureS,
 	meetingClass,
 	trafficCollisionCorpus,
@@ -84,8 +84,8 @@ for (const record of records) {
 		...m,
 		key: `${record.index}#${m.key}`,
 	});
-	met.push(...encounters(run.meetings).map(tag));
-	cruise.push(...encounters(run.cruiseMeetings).map(tag));
+	met.push(...distinctMeetings(run.meetings).map(tag));
+	cruise.push(...distinctMeetings(run.cruiseMeetings).map(tag));
 }
 
 const what = (m: Meeting): string =>
@@ -103,7 +103,7 @@ console.log(`carrier pairs tested on one step: ${pairSteps}`);
 console.log(`launch ghosts (§4.3, sanctioned): ${launchGhosts}`);
 
 const table = (label: string, list: readonly Meeting[]) => {
-	console.log(`${label}: ${list.length} encounters`);
+	console.log(`${label}: ${list.length} distinct meetings`);
 	const buckets = new Map<string, Meeting[]>();
 	for (const m of list) {
 		const key = `${meetingClass(m).padEnd(17)} ${m.phase.padEnd(16)} ${what(m)}`;
