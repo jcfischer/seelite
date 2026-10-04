@@ -6270,15 +6270,13 @@ export const SELECTED_FORM: Record<StationType, StationFormId> = {
 	// have had.
 	//
 	// The refinery's changes what a running game draws: `system.ts` places
-	// refineries. The outpost's does not — it places no outposts, because
-	// what one sells and how often one exists are #13's and #6's questions.
+	// refineries. The outpost's did not until node #491 placed outposts.
 	refinery: "d",
 	// **E, on the principal's yes to #518's sheet (2026-09-24).** The Cluster
 	// was taken above as an industrial machine, and #490 then made the outpost
 	// a raider's haven; E is the form built for that role — salvage welded
 	// round the pad — ranked beside A–D at three plans under five finishes
-	// and four framings. Still nothing a running game draws until #491 places
-	// outposts.
+	// and four framings. What every lawless system draws since node #491.
 	outpost: "e",
 };
 

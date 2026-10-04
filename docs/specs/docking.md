@@ -1066,8 +1066,9 @@ arrival twice.
 
 The flag is **per-galaxy player state, not a per-carrier-slot row.** It is four
 booleans, not one row per station, which is the whole reason to gate on type —
-**three of them reachable today**, because no outpost is generated (§12.7's
-joint 5).
+**three of them reachable today** (§12.7's joint 5). #491 generates outposts
+now, but their berths are closed to every pilot until the outpost has a market
+(`station-types.md` §5.5), so no first outpost dock can happen yet.
 
 **Per galaxy means the four reset on entering a new one**, and that is a choice
 rather than a consequence of where the bits live. Eight galaxies is eight sets of
@@ -1426,7 +1427,9 @@ open until #303 lands.
    the fourth skip flag is dead until something places one, and E4 is in practice
    three first-times. And obligation 8's physical claim cannot fail while nothing
    collides; only its state-visibility half is live until #303 builds
-   `collision.md` §9.1.8.
+   `collision.md` §9.1.8. *(#491, 2026-10-04: an outpost is placed now, in every
+   lawless system, and the fourth flag is still dead — for a different reason.
+   Its berth is closed until it has a market, `station-types.md` §5.5.)*
 6. **E4's flag is an unmet precondition on #46.** §12.1 says the skip gate is a
    typed domain that node "must approve and bound", and then this section is
    where a reader would look for the dependency and would not have found it. So:
@@ -1870,6 +1873,8 @@ Seven frames:
 5. shipyard free-look from a wall berth;
 6. refinery free-look from a service cradle;
 7. an outpost interior workbench view, because outposts are not generated live.
+   *(#491 generates them now, but their berths are closed to every pilot, so a
+   live berth view is still not available; #153 owns this frame.)*
 
 The first four prove the full transition. The final three prove that role,
 family and location produce distinct interiors.

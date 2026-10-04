@@ -271,8 +271,9 @@ export const STATION_FENCE_ELIGIBLE: Record<StationType, boolean> = {
  * **The raider outpost's are closed, and that is the explicit absence of its
  * docking contract rather than an oversight.** #490 D5 rules that only a Wanted
  * pilot may dock there — `dockingRefusedByLaw` carries that arm — but a pilot
- * admitted would dock into a console whose market, equipment and fuel all read
- * a `TYPE_OFFSET` row the outpost does not have (#490 D6). So until that market
+ * admitted would dock into a console built on a `TYPE_OFFSET` row the outpost
+ * does not have (`main.ts`'s `dockedStationContext`, #490 D6), and every tab of
+ * it — market, equipment, fuel — would throw. So until that market
  * exists the berth refuses every pilot, with its own reason (`docking.ts`'s
  * `"closed"`), rather than a clean pilot being told they are hostile or a Wanted
  * one docking into a throw.

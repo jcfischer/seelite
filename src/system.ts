@@ -128,6 +128,8 @@ export const hasRaiderOutpost = (government: number): boolean =>
  * the way a planet-hosted one is, so in 10 of those 4,590 systems the new-game
  * and jump arrival is pushed out past the outpost. A planet-hosted outpost would
  * have moved none; that is the price of a rule with no second mode.
+ *
+ * `scripts/measure-raider-outpost.ts` reprints every figure in this comment.
  */
 export const RAIDER_OUTPOST_LEAD_RAD = Math.PI / 3;
 

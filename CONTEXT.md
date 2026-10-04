@@ -273,6 +273,20 @@ later. It is what makes the relay's recovery interruptible. `src/relay-tender.ts
 owns it.
 _Avoid_: Repair convoy, repair drone
 
+**Raider outpost**:
+The fourth station type, `outpost` (#490): the raiders' haven. Placed by #491 in
+every system whose raider slot count is at its height — the two most lawless
+governments — at a Trojan point of a drawn planet's orbit, star-centric and a
+sixth of a turn from the planet, so it is a place of its own and never the
+station the **Pirate relay** watches. Its berth admits only a Wanted pilot
+(D5) and it witnesses nothing (D10), but until it has a market (#490 D6) its
+berth is closed to every pilot, refused as `"closed"` rather than as hostility.
+Its Traffic stays on its own side: no lawful station's carrier flies to it.
+`galaxy-generation.md` §6.4 owns where it stands and `station-types.md` §5.5
+what it carries; `src/system.ts`'s `hasRaiderOutpost` is the incidence rule.
+"Outpost" means this and nothing else since #490 D2 withdrew its retirement.
+_Avoid_: Pirate base, refinery outpost, haven (as a type name)
+
 **Route detection**:
 The pirate relay's dial on the leg law (`raider-slots.ts`' `RouteDetection`):
 `law` is the ordinary draw; `watched` is a watched route while the relay is
@@ -546,7 +560,7 @@ The third rung of an offence against a Clean carrier — `ASSAULT_FIRE_S` second
 **Scope note, not an _Avoid_ line.** `assault` is canonical as the save's and API's spelling — `OFFENCE_HEAT.assault`, `assaultCharged`, `LegalStatus.assaulted` — so an _Avoid_ line naming it would misfire on every correct use of it, which is the shape §Language's Transit lane note rules out by name. What is worth saying is the scope: the strike is an assault too, so "charged with assault" means two rungs unless the rung is named. "Sustained-fire charge" is the phrase to drop, because the charge is the heat and the fire is the act.
 
 **Hearer**:
-A station that was within earshot when an offence was committed against a carrier — `DISTRESS_RANGE_KM` in a straight line from the **victim**, never from the pilot, which is #396's amendment of the frame-body reach `civilian-combat.md` H5 had inherited. `src/distress.ts`'s `stationsInEarshot` computes the set, inside `legal.ts`'s `chargeOffence`, which takes every station in the system as a required fact (#633), so an empty set is the answer "nobody heard it" and not the absence of having looked. **It is the physics, not the verdict.** Being heard is what puts a berth in `LegalStatus.witnesses`, and the refusal H5 names needs the heat the same act filed as well — which is why `distress.ts` returns keys and no judgement, and why the two words are not interchangeable in either direction.
+A lawful station (any but a **Raider outpost**, which hears nothing: #490 D10) that was within earshot when an offence was committed against a carrier — `DISTRESS_RANGE_KM` in a straight line from the **victim**, never from the pilot, which is #396's amendment of the frame-body reach `civilian-combat.md` H5 had inherited. `src/distress.ts`'s `stationsInEarshot` computes the set, inside `legal.ts`'s `chargeOffence`, which takes every station in the system as a required fact (#633), so an empty set is the answer "nobody heard it" and not the absence of having looked. **It is the physics, not the verdict.** Being heard is what puts a berth in `LegalStatus.witnesses`, and the refusal H5 names needs the heat the same act filed as well — which is why `distress.ts` returns keys and no judgement, and why the two words are not interchangeable in either direction.
 _Avoid_: Bystander, neighbour (both say "near" where the rule is "heard")
 
 **Causal-episode ordinal**:

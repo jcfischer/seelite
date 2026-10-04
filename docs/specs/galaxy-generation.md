@@ -533,16 +533,42 @@ subset in the headless suite and pins unchanged inner planets separately.
 Present with probability 0.45. Occupies a seeded gap between consecutive
 orbits, at the geometric mean of the two, width ±10%.
 
-### 6.4 Stations — 1 to 3, typed
+### 6.4 Stations — 1 to 4, typed
 
 | Type | Present when | Sits at |
 |---|---|---|
 | **trade station** | the system has a planet — see the note below | orbit of the primary planet |
 | **refinery** | the system has a belt (§6.3) | inside the belt |
 | **shipyard** | `displayTL ≥ 10` | orbit of the primary or a gas giant |
+| **raider outpost** | the system's raider slot count is at its height — government 0 or 1 ([#491](https://github.com/jcfischer/seelite/issues/491)) | a Trojan point of a drawn planet's orbit: star-centric, 60° ahead of or behind it |
+
+> **The raider outpost, since node #491.** #490 made it a station — Wanted-only
+> berths, its own law, the haven raider pressure comes from — and ruled its
+> incidence onto the law gradient the raiders already have: present where
+> `raiderSlotCount` is at its maximum, at most one, and nowhere else. That is
+> 28% of systems (4,590 of 16,384 over `worldSeeds(8)`), and it is a rule, not
+> a chance: a system holding one reads as dangerous off its government before
+> the pilot flies there.
+>
+> **Where.** On a planet's own orbit with its phase moved by a sixth of a turn,
+> so it keeps station with that planet for ever, is at least that orbit's
+> radius (≥ 0.3 AU) from it, and is a cruise target of its own — somewhere
+> other than the station the relay watches, which is what #482 asks of it. The
+> planet-hosted alternative was measured and set aside: 670 of those 4,590
+> systems have no planet without a station on it already, so it needs a second
+> mode for one case in seven. The cost of the star-centric form is the arrival
+> point: in 10 of the 4,590 systems the arrival is pushed out past the outpost
+> (§7.4's clearance), where a planet-hosted station would have moved none.
+> `scripts/measure-raider-outpost.ts` reprints all of these.
+>
+> **Its draws are its own.** Host, side, berth seed and assembly seed come from
+> `DOMAIN.RAIDER_OUTPOST` and nowhere else, so a system gaining an outpost
+> moves no station it already had — `tests/station-orbits.test.ts` and
+> `tests/station.test.ts` hold every other station against their committed
+> baselines with the outpost set aside.
 
 Count therefore keys off population and tech exactly as intended: a high-TL
-core world plausibly supports three, a rim Anarchy one. **Shipyards generate
+core world plausibly supports three, a rim Anarchy one and its raiders' haven. **Shipyards generate
 only in the core**, which is what gives the tech gradient teeth.
 
 This spec places stations and names their type. **What a type *is* — market
