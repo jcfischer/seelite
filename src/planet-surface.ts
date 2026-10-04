@@ -499,6 +499,8 @@ export function buildBodyVisual(
 		sunDir: { value: (opts.sunDir ?? DEFAULT_SUN_DIRECTION).clone() },
 		cloudSunDir: { value: new THREE.Vector3() },
 		cloudCoherent: { value: look.surface === "terran" ? 1 : 0 },
+		cloudCoverage: { value: null },
+		cloudCoverageReady: { value: 0 },
 		sunColor: { value: new THREE.Color(opts.sunColor ?? 0xfff7eb) },
 		// A thick atmosphere carries light well past the geometric terminator;
 		// an airless body does not carry it at all.
@@ -704,6 +706,15 @@ export function buildBodyVisual(
 	 * panel walks scenes and has no handle.
 	 */
 	planet.userData.bakeAllowed = true;
+	const updateCloudCoverage = () => {
+		const valid =
+			ready &&
+			bakedClass === "terran" &&
+			planet.userData.surfaceClass === "terran" &&
+			planet.userData.bakeAllowed;
+		uniforms.cloudCoverage.value = valid && ready ? ready.normal.texture : null;
+		uniforms.cloudCoverageReady.value = valid ? 1 : 0;
+	};
 	/**
 	 * Every cube pair this body is holding, the drawable one first.
 	 *
@@ -729,6 +740,7 @@ export function buildBodyVisual(
 			.map((bake) => ({ albedo: bake.albedo, normal: bake.normal }));
 	planet.userData.setBakeAllowed = (allowed: boolean) => {
 		planet.userData.bakeAllowed = allowed;
+		updateCloudCoverage();
 		if (!allowed && planet.userData.baked) {
 			planet.material = proceduralMaterial;
 			planet.userData.baked = false;
@@ -795,6 +807,7 @@ export function buildBodyVisual(
 		);
 		proceduralMaterial.needsUpdate = true;
 		planet.userData.surfaceClass = next;
+		updateCloudCoverage();
 	};
 	planet.userData.setSurfaceClass = setSurfaceClass;
 	group.add(planet);
@@ -1009,6 +1022,7 @@ export function buildBodyVisual(
 			ready = filling;
 			filling = undefined;
 			bakedClass = fillingClass;
+			updateCloudCoverage();
 			if (bakedMaterial) {
 				bakedMaterial.uniforms.bakedAlbedo.value = ready.albedo.texture;
 				bakedMaterial.uniforms.bakedNormal.value = ready.normal.texture;
@@ -1088,6 +1102,9 @@ export function buildBodyVisual(
 			// tripped over.
 			planet.material = proceduralMaterial;
 			planet.userData.baked = false;
+			// Cube targets own their textures; keep the subtree walker off them.
+			uniforms.cloudCoverage.value = null;
+			uniforms.cloudCoverageReady.value = 0;
 			disposeSubtree(group);
 			// **And the cubes are not reachable from the subtree, which is the
 			// point** (#208). A cube render target owns a framebuffer as well as a

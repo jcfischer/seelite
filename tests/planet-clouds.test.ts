@@ -40,6 +40,9 @@ test("weather moves by the same rotation in shell and both draw paths", () => {
 	expect(fragmentFor("terran")).toContain(
 		"cloudField(cloudP, cloudCover, seedOffset, cloudTestDir)",
 	);
+	expect(fragmentFor("terran")).toMatch(
+		/if \(cloudCoverageReady > 0\.5\)[\s\S]*textureCube\(cloudCoverage, cloudP\)\.a;\s*else[\s\S]*cloudField\(/,
+	);
 });
 
 test("sun projection uses the same radius as the shell and the body's frame", () => {

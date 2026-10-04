@@ -430,6 +430,7 @@ ${SANITISE_GLSL}
 ${VARYINGS_GLSL}
 ${NOISE_GLSL}
 ${surface === "terran" ? CLOUD_FIELD_GLSL + CLOUD_PROJECTION_GLSL : ""}
+${surface === "terran" ? "uniform samplerCube cloudCoverage;\nuniform float cloudCoverageReady;" : ""}
 ${LIGHT_GLSL}
 float height(vec3 p);
 ${RELIEF}
@@ -448,10 +449,15 @@ void main() {
   if (perfAblate < 1.5) surface(p, albedo, N, emissive, specPower, specMask);
 ${
 	surface === "terran"
-		? `  // Before the bake: one weather evaluation per pixel, never per relief tap.
+		? `  // Reuse ready weather even when terrain relief is procedural.
   if (perfAblate < 1.5 && cloudCover > 0.01 && dot(p, cloudSunDir) > 0.0) {
     vec3 cloudP = cloudDirection(p);
-    albedo *= 1.0 - CLOUD_SHADOW_STRENGTH * cloudField(cloudP, cloudCover, seedOffset, cloudTestDir);
+    float coverage;
+    if (cloudCoverageReady > 0.5)
+      coverage = textureCube(cloudCoverage, cloudP).a;
+    else
+      coverage = cloudField(cloudP, cloudCover, seedOffset, cloudTestDir);
+    albedo *= 1.0 - CLOUD_SHADOW_STRENGTH * coverage;
   }`
 		: ""
 }

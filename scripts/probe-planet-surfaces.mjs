@@ -2541,201 +2541,211 @@ if (airless) {
 				undefined,
 				{ timeout: 60_000 },
 			);
-			for (const path of ["four-tap", "baked"]) {
+			for (const [label, path, coverageReady] of [
+				["four-tap before bake", "four-tap", 0],
+				["four-tap with coverage cube", "four-tap", 1],
+				["baked", "baked", 1],
+			]) {
 				await shadowPage.evaluate(
 					(path) => window.__seelite.setSurfacePin(path),
 					path,
 				);
-				const rows = await shadowPage.evaluate(async (id) => {
-					const THREE = await import(
-						"/node_modules/three/build/three.module.js"
-					);
-					const g = window.__seelite;
-					const vis = g.bodyVisuals.get(id);
-					const shell = vis.group.children.find(
-						(o) => o.userData.shell === "cloud",
-					);
-					const scene = new THREE.Scene();
-					const group = new THREE.Group();
-					group.rotation.copy(vis.group.rotation);
-					scene.add(group);
-					const u = {
-						...vis.surfaceMesh.material.uniforms,
-						cloudTestDir: { value: new THREE.Vector3() },
-						cloudCover: { value: 0.7 },
-						cloudCoherent: { value: 1 },
-						time: { value: 0 },
-						sunDir: { value: new THREE.Vector3() },
-						cloudSunDir: { value: new THREE.Vector3() },
-					};
-					const groundMaterial = vis.surfaceMesh.material.clone();
-					groundMaterial.uniforms = u;
-					const ground = new THREE.Mesh(
-						vis.surfaceMesh.geometry,
-						groundMaterial,
-					);
-					const cloudMaterial = shell.material.clone();
-					cloudMaterial.uniforms = u;
-					// Keep the production field and motion. Only replace the final
-					// lighting/opacity output, so coverage can be read linearly.
-					cloudMaterial.fragmentShader =
-						cloudMaterial.fragmentShader.slice(
-							0,
-							cloudMaterial.fragmentShader.lastIndexOf("  gl_FragColor ="),
-						) + "  gl_FragColor = vec4(vec3(mask), 1.0);\n}\n";
-					cloudMaterial.transparent = false;
-					const cloud = new THREE.Mesh(shell.geometry, cloudMaterial);
-					group.add(ground, cloud);
-					const camera = new THREE.OrthographicCamera(
-						-1.1,
-						1.1,
-						1.1,
-						-1.1,
-						0.1,
-						10,
-					);
-					const px = 128;
-					const target = new THREE.WebGLRenderTarget(px, px, {
-						type: THREE.FloatType,
-					});
-					const renderer = g.renderer;
-					const oldTarget = renderer.getRenderTarget();
-					const oldClear = renderer.getClearColor(new THREE.Color());
-					const oldAlpha = renderer.getClearAlpha();
-					const oldAutoClear = renderer.autoClear;
-					const read = () => {
-						renderer.setRenderTarget(target);
-						renderer.render(scene, camera);
-						const pixels = new Float32Array(px * px * 4);
-						renderer.readRenderTargetPixels(target, 0, 0, px, px, pixels);
-						return pixels;
-					};
-					const rows = [];
-					let previousCoverage;
-					try {
-						renderer.autoClear = true;
-						renderer.setClearColor(0, 1);
-						for (const [seconds, light] of [
-							[0, [0.6, 0.3, 0.8]],
-							[4000, [0.6, 0.3, 0.8]],
-							[8000, [-0.5, 0.4, 0.8]],
-						]) {
-							u.time.value = seconds;
-							u.sunDir.value.fromArray(light).normalize();
-							u.cloudSunDir.value
-								.copy(u.sunDir.value)
-								.applyQuaternion(
-									group.getWorldQuaternion(new THREE.Quaternion()).invert(),
-								);
-							camera.position.copy(u.sunDir.value).multiplyScalar(3);
-							camera.lookAt(0, 0, 0);
-							ground.visible = true;
-							cloud.visible = false;
-							const on = read();
-							u.cloudCover.value = 0;
-							const off = read();
-							u.cloudCover.value = 0.7;
-							ground.visible = false;
-							cloud.visible = true;
-							const coverage = read();
-							let frozen;
-							if (seconds === 4000) {
-								// Inject the round-3 defect: shadow fixed at t=0 while
-								// the real shell keeps moving. The oracle must reject it.
-								const source = groundMaterial.fragmentShader;
-								const broken = source.replace(
-									"normalize(p + cloudSunDir * distance), time",
-									"normalize(p + cloudSunDir * distance), 0.0",
-								);
-								if (broken === source)
-									throw new Error(
-										"cloud drift defect injection missed its target",
+				const rows = await shadowPage.evaluate(
+					async ({ id, coverageReady }) => {
+						const THREE = await import(
+							"/node_modules/three/build/three.module.js"
+						);
+						const g = window.__seelite;
+						const vis = g.bodyVisuals.get(id);
+						const shell = vis.group.children.find(
+							(o) => o.userData.shell === "cloud",
+						);
+						const scene = new THREE.Scene();
+						const group = new THREE.Group();
+						group.rotation.copy(vis.group.rotation);
+						scene.add(group);
+						const u = {
+							...vis.surfaceMesh.material.uniforms,
+							cloudTestDir: { value: new THREE.Vector3() },
+							cloudCover: { value: 0.7 },
+							cloudCoherent: { value: 1 },
+							cloudCoverageReady: { value: coverageReady },
+							time: { value: 0 },
+							sunDir: { value: new THREE.Vector3() },
+							cloudSunDir: { value: new THREE.Vector3() },
+						};
+						const groundMaterial = vis.surfaceMesh.material.clone();
+						groundMaterial.uniforms = u;
+						const ground = new THREE.Mesh(
+							vis.surfaceMesh.geometry,
+							groundMaterial,
+						);
+						const cloudMaterial = shell.material.clone();
+						cloudMaterial.uniforms = u;
+						// Keep the production field and motion. Only replace the final
+						// lighting/opacity output, so coverage can be read linearly.
+						cloudMaterial.fragmentShader =
+							cloudMaterial.fragmentShader.slice(
+								0,
+								cloudMaterial.fragmentShader.lastIndexOf("  gl_FragColor ="),
+							) + "  gl_FragColor = vec4(vec3(mask), 1.0);\n}\n";
+						cloudMaterial.transparent = false;
+						const cloud = new THREE.Mesh(shell.geometry, cloudMaterial);
+						group.add(ground, cloud);
+						const camera = new THREE.OrthographicCamera(
+							-1.1,
+							1.1,
+							1.1,
+							-1.1,
+							0.1,
+							10,
+						);
+						const px = 128;
+						const target = new THREE.WebGLRenderTarget(px, px, {
+							type: THREE.FloatType,
+						});
+						const renderer = g.renderer;
+						const oldTarget = renderer.getRenderTarget();
+						const oldClear = renderer.getClearColor(new THREE.Color());
+						const oldAlpha = renderer.getClearAlpha();
+						const oldAutoClear = renderer.autoClear;
+						const read = () => {
+							renderer.setRenderTarget(target);
+							renderer.render(scene, camera);
+							const pixels = new Float32Array(px * px * 4);
+							renderer.readRenderTargetPixels(target, 0, 0, px, px, pixels);
+							return pixels;
+						};
+						const rows = [];
+						let previousCoverage;
+						try {
+							renderer.autoClear = true;
+							renderer.setClearColor(0, 1);
+							for (const [seconds, light] of [
+								[0, [0.6, 0.3, 0.8]],
+								[4000, [0.6, 0.3, 0.8]],
+								[8000, [-0.5, 0.4, 0.8]],
+							]) {
+								u.time.value = seconds;
+								u.sunDir.value.fromArray(light).normalize();
+								u.cloudSunDir.value
+									.copy(u.sunDir.value)
+									.applyQuaternion(
+										group.getWorldQuaternion(new THREE.Quaternion()).invert(),
 									);
-								groundMaterial.fragmentShader = broken;
-								groundMaterial.needsUpdate = true;
+								camera.position.copy(u.sunDir.value).multiplyScalar(3);
+								camera.lookAt(0, 0, 0);
 								ground.visible = true;
 								cloud.visible = false;
-								frozen = read();
-								groundMaterial.fragmentShader = source;
-								groundMaterial.needsUpdate = true;
-							}
-							let weatherChange = 0;
-							if (previousCoverage)
-								for (let i = 0; i < coverage.length; i += 4)
-									weatherChange += Math.abs(coverage[i] - previousCoverage[i]);
-							previousCoverage = coverage;
-							let n = 0,
-								sx = 0,
-								sy = 0,
-								sxx = 0,
-								syy = 0,
-								sxy = 0,
-								maxShadow = 0,
-								maxCloud = 0;
-							let sf = 0,
-								sff = 0,
-								sxf = 0;
-							for (let y = 0; y < px; y++)
-								for (let x = 0; x < px; x++) {
-									if (
-										Math.hypot(
-											((x + 0.5 - px / 2) * 2.2) / px,
-											((y + 0.5 - px / 2) * 2.2) / px,
-										) > 0.65
-									)
-										continue;
-									const i = (y * px + x) * 4;
-									const luma = (a) =>
-										0.2126 * a[i] + 0.7152 * a[i + 1] + 0.0722 * a[i + 2];
-									if (luma(off) < 0.005) continue;
-									const a = coverage[i];
-									const b = 1 - luma(on) / luma(off);
-									n++;
-									sx += a;
-									sy += b;
-									sxx += a * a;
-									syy += b * b;
-									sxy += a * b;
-									maxShadow = Math.max(maxShadow, b);
-									maxCloud = Math.max(maxCloud, a);
-									if (frozen) {
-										const f = 1 - luma(frozen) / luma(off);
-										sf += f;
-										sff += f * f;
-										sxf += a * f;
-									}
+								const on = read();
+								u.cloudCover.value = 0;
+								const off = read();
+								u.cloudCover.value = 0.7;
+								ground.visible = false;
+								cloud.visible = true;
+								const coverage = read();
+								let frozen;
+								if (seconds === 4000) {
+									// Inject the round-3 defect: shadow fixed at t=0 while
+									// the real shell keeps moving. The oracle must reject it.
+									const source = groundMaterial.fragmentShader;
+									const broken = source.replace(
+										"normalize(p + cloudSunDir * distance), time",
+										"normalize(p + cloudSunDir * distance), 0.0",
+									);
+									if (broken === source)
+										throw new Error(
+											"cloud drift defect injection missed its target",
+										);
+									groundMaterial.fragmentShader = broken;
+									groundMaterial.needsUpdate = true;
+									ground.visible = true;
+									cloud.visible = false;
+									frozen = read();
+									groundMaterial.fragmentShader = source;
+									groundMaterial.needsUpdate = true;
 								}
-							const correlation =
-								(n * sxy - sx * sy) /
-								Math.sqrt((n * sxx - sx * sx) * (n * syy - sy * sy));
-							rows.push({
-								seconds,
-								light,
-								n,
-								correlation,
-								maxShadow,
-								maxCloud,
-								weatherChange: weatherChange / (px * px),
-								frozenCorrelation: frozen
-									? (n * sxf - sx * sf) /
-										Math.sqrt((n * sxx - sx * sx) * (n * sff - sf * sf))
-									: null,
-								path: vis.surfacePath(),
-							});
+								let weatherChange = 0;
+								if (previousCoverage)
+									for (let i = 0; i < coverage.length; i += 4)
+										weatherChange += Math.abs(
+											coverage[i] - previousCoverage[i],
+										);
+								previousCoverage = coverage;
+								let n = 0,
+									sx = 0,
+									sy = 0,
+									sxx = 0,
+									syy = 0,
+									sxy = 0,
+									maxShadow = 0,
+									maxCloud = 0;
+								let sf = 0,
+									sff = 0,
+									sxf = 0;
+								for (let y = 0; y < px; y++)
+									for (let x = 0; x < px; x++) {
+										if (
+											Math.hypot(
+												((x + 0.5 - px / 2) * 2.2) / px,
+												((y + 0.5 - px / 2) * 2.2) / px,
+											) > 0.65
+										)
+											continue;
+										const i = (y * px + x) * 4;
+										const luma = (a) =>
+											0.2126 * a[i] + 0.7152 * a[i + 1] + 0.0722 * a[i + 2];
+										if (luma(off) < 0.005) continue;
+										const a = coverage[i];
+										const b = 1 - luma(on) / luma(off);
+										n++;
+										sx += a;
+										sy += b;
+										sxx += a * a;
+										syy += b * b;
+										sxy += a * b;
+										maxShadow = Math.max(maxShadow, b);
+										maxCloud = Math.max(maxCloud, a);
+										if (frozen) {
+											const f = 1 - luma(frozen) / luma(off);
+											sf += f;
+											sff += f * f;
+											sxf += a * f;
+										}
+									}
+								const correlation =
+									(n * sxy - sx * sy) /
+									Math.sqrt((n * sxx - sx * sx) * (n * syy - sy * sy));
+								rows.push({
+									seconds,
+									light,
+									n,
+									correlation,
+									maxShadow,
+									maxCloud,
+									weatherChange: weatherChange / (px * px),
+									frozenCorrelation: frozen
+										? (n * sxf - sx * sf) /
+											Math.sqrt((n * sxx - sx * sx) * (n * sff - sf * sf))
+										: null,
+									path: vis.surfacePath(),
+								});
+							}
+						} finally {
+							renderer.setRenderTarget(oldTarget);
+							renderer.setClearColor(oldClear, oldAlpha);
+							renderer.autoClear = oldAutoClear;
+							target.dispose();
+							groundMaterial.dispose();
+							cloudMaterial.dispose();
 						}
-					} finally {
-						renderer.setRenderTarget(oldTarget);
-						renderer.setClearColor(oldClear, oldAlpha);
-						renderer.autoClear = oldAutoClear;
-						target.dispose();
-						groundMaterial.dispose();
-						cloudMaterial.dispose();
-					}
-					return rows;
-				}, subject.id);
+						return rows;
+					},
+					{ id: subject.id, coverageReady },
+				);
 				for (const row of rows)
 					check(
-						`${path}: production cloud coverage overlaps its ground shadow at t=${row.seconds}`,
+						`${label}: production cloud coverage overlaps its ground shadow at t=${row.seconds}`,
 						row.path === path &&
 							row.n > 1000 &&
 							row.correlation > 0.9 &&
@@ -2744,12 +2754,12 @@ if (airless) {
 						JSON.stringify(row),
 					);
 				check(
-					`${path}: production weather moves between t=0 and t=4000`,
+					`${label}: production weather moves between t=0 and t=4000`,
 					rows[1].weatherChange > 0.01,
 					JSON.stringify(rows[1]),
 				);
 				check(
-					`${path}: overlap oracle rejects a shadow frozen at t=0`,
+					`${label}: overlap oracle rejects a shadow frozen at t=0`,
 					Number.isFinite(rows[1].frozenCorrelation) &&
 						rows[1].frozenCorrelation < 0.7,
 					JSON.stringify(rows[1]),
@@ -2770,7 +2780,8 @@ if (airless) {
 							const g = window.__seelite;
 							g.bodyVisuals.get(id).uniforms.cloudCover.value = cover;
 							g.setSurfacePin(path);
-							if (path === "baked") g.rebake(id, 512);
+							// Both programs reuse ready coverage; the fixture changed.
+							g.rebake(id, 512);
 						},
 						{ id: subject.id, cover, path },
 					);
