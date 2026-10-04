@@ -138,9 +138,21 @@ const coast = async ({ type, where, gates }) => {
 					outwardAfterKms = dot(vRel, axis);
 					// Down from the ship's lowest point, onto what is drawn. The
 					// near layer draws at 1:1, placed about the camera.
+					const box = g.flownSolid[0];
+					if (box.kind !== "box") throw new Error("player has no hull box");
+					const shipNose = g.nose();
+					const shipUp = g.shipUp();
+					// The fore face's centre, including the measured origin offset.
+					// Casting only against the station needs no self-hit offset.
 					const lowest = add(
 						g.world.ship.pos,
-						scale(nose, 0.5 * g.flownEnvelope.lengthKm + 0.002),
+						add(
+							add(
+								scale(cross(shipNose, shipUp), box.centre.x),
+								scale(shipUp, box.centre.y),
+							),
+							scale(shipNose, box.centre.z + box.half[2]),
+						),
 					);
 					const cam = g.cameraSimPos;
 					const from = sub(lowest, cam);
@@ -149,7 +161,7 @@ const coast = async ({ type, where, gates }) => {
 						root.updateMatrixWorld(true);
 						const caster = new THREE.Raycaster(
 							new THREE.Vector3(from.x, from.y, from.z),
-							new THREE.Vector3(nose.x, nose.y, nose.z),
+							new THREE.Vector3(shipNose.x, shipNose.y, shipNose.z),
 						);
 						const hit = caster
 							.intersectObject(root, true)

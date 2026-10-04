@@ -21,6 +21,8 @@ Pad proxies have a derived landing well below the plane, so the hull's nose
 can reach the centre crossing without hitting the deck first.
 
 `docking.md` §9.2.4 and its stale handoffs now name `probe-collision.mjs`.
+The gap ray reads the actual hull box's fore-face centre, including its measured
+origin offset, rather than approximating it from half the envelope length.
 The old hull-face entry row moved out of `probe-docking.mjs`; check 5 retains
 its headless containment rows. The collision and docking probes are registered
 under their current subjects.
@@ -50,9 +52,15 @@ the supervisor owes that final reviewed-head gate.
 
 The worker's targeted hardware run covers `probe-collision.mjs`,
 `probe-collision-surface.mjs`, `probe-docking.mjs`, `probe-dock-arrival.mjs`,
-`probe-docking-traffic.mjs` and `probe-frame-acceleration.mjs`. It uses the
+`probe-docking-traffic.mjs`, `probe-frame-acceleration.mjs` and
+`probe-public-site.mjs` (the changelog entry). It uses the
 canonical runner and its shared machine lock, server identity and renderer
 guards. This is partial evidence, regardless of its result.
+
+Status at this commit: queued behind the shared machine lock. The first attempt
+waited 1,021 seconds, then Chromium aborted before any checks and sandbox
+process control returned `EPERM`. An approved retry outside that process sandbox
+is waiting for the lock. No browser pass is claimed here yet.
 
 ## Principal judgment still required
 
