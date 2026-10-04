@@ -13,6 +13,11 @@
 
 import { RINGED_CLASSES, type SurfaceClass } from "./planet-appearance";
 import { CLASS_GLSL, RELIEF } from "./planet-classes.glsl";
+import {
+	CLOUD_FIELD_GLSL,
+	CLOUD_MOTION_GLSL,
+	CLOUD_PROJECTION_GLSL,
+} from "./planet-clouds";
 
 /**
  * One cell of a crater field, and the profile of the crater in it.
@@ -424,6 +429,8 @@ ${relief === "none" ? "#define RELIEF_NONE 1" : ""}
 ${SANITISE_GLSL}
 ${VARYINGS_GLSL}
 ${NOISE_GLSL}
+${surface === "terran" ? CLOUD_FIELD_GLSL + CLOUD_PROJECTION_GLSL : ""}
+${surface === "terran" ? "uniform samplerCube cloudCoverage;\nuniform float cloudCoverageReady;" : ""}
 ${LIGHT_GLSL}
 float height(vec3 p);
 ${RELIEF}
@@ -440,6 +447,20 @@ void main() {
   // ?perf=flat: a plain lit sphere, so the whole class shader can be priced
   // against the rest of the frame. Diagnostic; see planet-surface.ts.
   if (perfAblate < 1.5) surface(p, albedo, N, emissive, specPower, specMask);
+${
+	surface === "terran"
+		? `  // Reuse ready weather even when terrain relief is procedural.
+  if (perfAblate < 1.5 && cloudCover > 0.01 && dot(p, cloudSunDir) > 0.0) {
+    vec3 cloudP = cloudDirection(p);
+    float coverage;
+    if (cloudCoverageReady > 0.5)
+      coverage = textureCube(cloudCoverage, cloudP).a;
+    else
+      coverage = cloudField(cloudP, cloudCover, seedOffset, cloudTestDir);
+    albedo *= 1.0 - CLOUD_SHADOW_STRENGTH * coverage;
+  }`
+		: ""
+}
 
 ${
 	RINGED_CLASSES.includes(surface)
@@ -531,9 +552,9 @@ void main() {
   float graze = sqrt(max(d2, 0.0));
   // Zero at the ground, one at the top of the shell.
   float altitude = clamp((graze - inner) / max(outer - inner, 1e-6), 0.0, 1.0);
-  // A scale height of 3.5 leaves about 3% of the ground value at the top,
-  // which reads as a tail rather than a border.
-  float density = exp(-altitude * 3.5);
+  // A scale height of 2.8 leaves about 6% of the ground value at the top.
+  // Node #212 widens the falloff; readability is judged on the sheet.
+  float density = exp(-altitude * 2.8);
   // Multiplied out to exactly zero at the silhouette, so the small remainder
   // the exponential still carries does not leave a step of its own.
   float rim = density * (1.0 - altitude);
@@ -542,8 +563,9 @@ void main() {
   // Only the lit limb glows, and it fades through the terminator rather than
   // stopping at it.
   float day = smoothstep(-0.45, 0.30, dot(N, sunDir));
-  // Forward scattering: looking towards the star through the shell.
-  float forward = pow(max(dot(V, -sunDir), 0.0), 5.0);
+  // Forward scattering: looking towards the star through the shell. Exponent
+  // 3.5 rather than the previous 5.0 spreads the glow wider (node #212).
+  float forward = pow(max(dot(V, -sunDir), 0.0), 3.5);
   // Longer path at grazing angles scatters out the blue first — grazing is now
   // "a long way through the air", which is what it always meant.
   float grazing = pow(clamp(depth, 0.0, 1.0), 2.5);
@@ -566,35 +588,42 @@ precision highp float;
 ${VARYINGS_GLSL}
 ${SANITISE_GLSL}
 ${NOISE_GLSL}
+${CLOUD_FIELD_GLSL}
+${CLOUD_MOTION_GLSL}
 ${LIGHT_GLSL}
 uniform float time;
+uniform vec3 cloudTestDir;
+uniform float cloudCoherent;
 uniform float cloudCover;
 uniform float seedOffset;
 uniform vec3  cloudTint;
 void main() {
   vec3 p = normalize(vObjP);
-  // Two rates: the deck drifts and the detail shears across it, which reads as
-  // one system moving rather than a texture sliding.
-  vec3 slow = p + vec3(time * 0.0030, 0.0, 0.0) + seedOffset;
-  vec3 fast = p + vec3(time * 0.0068, 0.0, time * 0.0011) + seedOffset;
-  float broad = fbm4(warp(slow * 2.3, 1.1, 0.75));
-  float wisp  = fbm5(fast * 8.5);
-
-  // Weather is banded on a rotating world: wet at the equator, dry in the horse
-  // latitudes, wet again at the polar front. Uniform coverage looks like fog.
-  float lat = abs(p.y);
-  float zonal = 0.58 + 0.42 * cos(lat * 8.2 + 0.4);
-
-  float field = broad * 0.68 + wisp * 0.32;
-  float mask = smoothstep(0.54 - cloudCover * 0.16, 0.56 + 0.10, field) * zonal;
+  float mask;
+  if (cloudCoherent > 0.5) {
+    // Terran weather moves coherently with its baked coverage field.
+    mask = cloudField(cloudMotion(p, time), cloudCover, seedOffset, cloudTestDir);
+  } else {
+    // Preserve the pre-node dust field: two shearing scales, no cirrus.
+    vec3 slow = p + vec3(time * 0.0030, 0.0, 0.0) + seedOffset;
+    vec3 fast = p + vec3(time * 0.0068, 0.0, time * 0.0011) + seedOffset;
+    float broad = fbm4(warp(slow * 2.3, 1.1, 0.75));
+    float wisp = fbm5(fast * 8.5);
+    float lat = abs(p.y);
+    float zonal = 0.58 + 0.42 * cos(lat * 8.2 + 0.4);
+    float field = broad * 0.68 + wisp * 0.32;
+    mask = smoothstep(0.54 - cloudCover * 0.16, 0.56 + 0.10, field) * zonal;
+  }
 
   vec3 N = normalize(vWorldN);
   vec3 V = normalize(cameraPosition - vWorldP);
   // Same lighting as the ground, so the cloud terminator lines up with it.
   float lit = wrappedDiffuse(N);
   float rim = pow(1.0 - max(dot(N, V), 0.0), 2.2);
+  // Only terran weather gets the lower opacity; dust keeps its original value.
+  float opacity = cloudCoherent > 0.5 ? (0.48 + 0.22 * rim) : (0.62 + 0.30 * rim);
   gl_FragColor = sane4(vec4(cloudTint * (lit * 1.30 * sunColor + 0.025),
-                            clamp(mask, 0.0, 1.0) * (0.62 + 0.30 * rim)));
+                            clamp(mask, 0.0, 1.0) * opacity));
 }
 `;
 
@@ -808,7 +837,11 @@ export interface BakeDescriptor {
 }
 
 export const BAKE_DESCRIPTORS: Partial<Record<SurfaceClass, BakeDescriptor>> = {
-	terran: { aux: "0.0", perFrame: "", specPower: 230 },
+	terran: {
+		aux: "cloudField(p, cloudCover, seedOffset, cloudTestDir)",
+		perFrame: "",
+		specPower: 230,
+	},
 	desert: { aux: "0.0", perFrame: "", specPower: 0 },
 	ice: { aux: "0.0", perFrame: "", specPower: 46 },
 	airless: { aux: "0.0", perFrame: "", specPower: 0 },
@@ -908,6 +941,7 @@ uniform mat3 faceBasis;
 varying vec2 vNdc;
 ${SANITISE_GLSL}
 ${NOISE_GLSL}
+${surface === "terran" && channel === "normal" ? CLOUD_FIELD_GLSL : ""}
 float height(vec3 p);
 ${RELIEF}
 ${CLASS_GLSL[surface]}
@@ -976,7 +1010,8 @@ ${SURFACE_VERTEX_BODY}
 /**
  * Draw a body from its two cubes — the cheap program the whole node is for.
  *
- * Two texture fetches and the shared lighting, against the 100 to 150 noise
+ * Two terrain texture fetches and shared lighting, plus terran's sun-projected
+ * cloud-coverage fetch, against the 100 to 150 noise
  * calls a fragment the procedural program makes. There is **no relief path
  * here**: the normal comes out of a texture, so #207's three programs have
  * nothing to select between and `SurfacePath` keeps `"baked"` outside the
@@ -1019,6 +1054,7 @@ uniform samplerCube bakedAlbedo;
 uniform samplerCube bakedNormal;
 ${d.perFrame ? "" : "uniform float perfAblate;"}
 ${prelude}
+${surface === "terran" ? CLOUD_PROJECTION_GLSL + "\nuniform float cloudCover;" : ""}
 void main() {
   vec3 p = normalize(vObjP);
   vec3 V = normalize(cameraPosition - vWorldP);
@@ -1041,6 +1077,16 @@ ${d.perFrame ? `  ${d.perFrame}` : ""}
   }
   if (perfAblate > 0.5) N = normalize(vWorldN);
 
+${
+	surface === "terran"
+		? `  // Coverage is normal-cube alpha: one extra fetch, no per-frame noise.
+  // Lighting and weather motion stay live, independent of the terrain bake.
+  if (perfAblate < 1.5 && cloudCover > 0.01 && dot(p, cloudSunDir) > 0.0) {
+    vec3 cloudP = cloudDirection(p);
+    albedo *= 1.0 - CLOUD_SHADOW_STRENGTH * textureCube(bakedNormal, cloudP).a;
+  }`
+		: ""
+}
   vec3 col = shade(albedo, N, V);
 ${
 	d.specPower > 0

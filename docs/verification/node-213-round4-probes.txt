@@ -1,0 +1,27 @@
+
+> seelite@0.1.0 probe:one
+> npm run probe:gpu -- --only planet
+
+
+> seelite@0.1.0 probe:gpu
+> npm run check:wiring && SEELITE_PROBE_RENDERER=hardware node scripts/probe-all.mjs --only planet
+
+
+> seelite@0.1.0 check:wiring
+> node scripts/check-launcher-wiring.mjs
+
+ok   112 scripts call launchChromium, every one imports it from probe-guard.mjs, and none resolves Playwright itself
+probe lock: waiting 0s for pid 71166 (probe-all, 13 probes) in /Users/fischer/work/ranger-repos/jcfischer/seelite/.worktrees/node-684 since 2026-10-04T17:11:54.095Z
+probe lock: waiting 60s for pid 71166 (probe-all, 13 probes) in /Users/fischer/work/ranger-repos/jcfischer/seelite/.worktrees/node-684 since 2026-10-04T17:11:54.095Z
+probe lock: waiting 121s for pid 71166 (probe-all, 13 probes) in /Users/fischer/work/ranger-repos/jcfischer/seelite/.worktrees/node-684 since 2026-10-04T17:11:54.095Z
+probe lock: taken after 126s
+checking hardware renderer for GPU probe lane
+[probe] hardware renderer: ANGLE (Apple, ANGLE Metal Renderer: Apple M1 Pro, Unspecified Version)
+probing http://127.0.0.1:62633 (dev server) — 2 probes, 1 at a time
+     filtered by --only planet: 83 of 85 probes were not run.
+
+ok   probe-planet-surfaces.mjs (21.3s)
+ok   probe-planets.mjs (7.4s)
+
+2/2 gating probes passed in 29s · peak load 10.3 on 10 cores — PARTIAL RUN, --only planet: 83 of 85 probes were not run.
+     This is not a pass for the suite. Run `npm run probe` for that.

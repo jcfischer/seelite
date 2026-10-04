@@ -128,6 +128,12 @@ export const DOMAIN = {
 	 * the giant/rocky threshold can reclassify a rung, but does not move those
 	 * existing draws or another rung's formation roll. */
 	FORMATION_MASS: 28,
+	/** Per-system gas cloud parameters (node #433): colour, density, and the
+	 * direction the gas concentrates toward. Its own tag rather than a draw off
+	 * `SKY_FRAME`, which seeds the galactic frame — the gas is a different
+	 * question from which way the band lies, and sharing a stream would make a
+	 * system's gas a function of its frame's three draws. */
+	GAS: 29,
 } as const;
 
 export type DomainName = keyof typeof DOMAIN;

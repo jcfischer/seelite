@@ -10,7 +10,7 @@
 import { describe, expect, test } from "bun:test";
 import { readFileSync } from "node:fs";
 import { radiusAtTexelRatio } from "./lib/texel-radius";
-import { codeOf } from "./lib/source-scan";
+import { codeOf, stripComments } from "./lib/source-scan";
 import { CLASS_GLSL } from "../src/planet-classes.glsl";
 import type { SurfaceClass } from "../src/planet-appearance";
 import {
@@ -146,6 +146,24 @@ describe("which classes bake", () => {
 });
 
 describe("the two programs a bake needs", () => {
+	test("terran coverage bake defines helpers before writing normal-cube alpha", () => {
+		// Coverage is light-free and belongs only to the normal cube's spare alpha.
+		{
+			const channel = "normal";
+			const source = stripComments(bakeFragmentFor("terran", channel));
+			for (const helper of ["cloudFieldFromInputs", "cirrusDomain"]) {
+				const definition = source.search(
+					new RegExp(`(?:float|vec3)\\s+${helper}\\s*\\(`),
+				);
+				expect(definition, `${channel}: ${helper} defined`).toBeGreaterThan(-1);
+				expect(
+					definition,
+					`${channel}: ${helper} before cloudField`,
+				).toBeLessThan(source.indexOf("float cloudField("));
+			}
+		}
+	});
+
 	test("the bake writes both channels and never shades", () => {
 		for (const surface of BAKEABLE_CLASSES) {
 			const albedo = bakeFragmentFor(surface, "albedo");
@@ -187,16 +205,15 @@ describe("the two programs a bake needs", () => {
 		}
 	});
 
-	test("the per-frame hook is inert on every class in the table", () => {
-		// `aux` and `perFrame` are the node's "emissive lava stays a per-frame
-		// term", and nothing uses them: lava is the only class that ever wanted
-		// one and it is out of the table on a measurement (`BAKE_DESCRIPTORS`
-		// records the figures). The fields stay because the mechanism is what a
-		// second attempt would need, and this asserts the claim that they are
-		// currently doing nothing rather than leaving it to be inferred — so a
-		// class that quietly acquires one has to come past this line.
+	test("the emissive hook stays inert and only terran stores weather coverage", () => {
+		// Node #212 uses normal-cube alpha for static coverage, separately from
+		// the emissive hook. Motion and sun projection belong to the draw program.
 		for (const surface of BAKEABLE_CLASSES) {
-			expect(BAKE_DESCRIPTORS[surface]?.aux, surface).toBe("0.0");
+			expect(BAKE_DESCRIPTORS[surface]?.aux, surface).toBe(
+				surface === "terran"
+					? "cloudField(p, cloudCover, seedOffset, cloudTestDir)"
+					: "0.0",
+			);
 			expect(BAKE_DESCRIPTORS[surface]?.perFrame, surface).toBe("");
 		}
 	});

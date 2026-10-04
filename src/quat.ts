@@ -12,15 +12,14 @@
  * degenerate case, perpendicular-axis fallback and all. A second copy of a
  * 180°-safe shortest arc is how two files end up disagreeing about whether the
  * antiparallel case is handled, with nothing linking them: #99's own lesson was
- * that a rotation stated twice is a claim nothing can break. So `envRotation`
- * builds through {@link shortestArc} here, and
- * `tests/quat.test.ts` holds the primitive while `tests/light-rig.test.ts`
- * keeps holding the bake's own property through it.
+ * that a rotation stated twice is a claim nothing can break. The shared
+ * {@link shortestArc} now carries the galactic frame; node #433 retired the lighting wrapper and
+ * `tests/quat.test.ts` holds its useful rotation properties on the primitive.
  *
  * ## Two conventions, stated because both are easy to get backwards
  *
- * - **`[x, y, z, w]` order**, last element scalar. The one `three` uses, and the
- *   one `envRotation` already returned, so `main.ts`'s `fromArray` keeps working.
+ * - **`[x, y, z, w]` order**, last element scalar. The convention `three` uses
+ *   as well, so renderer boundaries can read the arrays directly.
  * - **`quatMul(a, b)` is `a` *after* `b`** — Hamilton's product, applied
  *   right-to-left, asserted as a function composition in the test rather than as
  *   a formula. A frame built as an arc and then a roll is one flipped `quatMul`

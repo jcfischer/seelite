@@ -21,7 +21,10 @@
  */
 
 import * as THREE from "three";
+import { airlessFeatures, applyAirlessFeatures } from "./airless-features";
+import { planetSeedOffset } from "./planet-appearance";
 import type { PlanetAppearance, SurfaceClass } from "./planet-appearance";
+import { CLOUD_SHELL_RADIUS } from "./planet-clouds";
 import {
 	ATMOSPHERE_FRAGMENT,
 	BAKED_SURFACE_VERTEX,
@@ -419,7 +422,9 @@ function coronaTexture(): THREE.Texture {
  */
 let cloudGeometry: THREE.SphereGeometry | undefined;
 const cloudShell = () => {
-	cloudGeometry ??= shared(new THREE.SphereGeometry(1.014, 128, 84));
+	cloudGeometry ??= shared(
+		new THREE.SphereGeometry(CLOUD_SHELL_RADIUS, 128, 84),
+	);
 	return cloudGeometry;
 };
 let shellGeometry: THREE.SphereGeometry | undefined;
@@ -494,11 +499,19 @@ export function buildBodyVisual(
 		// scale — which is what lets one uniform serve the far, approach and near
 		// layers without a per-layer copy.
 		sunDir: { value: (opts.sunDir ?? DEFAULT_SUN_DIRECTION).clone() },
+		cloudSunDir: { value: new THREE.Vector3() },
+		cloudCoherent: { value: look.surface === "terran" ? 1 : 0 },
+		cloudCoverage: { value: null },
+		cloudCoverageReady: { value: 0 },
 		sunColor: { value: new THREE.Color(opts.sunColor ?? 0xfff7eb) },
 		// A thick atmosphere carries light well past the geometric terminator;
 		// an airless body does not carry it at all.
 		wrapAmount: { value: look.atmosphere * 0.32 },
-		seedOffset: { value: (look.seed % 997) / 97 },
+		seedOffset: { value: planetSeedOffset(look.seed) },
+		basinCount: { value: 0 },
+		basins: { value: Array.from({ length: 4 }, () => new THREE.Vector4()) },
+		rayCount: { value: 0 },
+		rayCells: { value: Array.from({ length: 3 }, () => new THREE.Vector3()) },
 		// 0 normally; 1 drops the normal perturbation, 2 drops the surface noise
 		// entirely. Read by every class through `RELIEF`.
 		perfAblate: { value: 0 },
@@ -517,6 +530,9 @@ export function buildBodyVisual(
 		// Set below, once the shell's scale is known.
 		atmoInnerRatio: { value: 1 },
 		cloudCover: { value: look.cloudCover },
+		// When non-zero, coverage bake, procedural shadow, and terran shell share
+		// a single blob in the rotating weather frame. Zero in production.
+		cloudTestDir: { value: new THREE.Vector3(0, 0, 0) },
 		// Water cloud is neutral; a dust haze is the colour of the ground it
 		// was lifted from.
 		cloudTint: {
@@ -552,6 +568,26 @@ export function buildBodyVisual(
 	};
 
 	const group = new THREE.Group();
+	let airlessReady = false;
+	const prepareAirless = () => {
+		if (airlessReady) return;
+		const features = airlessFeatures(look.seed);
+		if (features.exhausted)
+			console.warn(
+				`airless seed ${look.seed}: ${features.exhausted} selection exhausted; retained crater terrain`,
+			);
+		applyAirlessFeatures(
+			{
+				basinCount: uniforms.basinCount,
+				basins: uniforms.basins,
+				rayCount: uniforms.rayCount,
+				rayCells: uniforms.rayCells,
+			},
+			features,
+		);
+		airlessReady = true;
+	};
+	if (look.surface === "airless") prepareAirless();
 	const planet = new THREE.Mesh(
 		sphere,
 		new THREE.ShaderMaterial({
@@ -696,6 +732,15 @@ export function buildBodyVisual(
 	 * panel walks scenes and has no handle.
 	 */
 	planet.userData.bakeAllowed = true;
+	const updateCloudCoverage = () => {
+		const valid =
+			ready &&
+			bakedClass === "terran" &&
+			planet.userData.surfaceClass === "terran" &&
+			planet.userData.bakeAllowed;
+		uniforms.cloudCoverage.value = valid && ready ? ready.normal.texture : null;
+		uniforms.cloudCoverageReady.value = valid ? 1 : 0;
+	};
 	/**
 	 * Every cube pair this body is holding, the drawable one first.
 	 *
@@ -721,6 +766,7 @@ export function buildBodyVisual(
 			.map((bake) => ({ albedo: bake.albedo, normal: bake.normal }));
 	planet.userData.setBakeAllowed = (allowed: boolean) => {
 		planet.userData.bakeAllowed = allowed;
+		updateCloudCoverage();
 		if (!allowed && planet.userData.baked) {
 			planet.material = proceduralMaterial;
 			planet.userData.baked = false;
@@ -762,6 +808,8 @@ export function buildBodyVisual(
 			: (planet.userData.reliefPath as ReliefPath);
 
 	const setSurfaceClass = (next: SurfaceClass) => {
+		if (next === "airless") prepareAirless();
+		uniforms.cloudCoherent.value = next === "terran" ? 1 : 0;
 		// A star keeps its own shader. It is not a planet surface, it is the
 		// brightest thing in the frame and therefore what the bloom pass is
 		// mostly working on, and drawing it as a desert would change the one
@@ -786,6 +834,7 @@ export function buildBodyVisual(
 		);
 		proceduralMaterial.needsUpdate = true;
 		planet.userData.surfaceClass = next;
+		updateCloudCoverage();
 	};
 	planet.userData.setSurfaceClass = setSurfaceClass;
 	group.add(planet);
@@ -828,8 +877,9 @@ export function buildBodyVisual(
 		// leaves the exponential falloff no room to fall off in, so the haze had
 		// to be steep to fit — and steep is the thing being fixed. The glow
 		// fades well inside the new silhouette, so a thicker shell does not read
-		// as a bigger planet.
-		const shellScale = 1.06 + look.atmosphere * 0.05;
+		// as a bigger planet. Node #212 raises the scale from 1.06 + 0.05a;
+		// three-radius legibility awaits the principal's judgement on the sheet.
+		const shellScale = 1.1 + look.atmosphere * 0.06;
 		shell.scale.setScalar(shellScale);
 		// The surface is the unit sphere and the shell is that scaled, so the
 		// fraction of the shell the solid body fills is one over the scale. The
@@ -887,6 +937,15 @@ export function buildBodyVisual(
 	// body rather than as a ball. Per-body tilt would be a generator question —
 	// the axis decides seasons — and nothing in the sim has an axis yet.
 	group.rotation.z = 0.18;
+	const cloudFrame = new THREE.Quaternion();
+	const updateCloudSun = (direction: THREE.Vector3) => {
+		group.getWorldQuaternion(cloudFrame).invert();
+		(uniforms.cloudSunDir.value as THREE.Vector3)
+			.copy(direction)
+			.applyQuaternion(cloudFrame)
+			.normalize();
+	};
+	updateCloudSun(uniforms.sunDir.value as THREE.Vector3);
 
 	return {
 		group,
@@ -895,6 +954,7 @@ export function buildBodyVisual(
 		surface: look.surface,
 		setSunDirection(direction, starAngularRadius) {
 			(uniforms.sunDir.value as THREE.Vector3).copy(direction);
+			updateCloudSun(direction);
 			uniforms.sunAngularRadius.value = starAngularRadius;
 			// `getWorldDirection` updates the ring's world matrix from the root
 			// before reading its +Z, so this is exact rather than a frame stale —
@@ -989,6 +1049,7 @@ export function buildBodyVisual(
 			ready = filling;
 			filling = undefined;
 			bakedClass = fillingClass;
+			updateCloudCoverage();
 			if (bakedMaterial) {
 				bakedMaterial.uniforms.bakedAlbedo.value = ready.albedo.texture;
 				bakedMaterial.uniforms.bakedNormal.value = ready.normal.texture;
@@ -1068,6 +1129,9 @@ export function buildBodyVisual(
 			// tripped over.
 			planet.material = proceduralMaterial;
 			planet.userData.baked = false;
+			// Cube targets own their textures; keep the subtree walker off them.
+			uniforms.cloudCoverage.value = null;
+			uniforms.cloudCoverageReady.value = 0;
 			disposeSubtree(group);
 			// **And the cubes are not reachable from the subtree, which is the
 			// point** (#208). A cube render target owns a framebuffer as well as a

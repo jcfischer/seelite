@@ -178,7 +178,7 @@ describe("the view set itself", () => {
 		// not `VIEWS.length`, which is the whole point: a view deleted by accident
 		// has to be a red run, and a check derived from its own subject cannot be
 		// one.
-		expect(VIEWS.length).toBe(67);
+		expect(VIEWS.length).toBe(68);
 		const names = VIEWS.map((v) => v.name);
 		expect(new Set(names).size).toBe(names.length);
 		for (const name of names) expect(name).toMatch(/^[a-z]+(-[a-z]+)*$/);
@@ -329,6 +329,13 @@ describe("the view set itself", () => {
 		};
 		const fill = planetView("planet-fill");
 		const terminator = planetView("planet-terminator");
+		// Node #212 owes a limb judgement at three radii on an existing row.
+		expect(terminator.covers).toContain(212);
+		expect(terminator.shot.radii).toBe(3);
+		const terran = makeWorld(SEED).system.bodies.find(
+			(b) => b.id === terminator.shot.body,
+		);
+		expect(terran?.appearance?.surface).toBe("terran");
 		for (const view of [fill, terminator]) {
 			expect(view.covers).toContain(206);
 			expect(view.shot.kind).toBe("body-offset");
@@ -524,7 +531,7 @@ describe("the contact sheet", () => {
 		// The fixture spaces its frames 0.4 s apart, so the span is fixed by how
 		// many views the set declares — which is the count row's business, not this
 		// one's, and this literal moves with it.
-		expect(html).toContain("· clock 0.6–27.0s");
+		expect(html).toContain("· clock 0.6–27.4s");
 		expect(html).not.toContain("pinned");
 	});
 

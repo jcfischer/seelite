@@ -1,78 +1,85 @@
 /**
- * The one thing about #99's light rig that no headless test can reach: whether
- * the baked environment is **oriented** the way `three` samples it.
+ * The one thing about the light rig's environment that no headless test can
+ * reach: whether the baked sky lights the expected side of a hull in the
+ * world frame.
  *
- * `tests/light-rig.test.ts` holds the radiance model — it is a lobe toward the
- * star and a floor everywhere — and says in its own header why it stops there.
- * The mapping from a texel to a direction is stated once, in `light-rig.ts`, so
- * any assertion restating it agrees with it by construction, including a
- * flipped one. A cube handed to the renderer back-to-front puts the reflection
- * on the side *away* from the star: it looks wrong and measures perfectly.
+ * `tests/light-rig.test.ts` holds the sky model and says in its own header why
+ * it stops there. The mapping from a texel to a direction is stated once, in
+ * `light-rig.ts`, so any assertion restating it agrees with it by construction,
+ * including a flipped one. A sky handed to the renderer back-to-front lights the
+ * face turned *away* from its bright side: it looks wrong and measures
+ * perfectly.
  *
- * ## What is measured, and why it is a difference
+ * ## What the star-free sky promises, and so what this measures
  *
- * The same station, framed twice — once front-lit (the star nearly behind the
- * camera) and once backlit (the star beyond the subject) — and each framing
- * rendered twice, with the quality setting `high` and then `low`. Low drops the
- * environment and changes nothing else, so **high minus low is the environment
- * and only the environment**: the sun, the hemisphere, the fill, the clock, the
- * camera and the station's own spin phase are identical across the pair.
+ * Before node #433 the bake was a star lobe and a floor, rotated onto the star
+ * each frame, and this probe compared a front-lit station with a backlit one:
+ * the environment had to add more where the star was in front. **That premise
+ * is gone, by the principal's decision of 2026-10-04**: the per-system bake is
+ * haze, gas and the floor, with no star — star light comes from the direct sun
+ * alone — so nothing in the environment favours the star side any more, and
+ * on a star-free bake the front/back comparison read 0.17 against 0.44. What the
+ * sky does promise (#100, carried by #433) is two things, and the probe
+ * measures those:
  *
- * That is the point of differencing rather than thresholding. An absolute
- * brightness would be measuring the sun's angle as much as the environment, and
- * the sun's angle is exactly what the two framings vary.
+ * - **It reaches the scene.** The system's own sky, on minus off, adds light
+ *   to the station from both framings.
+ * - **Its bright side lights the expected face.** A haze the bake puts on
+ *   one side of the sky lights the hull face turned toward that side.
  *
- * Both halves are then compared against each other, which is the orientation
- * check: the environment must add **more** where the star is in front of the
- * subject than where it is behind it. That inequality is
+ * The second cannot be read off the system's own sky at the canonical seed:
+ * seed 47's haze and gas, cosine-weighted the way a diffuse face gathers them,
+ * light any two opposite faces edge-on to its star within 4% of each other
+ * (printed each run as "at most N×"). So the probe bakes a sky of its own
+ * through the game's own path (`Game.bakeSky`) — a full-strength haze and no
+ * gas — once aimed at the up face and once at the down face, reads each face
+ * under both at one station pose, and puts the system's sky back. Which face
+ * is "up", and what the model predicts for it, is `pickFramings`'s to say.
  *
- * - true on a correct bake,
- * - **reversed** on a bake sampled back-to-front,
- * - and **zero on both sides** if the environment never reached the scene at
- *   all — which is why the first check requires the front-lit delta to be
- *   positive before the comparison is made. A check whose every arm can read
- *   zero is a check that passes when the thing it measures is missing.
+ * ## Why it is two differences and not a threshold
  *
- * Both of those were built and watched go red before this was offered as
- * verification: `scene.environment = null` reads Δ 0.00 on both arms and fails
- * two checks, and negating the star direction in the rotation reads front
- * Δ 9.37 against back Δ 23.54 and fails the comparison.
+ * Each face is read with the environment on and then off, at the same pose and
+ * in the same evaluate, so on minus off is the environment and only the
+ * environment. Then each face is compared **with itself** — haze toward it
+ * against haze away — rather than with the other face, so the station's shape,
+ * the sun's angle on that face and anything else the frame carries cancel. The
+ * check requires both faces to agree, and the reach check requires both deltas
+ * to be positive: a check whose every arm can read zero passes when the thing
+ * it measures is missing.
+ *
+ * Built and watched go red before this was offered as verification, each a
+ * one-line change on node #433's build:
+ *
+ * - the environment never assigned (`scene.environment = null` in
+ *   `applyQuality`): Δ 0.00 on every arm, reach and orientation both red;
+ * - the bake point-reflected (`radiance([-dx, -dy, -dz])` in
+ *   `equirectEnvironment`): 0.72× and 0.71× toward over away, red;
+ * - rows uploaded upside down (`(height - 1 - y)` as the row index): 0.75× and
+ *   0.78×, red.
+ *
+ * On the correct build it reads about 1.4× on both faces. The model's 1.78×
+ * scores one face normal and is printed beside it; the check is on the sign
+ * on both faces, not on the size.
  *
  * ## What it does not catch, measured rather than assumed
  *
- * **The fill is not tested here, and cannot be at these framings.** A check
- * that a backlit hull is still lit — the fix #99 inherited and must not undo —
- * was written, and it could not fail: it asserted `back.low > 1` against a
- * measured 38.28, on a mask that already admits only pixels three levels away
- * from the background. Rebuilding it as a ratio did not rescue it either. With
- * `fill.intensity` driven to 0, the backlit arm reads 28.16 against 38.28 and
- * the ratio to the front-lit arm moves 48.9% → 39.6% — a real difference in the
- * right direction, and far too shallow to put a threshold in the middle of
- * without tuning the threshold until the verdict came out.
+ * **The fill is not tested here.** A check that a backlit hull is still lit —
+ * the fix #99 inherited and must not undo — was written against the old
+ * framings and could not fail: it asserted `back.low > 1` against a measured
+ * 38.28 on a mask that already admits only pixels three levels away from the
+ * background, and as a ratio it moved 48.9% → 39.6% with `fill.intensity` at 0,
+ * far too shallow to put a threshold in the middle of. The fill's own case is a
+ * hull lit from behind, where the station eclipses the star and the mask stops
+ * being the station, so the fill keeps the coverage it had before #99 — none,
+ * beyond the frame a person looks at.
  *
- * The reason is the framing rather than the check. The fill's own case is a
- * hull lit from *behind*, near 180°, and that is precisely the angle where the
- * station eclipses the star and the mask stops being the station (below). So
- * the two requirements are in direct conflict at this subject, and the fill
- * keeps the coverage it had before #99 — which is none, beyond the frame a
- * person looks at.
- *
- * **A small mis-rotation walks past it, and something else catches that now.**
- * Inverting the rotation — a plausible typo, and the third defect built for
- * this — moved the pair from 21.30/12.31 to 19.84/9.22 and stayed green,
- * because the inverse lands the lobe 2θ from the star and θ is small for the
- * direction seed 47 puts it in. The inequality here is between a front-lit and
- * a backlit hull, so it discriminates *which hemisphere* the lobe is in and
- * nothing finer; a check claiming more would be claiming it about a difference
- * of two means over two thousand pixels.
- *
- * What closed that gap was moving the rotation out of `main.ts` and into
- * `envRotation`, where `tests/light-rig.test.ts` sweeps its round trip over 200
- * directions and the inverse fails at every one but the two poles. So the two
- * tiers divide the question: the headless test says the rotation is the
- * rotation it claims to be, and this says the bake reached the scene pointing
- * the right way. Neither implies the other — a correct rotation applied to an
- * environment that was never assigned is green upstairs.
+ * **Full world-frame orientation is not tested here.** Both synthetic skies
+ * are symmetric about the same axis, so a roll around that axis leaves them
+ * unchanged. The checks establish which side lights each face and reject the
+ * measured point reflection and row flip; they cannot detect that roll.
+ * **Whether the system's own sky is the right sky is not tested here.** What
+ * the haze and gas look like, and whether seed 47's evenness is what #100 wanted,
+ * is the canonical view set's question and the principal's yes.
  *
  * ## Which rasteriser, said plainly
  *
@@ -136,110 +143,291 @@ const RADII = 8;
 const HULL_SAMPLES = 5;
 
 /**
- * Front-lit and backlit, and neither is at an extreme.
+ * How much more light the model must put on the bright face than on the dim
+ * one before the comparison below is about anything.
  *
- * `sunAngleDeg` is measured at the subject, so 0 puts the star behind the
- * camera and 180 puts it directly behind the station. **160 was tried first and
- * is wrong**: at that angle the station eclipses the star, so hiding the mesh
- * reveals the disc and its bloom halo, and the mask — which is "pixels that
- * changed when the station was hidden" — grew from ~2,100 px to ~39,500. The
- * backlit mean was then mostly halo, and the comparison against the front-lit
- * delta was a comparison between two different subjects. It still read green.
- *
- * At 110 the star sits about 70 degrees off the view axis, outside a 60-degree
- * field, so both framings mask the station and nothing else. The mask-parity
- * check below is what keeps it that way, rather than a comment that hopes so.
+ * The measured deltas are fractions of a display code, so a pair of framings
+ * the sky barely tells apart would make the orientation check a coin toss that
+ * reads green half the time on a flipped bake. Asserted rather than assumed,
+ * like `probe-planet-surfaces.mjs`'s neutral-star premise, so a change to the
+ * haze model that flattens it turns the premise red by name instead of leaving
+ * the comparison to pass by luck.
  */
-const FRONT_DEG = 20;
-const BACK_DEG = 110;
+const PREMISE_RATIO = 1.25;
+
+/** How far off each view axis the star is held, at least. The frame is 60°
+ *  tall and about 85° wide, so 60° keeps it outside even the corners. */
+const STAR_CLEARANCE_DEG = 60;
 
 /**
- * Mean luminance of the subject's own pixels, with the environment and without,
- * from one evaluate.
+ * The two framings, and the haze the orientation check bakes for them.
+ *
+ * The up face is the direction nearest world +Y that keeps the star at least
+ * `STAR_CLEARANCE_DEG` off both view axes, so the star stays out of frame (the
+ * 160° framing this probe once used put the star behind the station and
+ * measured its bloom halo instead). Nearest +Y so that a bake mirrored through
+ * its equator — rows uploaded the wrong way up — carries the haze over to the
+ * other face too. Held exactly edge-on to the star, which was the first
+ * choice, that face sat far enough off +Y at seed 47's station that the mirror
+ * did not carry the haze across, and a bake uploaded upside down read 1.06×
+ * and 1.14× and stayed green. The two faces then meet the sun at different
+ * angles, which the comparison below does not mind: it never compares one
+ * face with the other.
+ *
+ * The haze is aimed at that face at full strength with no gas: the system's
+ * own sky is reported beside it, scored on the same pair and on the best pair
+ * the circle offers, but not used, because seed 47's is too even to orient
+ * anything (see the header).
+ *
+ * **From the model, not from the texture.** Each face is scored by
+ * `skyRadiance` evaluated in world directions — cosine-weighted over a
+ * Fibonacci sphere, which is what a diffuse face turned toward `d` gathers.
+ * Reading the bake back instead would interpret each texel through the same
+ * direction mapping `light-rig.ts` wrote it with, and a flipped mapping would
+ * then predict the flipped picture and agree with it.
+ */
+const pickFramings = (page, bodyId) =>
+	page.evaluate(
+		async ([id, clearanceDeg]) => {
+			const g = window.__seelite;
+			const { skyRadiance } = await import("/src/light-rig.ts");
+			const own = g.skyBake;
+			if (!own) return null;
+			const unit = (v) => {
+				const n = Math.hypot(v[0], v[1], v[2]) || 1;
+				return [v[0] / n, v[1] / n, v[2] / n];
+			};
+			const dot = (a, b) => a[0] * b[0] + a[1] * b[1] + a[2] * b[2];
+			const negate = (v) => v.map((c) => -c);
+			const body = window.__bodyById(id);
+			// Sim space is star-centred, so the station's star is its reversed position.
+			const sun = unit([-body.pos.x, -body.pos.y, -body.pos.z]);
+			// World +Y with its star component taken out, and the circle of faces
+			// the star meets edge-on that it spans with `e2`.
+			const edgeOn = unit([
+				-sun[1] * sun[0],
+				1 - sun[1] * sun[1],
+				-sun[1] * sun[2],
+			]);
+			const e2 = [
+				sun[1] * edgeOn[2] - sun[2] * edgeOn[1],
+				sun[2] * edgeOn[0] - sun[0] * edgeOn[2],
+				sun[0] * edgeOn[1] - sun[1] * edgeOn[0],
+			];
+			// Tilted from edge-on toward +Y by as much of the star's component as
+			// the clearance allows: +Y itself when the star is far enough off it.
+			const limit = Math.cos((clearanceDeg * Math.PI) / 180);
+			const along = Math.max(-limit, Math.min(limit, sun[1]));
+			const across = Math.sqrt(1 - along * along);
+			const bright = unit(
+				[0, 1, 2].map((c) => edgeOn[c] * across + sun[c] * along),
+			);
+			// A full-strength haze and no gas, aimed at one face and then the other.
+			const hazeToward = (d) => ({
+				haze: { coreBearing: d, strength: 1 },
+				gas: null,
+			});
+
+			const N = 4096;
+			const golden = Math.PI * (3 - Math.sqrt(5));
+			const sphere = [];
+			for (let i = 0; i < N; i++) {
+				const y = 1 - (2 * (i + 0.5)) / N;
+				const r = Math.sqrt(1 - y * y);
+				sphere.push([Math.cos(golden * i) * r, y, Math.sin(golden * i) * r]);
+			}
+			const scorer = (sky) => {
+				const lumas = sphere.map((w) => {
+					const [r, gg, b] = skyRadiance(w, sky);
+					return 0.2126 * r + 0.7152 * gg + 0.0722 * b;
+				});
+				const irradiance = (d) => {
+					let sum = 0;
+					let weight = 0;
+					for (let i = 0; i < N; i++) {
+						const c = dot(d, sphere[i]);
+						if (c <= 0) continue;
+						sum += c * lumas[i];
+						weight += c;
+					}
+					return sum / weight;
+				};
+				return (d) => irradiance(d) / irradiance(negate(d));
+			};
+			const ownRatio = scorer(own);
+			let ownBest = 0;
+			for (let k = 0; k < 72; k++) {
+				const a = (k * Math.PI) / 36;
+				const d = [0, 1, 2].map(
+					(c) => edgeOn[c] * Math.cos(a) + e2[c] * Math.sin(a),
+				);
+				ownBest = Math.max(ownBest, ownRatio(d));
+			}
+			return {
+				bright,
+				dim: negate(bright),
+				sunDot: dot(bright, sun),
+				own,
+				hazeUp: hazeToward(bright),
+				hazeDown: hazeToward(negate(bright)),
+				ratio: scorer(hazeToward(bright))(bright),
+				ownRatio: ownRatio(bright),
+				upDeg: (Math.acos(Math.min(1, bright[1])) * 180) / Math.PI,
+				ownBest,
+			};
+		},
+		[bodyId, STAR_CLEARANCE_DEG],
+	);
+
+/**
+ * Mean luminance of the subject's own pixels under each of `skies`, and once
+ * with the environment taken off the scenes, from one evaluate.
+ *
+ * **Off by unassigning `scene.environment`, not by `quality: low`.** This probe
+ * used to difference `high` against `low` on the strength of "low drops the
+ * environment and changes nothing else", which stopped being true when `low`
+ * also began dropping the shadows. Measured on node #433's build with the
+ * environment never assigned at all, high minus low still read Δ 0.38 and 0.16
+ * on the two framings — green on a reach check whose subject was missing.
+ * Unassigning the environment on the four layer scenes for one frame changes
+ * exactly the term being measured.
  *
  * One evaluate for `probe-station-visuals.mjs`'s reason: between two the frame
  * loop runs, the station spins and its orbit carries it, and the drift is the
- * size of the effect. Everything below happens between two renders with nothing
- * else moving.
+ * size of the effect. Everything below happens between renders with nothing
+ * else moving — **including the rebakes**. A first version baked each sky in
+ * its own evaluate, so the station had turned between the two readings it
+ * compared. A sky is a synchronous bake and a PMREM pass, so it goes in here.
+ *
+ * `null` in `skies` is the sky already on screen. Any other entry is baked
+ * through `Game.bakeSky`, and the sky that was on screen goes back before this
+ * returns.
  *
  * The subject is isolated by what *changed*, never by thresholding: the
  * starfield puts lit pixels across the whole frame, and a threshold tuned to
  * one sun angle would not survive the other. Hiding the station's mesh gives an
  * exact mask of where it is.
  */
-const measure = (page, bodyId) =>
-	page.evaluate((id) => {
-		const g = window.__seelite;
-		const W = 480;
-		const H = 300;
-		const src = g.renderer.domElement;
-		const scratch = document.createElement("canvas");
-		scratch.width = W;
-		scratch.height = H;
-		const ctx = scratch.getContext("2d", { willReadFrequently: true });
-		const frame = () => {
-			// Render and read in the same task: a WebGL canvas without
-			// `preserveDrawingBuffer` is cleared at the next composite.
-			g.render(0);
-			ctx.drawImage(src, 0, 0, W, H);
-			return ctx.getImageData(0, 0, W, H).data;
-		};
-		const mesh = window.__meshOfBody(id);
-		if (!mesh) return { missing: true };
+const measure = (page, bodyId, skies) =>
+	page.evaluate(
+		([id, skyList]) => {
+			const g = window.__seelite;
+			const W = 480;
+			const H = 300;
+			const src = g.renderer.domElement;
+			const scratch = document.createElement("canvas");
+			scratch.width = W;
+			scratch.height = H;
+			const ctx = scratch.getContext("2d", { willReadFrequently: true });
+			const frame = () => {
+				// Render and read in the same task: a WebGL canvas without
+				// `preserveDrawingBuffer` is cleared at the next composite.
+				g.render(0);
+				ctx.drawImage(src, 0, 0, W, H);
+				return ctx.getImageData(0, 0, W, H).data;
+			};
+			const mesh = window.__meshOfBody(id);
+			if (!mesh) return { missing: true };
 
-		const wasVisible = mesh.visible;
-		const quality = g.settings.value.quality;
+			const wasVisible = mesh.visible;
+			const quality = g.settings.value.quality;
+			const onScreen = g.skyBake;
+			const backdrop = g.backdropScene;
+			const background = backdrop.background;
+			// The sky's picture off for every frame: `high` turns it on with the
+			// environment (node #433 draws the bake as the backdrop), and an
+			// antialiased edge pixel blends the station with whatever sky is
+			// behind it — the dim side of the sky in one framing and the bright
+			// side in the other. What is compared here is the reflection, so the
+			// picture is held out and high minus low stays the environment's
+			// light on the hull and nothing else.
+			const set = (q) => {
+				g.settings.set("quality", q);
+				backdrop.background = null;
+			};
 
-		// High *before* the bare frame, not after. The mask is "pixels that moved
-		// when the station was hidden", so the bare frame and the frame it is
-		// differenced against have to be the same configuration — otherwise, on a
-		// page whose stored setting is `low`, the mask becomes "pixels the
-		// environment changed" and quietly stops being the station. The default
-		// is checked below, but a check that runs after the measurement does not
-		// protect it.
-		g.settings.set("quality", "high");
+			// High *before* the bare frame, not after. The mask is "pixels that
+			// moved when the station was hidden", so the bare frame and the frame
+			// it is differenced against have to be the same configuration —
+			// otherwise, on a page whose stored setting is `low`, the mask becomes
+			// "pixels the environment changed" and quietly stops being the
+			// station. The default is checked below, but a check that runs after
+			// the measurement does not protect it.
+			set("high");
+			mesh.visible = false;
+			const withoutSubject = frame();
+			mesh.visible = wasVisible;
 
-		mesh.visible = false;
-		const withoutSubject = frame();
-		mesh.visible = wasVisible;
+			const highs = [];
+			for (const sky of skyList) {
+				if (sky) {
+					g.bakeSky(sky);
+					set("high");
+				}
+				highs.push(frame());
+			}
+			if (skyList.some(Boolean)) g.bakeSky(onScreen);
+			set("high");
+			const layers = [g.farScene, g.approachScene, g.nearScene, g.cabinScene];
+			const environments = layers.map((scene) => scene.environment);
+			for (const scene of layers) scene.environment = null;
+			const low = frame();
+			layers.forEach((scene, k) => {
+				scene.environment = environments[k];
+			});
+			g.settings.set("quality", quality);
+			backdrop.background = background;
 
-		const high = frame();
-		g.settings.set("quality", "low");
-		const low = frame();
-		g.settings.set("quality", quality);
-
-		// The mask: pixels the station occupies, taken from the frame it is
-		// missing from rather than from a brightness cut.
-		const luma = (d, i) =>
-			0.2126 * d[i] + 0.7152 * d[i + 1] + 0.0722 * d[i + 2];
-		let pixels = 0;
-		let sumHigh = 0;
-		let sumLow = 0;
-		for (let i = 0; i < high.length; i += 4) {
-			const bare = luma(withoutSubject, i);
-			const here = luma(high, i);
-			// A pixel is the subject's where hiding it changed the frame. Two
-			// levels rather than any: the starfield's own points sit at 1–2 and
-			// would otherwise join the mask wherever the station occludes one.
-			if (Math.abs(here - bare) < 3) continue;
-			pixels++;
-			sumHigh += here;
-			sumLow += luma(low, i);
-		}
-		return {
-			pixels,
-			high: pixels ? sumHigh / pixels : 0,
-			low: pixels ? sumLow / pixels : 0,
-			quality,
-		};
-	}, bodyId);
-
-async function frameAndMeasure(page, sunAngleDeg) {
-	await page.evaluate(
-		([id, radii, deg]) => window.__sunOffset(id, radii, deg),
-		[SUBJECT, RADII, sunAngleDeg],
+			// The mask: pixels the station occupies, taken from the frame it is
+			// missing from rather than from a brightness cut.
+			const luma = (d, i) =>
+				0.2126 * d[i] + 0.7152 * d[i + 1] + 0.0722 * d[i + 2];
+			let pixels = 0;
+			const sums = highs.map(() => 0);
+			let sumLow = 0;
+			for (let i = 0; i < low.length; i += 4) {
+				const bare = luma(withoutSubject, i);
+				// A pixel is the subject's where hiding it changed the frame. Two
+				// levels rather than any: the starfield's own points sit at 1–2 and
+				// would otherwise join the mask wherever the station occludes one.
+				if (Math.abs(luma(highs[0], i) - bare) < 3) continue;
+				pixels++;
+				for (let k = 0; k < highs.length; k++) sums[k] += luma(highs[k], i);
+				sumLow += luma(low, i);
+			}
+			const low_ = pixels ? sumLow / pixels : 0;
+			return {
+				pixels,
+				// On minus off under each sky: that sky's light on the hull.
+				deltas: sums.map((s) => (pixels ? s / pixels : 0) - low_),
+				high: pixels ? sums[0] / pixels : 0,
+				low: low_,
+				quality,
+			};
+		},
+		[bodyId, skies],
 	);
-	return measure(page, SUBJECT);
+
+/** Stand `RADII` silhouettes off the subject along `dir`, co-moving, and
+ *  look back at it — `__sunOffset`'s placement with the direction given. */
+async function frameAndMeasure(page, dir, skies) {
+	await page.evaluate(
+		async ([id, radii, d]) => {
+			const body = window.__bodyById(id);
+			const range = window.__radiusOf(id) * radii;
+			await window.__placeShipAt(
+				{
+					x: body.pos.x + d[0] * range,
+					y: body.pos.y + d[1] * range,
+					z: body.pos.z + d[2] * range,
+				},
+				window.__frameVelocityOf(id),
+			);
+			await window.__lookAt(body.pos);
+		},
+		[SUBJECT, RADII, dir],
+	);
+	return measure(page, SUBJECT, skies);
 }
 
 /**
@@ -323,6 +511,16 @@ async function measureHullChase(page) {
 					hidden.push({ object, visible: object.visible });
 					object.visible = false;
 				}
+			// And the sky's picture, which is the scene's background rather than a
+			// child, so the loop above does not reach it. Since node #433 draws the
+			// bake behind everything, leaving it up put the hull against a lit sky
+			// instead of the black clear this reader is written for: at the ×5 sky
+			// the subtraction mask kept 22,879 of the hull's 25,567 pixels (it
+			// drops the dark ones, within 3 codes of the sky) and the lower quartile
+			// read 51.17 against 41.69 for the same hull against black. The
+			// environment still lights the hull; only the picture leaves the frame.
+			const background = game.backdropScene.background;
+			game.backdropScene.background = null;
 			const frame = () => {
 				game.render(0);
 				ctx.drawImage(canvas, 0, 0);
@@ -381,6 +579,7 @@ async function measureHullChase(page) {
 			for (const mesh of meshes) mesh.object.visible = mesh.visible;
 			if (navLights) navLights.visible = navLightsVisible;
 			for (const entry of hidden) entry.object.visible = entry.visible;
+			game.backdropScene.background = background;
 			game.bloom.enabled = bloomEnabled;
 			game.render(0);
 			return {
@@ -440,8 +639,20 @@ const liveEmissives = await page.evaluate(() => {
 	};
 });
 
-const front = await frameAndMeasure(page, FRONT_DEG);
-const back = await frameAndMeasure(page, BACK_DEG);
+const framings = await pickFramings(page, SUBJECT);
+const missing = { missing: true };
+// Under each framing, in one evaluate: the system's own sky, for reach; then
+// the probe's haze aimed at the up face and at the down face, for orientation.
+// The system's sky is back on screen before the hull row, whose band is
+// calibrated under it.
+const skies = framings ? [null, framings.hazeUp, framings.hazeDown] : [];
+const up = framings
+	? await frameAndMeasure(page, framings.bright, skies)
+	: missing;
+const down = framings
+	? await frameAndMeasure(page, framings.dim, skies)
+	: missing;
+const arms = [up, down];
 const hull = await measureHullChase(page);
 
 const livePeak = Math.max(...liveEmissives.materials.map((m) => m.intensity));
@@ -458,28 +669,38 @@ t.check(
 );
 
 t.check(
-	"the station is on screen in both framings",
-	!front.missing && !back.missing && front.pixels > 500 && back.pixels > 500,
-	`front ${front.pixels ?? "no mesh"} px, back ${back.pixels ?? "no mesh"} px`,
+	"the game baked a sky to predict the framings from",
+	framings !== null,
+	framings ? "Game.skyBake is set" : "Game.skyBake is null",
 );
 
-// Everything below reads `front.high` and friends, and the summary lines at the
+t.check(
+	"the station is on screen in both framings",
+	arms.every((arm) => !arm.missing && arm.pixels > 500),
+	`up ${up.pixels ?? "no mesh"} px, down ${down.pixels ?? "no mesh"} px`,
+);
+
+// Everything below reads `up.deltas` and friends, and the summary lines at the
 // end format them unconditionally — so a missing mesh would throw a TypeError
 // over the tally's own report and take the `browser.close()` with it. Leaving
 // through the tally means the run says which check failed.
-if (front.missing || back.missing) {
+if (arms.some((arm) => arm.missing)) {
 	await browser.close();
 	t.exit();
 }
 
 t.check(
 	"the game ships with the environment on",
-	front.quality === "high",
-	`default quality is ${front.quality}`,
+	up.quality === "high",
+	`default quality is ${up.quality}`,
 );
 
-const frontDelta = front.high - front.low;
-const backDelta = back.high - back.low;
+// Each face read twice at one station pose, under the same haze aimed at it
+// and aimed away from it. Only the haze's direction differs between the two
+// readings of a face, so whatever the station's shape does to one face and not
+// the other cancels, and so does whatever else the frame carries.
+const [ownUp, upLit, upAway] = up.deltas;
+const [ownDown, downAway, downLit] = down.deltas;
 
 // Both framings must mask the *same subject* before their means can be
 // compared. A halo, a second body drifting into frame, or a subject half off
@@ -488,20 +709,34 @@ const backDelta = back.high - back.low;
 // of this probe passed while measuring bloom.
 t.check(
 	"both framings mask the station and not something larger",
-	Math.max(front.pixels, back.pixels) < 2 * Math.min(front.pixels, back.pixels),
-	`front ${front.pixels} px against back ${back.pixels} px`,
+	Math.max(up.pixels, down.pixels) < 2 * Math.min(up.pixels, down.pixels),
+	`up ${up.pixels} px against down ${down.pixels} px`,
 );
 
 t.check(
-	"the environment adds light to a front-lit hull",
-	frontDelta > 0,
-	`high ${front.high.toFixed(2)} vs low ${front.low.toFixed(2)} (Δ ${frontDelta.toFixed(2)})`,
+	"the system's own sky reaches the hull from both sides",
+	ownUp > 0 && ownDown > 0,
+	`Δ ${ownUp.toFixed(2)} and ${ownDown.toFixed(2)}`,
 );
 
 t.check(
-	"and it adds more there than on a backlit one — the bake is not flipped",
-	frontDelta > backDelta,
-	`front Δ ${frontDelta.toFixed(2)} against back Δ ${backDelta.toFixed(2)}`,
+	"the probe's haze tells the two faces apart — the comparison below is about something",
+	framings.ratio >= PREMISE_RATIO &&
+		Math.abs(framings.sunDot) <=
+			Math.cos((STAR_CLEARANCE_DEG * Math.PI) / 180) + 1e-9,
+	`the model puts ${framings.ratio.toFixed(2)}× the light on the bright face ` +
+		`(premise ${PREMISE_RATIO}×); the star ${(
+			(Math.acos(Math.abs(framings.sunDot)) * 180) / Math.PI
+		).toFixed(
+			0,
+		)}° off both view axes, the up face ${framings.upDeg.toFixed(0)}° off +Y`,
+);
+
+t.check(
+	"a haze baked toward a face lights it more than one baked away, from both sides — the bake is not flipped",
+	upLit > upAway && downLit > downAway,
+	`up face Δ ${upLit.toFixed(2)} haze toward against ${upAway.toFixed(2)} away; ` +
+		`down face ${downLit.toFixed(2)} against ${downAway.toFixed(2)}`,
 );
 
 t.check(
@@ -566,10 +801,13 @@ if (!hull.missing) {
 }
 
 console.log(
-	`  front-lit  high ${front.high.toFixed(2)}  low ${front.low.toFixed(2)}  Δ ${frontDelta.toFixed(2)}  (${front.pixels} px)`,
+	`  probe haze  predicted ${framings.ratio.toFixed(2)}× toward over away from the sky model; ` +
+		`measured ${(upLit / upAway).toFixed(2)}× on the up face, ${(downLit / downAway).toFixed(2)}× on the down face`,
 );
 console.log(
-	`  backlit    high ${back.high.toFixed(2)}  low ${back.low.toFixed(2)}  Δ ${backDelta.toFixed(2)}  (${back.pixels} px)`,
+	`  own sky     Δ ${ownUp.toFixed(2)} up, ${ownDown.toFixed(2)} down (${up.pixels} / ${down.pixels} px); ` +
+		`predicted ${framings.ownRatio.toFixed(2)}× on this pair, at most ` +
+		`${framings.ownBest.toFixed(2)}× on any pair edge-on to the star — reported, not gated`,
 );
 
 await browser.close();
