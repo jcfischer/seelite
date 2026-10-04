@@ -91,6 +91,7 @@ export interface TrafficSchedule {
 }
 
 export interface TrafficActor {
+	vocation?: "local" | "hauler";
 	key: CarrierKey;
 	homeStationId: string;
 	localCarrierId: string;
@@ -106,6 +107,10 @@ export interface TrafficActor {
 export function stationTrafficRoster(
 	systemIndex: number,
 	station: Station,
+	slotPolicy?: (ordinal: number) => {
+		vocation: "local" | "hauler";
+		cycleMultiple: number;
+	},
 ): TrafficActor[] {
 	const interior = stationInterior(
 		station.type,
@@ -145,7 +150,10 @@ export function stationTrafficRoster(
 			role.parkedDuty,
 			unit(`${localCarrierId}|duty|${station.berthSeed}`),
 		);
+		const policy = slotPolicy?.(ordinal);
+		const actorCycleS = cycleS * (policy?.cycleMultiple ?? 1);
 		return {
+			...(policy ? { vocation: policy.vocation } : {}),
 			key: carrierKey(systemIndex, localCarrierId),
 			homeStationId: station.id,
 			localCarrierId,
@@ -154,10 +162,10 @@ export function stationTrafficRoster(
 			variant: HULL_SPECS[hullId].variant,
 			callsign: trafficRegistry(hullId, role.code, ordinal),
 			schedule: {
-				cycleS,
+				cycleS: actorCycleS,
 				departureAtS: (sharedPhase + ordinal * 2 * cadence) % cycleS,
 				parkedDuty,
-				awayS: cycleS * (1 - parkedDuty),
+				awayS: actorCycleS * (1 - parkedDuty),
 			},
 		};
 	});

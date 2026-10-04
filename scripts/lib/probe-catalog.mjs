@@ -19,6 +19,21 @@ const entry = (file, contract, evidence) =>
 export const PROBE_CATALOG = Object.freeze(
 	[
 		entry(
+			"probe-inter-system-traffic.mjs",
+			"Follows one named home-owned hauler from its berth through a painted departure ring and the anchored arrival ring into the destination Traffic queues; identity, contact removal and visitor berth share the live Game.",
+			[
+				"inter-system traffic",
+				"haulers",
+				"lane points",
+				"NPC rings",
+				"arrival",
+				"departure",
+				"clearance",
+				"Traffic berths",
+				"home identity",
+			],
+		),
+		entry(
 			"measure-cruise-detour.mjs",
 			"Runs the corpus gate for automatic cruise detours through the real Game steering loop.",
 			["cruise routing", "detour geometry", "Game steering"],

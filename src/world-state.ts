@@ -49,7 +49,12 @@ import {
 	relayTenderSlot,
 } from "./relay-slot";
 import type { StationType } from "./station";
-import { NO_FLOWN_VOYAGE, stationTrafficRoster } from "./station-traffic";
+import {
+	NO_FLOWN_VOYAGE,
+	nextTrafficDepartureAtS,
+	stationTrafficRoster,
+	type TrafficActor,
+} from "./station-traffic";
 import { generateContents } from "./system";
 
 // **Not re-exported.** `carrier-key.ts` is the one owner; a second path to the
@@ -706,6 +711,31 @@ export const effectiveCarrier = (
 		recovery: settled.recovery,
 	};
 };
+
+/**
+ * A Traffic carrier's saved condition, and the departure it rejoins its
+ * schedule at after a completed repair or replacement (0 when none is saved).
+ */
+export function haulerAvailability(
+	actor: Pick<TrafficActor, "key" | "schedule">,
+	env: GalaxyEnvelope,
+	atS: number,
+): { condition: string; rejoinsAtS: number } {
+	const row = env.objective[actor.key],
+		latest = env.episodes[actor.key]?.latest;
+	const completesAt =
+		row?.recovery?.completesAt ??
+		(latest && ["repair-complete", "replacement-complete"].includes(latest.kind)
+			? latest.occurredAt
+			: 0);
+	return {
+		condition: effectiveCarrier(env, actor.key, atS).condition,
+		rejoinsAtS:
+			completesAt > 0
+				? nextTrafficDepartureAtS(actor.schedule, completesAt)
+				: 0,
+	};
+}
 
 /**
  * §4's persisted materialization, in canonical key order.

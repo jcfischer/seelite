@@ -87,8 +87,16 @@ export type Cue =
 			ringHz: number;
 	  }
 	| { kind: "witchspaceRideClose"; seconds: number }
-	| { kind: "witchspaceUnfold"; seconds: number }
-	| { kind: "witchspaceRift"; seconds: number }
+	| {
+			kind: "witchspaceUnfold";
+			seconds: number;
+			spatial?: { pan: number; gain: number };
+	  }
+	| {
+			kind: "witchspaceRift";
+			seconds: number;
+			spatial?: { pan: number; gain: number };
+	  }
 	| { kind: "witchspaceStop" }
 	| { kind: "cruiseEngage" }
 	| { kind: "cruiseDrop" };
