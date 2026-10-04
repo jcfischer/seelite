@@ -422,6 +422,10 @@ import {
 	trafficKillTransitions,
 	trafficPresence,
 } from "./traffic-engagement";
+import {
+	presentedTrafficPos,
+	presentedTrafficStep,
+} from "./traffic-presentation";
 import { carrierName } from "./carrier-name";
 import {
 	type CarrierStanding,
@@ -6876,49 +6880,19 @@ class Game {
 			const prior = settled
 				? null
 				: this.trafficPreviousRoutes.get(projection.key);
-			// Interpolate the *correction*, not two stale absolute positions. A
-			// station can translate several kilometres during one 10 Hz authority
-			// interval. Blending its old and new world-space poses therefore shows
-			// the Carrier one whole tick behind the current station/player frame;
-			// the recording from #266 exposed that as a 10 Hz jump between two
-			// apparent positions. Predict each authority sample to render time first,
-			// then blend between those predictions. The result is continuous at a
-			// tick boundary while retaining the smooth correction of a course change.
-			const predictAtRender = (
-				pose: Pick<TrafficProjection, "pos" | "vel">,
-				atS: number,
-			) => {
-				const dt = Number.isFinite(atS)
-					? Math.max(0, this.world.gameTime - atS)
-					: 0;
-				return {
-					x: pose.pos.x + pose.vel.x * dt,
-					y: pose.pos.y + pose.vel.y * dt,
-					z: pose.pos.z + pose.vel.z * dt,
-				};
-			};
-			// A settled pose was resampled from the station at render time just
-			// above. Predicting it again from the authority tick would apply the
-			// station's orbital velocity twice.
-			const currentAtRender = settled
-				? presented.pos
-				: predictAtRender(presented, this.trafficProjectionAtS);
-			const previousAtRender = prior
-				? predictAtRender(prior, this.trafficPreviousProjectionAtS)
-				: null;
-			const sampledPos = previousAtRender
-				? {
-						x:
-							previousAtRender.x +
-							(currentAtRender.x - previousAtRender.x) * blend,
-						y:
-							previousAtRender.y +
-							(currentAtRender.y - previousAtRender.y) * blend,
-						z:
-							previousAtRender.z +
-							(currentAtRender.z - previousAtRender.z) * blend,
-					}
-				: currentAtRender;
+			// Interpolate the *correction*, not two stale absolute positions: one
+			// law, `presentedTrafficPos`, which the collision step reads too
+			// (`Game.fleetOf`), so what is swept is what is drawn.
+			const sampledPos = presentedTrafficPos(
+				{
+					current: presented,
+					currentAtS: this.trafficProjectionAtS,
+					prior: prior ?? null,
+					priorAtS: this.trafficPreviousProjectionAtS,
+					settled,
+				},
+				this.world.gameTime,
+			);
 			const dx = sampledPos.x - this.world.ship.pos.x;
 			const dy = sampledPos.y - this.world.ship.pos.y;
 			const dz = sampledPos.z - this.world.ship.pos.z;
@@ -14483,8 +14457,9 @@ class Game {
 	 * The **flown** ones — the raider and the engaged carriers — from where
 	 * they stood before their own steps to where those left them. A carrier on
 	 * its **projection** is met only while its route phase collides (§5): from
-	 * where it is drawn, along the velocity it is drawn with, and only near
-	 * enough to be reached this step by the player or by any flown ship
+	 * where it is drawn at the step's start to where it is drawn at its end
+	 * (`presentedTrafficStep`), at the velocity that displacement is, and only
+	 * near enough to be reached this step by the player or by any flown ship
 	 * (`projectedMayMeet`) — a raider or an engaged carrier meets a projected
 	 * one the player is nowhere near. It is `projected`, so the step never
 	 * sweeps it against the world — a route cannot be bounced — and a meeting
@@ -14536,34 +14511,52 @@ class Game {
 				end: ship.motion.end.origin,
 			})),
 		];
-		for (const [key, contact] of this.trafficContacts) {
+		// The materialised contacts: a carrier not drawn near the player is
+		// not posed for a meeting at all.
+		for (const key of this.trafficContacts.keys()) {
 			if (this.trafficEngagements.has(key)) continue;
 			const route = this.trafficRouteByKey(key);
 			const actor = this.trafficActorByKey(key);
 			if (!route || !actor || !route.nose || !route.up) continue;
 			if (route.present === false || !trafficCollides(route.phase)) continue;
+			// Where it is drawn at both ends of the step, each at its own clock,
+			// by the law the render path draws it with — never `contact.pos`
+			// plus `contact.velocity · dt`: the drawn step carries the 10 Hz
+			// correction as well, and a projection's `vel` read 0.082 km/s on a
+			// step that moved kilometres (the corpus row's finding). A phase
+			// that collides is never settled in a berth (§5 exempts all three),
+			// so no parked resample is owed here.
+			const drawn = presentedTrafficStep(
+				{
+					current: route,
+					currentAtS: this.trafficProjectionAtS,
+					prior: this.trafficPreviousRoutes.get(key) ?? null,
+					priorAtS: this.trafficPreviousProjectionAtS,
+				},
+				this.world.gameTime,
+				dt,
+			);
 			// Reachable this step by anything flown at all, taken early so a
 			// system's Traffic is not posed every frame for nothing.
 			if (
 				!projectedMayMeet(
-					{ pos: contact.pos, vel: contact.velocity },
+					{ pos: drawn.start, vel: drawn.vel },
 					movers,
 					dt,
 					FLEET_REACH_KM,
 				)
 			)
 				continue;
-			const end = add(contact.pos, scale(contact.velocity, dt));
 			ships.push({
 				id: key,
 				projected: true,
 				motion: {
 					massT: HULL_SPECS[actor.hullId].massT,
 					primitives: this.hullSolidOf(actor.hullId),
-					start: shipPose(contact.pos, route.nose, route.up),
-					end: shipPose(end, route.nose, route.up),
-					velStart: contact.velocity,
-					velEnd: contact.velocity,
+					start: shipPose(drawn.start, route.nose, route.up),
+					end: shipPose(drawn.end, route.nose, route.up),
+					velStart: drawn.vel,
+					velEnd: drawn.vel,
 				},
 			});
 		}

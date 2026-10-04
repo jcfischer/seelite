@@ -1937,6 +1937,15 @@ const SOLID_BODY_KINDS: ReadonlySet<BodyKind> = new Set([
  * for the six checks to place; an impact at or before it wins, and the plane
  * is not crossed this step. Omitted, nothing is watched.
  *
+ * **`fleet` are the other ships the step can meet** (§3, C4b, §6; node
+ * #664), and a meeting is an event like the others: each ship's first one is
+ * read on the unresolved motions (`firstMeetings`) and weighed against its
+ * world impacts and, for the player, the plane. A world impact at or before
+ * it is resolved first, as before; a meeting strictly first owns the tick —
+ * the world is not resolved, the plane is not crossed, the pair is met, and
+ * the ship is then swept against the world on the motion the meeting left it,
+ * so a world impact the bounce prevents is never billed.
+ *
  * `dt` is seconds of **sim** time and is never scaled (#10).
  */
 export function stepWorld(
@@ -1995,7 +2004,6 @@ export function stepWorld(
 			shipImpacts: [],
 			fleet: untouched(),
 		};
-	const fleetWorld = fleetAgainstWorld(world, fleet, starts, { fromTime, dt });
 	const playerMotion = (): ShipMotion => ({
 		massT: perf.massT,
 		primitives: solid,
@@ -2004,42 +2012,215 @@ export function stepWorld(
 		velStart: fromVel,
 		velEnd: world.ship.vel,
 	});
-	let met = collideShip(world, solid, from, fromVel, attitude, step, starts, {
+	// §4.2's earliest event owns the tick, ships included (node #664): when
+	// every ship's first meeting with another ship falls, read on the step's
+	// own motions before anything has resolved them, so it can be weighed
+	// against the world's impacts and the plane before either is committed.
+	const shipS = firstMeetings(playerMotion(), fleet, dt);
+	const fleetWorld = fleetAgainstWorld(world, fleet, starts, shipS.fleet, {
 		fromTime,
 		dt,
-		planeS: found ? found.timeS : null,
 	});
-	// The plane beat every world solid, and left the ship unresolved. A ship
-	// met at or before it owns the tick instead (§4.2, the tie to the impact):
-	// the plane is not crossed this step, and the world is swept again
-	// without it, as for a world impact that came first.
-	if (
+	// The player's world sweep is cut off at the earlier of the plane and its
+	// first ship meeting. Neither the world nor the plane before the cut, the
+	// cut owns the tick: the plane if it came strictly first, else the ship
+	// (the tie to the meeting, as to an impact).
+	const cutS = earliestOf(found ? found.timeS : null, shipS.player);
+	const met = collideShip(world, solid, from, fromVel, attitude, step, starts, {
+		fromTime,
+		dt,
+		planeS: cutS,
+	});
+	const planeOwns =
 		met.planeOwns &&
-		found &&
-		fleetMeetsBy(playerMotion(), fleet, fleetWorld.motions, dt, found.timeS)
-	)
-		met = collideShip(world, solid, from, fromVel, attitude, step, starts, {
-			fromTime,
-			dt,
-			planeS: null,
-		});
+		found !== null &&
+		(shipS.player === null || found.timeS < shipS.player);
+	// A ship met first: the world is not resolved yet, and the plane is not
+	// crossed this step.
+	const playerDeferred = met.planeOwns && !planeOwns;
 	// The plane owns the tick: the ship is left unresolved for the six checks
 	// to place, and no ship was met before it, so it meets none this step.
 	const ships = collidePairs(
 		world,
 		playerMotion(),
-		met.planeOwns,
+		planeOwns,
 		fleet,
 		fleetWorld,
 		dt,
 	);
+	// What the first meeting left a deferred ship on, it now meets the world
+	// along: swept again from the step's start to where the pair left it.
+	let { impacts, ghosts } = met;
+	if (playerDeferred) {
+		const after = collideShip(
+			world,
+			solid,
+			from,
+			fromVel,
+			attitude,
+			step,
+			starts,
+			{ fromTime, dt, planeS: null },
+		);
+		impacts = after.impacts;
+		ghosts = [...new Set([...ghosts, ...after.ghosts])];
+	}
+	resweepDeferred(world, fleet, fleetWorld, ships.fleet, starts, {
+		fromTime,
+		dt,
+	});
 	return {
 		...step,
-		impacts: met.impacts,
-		ghosts: met.ghosts,
-		plane: met.planeOwns ? found : null,
+		impacts,
+		ghosts,
+		plane: planeOwns ? found : null,
 		shipImpacts: ships.player,
 		fleet: ships.fleet,
+	};
+}
+
+/** The earlier of two times into a step, either of which may be absent. */
+const earliestOf = (a: number | null, b: number | null): number | null =>
+	a === null ? b : b === null ? a : Math.min(a, b);
+
+/**
+ * When each ship's step first meets another ship (§4.2, node #664), read on
+ * the step's own motions — nothing resolved yet — through the pairs
+ * `collidePairs` will take: the player against every fleet ship, and every
+ * fleet pair with one flown, a projected carrier as B. A billed meeting is at
+ * its own time; a resting hold with nothing billed is at the start of the
+ * step for a ship it stopped closing — its velocity changed — and is no
+ * meeting at all for one it only nudged along a graze. `null` where a ship
+ * meets none.
+ *
+ * Read-only, and an estimate past the first event: a ship that meets the
+ * world before it meets its partner leaves that line, so the partner's time
+ * may be one the step never reaches. That errs safe — a ship whose world
+ * sweep is deferred for a meeting that does not happen is swept again on the
+ * motion it keeps (`resweepDeferred`), and meets the same world.
+ */
+function firstMeetings(
+	player: ShipMotion,
+	fleet: readonly FleetShip[],
+	dt: number,
+): { player: number | null; fleet: (number | null)[] } {
+	let you: number | null = null;
+	const them: (number | null)[] = fleet.map(() => null);
+	const pair = (
+		a: ShipMotion,
+		b: ShipMotion,
+		bProjected: boolean,
+	): { a: number | null; b: number | null } => {
+		const met = sweepShipPair(a, b, dt, { bProjected });
+		if (met.impacts.length > 0) {
+			const s = Math.min(...met.impacts.map((impact) => impact.timeS));
+			return { a: s, b: s };
+		}
+		return {
+			a: length(sub(met.a.vel, a.velEnd)) > 0 ? 0 : null,
+			b: length(sub(met.b.vel, b.velEnd)) > 0 ? 0 : null,
+		};
+	};
+	fleet.forEach((ship, index) => {
+		const met = pair(player, ship.motion, ship.projected);
+		you = earliestOf(you, met.a);
+		them[index] = earliestOf(them[index], met.b);
+	});
+	for (let i = 0; i < fleet.length; i++)
+		for (let j = i + 1; j < fleet.length; j++) {
+			if (fleet[i].projected && fleet[j].projected) continue;
+			const [x, y] = fleet[i].projected ? [j, i] : [i, j];
+			const met = pair(fleet[x].motion, fleet[y].motion, fleet[y].projected);
+			them[x] = earliestOf(them[x], met.a);
+			them[y] = earliestOf(them[y], met.b);
+		}
+	return { player: you, fleet: them };
+}
+
+/**
+ * Every flown fleet ship whose world sweep its first ship meeting deferred
+ * (`fleetAgainstWorld`), swept against the world again on what the pairs left
+ * it (§4.2, node #664): from the step's start to the end and velocity the
+ * meeting gave it, so a bounce that turned it off a solid meets nothing and
+ * one that left it inside a solid is held outside. A straight line from the
+ * start to the corrected end stands for the bent path, which is exact for a
+ * meeting at the start of the step and an approximation for one later. Its
+ * world impacts follow its ship meetings, which came first.
+ */
+function resweepDeferred(
+	world: World,
+	fleet: readonly FleetShip[],
+	againstWorld: { motions: ShipMotion[]; deferred: boolean[] },
+	steps: FleetStep[],
+	starts: WorldStarts,
+	clock: { fromTime: number; dt: number },
+): void {
+	fleet.forEach((ship, index) => {
+		if (!againstWorld.deferred[index]) return;
+		const out = steps[index];
+		const motion: ShipMotion = {
+			...againstWorld.motions[index],
+			end: { ...ship.motion.end, origin: out.pos },
+			velEnd: out.vel,
+		};
+		const after = sweepWorld(world, motion, starts, clock, null);
+		out.pos = after.pos;
+		out.vel = after.vel;
+		out.ghosts = [...new Set([...out.ghosts, ...after.ghosts])];
+		out.impacts.push(...after.impacts);
+	});
+}
+
+/**
+ * One flown ship's motion against the world: `worldSolids` from `starts`,
+ * swept with `sweepShip`, cut off at `cutS` (§4.2). `deferred` when nothing
+ * in the world came at or before the cut, which leaves the motion unresolved.
+ */
+function sweepWorld(
+	world: World,
+	motion: ShipMotion,
+	starts: WorldStarts,
+	clock: { fromTime: number; dt: number },
+	cutS: number | null,
+): {
+	pos: Vec3;
+	vel: Vec3;
+	impacts: ShipImpact[];
+	ghosts: string[];
+	deferred: boolean;
+} {
+	const { owner, motions: solids } = worldSolids(
+		world.system,
+		{
+			start: motion.start.origin,
+			end: motion.end.origin,
+			reachKm: reachKm(motion.primitives),
+		},
+		starts,
+		{ fromTime: clock.fromTime, toTime: world.gameTime },
+	);
+	if (solids.length === 0)
+		return {
+			pos: motion.end.origin,
+			vel: motion.velEnd,
+			impacts: [],
+			ghosts: [],
+			deferred: cutS !== null,
+		};
+	const swept = sweepShip(motion, solids, clock.dt, { planeS: cutS });
+	return {
+		pos: swept.pos,
+		vel: swept.vel,
+		ghosts: [...new Set(swept.ghosts.map((i) => owner[i]))],
+		impacts: swept.impacts.map((impact) => ({
+			with: owner[impact.solid],
+			ship: false,
+			closingKms: impact.closingKms,
+			damage: impact.damage,
+			side: impact.side,
+			resting: impact.resting,
+		})),
+		deferred: swept.planeOwns,
 	};
 }
 
@@ -2048,18 +2229,24 @@ export function stepWorld(
  * #664) — the same `worldSolids` the player meets, from the same starts, so a
  * raider meets a planet and a station's proxy exactly as the player does. A
  * projected carrier is not: its pose is a route's, and cannot be bounced.
- * Each ship's motion comes back ending where its own meeting left it, for
- * the pairs to sweep.
+ *
+ * **Cut off at each ship's first ship meeting** (`shipS`, §4.2): a world
+ * impact at or before it owns the tick and is resolved here; with none, the
+ * ship is `deferred` — left on its own motion for the pairs, and swept again
+ * on what they left it (`resweepDeferred`). Each ship's motion comes back
+ * ending where its world meeting, if any, left it, for the pairs to sweep.
  */
 function fleetAgainstWorld(
 	world: World,
 	fleet: readonly FleetShip[],
 	starts: WorldStarts,
+	shipS: readonly (number | null)[],
 	clock: { fromTime: number; dt: number },
-): { steps: FleetStep[]; motions: ShipMotion[] } {
+): { steps: FleetStep[]; motions: ShipMotion[]; deferred: boolean[] } {
 	const steps: FleetStep[] = [];
 	const motions: ShipMotion[] = [];
-	for (const ship of fleet) {
+	const deferred: boolean[] = [];
+	fleet.forEach((ship, index) => {
 		const out: FleetStep = {
 			id: ship.id,
 			pos: ship.motion.end.origin,
@@ -2067,71 +2254,31 @@ function fleetAgainstWorld(
 			impacts: [],
 			ghosts: [],
 		};
+		let held = false;
 		if (!ship.projected) {
-			const { owner, motions: solids } = worldSolids(
-				world.system,
-				{
-					start: ship.motion.start.origin,
-					end: ship.motion.end.origin,
-					reachKm: reachKm(ship.motion.primitives),
-				},
-				starts,
-				{ fromTime: clock.fromTime, toTime: world.gameTime },
-			);
-			if (solids.length > 0) {
-				const swept = sweepShip(ship.motion, solids, clock.dt);
-				out.pos = swept.pos;
-				out.vel = swept.vel;
-				out.ghosts = [...new Set(swept.ghosts.map((i) => owner[i]))];
-				for (const impact of swept.impacts)
-					out.impacts.push({
-						with: owner[impact.solid],
-						ship: false,
-						closingKms: impact.closingKms,
-						damage: impact.damage,
-						side: impact.side,
-						resting: impact.resting,
-					});
-			}
+			const met = sweepWorld(world, ship.motion, starts, clock, shipS[index]);
+			out.pos = met.pos;
+			out.vel = met.vel;
+			out.ghosts = met.ghosts;
+			out.impacts.push(...met.impacts);
+			held = met.deferred;
 		}
 		steps.push(out);
+		deferred.push(held);
 		motions.push({
 			...ship.motion,
 			end: { ...ship.motion.end, origin: out.pos },
 			velEnd: out.vel,
 		});
-	}
-	return { steps, motions };
-}
-
-/**
- * Whether the player's unresolved step meets a fleet ship at or before
- * `planeS` seconds into it (§4.2): a billed meeting by then, or a resting
- * hold with nothing billed that stopped the player closing on it — its
- * velocity changed — which is at the start of the step. A hold that only
- * nudged the player out along a graze stopped nothing, and leaves the plane
- * the tick. Read-only: nothing is landed.
- */
-function fleetMeetsBy(
-	player: ShipMotion,
-	fleet: readonly FleetShip[],
-	motions: readonly ShipMotion[],
-	dt: number,
-	planeS: number,
-): boolean {
-	return fleet.some((ship, index) => {
-		const pair = sweepShipPair(player, motions[index], dt, {
-			bProjected: ship.projected,
-		});
-		if (pair.impacts.length > 0)
-			return pair.impacts.some((impact) => impact.timeS <= planeS);
-		return length(sub(pair.a.vel, player.velEnd)) > 0;
 	});
+	return { steps, motions, deferred };
 }
 
 /**
  * The step's ships against each other (`collision.md` §3, C4b, §6; node
- * #664), after each has met the world (`fleetAgainstWorld`).
+ * #664), after each has met whatever of the world came before its first
+ * meeting (`fleetAgainstWorld`); a ship whose meeting came first meets the
+ * world after this, on what the pair left it (`resweepDeferred`).
  *
  * **The player against every fleet ship**, then **every pair of fleet ships**
  * with at least one flown — through `sweepShipPair`, so momentum is

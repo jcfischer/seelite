@@ -345,6 +345,12 @@ crossing the aperture plane inside the rectangle.
   is §2's in full.
 - **An impact first:** this spec's law runs, and the plane is not crossed this
   tick.
+- **Another ship first** (node #664): the pair is met by C4b's law, the plane
+  is not crossed, and the ship meets the world afterwards on the motion the
+  meeting left it, swept from the tick's start to its corrected end. A world
+  impact the bounce prevents is not billed. Each ship's first meeting is read
+  on the tick's unresolved motions, so a meeting its partner never reaches
+  only defers the world sweep; it cannot lose a world impact.
 - **An exact tie:** the impact wins (derived). A surface is a promise to keep
   out, so it beats an inclusion promise. `cruise.ts` makes the same ruling for
   a surface and an arrival.

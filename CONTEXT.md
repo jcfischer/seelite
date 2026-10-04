@@ -355,8 +355,9 @@ off-axis and leave the player's approach corridor clear.
 _Avoid_: Staging point, queue slot, parking berth
 
 **Diversion**:
-What a shot that opens a carrier's hull does to it. In one tick the carrier is
-disabled with the shooter's provenance and taken in for repair under its home
+What a shot — or an impact (`collision.md` §6, node #664) — that opens a
+carrier's hull does to it. In one tick the carrier is disabled with the
+shooter's provenance, or the impact's, and taken in for repair under its home
 station's, and from then on it is **parked at home**: drawn in a berth, holding
 it, off its route and off the scanner, until the first departure its own schedule
 makes at or after the repair's floor, when the same instance flies again. The

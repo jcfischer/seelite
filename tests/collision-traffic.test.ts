@@ -32,6 +32,7 @@ import {
 	pairSeparation,
 	shipImpulse,
 	SEPARATION_KM,
+	bodySphere,
 	shipPose,
 	sweepShip,
 	sweepShipPair,
@@ -86,6 +87,11 @@ import {
 	trafficImpactTransitions,
 } from "../src/traffic-engagement";
 import { type EntryPose, slotBasis } from "../src/docking";
+import {
+	type TrafficSamples,
+	presentedTrafficPos,
+	presentedTrafficStep,
+} from "../src/traffic-presentation";
 import { STATION_GEOMETRY } from "../src/station";
 import { type Vec3, add, dot, length, scale, sub, v3 } from "../src/vec3";
 import {
@@ -680,6 +686,252 @@ describe("stepWorld: a ship met before the aperture plane owns the tick (§4.2, 
 		expect(step.plane?.stationId).toBe(id);
 		expect(step.shipImpacts).toEqual([]);
 		expect(step.fleet[0].impacts.filter((i) => i.ship)).toEqual([]);
+	});
+});
+
+describe("stepWorld: a ship met before a world impact owns the tick (§4.2, node #664)", () => {
+	const dt = 0.1;
+	/** Falling toward the star's surface at 2 km/s, from this far above it. */
+	const FALL_KMS = 2;
+	const HEIGHT_KM = 0.19;
+	/** The gap between the falling ship's box and the heavy ship below it. */
+	const GAP_KM = 0.01;
+
+	/** Seed 47's star, a sphere at rest, and how far a pose is from it. */
+	function starOf(world: ReturnType<typeof makeWorld>) {
+		const star = world.system.bodies.find((b) => b.kind === "star");
+		if (!star) throw new Error("seed 47 has no star");
+		const vel = bodyVelocity(world.system, star.id, world.gameTime);
+		const sphere = bodySphere(star.radiusKm);
+		const at = shipPose(star.pos, v3(0, 0, 1), v3(0, 1, 0));
+		const clearance = (hull: HullId, pose: ReturnType<typeof shipPose>) => {
+			const gap = pairSeparation(box(hull)[0], pose, sphere, at);
+			return gap.overlap ? -1 : gap.distanceKm;
+		};
+		return { star, vel, clearance };
+	}
+
+	/** A miner riding with the star, its box `GAP_KM` below `above`'s along
+	 *  −`dir`, found by probing the gap rather than adding up half-lengths. */
+	function below(
+		above: { hull: HullId; pose: ReturnType<typeof shipPose> },
+		dir: Vec3,
+		nose: Vec3,
+		vel: Vec3,
+	): FleetShip {
+		const probeAt = sub(above.pose.origin, dir);
+		const gap = pairSeparation(
+			box("miner")[0],
+			shipPose(probeAt, nose, v3(0, 1, 0)),
+			box(above.hull)[0],
+			above.pose,
+		);
+		if (gap.overlap) throw new Error("the probe pose overlaps");
+		const pos = add(probeAt, scale(dir, gap.distanceKm - GAP_KM));
+		return {
+			id: "miner",
+			projected: false,
+			motion: {
+				massT: HULL_SPECS.miner.massT,
+				primitives: box("miner"),
+				start: shipPose(pos, nose, v3(0, 1, 0)),
+				end: shipPose(add(pos, scale(vel, dt)), nose, v3(0, 1, 0)),
+				velStart: vel,
+				velEnd: vel,
+			},
+		};
+	}
+
+	/** A raider falling onto the star, and, given `blocked`, a miner between
+	 *  it and the surface that it meets first. */
+	function fleetFall(blocked: boolean) {
+		const world = makeWorld(47);
+		const { star, vel, clearance } = starOf(world);
+		const dir = v3(1, 0, 0);
+		const nose = scale(dir, -1);
+		const start = add(star.pos, scale(dir, star.radiusKm + HEIGHT_KM));
+		const fall = add(vel, scale(dir, -FALL_KMS));
+		const raider: FleetShip = {
+			id: "raider",
+			projected: false,
+			motion: flying("raider", start, fall, dt, nose),
+		};
+		const fleet = [raider];
+		if (blocked)
+			fleet.push(
+				below({ hull: "raider", pose: raider.motion.start }, dir, nose, vel),
+			);
+		const flown = stepWorld(
+			world,
+			still(),
+			HANDS_OFF,
+			dt,
+			flightPerformance("courier"),
+			box("courier"),
+			[],
+			fleet,
+		);
+		return { flown, star, fleet, clearance, vel };
+	}
+
+	test("the control: a raider falling onto the star meets it inside the step", () => {
+		const { flown, star, fleet, clearance } = fleetFall(false);
+		expect(clearance("raider", fleet[0].motion.start)).toBeLessThan(
+			FALL_KMS * dt,
+		);
+		expect(flown.fleet[0].impacts.map((i) => i.with)).toEqual([star.id]);
+	});
+
+	test("a raider that meets a ship first bills the ship and not the star its bounce turned it from", () => {
+		const { flown, fleet, clearance, vel } = fleetFall(true);
+		// The miner stands clear of the star, so whatever it meets is the
+		// raider's doing.
+		expect(clearance("miner", fleet[1].motion.start)).toBeGreaterThan(0.05);
+		const [raider, miner] = flown.fleet;
+		expect(raider.impacts.map((i) => i.with)).toEqual(["miner"]);
+		expect(miner.impacts.map((i) => i.with)).toEqual(["raider"]);
+		// Turned back: it leaves the step rising, and outside the star.
+		expect(dot(sub(raider.vel, vel), v3(1, 0, 0))).toBeGreaterThan(0);
+		expect(
+			clearance("raider", { ...fleet[0].motion.end, origin: raider.pos }),
+		).toBeGreaterThan(0);
+	});
+
+	/** The player falling onto the star, and, given `blocked`, a miner between
+	 *  it and the surface that it meets first. */
+	function playerFall(blocked: boolean) {
+		const world = makeWorld(47);
+		const { star, vel, clearance } = starOf(world);
+		// `still()` points the nose along −z, so the player falls nose first.
+		const dir = v3(0, 0, 1);
+		const nose = scale(dir, -1);
+		world.ship.pos = add(star.pos, scale(dir, star.radiusKm + HEIGHT_KM));
+		world.ship.vel = add(vel, scale(dir, -FALL_KMS));
+		const you = shipPose(world.ship.pos, nose, v3(0, 1, 0));
+		const fleet = blocked
+			? [below({ hull: "courier", pose: you }, dir, nose, vel)]
+			: [];
+		const flown = stepWorld(
+			world,
+			still(),
+			HANDS_OFF,
+			dt,
+			flightPerformance("courier"),
+			box("courier"),
+			[],
+			fleet,
+		);
+		return { flown, star, you, fleet, clearance, world, dir, vel };
+	}
+
+	test("the control: the player falling onto the star meets it inside the step", () => {
+		const { flown, star, you, clearance } = playerFall(false);
+		expect(clearance("courier", you)).toBeLessThan(FALL_KMS * dt);
+		expect(flown.impacts.map((i) => i.bodyId)).toEqual([star.id]);
+	});
+
+	test("the player meeting a ship first bills the ship and not the star its bounce turned it from", () => {
+		const { flown, you, fleet, clearance, world, dir, vel } = playerFall(true);
+		expect(clearance("miner", fleet[0].motion.start)).toBeGreaterThan(0.05);
+		expect(flown.impacts).toEqual([]);
+		expect(flown.shipImpacts.map((i) => i.with)).toEqual(["miner"]);
+		expect(flown.fleet[0].impacts.map((i) => i.with)).toEqual([PLAYER_SHIP_ID]);
+		expect(dot(sub(world.ship.vel, vel), dir)).toBeGreaterThan(0);
+		expect(
+			clearance("courier", { ...you, origin: world.ship.pos }),
+		).toBeGreaterThan(0);
+	});
+});
+
+describe("presentedTrafficStep: a projection is swept along what is drawn (node #664)", () => {
+	/** Two authority ticks 0.1 s apart whose correction carries the carrier
+	 *  `2 · CORRECTION_KM` along +x, while each sample's own `vel` reads the
+	 *  corpus row's 0.082 km/s. */
+	const CORRECTION_KM = 0.5;
+	const LAW_KMS = 0.082;
+	function samples(at: Vec3): TrafficSamples {
+		const vel = v3(LAW_KMS, 0, 0);
+		return {
+			prior: { pos: add(at, v3(-CORRECTION_KM, 0, 0)), vel },
+			priorAtS: 0,
+			current: { pos: add(at, v3(CORRECTION_KM, 0, 0)), vel },
+			currentAtS: 0.1,
+		};
+	}
+
+	test("the law the render path draws with: each sample predicted to the clock, then blended", () => {
+		const s = samples(v3());
+		// At the current tick the blend is 0, so it is drawn on the prior
+		// sample's prediction; a span later, on the current one's.
+		const atTick = presentedTrafficPos(s, 0.1);
+		expect(atTick.x).toBeCloseTo(-CORRECTION_KM + LAW_KMS * 0.1, 12);
+		const aSpanOn = presentedTrafficPos(s, 0.2);
+		expect(aSpanOn.x).toBeCloseTo(CORRECTION_KM + LAW_KMS * 0.1, 12);
+		// No prior: the current sample, predicted. Settled: not predicted.
+		expect(presentedTrafficPos({ ...s, prior: null }, 0.2).x).toBeCloseTo(
+			CORRECTION_KM + LAW_KMS * 0.1,
+			12,
+		);
+		expect(
+			presentedTrafficPos({ ...s, prior: null, settled: true }, 0.2).x,
+		).toBe(CORRECTION_KM);
+	});
+
+	test("a step's velocity is its drawn displacement, and one step ends where the next starts", () => {
+		const s = samples(v3());
+		const a = presentedTrafficStep(s, 0.125, 0.05);
+		const b = presentedTrafficStep(s, 0.175, 0.05);
+		expect(length(sub(a.end, b.start))).toBe(0);
+		expect(length(sub(scale(a.vel, 0.05), sub(a.end, a.start)))).toBeLessThan(
+			1e-12,
+		);
+		// The correction is the motion: ten kilometres a second, not 0.082.
+		expect(a.vel.x).toBeGreaterThan(100 * LAW_KMS);
+	});
+
+	test("a carrier drawn crossing the player is met; swept on its `vel`, it was not", () => {
+		const dt = 0.05;
+		const fromS = 0.125;
+		const at = makeWorld(47).ship.pos;
+		const drawn = presentedTrafficStep(samples(at), fromS, dt);
+		// Drawn from a quarter of a kilometre short of the player to as far
+		// past it inside one step.
+		expect(drawn.start.x - at.x).toBeCloseTo(-0.25, 1);
+		expect(drawn.end.x - at.x).toBeCloseTo(0.25, 1);
+		const meet = (end: Vec3, vel: Vec3) => {
+			const world = makeWorld(47);
+			world.ship.vel = v3();
+			return stepWorld(
+				world,
+				still(),
+				HANDS_OFF,
+				dt,
+				flightPerformance("courier"),
+				box("courier"),
+				[],
+				[
+					{
+						id: "carrier",
+						projected: true,
+						motion: {
+							massT: HULL_SPECS.freighter.massT,
+							primitives: box("freighter"),
+							start: shipPose(drawn.start, v3(1, 0, 0), v3(0, 1, 0)),
+							end: shipPose(end, v3(1, 0, 0), v3(0, 1, 0)),
+							velStart: vel,
+							velEnd: vel,
+						},
+					},
+				],
+			);
+		};
+		// The red build's construction: the start plus `vel · dt`, 4 m.
+		const law = v3(LAW_KMS, 0, 0);
+		expect(meet(add(drawn.start, scale(law, dt)), law).shipImpacts).toEqual([]);
+		// What is drawn: met, at the closing speed the drawn step has.
+		const met = meet(drawn.end, drawn.vel).shipImpacts;
+		expect(met.map((i) => i.with)).toEqual(["carrier"]);
+		expect(met[0].closingKms).toBeGreaterThan(1);
 	});
 });
 
