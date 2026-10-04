@@ -461,6 +461,7 @@ const undock = good.docked
 				g.clearTrafficPresentation();
 				g.trafficSystemIndex = g.world.system.record.index;
 				g.trafficActors = [];
+				g.trafficInbound = [];
 				g.trafficWarmIndex = 0;
 				g.trafficTick = Math.floor(g.world.gameTime * 10 + 1e-8);
 				const launched = g.launch();

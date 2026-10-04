@@ -92,6 +92,16 @@
  *   ones `trafficShown` refuses), which is the conservative direction for a caption; a
  *   drawn carrier with no route is the other direction and **throws**.
  *
+ *   **The roster is not the drawn set any more** (node #684). `flyingTraffic()` now
+ *   lists inbound haulers from neighbouring systems beside the home roster. An inbound
+ *   hauler has no route until the authority has warmed it, and while it is in another
+ *   system its route is marked `present: false` over a placeholder pose at the origin.
+ *   Neither is drawn. So the reading first warms the authority until it is
+ *   ready (every candidate projected; a run that cannot get there throws rather than
+ *   measuring half a roster), then drops the absent carriers from both lists by one
+ *   key set: off the subjects, where an origin pose would stand a hull on the star,
+ *   and off the drawn list, where it would be a hull with no place to measure.
+ *
  *   Traffic is drawn at the shipped arrival frame — a dozen carriers, give or take, per
  *   world, which the sweep prints rather than what this sentence says. That number is why
  *   this class exists in the reading at all: the first draft asked none of these
@@ -173,6 +183,15 @@ export async function bootForClearance(page, origin, seed) {
  * a row of its own rather than as a run someone remembers doing.
  */
 export async function measureClearance(page, askedSeed) {
+	await page.evaluate(() => {
+		const g = window.__seelite;
+		for (let i = 0; i < 2_000 && !g.trafficAuthorityReady(); i++)
+			g.updateTrafficAuthority();
+		if (!g.trafficAuthorityReady())
+			throw new Error(
+				`sky-clearance: Traffic authority still warming after 2000 ticks (${g.trafficWarmIndex} of ${g.trafficCandidates().length} candidates), so which carriers this system holds is not yet known and the reading would measure part of a roster`,
+			);
+	});
 	await settleFrames(page, 5);
 
 	return page.evaluate((asked) => {
@@ -244,15 +263,21 @@ export async function measureClearance(page, askedSeed) {
 		};
 
 		/**
-		 * Every Traffic hull the game says it draws, and every route it can place one
-		 * on. See the header: routes are a superset of what is drawn, so the guard
-		 * below has to be about **which** hulls have routes and never about how many.
+		 * Every Traffic hull the game can draw in this system, and every route it can
+		 * place one on — less the carriers whose route says they are in another system.
+		 * See the header: routes are a superset of what is drawn, so the guard below
+		 * has to be about **which** hulls have routes and never about how many.
 		 */
 		function collectTraffic(game) {
 			if (!Array.isArray(game.trafficRoutes))
 				throw new Error(
 					"sky-clearance: game.trafficRoutes is not a list, so Traffic can be neither placed nor excluded and the caption's *nothing* is no longer measurable",
 				);
+			const absent = new Set(
+				game.trafficRoutes
+					.filter((route) => route?.present === false)
+					.map((route) => route.key),
+			);
 			const drawn = [];
 			for (const accessor of ["flyingTraffic", "divertedTraffic"]) {
 				const listed = game[accessor];
@@ -260,14 +285,17 @@ export async function measureClearance(page, askedSeed) {
 					throw new Error(
 						`sky-clearance: game.${accessor}() is no longer a function, so this reading cannot say how much Traffic is drawn in the frame it is auditing`,
 					);
-				for (const actor of listed.call(game))
+				for (const actor of listed.call(game)) {
+					if (absent.has(actor.key)) continue;
 					drawn.push({
 						key: actor.key,
 						label: actor.callsign ?? String(actor.key ?? "carrier"),
 					});
+				}
 			}
 			const routes = [];
 			for (const route of game.trafficRoutes) {
+				if (absent.has(route.key)) continue;
 				if (!route?.pos || !Number.isFinite(route.pos.x))
 					throw new Error(
 						`sky-clearance: a traffic route has no usable position, so it can be neither placed nor excluded — and a subject the frame cannot evaluate is dropped by the in-frame filter rather than counted, which is a green light handed out by a blind spot`,
