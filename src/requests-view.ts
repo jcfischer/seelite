@@ -13,6 +13,7 @@ import {
 	isAcceptedRequest,
 	nextAction,
 	statusLabel,
+	type AcceptedRequest,
 	type RequestOffer,
 	type RequestsState,
 	type RequestStation,
@@ -109,6 +110,121 @@ export interface RequestsView {
 	 * lists **locked**, names the module on its row and draws no Accept.
 	 */
 	equipment: readonly string[];
+	/**
+	 * Which half of the journal the list shows (node #690): **Current** for
+	 * work still going, **Past** for outcomes. Transient UI state on `Game`,
+	 * never saved, and `"current"` whenever Requests is opened.
+	 */
+	tab: RequestsTab;
+}
+
+/** The two halves of the Requests list (node #690). */
+export type RequestsTab = "current" | "past";
+export const REQUESTS_TABS: readonly RequestsTab[] = ["current", "past"];
+export const isRequestsTab = (value: string): value is RequestsTab =>
+	(REQUESTS_TABS as readonly string[]).includes(value);
+
+/**
+ * Which tab a journal row lives under.
+ *
+ * **`isAcceptedRequest` is the whole rule**, read rather than restated: it is
+ * the allow-list on the status union, so a status added later lands in Past
+ * rather than posing as work in progress — the reason #445 made it an
+ * allow-list in the first place.
+ */
+export const tabOfRequest = (r: AcceptedRequest): RequestsTab =>
+	isAcceptedRequest(r) ? "current" : "past";
+
+/**
+ * The board, partitioned. Four sections, **disjoint and together exactly the
+ * rows the single list used to show**: a journal row is classified by its
+ * status first, so a cancelled job still posted at its requester is an
+ * outcome and not an offer, and a kept lead the pilot later accepted is a job
+ * and not a lead. Only then is a lead *kept*, and only then is an offer
+ * *posted*.
+ *
+ * Offers are the docked board's alone, as they always were; in flight the
+ * list is the journal and the kept leads.
+ */
+export interface RequestsSections {
+	/** Accepted and ready-to-report: Current's first section. */
+	ongoing: RequestOffer[];
+	/** Posted at this station and not taken: Current, docked only. */
+	posted: RequestOffer[];
+	/** Kept for later and not taken: Current. */
+	kept: RequestOffer[];
+	/** Completed, cancelled and failed: the Past tab. */
+	past: RequestOffer[];
+}
+
+export function requestSections(
+	view: Pick<RequestsView, "state" | "offers">,
+	flight: boolean,
+): RequestsSections {
+	const { state } = view;
+	const out: RequestsSections = { ongoing: [], posted: [], kept: [], past: [] };
+	const seen = new Set<string>();
+	for (const r of Object.values(state.byId)) {
+		seen.add(r.offerId);
+		(tabOfRequest(r) === "current" ? out.ongoing : out.past).push(r.terms);
+	}
+	for (const lead of Object.values(state.leadsById))
+		if (!seen.has(lead.id)) {
+			seen.add(lead.id);
+			out.kept.push(lead);
+		}
+	if (!flight)
+		for (const offer of view.offers)
+			if (!seen.has(offer.id)) {
+				seen.add(offer.id);
+				out.posted.push(offer);
+			}
+	return out;
+}
+
+/**
+ * Which tab shows an entry, or `null` when no row on this surface carries it.
+ *
+ * The selection is kept across a tab switch; this is what decides whether it
+ * is drawn. A details pane is drawn **only for a row the list is showing**, so
+ * a job that moved to the other tab — or a selection on a surface that does
+ * not list it — leaves no actionable pane behind.
+ */
+export function requestsTabOf(
+	view: Pick<RequestsView, "state" | "offers">,
+	id: string,
+	flight: boolean,
+): RequestsTab | null {
+	const sections = requestSections(view, flight);
+	if (sections.past.some((o) => o.id === id)) return "past";
+	return [...sections.ongoing, ...sections.posted, ...sections.kept].some(
+		(o) => o.id === id,
+	)
+		? "current"
+		: null;
+}
+
+/**
+ * Entrusted goods aboard for a job that is no longer running (node #690).
+ *
+ * Cancelling moves the job to Past, and the goods it issued stay aboard until
+ * they are returned. Current names them, so moving a row into history does not
+ * hide what the pilot still owes.
+ */
+export function outstandingReturns(
+	state: RequestsView["state"],
+): { offer: RequestOffer; goodName: string; aboardT: number }[] {
+	const out: { offer: RequestOffer; goodName: string; aboardT: number }[] = [];
+	for (const lot of Object.values(state.entrustedByLotId)) {
+		const r = state.byId[lot.offerId];
+		if (r && lot.aboardT > 0 && tabOfRequest(r) === "past")
+			out.push({
+				offer: r.terms,
+				goodName: lot.goodName,
+				aboardT: lot.aboardT,
+			});
+	}
+	return out;
 }
 
 /** What an offer requires that the pilot has not fitted. */
@@ -186,7 +302,16 @@ export const REQUESTS_STYLE = `
 .lc-requests { flex: 1; min-height: 0; overflow: auto; }
 .lc-request-intro { color: #cb8c51; margin: 4px 0 18px; }
 .lc-request-layout { display: grid; grid-template-columns: minmax(230px, .7fr) minmax(0, 1.5fr); gap: 28px; }
+.lc-request-tabs { display: flex; gap: 6px; margin: 0 0 16px; border-bottom: 1px solid #8a5831; }
+.lc-request-tab { padding: 8px 16px; margin-bottom: -1px; border: 1px solid transparent; border-bottom-color: #8a5831; background: transparent; color: #cb8c51; font: inherit; letter-spacing: .06em; text-transform: uppercase; cursor: pointer; }
+.lc-request-tab[aria-selected="true"] { border-color: #ffe0a2 #ffe0a2 #452607; background: #452607; color: #fff0c9; }
+.lc-request-tab-count { margin-left: 6px; color: #cb8c51; }
 .lc-request-list { display: grid; align-content: start; gap: 10px; }
+.lc-request-section { display: grid; gap: 10px; }
+.lc-request-section + .lc-request-section { margin-top: 12px; }
+.lc-request-section h4 { margin: 0; color: #cb8c51; font-size: 11px; font-weight: normal; letter-spacing: .06em; text-transform: uppercase; }
+.lc-request-empty { margin: 0; color: #c7a882; }
+.lc-request-owed { margin: 0; padding: 10px 12px; border-left: 2px solid #e5aa52; color: #ffe1a9; background: #2c1808; }
 .lc-request-row { display: block; width: 100%; text-align: left; padding: 16px; color: #ffe1a9; border: 1px solid #8a5831; background: #271407; font: inherit; cursor: pointer; }
 .lc-request-row[aria-selected="true"] { border-color: #ffe0a2; background: #452607; }
 .lc-request-row strong, .lc-request-row small { display: block; }
@@ -221,31 +346,81 @@ export function requestCue(view?: RequestsView): string {
 export function requestsBody(view?: RequestsView, flight = false): string {
 	if (!view)
 		return `<div class="lc-requests"><p>No request board loaded.</p></div>`;
-	const { state } = view;
-	const entries = new Map<string, RequestOffer>();
-	if (!flight) for (const offer of view.offers) entries.set(offer.id, offer);
-	for (const r of Object.values(state.byId)) entries.set(r.offerId, r.terms);
-	for (const lead of Object.values(state.leadsById))
-		if (!flight || !state.byId[lead.id]) entries.set(lead.id, lead);
-	const selected = view.selectedId ? entries.get(view.selectedId) : null;
-	const count = Object.values(state.byId).filter(isAcceptedRequest).length;
-	const rows = [...entries.values()]
-		.map((o) => {
-			const r = state.byId[o.id];
-			// **Locked on the row, not only in the details** (#489): a pilot
-			// scanning the list learns the requirement without opening it.
-			const missing = r ? [] : missingEquipment(view, o);
-			const label = r
-				? statusLabel(r.status)
-				: missing.length > 0
-					? `locked: needs ${missing.join(", ")}`
-					: state.leadsById[o.id]
-						? "kept, not accepted"
-						: "not accepted";
-			return `<button type="button" class="lc-request-row" data-live-request-action="details" data-live-request-id="${esc(o.id)}" aria-selected="${selected?.id === o.id}"${missing.length > 0 ? " data-live-request-locked" : ""}><strong>${esc(o.title)}</strong><small>${esc(label)}${state.trackedRequestId === o.id ? " · TRACKED" : ""}</small><small>${o.rewardCr} Cr · ${esc(operandLine(o))} · report at ${esc(o.reportName)}</small></button>`;
-		})
+	const { state, tab } = view;
+	const sections = requestSections(view, flight);
+	const visible =
+		tab === "past"
+			? sections.past
+			: [...sections.ongoing, ...sections.posted, ...sections.kept];
+	// **Only a row the list is showing has details** (node #690). The
+	// selection survives a tab switch so switching back restores it, but a
+	// pane with Cancel or Report on it for a row that is not on the glass is a
+	// control for something the pilot cannot see.
+	const selected = view.selectedId
+		? (visible.find((o) => o.id === view.selectedId) ?? null)
+		: null;
+	const count = sections.ongoing.length;
+	const row = (o: RequestOffer): string => {
+		const r = state.byId[o.id];
+		// **Locked on the row, not only in the details** (#489): a pilot
+		// scanning the list learns the requirement without opening it.
+		const missing = r ? [] : missingEquipment(view, o);
+		const label = r
+			? statusLabel(r.status)
+			: missing.length > 0
+				? `locked: needs ${missing.join(", ")}`
+				: state.leadsById[o.id]
+					? "kept, not accepted"
+					: "not accepted";
+		return `<button type="button" class="lc-request-row" data-live-request-action="details" data-live-request-id="${esc(o.id)}" aria-selected="${selected?.id === o.id}"${missing.length > 0 ? " data-live-request-locked" : ""}><strong>${esc(o.title)}</strong><small>${esc(label)}${state.trackedRequestId === o.id ? " · TRACKED" : ""}</small><small>${o.rewardCr} Cr · ${esc(operandLine(o))} · report at ${esc(o.reportName)}</small></button>`;
+	};
+	// **Namespaced by surface**, for `button()`'s reason: the station console
+	// and the flight console can both be in one document.
+	const surface = flight ? "flight" : "console";
+	const panelId = `${surface}-requests-panel`;
+	const tabId = (t: RequestsTab) => `${surface}-requests-tab-${t}`;
+	// The tabs are request actions, so the click path, native Enter and Space,
+	// and the pad's walk and A reach them with nothing added. They are **not**
+	// `.lc-tab`: the shoulders step the console's own tabs, and these are
+	// inside one of them.
+	const tabButton = (t: RequestsTab, label: string, n: number) =>
+		`<button type="button" role="tab" class="lc-request-tab" id="${tabId(t)}" aria-controls="${panelId}" aria-selected="${tab === t}" data-live-request-action="tab" data-live-request-id="${t}">${label} <span class="lc-request-tab-count">${n}</span></button>`;
+	const tabs = `<div class="lc-request-tabs" role="tablist" aria-label="Requests">${tabButton("current", "Current", sections.ongoing.length)}${tabButton("past", "Past", sections.past.length)}</div>`;
+	const section = (
+		key: keyof RequestsSections,
+		heading: string,
+		items: readonly RequestOffer[],
+		empty: string,
+	) =>
+		`<section class="lc-request-section" data-live-request-section="${key}"><h4>${esc(heading)}</h4>${items.length > 0 ? items.map(row).join("") : `<p class="lc-request-empty" data-live-request-empty="${key}">${esc(empty)}</p>`}</section>`;
+	// What a cancelled job still has aboard, said on Current: the job is
+	// history, the goods are not (`missions-and-requests.md` §4).
+	const owed = outstandingReturns(state)
+		.map(
+			({ offer, goodName, aboardT }) =>
+				`<p class="lc-request-owed" data-live-request-owed="${esc(offer.id)}">You still carry ${aboardT} t of ${esc(goodName)} for a cancelled job. Return it at ${esc(offer.requesterName)}. The job is under Past.</p>`,
+		)
 		.join("");
-	let details = `<div class="lc-request-details" data-live-request-details><h3>Jobs</h3><p>Select a job to read its terms. Reading it or keeping it for later does not commit you.</p><p>You can take several jobs at once. Track one to see its next step while you fly.</p></div>`;
+	const list =
+		tab === "past"
+			? section(
+					"past",
+					"Reported, cancelled and failed",
+					sections.past,
+					"No finished jobs yet. A job you report or cancel moves here, with how it ended.",
+				)
+			: `${owed}${section(
+					"ongoing",
+					"In progress",
+					sections.ongoing,
+					flight
+						? "No jobs in progress. Take one on a station's Requests tab."
+						: "No jobs in progress. Take one from the jobs posted here.",
+				)}${flight ? "" : section("posted", "Posted here", sections.posted, "No jobs posted here.")}${sections.kept.length > 0 ? section("kept", "Kept for later", sections.kept, "") : ""}`;
+	let details =
+		tab === "past"
+			? `<div class="lc-request-details" data-live-request-details><h3>Past jobs</h3><p>Select a job to read how it ended.</p><p>A cancelled job can be accepted again at the station that posted it.</p></div>`
+			: `<div class="lc-request-details" data-live-request-details><h3>Jobs</h3><p>Select a job to read its terms. Reading it or keeping it for later does not commit you.</p><p>You can take several jobs at once. Track one to see its next step while you fly.</p></div>`;
 	if (selected) {
 		const o = selected;
 		const r = state.byId[o.id];
@@ -342,5 +517,5 @@ export function requestsBody(view?: RequestsView, flight = false): string {
 			);
 		details = `<div class="lc-request-details" data-live-request-details><h3>${esc(o.title)}</h3><p>${r ? esc(nextAction(r)) : "Read the terms before you accept."}</p><dl>${fields.map(([k, v]) => `<dt>${esc(k)}</dt><dd>${k === "Intelligence" ? `${esc(o.region)}. ${esc(o.source)} · <span data-live-request-age="${o.observedAt}">${Math.max(0, Math.floor(view.now - o.observedAt))}s old</span>` : esc(v)}</dd>`).join("")}</dl><div class="lc-request-actions">${actions}</div>${r?.status === "ready-to-report" && !atReport ? `<p>Dock at ${esc(o.reportName)} to report. You can only be paid there.</p>` : ""}</div>`;
 	}
-	return `<div class="lc-requests" data-live-requests><p class="lc-request-intro">${count} accepted · ${flight ? "your jobs and the ones you kept" : "jobs posted here and jobs you have taken"}</p><p class="lc-request-message" role="status">${esc(view.message)}</p><div class="lc-request-layout"><div class="lc-request-list">${rows || `<p>${flight ? "You have no jobs. Check Requests at a station." : "No jobs posted here."}</p>`}</div>${details}</div></div>`;
+	return `<div class="lc-requests" data-live-requests><p class="lc-request-intro">${count} accepted · ${flight ? "your jobs and the ones you kept" : "jobs posted here and jobs you have taken"}</p><p class="lc-request-message" role="status">${esc(view.message)}</p>${tabs}<div class="lc-request-layout" role="tabpanel" id="${panelId}" aria-labelledby="${tabId(tab)}" data-live-request-tab-panel="${tab}"><div class="lc-request-list">${list}</div>${details}</div></div>`;
 }

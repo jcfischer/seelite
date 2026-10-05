@@ -878,7 +878,12 @@ import {
 	bindJobs,
 	deliveryCandidates,
 } from "./jobs";
-import type { RequestsView } from "./requests-view";
+import {
+	isRequestsTab,
+	requestsTabOf,
+	type RequestsTab,
+	type RequestsView,
+} from "./requests-view";
 import {
 	type CommanderRecord,
 	type SaveEnvelope,
@@ -2315,6 +2320,14 @@ class Game {
 	private stationConsoleTab: StationConsoleTab = "Market";
 	private requests = emptyRequests();
 	private requestSelectedId: string | null = null;
+	/**
+	 * Current or Past (node #690). Transient, never saved: Requests opens on
+	 * Current — a press that opens the tab, a new surface (docking somewhere,
+	 * launching) and a fresh boot all start there.
+	 */
+	private requestTab: RequestsTab = "current";
+	/** The surface the tab was last drawn on, so a new one resets it. */
+	private requestTabSurface: string | null = null;
 	private requestMessage = "";
 	private requestRevision = 0;
 	private requestOffersCacheKey: string | null = null;
@@ -4488,6 +4501,8 @@ class Game {
 				this.updateCockpit();
 			},
 			onLeftTab: (tab) => {
+				if (tab === "Requests" && this.leftTab !== "Requests")
+					this.requestTab = "current";
 				this.leftTab = tab;
 				this.consolePress(true);
 				this.updateCockpit();
@@ -4519,6 +4534,8 @@ class Game {
 				this.updateCockpit();
 			},
 			onStationTab: (tab) => {
+				if (tab === "Requests" && this.stationConsoleTab !== "Requests")
+					this.requestTab = "current";
 				this.stationConsoleTab = tab;
 				// A refusal is about the press that earned it, so **any** tab
 				// press retires it (#443) — including a press on the tab
@@ -15554,6 +15571,16 @@ class Game {
 		// One board per update: the console draws it and the first day asks it
 		// whether a Local run is posted (#408). Station control's log is written
 		// here, once, before the panel reads it.
+		// **A new surface opens on Current** (node #690). Here rather than in
+		// `requestsView`, which probes and `actOnRequest` also call: reading the
+		// board must not move it.
+		const requestSurface = dockContext
+			? `station:${dockContext.galaxyIndex}:${dockContext.stationKey}`
+			: "flight";
+		if (requestSurface !== this.requestTabSurface) {
+			this.requestTabSurface = requestSurface;
+			this.requestTab = "current";
+		}
 		const requests = this.requestsView(dockContext, hold);
 		const firstDayFacts = this.firstDayFacts(requests.offers);
 		this.noteFirstDayStep(firstDayFacts);
@@ -15770,6 +15797,7 @@ class Game {
 			state: this.requests,
 			offers: context ? this.requestOffersCache : [],
 			selectedId: this.requestSelectedId,
+			tab: this.requestTab,
 			message: this.requestMessage,
 			revision: this.requestRevision,
 			now: this.world.gameTime,
@@ -15862,6 +15890,17 @@ class Game {
 	/** Whether the board did what was asked: the press's sound reads it (#546). */
 	private actOnRequest(action: string, id: string): boolean {
 		const view = this.requestsView();
+		if (action === "tab") {
+			// The board's own state, like `details`: switching halves of the
+			// list changes no request, tracking, cargo or credit, so it is not a
+			// hold event and saves nothing (node #690).
+			if (!isRequestsTab(id)) return false;
+			this.requestTab = id;
+			this.requestMessage = "";
+			this.requestRevision += 1;
+			this.updateCockpit();
+			return true;
+		}
 		if (action === "details") {
 			// The board's own state (#626 D5), not a hold event: it repaints
 			// itself.
@@ -15894,6 +15933,20 @@ class Game {
 			galaxyIndex: this.world.system.record.galaxy,
 			at: this.world.gameTime,
 		});
+		// **The list follows the job the pilot just moved** (node #690). Cancel
+		// and Report send it to Past, where a consignment to return and Accept
+		// again are; Accept again brings it back to Current, where Track is. Set
+		// before the adopt, because the adopt repaints: one frame drawn on the
+		// old tab is a pane for a row that is no longer listed. A press that
+		// changed nothing moves nothing.
+		if (outcome.holdings !== before) {
+			const tab = requestsTabOf(
+				{ state: outcome.holdings.requests, offers: view.offers },
+				id,
+				!view.docked,
+			);
+			if (tab) this.requestTab = tab;
+		}
 		this.adoptHoldings(outcome);
 		return outcome.holdings !== before;
 	}
