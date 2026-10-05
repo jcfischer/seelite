@@ -42,7 +42,7 @@ export const CONTROLS_CHORD = "Shift + /";
 /**
  * The mark beside a key bound on another layout (node #382).
  *
- * **On the trigger, not the row**: a row can carry a key and a pad button,
+ * **On the trigger, not the row**: a row can carry a key and a pad button, // glossary-ignore: pad
  * and only the key was recorded anywhere. **Outside the `<kbd>`**, so the key
  * still prints as exactly the character it was recorded with. And a glyph no
  * keyboard types, so it cannot be read as part of a key — `*` and `+` both

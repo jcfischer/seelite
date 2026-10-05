@@ -388,7 +388,7 @@ check(
 // ---------------------------------------------------------------------------
 const offLayout = await bootOn([
 	{
-		command: "fly.pitchUp",
+		command: "fly.pitchUp", // glossary-ignore: Command
 		from: { kind: "key", key: "s", hold: true, code: "KeyS" },
 		to: { kind: "key", key: "ü", hold: true, code: "BracketLeft" },
 	},

@@ -1271,6 +1271,37 @@ const AUTHORED_SHIFTED: Readonly<Record<string, string>> = {
 	Slash: "?",
 };
 
+/**
+ * What each number-pad key types with Num Lock on, on the layout the defaults
+ * were authored on (node #382).
+ *
+ * The pad is **not** the same on every keyboard: `NumpadDecimal` types `.` on
+ * a US keyboard and `,` on a Brazilian or German one (UI Events `code`,
+ * §3.4), so a captured `{ key: ",", code: "NumpadDecimal" }` is another
+ * keyboard's character and is marked like any other. A pad key the US layout
+ * does not have — `NumpadComma` — types nothing there, as `IntlBackslash`
+ * does. With Num Lock off the pad sends named keys (`arrowup`, `delete`),
+ * which `offAuthoredLayout` never marks.
+ */
+const AUTHORED_NUMPAD: Readonly<Record<string, string>> = {
+	Numpad0: "0",
+	Numpad1: "1",
+	Numpad2: "2",
+	Numpad3: "3",
+	Numpad4: "4",
+	Numpad5: "5",
+	Numpad6: "6",
+	Numpad7: "7",
+	Numpad8: "8",
+	Numpad9: "9",
+	NumpadDecimal: ".",
+	NumpadAdd: "+",
+	NumpadSubtract: "-",
+	NumpadMultiply: "*",
+	NumpadDivide: "/",
+	NumpadEqual: "=",
+};
+
 /** The characters the authored layout types at a position, either shift. */
 const authoredCharacters = (code: string): readonly string[] => {
 	if (/^Key[A-Z]$/.test(code)) return [code.slice(3).toLowerCase()];
@@ -1283,6 +1314,8 @@ const authoredCharacters = (code: string): readonly string[] => {
 				? [AUTHORED_SHIFTED[code] as string]
 				: []),
 		];
+	if (Object.hasOwn(AUTHORED_NUMPAD, code))
+		return [AUTHORED_NUMPAD[code] as string];
 	// A key the authored layout does not have — `IntlBackslash` — types
 	// nothing there, so any character recorded on it is another keyboard's.
 	return [];
@@ -1294,7 +1327,7 @@ const authoredCharacters = (code: string): readonly string[] => {
  *
  * D7 prints the character a binding was recorded with, so a printed key is
  * evidence about the keyboard it was bound on. The `Controls` tab's header
- * says the keys print as a US keyboard types them, and this is the row-level
+ * says the keys print as a US keyboard types them, and this is the row-level // glossary-ignore: level
  * question that sentence owes: **does this key's character disagree with it.**
  * It is not "which keyboard was attached" — a QWERTZ capture on `KeyQ` types
  * `q`, is not marked, and prints exactly what the sentence says.
@@ -1312,12 +1345,14 @@ const authoredCharacters = (code: string): readonly string[] => {
  * - a chord — `movedTrigger` stores the character its position types here,
  *   because Option makes the event's character untrustworthy, so a chord is
  *   the authored layout's by construction and is D7's one printed exception;
- * - a named key — `arrowup`, `enter`, `f6` are spelled alike on every layout;
- * - the number pad, which types the same characters on every layout.
+ * - a named key — `arrowup`, `enter`, `f6` are spelled alike on every layout.
+ *
+ * The number-pad keys are not exempt: they are compared against
+ * `AUTHORED_NUMPAD`, because a pad's decimal key types `,` on many layouts.
  */
 export function offAuthoredLayout(t: Trigger): boolean {
 	if (t.kind !== "key" || t.code === undefined || t.alt === true) return false;
-	if ([...t.key].length !== 1 || t.code.startsWith("Numpad")) return false;
+	if ([...t.key].length !== 1) return false;
 	return !authoredCharacters(t.code).includes(t.key);
 }
 

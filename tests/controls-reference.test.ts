@@ -612,7 +612,7 @@ describe("whose layout a printed key came from", () => {
 	});
 
 	test("the mark is on the trigger, not the row", () => {
-		// The jump has a pad button beside the key, and only the key was
+		// The jump has a pad button beside the key, and only the key was // glossary-ignore: pad
 		// recorded anywhere.
 		const html = controlsBody(
 			controlsCatalogue(capture("q", "KeyA").layout),
@@ -644,10 +644,32 @@ describe("whose layout a printed key came from", () => {
 		expect(offAuthoredLayout(capture("<", "IntlBackslash").stored)).toBe(true);
 	});
 
-	test("names, the number pad, chords and codeless keys are never marked", () => {
+	test("the number pad is compared against the US pad, not exempt", () => {
+		// The US pad types these, so the sentence above them stays true.
+		expect(offAuthoredLayout(capture("1", "Numpad1").stored)).toBe(false);
+		expect(offAuthoredLayout(capture(".", "NumpadDecimal").stored)).toBe(false);
+		expect(offAuthoredLayout(capture("+", "NumpadAdd").stored)).toBe(false);
+		// A Brazilian or German pad types `,` at NumpadDecimal, which a US one
+		// types as `.`.
+		expect(offAuthoredLayout(capture(",", "NumpadDecimal").stored)).toBe(true);
+		// The US layout has no NumpadComma, so it types nothing there.
+		expect(offAuthoredLayout(capture(",", "NumpadComma").stored)).toBe(true);
+		// Num Lock off sends a named key, spelled alike everywhere.
+		expect(offAuthoredLayout(capture("delete", "NumpadDecimal").stored)).toBe(
+			false,
+		);
+		// The printed label is the recorded comma, marked.
+		const html = controlsBody(
+			controlsCatalogue(capture(",", "NumpadDecimal").layout),
+			new Set(),
+		);
+		expect(html).toContain("<kbd>,</kbd>");
+		expect(marks(html)).toBe(1);
+	});
+
+	test("names, chords and codeless keys are never marked", () => {
 		expect(offAuthoredLayout(capture("arrowup", "ArrowUp").stored)).toBe(false);
 		expect(offAuthoredLayout(capture("f6", "F6").stored)).toBe(false);
-		expect(offAuthoredLayout(capture("1", "Numpad1").stored)).toBe(false);
 		// A chord stores the character its position types on the authored
 		// layout (`movedTrigger`), so it cannot be off it.
 		const HEAD_PORT: CommandId = "view.headPort";
@@ -705,6 +727,7 @@ describe("whose layout a printed key came from", () => {
 			JSON.stringify({
 				version: LAYOUT_VERSION,
 				moves: [
+					// glossary-ignore: Command
 					{ command: JUMP, from, to: { kind: "key", key: "q", code: "KeyA" } },
 				],
 			}),
