@@ -491,6 +491,7 @@ for (const viewport of VIEWPORTS) {
 		game.clearTrafficPresentation();
 		game.trafficSystemIndex = game.world.system.record.index;
 		game.trafficActors = [];
+		game.trafficInbound = [];
 	});
 
 	const stations = await page.evaluate(() =>
@@ -757,6 +758,7 @@ for (const viewport of VIEWPORTS) {
 		game.clearTrafficPresentation();
 		game.trafficSystemIndex = game.world.system.record.index;
 		game.trafficActors = [];
+		game.trafficInbound = [];
 	});
 
 	const trade = await page.evaluate(() => {

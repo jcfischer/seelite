@@ -62,6 +62,10 @@ export async function installViewFraming(page) {
 			g.clearTrafficPresentation();
 			g.trafficSystemIndex = g.world.system.record.index;
 			g.trafficActors = [];
+			// Both rosters. Authority is ready only once its warm index reaches the
+			// candidate count (home plus inbound); with it stubbed, an inbound hauler
+			// left here keeps it unready, and the player's lane request waits forever.
+			g.trafficInbound = [];
 			g.trafficTick = Math.floor(g.world.gameTime * 10);
 			g.updateTrafficAuthority = () => {};
 			g.updateTrafficPresentation = () => {};

@@ -1026,6 +1026,9 @@ describe("§9.1.11 the docking computer", () => {
 			expect(run.refused).toBeNull();
 			expect(run.violations).toBe(0);
 			expect(run.docked).toBe(true);
+			// `collision.md` §9.1.15: and the hull met nothing on the way in.
+			expect(run.impacts).toEqual([]);
+			expect(run.ghostSteps).toBe(0);
 			// A run that "docked" on step one would pass the line above without
 			// having flown anything.
 			expect(run.steps).toBeGreaterThan(50);
@@ -1036,6 +1039,11 @@ describe("§9.1.11 the docking computer", () => {
 		const run = flyTheComputer({ spinRpm: 0, type: "refinery" });
 		expect(run.docked).toBe(true);
 		expect(run.violations).toBe(0);
+		// §9.1.15 on a pad: the nose is past the plane before the centre is, so // glossary-ignore: pad
+		// this row went red — no crossing, an impact on the deck — until the
+		// pad's opening ran down into its landing well (`padWellDepthKm`). // glossary-ignore: pad
+		expect(run.impacts).toEqual([]);
+		expect(run.ghostSteps).toBe(0);
 	});
 
 	/**

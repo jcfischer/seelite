@@ -1,0 +1,179 @@
+{
+	"worldSchemaVersion": 3,
+	"worldGeneratorVersion": 8,
+	"seed": 47,
+	"gameTime": 10,
+	"galaxies": [
+		{
+			"galaxyIndex": 0,
+			"objective": {
+				"0:station-refinery/traffic-01": {
+					"instanceOrdinal": 0,
+					"condition": "repairing",
+					"recovery": {
+						"kind": "repair",
+						"processId": "0:station-refinery/traffic-01#1:repair",
+						"consequenceArea": "station:station-refinery",
+						"startedAt": 10,
+						"completesAt": 1110,
+						"initiatedBy": {
+							"causeKind": "player-weapons",
+							"actorId": "player",
+							"playerRole": "direct"
+						}
+					}
+				}
+			},
+			"episodes": {
+				"0:station-refinery/traffic-01": {
+					"ordinal": 1,
+					"initiating": {
+						"key": "0:station-refinery/traffic-01",
+						"instanceOrdinal": 0,
+						"episodeOrdinal": 1,
+						"kind": "disable",
+						"occurredAt": 10,
+						"cause": {
+							"causeKind": "player-weapons",
+							"actorId": "player",
+							"playerRole": "direct"
+						}
+					},
+					"intervention": {
+						"key": "0:station-refinery/traffic-01",
+						"instanceOrdinal": 0,
+						"episodeOrdinal": 1,
+						"kind": "repair-start",
+						"occurredAt": 10,
+						"cause": {
+							"causeKind": "player-weapons",
+							"actorId": "player",
+							"playerRole": "direct"
+						},
+						"processId": "0:station-refinery/traffic-01#1:repair"
+					},
+					"latest": {
+						"key": "0:station-refinery/traffic-01",
+						"instanceOrdinal": 0,
+						"episodeOrdinal": 1,
+						"kind": "repair-start",
+						"occurredAt": 10,
+						"cause": {
+							"causeKind": "player-weapons",
+							"actorId": "player",
+							"playerRole": "direct"
+						},
+						"processId": "0:station-refinery/traffic-01#1:repair"
+					},
+					"closed": false
+				}
+			},
+			"knowledge": {
+				"0:station-refinery/traffic-01": {
+					"observedInstanceOrdinal": 0,
+					"observedCondition": "repairing",
+					"observedAt": 10,
+					"source": "intervention",
+					"observedRecovery": {
+						"processId": "0:station-refinery/traffic-01#1:repair",
+						"kind": "repair",
+						"consequenceArea": "station:station-refinery",
+						"startedAt": 10,
+						"completesAt": 1110
+					}
+				}
+			},
+			"deficits": {},
+			"visited": [],
+			"legalStatus": {
+				"heat": 0,
+				"updatedAt": 0
+			}
+		},
+		{
+			"galaxyIndex": 1,
+			"objective": {},
+			"episodes": {},
+			"knowledge": {},
+			"deficits": {},
+			"visited": [],
+			"legalStatus": {
+				"heat": 0,
+				"updatedAt": 0
+			}
+		},
+		{
+			"galaxyIndex": 2,
+			"objective": {},
+			"episodes": {},
+			"knowledge": {},
+			"deficits": {},
+			"visited": [],
+			"legalStatus": {
+				"heat": 0,
+				"updatedAt": 0
+			}
+		},
+		{
+			"galaxyIndex": 3,
+			"objective": {},
+			"episodes": {},
+			"knowledge": {},
+			"deficits": {},
+			"visited": [],
+			"legalStatus": {
+				"heat": 0,
+				"updatedAt": 0
+			}
+		},
+		{
+			"galaxyIndex": 4,
+			"objective": {},
+			"episodes": {},
+			"knowledge": {},
+			"deficits": {},
+			"visited": [],
+			"legalStatus": {
+				"heat": 0,
+				"updatedAt": 0
+			}
+		},
+		{
+			"galaxyIndex": 5,
+			"objective": {},
+			"episodes": {},
+			"knowledge": {},
+			"deficits": {},
+			"visited": [],
+			"legalStatus": {
+				"heat": 0,
+				"updatedAt": 0
+			}
+		},
+		{
+			"galaxyIndex": 6,
+			"objective": {},
+			"episodes": {},
+			"knowledge": {},
+			"deficits": {},
+			"visited": [],
+			"legalStatus": {
+				"heat": 0,
+				"updatedAt": 0
+			}
+		},
+		{
+			"galaxyIndex": 7,
+			"objective": {},
+			"episodes": {},
+			"knowledge": {},
+			"deficits": {},
+			"visited": [],
+			"legalStatus": {
+				"heat": 0,
+				"updatedAt": 0
+			}
+		}
+	],
+	"integrity": 1535444291
+}

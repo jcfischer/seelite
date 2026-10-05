@@ -523,3 +523,14 @@ export function witchspaceSkyZoom(beta: number): number {
 	const b = WITCHSPACE.peakBeta * Math.min(1, beta);
 	return Math.sqrt((1 - b) / (1 + b));
 }
+
+/** NPC rings open at the jump; the existing exit clock still owns closing. */
+export function npcRiftStrength(ageS: number): number {
+	if (ageS < 0 || ageS >= WITCHSPACE.riftEndS) return 0;
+	const look = (sinceS: number) =>
+		witchspaceLook({ kind: "exit", sinceS, from: "arrival" }).rift;
+	return (
+		look(Math.min(ageS + WITCHSPACE.unfoldAtS, WITCHSPACE.unfoldAtS + 0.5)) *
+		look(Math.max(ageS, WITCHSPACE.unfoldAtS + 0.5))
+	);
+}

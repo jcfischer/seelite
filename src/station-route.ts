@@ -9,7 +9,7 @@ import {
 	beginLaunch,
 	slerpAttitude,
 } from "./arrival";
-import type { CarrierKey } from "./carrier-key";
+import { type CarrierKey, systemIndexOfKey } from "./carrier-key";
 import {
 	advanceCruise,
 	CHARGE_PER_AU,
@@ -40,7 +40,12 @@ import {
 	stationPose,
 } from "./sim";
 import { STATION_GEOMETRY, STATION_LAWFUL } from "./station";
-import { berthFits, stationInterior, trafficBerths } from "./station-interior";
+import {
+	berthFits,
+	fittingTrafficBerths,
+	stationInterior,
+	trafficBerths,
+} from "./station-interior";
 import {
 	type ClearanceQueueRequest,
 	clearancePromotion,
@@ -57,10 +62,16 @@ import {
 	trafficHoldProjection,
 	trafficScheduleAt,
 } from "./station-traffic";
+import { JUMP_CHARGE_S } from "./hyperspace";
 import { AU_KM } from "./units";
 import { add, dot, length, scale, sub, type Vec3 } from "./vec3";
 
 export const CANONICAL_ROUTE_DT_S = 0.1;
+
+const budgetOf = (ticks?: number) =>
+	ticks === undefined
+		? undefined
+		: { remainingTicks: Math.max(0, Math.floor(ticks)) };
 
 export interface RouteActorIdentity {
 	key: CarrierKey;
@@ -139,6 +150,10 @@ export type TrafficCruisePhase =
 	| "blocked";
 
 export interface TrafficCruiseState {
+	/** Integrated path from this physical cruise leg's start (powered and passive). */
+	pathKm?: number;
+	/** Independent sum of the exact cruise segment displacement vectors. */
+	displacementKm?: Vec3;
 	phase: TrafficCruisePhase;
 	pos: Vec3;
 	vel: Vec3;
@@ -290,7 +305,16 @@ const advanceTrafficCruiseStep = (
 			workTicks: state.workTicks + 1,
 		};
 	}
+	let stepPathKm = 0;
+	let stepDisplacementKm = { x: 0, y: 0, z: 0 };
 	const step = advanceCruise({
+		onSegment: (segment) => {
+			stepPathKm += length(segment.velocity) * segment.duration;
+			stepDisplacementKm = add(
+				stepDisplacementKm,
+				scale(segment.velocity, segment.duration),
+			);
+		},
 		pos: state.pos,
 		nose: guidance.nose,
 		throttle: guidance.throttle,
@@ -315,6 +339,11 @@ const advanceTrafficCruiseStep = (
 						? "regenerating"
 						: "cruise",
 		pos: step.pos,
+		pathKm: (state.pathKm ?? 0) + stepPathKm,
+		displacementKm: add(
+			state.displacementKm ?? { x: 0, y: 0, z: 0 },
+			stepDisplacementKm,
+		),
 		vel:
 			step.exit === "proximity"
 				? stoppedBy?.vel
@@ -430,7 +459,10 @@ export type TrafficRoutePhase =
 	| "lane-queued"
 	| "arriving"
 	| "docked-away"
-	| "abstract-away";
+	| "abstract-away"
+	| "lane-point-hold"
+	| "jump-windup"
+	| "hyperspace-away";
 
 export interface TrafficArbitrationEvent {
 	stationId: string;
@@ -449,7 +481,16 @@ export interface TrafficArbitrationEvent {
 export type TrafficBerthCache = Map<string, string>;
 
 export interface SystemTrafficProjection extends TrafficProjection {
+	cruisePathKm?: number;
+	cruiseDisplacementKm?: Vec3;
+	cruiseStartedAtS?: number;
 	phase: TrafficRoutePhase;
+	jump?: { kind: "arrival" | "departure"; atS: number; pos: Vec3; nose: Vec3 };
+	/**
+	 * False for a hauler in another system: it has no place in this one, and
+	 * its `pos` is a placeholder no reader may draw, measure or aim at.
+	 */
+	present?: false;
 	destinationStationId: string | null;
 	chargeAu: number;
 	pendingIntent: { desired: "parked" | "away"; readyAt: number } | null;
@@ -539,13 +580,24 @@ const placedBody = (system: ReturnType<typeof makeSystem>, id: string) => {
 const withRoute = (
 	actor: TrafficActor,
 	phase: TrafficRoutePhase,
-	projection: TrafficProjection,
+	projection: TrafficProjection & {
+		pathKm?: number;
+		displacementKm?: Vec3;
+		startedAtS?: number;
+	},
 	extra: Partial<SystemTrafficProjection> = {},
 ): SystemTrafficProjection => ({
 	key: actor.key,
 	phase,
 	pos: projection.pos,
 	vel: projection.vel,
+	...(projection.startedAtS === undefined
+		? {}
+		: {
+				cruisePathKm: projection.pathKm ?? 0,
+				cruiseDisplacementKm: projection.displacementKm ?? { x: 0, y: 0, z: 0 },
+				cruiseStartedAtS: projection.startedAtS,
+			}),
 	...(projection.nose ? { nose: projection.nose } : {}),
 	...(projection.up ? { up: projection.up } : {}),
 	destinationStationId: null,
@@ -665,7 +717,25 @@ const blockedUntil = (
 	return end;
 };
 
+/** Fixed, star-centric endpoint supplied by the cross-system owner. */
+export interface TrafficLanePointEndpoint {
+	pos: Vec3;
+	nose: Vec3;
+	atS: number;
+	chargeAu: number;
+}
+export interface TrafficHaulerVoyage {
+	awayOrdinal: number;
+	departureAtS: number;
+	parkedBoundaryS: number;
+	stationId: string;
+	home: boolean;
+	departure: TrafficLanePointEndpoint;
+	arrival: TrafficLanePointEndpoint;
+}
+
 interface TrafficLegInput {
+	endLanePoint?: TrafficLanePointEndpoint;
 	record: SystemRecord;
 	actor: TrafficActor;
 	gameTime: number;
@@ -838,17 +908,26 @@ function projectTrafficLeg(input: TrafficLegInput): SystemTrafficProjection {
 				(candidate) => candidate.id === input.destinationStationId,
 			)
 		: candidates;
-	const selected = selectTrafficDestination({
-		actor,
-		homeStationId: input.destinationStationId
-			? originStationId
-			: actor.homeStationId,
-		from: crossingPos,
-		candidates: selectable,
-		masses: massesAt(record, launchEndS),
-		capacityAu: HULL_SPECS[actor.hullId].chargeAu,
-		awayOrdinal,
-	});
+	const selected = input.endLanePoint
+		? {
+				id: "traffic-lane-point",
+				fits: true,
+				hold: input.endLanePoint.pos,
+				parentId: null,
+				chain: [crossingPos, input.endLanePoint.pos],
+				plannedKm: length(sub(input.endLanePoint.pos, crossingPos)),
+			}
+		: selectTrafficDestination({
+				actor,
+				homeStationId: input.destinationStationId
+					? originStationId
+					: actor.homeStationId,
+				from: crossingPos,
+				candidates: selectable,
+				masses: massesAt(record, launchEndS),
+				capacityAu: HULL_SPECS[actor.hullId].chargeAu,
+				awayOrdinal,
+			});
 	if (!selected)
 		return withRoute(
 			actor,
@@ -881,22 +960,8 @@ function projectTrafficLeg(input: TrafficLegInput): SystemTrafficProjection {
 		CANONICAL_ROUTE_DT_S,
 		(1.5 * localDepartureKm) / TRAFFIC_STATION_LOCAL_SPEED_KM_S,
 	);
-	const spoolEndS = launchEndS + localDepartureS;
-	let movingSystem = systemAt(record, spoolEndS);
-	let movingAtS = spoolEndS;
-	const movingSystemAt = (t: number) => {
-		if (t + 1e-9 < movingAtS) {
-			movingSystem = systemAt(record, t);
-			movingAtS = t;
-		} else if (t !== movingAtS) {
-			advanceSystem(movingSystem, t);
-			movingAtS = t;
-		}
-		return movingSystem;
-	};
-	const holdAt = (t: number) =>
-		trafficHoldProjection(movingSystemAt(t), selected.id, actor.key, t);
-	const cruiseMassesAt = (t: number) => massesFromSystem(movingSystemAt(t), t);
+	const spoolEndS =
+		launchEndS + localDepartureS + (input.endLanePoint ? JUMP_CHARGE_S : 0);
 	const departureRelAt = (elapsedS: number) => {
 		const u = smooth(clamp01(elapsedS / localDepartureS));
 		const rangeKm = releaseRangeKm + localDepartureKm * u;
@@ -947,10 +1012,10 @@ function projectTrafficLeg(input: TrafficLegInput): SystemTrafficProjection {
 	const initialGuidance = beginCruiseGuidance({
 		from: cruiseStartPos,
 		target: { id: selected.id, pos: selected.hold },
-		masses: cruiseMassesAt(spoolEndS),
+		masses: massesAt(record, spoolEndS),
 		targetParentId: selected.parentId ?? null,
 	});
-	let cruiseInitial: TrafficCruiseState = {
+	const cruiseInitial: TrafficCruiseState = {
 		phase: initialGuidance.error ? "blocked" : "cruise",
 		pos: cruiseStartPos,
 		vel: add(
@@ -968,7 +1033,46 @@ function projectTrafficLeg(input: TrafficLegInput): SystemTrafficProjection {
 		initialBlockedById: initialGuidance.error?.blockerId,
 		blockedById: initialGuidance.error?.blockerId,
 	};
-	const cruiseEnvironment: TrafficCruiseEnvironment = {
+	return projectTrafficFlight(input, selected, cruiseInitial, departureCommit);
+}
+
+const movingTrafficSystem = (record: SystemRecord, atS: number) => {
+	let movingSystem = systemAt(record, atS);
+	let movingAtS = atS;
+	const movingSystemAt = (t: number) => {
+		if (t + 1e-9 < movingAtS) {
+			movingSystem = systemAt(record, t);
+			movingAtS = t;
+		} else if (t !== movingAtS) {
+			advanceSystem(movingSystem, t);
+			movingAtS = t;
+		}
+		return movingSystem;
+	};
+
+	return movingSystemAt;
+};
+
+/** The existing cruise law with one retained, system-local endpoint. */
+export function trafficCruiseEnvironment(
+	input: {
+		record: SystemRecord;
+		actor: TrafficActor;
+		atS: number;
+		selected: RouteDestinationCandidate;
+		endLanePoint?: TrafficLanePointEndpoint;
+	},
+	systemAtTime?: (atS: number) => System,
+): TrafficCruiseEnvironment {
+	const { record, actor, selected, atS } = input;
+	const movingSystemAt = systemAtTime ?? movingTrafficSystem(record, atS);
+
+	const holdAt = (t: number) =>
+		input.endLanePoint
+			? { pos: input.endLanePoint.pos, vel: { x: 0, y: 0, z: 0 } }
+			: trafficHoldProjection(movingSystemAt(t), selected.id, actor.key, t);
+	const cruiseMassesAt = (t: number) => massesFromSystem(movingSystemAt(t), t);
+	return {
 		params: DEFAULT_CRUISE,
 		targetAt: (t) => {
 			const hold = holdAt(t);
@@ -1014,6 +1118,49 @@ function projectTrafficLeg(input: TrafficLegInput): SystemTrafficProjection {
 			};
 		},
 	};
+}
+
+/** Cruise and terminal composition shared by station and Lane point origins. */
+function projectTrafficFlight(
+	input: TrafficLegInput,
+	selected: RouteDestinationCandidate,
+	initial: TrafficCruiseState,
+	departureCommit: Partial<SystemTrafficProjection>,
+): SystemTrafficProjection {
+	const {
+		record,
+		actor,
+		gameTime,
+		timeline,
+		originStationId,
+		readyAtS,
+		awayOrdinal,
+		finalPhase,
+		pendingIntent,
+	} = input;
+	let cruiseInitial = initial;
+	const spoolEndS = initial.startedAtS;
+	const movingSystemAt = movingTrafficSystem(record, spoolEndS);
+	const holdAt = (t: number): TrafficProjection =>
+		input.endLanePoint
+			? {
+					key: actor.key,
+					pos: input.endLanePoint.pos,
+					vel: { x: 0, y: 0, z: 0 },
+					nose: input.endLanePoint.nose,
+					up: initial.up,
+				}
+			: trafficHoldProjection(movingSystemAt(t), selected.id, actor.key, t);
+	const cruiseEnvironment = trafficCruiseEnvironment(
+		{
+			record,
+			actor,
+			atS: spoolEndS,
+			selected,
+			endLanePoint: input.endLanePoint,
+		},
+		movingSystemAt,
+	);
 	// A schedule query can project the previous and current visit in one call.
 	// Their otherwise-identical route keys must not evict each other while an
 	// incremental warm-up alternates between those visits.
@@ -1132,6 +1279,65 @@ function projectTrafficLeg(input: TrafficLegInput): SystemTrafficProjection {
 
 	const dropAtS = cruise.completedAtS ?? gameTime;
 	const drop = cruise;
+	if (input.endLanePoint) {
+		const lanePoint = input.endLanePoint;
+		const approachS = Math.max(1, length(sub(drop.pos, lanePoint.pos)) / 2);
+		const reachedS = dropAtS + approachS;
+		const jumpAtS = Math.max(lanePoint.atS, reachedS + JUMP_CHARGE_S);
+		const nose = scale(lanePoint.nose, -1);
+		if (gameTime < reachedS) {
+			const raw = clamp01((gameTime - dropAtS) / approachS);
+			const u = smooth(raw);
+			return withRoute(
+				actor,
+				"local-approach",
+				{
+					key: actor.key,
+					pos: interpolate(drop.pos, lanePoint.pos, u),
+					vel: scale(
+						sub(lanePoint.pos, drop.pos),
+						(6 * raw * (1 - raw)) / approachS,
+					),
+					...slerpAttitude(
+						{ nose: drop.nose, up: drop.up },
+						{ nose, up: drop.up },
+						u,
+					),
+				},
+				{
+					...departureCommit,
+					originBerthOccupied: false,
+					chargeAu: drop.chargeAu,
+					pendingIntent,
+					workTicks: drop.workTicks,
+				},
+			);
+		}
+		return withRoute(
+			actor,
+			gameTime >= jumpAtS
+				? "hyperspace-away"
+				: gameTime >= jumpAtS - JUMP_CHARGE_S
+					? "jump-windup"
+					: "lane-point-hold",
+			{
+				key: actor.key,
+				pos: lanePoint.pos,
+				vel: { x: 0, y: 0, z: 0 },
+				nose,
+				up: drop.up,
+			},
+			{
+				...departureCommit,
+				originBerthOccupied: false,
+				chargeAu: drop.chargeAu,
+				pendingIntent,
+				workTicks: drop.workTicks,
+				completedAtS: jumpAtS,
+				jump: { kind: "departure", atS: jumpAtS, pos: lanePoint.pos, nose },
+			},
+		);
+	}
 	const holdAtDrop = holdAt(dropAtS);
 	const approachS = Math.max(1, length(sub(drop.pos, holdAtDrop.pos)) / 2);
 	const holdReachedS = dropAtS + approachS;
@@ -1619,11 +1825,13 @@ export interface SystemTrafficProjectionInput {
 	playerTimeline?: readonly TrafficArbitrationEvent[];
 	occupiedByStation?: ReadonlyMap<string, ReadonlySet<string>>;
 	projectionSystem?: System;
+	haulerVoyages?: readonly TrafficHaulerVoyage[];
 }
 
 export interface SystemTrafficAuthorityInput
 	extends SystemTrafficProjectionInput {
 	cruiseCache?: TrafficCruiseCache;
+	lanePointArrivalCache?: TrafficLanePointArrivalCache;
 	berthCache?: TrafficBerthCache;
 	berthCacheTouched?: Set<string>;
 	/** False for an arbitration preview which must not commit a berth. */
@@ -1646,10 +1854,8 @@ export interface SystemTrafficAuthorityInput
 function projectSystemTrafficActorWithCaches(
 	input: SystemTrafficAuthorityInput,
 ): SystemTrafficProjection {
-	const cruiseBudget =
-		input.cruiseTickBudget === undefined
-			? undefined
-			: { remainingTicks: Math.max(0, Math.floor(input.cruiseTickBudget)) };
+	if (input.haulerVoyages) return projectHaulerInSystem(input);
+	const cruiseBudget = budgetOf(input.cruiseTickBudget);
 	const visitInput = { ...input, cruiseBudget };
 	if (input.activeVisit)
 		return projectTrafficVisit({
@@ -1758,4 +1964,316 @@ export function projectSystemTrafficAuthority(
 	input: SystemTrafficAuthorityInput,
 ): SystemTrafficProjection {
 	return projectSystemTrafficActorWithCaches(input);
+}
+
+/** A Lane point arrival's start: fixed for its voyage, so held per visit. */
+interface LanePointArrivalStart {
+	initial: TrafficCruiseState;
+	hold: Vec3;
+	parentId: RouteDestinationCandidate["parentId"];
+}
+
+/** Bounded to 256 arrivals by deterministic oldest-entry eviction. */
+export type TrafficLanePointArrivalCache = Map<string, LanePointArrivalStart>;
+
+function lanePointArrivalStart(
+	input: SystemTrafficAuthorityInput,
+	v: TrafficHaulerVoyage,
+	lanePointUp: Vec3,
+): LanePointArrivalStart {
+	const lanePoint = v.arrival;
+	const startAtS = lanePoint.atS + JUMP_CHARGE_S;
+	const cache = input.lanePointArrivalCache;
+	const cacheKey = `${input.record.index}|${input.actor.key}|${v.home}|${v.stationId}|${v.awayOrdinal}|${startAtS}`;
+	const cached = cache?.get(cacheKey);
+	if (cached) return cached;
+	const system = systemAt(input.record, startAtS);
+	const hold = trafficHoldProjection(
+		system,
+		v.stationId,
+		input.actor.key,
+		startAtS,
+	);
+	const station = stationOf(system, v.stationId);
+	const guidance = beginCruiseGuidance({
+		from: lanePoint.pos,
+		target: { id: v.stationId, pos: hold.pos },
+		masses: massesFromSystem(system, startAtS),
+		targetParentId: station.parentId,
+	});
+	const start: LanePointArrivalStart = {
+		initial: {
+			phase: guidance.error ? "blocked" : "cruise",
+			pos: lanePoint.pos,
+			vel: { x: 0, y: 0, z: 0 },
+			nose: lanePoint.nose,
+			up: lanePointUp,
+			chargeAu: lanePoint.chargeAu,
+			startedAtS: startAtS,
+			atS: startAtS,
+			workTicks: 0,
+			guidance: guidance.guidance,
+			blockedById: guidance.error?.blockerId,
+			initialPhase: guidance.error ? "blocked" : "cruise",
+			initialBlockedById: guidance.error?.blockerId,
+		},
+		hold: hold.pos,
+		parentId: station.parentId,
+	};
+	if (cache) {
+		if (cache.size >= 256) {
+			const oldest = cache.keys().next().value;
+			if (oldest !== undefined) cache.delete(oldest);
+		}
+		cache.set(cacheKey, start);
+	}
+	return start;
+}
+
+/** A Lane point-origin leg enters the station-origin cruise/terminal law. */
+function projectLanePointArrival(
+	input: SystemTrafficAuthorityInput,
+	v: TrafficHaulerVoyage,
+): SystemTrafficProjection {
+	const lanePoint = v.arrival;
+	const lanePointUp = normal(
+		{ x: lanePoint.nose.y, y: -lanePoint.nose.x, z: 0 },
+		{ x: 0, y: 1, z: 0 },
+	);
+	const jump = {
+		kind: "arrival" as const,
+		atS: lanePoint.atS,
+		pos: lanePoint.pos,
+		nose: lanePoint.nose,
+	};
+	if (input.gameTime < lanePoint.atS + JUMP_CHARGE_S)
+		return withRoute(
+			input.actor,
+			"lane-point-hold",
+			{
+				key: input.actor.key,
+				pos: lanePoint.pos,
+				vel: { x: 0, y: 0, z: 0 },
+				nose: lanePoint.nose,
+				up: lanePointUp,
+			},
+			{ chargeAu: lanePoint.chargeAu, originBerthOccupied: false, jump },
+		);
+	const start = lanePointArrivalStart(input, v, lanePointUp);
+	const result = projectTrafficFlight(
+		{
+			...input,
+			timeline: input.playerTimeline ?? [],
+			originStationId: "traffic-lane-point",
+			originBerthId: "",
+			destinationStationId: v.stationId,
+			readyAtS: lanePoint.atS,
+			awayOrdinal: v.awayOrdinal,
+			finalPhase: v.home ? "parked-home" : "docked-away",
+			pendingIntent:
+				!v.home && input.gameTime >= v.parkedBoundaryS
+					? { desired: "parked", readyAt: v.parkedBoundaryS }
+					: null,
+			committedArrivalAtS: v.home
+				? input.activeVisit?.returnArrivalAtS
+				: input.activeVisit?.outboundArrivalAtS,
+			cruiseBudget: budgetOf(input.cruiseTickBudget),
+		},
+		{ id: v.stationId, fits: true, hold: start.hold, parentId: start.parentId },
+		start.initial,
+		{},
+	);
+	return { ...result, jump };
+}
+
+/** A hauler in another system: it has no place in this one. */
+const absentHauler = (actor: TrafficActor): SystemTrafficProjection =>
+	withRoute(
+		actor,
+		"hyperspace-away",
+		{ key: actor.key, pos: { x: 0, y: 0, z: 0 }, vel: { x: 0, y: 0, z: 0 } },
+		{ originBerthOccupied: false, present: false },
+	);
+
+/** Stamp a hauler projection with the identity of the visit it belongs to. */
+function markVisit(
+	r: SystemTrafficProjection,
+	v: TrafficHaulerVoyage,
+	activeVisit: SystemTrafficAuthorityInput["activeVisit"],
+): SystemTrafficProjection {
+	return {
+		...r,
+		visitDepartureAtS: v.departureAtS,
+		visitLaunchReadyAtS: activeVisit?.launchReadyAtS ?? v.departureAtS,
+		visitAwayOrdinal: v.awayOrdinal,
+		visitHomeBerthId: activeVisit?.homeBerthId,
+		visitOutboundDepartureAtS: v.home
+			? (r.departureStartedAtS ?? activeVisit?.outboundDepartureAtS)
+			: activeVisit?.outboundDepartureAtS,
+		visitOutboundArrivalAtS: v.home
+			? activeVisit?.outboundArrivalAtS
+			: r.arrivalStartedAtS,
+		visitReturnDepartureAtS: v.home
+			? activeVisit?.returnDepartureAtS
+			: r.departureStartedAtS,
+		visitReturnArrivalAtS: v.home
+			? r.arrivalStartedAtS
+			: activeVisit?.returnArrivalAtS,
+	};
+}
+
+/** What a finished home voyage hands the next one: its berth and earliest relaunch. */
+interface HomeVoyageCarry {
+	readyAtS: number;
+	berthId?: string;
+}
+
+/** Out from the home berth to the Lane point, and back in from it. */
+function projectHomeVoyage(
+	input: SystemTrafficAuthorityInput,
+	v: TrafficHaulerVoyage,
+	carry: HomeVoyageCarry,
+): { projection: SystemTrafficProjection } | { carry: HomeVoyageCarry } {
+	const { actor, gameTime } = input;
+	const sys = input.projectionSystem ?? systemAt(input.record, gameTime);
+	const station = stationOf(sys, v.stationId);
+	const berths = fittingTrafficBerths(
+		stationInterior(
+			station.type,
+			STATION_GEOMETRY[station.type].aperturePlaneKm,
+			station.berthSeed,
+		),
+		HULL_SPECS[actor.hullId].env,
+	);
+	const berth =
+		input.activeVisit?.homeBerthId ??
+		carry.berthId ??
+		berths[actor.ordinal % berths.length].id;
+	const outgoing = projectTrafficLeg({
+		...input,
+		timeline: input.playerTimeline ?? [],
+		originStationId: v.stationId,
+		originBerthId: berth,
+		destinationStationId: null,
+		readyAtS: Math.max(
+			input.activeVisit?.launchReadyAtS ?? v.departureAtS,
+			carry.readyAtS,
+		),
+		awayOrdinal: v.awayOrdinal,
+		finalPhase: "docked-away",
+		pendingIntent:
+			gameTime >= v.parkedBoundaryS
+				? { desired: "parked", readyAt: v.parkedBoundaryS }
+				: null,
+		endLanePoint: v.departure,
+		committedDepartureAtS: input.activeVisit?.outboundDepartureAtS,
+		cruiseBudget: budgetOf(input.cruiseTickBudget),
+	});
+	if (outgoing.phase !== "hyperspace-away" || gameTime < v.arrival.atS)
+		return { projection: markVisit(outgoing, v, input.activeVisit) };
+	const arrived = projectLanePointArrival(input, v);
+	const nextDeparture = v.departureAtS + actor.schedule.cycleS;
+	if (
+		gameTime <
+			Math.max(
+				nextDeparture,
+				(arrived.completedAtS ?? nextDeparture) + TRAFFIC_MIN_DOCKED_S,
+			) ||
+		arrived.phase !== "parked-home" ||
+		input.activeVisit
+	)
+		return {
+			projection: markVisit(
+				{ ...arrived, visitHomeBerthId: arrived.berthId ?? berth },
+				v,
+				input.activeVisit,
+			),
+		};
+	return {
+		carry: {
+			readyAtS: (arrived.completedAtS ?? 0) + TRAFFIC_MIN_DOCKED_S,
+			berthId: arrived.berthId ?? undefined,
+		},
+	};
+}
+
+/**
+ * In from the Lane point to the destination berth, and out again once the
+ * parked boundary and the minimum dwell have both passed. Null hands the
+ * query on to the next voyage: this one has not arrived yet, or it has
+ * already left and is not the last.
+ */
+function projectAwayVoyage(
+	input: SystemTrafficAuthorityInput,
+	v: TrafficHaulerVoyage,
+	isLast: boolean,
+): SystemTrafficProjection | null {
+	if (input.gameTime < v.arrival.atS) return null;
+	const arrived = projectLanePointArrival(input, v);
+	if (
+		arrived.phase !== "docked-away" ||
+		arrived.completedAtS === undefined ||
+		!arrived.berthId
+	)
+		return markVisit(arrived, v, input.activeVisit);
+	const readyAtS = Math.max(
+		v.parkedBoundaryS,
+		arrived.completedAtS + TRAFFIC_MIN_DOCKED_S,
+	);
+	if (input.gameTime < readyAtS)
+		return markVisit(arrived, v, input.activeVisit);
+	const outgoing = projectTrafficLeg({
+		...input,
+		timeline: input.playerTimeline ?? [],
+		originStationId: v.stationId,
+		originBerthId: arrived.berthId,
+		destinationStationId: null,
+		readyAtS,
+		awayOrdinal: v.awayOrdinal,
+		finalPhase: "parked-home",
+		pendingIntent: null,
+		endLanePoint: v.departure,
+		committedDepartureAtS: input.activeVisit?.returnDepartureAtS,
+		cruiseBudget: budgetOf(input.cruiseTickBudget),
+	});
+	return outgoing.phase !== "hyperspace-away" || isLast
+		? markVisit(outgoing, v, input.activeVisit)
+		: null;
+}
+
+/** Current-system half only. Earlier unfinished visits remain non-preemptive. */
+function projectHaulerInSystem(
+	input: SystemTrafficAuthorityInput,
+): SystemTrafficProjection {
+	const { actor, gameTime } = input;
+	const parked = () =>
+		projectParkedTrafficActor({
+			...input,
+			projectionSystem:
+				input.projectionSystem ?? systemAt(input.record, gameTime),
+		});
+	const voyages = input.haulerVoyages ?? [];
+	if (!voyages.length && systemIndexOfKey(actor.key) === input.record.index)
+		return parked();
+	let carry: HomeVoyageCarry = { readyAtS: 0 };
+	for (const v of voyages) {
+		if (input.activeVisit && v.awayOrdinal !== input.activeVisit.awayOrdinal)
+			continue;
+		if (v.home) {
+			if (gameTime < v.departureAtS) return parked();
+			const step = projectHomeVoyage(input, v, carry);
+			if ("projection" in step) return step.projection;
+			carry = step.carry;
+		} else {
+			const projection = projectAwayVoyage(
+				input,
+				v,
+				v === voyages[voyages.length - 1],
+			);
+			if (projection) return projection;
+		}
+	}
+	if (voyages.some((v) => v.home) && gameTime < actor.schedule.departureAtS)
+		return parked();
+	return absentHauler(actor);
 }

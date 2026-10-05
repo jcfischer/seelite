@@ -1,4 +1,5 @@
 import { expect, test } from "bun:test";
+import { systemIndexOfKey } from "../src/carrier-key";
 import { readFileSync } from "node:fs";
 import ts from "typescript";
 import { projectNavTargets } from "../src/cockpit";
@@ -562,6 +563,7 @@ function divertCueOf(over: Record<string, unknown> = {}, from = v3()) {
 		Object.create(
 			methods(["selectedDivertCue", "homeStationKm"], {
 				trafficDivertCue,
+				systemIndexOfKey,
 				trafficPresence,
 				length,
 				sub,
@@ -575,9 +577,10 @@ function divertCueOf(over: Record<string, unknown> = {}, from = v3()) {
 				condition: "repairing",
 				recovery: { kind: "repair" },
 			}),
-			trafficActorByKey: () => ({ homeStationId: "S1" }),
+			trafficActorByKey: () => ({ key, homeStationId: "S1" }),
 			world: {
 				system: {
+					record: { index: 7 },
 					bodies: [{ kind: "station", id: "S1", pos: v3(0, 40, 0) }],
 				},
 				ship: { pos: v3() },
@@ -652,7 +655,24 @@ test("the home-station distance is measured from where the label is drawn, not f
 	// A station that is not in the system cannot be pointed at.
 	expect(
 		divertCueOf({
-			world: { system: { bodies: [] }, ship: { pos: v3() } },
+			world: {
+				system: { record: { index: 7 }, bodies: [] },
+				ship: { pos: v3() },
+			},
+		}),
+	).toBe(DIVERT_LABEL);
+});
+
+test("a foreign hauler does not point at a same-id station in this system", () => {
+	expect(
+		divertCueOf({
+			world: {
+				system: {
+					record: { index: 8 },
+					bodies: [{ kind: "station", id: "S1", pos: v3(0, 40, 0) }],
+				},
+				ship: { pos: v3() },
+			},
 		}),
 	).toBe(DIVERT_LABEL);
 });

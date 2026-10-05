@@ -564,12 +564,23 @@ export class AudioFX {
 			this.witchspaceRide(cue);
 			return;
 		}
-		if (cue.kind === "witchspaceUnfold") {
-			this.witchspaceUnfold(cue.seconds);
-			return;
-		}
-		if (cue.kind === "witchspaceRift") {
-			this.witchspaceRift(cue.seconds);
+		if (cue.kind === "witchspaceUnfold" || cue.kind === "witchspaceRift") {
+			const render = (out?: AudioNode, finished?: () => void) =>
+				cue.kind === "witchspaceRift"
+					? this.witchspaceRift(cue.seconds, out, finished)
+					: this.witchspaceUnfold(cue.seconds, out, finished);
+			if (cue.spatial) {
+				const gain = this.ctx.createGain(),
+					pan = this.ctx.createStereoPanner();
+				gain.gain.value = cue.spatial.gain;
+				pan.pan.value = cue.spatial.pan;
+				gain.connect(pan);
+				pan.connect(this.sending(cue.kind));
+				render(gain, () => {
+					gain.disconnect();
+					pan.disconnect();
+				});
+			} else render();
 			return;
 		}
 		if (cue.kind === "cruiseEngage") {
@@ -2230,8 +2241,12 @@ export class AudioFX {
 	 * The new light catching up (#534): a long fall from high to low, noise
 	 * and a glide together, swelling in and easing out as the sky unfolds.
 	 */
-	private witchspaceUnfold(seconds: number) {
-		const out = this.witchspaceGroup("unfold");
+	private witchspaceUnfold(
+		seconds: number,
+		spatialOutput?: AudioNode,
+		finished?: () => void,
+	) {
+		const out = spatialOutput ?? this.witchspaceGroup("unfold");
 		if (!out || !this.ctx) return;
 		const ctx = this.ctx;
 		const t = ctx.currentTime;
@@ -2271,6 +2286,17 @@ export class AudioFX {
 		for (const s of [src, glide]) {
 			s.start(t);
 			s.stop(end + 0.05);
+			s.onended = () => {
+				s.disconnect();
+				if (s === glide) {
+					band.disconnect();
+					noiseLevel.disconnect();
+					soft.disconnect();
+					glideLevel.disconnect();
+					env.disconnect();
+					finished?.();
+				}
+			};
 		}
 	}
 	/**
@@ -2278,8 +2304,12 @@ export class AudioFX {
 	 * a faint high shimmer, in with the new light and held, then falling in
 	 * pitch and fading as the rift closes.
 	 */
-	private witchspaceRift(seconds: number) {
-		const out = this.witchspaceGroup("rift");
+	private witchspaceRift(
+		seconds: number,
+		spatialOutput?: AudioNode,
+		finished?: () => void,
+	) {
+		const out = spatialOutput ?? this.witchspaceGroup("rift");
 		if (!out || !this.ctx) return;
 		const ctx = this.ctx;
 		const t = ctx.currentTime;
@@ -2295,14 +2325,16 @@ export class AudioFX {
 		soft.type = "lowpass";
 		soft.frequency.setValueAtTime(900, t);
 		soft.connect(env);
-		for (const [hz, type, vol] of [
+		const partials = [
 			[73.4, "triangle", 0.07],
 			[73.9, "triangle", 0.07],
 			[110.2, "triangle", 0.05],
 			[146.9, "sine", 0.04],
 			[1760, "sine", 0.012],
 			[1767, "sine", 0.012],
-		] as const) {
+		] as const;
+		let remaining = partials.length;
+		for (const [hz, type, vol] of partials) {
 			const o = ctx.createOscillator();
 			o.type = type;
 			o.frequency.setValueAtTime(hz, t);
@@ -2314,6 +2346,15 @@ export class AudioFX {
 			g.connect(hz > 1000 ? env : soft);
 			o.start(t);
 			o.stop(end + 0.05);
+			o.onended = () => {
+				o.disconnect();
+				g.disconnect();
+				if (--remaining === 0) {
+					soft.disconnect();
+					env.disconnect();
+					finished?.();
+				}
+			};
 		}
 	}
 	/**

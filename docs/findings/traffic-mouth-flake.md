@@ -4,6 +4,10 @@ Node #669, measured 2026-10-03. This file records data only. Choosing between
 #287's two answers, and any change to the probe, its threshold or the aperture
 edge, is for #287.
 
+The same probe was measured on `main` at `24cdf27` by node #672, on both lanes
+and with the erosion at 1px and 2px. That record is
+[`traffic-mouth-main.md`](traffic-mouth-main.md).
+
 ## What was run
 
 Two arms, each a `git archive` of one commit extracted outside the repo with its

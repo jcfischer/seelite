@@ -23,7 +23,12 @@
  * hull was retuned.
  */
 
-import type { HullEnvelope } from "./hull";
+import {
+	DOCKABLE_HULL_IDS,
+	HULL_SPECS,
+	type HullEnvelope,
+	type HullId,
+} from "./hull";
 import {
 	STATION_GEOMETRY,
 	type StationAperture,
@@ -593,6 +598,22 @@ export function berthFits(berth: Berth, hull: HullEnvelope): boolean {
 	);
 }
 
+/** The hulls admitted by at least one berth of this role. Admission is an
+ *  envelope comparison, independent of the catalogue's seed and occupancy. */
+export function admittedHulls(
+	type: StationType,
+	ids: readonly HullId[] = DOCKABLE_HULL_IDS,
+): HullId[] {
+	const interior = stationInterior(
+		type,
+		STATION_GEOMETRY[type].aperturePlaneKm,
+		0,
+	);
+	return ids.filter((id) =>
+		interior.berths.some((berth) => berthFits(berth, HULL_SPECS[id].env)),
+	);
+}
+
 /** How much of the berth the hull does not use, cubic kilometres. The
  *  allocation's ranking key: least spare first, so a big berth stays free for a
  *  big ship. */
@@ -650,6 +671,15 @@ export function trafficBerths(interior: StationInterior): readonly Berth[] {
 		0,
 		Math.max(0, interior.berths.length - VISITOR_BERTHS_PER_STATION),
 	);
+}
+
+/** The Traffic berths a hull fits — one fit rule for the hauler planner's
+ *  bounds, its destinations and a hauler's home berth. */
+export function fittingTrafficBerths(
+	interior: StationInterior,
+	hull: HullEnvelope,
+): readonly Berth[] {
+	return trafficBerths(interior).filter((b) => berthFits(b, hull));
 }
 
 /** `chooseBerth` over a caller's own subset of the catalogue — Traffic's, in

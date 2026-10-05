@@ -304,13 +304,17 @@ import {
 	restoreWorld,
 	canResetWorldToStart,
 	resetWorldToStart,
+	stationApertureFrame,
 	stationOf,
 	stationPose,
 	type HullControl,
 	type HullHands,
 	type HullStep,
 	type LinearDemand,
+	type PlaneWatch,
 	type VentLevels,
+	type WorldPlane,
+	crossedPlane,
 	speedDemand,
 	stepHull,
 	stepWorld,
@@ -371,12 +375,10 @@ import {
 	ROLL_TOLERANCE_DEG,
 	VICINITY_KM,
 	V_GATE_KMS,
-	apertureFrame,
 	attemptEntry,
 	grantLive,
 	newDockingState,
 	orthonormalise,
-	planeCrossing,
 	releaseBerth,
 	requestClearance,
 	slotBasis,
@@ -660,10 +662,18 @@ import {
 } from "./chase-view";
 import { ArrivalRift } from "./arrival-rift";
 import {
+	buildHaulerPlans,
+	inboundCandidates,
+	routeVoyages,
+	trafficIdentityRecord,
+	type HaulerPlan,
+} from "./inter-system-traffic";
+import {
 	WITCHSPACE,
 	type WitchspaceState,
 	abortWitchspace,
 	arriveWitchspace,
+	npcRiftStrength,
 	beginWitchspace,
 	entryWitchspace,
 	idleWitchspace,
@@ -732,6 +742,7 @@ import {
 	projectParkedTrafficActor,
 	projectSystemTrafficAuthority,
 	type TrafficCruiseCache,
+	type TrafficLanePointArrivalCache,
 	type SystemTrafficProjection,
 	type TrafficBerthCache,
 	type TrafficArbitrationEvent,
@@ -970,6 +981,7 @@ import {
 	advanceTo,
 	effectiveCarrier,
 	type EffectiveCarrier,
+	haulerAvailability,
 	observe,
 	observeSystemRelay,
 	readKnowledge,
@@ -2801,7 +2813,16 @@ class Game {
 		SystemTrafficProjection
 	>();
 	private trafficPreviousProjectionAtS = Number.NaN;
+	/** Home roster only; foreign candidates are kept separately. */
 	private trafficActors: TrafficActor[] = [];
+	private trafficInbound: TrafficActor[] = [];
+	private readonly trafficHaulers = new Map<CarrierKey, HaulerPlan>();
+	private readonly trafficContentsCache = new Map<
+		number,
+		ReturnType<typeof generateContents>
+	>();
+	private readonly trafficRifts = new Map<string, ArrivalRift>();
+	private readonly trafficJumpSounds = new Map<string, number>();
 	private readonly trafficContacts = new Map<CarrierKey, DisplayContact>();
 	private readonly trafficMeshes = new Map<CarrierKey, THREE.Group>();
 	/**
@@ -2872,6 +2893,8 @@ class Game {
 		TrafficProjection
 	>();
 	private readonly trafficCruiseCache: TrafficCruiseCache = new Map();
+	private readonly trafficLanePointArrivalCache: TrafficLanePointArrivalCache =
+		new Map();
 	/** Berths already granted to physical visits; prevents historical route rewrites. */
 	private readonly trafficBerthCache: TrafficBerthCache = new Map();
 	/** Actors shown parked while their authoritative canonical replay warms. */
@@ -3584,6 +3607,21 @@ class Game {
 	collisionGhostSteps = 0;
 	lastCollisionGhost: string | null = null;
 
+	/**
+	 * Impacts this flight has made, and the last one: what was met, how fast it
+	 * closed, what it cost (`collision.md` §3, node #663). An impact otherwise
+	 * shows only as a change in condition and velocity (§8), and one under
+	 * `V_SCRAPE` costs nothing — so a probe asserting that a run met nothing
+	 * reads this rather than the pools. Not a pilot's line (#447).
+	 */
+	collisionImpacts = 0;
+	lastCollisionImpact: {
+		bodyId: string;
+		closingKms: number;
+		damage: number;
+		resting: boolean;
+	} | null = null;
+
 	/** Where the camera is in sim space this frame — what `collision.md`
 	 *  §9.2.3 holds outside a surface on the frame of impact. */
 	get cameraSimPos(): Vec3 {
@@ -3632,7 +3670,7 @@ class Game {
 	private trafficAuthorityReady(): boolean {
 		return (
 			Number.isFinite(this.trafficTick) &&
-			this.trafficWarmIndex >= this.trafficActors.length &&
+			this.trafficWarmIndex >= this.trafficCandidates().length &&
 			// **The carriers Traffic draws, not the roster** (civilian-combat H1,
 			// H3b). A destroyed carrier has no route, so against the roster a kill
 			// left authority "warming" until the replacement completed, and every
@@ -6084,7 +6122,7 @@ class Game {
 	/** Retain exactly the event horizon the pure current/previous-visit replay can read. */
 	private pruneTrafficTimelines(gameTime: number) {
 		let oldestReplayS = gameTime;
-		for (const actor of this.trafficActors) {
+		for (const actor of this.trafficCandidates()) {
 			const schedule = trafficScheduleAt(actor, gameTime);
 			const departureAtS =
 				schedule.desired === "away"
@@ -6147,6 +6185,12 @@ class Game {
 	}
 
 	private disposeTrafficPresentation() {
+		for (const rift of this.trafficRifts.values()) {
+			rift.object.removeFromParent();
+			disposeSubtree(rift.object);
+		}
+		this.trafficRifts.clear();
+		this.trafficJumpSounds.clear();
 		for (const contact of this.trafficContacts.values())
 			this.unregisterContact(contact);
 		for (const mesh of this.trafficMeshes.values()) {
@@ -6165,6 +6209,7 @@ class Game {
 		this.trafficPlayerTimeline.length = 0;
 		this.trafficCarrierTimeline.length = 0;
 		this.trafficCruiseCache.clear();
+		this.trafficLanePointArrivalCache.clear();
 		this.trafficBerthCache.clear();
 		this.trafficColdActors.clear();
 		this.trafficWarmIndex = 0;
@@ -6179,14 +6224,85 @@ class Game {
 		this.markerLabels.reset();
 	}
 
+	private trafficHomeRecord(actor: Pick<TrafficActor, "key">) {
+		return trafficIdentityRecord(
+			this.world.galaxy,
+			actor.key,
+			this.world.system.record,
+		);
+	}
+	private trafficContentsFor(index: number) {
+		let contents = this.trafficContentsCache.get(index);
+		if (!contents) {
+			const record = this.world.galaxy.systems.find((r) => r.index === index);
+			if (!record) throw new Error(`Traffic system ${index} missing`);
+			contents = generateContents(record);
+			this.trafficContentsCache.set(index, contents);
+		}
+		return contents;
+	}
+	private trafficCandidateHomes?: TrafficActor[];
+	private trafficCandidateInbound?: TrafficActor[];
+	private trafficCombined: TrafficActor[] = [];
+	private trafficByKey = new Map<CarrierKey, TrafficActor>();
+	private trafficCandidates(): TrafficActor[] {
+		// System entry replaces the roster arrays. Reference checks also allow
+		// isolated browser fixtures to replace a roster without stale candidates.
+		if (
+			this.trafficCandidateHomes !== this.trafficActors ||
+			this.trafficCandidateInbound !== this.trafficInbound
+		) {
+			this.trafficCandidateHomes = this.trafficActors;
+			this.trafficCandidateInbound = this.trafficInbound;
+			this.trafficCombined = [
+				...this.trafficActors,
+				...this.trafficInbound,
+			].sort((a, b) => compareCarrierKeys(a.key, b.key));
+			this.trafficByKey = new Map(
+				this.trafficCombined.map((actor) => [actor.key, actor]),
+			);
+		}
+		return this.trafficCombined;
+	}
+	private trafficVoyages(actor: TrafficActor, atS: number) {
+		const plan = this.trafficHaulers.get(actor.key);
+		if (!plan) return undefined;
+		return routeVoyages(
+			this.world.galaxy,
+			plan,
+			this.world.system.record.index,
+			atS,
+			(i) => this.trafficContentsFor(i),
+			this.trafficPreviousRoutes.get(actor.key)?.visitAwayOrdinal,
+			haulerAvailability(
+				plan.actor,
+				this.commerceWorld.galaxies[this.world.system.record.galaxy],
+				atS,
+			).rejoinsAtS,
+		);
+	}
 	private ensureTrafficActors() {
 		const index = this.world.system.record.index;
 		if (this.trafficSystemIndex === index) return;
 		this.clearTrafficPresentation();
 		this.trafficSystemIndex = index;
-		this.trafficActors = this.world.system.contents.stations
-			.flatMap((station) => stationTrafficRoster(index, station))
-			.sort((a, b) => compareCarrierKeys(a.key, b.key));
+		this.trafficContentsCache.clear();
+		this.trafficContentsCache.set(index, this.world.system.contents);
+		const contentsFor = (i: number) => this.trafficContentsFor(i);
+		const homePlans = buildHaulerPlans(this.world.galaxy, index, contentsFor);
+		const inboundPlans = inboundCandidates(
+			this.world.galaxy,
+			index,
+			contentsFor,
+		);
+		const plans = [...homePlans, ...inboundPlans];
+		this.trafficHaulers.clear();
+		for (const plan of plans)
+			if (plan.vocation === "hauler")
+				this.trafficHaulers.set(plan.actor.key, plan);
+		this.trafficActors = homePlans.map((p) => p.actor);
+		this.trafficInbound = inboundPlans.map((p) => p.actor);
+		this.trafficCandidates();
 		// Before the first scheduled departure is the only parked state the
 		// base schedule proves without replaying a physical visit. A later
 		// `desired: parked` boundary is only intent: a delayed outbound trip may
@@ -6254,7 +6370,7 @@ class Game {
 	private updateTrafficAuthority() {
 		this.ensureTrafficActors();
 		const tick = Math.floor(this.world.gameTime * 10 + 1e-8);
-		if (this.trafficWarmIndex < this.trafficActors.length) {
+		if (this.trafficWarmIndex < this.trafficCandidates().length) {
 			const projectionSystem = makeSystem(this.world.system.record, tick / 10);
 			this.refreshColdTraffic(tick / 10, projectionSystem);
 			// Four equal slices share one 100-tick frame ceiling. Finishing a cheap
@@ -6262,16 +6378,18 @@ class Game {
 			// least one whole frame per roster entry.
 			for (
 				let slice = 0;
-				slice < 4 && this.trafficWarmIndex < this.trafficActors.length;
+				slice < 4 && this.trafficWarmIndex < this.trafficCandidates().length;
 				slice++
 			) {
-				const actor = this.trafficActors[this.trafficWarmIndex];
+				const actor = this.trafficCandidates()[this.trafficWarmIndex];
 				const warmed = projectSystemTrafficAuthority({
+					haulerVoyages: this.trafficVoyages(actor, tick / 10),
 					record: this.world.system.record,
 					actor,
 					gameTime: tick / 10,
 					playerTimeline: this.trafficPlayerTimeline,
 					cruiseCache: this.trafficCruiseCache,
+					lanePointArrivalCache: this.trafficLanePointArrivalCache,
 					projectionSystem,
 					cruiseTickBudget: 25,
 				});
@@ -6302,9 +6420,7 @@ class Game {
 			>();
 			for (const route of this.trafficPreviousRoutes.values()) {
 				if (!route.berthId) continue;
-				const routeActor = this.trafficActors.find(
-					(candidate) => candidate.key === route.key,
-				);
+				const routeActor = this.trafficActorByKey(route.key);
 				const stationId =
 					route.terminalStationId ??
 					(route.phase === "parked-home"
@@ -6412,15 +6528,23 @@ class Game {
 				const held = this.holdBerth(projection, occupied);
 				if (held) divertedBerths.add(held);
 			}
+			const voyagesByActor = new Map(
+				this.flyingTraffic().map((actor) => [
+					actor.key,
+					this.trafficVoyages(actor, tick / 10),
+				]),
+			);
 			const baselines = this.flyingTraffic().map((actor) => ({
 				actor,
 				projection: projectSystemTrafficAuthority({
+					haulerVoyages: voyagesByActor.get(actor.key),
 					record: this.world.system.record,
 					actor,
 					gameTime: tick / 10,
 					playerTimeline: arbitrationTimeline,
 					occupiedByStation: occupiedWithoutOwnPreviousBerth(actor.key),
 					cruiseCache: this.trafficCruiseCache,
+					lanePointArrivalCache: this.trafficLanePointArrivalCache,
 					berthCache: this.trafficBerthCache,
 					recordBerthAssignments: false,
 					projectionSystem,
@@ -6456,12 +6580,14 @@ class Game {
 				let activeVisit = activeVisitFor(actor.key);
 				const projectActor = () =>
 					projectSystemTrafficAuthority({
+						haulerVoyages: voyagesByActor.get(actor.key),
 						record: this.world.system.record,
 						actor,
 						gameTime: tick / 10,
 						playerTimeline: arbitrationTimeline,
 						occupiedByStation: occupied,
 						cruiseCache: this.trafficCruiseCache,
+						lanePointArrivalCache: this.trafficLanePointArrivalCache,
 						berthCache: this.trafficBerthCache,
 						berthCacheTouched: touchedBerthAssignments,
 						projectionSystem,
@@ -6689,9 +6815,7 @@ class Game {
 				: 1;
 		this.trafficExactParked.clear();
 		for (const projection of this.trafficRoutes) {
-			const actor = this.trafficActors.find(
-				(candidate) => candidate.key === projection.key,
-			);
+			const actor = this.trafficActorByKey(projection.key);
 			if (!actor) continue;
 			// Flown, not projected, while engaged; and a carrier that is not in the
 			// world any more — destroyed, or a replacement still being built — is
@@ -6772,7 +6896,9 @@ class Game {
 				? TRAFFIC_DEMATERIALIZE_KM
 				: TRAFFIC_MATERIALIZE_KM;
 			const visible =
+				projection.present !== false &&
 				projection.phase !== "abstract-away" &&
+				projection.phase !== "hyperspace-away" &&
 				dx * dx + dy * dy + dz * dz <= rangeKm * rangeKm;
 			if (!visible) {
 				if (previous) {
@@ -6861,9 +6987,78 @@ class Game {
 		}
 	}
 
+	/** The listener is the camera: its right axis, not the hull's, pans a ring. */
+	private updateTrafficRifts(
+		cameraPos: Vec3,
+		cameraRotation: THREE.Quaternion,
+	) {
+		for (const [id, expiresAtS] of this.trafficJumpSounds)
+			if (this.world.gameTime >= expiresAtS) this.trafficJumpSounds.delete(id);
+		const shown = new Set<string>();
+		for (const route of this.trafficRoutes) {
+			const jump = route.jump;
+			const actor = this.trafficActorByKey(route.key);
+			if (!jump || !actor || !this.trafficShown(route.key)) continue;
+			const age = this.world.gameTime - jump.atS;
+			const id = route.key + "|" + jump.kind + "|" + jump.atS;
+			const range = this.trafficRifts.has(id)
+				? TRAFFIC_DEMATERIALIZE_KM
+				: TRAFFIC_MATERIALIZE_KM;
+			if (
+				age < 0 ||
+				age >= WITCHSPACE.riftEndS ||
+				length(sub(jump.pos, this.world.ship.pos)) > range
+			)
+				continue;
+			shown.add(id);
+			let rift = this.trafficRifts.get(id);
+			if (!rift) {
+				rift = new ArrivalRift({
+					pos: jump.pos,
+					nose: jump.kind === "departure" ? scale(jump.nose, -1) : jump.nose,
+					reachKm: HULL_REACH_KM[actor.hullId],
+				});
+				rift.object.name = "traffic-" + jump.kind + "-rift";
+				this.trafficRifts.set(id, rift);
+				this.nearScene.add(rift.object);
+			}
+			const strength = npcRiftStrength(age);
+			rift.update(strength, age, cameraPos);
+			if (!this.trafficJumpSounds.has(id)) {
+				this.trafficJumpSounds.set(id, jump.atS + WITCHSPACE.riftEndS);
+				const rel = sub(jump.pos, cameraPos),
+					distance = length(rel);
+				const r = new THREE.Vector3(1, 0, 0).applyQuaternion(cameraRotation);
+				const right = { x: r.x, y: r.y, z: r.z };
+				const spatial = {
+					pan:
+						distance > 0
+							? Math.max(-1, Math.min(1, dot(rel, right) / distance))
+							: 0,
+					gain: 1 / (1 + distance),
+				};
+				this.play({
+					kind: "witchspaceUnfold",
+					seconds: WITCHSPACE.exitS - WITCHSPACE.unfoldAtS,
+					spatial,
+				});
+				this.play({
+					kind: "witchspaceRift",
+					seconds: WITCHSPACE.riftEndS,
+					spatial,
+				});
+			}
+		}
+		for (const [id, rift] of this.trafficRifts)
+			if (!shown.has(id)) {
+				rift.object.removeFromParent();
+				disposeSubtree(rift.object);
+				this.trafficRifts.delete(id);
+			}
+	}
 	/** The Traffic actors flying their projection now: the operational ones. */
 	private flyingTraffic(): TrafficActor[] {
-		return flyingTrafficActors(this.trafficActors, (key) =>
+		return flyingTrafficActors(this.trafficCandidates(), (key) =>
 			this.carrierCondition(key),
 		);
 	}
@@ -6964,7 +7159,7 @@ class Game {
 						voyageOrdinal: this.trafficVoyage(actor),
 					},
 					carrierInstanceSeed(
-						record.seed,
+						this.trafficHomeRecord({ key }).seed,
 						key,
 						this.carrierCondition(key).instanceOrdinal,
 						DOMAIN.TRAFFIC_ENGAGEMENT,
@@ -7031,7 +7226,8 @@ class Game {
 	}
 
 	private trafficActorByKey(key: CarrierKey): TrafficActor | undefined {
-		return this.trafficActors.find((a) => a.key === key);
+		this.trafficCandidates();
+		return this.trafficByKey.get(key);
 	}
 
 	/** Take one carrier out of what the player can look at: the scanner's list,
@@ -7068,7 +7264,7 @@ class Game {
 		instanceOrdinal: number,
 		voyageOrdinal: number,
 	) {
-		const record = this.world.system.record;
+		const record = this.trafficHomeRecord(actor);
 		return carrierManifest(
 			record.seed,
 			actor.key,
@@ -7132,7 +7328,7 @@ class Game {
 			offence,
 			galaxy: record.galaxy,
 			now: this.world.gameTime,
-			systemSeed: record.seed,
+			systemSeed: this.trafficHomeRecord(actor).seed,
 			carrier: {
 				key: actor.key,
 				instanceOrdinal: before.instanceOrdinal,
@@ -7231,7 +7427,7 @@ class Game {
 		const carrier = this.carrierCondition(actor.key);
 		if (
 			carrierStanding(
-				record.seed,
+				this.trafficHomeRecord(actor).seed,
 				actor.key,
 				carrier.instanceOrdinal,
 				this.world.gameTime,
@@ -7317,7 +7513,11 @@ class Game {
 		const now = this.world.gameTime;
 		const carrier = this.carrierCondition(actor.key);
 		if (carrier.condition !== "operational") return;
-		for (const event of trafficDiversion(record.index, actor, now))
+		for (const event of trafficDiversion(
+			systemIndexOfKey(actor.key),
+			actor,
+			now,
+		))
 			this.applyCarrierTransition(actor.key, event, actor.hullId);
 		// Charged against the row read before the transition above (#633).
 		const charge = chargeOffence(
@@ -7347,7 +7547,7 @@ class Game {
 		const carrier = this.carrierCondition(actor.key);
 		const { instanceOrdinal } = carrier;
 		const standing = carrierStanding(
-			record.seed,
+			this.trafficHomeRecord(actor).seed,
 			actor.key,
 			instanceOrdinal,
 			now,
@@ -7358,7 +7558,7 @@ class Game {
 			engagement.voyageOrdinal,
 		);
 		for (const event of trafficKillTransitions(
-			record.index,
+			systemIndexOfKey(actor.key),
 			actor,
 			carrier.condition,
 			now,
@@ -7367,7 +7567,7 @@ class Game {
 		this.canisters = [
 			...this.canisters,
 			...dropManifestCanisters({
-				systemSeed: record.seed,
+				systemSeed: this.trafficHomeRecord(actor).seed,
 				key: actor.key,
 				manifest,
 				killedAt: now,
@@ -7426,7 +7626,7 @@ class Game {
 					presence: trafficPresence(carrier),
 					repairCompletesAt: carrier.recovery?.completesAt ?? null,
 					standing: carrierStanding(
-						record.seed,
+						this.trafficHomeRecord({ key }).seed,
 						key,
 						carrier.instanceOrdinal,
 						now,
@@ -7500,6 +7700,18 @@ class Game {
 				homeStationId: actor.homeStationId,
 				backAtS: this.carrierCondition(actor.key).recovery?.completesAt ?? null,
 			})),
+			haulers: [...this.trafficHaulers.values()].map((p) => ({
+				key: p.actor.key,
+				homeIndex: p.homeRecord.index,
+				hullId: p.actor.hullId,
+				name: this.drawnName(p.actor),
+				voyages: this.trafficVoyages(p.actor, this.world.gameTime),
+			})),
+			rifts: [...this.trafficRifts].map(([id, r]) => ({
+				id,
+				anchor: r.anchor,
+				strength: r.strength,
+			})),
 			authorityReady: this.trafficAuthorityReady(),
 		};
 	}
@@ -7566,7 +7778,7 @@ class Game {
 	/** What the pilot has recorded about this carrier, re-derived from the row's
 	 *  own clock and voyage. `null` is F8's `UNKNOWN`. */
 	private recordedReading(actor: TrafficActor): CarrierReading | null {
-		const record = this.world.system.record;
+		const record = this.trafficHomeRecord(actor);
 		return carrierReading({
 			systemSeed: record.seed,
 			key: actor.key,
@@ -7593,7 +7805,7 @@ class Game {
 		const scan = row?.scan;
 		if (!scan) return null;
 		return carrierStanding(
-			record.seed,
+			this.trafficHomeRecord(actor).seed,
 			actor.key,
 			scan.observedInstanceOrdinal,
 			scan.observedAt,
@@ -7754,7 +7966,7 @@ class Game {
 	 *  from the instrument and the console naming different ships. */
 	private drawnName(actor: TrafficActor): string {
 		return carrierName(
-			this.world.system.record.seed,
+			this.trafficHomeRecord(actor).seed,
 			actor.key,
 			this.carrierCondition(actor.key).instanceOrdinal,
 		);
@@ -10524,13 +10736,9 @@ class Game {
 	 * nothing here reads an `Object3D`, and the renderer mirrors the same call.
 	 */
 	apertureFrameOf(id: string): ApertureFrame {
-		const pose = stationPose(this.world.system, id, this.world.gameTime);
-		return apertureFrame(
-			stationOf(this.world.system, id).type,
-			pose.axis,
-			pose.phaseRad,
-			pose.reference,
-		);
+		// The sim's builder, so the frame a crossing is checked in and the frame
+		// the station's proxy is posed in are one call (node #663).
+		return stationApertureFrame(this.world.system, id, this.world.gameTime);
 	}
 
 	/**
@@ -10982,12 +11190,15 @@ class Game {
 	 * The docking half of one simulation step: the clock's effect on every
 	 * protocol state, then the crossing test against the nearest station.
 	 *
-	 * Called with the pose from *before* the flight step, because a crossing is
-	 * a property of the pair of frames rather than of either one. Sampling the
-	 * nearer frame instead makes every tolerance a function of the frame rate —
-	 * the class of error §4.1 already refuses for the slot phase.
+	 * **The crossing is the step's, not found here** (node #663). `stepWorld`
+	 * watched every plane in reach from the pose *before* the flight step —
+	 * a crossing is a property of the pair of frames rather than of either one,
+	 * and sampling the nearer frame makes every tolerance a function of the
+	 * frame rate — and handed back the crossing only if it came before any
+	 * impact (`collision.md` §4.2). A second search here could disagree with
+	 * it once a sweep had moved the ship's end, so there is none.
 	 */
-	private stepDocking(before: Map<string, DockingApproach>) {
+	private stepDocking(plane: WorldPlane | null) {
 		this.stepDockingProtocol();
 		this.stepArrivalTurns();
 
@@ -10999,42 +11210,14 @@ class Game {
 		// outside the plane, so the state ends deliberately rather than by the
 		// ship wandering out of a radius.
 
-		// **At most one crossing is resolved per step: the first, in
-		// start-of-step range order.** `dockingApproaches` sorts by the range the
-		// ship had *before* it moved, so this is not strictly the nearest
-		// crossing — over one 0.1 s step it is the same station in every case
-		// that can arise, since two stations close enough for the order to flip
-		// mid-step would be inside each other. A ship cannot dock at two stations
-		// at once, and resolving a farther one after a nearer one would apply a
-		// repel to a position the nearer outcome had already rewritten.
-		for (const [id, from] of before) {
-			// A ship in any of §12.3's three exempt states does not re-cross its
-			// own plane — `step` does not reach this loop at all while it is in
-			// one, and the guard stays as the statement of the rule rather than
-			// as the thing enforcing it.
-			if (this.dock.stationId === id) continue;
-			// **The cached frame, not a fresh one.** `dockingApproaches` built it
-			// at the top of the step and `planeCrossing` already documents that it
-			// evaluates one frame for both endpoints; rebuilding it here was the
-			// dedup this pair exists for, not happening.
-			const crossing = planeCrossing(
-				from.frame,
-				from.pose,
-				this.entryPoseOf(id),
-			);
-			if (!crossing) continue;
-			// `planeCrossing` intentionally solves an infinite mathematical plane.
-			// It says when a trajectory reaches the aperture depth, not whether the
-			// station occupies that point. Without this physical-volume gate, an
-			// ordinary fly-by 1.6 km off a 0.6 km station counted as barging through
-			// its entrance and silently made the station hostile. The body's radius
-			// is the authored bound of the dockable core; outside it there is neither
-			// hull nor aperture to enter.
-			const body = this.world.system.byId.get(id);
-			if (!body || length(crossing.rel) > body.radiusKm) continue;
-			this.resolveCrossing(id, from.frame, crossing);
-			return;
-		}
+		// **At most one crossing is resolved per step: the earliest.** A ship
+		// cannot dock at two stations at once, and `stepWorld` picks the
+		// crossing that came first in the step. A ship in any of §12.3's three
+		// exempt states does not re-cross its own plane — `step` does not reach
+		// this at all while it is in one, and `advanceNormalFlight` watches no
+		// plane of the station the session names.
+		if (plane)
+			this.resolveCrossing(plane.stationId, plane.frame, plane.crossing);
 	}
 
 	/** One crossing, applied: the outcome, the ship, and the session state that
@@ -11787,6 +11970,8 @@ class Game {
 		// new flight: a second leg reads only its own placements.
 		this.collisionGhostSteps = 0;
 		this.lastCollisionGhost = null;
+		this.collisionImpacts = 0;
+		this.lastCollisionImpact = null;
 
 		// **#241's gate goes back to shut, which is where a boot in open space
 		// finds it.** Left open, a reset would draw both passes for the whole
@@ -14117,15 +14302,27 @@ class Game {
 			// This tail only runs while flying, so the gate is the predicate
 			// read rather than a second statement of which phase that is.
 			collisionExempt(this.dock.phase) ? null : this.flownSolid,
+			// §4.2: every plane in reach, from the top of the step. The step
+			// weighs the crossing against its impacts and hands back the one
+			// that owned the tick.
+			this.planesOf(before),
 		);
 		// §3: every surface met lands through the one damage path, so a hull at
 		// zero dies the way a kill by fire does.
-		for (const impact of flown.impacts)
+		for (const impact of flown.impacts) {
+			this.collisionImpacts++;
+			this.lastCollisionImpact = {
+				bodyId: impact.bodyId,
+				closingKms: impact.closingKms,
+				damage: impact.damage,
+				resting: impact.resting,
+			};
 			this.takeDamage(
 				impact.damage,
 				impact.side,
 				`struck ${this.world.system.byId.get(impact.bodyId)?.name ?? "a body"}`,
 			);
+		}
 		if (flown.ghosts.length > 0) {
 			this.collisionGhostSteps++;
 			this.lastCollisionGhost = flown.ghosts[flown.ghosts.length - 1];
@@ -14157,12 +14354,42 @@ class Game {
 		// §7: the tank refills passively in normal flight, and that is the
 		// anti-stranding rule rather than a convenience.
 		this.chargeAu = chargeAfterRegen(this.chargeAu, dt, this.chargeCapacityAu);
-		this.stepDocking(before);
+		this.stepDocking(flown.plane);
 		// Last, because §8's wind-up is only vulnerable if the frame it fires on
 		// is flown first — `stepDocking` is what applies a failed entry's damage,
 		// and damage cancels the charge.
 		this.takePendingJump();
 		return flown;
+	}
+
+	/** The planes a step watches (`collision.md` §4.2): every approach in
+	 *  reach but the station the session names. */
+	private planesOf(before: Map<string, DockingApproach>): PlaneWatch[] {
+		return [...before]
+			.filter(([id]) => id !== this.dock.stationId)
+			.map(([stationId, { frame, pose }]) => ({
+				stationId,
+				frame,
+				before: pose,
+			}));
+	}
+
+	/**
+	 * **Probe affordance, not an input path.** No game flow calls this seam.
+	 * The crossing a ship placed on both sides of a plane makes, for a probe
+	 * that puts it there rather than flying it: `before` is
+	 * `dockingApproaches` taken on the outer side, and the ship is where it
+	 * stands now. The search `stepWorld` makes, without the sweep — a
+	 * placement is not motion — so `stepDocking` of the result reaches the six
+	 * checks the way a flown crossing does.
+	 */
+	crossingFrom(before: Map<string, DockingApproach>): WorldPlane | null {
+		return crossedPlane(
+			this.world,
+			this.planesOf(before),
+			{ nose: this.nose(), up: this.shipUp() },
+			1,
+		);
 	}
 
 	/**
@@ -14410,6 +14637,10 @@ class Game {
 		const shotCam = this.openingCamera();
 		const camPos = shotCam?.pos ?? this.cameraPos();
 		this.updateTrafficPresentation(camPos);
+		this.updateTrafficRifts(
+			camPos,
+			shotCam ? this.shotRotation(shotCam) : this.cameraRotation(),
+		);
 		this.updateEncounterPresentation(camPos);
 		this.updateRelayPresentation(camPos);
 		this.updateTenderPresentation(camPos);
@@ -17366,7 +17597,11 @@ class Game {
 	 *  digits the pilot is reading. One label, one origin. */
 	private homeStationKm(key: CarrierKey, from: Vec3): number | null {
 		const actor = this.trafficActorByKey(key);
-		if (!actor) return null;
+		if (
+			!actor ||
+			systemIndexOfKey(actor.key) !== this.world.system.record.index
+		)
+			return null;
 		// The live body, not a cached one. A station is carried around its star at
 		// some tens of km/s, and the figure is read every frame the mark is up.
 		const home = this.world.system.bodies.find(

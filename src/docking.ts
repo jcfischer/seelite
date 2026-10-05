@@ -562,12 +562,26 @@ export function planeCrossing(
 	before: EntryPose,
 	after: EntryPose,
 ): EntryPose | null {
+	return planeCrossingAt(frame, before, after)?.pose ?? null;
+}
+
+/**
+ * `planeCrossing`, with how far through the step it happened: `fraction` is
+ * 0 at `before` and 1 at `after`. The collision sweep weighs that time
+ * against an impact's (`collision.md` §4.2), so it is the same root the pose
+ * is interpolated at rather than a second solve.
+ */
+export function planeCrossingAt(
+	frame: ApertureFrame,
+	before: EntryPose,
+	after: EntryPose,
+): { pose: EntryPose; fraction: number } | null {
 	const a0 = dot(before.rel, frame.axis) - frame.planeKm;
 	const a1 = dot(after.rel, frame.axis) - frame.planeKm;
 	if (!(a0 > 0 && a1 <= 0)) return null;
 	const t = a0 === a1 ? 0 : a0 / (a0 - a1);
 	const lerp = (p: Vec3, q: Vec3) => add(p, scale(sub(q, p), t));
-	return {
+	const pose: EntryPose = {
 		rel: lerp(before.rel, after.rel),
 		vRel: lerp(before.vRel, after.vRel),
 		// **Attitude is taken from the later frame rather than interpolated**, so
@@ -585,6 +599,47 @@ export function planeCrossing(
 		nose: after.nose,
 		up: after.up,
 	};
+	return { pose, fraction: t };
+}
+
+/**
+ * A crossing the station answers for: `planeCrossingAt`, inside the body.
+ *
+ * `planeCrossing` intentionally solves an infinite mathematical plane. It says
+ * when a trajectory reaches the aperture depth, not whether the station
+ * occupies that point. Without this physical-volume gate, an ordinary fly-by
+ * 1.6 km off a 0.6 km station counted as barging through its entrance and
+ * silently made the station hostile. The body's radius is the authored bound of
+ * the dockable core; outside it there is neither hull nor aperture to enter.
+ *
+ * **Or the aperture's own corner, where that is further** (node #663). The
+ * outpost's plane stands at 0.165 km on a 0.15 km core, so a centred crossing
+ * lay outside the body and no crossing there was ever answered. The docking
+ * harness found this for the unplaced outpost role; node #491 owns placing
+ * outposts in the game. The refinery's pad corners stand 0.41 km out on a 0.4 km // glossary-ignore: pad
+ * core, so a crossing there was a pass-through rather than an entry. The bound
+ * is the larger of the two, so the 1.6 km fly-by above is still no crossing.
+ *
+ * **One predicate for two callers** (node #663): `stepWorld` decides with it
+ * whether the plane or an impact owns the tick (`collision.md` §4.2), and the
+ * game resolves the crossing `stepWorld` hands back, rather than finding its
+ * own — two searches could disagree once a sweep has moved the ship's end.
+ */
+export function apertureCrossing(
+	frame: ApertureFrame,
+	before: EntryPose,
+	after: EntryPose,
+	bodyRadiusKm: number,
+): { pose: EntryPose; fraction: number } | null {
+	const crossing = planeCrossingAt(frame, before, after);
+	const corner = Math.hypot(
+		frame.planeKm,
+		frame.aperture.widthKm / 2,
+		frame.aperture.heightKm / 2,
+	);
+	const bound = Math.max(bodyRadiusKm, corner);
+	if (!crossing || length(crossing.pose.rel) > bound) return null;
+	return crossing;
 }
 
 // ---------------------------------------------------------------------------
