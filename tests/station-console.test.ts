@@ -28,6 +28,7 @@ import {
 	type MarketStation,
 	PRICE_STEP_CR,
 	MARKET_PERIOD_MIN,
+	QUANTITY_CAP,
 	quantizeToDisplayStepCr,
 	UNIVERSAL_GATE_CAP,
 	UNIVERSAL_ITEMS,
@@ -48,7 +49,11 @@ import {
 } from "../src/station-commerce";
 import {
 	REFUSAL_REASONS,
+	SHELF_MAX_MARK,
+	SHELF_MAX_TITLE,
+	type ConsoleMarketRow,
 	flightFloorVisible,
+	marketDisplayValues,
 	refusalSentence,
 	requiredDisplayTL,
 	priceLabel,
@@ -91,6 +96,7 @@ test("a market redraw is needed only when a printed row changes", () => {
 		gameTimeMin: 0,
 		deficitOf: noDeficit,
 		holdT: HOLD_REFERENCE_T,
+		cargo: {},
 		displayTL: SCREEN_TL,
 	});
 	const unchanged = before.map((row) => ({ ...row }));
@@ -127,6 +133,7 @@ test("obligation 3: the builder calls marketRow only where listsCommodity is tru
 				gameTimeMin: 0,
 				deficitOf: noDeficit,
 				holdT: HOLD_REFERENCE_T,
+				cargo: {},
 				displayTL: SCREEN_TL,
 			},
 			(commodity, economy, s, gameTimeMin) => {
@@ -158,6 +165,7 @@ test("M5: seventeen rows at every station, priced iff the station lists the good
 			gameTimeMin: 0,
 			deficitOf: noDeficit,
 			holdT: HOLD_REFERENCE_T,
+			cargo: {},
 			displayTL: SCREEN_TL,
 		});
 		expect(rows.length).toBe(COMMODITIES.length);
@@ -202,6 +210,7 @@ test("obligation 4: a non-zero deficit carries a signed delta, a zero one carrie
 		gameTimeMin: 0,
 		deficitOf: moved(good.name, 12),
 		holdT: HOLD_REFERENCE_T,
+		cargo: {},
 		displayTL: SCREEN_TL,
 	});
 	const movedRow = rows.find((r) => r.commodity.name === good.name);
@@ -233,6 +242,7 @@ test("obligation 4: the delta is measured against this epoch's base, not the las
 			gameTimeMin,
 			deficitOf: moved(good.name, 12),
 			holdT: HOLD_REFERENCE_T,
+			cargo: {},
 			displayTL: SCREEN_TL,
 		});
 		const row = rows.find((r) => r.commodity.name === good.name);
@@ -543,6 +553,7 @@ test("#182: the screen's prices follow the flown hold, bay included", () => {
 			gameTimeMin: 0,
 			deficitOf: moved(good.name, 12),
 			holdT,
+			cargo: {},
 			displayTL: SCREEN_TL,
 		}).find((r) => r.commodity.name === good.name);
 		if (!row) throw new Error("the moved good is not on the screen");
@@ -563,6 +574,7 @@ test("#182: the screen's prices follow the flown hold, bay included", () => {
 				gameTimeMin: 0,
 				deficitOf: noDeficit,
 				holdT,
+				cargo: {},
 				displayTL: SCREEN_TL,
 			}).find((r) => r.commodity.name === good.name) as { buyCr: number }
 		).buyCr;
@@ -630,6 +642,7 @@ describe("§5.6 the market row shows what the station pays as well as what it as
 			gameTimeMin: 0,
 			deficitOf: noDeficit,
 			holdT: HOLD_REFERENCE_T,
+			cargo: {},
 			displayTL,
 		});
 		const row = rows.find((r) => r.commodity.name === name);
@@ -764,5 +777,120 @@ describe("#443 — every refusal has a sentence", () => {
 				entrustedT: 0,
 			}),
 		).toBe("No room — 0 t free of 35.");
+	});
+});
+
+// ---------------------------------------------------------------------------
+// #473 D2, D3, D5, D10 — `MAX` on a capped shelf, and what the hold carries
+// ---------------------------------------------------------------------------
+
+describe("a capped shelf reads MAX and every row says what is held (#473)", () => {
+	const screen = (
+		deficitOf: (name: string) => number,
+		cargo: Readonly<Record<string, number>> = {},
+	) =>
+		stationMarketScreen({
+			station: TRADE,
+			economy: ECONOMY,
+			gameTimeMin: 0,
+			deficitOf,
+			holdT: HOLD_REFERENCE_T,
+			displayTL: SCREEN_TL,
+			cargo,
+		});
+	const rowOf = (rows: readonly ConsoleMarketRow[], name: string) => {
+		const row = rows.find((r) => r.commodity.name === name);
+		if (!row) throw new Error(`no ${name} row`);
+		return row;
+	};
+
+	test("the mark is keyed on the cap and nothing below it", () => {
+		// One listed row with its shelf set either side of the cap, so the rule is
+		// read off the quantity alone rather than off whichever good happens to sit
+		// there at this seed.
+		const food = rowOf(screen(noDeficit), "Food");
+		expect(food.listed).toBe(true);
+		const at = (quantity: number) => marketDisplayValues({ ...food, quantity });
+		expect(at(QUANTITY_CAP).shelfMark).toBe(SHELF_MAX_MARK);
+		expect(at(QUANTITY_CAP - 1).shelfMark).toBeNull();
+		expect(at(0).shelfMark).toBeNull();
+		// The count keeps its own field and its own form: the mark sits after it,
+		// not inside it, so a reader of the shelf figure reads the same string.
+		expect(at(QUANTITY_CAP).shelf).toBe(
+			`${QUANTITY_CAP} ${food.commodity.unit}`,
+		);
+		// It is `MAX` and never `FULL` — "full" is a till refusal in this console.
+		expect(SHELF_MAX_MARK).toBe("MAX");
+	});
+
+	test("Gold, untraded, shows MAX — its generated shelf is always the cap", () => {
+		const gold = rowOf(screen(noDeficit), "Gold");
+		// Listed first, so the row below cannot pass on an unlisted Gold whose
+		// mark is null for the other reason.
+		expect(gold.listed).toBe(true);
+		expect(gold.quantity).toBe(QUANTITY_CAP);
+		expect(gold.quantityDelta).toBeUndefined();
+		const shown = marketDisplayValues(gold);
+		expect(shown.shelf).toBe(`${QUANTITY_CAP} kg`);
+		expect(shown.shelfMark).toBe(SHELF_MAX_MARK);
+	});
+
+	test("a sale into a capped shelf keeps the mark", () => {
+		// A negative mark is the pilot selling. It goes through `shelfQuantity`'s
+		// clamp, which is what holds the shelf at the cap — a hand-set 63 would
+		// test the display rule and not the state a sale actually leaves.
+		const sold = rowOf(screen(moved("Gold", -5)), "Gold");
+		expect(sold.listed).toBe(true);
+		expect(sold.quantity).toBe(QUANTITY_CAP);
+		expect(sold.quantityDelta).toBe(0);
+		expect(marketDisplayValues(sold).shelfMark).toBe(SHELF_MAX_MARK);
+	});
+
+	test("an unlisted row carries no mark", () => {
+		const illegal = COMMODITIES.find((c) => !listsCommodity(c, TRADE));
+		if (!illegal) throw new Error("the trade station lists every good");
+		expect(
+			marketDisplayValues(rowOf(screen(noDeficit), illegal.name)).shelfMark,
+		).toBeNull();
+	});
+
+	test("the hover text reads the cap off QUANTITY_CAP and says the station still buys", () => {
+		expect(SHELF_MAX_TITLE).toBe(
+			`Shelf at its ${QUANTITY_CAP}-unit limit. The station still buys; each sale lowers the price.`,
+		);
+		// Source-level: the sentence interpolates the constant, so #689 moving the
+		// cap moves the sentence. A literal 63 in it would pass the row above.
+		const source = readFileSync("src/station-console.ts", "utf8");
+		const declaration = /export const SHELF_MAX_TITLE = `([^`]*)`/.exec(source);
+		expect(declaration?.[1]).toContain("${QUANTITY_CAP}");
+		expect(declaration?.[1]).not.toMatch(/\d/);
+	});
+
+	test("HELD is the carried units in the good's own unit, and blank when none", () => {
+		const illegal = COMMODITIES.find((c) => !listsCommodity(c, TRADE));
+		if (!illegal) throw new Error("the trade station lists every good");
+		const rows = screen(noDeficit, { Food: 5, Gold: 3, [illegal.name]: 2 });
+		expect(marketDisplayValues(rowOf(rows, "Food")).held).toBe("5 t");
+		expect(marketDisplayValues(rowOf(rows, "Gold")).held).toBe("3 kg");
+		// A good this station does not trade still has a row, and the row still
+		// says it is aboard.
+		const unlisted = rowOf(rows, illegal.name);
+		expect(unlisted.listed).toBe(false);
+		expect(marketDisplayValues(unlisted).held).toBe(`2 ${illegal.unit}`);
+		// Not carried: blank, not `0 t`, so the rows that hold cargo stand out.
+		expect(marketDisplayValues(rowOf(rows, "Textiles")).held).toBeNull();
+		expect(rowOf(rows, "Textiles").held).toBe(0);
+		// A key at zero is a good sold out of the hold, and reads as none.
+		expect(
+			marketDisplayValues(rowOf(screen(noDeficit, { Food: 0 }), "Food")).held,
+		).toBeNull();
+	});
+
+	test("a change in what is held redraws the market", () => {
+		const before = screen(noDeficit);
+		expect(marketDisplayChanged(before, screen(noDeficit, { Food: 1 }))).toBe(
+			true,
+		);
+		expect(marketDisplayChanged(before, screen(noDeficit, {}))).toBe(false);
 	});
 });

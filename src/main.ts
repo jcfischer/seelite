@@ -15959,6 +15959,9 @@ class Game {
 				gameTimeMin,
 				deficitOf: (goodName) =>
 					readDeficit(envelope.deficits, stationKey, goodName, gameTimeMin),
+				// The HELD column (#473 D10): the pilot's own goods only, so an
+				// entrusted lot stays in the hold line and out of every row.
+				cargo: this.commander.cargo,
 				// The flown hold, bay included — the same figure the transaction
 				// uses (#182), read through `commanderHold` so the screen and till
 				// agree about whether a Large Cargo Bay counts.
