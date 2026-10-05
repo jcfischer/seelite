@@ -1239,6 +1239,89 @@ const codeFor = (key: string): string | undefined =>
 	/^[a-z]$/.test(key) ? `Key${key.toUpperCase()}` : undefined;
 
 /**
+ * What each digit and punctuation key types **under Shift** on the layout the
+ * defaults were authored on — `PUNCTUATION_CODES`' other half, for one reader.
+ *
+ * `offAuthoredLayout` needs it because the capture records the character the
+ * event sent, and Shift is held whenever a pilot throttles up: a US player who
+ * binds `?` stores `{ key: "?", code: "Slash" }`, and against the unshifted
+ * table alone that reads as a key from another keyboard.
+ */
+const AUTHORED_SHIFTED: Readonly<Record<string, string>> = {
+	Digit1: "!",
+	Digit2: "@",
+	Digit3: "#",
+	Digit4: "$",
+	Digit5: "%",
+	Digit6: "^",
+	Digit7: "&",
+	Digit8: "*",
+	Digit9: "(",
+	Digit0: ")",
+	Backquote: "~",
+	Backslash: "|",
+	BracketLeft: "{",
+	BracketRight: "}",
+	Comma: "<",
+	Equal: "+",
+	Minus: "_",
+	Period: ">",
+	Quote: '"',
+	Semicolon: ":",
+	Slash: "?",
+};
+
+/** The characters the authored layout types at a position, either shift. */
+const authoredCharacters = (code: string): readonly string[] => {
+	if (/^Key[A-Z]$/.test(code)) return [code.slice(3).toLowerCase()];
+	if (/^Digit[0-9]$/.test(code))
+		return [code.slice(5), AUTHORED_SHIFTED[code] as string];
+	if (Object.hasOwn(PUNCTUATION_CODES, code))
+		return [
+			PUNCTUATION_CODES[code] as string,
+			...(Object.hasOwn(AUTHORED_SHIFTED, code)
+				? [AUTHORED_SHIFTED[code] as string]
+				: []),
+		];
+	// A key the authored layout does not have — `IntlBackslash` — types
+	// nothing there, so any character recorded on it is another keyboard's.
+	return [];
+};
+
+/**
+ * Whether a key trigger prints a character the layout the defaults were
+ * authored on does **not** type at its position (node #382).
+ *
+ * D7 prints the character a binding was recorded with, so a printed key is
+ * evidence about the keyboard it was bound on. The `Controls` tab's header
+ * says the keys print as a US keyboard types them, and this is the row-level
+ * question that sentence owes: **does this key's character disagree with it.**
+ * It is not "which keyboard was attached" — a QWERTZ capture on `KeyQ` types
+ * `q`, is not marked, and prints exactly what the sentence says.
+ *
+ * **A function of the stored trigger alone**, so no change of the attached
+ * keyboard can falsify it or the header that counts it. Knowing the attached
+ * layout takes a keypress or Chromium's `getLayoutMap`, and telling a player
+ * it changed under a saved layout is the capture modal's half of D7 — not
+ * this predicate's, and not the tab's.
+ *
+ * Never true of:
+ *
+ * - a key with no code — the shipped punctuation and digits, whose character
+ *   is all the row states (`codeFor`);
+ * - a chord — `movedTrigger` stores the character its position types here,
+ *   because Option makes the event's character untrustworthy, so a chord is
+ *   the authored layout's by construction and is D7's one printed exception;
+ * - a named key — `arrowup`, `enter`, `f6` are spelled alike on every layout;
+ * - the number pad, which types the same characters on every layout.
+ */
+export function offAuthoredLayout(t: Trigger): boolean {
+	if (t.kind !== "key" || t.code === undefined || t.alt === true) return false;
+	if ([...t.key].length !== 1 || t.code.startsWith("Numpad")) return false;
+	return !authoredCharacters(t.code).includes(t.key);
+}
+
+/**
  * The Alt chords authored on a command, as key triggers.
  *
  * **Authored here since #381 S4, and derived from `ALT_CHORDS` before it.**

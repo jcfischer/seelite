@@ -201,6 +201,18 @@ check(
 		!/your layout/i.test(header),
 	JSON.stringify(header),
 );
+const attribution = await page.evaluate(() => ({
+	state:
+		document
+			.querySelector("[data-live-controls-attribution]")
+			?.getAttribute("data-live-controls-attribution") ?? null,
+	marks: document.querySelectorAll("[data-live-controls-off-layout]").length,
+}));
+check(
+	"the shipped layout prints as a US keyboard types it, with no key marked (node #382)",
+	attribution.state === "authored" && attribution.marks === 0,
+	JSON.stringify(attribution),
+);
 // **This row pins the whole order, and #445 moved it.** The Hold page sits
 // with the other readouts, so Controls is no longer Drive's neighbour — what
 // #370 D1 actually decided is that `Controls` comes immediately before

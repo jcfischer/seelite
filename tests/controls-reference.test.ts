@@ -13,6 +13,9 @@ import {
 	type CommandId,
 	commandById,
 	DEFAULT_BINDINGS,
+	offAuthoredLayout,
+	rebound,
+	SHIPPED_LAYOUTS,
 	TASK_GROUPS,
 	type Trigger,
 	triggerKey,
@@ -21,6 +24,7 @@ import { CONTROLS, controlsCatalogue } from "../src/controls-catalogue";
 import {
 	CONTROLS_CHORD,
 	CONTROLS_TAB,
+	OFF_LAYOUT_MARK,
 	contextNote,
 	controlsBody,
 	controlsKeyMove,
@@ -548,5 +552,166 @@ describe("the band above the tree (#381 S3)", () => {
 		// It says what the game does — both commands run — and not #369 D5's
 		// last-changed law, which no dispatch implements. #484 owns that.
 		expect(text).toMatch(/both run/i);
+	});
+});
+
+/**
+ * Whose layout the printed characters came from (node #382).
+ *
+ * #369 D7 dispatches on the physical key and prints the character a binding
+ * was recorded with, so a printed character is evidence about the keyboard a
+ * row was bound on. Every fixture below is built by the shipped path —
+ * `rebound`, or a stored blob through `parseLayout` — and printed by
+ * `controlsCatalogue`, never a struct this file authored.
+ */
+describe("whose layout a printed key came from", () => {
+	const JUMP: CommandId = "fly.jump";
+	const jumpKey = () => {
+		const t = DEFAULT_BINDINGS.find(
+			(b) => b.command === JUMP && b.trigger.kind === "key",
+		)?.trigger;
+		if (t === undefined) throw new Error("no shipped jump key");
+		return t;
+	};
+	/** The jump moved onto what a capture would hand over for this press. */
+	const capture = (key: string, code: string) =>
+		rebound(DEFAULT_BINDINGS, JUMP, jumpKey(), { kind: "key", key, code });
+	const marks = (html: string) =>
+		html.match(/data-live-controls-off-layout/g)?.length ?? 0;
+
+	test("no shipped layout carries a key off the layout it was authored on", () => {
+		for (const [name, layout] of Object.entries(SHIPPED_LAYOUTS)) {
+			const off = layout.filter((b) => offAuthoredLayout(b.trigger));
+			expect({ name, off }).toEqual({ name, off: [] });
+			const html = controlsBody(controlsCatalogue(layout), new Set());
+			expect(marks(html)).toBe(0);
+			expect(html).not.toContain(OFF_LAYOUT_MARK);
+		}
+	});
+
+	test("an AZERTY capture prints the character it was recorded with, marked", () => {
+		// The key at A's position types `q` on AZERTY. KeyA carries no press
+		// in the shipped table, so the move collides with nothing.
+		const { layout, stored } = capture("q", "KeyA");
+		expect(stored).toMatchObject({ kind: "key", key: "q", code: "KeyA" });
+		expect(offAuthoredLayout(stored)).toBe(true);
+		const catalogue = controlsCatalogue(layout);
+		expect(catalogue.notices).toEqual([]);
+		const html = controlsBody(catalogue, new Set());
+		const row = html.match(
+			/<div class="lc-controls-row" data-live-controls-row="fly\.jump">.*?<\/div>/,
+		)?.[0];
+		if (row === undefined) throw new Error("no jump row");
+		// The printed label is the recorded character, never one derived from
+		// the position: `q`, not `a`.
+		expect(row).toContain("<kbd>q</kbd>");
+		expect(row).not.toContain("<kbd>a</kbd>");
+		expect(marks(row)).toBe(1);
+		expect(row).toContain(OFF_LAYOUT_MARK);
+		expect(marks(html)).toBe(1);
+	});
+
+	test("the mark is on the trigger, not the row", () => {
+		// The jump has a pad button beside the key, and only the key was
+		// recorded anywhere.
+		const html = controlsBody(
+			controlsCatalogue(capture("q", "KeyA").layout),
+			new Set(),
+		);
+		const row = html.match(
+			/<div class="lc-controls-row" data-live-controls-row="fly\.jump">.*?<\/div>/,
+		)?.[0];
+		expect(row?.match(/<kbd>/g)?.length).toBeGreaterThan(1);
+		expect(marks(row ?? "")).toBe(1);
+	});
+
+	test("a US capture of a shifted character is not marked", () => {
+		// `?` and `!` are what a US keyboard types at Slash and Digit1 under
+		// Shift, so the sentence above them stays true.
+		expect(offAuthoredLayout(capture("?", "Slash").stored)).toBe(false);
+		expect(offAuthoredLayout(capture("!", "Digit1").stored)).toBe(false);
+		expect(offAuthoredLayout(capture("/", "Slash").stored)).toBe(false);
+		expect(offAuthoredLayout(capture("w", "KeyW").stored)).toBe(false);
+	});
+
+	test("a key another layout types at a US position is marked", () => {
+		// German: the key at Slash types `-`, the one at Minus types `ß`, and
+		// the one at KeyZ types `y`.
+		expect(offAuthoredLayout(capture("-", "Slash").stored)).toBe(true);
+		expect(offAuthoredLayout(capture("ß", "Minus").stored)).toBe(true);
+		expect(offAuthoredLayout(capture("y", "KeyZ").stored)).toBe(true);
+		// A key the US layout does not have types nothing there.
+		expect(offAuthoredLayout(capture("<", "IntlBackslash").stored)).toBe(true);
+	});
+
+	test("names, the number pad, chords and codeless keys are never marked", () => {
+		expect(offAuthoredLayout(capture("arrowup", "ArrowUp").stored)).toBe(false);
+		expect(offAuthoredLayout(capture("f6", "F6").stored)).toBe(false);
+		expect(offAuthoredLayout(capture("1", "Numpad1").stored)).toBe(false);
+		// A chord stores the character its position types on the authored
+		// layout (`movedTrigger`), so it cannot be off it.
+		const HEAD_PORT: CommandId = "view.headPort";
+		const shippedChord = DEFAULT_BINDINGS.find(
+			(b) =>
+				b.command === HEAD_PORT &&
+				b.trigger.kind === "key" &&
+				b.trigger.alt === true,
+		)?.trigger;
+		if (shippedChord === undefined) throw new Error("no shipped chord");
+		expect(offAuthoredLayout(shippedChord)).toBe(false);
+		const chord = rebound(DEFAULT_BINDINGS, HEAD_PORT, shippedChord, {
+			kind: "key",
+			key: "∂",
+			code: "KeyD",
+			alt: true,
+		});
+		expect(chord.stored).toMatchObject({ key: "d", alt: true });
+		expect(offAuthoredLayout(chord.stored)).toBe(false);
+		expect(offAuthoredLayout({ kind: "key", key: "`" })).toBe(false);
+	});
+
+	test("the header says whose characters they are, and says the exception when a row disagrees", () => {
+		const head = (html: string) =>
+			html.match(/<header class="lc-controls-head">.*?<\/header>/)?.[0] ?? "";
+		const shipped = head(controlsBody(CONTROLS, new Set()));
+		expect(shipped).toContain('data-live-controls-attribution="authored"');
+		expect(shipped).toContain("US keyboard");
+		expect(shipped).not.toContain(OFF_LAYOUT_MARK);
+		// The sentence it replaces claimed every key prints as the character
+		// the player types, which a default never was on another layout.
+		expect(shipped).not.toContain("the character you type");
+
+		// A player layout rebound on a US keyboard is still all US characters.
+		const usOnly = head(
+			controlsBody(controlsCatalogue(capture("k", "KeyK").layout), new Set()),
+		);
+		expect(usOnly).toContain("PLAYER LAYOUT");
+		expect(usOnly).toContain('data-live-controls-attribution="authored"');
+		expect(usOnly).not.toContain(OFF_LAYOUT_MARK);
+
+		const mixed = head(
+			controlsBody(controlsCatalogue(capture("q", "KeyA").layout), new Set()),
+		);
+		expect(mixed).toContain("PLAYER LAYOUT");
+		expect(mixed).toContain('data-live-controls-attribution="recorded"');
+		expect(mixed).toContain("US keyboard");
+		expect(mixed).toContain(OFF_LAYOUT_MARK);
+		expect(mixed).toContain("another layout");
+	});
+
+	test("a stored capture keeps its position and its character across a reload", () => {
+		const from = jumpKey();
+		const read = parseLayout(
+			JSON.stringify({
+				version: LAYOUT_VERSION,
+				moves: [
+					{ command: JUMP, from, to: { kind: "key", key: "q", code: "KeyA" } },
+				],
+			}),
+		);
+		expect(read.notices).toEqual([]);
+		const html = controlsBody(controlsCatalogue(read.layout), new Set());
+		expect(html).toContain("<kbd>q</kbd>");
+		expect(marks(html)).toBe(1);
 	});
 });

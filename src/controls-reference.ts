@@ -17,6 +17,7 @@ import type { RebindRefusal, TaskGroup, Trigger } from "./commands";
 import {
 	COMMANDS,
 	isPlaceholder,
+	offAuthoredLayout,
 	PAD_CONTEXTS,
 	TASK_GROUPS,
 	VIEW_MODES,
@@ -37,6 +38,51 @@ export const CONTROLS_TAB = "Controls";
  * assumes.
  */
 export const CONTROLS_CHORD = "Shift + /";
+
+/**
+ * The mark beside a key bound on another layout (node #382).
+ *
+ * **On the trigger, not the row**: a row can carry a key and a pad button,
+ * and only the key was recorded anywhere. **Outside the `<kbd>`**, so the key
+ * still prints as exactly the character it was recorded with. And a glyph no
+ * keyboard types, so it cannot be read as part of a key — `*` and `+` both
+ * are keys.
+ */
+export const OFF_LAYOUT_MARK = "◆";
+
+/**
+ * Whose layout the printed characters are (node #382, amending #372's line).
+ *
+ * The line it replaces — *"the chord assumes a US layout; every other key
+ * prints as the character you type"* — was true of nothing on another
+ * keyboard: a default prints its authored US label whatever the keyboard
+ * types there, and a recorded row prints what the keyboard typed when it was
+ * bound, not now. So the line says whose characters they are — the US
+ * layout's, which covers the chord — and, when a row was bound on a keyboard
+ * that types something else at that position, says the exception and marks
+ * it. Two states, derived from the rows on every render, never stored: the
+ * shipped layouts carry no mark (CI holds that), and a player layout rebound
+ * on a US keyboard reads exactly as the defaults do.
+ *
+ * No count in the sentence: the marks are on the rows, and a figure beside
+ * them would be a second copy of what the tree already shows.
+ */
+function attributionMarkup(catalogue: ControlsCatalogue): string {
+	const recorded = catalogue.commands.some((c) =>
+		c.currentTriggers.some(offAuthoredLayout),
+	);
+	return recorded
+		? `<span data-live-controls-attribution="recorded">Keys print as a US keyboard types them; ${OFF_LAYOUT_MARK} marks a key bound on another layout, printed as that keyboard typed it</span>`
+		: `<span data-live-controls-attribution="authored">Keys print as a US keyboard types them</span>`;
+}
+
+/** A key as it prints, marked when it was bound on another layout. */
+function keyMarkup(t: Trigger): string {
+	const kbd = `<kbd>${escapeHtml(triggerLabel(t))}</kbd>`;
+	return offAuthoredLayout(t)
+		? `<span class="lc-controls-recorded" data-live-controls-off-layout>${kbd}<i class="lc-controls-mark" aria-hidden="true">${OFF_LAYOUT_MARK}</i></span>`
+		: kbd;
+}
 
 // ---------------------------------------------------------------------------
 // The key
@@ -312,7 +358,7 @@ function rowMarkup(catalogue: ControlsCatalogue, command: ControlCommand) {
 	// the row stays a row, and selecting it opens the capture on it.
 	const bound = command.currentTriggers.filter((t) => !isPlaceholder(t));
 	const triggers = bound.length
-		? bound.map((t) => `<kbd>${escapeHtml(triggerLabel(t))}</kbd>`).join("")
+		? bound.map(keyMarkup).join("")
 		: "<em>unbound</em>";
 	const note = contextNote(catalogue, command);
 	return `<div class="lc-controls-row" data-live-controls-row="${command.id}"><span class="lc-controls-name">${escapeHtml(command.name)}</span><span class="lc-controls-keys">${triggers}</span>${note ? `<small class="lc-controls-note">${escapeHtml(note)}</small>` : ""}</div>`;
@@ -350,7 +396,8 @@ export function controlsTreeMarkup(
  * D6: the panel's body is replaced wholesale, on the `[data-live-chart-body]`
  * precedent — the rail-and-copy grid would put the tree in a 48-character
  * column. D5: the owner line reads `DEFAULT LAYOUT` until the registry can
- * report a player one, and never "your layout" before it can.
+ * report a player one, and never "your layout" before it can. The line after
+ * the chord says whose characters the rows print (`attributionMarkup`).
  */
 export function controlsBody(
 	catalogue: ControlsCatalogue,
@@ -365,7 +412,7 @@ export function controlsBody(
 			: catalogue.base === "default"
 				? "PLAYER LAYOUT"
 				: `PLAYER LAYOUT · FROM ${shipped}`;
-	return `<div class="lc-panel-body lc-controls" data-live-controls-body><header class="lc-controls-head"><b data-live-controls-owner>${owner}</b><span>F1 or ${CONTROLS_CHORD} opens and closes this tab</span><span>The chord assumes a US layout; every other key prints as the character you type</span></header>${noticesMarkup(catalogue.notices)}<div class="lc-controls-tree" data-live-controls-tree>${controlsTreeMarkup(catalogue, collapsed)}</div></div>`;
+	return `<div class="lc-panel-body lc-controls" data-live-controls-body><header class="lc-controls-head"><b data-live-controls-owner>${owner}</b><span>F1 or ${CONTROLS_CHORD} opens and closes this tab</span>${attributionMarkup(catalogue)}</header>${noticesMarkup(catalogue.notices)}<div class="lc-controls-tree" data-live-controls-tree>${controlsTreeMarkup(catalogue, collapsed)}</div></div>`;
 }
 
 // ---------------------------------------------------------------------------
