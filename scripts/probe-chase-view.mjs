@@ -22,6 +22,9 @@
  *   boresight pip on the nose's pixel** (D4).
  * - **the beam starts on each muzzle's pixel** (D3, D5): one beam per
  *   hardpoint, from the muzzle projected off the drawn hull.
+ * - **the cues hold above and below the hull too** (node #691): the same
+ *   projection row at a raised and a lowered orbit, where the camera's frame
+ *   is turned off the ship's on two axes rather than one.
  *
  * This is a default-layout probe (#381 D11): `v` is the view toggle and
  * Space the trigger in the shipped layout. The rows check the view changed and
@@ -52,6 +55,10 @@ const ORBIT = 0.7;
 /** The pip's orbit: off the axis, with the nose still in frame. At `ORBIT`
  *  the nose is 40° off the camera, at the frame's edge at this aspect. */
 const PIP_ORBIT = 0.35;
+/** The elevations the full orbit's rows are taken at (node #691), radians,
+ *  at `PIP_ORBIT`'s yaw: above and below the hull with the target still in
+ *  a 60° frame — the cue row needs a body on screen to say anything. */
+const ELEVATIONS = [0.3, -0.35];
 
 await guardedOrigin(ORIGIN);
 const browser = await launchChromium();
@@ -78,11 +85,12 @@ const frames = () =>
 			await new Promise((r) => requestAnimationFrame(() => r()));
 	});
 
-const measure = (orbit) =>
+const measure = (orbit, elevation = 0) =>
 	page.evaluate(
-		async ([orbit]) => {
+		async ([orbit, elevation]) => {
 			const g = window.__seelite;
 			g.chaseYaw = orbit;
+			g.chaseElevation = elevation;
 			for (let i = 0; i < 2; i++)
 				await new Promise((r) => requestAnimationFrame(() => r()));
 			const { projectDirection } = await import("/src/hud.ts");
@@ -126,7 +134,7 @@ const measure = (orbit) =>
 				ship: { ...g.world.ship.pos },
 			};
 		},
-		[orbit],
+		[orbit, elevation],
 	);
 
 const at0 = await measure(0);
@@ -161,10 +169,28 @@ check(
 	);
 }
 
+// Node #691: the same two rows off the level, above and below the hull.
+for (const elevation of ELEVATIONS) {
+	const raised = await measure(PIP_ORBIT, elevation);
+	const worst = Math.max(...raised.bodies.map((b) => b.err));
+	const diff = (a, b) => Math.hypot(a.x - b.x, a.y - b.y, a.z - b.z);
+	check(
+		`every placed cue lands on its body's drawn pixel at an elevation of ${elevation} (node #691)`,
+		raised.bodies.length > 0 && worst < EPS_NDC,
+		`${raised.bodies.length} bodies on screen; worst ${worst.toExponential(2)} NDC against ${EPS_NDC}`,
+	);
+	check(
+		`and the gun stays on the nose at that elevation (node #691)`,
+		diff(at0.aim, raised.aim) < 1e-9 && diff(raised.origin, raised.ship) < 1e-9,
+		`aim moved ${diff(at0.aim, raised.aim).toExponential(2)}`,
+	);
+}
+
 // The ship-fixed cues, and the pip on the nose.
 const cues = await page.evaluate(async (pipOrbit) => {
 	const g = window.__seelite;
 	g.chaseYaw = pipOrbit;
+	g.chaseElevation = 0;
 	for (let i = 0; i < 2; i++)
 		await new Promise((r) => requestAnimationFrame(() => r()));
 	const ship = g.nearScene.getObjectByName("ship");

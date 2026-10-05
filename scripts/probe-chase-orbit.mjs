@@ -1,0 +1,686 @@
+/**
+ * The chase camera's full mouse orbit, and the postcard that carries it
+ * (node #691), read off a running page.
+ *
+ *   npm run probe:one probe-chase-orbit
+ *
+ * `tests/chase-orbit.test.ts` holds the rig's arithmetic and
+ * `tests/postcard.test.ts` the recipe's. What only a browser can say is here:
+ *
+ * - **the pointer orbits, and only orbits** (C1, C2): a real mouse move under a
+ *   real pointer lock swings the chase camera round and over the hull, the
+ *   ship's attitude, rates and trigger untouched, the hull holding its place
+ *   in the drawn frame — and an engaged docking computer stays engaged, which
+ *   is the row a delta read raw by `hasControlInput` would turn red. The
+ *   control is the cockpit, where the same move steers and cancels it;
+ * - **the pointer's owners** (C2): the cockpit gets its controls back and the
+ *   chase pose is held across the toggle; a lost lock moves nothing until the
+ *   next click takes it back; the settings screen and the Postcard screen take
+ *   the pointer with them;
+ * - **the postcard carries the pose** (C3): an exterior card opened from an
+ *   orbited view spells its yaw and elevation, its PNG is the card shown, the
+ *   viewer rebuilds the same link and the same picture, the pilot's pose and
+ *   drawing size survive every capture — the failing one included — and a
+ *   yaw-only schema-1 link still opens, level;
+ * - `2` recentres the whole pose.
+ *
+ * **The lane.** It needs a view that can hold a pointer lock, so it launches
+ * the way `probe-pointer-lock.mjs` does and for that file's reasons
+ * (`PROBE_WINDOW_LOCKABLE`, #454). That lane renders on the hardware renderer;
+ * the pixel rows here compare two cards drawn by the same browser, never a
+ * card against a stored baseline.
+ *
+ * **The sheet** (C4): every pose's live frame, exterior card and rebuilt card
+ * are written under `probe-shots/chase-orbit/`, with `index.html` beside them.
+ * The probe cannot say they look right; the principal does.
+ *
+ * A default-layout probe (#381 D11): `v`, `2`, `6` and `z` are the shipped keys.
+ */
+import { createHash } from "node:crypto";
+import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import {
+	bootedGame,
+	guardedOrigin,
+	launchChromium,
+	PROBE_WINDOW_LOCKABLE,
+	tally,
+	waitForSettingsPanel,
+} from "./probe-guard.mjs";
+import { gameUrl, postcardUrl } from "./lib/game-url.mjs";
+import {
+	PANEL_CARD,
+	VIEWER_CARD,
+	keepCard,
+	setPostcardMode,
+	waitViewerCard,
+} from "./lib/postcard-shots.mjs";
+
+const ORIGIN =
+	process.env.PROBE_ORIGIN ?? process.argv[2] ?? "http://localhost:5173";
+const origin = await guardedOrigin(ORIGIN);
+const { check, watch, exit } = tally();
+const SHOTS = "probe-shots/chase-orbit";
+mkdirSync(SHOTS, { recursive: true });
+const VIEWPORT = { width: 1280, height: 760 };
+
+const browser = await launchChromium({
+	channel: "chromium",
+	probeWindow: PROBE_WINDOW_LOCKABLE,
+});
+const context = await browser.newContext({
+	viewport: VIEWPORT,
+	acceptDownloads: true,
+});
+await context.grantPermissions(["clipboard-read", "clipboard-write"], {
+	origin: new URL(origin).origin,
+});
+const page = await context.newPage();
+watch(page);
+await page.goto(gameUrl(origin, { seed: 42, raider: "off" }), {
+	waitUntil: "load",
+});
+await bootedGame(page);
+
+/** Two frames, so what is read was drawn after the last write. */
+const settle = (target = page) =>
+	target.evaluate(
+		() =>
+			new Promise((done) =>
+				requestAnimationFrame(() => requestAnimationFrame(done)),
+			),
+	);
+
+const lockHolder = () =>
+	page.evaluate(() => document.pointerLockElement?.tagName ?? null);
+
+/** The pilot's state an orbit must and must not move, read in one go. */
+const pilot = () =>
+	page.evaluate(() => {
+		const g = window.__seelite;
+		const ship = g.nearScene.getObjectByName("ship");
+		// Where the drawn hull sits in the drawn camera's frame, as a direction:
+		// constant from every pose when position and orientation agree.
+		const inCam = ship.position
+			.clone()
+			.applyQuaternion(g.nearCamera.quaternion.clone().invert())
+			.normalize();
+		return {
+			view: g.view,
+			yaw: g.chaseYaw,
+			elev: g.chaseElevation,
+			q: g.orientation.toArray(),
+			rates: { ...g.rates },
+			mouseFiring: g.mouseFiring,
+			trigger: g.triggerHeld(),
+			computer: g.dockingComputer.engaged,
+			hullInCamera: inCam.toArray(),
+			drawing: [g.renderer.domElement.width, g.renderer.domElement.height],
+		};
+	});
+
+const angle = (a, b) => {
+	const dot = a.reduce((s, x, i) => s + x * b[i], 0);
+	return Math.acos(Math.min(1, Math.abs(dot)));
+};
+const zeroRates = () =>
+	page.evaluate(() => {
+		window.__seelite.rates = { pitch: 0, yaw: 0, roll: 0 };
+	});
+
+/** Where the cursor is: locked moves are deltas between absolute positions,
+ *  so every move starts from the last one rather than from somewhere new. */
+let cursor = null;
+const clickGlass = async () => {
+	// The browser's lock window, which `probe-pointer-lock.mjs` measured: wait
+	// it out before the one click, rather than retrying after a refusal.
+	await page.waitForTimeout(3000);
+	await page.bringToFront();
+	await page.waitForFunction(() => document.hasFocus());
+	cursor = await page.evaluate(() => {
+		const r = window.__seelite.renderer.domElement.getBoundingClientRect();
+		return {
+			x: Math.round(r.left + r.width * 0.5),
+			y: Math.round(r.top + r.height * 0.5),
+		};
+	});
+	await page.mouse.click(cursor.x, cursor.y);
+	await settle();
+};
+/** A real mouse move of `steps` steps of (`dx`, `dy`) pixels. */
+const moveMouse = async (dx, dy, steps = 8) => {
+	for (let i = 0; i < steps; i++) {
+		cursor = { x: cursor.x + dx, y: cursor.y + dy };
+		await page.mouse.move(cursor.x, cursor.y);
+	}
+	await settle();
+};
+
+// ---------------------------------------------------------------------------
+// Into chase, with the glass locked: the premise every orbit row stands on.
+// ---------------------------------------------------------------------------
+await page.evaluate(async () => {
+	const g = window.__seelite;
+	g.resetFlightToStart();
+	g.faceTarget();
+	await new Promise((r) => requestAnimationFrame(() => r()));
+});
+await page.keyboard.press("v");
+await settle();
+await clickGlass();
+const premise = { view: (await pilot()).view, lock: await lockHolder() };
+check(
+	"in chase with the glass locked, so the pointer rows below can see anything",
+	premise.view === "chase" && premise.lock === "CANVAS",
+	JSON.stringify(premise),
+);
+if (premise.lock !== "CANVAS") {
+	await browser.close();
+	exit();
+}
+const radPerPx = await page.evaluate(
+	async () => (await import("/src/chase-orbit.ts")).ORBIT_RAD_PER_PX,
+);
+
+// ---------------------------------------------------------------------------
+// C1, C2: the pointer orbits the camera and nothing else.
+// ---------------------------------------------------------------------------
+await zeroRates();
+await settle();
+const astern = await pilot();
+await moveMouse(26, -9);
+const orbited = await pilot();
+{
+	// 208 px right and 72 px up: the camera swings to port and rises.
+	const wantYaw = -208 * radPerPx;
+	const wantElev = 72 * radPerPx;
+	check(
+		"a real push right and up swings the chase camera to port and over the hull",
+		Math.abs(orbited.yaw - wantYaw) < 0.15 * Math.abs(wantYaw) &&
+			Math.abs(orbited.elev - wantElev) < 0.15 * wantElev,
+		`yaw ${orbited.yaw.toFixed(4)} (want ${wantYaw.toFixed(4)}), elevation ${orbited.elev.toFixed(4)} (want ${wantElev.toFixed(4)})`,
+	);
+}
+check(
+	"the orbit leaves the ship's attitude, its rates and its trigger alone",
+	angle(astern.q, orbited.q) < 1e-9 &&
+		orbited.rates.pitch === 0 &&
+		orbited.rates.yaw === 0 &&
+		orbited.rates.roll === 0 &&
+		!orbited.mouseFiring &&
+		!orbited.trigger,
+	`attitude moved ${angle(astern.q, orbited.q).toExponential(2)} rad; rates ${JSON.stringify(orbited.rates)}; firing ${orbited.mouseFiring}/${orbited.trigger}`,
+);
+check(
+	"the drawn hull holds its place in the drawn frame: position and orientation agree",
+	angle(astern.hullInCamera, orbited.hullInCamera) < 1e-4,
+	`${angle(astern.hullInCamera, orbited.hullInCamera).toExponential(2)} rad between astern and orbited`,
+);
+
+// The docking computer: engaged, then orbited under. A delta read raw by the
+// cancel check would disengage it; the cockpit arm below is the control.
+await page.evaluate(() => {
+	const g = window.__seelite;
+	if (!g.hasDockingComputer)
+		g.commander = {
+			...g.commander,
+			ownedEquipment: [...g.commander.ownedEquipment, g.dockingComputerName],
+		};
+	if (!g.dockingComputer.engaged) g.toggleDockingComputer();
+});
+await settle();
+const engaged = await pilot();
+await moveMouse(-20, 6);
+const underComputer = await pilot();
+check(
+	"orbiting under an engaged docking computer leaves it engaged",
+	engaged.computer &&
+		underComputer.computer &&
+		Math.abs(underComputer.yaw - engaged.yaw) > 0.3,
+	`engaged ${engaged.computer} → ${underComputer.computer}; yaw ${engaged.yaw.toFixed(3)} → ${underComputer.yaw.toFixed(3)}`,
+);
+
+// Back to the cockpit: the pointer steers again, and the chase pose is held.
+await page.keyboard.press("v");
+await settle();
+await zeroRates();
+const cockpitBefore = await pilot();
+await moveMouse(14, 5);
+const cockpitAfter = await pilot();
+check(
+	"in the cockpit the same move steers the ship and leaves the chase pose held",
+	cockpitAfter.view === "cockpit" &&
+		Math.abs(cockpitAfter.rates.yaw) > 1e-4 &&
+		cockpitAfter.yaw === underComputer.yaw &&
+		cockpitAfter.elev === underComputer.elev,
+	`rates ${JSON.stringify(cockpitAfter.rates)}; pose ${cockpitAfter.yaw.toFixed(3)}, ${cockpitAfter.elev.toFixed(3)}`,
+);
+check(
+	"control: there the move is control input, and cancels the computer",
+	cockpitBefore.computer && !cockpitAfter.computer,
+	`engaged ${cockpitBefore.computer} → ${cockpitAfter.computer}`,
+);
+await page.keyboard.press("v");
+await settle();
+await zeroRates();
+const back = await pilot();
+check(
+	"returning to chase finds the pose it left",
+	back.view === "chase" &&
+		back.yaw === underComputer.yaw &&
+		back.elev === underComputer.elev,
+	`${back.yaw.toFixed(3)}, ${back.elev.toFixed(3)}`,
+);
+
+// A lost lock moves nothing; the next click takes it back and orbits again.
+await page.evaluate(() => document.exitPointerLock());
+await settle();
+const unlocked = await pilot();
+await moveMouse(30, -10);
+const movedUnlocked = await pilot();
+check(
+	"with the lock lost, the mouse orbits nothing",
+	(await lockHolder()) === null &&
+		movedUnlocked.yaw === unlocked.yaw &&
+		movedUnlocked.elev === unlocked.elev,
+	`lock ${await lockHolder()}; yaw ${unlocked.yaw.toFixed(3)} → ${movedUnlocked.yaw.toFixed(3)}`,
+);
+await clickGlass();
+const relocked = await pilot();
+await moveMouse(-12, -4);
+const movedRelocked = await pilot();
+check(
+	"the next click takes the lock back, and the mouse orbits again",
+	(await lockHolder()) === "CANVAS" &&
+		Math.abs(movedRelocked.yaw - relocked.yaw) > 0.1,
+	`lock ${await lockHolder()}; yaw ${relocked.yaw.toFixed(3)} → ${movedRelocked.yaw.toFixed(3)}`,
+);
+
+// A screen takes the pointer with it: the settings screen.
+if (!(await waitForSettingsPanel(page)))
+	check("the settings screen mounted", false);
+await page.keyboard.press("z");
+await settle();
+const inSettings = await pilot();
+await moveMouse(25, 8);
+const movedInSettings = await pilot();
+const settingsState = await page.evaluate(() => ({
+	open: window.__seelite.settingsPanel?.isOpen() ?? false,
+	context: window.__seelite.padContext(),
+}));
+check(
+	"the settings screen takes the pointer, and a move behind it orbits nothing",
+	settingsState.open &&
+		(await lockHolder()) === null &&
+		movedInSettings.yaw === inSettings.yaw &&
+		movedInSettings.elev === inSettings.elev,
+	`${JSON.stringify(settingsState)}; lock ${await lockHolder()}; yaw ${inSettings.yaw.toFixed(3)} → ${movedInSettings.yaw.toFixed(3)}`,
+);
+await page.keyboard.press("Escape");
+await settle();
+const closedSettings = await pilot();
+check(
+	"closing it delivers no swing built up behind it",
+	closedSettings.yaw === inSettings.yaw &&
+		closedSettings.elev === inSettings.elev,
+	`${closedSettings.yaw.toFixed(3)}, ${closedSettings.elev.toFixed(3)}`,
+);
+
+// ---------------------------------------------------------------------------
+// C3: the exterior postcard carries the pose.
+// ---------------------------------------------------------------------------
+
+/** Luma grid over a card `<img>`, as `probe-postcard.mjs` reads one. */
+const cardGrid = (target, selector) =>
+	target.evaluate(async (sel) => {
+		const img = document.querySelector(sel);
+		await img.decode();
+		const canvas = document.createElement("canvas");
+		canvas.width = img.naturalWidth;
+		canvas.height = img.naturalHeight;
+		const ctx = canvas.getContext("2d");
+		ctx.drawImage(img, 0, 0);
+		const { data } = ctx.getImageData(0, 0, canvas.width, canvas.height);
+		const cols = 24;
+		const rows = 16;
+		const grid = new Array(cols * rows).fill(0);
+		for (let y = 0; y < canvas.height; y++)
+			for (let x = 0; x < canvas.width; x++) {
+				const i = (y * canvas.width + x) * 4;
+				grid[
+					Math.floor((y / canvas.height) * rows) * cols +
+						Math.floor((x / canvas.width) * cols)
+				] += 0.2126 * data[i] + 0.7152 * data[i + 1] + 0.0722 * data[i + 2];
+			}
+		const cell = (canvas.width / cols) * (canvas.height / rows);
+		return {
+			width: img.naturalWidth,
+			height: img.naturalHeight,
+			grid: grid.map((v) => v / cell),
+		};
+	}, selector);
+const changedCells = (a, b) =>
+	a.grid.filter((v, i) => Math.abs(v - b.grid[i]) > 10).length / a.grid.length;
+const pairs = (fragment) =>
+	Object.fromEntries(fragment.split("&").map((p) => p.split("=")));
+/** The names two fragments spell differently, for a row's detail. */
+const differing = (a, b) => {
+	const [pa, pb] = [pairs(a), pairs(b)];
+	const names = [...new Set([...Object.keys(pa), ...Object.keys(pb)])].filter(
+		(n) => pa[n] !== pb[n],
+	);
+	return names.length === 0
+		? ""
+		: `; differs at ${names.map((n) => `${n}: ${pa[n]} vs ${pb[n]}`).join(", ")}`;
+};
+
+/** Open the Postcard screen on this pose and read what it made. */
+const openCard = async () => {
+	const before = await pilot();
+	await page.keyboard.press("6");
+	await page.waitForFunction(
+		() => window.__seelite.postcardPanel.state.fragment !== null,
+		null,
+		{ timeout: 30000 },
+	);
+	await page.waitForFunction(
+		(sel) => document.querySelector(sel)?.src.startsWith("blob:"),
+		PANEL_CARD,
+		{ timeout: 30000 },
+	);
+	const state = await page.evaluate(() =>
+		structuredClone(window.__seelite.postcardPanel.state),
+	);
+	return { before, state, after: await pilot() };
+};
+const closeCard = async () => {
+	await page.keyboard.press("Escape");
+	await settle();
+	return pilot();
+};
+
+const POSES = [
+	{ label: "oblique-above", from: "mouse" },
+	{ label: "below", yaw: 2.4, elev: -1.1 },
+	{ label: "overhead", yaw: 0.3, elev: Math.PI / 2 },
+];
+const sheet = [];
+let first = null;
+for (const pose of POSES) {
+	if (pose.from !== "mouse")
+		await page.evaluate(
+			([yaw, elev]) => {
+				window.__seelite.chaseYaw = yaw;
+				window.__seelite.chaseElevation = elev;
+			},
+			[pose.yaw, pose.elev],
+		);
+	await settle();
+	await page.screenshot({ path: `${SHOTS}/${pose.label}-live.png` });
+	const { before, state, after } = await openCard();
+	const asked = pairs(state.fragment);
+	check(
+		`${pose.label}: the screen opens on the exterior, and its link spells the pose`,
+		state.mode === "exterior" &&
+			asked.postcard === "2" &&
+			Math.abs(Number(asked.yaw) - before.yaw) <= 5e-7 &&
+			Math.abs(Number(asked.elev) - before.elev) <= 5e-7,
+		`mode ${state.mode}; yaw=${asked.yaw} elev=${asked.elev} against ${before.yaw.toFixed(6)}, ${before.elev.toFixed(6)}`,
+	);
+	check(
+		`${pose.label}: drawing the card puts the pilot's pose and drawing size back`,
+		after.yaw === before.yaw &&
+			after.elev === before.elev &&
+			after.view === "chase" &&
+			after.drawing.join("x") === before.drawing.join("x"),
+		`pose ${after.yaw}, ${after.elev}; drawing ${after.drawing.join("x")} against ${before.drawing.join("x")}`,
+	);
+	await keepCard(page, PANEL_CARD, `${SHOTS}/${pose.label}-card.png`);
+	const card = await cardGrid(page, PANEL_CARD);
+
+	if (pose.from === "mouse") {
+		first = { pose: before, state, card };
+		// Save image: the download is the card on the screen, byte for byte.
+		await page.evaluate(() => {
+			navigator.canShare = () => false;
+		});
+		const [download] = await Promise.all([
+			page.waitForEvent("download", { timeout: 20000 }),
+			page.click('#seelite-postcard [data-action="save"]'),
+		]);
+		const file = readFileSync(await download.path());
+		const shown = Buffer.from(
+			await page.evaluate(async (sel) => {
+				const blob = await (
+					await fetch(document.querySelector(sel).src)
+				).blob();
+				return [...new Uint8Array(await blob.arrayBuffer())];
+			}, PANEL_CARD),
+		);
+		const sha = (b) => createHash("sha256").update(b).digest("hex");
+		check(
+			"Save image exports the orbited card, byte for byte, at the canonical size",
+			sha(file) === sha(shown) &&
+				file.readUInt32BE(16) === 1800 &&
+				file.readUInt32BE(20) === 1200,
+			`${file.length} bytes, ${file.readUInt32BE(16)}x${file.readUInt32BE(20)}`,
+		);
+		await page.click('#seelite-postcard [data-action="copy"]');
+		await page.waitForFunction(
+			() => window.__seelite.postcardPanel.state.lastCopy !== null,
+		);
+		const copied = await page.evaluate(() => navigator.clipboard.readText());
+		check(
+			"Copy postcard link copies the link that carries the pose",
+			copied === state.link && copied.endsWith(state.fragment),
+			copied.slice(-60),
+		);
+		// Another composition and back: the exterior is the same card again.
+		await setPostcardMode(page, "clear");
+		await setPostcardMode(page, "exterior");
+		const again = await page.evaluate(() =>
+			structuredClone(window.__seelite.postcardPanel.state),
+		);
+		const afterModes = await pilot();
+		check(
+			"changing composition and back leaves the pose, and the link, as they were",
+			afterModes.yaw === before.yaw &&
+				afterModes.elev === before.elev &&
+				pairs(again.fragment).yaw === asked.yaw &&
+				pairs(again.fragment).elev === asked.elev,
+			`pose ${afterModes.yaw}, ${afterModes.elev}`,
+		);
+	}
+	const closed = await closeCard();
+	check(
+		`${pose.label}: closing the screen neither flattens nor recentres the orbit`,
+		closed.yaw === before.yaw && closed.elev === before.elev,
+		`${closed.yaw}, ${closed.elev}`,
+	);
+
+	// The link, opened: the same recipe and the same picture.
+	const viewer = await context.newPage();
+	watch(viewer, `viewer ${pose.label}`);
+	await viewer.goto(postcardUrl(origin, state.fragment), { waitUntil: "load" });
+	await viewer.waitForFunction(
+		() =>
+			window.__seelite?.postcardViewState?.card &&
+			window.__seelite.postcardViewState.rebuiltFragment,
+		null,
+		{ timeout: 60000 },
+	);
+	await waitViewerCard(viewer);
+	const rebuilt = await viewer.evaluate(() => ({
+		fragment: window.__seelite.postcardViewState.rebuiltFragment,
+		yaw: window.__seelite.chaseYaw,
+		elev: window.__seelite.chaseElevation,
+		view: window.__seelite.view,
+	}));
+	await keepCard(viewer, VIEWER_CARD, `${SHOTS}/${pose.label}-linked.png`);
+	const linked = await cardGrid(viewer, VIEWER_CARD);
+	await viewer.close();
+	const moved = changedCells(linked, card);
+	check(
+		`${pose.label}: the link rebuilds the same recipe, standing at the same orbit`,
+		rebuilt.fragment === state.fragment &&
+			rebuilt.view === "chase" &&
+			rebuilt.yaw === Number(asked.yaw) &&
+			rebuilt.elev === Number(asked.elev),
+		`${rebuilt.view} ${rebuilt.yaw}, ${rebuilt.elev}${differing(state.fragment, rebuilt.fragment)}`,
+	);
+	check(
+		`${pose.label}: and draws the card that was sent`,
+		linked.width === 1800 && linked.height === 1200 && moved < 0.01,
+		`${(moved * 100).toFixed(1)}% of cells changed against the sender's`,
+	);
+	sheet.push({ ...pose, yaw: before.yaw, elev: before.elev, card });
+}
+
+// Control: the pose is in the picture — astern draws a different card.
+await page.keyboard.press("2");
+await settle();
+const centred = await pilot();
+check(
+	"2 recentres the whole pose astern",
+	centred.yaw === 0 && centred.elev === 0,
+	`${centred.yaw}, ${centred.elev}`,
+);
+{
+	await openCard();
+	const asternCard = await cardGrid(page, PANEL_CARD);
+	await keepCard(page, PANEL_CARD, `${SHOTS}/astern-card.png`);
+	await closeCard();
+	// Against the pose furthest from astern: the oblique one is a small
+	// swing, and a small swing moves few cells by construction.
+	const below = sheet.find((s) => s.label === "below").card;
+	const moved = changedCells(below, asternCard);
+	check(
+		"control: the astern card differs from one taken from below, so the cards are measuring the pose",
+		moved > 0.05,
+		`${(moved * 100).toFixed(1)}% of cells changed`,
+	);
+}
+
+// A link written before node #691: schema 1, yaw alone, opens level.
+{
+	const modern = first.state.fragment;
+	const legacy = modern
+		.replace(/^postcard=2&/, "postcard=1&")
+		.replace(/&elev=[^&]+$/, "");
+	const viewer = await context.newPage();
+	watch(viewer, "viewer legacy");
+	await viewer.goto(postcardUrl(origin, legacy), { waitUntil: "load" });
+	await viewer.waitForFunction(
+		() =>
+			window.__seelite?.postcardViewState?.card &&
+			window.__seelite.postcardViewState.rebuiltFragment,
+		null,
+		{ timeout: 60000 },
+	);
+	await waitViewerCard(viewer);
+	const seen = await viewer.evaluate(() => ({
+		fragment: window.__seelite.postcardViewState.rebuiltFragment,
+		yaw: window.__seelite.chaseYaw,
+		elev: window.__seelite.chaseElevation,
+	}));
+	await keepCard(viewer, VIEWER_CARD, `${SHOTS}/legacy-linked.png`);
+	await viewer.close();
+	check(
+		"a schema-1 exterior link opens at its own level framing, spelled back as schema 2",
+		seen.elev === 0 &&
+			seen.yaw === Number(pairs(legacy).yaw) &&
+			seen.fragment ===
+				`${legacy.replace(/^postcard=1&/, "postcard=2&")}&elev=0`,
+		`${seen.yaw}, ${seen.elev}; ${seen.fragment.slice(-40)}`,
+	);
+	// And a schema-2 exterior missing its height is refused, not read level.
+	const refusedPage = await context.newPage();
+	watch(refusedPage, "refused");
+	await refusedPage.goto(
+		postcardUrl(origin, modern.replace(/&elev=[^&]+$/, "")),
+		{ waitUntil: "load" },
+	);
+	await refusedPage.waitForSelector("body[data-postcard-refused]", {
+		timeout: 20000,
+	});
+	const refusal = await refusedPage.evaluate(() => ({
+		reason: document.body.dataset.postcardRefused,
+		game: "__seelite" in window,
+	}));
+	await refusedPage.close();
+	check(
+		"a schema-2 exterior with no elevation is refused, and boots no game",
+		refusal.reason === "malformed" && !refusal.game,
+		JSON.stringify(refusal),
+	);
+}
+
+// The capture's two exits, called directly: both put everything back.
+{
+	await page.evaluate(() => {
+		window.__seelite.chaseYaw = -1.3;
+		window.__seelite.chaseElevation = 0.45;
+	});
+	await settle();
+	const held = await pilot();
+	const outcome = await page.evaluate(() => {
+		const g = window.__seelite;
+		const ok = g.capturePostcardFrame(
+			{ mode: "exterior", yawRad: 2, elevationRad: -0.9 },
+			1800,
+			1200,
+		);
+		const success = { width: ok.width, height: ok.height };
+		g.render = () => {
+			throw new Error("probe: a capture that fails");
+		};
+		let threw = false;
+		try {
+			g.capturePostcardFrame(
+				{ mode: "exterior", yawRad: 1, elevationRad: 1 },
+				1800,
+				1200,
+			);
+		} catch {
+			threw = true;
+		} finally {
+			delete g.render;
+		}
+		return { success, threw };
+	});
+	await settle();
+	const restored = await pilot();
+	check(
+		"a capture that succeeds and one that throws both restore the pilot's pose and drawing size",
+		outcome.success.width === 1800 &&
+			outcome.threw &&
+			restored.view === "chase" &&
+			restored.yaw === held.yaw &&
+			restored.elev === held.elev &&
+			restored.drawing.join("x") === held.drawing.join("x"),
+		`${JSON.stringify(outcome)}; pose ${restored.yaw}, ${restored.elev}; drawing ${restored.drawing.join("x")} against ${held.drawing.join("x")}`,
+	);
+}
+
+// The sheet: each pose's live frame, its card, and the card its link rebuilt.
+const rows = sheet
+	.map(
+		(
+			s,
+		) => `<tr><th>${s.label}<br><small>yaw ${s.yaw.toFixed(3)} · elevation ${s.elev.toFixed(3)}</small></th>
+<td><img src="${s.label}-live.png"></td><td><img src="${s.label}-card.png"></td><td><img src="${s.label}-linked.png"></td></tr>`,
+	)
+	.join("\n");
+writeFileSync(
+	`${SHOTS}/index.html`,
+	`<!doctype html><meta charset="utf-8"><title>Chase orbit and postcards (node #691)</title>
+<style>body{background:#111;color:#ddd;font:13px ui-monospace,monospace}img{width:420px}td,th{padding:6px;vertical-align:top}</style>
+<table><tr><th></th><th>live chase view</th><th>exterior card</th><th>rebuilt from its link</th></tr>
+${rows}
+<tr><th>astern<br><small>after 2</small></th><td></td><td><img src="astern-card.png"></td><td></td></tr>
+<tr><th>schema-1 link<br><small>yaw only, level</small></th><td></td><td></td><td><img src="legacy-linked.png"></td></tr>
+</table>`,
+);
+
+await context.close();
+await browser.close();
+exit();

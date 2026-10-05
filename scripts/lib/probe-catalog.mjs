@@ -208,6 +208,21 @@ export const PROBE_CATALOG = Object.freeze(
 			],
 		),
 		entry(
+			"probe-chase-orbit.mjs",
+			"Drives a real mouse under a real pointer lock in chase view and checks the full orbit: the camera swings round and over the hull while the ship's attitude, rates, trigger and an engaged docking computer stay untouched; the cockpit, a lost lock and the settings and Postcard screens take the pointer back; an exterior postcard spells the yaw and elevation, its PNG is the shown card, the viewer rebuilds the same link and picture, captures restore the pilot's pose and drawing size on success and failure, and a yaw-only schema-1 link opens level.",
+			[
+				"chase view",
+				"camera orbit",
+				"pointer lock",
+				"mouse input",
+				"docking computer",
+				"postcard",
+				"scene recipe",
+				"postcard viewer",
+				"input ownership",
+			],
+		),
+		entry(
 			"probe-cabin-pass.mjs",
 			"Reads flat-colour frames near a berth to prove no world fragment is drawn inside the cabin footprint.",
 			[
