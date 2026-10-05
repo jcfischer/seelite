@@ -612,7 +612,9 @@ carries, and the explicit absence of what it does not:
 - **Traffic — on its own side of the line.** Its roster is the table's: one
   carrier, with two berths less the visitor's. A lawful station's carriers are never
   routed to it and its own to no lawful berth (`STATION_LAWFUL` in
-  `station-route.ts`), so placing it moved no existing carrier's schedule; its
+  `station-route.ts`, and in `inter-system-traffic.ts` for a hauler's
+  neighbours, `inter-system-traffic.md` §2 clause 4), so placing it moved no
+  existing carrier's schedule; its
   courier leaves the system abstractly and comes home.
 - **Raider pressure — not yet.** D3's own dial on the leg law, the relay paired
   with it (D7), its destruction and relocation (D8, #494) and the sweep that
