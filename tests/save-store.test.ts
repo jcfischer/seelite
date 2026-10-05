@@ -23,6 +23,7 @@ import {
 import { START_GALAXY } from "../src/sim";
 import { newCommander, STARTING_CREDITS } from "../src/station-commerce";
 import { generateContents } from "../src/system";
+import { hasDocked } from "../src/holdings";
 import {
 	CommanderCatalog,
 	DEFAULT_SLOT,
@@ -673,6 +674,61 @@ describe("#660 D1, D10 — a death restores the launch, and a first death wakes 
 		await expect(h.store.revertToLastDocked(h.commander)).rejects.toThrow(
 			/lastDocked/,
 		);
+	});
+
+	test("a failed dock write is still refused after a reload, and live is kept", async () => {
+		// The held fault is this tab's memory and a reload empties it. The
+		// record is what remembers the dock: `bankOnDock` puts the station in
+		// `visited` before the dock flush, and the quit flush carries it to
+		// `live` (sage round 2's blocker on node #702).
+		const station = carrierKey(3, LOCAL_CARRIER_ID.trade);
+		const before = harness();
+		before.edit((c) => ({
+			...c,
+			dockedAt: station,
+			state: { ...c.state, credits: 4321, ownedEquipment: ["Escape Pod"] },
+			ladders: {
+				...c.ladders,
+				visited: { 0: { systems: [3], stations: [station] } },
+			},
+		}));
+		before.store.markDirty();
+		before.backend.failNextWrite();
+		await expect(before.store.flush("dock")).rejects.toThrow(/backend/);
+		before.edit((c) => ({ ...c, dockedAt: null }));
+		before.store.markDirty();
+		await before.store.flush("quit");
+		expect(await before.backend.has("default", "lastDocked")).toBe(false);
+		const written = await before.backend.raw("default", "live");
+
+		const after = harness({ backend: before.backend });
+		const reloaded = await after.store.load("default");
+		after.edit(() => reloaded.commander);
+		expect(after.store.heldFaults.size).toBe(0);
+		await expect(
+			after.store.revertToLastDocked(after.commander),
+		).rejects.toThrow(/lastDocked/);
+		// The hull, credits and equipment the death interrupted are still there.
+		expect(await after.backend.raw("default", "live")).toEqual(written);
+		expect((await after.store.load("default")).commander.state.credits).toBe(
+			4321,
+		);
+	});
+
+	test("hasDocked reads the record: a new game has not, a banked dock has", () => {
+		const fresh = newCommanderRecord("courier");
+		expect(hasDocked(fresh)).toBe(false);
+		const station = carrierKey(3, LOCAL_CARRIER_ID.trade);
+		expect(hasDocked({ ...fresh, dockedAt: station })).toBe(true);
+		expect(
+			hasDocked({
+				...fresh,
+				ladders: {
+					...fresh.ladders,
+					visited: { 2: { systems: [], stations: [station] } },
+				},
+			}),
+		).toBe(true);
 	});
 });
 

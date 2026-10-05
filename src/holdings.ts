@@ -137,6 +137,24 @@ export const firstCheckpoint = (
 	};
 };
 
+/**
+ * Whether this commander has ever docked, read off the record rather than off
+ * a store's memory. Every dock banks its station into `ladders.visited` before
+ * the dock flush (`bankOnDock`), a new game seeds none, and every later `live`
+ * write carries the set — so it survives a reload that a failed `lastDocked`
+ * write does not. A commander still naming a station has docked too.
+ *
+ * It is what keeps `firstCheckpoint` for the pilot it is for: an absent
+ * `lastDocked` beside a commander that docked is a lost record, and waking
+ * them as a new commander would be the silent substitution #89 D9 rules out
+ * (sage round 2 on node #702).
+ */
+export const hasDocked = (commander: CommanderRecord): boolean =>
+	commander.dockedAt !== null ||
+	Object.values(commander.ladders.visited).some(
+		(places) => (places?.stations.length ?? 0) > 0,
+	);
+
 export interface Holdings {
 	readonly commander: CommanderState;
 	readonly requests: RequestsState;

@@ -50,7 +50,7 @@
  */
 
 import { type FirstDayChoice, isFirstDayChoice } from "./first-day-choice";
-import { commanderAfterDeath, firstCheckpoint } from "./holdings";
+import { commanderAfterDeath, firstCheckpoint, hasDocked } from "./holdings";
 import {
 	type CommanderRecord,
 	parseSave,
@@ -489,7 +489,7 @@ export class SaveStore {
 			const snapshot = checkpoint
 				? { blob: serializeSave(this.current()), edits: this.edits }
 				: undefined;
-			await this.run(kinds, slot, snapshot);
+			await this.run(kinds, slot, snapshot); // glossary-ignore: slot
 		} catch (error) {
 			// A flush is a transition the player made — a dock, an undock, a jump,
 			// a switch — so one failure is a fault, with no retry to wait for.
@@ -517,7 +517,7 @@ export class SaveStore {
 
 	private async run(
 		kinds: SaveRecordKind[],
-		slot: string,
+		slot: string, // glossary-ignore: slot
 		snapshot?: { readonly blob: unknown; readonly edits: number },
 	): Promise<void> {
 		// Queue behind whatever is already writing rather than racing it. The
@@ -640,8 +640,9 @@ export class SaveStore {
 	 * since #660 D10 that is not a refusal: `firstCheckpoint` derives a new
 	 * commander docked at the start system's trade station, and it goes
 	 * through `commanderAfterDeath` and the same parse beside the dying world
-	 * as a written record. The one absence that still refuses is a store
-	 * holding a failed `lastDocked` write, which means the pilot did dock.
+	 * as a written record. The one absence that still refuses is a pilot who
+	 * did dock — a held `lastDocked` fault, or a record that `hasDocked` says
+	 * docked, which is the witness a reload keeps.
 	 */
 	async revertToLastDocked(commander: {
 		permadeath: boolean;
@@ -660,12 +661,14 @@ export class SaveStore {
 			if (docked !== null && docked !== undefined)
 				dock = parseSave(docked).commander;
 			else {
-				// Absent because the write that would have made it failed: this
-				// pilot did dock, and waking them as a new commander would be the
-				// silent substitution D9 rules out.
-				if (this.faultsHeld.has("lastDocked"))
+				// Absent although this pilot did dock: the write that would have
+				// made it failed, in this tab or before a reload. Waking them as a
+				// new commander would be the silent substitution D9 rules out. The
+				// record is the witness that survives the reload (`hasDocked`); the
+				// held fault is this tab's own.
+				if (this.faultsHeld.has("lastDocked") || hasDocked(dying.commander))
 					fail(
-						`Commander "${this.slot}" has no lastDocked record — its write failed`,
+						`Commander "${this.slot}" has docked but has no lastDocked record`,
 					);
 				dock = firstCheckpoint(dying.world.seed, dying.commander);
 			}
