@@ -291,7 +291,12 @@ Fisher's exact test on the failure counts gives a two-sided p of 1.00. Across
 the 400 cross-arm pairings of direct `maxLeak`, cpu-1px reads higher in 180,
 cpu-2px reads higher in 199, and 21 are ties. That is a coin toss. The 1px
 erosion compares about three times as many pixels (96–97 against 33–38), and
-the residual's size does not move with it. So the residual is not confined to
+the residual's size does not move with it. On any one frame the 2px set is a
+subset of the 1px set, because a pixel solid over a 5×5 neighbourhood is also
+solid over 3×3, so the 1px `maxLeak` of that frame can never be lower. The runs
+are separate frames, so this bounds each run and not the comparison. Even so,
+two indistinguishable distributions say the extra edge pixels add nothing
+larger. So the residual is not confined to
 the pixels the 2px erosion strips, and the 2px erosion does not hide it.
 
 ## Limits of this measurement
@@ -317,9 +322,11 @@ the pixels the 2px erosion strips, and the 2px erosion does not hide it.
 
 **A positive residual above #669's parent floor of 0.886 is still present on
 `main` at `24cdf27`, on both lanes, in every run.** On SwiftShader it reads
-2.000–10.815, median 8.40, with the 2px erosion. That is higher than #669
-measured at `7208996`: re-read at #669's gate, 19 of 20 runs exceed it at #669's
-1px erosion, against 12 of 20 there. On the GPU lane it reads 3.000–4.413 on
+2.000–10.815, median 8.40, with the 2px erosion. Re-read at #669's gate, 19 of
+20 runs exceed it at #669's 1px erosion, against 12 of 20 at `7208996`. But the
+commit, the framing (the bar has moved, and the 1px overlap is 96–97 against
+99–102) and the machine load all differ, so that comparison does not show the
+residual has grown. On the GPU lane it reads 3.000–4.413 on
 direct and up to 5.000 on bloom. The GPU figure is above 0.886, but 0.886 is a
 SwiftShader floor, and no pre-#284 GPU baseline exists to compare it against.
 
@@ -328,8 +335,10 @@ SwiftShader floor, and no pre-#284 GPU baseline exists to compare it against.
 2px erosion from 9d268cb does not hide the residual on SwiftShader.
 
 **State of the gate on `main`.** On the GPU lane, which `npm run probe` runs,
-the probe was green in 20 of 20 runs. Its bloom residual touched the gate of 5
-exactly once and passed on equality. On the SwiftShader lane
+the probe was green in 20 of 20 runs. That bounds its failure rate rather than
+showing it is zero: 0 failures in 20 is consistent with a rate up to about 14%
+at 95% confidence. Its bloom residual touched the gate of 5 exactly once and
+passed on equality. On the SwiftShader lane
 (`npm run probe:cpu`) it is red in 16 of 20 runs.
 
 Under #287's ruling, a residual present on any lane above 0.886 selects the
