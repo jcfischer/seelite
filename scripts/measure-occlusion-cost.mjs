@@ -45,8 +45,10 @@
  * And every figure was taken at the **default** sample count, which the
  * principal does not play at. Multisampling multiplies every later fill-rate
  * term rather than adding beside it, so a term priced at 0 samples understates
- * a 2x player's cost by a factor of two — measured, +3.563 ms against +7.130 in
- * empty space. The second table below is the shipped build at both counts.
+ * a 2x player's cost by a factor of two. Measured on #241's build, it is
+ * +2.110 ms against +4.152 in empty space. Node #249 re-measured this, because
+ * the +3.563 / +7.130 first written here did not reproduce. The second table
+ * below is the shipped build at both counts.
  *
  * ## Two framings, because the passes scale with different things
  *

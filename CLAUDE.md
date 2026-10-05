@@ -461,9 +461,15 @@ merge.
   row, an instrument's pin and the gate — an explicit `setOcclusion(a, b)` wins
   over the gate, a bare `setOcclusion()` gives it back. **And the figure that
   made this a regression is the second one:** multisampling multiplies every
-  later fill-rate term rather than adding beside it, so the pair costs +3.563 ms
-  at 0 samples and +7.130 at 2. Every one of #222's figures was taken at 0,
-  which is the default and not what the principal plays at.
+  later fill-rate term rather than adding beside it, so on #241's build the pair
+  costs +2.110 ms at 0 samples and +4.152 at 2. Every one of #222's figures was
+  taken at 0, which is the default and not what the principal plays at. **This
+  line carried +3.563 and +7.130 until node #249.** They were differences
+  read off a table that no build reproduces. That table came from a harness
+  that was never committed, and one instrument run on #241's and #242's builds
+  agrees with itself to 0.6% and with #242's figures.
+  `scripts/measure-open-space-repro.mjs` is that instrument: it runs unchanged
+  against an older checkout.
 - **A bay's shadow figure is not a stable property of a build.** #241 measured
   the same check three ways on one machine: `main` at 5.917% and 5.881%, the
   gated build at 5.324–5.326%, and the gate forced permanently open at

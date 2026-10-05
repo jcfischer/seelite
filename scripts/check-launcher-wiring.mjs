@@ -107,6 +107,10 @@ let callers = 0;
  */
 const EXEMPT = new Map([
 	[
+		"measure-open-space-repro.mjs",
+		"node #249's headed instrument, run unchanged against older checkouts to tell a build from an instrument: it prints pair-off, pair-on and gate-live medians with a separation count for a receipt and gates on nothing — #98 settled that there is no frame-time floor; a software rasteriser or a wrong-tree server throws out of the run",
+	],
+	[
 		"measure-cabin-pass-cost.mjs",
 		"#651's headed cabin-pass instrument, two builds against each other on two servers; a sibling of #201's and exempt for the same reason — #98 settled that there is no frame-time floor in this game, so it prints build-against-build deltas and a separation count for a receipt and gates on nothing. It refuses a software rasteriser, a base server that declares no tree or the same commit, and a non-finite block, each by throwing out of the run",
 	],
