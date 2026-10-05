@@ -233,6 +233,14 @@ export type Trigger =
 			readonly kind: "mouse-move";
 			readonly axis: "x" | "y";
 			readonly half: Half;
+			/**
+			 * The views this movement is live in, when narrower than its
+			 * command's (node #691). The pointer steers the ship in the cockpit
+			 * and orbits the camera in chase, so the `fly.*` rows' movement is
+			 * the cockpit's while their keys fly in both — the one trigger kind
+			 * whose meaning changes with the view while the command's does not.
+			 */
+			readonly views?: readonly ViewMode[];
 	  }
 	| {
 			readonly kind: "pad-button";
@@ -533,7 +541,7 @@ const AUTHORED = [
 		// the mouse comes back — and `tests/commands.test.ts` reads that
 		// negation out of the source rather than trusting this sentence.
 		more: [
-			{ kind: "mouse-move", axis: "y", half: "+" },
+			{ kind: "mouse-move", axis: "y", half: "+", views: COCKPIT },
 			...stickFor("pitch", -1),
 		],
 	},
@@ -543,7 +551,7 @@ const AUTHORED = [
 		group: "fly",
 		keys: [{ key: "w", hold: true }],
 		more: [
-			{ kind: "mouse-move", axis: "y", half: "-" },
+			{ kind: "mouse-move", axis: "y", half: "-", views: COCKPIT },
 			...stickFor("pitch", 1),
 		],
 	},
@@ -552,7 +560,10 @@ const AUTHORED = [
 		name: "Yaw: nose to port",
 		group: "fly",
 		keys: [{ key: "a", hold: true }],
-		more: [{ kind: "mouse-move", axis: "x", half: "-" }, ...stickFor("yaw", 1)],
+		more: [
+			{ kind: "mouse-move", axis: "x", half: "-", views: COCKPIT },
+			...stickFor("yaw", 1),
+		],
 	},
 	{
 		id: "fly.yawStarboard",
@@ -560,7 +571,7 @@ const AUTHORED = [
 		group: "fly",
 		keys: [{ key: "d", hold: true }],
 		more: [
-			{ kind: "mouse-move", axis: "x", half: "+" },
+			{ kind: "mouse-move", axis: "x", half: "+", views: COCKPIT },
 			...stickFor("yaw", -1),
 		],
 	},
@@ -800,6 +811,10 @@ const AUTHORED = [
 		group: "view",
 		views: CHASE,
 		keys: [{ key: "1", hold: true }],
+		// Node #691: in chase the pointer orbits, and the view goes where it
+		// goes — right swings the camera to port, looking to starboard
+		// (`chase-orbit.ts`, which `main.ts`'s `orbitChase` reads).
+		more: [{ kind: "mouse-move", axis: "x", half: "+" }],
 	},
 	{
 		id: "view.orbitStarboard",
@@ -807,6 +822,27 @@ const AUTHORED = [
 		group: "view",
 		views: CHASE,
 		keys: [{ key: "3", hold: true }],
+		more: [{ kind: "mouse-move", axis: "x", half: "-" }],
+	},
+	{
+		// Node #691's vertical half, the pointer's alone: pushed away the
+		// camera rises over the hull, pulled back it sinks beneath and looks
+		// up, as pulling back brings the nose up in the cockpit.
+		id: "view.orbitUp",
+		name: "Orbit the chase camera up, over the ship",
+		group: "view",
+		views: CHASE,
+		// A pointer row: movement is its only trigger, and nothing moves it.
+		fixed: "pointer",
+		more: [{ kind: "mouse-move", axis: "y", half: "-" }],
+	},
+	{
+		id: "view.orbitDown",
+		name: "Orbit the chase camera down, beneath the ship",
+		group: "view",
+		views: CHASE,
+		fixed: "pointer",
+		more: [{ kind: "mouse-move", axis: "y", half: "+" }],
 	},
 	{
 		id: "view.orbitCentre",
@@ -1403,7 +1439,10 @@ const scopeOf = (trigger: Trigger, views: readonly ViewMode[]): Scope => {
 		trigger.surface !== undefined
 			? trigger.surface
 			: undefined;
-	return makeScope(pad, views, surface);
+	// A movement narrower than its command is live where both are (node #691).
+	const only = trigger.kind === "mouse-move" ? trigger.views : undefined;
+	const live = only ? views.filter((v) => only.includes(v)) : views;
+	return makeScope(pad, live, surface);
 };
 
 function triggersOf(a: Authored): Trigger[] {
@@ -1548,6 +1587,8 @@ export const layoutOf = (
 	for (const b of rows) {
 		Object.freeze(b.trigger);
 		if ("contexts" in b.trigger) Object.freeze(b.trigger.contexts);
+		if (b.trigger.kind === "mouse-move" && b.trigger.views)
+			Object.freeze(b.trigger.views);
 		Object.freeze(b.scope.pad);
 		Object.freeze(b.scope.views);
 		Object.freeze(b.scope);

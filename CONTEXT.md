@@ -811,6 +811,14 @@ the sentence means and nothing is renamed here. What the sentence has to name is
 which population — an invented point and a system are not interchangeable, and the
 invariant between them is the reason.
 
+**Chase orbit**:
+The outside view's pose about the hull: a yaw about the ship's up axis and an
+elevation above its horizontal plane, clamped at ±π/2, held across a view toggle
+and recentred astern by `view.orbitCentre`. In chase the locked pointer drives it
+and never the ship; `1` and `3` still swing it held. `src/chase-orbit.ts` owns the
+rig, the gesture and the pole behaviour (node #691); `tests/chase-orbit.test.ts`
+holds them.
+
 **Postcard**:
 A card the pilot makes of the current view: the frame drawn at one canonical size
 (3:2, 1800 x 1200), full bleed, with a band carrying **The Far Between**, the
@@ -826,7 +834,9 @@ direction's ordinary English for a picture a pilot keeps
 **Scene recipe**:
 What a **Postcard** link carries in its URL **fragment**: schema and generator
 versions, seed, galaxy, system, game time, viewpoint, orientation and composition —
-and nothing a Commander owns. Opening one boots the **postcard viewer**, a
+for an *exterior* the **chase orbit**'s yaw and elevation — and nothing a
+Commander owns. Schema 2 carries the elevation (node #691); a schema-1 link,
+yaw alone, still opens at its own level framing. Opening one boots the **postcard viewer**, a
 read-only page that rebuilds the view from the seeded baseline, runs no frame loop
 and attaches no store. It is not a save and not a replay: the sender's stock
 deficits, strikes and discoveries do not reach it, and a card of a pilot's own

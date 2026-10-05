@@ -20,8 +20,9 @@
  *
  * ## The spelling
  *
- * `postcard=1&gen=8&seed=47&galaxy=0&system=12&t=…&pos=x,y,z&q=x,y,z,w&mode=…`
- * then `head=…` for the two cockpit-eye modes or `yaw=…` for the exterior. It is
+ * `postcard=2&gen=8&seed=47&galaxy=0&system=12&t=…&pos=x,y,z&q=x,y,z,w&mode=…`
+ * then `head=…` for the two cockpit-eye modes or `yaw=…&elev=…` for the
+ * exterior — the chase orbit's two angles (node #691, `chase-orbit.ts`). It is
  * readable on purpose: a person looking at a link can see that it carries a
  * place and a camera and nothing else. It rides the **fragment**, which the
  * browser never sends to a server, so the static host learns nothing either.
@@ -33,6 +34,29 @@
  * aliases, and `encode(parse(s)) === s` for every `s` the parse accepts, spelled
  * without the leading `#` a `location.hash` carries (the parse takes either).
  *
+ * ## Two schemas, read; one, written
+ *
+ * Schema 1 spelled the exterior by its yaw alone, because the chase camera then
+ * orbited only about the ship's up axis. Node #691 gave it an elevation, and
+ * schema 2 is what carries it: `elev` is required on every schema-2 exterior,
+ * zero included, so a reader can never mistake a level card for one whose
+ * height was dropped.
+ *
+ * **A schema-1 link still opens, at its own framing.** Its exterior is level by
+ * construction — there was no other kind — so it parses with an elevation of
+ * zero, which is exactly the orbit it was taken at (`chase-orbit.ts` holds
+ * that zero elevation is the old yaw-only rig). It keeps `schema: 1`, so it
+ * re-encodes to its own bytes and the round-trip rule holds for it too; a
+ * schema-1 link carrying `elev` is malformed, not a schema-2 one misnumbered.
+ * `encodePostcard` refuses to write a schema-1 recipe with a non-zero
+ * elevation rather than drop it.
+ *
+ * **Every card this build makes is schema 2**, the cockpit compositions
+ * included, whose keys did not change. One number per build keeps one spelling
+ * per recipe; the cost is that a build from before node #691 refuses even a
+ * cockpit card made here, with the ordinary `unsupported-schema` notice — the
+ * versioned refusal, rather than a link it reads by ignoring a field.
+ *
  * ## Why this is a leaf
  *
  * `entry.ts` validates a fragment **before** it imports the game, because a
@@ -43,8 +67,11 @@
  * `world-state.ts`, which is the repo's rule for one quantity named twice.
  */
 
-/** The recipe schema this build writes and reads. */
-export const POSTCARD_SCHEMA = 1;
+/** The recipe schema this build writes. */
+export const POSTCARD_SCHEMA = 2;
+
+/** Every schema this build reads: the yaw-only one as well (see above). */
+export const POSTCARD_READ_SCHEMAS: readonly number[] = [1, 2];
 
 /**
  * Generator versions whose scene layout this build can reproduce. Saves can
@@ -81,6 +108,7 @@ export const POSTCARD_KEYS = [
 	"mode",
 	"head",
 	"yaw",
+	"elev",
 ] as const;
 
 export const POSTCARD_MODES = ["clear", "cockpit", "exterior"] as const;
@@ -99,9 +127,10 @@ const MAX_POS_KM = 1e10;
  * Decimal places kept, per field. Time to a microsecond, because a station
  * moves ~30 km/s and the eye beside it must not slide off its berth; position
  * to 10 cm; the quaternion to seven places, which moves a direction by well
- * under a pixel at the canonical size; the chase yaw to a microradian.
+ * under a pixel at the canonical size; the chase yaw and elevation to a
+ * microradian.
  */
-const PLACES = { t: 6, pos: 4, q: 7, yaw: 6 } as const;
+const PLACES = { t: 6, pos: 4, q: 7, yaw: 6, elev: 6 } as const;
 
 /**
  * The largest chase yaw a recipe spells. Not `Math.PI`: a wrapped yaw of π
@@ -109,6 +138,13 @@ const PLACES = { t: 6, pos: 4, q: 7, yaw: 6 } as const;
  * card of a pilot looking straight back at the ship's nose (sage round 1).
  */
 const YAW_LIMIT = 3.141593;
+
+/**
+ * The largest chase elevation a recipe spells: π/2 quantised, which rounds
+ * *down* (1.5707963… to 1.570796), so a camera standing exactly at a pole —
+ * where `chase-orbit.ts` clamps it — spells a link the parse accepts.
+ */
+const ELEV_LIMIT = 1.570796;
 
 interface RecipeBase {
 	schema: number;
@@ -127,12 +163,14 @@ interface RecipeBase {
 /**
  * The composed view. `clear` and `cockpit` stand at the cockpit eye and differ
  * only in whether the cabin is drawn; `head` is which way it is turned.
- * `exterior` is the chase camera, orbited by `yawRad`.
+ * `exterior` is the chase camera, orbited by `yawRad` about the ship's up
+ * axis and raised by `elevationRad` above its horizontal plane — zero on a
+ * schema-1 link, which could not carry one.
  */
 export type PostcardRecipe = RecipeBase &
 	(
 		| { mode: "clear" | "cockpit"; head: PostcardHead }
-		| { mode: "exterior"; yawRad: number }
+		| { mode: "exterior"; yawRad: number; elevationRad: number }
 	);
 
 /** What the game hands over. Anything else on the object is ignored. */
@@ -146,6 +184,7 @@ export interface PostcardScene {
 	mode: PostcardMode;
 	head?: PostcardHead;
 	yawRad?: number;
+	elevationRad?: number;
 }
 
 export type PostcardRefusal =
@@ -233,6 +272,7 @@ export function postcardRecipe(scene: PostcardScene): PostcardRecipe {
 			...base,
 			mode: "exterior",
 			yawRad: quantise(wrapAngle(scene.yawRad ?? 0), PLACES.yaw),
+			elevationRad: quantise(scene.elevationRad ?? 0, PLACES.elev),
 		};
 	return { ...base, mode: scene.mode, head: scene.head ?? "forward" };
 }
@@ -250,9 +290,14 @@ export function encodePostcard(recipe: PostcardRecipe): string {
 		["q", recipe.orientation.map((c) => spell(c, PLACES.q)).join(",")],
 		["mode", recipe.mode],
 	];
-	if (recipe.mode === "exterior")
+	if (recipe.mode === "exterior") {
 		pairs.push(["yaw", spell(recipe.yawRad, PLACES.yaw)]);
-	else pairs.push(["head", recipe.head]);
+		if (recipe.schema >= 2)
+			pairs.push(["elev", spell(recipe.elevationRad, PLACES.elev)]);
+		else if (recipe.elevationRad !== 0)
+			// Never a link that quietly flattens the camera it was asked for.
+			throw new Error("postcard: a schema-1 recipe cannot carry an elevation");
+	} else pairs.push(["head", recipe.head]);
 	return pairs.map(([name, value]) => `${name}=${value}`).join("&");
 }
 
@@ -291,7 +336,7 @@ export function decodePostcard(fragment: string): PostcardParse {
 
 	const schema = integer(fields.get("postcard") ?? "");
 	if (schema === null || [...fields.keys()][0] !== "postcard") return malformed;
-	if (schema !== POSTCARD_SCHEMA)
+	if (!POSTCARD_READ_SCHEMAS.includes(schema))
 		return { ok: false, reason: "unsupported-schema" };
 	const generator = integer(fields.get("gen") ?? "");
 	if (generator === null) return malformed;
@@ -302,8 +347,11 @@ export function decodePostcard(fragment: string): PostcardParse {
 	if (!(POSTCARD_MODES as readonly string[]).includes(mode ?? ""))
 		return malformed;
 	const exterior = mode === "exterior";
+	// A schema-1 exterior is yaw alone; schema 2 adds the elevation.
 	const expected = POSTCARD_KEYS.filter((key) =>
-		exterior ? key !== "head" : key !== "yaw",
+		exterior
+			? key !== "head" && (key !== "elev" || schema >= 2)
+			: key !== "yaw" && key !== "elev",
 	);
 	if (
 		fields.size !== expected.length ||
@@ -349,7 +397,14 @@ export function decodePostcard(fragment: string): PostcardParse {
 		const yawRad = decimal(fields.get("yaw") as string);
 		if (yawRad === null) return malformed;
 		if (!(Math.abs(yawRad) <= YAW_LIMIT)) return outOfRange;
-		recipe = { ...base, mode: "exterior", yawRad };
+		let elevationRad = 0;
+		if (schema >= 2) {
+			const elev = decimal(fields.get("elev") as string);
+			if (elev === null) return malformed;
+			if (!(Math.abs(elev) <= ELEV_LIMIT)) return outOfRange;
+			elevationRad = elev;
+		}
+		recipe = { ...base, mode: "exterior", yawRad, elevationRad };
 	} else {
 		const head = fields.get("head") as string;
 		if (!(POSTCARD_HEADS as readonly string[]).includes(head)) return malformed;
@@ -454,11 +509,18 @@ export function postcardRefusalText(reason: PostcardRefusal): {
 }
 
 /** The camera half of a scene: the composition, and the head or the orbit. */
-export type PostcardPose = Pick<PostcardScene, "mode" | "head" | "yawRad">;
+export type PostcardPose = Pick<
+	PostcardScene,
+	"mode" | "head" | "yawRad" | "elevationRad"
+>;
 
 /** The camera half of a recipe: what `Game.capturePostcardFrame` is posed by. */
 export function postcardPose(recipe: PostcardRecipe): PostcardPose {
 	return recipe.mode === "exterior"
-		? { mode: recipe.mode, yawRad: recipe.yawRad }
+		? {
+				mode: recipe.mode,
+				yawRad: recipe.yawRad,
+				elevationRad: recipe.elevationRad,
+			}
 		: { mode: recipe.mode, head: recipe.head };
 }

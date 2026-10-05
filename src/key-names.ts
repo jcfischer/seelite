@@ -105,7 +105,10 @@ export function triggerLabel(t: Trigger): string {
 			return t.surface ? `${press} ${SURFACE_WORDS[t.surface]}` : press;
 		}
 		case "mouse-move":
-			return `move the mouse ${way(t.axis, t.half)}`;
+			// Node #691: a movement narrower than its command says where.
+			return t.views
+				? `move the mouse ${way(t.axis, t.half)} (${t.views.join(" or ")} view)`
+				: `move the mouse ${way(t.axis, t.half)}`;
 		case "pad-button":
 			return t.hold ? `hold ${padButton(t.button)}` : padButton(t.button);
 		case "pad-stick":
