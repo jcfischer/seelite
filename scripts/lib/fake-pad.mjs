@@ -56,8 +56,9 @@ export const STANDARD_INDEX = {
  * until a button is pressed, and the module's first poll has to find one there.
  *
  * It installs three globals. `window.__pad` drives the device — `hold`,
- * `release`, `axes`, `rest`, `unplug`, and a `calls` count of how many times
- * `getGamepads` has been asked. `window.__frames(n)` resolves after `n`
+ * `release`, `axes`, `rest`, `unplug`, a `calls` count of how many times
+ * `getGamepads` has been asked, and `callsAcrossFrames(n)`, which counts them
+ * across `n` frames from inside the frames. `window.__frames(n)` resolves after `n`
  * rendered frames, and lives in the page because half of each probe waits for
  * frames from inside an `evaluate` and half from outside — a frame under
  * SwiftShader is a large fraction of a second, so how many a check waits for is
@@ -101,6 +102,44 @@ export const installFakePad = () => {
 		},
 		resetCalls() {
 			calls = 0;
+		},
+		/**
+		 * How many times `getGamepads` was asked across `n` rendered frames,
+		 * read from inside the frames themselves (node #701).
+		 *
+		 * The baseline is taken in this callback's first run and the reading in
+		 * its run `n` frames later, so both ends sit at the same place in each
+		 * frame's callback order and a loop that polls once per frame reads
+		 * exactly `n`, whichever of the two callbacks a frame runs first. A
+		 * count taken across separate `page.evaluate` round trips also counts
+		 * every frame the game rendered while a round trip was in flight, and
+		 * on a loaded host that is up to three at each end.
+		 *
+		 * **Per frame, not only in total** (sage, round 2). The same callback
+		 * reads the counter in every frame between the two ends, so `perFrame`
+		 * holds the polls between one of its runs and the next — one game frame
+		 * each, since both loops re-arm through `rAF` every frame. A total of
+		 * `n` is also what two polls every other frame read; `perFrame` is all
+		 * ones only when every frame polled exactly once.
+		 *
+		 * Subtracts rather than resets, so `calls` stays the running total the
+		 * other readers of it see.
+		 */
+		callsAcrossFrames(n) {
+			return new Promise((res) => {
+				const perFrame = [];
+				let base = null;
+				let prev = 0;
+				const tick = () => {
+					if (base === null) base = calls;
+					else perFrame.push(calls - prev);
+					prev = calls;
+					if (perFrame.length === n)
+						res({ frames: perFrame.length, calls: calls - base, perFrame });
+					else requestAnimationFrame(tick);
+				};
+				requestAnimationFrame(tick);
+			});
 		},
 		axes(lx, ly, rx, ry) {
 			pad.axes = [lx, ly, rx, ry];
