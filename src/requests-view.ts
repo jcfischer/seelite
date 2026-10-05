@@ -380,7 +380,7 @@ export function requestsBody(view?: RequestsView, flight = false): string {
 	const panelId = `${surface}-requests-panel`;
 	const tabId = (t: RequestsTab) => `${surface}-requests-tab-${t}`;
 	// The tabs are request actions, so the click path, native Enter and Space,
-	// and the pad's walk and A reach them with nothing added. They are **not**
+	// and the gamepad's walk and A reach them with nothing added. They are **not**
 	// `.lc-tab`: the shoulders step the console's own tabs, and these are
 	// inside one of them.
 	const tabButton = (t: RequestsTab, label: string, n: number) =>
@@ -517,5 +517,5 @@ export function requestsBody(view?: RequestsView, flight = false): string {
 			);
 		details = `<div class="lc-request-details" data-live-request-details><h3>${esc(o.title)}</h3><p>${r ? esc(nextAction(r)) : "Read the terms before you accept."}</p><dl>${fields.map(([k, v]) => `<dt>${esc(k)}</dt><dd>${k === "Intelligence" ? `${esc(o.region)}. ${esc(o.source)} · <span data-live-request-age="${o.observedAt}">${Math.max(0, Math.floor(view.now - o.observedAt))}s old</span>` : esc(v)}</dd>`).join("")}</dl><div class="lc-request-actions">${actions}</div>${r?.status === "ready-to-report" && !atReport ? `<p>Dock at ${esc(o.reportName)} to report. You can only be paid there.</p>` : ""}</div>`;
 	}
-	return `<div class="lc-requests" data-live-requests><p class="lc-request-intro">${count} accepted · ${flight ? "your jobs and the ones you kept" : "jobs posted here and jobs you have taken"}</p><p class="lc-request-message" role="status">${esc(view.message)}</p>${tabs}<div class="lc-request-layout" role="tabpanel" id="${panelId}" aria-labelledby="${tabId(tab)}" data-live-request-tab-panel="${tab}"><div class="lc-request-list">${list}</div>${details}</div></div>`;
+	return `<div class="lc-requests" data-live-requests><p class="lc-request-intro">${count} accepted · ${flight ? "your jobs and the ones you kept" : "jobs posted here and jobs you have taken"}</p><p class="lc-request-message" role="status">${esc(view.message)}</p>${tabs}<div class="lc-request-layout" role="tabpanel" id="${panelId}" aria-labelledby="${tabId(tab)}" data-live-request-tab-panel="${tab}"><div class="lc-request-list">${list}</div>${details}</div></div>`; // glossary-ignore: Intro
 }

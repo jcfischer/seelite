@@ -9,7 +9,7 @@
  *
  * Rows on the pure builders, for `requests-view.test.ts`'s reason: a probe
  * that reads one rendered case is not a check on the branch. The browser half
- * — the tab following a pressed job, the pad and the keyboard reaching the
+ * — the tab following a pressed job, the gamepad and the keyboard reaching the
  * tabs — is `probe-requests.mjs`'s.
  */
 import { describe, expect, test } from "bun:test";

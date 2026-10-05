@@ -77,6 +77,17 @@ try {
 			g.updateCockpit();
 			return id;
 		}, stationId);
+	// Launch, clear the berth and face forward: node #690's two flight checks
+	// enter flight the same way, so they share it.
+	const launchToForwardFlight = (target) =>
+		target.evaluate(() => {
+			const g = window.__seelite;
+			g.launch();
+			g.skipDockTraversal();
+			for (let i = 0; i < 120; i++) g.step(1 / 60);
+			g.setHeadLook("forward");
+			g.updateCockpit();
+		});
 
 	const station = await dockAt(page);
 	check(
@@ -995,7 +1006,7 @@ try {
 	// The restored game opens Requests on Current with the settled job under
 	// Past. The history is then **injected**, after the save checks above so
 	// no envelope carries it: thirty outcomes and three jobs under way is a
-	// screen, not a lifecycle, and flying thirty jobs would be measuring the
+	// screen, not a run of jobs, and flying thirty jobs would be measuring the
 	// flight rather than the list. Nothing is saved after this point.
 	// -----------------------------------------------------------------------
 	await dockAt(page, home);
@@ -1106,7 +1117,7 @@ try {
 				.locator(`${STATION} [data-live-request-id="${cancelledId}"]`)
 				.count()) === 0,
 	);
-	// The pad walks to the Past tab and presses A: the tabs are on the walk.
+	// The gamepad walks to the Past tab and presses A: the tabs are on the walk.
 	const walkTo = async (wantAction, wantId) => {
 		for (let i = 0; i < 80; i++) {
 			const data = await page.evaluate(
@@ -1121,7 +1132,7 @@ try {
 		}
 		return false;
 	};
-	check("the pad cursor reaches the Past tab", await walkTo("tab", "past"));
+	check("the gamepad cursor reaches the Past tab", await walkTo("tab", "past"));
 	await tap(B.a);
 	check(
 		"controller A on the Past tab switches to Past, and the selection comes back",
@@ -1133,15 +1144,8 @@ try {
 		(await journal()) === historyBefore,
 	);
 
-	// In flight, the same partition on the left console, reached by the pad.
-	await page.evaluate(() => {
-		const g = window.__seelite;
-		g.launch();
-		g.skipDockTraversal();
-		for (let i = 0; i < 120; i++) g.step(1 / 60);
-		g.setHeadLook("forward");
-		g.updateCockpit();
-	});
+	// In flight, the same partition on the left console, reached by the gamepad.
+	await launchToForwardFlight(page);
 	const cueLong = await cueText();
 	await page.keyboard.press("Alt+ArrowLeft");
 	await page.locator('[data-live-left-tab="Requests"]').click();
@@ -1152,7 +1156,7 @@ try {
 	);
 	await page.screenshot({ path: `${out}/06-flight-long-current.png` });
 	check(
-		"the pad cursor reaches the flight Past tab",
+		"the gamepad cursor reaches the flight Past tab",
 		await walkTo("tab", "past"),
 	);
 	await tap(B.a);
@@ -1187,14 +1191,7 @@ try {
 			`${STATION} [data-live-request-action="tab"][data-live-request-id="past"]`,
 		)
 		.click();
-	await page.evaluate(() => {
-		const g = window.__seelite;
-		g.launch();
-		g.skipDockTraversal();
-		for (let i = 0; i < 120; i++) g.step(1 / 60);
-		g.setHeadLook("forward");
-		g.updateCockpit();
-	});
+	await launchToForwardFlight(page);
 	await page.keyboard.press("Alt+ArrowLeft");
 	check(
 		"launching opens the flight console's Requests on Current, though the station was on Past",
