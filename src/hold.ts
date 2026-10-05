@@ -217,6 +217,23 @@ export const aboardForOffer = (
 		.reduce((sum, line) => sum + line.amount, 0);
 
 /**
+ * The pilot's own goods, by name, in each good's native unit — the Market
+ * tab's HELD column (#473 D10).
+ *
+ * Off the projection rather than off `commander.cargo`, so this module stays
+ * the one place that decides which lines are the pilot's: a requester's lot
+ * is not per good on the market screen, and the hold line carries its share.
+ */
+export const pilotGoods = (
+	hold: HoldSummary,
+): Readonly<Record<string, number>> =>
+	Object.fromEntries(
+		hold.lines
+			.filter((line) => line.owner === "pilot")
+			.map((line) => [line.goodName, line.amount]),
+	);
+
+/**
  * What the docked station pays for one unit of each good it trades (#445).
  *
  * The **bid**, which is what a sale is paid — not the ask a BUY column shows.

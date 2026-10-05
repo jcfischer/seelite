@@ -522,6 +522,20 @@ export const PROBE_CATALOG = Object.freeze(
 			["live cockpit", "contacts", "target cues", "head look", "renderer"],
 		),
 		entry(
+			"probe-market-shelf.mjs",
+			"Docks at a trade station and reads the live Market tab: a capped shelf's MAX mark and its hover text, a blank HELD cell, the HELD cell after a real buy, and a bottom line that keeps only the credits on Market and the goods list on Equipment, and with an accepted consignment aboard the hold line's entrusted tonnes on Market and no HELD cell moved by it.",
+			[
+				"station market",
+				"shelf cap",
+				"MAX marker",
+				"HELD column",
+				"cargo",
+				"commander line",
+				"trade screen",
+				"entrusted cargo",
+			],
+		),
+		entry(
 			"probe-model-viewer.mjs",
 			"Checks that the procedural model workbench renders models while remaining isolated from Game.",
 			["model viewer", "workbench", "procedural models", "Game isolation"],

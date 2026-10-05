@@ -204,6 +204,8 @@ is a charge, and a **held launch** is Traffic refusing one — four senses the s
 English word reaches for, which is why each has its own name here.
 _Avoid_: Inventory, cargo bay, hold contents (for the manifest)
 
+> **Scope of the word `HELD`** (node #696, #473 D10). Two screens print it and they name different things. The docked Market tab's `HELD` column is the player's **Hold** — the pilot's own lines, per good, read through `pilotGoods` in `src/hold.ts`; a consignment's share stays in the hold line. The Flight console's `HELD` row is a carrier's **Manifest** (above). A ship is carrying something in both, which is why the plain word serves both glasses; the identifiers behind them — `held` on a market row, `manifest` on a carrier — are what keep the two apart.
+
 > **Scope of the `hold` alias** (added by [#486](https://github.com/jcfischer/seelite/pull/486), the same reading as the `Command` note below). A fifth English sense is a **held key**: `Trigger.hold` in `src/commands.ts` says a binding is flown by keeping a key down rather than by pressing it — #369 D3 splits `x` pressed from `x` held on exactly that — and #381's storage slice writes it into `seelite:bindings`. It is a property of an input and never of cargo, a carrier or a launch, so it takes no canonical name here; it is listed because it is durable now, and a reader meeting `{ kind: "key", hold: true }` in a stored blob should find it rather than wonder which of the four it is. The `_Avoid_` line above is **Hold**'s and not this note's.
 
 **Holdings**:
