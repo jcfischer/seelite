@@ -83,7 +83,13 @@ The cause stays unattributed, because the harness is gone.
 the merge of #235's ambient occlusion row (754d63b1). 2e3086d contains it and
 #241's final thresholds. Neither moved a cell beyond 0.6%. The node's first
 candidate, "the two runs are not the same build", is real: d00dc94c-era WIP
-against 2e3086d. But building it made no difference. The second candidate is
+against 2e3086d. d00dc94c itself was not run. Its `src/` diff to 33e07ba3 is
+a read-only `occlusionState` getter, a line on the `?perf` panel (mounted only
+under that query, which no run here sets), `enclosure` exported as
+`enclosureRad`, and comments, so nothing on the render path differs between
+the two. The WIP the table was taken on was never committed and cannot be
+built at all; how far it differed from d00dc94c is not known. Of the builds
+that exist, none moved the frame. The second candidate is
 out too. `scripts/lib/view-placement.mjs` is unchanged between the two builds,
 so `OCCLUSION_FRAMINGS.deepSky` is one shot. The third, the warm-up, is a
 property of the lost harness. The fourth, the floor, is real but does not

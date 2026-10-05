@@ -36,7 +36,7 @@
  * pair left to #241's gate, which is what #242's instrument measured. The gate
  * is a per-frame decision, so each framing gets an untimed pre-roll before its
  * first block and the gate's state is printed beside the live arm. That is fewer arms and blocks than the
- * table's parent instrument, so a run fits inside one foreground command on the
+ * table's parent instrument, so a run fits inside one foreground invocation on the
  * bay's 40 ms frame. The 2x column is the cheap test of *how* two figures
  * differ: a fixed per-frame overhead adds the same milliseconds at 0 and at 2
  * samples, while a multiplicative cause scales with the frame.
