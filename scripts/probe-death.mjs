@@ -14,6 +14,12 @@
  *    through the world's own writer) is still there.
  * 2. **Under `?no-save`**, there is nothing to restore: the ship stays
  *    destroyed, the clock holds, and the Commander overlay opens.
+ * 3. **A death after a launch** (#660 D1, node #702) restores the commander
+ *    as it launched: a purchase made at the dock survives, and the reload
+ *    wakes docked at that station.
+ * 4. **A death before the first dock** (#660 D10) wakes a new commander
+ *    docked at the start system's trade station, in the world the death
+ *    happened in.
  *
  * Permadeath is not flown here. Its whole difference is that the store returns
  * nothing, which the headless row proves, and the in-game branch it takes is
@@ -250,6 +256,234 @@ if (dockArmed.store && dockArmed.station) {
 	}
 }
 await dockPage.close();
+
+/** Kills the ship from a timer, so `evaluate` returns before the reload, and
+ *  reports whether the reload came. */
+const killAndReload = async (p) => {
+	const reloaded = p.waitForEvent("load", { timeout: 20000 });
+	await p.evaluate(() => {
+		setTimeout(() => window.__seelite.takeDamage(1e6, "fore", "probe"), 0);
+	});
+	try {
+		await reloaded;
+		return true;
+	} catch {
+		return false;
+	}
+};
+
+// ---------------------------------------------------------------------------
+// Arm 3: a death restores the commander as it launched (#660 D1, node #702).
+// ---------------------------------------------------------------------------
+// The real path end to end: a dock by the protocol, a purchase there that
+// reaches `live` through the debounce, a launch by the game's own `launch`,
+// a leg, a death. The undock flush is what writes the checkpoint the reload
+// boots, so the purchase survives and the ship wakes at that station.
+
+const LAUNCH_CREDITS = 777;
+const launchPage = await browser.newPage({
+	viewport: { width: 900, height: 620 },
+});
+watch(launchPage, "launch-death");
+await launchPage.goto(gameUrl(origin, { seed: 42 }));
+await bootedGame(launchPage);
+await launchPage.waitForFunction(() => !window.__seelite.clockHeld);
+
+const docked = await launchPage.evaluate(
+	async ({ credits }) => {
+		const g = window.__seelite;
+		if (!g.saveStore) return { store: false };
+		if (!g.startDockedAtHome()) return { store: true, docked: false };
+		await g.saveStore.settled();
+		const arrival = await g.save.backend.read(g.save.defaultSlot, "lastDocked");
+		// The purchase: credits spent and the pod fitted, then the debounce
+		// carries it to `live` and clears the flag before the launch.
+		g.commander.credits = credits;
+		g.commander.ownedEquipment = [...g.commander.ownedEquipment, "Escape Pod"];
+		g.saveStore.markDirty();
+		await new Promise((resolve) =>
+			setTimeout(resolve, g.save.debounceMs + 200),
+		);
+		await g.saveStore.settled();
+		return {
+			store: true,
+			docked: true,
+			station: g.dockedAt,
+			arrivalCredits: arrival?.commander?.state?.credits ?? null,
+		};
+	},
+	{ credits: LAUNCH_CREDITS },
+);
+check(
+	"arm 3 fixture: docked at the start trade station by the protocol",
+	docked.store && docked.docked && docked.arrivalCredits !== LAUNCH_CREDITS,
+	JSON.stringify(docked),
+);
+
+let launched = null;
+if (docked.docked) {
+	// A launch the lane holds is retried, as `stepHeldLaunch` retries it.
+	await launchPage.waitForFunction(
+		() => {
+			const g = window.__seelite;
+			return g.dockPhase !== "docked" || g.launch();
+		},
+		null,
+		{ timeout: 20000, polling: 250 },
+	);
+	await launchPage.waitForFunction(
+		() => window.__seelite.dockPhase === "flying",
+		null,
+		{ timeout: 30000 },
+	);
+	launched = await launchPage.evaluate(async (leg) => {
+		const g = window.__seelite;
+		await g.saveStore.settled();
+		const record = await g.save.backend.read(g.save.defaultSlot, "lastDocked");
+		g.commander.credits = leg;
+		g.saveStore.markDirty();
+		g.saveFlush("jump");
+		await g.saveStore.settled();
+		return {
+			credits: record?.commander?.state?.credits ?? null,
+			pod:
+				record?.commander?.state?.ownedEquipment?.includes("Escape Pod") ??
+				false,
+			dockedAt: record?.commander?.dockedAt ?? null,
+		};
+	}, LEG_CREDITS);
+}
+check(
+	"the undock flush writes lastDocked: the commander as it launched, at that station",
+	launched?.credits === LAUNCH_CREDITS &&
+		launched.pod &&
+		launched.dockedAt !== null,
+	JSON.stringify(launched),
+);
+
+if (launched) {
+	const seen = await killAndReload(launchPage);
+	check("a death after the launch reloads the page", seen);
+	if (seen) {
+		await bootedGame(launchPage);
+		const woke = await launchPage.evaluate(() => {
+			const g = window.__seelite;
+			return {
+				phase: g.dockPhase,
+				dockedAt: g.dockedAt,
+				credits: g.commander.credits,
+				pod: g.commander.ownedEquipment.includes("Escape Pod"),
+				dead: g.dead,
+			};
+		});
+		check(
+			"the reload wakes docked at the launch station with what was bought there",
+			woke.phase === "docked" &&
+				woke.dockedAt === docked.station &&
+				woke.credits === LAUNCH_CREDITS &&
+				woke.pod &&
+				!woke.dead,
+			JSON.stringify({ ...woke, want: docked.station }),
+		);
+	}
+}
+await launchPage.close();
+
+// ---------------------------------------------------------------------------
+// Arm 4: a pilot who never docked wakes as a new commander at the start
+// system's trade station (#660 D10, node #702).
+// ---------------------------------------------------------------------------
+
+const firstPage = await browser.newPage({
+	viewport: { width: 900, height: 620 },
+});
+watch(firstPage, "first-death");
+await firstPage.goto(gameUrl(origin, { seed: 42 }));
+await bootedGame(firstPage);
+
+const flown = await firstPage.evaluate(async (leg) => {
+	const g = window.__seelite;
+	if (!g.saveStore) return { store: false };
+	const ws = await import("/src/world-state.ts");
+	const trade = g.world.system.contents.stations.find(
+		(s) => s.type === "trade",
+	);
+	// A leg the death keeps in the world: a system marked visited that the
+	// start is not.
+	const galaxy = g.world.system.record.galaxy;
+	const elsewhere = (g.world.system.record.index + 1) % 256;
+	g.commerceWorld = ws.visit(g.commerceWorld, galaxy, elsewhere);
+	g.commander.credits = leg;
+	g.commander.cargo = { ...g.commander.cargo, Food: 2 };
+	g.saveStore.markDirty();
+	g.saveFlush("jump");
+	await g.saveStore.settled();
+	return {
+		store: true,
+		trade: trade?.id ?? null,
+		// `station-trade` is every system's id; the index says which one.
+		system: g.world.system.record.index,
+		elsewhere,
+		lastDocked:
+			(await g.save.backend.read(g.save.defaultSlot, "lastDocked")) !== null,
+		phase: g.dockPhase,
+	};
+}, LEG_CREDITS);
+check(
+	"arm 4 fixture: a free start in flight with no lastDocked",
+	flown.store &&
+		flown.trade !== null &&
+		!flown.lastDocked &&
+		flown.phase === "flying",
+	JSON.stringify(flown),
+);
+
+if (flown.store && flown.trade) {
+	const seen = await killAndReload(firstPage);
+	check("a death before the first dock reloads the page", seen);
+	if (seen) {
+		await bootedGame(firstPage);
+		const woke = await firstPage.evaluate(async (elsewhere) => {
+			const g = window.__seelite;
+			const commerce = await import("/src/station-commerce.ts");
+			const hull = await import("/src/hull.ts");
+			return {
+				phase: g.dockPhase,
+				dockedAt: g.dockedAt,
+				system: g.world.system.record.index,
+				credits: g.commander.credits,
+				startingCredits: commerce.STARTING_CREDITS,
+				hull: g.commander.hull,
+				baseline: hull.PLAYER_BASELINE_HULL,
+				cargo: Object.keys(g.commander.cargo).length,
+				visitedKept:
+					g.commerceWorld.galaxies[
+						g.world.system.record.galaxy
+					].visited.includes(elsewhere),
+				dead: g.dead,
+				overlayOpen: g.commanderOverlay?.isOpen() ?? null,
+			};
+		}, flown.elsewhere);
+		check(
+			"the reload wakes a new commander docked at the start trade station",
+			woke.phase === "docked" &&
+				woke.dockedAt === flown.trade &&
+				woke.system === flown.system &&
+				woke.credits === woke.startingCredits &&
+				woke.hull === woke.baseline &&
+				woke.cargo === 0 &&
+				!woke.dead &&
+				woke.overlayOpen !== true,
+			JSON.stringify({ ...woke, want: flown.trade, wantSystem: flown.system }),
+		);
+		check(
+			"and the world keeps the leg flown before the death",
+			woke.visitedKept,
+			JSON.stringify(woke),
+		);
+	}
+}
+await firstPage.close();
 
 // ---------------------------------------------------------------------------
 // Arm 2: ?no-save. Nothing to restore: destroyed, held, overlay open.

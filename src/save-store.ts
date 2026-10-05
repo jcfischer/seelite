@@ -20,15 +20,22 @@
  * ## Two records per slot (#89's correction to D7)
  *
  * A slot holds `live`, which the debounce writes continuously, and
- * `lastDocked`, written at each docking flush. A non-permadeath death restores
- * `lastDocked` — genuine leg-loss, which is what the classic-Elite framing
+ * `lastDocked`, the commander at its last station: written by the dock flush
+ * and written again by the undock flush, so once a pilot has launched it is
+ * the commander **as it launched** (#660 D1, built by node #702) and what was
+ * bought at the dock survives a death. A non-permadeath death restores its
+ * commander — genuine leg-loss, which is what the classic-Elite framing
  * described. The resolution's original wording ("rolls back to the last write")
  * was written against the dock-only cadence rejected in the same round, where
- * reloading the last write is dying again.
+ * reloading the last write is dying again. The name stays: a launch record
+ * still names the station it launched from.
  *
  * `lastDocked` is **not** a last-known-good fallback, and D9's rejection of one
  * stands: a `lastDocked` that will not parse is a named error, never a silent
- * substitution.
+ * substitution. **An absent one is not an error** (#660 D10): a pilot who has
+ * never docked wakes as a new commander at the start system's trade station,
+ * derived at the death by `firstCheckpoint` rather than written at new game.
+ * Nothing here changes the schema; both records are the envelope they were.
  *
  * ## What deliberately is not here
  *
@@ -43,8 +50,13 @@
  */
 
 import { type FirstDayChoice, isFirstDayChoice } from "./first-day-choice";
-import { commanderAfterDeath } from "./holdings";
-import { parseSave, type SaveEnvelope, serializeSave } from "./save-envelope";
+import { commanderAfterDeath, firstCheckpoint } from "./holdings";
+import {
+	type CommanderRecord,
+	parseSave,
+	type SaveEnvelope,
+	serializeSave,
+} from "./save-envelope";
 
 /**
  * The debounce window, milliseconds.
@@ -115,8 +127,9 @@ const noRecordToCopy = (slot: string): never =>
 	fail(`"${slot}" holds no record to copy`);
 
 /**
- * Why a flush is happening. `dock` is the one that also writes the checkpoint;
- * the rest are D4's unconditional flushes.
+ * Why a flush is happening. `dock` and `undock` are the two that also write
+ * the checkpoint (`CHECKPOINT_FLUSHES`); the rest are D4's unconditional
+ * flushes.
  *
  * `quit` means leaving this Commander, whichever way: a tab closing, or a
  * switch the overlay awaits before New game, Load or Import (§11.3). Both write
@@ -124,6 +137,31 @@ const noRecordToCopy = (slot: string): never =>
  * gets, which is neither.
  */
 export type FlushReason = "dock" | "undock" | "jump" | "quit" | "new-game";
+
+/**
+ * The flushes that write `lastDocked` beside `live`: the arrival and the
+ * launch (#660 D1, built by node #702). The launch's is the one a death
+ * restores, so a pilot dies with what they bought at the dock; the arrival's
+ * stands until then, which is what a death on the arrival's rails or in the
+ * berth gets back.
+ */
+const CHECKPOINT_FLUSHES: ReadonlySet<FlushReason> = new Set([
+	"dock",
+	"undock",
+]);
+
+/**
+ * The flushes that write with nothing dirty. `quit` and `new-game` for their
+ * own reasons (`flush`); `undock` because the checkpoint can be stale while
+ * `live` is not — a purchase at the dock lands in `live` through the debounce
+ * and clears the flag, and a launch gated on the flag would leave `lastDocked`
+ * at the arrival, undoing the purchase on a death.
+ */
+const FLUSHES_WHEN_CLEAN: ReadonlySet<FlushReason> = new Set([
+	"quit",
+	"new-game",
+	"undock",
+]);
 
 /**
  * Why a record kind is held as a fault (§11.5): the flush that failed, or the
@@ -411,13 +449,16 @@ export class SaveStore {
 	}
 
 	/**
-	 * D4's unconditional write. `dock` additionally lays down the checkpoint.
+	 * D4's unconditional write. `dock` and `undock` additionally lay down the
+	 * checkpoint (`CHECKPOINT_FLUSHES`).
 	 *
 	 * A flush with nothing dirty writes nothing: the record on disk already
 	 * says what the world says, and rewriting it would spend a transaction to
-	 * change no bytes.
+	 * change no bytes. **`undock` is not covered by that premise**: `live` may
+	 * say what the world says while `lastDocked` is still the arrival, so it
+	 * writes clean too (`FLUSHES_WHEN_CLEAN`).
 	 *
-	 * **`quit` is the exception, and it has to be.** The other three flushes
+	 * **`quit` is the exception, and it has to be.** The other flushes
 	 * each follow a `saveDirty()` at the transition that caused them, so the
 	 * flag is set by the time they run; `pagehide` follows nothing. A new game
 	 * flown in normal flight only and then closed had *never* dirtied, so it
@@ -430,9 +471,10 @@ export class SaveStore {
 		this.cancel?.();
 		this.cancel = null;
 		if (this.retired) return;
-		if (!this.dirty && reason !== "quit" && reason !== "new-game") return;
-		const kinds: SaveRecordKind[] =
-			reason === "dock" ? ["live", "lastDocked"] : ["live"];
+		if (!this.dirty && !FLUSHES_WHEN_CLEAN.has(reason)) return;
+		const kinds: SaveRecordKind[] = CHECKPOINT_FLUSHES.has(reason)
+			? ["live", "lastDocked"]
+			: ["live"];
 		try {
 			await this.run(kinds, slot);
 		} catch (error) {
@@ -562,13 +604,19 @@ export class SaveStore {
 	 * write in flight, either of which could land after the copy and put the
 	 * dead ship back. It then reads and validates the dock record, because D9
 	 * makes a bad `lastDocked` a named error rather than something to
-	 * substitute. **Only a record that validates retires the store**: a
-	 * Commander who died before their first dock has no `lastDocked`, and a
-	 * store that had already retired would have dropped every later write
-	 * while still holding the tab's lock. On that path this throws with the
-	 * store still writing and the lock still held. After the copy it gives the
-	 * lock back, so the one-shot continue and the reload's boot can take the
+	 * substitute. **Only a record that validates retires the store**: a store
+	 * that had already retired would have dropped every later write while
+	 * still holding the tab's lock. On a refusal this throws with the store
+	 * still writing and the lock still held. After the copy it gives the lock
+	 * back, so the one-shot continue and the reload's boot can take the
 	 * Commander.
+	 *
+	 * **A Commander who died before their first dock** has no `lastDocked`, and
+	 * since #660 D10 that is not a refusal: `firstCheckpoint` derives a new
+	 * commander docked at the start system's trade station, and it goes
+	 * through `commanderAfterDeath` and the same parse beside the dying world
+	 * as a written record. The one absence that still refuses is a store
+	 * holding a failed `lastDocked` write, which means the pilot did dock.
 	 */
 	async revertToLastDocked(commander: {
 		permadeath: boolean;
@@ -582,10 +630,20 @@ export class SaveStore {
 		let restored: SaveEnvelope;
 		try {
 			const docked = await this.backend.read(this.slot, "lastDocked");
-			if (docked === null || docked === undefined)
-				fail(`Commander "${this.slot}" has no lastDocked record`);
-			const dock = parseSave(docked).commander;
 			const dying = this.current();
+			let dock: CommanderRecord;
+			if (docked !== null && docked !== undefined)
+				dock = parseSave(docked).commander;
+			else {
+				// Absent because the write that would have made it failed: this
+				// pilot did dock, and waking them as a new commander would be the
+				// silent substitution D9 rules out.
+				if (this.faultsHeld.has("lastDocked"))
+					fail(
+						`Commander "${this.slot}" has no lastDocked record — its write failed`,
+					);
+				dock = firstCheckpoint(dying.world.seed, dying.commander);
+			}
 			raw = serializeSave({
 				world: dying.world,
 				commander: commanderAfterDeath(dock, dying.commander),
