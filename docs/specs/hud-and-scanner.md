@@ -626,8 +626,9 @@ off screen, or a place on the scanner's rim, is open for the principal.
 composition over every shipped system and against the two wrong frames a caller
 could hand it. `scripts/probe-hud.mjs` reads the overlay's pixels in a box
 around the mark with the bearing 15° off the nose. It reads the same box again
-with the ship turned away as the control. **A look change**, so the principal's
-yes on a rendered frame is owed as well (#98, #94). No probe stands in for it.
+with the ship turned away as the control. The sky's look is untouched, so this is
+not one of #478's look decisions. As a new instrument it still owes a look at a
+rendered frame (#94), and no probe stands in for that.
 
 ## 6. Responsive behaviour
 
