@@ -1699,9 +1699,11 @@ milestone runs **40–53 min at 15 s and 81–114 min at 90 s**. A reader who th
 semantics: you eject, you lose the entire hold, you keep the hull and everything
 fitted to it, and you resume at the last station you docked at.
 
-#660 settled the rest (2026-10-05). A death keeps the world (#654) and restores
-the commander **as it launched** from that station, so a purchase made there —
-the pod included — survives the death it was bought for. The pod is **manual
+#660 settled the rest (2026-10-05). A death keeps the world (#654), and the
+commander it starts from is the one that **launched** from that station, not
+the one that arrived: what was bought there, the pod included, is aboard when
+the death happens. That is the baseline, and a death's cost is then taken from
+it — the hold and the pod with a pod (below), the whole ship without one. The pod is **manual
 only**, as in Elite: it works if the pilot ejects before the hull reaches zero,
 at any time in flight except docked or on an arrival or launch's rails, and it
 is **consumed**. A job's entrusted goods are lost with the hold and the job
