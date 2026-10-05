@@ -115,20 +115,28 @@ export const installFakePad = () => {
 		 * every frame the game rendered while a round trip was in flight, and
 		 * on a loaded host that is up to three at each end.
 		 *
+		 * **Per frame, not only in total** (sage, round 2). The same callback
+		 * reads the counter in every frame between the two ends, so `perFrame`
+		 * holds the polls between one of its runs and the next — one game frame
+		 * each, since both loops re-arm through `rAF` every frame. A total of
+		 * `n` is also what two polls every other frame read; `perFrame` is all
+		 * ones only when every frame polled exactly once.
+		 *
 		 * Subtracts rather than resets, so `calls` stays the running total the
 		 * other readers of it see.
 		 */
 		callsAcrossFrames(n) {
 			return new Promise((res) => {
-				let seen = 0;
-				let base = 0;
+				const perFrame = [];
+				let base = null;
+				let prev = 0;
 				const tick = () => {
-					if (seen === 0) base = calls;
-					if (seen === n) res({ frames: n, calls: calls - base });
-					else {
-						seen += 1;
-						requestAnimationFrame(tick);
-					}
+					if (base === null) base = calls;
+					else perFrame.push(calls - prev);
+					prev = calls;
+					if (perFrame.length === n)
+						res({ frames: perFrame.length, calls: calls - base, perFrame });
+					else requestAnimationFrame(tick);
 				};
 				requestAnimationFrame(tick);
 			});

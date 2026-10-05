@@ -414,23 +414,28 @@ try {
 	// `probe-boot.mjs` fails if `Game` grows one.
 
 	{
-		const { frames: rendered, calls: whileRunning } = await page.evaluate(() =>
-			window.__pad.callsAcrossFrames(10),
-		);
+		const {
+			frames: rendered,
+			calls: whileRunning,
+			perFrame,
+		} = await page.evaluate(() => window.__pad.callsAcrossFrames(10));
 		check(
-			// **Exactly N.** Both ends of the count are taken inside the probe's
-			// own `rAF` callback, so they sit at the same place in every frame's
-			// callback order and the game's poll lands between them once per
-			// frame. This used to be a reset, a wait and a read in three round
-			// trips, accepting N or N+1 — and on a loaded host it read N+2 (node
-			// #701's reds). The game kept rendering while each trip was in
-			// flight; `tests/fake-pad.test.ts` says where that attribution comes // glossary-ignore: pad
-			// from, and that it is not shipped. 2N and
-			// N/2 fail; a timer that happens to land on N does not, and the arm
-			// below is the one that catches it.
+			// **Exactly one in every frame.** The count is read inside the probe's
+			// own `rAF` callback, once per frame, so each reading sits at the same
+			// place in that frame's callback order and the game's poll lands
+			// between two of them once per frame. This used to be a reset, a wait
+			// and a read in three round trips, accepting N or N+1 in total — and
+			// on a loaded host it read N+2 (node #701's reds). The game kept
+			// rendering while each trip was in flight; `tests/fake-pad.test.ts` // glossary-ignore: pad
+			// says where that attribution comes from, and that it is not shipped.
+			// Per frame rather than in total (sage, round 2): two polls every
+			// other frame also total N. Any frame reading 0 or 2 fails, so 2N,
+			// N/2 and that alternation all do. A timer that happens to fire once
+			// between frames still reads all ones, and the arm below is the one
+			// that catches it.
 			"the pad is read once per rendered frame", // glossary-ignore: pad
-			whileRunning === rendered,
-			`${whileRunning} call(s) across ${rendered} frames`,
+			rendered === 10 && perFrame.every((c) => c === 1),
+			`${whileRunning} call(s) across ${rendered} frames, per frame [${perFrame.join(",")}]`,
 		);
 
 		const stopped = await page.evaluate(async () => {

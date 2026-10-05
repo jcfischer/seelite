@@ -27,7 +27,9 @@ import { installFakePad } from "../scripts/lib/fake-pad.mjs"; // glossary-ignore
 type Pad = {
 	calls: number;
 	resetCalls(): void;
-	callsAcrossFrames(n: number): Promise<{ frames: number; calls: number }>;
+	callsAcrossFrames(
+		n: number,
+	): Promise<{ frames: number; calls: number; perFrame: number[] }>;
 };
 type Page = {
 	__pad: Pad; // glossary-ignore: pad
@@ -102,6 +104,8 @@ afterEach(() => {
  * call that starts it, which is the point. The trailing one can, and must
  * change nothing.
  */
+const ones = (n: number) => Array.from({ length: n }, () => 1);
+
 const count = async (n: number, idleAfter = 0) => {
 	const pending = page.__pad.callsAcrossFrames(n);
 	frames(n + 1 + idleAfter);
@@ -114,7 +118,7 @@ describe("callsAcrossFrames", () => {
 		frames(7); // the game has been running before the count starts
 		for (const idle of [0, 1, 2, 3, 9]) {
 			const r = await count(10, idle);
-			expect(r).toEqual({ frames: 10, calls: 10 });
+			expect(r).toEqual({ frames: 10, calls: 10, perFrame: ones(10) });
 		}
 	});
 
@@ -124,7 +128,11 @@ describe("callsAcrossFrames", () => {
 		const pending = page.__pad.callsAcrossFrames(10);
 		startGame();
 		frames(15);
-		expect(await pending).toEqual({ frames: 10, calls: 10 });
+		expect(await pending).toEqual({
+			frames: 10,
+			calls: 10,
+			perFrame: ones(10),
+		});
 	});
 
 	test("two polls a frame read 2N, so it is not a tolerance", async () => {
@@ -137,6 +145,45 @@ describe("callsAcrossFrames", () => {
 		startGame(1, 2);
 		frames(3);
 		expect((await count(10)).calls).toBe(5);
+	});
+
+	test("two polls every other frame total N, and the frames say so", async () => {
+		// Sage, round 2: an exact total is satisfied by this schedule, which
+		// misses every other frame and reads twice in the rest.
+		startGame(2, 2);
+		frames(3);
+		const r = await count(10);
+		expect(r.calls).toBe(10);
+		expect(r.perFrame).toHaveLength(10);
+		expect(r.perFrame.every((c) => c === 1)).toBe(false);
+		expect(new Set(r.perFrame)).toEqual(new Set([0, 2]));
+	});
+
+	test("one duplicate and one skip total N, and the frames say where", async () => {
+		// A different shape from the alternation: nine of ten frames are right.
+		const perFrameSchedule = [1, 1, 1, 2, 1, 1, 0, 1, 1, 1, 1, 1, 1, 1];
+		let k = 0;
+		const animate = () => {
+			requestAnimationFrame(animate);
+			const polls = perFrameSchedule[k++] ?? 1;
+			for (let i = 0; i < polls; i++) navigator.getGamepads();
+		};
+		const pending = page.__pad.callsAcrossFrames(10);
+		requestAnimationFrame(animate);
+		frames(12);
+		const r = await pending;
+		expect(r.calls).toBe(10);
+		expect(r.perFrame.filter((c) => c !== 1).sort()).toEqual([0, 2]);
+	});
+
+	test("a loop that never polls reads ten zeros, not a shorter run", async () => {
+		// The counter is 0 at every frame here, so nothing about its value may
+		// be what tells the first run from the rest.
+		expect(await count(10)).toEqual({
+			frames: 10,
+			calls: 0,
+			perFrame: Array.from({ length: 10 }, () => 0),
+		});
 	});
 
 	test("it does not reset the counter the rAF-stubbed arm reads", async () => {
