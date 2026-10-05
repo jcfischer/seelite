@@ -1269,7 +1269,9 @@ export class LiveCockpit {
 		// system from the Navigation list changes it, and a rebuild on that
 		// keystroke would blow away the filter field's focus and caret — the
 		// list would become unusable exactly while it was being used.
-		const key = `${state.visible}|${state.dockPhase}|${state.headLook}|${state.leftTab}|${state.rightTab}|${state.stationConsole?.label ?? ""}|${state.stationConsole?.tab ?? ""}|${state.stationConsole?.revision ?? 0}|${state.stationConsole?.message ?? ""}|${state.launchHold ? "held" : ""}|${!!state.requests}|${state.requests?.revision ?? 0}|${state.firstDay?.current ?? ""}|${state.firstDay?.text ?? ""}|${state.firstDay?.stationLine ?? ""}|${state.firstDay?.controls.keyboard ?? ""}|${state.firstDay?.controls.controller ?? ""}|${state.rightTab === "Commander" ? ladderViewKey(state.ladders) : ""}`;
+		// **The Requests tab is in it** (node #690): docking or launching resets
+		// the tab to Current without a press, so no revision moves with it.
+		const key = `${state.visible}|${state.dockPhase}|${state.headLook}|${state.leftTab}|${state.rightTab}|${state.stationConsole?.label ?? ""}|${state.stationConsole?.tab ?? ""}|${state.stationConsole?.revision ?? 0}|${state.stationConsole?.message ?? ""}|${state.launchHold ? "held" : ""}|${!!state.requests}|${state.requests?.revision ?? 0}|${state.requests?.tab ?? ""}|${state.firstDay?.current ?? ""}|${state.firstDay?.text ?? ""}|${state.firstDay?.stationLine ?? ""}|${state.firstDay?.controls.keyboard ?? ""}|${state.firstDay?.controls.controller ?? ""}|${state.rightTab === "Commander" ? ladderViewKey(state.ladders) : ""}`;
 		this.setVisible(state.visible);
 		this.root.dataset.liveHeadLook = state.headLook;
 		this.root.dataset.liveDocked = String(state.dockPhase === "docked");
