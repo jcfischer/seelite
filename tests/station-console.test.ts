@@ -19,6 +19,7 @@ import { readFileSync } from "node:fs";
 import {
 	COMMODITIES,
 	type Commodity,
+	DEFICIT_SATURATION_RUNS,
 	DISPLAY_TL_MAX,
 	DISPLAY_TL_MIN,
 	EQUIPMENT,
@@ -846,7 +847,7 @@ describe("a capped shelf reads MAX and every row says what is held (#473)", () =
 		expect(marketDisplayValues(sold).shelfMark).toBe(SHELF_MAX_MARK);
 	});
 
-	test("a sale into a capped shelf lowers the price, as the hover text says", () => {
+	test("a sale into a capped shelf lowers the price while the market is below saturation", () => {
 		// The sentence's second clause is a claim about the market, not about the
 		// glass: the shelf stays at the cap and the price still moves. Gold is
 		// at the cap untouched, so the sale is into a full shelf from the start.
@@ -859,6 +860,26 @@ describe("a capped shelf reads MAX and every row says what is held (#473)", () =
 		expect(sold.sellCr as number).toBeLessThan(before.sellCr as number);
 	});
 
+	test("past saturation a sale into a capped shelf leaves the price where it was", () => {
+		// The floor the hover text names. `stockResponse` clamps the deficit at
+		// `DEFICIT_SATURATION_RUNS` of the hold, so a sale one unit past it is still
+		// accepted, still reads MAX, and quotes exactly what the saturated row did —
+		// which is why the sentence cannot say "each sale lowers the price".
+		const saturated = -DEFICIT_SATURATION_RUNS * HOLD_REFERENCE_T;
+		const at = rowOf(screen(moved("Gold", saturated)), "Gold");
+		const past = rowOf(screen(moved("Gold", saturated - 1)), "Gold");
+		expect(at.listed && past.listed).toBe(true);
+		expect(at.quantity).toBe(QUANTITY_CAP);
+		expect(past.quantity).toBe(QUANTITY_CAP);
+		expect(marketDisplayValues(past).shelfMark).toBe(SHELF_MAX_MARK);
+		expect(past.buyCr).toBe(at.buyCr as number);
+		expect(past.sellCr).toBe(at.sellCr as number);
+		// And the floor is a real one, not a row that never moved: the saturated
+		// quote is below the untouched shelf's.
+		const untouched = rowOf(screen(noDeficit), "Gold");
+		expect(at.buyCr as number).toBeLessThan(untouched.buyCr as number);
+	});
+
 	test("an unlisted row carries no mark", () => {
 		const illegal = COMMODITIES.find((c) => !listsCommodity(c, TRADE));
 		if (!illegal) throw new Error("the trade station lists every good");
@@ -869,7 +890,7 @@ describe("a capped shelf reads MAX and every row says what is held (#473)", () =
 
 	test("the hover text reads the cap off QUANTITY_CAP and says the station still buys", () => {
 		expect(SHELF_MAX_TITLE).toBe(
-			`Shelf at its ${QUANTITY_CAP}-unit limit. The station still buys; each sale lowers the price.`,
+			`Shelf at its ${QUANTITY_CAP}-unit limit. The station still buys; sales lower the price, down to a floor.`,
 		);
 		// Source-level: the sentence interpolates the constant, so #689 moving the
 		// cap moves the sentence. A literal 63 in it would pass the row above.

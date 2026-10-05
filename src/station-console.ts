@@ -295,8 +295,15 @@ export const SHELF_MAX_MARK = "MAX";
 /**
  * The hover text on `SHELF_MAX_MARK` (#473 D3). The cap is read off
  * `QUANTITY_CAP` rather than written in, because #689 may move it.
+ *
+ * **"Down to a floor", not "each sale lowers the price".** D3 ruled the second
+ * form, and it is false twice over: `stockResponse` clamps at
+ * `DEFICIT_SATURATION_RUNS` of the hold, so past it a sale leaves both quotes
+ * where they were, and a small sale of a cheap good moves the mid by less than
+ * one `PRICE_STEP_CR`. The clause states the direction and the limit and
+ * claims neither of those.
  */
-export const SHELF_MAX_TITLE = `Shelf at its ${QUANTITY_CAP}-unit limit. The station still buys; each sale lowers the price.`;
+export const SHELF_MAX_TITLE = `Shelf at its ${QUANTITY_CAP}-unit limit. The station still buys; sales lower the price, down to a floor.`;
 
 /** Canonical printed form of a market row, for rendering and redraw detection. */
 export function marketDisplayValues(row: ConsoleMarketRow) {
