@@ -88,9 +88,9 @@ a read-only `occlusionState` getter, a line on the `?perf` panel (mounted only
 under that query, which no run here sets), `enclosure` exported as
 `enclosureRad`, and comments, so nothing on the render path differs between
 the two. The WIP the table was taken on was never committed and cannot be
-built at all; how far it differed from d00dc94c is not known. Of the builds
-that exist, none moved the frame. The second candidate is
-out too. `scripts/lib/view-placement.mjs` is unchanged between the two builds,
+built at all; how far it differed from d00dc94c is not known. So the two builds
+run here did not move the frame, and d00dc94c matches 33e07ba3 on the render
+path. The second candidate is out too. `scripts/lib/view-placement.mjs` is unchanged between the two builds,
 so `OCCLUSION_FRAMINGS.deepSky` is one shot. The third, the warm-up, is a
 property of the lost harness. The fourth, the floor, is real but does not
 explain anything here: both instruments read the same floor.
