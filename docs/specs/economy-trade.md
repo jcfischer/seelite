@@ -1708,7 +1708,10 @@ only**, as in Elite: it works if the pilot ejects before the hull reaches zero,
 at any time in flight except docked or on an arrival or launch's rails, and it
 is **consumed**. A job's entrusted goods are lost with the hold and the job
 fails with no debt. A pilot with a pod fitted is warned on the glass when the
-hull falls below a threshold derived from the strongest hostile weapon.
+hull falls below a threshold derived, once and for the whole roster, from the
+most hull damage any hostile's weapon can land in about one second of the
+pilot's reaction — so the warning cannot come after the last hit. #704 measures
+it.
 
 One consequence is recorded because #8 has to reckon with it: **ejecting dumps
 contraband**, which makes the pod a panic-button disposal route ahead of a
@@ -1717,14 +1720,17 @@ this spec's.
 
 **Without a pod, or without ejecting, the pilot loses the ship** (#660 D6): the
 hull, every fitting and the hold. They wake at the station they launched from in
-a stock courier with a full tank, and keep the credits they launched with. That
-cannot strand a save: a courier is always left, and courier work entrusts its
-goods to a pilot with no credits. A pilot who dies before their first dock wakes
+a stock courier with a full tank, and keep the credits they launched with. The
+intent is that this cannot strand a save: a courier is always left, and #356's
+courier floor entrusts its goods to a pilot with no credits. One case is not yet
+shown: a Wanted pilot keeps their heat through a death (#654), and a station
+that refuses them may leave no work to take. #704 owes that check. A pilot who dies before their first dock wakes
 docked at the start system's trade station as a new commander (D10). Ladder
 rungs and banked ladder credit are never touched (#183).
 
-A death will leave a **wreck** holding a seeded share of what it took — cargo
-and fittings after a death, cargo only after an eject — never the hull, the pod
+An eject is a death with a pod here, and both will leave a **wreck** at that
+point holding a seeded share of what was lost — cargo and fittings after a death
+without a pod, cargo only after an eject — never the hull, the pod
 or entrusted goods. Recovering it is salvage's verb, so it waits on #466.
 Permadeath is a separate arm and is #238's.
 
