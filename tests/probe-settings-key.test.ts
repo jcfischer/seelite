@@ -120,6 +120,9 @@ describe("the settings key is driven only after the screen exists", () => {
 			// never mounts would satisfy "z did not open it" for the wrong
 			// reason.
 			"scripts/probe-capture.mjs",
+			// Node #691 opens the screen to show it takes the pointer, so a
+			// mouse moved behind it orbits nothing.
+			"scripts/probe-chase-orbit.mjs",
 			"scripts/probe-commander.mjs",
 			// #639 selects the mouse-flight layout on the screen, as a player does.
 			"scripts/probe-mouse-flight-layout.mjs",
