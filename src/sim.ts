@@ -2114,7 +2114,16 @@ export function stepFleet(
 	starts: WorldStarts,
 	clock: { fromTime: number; dt: number },
 ): FleetStep[] {
-	if (fleet.length === 0) return [];
+	// As `stepWorld`: a step of no time sweeps nothing, and every ship is
+	// where its own step left it.
+	if (clock.dt <= 0)
+		return fleet.map((ship) => ({
+			id: ship.id,
+			pos: ship.motion.end.origin,
+			vel: ship.motion.velEnd,
+			impacts: [],
+			ghosts: [],
+		}));
 	const shipS = firstMeetings(null, fleet, clock.dt);
 	const fleetWorld = fleetAgainstWorld(
 		world,

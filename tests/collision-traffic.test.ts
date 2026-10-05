@@ -1079,6 +1079,27 @@ describe("stepFleet: the fleet meets the world and itself with no player in the 
 		expect(world.ship.vel).toEqual(player.vel);
 	});
 
+	test("a step of no time sweeps nothing: every ship is where its own step left it", () => {
+		const world = makeWorld(47);
+		const ship: FleetShip = {
+			id: "raider",
+			projected: false,
+			motion: flying("raider", v3(5e6, 0, 0), v3(0, 0, 1), 0),
+		};
+		const starts = worldStarts(world.system, world.gameTime);
+		const [step] = stepFleet(world, [ship], starts, {
+			fromTime: world.gameTime,
+			dt: 0,
+		});
+		expect(step).toEqual({
+			id: "raider",
+			pos: ship.motion.end.origin,
+			vel: ship.motion.velEnd,
+			impacts: [],
+			ghosts: [],
+		});
+	});
+
 	test("a raider rams a flown carrier: both take one damage, each names the other", () => {
 		const { steps } = fleetStep(() => {
 			const far = v3(5e6, 0, 0);
@@ -1113,8 +1134,8 @@ describe("stepFleet: the fleet meets the world and itself with no player in the 
 
 describe("stepWorld: a pair that started overlapped is a ghost, and nothing pushes it (node #664)", () => {
 	/**
-	 * Sage round 4's case: the player at rest 60 m above seed 47's star and
-	 * a projected freighter 80 m above it, their boxes overlapping at the
+	 * After sage round 4's case: the player at rest 60 m above seed 47's star
+	 * and a projected freighter 80 m above it, their boxes overlapping at the
 	 * start of the step. §4.3 leaves the pair untested, so nothing may move
 	 * either ship for it — the push that keeps a met pair apart once moved
 	 * the courier 44 m, into the star, and recorded nothing.

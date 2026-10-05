@@ -14473,8 +14473,10 @@ class Game {
 	}
 
 	/**
-	 * Every ship the player's step can meet this frame (`collision.md` §2.4,
-	 * §5, §6; node #664).
+	 * Every ship other than the player that this frame's step can meet
+	 * (`collision.md` §2.4, §5, §6; node #664): `stepWorld`'s in normal
+	 * flight, and `stepFleet`'s while the player cruises — `options.player`
+	 * false, so the player's leg poses no carrier, as it meets none.
 	 *
 	 * The **flown** ones — the raider and the engaged carriers — from where
 	 * they stood before their own steps to where those left them. A carrier on
