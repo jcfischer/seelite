@@ -878,11 +878,19 @@ function projectTrafficLeg(input: TrafficLegInput): SystemTrafficProjection {
 	// Traffic trades with its own side of #490's line (`STATION_LAWFUL`): a
 	// lawful station's carriers never fly to the raider outpost, and its own to
 	// no lawful berth, so placing one moved no existing schedule (node #491).
-	const home = contents.stations.find((s) => s.id === actor.homeStationId);
-	if (!home) throw new Error(`no home station ${actor.homeStationId}`);
-	const homeLawful = STATION_LAWFUL[home.type];
+	// Only a leg that picks its own destination reads the side: a hauler's leg
+	// to or from a Lane point runs in a system that need not hold its home.
+	const freeChoice = !input.endLanePoint && !input.destinationStationId;
+	const home = freeChoice
+		? contents.stations.find((s) => s.id === actor.homeStationId)
+		: undefined;
+	if (freeChoice && !home)
+		throw new Error(`no home station ${actor.homeStationId}`);
 	const candidates = contents.stations
-		.filter((station) => STATION_LAWFUL[station.type] === homeLawful)
+		.filter(
+			(station) =>
+				!home || STATION_LAWFUL[station.type] === STATION_LAWFUL[home.type],
+		)
 		.map((station) => {
 			const interior = stationInterior(
 				station.type,
