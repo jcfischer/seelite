@@ -1338,10 +1338,12 @@ const AUTHORED_ANYWHERE: ReadonlySet<string> = new Set([
  * Whether a stored key is a UI Events named key (`arrowup`, `f6`, `enter`)
  * rather than a key string (node #382).
  *
- * Names are ASCII words of two or more characters, stored lowercased by
- * `keyDispatch`. A key string is anything else — including one character
- * built from several code points, such as `ḍ̇` (UI Events `key`, §2.2), which
- * counting code points would have read as a name.
+ * Names are ASCII words of two or more characters, stored lowercased — the
+ * capture modal's offer in `main.ts` lowercases `e.key` as `keyDispatch` does.
+ * A key string is anything else — including one character built from several
+ * code points, such as `ḍ̇`
+ * (https://www.w3.org/TR/uievents-key/#key-string), which counting code
+ * points would have read as a name.
  */
 const namedKey = (key: string): boolean => /^[a-z][a-z0-9]+$/.test(key);
 
