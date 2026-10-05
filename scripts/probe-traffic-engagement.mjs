@@ -117,16 +117,15 @@ try {
 			return scale(back, km);
 		};
 		/**
-		 * Where `tether` puts the ship: off the carrier as it is drawn, and while
-		 * nothing has drawn it, off its route carried to the clock the way the
-		 * presentation carries it (`predictAtRender`). The route is the
-		 * authority's 10 Hz projection, a tick behind a station that moves ~3 km
-		 * a tick; read raw, it passed the first tether below at 4.0 km clear of
-		 * a station the drawn carrier put the pilot 0.75 km from.
+		 * Where `tether` puts the ship: off the carrier's route carried to the
+		 * clock, the way the presentation carries it (`predictAtRender`). The
+		 * route is the authority's 10 Hz projection, a tick behind a station that
+		 * moves ~3 km a tick; read raw, it passed the first tether below at
+		 * 4.0 km clear of a station the drawn carrier put the pilot 0.75 km from.
+		 * **Not off the contact**: `seek` runs the clock without drawing, so a
+		 * contact left from an earlier fight is wherever the last frame put it.
 		 */
 		const tetherPoint = (key, km) => {
-			const contact = g.trafficContacts.get(key);
-			if (contact) return add(contact.pos, tetherOffset(key, km));
 			const route = g.trafficRoutes.find((r) => r.key === key);
 			const sinceS = g.world.gameTime - g.trafficProjectionAtS;
 			if (!route || !Number.isFinite(sinceS)) return null;
@@ -200,14 +199,16 @@ try {
 			/** Put the ship `km` behind the carrier, co-moving, nose on it. */
 			tether(key, km, offNoseRad = 0) {
 				const route = g.trafficRoutes.find((r) => r.key === key);
-				const contact = g.trafficContacts.get(key);
-				const pos = contact?.pos ?? route.pos;
-				const vel = contact?.velocity ?? route.vel;
+				// The point `seek` judged clear, so the check and the placement
+				// are one expression.
+				g.world.ship.pos = tetherPoint(key, km);
 				window.__engagementProbe.offset = tetherOffset(key, km);
-				g.world.ship.pos = add(pos, window.__engagementProbe.offset);
-				g.world.ship.vel = { ...vel };
+				g.world.ship.vel = { ...route.vel };
 				g.throttle = 0;
-				window.__engagementProbe.aimAt(pos, offNoseRad);
+				window.__engagementProbe.aimAt(
+					sub(g.world.ship.pos, window.__engagementProbe.offset),
+					offNoseRad,
+				);
 				g.setHeadLook("forward");
 			},
 			/** The offence pair a write is measured against: the status as it
