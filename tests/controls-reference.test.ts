@@ -644,6 +644,55 @@ describe("whose layout a printed key came from", () => {
 		expect(offAuthoredLayout(capture("<", "IntlBackslash").stored)).toBe(true);
 	});
 
+	test("a key string of several code points is a character, not a name", () => {
+		// UI Events allows a key string such as `ḍ̇` — d, dot below, dot
+		// above: three code points, one character some keyboard types.
+		const combining = "ḍ̇";
+		const { layout, stored } = capture(combining, "KeyA");
+		expect(stored).toMatchObject({ key: combining, code: "KeyA" });
+		expect(offAuthoredLayout(stored)).toBe(true);
+		const html = controlsBody(controlsCatalogue(layout), new Set());
+		expect(html).toContain(`<kbd>${combining}</kbd>`);
+		expect(marks(html)).toBe(1);
+		expect(html).toContain('data-live-controls-attribution="recorded"');
+	});
+
+	test("a codeless key the US layout types nowhere is marked", () => {
+		// A stored blob can carry a character with no code; it names no
+		// position, so it is compared against every character a US keyboard
+		// types, and `ü` is none of them.
+		const from = jumpKey();
+		if (from.kind !== "key") throw new Error("shipped jump key is not a key");
+		const read = parseLayout(
+			JSON.stringify({
+				version: LAYOUT_VERSION,
+				moves: [
+					{
+						command: JUMP,
+						from,
+						to: { kind: "key", key: "ü", hold: from.hold },
+					},
+				],
+			}),
+		);
+		expect(read.notices).toEqual([]);
+		const stored = read.layout.find((b) => b.command === JUMP)?.trigger;
+		expect(stored).toMatchObject({ kind: "key", key: "ü" });
+		expect(
+			stored && "code" in stored ? stored.code : undefined,
+		).toBeUndefined();
+		if (stored === undefined) throw new Error("no jump binding");
+		expect(offAuthoredLayout(stored)).toBe(true);
+		const html = controlsBody(controlsCatalogue(read.layout), new Set());
+		expect(html).toContain("<kbd>ü</kbd>");
+		expect(marks(html)).toBe(1);
+		expect(html).toContain('data-live-controls-attribution="recorded"');
+		// The codeless characters a US keyboard does type stay unmarked.
+		expect(offAuthoredLayout({ kind: "key", key: "?" })).toBe(false);
+		expect(offAuthoredLayout({ kind: "key", key: "7" })).toBe(false);
+		expect(offAuthoredLayout({ kind: "key", key: " " })).toBe(false);
+	});
+
 	test("the number pad is compared against the US pad, not exempt", () => {
 		// The US pad types these, so the sentence above them stays true.
 		expect(offAuthoredLayout(capture("1", "Numpad1").stored)).toBe(false);

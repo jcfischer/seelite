@@ -1272,15 +1272,15 @@ const AUTHORED_SHIFTED: Readonly<Record<string, string>> = {
 };
 
 /**
- * What each number-pad key types with Num Lock on, on the layout the defaults
+ * What each number-pad key types with Num Lock on, on the layout the defaults // glossary-ignore: pad
  * were authored on (node #382).
  *
- * The pad is **not** the same on every keyboard: `NumpadDecimal` types `.` on
+ * The pad is **not** the same on every keyboard: `NumpadDecimal` types `.` on // glossary-ignore: pad
  * a US keyboard and `,` on a Brazilian or German one (UI Events `code`,
  * §3.4), so a captured `{ key: ",", code: "NumpadDecimal" }` is another
- * keyboard's character and is marked like any other. A pad key the US layout
+ * keyboard's character and is marked like any other. A pad key the US layout // glossary-ignore: pad
  * does not have — `NumpadComma` — types nothing there, as `IntlBackslash`
- * does. With Num Lock off the pad sends named keys (`arrowup`, `delete`),
+ * does. With Num Lock off the pad sends named keys (`arrowup`, `delete`), // glossary-ignore: pad
  * which `offAuthoredLayout` never marks.
  */
 const AUTHORED_NUMPAD: Readonly<Record<string, string>> = {
@@ -1322,6 +1322,30 @@ const authoredCharacters = (code: string): readonly string[] => {
 };
 
 /**
+ * Every character the authored layout types at any position, either shift —
+ * what a codeless key is compared against, since it names no position.
+ */
+const AUTHORED_ANYWHERE: ReadonlySet<string> = new Set([
+	..."abcdefghijklmnopqrstuvwxyz0123456789",
+	...Object.values(AUTHORED_SHIFTED),
+	...Object.values(AUTHORED_NUMPAD),
+	...Object.entries(PUNCTUATION_CODES)
+		.filter(([code]) => !/^(Alt|Control|Meta|Shift)/.test(code))
+		.map(([, key]) => key),
+]);
+
+/**
+ * Whether a stored key is a UI Events named key (`arrowup`, `f6`, `enter`)
+ * rather than a key string (node #382).
+ *
+ * Names are ASCII words of two or more characters, stored lowercased by
+ * `keyDispatch`. A key string is anything else — including one character
+ * built from several code points, such as `ḍ̇` (UI Events `key`, §2.2), which
+ * counting code points would have read as a name.
+ */
+const namedKey = (key: string): boolean => /^[a-z][a-z0-9]+$/.test(key);
+
+/**
  * Whether a key trigger prints a character the layout the defaults were
  * authored on does **not** type at its position (node #382).
  *
@@ -1340,19 +1364,28 @@ const authoredCharacters = (code: string): readonly string[] => {
  *
  * Never true of:
  *
- * - a key with no code — the shipped punctuation and digits, whose character
- *   is all the row states (`codeFor`);
+ * - a key with no code whose character the authored layout types somewhere —
+ *   the shipped punctuation and digits, whose character is all the row
+ *   states (`codeFor`). A codeless key the US layout types **nowhere** — a
+ *   stored `{ key: "ü" }` — is marked, because the header would otherwise
+ *   attribute it to a US keyboard (sage round 2);
  * - a chord — `movedTrigger` stores the character its position types here,
  *   because Option makes the event's character untrustworthy, so a chord is
  *   the authored layout's by construction and is D7's one printed exception;
  * - a named key — `arrowup`, `enter`, `f6` are spelled alike on every layout.
  *
- * The number-pad keys are not exempt: they are compared against
- * `AUTHORED_NUMPAD`, because a pad's decimal key types `,` on many layouts.
+ * A named key is told from a printable one by its **shape**, not its length:
+ * UI Events names are ASCII words (`namedKey`), while a key string may be one
+ * character built from several code points — `ḍ̇` is three — and is still a
+ * character some keyboard types.
+ *
+ * The number-pad keys are not exempt: they are compared against // glossary-ignore: pad
+ * `AUTHORED_NUMPAD`, because a pad's decimal key types `,` on many layouts. // glossary-ignore: pad
  */
 export function offAuthoredLayout(t: Trigger): boolean {
-	if (t.kind !== "key" || t.code === undefined || t.alt === true) return false;
-	if ([...t.key].length !== 1) return false;
+	if (t.kind !== "key" || t.alt === true) return false;
+	if (namedKey(t.key)) return false;
+	if (t.code === undefined) return !AUTHORED_ANYWHERE.has(t.key);
 	return !authoredCharacters(t.code).includes(t.key);
 }
 
