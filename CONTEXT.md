@@ -483,6 +483,10 @@ _Avoid_: Active request (when conflating tracking with acceptance)
 An accepted request whose objective has been satisfied but whose result has not yet been reported to the requester. `docs/specs/missions-and-requests.md` §3–5 owns report eligibility and settlement.
 _Avoid_: Completed request (before reporting)
 
+**Current** / **Past** (Requests tabs):
+The two halves of the Requests list. Current is the work still going — accepted and ready-to-report requests — beside the offers and kept leads; Past is the outcomes, completed, cancelled and failed. A view over the journal's status, never a status of its own. `docs/specs/missions-and-requests.md` §6 owns the partition (node #690).
+_Avoid_: Active / Archive, History (as if a tab were stored on the request)
+
 **Search region**:
 The bounded area a lead gives the pilot to search before identifying a hidden target. `docs/specs/missions-and-requests.md` owns region cues and identification boundaries (D5 and §6).
 _Avoid_: Target position (before identification)

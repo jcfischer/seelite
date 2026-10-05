@@ -301,6 +301,7 @@ describe("the rendered control carries what the builder decided", () => {
 				lines: aboard ? [line] : [],
 			},
 			equipment: [],
+			tab: "current",
 		};
 		return requestsBody(view);
 	};
