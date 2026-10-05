@@ -438,6 +438,11 @@ const STYLE = `${REQUESTS_STYLE}${HOLD_STYLE}${LADDER_STYLE}${RELAY_CUE_STYLE}
 .lc-controls-name { color: #ffdcb0; }
 .lc-controls-keys { display: flex; flex-wrap: wrap; gap: 4px; }
 .lc-controls-keys kbd, .lc-controls-keys em { padding: 0 5px; border: 1px solid rgba(229, 170, 82, .6); border-radius: 3px; color: #fff0c9; font: inherit; font-style: normal; }
+/* A key bound on another layout (node #382): its mark sits beside the kbd, not
+   in it, so the key still reads as the character it was recorded with. The
+   door's blue rather than amber or red - it is attribution, not a fault. */
+.lc-controls-recorded { display: inline-flex; align-items: baseline; gap: 2px; }
+.lc-controls-mark { color: #8ba8d1; font-size: 9px; font-style: normal; }
 .lc-controls-note { color: #cb8c51; font-size: 10px; }
 @media (max-width: 600px) { .lc-controls-row { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); font-size: 10px; } .lc-controls-note { grid-column: 1 / -1; } }
 .lc-nav-filters { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
