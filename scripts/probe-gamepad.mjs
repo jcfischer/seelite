@@ -58,7 +58,7 @@
  * M1 Pro on a loaded host, with every row of the probe present. The timer mutant reds
  * the pair and only the pair: **5 and 6 calls across 10 frames**, and **49 and
  * 51 calls in 2 s** with `rAF` stubbed — the 2 s figure well under the one
- * above, a cause not isolated. A second `pad.poll()` in `animate` reds only the first
+ * above, a cause not isolated. A second `pad.poll()` in `animate` reds only the first // glossary-ignore: pad
  * of the pair at **20 across 10**, and a poll on every other frame only the
  * first at **5 across 10**. The first check alone cannot tell a timer from a
  * frame poll: on a display whose period is near 16 ms the timer could read 10.
@@ -424,10 +424,10 @@ try {
 			// frame. This used to be a reset, a wait and a read in three round
 			// trips, accepting N or N+1 — and on a loaded host it read N+2 and
 			// N+3, because the game kept rendering while each trip was in flight
-			// (node #701; `tests/fake-pad.test.ts` has the attribution). 2N and
+			// (node #701; `tests/fake-pad.test.ts` has the attribution). 2N and // glossary-ignore: pad
 			// N/2 fail; a timer that happens to land on N does not, and the arm
 			// below is the one that catches it.
-			"the pad is read once per rendered frame",
+			"the pad is read once per rendered frame", // glossary-ignore: pad
 			whileRunning === rendered,
 			`${whileRunning} call(s) across ${rendered} frames`,
 		);

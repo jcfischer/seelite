@@ -1,16 +1,17 @@
 /**
- * The fake pad's poll counter, against a frame clock that behaves like the
+ * The fake pad's poll counter, against a frame clock that behaves like the // glossary-ignore: pad
  * browser's (node #701).
  *
- * `probe-gamepad.mjs`'s check "the pad is read once per rendered frame" read
+ * `probe-gamepad.mjs`'s check "the pad is read once per rendered frame" read // glossary-ignore: pad
  * `12 call(s) across 10 frames` on a loaded host, on two refs, alone and in a
  * suite. The count was taken across three `page.evaluate` round trips — reset,
  * wait for frames, read — and the game's own `rAF` keeps polling during the two
- * gaps between them. Measured with the calls attributed to where they landed
- * (load 24 to 64 on ten cores, 140 samples, hardware lane; a one-off
- * script on node #701's branch, not shipped), each gap carried 0 to 3 polls and
- * the totals ran 10 to 13 across 10 frames; the frames themselves carried
- * exactly one poll each, every time.
+ * gaps between them. That attribution comes from a one-off measurement on
+ * node #701's branch that is **not shipped**, so nothing in this repo reprints
+ * it: calls attributed to where they landed, load 24 to 64 on ten cores, 140
+ * samples, hardware lane, read each gap carrying 0 to 3 polls, totals of 10 to
+ * 13 across 10 frames, and one poll inside each frame. Treat those figures as a
+ * report, not as evidence these rows supply.
  *
  * `callsAcrossFrames` takes the baseline and the reading inside the probe's own
  * `rAF` callback, so both ends sit at the same place in the frame's callback
@@ -20,15 +21,16 @@
  * registered during a frame runs in the next one.
  */
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
-import { installFakePad } from "../scripts/lib/fake-pad.mjs";
+import { installFakePad } from "../scripts/lib/fake-pad.mjs"; // glossary-ignore: pad
 
+// glossary-ignore: pad
 type Pad = {
 	calls: number;
 	resetCalls(): void;
 	callsAcrossFrames(n: number): Promise<{ frames: number; calls: number }>;
 };
 type Page = {
-	__pad: Pad;
+	__pad: Pad; // glossary-ignore: pad
 	__frames(n: number): Promise<{ frames: number }>;
 };
 
