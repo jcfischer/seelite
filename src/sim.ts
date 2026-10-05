@@ -2504,7 +2504,11 @@ function keepPairsApart(
 		id: string;
 		motion: ShipMotion;
 		/** On its projection and met by nothing this step: a route's pose,
-		 *  which nothing here may move. */
+		 *  which nothing here may move. The test is the one `Game.landFleet`
+		 *  hands a projected carrier to flight on (no impacts, no landing),
+		 *  so a carrier moved here is exactly one the game flies from the
+		 *  pose this step leaves it; the two change together or the pose is
+		 *  thrown away. */
 		pinned: boolean;
 		/** Where the pairs left it. */
 		paired: Vec3;
