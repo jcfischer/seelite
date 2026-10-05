@@ -1027,6 +1027,129 @@ describe("stepWorld: a pair stays apart after the world corrects one of them (no
 		});
 });
 
+describe("stepWorld: a carrier a meeting hands to flight takes the correction the world-held player cannot (node #664)", () => {
+	const dt = 0.1;
+	/** Sage round 5's case: the courier this far clear of the star. */
+	const PLAYER_CLEARANCE_KM = 0.00445;
+	/** The gap a projected freighter closes across, and how fast. */
+	const GAP_KM = 0.001;
+	const CLOSING_KMS = 0.1;
+
+	/**
+	 * The player at rest with seed 47's star just above its surface, and a
+	 * freighter on its projection closing on it from outside. The meeting's
+	 * mass split drives the courier into the star; the player's second world
+	 * look holds it out, back onto the freighter — which the meeting has
+	 * handed to flight, so the freighter is the ship that can give way.
+	 */
+	function pinnedAgainstStar(projected: boolean) {
+		const world = makeWorld(47);
+		const star = world.system.bodies.find((b) => b.kind === "star");
+		if (!star) throw new Error("seed 47 has no star");
+		const vel = bodyVelocity(world.system, star.id, world.gameTime);
+		const sphere = bodySphere(star.radiusKm);
+		const starAt = shipPose(star.pos, v3(0, 0, 1), v3(0, 1, 0));
+		// `still()` points the nose along −z, so the star is under the nose.
+		const dir = v3(0, 0, 1);
+		const nose = scale(dir, -1);
+		const up = v3(0, 1, 0);
+		const clearance = (hull: HullId, pos: Vec3) => {
+			const gap = pairSeparation(
+				box(hull)[0],
+				shipPose(pos, nose, up),
+				sphere,
+				starAt,
+			);
+			return gap.overlap ? -1 : gap.distanceKm;
+		};
+		const probe = add(star.pos, scale(dir, star.radiusKm + 0.1));
+		world.ship.pos = add(
+			probe,
+			scale(dir, PLAYER_CLEARANCE_KM - clearance("courier", probe)),
+		);
+		world.ship.vel = vel;
+		const from = { ...world.ship.pos };
+		const you = shipPose(world.ship.pos, nose, up);
+		const probeFreighter = add(world.ship.pos, scale(dir, 0.2));
+		const gap = pairSeparation(
+			box("freighter")[0],
+			shipPose(probeFreighter, nose, up),
+			box("courier")[0],
+			you,
+		);
+		if (gap.overlap) throw new Error("the probe pose overlaps");
+		const freighter: FleetShip = {
+			id: "freighter",
+			projected,
+			motion: flying(
+				"freighter",
+				sub(probeFreighter, scale(dir, gap.distanceKm - GAP_KM)),
+				add(vel, scale(dir, -CLOSING_KMS)),
+				dt,
+				nose,
+				up,
+			),
+		};
+		const flown = stepWorld(
+			world,
+			still(),
+			HANDS_OFF,
+			dt,
+			flightPerformance("courier"),
+			box("courier"),
+			[],
+			[freighter],
+		);
+		return { world, flown, star, freighter, clearance, nose, up, from };
+	}
+
+	for (const projected of [true, false])
+		test(`the courier ends outside the star and apart from the freighter (${projected ? "projected" : "flown"})`, () => {
+			const { world, flown, star, freighter, clearance, nose, up, from } =
+				pinnedAgainstStar(projected);
+			// It started clear of the star by less than the meeting pushes it.
+			expect(clearance("courier", from)).toBeCloseTo(PLAYER_CLEARANCE_KM, 9);
+			expect(flown.shipImpacts.map((i) => i.with)).toEqual(["freighter"]);
+			const [step] = flown.fleet;
+			expect(step.impacts.map((i) => i.with)).toEqual([PLAYER_SHIP_ID]);
+			expect(clearance("courier", world.ship.pos)).toBeGreaterThan(0);
+			expect(
+				pairSeparation(
+					box("courier")[0],
+					shipPose(world.ship.pos, nose, up),
+					box("freighter")[0],
+					shipPose(step.pos, nose, up),
+				).overlap,
+			).toBe(false);
+			// The next step from there meets no ghost: not the star, and not
+			// the freighter, now flown from where the step left it.
+			const next = stepWorld(
+				world,
+				still(),
+				HANDS_OFF,
+				dt,
+				flightPerformance("courier"),
+				box("courier"),
+				[],
+				[
+					{
+						...freighter,
+						projected: false,
+						motion: {
+							...freighter.motion,
+							start: shipPose(step.pos, nose, up),
+							end: shipPose(add(step.pos, scale(step.vel, dt)), nose, up),
+							velStart: step.vel,
+							velEnd: step.vel,
+						},
+					},
+				],
+			);
+			expect(next.ghosts).not.toContain(star.id);
+			expect(next.fleet[0].ghosts).toEqual([]);
+		});
+});
+
 describe("stepFleet: the fleet meets the world and itself with no player in the step (node #664)", () => {
 	/**
 	 * Sage round 4: while the player cruises, the raider and the engaged

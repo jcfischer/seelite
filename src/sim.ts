@@ -2380,27 +2380,29 @@ function collidePairs(
 	const ghosts = new Set<string>();
 	const { steps } = againstWorld;
 	const motions = [...againstWorld.motions];
-	/** Where a pair left one ship, and what it met, if anything. */
-	type Land = (pos: Vec3, vel: Vec3, impact: ShipImpact | null) => void;
-	/** One pair, A then B, each landing where it ends and what it met. */
-	const meet = (
-		a: ShipMotion,
-		b: ShipMotion,
-		landA: Land,
-		landB: Land,
-		idA: string,
-		idB: string,
-		bProjected: boolean,
-	): { a: ShipMotion; b: ShipMotion } => {
-		const pair = sweepShipPair(a, b, dt, { bProjected });
-		if (pair.ghost) ghosts.add(pairKey(idA, idB));
+	/** One side of a pair: its motion, its name, whether it is a carrier on
+	 *  its projection, and where the pair left it and what it met, if
+	 *  anything. */
+	interface Side {
+		motion: ShipMotion;
+		id: string;
+		projected: boolean;
+		land: (pos: Vec3, vel: Vec3, impact: ShipImpact | null) => void;
+	}
+	/** One pair, A then B, each landing where it ends and what it met. Only B
+	 *  may be projected (`eligibleFleetPairs`). */
+	const meet = (A: Side, B: Side): { a: ShipMotion; b: ShipMotion } => {
+		const a = A.motion;
+		const b = B.motion;
+		const pair = sweepShipPair(a, b, dt, { bProjected: B.projected });
+		if (pair.ghost) ghosts.add(pairKey(A.id, B.id));
 		const moved =
 			pair.impacts.length > 0 ||
 			length(sub(pair.a.pos, a.end.origin)) > 0 ||
 			length(sub(pair.b.pos, b.end.origin)) > 0;
 		if (!moved) return { a, b };
-		landA(pair.a.pos, pair.a.vel, null);
-		landB(pair.b.pos, pair.b.vel, null);
+		A.land(pair.a.pos, pair.a.vel, null);
+		B.land(pair.b.pos, pair.b.vel, null);
 		for (const impact of pair.impacts) {
 			const common = {
 				ship: true,
@@ -2408,14 +2410,14 @@ function collidePairs(
 				damage: impact.damage,
 				resting: impact.resting,
 			};
-			landA(pair.a.pos, pair.a.vel, {
+			A.land(pair.a.pos, pair.a.vel, {
 				...common,
-				with: idB,
+				with: B.id,
 				side: impact.sideA,
 			});
-			landB(pair.b.pos, pair.b.vel, {
+			B.land(pair.b.pos, pair.b.vel, {
 				...common,
-				with: idA,
+				with: A.id,
 				side: impact.sideB,
 			});
 		}
@@ -2424,42 +2426,37 @@ function collidePairs(
 			b: { ...b, end: { ...b.end, origin: pair.b.pos }, velEnd: pair.b.vel },
 		};
 	};
-	const landFleet =
-		(index: number): Land =>
-		(pos, vel, impact) => {
+	const fleetSide = (index: number): Side => ({
+		motion: motions[index],
+		id: fleet[index].id,
+		projected: fleet[index].projected,
+		land: (pos, vel, impact) => {
 			steps[index].pos = pos;
 			steps[index].vel = vel;
 			if (impact) steps[index].impacts.push(impact);
-		};
+		},
+	});
 	let you = player;
-	fleet.forEach((ship, index) => {
+	fleet.forEach((_, index) => {
 		if (!you) return;
 		const met = meet(
-			you,
-			motions[index],
-			(pos, vel, impact) => {
-				world.ship.pos = pos;
-				world.ship.vel = vel;
-				if (impact) shipImpacts.push(impact);
+			{
+				motion: you,
+				id: PLAYER_SHIP_ID,
+				projected: false,
+				land: (pos, vel, impact) => {
+					world.ship.pos = pos;
+					world.ship.vel = vel;
+					if (impact) shipImpacts.push(impact);
+				},
 			},
-			landFleet(index),
-			PLAYER_SHIP_ID,
-			ship.id,
-			ship.projected,
+			fleetSide(index),
 		);
 		you = met.a;
 		motions[index] = met.b;
 	});
 	for (const [x, y] of eligibleFleetPairs(fleet)) {
-		const met = meet(
-			motions[x],
-			motions[y],
-			landFleet(x),
-			landFleet(y),
-			fleet[x].id,
-			fleet[y].id,
-			fleet[y].projected,
-		);
+		const met = meet(fleetSide(x), fleetSide(y));
 		motions[x] = met.a;
 		motions[y] = met.b;
 	}
@@ -2481,9 +2478,13 @@ const pairKey = (idA: string, idB: string): string => `${idA}\u0000${idB}`;
  * So each pair now overlapped is moved apart along the normal it parted on
  * (read at the poses the pairs left, which stood `SEPARATION_KM` apart), by
  * `pushOutAlong`: wholly by the ship the world did not just hold, or by mass
- * when it held both or neither — never a projected carrier, whose pose is a
- * route's — and the inward part of the pair's relative velocity is taken off
- * in the same shares, so momentum is kept between two free ships. **Nothing
+ * when it held both or neither — never a carrier still on its projection,
+ * whose pose is a route's — and the inward part of the pair's relative
+ * velocity is taken off in the same shares, so momentum is kept between two
+ * free ships. A projected carrier this step **met** is not on its projection
+ * any more: the meeting hands it to flight at the pose the step leaves it
+ * (§6), so it gives way like a flown ship, and a world-held ship it struck
+ * is not pushed back into what held it (sage round 5). **Nothing
  * is billed**: the meeting already was. One pass in the pairs' order, so
  * exact for one meeting a step, as `collidePairs` is; a ship it moves is not
  * swept against the world again.
@@ -2502,7 +2503,9 @@ function keepPairsApart(
 	interface Member {
 		id: string;
 		motion: ShipMotion;
-		projected: boolean;
+		/** On its projection and met by nothing this step: a route's pose,
+		 *  which nothing here may move. */
+		pinned: boolean;
 		/** Where the pairs left it. */
 		paired: Vec3;
 		/** Where it is now, written back in place. */
@@ -2511,7 +2514,7 @@ function keepPairsApart(
 	const members: Member[] = fleet.map((f, index) => ({
 		id: f.id,
 		motion: f.motion,
-		projected: f.projected,
+		pinned: f.projected && steps[index].impacts.length === 0,
 		paired: pairedFleet[index],
 		now: steps[index],
 	}));
@@ -2521,7 +2524,7 @@ function keepPairsApart(
 			id: PLAYER_SHIP_ID,
 			motion: player.motion,
 			paired: player.paired,
-			projected: false,
+			pinned: false,
 			now: player.ship,
 		});
 		const you = members.length - 1;
@@ -2569,11 +2572,11 @@ function keepPairsApart(
 			n,
 		);
 		if (!(push > 0)) continue;
-		const freeA = !a.projected && !held(a);
-		const freeB = !b.projected && !held(b);
-		const shareA = b.projected
+		const freeA = !a.pinned && !held(a);
+		const freeB = !b.pinned && !held(b);
+		const shareA = b.pinned
 			? 1
-			: a.projected
+			: a.pinned
 				? 0
 				: freeA === freeB
 					? b.motion.massT / (a.motion.massT + b.motion.massT)

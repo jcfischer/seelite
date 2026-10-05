@@ -52,6 +52,7 @@ import {
 } from "../../src/inter-system-traffic";
 import {
 	type System,
+	type WorldStarts,
 	makeSystem,
 	worldSolids,
 	worldStarts,
@@ -338,107 +339,25 @@ export function trafficCollisionCorpus(
 		const starts = worldStarts(systemA, atS);
 		const systemB = makeSystem(record, toS);
 		const samplesB = project(systemB, toS, options.stepS);
-		/** The carriers collidable across this interval, with their motions. */
-		const live: {
-			index: number;
-			motion: SolidMotion;
-			cls: TrafficCollision;
-			phase: TrafficRoutePhase;
-		}[] = [];
-		actors.forEach((actor, index) => {
-			const a = samplesA[index];
-			const b = samplesB[index];
-			// Collidable at both ends: a phase boundary inside the interval is a
-			// placement (a launch end, a cruise exit) and is judged from the
-			// first interval that starts in the new phase.
-			if (!swept(a.cls, includeExempt) || !swept(b.cls, includeExempt)) return;
-			if (a.cls !== b.cls) return;
-			const motion = motionOf(actor, a.projection, b.projection, options.stepS);
-			if (!motion) throw new Error(`${actor.key} has no attitude at ${atS}`);
-			const phase = a.projection.phase;
-			result.steps[phase] = (result.steps[phase] ?? 0) + 1;
-			live.push({ index, motion, cls: a.cls, phase });
-			// A launch end is the interval whose start is the first collidable
-			// sample after `departing`.
-			const prior = previousPhase.get(actor.key);
-			const phaseAgeS = atS - (phaseSince.get(actor.key) ?? options.fromS);
-			const launchEnd = phase === "local-departure" && prior === "departing";
-			const { owner, motions } = worldSolids(
+		measureInterval(
+			actors,
+			{
+				atS,
+				toS,
+				stepS: options.stepS,
 				systemB,
-				{
-					start: motion.start.origin,
-					end: motion.end.origin,
-					reachKm: reachKm(motion.primitives),
-				},
 				starts,
-				{ fromTime: atS, toTime: toS },
-			);
-			if (motions.length === 0) return;
-			const sweep = sweepShip(motion, motions, options.stepS);
-			const report = (meeting: Meeting) => {
-				if (a.cls === "cruise") result.cruiseMeetings.push(meeting);
-				else if (
-					launchEnd &&
-					meeting.kind === "ghost" &&
-					meeting.met === a.projection.terminalStationId
-				)
-					result.launchGhosts.push(meeting);
-				else result.meetings.push(meeting);
-			};
-			for (const ghost of new Set(sweep.ghosts.map((i) => owner[i])))
-				report({
-					key: actor.key,
-					atS,
-					phase,
-					met: ghost,
-					kind: "ghost",
-					closingKms: 0,
-					phaseAgeS,
-				});
-			for (const impact of sweep.impacts)
-				report({
-					key: actor.key,
-					atS,
-					phase,
-					met: owner[impact.solid],
-					kind: "impact",
-					closingKms: finite(impact.closingKms, "closing speed"),
-					phaseAgeS,
-				});
-		});
-		// Carrier against carrier: every pair collidable on this interval.
-		for (let i = 0; i < live.length; i++)
-			for (let j = i + 1; j < live.length; j++) {
-				const a = live[i];
-				const b = live[j];
-				const gap = length(sub(a.motion.start.origin, b.motion.start.origin));
-				const travel =
-					length(sub(a.motion.end.origin, a.motion.start.origin)) +
-					length(sub(b.motion.end.origin, b.motion.start.origin));
-				if (
-					gap >
-					reachKm(a.motion.primitives) + reachKm(b.motion.primitives) + travel
-				)
-					continue;
-				result.pairSteps++;
-				const sweep = sweepShip(a.motion, [b.motion], options.stepS);
-				const keyA = actors[a.index].key;
-				const keyB = actors[b.index].key;
-				const meeting = (kind: "impact" | "ghost", closingKms: number) => ({
-					key: keyA,
-					atS,
-					phase: a.phase,
-					met: `carrier:${keyB}:${b.phase}`,
-					kind,
-					closingKms,
-					phaseAgeS: atS - (phaseSince.get(keyA) ?? options.fromS),
-				});
-				const both = a.cls === "cruise" || b.cls === "cruise";
-				const sink = both ? result.cruiseMeetings : result.meetings;
-				if (sweep.ghosts.length > 0) sink.push(meeting("ghost", 0));
-				for (const impact of sweep.impacts)
-					sink.push(meeting("impact", impact.closingKms));
-			}
+				samplesA,
+				samplesB,
+			},
+			{
+				includeExempt,
+				fromS: options.fromS,
+				previousPhase,
+				phaseSince,
+			},
+			result,
+		);
 		for (const [index, actor] of actors.entries()) {
 			previousPhase.set(actor.key, samplesA[index].projection.phase);
 			if (samplesB[index].projection.phase !== samplesA[index].projection.phase)
@@ -448,6 +367,176 @@ export function trafficCollisionCorpus(
 		samplesA = samplesB;
 	}
 	return result;
+}
+
+/** One interval of the corpus: the world and every actor's sample at each end. */
+interface Interval {
+	atS: number;
+	toS: number;
+	stepS: number;
+	/** The world at the interval's end, and its starts at its top. */
+	systemB: System;
+	starts: WorldStarts;
+	samplesA: readonly Sample[];
+	samplesB: readonly Sample[];
+}
+
+/** What a meeting on an interval is judged against: the run's settings and
+ *  each actor's phase history, which the runner keeps across intervals. */
+interface IntervalContext {
+	includeExempt: boolean;
+	fromS: number;
+	/** The phase each actor held one sample back. */
+	previousPhase: ReadonlyMap<string, TrafficRoutePhase>;
+	/** When each actor entered the phase it holds now. */
+	phaseSince: ReadonlyMap<string, number>;
+}
+
+/** A carrier collidable across one interval, with its motion. */
+interface LiveCarrier {
+	index: number;
+	motion: SolidMotion;
+	cls: TrafficCollision;
+	phase: TrafficRoutePhase;
+}
+
+/**
+ * Sweep one interval into `result`: every carrier collidable at both ends
+ * against the world, then every pair of them against each other.
+ */
+function measureInterval(
+	actors: readonly TrafficActor[],
+	interval: Interval,
+	context: IntervalContext,
+	result: CorpusResult,
+): void {
+	const live: LiveCarrier[] = [];
+	actors.forEach((actor, index) => {
+		const carrier = sweepAgainstWorld(actor, index, interval, context, result);
+		if (carrier) live.push(carrier);
+	});
+	sweepCarrierPairs(actors, live, interval, context, result);
+}
+
+/**
+ * One carrier against the world across an interval, its meetings reported
+ * into `result`; the carrier and its motion if it is collidable at both ends.
+ */
+function sweepAgainstWorld(
+	actor: TrafficActor,
+	index: number,
+	interval: Interval,
+	context: IntervalContext,
+	result: CorpusResult,
+): LiveCarrier | null {
+	const { atS, toS, stepS } = interval;
+	const a = interval.samplesA[index];
+	const b = interval.samplesB[index];
+	// Collidable at both ends: a phase boundary inside the interval is a
+	// placement (a launch end, a cruise exit) and is judged from the
+	// first interval that starts in the new phase.
+	if (
+		!swept(a.cls, context.includeExempt) ||
+		!swept(b.cls, context.includeExempt)
+	)
+		return null;
+	if (a.cls !== b.cls) return null;
+	const motion = motionOf(actor, a.projection, b.projection, stepS);
+	if (!motion) throw new Error(`${actor.key} has no attitude at ${atS}`);
+	const phase = a.projection.phase;
+	result.steps[phase] = (result.steps[phase] ?? 0) + 1;
+	const carrier = { index, motion, cls: a.cls, phase };
+	// A launch end is the interval whose start is the first collidable
+	// sample after `departing`.
+	const phaseBefore = context.previousPhase.get(actor.key);
+	const phaseAgeS = atS - (context.phaseSince.get(actor.key) ?? context.fromS);
+	const launchEnd = phase === "local-departure" && phaseBefore === "departing";
+	const { owner, motions } = worldSolids(
+		interval.systemB,
+		{
+			start: motion.start.origin,
+			end: motion.end.origin,
+			reachKm: reachKm(motion.primitives),
+		},
+		interval.starts,
+		{ fromTime: atS, toTime: toS },
+	);
+	if (motions.length === 0) return carrier;
+	const sweep = sweepShip(motion, motions, stepS);
+	const report = (meeting: Meeting) => {
+		if (a.cls === "cruise") result.cruiseMeetings.push(meeting);
+		else if (
+			launchEnd &&
+			meeting.kind === "ghost" &&
+			meeting.met === a.projection.terminalStationId
+		)
+			result.launchGhosts.push(meeting);
+		else result.meetings.push(meeting);
+	};
+	for (const ghost of new Set(sweep.ghosts.map((i) => owner[i])))
+		report({
+			key: actor.key,
+			atS,
+			phase,
+			met: ghost,
+			kind: "ghost",
+			closingKms: 0,
+			phaseAgeS,
+		});
+	for (const impact of sweep.impacts)
+		report({
+			key: actor.key,
+			atS,
+			phase,
+			met: owner[impact.solid],
+			kind: "impact",
+			closingKms: finite(impact.closingKms, "closing speed"),
+			phaseAgeS,
+		});
+	return carrier;
+}
+
+/** Carrier against carrier: every pair collidable on one interval. */
+function sweepCarrierPairs(
+	actors: readonly TrafficActor[],
+	live: readonly LiveCarrier[],
+	interval: Interval,
+	context: IntervalContext,
+	result: CorpusResult,
+): void {
+	const { atS, stepS } = interval;
+	for (let i = 0; i < live.length; i++)
+		for (let j = i + 1; j < live.length; j++) {
+			const a = live[i];
+			const b = live[j];
+			const gap = length(sub(a.motion.start.origin, b.motion.start.origin));
+			const travel =
+				length(sub(a.motion.end.origin, a.motion.start.origin)) +
+				length(sub(b.motion.end.origin, b.motion.start.origin));
+			if (
+				gap >
+				reachKm(a.motion.primitives) + reachKm(b.motion.primitives) + travel
+			)
+				continue;
+			result.pairSteps++;
+			const sweep = sweepShip(a.motion, [b.motion], stepS);
+			const keyA = actors[a.index].key;
+			const keyB = actors[b.index].key;
+			const meeting = (kind: "impact" | "ghost", closingKms: number) => ({
+				key: keyA,
+				atS,
+				phase: a.phase,
+				met: `carrier:${keyB}:${b.phase}`,
+				kind,
+				closingKms,
+				phaseAgeS: atS - (context.phaseSince.get(keyA) ?? context.fromS),
+			});
+			const both = a.cls === "cruise" || b.cls === "cruise";
+			const sink = both ? result.cruiseMeetings : result.meetings;
+			if (sweep.ghosts.length > 0) sink.push(meeting("ghost", 0));
+			for (const impact of sweep.impacts)
+				sink.push(meeting("impact", impact.closingKms));
+		}
 }
 
 /** The contents of every system in a galaxy, generated once each. */
