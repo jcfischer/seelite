@@ -8,7 +8,7 @@ import {
 	trafficBerths,
 	berthFits,
 } from "../src/station-interior";
-import { STATION_GEOMETRY } from "../src/station";
+import { STATION_GEOMETRY, STATION_LAWFUL } from "../src/station";
 import { length, sub } from "../src/vec3";
 import { AU_KM } from "../src/units";
 import {
@@ -132,7 +132,14 @@ test("crossing: recomputing actual charge eligibility at a delayed outward cross
 							time,
 						),
 						awayLane = arrivalPoint(dest, get(dest.index), record.pos, time);
+					const homeLawful =
+						STATION_LAWFUL[
+							get(record.index).stations.find(
+								(s) => s.id === p.actor.homeStationId,
+							)!.type
+						];
 					for (const s of get(dest.index).stations) {
+						if (STATION_LAWFUL[s.type] !== homeLawful) continue;
 						const interior = stationInterior(
 							s.type,
 							STATION_GEOMETRY[s.type].aperturePlaneKm,

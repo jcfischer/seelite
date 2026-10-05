@@ -355,7 +355,11 @@ import {
 	surfacePathFor,
 } from "./relief-bands";
 
-import { SPIN_RPM_RANGE, STATION_GEOMETRY } from "./station";
+import {
+	SPIN_RPM_RANGE,
+	STATION_BERTHS_OPEN,
+	STATION_GEOMETRY,
+} from "./station";
 import { PROMPT_FILL, PROMPT_FONT, TextRaster } from "./text-raster";
 import {
 	type ApertureFrame,
@@ -7278,10 +7282,14 @@ class Game {
 	private earshotStations(): EarshotStation[] {
 		return this.world.system.bodies
 			.filter((body) => body.kind === "station")
-			.map((body) => ({
-				key: this.stationKey(stationOf(this.world.system, body.id)),
-				pos: body.pos,
-			}));
+			.map((body) => {
+				const station = stationOf(this.world.system, body.id);
+				return {
+					key: this.stationKey(station),
+					pos: body.pos,
+					type: station.type,
+				};
+			});
 	}
 
 	/**
@@ -8022,6 +8030,16 @@ class Game {
 	 */
 	private stationKey(station: Station): CarrierKey {
 		return carrierKey(this.world.system.record.index, station.localCarrierId);
+	}
+
+	/**
+	 * Whether this station's berths admit nobody at all — the raider outpost's,
+	 * until it has a market (node #491, `STATION_BERTHS_OPEN`). Read by the
+	 * three protocol doors beside `refusedByLaw`, and outranking it: the law's
+	 * verdict at a berth nobody may use is not spoken as hostility.
+	 */
+	private berthClosed(stationId: string): boolean {
+		return !STATION_BERTHS_OPEN[stationOf(this.world.system, stationId).type];
 	}
 
 	private refusedByLaw(stationId: string): boolean {
@@ -10839,6 +10857,9 @@ class Game {
 			// H5's exit — heat decaying below Wanted — reopens the berth on the
 			// next request with nothing to time out first.
 			refusedByLaw: this.refusedByLaw(chosen.id),
+			// Node #491: a raider outpost's berths admit nobody until it has a
+			// market to dock into, and it says so as its own reason.
+			closed: this.berthClosed(chosen.id),
 		});
 		this.dockingStates.set(chosen.id, next);
 		// A request starts an approach, so the last one's notice is done (#597).
@@ -10900,6 +10921,7 @@ class Game {
 				state: this.dockingStateOf(id),
 				gameTime: this.world.gameTime,
 				refusedByLaw: this.refusedByLaw(id),
+				closed: this.berthClosed(id),
 				// #521: the turn a crossing would be judged on now, so the wait on
 				// the glass and the bounce at the plane cannot disagree. The grant
 				// test here only saves the Traffic query; `dockingDirector` owns the
@@ -11222,6 +11244,7 @@ class Game {
 			// before the offence did not barge, and must not be given the flip's
 			// cooldown for someone else's act.
 			refusedByLaw: this.refusedByLaw(id),
+			closed: this.berthClosed(id),
 		});
 		// A dock spends the turn; a bounce keeps it, so a pilot turned back at
 		// the plane is not sent to the back of the lane as well (#521).

@@ -197,9 +197,10 @@ export const LEVERS = Object.freeze({
  *   berth is a different room each run, and a before/after pair of two rooms
  *   compares nothing.
  * - `workbench-interior` — `?model-viewer=station`, framed on one role's
- *   interior. It exists for exactly one subject: no system generates an
- *   outpost (§12.7's joint 5), so the workbench is the only place its interior
- *   exists. It **navigates the page**, so it is last in the set. Since #165 the
+ *   interior. It exists for exactly one subject: no pilot can dock at an
+ *   outpost — node #491 generates them in lawless systems, but their berths are
+ *   closed until they have a market (`station-types.md` §5.5) — so the
+ *   workbench is the only place its interior can be looked at from inside. It **navigates the page**, so it is last in the set. Since #165 the
  *   outpost's interior is a landing pad rather than a bay, so the frame looks
  *   down at a deck rather than in through an opening; the kind's name is the
  *   mechanism — the workbench stage — and not a claim about the subject.

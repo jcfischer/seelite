@@ -28,6 +28,12 @@ export type ChangelogEntry = {
 };
 
 export const CHANGELOG: readonly ChangelogEntry[] = [
+	// Node #491: proposed copy; principal approval and the main date are pending.
+	{
+		date: "2026-10-04",
+		text: "The most lawless systems now hold a raider outpost, a station of its own out along a planet's orbit; its berths are not open to anyone yet.",
+		node: 491,
+	},
 	// Node #213: proposed copy; principal approval and the main date are pending.
 	{
 		date: "2026-10-04",

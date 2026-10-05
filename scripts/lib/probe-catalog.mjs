@@ -630,6 +630,17 @@ export const PROBE_CATALOG = Object.freeze(
 			["raider flight", "local frame", "flight assist", "duel"],
 		),
 		entry(
+			"probe-raider-outpost.mjs",
+			"Boots a lawless system and checks its raider outpost is generated, placed at its Trojan point, drawn, and refuses clearance as closed while a lawful station still answers.",
+			[
+				"raider outpost",
+				"station generation",
+				"station placement",
+				"docking clearance",
+				"lawless system",
+			],
+		),
+		entry(
 			"probe-relay.mjs",
 			"Exercises the pirate relay discovery, targeting, intervention, persistence, and revisit loop.",
 			[

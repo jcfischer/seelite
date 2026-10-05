@@ -977,7 +977,10 @@ try {
 		const g = window.__seelite;
 		const berths = g
 			.trafficReadout()
-			.stations.map((st) => ({ key: st.id, pos: st.pos }));
+			// The type rides along because a raider outpost hears nothing
+			// (#490 D10, node #491): the earshot reads it, and a berth without
+			// one is not a station the module recognises as lawful.
+			.stations.map((st) => ({ key: st.id, pos: st.pos, type: st.type }));
 		if (berths.length < 2) return { enough: false, berths: berths.length };
 		const apart = (a, b) => p.apartKm(a, b);
 		// A stand-off that is a frame body and a half from the nearest berth: too

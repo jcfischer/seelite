@@ -45,6 +45,12 @@ export const COMMS_LINES = {
 		text: "Docking request denied. No berth for your ship.",
 		voice: "approach",
 	},
+	// A station whose berths admit nobody (node #491's raider outpost, until it
+	// trades): not hostility, and not this hull's size.
+	deniedClosed: {
+		text: "Docking request denied. No berth is free to you.",
+		voice: "approach",
+	},
 	ceaseFire: { text: "Cease fire! Cease fire!", voice: "pilot" },
 	welcome: { text: "Welcome aboard, commander.", voice: "approach" },
 } as const satisfies Record<string, CommsLine>;
@@ -62,6 +68,7 @@ export function clearanceLine(
 	if (next.kind === "denied") {
 		if (next.reason === "hostile") return "deniedHostile";
 		if (next.reason === "contraband") return "deniedContraband";
+		if (next.reason === "closed") return "deniedClosed";
 		return "deniedNoBerth";
 	}
 	return next.kind === "granted" ? "granted" : "queued";

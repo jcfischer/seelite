@@ -690,7 +690,10 @@ export type Clearance =
 	| { kind: "none" }
 	| { kind: "granted"; expiresAtS: number }
 	| { kind: "queued"; position: number }
-	| { kind: "denied"; reason: "hostile" | "contraband" | "no berth that fits" };
+	| {
+			kind: "denied";
+			reason: "hostile" | "contraband" | "no berth that fits" | "closed";
+	  };
 
 export interface DockingState {
 	clearance: Clearance;
@@ -790,6 +793,36 @@ export interface ClearanceRequest {
 	 * three call sites, and a module test cannot see whether they pass it.
 	 */
 	refusedByLaw?: boolean;
+	/**
+	 * Whether this station's berths admit nobody at all
+	 * (`station.ts`'s `STATION_BERTHS_OPEN`, node #491) — the raider outpost's,
+	 * until it has a market to dock into.
+	 *
+	 * **Its own reason, and asked before the law.** It is not hostility: a clean
+	 * pilot refused there has done nothing, and "You are hostile" would tell them
+	 * they had. And it is not a timed state either, so it writes nothing into
+	 * `state.hostile`; a pilot who flies in anyway has no grant and is turned
+	 * back by the barge rule like anyone else.
+	 */
+	closed?: boolean;
+}
+
+/**
+ * Whether the station treats this pilot as hostile at its mouth: the flip, or
+ * the law's refusal **unless the berth is closed**. At a closed berth the
+ * law's verdict is moot — the raider outpost's would mark every clean pilot
+ * who flew near it hostile without their asking anything — while a pilot who
+ * barged it earned `state.hostile` like anywhere else. One rule, read by
+ * `attemptEntry` and by the director that presents it, so the two cannot
+ * disagree about which of closure and law wins.
+ */
+export function hostileAtMouth(
+	state: Pick<DockingState, "hostile">,
+	input: { refusedByLaw?: boolean; closed?: boolean },
+): boolean {
+	return (
+		state.hostile || (input.refusedByLaw === true && input.closed !== true)
+	);
 }
 
 /**
@@ -805,6 +838,8 @@ export function requestClearance(
 ): DockingState {
 	const interior = req.interior;
 	if (req.rangeKm > VICINITY_KM) return state;
+	if (req.closed)
+		return { ...state, clearance: { kind: "denied", reason: "closed" } };
 	// Either reason answers the same way, and neither may write the other: the
 	// flip is `state.hostile` with a cooldown, the law is `refusedByLaw` with
 	// none. See `ClearanceRequest.refusedByLaw`.
@@ -984,6 +1019,10 @@ export function attemptEntry(input: {
 	 *  it belongs to the pilot and the station, not to this session's state, and
 	 *  it must not be written into `state.hostile`. */
 	refusedByLaw?: boolean;
+	/** `ClearanceRequest.closed`: at a closed berth the law's refusal is moot and
+	 *  is not reported as hostility. The entry fails anyway — nobody holds a
+	 *  grant there, so it is a barge. */
+	closed?: boolean;
 }): EntryOutcome {
 	const { frame, pose, gameTime } = input;
 	const barged = !grantLive(input.state, gameTime);
@@ -1001,7 +1040,7 @@ export function attemptEntry(input: {
 	// changed is the station's reason for admitting them. So `barged` stays false
 	// — and the flip, with its cooldown, is not started for them.
 	const evaluation = evaluateEntry(frame, pose, {
-		hostile: state.hostile || input.refusedByLaw === true,
+		hostile: hostileAtMouth(state, input),
 	});
 	// A barge is a failed entry whatever the geometry says: the checks are
 	// evaluated so the diagnostics are complete, and the verdict is not theirs.
