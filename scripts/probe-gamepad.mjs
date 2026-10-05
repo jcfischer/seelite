@@ -55,10 +55,10 @@
  * not part of it, so "nothing else" above does not speak for them.
  *
  * **The wiring pair was re-run on node #701's exact count**, hardware lane, an
- * M1 Pro at 120 Hz, with every row of the probe present. The timer mutant reds
+ * M1 Pro on a loaded host, with every row of the probe present. The timer mutant reds
  * the pair and only the pair: **5 and 6 calls across 10 frames**, and **49 and
- * 51 calls in 2 s** with `rAF` stubbed — fewer than the figures above because
- * the host was loaded. A second `pad.poll()` in `animate` reds only the first
+ * 51 calls in 2 s** with `rAF` stubbed — the 2 s figure well under the one
+ * above, a cause not isolated. A second `pad.poll()` in `animate` reds only the first
  * of the pair at **20 across 10**, and a poll on every other frame only the
  * first at **5 across 10**. The first check alone cannot tell a timer from a
  * frame poll: on a display whose period is near 16 ms the timer could read 10.
