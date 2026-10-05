@@ -101,6 +101,11 @@ try {
 		`${await rows.count()} offer(s)`,
 	);
 	const id = await rows.first().getAttribute("data-live-request-id");
+	// **By id, not by position** (node #690): keeping the offer moves it from
+	// the posted section to the kept one, so the first row stops being it.
+	const offerRow = page.locator(
+		`[data-live-station-console] [data-live-request-action="details"][data-live-request-id="${id}"]`,
+	);
 	const offer = await page.evaluate(
 		(i) => window.__seelite.requestsView().offers.find((o) => o.id === i),
 		id,
@@ -236,7 +241,7 @@ try {
 
 	// **Real key events, on the public dispatch.** `Enter` on a focused row
 	// opens its details and nothing else; the walk below is what accepts.
-	await rows.first().focus();
+	await offerRow.focus();
 	await page.keyboard.press("Enter");
 	check(
 		"native Enter opens the focused offer without accepting",
@@ -307,6 +312,35 @@ try {
 	);
 
 	await click("cancel");
+	// -----------------------------------------------------------------------
+	// Node #690 — Current and Past. Cancel moves the job into history, and the
+	// list goes with it: the pane a pilot reads next is the one with Return on
+	// it, not an empty Current. Read off the glass, not off `requestTab`.
+	// -----------------------------------------------------------------------
+	const tabShown = (scope) =>
+		page
+			.locator(
+				`${scope} [data-live-request-action="tab"][aria-selected="true"]`,
+			)
+			.getAttribute("data-live-request-id");
+	const detailsTitle = (scope) =>
+		page.locator(`${scope} [data-live-request-details] h3`).innerText();
+	const STATION = "[data-live-station-console]";
+	check(
+		"Cancel moves the job to Past, and its details and Return go with it",
+		(await tabShown(STATION)) === "past" &&
+			(await detailsTitle(STATION)) === offer.title &&
+			(await page
+				.locator(`${STATION} [data-live-request-action="return-entrusted"]`)
+				.isVisible()) &&
+			(await page
+				.locator(
+					`${STATION} [data-live-request-section="past"] [data-live-request-id="${id}"]`,
+				)
+				.count()) === 1,
+		await tabShown(STATION),
+	);
+	await page.screenshot({ path: `${out}/01b-cancelled-past.png` });
 	check(
 		"cancelling keeps the obligation it created",
 		await page.evaluate(
@@ -351,6 +385,19 @@ try {
 		),
 	);
 
+	check(
+		"Accept again brings the job back to Current, where Track is",
+		(await tabShown(STATION)) === "current" &&
+			(await detailsTitle(STATION)) === offer.title &&
+			(await page
+				.locator(`${STATION} [data-live-request-action="track"]`)
+				.isVisible()) &&
+			(await page
+				.locator(
+					`${STATION} [data-live-request-section="ongoing"] [data-live-request-id="${id}"]`,
+				)
+				.count()) === 1,
+	);
 	const target = await page.evaluate(() => window.__seelite.targetId);
 	await click("track");
 	check(
@@ -606,7 +653,7 @@ try {
 				id,
 			)),
 	);
-	await rows.first().click();
+	await offerRow.click();
 
 	// Fly it. The delivery station may be in this system or one jump away; the
 	// binder decides, so the probe reads the offer rather than assuming.
@@ -637,6 +684,51 @@ try {
 				.count()) === 0,
 	);
 	await page.screenshot({ path: `${out}/02b-flight-requests.png` });
+	const LEFT = '[data-live-panel="left"]';
+	const journal = () =>
+		page.evaluate(() =>
+			JSON.stringify(window.__seelite.commanderRecord().requests),
+		);
+	const cueText = () => page.locator("[data-live-request-cue]").textContent();
+	const flightBefore = { journal: await journal(), cue: await cueText() };
+	check(
+		"the flight console opens Requests on Current, with the job under way",
+		(await tabShown(LEFT)) === "current" &&
+			(await page
+				.locator(
+					`${LEFT} [data-live-request-section="ongoing"] [data-live-request-id="${id}"]`,
+				)
+				.count()) === 1,
+	);
+	await page
+		.locator(
+			`${LEFT} [data-live-request-action="tab"][data-live-request-id="past"]`,
+		)
+		.click();
+	check(
+		"an empty Past says so in flight, and the mouse switched to it",
+		(await tabShown(LEFT)) === "past" &&
+			(await page
+				.locator(`${LEFT} [data-live-request-empty="past"]`)
+				.isVisible()),
+	);
+	await page.screenshot({ path: `${out}/02c-flight-past-empty.png` });
+	await page
+		.locator(
+			`${LEFT} [data-live-request-action="tab"][data-live-request-id="current"]`,
+		)
+		.focus();
+	await page.keyboard.press("Enter");
+	check(
+		"native Enter on a focused tab switches back to Current",
+		(await tabShown(LEFT)) === "current",
+	);
+	check(
+		"browsing the tabs changed no request, no tracking and not the cue",
+		(await journal()) === flightBefore.journal &&
+			(await cueText()) === flightBefore.cue &&
+			flightBefore.cue.length > 0,
+	);
 	await page.keyboard.press("Alt+ArrowUp");
 	await page.screenshot({ path: `${out}/02-tracked-flight.png` });
 
@@ -885,6 +977,190 @@ try {
 			},
 			[id, creditsBefore, offer.rewardCr],
 		),
+	);
+	// -----------------------------------------------------------------------
+	// Node #690 — after a reload, and with a long history.
+	//
+	// The restored game opens Requests on Current with the settled job under
+	// Past. The history is then **injected**, after the save checks above so
+	// no envelope carries it: thirty outcomes and three jobs under way is a
+	// screen, not a lifecycle, and flying thirty jobs would be measuring the
+	// flight rather than the list. Nothing is saved after this point.
+	// -----------------------------------------------------------------------
+	await dockAt(page, home);
+	await page.locator('[data-live-station-tab="Requests"]').click();
+	check(
+		"a reloaded game opens Requests on Current, and the settled job is under Past",
+		(await tabShown(STATION)) === "current" &&
+			(await page
+				.locator(`${STATION} [data-live-request-id="${id}"]`)
+				.count()) === 0 &&
+			(await page
+				.locator(
+					`${STATION} [data-live-request-action="tab"][data-live-request-id="past"] .lc-request-tab-count`,
+				)
+				.innerText()) === "1",
+	);
+	const PAST_N = 30;
+	const NOW_N = 3;
+	await page.evaluate(
+		([i, pastN, nowN]) => {
+			const g = window.__seelite;
+			const done = g.requests.byId[i];
+			const byId = { ...g.requests.byId };
+			const add = (suffix, status) => {
+				const rowId = `${i}~${suffix}`;
+				byId[rowId] = {
+					...structuredClone(done),
+					offerId: rowId,
+					terms: {
+						...structuredClone(done.terms),
+						id: rowId,
+						title: `${done.terms.title} (${suffix})`,
+					},
+					status,
+					settledAt: status === "completed" ? done.settledAt : null,
+					outcomeReason:
+						status === "failed" ? "The requester withdrew the job." : null,
+				};
+			};
+			const outcomes = ["completed", "cancelled", "failed"];
+			for (let n = 0; n < pastN; n++) add(`past-${n}`, outcomes[n % 3]);
+			for (let n = 0; n < nowN; n++) add(`now-${n}`, "accepted");
+			g.requests = { ...g.requests, byId, trackedRequestId: `${i}~now-1` };
+			// The cockpit redraws on the board's revision; a write it was not
+			// told about is a frame it does not draw.
+			g.requestRevision += 1;
+			g.updateCockpit();
+		},
+		[id, PAST_N, NOW_N],
+	);
+	const sectionRows = (scope, section) =>
+		page
+			.locator(
+				`${scope} [data-live-request-section="${section}"] [data-live-request-action="details"]`,
+			)
+			.count();
+	const historyBefore = await journal();
+	check(
+		"with a long history, Current lists only the jobs under way",
+		(await sectionRows(STATION, "ongoing")) === NOW_N &&
+			(await page
+				.locator(`${STATION} [data-live-request-section="past"]`)
+				.count()) === 0,
+		`${await sectionRows(STATION, "ongoing")} under way`,
+	);
+	await page.screenshot({ path: `${out}/04-long-history-current.png` });
+	await page
+		.locator(
+			`${STATION} [data-live-request-action="tab"][data-live-request-id="past"]`,
+		)
+		.click();
+	check(
+		"the mouse opens Past, and it lists every outcome and nothing else",
+		(await tabShown(STATION)) === "past" &&
+			(await sectionRows(STATION, "past")) === PAST_N + 1 &&
+			(await page
+				.locator(`${STATION} [data-live-request-section="ongoing"]`)
+				.count()) === 0,
+		`${await sectionRows(STATION, "past")} outcomes`,
+	);
+	const cancelledId = `${id}~past-1`;
+	await page
+		.locator(
+			`${STATION} [data-live-request-action="details"][data-live-request-id="${cancelledId}"]`,
+		)
+		.click();
+	check(
+		"a cancelled job's details are readable under Past, with Accept again",
+		(await detailsTitle(STATION)).endsWith("(past-1)") &&
+			(await page
+				.locator(
+					`${STATION} [data-live-request-action="accept"][data-live-request-id="${cancelledId}"]`,
+				)
+				.isVisible()),
+	);
+	await page.screenshot({ path: `${out}/05-long-history-past.png` });
+	await page
+		.locator(
+			`${STATION} [data-live-request-action="tab"][data-live-request-id="current"]`,
+		)
+		.focus();
+	await page.keyboard.press("Enter");
+	check(
+		"the keyboard switches to Current, and the hidden row leaves no actionable pane",
+		(await tabShown(STATION)) === "current" &&
+			(await detailsTitle(STATION)) === "Jobs" &&
+			(await page
+				.locator(`${STATION} [data-live-request-id="${cancelledId}"]`)
+				.count()) === 0,
+	);
+	// The pad walks to the Past tab and presses A: the tabs are on the walk.
+	const walkTo = async (wantAction, wantId) => {
+		for (let i = 0; i < 80; i++) {
+			const data = await page.evaluate(
+				() => window.__seelite.liveCockpit.focusedElement()?.dataset,
+			);
+			if (
+				data?.liveRequestAction === wantAction &&
+				data.liveRequestId === wantId
+			)
+				return true;
+			await tap(B.up);
+		}
+		return false;
+	};
+	check("the pad cursor reaches the Past tab", await walkTo("tab", "past"));
+	await tap(B.a);
+	check(
+		"controller A on the Past tab switches to Past, and the selection comes back",
+		(await tabShown(STATION)) === "past" &&
+			(await detailsTitle(STATION)).endsWith("(past-1)"),
+	);
+	check(
+		"switching tabs docked changed no request and no tracking",
+		(await journal()) === historyBefore,
+	);
+
+	// In flight, the same partition on the left console, reached by the pad.
+	await page.evaluate(() => {
+		const g = window.__seelite;
+		g.launch();
+		g.skipDockTraversal();
+		for (let i = 0; i < 120; i++) g.step(1 / 60);
+		g.setHeadLook("forward");
+		g.updateCockpit();
+	});
+	const cueLong = await cueText();
+	await page.keyboard.press("Alt+ArrowLeft");
+	await page.locator('[data-live-left-tab="Requests"]').click();
+	check(
+		"launching opens the flight console's Requests on Current, with every job under way",
+		(await tabShown(LEFT)) === "current" &&
+			(await sectionRows(LEFT, "ongoing")) === NOW_N,
+	);
+	await page.screenshot({ path: `${out}/06-flight-long-current.png` });
+	check(
+		"the pad cursor reaches the flight Past tab",
+		await walkTo("tab", "past"),
+	);
+	await tap(B.a);
+	check(
+		"controller A switches the flight console to Past, with every outcome",
+		(await tabShown(LEFT)) === "past" &&
+			(await sectionRows(LEFT, "past")) === PAST_N + 1,
+	);
+	await page.screenshot({ path: `${out}/07-flight-long-past.png` });
+	check(
+		"browsing Past in flight leaves the tracked job and its cue alone",
+		(await cueText()) === cueLong &&
+			cueLong.includes("(now-1)") &&
+			(await page.evaluate(
+				(i) =>
+					window.__seelite.commanderRecord().requests.trackedRequestId ===
+					`${i}~now-1`,
+				id,
+			)),
 	);
 	check("no shader failed to compile or link", t.failures === 0);
 	writeFileSync(
