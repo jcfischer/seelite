@@ -770,6 +770,8 @@ interface Sweep {
 	shipBox: Primitive;
 	shipReach: number;
 	shipSpin: Spin;
+	/** At rest, both ships keep the own-turn exemption (§3.1). */
+	restingShipPair: boolean;
 	solids: readonly SolidMotion[];
 	/** Each solid's turn across the step, by index — computed once. */
 	spins: readonly Spin[];
@@ -813,6 +815,16 @@ export function sweepShip(
 	dt: number,
 	options: SweepOptions = {},
 ): SweepResult {
+	return sweepMotion(ship, solids, dt, options, false);
+}
+
+function sweepMotion(
+	ship: SolidMotion,
+	solids: readonly SolidMotion[],
+	dt: number,
+	options: SweepOptions,
+	restingShipPair: boolean,
+): SweepResult {
 	const result: SweepResult = {
 		pos: ship.end.origin,
 		vel: ship.velEnd,
@@ -832,6 +844,7 @@ export function sweepShip(
 		shipBox,
 		shipReach: reachKm(ship.primitives),
 		shipSpin: spinBetween(ship.start, ship.end),
+		restingShipPair,
 		solids,
 		spins: solids.map((solid) => spinBetween(solid.start, solid.end)),
 		dt,
@@ -952,17 +965,19 @@ function classifyPairs(
 				swept.push(pair);
 				continue;
 			}
-			// A resting pair: closing read at the start of the step, on the
-			// ship's translation alone — its own turn is resolved by moving it
-			// out, not billed (§3.1). The surface's own motion is billed.
-			const surfaceVel = pointVelocity(
-				solid,
-				sweep.spins[index],
-				dt,
-				0,
-				solidPose,
-				gap.onSurface,
-			);
+			// Both ships keep the own-turn exemption at rest (§3.1). Their
+			// translation at the start still bills; a moving world surface
+			// is still billed. Swept impacts use both point velocities below.
+			const surfaceVel = sweep.restingShipPair
+				? solid.velStart
+				: pointVelocity(
+						solid,
+						sweep.spins[index],
+						dt,
+						0,
+						solidPose,
+						gap.onSurface,
+					);
 			const closing = closingSpeed(sub(ship.velStart, surfaceVel), gap.normal);
 			touching.push({ pair, normal: gap.normal, closingKms: closing });
 			if (closing > 0)
@@ -1129,14 +1144,18 @@ function settleTouching(
 			push = SEPARATION_KM - gap.distanceKm;
 		}
 		if (push > 0) origin = add(origin, scale(normal, push));
-		const surfaceVel = pointVelocity(
-			solid,
-			sweep.spins[r.pair.solid],
-			dt,
-			1,
-			solidEnd,
-			gap.overlap ? shipEnd.c : gap.onSurface,
-		);
+		// Own rotation is held by separating the boxes (§3.1), rather than
+		// adding translation to the other ship only when it happens to be A.
+		const surfaceVel = sweep.restingShipPair
+			? solid.velEnd
+			: pointVelocity(
+					solid,
+					sweep.spins[r.pair.solid],
+					dt,
+					1,
+					solidEnd,
+					gap.overlap ? shipEnd.c : gap.onSurface,
+				);
 		const u = sub(vel, surfaceVel);
 		const un = dot(u, normal);
 		if (r.closingKms > V_SCRAPE_KMS && !bounced) {
@@ -1299,7 +1318,7 @@ export function sweepShipPair(
 	dt: number,
 	options: { bProjected?: boolean } = {},
 ): ShipPairResult {
-	const swept = sweepShip(a, [b], dt);
+	const swept = sweepMotion(a, [b], dt, {}, true);
 	const result: ShipPairResult = {
 		a: { pos: a.end.origin, vel: a.velEnd },
 		b: { pos: b.end.origin, vel: b.velEnd },

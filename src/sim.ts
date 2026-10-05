@@ -2216,21 +2216,31 @@ function firstMeetings(
 	return { player: you, fleet: them };
 }
 
+/** The same handoff condition used when Game lands a carrier. */
+function stillProjected(ship: FleetShip, step?: FleetStep): boolean {
+	return ship.projected && (!step || step.impacts.length === 0);
+}
+
 /**
  * Every pair of fleet ships the step meets (§6, node #664), by index: at
- * least one flown — two projected carriers are never paired, because a route
+ * least one flown — two carriers still on projection are never paired, because a route
  * against a route is the corpus row's (§6 item 1) — and a projected carrier
  * always second, as the pair's B, so a hold it cannot take goes to the ship
- * that can. One list for every pass that pairs the fleet (`firstMeetings`,
- * `collidePairs`, `keepPairsApart`), so they cannot disagree about which
- * pairs there are or which ship is B.
+ * that can. Each fleet pass (`firstMeetings`, `collidePairs`,
+ * `keepPairsApart`) applies the same rule to its current state. An impact ends
+ * projection immediately, as the game landing does.
  */
-function eligibleFleetPairs(fleet: readonly FleetShip[]): [number, number][] {
+function eligibleFleetPairs(
+	fleet: readonly FleetShip[],
+	steps?: readonly FleetStep[],
+): [number, number][] {
 	const pairs: [number, number][] = [];
 	for (let i = 0; i < fleet.length; i++)
 		for (let j = i + 1; j < fleet.length; j++) {
-			if (fleet[i].projected && fleet[j].projected) continue;
-			pairs.push(fleet[i].projected ? [j, i] : [i, j]);
+			const projectedI = stillProjected(fleet[i], steps?.[i]);
+			const projectedJ = stillProjected(fleet[j], steps?.[j]);
+			if (projectedI && projectedJ) continue;
+			pairs.push(projectedI ? [j, i] : [i, j]);
 		}
 	return pairs;
 }
@@ -2433,7 +2443,7 @@ function fleetAgainstWorld(
  * on their own sides. A resting hold with nothing billed still lands where
  * it left both ships, so a touching pair is never left overlapped. A
  * projected carrier is always the pair's B (`bProjected`), so a hold it
- * cannot take goes to the ship that can. Two projected carriers are never
+ * cannot take goes to the ship that can. Two carriers still projected are never
  * paired: a route against a route is the corpus row's (§6 item 1).
  *
  * Pairs are resolved in that order, each from the state the one before left,
@@ -2499,7 +2509,7 @@ function collidePairs(
 	const fleetSide = (index: number): Side => ({
 		motion: motions[index],
 		id: fleet[index].id,
-		projected: fleet[index].projected,
+		projected: stillProjected(fleet[index], steps[index]),
 		land: (pos, vel, impact) => {
 			steps[index].pos = pos;
 			steps[index].vel = vel;
@@ -2525,16 +2535,42 @@ function collidePairs(
 		you = met.a;
 		motions[index] = met.b;
 	});
-	for (const [x, y] of eligibleFleetPairs(fleet)) {
+	// A billed ram hands a projected carrier to flight in this frame. Its
+	// contacts with still-projected neighbours become eligible immediately.
+	// Queue each unordered pair once: a handoff may extend this queue, but
+	// cannot bill an already resolved pair again.
+	const queue: [number, number][] = [];
+	const queued = new Set<string>();
+	const enqueueEligible = () => {
+		for (const [x, y] of eligibleFleetPairs(fleet, steps)) {
+			const key = pairKey(fleet[x].id, fleet[y].id);
+			if (queued.has(key)) continue;
+			queued.add(key);
+			queue.push([x, y]);
+		}
+	};
+	enqueueEligible();
+	for (let i = 0; i < queue.length; i++) {
+		let [x, y] = queue[i];
+		// A queued pair's roles can change after an earlier handoff.
+		if (stillProjected(fleet[x], steps[x])) [x, y] = [y, x];
+		const projectedX = stillProjected(fleet[x], steps[x]);
+		const projectedY = stillProjected(fleet[y], steps[y]);
 		const met = meet(fleetSide(x), fleetSide(y));
 		motions[x] = met.a;
 		motions[y] = met.b;
+		if (
+			(projectedX && !stillProjected(fleet[x], steps[x])) ||
+			(projectedY && !stillProjected(fleet[y], steps[y]))
+		)
+			enqueueEligible();
 	}
 	return { player: shipImpacts, fleet: steps, ghosts };
 }
 
-/** One pair's name, A then B, for the ghosts `collidePairs` found. */
-const pairKey = (idA: string, idB: string): string => `${idA}\u0000${idB}`;
+/** Unordered identity stays stable when a handoff changes A/B roles. */
+const pairKey = (idA: string, idB: string): string =>
+	idA < idB ? `${idA}\u0000${idB}` : `${idB}\u0000${idA}`;
 
 /**
  * Every met pair the world's second look left overlapped, pushed apart again
@@ -2561,9 +2597,9 @@ const pairKey = (idA: string, idB: string): string => `${idA}\u0000${idB}`;
  * any more: the meeting hands it to flight at the pose the step leaves it
  * (§6), so it gives way like a flown ship, and a world-held ship it struck
  * is not pushed back into what held it (sage round 5). **Nothing
- * is billed**: the meeting already was. One pass in the pairs' order, so
- * exact for one meeting a step, as `collidePairs` is; a ship it moves is not
- * swept against the world again.
+ * is billed**: the meeting already was. Bounded passes revisit an earlier
+ * pair a later correction reopened, preserving world holds and initial
+ * ghosts. A ship it moves is not swept against the world again.
  */
 function keepPairsApart(
 	player: {
@@ -2592,18 +2628,21 @@ function keepPairsApart(
 		paired: Vec3;
 		/** Where it is now, written back in place. */
 		now: { pos: Vec3; vel: Vec3 };
+		/** Only the world's second look, before pair corrections begin. */
+		worldCorrection: Vec3;
 		/** The outward normal of every world impact it had this step. */
 		worldNormals: readonly Vec3[];
 	}
 	const members: Member[] = fleet.map((f, index) => ({
 		id: f.id,
 		motion: f.motion,
-		pinned: f.projected && steps[index].impacts.length === 0,
+		pinned: stillProjected(f, steps[index]),
 		paired: pairedFleet[index],
 		now: steps[index],
+		worldCorrection: sub(steps[index].pos, pairedFleet[index]),
 		worldNormals: fleetNormals[index],
 	}));
-	const pairs = eligibleFleetPairs(fleet);
+	const pairs = eligibleFleetPairs(fleet, steps);
 	if (player) {
 		members.push({
 			id: PLAYER_SHIP_ID,
@@ -2611,6 +2650,7 @@ function keepPairsApart(
 			paired: player.paired,
 			pinned: false,
 			now: player.ship,
+			worldCorrection: sub(player.ship.pos, player.paired),
 			worldNormals: player.worldNormals,
 		});
 		const you = members.length - 1;
@@ -2628,62 +2668,70 @@ function keepPairsApart(
 	const canGive = (m: Member, d: Vec3): boolean => {
 		if (m.pinned) return false;
 		if (m.worldNormals.some((normal) => dot(d, normal) < 0)) return false;
-		const held = sub(m.now.pos, m.paired);
+		const held = m.worldCorrection;
 		return length(held) === 0 || dot(d, held) > 0;
 	};
-	for (const [x, y] of pairs) {
-		const a = members[x];
-		const b = members[y];
-		// Overlapped at the start, so never met (§4.3): nothing parted them,
-		// and nothing here may move either for it.
-		if (ghosts.has(pairKey(a.id, b.id))) continue;
-		const boxA = boxOf(a);
-		const boxB = boxOf(b);
-		if (
-			!pairSeparation(boxA, poseOf(a, a.now.pos), boxB, poseOf(b, b.now.pos))
-				.overlap
-		)
-			continue;
-		const parted = pairSeparation(
-			boxA,
-			poseOf(a, a.paired),
-			boxB,
-			poseOf(b, b.paired),
-		);
-		// From B toward A, as every separation's normal is.
-		const n = parted.overlap
-			? normalizeOr(
-					sub(a.paired, b.paired),
-					normalizeOr(sub(a.now.pos, b.now.pos), v3(1, 0, 0)),
-				)
-			: parted.normal;
-		const push = pushOutAlong(
-			boxA,
-			poseOf(a, a.now.pos),
-			boxB,
-			poseOf(b, b.now.pos),
-			n,
-		);
-		if (!(push > 0)) continue;
-		// A moves along n, B against it.
-		const freeA = canGive(a, n);
-		const freeB = canGive(b, scale(n, -1));
-		const shareA = b.pinned
-			? 1
-			: a.pinned
-				? 0
-				: freeA === freeB
-					? b.motion.massT / (a.motion.massT + b.motion.massT)
-					: freeA
-						? 1
-						: 0;
-		a.now.pos = add(a.now.pos, scale(n, push * shareA));
-		b.now.pos = sub(b.now.pos, scale(n, push * (1 - shareA)));
-		const un = dot(sub(a.now.vel, b.now.vel), n);
-		if (un < 0) {
-			a.now.vel = sub(a.now.vel, scale(n, un * shareA));
-			b.now.vel = add(b.now.vel, scale(n, un * (1 - shareA)));
+	// A later correction can reopen an earlier pair in a contact chain.
+	// Recheck geometry without replaying or billing any impact. The bound
+	// keeps an impossible squeeze from monopolising the simulation tick.
+	for (let pass = 0; pass < 8 * members.length; pass++) {
+		let moved = false;
+		for (const [x, y] of pairs) {
+			const a = members[x];
+			const b = members[y];
+			// Overlapped at the start, so never met (§4.3): nothing parted them,
+			// and nothing here may move either for it.
+			if (ghosts.has(pairKey(a.id, b.id))) continue;
+			const boxA = boxOf(a);
+			const boxB = boxOf(b);
+			if (
+				!pairSeparation(boxA, poseOf(a, a.now.pos), boxB, poseOf(b, b.now.pos))
+					.overlap
+			)
+				continue;
+			const parted = pairSeparation(
+				boxA,
+				poseOf(a, a.paired),
+				boxB,
+				poseOf(b, b.paired),
+			);
+			// From B toward A, as every separation's normal is.
+			const n = parted.overlap
+				? normalizeOr(
+						sub(a.paired, b.paired),
+						normalizeOr(sub(a.now.pos, b.now.pos), v3(1, 0, 0)),
+					)
+				: parted.normal;
+			const push = pushOutAlong(
+				boxA,
+				poseOf(a, a.now.pos),
+				boxB,
+				poseOf(b, b.now.pos),
+				n,
+			);
+			if (!(push > 0)) continue;
+			moved = true;
+			// A moves along n, B against it.
+			const freeA = canGive(a, n);
+			const freeB = canGive(b, scale(n, -1));
+			const shareA = b.pinned
+				? 1
+				: a.pinned
+					? 0
+					: freeA === freeB
+						? b.motion.massT / (a.motion.massT + b.motion.massT)
+						: freeA
+							? 1
+							: 0;
+			a.now.pos = add(a.now.pos, scale(n, push * shareA));
+			b.now.pos = sub(b.now.pos, scale(n, push * (1 - shareA)));
+			const un = dot(sub(a.now.vel, b.now.vel), n);
+			if (un < 0) {
+				a.now.vel = sub(a.now.vel, scale(n, un * shareA));
+				b.now.vel = add(b.now.vel, scale(n, un * (1 - shareA)));
+			}
 		}
+		if (!moved) break;
 	}
 }
 
