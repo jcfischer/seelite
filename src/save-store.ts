@@ -377,6 +377,9 @@ export class SaveStore {
 	private readonly schedule: Scheduler;
 	private readonly current: () => SaveEnvelope;
 	private dirty = false;
+	/** Counts `markDirty` calls, so a checkpoint taken before its write can
+	 *  tell whether saved state moved while it waited (`run`). */
+	private edits = 0;
 	private cancel: (() => void) | null = null;
 	/** The write in flight, if any. One at a time: two overlapping
 	 *  transactions can land in either order, and the loser would be the newer
@@ -414,6 +417,7 @@ export class SaveStore {
 	markDirty(): void {
 		if (this.retired) return;
 		this.dirty = true;
+		this.edits += 1;
 		this.cancel?.();
 		this.cancel = this.schedule(() => {
 			this.cancel = null;
@@ -472,11 +476,20 @@ export class SaveStore {
 		this.cancel = null;
 		if (this.retired) return;
 		if (!this.dirty && !FLUSHES_WHEN_CLEAN.has(reason)) return;
-		const kinds: SaveRecordKind[] = CHECKPOINT_FLUSHES.has(reason)
+		const checkpoint = CHECKPOINT_FLUSHES.has(reason);
+		const kinds: SaveRecordKind[] = checkpoint
 			? ["live", "lastDocked"]
 			: ["live"];
+		// **A checkpoint is taken at the transition, not when its write starts.**
+		// `run` queues behind any write in flight, and the launch does not wait
+		// for this flush: read `current()` after the queue and a slow earlier
+		// write hands `lastDocked` the ship already clear of the station, with
+		// whatever happened since — and a death restores flight, not the launch.
 		try {
-			await this.run(kinds, slot);
+			const snapshot = checkpoint
+				? { blob: serializeSave(this.current()), edits: this.edits }
+				: undefined;
+			await this.run(kinds, slot, snapshot);
 		} catch (error) {
 			// A flush is a transition the player made — a dock, an undock, a jump,
 			// a switch — so one failure is a fault, with no retry to wait for.
@@ -502,7 +515,11 @@ export class SaveStore {
 		while (this.inFlight) await this.inFlight.catch(() => {});
 	}
 
-	private async run(kinds: SaveRecordKind[], slot: string): Promise<void> {
+	private async run(
+		kinds: SaveRecordKind[],
+		slot: string,
+		snapshot?: { readonly blob: unknown; readonly edits: number },
+	): Promise<void> {
 		// Queue behind whatever is already writing rather than racing it. The
 		// awaited chain is what keeps `maxInFlight` at one.
 		//
@@ -512,9 +529,16 @@ export class SaveStore {
 		// — no `lastDocked` checkpoint, and `settled()` rejecting too. The
 		// earlier write's failure is its own caller's; this one still has its
 		// own to report.
+		//
+		// A `snapshot` is a checkpoint `flush` took before queueing. It goes
+		// under every kind in one transaction as before, so `live` may land a
+		// little behind the world; when saved state moved while it waited
+		// (`edits`), the save stays dirty and the debounce is re-armed once the
+		// write lands, so `live` catches up on the cadence that writes it anyway.
 		while (this.inFlight) await this.inFlight.catch(() => {});
-		const blob = serializeSave(this.current());
-		this.dirty = false;
+		const blob = snapshot ? snapshot.blob : serializeSave(this.current());
+		const behind = snapshot !== undefined && snapshot.edits !== this.edits;
+		this.dirty = behind;
 		const work = this.backend.writeMany(slot, kinds, blob);
 		this.inFlight = work.finally(() => {
 			this.inFlight = null;
@@ -523,6 +547,7 @@ export class SaveStore {
 			await this.inFlight;
 			this.failures = 0;
 			for (const kind of kinds) this.faultsHeld.delete(kind);
+			if (behind) this.markDirty();
 		} catch (error) {
 			// The write did not land, so the save is still dirty. D9: the
 			// previous record is untouched — stale rather than broken. Whether

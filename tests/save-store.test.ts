@@ -538,6 +538,57 @@ describe("#660 D1, D10 — a death restores the launch, and a first death wakes 
 		}
 	});
 
+	test("a launch checkpoint queued behind a slow write is the launch, not what followed it", async () => {
+		// Sage's round-1 reproduction. The launch does not await its flush, so
+		// a debounced write still in flight holds the checkpoint in the queue
+		// while the ship flies on. Read `current()` there and `lastDocked` gets
+		// the flight; the checkpoint has to be what the world was at the call.
+		const h = harness();
+		h.set(1040);
+		h.store.markDirty();
+		await h.store.flush("dock");
+		buyPod(h);
+		h.backend.hold();
+		h.store.markDirty();
+		h.clock.fire();
+		expect(h.backend.inFlight).toBe(1);
+		const launched = h.store.flush("undock");
+		// Flown on before the slow write lands: credits spent, a system visited.
+		h.set(9999);
+		h.leg(9, 600);
+		h.store.markDirty();
+		h.backend.release();
+		await launched;
+		await h.store.settled();
+		const checkpoint = await h.store.load("default", "lastDocked");
+		expect(checkpoint.commander.state.credits).toBe(40);
+		expect(checkpoint.commander.state.ownedEquipment).toContain("Escape Pod");
+		expect(checkpoint.world.galaxies[0].visited).not.toContain(9);
+		// `live` landed behind the world, so the save stays dirty and the
+		// debounce is armed to catch it up.
+		expect(h.clock.armed).toBe(true);
+		h.clock.fire();
+		await h.store.settled();
+		expect(h.backend.maxInFlight).toBe(1);
+		const live = await h.store.load("default");
+		expect(live.commander.state.credits).toBe(9999);
+		expect(live.world.galaxies[0].visited).toContain(9);
+		const restored = await h.store.revertToLastDocked(h.commander);
+		expect(restored?.commander.state.credits).toBe(40);
+		expect(restored?.commander.state.ownedEquipment).toContain("Escape Pod");
+		expect(restored?.world.galaxies[0].visited).toContain(9);
+	});
+
+	test("a checkpoint with nothing moved behind it leaves the debounce alone", async () => {
+		const h = harness();
+		h.set(1040);
+		h.store.markDirty();
+		await h.store.flush("dock");
+		await h.store.flush("undock");
+		expect(h.clock.armed).toBe(false);
+		expect(h.backend.writes).toBe(2);
+	});
+
 	test("dock, death without an undock: the arrival is restored", async () => {
 		const h = harness();
 		h.set(1040);
