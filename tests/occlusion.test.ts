@@ -264,9 +264,11 @@ test("nothing in the near layer means no box rather than a box of nothing", () =
  * #241's gate — whether the two passes run at all this frame.
  *
  * The cost that opened the node, measured headed on an M1 Pro at 1440x900 and
- * device scale 2, in empty space: the pair takes a 3.740 ms frame to 7.303 at
- * the default sample count and an 11.552 ms one to 18.681 at the principal's
- * 2x, because antialias multiplies every later fill-rate term. What it buys
+ * device scale 2 on #241's build, in empty space: the pair takes a 1.666 ms
+ * frame to 3.776 at the default sample count and a 6.662 ms one to 10.815 at
+ * the principal's 2x, because antialias multiplies every later fill-rate term.
+ * (Node #249 re-measured these; the 3.740 / 18.681 first written here did not
+ * reproduce on any build, and `occlusion.ts` says why.) What it buys
  * there is 0.003% of pixels darkened at `station-flank` and 0.002% at
  * `cockpit-arrival`, against 6.06% in a bay.
  *

@@ -461,9 +461,15 @@ merge.
   row, an instrument's pin and the gate — an explicit `setOcclusion(a, b)` wins
   over the gate, a bare `setOcclusion()` gives it back. **And the figure that
   made this a regression is the second one:** multisampling multiplies every
-  later fill-rate term rather than adding beside it, so the pair costs +3.563 ms
-  at 0 samples and +7.130 at 2. Every one of #222's figures was taken at 0,
-  which is the default and not what the principal plays at.
+  later fill-rate term rather than adding beside it, so the pair costs about
+  twice as much at 2 samples as at 0. Every one of #222's figures was taken at
+  0, which is the default and not what the principal plays at. **This line
+  carried two figures until node #249, and no build reproduces them.** They
+  came from a harness that was never committed. `occlusion.ts` holds the
+  re-measured table, and `docs/receipts/node-249-open-space-repro.md` explains
+  why the old one is withdrawn. `scripts/measure-open-space-repro.mjs` runs
+  unchanged against an older checkout, so a later disagreement can be split
+  into build and instrument.
 - **A bay's shadow figure is not a stable property of a build.** #241 measured
   the same check three ways on one machine: `main` at 5.917% and 5.881%, the
   gated build at 5.324–5.326%, and the gate forced permanently open at
@@ -501,7 +507,12 @@ merge.
   measured in place is 2.91 ms and §13.1's interior 2.12. The same framing in
   **open space with no station within a thousand kilometres** costs 36.76.
   `scripts/measure-bay-frame-cost.mjs` is the instrument and prints all four
-  framings.
+  framings. **Those two are not the same occlusion state (node #249).** The
+  instrument leaves the pair to #241's gate, which reads stations only
+  (`stepOcclusionGate`). So the bay's 40.29 is drawn with the pair, while the
+  planet-fill 36.76, the open-space framings and `no planet-4`'s 1.678 there
+  are drawn without it. The gap from 36.76 to 40.29 is therefore not the
+  station alone. No same-build arm has priced the pair at planet-fill.
 
   Three things fall out of it that outlive the number. **It is fill-rate bound**
   — a least-squares fit over the `renderScale` rungs gives a floor of 1.01 ms
