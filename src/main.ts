@@ -15579,6 +15579,9 @@ class Game {
 			: "flight";
 		if (requestSurface !== this.requestTabSurface) {
 			this.requestTabSurface = requestSurface;
+			// The cockpit redraws on the board's revision, so a tab it was not
+			// told about would be drawn only by the next press.
+			if (this.requestTab !== "current") this.requestRevision += 1;
 			this.requestTab = "current";
 		}
 		const requests = this.requestsView(dockContext, hold);

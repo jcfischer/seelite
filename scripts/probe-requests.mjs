@@ -875,6 +875,17 @@ try {
 			!/You still have|You have no/.test(settled),
 		settled,
 	);
+	check(
+		"Report moves the job to Past, and its details go with it",
+		(await tabShown(STATION)) === "past" &&
+			(await detailsTitle(STATION)) === offer.title &&
+			(await page
+				.locator(
+					`${STATION} [data-live-request-section="past"] [data-live-request-id="${id}"]`,
+				)
+				.count()) === 1,
+		await tabShown(STATION),
+	);
 	await page.screenshot({ path: `${out}/03b-settled.png` });
 	check(
 		"Report pays the pinned reward once",
@@ -1161,6 +1172,34 @@ try {
 					`${i}~now-1`,
 				id,
 			)),
+	);
+	// **A new surface opens on Current with no tab pressed.** Every entry
+	// above went through a tab click, which resets on its own; these two reach
+	// Requests only by docking and by launching, with the tab already open.
+	await dockAt(page, home);
+	check(
+		"docking opens the station's Requests on Current, though flight was on Past",
+		(await tabShown(STATION)) === "current",
+		await tabShown(STATION),
+	);
+	await page
+		.locator(
+			`${STATION} [data-live-request-action="tab"][data-live-request-id="past"]`,
+		)
+		.click();
+	await page.evaluate(() => {
+		const g = window.__seelite;
+		g.launch();
+		g.skipDockTraversal();
+		for (let i = 0; i < 120; i++) g.step(1 / 60);
+		g.setHeadLook("forward");
+		g.updateCockpit();
+	});
+	await page.keyboard.press("Alt+ArrowLeft");
+	check(
+		"launching opens the flight console's Requests on Current, though the station was on Past",
+		(await tabShown(LEFT)) === "current",
+		await tabShown(LEFT),
 	);
 	check("no shader failed to compile or link", t.failures === 0);
 	writeFileSync(
