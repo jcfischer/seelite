@@ -2029,11 +2029,13 @@ export function stepWorld(
 	// cut owns the tick: the plane if it came strictly first, else the ship
 	// (the tie to the meeting, as to an impact).
 	const cutS = earliestOf(found ? found.timeS : null, shipS.player);
-	const met = collideShip(world, solid, from, fromVel, attitude, step, starts, {
+	const met = collideShip(world, playerMotion(), starts, {
 		fromTime,
 		dt,
 		planeS: cutS,
 	});
+	// Where the world's first look left the player, for the pairs to move.
+	const worldLeft = { ...world.ship.pos };
 	const planeOwns =
 		met.planeOwns &&
 		found !== null &&
@@ -2056,33 +2058,44 @@ export function stepWorld(
 		fleet: ships.fleet.map((ship) => ({ ...ship.pos })),
 	};
 	// What the first meeting left a deferred ship on, it now meets the world
-	// along: swept again from the step's start to where the pair left it.
+	// along: swept again from the step's start to where the pair left it. A
+	// ship whose world meeting came first is swept again too when the pair
+	// moved it (sage round 6) — a ram can push it back into the solid it was
+	// held out of — and what it already met is not billed twice.
 	let { impacts, ghosts } = met;
-	if (playerDeferred) {
-		const after = collideShip(
-			world,
-			solid,
-			from,
-			fromVel,
-			attitude,
-			step,
-			starts,
-			{ fromTime, dt, planeS: null },
-		);
-		impacts = after.impacts;
+	const worldNormals = met.impacts.map((impact) => impact.normal);
+	const pairMoved = !planeOwns && length(sub(world.ship.pos, worldLeft)) > 0;
+	if (playerDeferred || pairMoved) {
+		const after = collideShip(world, playerMotion(), starts, {
+			fromTime,
+			dt,
+			planeS: null,
+		});
+		const billed = new Set(impacts.map((impact) => impact.bodyId));
+		worldNormals.push(...after.impacts.map((impact) => impact.normal));
+		impacts = [
+			...impacts,
+			...after.impacts.filter((impact) => !billed.has(impact.bodyId)),
+		];
 		ghosts = [...new Set([...ghosts, ...after.ghosts])];
 	}
-	resweepDeferred(world, fleet, fleetWorld, ships.fleet, starts, {
+	resweepAfterPairs(world, fleet, fleetWorld, ships.fleet, starts, {
 		fromTime,
 		dt,
 	});
 	keepPairsApart(
 		planeOwns
 			? null
-			: { motion: playerMotion(), paired: paired.player, ship: world.ship },
+			: {
+					motion: playerMotion(),
+					paired: paired.player,
+					ship: world.ship,
+					worldNormals,
+				},
 		fleet,
 		ships.fleet,
 		paired.fleet,
+		fleetWorld.normals,
 		ships.ghosts,
 	);
 	return {
@@ -2100,7 +2113,8 @@ export function stepWorld(
  * §6; node #664): every flown fleet ship against the world, and the fleet's
  * pairs against each other, by the passes `stepWorld` runs — first
  * meetings, the world up to each ship's first meeting, the pairs, the world
- * again for a ship its meeting deferred, and the pairs kept apart. For a
+ * again for a ship its meeting deferred or the pairs moved, and the pairs
+ * kept apart. For a
  * frame the player does not fly in normal flight: in cruise the raider and
  * the engaged carriers still fly, and still meet what they fly into.
  *
@@ -2134,8 +2148,15 @@ export function stepFleet(
 	);
 	const ships = collidePairs(world, null, fleet, fleetWorld, clock.dt);
 	const paired = ships.fleet.map((ship) => ({ ...ship.pos }));
-	resweepDeferred(world, fleet, fleetWorld, ships.fleet, starts, clock);
-	keepPairsApart(null, fleet, ships.fleet, paired, ships.ghosts);
+	resweepAfterPairs(world, fleet, fleetWorld, ships.fleet, starts, clock);
+	keepPairsApart(
+		null,
+		fleet,
+		ships.fleet,
+		paired,
+		fleetWorld.normals,
+		ships.ghosts,
+	);
 	return ships.fleet;
 }
 
@@ -2157,7 +2178,7 @@ const earliestOf = (a: number | null, b: number | null): number | null =>
  * world before it meets its partner leaves that line, so the partner's time
  * may be one the step never reaches. That errs safe — a ship whose world
  * sweep is deferred for a meeting that does not happen is swept again on the
- * motion it keeps (`resweepDeferred`), and meets the same world.
+ * motion it keeps (`resweepAfterPairs`), and meets the same world.
  */
 function firstMeetings(
 	player: ShipMotion | null,
@@ -2215,43 +2236,79 @@ function eligibleFleetPairs(fleet: readonly FleetShip[]): [number, number][] {
 }
 
 /**
- * Every flown fleet ship whose world sweep its first ship meeting deferred
- * (`fleetAgainstWorld`), swept against the world again on what the pairs left
- * it (§4.2, node #664): from the step's start to the end and velocity the
- * meeting gave it, so a bounce that turned it off a solid meets nothing and
+ * Every flown fleet ship swept against the world again on what the pairs
+ * left it (§4.2, node #664): from the step's start to the end and velocity
+ * the pairs gave it, so a bounce that turned it off a solid meets nothing and
  * one that left it inside a solid is held outside. A straight line from the
  * start to the corrected end stands for the bent path, which is exact for a
- * meeting at the start of the step and an approximation for one later. Its
- * world impacts follow its ship meetings, which came first.
+ * meeting at the start of the step and an approximation for one later.
+ *
+ * Two kinds of ship are swept again. One whose world sweep its first ship
+ * meeting **deferred** (`fleetAgainstWorld`): its world impacts follow its
+ * ship meetings, which came first. And one whose world meeting came first
+ * but which **the pairs then moved** (sage round 6): a ram can push it back
+ * into the solid that had just held it out, and the next step would ghost
+ * that solid rather than meet it. Its correction lands; a body it already
+ * met this step is not billed again. A projected carrier is not swept: its
+ * pose is a route's.
  */
-function resweepDeferred(
+function resweepAfterPairs(
 	world: World,
 	fleet: readonly FleetShip[],
-	againstWorld: { motions: ShipMotion[]; deferred: boolean[] },
+	againstWorld: {
+		motions: ShipMotion[];
+		deferred: boolean[];
+		normals: Vec3[][];
+	},
 	steps: FleetStep[],
 	starts: WorldStarts,
 	clock: { fromTime: number; dt: number },
 ): void {
 	fleet.forEach((ship, index) => {
-		if (!againstWorld.deferred[index]) return;
+		if (ship.projected) return;
 		const out = steps[index];
+		const before = againstWorld.motions[index];
+		const moved = length(sub(out.pos, before.end.origin)) > 0;
+		if (!againstWorld.deferred[index] && !moved) return;
 		const motion: ShipMotion = {
-			...againstWorld.motions[index],
+			...before,
 			end: { ...ship.motion.end, origin: out.pos },
 			velEnd: out.vel,
 		};
 		const after = sweepWorld(world, motion, starts, clock, null);
+		const billed = new Set(
+			out.impacts.filter((impact) => !impact.ship).map((impact) => impact.with),
+		);
 		out.pos = after.pos;
 		out.vel = after.vel;
 		out.ghosts = [...new Set([...out.ghosts, ...after.ghosts])];
-		out.impacts.push(...after.impacts);
+		againstWorld.normals[index].push(
+			...after.impacts.map((impact) => impact.normal),
+		);
+		out.impacts.push(
+			...after.impacts
+				.filter((impact) => !billed.has(impact.bodyId))
+				.map(asShipImpact),
+		);
 	});
 }
 
+/** A world impact as a fleet ship's step names it. */
+const asShipImpact = (impact: WorldImpact): ShipImpact => ({
+	with: impact.bodyId,
+	ship: false,
+	closingKms: impact.closingKms,
+	damage: impact.damage,
+	side: impact.side,
+	resting: impact.resting,
+});
+
 /**
- * One flown ship's motion against the world: `worldSolids` from `starts`,
- * swept with `sweepShip`, cut off at `cutS` (§4.2). `deferred` when nothing
+ * One ship's motion against the world: `worldSolids` from `starts`, swept
+ * with `sweepShip`, cut off at `cutS` (§4.2) — the player's watched plane or
+ * first ship meeting, a fleet ship's first meeting. `deferred` when nothing
  * in the world came at or before the cut, which leaves the motion unresolved.
+ * The one wrapper every ship meets the world through.
  */
 function sweepWorld(
 	world: World,
@@ -2262,7 +2319,7 @@ function sweepWorld(
 ): {
 	pos: Vec3;
 	vel: Vec3;
-	impacts: ShipImpact[];
+	impacts: WorldImpact[];
 	ghosts: string[];
 	deferred: boolean;
 } {
@@ -2288,14 +2345,11 @@ function sweepWorld(
 	return {
 		pos: swept.pos,
 		vel: swept.vel,
+		// A station's spinning member and its keel are one body met.
 		ghosts: [...new Set(swept.ghosts.map((i) => owner[i]))],
 		impacts: swept.impacts.map((impact) => ({
-			with: owner[impact.solid],
-			ship: false,
-			closingKms: impact.closingKms,
-			damage: impact.damage,
-			side: impact.side,
-			resting: impact.resting,
+			...impact,
+			bodyId: owner[impact.solid],
 		})),
 		deferred: swept.planeOwns,
 	};
@@ -2310,7 +2364,7 @@ function sweepWorld(
  * **Cut off at each ship's first ship meeting** (`shipS`, §4.2): a world
  * impact at or before it owns the tick and is resolved here; with none, the
  * ship is `deferred` — left on its own motion for the pairs, and swept again
- * on what they left it (`resweepDeferred`). Each ship's motion comes back
+ * on what they left it (`resweepAfterPairs`). Each ship's motion comes back
  * ending where its world meeting, if any, left it, for the pairs to sweep.
  */
 function fleetAgainstWorld(
@@ -2319,10 +2373,16 @@ function fleetAgainstWorld(
 	starts: WorldStarts,
 	shipS: readonly (number | null)[],
 	clock: { fromTime: number; dt: number },
-): { steps: FleetStep[]; motions: ShipMotion[]; deferred: boolean[] } {
+): {
+	steps: FleetStep[];
+	motions: ShipMotion[];
+	deferred: boolean[];
+	normals: Vec3[][];
+} {
 	const steps: FleetStep[] = [];
 	const motions: ShipMotion[] = [];
 	const deferred: boolean[] = [];
+	const normals: Vec3[][] = [];
 	fleet.forEach((ship, index) => {
 		const out: FleetStep = {
 			id: ship.id,
@@ -2332,30 +2392,34 @@ function fleetAgainstWorld(
 			ghosts: [],
 		};
 		let held = false;
+		const met: Vec3[] = [];
 		if (!ship.projected) {
-			const met = sweepWorld(world, ship.motion, starts, clock, shipS[index]);
-			out.pos = met.pos;
-			out.vel = met.vel;
-			out.ghosts = met.ghosts;
-			out.impacts.push(...met.impacts);
-			held = met.deferred;
+			const swept = sweepWorld(world, ship.motion, starts, clock, shipS[index]);
+			out.pos = swept.pos;
+			out.vel = swept.vel;
+			out.ghosts = swept.ghosts;
+			out.impacts.push(...swept.impacts.map(asShipImpact));
+			met.push(...swept.impacts.map((impact) => impact.normal));
+			held = swept.deferred;
 		}
 		steps.push(out);
 		deferred.push(held);
+		normals.push(met);
 		motions.push({
 			...ship.motion,
 			end: { ...ship.motion.end, origin: out.pos },
 			velEnd: out.vel,
 		});
 	});
-	return { steps, motions, deferred };
+	return { steps, motions, deferred, normals };
 }
 
 /**
  * The step's ships against each other (`collision.md` §3, C4b, §6; node
  * #664), after each has met whatever of the world came before its first
- * meeting (`fleetAgainstWorld`); a ship whose meeting came first meets the
- * world after this, on what the pair left it (`resweepDeferred`).
+ * meeting (`fleetAgainstWorld`); a ship whose meeting came first, or whose
+ * world meeting came first and which a pair then moved, meets the world
+ * after this, on what the pair left it (`resweepAfterPairs`).
  *
  * **The player against every fleet ship**, then **every pair of fleet ships**
  * with at least one flown — through `sweepShipPair`, so momentum is
@@ -2469,7 +2533,7 @@ const pairKey = (idA: string, idB: string): string => `${idA}\u0000${idB}`;
 /**
  * Every met pair the world's second look left overlapped, pushed apart again
  * (§3.1, §4.3; node #664). A ship swept against the world after its meeting
- * (`resweepDeferred`, and the player's own resweep) can be held out of a
+ * (`resweepAfterPairs`, and the player's own resweep) can be held out of a
  * solid **back into the partner it had just parted from**: a raider ramming a
  * patrol against a star pushes the patrol in by the mass split, and the star
  * holds it out again, onto the raider. Left there, the next step would read
@@ -2477,11 +2541,17 @@ const pairKey = (idA: string, idB: string): string => `${idA}\u0000${idB}`;
  *
  * So each pair now overlapped is moved apart along the normal it parted on
  * (read at the poses the pairs left, which stood `SEPARATION_KM` apart), by
- * `pushOutAlong`: wholly by the ship the world did not just hold, or by mass
- * when it held both or neither — never a carrier still on its projection,
- * whose pose is a route's — and the inward part of the pair's relative
- * velocity is taken off in the same shares, so momentum is kept between two
- * free ships. A projected carrier this step **met** is not on its projection
+ * `pushOutAlong`: wholly by the ship that can give way, or by mass when both
+ * can or neither can — never a carrier still on its projection, whose pose
+ * is a route's — and the inward part of the pair's relative velocity is
+ * taken off in the same shares, so momentum is kept between two free ships.
+ * **A ship cannot give way into the world** (sage round 6): not along a push
+ * against the outward normal of any world impact it had this step, in either
+ * look, nor against the correction the world's second look just made to it.
+ * Two ships the world held side by side are not split by mass, which pushed
+ * the inner one back into the star; the outer one, whose push is outward,
+ * takes it all. Neither able to give is a squeeze no push resolves, and is
+ * split by mass as before. A projected carrier this step **met** is not on its projection
  * any more: the meeting hands it to flight at the pose the step leaves it
  * (§6), so it gives way like a flown ship, and a world-held ship it struck
  * is not pushed back into what held it (sage round 5). **Nothing
@@ -2494,10 +2564,12 @@ function keepPairsApart(
 		motion: ShipMotion;
 		paired: Vec3;
 		ship: { pos: Vec3; vel: Vec3 };
+		worldNormals: readonly Vec3[];
 	} | null,
 	fleet: readonly FleetShip[],
 	steps: FleetStep[],
 	pairedFleet: readonly Vec3[],
+	fleetNormals: readonly (readonly Vec3[])[],
 	ghosts: ReadonlySet<string>,
 ): void {
 	interface Member {
@@ -2514,6 +2586,8 @@ function keepPairsApart(
 		paired: Vec3;
 		/** Where it is now, written back in place. */
 		now: { pos: Vec3; vel: Vec3 };
+		/** The outward normal of every world impact it had this step. */
+		worldNormals: readonly Vec3[];
 	}
 	const members: Member[] = fleet.map((f, index) => ({
 		id: f.id,
@@ -2521,6 +2595,7 @@ function keepPairsApart(
 		pinned: f.projected && steps[index].impacts.length === 0,
 		paired: pairedFleet[index],
 		now: steps[index],
+		worldNormals: fleetNormals[index],
 	}));
 	const pairs = eligibleFleetPairs(fleet);
 	if (player) {
@@ -2530,6 +2605,7 @@ function keepPairsApart(
 			paired: player.paired,
 			pinned: false,
 			now: player.ship,
+			worldNormals: player.worldNormals,
 		});
 		const you = members.length - 1;
 		pairs.unshift(...fleet.map((_, index): [number, number] => [you, index]));
@@ -2540,8 +2616,15 @@ function keepPairsApart(
 		return box;
 	};
 	const poseOf = (m: Member, origin: Vec3) => ({ ...m.motion.end, origin });
-	/** The world moved it after the pairs did. */
-	const held = (m: Member) => length(sub(m.now.pos, m.paired)) > 0;
+	/** Whether `m` can be moved along `d` without driving it back into the
+	 *  world: not against any surface it met this step, nor against the
+	 *  correction the world made to it after the pairs did. */
+	const canGive = (m: Member, d: Vec3): boolean => {
+		if (m.pinned) return false;
+		if (m.worldNormals.some((normal) => dot(d, normal) < 0)) return false;
+		const held = sub(m.now.pos, m.paired);
+		return length(held) === 0 || dot(d, held) > 0;
+	};
 	for (const [x, y] of pairs) {
 		const a = members[x];
 		const b = members[y];
@@ -2576,8 +2659,9 @@ function keepPairsApart(
 			n,
 		);
 		if (!(push > 0)) continue;
-		const freeA = !a.pinned && !held(a);
-		const freeB = !b.pinned && !held(b);
+		// A moves along n, B against it.
+		const freeA = canGive(a, n);
+		const freeB = canGive(b, scale(n, -1));
 		const shareA = b.pinned
 			? 1
 			: a.pinned
@@ -2809,50 +2893,25 @@ export function worldSolids(
 }
 
 /**
- * The step's ship motion against every solid `worldSolids` names, through
- * `sweepShip`.
+ * The player's motion against the world, through `sweepWorld` — the same
+ * wrapper a fleet ship meets it through — landing where it leaves the ship.
  *
- * `clock.planeS` is the watched plane's time (§4.2): the sweep weighs it
- * against every impact, and `planeOwns` says which won.
+ * `clock.planeS` is the cut (§4.2): the sweep weighs it against every
+ * impact, and `planeOwns` says the cut won and nothing was resolved.
  */
 function collideShip(
 	world: World,
-	solid: readonly Primitive[],
-	from: Vec3,
-	fromVel: Vec3,
-	attitude: HullAttitude,
-	step: HullStep,
+	motion: ShipMotion,
 	starts: WorldStarts,
 	clock: { fromTime: number; dt: number; planeS: number | null },
 ): { impacts: WorldImpact[]; ghosts: string[]; planeOwns: boolean } {
-	const { owner, motions } = worldSolids(
-		world.system,
-		{ start: from, end: world.ship.pos, reachKm: reachKm(solid) },
-		starts,
-		{ fromTime: clock.fromTime, toTime: world.gameTime },
-	);
-	const swept = sweepShip(
-		{
-			primitives: solid,
-			start: shipPose(from, attitude.nose, attitude.up),
-			end: shipPose(world.ship.pos, step.nose, step.up),
-			velStart: fromVel,
-			velEnd: world.ship.vel,
-		},
-		motions,
-		clock.dt,
-		{ planeS: clock.planeS },
-	);
+	const swept = sweepWorld(world, motion, starts, clock, clock.planeS);
 	world.ship.pos = swept.pos;
 	world.ship.vel = swept.vel;
 	return {
-		impacts: swept.impacts.map((impact) => ({
-			...impact,
-			bodyId: owner[impact.solid],
-		})),
-		// A station's spinning member and its keel are one body met.
-		ghosts: [...new Set(swept.ghosts.map((index) => owner[index]))],
-		planeOwns: swept.planeOwns,
+		impacts: swept.impacts,
+		ghosts: swept.ghosts,
+		planeOwns: swept.deferred,
 	};
 }
 

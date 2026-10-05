@@ -1150,6 +1150,244 @@ describe("stepWorld: a carrier a meeting hands to flight takes the correction th
 		});
 });
 
+describe("stepFleet: a ram after the world's meeting leaves both ships outside the star (sage round 6, node #664)", () => {
+	const dt = 0.1;
+	/**
+	 * A patrol falling onto seed 47's star from `clearKm` above it at
+	 * `fallKms`, and a raider behind it, `gapKm` further out, falling faster
+	 * at `ramKms`, so the raider catches the patrol inside the step. In the
+	 * `world-first` case the patrol meets the star before the raider meets it
+	 * — its world meeting is resolved first, and the ram that follows pushed
+	 * it back in, 3 cm under the surface, where the next step ghosts the star.
+	 * In the `ship-first` case the raider meets it first and both meet the
+	 * star after: the two were split by mass beside it, and the patrol was
+	 * pushed in again.
+	 */
+	const CASES = {
+		"world-first": { clearKm: 0.01, fallKms: 0.5, gapKm: 0.1, ramKms: 3 },
+		"ship-first": { clearKm: 0.002, fallKms: 0.1, gapKm: 0.03, ramKms: 2 },
+	} as const;
+
+	function rammedOntoStar(which: keyof typeof CASES) {
+		const { clearKm, fallKms, gapKm, ramKms } = CASES[which];
+		const world = makeWorld(47);
+		const star = world.system.bodies.find((b) => b.kind === "star");
+		if (!star) throw new Error("seed 47 has no star");
+		const sphere = bodySphere(star.radiusKm);
+		const dir = v3(1, 0, 0);
+		const nose = scale(dir, -1);
+		const up = v3(0, 1, 0);
+		/** How far a ship stands clear of the star where it stands now. */
+		const clearance = (hull: HullId, pos: Vec3) => {
+			const gap = pairSeparation(
+				box(hull)[0],
+				shipPose(pos, nose, up),
+				sphere,
+				shipPose(star.pos, v3(0, 0, 1), v3(0, 1, 0)),
+			);
+			return gap.overlap ? -1 : gap.distanceKm;
+		};
+		const vel = bodyVelocity(world.system, star.id, world.gameTime);
+		const probe = add(star.pos, scale(dir, star.radiusKm + 0.1));
+		const patrolPos = add(
+			probe,
+			scale(dir, clearKm - clearance("patrol", probe)),
+		);
+		const patrol: FleetShip = {
+			id: "patrol",
+			projected: false,
+			motion: flying(
+				"patrol",
+				patrolPos,
+				add(vel, scale(dir, -fallKms)),
+				dt,
+				nose,
+				up,
+			),
+		};
+		const probeRaider = add(patrolPos, scale(dir, 0.2));
+		const gap = pairSeparation(
+			box("raider")[0],
+			shipPose(probeRaider, nose, up),
+			box("patrol")[0],
+			patrol.motion.start,
+		);
+		if (gap.overlap) throw new Error("the probe pose overlaps");
+		const raider: FleetShip = {
+			id: "raider",
+			projected: false,
+			motion: flying(
+				"raider",
+				sub(probeRaider, scale(dir, gap.distanceKm - gapKm)),
+				add(vel, scale(dir, -ramKms)),
+				dt,
+				nose,
+				up,
+			),
+		};
+		const fleet = [patrol, raider];
+		const step = (ships: FleetShip[]) => {
+			const fromTime = world.gameTime;
+			const starts = worldStarts(world.system, fromTime);
+			advanceWorldClock(world, dt);
+			return stepFleet(world, ships, starts, { fromTime, dt });
+		};
+		const steps = step(fleet);
+		return { world, star, fleet, steps, step, clearance, nose, up, dir };
+	}
+
+	for (const which of ["world-first", "ship-first"] as const)
+		test(`the patrol is held outside the star, apart from the raider, and billed for the star once (${which})`, () => {
+			const { world, star, fleet, steps, step, clearance, nose, up, dir } =
+				rammedOntoStar(which);
+			const [patrol, raider] = steps;
+			// Each meeting is billed once, in the order the step met them.
+			expect(patrol.impacts.map((i) => i.with)).toEqual(
+				which === "world-first" ? [star.id, "raider"] : ["raider", star.id],
+			);
+			expect(raider.impacts.filter((i) => i.ship).map((i) => i.with)).toEqual([
+				"patrol",
+			]);
+			// Both end outside the star and apart from each other.
+			expect(clearance("patrol", patrol.pos)).toBeGreaterThan(0);
+			expect(clearance("raider", raider.pos)).toBeGreaterThan(0);
+			expect(
+				pairSeparation(
+					box("raider")[0],
+					shipPose(raider.pos, nose, up),
+					box("patrol")[0],
+					shipPose(patrol.pos, nose, up),
+				).overlap,
+			).toBe(false);
+			// The patrol is not left falling into the star.
+			const starVel = bodyVelocity(world.system, star.id, world.gameTime);
+			expect(dot(sub(patrol.vel, starVel), dir)).toBeGreaterThanOrEqual(-1e-12);
+			// The next step from there meets no ghost: the star is met, if at
+			// all, and so is the other ship.
+			const next = step(
+				fleet.map((ship, index) => {
+					const left = steps[index];
+					return {
+						...ship,
+						motion: {
+							...ship.motion,
+							start: shipPose(left.pos, nose, up),
+							end: shipPose(add(left.pos, scale(left.vel, dt)), nose, up),
+							velStart: left.vel,
+							velEnd: left.vel,
+						},
+					};
+				}),
+			);
+			for (const ship of next)
+				expect([ship.id, ship.ghosts]).toEqual([ship.id, []]);
+		});
+});
+
+describe("stepWorld: a ram after the player's world meeting leaves the player outside the star (sage round 6, node #664)", () => {
+	const dt = 0.1;
+	/** The courier falls from this far above the star; a raider behind it,
+	 *  this much further out, catches it after the star has. */
+	const CLEAR_KM = 0.01;
+	const FALL_KMS = 0.5;
+	const GAP_KM = 0.1;
+	const RAM_KMS = 3;
+
+	test("the courier is held outside the star, apart from the raider, and billed for the star once", () => {
+		const world = makeWorld(47);
+		const star = world.system.bodies.find((b) => b.kind === "star");
+		if (!star) throw new Error("seed 47 has no star");
+		const sphere = bodySphere(star.radiusKm);
+		// `still()` points the nose along −z, so the star is under the nose.
+		const dir = v3(0, 0, 1);
+		const nose = scale(dir, -1);
+		const up = v3(0, 1, 0);
+		const clearance = (hull: HullId, pos: Vec3) => {
+			const gap = pairSeparation(
+				box(hull)[0],
+				shipPose(pos, nose, up),
+				sphere,
+				shipPose(star.pos, v3(0, 0, 1), v3(0, 1, 0)),
+			);
+			return gap.overlap ? -1 : gap.distanceKm;
+		};
+		const vel = bodyVelocity(world.system, star.id, world.gameTime);
+		const probe = add(star.pos, scale(dir, star.radiusKm + 0.1));
+		world.ship.pos = add(
+			probe,
+			scale(dir, CLEAR_KM - clearance("courier", probe)),
+		);
+		world.ship.vel = add(vel, scale(dir, -FALL_KMS));
+		const probeRaider = add(world.ship.pos, scale(dir, 0.2));
+		const gap = pairSeparation(
+			box("raider")[0],
+			shipPose(probeRaider, nose, up),
+			box("courier")[0],
+			shipPose(world.ship.pos, nose, up),
+		);
+		if (gap.overlap) throw new Error("the probe pose overlaps");
+		const raider: FleetShip = {
+			id: "raider",
+			projected: false,
+			motion: flying(
+				"raider",
+				sub(probeRaider, scale(dir, gap.distanceKm - GAP_KM)),
+				add(vel, scale(dir, -RAM_KMS)),
+				dt,
+				nose,
+				up,
+			),
+		};
+		const flown = stepWorld(
+			world,
+			still(),
+			HANDS_OFF,
+			dt,
+			flightPerformance("courier"),
+			box("courier"),
+			[],
+			[raider],
+		);
+		expect(flown.impacts.map((i) => i.bodyId)).toEqual([star.id]);
+		expect(flown.shipImpacts.map((i) => i.with)).toEqual(["raider"]);
+		const [step] = flown.fleet;
+		expect(clearance("courier", world.ship.pos)).toBeGreaterThan(0);
+		expect(clearance("raider", step.pos)).toBeGreaterThan(0);
+		expect(
+			pairSeparation(
+				box("courier")[0],
+				shipPose(world.ship.pos, nose, up),
+				box("raider")[0],
+				shipPose(step.pos, nose, up),
+			).overlap,
+		).toBe(false);
+		// The next step from there meets no ghost.
+		const next = stepWorld(
+			world,
+			still(),
+			HANDS_OFF,
+			dt,
+			flightPerformance("courier"),
+			box("courier"),
+			[],
+			[
+				{
+					...raider,
+					motion: {
+						...raider.motion,
+						start: shipPose(step.pos, nose, up),
+						end: shipPose(add(step.pos, scale(step.vel, dt)), nose, up),
+						velStart: step.vel,
+						velEnd: step.vel,
+					},
+				},
+			],
+		);
+		expect(next.ghosts).toEqual([]);
+		expect(next.fleet[0].ghosts).toEqual([]);
+	});
+});
+
 describe("stepFleet: the fleet meets the world and itself with no player in the step (node #664)", () => {
 	/**
 	 * Sage round 4: while the player cruises, the raider and the engaged
