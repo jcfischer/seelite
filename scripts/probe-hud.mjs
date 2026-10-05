@@ -36,6 +36,11 @@
  * 4. It holds in *both* render layers — a body drawn at `FAR_SCALE` an AU away
  *    and one drawn at 1:1 must both be marked correctly, which is the property
  *    that lets one overlay serve three layers.
+ * 5. The Core mark (`hud-and-scanner.md` §5.5, node #478) is painted where the
+ *    live system's Core bearing projects: its record agrees with `markerNdc`,
+ *    the overlay carries ink in a box around it, and the same box is bare with
+ *    the ship turned away. Deleting the strokes and keeping the record turns the
+ *    ink row red, which is the defect a record-only check would pass.
  */
 import {
 	bootedGame,
@@ -211,6 +216,119 @@ check(
 	state.liveCockpit === "true",
 	`live cockpit active: ${state.liveCockpit ?? "absent"}`,
 );
+
+// (5) The Core mark (`hud-and-scanner.md` §5.5, node #478) is painted where the
+// Core bearing lands. The record alone proves nothing was painted (#69, #447),
+// so the overlay's own pixels are read: once with the bearing 15° right of the
+// nose, and once — the control — with the ship turned to face away from it, the
+// *same* box read again. Only the overlay canvas is read, so the sky behind it
+// cannot light the box; what can is another marker, which is why the control is
+// the same pixels rather than a constant.
+const CORE_OFF_NOSE_DEG = 15;
+/** Half the side of the box read around the mark: the brackets' radius plus a
+ *  stroke's width and antialiasing, and short of the label beside it. */
+const CORE_BOX_PX = 9;
+const coreMark = await page.evaluate(
+	async ({ offDeg, boxPx }) => {
+		const g = window.__seelite;
+		const core = g.coreBearingDir;
+		if (!core) return { noCore: true };
+		const frames = async () => {
+			await new Promise((r) => requestAnimationFrame(() => r()));
+			await new Promise((r) => requestAnimationFrame(() => r()));
+		};
+		const norm = (v) => {
+			const l = Math.hypot(v.x, v.y, v.z);
+			return { x: v.x / l, y: v.y / l, z: v.z / l };
+		};
+		// `face` looks along a direction with world +y as up, so the camera's right
+		// is `dir × up`. Turning the nose *left* of the core about that right puts
+		// the mark right of centre and level with it — clear of the nose cross and
+		// above the floor strip.
+		const up = { x: 0, y: 1, z: 0 };
+		const crossUp = (v) => ({ x: -v.z * up.y, y: 0, z: v.x * up.y });
+		const right0 = norm(
+			Math.hypot(core.x, core.z) > 1e-3 ? crossUp(core) : { x: 1, y: 0, z: 0 },
+		);
+		const a = (offDeg * Math.PI) / 180;
+		const facing = norm({
+			x: core.x * Math.cos(a) - right0.x * Math.sin(a),
+			y: core.y * Math.cos(a) - right0.y * Math.sin(a),
+			z: core.z * Math.cos(a) - right0.z * Math.sin(a),
+		});
+		const overlay = document.getElementById("overlay");
+		const ctx = overlay.getContext("2d");
+		const inked = (x, y) => {
+			const left = Math.round(x) - boxPx;
+			const top = Math.round(y) - boxPx;
+			const side = 2 * boxPx + 1;
+			const data = ctx.getImageData(left, top, side, side).data;
+			let n = 0;
+			for (let i = 3; i < data.length; i += 4) if (data[i] > 0) n++;
+			return n;
+		};
+		g.face(facing);
+		await frames();
+		const hit = g.coreRender;
+		const projected = g.markerNdc(core);
+		const w = overlay.width;
+		const h = overlay.height;
+		const expected = {
+			x: (projected.ndcX * 0.5 + 0.5) * w,
+			y: (1 - (projected.ndcY * 0.5 + 0.5)) * h,
+		};
+		const at = hit?.at ?? expected;
+		const hitInk = inked(at.x, at.y);
+		g.face({ x: -core.x, y: -core.y, z: -core.z });
+		await frames();
+		const control = g.coreRender;
+		const controlInk = inked(at.x, at.y);
+		return {
+			core,
+			hit,
+			expected,
+			hitInk,
+			control,
+			controlInk,
+			view: g.view,
+		};
+	},
+	{ offDeg: CORE_OFF_NOSE_DEG, boxPx: CORE_BOX_PX },
+);
+
+if (coreMark.noCore) {
+	check(
+		"the live system has a Core bearing to mark",
+		false,
+		"coreBearingDir is null",
+	);
+} else {
+	check(
+		`the Core mark is drawn ${CORE_OFF_NOSE_DEG}° off the nose, where the bearing projects`,
+		coreMark.hit !== null &&
+			Math.abs(coreMark.hit.at.x - coreMark.expected.x) < 0.5 &&
+			Math.abs(coreMark.hit.at.y - coreMark.expected.y) < 0.5,
+		coreMark.hit
+			? `drawn at (${coreMark.hit.at.x.toFixed(1)}, ${coreMark.hit.at.y.toFixed(1)}), ` +
+					`projected (${coreMark.expected.x.toFixed(1)}, ${coreMark.expected.y.toFixed(1)}), ` +
+					`label ${coreMark.hit.labelled ? "drawn" : "declined"}, view ${coreMark.view}`
+			: `no mark recorded; projected (${coreMark.expected.x.toFixed(1)}, ${coreMark.expected.y.toFixed(1)}), view ${coreMark.view}`,
+	);
+	// The hit arm needs ink, and a floor so a lone stray pixel cannot carry it:
+	// the two brackets and the dot paint well over this at any antialiasing.
+	check(
+		"the Core mark puts ink on the glass, and the same box is bare facing away",
+		coreMark.hitInk >= 15 && coreMark.controlInk * 3 < coreMark.hitInk,
+		`${coreMark.hitInk} inked px at the mark, ${coreMark.controlInk} in the same box facing away`,
+	);
+	check(
+		"facing away from the core, no Core mark is recorded",
+		coreMark.control === null,
+		coreMark.control
+			? `recorded at (${coreMark.control.at.x.toFixed(1)}, ${coreMark.control.at.y.toFixed(1)})`
+			: "none",
+	);
+}
 
 // The overlay assertions above deliberately use the default live-cockpit route.
 // Keep this older legacy-HUD ETA check as a separate compatibility pass.

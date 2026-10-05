@@ -775,7 +775,8 @@ which is #100's measurement. §11 of `galaxy-generation.md` is where the rule is
 written down once, and §12 is where the measured cone figures are — how much of a
 sky's other systems a star near the rim puts inside a cone on the centre, against
 what uniform spacing would — reprinted by `scripts/measure-sky-density.ts core`.
-`coreBearing` in `src/galaxy-frame.ts`.
+`coreBearing` in `src/galaxy-frame.ts`. The sky does not show it; the **Core
+mark** on the glass does (`hud-and-scanner.md` §5.5, node #478).
 _Avoid_: The way home, galactic down
 
 **Derived sky**:

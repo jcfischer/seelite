@@ -28,6 +28,12 @@ export type ChangelogEntry = {
 };
 
 export const CHANGELOG: readonly ChangelogEntry[] = [
+	// Node #478: proposed copy; principal approval and the main date are pending.
+	{
+		date: "2026-10-05",
+		text: "A faint CORE mark on the cockpit glass now shows which way the centre of the star cluster lies from the system you are in.",
+		node: 478,
+	},
 	// Node #213: proposed copy; principal approval and the main date are pending.
 	{
 		date: "2026-10-04",

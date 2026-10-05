@@ -49,6 +49,7 @@ import {
 	SYSTEM_PLANE_NORMAL,
 	skyBearing,
 	skyFrame,
+	systemCoreBearing,
 } from "../src/galaxy-frame";
 import { type Quat4, rotateBy } from "../src/quat";
 import {
@@ -584,6 +585,55 @@ describe("coreBearing", () => {
 		expect(Math.max(...againstPlane)).toBeGreaterThan(0.6);
 		expect(Math.min(...againstPlane)).toBeLessThan(0.4);
 		expect(mean).toBeGreaterThan(0.2);
+	});
+});
+
+describe("systemCoreBearing: the one read the haze and the Core mark share", () => {
+	test("is the observer's own frame composed with coreBearing, for every shipped system", () => {
+		// The helper adds no arithmetic of its own; what it adds is that the two
+		// readers cannot each compose it differently. So the row holds it equal to
+		// the composition element by element, over the whole cluster.
+		for (const r of galaxy.systems) {
+			const got = systemCoreBearing(r);
+			const want = coreBearing(skyFrame(r.seed), r.pos);
+			expect(got).not.toBeNull();
+			expectVec(got!, want!, 1e-12);
+		}
+	});
+
+	test("is carried into the system's frame, not left in galaxy space", () => {
+		// The defect this row can see: a helper that returned the raw galaxy-space
+		// direction to the centre is a perfectly good unit vector and passes the row
+		// above only if `coreBearing` were wrong the same way. Here it is held
+		// against that raw direction, and against the same bearing read through a
+		// *neighbour's* frame — the other wrong frame a caller could hand it.
+		const rim = galaxy.systems.reduce((best, r) =>
+			length(r.pos) > length(best.pos) ? r : best,
+		);
+		const other = galaxy.systems.find((r) => r.seed !== rim.seed)!;
+		const b = systemCoreBearing(rim)!;
+		const raw = normalizeOr(scale(rim.pos, -1), UNIT);
+		const throughOther = coreBearing(skyFrame(other.seed), rim.pos)!;
+		expect(length(sub(b, raw))).toBeGreaterThan(1e-3);
+		expect(length(sub(b, throughOther))).toBeGreaterThan(1e-3);
+	});
+
+	test("main.ts reads it once, and the haze and the glass draw from that one value", () => {
+		// Node #478. The haze in the bake and the Core mark on the glass both say
+		// where the core is; two reads would let them drift, and nothing headless
+		// renders either. So the row holds the wiring: one call, kept on the field
+		// the draw reads, and the bake's haze built from the same local.
+		const main = codeOf("src/main.ts");
+		const calls = main.match(/systemCoreBearing\(/g) ?? [];
+		expect(calls.length).toBe(1);
+		expect(main).toMatch(
+			/const core = systemCoreBearing\(record\);\s*this\.coreDir = core;/,
+		);
+		expect(main).toMatch(/coreBearing: \[core\.x, core\.y, core\.z\]/);
+		expect(main).toMatch(/const core = shipCues \? this\.coreDir : null;/);
+		// And no second spelling of the composition beside it.
+		expect(main).not.toMatch(/\bcoreBearing\(/);
+		expect(main).not.toMatch(/\bskyFrame\(/);
 	});
 });
 
