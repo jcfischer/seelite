@@ -102,14 +102,20 @@ function blendAt(
 const FORWARD = v3(0, 0, -1);
 
 /**
- * A sample's attitude as a frame. With no up, the up is where the shortest
- * turn from `FORWARD` onto the nose carries the hull's own up — what
- * three's `setFromUnitVectors` draws, a half turn about the up included.
+ * A sample's attitude as a frame, the up square to the nose — as three's
+ * `lookAt` squares it before drawing, so a route's up that has drifted off
+ * square is swept where it is drawn. With no up, the up is where the
+ * shortest turn from `FORWARD` onto the nose carries the hull's own up —
+ * what three's `setFromUnitVectors` draws, a half turn about the up included.
  */
 function frameOf(sample: AttitudeSample): TrafficAttitude | null {
 	if (!sample.nose) return null;
 	const nose = scale(sample.nose, 1 / length(sample.nose));
-	if (sample.up) return { nose, up: scale(sample.up, 1 / length(sample.up)) };
+	if (sample.up) {
+		const square = sub(sample.up, scale(nose, dot(sample.up, nose)));
+		const n = length(square);
+		if (n > 1e-12) return { nose, up: scale(square, 1 / n) };
+	}
 	const cos = dot(FORWARD, nose);
 	const axis = cross(FORWARD, nose);
 	const sin = length(axis);

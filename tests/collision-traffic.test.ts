@@ -1135,6 +1135,17 @@ describe("presentedTrafficStep: a projection is swept along what is drawn (node 
 		close(at(0.25)?.nose, yaw(45));
 		close(at(0.3)?.nose, yaw(90));
 		close(at(0.25)?.up, v3(0, 1, 0));
+		// An up off square to its nose is squared, as three's `lookAt` draws it.
+		const skew = presentedTrafficAttitude(
+			{
+				current: { nose: yaw(0), up: v3(0, 1, -0.2) },
+				currentAtS: 0,
+				prior: null,
+				priorAtS: 0,
+			},
+			0,
+		);
+		close(skew?.up, v3(0, 1, 0));
 		// No prior: the current's.
 		close(
 			presentedTrafficAttitude({ ...samples, prior: null }, 0.2)?.nose,
