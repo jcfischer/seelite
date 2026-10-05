@@ -523,7 +523,7 @@ export const PROBE_CATALOG = Object.freeze(
 		),
 		entry(
 			"probe-market-shelf.mjs",
-			"Docks at a trade station and reads the live Market tab: a capped shelf's MAX mark and its hover text, a blank HELD cell, the HELD cell after a real buy, and a bottom line that keeps only the credits on Market and the goods list on Equipment.",
+			"Docks at a trade station and reads the live Market tab: a capped shelf's MAX mark and its hover text, a blank HELD cell, the HELD cell after a real buy, and a bottom line that keeps only the credits on Market and the goods list on Equipment, and with an accepted consignment aboard the hold line's entrusted tonnes on Market and no HELD cell moved by it.",
 			[
 				"station market",
 				"shelf cap",
@@ -532,6 +532,7 @@ export const PROBE_CATALOG = Object.freeze(
 				"cargo",
 				"commander line",
 				"trade screen",
+				"entrusted cargo",
 			],
 		),
 		entry(

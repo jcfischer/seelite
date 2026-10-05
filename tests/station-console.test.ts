@@ -846,6 +846,19 @@ describe("a capped shelf reads MAX and every row says what is held (#473)", () =
 		expect(marketDisplayValues(sold).shelfMark).toBe(SHELF_MAX_MARK);
 	});
 
+	test("a sale into a capped shelf lowers the price, as the hover text says", () => {
+		// The sentence's second clause is a claim about the market, not about the
+		// glass: the shelf stays at the cap and the price still moves. Gold is
+		// at the cap untouched, so the sale is into a full shelf from the start.
+		const before = rowOf(screen(noDeficit), "Gold");
+		const sold = rowOf(screen(moved("Gold", -5)), "Gold");
+		expect(before.listed && sold.listed).toBe(true);
+		expect(before.quantity).toBe(QUANTITY_CAP);
+		expect(sold.quantity).toBe(QUANTITY_CAP);
+		expect(sold.buyCr as number).toBeLessThan(before.buyCr as number);
+		expect(sold.sellCr as number).toBeLessThan(before.sellCr as number);
+	});
+
 	test("an unlisted row carries no mark", () => {
 		const illegal = COMMODITIES.find((c) => !listsCommodity(c, TRADE));
 		if (!illegal) throw new Error("the trade station lists every good");

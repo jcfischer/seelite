@@ -1687,6 +1687,13 @@ export class LiveCockpit {
 	 * column says the same thing per row and a second list beside it is two
 	 * copies of one fact. Every other tab keeps the whole line — on the
 	 * Shipyard it is the only place the cargo shows.
+	 *
+	 * **Nothing entrusted is dropped with it.** `cargo` is the pilot's own
+	 * lines only (`main.ts` filters the projection by owner) and never carried
+	 * a job's lot on any tab; a consignment's tonnes are in `holdLine`'s
+	 * `t entrusted` clause, which this console draws above the rows on every
+	 * tab, Market included. `probe-market-shelf` reads both on Market with a
+	 * consignment aboard.
 	 */
 	private commanderLine(stationConsole: {
 		tab: StationConsoleTab;

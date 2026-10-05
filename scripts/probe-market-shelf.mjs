@@ -7,8 +7,9 @@
  * than restated here, because #689 may move the cap and a probe carrying its
  * own 63 would go falsely red when it does.
  *
- * Two checks are setup gates — the dock phase and that there is a tonne good
- * with a shelf to buy — and each reads the thing it gates.
+ * Four checks are setup gates — the dock phase, a tonne good with two or more
+ * on its shelf, a job posting entrusted cargo, and that consignment aboard —
+ * and each reads the thing it gates.
  */
 import {
 	bootedGame,
@@ -149,9 +150,13 @@ try {
 			(el) =>
 				el.getAttribute("data-live-listed") === "true" &&
 				el.querySelector('[data-live-station-action="buy-commodity"]') &&
-				/^[1-9]\d*\s*t\b/.test(
-					el.querySelector("[data-live-shelf]")?.textContent ?? "",
-				),
+				// Two buys follow, so the shelf must hold at least two: a 1 t
+				// shelf would refuse the second for a setup reason.
+				Number(
+					/^(\d+)\s*t\b/.exec(
+						el.querySelector("[data-live-shelf]")?.textContent ?? "",
+					)?.[1] ?? 0,
+				) >= 2,
 		);
 		const good = row?.getAttribute("data-live-market-row") ?? null;
 		if (!good) return null;
@@ -160,7 +165,10 @@ try {
 		window.__seelite.updateCockpit();
 		return good;
 	});
-	check("a tonne good with a shelf is on the board to buy", mine !== null);
+	check(
+		"a tonne good with two or more on the shelf is on the board to buy",
+		mine !== null,
+	);
 	const buy = page.locator(
 		`[data-live-station-action="buy-commodity"][data-live-station-name="${mine}"]`,
 	);
@@ -199,6 +207,58 @@ try {
 		"the Equipment tab keeps the whole line, goods included",
 		new RegExp(`^\\d+\\.\\d Cr · HOLD .*${mine} 2\\b`).test(equipmentLine),
 		equipmentLine,
+	);
+
+	// ---------------------------------------------------------------------
+	// A consignment aboard: dropping the Market tab's per-good list hides
+	// nothing entrusted. The list never carried a job's lot; the hold line
+	// above the rows carries its tonnes, on Market as on every tab.
+	// ---------------------------------------------------------------------
+	await page.locator('[data-live-station-tab="Requests"]').click();
+	const offerId = await page.evaluate(
+		() =>
+			window.__seelite.requestsView().offers.find((o) => o.operand?.entrusted)
+				?.id ?? null,
+	);
+	check("the board posts a job with entrusted cargo", offerId !== null);
+	await page
+		.locator(
+			`[data-live-station-console] [data-live-request-action="details"][data-live-request-id="${offerId}"]`,
+		)
+		.click();
+	await page
+		.locator('[data-live-station-console] [data-live-request-action="accept"]')
+		.click();
+	const entrustedT = await page.evaluate(() =>
+		Object.values(
+			window.__seelite.commanderRecord().requests.entrustedByLotId,
+		).reduce((sum, lot) => sum + lot.aboardT, 0),
+	);
+	check("the consignment is aboard", entrustedT > 0, `${entrustedT} t`);
+	await page.locator('[data-live-station-tab="Market"]').click();
+	const holdLine = (
+		await page.locator("[data-live-station-hold]").innerText()
+	).trim();
+	check(
+		"on Market the hold line says a job's cargo is aboard",
+		holdLine.includes(`${entrustedT} t entrusted`),
+		holdLine,
+	);
+	const withLot = await readRows();
+	check(
+		"the consignment moves no HELD cell: it is the requester's, not the pilot's",
+		withLot.every(
+			(row) => row.held === afterBuy.find((r) => r.name === row.name)?.held,
+		),
+		JSON.stringify(withLot.filter((row) => row.held)),
+	);
+	const lotLine = (
+		await page.locator("[data-live-commander]").innerText()
+	).trim();
+	check(
+		"with a consignment aboard the Market bottom line is still the credits",
+		/^\d+\.\d Cr$/.test(lotLine),
+		lotLine,
 	);
 
 	await page.close();

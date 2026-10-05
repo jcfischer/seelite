@@ -161,14 +161,15 @@ export interface ConsoleMarketRow {
 	/** The same, in units on the shelf. Present iff the deficit is non-zero. */
 	quantityDelta?: number;
 	/**
-	 * Units of this good in `commander.cargo`, in the good's own unit — the
-	 * HELD column (#473 D10). On **every** row, listed or not: a good this
+	 * Units of this good the pilot owns, in the good's own unit — the HELD
+	 * column (#473 D10). On **every** row, listed or not: a good this
 	 * station does not trade can still be aboard, and the row is where a pilot
 	 * looks for it.
 	 *
-	 * Entrusted job cargo is not in it and cannot be: it is read off the
-	 * commander's own map, and a consignment lives in the request journal and
-	 * is not per good. #443's hold line carries that.
+	 * Entrusted job cargo is not in it and cannot be: it is read off the hold
+	 * projection's pilot lines (`pilotGoods` in `hold.ts`), and a consignment
+	 * is the requester's, not per good on this screen. #443's hold line, drawn
+	 * above these rows on every tab, carries its tonnes.
 	 */
 	held: number;
 }
@@ -209,7 +210,8 @@ export interface StationMarketScreenInput {
 	 */
 	deficitOf: (goodName: string) => number;
 	/**
-	 * The pilot's own goods — `commander.cargo` — for the HELD column (#473 D10).
+	 * The pilot's own goods for the HELD column (#473 D10) — `pilotGoods` of
+	 * the console's hold projection, so `hold.ts` alone decides whose a line is.
 	 *
 	 * Required and not defaulted, for `holdT`'s reason below: a screen that
 	 * defaulted it to empty would draw a blank column over a full hold, and a

@@ -950,7 +950,7 @@ import {
 	heldSaveFault,
 } from "./save-badge";
 import { marketStationOf } from "./market";
-import { type HoldBids, holdSummary } from "./hold";
+import { type HoldBids, holdSummary, pilotGoods } from "./hold";
 
 import { exposeMarketLaw } from "./market-probe-hook";
 import {
@@ -15952,6 +15952,10 @@ class Game {
 		}
 		const { station, market, envelope, stationKey, economy, gameTimeMin } =
 			context;
+		// One projection for the whole console (#443) — see the key below for
+		// why it is built before the memo is consulted. Built first now because
+		// the market's HELD column reads it too.
+		const hold = holdSummary(this.commander, this.requests);
 		const readMarket = () =>
 			stationMarketScreen({
 				station: market,
@@ -15959,9 +15963,11 @@ class Game {
 				gameTimeMin,
 				deficitOf: (goodName) =>
 					readDeficit(envelope.deficits, stationKey, goodName, gameTimeMin),
-				// The HELD column (#473 D10): the pilot's own goods only, so an
-				// entrusted lot stays in the hold line and out of every row.
-				cargo: this.commander.cargo,
+				// The HELD column (#473 D10): the pilot's own lines off the hold
+				// projection, so an entrusted lot stays in the hold line's
+				// `t entrusted` clause — drawn on every tab, Market included — and
+				// out of every row.
+				cargo: pilotGoods(hold),
 				// The flown hold, bay included — the same figure the transaction
 				// uses (#182), read through `commanderHold` so the screen and till
 				// agree about whether a Large Cargo Bay counts.
@@ -16019,8 +16025,8 @@ class Game {
 		// markup key still reads `stationConsole.revision` and the request
 		// revision, so the *drawn* line depends on those counters even where
 		// this one no longer does. The two together are why the hold line is
-		// correct today; only the half in this file is self-keyed.
-		const hold = holdSummary(this.commander, this.requests);
+		// correct today; only the half in this file is self-keyed. (`hold` is
+		// built at the top of this method.)
 		// `pilotLines` would be wrong — these are every line, both owners — and
 		// `manifest` would be worse: CONTEXT.md scopes that noun to what an
 		// ordinary carrier carries on one voyage, and one canonical term with
