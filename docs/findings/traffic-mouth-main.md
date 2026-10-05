@@ -74,8 +74,10 @@ The runs used #669's driver, extended (appendix). For every run it:
 `probe-all.mjs` prints a probe's output only on failure, and `maxLeak` lives in
 that output, so the runner itself was not used. Each run started its own server
 and its own browser. Before each run the driver refused to start if
-`/tmp/seelite-probe.lock` existed, and it never did. So no probe suite ran
-during any counted run.
+`/tmp/seelite-probe.lock` existed, and it never refused. That check runs once,
+before the run: the driver neither takes the lock nor watches it while the probe
+runs, so it shows only that no suite held the lock as each run began. A suite
+started while a run was in progress would not have been caught.
 
 **Order.** The 20 GPU runs came first, as one block. Then the two SwiftShader
 arms ran as 20 interleaved pairs: odd pairs ran cpu-2px first, even pairs ran
@@ -107,8 +109,9 @@ gate of 5. The GPU lane, which `npm run probe` runs, did not fail in 20 runs.
 
 Columns are as in #669: `leaked` and `maxLeak` for both of the probe's passes,
 `overlap` as the number of pixels compared, and `bar x/y` as the chosen bar's
-projected position in NDC. `s` is the wall time of the whole run in seconds,
-server start included.
+projected position in NDC. `s` is the elapsed time in seconds from the probe's
+launch through the dev server's shutdown. Server start is not included: the
+driver starts its clock after `server.listen()` returns.
 
 ### gpu-2px
 
@@ -278,7 +281,7 @@ differ for another reason, this instrument does not say.
 
 ### Arm 2: does the 2px erosion hide the residual?
 
-**No difference.** Same lane, same build, interleaved:
+**No difference detected.** Same lane, same build, interleaved:
 
 | | cpu-2px | cpu-1px |
 | --- | --- | --- |
@@ -289,19 +292,27 @@ differ for another reason, this instrument does not say.
 
 Fisher's exact test on the failure counts gives a two-sided p of 1.00. Across
 the 400 cross-arm pairings of direct `maxLeak`, cpu-1px reads higher in 180,
-cpu-2px reads higher in 199, and 21 are ties. That is a coin toss. The 1px
+cpu-2px reads higher in 199, and 21 are ties, which shows no lean either way. The 1px
 erosion compares about three times as many pixels (96–97 against 33–38), and
 the residual's size does not move with it. On any one frame the 2px set is a
 subset of the 1px set, because a pixel solid over a 5×5 neighbourhood is also
 solid over 3×3, so the 1px `maxLeak` of that frame can never be lower. The runs
-are separate frames, so this bounds each run and not the comparison. Even so,
-two indistinguishable distributions say the extra edge pixels add nothing
-larger. So the residual is not confined to
-the pixels the 2px erosion strips, and the 2px erosion does not hide it.
+are separate frames, so this bounds each run and not the comparison.
+
+Neither test establishes that the two arms are equivalent. Fisher's test reads
+only the failure counts, and the 400 pairings reuse the same 40 runs, so they
+are not 400 independent observations. What 20 runs per arm show is that no
+effect of the erosion on failure rate or `maxLeak` was detected here; an effect
+smaller than this sample resolves is not excluded. The answer to arm 2's
+question does not rest on that comparison. It rests on the 2px arm alone: every
+one of its 20 runs read a positive residual above 0.886 (lowest 2.000), so the
+2px erosion leaves the residual visible, and the residual is not confined to
+the pixels that erosion strips.
 
 ## Limits of this measurement
 
-- **Ambient load.** No probe suite ran during any run, but the machine carried a
+- **Ambient load.** No suite held the probe lock as any run began (the check is
+  once per run, not continuous), but the machine carried a
   1-minute load of 11–25 from other work. #669 records that nothing else was
   probing, but gives no load figure, so the two cannot be compared on load.
   Whether load moves this residual is not measured here. Within these runs, low
@@ -330,9 +341,11 @@ residual has grown. On the GPU lane it reads 3.000–4.413 on
 direct and up to 5.000 on bloom. The GPU figure is above 0.886, but 0.886 is a
 SwiftShader floor, and no pre-#284 GPU baseline exists to compare it against.
 
-**The erosion arm does not differ from the 2px arm.** At 1px the probe fails
-15/20 against 16/20, and the `maxLeak` distributions are indistinguishable. The
-2px erosion from 9d268cb does not hide the residual on SwiftShader.
+**No difference was detected between the erosion arm and the 2px arm.** At 1px
+the probe fails 15/20 against 16/20, and the direct `maxLeak` medians are 8.258
+and 8.402; 20 runs per arm cannot exclude a smaller effect. The 2px erosion from
+9d268cb does not hide the residual on SwiftShader: the 2px arm read it above
+0.886 in all 20 runs.
 
 **State of the gate on `main`.** On the GPU lane, which `npm run probe` runs,
 the probe was green in 20 of 20 runs. That bounds its failure rate rather than
