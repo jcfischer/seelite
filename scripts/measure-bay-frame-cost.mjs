@@ -20,6 +20,13 @@
  * agreed with the table's 38.861 by coincidence. The table was about 2 ms high,
  * and this control carries the pair's 3.4.
  *
+ * **The same split runs between the bay and `planet-fill`.** The gate reads
+ * stations only (`stepOcclusionGate`), and `planet-fill` has none within a
+ * thousand kilometres. So "the same framing in open space costs the same"
+ * compares a pair-on frame (40.29) with a pair-off one (36.76), and the gap
+ * between them is not the station alone. No arm here pins the pair at
+ * `planet-fill`, so its share of that gap is not measured.
+ *
  * **The name is a leftover and is kept on purpose.** What it measured is that
  * the bay is not the subject: the same framing in open space, with no station
  * within a thousand kilometres, costs the same, and the whole of §13.1's

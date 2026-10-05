@@ -89,6 +89,18 @@ so `OCCLUSION_FRAMINGS.deepSky` is one shot. The third, the warm-up, is a
 property of the lost harness. The fourth, the floor, is real but does not
 explain anything here: both instruments read the same floor.
 
+**F7. #242's planet-fill comparison straddles the gate too.** #242 also
+compared the bay (40.29) with `planet-fill`, "the same framing in open space,
+with no station within a thousand kilometres", at 36.76. At 2e3086d the gate's
+only input is the station list. `stepOcclusionGate` (`src/occlusion.ts:331`)
+takes `stations`, and `main.ts:6170` passes `buildStationSubjects()`. With no
+station in range the gate is shut, so 36.76 and `no planet-4`'s 1.678 there are
+pair-off figures, and the bay's 40.29 is pair-on. The 3.5 ms between them is
+not the station's footprint alone. How much of it is the pair at `planet-fill`
+is not measured: the pair's cost depends on what is in the near layer, and no
+same-build arm pins it there. `CLAUDE.md` and the
+`measure-bay-frame-cost.mjs` header now say so.
+
 ## Today's build, for scale
 
 The same file on this branch's base (5726c865, run 5): sky-only pair off
@@ -106,10 +118,15 @@ frame-filling planet draws at half resolution (#211). These are why
   4.3 ms (10.99 against 6.68).
 - `tests/occlusion.test.ts`: the gate block's comment.
 - `CLAUDE.md`: the pair's cost, which was +3.563 / +7.130 ms (differences of the
-  withdrawn table), is now +2.110 / +4.152.
-- `scripts/measure-occlusion-cost.mjs`: the same pair of figures in its header.
-- `scripts/measure-bay-frame-cost.mjs`: its header attributed 3.740 to #242, and
-  its settings comment did not say the bay control is pair-on. Both are fixed.
+  withdrawn table), is now a pointer to `occlusion.ts` and this receipt. That
+  follows the bullet's own "not restated here" rule. The "A place is not a cost"
+  bullet now says its bay and `planet-fill` figures are in different gate
+  states (F7).
+- `scripts/measure-occlusion-cost.mjs`: the same pair of figures in its header,
+  now +2.110 / +4.152.
+- `scripts/measure-bay-frame-cost.mjs`: its header attributed 3.740 to #242,
+  and its settings comment did not say the bay control is pair-on. Both are
+  fixed, and the header carries F7.
 
 The qualitative claims survive. The pair more than doubles the open-space frame
 (×2.27, where the table gave ×1.95). Its cost roughly doubles at 2x (+2.110 to
@@ -122,7 +139,9 @@ text, so it is reported here rather than edited.
 
 The `36/36` signature appears only in the withdrawn table and the commit that
 wrote it. Every figure derived from that table has been listed above and
-corrected or withdrawn.
+corrected or withdrawn. #242's instrument read its open-space figures with the
+gate live, which is the fault behind F4. Its `planet-fill` figure has the same
+fault (F7).
 
 `src/settings.ts` quotes `cockpit-arrival` at 1.85–2.03 ms without the pair, and
 the pair at +2.32–2.46. Those came from the committed instrument before #241,
