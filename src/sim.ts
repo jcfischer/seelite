@@ -2045,8 +2045,7 @@ export function stepWorld(
 	// to place, and no ship was met before it, so it meets none this step.
 	const ships = collidePairs(
 		world,
-		playerMotion(),
-		planeOwns,
+		planeOwns ? null : playerMotion(),
 		fleet,
 		fleetWorld,
 		dt,
@@ -2078,11 +2077,13 @@ export function stepWorld(
 		dt,
 	});
 	keepPairsApart(
-		planeOwns ? null : { motion: playerMotion(), paired: paired.player },
-		world.ship,
+		planeOwns
+			? null
+			: { motion: playerMotion(), paired: paired.player, ship: world.ship },
 		fleet,
 		ships.fleet,
 		paired.fleet,
+		ships.ghosts,
 	);
 	return {
 		...step,
@@ -2092,6 +2093,41 @@ export function stepWorld(
 		shipImpacts: ships.player,
 		fleet: ships.fleet,
 	};
+}
+
+/**
+ * The fleet's half of a step with no player in it (`collision.md` §3, C4b,
+ * §6; node #664): every flown fleet ship against the world, and the fleet's
+ * pairs against each other, by the passes `stepWorld` runs — first
+ * meetings, the world up to each ship's first meeting, the pairs, the world
+ * again for a ship its meeting deferred, and the pairs kept apart. For a
+ * frame the player does not fly in normal flight: in cruise the raider and
+ * the engaged carriers still fly, and still meet what they fly into.
+ *
+ * `starts` is the world at the top of the step (`worldStarts`, read before
+ * the clock moved); the world now stands at the step's end. Nothing is
+ * resolved against the player, who is not in this step's pairs.
+ */
+export function stepFleet(
+	world: World,
+	fleet: readonly FleetShip[],
+	starts: WorldStarts,
+	clock: { fromTime: number; dt: number },
+): FleetStep[] {
+	if (fleet.length === 0) return [];
+	const shipS = firstMeetings(null, fleet, clock.dt);
+	const fleetWorld = fleetAgainstWorld(
+		world,
+		fleet,
+		starts,
+		shipS.fleet,
+		clock,
+	);
+	const ships = collidePairs(world, null, fleet, fleetWorld, clock.dt);
+	const paired = ships.fleet.map((ship) => ({ ...ship.pos }));
+	resweepDeferred(world, fleet, fleetWorld, ships.fleet, starts, clock);
+	keepPairsApart(null, fleet, ships.fleet, paired, ships.ghosts);
+	return ships.fleet;
 }
 
 /** The earlier of two times into a step, either of which may be absent. */
@@ -2115,7 +2151,7 @@ const earliestOf = (a: number | null, b: number | null): number | null =>
  * motion it keeps (`resweepDeferred`), and meets the same world.
  */
 function firstMeetings(
-	player: ShipMotion,
+	player: ShipMotion | null,
 	fleet: readonly FleetShip[],
 	dt: number,
 ): { player: number | null; fleet: (number | null)[] } {
@@ -2136,11 +2172,12 @@ function firstMeetings(
 			b: length(sub(met.b.vel, b.velEnd)) > 0 ? 0 : null,
 		};
 	};
-	fleet.forEach((ship, index) => {
-		const met = pair(player, ship.motion, ship.projected);
-		you = earliestOf(you, met.a);
-		them[index] = earliestOf(them[index], met.b);
-	});
+	if (player)
+		fleet.forEach((ship, index) => {
+			const met = pair(player, ship.motion, ship.projected);
+			you = earliestOf(you, met.a);
+			them[index] = earliestOf(them[index], met.b);
+		});
 	for (const [x, y] of eligibleFleetPairs(fleet)) {
 		const met = pair(fleet[x].motion, fleet[y].motion, fleet[y].projected);
 		them[x] = earliestOf(them[x], met.a);
@@ -2325,13 +2362,13 @@ function fleetAgainstWorld(
  */
 function collidePairs(
 	world: World,
-	player: ShipMotion,
-	playerHeld: boolean,
+	player: ShipMotion | null,
 	fleet: readonly FleetShip[],
 	againstWorld: { steps: FleetStep[]; motions: ShipMotion[] },
 	dt: number,
-): { player: ShipImpact[]; fleet: FleetStep[] } {
+): { player: ShipImpact[]; fleet: FleetStep[]; ghosts: Set<string> } {
 	const shipImpacts: ShipImpact[] = [];
+	const ghosts = new Set<string>();
 	const { steps } = againstWorld;
 	const motions = [...againstWorld.motions];
 	/** Where a pair left one ship, and what it met, if anything. */
@@ -2347,6 +2384,7 @@ function collidePairs(
 		bProjected: boolean,
 	): { a: ShipMotion; b: ShipMotion } => {
 		const pair = sweepShipPair(a, b, dt, { bProjected });
+		if (pair.ghost) ghosts.add(pairKey(idA, idB));
 		const moved =
 			pair.impacts.length > 0 ||
 			length(sub(pair.a.pos, a.end.origin)) > 0 ||
@@ -2385,24 +2423,24 @@ function collidePairs(
 			if (impact) steps[index].impacts.push(impact);
 		};
 	let you = player;
-	if (!playerHeld)
-		fleet.forEach((ship, index) => {
-			const met = meet(
-				you,
-				motions[index],
-				(pos, vel, impact) => {
-					world.ship.pos = pos;
-					world.ship.vel = vel;
-					if (impact) shipImpacts.push(impact);
-				},
-				landFleet(index),
-				PLAYER_SHIP_ID,
-				ship.id,
-				ship.projected,
-			);
-			you = met.a;
-			motions[index] = met.b;
-		});
+	fleet.forEach((ship, index) => {
+		if (!you) return;
+		const met = meet(
+			you,
+			motions[index],
+			(pos, vel, impact) => {
+				world.ship.pos = pos;
+				world.ship.vel = vel;
+				if (impact) shipImpacts.push(impact);
+			},
+			landFleet(index),
+			PLAYER_SHIP_ID,
+			ship.id,
+			ship.projected,
+		);
+		you = met.a;
+		motions[index] = met.b;
+	});
 	for (const [x, y] of eligibleFleetPairs(fleet)) {
 		const met = meet(
 			motions[x],
@@ -2416,8 +2454,11 @@ function collidePairs(
 		motions[x] = met.a;
 		motions[y] = met.b;
 	}
-	return { player: shipImpacts, fleet: steps };
+	return { player: shipImpacts, fleet: steps, ghosts };
 }
+
+/** One pair's name, A then B, for the ghosts `collidePairs` found. */
+const pairKey = (idA: string, idB: string): string => `${idA}\u0000${idB}`;
 
 /**
  * Every met pair the world's second look left overlapped, pushed apart again
@@ -2439,13 +2480,18 @@ function collidePairs(
  * swept against the world again.
  */
 function keepPairsApart(
-	player: { motion: ShipMotion; paired: Vec3 } | null,
-	ship: { pos: Vec3; vel: Vec3 },
+	player: {
+		motion: ShipMotion;
+		paired: Vec3;
+		ship: { pos: Vec3; vel: Vec3 };
+	} | null,
 	fleet: readonly FleetShip[],
 	steps: FleetStep[],
 	pairedFleet: readonly Vec3[],
+	ghosts: ReadonlySet<string>,
 ): void {
 	interface Member {
+		id: string;
 		motion: ShipMotion;
 		projected: boolean;
 		/** Where the pairs left it. */
@@ -2454,6 +2500,7 @@ function keepPairsApart(
 		now: { pos: Vec3; vel: Vec3 };
 	}
 	const members: Member[] = fleet.map((f, index) => ({
+		id: f.id,
 		motion: f.motion,
 		projected: f.projected,
 		paired: pairedFleet[index],
@@ -2461,7 +2508,13 @@ function keepPairsApart(
 	}));
 	const pairs = eligibleFleetPairs(fleet);
 	if (player) {
-		members.push({ ...player, projected: false, now: ship });
+		members.push({
+			id: PLAYER_SHIP_ID,
+			motion: player.motion,
+			paired: player.paired,
+			projected: false,
+			now: player.ship,
+		});
 		const you = members.length - 1;
 		pairs.unshift(...fleet.map((_, index): [number, number] => [you, index]));
 	}
@@ -2476,6 +2529,9 @@ function keepPairsApart(
 	for (const [x, y] of pairs) {
 		const a = members[x];
 		const b = members[y];
+		// Overlapped at the start, so never met (§4.3): nothing parted them,
+		// and nothing here may move either for it.
+		if (ghosts.has(pairKey(a.id, b.id))) continue;
 		const boxA = boxOf(a);
 		const boxB = boxOf(b);
 		if (

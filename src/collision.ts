@@ -7,7 +7,9 @@
  * normal flight with the assist on and off, with the aperture plane weighed
  * against the impacts (§4.2) — and since node #664, every other ship: raiders,
  * a relay's defender and Traffic carriers against bodies, proxies, the player
- * and each other (C4b, §6), through `sweepShipPair` below. The resolver is
+ * and each other (C4b, §6), through `sweepShipPair` below. The player meets
+ * them in normal flight; while the player cruises, the flown ones still meet
+ * bodies, proxies and each other (`stepFleet`). The resolver is
  * written against a **generic
  * primitive** — sphere, capsule, oriented box — in a solid's own frame, so a
  * station proxy is data handed to the same sweep and not a second resolver.
@@ -1320,6 +1322,8 @@ export function sweepShipPair(
 		result.b.vel = sub(b.velEnd, scale(dv, 1 - shareA));
 		return result;
 	}
+	// B's turn across the step, as its box was swept turning (`sweepShip`).
+	const bSpin = spinBetween(b.start, b.end);
 	for (const impact of swept.impacts) {
 		const n = impact.normal;
 		const unBefore = dot(sub(result.a.vel, result.b.vel), n);
@@ -1332,12 +1336,10 @@ export function sweepShipPair(
 			result.a.vel = add(result.a.vel, kick.a);
 			result.b.vel = add(result.b.vel, kick.b);
 		}
+		// B's pose at the meeting, on the arc its box was swept along: a chord
+		// between its two end noses lags a fast turn by tens of degrees.
 		const s = dt > 0 ? impact.timeS / dt : 0;
-		const bAt = add(
-			b.start.origin,
-			scale(sub(b.end.origin, b.start.origin), s),
-		);
-		const bNose = normalizeOrKeep(lerp(b.start.z, b.end.z, s), b.end.z);
+		const bAt = poseAt(b, bSpin, s, v3());
 		result.impacts.push({
 			timeS: impact.timeS,
 			point: impact.point,
@@ -1345,14 +1347,9 @@ export function sweepShipPair(
 			closingKms: impact.closingKms,
 			damage: impact.damage,
 			sideA: impact.side,
-			sideB: sideStruck(bNose, sub(impact.point, bAt)),
+			sideB: sideStruck(bAt.z, sub(impact.point, bAt.origin)),
 			resting: impact.resting,
 		});
 	}
 	return result;
 }
-
-const normalizeOrKeep = (v: Vec3, fallback: Vec3): Vec3 => {
-	const n = length(v);
-	return n > 1e-12 ? scale(v, 1 / n) : fallback;
-};

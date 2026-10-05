@@ -666,7 +666,7 @@ rules for every combat ship.
 10. **A raider's kill by impact pays only the player's own ram** (node #664).
     A raider that a collision finishes dies in the same tick, through the end
     a kill by fire takes — so a ram that kills the pilot as well, and holds
-    the clock, still destroys the raider's slot and schedules its
+    the clock, still destroys its Raider slot and schedules its <!-- glossary-ignore: slot -->
     replacement — named for the meeting that did the most damage: the player's ram is a direct cause and pays bounty and ladder as
     the gun does; a raider that flew into a station or planet alone names what
     it met and pays nobody (`tests/collision-traffic.test.ts`).

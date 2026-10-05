@@ -69,10 +69,13 @@ import {
 	flightPerformance,
 	makeSystem,
 	makeWorld,
+	advanceWorldClock,
 	projectedMayMeet,
 	speedDemand,
 	stationApertureFrame,
+	stepFleet,
 	stepWorld,
+	worldStarts,
 } from "../src/sim";
 import {
 	type TrafficRoutePhase,
@@ -312,6 +315,40 @@ describe("collision.md §9.1.13: ship against ship (C4b)", () => {
 		const b = flying("carrier", v3(), v3(), dt, v3(0, 0, 1));
 		const [hit] = sweepShipPair(a, b, dt).impacts;
 		expect([hit.sideA, hit.sideB]).toEqual(["fore", "aft"]);
+	});
+
+	test("a turning ship's side is read on the attitude its box was swept at, not a chord between its ends", () => {
+		// Sage round 4: B turns 170° about its up across the step, and A flies
+		// into it from 30° off its starting nose. Its box is swept turning
+		// through the arc, so the side it is struck on is read off the nose on
+		// that arc — the chord between the two end noses lags it by up to 38°
+		// and puts this hit aft.
+		const dt = 0.1;
+		const up = v3(0, 1, 0);
+		const th = (170 * Math.PI) / 180;
+		const z0 = v3(0, 0, 1);
+		const z1 = v3(Math.sin(th), 0, Math.cos(th));
+		const b: ShipMotion = {
+			massT: HULL_SPECS.courier.massT,
+			primitives: box("courier"),
+			start: shipPose(v3(), z0, up),
+			end: shipPose(v3(), z1, up),
+			velStart: v3(),
+			velEnd: v3(),
+		};
+		const from = scale(
+			v3(Math.sin(Math.PI / 6), 0, Math.cos(Math.PI / 6)),
+			0.13,
+		);
+		const a = flying("courier", from, scale(from, -1 / dt), dt, v3(1, 0, 0));
+		const [hit] = sweepShipPair(a, b, dt).impacts;
+		const s = hit.timeS / dt;
+		// The premise: the two readings disagree on this hit.
+		const chord = add(z0, scale(sub(z1, z0), s));
+		const arc = v3(Math.sin(th * s), 0, Math.cos(th * s));
+		expect(dot(chord, hit.point)).toBeLessThan(0);
+		expect(dot(arc, hit.point)).toBeGreaterThan(0);
+		expect(hit.sideB).toBe("fore");
 	});
 
 	test("a resting pair thrusting together bills nothing, and is held apart by mass", () => {
@@ -988,6 +1025,150 @@ describe("stepWorld: a pair stays apart after the world corrects one of them (no
 			for (const step of after.fleet)
 				expect([step.id, step.ghosts]).toEqual([step.id, []]);
 		});
+});
+
+describe("stepFleet: the fleet meets the world and itself with no player in the step (node #664)", () => {
+	/**
+	 * Sage round 4: while the player cruises, the raider and the engaged
+	 * carriers still fly, and `stepWorld` — the normal-flight step — is not
+	 * run. `stepFleet` is the same passes without the player.
+	 */
+	const dt = 0.1;
+	function fleetStep(
+		build: (world: ReturnType<typeof makeWorld>) => FleetShip[],
+	) {
+		const world = makeWorld(47);
+		const fleet = build(world);
+		const player = { pos: { ...world.ship.pos }, vel: { ...world.ship.vel } };
+		const fromTime = world.gameTime;
+		const starts = worldStarts(world.system, fromTime);
+		advanceWorldClock(world, dt);
+		const steps = stepFleet(world, fleet, starts, { fromTime, dt });
+		return { world, fleet, steps, player };
+	}
+
+	test("a raider flown into a planet meets it, and is left outside it", () => {
+		let planetId = "";
+		let planetRadius = 0;
+		const { world, steps, player } = fleetStep((world) => {
+			const planet = world.system.bodies.find((b) => b.kind === "planet");
+			if (!planet) throw new Error("no planet");
+			planetId = planet.id;
+			planetRadius = planet.radiusKm;
+			const dir = v3(1, 0, 0);
+			const start = add(planet.pos, scale(dir, planet.radiusKm + 0.1));
+			const fall = add(
+				bodyVelocity(world.system, planet.id, world.gameTime),
+				scale(dir, -2),
+			);
+			return [
+				{
+					id: "raider",
+					projected: false,
+					motion: flying("raider", start, fall, dt, scale(dir, -1)),
+				},
+			];
+		});
+		const [step] = steps;
+		expect(step.impacts.map((i) => i.with)).toEqual([planetId]);
+		const planet = world.system.byId.get(planetId);
+		if (!planet) throw new Error("no planet");
+		expect(length(sub(step.pos, planet.pos))).toBeGreaterThan(planetRadius);
+		// The player is not in the step: nothing of it moved.
+		expect(world.ship.pos).toEqual(player.pos);
+		expect(world.ship.vel).toEqual(player.vel);
+	});
+
+	test("a raider rams a flown carrier: both take one damage, each names the other", () => {
+		const { steps } = fleetStep(() => {
+			const far = v3(5e6, 0, 0);
+			const half =
+				(HULL_SPECS.raider.env.lengthKm + HULL_SPECS.freighter.env.lengthKm) /
+				2;
+			return [
+				{
+					id: "raider",
+					projected: false,
+					motion: flying(
+						"raider",
+						add(far, v3(0, 0, -(half + 0.05))),
+						v3(0, 0, 1),
+						dt,
+					),
+				},
+				{
+					id: "carrier",
+					projected: false,
+					motion: flying("freighter", far, v3(), dt),
+				},
+			];
+		});
+		const [raider, carrier] = steps;
+		expect(raider.impacts.map((i) => i.with)).toEqual(["carrier"]);
+		expect(carrier.impacts.map((i) => i.with)).toEqual(["raider"]);
+		expect(raider.impacts[0].damage).toBe(carrier.impacts[0].damage);
+		expect(raider.impacts[0].damage).toBeGreaterThan(0);
+	});
+});
+
+describe("stepWorld: a pair that started overlapped is a ghost, and nothing pushes it (node #664)", () => {
+	/**
+	 * Sage round 4's case: the player at rest 60 m above seed 47's star and
+	 * a projected freighter 80 m above it, their boxes overlapping at the
+	 * start of the step. §4.3 leaves the pair untested, so nothing may move
+	 * either ship for it — the push that keeps a met pair apart once moved
+	 * the courier 44 m, into the star, and recorded nothing.
+	 */
+	test("the player is left where its own step put it, and outside the star", () => {
+		const dt = 0.1;
+		const world = makeWorld(47);
+		const star = world.system.bodies.find((b) => b.kind === "star");
+		if (!star) throw new Error("seed 47 has no star");
+		const vel = bodyVelocity(world.system, star.id, world.gameTime);
+		const dir = v3(0, 0, 1);
+		const up = v3(0, 1, 0);
+		world.ship.pos = add(star.pos, scale(dir, star.radiusKm + 0.06));
+		world.ship.vel = vel;
+		const you = shipPose(world.ship.pos, v3(0, 0, -1), up);
+		const carrierAt = add(star.pos, scale(dir, star.radiusKm + 0.08));
+		const carrier: FleetShip = {
+			id: "carrier",
+			projected: true,
+			motion: flying("freighter", carrierAt, vel, dt, v3(0, 0, -1), up),
+		};
+		// The premise: the two share volume at the start of the step.
+		expect(
+			pairSeparation(
+				box("courier")[0],
+				you,
+				box("freighter")[0],
+				carrier.motion.start,
+			).overlap,
+		).toBe(true);
+		const flown = stepWorld(
+			world,
+			still(),
+			HANDS_OFF,
+			dt,
+			flightPerformance("courier"),
+			box("courier"),
+			[],
+			[carrier],
+		);
+		expect(flown.shipImpacts).toEqual([]);
+		expect(flown.fleet[0].impacts).toEqual([]);
+		// Where its own step put it: at rest with the star, nothing added.
+		const own = add(you.origin, scale(vel, dt));
+		expect(length(sub(world.ship.pos, own))).toBeLessThan(1e-9);
+		const sphere = bodySphere(star.radiusKm);
+		const gap = pairSeparation(
+			box("courier")[0],
+			shipPose(world.ship.pos, v3(0, 0, -1), up),
+			sphere,
+			shipPose(star.pos, v3(0, 0, 1), up),
+		);
+		expect(gap.overlap).toBe(false);
+	});
 });
 
 describe("presentedTrafficStep: a projection is swept along what is drawn (node #664)", () => {

@@ -320,9 +320,11 @@ import {
 	type WorldPlane,
 	crossedPlane,
 	speedDemand,
+	stepFleet,
 	stepHull,
 	stepWorld,
 	thrustShares,
+	worldStarts,
 } from "./sim";
 import { type Flick, FlickMeter, couplePxS, pointerImpulse } from "./pointer";
 import { AttitudeFollower } from "./attitude-hold";
@@ -12343,7 +12345,7 @@ class Game {
 	}
 
 	/**
-	 * An encounter that has ended (#324): a kill is the slot's world-state
+	 * An encounter that has ended (#324): a kill is the Raider slot's world-state // glossary-ignore: slot
 	 * destruction, which schedules its replacement, and the wreck drops its
 	 * cargo; then the end is said and the raider is gone. One method for the
 	 * duel step's end and a collision's kill (node #664), so the two cannot
@@ -12359,7 +12361,7 @@ class Game {
 		if (ended.end === "destroyed" && wreck) {
 			const record = this.world.system.record;
 			const now = this.world.gameTime;
-			// The relay's defender (#515) is a raider from a slot, so it is
+			// The relay's defender (#515) fills a Raider slot, so it is // glossary-ignore: slot
 			// priced here too.
 			this.applyCarrierTransition(
 				encounter.slot.key,
@@ -14283,8 +14285,22 @@ class Game {
 		}
 
 		if (this.regime === "cruise") {
+			// The player's leg is cruise's, but the raider and the engaged
+			// carriers fly on in normal flight and meet what they fly into
+			// (`collision.md` §3, §6; node #664): the same passes `stepWorld`
+			// runs, without the player, from the world as it stands before the
+			// leg moves the clock.
+			const fleet = this.fleetOf(dt, { player: false });
+			const fromTime = this.world.gameTime;
+			const starts =
+				fleet.length > 0 ? worldStarts(this.world.system, fromTime) : null;
 			meterFlick(this.turnInCruise(dt, hands));
 			this.stepCruise(dt, contactTargetAtFrameStart);
+			if (starts)
+				this.landFleet(
+					stepFleet(this.world, fleet, starts, { fromTime, dt }),
+					fleet,
+				);
 			return;
 		}
 
@@ -14471,7 +14487,10 @@ class Game {
 	 * sweeps it against the world — a route cannot be bounced — and a meeting
 	 * hands it to flight (`landFleet`).
 	 */
-	private fleetOf(dt: number): FleetShip[] {
+	private fleetOf(
+		dt: number,
+		options: { player: boolean } = { player: true },
+	): FleetShip[] {
 		const ships: FleetShip[] = [];
 		const flown = (id: string, hull: HullId, end: FleetPose) => {
 			const start = this.fleetStarts.get(id) ?? {
@@ -14508,10 +14527,13 @@ class Game {
 			});
 		const player = this.world.ship;
 		// Everything flown this step is what a projection can be met by: the
-		// player, on the velocity it starts the step with, and each flown fleet
-		// ship along its own step.
+		// player, on the velocity it starts the step with — unless it is not
+		// in the step's pairs, as in cruise, where its leg would reach every
+		// carrier along it — and each flown fleet ship along its own step.
 		const movers = [
-			{ start: player.pos, end: add(player.pos, scale(player.vel, dt)) },
+			...(options.player
+				? [{ start: player.pos, end: add(player.pos, scale(player.vel, dt)) }]
+				: []),
 			...ships.map((ship) => ({
 				start: ship.motion.start.origin,
 				end: ship.motion.end.origin,
