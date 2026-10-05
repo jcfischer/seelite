@@ -494,7 +494,7 @@ const STYLE = `${REQUESTS_STYLE}${HOLD_STYLE}${LADDER_STYLE}${RELAY_CUE_STYLE}
  * in the header, which no probe sees because a wrapped button is still a button:
  * The check that does exist is tests/live-cockpit.test.ts's row-arity row: it reads this
  * rule back as six tracks and the row templates as six spans, and holds the shared rule
- * at four. A sixth cell beside four tracks would wrap the price into the name's column,
+ * at four. A seventh cell beside six tracks would wrap the price into the name's column,
  * and a wrapped button is still a button, so no probe would see it. (No backticks here:
  * this comment lives inside the stylesheet's template literal.) 
 */
