@@ -2243,14 +2243,17 @@ function eligibleFleetPairs(fleet: readonly FleetShip[]): [number, number][] {
  * start to the corrected end stands for the bent path, which is exact for a
  * meeting at the start of the step and an approximation for one later.
  *
- * Two kinds of ship are swept again. One whose world sweep its first ship
+ * Three kinds of ship are swept again. One whose world sweep its first ship
  * meeting **deferred** (`fleetAgainstWorld`): its world impacts follow its
- * ship meetings, which came first. And one whose world meeting came first
- * but which **the pairs then moved** (sage round 6): a ram can push it back
- * into the solid that had just held it out, and the next step would ghost
- * that solid rather than meet it. Its correction lands; a body it already
- * met this step is not billed again. A projected carrier is not swept: its
- * pose is a route's.
+ * ship meetings, which came first. One whose world meeting came first but
+ * which **the pairs then moved** (sage round 6): a ram can push it back into
+ * the solid that had just held it out, and the next step would ghost that
+ * solid rather than meet it. Its correction lands; a body it already met
+ * this step is not billed again. And a projected carrier **a meeting handed
+ * to flight** (sage round 7): it had no world sweep of its own, and a ram's
+ * mass split can leave it inside a solid it is flown from next step. A
+ * carrier still on its projection — met by nothing — is not swept: its pose
+ * is a route's.
  */
 function resweepAfterPairs(
 	world: World,
@@ -2265,11 +2268,14 @@ function resweepAfterPairs(
 	clock: { fromTime: number; dt: number },
 ): void {
 	fleet.forEach((ship, index) => {
-		if (ship.projected) return;
 		const out = steps[index];
+		// A carrier still on its projection keeps a route's pose; one a
+		// meeting handed to flight is a flown ship from here (`landFleet`'s
+		// test, and `keepPairsApart`'s), and meets the world as one.
+		if (ship.projected && out.impacts.length === 0) return;
 		const before = againstWorld.motions[index];
 		const moved = length(sub(out.pos, before.end.origin)) > 0;
-		if (!againstWorld.deferred[index] && !moved) return;
+		if (!ship.projected && !againstWorld.deferred[index] && !moved) return;
 		const motion: ShipMotion = {
 			...before,
 			end: { ...ship.motion.end, origin: out.pos },

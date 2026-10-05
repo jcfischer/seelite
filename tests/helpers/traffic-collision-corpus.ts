@@ -612,16 +612,28 @@ export function meetingClass(m: Meeting): MeetingClass {
  * One meeting per distinct meeting: a carrier stays met, step after step,
  * until its phase ends, so the first step of each (carrier, what it met,
  * phase entry) stands for the meeting and the steps after it are not new
- * events.
+ * events. **Its severity is the whole meeting's** (sage round 7): the closing
+ * speed is the worst any of its steps read, and it is an impact if any step
+ * was — a ghost first step followed by an 8.959 km/s impact is one meeting
+ * at 8.959, never one at 0.
  */
 export function distinctMeetings(meetings: readonly Meeting[]): Meeting[] {
-	const seen = new Set<string>();
+	const at = new Map<string, number>();
 	const out: Meeting[] = [];
 	for (const m of meetings) {
 		const id = `${m.key}|${m.met}|${m.phase}|${m.atS - m.phaseAgeS}`;
-		if (seen.has(id)) continue;
-		seen.add(id);
-		out.push(m);
+		const index = at.get(id);
+		if (index === undefined) {
+			at.set(id, out.length);
+			out.push(m);
+			continue;
+		}
+		const first = out[index];
+		out[index] = {
+			...first,
+			closingKms: Math.max(first.closingKms, m.closingKms),
+			kind: first.kind === "impact" || m.kind === "impact" ? "impact" : "ghost",
+		};
 	}
 	return out;
 }

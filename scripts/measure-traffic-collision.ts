@@ -12,7 +12,8 @@
  * - the N of every bucket: carrier-steps swept per phase, and the systems and
  *   actors behind them;
  * - every distinct meeting (`distinctMeetings`) by class and by what was met, with the
- *   worst closing speed and how many were billed (closing above `V_SCRAPE`);
+ *   worst closing speed any step of any of them read, and how many were
+ *   billed (any step closing above `V_SCRAPE`);
  * - the cruise phases' distinct meetings, counted under C5 and not judged;
  * - §4.3's sanctioned launch ghosts.
  *

@@ -14485,9 +14485,10 @@ class Game {
 	 * (`presentedTrafficStep`), at the velocity that displacement is, and only
 	 * near enough to be reached this step by the player or by any flown ship
 	 * (`projectedMayMeet`) — a raider or an engaged carrier meets a projected
-	 * one the player is nowhere near. It is `projected`, so the step never
-	 * sweeps it against the world — a route cannot be bounced — and a meeting
-	 * hands it to flight (`landFleet`).
+	 * one the player is nowhere near. It is `projected`, so the step does not
+	 * sweep it against the world — a route cannot be bounced — until a meeting
+	 * hands it to flight (`landFleet`): from then the step sweeps it as it does
+	 * a flown ship, from where it stood to where the meeting left it.
 	 */
 	private fleetOf(
 		dt: number,
