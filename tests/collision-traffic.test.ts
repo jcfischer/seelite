@@ -2163,29 +2163,57 @@ describe("collision.md §3: a kill by impact names the impact, and pays only the
 		const vel = v3(0, 0.3, 0);
 		// A ram that kills the pilot too holds the clock, and no duel step
 		// comes after it: the kill is in the tick or it is nowhere.
-		const killed = landRaiderImpacts(duel, {
-			pos,
-			vel,
-			impacts: [{ damage: lethal, side: "fore" }],
-		});
+		const killed = landRaiderImpacts(
+			duel,
+			{ pos, vel, impacts: [{ damage: lethal, side: "fore" }] },
+			null,
+		);
 		expect(killed?.encounter.phase).toBe("over");
 		expect(killed?.encounter.end).toBe("destroyed");
 		expect(killed?.wreck).toEqual({ pos, vel });
 		// A survivable meeting lands on its condition and its pose, and the
 		// duel goes on.
-		const bumped = landRaiderImpacts(duel, {
-			pos,
-			vel,
-			impacts: [{ damage: 5, side: "aft" }],
-		});
+		const bumped = landRaiderImpacts(
+			duel,
+			{ pos, vel, impacts: [{ damage: 5, side: "aft" }] },
+			null,
+		);
 		expect(bumped?.wreck).toBeNull();
 		expect(bumped?.encounter.phase).toBe("duel");
 		expect(bumped?.encounter.raider?.condition).toEqual(
 			applyDamage(full, 5, "aft"),
 		);
 		expect(bumped?.encounter.raider?.flight.ship).toEqual({ pos, vel });
+		// The view the duel step drew stood where the raider was before the
+		// meeting moved it; the hull and the scanner draw where it ended.
+		const drawn = {
+			key: duel.slot.key,
+			name: duel.name,
+			pos: v3(0, 0, -3),
+			vel: v3(0, 0, -0.2),
+			nose: v3(0, 0, 1),
+			up: v3(0, 1, 0),
+		};
+		const seen = landRaiderImpacts(
+			duel,
+			{ pos, vel, impacts: [{ damage: 5, side: "aft" }] },
+			drawn,
+		);
+		expect(seen?.contact).toEqual({ ...drawn, pos, vel });
+		expect(seen?.contact?.pos).not.toBe(pos);
+		// No view, nothing drawn; a kill takes the view away.
+		expect(bumped?.contact).toBeNull();
+		expect(
+			landRaiderImpacts(
+				duel,
+				{ pos, vel, impacts: [{ damage: lethal, side: "fore" }] },
+				drawn,
+			)?.contact,
+		).toBeNull();
 		// Outside a duel there is no raider in flight to land anything on.
-		expect(landRaiderImpacts(start, { pos, vel, impacts: [] })).toBeNull();
+		expect(
+			landRaiderImpacts(start, { pos, vel, impacts: [] }, null),
+		).toBeNull();
 	});
 
 	test("a raider that reaches a duel step at no hull is destroyed there, even into cruise", () => {

@@ -14657,7 +14657,7 @@ class Game {
 				// the end a kill by fire takes (§3) — named for what it met. The
 				// player's own ram pays as the gun does; a raider that flew into
 				// a station alone pays nobody.
-				const landed = landRaiderImpacts(encounter, step);
+				const landed = landRaiderImpacts(encounter, step, this.encounterView);
 				if (!landed) return;
 				if (landed.wreck)
 					this.endEncounter(
@@ -14666,7 +14666,12 @@ class Game {
 						landed.wreck,
 						impactCauseOf(step.impacts, PLAYER_SHIP_ID),
 					);
-				else this.encounter = landed.encounter;
+				else {
+					this.encounter = landed.encounter;
+					// `stepRaider` drew the view before the step moved the raider;
+					// the hull and the scanner show where the step left it.
+					this.encounterView = landed.contact;
+				}
 				return;
 			}
 			if (ship.projected && step.impacts.length === 0) return;

@@ -324,6 +324,11 @@ const upFor = (nose: Vec3): Vec3 => cross(frameAcross(nose), nose);
  * gives — rather than on the duel step after: a ram that kills the pilot as
  * well holds the clock, and no step after it ever comes. `null` outside a
  * duel, where there is no raider in flight to land anything on.
+ *
+ * `view` is the contact the duel step drew, which stood where the raider
+ * was before this step moved it; `contact` is that view moved to where the
+ * step left the raider, so the hull and the scanner draw what the collision
+ * body did. `null` with no view, and on a kill, which takes the view away.
  */
 export function landRaiderImpacts(
 	e: Encounter,
@@ -332,7 +337,12 @@ export function landRaiderImpacts(
 		vel: Vec3;
 		impacts: readonly { damage: number; side: ShieldSide }[];
 	},
-): { encounter: Encounter; wreck: { pos: Vec3; vel: Vec3 } | null } | null {
+	view: EncounterContact | null,
+): {
+	encounter: Encounter;
+	wreck: { pos: Vec3; vel: Vec3 } | null;
+	contact: EncounterContact | null;
+} | null {
 	const raider = e.phase === "duel" ? e.raider : null;
 	if (!raider) return null;
 	let condition = raider.condition;
@@ -343,6 +353,7 @@ export function landRaiderImpacts(
 		return {
 			encounter: over(e, "destroyed").encounter,
 			wreck: { pos: { ...ship.pos }, vel: { ...ship.vel } },
+			contact: null,
 		};
 	return {
 		encounter: {
@@ -350,6 +361,9 @@ export function landRaiderImpacts(
 			raider: { flight: { ...raider.flight, ship }, condition },
 		},
 		wreck: null,
+		contact: view
+			? { ...view, pos: { ...ship.pos }, vel: { ...ship.vel } }
+			: null,
 	};
 }
 
