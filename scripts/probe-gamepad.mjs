@@ -422,9 +422,10 @@ try {
 			// own `rAF` callback, so they sit at the same place in every frame's
 			// callback order and the game's poll lands between them once per
 			// frame. This used to be a reset, a wait and a read in three round
-			// trips, accepting N or N+1 — and on a loaded host it read N+2 and
-			// N+3, because the game kept rendering while each trip was in flight
-			// (node #701; `tests/fake-pad.test.ts` has the attribution). 2N and // glossary-ignore: pad
+			// trips, accepting N or N+1 — and on a loaded host it read N+2 (node
+			// #701's reds). The game kept rendering while each trip was in
+			// flight; `tests/fake-pad.test.ts` says where that attribution comes // glossary-ignore: pad
+			// from, and that it is not shipped. 2N and
 			// N/2 fail; a timer that happens to land on N does not, and the arm
 			// below is the one that catches it.
 			"the pad is read once per rendered frame", // glossary-ignore: pad
