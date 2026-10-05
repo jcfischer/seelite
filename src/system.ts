@@ -941,8 +941,9 @@ function generateStations(
  * otherwise draw from the shared per-station streams. Appended last, a draw on
  * those streams would shift no earlier station; drawn here, it touches no
  * stream any other station reads, which is the stronger claim and the one
- * `tests/station-orbits.test.ts` and `tests/station-fields.test.ts` hold by
- * comparing every other station to its committed baseline.
+ * `tests/station-orbits.test.ts` and `tests/station.test.ts` hold by
+ * comparing every other station to its committed baseline
+ * (`tests/fixtures/station-orbits.json`, `tests/fixtures/station-fields.json`).
  *
  * Two fields are answers rather than draws. `blackMarket` is `false` because
  * `STATION_FENCE_ELIGIBLE.outpost` is — #490 D6's fence waits on the outpost's
