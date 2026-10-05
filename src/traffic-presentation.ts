@@ -1,6 +1,6 @@
 /**
- * Where a Traffic carrier on its projection is drawn at a clock, and how far
- * that moves it across one step (node #664). Three-free, so the render path
+ * Where a Traffic carrier on its projection is drawn at a clock, how it is
+ * turned there, and how far that moves it across one step (node #664). Three-free, so the render path
  * and the collision step read one law and a headless test can read it too.
  *
  * The authority projects every carrier at 10 Hz. Between two authority ticks
@@ -19,13 +19,37 @@
  * poses (`presentedTrafficStep`), never from `vel`.
  */
 
-import { type Vec3, add, scale, sub } from "./vec3";
+import { shipPose, spinBetween } from "./collision";
+import {
+	type Vec3,
+	add,
+	cross,
+	dot,
+	length,
+	rotateAbout,
+	scale,
+	sub,
+	v3,
+} from "./vec3";
 
-/** One authority sample of a carrier: where it was projected, and the
- *  velocity of the law it interpolates. */
-export interface TrafficSample {
+/** A carrier's attitude as a sample carries it: the nose, and the up when
+ *  the route states one. */
+export interface AttitudeSample {
+	nose?: Vec3 | null;
+	up?: Vec3 | null;
+}
+
+/** One authority sample of a carrier: where it was projected, the velocity
+ *  of the law it interpolates, and its attitude. */
+export interface TrafficSample extends AttitudeSample {
 	pos: Vec3;
 	vel: Vec3;
+}
+
+/** A drawn attitude: the nose and the up, at right angles. */
+export interface TrafficAttitude {
+	nose: Vec3;
+	up: Vec3;
 }
 
 /** The two authority samples a drawn pose is blended from, and their clocks. */
@@ -58,19 +82,82 @@ export function presentedTrafficPos(
 		? { ...current.pos }
 		: predict(current, currentAtS);
 	if (!prior) return now;
-	const spanS = currentAtS - priorAtS;
-	const blend =
-		Number.isFinite(spanS) && spanS > 0
-			? Math.max(0, Math.min(1, (atS - currentAtS) / spanS))
-			: 1;
 	const before = predict(prior, priorAtS);
-	return add(before, scale(sub(now, before), blend));
+	return add(before, scale(sub(now, before), blendAt(samples, atS)));
 }
 
-/** Where the last sweep left a carrier: its drawn end, and the clock of it. */
+/** How far `atS` is into the current tick's span, `[0, 1]`: the one blend
+ *  the pose and the attitude are both drawn with. */
+function blendAt(
+	samples: { currentAtS: number; priorAtS: number },
+	atS: number,
+): number {
+	const spanS = samples.currentAtS - samples.priorAtS;
+	return Number.isFinite(spanS) && spanS > 0
+		? Math.max(0, Math.min(1, (atS - samples.currentAtS) / spanS))
+		: 1;
+}
+
+/** The hull's forward axis in its own frame, as the mesh is built. */
+const FORWARD = v3(0, 0, -1);
+
+/**
+ * A sample's attitude as a frame. With no up, the up is where the shortest
+ * turn from `FORWARD` onto the nose carries the hull's own up — what
+ * three's `setFromUnitVectors` draws, a half turn about the up included.
+ */
+function frameOf(sample: AttitudeSample): TrafficAttitude | null {
+	if (!sample.nose) return null;
+	const nose = scale(sample.nose, 1 / length(sample.nose));
+	if (sample.up) return { nose, up: scale(sample.up, 1 / length(sample.up)) };
+	const cos = dot(FORWARD, nose);
+	const axis = cross(FORWARD, nose);
+	const sin = length(axis);
+	if (sin < 1e-12) return { nose, up: v3(0, 1, 0) };
+	return {
+		nose,
+		up: rotateAbout(v3(0, 1, 0), scale(axis, 1 / sin), Math.atan2(sin, cos)),
+	};
+}
+
+/**
+ * How a carrier is **turned** where `samples` draw it at `atS` (node #664):
+ * the prior tick's attitude turned toward the current one by the blend its
+ * pose is drawn with, along the shortest turn — a slerp — and the current
+ * one alone with no prior. The render path draws the hull at this attitude
+ * and the collision step sweeps its box at it, so what is swept is what is
+ * drawn in turn as well as in place. `null` when the current sample has no
+ * nose, which draws nothing.
+ */
+export function presentedTrafficAttitude(
+	samples: {
+		current: AttitudeSample;
+		currentAtS: number;
+		prior: AttitudeSample | null;
+		priorAtS: number;
+	},
+	atS: number,
+): TrafficAttitude | null {
+	const now = frameOf(samples.current);
+	if (!now) return null;
+	const before = samples.prior ? frameOf(samples.prior) : null;
+	if (!before) return now;
+	const from = shipPose(v3(), before.nose, before.up);
+	const spin = spinBetween(from, shipPose(v3(), now.nose, now.up));
+	const angle = spin.angle * blendAt(samples, atS);
+	if (angle === 0) return before;
+	return {
+		nose: rotateAbout(before.nose, spin.axis, angle),
+		up: rotateAbout(before.up, spin.axis, angle),
+	};
+}
+
+/** Where the last sweep left a carrier: its drawn end, its attitude there,
+ *  and the clock of it. */
 export interface TrafficSweptEnd {
 	atS: number;
 	pos: Vec3;
+	attitude: TrafficAttitude | null;
 }
 
 /** Two clocks this close are one: a step's end and the next step's start are
@@ -79,8 +166,9 @@ const SAME_CLOCK_S = 1e-9;
 
 /**
  * A projected carrier across one step: drawn at `fromS + dt`, from where the
- * step began, and the velocity that displacement is (node #664). Each end is
- * evaluated at its own clock, blend and prediction alike.
+ * step began, the velocity that displacement is, and its attitude at each end
+ * (`presentedTrafficAttitude`) (node #664). Each end is evaluated at its own
+ * clock, blend and prediction alike.
  *
  * **`from` carries the previous sweep's end across an authority tick.** Within
  * one tick's samples a step's end is the next step's start by construction.
@@ -92,20 +180,43 @@ const SAME_CLOCK_S = 1e-9;
  * starts there, so that jump is swept rather than skipped, and its velocity
  * spikes on a tick's frame by exactly the jump: that is the drawn motion. A
  * `from` at any other clock — a carrier not swept last step, a rewound clock
- * — is ignored, and the step starts where it is drawn now. With no step to
- * divide by, the velocity is the current sample's.
+ * — is ignored, and the step starts where it is drawn now. The attitude is
+ * carried the same way, since a tick re-turns a carrier as it re-places it.
+ * With no step to divide by, the velocity is the current sample's.
  */
 export function presentedTrafficStep(
 	samples: TrafficSamples,
 	fromS: number,
 	dt: number,
 	from: TrafficSweptEnd | null = null,
-): { start: Vec3; end: Vec3; vel: Vec3 } {
-	const start =
-		from && Math.abs(from.atS - fromS) <= SAME_CLOCK_S
-			? { ...from.pos }
-			: presentedTrafficPos(samples, fromS);
-	if (!(dt > 0)) return { start, end: start, vel: { ...samples.current.vel } };
+): {
+	start: Vec3;
+	end: Vec3;
+	vel: Vec3;
+	startAttitude: TrafficAttitude | null;
+	endAttitude: TrafficAttitude | null;
+} {
+	const carried =
+		from && Math.abs(from.atS - fromS) <= SAME_CLOCK_S ? from : null;
+	const start = carried
+		? { ...carried.pos }
+		: presentedTrafficPos(samples, fromS);
+	const startAttitude =
+		carried?.attitude ?? presentedTrafficAttitude(samples, fromS);
+	if (!(dt > 0))
+		return {
+			start,
+			end: start,
+			vel: { ...samples.current.vel },
+			startAttitude,
+			endAttitude: startAttitude,
+		};
 	const end = presentedTrafficPos(samples, fromS + dt);
-	return { start, end, vel: scale(sub(end, start), 1 / dt) };
+	return {
+		start,
+		end,
+		vel: scale(sub(end, start), 1 / dt),
+		startAttitude,
+		endAttitude: presentedTrafficAttitude(samples, fromS + dt),
+	};
 }

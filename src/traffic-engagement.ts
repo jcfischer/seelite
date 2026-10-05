@@ -27,6 +27,7 @@
 import type { CarrierKey } from "./carrier-key";
 import {
 	type CombatEnemyState,
+	type EnemyIntent,
 	NO_ROTATION,
 	playerLaserHit,
 } from "./combat-enemy";
@@ -122,6 +123,15 @@ export interface Engagement {
 	key: CarrierKey;
 	hullId: HullId;
 	armed: boolean;
+	/**
+	 * What it does with the pilot (H3): an armed hull the **pilot** has given
+	 * cause closes and fires (`attacker`); every other carrier runs
+	 * (`civilian`). Decided at `engage` and raised only by the pilot
+	 * (`provoke`), never read off `armed` alone: a patrol another ship rammed
+	 * (node #664) is in flight because of a stranger, and an uninvolved pilot
+	 * is not who it turns on.
+	 */
+	intent: EnemyIntent;
 	flight: CombatEnemyState;
 	condition: ShipCondition;
 	/**
@@ -171,6 +181,13 @@ export interface EngagementStart {
 	 * same incident, and the engagement is the only place the clock lives.
 	 */
 	assaultAlreadyCharged: boolean;
+	/**
+	 * Whether the **pilot** is what put it in flight — their fire landing, or
+	 * their own hull meeting it. Required, so a caller handing a carrier to
+	 * flight for someone else's collision (node #664) has to say so: an armed
+	 * hull starts closing on the pilot only when this is true.
+	 */
+	byPilot: boolean;
 }
 
 /**
@@ -186,7 +203,9 @@ export const flownVoyageOrdinal = (
 
 /**
  * Hand a carrier from its projection to flight at the pose it was drawn in.
- * A civilian starts running; an armed hull starts closing.
+ * A civilian starts running; an armed hull starts closing — on the pilot, so
+ * only when the pilot put it there (`EngagementStart.byPilot`), and running
+ * otherwise until the pilot gives it cause (`provoke`).
  */
 export function engage(
 	target: {
@@ -202,10 +221,12 @@ export function engage(
 	prior: EngagementStart,
 ): Engagement {
 	const armed = ARMED_TRAFFIC_HULLS.has(target.hullId);
+	const intent: EnemyIntent = armed && prior.byPilot ? "attacker" : "civilian";
 	return {
 		key: target.key,
 		hullId: target.hullId,
 		armed,
+		intent,
 		condition: fullCondition(target.hullId),
 		voyageOrdinal: target.voyageOrdinal,
 		landedFireS: 0,
@@ -216,7 +237,7 @@ export function engage(
 			nose: target.nose,
 			up: target.up ?? frameAcross(target.nose),
 			rates: NO_ROTATION,
-			phase: armed ? "acquire" : "flee",
+			phase: intent === "attacker" ? "acquire" : "flee",
 			phaseSeconds: 0,
 			maneuverSeconds: 30,
 			evadeCooldown: 0,
@@ -273,27 +294,50 @@ export function stepEngagement(
 	const step = stepCombatShip(engagement, pilot, shot, dt, {
 		hitRadiusKm: trafficHitRadiusKm(engagement.hullId),
 		performance: flightPerformance(engagement.hullId),
-		intent: engagement.armed ? "attacker" : "civilian",
+		intent: engagement.intent,
 	});
 	// Held, not reset, when nothing lands this frame. A pilot who breaks off to
 	// line up another shot has not un-done the seconds they already spent.
 	const landedFireS = engagement.landedFireS + (step.playerHit ? dt : 0);
 	const assaultCrossed =
 		!engagement.assaultCharged && landedFireS >= ASSAULT_FIRE_S;
+	const stepped: Engagement = {
+		...engagement,
+		flight: step.flight,
+		condition: step.condition,
+		landedFireS,
+		assaultCharged: engagement.assaultCharged || assaultCrossed,
+		struckOnce: engagement.struckOnce || step.playerHit,
+	};
 	return {
-		engagement: {
-			...engagement,
-			flight: step.flight,
-			condition: step.condition,
-			landedFireS,
-			assaultCharged: engagement.assaultCharged || assaultCrossed,
-			struckOnce: engagement.struckOnce || step.playerHit,
-		},
+		// The pilot's fire landing is cause, whatever put it in flight.
+		engagement: step.playerHit ? provoke(stepped) : stepped,
 		returnFire: step.returnFire,
 		destroyed: step.destroyed,
 		hullStruck: step.condition.hull < engagement.condition.hull,
 		firstHit: step.playerHit && !engagement.struckOnce,
 		assaultCrossed,
+	};
+}
+
+/**
+ * The pilot has given an engaged carrier cause — their fire landed, or their
+ * hull met it (node #664). An armed hull running for someone else's
+ * collision turns on the pilot: `attacker`, closing again from `acquire`,
+ * because a `flee` is terminal to the attacker's machine. A civilian, or a
+ * hull already attacking, is unchanged.
+ */
+export function provoke(engagement: Engagement): Engagement {
+	if (!engagement.armed || engagement.intent === "attacker") return engagement;
+	return {
+		...engagement,
+		intent: "attacker",
+		flight: {
+			...engagement.flight,
+			phase: "acquire",
+			phaseSeconds: 0,
+			maneuverSeconds: 30,
+		},
 	};
 }
 

@@ -414,6 +414,7 @@ import {
 	flownVoyageOrdinal,
 	flyingTrafficActors,
 	parkedHomeTrafficActors,
+	provoke,
 	stepEngagement,
 	strikeClock,
 	trafficDiversion,
@@ -424,6 +425,7 @@ import {
 } from "./traffic-engagement";
 import {
 	type TrafficSweptEnd,
+	presentedTrafficAttitude,
 	presentedTrafficPos,
 	presentedTrafficStep,
 } from "./traffic-presentation";
@@ -576,6 +578,7 @@ import {
 	defenderEncounter,
 	forceEncounter,
 	scheduleEncounter,
+	landRaiderImpacts,
 	stepEncounter,
 } from "./encounter";
 import {
@@ -2919,7 +2922,6 @@ class Game {
 	private readonly trafficUp = new THREE.Vector3();
 	private readonly trafficOrigin = new THREE.Vector3();
 	private readonly trafficAttitude = new THREE.Matrix4();
-	private readonly trafficFromQuaternion = new THREE.Quaternion();
 	private readonly trafficToQuaternion = new THREE.Quaternion();
 	/** Selected-target-first admission and release hysteresis for glass labels. */
 	private readonly markerLabels = new MarkerLabelDeclutter();
@@ -6834,21 +6836,6 @@ class Game {
 
 	/** Synchronize contacts and meshes from authority without changing it. */
 	private updateTrafficPresentation(cameraPos: Vec3) {
-		// Flying poses remain at render time while their 10 Hz authority correction
-		// is spread across the next six 60 Hz frames. Both endpoints are predicted
-		// forward below; interpolating their stale absolute positions would put an
-		// orbiting station's traffic one full tick behind the station itself.
-		const spanS = this.trafficProjectionAtS - this.trafficPreviousProjectionAtS;
-		const blend =
-			Number.isFinite(spanS) && spanS > 0
-				? Math.max(
-						0,
-						Math.min(
-							1,
-							(this.world.gameTime - this.trafficProjectionAtS) / spanS,
-						),
-					)
-				: 1;
 		this.trafficExactParked.clear();
 		for (const projection of this.trafficRoutes) {
 			const actor = this.trafficActorByKey(projection.key);
@@ -6884,7 +6871,8 @@ class Game {
 				: this.trafficPreviousRoutes.get(projection.key);
 			// Interpolate the *correction*, not two stale absolute positions: one
 			// law, `presentedTrafficPos`, which the collision step reads too
-			// (`Game.fleetOf`), so what is swept is what is drawn.
+			// (`Game.fleetOf`), so the box is swept where the hull is drawn —
+			// and turned as it is drawn, by `presentedTrafficAttitude` below.
 			const sampledPos = presentedTrafficPos(
 				{
 					current: presented,
@@ -6962,12 +6950,18 @@ class Game {
 			const prior = exact
 				? null
 				: this.trafficPreviousRoutes.get(projection.key);
-			const target = exact ?? projection;
-			if (!this.trafficQuaternion(target, this.trafficToQuaternion)) continue;
-			if (prior && this.trafficQuaternion(prior, this.trafficFromQuaternion)) {
-				this.trafficFromQuaternion.slerp(this.trafficToQuaternion, blend);
-				mesh.quaternion.copy(this.trafficFromQuaternion);
-			} else mesh.quaternion.copy(this.trafficToQuaternion);
+			// Turned by the law the collision step sweeps it at
+			// (`presentedTrafficAttitude`), so the box is where the hull is.
+			const attitude = presentedTrafficAttitude(
+				{
+					current: exact ?? projection,
+					currentAtS: this.trafficProjectionAtS,
+					prior: prior ?? null,
+					priorAtS: this.trafficPreviousProjectionAtS,
+				},
+				this.world.gameTime,
+			);
+			if (attitude) this.trafficQuaternion(attitude, mesh.quaternion);
 		}
 
 		// Engaged carriers are drawn from their flight (civilian-combat H3).
@@ -7172,9 +7166,11 @@ class Game {
 					),
 					// The clock starts where the **world** left it, not at zero: a
 					// fight resumed after a reload is the same incident, and a fresh
-					// engagement would otherwise be a fresh five seconds.
+					// engagement would otherwise be a fresh five seconds. The pilot's
+					// own fire put it here, so an armed hull closes on them.
 					{
 						assaultAlreadyCharged: assaultCharged(this.legalStatus(), key),
+						byPilot: true,
 					},
 				),
 			);
@@ -11327,7 +11323,6 @@ class Game {
 			// A dock ends any encounter: a station is not a place a raider follows.
 			this.encounter = null;
 			this.encounterView = null;
-			this.raiderImpactCause = null;
 			this.raiderFiring = false;
 			this.dock = enterArrival(
 				id,
@@ -11907,7 +11902,6 @@ class Game {
 		// behind. Render drops its contact and hull on the next frame.
 		this.encounter = null;
 		this.encounterView = null;
-		this.raiderImpactCause = null;
 		// A charge belongs to the leg it was held on, exactly as a raider does.
 		// Without this, five seconds spent on a carrier in one system would arrive
 		// part-way banked in the next, where a stranger's scan finishes under the
@@ -12344,50 +12338,59 @@ class Game {
 				step.raiderHit.side,
 				`fired on by ${name}`,
 			);
-		if (step.encounter.phase === "over") {
-			// #324 part d: a kill is the slot's world-state destruction, which
-			// schedules its replacement, and the wreck drops its cargo.
-			if (step.encounter.end === "destroyed" && step.wreck) {
-				const record = this.world.system.record;
-				const now = this.world.gameTime;
-				// The relay's defender (#515) is a raider from a slot, so it is
-				// priced here too.
-				this.applyCarrierTransition(
-					encounter.slot.key,
-					raiderDestruction(
-						record.index,
-						now,
-						this.raiderImpactCause ?? undefined,
-					),
-					RAIDER_HULL_ID,
-				);
-				this.canisters = [
-					...this.canisters,
-					...dropCanisters({
-						systemSeed: record.seed,
-						government: record.government,
-						key: encounter.slot.key,
-						killedAt: now,
-						pos: step.wreck.pos,
-						vel: step.wreck.vel,
-						frameVel: this.localFrame(),
-						// The body the kill happened beside owns the frame these rest
-						// in, so they keep station with it after the player leaves.
-						frameBodyId: this.frameBody?.id ?? null,
-					}),
-				];
-				this.play({ kind: "explosion" });
-			}
-			const notice = step.encounter.end
-				? ENCOUNTER_END_NOTICE[step.encounter.end]
-				: null;
-			if (notice) this.lastExit = notice(name);
-			this.encounter = null;
-			this.raiderImpactCause = null;
-			// A raider that fired on its last step would otherwise leave the cue
-			// red until the next encounter's first step.
-			this.raiderFiring = false;
+		if (step.encounter.phase === "over")
+			this.endEncounter(encounter, step.encounter, step.wreck, undefined);
+	}
+
+	/**
+	 * An encounter that has ended (#324): a kill is the slot's world-state
+	 * destruction, which schedules its replacement, and the wreck drops its
+	 * cargo; then the end is said and the raider is gone. One method for the
+	 * duel step's end and a collision's kill (node #664), so the two cannot
+	 * drift — the kill pays or not by `cause`, the gun's when absent.
+	 */
+	private endEncounter(
+		encounter: Encounter,
+		ended: Encounter,
+		wreck: { pos: Vec3; vel: Vec3 } | null,
+		cause: Provenance | undefined,
+	) {
+		const { name } = encounter;
+		if (ended.end === "destroyed" && wreck) {
+			const record = this.world.system.record;
+			const now = this.world.gameTime;
+			// The relay's defender (#515) is a raider from a slot, so it is
+			// priced here too.
+			this.applyCarrierTransition(
+				encounter.slot.key,
+				raiderDestruction(record.index, now, cause),
+				RAIDER_HULL_ID,
+			);
+			this.canisters = [
+				...this.canisters,
+				...dropCanisters({
+					systemSeed: record.seed,
+					government: record.government,
+					key: encounter.slot.key,
+					killedAt: now,
+					pos: wreck.pos,
+					vel: wreck.vel,
+					frameVel: this.localFrame(),
+					// The body the kill happened beside owns the frame these rest
+					// in, so they keep station with it after the player leaves.
+					frameBodyId: this.frameBody?.id ?? null,
+				}),
+			];
+			this.play({ kind: "explosion" });
 		}
+		const notice = ended.end ? ENCOUNTER_END_NOTICE[ended.end] : null;
+		// A pilot the same tick killed keeps "ship destroyed" as the line.
+		if (notice && !this.dead) this.lastExit = notice(name);
+		this.encounter = null;
+		this.encounterView = null;
+		// A raider that fired on its last step would otherwise leave the cue
+		// red until the next encounter's first step.
+		this.raiderFiring = false;
 	}
 
 	/**
@@ -13166,8 +13169,10 @@ class Game {
 			: null;
 		const phase = this.encounter?.phase ?? "over";
 		let engaged = false;
+		// Hostile to the pilot, not merely armed: a patrol running from another
+		// ship's ram is no danger to them (node #664).
 		for (const e of this.trafficEngagements.values())
-			if (e.armed) engaged = true;
+			if (e.intent === "attacker") engaged = true;
 		const c = this.condition;
 		const step = stepMusic(
 			this.musicState,
@@ -14412,13 +14417,6 @@ class Game {
 		return flown;
 	}
 
-	/**
-	 * What finished the raider, when a collision did (node #664): read by the
-	 * kill block on the duel step after, so the world names the impact rather
-	 * than the gun. `null` for a kill by fire.
-	 */
-	private raiderImpactCause: Provenance | null = null;
-
 	/** Where each flown fleet ship stood before this step moved it. */
 	private fleetStarts = new Map<string, FleetPose>();
 
@@ -14554,6 +14552,7 @@ class Game {
 			this.trafficSweptEnds.set(key, {
 				atS: this.world.gameTime + dt,
 				pos: drawn.end,
+				attitude: drawn.endAttitude,
 			});
 			// Reachable this step by anything flown at all, taken early so a
 			// system's Traffic is not posed every frame for nothing.
@@ -14566,14 +14565,21 @@ class Game {
 				)
 			)
 				continue;
+			const turned =
+				drawn.startAttitude && drawn.endAttitude
+					? { start: drawn.startAttitude, end: drawn.endAttitude }
+					: null;
+			if (!turned) continue;
 			ships.push({
 				id: key,
 				projected: true,
 				motion: {
 					massT: HULL_SPECS[actor.hullId].massT,
 					primitives: this.hullSolidOf(actor.hullId),
-					start: shipPose(drawn.start, route.nose, route.up),
-					end: shipPose(drawn.end, route.nose, route.up),
+					// Turned at each end as it is drawn there, so the box sweeps
+					// the turn the hull is seen to make.
+					start: shipPose(drawn.start, turned.start.nose, turned.start.up),
+					end: shipPose(drawn.end, turned.end.nose, turned.end.up),
 					velStart: drawn.vel,
 					velEnd: drawn.vel,
 				},
@@ -14606,47 +14612,50 @@ class Game {
 	 * and every meeting through the one damage path a ship has.
 	 *
 	 * - **The raider** takes its damage on its own condition. A hull at zero is
-	 *   picked up by its next duel step as a destroyed raider, through the path
-	 *   a kill by fire takes (§3).
+	 *   destroyed in this tick (`landRaiderImpacts`), through the end a kill
+	 *   by fire takes (§3) — not on a later duel step, which a ram that kills
+	 *   the pilot too would never reach.
 	 * - **A carrier** — flown already, or handed to flight now at the pose the
 	 *   bounce left it in (§6: a projected pose cannot express a bounce) —
 	 *   takes it on its engagement's condition, and the world hears H3d's
 	 *   answer: a kill, a divert, or nothing for shields alone. **No heat**:
-	 *   an impact is not yet an offence (#675 builds that).
+	 *   an impact is not yet an offence (#675 builds that). The pilot's own
+	 *   hull meeting it is cause, as their fire is (`provoke`); another ship's
+	 *   is not.
 	 */
 	private landFleet(steps: readonly FleetStep[], fleet: readonly FleetShip[]) {
 		steps.forEach((step, index) => {
 			const ship = fleet[index];
-			const raider = this.duelRaider();
-			if (raider && this.encounter?.slot.key === step.id) {
-				let condition = raider.condition;
-				for (const impact of step.impacts)
-					condition = applyDamage(condition, impact.damage, impact.side);
-				// A raider a collision finishes dies on its next duel step,
-				// through the kill block a kill by fire takes (§3) — named for
-				// what it met. The player's own ram pays as the gun does; a
-				// raider that flew into a station alone pays nobody.
-				if (isAlive(raider.condition) && !isAlive(condition))
-					this.raiderImpactCause = impactCauseOf(step.impacts, PLAYER_SHIP_ID);
-				this.encounter = {
-					...this.encounter,
-					raider: {
-						flight: {
-							...raider.flight,
-							ship: { pos: step.pos, vel: step.vel },
-						},
-						condition,
-					},
-				};
+			const encounter = this.encounter;
+			if (encounter?.slot.key === step.id) {
+				// A raider a collision finishes is destroyed in this tick, through
+				// the end a kill by fire takes (§3) — named for what it met. The
+				// player's own ram pays as the gun does; a raider that flew into
+				// a station alone pays nobody.
+				const landed = landRaiderImpacts(encounter, step);
+				if (!landed) return;
+				if (landed.wreck)
+					this.endEncounter(
+						encounter,
+						landed.encounter,
+						landed.wreck,
+						impactCauseOf(step.impacts, PLAYER_SHIP_ID),
+					);
+				else this.encounter = landed.encounter;
 				return;
 			}
 			if (ship.projected && step.impacts.length === 0) return;
 			const key = step.id as CarrierKey;
 			const actor = this.trafficActorByKey(key);
 			if (!actor) return;
-			const flying =
-				this.trafficEngagements.get(key) ??
-				this.engageByImpact(actor, ship, step);
+			const engaged = this.trafficEngagements.get(key);
+			// The pilot's own hull meeting an engaged carrier is cause, as their
+			// fire landing is (`provoke`).
+			const flying = engaged
+				? step.impacts.some((i) => i.with === PLAYER_SHIP_ID)
+					? provoke(engaged)
+					: engaged
+				: this.engageByImpact(actor, ship, step);
 			if (!flying) return;
 			const before = flying.condition;
 			let after = before;
@@ -14675,16 +14684,19 @@ class Game {
 				cause,
 			))
 				this.applyCarrierTransition(key, event, actor.hullId);
-			if (outcome === "divert")
+			if (outcome === "divert" && !this.dead)
 				this.lastExit = `${actor.callsign} disabled in a collision — running home`;
 		});
 	}
 
 	/**
 	 * A projected carrier a meeting hands to flight (§6), at the pose the
-	 * bounce left it in and with its H3 intent — as a shot hands one over
-	 * (`engageStruckTraffic`), with the same seed and the same assault clock,
-	 * so a fight that follows is the same incident.
+	 * bounce left it in — as a shot hands one over (`engageStruckTraffic`),
+	 * with the same seed and the same assault clock, so a fight that follows
+	 * is the same incident. Its H3 intent is toward the pilot, so an armed
+	 * hull closes only when the pilot was a party to the meeting; one met by
+	 * another ship or by the world runs, until the pilot gives it cause
+	 * (`provoke`).
 	 */
 	private engageByImpact(
 		actor: TrafficActor,
@@ -14710,6 +14722,10 @@ class Game {
 			),
 			{
 				assaultAlreadyCharged: assaultCharged(this.legalStatus(), actor.key),
+				// Cause only when the pilot was a party to the meeting — any of
+				// them, not the worst: a raider's ram does not turn a patrol on
+				// a pilot who was nowhere in it.
+				byPilot: step.impacts.some((i) => i.with === PLAYER_SHIP_ID),
 			},
 		);
 		this.trafficEngagements.set(actor.key, engagement);

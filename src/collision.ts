@@ -360,6 +360,27 @@ export const pairSeparation = (
 ): Separation =>
 	separation(placeBox(shipBox, shipAt), place(primitive, solidAt));
 
+/**
+ * How far a ship's box must move along `normal` — pointing from the other
+ * primitive toward the ship — for the two to stand `SEPARATION_KM` apart
+ * along it: the push `settleTouching` gives an overlap. Apart along one axis
+ * is apart (the separating axis), so this clears an overlap whichever axis is
+ * chosen; `≤ 0` when the two already stand that far apart along it.
+ */
+export function pushOutAlong(
+	shipBox: Primitive,
+	shipAt: Pose,
+	primitive: Primitive,
+	solidAt: Pose,
+	normal: Vec3,
+): number {
+	const ship = placeBox(shipBox, shipAt);
+	const shipLow = -extentAlong(ship, scale(normal, -1));
+	return (
+		extentAlong(place(primitive, solidAt), normal) + SEPARATION_KM - shipLow
+	);
+}
+
 /** One vertex of the Minkowski difference `A − B`, with its two witnesses. */
 interface Vertex {
 	w: Vec3;
@@ -538,7 +559,7 @@ export interface SolidMotion {
 }
 
 /** A solid's turn across the step, as an axis and an angle. */
-interface Spin {
+export interface Spin {
 	axis: Vec3;
 	angle: number;
 }
@@ -548,7 +569,7 @@ interface Spin {
  * through the quaternion (Shepperd's method) so a turn near a half
  * revolution keeps its axis.
  */
-function spinBetween(from: Pose, to: Pose): Spin {
+export function spinBetween(from: Pose, to: Pose): Spin {
 	// R = Σ to_i ⊗ from_i, so R·from_i = to_i.
 	const col = (k: "x" | "y" | "z") => ({
 		x: to.x[k] * from.x.x + to.y[k] * from.y.x + to.z[k] * from.z.x,

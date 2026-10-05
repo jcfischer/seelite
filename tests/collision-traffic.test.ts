@@ -23,6 +23,7 @@
  */
 
 import { describe, expect, test } from "bun:test";
+import * as THREE from "three";
 import {
 	type ShipMotion,
 	RESTITUTION,
@@ -50,6 +51,7 @@ import { raiderAtDrop } from "../src/duel";
 import {
 	type Encounter,
 	forceEncounter,
+	landRaiderImpacts,
 	stepEncounter,
 } from "../src/encounter";
 import { type Holdings, applyHoldEvent } from "../src/holdings";
@@ -90,6 +92,7 @@ import {
 import { type EntryPose, slotBasis } from "../src/docking";
 import {
 	type TrafficSamples,
+	presentedTrafficAttitude,
 	presentedTrafficPos,
 	presentedTrafficStep,
 } from "../src/traffic-presentation";
@@ -844,6 +847,149 @@ describe("stepWorld: a ship met before a world impact owns the tick (§4.2, node
 	});
 });
 
+describe("stepWorld: a pair stays apart after the world corrects one of them (node #664)", () => {
+	const dt = 0.1;
+	/** The patrol's clearance above the star: inside what the ram's mass
+	 *  split pushes it down by, so the world has to hold it out again. */
+	const PATROL_CLEARANCE_KM = 0.002;
+	const GAP_KM = 0.01;
+	const RAM_KMS = 0.3;
+
+	/**
+	 * Sage round 3's case: a patrol riding with seed 47's star just above
+	 * its surface, not closing on it — so its world sweep waits on its ship
+	 * meeting — and a raider ramming it from outside at `RAM_KMS`. The ram's
+	 * mass split pushes the patrol into the star; the star holds it out,
+	 * back toward the raider.
+	 */
+	function ramAgainstStar(order: "raider-first" | "patrol-first") {
+		const world = makeWorld(47);
+		const star = world.system.bodies.find((b) => b.kind === "star");
+		if (!star) throw new Error("seed 47 has no star");
+		const vel = bodyVelocity(world.system, star.id, world.gameTime);
+		const sphere = bodySphere(star.radiusKm);
+		const starAt = shipPose(star.pos, v3(0, 0, 1), v3(0, 1, 0));
+		const dir = v3(1, 0, 0);
+		const nose = scale(dir, -1);
+		const up = v3(0, 1, 0);
+		const clearance = (hull: HullId, pos: Vec3) => {
+			const gap = pairSeparation(
+				box(hull)[0],
+				shipPose(pos, nose, up),
+				sphere,
+				starAt,
+			);
+			return gap.overlap ? -1 : gap.distanceKm;
+		};
+		// Probe the patrol's height above the surface, then set it.
+		const probe = add(star.pos, scale(dir, star.radiusKm + 0.1));
+		const patrolPos = add(
+			probe,
+			scale(dir, PATROL_CLEARANCE_KM - clearance("patrol", probe)),
+		);
+		const patrol: FleetShip = {
+			id: "patrol",
+			projected: false,
+			motion: {
+				massT: HULL_SPECS.patrol.massT,
+				primitives: box("patrol"),
+				start: shipPose(patrolPos, nose, up),
+				end: shipPose(add(patrolPos, scale(vel, dt)), nose, up),
+				velStart: vel,
+				velEnd: vel,
+			},
+		};
+		const probeRaider = add(patrolPos, scale(dir, 0.1));
+		const gap = pairSeparation(
+			box("raider")[0],
+			shipPose(probeRaider, nose, up),
+			box("patrol")[0],
+			patrol.motion.start,
+		);
+		if (gap.overlap) throw new Error("the probe pose overlaps");
+		const raiderPos = sub(probeRaider, scale(dir, gap.distanceKm - GAP_KM));
+		const ram = add(vel, scale(dir, -RAM_KMS));
+		const raider: FleetShip = {
+			id: "raider",
+			projected: false,
+			motion: flying("raider", raiderPos, ram, dt, nose, up),
+		};
+		const fleet =
+			order === "raider-first" ? [raider, patrol] : [patrol, raider];
+		const flown = stepWorld(
+			world,
+			still(),
+			HANDS_OFF,
+			dt,
+			flightPerformance("courier"),
+			box("courier"),
+			[],
+			fleet,
+		);
+		const end = (id: string) => {
+			const step = flown.fleet.find((f) => f.id === id);
+			if (!step) throw new Error(`no ${id}`);
+			return step;
+		};
+		return { world, end, fleet, clearance, nose, up };
+	}
+
+	for (const order of ["raider-first", "patrol-first"] as const)
+		test(`a raider ramming a patrol against the star leaves the two apart, and outside it (${order})`, () => {
+			const { end, clearance, nose, up, world, fleet } = ramAgainstStar(order);
+			const raider = end("raider");
+			const patrol = end("patrol");
+			// The ram is met, and billed once on each.
+			expect(raider.impacts.filter((i) => i.ship).map((i) => i.with)).toEqual([
+				"patrol",
+			]);
+			expect(patrol.impacts.filter((i) => i.ship).map((i) => i.with)).toEqual([
+				"raider",
+			]);
+			// The world held the patrol: it ends outside the star.
+			expect(clearance("patrol", patrol.pos)).toBeGreaterThan(0);
+			expect(clearance("raider", raider.pos)).toBeGreaterThan(0);
+			// And the two are not left overlapped for the next step to ghost.
+			const apart = pairSeparation(
+				box("raider")[0],
+				shipPose(raider.pos, nose, up),
+				box("patrol")[0],
+				shipPose(patrol.pos, nose, up),
+			);
+			expect(apart.overlap).toBe(false);
+			// Nor closing on each other along the line they met on.
+			expect(
+				dot(sub(raider.vel, patrol.vel), sub(raider.pos, patrol.pos)),
+			).toBeGreaterThanOrEqual(-1e-12);
+			// The next step from there meets no ghost.
+			const next = fleet.map((ship) => {
+				const step = end(ship.id);
+				return {
+					...ship,
+					motion: {
+						...ship.motion,
+						start: shipPose(step.pos, nose, up),
+						end: shipPose(add(step.pos, scale(step.vel, dt)), nose, up),
+						velStart: step.vel,
+						velEnd: step.vel,
+					},
+				};
+			});
+			const after = stepWorld(
+				world,
+				still(),
+				HANDS_OFF,
+				dt,
+				flightPerformance("courier"),
+				box("courier"),
+				[],
+				next,
+			);
+			for (const step of after.fleet)
+				expect([step.id, step.ghosts]).toEqual([step.id, []]);
+		});
+});
+
 describe("presentedTrafficStep: a projection is swept along what is drawn (node #664)", () => {
 	/** Two authority ticks 0.1 s apart whose correction carries the carrier
 	 *  `2 · CORRECTION_KM` along +x, while each sample's own `vel` reads the
@@ -916,6 +1062,7 @@ describe("presentedTrafficStep: a projection is swept along what is drawn (node 
 		const carried = presentedTrafficStep(b, t, dt, {
 			atS: t,
 			pos: before.end,
+			attitude: null,
 		});
 		// Drawn on consecutive frames, a hull and more apart: what the red
 		// build skipped.
@@ -926,7 +1073,11 @@ describe("presentedTrafficStep: a projection is swept along what is drawn (node 
 		expect(carried.end).toEqual(fresh.end);
 		// A `from` at another clock is ignored.
 		expect(
-			presentedTrafficStep(b, t, dt, { atS: t - dt, pos: before.end }).start,
+			presentedTrafficStep(b, t, dt, {
+				atS: t - dt,
+				pos: before.end,
+				attitude: null,
+			}).start,
 		).toEqual(fresh.start);
 		// The player at rest in the middle of the jump: no sweep that starts
 		// where the carrier is drawn reaches it; the carried one does.
@@ -962,6 +1113,79 @@ describe("presentedTrafficStep: a projection is swept along what is drawn (node 
 		expect(meet(before)).toEqual([]);
 		expect(meet(fresh)).toEqual([]);
 		expect(meet(carried)).toEqual(["carrier"]);
+	});
+
+	test("a carrier is swept turned as it is drawn turned: the prior attitude slerped by the pose's blend", () => {
+		const yaw = (deg: number) => {
+			const r = (deg * Math.PI) / 180;
+			return v3(-Math.sin(r), 0, -Math.cos(r));
+		};
+		const samples = {
+			prior: { pos: v3(), vel: v3(), nose: yaw(0), up: v3(0, 1, 0) },
+			priorAtS: 0.1,
+			current: { pos: v3(), vel: v3(), nose: yaw(90), up: v3(0, 1, 0) },
+			currentAtS: 0.2,
+		};
+		const at = (s: number) => presentedTrafficAttitude(samples, s);
+		const close = (a: Vec3 | undefined, b: Vec3) =>
+			expect(length(sub(a ?? v3(NaN, 0, 0), b))).toBeLessThan(1e-9);
+		// At the tick the prior's, a whole span on the current's, and between
+		// them by the blend the pose is drawn with — not the current's alone.
+		close(at(0.2)?.nose, yaw(0));
+		close(at(0.25)?.nose, yaw(45));
+		close(at(0.3)?.nose, yaw(90));
+		close(at(0.25)?.up, v3(0, 1, 0));
+		// No prior: the current's.
+		close(
+			presentedTrafficAttitude({ ...samples, prior: null }, 0.2)?.nose,
+			yaw(90),
+		);
+		// A step's two ends are the drawn attitudes at their own clocks, so
+		// the box turns through the step as the hull does.
+		const step = presentedTrafficStep(samples, 0.22, 1 / 60);
+		close(step.startAttitude?.nose, at(0.22)?.nose ?? v3());
+		close(step.endAttitude?.nose, at(0.22 + 1 / 60)?.nose ?? v3());
+		expect(
+			dot(step.startAttitude?.nose ?? v3(), step.endAttitude?.nose ?? v3()),
+		).toBeLessThan(1 - 1e-6);
+		// Across a tick, the attitude the last sweep ended on is carried too.
+		const carried = presentedTrafficStep(samples, 0.22, 1 / 60, {
+			atS: 0.22,
+			pos: v3(),
+			attitude: { nose: yaw(10), up: v3(0, 1, 0) },
+		});
+		close(carried.startAttitude?.nose, yaw(10));
+	});
+
+	test("a sample with no up is turned as three draws it: the shortest turn from forward", () => {
+		const fromForward = new THREE.Quaternion();
+		const lookAt = new THREE.Matrix4();
+		const viaLaw = new THREE.Quaternion();
+		for (const nose of [
+			v3(0, 0, -1),
+			v3(0, 0, 1),
+			v3(1, 0, 0),
+			v3(0.3, 0.8, -0.2),
+			v3(-0.6, -0.1, 0.7),
+		]) {
+			const n = scale(nose, 1 / length(nose));
+			const turned = presentedTrafficAttitude(
+				{ current: { nose: n }, currentAtS: 0, prior: null, priorAtS: 0 },
+				0,
+			);
+			if (!turned) throw new Error("no attitude");
+			fromForward.setFromUnitVectors(
+				new THREE.Vector3(0, 0, -1),
+				new THREE.Vector3(n.x, n.y, n.z),
+			);
+			lookAt.lookAt(
+				new THREE.Vector3(),
+				new THREE.Vector3(turned.nose.x, turned.nose.y, turned.nose.z),
+				new THREE.Vector3(turned.up.x, turned.up.y, turned.up.z),
+			);
+			viaLaw.setFromRotationMatrix(lookAt);
+			expect(Math.abs(viaLaw.dot(fromForward))).toBeGreaterThan(1 - 1e-9);
+		}
 	});
 
 	test("a carrier drawn crossing the player is met; swept on its `vel`, it was not", () => {
@@ -1348,7 +1572,50 @@ describe("collision.md §3: a kill by impact names the impact, and pays only the
 		);
 	});
 
-	test("a raider a collision left at no hull is destroyed on its next duel step, even into cruise", () => {
+	test("a raider a collision finishes is destroyed in the same tick, its wreck where it came apart", () => {
+		const start = forceEncounter(() => true, 3, 0, "ahead", 10, 3);
+		if (!start) throw new Error("no raider");
+		const pilotShip = { pos: v3(), vel: v3() };
+		const duel: Encounter = {
+			...start,
+			phase: "duel",
+			raider: {
+				flight: raiderAtDrop(v3(0, 0, -3), pilotShip, 7),
+				condition: fullCondition("raider"),
+			},
+		};
+		const full = fullCondition("raider");
+		const lethal = full.fore + full.aft + full.hull + 1;
+		const pos = v3(0.4, 0, -2.6);
+		const vel = v3(0, 0.3, 0);
+		// A ram that kills the pilot too holds the clock, and no duel step
+		// comes after it: the kill is in the tick or it is nowhere.
+		const killed = landRaiderImpacts(duel, {
+			pos,
+			vel,
+			impacts: [{ damage: lethal, side: "fore" }],
+		});
+		expect(killed?.encounter.phase).toBe("over");
+		expect(killed?.encounter.end).toBe("destroyed");
+		expect(killed?.wreck).toEqual({ pos, vel });
+		// A survivable meeting lands on its condition and its pose, and the
+		// duel goes on.
+		const bumped = landRaiderImpacts(duel, {
+			pos,
+			vel,
+			impacts: [{ damage: 5, side: "aft" }],
+		});
+		expect(bumped?.wreck).toBeNull();
+		expect(bumped?.encounter.phase).toBe("duel");
+		expect(bumped?.encounter.raider?.condition).toEqual(
+			applyDamage(full, 5, "aft"),
+		);
+		expect(bumped?.encounter.raider?.flight.ship).toEqual({ pos, vel });
+		// Outside a duel there is no raider in flight to land anything on.
+		expect(landRaiderImpacts(start, { pos, vel, impacts: [] })).toBeNull();
+	});
+
+	test("a raider that reaches a duel step at no hull is destroyed there, even into cruise", () => {
 		const start = forceEncounter(() => true, 3, 0, "ahead", 10, 3);
 		if (!start) throw new Error("no raider");
 		const pilotShip = { pos: v3(), vel: v3() };

@@ -420,7 +420,10 @@ whether launches ever do is measured rather than assumed.
 `civilian-combat.md` uses the term, for its mechanics and nothing else:
 
 - While materialized, the carrier is flown from the pose the bounce left it in,
-  with its H3 intent. A projected pose cannot express a bounce.
+  with its H3 intent toward the pilot when the pilot was a party to the
+  meeting; one met only by another ship or by the world runs, as a civilian
+  does, until the pilot's fire lands on it or their hull meets it. A projected
+  pose cannot express a bounce.
 - An impact that reaches hull is H3d's trigger, and H3c records it: `disable`,
   then `repair-start`. That is the saved Carrier deviation #75 asked for. The
   route already exists; this spec does not add a second one.
@@ -653,14 +656,18 @@ rules for every combat ship.
    §6 has a projected carrier leave its projection on any meeting, because a
    route cannot express a bounce — including a touch under `V_SCRAPE` that
    costs nothing. A civilian then flees. An armed hull (patrol, interceptor)
-   takes the attacker's intent, so a pilot who nudges one at 0.01 km/s has
-   started a fight, which reads against H3's "never starts a fight". Built as
-   §6 is written; whether a costless touch should engage at all is the
-   principal's to rule.
+   takes the attacker's intent **only when the pilot was a party to the
+   meeting**, because that intent is toward the pilot: a patrol a raider rams,
+   or one that met a station, runs instead, and turns on the pilot only when
+   the pilot's fire lands on it or their hull meets it (`provoke`). So a pilot
+   who nudges one at 0.01 km/s has still started a fight, which reads against
+   H3's "never starts a fight". Built as §6 is written; whether a costless
+   touch should engage at all is the principal's to rule.
 10. **A raider's kill by impact pays only the player's own ram** (node #664).
-    A raider that a collision finishes dies on its next duel step through the
-    kill block a kill by fire takes, named for the meeting that did the most
-    damage: the player's ram is a direct cause and pays bounty and ladder as
+    A raider that a collision finishes dies in the same tick, through the end
+    a kill by fire takes — so a ram that kills the pilot as well, and holds
+    the clock, still destroys the raider's slot and schedules its
+    replacement — named for the meeting that did the most damage: the player's ram is a direct cause and pays bounty and ladder as
     the gun does; a raider that flew into a station or planet alone names what
     it met and pays nobody (`tests/collision-traffic.test.ts`).
 5. **The proxy is checked as a container and not as a fit** (§2.2). A proxy

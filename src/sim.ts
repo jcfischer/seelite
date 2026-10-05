@@ -86,6 +86,8 @@ import {
 	IDENTITY_AXES,
 	bodySphere,
 	mayMeet,
+	pairSeparation,
+	pushOutAlong,
 	reachKm,
 	shipPose,
 	sweepShip,
@@ -109,6 +111,7 @@ import {
 	cross,
 	dot,
 	length,
+	normalizeOr,
 	rotateAbout,
 	scale,
 	sub,
@@ -2048,6 +2051,11 @@ export function stepWorld(
 		fleetWorld,
 		dt,
 	);
+	// Where the pairs left every ship, before the world's second look.
+	const paired = {
+		player: { ...world.ship.pos },
+		fleet: ships.fleet.map((ship) => ({ ...ship.pos })),
+	};
 	// What the first meeting left a deferred ship on, it now meets the world
 	// along: swept again from the step's start to where the pair left it.
 	let { impacts, ghosts } = met;
@@ -2069,6 +2077,13 @@ export function stepWorld(
 		fromTime,
 		dt,
 	});
+	keepPairsApart(
+		planeOwns ? null : { motion: playerMotion(), paired: paired.player },
+		world.ship,
+		fleet,
+		ships.fleet,
+		paired.fleet,
+	);
 	return {
 		...step,
 		impacts,
@@ -2126,15 +2141,31 @@ function firstMeetings(
 		you = earliestOf(you, met.a);
 		them[index] = earliestOf(them[index], met.b);
 	});
+	for (const [x, y] of eligibleFleetPairs(fleet)) {
+		const met = pair(fleet[x].motion, fleet[y].motion, fleet[y].projected);
+		them[x] = earliestOf(them[x], met.a);
+		them[y] = earliestOf(them[y], met.b);
+	}
+	return { player: you, fleet: them };
+}
+
+/**
+ * Every pair of fleet ships the step meets (§6, node #664), by index: at
+ * least one flown — two projected carriers are never paired, because a route
+ * against a route is the corpus row's (§6 item 1) — and a projected carrier
+ * always second, as the pair's B, so a hold it cannot take goes to the ship
+ * that can. One list for every pass that pairs the fleet (`firstMeetings`,
+ * `collidePairs`, `keepPairsApart`), so they cannot disagree about which
+ * pairs there are or which ship is B.
+ */
+function eligibleFleetPairs(fleet: readonly FleetShip[]): [number, number][] {
+	const pairs: [number, number][] = [];
 	for (let i = 0; i < fleet.length; i++)
 		for (let j = i + 1; j < fleet.length; j++) {
 			if (fleet[i].projected && fleet[j].projected) continue;
-			const [x, y] = fleet[i].projected ? [j, i] : [i, j];
-			const met = pair(fleet[x].motion, fleet[y].motion, fleet[y].projected);
-			them[x] = earliestOf(them[x], met.a);
-			them[y] = earliestOf(them[y], met.b);
+			pairs.push(fleet[i].projected ? [j, i] : [i, j]);
 		}
-	return { player: you, fleet: them };
+	return pairs;
 }
 
 /**
@@ -2372,24 +2403,126 @@ function collidePairs(
 			you = met.a;
 			motions[index] = met.b;
 		});
-	for (let i = 0; i < fleet.length; i++)
-		for (let j = i + 1; j < fleet.length; j++) {
-			if (fleet[i].projected && fleet[j].projected) continue;
-			// A projected carrier is B, so a hold it cannot take is A's.
-			const [x, y] = fleet[i].projected ? [j, i] : [i, j];
-			const met = meet(
-				motions[x],
-				motions[y],
-				landFleet(x),
-				landFleet(y),
-				fleet[x].id,
-				fleet[y].id,
-				fleet[y].projected,
-			);
-			motions[x] = met.a;
-			motions[y] = met.b;
-		}
+	for (const [x, y] of eligibleFleetPairs(fleet)) {
+		const met = meet(
+			motions[x],
+			motions[y],
+			landFleet(x),
+			landFleet(y),
+			fleet[x].id,
+			fleet[y].id,
+			fleet[y].projected,
+		);
+		motions[x] = met.a;
+		motions[y] = met.b;
+	}
 	return { player: shipImpacts, fleet: steps };
+}
+
+/**
+ * Every met pair the world's second look left overlapped, pushed apart again
+ * (§3.1, §4.3; node #664). A ship swept against the world after its meeting
+ * (`resweepDeferred`, and the player's own resweep) can be held out of a
+ * solid **back into the partner it had just parted from**: a raider ramming a
+ * patrol against a star pushes the patrol in by the mass split, and the star
+ * holds it out again, onto the raider. Left there, the next step would read
+ * the pair as overlapped at the start — a ghost (§4.3) — and test it no more.
+ *
+ * So each pair now overlapped is moved apart along the normal it parted on
+ * (read at the poses the pairs left, which stood `SEPARATION_KM` apart), by
+ * `pushOutAlong`: wholly by the ship the world did not just hold, or by mass
+ * when it held both or neither — never a projected carrier, whose pose is a
+ * route's — and the inward part of the pair's relative velocity is taken off
+ * in the same shares, so momentum is kept between two free ships. **Nothing
+ * is billed**: the meeting already was. One pass in the pairs' order, so
+ * exact for one meeting a step, as `collidePairs` is; a ship it moves is not
+ * swept against the world again.
+ */
+function keepPairsApart(
+	player: { motion: ShipMotion; paired: Vec3 } | null,
+	ship: { pos: Vec3; vel: Vec3 },
+	fleet: readonly FleetShip[],
+	steps: FleetStep[],
+	pairedFleet: readonly Vec3[],
+): void {
+	interface Member {
+		motion: ShipMotion;
+		projected: boolean;
+		/** Where the pairs left it. */
+		paired: Vec3;
+		/** Where it is now, written back in place. */
+		now: { pos: Vec3; vel: Vec3 };
+	}
+	const members: Member[] = fleet.map((f, index) => ({
+		motion: f.motion,
+		projected: f.projected,
+		paired: pairedFleet[index],
+		now: steps[index],
+	}));
+	const pairs = eligibleFleetPairs(fleet);
+	if (player) {
+		members.push({ ...player, projected: false, now: ship });
+		const you = members.length - 1;
+		pairs.unshift(...fleet.map((_, index): [number, number] => [you, index]));
+	}
+	const boxOf = (m: Member) => {
+		const box = m.motion.primitives.find((p) => p.kind === "box");
+		if (!box) throw new Error("a ship collides on its hull box (P1)");
+		return box;
+	};
+	const poseOf = (m: Member, origin: Vec3) => ({ ...m.motion.end, origin });
+	/** The world moved it after the pairs did. */
+	const held = (m: Member) => length(sub(m.now.pos, m.paired)) > 0;
+	for (const [x, y] of pairs) {
+		const a = members[x];
+		const b = members[y];
+		const boxA = boxOf(a);
+		const boxB = boxOf(b);
+		if (
+			!pairSeparation(boxA, poseOf(a, a.now.pos), boxB, poseOf(b, b.now.pos))
+				.overlap
+		)
+			continue;
+		const parted = pairSeparation(
+			boxA,
+			poseOf(a, a.paired),
+			boxB,
+			poseOf(b, b.paired),
+		);
+		// From B toward A, as every separation's normal is.
+		const n = parted.overlap
+			? normalizeOr(
+					sub(a.paired, b.paired),
+					normalizeOr(sub(a.now.pos, b.now.pos), v3(1, 0, 0)),
+				)
+			: parted.normal;
+		const push = pushOutAlong(
+			boxA,
+			poseOf(a, a.now.pos),
+			boxB,
+			poseOf(b, b.now.pos),
+			n,
+		);
+		if (!(push > 0)) continue;
+		const freeA = !a.projected && !held(a);
+		const freeB = !b.projected && !held(b);
+		const shareA = b.projected
+			? 1
+			: a.projected
+				? 0
+				: freeA === freeB
+					? b.motion.massT / (a.motion.massT + b.motion.massT)
+					: freeA
+						? 1
+						: 0;
+		a.now.pos = add(a.now.pos, scale(n, push * shareA));
+		b.now.pos = sub(b.now.pos, scale(n, push * (1 - shareA)));
+		const un = dot(sub(a.now.vel, b.now.vel), n);
+		if (un < 0) {
+			a.now.vel = sub(a.now.vel, scale(n, un * shareA));
+			b.now.vel = add(b.now.vel, scale(n, un * (1 - shareA)));
+		}
+	}
 }
 
 /** A station at the top of a step: its place and its aperture frame. */
