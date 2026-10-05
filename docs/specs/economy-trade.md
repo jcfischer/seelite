@@ -1699,13 +1699,32 @@ milestone runs **40–53 min at 15 s and 81–114 min at 90 s**. A reader who th
 semantics: you eject, you lose the entire hold, you keep the hull and everything
 fitted to it, and you resume at the last station you docked at.
 
+#660 settled the rest (2026-10-05). A death keeps the world (#654) and restores
+the commander **as it launched** from that station, so a purchase made there —
+the pod included — survives the death it was bought for. The pod is **manual
+only**, as in Elite: it works if the pilot ejects before the hull reaches zero,
+at any time in flight except docked or on an arrival or launch's rails, and it
+is **consumed**. A job's entrusted goods are lost with the hold and the job
+fails with no debt. A pilot with a pod fitted is warned on the glass when the
+hull falls below a threshold derived from the strongest hostile weapon.
+
 One consequence is recorded because #8 has to reckon with it: **ejecting dumps
 contraband**, which makes the pod a panic-button disposal route ahead of a
 shipyard scan. Whether that is a legitimate tactic or wants a cost is #8's, not
 this spec's.
 
-**What happens without a pod is not decided here.** That is the save/permadeath
-question, still fog on the map, and it reaches far past the economy.
+**Without a pod, or without ejecting, the pilot loses the ship** (#660 D6): the
+hull, every fitting and the hold. They wake at the station they launched from in
+a stock courier with a full tank, and keep the credits they launched with. That
+cannot strand a save: a courier is always left, and courier work entrusts its
+goods to a pilot with no credits. A pilot who dies before their first dock wakes
+docked at the start system's trade station as a new commander (D10). Ladder
+rungs and banked ladder credit are never touched (#183).
+
+A death will leave a **wreck** holding a seeded share of what it took — cargo
+and fittings after a death, cargo only after an eject — never the hull, the pod
+or entrusted goods. Recovering it is salvage's verb, so it waits on #466.
+Permadeath is a separate arm and is #238's.
 
 ---
 
