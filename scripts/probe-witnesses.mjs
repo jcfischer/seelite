@@ -73,6 +73,7 @@ try {
 		const g = window.__seelite;
 		cancelAnimationFrame(g.animationFrame);
 		const sim = await import("/src/sim.ts");
+		const { frameAcross } = await import("/src/vec3.ts");
 		// Constants read off the page, never restated here (CLAUDE.md).
 		const legalMod = await import("/src/legal.ts");
 		const engagementMod = await import("/src/traffic-engagement.ts");
@@ -165,6 +166,8 @@ try {
 			 * two spellings that could disagree about what "parked" means.
 			 */
 			parkShip(at, toward, vel) {
+				if (g.dead || !(g.condition.hull > 0))
+					throw new Error("witness fixture needs a live pilot");
 				g.world.ship.pos = at;
 				g.world.ship.vel = vel;
 				g.throttle = 0;
@@ -343,26 +346,20 @@ try {
 			offset: { x: 0, y: 0, z: 0 },
 			framesFired: 0,
 			/**
-			 * Put the ship 1.2 km behind the carrier along its own nose, co-moving.
+			 * Put the ship 1.2 km beside the carrier's route, co-moving.
 			 *
-			 * **The engagement probe's rig, not a placement of this file's.** The
-			 * first pass here held the ship 1 km off the target on a fixed axis and
-			 * held the trigger for ninety seconds of game time without ever landing
-			 * a hit. The diagnostics say why in one field: the energy bank fell the
-			 * whole way (so the pulse laser was firing) and the painted mark read
-			 * `onTarget: false` on every frame — the gimbal's own statement that
-			 * the pulse laser is not where the nose is. That rig has landed one on
-			 * a Clean civilian before, so it is copied rather than reinvented, and
-			 * the mark is reported below so the next failure says the same.
+			 * A rear tether followed an approaching carrier through its station,
+			 * killing the pilot while the scripted fight kept stepping (#702).
+			 * The lateral stand-off keeps the pilot outside that route's crossing;
+			 * aimAt still aims the real gun, and the landed-fire rows prove the hit.
+			 * Collision and the production death callback remain active.
 			 */
 			tether(key, km) {
 				const contact = g.trafficContacts.get(key);
 				if (!contact) return false;
 				const route = g.trafficRoutes.find((r) => r.key === key);
-				const back = unit(
-					route?.nose ? scale(route.nose, -1) : { x: 0, y: 0, z: 1 },
-				);
-				window.__witnessProbe.offset = scale(back, km);
+				const across = frameAcross(route?.nose ?? { x: 0, y: 0, z: 1 });
+				window.__witnessProbe.offset = scale(across, km);
 				g.targetId = key;
 				window.__witnessProbe.parkShip(
 					add(contact.pos, window.__witnessProbe.offset),
