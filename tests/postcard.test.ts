@@ -583,3 +583,57 @@ describe("the full exterior pose (node #691)", () => {
 		expect("elevationRad" in recipe || "yawRad" in recipe).toBe(false);
 	});
 });
+
+describe("a rebuilt recipe spells the link it was opened on (node #691)", () => {
+	/**
+	 * The viewer hands `postcardRecipe` the quaternion the link carried. That
+	 * quaternion is quantised, so its norm is off one by up to ~2e-7, and the
+	 * division this function used to apply moved the last digit of about one
+	 * orientation in three hundred — 56 of this row's 20,000, run against the
+	 * old division — after `probe-chase-orbit.mjs` went red on one.
+	 */
+	test("over a sweep of orientations, scene → link → recipe → link is the identity", () => {
+		let state = 691;
+		const next = () => {
+			state = (state * 1_103_515_245 + 12_345) >>> 0;
+			return (state / 2 ** 32) * 2 - 1;
+		};
+		let moved = 0;
+		for (let i = 0; i < 20_000; i++) {
+			const q = [next(), next(), next(), next()];
+			const n = Math.hypot(...q);
+			const sent = encodePostcard(
+				postcardRecipe({
+					...scene,
+					mode: "exterior",
+					head: undefined,
+					yawRad: 0.3,
+					elevationRad: -0.2,
+					orientation: q.map((c) => c / n),
+				}),
+			);
+			const read = decodePostcard(sent);
+			if (!read.ok) throw new Error(read.reason);
+			const rebuilt = encodePostcard(
+				postcardRecipe({
+					...scene,
+					mode: "exterior",
+					head: undefined,
+					yawRad: 0.3,
+					elevationRad: -0.2,
+					orientation: read.recipe.orientation,
+				}),
+			);
+			if (rebuilt !== sent) moved++;
+		}
+		expect(moved).toBe(0);
+	});
+
+	test("a scene's quaternion that is not a rotation is still normalised", () => {
+		const doubled = postcardRecipe({
+			...scene,
+			orientation: scene.orientation.map((c) => c * 2),
+		});
+		expect(encodePostcard(doubled)).toBe(canonical());
+	});
+});

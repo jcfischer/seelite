@@ -3995,7 +3995,13 @@ class Game {
 			this.world.ship.pos = v3(x, y, z);
 			this.world.ship.vel = v3();
 			const [qx, qy, qz, qw] = postcard.orientation;
-			this.orientation.set(qx, qy, qz, qw).normalize();
+			// **As the link spelled it, not renormalised** (node #691): the parse
+			// already holds its norm within 1e-5 of one, which no frame can see,
+			// and a renormalise moves the components by enough to spell back a
+			// different last digit — so `rebuiltFragment` would differ from the
+			// link it was opened on. `postcardRecipe` says why it divides only
+			// past that.
+			this.orientation.set(qx, qy, qz, qw);
 			this.restoredAttitude = true;
 			this.composePostcard(postcard);
 		} else if (save) {

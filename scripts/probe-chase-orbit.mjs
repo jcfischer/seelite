@@ -16,7 +16,9 @@
  * - **the pointer's owners** (C2): the cockpit gets its controls back and the
  *   chase pose is held across the toggle; a lost lock moves nothing until the
  *   next click takes it back; the settings screen and the Postcard screen take
- *   the pointer with them;
+ *   the pointer with them. The consoles and the Galaxy Map are cockpit walls,
+ *   so in chase they never hold it; `probe-pointer-lock.mjs` owns their rows,
+ *   and the orbit is dropped behind them by the same `contextFliesShip`;
  * - **the postcard carries the pose** (C3): an exterior card opened from an
  *   orbited view spells its yaw and elevation, its PNG is the card shown, the
  *   viewer rebuilds the same link and the same picture, the pilot's pose and
@@ -439,6 +441,16 @@ for (const pose of POSES) {
 
 	if (pose.from === "mouse") {
 		first = { pose: before, state, card };
+		// The Postcard screen took the pointer: a move behind it orbits nothing.
+		await moveMouse(22, -7);
+		const behind = await pilot();
+		check(
+			"the Postcard screen takes the pointer, and a move behind it orbits nothing",
+			(await lockHolder()) === null &&
+				behind.yaw === before.yaw &&
+				behind.elev === before.elev,
+			`lock ${await lockHolder()}; pose ${behind.yaw}, ${behind.elev}`,
+		);
 		// Save image: the download is the card on the screen, byte for byte.
 		await page.evaluate(() => {
 			navigator.canShare = () => false;
