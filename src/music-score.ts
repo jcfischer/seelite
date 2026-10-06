@@ -12,7 +12,10 @@
  */
 
 /** The synth's voices (#543 D1). `noise` and `tone` are the two percussion
- *  voices: a burst of filtered noise, and a sine that drops in pitch. */
+ *  voices: a burst of filtered noise, and a sine that drops in pitch.
+ *  `pulse`, `epiano`, `harpsi` and `softsaw` are the Danube versions':
+ *  a chip's pulse wave, an electric piano, a harpsichord and a soft-edged
+ *  saw lead. */
 export type VoiceKind =
 	| "pad"
 	| "pluck"
@@ -26,7 +29,11 @@ export type VoiceKind =
 	| "kick"
 	| "strings"
 	| "brass"
-	| "flute";
+	| "flute"
+	| "pulse"
+	| "epiano"
+	| "harpsi"
+	| "softsaw";
 
 /**
  * One note (#543 D3).
@@ -123,6 +130,20 @@ export interface TempoPoint {
  *   For noise the band's centre moves.
  * - `cutoffHz` — pad: the lowpass. Pluck: the brightness of the pluck's first
  *   moment. Noise has none: its band is centred on the note's pitch.
+ * - For **pulse**, `width` is the share of the cycle the wave is high,
+ *   0.05..0.5 (0.5 is a square); `pwmHz` and `pwmDepth` sweep it, the
+ *   depth in the same units and the width kept inside its range. `cutoffHz`
+ *   above 0 puts a lowpass after it, and `drive` saturates it.
+ * - For **epiano**, `index` is the body's brightness at full velocity,
+ *   falling over `envDecayS`; `envAmount` is the tine's strike and
+ *   `indexDecayS` how fast it dies; `ratio` is the tine's partial.
+ * - For **harpsi**, `index` is where along the string it is plucked, as a
+ *   share of its length — the harmonics at multiples of its inverse are
+ *   missing; `cutoffHz` the pluck's brightness; `decayS` the string's
+ *   own 60 dB fall at its fundamental. Velocity barely moves its level.
+ * - For **softsaw**, `unison` saws (default 8), each with its edge rounded
+ *   wider as the envelope falls, so a note mellows as it rings;
+ *   `detune` and `spread` as for analog.
  * - `pan` — `-1` left .. `1` right; 0, the centre, is the default.
  * - `reverb`, `echo` — the part's sends into the song's space
  *   (`music-space.ts`), `0`..`1`. **Both default to 0**: a part is dry
@@ -171,6 +192,10 @@ export interface PartSpec {
 	readonly keyTrack?: number;
 	readonly rosin?: number;
 	readonly rosinLow?: number;
+	/** Pulse: the duty cycle, and its sweep's rate and depth. */
+	readonly width?: number;
+	readonly pwmHz?: number;
+	readonly pwmDepth?: number;
 }
 
 /**

@@ -61,6 +61,7 @@ import {
 	DANUBE_VARIANT_SET,
 	renderInPage,
 	SOUND_SET,
+	VOICE_DEMO_SET,
 } from "./lib/sound-set.mjs";
 import { TREE_ENDPOINT } from "./lib/tree-declaration.mjs";
 import { launchChromium } from "./probe-guard.mjs";
@@ -80,13 +81,16 @@ const only = arg("only") ? [...new Set(arg("only").split(","))] : undefined;
 const ref = arg("ref");
 // `--set classical`: #589's set-pieces instead of the cue set. They are a
 // listening pass for the grilling, so no probe bands them.
-// `--set danube`: the waltz's alternative versions, a listening set too.
+// `--set danube`: the waltz's alternative versions, a listening set too;
+// `--set voices`: a demo of each of their voices.
 const SET =
 	arg("set") === "classical"
 		? CLASSICAL_SET
 		: arg("set") === "danube"
 			? DANUBE_VARIANT_SET
-			: SOUND_SET;
+			: arg("set") === "voices"
+				? VOICE_DEMO_SET
+				: SOUND_SET;
 const out = resolve(arg("out") ?? join(HERE, "sound-set"));
 const seed =
 	process.env.SEED === "off" ? null : Number(process.env.SEED ?? 552);

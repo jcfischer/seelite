@@ -38,6 +38,10 @@ const KICK = 9;
 const STRINGS = 10;
 const BRASS = 11;
 const FLUTE = 12;
+const PULSE = 13;
+const EPIANO = 14;
+const HARPSI = 15;
+const SOFTSAW = 16;
 const KIND: Record<VoiceKind, number> = {
 	pad: PAD,
 	pluck: PLUCK,
@@ -52,12 +56,16 @@ const KIND: Record<VoiceKind, number> = {
 	strings: STRINGS,
 	brass: BRASS,
 	flute: FLUTE,
+	pulse: PULSE,
+	epiano: EPIANO,
+	harpsi: HARPSI,
+	softsaw: SOFTSAW,
 };
 /** The voices that are two signals, one a side; every other is one, panned.
  *  Indexed by kind, and filled by name (sage round 8), so a kind added or
  *  renumbered above cannot take another's row. */
 const STEREO = new Uint8Array(Object.keys(KIND).length);
-for (const k of [PAD, ANALOG, DRONE, KEYS, STRINGS]) STEREO[k] = 1;
+for (const k of [PAD, ANALOG, DRONE, KEYS, STRINGS, SOFTSAW]) STEREO[k] = 1;
 /** The voices that can play legato, and carry their own weight to do it. */
 const LEGATO = new Uint8Array(Object.keys(KIND).length);
 for (const k of [STRINGS, BRASS, FLUTE]) LEGATO[k] = 1;
@@ -114,6 +122,10 @@ export interface ResolvedPart {
 	readonly keyTrack: number;
 	readonly rosin: number;
 	readonly rosinLow: number;
+	/** Pulse: the duty cycle, its sweep per frame (cycles) and depth. */
+	readonly width: number;
+	readonly pwmInc: number;
+	readonly pwmDepth: number;
 }
 
 /**
@@ -158,6 +170,9 @@ const BASE: VoiceDefaults = {
 	rosinLow: 1,
 	sweepS: 0,
 	sweepOct: 0,
+	width: 0.5,
+	pwmHz: 0,
+	pwmDepth: 0,
 };
 
 /** The strings' defaults are its parameter table's (#547 D15), but for the
@@ -308,6 +323,55 @@ const DEFAULTS: Record<VoiceKind, VoiceDefaults> = {
 		drift: 2,
 		detune: 0.03,
 	},
+	// A chip's pulse: two band-limited saws a width apart, the width swept,
+	// no filter unless a part asks for one.
+	pulse: {
+		...BASE,
+		attackS: 0.002,
+		decayS: 0.4,
+		sustain: 0.8,
+		releaseS: 0.05,
+		width: 0.5,
+	},
+	// An electric piano, by phase modulation: the body a sine bent by its own
+	// phase, brighter the harder it is struck and mellowing as it rings, and
+	// a tine's clank — a partial far above, gone in a tenth of a second.
+	epiano: {
+		...BASE,
+		attackS: 0.002,
+		decayS: 4.5,
+		sustain: 0,
+		releaseS: 0.35,
+		index: 2.4,
+		envAmount: 1.2,
+		envDecayS: 3,
+		indexDecayS: 0.12,
+		ratio: 11,
+	},
+	// A harpsichord: a plucked string in a delay line, plucked near its end so
+	// some harmonics are missing, bright and long while the key is down, and
+	// the damper's soft thunk when it is let go.
+	harpsi: {
+		...BASE,
+		attackS: 0.001,
+		decayS: 6,
+		sustain: 1,
+		releaseS: 0.12,
+		cutoffHz: 7000,
+		index: 0.13,
+	},
+	// A lead of soft saws: eight at random phases across the field, each
+	// edge rounded wider as the note falls, so it mellows as it rings.
+	softsaw: {
+		...BASE,
+		attackS: 0.005,
+		decayS: 3,
+		sustain: 0.35,
+		releaseS: 0.4,
+		unison: 8,
+		detune: 0.06,
+		spread: 0.8,
+	},
 };
 
 /** 60 dB in `seconds`, as a per-frame multiplier. */
@@ -357,6 +421,9 @@ export function resolvePart(spec: PartSpec, sampleRate: number): ResolvedPart {
 		keyTrack: d.keyTrack,
 		rosin: d.rosin,
 		rosinLow: d.rosinLow,
+		width: Math.max(PULSE_MIN_WIDTH, Math.min(0.5, d.width)),
+		pwmInc: d.pwmHz > 0 ? d.pwmHz / sampleRate : 0,
+		pwmDepth: d.pwmHz > 0 ? Math.max(0, d.pwmDepth) : 0,
 	};
 }
 
@@ -446,6 +513,30 @@ const BREATH_ONSET_S = 0.06;
 const BREATH_HELD = 0.18;
 /** Per frame, how fast a legato note's weight follows the new note's. */
 const LEGATO_VEL = 0.002;
+/** The narrowest pulse: a width under this is a click train. */
+const PULSE_MIN_WIDTH = 0.05;
+/** The epiano's tine is left out where its sidebands would pass Nyquist. */
+const TINE_NYQUIST = 0.45;
+/** The harpsichord's string loss: the share of the last sample in each
+ *  pass. Small, so the highs ring on — the instrument's brightness. */
+const HARPSI_LOSS = 0.1;
+/** Its pitch, per note, a little off: ± this share (about 2.6 cents). */
+const HARPSI_DETUNE = 0.0015;
+/** The damper's thunk: its level, its 60 dB fall in s, and the lowpass on
+ *  its noise, per frame. */
+const THUNK_LEVEL = 0.35;
+const THUNK_S = 0.05;
+const THUNK_LP = 0.04;
+/** The least release envelope the thunk is divided by: past it, the thunk
+ *  falls with the voice, which is about to free its slot. */
+const THUNK_FLOOR = 0.1;
+/** The soft saw's edge: the share of a cycle its fall takes at the peak of
+ *  the envelope and as the note dies. */
+const SOFT_EDGE_MIN = 0.02;
+const SOFT_EDGE_MAX = 0.45;
+/** Eight saws at random phases peak well past one where they line up; this
+ *  keeps a held note under full scale. */
+const SOFTSAW_GAIN = 0.6;
 
 const STAGE_FREE = 0;
 const STAGE_ATTACK = 1;
@@ -806,7 +897,71 @@ export class VoiceBank {
 				this.ph2[i] = 0.5 * (this.noise() + 1);
 				this.g[i] = svfCoef(part.cutoffHz, sr);
 				break;
+			case PULSE:
+				this.inc1[i] = f / sr;
+				this.glideTo[i] = f / sr;
+				this.ph2[i] = 0;
+				this.opPh[i * MAX_OPS] = 0;
+				this.g[i] = part.cutoffHz > 0 ? stableCoef(part.cutoffHz, sr) : 0;
+				break;
+			case EPIANO:
+				this.inc1[i] = f / sr;
+				this.inc2[i] = (f * part.ratio) / sr;
+				this.fenv[i] = 1;
+				// No tine where its upper sideband would alias.
+				this.opOff[i * MAX_OPS] =
+					f * (part.ratio + 1) < TINE_NYQUIST * sr ? 1 : 0;
+				break;
+			case HARPSI:
+				this.amp[i] = part.level * (0.85 + 0.15 * vel);
+				this.harpsiOn(i, part, f);
+				break;
+			case SOFTSAW:
+				this.inc1[i] = f / sr;
+				this.glideTo[i] = f / sr;
+				this.unisonOn(i, part);
+				this.ph2[i] = 0.5 * (this.noise() + 1);
+				break;
 		}
+	}
+
+	/** The harpsichord's string: a bright burst with the pluck point's comb
+	 *  cut into it, the delay tuned a little off the note, and the loop gain
+	 *  that gives its fundamental a `decayS` fall. */
+	private harpsiOn(i: number, part: ResolvedPart, f: number) {
+		const sr = this.sampleRate;
+		const line = this.line[i];
+		const a = 1 - Math.exp((-2 * Math.PI * part.cutoffHz) / sr);
+		const tuned = f * (1 + HARPSI_DETUNE * this.noise());
+		// The loss filter delays by its own weight; the line makes up the rest.
+		const L = line.length;
+		const D = Math.min(L - 2, sr / tuned - HARPSI_LOSS);
+		const n = Math.min(L, Math.ceil(D) + 2);
+		// One period of burst, `N` frames, made periodic before it is combed.
+		const N = Math.max(2, Math.min(n, Math.round(D)));
+		let y = 0;
+		for (let k = 0; k < N; k++) {
+			y += a * (this.noise() - y);
+			line[k] = y;
+		}
+		// The pluck point: the period less itself `m` frames on, around the
+		// period, which cuts every harmonic at a multiple of `N / m`. The
+		// period's head is copied past its end first, so the comb reads only
+		// burst; a note too low for the copy to fit is left uncombed.
+		const m = Math.max(1, Math.min(N - 1, Math.round(part.index * N)));
+		if (N + m <= L) {
+			for (let k = 0; k < m; k++) line[N + k] = line[k];
+			for (let k = 0; k < N; k++) line[k] = line[k + m] - line[k];
+		}
+		// The frames the read head starts behind, from the same period.
+		for (let k = N; k < n; k++) line[k] = line[k - N];
+		this.lineW[i] = n % L;
+		this.lineD[i] = D;
+		this.fb[i] = 0;
+		this.g[i] = 10 ** (-3 / (tuned * Math.max(0.05, part.decayS)));
+		this.accent[i] = 0;
+		this.idxEnv[i] = 0;
+		this.opOff[i * MAX_OPS] = fall60(THUNK_S, sr);
 	}
 
 	/** A unison note's oscillators: fixed detune spread evenly, each with its
@@ -970,6 +1125,14 @@ export class VoiceBank {
 				return this.horn(i, part, at);
 			case FLUTE:
 				return this.flute(i, part, at);
+			case PULSE:
+				return this.pulse(i, part, at);
+			case EPIANO:
+				return this.epiano(i, part);
+			case HARPSI:
+				return this.harpsi(i, env, at);
+			case SOFTSAW:
+				return this.softsaw(i, part, env, at);
 			case PAD: {
 				const a = saw(this.ph1[i], this.inc1[i]);
 				const b = saw(this.ph2[i], this.inc2[i]);
@@ -1349,6 +1512,107 @@ export class VoiceBank {
 		return softclip(1.3 * x) * 0.8;
 	}
 
+	/** The chip's pulse: a saw a width behind less the saw itself — high for
+	 *  `width` of the cycle — the width swept, the vibrato arriving late. */
+	private pulse(i: number, part: ResolvedPart, at: number) {
+		const t = this.age[i]++ / this.sampleRate;
+		const inc = this.inc1[i] * semis(this.carry(i, part, at, t));
+		const o = i * MAX_OPS;
+		let w = part.width;
+		if (part.pwmInc > 0) {
+			w += part.pwmDepth * Math.sin(2 * Math.PI * this.opPh[o]);
+			this.opPh[o] = wrap(this.opPh[o] + part.pwmInc);
+			w = Math.max(PULSE_MIN_WIDTH, Math.min(0.5, w));
+		}
+		const p = this.ph1[i];
+		let x = saw(wrap(p + 1 - w), inc) - saw(p, inc);
+		this.ph1[i] = wrap(p + inc);
+		if (this.g[i] > 0) x = this.svf(i, x, part.damp, false);
+		if (part.drive > 0) x = softclip(x * (1 + 3 * part.drive));
+		return x * 0.5;
+	}
+
+	/** The electric piano: a body that is a sine bent by its own phase — the
+	 *  bend from the velocity, falling as it rings — and beside it the same
+	 *  sine bent by the tine's partial far above, which dies at once. */
+	private epiano(i: number, part: ResolvedPart) {
+		const p = 2 * Math.PI * this.ph1[i];
+		const s = Math.sin(p);
+		const v = this.vel[i];
+		const body = Math.sin(p + part.index * v * Math.sqrt(v) * this.fenv[i] * s);
+		this.fenv[i] *= part.envDecayCoef;
+		let tine = s;
+		if (this.opOff[i * MAX_OPS] > 0) {
+			tine = Math.sin(
+				p +
+					part.envAmount *
+						this.vel[i] *
+						this.idxEnv[i] *
+						Math.sin(2 * Math.PI * this.ph2[i]),
+			);
+			this.idxEnv[i] *= part.indexDecayCoef;
+			this.ph2[i] = wrap(this.ph2[i] + this.inc2[i]);
+		}
+		this.ph1[i] = wrap(this.ph1[i] + this.inc1[i]);
+		return 0.4 * (body + tine);
+	}
+
+	/** The harpsichord: one pass of its string's loop, and the damper's thunk
+	 *  from the frame the key is let go — on its own envelope, so divided by
+	 *  the release's, which multiplies everything a voice returns. */
+	private harpsi(i: number, env: number, at: number) {
+		const line = this.line[i];
+		const L = line.length;
+		const w = this.lineW[i];
+		let r = w - this.lineD[i];
+		if (r < 0) r += L;
+		const r0 = Math.floor(r);
+		const y = line[r0] + (line[(r0 + 1) % L] - line[r0]) * (r - r0);
+		line[w] = ((1 - HARPSI_LOSS) * y + HARPSI_LOSS * this.fb[i]) * this.g[i];
+		this.fb[i] = y;
+		this.lineW[i] = w + 1 === L ? 0 : w + 1;
+		if (this.accent[i] === 0 && at >= this.end[i]) {
+			this.accent[i] = 1;
+			this.idxEnv[i] = 1;
+		}
+		let thunk = 0;
+		if (this.idxEnv[i] > SILENT) {
+			this.lp[i] += THUNK_LP * (this.noise() - this.lp[i]);
+			thunk =
+				(THUNK_LEVEL * this.idxEnv[i] * this.lp[i]) /
+				Math.max(env, THUNK_FLOOR);
+			this.idxEnv[i] *= this.opOff[i * MAX_OPS];
+		}
+		return y + thunk;
+	}
+
+	/** The soft saws: each a ramp that falls back over a share of its cycle,
+	 *  that share widening as the envelope falls — bright at the strike,
+	 *  rounder as it rings. Never under two frames, so it does not alias. */
+	private softsaw(i: number, part: ResolvedPart, env: number, at: number) {
+		const n = part.unison;
+		const base = i * MAX_OPS;
+		const t = this.age[i]++ / this.sampleRate;
+		this.wander(i, part);
+		const vib = this.carry(i, part, at, t);
+		const edge =
+			SOFT_EDGE_MIN + (SOFT_EDGE_MAX - SOFT_EDGE_MIN) * (1 - Math.min(1, env));
+		let l = 0;
+		let r = 0;
+		for (let k = 0; k < n; k++) {
+			const o = base + k;
+			const inc = this.inc1[i] * semis(this.opOff[o] + this.opJit[o] + vib);
+			const w = Math.min(0.5, Math.max(edge, 2 * inc));
+			const p = this.opPh[o];
+			const v = p < 1 - w ? (2 * p) / (1 - w) - 1 : 1 - (2 * (p - 1 + w)) / w;
+			this.opPh[o] = wrap(p + inc);
+			l += v * this.opL[o];
+			r += v * this.opR[o];
+		}
+		this.sideR = SOFTSAW_GAIN * r;
+		return SOFTSAW_GAIN * l;
+	}
+
 	/** Voice `i`'s second filter, the same lowpass on its own state: the
 	 *  right side of the pad and the analog, and the acid's second stage. */
 	private svf2(i: number, x: number, damp: number): number {
@@ -1392,6 +1656,13 @@ function sweep(part: ResolvedPart, at: number): number {
 /** Chamberlin state-variable coefficient, capped where it stays stable. */
 const svfCoef = (hz: number, sampleRate: number) =>
 	2 * Math.sin((Math.PI * Math.min(hz, sampleRate / 6)) / sampleRate);
+
+/** The coefficient a new voice's filter takes: capped at an eighth of the
+ *  rate, where a Chamberlin filter stays stable at any resonance — at the
+ *  sixth `svfCoef` allows, an undamped one runs away and the NaN silences
+ *  the song's room. */
+const stableCoef = (hz: number, sampleRate: number) =>
+	svfCoef(Math.min(hz, sampleRate / 8), sampleRate);
 
 const wrap = (p: number) => (p >= 1 ? p - 1 : p);
 

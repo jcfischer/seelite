@@ -645,6 +645,10 @@ export async function renderInPage({
 								)
 								.catch(() => ({}))),
 							// The waltz's alternative versions, where the served tree has them.
+							// The Danube voices' demos, where the served tree has them.
+							...(await import("/src/music-voice-demos.ts")
+								.then((m) => m.VOICE_DEMOS)
+								.catch(() => ({}))),
 							...(await import("/src/music-danube-variants.ts")
 								.then((m) => m.danubeVariants())
 								.catch(() => ({}))),
@@ -1149,4 +1153,26 @@ export const DANUBE_VARIANT_SET = Object.freeze(
 				tune(`music-${id}-run-short`, 76, 62),
 			];
 		}),
+);
+
+/**
+ * The Danube voices' demos (`src/music-voice-demos.ts`): a scale and a chord
+ * at three velocities per voice, `npm run sounds -- --set voices`. A
+ * listening set; no probe bands it. Lengths are each demo's bars at 100 BPM
+ * and the reverb's tail.
+ */
+export const VOICE_DEMO_SET = Object.freeze(
+	/** @type {[string, number][]} */ ([
+		["pulse", 54],
+		["epiano", 20],
+		["harpsi", 20],
+		["softsaw", 20],
+	]).map(([voice, seconds]) => ({
+		name: `voice-demo-${voice}`,
+		seconds,
+		music: {
+			songs: { [`voice-${voice}`]: `voice-${voice}` },
+			script: [[0, { type: "play", id: `voice-${voice}`, at: "bar" }]],
+		},
+	})),
 );
