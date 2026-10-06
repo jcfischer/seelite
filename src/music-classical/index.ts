@@ -10,7 +10,15 @@ import { WACHET_AUF, WACHET_AUF_SECONDS } from "./bach-wachet-auf";
 import { STEPPES, STEPPES_SECONDS } from "./borodin-steppes";
 import { BRUCKNER_ADAGIO, BRUCKNER_ADAGIO_SECONDS } from "./bruckner-7-adagio";
 import { CATHEDRALE, CATHEDRALE_SECONDS } from "./debussy-cathedrale";
+import {
+	CATHEDRALE_PIANO,
+	CATHEDRALE_PIANO_SECONDS,
+} from "./debussy-cathedrale-piano";
 import { CLAIR_DE_LUNE, CLAIR_DE_LUNE_SECONDS } from "./debussy-clair-de-lune";
+import {
+	CLAIR_DE_LUNE_PIANO,
+	CLAIR_DE_LUNE_PIANO_SECONDS,
+} from "./debussy-clair-de-lune-piano";
 import { NUAGES, NUAGES_SECONDS } from "./debussy-nuages";
 import { DVORAK_LARGO, DVORAK_LARGO_SECONDS } from "./dvorak-largo";
 import { MOUNTAIN_KING, MOUNTAIN_KING_SECONDS } from "./grieg-mountain-king";
@@ -23,7 +31,15 @@ import {
 } from "./rachmaninoff-isle-of-the-dead";
 import { AQUARIUM, AQUARIUM_SECONDS } from "./saint-saens-aquarium";
 import { GNOSSIENNE, GNOSSIENNE_SECONDS } from "./satie-gnossienne-1";
+import {
+	GNOSSIENNE_PIANO,
+	GNOSSIENNE_PIANO_SECONDS,
+} from "./satie-gnossienne-1-piano";
 import { GYMNOPEDIE, GYMNOPEDIE_SECONDS } from "./satie-gymnopedie-1";
+import {
+	GYMNOPEDIE_PIANO,
+	GYMNOPEDIE_PIANO_SECONDS,
+} from "./satie-gymnopedie-1-piano";
 import { ZARATHUSTRA, ZARATHUSTRA_SECONDS } from "./strauss-zarathustra";
 
 /** Every work: its song and how long its excerpt runs. */
@@ -60,6 +76,23 @@ export const CLASSICAL_WORKS: Readonly<
 		seconds: ISLE_OF_THE_DEAD_SECONDS,
 	},
 	"saint-saens-aquarium": { song: AQUARIUM, seconds: AQUARIUM_SECONDS },
+	// The piano works on the piano (2026-10-06): `piano.ts`.
+	"satie-gymnopedie-1-piano": {
+		song: GYMNOPEDIE_PIANO,
+		seconds: GYMNOPEDIE_PIANO_SECONDS,
+	},
+	"satie-gnossienne-1-piano": {
+		song: GNOSSIENNE_PIANO,
+		seconds: GNOSSIENNE_PIANO_SECONDS,
+	},
+	"debussy-clair-de-lune-piano": {
+		song: CLAIR_DE_LUNE_PIANO,
+		seconds: CLAIR_DE_LUNE_PIANO_SECONDS,
+	},
+	"debussy-cathedrale-piano": {
+		song: CATHEDRALE_PIANO,
+		seconds: CATHEDRALE_PIANO_SECONDS,
+	},
 };
 
 /** Every work's song by its id, as `renderInPage` loads them. */

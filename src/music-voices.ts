@@ -19,7 +19,7 @@
  * score draws a seeded stream is #548's to decide; this is noise inside a
  * voice.
  */
-import type { PartSpec, VoiceKind } from "./music-score";
+import type { PartSpec, SampleBank, VoiceKind } from "./music-score";
 import { stringsDefaults } from "./strings-params";
 
 // Each voice's number in the bank's `kind` array, which is a `Uint8Array`
@@ -42,6 +42,7 @@ const PULSE = 13;
 const EPIANO = 14;
 const HARPSI = 15;
 const SOFTSAW = 16;
+const SAMPLER = 17;
 const KIND: Record<VoiceKind, number> = {
 	pad: PAD,
 	pluck: PLUCK,
@@ -60,12 +61,16 @@ const KIND: Record<VoiceKind, number> = {
 	epiano: EPIANO,
 	harpsi: HARPSI,
 	softsaw: SOFTSAW,
+	sampler: SAMPLER,
 };
 /** The voices that are two signals, one a side; every other is one, panned.
  *  Indexed by kind, and filled by name (sage round 8), so a kind added or
  *  renumbered above cannot take another's row. */
 const STEREO = new Uint8Array(Object.keys(KIND).length);
-for (const k of [PAD, ANALOG, DRONE, KEYS, STRINGS, SOFTSAW]) STEREO[k] = 1;
+// The sampler is two signals whether its set is or not: a mono recording
+// reads the same frame to both sides.
+for (const k of [PAD, ANALOG, DRONE, KEYS, STRINGS, SOFTSAW, SAMPLER])
+	STEREO[k] = 1;
 /** The voices that can play legato, and carry their own weight to do it. */
 const LEGATO = new Uint8Array(Object.keys(KIND).length);
 for (const k of [STRINGS, BRASS, FLUTE]) LEGATO[k] = 1;
@@ -126,6 +131,10 @@ export interface ResolvedPart {
 	readonly width: number;
 	readonly pwmInc: number;
 	readonly pwmDepth: number;
+	/** Sampler: its set's name, and the synth part it plays while the set is
+	 *  absent; `null` plays nothing then. */
+	readonly samples: string;
+	readonly fallback: ResolvedPart | null;
 }
 
 /**
@@ -133,7 +142,9 @@ export interface ResolvedPart {
  * repo is one: the test score is heard with them, and #547 and #548 set what
  * their own parts need.
  */
-type VoiceDefaults = Required<Omit<PartSpec, "voice" | "level">>;
+type VoiceDefaults = Required<
+	Omit<PartSpec, "voice" | "level" | "samples" | "fallback">
+>;
 
 /** What no voice before #548's references had: off, or neutral, unless a
  *  voice below names it. */
@@ -372,6 +383,16 @@ const DEFAULTS: Record<VoiceKind, VoiceDefaults> = {
 		detune: 0.06,
 		spread: 0.8,
 	},
+	// A recorded instrument (map #1's sample ruling): the recording carries
+	// its own decay, so the envelope only opens it and, on the key's release,
+	// is the damper.
+	sampler: {
+		...BASE,
+		attackS: 0.002,
+		decayS: 1,
+		sustain: 1,
+		releaseS: 0.25,
+	},
 };
 
 /** 60 dB in `seconds`, as a per-frame multiplier. */
@@ -424,6 +445,11 @@ export function resolvePart(spec: PartSpec, sampleRate: number): ResolvedPart {
 		width: Math.max(PULSE_MIN_WIDTH, Math.min(0.5, d.width)),
 		pwmInc: d.pwmHz > 0 ? d.pwmHz / sampleRate : 0,
 		pwmDepth: d.pwmHz > 0 ? Math.max(0, d.pwmDepth) : 0,
+		samples: spec.samples ?? "",
+		fallback:
+			spec.voice === "sampler" && spec.fallback
+				? resolvePart({ ...spec, voice: spec.fallback }, sampleRate)
+				: null,
 	};
 }
 
@@ -545,6 +571,40 @@ const STAGE_RELEASE = 3;
 
 const mtof = (pitch: number) => 440 * 2 ** ((pitch - 69) / 12);
 
+/** A four-point Hermite curve through `x0` and `x1`, at `t` between them. */
+const hermite = (t: number, xm: number, x0: number, x1: number, x2: number) => {
+	const c1 = 0.5 * (x1 - xm);
+	const c2 = xm - 2.5 * x0 + 2 * x1 - 0.5 * x2;
+	const c3 = 0.5 * (x2 - xm) + 1.5 * (x0 - x1);
+	return ((c3 * t + c2) * t + c1) * t + x0;
+};
+
+/**
+ * The recording a sampler note plays, in two steps that allocate nothing:
+ * the softest layer whose `maxVelocity` reaches `vel` (the loudest above
+ * them all), and in it the root nearest the pitch — the lower of two equally
+ * near, so a note is read faster rather than slower, which keeps its attack
+ * short. Exported for tests.
+ */
+export function pickLayer(set: SampleBank, vel: number) {
+	const layers = set.layers;
+	for (const l of layers) if (vel <= l.maxVelocity) return l;
+	return layers[layers.length - 1];
+}
+
+export function pickZone(layer: SampleBank["layers"][number], pitch: number) {
+	let best: SampleBank["layers"][number]["zones"][number] | undefined;
+	let bestD = Number.POSITIVE_INFINITY;
+	for (const z of layer.zones) {
+		const d = Math.abs(z.root - pitch);
+		if (d < bestD) {
+			bestD = d;
+			best = z;
+		}
+	}
+	return best;
+}
+
 export class VoiceBank {
 	private readonly stage: Uint8Array;
 	private readonly kind: Uint8Array;
@@ -612,6 +672,14 @@ export class VoiceBank {
 	private readonly lineW: Int32Array;
 	private readonly lineD: Float64Array;
 	private readonly parts: (ResolvedPart | null)[];
+	/** The sample sets that have arrived, by name, and each sampler slot's
+	 *  buffer: a reference into a set, never a copy. */
+	private readonly sets = new Map<string, SampleBank>();
+	private readonly sbuf: (Float32Array | null)[];
+	/** A stereo set's right channel, per slot; `null` for a mono set. */
+	private readonly sbufR: (Float32Array | null)[];
+	/** Set by `sampler` when a recording has run out: its slot is free. */
+	private ended = false;
 	/** The bank's own noise, -1..1: the bursts, the drift and the unison
 	 *  phases. */
 	private readonly noise = xorshift(0x9e3779b9);
@@ -674,6 +742,19 @@ export class VoiceBank {
 		this.lineW = new Int32Array(cap);
 		this.lineD = f64();
 		this.parts = new Array(cap).fill(null);
+		this.sbuf = new Array(cap).fill(null);
+		this.sbufR = new Array(cap).fill(null);
+	}
+
+	/** Hold a sample set for the `sampler` voice; a second one of the same
+	 *  name replaces the first for notes that start after it. */
+	addSamples(name: string, bank: SampleBank) {
+		this.sets.set(name, bank);
+	}
+
+	/** Whether a sample set has arrived. */
+	hasSamples(name: string): boolean {
+		return this.sets.has(name);
 	}
 
 	/** Voices holding a slot: sounding, or waiting for their start frame. */
@@ -719,6 +800,35 @@ export class VoiceBank {
 		vel: number,
 		durFrames: number,
 	) {
+		let zone: Float32Array | null = null;
+		let zoneR: Float32Array | null = null;
+		let zoneInc = 0;
+		let zoneAmp = 0;
+		if (part.kind === SAMPLER) {
+			const set = this.sets.get(part.samples);
+			if (!set) {
+				if (part.fallback)
+					this.noteOn(
+						frame,
+						part.fallback,
+						owner,
+						partIndex,
+						pitch,
+						vel,
+						durFrames,
+					);
+				return;
+			}
+			const layer = pickLayer(set, vel);
+			const pick = layer && pickZone(layer, pitch);
+			if (!pick) return;
+			zone = pick.data;
+			zoneR = pick.right ?? null;
+			zoneInc = 2 ** ((pitch - pick.root) / 12) * (set.rate / this.sampleRate);
+			// A layer's recording is its loudest note: the velocity within it.
+			const top = layer.maxVelocity > 0 ? layer.maxVelocity : 1;
+			zoneAmp = part.level * set.gain * Math.min(1, Math.max(0, vel / top));
+		}
 		let slot = -1;
 		let oldest = Number.POSITIVE_INFINITY;
 		let mono = -1;
@@ -922,6 +1032,14 @@ export class VoiceBank {
 				this.unisonOn(i, part);
 				this.ph2[i] = 0.5 * (this.noise() + 1);
 				break;
+			case SAMPLER:
+				// A read position into the recording, in its frames.
+				this.sbuf[i] = zone;
+				this.sbufR[i] = zoneR;
+				this.ph1[i] = 0;
+				this.inc1[i] = zoneInc;
+				this.amp[i] = zoneAmp;
+				break;
 		}
 	}
 
@@ -1079,6 +1197,13 @@ export class VoiceBank {
 					}
 				}
 				const x = this.sample(i, kind, part, env, frame + s);
+				// A recording that has run out ends its note, whatever the
+				// envelope says.
+				if (this.ended) {
+					this.ended = false;
+					stage = STAGE_FREE;
+					break;
+				}
 				const k = env * amp * gains.gain(owner, pIx, frame + s);
 				const l = x * k * part.panL;
 				const r = (STEREO[kind] ? this.sideR : x) * k * part.panR;
@@ -1133,6 +1258,8 @@ export class VoiceBank {
 				return this.harpsi(i, env, at);
 			case SOFTSAW:
 				return this.softsaw(i, part, env, at);
+			case SAMPLER:
+				return this.sampler(i);
 			case PAD: {
 				const a = saw(this.ph1[i], this.inc1[i]);
 				const b = saw(this.ph2[i], this.inc2[i]);
@@ -1621,6 +1748,30 @@ export class VoiceBank {
 
 	/** One step of voice `i`'s Chamberlin state-variable filter: its lowpass
 	 *  output, or with `band` its bandpass. */
+	/** One frame of a recording, read at the note's rate between its samples
+	 *  by a four-point Hermite curve; past its last frame, `ended`. */
+	private sampler(i: number) {
+		const d = this.sbuf[i] as Float32Array;
+		const pos = this.ph1[i];
+		const k = pos | 0;
+		if (k + 2 >= d.length) {
+			this.ended = true;
+			return 0;
+		}
+		const t = pos - k;
+		const xm = k > 0 ? d[k - 1] : d[k];
+		const x0 = d[k];
+		const left = hermite(t, xm, x0, d[k + 1], d[k + 2]);
+		// A stereo set's right side, read at the same place; a mono set's is
+		// its left. Either way `pan` weighs the two, as a balance.
+		const r = this.sbufR[i];
+		this.sideR = r
+			? hermite(t, k > 0 ? r[k - 1] : r[k], r[k], r[k + 1], r[k + 2])
+			: left;
+		this.ph1[i] = pos + this.inc1[i];
+		return left;
+	}
+
 	private svf(i: number, x: number, damp: number, band: boolean): number {
 		return svfStep(this.lp, this.bp, i, this.g[i], x, damp, band);
 	}

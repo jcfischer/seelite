@@ -647,7 +647,7 @@ export async function renderInPage({
 							// The waltz's alternative versions, where the served tree has them.
 							// The Danube voices' demos, where the served tree has them.
 							...(await import("/src/music-voice-demos.ts")
-								.then((m) => m.VOICE_DEMOS)
+								.then((m) => ({ ...m.VOICE_DEMOS, ...m.SAMPLE_DEMOS }))
 								.catch(() => ({}))),
 							...(await import("/src/music-danube-variants.ts")
 								.then((m) => m.danubeVariants())
@@ -723,6 +723,9 @@ export async function renderInPage({
 		while (script.length && script[0][0] === "attach")
 			music.send(script.shift()[1]);
 		await ready;
+		// The sample sets its songs name, decoded and sent (map #1's sample
+		// ruling); an older engine has no sampler and nothing to wait for.
+		if (typeof music.samplesReady === "function") await music.samplesReady();
 		// And applied: an offline render starts without reading the port, so a
 		// held command would otherwise wait for a suspend (`Music.sync`).
 		await music.sync();
@@ -1114,6 +1117,11 @@ export const CLASSICAL_SET = Object.freeze(
 		["borodin-steppes", 63],
 		["rachmaninoff-isle-of-the-dead", 60],
 		["saint-saens-aquarium", 55],
+		// The piano works on the piano (`src/music-classical/piano.ts`).
+		["satie-gymnopedie-1-piano", 70],
+		["satie-gnossienne-1-piano", 95],
+		["debussy-clair-de-lune-piano", 66],
+		["debussy-cathedrale-piano", 70],
 	]).map(([id, seconds]) => ({
 		name: `classical-${id}`,
 		seconds,
@@ -1167,6 +1175,16 @@ export const VOICE_DEMO_SET = Object.freeze(
 		["epiano", 20],
 		["harpsi", 20],
 		["softsaw", 20],
+		// The same Danube phrase on each piano, sampled and synthesised, and on
+		// each harpsichord (map #1's sample ruling): heard side by side.
+		["piano-upright", 17],
+		["piano-grand", 17],
+		["piano-vcsl", 17],
+		// Its tails run to 16 s: room for the last chord to ring out.
+		["piano-grand-rich", 30],
+		["piano-epiano", 17],
+		["harpsi-synth", 17],
+		["harpsi-vcsl", 17],
 	]).map(([voice, seconds]) => ({
 		name: `voice-demo-${voice}`,
 		seconds,

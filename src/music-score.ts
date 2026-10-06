@@ -33,7 +33,8 @@ export type VoiceKind =
 	| "pulse"
 	| "epiano"
 	| "harpsi"
-	| "softsaw";
+	| "softsaw"
+	| "sampler";
 
 /**
  * One note (#543 D3).
@@ -196,6 +197,36 @@ export interface PartSpec {
 	readonly width?: number;
 	readonly pwmHz?: number;
 	readonly pwmDepth?: number;
+	/**
+	 * Sampler: the sample set it plays, by its folder under
+	 * `public/music-samples/` (map #1's ruling on open-licensed music samples,
+	 * 2026-10-06). `Music` fetches it when a song naming it is loaded; until
+	 * it has arrived, or where it cannot be decoded, the part plays
+	 * `fallback` — a synth voice, given every other field of the part — or
+	 * nothing.
+	 */
+	readonly samples?: string;
+	readonly fallback?: Exclude<VoiceKind, "sampler">;
+}
+
+/**
+ * One sample set as the worklet holds it: decoded on the main thread at the
+ * context's rate, one buffer per sampled note — two for a stereo set,
+ * `data` the left and `right` the right. `layers` run soft to loud,
+ * each taking the notes up to its `maxVelocity`; its `zones` are its
+ * sampled roots, ascending. `gain` is the set's one linear gain.
+ */
+export interface SampleBank {
+	readonly rate: number;
+	readonly gain: number;
+	readonly layers: readonly {
+		readonly maxVelocity: number;
+		readonly zones: readonly {
+			readonly root: number;
+			readonly data: Float32Array;
+			readonly right?: Float32Array;
+		}[];
+	}[];
 }
 
 /**
@@ -283,6 +314,8 @@ export type Quantum = "bar" | "section";
  *   stems moved at once are a crossfade between parts.
  * - `tempo` — the playing song's tempo map is scaled by `scale`, from the
  *   quantum, reached over `rampBars` bars (0: at the line).
+ * - `samples` — moves nothing: a sample set's buffers, for the `sampler`
+ *   voice. `Music` sends it, once a set, when a song that names it is loaded.
  * - `sync` — moves nothing; the worklet answers `synced` with the token once
  *   every command before it has been applied. An offline render needs it: a
  *   message sent while the render is suspended is applied only when the
@@ -331,7 +364,12 @@ export type MusicCommand =
 			readonly at: Quantum;
 			readonly rampBars: number;
 	  }
-	| { readonly type: "sync"; readonly token: number };
+	| { readonly type: "sync"; readonly token: number }
+	| {
+			readonly type: "samples";
+			readonly set: string;
+			readonly bank: SampleBank;
+	  };
 
 /** The processor's registered name: the worklet registers it and the
  *  controller constructs it, from this one copy. */

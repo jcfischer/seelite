@@ -26,8 +26,8 @@ import {
 	type Song,
 	type SongSpace,
 } from "./music-score";
-import { Space, type SpaceSpec } from "./music-space";
 import { compileSong, type NoteSink, Player } from "./music-sequencer";
+import { Space, type SpaceSpec } from "./music-space";
 import {
 	type ResolvedPart,
 	type RoomSends,
@@ -295,6 +295,11 @@ export class MusicEngine implements NoteSink, VoiceGain {
 			}
 			// The worklet answers it; there is nothing to move.
 			case "sync":
+				return;
+			// A sample set for the `sampler` voice: held from now on, for notes
+			// that start after it.
+			case "samples":
+				this.bank.addSamples(cmd.set, cmd.bank);
 				return;
 		}
 	}

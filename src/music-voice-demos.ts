@@ -4,7 +4,12 @@
  * scale up and down, then one chord at three velocities, soft to hard — so a
  * voice's range and its answer to how hard it is played are heard in one
  * render. Listening material, not a game score.
+ *
+ * And the pianos and harpsichords side by side (map #1's sample ruling,
+ * 2026-10-06): the waltz's first phrase, tune and oom-pah-pah, on each
+ * sampled set and on the synth voice that would otherwise play it.
  */
+import { HARMONY, THEME } from "./music-danube";
 import type { NoteEvent, PartSpec, Song } from "./music-score";
 
 /** C major from C3, two octaves. */
@@ -91,4 +96,69 @@ export const VOICE_DEMOS: Readonly<Record<string, Song>> = {
 	"voice-softsaw": song("softsaw", {
 		softsaw: { voice: "softsaw", level: 0.3, reverb: 0.3 },
 	}),
+};
+
+/** Waltz No. 1's first eight bars and their upbeat, as a pianist plays them:
+ *  the tune in the right hand, and in the left the bass on one and the
+ *  chord on two and three. */
+function phrase(right: string, left: string): NoteEvent[] {
+	const out: NoteEvent[] = [];
+	for (const [bar, beat, pitch, dur] of THEME)
+		if (bar <= 8) out.push({ part: right, bar, beat, dur, pitch, vel: 0.7 });
+	for (let bar = 1; bar <= 8; bar++) {
+		const h = HARMONY[bar];
+		if (!h) continue;
+		const [bass, chord] = h;
+		out.push({ part: left, bar, beat: 0, dur: 1, pitch: bass, vel: 0.6 });
+		for (const beat of [1, 2])
+			for (const pitch of chord)
+				out.push({ part: left, bar, beat, dur: 0.8, pitch, vel: 0.42 });
+	}
+	// The last chord held, so a set's ring is heard.
+	out.push({ part: left, bar: 9, beat: 0, dur: 3, pitch: 38, vel: 0.6 });
+	for (const pitch of [54, 57, 62, 74])
+		out.push({ part: left, bar: 9, beat: 0, dur: 3, pitch, vel: 0.5 });
+	return out;
+}
+
+const phraseSong = (name: string, spec: PartSpec): Song => ({
+	name,
+	beatsPerBar: 3,
+	parts: { right: spec, left: { ...spec, pan: 0 } },
+	sections: [{ name: "phrase", bars: 12, events: phrase("right", "left") }],
+	tempo: [{ bar: 0, bpm: 140 }],
+	space: { reverbS: 1.8 },
+});
+
+const sampled = (set: string, level: number): PartSpec => ({
+	voice: "sampler",
+	samples: set,
+	level,
+	reverb: 0.25,
+});
+
+/** The pianos and harpsichords, by the id `renderInPage` loads each under. */
+export const SAMPLE_DEMOS: Readonly<Record<string, Song>> = {
+	"voice-piano-upright": phraseSong(
+		"piano-upright",
+		sampled("piano-upright", 0.8),
+	),
+	"voice-piano-grand": phraseSong("piano-grand", sampled("piano-grand", 1)),
+	"voice-piano-vcsl": phraseSong("piano-vcsl", sampled("piano-vcsl", 0.8)),
+	// Salamander again, six layers and stereo, its tails left long.
+	"voice-piano-grand-rich": phraseSong(
+		"piano-grand-rich",
+		sampled("piano-grand-rich", 1),
+	),
+	"voice-piano-epiano": phraseSong("piano-epiano", {
+		voice: "epiano",
+		level: 0.55,
+		reverb: 0.25,
+	}),
+	"voice-harpsi-synth": phraseSong("harpsi-synth", {
+		voice: "harpsi",
+		level: 0.3,
+		reverb: 0.25,
+	}),
+	"voice-harpsi-vcsl": phraseSong("harpsi-vcsl", sampled("harpsi-vcsl", 0.26)),
 };
