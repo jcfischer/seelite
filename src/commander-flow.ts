@@ -15,6 +15,7 @@
  */
 
 import type { BootMode } from "./boot-mode";
+import type { DeathWake } from "./death-cost";
 import type { FirstDayChoice } from "./first-day-choice";
 import { type SaveEnvelope } from "./save-envelope";
 import {
@@ -177,6 +178,14 @@ export interface BootPlan {
 	record: string | null;
 	/** Under the overlay a `?seed` pre-fills New game and does nothing else. */
 	seedPrefill: number | null;
+	/**
+	 * What a death took, for the notice the pilot wakes to (#660, node #704),
+	 * or `null`. Only for the Commander this boot loaded: a wake left for
+	 * another, or beside no record, is dropped — it is taken by every boot
+	 * that reads storage, so it is never shown later than the boot after its
+	 * death.
+	 */
+	wake: DeathWake | null;
 }
 
 /**
@@ -206,6 +215,7 @@ export async function planBoot(input: BootInput): Promise<BootPlan> {
 		canContinue: false,
 		seedPrefill: direct ? null : querySeed,
 		record: null,
+		wake: null,
 	};
 	// A fresh game that saves nothing, so there is always something to continue.
 	if (writesNothing) {
@@ -214,6 +224,9 @@ export async function planBoot(input: BootInput): Promise<BootPlan> {
 	}
 
 	let oneShot: string | null;
+	// A courtesy, so a backend that cannot hand it over costs the notice and
+	// never the boot.
+	const wake = await catalog.takeWake().catch(() => null);
 	try {
 		oneShot = await catalog.takeOneShot();
 		const active = await catalog.resolveActive();
@@ -253,6 +266,8 @@ export async function planBoot(input: BootInput): Promise<BootPlan> {
 	// discarded: the overlay opens, with the fault when there is one (§11.3).
 	if (!direct && oneShot === plan.slot && plan.canContinue)
 		plan.mode = "continue";
+	if (wake !== null && wake.slot === plan.slot && plan.loaded !== null)
+		plan.wake = wake;
 	return plan;
 }
 

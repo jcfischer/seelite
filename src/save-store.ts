@@ -51,6 +51,12 @@
 
 import { type FirstDayChoice, isFirstDayChoice } from "./first-day-choice";
 import { firstCheckpoint, hasDocked } from "./death-checkpoint";
+import {
+	type DeathCause,
+	type DeathWake,
+	deathWake,
+	parseDeathWake,
+} from "./death-cost";
 import { commanderAfterDeath } from "./holdings";
 import {
 	type CommanderRecord,
@@ -227,8 +233,9 @@ export interface SaveBackend {
 	takeMeta(key: SaveMetaKey): Promise<unknown | null>;
 }
 
-/** The pointer store's keys (§11.3, §11.4). */
-export type SaveMetaKey = "active" | "oneShot" | "pending";
+/** The pointer store's keys (§11.3, §11.4), and the wake a death leaves for
+ *  the next boot (#660, node #704: `DeathWake`). */
+export type SaveMetaKey = "active" | "oneShot" | "pending" | "wake";
 
 /**
  * A Commander's exclusive lock, per tab (§11.3).
@@ -644,10 +651,20 @@ export class SaveStore {
 	 * as a written record. The one absence that still refuses is a pilot who
 	 * did dock — a held `lastDocked` fault, or a record that `hasDocked` says
 	 * docked, which is the witness a reload keeps.
+	 *
+	 * **`cause` is what the death costs** (#660, node #704): an `eject` keeps
+	 * the launch ship and loses the hold and the pod, a `destroyed` loses the
+	 * ship for a stock courier (`commanderAfterDeath`). Required, for
+	 * `FlightPerformance`'s reason: a caller that forgot it would silently
+	 * hand a pilot the cheaper death. The store also leaves the wake — what
+	 * was lost — in the pointer store for the next boot (`takeWake`).
 	 */
-	async revertToLastDocked(commander: {
-		permadeath: boolean;
-	}): Promise<SaveEnvelope | null> {
+	async revertToLastDocked(
+		commander: {
+			permadeath: boolean;
+		},
+		cause: DeathCause,
+	): Promise<SaveEnvelope | null> {
 		if (commander.permadeath) return null;
 		const wasDirty = this.dirty;
 		this.quiet();
@@ -655,15 +672,17 @@ export class SaveStore {
 		await this.settled();
 		let raw: unknown;
 		let restored: SaveEnvelope;
+		let wake: DeathWake;
 		try {
 			const docked = await this.backend.read(this.slot, "lastDocked");
 			const dying = this.current();
 			const dock = this.checkpointFor(docked, dying);
 			raw = serializeSave({
 				world: dying.world,
-				commander: commanderAfterDeath(dock, dying.commander),
+				commander: commanderAfterDeath(dock, dying.commander, cause),
 			});
 			restored = parseSave(raw);
+			wake = deathWake(this.slot, dock, cause);
 		} catch (error) {
 			// Not retired, and the save the death interrupted is still owed: quieting
 			// cleared the flag and the debounce, and without this a change made
@@ -676,6 +695,15 @@ export class SaveStore {
 		this.retired = true;
 		this.quiet();
 		await this.backend.write(this.slot, "live", raw);
+		// What the death took, for the notice the next boot shows (node #704).
+		// After `live`, and a courtesy rather than a part of the restore: a
+		// write that fails here costs the pilot the notice, never the save, so
+		// it is logged and not thrown.
+		try {
+			await this.backend.writeMeta({ wake });
+		} catch (error) {
+			console.warn("save: the wake notice was not written", error);
+		}
 		this.release();
 		return restored;
 	}
@@ -897,6 +925,17 @@ export class CommanderCatalog {
 	async takeOneShot(): Promise<string | null> {
 		const value = await this.backend.takeMeta("oneShot");
 		return typeof value === "string" ? value : null;
+	}
+
+	/**
+	 * The wake a death left (`revertToLastDocked`), consumed: what the death
+	 * took, or `null` — none, or one this build cannot read. One transaction
+	 * reads and deletes it, so it is shown by one boot at most, and every boot
+	 * that reads storage takes it, so a wake never outlives the boot after
+	 * its death. Which Commander it is for is the caller's to check (`slot`).
+	 */
+	async takeWake(): Promise<DeathWake | null> {
+		return parseDeathWake(await this.backend.takeMeta("wake"));
 	}
 
 	/**

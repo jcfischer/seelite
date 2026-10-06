@@ -1143,7 +1143,10 @@ describe("#654 — the commander record a death restores", () => {
 				playedS: 1800,
 			},
 		};
-		expect(commanderAfterDeath(docked, dying)).toEqual({
+		// An eject with an empty hold and no pod costs nothing more, so this
+		// row isolates #654's half; what a death costs is
+		// `tests/death-cost.test.ts`'s (#660, node #704).
+		expect(commanderAfterDeath(docked, dying, "eject")).toEqual({
 			...docked,
 			ladders: { ...docked.ladders, playedS: 1800 },
 		});

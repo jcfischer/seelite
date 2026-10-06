@@ -167,6 +167,9 @@ export interface FirstDayPanel {
 	consoleLine: string | null;
 	/** The flight controls as bound, keyboard and controller (#408). */
 	controls: { keyboard: string; controller: string };
+	/** The escape pod's row, while one is fitted (#660 D9): how to eject, in
+	 *  the key as bound (`firstDayEjectLine`). */
+	eject: string | null;
 }
 
 export interface LiveCockpitState {
@@ -1282,7 +1285,7 @@ export class LiveCockpit {
 		// list would become unusable exactly while it was being used.
 		// **The Requests tab is in it** (node #690): docking or launching resets
 		// the tab to Current without a press, so no revision moves with it.
-		const key = `${state.visible}|${state.dockPhase}|${state.headLook}|${state.leftTab}|${state.rightTab}|${state.stationConsole?.label ?? ""}|${state.stationConsole?.tab ?? ""}|${state.stationConsole?.revision ?? 0}|${state.stationConsole?.message ?? ""}|${state.launchHold ? "held" : ""}|${!!state.requests}|${state.requests?.revision ?? 0}|${state.requests?.tab ?? ""}|${state.firstDay?.current ?? ""}|${state.firstDay?.text ?? ""}|${state.firstDay?.stationLine ?? ""}|${state.firstDay?.controls.keyboard ?? ""}|${state.firstDay?.controls.controller ?? ""}|${state.rightTab === "Commander" ? ladderViewKey(state.ladders) : ""}`;
+		const key = `${state.visible}|${state.dockPhase}|${state.headLook}|${state.leftTab}|${state.rightTab}|${state.stationConsole?.label ?? ""}|${state.stationConsole?.tab ?? ""}|${state.stationConsole?.revision ?? 0}|${state.stationConsole?.message ?? ""}|${state.launchHold ? "held" : ""}|${!!state.requests}|${state.requests?.revision ?? 0}|${state.requests?.tab ?? ""}|${state.firstDay?.current ?? ""}|${state.firstDay?.text ?? ""}|${state.firstDay?.stationLine ?? ""}|${state.firstDay?.controls.keyboard ?? ""}|${state.firstDay?.controls.controller ?? ""}|${state.firstDay?.eject ?? ""}|${state.rightTab === "Commander" ? ladderViewKey(state.ladders) : ""}`;
 		this.setVisible(state.visible);
 		this.root.dataset.liveHeadLook = state.headLook;
 		this.root.dataset.liveDocked = String(state.dockPhase === "docked");
@@ -1924,7 +1927,7 @@ function firstDayBody(panel: FirstDayPanel | undefined): string {
 		const state = i < at ? "done" : i === at ? "current" : "ahead";
 		return `<li class="lc-first-day-step" data-first-day-step="${step.id}" data-first-day-state="${state}">${escapeHtml(step.title)}</li>`;
 	}).join("");
-	return `<div class="lc-panel-body" data-live-first-day><div class="lc-rail"><b>FIRST DAY</b><span>A SHORT JOB</span><span>ON YOUR OWN TIME</span></div><div class="lc-panel-copy"><h3>NOW</h3><p data-live-first-day-now>${escapeHtml(panel.text)}</p><h3>THE DAY</h3><ol class="lc-first-day-steps">${rows}</ol><h3>FLYING</h3><p data-live-first-day-controls>${escapeHtml(panel.controls.keyboard)}<br>CONTROLLER · ${escapeHtml(panel.controls.controller)}</p></div></div>`;
+	return `<div class="lc-panel-body" data-live-first-day><div class="lc-rail"><b>FIRST DAY</b><span>A SHORT JOB</span><span>ON YOUR OWN TIME</span></div><div class="lc-panel-copy"><h3>NOW</h3><p data-live-first-day-now>${escapeHtml(panel.text)}</p><h3>THE DAY</h3><ol class="lc-first-day-steps">${rows}</ol><h3>FLYING</h3><p data-live-first-day-controls>${escapeHtml(panel.controls.keyboard)}<br>CONTROLLER · ${escapeHtml(panel.controls.controller)}</p>${panel.eject === null ? "" : `<h3>ESCAPE POD</h3><p data-live-first-day-eject>${escapeHtml(panel.eject)}</p>`}</div></div>`;
 }
 
 /**

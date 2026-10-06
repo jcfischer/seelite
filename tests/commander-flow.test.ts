@@ -10,6 +10,7 @@
  */
 
 import { describe, expect, test } from "bun:test";
+import type { DeathWake } from "../src/death-cost";
 import {
 	attachCommander,
 	CommanderSwitch,
@@ -85,6 +86,39 @@ const origin = () => {
 		});
 	return { backend, locks, catalog, save, boot, store };
 };
+
+describe("planBoot: the wake a death left (#660, node #704)", () => {
+	const wake = (slot: string): DeathWake => ({
+		slot,
+		cause: "eject",
+		hull: "courier",
+		holdT: 4,
+		fittingsLost: 1,
+		failedJobs: 0,
+	});
+
+	test("the death's continue carries its wake, and the next boot does not", async () => {
+		const o = origin();
+		await o.save("Jameson");
+		await o.backend.writeMeta({ wake: wake("Jameson") });
+		await o.catalog.chooseCommander("Jameson");
+		const plan = await o.boot();
+		expect(plan.mode).toBe("continue");
+		expect(plan.wake).toEqual(wake("Jameson"));
+		expect((await o.boot()).wake).toBeNull();
+	});
+
+	test("a wake for another Commander, or one this build cannot read, is dropped and taken", async () => {
+		const o = origin();
+		await o.save(DEFAULT_SLOT);
+		await o.backend.writeMeta({ wake: wake("Elsewhere") });
+		expect((await o.boot()).wake).toBeNull();
+		expect(await o.backend.readMeta("wake")).toBeNull();
+		await o.backend.writeMeta({ wake: { slot: DEFAULT_SLOT, cause: "x" } });
+		expect((await o.boot()).wake).toBeNull();
+		expect(await o.backend.readMeta("wake")).toBeNull();
+	});
+});
 
 describe("planBoot: which Commander a boot is for (§11.2)", () => {
 	test("a fresh profile opens the overlay on the default Commander with nothing to continue", async () => {

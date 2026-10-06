@@ -10,6 +10,7 @@ import {
 	COMMS_LINES,
 	clearanceLine,
 	type CommsLineId,
+	ejectWarningLine,
 	numbersPhrase,
 	voiceArms,
 } from "../src/comms";
@@ -407,5 +408,17 @@ describe("a spoken line on the engine", () => {
 		}
 		expect(Number.isFinite(waited)).toBe(true);
 		expect(waited).toBeLessThanOrEqual(SPEECH_ECHO_MAX_TAIL_S * 1000);
+	});
+});
+
+describe("the eject warning's line (#660 D12, node #704)", () => {
+	test("names the key the glass names, and none it cannot say", () => {
+		expect(COMMS_LINES[ejectWarningLine("hold Backspace")].text).toContain(
+			"backspace",
+		);
+		expect(COMMS_LINES[ejectWarningLine("hold Home")].text).toContain("home");
+		const rebound = COMMS_LINES[ejectWarningLine("hold 8")].text;
+		expect(rebound).toContain("Eject");
+		expect(textToTokens(rebound).unknown).toEqual([]);
 	});
 });

@@ -9,6 +9,7 @@
 import { describe, expect, test } from "bun:test";
 import { carrierKey } from "../src/carrier-key";
 import {
+	firstDayEjectLine,
 	FIRST_DAY_STEPS,
 	firstDayConsoleLine,
 	type FirstDayFacts,
@@ -325,5 +326,18 @@ describe("#408 — station control on the port console", () => {
 		expect(
 			firstDayConsoleLine(facts({ settledAny: true }), null, KEYS),
 		).toBeNull();
+	});
+});
+
+describe("#660 D9 — the eject key, taught once a pod is fitted (node #704)", () => {
+	test("no row before the first pod, and the key as bound after it", () => {
+		expect(firstDayEjectLine(false, "hold Backspace to eject")).toBeNull();
+		const line = firstDayEjectLine(true, "hold Backspace to eject");
+		expect(line).toContain("hold Backspace to eject");
+		expect(line).toContain("lose the hold and the pod");
+		expect(line).toContain("lose the ship");
+		expect(firstDayEjectLine(true, "hold 8 to eject")).toContain(
+			"hold 8 to eject",
+		);
 	});
 });

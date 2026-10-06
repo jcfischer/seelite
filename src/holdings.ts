@@ -27,8 +27,9 @@
  */
 
 import type { CarrierKey } from "./carrier-key";
+import type { DeathCause } from "./death-cost";
 import type { CommanderRecord } from "./save-envelope";
-import type { HullId } from "./hull";
+import { HULL_SPECS, type HullId, PLAYER_BASELINE_HULL } from "./hull";
 import { killCredit } from "./kill-credit";
 import {
 	type LadderRecord,
@@ -45,6 +46,7 @@ import {
 	withCapstone,
 } from "./ladder";
 import { recordTrade } from "./deficits";
+import { ESCAPE_POD } from "./market";
 import type { Standing } from "./legal";
 import { PLAYER_KILL } from "./raider-wreck";
 import {
@@ -55,12 +57,14 @@ import {
 	readiedBy,
 	recordKill,
 	requestAction,
+	requestsAfterLostHold,
 } from "./requests";
 import {
 	type CommanderState,
 	type StationAction,
 	type StationCommerceResult,
 	commanderHold,
+	newCommander,
 	scoopCargo,
 } from "./station-commerce";
 import {
@@ -71,20 +75,64 @@ import {
 	visit,
 } from "./world-state";
 
-/** Everything a pilot owns that an act at a console or in space can move. */
 /**
  * The commander record a death restores (#654, the principal's Q2 ruling on
- * #238): the last dock's, so the pilot wakes with what they had there, with
- * the ladder record's own exception (`ladderAfterDeath`). The world is not
- * an input: a death keeps it whole, and only the store pairs the two.
+ * #238): the checkpoint's — the commander as it launched, since #660 D1 —
+ * with the ladder record's own exception (`ladderAfterDeath`), and then what
+ * the death costs (#660, node #704). The world is not an input: a death keeps
+ * it whole, and only the store pairs the two.
+ *
+ * **Both causes lose the hold** (D2, D6): the pilot's cargo, its purchase
+ * basis — the parser refuses a basis covering more than is aboard — and every
+ * entrusted lot, whose running job fails with no debt (D3,
+ * `requestsAfterLostHold`).
+ *
+ * - **`eject`** (D2): the launch hull and every fitting are kept, and the pod
+ *   is consumed. Tank and charge are the launch's.
+ * - **`destroyed`** (D6): the hull and every fitting go too. The pilot wakes
+ *   in a stock courier with a full tank and a full charge, and keeps the
+ *   launch credits — which is what leaves no save stranded: a courier, and
+ *   #356's courier floor entrusting its goods to a pilot with nothing.
+ *
+ * Rungs and banked ladder credit are never touched (#183); unbanked credit was
+ * never on the checkpoint.
  */
 export const commanderAfterDeath = (
 	dock: CommanderRecord,
 	dying: CommanderRecord,
-): CommanderRecord => ({
-	...dock,
-	ladders: ladderAfterDeath(dock.ladders, dying.ladders),
-});
+	cause: DeathCause,
+): CommanderRecord => {
+	const requests = requestsAfterLostHold(dock.requests).state;
+	const ladders = {
+		...ladderAfterDeath(dock.ladders, dying.ladders),
+		basis: {},
+	};
+	if (cause === "eject")
+		return {
+			...dock,
+			requests,
+			ladders,
+			state: {
+				...dock.state,
+				cargo: {},
+				ownedEquipment: dock.state.ownedEquipment.filter(
+					(item) => item !== ESCAPE_POD,
+				),
+			},
+		};
+	return {
+		...dock,
+		requests,
+		ladders,
+		state: {
+			...newCommander(PLAYER_BASELINE_HULL),
+			credits: dock.state.credits,
+		},
+		chargeAu: HULL_SPECS[PLAYER_BASELINE_HULL].chargeAu,
+	};
+};
+
+/** Everything a pilot owns that an act at a console or in space can move. */
 
 export interface Holdings {
 	readonly commander: CommanderState;

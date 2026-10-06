@@ -14,10 +14,14 @@ import type { JobOffer } from "../src/jobs";
 import { firstOffer, firstProcurementOffer } from "./helpers/job-board";
 import { recordTrade } from "../src/deficits";
 import {
+	LOST_WITH_SHIP_REASON,
 	type RequestsState,
 	emptyRequests,
 	entrustedTonnesAboard,
+	nextAction,
+	parseRequests,
 	requestAction,
+	requestsAfterLostHold,
 	settledAt,
 	settlementMessage,
 } from "../src/requests";
@@ -652,5 +656,81 @@ describe("the settlement says what moved", () => {
 				remainingT: 0,
 			}),
 		).toContain("You have no Textiles left.");
+	});
+});
+
+describe("#660 D3 — entrusted goods are lost with the ship", () => {
+	const taken = () => {
+		const accepted = accept().state;
+		return requestAction(accepted, offers, "track", courier.id, context())
+			.state;
+	};
+
+	test("a running courier fails with a readable reason, its lot gone, nothing owed", () => {
+		const before = taken();
+		expect(entrustedTonnesAboard(before)).toBeGreaterThan(0);
+		expect(before.trackedRequestId).toBe(courier.id);
+		const { state, failed } = requestsAfterLostHold(before);
+		expect(failed).toEqual([courier.id]);
+		const job = state.byId[courier.id];
+		expect(job.status).toBe("failed");
+		expect(job.settledAt).toBeNull();
+		expect(nextAction(job)).toBe(LOST_WITH_SHIP_REASON);
+		expect(entrustedTonnesAboard(state)).toBe(0);
+		// The parser refuses a tracked job that is not running.
+		expect(state.trackedRequestId).toBeNull();
+		// A journal the save can carry.
+		expect(parseRequests(structuredClone(state), 120)).toEqual(state);
+	});
+
+	test("the failed job can be accepted again where it was posted", () => {
+		const { state } = requestsAfterLostHold(taken());
+		const again = requestAction(state, offers, "accept", courier.id, context());
+		expect(again.ok).toBe(true);
+		expect(again.state.byId[courier.id].status).toBe("accepted");
+		expect(again.state.byId[courier.id].outcomeReason).toBeNull();
+		expect(again.state.byId[courier.id].acceptanceOrdinal).toBe(2);
+		expect(entrustedTonnesAboard(again.state)).toBe(courier.operand.tonnes);
+		const elsewhere = requestAction(state, offers, "accept", courier.id, {
+			...context(),
+			docked: null,
+		});
+		expect(elsewhere.ok).toBe(false);
+	});
+
+	test("a cancelled job keeps its status and only loses the goods it owed back", () => {
+		const cancelled = requestAction(
+			accept().state,
+			offers,
+			"cancel",
+			courier.id,
+			context(),
+		).state;
+		expect(cancelled.byId[courier.id].status).toBe("cancelled");
+		expect(entrustedTonnesAboard(cancelled)).toBeGreaterThan(0);
+		const { state, failed } = requestsAfterLostHold(cancelled);
+		expect(failed).toEqual([]);
+		expect(state.byId[courier.id].status).toBe("cancelled");
+		expect(entrustedTonnesAboard(state)).toBe(0);
+	});
+
+	test("procurement is the pilot's own cargo: set back, not failed; an empty hold moves nothing", () => {
+		const { offers: shelf, offer: purchase } = firstProcurementOffer(
+			SYSTEMS,
+			"Food",
+			0,
+		);
+		const accepted = requestAction(
+			emptyRequests(),
+			shelf,
+			"accept",
+			purchase.id,
+			context({ docked: at(purchase.requester) }),
+		);
+		expect(accepted.ok).toBe(true);
+		const lost = requestsAfterLostHold(accepted.state);
+		expect(lost.failed).toEqual([]);
+		expect(lost.state).toBe(accepted.state);
+		expect(lost.state.byId[purchase.id].status).toBe("accepted");
 	});
 });
