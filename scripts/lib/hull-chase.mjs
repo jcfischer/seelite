@@ -7,8 +7,8 @@
  * One copy, so the instrument holds exposure by the measurement the band was
  * calibrated with and not by a second reader that drifts from it.
  *
- * Moved here verbatim from `probe-light-rig.mjs`; the only change is that
- * the sample count is an argument.
+ * Moved here verbatim from `probe-light-rig.mjs`; the sample count became an
+ * argument, and `mask` / `keepMask` were added for the instrument (below).
  */
 
 /**
@@ -19,8 +19,21 @@
  * become the "brightest hull pixel" while barely containing any hull at all.
  * The mask still comes from subtraction: render without the ship's meshes,
  * then with only its non-emissive meshes.
+ *
+ * **That mask depends on the lighting**, which is why the instrument cannot use
+ * it as is. A pixel within 3 codes of the black clear drops out, so a darker rig
+ * drops the hull's dark facets and the median of what is left goes *up*: on
+ * #723's run, the hemisphere at 0 kept 67,707 of 102,342 pixels, and sun 0.2
+ * read a median of 62.95 at hemisphere 3 and 67.22 at hemisphere 0. A search
+ * on that median has no direction. So `keepMask: true` returns the pixel set
+ * as `mask`, and passing it back as `mask` reads every later rig over the same
+ * pixels. With neither, the reading is the one `probe-light-rig.mjs` gates on.
  */
-export async function measureHullChase(page, samples) {
+export async function measureHullChase(
+	page,
+	samples,
+	{ mask = null, keepMask = false } = {},
+) {
 	const bodyId = await page.evaluate(() => {
 		const planets = window.__seelite.world.system.bodies.filter(
 			(body) => body.kind === "planet",
@@ -38,7 +51,7 @@ export async function measureHullChase(page, samples) {
 	}
 
 	return page.evaluate(
-		([sampleCount, framedBodyId]) => {
+		([sampleCount, framedBodyId, fixedMask, returnMask]) => {
 			const game = window.__seelite;
 			const ship = game.shipMesh;
 			if (!ship) return { missing: true };
@@ -109,13 +122,22 @@ export async function measureHullChase(page, samples) {
 			};
 			const luma = (data, i) =>
 				0.2126 * data[i] + 0.7152 * data[i + 1] + 0.0722 * data[i + 2];
+			const inFixedMask = fixedMask
+				? new Uint8Array(scratch.width * scratch.height)
+				: null;
+			if (inFixedMask) for (const at of fixedMask) inFixedMask[at] = 1;
+			let kept = [];
 			const summarizeDifference = (hull, withoutShip) => {
 				let peak = 0;
 				let peakAt = 0;
 				const values = [];
+				kept = [];
 				for (let i = 0; i < hull.length; i += 4) {
 					const here = luma(hull, i);
-					if (Math.abs(here - luma(withoutShip, i)) < 3) continue;
+					if (inFixedMask) {
+						if (!inFixedMask[i / 4]) continue;
+					} else if (Math.abs(here - luma(withoutShip, i)) < 3) continue;
+					if (returnMask) kept.push(i / 4);
 					if (here > peak) {
 						peak = here;
 						peakAt = i / 4;
@@ -173,8 +195,9 @@ export async function measureHullChase(page, samples) {
 				medians,
 				exposure: game.exposure,
 				finishes: game.finishes,
+				...(returnMask ? { mask: kept } : {}),
 			};
 		},
-		[samples, bodyId],
+		[samples, bodyId, mask, keepMask],
 	);
 }

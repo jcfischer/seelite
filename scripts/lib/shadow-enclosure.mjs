@@ -45,14 +45,17 @@ export const REBALANCE_SUNS = Object.freeze([0.5, 1, 2]);
  * (`lib/hull-chase.mjs`, the reader #199's band is calibrated with) equals the
  * same run's shipped median within `toleranceCodes`. The target is the run's
  * own reading, not `HULL_LUMA_CALIBRATION`'s, so the rule compares two rigs on
- * one build and one renderer.
+ * one build and one renderer. Every rebalance is read over the **shipped
+ * rig's hull pixels**: the reader's own mask is lit-dependent and drops dark
+ * facets as the hemisphere falls, which raised the median at hemisphere 0
+ * above the one at hemisphere 3 on #723's first run.
  */
 export const EXPOSURE_RULE = Object.freeze({
 	subject: "hull-chase painted hull",
 	statistic: "median",
 	toleranceCodes: 1,
 	describe:
-		"hemisphere lowered until the hull-chase painted-hull median equals this run's shipped median within 1 code",
+		"hemisphere lowered until the hull-chase painted-hull median, over the pixels the shipped rig shows, equals this run's shipped median within 1 code",
 });
 
 /** Every arm is differenced against this frame, drawn at the arm's own lights. */

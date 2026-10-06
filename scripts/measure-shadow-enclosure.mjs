@@ -28,7 +28,9 @@
  * Before the ladder, each rebalance sun gets a hemisphere value from
  * `EXPOSURE_RULE`: the hemisphere is lowered until the `hull-chase` painted
  * hull's median equals this run's shipped median. The hull is read by
- * `lib/hull-chase.mjs`, the reader #199's band is calibrated with.
+ * `lib/hull-chase.mjs`, the reader #199's band is calibrated with, over the
+ * pixels the shipped rig shows: that reader's own mask drops dark facets as a
+ * rig gets darker, which moves the median the wrong way (see its docblock).
  *
  * ## Two statistics per row
  *
@@ -297,10 +299,10 @@ function printRows(rows) {
  * The painted hull's reading in `hull-chase` under one pair of lights in
  * every layer, with the readback checked on both sides.
  */
-async function hullUnder(page, lights, shippedLights) {
+async function hullUnder(page, lights, shippedLights, options = {}) {
 	await writeLights(page, lights);
 	const atHull = await readLights(page);
-	const hull = await measureHullChase(page, 1);
+	const hull = await measureHullChase(page, 1, options);
 	await writeLights(page, shippedLights);
 	const restored = await readLights(page);
 	refuseUnless(
@@ -320,6 +322,7 @@ async function hullUnder(page, lights, shippedLights) {
 		peak: hull.peaks[0],
 		lowerQuartile: hull.lowerQuartiles[0],
 		pixels: hull.pixels,
+		mask: hull.mask,
 	};
 }
 
@@ -391,7 +394,8 @@ try {
 	// ---- the same exposure ----
 
 	console.log(`\n  the same exposure — ${EXPOSURE_RULE.describe}`);
-	const target = await hullUnder(page, shipped, shipped);
+	const target = await hullUnder(page, shipped, shipped, { keepMask: true });
+	const { mask } = target;
 	console.log(
 		`  shipped: median ${target.median.toFixed(2)}, peak ${target.peak.toFixed(2)}, ` +
 			`lower quartile ${target.lowerQuartile.toFixed(2)} over ${target.pixels} px`,
@@ -407,7 +411,7 @@ try {
 	for (const sun of REBALANCE_SUNS) {
 		const found = await bisectHemisphere(
 			async (hemisphere) =>
-				(await hullUnder(page, { sun, hemisphere }, shipped)).median,
+				(await hullUnder(page, { sun, hemisphere }, shipped, { mask })).median,
 			{
 				target: target.median,
 				lo: 0,
@@ -418,7 +422,7 @@ try {
 		// Round to three places so the printed value is the value drawn, and
 		// read the hull once more at it.
 		const hemisphere = Math.round(found.hemisphere * 1000) / 1000;
-		const at = await hullUnder(page, { sun, hemisphere }, shipped);
+		const at = await hullUnder(page, { sun, hemisphere }, shipped, { mask });
 		const held =
 			Math.abs(at.median - target.median) <= EXPOSURE_RULE.toleranceCodes;
 		rebalances.push({ sun, hemisphere });
