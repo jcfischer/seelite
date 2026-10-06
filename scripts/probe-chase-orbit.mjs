@@ -676,7 +676,7 @@ check(
 				`${legacy.replace(/^postcard=1&/, "postcard=2&")}&elev=0`,
 		`${seen.yaw}, ${seen.elev}; ${seen.fragment.slice(-40)}`,
 	);
-	// And a schema-2 exterior missing its height is refused, not read level.
+	// And a schema-3 exterior missing its height is refused, not read level.
 	const refusedPage = await context.newPage();
 	watch(refusedPage, "refused");
 	await refusedPage.goto(

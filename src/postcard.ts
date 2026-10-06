@@ -55,8 +55,10 @@
  * by node #691 for elevation; this includes clear and cockpit compositions.
  * They do not preserve the schema-1 spelling written by the previous build.
  * A composition carrying zoom uses schema 3 and requires `zoom`, including an
- * explicit multiplier of
- * one. Received schema-1 and schema-2 links keep their framing and spelling.
+ * explicit multiplier of one. Received schema-1 and schema-2 links keep their
+ * framing. Encoding the decoded recipe preserves its original spelling;
+ * composing a new link from the viewer uses this build's writing schema, so
+ * a schema-1 exterior becomes schema 2 with `elev=0` and the same level view.
  * Compatibility is backward reading: a build that reads only schema 1 refuses
  * new schema-2 and schema-3 links, and a schema-2 reader refuses schema 3.
  *

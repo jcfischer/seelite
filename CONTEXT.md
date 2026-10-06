@@ -881,7 +881,9 @@ including clear and cockpit cards. Older schema-1-only readers refuse these
 new links; this build reads schemas 1, 2 and 3. A received schema-1 link,
 yaw alone, still opens at its own level framing. Opening one boots the **postcard viewer**, a
 read-only page that rebuilds the view from the seeded baseline, runs no frame loop
-and attaches no store. It is not a save and not a replay: the sender's stock
+and attaches no store. Sharing from the viewer composes a new link in this
+build's writing schema; a schema-1 exterior becomes schema 2 with `elev=0`,
+while its level framing remains the same. It is not a save and not a replay: the sender's stock
 deficits, strikes and discoveries do not reach it, and a card of a pilot's own
 hull rebuilds with the starting one. `src/postcard.ts` owns the spelling and the
 strict parse; `tests/postcard.test.ts` holds both.

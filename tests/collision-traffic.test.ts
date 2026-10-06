@@ -1860,6 +1860,9 @@ describe("collision.md §5: a carrier's exemption is keyed on its route phase", 
 			);
 	});
 
+	// The full 0.1-second-step route simulation took about 5.9 seconds in CI,
+	// beyond Bun's default five-second timeout. Its oracle is behavioral;
+	// retain the full route and every assertion with a bounded 15-second budget.
 	test("the boundaries are §12.3's: the launch ends with the centre outside the plane, the arrival starts at the lane's grant", () => {
 		const galaxy = generateGalaxy(0x5ee11e, 0);
 		const record = galaxy.systems.find(

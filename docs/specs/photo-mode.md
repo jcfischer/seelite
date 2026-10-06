@@ -17,6 +17,8 @@ Camera manipulation by mouse is enabled only in Photo mode. Held clicks,
 keyboard fire and controller fire cannot shoot there. Entry and exit clear
 held keyboard and mouse input and pending pointer deltas. Exiting restores
 the previous view and preserves any independent menu pause.
+The composed orbit and distance remain set after exit. In the outside view,
+`2` centres the camera and resets distance, including during normal flight.
 Normal outside-view flight retains mouse steering. The Controls registry
 describes the fixed orbit gestures with a Photo-mode scope, keeping the same
 physical mouse trigger identity and distinguishing its active modes.
@@ -26,7 +28,10 @@ zoom. Schema 3 requires a distance multiplier for exterior cards. Newly
 composed cards with no multiplier use schema 2, introduced by #691 for
 elevation, including clear and cockpit cards. This changes newly written links
 from the previous build's schema 1. Received schema-1 and schema-2 links keep
-their original framing and spelling. Older builds that read only schema 1
+their original framing. The decoder preserves the original encoding when its
+recipe is encoded again; sharing a newly composed link from the viewer uses
+the current writing schema. A schema-1 exterior therefore shares as schema 2
+with `elev=0`, preserving its level view. Older builds that read only schema 1
 refuse the new schema-2 and schema-3 links; schema-2 readers refuse schema 3.
 A received link remains a read-only seeded scene.
 
