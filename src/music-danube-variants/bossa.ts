@@ -9,10 +9,11 @@
  * changes (one chord per waltz bar, so two a bar here), ninths and
  * thirteenths.
  *
- * The band: the tune on flute, a soft electric piano an octave under it, a
- * nylon guitar comping in the bossa pattern with its thumb on the root and
- * fifth, a rim clave, a shaker and a soft kick. The intro is the guitar
- * alone, then the horn's call on the flute.
+ * The band: the tune on soft-edged saws, the woodwinds' answers on a soft
+ * mallet an octave under it, an electric piano comping in the bossa pattern
+ * (`keys`, one part, so a sampled piano is a one-line swap), an upright
+ * bass on the root and fifth, a rim clave, a shaker and a soft kick. The
+ * intro is the electric piano alone, then the horn's call on the lead.
  */
 import { THEME } from "../music-danube";
 import type { NoteEvent, PartSpec, Song } from "../music-score";
@@ -24,44 +25,58 @@ const RIM = 92;
 const SHAKER = 106;
 
 const PARTS: Readonly<Record<string, PartSpec>> = {
-	flute: {
-		voice: "flute",
-		level: 0.45,
-		glideS: 0.02,
+	// The tune: soft-edged saws, round and mellowing as each note rings,
+	// into a little of the echo.
+	lead: {
+		voice: "softsaw",
+		level: 0.4,
+		attackS: 0.012,
+		decayS: 2.4,
+		sustain: 0.45,
+		releaseS: 0.35,
+		unison: 6,
+		detune: 0.05,
+		spread: 0.6,
 		pan: -0.1,
-		reverb: 0.4,
+		reverb: 0.35,
+		echo: 0.22,
 	},
-	piano: {
-		voice: "keys",
-		level: 0.21,
+	// The woodwinds' answers an octave under the tune: a soft mallet.
+	answer: {
+		voice: "fm",
+		level: 0.34,
 		attackS: 0.003,
 		decayS: 1.6,
-		sustain: 0.15,
-		releaseS: 0.3,
-		ratio: 1.001,
-		index: 0.45,
-		pan: 0.25,
+		sustain: 0,
+		releaseS: 0.4,
+		ratio: 1,
+		index: 1.1,
+		indexDecayS: 0.25,
+		feedback: 0,
+		pan: 0.3,
 		reverb: 0.35,
 	},
-	// The nylon guitar: a soft, dark pluck, short.
-	guitar: {
-		voice: "pluck",
-		level: 0.6,
-		decayS: 1.2,
-		releaseS: 0.12,
-		cutoffHz: 1800,
+	// The comping: an electric piano, soft and rounded — the body darkened
+	// and the tine's strike held back — in the bossa pattern.
+	keys: {
+		voice: "epiano",
+		level: 0.35,
+		decayS: 3,
+		releaseS: 0.3,
+		index: 1.4,
+		envAmount: 0.6,
 		pan: 0.2,
-		reverb: 0.25,
+		reverb: 0.3,
 	},
-	// The thumb, on the same guitar's low strings.
-	thumb: {
+	// An upright bass on the root and fifth: a low pluck, dark and short.
+	bass: {
 		voice: "pluck",
-		level: 0.75,
-		decayS: 1.4,
-		releaseS: 0.15,
-		cutoffHz: 700,
-		pan: 0.1,
-		reverb: 0.15,
+		level: 0.85,
+		decayS: 1,
+		releaseS: 0.12,
+		cutoffHz: 420,
+		pan: 0.05,
+		reverb: 0.08,
 	},
 	rim: {
 		voice: "noise",
@@ -141,13 +156,13 @@ const G = 7;
 const A = 9;
 const B = 11;
 
-/** The guitar's voicing: every chord tone folded into E3–D#4, rootless. */
+/** The comping's voicing: every chord tone folded into E3–D#4, rootless. */
 const voicing = ([root, q]: Change): number[] =>
 	[...new Set(QUALITY[q].map((i) => 52 + ((root + i - 52 + 120) % 12)))].sort(
 		(a, b) => a - b,
 	);
 
-/** The thumb's root, folded into A1–G#2. */
+/** The bass's root, folded into A1–G#2. */
 const bassRoot = ([root]: Change): number => 33 + ((root - 9 + 12) % 12);
 
 /** One chord per waltz bar of `THEME` (bar 0 is the upbeat). */
@@ -186,23 +201,22 @@ const CHANGES: readonly Change[] = [
 	[D, "69"],
 ];
 
-/** Where the guitar's fingers strike in a two-beat half bar, alternating:
- *  the bossa's long-short push against the thumb. */
+/** Where the comping strikes in a two-beat half bar, alternating:
+ *  the bossa's long-short push against the bass. */
 const STRIKES: readonly (readonly number[])[] = [
 	[0, 0.75, 1.5],
 	[0.5, 1.25],
 ];
 
-/** The guitar over one half bar (two beats from `t`) on `c`. */
-function guitar(t: number, half: number, c: Change, vel: number): NoteEvent[] {
+/** The comping and the bass over one half bar (two beats from `t`) on `c`. */
+function comp(t: number, half: number, c: Change, vel: number): NoteEvent[] {
 	const out: NoteEvent[] = [];
 	for (const s of STRIKES[half % 2])
-		for (const p of voicing(c))
-			out.push(at("guitar", t + s, 0.4, p, vel * 0.7));
+		for (const p of voicing(c)) out.push(at("keys", t + s, 0.4, p, vel * 0.7));
 	const root = bassRoot(c);
 	out.push(
-		at("thumb", t, 1.4, root, vel),
-		at("thumb", t + 1, 0.9, root + 7, vel * 0.8),
+		at("bass", t, 1.4, root, vel),
+		at("bass", t + 1, 0.9, root + 7, vel * 0.8),
 	);
 	return out;
 }
@@ -225,7 +239,7 @@ function kit(bar: number, bars: number, kick = true): NoteEvent[] {
 	return out;
 }
 
-// ── Intro: the guitar alone, then the horn's call on the flute ──────────────
+// ── Intro: the keys alone, then the horn's call on the lead ─────────────────
 
 const INTRO_CHANGES: readonly Change[] = [
 	[D, "maj9"],
@@ -247,7 +261,7 @@ const INTRO_CHANGES: readonly Change[] = [
 ];
 
 const INTRO: NoteEvent[] = [
-	...INTRO_CHANGES.flatMap((c, h) => guitar(h * 2, h, c, 0.55)),
+	...INTRO_CHANGES.flatMap((c, h) => comp(h * 2, h, c, 0.55)),
 	...kit(2, 2, false),
 	...kit(4, 4),
 	// The call, A–C#–E into the held E, then E–G#–B into the held B.
@@ -260,9 +274,9 @@ const INTRO: NoteEvent[] = [
 			[27, 80],
 			[27.5, 83],
 		] as const
-	).map(([t, p]) => at("flute", t, 0.5, p, 0.55)),
-	at("flute", 20, 5, 76, 0.5),
-	at("flute", 28, 3.5, 83, 0.5),
+	).map(([t, p]) => at("lead", t, 0.5, p, 0.55)),
+	at("lead", 20, 5, 76, 0.5),
+	at("lead", 28, 3.5, 83, 0.5),
 ];
 
 // ── Waltz No. 1, as a bossa ─────────────────────────────────────────────────
@@ -272,16 +286,16 @@ const dyn = (bar: number) =>
 
 const WALTZ: NoteEvent[] = [
 	...THEME.flatMap(([bar, beat, pitch, dur, answer]) => [
-		fromWaltz("flute", bar, beat, dur, pitch, dyn(bar)),
+		fromWaltz("lead", bar, beat, dur, pitch, dyn(bar)),
 		...(answer
-			? [fromWaltz("piano", bar, beat, Math.min(dur, 1), pitch - 12, dyn(bar))]
+			? [fromWaltz("answer", bar, beat, Math.min(dur, 1), pitch - 12, dyn(bar))]
 			: []),
 	]),
-	...CHANGES.flatMap((c, bar) => guitar(bar * 2, bar, c, dyn(bar))),
+	...CHANGES.flatMap((c, bar) => comp(bar * 2, bar, c, dyn(bar))),
 	...kit(0, 16),
 ];
 
-// ── The cadence: Strauss's last three bars, and the guitar's last chord ─────
+// ── The cadence: Strauss's last three bars, and the keys' last chord ─────────
 
 const CADENCE: NoteEvent[] = [
 	...(
@@ -294,15 +308,15 @@ const CADENCE: NoteEvent[] = [
 			[2, 1.5, 74, 0.5],
 			[2, 2, 74, 1],
 		] as const
-	).map(([bar, beat, p, dur]) => fromWaltz("flute", bar, beat, dur, p, 0.75)),
-	at("flute", 6, 6, 74, 0.7),
-	...guitar(0, 0, [E, "m9"], 0.75),
-	...guitar(2, 1, [A, "13"], 0.75),
-	...guitar(4, 0, [D, "69"], 0.7),
-	// The last chord, strummed slowly, with the thumb on D.
-	...voicing([D, "69"]).map((p, i) => at("guitar", 8 + i * 0.1, 3, p, 0.6)),
-	...[62, 66, 69, 74].map((p, i) => at("piano", 8.4 + i * 0.12, 3, p, 0.45)),
-	at("thumb", 8, 4, 38, 0.7),
+	).map(([bar, beat, p, dur]) => fromWaltz("lead", bar, beat, dur, p, 0.75)),
+	at("lead", 6, 6, 74, 0.7),
+	...comp(0, 0, [E, "m9"], 0.75),
+	...comp(2, 1, [A, "13"], 0.75),
+	...comp(4, 0, [D, "69"], 0.7),
+	// The last chord, rolled slowly, with the bass on D.
+	...voicing([D, "69"]).map((p, i) => at("keys", 8 + i * 0.1, 3, p, 0.6)),
+	...[62, 66, 69, 74].map((p, i) => at("answer", 8.4 + i * 0.12, 3, p, 0.45)),
+	at("bass", 8, 4, 38, 0.7),
 	...kit(0, 2),
 	at("rim", 8, 0.05, RIM, 0.8),
 ];
