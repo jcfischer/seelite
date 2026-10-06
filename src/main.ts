@@ -11498,13 +11498,15 @@ class Game {
 			// dock opens on a sentence about a station the ship has left (#443).
 			this.clearStationRefusal();
 			this.openPlayerTrafficEvent(stationId, "lane", readyAt, "launch");
-			// D4's undock flush. **The record still names the station here** —
-			// `commanderRecord` reads every phase that is not `flying`, and this
-			// runs inside `phase === "launching"` — so what this writes is a ship
-			// on rails on its way out, which restores at the arrival point like
-			// any other non-flying phase. The comment here claimed the opposite
-			// for a round. What actually clears `dockedAt` is the outward
-			// crossing below, and that is where the second write is.
+			// D4's undock flush, which since #660 D1 (node #702) also writes
+			// `lastDocked`: a death restores the commander **as it launched**,
+			// with what it bought here. **The record still names the station
+			// here** — `commanderRecord` reads every phase that is not `flying`,
+			// and this runs inside `phase === "launching"` — so the checkpoint
+			// re-docks at this station on a death's reload (node #658's docked
+			// restore), and `live` restores a ship on rails on its way out like
+			// any other non-flying phase. What actually clears `dockedAt` is the
+			// outward crossing below, and that is where the second write is.
 			this.saveDirty();
 			this.saveFlush("undock");
 		}
@@ -19259,10 +19261,13 @@ if (postcard) {
 	};
 	// **A death (#324, the principal's ruling O5; #654).** With a store attached
 	// and a commander who is not permadeath, `live` becomes the world at the
-	// death beside the last dock's commander, the one-shot continue names the
-	// Commander, and the page reloads into the dock.
-	// Otherwise — permadeath, `?no-save`, or a restore that failed — the ship
-	// stays destroyed and the Commander overlay opens.
+	// death beside the commander as it last launched (#660 D1) — or, for a
+	// pilot who never docked, a new commander at the start system's trade
+	// station (D10) — the one-shot continue names the Commander, and the page
+	// reloads into the dock.
+	// Otherwise — permadeath, a boot that writes nothing (`?no-save`,
+	// `?system=`), or a restore that failed — the ship stays destroyed and the
+	// Commander overlay opens.
 	game.onDeath = async () => {
 		const store = game.saveStore;
 		const slot = attachedSlot;
