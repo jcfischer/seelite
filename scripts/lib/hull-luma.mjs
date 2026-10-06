@@ -27,8 +27,7 @@
  */
 
 /**
- * Measured on `c6f8b57`, rig B (sun 1.0, hemisphere 3.425, the principal's
- * choice on #231), `hull-chase`, five samples per lane, same-build noise 0.00
+ * Measured on `c6f8b57`, rig B (`LIGHT_RIG`, the principal's choice on #231), `hull-chase`, five samples per lane, same-build noise 0.00
  * at every one. Where the two rasterisers disagree the **lower** reading is
  * recorded, because these are floors and the conservative arm is the dark one.
  *

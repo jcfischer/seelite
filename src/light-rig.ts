@@ -139,7 +139,7 @@ export const LIGHT_RIG = {
 	 * gradient. That keeps a camera-facing hull readable across its facets
 	 * without one shoulder owning the whole exposure range. Ground remains
 	 * darker than sky, so the lift retains an edge-bearing gradient rather than
-	 * becoming a flat ambient wash. #231 moved half of it back into the sun
+	 * becoming a flat ambient wash. #231 halved it and raised the sun fivefold
 	 * (see `sun`).
 	 */
 	hemisphere: { sky: 0xc0ccd8, ground: 0x8090a0, intensity: 3.425 },

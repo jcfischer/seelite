@@ -376,18 +376,17 @@ describe("the painted-hull luma calibration", () => {
 		expect(HULL_LUMA_CALIBRATION.peak).toBeLessThan(HULL_LUMA_BAND.max);
 	});
 
-	test("the ceiling is the principal's 215 and the rig is #231's B", () => {
+	test("the ceiling is the principal's 215, with room above the calibrated peak", () => {
 		// Authored, not derived: #231 D2 raised it from #199's 200 when the
-		// principal chose rig B by eye, about ten codes above B's peak.
+		// principal chose rig B by eye. Held as a literal because it is a ruling,
+		// and the headroom row is what a later re-calibration has to keep.
 		expect(HULL_LUMA_BAND.max).toBe(215);
-		expect(LIGHT_RIG.sun.intensity).toBe(1);
-		expect(LIGHT_RIG.hemisphere.intensity).toBe(3.425);
-		expect(HULL_LUMA_CALIBRATION.ref).toBe("c6f8b57");
+		expect(HULL_LUMA_BAND.max - HULL_LUMA_CALIBRATION.peak).toBeGreaterThan(5);
 	});
 
 	test("no margin is small enough to be decided by which rasteriser ran", () => {
 		// A rail rather than a bound, and the module says so: at the margins here
-		// this clears by 30x or more, so it rejects a margin small enough to be a
+		// this clears by 55x or more, so it rejects a margin small enough to be a
 		// typo and nothing a person would choose on purpose. Kept because the
 		// typo is the case that would send a later reader hunting a renderer bug.
 		for (const metric of METRICS)

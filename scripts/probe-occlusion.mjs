@@ -103,16 +103,25 @@ const TEXEL_CEILING_KM = { exterior: 0.01, cockpit: 0.001 };
  * than snug under six. That is still six times what a shadow that had stopped
  * being drawn would give, which is the 0.00-something the exterior row prints.
  *
- * **Those readings were #199's rig.** #231's rig B (sun 1.0, hemisphere
- * 3.425) reads the bay at 74.3% here, and `measure-shadow-enclosure.mjs` read
- * 74.4–74.5% at sun 1.0 and 2.0 alike: the figure is saturated, because the
- * shadow covers every bay pixel the sun reaches. So the ceiling moved from 15
- * to 90. It stays a sanity bound: a shadow over the whole frame, sky
- * included, is past it. The floor is unchanged. The sign and the scale-freedom of the bias are pinned
+ * **Those readings were #199's rig.** On #231's rig B (`LIGHT_RIG`) the bay
+ * reads 74.34% here on two runs, and `measure-shadow-enclosure.mjs` read
+ * 74.4–74.5% at sun 1.0 and 2.0 alike. The figure is saturated: the shadow
+ * covers every bay pixel the sun reaches, so a stronger or a broken shadow
+ * over those pixels reads the same, and no ceiling can tell them apart (the
+ * paragraph above already says the ceiling is not an acne guard).
+ *
+ * What a ceiling just above saturation still catches is two arms that differ
+ * by **more** than the shadow: a pixel the sun never reaches cannot be darkened
+ * by toggling the sun's shadow, so a reading above the sun's reach means the
+ * "off" arm was drawn differently, which is how #201's relit arm once read.
+ * So the ceiling is 77, about 2.5 points above saturation. The floor is
+ * unchanged.
+ *
+ * The sign and the scale-freedom of the bias are pinned
  * exactly in `tests/occlusion.test.ts`, where they are arithmetic; this is the
  * arm that says the arithmetic reached the frame.
  */
-const SHADOW_BAND_PCT = { min: 1, max: 90 };
+const SHADOW_BAND_PCT = { min: 1, max: 77 };
 
 /** How much of the near subject the ambient occlusion has to reach before it
  *  counts as present. A bay is a room of corners; measured on a passing run it
@@ -799,7 +808,7 @@ console.log(
  * | `cockpit-arrival` | 0.002% | 14.1/255 |
  * | `berth-free-look` | 6.2% | 11.6/255 |
  *
- * #231 moved light into the sun (rig B, 1.0 against 3.425), which made the
+ * #231 moved light into the sun (rig B, `LIGHT_RIG`), which made the
  * exterior shadow larger. `scripts/measure-shadow-enclosure.mjs` measures it
  * on its ladder, and the figures this probe prints show it on this build. The
  * exterior rows stay printed, not asserted, for the reason below.
