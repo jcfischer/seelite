@@ -108,6 +108,28 @@ export const PUBLIC_PAGES: readonly PublicPage[] = [
 	},
 ];
 
+/**
+ * The home page's title (#716): the name, then what it is — the page's own
+ * eyebrow, so the title adds no copy. A search result and a link preview show
+ * it, and `index.html` carries the same string, which
+ * `tests/social-preview.test.ts` holds. "The Far Between" alone was 15
+ * characters, and the shell's rule below printed it twice.
+ */
+export const HOME_TITLE = `The Far Between — ${homeEyebrow()}`;
+
+/** The home page's eyebrow, or a throw: a missing one would print "undefined". */
+function homeEyebrow(): string {
+	const eyebrow = pageForPath("")?.eyebrow;
+	if (!eyebrow)
+		throw new Error("PUBLIC_PAGES has no home page with an eyebrow");
+	return eyebrow;
+}
+
+/** The tab title the shell sets: the home page's own, `<title> — The Far Between` else. */
+export function shellTitle(title: string, current: PublicPage | null): string {
+	return current?.slug === "" ? HOME_TITLE : `${title} — The Far Between`;
+}
+
 export function pageForPath(pathname: string): PublicPage | undefined {
 	const normalised = pathname.replace(/^\/+|\/+$/g, "");
 	return PUBLIC_PAGES.find((page) => page.slug === normalised);
@@ -124,7 +146,7 @@ export type PublicNotice = Pick<
 > & { modifier: string };
 
 function mountShell(page: PublicNotice, current: PublicPage | null): void {
-	document.title = `${page.title} — The Far Between`;
+	document.title = shellTitle(page.title, current);
 	document.body.classList.add("public-site");
 	document.body.innerHTML = `<main class="site-shell">
 		<header class="site-header"><a class="wordmark" href="/" aria-label="The Far Between home">THE FAR<br />BETWEEN</a>

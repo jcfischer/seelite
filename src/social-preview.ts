@@ -16,7 +16,8 @@
  * every HTML entry at build; a dev server is never crawled, and leaving dev
  * alone keeps every probe's page as it was. No entry carries its own copy, and
  * `tests/social-preview.test.ts` goes red if one does. The title is the page's
- * own `<title>` and the description its `dek` from `PUBLIC_PAGES`, so the
+ * own `<title>` and the description its `dek` from `PUBLIC_PAGES` — the same
+ * `dek` as the plain `description` a search engine reads (#716) — so the
  * preview says what the page says and adds no copy of its own. Both are HTML
  * text already — a `<title>` is parsed as HTML and a `dek` is written into
  * the page as markup — so only the attribute's own quote is escaped; escaping
@@ -75,6 +76,7 @@ export function socialPreviewTags(html: string, entry: string): string {
 	if (title === undefined || !html.includes("</head>"))
 		throw new Error(`social preview: ${entry} has no <title> or </head>`);
 	const tags: [string, string, string][] = [
+		["name", "description", page.dek],
 		["property", "og:type", "website"],
 		["property", "og:site_name", "The Far Between"],
 		["property", "og:title", title],

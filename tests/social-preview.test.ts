@@ -1,6 +1,11 @@
 import { describe, expect, test } from "bun:test";
 import { readFileSync, statSync } from "node:fs";
-import { PUBLIC_PAGES } from "../src/public-site";
+import {
+	HOME_TITLE,
+	PUBLIC_PAGES,
+	pageForPath,
+	shellTitle,
+} from "../src/public-site";
 import {
 	SITE_ORIGIN,
 	SOCIAL_PREVIEW,
@@ -9,11 +14,11 @@ import {
 } from "../src/social-preview";
 import { repoPath } from "./lib/source-scan";
 
-/** Every `og:` and `twitter:` meta tag in `html`, by key. */
+/** Every `og:`, `twitter:` and `description` meta tag in `html`, by key. */
 function metaTags(html: string): Map<string, string> {
 	const tags = new Map<string, string>();
 	for (const m of html.matchAll(
-		/<meta (?:property|name)="((?:og|twitter):[^"]+)" content="([^"]*)" \/>/g,
+		/<meta (?:property|name)="((?:og|twitter):[^"]+|description)" content="([^"]*)" \/>/g,
 	))
 		tags.set(m[1] as string, m[2] as string);
 	return tags;
@@ -42,11 +47,12 @@ describe("social preview (#714)", () => {
 			const source = readFileSync(repoPath(page.entry), "utf8");
 			// The block is written once, by the transform; a page that carried
 			// its own copy would be a second one to keep in step.
-			expect(source).not.toMatch(/og:|twitter:/);
+			expect(source).not.toMatch(/og:|twitter:|name="description"/);
 			const html = socialPreviewTags(source, page.entry);
 			const tags = metaTags(html);
 			const title = /<title>([^<]*)<\/title>/.exec(source)?.[1] as string;
 			expect(Object.fromEntries(tags)).toEqual({
+				description: page.dek,
 				"og:type": "website",
 				"og:site_name": "The Far Between",
 				"og:title": title,
@@ -61,6 +67,23 @@ describe("social preview (#714)", () => {
 			// Inside the head, where a crawler that stops at </head> reads it.
 			expect(html.indexOf("og:image")).toBeLessThan(html.indexOf("</head>"));
 		});
+
+	test("the home page has one title, in its HTML and at runtime (#716)", () => {
+		const home = pageForPath("");
+		const html = readFileSync(repoPath("index.html"), "utf8");
+		expect(/<title>([^<]*)<\/title>/.exec(html)?.[1]).toBe(HOME_TITLE);
+		expect(shellTitle(home?.title as string, home ?? null)).toBe(HOME_TITLE);
+		// The name first, then what it is.
+		expect(HOME_TITLE.startsWith("The Far Between — ")).toBe(true);
+	});
+
+	test("every other page keeps its runtime title rule", () => {
+		for (const page of PUBLIC_PAGES.filter((p) => p.slug !== ""))
+			expect(shellTitle(page.title, page)).toBe(
+				`${page.title} — The Far Between`,
+			);
+		expect(shellTitle("Lost", null)).toBe("Lost — The Far Between");
+	});
 
 	test("the image URL is absolute https, which Facebook and LinkedIn require", () => {
 		expect(SITE_ORIGIN).toMatch(/^https:\/\/[^/]+$/);
