@@ -115,7 +115,15 @@ export const PUBLIC_PAGES: readonly PublicPage[] = [
  * `tests/social-preview.test.ts` holds. "The Far Between" alone was 15
  * characters, and the shell's rule below printed it twice.
  */
-export const HOME_TITLE = `The Far Between — ${PUBLIC_PAGES.find((page) => page.slug === "")?.eyebrow}`;
+export const HOME_TITLE = `The Far Between — ${homeEyebrow()}`;
+
+/** The home page's eyebrow, or a throw: a missing one would print "undefined". */
+function homeEyebrow(): string {
+	const eyebrow = pageForPath("")?.eyebrow;
+	if (!eyebrow)
+		throw new Error("PUBLIC_PAGES has no home page with an eyebrow");
+	return eyebrow;
+}
 
 /** The tab title the shell sets: the home page's own, `<title> — The Far Between` else. */
 export function shellTitle(title: string, current: PublicPage | null): string {

@@ -1,6 +1,11 @@
 import { describe, expect, test } from "bun:test";
 import { readFileSync, statSync } from "node:fs";
-import { HOME_TITLE, PUBLIC_PAGES, shellTitle } from "../src/public-site";
+import {
+	HOME_TITLE,
+	PUBLIC_PAGES,
+	pageForPath,
+	shellTitle,
+} from "../src/public-site";
 import {
 	SITE_ORIGIN,
 	SOCIAL_PREVIEW,
@@ -64,11 +69,11 @@ describe("social preview (#714)", () => {
 		});
 
 	test("the home page has one title, in its HTML and at runtime (#716)", () => {
-		const home = PUBLIC_PAGES.find((p) => p.slug === "");
+		const home = pageForPath("");
 		const html = readFileSync(repoPath("index.html"), "utf8");
 		expect(/<title>([^<]*)<\/title>/.exec(html)?.[1]).toBe(HOME_TITLE);
 		expect(shellTitle(home?.title as string, home ?? null)).toBe(HOME_TITLE);
-		// Long enough for a search result, and still the name first.
+		// The name first, then what it is.
 		expect(HOME_TITLE.startsWith("The Far Between — ")).toBe(true);
 	});
 
