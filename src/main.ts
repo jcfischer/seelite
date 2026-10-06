@@ -18716,7 +18716,9 @@ class Game {
 			const edgeX = Math.min(w - 120, Math.max(10, p.x - 48));
 			const edgeY = Math.min(h - 10, Math.max(20, p.y + 22));
 			ctx.fillText(edgeText, edgeX, edgeY);
-			edgeLabel = labelBounds(edgeX, edgeY, edgeText);
+			// Reserved against its widest reading, for the condition line's reason:
+			// a box that follows the digits would let CORE in and out as they ran.
+			edgeLabel = labelBounds(edgeX, edgeY, `${body.name}  180° off`);
 		}
 
 		// The Core mark is the glass's lowest rank, so it goes last (§5.5), and
