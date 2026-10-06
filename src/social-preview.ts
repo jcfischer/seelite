@@ -25,24 +25,35 @@
 import type { Plugin } from "vite";
 import { PUBLIC_PAGES } from "./public-site";
 
-/** The deployed origin. Facebook and LinkedIn refuse a relative image URL. */
-export const SITE_ORIGIN = "https://seelite.pages.dev";
+/**
+ * The public origin. Facebook and LinkedIn refuse a relative image URL, and
+ * the site's own name is the one a preview should carry: `seelite.pages.dev`
+ * serves the same build, but farbetween.ch is the address the site announces.
+ */
+export const SITE_ORIGIN = "https://farbetween.ch";
 
 /**
  * The image: `public/<file>`, served at the site root.
  *
  * 1200 x 630 is the 1.91:1 frame X, LinkedIn, Facebook and Discord show
  * uncropped; the 3:2 postcard card would lose its foot band to their crop.
- * `recipe` is the postcard fragment the frame was captured from, so it can be
- * re-made with `scripts/shot-social-preview.mjs` when the world it shows moves.
  * `maxBytes` keeps it well under the smallest crawler limit (X: 5 MB).
+ *
+ * **It is a frame of the Docking Waltz film, the principal's choice (#714).**
+ * Frame 1650 (27.5 s) of the 2560 x 1440 capture, cut to 1.91:1 by dropping
+ * 48 rows top and bottom and scaled down. The film is drawn by the game's own
+ * code — the courier, the terran planet shader, the starfield — but its
+ * station is Station-X, the Wheel trade form with the film's detail pass,
+ * which the running game does not place yet. So the frame cannot be rebuilt
+ * from a postcard recipe; `source` names where it came from instead.
  */
 export const SOCIAL_PREVIEW = {
 	file: "social-preview.jpg",
 	width: 1200,
 	height: 630,
-	alt: "",
-	recipe: "",
+	alt: "A courier approaching a spinning wheel station above a cloud-covered planet.",
+	source:
+		"The Far Between — The Docking Waltz, capture frame 01650 (t = 27.5 s): crop=2560:1344:0:48, scale=1200:630 lanczos, JPEG q2",
 	maxBytes: 400_000,
 } as const;
 

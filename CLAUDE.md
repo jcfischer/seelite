@@ -744,4 +744,7 @@ is the natural voice (#604), by the principal's ruling in the map's
 Constraints: `node scripts/fetch-voice-model.mjs` puts it in
 `public/voice-model/` (git-ignored), and `scripts/measure-neural-voice.mjs`
 — manual, by the principal's ruling — needs it there; `probe-neural-voice`
-gates without it.
+gates without it. `public/social-preview.jpg` (#714) is the one tracked image:
+a frame of the Docking Waltz film, which the game's own code drew, served only
+for the link previews a crawler fetches. No page and no game loads it, and
+`src/social-preview.ts` says where it came from.
