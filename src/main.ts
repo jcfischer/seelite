@@ -11735,7 +11735,14 @@ class Game {
 			metaKey: e.metaKey,
 			editable: false,
 		});
-		if (route.kind === "release") this.keysPhysicallyDown.delete(route.key);
+		if (route.kind === "release") {
+			this.keysPhysicallyDown.delete(route.key);
+			// A release and a new press can both arrive before the next frame.
+			// Cancel now, or that frame sees only the new press and inherits the
+			// old fill or spent latch. Another physical eject source still down
+			// keeps the aggregate hold continuous.
+			if (!this.ejectDown()) this.ejectHold = EJECT_IDLE;
+		}
 	}
 
 	/** Whether the eject control is physically down, wherever it is — the

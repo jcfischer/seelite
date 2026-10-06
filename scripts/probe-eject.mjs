@@ -581,5 +581,68 @@ check(
 	`spent ${JSON.stringify(spentBeforePostcard)}, opened ${postcardOpened}, closed ${postcardClosed}, fired ${fresh.fired} ${Math.round(fresh.elapsedMs)} ms after the press against a ${law.holdMs} ms hold`,
 );
 
+// The release edge itself cancels, even if a new press arrives before the
+// frame loop can observe it (sage round 7). Real DOM input handlers and bounded
+// Game control steps run in one browser task to guarantee that ordering. This
+// checks the input edge, not wall-clock timing; the rows above hold that timing.
+const interFrame = await page.evaluate((law) => {
+	const g = window.__seelite;
+	const holdS = law.holdMs / 1000;
+	const maxStepS = law.maxDtMs / 1000;
+	const key = (type) =>
+		window.dispatchEvent(
+			new KeyboardEvent(type, {
+				key: "Backspace",
+				code: "Backspace",
+				bubbles: true,
+				cancelable: true,
+			}),
+		);
+	const stepFor = (seconds) => {
+		let left = seconds;
+		while (left > 1e-9) {
+			const dt = Math.min(left, maxStepS);
+			g.stepEject(dt);
+			left -= dt;
+		}
+	};
+	const before = g.ejectCount;
+	key("keydown");
+	stepFor(holdS * 0.95);
+	key("keyup");
+	key("keydown");
+	stepFor(holdS * 0.1);
+	const afterShort = g.ejectCount;
+	const shortHeldS = g.ejectHold.heldS;
+	stepFor(holdS + maxStepS);
+	const afterFull = g.ejectCount;
+	key("keyup");
+	key("keydown");
+	stepFor(holdS + maxStepS);
+	const afterFresh = g.ejectCount;
+	key("keyup");
+	return {
+		before,
+		afterShort,
+		shortHeldS,
+		afterFull,
+		afterFresh,
+		phase: g.dock.phase,
+	};
+}, law);
+check(
+	"release and repress between frames starts confirmation from zero",
+	interFrame.phase === "flying" &&
+		interFrame.afterShort === interFrame.before &&
+		Math.abs(interFrame.shortHeldS - (law.holdMs / 1000) * 0.1) < 1e-6,
+	JSON.stringify(interFrame),
+);
+check(
+	"a spent hold released and repressed between frames can fire a fresh full hold",
+	interFrame.afterFull === interFrame.before + 1 &&
+		interFrame.afterFresh === interFrame.before + 2,
+	JSON.stringify(interFrame),
+);
+
 await browser.close();
 exit();

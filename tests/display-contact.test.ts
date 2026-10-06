@@ -5,7 +5,13 @@ import ts from "typescript";
 import { projectNavTargets } from "../src/cockpit";
 import { AttitudeFollower } from "../src/attitude-hold";
 import { DockingComputer } from "../src/docking-computer";
-import { EJECT_IDLE, type EjectHold, idleEjectHold } from "../src/eject";
+import {
+	EJECT_IDLE,
+	type EjectHold,
+	idleEjectHold,
+	stepEjectHold,
+} from "../src/eject";
+import { keyDispatch } from "../src/key-dispatch";
 import {
 	NO_ATTITUDE,
 	bodyAccelerationBound,
@@ -705,4 +711,77 @@ test("a foreign hauler does not point at a same-id station in this system", () =
 			},
 		}),
 	).toBe(DIVERT_LABEL);
+});
+
+function ejectReleaseSubject(hold: EjectHold, down = ["backspace"]) {
+	const keys = new Set(down);
+	const pad = { held: false }; // glossary-ignore: pad
+	const subject = Object.assign(
+		Object.create(methods(["releasePhysicalKey"], { keyDispatch, EJECT_IDLE })),
+		{
+			keysPhysicallyDown: keys,
+			ejectHold: hold,
+			// The release handler asks the aggregate physical control. These are
+			// two keyboard sources and the controller; this is not a binding test.
+			ejectDown: () => keys.has("backspace") || keys.has("x") || pad.held, // glossary-ignore: pad
+		},
+	);
+	const release = (key: string) =>
+		subject.releasePhysicalKey({
+			key,
+			code: key,
+			repeat: false,
+			altKey: false,
+			ctrlKey: false,
+			metaKey: false,
+		});
+	return { subject, keys, pad, release }; // glossary-ignore: pad
+}
+
+test("eject release and repress between frames cancels accumulated confirmation", () => {
+	const { subject, keys, release } = ejectReleaseSubject({
+		heldS: 0.74,
+		spent: false,
+	});
+	release("Backspace");
+	keys.add("backspace"); // No simulation frame between the two input events.
+	const next = stepEjectHold(subject.ejectHold, true, 0.02, null);
+	expect(next.event).toBe(null);
+	expect(next.hold.heldS).toBeCloseTo(0.02);
+});
+
+test("eject release and repress between frames arms a fresh spent press", () => {
+	const { subject, keys, release } = ejectReleaseSubject({
+		heldS: 0.75,
+		spent: true,
+	});
+	release("Backspace");
+	keys.add("backspace");
+	expect(stepEjectHold(subject.ejectHold, true, 0.75, null).event).toEqual({
+		kind: "eject",
+	});
+});
+
+test("releasing one of two eject keys preserves the hold until the final release", () => {
+	const hold = { heldS: 0.4, spent: false };
+	const { subject, release } = ejectReleaseSubject(hold, ["backspace", "x"]);
+	release("Backspace");
+	expect(subject.ejectHold).toBe(hold);
+	release("x");
+	expect(subject.ejectHold).toEqual(EJECT_IDLE);
+});
+
+test("an unrelated key release does not reset a held eject confirmation", () => {
+	const hold = { heldS: 0.4, spent: false };
+	const { subject, release } = ejectReleaseSubject(hold);
+	release("z");
+	expect(subject.ejectHold).toBe(hold);
+});
+
+test("keyboard release preserves a spent eject while its controller is still down", () => {
+	const hold = { heldS: 0.75, spent: true };
+	const { subject, pad, release } = ejectReleaseSubject(hold); // glossary-ignore: pad
+	pad.held = true; // glossary-ignore: pad
+	release("Backspace");
+	expect(subject.ejectHold).toBe(hold);
 });

@@ -355,6 +355,7 @@ export const PROBE_CATALOG = Object.freeze(
 				"window blur",
 				"held clock",
 				"Postcard screen",
+				"release and repress between frames",
 			],
 		),
 		entry(
