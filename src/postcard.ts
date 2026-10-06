@@ -51,10 +51,14 @@
  * `encodePostcard` refuses to write a schema-1 recipe with a non-zero
  * elevation rather than drop it.
  *
- * Cards without a distance multiplier keep schema 2. A composition carrying
- * zoom uses schema 3 and requires `zoom`, including an explicit multiplier of
- * one. Old schema-1 and schema-2 links keep their framing and spelling. A build
- * that predates zoom refuses schema 3 rather than silently changing the view.
+ * Newly composed cards without a distance multiplier use schema 2, introduced
+ * by node #691 for elevation; this includes clear and cockpit compositions.
+ * They do not preserve the schema-1 spelling written by the previous build.
+ * A composition carrying zoom uses schema 3 and requires `zoom`, including an
+ * explicit multiplier of
+ * one. Received schema-1 and schema-2 links keep their framing and spelling.
+ * Compatibility is backward reading: a build that reads only schema 1 refuses
+ * new schema-2 and schema-3 links, and a schema-2 reader refuses schema 3.
  *
  * ## Why this is a leaf
  *
@@ -66,9 +70,9 @@
  * `world-state.ts`, which is the repo's rule for one quantity named twice.
  */
 
-/** The recipe schema this build writes. */
+/** The schema used to compose new cards without zoom. */
 export const POSTCARD_SCHEMA = 2;
-/** Zoomed exterior cards use schema 3; unzoomed cards keep their old spelling. */
+/** Newly composed zoomed exterior cards use schema 3. */
 export const POSTCARD_ZOOM_SCHEMA = 3;
 export const POSTCARD_ZOOM_MIN = 0.25;
 export const POSTCARD_ZOOM_MAX = 8;

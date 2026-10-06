@@ -22,9 +22,13 @@ describes the fixed orbit gestures with a Photo-mode scope, keeping the same
 physical mouse trigger identity and distinguishing its active modes.
 
 Postcard preview, exported PNG and opened link carry the same angles and
-zoom. Schema 3 requires a distance multiplier for exterior cards. Cards with
-no multiplier retain schema 2, and schema-1 and schema-2 links retain their
-original framing. A received link remains a read-only seeded scene.
+zoom. Schema 3 requires a distance multiplier for exterior cards. Newly
+composed cards with no multiplier use schema 2, introduced by #691 for
+elevation, including clear and cockpit cards. This changes newly written links
+from the previous build's schema 1. Received schema-1 and schema-2 links keep
+their original framing and spelling. Older builds that read only schema 1
+refuse the new schema-2 and schema-3 links; schema-2 readers refuse schema 3.
+A received link remains a read-only seeded scene.
 
 Verification: headless rig, link and real-Game-method regressions plus the
 hardware `probe-chase-orbit` rows for frozen time, held click, actual camera

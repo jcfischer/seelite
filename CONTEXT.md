@@ -875,8 +875,10 @@ direction's ordinary English for a picture a pilot keeps
 What a **Postcard** link carries in its URL **fragment**: schema and generator
 versions, seed, galaxy, system, game time, viewpoint, orientation and composition —
 for an *exterior* the **chase orbit**'s yaw and elevation — and nothing a
-Commander owns. Schema 3 carries zoom distance when present; cards without zoom
-retain schema 2. Schema 2 carries the elevation (node #691); a schema-1 link,
+Commander owns. Schema 3 carries zoom distance when present; newly composed
+cards without zoom use schema 2, introduced for elevation by node #691,
+including clear and cockpit cards. Older schema-1-only readers refuse these
+new links; this build reads schemas 1, 2 and 3. A received schema-1 link,
 yaw alone, still opens at its own level framing. Opening one boots the **postcard viewer**, a
 read-only page that rebuilds the view from the seeded baseline, runs no frame loop
 and attaches no store. It is not a save and not a replay: the sender's stock
