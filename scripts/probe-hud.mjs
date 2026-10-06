@@ -251,10 +251,11 @@ const coreMark = await page.evaluate(
 			return { x: v.x / l, y: v.y / l, z: v.z / l };
 		};
 		// `face` looks along a direction with world +y as up, so the camera's right
-		// is `dir × up`. Turning the nose *left* of the core about that right puts
-		// the mark right of centre and level with it — clear of the nose cross, of
-		// the horizon line (which ends at 0.16 of the height from centre) and of
-		// the floor strip.
+		// is `dir × up`. Turning the nose *left* of the core in that plane puts the
+		// mark about 15° right of centre, near its height (at 900x620 it lands near
+		// (592, 290)). Nothing here needs the box clear of the nose cross or the
+		// horizon: the control is the same pose, so anything else in the box is
+		// inked in both frames and the ink row does not count it.
 		const up = { x: 0, y: 1, z: 0 };
 		const crossUp = (v) => ({ x: -v.z * up.y, y: 0, z: v.x * up.y });
 		const right0 = norm(
