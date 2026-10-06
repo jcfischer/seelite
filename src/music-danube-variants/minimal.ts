@@ -32,23 +32,26 @@ import type { NoteEvent, PartSpec, Song } from "../music-score";
 export const MINIMAL_BPM = 120;
 
 const PARTS: Readonly<Record<string, PartSpec>> = {
-	// The arpeggio: an electric piano, low, its tine soft.
+	// The arpeggio: an electric piano, low, its tine soft — and dry. Every
+	// pattern part dies before its next note: rung on, ten eighths overlapped
+	// into a held chord, which the principal heard as the chord bed again.
 	piano: {
 		voice: "epiano",
-		level: 0.42,
-		decayS: 2.5,
-		releaseS: 0.25,
+		level: 0.588,
+		decayS: 0.35,
+		sustain: 0,
+		releaseS: 0.06,
 		index: 1.6,
 		pan: -0.1,
-		reverb: 0.3,
+		reverb: 0.1,
 	},
 	// A marimba-ish mallet: FM at about the bar's fourth partial, the
 	// brightness gone in a few hundredths of a second.
 	phaseA: {
 		voice: "fm",
-		level: 0.3,
+		level: 0.42,
 		attackS: 0.002,
-		decayS: 0.55,
+		decayS: 0.3,
 		sustain: 0,
 		releaseS: 0.08,
 		ratio: 3.98,
@@ -56,13 +59,13 @@ const PARTS: Readonly<Record<string, PartSpec>> = {
 		indexDecayS: 0.04,
 		feedback: 0,
 		pan: -0.55,
-		reverb: 0.25,
+		reverb: 0.12,
 	},
 	phaseB: {
 		voice: "fm",
-		level: 0.3,
+		level: 0.42,
 		attackS: 0.002,
-		decayS: 0.55,
+		decayS: 0.3,
 		sustain: 0,
 		releaseS: 0.08,
 		ratio: 4.02,
@@ -70,28 +73,28 @@ const PARTS: Readonly<Record<string, PartSpec>> = {
 		indexDecayS: 0.04,
 		feedback: 0,
 		pan: 0.55,
-		reverb: 0.25,
+		reverb: 0.12,
 	},
 	pulse: {
 		voice: "keys",
-		level: 0.18,
+		level: 0.252,
 		attackS: 0.004,
-		decayS: 0.7,
+		decayS: 0.25,
 		sustain: 0,
-		releaseS: 0.1,
+		releaseS: 0.06,
 		index: 0.4,
-		reverb: 0.15,
+		reverb: 0.05,
 	},
 	// The tune: soft saws that mellow as they ring, into the echo.
 	melody: {
 		voice: "softsaw",
-		level: 0.42,
+		level: 0.588,
 		attackS: 0.03,
 		decayS: 2.5,
 		sustain: 0.5,
 		releaseS: 0.35,
-		reverb: 0.4,
-		echo: 0.2,
+		reverb: 0.25,
+		echo: 0.15,
 	},
 };
 
@@ -282,7 +285,7 @@ export const DANUBE_MINIMAL: Song = {
 	],
 	loop: { from: "waltz", to: "waltz" },
 	resolve: "cadence",
-	space: { reverbS: 2.8, echoBeats: 1.5, echoFeedback: 0.35 },
+	space: { reverbS: 1.6, echoBeats: 1.5, echoFeedback: 0.35 },
 };
 
 /** The loader's name for this version (`music-danube-variants.ts`). */
