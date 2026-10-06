@@ -4,6 +4,7 @@ import { readFileSync } from "node:fs";
 import ts from "typescript";
 import { projectNavTargets } from "../src/cockpit";
 import { AttitudeFollower } from "../src/attitude-hold";
+import { ORBIT_ASTERN } from "../src/chase-orbit";
 import { DockingComputer } from "../src/docking-computer";
 import {
 	NO_ATTITUDE,
@@ -369,6 +370,8 @@ test("a jump or a reset takes the cargo contacts with the canisters", () => {
 					QUIET_WEAPONS: null,
 					SILENT_WEAPONS: null,
 					beginScanHold: () => ({ key: null, chargeS: 0 }),
+					// The teardown recentres the chase orbit (node #691).
+					ORBIT_ASTERN,
 				},
 			),
 		),

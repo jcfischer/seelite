@@ -55,7 +55,8 @@ const UNBOUND_KEY_NAMES = [
  *  29 since #381: the beam sentence used to say "the same key" and now
  *  anchors its own `<kbd>` on `fight.fireBeam`, because D3 split `x` into a
  *  press and a hold and the hold is a command a player can move. 30 since
- *  #406: the Postcard screen's `6`. */
+ *  #406: the Postcard screen's `6`. 32 since node #691: the outside view's
+ *  `V` (`view.toggle`) and its recentre `2` (`view.orbitCentre`). */
 const MANUAL_KEY_COUNT = 32;
 
 /** The manual page, resolved per row rather than in the `describe` body — a

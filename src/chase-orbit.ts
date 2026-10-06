@@ -131,7 +131,7 @@ export function orbitRotation(orbit: ChaseOrbit): Quat {
 }
 
 /** `v` turned by `q`: the inverse of `intoCameraFrame`. */
-const rotate = (v: Vec3, q: Quat): Vec3 =>
+export const rotate = (v: Vec3, q: Quat): Vec3 =>
 	intoCameraFrame(v, { x: -q.x, y: -q.y, z: -q.z, w: q.w });
 
 /** Where the camera stands relative to the hull, in the ship's own frame, km. */

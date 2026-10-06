@@ -5,6 +5,7 @@
  * there passes on a build that confused them.
  */
 import { describe, expect, test } from "bun:test";
+import { readFileSync } from "node:fs";
 import {
 	CHASE_BACK_KM,
 	CHASE_UP_KM,
@@ -18,8 +19,10 @@ import {
 	orbitOffsetKm,
 	orbitRotation,
 	pointerOwner,
+	rotate,
 	wrapYaw,
 } from "../src/chase-orbit";
+import { DEFAULT_BINDINGS } from "../src/commands";
 import { intoCameraFrame, type Quat } from "../src/hud";
 import { add, length, sub, type Vec3, v3 } from "../src/vec3";
 
@@ -34,8 +37,6 @@ const axisAngle = (axis: Vec3, rad: number): Quat => {
 	const s = Math.sin(rad / 2) / n;
 	return { x: axis.x * s, y: axis.y * s, z: axis.z * s, w: Math.cos(rad / 2) };
 };
-const rotate = (v: Vec3, q: Quat): Vec3 =>
-	intoCameraFrame(v, { x: -q.x, y: -q.y, z: -q.z, w: q.w });
 const near = (a: Vec3, b: Vec3, eps = 1e-12) =>
 	expect(length(sub(a, b))).toBeLessThan(eps);
 const finite = (v: Vec3 | Quat) =>
@@ -246,5 +247,52 @@ describe("who the pointer belongs to (C2)", () => {
 		const ship = { ...SHIPS[0] };
 		rig(SHIP_POS, ship, orbitByPointer(ORBIT_ASTERN, 300, -120));
 		expect(ship).toEqual(SHIPS[0]);
+	});
+});
+
+describe("the Controls tab says what the pointer does (C2)", () => {
+	// The registry's chase movement rows are a description: `orbitChase` hands
+	// the raw delta to `orbitByPointer` and reads no binding (sage round 1).
+	// So each row is held to the way the orbit actually turns, by pushing the
+	// pointer the way the row names and watching the pose.
+	const WAY: Record<string, (o: ChaseOrbit) => boolean> = {
+		"view.orbitPort": (o) => o.yawRad < 0 && o.elevationRad === 0,
+		"view.orbitStarboard": (o) => o.yawRad > 0 && o.elevationRad === 0,
+		"view.orbitUp": (o) => o.elevationRad > 0 && o.yawRad === 0,
+		"view.orbitDown": (o) => o.elevationRad < 0 && o.yawRad === 0,
+	};
+
+	test("every chase movement row's half turns the orbit the way its name says", () => {
+		const rows = DEFAULT_BINDINGS.flatMap((b) =>
+			b.trigger.kind === "mouse-move" && b.scope.views.includes("chase")
+				? [{ command: b.command, axis: b.trigger.axis, half: b.trigger.half }]
+				: [],
+		);
+		expect(rows.map((r): string => r.command).sort()).toEqual(
+			Object.keys(WAY).sort(),
+		);
+		for (const r of rows) {
+			const px = r.half === "+" ? 50 : -50;
+			const moved = orbitByPointer(
+				ORBIT_ASTERN,
+				r.axis === "x" ? px : 0,
+				r.axis === "y" ? px : 0,
+			);
+			expect({ [r.command]: WAY[r.command](moved) }).toEqual({
+				[r.command]: true,
+			});
+		}
+	});
+
+	test("the orbit is handed the pointer's delta unchanged", () => {
+		// Read from the source rather than restated: a negation added between
+		// the pointer and the orbit would flip every row above while they pass.
+		const main = readFileSync("src/main.ts", "utf8");
+		const body = main.slice(main.indexOf("private orbitChase()"));
+		const fn = body.slice(0, body.indexOf("\n\t}\n"));
+		expect(fn).toContain("const { dx, dy } = this.takePointer();");
+		expect(fn).toContain(
+			"this.chaseOrbit = orbitByPointer(this.chaseOrbit, dx, dy);",
+		);
 	});
 });

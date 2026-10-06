@@ -657,6 +657,7 @@ import {
 	weaponRay,
 } from "./chase-view";
 import {
+	type ChaseOrbit,
 	ORBIT_ASTERN,
 	clampElevation,
 	orbitByPointer,
@@ -2652,13 +2653,26 @@ class Game {
 	/** #5 made cockpit the default and chase a toggle. The hull is hidden in
 	 *  cockpit, which is what makes the HUD markers load-bearing. */
 	view: "cockpit" | "chase" = "cockpit";
-	/** Chase orbit about the ship's own up axis; zero is directly astern. Held
-	 *  across a view toggle, because a look you set up is a look you meant. */
-	chaseYaw = 0;
-	/** The orbit's height above the ship's horizontal plane, ±π/2 at the poles
-	 *  (node #691): the second half of the pose `chase-orbit.ts` owns, held
-	 *  and recentred with `chaseYaw`. */
-	chaseElevation = 0;
+	/** The chase camera's orbit about the ship (node #691), one pose that
+	 *  `chase-orbit.ts` owns: assigned whole, so a reset, a capture and its
+	 *  restore cannot keep one half and lose the other. Held across a view
+	 *  toggle, because a look you set up is a look you meant. */
+	chaseOrbit: ChaseOrbit = ORBIT_ASTERN;
+	/** The orbit's yaw about the ship's own up axis; zero is directly astern.
+	 *  The probes read and write the two halves by name. */
+	get chaseYaw() {
+		return this.chaseOrbit.yawRad;
+	}
+	set chaseYaw(yawRad: number) {
+		this.chaseOrbit = { ...this.chaseOrbit, yawRad };
+	}
+	/** The orbit's height above the ship's horizontal plane, ±π/2 at the poles. */
+	get chaseElevation() {
+		return this.chaseOrbit.elevationRad;
+	}
+	set chaseElevation(elevationRad: number) {
+		this.chaseOrbit = { ...this.chaseOrbit, elevationRad };
+	}
 	/** How fast the ship is turning, radians per second — rotation has momentum,
 	 *  and `sim.ts`'s Hull step owns the dynamics. Saved state since #619:
 	 *  a save taken tumbling resumes tumbling (`flight-model.md` §3.9). */
@@ -9433,8 +9447,7 @@ class Game {
 				return;
 			case "view.orbitCentre":
 				// The whole pose, not its yaw: astern is level as well (node #691).
-				this.chaseYaw = 0;
-				this.chaseElevation = ORBIT_ASTERN.elevationRad;
+				this.chaseOrbit = ORBIT_ASTERN;
 				return;
 			case "view.headStarboard":
 				this.setHeadLook("right");
@@ -11918,8 +11931,7 @@ class Game {
 		this.rates = { pitch: 0, yaw: 0, roll: 0 };
 		this.computerFollower.reset();
 		this.dropPointer();
-		this.chaseYaw = 0;
-		this.chaseElevation = 0;
+		this.chaseOrbit = ORBIT_ASTERN;
 	}
 
 	resetFlightToStart() {
@@ -14192,7 +14204,10 @@ class Game {
 		// player is choosing by eye wants a rate, not a ladder of fixed stops.
 		const orbit = this.view === "chase" ? this.chaseOrbitInput() : 0;
 		if (orbit !== 0)
-			this.chaseYaw = wrapAngle(this.chaseYaw + orbit * CHASE_ORBIT_RATE * dt);
+			this.chaseOrbit = {
+				...this.chaseOrbit,
+				yawRad: wrapAngle(this.chaseYaw + orbit * CHASE_ORBIT_RATE * dt),
+			};
 
 		// **The lever moves only with the assist on** (#620, `flight-model.md`
 		// §3.6). Off, the same keys and triggers fire the main drive and the
@@ -14587,7 +14602,7 @@ class Game {
 		// rotation (`chase-orbit.ts`). `cameraRotation` applies the same
 		// rotation, so the rig turns as one piece and the hull stays where it
 		// was in frame from every pose.
-		const local = orbitOffsetKm(this.chaseOrbit());
+		const local = orbitOffsetKm(this.chaseOrbit);
 		const offset = this.chaseOffset
 			.set(local.x, local.y, local.z)
 			.applyQuaternion(this.orientation);
@@ -15401,7 +15416,7 @@ class Game {
 
 	private cameraRotation() {
 		if (this.view === "chase") {
-			const q = orbitRotation(this.chaseOrbit());
+			const q = orbitRotation(this.chaseOrbit);
 			this.headRotation.set(q.x, q.y, q.z, q.w);
 		} else {
 			const yaw =
@@ -15415,11 +15430,6 @@ class Game {
 		return this.viewRotation.copy(this.orientation).multiply(this.headRotation);
 	}
 
-	/** The chase pose, as `chase-orbit.ts` reads it. */
-	private chaseOrbit() {
-		return { yawRad: this.chaseYaw, elevationRad: this.chaseElevation };
-	}
-
 	/**
 	 * Spend this frame's pointer delta on the chase orbit (node #691), or drop
 	 * it where the pointer is not the glass's: the same `contextFliesShip`
@@ -15429,9 +15439,7 @@ class Game {
 	private orbitChase() {
 		const { dx, dy } = this.takePointer();
 		if (this.openingActive || !contextFliesShip(this.padContext())) return;
-		const next = orbitByPointer(this.chaseOrbit(), dx, dy);
-		this.chaseYaw = next.yawRad;
-		this.chaseElevation = next.elevationRad;
+		this.chaseOrbit = orbitByPointer(this.chaseOrbit, dx, dy);
 	}
 
 	/**
@@ -15445,8 +15453,10 @@ class Game {
 	private composePostcard(pose: PostcardPose) {
 		if (pose.mode === "exterior") {
 			this.view = "chase";
-			this.chaseYaw = pose.yawRad ?? 0;
-			this.chaseElevation = clampElevation(pose.elevationRad ?? 0);
+			this.chaseOrbit = {
+				yawRad: pose.yawRad ?? 0,
+				elevationRad: clampElevation(pose.elevationRad ?? 0),
+			};
 			this.cabinHidden = false;
 		} else {
 			this.view = "cockpit";
@@ -15535,8 +15545,7 @@ class Game {
 		const kept = {
 			view: this.view,
 			headLook: this.headLook,
-			chaseYaw: this.chaseYaw,
-			chaseElevation: this.chaseElevation,
+			chaseOrbit: this.chaseOrbit,
 			cabinHidden: this.cabinHidden,
 		};
 		const out = document.createElement("canvas");
@@ -15568,8 +15577,7 @@ class Game {
 		} finally {
 			this.view = kept.view;
 			this.headLook = kept.headLook;
-			this.chaseYaw = kept.chaseYaw;
-			this.chaseElevation = kept.chaseElevation;
+			this.chaseOrbit = kept.chaseOrbit;
 			this.cabinHidden = kept.cabinHidden;
 			this.onResize();
 			// Three renders at the card's size, and any bake faces, are one long

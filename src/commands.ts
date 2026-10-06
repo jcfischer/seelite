@@ -235,10 +235,10 @@ export type Trigger =
 			readonly half: Half;
 			/**
 			 * The views this movement is live in, when narrower than its
-			 * command's (node #691). The pointer steers the ship in the cockpit
+			 * command's (node #691). The pointer steers the ship in the cockpit // glossary-ignore: Command
 			 * and orbits the camera in chase, so the `fly.*` rows' movement is
 			 * the cockpit's while their keys fly in both — the one trigger kind
-			 * whose meaning changes with the view while the command's does not.
+			 * whose meaning changes with the view while the command's does not. // glossary-ignore: Command
 			 */
 			readonly views?: readonly ViewMode[];
 	  }
@@ -812,8 +812,13 @@ const AUTHORED = [
 		views: CHASE,
 		keys: [{ key: "1", hold: true }],
 		// Node #691: in chase the pointer orbits, and the view goes where it
-		// goes — right swings the camera to port, looking to starboard
-		// (`chase-orbit.ts`, which `main.ts`'s `orbitChase` reads).
+		// goes — right swings the camera to port, looking to starboard. These
+		// movement rows *describe* `chase-orbit.ts`'s `orbitByPointer`, which
+		// `main.ts`'s `orbitChase` hands the raw delta without consulting a
+		// binding, as `pointerImpulse` is for the `fly.*` rows. A movement
+		// cannot be rebound (`no-capture-surface`), and
+		// `tests/chase-orbit.test.ts` holds each row's half to the way
+		// `orbitByPointer` actually turns.
 		more: [{ kind: "mouse-move", axis: "x", half: "+" }],
 	},
 	{
@@ -1439,10 +1444,10 @@ const scopeOf = (trigger: Trigger, views: readonly ViewMode[]): Scope => {
 		trigger.surface !== undefined
 			? trigger.surface
 			: undefined;
-	// A movement narrower than its command is live where both are (node #691).
+	// A movement narrower than its command is live where both are (node #691). // glossary-ignore: Command
 	const only = trigger.kind === "mouse-move" ? trigger.views : undefined;
 	const live = only ? views.filter((v) => only.includes(v)) : views;
-	return makeScope(pad, live, surface);
+	return makeScope(pad, live, surface); // glossary-ignore: pad
 };
 
 function triggersOf(a: Authored): Trigger[] {

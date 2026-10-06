@@ -400,6 +400,96 @@ const closeCard = async () => {
 	return pilot();
 };
 
+/** Open a postcard link in a fresh read-only viewer, keep its card as `shot`,
+ *  and read back what it rebuilt and where its camera stands. */
+const openViewer = async (fragment, label, shot) => {
+	const viewer = await context.newPage();
+	watch(viewer, label);
+	await viewer.goto(postcardUrl(origin, fragment), { waitUntil: "load" });
+	await viewer.waitForFunction(
+		() =>
+			window.__seelite?.postcardViewState?.card &&
+			window.__seelite.postcardViewState.rebuiltFragment,
+		null,
+		{ timeout: 60000 },
+	);
+	await waitViewerCard(viewer);
+	const seen = await viewer.evaluate(() => ({
+		fragment: window.__seelite.postcardViewState.rebuiltFragment,
+		yaw: window.__seelite.chaseYaw,
+		elev: window.__seelite.chaseElevation,
+		view: window.__seelite.view,
+	}));
+	await keepCard(viewer, VIEWER_CARD, shot);
+	const grid = await cardGrid(viewer, VIEWER_CARD);
+	await viewer.close();
+	return { ...seen, grid };
+};
+
+/** The rows only the first, mouse-composed card runs: the pointer behind the
+ *  screen, Save image, Copy postcard link, and a round trip through another
+ *  composition. */
+const checkFirstCardActions = async (before, state, asked) => {
+	// The Postcard screen took the pointer: a move behind it orbits nothing.
+	await moveMouse(22, -7);
+	const behind = await pilot();
+	check(
+		"the Postcard screen takes the pointer, and a move behind it orbits nothing",
+		(await lockHolder()) === null &&
+			behind.yaw === before.yaw &&
+			behind.elev === before.elev,
+		`lock ${await lockHolder()}; pose ${behind.yaw}, ${behind.elev}`,
+	);
+	// Save image: the download is the card on the screen, byte for byte.
+	await page.evaluate(() => {
+		navigator.canShare = () => false;
+	});
+	const [download] = await Promise.all([
+		page.waitForEvent("download", { timeout: 20000 }),
+		page.click('#seelite-postcard [data-action="save"]'),
+	]);
+	const file = readFileSync(await download.path());
+	const shown = Buffer.from(
+		await page.evaluate(async (sel) => {
+			const blob = await (await fetch(document.querySelector(sel).src)).blob();
+			return [...new Uint8Array(await blob.arrayBuffer())];
+		}, PANEL_CARD),
+	);
+	const sha = (b) => createHash("sha256").update(b).digest("hex");
+	check(
+		"Save image exports the orbited card, byte for byte, at the canonical size",
+		sha(file) === sha(shown) &&
+			file.readUInt32BE(16) === 1800 &&
+			file.readUInt32BE(20) === 1200,
+		`${file.length} bytes, ${file.readUInt32BE(16)}x${file.readUInt32BE(20)}`,
+	);
+	await page.click('#seelite-postcard [data-action="copy"]');
+	await page.waitForFunction(
+		() => window.__seelite.postcardPanel.state.lastCopy !== null,
+	);
+	const copied = await page.evaluate(() => navigator.clipboard.readText());
+	check(
+		"Copy postcard link copies the link that carries the pose",
+		copied === state.link && copied.endsWith(state.fragment),
+		copied.slice(-60),
+	);
+	// Another composition and back: the exterior is the same card again.
+	await setPostcardMode(page, "clear");
+	await setPostcardMode(page, "exterior");
+	const again = await page.evaluate(() =>
+		structuredClone(window.__seelite.postcardPanel.state),
+	);
+	const afterModes = await pilot();
+	check(
+		"changing composition and back leaves the pose, and the link, as they were",
+		afterModes.yaw === before.yaw &&
+			afterModes.elev === before.elev &&
+			pairs(again.fragment).yaw === asked.yaw &&
+			pairs(again.fragment).elev === asked.elev,
+		`pose ${afterModes.yaw}, ${afterModes.elev}`,
+	);
+};
+
 const POSES = [
 	{ label: "oblique-above", from: "mouse" },
 	{ label: "below", yaw: 2.4, elev: -1.1 },
@@ -441,66 +531,7 @@ for (const pose of POSES) {
 
 	if (pose.from === "mouse") {
 		first = { pose: before, state, card };
-		// The Postcard screen took the pointer: a move behind it orbits nothing.
-		await moveMouse(22, -7);
-		const behind = await pilot();
-		check(
-			"the Postcard screen takes the pointer, and a move behind it orbits nothing",
-			(await lockHolder()) === null &&
-				behind.yaw === before.yaw &&
-				behind.elev === before.elev,
-			`lock ${await lockHolder()}; pose ${behind.yaw}, ${behind.elev}`,
-		);
-		// Save image: the download is the card on the screen, byte for byte.
-		await page.evaluate(() => {
-			navigator.canShare = () => false;
-		});
-		const [download] = await Promise.all([
-			page.waitForEvent("download", { timeout: 20000 }),
-			page.click('#seelite-postcard [data-action="save"]'),
-		]);
-		const file = readFileSync(await download.path());
-		const shown = Buffer.from(
-			await page.evaluate(async (sel) => {
-				const blob = await (
-					await fetch(document.querySelector(sel).src)
-				).blob();
-				return [...new Uint8Array(await blob.arrayBuffer())];
-			}, PANEL_CARD),
-		);
-		const sha = (b) => createHash("sha256").update(b).digest("hex");
-		check(
-			"Save image exports the orbited card, byte for byte, at the canonical size",
-			sha(file) === sha(shown) &&
-				file.readUInt32BE(16) === 1800 &&
-				file.readUInt32BE(20) === 1200,
-			`${file.length} bytes, ${file.readUInt32BE(16)}x${file.readUInt32BE(20)}`,
-		);
-		await page.click('#seelite-postcard [data-action="copy"]');
-		await page.waitForFunction(
-			() => window.__seelite.postcardPanel.state.lastCopy !== null,
-		);
-		const copied = await page.evaluate(() => navigator.clipboard.readText());
-		check(
-			"Copy postcard link copies the link that carries the pose",
-			copied === state.link && copied.endsWith(state.fragment),
-			copied.slice(-60),
-		);
-		// Another composition and back: the exterior is the same card again.
-		await setPostcardMode(page, "clear");
-		await setPostcardMode(page, "exterior");
-		const again = await page.evaluate(() =>
-			structuredClone(window.__seelite.postcardPanel.state),
-		);
-		const afterModes = await pilot();
-		check(
-			"changing composition and back leaves the pose, and the link, as they were",
-			afterModes.yaw === before.yaw &&
-				afterModes.elev === before.elev &&
-				pairs(again.fragment).yaw === asked.yaw &&
-				pairs(again.fragment).elev === asked.elev,
-			`pose ${afterModes.yaw}, ${afterModes.elev}`,
-		);
+		await checkFirstCardActions(before, state, asked);
 	}
 	const closed = await closeCard();
 	check(
@@ -510,26 +541,11 @@ for (const pose of POSES) {
 	);
 
 	// The link, opened: the same recipe and the same picture.
-	const viewer = await context.newPage();
-	watch(viewer, `viewer ${pose.label}`);
-	await viewer.goto(postcardUrl(origin, state.fragment), { waitUntil: "load" });
-	await viewer.waitForFunction(
-		() =>
-			window.__seelite?.postcardViewState?.card &&
-			window.__seelite.postcardViewState.rebuiltFragment,
-		null,
-		{ timeout: 60000 },
+	const { grid: linked, ...rebuilt } = await openViewer(
+		state.fragment,
+		`viewer ${pose.label}`,
+		`${SHOTS}/${pose.label}-linked.png`,
 	);
-	await waitViewerCard(viewer);
-	const rebuilt = await viewer.evaluate(() => ({
-		fragment: window.__seelite.postcardViewState.rebuiltFragment,
-		yaw: window.__seelite.chaseYaw,
-		elev: window.__seelite.chaseElevation,
-		view: window.__seelite.view,
-	}));
-	await keepCard(viewer, VIEWER_CARD, `${SHOTS}/${pose.label}-linked.png`);
-	const linked = await cardGrid(viewer, VIEWER_CARD);
-	await viewer.close();
 	const moved = changedCells(linked, card);
 	check(
 		`${pose.label}: the link rebuilds the same recipe, standing at the same orbit`,
@@ -578,24 +594,11 @@ check(
 	const legacy = modern
 		.replace(/^postcard=2&/, "postcard=1&")
 		.replace(/&elev=[^&]+$/, "");
-	const viewer = await context.newPage();
-	watch(viewer, "viewer legacy");
-	await viewer.goto(postcardUrl(origin, legacy), { waitUntil: "load" });
-	await viewer.waitForFunction(
-		() =>
-			window.__seelite?.postcardViewState?.card &&
-			window.__seelite.postcardViewState.rebuiltFragment,
-		null,
-		{ timeout: 60000 },
+	const seen = await openViewer(
+		legacy,
+		"viewer legacy",
+		`${SHOTS}/legacy-linked.png`,
 	);
-	await waitViewerCard(viewer);
-	const seen = await viewer.evaluate(() => ({
-		fragment: window.__seelite.postcardViewState.rebuiltFragment,
-		yaw: window.__seelite.chaseYaw,
-		elev: window.__seelite.chaseElevation,
-	}));
-	await keepCard(viewer, VIEWER_CARD, `${SHOTS}/legacy-linked.png`);
-	await viewer.close();
 	check(
 		"a schema-1 exterior link opens at its own level framing, spelled back as schema 2",
 		seen.elev === 0 &&

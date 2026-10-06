@@ -105,7 +105,7 @@ export function triggerLabel(t: Trigger): string {
 			return t.surface ? `${press} ${SURFACE_WORDS[t.surface]}` : press;
 		}
 		case "mouse-move":
-			// Node #691: a movement narrower than its command says where.
+			// Node #691: a movement narrower than its command says where. // glossary-ignore: Command
 			return t.views
 				? `move the mouse ${way(t.axis, t.half)} (${t.views.join(" or ")} view)`
 				: `move the mouse ${way(t.axis, t.half)}`;
