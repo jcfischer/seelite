@@ -5,9 +5,15 @@
  * reads: a gate that was shut before the reset and is open after it means the
  * boot position the ship was sent to is enclosed, and every reading taken next
  * would be drawn with #241's pair on for a reason that is not the framing.
+ * And the rule it reads when the gate was already open: an open gate the boot
+ * frames did not start closing is one the boot position is holding open.
  */
 import { describe, expect, test } from "bun:test";
-import { resetOpenedGate } from "../scripts/lib/fixture-reset.mjs";
+import {
+	resetHeldGateOpen,
+	resetOpenedGate,
+} from "../scripts/lib/fixture-reset.mjs";
+import { OCCLUSION, stepOcclusionGate } from "../src/occlusion";
 
 describe("resetOpenedGate", () => {
 	test("shut before and open after is the reset opening the gate", () => {
@@ -34,6 +40,54 @@ describe("resetOpenedGate", () => {
 				resetOpenedGate({ before, after } as unknown as {
 					before: boolean;
 					after: boolean;
+				}),
+			).toThrow(/gate/);
+	});
+});
+
+// The reset above cannot see an enclosed boot when the gate was already open
+// before it: open → open passes. What can is the gate's own close counter.
+// `stepOcclusionGate` zeroes `pending` on every frame the gate already wants
+// the state it is in, so an open gate whose boot frames left `pending` at 0 is
+// one the boot position is holding open. These rows step the shipped reducer
+// rather than hand-built pairs, so a change to that rule turns them red here.
+describe("resetHeldGateOpen", () => {
+	const open = { open: true, pending: 0 };
+	const at = (rad: number) => [
+		// A subject whose apparent radius from the origin is `rad`.
+		{ center: [0, 0, 1 / Math.sin(rad)] as const, radiusKm: 1 },
+	];
+	const twoFrames = (rad: number) =>
+		stepOcclusionGate(stepOcclusionGate(open, at(rad)), at(rad));
+
+	test("an open gate the boot frames held open is refused", () => {
+		const held = twoFrames(OCCLUSION.gate.closeRad + 0.01);
+		expect(held).toEqual({ open: true, pending: 0 });
+		expect(resetHeldGateOpen(held)).toBe(true);
+	});
+
+	test("an open gate the boot frames started closing passes", () => {
+		const closing = twoFrames(OCCLUSION.gate.closeRad - 0.01);
+		expect(closing).toEqual({ open: true, pending: 2 });
+		expect(resetHeldGateOpen(closing)).toBe(false);
+	});
+
+	test("a shut gate passes whatever its counter reads", () => {
+		expect(resetHeldGateOpen({ open: false, pending: 0 })).toBe(false);
+		expect(resetHeldGateOpen({ open: false, pending: 1 })).toBe(false);
+	});
+
+	test("a gate state it cannot read is refused, not passed", () => {
+		for (const [o, pending] of [
+			[undefined, 0],
+			[true, undefined],
+			[true, Number.NaN],
+			["true", 0],
+		])
+			expect(() =>
+				resetHeldGateOpen({ open: o, pending } as unknown as {
+					open: boolean;
+					pending: number;
 				}),
 			).toThrow(/gate/);
 	});

@@ -18,9 +18,20 @@
  * transient left the gate open at 5 and 3 radii, below its threshold.
  *
  * That holds only while the boot position is not itself enclosed, so the
- * reset refuses a gate it opened: shut before and open after is the defect.
- * An open gate that stays open is not refused — the reset did not open it,
- * and it closes on its own frames.
+ * reset refuses two things. A gate it opened — shut before, open after — is
+ * the first (`resetOpenedGate`). The second is a gate that was already open
+ * and that the boot position is holding open (`resetHeldGateOpen`): the bay
+ * reset runs straight after the 1.5-radii rung, where the gate is open, so
+ * open → open is what an enclosed boot would read there, and the first check
+ * cannot see it. `stepOcclusionGate` zeroes `pending` on every frame the gate
+ * already wants the state it is in, so an open gate passes only if the boot
+ * frames started counting it toward closing. Those frames are
+ * `__startClockAt`'s two (`view-placement.mjs`), drawn with the ship at boot
+ * and the clock at the fixture, which is why the state is read after them.
+ *
+ * What neither refuses is a shut gate at a boot enclosed between the gate's
+ * two thresholds: it stays shut, so nothing read after the reset was drawn
+ * with the pair on, and the reset did not change the gate.
  *
  * Needs `installViewPlacement` (for `__returnToBootPosition` and
  * `__startClockAt`) and a `__rememberBootPosition` call before the first
@@ -47,25 +58,54 @@ export const resetOpenedGate = ({ before, after }) => {
 };
 
 /**
+ * Is the boot position holding an open gate open? True only for an open gate
+ * whose close counter the boot frames left at zero.
+ *
+ * Throws on a state it cannot read, for `resetOpenedGate`'s reason.
+ *
+ * @param {{ open: boolean, pending: number }} gate the state after the reset
+ * @returns {boolean}
+ */
+export const resetHeldGateOpen = ({ open, pending }) => {
+	if (typeof open !== "boolean" || !Number.isFinite(pending))
+		throw new Error(
+			`resetHeldGateOpen: the occlusion gate read open ${String(open)}, pending ${String(pending)} after the reset; need a boolean and a finite count`,
+		);
+	return open && pending === 0;
+};
+
+/**
  * The ship to its remembered boot position, then the clock to `clockS`; throws
- * if that opened the occlusion gate.
+ * if that opened the occlusion gate or left it held open at the boot position.
  */
 export async function resetToFixture(page, clockS) {
-	const gate = () => page.evaluate(() => window.__seelite.occlusionState.open);
-	const before = await gate();
+	const before = await page.evaluate(
+		() => window.__seelite.occlusionState.open,
+	);
 	await page.evaluate(() => window.__returnToBootPosition());
 	await page.evaluate((t) => window.__startClockAt(t), clockS);
-	const after = await gate();
-	if (resetOpenedGate({ before, after })) {
-		const { boot, enclosureRad } = await page.evaluate(() => ({
-			boot: window.__bootPos,
-			enclosureRad: window.__seelite.occlusionState.enclosureRad,
-		}));
-		const at = boot
-			? `(${boot.x.toFixed(3)}, ${boot.y.toFixed(3)}, ${boot.z.toFixed(3)}) km`
-			: "(unread)";
-		throw new Error(
-			`resetToFixture: the reset opened the occlusion gate — the boot position ${at} is enclosed (enclosure ${enclosureRad?.toFixed(4)} rad at clock ${clockS} s)`,
-		);
-	}
+	// One read after `__startClockAt`'s frames, so the reset makes no more
+	// round trips than it did with a gate-only check.
+	const after = await page.evaluate(() => {
+		const s = window.__seelite.occlusionState;
+		return { open: s.open, pending: s.pending };
+	});
+	const opened = resetOpenedGate({ before, after: after.open });
+	const held = !opened && resetHeldGateOpen(after);
+	if (!opened && !held) return;
+	const { boot, enclosureRad } = await page.evaluate(() => ({
+		boot: window.__bootPos,
+		enclosureRad: window.__seelite.occlusionState.enclosureRad,
+	}));
+	const at = boot
+		? `(${boot.x.toFixed(3)}, ${boot.y.toFixed(3)}, ${boot.z.toFixed(3)}) km`
+		: "(unread)";
+	const rad = Number.isFinite(enclosureRad)
+		? enclosureRad.toFixed(4)
+		: "(unread)";
+	throw new Error(
+		opened
+			? `resetToFixture: the reset opened the occlusion gate — the boot position ${at} is enclosed (enclosure ${rad} rad at clock ${clockS} s)`
+			: `resetToFixture: the occlusion gate was open before the reset and the boot position ${at} is holding it open — its close counter read 0 after the boot frames (enclosure ${rad} rad at clock ${clockS} s)`,
+	);
 }
