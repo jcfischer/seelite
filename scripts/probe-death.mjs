@@ -588,35 +588,22 @@ if (flown.store && flown.trade) {
 	check("a death before the first dock reloads the page", seen);
 	if (seen) {
 		await bootedGame(firstPage);
-		const woke = await firstPage.evaluate(async (elsewhere) => {
-			const g = window.__seelite;
-			const commerce = await import("/src/station-commerce.ts");
-			const hull = await import("/src/hull.ts");
-			return {
-				phase: g.dockPhase,
-				dockedAt: g.dockedAt,
-				system: g.world.system.record.index,
-				credits: g.commander.credits,
-				startingCredits: commerce.STARTING_CREDITS,
-				hull: g.commander.hull,
-				baseline: hull.PLAYER_BASELINE_HULL,
-				cargo: Object.keys(g.commander.cargo).length,
-				visitedKept:
-					g.commerceWorld.galaxies[
-						g.world.system.record.galaxy
-					].visited.includes(elsewhere),
-				dead: g.dead,
-				overlayOpen: g.commanderOverlay?.isOpen() ?? null,
-				wake: g.wakeShown,
-				message: (() => {
-					g.updateCockpit();
-					return (
-						document.querySelector("[data-live-station-message]")
-							?.textContent ?? null
-					);
-				})(),
-			};
-		}, flown.elsewhere);
+		const woke = {
+			...(await wokeTo(firstPage)),
+			...(await firstPage.evaluate(async (elsewhere) => {
+				const g = window.__seelite;
+				const commerce = await import("/src/station-commerce.ts");
+				return {
+					system: g.world.system.record.index,
+					startingCredits: commerce.STARTING_CREDITS,
+					visitedKept:
+						g.commerceWorld.galaxies[
+							g.world.system.record.galaxy
+						].visited.includes(elsewhere),
+					overlayOpen: g.commanderOverlay?.isOpen() ?? null,
+				};
+			}, flown.elsewhere)),
+		};
 		check(
 			"the reload wakes a new commander docked at the start trade station",
 			woke.phase === "docked" &&

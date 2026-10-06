@@ -12007,6 +12007,7 @@ class Game {
 			!this.openingActive &&
 			ejectWarningDue({
 				podFitted: this.commander.ownedEquipment.includes(ESCAPE_POD),
+				permadeath: this.permadeath,
 				flying: this.dock.phase === "flying",
 				alive: !this.dead && isAlive(this.condition),
 				hull: this.condition.hull,
@@ -17950,6 +17951,7 @@ class Game {
 			controls: flightControls(this.bindings),
 			eject: firstDayEjectLine(
 				this.commander.ownedEquipment.includes(ESCAPE_POD),
+				this.permadeath,
 				ejectPrompt(this.bindings),
 			),
 		};

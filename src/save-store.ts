@@ -686,7 +686,7 @@ export class SaveStore {
 			// no record to read, and then the loss is the dying commander's.
 			const firstLife = docked === null || docked === undefined;
 			wake = deathWake(
-				this.slot,
+				this.slot, // glossary-ignore: slot
 				firstLife ? dying.commander : dock,
 				cause,
 				firstLife,
@@ -940,7 +940,7 @@ export class CommanderCatalog {
 	 * took, or `null` — none, or one this build cannot read. One transaction
 	 * reads and deletes it, so it is shown by one boot at most, and every boot
 	 * that reads storage takes it, so a wake never outlives the boot after
-	 * its death. Which Commander it is for is the caller's to check (`slot`).
+	 * its death. Which Commander it is for is the caller's to check (`saveSlot`).
 	 */
 	async takeWake(): Promise<DeathWake | null> {
 		return parseDeathWake(await this.backend.takeMeta("wake"));

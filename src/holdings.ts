@@ -133,7 +133,6 @@ export const commanderAfterDeath = (
 };
 
 /** Everything a pilot owns that an act at a console or in space can move. */
-
 export interface Holdings {
 	readonly commander: CommanderState;
 	readonly requests: RequestsState;

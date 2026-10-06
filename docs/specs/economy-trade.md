@@ -1723,7 +1723,7 @@ strongest *weapon*: two hostiles firing at once land twice the rate, and the
 warning can then come late. The glass names the key as bound, keyboard first as
 every prompt does; the voice line names it only while it is the default
 Backspace, since a rebound key may be a word the voice has none for, and a pilot
-flying from the pad hears the keyboard's key as the glass shows it.
+flying from a gamepad hears the keyboard's key as the glass shows it.
 
 One consequence is recorded because #8 has to reckon with it: **ejecting dumps
 contraband**, which makes the pod a panic-button disposal route ahead of a
@@ -1742,20 +1742,28 @@ for Clean. **A berth holds, with one exception, and the exception is bounded.**
 A launch station that refuses them by law — a shipyard on standing alone, or a
 trade station or refinery that heard the offence — refuses the docked restore's
 clearance too, so they wake in flight beside it rather than in its berth. From
-there a trade station or refinery that did not hear it admits them, and a stock
-courier wakes with a full tank and charge to reach one, in this system or the
-next. The worst case is every station in reach having heard: then the refusal
-lasts until heat decays below Wanted, at most about **100 minutes** of game
-clock from the cap (`HEAT_HALF_LIFE_S × log₂(HEAT_CAP / WANTED_HEAT)`). That is
-the one place the floor bends, and it bends to a wait, never to a stranded
-save. A pilot who dies before their first dock wakes
+there a trade station or refinery that did not hear it admits them. A pilot who
+lost the ship wakes in a stock courier with a full tank and charge, so another
+system is a jump away; the rows assert the tank and the charge, not that an
+unwitnessed station is in reach of them. **A pilot who ejected keeps the
+launch's tank and charge**, whatever those were, and no row checks how far they
+reach. The worst case, for either cause, is every station in reach having
+heard: then the refusal lasts until heat decays below Wanted, at most about
+**100 minutes** of game clock from the cap
+(`HEAT_HALF_LIFE_S × log₂(HEAT_CAP / WANTED_HEAT)`), and the launch station
+admits them again after it. That is where the floor bends, and the decay bounds
+it to a wait: what the rows show is that the wait ends, not that a pilot in
+reach of nothing never waits. A pilot who dies before their first dock wakes
 docked at the start system's trade station as a new commander (D10). Ladder
 rungs and banked ladder credit are never touched (#183).
 
 **A permadeath commander who ejects ends the save**, as any death of theirs
 does: the store restores nothing for them (#89 D7), so the pod buys them
 nothing. Whether it should is permadeath's question, and #238's, not this
-section's.
+section's. Until it is answered nothing in the game urges them to: the eject
+warning is never shown or said to a permadeath commander (`ejectWarningDue`),
+and the First day tab's pod row tells them an eject ends the save instead of
+teaching the key.
 
 The pilot wakes to a notice of what the death took — the hold and the pod, or
 the ship, its fittings and the hold, and how many jobs failed with it — on the

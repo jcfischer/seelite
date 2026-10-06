@@ -144,7 +144,7 @@ export function voiceArms(value: string | null, dev: boolean): VoiceArms {
  * key the lexicon has no word for gets the line that names none.
  *
  * **Keyboard first, as every prompt is** (`spoken`): a rebind moves a key and
- * never removes one, so the pad's Home is never the control named here, and a
+ * never removes one, so the pad's Home is never the control named here, and a // glossary-ignore: pad
  * pilot flying from the pad hears "backspace", as the glass shows it. // glossary-ignore: pad
  */
 export function ejectWarningLine(control: string): CommsLineId {

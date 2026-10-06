@@ -180,7 +180,10 @@ courier floor is open to a pilot with 0 Cr (`economy-trade.md` §9). So the day
 teaches the eject key **from the first pod purchase**: once one is fitted, the
 First day tab carries an escape-pod row naming the control as bound
 (`firstDayEjectLine`) and what an eject keeps and loses. Every commander has
-it, guided or free, as every commander has the tab (D5); it is not pushed.
+it, guided or free, as every commander has the tab (D5); it is not pushed. A
+permadeath commander's row says instead that an eject ends the save, as any
+death of theirs does, and teaches no key: the pod keeps them no ship
+(`economy-trade.md` §9).
 
 ## Playtest rulings (2026-09-25)
 

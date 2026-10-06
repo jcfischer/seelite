@@ -88,8 +88,8 @@ const origin = () => {
 };
 
 describe("planBoot: the wake a death left (#660, node #704)", () => {
-	const wake = (slot: string): DeathWake => ({
-		slot,
+	const wake = (saveSlot: string): DeathWake => ({
+		saveSlot,
 		cause: "eject",
 		hull: "courier",
 		holdT: 4,
@@ -115,7 +115,7 @@ describe("planBoot: the wake a death left (#660, node #704)", () => {
 		await o.backend.writeMeta({ wake: wake("Elsewhere") });
 		expect((await o.boot()).wake).toBeNull();
 		expect(await o.backend.readMeta("wake")).toBeNull();
-		await o.backend.writeMeta({ wake: { slot: DEFAULT_SLOT, cause: "x" } });
+		await o.backend.writeMeta({ wake: { saveSlot: DEFAULT_SLOT, cause: "x" } });
 		expect((await o.boot()).wake).toBeNull();
 		expect(await o.backend.readMeta("wake")).toBeNull();
 	});

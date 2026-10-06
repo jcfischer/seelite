@@ -219,7 +219,8 @@ equipment, **Hyperspace tank**, hull), the Requests journal, the **Ladder** reco
 purchase basis, and the pending ladder credit. `src/holdings.ts` owns what a
 pilot's act does to them and to the world it writes — a Request settlement, a
 market trade (hull sale included) and a canister scoop since #626, and a
-carrier transition, a jump arrival and a dock since #627 — so the rule that the
+carrier transition, a jump arrival and a dock since #627, and what a death
+takes, by cause, since node #704 (`commanderAfterDeath`) — so the rule that the
 purchase basis follows the cargo has one copy, and so does a settlement's mark
 with the flown hull's **Hold** (the till's own mark is
 `transactAtStation`'s). A player's kill pays its Bounty and its combat ladder

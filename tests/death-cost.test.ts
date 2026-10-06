@@ -22,7 +22,12 @@ import {
 import { EJECT_HOLD_S, EJECT_IDLE, stepEjectHold } from "../src/eject";
 import { generateGalaxy } from "../src/galaxy";
 import { commanderAfterDeath } from "../src/holdings";
-import { HULL_IDS, HULL_SPECS, PLAYER_BASELINE_HULL } from "../src/hull";
+import {
+	HULL_IDS,
+	HULL_SPECS,
+	type HullId,
+	PLAYER_BASELINE_HULL,
+} from "../src/hull";
 import {
 	FUGITIVE_HEAT,
 	HEAT_CAP,
@@ -257,15 +262,19 @@ describe("#660 D6 — a death without ejecting: the ship goes", () => {
 });
 
 describe("#660 D12 — the warning threshold, derived from the hostile weapon table", () => {
-	test("the table's one row is the gun every hostile fires, at its own rate", () => {
+	test("no hull's gun out-fires the table's strongest row", () => {
 		// A raider (`duel.ts`) and a carrier returning fire
-		// (`traffic-engagement.ts`) fire through `stepCondition`, whose gun is
-		// the pulse laser: one second of trigger lands this much.
-		const gun = stepCondition(fullCondition(PLAYER_BASELINE_HULL), 1, true);
-		expect(gun.damage).toBe(PULSE_LASER.damagePerS);
-		expect(Math.max(...HOSTILE_WEAPONS.map((w) => w.hullDamagePerS))).toBe(
-			gun.damage,
-		);
+		// (`traffic-engagement.ts`) fire through `stepCondition`, so a second
+		// of its trigger on every hull in the roster is every gun a hostile
+		// has today. This catches a hull given a harder-hitting gun there; a
+		// weapon fired outside `stepCondition` it cannot see, and that one is
+		// added to `HOSTILE_WEAPONS` by hand.
+		const strongest = Math.max(...HOSTILE_WEAPONS.map((w) => w.hullDamagePerS));
+		for (const hull of HULL_IDS) {
+			const gun = stepCondition(fullCondition(hull), 1, true);
+			expect(gun.damage, hull).toBeLessThanOrEqual(strongest);
+		}
+		expect(strongest).toBe(PULSE_LASER.damagePerS);
 	});
 
 	test("the window is a second of reaction, the hold, and two longest frames", () => {
@@ -285,45 +294,52 @@ describe("#660 D12 — the warning threshold, derived from the hostile weapon ta
 	 * first — the warning read off the hull the last frame left, the hold
 	 * stepped, the pod gone if it completes — and the guns after it. The
 	 * strongest hostile gun on a ship with its shields down. The pilot's hand
-	 * goes down a second after the frame that first showed the warning, at
-	 * every alignment against the frame clock, and stays down: the eject has
-	 * to come before the frame whose hit finishes the hull.
+	 * goes down a second after the frame that first showed the warning, `lag`
+	 * of a frame late against the frame clock, and stays down. True when the
+	 * eject came before the frame whose hit finishes the hull.
 	 */
+	const flyToEject = (
+		hull: HullId,
+		dt: number,
+		lag: number,
+		warned: (hull: number) => boolean,
+	): boolean => {
+		let player = { ...fullCondition(hull), fore: 0, aft: 0 };
+		let gun = fullCondition("raider");
+		let hold = EJECT_IDLE;
+		let pressAt: number | null = null;
+		for (let n = 1; player.hull > 0; n++) {
+			if (n > 3600 / dt) throw new Error(`${hull} never died`);
+			const t = n * dt;
+			if (pressAt === null && warned(player.hull))
+				pressAt = t + EJECT_REACTION_S + lag * dt;
+			const down = pressAt !== null && t >= pressAt - 1e-9;
+			const step = stepEjectHold(hold, down, dt, null);
+			hold = step.hold;
+			if (step.event?.kind === "eject") return true;
+			const fired = stepCondition(gun, dt, true);
+			gun = fired.condition;
+			player = applyDamage(player, fired.damage, "fore");
+		}
+		return false;
+	};
+
 	for (const dt of [1 / 60, 1 / 30, MAX_DT])
 		test(`a pilot who reacts in a second is out before the last hit, every hull, at dt ${dt.toFixed(3)}`, () => {
+			const warned = (hull: number) =>
+				ejectWarningDue({
+					podFitted: true,
+					permadeath: false,
+					flying: true,
+					alive: true,
+					hull,
+				});
 			for (const hull of HULL_IDS)
-				for (const lag of [0, 0.25, 0.5, 0.75, 0.999]) {
-					let player = { ...fullCondition(hull), fore: 0, aft: 0 };
-					let gun = fullCondition("raider");
-					let hold = EJECT_IDLE;
-					let pressAt: number | null = null;
-					let ejected = false;
-					for (let n = 1; player.hull > 0; n++) {
-						if (n > 3600 / dt) throw new Error(`${hull} never died`);
-						const t = n * dt;
-						if (
-							pressAt === null &&
-							ejectWarningDue({
-								podFitted: true,
-								flying: true,
-								alive: true,
-								hull: player.hull,
-							})
-						)
-							pressAt = t + EJECT_REACTION_S + lag * dt;
-						const down = pressAt !== null && t >= pressAt - 1e-9;
-						const step = stepEjectHold(hold, down, dt, null);
-						hold = step.hold;
-						if (step.event?.kind === "eject") {
-							ejected = true;
-							break;
-						}
-						const fired = stepCondition(gun, dt, true);
-						gun = fired.condition;
-						player = applyDamage(player, fired.damage, "fore");
-					}
-					expect(ejected, `${hull}, a press ${lag} of a frame late`).toBe(true);
-				}
+				for (const lag of [0, 0.25, 0.5, 0.75, 0.999])
+					expect(
+						flyToEject(hull, dt, lag, warned),
+						`${hull}, a press ${lag} of a frame late`,
+					).toBe(true);
 		});
 
 	test("one longest frame was not enough: the shipped order loses a ship with it", () => {
@@ -332,43 +348,41 @@ describe("#660 D12 — the warning threshold, derived from the hostile weapon ta
 		const oneFrame =
 			PULSE_LASER.damagePerS * (EJECT_REACTION_S + EJECT_HOLD_S + MAX_DT) +
 			HULL_KILL_TOLERANCE;
-		const dt = MAX_DT;
 		let lost = 0;
 		for (const hull of HULL_IDS)
-			for (const lag of [0, 0.5, 0.999]) {
-				let player = { ...fullCondition(hull), fore: 0, aft: 0 };
-				let gun = fullCondition("raider");
-				let hold = EJECT_IDLE;
-				let pressAt: number | null = null;
-				let ejected = false;
-				for (let n = 1; player.hull > 0; n++) {
-					const t = n * dt;
-					if (pressAt === null && player.hull < oneFrame)
-						pressAt = t + EJECT_REACTION_S + lag * dt;
-					const down = pressAt !== null && t >= pressAt - 1e-9;
-					const step = stepEjectHold(hold, down, dt, null);
-					hold = step.hold;
-					if (step.event?.kind === "eject") {
-						ejected = true;
-						break;
-					}
-					const fired = stepCondition(gun, dt, true);
-					gun = fired.condition;
-					player = applyDamage(player, fired.damage, "fore");
-				}
-				if (!ejected) lost++;
-			}
+			for (const lag of [0, 0.5, 0.999])
+				if (!flyToEject(hull, MAX_DT, lag, (h) => h < oneFrame)) lost++;
 		expect(lost).toBeGreaterThan(0);
 	});
 
 	test("no pod, no warning; not on the rails or docked; not for a wreck", () => {
 		const low = EJECT_WARNING_HULL - 1;
-		const base = { podFitted: true, flying: true, alive: true, hull: low };
+		const base = {
+			podFitted: true,
+			permadeath: false,
+			flying: true,
+			alive: true,
+			hull: low,
+		};
 		expect(ejectWarningDue(base)).toBe(true);
 		expect(ejectWarningDue({ ...base, podFitted: false })).toBe(false);
 		expect(ejectWarningDue({ ...base, flying: false })).toBe(false);
 		expect(ejectWarningDue({ ...base, alive: false })).toBe(false);
 		expect(ejectWarningDue({ ...base, hull: EJECT_WARNING_HULL })).toBe(false);
+	});
+
+	test("never for a permadeath commander, whom an eject does not save", () => {
+		// The store restores nothing for them (#89 D7): the pod keeps no ship,
+		// so neither the glass nor the voice urges one (`economy-trade.md` §9).
+		expect(
+			ejectWarningDue({
+				podFitted: true,
+				permadeath: true,
+				flying: true,
+				alive: true,
+				hull: EJECT_WARNING_HULL - 1,
+			}),
+		).toBe(false);
 	});
 
 	test("the voice is said once per crossing, and again only after it lapses", () => {
@@ -395,7 +409,7 @@ describe("the wake: what the death took", () => {
 	test("an eject took the hold and the pod; the ship is named as kept", () => {
 		const wake = deathWake("jameson", launch, "eject", false);
 		expect(wake).toEqual({
-			slot: "jameson",
+			saveSlot: "jameson",
 			cause: "eject",
 			hull: LAUNCH_HULL,
 			holdT: 6 + courier.operand.tonnes,

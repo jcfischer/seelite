@@ -42,8 +42,10 @@ export type DeathCause = "eject" | "destroyed";
  * raider (its relay-defender call included) and a carrier returning fire both
  * fire through `stepCondition`, which fires `PULSE_LASER` and nothing else, at
  * one gun per ship — `combat-model.md` §2's one forward weapon. A hostile
- * weapon added later is a row here, and the threshold moves with it;
- * `tests/death-cost.test.ts` holds the row to the gun's own rate.
+ * weapon added later is a row here, added by hand, and the threshold moves
+ * with it. `tests/death-cost.test.ts` checks that no hull in the roster fires
+ * a harder gun through `stepCondition` than this table's strongest row; a
+ * weapon fired by some other path it cannot see.
  *
  * **One weapon, not a fleet**: two hostiles firing at once land twice the
  * rate, and the warning can then come later than D12 asks. D12 is written
@@ -95,14 +97,21 @@ export const EJECT_WARNING_HULL =
 
 /** Whether the warning stands this frame: a pod fitted, a live ship in
  *  flight off the rails — where an eject is not refused (D5) — and the hull
- *  below the line. No pod, no warning (D12). */
+ *  below the line. No pod, no warning (D12).
+ *
+ *  **Never for a permadeath commander**: the store restores nothing for them
+ *  (#89 D7), so an eject ends their save as any death does, and a sentence
+ *  urging it would promise them a ship the pod does not keep
+ *  (`economy-trade.md` §9). */
 export const ejectWarningDue = (facts: {
 	readonly podFitted: boolean;
+	readonly permadeath: boolean;
 	readonly flying: boolean;
 	readonly alive: boolean;
 	readonly hull: number;
 }): boolean =>
 	facts.podFitted &&
+	!facts.permadeath &&
 	facts.flying &&
 	facts.alive &&
 	facts.hull < EJECT_WARNING_HULL;
@@ -132,14 +141,15 @@ export const ejectWarningText = (prompt: string): string =>
 
 /**
  * What a death took, carried across the reload for the notice the pilot wakes
- * to. Written beside the one-shot continue (`CommanderCatalog.chooseCommander`)
- * and taken once by the next boot, for the Commander it names.
+ * to. Written by `SaveStore.revertToLastDocked` after the restored `live`
+ * record, and taken once by the next boot (`CommanderCatalog.takeWake`), for
+ * the Commander it names.
  *
  * Counts, not lists: the notice says how much went, and the Requests board
  * already says which jobs failed and why.
  */
 export interface DeathWake {
-	slot: string;
+	saveSlot: string;
 	cause: DeathCause;
 	/** The hull flown at the launch: kept by an eject, lost otherwise. */
 	hull: HullId;
@@ -162,14 +172,14 @@ export interface DeathWake {
  * since the checkpoint that pilot wakes to is a new one and held nothing.
  */
 export function deathWake(
-	slot: string,
+	saveSlot: string,
 	lost: CommanderRecord,
 	cause: DeathCause,
 	firstLife: boolean,
 ): DeathWake {
 	const entrustedT = entrustedTonnesAboard(lost.requests);
 	return {
-		slot,
+		saveSlot,
 		cause,
 		hull: lost.state.hull,
 		holdT: commanderHold(lost.state, entrustedT).usedT,
@@ -191,7 +201,7 @@ export function parseDeathWake(raw: unknown): DeathWake | null {
 	if (typeof raw !== "object" || raw === null) return null;
 	const o = raw as Record<string, unknown>;
 	if (
-		typeof o.slot !== "string" ||
+		typeof o.saveSlot !== "string" ||
 		(o.cause !== "eject" && o.cause !== "destroyed") ||
 		typeof o.hull !== "string" ||
 		!(HULL_IDS as readonly string[]).includes(o.hull) ||
@@ -204,7 +214,7 @@ export function parseDeathWake(raw: unknown): DeathWake | null {
 	)
 		return null;
 	return {
-		slot: o.slot,
+		saveSlot: o.saveSlot,
 		cause: o.cause,
 		hull: o.hull as HullId,
 		holdT: o.holdT,

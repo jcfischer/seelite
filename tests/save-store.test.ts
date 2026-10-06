@@ -584,7 +584,7 @@ describe("#660 D1, D10 — a death restores the launch, and a first death wakes 
 		await h.store.flush("undock");
 		await h.store.revertToLastDocked(h.commander, "eject");
 		const wake = await h.catalog.takeWake();
-		expect(wake?.slot).toBe("default");
+		expect(wake?.saveSlot).toBe("default");
 		expect(wake?.cause).toBe("eject");
 		expect(wake?.fittingsLost).toBe(1);
 		expect(wake?.firstLife).toBe(false);

@@ -266,7 +266,8 @@ export async function planBoot(input: BootInput): Promise<BootPlan> {
 	// discarded: the overlay opens, with the fault when there is one (§11.3).
 	if (!direct && oneShot === plan.slot && plan.canContinue)
 		plan.mode = "continue";
-	if (wake !== null && wake.slot === plan.slot && plan.loaded !== null)
+	// A wake is shown only by the save slot it names. // glossary-ignore: slot
+	if (wake !== null && wake.saveSlot === plan.slot && plan.loaded !== null)
 		plan.wake = wake;
 	return plan;
 }
