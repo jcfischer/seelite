@@ -55,9 +55,11 @@ import {
 	bodyVelocity,
 	flightPerformance,
 	makeWorld,
+	stationApertureFrame,
 	stepFleet,
 	worldStarts,
 } from "../src/sim";
+import { STATION_GEOMETRY } from "../src/station";
 import { proxyReachKm, selectedStationProxy } from "../src/station-proxy";
 import { TRAFFIC_HULL_POOLS } from "../src/station-traffic";
 import {
@@ -78,6 +80,7 @@ import {
 	sub,
 	v3,
 } from "../src/vec3";
+import { codeOf, methodBodyOf } from "./lib/source-scan";
 
 const DT = 1 / 30;
 /** Seeds whose start systems carry all three placed station roles between
@@ -95,6 +98,9 @@ interface Run {
 	met: string | null;
 	/** Share of frames the ship's gun fired on the pilot. */
 	fireShare: number;
+	/** Share of frames the ship was all but still against the station, under
+	 *  0.3 km/s — a controller stalled by its own brake reads high here. */
+	stillShare: number;
 }
 
 function placedStations(world: World) {
@@ -139,6 +145,11 @@ function flyBesideStation(o: {
 	avoid: boolean;
 	hull?: HullId;
 	open?: boolean;
+	/** The pilot at the station's mouth, inside its keep-out, rather than just
+	 *  outside it. */
+	atMouth?: boolean;
+	/** An armed carrier the pilot provoked fights instead of the raider. */
+	armed?: HullId;
 }): Run {
 	const world = makeWorld(o.seed);
 	const system = world.system;
@@ -156,12 +167,19 @@ function flyBesideStation(o: {
 		v3(1, 0, 0),
 	);
 	const across = frameAcross(dir);
-	const hull = o.regime === "cruise" ? (o.hull ?? "freighter") : RAIDER_HULL_ID;
+	const hull =
+		o.regime === "cruise"
+			? (o.hull ?? "freighter")
+			: (o.armed ?? RAIDER_HULL_ID);
 
 	// The pilot, relative to the station. In cruise the pilot has gone: far
 	// down the track and leaving at cruise speed, which the carrier reads only
 	// as a bearing to run from.
+	const mouthKm = STATION_GEOMETRY[station.type].aperturePlaneKm + 0.3;
+	const mouth = (t: number) =>
+		scale(stationApertureFrame(system, station.id, t).axis, mouthKm);
 	let pilotRel = scale(dir, keep + 0.8);
+	if (o.atMouth) pilotRel = mouth(world.gameTime);
 	let pilotDrift = v3();
 	if (o.regime === "assist-off") {
 		pilotRel = add(pilotRel, scale(across, -8));
@@ -194,6 +212,24 @@ function flyBesideStation(o: {
 			o.seed * 31 + o.stationIndex,
 			{ assaultAlreadyCharged: false, byPilot: false },
 		);
+	} else if (o.armed) {
+		const start = add(
+			where(),
+			add(scale(dir, -12), scale(across, 0.3 * Math.sin(5 * o.bearing))),
+		);
+		carrier = engage(
+			{
+				key: carrierKey(1, "station-shipyard/traffic-00"),
+				hullId: o.armed,
+				pos: start,
+				vel: stationVel(world.gameTime),
+				nose: normalizeOr(sub(add(where(), pilotRel), start), dir),
+				up: null,
+				voyageOrdinal: 0,
+			},
+			o.seed * 31 + o.stationIndex,
+			{ assaultAlreadyCharged: false, byPilot: true },
+		);
 	} else {
 		raider = {
 			flight: raiderAtDrop(
@@ -210,6 +246,7 @@ function flyBesideStation(o: {
 
 	const steps = o.regime === "cruise" ? 900 : 1200;
 	let fired = 0;
+	let still = 0;
 	for (let i = 0; i < steps; i++) {
 		const t = world.gameTime;
 		const flight = raider ? raider.flight : (carrier as Engagement).flight;
@@ -217,7 +254,7 @@ function flyBesideStation(o: {
 		const pilotPos =
 			o.regime === "cruise"
 				? add(where(), scale(track, -1e6))
-				: add(where(), pilotRel);
+				: add(where(), o.atMouth ? mouth(t) : pilotRel);
 		const pilotVel =
 			o.regime === "cruise"
 				? scale(track, -3e5)
@@ -261,19 +298,30 @@ function flyBesideStation(o: {
 		advanceWorldClock(world, DT);
 		const [swept] = stepFleet(world, fleet, starts, { fromTime: t, dt: DT });
 		const met = swept.impacts.find((impact) => !impact.ship);
-		if (met) return { met: met.with, fireShare: fired / (i + 1) };
+		if (met)
+			return {
+				met: met.with,
+				fireShare: fired / (i + 1),
+				stillShare: still / (i + 1),
+			};
 		const ship = { pos: swept.pos, vel: swept.vel };
+		if (length(sub(swept.vel, stationVel(world.gameTime))) < 0.3) still++;
 		if (raider) raider = { ...raider, flight: { ...raider.flight, ship } };
 		else if (carrier)
 			carrier = { ...carrier, flight: { ...carrier.flight, ship } };
 	}
-	return { met: null, fireShare: fired / steps };
+	return { met: null, fireShare: fired / steps, stillShare: still / steps };
 }
 
 function corpus(
 	regime: Regime,
 	avoid: boolean,
-	extra: { hull?: HullId; open?: boolean } = {},
+	extra: {
+		hull?: HullId;
+		open?: boolean;
+		atMouth?: boolean;
+		armed?: HullId;
+	} = {},
 ): Run[] {
 	const runs: Run[] = [];
 	for (const seed of SEEDS)
@@ -342,8 +390,8 @@ describe("the figures the avoidance is built from", () => {
 					length(bodyVelocity(world.system, body.id, world.gameTime)),
 				);
 		}
-		expect(fastest).toBeGreaterThan(80);
-		expect(fastest).toBeLessThan(100);
+		// The figure `AVOID_SCAN_KM`'s comment quotes.
+		expect(fastest).toBeCloseTo(86.66, 2);
 		// Every hull a controller flies: the raider and every Traffic roster
 		// hull. The capitals fly under none.
 		const flown = new Set<HullId>([
@@ -354,6 +402,8 @@ describe("the figures the avoidance is built from", () => {
 			...[...flown].map((id) => avoidanceHorizonS(flightPerformance(id), 1e9)),
 		);
 		expect(longest).toBeCloseTo(22.3, 1);
+		// And it is the miner's, as that comment says.
+		expect(longest).toBe(avoidanceHorizonS(flightPerformance("miner"), 1e9));
 		expect(AVOID_SCAN_KM).toBeGreaterThan(longest * 100);
 	});
 });
@@ -451,6 +501,37 @@ describe("a duel beside a station stays a duel", () => {
 			// beside fired on 10.3% of frames. The bands are wide of both.
 			expect(mean(beside)).toBeGreaterThan(0.6 * mean(open));
 			expect(Math.min(...beside.map((r) => r.fireShare))).toBeGreaterThan(0.05);
+		});
+	}
+
+	/**
+	 * The pilot at the station's mouth, 0.3 km out from its aperture plane —
+	 * inside the keep-out, where a pilot about to dock or just launched is.
+	 * No turn clears a run at them, so the raider and an armed carrier the
+	 * pilot provoked hold off at the keep-out with their noses on the run.
+	 * Measured over the 39 runs, the share of frames each fires on against
+	 * the same fight in open space: raider 0.277 against 0.287, patrol 0.298
+	 * against 0.296, interceptor 0.295 against 0.291, the lowest run 0.242;
+	 * blind, 29, 27 and 30 runs met the station. Before the hold-off, bent
+	 * round, they fired on 0.044 to 0.048 and some runs never fired.
+	 */
+	for (const armed of [undefined, "patrol", "interceptor"] as const) {
+		test(`a pilot at the mouth, inside the keep-out: ${armed ?? "the raider"} holds off and keeps firing`, () => {
+			const extra = { atMouth: true, armed };
+			const blind = corpus("assist-on", false, extra);
+			const open = corpus("assist-on", false, { ...extra, open: true });
+			const beside = corpus("assist-on", true, extra);
+			const mean = (runs: Run[], f: (r: Run) => number) =>
+				runs.reduce((sum, r) => sum + f(r), 0) / runs.length;
+			expect(struck(blind)).toBeGreaterThan(blind.length / 2);
+			expect(struck(beside)).toBe(0);
+			expect(mean(beside, (r) => r.fireShare)).toBeGreaterThan(
+				0.8 * mean(open, (r) => r.fireShare),
+			);
+			expect(Math.min(...beside.map((r) => r.fireShare))).toBeGreaterThan(0.15);
+			// Holding off is not hovering: no run sits still against the station
+			// for half the fight (the most measured is 0.346).
+			expect(Math.max(...beside.map((r) => r.stillShare))).toBeLessThan(0.5);
 		});
 	}
 });
@@ -557,8 +638,13 @@ describe("the law, on its own", () => {
 			v3(),
 			[station(v3(horizonKm + 5, 0, 0))],
 			perf,
+			v3(100, 0, 0),
 		);
-		expect(far).toEqual({ desired: ahead, brake: false, avoiding: null });
+		expect(far).toEqual({
+			desired: ahead,
+			maxSpeedKms: Number.POSITIVE_INFINITY,
+			avoiding: null,
+		});
 		const near = avoidSolids(
 			ship,
 			ahead,
@@ -567,6 +653,7 @@ describe("the law, on its own", () => {
 			v3(),
 			[station(v3(6, 0.05, 0))],
 			perf,
+			v3(100, 0, 0),
 		);
 		expect(near.avoiding).toBe("s");
 		// Bent off the bearing past the keep-out's cone, not reversed.
@@ -592,8 +679,13 @@ describe("the law, on its own", () => {
 			frame,
 			[station(v3(5, 0, 0), frame)],
 			perf,
+			v3(0, 0, -50),
 		);
-		expect(out).toEqual({ desired: heading, brake: false, avoiding: null });
+		expect(out).toEqual({
+			desired: heading,
+			maxSpeedKms: Number.POSITIVE_INFINITY,
+			avoiding: null,
+		});
 	});
 
 	test("thrust along a nose still on the solid is cut while the nose comes round", () => {
@@ -608,8 +700,9 @@ describe("the law, on its own", () => {
 			v3(),
 			[station(v3(3, 0, 0))],
 			perf,
+			v3(0, 0, 50),
 		);
-		expect(out.brake).toBe(true);
+		expect(out.maxSpeedKms).toBe(0);
 		const nosedAway = avoidSolids(
 			ship,
 			away,
@@ -618,8 +711,56 @@ describe("the law, on its own", () => {
 			v3(),
 			[station(v3(3, 0, 0))],
 			perf,
+			v3(0, 0, 50),
 		);
-		expect(nosedAway.brake).toBe(false);
+		expect(nosedAway.maxSpeedKms).toBe(Number.POSITIVE_INFINITY);
+	});
+
+	test("a target inside the keep-out is held off: the nose stays on the run, and the speed is what the ship can stop from", () => {
+		// A pilot at the mouth, 0.3 km off a 0.62 km station's centre: inside
+		// its keep-out. Bending round could never reach them.
+		const solid = station(v3(0, 0, 0));
+		const target = v3(-0.3, 0, 0);
+		const run = (gapKm: number) => {
+			const pos = v3(-(0.62 + AVOID_CLEARANCE_KM + gapKm), 0, 0);
+			const heading = normalizeOr(sub(target, pos), v3(1, 0, 0));
+			return {
+				heading,
+				out: avoidSolids(
+					{ pos, vel: scale(heading, 2) },
+					heading,
+					heading,
+					2,
+					v3(),
+					[solid],
+					perf,
+					target,
+				),
+			};
+		};
+		const far = run(4);
+		expect(far.out.desired).toEqual(far.heading);
+		expect(far.out.avoiding).toBe("s");
+		// Closer in, less speed: what half the retro can take off in the gap.
+		const near = run(0.5);
+		expect(near.out.maxSpeedKms).toBeLessThan(far.out.maxSpeedKms);
+		expect(near.out.maxSpeedKms).toBeCloseTo(
+			Math.sqrt(perf.retroKms2 * 0.5),
+			9,
+		);
+		expect(run(0).out.maxSpeedKms).toBe(0);
+		// A station moving in the frame cannot be stopped short of: gone round.
+		const moving = avoidSolids(
+			{ pos: v3(-2, 0, 0), vel: v3(2, 0, 0) },
+			v3(1, 0, 0),
+			v3(1, 0, 0),
+			2,
+			v3(),
+			[station(v3(0, 0, 0), v3(-3, 0, 0))],
+			perf,
+			target,
+		);
+		expect(dot(moving.desired, v3(1, 0, 0))).toBeLessThan(0.99);
 	});
 
 	test("a ship placed inside the keep-out is steered out, not pinned (#30's inside-the-sphere case)", () => {
@@ -633,6 +774,7 @@ describe("the law, on its own", () => {
 			v3(),
 			[solid],
 			perf,
+			v3(5, 0, 0),
 		);
 		expect(out.avoiding).toBe("s");
 		expect(dot(out.desired, v3(1, 0, 0))).toBeLessThan(0);
@@ -723,5 +865,28 @@ describe("the law, on its own", () => {
 				b = sb.state;
 			}
 		}
+	});
+});
+
+describe("the game hands its fights the solids", () => {
+	/**
+	 * Nothing headless runs `Game`, so a `solids: []` written into `main.ts`
+	 * would leave every row above green while the raider flew blind again.
+	 * Read off the source: one list per frame from the builder, handed to the
+	 * raider's step and the engagements' step, and placed on both pilots.
+	 */
+	test("main.ts builds the list with avoidanceSolids and passes it to both fights", () => {
+		const main = codeOf("src/main.ts");
+		const loop =
+			/const solids = this\.fightSolids\(\);\s*this\.stepRaider\(dt, shot, solids\);\s*this\.stepRelay\(shot, dt\);\s*this\.stepTrafficEngagements\(dt, shot, solids\);/;
+		expect(main).toMatch(loop);
+		expect(methodBodyOf(main, "fightSolids")).toContain(
+			"avoidanceSolids(this.world.system, this.world.gameTime, near)",
+		);
+		// Each pilot carries the list it was handed, and nowhere is an empty
+		// one written in its place.
+		expect(methodBodyOf(main, "stepRaider")).toMatch(/\bsolids,/);
+		expect(methodBodyOf(main, "stepTrafficEngagements")).toMatch(/\bsolids,/);
+		expect(main).not.toMatch(/solids:\s*\[\]/);
 	});
 });

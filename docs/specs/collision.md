@@ -468,7 +468,11 @@ line.
      the keep-out inside the hull's own horizon (`avoidanceHorizonS`), and
      only the earliest is answered. A threat beyond the horizon moves
      nothing.
-   - **What it does.** It takes the smallest turn off the bearing that clears
+   - **What it does.** When the ship is running at a pilot inside the
+     keep-out — at the station's mouth — and the solid is at rest in the
+     frame, it **holds off**: the nose stays on the run and the speed is
+     capped at what half the hull's retro can stop from before the keep-out.
+     Otherwise it **goes round**: the heading nearest the bearing that clears
      the keep-out's cone, on the side the ship is already sliding to. While
      the present path is still inside the cone, it aims past the edge by as
      much as that path is inside. Inside the keep-out it steers outward. The
@@ -486,7 +490,10 @@ line.
      is under half of `GUN_RANGE_KM`. Against a pilot sitting just outside
      a station, the raider fires on about 70% as many frames as it does in
      open space with the pilot's assist on (0.191 against 0.271), and on as
-     many with it off (0.168 against 0.169).
+     many with it off (0.168 against 0.169). Against a pilot at the mouth,
+     the raider, a patrol and an interceptor holding off fire on as many
+     frames as in open space (0.277 against 0.287, 0.298 against 0.296,
+     0.295 against 0.291). Gone round instead, they fired on under 0.05.
    - **The figures are measured, not derived.** They were read off
      `tests/combat-enemy-avoidance.test.ts` at node #665, which flies the
      production steps beside real stations and meets the world through
@@ -494,7 +501,8 @@ line.
      the pilot's assist on, 27 with it off and 39 in cruise; avoiding, in
      none. The test gates the shape rather than the counts: blind more than
      half, avoiding zero, and the fire share beside a station above 0.6 of
-     the open-space share, with no run under 0.05.
+     the open-space share, with no run under 0.05 (at the mouth, above 0.8
+     and no run under 0.15).
 
 ---
 

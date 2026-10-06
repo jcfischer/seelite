@@ -445,13 +445,20 @@ const AVOID_STEP_RAD = (2 * Math.PI) / 180;
 /** Inside the keep-out the heading must point this far past tangent, so the
  *  ship climbs out rather than skimming round at the depth it reached. */
 const AVOID_OUTWARD_RAD = Math.PI / 6;
+/** A run counts as at the target while the heading is within 30° of it, which
+ *  the attack weave's 5.7° never leaves. */
+const HOLD_OFF_AIM_COS = Math.cos(Math.PI / 6);
 
 export interface Avoidance {
 	desired: Vec3;
-	/** Cut the throttle: thrust along the nose as it stands would close on the
-	 *  solid, so the assist brakes in the frame while the nose comes round. */
-	brake: boolean;
-	/** The solid the heading was bent for, or `null` when it was left alone. */
+	/**
+	 * The most speed the assist may hold, km/s: `Infinity` when untouched, 0
+	 * while the nose itself is still on the solid, and a figure the ship can
+	 * stop from before the keep-out while it holds off a target inside it.
+	 */
+	maxSpeedKms: number;
+	/** The solid the step was changed for — its heading bent or its speed
+	 *  capped — or `null` when it was left alone. */
 	avoiding: string | null;
 }
 
@@ -468,12 +475,26 @@ export interface Avoidance {
  * ~30 km/s, and so does the station; only the difference is a path.
  *
  * A threat is a path entering the keep-out inside `avoidanceHorizonS`, and
- * only the earliest one is answered. The answer is the smallest turn of the
- * heading, away from the solid, after which the intended path misses: past
- * the cone the keep-out subtends, past tangent when the present path would
- * enter before half the horizon is gone, and outward when the ship is already
- * inside. So a raider whose run on the pilot clips a station skims it by the
- * cone and keeps its run; nothing farther than the horizon moves the nose.
+ * only the earliest one is answered, in one of three ways:
+ *
+ * - **Held off**, when the ship is running at a target inside the keep-out —
+ *   a pilot at the station's mouth — and the solid is at rest in the frame:
+ *   the heading is kept and the speed capped at what the ship can stop from
+ *   before the keep-out.
+ * - **Gone round** otherwise: the heading nearest the bearing, on the side
+ *   the ship leans and slides to, whose intended path clears the cone the
+ *   keep-out subtends — and as far again past the cone's edge as the present
+ *   path is inside it, because the velocity lags the nose. It is built in
+ *   the plane of the bearing and that side, so a bent heading keeps none of
+ *   the desired heading out of that plane. From inside the keep-out the
+ *   cone is past tangent, and the ship climbs out. A solid no heading can
+ *   clear — one closing faster than the hull can leave its path — gets the
+ *   heading that closes least.
+ * - **Braked**, while going round, as long as thrust along the nose as it
+ *   stands would close on the solid: speed 0 until the nose is round.
+ *
+ * So a raider whose run on the pilot clips a station skims it by the cone
+ * and keeps its run, and nothing farther than the horizon moves the nose.
  *
  * Pure, and it draws nothing from the fight's stream, so a fight in open
  * space flies bit-identically with or without the solids beside it.
@@ -486,12 +507,18 @@ export function avoidSolids(
 	frameVel: Vec3,
 	solids: readonly AvoidSphere[],
 	perf: FlightPerformance,
+	/** Where the ship is fighting toward: the pilot. */
+	target: Vec3,
 ): Avoidance {
 	const intendedFor = (heading: Vec3, solid: AvoidSphere) =>
 		sub(add(frameVel, scale(heading, speedKms)), solid.vel);
 
 	let worst: {
 		solid: AvoidSphere;
+		r: Vec3;
+		dist: number;
+		keep: number;
+		horizon: number;
 		toward: Vec3;
 		present: Vec3;
 		inside: boolean;
@@ -506,13 +533,14 @@ export function avoidSolids(
 		const present = sub(ship.vel, solid.vel);
 		let entry: number;
 		let halfAngle: number;
+		let horizon = 0;
 		if (dist <= keep) {
 			entry = 0;
 			halfAngle = Math.PI / 2 + AVOID_OUTWARD_RAD;
 		} else {
 			const intended = intendedFor(desired, solid);
 			const closing = Math.max(dot(present, toward), dot(intended, toward));
-			const horizon = avoidanceHorizonS(perf, closing);
+			horizon = avoidanceHorizonS(perf, closing);
 			const presentEntry = entryS(r, present, keep);
 			entry = Math.min(presentEntry, entryS(r, intended, keep));
 			if (entry > horizon) continue;
@@ -535,6 +563,10 @@ export function avoidSolids(
 		if (worst && entry >= worst.entry) continue;
 		worst = {
 			solid,
+			r,
+			dist,
+			keep,
+			horizon,
 			toward,
 			present,
 			inside: entry === 0,
@@ -542,9 +574,11 @@ export function avoidSolids(
 			entry,
 		};
 	}
-	if (!worst) return { desired, brake: false, avoiding: null };
+	if (!worst)
+		return { desired, maxSpeedKms: Number.POSITIVE_INFINITY, avoiding: null };
 
-	const { solid, toward, present, inside, cosLimit } = worst;
+	const { solid, r, dist, keep, horizon, toward, present, inside, cosLimit } =
+		worst;
 	/** How directly the intended path closes on the solid, -1…1. No motion
 	 *  relative to it is no path into it — unless the ship is already inside,
 	 *  where standing still is staying there. */
@@ -554,16 +588,45 @@ export function avoidSolids(
 		if (speed === 0) return inside ? 1 : -1;
 		return dot(intended, toward) / speed;
 	};
+	// **A target inside the keep-out is held off, not gone round.** A pilot at
+	// a station's mouth is inside its keep-out, so every run on them enters
+	// it and no turn clears it; bent round, the raider kept off and all but
+	// stopped firing. So while the ship is running at a target inside the
+	// keep-out, the nose stays on the run and the speed is held to what the
+	// assist can stop from, at half its retro, before the keep-out — which it
+	// can only do where the solid is at rest in the frame, as a station is in
+	// its own. The merge break takes the ship off the pilot from there.
+	const toTarget = unit(sub(target, ship.pos), desired);
+	if (
+		!inside &&
+		length(sub(target, solid.pos)) < keep &&
+		dot(desired, toTarget) > HOLD_OFF_AIM_COS &&
+		entryS(r, sub(frameVel, solid.vel), keep) > horizon
+	) {
+		const radial = dot(desired, toward);
+		const stoppable = Math.sqrt(perf.retroKms2 * Math.max(0, dist - keep));
+		return {
+			desired,
+			maxSpeedKms: radial > 0 ? stoppable / radial : Number.POSITIVE_INFINITY,
+			avoiding: solid.id,
+		};
+	}
 	// **The assist thrusts along the nose, not along the heading it is
 	// turning to.** A ship whose nose is still on the solid while it turns
 	// away is driven at it the whole turn, which is how a break begun nosed
 	// at a station flew into it with a clear heading. So while thrust along
 	// the nose as it stands would close on the solid, the throttle is cut and
 	// the assist brakes in the frame until the nose is clear.
-	const brake =
-		dot(nose, toward) > 0 && closingCos(nose) > cosLimit ? true : false;
+	const maxSpeedKms =
+		dot(nose, toward) > 0 && closingCos(nose) > cosLimit
+			? 0
+			: Number.POSITIVE_INFINITY;
 	if (closingCos(desired) <= cosLimit)
-		return { desired, brake, avoiding: brake ? solid.id : null };
+		return {
+			desired,
+			maxSpeedKms,
+			avoiding: maxSpeedKms === 0 ? solid.id : null,
+		};
 	// Which side to pass on: the side the heading leans to, and the side the
 	// ship is already sliding to, each weighed by the sine of its angle off
 	// the bearing. The slide is what holds the choice: a heading nearly on
@@ -586,7 +649,8 @@ export function avoidSolids(
 			scale(side, Math.sin(angle)),
 		);
 		const cos = closingCos(heading);
-		if (cos <= cosLimit) return { desired: heading, brake, avoiding: solid.id };
+		if (cos <= cosLimit)
+			return { desired: heading, maxSpeedKms, avoiding: solid.id };
 		if (cos < bestCos) {
 			best = heading;
 			bestCos = cos;
@@ -595,7 +659,7 @@ export function avoidSolids(
 	// A solid closing faster than the hull can move off its path — a station
 	// overtaking a ship held in another frame: the heading that closes least,
 	// which is across its path rather than along it.
-	return { desired: best, brake, avoiding: solid.id };
+	return { desired: best, maxSpeedKms, avoiding: solid.id };
 }
 
 /**
@@ -922,9 +986,10 @@ export function stepEnemyShip(
 				: 1;
 
 	// **Then round what is in the way** (node #665): every phase's heading, the
-	// rout's and a civilian's included, is bent round the most urgent solid on
-	// its path, in that solid's frame, and the throttle is cut while the nose
-	// itself is still on it.
+	// rout's and a civilian's included, is answered for the most urgent solid
+	// on its path, in that solid's frame — bent round it, or held off it when
+	// the pilot is inside its keep-out — and the speed is capped by what that
+	// answer allows.
 	const avoided = avoidSolids(
 		state.ship,
 		state.nose,
@@ -933,6 +998,7 @@ export function stepEnemyShip(
 		frame ? frame.start : v3(),
 		solids,
 		performance,
+		player.pos,
 	);
 	const desired = avoided.desired;
 
@@ -950,7 +1016,9 @@ export function stepEnemyShip(
 			stick: aimStick(state, desired, performance),
 			turnAssist: true,
 			translation: {
-				demand: speedDemand(avoided.brake ? 0 : throttle),
+				demand: speedDemand(
+					Math.min(throttle, avoided.maxSpeedKms / ASSIST_CAP_KMS),
+				),
 				assist: true,
 				frame,
 			},

@@ -14961,6 +14961,10 @@ class Game {
 	 * clock their own steps start from.
 	 */
 	private fightSolids(): AvoidSphere[] {
+		// No encounter in any phase and no engagement: nothing will read it. Any
+		// phase, not the duel alone, because a raider enters the duel inside the
+		// step that flies its first frame.
+		if (!this.encounter && this.trafficEngagements.size === 0) return [];
 		const near: Vec3[] = [this.world.ship.pos];
 		const raider = this.duelRaider();
 		if (raider) near.push(raider.flight.ship.pos);
