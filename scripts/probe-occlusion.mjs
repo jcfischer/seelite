@@ -779,12 +779,12 @@ console.log(
  * **The shadow is checked in the bay, and the exterior and cabin figures above
  * are printed rather than asserted. That is a finding, not a convenience.**
  *
- * The star is one of three terms lighting this game and much the smallest:
- * `LIGHT_RIG` puts the sun at 0.2 against a hemisphere at 6.85, so a surface
- * receives about 3% of its light along the direction that casts a shadow — and
- * a shadow can only ever subtract the light of the light that casts it. A
- * hemisphere cannot be shadowed at all. Measured on this build, same builds and
- * framings, shadow on against off:
+ * Until #231 the star was one of three terms lighting this game and much the
+ * smallest: `LIGHT_RIG` put the sun at 0.2 against a hemisphere at 6.85, so a
+ * surface received about 3% of its light along the direction that casts a
+ * shadow — and a shadow can only ever subtract the light of the light that
+ * casts it. A hemisphere cannot be shadowed at all. Measured then, on that rig,
+ * shadow on against off:
  *
  * | framing | pixels darkened | deepest |
  * |---|---|---|
@@ -792,11 +792,17 @@ console.log(
  * | `cockpit-arrival` | 0.002% | 14.1/255 |
  * | `berth-free-look` | 6.2% | 11.6/255 |
  *
- * The bay is where it reads at all, and the reason is geometric: an enclosed
+ * #231 moved light into the sun (rig B, 1.0 against 3.425), which made the
+ * exterior shadow larger. `scripts/measure-shadow-enclosure.mjs` measures it
+ * on its ladder, and the figures this probe prints show it on this build. The
+ * exterior rows stay printed, not asserted, for the reason below.
+ *
+ * The bay is where it reads most, and the reason is geometric: an enclosed
  * room is the one place a hull can put a large fraction of another surface out
  * of the star's line. A floor there is a real check on the whole path — the
  * box, the biases, the caster flags — where the same floor on either other
- * framing would be asserting a term the rig does not currently fund.
+ * framing would have asserted a term #199's rig did not fund. Whether B's
+ * exterior figures earn a floor of their own is not decided here.
  *
  * **An earlier revision of this file checked `station-flank` at 0.467% and
  * passed**, with a ceiling calibrated against that figure. It was measuring a

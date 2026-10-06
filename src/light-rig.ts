@@ -120,7 +120,16 @@ export const EXPOSURE = {
 export const LIGHT_RIG = {
 	/** Directional, because one light cannot serve two scenes at two scales;
 	 *  `main.ts` has the argument. */
-	/** Paired with `environmentIntensity`; see that field's measured sweep. */
+	/**
+	 * Paired with `environmentIntensity`; see that field's measured sweep.
+	 *
+	 * Rig B, the principal's choice on #231 by eye (2026-10-06): sun 1.0 and
+	 * hemisphere 3.425, from #199's 0.2 and 6.85. The hemisphere cannot be
+	 * shadowed, so at 0.2 the shadow had almost nothing to remove. B holds the
+	 * `hull-chase` hull's median (#723's rule) and moves light from the
+	 * gradient into the one direction that casts a shadow. The hull band in
+	 * `scripts/lib/hull-luma.mjs` is calibrated on B.
+	 */
 	sun: { color: 0xfff0d8, intensity: 1.0 },
 	/**
 	 * The ambient replacement. Aimed along the star, so `sky` is the lift on the
@@ -130,7 +139,8 @@ export const LIGHT_RIG = {
 	 * gradient. That keeps a camera-facing hull readable across its facets
 	 * without one shoulder owning the whole exposure range. Ground remains
 	 * darker than sky, so the lift retains an edge-bearing gradient rather than
-	 * becoming a flat ambient wash.
+	 * becoming a flat ambient wash. #231 moved half of it back into the sun
+	 * (see `sun`).
 	 */
 	hemisphere: { sky: 0xc0ccd8, ground: 0x8090a0, intensity: 3.425 },
 	/** Camera-side, near layer only. Still off-axis, but close enough to the lens
@@ -145,11 +155,11 @@ export const LIGHT_RIG = {
 	 * How hard the baked environment is applied, as `Scene.environmentIntensity`.
 	 *
 	 * #99 originally bracketed this at 2.2 by eye. #199 found that value and the
-	 * 3.0 sun together drove `hull-chase` past white. The final rig lowers the
-	 * sun, environment and fill together. The final masked, post-tone-map painted
-	 * hull reads 154.03 of 255 across five same-build samples, with 0.00 spread;
-	 * its lower quartile is 61.04 and median 85.37, so the band does not hide a
-	 * mostly-black exterior behind one compliant highlight.
+	 * 3.0 sun together drove `hull-chase` past white. #199's rig lowered the
+	 * sun, environment and fill together, and its masked, post-tone-map painted
+	 * hull read 154.03 of 255, lower quartile 61.04, median 85.37. Those figures
+	 * belong to #199's rig and #199's finish; the band now in force is
+	 * `scripts/lib/hull-luma.mjs`'s, calibrated on #231's rig B.
 	 *
 	 * That pixel band guards clipping; whether the lower-exposure scene still has
 	 * the intended depth and legibility remains the canonical sheet's human gate.

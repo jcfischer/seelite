@@ -376,6 +376,15 @@ describe("the painted-hull luma calibration", () => {
 		expect(HULL_LUMA_CALIBRATION.peak).toBeLessThan(HULL_LUMA_BAND.max);
 	});
 
+	test("the ceiling is the principal's 215 and the rig is #231's B", () => {
+		// Authored, not derived: #231 D2 raised it from #199's 200 when the
+		// principal chose rig B by eye, about ten codes above B's peak.
+		expect(HULL_LUMA_BAND.max).toBe(215);
+		expect(LIGHT_RIG.sun.intensity).toBe(1);
+		expect(LIGHT_RIG.hemisphere.intensity).toBe(3.425);
+		expect(HULL_LUMA_CALIBRATION.ref).toBe("c6f8b57");
+	});
+
 	test("no margin is small enough to be decided by which rasteriser ran", () => {
 		// A rail rather than a bound, and the module says so: at the margins here
 		// this clears by 30x or more, so it rejects a margin small enough to be a
