@@ -192,7 +192,7 @@ const EXEMPT = new Map([
 	],
 	[
 		"measure-shadow-enclosure.mjs",
-		"node #363's headed shadow-enclosure instrument; a sibling of #201's occlusion-cost instrument and exempt for the same reason — it prints a four-arm ladder for a receipt that #231 decides from, and gates on nothing. It refuses a software rasteriser, which throws out of the run rather than counting a failed check",
+		"node #363's headed shadow-enclosure instrument; a sibling of #201's occlusion-cost instrument and exempt for the same reason — it prints a ladder of arms (#723) for a receipt that #231 decides from, and gates on nothing. It refuses a software rasteriser, and a light readback that breaks its lights-held rule; both throw out of the run rather than counting a failed check",
 	],
 	[
 		"capture-views.mjs",
