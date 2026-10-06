@@ -12,9 +12,11 @@
  *   over the hull, the ship's attitude, rates and trigger untouched, the hull
  *   holding its place in the drawn frame. Outside Photo mode the same move
  *   steers in both views. An engaged docking computer orbited under is still
- *   engaged once Photo mode is left and the sim runs again — read while the
- *   world is frozen it proves nothing, because `step` does not run to cancel
- *   it. The control is the cockpit, where the same move steers and cancels it;
+ *   engaged once Photo mode is left and the sim runs again. Neither reading
+ *   detects a routing leak — frozen, `step` does not run to cancel it, and the
+ *   toggle drains the pointer before it resumes — so the routing is
+ *   `pointerOwner`'s headless rows. The control is the cockpit, where the same
+ *   move steers and cancels it;
  * - **the pointer's owners** (C2): the cockpit gets its controls back and the
  *   chase pose is held across the toggle; a lost lock moves nothing until the
  *   next click takes it back; the settings screen and the Postcard screen take
@@ -271,8 +273,8 @@ check(
 );
 
 // The docking computer: engaged, then orbited under. Photo mode holds the
-// world, so this row alone cannot see a leak — `step` never runs to cancel
-// anything. The row after leaving Photo mode runs the sim and can; the
+// world, so this row cannot see a leak — `step` never runs to cancel
+// anything. The routing is held headlessly by `pointerOwner`'s rows; the
 // cockpit arm below is the control.
 await page.evaluate(() => {
 	const g = window.__seelite;
@@ -306,10 +308,11 @@ check(
 	"leaving Photo mode resumes the simulation",
 	!cockpitBefore.photo && resumed.time > cockpitBefore.time,
 );
-// The row above the frozen world cannot fail: `step` does not run in Photo
-// mode, so nothing there can disengage the computer. This one runs the sim:
-// a delta the orbit banked rather than spent would reach `hasControlInput`
-// on the first unfrozen step and cancel it here.
+// The orbit row under the computer cannot fail: `step` does not run in Photo
+// mode, so nothing there can disengage it. This one runs the sim, and proves
+// only that leaving Photo mode does not: `togglePhotoMode` drains any delta
+// left in the pointer before the world resumes, so a delta the orbit banked
+// is dropped at the toggle and is not what this row tests.
 check(
 	"the computer is still engaged once the simulation runs again",
 	cockpitBefore.computer && resumed.computer,
