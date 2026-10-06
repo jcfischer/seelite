@@ -13,7 +13,7 @@ import { HULL_SPECS, type HullId } from "./hull";
 import { JUMP_CHARGE_S } from "./hyperspace";
 import { fnv1a } from "./rng";
 import { stationPose, makeSystem } from "./sim";
-import { STATION_GEOMETRY } from "./station";
+import { STATION_GEOMETRY, STATION_LAWFUL } from "./station";
 import { stationInterior, fittingTrafficBerths } from "./station-interior";
 import {
 	stationTrafficRoster,
@@ -214,6 +214,10 @@ export function buildHaulerPlans(
 						for (const dest of [...away.stations].sort((a, b) =>
 							a.id < b.id ? -1 : a.id > b.id ? 1 : 0,
 						)) {
+							// A hauler keeps to its home's side of #490's line, as a local
+							// leg does in `station-route.ts` (node #491).
+							if (STATION_LAWFUL[dest.type] !== STATION_LAWFUL[s.type])
+								continue;
 							const bounds = boundsIfFits(r, away, dest, base.hullId);
 							if (
 								bounds &&

@@ -11,12 +11,21 @@
 
 import { describe, expect, test } from "bun:test";
 import { carrierKey } from "../src/carrier-key";
+import { generateGalaxy, startSystem } from "../src/galaxy";
+import { PLAYER_BASELINE_HULL } from "../src/hull";
 import {
 	type CommanderRecord,
 	newCommanderRecord,
+	parseSave,
 	type SaveEnvelope,
 	serializeSave,
 } from "../src/save-envelope";
+import { START_GALAXY } from "../src/sim";
+import { newCommander, STARTING_CREDITS } from "../src/station-commerce";
+import { generateContents } from "../src/system";
+import { hasDocked } from "../src/death-checkpoint";
+import { applyHoldEvent } from "../src/holdings";
+import { emptyPending } from "../src/ladder";
 import {
 	CommanderCatalog,
 	DEFAULT_SLOT,
@@ -114,6 +123,10 @@ const harness = (
 				},
 			};
 		},
+		/** Any other change to the commander, for the rows that need one. */
+		edit(change: (c: CommanderRecord) => CommanderRecord) {
+			state = { ...state, commander: change(state.commander) };
+		},
 		/** A leg flown: a system visited, the clock moved on and the play log
 		 *  with it — world state and commander state a death treats apart. */
 		leg(systemIndex: number, seconds: number) {
@@ -169,9 +182,9 @@ describe("#89 D4 — the write cadence", () => {
 		}
 	});
 
-	test("a flush with nothing dirty writes nothing — except quit", async () => {
+	test("a flush with nothing dirty writes nothing — except quit and undock", async () => {
 		const h = harness();
-		for (const reason of ["dock", "undock", "jump"] as const) {
+		for (const reason of ["dock", "jump"] as const) {
 			await h.store.flush(reason);
 			expect(h.backend.writes).toBe(0);
 		}
@@ -183,6 +196,11 @@ describe("#89 D4 — the write cadence", () => {
 		await h.store.flush("quit");
 		expect(h.backend.writes).toBe(1);
 		expect((await h.store.load("default")).commander.state.credits).toBe(100);
+		// **Undock too** (#660 D1, node #702): `live` can be current while the
+		// checkpoint is the arrival, so a clean launch still lays it down.
+		await h.store.flush("undock");
+		expect(h.backend.writes).toBe(2);
+		expect(await h.backend.has("default", "lastDocked")).toBe(true);
 	});
 
 	test("a new game's first flush writes `live` with nothing dirty, and only `live`", async () => {
@@ -357,24 +375,33 @@ describe("#324 O5 — a death reverts live to the last dock", () => {
 		expect((await h.store.load("default")).commander.state.credits).toBe(100);
 	});
 
-	test("no last dock is a named error, and live is left alone", async () => {
-		const h = harness();
+	/** A flight leg flushed, beside a `lastDocked` the parser refuses — the
+	 *  revert's one refusal since #660 D10 made an absent record a checkpoint
+	 *  (node #702). */
+	const unparseableDock = async (h: ReturnType<typeof harness>) => {
 		h.store.markDirty();
 		await h.store.flush("jump");
+		await h.backend.write("default", "lastDocked", { not: "a save" });
+	};
+
+	test("a last dock that will not parse is a named error, and live is left alone", async () => {
+		const h = harness();
+		await unparseableDock(h);
 		const before = h.backend.writes;
 		await expect(h.store.revertToLastDocked(h.commander)).rejects.toThrow(
-			/lastDocked/,
+			/lastDocked record that will not parse/,
 		);
 		expect(h.backend.writes).toBe(before);
+		expect((await h.store.load("default")).commander.state.credits).toBe(100);
 	});
 
-	test("a death before the first dock leaves the store saving and the lock held", async () => {
-		// Sage round 1's blocker. A new game has no `lastDocked`, and the first
-		// build retired the store before it found that out: every later write was
-		// dropped without an error, and the tab kept a lock nothing released.
+	test("a refused revert leaves the store saving and the lock held", async () => {
+		// Sage round 1's blocker. The first build retired the store before it
+		// found the dock record missing: every later write was dropped without
+		// an error, and the tab kept a lock nothing released. An absent record
+		// is a checkpoint now (#660 D10), so the refusal is an unparseable one.
 		const h = harness();
-		h.store.markDirty();
-		await h.store.flush("jump");
+		await unparseableDock(h);
 		expect(await h.store.hold()).toBe(true);
 		await h.store.revertToLastDocked(h.commander).catch(() => {});
 		const before = h.backend.writes;
@@ -392,8 +419,7 @@ describe("#324 O5 — a death reverts live to the last dock", () => {
 		// debounce before it found no dock record, so a change made just before
 		// the death was dropped by the next flush, which saw nothing dirty.
 		const h = harness();
-		h.store.markDirty();
-		await h.store.flush("jump");
+		await unparseableDock(h);
 		h.set(888);
 		h.store.markDirty();
 		await h.store.revertToLastDocked(h.commander).catch(() => {});
@@ -472,6 +498,256 @@ describe("#654 — a death keeps the world and reverts only the commander", () =
 		const before = await h.backend.raw("default", "lastDocked");
 		await h.store.revertToLastDocked(h.commander);
 		expect(await h.backend.raw("default", "lastDocked")).toEqual(before);
+	});
+});
+
+/**
+ * #660 D1 and D10, built by node #702: a death restores the commander **as it
+ * launched**, and a pilot who never docked has a checkpoint too.
+ */
+describe("#660 D1, D10 — a death restores the launch, and a first death wakes at the start", () => {
+	/** A purchase at the dock: credits spent and the pod fitted. */
+	const buyPod = (h: ReturnType<typeof harness>) =>
+		h.edit((c) => ({
+			...c,
+			state: {
+				...c.state,
+				credits: 40,
+				ownedEquipment: [...c.state.ownedEquipment, "Escape Pod"],
+			},
+		}));
+
+	/** Docked with 1040 Cr and the checkpoint written, then the pod bought.
+	 *  `settle` carries the purchase to `live` through the debounce, which
+	 *  clears the dirty flag the way a real purchase does. */
+	const dockAndBuy = async (
+		h: ReturnType<typeof harness>,
+		{ settle }: { settle: boolean },
+	) => {
+		h.set(1040);
+		h.store.markDirty();
+		await h.store.flush("dock");
+		buyPod(h);
+		if (!settle) return;
+		h.store.markDirty();
+		h.clock.fire();
+		await h.store.settled();
+	};
+
+	test("dock, buy, undock, death: the purchase is restored", async () => {
+		const h = harness();
+		// The purchase reaches `live` through the debounce, which clears the
+		// flag — so the launch's flush is the one that must still write.
+		await dockAndBuy(h, { settle: true });
+		await h.store.flush("undock");
+		h.set(9999);
+		h.leg(9, 600);
+		h.store.markDirty();
+		await h.store.flush("jump");
+		const restored = await h.store.revertToLastDocked(h.commander);
+		for (const save of [restored, await h.store.load("default")]) {
+			expect(save?.commander.state.credits).toBe(40);
+			expect(save?.commander.state.ownedEquipment).toContain("Escape Pod");
+			expect(save?.world.galaxies[0].visited).toContain(9);
+		}
+	});
+
+	test("a launch checkpoint queued behind a slow write is the launch, not what followed it", async () => {
+		// Sage's round-1 reproduction. The launch does not await its flush, so
+		// a debounced write still in flight holds the checkpoint in the queue
+		// while the ship flies on. Read `current()` there and `lastDocked` gets
+		// the flight; the checkpoint has to be what the world was at the call.
+		const h = harness();
+		await dockAndBuy(h, { settle: false });
+		h.backend.hold();
+		h.store.markDirty();
+		h.clock.fire();
+		expect(h.backend.inFlight).toBe(1);
+		const launched = h.store.flush("undock");
+		// Flown on before the slow write lands: credits spent, a system visited.
+		h.set(9999);
+		h.leg(9, 600);
+		h.store.markDirty();
+		h.backend.release();
+		await launched;
+		await h.store.settled();
+		const checkpoint = await h.store.load("default", "lastDocked");
+		expect(checkpoint.commander.state.credits).toBe(40);
+		expect(checkpoint.commander.state.ownedEquipment).toContain("Escape Pod");
+		expect(checkpoint.world.galaxies[0].visited).not.toContain(9);
+		// `live` landed behind the world, so the save stays dirty and the
+		// debounce is armed to catch it up.
+		expect(h.clock.armed).toBe(true);
+		h.clock.fire();
+		await h.store.settled();
+		expect(h.backend.maxInFlight).toBe(1);
+		const live = await h.store.load("default");
+		expect(live.commander.state.credits).toBe(9999);
+		expect(live.world.galaxies[0].visited).toContain(9);
+		const restored = await h.store.revertToLastDocked(h.commander);
+		expect(restored?.commander.state.credits).toBe(40);
+		expect(restored?.commander.state.ownedEquipment).toContain("Escape Pod");
+		expect(restored?.world.galaxies[0].visited).toContain(9);
+	});
+
+	test("a checkpoint with nothing moved behind it leaves the debounce alone", async () => {
+		const h = harness();
+		h.set(1040);
+		h.store.markDirty();
+		await h.store.flush("dock");
+		await h.store.flush("undock");
+		expect(h.clock.armed).toBe(false);
+		expect(h.backend.writes).toBe(2);
+	});
+
+	test("dock, death without an undock: the arrival is restored", async () => {
+		const h = harness();
+		await dockAndBuy(h, { settle: true });
+		const restored = await h.store.revertToLastDocked(h.commander);
+		expect(restored?.commander.state.credits).toBe(1040);
+		expect(restored?.commander.state.ownedEquipment).not.toContain(
+			"Escape Pod",
+		);
+	});
+
+	test("a never-docked death wakes a new commander at the start system's trade station", async () => {
+		const h = harness();
+		// A free start flown on: a hold of goods, a different hull, banked
+		// credit and a first-day choice, then a leg the death keeps.
+		h.edit((c) => ({
+			...c,
+			firstDay: "guided",
+			state: {
+				...c.state,
+				hull: "freighter",
+				credits: 5000,
+				cargo: { Food: 4 },
+				ownedEquipment: ["Escape Pod"],
+			},
+			ladders: {
+				...c.ladders,
+				banked: { combat: 3, trade: 0, exploration: 2 },
+				basis: { Food: { units: 4, cr: 40 } },
+			},
+		}));
+		h.leg(9, 600);
+		h.store.markDirty();
+		await h.store.flush("jump");
+		expect(await h.backend.has("default", "lastDocked")).toBe(false);
+		const dying = h.commander;
+		const restored = await h.store.revertToLastDocked(dying);
+		const live = await h.store.load("default");
+		const galaxy = generateGalaxy(SEED, START_GALAXY);
+		const start = startSystem(galaxy);
+		const trade = generateContents(start).stations.find(
+			(s) => s.type === "trade",
+		);
+		expect(trade).toBeDefined();
+		for (const save of [restored, live]) {
+			const c = save?.commander;
+			expect(c?.dockedAt).toBe(
+				carrierKey(start.index, trade?.localCarrierId ?? ""),
+			);
+			expect(c?.galaxyIndex).toBe(START_GALAXY);
+			expect(c?.systemIndex).toBe(start.index);
+			expect(c?.state).toEqual(newCommander(PLAYER_BASELINE_HULL));
+			expect(c?.state.credits).toBe(STARTING_CREDITS);
+			expect(c?.requests).toEqual(newCommanderRecord("courier").requests);
+			expect(c?.firstDay).toBe("guided");
+			expect(c?.permadeath).toBe(false);
+			// The ladders are never touched by a death (§9): banked credit and
+			// the play log stay, and the basis empties with the hold.
+			expect(c?.ladders.banked).toEqual(dying.ladders.banked);
+			expect(c?.ladders.playedS).toBe(600);
+			expect(c?.ladders.basis).toEqual({});
+			// And the world is the one the death happened in (#654).
+			expect(save?.world).toEqual(h.world);
+		}
+		// The record that went to disk is one the parser accepts.
+		expect(parseSave(await h.backend.raw("default", "live"))).toEqual(live);
+	});
+
+	test("an absent lastDocked whose write failed is refused, not derived", async () => {
+		// The pilot docked; the dock flush did not land. Waking them as a new
+		// commander would be the silent substitution D9 rules out.
+		const h = harness();
+		h.store.markDirty();
+		h.backend.failNextWrite();
+		await expect(h.store.flush("dock")).rejects.toThrow(/backend/);
+		expect(await h.backend.has("default", "lastDocked")).toBe(false);
+		await expect(h.store.revertToLastDocked(h.commander)).rejects.toThrow(
+			/lastDocked/,
+		);
+	});
+
+	test("a failed dock write is still refused after a reload, and live is kept", async () => {
+		// The held fault is this tab's memory and a reload empties it. The
+		// record is what remembers the dock (sage round 2's blocker on node
+		// #702): the dock's own hold event banks the station into `visited`,
+		// driven here through `applyHoldEvent` rather than written by hand so
+		// this row reds if the dock stops recording it. That `Game` banks
+		// before the dock flush is `world-state-wiring.test.ts`'s row.
+		const station = carrierKey(3, LOCAL_CARRIER_ID.trade);
+		const before = harness();
+		before.edit((c) => {
+			const banked = applyHoldEvent(
+				{
+					commander: c.state,
+					requests: c.requests,
+					ladders: c.ladders,
+					ladderPending: emptyPending(),
+				},
+				before.world,
+				{ kind: "dock", galaxyIndex: 0, station, at: before.world.gameTime },
+			).holdings.ladders;
+			return {
+				...c,
+				dockedAt: station,
+				state: { ...c.state, credits: 4321, ownedEquipment: ["Escape Pod"] },
+				ladders: banked,
+			};
+		});
+		// Nothing hand-written: a new commander has not docked, and the
+		// dock's event alone is what makes the record say it has.
+		expect(hasDocked({ ...before.commander, dockedAt: null })).toBe(true);
+		expect(hasDocked(newCommanderRecord("courier"))).toBe(false);
+		before.store.markDirty();
+		before.backend.failNextWrite();
+		await expect(before.store.flush("dock")).rejects.toThrow(/backend/);
+		before.edit((c) => ({ ...c, dockedAt: null }));
+		before.store.markDirty();
+		await before.store.flush("quit");
+		expect(await before.backend.has("default", "lastDocked")).toBe(false);
+		const written = await before.backend.raw("default", "live");
+
+		const after = harness({ backend: before.backend });
+		const reloaded = await after.store.load("default");
+		after.edit(() => reloaded.commander);
+		expect(after.store.heldFaults.size).toBe(0);
+		await expect(
+			after.store.revertToLastDocked(after.commander),
+		).rejects.toThrow(/lastDocked/);
+		// The hull, credits and equipment the death interrupted are still there.
+		expect(await after.backend.raw("default", "live")).toEqual(written);
+		expect((await after.store.load("default")).commander.state.credits).toBe(
+			4321,
+		);
+	});
+
+	test("hasDocked reads the record: a new game has not, a banked dock has", () => {
+		const fresh = newCommanderRecord("courier");
+		expect(hasDocked(fresh)).toBe(false);
+		const station = carrierKey(3, LOCAL_CARRIER_ID.trade);
+		expect(hasDocked({ ...fresh, dockedAt: station })).toBe(true);
+		expect(
+			hasDocked({
+				...fresh,
+				ladders: {
+					...fresh.ladders,
+					visited: { 2: { systems: [], stations: [station] } },
+				},
+			}),
+		).toBe(true);
 	});
 });
 
@@ -1221,20 +1497,33 @@ describe("§11.5 — faults are held per record kind", () => {
 		expect([...h.store.faultKinds]).toEqual([]);
 	});
 
-	for (const reason of ["undock", "jump"] as const)
-		test(`a failed ${reason} flush is a live fault at once`, async () => {
-			const h = harness();
-			h.store.markDirty();
-			h.backend.failNextWrite();
-			await expect(h.store.flush(reason)).rejects.toThrow(/backend/);
-			expect([...h.store.faultKinds]).toEqual(["live"]);
-			// And a good debounced write clears it: both carry `live` alone. The
-			// flush cancelled the timer, so the write is a new mark.
-			h.store.markDirty();
-			h.clock.fire();
-			await h.store.settled();
-			expect([...h.store.faultKinds]).toEqual([]);
-		});
+	test("a failed jump flush is a live fault at once", async () => {
+		const h = harness();
+		h.store.markDirty();
+		h.backend.failNextWrite();
+		await expect(h.store.flush("jump")).rejects.toThrow(/backend/);
+		expect([...h.store.faultKinds]).toEqual(["live"]);
+		// And a good debounced write clears it: both carry `live` alone. The
+		// flush cancelled the timer, so the write is a new mark.
+		h.store.markDirty();
+		h.clock.fire();
+		await h.store.settled();
+		expect([...h.store.faultKinds]).toEqual([]);
+	});
+
+	test("a failed undock flush holds both kinds, as a dock flush does (#660 D1)", async () => {
+		const h = harness();
+		h.store.markDirty();
+		h.backend.failNextWrite();
+		await expect(h.store.flush("undock")).rejects.toThrow(/backend/);
+		expect([...h.store.faultKinds].sort()).toEqual(["lastDocked", "live"]);
+		// A debounced write clears `live` alone; the launch's checkpoint is
+		// still missing until a flush that writes it lands.
+		h.store.markDirty();
+		h.clock.fire();
+		await h.store.settled();
+		expect([...h.store.faultKinds]).toEqual(["lastDocked"]);
+	});
 });
 
 describe("the store writes what a parser accepts", () => {

@@ -23,7 +23,11 @@ import {
 	type SystemRecord,
 } from "../../src/galaxy";
 import { type Body, makeWorld } from "../../src/sim";
-import { type SystemContents, generateContents } from "../../src/system";
+import {
+	type SystemContents,
+	generateContents,
+	hasRaiderOutpost,
+} from "../../src/system";
 import type { Vec3 } from "../../src/vec3";
 
 /**
@@ -88,6 +92,27 @@ export function stationRows(
 		}
 	});
 	return rows;
+}
+
+/** Whether a `stationRows` or `stationFieldRows` row is the raider outpost's.
+ *  Both formats carry the type in the fourth column. The outpost is node
+ *  #491's addition, so the baselines captured before it are compared with it
+ *  set aside on both sides. */
+export const notOutpostRow = (row: string): boolean =>
+	row.split("\t")[3] !== "outpost";
+
+/** How many systems in `galaxies` of one world hold a raider outpost, by the
+ *  generator's own rule — the count a filtered baseline comparison must have
+ *  set aside, and no more. */
+export function outpostSystems(
+	worldSeed: number,
+	galaxies: readonly number[],
+): number {
+	let n = 0;
+	forEachSystem(worldSeed, galaxies, (record) => {
+		if (hasRaiderOutpost(record.government)) n++;
+	});
+	return n;
 }
 
 /**

@@ -73,6 +73,7 @@ try {
 		const g = window.__seelite;
 		cancelAnimationFrame(g.animationFrame);
 		const sim = await import("/src/sim.ts");
+		const { frameAcross } = await import("/src/vec3.ts");
 		// Constants read off the page, never restated here (CLAUDE.md).
 		const legalMod = await import("/src/legal.ts");
 		const engagementMod = await import("/src/traffic-engagement.ts");
@@ -165,6 +166,8 @@ try {
 			 * two spellings that could disagree about what "parked" means.
 			 */
 			parkShip(at, toward, vel) {
+				if (g.dead || !(g.condition.hull > 0))
+					throw new Error("witness fixture needs a live pilot");
 				g.world.ship.pos = at;
 				g.world.ship.vel = vel;
 				g.throttle = 0;
@@ -343,26 +346,35 @@ try {
 			offset: { x: 0, y: 0, z: 0 },
 			framesFired: 0,
 			/**
-			 * Put the ship 1.2 km behind the carrier along its own nose, co-moving.
+			 * Put the ship 1.2 km beside the carrier's route, co-moving.
 			 *
-			 * **The engagement probe's rig, not a placement of this file's.** The
-			 * first pass here held the ship 1 km off the target on a fixed axis and
-			 * held the trigger for ninety seconds of game time without ever landing
-			 * a hit. The diagnostics say why in one field: the energy bank fell the
-			 * whole way (so the pulse laser was firing) and the painted mark read
-			 * `onTarget: false` on every frame — the gimbal's own statement that
-			 * the pulse laser is not where the nose is. That rig has landed one on
-			 * a Clean civilian before, so it is copied rather than reinvented, and
-			 * the mark is reported below so the next failure says the same.
+			 * **Three rigs, two of them rejected.** The first pass here held the
+			 * ship 1 km off the target on a *fixed* axis and held the trigger for
+			 * ninety seconds of game time without ever landing a hit: the energy
+			 * bank fell the whole way (so the pulse laser was firing) and the
+			 * painted mark read `onTarget: false` on every frame — the gimbal's
+			 * own statement that the laser is not where the nose is. The
+			 * engagement probe's rig replaced it: 1.2 km behind the carrier along
+			 * its own nose, re-placed and re-aimed (`parkShip`, `aimAt`) every
+			 * frame. That rig lands hits, but it followed an approaching carrier
+			 * through its station and killed the pilot while the scripted fight
+			 * kept stepping — which node #702 made visible, because a death now
+			 * reloads into a checkpoint where it used to leave a dead ship.
+			 *
+			 * This one keeps the second rig's frame — offset from the carrier's
+			 * live position, co-moving, nose re-aimed each frame — and swings the
+			 * offset to the route's lateral, outside the crossing. It is not the
+			 * fixed-axis rig. The landed-fire rows (`landedFireS` and the struck
+			 * check below) are what say it lands, and the mark is reported below
+			 * so a failure says the same as the first one did. Collision and the
+			 * production death callback remain active.
 			 */
 			tether(key, km) {
 				const contact = g.trafficContacts.get(key);
 				if (!contact) return false;
 				const route = g.trafficRoutes.find((r) => r.key === key);
-				const back = unit(
-					route?.nose ? scale(route.nose, -1) : { x: 0, y: 0, z: 1 },
-				);
-				window.__witnessProbe.offset = scale(back, km);
+				const across = frameAcross(route?.nose ?? { x: 0, y: 0, z: 1 });
+				window.__witnessProbe.offset = scale(across, km);
 				g.targetId = key;
 				window.__witnessProbe.parkShip(
 					add(contact.pos, window.__witnessProbe.offset),
@@ -977,7 +989,10 @@ try {
 		const g = window.__seelite;
 		const berths = g
 			.trafficReadout()
-			.stations.map((st) => ({ key: st.id, pos: st.pos }));
+			// The type rides along because a raider outpost hears nothing
+			// (#490 D10, node #491): the earshot reads it, and a berth without
+			// one is not a station the module recognises as lawful.
+			.stations.map((st) => ({ key: st.id, pos: st.pos, type: st.type }));
 		if (berths.length < 2) return { enough: false, berths: berths.length };
 		const apart = (a, b) => p.apartKm(a, b);
 		// A stand-off that is a frame body and a half from the nearest berth: too

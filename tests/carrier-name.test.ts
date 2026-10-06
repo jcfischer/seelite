@@ -140,13 +140,16 @@ describe("the registry", () => {
 		// player has already seen, across every station of the first systems.
 		const galaxy = generateGalaxy(SEED, 0);
 		const rows: [string, string][] = [];
+		// Node #491's raider outpost is new, so no player has seen its
+		// Traffic; the pin is over the stations that were already there.
 		for (const record of galaxy.systems.slice(0, 3))
 			for (const station of generateContents(record).stations)
-				for (const actor of stationTrafficRoster(record.index, station).slice(
-					0,
-					3,
-				))
-					rows.push([actor.callsign, carrierName(record.seed, actor.key, 0)]);
+				if (station.type !== "outpost")
+					for (const actor of stationTrafficRoster(record.index, station).slice(
+						0,
+						3,
+					))
+						rows.push([actor.callsign, carrierName(record.seed, actor.key, 0)]);
 		expect(rows.slice(0, 7)).toEqual([
 			["Porter TR-01", "RIEDBIRA"],
 			["Porter TR-02", "EDBIOR"],

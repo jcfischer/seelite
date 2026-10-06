@@ -37,8 +37,8 @@ const stations = () => {
 };
 
 describe("station Traffic roster", () => {
-	test("Traffic slots join the version-8 persistence Carrier namespace", () => {
-		expect(WORLD_GENERATOR_VERSION).toBe(8);
+	test("Traffic slots join the version-9 persistence Carrier namespace", () => {
+		expect(WORLD_GENERATOR_VERSION).toBe(9);
 		const generated = [...enumerateCarriers(WORLD, 0)];
 		const traffic = generated.filter((carrier) =>
 			carrier.localCarrierId.includes("/traffic-"),

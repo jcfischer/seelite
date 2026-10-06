@@ -34,6 +34,18 @@ export const CHANGELOG: readonly ChangelogEntry[] = [
 		text: "Your ship is now solid to other ships: ram a raider or a passing freighter and you both take the hit, the lighter ship is thrown further, and a freighter struck through its shields is taken home for repair.",
 		node: 664,
 	},
+	// Node #478: proposed copy; principal approval and the main date are pending.
+	{
+		date: "2026-10-05",
+		text: "A faint CORE mark on the cockpit glass now shows which way the centre of the star cluster lies from the system you are in.",
+		node: 478,
+	},
+	// Node #491: proposed copy; principal approval and the main date are pending.
+	{
+		date: "2026-10-04",
+		text: "The most lawless systems now hold a raider outpost, a station of its own out along a planet's orbit; its berths are not open to anyone yet.",
+		node: 491,
+	},
 	// Node #213: proposed copy; principal approval and the main date are pending.
 	{
 		date: "2026-10-04",

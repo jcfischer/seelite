@@ -433,8 +433,16 @@ export const PROBE_CATALOG = Object.freeze(
 		),
 		entry(
 			"probe-hud.mjs",
-			"Checks full-screen HUD sizing and projection of attitude, velocity, target, and docking markers.",
-			["HUD", "projection", "canvas resize", "markers", "cockpit"],
+			"Checks full-screen HUD sizing and projection of attitude, velocity, target, and docking markers, and that the Core mark is painted where the Core bearing projects and its label yields to the selected target's edge label.",
+			[
+				"HUD",
+				"projection",
+				"canvas resize",
+				"markers",
+				"cockpit",
+				"Core bearing",
+				"label declutter",
+			],
 		),
 		entry(
 			"probe-interdiction.mjs",
@@ -520,6 +528,20 @@ export const PROBE_CATALOG = Object.freeze(
 			"probe-live-cockpit.mjs",
 			"Checks the normal cockpit route with the real renderer, world contacts, target cues, and head-look states.",
 			["live cockpit", "contacts", "target cues", "head look", "renderer"],
+		),
+		entry(
+			"probe-market-shelf.mjs",
+			"Docks at a trade station and reads the live Market tab: a capped shelf's MAX mark and its hover text, a blank HELD cell, the HELD cell after a real buy, and a bottom line that keeps only the credits on Market and the goods list on Equipment, and with an accepted consignment aboard the hold line's entrusted tonnes on Market and no HELD cell moved by it.",
+			[
+				"station market",
+				"shelf cap",
+				"MAX marker",
+				"HELD column",
+				"cargo",
+				"commander line",
+				"trade screen",
+				"entrusted cargo",
+			],
 		),
 		entry(
 			"probe-model-viewer.mjs",
@@ -628,6 +650,17 @@ export const PROBE_CATALOG = Object.freeze(
 			"probe-raider-frame.mjs",
 			"Checks that raider flight assist uses the player's local moving frame during a live duel.",
 			["raider flight", "local frame", "flight assist", "duel"],
+		),
+		entry(
+			"probe-raider-outpost.mjs",
+			"Boots a lawless system and checks its raider outpost is generated, placed at its Trojan point, drawn, and refuses clearance as closed while a lawful station still answers.",
+			[
+				"raider outpost",
+				"station generation",
+				"station placement",
+				"docking clearance",
+				"lawless system",
+			],
 		),
 		entry(
 			"probe-relay.mjs",

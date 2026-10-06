@@ -37,7 +37,11 @@ import {
 	BOOT_DIRECT as SRC_BOOT_DIRECT,
 	bootMode,
 } from "../src/boot-mode";
-import { POSTCARD_FRAGMENT_PREFIX, decodePostcard } from "../src/postcard";
+import {
+	POSTCARD_FRAGMENT_PREFIX,
+	POSTCARD_GENERATORS,
+	decodePostcard,
+} from "../src/postcard";
 import {
 	callArguments,
 	codeOf,
@@ -465,8 +469,9 @@ describe("postcardUrl (#406)", () => {
 	});
 
 	test("puts the recipe in the fragment and nothing in the query", () => {
-		const fragment =
-			"postcard=1&gen=8&seed=47&galaxy=0&system=12&t=0&pos=0,0,0&q=0,0,0,1&mode=clear&head=forward";
+		// The current generator, read rather than restated: a pinned version
+		// goes stale at every generator bump and the fragment stops decoding.
+		const fragment = `postcard=1&gen=${POSTCARD_GENERATORS[0]}&seed=47&galaxy=0&system=12&t=0&pos=0,0,0&q=0,0,0,1&mode=clear&head=forward`;
 		const url = new URL(postcardUrl(ORIGIN, fragment));
 		expect(url.search).toBe("");
 		expect(url.pathname).toBe("/");

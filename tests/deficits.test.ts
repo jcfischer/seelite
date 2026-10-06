@@ -32,6 +32,7 @@ import {
 	DEFICIT_HALF_LIFE_MIN,
 	DEFICIT_MAX,
 	HOLD_REFERENCE_T,
+	hasMarket,
 } from "../src/market";
 import { LOCAL_CARRIER_ID } from "../src/station";
 import { generateContents } from "../src/system";
@@ -140,8 +141,11 @@ describe("§5.5 the deficit map is sparse, lazy, and round-trips", () => {
 	test("a full map survives JSON and reads back identically", () => {
 		let map: DeficitMap = {};
 		let t = 0;
+		// Stations with a market only: the map is a market's memory, and node
+		// #491's raider outpost has none, so the quoted 61-row corpus is over
+		// the stations a trade can be recorded at.
 		for (const [i, record] of SYSTEMS.slice(0, 40).entries())
-			for (const s of generateContents(record).stations) {
+			for (const s of generateContents(record).stations.filter(hasMarket)) {
 				t += 7;
 				map = recordTrade(
 					map,

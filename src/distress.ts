@@ -30,6 +30,7 @@
  * was put in place to keep, and one a caller with an optional argument erases.
  */
 import type { CarrierKey } from "./carrier-key";
+import { STATION_LAWFUL, type StationType } from "./station";
 import { NEAR_FAR_KM } from "./units";
 import { length, sub, type Vec3 } from "./vec3";
 
@@ -40,10 +41,12 @@ import { length, sub, type Vec3 } from "./vec3";
  */
 export const DISTRESS_RANGE_KM = 3 * NEAR_FAR_KM;
 
-/** One station as the earshot question needs it: a key to file and a place. */
+/** One station as the earshot question needs it: a key to file, a place, and
+ *  its type, because a raider outpost hears and files nothing (#490 D10). */
 export interface EarshotStation {
 	key: CarrierKey;
 	pos: Vec3;
+	type: StationType;
 }
 
 /**
@@ -53,13 +56,19 @@ export interface EarshotStation {
  * Straight-line distance from the victim, at the moment of the charge: no
  * occlusion, because nothing in this world attenuates a radio and a station
  * behind the star would be a second model rather than a second figure.
+ *
+ * A station that is not lawful (`STATION_LAWFUL`) is skipped whatever its
+ * range — the raider outpost, which reports nobody (#490 D10).
  */
 export const stationsInEarshot = (
 	stations: readonly EarshotStation[],
 	from: Vec3,
 ): CarrierKey[] =>
 	stations
-		.filter((s) => length(sub(s.pos, from)) <= DISTRESS_RANGE_KM)
+		.filter(
+			(s) =>
+				STATION_LAWFUL[s.type] && length(sub(s.pos, from)) <= DISTRESS_RANGE_KM,
+		)
 		.map((s) => s.key);
 
 /**

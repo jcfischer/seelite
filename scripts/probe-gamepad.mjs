@@ -54,6 +54,16 @@
  * toggles the flight assist" and "Square held does not move the throttle" were
  * not part of it, so "nothing else" above does not speak for them.
  *
+ * **The wiring pair was re-run on node #701's exact count**, hardware lane, an
+ * M1 Pro on a loaded host, with every row of the probe present. The timer mutant reds
+ * the pair and only the pair: **5 and 6 calls across 10 frames**, and **49 and
+ * 51 calls in 2 s** with `rAF` stubbed — the 2 s figure well under the one
+ * above, a cause not isolated. A second `pad.poll()` in `animate` reds only the first // glossary-ignore: pad
+ * of the pair at **20 across 10**, and a poll on every other frame only the
+ * first at **5 across 10**. The first check alone cannot tell a timer from a
+ * frame poll: on a display whose period is near 16 ms the timer could read 10.
+ * The stubbed arm is the decisive one.
+ *
  * Two checks were also wrong before they were right, and both were caught by a
  * red rather than by review. The deadzone check ran *after* the stick arms and
  * read −0.0117 rad/s of the assist's exponential ease-out as a leak, so it runs
@@ -404,20 +414,28 @@ try {
 	// `probe-boot.mjs` fails if `Game` grows one.
 
 	{
-		await page.evaluate(() => window.__pad.resetCalls());
-		const { frames: rendered } = await frames(10);
-		const whileRunning = await page.evaluate(() => window.__pad.calls);
+		const {
+			frames: rendered,
+			calls: whileRunning,
+			perFrame,
+		} = await page.evaluate(() => window.__pad.callsAcrossFrames(10));
 		check(
-			// **N or N+1, and the +1 is the measurement's rather than the game's.**
-			// The probe's counter is its own `rAF` callback, registered separately
-			// from the game's, so the frame at either boundary can carry a poll the
-			// counter has not reached yet — this read 11 across 10 on every run.
-			// It is still not a tolerance: 2N and N/2 both fail, which is what
-			// separates a per-frame poll from a timer that happens to be close.
-			// The arm below is the decisive one.
-			"the pad is read once per rendered frame",
-			whileRunning === rendered || whileRunning === rendered + 1,
-			`${whileRunning} call(s) across ${rendered} frames`,
+			// **Exactly one in every frame.** The count is read inside the probe's
+			// own `rAF` callback, once per frame, so each reading sits at the same
+			// place in that frame's callback order and the game's poll lands
+			// between two of them once per frame. This used to be a reset, a wait
+			// and a read in three round trips, accepting N or N+1 in total — and
+			// on a loaded host it read N+2 (node #701's reds). The game kept
+			// rendering while each trip was in flight; `tests/fake-pad.test.ts` // glossary-ignore: pad
+			// says where that attribution comes from, and that it is not shipped.
+			// Per frame rather than in total (sage, round 2): two polls every
+			// other frame also total N. Any frame reading 0 or 2 fails, so 2N,
+			// N/2 and that alternation all do. A timer that happens to fire once
+			// between frames still reads all ones, and the arm below is the one
+			// that catches it.
+			"the pad is read once per rendered frame", // glossary-ignore: pad
+			rendered === 10 && perFrame.every((c) => c === 1),
+			`${whileRunning} call(s) across ${rendered} frames, per frame [${perFrame.join(",")}]`,
 		);
 
 		const stopped = await page.evaluate(async () => {

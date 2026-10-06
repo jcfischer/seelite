@@ -92,6 +92,7 @@ try {
 		const gimbalMod = await import("/src/gimbal.ts");
 		const wreckMod = await import("/src/raider-wreck.ts");
 		const conditionMod = await import("/src/ship-condition.ts");
+		const proxyMod = await import("/src/station-proxy.ts");
 		const dt = g.units.MAX_DT;
 		const frame = () => {
 			g.step(dt);
@@ -107,9 +108,60 @@ try {
 		const scale = (a, k) => ({ x: a.x * k, y: a.y * k, z: a.z * k });
 		const SLOW = new Set(["local-departure", "local-approach"]);
 
-		/** A flying, slow route of the wanted kind at the clock as it stands. */
-		const findRoute = (want) => {
+		/** The tether's offset: `km` behind the carrier, off its nose. */
+		const tetherOffset = (key, km) => {
+			const route = g.trafficRoutes.find((r) => r.key === key);
+			const back = unit(
+				route?.nose ? scale(route.nose, -1) : { x: 0, y: 0, z: 1 },
+			);
+			return scale(back, km);
+		};
+		/**
+		 * Where `tether` puts the ship: off the carrier's route carried to the
+		 * clock, the way the presentation carries it (`predictAtRender`). The
+		 * route is the authority's 10 Hz projection, a tick behind a station that
+		 * moves ~3 km a tick; read raw, it passed the first tether below at
+		 * 4.0 km clear of a station the drawn carrier put the pilot 0.75 km from.
+		 * **Not off the contact**: `seek` runs the clock without drawing, so a
+		 * contact left from an earlier fight is wherever the last frame put it.
+		 */
+		const tetherPoint = (key, km) => {
+			const route = g.trafficRoutes.find((r) => r.key === key);
+			const sinceS = g.world.gameTime - g.trafficProjectionAtS;
+			if (!route || !Number.isFinite(sinceS)) return null;
+			return add(
+				add(route.pos, scale(route.vel, Math.max(0, sinceS))),
+				tetherOffset(key, km),
+			);
+		};
+		/**
+		 * **Clear of every station's solid, with room to spare (node #697).**
+		 * A slow route is slow because it is beside its station, and since #663
+		 * a station is solid: a tether 1.2 km behind a carrier leaving its berth
+		 * put the pilot 0.75 km from the trade station's centre and closing,
+		 * inside its 0.62 km reach within five seconds, and the impacts there
+		 * left the hull at 0 before the armed hull was found — which then,
+		 * correctly, never fired on a dead pilot. The reach is read off the proxy
+		 * the sim sweeps, never restated. The margin is the probe's own: room for
+		 * the first frames of the fight, while the carrier is still near the
+		 * station it left or is making for.
+		 */
+		const STATION_CLEARANCE_KM = 2;
+		const clearOfStations = (pos) =>
+			pos !== null &&
+			g.world.system.contents.stations.every((station) => {
+				const body = g.world.system.byId.get(station.id);
+				if (!body) return true;
+				const reach = proxyMod.proxyReachKm(
+					proxyMod.selectedStationProxy(station),
+				);
+				return len(sub(pos, body.pos)) > reach + STATION_CLEARANCE_KM;
+			});
+
+		/** Every flying, slow route of the wanted kind at the clock as it stands. */
+		const findRoutes = (want) => {
 			const record = g.world.system.record;
+			const found = [];
 			for (const route of g.trafficRoutes) {
 				if (!SLOW.has(route.phase)) continue;
 				const actor = g.trafficActors.find((a) => a.key === route.key);
@@ -124,17 +176,20 @@ try {
 					g.world.gameTime,
 				);
 				if (want.standing && standing !== want.standing) continue;
-				return { key: route.key, actor, standing };
+				found.push({ key: route.key, actor, standing });
 			}
-			return null;
+			return found;
 		};
 
 		window.__engagementProbe = {
 			frame,
-			/** Run the clock until a route of the wanted kind is flying slowly. */
-			seek(want, maxSeconds) {
+			/** Run the clock until a route of the wanted kind is flying slowly,
+			 *  where a tether `km` behind it is clear of every station. */
+			seek(want, km, maxSeconds) {
 				for (let t = 0; t < maxSeconds; t += dt) {
-					const found = findRoute(want);
+					const found = findRoutes(want).find((c) =>
+						clearOfStations(tetherPoint(c.key, km)),
+					);
 					if (found) return found;
 					// Authority only: nothing is drawn while the clock runs to a route.
 					g.step(dt);
@@ -144,17 +199,16 @@ try {
 			/** Put the ship `km` behind the carrier, co-moving, nose on it. */
 			tether(key, km, offNoseRad = 0) {
 				const route = g.trafficRoutes.find((r) => r.key === key);
-				const contact = g.trafficContacts.get(key);
-				const pos = contact?.pos ?? route.pos;
-				const vel = contact?.velocity ?? route.vel;
-				const back = unit(
-					route?.nose ? scale(route.nose, -1) : { x: 0, y: 0, z: 1 },
-				);
-				window.__engagementProbe.offset = scale(back, km);
-				g.world.ship.pos = add(pos, window.__engagementProbe.offset);
-				g.world.ship.vel = { ...vel };
+				// The point `seek` judged clear, so the check and the placement
+				// are one expression.
+				g.world.ship.pos = tetherPoint(key, km);
+				window.__engagementProbe.offset = tetherOffset(key, km);
+				g.world.ship.vel = { ...route.vel };
 				g.throttle = 0;
-				window.__engagementProbe.aimAt(pos, offNoseRad);
+				window.__engagementProbe.aimAt(
+					sub(g.world.ship.pos, window.__engagementProbe.offset),
+					offNoseRad,
+				);
 				g.setHeadLook("forward");
 			},
 			/** The offence pair a write is measured against: the status as it
@@ -271,7 +325,7 @@ try {
 		const p = window.__engagementProbe;
 		const g = window.__seelite;
 		const { trafficInSights } = await import("/src/traffic-engagement.ts");
-		const target = p.seek({ armed: false, standing: "clean" }, 900);
+		const target = p.seek({ armed: false, standing: "clean" }, 1.2, 900);
 		if (!target) return { target: null };
 		// Inside and outside the gimbal's cone, read off the page.
 		const off = p.gimbalConeRad / 2;
@@ -792,7 +846,7 @@ try {
 	const next = await page.evaluate(() => {
 		const p = window.__engagementProbe;
 		const g = window.__seelite;
-		const target = p.seek({ armed: false, standing: "clean" }, 900);
+		const target = p.seek({ armed: false, standing: "clean" }, 1.2, 900);
 		if (!target) return { target: null };
 		p.tether(target.key, 1.2);
 		p.frame();
@@ -1012,8 +1066,16 @@ try {
 	const armed = await page.evaluate(() => {
 		const p = window.__engagementProbe;
 		const g = window.__seelite;
-		const target = p.seek({ armed: true }, 1800);
+		const target = p.seek({ armed: true }, 3, 1800);
 		if (!target) return { target: null };
+		// **A drop in the pools is not return fire on its own (node #697).** Since
+		// #663 a station is solid, and an impact lands through the same
+		// `takeDamage` as a hit: before the tether kept clear, this row's first
+		// frame met the shipyard 1.3 km from its centre, inside its 1.64 km reach,
+		// for 3947. One frame later it would have read as the hull firing back. So
+		// the fight must also have met nothing — the counter #663 kept for this,
+		// counted from before the tether so its first frame is inside the count.
+		const impactsBefore = g.collisionImpacts;
 		p.tether(target.key, 3);
 		p.frame();
 		g.targetId = target.key;
@@ -1035,11 +1097,19 @@ try {
 		const readout = g
 			.trafficReadout()
 			.contacts.find((c) => c.key === target.key);
-		return { target, returned, readout };
+		return {
+			target,
+			returned,
+			impacts: g.collisionImpacts - impactsBefore,
+			lastImpact: g.lastCollisionImpact,
+			before,
+			after: { ...g.condition },
+			readout,
+		};
 	});
 	check(
 		"an armed hull, struck, fires back (H3)",
-		armed.target !== null && armed.returned,
+		armed.target !== null && armed.returned && armed.impacts === 0,
 		JSON.stringify(armed),
 	);
 } finally {

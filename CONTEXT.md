@@ -209,6 +209,8 @@ is a charge, and a **held launch** is Traffic refusing one — four senses the s
 English word reaches for, which is why each has its own name here.
 _Avoid_: Inventory, cargo bay, hold contents (for the manifest)
 
+> **Scope of the word `HELD`** (node #696, #473 D10). Two screens print it and they name different things. The docked Market tab's `HELD` column is the player's **Hold** — the pilot's own lines, per good, read through `pilotGoods` in `src/hold.ts`; a consignment's share stays in the hold line. The Flight console's `HELD` row is a carrier's **Manifest** (above). A ship is carrying something in both, which is why the plain word serves both glasses; the identifiers behind them — `held` on a market row, `manifest` on a carrier — are what keep the two apart.
+
 > **Scope of the `hold` alias** (added by [#486](https://github.com/jcfischer/seelite/pull/486), the same reading as the `Command` note below). A fifth English sense is a **held key**: `Trigger.hold` in `src/commands.ts` says a binding is flown by keeping a key down rather than by pressing it — #369 D3 splits `x` pressed from `x` held on exactly that — and #381's storage slice writes it into `seelite:bindings`. It is a property of an input and never of cargo, a carrier or a launch, so it takes no canonical name here; it is listed because it is durable now, and a reader meeting `{ kind: "key", hold: true }` in a stored blob should find it rather than wonder which of the four it is. The `_Avoid_` line above is **Hold**'s and not this note's.
 
 **Holdings**:
@@ -279,6 +281,20 @@ at the wreck. Destroying it sets the repair back by a wreck and a repair
 later. It is what makes the relay's recovery interruptible. `src/relay-tender.ts`
 owns it.
 _Avoid_: Repair convoy, repair drone
+
+**Raider outpost**:
+The fourth station type, `outpost` (#490): the raiders' haven. Placed by #491 in
+every system whose `raiderSlotCount` is at its height — the two most lawless
+governments — at a Trojan point of a drawn planet's orbit, star-centric and a
+sixth of a turn from the planet, so it is a place of its own and never the
+station the **Pirate relay** watches. Its berth admits only a Wanted pilot
+(D5) and it witnesses nothing (D10), but until it has a market (#490 D6) its
+berth is closed to every pilot, refused as `"closed"` rather than as hostility.
+Its Traffic stays on its own side: no lawful station's carrier flies to it.
+`galaxy-generation.md` §6.4 owns where it stands and `station-types.md` §5.5
+what it carries; `src/system.ts`'s `hasRaiderOutpost` is the incidence rule.
+"Outpost" means this and nothing else since #490 D2 withdrew its retirement.
+_Avoid_: refinery outpost, haven (as a type name)
 
 **Route detection**:
 The pirate relay's dial on the leg law (`raider-slots.ts`' `RouteDetection`):
@@ -475,6 +491,10 @@ _Avoid_: Active request (when conflating tracking with acceptance)
 An accepted request whose objective has been satisfied but whose result has not yet been reported to the requester. `docs/specs/missions-and-requests.md` §3–5 owns report eligibility and settlement.
 _Avoid_: Completed request (before reporting)
 
+**Current** / **Past** (Requests tabs):
+The two halves of the Requests list. Current is the work still going — accepted and ready-to-report requests — beside the offers and kept leads; Past is the outcomes, completed, cancelled and failed. A view over the journal's status, never a status of its own. `docs/specs/missions-and-requests.md` §6 owns the partition (node #690).
+_Avoid_: Active / Archive, History (as if a tab were stored on the request)
+
 **Search region**:
 The bounded area a lead gives the pilot to search before identifying a hidden target. `docs/specs/missions-and-requests.md` owns region cues and identification boundaries (D5 and §6).
 _Avoid_: Target position (before identification)
@@ -554,7 +574,7 @@ The third rung of an offence against a Clean carrier — `ASSAULT_FIRE_S` second
 **Scope note, not an _Avoid_ line.** `assault` is canonical as the save's and API's spelling — `OFFENCE_HEAT.assault`, `assaultCharged`, `LegalStatus.assaulted` — so an _Avoid_ line naming it would misfire on every correct use of it, which is the shape §Language's Transit lane note rules out by name. What is worth saying is the scope: the strike is an assault too, so "charged with assault" means two rungs unless the rung is named. "Sustained-fire charge" is the phrase to drop, because the charge is the heat and the fire is the act.
 
 **Hearer**:
-A station that was within earshot when an offence was committed against a carrier — `DISTRESS_RANGE_KM` in a straight line from the **victim**, never from the pilot, which is #396's amendment of the frame-body reach `civilian-combat.md` H5 had inherited. `src/distress.ts`'s `stationsInEarshot` computes the set, inside `legal.ts`'s `chargeOffence`, which takes every station in the system as a required fact (#633), so an empty set is the answer "nobody heard it" and not the absence of having looked. **It is the physics, not the verdict.** Being heard is what puts a berth in `LegalStatus.witnesses`, and the refusal H5 names needs the heat the same act filed as well — which is why `distress.ts` returns keys and no judgement, and why the two words are not interchangeable in either direction.
+A lawful station (any but a **Raider outpost**, which hears nothing: #490 D10) that was within earshot when an offence was committed against a carrier — `DISTRESS_RANGE_KM` in a straight line from the **victim**, never from the pilot, which is #396's amendment of the frame-body reach `civilian-combat.md` H5 had inherited. `src/distress.ts`'s `stationsInEarshot` computes the set, inside `legal.ts`'s `chargeOffence`, which takes every station in the system as a required fact (#633), so an empty set is the answer "nobody heard it" and not the absence of having looked. **It is the physics, not the verdict.** Being heard is what puts a berth in `LegalStatus.witnesses`, and the refusal H5 names needs the heat the same act filed as well — which is why `distress.ts` returns keys and no judgement, and why the two words are not interchangeable in either direction.
 _Avoid_: Bystander, neighbour (both say "near" where the rule is "heard")
 
 **Causal-episode ordinal**:
@@ -617,7 +637,7 @@ _Avoid_: Touchdown deck, apron, exterior pad
 **Berth**:
 Where one ship parks in a station interior, addressed as **interior face × depth band** — deck, port wall, starboard wall or overhead; near or deep. In a bay the face is the wall the berth is bolted to; on a landing pad there is one surface, so the face is the *side of the landing lane* the berth stands on and every berth is in the `near` band, because a deck has no depth. Its **family** (open deck pad, wall-side berth, recessed service cradle) changes presentation and parked pose and never the docking interaction. It accepts a hull when its declared clear length, beam and height contain that hull's envelope; there is no S/M/L class. `docs/specs/docking.md` §13.2 owns the catalogue, the fit predicate and the allocation.
 _Avoid_: Docking bay, slot, pad, landing pad
-These are aliases for **a berth** and nothing else. **The scope note is the point of the entry, not a footnote to it**, and it has grown once already: the repo has had to correct one alias that read as banning an English word. "Slot" is an aperture kind — `aperture.kind === "slot"` is code. "Pad" now carries **four** senses that are not this one — a berth *family* (open deck pad), the surface a ship settles onto (`berth-pad`), since #165 an aperture kind and the interior presentation that goes with it (**Landing pad** above), and since #283 the **game controller**: `src/gamepad.ts`, `PadFrame`, `padIntents`, `docs/gamepad.md`. That fourth one arrived as a *copy* — the module is byte-identical to seekolous's and says "pad" throughout — so it could not have been renamed here even if the sense were worth renaming, and it is not: a controller is what every player calls a pad. Since #90 "slot" carries a **second** sense of its own: a **save slot** is one named save — `src/save-store.ts`, `CommanderCatalog.slots()`, `exportSlot`, and #89's D6, which ratified the word. It holds two records, `live` and `lastDocked`, and has nothing to do with where a ship parks. The player never sees the word: what a player sees of a save slot is a **Commander** (below). The first version of this sentence claimed the two senses "do not meet in any one file", and the change that introduced it refuted that six lines apart: `releaseBerth` and `saveDirty` sit in the same block of `main.ts`, because releasing a berth is exactly when a save stops describing a parked ship. They meet, and it does not matter — the disambiguation is the word beside it, and `saveSlot`, `exportSlot` and `SaveRecordKind` never read as a place to park. Since #619 "slot" has a **third** sense: a **vent slot** (`VENT_SLOTS`, `VentSlot`) names a thruster's place on a hull, one vocabulary across the roster (`flight-model.md` §3.4.1). It is never a berth and never an aperture. A reviewer flagging one of those has found the alias rule firing on an English word rather than on a synonym for a berth.
+These are aliases for **a berth** and nothing else. **The scope note is the point of the entry, not a footnote to it**, and it has grown once already: the repo has had to correct one alias that read as banning an English word. "Slot" is an aperture kind — `aperture.kind === "slot"` is code. "Pad" now carries **four** senses that are not this one — a berth *family* (open deck pad), the surface a ship settles onto (`berth-pad`), since #165 an aperture kind and the interior presentation that goes with it (**Landing pad** above), and since #283 the **game controller**: `src/gamepad.ts`, `PadFrame`, `padIntents`, `docs/gamepad.md`. That fourth one arrived as a *copy* — the module is byte-identical to seekolous's and says "pad" throughout — so it could not have been renamed here even if the sense were worth renaming, and it is not: a controller is what every player calls a pad. Since #90 "slot" carries a **second** sense of its own: a **save slot** is one named save — `src/save-store.ts`, `CommanderCatalog.slots()`, `exportSlot`, and #89's D6, which ratified the word. It holds two records, `live` and `lastDocked`, and has nothing to do with where a ship parks. The player never sees the word: what a player sees of a save slot is a **Commander** (below). The first version of this sentence claimed the two senses "do not meet in any one file", and the change that introduced it refuted that six lines apart: `releaseBerth` and `saveDirty` sit in the same block of `main.ts`, because releasing a berth is exactly when a save stops describing a parked ship. They meet, and it does not matter — the disambiguation is the word beside it, and `saveSlot`, `exportSlot` and `SaveRecordKind` never read as a place to park. Since #619 "slot" has a **third** sense: a **vent slot** (`VENT_SLOTS`, `VentSlot`) names a thruster's place on a hull, one vocabulary across the roster (`flight-model.md` §3.4.1). It is never a berth and never an aperture. And **Carrier slot** above is a fourth: the row a carrier is filed under — a **Raider slot**, the relay's, one of a station's **Traffic roster** — with `raider-slots.ts` and `relay-slot.ts` named for it; a berth is where a ship parks, a Carrier slot is what its save row is filed under. A reviewer flagging one of those has found the alias rule firing on an English word rather than on a synonym for a berth. <!-- glossary-ignore: slot, pad, landing pad -->
 
 **Commander**:
 What the player sees of one **save slot**: a named save, with its galaxy seed and
@@ -661,7 +681,7 @@ _Avoid_: tier (that is #26's hull tier), grade
 **Banked credit**:
 Ladder credit the save carries. Credit earned in flight — a kill, a first
 arrival — is **unbanked** until the next dock banks it, and is lost with the
-ship before that (#183 D7): a death restores the last dock's commander record (`CommanderRecord`, #654) — except the ladders' `playedS`, which keeps the time flown before the death (#581) — and a save
+ship before that (#183 D7): a death restores the commander record as it last launched (`CommanderRecord`, #654, #660 D1) — except the ladders' `playedS`, which keeps the time flown before the death (#581) — and a save
 taken in flight does not carry it. Trade credit is earned docked, so it banks
 at once.
 _Avoid_: score, XP
@@ -781,8 +801,15 @@ which is #100's measurement. §11 of `galaxy-generation.md` is where the rule is
 written down once, and §12 is where the measured cone figures are — how much of a
 sky's other systems a star near the rim puts inside a cone on the centre, against
 what uniform spacing would — reprinted by `scripts/measure-sky-density.ts core`.
-`coreBearing` in `src/galaxy-frame.ts`.
+`coreBearing` in `src/galaxy-frame.ts`. The sky does not show it; the **Core
+mark** on the glass does (`hud-and-scanner.md` §5.5, node #478).
 _Avoid_: The way home, galactic down
+
+**Core mark**:
+The cockpit glass's mark for the **Core bearing** at the live system: a dot
+between two brackets, labelled `CORE`, on screen only. An instrument rather than
+a picture, because the sky withholds the core (node #478).
+`hud-and-scanner.md` §5.5 owns it; `drawCoreMark` in `src/main.ts` draws it.
 
 **Derived sky**:
 The points that *are* systems — one for every other system in the galaxy, at its

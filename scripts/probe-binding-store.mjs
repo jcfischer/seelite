@@ -274,6 +274,19 @@ const tab = () =>
 		return {
 			owner:
 				body.querySelector("[data-live-controls-owner]")?.textContent ?? "",
+			// Whose layout the characters are, and every key marked as bound on
+			// another one (node #382), each as `row: key` off the drawn kbd.
+			attribution:
+				body
+					.querySelector("[data-live-controls-attribution]")
+					?.getAttribute("data-live-controls-attribution") ?? null,
+			attributionText:
+				body.querySelector("[data-live-controls-attribution]")?.textContent ??
+				"",
+			marked: [...body.querySelectorAll("[data-live-controls-off-layout]")].map(
+				(m) =>
+					`${m.closest("[data-live-controls-row]")?.getAttribute("data-live-controls-row")}: ${m.querySelector("kbd")?.textContent}`,
+			),
 			notices:
 				band && band.checkVisibility() === true
 					? [...band.querySelectorAll("[data-live-controls-notice]")].map(
@@ -358,6 +371,43 @@ check(
 		mixed.notices[0].startsWith("rejected:") &&
 		/roll/i.test(mixed.notices[0]),
 	JSON.stringify(mixed?.notices ?? null),
+);
+
+check(
+	"a row rebound on a US keyboard is printed as the defaults are, unmarked",
+	mixed !== null &&
+		mixed.attribution === "authored" &&
+		mixed.marked.length === 0,
+	JSON.stringify(mixed && { a: mixed.attribution, marked: mixed.marked }),
+);
+
+// ---------------------------------------------------------------------------
+// A row bound on another keyboard prints what that keyboard typed, marked, and
+// the header says whose characters the rest are (node #382). `ü` is what a
+// German keyboard types at BracketLeft, which a US one types as `[`.
+// ---------------------------------------------------------------------------
+const offLayout = await bootOn([
+	{
+		command: "fly.pitchUp", // glossary-ignore: Command
+		from: { kind: "key", key: "s", hold: true, code: "KeyS" },
+		to: { kind: "key", key: "ü", hold: true, code: "BracketLeft" },
+	},
+]);
+check(
+	"a key bound on another layout prints its recorded character, and only it is marked",
+	offLayout !== null &&
+		offLayout.notices.length === 0 &&
+		offLayout.marked.length === 1 &&
+		offLayout.marked[0] === "fly.pitchUp: hold ü",
+	JSON.stringify(offLayout && { n: offLayout.notices, m: offLayout.marked }),
+);
+check(
+	"and the header says the rest are a US keyboard's and names the mark",
+	offLayout !== null &&
+		offLayout.attribution === "recorded" &&
+		offLayout.attributionText.includes("US keyboard") &&
+		offLayout.attributionText.includes("◆"),
+	JSON.stringify(offLayout?.attributionText ?? null),
 );
 
 // ---------------------------------------------------------------------------

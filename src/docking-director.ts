@@ -39,6 +39,7 @@ import {
 	type EntryPose,
 	evaluateEntry,
 	grantLive,
+	hostileAtMouth,
 	signedRollDeg,
 } from "./docking";
 import {
@@ -248,11 +249,16 @@ export function dockingDirector(input: {
 	 *  so the mark arrives before the denial does, rather than after a run the
 	 *  pilot could not have known to abort. */
 	refusedByLaw?: boolean;
+	/** Whether this station's berths admit nobody (`ClearanceRequest.closed`,
+	 *  node #491). **It silences the law's mark and not the flip's** — the rule is
+	 *  `hostileAtMouth`'s, shared with `attemptEntry`. The
+	 *  closure itself is spoken by the denial a request gets. */
+	closed?: boolean;
 	/** Traffic's answer for this station's lane, read only under a live grant. */
 	laneWait?: DirectorLaneWait | null;
 }): DirectorState {
 	const { stationId, stationPos, frame, pose, state, gameTime } = input;
-	const hostile = state.hostile || input.refusedByLaw === true;
+	const hostile = hostileAtMouth(state, input);
 	const evaluation = evaluateEntry(frame, pose, { hostile });
 	const live = grantLive(state, gameTime);
 	const rangeKm = length(pose.rel);
@@ -335,7 +341,9 @@ function blockingOf(
 			text:
 				state.clearance.reason === "no berth that fits"
 					? "DO NOT ENTER · clearance denied · no berth that fits this hull"
-					: `DO NOT ENTER · clearance denied · ${state.clearance.reason} scan`,
+					: state.clearance.reason === "closed"
+						? "DO NOT ENTER · clearance denied · no berth open to you"
+						: `DO NOT ENTER · clearance denied · ${state.clearance.reason} scan`,
 		};
 	if (live) return null;
 	if (state.clearance.kind === "queued")

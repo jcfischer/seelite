@@ -38,6 +38,7 @@ import {
 	listsCommodity,
 	marketQuote,
 	marketRow,
+	QUANTITY_CAP,
 	type QuoteFn,
 	shelfQuantity,
 	stockResponse,
@@ -159,6 +160,18 @@ export interface ConsoleMarketRow {
 	priceDeltaCr?: number;
 	/** The same, in units on the shelf. Present iff the deficit is non-zero. */
 	quantityDelta?: number;
+	/**
+	 * Units of this good the pilot owns, in the good's own unit — the HELD
+	 * column (#473 D10). On **every** row, listed or not: a good this
+	 * station does not trade can still be aboard, and the row is where a pilot
+	 * looks for it.
+	 *
+	 * Entrusted job cargo is not in it and cannot be: it is read off the hold
+	 * projection's pilot lines (`pilotGoods` in `hold.ts`), and a consignment
+	 * is the requester's, not per good on this screen. #443's hold line, drawn
+	 * above these rows on every tab, carries its tonnes.
+	 */
+	held: number;
 }
 
 /** What `stationMarketScreen` prices a row with. Injectable **only** so §8.6's
@@ -197,6 +210,15 @@ export interface StationMarketScreenInput {
 	 */
 	deficitOf: (goodName: string) => number;
 	/**
+	 * The pilot's own goods for the HELD column (#473 D10) — `pilotGoods` of
+	 * the console's hold projection, so `hold.ts` alone decides whose a line is.
+	 *
+	 * Required and not defaulted, for `holdT`'s reason below: a screen that
+	 * defaulted it to empty would draw a blank column over a full hold, and a
+	 * blank cell is exactly what this column uses to mean *none aboard*.
+	 */
+	cargo: Readonly<Record<string, number>>;
+	/**
 	 * The flown hull's hold, tonnes — what §5.2's response saturates against
 	 * (#182).
 	 *
@@ -221,12 +243,14 @@ export function stationMarketScreen(
 	row: MarketRowFn = marketRow,
 	quote: QuoteFn = marketQuote,
 ): readonly ConsoleMarketRow[] {
-	const { station, economy, gameTimeMin, deficitOf, holdT, displayTL } = input;
+	const { station, economy, gameTimeMin, deficitOf, holdT, displayTL, cargo } =
+		input;
 	return COMMODITIES.map((commodity): ConsoleMarketRow => {
+		const held = cargo[commodity.name] ?? 0;
 		// §8.5.1: the test comes first. Asking for a price so the row can be
 		// greyed out throws at every non-fence station in the galaxy.
 		if (!listsCommodity(commodity, station))
-			return { commodity, listed: false };
+			return { commodity, listed: false, held };
 		const base = row(commodity, economy, station, gameTimeMin);
 		const deficit = deficitOf(commodity.name);
 		const midCr = stockResponse(base.priceCr, deficit, holdT);
@@ -237,13 +261,14 @@ export function stationMarketScreen(
 		const { buyCr, sellCr } = quote(midCr, displayTL);
 		const quantity = shelfQuantity(base.quantity, deficit);
 		if (deficit === 0)
-			return { commodity, listed: true, buyCr, sellCr, quantity };
+			return { commodity, listed: true, buyCr, sellCr, quantity, held };
 		return {
 			commodity,
 			listed: true,
 			buyCr,
 			sellCr,
 			quantity,
+			held,
 			// Against *this* epoch's base, which is what `base` is: it was derived
 			// from the station's identity and the clock a line ago rather than
 			// remembered from the last visit. And measured on the column it is drawn
@@ -256,6 +281,30 @@ export function stationMarketScreen(
 	});
 }
 
+/**
+ * The word a shelf at `QUANTITY_CAP` carries after its count (#473 D2, D5).
+ *
+ * **`MAX` and not `FULL`.** In this console "full" names a till refusal —
+ * `cargo-full`, `fuel-full` — and a sale into a capped shelf is *accepted*
+ * under today's rule. `MAX` states the limit without claiming a refusal. If
+ * #689 rules that the till refuses there, the word and the sentence below
+ * change together.
+ */
+export const SHELF_MAX_MARK = "MAX";
+
+/**
+ * The hover text on `SHELF_MAX_MARK` (#473 D3). The cap is read off
+ * `QUANTITY_CAP` rather than written in, because #689 may move it.
+ *
+ * **"Down to a floor", not "each sale lowers the price".** D3 ruled the second
+ * form, and it is false twice over: `stockResponse` clamps at
+ * `DEFICIT_SATURATION_RUNS` of the hold, so past it a sale leaves both quotes
+ * where they were, and a small sale of a cheap good moves the mid by less than
+ * one `PRICE_STEP_CR`. The clause states the direction and the limit and
+ * claims neither of those.
+ */
+export const SHELF_MAX_TITLE = `Shelf at its ${QUANTITY_CAP}-unit limit. The station still buys; sales lower the price, down to a floor.`;
+
 /** Canonical printed form of a market row, for rendering and redraw detection. */
 export function marketDisplayValues(row: ConsoleMarketRow) {
 	return {
@@ -265,6 +314,13 @@ export function marketDisplayValues(row: ConsoleMarketRow) {
 		buy: row.listed ? priceLabel(row.buyCr ?? 0) : null,
 		sell: row.listed ? priceLabel(row.sellCr ?? 0) : null,
 		shelf: row.listed ? `${row.quantity ?? 0} ${row.commodity.unit}` : null,
+		// Keyed on what the shelf *reads*, not on why: Gold's generated quantity
+		// is always the cap, and a sale into a capped shelf clamps back to it, so
+		// both show the mark with no trade at this station needed (#473 D2).
+		shelfMark:
+			row.listed && row.quantity === QUANTITY_CAP ? SHELF_MAX_MARK : null,
+		// Blank rather than `0 t`, so the rows that carry cargo stand out (D10).
+		held: row.held > 0 ? `${row.held} ${row.commodity.unit}` : null,
 		priceDelta:
 			row.priceDeltaCr === undefined ? null : signedDelta(row.priceDeltaCr, 1),
 		quantityDelta:

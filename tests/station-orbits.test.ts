@@ -29,6 +29,8 @@ import {
 	forEachHostedStation,
 	forEachPlacedStation,
 	forEachSystem,
+	notOutpostRow,
+	outpostSystems,
 	shellViolation,
 	stationRows,
 	worldSeeds,
@@ -44,14 +46,23 @@ describe("station placement is stable against added draws", () => {
 	});
 
 	test("unaffected stations match the baseline; relocated shipyards keep their draws", () => {
-		const now = stationRows(baseline.worldSeed, baseline.galaxies);
+		// Node #491's raider outpost is new since the capture and is set aside on
+		// both sides; that every other row is unmoved is the evidence its
+		// placement drew on its own stream. The set-aside count is pinned to the
+		// generator's rule, so the filter cannot hide a station of another type.
+		const all = stationRows(baseline.worldSeed, baseline.galaxies);
+		const now = all.filter(notOutpostRow);
+		expect(all.length - now.length).toBe(
+			outpostSystems(baseline.worldSeed, baseline.galaxies),
+		);
+		const rows = baseline.rows.filter(notOutpostRow);
 		// Count first: a length mismatch means stations appeared or vanished, and
 		// the row-by-row diff below would then misalign and report every station
 		// as changed rather than naming the real one.
-		expect(now.length).toBe(baseline.rows.length);
+		expect(now.length).toBe(rows.length);
 		let relocated = 0;
 		for (let i = 0; i < now.length; i++) {
-			const before = baseline.rows[i].split("\t");
+			const before = rows[i].split("\t");
 			const after = now[i].split("\t");
 			if (before[2] !== "station-shipyard" || before[4] === after[4]) {
 				expect(after).toEqual(before);

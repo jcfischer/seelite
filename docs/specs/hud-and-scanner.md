@@ -589,6 +589,54 @@ neighbour's label in and out as they ran down. Under the share form one widest
 case covers the whole roster, which is the thing the percentage bought for the
 fit; `tests/duel-hud.test.ts` holds it over every hull's walk to its kill.
 
+### 5.5 The Core mark
+
+Built under [#478](https://github.com/jcfischer/seelite/issues/478), arm 3 of
+that node's four. **The sky withholds the cluster's core on purpose, and the
+glass gives the bearing instead.** The derived sky (#431) draws the other systems
+as points at their true bearings, and the cone they make toward the core stays
+under the density the invented layer lays in every direction, from every
+observer the instrument sweeps — `bun scripts/measure-sky-density.ts core` prints the figures and
+is their only owner. The principal judged that sparse sky the right look, over the
+denser field it replaced, so the sky is not made denser to show the core. The
+**Core bearing** is a fact that carries information rather than light, and an
+instrument is where such a fact goes.
+
+**What it draws.** A dot between two brackets, `( · )`, labelled `CORE`, where
+the Core bearing at the live system lands on the glass. The bearing is
+`systemCoreBearing` in `src/galaxy-frame.ts`, read once per system by `main.ts`.
+The sky bake's haze reads the same value, so the glow and the mark cannot point
+two ways (`tests/galaxy-frame.test.ts` holds the wiring). The bearing is at
+infinity, so it moves only on a jump, and the mark moves on the glass only as the
+ship turns.
+
+**Where it ranks.** §4's attention order puts passive system information last,
+and the mark is that. It takes the cool tone of the attitude reference, faint, and
+no other mark on the glass has its shape, so it reads without its hue. Its rank
+is in its label: the label goes through §3's declutter pass last, after the
+selected target's name (on the glass, or beside its edge arrow when the target
+is off it) and the context labels, so the label gives way on a collision and
+never overprints a name. The brackets and the dot are not decluttered: they are
+painted after the body markers and can cross another mark or its name. Cockpit
+view only, with the horizon line: chase has no glass.
+
+**On the glass only.** No edge arrow points to a core behind the ship. An edge
+arrow is the selected target's word (§3), and a second arrow that never goes away
+would be a new permanent claim on the screen's edge. Whether the core owes one
+off screen, or a place on the scanner's rim, is open for the principal.
+
+**Verification.** `tests/galaxy-frame.test.ts` holds the bearing against its
+composition over every shipped system and against the two wrong frames a caller
+could hand it. `scripts/probe-hud.mjs` reads the overlay's pixels in a box
+around the mark with the bearing 15° off the nose, then again at the same pose
+and frame with the mark withheld, as the control. It counts the pixels inked only
+with the mark present, so another marker in the box cannot carry the row. A
+second row stands the selected target astern so its edge label falls on the
+room `CORE` would take, and reads the label refused, against the same pose with
+nothing selected, where it is drawn. The sky's look is untouched, so this is
+not one of #478's look decisions. As a new instrument it still owes a look at a
+rendered frame (#94), and no probe stands in for that.
+
 ## 6. Responsive behaviour
 
 On narrow viewports, one side panel at a time becomes a wide overlay. In either

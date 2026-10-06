@@ -240,7 +240,7 @@ import {
 // that module's whole subject is the relation between this plane and the
 // cluster's; the roll below is its consumer, and the one in `hud.ts` reads the
 // vector handed to it.
-import { SYSTEM_PLANE_NORMAL, coreBearing, skyFrame } from "./galaxy-frame";
+import { SYSTEM_PLANE_NORMAL, systemCoreBearing } from "./galaxy-frame";
 import { type Course, courseProgress, setCourse } from "./galaxy-route";
 import { type HullReach, hullReachFrom } from "./hull-reach";
 import { bootHull, deliverHull } from "./flown-hull";
@@ -361,7 +361,11 @@ import {
 	surfacePathFor,
 } from "./relief-bands";
 
-import { SPIN_RPM_RANGE, STATION_GEOMETRY } from "./station";
+import {
+	SPIN_RPM_RANGE,
+	STATION_BERTHS_OPEN,
+	STATION_GEOMETRY,
+} from "./station";
 import { PROMPT_FILL, PROMPT_FONT, TextRaster } from "./text-raster";
 import {
 	type ApertureFrame,
@@ -899,7 +903,12 @@ import {
 	bindJobs,
 	deliveryCandidates,
 } from "./jobs";
-import type { RequestsView } from "./requests-view";
+import {
+	isRequestsTab,
+	requestsTabOf,
+	type RequestsTab,
+	type RequestsView,
+} from "./requests-view";
 import {
 	type CommanderRecord,
 	type SaveEnvelope,
@@ -971,7 +980,7 @@ import {
 	heldSaveFault,
 } from "./save-badge";
 import { marketStationOf } from "./market";
-import { type HoldBids, holdSummary } from "./hold";
+import { type HoldBids, holdSummary, pilotGoods } from "./hold";
 
 import { exposeMarketLaw } from "./market-probe-hook";
 import {
@@ -1386,6 +1395,28 @@ const PROGRADE_MIN_KMS = 0.02;
 
 /** How far inside the viewport the selected target's sky arrow sits. */
 const EDGE_MARGIN = 0.07;
+
+/** The Core mark (`hud-and-scanner.md` §5.5, node #478): §4's cool tone for a
+ *  stable reference, the attitude reference's hue at a brighter alpha because a
+ *  point mark carries less ink than a line across the glass. */
+const CORE_MARK_STROKE = "rgba(120, 190, 235, 0.5)";
+/** The brackets' radius, in CSS pixels — under the unselected body bracket's 7. */
+const CORE_MARK_RADIUS_PX = 6;
+/** What the mark is labelled — the vocabulary's own word for the bearing. */
+const CORE_MARK_LABEL = "CORE";
+/** The declutter pass's key for the label; no body id is spelled like it. */
+const CORE_MARK_LABEL_ID = "#core-bearing";
+
+/** Where the overlay frame puts things, as the Core mark needs it: the frame's
+ *  projection and label box, the labels already claimed, and the glass size. */
+interface CoreMarkLayout {
+	place: (dir: Vec3) => { x: number; y: number; on: boolean } | null;
+	labelBounds: (x: number, y: number, text: string) => MarkerLabelBounds;
+	/** Claimed this frame, in rank order; the Core label is admitted last. */
+	occupied: MarkerLabelBounds[];
+	w: number;
+	h: number;
+}
 
 /**
  * §4's spool-up, seconds — reused here for the voluntary case.
@@ -2371,6 +2402,14 @@ class Game {
 	private stationConsoleTab: StationConsoleTab = "Market";
 	private requests = emptyRequests();
 	private requestSelectedId: string | null = null;
+	/**
+	 * Current or Past (node #690). Transient, never saved: Requests opens on
+	 * Current — a press that opens the tab, a new surface (docking somewhere,
+	 * launching) and a fresh boot all start there.
+	 */
+	private requestTab: RequestsTab = "current";
+	/** The surface the tab was last drawn on, so a new one resets it. */
+	private requestTabSurface: string | null = null;
 	private requestMessage = "";
 	private requestRevision = 0;
 	private requestOffersCacheKey: string | null = null;
@@ -3206,6 +3245,28 @@ class Game {
 		/** The ring's centre on the overlay, or `null` when the edge arrow is
 		 *  drawn instead — so a probe samples the paint, not this record. */
 		at: { x: number; y: number } | null;
+	} | null = null;
+	/**
+	 * The Core bearing at the live system, in its world frame, or `null` where it
+	 * has none. Set by `buildEnvironment` on every system the ship arrives in, so
+	 * the haze in the bake and the Core mark on the glass read one value (node
+	 * #478). A bearing at infinity, so it moves only on a jump.
+	 */
+	private coreDir: Vec3 | null = null;
+	/** The Core bearing the glass marks, for a probe to aim by. */
+	get coreBearingDir(): Vec3 | null {
+		return this.coreDir;
+	}
+	/**
+	 * The Core mark as painted this frame (`hud-and-scanner.md` §5.5), or `null`
+	 * when it was not drawn — off the glass, behind the camera, or no glass this
+	 * frame. Written by the draw, like `cueRender`, so a probe samples the paint
+	 * at `at` rather than trusting this record.
+	 */
+	coreRender: {
+		at: { x: number; y: number };
+		/** Whether the label won its room from the declutter pass. */
+		labelled: boolean;
 	} | null = null;
 	/**
 	 * The selected target's label as painted this frame, or `null` when none was
@@ -4543,6 +4604,8 @@ class Game {
 				this.updateCockpit();
 			},
 			onLeftTab: (tab) => {
+				if (tab === "Requests" && this.leftTab !== "Requests")
+					this.requestTab = "current";
 				this.leftTab = tab;
 				this.consolePress(true);
 				this.updateCockpit();
@@ -4574,6 +4637,8 @@ class Game {
 				this.updateCockpit();
 			},
 			onStationTab: (tab) => {
+				if (tab === "Requests" && this.stationConsoleTab !== "Requests")
+					this.requestTab = "current";
 				this.stationConsoleTab = tab;
 				// A refusal is about the press that earned it, so **any** tab
 				// press retires it (#443) — including a press on the tab
@@ -5624,8 +5689,10 @@ class Game {
 	private buildEnvironment() {
 		// Haze: direction toward the galactic core, in world frame.
 		const record = this.world.system.record;
-		const frame = skyFrame(record.seed);
-		const core = coreBearing(frame, record.pos);
+		// Read once per system and kept: the Core mark on the glass draws from
+		// this same value (node #478), so the glow and the mark cannot disagree.
+		const core = systemCoreBearing(record);
+		this.coreDir = core;
 		// Strength: how far from the cluster centre this system is. Systems near
 		// the centre see an almost uniform sky; rim systems see a bright core
 		// direction. Normalised by the galaxy radius so it ranges ~0..1.
@@ -7298,10 +7365,14 @@ class Game {
 	private earshotStations(): EarshotStation[] {
 		return this.world.system.bodies
 			.filter((body) => body.kind === "station")
-			.map((body) => ({
-				key: this.stationKey(stationOf(this.world.system, body.id)),
-				pos: body.pos,
-			}));
+			.map((body) => {
+				const station = stationOf(this.world.system, body.id);
+				return {
+					key: this.stationKey(station),
+					pos: body.pos,
+					type: station.type,
+				};
+			});
 	}
 
 	/**
@@ -8076,6 +8147,16 @@ class Game {
 	 */
 	private stationKey(station: Station): CarrierKey {
 		return carrierKey(this.world.system.record.index, station.localCarrierId);
+	}
+
+	/**
+	 * Whether this station's berths admit nobody at all — the raider outpost's,
+	 * until it has a market (node #491, `STATION_BERTHS_OPEN`). Read by the
+	 * three protocol doors beside `refusedByLaw`, and outranking it: the law's
+	 * verdict at a berth nobody may use is not spoken as hostility.
+	 */
+	private berthClosed(stationId: string): boolean {
+		return !STATION_BERTHS_OPEN[stationOf(this.world.system, stationId).type];
 	}
 
 	private refusedByLaw(stationId: string): boolean {
@@ -10893,6 +10974,9 @@ class Game {
 			// H5's exit — heat decaying below Wanted — reopens the berth on the
 			// next request with nothing to time out first.
 			refusedByLaw: this.refusedByLaw(chosen.id),
+			// Node #491: a raider outpost's berths admit nobody until it has a
+			// market to dock into, and it says so as its own reason.
+			closed: this.berthClosed(chosen.id),
 		});
 		this.dockingStates.set(chosen.id, next);
 		// A request starts an approach, so the last one's notice is done (#597).
@@ -10954,6 +11038,7 @@ class Game {
 				state: this.dockingStateOf(id),
 				gameTime: this.world.gameTime,
 				refusedByLaw: this.refusedByLaw(id),
+				closed: this.berthClosed(id),
 				// #521: the turn a crossing would be judged on now, so the wait on
 				// the glass and the bounce at the plane cannot disagree. The grant
 				// test here only saves the Traffic query; `dockingDirector` owns the
@@ -11276,6 +11361,7 @@ class Game {
 			// before the offence did not barge, and must not be given the flip's
 			// cooldown for someone else's act.
 			refusedByLaw: this.refusedByLaw(id),
+			closed: this.berthClosed(id),
 		});
 		// A dock spends the turn; a bounce keeps it, so a pilot turned back at
 		// the plane is not sent to the back of the lane as well (#521).
@@ -11512,13 +11598,15 @@ class Game {
 			// dock opens on a sentence about a station the ship has left (#443).
 			this.clearStationRefusal();
 			this.openPlayerTrafficEvent(stationId, "lane", readyAt, "launch");
-			// D4's undock flush. **The record still names the station here** —
-			// `commanderRecord` reads every phase that is not `flying`, and this
-			// runs inside `phase === "launching"` — so what this writes is a ship
-			// on rails on its way out, which restores at the arrival point like
-			// any other non-flying phase. The comment here claimed the opposite
-			// for a round. What actually clears `dockedAt` is the outward
-			// crossing below, and that is where the second write is.
+			// D4's undock flush, which since #660 D1 (node #702) also writes
+			// `lastDocked`: a death restores the commander **as it launched**,
+			// with what it bought here. **The record still names the station
+			// here** — `commanderRecord` reads every phase that is not `flying`,
+			// and this runs inside `phase === "launching"` — so the checkpoint
+			// re-docks at this station on a death's reload (node #658's docked
+			// restore), and `live` restores a ship on rails on its way out like
+			// any other non-flying phase. What actually clears `dockedAt` is the
+			// outward crossing below, and that is where the second write is.
 			this.saveDirty();
 			this.saveFlush("undock");
 		}
@@ -15973,6 +16061,16 @@ class Game {
 		// One board per update: the console draws it and the first day asks it
 		// whether a Local run is posted (#408). Station control's log is written
 		// here, once, before the panel reads it.
+		// **A new surface opens on Current** (node #690). Here rather than in
+		// `requestsView`, which probes and `actOnRequest` also call: reading the
+		// board must not move it.
+		const requestSurface = dockContext
+			? `station:${dockContext.galaxyIndex}:${dockContext.stationKey}`
+			: "flight";
+		if (requestSurface !== this.requestTabSurface) {
+			this.requestTabSurface = requestSurface;
+			this.requestTab = "current";
+		}
 		const requests = this.requestsView(dockContext, hold);
 		const firstDayFacts = this.firstDayFacts(requests.offers);
 		this.noteFirstDayStep(firstDayFacts);
@@ -16189,6 +16287,7 @@ class Game {
 			state: this.requests,
 			offers: context ? this.requestOffersCache : [],
 			selectedId: this.requestSelectedId,
+			tab: this.requestTab,
 			message: this.requestMessage,
 			revision: this.requestRevision,
 			now: this.world.gameTime,
@@ -16281,6 +16380,17 @@ class Game {
 	/** Whether the board did what was asked: the press's sound reads it (#546). */
 	private actOnRequest(action: string, id: string): boolean {
 		const view = this.requestsView();
+		if (action === "tab") {
+			// The board's own state, like `details`: switching halves of the
+			// list changes no request, tracking, cargo or credit, so it is not a
+			// hold event and saves nothing (node #690).
+			if (!isRequestsTab(id)) return false;
+			this.requestTab = id;
+			this.requestMessage = "";
+			this.requestRevision += 1;
+			this.updateCockpit();
+			return true;
+		}
 		if (action === "details") {
 			// The board's own state (#626 D5), not a hold event: it repaints
 			// itself.
@@ -16313,6 +16423,20 @@ class Game {
 			galaxyIndex: this.world.system.record.galaxy,
 			at: this.world.gameTime,
 		});
+		// **The list follows the job the pilot just moved** (node #690). Cancel
+		// and Report send it to Past, where a consignment to return and Accept
+		// again are; Accept again brings it back to Current, where Track is. Set
+		// before the adopt, because the adopt repaints: one frame drawn on the
+		// old tab is a pane for a row that is no longer listed. A press that
+		// changed nothing moves nothing.
+		if (outcome.holdings !== before) {
+			const tab = requestsTabOf(
+				{ state: outcome.holdings.requests, offers: view.offers },
+				id,
+				!view.docked,
+			);
+			if (tab) this.requestTab = tab;
+		}
 		this.adoptHoldings(outcome);
 		return outcome.holdings !== before;
 	}
@@ -16371,6 +16495,10 @@ class Game {
 		}
 		const { station, market, envelope, stationKey, economy, gameTimeMin } =
 			context;
+		// One projection for the whole console (#443) — see the key below for
+		// why it is built before the memo is consulted. Built first now because
+		// the market's HELD column reads it too.
+		const hold = holdSummary(this.commander, this.requests);
 		const readMarket = () =>
 			stationMarketScreen({
 				station: market,
@@ -16378,6 +16506,11 @@ class Game {
 				gameTimeMin,
 				deficitOf: (goodName) =>
 					readDeficit(envelope.deficits, stationKey, goodName, gameTimeMin),
+				// The HELD column (#473 D10): the pilot's own lines off the hold
+				// projection, so an entrusted lot stays in the hold line's
+				// `t entrusted` clause — drawn on every tab, Market included — and
+				// out of every row.
+				cargo: pilotGoods(hold),
 				// The flown hold, bay included — the same figure the transaction
 				// uses (#182), read through `commanderHold` so the screen and till
 				// agree about whether a Large Cargo Bay counts.
@@ -16435,8 +16568,8 @@ class Game {
 		// markup key still reads `stationConsole.revision` and the request
 		// revision, so the *drawn* line depends on those counters even where
 		// this one no longer does. The two together are why the hold line is
-		// correct today; only the half in this file is self-keyed.
-		const hold = holdSummary(this.commander, this.requests);
+		// correct today; only the half in this file is self-keyed. (`hold` is
+		// built at the top of this method.)
 		// `pilotLines` would be wrong — these are every line, both owners — and
 		// `manifest` would be worse: CONTEXT.md scopes that noun to what an
 		// ordinary carrier carries on one voyage, and one canonical term with
@@ -18489,6 +18622,7 @@ class Game {
 		// Written again below only if a raider is selected and drawn this frame.
 		this.cueRender = null;
 		this.selectedRender = null;
+		this.coreRender = null;
 		// Cleared before any early return, so a frame that drew neither does not
 		// leave the last one's readable (sage round 2 on #608).
 		this.boresightRender = null;
@@ -18928,6 +19062,10 @@ class Game {
 		const markOnGlass = selectedAt?.on === true;
 		const targetCondition = markOnGlass ? this.selectedTargetCondition() : null;
 		const divertCue = markOnGlass ? this.selectedDivertCue(camPos) : null;
+		// The selected target's name beside its edge arrow, when it is off the
+		// glass. Reserved for the Core mark alone, after the walk: the context
+		// labels' order against it is unchanged by node #478.
+		let edgeLabel: MarkerLabelBounds | null = null;
 		const selectedLabel = (name: string, km: number) =>
 			`${name}  ${range(km)}${onTarget ? "  ON TARGET" : ""}${
 				divertCue ? `  ${divertCue}` : ""
@@ -19080,12 +19218,79 @@ class Game {
 			ctx.fill();
 			ctx.restore();
 			ctx.fillStyle = "rgba(255, 214, 120, 0.8)";
-			ctx.fillText(
-				`${body.name}  ${((angleOffNose(dir, this.nose()) * 180) / Math.PI).toFixed(0)}° off`,
-				Math.min(w - 120, Math.max(10, p.x - 48)),
-				Math.min(h - 10, Math.max(20, p.y + 22)),
-			);
+			const edgeText = `${body.name}  ${((angleOffNose(dir, this.nose()) * 180) / Math.PI).toFixed(0)}° off`;
+			const edgeX = Math.min(w - 120, Math.max(10, p.x - 48));
+			const edgeY = Math.min(h - 10, Math.max(20, p.y + 22));
+			ctx.fillText(edgeText, edgeX, edgeY);
+			// Reserved against its widest reading, for the condition line's reason:
+			// a box that follows the digits would let CORE in and out as they ran.
+			edgeLabel = labelBounds(edgeX, edgeY, `${body.name}  180° off`);
 		}
+
+		// The Core mark is the glass's lowest rank, so it goes last (§5.5), and
+		// the selected target's edge label outranks it as its on-glass one does.
+		if (edgeLabel) occupiedLabels.push(edgeLabel);
+		this.drawCoreMark(ctx, shipCues ? this.coreDir : null, {
+			place,
+			labelBounds,
+			occupied: occupiedLabels,
+			w,
+			h,
+		});
+	}
+
+	/**
+	 * **The Core mark** (`hud-and-scanner.md` §5.5, node #478): where the
+	 * cluster's centre lies from this system. The sky shows the cluster as points
+	 * and the core cone is under the invented layer's own density everywhere
+	 * (`measure-sky-density.ts core`), so the bearing is given by instrument
+	 * rather than by light. A background fact, so it takes the attitude
+	 * reference's cool tone and the lowest rank: its label is admitted last, only
+	 * where nothing above it has claimed the room. The brackets are not
+	 * decluttered and may cross another mark or name. On the glass only — no edge
+	 * arrow, which would be a second permanent edge cue beside the selected
+	 * target's. `core` is `null` where the frame has no glass for it.
+	 */
+	private drawCoreMark(
+		ctx: CanvasRenderingContext2D,
+		core: Vec3 | null,
+		layout: CoreMarkLayout,
+	) {
+		const { place, labelBounds, occupied, w, h } = layout;
+		const coreAt = core && place(core);
+		if (!coreAt?.on) return;
+		ctx.strokeStyle = CORE_MARK_STROKE;
+		ctx.fillStyle = CORE_MARK_STROKE;
+		ctx.lineWidth = 1;
+		// A dot between two brackets, `( · )`: no other mark on the glass is that
+		// shape, so it reads without its hue (§4).
+		const r = CORE_MARK_RADIUS_PX;
+		ctx.beginPath();
+		ctx.arc(coreAt.x, coreAt.y, r, Math.PI * 0.7, Math.PI * 1.3);
+		ctx.moveTo(
+			coreAt.x + r * Math.cos(-Math.PI * 0.3),
+			coreAt.y + r * Math.sin(-Math.PI * 0.3),
+		);
+		ctx.arc(coreAt.x, coreAt.y, r, -Math.PI * 0.3, Math.PI * 0.3);
+		ctx.stroke();
+		ctx.beginPath();
+		ctx.arc(coreAt.x, coreAt.y, 1.5, 0, Math.PI * 2);
+		ctx.fill();
+		const x = coreAt.x + r + 6;
+		const y = coreAt.y + 4;
+		const bounds = labelBounds(x, y, CORE_MARK_LABEL);
+		const labelled =
+			bounds.right <= w &&
+			bounds.top >= 0 &&
+			bounds.bottom <= h &&
+			this.markerLabels.claim(
+				CORE_MARK_LABEL_ID,
+				bounds,
+				occupied,
+				this.world.gameTime,
+			);
+		if (labelled) ctx.fillText(CORE_MARK_LABEL, x, y);
+		this.coreRender = { at: { x: coreAt.x, y: coreAt.y }, labelled };
 	}
 
 	/** The overlay's backing store, in CSS pixels — not device pixels: the
@@ -19593,10 +19798,13 @@ if (postcard) {
 	};
 	// **A death (#324, the principal's ruling O5; #654).** With a store attached
 	// and a commander who is not permadeath, `live` becomes the world at the
-	// death beside the last dock's commander, the one-shot continue names the
-	// Commander, and the page reloads into the dock.
-	// Otherwise — permadeath, `?no-save`, or a restore that failed — the ship
-	// stays destroyed and the Commander overlay opens.
+	// death beside the commander as it last launched (#660 D1) — or, for a
+	// pilot who never docked, a new commander at the start system's trade
+	// station (D10) — the one-shot continue names the Commander, and the page
+	// reloads into the dock.
+	// Otherwise — permadeath, a boot that writes nothing (`?no-save`,
+	// `?system=`), or a restore that failed — the ship stays destroyed and the
+	// Commander overlay opens.
 	game.onDeath = async () => {
 		const store = game.saveStore;
 		const slot = attachedSlot;
