@@ -19,6 +19,8 @@
  *   the pointer with them. The consoles and the Galaxy Map are cockpit walls,
  *   so in chase they never hold it; `probe-pointer-lock.mjs` owns their rows,
  *   and the orbit is dropped behind them by the same `contextFliesShip`;
+ *   and docked the mouse still orbits, because the non-flight branch of `step`
+ *   spends the delta before it drops it (sage round 2 found it dead there);
  * - **the postcard carries the pose** (C3): an exterior card opened from an
  *   orbited view spells its yaw and elevation, its PNG is the card shown, the
  *   viewer rebuilds the same link and the same picture, the pilot's pose and
