@@ -36,9 +36,23 @@ import {
 	carrierKey,
 	compareCarrierKeys,
 	isCarrierKey,
+	localCarrierIdOfKey,
+	systemIndexOfKey,
 } from "./carrier-key";
 import { type DeficitMap, parseDeficits } from "./deficits";
-import { generateGalaxy } from "./galaxy";
+import {
+	DERELICT_FITTINGS,
+	DERELICT_MAX_CONTAINERS,
+	type DerelictContainerKind,
+	type DerelictPhase,
+	derelictContents,
+	derelictOrdinalOf,
+	derelictSlotCount,
+	derelictSlots,
+	derelictTimeline,
+} from "./derelict-slots";
+import { generateGalaxy, systemAt } from "./galaxy";
+import { COMMODITIES } from "./market";
 import type { HullId } from "./hull";
 import { fnv1a } from "./rng";
 import { RAIDER_HULL_ID, raiderSlots } from "./raider-slots";
@@ -79,7 +93,7 @@ export const WORLD_SCHEMA_VERSION = 3;
  * exactly the set `carrierBaselineFingerprint` hashes, so the pinned
  * fingerprints in `world-state.test.ts` go red at the same moment.
  */
-export const WORLD_GENERATOR_VERSION = 9;
+export const WORLD_GENERATOR_VERSION = 10;
 
 /**
  * Generator versions a snapshot may still carry. Version 6 → 7 was a pure
@@ -97,13 +111,17 @@ export const WORLD_GENERATOR_VERSION = 9;
  * the identity goldens for system, Carrier slot and type, and version 8's full
  * baseline fingerprints for parent and placement. So an 8 save rebases exactly
  * as a 7 does.
+ * Version 9 → 10 (node #731) only **adds** too: one to three derelict slots in
+ * every system, by government (`derelict-slots.ts`). Nothing drawn moved, and
+ * `tests/world-state.test.ts` holds version 9's full baseline fingerprints over
+ * every carrier but the derelicts, so a 9 save rebases exactly as an 8 does.
  * Version 5 is not here, and listing it would open nothing: saves
  * shipped on 2026-09-11 at version 5, but `WORLD_SCHEMA_VERSION` 3 arrived on
  * 09-18 after version 6, so every version-5 snapshot carries schema 2 and the
  * schema check refuses it first.
  */
 // glossary-ignore: slot
-export const LEGACY_WORLD_GENERATOR_VERSIONS: readonly number[] = [8, 7, 6];
+export const LEGACY_WORLD_GENERATOR_VERSIONS: readonly number[] = [9, 8, 7, 6];
 
 export const GALAXY_COUNT = 8;
 
@@ -363,8 +381,53 @@ export interface LegalStatus {
 }
 
 /**
- * §7's typed per-galaxy envelope: **six state domains** — objective deltas,
- * causal episodes, knowledge, market deficits, visited flags and legal status.
+ * One container on a wreck's row (`salvage.md` S6, S20): what it holds, the
+ * tonnes it was drawn with, and the tonnes still in it.
+ *
+ * **`tonnes` is stored, not re-derived**, and that is a reading of the node
+ * worth stating. The parse refuses a container whose `left` is above its line,
+ * and the line it reads is this one — the tonnes the loss drew — rather than a
+ * fresh draw, because S6 forbids re-deriving an instance after its loss: a
+ * parser that re-drew would refuse every saved wreck the day the draw was
+ * retuned. A changed draw reaches new instances only, which is S6's promise.
+ */
+export interface DerelictContainer {
+	kind: DerelictContainerKind;
+	/** A commodity name for a good, an `EQUIPMENT` name for a fitting. */
+	id: string;
+	/** The tonnes the loss put in it. */
+	tonnes: number;
+	/** The tonnes still in it. Zero is a scooped-out container, still listed,
+	 *  so a container index names one container for the instance's life. */
+	left: number;
+}
+
+/**
+ * A derelict slot's saved row (`salvage.md` S1, S2, S6, S16): **one per slot
+ * key**, whatever happens to the slot, which is §6's bound.
+ *
+ * It records one instance — the one the pilot last touched — and anchors the
+ * schedule there (`derelictTimeline`). A slot with no row is derived whole from
+ * the clock; a row that later instances have overtaken still anchors the walk,
+ * and the next write replaces it. `condition` is not stored: an instance on a
+ * row is `destroyed` until `salvaged` is written or other salvagers take it
+ * on the clock, so storing it would be a second copy of the schedule.
+ */
+export interface DerelictRow {
+	instanceOrdinal: number;
+	/** When this instance was lost, from the schedule. */
+	lostAt: number;
+	/** Index order is container order: a Salvage job's operand names one by it. */
+	containers: DerelictContainer[];
+	/** Written when the pilot strips the last container (S2). Other salvagers'
+	 *  strip is the clock's and is never written. */
+	salvaged?: { at: number; cause: Provenance };
+}
+
+/**
+ * §7's typed per-galaxy envelope: **seven state domains** — objective deltas,
+ * causal episodes, knowledge, market deficits, visited flags, legal status and
+ * derelict rows.
  *
  * `galaxyIndex` is the container's identity rather than a seventh domain. It
  * lives here once, and every station-keyed domain stores the envelope-relative
@@ -379,6 +442,9 @@ export interface GalaxyEnvelope {
 	/** System indices the player has visited, ascending. */
 	visited: number[];
 	legalStatus: LegalStatus;
+	/** Derelict slots the pilot has touched (`salvage.md`, node #731). Empty
+	 *  means every slot is on its derived schedule, untouched. */
+	derelicts: Record<CarrierKey, DerelictRow>;
 }
 
 export interface WorldState {
@@ -391,8 +457,8 @@ export interface WorldState {
 }
 
 /**
- * The envelope's declared fields: **six state domains plus the container's own
- * identity**, `galaxyIndex`, which is not one of them. Anything else in a
+ * The envelope's declared fields: **seven state domains plus the container's
+ * own identity**, `galaxyIndex`, which is not one of them. Anything else in a
  * serialized envelope is rejected (§9.2) — a save is not an open bag.
  */
 const ENVELOPE_DOMAINS = [
@@ -403,7 +469,16 @@ const ENVELOPE_DOMAINS = [
 	"deficits",
 	"visited",
 	"legalStatus",
+	"derelicts",
 ] as const;
+
+/**
+ * The declared domains a serialized envelope may leave out, because absent
+ * means empty. `derelicts` arrived after saves shipped (node #731), and an
+ * envelope that writes `"derelicts": {}` would move the integrity hash of every
+ * save taken before it — the reason `witnesses` is omitted when empty (§7).
+ */
+const OPTIONAL_ENVELOPE_DOMAINS: ReadonlySet<string> = new Set(["derelicts"]);
 
 const WORLD_FIELDS = [
 	"worldSchemaVersion",
@@ -422,6 +497,7 @@ export const emptyEnvelope = (galaxyIndex: number): GalaxyEnvelope => ({
 	deficits: {},
 	visited: [],
 	legalStatus: { heat: 0, updatedAt: 0, witnesses: [], assaulted: [] },
+	derelicts: {},
 });
 
 export const newWorld = (seed: number): WorldState => ({
@@ -476,6 +552,10 @@ export type GeneratedCarrier = GeneratedCarrierBase &
 		/** The relay's repair tender (#351), parented to the relay. It flies in
 		 *  when it is sent, so like a raider it has no generated placement. */
 		| { kind: "relay-tender"; hullId: HullId }
+		/** A derelict slot (`derelict-slots.ts`, node #731). A system's, with no
+		 *  parent. Its hull and its seeded offset are the drawing build's
+		 *  (`salvage.md` S11, S26), so it has no generated placement yet. */
+		| { kind: "derelict" }
 	);
 
 /**
@@ -553,6 +633,14 @@ export function* enumerateCarriers(
 				parentId: relay.localCarrierId,
 			};
 		}
+		for (const slot of derelictSlots(systemIndex, record.government))
+			yield {
+				systemIndex,
+				localCarrierId: slot.localCarrierId,
+				key: slot.key,
+				kind: "derelict",
+				parentId: null,
+			};
 	}
 }
 
@@ -569,6 +657,8 @@ const fingerprintType = (c: GeneratedCarrier): string => {
 			return "relay";
 		case "relay-tender":
 			return `relay-tender:${c.hullId}`;
+		case "derelict":
+			return "derelict";
 	}
 };
 
@@ -588,6 +678,7 @@ const fingerprintPlacement = (c: GeneratedCarrier): string => {
 			return `|${c.watchedLocalCarrierId}|${c.leadKm.toFixed(6)}|${c.offPlaneKm.toFixed(6)}`;
 		case "raider":
 		case "relay-tender":
+		case "derelict":
 			return "";
 	}
 };
@@ -1621,6 +1712,220 @@ export const setLegalAssaulted = (
 	setLegalCarrierList(world, galaxyIndex, "assaulted", assaulted, at);
 
 // ---------------------------------------------------------------------------
+// Derelict slots — `salvage.md` S1, S2, S6, S16 (node #731)
+// ---------------------------------------------------------------------------
+
+/** Other salvagers' strip: the clock's, never the pilot's, so it carries no
+ *  player provenance (S16). It is never written; a read derives it. */
+export const OTHER_SALVAGERS: Provenance = {
+	causeKind: "salvage",
+	actorId: "salvagers",
+	playerRole: "none",
+};
+
+/** The pilot's strip: the last container scooped to zero (S2). */
+export const PLAYER_SALVAGE: Provenance = {
+	causeKind: "salvage",
+	actorId: "player",
+	playerRole: "direct",
+};
+
+/** A derelict slot at one game time, with its contents when an instance is
+ *  adrift. `stored` says whether they came off the row or off the draw. */
+export type EffectiveDerelict =
+	| { condition: "empty"; firstLossAt: number }
+	| {
+			condition: "destroyed";
+			instanceOrdinal: number;
+			lostAt: number;
+			salvagerAt: number;
+			containers: DerelictContainer[];
+			stored: boolean;
+	  }
+	| {
+			condition: "salvaged";
+			instanceOrdinal: number;
+			lostAt: number;
+			salvagedAt: number;
+			cause: Provenance;
+			nextLossAt: number;
+	  };
+
+/** The system a derelict key belongs to, as the draws need it — or a refusal
+ *  when the key names no derelict slot that system holds. */
+const derelictSite = (
+	worldSeed: number,
+	galaxyIndex: number,
+	key: CarrierKey,
+): { seed: number; government: number } => {
+	assertGalaxy(galaxyIndex);
+	assertCarrierKey(key);
+	const systemIndex = systemIndexOfKey(key);
+	if (!isSystemIndex(systemIndex))
+		fail(`${key} is not in a system of galaxy ${galaxyIndex}`);
+	const ordinal = derelictOrdinalOf(localCarrierIdOfKey(key));
+	const record = systemAt(worldSeed, galaxyIndex, systemIndex);
+	if (ordinal === null || ordinal >= derelictSlotCount(record.government))
+		fail(`${key} is not a derelict slot`);
+	return { seed: record.seed, government: record.government };
+};
+
+const anchorOf = (row: DerelictRow) => ({
+	instanceOrdinal: row.instanceOrdinal,
+	lostAt: row.lostAt,
+	...(row.salvaged
+		? {
+				stripped: {
+					at: row.salvaged.at,
+					byPlayer: row.salvaged.cause.playerRole !== "none",
+				},
+			}
+		: {}),
+});
+
+const effectiveFrom = (
+	site: { seed: number; government: number },
+	key: CarrierKey,
+	row: DerelictRow | undefined,
+	gameTime: number,
+): EffectiveDerelict => {
+	const phase: DerelictPhase = derelictTimeline(
+		site.seed,
+		key,
+		gameTime,
+		row ? anchorOf(row) : undefined,
+	);
+	switch (phase.condition) {
+		case "empty":
+			return phase;
+		case "destroyed": {
+			const stored =
+				row !== undefined && row.instanceOrdinal === phase.instanceOrdinal;
+			return {
+				...phase,
+				containers: stored
+					? row.containers.map((c) => ({ ...c }))
+					: derelictContents(
+							site.seed,
+							site.government,
+							key,
+							phase.instanceOrdinal,
+						).map((c) => ({ ...c, left: c.tonnes })),
+				stored,
+			};
+		}
+		case "salvaged": {
+			const { byPlayer: _, ...rest } = phase;
+			const cause =
+				row?.salvaged && row.instanceOrdinal === phase.instanceOrdinal
+					? row.salvaged.cause
+					: OTHER_SALVAGERS;
+			return { ...rest, cause };
+		}
+	}
+};
+
+/**
+ * A derelict slot at `gameTime`: empty before its first loss, an instance
+ * adrift with its containers, or salvaged — by the pilot, off the row, or by
+ * other salvagers, off the clock — until the next loss. Derived; nothing is
+ * written, and a slot nobody touched needs no row to answer.
+ */
+export const effectiveDerelict = (
+	world: WorldState,
+	galaxyIndex: number,
+	key: CarrierKey,
+	gameTime: number,
+): EffectiveDerelict =>
+	effectiveFrom(
+		derelictSite(world.seed, galaxyIndex, key),
+		key,
+		world.galaxies[galaxyIndex].derelicts[key],
+		gameTime,
+	);
+
+/** The row an instance adrift writes when it is first touched: its drawn
+ *  contents, every container full. */
+const rowFor = (
+	e: Extract<EffectiveDerelict, { condition: "destroyed" }>,
+): DerelictRow => ({
+	instanceOrdinal: e.instanceOrdinal,
+	lostAt: e.lostAt,
+	containers: e.containers.map((c) => ({ ...c })),
+});
+
+/**
+ * Stores the adrift instance's contents on the slot's row (S6), so nothing
+ * reads the draw for it again. The drawing build calls this when the pilot
+ * meets a wreck, which is what makes a generator change or an appended fitting
+ * unable to move a wreck a pilot has seen. A slot that is empty or salvaged,
+ * or whose row already holds this instance, is left as it is.
+ */
+export const materializeDerelict = (
+	world: WorldState,
+	galaxyIndex: number,
+	key: CarrierKey,
+	at: number,
+): WorldState => {
+	const site = derelictSite(world.seed, galaxyIndex, key);
+	return withEnvelope(world, galaxyIndex, at, (env) => {
+		const e = effectiveFrom(site, key, env.derelicts[key], at);
+		if (e.condition !== "destroyed" || e.stored) return env;
+		return { ...env, derelicts: { ...env.derelicts, [key]: rowFor(e) } };
+	});
+};
+
+/**
+ * Takes `tonnes` out of one container of the instance adrift (S3, S20), and
+ * writes `salvaged` with the pilot's provenance when that empties the last one
+ * (S2). The next loss is then scheduled from `at` (S16), off the row.
+ *
+ * Refuses, by name: a slot with nothing adrift, a container index the instance
+ * does not have, and more tonnes than the container holds. How much fits the
+ * hold is the caller's to decide; this is the world's side of the scoop.
+ */
+export const scoopDerelict = (
+	world: WorldState,
+	galaxyIndex: number,
+	key: CarrierKey,
+	containerIndex: number,
+	tonnes: number,
+	at: number,
+): WorldState => {
+	const site = derelictSite(world.seed, galaxyIndex, key);
+	if (!Number.isInteger(tonnes) || tonnes <= 0)
+		fail(`scoopDerelict: ${tonnes} is not a whole number of tonnes`);
+	return withEnvelope(world, galaxyIndex, at, (env) => {
+		const e = effectiveFrom(site, key, env.derelicts[key], at);
+		if (e.condition !== "destroyed")
+			fail(`scoopDerelict: ${key} is ${e.condition}; nothing is adrift`);
+		const row = rowFor(e);
+		const container = Number.isInteger(containerIndex)
+			? row.containers[containerIndex]
+			: undefined;
+		if (!container)
+			fail(
+				`scoopDerelict: container ${containerIndex} is unknown on ${key} instance ${e.instanceOrdinal}`,
+			);
+		if (tonnes > container.left)
+			fail(
+				`scoopDerelict: container ${containerIndex} holds ${container.left} t, not ${tonnes}`,
+			);
+		container.left -= tonnes;
+		const stripped = row.containers.every((c) => c.left === 0);
+		return {
+			...env,
+			derelicts: {
+				...env.derelicts,
+				[key]: stripped
+					? { ...row, salvaged: { at, cause: PLAYER_SALVAGE } }
+					: row,
+			},
+		};
+	});
+};
+
+// ---------------------------------------------------------------------------
 // §6 — compaction
 // ---------------------------------------------------------------------------
 
@@ -1705,6 +2010,28 @@ const canonicalFact = (f: TransitionFact) => ({
 	...(f.processId === undefined ? {} : { processId: f.processId }),
 });
 
+/** A derelict row's wire form. Containers are keyed by their index, which is
+ *  the identity a Salvage job's operand names (S18), so the parse can refuse
+ *  an index the instance does not have by name. */
+const canonicalDerelict = (r: DerelictRow) => ({
+	instanceOrdinal: r.instanceOrdinal,
+	lostAt: r.lostAt,
+	containers: Object.fromEntries(
+		r.containers.map((c, i) => [
+			String(i),
+			{ kind: c.kind, id: c.id, tonnes: c.tonnes, left: c.left },
+		]),
+	),
+	...(r.salvaged
+		? {
+				salvaged: {
+					at: r.salvaged.at,
+					cause: canonicalProvenance(r.salvaged.cause),
+				},
+			}
+		: {}),
+});
+
 const canonicalEnvelope = (env: GalaxyEnvelope) => ({
 	galaxyIndex: env.galaxyIndex,
 	objective: canonicalMap(env.objective, (d) => ({
@@ -1779,6 +2106,12 @@ const canonicalEnvelope = (env: GalaxyEnvelope) => ({
 				}
 			: {}),
 	},
+	// **Omitted when empty**, for the legal lists' reason: a `"derelicts": {}`
+	// on every envelope would move the hash of every save taken before node #731
+	// and have the integrity check call an old save corrupt.
+	...(Object.keys(env.derelicts).length
+		? { derelicts: canonicalMap(env.derelicts, canonicalDerelict) }
+		: {}),
 });
 
 const canonicalBody = (world: WorldState) => ({
@@ -2144,6 +2477,86 @@ const parseKnowledgeRow = (value: unknown, key: string): KnowledgeRow => {
 	};
 };
 
+/** The ids a container may name: a tonne good a station trades, or a module on
+ *  the append-only fitting list. A row naming anything else was not written by
+ *  a loss. */
+const DERELICT_GOOD_IDS: ReadonlySet<string> = new Set(
+	COMMODITIES.filter((c) => c.unit === "t").map((c) => c.name),
+);
+const DERELICT_FITTING_IDS: ReadonlySet<string> = new Set(DERELICT_FITTINGS);
+
+const parseDerelictContainer = (
+	raw: unknown,
+	what: string,
+): DerelictContainer => {
+	const o = asObject(raw, what);
+	const kind = str(o, "kind", what);
+	if (kind !== "good" && kind !== "fitting")
+		fail(`${what}: container kind ${kind} is unknown`);
+	const id = str(o, "id", what);
+	if (!(kind === "good" ? DERELICT_GOOD_IDS : DERELICT_FITTING_IDS).has(id))
+		fail(`${what}: ${id} is not a ${kind} a derelict can hold`);
+	const tonnes = ordinal(o, "tonnes", what);
+	if (tonnes === 0) fail(`${what}: a container drawn with no tonnes`);
+	const left = ordinal(o, "left", what);
+	if (left > tonnes)
+		fail(
+			`${what}: ${left} t left is above the ${tonnes} t line it was drawn with`,
+		);
+	return { kind: kind as DerelictContainerKind, id, tonnes, left };
+};
+
+/**
+ * A derelict slot's row (node #731). Refuses, by name, what no writer can
+ * produce: a key that is not a derelict slot, a container index the row does
+ * not hold, more than five containers, tonnes above the drawn line, and a
+ * stripped row that is not marked salvaged or the reverse.
+ */
+const parseDerelictRow = (value: unknown, key: string): DerelictRow => {
+	const what = `derelict ${key}`;
+	if (derelictOrdinalOf(localCarrierIdOfKey(key as CarrierKey)) === null)
+		fail(`derelicts: ${key} is not a derelict slot`);
+	const row = asObject(value, what);
+	const lostAt = num(row, "lostAt", what);
+	const raw = asObject(row.containers, `${what} containers`);
+	const indices = Object.keys(raw);
+	if (indices.length === 0 || indices.length > DERELICT_MAX_CONTAINERS)
+		fail(
+			`${what}: ${indices.length} containers; a row holds 1 to ${DERELICT_MAX_CONTAINERS}`,
+		);
+	const containers: DerelictContainer[] = [];
+	for (const index of indices) {
+		const i = Number(index);
+		if (!Number.isInteger(i) || String(i) !== index || i >= indices.length)
+			fail(`${what}: container index ${index} is unknown`);
+		containers[i] = parseDerelictContainer(
+			raw[index],
+			`${what} container ${index}`,
+		);
+	}
+	let salvaged: DerelictRow["salvaged"];
+	if (row.salvaged !== undefined) {
+		const o = asObject(row.salvaged, `${what} salvaged`);
+		const at = num(o, "at", `${what} salvaged`);
+		if (at < lostAt)
+			fail(`${what}: salvaged at ${at}, before its loss at ${lostAt}`);
+		salvaged = { at, cause: parseProvenance(o.cause, `${what} salvaged`) };
+	}
+	const empty = containers.every((c) => c.left === 0);
+	if (empty !== (salvaged !== undefined))
+		fail(
+			empty
+				? `${what}: every container is empty and the row is not salvaged`
+				: `${what}: salvaged with tonnes still in a container`,
+		);
+	return {
+		instanceOrdinal: ordinal(row, "instanceOrdinal", what),
+		lostAt,
+		containers,
+		...(salvaged ? { salvaged } : {}),
+	};
+};
+
 /** §7's visited flags. **Checked, never normalised**: re-sorting on the way in
  *  is exactly what would let a save differ from what the integrity hash was
  *  computed over. */
@@ -2211,7 +2624,7 @@ const parseEnvelope = (raw: unknown, slot: number): GalaxyEnvelope => {
 		if (!(ENVELOPE_DOMAINS as readonly string[]).includes(field))
 			fail(`galaxy ${slot}: ${field} is not a declared state domain`);
 	for (const field of ENVELOPE_DOMAINS)
-		if (o[field] === undefined)
+		if (o[field] === undefined && !OPTIONAL_ENVELOPE_DOMAINS.has(field))
 			fail(`galaxy ${slot}: the ${field} domain is missing`);
 
 	const galaxyIndex = num(o, "galaxyIndex", `galaxy ${slot}`);
@@ -2254,6 +2667,10 @@ const parseEnvelope = (raw: unknown, slot: number): GalaxyEnvelope => {
 			witnesses: parseLegalKeyList(legal.witnesses, galaxyIndex, "witnesses"),
 			assaulted: parseLegalKeyList(legal.assaulted, galaxyIndex, "assaulted"),
 		},
+		derelicts:
+			o.derelicts === undefined
+				? {}
+				: parseCarrierMap(o.derelicts, "derelicts", parseDerelictRow),
 	};
 };
 

@@ -16,6 +16,7 @@
 
 import { describe, expect, test } from "bun:test";
 import { readFileSync } from "node:fs";
+import { derelictSlotCount } from "../src/derelict-slots";
 import { raiderSlotCount } from "../src/raider-slots";
 import {
 	RELAY_LOCAL_CARRIER_ID,
@@ -130,14 +131,17 @@ describe("§9.1 namespace and baseline stability", () => {
 		// the pin says so by kind rather than by arithmetic on this figure.
 		// Node #491 added the raider outpost and its one Traffic carrier (two
 		// berths, less the visitor's) in every system `hasRaiderOutpost` admits, 1,148
-		// more; that too is said by kind below.
-		expect(carriers).toBe(33046);
+		// more; that too is said by kind below. Node #731 added one to three
+		// derelict slots to every system by government, 5,040; by kind below.
+		expect(carriers).toBe(38086);
 		// #351 enrolled the relay and its tender: one of each in every system
 		// with a station to watch.
 		let raiders = 0;
 		let relays = 0;
 		let tenders = 0;
 		let outpostCarriers = 0;
+		let derelicts = 0;
+		let expectedDerelicts = 0;
 		let expectedRaiders = 0;
 		let expectedRelays = 0;
 		let expectedOutposts = 0;
@@ -146,6 +150,7 @@ describe("§9.1 namespace and baseline stability", () => {
 				if (c.kind === "raider") raiders++;
 				if (c.kind === "relay") relays++;
 				if (c.kind === "relay-tender") tenders++;
+				if (c.kind === "derelict") derelicts++;
 				if (
 					(c.kind === "station" && c.stationType === "outpost") ||
 					(c.kind === "traffic" && c.homeStationType === "outpost")
@@ -154,6 +159,7 @@ describe("§9.1 namespace and baseline stability", () => {
 			}
 			for (const record of generateGalaxy(WORLD, galaxy).systems) {
 				expectedRaiders += raiderSlotCount(record.government);
+				expectedDerelicts += derelictSlotCount(record.government);
 				if (relayPlan(generateContents(record), record.seed)) expectedRelays++;
 				if (hasRaiderOutpost(record.government)) expectedOutposts++;
 			}
@@ -162,8 +168,11 @@ describe("§9.1 namespace and baseline stability", () => {
 		expect(relays).toBe(expectedRelays);
 		expect(tenders).toBe(expectedRelays);
 		expect(outpostCarriers).toBe(2 * expectedOutposts);
+		expect(derelicts).toBe(expectedDerelicts);
 		// 21736 is version 5's station and Traffic set, still unmoved.
-		expect(carriers - raiders - relays - tenders - outpostCarriers).toBe(21736);
+		expect(
+			carriers - raiders - relays - tenders - outpostCarriers - derelicts,
+		).toBe(21736);
 		let systemsWithStations = 0;
 		let widest = 0;
 		for (let galaxy = 0; galaxy < 8; galaxy++) {
@@ -173,13 +182,13 @@ describe("§9.1 namespace and baseline stability", () => {
 			systemsWithStations += perSystem.size;
 			widest = Math.max(widest, ...perSystem.values());
 		}
-		expect(widest).toBe(23);
+		expect(widest).toBe(26);
 		expect(systemsWithStations).toBe(8 * 256);
 		// Eight station and Traffic carriers at the least plus one raider slot;
 		// eighteen at the most plus four, and an outpost's two beside those;
-		// and the relay and its tender in each.
-		expect(carriers).toBeGreaterThanOrEqual(8 * 256 * (8 + 1 + 2));
-		expect(carriers).toBeLessThanOrEqual(8 * 256 * (18 + 2 + 4 + 2));
+		// and the relay and its tender in each; and one to three derelicts.
+		expect(carriers).toBeGreaterThanOrEqual(8 * 256 * (8 + 1 + 2 + 1));
+		expect(carriers).toBeLessThanOrEqual(8 * 256 * (18 + 2 + 4 + 2 + 3));
 	});
 
 	test("a local id repeats across systems and never inside one", () => {
@@ -200,8 +209,9 @@ describe("§9.1 namespace and baseline stability", () => {
 		// Three station carriers and fifteen Traffic ones — the widest system's
 		// roster since #277 reserved a visitor berth at each of its stations —
 		// and #324's four raider slots, and #351's relay and its tender, and node
-		// #491's outpost with its one Traffic carrier.
-		expect(globalIds.size).toBe(26);
+		// #491's outpost with its one Traffic carrier, and node #731's three
+		// derelict slots.
+		expect(globalIds.size).toBe(29);
 	});
 
 	test("station and Traffic carrier metadata stay structurally discriminated", () => {
@@ -276,13 +286,16 @@ describe("§9.1 namespace and baseline stability", () => {
 	const isOutpostCarrier = (c: GeneratedCarrier): boolean =>
 		(c.kind === "station" && c.stationType === "outpost") ||
 		(c.kind === "traffic" && c.homeStationType === "outpost");
+	/** Version 10's addition (node #731), excluded from every older version's
+	 *  hash for the outpost's reason. */
+	const isDerelict = (c: GeneratedCarrier): boolean => c.kind === "derelict";
 	const migrationIdentityFingerprint = (
 		galaxy: number,
 		keep: (c: GeneratedCarrier) => boolean,
 	): number => {
 		const parts: string[] = [];
 		for (const c of enumerateCarriers(WORLD, galaxy)) {
-			if (!keep(c) || isOutpostCarrier(c)) continue;
+			if (!keep(c) || isOutpostCarrier(c) || isDerelict(c)) continue;
 			const generatedType =
 				c.kind === "station"
 					? c.stationType
@@ -328,6 +341,15 @@ describe("§9.1 namespace and baseline stability", () => {
 				3863013389, 4286568612,
 			],
 		},
+		// Version 9's own identities are version 8's plus the outpost's, which
+		// this hash leaves out; node #731's derelicts are what 10 adds.
+		9: {
+			kinds: ["station", "traffic", "raider", "relay", "relay-tender"],
+			goldens: [
+				4019261657, 2620491408, 1543164142, 1310966715, 1616386912, 2463802301,
+				3863013389, 4286568612,
+			],
+		},
 	};
 
 	test("the outpost's carriers are what version 9 adds, and they are there", () => {
@@ -342,7 +364,7 @@ describe("§9.1 namespace and baseline stability", () => {
 		}
 	});
 
-	test("versions 6, 7 and 8 keep every carrier identity and type through the rebase", () => {
+	test("versions 6, 7, 8 and 9 keep every carrier identity and type through the rebase", () => {
 		for (const [version, { kinds, goldens }] of Object.entries(
 			MIGRATION_IDENTITY_GOLDENS,
 		))
@@ -361,9 +383,30 @@ describe("§9.1 namespace and baseline stability", () => {
 		// fingerprints, hashed over every carrier but the outpost's.
 		expect(
 			[0, 1, 2, 3, 4, 5, 6, 7].map((g) =>
-				carrierBaselineFingerprint(WORLD, g, (c) => !isOutpostCarrier(c)),
+				carrierBaselineFingerprint(
+					WORLD,
+					g,
+					(c) => !isOutpostCarrier(c) && !isDerelict(c),
+				),
 			),
 		).toEqual(VERSION_8_BASELINE_FINGERPRINTS);
+	});
+
+	test("the derelict slots are what version 10 adds, and they are there", () => {
+		for (let g = 0; g < 8; g++)
+			expect(Array.from(enumerateCarriers(WORLD, g)).some(isDerelict)).toBe(
+				true,
+			);
+	});
+
+	test("version 10 moves no version-9 carrier: parent and placement too", () => {
+		// Node #731 only enumerated derelict slots. Version 9's full baseline
+		// fingerprints, hashed over every carrier but the derelicts.
+		expect(
+			[0, 1, 2, 3, 4, 5, 6, 7].map((g) =>
+				carrierBaselineFingerprint(WORLD, g, (c) => !isDerelict(c)),
+			),
+		).toEqual(VERSION_9_BASELINE_FINGERPRINTS);
 	});
 
 	test("every supported old generator version has an identity golden", () => {
@@ -375,7 +418,7 @@ describe("§9.1 namespace and baseline stability", () => {
 		// Identity, type, parent and generated placement, hashed. It goes red on
 		// any generator change that moves a station — which is exactly when
 		// `WORLD_GENERATOR_VERSION` owes a bump and a migration.
-		expect(WORLD_GENERATOR_VERSION).toBe(9);
+		expect(WORLD_GENERATOR_VERSION).toBe(10);
 		const fingerprints = [0, 1, 2, 3, 4, 5, 6, 7].map((g) =>
 			carrierBaselineFingerprint(WORLD, g),
 		);
@@ -385,7 +428,7 @@ describe("§9.1 namespace and baseline stability", () => {
 });
 
 /**
- * Pinned at `WORLD_GENERATOR_VERSION` 9 against world seed `0x5ee11e`.
+ * Pinned at `WORLD_GENERATOR_VERSION` 10 against world seed `0x5ee11e`.
  *
  * - 1 → 2: node #32's orbit floor moved every floored station's generated
  *   placement — the set this hashes — so the baseline moved with it.
@@ -415,6 +458,10 @@ describe("§9.1 namespace and baseline stability", () => {
  *   holds some, so all eight hashes move. Nothing else did: hashed over every
  *   carrier but the outpost's, this fingerprint still reads version 8's,
  *   which `VERSION_8_BASELINE_FINGERPRINTS` keeps and a row above checks.
+ * - 9 → 10: node #731 enumerated one to three derelict slots in every system
+ *   by government (`salvage.md` S21). They have no parent and no placement
+ *   yet; hashed over every carrier but the derelicts, this fingerprint still
+ *   reads version 9's, which `VERSION_9_BASELINE_FINGERPRINTS` keeps.
  *
  * Version 4 changed all eight hashes because every generated station gained
  * Traffic Carrier slots; version 5 changes all eight again because every one of
@@ -440,9 +487,16 @@ const VERSION_8_BASELINE_FINGERPRINTS = [
 	4125920552, 2160286286,
 ];
 
-const GOLDEN_FINGERPRINTS = [
+/** Version 9's `GOLDEN_FINGERPRINTS`, kept as the oracle for the row that
+ *  holds every non-derelict carrier through 9 → 10. */
+const VERSION_9_BASELINE_FINGERPRINTS = [
 	2672329271, 4074845572, 1545285557, 3911845246, 1787093879, 1921536928,
 	1159651322, 1021027989,
+];
+
+const GOLDEN_FINGERPRINTS = [
+	2240710115, 2950027290, 1577563467, 1853774124, 621039426, 3750933717,
+	1834849230, 1207904577,
 ];
 
 // ---------------------------------------------------------------------------
