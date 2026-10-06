@@ -5,8 +5,12 @@
  * **What is turned on.** The player against star, planet and moon spheres
  * (§2.1, node #661) and against every station's proxy (§2.2, node #663), in
  * normal flight with the assist on and off, with the aperture plane weighed
- * against the impacts (§4.2). Raiders and Traffic stay non-colliding until the
- * ships-and-Traffic slice. The resolver is written against a **generic
+ * against the impacts (§4.2) — and since node #664, every other ship: raiders,
+ * a relay's defender and Traffic carriers against bodies, proxies, the player
+ * and each other (C4b, §6), through `sweepShipPair` below. The player meets
+ * them in normal flight; while the player cruises, the flown ones still meet
+ * bodies, proxies and each other (`stepFleet`). The resolver is
+ * written against a **generic
  * primitive** — sphere, capsule, oriented box — in a solid's own frame, so a
  * station proxy is data handed to the same sweep and not a second resolver.
  *
@@ -16,7 +20,7 @@
  * star-centred coordinate at an AU never meets a 0.1 m separation in one
  * subtraction.
  *
- * Three parts, in this order:
+ * Four parts, in this order:
  *
  * 1. **The law** (§3, P2, P3) — closing speed, damage, bounce. Pure functions,
  *    no geometry.
@@ -30,6 +34,9 @@
  *    bound below, so an advance by `gap / bound` cannot step over any
  *    primitive however thin. That is §4.1's requirement met by construction
  *    rather than by a sub-step count.
+ * 4. **Ship against ship** (C4b) — the same sweep, with the meeting landed on
+ *    both ships: one damage, each its own side, and a momentum-conserving
+ *    impulse split by mass.
  */
 
 import { DOCKING_DAMAGE_SCALE, V_GATE_KMS } from "./docking";
@@ -355,6 +362,27 @@ export const pairSeparation = (
 ): Separation =>
 	separation(placeBox(shipBox, shipAt), place(primitive, solidAt));
 
+/**
+ * How far a ship's box must move along `normal` — pointing from the other
+ * primitive toward the ship — for the two to stand `SEPARATION_KM` apart
+ * along it: the push `settleTouching` gives an overlap. Apart along one axis
+ * is apart (the separating axis), so this clears an overlap whichever axis is
+ * chosen; `≤ 0` when the two already stand that far apart along it.
+ */
+export function pushOutAlong(
+	shipBox: Primitive,
+	shipAt: Pose,
+	primitive: Primitive,
+	solidAt: Pose,
+	normal: Vec3,
+): number {
+	const ship = placeBox(shipBox, shipAt);
+	const shipLow = -extentAlong(ship, scale(normal, -1));
+	return (
+		extentAlong(place(primitive, solidAt), normal) + SEPARATION_KM - shipLow
+	);
+}
+
 /** One vertex of the Minkowski difference `A − B`, with its two witnesses. */
 interface Vertex {
 	w: Vec3;
@@ -533,7 +561,7 @@ export interface SolidMotion {
 }
 
 /** A solid's turn across the step, as an axis and an angle. */
-interface Spin {
+export interface Spin {
 	axis: Vec3;
 	angle: number;
 }
@@ -543,7 +571,7 @@ interface Spin {
  * through the quaternion (Shepperd's method) so a turn near a half
  * revolution keeps its axis.
  */
-function spinBetween(from: Pose, to: Pose): Spin {
+export function spinBetween(from: Pose, to: Pose): Spin {
 	// R = Σ to_i ⊗ from_i, so R·from_i = to_i.
 	const col = (k: "x" | "y" | "z") => ({
 		x: to.x[k] * from.x.x + to.y[k] * from.y.x + to.z[k] * from.z.x,
@@ -635,10 +663,17 @@ function pointVelocity(
 	pose: Pose,
 	point: Vec3,
 ): Vec3 {
-	const v = lerp(m.velStart, m.velEnd, s);
-	if (spin.angle === 0) return v;
+	return add(
+		lerp(m.velStart, m.velEnd, s),
+		turnVelocity(spin, dt, pose, point),
+	);
+}
+
+/** What a solid's turn about its origin adds to a point's velocity. */
+function turnVelocity(spin: Spin, dt: number, pose: Pose, point: Vec3): Vec3 {
+	if (spin.angle === 0 || !(dt > 0)) return v3();
 	const omega = scale(spin.axis, spin.angle / dt);
-	return add(v, cross(omega, sub(point, pose.origin)));
+	return cross(omega, sub(point, pose.origin));
 }
 
 /** A solid's bounding sphere across one step: its origin at both ends, and
@@ -742,6 +777,8 @@ interface Sweep {
 	shipBox: Primitive;
 	shipReach: number;
 	shipSpin: Spin;
+	/** At rest, both ships keep the own-turn exemption (§3.1). */
+	restingShipPair: boolean;
 	solids: readonly SolidMotion[];
 	/** Each solid's turn across the step, by index — computed once. */
 	spins: readonly Spin[];
@@ -785,6 +822,16 @@ export function sweepShip(
 	dt: number,
 	options: SweepOptions = {},
 ): SweepResult {
+	return sweepMotion(ship, solids, dt, options, false);
+}
+
+function sweepMotion(
+	ship: SolidMotion,
+	solids: readonly SolidMotion[],
+	dt: number,
+	options: SweepOptions,
+	restingShipPair: boolean,
+): SweepResult {
 	const result: SweepResult = {
 		pos: ship.end.origin,
 		vel: ship.velEnd,
@@ -804,6 +851,7 @@ export function sweepShip(
 		shipBox,
 		shipReach: reachKm(ship.primitives),
 		shipSpin: spinBetween(ship.start, ship.end),
+		restingShipPair,
 		solids,
 		spins: solids.map((solid) => spinBetween(solid.start, solid.end)),
 		dt,
@@ -924,17 +972,19 @@ function classifyPairs(
 				swept.push(pair);
 				continue;
 			}
-			// A resting pair: closing read at the start of the step, on the
-			// ship's translation alone — its own turn is resolved by moving it
-			// out, not billed (§3.1). The surface's own motion is billed.
-			const surfaceVel = pointVelocity(
-				solid,
-				sweep.spins[index],
-				dt,
-				0,
-				solidPose,
-				gap.onSurface,
-			);
+			// Both ships keep the own-turn exemption at rest (§3.1). Their
+			// translation at the start still bills; a moving world surface
+			// is still billed. Swept impacts use both point velocities below.
+			const surfaceVel = sweep.restingShipPair
+				? solid.velStart
+				: pointVelocity(
+						solid,
+						sweep.spins[index],
+						dt,
+						0,
+						solidPose,
+						gap.onSurface,
+					);
 			const closing = closingSpeed(sub(ship.velStart, surfaceVel), gap.normal);
 			touching.push({ pair, normal: gap.normal, closingKms: closing });
 			if (closing > 0)
@@ -1101,14 +1151,18 @@ function settleTouching(
 			push = SEPARATION_KM - gap.distanceKm;
 		}
 		if (push > 0) origin = add(origin, scale(normal, push));
-		const surfaceVel = pointVelocity(
-			solid,
-			sweep.spins[r.pair.solid],
-			dt,
-			1,
-			solidEnd,
-			gap.overlap ? shipEnd.c : gap.onSurface,
-		);
+		// Own rotation is held by separating the boxes (§3.1), rather than
+		// adding translation to the other ship only when it happens to be A.
+		const surfaceVel = sweep.restingShipPair
+			? solid.velEnd
+			: pointVelocity(
+					solid,
+					sweep.spins[r.pair.solid],
+					dt,
+					1,
+					solidEnd,
+					gap.overlap ? shipEnd.c : gap.onSurface,
+				);
 		const u = sub(vel, surfaceVel);
 		const un = dot(u, normal);
 		if (r.closingKms > V_SCRAPE_KMS && !bounced) {
@@ -1176,4 +1230,169 @@ function advance(
 		if (s > 1) return null;
 	}
 	return s;
+}
+
+// ---------------------------------------------------------------------------
+// 4. Ship against ship (C4b, node #664)
+// ---------------------------------------------------------------------------
+
+/** A ship across one step, as the pair resolver reads it: its motion and its
+ *  mass, which the impulse is split by. */
+export interface ShipMotion extends SolidMotion {
+	massT: number;
+}
+
+/**
+ * §3's ship-against-ship impulse (C4b): the change to each ship's velocity
+ * that takes their relative normal velocity from `unBefore` to `unAfter`,
+ * along `normal` (from B toward A), with momentum conserved — so it is split
+ * by mass (derived). `J = (unAfter − unBefore) · mₐm_b / (mₐ + m_b)`; A gains
+ * `J / mₐ` along the normal and B loses `J / m_b`. A courier that meets a
+ * carrier moves; the carrier barely does.
+ */
+export function shipImpulse(
+	normal: Vec3,
+	unBefore: number,
+	unAfter: number,
+	massA: number,
+	massB: number,
+): { a: Vec3; b: Vec3 } {
+	if (!(massA > 0) || !(massB > 0))
+		throw new Error("a ship's mass is positive");
+	const j = ((unAfter - unBefore) * massA * massB) / (massA + massB);
+	return { a: scale(normal, j / massA), b: scale(normal, -j / massB) };
+}
+
+/** One meeting of two ships, as each lands it. */
+export interface ShipPairImpact {
+	/** Seconds into the step. A resting pair is met at 0. */
+	timeS: number;
+	/** Where they met, world coordinates. */
+	point: Vec3;
+	/** From B toward A. */
+	normal: Vec3;
+	/** §3's `v_n`: the closing speed of the two points, km/s. */
+	closingKms: number;
+	/** §3's damage, the same on each side (C4b). */
+	damage: number;
+	/** The side each ship is struck on, each by its own `sideStruck`. */
+	sideA: ShieldSide;
+	sideB: ShieldSide;
+	resting: boolean;
+}
+
+export interface ShipPairResult {
+	a: { pos: Vec3; vel: Vec3 };
+	b: { pos: Vec3; vel: Vec3 };
+	impacts: ShipPairImpact[];
+	/** The two overlapped at the start, so were not tested (§4.3). */
+	ghost: boolean;
+}
+
+/**
+ * One step of two ships against each other (§3, C4b): A's box swept against
+ * B's along both their motions, exactly as `sweepShip` sweeps a ship against
+ * any solid, and then the meeting landed on both.
+ *
+ * - **The same damage on each side**, each on the side its own `sideStruck`
+ *   gives it from where it was met.
+ * - **The impulse is computed, not re-split.** `sweepShip`'s own bounce treats
+ *   the met solid as immovable and carries the ship with the solid's own
+ *   acceleration for the rest of the step — for a ship, the other ship's
+ *   thrust — so its velocity is not the one a two-body bounce leaves. Each
+ *   ship keeps the velocity its own step gave it, and `shipImpulse` takes the
+ *   pair's relative normal velocity to `RESTITUTION · v_n` separating, with
+ *   momentum conserved. A resting pair closing at or under `V_SCRAPE_KMS`
+ *   only stops closing, as §3.1 has a resting ship stop.
+ * - **The separation is split by mass as well.** `sweepShip` leaves A outside
+ *   B's end pose; that correction is shared in the impulse's proportions, so
+ *   the two still end the step apart by the same gap and a carrier is not
+ *   shoved aside by a courier's step.
+ * - **A resting pair is held apart even when nothing is billed.** Two ships
+ *   touching at rest that thrust together close at zero at the start of the
+ *   step, so §3.1 bills nothing — but `sweepShip` still holds A at the
+ *   surface and takes the inward part off its velocity. Both corrections are
+ *   split by mass, momentum kept, so the pair ends touching and not closing
+ *   rather than overlapped, which the next step would read as a ghost.
+ * - **`options.bProjected`**: B is a carrier on its projection (§6), a pose
+ *   only a billed meeting can move, because a meeting hands it to flight. A
+ *   hold with nothing billed is then put wholly on A, the one ship there is
+ *   to move; a billed meeting splits as above.
+ */
+export function sweepShipPair(
+	a: ShipMotion,
+	b: ShipMotion,
+	dt: number,
+	options: { bProjected?: boolean } = {},
+): ShipPairResult {
+	const swept = sweepMotion(a, [b], dt, {}, true);
+	const result: ShipPairResult = {
+		a: { pos: a.end.origin, vel: a.velEnd },
+		b: { pos: b.end.origin, vel: b.velEnd },
+		impacts: [],
+		ghost: swept.ghosts.length > 0,
+	};
+	if (result.ghost) return result;
+	const billed = swept.impacts.length > 0;
+	/** A's share of what `sweepShip` did to A against an immovable B. */
+	const shareA =
+		options.bProjected && !billed ? 1 : b.massT / (a.massT + b.massT);
+	const correction = sub(swept.pos, a.end.origin);
+	result.a.pos = add(a.end.origin, scale(correction, shareA));
+	result.b.pos = sub(b.end.origin, scale(correction, 1 - shareA));
+	if (!billed) {
+		// Resting, nothing billed: the hold's velocity change, split the way
+		// the separation is, so momentum is kept.
+		const dv = sub(swept.vel, a.velEnd);
+		result.a.vel = add(a.velEnd, scale(dv, shareA));
+		result.b.vel = sub(b.velEnd, scale(dv, 1 - shareA));
+		return result;
+	}
+	// Each ship's turn across the step, as its box was swept turning
+	// (`sweepShip`).
+	const aSpin = spinBetween(a.start, a.end);
+	const bSpin = spinBetween(b.start, b.end);
+	for (const impact of swept.impacts) {
+		const n = impact.normal;
+		// Each pose at the meeting, on the arc its box was swept along: a chord
+		// between its two end noses lags a fast turn by tens of degrees.
+		const s = dt > 0 ? impact.timeS / dt : 0;
+		const aAt = poseAt(a, aSpin, s, v3());
+		const bAt = poseAt(b, bSpin, s, v3());
+		// What the two turns add to the points' relative normal velocity. A
+		// swept `closingKms` is measured on the points, turns included, so the
+		// impulse must take the points to it; a resting one keeps both ships'
+		// own-turn exemption (§3.1), and so does this. The impulse is linear
+		// only (§3), so the turns' share is the same after it as before.
+		const turns = impact.resting
+			? 0
+			: dot(
+					sub(
+						turnVelocity(aSpin, dt, aAt, impact.point),
+						turnVelocity(bSpin, dt, bAt, impact.point),
+					),
+					n,
+				);
+		const unBefore = dot(sub(result.a.vel, result.b.vel), n) + turns;
+		const unAfter =
+			impact.resting && impact.closingKms <= V_SCRAPE_KMS
+				? Math.max(unBefore, 0)
+				: Math.max(unBefore, RESTITUTION * impact.closingKms);
+		if (unAfter > unBefore) {
+			const kick = shipImpulse(n, unBefore, unAfter, a.massT, b.massT);
+			result.a.vel = add(result.a.vel, kick.a);
+			result.b.vel = add(result.b.vel, kick.b);
+		}
+		result.impacts.push({
+			timeS: impact.timeS,
+			point: impact.point,
+			normal: n,
+			closingKms: impact.closingKms,
+			damage: impact.damage,
+			sideA: impact.side,
+			sideB: sideStruck(bAt.z, sub(impact.point, bAt.origin)),
+			resting: impact.resting,
+		});
+	}
+	return result;
 }

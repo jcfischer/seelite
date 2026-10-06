@@ -71,14 +71,13 @@
  *
  * Two declarations have a `src/` reader: `GALACTIC_NORMAL`, which the chart reads
  * instead of restating, and `SYSTEM_PLANE_NORMAL`, which `main.ts` rolls the
- * horizon against. Nothing in `src/` calls any *function* here. `skyFrame`,
- * `galaxyToSystem`, `skyBearing`, `coreBearing` and `GALACTIC_CORE` are the
- * transform #430 exists to write, and the nodes that would draw with it — #431's
- * bearings, #433's bake, #432's deep-sky row — are the ones this node blocks. That
- * is what a frame landed ahead of the sky that uses it looks like, and it belongs
- * in the header rather than in a grep: until #431 lands, this module's only reader
- * is its own suite, which is why that suite measures each of these claims twice
- * where it can and calls out the arms nobody has flown.
+ * horizon against. The functions landed ahead of the sky that uses them and have
+ * readers now: `backdrop.ts` draws #431's bright layer through `skyFrame` and
+ * `skyBearing`, and `main.ts` reads `systemCoreBearing` once per system for two
+ * things that must agree — #433's haze in the bake, and the Core mark on the
+ * glass (node #478, `hud-and-scanner.md` §5.5). `galaxyToSystem` still has no
+ * reader outside this module's own suite, which is why that suite measures each
+ * of these claims twice where it can and calls out the arms nobody has flown.
  *
  * The deletions are the deliberate half of the same fact. `systemToGalaxy`,
  * `rotateByInverse`, `quatConjugate` and `QUAT_IDENTITY` went during review for
@@ -272,4 +271,25 @@ export function skyBearing(
  */
 export function coreBearing(frame: SkyFrame, fromLy: Vec3): Vec3 | null {
 	return skyBearing(frame, fromLy, GALACTIC_CORE);
+}
+
+/**
+ * The **Core bearing** at one system, in that system's world frame: its own
+ * {@link skyFrame} composed with {@link coreBearing} from where it stands.
+ *
+ * Two readers, and they must agree, which is why this is one call rather than
+ * the two lines each would otherwise spell for itself: the sky bake's haze
+ * (`light-rig.ts`, through `main.ts`'s `buildEnvironment`) and the Core mark on
+ * the glass (`hud-and-scanner.md` §5.5, node #478). `main.ts` reads it once per
+ * system and both draw from that one value, so the glow and the mark cannot
+ * point two ways.
+ *
+ * Takes the record's two fields structurally so the headless tier can hand it a
+ * `SystemRecord` without building a system.
+ */
+export function systemCoreBearing(record: {
+	readonly seed: number;
+	readonly pos: Vec3;
+}): Vec3 | null {
+	return coreBearing(skyFrame(record.seed), record.pos);
 }

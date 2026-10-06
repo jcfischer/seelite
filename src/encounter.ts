@@ -56,7 +56,7 @@ import {
 import { defenderDraw } from "./relay-defender";
 import { mix } from "./rng";
 import type { ShieldSide } from "./ship-condition";
-import { fullCondition } from "./ship-condition";
+import { applyDamage, fullCondition, isAlive } from "./ship-condition";
 import { flightPerformance } from "./sim";
 import {
 	type Vec3,
@@ -316,6 +316,57 @@ const over = (e: Encounter, end: EncounterEnd): EncounterStep =>
 
 const upFor = (nose: Vec3): Vec3 => cross(frameAcross(nose), nose);
 
+/**
+ * What one step's collisions did to the duel's raider (`collision.md` §3,
+ * node #664): every meeting landed on its condition, at the pose the step
+ * left it in. **A raider they finish is destroyed in this tick**, its wreck
+ * where it came apart — the same `over` and the same wreck a kill by fire
+ * gives — rather than on the duel step after: a ram that kills the pilot as
+ * well holds the clock, and no step after it ever comes. `null` outside a
+ * duel, where there is no raider in flight to land anything on.
+ *
+ * `view` is the contact the duel step drew, which stood where the raider
+ * was before this step moved it; `contact` is that view moved to where the
+ * step left the raider, so the hull and the scanner draw what the collision
+ * body did. `null` with no view, and on a kill, which takes the view away.
+ */
+export function landRaiderImpacts(
+	e: Encounter,
+	landed: {
+		pos: Vec3;
+		vel: Vec3;
+		impacts: readonly { damage: number; side: ShieldSide }[];
+	},
+	view: EncounterContact | null,
+): {
+	encounter: Encounter;
+	wreck: { pos: Vec3; vel: Vec3 } | null;
+	contact: EncounterContact | null;
+} | null {
+	const raider = e.phase === "duel" ? e.raider : null;
+	if (!raider) return null;
+	let condition = raider.condition;
+	for (const impact of landed.impacts)
+		condition = applyDamage(condition, impact.damage, impact.side);
+	const ship = { pos: landed.pos, vel: landed.vel };
+	if (isAlive(raider.condition) && !isAlive(condition))
+		return {
+			encounter: over(e, "destroyed").encounter,
+			wreck: { pos: { ...ship.pos }, vel: { ...ship.vel } },
+			contact: null,
+		};
+	return {
+		encounter: {
+			...e,
+			raider: { flight: { ...raider.flight, ship }, condition },
+		},
+		wreck: null,
+		contact: view
+			? { ...view, pos: { ...ship.pos }, vel: { ...ship.vel } }
+			: null,
+	};
+}
+
 export function stepEncounter(e: Encounter, f: EncounterFrame): EncounterStep {
 	const { pilot } = f;
 	const contactOf = (
@@ -416,7 +467,16 @@ export function stepEncounter(e: Encounter, f: EncounterFrame): EncounterStep {
 		};
 	}
 
-	// The duel.
+	// The duel. **A raider already at no hull is destroyed** before anything
+	// else is asked of it (node #664). A collision kill is resolved in its own
+	// tick (`landRaiderImpacts`); this is the backstop, so a raider that
+	// reaches a duel step dead by any route is never flown, nor let escape
+	// into cruise.
+	if (e.raider && !isAlive(e.raider.condition))
+		return {
+			...over(e, "destroyed"),
+			wreck: { pos: e.raider.flight.ship.pos, vel: e.raider.flight.ship.vel },
+		};
 	if (f.inCruise) return over(e, "escaped");
 	const raider: Raider = e.raider ?? {
 		flight: raiderAtDrop(

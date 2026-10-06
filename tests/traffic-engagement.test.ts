@@ -11,6 +11,7 @@ import {
 	flownVoyageOrdinal,
 	flyingTrafficActors,
 	parkedHomeTrafficActors,
+	provoke,
 	stepEngagement,
 	strikeClock,
 	type EngagementStep,
@@ -71,7 +72,12 @@ const DT = 1 / 60;
 const KEY = carrierKey(12, "station-trade/traffic-02");
 
 /** A civilian `km` ahead of a stationary player, flying away at rest. */
-function ahead(hullId: HullId, km: number, seed = 5): Engagement {
+function ahead(
+	hullId: HullId,
+	km: number,
+	seed = 5,
+	byPilot = true,
+): Engagement {
 	return engage(
 		{
 			key: KEY,
@@ -83,7 +89,7 @@ function ahead(hullId: HullId, km: number, seed = 5): Engagement {
 			voyageOrdinal: 0,
 		},
 		seed,
-		{ assaultAlreadyCharged: false },
+		{ assaultAlreadyCharged: false, byPilot },
 	);
 }
 
@@ -203,6 +209,59 @@ describe("H3: the reaction per role", () => {
 		}
 	});
 
+	test("an armed hull put in flight by someone else runs from the pilot and never fires (node #664)", () => {
+		for (const hull of ARMED_HULLS) {
+			let e = ahead(hull, 3, 11, false);
+			expect(e.intent).toBe("civilian");
+			expect(e.flight.phase).toBe("flee");
+			let fired = false;
+			const phases = new Set<string>();
+			const quiet = { fired: false, damage: 0 };
+			for (let t = 0; t < 30; t += DT) {
+				const step = stepEngagement(e, chaser(e, { pos: v3() }), quiet, DT);
+				e = step.engagement;
+				phases.add(e.flight.phase);
+				if (step.returnFire) fired = true;
+			}
+			expect(fired).toBe(false);
+			expect([...phases]).toEqual(["flee"]);
+			// The control: the same hull the pilot put in flight closes and fires.
+			expect(ahead(hull, 3, 11, true).intent).toBe("attacker");
+		}
+		// A civilian hull runs either way.
+		for (const hull of CIVILIAN_HULLS)
+			expect(ahead(hull, 3, 11, true).intent).toBe("civilian");
+	});
+
+	test("the pilot's fire landing provokes it: it turns and closes from acquire", () => {
+		for (const hull of ARMED_HULLS) {
+			let e = ahead(hull, 2, 11, false);
+			// Pinned in the beam for one frame: the hit lands.
+			const step = stepEngagement(e, chaser(e, { pos: v3() }), SHOT, DT);
+			expect(step.firstHit).toBe(true);
+			e = step.engagement;
+			expect(e.intent).toBe("attacker");
+			expect(e.flight.phase).toBe("acquire");
+			let fired = false;
+			for (let t = 0; t < 30 && !fired; t += DT) {
+				const next = stepEngagement(
+					e,
+					chaser(e, { pos: v3() }),
+					{ fired: false, damage: 0 },
+					DT,
+				);
+				e = next.engagement;
+				if (next.returnFire) fired = true;
+			}
+			expect(fired).toBe(true);
+		}
+		// Provoking a civilian, or a hull already attacking, changes nothing.
+		const civilian = ahead("freighter", 2, 11, false);
+		expect(provoke(civilian)).toBe(civilian);
+		const attacking = ahead("patrol", 2, 11, true);
+		expect(provoke(attacking)).toBe(attacking);
+	});
+
 	test("flies on its own hull's thrust, not the raider's", () => {
 		let e = ahead("freighter", 5);
 		const pilot: DuelPilot = {
@@ -292,7 +351,7 @@ describe("a fight beside a station is flown in its frame", () => {
 					voyageOrdinal: 0,
 				},
 				3,
-				{ assaultAlreadyCharged: false },
+				{ assaultAlreadyCharged: false, byPilot: true },
 			);
 			let player = v3();
 			let nearest = Number.POSITIVE_INFINITY;
@@ -347,7 +406,7 @@ describe("the voyage a hold is drawn for (carrier-identity F11)", () => {
 				voyageOrdinal: 4,
 			},
 			1,
-			{ assaultAlreadyCharged: false },
+			{ assaultAlreadyCharged: false, byPilot: true },
 		);
 		let stepped = e;
 		for (let i = 0; i < 600; i++)
@@ -1062,6 +1121,7 @@ describe("H4's sustained-fire clock (#396)", () => {
 					paid.world.galaxies[0].legalStatus,
 					KEY,
 				),
+				byPilot: true,
 			},
 		);
 		expect(resumed.landedFireS).toBe(0);

@@ -345,6 +345,12 @@ crossing the aperture plane inside the rectangle.
   is §2's in full.
 - **An impact first:** this spec's law runs, and the plane is not crossed this
   tick.
+- **Another ship first** (node #664): the pair is met by C4b's law, the plane
+  is not crossed, and the ship meets the world afterwards on the motion the
+  meeting left it, swept from the tick's start to its corrected end. A world
+  impact the bounce prevents is not billed. Each ship's first meeting is read
+  on the tick's unresolved motions, so a meeting its partner never reaches
+  only defers the world sweep; it cannot lose a world impact.
 - **An exact tie:** the impact wins (derived). A surface is a promise to keep
   out, so it beats an inclusion promise. `cruise.ts` makes the same ruling for
   a surface and an arrival.
@@ -392,6 +398,16 @@ whether launches ever do is measured rather than assumed.
   after the six checks pass, and ends when the launching ship's centre clears
   the plane outward. §4.3 covers the hull that is still in the throat at that
   tick.
+- **As Traffic's route phases** (node #664, `trafficCollisionClass` in
+  `src/station-route.ts`). Exempt: `parked-home`, `launch-queued` and
+  `docked-away` (parked), `departing` (the launch, which releases twenty
+  metres past the plane, so the centre has cleared it) and `arriving` (from
+  the tick the lane is granted at the hold, through the traversal). Collidable:
+  `local-departure`, `local-approach`, the two queues' holds, and a hauler's
+  `lane-point-hold` and `jump-windup`. `cruise` and `regenerating` are the
+  cruise regime and are C5's (derived: the player's two regimes, applied to
+  Traffic). `tests/collision-traffic.test.ts` holds the table and reads the two
+  boundaries off the route law.
 
 ---
 
@@ -404,7 +420,10 @@ whether launches ever do is measured rather than assumed.
 `civilian-combat.md` uses the term, for its mechanics and nothing else:
 
 - While materialized, the carrier is flown from the pose the bounce left it in,
-  with its H3 intent. A projected pose cannot express a bounce.
+  with its H3 intent toward the pilot when the pilot was a party to the
+  meeting; one met only by another ship or by the world runs, as a civilian
+  does, until the pilot's fire lands on it or their hull meets it. A projected
+  pose cannot express a bounce.
 - An impact that reaches hull is H3d's trigger, and H3c records it: `disable`,
   then `repair-start`. That is the saved Carrier deviation #75 asked for. The
   route already exists; this spec does not add a second one.
@@ -423,6 +442,14 @@ line.
    box into a proxy, a body's sphere, or another carrier's box. Without either,
    Traffic damages itself on its own stations and diverts itself home. #303
    builds the row first, and avoidance only if the row is red.
+   **The row is red** (node #664, `docs/findings/traffic-collision-corpus.md`).
+   Over 40 systems of seed 47 it finds a local approach whose straight line
+   runs through a trade station at up to 8.96 km/s, and touches under
+   `V_SCRAPE` at a launch's aperture and at the shared release point. The
+   avoidance is owed by a node below #664, not built past it. Until then a
+   projected route is not swept against the world at runtime — it is met only
+   by the ships that are flown — so the defect costs Traffic nothing it can
+   see, and the row is what keeps it visible.
 2. **The NPC controller has no body awareness.** `combat-enemy.ts` steers on
    its target alone. Under symmetric collision a raider flies into a station
    or a planet until its controller avoids them. `combat-model.md` §1 forbids
@@ -581,7 +608,7 @@ Each spec line is amended in this change, except where its own table says otherw
 | "#75 made Traffic collidable" with no law behind it | `in-system-route-traffic.md` §5 | Points here; an impact is a landed hit (§6) |
 | "#75 and #362 have since added both" | `station-traffic.md` §3.1 | Collision is decided, not added. #303 builds it. |
 | "Swept collision at `MAX_DT` — the collision spec owed by #302" | `flight-model.md` §1, §4 | Points here; §4.1 answers the angular case |
-| The false-rules table's first row | `civilian-combat.md` | Not here. That table is amended by the change that builds its rows, so #303 adds that an impact uses H3d's route. |
+| The false-rules table's first row | `civilian-combat.md` | Not here. That table is amended by the change that builds its rows, so #303 adds that an impact uses H3d's route. Done by node #664. |
 | "A contact is a saved Carrier deviation" | Map #1 Constraints | Only a hull-reaching impact. Amended on the map when this merges. |
 | `collisionExempt`'s comment: "#75 inherits the other half of obligation 8" | `src/dock-session.ts` | §9.1.8 here. A code comment, so #303 amends it. |
 
@@ -614,7 +641,35 @@ rules for every combat ship.
 4. **Traffic and NPCs are collidable before they can avoid anything** (§6).
    Until #303's corpus row is green, or avoidance exists, a carrier can divert
    itself on its own station. Until the controller is built, a raider can die
-   on a planet.
+   on a planet. Node #664 found the row red and recorded it
+   (`docs/findings/traffic-collision-corpus.md`); a carrier on its projection
+   is not swept against the world, so only a flown one — engaged, or handed to
+   flight by a meeting — can divert itself today.
+8. **An impact's divert discounts a later strike** (node #664). An impact
+   writes H3c's pair under a `collision` cause, never `PLAYER_KILL`, but
+   `strikeClock` reads presence and not provenance: a carrier standing in its
+   berth for an impact reads, to `chargeOffence`, as a carrier the player has
+   already been charged for striking. And a carrier an impact has diverted is
+   no longer `operational`, so the gun's later hull strike writes no divert and
+   charges no `struck`. Both are the offence's to settle, which is #675's.
+9. **A bump hands a carrier to flight, and to its H3 intent** (node #664).
+   §6 has a projected carrier leave its projection on any meeting, because a
+   route cannot express a bounce — including a touch under `V_SCRAPE` that
+   costs nothing. A civilian then flees. An armed hull (patrol, interceptor)
+   takes the attacker's intent **only when the pilot was a party to the
+   meeting**, because that intent is toward the pilot: a patrol a raider rams,
+   or one that met a station, runs instead, and turns on the pilot only when
+   the pilot's fire lands on it or their hull meets it (`provoke`). So a pilot
+   who nudges one at 0.01 km/s has still started a fight, which reads against
+   H3's "never starts a fight". Built as §6 is written; whether a costless
+   touch should engage at all is the principal's to rule.
+10. **A raider's kill by impact pays only the player's own ram** (node #664).
+    A raider that a collision finishes dies in the same tick, through the end
+    a kill by fire takes — so a ram that kills the pilot as well, and holds
+    the clock, still destroys its Raider slot and schedules its <!-- glossary-ignore: slot -->
+    replacement — named for the meeting that did the most damage: the player's ram is a direct cause and pays bounty and ladder as
+    the gun does; a raider that flew into a station or planet alone names what
+    it met and pays nobody (`tests/collision-traffic.test.ts`).
 5. **The proxy is checked as a container and not as a fit** (§2.2). A proxy
    that wraps a sparse form in a box passes every headless row. Only flying
    it (§9.2.2) shows the invisible wall.

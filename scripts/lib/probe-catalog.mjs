@@ -453,8 +453,16 @@ export const PROBE_CATALOG = Object.freeze(
 		),
 		entry(
 			"probe-hud.mjs",
-			"Checks full-screen HUD sizing and projection of attitude, velocity, target, and docking markers.",
-			["HUD", "projection", "canvas resize", "markers", "cockpit"],
+			"Checks full-screen HUD sizing and projection of attitude, velocity, target, and docking markers, and that the Core mark is painted where the Core bearing projects and its label yields to the selected target's edge label.",
+			[
+				"HUD",
+				"projection",
+				"canvas resize",
+				"markers",
+				"cockpit",
+				"Core bearing",
+				"label declutter",
+			],
 		),
 		entry(
 			"probe-interdiction.mjs",

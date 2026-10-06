@@ -121,6 +121,11 @@ const NOT_RESET: Record<string, string> = {
 		"stale id gives one body the large pair for one frame and then the right " +
 		"one; a jump clears it, because there the id names a body that no longer " +
 		"exists",
+	fleetStarts:
+		"node #664's scratch: the flown ships' poses at the top of a frame, " +
+		"written before the raider and the engaged carriers step and read by " +
+		"`fleetOf` in that same frame's flight tail — no frame reads one it did " +
+		"not write, so a reset would clear what the next frame overwrites",
 };
 
 /**

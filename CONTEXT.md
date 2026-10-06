@@ -47,6 +47,11 @@ _Avoid_: hitbox, collision mesh.
 A `FleetSlot` layout position in the query-gated showroom avenue. Its `slot`
 identifier describes the model and its placement; it has no Berth reservation,
 aperture, station or docking semantics. `src/ship-mesh.ts` owns the layout.
+**Scope note, not an _Avoid_ line.** The collision step's `FleetShip`,
+`FleetStep` and `stepFleet` (`src/sim.ts`, node #664) use "fleet" for every
+ship in one step other than the player — a raider, an engaged carrier, a
+projected carrier a ship can meet. That fleet has nothing to do with the
+showroom avenue's.
 
 **Carrier**:
 A named physical asset, actor, or condition in the universe that enables a capability in a bounded consequence area.
@@ -371,8 +376,9 @@ off-axis and leave the player's approach corridor clear.
 _Avoid_: Staging point, queue slot, parking berth
 
 **Diversion**:
-What a shot that opens a carrier's hull does to it. In one tick the carrier is
-disabled with the shooter's provenance and taken in for repair under its home
+What a shot — or an impact (`collision.md` §6, node #664) — that opens a
+carrier's hull does to it. In one tick the carrier is disabled with the
+shooter's provenance, or the impact's, and taken in for repair under its home
 station's, and from then on it is **parked at home**: drawn in a berth, holding
 it, off its route and off the scanner, until the first departure its own schedule
 makes at or after the repair's floor, when the same instance flies again. The
@@ -795,8 +801,15 @@ which is #100's measurement. §11 of `galaxy-generation.md` is where the rule is
 written down once, and §12 is where the measured cone figures are — how much of a
 sky's other systems a star near the rim puts inside a cone on the centre, against
 what uniform spacing would — reprinted by `scripts/measure-sky-density.ts core`.
-`coreBearing` in `src/galaxy-frame.ts`.
+`coreBearing` in `src/galaxy-frame.ts`. The sky does not show it; the **Core
+mark** on the glass does (`hud-and-scanner.md` §5.5, node #478).
 _Avoid_: The way home, galactic down
+
+**Core mark**:
+The cockpit glass's mark for the **Core bearing** at the live system: a dot
+between two brackets, labelled `CORE`, on screen only. An instrument rather than
+a picture, because the sky withholds the core (node #478).
+`hud-and-scanner.md` §5.5 owns it; `drawCoreMark` in `src/main.ts` draws it.
 
 **Derived sky**:
 The points that *are* systems — one for every other system in the galaxy, at its
