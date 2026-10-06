@@ -222,3 +222,39 @@ export async function bisectHemisphere(
 		steps: maxSteps + 2,
 	};
 }
+
+/**
+ * How much the sun must add to a hull pixel, in display codes, for that pixel
+ * to count as the lit side. The instrument's own `MOVED`: a smaller change is
+ * not stable between two renders of one frame.
+ */
+export const LIT_SIDE_MIN_GAIN = 2;
+
+/**
+ * Which hull pixels the sun reaches (node #723, the principal's addition).
+ * `EXPOSURE_RULE` holds the whole painted hull, which is #199's reading; but
+ * `hull-chase` puts the star 150° round, so much of the hull may face away,
+ * and a face the sun does not reach does not get brighter when the sun goes
+ * up. The lit side is read beside the whole hull so that difference is
+ * visible. Both arrays are per pixel, in the shipped mask's order: the
+ * shipped rig, and the same rig with the sun at 0.
+ */
+export function litSide({ shippedLuma, noSunLuma, minGain }) {
+	if (shippedLuma.length !== noSunLuma.length)
+		throw new Error(
+			`litSide: ${shippedLuma.length} shipped pixels against ${noSunLuma.length} without the sun`,
+		);
+	return shippedLuma.map((value, i) => value - noSunLuma[i] > minGain);
+}
+
+/** The median as `lib/hull-chase.mjs` takes it: the sorted value at
+ *  `floor(n / 2)`, and 0 for no pixels. */
+export function medianOf(values) {
+	const sorted = [...values].sort((a, b) => a - b);
+	return sorted[Math.floor(sorted.length * 0.5)] ?? 0;
+}
+
+/** The median of the values whose flag is set. */
+export function medianWhere(values, flags) {
+	return medianOf(values.filter((_, i) => flags[i]));
+}

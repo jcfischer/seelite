@@ -27,12 +27,15 @@
  * read a median of 62.95 at hemisphere 3 and 67.22 at hemisphere 0. A search
  * on that median has no direction. So `keepMask: true` returns the pixel set
  * as `mask`, and passing it back as `mask` reads every later rig over the same
- * pixels. With neither, the reading is the one `probe-light-rig.mjs` gates on.
+ * pixels. `keepLuma: true` also returns `luma`, each kept pixel's value in
+ * `mask`'s order, so a caller can split the hull into the faces the sun
+ * reaches and the faces it does not. With none of the three, the reading is
+ * the one `probe-light-rig.mjs` gates on.
  */
 export async function measureHullChase(
 	page,
 	samples,
-	{ mask = null, keepMask = false } = {},
+	{ mask = null, keepMask = false, keepLuma = false } = {},
 ) {
 	const bodyId = await page.evaluate(() => {
 		const planets = window.__seelite.world.system.bodies.filter(
@@ -51,7 +54,7 @@ export async function measureHullChase(
 	}
 
 	return page.evaluate(
-		([sampleCount, framedBodyId, fixedMask, returnMask]) => {
+		([sampleCount, framedBodyId, fixedMask, returnMask, returnLuma]) => {
 			const game = window.__seelite;
 			const ship = game.shipMesh;
 			if (!ship) return { missing: true };
@@ -127,17 +130,20 @@ export async function measureHullChase(
 				: null;
 			if (inFixedMask) for (const at of fixedMask) inFixedMask[at] = 1;
 			let kept = [];
+			let keptLuma = [];
 			const summarizeDifference = (hull, withoutShip) => {
 				let peak = 0;
 				let peakAt = 0;
 				const values = [];
 				kept = [];
+				keptLuma = [];
 				for (let i = 0; i < hull.length; i += 4) {
 					const here = luma(hull, i);
 					if (inFixedMask) {
 						if (!inFixedMask[i / 4]) continue;
 					} else if (Math.abs(here - luma(withoutShip, i)) < 3) continue;
 					if (returnMask) kept.push(i / 4);
+					if (returnLuma) keptLuma.push(here);
 					if (here > peak) {
 						peak = here;
 						peakAt = i / 4;
@@ -196,8 +202,9 @@ export async function measureHullChase(
 				exposure: game.exposure,
 				finishes: game.finishes,
 				...(returnMask ? { mask: kept } : {}),
+				...(returnLuma ? { mask: kept, luma: keptLuma } : {}),
 			};
 		},
-		[samples, bodyId, mask, keepMask],
+		[samples, bodyId, mask, keepMask || keepLuma, keepLuma],
 	);
 }

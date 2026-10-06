@@ -32,6 +32,12 @@
  * pixels the shipped rig shows: that reader's own mask drops dark facets as a
  * rig gets darker, which moves the median the wrong way (see its docblock).
  *
+ * Beside it, the **lit side**: the hull pixels the shipped sun brightens
+ * (`litSide`), with its median at each rebalance and the hemisphere a rule on
+ * that median would choose. `hull-chase` puts the star 150° round, so a face
+ * the sun does not reach cannot gain when the sun goes up, and the whole-hull
+ * rule may understate the rebalance. The ladder still uses the whole-hull rule.
+ *
  * ## Two statistics per row
  *
  * Neither alone answers anything. Coverage answers "how much of the frame
@@ -69,7 +75,10 @@ import {
 	enclosureArms,
 	EXPOSURE_RULE,
 	LAYER_SCENES,
+	LIT_SIDE_MIN_GAIN,
 	lightsHeldProblems,
+	litSide,
+	medianWhere,
 	REBALANCE_SUNS,
 	resolveOcclusion,
 	SUN_SCALE,
@@ -341,6 +350,7 @@ async function hullUnder(page, lights, shippedLights, options = {}) {
 		lowerQuartile: hull.lowerQuartiles[0],
 		pixels: hull.pixels,
 		mask: hull.mask,
+		luma: hull.luma,
 	};
 }
 
@@ -412,7 +422,7 @@ try {
 	// ---- the same exposure ----
 
 	console.log(`\n  the same exposure — ${EXPOSURE_RULE.describe}`);
-	const target = await hullUnder(page, shipped, shipped, { keepMask: true });
+	const target = await hullUnder(page, shipped, shipped, { keepLuma: true });
 	const { mask } = target;
 	console.log(
 		`  shipped: median ${target.median.toFixed(2)}, peak ${target.peak.toFixed(2)}, ` +
@@ -422,16 +432,46 @@ try {
 		`  context: probe-light-rig's band, at device scale 1 — peak ${HULL_LUMA_BAND.min}–${HULL_LUMA_BAND.max}, ` +
 			`median ≥ ${HULL_LUMA_FLOORS.median}, lower quartile ≥ ${HULL_LUMA_FLOORS.lowerQuartile}`,
 	);
-	console.log(
-		`    ${"sun".padStart(5)} ${"hemi".padStart(6)}  ${"median".padStart(7)} ${"peak".padStart(7)} ${"LQ".padStart(7)}  held`,
+
+	// The lit side, read beside the whole hull and not instead of it: the
+	// pixels the shipped sun adds more than LIT_SIDE_MIN_GAIN codes to.
+	const noSun = await hullUnder(
+		page,
+		{ sun: 0, hemisphere: shipped.hemisphere },
+		shipped,
+		{ mask, keepLuma: true },
 	);
-	const rebalances = [];
-	for (const sun of REBALANCE_SUNS) {
+	const lit = litSide({
+		shippedLuma: target.luma,
+		noSunLuma: noSun.luma,
+		minGain: LIT_SIDE_MIN_GAIN,
+	});
+	const litPixels = lit.filter(Boolean).length;
+	if (litPixels === 0)
+		throw new Error("measure-shadow-enclosure: the sun reaches no hull pixel");
+	const litTarget = medianWhere(target.luma, lit);
+	console.log(
+		`  lit side: ${litPixels} of ${lit.length} px (${((100 * litPixels) / lit.length).toFixed(1)}%) gain > ${LIT_SIDE_MIN_GAIN} codes from the sun; ` +
+			`shipped lit-side median ${litTarget.toFixed(2)}`,
+	);
+	console.log(
+		`  the ladder uses the whole-hull rule; "lit rule" is the hemisphere that would hold the lit-side median instead`,
+	);
+	console.log(
+		`    ${"sun".padStart(5)} ${"hemi".padStart(6)}  ${"median".padStart(7)} ${"lit med".padStart(7)} ${"peak".padStart(7)} ${"LQ".padStart(7)}  ${"held".padEnd(10)}  ` +
+			`${"lit rule".padStart(8)} ${"median".padStart(7)} ${"lit med".padStart(7)}  held`,
+	);
+	const solve = async (sun, read, aim) => {
 		const found = await bisectHemisphere(
 			async (hemisphere) =>
-				(await hullUnder(page, { sun, hemisphere }, shipped, { mask })).median,
+				read(
+					await hullUnder(page, { sun, hemisphere }, shipped, {
+						mask,
+						keepLuma: true,
+					}),
+				),
 			{
-				target: target.median,
+				target: aim,
 				lo: 0,
 				hi: shipped.hemisphere,
 				tolerance: EXPOSURE_RULE.toleranceCodes,
@@ -440,14 +480,32 @@ try {
 		// Round to three places so the printed value is the value drawn, and
 		// read the hull once more at it.
 		const hemisphere = Math.round(found.hemisphere * 1000) / 1000;
-		const at = await hullUnder(page, { sun, hemisphere }, shipped, { mask });
-		const held =
-			Math.abs(at.median - target.median) <= EXPOSURE_RULE.toleranceCodes;
-		rebalances.push({ sun, hemisphere });
+		const at = await hullUnder(page, { sun, hemisphere }, shipped, {
+			mask,
+			keepLuma: true,
+		});
+		const held = Math.abs(read(at) - aim) <= EXPOSURE_RULE.toleranceCodes;
+		return {
+			hemisphere,
+			at,
+			litMedian: medianWhere(at.luma, lit),
+			held: held ? "yes" : `no (${found.reason ?? "rounding"})`,
+		};
+	};
+	const rebalances = [];
+	for (const sun of REBALANCE_SUNS) {
+		const whole = await solve(sun, (hull) => hull.median, target.median);
+		const bySide = await solve(
+			sun,
+			(hull) => medianWhere(hull.luma, lit),
+			litTarget,
+		);
+		rebalances.push({ sun, hemisphere: whole.hemisphere });
 		console.log(
-			`    ${sun.toFixed(2).padStart(5)} ${hemisphere.toFixed(3).padStart(6)}  ` +
-				`${at.median.toFixed(2).padStart(7)} ${at.peak.toFixed(2).padStart(7)} ${at.lowerQuartile.toFixed(2).padStart(7)}  ` +
-				`${held ? "yes" : `no (${found.reason ?? "rounding"})`}, ${found.steps} reads`,
+			`    ${sun.toFixed(2).padStart(5)} ${whole.hemisphere.toFixed(3).padStart(6)}  ` +
+				`${whole.at.median.toFixed(2).padStart(7)} ${whole.litMedian.toFixed(2).padStart(7)} ` +
+				`${whole.at.peak.toFixed(2).padStart(7)} ${whole.at.lowerQuartile.toFixed(2).padStart(7)}  ${whole.held.padEnd(10)}  ` +
+				`${bySide.hemisphere.toFixed(3).padStart(8)} ${bySide.at.median.toFixed(2).padStart(7)} ${bySide.litMedian.toFixed(2).padStart(7)}  ${bySide.held}`,
 		);
 	}
 	await page.evaluate(() => window.__returnToBootPosition());

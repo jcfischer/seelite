@@ -16,7 +16,11 @@ import {
 	enclosureArms,
 	EXPOSURE_RULE,
 	LAYER_SCENES,
+	LIT_SIDE_MIN_GAIN,
 	lightsHeldProblems,
+	litSide,
+	medianOf,
+	medianWhere,
 	REBALANCE_SUNS,
 	resolveOcclusion,
 	SUN_SCALE,
@@ -218,5 +222,33 @@ describe("the hemisphere search", () => {
 		});
 		expect(found.held).toBe(false);
 		expect(found.reason).toBe("under");
+	});
+});
+
+describe("the lit side of the hull", () => {
+	test("a pixel is lit when the sun adds more than the gain floor to it", () => {
+		const lit = litSide({
+			shippedLuma: [10, 50, 80, 33],
+			noSunLuma: [10, 40, 79, 30.5],
+			minGain: LIT_SIDE_MIN_GAIN,
+		});
+		expect(lit).toEqual([false, true, false, true]);
+	});
+
+	test("the two readings must cover the same pixels", () => {
+		expect(() =>
+			litSide({ shippedLuma: [1, 2], noSunLuma: [1], minGain: 2 }),
+		).toThrow();
+	});
+
+	test("the median is the hull reader's: the sorted value at half the count", () => {
+		expect(medianOf([5, 1, 3, 2])).toBe(3);
+		expect(medianOf([4, 9, 1])).toBe(4);
+		expect(medianOf([])).toBe(0);
+	});
+
+	test("a lit-side median reads only the lit pixels", () => {
+		const lit = [false, true, true, false];
+		expect(medianWhere([100, 20, 40, 100], lit)).toBe(40);
 	});
 });
