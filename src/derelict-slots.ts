@@ -16,12 +16,14 @@
  * the walk at the instance it records (`derelictTimeline`); without one the
  * walk starts at the slot's first loss.
  *
- * **The contents are drawn once and stored** (S6). `derelictContents` is the
+ * **The contents are pinned on first touch** (S6). `derelictContents` is the
  * draw, keyed on (slot key, `instanceOrdinal`) under its own `DOMAIN` tag; the
- * world-state writers put its answer on the slot's row, and nothing reads the
- * draw again for an instance that has a row. That is what keeps a generator
- * change, or a module appended to `DERELICT_FITTINGS`, from reaching a wreck
- * a pilot has already met.
+ * world-state writers put its answer on the slot's row when the pilot first
+ * touches the instance (`materializeDerelict`, or the first scoop), and
+ * nothing reads the draw again for an instance that has a row. That is what
+ * keeps a generator change, or a module appended to `DERELICT_FITTINGS`, from
+ * reaching a wreck a pilot has already met. An instance nobody has touched is
+ * re-derived, so either change can still move it.
  *
  * Imports only leaves, the market's commodity table and the raider wreck's
  * cargo weighting, so `world-state.ts` can enumerate and read these slots
@@ -75,8 +77,9 @@ export const DERELICT_FITTING_T = 1;
  *
  * **Append-only** (S18). An id here is what a stored container and a Salvage
  * job's snapshot name, so reordering or removing one would make a saved id
- * name a second module. Appending reaches new instances only, because an
- * instance's contents are stored at its loss.
+ * name a second module. Appending moves no instance the pilot has touched,
+ * because touching one pins its contents on its row (`materializeDerelict`, or
+ * the first scoop); an untouched instance re-derives, and may draw the new one.
  *
  * Every name is in `market.ts`'s `EQUIPMENT`, which `tests/derelict.test.ts`
  * asserts rather than this file importing the list: the Missile is a round
@@ -180,7 +183,7 @@ export const derelictGapS = (
 /**
  * Where a walk starts: the instance a saved row records, when its loss
  * happened, and, once it is stripped, when that was and whether the pilot did
- * it. A row whose instance is still adrift has no `strippedAt`, and other
+ * it. A row whose instance is still adrift has no `stripped`, and other
  * salvagers take it on the schedule.
  */
 export interface DerelictAnchor {
@@ -216,7 +219,9 @@ export type DerelictPhase =
  *
  * Each step of the walk is one instance's life — 72 h adrift at most and a gap
  * of at least 6 h after it — so a walk over any length of play is finite and a
- * saved row shortens it to the instances since that row's.
+ * saved row shortens it to the instances since that row's. Short is not free:
+ * a caller showing every slot in a system reads it when the game time it cares
+ * about changes, not once per frame.
  *
  * `anchor` is the saved row's instance. A time before the anchor's loss is
  * refused: a row is written at the clock, so nothing can ask about the slot
@@ -282,9 +287,11 @@ export interface DrawnContainer {
 }
 
 /**
- * An instance's containers, drawn at its loss: one per manifest line, then a
- * fitting in `DERELICT_FITTING_CHANCE` of instances. Container index is the
- * position in this list, which is what a Salvage job's operand names (S18).
+ * An instance's containers: one per manifest line, then a fitting in
+ * `DERELICT_FITTING_CHANCE` of instances. Container index is the position in
+ * this list, which is what a Salvage job's operand names (S18). The answer is
+ * stored on the slot's row when the pilot first touches the instance; until
+ * then every read draws it again.
  *
  * `fittings` is the append-only list and is a parameter only so a test can
  * show that appending to it moves no stored instance.

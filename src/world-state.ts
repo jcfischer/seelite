@@ -43,7 +43,6 @@ import { type DeficitMap, parseDeficits } from "./deficits";
 import {
 	DERELICT_FITTINGS,
 	DERELICT_MAX_CONTAINERS,
-	DERELICT_SALVAGER_S,
 	type DerelictContainerKind,
 	type DerelictPhase,
 	derelictContents,
@@ -52,7 +51,7 @@ import {
 	derelictSlots,
 	derelictTimeline,
 } from "./derelict-slots";
-import { generateGalaxy, systemAt } from "./galaxy";
+import { generateGalaxy, type SystemRecord, systemAt } from "./galaxy";
 import { COMMODITIES } from "./market";
 import type { HullId } from "./hull";
 import { fnv1a } from "./rng";
@@ -387,16 +386,18 @@ export interface LegalStatus {
  *
  * **`tonnes` is stored, not re-derived**, and that is a reading of the node
  * worth stating. The parse refuses a container whose `left` is above its line,
- * and the line it reads is this one — the tonnes the loss drew — rather than a
- * fresh draw, because S6 forbids re-deriving an instance after its loss: a
- * parser that re-drew would refuse every saved wreck the day the draw was
- * retuned. A changed draw reaches new instances only, which is S6's promise.
+ * and the line it reads is this one — the tonnes the draw gave when the row was
+ * written — rather than a fresh draw, because a stored instance is never
+ * re-derived: a parser that re-drew would refuse every saved wreck the day the
+ * draw was retuned. A changed draw reaches only the instances no row holds yet,
+ * which is S6's promise as node #731 reads it: contents are pinned on first
+ * touch, not at the loss (`persistent-world-state.md` §7).
  */
 export interface DerelictContainer {
 	kind: DerelictContainerKind;
 	/** A commodity name for a good, an `EQUIPMENT` name for a fitting. */
 	id: string;
-	/** The tonnes the loss put in it. */
+	/** The tonnes the draw put in it. */
 	tonnes: number;
 	/** The tonnes still in it. Zero is a scooped-out container, still listed,
 	 *  so a container index names one container for the instance's life. */
@@ -427,7 +428,7 @@ export interface DerelictRow {
 
 /**
  * §7's typed per-galaxy envelope: **seven state domains** — objective deltas,
- * causal episodes, knowledge, market deficits, visited flags, legal status and
+ * causal episodes, knowledge, market deficits, visited flags, legal status and // glossary-ignore: slot, Legal status
  * derelict rows.
  *
  * `galaxyIndex` is the container's identity rather than a seventh domain. It
@@ -443,7 +444,7 @@ export interface GalaxyEnvelope {
 	/** System indices the player has visited, ascending. */
 	visited: number[];
 	legalStatus: LegalStatus;
-	/** Derelict slots the pilot has touched (`salvage.md`, node #731). Empty
+	/** Derelict slots the pilot has touched (`salvage.md`, node #731). Empty // glossary-ignore: slot
 	 *  means every slot is on its derived schedule, untouched. */
 	derelicts: Record<CarrierKey, DerelictRow>;
 }
@@ -553,7 +554,7 @@ export type GeneratedCarrier = GeneratedCarrierBase &
 		/** The relay's repair tender (#351), parented to the relay. It flies in
 		 *  when it is sent, so like a raider it has no generated placement. */
 		| { kind: "relay-tender"; hullId: HullId }
-		/** A derelict slot (`derelict-slots.ts`, node #731). A system's, with no
+		/** A derelict slot (`derelict-slots.ts`, node #731). A system's, with no // glossary-ignore: slot
 		 *  parent. Its hull and its seeded offset are the drawing build's
 		 *  (`salvage.md` S11, S26), so it has no generated placement yet. */
 		| { kind: "derelict" }
@@ -634,6 +635,7 @@ export function* enumerateCarriers(
 				parentId: relay.localCarrierId,
 			};
 		}
+		// glossary-ignore: slot
 		for (const slot of derelictSlots(systemIndex, record.government))
 			yield {
 				systemIndex,
@@ -1715,6 +1717,7 @@ export const setLegalAssaulted = (
 // ---------------------------------------------------------------------------
 // Derelict slots — `salvage.md` S1, S2, S6, S16 (node #731)
 // ---------------------------------------------------------------------------
+// glossary-ignore: slot
 
 /** Other salvagers' strip: the clock's, never the pilot's, so it carries no
  *  player provenance (S16). It is never written; a read derives it. */
@@ -1752,6 +1755,25 @@ export type EffectiveDerelict =
 			nextLossAt: number;
 	  };
 
+/**
+ * The system holding the derelict slot a key names, or `null` when the key
+ * names none: a system index outside the galaxy, an id that is not a derelict
+ * slot's, or an ordinal past what the system's government holds. The one home
+ * of that rule — the reads refuse by it and so does the parse.
+ */
+const heldDerelictSlot = (
+	worldSeed: number,
+	galaxyIndex: number,
+	key: CarrierKey,
+): SystemRecord | null => {
+	const systemIndex = systemIndexOfKey(key);
+	if (!isSystemIndex(systemIndex)) return null;
+	const ordinal = derelictOrdinalOf(localCarrierIdOfKey(key));
+	if (ordinal === null) return null;
+	const record = systemAt(worldSeed, galaxyIndex, systemIndex);
+	return ordinal < derelictSlotCount(record.government) ? record : null;
+};
+
 /** The system a derelict key belongs to, as the draws need it — or a refusal
  *  when the key names no derelict slot that system holds. */
 const derelictSite = (
@@ -1761,13 +1783,8 @@ const derelictSite = (
 ): { seed: number; government: number } => {
 	assertGalaxy(galaxyIndex);
 	assertCarrierKey(key);
-	const systemIndex = systemIndexOfKey(key);
-	if (!isSystemIndex(systemIndex))
-		fail(`${key} is not in a system of galaxy ${galaxyIndex}`);
-	const ordinal = derelictOrdinalOf(localCarrierIdOfKey(key));
-	const record = systemAt(worldSeed, galaxyIndex, systemIndex);
-	if (ordinal === null || ordinal >= derelictSlotCount(record.government))
-		fail(`${key} is not a derelict slot`);
+	const record = heldDerelictSlot(worldSeed, galaxyIndex, key);
+	if (!record) fail(`${key} is not a derelict slot in galaxy ${galaxyIndex}`);
 	return { seed: record.seed, government: record.government };
 };
 
@@ -2508,7 +2525,7 @@ const parseDerelictContainer = (
 };
 
 /**
- * A derelict slot's row (node #731). Refuses, by name, what no writer can
+ * A derelict slot's row (node #731). Refuses, by name, what no writer can // glossary-ignore: slot
  * produce: a key that is not a derelict slot, a container index the row does
  * not hold, more than five containers, tonnes above the drawn line, and a
  * stripped row that is not marked salvaged or the reverse.
@@ -2539,12 +2556,13 @@ const parseDerelictRow = (value: unknown, key: string): DerelictRow => {
 	if (row.salvaged !== undefined) {
 		const o = asObject(row.salvaged, `${what} salvaged`);
 		const at = num(o, "at", `${what} salvaged`);
-		// The pilot strips a wreck only while it is adrift: from its loss to the
-		// salvagers' time, after which nothing is there to strip.
-		if (at < lostAt || at >= lostAt + DERELICT_SALVAGER_S)
-			fail(
-				`${what}: salvaged at ${at}, outside the time it was adrift from ${lostAt}`,
-			);
+		// A strip comes after its loss. **Its end is not checked**: the
+		// salvagers' time is a starting figure the principal's flight tunes, and a
+		// parse that read it would refuse every legitimately stripped row the day
+		// it was shortened — `tonnes`'s reason, below. The clock bounds it instead
+		// (`parseWorld`).
+		if (at < lostAt)
+			fail(`${what}: salvaged at ${at}, before its loss at ${lostAt}`);
 		salvaged = { at, cause: parseProvenance(o.cause, `${what} salvaged`) };
 	}
 	const empty = containers.every((c) => c.left === 0);
@@ -2725,23 +2743,34 @@ export function parseWorld(raw: unknown): WorldState {
 		gameTime: num(o, "gameTime", "snapshot"),
 		galaxies: (o.galaxies as unknown[]).map((g, i) => parseEnvelope(g, i)),
 	};
+	// glossary-ignore: slot
 	// **A derelict key names a slot its system holds**, which needs the seed and
 	// so cannot be checked inside one envelope. `derelict-02` in a lawful system
 	// matches the id pattern; let through, it loads cleanly and then throws "is
 	// not a derelict slot" on the first read, a long way from the save.
+	//
+	// **And a row's times are on the clock**, which is also only here. Every
+	// writer advances the clock to the time it writes, so no written loss or
+	// strip is after `gameTime`, and a first loss is never before zero. A row
+	// outside that was not written: one stamped in the future throws on its
+	// first read, and one stamped far in the past sends the schedule's walk
+	// through every instance since.
 	for (const env of world.galaxies)
-		for (const key of Object.keys(env.derelicts) as CarrierKey[]) {
-			const systemIndex = systemIndexOfKey(key);
-			const ordinal = derelictOrdinalOf(localCarrierIdOfKey(key)) ?? 0;
-			if (
-				!isSystemIndex(systemIndex) ||
-				ordinal >=
-					derelictSlotCount(
-						systemAt(world.seed, env.galaxyIndex, systemIndex).government,
-					)
-			)
+		for (const [key, row] of Object.entries(env.derelicts) as [
+			CarrierKey,
+			DerelictRow,
+		][]) {
+			if (!heldDerelictSlot(world.seed, env.galaxyIndex, key))
 				fail(
 					`derelicts: ${key} is not a derelict slot in galaxy ${env.galaxyIndex}`,
+				);
+			if (row.lostAt < 0 || row.lostAt > world.gameTime)
+				fail(
+					`derelict ${key}: lost at ${row.lostAt}, outside the clock's 0 to ${world.gameTime}`,
+				);
+			if (row.salvaged && row.salvaged.at > world.gameTime)
+				fail(
+					`derelict ${key}: salvaged at ${row.salvaged.at}, after the clock's ${world.gameTime}`,
 				);
 		}
 

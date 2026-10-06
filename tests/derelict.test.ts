@@ -1,12 +1,13 @@
 /**
  * Node #731: the derelict row — government-keyed slots, a seeded loss schedule,
- * derived contents stored at the loss, and the save (`salvage.md` S1, S2, S6,
+ * derived contents pinned on first touch, and the save (`salvage.md` S1, S2, S6,
  * S16, S18's draw, S21).
  *
  * The test seam is the world-state API and the save envelope: what a slot reads
  * at a game time, what the two writers leave on its row, and what survives a
  * round trip or is refused at the parse.
  */
+// glossary-ignore: slot
 
 import { describe, expect, test } from "bun:test";
 import { type CarrierKey, carrierKey } from "../src/carrier-key";
@@ -84,17 +85,6 @@ const strip = (world: WorldState, key: CarrierKey, at: number): WorldState => {
 	return w;
 };
 
-const resealedWorld = (
-	world: WorldState,
-	edit: (body: Record<string, any>) => void,
-): unknown => {
-	const { integrity: _, ...body } = JSON.parse(
-		JSON.stringify(serializeWorld(world)),
-	);
-	edit(body);
-	return { ...body, integrity: fnv1a(JSON.stringify(body)) };
-};
-
 const resealedSave = (
 	raw: unknown,
 	edit: (body: Record<string, any>) => void,
@@ -103,6 +93,11 @@ const resealedSave = (
 	edit(body);
 	return { ...body, integrity: fnv1a(JSON.stringify(body)) };
 };
+
+const resealedWorld = (
+	world: WorldState,
+	edit: (body: Record<string, any>) => void,
+): unknown => resealedSave(serializeWorld(world), edit);
 
 // ---------------------------------------------------------------------------
 
@@ -232,7 +227,7 @@ describe("S16 — the schedule, derived from the clock", () => {
 	});
 });
 
-describe("S6 — the contents, drawn at the loss and stored", () => {
+describe("S6 — the contents, drawn per instance and stored on first touch", () => {
 	test("1–4 manifest lines, at most five containers, a fitting in about 25%", () => {
 		const fittings = new Set(DERELICT_FITTINGS);
 		let instances = 0;
@@ -592,15 +587,57 @@ describe("a malformed row is refused by name", () => {
 		}
 	});
 
-	test("a strip outside the time the wreck was adrift", () => {
+	test("a strip before its loss", () => {
+		const early = resealedWorld(
+			strip(newWorld(WORLD), KEY, firstLoss()),
+			(body) => {
+				const row = body.galaxies[G].derelicts[KEY];
+				row.salvaged.at = row.lostAt - 1;
+			},
+		);
+		expect(() => parseWorld(early)).toThrow("before its loss at");
+	});
+
+	test("a strip later than today's salvager time loads, because that time is tuned", () => {
+		// A row the pilot stripped under a longer salvager time must survive the
+		// day the figure is shortened, so the parse does not read it.
 		const late = resealedWorld(
 			strip(newWorld(WORLD), KEY, firstLoss()),
 			(body) => {
 				const row = body.galaxies[G].derelicts[KEY];
-				row.salvaged.at = row.lostAt + DERELICT_SALVAGER_S;
+				row.salvaged.at = row.lostAt + DERELICT_SALVAGER_S + 3600;
+				body.gameTime = row.salvaged.at;
 			},
 		);
-		expect(() => parseWorld(late)).toThrow("outside the time it was adrift");
+		const loaded = parseWorld(late);
+		const at = firstLoss() + DERELICT_SALVAGER_S + 3600;
+		const e = effectiveDerelict(loaded, G, KEY, at);
+		expect(e.condition).toBe("salvaged");
+		if (e.condition === "salvaged") {
+			expect(e.salvagedAt).toBe(at);
+			expect(e.cause.playerRole).toBe("direct");
+		}
+	});
+
+	test("a loss before zero or after the clock", () => {
+		const before = edit((row) => {
+			row.lostAt = -1;
+		});
+		expect(() => parseWorld(before)).toThrow("outside the clock's 0 to");
+		const ahead = resealedWorld(base(), (body) => {
+			body.galaxies[G].derelicts[KEY].lostAt = body.gameTime + 1;
+		});
+		expect(() => parseWorld(ahead)).toThrow("outside the clock's 0 to");
+	});
+
+	test("a strip after the clock", () => {
+		const raw = resealedWorld(
+			strip(newWorld(WORLD), KEY, firstLoss()),
+			(body) => {
+				body.galaxies[G].derelicts[KEY].salvaged.at = body.gameTime + 1;
+			},
+		);
+		expect(() => parseWorld(raw)).toThrow("after the clock's");
 	});
 
 	test("a key that is not a derelict slot", () => {

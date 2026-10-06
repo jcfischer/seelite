@@ -122,7 +122,7 @@ import {
  * §3.9). Every older record loads at rest: before #619 a released axis eased
  * to a stop with the assist on, and nothing recorded a spin to resume.
  *
- * **9 adds the world's derelict rows (node #731, `salvage.md`)**: per galaxy,
+ * **9 adds the world's derelict rows (node #731, `salvage.md`)**: per galaxy, // glossary-ignore: slot
  * one row per derelict slot the pilot has touched, holding the instance and
  * the tonnes left in each container. The rows live in the world's envelopes,
  * absent when empty — so `WORLD_SCHEMA_VERSION` does not move and a version 8
