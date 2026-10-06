@@ -114,14 +114,21 @@ const TEXEL_CEILING_KM = { exterior: 0.01, cockpit: 0.001 };
  * by **more** than the shadow: a pixel the sun never reaches cannot be darkened
  * by toggling the sun's shadow, so a reading above the sun's reach means the
  * "off" arm was drawn differently, which is how #201's relit arm once read.
- * So the ceiling is 77, about 2.5 points above saturation. The floor is
- * unchanged.
+ * So the ceiling is 77, about 2.5 points above saturation.
+ *
+ * **And the floor scales with it.** At 1 under 74% it would pass a shadow that
+ * lost 98% of its coverage. On #199's rig the one short-stopped framing read
+ * 1.37 against 6.06, about 23% of a normal run, and the floor of 1 sat just
+ * under that. The same ratio on B is about 17, so the floor is 15. B's own
+ * short-stop reading has not been measured; if a run reads under 15 with the
+ * docking computer stopping short, that is the reading to take, not a reason
+ * to drop the floor back.
  *
  * The sign and the scale-freedom of the bias are pinned
  * exactly in `tests/occlusion.test.ts`, where they are arithmetic; this is the
  * arm that says the arithmetic reached the frame.
  */
-const SHADOW_BAND_PCT = { min: 1, max: 77 };
+const SHADOW_BAND_PCT = { min: 15, max: 77 };
 
 /** How much of the near subject the ambient occlusion has to reach before it
  *  counts as present. A bay is a room of corners; measured on a passing run it

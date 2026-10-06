@@ -386,7 +386,7 @@ describe("the painted-hull luma calibration", () => {
 
 	test("no margin is small enough to be decided by which rasteriser ran", () => {
 		// A rail rather than a bound, and the module says so: at the margins here
-		// this clears by 55x or more, so it rejects a margin small enough to be a
+		// it is far from binding, so it rejects a margin small enough to be a
 		// typo and nothing a person would choose on purpose. Kept because the
 		// typo is the case that would send a later reader hunting a renderer bug.
 		for (const metric of METRICS)

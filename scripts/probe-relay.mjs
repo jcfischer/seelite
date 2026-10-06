@@ -1064,8 +1064,8 @@ const tenderPx = {
 // The floor is how many pixels hiding the tug must move past 24/255, and it
 // follows the light rig: #199's rig read 217 and 212 here, and #231's rig B
 // (`LIGHT_RIG`) reads 117 and 120. Why the count fell was not isolated; only
-// the readings were. 60 is about half of B's reading. The claim that matters is the control: a same-build
-// repeat moves 0 on both rigs.
+// the readings were. 60 is about half of B's reading. The claim that matters
+// is the control: a same-build repeat moves 0 on both rigs.
 check(
 	"#351: the parked tender is drawn: hiding its mesh moves pixels, and a same-build control moves far fewer",
 	tenderPx.moved > 60 && tenderPx.moved > 5 * tenderPx.control,

@@ -27,8 +27,9 @@
  */
 
 /**
- * Measured on `c6f8b57`, rig B (`LIGHT_RIG`, the principal's choice on #231), `hull-chase`, five samples per lane, same-build noise 0.00
- * at every one. Where the two rasterisers disagree the **lower** reading is
+ * Measured on `c6f8b57`, rig B (`LIGHT_RIG`, the principal's choice on
+ * #231), `hull-chase`, five samples per lane, same-build noise 0.00 at every
+ * one. Where the two rasterisers disagree the **lower** reading is
  * recorded, because these are floors and the conservative arm is the dark one.
  *
  * | | ANGLE Metal (M1 Pro) | SwiftShader |
@@ -179,10 +180,9 @@ export const FLOOR_FRACTION_OF_READING = 0.5;
  *
  * A fourth bound is **asserted and not binding**, and is worth reading as a rail
  * rather than a constraint: a margin in display codes must exceed `laneSpread`,
- * or the row would go red on which rasteriser ran it. At the margins here that
- * is 65.57, 3.47 and 11.13 codes against spreads of 0, 0 and 0.20 — between
- * 55x and unbounded away from binding. It rejects a margin small enough to be a
- * typo and nothing a person would choose on purpose.
+ * or the row would go red on which rasteriser ran it. The test asserts it; at
+ * the margins here it is far from binding, so it rejects a margin small enough
+ * to be a typo and nothing a person would choose on purpose.
  */
 export const HULL_LUMA_MARGINS = Object.freeze({
 	peak: 0.32,
