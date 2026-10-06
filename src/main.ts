@@ -11629,8 +11629,12 @@ class Game {
 	 * not one of #283's flight keys that stay live under a turned head — it
 	 * does not fly the ship, and its confirm needs a surface to be shown on.
 	 * Docked the same holds: the refusal is said on the forward console, which
-	 * a turned head is not reading. Idle rather than refused, so turning the
-	 * head mid-hold drops the hold, as letting go does.
+	 * a turned head is not reading. Idle rather than refused: turning the head
+	 * mid-hold resets the fill, so a hold that turns back forward starts over
+	 * and is seen whole. **The turn does not clear `spent`**, though — only a
+	 * release does (`stepEjectHold`). A hold refused on the launch's rails,
+	 * kept down through a head turn while the launch completes, would
+	 * otherwise arm fresh on turning forward and eject a pilot who was told no.
 	 */
 	private stepEject(dt: number) {
 		// **A refusal is about the phase it was said in**, so it ends with
@@ -11644,7 +11648,9 @@ class Game {
 				: { text: "", left: 0, phase: null };
 		const headTurned = this.view === "cockpit" && this.headLook !== "forward";
 		if (this.openingActive || !EJECT_OFFERED || headTurned) {
-			this.ejectHold = EJECT_IDLE;
+			this.ejectHold = headTurned
+				? { ...EJECT_IDLE, spent: this.ejectHold.spent }
+				: EJECT_IDLE;
 			return;
 		}
 		const held =

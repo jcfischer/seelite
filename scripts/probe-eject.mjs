@@ -195,9 +195,11 @@ await page.waitForTimeout(law.holdMs * 1.5);
 const turned = await read();
 await page.keyboard.up("Backspace");
 await page.evaluate(() => window.__seelite.setHeadLook("forward"));
+// The eject count is the whole check. `ejectRender` is not in it: a turned
+// head draws no glass at all, so the row reads null with the gate or without.
 check(
-	"with the head turned to a side console a held Backspace arms nothing and fires nothing",
-	turned.phase === "flying" && turned.ejects === 1 && turned.render === null,
+	"with the head turned to a side console a held Backspace fires nothing",
+	turned.phase === "flying" && turned.ejects === 1,
 	JSON.stringify(turned),
 );
 
@@ -363,13 +365,34 @@ check(
 );
 await page.keyboard.down("Backspace");
 const launchSaid = await glassSays(law.refused.launching);
-await page.keyboard.up("Backspace");
-const after = await read();
 check(
 	"on the launch's rails a press is refused on the glass",
 	launching === "launching" && launchSaid,
 	`${launching}, said ${launchSaid}`,
 );
+// **Still held**, through a head turn, while the launch completes, and then
+// forward again: the turn idles the control but must not un-spend the refused
+// hold, or turning forward would arm it fresh in flight and eject a pilot who
+// was told no. Only letting go clears it.
+await page.evaluate(() => window.__seelite.setHeadLook("right"));
+const clear = await page
+	.waitForFunction(() => window.__seelite.dockPhase === "flying", null, {
+		timeout: 60_000,
+	})
+	.then(
+		() => true,
+		() => false,
+	);
+await page.evaluate(() => window.__seelite.setHeadLook("forward"));
+await page.waitForTimeout(law.holdMs * 1.5);
+const turnedThrough = await read();
+await page.keyboard.up("Backspace");
+check(
+	"a refused hold kept down through a head turn and the launch's end fires nothing on turning forward",
+	clear && turnedThrough.phase === "flying" && turnedThrough.ejects === 1,
+	`cleared ${clear}, ${JSON.stringify(turnedThrough)}`,
+);
+const after = await read();
 check(
 	"and across all three refusals the one eject from flight is still the only one",
 	after.ejects === 1,
