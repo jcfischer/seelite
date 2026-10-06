@@ -75,9 +75,12 @@ import {
 	enclosureArms,
 	EXPOSURE_RULE,
 	LAYER_SCENES,
+	BASELINE_OCCLUSION,
 	LIT_SIDE_MIN_GAIN,
 	lightsHeldProblems,
+	lightsMatch,
 	litSide,
+	medianOf,
 	medianWhere,
 	REBALANCE_SUNS,
 	resolveOcclusion,
@@ -117,22 +120,39 @@ const MOVED = 2;
  * ship still at the last rung draws two frames with the station jumped back
  * beside it. Two frames open #241's gate and thirty close it, so that
  * transient left the gate open at 5 and 3 radii, below its threshold.
+ *
+ * That holds only while the boot position is not itself enclosed, so the
+ * reset refuses a gate it opened: shut before and open after is the defect.
  */
 const resetClock = async (page) => {
+	const gate = () => page.evaluate(() => window.__seelite.occlusionState.open);
+	const before = await gate();
 	await page.evaluate(() => window.__returnToBootPosition());
 	await page.evaluate((t) => window.__startClockAt(t), GAME_TIME_S);
+	if (!before && (await gate()))
+		throw new Error(
+			"measure-shadow-enclosure: the clock reset opened the occlusion gate — the boot position is enclosed",
+		);
 };
+
+/**
+ * One lookup for a layer's named light, installed in the page so every
+ * evaluate that reads or writes the rig finds the same object.
+ */
+const installLayerLights = (page) =>
+	page.addInitScript(() => {
+		window.__layerLight = (scene, name) =>
+			scene.children.find((object) => object.isLight && object.name === name);
+	});
 
 /** Every layer's `"sun"` and `"hemisphere"`, read off the page. */
 const readLights = (page) =>
 	page.evaluate((scenes) => {
 		const game = window.__seelite;
-		const named = (scene, name) =>
-			scene.children.find((object) => object.isLight && object.name === name);
 		return scenes.map((scene) => ({
 			scene,
-			sun: named(game[scene], "sun")?.intensity,
-			hemisphere: named(game[scene], "hemisphere")?.intensity,
+			sun: window.__layerLight(game[scene], "sun")?.intensity,
+			hemisphere: window.__layerLight(game[scene], "hemisphere")?.intensity,
 		}));
 	}, LAYER_SCENES);
 
@@ -142,9 +162,10 @@ const writeLights = (page, lights) =>
 		([scenes, wanted]) => {
 			const game = window.__seelite;
 			for (const scene of scenes)
-				for (const object of game[scene].children)
-					if (object.isLight && object.name in wanted)
-						object.intensity = wanted[object.name];
+				for (const name of ["sun", "hemisphere"]) {
+					const light = window.__layerLight(game[scene], name);
+					if (light) light.intensity = wanted[name];
+				}
 		},
 		[LAYER_SCENES, lights],
 	);
@@ -169,7 +190,7 @@ const refuseUnless = (label, problems) => {
  */
 const measure = (page, { occlusion, lights, mode }) =>
 	page.evaluate(
-		([occ, wanted, scenes, how, moved]) => {
+		([occ, base, wanted, scenes, how, moved]) => {
 			const game = window.__seelite;
 
 			const W = 480;
@@ -185,12 +206,10 @@ const measure = (page, { occlusion, lights, mode }) =>
 				return ctx.getImageData(0, 0, W, H).data;
 			};
 
-			const named = (scene, name) =>
-				scene.children.find((object) => object.isLight && object.name === name);
 			const pairs = scenes.map((scene) => ({
 				scene,
-				sun: named(game[scene], "sun"),
-				hemisphere: named(game[scene], "hemisphere"),
+				sun: window.__layerLight(game[scene], "sun"),
+				hemisphere: window.__layerLight(game[scene], "hemisphere"),
 			}));
 			const read = () =>
 				pairs.map(({ scene, sun, hemisphere }) => ({
@@ -222,7 +241,7 @@ const measure = (page, { occlusion, lights, mode }) =>
 				}
 
 			// Baseline: no shadow, no AO, at the arm's lights.
-			game.setOcclusion(false, false);
+			game.setOcclusion(base.shadows, base.ao);
 			const atBaseline = read();
 			const baseline = frame();
 
@@ -231,6 +250,13 @@ const measure = (page, { occlusion, lights, mode }) =>
 			else game.setOcclusion(occ.shadows, occ.ao);
 			const atArm = read();
 			const armFrame = frame();
+			// What the arm's frame drew, read off the two objects that draw it.
+			// Either one missing is a refusal, not an "off": gate-blind takes its
+			// AO from this, and a silent false would pin it off and bring back
+			// the confound the arms exist to remove.
+			const unread = [];
+			if (!game.shadowSun) unread.push("shadowSun");
+			if (!game.gtaoPass) unread.push("gtaoPass");
 			const drawn = {
 				shadow: !!game.shadowSun?.castShadow,
 				ao: !!game.gtaoPass?.enabled,
@@ -267,11 +293,12 @@ const measure = (page, { occlusion, lights, mode }) =>
 				deepest,
 				baseLuma: baseSum / pixels,
 				drawn,
+				unread,
 				texelKm: game.shadowTexelKm,
 				readback: { atBaseline, atArm, restored },
 			};
 		},
-		[occlusion, lights, LAYER_SCENES, mode, MOVED],
+		[occlusion, BASELINE_OCCLUSION, lights, LAYER_SCENES, mode, MOVED],
 	);
 
 /**
@@ -291,6 +318,10 @@ async function measureArms(page, arms, shippedLights, label) {
 			lights: arm.lights,
 			mode: "world-only",
 		});
+		if (result.unread.length > 0)
+			throw new Error(
+				`measure-shadow-enclosure: ${label}, ${arm.name} could not read what it drew: no ${result.unread.join(" or ")}`,
+			);
 		refuseUnless(
 			`${label}, ${arm.name}`,
 			lightsHeldProblems({
@@ -334,16 +365,19 @@ async function hullUnder(page, lights, shippedLights, options = {}) {
 	const restored = await readLights(page);
 	refuseUnless(
 		`hull-chase at sun ${lights.sun}, hemisphere ${lights.hemisphere}`,
-		lightsHeldProblems({
-			wanted: lights,
-			atBaseline: atHull,
-			atArm: atHull,
-			restored,
-			shipped: shippedLights,
-		}),
+		[
+			...lightsMatch("hull", atHull, lights),
+			...lightsMatch("restored", restored, shippedLights),
+		],
 	);
 	if (hull.missing)
 		throw new Error("measure-shadow-enclosure: no player hull in hull-chase");
+	// `medianOf` is a second copy of the reader's median, because the reader
+	// runs in the page and cannot import it. Held together here.
+	if (hull.luma && medianOf(hull.luma) !== hull.medians[0])
+		throw new Error(
+			`measure-shadow-enclosure: medianOf reads ${medianOf(hull.luma)} where the hull reader reads ${hull.medians[0]}`,
+		);
 	return {
 		median: hull.medians[0],
 		peak: hull.peaks[0],
@@ -365,6 +399,7 @@ try {
 	});
 	await installViewPlacement(page);
 	await installViewFraming(page);
+	await installLayerLights(page);
 	await page.goto(gameUrl(origin, { seed: SEED }));
 	await bootedGame(page);
 	const renderer = await assertPlayersRenderer(page, "measure");
@@ -374,8 +409,7 @@ try {
 	// The shipped rig, read off the page rather than restated.
 	const rig = await page.evaluate(() => {
 		const g = window.__seelite;
-		const named = (name) =>
-			g.nearScene.children.find((o) => o.isLight && o.name === name);
+		const named = (name) => window.__layerLight(g.nearScene, name);
 		return {
 			sun: named("sun")?.intensity,
 			hemisphere: named("hemisphere")?.intensity,
@@ -389,13 +423,7 @@ try {
 	const shipped = { sun: rig.sun, hemisphere: rig.hemisphere };
 	refuseUnless(
 		"the shipped rig",
-		lightsHeldProblems({
-			wanted: shipped,
-			atBaseline: await readLights(page),
-			atArm: await readLights(page),
-			restored: await readLights(page),
-			shipped,
-		}),
+		lightsMatch("boot", await readLights(page), shipped),
 	);
 
 	// ---- header ----
@@ -562,16 +590,9 @@ try {
 		.texelKm;
 	if (texel > 0) console.log(`  texel: ${(texel * 1000).toFixed(2)} m`);
 
-	const final = await readLights(page);
 	refuseUnless(
 		"the end of the run",
-		lightsHeldProblems({
-			wanted: shipped,
-			atBaseline: final,
-			atArm: final,
-			restored: final,
-			shipped,
-		}),
+		lightsMatch("end", await readLights(page), shipped),
 	);
 
 	// ---- reading guide for #231 ----

@@ -18,6 +18,7 @@ import {
 	LAYER_SCENES,
 	LIT_SIDE_MIN_GAIN,
 	lightsHeldProblems,
+	lightsMatch,
 	litSide,
 	medianOf,
 	medianWhere,
@@ -169,6 +170,18 @@ describe("the lights are held across an arm's two frames", () => {
 			shipped: SHIPPED,
 		});
 		expect(problems.length).toBeGreaterThan(0);
+	});
+
+	test("one readback is checked against one rig, every layer by name", () => {
+		expect(lightsMatch("boot", everyScene(SHIPPED), SHIPPED)).toEqual([]);
+		const problems = lightsMatch(
+			"boot",
+			everyScene(SHIPPED).map((row) =>
+				row.scene === "cabinScene" ? { ...row, hemisphere: 0 } : row,
+			),
+			SHIPPED,
+		);
+		expect(problems).toEqual(["boot: cabinScene hemisphere 0, expected 6.85"]);
 	});
 
 	test("lights not restored to the shipped rig are refused", () => {

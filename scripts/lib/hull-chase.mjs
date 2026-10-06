@@ -4,11 +4,15 @@
  *
  * `probe-light-rig.mjs` gates #199's exposure band on it, and
  * `measure-shadow-enclosure.mjs` holds a rebalanced rig to the same median.
- * One copy, so the instrument holds exposure by the measurement the band was
- * calibrated with and not by a second reader that drifts from it.
+ * One copy of the reader, so the instrument and the band cannot drift apart in
+ * code. The conditions still differ, and that is not the calibrated
+ * measurement: the instrument reads at device scale 2 (102,342 px on #723's
+ * runs against the band's 25,567 at scale 1) and over a fixed mask. It
+ * compares two rigs on its own run, and prints the band only as context.
  *
  * Moved here verbatim from `probe-light-rig.mjs`; the sample count became an
- * argument, and `mask` / `keepMask` were added for the instrument (below).
+ * argument, and `mask` / `keepMask` / `keepLuma` were added for the
+ * instrument (below).
  */
 // A default-layout probe (#381 D11): it presses keys by name, as the shipped
 // layout binds them, and a moved default turns it red for that reason.
@@ -30,7 +34,7 @@
  * on that median has no direction. So `keepMask: true` returns the pixel set
  * as `mask`, and passing it back as `mask` reads every later rig over the same
  * pixels. `keepLuma: true` also returns `luma`, each kept pixel's value in
- * `mask`'s order, so a caller can split the hull into the faces the sun
+ * `mask`'s order (and `mask` itself when none was passed in), so a caller can split the hull into the faces the sun
  * reaches and the faces it does not. With none of the three, the reading is
  * the one `probe-light-rig.mjs` gates on.
  */
@@ -204,9 +208,11 @@ export async function measureHullChase(
 				exposure: game.exposure,
 				finishes: game.finishes,
 				...(returnMask ? { mask: kept } : {}),
-				...(returnLuma ? { mask: kept, luma: keptLuma } : {}),
+				...(returnLuma ? { luma: keptLuma } : {}),
 			};
 		},
-		[samples, bodyId, mask, keepMask || keepLuma, keepLuma],
+		// The mask goes back only when it was made here: a caller that passed
+		// one already holds it, and a hull is ~100k indices each way.
+		[samples, bodyId, mask, !mask && (keepMask || keepLuma), keepLuma],
 	);
 }

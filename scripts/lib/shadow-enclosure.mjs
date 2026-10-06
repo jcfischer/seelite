@@ -143,25 +143,33 @@ export function lightsHeldProblems({
 	restored,
 	shipped,
 }) {
+	return [
+		...lightsMatch("baseline", atBaseline, wanted),
+		...lightsMatch("arm", atArm, wanted),
+		...lightsMatch("restored", restored, shipped),
+	];
+}
+
+/**
+ * One readback against one pair of intensities, in every layer: the rule
+ * `lightsHeldProblems` applies three times, for a caller with a single
+ * readback to check (the boot rig, the end of the run, a hull read).
+ */
+export function lightsMatch(label, rows, expected) {
 	const problems = [];
-	const check = (label, rows, expected) => {
-		const seen = new Map(rows.map((row) => [row.scene, row]));
-		for (const scene of LAYER_SCENES) {
-			const row = seen.get(scene);
-			if (!row) {
-				problems.push(`${label}: ${scene} has no sun and hemisphere to read`);
-				continue;
-			}
-			for (const light of ["sun", "hemisphere"])
-				if (row[light] !== expected[light])
-					problems.push(
-						`${label}: ${scene} ${light} ${row[light]}, expected ${expected[light]}`,
-					);
+	const seen = new Map(rows.map((row) => [row.scene, row]));
+	for (const scene of LAYER_SCENES) {
+		const row = seen.get(scene);
+		if (!row) {
+			problems.push(`${label}: ${scene} has no sun and hemisphere to read`);
+			continue;
 		}
-	};
-	check("baseline", atBaseline, wanted);
-	check("arm", atArm, wanted);
-	check("restored", restored, shipped);
+		for (const light of ["sun", "hemisphere"])
+			if (row[light] !== expected[light])
+				problems.push(
+					`${label}: ${scene} ${light} ${row[light]}, expected ${expected[light]}`,
+				);
+	}
 	return problems;
 }
 
@@ -247,8 +255,15 @@ export function litSide({ shippedLuma, noSunLuma, minGain }) {
 	return shippedLuma.map((value, i) => value - noSunLuma[i] > minGain);
 }
 
-/** The median as `lib/hull-chase.mjs` takes it: the sorted value at
- *  `floor(n / 2)`, and 0 for no pixels. */
+/**
+ * The median as `lib/hull-chase.mjs` takes it: the sorted value at
+ * `floor(n / 2)`, and 0 for no pixels.
+ *
+ * A second copy of that rule, because the reader's runs inside
+ * `page.evaluate` and cannot import. The instrument holds the two together
+ * at run time: it takes this median over the luma the reader returns and
+ * stops if it differs from the reader's own.
+ */
 export function medianOf(values) {
 	const sorted = [...values].sort((a, b) => a - b);
 	return sorted[Math.floor(sorted.length * 0.5)] ?? 0;
