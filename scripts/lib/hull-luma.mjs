@@ -27,15 +27,20 @@
  */
 
 /**
- * Measured on `9627632`, `hull-chase`, five samples per lane, same-build noise
- * 0.00 at every one. Where the two rasterisers disagree the **lower** reading is
+ * Measured on `c6f8b57`, rig B (`LIGHT_RIG`, the principal's choice on
+ * #231), `hull-chase`, five samples per lane, same-build noise 0.00 at every
+ * one. Where the two rasterisers disagree the **lower** reading is
  * recorded, because these are floors and the conservative arm is the dark one.
  *
  * | | ANGLE Metal (M1 Pro) | SwiftShader |
  * | --- | --- | --- |
- * | peak | 149.08 | 149.08 |
- * | lower quartile | 41.24 | 41.45 |
- * | median | 81.10 | 81.17 |
+ * | peak | 204.92 | 204.92 |
+ * | lower quartile | 22.80 | 22.80 |
+ * | median | 79.53 | 79.73 |
+ *
+ * B moved light from the hemisphere into the sun with the median held (#723's
+ * rule), so the hull reads with more contrast than #199's rig did: on
+ * `9627632` that rig read 149.08 / 41.24 / 81.10.
  *
  * `laneSpread` is what they disagreed by, and it is recorded rather than
  * described because the margins below are asserted against it. These are two
@@ -57,11 +62,11 @@
  */
 export const HULL_LUMA_CALIBRATION = Object.freeze({
 	finish: "worn",
-	ref: "9627632",
-	peak: 149.08,
-	lowerQuartile: 41.24,
-	median: 81.1,
-	laneSpread: Object.freeze({ peak: 0, lowerQuartile: 0.21, median: 0.07 }),
+	ref: "c6f8b57",
+	peak: 204.92,
+	lowerQuartile: 22.8,
+	median: 79.53,
+	laneSpread: Object.freeze({ peak: 0, lowerQuartile: 0, median: 0.2 }),
 });
 
 /**
@@ -128,11 +133,10 @@ export const SUBJECT_CHANGE_QUARTILE_DROP =
  * *sensitivity* bound above it, so it cannot simply be loosened — and then
  * tightened it from 35 to 37.116 anyway, which is the thing this constant
  * exists to prevent. There is no need for the carve-out: at 15.2% the derived
- * floor is 34.972, inside the ratchet, and still inside
- * `SUBJECT_CHANGE_QUARTILE_DROP / 2` at 15.57%. The two bounds nearly meet, and
- * that is the honest shape of this row rather than a defect — it is as loose as
- * the ratchet demands and as tight as sensitivity allows, with about half a
- * point between them.
+ * floor was 34.972 on #199's rig, inside the ratchet, and still inside
+ * `SUBJECT_CHANGE_QUARTILE_DROP / 2` at 15.57%. On rig B (#231) the quartile
+ * reads 22.80 and the same margin derives 19.334, far inside the ratchet: B
+ * loosened the row, which the ratchet allows.
  */
 export const SHIPPED_FLOORS = Object.freeze({
 	peak: 140,
@@ -160,8 +164,10 @@ export const FLOOR_FRACTION_OF_READING = 0.5;
  * than leaving it as prose.
  *
  * **Above**, by `SHIPPED_FLOORS` — no floor may tighten past what shipped. That
- * is why the peak's margin is 8% rather than the 5% first written here, which
- * derived 141.626 against a shipped 140, and why the quartile's is 15.2%.
+ * is why the peak's margin is 32%: rig B (#231) reads 204.92, and the 8% it
+ * carried on #199's rig would derive 188.526 against a shipped 140. The smallest
+ * margin the ratchet allows is 31.7%, and 32% derives 139.346. It is why the
+ * quartile's is 15.2%, too.
  *
  * **Below**, by `FLOOR_FRACTION_OF_READING`, so loosening stops short of a floor
  * nothing can fail.
@@ -174,13 +180,12 @@ export const FLOOR_FRACTION_OF_READING = 0.5;
  *
  * A fourth bound is **asserted and not binding**, and is worth reading as a rail
  * rather than a constraint: a margin in display codes must exceed `laneSpread`,
- * or the row would go red on which rasteriser ran it. At the margins here that
- * is 11.93, 6.27 and 11.35 codes against spreads of 0, 0.21 and 0.07 — between
- * 30x and unbounded away from binding. It rejects a margin small enough to be a
- * typo and nothing a person would choose on purpose.
+ * or the row would go red on which rasteriser ran it. The test asserts it; at
+ * the margins here it is far from binding, so it rejects a margin small enough
+ * to be a typo and nothing a person would choose on purpose.
  */
 export const HULL_LUMA_MARGINS = Object.freeze({
-	peak: 0.08,
+	peak: 0.32,
 	lowerQuartile: 0.152,
 	median: 0.14,
 });
@@ -216,10 +221,12 @@ export const HULL_LUMA_FLOOR_OF = Object.freeze(
  * A band rather than a floor: a white hull and an under-lit hull are both
  * exposure failures. Only the floor is derived — the ceiling is an authored
  * limit on how bright painted metal may read, and no calibration produces it.
+ * #199 set it at 200. The principal raised it to 215 on #231 (D2) with rig B,
+ * whose peak reads 204.92: about ten codes of room.
  */
 export const HULL_LUMA_BAND = Object.freeze({
 	min: HULL_LUMA_FLOOR_OF.peak,
-	max: 200,
+	max: 215,
 });
 
 /**

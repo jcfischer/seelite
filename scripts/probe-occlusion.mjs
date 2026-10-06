@@ -101,11 +101,34 @@ const TEXEL_CEILING_KM = { exterior: 0.01, cockpit: 0.001 };
  * 6.06, 6.13 and one outlier at **1.37**: the framing flies the docking
  * computer and occasionally stops a little short, so the floor is at 1 rather
  * than snug under six. That is still six times what a shadow that had stopped
- * being drawn would give, which is the 0.00-something the exterior row prints. The sign and the scale-freedom of the bias are pinned
+ * being drawn would give, which is the 0.00-something the exterior row prints.
+ *
+ * **Those readings were #199's rig.** On #231's rig B (`LIGHT_RIG`) the bay
+ * reads 74.34% here on two runs, and `measure-shadow-enclosure.mjs` read
+ * 74.4–74.5% at sun 1.0 and 2.0 alike. The figure is saturated: the shadow
+ * covers every bay pixel the sun reaches, so a stronger or a broken shadow
+ * over those pixels reads the same, and no ceiling can tell them apart (the
+ * paragraph above already says the ceiling is not an acne guard).
+ *
+ * What a ceiling just above saturation still catches is two arms that differ
+ * by **more** than the shadow: a pixel the sun never reaches cannot be darkened
+ * by toggling the sun's shadow, so a reading above the sun's reach means the
+ * "off" arm was drawn differently, which is how #201's relit arm once read.
+ * So the ceiling is 77, about 2.5 points above saturation.
+ *
+ * **And the floor scales with it.** At 1 under 74% it would pass a shadow that
+ * lost 98% of its coverage. On #199's rig the one short-stopped framing read
+ * 1.37 against 6.06, about 23% of a normal run, and the floor of 1 sat just
+ * under that. The same ratio on B is about 17, so the floor is 15. B's own
+ * short-stop reading has not been measured; if a run reads under 15 with the
+ * docking computer stopping short, that is the reading to take, not a reason
+ * to drop the floor back.
+ *
+ * The sign and the scale-freedom of the bias are pinned
  * exactly in `tests/occlusion.test.ts`, where they are arithmetic; this is the
  * arm that says the arithmetic reached the frame.
  */
-const SHADOW_BAND_PCT = { min: 1, max: 15 };
+const SHADOW_BAND_PCT = { min: 15, max: 77 };
 
 /** How much of the near subject the ambient occlusion has to reach before it
  *  counts as present. A bay is a room of corners; measured on a passing run it
@@ -779,12 +802,12 @@ console.log(
  * **The shadow is checked in the bay, and the exterior and cabin figures above
  * are printed rather than asserted. That is a finding, not a convenience.**
  *
- * The star is one of three terms lighting this game and much the smallest:
- * `LIGHT_RIG` puts the sun at 0.2 against a hemisphere at 6.85, so a surface
- * receives about 3% of its light along the direction that casts a shadow — and
- * a shadow can only ever subtract the light of the light that casts it. A
- * hemisphere cannot be shadowed at all. Measured on this build, same builds and
- * framings, shadow on against off:
+ * Until #231 the star was one of three terms lighting this game and much the
+ * smallest: `LIGHT_RIG` put the sun at 0.2 against a hemisphere at 6.85, so a
+ * surface received about 3% of its light along the direction that casts a
+ * shadow — and a shadow can only ever subtract the light of the light that
+ * casts it. A hemisphere cannot be shadowed at all. Measured then, on that rig,
+ * shadow on against off:
  *
  * | framing | pixels darkened | deepest |
  * |---|---|---|
@@ -792,11 +815,17 @@ console.log(
  * | `cockpit-arrival` | 0.002% | 14.1/255 |
  * | `berth-free-look` | 6.2% | 11.6/255 |
  *
- * The bay is where it reads at all, and the reason is geometric: an enclosed
+ * #231 moved light into the sun (rig B, `LIGHT_RIG`), which made the
+ * exterior shadow larger. `scripts/measure-shadow-enclosure.mjs` measures it
+ * on its ladder, and the figures this probe prints show it on this build. The
+ * exterior rows stay printed, not asserted, for the reason below.
+ *
+ * The bay is where it reads most, and the reason is geometric: an enclosed
  * room is the one place a hull can put a large fraction of another surface out
  * of the star's line. A floor there is a real check on the whole path — the
  * box, the biases, the caster flags — where the same floor on either other
- * framing would be asserting a term the rig does not currently fund.
+ * framing would have asserted a term #199's rig did not fund. Whether B's
+ * exterior figures earn a floor of their own is not decided here.
  *
  * **An earlier revision of this file checked `station-flank` at 0.467% and
  * passed**, with a ceiling calibrated against that figure. It was measuring a
