@@ -205,6 +205,17 @@ so `canonicalEnvelope` omits an empty one and `WORLD_SCHEMA_VERSION` does not
 move; the save envelope's own version (9) is what says a record may carry rows,
 and a version 8 record carrying one is refused as assembled.
 
+**An instance's contents are pinned when the pilot first touches it, not at
+its loss.** `salvage.md` S6 stores them "at the loss", and storing every
+slot's row at its loss would need a tick and thousands of rows in every save;
+node #731 writes the row on first touch instead (`materializeDerelict`, or the
+first scoop). Until then an instance is derived from its slot key and
+`instanceOrdinal`, so a change to the draw or an appended fitting can still
+move an instance nobody has met — and never one somebody has. That puts an
+obligation on every later build that shows a wreck's contents — drawing it,
+finding it, posting a Salvage offer naming a container: it calls
+`materializeDerelict` before the pilot sees anything.
+
 The domains share the galaxy namespace and authoritative game clock but not a generic lowest-common-denominator event schema. Capabilities and UI projections may read multiple domains; they do not save duplicate capability projections.
 
 The eventual save system must snapshot `worldSchemaVersion`, `worldGeneratorVersion`, world seed, `gameTime`, current location/player state, and all eight galaxy envelopes atomically. Slots, autosave cadence and permadeath were decided by node #89 and implemented by #90; see §10. **Rollback was decided and is not yet reached**: #89's correction makes a non-permadeath death restore the last dock, `SaveStore.restoreAfterDeath` implements it, and nothing calls it because the game has no death path — #90 wired the flag and the record, not the death. Stated here rather than left to read as shipped, which is the class of false assertion §10 was corrected for. Any later policy may retain, rewind, or delete a whole snapshot, but may not selectively reset carrier consequences while retaining the rest of that timeline.

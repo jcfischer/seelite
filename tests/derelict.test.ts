@@ -578,6 +578,31 @@ describe("a malformed row is refused by name", () => {
 		);
 	});
 
+	test("a derelict slot its system does not hold", () => {
+		const lawful = systemOf(7);
+		for (const local of ["derelict-01", "derelict-99"]) {
+			const raw = resealedWorld(base(), (body) => {
+				const d = body.galaxies[G].derelicts;
+				d[`${lawful.index}:${local}`] = d[KEY];
+				delete d[KEY];
+			});
+			expect(() => parseWorld(raw)).toThrow(
+				`${lawful.index}:${local} is not a derelict slot in galaxy 0`,
+			);
+		}
+	});
+
+	test("a strip outside the time the wreck was adrift", () => {
+		const late = resealedWorld(
+			strip(newWorld(WORLD), KEY, firstLoss()),
+			(body) => {
+				const row = body.galaxies[G].derelicts[KEY];
+				row.salvaged.at = row.lostAt + DERELICT_SALVAGER_S;
+			},
+		);
+		expect(() => parseWorld(late)).toThrow("outside the time it was adrift");
+	});
+
 	test("a key that is not a derelict slot", () => {
 		const raw = resealedWorld(base(), (body) => {
 			const d = body.galaxies[G].derelicts;

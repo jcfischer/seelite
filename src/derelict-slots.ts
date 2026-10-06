@@ -27,6 +27,7 @@
  * cargo weighting, so `world-state.ts` can enumerate and read these slots
  * without a cycle.
  */
+// glossary-ignore: slot
 import { type CarrierKey, carrierKey } from "./carrier-key";
 import { carrierInstanceSeed } from "./carrier-standing";
 import { DOMAIN } from "./domains";

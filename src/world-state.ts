@@ -43,6 +43,7 @@ import { type DeficitMap, parseDeficits } from "./deficits";
 import {
 	DERELICT_FITTINGS,
 	DERELICT_MAX_CONTAINERS,
+	DERELICT_SALVAGER_S,
 	type DerelictContainerKind,
 	type DerelictPhase,
 	derelictContents,
@@ -2538,8 +2539,12 @@ const parseDerelictRow = (value: unknown, key: string): DerelictRow => {
 	if (row.salvaged !== undefined) {
 		const o = asObject(row.salvaged, `${what} salvaged`);
 		const at = num(o, "at", `${what} salvaged`);
-		if (at < lostAt)
-			fail(`${what}: salvaged at ${at}, before its loss at ${lostAt}`);
+		// The pilot strips a wreck only while it is adrift: from its loss to the
+		// salvagers' time, after which nothing is there to strip.
+		if (at < lostAt || at >= lostAt + DERELICT_SALVAGER_S)
+			fail(
+				`${what}: salvaged at ${at}, outside the time it was adrift from ${lostAt}`,
+			);
 		salvaged = { at, cause: parseProvenance(o.cause, `${what} salvaged`) };
 	}
 	const empty = containers.every((c) => c.left === 0);
@@ -2720,6 +2725,25 @@ export function parseWorld(raw: unknown): WorldState {
 		gameTime: num(o, "gameTime", "snapshot"),
 		galaxies: (o.galaxies as unknown[]).map((g, i) => parseEnvelope(g, i)),
 	};
+	// **A derelict key names a slot its system holds**, which needs the seed and
+	// so cannot be checked inside one envelope. `derelict-02` in a lawful system
+	// matches the id pattern; let through, it loads cleanly and then throws "is
+	// not a derelict slot" on the first read, a long way from the save.
+	for (const env of world.galaxies)
+		for (const key of Object.keys(env.derelicts) as CarrierKey[]) {
+			const systemIndex = systemIndexOfKey(key);
+			const ordinal = derelictOrdinalOf(localCarrierIdOfKey(key)) ?? 0;
+			if (
+				!isSystemIndex(systemIndex) ||
+				ordinal >=
+					derelictSlotCount(
+						systemAt(world.seed, env.galaxyIndex, systemIndex).government,
+					)
+			)
+				fail(
+					`derelicts: ${key} is not a derelict slot in galaxy ${env.galaxyIndex}`,
+				);
+		}
 
 	// **Over what arrived, not over what parsing made of it.** Hashing the
 	// re-canonicalised model made every difference canonicalisation smooths away
