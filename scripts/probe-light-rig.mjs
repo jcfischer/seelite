@@ -100,8 +100,8 @@
  * The half that needs the player's GPU is the picture, and that is the
  * canonical view set's job.
  */
-// A default-layout probe (#381 D11): it presses keys by name, as the shipped
-// layout binds them, and a moved default turns it red for that reason.
+// Its one press by name, `v` into the chase view, moved with the hull reader
+// into `lib/hull-chase.mjs` (#723), which carries #381 D11's label now.
 
 import { gameUrl } from "./lib/game-url.mjs";
 import { measureHullChase } from "./lib/hull-chase.mjs";

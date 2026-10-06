@@ -10,6 +10,8 @@
  * Moved here verbatim from `probe-light-rig.mjs`; the sample count became an
  * argument, and `mask` / `keepMask` were added for the instrument (below).
  */
+// A default-layout probe (#381 D11): it presses keys by name, as the shipped
+// layout binds them, and a moved default turns it red for that reason.
 
 /**
  * The `hull-chase` frame's painted hull peak, with canopy, exhaust and point
