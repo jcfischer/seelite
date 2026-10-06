@@ -16,6 +16,8 @@ kind.
 The S numbers are #466's D1–D27 in order, renamed so they do not collide with
 the D numbers of the specs this one points at.
 
+<!-- glossary-ignore: slot -->
+
 ## What this spec does not own
 
 | Fact | Owner |
@@ -39,17 +41,19 @@ canisters at the kill (#362 H11), so salvaging it would pay the same cargo
 twice. `ordinary-requests.md` D7's "re-derived from its carrier's destroyed row"
 is amended by this.
 
-**S2 — A wreck stays until it is stripped.** Stripping writes a `salvaged`
-condition on its row. A derelict slot then waits for its next loss (S16). A
+**S2 — A wreck stays until it is stripped.** A wreck is stripped when every
+container's tonnes are zero, and stripping writes a `salvaged` condition on its
+row. A derelict slot then waits for its next loss (S16). A
 death wreck goes when it is stripped or when a new death replaces it. S16
 amends this for derelict slots only.
 
 **S6 — What a derelict holds.** One to four manifest containers, one per line,
-each holding that line's tonnes, and sometimes one **fitting** container drawn
-from the equipment catalogue. The contents are a derived function on their own
+each holding that line's tonnes, and sometimes one **fitting** container. The
+fitting's catalogue index is drawn **at the loss and stored on the row**, so a
+module added to the catalogue later joins new instances only (S18). The contents are a derived function on their own
 `DOMAIN` tag, keyed on (slot key, `instanceOrdinal`), so a reload or a
 replacement re-derives them. The row stores only condition, the tonnes left per
-container (S20) and the loss schedule's place.
+container (S20), the fitting's index and the loss schedule's place.
 
 **S11 — Where it sits.** At rest in a local frame. A death wreck keeps the
 frame the pilot flew in at death (#529's frame) and its offset there; a
@@ -108,8 +112,10 @@ that leg are part of what the death took and may return in the death wreck's
 seeded share. An entrusted job item never goes into a wreck (#660 D8), so the
 job fails with a readable reason.
 
-A reload in mid-recovery needs no rule: the `live` save is written continuously
-(`src/save-store.ts`), so the row's tonnes and the hold are restored together.
+A reload in mid-recovery needs no rule of its own once the derelict-row build
+puts the row in the save: the `live` record is written continuously
+(`src/save-store.ts`'s cadence, #89 D4), so the row's tonnes and the hold are
+restored together.
 
 ## 3. Finding a wreck
 
@@ -147,7 +153,7 @@ provenance, and the slot's next loss follows. A death wreck has no salvager
 time.
 
 **S14 — The poster is the derelict's home station.** Every derelict draws a home
-registry: the station that lost it. That station alone posts "recover our lost
+station: the station that lost it. That station alone posts "recover our lost
 X", naming one container: the fitting when there is one, otherwise the line of
 highest value. Not every station posts, so boards differ.
 
@@ -160,8 +166,8 @@ as its source and the age since the loss (#337 D5). The pilot searches by sweep
 or by the visual floor. A Salvage job does **not** need the scanner; the relay
 Bounty does (#489), and the difference is deliberate.
 
-**S17 — The mark and the job's end.** A container's tonnes reaching zero is the
-mark: "the wreck's recoverable item is gone, once" (`ordinary-requests.md` §4).
+**S17 — The mark and the job's end.** The named container's tonnes reaching zero
+is the mark: "the wreck's recoverable item is gone, once" (`ordinary-requests.md` §4).
 A new instance has a new ordinal and new containers, so a repeat visit cannot
 pay twice. If the named item is gone before the job is accepted, the offer
 withdraws. If other salvagers take an accepted job's wreck, the job fails with
@@ -169,10 +175,10 @@ a readable reason and is cancelled free.
 
 **S18 — The operand.** A wreck reference — slot key, `instanceOrdinal`,
 container index — plus a **snapshot** of the named item: its good or fitting id
-and tonnes. Delivery is checked against the snapshot. The job pays 1.5 × the item's price at the posting station at acceptance, also kept in the snapshot, so a job beats selling the same item as free salvage. The fitting draw is an
-indexed list to which new modules are **appended only**, so an index drawn today
-names the same module tomorrow; the snapshot covers what a generator change
-still moves.
+and tonnes. Delivery is checked against the snapshot. The job pays 1.5 × the item's price at the posting station at acceptance, also kept in the snapshot, so the job pays more than selling the same item at the posting station. The fitting list is
+**append-only** and the index is stored on the row at the loss (S6), so a stored
+index names the same module after a catalogue change; the snapshot covers what a
+generator change still moves in the manifest lines.
 
 ## 5. Starting figures
 
@@ -191,11 +197,11 @@ tuned by #705.
 | Fitting container chance (S6) | 25% of instances |
 | Salvage job pay (S18) | 1.5 × the item's price at the posting station |
 
-## 6. Builds
+## 6. Builds (S27)
 
 | Build | Carries |
 | --- | --- |
-| The derelict row: slots, schedule, contents and the save | S1, S2, S6, S16, S18's draw, S21 |
+| The derelict row: slots, schedule, contents and the save | S1, S2, S6, S16, S18's draw, S21 — and the amendments it owes `persistent-world-state.md`: §2's carrier namespace gains the derelict slot, §3.2's conditions gain `salvaged` |
 | The wreck in the cockpit: drawn, placed, collidable and scooped | S3, S4, S5, S7, S8, S11, S13, S19, S20, S24, S26 |
 | Finding a wreck: the sweep, the visual floor and the ladder kind | S9, S22, S25 |
 | #705, the death wreck | S10, S12, on the row above |

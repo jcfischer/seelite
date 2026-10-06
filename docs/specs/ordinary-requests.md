@@ -109,9 +109,10 @@ principal chose to split rather than absorb.
 A salvage job's objective is a **persistent wreck**, which survives a
 departure and a reload. It is **not** a cargo canister.
 
+<!-- glossary-ignore: slot -->
 **Amended by [#466](https://github.com/jcfischer/seelite/issues/466).** The
 wreck is **not** re-derived from a destroyed carrier row, as this section first
-said: that row draws nothing, is destroyed for ten minutes only, and its
+said: that row draws nothing, is destroyed only for `RAIDER_WRECK_S`, and its
 manifest already dropped as canisters at the kill. A wreck comes from a seeded
 derelict slot or from a death, and `salvage.md` owns it.
 
@@ -121,9 +122,9 @@ state with a lifetime declared in `src/raider-wreck.ts`, and #324's playtests
 chose that deliberately. A job spanning a save cannot be built on them without
 reversing that choice.
 
-This family needed a **wreck-interaction verb**, this spec's one acknowledged
-new mechanic. #466 settled it as a proximity scoop of the wreck's tethered
-containers (`salvage.md` S3).
+This family needs a **wreck-interaction verb**, this spec's one acknowledged
+new mechanic. #466 specified it as a proximity scoop of the wreck's tethered
+containers (`salvage.md` S3), and its builds deliver it.
 
 ### D8 — Offers derive from need, with a courier floor
 
