@@ -682,7 +682,15 @@ export class SaveStore {
 				commander: commanderAfterDeath(dock, dying.commander, cause),
 			});
 			restored = parseSave(raw);
-			wake = deathWake(this.slot, dock, cause);
+			// `checkpointFor` derived a first checkpoint exactly when there was
+			// no record to read, and then the loss is the dying commander's.
+			const firstLife = docked === null || docked === undefined;
+			wake = deathWake(
+				this.slot,
+				firstLife ? dying.commander : dock,
+				cause,
+				firstLife,
+			);
 		} catch (error) {
 			// Not retired, and the save the death interrupted is still owed: quieting
 			// cleared the flag and the debounce, and without this a change made

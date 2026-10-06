@@ -54,15 +54,11 @@ export const COMMS_LINES = {
 	ceaseFire: { text: "Cease fire! Cease fire!", voice: "pilot" },
 	welcome: { text: "Welcome aboard, commander.", voice: "approach" },
 	// #660 D12 (node #704): the ship's own warning, once per crossing. The
-	// key is part of the line, so there is one line per default binding and
-	// one that names none, for a control rebound to a key the lexicon cannot
-	// say — the glass names that one (`ejectWarningLine`).
+	// key is part of the line, so there is one line for the default key and
+	// one that names none, for a key rebound to one the lexicon cannot say —
+	// the glass names that one (`ejectWarningLine`).
 	ejectWarningBackspace: {
 		text: "Warning. Hull failing. Hold backspace to eject.",
-		voice: "machine",
-	},
-	ejectWarningHome: {
-		text: "Warning. Hull failing. Hold home to eject.",
 		voice: "machine",
 	},
 	ejectWarning: {
@@ -146,9 +142,13 @@ export function voiceArms(value: string | null, dev: boolean): VoiceArms {
  * the glass names it (`spoken(layout, "fly.eject")`), so the voice and the
  * sentence name the same key. A line is static text the lexicon can say, so a
  * key the lexicon has no word for gets the line that names none.
+ *
+ * **Keyboard first, as every prompt is** (`spoken`): a rebind moves a key and
+ * never removes one, so the pad's Home is never the control named here, and a
+ * pilot flying from the pad hears "backspace", as the glass shows it. // glossary-ignore: pad
  */
 export function ejectWarningLine(control: string): CommsLineId {
-	if (control === "hold Backspace") return "ejectWarningBackspace";
-	if (control === "hold Home") return "ejectWarningHome";
-	return "ejectWarning";
+	return control === "hold Backspace"
+		? "ejectWarningBackspace"
+		: "ejectWarning";
 }

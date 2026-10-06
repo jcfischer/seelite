@@ -53,7 +53,6 @@ export const LEXICON: Readonly<Record<string, string>> = {
 	HAVE: "HH AE1 V",
 	HELLO: "HH AH0 L OW1",
 	HOLD: "HH OW1 L D",
-	HOME: "HH OW1 M",
 	HOSTILE: "HH AA1 S T AH0 L",
 	HULL: "HH AH1 L",
 	IN: "IH1 N",

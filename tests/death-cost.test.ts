@@ -19,7 +19,7 @@ import {
 	stepEjectWarning,
 	wakeText,
 } from "../src/death-cost";
-import { EJECT_HOLD_S } from "../src/eject";
+import { EJECT_HOLD_S, EJECT_IDLE, stepEjectHold } from "../src/eject";
 import { generateGalaxy } from "../src/galaxy";
 import { commanderAfterDeath } from "../src/holdings";
 import { HULL_IDS, HULL_SPECS, PLAYER_BASELINE_HULL } from "../src/hull";
@@ -268,10 +268,11 @@ describe("#660 D12 — the warning threshold, derived from the hostile weapon ta
 		);
 	});
 
-	test("the window is a second of reaction, the hold, and one longest frame", () => {
+	test("the window is a second of reaction, the hold, and two longest frames", () => {
 		expect(EJECT_REACTION_S).toBe(1);
-		expect(EJECT_WARNING_WINDOW_S).toBe(
-			EJECT_REACTION_S + EJECT_HOLD_S + MAX_DT,
+		expect(EJECT_WARNING_WINDOW_S).toBeCloseTo(
+			EJECT_REACTION_S + EJECT_HOLD_S + 2 * MAX_DT,
+			12,
 		);
 		expect(EJECT_WARNING_HULL).toBeCloseTo(
 			PULSE_LASER.damagePerS * EJECT_WARNING_WINDOW_S + HULL_KILL_TOLERANCE,
@@ -280,42 +281,85 @@ describe("#660 D12 — the warning threshold, derived from the hostile weapon ta
 	});
 
 	/**
-	 * Flown: the strongest hostile gun on a ship with its shields down, frame
-	 * by frame. From the frame the warning is first due, a pilot who reacts in
-	 * a second and holds the key the whole hold is out before the hull is.
+	 * Flown in the game's own order (`Game.step`): each frame the eject runs
+	 * first — the warning read off the hull the last frame left, the hold
+	 * stepped, the pod gone if it completes — and the guns after it. The
+	 * strongest hostile gun on a ship with its shields down. The pilot's hand
+	 * goes down a second after the frame that first showed the warning, at
+	 * every alignment against the frame clock, and stays down: the eject has
+	 * to come before the frame whose hit finishes the hull.
 	 */
 	for (const dt of [1 / 60, 1 / 30, MAX_DT])
-		test(`the last hit cannot come inside the window, every hull, at dt ${dt.toFixed(3)}`, () => {
-			for (const hull of HULL_IDS) {
+		test(`a pilot who reacts in a second is out before the last hit, every hull, at dt ${dt.toFixed(3)}`, () => {
+			for (const hull of HULL_IDS)
+				for (const lag of [0, 0.25, 0.5, 0.75, 0.999]) {
+					let player = { ...fullCondition(hull), fore: 0, aft: 0 };
+					let gun = fullCondition("raider");
+					let hold = EJECT_IDLE;
+					let pressAt: number | null = null;
+					let ejected = false;
+					for (let n = 1; player.hull > 0; n++) {
+						if (n > 3600 / dt) throw new Error(`${hull} never died`);
+						const t = n * dt;
+						if (
+							pressAt === null &&
+							ejectWarningDue({
+								podFitted: true,
+								flying: true,
+								alive: true,
+								hull: player.hull,
+							})
+						)
+							pressAt = t + EJECT_REACTION_S + lag * dt;
+						const down = pressAt !== null && t >= pressAt - 1e-9;
+						const step = stepEjectHold(hold, down, dt, null);
+						hold = step.hold;
+						if (step.event?.kind === "eject") {
+							ejected = true;
+							break;
+						}
+						const fired = stepCondition(gun, dt, true);
+						gun = fired.condition;
+						player = applyDamage(player, fired.damage, "fore");
+					}
+					expect(ejected, `${hull}, a press ${lag} of a frame late`).toBe(true);
+				}
+		});
+
+	test("one longest frame was not enough: the shipped order loses a ship with it", () => {
+		// The control for the row above: the same flight, with a window of one
+		// frame, has a hull and an alignment that dies holding the key.
+		const oneFrame =
+			PULSE_LASER.damagePerS * (EJECT_REACTION_S + EJECT_HOLD_S + MAX_DT) +
+			HULL_KILL_TOLERANCE;
+		const dt = MAX_DT;
+		let lost = 0;
+		for (const hull of HULL_IDS)
+			for (const lag of [0, 0.5, 0.999]) {
 				let player = { ...fullCondition(hull), fore: 0, aft: 0 };
 				let gun = fullCondition("raider");
-				let t = 0;
-				let warnedAt: number | null = null;
-				while (player.hull > 0) {
-					const step = stepCondition(gun, dt, true);
-					gun = step.condition;
-					player = applyDamage(player, step.damage, "fore");
-					t += dt;
-					if (
-						warnedAt === null &&
-						ejectWarningDue({
-							podFitted: true,
-							flying: true,
-							alive: player.hull > 0,
-							hull: player.hull,
-						})
-					)
-						warnedAt = t;
-					if (t > 3600) throw new Error(`${hull} never died`);
+				let hold = EJECT_IDLE;
+				let pressAt: number | null = null;
+				let ejected = false;
+				for (let n = 1; player.hull > 0; n++) {
+					const t = n * dt;
+					if (pressAt === null && player.hull < oneFrame)
+						pressAt = t + EJECT_REACTION_S + lag * dt;
+					const down = pressAt !== null && t >= pressAt - 1e-9;
+					const step = stepEjectHold(hold, down, dt, null);
+					hold = step.hold;
+					if (step.event?.kind === "eject") {
+						ejected = true;
+						break;
+					}
+					const fired = stepCondition(gun, dt, true);
+					gun = fired.condition;
+					player = applyDamage(player, fired.damage, "fore");
 				}
-				// A hull that dies in the frame it crosses is never warned; none
-				// on the roster is that light.
-				expect(warnedAt, hull).not.toBeNull();
-				expect(t - (warnedAt as number), hull).toBeGreaterThanOrEqual(
-					EJECT_REACTION_S + EJECT_HOLD_S - 1e-9,
-				);
+				if (!ejected) lost++;
 			}
-		});
+		expect(lost).toBeGreaterThan(0);
+	});
 
 	test("no pod, no warning; not on the rails or docked; not for a wreck", () => {
 		const low = EJECT_WARNING_HULL - 1;
@@ -349,7 +393,7 @@ describe("the wake: what the death took", () => {
 	const launch = launched();
 
 	test("an eject took the hold and the pod; the ship is named as kept", () => {
-		const wake = deathWake("jameson", launch, "eject");
+		const wake = deathWake("jameson", launch, "eject", false);
 		expect(wake).toEqual({
 			slot: "jameson",
 			cause: "eject",
@@ -357,6 +401,7 @@ describe("the wake: what the death took", () => {
 			holdT: 6 + courier.operand.tonnes,
 			fittingsLost: 1,
 			failedJobs: 1,
+			firstLife: false,
 		});
 		const text = wakeText(wake);
 		expect(text).toContain("escape pod");
@@ -366,7 +411,7 @@ describe("the wake: what the death took", () => {
 	});
 
 	test("a death without one took the ship, its fittings and the hold", () => {
-		const wake = deathWake("jameson", launch, "destroyed");
+		const wake = deathWake("jameson", launch, "destroyed", false);
 		expect(wake.fittingsLost).toBe(FITTED.length);
 		const text = wakeText(wake);
 		expect(text).toContain("stock courier");
@@ -375,19 +420,36 @@ describe("the wake: what the death took", () => {
 
 	test("a bare courier with nothing aboard is told so, with no jobs line", () => {
 		const bare = newCommanderRecord(PLAYER_BASELINE_HULL);
-		const text = wakeText(deathWake("x", bare, "destroyed"));
+		const text = wakeText(deathWake("x", bare, "destroyed", false));
 		expect(text).toContain("an empty hold");
 		expect(text).not.toContain("Requests");
 	});
 
+	test("a pilot who never docked is not told they are back where they launched", () => {
+		const dying = {
+			...newCommanderRecord(PLAYER_BASELINE_HULL),
+			state: {
+				...newCommanderRecord(PLAYER_BASELINE_HULL).state,
+				cargo: { Food: 3 },
+			},
+		};
+		const wake = deathWake("x", dying, "destroyed", true);
+		expect(wake.holdT).toBe(3);
+		const text = wakeText(wake);
+		expect(text).not.toContain("where you launched");
+		expect(text).toContain("new commander");
+		expect(text).toContain("the hold (3 t)");
+	});
+
 	test("the stored wake round-trips, and anything else reads as none", () => {
-		const wake = deathWake("jameson", launch, "eject");
+		const wake = deathWake("jameson", launch, "eject", false);
 		expect(parseDeathWake(structuredClone(wake))).toEqual(wake);
 		expect(parseDeathWake(null)).toBeNull();
 		expect(parseDeathWake("eject")).toBeNull();
 		expect(parseDeathWake({ ...wake, cause: "drowned" })).toBeNull();
 		expect(parseDeathWake({ ...wake, hull: "zeppelin" })).toBeNull();
 		expect(parseDeathWake({ ...wake, failedJobs: -1 })).toBeNull();
+		expect(parseDeathWake({ ...wake, firstLife: "no" })).toBeNull();
 	});
 });
 

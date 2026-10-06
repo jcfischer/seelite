@@ -416,7 +416,6 @@ describe("the eject warning's line (#660 D12, node #704)", () => {
 		expect(COMMS_LINES[ejectWarningLine("hold Backspace")].text).toContain(
 			"backspace",
 		);
-		expect(COMMS_LINES[ejectWarningLine("hold Home")].text).toContain("home");
 		const rebound = COMMS_LINES[ejectWarningLine("hold 8")].text;
 		expect(rebound).toContain("Eject");
 		expect(textToTokens(rebound).unknown).toEqual([]);

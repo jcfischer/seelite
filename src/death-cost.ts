@@ -63,12 +63,17 @@ export const EJECT_REACTION_S = 1;
 
 /**
  * The time the warning has to buy, s: the reaction, then the hold itself — a
- * pilot cannot eject faster than `EJECT_HOLD_S` (node #703) — and one longest
- * frame, `MAX_DT`. The frame is there because the threshold is read once per
- * frame: the hit that crosses it lands inside a frame, and the hull it leaves
- * can already be up to one frame's damage below the line.
+ * pilot cannot eject faster than `EJECT_HOLD_S` (node #703) — and **two**
+ * longest frames, `MAX_DT`, because the game reads the line and lands the
+ * hits in a fixed order. `step` runs the eject first and the guns after it,
+ * so the hit that crosses the line is read on the next frame (one frame
+ * late), and the hold ends on a frame boundary, where the eject goes before
+ * that frame's hits but a press made between frames waits for the next one
+ * (up to one more). `tests/death-cost.test.ts` flies that order at three
+ * frame times and every press alignment.
  */
-export const EJECT_WARNING_WINDOW_S = EJECT_REACTION_S + EJECT_HOLD_S + MAX_DT;
+export const EJECT_WARNING_WINDOW_S =
+	EJECT_REACTION_S + EJECT_HOLD_S + 2 * MAX_DT;
 
 /**
  * Below this hull, in points, a pilot with a pod is told to eject (#660 D12).
@@ -144,23 +149,33 @@ export interface DeathWake {
 	fittingsLost: number;
 	/** Jobs that failed with the hold (#660 D3). */
 	failedJobs: number;
+	/** A pilot who had never docked, woken as a new commander at the start
+	 *  system's trade station (#660 D10): there was no launch to go back to,
+	 *  so what was lost is read off the dying commander instead. */
+	firstLife: boolean;
 }
 
-/** The wake for a death restored from `checkpoint`, the launch record. */
+/**
+ * The wake for a death, read off the commander whose loss it reports: the
+ * launch record a death restores from — what it takes is what that record
+ * held — or, for a pilot who never docked (`firstLife`), the dying commander,
+ * since the checkpoint that pilot wakes to is a new one and held nothing.
+ */
 export function deathWake(
 	slot: string,
-	checkpoint: CommanderRecord,
+	lost: CommanderRecord,
 	cause: DeathCause,
+	firstLife: boolean,
 ): DeathWake {
-	const entrustedT = entrustedTonnesAboard(checkpoint.requests);
+	const entrustedT = entrustedTonnesAboard(lost.requests);
 	return {
 		slot,
 		cause,
-		hull: checkpoint.state.hull,
-		holdT: commanderHold(checkpoint.state, entrustedT).usedT,
-		fittingsLost:
-			cause === "eject" ? 1 : checkpoint.state.ownedEquipment.length,
-		failedJobs: requestsAfterLostHold(checkpoint.requests).failed.length,
+		hull: lost.state.hull,
+		holdT: commanderHold(lost.state, entrustedT).usedT,
+		fittingsLost: cause === "eject" ? 1 : lost.state.ownedEquipment.length,
+		failedJobs: requestsAfterLostHold(lost.requests).failed.length,
+		firstLife,
 	};
 }
 
@@ -184,7 +199,8 @@ export function parseDeathWake(raw: unknown): DeathWake | null {
 		!Number.isFinite(o.holdT) ||
 		o.holdT < 0 ||
 		!count(o.fittingsLost) ||
-		!count(o.failedJobs)
+		!count(o.failedJobs) ||
+		typeof o.firstLife !== "boolean"
 	)
 		return null;
 	return {
@@ -194,6 +210,7 @@ export function parseDeathWake(raw: unknown): DeathWake | null {
 		holdT: o.holdT,
 		fittingsLost: o.fittingsLost,
 		failedJobs: o.failedJobs,
+		firstLife: o.firstLife,
 	};
 }
 
@@ -219,5 +236,8 @@ export function wakeText(wake: DeathWake): string {
 		wake.fittingsLost > 0
 			? `, ${plural(wake.fittingsLost, "fitting", "fittings")}`
 			: "";
-	return `Your ship was destroyed. You are back where you launched, in a stock courier with a full tank and your credits. Lost: your ${wake.hull}${fittings} and ${hold}.${jobs}`;
+	const lost = `Lost: your ${wake.hull}${fittings} and ${hold}.${jobs}`;
+	if (wake.firstLife)
+		return `Your ship was destroyed before you ever docked. You wake as a new commander at the start system's trade station. ${lost}`;
+	return `Your ship was destroyed. You are back where you launched, in a stock courier with a full tank and your credits. ${lost}`;
 }

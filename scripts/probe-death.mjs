@@ -36,6 +36,9 @@
  * The kill is started from a timer inside the page so this script's `evaluate`
  * returns before the reload destroys the page it ran in.
  */
+// A default-layout probe (#381 D11): arm 5 holds Backspace by name, as the
+// shipped layout binds the eject, and a moved default turns it red for that
+// reason.
 import {
 	bootedGame,
 	guardedOrigin,
@@ -604,6 +607,14 @@ if (flown.store && flown.trade) {
 					].visited.includes(elsewhere),
 				dead: g.dead,
 				overlayOpen: g.commanderOverlay?.isOpen() ?? null,
+				wake: g.wakeShown,
+				message: (() => {
+					g.updateCockpit();
+					return (
+						document.querySelector("[data-live-station-message]")
+							?.textContent ?? null
+					);
+				})(),
 			};
 		}, flown.elsewhere);
 		check(
@@ -622,6 +633,14 @@ if (flown.store && flown.trade) {
 			"and the world keeps the leg flown before the death",
 			woke.visitedKept,
 			JSON.stringify(woke),
+		);
+		check(
+			"and the console says a new commander woke, not that they launched",
+			woke.wake?.firstLife === true &&
+				woke.wake?.holdT === 2 &&
+				woke.message?.includes("new commander") === true &&
+				!woke.message?.includes("where you launched"),
+			JSON.stringify({ wake: woke.wake, message: woke.message }),
 		);
 	}
 }

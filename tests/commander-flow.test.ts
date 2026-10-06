@@ -95,6 +95,7 @@ describe("planBoot: the wake a death left (#660, node #704)", () => {
 		holdT: 4,
 		fittingsLost: 1,
 		failedJobs: 0,
+		firstLife: false,
 	});
 
 	test("the death's continue carries its wake, and the next boot does not", async () => {

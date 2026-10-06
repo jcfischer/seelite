@@ -587,6 +587,7 @@ describe("#660 D1, D10 — a death restores the launch, and a first death wakes 
 		expect(wake?.slot).toBe("default");
 		expect(wake?.cause).toBe("eject");
 		expect(wake?.fittingsLost).toBe(1);
+		expect(wake?.firstLife).toBe(false);
 		expect(await h.catalog.takeWake()).toBeNull();
 	});
 
@@ -714,6 +715,11 @@ describe("#660 D1, D10 — a death restores the launch, and a first death wakes 
 		}
 		// The record that went to disk is one the parser accepts.
 		expect(parseSave(await h.backend.raw("default", "live"))).toEqual(live);
+		// And the wake reads what the dying commander lost, as a first life.
+		const wake = await h.catalog.takeWake();
+		expect(wake?.firstLife).toBe(true);
+		expect(wake?.hull).toBe("freighter");
+		expect(wake?.holdT).toBe(4);
 	});
 
 	test("an absent lastDocked whose write failed is refused, not derived", async () => {
