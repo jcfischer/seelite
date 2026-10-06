@@ -3325,6 +3325,15 @@ class Game {
 	chargedRender: { text: string; alpha: number } | null = null;
 	/** The eject control's progress through the hold it is in (node #703). */
 	ejectHold: EjectHold = EJECT_IDLE;
+	/**
+	 * Whether the window has focus, as its `blur` and `focus` events say (sage
+	 * round 9). The eject arms only while it does, from either device: a pad // glossary-ignore: pad
+	 * is polled whether the window has focus or not, so a `home` held through
+	 * a switch to another window went on filling and fired there. True until
+	 * a `blur` says otherwise, because the probe lane's window is never the
+	 * key window (#441) and `document.hasFocus()` would read it unfocused.
+	 */
+	windowFocused = true;
 	/** The eject's last refusal on the glass, what is left of its time, and
 	 *  the dock phase it was said in. */
 	ejectRefused: { text: string; left: number; phase: DockPhase | null } = {
@@ -4968,6 +4977,7 @@ class Game {
 			this.mouseFiring = false;
 			this.loseEjectFocus();
 		});
+		window.addEventListener("focus", () => this.regainEjectFocus());
 		// **A key unlocks the sound as well as a click**, because #283's pad
 		// notice tells the player so: "press any key or click once to enable
 		// sound". Only the pointer path existed, so a player who did what the
@@ -11850,7 +11860,9 @@ class Game {
 	 *
 	 * **Two idles happen outside this method** (sage round 5), because this
 	 * method does not run for them: a held clock skips `step`, so the frame
-	 * loop calls `idleEject`, and a lost window focus is `loseEjectFocus`.
+	 * loop calls `idleEject`, and a lost window focus is `loseEjectFocus`. The
+	 * focus then holds the control idle here until it returns (sage round 9),
+	 * which is what reaches the pad: its `home` is still read as held. // glossary-ignore: pad
 	 */
 	private stepEject(dt: number) {
 		// **A refusal is about the phase it was said in**, so it ends with
@@ -11869,6 +11881,7 @@ class Game {
 		}
 		const headTurned = this.view === "cockpit" && this.headLook !== "forward";
 		const live =
+			this.windowFocused &&
 			!headTurned &&
 			(this.held("fly.eject") ||
 				padEjectHeld(this.padFrame, this.padContext()));
@@ -11953,16 +11966,28 @@ class Game {
 	 * `keysPhysicallyDown`, which only a keyup clears: that keeps a spent hold
 	 * spent, at the cost of one dead press (`keysPhysicallyDown`'s note).
 	 *
+	 * **The pad is idled by the focus, not by its frame** (sage round 9). The // glossary-ignore: pad
+	 * browser goes on reporting a held `home` to an unfocused window, so
+	 * `stepEject` arms nothing until `regainEjectFocus`. Idle, so a spent hold
+	 * stays spent while the button is down; a hold still down when focus
+	 * returns starts from zero and is seen whole on the glass.
+	 *
 	 * **The eject's keys only.** Every held key is lost on a blur the same way;
 	 * what the others should do about it is not this node's question.
 	 */
 	private loseEjectFocus() {
+		this.windowFocused = false;
 		for (const key of [...this.keys]) {
 			const one = new Set([key]);
 			if (VIEW_MODES.some((v) => isHeld(this.bindings, "fly.eject", one, v)))
 				this.keys.delete(key);
 		}
 		this.idleEject();
+	}
+
+	/** The window has focus again: the eject may arm (`loseEjectFocus`). */
+	private regainEjectFocus() {
+		this.windowFocused = true;
 	}
 
 	/**

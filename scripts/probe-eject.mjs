@@ -7,7 +7,9 @@
  * a tap fires nothing, a hold with the head turned to a side console fires
  * nothing, a spent hold kept down through the Settings screen stays spent, a
  * hold cut by a lost window focus or a held clock does not finish what it
- * had, a spent hold let go under the Postcard screen is let go, and the same key on the rails of an arrival, docked and
+ * had, a pad's `home` held through a lost window focus arms nothing until // glossary-ignore: pad
+ * focus returns, a spent hold let go under the Postcard screen is let go, and
+ * the same key on the rails of an arrival, docked and
  * on the rails of a launch is refused where a pilot in the cockpit reads it —
  * the glass on the rails, the station console's message line docked.
  *
@@ -27,6 +29,7 @@ import {
 	waitForSettingsPanel,
 } from "./probe-guard.mjs";
 import { installViewFraming } from "./lib/view-placement.mjs";
+import { STANDARD_INDEX, installFakePad } from "./lib/fake-pad.mjs";
 import { gameUrl } from "./lib/game-url.mjs";
 
 const ORIGIN =
@@ -39,6 +42,8 @@ const page = await browser.newPage({ viewport: { width: 1280, height: 760 } });
 watch(page);
 await installViewPlacement(page);
 await installViewFraming(page);
+// A pad at rest until the focus rows hold its `home` (sage round 9). // glossary-ignore: pad
+await page.addInitScript(installFakePad);
 await page.goto(gameUrl(origin, { seed: 42 }), { waitUntil: "load" });
 await bootedGame(page);
 
@@ -66,6 +71,17 @@ const read = () =>
 		};
 	});
 
+/**
+ * Wait out half a hold past a whole one with the control as it is, and read
+ * (sage round 9). Every row that asks "did this hold fire" reads it here and
+ * checks the count against its own start, so a row added above does not
+ * renumber the rows below it.
+ */
+const holdAndRead = async () => {
+	await page.waitForTimeout(law.holdMs * 1.5);
+	return read();
+};
+
 /** Wait for the eject row on the glass to satisfy `test`, the key down. */
 const glassSays = (text, timeout = 3000) =>
 	page
@@ -80,11 +96,12 @@ const glassSays = (text, timeout = 3000) =>
 		);
 
 /**
- * Wait for the eject count to reach `count`, and read how long after
- * `startedAtMs` — a page clock — the last eject recorded itself. One reading
- * for every row that times a hold (sage round 6).
+ * Wait for the eject count to pass `base`, the count the row started at, and
+ * read how long after `startedAtMs` — a page clock — the last eject recorded
+ * itself. One reading for every row that times a hold (sage round 6).
  */
-const waitForEject = async (count, startedAtMs) => {
+const waitForEject = async (base, startedAtMs) => {
+	const count = base + 1;
 	const fired = await page
 		.waitForFunction((want) => window.__seelite.ejectCount >= want, count, {
 			timeout: law.holdMs * 6,
@@ -125,13 +142,12 @@ await page.keyboard.down("Backspace");
 const noPodSaid = await glassSays(law.refused["no-pod"]);
 if (process.env.EJECT_EVIDENCE)
 	await page.screenshot({ path: `${process.env.EJECT_EVIDENCE}/refused.png` });
-await page.waitForTimeout(law.holdMs * 1.5);
+const noPod = await holdAndRead();
 await page.keyboard.up("Backspace");
-const noPod = await read();
 check(
 	"without a pod a held Backspace is refused on the glass, and fires nothing",
-	noPodSaid && noPod.ejects === 0,
-	`said ${noPodSaid}, ejects ${noPod.ejects}`,
+	noPodSaid && noPod.ejects === start.ejects,
+	`said ${noPodSaid}, ejects ${noPod.ejects} from ${start.ejects}`,
 );
 
 // ---------------------------------------------------------------------------
@@ -145,8 +161,8 @@ await page.waitForTimeout(law.holdMs);
 const tap = await read();
 check(
 	"a tap of Backspace fires no eject — the hold is the confirm",
-	tap.ejects === 0,
-	`ejects ${tap.ejects}`,
+	tap.ejects === start.ejects,
+	`ejects ${tap.ejects} from ${start.ejects}`,
 );
 
 await page.keyboard.down("Backspace");
@@ -170,20 +186,22 @@ const arming = await page
 // default: a screenshot inside the hold would slow the very window it times.
 if (process.env.EJECT_EVIDENCE)
 	await page.screenshot({ path: `${process.env.EJECT_EVIDENCE}/arming.png` });
-const { fired, elapsedMs: firedAfterMs } = await waitForEject(1, downAtMs);
+const { fired, elapsedMs: firedAfterMs } = await waitForEject(
+	tap.ejects,
+	downAtMs,
+);
 // Held on past the eject: a second one would be a held key firing per frame.
-await page.waitForTimeout(law.holdMs * 1.5);
+const held = await holdAndRead();
 await page.keyboard.up("Backspace");
-const held = await read();
 check(
 	"while held, the glass shows the hold filling, and nothing has fired yet",
-	arming?.render?.refused === false && arming.ejects === 0,
+	arming?.render?.refused === false && arming.ejects === tap.ejects,
 	JSON.stringify(arming),
 );
 check(
 	"held in flight, the eject event fires exactly once",
-	fired && held.ejects === 1,
-	`fired ${fired}, ejects ${held.ejects}`,
+	fired && held.ejects === tap.ejects + 1,
+	`fired ${fired}, ejects ${held.ejects} from ${tap.ejects}`,
 );
 // **Less one step**, and that is the hold's arithmetic rather than slack: the
 // first step after the keydown adds that frame's whole `dt`, part of which
@@ -204,16 +222,15 @@ check(
 // ---------------------------------------------------------------------------
 await page.evaluate(() => window.__seelite.setHeadLook("right"));
 await page.keyboard.down("Backspace");
-await page.waitForTimeout(law.holdMs * 1.5);
-const turned = await read();
+const turned = await holdAndRead();
 await page.keyboard.up("Backspace");
 await page.evaluate(() => window.__seelite.setHeadLook("forward"));
 // The eject count is the whole check. `ejectRender` is not in it: a turned
 // head draws no glass at all, so the row reads null with the gate or without.
 check(
 	"with the head turned to a side console a held Backspace fires nothing",
-	turned.phase === "flying" && turned.ejects === 1,
-	JSON.stringify(turned),
+	turned.phase === "flying" && turned.ejects === held.ejects,
+	`${JSON.stringify(turned)} from ${held.ejects}`,
 );
 
 // ---------------------------------------------------------------------------
@@ -256,6 +273,8 @@ const station = await page.evaluate(async () => {
 	return id;
 });
 const arriving = await read();
+// Every refusal below is checked against this: none of them fires.
+const beforeRefusals = arriving.ejects;
 await page.keyboard.down("Backspace");
 const arrivalSaid = await glassSays(law.refused.arriving);
 await page.keyboard.up("Backspace");
@@ -301,8 +320,7 @@ const dockedSaid = await page
 		() => true,
 		() => false,
 	);
-await page.waitForTimeout(law.holdMs * 1.5);
-const dockedHeld = await read();
+const dockedHeld = await holdAndRead();
 await page.keyboard.up("Backspace");
 check(
 	"docked, a held Backspace is refused on the station console's message line",
@@ -318,8 +336,8 @@ check(
 // frame left and says nothing about this one.
 check(
 	"and fires nothing, however long it is held",
-	dockedHeld.ejects === 1,
-	JSON.stringify(dockedHeld),
+	dockedHeld.ejects === beforeRefusals,
+	`${JSON.stringify(dockedHeld)} from ${beforeRefusals}`,
 );
 // **What the glass left is under the console, not over it.** No render means
 // no `clearRect` either, so the overlay keeps the last arrival frame — which
@@ -397,18 +415,19 @@ const clear = await page
 		() => false,
 	);
 await page.evaluate(() => window.__seelite.setHeadLook("forward"));
-await page.waitForTimeout(law.holdMs * 1.5);
-const turnedThrough = await read();
+const turnedThrough = await holdAndRead();
 check(
 	"a refused hold kept down through a head turn and the launch's end fires nothing on turning forward",
-	clear && turnedThrough.phase === "flying" && turnedThrough.ejects === 1,
-	`cleared ${clear}, ${JSON.stringify(turnedThrough)}`,
+	clear &&
+		turnedThrough.phase === "flying" &&
+		turnedThrough.ejects === beforeRefusals,
+	`cleared ${clear}, ${JSON.stringify(turnedThrough)} from ${beforeRefusals}`,
 );
 const after = await read();
 check(
-	"and across all three refusals the one eject from flight is still the only one",
-	after.ejects === 1,
-	`ejects ${after.ejects}`,
+	"and across all three refusals the count has not moved",
+	after.ejects === beforeRefusals,
+	`ejects ${after.ejects} from ${beforeRefusals}`,
 );
 // The same spent hold, **let go at a side console** and pressed again there
 // (sage round 3): a release is a release wherever the head is, so the fresh
@@ -421,13 +440,12 @@ await page.waitForTimeout(100);
 await page.keyboard.down("Backspace");
 await page.waitForTimeout(100);
 await page.evaluate(() => window.__seelite.setHeadLook("forward"));
-await page.waitForTimeout(law.holdMs * 1.5);
-const repressed = await read();
+const repressed = await holdAndRead();
 await page.keyboard.up("Backspace");
 check(
 	"a hold let go and pressed again at a side console fires on turning forward",
-	repressed.phase === "flying" && repressed.ejects === 2,
-	JSON.stringify(repressed),
+	repressed.phase === "flying" && repressed.ejects === after.ejects + 1,
+	`${JSON.stringify(repressed)} from ${after.ejects}`,
 );
 
 // A spent hold **kept down through the Settings screen** (sage round 4): the
@@ -439,8 +457,7 @@ check(
 // a release no frame saw is not one.
 await page.waitForTimeout(100);
 await page.keyboard.down("Backspace");
-await page.waitForTimeout(law.holdMs * 1.5);
-const spentByEject = await read();
+const spentByEject = await holdAndRead();
 // The screen mounts from a deferred import; long since landed by now, but a
 // screen that never arrived is reported as that, not as a key that did nothing.
 const settingsMounted = await waitForSettingsPanel(page);
@@ -458,19 +475,18 @@ await page.keyboard.down("Backspace");
 // The repeat must have landed, or the row below passes on a key the game
 // never saw again and says nothing about a release.
 const repeatLanded = await page.evaluate(() => window.__seelite.heldKeyCount);
-await page.waitForTimeout(law.holdMs * 1.5);
-const throughSettings = await read();
+const throughSettings = await holdAndRead();
 await page.keyboard.up("Backspace");
 check(
 	"a spent hold kept down through the Settings screen fires nothing when the key repeats after it",
-	spentByEject.ejects === 3 &&
+	spentByEject.ejects === repressed.ejects + 1 &&
 		settingsMounted &&
 		settingsOpened &&
 		keysWhileOpen === 0 &&
 		settingsClosed &&
 		repeatLanded > 0 &&
 		throughSettings.phase === "flying" &&
-		throughSettings.ejects === 3,
+		throughSettings.ejects === spentByEject.ejects,
 	`spent ${JSON.stringify(spentByEject)}, mounted ${settingsMounted}, opened ${settingsOpened}, keys while open ${keysWhileOpen}, closed ${settingsClosed}, repeat landed ${repeatLanded}, after ${JSON.stringify(throughSettings)}`,
 );
 
@@ -497,13 +513,16 @@ await page.keyboard.down("Backspace");
 const blurArming = await armingShown();
 await page.waitForTimeout(law.holdMs * 0.3);
 await page.evaluate(() => window.dispatchEvent(new Event("blur")));
-await page.waitForTimeout(law.holdMs * 1.5);
-const blurred = await read();
+const blurred = await holdAndRead();
 await page.keyboard.up("Backspace");
+// Focus back, or every row below runs in a window the game holds idle.
+await page.evaluate(() => window.dispatchEvent(new Event("focus")));
 check(
 	"a hold part-filled when the window loses focus fires nothing after it",
-	blurArming && blurred.phase === "flying" && blurred.ejects === 3,
-	`arming ${blurArming}, ${JSON.stringify(blurred)}`,
+	blurArming &&
+		blurred.phase === "flying" &&
+		blurred.ejects === throughSettings.ejects,
+	`arming ${blurArming}, ${JSON.stringify(blurred)} from ${throughSettings.ejects}`,
 );
 
 // A hold part-filled **when the clock is held** (sage round 5): the frame loop
@@ -526,12 +545,12 @@ const resumedAtMs = await page.evaluate(() => {
 	return performance.now();
 });
 const { fired: firedAfterResume, elapsedMs: resumeFiredAfterMs } =
-	await waitForEject(4, resumedAtMs);
+	await waitForEject(blurred.ejects, resumedAtMs);
 await page.keyboard.up("Backspace");
 check(
 	"a hold part-filled when the clock is held takes a whole hold after the clock runs again",
 	clockArming &&
-		whileHeld.ejects === 3 &&
+		whileHeld.ejects === blurred.ejects &&
 		firedAfterResume &&
 		resumeFiredAfterMs >= law.holdMs - law.maxDtMs,
 	`arming ${clockArming}, ejects while held ${whileHeld.ejects}, fired ${firedAfterResume} ${Math.round(resumeFiredAfterMs)} ms after the release against a ${law.holdMs} ms hold`,
@@ -543,9 +562,9 @@ check(
 // stays physically down for good and the first real hold after the screen
 // closes is dead. A spent hold is the subject: an eject in flight makes one.
 await page.waitForTimeout(100);
+const beforePostcard = await read();
 await page.keyboard.down("Backspace");
-await page.waitForTimeout(law.holdMs * 1.5);
-const spentBeforePostcard = await read();
+const spentBeforePostcard = await holdAndRead();
 await page.keyboard.press("6");
 const postcardOpened = await page
 	.waitForFunction(() => window.__seelite.postcardPanel.isOpen(), null, {
@@ -569,11 +588,11 @@ const postcardClosed = await page
 await page.waitForTimeout(100);
 await page.keyboard.down("Backspace");
 const freshAtMs = await page.evaluate(() => performance.now());
-const fresh = await waitForEject(6, freshAtMs);
+const fresh = await waitForEject(spentBeforePostcard.ejects, freshAtMs);
 await page.keyboard.up("Backspace");
 check(
 	"a spent hold let go under the Postcard screen arms afresh on the next hold after it closes",
-	spentBeforePostcard.ejects === 5 &&
+	spentBeforePostcard.ejects === beforePostcard.ejects + 1 &&
 		postcardOpened &&
 		postcardClosed &&
 		fresh.fired &&
@@ -642,6 +661,46 @@ check(
 	interFrame.afterFull === interFrame.before + 1 &&
 		interFrame.afterFresh === interFrame.before + 2,
 	JSON.stringify(interFrame),
+);
+
+// The pad's `home` held **through a lost window focus** (sage round 9). The // glossary-ignore: pad
+// browser goes on reporting a held button to a window without focus, so
+// nothing a blur clears reaches it: the window's focus is what idles the
+// control. Part-filled at the blur, it fires nothing while the window is
+// elsewhere; still down when focus returns, it starts over and takes a whole
+// hold. Then, spent and still down, a second blur and focus fire nothing.
+const padStart = await read();
+await page.evaluate((i) => window.__pad.hold(i), STANDARD_INDEX.home);
+const padArming = await armingShown();
+await page.waitForTimeout(law.holdMs * 0.3);
+await page.evaluate(() => window.dispatchEvent(new Event("blur")));
+const padBlurred = await holdAndRead();
+const refocusedAtMs = await page.evaluate(() => {
+	window.dispatchEvent(new Event("focus"));
+	return performance.now();
+});
+const padFresh = await waitForEject(padBlurred.ejects, refocusedAtMs);
+await page.evaluate(() => window.dispatchEvent(new Event("blur")));
+await page.waitForTimeout(100);
+await page.evaluate(() => window.dispatchEvent(new Event("focus")));
+const padSpent = await holdAndRead();
+await page.evaluate(() => window.__pad.rest());
+check(
+	"a held Home part-filled when the window loses focus fires nothing while it is gone",
+	padArming &&
+		padBlurred.phase === "flying" &&
+		padBlurred.ejects === padStart.ejects,
+	`arming ${padArming}, ${JSON.stringify(padBlurred)} from ${padStart.ejects}`,
+);
+check(
+	"and still held when focus returns, it takes a whole hold from the return",
+	padFresh.fired && padFresh.elapsedMs >= law.holdMs - law.maxDtMs,
+	`fired ${padFresh.fired} ${Math.round(padFresh.elapsedMs)} ms after focus against a ${law.holdMs} ms hold`,
+);
+check(
+	"and once spent, kept down through a second lost focus, it fires nothing more",
+	padSpent.phase === "flying" && padSpent.ejects === padBlurred.ejects + 1,
+	JSON.stringify(padSpent),
 );
 
 await browser.close();
