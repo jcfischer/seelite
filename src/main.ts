@@ -309,6 +309,8 @@ import {
 	stationApertureFrame,
 	stationOf,
 	stationPose,
+	type AvoidSphere,
+	avoidanceSolids,
 	type FleetShip,
 	type FleetStep,
 	type HullControl,
@@ -7353,7 +7355,11 @@ class Game {
 	 * the band, where it stops being flown and starts being a carrier parked at
 	 * home (`parkedHomeTrafficActors`).
 	 */
-	private stepTrafficEngagements(dt: number, shot: PlayerShot) {
+	private stepTrafficEngagements(
+		dt: number,
+		shot: PlayerShot,
+		solids: readonly AvoidSphere[],
+	) {
 		const pilot: DuelPilot = {
 			ship: this.world.ship,
 			nose: this.nose(),
@@ -7361,6 +7367,7 @@ class Game {
 			aimNose: this.beamAim(),
 			hull: this.condition.hull,
 			frame: this.localFrameMotion(dt),
+			solids,
 		};
 		if (shot.fired && shot.damage > 0) this.engageStruckTraffic(pilot);
 		this.stepEngagedTraffic(pilot, shot, dt);
@@ -12776,7 +12783,11 @@ class Game {
 	 * three things only `Game` can — drop the player out of cruise, land the
 	 * raider's fire through `takeDamage`, and say how it ended.
 	 */
-	private stepRaider(dt: number, shot: PlayerShot) {
+	private stepRaider(
+		dt: number,
+		shot: PlayerShot,
+		solids: readonly AvoidSphere[],
+	) {
 		const encounter = this.encounter;
 		if (!encounter) return;
 		const { name } = encounter;
@@ -12795,6 +12806,8 @@ class Game {
 				// the frame the player's own assist holds, relay's included (#515),
 				// and shares its acceleration as the player's does (#529).
 				frame: this.assistFrameMotion(dt),
+				// What it steers clear of (node #665), read with the frame.
+				solids,
 			},
 			shot,
 		});
@@ -14518,9 +14531,11 @@ class Game {
 		// The flown ships' poses before their own steps move them: the start of
 		// each one's motion across this step (`collision.md` §4.1, node #664).
 		this.fleetStarts = this.flownFleetPoses();
-		this.stepRaider(dt, shot);
+		// The solids every fight steers clear of (node #665), at the same clock.
+		const solids = this.fightSolids();
+		this.stepRaider(dt, shot, solids);
 		this.stepRelay(shot, dt);
-		this.stepTrafficEngagements(dt, shot);
+		this.stepTrafficEngagements(dt, shot, solids);
 		this.stepCargoCanisters(dt);
 		this.syncCargoContacts();
 		// #48 deliberately couples no combat entity to the world yet: this is a
@@ -14936,6 +14951,22 @@ class Game {
 	/** The raider flown in a duel now, or `null`. */
 	private duelRaider() {
 		return this.encounter?.phase === "duel" ? this.encounter.raider : null;
+	}
+
+	/**
+	 * The solids beside every fight this frame (node #665), from the one
+	 * builder: around the pilot, the duel's raider and each engaged carrier,
+	 * since a carrier can be flown far from the pilot
+	 * (`TRAFFIC_DEMATERIALIZE_KM`). Read before any of them is stepped, at the
+	 * clock their own steps start from.
+	 */
+	private fightSolids(): AvoidSphere[] {
+		const near: Vec3[] = [this.world.ship.pos];
+		const raider = this.duelRaider();
+		if (raider) near.push(raider.flight.ship.pos);
+		for (const engagement of this.trafficEngagements.values())
+			near.push(engagement.flight.ship.pos);
+		return avoidanceSolids(this.world.system, this.world.gameTime, near);
 	}
 
 	/**

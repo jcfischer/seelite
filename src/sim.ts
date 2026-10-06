@@ -2939,6 +2939,75 @@ export function worldSolids(
 }
 
 /**
+ * A solid as an NPC's controller steers clear of it (node #665): a sphere
+ * that **bounds** what `worldSolids` sweeps, with the velocity the solid has
+ * now. A body is its own sphere; a station is its proxy's reach, which
+ * bounds the spinning member at every phase and a static keel with it, so
+ * the controller never needs the posing. Conservative on purpose: a sphere
+ * around the Gantry's sparse keel keeps a raider out of gaps the sweep would
+ * let it through, and a controller has no business threading a frame.
+ */
+export interface AvoidSphere {
+	id: string;
+	pos: Vec3;
+	vel: Vec3;
+	radiusKm: number;
+}
+
+/**
+ * How far from a ship a solid's surface may be and still be handed to its
+ * controller. The longest horizon a hull under a controller reads
+ * (`avoidanceHorizonS`, its braking term capped) is 22.3 s, on the miner —
+ * the capitals fly under none; the fastest body in 200 start systems moves
+ * 86.7 km/s, a station round an inner planet, and a ship held in the star's
+ * frame closes on it at that. 3,000 km is that horizon at over 100 km/s,
+ * which `tests/combat-enemy-avoidance.test.ts` holds against the raider and
+ * every Traffic hull, and against a fresh measurement of the bodies.
+ */
+export const AVOID_SCAN_KM = 3_000;
+
+/**
+ * Every solid within `AVOID_SCAN_KM` of any of `near` — the ships that will
+ * read the list this step — from the same sets `worldSolids` sweeps: each
+ * star, planet and moon, and each placed station on its selected proxy. One
+ * builder, so what a controller avoids cannot drift from what the sweep
+ * meets. `bodyVelocity` walks the contents, so it is read only for a solid
+ * that survived the distance cut.
+ */
+export function avoidanceSolids(
+	system: System,
+	gameTime: number,
+	near: readonly Vec3[],
+): AvoidSphere[] {
+	const solids: AvoidSphere[] = [];
+	const inScan = (pos: Vec3, radiusKm: number) =>
+		near.some((p) => length(sub(pos, p)) - radiusKm <= AVOID_SCAN_KM);
+	for (const body of system.bodies) {
+		if (!SOLID_BODY_KINDS.has(body.kind)) continue;
+		if (!inScan(body.pos, body.radiusKm)) continue;
+		solids.push({
+			id: body.id,
+			pos: { ...body.pos },
+			vel: bodyVelocity(system, body.id, gameTime),
+			radiusKm: body.radiusKm,
+		});
+	}
+	for (const station of system.contents.stations) {
+		if (!system.byId.has(station.id)) continue;
+		const { pos } = bodyOf(system, station.id);
+		const radiusKm = proxyReachKm(selectedStationProxy(station));
+		if (!inScan(pos, radiusKm)) continue;
+		solids.push({
+			id: station.id,
+			pos: { ...pos },
+			vel: bodyVelocity(system, station.id, gameTime),
+			radiusKm,
+		});
+	}
+	return solids;
+}
+
+/**
  * The player's motion against the world, through `sweepWorld` — the same
  * wrapper a fleet ship meets it through — landing where it leaves the ship.
  *

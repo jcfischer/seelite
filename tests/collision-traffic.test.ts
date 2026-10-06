@@ -2291,6 +2291,7 @@ describe("collision.md §3: a kill by impact names the impact, and pays only the
 					aimNose: v3(0, 0, -1),
 					hull: 100,
 					frame: { start: v3(), end: v3() },
+					solids: [],
 				},
 				shot: { fired: false, damage: 0 },
 			});

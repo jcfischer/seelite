@@ -106,6 +106,7 @@ function chaser(
 		aimNose: nose,
 		hull: 100,
 		frame: steadyFrame(v3()),
+		solids: [],
 	};
 }
 
@@ -271,6 +272,7 @@ describe("H3: the reaction per role", () => {
 			aimNose: v3(1, 0, 0),
 			hull: 100,
 			frame: steadyFrame(v3()),
+			solids: [],
 		};
 		// A fleeing ship already nosed away runs at full throttle.
 		e = { ...e, flight: { ...e.flight, phase: "flee", maneuverSeconds: 30 } };
@@ -363,6 +365,7 @@ describe("a fight beside a station is flown in its frame", () => {
 					aimNose: v3(0, 0, -1),
 					hull: 100,
 					frame: steadyFrame(frame),
+					solids: [],
 				};
 				e = stepEngagement(
 					e,
@@ -992,6 +995,7 @@ describe("H4's sustained-fire clock (#396)", () => {
 			aimNose: dir,
 			hull: 100,
 			frame: steadyFrame(v3()),
+			solids: [],
 		};
 	}
 

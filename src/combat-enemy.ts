@@ -43,6 +43,7 @@ import { mix, seedFor } from "./rng";
 import {
 	ASSIST_CAP_KMS,
 	type Angular,
+	type AvoidSphere,
 	flightPerformance,
 	type FlightPerformance,
 	type FrameMotion,
@@ -136,6 +137,8 @@ export interface EnemyFlightStep {
 	laserEndpointKm: number;
 	enemyFiring: boolean;
 	enemyHitAft: boolean;
+	/** The solid this step's heading was bent round (node #665), or `null`. */
+	avoiding: string | null;
 }
 
 /** Nose onto the player and start the run from here. */
@@ -387,6 +390,215 @@ function aimStick(
 }
 
 /**
+ * What a controller keeps between its centre and a solid's bounding sphere
+ * (node #665): **absolute, never a fraction of the solid** — the #30
+ * Constraint names an NPC's avoidance, and a shell proportional to a gas
+ * giant would swallow the station a duel is fought beside, which orbits at
+ * no less than 1.5 host radii. It covers the largest flown hull's own reach
+ * from its centre, so a centre outside the keep-out is a hull outside the
+ * solid, with metres to spare (`tests/combat-enemy-avoidance.test.ts`). The
+ * largest station keep-out it makes, the Gantry's 1.66 km keel plus this, is
+ * well inside `GUN_RANGE_KM`, so a raider held off a station still has a gun
+ * run on a pilot beside it.
+ */
+export const AVOID_CLEARANCE_KM = 0.5;
+
+/**
+ * How far ahead, in seconds, a controller reads a solid at closing speed
+ * `closingKms` (node #665): twice the time its hull needs to turn a quarter
+ * turn, take that closing speed off, and let the assist's lateral damping
+ * settle. The speed it can take off is bounded: the assist holds speed in
+ * the fight's frame, so nothing past twice the cap comes off relative to a
+ * solid, and past that the way out is sideways and the horizon stops
+ * growing. Read off the hull's own figures, so a freighter looks further
+ * ahead than a raider — it needs to, at 0.45 rad/s against 1.1 — and a
+ * threat beyond it leaves the heading alone, which is what keeps a duel
+ * from becoming a dance around every body in the system.
+ */
+export function avoidanceHorizonS(
+	perf: FlightPerformance,
+	closingKms: number,
+): number {
+	return (
+		2 *
+		(Math.PI / 2 / perf.angularMax.yaw +
+			clamp(closingKms, 0, 2 * ASSIST_CAP_KMS) / perf.thrustKms2 +
+			perf.assistLateralTauS)
+	);
+}
+
+/** Seconds until a point moving at `w` from the origin enters the sphere of
+ *  radius `keep` at `r`, or `Infinity` if it never does. Starts outside. */
+function entryS(r: Vec3, w: Vec3, keep: number): number {
+	const speedSq = lengthSq(w);
+	if (speedSq === 0) return Number.POSITIVE_INFINITY;
+	const along = dot(r, w) / Math.sqrt(speedSq);
+	if (along <= 0) return Number.POSITIVE_INFINITY;
+	const missSq = lengthSq(r) - along * along;
+	const keepSq = keep * keep;
+	if (missSq >= keepSq) return Number.POSITIVE_INFINITY;
+	return (along - Math.sqrt(keepSq - missSq)) / Math.sqrt(speedSq);
+}
+
+/** The step a deflection is searched in, and the margin it clears a cone by. */
+const AVOID_STEP_RAD = (2 * Math.PI) / 180;
+/** Inside the keep-out the heading must point this far past tangent, so the
+ *  ship climbs out rather than skimming round at the depth it reached. */
+const AVOID_OUTWARD_RAD = Math.PI / 6;
+
+export interface Avoidance {
+	desired: Vec3;
+	/** Cut the throttle: thrust along the nose as it stands would close on the
+	 *  solid, so the assist brakes in the frame while the nose comes round. */
+	brake: boolean;
+	/** The solid the heading was bent for, or `null` when it was left alone. */
+	avoiding: string | null;
+}
+
+/**
+ * Bend a controller's heading round the most urgent solid on its path
+ * (node #665, `collision.md` §6 item 2). The ship is collidable on the same
+ * rules as the player (`combat-model.md` §1), so the avoidance is the
+ * controller's, and the step it returns is still flown through the Hull step.
+ *
+ * **Predicted in the solid's frame (#362).** Two paths are read against each
+ * solid, both as velocities relative to it: the one the ship is on, and the
+ * one its assist is about to put it on — `frame + desired · speed`, since the
+ * assist holds speed in the fight's frame. Beside a station that frame moves
+ * ~30 km/s, and so does the station; only the difference is a path.
+ *
+ * A threat is a path entering the keep-out inside `avoidanceHorizonS`, and
+ * only the earliest one is answered. The answer is the smallest turn of the
+ * heading, away from the solid, after which the intended path misses: past
+ * the cone the keep-out subtends, past tangent when the present path would
+ * enter before half the horizon is gone, and outward when the ship is already
+ * inside. So a raider whose run on the pilot clips a station skims it by the
+ * cone and keeps its run; nothing farther than the horizon moves the nose.
+ *
+ * Pure, and it draws nothing from the fight's stream, so a fight in open
+ * space flies bit-identically with or without the solids beside it.
+ */
+export function avoidSolids(
+	ship: Ship,
+	nose: Vec3,
+	desired: Vec3,
+	speedKms: number,
+	frameVel: Vec3,
+	solids: readonly AvoidSphere[],
+	perf: FlightPerformance,
+): Avoidance {
+	const intendedFor = (heading: Vec3, solid: AvoidSphere) =>
+		sub(add(frameVel, scale(heading, speedKms)), solid.vel);
+
+	let worst: {
+		solid: AvoidSphere;
+		toward: Vec3;
+		present: Vec3;
+		inside: boolean;
+		cosLimit: number;
+		entry: number;
+	} | null = null;
+	for (const solid of solids) {
+		const r = sub(solid.pos, ship.pos);
+		const dist = length(r);
+		const keep = solid.radiusKm + AVOID_CLEARANCE_KM;
+		const toward = unit(r, scale(desired, -1));
+		const present = sub(ship.vel, solid.vel);
+		let entry: number;
+		let halfAngle: number;
+		if (dist <= keep) {
+			entry = 0;
+			halfAngle = Math.PI / 2 + AVOID_OUTWARD_RAD;
+		} else {
+			const intended = intendedFor(desired, solid);
+			const closing = Math.max(dot(present, toward), dot(intended, toward));
+			const horizon = avoidanceHorizonS(perf, closing);
+			const presentEntry = entryS(r, present, keep);
+			entry = Math.min(presentEntry, entryS(r, intended, keep));
+			if (entry > horizon) continue;
+			const cone = Math.asin(keep / dist);
+			// The velocity lags the nose by the assist's lateral settling, so
+			// a heading on the cone's edge leaves a present path inside it to
+			// curve in along the edge as the cone widens. Aim as far past the
+			// edge as the present path is inside it, and the velocity crosses
+			// the edge on its way there.
+			const presentSpeed = length(present);
+			const presentAngle =
+				presentSpeed === 0
+					? Math.PI
+					: Math.acos(clamp(dot(present, toward) / presentSpeed, -1, 1));
+			halfAngle = Math.min(
+				Math.PI - AVOID_STEP_RAD,
+				cone + Math.max(0, cone - presentAngle),
+			);
+		}
+		if (worst && entry >= worst.entry) continue;
+		worst = {
+			solid,
+			toward,
+			present,
+			inside: entry === 0,
+			cosLimit: Math.cos(halfAngle + AVOID_STEP_RAD),
+			entry,
+		};
+	}
+	if (!worst) return { desired, brake: false, avoiding: null };
+
+	const { solid, toward, present, inside, cosLimit } = worst;
+	/** How directly the intended path closes on the solid, -1…1. No motion
+	 *  relative to it is no path into it — unless the ship is already inside,
+	 *  where standing still is staying there. */
+	const closingCos = (heading: Vec3) => {
+		const intended = intendedFor(heading, solid);
+		const speed = length(intended);
+		if (speed === 0) return inside ? 1 : -1;
+		return dot(intended, toward) / speed;
+	};
+	// **The assist thrusts along the nose, not along the heading it is
+	// turning to.** A ship whose nose is still on the solid while it turns
+	// away is driven at it the whole turn, which is how a break begun nosed
+	// at a station flew into it with a clear heading. So while thrust along
+	// the nose as it stands would close on the solid, the throttle is cut and
+	// the assist brakes in the frame until the nose is clear.
+	const brake =
+		dot(nose, toward) > 0 && closingCos(nose) > cosLimit ? true : false;
+	if (closingCos(desired) <= cosLimit)
+		return { desired, brake, avoiding: brake ? solid.id : null };
+	// Which side to pass on: the side the heading leans to, and the side the
+	// ship is already sliding to, each weighed by the sine of its angle off
+	// the bearing. The slide is what holds the choice: a heading nearly on
+	// the bearing leans by the attack weave alone, which turns, and a side
+	// read off it alone turned with it and never let the velocity commit.
+	// Head-on and at rest any side will do; the basis is the same every frame.
+	const lean = (v: Vec3, norm: number) =>
+		norm === 0 ? v3() : scale(sub(v, scale(toward, dot(v, toward))), 1 / norm);
+	const side = unit(
+		add(lean(desired, 1), lean(present, length(present))),
+		perpBasis(toward)[0],
+	);
+	// The edge of what clears, on that side, nearest the bearing: the least
+	// the heading can be bent and still pass.
+	let best = desired;
+	let bestCos = closingCos(desired);
+	for (let angle = AVOID_STEP_RAD; angle <= Math.PI; angle += AVOID_STEP_RAD) {
+		const heading = add(
+			scale(toward, Math.cos(angle)),
+			scale(side, Math.sin(angle)),
+		);
+		const cos = closingCos(heading);
+		if (cos <= cosLimit) return { desired: heading, brake, avoiding: solid.id };
+		if (cos < bestCos) {
+			best = heading;
+			bestCos = cos;
+		}
+	}
+	// A solid closing faster than the hull can move off its path — a station
+	// overtaking a ship held in another frame: the heading that closes least,
+	// which is across its path rather than along it.
+	return { desired: best, brake, avoiding: solid.id };
+}
+
+/**
  * Spawn nosed at the player, beyond the player's beam, at a drawn bearing.
  *
  * The bearing and the range are draws rather than the previous build's fixed
@@ -473,6 +685,8 @@ export function stepCombatEnemy(
 		frame,
 		performance: STRIKER_PERFORMANCE,
 		intent: "attacker",
+		// The rig fights in empty space, and has no world to read solids from.
+		solids: [],
 	});
 }
 
@@ -498,6 +712,14 @@ export interface EnemyShipOptions {
 	 *  name a hull would silently fly a freighter as a raider. */
 	performance: FlightPerformance;
 	intent: EnemyIntent;
+	/**
+	 * The solids beside the fight this step (`avoidanceSolids`), which the
+	 * controller steers clear of (node #665). **Required**, for
+	 * `performance`'s reason: a caller that forgot it would fly the ship blind
+	 * into a station, and the two read the same in a diff. Pass `[]` to mean
+	 * open space.
+	 */
+	solids: readonly AvoidSphere[];
 }
 
 /** `stepCombatEnemy` for any hull and either intent. */
@@ -510,8 +732,15 @@ export function stepEnemyShip(
 	dt: number,
 	options: EnemyShipOptions,
 ): EnemyFlightStep {
-	const { laserOrigin, laserNose, hitRadiusKm, frame, performance, intent } =
-		options;
+	const {
+		laserOrigin,
+		laserNose,
+		hitRadiusKm,
+		frame,
+		performance,
+		intent,
+		solids,
+	} = options;
 	const step = Math.max(0, dt);
 	const toPlayer = sub(player.pos, state.ship.pos);
 	const range = length(toPlayer);
@@ -668,7 +897,7 @@ export function stepEnemyShip(
 		phaseSeconds * EVADE_SPIRAL_RAD_S,
 	);
 
-	const desired =
+	const wanted =
 		phase === "flee"
 			? awayFromPlayer
 			: phase === "evade"
@@ -692,6 +921,21 @@ export function stepEnemyShip(
 				? 0.9
 				: 1;
 
+	// **Then round what is in the way** (node #665): every phase's heading, the
+	// rout's and a civilian's included, is bent round the most urgent solid on
+	// its path, in that solid's frame, and the throttle is cut while the nose
+	// itself is still on it.
+	const avoided = avoidSolids(
+		state.ship,
+		state.nose,
+		wanted,
+		throttle * ASSIST_CAP_KMS,
+		frame ? frame.start : v3(),
+		solids,
+		performance,
+	);
+	const desired = avoided.desired;
+
 	const ship = { pos: { ...state.ship.pos }, vel: { ...state.ship.vel } };
 	// `step`, not `dt`: the clamp above is what stops a negative frame delta
 	// running the integrator backwards, and it has to reach the integrator too.
@@ -705,7 +949,11 @@ export function stepEnemyShip(
 		{
 			stick: aimStick(state, desired, performance),
 			turnAssist: true,
-			translation: { demand: speedDemand(throttle), assist: true, frame },
+			translation: {
+				demand: speedDemand(avoided.brake ? 0 : throttle),
+				assist: true,
+				frame,
+			},
 		},
 		step,
 		performance,
@@ -743,5 +991,6 @@ export function stepEnemyShip(
 		// the dot is negative when the striker is *behind* the player, which is
 		// the case its fire lands on the aft shield.
 		enemyHitAft: dot(playerNose, awayFromPlayer) < 0,
+		avoiding: avoided.avoiding,
 	};
 }

@@ -38,6 +38,7 @@ import {
 	stepCondition,
 } from "./ship-condition";
 import {
+	type AvoidSphere,
 	type FlightPerformance,
 	type FrameMotion,
 	type Ship,
@@ -116,6 +117,15 @@ export interface DuelPilot {
 	 *  `v3()` at both ends to mean the star's frame. Across the step, because
 	 *  the frame accelerates and the raider shares that too (#529). */
 	frame: FrameMotion;
+	/**
+	 * The solids beside the fight this step (`avoidanceSolids`), which every
+	 * ship fighting the player steers clear of (node #665). Carried with the
+	 * pilot because the fight is the pilot's: one list per step, read at the
+	 * clock the frame is read at. **Required**, for `frame`'s reason: a builder
+	 * that forgot it would fly the raider blind into a station. `[]` is open
+	 * space.
+	 */
+	solids: readonly AvoidSphere[];
 }
 
 /** The player's gun this step, as `stepCondition` already settled it. */
@@ -235,6 +245,7 @@ export function stepCombatShip(
 			frame: pilot.frame,
 			performance: rules.performance,
 			intent: rules.intent,
+			solids: pilot.solids,
 		},
 	);
 
