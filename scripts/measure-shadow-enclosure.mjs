@@ -96,6 +96,24 @@ const LADDER_RUNGS = [20, 12, 8, 5, 3, 2, 1.5];
  *  Same threshold as `probe-occlusion.mjs`. */
 const MOVED = 2;
 
+/**
+ * The clock back to the fixture, before every placement. The station orbits
+ * and spins on game time, and the hull calibration takes as long as its
+ * search does: on #723's first two runs the 1.5-radii rung read an enclosure
+ * of 0.9102 and 1.2121 rad. With this, a rung is the same framing whatever ran
+ * before it.
+ *
+ * **The ship goes to the boot position first.** `__startClockAt` draws two
+ * frames, and a body moves only when a frame steps it, so a reset with the
+ * ship still at the last rung draws two frames with the station jumped back
+ * beside it. Two frames open #241's gate and thirty close it, so that
+ * transient left the gate open at 5 and 3 radii, below its threshold.
+ */
+const resetClock = async (page) => {
+	await page.evaluate(() => window.__returnToBootPosition());
+	await page.evaluate((t) => window.__startClockAt(t), GAME_TIME_S);
+};
+
 /** Every layer's `"sun"` and `"hemisphere"`, read off the page. */
 const readLights = (page) =>
 	page.evaluate((scenes) => {
@@ -444,12 +462,7 @@ try {
 	await setView(page, "chase");
 
 	for (const rung of LADDER_RUNGS) {
-		// The clock back to the fixture before every placement. The station
-		// orbits and spins on game time, and the hull calibration above takes
-		// as long as its search does — on #723's first two runs the 1.5-radii
-		// rung read an enclosure of 0.9102 and 1.2121 rad. Reset here, a rung
-		// is the same framing whatever ran before it.
-		await page.evaluate((t) => window.__startClockAt(t), GAME_TIME_S);
+		await resetClock(page);
 		await page.evaluate(
 			([id, radii]) =>
 				window.__viewAlongAxis(id, window.__radiusOf(id) * radii, {
@@ -475,7 +488,7 @@ try {
 
 	console.log(`\n  bay — ${STATION}, berth-free-look, world-only`);
 
-	await page.evaluate((t) => window.__startClockAt(t), GAME_TIME_S);
+	await resetClock(page);
 	await setView(page, OCCLUSION_FRAMINGS.berth.view);
 	await OCCLUSION_FRAMINGS.berth.place(page);
 	await setView(page, OCCLUSION_FRAMINGS.berth.view);
