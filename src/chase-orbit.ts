@@ -100,8 +100,8 @@ export function zoomOrbit(orbit: ChaseOrbit, deltaPx: number): ChaseOrbit {
 	};
 }
 
-/** Who a locked pointer's delta belongs to: the camera in chase, the ship in
- *  the cockpit. Never both — a delta the orbit took is not also a turn. */
+/** Who a locked pointer's delta belongs to: the camera in Photo mode, the
+ *  ship otherwise. Never both — a delta the orbit took is not also a turn. */
 export type PointerOwner = "orbit" | "steer";
 export const pointerOwner = (view: View, photoMode = false): PointerOwner =>
 	view === "chase" && photoMode ? "orbit" : "steer";

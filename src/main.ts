@@ -1315,6 +1315,19 @@ const SETTLED_PHASES: readonly string[] = [
 const CHASE_ORBIT_RATE = 1.2;
 
 /**
+ * The controls that still answer in Photo mode (node #691): leaving it, the
+ * recentre, the Postcard screen and Settings. The world is paused, so every
+ * other control would act on a frozen ship.
+ */
+const PHOTO_MODE_COMMANDS: ReadonlySet<CommandId> = new Set<CommandId>([
+	"view.photo",
+	"view.orbitCentre",
+	"view.toggle",
+	"system.postcard",
+	"system.settings",
+]);
+
+/**
  * Fold an angle back into (-π, π].
  *
  * Local rather than in `units.ts` because that file is a leaf of the unit
@@ -9469,17 +9482,7 @@ class Game {
 	 * long enough to forget what the first one felt like.
 	 */
 	private command(id: CommandId) {
-		if (
-			this.photoMode &&
-			![
-				"view.photo",
-				"view.orbitCentre",
-				"view.toggle",
-				"system.postcard",
-				"system.settings",
-			].includes(id)
-		)
-			return;
+		if (this.photoMode && !PHOTO_MODE_COMMANDS.has(id)) return;
 		// #530 D2: while the opening runs, one key answers — the one that skips
 		// a traversal skips the opening too — and every other is ignored, so
 		// nothing a pilot presses can make a watched run differ from a skipped
@@ -14282,12 +14285,7 @@ class Game {
 
 		// Held rather than stepped, for the same reason throttle is: an angle the
 		// player is choosing by eye wants a rate, not a ladder of fixed stops.
-		const orbit = this.view === "chase" ? this.chaseOrbitInput() : 0;
-		if (orbit !== 0)
-			this.chaseOrbit = {
-				...this.chaseOrbit,
-				yawRad: wrapAngle(this.chaseYaw + orbit * CHASE_ORBIT_RATE * dt),
-			};
+		if (this.view === "chase") this.stepKeyOrbit(dt);
 
 		// **The lever moves only with the assist on** (#620, `flight-model.md`
 		// §3.6). Off, the same keys and triggers fire the main drive and the
@@ -15412,14 +15410,7 @@ class Game {
 		// Compose even while the world is held; panels still own their input.
 		if (pointerOwner(this.view, this.photoMode) === "orbit") {
 			this.orbitChase();
-			if (contextFliesShip(this.padContext())) {
-				const orbit = this.chaseOrbitInput();
-				if (orbit !== 0)
-					this.chaseOrbit = {
-						...this.chaseOrbit,
-						yawRad: wrapAngle(this.chaseYaw + orbit * CHASE_ORBIT_RATE * dt),
-					};
-			}
+			if (contextFliesShip(this.padContext())) this.stepKeyOrbit(dt);
 		}
 		const updateStartedAt = this.frameAttribution ? performance.now() : 0;
 		// **The clock is held, not the loop** (§11.2): `lastTime` above still
@@ -15530,13 +15521,19 @@ class Game {
 	 */
 	private orbitChase() {
 		const { dx, dy } = this.takePointer();
-		if (
-			!this.photoMode ||
-			this.openingActive ||
-			!contextFliesShip(this.padContext())
-		)
-			return;
+		if (this.openingActive || !contextFliesShip(this.padContext())) return;
 		this.chaseOrbit = orbitByPointer(this.chaseOrbit, dx, dy);
+	}
+
+	/** The held `1`/`3` swing, one frame of it. Each caller keeps its own gate:
+	 *  `step` in flight, the frame loop while Photo mode holds the world. */
+	private stepKeyOrbit(dt: number) {
+		const orbit = this.chaseOrbitInput();
+		if (orbit !== 0)
+			this.chaseOrbit = {
+				...this.chaseOrbit,
+				yawRad: wrapAngle(this.chaseYaw + orbit * CHASE_ORBIT_RATE * dt),
+			};
 	}
 
 	private togglePhotoMode() {

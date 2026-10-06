@@ -108,10 +108,7 @@ export function triggerLabel(t: Trigger): string {
 		case "mouse-move":
 			if (t.photoMode)
 				return `move the mouse ${way(t.axis, t.half)} (Photo mode)`;
-			// Node #691: a movement narrower than its command says where. // glossary-ignore: Command
-			return t.views
-				? `move the mouse ${way(t.axis, t.half)} (${t.views.join(" or ")} view)`
-				: `move the mouse ${way(t.axis, t.half)}`;
+			return `move the mouse ${way(t.axis, t.half)}`;
 		case "pad-button":
 			return t.hold ? `hold ${padButton(t.button)}` : padButton(t.button);
 		case "pad-stick":

@@ -7,20 +7,23 @@
  * `tests/chase-orbit.test.ts` holds the rig's arithmetic and
  * `tests/postcard.test.ts` the recipe's. What only a browser can say is here:
  *
- * - **the pointer orbits, and only orbits** (C1, C2): a real mouse move under a
- *   real pointer lock swings the chase camera round and over the hull, the
- *   ship's attitude, rates and trigger untouched, the hull holding its place
- *   in the drawn frame — and an engaged docking computer stays engaged, which
- *   is the row a delta read raw by `hasControlInput` would turn red. The
- *   control is the cockpit, where the same move steers and cancels it;
+ * - **in Photo mode the pointer orbits, and only orbits** (C1, C2): a real
+ *   mouse move under a real pointer lock swings the chase camera round and
+ *   over the hull, the ship's attitude, rates and trigger untouched, the hull
+ *   holding its place in the drawn frame. Outside Photo mode the same move
+ *   steers in both views. An engaged docking computer orbited under is still
+ *   engaged once Photo mode is left and the sim runs again — read while the
+ *   world is frozen it proves nothing, because `step` does not run to cancel
+ *   it. The control is the cockpit, where the same move steers and cancels it;
  * - **the pointer's owners** (C2): the cockpit gets its controls back and the
  *   chase pose is held across the toggle; a lost lock moves nothing until the
  *   next click takes it back; the settings screen and the Postcard screen take
  *   the pointer with them. The consoles and the Galaxy Map are cockpit walls,
  *   so in chase they never hold it; `probe-pointer-lock.mjs` owns their rows,
  *   and the orbit is dropped behind them by the same `contextFliesShip`;
- *   and docked the mouse still orbits, because the non-flight branch of `step`
- *   spends the delta before it drops it (sage round 2 found it dead there);
+ *   and docked, Photo mode's mouse still orbits, because the frame loop spends
+ *   the delta whatever the dock phase (sage round 2 found it dead there). The
+ *   ship staying docked is the freeze's doing, not the routing's;
  * - **the postcard carries the pose** (C3): an exterior card opened from an
  *   orbited view spells its yaw and elevation, its PNG is the card shown, the
  *   viewer rebuilds the same link and the same picture, the pilot's pose and
@@ -267,8 +270,10 @@ check(
 	`${angle(astern.hullInCamera, orbited.hullInCamera).toExponential(2)} rad between astern and orbited`,
 );
 
-// The docking computer: engaged, then orbited under. A delta read raw by the
-// cancel check would disengage it; the cockpit arm below is the control.
+// The docking computer: engaged, then orbited under. Photo mode holds the
+// world, so this row alone cannot see a leak — `step` never runs to cancel
+// anything. The row after leaving Photo mode runs the sim and can; the
+// cockpit arm below is the control.
 await page.evaluate(() => {
 	const g = window.__seelite;
 	if (!g.hasDockingComputer)
@@ -296,9 +301,19 @@ await settle();
 await zeroRates();
 const cockpitBefore = await pilot();
 await page.waitForTimeout(200);
+const resumed = await pilot();
 check(
 	"leaving Photo mode resumes the simulation",
-	!cockpitBefore.photo && (await pilot()).time > cockpitBefore.time,
+	!cockpitBefore.photo && resumed.time > cockpitBefore.time,
+);
+// The row above the frozen world cannot fail: `step` does not run in Photo
+// mode, so nothing there can disengage the computer. This one runs the sim:
+// a delta the orbit banked rather than spent would reach `hasControlInput`
+// on the first unfrozen step and cancel it here.
+check(
+	"the computer is still engaged once the simulation runs again",
+	cockpitBefore.computer && resumed.computer,
+	`engaged ${cockpitBefore.computer} → ${resumed.computer}`,
 );
 await moveMouse(14, 5);
 const cockpitAfter = await pilot();
@@ -773,9 +788,10 @@ ${rows}
 );
 
 // ---------------------------------------------------------------------------
-// Docked, the camera still answers (sage round 2). The non-flight branch of
-// `step` returns above the flight tail, and the orbit was spent only there:
-// docked, arriving or launching, chase ignored the mouse.
+// Docked, the camera still answers (sage round 2). The orbit was once spent
+// only in `step`'s flight tail, so docked, arriving or launching, chase
+// ignored the mouse; Photo mode's orbit is spent in the frame loop. The
+// docked phase holding below is the frozen world's, not evidence of routing.
 // ---------------------------------------------------------------------------
 // The fixture actually flies the docking computer; let it reach the berth
 // before holding the resulting docked composition.

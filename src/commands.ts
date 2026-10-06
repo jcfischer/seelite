@@ -234,14 +234,10 @@ export type Trigger =
 			readonly axis: "x" | "y";
 			readonly half: Half;
 			/**
-			 * The views this movement is live in, when narrower than its
-			 * command's (node #691). The pointer steers the ship in the cockpit // glossary-ignore: Command
-			 * and outside view during flight; Photo mode orbits the camera. The
-			 * fixed mouse rows carry that mode separately from their view. Keys
-			 * keep the scope of the command they are bound to. // glossary-ignore: Command
+			 * The fixed gesture's mode (node #691): omitted means normal
+			 * flight, where the pointer steers the ship in both views; set, the
+			 * movement orbits the camera in Photo mode.
 			 */
-			readonly views?: readonly ViewMode[];
-			/** The fixed gesture's mode: omitted means normal flight. */
 			readonly photoMode?: true;
 	  }
 	| {
@@ -1519,7 +1515,7 @@ const makeScope = (
 	surface?: Surface,
 	photoMode?: boolean,
 ): Scope => ({
-	pad,
+	pad, // glossary-ignore: pad
 	views,
 	...(surface === undefined ? {} : { surface }),
 	...(photoMode === undefined ? {} : { photoMode }),
@@ -1610,15 +1606,12 @@ const scopeOf = (trigger: Trigger, views: readonly ViewMode[]): Scope => {
 		trigger.surface !== undefined
 			? trigger.surface
 			: undefined;
-	// A movement narrower than its command is live where both are (node #691). // glossary-ignore: Command
-	const only = trigger.kind === "mouse-move" ? trigger.views : undefined;
-	const live = only ? views.filter((v) => only.includes(v)) : views;
 	return makeScope(
-		pad,
-		live,
+		pad, // glossary-ignore: pad
+		views,
 		surface,
 		trigger.kind === "mouse-move" ? trigger.photoMode === true : undefined,
-	); // glossary-ignore: pad
+	);
 };
 
 function triggersOf(a: Authored): Trigger[] {
@@ -1763,8 +1756,6 @@ export const layoutOf = (
 	for (const b of rows) {
 		Object.freeze(b.trigger);
 		if ("contexts" in b.trigger) Object.freeze(b.trigger.contexts);
-		if (b.trigger.kind === "mouse-move" && b.trigger.views)
-			Object.freeze(b.trigger.views);
 		Object.freeze(b.scope.pad);
 		Object.freeze(b.scope.views);
 		Object.freeze(b.scope);
@@ -1927,7 +1918,7 @@ const overlapScope = (a: Scope, b: Scope): Scope | null => {
 	const pad = intersection(a.pad, b.pad);
 	const views = intersection(a.views, b.views);
 	if (pad.length === 0 || views.length === 0) return null;
-	return makeScope(pad, views, a.surface, a.photoMode ?? b.photoMode);
+	return makeScope(pad, views, a.surface, a.photoMode ?? b.photoMode); // glossary-ignore: pad
 };
 
 export interface Collision {
