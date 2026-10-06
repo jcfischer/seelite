@@ -54,3 +54,8 @@ sound-set/
 # runtime binaries).
 public/voice-model/
 .voice-model-cache/
+
+# The music's instrument samples (map #1's Constraints, 2026-10-06), fetched by
+# scripts/fetch-music-samples.mjs and never committed. The download cache is
+# outside the repository.
+public/music-samples/
