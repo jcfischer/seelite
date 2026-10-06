@@ -92,6 +92,14 @@ jobs:
         if: github.event_name != 'pull_request'
         run: node scripts/fetch-voice-model.mjs
 
+      # The music's instrument samples are in Git LFS (map #1's Constraints,
+      # 2026-10-06), and the checkout above leaves them as pointer files. Only
+      # a publishing run needs the audio, so a pull request spends no LFS
+      # bandwidth; git-lfs is preinstalled on GitHub's Ubuntu runners.
+      - name: Fetch the music samples
+        if: github.event_name != 'pull_request'
+        run: git lfs pull --include "public/music-samples/**"
+
       # `npm run build` is `tsc --noEmit && vite build`, so a type error fails
       # the job before anything is published.
       - run: npm run build

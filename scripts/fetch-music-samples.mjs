@@ -88,6 +88,10 @@ const nameOf = (root, middleCOctave = 4) =>
 /** How long a sample is kept: 8 s at C3 and below, falling to 4.5 s at C6. */
 const pianoSeconds = (root) =>
 	Math.min(8, Math.max(4.5, 8 - ((root - 48) * 3.5) / 36));
+/** The rich grand keeps more of each tail: 16 s at C3 and below, falling to
+ *  8 s at C6. */
+const richSeconds = (root) =>
+	Math.min(16, Math.max(8, 16 - ((root - 48) * 8) / 36));
 const harpsiSeconds = (root) =>
 	Math.min(5, Math.max(3, 5 - ((root - 48) * 2) / 36));
 
@@ -167,6 +171,83 @@ const SETS = [
 						path: `Samples/${nameOf(root)}${l.source}.flac`,
 					});
 			return out;
+		},
+	},
+	// The same grand with more of it kept, for the principal's second blind
+	// round: six of the sixteen layers, stereo, longer tails. About seven
+	// times the size of `piano-grand`.
+	{
+		id: "piano-grand-rich",
+		instrument:
+			"Salamander Grand Piano V3 — a Yamaha C5, recorded by Alexander Holm",
+		license: "CC-BY-3.0",
+		licenseUrl: "https://creativecommons.org/licenses/by/3.0/",
+		credit:
+			"Salamander Grand Piano V3 by Alexander Holm, CC BY 3.0 (https://creativecommons.org/licenses/by/3.0/)",
+		repo: "sfzinstruments/SalamanderGrandPiano",
+		revision: "3382bf9496bba2486f5ab0de55a264d1dfc38404",
+		seconds: richSeconds,
+		channels: 2,
+		bitrate: 96000,
+		layers: [
+			{ name: "pp", maxVelocity: 0.2, source: "v3" },
+			{ name: "p", maxVelocity: 0.38, source: "v6" },
+			{ name: "mp", maxVelocity: 0.55, source: "v9" },
+			{ name: "mf", maxVelocity: 0.7, source: "v11" },
+			{ name: "f", maxVelocity: 0.85, source: "v14" },
+			{ name: "ff", maxVelocity: 1, source: "v16" },
+		],
+		async samples(set) {
+			const out = [];
+			for (let root = 21; root <= 108; root += 3)
+				for (const l of set.layers)
+					out.push({
+						root,
+						layer: l.name,
+						path: `Samples/${nameOf(root)}${l.source}.flac`,
+					});
+			return out;
+		},
+	},
+	// A jazz bass for the piano trio: pizzicato, three dynamics, the first
+	// of each note's round robins. The SFZ's own split: p to 74, m to 120.
+	{
+		id: "bass-pizz",
+		instrument:
+			"A 1958 Otto Rubner double bass, pizzicato, played and mapped by D. Smolken",
+		license: "CC0-1.0",
+		licenseUrl: "https://creativecommons.org/publicdomain/zero/1.0/",
+		credit: "Double bass (1958 Otto Rubner), pizzicato, by D. Smolken, CC0 1.0",
+		repo: "sfzinstruments/dsmolken.double-bass",
+		revision: "c2985eb647109d2a8f30a70071e3e163339d7396",
+		seconds: () => 4,
+		layers: [
+			{ name: "p", maxVelocity: 74 / 127, source: "p" },
+			{ name: "m", maxVelocity: 120 / 127, source: "m" },
+			{ name: "f", maxVelocity: 1, source: "f" },
+		],
+		async samples(set) {
+			// The file names spell flats, which `midi` does not read.
+			const roots = {
+				c1: 24,
+				eb1: 27,
+				g1: 31,
+				bb1: 34,
+				d2: 38,
+				f2: 41,
+				a2: 45,
+				c3: 48,
+				e3: 52,
+				g3: 55,
+				a3: 57,
+			};
+			return Object.entries(roots).flatMap(([name, root]) =>
+				set.layers.map((l) => ({
+					root,
+					layer: l.name,
+					path: `pizz/pizz_${name}_${l.source}a.wav`,
+				})),
+			);
 		},
 	},
 	{
@@ -255,10 +336,11 @@ const ffmpeg = (args) =>
 		maxBuffer: 1 << 30,
 	});
 
-/** A sample's audio from its attack, mono at `RATE`, as float32. Read
+/** A sample's audio from its attack at `RATE`, as float32 — interleaved
+ *  when `channels` is 2. Read
  *  from a file rather than a pipe: ffmpeg stops reading once the cut is
  *  complete, and a pipe it has closed fails the write with EPIPE. */
-function decode(buf, seconds) {
+function decode(buf, seconds, channels = 1) {
 	const tmp = join(CACHE, `decode-${process.pid}`);
 	writeFileSync(tmp, buf);
 	const out = ffmpeg([
@@ -268,7 +350,7 @@ function decode(buf, seconds) {
 		// From 4 ms before the attack, `seconds` long.
 		`silenceremove=start_periods=1:start_threshold=-55dB:start_silence=0.004,atrim=0:${seconds}`,
 		"-ac",
-		"1",
+		String(channels),
 		"-ar",
 		String(RATE),
 		"-f",
@@ -278,6 +360,18 @@ function decode(buf, seconds) {
 	rmSync(tmp);
 	return new Float32Array(out.buffer, out.byteOffset, out.length / 4);
 }
+
+/** Interleaved frames summed to one channel, for measuring pitch. */
+const mono = (x, channels) => {
+	if (channels === 1) return x;
+	const y = new Float32Array(x.length / channels);
+	for (let i = 0; i < y.length; i++) {
+		let v = 0;
+		for (let c = 0; c < channels; c++) v += x[i * channels + c];
+		y[i] = v / channels;
+	}
+	return y;
+};
 
 /** The fundamental, in MIDI, by normalised autocorrelation after the
  *  attack, searched within an octave and a half of `root`. */
@@ -323,15 +417,17 @@ const peakDb = (x) => {
 	return 20 * Math.log10(m || 1e-9);
 };
 
-/** Float32 mono at `RATE` to Ogg Opus, faded out over its last `fadeS`.
+/** Float32 at `RATE`, `channels` interleaved, to Ogg Opus at `bitrate`,
+ *  faded out over its last `fadeS`.
  *  Through files, as `decode` is: an encode fed through a pipe once sat
  *  waiting on its input after node had written all of it. */
-function encode(x, gainDb, fadeS) {
+function encode(x, gainDb, fadeS, channels = 1, bitrate = BITRATE) {
 	const g = 10 ** (gainDb / 20);
 	const y = new Float32Array(x.length);
-	const fade = Math.min(x.length, Math.round(fadeS * RATE));
+	const frames = x.length / channels;
+	const fade = Math.min(frames, Math.round(fadeS * RATE));
 	for (let i = 0; i < x.length; i++) {
-		const t = x.length - i;
+		const t = frames - Math.floor(i / channels);
 		y[i] = x[i] * g * (t < fade ? t / fade : 1);
 	}
 	const input = join(CACHE, `encode-${process.pid}.f32`);
@@ -343,13 +439,13 @@ function encode(x, gainDb, fadeS) {
 		"-ar",
 		String(RATE),
 		"-ac",
-		"1",
+		String(channels),
 		"-i",
 		input,
 		"-c:a",
 		"libopus",
 		"-b:a",
-		String(BITRATE),
+		String(bitrate),
 		"-application",
 		"audio",
 		"-f",
@@ -386,6 +482,8 @@ function wholeFrames(buf) {
 }
 
 async function build(set) {
+	const channels = set.channels ?? 1;
+	const bitrate = set.bitrate ?? BITRATE;
 	const list = await set.samples(set);
 	if (!list.length) throw new Error(`music samples: ${set.id}: no samples`);
 	const keys = list.map((s) => `${s.root}-${s.layer}`);
@@ -410,10 +508,11 @@ async function build(set) {
 			const x = decode(
 				set.range ? wholeFrames(bufs[j]) : bufs[j],
 				set.seconds(s.root),
+				channels,
 			);
-			if (x.length < 0.2 * RATE)
+			if (x.length / channels < 0.2 * RATE)
 				throw new Error(`music samples: ${s.path}: under 0.2 s`);
-			const pitch = measurePitch(x, s.root);
+			const pitch = measurePitch(mono(x, channels), s.root);
 			const cents = pitch === null ? null : Math.round((pitch - s.root) * 100);
 			const reliable =
 				s.root >= PITCH_RELIABLE[0] && s.root <= PITCH_RELIABLE[1];
@@ -440,13 +539,20 @@ async function build(set) {
 	mkdirSync(dir, { recursive: true });
 	const samples = decoded.map((d) => {
 		const file = `${String(d.root).padStart(3, "0")}-${d.layer}.ogg`;
-		const ogg = encode(d.x, gainDb, Math.min(0.25, d.x.length / RATE / 4));
+		const seconds = d.x.length / channels / RATE;
+		const ogg = encode(
+			d.x,
+			gainDb,
+			Math.min(0.25, seconds / 4),
+			channels,
+			bitrate,
+		);
 		writeFileSync(join(dir, file), ogg);
 		return {
 			root: d.root,
 			layer: d.layer,
 			file,
-			durationS: Number((d.x.length / RATE).toFixed(3)),
+			durationS: Number(seconds.toFixed(3)),
 			bytes: ogg.length,
 			sha256: sha256(ogg),
 			measuredCents: d.cents,
@@ -462,8 +568,8 @@ async function build(set) {
 		licenseUrl: set.licenseUrl,
 		credit: set.credit,
 		source: `https://github.com/${set.repo}/tree/${set.revision}`,
-		format: { container: "ogg", codec: "opus", sampleRate: RATE, channels: 1 },
-		bitrate: BITRATE,
+		format: { container: "ogg", codec: "opus", sampleRate: RATE, channels },
+		bitrate,
 		gainDb: Number(gainDb.toFixed(2)),
 		layers: set.layers.map(({ name, maxVelocity }) => ({ name, maxVelocity })),
 		bytes,
@@ -483,8 +589,8 @@ Licence: ${set.license} — ${set.licenseUrl}
 Source: ${manifest.source}
 
 The files here are excerpts of that work: each sample cut from its attack to
-a few seconds, faded, summed to mono, scaled by ${manifest.gainDb} dB for the
-whole set, and encoded as Ogg Opus at ${BITRATE / 1000} kbit/s.
+a few seconds, faded, ${channels === 1 ? "summed to mono" : "kept in stereo"}, scaled by ${manifest.gainDb} dB for
+the whole set, and encoded as Ogg Opus at ${bitrate / 1000} kbit/s.
 `,
 	);
 	console.log(
