@@ -571,6 +571,7 @@ import {
 	ejectArming,
 	ejectArmingText,
 	ejectRefusal,
+	idleEjectHold,
 	stepEjectControl,
 } from "./eject";
 import {
@@ -839,6 +840,7 @@ import {
 	shippedOf,
 	type Trigger,
 	VENT_COMMANDS,
+	VIEW_MODES,
 } from "./commands";
 import { LAYOUT_LABELS, layoutChoiceNote } from "./layout-choice";
 import { keyDispatch } from "./key-dispatch";
@@ -4804,6 +4806,7 @@ class Game {
 		// down survives the tab switch.
 		window.addEventListener("blur", () => {
 			this.mouseFiring = false;
+			this.loseEjectFocus();
 		});
 		// **A key unlocks the sound as well as a click**, because #283's pad
 		// notice tells the player so: "press any key or click once to enable
@@ -11657,6 +11660,10 @@ class Game {
 	 * release is read off what is physically down — `padEjectDown` and
 	 * `keysPhysicallyDown` — or a refused hold kept down through the screen
 	 * would come back unspent when it closed and eject.
+	 *
+	 * **Two idles happen outside this method** (sage round 5), because this
+	 * method does not run for them: a held clock skips `step`, so the frame
+	 * loop calls `idleEject`, and a lost window focus is `loseEjectFocus`.
 	 */
 	private stepEject(dt: number) {
 		// **A refusal is about the phase it was said in**, so it ends with
@@ -11677,9 +11684,7 @@ class Game {
 			!headTurned &&
 			(this.held("fly.eject") ||
 				padEjectHeld(this.padFrame, this.padContext()));
-		const down =
-			isHeld(this.bindings, "fly.eject", this.keysPhysicallyDown, this.view) ||
-			padEjectDown(this.padFrame);
+		const down = this.ejectDown();
 		const refusal = ejectRefusal({
 			phase: this.dock.phase,
 			podFitted: this.commander.ownedEquipment.includes(ESCAPE_POD),
@@ -11703,6 +11708,49 @@ class Game {
 				this.updateCockpit();
 			}
 		}
+	}
+
+	/** Whether the eject control is physically down, wherever it is — the
+	 *  reading that keeps a spent hold spent (`stepEjectControl`). */
+	private ejectDown(): boolean {
+		return (
+			isHeld(this.bindings, "fly.eject", this.keysPhysicallyDown, this.view) ||
+			padEjectDown(this.padFrame)
+		);
+	}
+
+	/**
+	 * One frame of the eject while the sim does not step: the clock held, by
+	 * the Postcard screen or any other hold (sage round 5). `stepEject` runs
+	 * inside `step`, which the frame loop skips then, so without this a hold
+	 * part-filled when the clock stopped kept its fill and finished on the
+	 * clock's release after less than a whole hold — which the glass, frozen
+	 * with the clock, never showed being made. Idle, the turned head's answer:
+	 * the fill starts over, and a spent hold stays spent while it is down.
+	 */
+	private idleEject() {
+		this.ejectHold = idleEjectHold(this.ejectHold, this.ejectDown());
+	}
+
+	/**
+	 * The window lost focus with the eject's key down (sage round 5). It never
+	 * sees that release, so the key would stay in `keys` and a hold begun
+	 * before the switch would go on filling — and complete — with nothing
+	 * down. The key leaves the game's held set and the fill goes with it; a
+	 * fresh press after focus returns is a fresh hold, seen whole. It stays in
+	 * `keysPhysicallyDown`, which only a keyup clears: that keeps a spent hold
+	 * spent, at the cost of one dead press (`keysPhysicallyDown`'s note).
+	 *
+	 * **The eject's keys only.** Every held key is lost on a blur the same way;
+	 * what the others should do about it is not this node's question.
+	 */
+	private loseEjectFocus() {
+		for (const key of [...this.keys]) {
+			const one = new Set([key]);
+			if (VIEW_MODES.some((v) => isHeld(this.bindings, "fly.eject", one, v)))
+				this.keys.delete(key);
+		}
+		this.idleEject();
 	}
 
 	/**
@@ -15537,7 +15585,7 @@ class Game {
 			// #562 D2's play log: seconds with the clock running. A new record
 			// and no save (#631): `ladderAfterPlay` says why.
 			this.ladders = ladderAfterPlay(this.ladders, dt);
-		}
+		} else this.idleEject();
 		// Every frame, paused ones too: a paused burn does not keep its drive
 		// (the principal's ruling on #544), which needs the sound to hear the
 		// pause rather than keep the last level it was given.

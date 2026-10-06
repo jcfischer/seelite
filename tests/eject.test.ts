@@ -21,6 +21,7 @@ import {
 	EJECT_IDLE,
 	EJECT_PHASE_REFUSAL,
 	EJECT_REFUSED_TEXT,
+	type EjectEvent,
 	type EjectHold,
 	type EjectRefusal,
 	ejectArming,
@@ -49,6 +50,33 @@ function padFrame(held: string[]): PadFrame {
 	};
 }
 
+/**
+ * Run `seconds` of frames of `dt` through one step of the control, and record
+ * what it said. The one frame driver: `hold` and `run` differ only in which
+ * step they take.
+ */
+function frames(
+	from: EjectHold,
+	seconds: number,
+	dt: number,
+	step: (
+		state: EjectHold,
+		dtS: number,
+	) => { hold: EjectHold; event: EjectEvent | null },
+) {
+	let state = from;
+	const events: string[] = [];
+	for (let t = 0; t < seconds - 1e-9; t += dt) {
+		const next = step(state, dt);
+		state = next.hold;
+		if (next.event)
+			events.push(
+				next.event.kind === "eject" ? "eject" : `refused:${next.event.refusal}`,
+			);
+	}
+	return { state, events };
+}
+
 /** Hold the control for `seconds` in frames of `dt`, under one refusal. */
 function hold(
 	seconds: number,
@@ -56,17 +84,9 @@ function hold(
 	dt = 1 / 60,
 	from: EjectHold = EJECT_IDLE,
 ) {
-	let state = from;
-	const events: string[] = [];
-	for (let t = 0; t < seconds - 1e-9; t += dt) {
-		const step = stepEjectHold(state, true, dt, refusal);
-		state = step.hold;
-		if (step.event)
-			events.push(
-				step.event.kind === "eject" ? "eject" : `refused:${step.event.refusal}`,
-			);
-	}
-	return { state, events };
+	return frames(from, seconds, dt, (state, dtS) =>
+		stepEjectHold(state, true, dtS, refusal),
+	);
 }
 
 describe("the binding table carries the action", () => {
@@ -263,19 +283,9 @@ describe("only a release lets go of a spent hold (sage round 4)", () => {
 		input: { live: boolean; down: boolean },
 		refusal: EjectRefusal | null,
 	) {
-		let state = from;
-		const events: string[] = [];
-		for (let t = 0; t < seconds - 1e-9; t += 1 / 60) {
-			const step = stepEjectControl(state, input, 1 / 60, refusal);
-			state = step.hold;
-			if (step.event)
-				events.push(
-					step.event.kind === "eject"
-						? "eject"
-						: `refused:${step.event.refusal}`,
-				);
-		}
-		return { state, events };
+		return frames(from, seconds, 1 / 60, (state, dtS) =>
+			stepEjectControl(state, input, dtS, refusal),
+		);
 	}
 
 	test("Home kept down through a modal is not let go of", () => {

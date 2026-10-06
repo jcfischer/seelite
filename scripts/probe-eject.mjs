@@ -5,8 +5,9 @@
  * table. `main.ts` cannot load headless, so this holds the wiring: a real held
  * Backspace in flight fires the eject event once and no sooner than the hold,
  * a tap fires nothing, a hold with the head turned to a side console fires
- * nothing, a spent hold kept down through the Settings screen stays spent,
- * and the same key on the rails of an arrival, docked and
+ * nothing, a spent hold kept down through the Settings screen stays spent, a
+ * hold cut by a lost window focus or a held clock does not finish what it
+ * had, and the same key on the rails of an arrival, docked and
  * on the rails of a launch is refused where a pilot in the cockpit reads it —
  * the glass on the rails, the station console's message line docked.
  *
@@ -461,6 +462,79 @@ check(
 		throughSettings.phase === "flying" &&
 		throughSettings.ejects === 3,
 	`spent ${JSON.stringify(spentByEject)}, mounted ${settingsMounted}, opened ${settingsOpened}, keys while open ${keysWhileOpen}, closed ${settingsClosed}, repeat landed ${repeatLanded}, after ${JSON.stringify(throughSettings)}`,
+);
+
+/** Wait until the glass shows a hold filling, the key down. */
+const armingShown = () =>
+	page
+		.waitForFunction(
+			() => window.__seelite.ejectRender?.text?.startsWith("HOLD TO EJECT"),
+			null,
+			{ timeout: 3000 },
+		)
+		.then(
+			() => true,
+			() => false,
+		);
+
+// A hold part-filled **when the window loses focus** (sage round 5). The
+// window never sees a release made elsewhere, and Playwright's key stays down
+// with no repeat — which is that release's shape as the game sees it: no
+// further keydown, no keyup. The game must stop counting the key, or the
+// fill goes on and the pod goes with nothing down.
+await page.waitForTimeout(100);
+await page.keyboard.down("Backspace");
+const blurArming = await armingShown();
+await page.waitForTimeout(law.holdMs * 0.3);
+await page.evaluate(() => window.dispatchEvent(new Event("blur")));
+await page.waitForTimeout(law.holdMs * 1.5);
+const blurred = await read();
+await page.keyboard.up("Backspace");
+check(
+	"a hold part-filled when the window loses focus fires nothing after it",
+	blurArming && blurred.phase === "flying" && blurred.ejects === 3,
+	`arming ${blurArming}, ${JSON.stringify(blurred)}`,
+);
+
+// A hold part-filled **when the clock is held** (sage round 5): the frame loop
+// skips the step, which is where the control is stepped. The clock is held
+// here directly, which is what the Postcard screen does as it opens; the
+// screen also empties the held keys, and this leaves Backspace held so the
+// row isolates the stopped step. On the clock's release the hold must start
+// over and take a whole hold, not finish what it had.
+await page.waitForTimeout(100);
+await page.keyboard.down("Backspace");
+const clockArming = await armingShown();
+await page.waitForTimeout(law.holdMs * 0.6);
+await page.evaluate(() => {
+	window.__seelite.clockHeld = true;
+});
+await page.waitForTimeout(200);
+const whileHeld = await read();
+const resumedAtMs = await page.evaluate(() => {
+	window.__seelite.clockHeld = false;
+	return performance.now();
+});
+const firedAfterResume = await page
+	.waitForFunction(() => window.__seelite.ejectCount >= 4, null, {
+		timeout: law.holdMs * 6,
+	})
+	.then(
+		() => true,
+		() => false,
+	);
+const resumeFiredAfterMs = await page.evaluate(
+	(at) => (window.__seelite.lastEject?.atMs ?? Number.NaN) - at,
+	resumedAtMs,
+);
+await page.keyboard.up("Backspace");
+check(
+	"a hold part-filled when the clock is held takes a whole hold after the clock runs again",
+	clockArming &&
+		whileHeld.ejects === 3 &&
+		firedAfterResume &&
+		resumeFiredAfterMs >= law.holdMs - law.maxDtMs,
+	`arming ${clockArming}, ejects while held ${whileHeld.ejects}, fired ${firedAfterResume} ${Math.round(resumeFiredAfterMs)} ms after the release against a ${law.holdMs} ms hold`,
 );
 
 await browser.close();
