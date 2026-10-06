@@ -111,7 +111,9 @@ describe("the Game's world writes", () => {
 		expect(body).toContain('kind: "carrier"');
 		for (const law of ["applyTransition(", "recordKill(", "pendingKill("])
 			expect(body).not.toContain(law);
-		const kill = MAIN.split('step.encounter.end === "destroyed"')[1] ?? "";
+		// The raider's end is one method for the duel's kill and a
+		// collision's (node #664), `endEncounter`.
+		const kill = MAIN.split('ended.end === "destroyed"')[1] ?? "";
 		expect(kill.slice(0, 600)).toContain("this.applyCarrierTransition(");
 		expect(kill.slice(0, 600)).toContain("raiderDestruction(");
 	});
@@ -126,7 +128,7 @@ describe("the Game's world writes", () => {
 		// and tender sites open on their anchor) or encloses it (the relay site
 		// names its transition inside the call).
 		["traffic", "private destroyTrafficCarrier(", "after", "actor.hullId"],
-		["raider", 'step.encounter.end === "destroyed"', "after", "RAIDER_HULL_ID"],
+		["raider", 'ended.end === "destroyed"', "after", "RAIDER_HULL_ID"],
 		["relay", "relayDestruction(record.index, now", "before", "null"],
 		["tender", "tenderKill(record.index, now", "after", "RELAY_TENDER_HULL_ID"],
 	])(

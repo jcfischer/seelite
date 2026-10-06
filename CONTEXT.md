@@ -47,6 +47,11 @@ _Avoid_: hitbox, collision mesh.
 A `FleetSlot` layout position in the query-gated showroom avenue. Its `slot`
 identifier describes the model and its placement; it has no Berth reservation,
 aperture, station or docking semantics. `src/ship-mesh.ts` owns the layout.
+**Scope note, not an _Avoid_ line.** The collision step's `FleetShip`,
+`FleetStep` and `stepFleet` (`src/sim.ts`, node #664) use "fleet" for every
+ship in one step other than the player — a raider, an engaged carrier, a
+projected carrier a ship can meet. That fleet has nothing to do with the
+showroom avenue's.
 
 **Carrier**:
 A named physical asset, actor, or condition in the universe that enables a capability in a bounded consequence area.
@@ -371,8 +376,9 @@ off-axis and leave the player's approach corridor clear.
 _Avoid_: Staging point, queue slot, parking berth
 
 **Diversion**:
-What a shot that opens a carrier's hull does to it. In one tick the carrier is
-disabled with the shooter's provenance and taken in for repair under its home
+What a shot — or an impact (`collision.md` §6, node #664) — that opens a
+carrier's hull does to it. In one tick the carrier is disabled with the
+shooter's provenance, or the impact's, and taken in for repair under its home
 station's, and from then on it is **parked at home**: drawn in a berth, holding
 it, off its route and off the scanner, until the first departure its own schedule
 makes at or after the repair's floor, when the same instance flies again. The
@@ -675,7 +681,7 @@ _Avoid_: tier (that is #26's hull tier), grade
 **Banked credit**:
 Ladder credit the save carries. Credit earned in flight — a kill, a first
 arrival — is **unbanked** until the next dock banks it, and is lost with the
-ship before that (#183 D7): a death restores the last dock's commander record (`CommanderRecord`, #654) — except the ladders' `playedS`, which keeps the time flown before the death (#581) — and a save
+ship before that (#183 D7): a death restores the commander record as it last launched (`CommanderRecord`, #654, #660 D1) — except the ladders' `playedS`, which keeps the time flown before the death (#581) — and a save
 taken in flight does not carry it. Trade credit is earned docked, so it banks
 at once.
 _Avoid_: score, XP
@@ -795,8 +801,15 @@ which is #100's measurement. §11 of `galaxy-generation.md` is where the rule is
 written down once, and §12 is where the measured cone figures are — how much of a
 sky's other systems a star near the rim puts inside a cone on the centre, against
 what uniform spacing would — reprinted by `scripts/measure-sky-density.ts core`.
-`coreBearing` in `src/galaxy-frame.ts`.
+`coreBearing` in `src/galaxy-frame.ts`. The sky does not show it; the **Core
+mark** on the glass does (`hud-and-scanner.md` §5.5, node #478).
 _Avoid_: The way home, galactic down
+
+**Core mark**:
+The cockpit glass's mark for the **Core bearing** at the live system: a dot
+between two brackets, labelled `CORE`, on screen only. An instrument rather than
+a picture, because the sky withholds the core (node #478).
+`hud-and-scanner.md` §5.5 owns it; `drawCoreMark` in `src/main.ts` draws it.
 
 **Derived sky**:
 The points that *are* systems — one for every other system in the galaxy, at its
@@ -831,6 +844,21 @@ the sentence means and nothing is renamed here. What the sentence has to name is
 which population — an invented point and a system are not interchangeable, and the
 invariant between them is the reason.
 
+**Chase orbit**:
+The outside view's pose about the hull: a yaw about the ship's up axis and an
+elevation above its horizontal plane, clamped at ±π/2, held across a view toggle
+and recentred astern by `view.orbitCentre`. Photo mode freezes the simulation
+while the locked pointer orbits and the wheel changes distance, from 0.25 to 8
+times the normal rig; neither fires weapons. It is enabled by `view.photo`
+(default F2) or the Photo mode button. Outside Photo mode, the mouse does not
+manipulate the camera and keeps normal ship steering in both views; `1` and `3`
+still swing it held. Fixed pointer gestures carry a Photo-mode scope in the
+Controls registry while keeping their physical trigger identity.
+`src/chase-orbit.ts` owns the
+rig, the gesture and the pole behaviour (node #691); `tests/chase-orbit.test.ts`
+holds them. The principal's ratified Photo-mode revision of #691 is in
+`docs/specs/photo-mode.md` (2026-10-06).
+
 **Postcard**:
 A card the pilot makes of the current view: the frame drawn at one canonical size
 (3:2, 1800 x 1200), full bleed, with a band carrying **The Far Between**, the
@@ -846,9 +874,16 @@ direction's ordinary English for a picture a pilot keeps
 **Scene recipe**:
 What a **Postcard** link carries in its URL **fragment**: schema and generator
 versions, seed, galaxy, system, game time, viewpoint, orientation and composition —
-and nothing a Commander owns. Opening one boots the **postcard viewer**, a
+for an *exterior* the **chase orbit**'s yaw and elevation — and nothing a
+Commander owns. Schema 3 carries zoom distance when present; newly composed
+cards without zoom use schema 2, introduced for elevation by node #691,
+including clear and cockpit cards. Older schema-1-only readers refuse these
+new links; this build reads schemas 1, 2 and 3. A received schema-1 link,
+yaw alone, still opens at its own level framing. Opening one boots the **postcard viewer**, a
 read-only page that rebuilds the view from the seeded baseline, runs no frame loop
-and attaches no store. It is not a save and not a replay: the sender's stock
+and attaches no store. Sharing from the viewer composes a new link in this
+build's writing schema; a schema-1 exterior becomes schema 2 with `elev=0`,
+while its level framing remains the same. It is not a save and not a replay: the sender's stock
 deficits, strikes and discoveries do not reach it, and a card of a pilot's own
 hull rebuilds with the starting one. `src/postcard.ts` owns the spelling and the
 strict parse; `tests/postcard.test.ts` holds both.

@@ -454,10 +454,10 @@ fails and raises its own badge rather than blocking the upgrade forever.
   `?boot=direct` boot whose attach failed plays on with nothing that will write
   (`heldSaveFault`, `src/save-badge.ts`).
   **It is held per record kind, and each kind clears only on a write of that
-  kind.** A debounced write carries `live` alone; a dock flush writes `live` and
-  `lastDocked` in one transaction. So a `live` fault clears on the next write
-  that lands, and a `lastDocked` fault clears only on the next dock flush that
-  lands — clearing it on a debounced write would hide the fault while a
+  kind.** A debounced write carries `live` alone; a dock or undock flush writes
+  `live` and `lastDocked` in one transaction (the undock's since #660 D1, node
+  #702). So a `live` fault clears on the next write that lands, and a
+  `lastDocked` fault clears only on the next dock or undock flush that lands — clearing it on a debounced write would hide the fault while a
   non-permadeath death still restores the older dock. The badge shows while
   either is held.
 - **The overlay's words name the Commander, never the slot.** Some `saveFault`

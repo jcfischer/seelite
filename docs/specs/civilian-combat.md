@@ -686,7 +686,7 @@ Each is amended in the change that builds it, not ahead of it.
 
 | Rule | Owner | Change |
 | --- | --- | --- |
-| "A visible Traffic route adds no collision or combat physics" | `in-system-route-traffic.md` §5 | A fired-on carrier leaves its projection; a destroyed or repairing one does not fly it (1, 2) |
+| "A visible Traffic route adds no collision or combat physics" | `in-system-route-traffic.md` §5 | A fired-on carrier leaves its projection; a destroyed or repairing one does not fly it (1, 2). An impact is a landed hit for its mechanics and uses H3d's route: one that reaches hull writes `disable` then `repair-start`, one that spends only shields writes nothing (`collision.md` §6, node #664). It writes no heat until #675 builds #659's ruling |
 | "Traffic actors do not add collision or combat physics in #148" | `station-traffic.md` §3.1 | Same (1) |
 | Standing and manifest keyed on the slot | `carrier-identity.md` §2, §3 | `instanceOrdinal` in both signatures, and the voyage is `flownVoyageOrdinal` (F11, §3, §5) (1) |
 | §7's "Nothing writes heat" and §11's handoff | `carrier-identity.md` §7, §11 | Discharged, pointing here (1) |

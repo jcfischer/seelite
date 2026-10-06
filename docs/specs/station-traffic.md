@@ -183,7 +183,12 @@ interior lane occupancy.
 
 Traffic actors added no collision or combat physics in #148. #362 has since
 added combat (`civilian-combat.md`). #75 decided collision and `collision.md`
-specifies it, but nothing collides until #303 builds it. A materialized
+specifies it; node #664 built it for Traffic. A carrier collides in every
+normal-flight phase of its route, and is exempt while parked, launching or
+arriving (`collision.md` §5, `trafficCollisionClass` in `src/station-route.ts`).
+A projected carrier is met by the ships that are flown, and a meeting hands it
+to flight; its route is never swept against the world at runtime, which is
+what `collision.md` §6's corpus row measures instead. A materialized
 actor's pose and velocity come from the station frame and the same traversal
 law as the player's; deriving progress from `gameTime` means an actor first
 seen midway through a movement appears at the correct point rather than

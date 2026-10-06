@@ -29,8 +29,9 @@ test("the frame loop leaves simulation unconditional and gates only render (#425
 		source.indexOf("private readonly chaseOffset"),
 	);
 	// #535: while the opening runs it steps the sim itself, at its own fixed
-	// step; either way the step sits under the clock and never under render.
-	expect(animate).toContain("if (dt > 0 && !this.clockHeld) {");
+	// step; either way the step sits under the effective clock (menu or
+	// Photo mode) and never under render eligibility.
+	expect(animate).toContain("if (dt > 0 && !this.simulationHeld) {");
 	expect(animate).toContain("opening.frame(this.openingSim, dt);");
 	expect(animate).toContain("} else this.step(dt);");
 	expect(animate).toContain("if (this.sceneRenderEligible()) this.render(dt);");

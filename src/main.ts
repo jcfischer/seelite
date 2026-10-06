@@ -240,7 +240,7 @@ import {
 // that module's whole subject is the relation between this plane and the
 // cluster's; the roll below is its consumer, and the one in `hud.ts` reads the
 // vector handed to it.
-import { SYSTEM_PLANE_NORMAL, coreBearing, skyFrame } from "./galaxy-frame";
+import { SYSTEM_PLANE_NORMAL, systemCoreBearing } from "./galaxy-frame";
 import { type Course, courseProgress, setCourse } from "./galaxy-route";
 import { type HullReach, hullReachFrom } from "./hull-reach";
 import { bootHull, deliverHull } from "./flown-hull";
@@ -309,18 +309,24 @@ import {
 	stationApertureFrame,
 	stationOf,
 	stationPose,
+	type FleetShip,
+	type FleetStep,
 	type HullControl,
 	type HullHands,
 	type HullStep,
 	type LinearDemand,
+	PLAYER_SHIP_ID,
+	projectedMayMeet,
 	type PlaneWatch,
 	type VentLevels,
 	type WorldPlane,
 	crossedPlane,
 	speedDemand,
+	stepFleet,
 	stepHull,
 	stepWorld,
 	thrustShares,
+	worldStarts,
 } from "./sim";
 import { type Flick, FlickMeter, couplePxS, pointerImpulse } from "./pointer";
 import { AttitudeFollower } from "./attitude-hold";
@@ -411,16 +417,26 @@ import {
 	type Engagement,
 	engage,
 	fliesItsRoute,
+	impactCauseOf,
+	impactOutcome,
 	flownVoyageOrdinal,
 	flyingTrafficActors,
 	parkedHomeTrafficActors,
+	provoke,
 	stepEngagement,
 	strikeClock,
 	trafficDiversion,
 	trafficInSights,
+	trafficImpactTransitions,
 	trafficKillTransitions,
 	trafficPresence,
 } from "./traffic-engagement";
+import {
+	type TrafficSweptEnd,
+	presentedTrafficAttitude,
+	presentedTrafficPos,
+	presentedTrafficStep,
+} from "./traffic-presentation";
 import { carrierName } from "./carrier-name";
 import {
 	type CarrierStanding,
@@ -582,6 +598,7 @@ import {
 	defenderEncounter,
 	forceEncounter,
 	scheduleEncounter,
+	landRaiderImpacts,
 	stepEncounter,
 } from "./encounter";
 import {
@@ -621,6 +638,8 @@ import {
 	V_SCRAPE_KMS,
 	hullBox,
 	impactDamage,
+	reachKm,
+	shipPose,
 } from "./collision";
 import {
 	DIRECTOR_RANGE_KM,
@@ -652,6 +671,7 @@ import {
 } from "./station-mesh";
 import { SPEC_FIXTURE_NAMES, stationFinishId } from "./station-visuals";
 import {
+	HULL_IDS,
 	HULL_SPECS,
 	purchasableHullNamed,
 	type HullEnvelope,
@@ -674,6 +694,17 @@ import {
 	shipCuesShown,
 	weaponRay,
 } from "./chase-view";
+import {
+	type ChaseOrbit,
+	ORBIT_ASTERN,
+	clampElevation,
+	clampZoom,
+	orbitByPointer,
+	orbitOffsetKm,
+	orbitRotation,
+	pointerOwner,
+	zoomOrbit,
+} from "./chase-orbit";
 import { ArrivalRift } from "./arrival-rift";
 import {
 	buildHaulerPlans,
@@ -760,6 +791,7 @@ import {
 	type SystemTrafficProjection,
 	type TrafficBerthCache,
 	type TrafficArbitrationEvent,
+	trafficCollides,
 } from "./station-route";
 import {
 	COCKPIT_EMISSIVE_INTENSITIES,
@@ -1006,6 +1038,7 @@ import {
 	observeSystemRelay,
 	readKnowledge,
 	type OperationalCondition,
+	type Provenance,
 	type TransitionEvent,
 	visit,
 	type WorldState,
@@ -1152,18 +1185,6 @@ const {
  *  owns that population's size band — the band this one must stay under — is the
  *  one place both halves of the rule can be read together. */
 const STAR_PIXEL_SCALE = 0.35;
-
-/**
- * The chase camera's offset from the ship, in kilometres: behind and above.
- *
- * 140 m back and 40 m up, set by looking at it. At 60 m the 30-metre hull filled
- * the lower half of the frame and the station 40 km ahead was a speck above it —
- * a view that shows the placeholder and hides the thing the placeholder is meant
- * to let you judge. These two numbers are the scaffold's only tuned-by-eye
- * constants, and the flight-model node owns them from here.
- */
-const CHASE_BACK_KM = 0.14;
-const CHASE_UP_KM = 0.04;
 
 /**
  * The raw `?hull=` value, read once at load (#554, #557).
@@ -1358,6 +1379,19 @@ const SETTLED_PHASES: readonly string[] = [
 const CHASE_ORBIT_RATE = 1.2;
 
 /**
+ * The controls that still answer in Photo mode (node #691): leaving it, the
+ * recentre, the Postcard screen and Settings. The world is paused, so every
+ * other control would act on a frozen ship.
+ */
+const PHOTO_MODE_COMMANDS: ReadonlySet<CommandId> = new Set<CommandId>([
+	"view.photo",
+	"view.orbitCentre",
+	"view.toggle",
+	"system.postcard",
+	"system.settings",
+]);
+
+/**
  * Fold an angle back into (-π, π].
  *
  * Local rather than in `units.ts` because that file is a leaf of the unit
@@ -1367,6 +1401,17 @@ const CHASE_ORBIT_RATE = 1.2;
 function wrapAngle(radians: number) {
 	const turn = Math.PI * 2;
 	return ((((radians + Math.PI) % turn) + turn) % turn) - Math.PI;
+}
+
+/**
+ * Keep a Photo-mode button's own activation keys off `window` (sage round 6
+ * on node #691). Only the keydown is stopped: `onKey` would run it as a flight
+ * binding and `preventDefault` it, which cancels the native click for both
+ * `Enter` and `Space`. The keyup still reaches `onKey`, whose release route
+ * clears a held key and prevents nothing.
+ */
+function photoButtonKey(e: KeyboardEvent) {
+	if (e.key === "Enter" || e.key === " ") e.stopPropagation();
 }
 
 /**
@@ -1415,6 +1460,28 @@ const PROGRADE_MIN_KMS = 0.02;
 
 /** How far inside the viewport the selected target's sky arrow sits. */
 const EDGE_MARGIN = 0.07;
+
+/** The Core mark (`hud-and-scanner.md` §5.5, node #478): §4's cool tone for a
+ *  stable reference, the attitude reference's hue at a brighter alpha because a
+ *  point mark carries less ink than a line across the glass. */
+const CORE_MARK_STROKE = "rgba(120, 190, 235, 0.5)";
+/** The brackets' radius, in CSS pixels — under the unselected body bracket's 7. */
+const CORE_MARK_RADIUS_PX = 6;
+/** What the mark is labelled — the vocabulary's own word for the bearing. */
+const CORE_MARK_LABEL = "CORE";
+/** The declutter pass's key for the label; no body id is spelled like it. */
+const CORE_MARK_LABEL_ID = "#core-bearing";
+
+/** Where the overlay frame puts things, as the Core mark needs it: the frame's
+ *  projection and label box, the labels already claimed, and the glass size. */
+interface CoreMarkLayout {
+	place: (dir: Vec3) => { x: number; y: number; on: boolean } | null;
+	labelBounds: (x: number, y: number, text: string) => MarkerLabelBounds;
+	/** Claimed this frame, in rank order; the Core label is admitted last. */
+	occupied: MarkerLabelBounds[];
+	w: number;
+	h: number;
+}
 
 /**
  * §4's spool-up, seconds — reused here for the voluntary case.
@@ -2008,6 +2075,40 @@ interface ScanFrame {
 	facts: ScanFacts;
 }
 
+/** A flown fleet ship's pose at one end of a step (node #664). */
+interface FleetPose {
+	pos: Vec3;
+	vel: Vec3;
+	nose: Vec3;
+	up: Vec3;
+}
+
+/** A flown ship's pose now, copied off its flight state. */
+const poseOfFlight = (flight: {
+	ship: { pos: Vec3; vel: Vec3 };
+	nose: Vec3;
+	up: Vec3;
+}): FleetPose => ({
+	pos: { ...flight.ship.pos },
+	vel: { ...flight.ship.vel },
+	nose: flight.nose,
+	up: flight.up,
+});
+
+/**
+ * How near a projected carrier must be, beyond a step's closing travel, for
+ * the step to be handed it (`Game.fleetOf`, `projectedMayMeet`): the reach of
+ * the two largest hull boxes in the roster, so the early cut drops no pair
+ * whose straight-line poses could meet.
+ */
+const FLEET_REACH_KM =
+	2 *
+	Math.max(
+		...HULL_IDS.map((id) =>
+			reachKm([hullBox(HULL_SPECS[id].env, HULL_SPECS[id].envCentre)]),
+		),
+	);
+
 class Game {
 	readonly world: World;
 	readonly renderer: THREE.WebGLRenderer;
@@ -2586,6 +2687,13 @@ class Game {
 	 * zero.
 	 */
 	clockHeld = false;
+	/** Photo holds the world independently of menus, so closing either cannot unpause the other. */
+	photoMode = false;
+	private photoPreviousView: "cockpit" | "chase" = "cockpit";
+	private photoNotice: HTMLDivElement | null = null;
+	get simulationHeld() {
+		return this.clockHeld || this.photoMode;
+	}
 	/**
 	 * A page opened on a postcard recipe (#406): a read-only viewer. It builds
 	 * the recipe's place, never runs the frame loop, takes no input and attaches
@@ -2727,9 +2835,26 @@ class Game {
 	/** #5 made cockpit the default and chase a toggle. The hull is hidden in
 	 *  cockpit, which is what makes the HUD markers load-bearing. */
 	view: "cockpit" | "chase" = "cockpit";
-	/** Chase orbit about the ship's own up axis; zero is directly astern. Held
-	 *  across a view toggle, because a look you set up is a look you meant. */
-	chaseYaw = 0;
+	/** The chase camera's orbit about the ship (node #691), one pose that
+	 *  `chase-orbit.ts` owns: assigned whole, so a reset, a capture and its
+	 *  restore cannot keep one half and lose the other. Held across a view
+	 *  toggle, because a look you set up is a look you meant. */
+	chaseOrbit: ChaseOrbit = ORBIT_ASTERN;
+	/** The orbit's yaw about the ship's own up axis; zero is directly astern.
+	 *  The probes read and write the two halves by name. */
+	get chaseYaw() {
+		return this.chaseOrbit.yawRad;
+	}
+	set chaseYaw(yawRad: number) {
+		this.chaseOrbit = { ...this.chaseOrbit, yawRad };
+	}
+	/** The orbit's height above the ship's horizontal plane, ±π/2 at the poles. */
+	get chaseElevation() {
+		return this.chaseOrbit.elevationRad;
+	}
+	set chaseElevation(elevationRad: number) {
+		this.chaseOrbit = { ...this.chaseOrbit, elevationRad };
+	}
 	/** How fast the ship is turning, radians per second — rotation has momentum,
 	 *  and `sim.ts`'s Hull step owns the dynamics. Saved state since #619:
 	 *  a save taken tumbling resumes tumbling (`flight-model.md` §3.9). */
@@ -2951,7 +3076,6 @@ class Game {
 	private readonly trafficUp = new THREE.Vector3();
 	private readonly trafficOrigin = new THREE.Vector3();
 	private readonly trafficAttitude = new THREE.Matrix4();
-	private readonly trafficFromQuaternion = new THREE.Quaternion();
 	private readonly trafficToQuaternion = new THREE.Quaternion();
 	/** Selected-target-first admission and release hysteresis for glass labels. */
 	private readonly markerLabels = new MarkerLabelDeclutter();
@@ -3247,6 +3371,28 @@ class Game {
 		/** The ring's centre on the overlay, or `null` when the edge arrow is
 		 *  drawn instead — so a probe samples the paint, not this record. */
 		at: { x: number; y: number } | null;
+	} | null = null;
+	/**
+	 * The Core bearing at the live system, in its world frame, or `null` where it
+	 * has none. Set by `buildEnvironment` on every system the ship arrives in, so
+	 * the haze in the bake and the Core mark on the glass read one value (node
+	 * #478). A bearing at infinity, so it moves only on a jump.
+	 */
+	private coreDir: Vec3 | null = null;
+	/** The Core bearing the glass marks, for a probe to aim by. */
+	get coreBearingDir(): Vec3 | null {
+		return this.coreDir;
+	}
+	/**
+	 * The Core mark as painted this frame (`hud-and-scanner.md` §5.5), or `null`
+	 * when it was not drawn — off the glass, behind the camera, or no glass this
+	 * frame. Written by the draw, like `cueRender`, so a probe samples the paint
+	 * at `at` rather than trusting this record.
+	 */
+	coreRender: {
+		at: { x: number; y: number };
+		/** Whether the label won its room from the declutter pass. */
+		labelled: boolean;
 	} | null = null;
 	/**
 	 * The selected target's label as painted this frame, or `null` when none was
@@ -4091,7 +4237,13 @@ class Game {
 			this.world.ship.pos = v3(x, y, z);
 			this.world.ship.vel = v3();
 			const [qx, qy, qz, qw] = postcard.orientation;
-			this.orientation.set(qx, qy, qz, qw).normalize();
+			// **As the link spelled it, not renormalised** (node #691): the parse
+			// already holds its norm within 1e-5 of one, which no frame can see,
+			// and a renormalise moves the components by enough to spell back a
+			// different last digit — so `rebuiltFragment` would differ from the
+			// link it was opened on. `postcardRecipe` says why it divides only
+			// past that.
+			this.orientation.set(qx, qy, qz, qw);
 			this.restoredAttitude = true;
 			this.composePostcard(postcard);
 		} else if (save) {
@@ -4800,7 +4952,7 @@ class Game {
 			// A press made where the mouse is suspended is not a pull of the trigger,
 			// and it does not become one when the head comes back with the button
 			// still down (#378, sage round 1): the next press is what fires.
-			if (e.button === 0)
+			if (e.button === 0 && !this.photoMode)
 				this.mouseFiring = mouseFireHeld(
 					true,
 					this.padContext(),
@@ -4890,12 +5042,25 @@ class Game {
 			this.mouseDx += e.movementX;
 			this.mouseDy += e.movementY;
 		});
+		this.renderer.domElement.addEventListener(
+			"wheel",
+			(e) => {
+				if (!this.photoMode || !contextFliesShip(this.readPadContext())) return;
+				e.preventDefault();
+				const pixels =
+					e.deltaY *
+					(e.deltaMode === 1 ? 16 : e.deltaMode === 2 ? window.innerHeight : 1);
+				this.chaseOrbit = zoomOrbit(this.chaseOrbit, pixels);
+			},
+			{ passive: false },
+		);
 
 		// #207's three relief programs per class, compiled before the first frame
 		// and **after the composer**, which is what makes them the variants the
 		// game will actually use (sage, PR #254).
 		this.prewarmReliefPrograms();
 
+		this.updatePhotoNotice();
 		this.animate();
 	}
 
@@ -5676,8 +5841,10 @@ class Game {
 	private buildEnvironment() {
 		// Haze: direction toward the galactic core, in world frame.
 		const record = this.world.system.record;
-		const frame = skyFrame(record.seed);
-		const core = coreBearing(frame, record.pos);
+		// Read once per system and kept: the Core mark on the glass draws from
+		// this same value (node #478), so the glow and the mark cannot disagree.
+		const core = systemCoreBearing(record);
+		this.coreDir = core;
 		// Strength: how far from the cluster centre this system is. Systems near
 		// the centre see an almost uniform sky; rim systems see a bright core
 		// direction. Normalised by the galaxy radius so it ranges ~0..1.
@@ -6302,6 +6469,7 @@ class Game {
 		}
 		this.trafficContacts.clear();
 		this.trafficMeshes.clear();
+		this.trafficSweptEnds.clear();
 	}
 
 	/** Reset presentation and transient authority when its system changes. */
@@ -6901,21 +7069,6 @@ class Game {
 
 	/** Synchronize contacts and meshes from authority without changing it. */
 	private updateTrafficPresentation(cameraPos: Vec3) {
-		// Flying poses remain at render time while their 10 Hz authority correction
-		// is spread across the next six 60 Hz frames. Both endpoints are predicted
-		// forward below; interpolating their stale absolute positions would put an
-		// orbiting station's traffic one full tick behind the station itself.
-		const spanS = this.trafficProjectionAtS - this.trafficPreviousProjectionAtS;
-		const blend =
-			Number.isFinite(spanS) && spanS > 0
-				? Math.max(
-						0,
-						Math.min(
-							1,
-							(this.world.gameTime - this.trafficProjectionAtS) / spanS,
-						),
-					)
-				: 1;
 		this.trafficExactParked.clear();
 		for (const projection of this.trafficRoutes) {
 			const actor = this.trafficActorByKey(projection.key);
@@ -6949,49 +7102,20 @@ class Game {
 			const prior = settled
 				? null
 				: this.trafficPreviousRoutes.get(projection.key);
-			// Interpolate the *correction*, not two stale absolute positions. A
-			// station can translate several kilometres during one 10 Hz authority
-			// interval. Blending its old and new world-space poses therefore shows
-			// the Carrier one whole tick behind the current station/player frame;
-			// the recording from #266 exposed that as a 10 Hz jump between two
-			// apparent positions. Predict each authority sample to render time first,
-			// then blend between those predictions. The result is continuous at a
-			// tick boundary while retaining the smooth correction of a course change.
-			const predictAtRender = (
-				pose: Pick<TrafficProjection, "pos" | "vel">,
-				atS: number,
-			) => {
-				const dt = Number.isFinite(atS)
-					? Math.max(0, this.world.gameTime - atS)
-					: 0;
-				return {
-					x: pose.pos.x + pose.vel.x * dt,
-					y: pose.pos.y + pose.vel.y * dt,
-					z: pose.pos.z + pose.vel.z * dt,
-				};
-			};
-			// A settled pose was resampled from the station at render time just
-			// above. Predicting it again from the authority tick would apply the
-			// station's orbital velocity twice.
-			const currentAtRender = settled
-				? presented.pos
-				: predictAtRender(presented, this.trafficProjectionAtS);
-			const previousAtRender = prior
-				? predictAtRender(prior, this.trafficPreviousProjectionAtS)
-				: null;
-			const sampledPos = previousAtRender
-				? {
-						x:
-							previousAtRender.x +
-							(currentAtRender.x - previousAtRender.x) * blend,
-						y:
-							previousAtRender.y +
-							(currentAtRender.y - previousAtRender.y) * blend,
-						z:
-							previousAtRender.z +
-							(currentAtRender.z - previousAtRender.z) * blend,
-					}
-				: currentAtRender;
+			// Interpolate the *correction*, not two stale absolute positions: one
+			// law, `presentedTrafficPos`, which the collision step reads too
+			// (`Game.fleetOf`), so the box is swept where the hull is drawn —
+			// and turned as it is drawn, by `presentedTrafficAttitude` below.
+			const sampledPos = presentedTrafficPos(
+				{
+					current: presented,
+					currentAtS: this.trafficProjectionAtS,
+					prior: prior ?? null,
+					priorAtS: this.trafficPreviousProjectionAtS,
+					settled,
+				},
+				this.world.gameTime,
+			);
 			const dx = sampledPos.x - this.world.ship.pos.x;
 			const dy = sampledPos.y - this.world.ship.pos.y;
 			const dz = sampledPos.z - this.world.ship.pos.z;
@@ -7059,12 +7183,18 @@ class Game {
 			const prior = exact
 				? null
 				: this.trafficPreviousRoutes.get(projection.key);
-			const target = exact ?? projection;
-			if (!this.trafficQuaternion(target, this.trafficToQuaternion)) continue;
-			if (prior && this.trafficQuaternion(prior, this.trafficFromQuaternion)) {
-				this.trafficFromQuaternion.slerp(this.trafficToQuaternion, blend);
-				mesh.quaternion.copy(this.trafficFromQuaternion);
-			} else mesh.quaternion.copy(this.trafficToQuaternion);
+			// Turned by the law the collision step sweeps it at
+			// (`presentedTrafficAttitude`), so the box is where the hull is.
+			const attitude = presentedTrafficAttitude(
+				{
+					current: exact ?? projection,
+					currentAtS: this.trafficProjectionAtS,
+					prior: prior ?? null,
+					priorAtS: this.trafficPreviousProjectionAtS,
+				},
+				this.world.gameTime,
+			);
+			if (attitude) this.trafficQuaternion(attitude, mesh.quaternion);
 		}
 
 		// Engaged carriers are drawn from their flight (civilian-combat H3).
@@ -7269,9 +7399,11 @@ class Game {
 					),
 					// The clock starts where the **world** left it, not at zero: a
 					// fight resumed after a reload is the same incident, and a fresh
-					// engagement would otherwise be a fresh five seconds.
+					// engagement would otherwise be a fresh five seconds. The pilot's
+					// own fire put it here, so an armed hull closes on them.
 					{
 						assaultAlreadyCharged: assaultCharged(this.legalStatus(), key),
+						byPilot: true,
 					},
 				),
 			);
@@ -7641,23 +7773,15 @@ class Game {
 	 * canisters, and the offence judged on its true standing and written.
 	 */
 	private destroyTrafficCarrier(actor: TrafficActor, engagement: Engagement) {
-		const record = this.world.system.record;
 		const now = this.world.gameTime;
 		// Read once, before anything is written: the instance that is about to
 		// die, the condition the kill has to be legal from, and — if the pilot
 		// finished off a carrier they had already struck — the offence this
 		// episode has already cost them (H9).
 		const carrier = this.carrierCondition(actor.key);
-		const { instanceOrdinal } = carrier;
-		const standing = carrierStanding(
-			this.trafficHomeRecord(actor).seed,
-			actor.key,
-			instanceOrdinal,
-			now,
-		);
 		const manifest = this.trafficManifest(
 			actor,
-			instanceOrdinal,
+			carrier.instanceOrdinal,
 			engagement.voyageOrdinal,
 		);
 		for (const event of trafficKillTransitions(
@@ -7667,19 +7791,7 @@ class Game {
 			now,
 		))
 			this.applyCarrierTransition(actor.key, event, actor.hullId);
-		this.canisters = [
-			...this.canisters,
-			...dropManifestCanisters({
-				systemSeed: this.trafficHomeRecord(actor).seed,
-				key: actor.key,
-				manifest,
-				killedAt: now,
-				pos: engagement.flight.ship.pos,
-				vel: engagement.flight.ship.vel,
-				frameVel: this.localFrame(),
-				frameBodyId: this.frameBody?.id ?? null,
-			}),
-		];
+		this.scrapTrafficCarrier(actor, engagement, manifest);
 		// Charged against the row read before the transition above (#633).
 		const charge = chargeOffence(
 			this.commerceWorld,
@@ -7687,11 +7799,65 @@ class Game {
 		);
 		this.adoptWorld(charge.world);
 		const { heat } = charge;
-		this.play({ kind: "explosion" });
 		this.lastExit =
 			heat > 0
 				? `${actor.callsign} destroyed — an offence`
 				: `${actor.callsign} destroyed`;
+	}
+
+	/**
+	 * A kill by impact (`collision.md` §3, §6; node #664): the kill's
+	 * transitions, named for the impact rather than the gun, and the wreck a
+	 * kill by fire leaves — and **no charge**, because an impact is not yet an
+	 * offence (`collision.md` §10; #675 builds that).
+	 */
+	private impactKillTrafficCarrier(
+		actor: TrafficActor,
+		engagement: Engagement,
+		cause: Provenance,
+	) {
+		const carrier = this.carrierCondition(actor.key);
+		const manifest = this.trafficManifest(
+			actor,
+			carrier.instanceOrdinal,
+			engagement.voyageOrdinal,
+		);
+		for (const event of trafficKillTransitions(
+			systemIndexOfKey(actor.key),
+			actor,
+			carrier.condition,
+			this.world.gameTime,
+			cause,
+		))
+			this.applyCarrierTransition(actor.key, event, actor.hullId);
+		this.scrapTrafficCarrier(actor, engagement, manifest);
+		this.lastExit = `${actor.callsign} destroyed in a collision`;
+	}
+
+	/**
+	 * What every kill of an ordinary carrier leaves, whoever made it: the
+	 * manifest a scan would have shown dropped as canisters, the explosion, and
+	 * the ship, its engagement, its contact and the lock on it gone.
+	 */
+	private scrapTrafficCarrier(
+		actor: TrafficActor,
+		engagement: Engagement,
+		manifest: ReturnType<Game["trafficManifest"]>,
+	) {
+		this.canisters = [
+			...this.canisters,
+			...dropManifestCanisters({
+				systemSeed: this.trafficHomeRecord(actor).seed,
+				key: actor.key,
+				manifest,
+				killedAt: this.world.gameTime,
+				pos: engagement.flight.ship.pos,
+				vel: engagement.flight.ship.vel,
+				frameVel: this.localFrame(),
+				frameBodyId: this.frameBody?.id ?? null,
+			}),
+		];
+		this.play({ kind: "explosion" });
 		this.trafficEngagements.delete(actor.key);
 		this.forgetTrafficContact(actor.key);
 		// The lock goes with the ship, as the raider's, relay's and canister's
@@ -9517,6 +9683,7 @@ class Game {
 	 * long enough to forget what the first one felt like.
 	 */
 	private command(id: CommandId) {
+		if (this.photoMode && !PHOTO_MODE_COMMANDS.has(id)) return;
 		// #530 D2: while the opening runs, one key answers — the one that skips
 		// a traversal skips the opening too — and every other is ignored, so
 		// nothing a pilot presses can make a watched run differ from a skipped
@@ -9540,6 +9707,9 @@ class Game {
 		if (this.jumpNotice && id !== "fly.jump" && !charging(this.jumpCharge))
 			this.jumpNotice = "";
 		switch (id) {
+			case "view.photo":
+				this.togglePhotoMode();
+				return;
 			// The view guards these three carried are the registry's now: all
 			// three rows are `views: COCKPIT`, so `resolveKey` never hands the
 			// chase view one. `2` was one case with an `else` for the same
@@ -9551,7 +9721,8 @@ class Game {
 				this.setHeadLook("forward");
 				return;
 			case "view.orbitCentre":
-				this.chaseYaw = 0;
+				// The whole pose, not its yaw: astern is level as well (node #691).
+				this.chaseOrbit = ORBIT_ASTERN;
 				return;
 			case "view.headStarboard":
 				this.setHeadLook("right");
@@ -9689,6 +9860,10 @@ class Game {
 				this.assist = !this.assist;
 				return;
 			case "view.toggle":
+				if (this.photoMode) {
+					this.togglePhotoMode();
+					return;
+				}
 				this.view = this.view === "cockpit" ? "chase" : "cockpit";
 				if (this.view === "chase") this.setHeadLook("forward");
 				return;
@@ -11590,13 +11765,15 @@ class Game {
 			// dock opens on a sentence about a station the ship has left (#443).
 			this.clearStationRefusal();
 			this.openPlayerTrafficEvent(stationId, "lane", readyAt, "launch");
-			// D4's undock flush. **The record still names the station here** —
-			// `commanderRecord` reads every phase that is not `flying`, and this
-			// runs inside `phase === "launching"` — so what this writes is a ship
-			// on rails on its way out, which restores at the arrival point like
-			// any other non-flying phase. The comment here claimed the opposite
-			// for a round. What actually clears `dockedAt` is the outward
-			// crossing below, and that is where the second write is.
+			// D4's undock flush, which since #660 D1 (node #702) also writes
+			// `lastDocked`: a death restores the commander **as it launched**,
+			// with what it bought here. **The record still names the station
+			// here** — `commanderRecord` reads every phase that is not `flying`,
+			// and this runs inside `phase === "launching"` — so the checkpoint
+			// re-docks at this station on a death's reload (node #658's docked
+			// restore), and `live` restores a ship on rails on its way out like
+			// any other non-flying phase. What actually clears `dockedAt` is the
+			// outward crossing below, and that is where the second write is.
 			this.saveDirty();
 			this.saveFlush("undock");
 		}
@@ -12219,7 +12396,7 @@ class Game {
 		this.rates = { pitch: 0, yaw: 0, roll: 0 };
 		this.computerFollower.reset();
 		this.dropPointer();
-		this.chaseYaw = 0;
+		this.chaseOrbit = ORBIT_ASTERN;
 	}
 
 	resetFlightToStart() {
@@ -12556,6 +12733,7 @@ class Game {
 	 */
 	private triggerHeld(): boolean {
 		return (
+			!this.photoMode &&
 			!this.combatRig &&
 			!this.openingActive &&
 			flightLive(this.dock.phase) &&
@@ -12607,45 +12785,59 @@ class Game {
 				step.raiderHit.side,
 				`fired on by ${name}`,
 			);
-		if (step.encounter.phase === "over") {
-			// #324 part d: a kill is the slot's world-state destruction, which
-			// schedules its replacement, and the wreck drops its cargo.
-			if (step.encounter.end === "destroyed" && step.wreck) {
-				const record = this.world.system.record;
-				const now = this.world.gameTime;
-				// The relay's defender (#515) is a raider from a slot, so it is
-				// priced here too.
-				this.applyCarrierTransition(
-					encounter.slot.key,
-					raiderDestruction(record.index, now),
-					RAIDER_HULL_ID,
-				);
-				this.canisters = [
-					...this.canisters,
-					...dropCanisters({
-						systemSeed: record.seed,
-						government: record.government,
-						key: encounter.slot.key,
-						killedAt: now,
-						pos: step.wreck.pos,
-						vel: step.wreck.vel,
-						frameVel: this.localFrame(),
-						// The body the kill happened beside owns the frame these rest
-						// in, so they keep station with it after the player leaves.
-						frameBodyId: this.frameBody?.id ?? null,
-					}),
-				];
-				this.play({ kind: "explosion" });
-			}
-			const notice = step.encounter.end
-				? ENCOUNTER_END_NOTICE[step.encounter.end]
-				: null;
-			if (notice) this.lastExit = notice(name);
-			this.encounter = null;
-			// A raider that fired on its last step would otherwise leave the cue
-			// red until the next encounter's first step.
-			this.raiderFiring = false;
+		if (step.encounter.phase === "over")
+			this.endEncounter(encounter, step.encounter, step.wreck, undefined);
+	}
+
+	/**
+	 * An encounter that has ended (#324): a kill is the Raider slot's world-state // glossary-ignore: slot
+	 * destruction, which schedules its replacement, and the wreck drops its
+	 * cargo; then the end is said and the raider is gone. One method for the
+	 * duel step's end and a collision's kill (node #664), so the two cannot
+	 * drift — the kill pays or not by `cause`, the gun's when absent.
+	 */
+	private endEncounter(
+		encounter: Encounter,
+		ended: Encounter,
+		wreck: { pos: Vec3; vel: Vec3 } | null,
+		cause: Provenance | undefined,
+	) {
+		const { name } = encounter;
+		if (ended.end === "destroyed" && wreck) {
+			const record = this.world.system.record;
+			const now = this.world.gameTime;
+			// The relay's defender (#515) fills a Raider slot, so it is // glossary-ignore: slot
+			// priced here too.
+			this.applyCarrierTransition(
+				encounter.slot.key,
+				raiderDestruction(record.index, now, cause),
+				RAIDER_HULL_ID,
+			);
+			this.canisters = [
+				...this.canisters,
+				...dropCanisters({
+					systemSeed: record.seed,
+					government: record.government,
+					key: encounter.slot.key,
+					killedAt: now,
+					pos: wreck.pos,
+					vel: wreck.vel,
+					frameVel: this.localFrame(),
+					// The body the kill happened beside owns the frame these rest
+					// in, so they keep station with it after the player leaves.
+					frameBodyId: this.frameBody?.id ?? null,
+				}),
+			];
+			this.play({ kind: "explosion" });
 		}
+		const notice = ended.end ? ENCOUNTER_END_NOTICE[ended.end] : null;
+		// A pilot the same tick killed keeps "ship destroyed" as the line.
+		if (notice && !this.dead) this.lastExit = notice(name);
+		this.encounter = null;
+		this.encounterView = null;
+		// A raider that fired on its last step would otherwise leave the cue
+		// red until the next encounter's first step.
+		this.raiderFiring = false;
 	}
 
 	/**
@@ -13386,7 +13578,7 @@ class Game {
 					C_KMS,
 					this.cruiseParams.vMaxKms,
 				),
-				held: this.clockHeld,
+				held: this.simulationHeld,
 				// The opening is silent (#544), and on #534's `duck` arm the bed is
 				// gone from the cut until the pilot's hands come back.
 				hushed:
@@ -13424,15 +13616,17 @@ class Game {
 			: null;
 		const phase = this.encounter?.phase ?? "over";
 		let engaged = false;
+		// Hostile to the pilot, not merely armed: a patrol running from another
+		// ship's ram is no danger to them (node #664).
 		for (const e of this.trafficEngagements.values())
-			if (e.armed) engaged = true;
+			if (e.intent === "attacker") engaged = true;
 		const c = this.condition;
 		const step = stepMusic(
 			this.musicState,
 			{
 				scene,
 				ready: this.music.ready,
-				held: this.clockHeld || this.openingActive,
+				held: this.simulationHeld || this.openingActive,
 				cruise: this.regime === "cruise",
 				encounter: phase === "over" ? "none" : phase,
 				sinceStruckS: c.sinceStruckS,
@@ -14191,6 +14385,7 @@ class Game {
 	 * exactly what the game runs rather than its own copy of the order.
 	 */
 	step(dt: number) {
+		if (this.photoMode) return;
 		// What the drive and thrusters do this step, set where they fly (#544).
 		// Zero on every path that flies no vent: docked, and a placed attitude.
 		// A cruise turn flies the attitude vents (`turnInCruise`, #647).
@@ -14259,6 +14454,8 @@ class Game {
 			// launch. Docked at the station console is exactly the case this
 			// branch's reversal is about, and the comment there claimed the
 			// delta was consumed. Sage found it.
+			//
+			// Photo composition is stepped by animate while simulation is held.
 			this.dropPointer();
 			// Same reason as the delta above: `stepScan` runs on the flight tail,
 			// so this branch is a way off it. A charge banked before docking would
@@ -14294,6 +14491,9 @@ class Game {
 		this.scoop.left = Math.max(0, this.scoop.left - dt);
 		this.charged.left = Math.max(0, this.charged.left - dt);
 		this.stepGunGimbal(dt);
+		// The flown ships' poses before their own steps move them: the start of
+		// each one's motion across this step (`collision.md` §4.1, node #664).
+		this.fleetStarts = this.flownFleetPoses();
 		this.stepRaider(dt, shot);
 		this.stepRelay(shot, dt);
 		this.stepTrafficEngagements(dt, shot);
@@ -14335,6 +14535,8 @@ class Game {
 		// the whole sequence — the same hold, for a different reason.
 		const handsHeld =
 			witchspaceControlHeld(this.witchspace) || this.openingActive;
+		// Normal flight keeps mouse steering in either view; Photo owns the
+		// pointer in animate and holds this simulation step.
 		const yaw = handsHeld
 			? 0
 			: this.axis("fly.yawStarboard", "fly.yawPort") + padYaw;
@@ -14486,9 +14688,7 @@ class Game {
 
 		// Held rather than stepped, for the same reason throttle is: an angle the
 		// player is choosing by eye wants a rate, not a ladder of fixed stops.
-		const orbit = this.view === "chase" ? this.chaseOrbitInput() : 0;
-		if (orbit !== 0)
-			this.chaseYaw = wrapAngle(this.chaseYaw + orbit * CHASE_ORBIT_RATE * dt);
+		if (this.view === "chase") this.stepKeyOrbit(dt);
 
 		// **The lever moves only with the assist on** (#620, `flight-model.md`
 		// §3.6). Off, the same keys and triggers fire the main drive and the
@@ -14537,8 +14737,22 @@ class Game {
 		}
 
 		if (this.regime === "cruise") {
+			// The player's leg is cruise's, but the raider and the engaged
+			// carriers fly on in normal flight and meet what they fly into
+			// (`collision.md` §3, §6; node #664): the same passes `stepWorld`
+			// runs, without the player, from the world as it stands before the
+			// leg moves the clock.
+			const fleet = this.fleetOf(dt, { player: false });
+			const fromTime = this.world.gameTime;
+			const starts =
+				fleet.length > 0 ? worldStarts(this.world.system, fromTime) : null;
 			meterFlick(this.turnInCruise(dt, hands));
 			this.stepCruise(dt, contactTargetAtFrameStart);
+			if (starts)
+				this.landFleet(
+					stepFleet(this.world, fleet, starts, { fromTime, dt }),
+					fleet,
+				);
 			return;
 		}
 
@@ -14576,6 +14790,7 @@ class Game {
 		// pair of frames, and the "before" half stops existing the moment the
 		// ship moves.
 
+		const fleet = this.fleetOf(dt);
 		// The whole world, not just the ship: `dt` is sim seconds and the bodies
 		// are on orbits driven by the same clock. Stepping the ship alone would
 		// freeze the system around it, which is the state the scaffold was in.
@@ -14596,6 +14811,8 @@ class Game {
 			// weighs the crossing against its impacts and hands back the one
 			// that owned the tick.
 			this.planesOf(before),
+			// C4b, §6 (node #664): every other ship this step can meet.
+			fleet,
 		);
 		// §3: every surface met lands through the one damage path, so a hull at
 		// zero dies the way a kill by fire does.
@@ -14617,6 +14834,22 @@ class Game {
 			this.collisionGhostSteps++;
 			this.lastCollisionGhost = flown.ghosts[flown.ghosts.length - 1];
 		}
+		// C4b: another ship met, through the same damage path.
+		for (const impact of flown.shipImpacts) {
+			this.collisionImpacts++;
+			this.lastCollisionImpact = {
+				bodyId: impact.with,
+				closingKms: impact.closingKms,
+				damage: impact.damage,
+				resting: impact.resting,
+			};
+			this.takeDamage(
+				impact.damage,
+				impact.side,
+				`struck ${this.fleetName(impact.with)}`,
+			);
+		}
+		this.landFleet(flown.fleet, fleet);
 		// The attitude step's rates and the translation firing's kick (#619).
 		this.applyHullTurn(flown);
 		// Off the vents that fired (#544, `flight-model.md` §4): the sound
@@ -14650,6 +14883,319 @@ class Game {
 		// and damage cancels the charge.
 		this.takePendingJump();
 		return flown;
+	}
+
+	/** Where each flown fleet ship stood before this step moved it. */
+	private fleetStarts = new Map<string, FleetPose>();
+
+	/**
+	 * Where the last step's sweep left each collidable projected carrier, at
+	 * the clock it ended on (`presentedTrafficStep`'s `from`, node #664).
+	 */
+	private readonly trafficSweptEnds = new Map<CarrierKey, TrafficSweptEnd>();
+
+	/**
+	 * The ships this frame flies other than the player (node #664): the
+	 * raider in its duel — a relay's defender is one — and every engaged
+	 * carrier, keyed by their carrier keys.
+	 */
+	private flownFleetPoses(): Map<string, FleetPose> {
+		const poses = new Map<string, FleetPose>();
+		const flight = this.duelRaider()?.flight;
+		if (flight && this.encounter)
+			poses.set(this.encounter.slot.key, poseOfFlight(flight));
+		for (const [key, engagement] of this.trafficEngagements)
+			poses.set(key, poseOfFlight(engagement.flight));
+		return poses;
+	}
+
+	/** The raider flown in a duel now, or `null`. */
+	private duelRaider() {
+		return this.encounter?.phase === "duel" ? this.encounter.raider : null;
+	}
+
+	/**
+	 * Every ship other than the player that this frame's step can meet
+	 * (`collision.md` §2.4, §5, §6; node #664): `stepWorld`'s in normal
+	 * flight, and `stepFleet`'s while the player cruises — `options.player`
+	 * false, so the player's leg poses no carrier, as it meets none.
+	 *
+	 * The **flown** ones — the raider and the engaged carriers — from where
+	 * they stood before their own steps to where those left them. A carrier on
+	 * its **projection** is met only while its route phase collides (§5): from
+	 * where it is drawn at the step's start to where it is drawn at its end
+	 * (`presentedTrafficStep`), at the velocity that displacement is, and only
+	 * near enough to be reached this step by the player or by any flown ship
+	 * (`projectedMayMeet`) — a raider or an engaged carrier meets a projected
+	 * one the player is nowhere near. It is `projected`, so the step does not
+	 * sweep it against the world — a route cannot be bounced — until a meeting
+	 * hands it to flight (`landFleet`): from then the step sweeps it as it does
+	 * a flown ship, from where it stood to where the meeting left it.
+	 */
+	private fleetOf(
+		dt: number,
+		options: { player: boolean } = { player: true },
+	): FleetShip[] {
+		const ships: FleetShip[] = [];
+		const flown = (id: string, hull: HullId, end: FleetPose) => {
+			const start = this.fleetStarts.get(id) ?? {
+				...end,
+				pos: sub(end.pos, scale(end.vel, dt)),
+			};
+			ships.push({
+				id,
+				projected: false,
+				motion: {
+					massT: HULL_SPECS[hull].massT,
+					primitives: this.hullSolidOf(hull),
+					start: shipPose(start.pos, start.nose, start.up),
+					end: shipPose(end.pos, end.nose, end.up),
+					velStart: start.vel,
+					velEnd: end.vel,
+				},
+			});
+		};
+		const raider = this.duelRaider();
+		if (raider && this.encounter)
+			flown(
+				this.encounter.slot.key,
+				RAIDER_HULL_ID,
+				poseOfFlight(raider.flight),
+			);
+		for (const [key, engagement] of this.trafficEngagements)
+			flown(key, engagement.hullId, poseOfFlight(engagement.flight));
+		const player = this.world.ship;
+		// Everything flown this step is what a projection can be met by: the
+		// player, on the velocity it starts the step with — unless it is not
+		// in the step's pairs, as in cruise, where its leg would reach every
+		// carrier along it — and each flown fleet ship along its own step.
+		const movers = [
+			...(options.player
+				? [{ start: player.pos, end: add(player.pos, scale(player.vel, dt)) }]
+				: []),
+			...ships.map((ship) => ({
+				start: ship.motion.start.origin,
+				end: ship.motion.end.origin,
+			})),
+		];
+		// Only this step's collidable carriers carry an end into the next.
+		const sweptBefore = new Map(this.trafficSweptEnds);
+		this.trafficSweptEnds.clear();
+		// The materialised contacts: a carrier not drawn near the player is
+		// not posed for a meeting at all.
+		for (const key of this.trafficContacts.keys()) {
+			if (this.trafficEngagements.has(key)) continue;
+			const route = this.trafficRouteByKey(key);
+			const actor = this.trafficActorByKey(key);
+			if (!route || !actor || !route.nose || !route.up) continue;
+			if (route.present === false || !trafficCollides(route.phase)) continue;
+			// Where it is drawn at both ends of the step, each at its own clock,
+			// by the law the render path draws it with — never `contact.pos`
+			// plus `contact.velocity · dt`: the drawn step carries the 10 Hz
+			// correction as well, and a projection's `vel` read 0.082 km/s on a
+			// step that moved kilometres (the corpus row's finding). A phase
+			// that collides is never settled in a berth (§5 exempts all three),
+			// so no parked resample is owed here.
+			// Started where the last sweep ended, so the jump an authority tick
+			// draws between two frames is swept too (`presentedTrafficStep`);
+			// recorded before the reach cut, so a step not posed still carries.
+			const drawn = presentedTrafficStep(
+				{
+					current: route,
+					currentAtS: this.trafficProjectionAtS,
+					prior: this.trafficPreviousRoutes.get(key) ?? null,
+					priorAtS: this.trafficPreviousProjectionAtS,
+				},
+				this.world.gameTime,
+				dt,
+				sweptBefore.get(key) ?? null,
+			);
+			this.trafficSweptEnds.set(key, {
+				atS: this.world.gameTime + dt,
+				pos: drawn.end,
+				attitude: drawn.endAttitude,
+			});
+			// Reachable this step by anything flown at all, taken early so a
+			// system's Traffic is not posed every frame for nothing.
+			if (
+				!projectedMayMeet(
+					{ pos: drawn.start, vel: drawn.vel },
+					movers,
+					dt,
+					FLEET_REACH_KM,
+				)
+			)
+				continue;
+			const turned =
+				drawn.startAttitude && drawn.endAttitude
+					? { start: drawn.startAttitude, end: drawn.endAttitude }
+					: null;
+			if (!turned) continue;
+			ships.push({
+				id: key,
+				projected: true,
+				motion: {
+					massT: HULL_SPECS[actor.hullId].massT,
+					primitives: this.hullSolidOf(actor.hullId),
+					// Turned at each end as it is drawn there, so the box sweeps
+					// the turn the hull is seen to make.
+					start: shipPose(drawn.start, turned.start.nose, turned.start.up),
+					end: shipPose(drawn.end, turned.end.nose, turned.end.up),
+					velStart: drawn.vel,
+					velEnd: drawn.vel,
+				},
+			});
+		}
+		return ships;
+	}
+
+	/** A hull's collision box (P1), cached per hull. */
+	private readonly hullSolids = new Map<HullId, readonly Primitive[]>();
+	private hullSolidOf(hull: HullId): readonly Primitive[] {
+		let solid = this.hullSolids.get(hull);
+		if (!solid) {
+			const spec = HULL_SPECS[hull];
+			solid = [hullBox(spec.env, spec.envCentre)];
+			this.hullSolids.set(hull, solid);
+		}
+		return solid;
+	}
+
+	/** What a meeting names a ship by, for the reason a damage carries. */
+	private fleetName(id: string): string {
+		if (this.encounter?.slot.key === id) return this.encounter.name;
+		const actor = this.trafficActorByKey(id as CarrierKey);
+		return actor?.callsign ?? "a ship";
+	}
+
+	/**
+	 * Land what the step did to every fleet ship (node #664): where it ended,
+	 * and every meeting through the one damage path a ship has.
+	 *
+	 * - **The raider** takes its damage on its own condition. A hull at zero is
+	 *   destroyed in this tick (`landRaiderImpacts`), through the end a kill
+	 *   by fire takes (§3) — not on a later duel step, which a ram that kills
+	 *   the pilot too would never reach.
+	 * - **A carrier** — flown already, or handed to flight now at the pose the
+	 *   bounce left it in (§6: a projected pose cannot express a bounce) —
+	 *   takes it on its engagement's condition, and the world hears H3d's
+	 *   answer: a kill, a divert, or nothing for shields alone. **No heat**:
+	 *   an impact is not yet an offence (#675 builds that). The pilot's own
+	 *   hull meeting it is cause, as their fire is (`provoke`); another ship's
+	 *   is not.
+	 */
+	private landFleet(steps: readonly FleetStep[], fleet: readonly FleetShip[]) {
+		steps.forEach((step, index) => {
+			const ship = fleet[index];
+			const encounter = this.encounter;
+			if (encounter?.slot.key === step.id) {
+				// A raider a collision finishes is destroyed in this tick, through
+				// the end a kill by fire takes (§3) — named for what it met. The
+				// player's own ram pays as the gun does; a raider that flew into
+				// a station alone pays nobody.
+				const landed = landRaiderImpacts(encounter, step, this.encounterView);
+				if (!landed) return;
+				if (landed.wreck)
+					this.endEncounter(
+						encounter,
+						landed.encounter,
+						landed.wreck,
+						impactCauseOf(step.impacts, PLAYER_SHIP_ID),
+					);
+				else {
+					this.encounter = landed.encounter;
+					// `stepRaider` drew the view before the step moved the raider;
+					// the hull and the scanner show where the step left it.
+					this.encounterView = landed.contact;
+				}
+				return;
+			}
+			if (ship.projected && step.impacts.length === 0) return;
+			const key = step.id as CarrierKey;
+			const actor = this.trafficActorByKey(key);
+			if (!actor) return;
+			const engaged = this.trafficEngagements.get(key);
+			// The pilot's own hull meeting an engaged carrier is cause, as their
+			// fire landing is (`provoke`).
+			const flying = engaged
+				? step.impacts.some((i) => i.with === PLAYER_SHIP_ID)
+					? provoke(engaged)
+					: engaged
+				: this.engageByImpact(actor, ship, step);
+			if (!flying) return;
+			const before = flying.condition;
+			let after = before;
+			for (const impact of step.impacts)
+				after = applyDamage(after, impact.damage, impact.side);
+			const engagement: Engagement = {
+				...flying,
+				flight: { ...flying.flight, ship: { pos: step.pos, vel: step.vel } },
+				condition: after,
+			};
+			this.trafficEngagements.set(key, engagement);
+			if (step.impacts.length === 0) return;
+			const from = this.carrierCondition(key).condition;
+			const outcome = impactOutcome(before, after, from);
+			const cause = impactCauseOf(step.impacts, PLAYER_SHIP_ID);
+			if (outcome === "kill") {
+				this.impactKillTrafficCarrier(actor, engagement, cause);
+				return;
+			}
+			for (const event of trafficImpactTransitions(
+				systemIndexOfKey(key),
+				actor,
+				outcome,
+				from,
+				this.world.gameTime,
+				cause,
+			))
+				this.applyCarrierTransition(key, event, actor.hullId);
+			if (outcome === "divert" && !this.dead)
+				this.lastExit = `${actor.callsign} disabled in a collision — running home`;
+		});
+	}
+
+	/**
+	 * A projected carrier a meeting hands to flight (§6), at the pose the
+	 * bounce left it in — as a shot hands one over (`engageStruckTraffic`),
+	 * with the same seed and the same assault clock, so a fight that follows
+	 * is the same incident. Its H3 intent is toward the pilot, so an armed
+	 * hull closes only when the pilot was a party to the meeting; one met by
+	 * another ship or by the world runs, until the pilot gives it cause
+	 * (`provoke`).
+	 */
+	private engageByImpact(
+		actor: TrafficActor,
+		ship: FleetShip,
+		step: FleetStep,
+	): Engagement | null {
+		if (!this.trafficOperational(actor.key)) return null;
+		const engagement = engage(
+			{
+				key: actor.key,
+				hullId: actor.hullId,
+				pos: step.pos,
+				vel: step.vel,
+				nose: ship.motion.end.z,
+				up: ship.motion.end.y,
+				voyageOrdinal: this.trafficVoyage(actor),
+			},
+			carrierInstanceSeed(
+				this.trafficHomeRecord({ key: actor.key }).seed,
+				actor.key,
+				this.carrierCondition(actor.key).instanceOrdinal,
+				DOMAIN.TRAFFIC_ENGAGEMENT,
+			),
+			{
+				assaultAlreadyCharged: assaultCharged(this.legalStatus(), actor.key),
+				// Cause only when the pilot was a party to the meeting — any of
+				// them, not the worst: a raider's ram does not turn a patrol on
+				// a pilot who was nowhere in it.
+				byPilot: step.impacts.some((i) => i.with === PLAYER_SHIP_ID),
+			},
+		);
+		this.trafficEngagements.set(actor.key, engagement);
+		return engagement;
 	}
 
 	/** The planes a step watches (`collision.md` §4.2): every approach in
@@ -14879,12 +15425,13 @@ class Game {
 				scale(v3(forward.x, forward.y, forward.z), COCKPIT_FORWARD_KM),
 			);
 		}
-		// Behind and above in the ship's own frame, then swung round its up axis
-		// by the orbit. `cameraRotation` applies the same yaw, so the rig turns
-		// as one piece and the hull stays where it was in frame.
+		// Behind and above in the ship's own frame, turned by the orbit's one
+		// rotation (`chase-orbit.ts`). `cameraRotation` applies the same
+		// rotation, so the rig turns as one piece and the hull stays where it
+		// was in frame from every pose.
+		const local = orbitOffsetKm(this.chaseOrbit);
 		const offset = this.chaseOffset
-			.set(0, CHASE_UP_KM, CHASE_BACK_KM)
-			.applyAxisAngle(HEAD_AXIS, this.chaseYaw)
+			.set(local.x, local.y, local.z)
 			.applyQuaternion(this.orientation);
 		return add(this.world.ship.pos, v3(offset.x, offset.y, offset.z));
 	}
@@ -15609,11 +16156,16 @@ class Game {
 		// After `dt` and before the step: the chart's camera is not flight, and
 		// it must keep turning while §12 has flight suspended.
 		this.stepChartOrbit(dt);
+		// Compose even while the world is held; panels still own their input.
+		if (pointerOwner(this.view, this.photoMode) === "orbit") {
+			this.orbitChase();
+			if (contextFliesShip(this.padContext())) this.stepKeyOrbit(dt);
+		}
 		const updateStartedAt = this.frameAttribution ? performance.now() : 0;
 		// **The clock is held, not the loop** (§11.2): `lastTime` above still
 		// moves, so the frame after Continue carries one frame of time rather than
 		// everything since the page opened.
-		if (dt > 0 && !this.clockHeld) {
+		if (dt > 0 && !this.simulationHeld) {
 			// #535: the opening owns the clock while it runs, and steps the sim
 			// at its own fixed step however long this frame was.
 			const opening = this.opening;
@@ -15628,11 +16180,11 @@ class Game {
 		// Every frame, paused ones too: a paused burn does not keep its drive
 		// (the principal's ruling on #544), which needs the sound to hear the
 		// pause rather than keep the last level it was given.
-		this.stepFlightSound(this.clockHeld ? 0 : dt);
-		this.stepMusicDirector(this.clockHeld ? 0 : dt);
+		this.stepFlightSound(this.simulationHeld ? 0 : dt);
+		this.stepMusicDirector(this.simulationHeld ? 0 : dt);
 		// The combat loops too: a held clock stops the step that would let a
 		// beam or a sizzle go, so the frame loop lets go of them here (#545).
-		this.audio.weapons(this.clockHeld ? SILENT_WEAPONS : this.weaponMix);
+		this.audio.weapons(this.simulationHeld ? SILENT_WEAPONS : this.weaponMix);
 		if (this.frameAttribution)
 			this.frameAttribution.recordCpu(
 				"simulation/step",
@@ -15695,29 +16247,109 @@ class Game {
 	}
 
 	private cameraRotation() {
-		const yaw =
-			this.view === "cockpit"
-				? this.headLook === "left"
+		if (this.view === "chase") {
+			const q = orbitRotation(this.chaseOrbit);
+			this.headRotation.set(q.x, q.y, q.z, q.w);
+		} else {
+			const yaw =
+				this.headLook === "left"
 					? Math.PI / 2.7
 					: this.headLook === "right"
 						? -Math.PI / 2.7
-						: 0
-				: this.chaseYaw;
-		this.headRotation.setFromAxisAngle(HEAD_AXIS, yaw);
+						: 0;
+			this.headRotation.setFromAxisAngle(HEAD_AXIS, yaw);
+		}
 		return this.viewRotation.copy(this.orientation).multiply(this.headRotation);
+	}
+
+	/**
+	 * Spend this frame's pointer delta on the chase orbit (node #691), or drop
+	 * it where the pointer is not the glass's: the same `contextFliesShip`
+	 * that lets it steer in the cockpit, so a console, the Galaxy Map, the
+	 * pause menu or the Postcard screen takes the orbit with the ship.
+	 */
+	private orbitChase() {
+		const { dx, dy } = this.takePointer();
+		if (this.openingActive || !contextFliesShip(this.padContext())) return;
+		this.chaseOrbit = orbitByPointer(this.chaseOrbit, dx, dy);
+	}
+
+	/** The held `1`/`3` swing, one frame of it. Each caller keeps its own gate:
+	 *  `step` in flight, the frame loop while Photo mode holds the world. */
+	private stepKeyOrbit(dt: number) {
+		const orbit = this.chaseOrbitInput();
+		if (orbit !== 0)
+			this.chaseOrbit = {
+				...this.chaseOrbit,
+				yawRad: wrapAngle(this.chaseYaw + orbit * CHASE_ORBIT_RATE * dt),
+			};
+	}
+
+	private togglePhotoMode() {
+		this.releaseHeldKeys();
+		this.mouseFiring = false;
+		this.takePointer();
+		if (this.photoMode) {
+			this.photoMode = false;
+			this.view = this.photoPreviousView;
+		} else {
+			this.photoPreviousView = this.view;
+			this.photoMode = true;
+			this.view = "chase";
+			this.setHeadLook("forward");
+		}
+		this.updatePhotoNotice();
+	}
+
+	private updatePhotoNotice() {
+		if (!this.photoNotice) {
+			this.photoNotice = document.createElement("div");
+			this.photoNotice.dataset.photoControls = "";
+			this.photoNotice.style.cssText =
+				"position:fixed;right:16px;bottom:16px;z-index:15;padding:8px 12px;color:#cce4ee;background:#07121ddd;border:1px solid #537384;border-radius:4px;font:13px system-ui;display:flex;gap:12px;align-items:center";
+			document.body.append(this.photoNotice);
+		}
+		this.photoNotice.replaceChildren();
+		const button = (text: string, action: () => void) => {
+			const b = document.createElement("button");
+			b.type = "button";
+			b.textContent = text;
+			b.addEventListener("click", action);
+			// A focused button's activation keys are the button's, not the
+			// ship's: bubbling to `onKey` ran `Enter` as `dock.launch` and ate
+			// `Space` before its native click (sage round 6).
+			b.addEventListener("keydown", photoButtonKey);
+			this.photoNotice?.append(b);
+		};
+		if (this.photoMode) {
+			const hint = document.createElement("span");
+			hint.textContent =
+				"PHOTO · paused · click view, then move to orbit · scroll to zoom";
+			this.photoNotice.append(hint);
+			button("Centre", () => this.command("view.orbitCentre"));
+			button("Save postcard", () => this.command("system.postcard"));
+			button("Exit Photo mode", () => this.command("view.photo"));
+		} else button("Photo mode", () => this.command("view.photo"));
 	}
 
 	/**
 	 * Stand the camera where a postcard composition puts it (#406). `clear` and
 	 * `cockpit` are the cockpit eye, turned by `head`, with the cabin hidden or
-	 * drawn; `exterior` is the chase camera orbited by `yawRad`. Assigned rather
+	 * drawn; `exterior` is the chase camera orbited by `yawRad` and
+	 * `elevationRad` (node #691). Assigned rather
 	 * than routed through `setHeadLook`, which also moves the pointer lock and
 	 * the consoles — a composition is a camera, not a pilot's action.
 	 */
 	private composePostcard(pose: PostcardPose) {
 		if (pose.mode === "exterior") {
 			this.view = "chase";
-			this.chaseYaw = pose.yawRad ?? 0;
+			this.chaseOrbit = {
+				yawRad: pose.yawRad ?? 0,
+				elevationRad: clampElevation(pose.elevationRad ?? 0),
+				...(pose.zoomScale !== undefined
+					? { zoomScale: clampZoom(pose.zoomScale) }
+					: {}),
+			};
 			this.cabinHidden = false;
 		} else {
 			this.view = "cockpit";
@@ -15751,6 +16383,10 @@ class Game {
 			mode,
 			head: this.view === "cockpit" ? this.headLook : "forward",
 			yawRad: this.view === "chase" ? this.chaseYaw : 0,
+			elevationRad: this.view === "chase" ? this.chaseElevation : 0,
+			...(this.view === "chase" && this.chaseOrbit.zoomScale !== undefined
+				? { zoomScale: this.chaseOrbit.zoomScale }
+				: {}),
 		};
 	}
 
@@ -15805,7 +16441,7 @@ class Game {
 		const kept = {
 			view: this.view,
 			headLook: this.headLook,
-			chaseYaw: this.chaseYaw,
+			chaseOrbit: this.chaseOrbit,
 			cabinHidden: this.cabinHidden,
 		};
 		const out = document.createElement("canvas");
@@ -15837,7 +16473,7 @@ class Game {
 		} finally {
 			this.view = kept.view;
 			this.headLook = kept.headLook;
-			this.chaseYaw = kept.chaseYaw;
+			this.chaseOrbit = kept.chaseOrbit;
 			this.cabinHidden = kept.cabinHidden;
 			this.onResize();
 			// Three renders at the card's size, and any bake faces, are one long
@@ -18467,6 +19103,7 @@ class Game {
 		// Written again below only if a raider is selected and drawn this frame.
 		this.cueRender = null;
 		this.selectedRender = null;
+		this.coreRender = null;
 		// Cleared before any early return, so a frame that drew neither does not
 		// leave the last one's readable (sage round 2 on #608).
 		this.boresightRender = null;
@@ -18924,6 +19561,10 @@ class Game {
 		const markOnGlass = selectedAt?.on === true;
 		const targetCondition = markOnGlass ? this.selectedTargetCondition() : null;
 		const divertCue = markOnGlass ? this.selectedDivertCue(camPos) : null;
+		// The selected target's name beside its edge arrow, when it is off the
+		// glass. Reserved for the Core mark alone, after the walk: the context
+		// labels' order against it is unchanged by node #478.
+		let edgeLabel: MarkerLabelBounds | null = null;
 		const selectedLabel = (name: string, km: number) =>
 			`${name}  ${range(km)}${onTarget ? "  ON TARGET" : ""}${
 				divertCue ? `  ${divertCue}` : ""
@@ -19076,12 +19717,79 @@ class Game {
 			ctx.fill();
 			ctx.restore();
 			ctx.fillStyle = "rgba(255, 214, 120, 0.8)";
-			ctx.fillText(
-				`${body.name}  ${((angleOffNose(dir, this.nose()) * 180) / Math.PI).toFixed(0)}° off`,
-				Math.min(w - 120, Math.max(10, p.x - 48)),
-				Math.min(h - 10, Math.max(20, p.y + 22)),
-			);
+			const edgeText = `${body.name}  ${((angleOffNose(dir, this.nose()) * 180) / Math.PI).toFixed(0)}° off`;
+			const edgeX = Math.min(w - 120, Math.max(10, p.x - 48));
+			const edgeY = Math.min(h - 10, Math.max(20, p.y + 22));
+			ctx.fillText(edgeText, edgeX, edgeY);
+			// Reserved against its widest reading, for the condition line's reason:
+			// a box that follows the digits would let CORE in and out as they ran.
+			edgeLabel = labelBounds(edgeX, edgeY, `${body.name}  180° off`);
 		}
+
+		// The Core mark is the glass's lowest rank, so it goes last (§5.5), and
+		// the selected target's edge label outranks it as its on-glass one does.
+		if (edgeLabel) occupiedLabels.push(edgeLabel);
+		this.drawCoreMark(ctx, shipCues ? this.coreDir : null, {
+			place,
+			labelBounds,
+			occupied: occupiedLabels,
+			w,
+			h,
+		});
+	}
+
+	/**
+	 * **The Core mark** (`hud-and-scanner.md` §5.5, node #478): where the
+	 * cluster's centre lies from this system. The sky shows the cluster as points
+	 * and the core cone is under the invented layer's own density everywhere
+	 * (`measure-sky-density.ts core`), so the bearing is given by instrument
+	 * rather than by light. A background fact, so it takes the attitude
+	 * reference's cool tone and the lowest rank: its label is admitted last, only
+	 * where nothing above it has claimed the room. The brackets are not
+	 * decluttered and may cross another mark or name. On the glass only — no edge
+	 * arrow, which would be a second permanent edge cue beside the selected
+	 * target's. `core` is `null` where the frame has no glass for it.
+	 */
+	private drawCoreMark(
+		ctx: CanvasRenderingContext2D,
+		core: Vec3 | null,
+		layout: CoreMarkLayout,
+	) {
+		const { place, labelBounds, occupied, w, h } = layout;
+		const coreAt = core && place(core);
+		if (!coreAt?.on) return;
+		ctx.strokeStyle = CORE_MARK_STROKE;
+		ctx.fillStyle = CORE_MARK_STROKE;
+		ctx.lineWidth = 1;
+		// A dot between two brackets, `( · )`: no other mark on the glass is that
+		// shape, so it reads without its hue (§4).
+		const r = CORE_MARK_RADIUS_PX;
+		ctx.beginPath();
+		ctx.arc(coreAt.x, coreAt.y, r, Math.PI * 0.7, Math.PI * 1.3);
+		ctx.moveTo(
+			coreAt.x + r * Math.cos(-Math.PI * 0.3),
+			coreAt.y + r * Math.sin(-Math.PI * 0.3),
+		);
+		ctx.arc(coreAt.x, coreAt.y, r, -Math.PI * 0.3, Math.PI * 0.3);
+		ctx.stroke();
+		ctx.beginPath();
+		ctx.arc(coreAt.x, coreAt.y, 1.5, 0, Math.PI * 2);
+		ctx.fill();
+		const x = coreAt.x + r + 6;
+		const y = coreAt.y + 4;
+		const bounds = labelBounds(x, y, CORE_MARK_LABEL);
+		const labelled =
+			bounds.right <= w &&
+			bounds.top >= 0 &&
+			bounds.bottom <= h &&
+			this.markerLabels.claim(
+				CORE_MARK_LABEL_ID,
+				bounds,
+				occupied,
+				this.world.gameTime,
+			);
+		if (labelled) ctx.fillText(CORE_MARK_LABEL, x, y);
+		this.coreRender = { at: { x: coreAt.x, y: coreAt.y }, labelled };
 	}
 
 	/** The overlay's backing store, in CSS pixels — not device pixels: the
@@ -19589,10 +20297,13 @@ if (postcard) {
 	};
 	// **A death (#324, the principal's ruling O5; #654).** With a store attached
 	// and a commander who is not permadeath, `live` becomes the world at the
-	// death beside the last dock's commander, the one-shot continue names the
-	// Commander, and the page reloads into the dock.
-	// Otherwise — permadeath, `?no-save`, or a restore that failed — the ship
-	// stays destroyed and the Commander overlay opens.
+	// death beside the commander as it last launched (#660 D1) — or, for a
+	// pilot who never docked, a new commander at the start system's trade
+	// station (D10) — the one-shot continue names the Commander, and the page
+	// reloads into the dock.
+	// Otherwise — permadeath, a boot that writes nothing (`?no-save`,
+	// `?system=`), or a restore that failed — the ship stays destroyed and the
+	// Commander overlay opens.
 	game.onDeath = async () => {
 		const store = game.saveStore;
 		const slot = attachedSlot;

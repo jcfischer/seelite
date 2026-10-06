@@ -19,6 +19,7 @@ import {
 	POSTCARD_GENERATORS,
 	POSTCARD_KEYS,
 	POSTCARD_MAX_CHARS,
+	POSTCARD_READ_SCHEMAS,
 	POSTCARD_SCHEMA,
 	POSTCARD_SYSTEMS,
 	type PostcardRecipe,
@@ -33,6 +34,8 @@ import {
 	postcardRecipe,
 	postcardRefusalText,
 } from "../src/postcard";
+import { clampElevation, clampZoom } from "../src/chase-orbit";
+import { gameMethods } from "./lib/game-methods";
 import {
 	LEGACY_WORLD_GENERATOR_VERSIONS,
 	WORLD_GENERATOR_VERSION,
@@ -113,7 +116,8 @@ describe("round trip", () => {
 	for (const pose of [
 		{ mode: "clear", head: "left" },
 		{ mode: "cockpit", head: "right" },
-		{ mode: "exterior", yawRad: -0.785398 },
+		{ mode: "exterior", yawRad: -0.785398, elevationRad: 0 },
+		{ mode: "exterior", yawRad: 2.5, elevationRad: -0.61 },
 	] as const) {
 		test(`${pose.mode}: parse(encode(r)) is r, and encode(parse(s)) is s`, () => {
 			const { mode: _m, head: _h, ...rest } = scene;
@@ -152,7 +156,8 @@ describe("what is not a postcard fragment", () => {
 
 describe("version rejection", () => {
 	test("a schema this build does not read", () => {
-		expect(refused(withPair("postcard", "2"))).toBe("unsupported-schema");
+		expect(POSTCARD_READ_SCHEMAS).toEqual([1, POSTCARD_SCHEMA, 3]);
+		expect(refused(withPair("postcard", "4"))).toBe("unsupported-schema");
 		expect(refused(withPair("postcard", "0"))).toBe("unsupported-schema");
 	});
 
@@ -185,6 +190,7 @@ describe("oversized input", () => {
 			orientation: [-0.5000001, -0.4999999, -0.5, -0.5],
 			mode: "exterior",
 			yawRad: -3.141592,
+			elevationRad: -1.570796,
 		});
 		const text = encodePostcard(widest);
 		expect(decodePostcard(text).ok).toBe(true);
@@ -325,7 +331,9 @@ describe("the allowlist", () => {
 			.split("&")
 			.map((pair) => pair.split("=")[0]);
 		expect(names).toEqual(
-			POSTCARD_KEYS.filter((key) => key !== "yaw") as unknown as string[],
+			POSTCARD_KEYS.filter(
+				(key) => key !== "yaw" && key !== "elev" && key !== "zoom",
+			) as unknown as string[],
 		);
 	});
 });
@@ -429,6 +437,67 @@ describe("the chase yaw at its ends (sage round 1)", () => {
 			expect(back).toEqual({ ok: true, recipe });
 		});
 
+	// The viewer rebuilds a card from `postcardPose` of the parsed recipe; an
+	// accepted end yaw must spell back as itself (sage round 6 found
+	// `yaw=3.141593` wrapped to `-3.141592`).
+	for (const end of ["3.141593", "-3.141593"])
+		test(`an accepted yaw of ${end} rebuilds to the same link`, () => {
+			const text = encodePostcard(
+				postcardRecipe({ ...scene, mode: "exterior", yawRad: 0.5 }),
+			).replace("yaw=0.5", `yaw=${end}`);
+			const back = decodePostcard(text);
+			if (!back.ok) throw new Error(`refused ${end}`);
+			expect(
+				encodePostcard(
+					postcardRecipe({ ...scene, ...postcardPose(back.recipe) }),
+				),
+			).toBe(text);
+		});
+
+	// The viewer's own chain, not the recipe's: the link's pose stood on the
+	// shipped `composePostcard` and read back by the shipped `postcardScene`,
+	// at both yaw ends and both poles, spells the link it was opened on.
+	test("the viewer's compose-then-scene chain spells an end-pose link back", () => {
+		const proto = gameMethods(
+			["composePostcard", "postcardScene", "chaseYaw", "chaseElevation"],
+			{ clampElevation, clampZoom },
+		);
+		for (const yaw of ["3.141593", "-3.141593"])
+			for (const elev of ["1.570796", "-1.570796", "0.3"]) {
+				const text = encodePostcard(
+					postcardRecipe({ ...scene, mode: "exterior", yawRad: 0.5 }),
+				)
+					.replace("yaw=0.5", `yaw=${yaw}`)
+					.replace("elev=0", `elev=${elev}`);
+				const back = decodePostcard(text);
+				if (!back.ok) throw new Error(`refused ${yaw}, ${elev}`);
+				const r = back.recipe;
+				const g = Object.assign(Object.create(proto), {
+					view: "cockpit",
+					headLook: "forward",
+					chaseOrbit: { yawRad: 0, elevationRad: 0 },
+					orientation: {
+						x: r.orientation[0],
+						y: r.orientation[1],
+						z: r.orientation[2],
+						w: r.orientation[3],
+					},
+					world: {
+						seed: r.seed,
+						gameTime: r.timeS,
+						ship: { pos: { x: r.pos[0], y: r.pos[1], z: r.pos[2] } },
+						system: { record: { galaxy: r.galaxy, index: r.system } },
+					},
+				});
+				g.composePostcard(postcardPose(r));
+				expect({
+					yaw,
+					elev,
+					text: encodePostcard(postcardRecipe(g.postcardScene("exterior"))),
+				}).toEqual({ yaw, elev, text });
+			}
+	});
+
 	test("past the quantised end is still refused", () => {
 		const exterior = encodePostcard(
 			postcardRecipe({ ...scene, mode: "exterior", yawRad: 0 }),
@@ -448,5 +517,198 @@ test("a recipe's pose is its camera half", () => {
 	});
 	expect(
 		postcardPose(postcardRecipe({ ...scene, mode: "exterior", yawRad: 0.5 })),
-	).toEqual({ mode: "exterior", yawRad: 0.5 });
+	).toEqual({ mode: "exterior", yawRad: 0.5, elevationRad: 0 });
+	expect(
+		postcardPose(
+			postcardRecipe({
+				...scene,
+				mode: "exterior",
+				yawRad: -2.9,
+				elevationRad: 1.2,
+			}),
+		),
+	).toEqual({ mode: "exterior", yawRad: -2.9, elevationRad: 1.2 });
+});
+
+describe("the full exterior pose (node #691)", () => {
+	const exterior = (yawRad: number, elevationRad: number) =>
+		encodePostcard(
+			postcardRecipe({
+				...scene,
+				head: undefined,
+				mode: "exterior",
+				yawRad,
+				elevationRad,
+			}),
+		);
+	/** A link as a build before node #691 wrote it: schema 1, yaw alone. */
+	const LEGACY =
+		`postcard=1&gen=${WORLD_GENERATOR_VERSION}&seed=47&galaxy=0&system=12` +
+		"&t=1234.56789&pos=149597870.1235,-2345.0001,8765432.1" +
+		"&q=0.1,-0.2,0.3,0.9273618&mode=exterior&yaw=0.7";
+
+	test("an exterior spells its yaw and its elevation, the elevation always", () => {
+		expect(exterior(0.7, -0.4)).toMatch(/&mode=exterior&yaw=0\.7&elev=-0\.4$/);
+		// Level is written, not left out: a missing height is never a level one.
+		expect(exterior(0.7, 0)).toMatch(/&yaw=0\.7&elev=0$/);
+		expect(exterior(0, 0)).toMatch(/^postcard=2&/);
+	});
+
+	test("a pose off the level survives the parse, and the parse its spelling", () => {
+		for (const [yaw, elev] of [
+			[2.4, 1.1],
+			[-0.3, -1.4],
+			[Math.PI, Math.PI / 2],
+			[-Math.PI, -Math.PI / 2],
+		]) {
+			const text = exterior(yaw, elev);
+			const back = decodePostcard(text);
+			expect(back.ok).toBe(true);
+			if (!back.ok || back.recipe.mode !== "exterior") continue;
+			expect(back.recipe.elevationRad).toBeCloseTo(elev, 6);
+			expect(encodePostcard(back.recipe)).toBe(text);
+			expect(postcardPose(back.recipe).elevationRad).toBe(
+				back.recipe.elevationRad,
+			);
+		}
+	});
+
+	test("a schema-1 link keeps its framing: level, and its own bytes back", () => {
+		const back = decodePostcard(LEGACY);
+		expect(back).toEqual({
+			ok: true,
+			recipe: {
+				schema: 1,
+				generator: WORLD_GENERATOR_VERSION,
+				seed: 47,
+				galaxy: 0,
+				system: 12,
+				timeS: 1234.56789,
+				pos: [149597870.1235, -2345.0001, 8765432.1],
+				orientation: [0.1, -0.2, 0.3, 0.9273618],
+				mode: "exterior",
+				yawRad: 0.7,
+				elevationRad: 0,
+			},
+		});
+		if (back.ok) expect(encodePostcard(back.recipe)).toBe(LEGACY);
+	});
+
+	test("a schema-1 cockpit link still opens, and still spells itself", () => {
+		const legacy = withPair("postcard", "1");
+		const back = decodePostcard(legacy);
+		expect(back.ok).toBe(true);
+		if (back.ok) expect(encodePostcard(back.recipe)).toBe(legacy);
+	});
+
+	test("an elevation in the wrong schema or the wrong mode is malformed", () => {
+		// Schema 1 could not carry one; schema 2 must.
+		expect(refused(`${LEGACY}&elev=0.3`)).toBe("malformed");
+		expect(refused(LEGACY.replace("postcard=1", "postcard=2"))).toBe(
+			"malformed",
+		);
+		expect(refused(`${canonical()}&elev=0`)).toBe("malformed");
+		expect(
+			refused(exterior(0.5, 0.2).replace("mode=exterior", "mode=clear")),
+		).toBe("malformed");
+	});
+
+	test("past a pole, non-finite or misspelled, an elevation is refused", () => {
+		const at = (value: string) =>
+			exterior(0.5, 0.25).replace("elev=0.25", `elev=${value}`);
+		expect(refused(at("1.570797"))).toBe("out-of-range");
+		expect(refused(at("-2"))).toBe("out-of-range");
+		expect(refused(at("NaN"))).toBe("malformed");
+		expect(refused(at("Infinity"))).toBe("malformed");
+		expect(refused(at("1e-1"))).toBe("malformed");
+		expect(refused(at("0.250"))).toBe("not-canonical");
+		expect(refused(at("-0"))).toBe("not-canonical");
+		expect(decodePostcard(at("1.570796")).ok).toBe(true);
+		expect(decodePostcard(at("-1.570796")).ok).toBe(true);
+	});
+
+	test("a schema-1 recipe with a height is refused at the encode, not flattened", () => {
+		const parsed = decodePostcard(LEGACY);
+		if (!parsed.ok) throw new Error("legacy fixture refused");
+		const legacy = parsed.recipe;
+		if (legacy.mode !== "exterior") throw new Error("legacy fixture mode");
+		expect(() => encodePostcard({ ...legacy, elevationRad: 0.4 })).toThrow();
+	});
+
+	test("a cockpit composition carries no orbit, whatever the scene holds", () => {
+		const recipe = postcardRecipe({
+			...scene,
+			yawRad: 1,
+			elevationRad: 1,
+		}) as unknown as Record<string, unknown>;
+		expect("elevationRad" in recipe || "yawRad" in recipe).toBe(false);
+	});
+});
+
+describe("a rebuilt recipe spells the link it was opened on (node #691)", () => {
+	/**
+	 * The viewer hands `postcardRecipe` the quaternion the link carried. That
+	 * quaternion is quantised, so its norm is off one by up to ~2e-7, and the
+	 * division this function used to apply moved the last digit of about one
+	 * orientation in three hundred — 56 of this row's 20,000, run against the
+	 * old division — after `probe-chase-orbit.mjs` went red on one.
+	 */
+	test("over a sweep of orientations, scene → link → recipe → link is the identity", () => {
+		let state = 691;
+		const next = () => {
+			state = (state * 1_103_515_245 + 12_345) >>> 0;
+			return (state / 2 ** 32) * 2 - 1;
+		};
+		let moved = 0;
+		for (let i = 0; i < 20_000; i++) {
+			const q = [next(), next(), next(), next()];
+			const n = Math.hypot(...q);
+			const sent = encodePostcard(
+				postcardRecipe({
+					...scene,
+					mode: "exterior",
+					head: undefined,
+					yawRad: 0.3,
+					elevationRad: -0.2,
+					orientation: q.map((c) => c / n),
+				}),
+			);
+			const read = decodePostcard(sent);
+			if (!read.ok) throw new Error(read.reason);
+			const rebuilt = encodePostcard(
+				postcardRecipe({
+					...scene,
+					mode: "exterior",
+					head: undefined,
+					yawRad: 0.3,
+					elevationRad: -0.2,
+					orientation: read.recipe.orientation,
+				}),
+			);
+			if (rebuilt !== sent) moved++;
+		}
+		expect(moved).toBe(0);
+	});
+
+	test("a link's quaternion at the edge of the parse's tolerance rebuilds as it was sent", () => {
+		// Sage round 2: a slack tighter than the parse's normalised this one to
+		// `q=0,0,0,1`, one accepted link the viewer spelled back differently.
+		for (const q of ["0,0,0,0.999991", "0,0,0,1.000009", "0,0,-0.999991,0"]) {
+			const sent = withPair("q", q);
+			const read = decodePostcard(sent);
+			if (!read.ok) throw new Error(read.reason);
+			const rebuilt = encodePostcard(
+				postcardRecipe({ ...scene, orientation: read.recipe.orientation }),
+			);
+			expect(rebuilt).toBe(sent);
+		}
+	});
+
+	test("a scene's quaternion that is not a rotation is still normalised", () => {
+		const doubled = postcardRecipe({
+			...scene,
+			orientation: scene.orientation.map((c) => c * 2),
+		});
+		expect(encodePostcard(doubled)).toBe(canonical());
+	});
 });

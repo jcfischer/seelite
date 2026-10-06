@@ -205,6 +205,7 @@ describe("the two triggerKey hazards S1 recorded, settled together", () => {
 			Enter: "enter",
 			F1: "f1",
 			Backspace: "backspace",
+			F2: "f2",
 			ArrowUp: "arrowup",
 			ArrowDown: "arrowdown",
 			ArrowLeft: "arrowleft",

@@ -120,6 +120,9 @@ describe("the settings key is driven only after the screen exists", () => {
 			// never mounts would satisfy "z did not open it" for the wrong
 			// reason.
 			"scripts/probe-capture.mjs",
+			// Node #691 opens the screen to show it takes the pointer, so a
+			// mouse moved behind it orbits nothing.
+			"scripts/probe-chase-orbit.mjs",
 			"scripts/probe-commander.mjs",
 			// Node #703 opens it over a held eject key: the screen empties the
 			// held keys, and that must not read as the key being let go.
