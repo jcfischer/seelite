@@ -14959,6 +14959,11 @@ class Game {
 	 * since a carrier can be flown far from the pilot
 	 * (`TRAFFIC_DEMATERIALIZE_KM`). Read before any of them is stepped, at the
 	 * clock their own steps start from.
+	 *
+	 * Those are every ship a controller flies here. A relay's defender is
+	 * `this.encounter` — `callDefender` writes it there — so it is the duel's
+	 * raider and flies through `stepRaider` with this list. The relay's
+	 * tender flies none: it is placed by `tenderOffset`, a scripted path.
 	 */
 	private fightSolids(): AvoidSphere[] {
 		// No encounter in any phase and no engagement: nothing will read it. Any

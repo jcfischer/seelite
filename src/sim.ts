@@ -1922,6 +1922,32 @@ const SOLID_BODY_KINDS: ReadonlySet<BodyKind> = new Set([
 ]);
 
 /**
+ * What of a system is solid (§2.1, §2.2), as one selection: each star, planet
+ * and moon in `system.bodies` order, and each placed station in
+ * `system.contents.stations` order. `worldStarts`, `worldSolids` and
+ * `avoidanceSolids` read it and nothing else, so what a controller avoids
+ * (node #665) is what the sweep meets, and `tests/combat-enemy-avoidance.test.ts`
+ * compares the two sets.
+ */
+function solidBodies(system: System): Body[] {
+	return system.bodies.filter((body) => SOLID_BODY_KINDS.has(body.kind));
+}
+
+/** The placed stations, in `system.contents.stations` order — the station
+ *  half of `solidBodies`' selection. */
+function solidStations(system: System): Station[] {
+	return system.contents.stations.filter((station) =>
+		system.byId.has(station.id),
+	);
+}
+
+/** The proxy a placed station is solid on (§2.2, node #663): its selected
+ *  form's. */
+function stationSolid(station: Station) {
+	return selectedStationProxy(station);
+}
+
+/**
  * One step of the whole world: the clock, then the bodies, then the ship.
  *
  * The order is the point. Bodies move to the *new* time before the ship
@@ -2740,13 +2766,11 @@ export function stationStarts(
 	system: System,
 	gameTime: number,
 ): StationStart[] {
-	return system.contents.stations
-		.filter((station) => system.byId.has(station.id))
-		.map((station) => ({
-			station,
-			origin: { ...bodyOf(system, station.id).pos },
-			frame: stationApertureFrame(system, station.id, gameTime),
-		}));
+	return solidStations(system).map((station) => ({
+		station,
+		origin: { ...bodyOf(system, station.id).pos },
+		frame: stationApertureFrame(system, station.id, gameTime),
+	}));
 }
 
 /** A placed station's frame, origin and velocity at the supplied clock. The
@@ -2862,9 +2886,7 @@ export interface WorldStarts {
 export function worldStarts(system: System, gameTime: number): WorldStarts {
 	return {
 		bodies: new Map(
-			system.bodies
-				.filter((body) => SOLID_BODY_KINDS.has(body.kind))
-				.map((body) => [body.id, { ...body.pos }]),
+			solidBodies(system).map((body) => [body.id, { ...body.pos }]),
 		),
 		stations: stationStarts(system, gameTime),
 	};
@@ -2895,8 +2917,7 @@ export function worldSolids(
 ): { owner: string[]; motions: SolidMotion[] } {
 	const owner: string[] = [];
 	const motions: SolidMotion[] = [];
-	for (const body of system.bodies) {
-		if (!SOLID_BODY_KINDS.has(body.kind)) continue;
+	for (const body of solidBodies(system)) {
 		const start = starts.bodies.get(body.id);
 		if (!start) continue;
 		if (!mayMeet(ship, { start, end: body.pos, reachKm: body.radiusKm }))
@@ -2912,7 +2933,7 @@ export function worldSolids(
 	}
 	for (const { station, origin, frame } of starts.stations) {
 		if (!system.byId.has(station.id)) continue;
-		const proxy = selectedStationProxy(station);
+		const proxy = stationSolid(station);
 		const body = bodyOf(system, station.id);
 		if (
 			!mayMeet(ship, {
@@ -2968,11 +2989,11 @@ export const AVOID_SCAN_KM = 3_000;
 
 /**
  * Every solid within `AVOID_SCAN_KM` of any of `near` — the ships that will
- * read the list this step — from the same sets `worldSolids` sweeps: each
- * star, planet and moon, and each placed station on its selected proxy. One
- * builder, so what a controller avoids cannot drift from what the sweep
- * meets. `bodyVelocity` walks the contents, so it is read only for a solid
- * that survived the distance cut.
+ * read the list this step — from the selection `worldSolids` sweeps
+ * (`solidBodies`, `solidStations`, each station on `stationSolid`'s proxy),
+ * so what a controller avoids and what the sweep meets are one set; a test
+ * row compares them. `bodyVelocity` walks the contents, so it is read only
+ * for a solid that survived the distance cut.
  */
 export function avoidanceSolids(
 	system: System,
@@ -2982,8 +3003,7 @@ export function avoidanceSolids(
 	const solids: AvoidSphere[] = [];
 	const inScan = (pos: Vec3, radiusKm: number) =>
 		near.some((p) => length(sub(pos, p)) - radiusKm <= AVOID_SCAN_KM);
-	for (const body of system.bodies) {
-		if (!SOLID_BODY_KINDS.has(body.kind)) continue;
+	for (const body of solidBodies(system)) {
 		if (!inScan(body.pos, body.radiusKm)) continue;
 		solids.push({
 			id: body.id,
@@ -2992,10 +3012,9 @@ export function avoidanceSolids(
 			radiusKm: body.radiusKm,
 		});
 	}
-	for (const station of system.contents.stations) {
-		if (!system.byId.has(station.id)) continue;
+	for (const station of solidStations(system)) {
 		const { pos } = bodyOf(system, station.id);
-		const radiusKm = proxyReachKm(selectedStationProxy(station));
+		const radiusKm = proxyReachKm(stationSolid(station));
 		if (!inScan(pos, radiusKm)) continue;
 		solids.push({
 			id: station.id,

@@ -499,7 +499,13 @@ line.
      production steps beside real stations and meets the world through
      `stepFleet`. Blind, its 39-run corpus met the station in 39 runs with
      the pilot's assist on, 27 with it off and 39 in cruise; avoiding, in
-     none. The test gates the shape rather than the counts: blind more than
+     none. A body is flown on one row per kind — a star, a planet and a
+     moon, 15 runs each — with a routed raider fleeing straight down at it
+     in the body's frame: blind every run meets the body, avoiding none
+     does. **No body row flies an attacking raider, the pilot's assist off
+     or cruise**: the law reads only motion relative to the solid, so those
+     cases are covered beside a body by the station rows' argument, not by
+     a run. The test gates the shape rather than the counts: blind more than
      half, avoiding zero, and the fire share beside a station above 0.6 of
      the open-space share, with no run under 0.05 (at the mouth, above 0.8
      and no run under 0.15).

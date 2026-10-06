@@ -462,6 +462,96 @@ export interface Avoidance {
 	avoiding: string | null;
 }
 
+/** The solid `avoidSolids` answers, and what it read of it. */
+interface Threat {
+	solid: AvoidSphere;
+	/** The solid's centre from the ship. */
+	r: Vec3;
+	dist: number;
+	/** The keep-out's radius: the solid's, plus `AVOID_CLEARANCE_KM`. */
+	keep: number;
+	/** The horizon it was read at; 0 from inside the keep-out. */
+	horizon: number;
+	/** The bearing to the solid. */
+	toward: Vec3;
+	/** The ship's present velocity relative to the solid. */
+	present: Vec3;
+	inside: boolean;
+	/** A heading clears when its path's closing cosine is at most this. */
+	cosLimit: number;
+	/** Seconds until the earlier of the two paths enters the keep-out. */
+	entry: number;
+}
+
+/**
+ * The earliest threat among `solids` (node #665): the solid whose keep-out
+ * the present path or the intended one — `frame + desired · speed` — enters
+ * soonest inside the hull's horizon, both relative to the solid (#362), or
+ * `null` if none does. The ship inside a keep-out is a threat at entry 0.
+ */
+function mostUrgentThreat(
+	ship: Ship,
+	desired: Vec3,
+	speedKms: number,
+	frameVel: Vec3,
+	solids: readonly AvoidSphere[],
+	perf: FlightPerformance,
+): Threat | null {
+	const intendedFor = (heading: Vec3, solid: AvoidSphere) =>
+		sub(add(frameVel, scale(heading, speedKms)), solid.vel);
+	let worst: Threat | null = null;
+	for (const solid of solids) {
+		const r = sub(solid.pos, ship.pos);
+		const dist = length(r);
+		const keep = solid.radiusKm + AVOID_CLEARANCE_KM;
+		const toward = unit(r, scale(desired, -1));
+		const present = sub(ship.vel, solid.vel);
+		let entry: number;
+		let halfAngle: number;
+		let horizon = 0;
+		if (dist <= keep) {
+			entry = 0;
+			halfAngle = Math.PI / 2 + AVOID_OUTWARD_RAD;
+		} else {
+			const intended = intendedFor(desired, solid);
+			const closing = Math.max(dot(present, toward), dot(intended, toward));
+			horizon = avoidanceHorizonS(perf, closing);
+			const presentEntry = entryS(r, present, keep);
+			entry = Math.min(presentEntry, entryS(r, intended, keep));
+			if (entry > horizon) continue;
+			const cone = Math.asin(keep / dist);
+			// The velocity lags the nose by the assist's lateral settling, so
+			// a heading on the cone's edge leaves a present path inside it to
+			// curve in along the edge as the cone widens. Aim as far past the
+			// edge as the present path is inside it, and the velocity crosses
+			// the edge on its way there.
+			const presentSpeed = length(present);
+			const presentAngle =
+				presentSpeed === 0
+					? Math.PI
+					: Math.acos(clamp(dot(present, toward) / presentSpeed, -1, 1));
+			halfAngle = Math.min(
+				Math.PI - AVOID_STEP_RAD,
+				cone + Math.max(0, cone - presentAngle),
+			);
+		}
+		if (worst && entry >= worst.entry) continue;
+		worst = {
+			solid,
+			r,
+			dist,
+			keep,
+			horizon,
+			toward,
+			present,
+			inside: entry === 0,
+			cosLimit: Math.cos(halfAngle + AVOID_STEP_RAD),
+			entry,
+		};
+	}
+	return worst;
+}
+
 /**
  * Bend a controller's heading round the most urgent solid on its path
  * (node #665, `collision.md` §6 item 2). The ship is collidable on the same
@@ -512,68 +602,14 @@ export function avoidSolids(
 ): Avoidance {
 	const intendedFor = (heading: Vec3, solid: AvoidSphere) =>
 		sub(add(frameVel, scale(heading, speedKms)), solid.vel);
-
-	let worst: {
-		solid: AvoidSphere;
-		r: Vec3;
-		dist: number;
-		keep: number;
-		horizon: number;
-		toward: Vec3;
-		present: Vec3;
-		inside: boolean;
-		cosLimit: number;
-		entry: number;
-	} | null = null;
-	for (const solid of solids) {
-		const r = sub(solid.pos, ship.pos);
-		const dist = length(r);
-		const keep = solid.radiusKm + AVOID_CLEARANCE_KM;
-		const toward = unit(r, scale(desired, -1));
-		const present = sub(ship.vel, solid.vel);
-		let entry: number;
-		let halfAngle: number;
-		let horizon = 0;
-		if (dist <= keep) {
-			entry = 0;
-			halfAngle = Math.PI / 2 + AVOID_OUTWARD_RAD;
-		} else {
-			const intended = intendedFor(desired, solid);
-			const closing = Math.max(dot(present, toward), dot(intended, toward));
-			horizon = avoidanceHorizonS(perf, closing);
-			const presentEntry = entryS(r, present, keep);
-			entry = Math.min(presentEntry, entryS(r, intended, keep));
-			if (entry > horizon) continue;
-			const cone = Math.asin(keep / dist);
-			// The velocity lags the nose by the assist's lateral settling, so
-			// a heading on the cone's edge leaves a present path inside it to
-			// curve in along the edge as the cone widens. Aim as far past the
-			// edge as the present path is inside it, and the velocity crosses
-			// the edge on its way there.
-			const presentSpeed = length(present);
-			const presentAngle =
-				presentSpeed === 0
-					? Math.PI
-					: Math.acos(clamp(dot(present, toward) / presentSpeed, -1, 1));
-			halfAngle = Math.min(
-				Math.PI - AVOID_STEP_RAD,
-				cone + Math.max(0, cone - presentAngle),
-			);
-		}
-		if (worst && entry >= worst.entry) continue;
-		worst = {
-			solid,
-			r,
-			dist,
-			keep,
-			horizon,
-			toward,
-			present,
-			inside: entry === 0,
-			cosLimit: Math.cos(halfAngle + AVOID_STEP_RAD),
-			entry,
-		};
-	}
+	const worst = mostUrgentThreat(
+		ship,
+		desired,
+		speedKms,
+		frameVel,
+		solids,
+		perf,
+	);
 	if (!worst)
 		return { desired, maxSpeedKms: Number.POSITIVE_INFINITY, avoiding: null };
 

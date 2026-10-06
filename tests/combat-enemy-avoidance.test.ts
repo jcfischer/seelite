@@ -1,6 +1,6 @@
 /**
- * Node #665: the NPC controller steers clear of stations and planets
- * (`collision.md` §6 item 2, §11 item 4).
+ * Node #665: the NPC controller steers clear of stations, stars, planets
+ * and moons (`collision.md` §6 item 2, §11 item 4).
  *
  * Since node #664 a raider and an engaged carrier are collidable on the
  * player's rules, and `combat-enemy.ts` steered on its target alone, so a
@@ -48,7 +48,7 @@ import { fullCondition } from "../src/ship-condition";
 import {
 	AVOID_SCAN_KM,
 	type AvoidSphere,
-	type FleetShip,
+	type Ship,
 	type World,
 	advanceWorldClock,
 	avoidanceSolids,
@@ -57,6 +57,7 @@ import {
 	makeWorld,
 	stationApertureFrame,
 	stepFleet,
+	worldSolids,
 	worldStarts,
 } from "../src/sim";
 import { STATION_GEOMETRY } from "../src/station";
@@ -85,7 +86,7 @@ import { codeOf, methodBodyOf } from "./lib/source-scan";
 const DT = 1 / 30;
 /** Seeds whose start systems carry all three placed station roles between
  *  them: trade everywhere, a refinery at 1, 2, 3 and 9, a shipyard at 2, 3,
- *  9 and 47 — so the Coriolis, the Works' pad and the Gantry's keel are each
+ *  9 and 47 — so the Coriolis, the Works and the Gantry's keel are each
  *  in the corpus. */
 const SEEDS = [1, 2, 3, 9, 47];
 /** Approach bearings round each station, in radians. */
@@ -131,13 +132,34 @@ function motionOf(
 }
 
 /**
- * One ship fighting beside one real station, met against the world.
- *
- * `open` flies the same fight with the world switched off — no solids and no
- * sweep — which is the open-space fight a duel beside a station is compared
- * with.
+ * One NPC step met against the world, as the game meets it: the world's
+ * starts snapshotted, the clock advanced, the ship swept through `stepFleet`.
+ * Returns the solid it met first, or `null`, and the ship where the sweep
+ * left it.
  */
-function flyBesideStation(o: {
+function sweepStep(
+	world: World,
+	hull: HullId,
+	before: CombatEnemyState,
+	after: CombatEnemyState,
+): { met: string | null; ship: Ship } {
+	const t = world.gameTime;
+	const starts = worldStarts(world.system, t);
+	advanceWorldClock(world, DT);
+	const [swept] = stepFleet(
+		world,
+		[{ id: "npc", projected: false, motion: motionOf(hull, before, after) }],
+		starts,
+		{ fromTime: t, dt: DT },
+	);
+	const met = swept.impacts.find((impact) => !impact.ship);
+	return {
+		met: met ? met.with : null,
+		ship: { pos: swept.pos, vel: swept.vel },
+	};
+}
+
+interface FlyOptions {
 	seed: number;
 	stationIndex: number;
 	bearing: number;
@@ -150,7 +172,16 @@ function flyBesideStation(o: {
 	atMouth?: boolean;
 	/** An armed carrier the pilot provoked fights instead of the raider. */
 	armed?: HullId;
-}): Run {
+}
+
+/**
+ * One ship fighting beside one real station, met against the world.
+ *
+ * `open` flies the same fight with the world switched off — no solids and no
+ * sweep — which is the open-space fight a duel beside a station is compared
+ * with.
+ */
+function flyBesideStation(o: FlyOptions): Run {
 	const world = makeWorld(o.seed);
 	const system = world.system;
 	const placed = placedStations(world);
@@ -291,21 +322,14 @@ function flyBesideStation(o: {
 			advanceWorldClock(world, DT);
 			continue;
 		}
-		const fleet: FleetShip[] = [
-			{ id: "npc", projected: false, motion: motionOf(hull, flight, after) },
-		];
-		const starts = worldStarts(system, t);
-		advanceWorldClock(world, DT);
-		const [swept] = stepFleet(world, fleet, starts, { fromTime: t, dt: DT });
-		const met = swept.impacts.find((impact) => !impact.ship);
-		if (met)
+		const { met, ship } = sweepStep(world, hull, flight, after);
+		if (met !== null)
 			return {
-				met: met.with,
+				met,
 				fireShare: fired / (i + 1),
 				stillShare: still / (i + 1),
 			};
-		const ship = { pos: swept.pos, vel: swept.vel };
-		if (length(sub(swept.vel, stationVel(world.gameTime))) < 0.3) still++;
+		if (length(sub(ship.vel, stationVel(world.gameTime))) < 0.3) still++;
 		if (raider) raider = { ...raider, flight: { ...raider.flight, ship } };
 		else if (carrier)
 			carrier = { ...carrier, flight: { ...carrier.flight, ship } };
@@ -316,12 +340,7 @@ function flyBesideStation(o: {
 function corpus(
 	regime: Regime,
 	avoid: boolean,
-	extra: {
-		hull?: HullId;
-		open?: boolean;
-		atMouth?: boolean;
-		armed?: HullId;
-	} = {},
+	extra: Pick<FlyOptions, "hull" | "open" | "atMouth" | "armed"> = {},
 ): Run[] {
 	const runs: Run[] = [];
 	for (const seed of SEEDS)
@@ -447,6 +466,29 @@ describe("avoidanceSolids: what the controller is handed", () => {
 		}
 	});
 
+	test("in reach of everything, it hands the controller exactly the solids the sweep meets", () => {
+		for (const seed of SEEDS) {
+			const world = makeWorld(seed);
+			const { system } = world;
+			const t = world.gameTime;
+			// Near every body there is, so every solid is in the scan.
+			const near = system.bodies.map((b) => b.pos);
+			const avoided = new Set(
+				avoidanceSolids(system, t, near).map((s) => s.id),
+			);
+			// A ship whose bounding sphere reaches every solid there is.
+			const { owner } = worldSolids(
+				system,
+				{ start: v3(), end: v3(), reachKm: 1e12 },
+				worldStarts(system, t),
+				{ fromTime: t, toTime: t },
+			);
+			const swept = new Set(owner);
+			expect([seed, [...avoided].sort()]).toEqual([seed, [...swept].sort()]);
+			expect(avoided.size).toBeGreaterThan(placedStations(world).length);
+		}
+	});
+
 	test("a ship in deep space is handed nothing", () => {
 		const world = makeWorld(47);
 		expect(
@@ -536,24 +578,36 @@ describe("a duel beside a station stays a duel", () => {
 	}
 });
 
-describe("a planet", () => {
-	/** A raider routed with the pilot above it, so its run is straight down. */
-	function fleeIntoPlanet(seed: number, bearing: number, avoid: boolean) {
+describe("a star, a planet and a moon", () => {
+	/** A raider routed with the pilot above a body, so its run is straight
+	 *  down. Flown with its own assist on in the body's frame; the pilot's
+	 *  regime is not read, since the pilot is a fixed point above the body. */
+	function fleeInto(
+		seed: number,
+		kind: "star" | "planet" | "moon",
+		bearing: number,
+		avoid: boolean,
+	) {
 		const world = makeWorld(seed);
 		const { system } = world;
-		const planet = system.bodies.find((b) => b.kind === "planet");
-		if (!planet) throw new Error("no planet");
+		const body = system.bodies.find((b) => b.kind === kind);
+		if (!body) throw new Error(`no ${kind} at seed ${seed}`);
 		const up = normalizeOr(
 			v3(Math.cos(bearing), Math.sin(bearing), 0.3),
 			v3(1, 0, 0),
 		);
-		const planetVel = (t: number) => bodyVelocity(system, planet.id, t);
+		const where = () => {
+			const placed = system.byId.get(body.id);
+			if (!placed) throw new Error(`${body.id} is not placed`);
+			return placed.pos;
+		};
+		const bodyVel = (t: number) => bodyVelocity(system, body.id, t);
 		let raider: Raider = {
 			flight: raiderAtDrop(
-				add(planet.pos, scale(up, planet.radiusKm + 6)),
+				add(where(), scale(up, body.radiusKm + 6)),
 				{
-					pos: add(planet.pos, scale(up, planet.radiusKm + 12)),
-					vel: planetVel(world.gameTime),
+					pos: add(where(), scale(up, body.radiusKm + 12)),
+					vel: bodyVel(world.gameTime),
 				},
 				seed,
 			),
@@ -562,59 +616,47 @@ describe("a planet", () => {
 		};
 		for (let i = 0; i < 600; i++) {
 			const t = world.gameTime;
-			const pilotPos = add(planet.pos, scale(up, planet.radiusKm + 12));
+			const pilotPos = add(where(), scale(up, body.radiusKm + 12));
 			const nose = scale(up, -1);
 			const before = raider.flight;
 			const step = stepDuel(
 				raider,
 				{
-					ship: { pos: pilotPos, vel: planetVel(t) },
+					ship: { pos: pilotPos, vel: bodyVel(t) },
 					nose,
 					aimOrigin: pilotPos,
 					aimNose: v3(0, 0, 1),
 					hull: 100,
-					frame: { start: planetVel(t), end: planetVel(t + DT) },
+					frame: { start: bodyVel(t), end: bodyVel(t + DT) },
 					solids: avoid ? avoidanceSolids(system, t, [before.ship.pos]) : [],
 				},
 				{ fired: false, damage: 0 },
 				DT,
 			);
-			raider = step.raider;
-			const starts = worldStarts(system, t);
-			advanceWorldClock(world, DT);
-			const [swept] = stepFleet(
+			const { met, ship } = sweepStep(
 				world,
-				[
-					{
-						id: "npc",
-						projected: false,
-						motion: motionOf(RAIDER_HULL_ID, before, raider.flight),
-					},
-				],
-				starts,
-				{ fromTime: t, dt: DT },
+				RAIDER_HULL_ID,
+				before,
+				step.raider.flight,
 			);
-			const met = swept.impacts.find((impact) => !impact.ship);
-			if (met) return met.with;
-			raider = {
-				...raider,
-				flight: { ...raider.flight, ship: { pos: swept.pos, vel: swept.vel } },
-			};
+			if (met !== null) return met;
+			raider = { ...step.raider, flight: { ...step.raider.flight, ship } };
 		}
 		return null;
 	}
 
-	test("a raider routed straight at a planet flies into it blind, and skims it avoiding", () => {
-		const blind: (string | null)[] = [];
-		const avoiding: (string | null)[] = [];
-		for (const seed of SEEDS)
-			for (const bearing of BEARINGS) {
-				blind.push(fleeIntoPlanet(seed, bearing, false));
-				avoiding.push(fleeIntoPlanet(seed, bearing, true));
-			}
-		expect(blind.filter((m) => m !== null).length).toBe(blind.length);
-		expect(avoiding.filter((m) => m !== null)).toEqual([]);
-	});
+	for (const kind of ["star", "planet", "moon"] as const)
+		test(`a raider routed straight at a ${kind} flies into it blind, and skims it avoiding`, () => {
+			const blind: (string | null)[] = [];
+			const avoiding: (string | null)[] = [];
+			for (const seed of SEEDS)
+				for (const bearing of BEARINGS) {
+					blind.push(fleeInto(seed, kind, bearing, false));
+					avoiding.push(fleeInto(seed, kind, bearing, true));
+				}
+			expect(blind.filter((m) => m !== null).length).toBe(blind.length);
+			expect(avoiding.filter((m) => m !== null)).toEqual([]);
+		});
 });
 
 describe("the law, on its own", () => {
@@ -748,7 +790,20 @@ describe("the law, on its own", () => {
 			Math.sqrt(perf.retroKms2 * 0.5),
 			9,
 		);
-		expect(run(0).out.maxSpeedKms).toBe(0);
+		// A hair outside the keep-out, still held off: the nose on the run and
+		// all but no speed left to close with.
+		const edge = run(1e-6);
+		expect(edge.out.desired).toEqual(edge.heading);
+		expect(edge.out.maxSpeedKms).toBeCloseTo(
+			Math.sqrt(perf.retroKms2 * 1e-6),
+			9,
+		);
+		expect(edge.out.maxSpeedKms).toBeLessThan(0.01);
+		// On the keep-out itself it is inside, and is steered out instead: the
+		// heading turns away from the station and the throttle is cut.
+		const onIt = run(0);
+		expect(dot(onIt.out.desired, onIt.heading)).toBeLessThan(0);
+		expect(onIt.out.maxSpeedKms).toBe(0);
 		// A station moving in the frame cannot be stopped short of: gone round.
 		const moving = avoidSolids(
 			{ pos: v3(-2, 0, 0), vel: v3(2, 0, 0) },
