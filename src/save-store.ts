@@ -50,7 +50,8 @@
  */
 
 import { type FirstDayChoice, isFirstDayChoice } from "./first-day-choice";
-import { commanderAfterDeath, firstCheckpoint, hasDocked } from "./holdings";
+import { firstCheckpoint, hasDocked } from "./death-checkpoint";
+import { commanderAfterDeath } from "./holdings";
 import {
 	type CommanderRecord,
 	parseSave,
@@ -657,21 +658,7 @@ export class SaveStore {
 		try {
 			const docked = await this.backend.read(this.slot, "lastDocked");
 			const dying = this.current();
-			let dock: CommanderRecord;
-			if (docked !== null && docked !== undefined)
-				dock = parseSave(docked).commander;
-			else {
-				// Absent although this pilot did dock: the write that would have
-				// made it failed, in this tab or before a reload. Waking them as a
-				// new commander would be the silent substitution D9 rules out. The
-				// record is the witness that survives the reload (`hasDocked`); the
-				// held fault is this tab's own.
-				if (this.faultsHeld.has("lastDocked") || hasDocked(dying.commander))
-					fail(
-						`Commander "${this.slot}" has docked but has no lastDocked record`,
-					);
-				dock = firstCheckpoint(dying.world.seed, dying.commander);
-			}
+			const dock = this.checkpointFor(docked, dying);
 			raw = serializeSave({
 				world: dying.world,
 				commander: commanderAfterDeath(dock, dying.commander),
@@ -691,6 +678,34 @@ export class SaveStore {
 		await this.backend.write(this.slot, "live", raw);
 		this.release();
 		return restored;
+	}
+
+	/**
+	 * The commander record a death restores from: the `lastDocked` record when
+	 * there is one, and `firstCheckpoint` for a pilot who has never docked.
+	 *
+	 * A record that will not parse is refused with the record named, which is
+	 * D9's named error rather than whatever the parser happened to say. An
+	 * absent one beside a pilot who did dock is refused too: the write that
+	 * would have made it failed, in this tab or before a reload, and waking
+	 * them as a new commander would be the silent substitution D9 rules out.
+	 * The record is the witness that survives the reload (`hasDocked`); the
+	 * held fault is this tab's own.
+	 */
+	private checkpointFor(docked: unknown, dying: SaveEnvelope): CommanderRecord {
+		if (docked !== null && docked !== undefined) {
+			try {
+				return parseSave(docked).commander;
+			} catch (error) {
+				const why = error instanceof Error ? error.message : String(error);
+				return fail(
+					`Commander "${this.slot}" has a lastDocked record that will not parse: ${why}`,
+				);
+			}
+		}
+		if (this.faultsHeld.has("lastDocked") || hasDocked(dying.commander))
+			fail(`Commander "${this.slot}" has docked but has no lastDocked record`);
+		return firstCheckpoint(dying.world.seed, dying.commander);
 	}
 
 	/** Cancels a pending debounced write. */

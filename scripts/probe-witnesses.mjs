@@ -348,11 +348,26 @@ try {
 			/**
 			 * Put the ship 1.2 km beside the carrier's route, co-moving.
 			 *
-			 * A rear tether followed an approaching carrier through its station,
-			 * killing the pilot while the scripted fight kept stepping (#702).
-			 * The lateral stand-off keeps the pilot outside that route's crossing;
-			 * aimAt still aims the real gun, and the landed-fire rows prove the hit.
-			 * Collision and the production death callback remain active.
+			 * **Three rigs, two of them rejected.** The first pass here held the
+			 * ship 1 km off the target on a *fixed* axis and held the trigger for
+			 * ninety seconds of game time without ever landing a hit: the energy
+			 * bank fell the whole way (so the pulse laser was firing) and the
+			 * painted mark read `onTarget: false` on every frame — the gimbal's
+			 * own statement that the laser is not where the nose is. The
+			 * engagement probe's rig replaced it: 1.2 km behind the carrier along
+			 * its own nose, re-placed and re-aimed (`parkShip`, `aimAt`) every
+			 * frame. That rig lands hits, but it followed an approaching carrier
+			 * through its station and killed the pilot while the scripted fight
+			 * kept stepping — which node #702 made visible, because a death now
+			 * reloads into a checkpoint where it used to leave a dead ship.
+			 *
+			 * This one keeps the second rig's frame — offset from the carrier's
+			 * live position, co-moving, nose re-aimed each frame — and swings the
+			 * offset to the route's lateral, outside the crossing. It is not the
+			 * fixed-axis rig. The landed-fire rows (`landedFireS` and the struck
+			 * check below) are what say it lands, and the mark is reported below
+			 * so a failure says the same as the first one did. Collision and the
+			 * production death callback remain active.
 			 */
 			tether(key, km) {
 				const contact = g.trafficContacts.get(key);

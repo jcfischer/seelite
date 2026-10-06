@@ -272,53 +272,95 @@ const killAndReload = async (p) => {
 	}
 };
 
+/** A fresh page on seed 42, booted: how arms 3 and 4 open. Arms 1 and 2
+ *  predate it and open theirs inline. */
+const openArm = async (label) => {
+	const p = await browser.newPage({ viewport: { width: 900, height: 620 } });
+	watch(p, label);
+	await p.goto(gameUrl(origin, { seed: 42 }));
+	await bootedGame(p);
+	return p;
+};
+
 // ---------------------------------------------------------------------------
 // Arm 3: a death restores the commander as it launched (#660 D1, node #702).
 // ---------------------------------------------------------------------------
-// The real path end to end: a dock by the protocol, a purchase there that
-// reaches `live` through the debounce, a launch by the game's own `launch`,
-// a leg, a death. The undock flush is what writes the checkpoint the reload
-// boots, so the purchase survives and the ship wakes at that station.
+// The game's own path for every step but the funds: a dock by the protocol,
+// the pod bought at that station's till (`transactStation`, as
+// `probe-save.mjs` reaches it) and carried to `live` by the debounce, a
+// launch by the game's own `launch`, a leg, a death. The funds are a fixture
+// — a new commander's 100 Cr does not buy a pod. The undock flush is what
+// writes the checkpoint the reload boots, so the purchase survives and the
+// ship wakes at that station.
 
-const LAUNCH_CREDITS = 777;
-const launchPage = await browser.newPage({
-	viewport: { width: 900, height: 620 },
-});
-watch(launchPage, "launch-death");
-await launchPage.goto(gameUrl(origin, { seed: 42 }));
-await bootedGame(launchPage);
+const POD_FUNDS = 1777;
+const launchPage = await openArm("launch-death");
 await launchPage.waitForFunction(() => !window.__seelite.clockHeld);
 
 const docked = await launchPage.evaluate(
-	async ({ credits }) => {
+	async ({ funds }) => {
 		const g = window.__seelite;
 		if (!g.saveStore) return { store: false };
 		if (!g.startDockedAtHome()) return { store: true, docked: false };
 		await g.saveStore.settled();
 		const arrival = await g.save.backend.read(g.save.defaultSlot, "lastDocked");
-		// The purchase: credits spent and the pod fitted, then the debounce
-		// carries it to `live` and clears the flag before the launch.
-		g.commander.credits = credits;
-		g.commander.ownedEquipment = [...g.commander.ownedEquipment, "Escape Pod"];
-		g.saveStore.markDirty();
+		// The real dock banked its station before the dock flush wrote: the
+		// witness `hasDocked` reads after a reload (`death-checkpoint.ts`).
+		const station = g.stationKey(
+			g.world.system.contents.stations.find((s) => s.id === g.dockedAt),
+		);
+		const galaxy = String(g.world.system.record.galaxy);
+		const visitedAtDock =
+			arrival?.commander?.ladders?.visited?.[galaxy]?.stations?.includes(
+				station,
+			) ?? false;
+		// The purchase, at the till: the till takes the pod's price and fits
+		// it, and the adopt point marks the save dirty for the debounce.
+		g.commander.credits = funds;
+		const bought = g.transactStation({
+			type: "buy-equipment",
+			equipment: "Escape Pod",
+		});
+		const credits = g.commander.credits;
 		await new Promise((resolve) =>
 			setTimeout(resolve, g.save.debounceMs + 200),
 		);
 		await g.saveStore.settled();
+		const live = await g.save.backend.read(g.save.defaultSlot, "live");
 		return {
 			store: true,
 			docked: true,
 			station: g.dockedAt,
+			bought,
+			credits,
+			liveCredits: live?.commander?.state?.credits ?? null,
 			arrivalCredits: arrival?.commander?.state?.credits ?? null,
+			arrivalPod:
+				arrival?.commander?.state?.ownedEquipment?.includes("Escape Pod") ??
+				null,
+			visitedAtDock,
 		};
 	},
-	{ credits: LAUNCH_CREDITS },
+	{ funds: POD_FUNDS },
 );
 check(
 	"arm 3 fixture: docked at the start trade station by the protocol",
-	docked.store && docked.docked && docked.arrivalCredits !== LAUNCH_CREDITS,
+	docked.store && docked.docked && docked.arrivalPod === false,
 	JSON.stringify(docked),
 );
+check(
+	"the real dock banked its station into the record the dock flush wrote",
+	docked.visitedAtDock === true,
+	JSON.stringify(docked),
+);
+check(
+	"the pod is bought at the till and reaches live through the debounce",
+	docked.bought === true &&
+		docked.credits < POD_FUNDS &&
+		docked.liveCredits === docked.credits,
+	JSON.stringify(docked),
+);
+const LAUNCH_CREDITS = docked.credits;
 
 let launched = null;
 if (docked.docked) {
@@ -394,12 +436,7 @@ await launchPage.close();
 // system's trade station (#660 D10, node #702).
 // ---------------------------------------------------------------------------
 
-const firstPage = await browser.newPage({
-	viewport: { width: 900, height: 620 },
-});
-watch(firstPage, "first-death");
-await firstPage.goto(gameUrl(origin, { seed: 42 }));
-await bootedGame(firstPage);
+const firstPage = await openArm("first-death");
 
 const flown = await firstPage.evaluate(async (leg) => {
 	const g = window.__seelite;
