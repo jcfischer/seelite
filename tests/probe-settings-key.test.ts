@@ -124,6 +124,9 @@ describe("the settings key is driven only after the screen exists", () => {
 			// mouse moved behind it orbits nothing.
 			"scripts/probe-chase-orbit.mjs",
 			"scripts/probe-commander.mjs",
+			// Node #703 opens it over a held eject key: the screen empties the
+			// held keys, and that must not read as the key being let go.
+			"scripts/probe-eject.mjs",
 			// #639 selects the mouse-flight layout on the screen, as a player does.
 			"scripts/probe-mouse-flight-layout.mjs",
 			"scripts/probe-pad-panels.mjs",

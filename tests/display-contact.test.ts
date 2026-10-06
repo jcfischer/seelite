@@ -7,6 +7,13 @@ import { AttitudeFollower } from "../src/attitude-hold";
 import { ORBIT_ASTERN } from "../src/chase-orbit";
 import { DockingComputer } from "../src/docking-computer";
 import {
+	EJECT_IDLE,
+	type EjectHold,
+	idleEjectHold,
+	stepEjectHold,
+} from "../src/eject";
+import { keyDispatch } from "../src/key-dispatch";
+import {
 	NO_ATTITUDE,
 	bodyAccelerationBound,
 	bodyVelocity,
@@ -325,8 +332,10 @@ test("the selected target reads the speed the scoop gate checks, not the rate al
 	expect(subject.targetRelativeKms()).toBeNull();
 });
 
-test("a jump or a reset takes the cargo contacts with the canisters", () => {
-	const subject = Object.assign(
+/** A subject that runs the real `clearFlightSession`, with the eject's
+ *  control held or not (`ejectDown`). */
+function teardownSubject(ejectHold: EjectHold, ejectDown: boolean) {
+	return Object.assign(
 		Object.create(
 			methods(
 				[
@@ -349,6 +358,9 @@ test("a jump or a reset takes the cargo contacts with the canisters", () => {
 					QUIET_WEAPONS: null,
 					SILENT_WEAPONS: null,
 					beginScanHold: () => ({ key: null, chargeS: 0 }),
+					// And the eject's hold (node #703), which the teardown idles: the
+					// real law, so a row can hold what it keeps.
+					idleEjectHold,
 					// The teardown recentres the chase orbit (node #691).
 					ORBIT_ASTERN,
 				},
@@ -366,8 +378,14 @@ test("a jump or a reset takes the cargo contacts with the canisters", () => {
 			flickMeter: { reset() {} },
 			selectableCache: null,
 			targetId: null as string | null,
+			ejectHold,
+			ejectDown: () => ejectDown,
 		},
 	);
+}
+
+test("a jump or a reset takes the cargo contacts with the canisters", () => {
+	const subject = teardownSubject(EJECT_IDLE, false);
 	subject.syncCargoContacts();
 	subject.targetId = "cargo-a";
 	subject.selectableCache = ["stale"];
@@ -384,6 +402,24 @@ test("a jump or a reset takes the cargo contacts with the canisters", () => {
 	expect(subject.cargoContacts.size).toBe(0);
 	expect(subject.targetId).toBeNull();
 	expect(subject.selectableCache).toBeNull();
+});
+
+test("a jump keeps a spent eject hold spent while its key is still down", () => {
+	// Sage round 6: `performJump` lets go of no key, so a teardown that wrote
+	// the idle hold back forgot a spent eject with the key still down, and the
+	// arrival ejected again with no release made.
+	const spent: EjectHold = { heldS: 0, spent: true };
+	const held = teardownSubject(spent, true);
+	held.clearFlightSession();
+	expect(held.ejectHold).toEqual(spent);
+	// A part-filled hold starts over: no fill is banked across the jump.
+	const arming = teardownSubject({ heldS: 0.4, spent: false }, true);
+	arming.clearFlightSession();
+	expect(arming.ejectHold).toEqual(EJECT_IDLE);
+	// And a release made before the jump is a release.
+	const released = teardownSubject(spent, false);
+	released.clearFlightSession();
+	expect(released.ejectHold).toEqual(EJECT_IDLE);
 });
 
 test("the relative-speed label is a magnitude with no direction word", () => {
@@ -657,4 +693,77 @@ test("a foreign hauler does not point at a same-id station in this system", () =
 			},
 		}),
 	).toBe(DIVERT_LABEL);
+});
+
+function ejectReleaseSubject(hold: EjectHold, down = ["backspace"]) {
+	const keys = new Set(down);
+	const pad = { held: false }; // glossary-ignore: pad
+	const subject = Object.assign(
+		Object.create(methods(["releasePhysicalKey"], { keyDispatch, EJECT_IDLE })),
+		{
+			keysPhysicallyDown: keys,
+			ejectHold: hold,
+			// The release handler asks the aggregate physical control. These are
+			// two keyboard sources and the controller; this is not a binding test.
+			ejectDown: () => keys.has("backspace") || keys.has("x") || pad.held, // glossary-ignore: pad
+		},
+	);
+	const release = (key: string) =>
+		subject.releasePhysicalKey({
+			key,
+			code: key,
+			repeat: false,
+			altKey: false,
+			ctrlKey: false,
+			metaKey: false,
+		});
+	return { subject, keys, pad, release }; // glossary-ignore: pad
+}
+
+test("eject release and repress between frames cancels accumulated confirmation", () => {
+	const { subject, keys, release } = ejectReleaseSubject({
+		heldS: 0.74,
+		spent: false,
+	});
+	release("Backspace");
+	keys.add("backspace"); // No simulation frame between the two input events.
+	const next = stepEjectHold(subject.ejectHold, true, 0.02, null);
+	expect(next.event).toBe(null);
+	expect(next.hold.heldS).toBeCloseTo(0.02);
+});
+
+test("eject release and repress between frames arms a fresh spent press", () => {
+	const { subject, keys, release } = ejectReleaseSubject({
+		heldS: 0.75,
+		spent: true,
+	});
+	release("Backspace");
+	keys.add("backspace");
+	expect(stepEjectHold(subject.ejectHold, true, 0.75, null).event).toEqual({
+		kind: "eject",
+	});
+});
+
+test("releasing one of two eject keys preserves the hold until the final release", () => {
+	const hold = { heldS: 0.4, spent: false };
+	const { subject, release } = ejectReleaseSubject(hold, ["backspace", "x"]);
+	release("Backspace");
+	expect(subject.ejectHold).toBe(hold);
+	release("x");
+	expect(subject.ejectHold).toEqual(EJECT_IDLE);
+});
+
+test("an unrelated key release does not reset a held eject confirmation", () => {
+	const hold = { heldS: 0.4, spent: false };
+	const { subject, release } = ejectReleaseSubject(hold);
+	release("z");
+	expect(subject.ejectHold).toBe(hold);
+});
+
+test("keyboard release preserves a spent eject while its controller is still down", () => {
+	const hold = { heldS: 0.75, spent: true };
+	const { subject, pad, release } = ejectReleaseSubject(hold); // glossary-ignore: pad
+	pad.held = true; // glossary-ignore: pad
+	release("Backspace");
+	expect(subject.ejectHold).toBe(hold);
 });

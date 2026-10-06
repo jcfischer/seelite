@@ -158,8 +158,17 @@ const NOTICE_ROW_PITCH_PX = 22;
 /** **The ladder has one owner, and it is this.** Two subjects share the rows
  *  now and a third would have nowhere to learn which are taken, so the rungs
  *  are named here rather than passed as bare literals from `render` (sage
- *  round 2 on #457). Row 0 is the bottom line. */
-export const GLASS_NOTICE_ROW = { scoop: 0, charge: 1 } as const;
+ *  round 2 on #457). Row 0 is the bottom line. The eject control took the
+ *  third (node #703): its arming line and its refusals.
+ *
+ *  **The third rung is the last one under the prompt line.** Both are
+ *  anchored in pixels to the glass bottom, so the gap does not scale with the
+ *  window: captured at 1280 x 760 with `press j to cruise` up, the eject
+ *  line's capitals clear the prompt's baseline by a few pixels and do not
+ *  touch it. A fourth rung would land on the prompt, and whether three this
+ *  close read well is a look decision — the principal's, off a frame, not
+ *  this comment's. */
+export const GLASS_NOTICE_ROW = { scoop: 0, charge: 1, eject: 2 } as const;
 
 /**
  * A one-line notice on the glass: centred under the reticle, just above the

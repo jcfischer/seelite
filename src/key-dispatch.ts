@@ -84,10 +84,12 @@ export type KeyRoute =
 /**
  * Keys whose browser default would fight the game: the arrows and Space scroll
  * the page under a full-viewport canvas, which looks like the controls simply
- * not working, and F1 opens the browser's help.
+ * not working, and F1 opens the browser's help. Backspace is the eject
+ * (node #703), and a browser configured to go back on it would leave the page
+ * the pilot was ejecting from.
  */
 const preventsDefault = (key: string) =>
-	key.startsWith("arrow") || key === " " || key === "f1";
+	key.startsWith("arrow") || key === " " || key === "f1" || key === "backspace";
 
 export function keyDispatch(e: KeyEventFacts): KeyRoute {
 	const key = e.key.toLowerCase();

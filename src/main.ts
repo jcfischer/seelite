@@ -253,6 +253,8 @@ import {
 	type PadIntents,
 	contextFliesShip,
 	mouseFireHeld,
+	padEjectDown,
+	padEjectHeld,
 	padFireHeld,
 	padFlightAxes,
 	padIntents,
@@ -577,6 +579,18 @@ import {
 	nextChargeNotice,
 } from "./charge-notice";
 import {
+	EJECT_DOCKED_SENTENCE,
+	EJECT_IDLE,
+	EJECT_REFUSED_S,
+	EJECT_REFUSED_TEXT,
+	type EjectHold,
+	ejectArming,
+	ejectArmingText,
+	ejectRefusal,
+	idleEjectHold,
+	stepEjectControl,
+} from "./eject";
+import {
 	type Encounter,
 	type EncounterContact,
 	type EncounterEnd,
@@ -858,6 +872,7 @@ import {
 	shippedOf,
 	type Trigger,
 	VENT_COMMANDS,
+	VIEW_MODES,
 } from "./commands";
 import { LAYOUT_LABELS, layoutChoiceNote } from "./layout-choice";
 import { keyDispatch } from "./key-dispatch";
@@ -990,7 +1005,7 @@ import {
 	hasHeldSaveFault,
 	heldSaveFault,
 } from "./save-badge";
-import { marketStationOf } from "./market";
+import { ESCAPE_POD, marketStationOf } from "./market";
 import { type HoldBids, holdSummary, pilotGoods } from "./hold";
 
 import { exposeMarketLaw } from "./market-probe-hook";
@@ -1279,6 +1294,33 @@ const VOICE_ARMS = voiceArms(
 	new URLSearchParams(window.location.search).get("voices"),
 	import.meta.env?.DEV === true,
 );
+/**
+ * Whether the eject control is offered: in a dev build, and nowhere else until
+ * node #704 builds what an eject does (sage round 1 on node #703).
+ *
+ * **A hold that visibly completes must do something, or not be offered.** The
+ * binding, the hold and the refusals are node #703's and complete; the pod
+ * going, the hold lost and the wake at the launch station are #660 D2's, built
+ * by node #704 behind `eject()`. Shipped before that, a pilot who bought the
+ * pod would watch the arming bar fill and then nothing happen — the control
+ * the help names, doing nothing, which is the thing a refusal exists to
+ * replace. So a production build neither steps the control nor prints its
+ * row, and node #704 deletes this gate.
+ *
+ * **The table keeps the row.** `fly.eject` stays in `commands.ts`'s binding
+ * table, so the headless tier holds the binding and the refusals, and a dev
+ * server — which is what every probe and a principal's flight run against —
+ * offers the whole control. What a production build still carries is
+ * Backspace's `preventDefault` (`key-dispatch.ts`), which costs nothing.
+ */
+const EJECT_OFFERED = import.meta.env?.DEV === true;
+
+/** The catalogue a screen prints: the eject's row only where it is offered. */
+const offeredControls = (c: ControlsCatalogue): ControlsCatalogue =>
+	EJECT_OFFERED
+		? c
+		: { ...c, commands: c.commands.filter((row) => row.id !== "fly.eject") };
+
 /** The director's arms: `?music=`'s, with `?voices=`'s say on the numbers. */
 const DIRECTOR_ARMS = { ...MUSIC_ARMS.arms, voice: VOICE_ARMS.music };
 const RAIDERS_OFF =
@@ -2324,6 +2366,18 @@ class Game {
 	private systemStars!: THREE.Points;
 	private starMaterial!: THREE.ShaderMaterial;
 	private readonly keys = new Set<string>();
+	/**
+	 * The keys physically down, which `keys` is not once a screen has emptied
+	 * it (`releaseHeldKeys`): added beside `keys` on a press and deleted on
+	 * every release — heard in the capture phase (`releasePhysicalKey`), so a
+	 * screen that stops a keyup there cannot keep it — and never cleared,
+	 * because only a keyup says a key went
+	 * up. Read by one thing — whether the eject control has been let go
+	 * (`stepEjectControl`), which it must not be told by the Settings screen
+	 * opening. It never flies or arms anything, so a release the window never
+	 * saw leaves a stale entry that costs at most one dead eject press.
+	 */
+	private readonly keysPhysicallyDown = new Set<string>();
 	/** Primary mouse fire is held state, matching the keyboard laser control. */
 	private mouseFiring = false;
 	/**
@@ -3269,6 +3323,39 @@ class Game {
 	/** What the charge notice drew this frame, for a probe to read beside the
 	 *  pixels rather than instead of them (#69, #447). */
 	chargedRender: { text: string; alpha: number } | null = null;
+	/** The eject control's progress through the hold it is in (node #703). */
+	ejectHold: EjectHold = EJECT_IDLE;
+	/**
+	 * Whether the window has focus, as its `blur` and `focus` events say (sage
+	 * round 9). The eject arms only while it does, from either device: a pad // glossary-ignore: pad
+	 * is polled whether the window has focus or not, so a `home` held through
+	 * a switch to another window went on filling and fired there. The game
+	 * treats the window as focused until a `blur` says otherwise.
+	 */
+	windowFocused = true;
+	/** The eject's last refusal on the glass, what is left of its time, and
+	 *  the dock phase it was said in. */
+	ejectRefused: { text: string; left: number; phase: DockPhase | null } = {
+		text: "",
+		left: 0,
+		phase: null,
+	};
+	/** What the eject's row drew this frame — the arming line or a refusal —
+	 *  for a probe to read rather than restate. */
+	ejectRender: { text: string; alpha: number; refused: boolean } | null = null;
+	/**
+	 * How many ejects the control has fired, and the last one (node #703): the
+	 * game clock it fired at, and the page's `performance.now()`, which is the
+	 * clock a probe can read a keydown against.
+	 *
+	 * **The event and nothing else yet.** What an eject does — the pod, the
+	 * empty hold, the wake at the launch station — is #660 D2's and node #704
+	 * builds it behind `eject()`. A count and the last one rather than a list,
+	 * because a list kept for a whole session grows with every hold (sage round
+	 * 1), and no reader wants more than these two.
+	 */
+	ejectCount = 0;
+	lastEject: { gameTime: number; atMs: number } | null = null;
 	/** The gimballed beam's direction, or `null` before the first step, when it
 	 *  is the boresight (`gimbal.ts`). */
 	gunAim: Vec3 | null = null;
@@ -4862,6 +4949,12 @@ class Game {
 		}
 		window.addEventListener("keydown", (e) => this.onKey(e, true));
 		window.addEventListener("keyup", (e) => this.onKey(e, false));
+		// Capture phase, so it hears a release a screen stops there (sage
+		// round 6): the Postcard screen stops every keyup in capture, and a
+		// spent eject let go of under it would otherwise stay down for good.
+		// A listener on the window sees the event whatever a listener beside it
+		// does, short of `stopImmediatePropagation`, which nothing here calls.
+		window.addEventListener("keyup", (e) => this.releasePhysicalKey(e), true);
 		// Audio cannot open before a gesture, so it opens on the first one.
 		this.renderer.domElement.addEventListener("pointerdown", (e) => {
 			// A press made where the mouse is suspended is not a pull of the trigger,
@@ -4881,7 +4974,9 @@ class Game {
 		// down survives the tab switch.
 		window.addEventListener("blur", () => {
 			this.mouseFiring = false;
+			this.loseEjectFocus();
 		});
+		window.addEventListener("focus", () => this.regainEjectFocus());
 		// **A key unlocks the sound as well as a click**, because #283's pad
 		// notice tells the player so: "press any key or click once to enable
 		// sound". Only the pointer path existed, so a player who did what the
@@ -9439,6 +9534,9 @@ class Game {
 		// keys.
 		if (route.kind === "release") {
 			// Releases must clear flight state even when a panel now owns the key.
+			// `keysPhysicallyDown` is not cleared here: a screen may stop the
+			// keyup before it bubbles this far, so it is let go of in the
+			// capture phase (`releasePhysicalKey`).
 			this.keys.delete(route.key);
 			return;
 		}
@@ -9562,6 +9660,7 @@ class Game {
 			return;
 		}
 		this.keys.add(route.key);
+		this.keysPhysicallyDown.add(route.key);
 		// One-shot commands fire on the press, not on the held state: engaging
 		// cruise and stepping a dial are events, and reading them out of `keys`
 		// each frame would repeat them sixty times a second.
@@ -9897,7 +9996,9 @@ class Game {
 	}
 
 	controlsNow(): ControlsCatalogue {
-		return controlsCatalogue(this.bindings, this.layoutNotices);
+		return offeredControls(
+			controlsCatalogue(this.bindings, this.layoutNotices),
+		);
 	}
 
 	/**
@@ -10002,7 +10103,7 @@ class Game {
 	 */
 	private publishControls() {
 		this.liveCockpit?.setControls(
-			controlsCatalogue(this.bindings, this.layoutNotices),
+			offeredControls(controlsCatalogue(this.bindings, this.layoutNotices)),
 		);
 	}
 
@@ -11721,6 +11822,187 @@ class Game {
 		else this.launch();
 	}
 
+	/**
+	 * One frame of the eject control (node #703, on #660 D4 and D5).
+	 *
+	 * The keyboard's held key or the pad's `home`, through `eject.ts`'s hold: // glossary-ignore: pad
+	 * a refusal on the first frame the control is down, an eject on the frame
+	 * the hold completes. **Every phase**, because two of the refusals are
+	 * docked and on the rails, where `step` returns before its flight tail.
+	 *
+	 * **Not during the opening**: #530 D2 rules that nothing a pilot presses
+	 * there makes a watched run differ from a skipped one, so the control is
+	 * idle and says nothing — the same answer `command` gives every other key. // glossary-ignore: Command
+	 *
+	 * **Nor with the head turned to a side console** (sage round 2). The hold's
+	 * fill on the glass *is* the confirm, and a turned head has no glass: the
+	 * console replaces it (`flightGlassShown`) and stacks above the overlay,
+	 * so a hold there would arm and complete unseen. That is why the eject is
+	 * not one of #283's flight keys that stay live under a turned head — it
+	 * does not fly the ship, and its confirm needs a surface to be shown on.
+	 * Docked the same holds: the refusal is said on the forward console, which
+	 * a turned head is not reading. Idle rather than refused: turning the head
+	 * mid-hold resets the fill, so a hold that turns back forward starts over
+	 * and is seen whole. **The turn does not clear `spent`**, though — only a
+	 * release does (`stepEjectControl`). A hold refused on the launch's rails,
+	 * kept down through a head turn while the launch completes, would
+	 * otherwise arm fresh on turning forward and eject a pilot who was told no;
+	 * and a release made at the console must clear it, or a fresh press made
+	 * there would be dead on turning forward.
+	 *
+	 * **A modal is not a release either** (sage round 4). The Settings screen
+	 * empties `keys` as it opens and the pad's `home` reads not live under a // glossary-ignore: pad
+	 * modal, so both read as let go while the control is still down. The
+	 * release is read off what is physically down — `padEjectDown` and
+	 * `keysPhysicallyDown` — or a refused hold kept down through the screen
+	 * would come back unspent when it closed and eject.
+	 *
+	 * **Two idles happen outside this method** (sage round 5), because this
+	 * method does not run for them: a held clock skips `step`, so the frame
+	 * loop calls `idleEject`, and a lost window focus is `loseEjectFocus`. The
+	 * focus then holds the control idle here until it returns (sage round 9),
+	 * which is what reaches the pad: its `home` is still read as held. // glossary-ignore: pad
+	 */
+	private stepEject(dt: number) {
+		// **A refusal is about the phase it was said in**, so it ends with
+		// that phase rather than outliving it: a docked refusal pressed just
+		// before a launch would otherwise stand on the launch's rails as
+		// `CANNOT EJECT  DOCKED`, the wrong sentence for where the ship is.
+		const said = this.ejectRefused;
+		this.ejectRefused =
+			said.phase === this.dock.phase
+				? { ...said, left: Math.max(0, said.left - dt) }
+				: { text: "", left: 0, phase: null };
+		if (this.openingActive || !EJECT_OFFERED) {
+			// Idle, not reset: only a release clears `spent`, here as anywhere.
+			this.ejectHold = idleEjectHold(this.ejectHold, this.ejectDown());
+			return;
+		}
+		const headTurned = this.view === "cockpit" && this.headLook !== "forward";
+		const live =
+			this.windowFocused &&
+			!headTurned &&
+			(this.held("fly.eject") ||
+				padEjectHeld(this.padFrame, this.padContext()));
+		const down = this.ejectDown();
+		const refusal = ejectRefusal({
+			phase: this.dock.phase,
+			podFitted: this.commander.ownedEquipment.includes(ESCAPE_POD),
+		});
+		const step = stepEjectControl(this.ejectHold, { live, down }, dt, refusal);
+		this.ejectHold = step.hold;
+		if (step.event?.kind === "eject") this.eject();
+		else if (step.event?.kind === "refused") {
+			this.ejectRefused = {
+				text: EJECT_REFUSED_TEXT[step.event.refusal],
+				left: EJECT_REFUSED_S,
+				phase: this.dock.phase,
+			};
+			// Docked, the station console fills the canopy and is the glass
+			// a docked cockpit has (`flightGlassShown`), so the refusal is
+			// said on its message line, where the till already says no. No
+			// revision bump: the console's memo key and the cockpit's both read
+			// the message itself, and a bump is an adoption's (`adopt`).
+			if (step.event.refusal === "docked") {
+				this.stationConsoleMessage = EJECT_DOCKED_SENTENCE;
+				this.updateCockpit();
+			}
+		}
+	}
+
+	/** A key went up, whatever screen owns it now: the one place
+	 *  `keysPhysicallyDown` is let go of. The key is `keyDispatch`'s release
+	 *  key, the same one `onKey` added, so the two cannot disagree on case. */
+	private releasePhysicalKey(e: KeyboardEvent) {
+		const route = keyDispatch({
+			key: e.key,
+			code: e.code,
+			down: false,
+			repeat: e.repeat,
+			altKey: e.altKey,
+			ctrlKey: e.ctrlKey,
+			metaKey: e.metaKey,
+			editable: false,
+		});
+		if (route.kind === "release") {
+			this.keysPhysicallyDown.delete(route.key);
+			// A release and a new press can both arrive before the next frame.
+			// Cancel now, or that frame sees only the new press and inherits the
+			// old fill or spent latch. Another physical eject source still down
+			// keeps the aggregate hold continuous.
+			if (!this.ejectDown()) this.ejectHold = EJECT_IDLE;
+		}
+	}
+
+	/** Whether the eject control is physically down, wherever it is — the
+	 *  reading that keeps a spent hold spent (`stepEjectControl`). */
+	private ejectDown(): boolean {
+		return (
+			isHeld(this.bindings, "fly.eject", this.keysPhysicallyDown, this.view) ||
+			padEjectDown(this.padFrame)
+		);
+	}
+
+	/**
+	 * One frame of the eject while the sim does not step: the clock held, by
+	 * the Postcard screen or any other hold (sage round 5). `stepEject` runs
+	 * inside `step`, which the frame loop skips then, so without this a hold
+	 * part-filled when the clock stopped kept its fill and finished on the
+	 * clock's release after less than a whole hold — which the glass, frozen
+	 * with the clock, never showed being made. Idle, the turned head's answer:
+	 * the fill starts over, and a spent hold stays spent while it is down.
+	 */
+	private idleEject() {
+		this.ejectHold = idleEjectHold(this.ejectHold, this.ejectDown());
+	}
+
+	/**
+	 * The window lost focus with the eject's key down (sage round 5). It never
+	 * sees that release, so the key would stay in `keys` and a hold begun
+	 * before the switch would go on filling — and complete — with nothing
+	 * down. The key leaves the game's held set and the fill goes with it; a
+	 * fresh press after focus returns is a fresh hold, seen whole. It stays in
+	 * `keysPhysicallyDown`, which only a keyup clears: that keeps a spent hold
+	 * spent, at the cost of one dead press (`keysPhysicallyDown`'s note).
+	 *
+	 * **The pad is idled by the focus, not by its frame** (sage round 9). The // glossary-ignore: pad
+	 * browser goes on reporting a held `home` to an unfocused window, so
+	 * `stepEject` arms nothing until `regainEjectFocus`. Idle, so a spent hold
+	 * stays spent while the button is down; a hold still down when focus
+	 * returns starts from zero and is seen whole on the glass.
+	 *
+	 * **The eject's keys only.** Every held key is lost on a blur the same way;
+	 * what the others should do about it is not this node's question.
+	 */
+	private loseEjectFocus() {
+		this.windowFocused = false;
+		for (const key of [...this.keys]) {
+			const one = new Set([key]);
+			if (VIEW_MODES.some((v) => isHeld(this.bindings, "fly.eject", one, v)))
+				this.keys.delete(key);
+		}
+		this.idleEject();
+	}
+
+	/** The window has focus again: the eject may arm (`loseEjectFocus`). */
+	private regainEjectFocus() {
+		this.windowFocused = true;
+	}
+
+	/**
+	 * The eject, once the hold completes and nothing refuses it.
+	 *
+	 * **Recorded, and nothing more, until node #704** builds what it costs
+	 * (#660 D2: the pod consumed, the hold lost, the pilot woken at the
+	 * launch station). Nothing is said on the glass here, because a line
+	 * announcing a pod that did not go would be a claim the game has not
+	 * made good.
+	 */
+	private eject() {
+		this.ejectCount += 1;
+		this.lastEject = { gameTime: this.world.gameTime, atMs: performance.now() };
+	}
+
 	/** The arrival turn the player holds at a station: the turn
 	 *  `stepArrivalTurns` registered keeps its first stamp, computer or
 	 *  hand-flown, and only with no turn held is it asked as of now. Read by the
@@ -12110,6 +12392,17 @@ class Game {
 		// Communications log keeps its line, which is what a record is for.
 		this.charged = { text: "", left: 0 };
 		this.chargedRender = null;
+		// And the eject's row and hold (node #703): a refusal about the leg
+		// that was left says nothing here, and a hold starts again from nothing
+		// rather than finishing on time banked before it. The event list is a
+		// record and is kept. **A spent hold stays spent while it is down**
+		// (sage round 6): `performJump` lets go of no key, so a pilot who
+		// ejected and kept the key down through a jump would otherwise eject
+		// again on arrival with no release made. Idle, the turned head's
+		// answer, and only a release clears `spent`.
+		this.ejectHold = idleEjectHold(this.ejectHold, this.ejectDown());
+		this.ejectRefused = { text: "", left: 0, phase: null };
+		this.ejectRender = null;
 		this.gunAim = null;
 		this.struckFor = 0;
 		this.lastExit = "";
@@ -14136,6 +14429,10 @@ class Game {
 		// Before the phase branch, so a hold is retried while docked and ended in
 		// every other phase (#314).
 		this.stepHeldLaunch();
+		// Before the phase branch as well, and for the opposite reason: docked
+		// and on the rails are where the eject is *refused* (#660 D5), and a
+		// refusal the branch below returned past would be a key doing nothing.
+		this.stepEject(dt);
 		// Every phase, docked included: energy regenerates and shields recharge
 		// on the sim clock wherever the ship is. The trigger is the pilot's
 		// (`triggerHeld`), and what the gun delivered is this frame's shot.
@@ -15903,7 +16200,7 @@ class Game {
 			// #562 D2's play log: seconds with the clock running. A new record
 			// and no save (#631): `ladderAfterPlay` says why.
 			this.ladders = ladderAfterPlay(this.ladders, dt);
-		}
+		} else this.idleEject();
 		// Every frame, paused ones too: a paused burn does not keep its drive
 		// (the principal's ruling on #544), which needs the sound to hear the
 		// pause rather than keep the last level it was given.
@@ -18752,6 +19049,45 @@ class Game {
 	}
 
 	/**
+	 * The eject control's row on the glass (node #703): the arming line while a
+	 * hold is filling, else a standing refusal.
+	 *
+	 * **Arming wins**, because it is the state the pilot's hand is in now — a
+	 * refusal is about a press that has already been let go. Amber while
+	 * arming, on §4's grammar for an action the pilot can still stop by letting
+	 * go; red for a refusal. Writes `ejectRender`, which `drawMarkers` clears
+	 * at the top of every frame.
+	 */
+	private drawEjectNotice(
+		ctx: CanvasRenderingContext2D,
+		w: number,
+		h: number,
+		glassBottom: number,
+	) {
+		const arming = ejectArming(this.ejectHold);
+		const refused = this.ejectRefused;
+		const line =
+			arming !== null
+				? { text: ejectArmingText(arming), alpha: 1, refused: false }
+				: refused.left > 0 && refused.text
+					? {
+							text: refused.text,
+							// The scoop's fade: over the last stretch, not a cut.
+							alpha: Math.min(1, refused.left / (EJECT_REFUSED_S * 0.4)),
+							refused: true,
+						}
+					: null;
+		if (!line) return;
+		drawGlassNotice(ctx, w, h, glassBottom, {
+			text: line.text,
+			alpha: line.alpha,
+			fill: line.refused ? FLOOR_TONE_FILL.refused : FLOOR_TONE_FILL.action,
+			row: GLASS_NOTICE_ROW.eject,
+		});
+		this.ejectRender = line;
+	}
+
+	/**
 	 * Evaluate the director once for this frame and write the corridor's world
 	 * lines from it. Runs before the composer, because the lines are in the
 	 * near layer; `drawDockingDirector` reads the same evaluation after it.
@@ -18797,6 +19133,7 @@ class Game {
 		this.boresightRender = null;
 		this.beamRender = null;
 		this.hostileFireRender = { beam: null, rim: 0 };
+		this.ejectRender = null;
 		if (!this.flightGlassShown()) {
 			this.cockpitPrompt.reset();
 			this.combatRig?.clearOverlay();
@@ -18806,6 +19143,20 @@ class Game {
 			this.directorRender = null;
 			this.floorRender = null;
 			this.saturationRender = null;
+			// **The one line drawn on the rails, and only that one** (node #703).
+			// An arrival and a launch are scripted, so their canopy carries no
+			// flight glass — but they are two of #660 D5's three refusals, and a
+			// refusal not said there is a key that does nothing. Head forward
+			// only: a turned head is reading a console, which replaces the glass.
+			// Docked is not here, because the station console is the docked
+			// glass and `stepEject` says it there.
+			if (
+				!this.openingActive &&
+				this.view === "cockpit" &&
+				this.headLook === "forward" &&
+				(this.dock.phase === "arriving" || this.dock.phase === "launching")
+			)
+				this.drawEjectNotice(ctx, w, h, GLASS_BOTTOM_FRACTION);
 			return;
 		}
 		const toPixels = (ndcX: number, ndcY: number) =>
@@ -19020,6 +19371,9 @@ class Game {
 			chargedAlpha === null
 				? null
 				: { text: this.charged.text, alpha: chargedAlpha };
+		// The eject control's row (node #703), in every view for the scoop's
+		// reason: it answers the pilot's own key.
+		this.drawEjectNotice(ctx, w, h, glassBottom);
 		// The gimballed beam's point on the glass (#324): the tracer ends there,
 		// and while the gimbal has turned the beam off the boresight a small pip
 		// shows where it points.

@@ -57,7 +57,8 @@ import { keyDispatch } from "../src/key-dispatch";
  *
  * **One move since, and it was ratified rather than a side effect:** #620 put
  * `flight-model.md` §3.5's strafe on the four held arrows, which stopped
- * repeating pitch and yaw.
+ * repeating pitch and yaw. Node #703 added a row rather than moving one: the
+ * eject on a held Backspace, a key nothing had bound (#660 D4).
  */
 const RATIFIED_LAYOUT: readonly string[] = [
 	"key: ::hold → fight.firePulse @ flight/instrument/console/modal cockpit/chase -",
@@ -94,6 +95,7 @@ const RATIFIED_LAYOUT: readonly string[] = [
 	"key:arrowup::press → panel.cursorUp @ flight/instrument/console/modal cockpit/chase requests",
 	"key:arrowup:alt:press → view.headForward @ flight/instrument/console/modal cockpit -",
 	"key:b::press → perf.bloom @ flight/instrument/console/modal cockpit/chase -",
+	"key:backspace::hold → fly.eject @ flight/instrument/console/modal cockpit/chase -",
 	"key:c::press → dock.clearance @ flight/instrument/console/modal cockpit/chase -",
 	"key:control::hold → fly.throttleDown @ flight/instrument/console/modal cockpit/chase -",
 	"key:d::hold → fly.yawStarboard @ flight/instrument/console/modal cockpit/chase -",
@@ -458,7 +460,8 @@ describe("the pad and the chord are resolved through the layout", () => {
 	 * through and a spread onto a frozen row throws.
 	 *
 	 * `home` is the button to move onto: the module's header declares it the
-	 * one standard button nothing claims, and it falls through to the flight
+	 * one standard button no *press* claims — it is the eject held, which a
+	 * press does not reach (node #703) — and it falls through to the flight
 	 * table in exactly the contexts `y` does, so the scope carries over
 	 * unchanged and the row measures the resolver rather than a context edit.
 	 */
@@ -677,12 +680,15 @@ describe("the pad and the chord are resolved through the layout", () => {
 		expect(checked).toBe(13);
 	});
 
-	test("Square and `home` reach no command, for two different reasons", () => {
+	test("Square and `home` reach no command by a press: both are held", () => {
+		// glossary-ignore: Command
 		// Both rows were `padIntents(...).keys` being empty, which was that
 		// module answering a question it no longer owns. Square is the pulse
 		// laser's trigger and it is *held* (#324), so it has a row and no
-		// press reaches it; `home` has no row at all, which is the one free
-		// standard button.
+		// press reaches it. `home` was the one free standard button and had no
+		// row at all, until node #703 made it the eject *held* — so the two
+		// are now the same reason, and the row says so rather than keeping a
+		// distinction that went away.
 		for (const view of VIEW_MODES)
 			for (const context of PAD_CONTEXTS) {
 				expect(
@@ -694,21 +700,15 @@ describe("the pad and the chord are resolved through the layout", () => {
 					`home in ${context}/${view}`,
 				).toEqual([]);
 			}
-		// And Square does have a row — held, which is what makes the two
-		// reasons different rather than one answer twice.
-		expect(
-			DEFAULT_BINDINGS.some(
-				(b) =>
-					b.trigger.kind === "pad-button" &&
-					b.trigger.button === "x" &&
-					b.trigger.hold === true,
-			),
-		).toBe(true);
-		expect(
-			DEFAULT_BINDINGS.some(
-				(b) => b.trigger.kind === "pad-button" && b.trigger.button === "home",
-			),
-		).toBe(false);
+		// And each does have a row — held, on the command it holds, and no // glossary-ignore: Command
+		// press row anywhere — so the empty answers above are a hold rather
+		// than a button nothing reads.
+		const padRows = (button: PadButtonName) =>
+			DEFAULT_BINDINGS.filter(
+				(b) => b.trigger.kind === "pad-button" && b.trigger.button === button, // glossary-ignore: pad
+			).map((b) => `${b.command} ${"hold" in b.trigger ? "hold" : "press"}`); // glossary-ignore: Command
+		expect(padRows("x")).toEqual(["fight.firePulse hold"]);
+		expect(padRows("home")).toEqual(["fly.eject hold"]);
 	});
 
 	test("`layoutOf` is the only producer of a layout in the whole of src/", () => {

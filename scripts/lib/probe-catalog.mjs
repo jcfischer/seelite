@@ -360,6 +360,25 @@ export const PROBE_CATALOG = Object.freeze(
 			["duel", "combat HUD", "raider", "target ring", "on target"],
 		),
 		entry(
+			"probe-eject.mjs",
+			"Holds the eject key in flight and sees the eject event fire once and no sooner than the hold, a tap fire nothing, and the same key refused without a pod and on the arrival's rails, docked and on the launch's rails, each said on the glass or the docked station console; a spent hold stays spent through a head turn and through the Settings screen emptying the held keys; a hold cut by a lost window focus fires nothing, a held controller Home arms nothing until focus returns and then takes a whole hold, and one cut by a held clock takes a whole hold once the clock runs; a spent hold let go under the Postcard screen arms afresh after it closes; the Controls tab names the binding.",
+			[
+				"eject",
+				"escape pod",
+				"held key",
+				"refusal",
+				"station console message",
+				"glass notice",
+				"controls reference",
+				"settings screen",
+				"released held keys",
+				"window blur",
+				"held clock",
+				"Postcard screen",
+				"release and repress between frames",
+			],
+		),
+		entry(
 			"probe-first-day.mjs",
 			"Flies a guided new game's first day: docked boot through clearance and its lastDocked checkpoint, station control's line, the First day tab, the Local run accepted, launched, docked, delivered and reported, the glass prompt and the Communications log; and a free pilot left unpushed.",
 			[
