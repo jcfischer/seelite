@@ -106,9 +106,15 @@ principal chose to split rather than absorb.
 
 ### D7 — Salvage targets a wreck, not a canister
 
-A salvage job's objective is a **persistent wreck**, which is re-derived from
-its carrier's destroyed row and therefore survives a departure and a reload. It
-is **not** a cargo canister.
+A salvage job's objective is a **persistent wreck**, which survives a
+departure and a reload. It is **not** a cargo canister.
+
+<!-- glossary-ignore: slot -->
+**Amended by [#466](https://github.com/jcfischer/seelite/issues/466).** The
+wreck is **not** re-derived from a destroyed carrier row, as this section first
+said: that row draws nothing, is destroyed only for `RAIDER_WRECK_S`, and its
+manifest already dropped as canisters at the kill. A wreck comes from a seeded
+derelict slot or from a death, and `salvage.md` owns it.
 
 The reason is a verified property rather than a preference: canisters appear
 nowhere in `src/save-envelope.ts` or `src/world-state.ts`. They are flight
@@ -116,8 +122,9 @@ state with a lifetime declared in `src/raider-wreck.ts`, and #324's playtests
 chose that deliberately. A job spanning a save cannot be built on them without
 reversing that choice.
 
-This family needs a **wreck-interaction verb**, which does not exist. It is
-this spec's one acknowledged new mechanic, and §1 marks it.
+This family needs a **wreck-interaction verb**, this spec's one acknowledged
+new mechanic. #466 specified it as a proximity scoop of the wreck's tethered
+containers (`salvage.md` S3), and its builds deliver it.
 
 ### D8 — Offers derive from need, with a courier floor
 
@@ -224,7 +231,7 @@ it, and what it needs that does not exist.
 | **Procurement** | Where to source, and how much of your own capital to risk | A station with a real stock deficit | Nothing |
 | **Bounty** | Whether to take a fight you could have flown past | An operational target carrier in the system — the pirate relay first ([#495](https://github.com/jcfischer/seelite/issues/495) D3–D4) | Built for the relay in [#508](https://github.com/jcfischer/seelite/issues/508), gated on the Long-Range Scanner. A ship as a target needs the scan (D10) and a ruling #495 left open |
 | **Investigation** | How to read an instrument, and how long to keep looking | A lead whose subject has not been identified | Nothing — the relay prototype flew this loop |
-| **Salvage** | Whether a known wreck is worth the detour | A destroyed carrier row | **A wreck-interaction verb** (D7) |
+| **Salvage** | Whether a known wreck is worth the detour | The station that lost a derelict, for a window after the loss (`salvage.md` S14, S15) | The wreck and its scoop (`salvage.md`, #466) |
 
 Courier and Procurement are distinct on one axis and it is not flavour: a
 courier carries the requester's goods and cannot sell them, a procurer buys
@@ -291,7 +298,7 @@ state domain.
 | Procurement | The same, at the station supplied | The same |
 | Bounty | The target carrier's condition becomes destroyed, with the player's provenance | The shipped destroy transition and its scheduled replacement |
 | Investigation | A knowledge row records what was observed, with source and time | The existing per-galaxy knowledge domain |
-| Salvage | The wreck's recoverable item is gone, once | Requires the D7 verb; the wreck itself is already derived |
+| Salvage | The wreck's recoverable item is gone, once | The named container's tonnes on the wreck row reach zero (`salvage.md` S17) |
 | **Repair** (a courier or procurement job whose destination has a disabled capability) | The capability returns to operational, with the player's provenance | The `restore` transition, which exists and is **currently dead for stations** |
 
 That last row is the load-bearing one for D4, and it comes with a warning.
@@ -325,7 +332,7 @@ implementation node, not to this merge.
 ### 6. Saved state
 
 **This spec adds none.** The request journal and its schema bump are
-`missions-and-requests.md` §7. Salvage reads existing destroyed rows. Derived offers are
+`missions-and-requests.md` §7. Salvage reads its derelict row (`salvage.md` S1, S6), which owes a save change of its own. Derived offers are
 derived. The generator bump that seeded damage needs belongs to the damage
 node, where it can be sequenced against the bump
 [#351](https://github.com/jcfischer/seelite/issues/351) already owes.
