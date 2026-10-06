@@ -24,8 +24,8 @@
  * that began refused stays spent until it is let go: the state clearing under
  * a held key — a launch completing — must not eject a pilot who was being told
  * no a moment ago. **Let go means physically released** (`stepEjectControl`):
- * a modal, a turned head, a held clock or a cleared key set idles the
- * control, and none of them is a release.
+ * a modal, a turned head, a held clock, a lost window focus or a cleared key
+ * set idles the control, and none of them is a release.
  *
  * Headless and on the list in `tests/headless.test.ts`.
  */

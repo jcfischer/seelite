@@ -3329,9 +3329,8 @@ class Game {
 	 * Whether the window has focus, as its `blur` and `focus` events say (sage
 	 * round 9). The eject arms only while it does, from either device: a pad // glossary-ignore: pad
 	 * is polled whether the window has focus or not, so a `home` held through
-	 * a switch to another window went on filling and fired there. True until
-	 * a `blur` says otherwise, because the probe lane's window is never the
-	 * key window (#441) and `document.hasFocus()` would read it unfocused.
+	 * a switch to another window went on filling and fired there. The game
+	 * treats the window as focused until a `blur` says otherwise.
 	 */
 	windowFocused = true;
 	/** The eject's last refusal on the glass, what is left of its time, and
