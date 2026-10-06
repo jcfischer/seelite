@@ -36,6 +36,7 @@ function pilot(over: Partial<DuelPilot> = {}): DuelPilot {
 		aimNose: FORWARD,
 		hull: fullCondition("courier").hull,
 		frame: steadyFrame(v3()),
+		solids: [],
 		...over,
 	};
 }

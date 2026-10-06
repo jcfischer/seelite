@@ -73,6 +73,7 @@ function frame(
 			aimNose: v3(0, 0, -1),
 			hull: fullCondition("courier").hull,
 			frame: steadyFrame(frameVel),
+			solids: [],
 		},
 		shot: { fired: false, damage: 0 },
 	};

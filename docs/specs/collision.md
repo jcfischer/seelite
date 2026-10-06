@@ -450,12 +450,65 @@ line.
    projected route is not swept against the world at runtime — it is met only
    by the ships that are flown — so the defect costs Traffic nothing it can
    see, and the row is what keeps it visible.
-2. **The NPC controller has no body awareness.** `combat-enemy.ts` steers on
-   its target alone. Under symmetric collision a raider flies into a station
-   or a planet until its controller avoids them. `combat-model.md` §1 forbids
-   exempting it, so the avoidance is the controller's to build. Until it is
-   built, an NPC can die on a surface. That is the honest outcome, not a
-   defect to hide.
+2. **The NPC controller steers clear of bodies and stations** (node #665).
+   `combat-model.md` §1 forbids exempting an NPC, so the avoidance is the
+   controller's: `avoidSolids` in `combat-enemy.ts` bends every phase's
+   heading, a rout's and a civilian's included, and both the raider's duel
+   and an engaged carrier fly through it.
+   - **What it avoids.** Each star, planet and moon at its radius, and each
+     placed station at its proxy's reach: one bounding sphere per solid,
+     from `avoidanceSolids` in `sim.ts`, which reads the sets `worldSolids`
+     sweeps. Around each it keeps `AVOID_CLEARANCE_KM`, an absolute 0.5 km
+     and never a fraction of the body (the #30 Constraint). **Not other
+     ships:** the pilot is the fight's target and the merge break already
+     keeps off them, and a meeting between two fleet ships is §3's bounce.
+   - **How it reads a threat.** Both the path the ship is on and the one its
+     assist is about to put it on, `frame + heading · speed`, each as a
+     velocity relative to the solid (#362). A threat is a path that enters
+     the keep-out inside the hull's own horizon (`avoidanceHorizonS`), and
+     only the earliest is answered. A threat beyond the horizon moves
+     nothing.
+   - **What it does.** When the ship is running at a pilot inside the
+     keep-out — at the station's mouth — and the solid is at rest in the
+     frame, it **holds off**: the nose stays on the run and the speed is
+     capped at what half the hull's retro can stop from before the keep-out.
+     Otherwise it **goes round**: the heading nearest the bearing that clears
+     the keep-out's cone, on the side the ship is already sliding to. While
+     the present path is still inside the cone, it aims past the edge by as
+     much as that path is inside. Inside the keep-out it steers outward. The
+     assist thrusts along the nose rather than along the heading it is
+     turning to, so while the nose still points into the solid the throttle
+     is cut and the assist brakes.
+   - **The three regimes.** The controller always flies its own assist on;
+     the regimes are the pilot's, and the law reads only relative motion.
+     In cruise the duel is over, and an engaged carrier is still held in
+     the pilot's frame. When that frame becomes the star's, the carrier is
+     braked toward star rest and the station's orbit drags it back into the
+     station, which the avoidance meets as a fast solid: when no heading
+     clears, it takes the one that closes least.
+   - **A duel beside a station stays a duel.** The widest station keep-out
+     is under half of `GUN_RANGE_KM`. Against a pilot sitting just outside
+     a station, the raider fires on about 70% as many frames as it does in
+     open space with the pilot's assist on (0.191 against 0.271), and on as
+     many with it off (0.168 against 0.169). Against a pilot at the mouth,
+     the raider, a patrol and an interceptor holding off fire on as many
+     frames as in open space (0.277 against 0.287, 0.298 against 0.296,
+     0.295 against 0.291). Gone round instead, they fired on under 0.05.
+   - **The figures are measured, not derived.** They were read off
+     `tests/combat-enemy-avoidance.test.ts` at node #665, which flies the
+     production steps beside real stations and meets the world through
+     `stepFleet`. Blind, its 39-run corpus met the station in 39 runs with
+     the pilot's assist on, 27 with it off and 39 in cruise; avoiding, in
+     none. A body is flown on one row per kind — a star, a planet and a
+     moon, 15 runs each — with a routed raider fleeing straight down at it
+     in the body's frame: blind every run meets the body, avoiding none
+     does. **No body row flies an attacking raider, the pilot's assist off
+     or cruise**: the law reads only motion relative to the solid, so those
+     cases are covered beside a body by the station rows' argument, not by
+     a run. The test gates the shape rather than the counts: blind more than
+     half, avoiding zero, and the fire share beside a station above 0.6 of
+     the open-space share, with no run under 0.05 (at the mouth, above 0.8
+     and no run under 0.15).
 
 ---
 
@@ -619,7 +672,7 @@ Each spec line is amended in this change, except where its own table says otherw
   `civilian-combat.md`'s (H4–H6) and the fiction map's (#460). Until that is
   decided, an impact writes no heat and no witness.
 - **What the pilot is told.** `hud-and-scanner.md` §3 and the audio owner (§8).
-- **The NPC controller's avoidance** (§6, item 2).
+- **The NPC controller's avoidance** (§6, item 2). Built by node #665.
 
 `combat-model.md` §1 needs no change. It already requires the same collision
 rules for every combat ship.
@@ -639,9 +692,12 @@ rules for every combat ship.
 3. **Cruise passes through stations that are not its target** (§7). C5
    accepts it, and §9.1.12 counts it.
 4. **Traffic and NPCs are collidable before they can avoid anything** (§6).
-   Until #303's corpus row is green, or avoidance exists, a carrier can divert
-   itself on its own station. Until the controller is built, a raider can die
-   on a planet. Node #664 found the row red and recorded it
+   Until #303's corpus row is green, or avoidance exists, a carrier on its
+   route can divert itself on its own station. The flown ships — the duel's
+   raider and an engaged carrier — steer clear of stations and bodies since
+   node #665 (§6 item 2). They still meet what that law does not read:
+   another ship, and a solid that closes faster than the hull can leave its
+   path. Node #664 found the row red and recorded it
    (`docs/findings/traffic-collision-corpus.md`); a carrier on its projection
    is not swept against the world, so only a flown one — engaged, or handed to
    flight by a meeting — can divert itself today.

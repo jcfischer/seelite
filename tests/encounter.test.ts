@@ -98,6 +98,7 @@ function frame(t: number, f: Flight, fire = false): EncounterFrame {
 			aimNose: f.nose,
 			hull: fullCondition("courier").hull,
 			frame: steadyFrame(v3()),
+			solids: [],
 		},
 		shot: fire
 			? { fired: true, damage: PULSE_LASER.damagePerS * DT }
