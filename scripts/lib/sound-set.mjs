@@ -646,6 +646,10 @@ export async function renderInPage({
 							...(await import("/src/music-danube-techno.ts")
 								.then((m) => ({ "danube-techno": m.DANUBE_TECHNO }))
 								.catch(() => ({}))),
+							// The jazz-waltz Danube, where the served tree has it.
+							...(await import("/src/music-danube-jazz.ts")
+								.then((m) => ({ "danube-jazz": m.DANUBE_JAZZ }))
+								.catch(() => ({}))),
 							// #589's classical set-pieces, where the served tree has them.
 							...(await import("/src/music-classical/index.ts")
 								.then((m) => m.CLASSICAL_SONGS)
@@ -1135,6 +1139,27 @@ export const TECHNO_SET = Object.freeze(
 			songs: { "danube-techno": "danube-techno" },
 			script: [
 				[0, { type: "play", id: "danube-techno", at: "bar" }],
+				[resolveS, { type: "resolve", at: "bar" }],
+			],
+		},
+	})),
+);
+
+/**
+ * The jazz-waltz Danube (`src/music-danube-jazz.ts`), a listening spike:
+ * `npm run sounds -- --set jazz`. No probe bands it.
+ */
+export const JAZZ_SET = Object.freeze(
+	/** @type {[string, number, number][]} */ ([
+		["music-danube-jazz", 104, 92],
+		["music-danube-jazz-run-short", 72, 62],
+	]).map(([name, seconds, resolveS]) => ({
+		name,
+		seconds,
+		music: {
+			songs: { "danube-jazz": "danube-jazz" },
+			script: [
+				[0, { type: "play", id: "danube-jazz", at: "bar" }],
 				[resolveS, { type: "resolve", at: "bar" }],
 			],
 		},

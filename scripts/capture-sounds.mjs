@@ -60,6 +60,7 @@ import {
 	CLASSICAL_SET,
 	renderInPage,
 	SOUND_SET,
+	JAZZ_SET,
 	TECHNO_SET,
 } from "./lib/sound-set.mjs";
 import { TREE_ENDPOINT } from "./lib/tree-declaration.mjs";
@@ -85,7 +86,9 @@ const SET =
 		? CLASSICAL_SET
 		: arg("set") === "techno"
 			? TECHNO_SET
-			: SOUND_SET;
+			: arg("set") === "jazz"
+				? JAZZ_SET
+				: SOUND_SET;
 const out = resolve(arg("out") ?? join(HERE, "sound-set"));
 const seed =
 	process.env.SEED === "off" ? null : Number(process.env.SEED ?? 552);
