@@ -62,8 +62,16 @@ export const raiderReplacementActor = (systemIndex: number): Provenance => ({
 export const raiderDestruction = (
 	systemIndex: number,
 	now: number,
+	/** Who destroyed it: the player's gun unless named — a raider that dies
+	 *  in a collision names the impact (`collision.md` §3, node #664). */
+	cause: Provenance = PLAYER_KILL,
 ): TransitionEvent =>
-	playerKillDestruction(systemIndex, now, raiderReplacementActor(systemIndex));
+	playerKillDestruction(
+		systemIndex,
+		now,
+		raiderReplacementActor(systemIndex),
+		cause,
+	);
 
 /**
  * A player's kill of any carrier (`combat-model.md` §4): destroyed for
@@ -75,11 +83,14 @@ export function playerKillDestruction(
 	systemIndex: number,
 	now: number,
 	replacedBy: Provenance,
+	/** Who destroyed it: the player's gun unless named — an impact names
+	 *  itself (`collision.md` §6, node #664). */
+	cause: Provenance = PLAYER_KILL,
 ): TransitionEvent {
 	return {
 		kind: "destroy",
 		occurredAt: now,
-		cause: PLAYER_KILL,
+		cause,
 		schedule: {
 			startsAt: now + RAIDER_WRECK_S,
 			completesAt: now + RAIDER_WRECK_S + RAIDER_REPAIR_S,
