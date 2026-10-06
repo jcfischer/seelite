@@ -2268,7 +2268,9 @@ class Game {
 	/**
 	 * The keys physically down, which `keys` is not once a screen has emptied
 	 * it (`releaseHeldKeys`): added beside `keys` on a press and deleted on
-	 * every release, and never cleared, because only a keyup says a key went
+	 * every release — heard in the capture phase (`releasePhysicalKey`), so a
+	 * screen that stops a keyup there cannot keep it — and never cleared,
+	 * because only a keyup says a key went
 	 * up. Read by one thing — whether the eject control has been let go
 	 * (`stepEjectControl`), which it must not be told by the Settings screen
 	 * opening. It never flies or arms anything, so a release the window never
@@ -4787,6 +4789,12 @@ class Game {
 		}
 		window.addEventListener("keydown", (e) => this.onKey(e, true));
 		window.addEventListener("keyup", (e) => this.onKey(e, false));
+		// Capture phase, so it hears a release a screen stops there (sage
+		// round 6): the Postcard screen stops every keyup in capture, and a
+		// spent eject let go of under it would otherwise stay down for good.
+		// A listener on the window sees the event whatever a listener beside it
+		// does, short of `stopImmediatePropagation`, which nothing here calls.
+		window.addEventListener("keyup", (e) => this.releasePhysicalKey(e), true);
 		// Audio cannot open before a gesture, so it opens on the first one.
 		this.renderer.domElement.addEventListener("pointerdown", (e) => {
 			// A press made where the mouse is suspended is not a pull of the trigger,
@@ -9351,8 +9359,10 @@ class Game {
 		// keys.
 		if (route.kind === "release") {
 			// Releases must clear flight state even when a panel now owns the key.
+			// `keysPhysicallyDown` is not cleared here: a screen may stop the
+			// keyup before it bubbles this far, so it is let go of in the
+			// capture phase (`releasePhysicalKey`).
 			this.keys.delete(route.key);
-			this.keysPhysicallyDown.delete(route.key);
 			return;
 		}
 		// **The rebind modal takes every key that is left, and takes it here**
@@ -11710,6 +11720,23 @@ class Game {
 		}
 	}
 
+	/** A key went up, whatever screen owns it now: the one place
+	 *  `keysPhysicallyDown` is let go of. The key is `keyDispatch`'s release
+	 *  key, the same one `onKey` added, so the two cannot disagree on case. */
+	private releasePhysicalKey(e: KeyboardEvent) {
+		const route = keyDispatch({
+			key: e.key,
+			code: e.code,
+			down: false,
+			repeat: e.repeat,
+			altKey: e.altKey,
+			ctrlKey: e.ctrlKey,
+			metaKey: e.metaKey,
+			editable: false,
+		});
+		if (route.kind === "release") this.keysPhysicallyDown.delete(route.key);
+	}
+
 	/** Whether the eject control is physically down, wherever it is — the
 	 *  reading that keeps a spent hold spent (`stepEjectControl`). */
 	private ejectDown(): boolean {
@@ -12159,8 +12186,12 @@ class Game {
 		// And the eject's row and hold (node #703): a refusal about the leg
 		// that was left says nothing here, and a hold starts again from nothing
 		// rather than finishing on time banked before it. The event list is a
-		// record and is kept.
-		this.ejectHold = EJECT_IDLE;
+		// record and is kept. **A spent hold stays spent while it is down**
+		// (sage round 6): `performJump` lets go of no key, so a pilot who
+		// ejected and kept the key down through a jump would otherwise eject
+		// again on arrival with no release made. Idle, the turned head's
+		// answer, and only a release clears `spent`.
+		this.ejectHold = idleEjectHold(this.ejectHold, this.ejectDown());
 		this.ejectRefused = { text: "", left: 0, phase: null };
 		this.ejectRender = null;
 		this.gunAim = null;

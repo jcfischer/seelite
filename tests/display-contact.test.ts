@@ -5,6 +5,7 @@ import ts from "typescript";
 import { projectNavTargets } from "../src/cockpit";
 import { AttitudeFollower } from "../src/attitude-hold";
 import { DockingComputer } from "../src/docking-computer";
+import { EJECT_IDLE, type EjectHold, idleEjectHold } from "../src/eject";
 import {
 	NO_ATTITUDE,
 	bodyAccelerationBound,
@@ -345,8 +346,10 @@ test("the selected target reads the speed the scoop gate checks, not the rate al
 	expect(subject.targetRelativeKms()).toBeNull();
 });
 
-test("a jump or a reset takes the cargo contacts with the canisters", () => {
-	const subject = Object.assign(
+/** A subject that runs the real `clearFlightSession`, with the eject's
+ *  control held or not (`ejectDown`). */
+function teardownSubject(ejectHold: EjectHold, ejectDown: boolean) {
+	return Object.assign(
 		Object.create(
 			methods(
 				[
@@ -369,9 +372,9 @@ test("a jump or a reset takes the cargo contacts with the canisters", () => {
 					QUIET_WEAPONS: null,
 					SILENT_WEAPONS: null,
 					beginScanHold: () => ({ key: null, chargeS: 0 }),
-					// And the eject's idle hold (node #703), which the teardown
-					// writes back for the same reason and nothing here reads.
-					EJECT_IDLE: null,
+					// And the eject's hold (node #703), which the teardown idles: the
+					// real law, so a row can hold what it keeps.
+					idleEjectHold,
 				},
 			),
 		),
@@ -387,8 +390,14 @@ test("a jump or a reset takes the cargo contacts with the canisters", () => {
 			flickMeter: { reset() {} },
 			selectableCache: null,
 			targetId: null as string | null,
+			ejectHold,
+			ejectDown: () => ejectDown,
 		},
 	);
+}
+
+test("a jump or a reset takes the cargo contacts with the canisters", () => {
+	const subject = teardownSubject(EJECT_IDLE, false);
 	subject.syncCargoContacts();
 	subject.targetId = "cargo-a";
 	subject.selectableCache = ["stale"];
@@ -405,6 +414,24 @@ test("a jump or a reset takes the cargo contacts with the canisters", () => {
 	expect(subject.cargoContacts.size).toBe(0);
 	expect(subject.targetId).toBeNull();
 	expect(subject.selectableCache).toBeNull();
+});
+
+test("a jump keeps a spent eject hold spent while its key is still down", () => {
+	// Sage round 6: `performJump` lets go of no key, so a teardown that wrote
+	// the idle hold back forgot a spent eject with the key still down, and the
+	// arrival ejected again with no release made.
+	const spent: EjectHold = { heldS: 0, spent: true };
+	const held = teardownSubject(spent, true);
+	held.clearFlightSession();
+	expect(held.ejectHold).toEqual(spent);
+	// A part-filled hold starts over: no fill is banked across the jump.
+	const arming = teardownSubject({ heldS: 0.4, spent: false }, true);
+	arming.clearFlightSession();
+	expect(arming.ejectHold).toEqual(EJECT_IDLE);
+	// And a release made before the jump is a release.
+	const released = teardownSubject(spent, false);
+	released.clearFlightSession();
+	expect(released.ejectHold).toEqual(EJECT_IDLE);
 });
 
 test("the relative-speed label is a magnitude with no direction word", () => {

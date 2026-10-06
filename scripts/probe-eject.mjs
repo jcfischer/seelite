@@ -7,7 +7,7 @@
  * a tap fires nothing, a hold with the head turned to a side console fires
  * nothing, a spent hold kept down through the Settings screen stays spent, a
  * hold cut by a lost window focus or a held clock does not finish what it
- * had, and the same key on the rails of an arrival, docked and
+ * had, a spent hold let go under the Postcard screen is let go, and the same key on the rails of an arrival, docked and
  * on the rails of a launch is refused where a pilot in the cockpit reads it —
  * the glass on the rails, the station console's message line docked.
  *
@@ -79,6 +79,27 @@ const glassSays = (text, timeout = 3000) =>
 			() => false,
 		);
 
+/**
+ * Wait for the eject count to reach `count`, and read how long after
+ * `startedAtMs` — a page clock — the last eject recorded itself. One reading
+ * for every row that times a hold (sage round 6).
+ */
+const waitForEject = async (count, startedAtMs) => {
+	const fired = await page
+		.waitForFunction((want) => window.__seelite.ejectCount >= want, count, {
+			timeout: law.holdMs * 6,
+		})
+		.then(
+			() => true,
+			() => false,
+		);
+	const elapsedMs = await page.evaluate(
+		(at) => (window.__seelite.lastEject?.atMs ?? Number.NaN) - at,
+		startedAtMs,
+	);
+	return { fired, elapsedMs };
+};
+
 const fitPod = (fitted) =>
 	page.evaluate(
 		({ pod, fitted }) => {
@@ -149,18 +170,7 @@ const arming = await page
 // default: a screenshot inside the hold would slow the very window it times.
 if (process.env.EJECT_EVIDENCE)
 	await page.screenshot({ path: `${process.env.EJECT_EVIDENCE}/arming.png` });
-const fired = await page
-	.waitForFunction(() => window.__seelite.ejectCount >= 1, null, {
-		timeout: law.holdMs * 6,
-	})
-	.then(
-		() => true,
-		() => false,
-	);
-const firedAfterMs = await page.evaluate(
-	(down) => (window.__seelite.lastEject?.atMs ?? Number.NaN) - down,
-	downAtMs,
-);
+const { fired, elapsedMs: firedAfterMs } = await waitForEject(1, downAtMs);
 // Held on past the eject: a second one would be a held key firing per frame.
 await page.waitForTimeout(law.holdMs * 1.5);
 await page.keyboard.up("Backspace");
@@ -515,18 +525,8 @@ const resumedAtMs = await page.evaluate(() => {
 	window.__seelite.clockHeld = false;
 	return performance.now();
 });
-const firedAfterResume = await page
-	.waitForFunction(() => window.__seelite.ejectCount >= 4, null, {
-		timeout: law.holdMs * 6,
-	})
-	.then(
-		() => true,
-		() => false,
-	);
-const resumeFiredAfterMs = await page.evaluate(
-	(at) => (window.__seelite.lastEject?.atMs ?? Number.NaN) - at,
-	resumedAtMs,
-);
+const { fired: firedAfterResume, elapsedMs: resumeFiredAfterMs } =
+	await waitForEject(4, resumedAtMs);
 await page.keyboard.up("Backspace");
 check(
 	"a hold part-filled when the clock is held takes a whole hold after the clock runs again",
@@ -535,6 +535,50 @@ check(
 		firedAfterResume &&
 		resumeFiredAfterMs >= law.holdMs - law.maxDtMs,
 	`arming ${clockArming}, ejects while held ${whileHeld.ejects}, fired ${firedAfterResume} ${Math.round(resumeFiredAfterMs)} ms after the release against a ${law.holdMs} ms hold`,
+);
+
+// A spent hold **let go while the Postcard screen is up** (sage round 6). The
+// screen stops every keyup in the capture phase, so the game's own handler
+// never hears it; the release is heard in the capture phase too, or the key
+// stays physically down for good and the first real hold after the screen
+// closes is dead. A spent hold is the subject: an eject in flight makes one.
+await page.waitForTimeout(100);
+await page.keyboard.down("Backspace");
+await page.waitForTimeout(law.holdMs * 1.5);
+const spentBeforePostcard = await read();
+await page.keyboard.press("6");
+const postcardOpened = await page
+	.waitForFunction(() => window.__seelite.postcardPanel.isOpen(), null, {
+		timeout: 5000,
+	})
+	.then(
+		() => true,
+		() => false,
+	);
+await page.keyboard.up("Backspace");
+await page.waitForTimeout(100);
+await page.keyboard.press("Escape");
+const postcardClosed = await page
+	.waitForFunction(() => !window.__seelite.postcardPanel.isOpen(), null, {
+		timeout: 5000,
+	})
+	.then(
+		() => true,
+		() => false,
+	);
+await page.waitForTimeout(100);
+await page.keyboard.down("Backspace");
+const freshAtMs = await page.evaluate(() => performance.now());
+const fresh = await waitForEject(6, freshAtMs);
+await page.keyboard.up("Backspace");
+check(
+	"a spent hold let go under the Postcard screen arms afresh on the next hold after it closes",
+	spentBeforePostcard.ejects === 5 &&
+		postcardOpened &&
+		postcardClosed &&
+		fresh.fired &&
+		fresh.elapsedMs >= law.holdMs - law.maxDtMs,
+	`spent ${JSON.stringify(spentBeforePostcard)}, opened ${postcardOpened}, closed ${postcardClosed}, fired ${fresh.fired} ${Math.round(fresh.elapsedMs)} ms after the press against a ${law.holdMs} ms hold`,
 );
 
 await browser.close();
