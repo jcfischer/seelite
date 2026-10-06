@@ -435,6 +435,23 @@ describe("the chase yaw at its ends (sage round 1)", () => {
 			expect(back).toEqual({ ok: true, recipe });
 		});
 
+	// The viewer rebuilds a card from `postcardPose` of the parsed recipe; an
+	// accepted end yaw must spell back as itself (sage round 6 found
+	// `yaw=3.141593` wrapped to `-3.141592`).
+	for (const end of ["3.141593", "-3.141593"])
+		test(`an accepted yaw of ${end} rebuilds to the same link`, () => {
+			const text = encodePostcard(
+				postcardRecipe({ ...scene, mode: "exterior", yawRad: 0.5 }),
+			).replace("yaw=0.5", `yaw=${end}`);
+			const back = decodePostcard(text);
+			if (!back.ok) throw new Error(`refused ${end}`);
+			expect(
+				encodePostcard(
+					postcardRecipe({ ...scene, ...postcardPose(back.recipe) }),
+				),
+			).toBe(text);
+		});
+
 	test("past the quantised end is still refused", () => {
 		const exterior = encodePostcard(
 			postcardRecipe({ ...scene, mode: "exterior", yawRad: 0 }),

@@ -835,6 +835,52 @@ check(
 	`${JSON.stringify(dockedContext)} → ${dockedPhase}; lock ${await lockHolder()}; yaw ${dockedBefore.yaw.toFixed(3)} → ${dockedAfter.yaw.toFixed(3)}, elevation ${dockedBefore.elev.toFixed(3)} → ${dockedAfter.elev.toFixed(3)}; rates ${JSON.stringify(dockedAfter.rates)}`,
 );
 
+// ---------------------------------------------------------------------------
+// A focused Photo button's keys are the button's (sage round 6). Docked, so a
+// leaked `Enter` is `dock.launch` and shows as a phase change; `Space` was
+// `preventDefault`ed by `onKey`, which cancels the native click.
+// ---------------------------------------------------------------------------
+const buttonPress = async (label, key) => {
+	await page.evaluate(() => document.exitPointerLock());
+	await page.evaluate((text) => {
+		const b = [...document.querySelectorAll("[data-photo-controls] button")]
+			.filter((el) => el.textContent === text)
+			.at(0);
+		b?.focus();
+	}, label);
+	const focused = await page.evaluate(
+		() => document.activeElement?.textContent ?? null,
+	);
+	await page.keyboard.press(key);
+	await settle();
+	return {
+		focused,
+		photo: (await pilot()).photo,
+		phase: await page.evaluate(() => window.__seelite.dockPhase),
+	};
+};
+const exitBySpace = await buttonPress("Exit Photo mode", "Space");
+check(
+	"Space on a focused Exit Photo mode button leaves Photo mode, still docked",
+	exitBySpace.focused === "Exit Photo mode" &&
+		!exitBySpace.photo &&
+		exitBySpace.phase === "docked",
+	JSON.stringify(exitBySpace),
+);
+// Out of Photo mode by command, so this row does not stand on the one above.
+await page.evaluate(() => {
+	const g = window.__seelite;
+	if (g.photoMode) g.command("view.photo");
+});
+const enterByEnter = await buttonPress("Photo mode", "Enter");
+check(
+	"Enter on a focused Photo mode button enters Photo mode and does not launch",
+	enterByEnter.focused === "Photo mode" &&
+		enterByEnter.photo &&
+		enterByEnter.phase === "docked",
+	JSON.stringify(enterByEnter),
+);
+
 await context.close();
 await browser.close();
 exit();

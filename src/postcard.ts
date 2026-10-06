@@ -263,6 +263,15 @@ const wrapAngle = (rad: number): number =>
 	Math.atan2(Math.sin(rad), Math.cos(rad));
 
 /**
+ * A yaw the parse would accept is kept as it stands and only one past it is
+ * wrapped. Wrapping every yaw turned a link's accepted `yaw=3.141593` — a hair
+ * past π — into `-3.141592` on rebuild, so a current link of a pilot looking
+ * straight back at the nose spelled back a different fragment (sage round 6).
+ */
+const canonicalYaw = (rad: number): number =>
+	Math.abs(rad) <= YAW_LIMIT ? rad : wrapAngle(rad);
+
+/**
  * A recipe from a scene: the allowlisted fields picked, and every number
  * quantised to what the link will carry, so a recipe and its parse are equal.
  */
@@ -310,7 +319,7 @@ export function postcardRecipe(scene: PostcardScene): PostcardRecipe {
 					}
 				: {}),
 			mode: "exterior",
-			yawRad: quantise(wrapAngle(scene.yawRad ?? 0), PLACES.yaw),
+			yawRad: quantise(canonicalYaw(scene.yawRad ?? 0), PLACES.yaw),
 			elevationRad: quantise(scene.elevationRad ?? 0, PLACES.elev),
 		};
 	return { ...base, mode: scene.mode, head: scene.head ?? "forward" };

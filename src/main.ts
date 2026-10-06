@@ -1340,6 +1340,17 @@ function wrapAngle(radians: number) {
 }
 
 /**
+ * Keep a Photo-mode button's own activation keys off `window` (sage round 6
+ * on node #691). Only the keydown is stopped: `onKey` would run it as a flight
+ * command and `preventDefault` it, which cancels the native click for both
+ * `Enter` and `Space`. The keyup still reaches `onKey`, whose release route
+ * clears a held key and prevents nothing.
+ */
+function photoButtonKey(e: KeyboardEvent) {
+	if (e.key === "Enter" || e.key === " ") e.stopPropagation();
+}
+
+/**
  * Mouse sensitivity: radians of rotation per pixel of pointer movement.
  *
  * Relative deltas under pointer lock rather than an absolute virtual stick,
@@ -15566,6 +15577,10 @@ class Game {
 			b.type = "button";
 			b.textContent = text;
 			b.addEventListener("click", action);
+			// A focused button's activation keys are the button's, not the
+			// ship's: bubbling to `onKey` ran `Enter` as `dock.launch` and ate
+			// `Space` before its native click (sage round 6).
+			b.addEventListener("keydown", photoButtonKey);
 			this.photoNotice?.append(b);
 		};
 		if (this.photoMode) {

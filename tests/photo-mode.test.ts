@@ -1,6 +1,4 @@
 import { expect, test } from "bun:test";
-import { readFileSync } from "node:fs";
-import ts from "typescript";
 import * as orbit from "../src/chase-orbit";
 import { DEFAULT_BINDINGS, collisions, triggerKey } from "../src/commands"; // glossary-ignore: Command
 import {
@@ -11,6 +9,7 @@ import {
 	POSTCARD_ZOOM_MIN,
 	POSTCARD_ZOOM_MAX,
 } from "../src/postcard";
+import { gameMethods, mainFunction } from "./lib/game-methods";
 
 test("wheel zoom scales the whole rig, preserves its angles, and stops at both limits", () => {
 	const zoom = orbit.zoomOrbit;
@@ -98,35 +97,11 @@ test("a zoomed postcard carries its distance through the link and capture pose",
 });
 
 // Run Game's real methods without constructing WebGL, following display-contact.
-const source = ts.createSourceFile(
-	"main.ts",
-	readFileSync("src/main.ts", "utf8"),
-	ts.ScriptTarget.Latest,
-	true,
-);
-const game = source.statements.find(
-	(n): n is ts.ClassDeclaration =>
-		ts.isClassDeclaration(n) && n.name?.text === "Game",
-);
-function methods(names: string[]) {
-	const members = names.map((name) => {
-		const member = game?.members.find(
-			(n) =>
-				(ts.isMethodDeclaration(n) || ts.isGetAccessorDeclaration(n)) &&
-				n.name.getText(source) === name,
-		);
-		if (!member) throw new Error(`Missing Game.${name}`);
-		return member.getText(source);
+const methods = (names: string[]) =>
+	gameMethods(names, {
+		orbitByPointer: orbit.orbitByPointer,
+		contextFliesShip: () => true,
 	});
-	const js = ts.transpileModule(`class Subject { ${members.join("\n")} }`, {
-		compilerOptions: { target: ts.ScriptTarget.ES2022 },
-	}).outputText;
-	return new Function(
-		"orbitByPointer",
-		"contextFliesShip",
-		`${js}; return Subject.prototype;`,
-	)(orbit.orbitByPointer, () => true);
-}
 test("Photo entry and exit clear held fire and pointer state and preserve the prior view", () => {
 	const proto = methods(["togglePhotoMode", "triggerHeld"]);
 	const g = Object.assign(Object.create(proto), {
@@ -206,4 +181,87 @@ test("zoom limits agree with the recipe leaf and every accepted zoom keeps its b
 	expect(() =>
 		encodePostcard({ ...postcardRecipe(scene), schema: 2 }),
 	).toThrow();
+});
+
+// Sage round 6: `Enter` on a focused Photo button bubbled to `onKey` and ran
+// `dock.launch` before the native click; `Space` was `preventDefault`ed there.
+const photoButtonKey = mainFunction("photoButtonKey");
+const keyEvent = (key: string) => {
+	const e = { key, stopped: false, stopPropagation() {} };
+	e.stopPropagation = () => {
+		e.stopped = true;
+	};
+	return e;
+};
+test("a Photo button keeps its activation keys and lets every other key fly", () => {
+	for (const key of ["Enter", " "]) {
+		const e = keyEvent(key);
+		photoButtonKey(e);
+		expect({ key, stopped: e.stopped }).toEqual({ key, stopped: true });
+	}
+	for (const key of ["w", "Escape", "F2", "Tab", "1"]) {
+		const e = keyEvent(key);
+		photoButtonKey(e);
+		expect({ key, stopped: e.stopped }).toEqual({ key, stopped: false });
+	}
+});
+
+test("every Photo button, in both modes, stops its activation keydown and no keyup", () => {
+	type Fake = {
+		tag: string;
+		listeners: Record<string, unknown[]>;
+		children: Fake[];
+		textContent?: string;
+		type?: string;
+		dataset: Record<string, string>;
+		style: Record<string, string>;
+		addEventListener(type: string, fn: unknown): void;
+		append(...c: Fake[]): void;
+		replaceChildren(): void;
+	};
+	const make = (tag: string): Fake => ({
+		tag,
+		listeners: {},
+		children: [],
+		dataset: {},
+		style: {},
+		addEventListener(type, fn) {
+			this.listeners[type] ??= [];
+			this.listeners[type].push(fn);
+		},
+		append(...c) {
+			this.children.push(...c);
+		},
+		replaceChildren() {
+			this.children = [];
+		},
+	});
+	const document = {
+		createElement: make,
+		body: { append() {} },
+	};
+	const proto = gameMethods(["updatePhotoNotice"], {
+		document,
+		photoButtonKey,
+	});
+	for (const photoMode of [false, true]) {
+		const g = Object.assign(Object.create(proto), {
+			photoMode,
+			photoNotice: null,
+			command() {},
+		});
+		g.updatePhotoNotice();
+		const buttons = (g.photoNotice as Fake).children.filter(
+			(c) => c.tag === "button",
+		);
+		expect(buttons.length).toBe(photoMode ? 3 : 1);
+		for (const b of buttons) {
+			expect({ b: b.textContent, down: b.listeners.keydown }).toEqual({
+				b: b.textContent,
+				down: [photoButtonKey],
+			});
+			expect(b.listeners.keyup).toBeUndefined();
+			expect(b.listeners.click?.length).toBe(1);
+		}
+	}
 });

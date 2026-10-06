@@ -5,7 +5,6 @@
  * there passes on a build that confused them.
  */
 import { describe, expect, test } from "bun:test";
-import { readFileSync } from "node:fs";
 import {
 	CHASE_BACK_KM,
 	CHASE_UP_KM,
@@ -25,6 +24,7 @@ import {
 import { DEFAULT_BINDINGS } from "../src/commands"; // glossary-ignore: Command
 import { intoCameraFrame, type Quat } from "../src/hud";
 import { add, length, sub, type Vec3, v3 } from "../src/vec3";
+import { gameMethods } from "./lib/game-methods";
 
 const mul = (a: Quat, b: Quat): Quat => ({
 	w: a.w * b.w - a.x * b.x - a.y * b.y - a.z * b.z,
@@ -314,14 +314,35 @@ describe("the Controls tab says what the pointer does (C2)", () => {
 	});
 
 	test("the orbit is handed the pointer's delta unchanged", () => {
-		// Read from the source rather than restated: a negation added between
-		// the pointer and the orbit would flip every row above while they pass.
-		const main = readFileSync("src/main.ts", "utf8");
-		const body = main.slice(main.indexOf("private orbitChase()"));
-		const fn = body.slice(0, body.indexOf("\n\t}\n"));
-		expect(fn).toContain("const { dx, dy } = this.takePointer();");
-		expect(fn).toContain(
-			"this.chaseOrbit = orbitByPointer(this.chaseOrbit, dx, dy);",
-		);
+		// Driven through the shipped `orbitChase` rather than read off its
+		// spelling (sage round 6): a negation added between the pointer and the
+		// orbit would flip every row above while they pass.
+		const proto = gameMethods(["orbitChase"], {
+			orbitByPointer,
+			contextFliesShip: () => true,
+		});
+		for (const [dx, dy] of [
+			[37, 0],
+			[0, -22],
+			[-15, 41],
+		]) {
+			const g = Object.assign(Object.create(proto), {
+				chaseOrbit: ORBIT_ASTERN,
+				openingActive: false,
+				padContext: () => "flight",
+				takePointer: () => ({ dx, dy }),
+			});
+			g.orbitChase();
+			expect(g.chaseOrbit).toEqual(orbitByPointer(ORBIT_ASTERN, dx, dy));
+		}
+		// And the opening keeps the camera: the delta is drained, not spent.
+		const opening = Object.assign(Object.create(proto), {
+			chaseOrbit: ORBIT_ASTERN,
+			openingActive: true,
+			padContext: () => "flight",
+			takePointer: () => ({ dx: 40, dy: 40 }),
+		});
+		opening.orbitChase();
+		expect(opening.chaseOrbit).toBe(ORBIT_ASTERN);
 	});
 });
