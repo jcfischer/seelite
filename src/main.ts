@@ -1200,6 +1200,25 @@ const {
 const STAR_PIXEL_SCALE = 0.35;
 
 /**
+ * #719 (prototype): a star is drawn as a small sharp point whose brightness is
+ * its light, not as a disc whose size is its light.
+ *
+ * `backdrop.ts`'s law is unchanged: a star's stored size still encodes its
+ * flux as `size²`. The shader reads that flux as `(size × uPixelScale)²` — the
+ * light the old disc delivered — and puts it into a core `STAR_CORE_SCALE` of
+ * the canvas height across, at `STAR_FLUX_GAIN` times the matching intensity.
+ * Above 1 the core is HDR and the bloom pass spreads it, which is how a camera
+ * shows a bright point source, so no star grows a disc. `STAR_HDR_CAP` stops a
+ * single point flaring the frame.
+ *
+ * The three dials are set by eye on the view set; nothing here is measured.
+ */
+const STAR_CORE_SCALE = 0.0012;
+const STAR_CORE_MIN_PX = 1.5;
+const STAR_FLUX_GAIN = 0.35;
+const STAR_HDR_CAP = 6;
+
+/**
  * The raw `?hull=` value, read once at load (#554, #557).
  *
  * **A fresh-game development affordance, not a way to change a saved ship.**
@@ -5173,6 +5192,9 @@ class Game {
 				uPixelScale: {
 					value: this.renderer.domElement.height * STAR_PIXEL_SCALE,
 				},
+				uCorePx: { value: this.starCorePx() },
+				uFluxGain: { value: STAR_FLUX_GAIN },
+				uHdrCap: { value: STAR_HDR_CAP },
 				// #537's cruise light shift: zero is the untouched sky.
 				uBeta: { value: 0 },
 				uHeading: { value: new THREE.Vector3(0, 0, -1) },
@@ -5181,7 +5203,13 @@ class Game {
 				attribute float aSize;
 				attribute vec3 aColor;
 				uniform float uPixelScale;
+				uniform float uCorePx;
+				uniform float uFluxGain;
+				uniform float uHdrCap;
 				varying vec3 vColor;
+				varying float vIntensity;
+				varying float vCoreFrac;
+				varying float vHalo;
 				${LIGHT_SHIFT_GLSL}
 				void main() {
 					vec3 color = aColor;
@@ -5198,22 +5226,44 @@ class Game {
 						view = viewMatrix * world;
 					}
 					vColor = color;
+					// #719: the light the old disc delivered, (size × scale)², put
+					// into a fixed core rather than spread over a disc of that size.
+					float discPx = size * uPixelScale;
+					vIntensity = min(
+						uHdrCap,
+						uFluxGain * (discPx * discPx) / (uCorePx * uCorePx)
+					);
+					// Light the core cannot hold goes into a small coloured halo,
+					// so the bright layer still reads as brighter than the field
+					// (#434) without growing a disc. Up to four core widths.
+					float excess = max(0.0, vIntensity - 1.0);
+					float spread = 1.0 + min(3.0, 1.2 * sqrt(excess));
 					// No distance attenuation: the sphere is re-centred on the camera
 					// every frame, so every star is exactly BACKDROP_RADIUS away and
-					// attenuating by depth would only add rounding.
-					gl_PointSize = max(1.0, size * uPixelScale);
+					// attenuating by depth would only add rounding. Two pixels of
+					// margin round the core, so its falloff is not cut square.
+					float spritePx = uCorePx * spread + 2.0;
+					vCoreFrac = (uCorePx + 2.0) / spritePx;
+					vHalo = 0.5 * excess / uHdrCap;
+					gl_PointSize = spritePx;
 					gl_Position = projectionMatrix * view;
 				}
 			`,
 			fragmentShader: /* glsl */ `
 				varying vec3 vColor;
+				varying float vIntensity;
+				varying float vCoreFrac;
+				varying float vHalo;
 				void main() {
-					// A soft disc rather than a square. gl_PointCoord runs 0..1 across
-					// the sprite, so this is the distance from its centre.
+					// A tight Gaussian core of fixed pixel size, and for the bright
+					// tail a soft halo across the rest of the sprite. gl_PointCoord
+					// runs 0..1, so r is 0 at the centre and 1 at the edge.
 					float r = length(gl_PointCoord - vec2(0.5)) * 2.0;
-					float a = smoothstep(1.0, 0.0, r);
-					if (a <= 0.004) discard;
-					gl_FragColor = vec4(vColor, a);
+					float rc = r / vCoreFrac;
+					float light = exp(-8.0 * rc * rc) * vIntensity
+						+ vHalo * exp(-4.0 * r * r);
+					if (light <= 0.004) discard;
+					gl_FragColor = vec4(vColor * light, 1.0);
 				}
 			`,
 			transparent: true,
@@ -20065,6 +20115,15 @@ class Game {
 		this.gtaoPass?.setSize(ao.x, ao.y);
 		this.starMaterial.uniforms.uPixelScale.value =
 			this.renderer.domElement.height * STAR_PIXEL_SCALE;
+		this.starMaterial.uniforms.uCorePx.value = this.starCorePx();
+	}
+
+	/** #719: the star core's diameter in pixels, against the canvas height. */
+	private starCorePx(): number {
+		return Math.max(
+			STAR_CORE_MIN_PX,
+			this.renderer.domElement.height * STAR_CORE_SCALE,
+		);
 	}
 }
 
