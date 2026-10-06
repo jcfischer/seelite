@@ -1342,7 +1342,7 @@ function wrapAngle(radians: number) {
 /**
  * Keep a Photo-mode button's own activation keys off `window` (sage round 6
  * on node #691). Only the keydown is stopped: `onKey` would run it as a flight
- * command and `preventDefault` it, which cancels the native click for both
+ * binding and `preventDefault` it, which cancels the native click for both
  * `Enter` and `Space`. The keyup still reaches `onKey`, whose release route
  * clears a held key and prevents nothing.
  */

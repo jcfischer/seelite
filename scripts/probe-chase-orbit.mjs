@@ -65,6 +65,8 @@ import { installViewFraming, setView } from "./lib/view-placement.mjs";
 import {
 	PANEL_CARD,
 	VIEWER_CARD,
+	cardPixels,
+	changedCells,
 	keepCard,
 	setPostcardMode,
 	waitViewerCard,
@@ -420,37 +422,6 @@ check(
 // C3: the exterior postcard carries the pose.
 // ---------------------------------------------------------------------------
 
-/** Luma grid over a card `<img>`, as `probe-postcard.mjs` reads one. */
-const cardGrid = (target, selector) =>
-	target.evaluate(async (sel) => {
-		const img = document.querySelector(sel);
-		await img.decode();
-		const canvas = document.createElement("canvas");
-		canvas.width = img.naturalWidth;
-		canvas.height = img.naturalHeight;
-		const ctx = canvas.getContext("2d");
-		ctx.drawImage(img, 0, 0);
-		const { data } = ctx.getImageData(0, 0, canvas.width, canvas.height);
-		const cols = 24;
-		const rows = 16;
-		const grid = new Array(cols * rows).fill(0);
-		for (let y = 0; y < canvas.height; y++)
-			for (let x = 0; x < canvas.width; x++) {
-				const i = (y * canvas.width + x) * 4;
-				grid[
-					Math.floor((y / canvas.height) * rows) * cols +
-						Math.floor((x / canvas.width) * cols)
-				] += 0.2126 * data[i] + 0.7152 * data[i + 1] + 0.0722 * data[i + 2];
-			}
-		const cell = (canvas.width / cols) * (canvas.height / rows);
-		return {
-			width: img.naturalWidth,
-			height: img.naturalHeight,
-			grid: grid.map((v) => v / cell),
-		};
-	}, selector);
-const changedCells = (a, b) =>
-	a.grid.filter((v, i) => Math.abs(v - b.grid[i]) > 10).length / a.grid.length;
 const pairs = (fragment) =>
 	Object.fromEntries(fragment.split("&").map((p) => p.split("=")));
 /** The names two fragments spell differently, for a row's detail. */
@@ -511,7 +482,7 @@ const openViewer = async (fragment, label, shot) => {
 		view: window.__seelite.view,
 	}));
 	await keepCard(viewer, VIEWER_CARD, shot);
-	const grid = await cardGrid(viewer, VIEWER_CARD);
+	const grid = await cardPixels(viewer, VIEWER_CARD);
 	await viewer.close();
 	return { ...seen, grid };
 };
@@ -623,7 +594,7 @@ for (const pose of POSES) {
 		`pose ${after.yaw}, ${after.elev}; drawing ${after.drawing.join("x")} against ${before.drawing.join("x")}`,
 	);
 	await keepCard(page, PANEL_CARD, `${SHOTS}/${pose.label}-card.png`);
-	const card = await cardGrid(page, PANEL_CARD);
+	const card = await cardPixels(page, PANEL_CARD);
 
 	if (pose.from === "mouse") {
 		first = { pose: before, state, card };
@@ -671,7 +642,7 @@ check(
 );
 {
 	await openCard();
-	const asternCard = await cardGrid(page, PANEL_CARD);
+	const asternCard = await cardPixels(page, PANEL_CARD);
 	await keepCard(page, PANEL_CARD, `${SHOTS}/astern-card.png`);
 	await closeCard();
 	// Against the pose furthest from astern: the oblique one is a small
@@ -871,7 +842,7 @@ check(
 		exitBySpace.phase === "docked",
 	JSON.stringify(exitBySpace),
 );
-// Out of Photo mode by command, so this row does not stand on the one above.
+// Out of Photo mode through `view.photo`, so this row does not stand on the one above.
 await page.evaluate(() => {
 	const g = window.__seelite;
 	if (g.photoMode) g.command("view.photo");

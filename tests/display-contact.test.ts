@@ -28,38 +28,17 @@ import {
 	scoops,
 } from "../src/raider-wreck";
 import { length, sub, v3 } from "../src/vec3";
+import {
+	gameClass as game,
+	gameMethodSource as method,
+	gameMethods as methods,
+	mainSource as source,
+} from "./lib/game-methods";
 import { repoPath } from "./lib/source-scan";
 
 // Execute the actual Game methods without constructing WebGL or copying their
 // implementation into a fixture. TypeScript's parser keeps nested braces safe.
-const source = ts.createSourceFile(
-	"main.ts",
-	readFileSync(repoPath("src/main.ts"), "utf8"),
-	ts.ScriptTarget.Latest,
-	true,
-);
-const game = source.statements.find(
-	(node): node is ts.ClassDeclaration =>
-		ts.isClassDeclaration(node) && node.name?.text === "Game",
-);
-function method(name: string) {
-	const member = game?.members.find(
-		(node) =>
-			ts.isMethodDeclaration(node) && node.name.getText(source) === name,
-	);
-	if (!member) throw new Error(`Missing Game.${name}`);
-	return member.getText(source);
-}
-function methods(names: string[], bindings: Record<string, unknown> = {}) {
-	const js = ts.transpileModule(
-		`class Subject { ${names.map(method).join("\n")} }`,
-		{ compilerOptions: { target: ts.ScriptTarget.ES2022 } },
-	).outputText;
-	return new Function(
-		...Object.keys(bindings),
-		`${js}; return Subject.prototype;`,
-	)(...Object.values(bindings));
-}
+// `tests/lib/game-methods.ts` owns the parse and the transpile.
 
 test("Navigation evaluates ETA for a selectable contact absent from the generated world", () => {
 	const world = makeWorld(42);
