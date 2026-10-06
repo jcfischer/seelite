@@ -34,6 +34,8 @@ import {
 	postcardRecipe,
 	postcardRefusalText,
 } from "../src/postcard";
+import { clampElevation, clampZoom } from "../src/chase-orbit";
+import { gameMethods } from "./lib/game-methods";
 import {
 	LEGACY_WORLD_GENERATOR_VERSIONS,
 	WORLD_GENERATOR_VERSION,
@@ -451,6 +453,50 @@ describe("the chase yaw at its ends (sage round 1)", () => {
 				),
 			).toBe(text);
 		});
+
+	// The viewer's own chain, not the recipe's: the link's pose stood on the
+	// shipped `composePostcard` and read back by the shipped `postcardScene`,
+	// at both yaw ends and both poles, spells the link it was opened on.
+	test("the viewer's compose-then-scene chain spells an end-pose link back", () => {
+		const proto = gameMethods(
+			["composePostcard", "postcardScene", "chaseYaw", "chaseElevation"],
+			{ clampElevation, clampZoom },
+		);
+		for (const yaw of ["3.141593", "-3.141593"])
+			for (const elev of ["1.570796", "-1.570796", "0.3"]) {
+				const text = encodePostcard(
+					postcardRecipe({ ...scene, mode: "exterior", yawRad: 0.5 }),
+				)
+					.replace("yaw=0.5", `yaw=${yaw}`)
+					.replace("elev=0", `elev=${elev}`);
+				const back = decodePostcard(text);
+				if (!back.ok) throw new Error(`refused ${yaw}, ${elev}`);
+				const r = back.recipe;
+				const g = Object.assign(Object.create(proto), {
+					view: "cockpit",
+					headLook: "forward",
+					chaseOrbit: { yawRad: 0, elevationRad: 0 },
+					orientation: {
+						x: r.orientation[0],
+						y: r.orientation[1],
+						z: r.orientation[2],
+						w: r.orientation[3],
+					},
+					world: {
+						seed: r.seed,
+						gameTime: r.timeS,
+						ship: { pos: { x: r.pos[0], y: r.pos[1], z: r.pos[2] } },
+						system: { record: { galaxy: r.galaxy, index: r.system } },
+					},
+				});
+				g.composePostcard(postcardPose(r));
+				expect({
+					yaw,
+					elev,
+					text: encodePostcard(postcardRecipe(g.postcardScene("exterior"))),
+				}).toEqual({ yaw, elev, text });
+			}
+	});
 
 	test("past the quantised end is still refused", () => {
 		const exterior = encodePostcard(

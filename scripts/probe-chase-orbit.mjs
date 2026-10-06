@@ -26,6 +26,10 @@
  *   and docked, Photo mode's mouse still orbits, because the frame loop spends
  *   the delta whatever the dock phase (sage round 2 found it dead there). The
  *   ship staying docked is the freeze's doing, not the routing's;
+ * - **a focused Photo button keeps its own keys** (C2, sage round 6): docked,
+ *   `Space` on Exit Photo mode leaves it and `Enter` on Photo mode enters it,
+ *   the ship still docked — before the fix `onKey` ate `Space` and ran
+ *   `Enter` as `dock.launch`, and both rows read red with the listener off;
  * - **the postcard carries the pose** (C3): an exterior card opened from an
  *   orbited view spells its yaw and elevation, its PNG is the card shown, the
  *   viewer rebuilds the same link and the same picture, the pilot's pose and
