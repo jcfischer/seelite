@@ -9,7 +9,10 @@ const query = new URLSearchParams(window.location.search);
 // read-only page, so it is the safe one to land on. **The recipe is parsed
 // here, before the game is imported** — a refused capsule must boot no game and
 // touch no storage, and building a `Game` already reads `localStorage`.
+// The open is counted before the parse (#714): a link this build refuses is
+// still a postcard somebody opened.
 if (isPostcardFragment(window.location.hash)) {
+	countVisit("postcard");
 	const parsed = decodePostcard(window.location.hash);
 	if (parsed.ok) await import("./main");
 	else (await import("./postcard-refused")).mountPostcardRefusal(parsed.reason);

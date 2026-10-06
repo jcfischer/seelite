@@ -1,5 +1,6 @@
 /**
- * One count per public page load and one per game launch (#569).
+ * One count per public page load, one per game launch (#569) and one per
+ * opened postcard link (#714).
  *
  * The principal's ruling, which reverses part of map #1's first Constraint:
  * *"I just want to see how many people are playing, so counterscale on public
@@ -10,6 +11,13 @@
  * reads the query string only for UTM tags, so the threshold at `/` and the
  * game at `/?boot=overlay` would both land as `/` and the one figure asked for
  * would disappear. A launch is counted under its own site id instead.
+ *
+ * **A postcard open is the third (#714).** A postcard link opens at `/` with
+ * its recipe in the fragment, which the tracker never reads, so under the page
+ * site it would read as a visit to the threshold. It is the link a player posts,
+ * and the principal asked for it to be counted on its own: the tracker's
+ * referrer column then says which network it came from. The recipe is not
+ * sent — the tracker reports `pathname` and the UTM tags, never the hash.
  *
  * **Production only.** The tracker skips its report on localhost but still
  * fetches `tracker.js` from the Worker, so an unconditional tag would put an
@@ -26,6 +34,7 @@ export const COUNTER_ORIGIN =
 export const VISIT_SITES = {
 	page: "the-far-between",
 	launch: "the-far-between-play",
+	postcard: "the-far-between-postcard",
 } as const;
 
 export type VisitKind = keyof typeof VISIT_SITES;

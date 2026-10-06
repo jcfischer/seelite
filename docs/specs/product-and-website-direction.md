@@ -130,6 +130,12 @@ a request on load — and `src/public-site.ts` builds the
 press the home page asks nothing of another origin, and
 `scripts/probe-public-site.mjs` holds it.
 
+**And a third count on 2026-10-06 (#714):** the principal asked for the
+visits that shared links bring to be counted on their own. An opened postcard
+link is counted once under a third site id, before its recipe is parsed, so a
+link the build refuses still counts. The recipe rides the fragment, which the
+tracker does not read, so what reaches the counter is `/` and the referrer.
+
 ## Development horizons
 
 ### Now — make one returnable frontier life real

@@ -34,6 +34,6 @@ describe("a page that is not the game", () => {
 		expect(page).toBeGreaterThan(-1);
 		// Before the public threshold, which takes everything left.
 		expect(page).toBeLessThan(publicEntry);
-		expect(entry.match(/countVisit\(/g)).toHaveLength(1);
+		expect(entry.match(/countVisit\("launch"\)/g)).toHaveLength(1);
 	});
 });
