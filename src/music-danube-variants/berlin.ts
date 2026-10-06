@@ -1,105 +1,139 @@
 /**
- * The Blue Danube as Berlin school: the waltz over a sequencer, in the
- * language of the game's own flight beds (`music-generate-berlin.ts`) — so
- * the docking music and the music of flight are one family.
+ * The Blue Danube as Berlin school, after Tangerine Dream's and Klaus
+ * Schulze's sequencer records of the mid-seventies (*Phaedra*, *Rubycon*,
+ * *Timewind*, *Stratosfear*): a low sequence that never stops, a filter that
+ * opens and closes over half a minute, a choir of string machines, and a
+ * slow lead singing over it.
  *
  * **Strauss's harmony becomes the sequence.** Each bar of `HARMONY` is a
- * twelve-step sixteenth ostinato on its root, octave and chord tones,
- * through a resonant filter that a slow sweep opens and closes across the
- * loop; a pulsing eighth-note bass sits under it and a slow string machine
- * holds each harmony as long as it lasts. The theme (`THEME`, printed
- * octave) is on the bed's own lead, into a dotted-eighth echo, the
- * woodwinds' answers a glassy keys line in the echo. The meter stays 3/4: a
- * sequence of twelve sixteenths turns over once a bar, so it rolls rather
- * than marches. No drums.
+ * twelve-step sixteenth ostinato on its root, octave and chord tones, all
+ * inside the octave above a low root and played nearly legato, so it rolls
+ * rather than ticks. A slow sweep through its resonant filter is the music's
+ * main movement. A second, darker sequence in eighths an octave and a fifth
+ * up, on a sweep of its own period, drifts against the first. The choir
+ * holds each harmony as long as it lasts.
+ *
+ * The theme (`THEME`, printed octave) is on a slow, singing lead into a
+ * dotted-eighth echo; the woodwinds' answers swell on a soft pad an octave
+ * below. Nothing is struck: no keys, no pluck, no bell, and no drums. The
+ * meter stays 3/4, twelve sixteenths a bar.
+ *
+ * Every filter peaks well under 6 kHz: cutoff × envelope × sweep, which the
+ * shared state-variable filter holds stable.
  */
 import { HARMONY, THEME } from "../music-danube";
 import type { NoteEvent, PartSpec, Song } from "../music-score";
 
-export const BERLIN_BPM = 120;
+export const BERLIN_BPM = 116;
 
 /** A bar of 3/4 at `BERLIN_BPM`, s. */
 const BAR_S = (3 * 60) / BERLIN_BPM;
 
 const PARTS: Readonly<Record<string, PartSpec>> = {
+	// The sequencer: low, nearly legato, its resonant filter swept open and
+	// shut over sixteen bars. Peak: 170 Hz × 2^(1.1 + 2.9) = 2.7 kHz.
 	seq: {
 		voice: "analog",
-		level: 0.36,
+		level: 0.353,
 		unison: 2,
-		detune: 0.06,
-		spread: 0.5,
-		attackS: 0.003,
-		decayS: 0.22,
-		sustain: 0,
-		releaseS: 0.08,
-		cutoffHz: 260,
-		envAmount: 2.2,
-		envDecayS: 0.12,
-		resonance: 0.55,
+		detune: 0.05,
+		drift: 2,
+		spread: 0.4,
+		attackS: 0.004,
+		decayS: 0.4,
+		sustain: 0.65,
+		releaseS: 0.05,
+		cutoffHz: 170,
+		envAmount: 1.1,
+		envDecayS: 0.14,
+		resonance: 0.62,
 		sweepS: 16 * BAR_S,
-		sweepOct: 2.6,
-		pan: -0.1,
-		reverb: 0.25,
+		sweepOct: 2.9,
+		pan: -0.12,
+		reverb: 0.2,
+		echo: 0.2,
+	},
+	// The second sequence: eighths, an octave and a fifth up, darker and
+	// quieter, on a sweep of eleven bars so the two drift against each
+	// other. Peak: 240 Hz × 2^(0.8 + 2.2) = 1.9 kHz.
+	seq2: {
+		voice: "analog",
+		level: 0.134,
+		unison: 2,
+		detune: 0.08,
+		drift: 3,
+		spread: 0.8,
+		attackS: 0.01,
+		decayS: 0.5,
+		sustain: 0.6,
+		releaseS: 0.12,
+		cutoffHz: 240,
+		envAmount: 0.8,
+		envDecayS: 0.2,
+		resonance: 0.45,
+		sweepS: 11 * BAR_S,
+		sweepOct: 2.2,
+		pan: 0.3,
+		reverb: 0.45,
 		echo: 0.35,
 	},
-	pulse: {
-		voice: "analog",
-		level: 0.336,
-		unison: 2,
-		detune: 0.04,
-		spread: 0.2,
-		attackS: 0.004,
-		decayS: 0.18,
-		sustain: 0.3,
-		releaseS: 0.06,
-		cutoffHz: 180,
-		envAmount: 2.5,
-		envDecayS: 0.09,
-		resonance: 0.35,
-		sweepS: 24 * BAR_S,
-		sweepOct: 1.2,
-		reverb: 0.08,
-	},
+	// The choir: a string machine, slow in, wide, a little vibrato.
 	choir: {
 		voice: "analog",
-		level: 0.192,
+		level: 0.168,
 		unison: 4,
-		detune: 0.15,
+		detune: 0.16,
+		drift: 5,
 		spread: 1,
-		attackS: 1.5,
+		attackS: 1.8,
+		decayS: 3,
 		sustain: 0.9,
-		releaseS: 1,
-		cutoffHz: 1100,
-		envAmount: 0.6,
+		releaseS: 1.6,
+		cutoffHz: 850,
+		envAmount: 0.5,
 		envDecayS: 4,
-		vibrato: 0.05,
-		reverb: 0.65,
+		vibrato: 0.06,
+		reverb: 0.7,
 	},
+	// The lead: slow to speak, singing, into the echo. Peak 2.1 kHz.
 	lead: {
 		voice: "analog",
-		level: 0.24,
+		level: 0.218,
 		unison: 2,
-		detune: 0.07,
-		attackS: 0.03,
-		decayS: 0.8,
-		sustain: 0.7,
-		releaseS: 0.5,
-		cutoffHz: 900,
-		envAmount: 1.8,
-		envDecayS: 0.5,
-		resonance: 0.3,
-		vibrato: 0.15,
-		reverb: 0.45,
-		echo: 0.4,
+		detune: 0.06,
+		drift: 3,
+		spread: 0.3,
+		attackS: 0.07,
+		decayS: 1.4,
+		sustain: 0.8,
+		releaseS: 0.6,
+		cutoffHz: 1050,
+		envAmount: 1,
+		envDecayS: 0.9,
+		resonance: 0.25,
+		vibrato: 0.18,
+		pan: -0.05,
+		reverb: 0.5,
+		echo: 0.45,
 	},
-	sparkle: {
-		voice: "keys",
-		level: 0.168,
-		decayS: 0.6,
-		releaseS: 0.15,
+	// The woodwinds' answers: a soft pad an octave down, swelling in.
+	answer: {
+		voice: "analog",
+		level: 0.109,
+		unison: 3,
+		detune: 0.12,
+		drift: 4,
+		spread: 0.9,
+		attackS: 0.25,
+		decayS: 2,
+		sustain: 0.8,
+		releaseS: 0.9,
+		cutoffHz: 700,
+		envAmount: 0.6,
+		envDecayS: 1,
 		pan: 0.35,
-		reverb: 0.4,
-		echo: 0.5,
+		reverb: 0.6,
+		echo: 0.3,
 	},
 };
 
@@ -116,10 +150,19 @@ const n = (
 const above = (p: number, floor: number): number =>
 	floor + 1 + ((((p - floor - 1) % 12) + 12) % 12);
 
+/** A root folded into A1–G#2, where the sequence sits. */
+const low = (root: number): number => 33 + ((((root - 33) % 12) + 12) % 12);
+
+/** The chord's three tones in the octave above `r`, lowest first. */
+function tonesOver(r: number, chord: readonly number[]): number[] {
+	const t = [...new Set(chord.map((p) => above(p, r)))].sort((a, b) => a - b);
+	return [t[0], t[1] ?? t[0], t[2] ?? t[1] ?? t[0]];
+}
+
 /**
- * One bar of the sequencer on `root` and `chord`: root, octave and the
- * chord's tones folded into the octave above the root, twelve sixteenths,
- * accented on the first and the seventh.
+ * One bar of the sequencer on `root` and `chord`: twelve sixteenths that
+ * never leave the octave above the low root, accented on one and on the
+ * seventh step, each held almost to the next.
  */
 function sequence(
 	bar: number,
@@ -127,62 +170,62 @@ function sequence(
 	chord: readonly number[],
 	vel: number,
 ): NoteEvent[] {
-	const r = root < 45 ? root + 12 : root;
-	const [t0, t1, t2] = [...new Set(chord.map((p) => above(p, r)))].sort(
-		(a, b) => a - b,
-	);
-	const tones = [t0, t1 ?? t0, t2 ?? t1 ?? t0];
-	const steps = [
-		r,
-		r + 12,
-		tones[0],
-		tones[1],
-		r,
-		r + 12,
-		tones[2],
-		tones[1],
-		r,
-		r + 12,
-		tones[0],
-		tones[2],
-	];
+	const r = low(root);
+	const [a, b, c] = tonesOver(r, chord);
+	const steps = [r, r, r + 12, a, r, b, r, r + 12, c, r, b, a];
 	return steps.map((p, i) =>
-		n("seq", bar, i / 4, 0.2, p, vel * (i % 6 === 0 ? 1 : 0.72)),
+		n("seq", bar, i / 4, 0.23, p, vel * (i % 6 === 0 ? 1 : 0.78)),
 	);
 }
 
-/** The pulse: the root in eighths, low. */
-const pulse = (bar: number, root: number, vel: number): NoteEvent[] => {
-	const r = root < 33 ? root + 12 : root > 45 ? root - 12 : root;
-	return Array.from({ length: 6 }, (_, i) =>
-		n("pulse", bar, i / 2, 0.4, r, vel * (i === 0 ? 1 : 0.75)),
+/** One bar of the second sequence: six eighths, an octave and a fifth up,
+ *  starting a sixteenth late so it falls between the first's accents. */
+function sequence2(
+	bar: number,
+	root: number,
+	chord: readonly number[],
+	vel: number,
+): NoteEvent[] {
+	const r = low(root) + 12;
+	const [a, b] = tonesOver(r, chord);
+	const steps = [r + 7, a, r + 12, b, r + 7, r];
+	return steps.map((p, i) =>
+		n("seq2", bar, 0.25 + i / 2, i === 5 ? 0.2 : 0.45, p, vel * 0.8),
 	);
-};
+}
 
-// ── Intro: the Andantino's harmony as a sequence fading up ──────────────────
+/** The choir's chord: the harmony's pad tones, under a low root. */
+const choirChord = (
+	bar: number,
+	root: number,
+	pad: readonly number[],
+	beats: number,
+	vel: number,
+) => [
+	n("choir", bar, 0, beats, low(root) + 12, vel * 0.8),
+	...pad.map((p) => n("choir", bar, 0, beats, p, vel)),
+];
 
-/** `[root, chord, choir]` a bar of the Andantino, from the score's own
- *  violins and cellos. */
-const ANDANTINO: readonly (readonly [
-	number,
-	readonly number[],
-	readonly number[],
-])[] = [
-	...Array(4).fill([45, [61, 64, 69], [57, 61, 64, 69]]),
-	...Array(2).fill([50, [64, 68, 71], [56, 62, 64, 71]]),
-	...Array(2).fill([52, [62, 66, 71], [59, 62, 66, 71]]),
-	[55, [61, 64, 66], [57, 61, 64, 67]],
+// ── Intro: the Andantino's harmony, the sequence fading up under the call ───
+
+/** `[root, chord]` a bar of the Andantino, from the score's own violins and
+ *  cellos. */
+const ANDANTINO: readonly (readonly [number, readonly number[]])[] = [
+	...Array(4).fill([45, [61, 64, 69]]),
+	...Array(2).fill([50, [64, 68, 71]]),
+	...Array(2).fill([52, [62, 66, 71]]),
+	[55, [61, 64, 66]],
 ];
 
 const INTRO: NoteEvent[] = [
 	...ANDANTINO.flatMap(([root, chord], bar) => [
-		...sequence(bar, root, chord, 0.35 + bar * 0.05),
-		...(bar >= 4 ? pulse(bar, root, 0.4 + (bar - 4) * 0.06) : []),
+		...sequence(bar, root, chord, 0.4 + bar * 0.05),
+		...(bar >= 4 ? sequence2(bar, root, chord, 0.45 + (bar - 4) * 0.05) : []),
 	]),
-	...[57, 61, 64, 69].map((p) => n("choir", 0, 0, 12, p, 0.5)),
-	...[56, 62, 64, 71].map((p) => n("choir", 4, 0, 6, p, 0.5)),
-	...[59, 62, 66, 71].map((p) => n("choir", 6, 0, 6, p, 0.5)),
-	...[57, 61, 64, 67].map((p) => n("choir", 8, 0, 3, p, 0.5)),
+	...choirChord(0, 45, [57, 61, 64, 69], 12, 0.45),
+	...choirChord(4, 50, [56, 62, 64, 71], 6, 0.5),
+	...choirChord(6, 52, [59, 62, 66, 71], 6, 0.5),
+	...choirChord(8, 55, [57, 61, 64, 67], 3, 0.5),
 	// The horns' call on the lead, at their sounding pitch.
 	...(
 		[
@@ -220,8 +263,9 @@ function choir(): NoteEvent[] {
 		const b = HARMONY[bar];
 		if (b && a && b[2].join() === a[2].join()) continue;
 		if (a)
-			for (const p of a[2])
-				out.push(n("choir", from, 0, (bar - from) * 3, p, dyn(from) * 0.7));
+			out.push(
+				...choirChord(from, a[0], a[2], (bar - from) * 3, dyn(from) * 0.7),
+			);
 		from = bar;
 	}
 	return out;
@@ -231,7 +275,7 @@ const WALTZ: NoteEvent[] = [
 	...THEME.flatMap(([bar, beat, pitch, dur, answer]) => [
 		n("lead", bar, beat, dur, pitch, dyn(bar)),
 		...(answer
-			? [n("sparkle", bar, beat, Math.min(dur, 0.5), pitch + 12, dyn(bar))]
+			? [n("answer", bar, beat, Math.max(dur, 1.5), pitch - 12, dyn(bar))]
 			: []),
 		...(answer && beat === 2
 			? [n("lead", bar, 1.9, 0.1, pitch - 1, dyn(bar) * 0.6)]
@@ -239,7 +283,10 @@ const WALTZ: NoteEvent[] = [
 	]),
 	...HARMONY.flatMap((h, bar) =>
 		h
-			? [...sequence(bar, h[0], h[1], dyn(bar)), ...pulse(bar, h[0], dyn(bar))]
+			? [
+					...sequence(bar, h[0], h[1], dyn(bar)),
+					...sequence2(bar, h[0], h[1], dyn(bar)),
+				]
 			: sequence(bar, 45, [61, 64, 67], dyn(bar) * 0.8),
 	),
 	...choir(),
@@ -260,22 +307,22 @@ const CADENCE: NoteEvent[] = [
 			[3, 0, 74, 3],
 		] as const
 	).map(([bar, beat, p, dur]) => n("lead", bar, beat, dur, p, 0.85)),
-	n("sparkle", 3, 0, 0.5, 86, 0.8),
+	n("answer", 3, 0, 3, 62, 0.8),
 	...sequence(0, 43, [59, 62, 67], 0.85),
 	...sequence(1, 45, [55, 61, 64], 0.85),
 	...sequence(2, 38, [57, 62, 66], 0.85),
-	...pulse(0, 43, 0.85),
-	...pulse(1, 45, 0.85),
-	...pulse(2, 38, 0.85),
-	n("pulse", 3, 0, 3, 38, 0.85),
-	...[55, 59, 62, 67].map((p) => n("choir", 0, 0, 3, p, 0.6)),
-	...[55, 61, 64, 69].map((p) => n("choir", 1, 0, 3, p, 0.6)),
-	...[50, 57, 62, 66].map((p) => n("choir", 2, 0, 6, p, 0.6)),
+	...sequence2(0, 43, [59, 62, 67], 0.85),
+	...sequence2(1, 45, [55, 61, 64], 0.85),
+	// The sequence stops on the low D; the choir holds the tonic.
+	n("seq", 3, 0, 3, 38, 0.8),
+	...choirChord(0, 43, [55, 59, 62, 67], 3, 0.6),
+	...choirChord(1, 45, [55, 61, 64, 69], 3, 0.6),
+	...choirChord(2, 38, [50, 57, 62, 66], 6, 0.6),
 ];
 
 /**
- * Score bars: the intro 0–8, the waltz 9–40 (48 s a loop at `BERLIN_BPM`),
- * the cadence 41–44, broadening over its last two.
+ * Score bars: the intro 0–8, the waltz 9–40 (49.7 s a loop at
+ * `BERLIN_BPM`), the cadence 41–44, broadening over its last two.
  */
 export const DANUBE_BERLIN: Song = {
 	name: "An der schönen blauen Donau (Berlin school)",
@@ -289,11 +336,11 @@ export const DANUBE_BERLIN: Song = {
 	tempo: [
 		{ bar: 0, bpm: BERLIN_BPM },
 		{ bar: 42, bpm: BERLIN_BPM },
-		{ bar: 44, bpm: 96, ramp: true },
+		{ bar: 44, bpm: 92, ramp: true },
 	],
 	loop: { from: "waltz", to: "waltz" },
 	resolve: "cadence",
-	space: { reverbS: 5, echoBeats: 0.75, echoFeedback: 0.45 },
+	space: { reverbS: 6, echoBeats: 0.75, echoFeedback: 0.5 },
 };
 
 /** The loader's name for this version (`music-danube-variants.ts`). */
