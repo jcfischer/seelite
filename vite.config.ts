@@ -1,6 +1,7 @@
 import { defineConfig, type Plugin } from "vite";
 import { resolve } from "node:path";
 import { treeDeclaration } from "./scripts/lib/tree-declaration.mjs";
+import { socialPreview } from "./src/social-preview";
 
 /**
  * Drop onnxruntime-web's own `.wasm` from the build (#604, the principal's
@@ -48,7 +49,7 @@ export default defineConfig({
 	 * factory lives in `scripts/lib/tree-declaration.mjs` beside the guard that
 	 * reads it.
 	 */
-	plugins: [treeDeclaration()],
+	plugins: [treeDeclaration(), socialPreview()],
 	/**
 	 * The neural voice's runtime resolves its files by its own module's URL,
 	 * and the dependency pre-bundler moved the module away from them: the

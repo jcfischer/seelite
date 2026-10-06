@@ -130,6 +130,19 @@ a request on load — and `src/public-site.ts` builds the
 press the home page asks nothing of another origin, and
 `scripts/probe-public-site.mjs` holds it.
 
+**And a third count on 2026-10-06 (#714):** the principal asked for the
+visits that shared links bring to be counted on their own. An opened postcard
+link is counted once under a third site id, before its recipe is parsed, so a
+link the build refuses still counts. The recipe rides the fragment, which the
+tracker does not read, so what reaches the counter is `/` and the referrer.
+
+**Link previews (#714).** Every public page carries Open Graph and Twitter
+card tags, written once by `src/social-preview.ts` at build, and names one
+1200 x 630 image on farbetween.ch: a frame of the Docking Waltz film, the
+principal's choice. A crawler runs no script and never sees a fragment, so a
+postcard link previews as the home page; a preview per postcard would need a
+backend and was declined.
+
 ## Development horizons
 
 ### Now — make one returnable frontier life real
