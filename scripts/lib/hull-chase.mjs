@@ -135,14 +135,12 @@ export async function measureHullChase(
 				? new Uint8Array(scratch.width * scratch.height)
 				: null;
 			if (inFixedMask) for (const at of fixedMask) inFixedMask[at] = 1;
-			let kept = [];
-			let keptLuma = [];
 			const summarizeDifference = (hull, withoutShip) => {
 				let peak = 0;
 				let peakAt = 0;
 				const values = [];
-				kept = [];
-				keptLuma = [];
+				const kept = [];
+				const keptLuma = [];
 				for (let i = 0; i < hull.length; i += 4) {
 					const here = luma(hull, i);
 					if (inFixedMask) {
@@ -166,6 +164,8 @@ export async function measureHullChase(
 					lowerQuartile: values[Math.floor(values.length * 0.25)] ?? 0,
 					median: values[Math.floor(values.length * 0.5)] ?? 0,
 					pixels: values.length,
+					kept,
+					keptLuma,
 				};
 			};
 			const peaks = [];
@@ -182,6 +182,7 @@ export async function measureHullChase(
 			// point sprite overlaps the fuselage, so a future Three.js type change
 			// must not silently put the lamp back into the hull sample.
 			if (navLights) navLights.visible = false;
+			let last = null;
 			for (let sample = 0; sample < sampleCount; sample++) {
 				const hull = frame();
 				const summary = summarizeDifference(hull, withoutShip);
@@ -190,6 +191,7 @@ export async function measureHullChase(
 				lowerQuartiles.push(summary.lowerQuartile);
 				medians.push(summary.median);
 				pixels = Math.max(pixels, summary.pixels);
+				last = summary;
 			}
 			for (const mesh of meshes) mesh.object.visible = mesh.visible;
 			if (navLights) navLights.visible = navLightsVisible;
@@ -207,8 +209,9 @@ export async function measureHullChase(
 				medians,
 				exposure: game.exposure,
 				finishes: game.finishes,
-				...(returnMask ? { mask: kept } : {}),
-				...(returnLuma ? { luma: keptLuma } : {}),
+				// The last sample's pixels; a fixed mask makes every sample's the same.
+				...(returnMask ? { mask: last.kept } : {}),
+				...(returnLuma ? { luma: last.keptLuma } : {}),
 			};
 		},
 		// The mask goes back only when it was made here: a caller that passed

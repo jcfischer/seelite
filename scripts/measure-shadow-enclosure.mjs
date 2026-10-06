@@ -136,37 +136,37 @@ const resetClock = async (page) => {
 };
 
 /**
- * One lookup for a layer's named light, installed in the page so every
- * evaluate that reads or writes the rig finds the same object.
+ * The rig's lookup, read and write, installed in the page once so the
+ * evaluates below and the readbacks the lights-held rule checks are one copy.
  */
 const installLayerLights = (page) =>
 	page.addInitScript(() => {
 		window.__layerLight = (scene, name) =>
 			scene.children.find((object) => object.isLight && object.name === name);
+		window.__readLights = (scenes) =>
+			scenes.map((scene) => ({
+				scene,
+				sun: window.__layerLight(window.__seelite[scene], "sun")?.intensity,
+				hemisphere: window.__layerLight(window.__seelite[scene], "hemisphere")
+					?.intensity,
+			}));
+		window.__writeLights = (scenes, wanted) => {
+			for (const scene of scenes)
+				for (const name of ["sun", "hemisphere"]) {
+					const light = window.__layerLight(window.__seelite[scene], name);
+					if (light) light.intensity = wanted[name];
+				}
+		};
 	});
 
 /** Every layer's `"sun"` and `"hemisphere"`, read off the page. */
 const readLights = (page) =>
-	page.evaluate((scenes) => {
-		const game = window.__seelite;
-		return scenes.map((scene) => ({
-			scene,
-			sun: window.__layerLight(game[scene], "sun")?.intensity,
-			hemisphere: window.__layerLight(game[scene], "hemisphere")?.intensity,
-		}));
-	}, LAYER_SCENES);
+	page.evaluate((scenes) => window.__readLights(scenes), LAYER_SCENES);
 
 /** Set every layer's `"sun"` and `"hemisphere"` to one pair of intensities. */
 const writeLights = (page, lights) =>
 	page.evaluate(
-		([scenes, wanted]) => {
-			const game = window.__seelite;
-			for (const scene of scenes)
-				for (const name of ["sun", "hemisphere"]) {
-					const light = window.__layerLight(game[scene], name);
-					if (light) light.intensity = wanted[name];
-				}
-		},
+		([scenes, wanted]) => window.__writeLights(scenes, wanted),
 		[LAYER_SCENES, lights],
 	);
 
@@ -206,24 +206,11 @@ const measure = (page, { occlusion, lights, mode }) =>
 				return ctx.getImageData(0, 0, W, H).data;
 			};
 
-			const pairs = scenes.map((scene) => ({
-				scene,
-				sun: window.__layerLight(game[scene], "sun"),
-				hemisphere: window.__layerLight(game[scene], "hemisphere"),
-			}));
-			const read = () =>
-				pairs.map(({ scene, sun, hemisphere }) => ({
-					scene,
-					sun: sun?.intensity,
-					hemisphere: hemisphere?.intensity,
-				}));
+			const read = () => window.__readLights(scenes);
 			const saved = read();
 
 			// The arm's lights first, so the baseline is drawn under them too.
-			for (const { sun, hemisphere } of pairs) {
-				if (sun) sun.intensity = wanted.sun;
-				if (hemisphere) hemisphere.intensity = wanted.hemisphere;
-			}
+			window.__writeLights(scenes, wanted);
 
 			// Turn off dither for measurement.
 			const dither = game.settings.value.dither;
@@ -263,11 +250,7 @@ const measure = (page, { occlusion, lights, mode }) =>
 			};
 
 			// Restore.
-			for (let i = 0; i < pairs.length; i++) {
-				if (pairs[i].sun) pairs[i].sun.intensity = saved[i].sun;
-				if (pairs[i].hemisphere)
-					pairs[i].hemisphere.intensity = saved[i].hemisphere;
-			}
+			for (const row of saved) window.__writeLights([row.scene], row);
 			const restored = read();
 			for (const [object, was] of hidden) object.visible = was;
 			game.setOcclusion();
@@ -340,14 +323,14 @@ const pct = (r) => `${r.darkerPct.toFixed(3).padStart(7)}%`;
 const deep = (r) => `${r.deepest.toFixed(1).padStart(5)}/255`;
 const onOff = (b) => (b ? "on" : "off");
 
-function printRows(rows) {
+function printRows(rows, heldByArm) {
 	console.log(
 		`    ${"arm".padEnd(15)} ${"sun".padStart(5)} ${"hemi".padStart(6)}  ` +
 			`${"shadow".padEnd(6)} ${"AO".padEnd(3)}  ${"darker".padStart(8)}  ${"deepest".padStart(9)}  base luma`,
 	);
 	for (const { arm, result } of rows)
 		console.log(
-			`    ${arm.name.padEnd(15)} ${arm.lights.sun.toFixed(2).padStart(5)} ${arm.lights.hemisphere.toFixed(3).padStart(6)}  ` +
+			`    ${(heldByArm.get(arm.name) === false ? `${arm.name} *` : arm.name).padEnd(15)} ${arm.lights.sun.toFixed(2).padStart(5)} ${arm.lights.hemisphere.toFixed(3).padStart(6)}  ` +
 				`${onOff(result.drawn.shadow).padEnd(6)} ${onOff(result.drawn.ao).padEnd(3)}  ` +
 				`${pct(result)}  ${deep(result)}  ${result.baseLuma.toFixed(2)}`,
 		);
@@ -361,12 +344,16 @@ async function hullUnder(page, lights, shippedLights, options = {}) {
 	await writeLights(page, lights);
 	const atHull = await readLights(page);
 	const hull = await measureHullChase(page, 1, options);
+	// Again after the read: the reader steps frames before it draws, so the
+	// readback before it alone cannot show that those frames left the rig be.
+	const afterHull = await readLights(page);
 	await writeLights(page, shippedLights);
 	const restored = await readLights(page);
 	refuseUnless(
 		`hull-chase at sun ${lights.sun}, hemisphere ${lights.hemisphere}`,
 		[
 			...lightsMatch("hull", atHull, lights),
+			...lightsMatch("after hull", afterHull, lights),
 			...lightsMatch("restored", restored, shippedLights),
 		],
 	);
@@ -386,6 +373,106 @@ async function hullUnder(page, lights, shippedLights, options = {}) {
 		mask: hull.mask,
 		luma: hull.luma,
 	};
+}
+
+/**
+ * Each rebalance sun's hemisphere under `EXPOSURE_RULE`, with the lit side
+ * read beside it (`litSide`), printed as the exposure table. Returns
+ * `{ sun, hemisphere, held }` per sun; the ladder flies the whole-hull value.
+ */
+async function solveRebalances(page, shipped) {
+	console.log(`\n  the same exposure — ${EXPOSURE_RULE.describe}`);
+	const target = await hullUnder(page, shipped, shipped, { keepLuma: true });
+	const { mask } = target;
+	console.log(
+		`  shipped: median ${target.median.toFixed(2)}, peak ${target.peak.toFixed(2)}, ` +
+			`lower quartile ${target.lowerQuartile.toFixed(2)} over ${target.pixels} px`,
+	);
+	console.log(
+		`  context: probe-light-rig's band, at device scale 1 — peak ${HULL_LUMA_BAND.min}–${HULL_LUMA_BAND.max}, ` +
+			`median ≥ ${HULL_LUMA_FLOORS.median}, lower quartile ≥ ${HULL_LUMA_FLOORS.lowerQuartile}`,
+	);
+
+	// The lit side, read beside the whole hull and not instead of it: the
+	// pixels the shipped sun adds more than LIT_SIDE_MIN_GAIN codes to.
+	const noSun = await hullUnder(
+		page,
+		{ sun: 0, hemisphere: shipped.hemisphere },
+		shipped,
+		{ mask, keepLuma: true },
+	);
+	const lit = litSide({
+		shippedLuma: target.luma,
+		noSunLuma: noSun.luma,
+		minGain: LIT_SIDE_MIN_GAIN,
+	});
+	const litPixels = lit.filter(Boolean).length;
+	if (litPixels === 0)
+		throw new Error("measure-shadow-enclosure: the sun reaches no hull pixel");
+	const litTarget = medianWhere(target.luma, lit);
+	console.log(
+		`  lit side: ${litPixels} of ${lit.length} px (${((100 * litPixels) / lit.length).toFixed(1)}%) gain > ${LIT_SIDE_MIN_GAIN} codes from the sun; ` +
+			`shipped lit-side median ${litTarget.toFixed(2)}`,
+	);
+	console.log(
+		`  the ladder uses the whole-hull rule; "lit rule" is the hemisphere that would hold the lit-side median instead`,
+	);
+	console.log(
+		`    ${"sun".padStart(5)} ${"hemi".padStart(6)}  ${"median".padStart(7)} ${"lit med".padStart(7)} ${"peak".padStart(7)} ${"LQ".padStart(7)}  ${"held".padEnd(10)}  ` +
+			`${"lit rule".padStart(8)} ${"median".padStart(7)} ${"lit med".padStart(7)}  held`,
+	);
+	// `needLuma`: only the lit-side search reads per-pixel values; the
+	// whole-hull search reads the median and need not ship ~100k of them.
+	const solve = async (sun, read, aim, needLuma) => {
+		const found = await bisectHemisphere(
+			async (hemisphere) =>
+				read(
+					await hullUnder(page, { sun, hemisphere }, shipped, {
+						mask,
+						keepLuma: needLuma,
+					}),
+				),
+			{
+				target: aim,
+				lo: 0,
+				hi: shipped.hemisphere,
+				tolerance: EXPOSURE_RULE.toleranceCodes,
+			},
+		);
+		// Round to three places so the printed value is the value drawn, and
+		// read the hull once more at it.
+		const hemisphere = Math.round(found.hemisphere * 1000) / 1000;
+		const at = await hullUnder(page, { sun, hemisphere }, shipped, {
+			mask,
+			keepLuma: true,
+		});
+		const held = Math.abs(read(at) - aim) <= EXPOSURE_RULE.toleranceCodes;
+		return {
+			hemisphere,
+			at,
+			litMedian: medianWhere(at.luma, lit),
+			held,
+			heldText: held ? "yes" : `no (${found.reason ?? "rounding"})`,
+		};
+	};
+	const rebalances = [];
+	for (const sun of REBALANCE_SUNS) {
+		const whole = await solve(sun, (hull) => hull.median, target.median, false);
+		const bySide = await solve(
+			sun,
+			(hull) => medianWhere(hull.luma, lit),
+			litTarget,
+			true,
+		);
+		rebalances.push({ sun, hemisphere: whole.hemisphere, held: whole.held });
+		console.log(
+			`    ${sun.toFixed(2).padStart(5)} ${whole.hemisphere.toFixed(3).padStart(6)}  ` +
+				`${whole.at.median.toFixed(2).padStart(7)} ${whole.litMedian.toFixed(2).padStart(7)} ` +
+				`${whole.at.peak.toFixed(2).padStart(7)} ${whole.at.lowerQuartile.toFixed(2).padStart(7)}  ${whole.heldText.padEnd(10)}  ` +
+				`${bySide.hemisphere.toFixed(3).padStart(8)} ${bySide.at.median.toFixed(2).padStart(7)} ${bySide.litMedian.toFixed(2).padStart(7)}  ${bySide.heldText}`,
+		);
+	}
+	return rebalances;
 }
 
 // ---- boot ----
@@ -449,96 +536,13 @@ try {
 
 	// ---- the same exposure ----
 
-	console.log(`\n  the same exposure — ${EXPOSURE_RULE.describe}`);
-	const target = await hullUnder(page, shipped, shipped, { keepLuma: true });
-	const { mask } = target;
-	console.log(
-		`  shipped: median ${target.median.toFixed(2)}, peak ${target.peak.toFixed(2)}, ` +
-			`lower quartile ${target.lowerQuartile.toFixed(2)} over ${target.pixels} px`,
-	);
-	console.log(
-		`  context: probe-light-rig's band, at device scale 1 — peak ${HULL_LUMA_BAND.min}–${HULL_LUMA_BAND.max}, ` +
-			`median ≥ ${HULL_LUMA_FLOORS.median}, lower quartile ≥ ${HULL_LUMA_FLOORS.lowerQuartile}`,
-	);
-
-	// The lit side, read beside the whole hull and not instead of it: the
-	// pixels the shipped sun adds more than LIT_SIDE_MIN_GAIN codes to.
-	const noSun = await hullUnder(
-		page,
-		{ sun: 0, hemisphere: shipped.hemisphere },
-		shipped,
-		{ mask, keepLuma: true },
-	);
-	const lit = litSide({
-		shippedLuma: target.luma,
-		noSunLuma: noSun.luma,
-		minGain: LIT_SIDE_MIN_GAIN,
-	});
-	const litPixels = lit.filter(Boolean).length;
-	if (litPixels === 0)
-		throw new Error("measure-shadow-enclosure: the sun reaches no hull pixel");
-	const litTarget = medianWhere(target.luma, lit);
-	console.log(
-		`  lit side: ${litPixels} of ${lit.length} px (${((100 * litPixels) / lit.length).toFixed(1)}%) gain > ${LIT_SIDE_MIN_GAIN} codes from the sun; ` +
-			`shipped lit-side median ${litTarget.toFixed(2)}`,
-	);
-	console.log(
-		`  the ladder uses the whole-hull rule; "lit rule" is the hemisphere that would hold the lit-side median instead`,
-	);
-	console.log(
-		`    ${"sun".padStart(5)} ${"hemi".padStart(6)}  ${"median".padStart(7)} ${"lit med".padStart(7)} ${"peak".padStart(7)} ${"LQ".padStart(7)}  ${"held".padEnd(10)}  ` +
-			`${"lit rule".padStart(8)} ${"median".padStart(7)} ${"lit med".padStart(7)}  held`,
-	);
-	const solve = async (sun, read, aim) => {
-		const found = await bisectHemisphere(
-			async (hemisphere) =>
-				read(
-					await hullUnder(page, { sun, hemisphere }, shipped, {
-						mask,
-						keepLuma: true,
-					}),
-				),
-			{
-				target: aim,
-				lo: 0,
-				hi: shipped.hemisphere,
-				tolerance: EXPOSURE_RULE.toleranceCodes,
-			},
-		);
-		// Round to three places so the printed value is the value drawn, and
-		// read the hull once more at it.
-		const hemisphere = Math.round(found.hemisphere * 1000) / 1000;
-		const at = await hullUnder(page, { sun, hemisphere }, shipped, {
-			mask,
-			keepLuma: true,
-		});
-		const held = Math.abs(read(at) - aim) <= EXPOSURE_RULE.toleranceCodes;
-		return {
-			hemisphere,
-			at,
-			litMedian: medianWhere(at.luma, lit),
-			held: held ? "yes" : `no (${found.reason ?? "rounding"})`,
-		};
-	};
-	const rebalances = [];
-	for (const sun of REBALANCE_SUNS) {
-		const whole = await solve(sun, (hull) => hull.median, target.median);
-		const bySide = await solve(
-			sun,
-			(hull) => medianWhere(hull.luma, lit),
-			litTarget,
-		);
-		rebalances.push({ sun, hemisphere: whole.hemisphere });
-		console.log(
-			`    ${sun.toFixed(2).padStart(5)} ${whole.hemisphere.toFixed(3).padStart(6)}  ` +
-				`${whole.at.median.toFixed(2).padStart(7)} ${whole.litMedian.toFixed(2).padStart(7)} ` +
-				`${whole.at.peak.toFixed(2).padStart(7)} ${whole.at.lowerQuartile.toFixed(2).padStart(7)}  ${whole.held.padEnd(10)}  ` +
-				`${bySide.hemisphere.toFixed(3).padStart(8)} ${bySide.at.median.toFixed(2).padStart(7)} ${bySide.litMedian.toFixed(2).padStart(7)}  ${bySide.held}`,
-		);
-	}
+	const rebalances = await solveRebalances(page, shipped);
 	await page.evaluate(() => window.__returnToBootPosition());
 
 	const arms = enclosureArms({ shipped, rebalances });
+	const heldBySun = new Map(
+		rebalances.map((r) => [`rebalance ${r.sun}`, r.held]),
+	);
 	console.log(`\n  arms: ${arms.map((a) => a.name).join(", ")}`);
 
 	// ---- approach ladder in chase view ----
@@ -567,7 +571,10 @@ try {
 		console.log(
 			`\n  ${rung} radii — gate ${state.open ? "open" : "shut"}, enclosure ${state.enclosureRad.toFixed(4)} rad`,
 		);
-		printRows(await measureArms(page, arms, shipped, `${rung} radii`));
+		printRows(
+			await measureArms(page, arms, shipped, `${rung} radii`),
+			heldBySun,
+		);
 	}
 
 	// ---- inside the bay ----
@@ -585,7 +592,7 @@ try {
 		`  gate: ${bayState.open ? "open" : "shut"}, enclosure: ${bayState.enclosureRad.toFixed(4)} rad`,
 	);
 	const bayRows = await measureArms(page, arms, shipped, "bay");
-	printRows(bayRows);
+	printRows(bayRows, heldBySun);
 	const texel = bayRows.find((row) => row.arm.name === "shadow only")?.result
 		.texelKm;
 	if (texel > 0) console.log(`  texel: ${(texel * 1000).toFixed(2)} m`);
@@ -609,6 +616,7 @@ try {
 		`"rebalance s" vs "shadow only": the shadow under a rig with the sun at s and the hemisphere`,
 		`  lowered to hold the hull's exposure (above). This is the move #231 is about.`,
 		`"control" repeats "shipped" for same-build drift.`,
+		`* after a rebalance's name: its hemisphere did not hold the exposure rule (see the exposure table).`,
 		`"base luma" is the baseline frame's mean display luma: the hull rule holds the hull,`,
 		`  not the station, so a rebalance that moves this column changes the station's exposure.`,
 		`both statistics: coverage (% of pixels past ${MOVED}/255) AND deepest single-pixel change.`,
