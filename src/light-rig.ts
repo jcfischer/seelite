@@ -121,7 +121,7 @@ export const LIGHT_RIG = {
 	/** Directional, because one light cannot serve two scenes at two scales;
 	 *  `main.ts` has the argument. */
 	/** Paired with `environmentIntensity`; see that field's measured sweep. */
-	sun: { color: 0xfff0d8, intensity: 0.2 },
+	sun: { color: 0xfff0d8, intensity: 1.0 },
 	/**
 	 * The ambient replacement. Aimed along the star, so `sky` is the lift on the
 	 * star side and `ground` the lift on the far side.
@@ -132,7 +132,7 @@ export const LIGHT_RIG = {
 	 * darker than sky, so the lift retains an edge-bearing gradient rather than
 	 * becoming a flat ambient wash.
 	 */
-	hemisphere: { sky: 0xc0ccd8, ground: 0x8090a0, intensity: 6.85 },
+	hemisphere: { sky: 0xc0ccd8, ground: 0x8090a0, intensity: 3.425 },
 	/** Camera-side, near layer only. Still off-axis, but close enough to the lens
 	 * that the whole chase hull receives a readable base rather than one bright
 	 * shoulder surrounded by black paint. */
