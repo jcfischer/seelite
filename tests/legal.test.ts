@@ -102,13 +102,18 @@ const instanceWith = (...wanted: [Standing, number][]): number =>
 
 /** A station inside the victim's earshot, and one outside it, with the victim
  *  at the origin. */
-const near = (key: CarrierKey): EarshotStation => ({
+const near = (
+	key: CarrierKey,
+	type: StationType = "trade",
+): EarshotStation => ({
 	key,
 	pos: v3(DISTRESS_RANGE_KM / 2, 0, 0),
+	type,
 });
 const far = (key: CarrierKey): EarshotStation => ({
 	key,
 	pos: v3(DISTRESS_RANGE_KM * 2, 0, 0),
+	type: "trade",
 });
 
 /** The facts of one act, as `Game` would hand them over. */
@@ -527,7 +532,7 @@ describe("H7: a shipyard refuses a Wanted pilot whatever it saw", () => {
 
 	test("a trade station and a refinery refuse only what they saw", () => {
 		const wanted = law(40, 0);
-		for (const type of ["trade", "refinery", "outpost"] as const) {
+		for (const type of ["trade", "refinery"] as const) {
 			expect(dockingRefusedByLaw(wanted, berth(YARD, type), 0)).toBe(false);
 			expect(
 				dockingRefusedByLaw(law(40, 0, [YARD]), berth(YARD, type), 0),
@@ -557,6 +562,47 @@ describe("H7: a shipyard refuses a Wanted pilot whatever it saw", () => {
 		expect(dockingRefusedByLaw(witnessed, berth(OTHER, "refinery"), 0)).toBe(
 			false,
 		);
+	});
+});
+
+describe("#490 D5: a raider outpost admits only a Wanted pilot (node #491)", () => {
+	const OUTPOST = carrierKey(3, "station-outpost");
+
+	test("refused below Wanted, admitted at it, and refused again once it decays", () => {
+		// The witness rule inverted: the exit is the other direction, so the
+		// same decay that reopens a shipyard closes the outpost.
+		expect(dockingRefusedByLaw(law(0), berth(OUTPOST, "outpost"), 0)).toBe(
+			true,
+		);
+		const wanted = law(40, 0);
+		expect(dockingRefusedByLaw(wanted, berth(OUTPOST, "outpost"), 0)).toBe(
+			false,
+		);
+		expect(
+			dockingRefusedByLaw(
+				wanted,
+				berth(OUTPOST, "outpost"),
+				minutesAbove(40, WANTED_HEAT) * MIN,
+			),
+		).toBe(true);
+	});
+
+	test("a witness entry does not refuse a Wanted pilot there", () => {
+		// D10 keeps an outpost off the list in the first place; this is that a
+		// list naming one by some other road still cannot turn the key into a
+		// bar, because the outpost's rule does not read the list.
+		expect(
+			dockingRefusedByLaw(law(40, 0, [OUTPOST]), berth(OUTPOST, "outpost"), 0),
+		).toBe(false);
+	});
+
+	test("an offence beside an outpost files nothing", () => {
+		const world = charged(newWorld(7), "destroyed", {
+			galaxy: 0,
+			instanceOrdinal: instanceWith(["clean", 0]),
+			stations: [near(OUTPOST, "outpost")],
+		});
+		expect(world.galaxies[0].legalStatus.witnesses).toEqual([]);
 	});
 });
 
@@ -816,7 +862,10 @@ describe("chargeOffence: one offence, priced and filed in one event", () => {
 			newWorld(7),
 			facts("assault", {
 				instanceOrdinal: clean,
-				stations: [near(TRADE), { key: TRADE, pos: v3(0, 1, 0) }],
+				stations: [
+					near(TRADE),
+					{ key: TRADE, pos: v3(0, 1, 0), type: "trade" },
+				],
 			}),
 		).world;
 		expect(first.galaxies[0].legalStatus.witnesses).toEqual([TRADE]);

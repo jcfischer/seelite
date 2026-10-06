@@ -35,6 +35,7 @@ import {
 	SATURATE,
 	type StationTypeKey,
 	commodity,
+	hasMarket,
 	marketRowAt,
 } from "../src/market";
 import {
@@ -217,7 +218,11 @@ for (const world of worlds) {
 		if (contents.stations.length === 0) return;
 		const entry: SystemMarket = {
 			economy: record.economy,
-			stations: contents.stations.map((s) => s.type as StationTypeKey),
+			// Priced stations only: a raider outpost has no market (node #491),
+			// and the cast below would hand it to `marketRowAt` as no offset.
+			stations: contents.stations
+				.filter(hasMarket)
+				.map((s) => s.type as StationTypeKey),
 			pos: record.pos,
 		};
 		systems.push(entry);

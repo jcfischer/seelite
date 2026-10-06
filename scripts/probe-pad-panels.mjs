@@ -394,8 +394,11 @@ try {
 						.liveLeftView,
 					hint:
 						document.querySelector("[data-live-pad-hint]")?.textContent ?? null,
+					// Requests always has its Current and Past tabs to walk (node
+					// #690), so an empty board is no longer an empty walk.
 					walkable: document.querySelectorAll(
-						'[data-live-panel="left"] [data-live-nav-target],' +
+						'[data-live-panel="left"] [data-live-request-action],' +
+							'[data-live-panel="left"] [data-live-nav-target],' +
 							'[data-live-panel="left"] [data-live-nav-kind],' +
 							'[data-live-panel="left"] [data-live-left-tab]:not(.lc-tab),' +
 							'[data-live-panel="left"] [data-map-haze],' +

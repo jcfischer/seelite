@@ -48,6 +48,11 @@ eligible for a hauler homed in system `A` when:
 3. the **static charge bound** of both in-system legs fits the hull's full
    `chargeAu`: `dHome + dAway ≤ chargeAu`, where each `d` is §5's distance
    bound from that system's lane point to the station.
+4. `s` is on the hauler's home's side of `STATION_LAWFUL` (node #491): a
+   lawful station's hauler is never sent to a raider outpost, as a local leg
+   never is (`station-types.md` §5.5). An outpost rosters one carrier at
+   ordinal 0, which never hauls, so today the clause only removes outposts
+   from lawful sets.
 
 The eligible set is sorted by `(systemIndex, station.id)`, both ascending, with
 `station.id` compared as #261 §1 compares it. For the away interval with

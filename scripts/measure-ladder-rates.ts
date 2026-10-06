@@ -65,6 +65,7 @@ import {
 	TOP_RUNG,
 } from "../src/ladder";
 import { fullKitCr } from "../src/market";
+import { STATION_BERTHS_OPEN } from "../src/station";
 import { PULSE_LASER, SHIELD_POOL } from "../src/ship-condition";
 import { RELAY_INTEGRITY } from "../src/pirate-relay";
 import { RAIDER_REPAIR_S, RAIDER_WRECK_S } from "../src/raider-wreck";
@@ -378,8 +379,16 @@ const components = (
 	return out.sort((a, b) => b.length - a.length);
 };
 
+/** First-time dock kinds: a station a pilot can dock at. A raider outpost's
+ *  berths are closed (node #491, `STATION_BERTHS_OPEN`), so it is no kind. */
 const stationsIn = (w: World, rs: readonly SystemRecord[]) =>
-	rs.reduce((n, r) => n + w.contentsFor(r).stations.length, 0);
+	rs.reduce(
+		(n, r) =>
+			n +
+			w.contentsFor(r).stations.filter((s) => STATION_BERTHS_OPEN[s.type])
+				.length,
+		0,
+	);
 
 const pool = WORLDS.map((w) => ({
 	systems: w.systems.length,

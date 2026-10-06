@@ -20,15 +20,22 @@
  * ## Two records per slot (#89's correction to D7)
  *
  * A slot holds `live`, which the debounce writes continuously, and
- * `lastDocked`, written at each docking flush. A non-permadeath death restores
- * `lastDocked` — genuine leg-loss, which is what the classic-Elite framing
+ * `lastDocked`, the commander at its last station: written by the dock flush
+ * and written again by the undock flush, so once a pilot has launched it is
+ * the commander **as it launched** (#660 D1, built by node #702) and what was
+ * bought at the dock survives a death. A non-permadeath death restores its
+ * commander — genuine leg-loss, which is what the classic-Elite framing
  * described. The resolution's original wording ("rolls back to the last write")
  * was written against the dock-only cadence rejected in the same round, where
- * reloading the last write is dying again.
+ * reloading the last write is dying again. The name stays: a launch record
+ * still names the station it launched from.
  *
  * `lastDocked` is **not** a last-known-good fallback, and D9's rejection of one
  * stands: a `lastDocked` that will not parse is a named error, never a silent
- * substitution.
+ * substitution. **An absent one is not an error** (#660 D10): a pilot who has
+ * never docked wakes as a new commander at the start system's trade station,
+ * derived at the death by `firstCheckpoint` rather than written at new game.
+ * Nothing here changes the schema; both records are the envelope they were.
  *
  * ## What deliberately is not here
  *
@@ -43,8 +50,14 @@
  */
 
 import { type FirstDayChoice, isFirstDayChoice } from "./first-day-choice";
+import { firstCheckpoint, hasDocked } from "./death-checkpoint";
 import { commanderAfterDeath } from "./holdings";
-import { parseSave, type SaveEnvelope, serializeSave } from "./save-envelope";
+import {
+	type CommanderRecord,
+	parseSave,
+	type SaveEnvelope,
+	serializeSave,
+} from "./save-envelope";
 
 /**
  * The debounce window, milliseconds.
@@ -115,8 +128,9 @@ const noRecordToCopy = (slot: string): never =>
 	fail(`"${slot}" holds no record to copy`);
 
 /**
- * Why a flush is happening. `dock` is the one that also writes the checkpoint;
- * the rest are D4's unconditional flushes.
+ * Why a flush is happening. `dock` and `undock` are the two that also write
+ * the checkpoint (`CHECKPOINT_FLUSHES`); the rest are D4's unconditional
+ * flushes.
  *
  * `quit` means leaving this Commander, whichever way: a tab closing, or a
  * switch the overlay awaits before New game, Load or Import (§11.3). Both write
@@ -124,6 +138,31 @@ const noRecordToCopy = (slot: string): never =>
  * gets, which is neither.
  */
 export type FlushReason = "dock" | "undock" | "jump" | "quit" | "new-game";
+
+/**
+ * The flushes that write `lastDocked` beside `live`: the arrival and the
+ * launch (#660 D1, built by node #702). The launch's is the one a death
+ * restores, so a pilot dies with what they bought at the dock; the arrival's
+ * stands until then, which is what a death on the arrival's rails or in the
+ * berth gets back.
+ */
+const CHECKPOINT_FLUSHES: ReadonlySet<FlushReason> = new Set([
+	"dock",
+	"undock",
+]);
+
+/**
+ * The flushes that write with nothing dirty. `quit` and `new-game` for their
+ * own reasons (`flush`); `undock` because the checkpoint can be stale while
+ * `live` is not — a purchase at the dock lands in `live` through the debounce
+ * and clears the flag, and a launch gated on the flag would leave `lastDocked`
+ * at the arrival, undoing the purchase on a death.
+ */
+const FLUSHES_WHEN_CLEAN: ReadonlySet<FlushReason> = new Set([
+	"quit",
+	"new-game",
+	"undock",
+]);
 
 /**
  * Why a record kind is held as a fault (§11.5): the flush that failed, or the
@@ -339,6 +378,9 @@ export class SaveStore {
 	private readonly schedule: Scheduler;
 	private readonly current: () => SaveEnvelope;
 	private dirty = false;
+	/** Counts `markDirty` calls, so a checkpoint taken before its write can
+	 *  tell whether saved state moved while it waited (`run`). */
+	private edits = 0;
 	private cancel: (() => void) | null = null;
 	/** The write in flight, if any. One at a time: two overlapping
 	 *  transactions can land in either order, and the loser would be the newer
@@ -376,6 +418,7 @@ export class SaveStore {
 	markDirty(): void {
 		if (this.retired) return;
 		this.dirty = true;
+		this.edits += 1;
 		this.cancel?.();
 		this.cancel = this.schedule(() => {
 			this.cancel = null;
@@ -411,13 +454,16 @@ export class SaveStore {
 	}
 
 	/**
-	 * D4's unconditional write. `dock` additionally lays down the checkpoint.
+	 * D4's unconditional write. `dock` and `undock` additionally lay down the
+	 * checkpoint (`CHECKPOINT_FLUSHES`).
 	 *
 	 * A flush with nothing dirty writes nothing: the record on disk already
 	 * says what the world says, and rewriting it would spend a transaction to
-	 * change no bytes.
+	 * change no bytes. **`undock` is not covered by that premise**: `live` may
+	 * say what the world says while `lastDocked` is still the arrival, so it
+	 * writes clean too (`FLUSHES_WHEN_CLEAN`).
 	 *
-	 * **`quit` is the exception, and it has to be.** The other three flushes
+	 * **`quit` is the exception, and it has to be.** The other flushes
 	 * each follow a `saveDirty()` at the transition that caused them, so the
 	 * flag is set by the time they run; `pagehide` follows nothing. A new game
 	 * flown in normal flight only and then closed had *never* dirtied, so it
@@ -430,11 +476,21 @@ export class SaveStore {
 		this.cancel?.();
 		this.cancel = null;
 		if (this.retired) return;
-		if (!this.dirty && reason !== "quit" && reason !== "new-game") return;
-		const kinds: SaveRecordKind[] =
-			reason === "dock" ? ["live", "lastDocked"] : ["live"];
+		if (!this.dirty && !FLUSHES_WHEN_CLEAN.has(reason)) return;
+		const checkpoint = CHECKPOINT_FLUSHES.has(reason);
+		const kinds: SaveRecordKind[] = checkpoint
+			? ["live", "lastDocked"]
+			: ["live"];
+		// **A checkpoint is taken at the transition, not when its write starts.**
+		// `run` queues behind any write in flight, and the launch does not wait
+		// for this flush: read `current()` after the queue and a slow earlier
+		// write hands `lastDocked` the ship already clear of the station, with
+		// whatever happened since — and a death restores flight, not the launch.
 		try {
-			await this.run(kinds, slot);
+			const snapshot = checkpoint
+				? { blob: serializeSave(this.current()), edits: this.edits }
+				: undefined;
+			await this.run(kinds, slot, snapshot); // glossary-ignore: slot
 		} catch (error) {
 			// A flush is a transition the player made — a dock, an undock, a jump,
 			// a switch — so one failure is a fault, with no retry to wait for.
@@ -460,7 +516,11 @@ export class SaveStore {
 		while (this.inFlight) await this.inFlight.catch(() => {});
 	}
 
-	private async run(kinds: SaveRecordKind[], slot: string): Promise<void> {
+	private async run(
+		kinds: SaveRecordKind[],
+		slot: string, // glossary-ignore: slot
+		snapshot?: { readonly blob: unknown; readonly edits: number },
+	): Promise<void> {
 		// Queue behind whatever is already writing rather than racing it. The
 		// awaited chain is what keeps `maxInFlight` at one.
 		//
@@ -470,9 +530,16 @@ export class SaveStore {
 		// — no `lastDocked` checkpoint, and `settled()` rejecting too. The
 		// earlier write's failure is its own caller's; this one still has its
 		// own to report.
+		//
+		// A `snapshot` is a checkpoint `flush` took before queueing. It goes
+		// under every kind in one transaction as before, so `live` may land a
+		// little behind the world; when saved state moved while it waited
+		// (`edits`), the save stays dirty and the debounce is re-armed once the
+		// write lands, so `live` catches up on the cadence that writes it anyway.
 		while (this.inFlight) await this.inFlight.catch(() => {});
-		const blob = serializeSave(this.current());
-		this.dirty = false;
+		const blob = snapshot ? snapshot.blob : serializeSave(this.current());
+		const behind = snapshot !== undefined && snapshot.edits !== this.edits;
+		this.dirty = behind;
 		const work = this.backend.writeMany(slot, kinds, blob);
 		this.inFlight = work.finally(() => {
 			this.inFlight = null;
@@ -481,6 +548,7 @@ export class SaveStore {
 			await this.inFlight;
 			this.failures = 0;
 			for (const kind of kinds) this.faultsHeld.delete(kind);
+			if (behind) this.markDirty();
 		} catch (error) {
 			// The write did not land, so the save is still dirty. D9: the
 			// previous record is untouched — stale rather than broken. Whether
@@ -562,13 +630,20 @@ export class SaveStore {
 	 * write in flight, either of which could land after the copy and put the
 	 * dead ship back. It then reads and validates the dock record, because D9
 	 * makes a bad `lastDocked` a named error rather than something to
-	 * substitute. **Only a record that validates retires the store**: a
-	 * Commander who died before their first dock has no `lastDocked`, and a
-	 * store that had already retired would have dropped every later write
-	 * while still holding the tab's lock. On that path this throws with the
-	 * store still writing and the lock still held. After the copy it gives the
-	 * lock back, so the one-shot continue and the reload's boot can take the
+	 * substitute. **Only a record that validates retires the store**: a store
+	 * that had already retired would have dropped every later write while
+	 * still holding the tab's lock. On a refusal this throws with the store
+	 * still writing and the lock still held. After the copy it gives the lock
+	 * back, so the one-shot continue and the reload's boot can take the
 	 * Commander.
+	 *
+	 * **A Commander who died before their first dock** has no `lastDocked`, and
+	 * since #660 D10 that is not a refusal: `firstCheckpoint` derives a new
+	 * commander docked at the start system's trade station, and it goes
+	 * through `commanderAfterDeath` and the same parse beside the dying world
+	 * as a written record. The one absence that still refuses is a pilot who
+	 * did dock — a held `lastDocked` fault, or a record that `hasDocked` says
+	 * docked, which is the witness a reload keeps.
 	 */
 	async revertToLastDocked(commander: {
 		permadeath: boolean;
@@ -582,10 +657,8 @@ export class SaveStore {
 		let restored: SaveEnvelope;
 		try {
 			const docked = await this.backend.read(this.slot, "lastDocked");
-			if (docked === null || docked === undefined)
-				fail(`Commander "${this.slot}" has no lastDocked record`);
-			const dock = parseSave(docked).commander;
 			const dying = this.current();
+			const dock = this.checkpointFor(docked, dying);
 			raw = serializeSave({
 				world: dying.world,
 				commander: commanderAfterDeath(dock, dying.commander),
@@ -605,6 +678,34 @@ export class SaveStore {
 		await this.backend.write(this.slot, "live", raw);
 		this.release();
 		return restored;
+	}
+
+	/**
+	 * The commander record a death restores from: the `lastDocked` record when
+	 * there is one, and `firstCheckpoint` for a pilot who has never docked.
+	 *
+	 * A record that will not parse is refused with the record named, which is
+	 * D9's named error rather than whatever the parser happened to say. An
+	 * absent one beside a pilot who did dock is refused too: the write that
+	 * would have made it failed, in this tab or before a reload, and waking
+	 * them as a new commander would be the silent substitution D9 rules out.
+	 * The record is the witness that survives the reload (`hasDocked`); the
+	 * held fault is this tab's own.
+	 */
+	private checkpointFor(docked: unknown, dying: SaveEnvelope): CommanderRecord {
+		if (docked !== null && docked !== undefined) {
+			try {
+				return parseSave(docked).commander;
+			} catch (error) {
+				const why = error instanceof Error ? error.message : String(error);
+				return fail(
+					`Commander "${this.slot}" has a lastDocked record that will not parse: ${why}`,
+				);
+			}
+		}
+		if (this.faultsHeld.has("lastDocked") || hasDocked(dying.commander))
+			fail(`Commander "${this.slot}" has docked but has no lastDocked record`);
+		return firstCheckpoint(dying.world.seed, dying.commander);
 	}
 
 	/** Cancels a pending debounced write. */

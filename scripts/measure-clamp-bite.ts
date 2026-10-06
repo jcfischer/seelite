@@ -66,6 +66,7 @@ import {
 	type QuoteFn,
 	PRICE_STEP_CR,
 	marketRow,
+	hasMarket,
 	marketStationOf,
 } from "../src/market";
 import {
@@ -225,7 +226,8 @@ const accFor = <K>(table: Map<K, SpreadAcc>, key: K): SpreadAcc => {
 
 for (const world of worlds) {
 	forEachSystem(world, ALL_GALAXIES, (record, contents) => {
-		for (const station of contents.stations) {
+		// Priced stations only: a raider outpost has no market (node #491).
+		for (const station of contents.stations.filter(hasMarket)) {
 			const market = marketStationOf(station, record.seed);
 			for (const good of COMMODITIES) {
 				// §4's legality is a law about the shelf, and `marketRow` throws rather

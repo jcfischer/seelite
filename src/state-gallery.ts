@@ -21,7 +21,9 @@ import {
 	type DockPhase,
 	type StationConsoleTab,
 	flightFloorVisible,
+	marketDisplayValues,
 	priceLabel,
+	SHELF_MAX_TITLE,
 	signedDelta,
 	stationConsoleVisible,
 	stationEquipmentScreen,
@@ -312,11 +314,18 @@ function renderMarketRow(row: ConsoleMarketRow): string {
 		row.quantityDelta === undefined
 			? ""
 			: `<em class="sg-delta" data-gallery-shelf-delta>${signedDelta(row.quantityDelta, 0)}</em>`;
+	// The shelf and its `MAX` through the module's rule (#473 D2), so the
+	// gallery and the live cockpit cannot disagree about when a shelf is capped.
+	const display = marketDisplayValues(row);
+	const shelfMark =
+		display.shelfMark === null
+			? ""
+			: `<b class="sg-shelf-max" data-gallery-shelf-max title="${esc(SHELF_MAX_TITLE)}"> ${display.shelfMark}</b>`;
 	// **Two price columns, one formatter.** `priceLabel` is the module's own
 	// (#193), and the gallery had a local `CR` that said the same thing in its
 	// own words — two formatters for one rule is how a screen starts printing a
 	// price the till will not honour.
-	return `<div class="sg-market-row" data-gallery-market-row="${esc(row.commodity.name)}" data-gallery-listed="true">${name}<span class="sg-cell"><span data-gallery-buy>${priceLabel(row.buyCr as number)}</span>${priceDelta}</span><span class="sg-cell sg-bid"><span data-gallery-sell>${priceLabel(row.sellCr as number)}</span></span><span class="sg-cell" data-gallery-shelf-cell><span data-gallery-shelf>${row.quantity} ${esc(row.commodity.unit)}</span>${shelfDelta}</span></div>`;
+	return `<div class="sg-market-row" data-gallery-market-row="${esc(row.commodity.name)}" data-gallery-listed="true">${name}<span class="sg-cell"><span data-gallery-buy>${priceLabel(row.buyCr as number)}</span>${priceDelta}</span><span class="sg-cell sg-bid"><span data-gallery-sell>${priceLabel(row.sellCr as number)}</span></span><span class="sg-cell" data-gallery-shelf-cell><span data-gallery-shelf>${esc(display.shelf ?? "")}</span>${shelfMark}${shelfDelta}</span></div>`;
 }
 
 function renderMarketTab(view: ConsoleView): string {
@@ -325,6 +334,9 @@ function renderMarketTab(view: ConsoleView): string {
 		economy: view.station.economy,
 		gameTimeMin: view.gameTimeMin,
 		deficitOf: (name) => view.station.moved[name] ?? 0,
+		// The gallery has no commander and draws no HELD column; an empty hold
+		// is the one it would draw if it did.
+		cargo: {},
 		// The gallery flies the baseline hull, and `HOLD_REFERENCE_T` *is* that
 		// hull's row since #181 — reached through `market.ts`, already imported
 		// here, rather than adding a second spelling of one figure to a
@@ -814,6 +826,7 @@ const STYLE = `
  * after the cut, so the two should not read as the same claim. */
 .sg-bid { color: #c9955c; }
 .sg-delta { color: #ffe0a2; font-style: normal; }
+.sg-shelf-max { color: #ffe0a2; font-weight: normal; letter-spacing: .06em; cursor: help; }
 .sg-absent { color: #a97a4a; }
 .sg-illegal { margin-left: 6px; color: #ff9c8e; }
 .sg-block-head { margin: 12px 0 4px; color: #ffb066; font-size: 11px; letter-spacing: .1em; }

@@ -134,6 +134,12 @@ export const DOMAIN = {
 	 * question from which way the band lies, and sharing a stream would make a
 	 * system's gas a function of its frame's three draws. */
 	GAS: 29,
+	/** The raider outpost's placement (`system.ts`, node #491): which planet's
+	 *  orbit it shares, which side of that planet it stands on, and its berth
+	 *  and assembly seeds. Its own tag rather than draws inside `STATIONS` or
+	 *  the per-station streams, so a system gaining an outpost moves no station
+	 *  it already had — the coupling `drawSpinRpm`'s discard exists to prevent. */
+	RAIDER_OUTPOST: 30,
 } as const;
 
 export type DomainName = keyof typeof DOMAIN;

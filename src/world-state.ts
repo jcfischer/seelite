@@ -79,7 +79,7 @@ export const WORLD_SCHEMA_VERSION = 3;
  * exactly the set `carrierBaselineFingerprint` hashes, so the pinned
  * fingerprints in `world-state.test.ts` go red at the same moment.
  */
-export const WORLD_GENERATOR_VERSION = 8;
+export const WORLD_GENERATOR_VERSION = 9;
 
 /**
  * Generator versions a snapshot may still carry. Version 6 → 7 was a pure
@@ -90,12 +90,20 @@ export const WORLD_GENERATOR_VERSION = 8;
  * those identities against fingerprints captured on the version-7 generator.
  * A docked commander keeps its station key and resumes at arrival, as the
  * loader already does; an in-flight commander keeps its saved position.
+ * Version 8 → 9 (node #491) only **adds**: a raider outpost and its Traffic
+ * Carrier slots in every system at the lawless end of the government scale. No
+ * version-8 carrier changes identity, type, parent or placement, which
+ * `tests/world-state.test.ts` pins twice over every carrier but the outpost's:
+ * the identity goldens for system, Carrier slot and type, and version 8's full
+ * baseline fingerprints for parent and placement. So an 8 save rebases exactly
+ * as a 7 does.
  * Version 5 is not here, and listing it would open nothing: saves
  * shipped on 2026-09-11 at version 5, but `WORLD_SCHEMA_VERSION` 3 arrived on
  * 09-18 after version 6, so every version-5 snapshot carries schema 2 and the
  * schema check refuses it first.
  */
-export const LEGACY_WORLD_GENERATOR_VERSIONS: readonly number[] = [7, 6];
+// glossary-ignore: slot
+export const LEGACY_WORLD_GENERATOR_VERSIONS: readonly number[] = [8, 7, 6];
 
 export const GALAXY_COUNT = 8;
 
@@ -593,16 +601,23 @@ const fingerprintPlacement = (c: GeneratedCarrier): string => {
  * `WORLD_GENERATOR_VERSION` bump is a save-migration bug caught at the moment
  * it is introduced rather than by a player whose market memory has silently
  * moved to a different station.
+ *
+ * `keep` narrows the hashed set and is the identity by default. It exists so a
+ * release that only **adds** carriers can be checked against the version before
+ * it: hash every carrier but the added ones and compare with that version's
+ * goldens, which is how node #491's outpost is held to have moved nothing.
  */
 export const carrierBaselineFingerprint = (
 	worldSeed: number,
 	galaxyIndex: number,
+	keep: (c: GeneratedCarrier) => boolean = () => true,
 ): number => {
 	const parts: string[] = [];
 	for (const c of enumerateCarriers(worldSeed, galaxyIndex))
-		parts.push(
-			`${c.systemIndex}|${c.localCarrierId}|${fingerprintType(c)}|${c.parentId ?? "-"}${fingerprintPlacement(c)}`,
-		);
+		if (keep(c))
+			parts.push(
+				`${c.systemIndex}|${c.localCarrierId}|${fingerprintType(c)}|${c.parentId ?? "-"}${fingerprintPlacement(c)}`,
+			);
 	return fnv1a(parts.join("\n"));
 };
 
@@ -2280,9 +2295,9 @@ export function parseWorld(raw: unknown): WorldState {
 
 	const world: WorldState = {
 		worldSchemaVersion,
-		// Rebase old overlays onto the generated version-8 catalog. The integrity
-		// hash below still checks the body that arrived; the next write hashes an
-		// explicitly version-8 one. Old physical placements are not stored.
+		// Rebase old overlays onto the generated current catalog. The integrity
+		// hash below still checks the body that arrived; the next write hashes one
+		// stamped with the current version. Old physical placements are not stored.
 		worldGeneratorVersion: WORLD_GENERATOR_VERSION,
 		seed: num(o, "seed", "snapshot"),
 		gameTime: num(o, "gameTime", "snapshot"),

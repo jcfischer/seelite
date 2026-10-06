@@ -39,7 +39,7 @@ import {
 	stationOf,
 	stationPose,
 } from "./sim";
-import { STATION_GEOMETRY } from "./station";
+import { STATION_GEOMETRY, STATION_LAWFUL } from "./station";
 import {
 	berthFits,
 	fittingTrafficBerths,
@@ -875,26 +875,42 @@ function projectTrafficLeg(input: TrafficLegInput): SystemTrafficProjection {
 	const crossingRel = arrivalRel(launch, 1, crossingFrame.pose.phaseRad);
 	const crossingPos = add(crossingBody.pos, crossingRel);
 	const contents = crossingFrame.system.contents;
-	const candidates = contents.stations.map((station) => {
-		const interior = stationInterior(
-			station.type,
-			STATION_GEOMETRY[station.type].aperturePlaneKm,
-			station.berthSeed,
-		);
-		return {
-			id: station.id,
-			fits: interior.berths.some((berth) =>
-				berthFits(berth, HULL_SPECS[actor.hullId].env),
-			),
-			hold: trafficHoldProjection(
-				crossingFrame.system,
-				station.id,
-				actor.key,
-				launchEndS,
-			).pos,
-			parentId: station.parentId,
-		};
-	});
+	// Traffic trades with its own side of #490's line (`STATION_LAWFUL`): a
+	// lawful station's carriers never fly to the raider outpost, and its own to
+	// no lawful berth, so placing one moved no existing schedule (node #491).
+	// Only a leg that picks its own destination reads the side: a hauler's leg
+	// to or from a Lane point runs in a system that need not hold its home.
+	const freeChoice = !input.endLanePoint && !input.destinationStationId;
+	const home = freeChoice
+		? contents.stations.find((s) => s.id === actor.homeStationId)
+		: undefined;
+	if (freeChoice && !home)
+		throw new Error(`no home station ${actor.homeStationId}`);
+	const candidates = contents.stations
+		.filter(
+			(station) =>
+				!home || STATION_LAWFUL[station.type] === STATION_LAWFUL[home.type],
+		)
+		.map((station) => {
+			const interior = stationInterior(
+				station.type,
+				STATION_GEOMETRY[station.type].aperturePlaneKm,
+				station.berthSeed,
+			);
+			return {
+				id: station.id,
+				fits: interior.berths.some((berth) =>
+					berthFits(berth, HULL_SPECS[actor.hullId].env),
+				),
+				hold: trafficHoldProjection(
+					crossingFrame.system,
+					station.id,
+					actor.key,
+					launchEndS,
+				).pos,
+				parentId: station.parentId,
+			};
+		});
 	const selectable = input.destinationStationId
 		? candidates.filter(
 				(candidate) => candidate.id === input.destinationStationId,

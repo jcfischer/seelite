@@ -463,9 +463,11 @@ describe("collision.md §9.1.6: the earliest impact owns the tick (C3)", () => {
 // 9.1.7 and 9.1.8: arrival, parked and launch, flown on every role
 // ---------------------------------------------------------------------------
 
-/** A start system holding a station of `type`. The outpost is placed by no
- *  system (#491), so it is a refinery re-typed: the two share their axis rule
- *  (`outward`) and neither spins, so the traversal is the outpost's own. */
+/** A start system holding a station of `type`. The outpost stands only in a
+ *  lawless system and its berth is closed until it has a market (node #491,
+ *  `station-types.md` §5.5), so it is a refinery re-typed: the two share their
+ *  axis rule (`outward`) and neither spins, so the traversal is the outpost's
+ *  own. */
 function worldWith(type: StationType): { world: World; id: string } {
 	const want = type === "outpost" ? "refinery" : type;
 	for (let seed = 1; seed < 400; seed++) {

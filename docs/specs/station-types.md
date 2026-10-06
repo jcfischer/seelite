@@ -5,6 +5,10 @@
 **Amended:** 2026-08-19 by [#28](https://github.com/jcfischer/seelite/issues/28),
 which built §7 and §8 — one verification obligation in §9.1 was sized on the
 wrong quantity. The amendment is inline, in that section.
+**Amended:** 2026-10-04 by [#491](https://github.com/jcfischer/seelite/issues/491),
+which placed [#490](https://github.com/jcfischer/seelite/issues/490)'s raider
+outpost: §1's retirement of "outpost" is withdrawn, §2 gains a fourth column,
+and §5.5 says what the outpost carries and what it does not yet.
 **Inputs:** [#6](https://github.com/jcfischer/seelite/issues/6) (galaxy & system generation),
 [#4](https://github.com/jcfischer/seelite/issues/4) (Elite-1984 mechanics),
 [#10](https://github.com/jcfischer/seelite/issues/10) (in-system travel)
@@ -50,25 +54,33 @@ Fixed here, and these words mean exactly one thing from now on across #6, #7,
 
 | Word | Means |
 |---|---|
-| **station** | any dockable object. The umbrella. Three types today. |
+| **station** | any dockable object. The umbrella. Four types since #491. |
 | **trade station** | the `trade` type. Never "main station", never "the station". |
 | **refinery** | the `refinery` type. |
 | **shipyard** | the `shipyard` type. |
+| **raider outpost** | the `outpost` type: #490's raider haven, the fourth type (§5.5). "Outpost" alone means this and nothing else. |
 | **target** | any endpoint a cruise leg can be aimed at. `cruise.ts`'s speed law reads the nearest star or planet; the selected target may also be a station, moon or belt. |
 | **fence** | a refinery whose `blackMarket` flag is true (§5.2). Not a separate object — the word is shorter than "a refinery with a black market" and is used only in that sense. |
 | **the target's frame** | the selected target's *velocity* frame, in which cruise exit and docking are judged (§6, `cruise.ts`). Declared here rather than left inferred, since it is the one place "target" means a reference frame and not a place. |
-| **system** | 1–3 stations plus its bodies — every system has a trade station on its primary planet since #51 (§5.4). "**multi-station**", never "multi-destination". |
+| **system** | 1–4 stations plus its bodies — every system has a trade station on its primary planet since #51 (§5.4). "**multi-station**", never "multi-destination". |
 
 These words hold across the specs and the code. **They do not rewrite the
 tracker**: #6's node text says "multi-destination" and will keep saying it,
 because a closed node is a record of what was decided, not a document to
 maintain. Where the two disagree, this spec is later and wins.
 
-Two words are **retired**, for the same reason: a synonym with no distinct job
-is how prose and types drift apart.
+Two words were **retired**, for the same reason: a synonym with no distinct job
+is how prose and types drift apart. **One retirement stands and one is
+withdrawn.**
 
-- **"Outpost"** — the galaxy-generation spec's "Refinery outpost" is now
-  "refinery". The word carried no distinction `refinery` does not carry already.
+- **"Outpost" — withdrawn by #490 D2, placed by #491.** The galaxy-generation
+  spec's "Refinery outpost" is still "refinery", and "outpost" is no longer a
+  synonym for anything: it is the fourth type, the raider outpost, with its own
+  law, its own (unbuilt) market scope and its own reason to exist. #56 had
+  already reintroduced it in `src/station.ts` as a form and a geometry, and the
+  code and this section disagreed from then until #490 ruled for the code. The
+  word now appears across `src`, `tests` and `docs` on purpose, so the audit
+  below no longer searches for it.
 - **"Destination"** — it had acquired two meanings at once. `in-system-travel.md`
   and `src/cruise.ts` used it for a cruise endpoint; #6 used "multi-destination"
   to mean "more than one station". Neither survives: a cruise endpoint is a
@@ -78,39 +90,49 @@ is how prose and types drift apart.
   `main.ts`, `system.ts`, `backdrop.ts`, `tests/` and `scripts/`. The audit is
 
   ```
-  grep -rniE 'destination|outpost' src scripts tests docs --exclude='station-types.md'
+  grep -rniE 'destination' src scripts tests docs --exclude='station-types.md'
   ```
 
-  and it should return **exactly one line**: `ctx.destination` in
-  `src/audio.ts`, which is the WebAudio API. Both retired words, and
-  case-insensitive: the sweep had capitalised occurrences ("Destination-only
-  law"), and a lowercase pattern cannot see a capitalised survivor. This file is excluded by name
+  It was written for both retired words and said it should return exactly one
+  line, `ctx.destination` in `src/audio.ts`, the WebAudio API. **It no longer
+  does, and #491 did not make it a gate:** "destination" has come back as an
+  ordinary word in job and route code (`destinationStationId`, a courier's
+  destination); run the pattern for today's count rather than trusting one
+  written here. Whether each is
+  the retired sense is a sweep of its own, not #491's. The pattern stays as the
+  audit's definition, case-insensitive because the sweep had capitalised
+  occurrences ("Destination-only law"). This file is excluded by name
   because a retirement note necessarily contains the word it retires; `grep`'s
   `--exclude` matches the basename, which is why the pattern is written that
   way. (`AudioContext`'s
   `ctx.destination` in `src/audio.ts` is the WebAudio API and is untouched.)
 
-The station vocabulary matches `StationType = "trade" | "refinery" | "shipyard"`
-(`src/system.ts`) exactly, which is the point: **the prose was renamed to the
-code, not the code to the prose**.
+The station vocabulary matches `StationType = "trade" | "refinery" | "shipyard"
+| "outpost"` (`src/station.ts`) exactly, which is the point: **the prose was
+renamed to the code, not the code to the prose** — and #490 D2 held the same
+line the other way, amending this section rather than renaming the type.
 
 ---
 
-## 2. The three types
+## 2. The four types
 
 Presence and location are **not restated here** — they are
 `galaxy-generation.md` §6.4's, and a second copy is a second thing to keep true.
 Every other row names the section that owns it, for the same reason.
 
-| | **trade station** | **refinery** | **shipyard** |
-|---|---|---|---|
-| Presence, location | *galaxy-generation.md §6.4* | *ibid.* | *ibid.* |
-| Price offset → §3 | 0 | **+3** | **−2** |
-| Equipment → §4 | system's `min(displayTL + 3, 10)` | same | same |
-| Exclusives → §4.1, §5.2 | — | fuel scoops, mining laser; contraband if `blackMarket` | hulls, military laser, energy unit |
-| Law → §5.1 | hostile odds ×1.0 | ×2.0 | ×0.5 + scan |
-| Docking → §6 | rotating slot | pad | rotating slot |
-| Silhouette → §7 | three forms, Coriolis selected | three forms on a rock, Warren selected | three forms, Gantry selected |
+| | **trade station** | **refinery** | **shipyard** | **raider outpost** (§5.5) |
+|---|---|---|---|---|
+| Presence, location | *galaxy-generation.md §6.4* | *ibid.* | *ibid.* | *ibid.* — government 0–1, a Trojan point |
+| Price offset → §3 | 0 | **+3** | **−2** | **none yet** — no market (#490 D6 unbuilt) |
+| Equipment → §4 | system's `min(displayTL + 3, 10)` | same | same | **none yet** |
+| Exclusives → §4.1, §5.2 | — | fuel scoops, mining laser; contraband if `blackMarket` | hulls, military laser, energy unit | **none yet**; not a fence until it trades |
+| Law → §5.1, §5.5 | hostile odds ×1.0 | ×2.0 | ×0.5 + scan | Wanted-only berth (D5); witnesses nothing (D10) |
+| Docking → §6 | rotating slot | pad | rotating slot | pad — **closed to every pilot** until it has a market |
+| Silhouette → §7 | three forms, Coriolis selected | three forms on a rock, Warren selected | three forms, Gantry selected | five forms, Salvage (E) selected |
+
+<!-- glossary-ignore: slot -->
+<!-- glossary-ignore: pad -->
+<!-- The Docking row names aperture kinds (`aperture.kind`), not berths. -->
 
 ---
 
@@ -554,6 +576,52 @@ Owned by its own node, below this one.
 
 ---
 
+### 5.5 The raider outpost, placed and not yet trading (#491)
+
+#490 ruled what the outpost is; #491 put one in every system at the lawless end
+of the government scale (`galaxy-generation.md` §6.4 owns where). What it
+carries, and the explicit absence of what it does not:
+
+- **Law — carried.** Its berth admits a pilot at or above Wanted heat and
+  refuses one below (#490 D5): the witness rule inverted, available because an
+  outpost is never a system's only station. `legal.ts`'s `dockingRefusedByLaw`
+  holds that arm. It **witnesses nothing** (D10): `stationsInEarshot` skips any
+  station `STATION_LAWFUL` marks unlawful, so no save's witness list names one.
+  That is the witness half only — `chargeOffence` prices heat from the act, not
+  from who heard it, so an offence beside an outpost still costs heat and can
+  still make the pilot Wanted, which every shipyard refuses on standing alone.
+  And it posts no Bounty
+  (#495 D4's "every lawful station").
+- **Market — absent.** D6 makes it a fence with a thin, punitive general list,
+  and reopens §5.2's geography to do it; none of that is built. A single signed
+  `TYPE_OFFSET` cannot be dear in both directions, so "punitive" is a design
+  question of its own, and §3's floor-fire figure (0.80% over the non-zero
+  types) would move under any new offset. Until then `TYPE_OFFSET` has no
+  outpost row, `market.ts`'s `hasMarket` says so to anything that walks a
+  system's stations, `STATION_FENCE_ELIGIBLE.outpost` stays `false` — a fence
+  flag on a station that trades nothing is a lie the market's node would
+  inherit — and it posts no ordinary work.
+- **Docking — closed, as its own reason.** The docked console's context is
+  built on the station's market (`main.ts`'s `dockedStationContext`), so every
+  tab — market, equipment, fuel — would throw for a Wanted pilot admitted by
+  D5's arm. `STATION_BERTHS_OPEN.outpost` is `false`, and
+  clearance is denied as `"closed"` — *"No berth is free to you"* — before the
+  law is asked, so a clean pilot is not told they are hostile. The market's node
+  opens the berth as an act; `tests/raider-outpost.test.ts` refuses an open
+  berth without a market behind it.
+- **Traffic — on its own side of the line.** Its roster is the table's: one
+  carrier, with two berths less the visitor's. A lawful station's carriers are never
+  routed to it and its own to no lawful berth (`STATION_LAWFUL` in
+  `station-route.ts`, and in `inter-system-traffic.ts` for a hauler's
+  neighbours, `inter-system-traffic.md` §2 clause 4), so placing it moved no
+  existing carrier's schedule; its
+  courier leaves the system abstractly and comes home.
+- **Raider pressure — not yet.** D3's own dial on the leg law, the relay paired
+  with it (D7), its destruction and relocation (D8, #494) and the sweep that
+  finds it (#482) are each their own node. Today it is a place.
+
+---
+
 ## 6. Geometry and docking: two interactions, not three
 
 | Interaction | Types | What it is |
@@ -688,8 +756,9 @@ since 2026-09-06**, on the principal's yes to #257's sheet — the first choice
 either role had, after two rounds in which `a` was a placeholder that said so.
 **The outpost is E since 2026-09-24**, on the principal's yes to #518's sheet,
 because the role became a raider's haven after the Cluster was taken. The
-refinery's choice changes what a running game draws; the outpost's does not,
-because `system.ts` places no outposts.
+refinery's choice changes what a running game draws; the outpost's did not
+until #491 placed the first outposts, so E is now what a lawless system draws
+where before only the workbench drew it.
 
 **The letter carried forward and the geometry did not, which is worth being
 plain about.** Round one's trade A was a twelve-sided lofted drum; it has been

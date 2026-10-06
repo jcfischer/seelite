@@ -17,6 +17,11 @@ import {
 	stationsInEarshot,
 } from "../src/distress";
 import { NEAR_FAR_KM } from "../src/units";
+import {
+	STATION_LAWFUL,
+	STATION_TYPES,
+	type StationType,
+} from "../src/station";
 import { type Vec3, v3 } from "../src/vec3";
 
 /** A station at `km` along +x, which is all a straight-line measure can see. */
@@ -24,9 +29,11 @@ const station = (
 	name: string,
 	km: number,
 	axis: Vec3 = v3(1, 0, 0),
+	type: StationType = "trade",
 ): EarshotStation => ({
 	key: carrierKey(3, name),
 	pos: v3(axis.x * km, axis.y * km, axis.z * km),
+	type,
 });
 
 describe("H5's reach, amended (#396)", () => {
@@ -67,6 +74,7 @@ describe("H5's reach, amended (#396)", () => {
 		const besideTheVictim: EarshotStation = {
 			key: carrierKey(3, "station-beside"),
 			pos: v3(0, 0, -2 * DISTRESS_RANGE_KM + 50),
+			type: "trade",
 		};
 		const besideTheShooter = station("station-shooter", 0);
 		expect(
@@ -114,6 +122,23 @@ describe("H5's reach, amended (#396)", () => {
 		const b = station("station-b", 100, v3(0, 1, 0));
 		expect(stationsInEarshot([b, a], v3())).toEqual([b.key, a.key]);
 		expect(stationsInEarshot([a, b], v3())).toEqual([a.key, b.key]);
+	});
+});
+
+describe("a raider outpost witnesses nothing (#490 D10, node #491)", () => {
+	test("an outpost in earshot is not filed, and a trade station beside it is", () => {
+		// The same place, the same range: only the type differs, so the only
+		// thing that can keep the outpost off the list is the type.
+		const outpost = station("station-outpost", 100, v3(1, 0, 0), "outpost");
+		const trade = station("station-trade", 100, v3(1, 0, 0), "trade");
+		expect(stationsInEarshot([outpost, trade], v3())).toEqual([trade.key]);
+		expect(stationsInEarshot([outpost], v3())).toEqual([]);
+	});
+
+	test("every type but the outpost is lawful, and so witnesses", () => {
+		// Pinned per type, so a fifth type has to answer rather than inherit.
+		for (const type of STATION_TYPES)
+			expect(STATION_LAWFUL[type]).toBe(type !== "outpost");
 	});
 });
 

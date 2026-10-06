@@ -30,6 +30,7 @@ function crossingEligible(galaxy: Galaxy, p: HaulerPlan, contentsFor: ContentsQu
 		if (away.galaxy !== home.galaxy || away.index === home.index || distanceLy(home.pos, away.pos) > HULL_SPECS[p.actor.hullId].tankLy) continue;
 		const c = contentsFor(away.index);
 		for (const station of c.stations) {
+			if (STATION_LAWFUL[station.type] !== STATION_LAWFUL[homeContents.stations.find(s => s.id === p.actor.homeStationId)!.type]) continue;
 			const interior = stationInterior(station.type, STATION_GEOMETRY[station.type].aperturePlaneKm, station.berthSeed);
 			if (!fittingTrafficBerths(interior, HULL_SPECS[p.actor.hullId].env).length) continue;
 			const body = placeBodies(c, atS).find(b => b.id === station.id)!;
