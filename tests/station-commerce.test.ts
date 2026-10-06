@@ -949,6 +949,7 @@ describe("§5.6 the bid cut, charged by the till", () => {
 				deficitOf: () => 12,
 				gameTimeMin: 0,
 				holdT: HOLD_REFERENCE_T,
+				cargo: {},
 				displayTL,
 			}).find((r) => r.commodity.name === "Food");
 			if (row?.sellCr === undefined)

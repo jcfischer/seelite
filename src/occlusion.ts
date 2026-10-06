@@ -231,18 +231,31 @@ const SHADOW_UNION_LIMIT = 4;
  * ## What it is for
  *
  * The pair is most expensive exactly where it shows least. Measured headed on
- * an M1 Pro at 1440x900 and device scale 2, six shuffled blocks of 120 frames,
- * every arm separating 36/36 against the plain frame:
+ * an M1 Pro at 1440x900 and device scale 2 on #241's own build (33e07ba3), six
+ * shuffled blocks of 120 frames with the warm-up drained, every pair-on arm
+ * separating 36/36 from its pair-off arm (node #249,
+ * `scripts/measure-open-space-repro.mjs`):
  *
  * | framing | pair off | pair on | pair off, 2x | pair on, 2x |
  * |---|---:|---:|---:|---:|
- * | empty space | 3.740 ms | 7.303 | 11.552 | 18.681 |
- * | `cockpit-arrival` | 3.784 | 7.403 | 11.650 | 18.519 |
- * | `berth-free-look` | 38.861 | 41.909 | 48.025 | 54.228 |
+ * | empty space (`sky-only`) | 1.666 ms | 3.776 | 6.662 | 10.815 |
+ * | `cockpit-arrival` | 1.728 | 3.921 | 6.684 | 10.987 |
+ * | `berth-free-look` | 36.864 | 40.264 | 45.830 | 51.697 |
  *
- * The pair **doubles** the open-space frame, and doubles again at the player's
- * antialias setting because multisampling multiplies every later fill-rate term
- * rather than adding beside it.
+ * **This table replaced one that did not reproduce.** The first copy read
+ * 3.740 / 7.303 / 11.552 / 18.681 in empty space and 38.861 in the bay. It came
+ * from a harness that was never committed. Its six-block, 36/36 design matches
+ * no version of `measure-occlusion-cost.mjs`, and neither 33e07ba3 nor #242's
+ * build (2e3086d) reproduces it with one instrument: both read the figures
+ * above to within 0.6%. `docs/receipts/node-249-open-space-repro.md` has the
+ * runs. These figures describe #241's build, not today's. The cabin pass
+ * (#651) and the half-resolution planet (#211) have moved every row since, and
+ * the instrument reprints the current one.
+ *
+ * The pair more than **doubles** the open-space frame (×2.27). Its own cost
+ * doubles again at the player's 2x antialias, +2.110 ms to +4.152, because
+ * multisampling multiplies every later fill-rate term rather than adding beside
+ * it.
  *
  * **What it buys there is two different answers and they must not be run
  * together.** The *shadow* buys almost nothing: #222's round-2 reading is
@@ -258,9 +271,10 @@ const SHADOW_UNION_LIMIT = 4;
  * darkening, which shows plenty — and the second of those is a look decision
  * rather than a saving. The canonical sheet is where it is taken: the whole
  * frame moves about 1% of its pixels past 24/255, against a same-build control
- * of 0.00–0.02%. Keeping the ambient occlusion in open space leaves the frame
- * at roughly 57 fps at the principal's 2x, which is why the two are gated
- * together rather than separately.
+ * of 0.00–0.02%. The two are gated together rather than separately. The frame
+ * rate this paragraph once gave for keeping the ambient occlusion alone at 2x
+ * came from the same withdrawn table, and no instrument has re-measured it
+ * (node #249).
  *
  * ## Why apparent size, and not the two obvious alternatives
  *
@@ -270,8 +284,9 @@ const SHADOW_UNION_LIMIT = 4;
  * `fitShadowCamera`'s existing no-subject idle path never fires: in cockpit view
  * its only candidate is the cabin mesh, visible in every frame, so `shadowBox`
  * always admits. But a *world* subject is admitted at `cockpit-arrival`'s five
- * radii, where the shadow darkens 0.002% and the pair costs 6.9 ms at 2x. The
- * approach would stay at 54 fps.
+ * radii, where the shadow darkens 0.002% and the pair costs 4.3 ms at 2x —
+ * 10.99 ms against 6.68 on #241's build (node #249 re-measured it; the 6.9 ms
+ * first written here came from the withdrawn table).
  *
  * **`DockPhase !== "flying"`** reads exactly like "inside a station" and is a
  * fact about a grant rather than about what is in front of the camera. It fires

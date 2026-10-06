@@ -510,6 +510,7 @@ describe("the board (#489's locked row)", () => {
 		docked: OFFER.requester,
 		hold: null,
 		equipment,
+		tab: "current",
 	});
 
 	test("unfitted, the row lists locked, names the module, and draws no Accept", () => {

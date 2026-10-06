@@ -77,6 +77,7 @@ describe("the lines", () => {
 		expect(clearanceLine(none, denied("no berth that fits"))).toBe(
 			"deniedNoBerth",
 		);
+		expect(clearanceLine(none, denied("closed"))).toBe("deniedClosed");
 		expect(clearanceLine(denied("hostile"), denied("hostile"))).toBeNull();
 		expect(clearanceLine(granted, none)).toBeNull();
 	});
@@ -93,6 +94,7 @@ describe("the lines", () => {
 			denied("hostile"),
 			denied("contraband"),
 			denied("no berth that fits"),
+			denied("closed"),
 		];
 		for (const prev of answers)
 			for (const next of answers)

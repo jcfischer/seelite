@@ -10,7 +10,7 @@
  * the hold itself is a second authority, and the till is the one that refuses.
  */
 import { describe, expect, test } from "bun:test";
-import { holdSummary } from "../src/hold";
+import { holdSummary, pilotGoods } from "../src/hold";
 import { LARGE_CARGO_BAY_BONUS_T, newCommander } from "../src/station-commerce";
 import { generateGalaxy } from "../src/galaxy";
 import type { JobOffer } from "../src/jobs";
@@ -170,5 +170,19 @@ describe("ownership is the thing the screen could not say", () => {
 	test("a good the commander holds none of draws no line", () => {
 		const summary = holdSummary(pilot({ Food: 0 }), emptyRequests());
 		expect(summary.lines).toEqual([]);
+	});
+});
+
+describe("pilotGoods: the Market tab's HELD column (#473 D10)", () => {
+	test("the pilot's own lines by name, and no requester lot", () => {
+		// The consignment's good is the requester's: it is in the hold line's
+		// entrusted clause and never in a market row, even when the pilot owns
+		// some of the same good — the row then reads the pilot's share alone.
+		const good = courier.operand.goodName;
+		const goods = pilotGoods(
+			holdSummary(pilot({ Gold: 3, [good]: 2 }), withConsignment()),
+		);
+		expect(goods).toEqual({ Gold: 3, [good]: 2 });
+		expect(pilotGoods(holdSummary(pilot({}), withConsignment()))).toEqual({});
 	});
 });

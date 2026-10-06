@@ -20,7 +20,7 @@
  *
  * ## The spelling
  *
- * `postcard=2&gen=8&seed=47&galaxy=0&system=12&t=…&pos=x,y,z&q=x,y,z,w&mode=…`
+ * `postcard=2&gen=9&seed=47&galaxy=0&system=12&t=…&pos=x,y,z&q=x,y,z,w&mode=…`
  * then `head=…` for the two cockpit-eye modes or `yaw=…&elev=…` for the
  * exterior — the chase orbit's two angles (node #691, `chase-orbit.ts`). It is
  * readable on purpose: a person looking at a link can see that it carries a
@@ -77,10 +77,13 @@ export const POSTCARD_READ_SCHEMAS: readonly number[] = [1, 2];
  * Generator versions whose scene layout this build can reproduce. Saves can
  * rebase persistent state onto the current generator, but a scene recipe asks
  * to rebuild its original view. Version 8 changed some planets and shipyard
- * placements, so older links are refused rather than silently reinterpreted.
- * The test holds this version against `world-state.ts`'s current version.
+ * placements, and version 9 put a raider outpost in every lawless system
+ * (node #491) — a body the old view did not hold, and one that can push the
+ * arrival point — so older links are refused rather than silently
+ * reinterpreted. The test holds this version against `world-state.ts`'s
+ * current version.
  */
-export const POSTCARD_GENERATORS: readonly number[] = [8];
+export const POSTCARD_GENERATORS: readonly number[] = [9];
 
 /** `GALAXY_COUNT` and `SYSTEMS_PER_GALAXY`, restated for the leaf's reason. */
 export const POSTCARD_GALAXIES = 8;

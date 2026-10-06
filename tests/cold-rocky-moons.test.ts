@@ -53,22 +53,25 @@ test("station names, flags, seeds, periods, and phases retain their old draws", 
 	// deliberately move; all draw-derived station details must stay put.
 	const rows: unknown[] = [];
 	for (let galaxy = 0; galaxy < 2; galaxy++)
+		// Node #491's raider outpost is new and draws on its own stream;
+		// every station that was already there must keep its draws.
 		for (const record of generateGalaxy(6218014, galaxy).systems)
 			for (const station of generateContents(record).stations)
-				rows.push([
-					galaxy,
-					record.index,
-					station.id,
-					station.type,
-					station.name,
-					station.localCarrierId,
-					station.blackMarket,
-					station.spinRpm,
-					station.berthSeed,
-					station.assemblySeed,
-					station.orbit.periodS,
-					station.orbit.theta0,
-				]);
+				if (station.type !== "outpost")
+					rows.push([
+						galaxy,
+						record.index,
+						station.id,
+						station.type,
+						station.name,
+						station.localCarrierId,
+						station.blackMarket,
+						station.spinRpm,
+						station.berthSeed,
+						station.assemblySeed,
+						station.orbit.periodS,
+						station.orbit.theta0,
+					]);
 	expect(rows.length).toBe(788);
 	expect(createHash("sha256").update(JSON.stringify(rows)).digest("hex")).toBe(
 		"2f2cdade80ae751a14bdbfc89bb45b844589ac2559b6a3748ac735379641ccc9",

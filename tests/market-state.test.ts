@@ -27,6 +27,7 @@ import {
 	marketPhaseMin,
 	marketRow,
 	marketRowAt,
+	hasMarket,
 	marketSeedFor,
 	marketStationOf,
 	stationCommodities,
@@ -48,9 +49,18 @@ const WORLD = 0x5ee11e;
  */
 const SYSTEMS = generateGalaxy(WORLD, 0).systems.slice(0, 80);
 
+/**
+ * The stations of one system that have a market — every one but a raider
+ * outpost, which node #491 places and #490 D6 has not yet priced. The corpus
+ * figures below (117 stations) are figures about markets, so they are counted
+ * over these.
+ */
+const marketStationsOf = (record: (typeof SYSTEMS)[number]): Station[] =>
+	generateContents(record).stations.filter(hasMarket);
+
 const stationsOf = (index: number) => {
 	const record = SYSTEMS[index];
-	return { record, stations: generateContents(record).stations };
+	return { record, stations: marketStationsOf(record) };
 };
 
 /** Through the shipped narrowing helper, not a hand-built struct: a test that
@@ -68,15 +78,23 @@ describe("§2 the persistence identity is a table, not a display key", () => {
 
 	test("every generated station carries the table's id for its type", () => {
 		let seen = 0;
+		let outposts = 0;
 		for (const record of SYSTEMS)
 			for (const station of generateContents(record).stations) {
 				expect(station.localCarrierId).toBe(LOCAL_CARRIER_ID[station.type]);
 				// The market's `TYPE_OFFSET` covers §3's three types only, so a
-				// generated outpost would price at no offset at all. None exist
-				// today; this is the assertion that says so out loud.
-				expect(station.type).not.toBe("outpost");
+				// generated outpost (node #491) has no market, and `marketStationOf`
+				// refuses it loudly rather than pricing it at no offset at all.
+				if (!hasMarket(station)) {
+					expect(station.type).toBe("outpost");
+					expect(() => marketStationOf(station, record.seed)).toThrow();
+					outposts++;
+					continue;
+				}
 				seen++;
 			}
+		// The refusal above has to have run to mean anything.
+		expect(outposts).toBeGreaterThan(0);
 		// **Pinned, not bounded.** `economy-trade.md` §10.3 quotes this corpus as
 		// 117 stations, and two figures were already invented in this node by
 		// reading a `>` threshold as though it were a measurement. A threshold
@@ -131,7 +149,7 @@ describe("§5.1 the base market is f(stationSeed, epoch)", () => {
 		let changed = 0;
 		let total = 0;
 		for (const record of SYSTEMS)
-			for (const s of generateContents(record).stations) {
+			for (const s of marketStationsOf(record)) {
 				const station = marketStation(record.seed, s);
 				const phase = station.phaseMin;
 				const boundary = MARKET_PERIOD_MIN * 3 - phase;
@@ -152,7 +170,7 @@ describe("§5.1 the base market is f(stationSeed, epoch)", () => {
 	test("phase staggers the stations of one system", () => {
 		let systemsWithTwo = 0;
 		for (const record of SYSTEMS) {
-			const stations = generateContents(record).stations;
+			const stations = marketStationsOf(record);
 			if (stations.length < 2) continue;
 			systemsWithTwo++;
 			const phases = stations.map((s) =>
@@ -171,7 +189,7 @@ describe("§5.1 the base market is f(stationSeed, epoch)", () => {
 		let compared = 0;
 		let identical = 0;
 		for (const record of SYSTEMS) {
-			const stations = generateContents(record).stations;
+			const stations = marketStationsOf(record);
 			if (stations.length < 2) continue;
 			const seeds = stations.map((s) =>
 				marketSeedFor(record.seed, s.localCarrierId),
@@ -276,12 +294,13 @@ describe("§5.1 the market is independent of draw order elsewhere", () => {
 			MUSIC: 27,
 			FORMATION_MASS: 28,
 			GAS: 29,
+			RAIDER_OUTPOST: 30,
 		});
 		// And a *new* tag is safe only when it is larger than every existing one,
 		// which is the operation this table was designed for.
 		const tags: number[] = Object.values(DOMAIN);
 		expect(tags.length).toBe(new Set(tags).size);
-		expect(DOMAIN.GAS as number).toBe(Math.max(...tags));
+		expect(DOMAIN.RAIDER_OUTPOST as number).toBe(Math.max(...tags));
 	});
 
 	test("the market seed is a function of the system seed alone", () => {
@@ -328,7 +347,7 @@ describe("§4 illegal goods are scoped to a fence, in the shipped module", () =>
 		let fences = 0;
 		let plain = 0;
 		for (const record of SYSTEMS)
-			for (const s of generateContents(record).stations) {
+			for (const s of marketStationsOf(record)) {
 				const station = marketStation(record.seed, s);
 				const listed = stationCommodities(station).map((c) => c.name);
 				if (s.blackMarket) {

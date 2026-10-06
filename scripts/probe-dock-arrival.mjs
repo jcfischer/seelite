@@ -827,6 +827,11 @@ const liveTrade = await page.evaluate((foodAction) => {
 		food:
 			document.querySelector('[data-live-market-row="Food"]')?.textContent ??
 			"",
+		// The Food row's HELD cell, not the bottom line: #473 D11 took the
+		// per-good list off the Market tab, and the column replaced it.
+		held:
+			document.querySelector('[data-live-market-row="Food"] [data-live-held]')
+				?.textContent ?? null,
 	});
 	const before = read();
 	const buy = document.querySelector(foodAction.replace("%s", "buy-commodity"));
@@ -848,7 +853,8 @@ check(
 	liveTrade.controls &&
 		liveTrade.afterBuy.commander !== liveTrade.before.commander &&
 		liveTrade.afterBuy.food !== liveTrade.before.food &&
-		liveTrade.afterSell.commander.includes("HOLD EMPTY") &&
+		liveTrade.afterBuy.held === "1 t" &&
+		liveTrade.afterSell.held === "" &&
 		liveTrade.afterSell.food === liveTrade.before.food,
 	JSON.stringify(liveTrade),
 );
@@ -858,8 +864,11 @@ check(
 // grant off the same clock, and a seven-minute jump expired it under them.
 const shelfTrade = await page.evaluate((foodAction) => {
 	const g = window.__seelite;
+	// The Food row's HELD cell (#473 D10); the Market tab's bottom line no
+	// longer lists goods (D11).
 	const hold = () =>
-		document.querySelector("[data-live-commander]")?.textContent ?? "";
+		document.querySelector('[data-live-market-row="Food"] [data-live-held]')
+			?.textContent ?? null;
 	const act = (action) =>
 		document.querySelector(foodAction.replace("%s", action))?.click();
 	// Three and one, not one and one: `readDeficit` reads a mark under one unit
@@ -894,9 +903,9 @@ check(
 	"every shelf the console shows after a faded trade is whole units",
 	// The trades must have happened: a refused buy leaves no mark, and a shelf
 	// with no mark is whole on the unfixed build too.
-	/HOLD .*Food 3\b/.test(shelfTrade.afterBuys) &&
-		/HOLD .*Food 2\b/.test(shelfTrade.afterSell) &&
-		shelfTrade.afterAll.includes("HOLD EMPTY") &&
+	shelfTrade.afterBuys === "3 t" &&
+		shelfTrade.afterSell === "2 t" &&
+		shelfTrade.afterAll === "" &&
 		shelfTrade.cells.length > 0 &&
 		fractionalShelves.length === 0,
 	`hold ${JSON.stringify([shelfTrade.afterBuys, shelfTrade.afterSell, shelfTrade.afterAll])}, cells=${shelfTrade.cells.length}, not whole=${JSON.stringify(fractionalShelves)}`,
@@ -1196,9 +1205,10 @@ const fadedShelf = await page.evaluate(async () => {
 	await new Promise((resolve) => requestAnimationFrame(resolve));
 	await new Promise((resolve) => requestAnimationFrame(resolve));
 	const before = read();
-	const traded = /HOLD .*Food 12\b/.test(
-		document.querySelector("[data-live-commander]")?.textContent ?? "",
-	);
+	// The Food row's HELD cell: the Market tab's bottom line lists no goods
+	// since #473 D11.
+	const traded =
+		food()?.querySelector("[data-live-held]")?.textContent === "12 t";
 	const shownAfterTrade = g
 		.stationConsoleState()
 		.market.find((entry) => entry.commodity.name === "Food");
@@ -1224,6 +1234,8 @@ const fadedShelf = await page.evaluate(async () => {
 			),
 		holdT: g.stationConsoleState().hold.capacityT,
 		displayTL: g.world.system.record.displayTL,
+		// Required since #473 D10; the shelf this check compares does not read it.
+		cargo: g.commander.cargo,
 	}).find((entry) => entry.commodity.name === "Food");
 	return {
 		before,
@@ -1305,6 +1317,7 @@ const epochTurn = await page.evaluate(async () => {
 				),
 			holdT,
 			displayTL: g.world.system.record.displayTL,
+			cargo: g.commander.cargo,
 		})
 			.filter(
 				(row) =>

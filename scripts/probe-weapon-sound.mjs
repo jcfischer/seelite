@@ -98,6 +98,21 @@ const steps = async (page, n, before = null, arg = null) => {
 };
 const kinds = (r) => r.cues.map((c) => c.kind);
 
+/** Exercise shield and hull cues without ending the duel and reloading its
+ * page (#702). Read the live pools, and refuse an already destroyed fixture. */
+const throughShield = (side) => {
+	const g = window.__seelite;
+	if (g.dead || !(g.condition.hull > 0))
+		throw new Error("sound fixture needs a live hull");
+	g.takeDamage(
+		g.condition[side] + Math.min(5, g.condition.hull / 4),
+		side,
+		"probe",
+	);
+	if (g.dead || !(g.condition.hull > 0))
+		throw new Error("sound fixture destroyed the hull");
+};
+
 {
 	// `given` on: the landed rows below need it, and `nogiven` is the default.
 	const { page, setup } = await duel("beam,given");
@@ -121,9 +136,7 @@ const kinds = (r) => r.cues.map((c) => c.kind);
 	);
 
 	await steps(page, 60);
-	const through = await steps(page, 2, () =>
-		window.__seelite.takeDamage(400, "aft", "probe"),
-	);
+	const through = await steps(page, 2, throughShield, "aft");
 	check(
 		"a hit through the shield plays on the hull too",
 		kinds(through).includes("hullHit"),
@@ -258,9 +271,7 @@ const kinds = (r) => r.cues.map((c) => c.kind);
 {
 	const { page } = await duel("legacy");
 	await steps(page, 120);
-	const hit = await steps(page, 2, () =>
-		window.__seelite.takeDamage(400, "fore", "probe"),
-	);
+	const hit = await steps(page, 2, throughShield, "fore");
 	check(
 		"?weaponsound=legacy plays no hit, as before #545",
 		!kinds(hit).some((k) => k === "shieldHit" || k === "hullHit"),

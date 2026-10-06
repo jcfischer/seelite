@@ -355,7 +355,11 @@ import {
 	surfacePathFor,
 } from "./relief-bands";
 
-import { SPIN_RPM_RANGE, STATION_GEOMETRY } from "./station";
+import {
+	SPIN_RPM_RANGE,
+	STATION_BERTHS_OPEN,
+	STATION_GEOMETRY,
+} from "./station";
 import { PROMPT_FILL, PROMPT_FONT, TextRaster } from "./text-raster";
 import {
 	type ApertureFrame,
@@ -887,7 +891,12 @@ import {
 	bindJobs,
 	deliveryCandidates,
 } from "./jobs";
-import type { RequestsView } from "./requests-view";
+import {
+	isRequestsTab,
+	requestsTabOf,
+	type RequestsTab,
+	type RequestsView,
+} from "./requests-view";
 import {
 	type CommanderRecord,
 	type SaveEnvelope,
@@ -959,7 +968,7 @@ import {
 	heldSaveFault,
 } from "./save-badge";
 import { marketStationOf } from "./market";
-import { type HoldBids, holdSummary } from "./hold";
+import { type HoldBids, holdSummary, pilotGoods } from "./hold";
 
 import { exposeMarketLaw } from "./market-probe-hook";
 import {
@@ -2312,6 +2321,14 @@ class Game {
 	private stationConsoleTab: StationConsoleTab = "Market";
 	private requests = emptyRequests();
 	private requestSelectedId: string | null = null;
+	/**
+	 * Current or Past (node #690). Transient, never saved: Requests opens on
+	 * Current — a press that opens the tab, a new surface (docking somewhere,
+	 * launching) and a fresh boot all start there.
+	 */
+	private requestTab: RequestsTab = "current";
+	/** The surface the tab was last drawn on, so a new one resets it. */
+	private requestTabSurface: string | null = null;
 	private requestMessage = "";
 	private requestRevision = 0;
 	private requestOffersCacheKey: string | null = null;
@@ -4508,6 +4525,8 @@ class Game {
 				this.updateCockpit();
 			},
 			onLeftTab: (tab) => {
+				if (tab === "Requests" && this.leftTab !== "Requests")
+					this.requestTab = "current";
 				this.leftTab = tab;
 				this.consolePress(true);
 				this.updateCockpit();
@@ -4539,6 +4558,8 @@ class Game {
 				this.updateCockpit();
 			},
 			onStationTab: (tab) => {
+				if (tab === "Requests" && this.stationConsoleTab !== "Requests")
+					this.requestTab = "current";
 				this.stationConsoleTab = tab;
 				// A refusal is about the press that earned it, so **any** tab
 				// press retires it (#443) — including a press on the tab
@@ -7298,10 +7319,14 @@ class Game {
 	private earshotStations(): EarshotStation[] {
 		return this.world.system.bodies
 			.filter((body) => body.kind === "station")
-			.map((body) => ({
-				key: this.stationKey(stationOf(this.world.system, body.id)),
-				pos: body.pos,
-			}));
+			.map((body) => {
+				const station = stationOf(this.world.system, body.id);
+				return {
+					key: this.stationKey(station),
+					pos: body.pos,
+					type: station.type,
+				};
+			});
 	}
 
 	/**
@@ -8042,6 +8067,16 @@ class Game {
 	 */
 	private stationKey(station: Station): CarrierKey {
 		return carrierKey(this.world.system.record.index, station.localCarrierId);
+	}
+
+	/**
+	 * Whether this station's berths admit nobody at all — the raider outpost's,
+	 * until it has a market (node #491, `STATION_BERTHS_OPEN`). Read by the
+	 * three protocol doors beside `refusedByLaw`, and outranking it: the law's
+	 * verdict at a berth nobody may use is not spoken as hostility.
+	 */
+	private berthClosed(stationId: string): boolean {
+		return !STATION_BERTHS_OPEN[stationOf(this.world.system, stationId).type];
 	}
 
 	private refusedByLaw(stationId: string): boolean {
@@ -10860,6 +10895,9 @@ class Game {
 			// H5's exit — heat decaying below Wanted — reopens the berth on the
 			// next request with nothing to time out first.
 			refusedByLaw: this.refusedByLaw(chosen.id),
+			// Node #491: a raider outpost's berths admit nobody until it has a
+			// market to dock into, and it says so as its own reason.
+			closed: this.berthClosed(chosen.id),
 		});
 		this.dockingStates.set(chosen.id, next);
 		// A request starts an approach, so the last one's notice is done (#597).
@@ -10921,6 +10959,7 @@ class Game {
 				state: this.dockingStateOf(id),
 				gameTime: this.world.gameTime,
 				refusedByLaw: this.refusedByLaw(id),
+				closed: this.berthClosed(id),
 				// #521: the turn a crossing would be judged on now, so the wait on
 				// the glass and the bounce at the plane cannot disagree. The grant
 				// test here only saves the Traffic query; `dockingDirector` owns the
@@ -11243,6 +11282,7 @@ class Game {
 			// before the offence did not barge, and must not be given the flip's
 			// cooldown for someone else's act.
 			refusedByLaw: this.refusedByLaw(id),
+			closed: this.berthClosed(id),
 		});
 		// A dock spends the turn; a bounce keeps it, so a pilot turned back at
 		// the plane is not sent to the back of the lane as well (#521).
@@ -11479,13 +11519,15 @@ class Game {
 			// dock opens on a sentence about a station the ship has left (#443).
 			this.clearStationRefusal();
 			this.openPlayerTrafficEvent(stationId, "lane", readyAt, "launch");
-			// D4's undock flush. **The record still names the station here** —
-			// `commanderRecord` reads every phase that is not `flying`, and this
-			// runs inside `phase === "launching"` — so what this writes is a ship
-			// on rails on its way out, which restores at the arrival point like
-			// any other non-flying phase. The comment here claimed the opposite
-			// for a round. What actually clears `dockedAt` is the outward
-			// crossing below, and that is where the second write is.
+			// D4's undock flush, which since #660 D1 (node #702) also writes
+			// `lastDocked`: a death restores the commander **as it launched**,
+			// with what it bought here. **The record still names the station
+			// here** — `commanderRecord` reads every phase that is not `flying`,
+			// and this runs inside `phase === "launching"` — so the checkpoint
+			// re-docks at this station on a death's reload (node #658's docked
+			// restore), and `live` restores a ship on rails on its way out like
+			// any other non-flying phase. What actually clears `dockedAt` is the
+			// outward crossing below, and that is where the second write is.
 			this.saveDirty();
 			this.saveFlush("undock");
 		}
@@ -15614,6 +15656,16 @@ class Game {
 		// One board per update: the console draws it and the first day asks it
 		// whether a Local run is posted (#408). Station control's log is written
 		// here, once, before the panel reads it.
+		// **A new surface opens on Current** (node #690). Here rather than in
+		// `requestsView`, which probes and `actOnRequest` also call: reading the
+		// board must not move it.
+		const requestSurface = dockContext
+			? `station:${dockContext.galaxyIndex}:${dockContext.stationKey}`
+			: "flight";
+		if (requestSurface !== this.requestTabSurface) {
+			this.requestTabSurface = requestSurface;
+			this.requestTab = "current";
+		}
 		const requests = this.requestsView(dockContext, hold);
 		const firstDayFacts = this.firstDayFacts(requests.offers);
 		this.noteFirstDayStep(firstDayFacts);
@@ -15830,6 +15882,7 @@ class Game {
 			state: this.requests,
 			offers: context ? this.requestOffersCache : [],
 			selectedId: this.requestSelectedId,
+			tab: this.requestTab,
 			message: this.requestMessage,
 			revision: this.requestRevision,
 			now: this.world.gameTime,
@@ -15922,6 +15975,17 @@ class Game {
 	/** Whether the board did what was asked: the press's sound reads it (#546). */
 	private actOnRequest(action: string, id: string): boolean {
 		const view = this.requestsView();
+		if (action === "tab") {
+			// The board's own state, like `details`: switching halves of the
+			// list changes no request, tracking, cargo or credit, so it is not a
+			// hold event and saves nothing (node #690).
+			if (!isRequestsTab(id)) return false;
+			this.requestTab = id;
+			this.requestMessage = "";
+			this.requestRevision += 1;
+			this.updateCockpit();
+			return true;
+		}
 		if (action === "details") {
 			// The board's own state (#626 D5), not a hold event: it repaints
 			// itself.
@@ -15954,6 +16018,20 @@ class Game {
 			galaxyIndex: this.world.system.record.galaxy,
 			at: this.world.gameTime,
 		});
+		// **The list follows the job the pilot just moved** (node #690). Cancel
+		// and Report send it to Past, where a consignment to return and Accept
+		// again are; Accept again brings it back to Current, where Track is. Set
+		// before the adopt, because the adopt repaints: one frame drawn on the
+		// old tab is a pane for a row that is no longer listed. A press that
+		// changed nothing moves nothing.
+		if (outcome.holdings !== before) {
+			const tab = requestsTabOf(
+				{ state: outcome.holdings.requests, offers: view.offers },
+				id,
+				!view.docked,
+			);
+			if (tab) this.requestTab = tab;
+		}
 		this.adoptHoldings(outcome);
 		return outcome.holdings !== before;
 	}
@@ -16012,6 +16090,10 @@ class Game {
 		}
 		const { station, market, envelope, stationKey, economy, gameTimeMin } =
 			context;
+		// One projection for the whole console (#443) — see the key below for
+		// why it is built before the memo is consulted. Built first now because
+		// the market's HELD column reads it too.
+		const hold = holdSummary(this.commander, this.requests);
 		const readMarket = () =>
 			stationMarketScreen({
 				station: market,
@@ -16019,6 +16101,11 @@ class Game {
 				gameTimeMin,
 				deficitOf: (goodName) =>
 					readDeficit(envelope.deficits, stationKey, goodName, gameTimeMin),
+				// The HELD column (#473 D10): the pilot's own lines off the hold
+				// projection, so an entrusted lot stays in the hold line's
+				// `t entrusted` clause — drawn on every tab, Market included — and
+				// out of every row.
+				cargo: pilotGoods(hold),
 				// The flown hold, bay included — the same figure the transaction
 				// uses (#182), read through `commanderHold` so the screen and till
 				// agree about whether a Large Cargo Bay counts.
@@ -16076,8 +16163,8 @@ class Game {
 		// markup key still reads `stationConsole.revision` and the request
 		// revision, so the *drawn* line depends on those counters even where
 		// this one no longer does. The two together are why the hold line is
-		// correct today; only the half in this file is self-keyed.
-		const hold = holdSummary(this.commander, this.requests);
+		// correct today; only the half in this file is self-keyed. (`hold` is
+		// built at the top of this method.)
 		// `pilotLines` would be wrong — these are every line, both owners — and
 		// `manifest` would be worse: CONTEXT.md scopes that noun to what an
 		// ordinary carrier carries on one voyage, and one canonical term with
@@ -19234,10 +19321,13 @@ if (postcard) {
 	};
 	// **A death (#324, the principal's ruling O5; #654).** With a store attached
 	// and a commander who is not permadeath, `live` becomes the world at the
-	// death beside the last dock's commander, the one-shot continue names the
-	// Commander, and the page reloads into the dock.
-	// Otherwise — permadeath, `?no-save`, or a restore that failed — the ship
-	// stays destroyed and the Commander overlay opens.
+	// death beside the commander as it last launched (#660 D1) — or, for a
+	// pilot who never docked, a new commander at the start system's trade
+	// station (D10) — the one-shot continue names the Commander, and the page
+	// reloads into the dock.
+	// Otherwise — permadeath, a boot that writes nothing (`?no-save`,
+	// `?system=`), or a restore that failed — the ship stays destroyed and the
+	// Commander overlay opens.
 	game.onDeath = async () => {
 		const store = game.saveStore;
 		const slot = attachedSlot;

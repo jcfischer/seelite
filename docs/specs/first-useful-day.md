@@ -28,8 +28,9 @@ Taken at `origin/main` 96fd436 over 200 world seeds (`seed × 7919`, galaxy 0,
   (`makeWorld`). The start trade station is a median **1.15 AU** from it
   (0.28 to 5.08), so the first act of an in-flight start is a cruise leg, and
   cruise legs are where raiders roll.
-- A death before the first dock has no `lastDocked` checkpoint; both arms of
-  `onDeath` end at the Commander overlay.
+- A death before the first dock had no `lastDocked` checkpoint; both arms of
+  `onDeath` ended at the Commander overlay. Since #660 D10 (node #702) such a
+  pilot wakes as a new commander docked at the start system's trade station.
 - The start trade station's first courier is in-system in **4 of 200** seeds.
   Its candidates average 27.7, of which 1.15 are in-system.
 - The start system has only its trade station in **33 of 200** seeds (16.5%).

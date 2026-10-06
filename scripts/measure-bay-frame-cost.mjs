@@ -4,11 +4,28 @@
  *   npm run dev                              # in one shell
  *   node scripts/measure-bay-frame-cost.mjs  # in another
  *
- * #242 printed a ratio and attributed none of it: 38.861 ms in
+ * #242 quoted a ratio and attributed none of it: 38.861 ms in
  * `berth-free-look` against 3.740 in `deep-sky`, with every optional term off,
  * and neither of this game's two levers reaching it. This instrument
  * decomposes that number. It is a **diagnosis**, not a gate: it asserts no
  * threshold, prints a table for a receipt, and changes nothing about the bay.
+ *
+ * **Neither half of that ratio was #242's, and neither survives (node #249).**
+ * Both came from #241's table, which a harness that was never committed
+ * produced. One instrument on #241's and #242's builds reads the pair-off
+ * frame at 1.666 in `sky-only` and 36.864 in the bay. This instrument leaves
+ * the occlusion to #241's gate, which is shut in open space and open in the
+ * bay. So its 1.677 is a pair-off figure and its 40.29 a pair-on one: the
+ * gate-live arm of the same instrument reads 1.659 and 40.273. Its bay control
+ * agreed with the table's 38.861 by coincidence. The table was about 2 ms high,
+ * and this control carries the pair's 3.4.
+ *
+ * **The same split runs between the bay and `planet-fill`.** The gate reads
+ * stations only (`stepOcclusionGate`), and `planet-fill` has none within a
+ * thousand kilometres. So "the same framing in open space costs the same"
+ * compares a pair-on frame (40.29) with a pair-off one (36.76), and the gap
+ * between them is not the station alone. No arm here pins the pair at
+ * `planet-fill`, so its share of that gap is not measured.
  *
  * **The name is a leftover and is kept on purpose.** What it measured is that
  * the bay is not the subject: the same framing in open space, with no station
@@ -891,6 +908,12 @@ console.log(
 // are known. #242's table says "aa 0, occl off" and this run's `sky-only` reads
 // less than half of it; without this line there is no way to tell a settings
 // difference from a mystery.
+//
+// **The settings row cannot say whether the pair drew, and node #249 found
+// that half.** The occlusion rows read `quality: high, ao: on` at every
+// framing. #241's gate decides per frame, so the pair is off in `sky-only`
+// and on in `berth-free-look`, and this instrument's bay control is a pair-on
+// figure. The table it was compared with was pair-off at both framings.
 //
 // **What it prints is the defaults, not the principal's saved configuration**,
 // and an earlier version of this comment claimed the latter — sage caught it.

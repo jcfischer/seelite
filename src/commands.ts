@@ -1280,6 +1280,159 @@ const codeFor = (key: string): string | undefined =>
 	/^[a-z]$/.test(key) ? `Key${key.toUpperCase()}` : undefined;
 
 /**
+ * What each digit and punctuation key types **under Shift** on the layout the
+ * defaults were authored on — `PUNCTUATION_CODES`' other half, for one reader.
+ *
+ * `offAuthoredLayout` needs it because the capture records the character the
+ * event sent, and Shift is held whenever a pilot throttles up: a US player who
+ * binds `?` stores `{ key: "?", code: "Slash" }`, and against the unshifted
+ * table alone that reads as a key from another keyboard.
+ */
+const AUTHORED_SHIFTED: Readonly<Record<string, string>> = {
+	Digit1: "!",
+	Digit2: "@",
+	Digit3: "#",
+	Digit4: "$",
+	Digit5: "%",
+	Digit6: "^",
+	Digit7: "&",
+	Digit8: "*",
+	Digit9: "(",
+	Digit0: ")",
+	Backquote: "~",
+	Backslash: "|",
+	BracketLeft: "{",
+	BracketRight: "}",
+	Comma: "<",
+	Equal: "+",
+	Minus: "_",
+	Period: ">",
+	Quote: '"',
+	Semicolon: ":",
+	Slash: "?",
+};
+
+/**
+ * What each number-pad key types with Num Lock on, on the layout the defaults // glossary-ignore: pad
+ * were authored on (node #382).
+ *
+ * The pad is **not** the same on every keyboard: `NumpadDecimal` types `.` on // glossary-ignore: pad
+ * a US keyboard and `,` on a Brazilian or German one (UI Events `code`,
+ * §3.4), so a captured `{ key: ",", code: "NumpadDecimal" }` is another
+ * keyboard's character and is marked like any other. A pad key the US layout // glossary-ignore: pad
+ * does not have — `NumpadComma` — types nothing there, as `IntlBackslash`
+ * does. With Num Lock off the pad sends named keys (`arrowup`, `delete`), // glossary-ignore: pad
+ * which `offAuthoredLayout` never marks.
+ */
+const AUTHORED_NUMPAD: Readonly<Record<string, string>> = {
+	Numpad0: "0",
+	Numpad1: "1",
+	Numpad2: "2",
+	Numpad3: "3",
+	Numpad4: "4",
+	Numpad5: "5",
+	Numpad6: "6",
+	Numpad7: "7",
+	Numpad8: "8",
+	Numpad9: "9",
+	NumpadDecimal: ".",
+	NumpadAdd: "+",
+	NumpadSubtract: "-",
+	NumpadMultiply: "*",
+	NumpadDivide: "/",
+	NumpadEqual: "=",
+};
+
+/** The characters the authored layout types at a position, either shift. */
+const authoredCharacters = (code: string): readonly string[] => {
+	if (/^Key[A-Z]$/.test(code)) return [code.slice(3).toLowerCase()];
+	if (/^Digit[0-9]$/.test(code))
+		return [code.slice(5), AUTHORED_SHIFTED[code] as string];
+	if (Object.hasOwn(PUNCTUATION_CODES, code))
+		return [
+			PUNCTUATION_CODES[code] as string,
+			...(Object.hasOwn(AUTHORED_SHIFTED, code)
+				? [AUTHORED_SHIFTED[code] as string]
+				: []),
+		];
+	if (Object.hasOwn(AUTHORED_NUMPAD, code))
+		return [AUTHORED_NUMPAD[code] as string];
+	// A key the authored layout does not have — `IntlBackslash` — types
+	// nothing there, so any character recorded on it is another keyboard's.
+	return [];
+};
+
+/**
+ * Every character the authored layout types at any position, either shift —
+ * what a codeless key is compared against, since it names no position.
+ */
+const AUTHORED_ANYWHERE: ReadonlySet<string> = new Set([
+	..."abcdefghijklmnopqrstuvwxyz0123456789",
+	...Object.values(AUTHORED_SHIFTED),
+	...Object.values(AUTHORED_NUMPAD),
+	...Object.entries(PUNCTUATION_CODES)
+		.filter(([code]) => !/^(Alt|Control|Meta|Shift)/.test(code))
+		.map(([, key]) => key),
+]);
+
+/**
+ * Whether a stored key is a UI Events named key (`arrowup`, `f6`, `enter`)
+ * rather than a key string (node #382).
+ *
+ * Names are ASCII words of two or more characters, stored lowercased — the
+ * capture modal's offer in `main.ts` lowercases `e.key` as `keyDispatch` does.
+ * A key string is anything else — including one character built from several
+ * code points, such as `ḍ̇`
+ * (https://www.w3.org/TR/uievents-key/#key-string), which counting code
+ * points would have read as a name.
+ */
+const namedKey = (key: string): boolean => /^[a-z][a-z0-9]+$/.test(key);
+
+/**
+ * Whether a key trigger prints a character the layout the defaults were
+ * authored on does **not** type at its position (node #382).
+ *
+ * D7 prints the character a binding was recorded with, so a printed key is
+ * evidence about the keyboard it was bound on. The `Controls` tab's header
+ * says the keys print as a US keyboard types them, and this is the row-level // glossary-ignore: level
+ * question that sentence owes: **does this key's character disagree with it.**
+ * It is not "which keyboard was attached" — a QWERTZ capture on `KeyQ` types
+ * `q`, is not marked, and prints exactly what the sentence says.
+ *
+ * **A function of the stored trigger alone**, so no change of the attached
+ * keyboard can falsify it or the header that counts it. Knowing the attached
+ * layout takes a keypress or Chromium's `getLayoutMap`, and telling a player
+ * it changed under a saved layout is the capture modal's half of D7 — not
+ * this predicate's, and not the tab's.
+ *
+ * Never true of:
+ *
+ * - a key with no code whose character the authored layout types somewhere —
+ *   the shipped punctuation and digits, whose character is all the row
+ *   states (`codeFor`). A codeless key the US layout types **nowhere** — a
+ *   stored `{ key: "ü" }` — is marked, because the header would otherwise
+ *   attribute it to a US keyboard (sage round 2);
+ * - a chord — `movedTrigger` stores the character its position types here,
+ *   because Option makes the event's character untrustworthy, so a chord is
+ *   the authored layout's by construction and is D7's one printed exception;
+ * - a named key — `arrowup`, `enter`, `f6` are spelled alike on every layout.
+ *
+ * A named key is told from a printable one by its **shape**, not its length:
+ * UI Events names are ASCII words (`namedKey`), while a key string may be one
+ * character built from several code points — `ḍ̇` is three — and is still a
+ * character some keyboard types.
+ *
+ * The number-pad keys are not exempt: they are compared against // glossary-ignore: pad
+ * `AUTHORED_NUMPAD`, because a pad's decimal key types `,` on many layouts. // glossary-ignore: pad
+ */
+export function offAuthoredLayout(t: Trigger): boolean {
+	if (t.kind !== "key" || t.alt === true) return false;
+	if (namedKey(t.key)) return false;
+	if (t.code === undefined) return !AUTHORED_ANYWHERE.has(t.key);
+	return !authoredCharacters(t.code).includes(t.key);
+}
+
+/**
  * The Alt chords authored on a command, as key triggers.
  *
  * **Authored here since #381 S4, and derived from `ALT_CHORDS` before it.**

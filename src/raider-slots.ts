@@ -27,10 +27,16 @@ import { mix } from "./rng";
 
 export const RAIDER_HULL_ID: HullId = "raider";
 
+/** The most raider slots any system holds: the two most lawless governments'
+ *  count. Named because the raider outpost's incidence (#490 D4, `system.ts`)
+ *  is "where the count is already at its height", and a restated `4` there
+ *  would drift from this the day the ramp was retuned. */
+export const RAIDER_SLOT_MAX = 4;
+
 /** How many raider slots a system holds: four in the two most lawless
  *  governments, one in the two most lawful. Never none. */
 export const raiderSlotCount = (government: number): number =>
-	4 - Math.floor(clampGovernment(government) / 2);
+	RAIDER_SLOT_MAX - Math.floor(clampGovernment(government) / 2);
 
 export interface RaiderSlot {
 	localCarrierId: string;

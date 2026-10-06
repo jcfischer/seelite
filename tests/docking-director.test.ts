@@ -625,3 +625,51 @@ describe("#521: a live grant waiting on the lane says so, and how long", () => {
 		expect(laneWaitEstimate(Number.POSITIVE_INFINITY)).toBe("");
 	});
 });
+
+describe("node #491: a closed berth silences the law's mark, not the flip's", () => {
+	const at = (
+		state: DockingState,
+		over: { refusedByLaw?: boolean; closed?: boolean },
+	) => {
+		const frame = frameFor();
+		return dockingDirector({
+			stationId: "station-outpost",
+			stationPos: v3(1_400, -900, 320),
+			frame,
+			pose: nominal(frame),
+			state,
+			gameTime: 0,
+			...over,
+		});
+	};
+
+	test("a clean pilot near a closed outpost is not marked hostile unasked", () => {
+		// D5's arm refuses a clean pilot by law; at a berth nobody may use that
+		// verdict is moot, and saying it would tell a pilot who did nothing that
+		// they are hostile.
+		const d = at(newDockingState(), { refusedByLaw: true, closed: true });
+		// The plain "request before entry" every unasked station reads, and no
+		// director on glass until the pilot asks.
+		expect(d.blocking?.kind).toBe("no-clearance");
+		expect(directorEngaged(d)).toBe(false);
+		// The same law at an open berth still marks, before any request.
+		const open = at(newDockingState(), { refusedByLaw: true });
+		expect(open.blocking?.kind).toBe("hostile");
+	});
+
+	test("asked, it reads the closure, and a barge there is still hostile", () => {
+		const denied: DockingState = {
+			...newDockingState(),
+			clearance: { kind: "denied", reason: "closed" },
+		};
+		const d = at(denied, { refusedByLaw: true, closed: true });
+		expect(d.blocking?.kind).toBe("denied");
+		expect(d.blocking?.text).toContain("no berth open to you");
+		const barged: DockingState = {
+			...newDockingState(),
+			hostile: true,
+			hostileUntilS: 600,
+		};
+		expect(at(barged, { closed: true }).blocking?.kind).toBe("hostile");
+	});
+});

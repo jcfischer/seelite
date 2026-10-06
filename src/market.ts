@@ -242,8 +242,9 @@ export function marketRowAt(
 	// call sites narrow a station's type to reach this function. An `outpost`
 	// would arrive here as an `undefined` offset and every price would come back
 	// `NaN` with nothing thrown — the silent-garbage failure the instrument's own
-	// `finite()` guard exists to prevent, one layer lower. `station-types.md`
-	// §3 owes the outpost an offset before one can be generated.
+	// `finite()` guard exists to prevent, one layer lower. Node #491 generates
+	// outposts, and `station-types.md` §3 still owes them an offset (#490 D6);
+	// `hasMarket` is how a caller asks first.
 	if (offset === undefined)
 		throw new Error(`no type offset for station type ${station}`);
 
@@ -863,6 +864,19 @@ export const stationFluct = (stationSeed: number, epoch: number): number =>
 	Math.floor(seededRand(mix(stationSeed, epoch))() * 256) & 0xff;
 
 /**
+ * Whether a station has a market at all: whether §3 has an offset for its type.
+ *
+ * Every type but the raider outpost does. Node #491 placed outposts before
+ * #490 D6's market for them exists, so anything that walks a system's
+ * stations to price them — the console, the job binders, an instrument, a
+ * corpus test — skips the ones this refuses rather than meeting
+ * `marketStationOf`'s throw. The day the outpost gets an offset, this answers
+ * yes for it with nothing else to change.
+ */
+export const hasMarket = (station: { type: string }): boolean =>
+	station.type in TYPE_OFFSET;
+
+/**
  * A generated station, narrowed to what the market can price.
  *
  * **The narrowing happens once, here, rather than at every call site.**
@@ -872,14 +886,16 @@ export const stationFluct = (stationSeed: number, epoch: number): number =>
  * typo away. This validates instead, and `marketRowAt` keeps its own throw as
  * the backstop for anyone constructing a `MarketStation` by hand.
  *
- * `station-types.md` §3 owes the outpost an offset before one can be generated;
- * until then this is where that gap is felt, loudly.
+ * `station-types.md` §3 still owes the outpost an offset (#490 D6), and node
+ * #491 generates outposts, so this is where that gap is felt, loudly. The game
+ * never reaches it — an outpost's berths are closed (`STATION_BERTHS_OPEN`) and
+ * it posts no work — and a caller walking every station asks `hasMarket` first.
  */
 export function marketStationOf(
 	station: { type: string; localCarrierId: string; blackMarket: boolean },
 	systemSeed: number,
 ): MarketStation {
-	if (!(station.type in TYPE_OFFSET))
+	if (!hasMarket(station))
 		throw new Error(
 			`station type ${station.type} has no market offset (economy-trade.md §3)`,
 		);
