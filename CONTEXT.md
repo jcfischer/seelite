@@ -844,6 +844,21 @@ the sentence means and nothing is renamed here. What the sentence has to name is
 which population — an invented point and a system are not interchangeable, and the
 invariant between them is the reason.
 
+**Chase orbit**:
+The outside view's pose about the hull: a yaw about the ship's up axis and an
+elevation above its horizontal plane, clamped at ±π/2, held across a view toggle
+and recentred astern by `view.orbitCentre`. Photo mode freezes the simulation
+while the locked pointer orbits and the wheel changes distance, from 0.25 to 8
+times the normal rig; neither fires weapons. It is enabled by `view.photo`
+(default F2) or the Photo mode button. Outside Photo mode, the mouse does not
+manipulate the camera and keeps normal ship steering in both views; `1` and `3`
+still swing it held. Fixed pointer gestures carry a Photo-mode scope in the
+Controls registry while keeping their physical trigger identity.
+`src/chase-orbit.ts` owns the
+rig, the gesture and the pole behaviour (node #691); `tests/chase-orbit.test.ts`
+holds them. The principal's ratified Photo-mode revision of #691 is in
+`docs/specs/photo-mode.md` (2026-10-06).
+
 **Postcard**:
 A card the pilot makes of the current view: the frame drawn at one canonical size
 (3:2, 1800 x 1200), full bleed, with a band carrying **The Far Between**, the
@@ -859,9 +874,16 @@ direction's ordinary English for a picture a pilot keeps
 **Scene recipe**:
 What a **Postcard** link carries in its URL **fragment**: schema and generator
 versions, seed, galaxy, system, game time, viewpoint, orientation and composition —
-and nothing a Commander owns. Opening one boots the **postcard viewer**, a
+for an *exterior* the **chase orbit**'s yaw and elevation — and nothing a
+Commander owns. Schema 3 carries zoom distance when present; newly composed
+cards without zoom use schema 2, introduced for elevation by node #691,
+including clear and cockpit cards. Older schema-1-only readers refuse these
+new links; this build reads schemas 1, 2 and 3. A received schema-1 link,
+yaw alone, still opens at its own level framing. Opening one boots the **postcard viewer**, a
 read-only page that rebuilds the view from the seeded baseline, runs no frame loop
-and attaches no store. It is not a save and not a replay: the sender's stock
+and attaches no store. Sharing from the viewer composes a new link in this
+build's writing schema; a schema-1 exterior becomes schema 2 with `elev=0`,
+while its level framing remains the same. It is not a save and not a replay: the sender's stock
 deficits, strikes and discoveries do not reach it, and a card of a pilot's own
 hull rebuilds with the starting one. `src/postcard.ts` owns the spelling and the
 strict parse; `tests/postcard.test.ts` holds both.

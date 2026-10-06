@@ -835,10 +835,13 @@ if (MASK_SWEEP) {
 			 * obvious answer — turn to face the widest body — is not available to a
 			 * player and so is not available to an instrument. `HeadLook` is
 			 * `"forward" | "left" | "right"` (`cockpit.ts`): three discrete yaws,
-			 * no pitch. In **chase** `cameraRotation` reads `chaseYaw` and ignores
-			 * head-look entirely. And a docked or arriving session restores the
-			 * docking attitude every tick (§12.6 obligation 9), so setting the
-			 * ship's orientation is undone before the next frame.
+			 * no pitch. In **chase** `cameraRotation` reads the orbit pose and
+			 * ignores head-look entirely. And a docked or arriving session restores
+			 * the docking attitude every tick (§12.6 obligation 9), so setting the
+			 * ship's orientation is undone before the next frame. (Node #691 gave
+			 * the chase orbit an elevation, so a player can now aim the *outside*
+			 * view at a body; this instrument's framings predate it and it adds no
+			 * aimed row — that would be a new measurement, not a correction.)
 			 *
 			 * The question an aimed row would have answered — does a pad role's
 			 * open deck occlude its host the way a bay does — is settled by

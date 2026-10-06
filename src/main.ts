@@ -680,6 +680,17 @@ import {
 	shipCuesShown,
 	weaponRay,
 } from "./chase-view";
+import {
+	type ChaseOrbit,
+	ORBIT_ASTERN,
+	clampElevation,
+	clampZoom,
+	orbitByPointer,
+	orbitOffsetKm,
+	orbitRotation,
+	pointerOwner,
+	zoomOrbit,
+} from "./chase-orbit";
 import { ArrivalRift } from "./arrival-rift";
 import {
 	buildHaulerPlans,
@@ -1161,18 +1172,6 @@ const {
 const STAR_PIXEL_SCALE = 0.35;
 
 /**
- * The chase camera's offset from the ship, in kilometres: behind and above.
- *
- * 140 m back and 40 m up, set by looking at it. At 60 m the 30-metre hull filled
- * the lower half of the frame and the station 40 km ahead was a speck above it —
- * a view that shows the placeholder and hides the thing the placeholder is meant
- * to let you judge. These two numbers are the scaffold's only tuned-by-eye
- * constants, and the flight-model node owns them from here.
- */
-const CHASE_BACK_KM = 0.14;
-const CHASE_UP_KM = 0.04;
-
-/**
  * The raw `?hull=` value, read once at load (#554, #557).
  *
  * **A fresh-game development affordance, not a way to change a saved ship.**
@@ -1338,6 +1337,19 @@ const SETTLED_PHASES: readonly string[] = [
 const CHASE_ORBIT_RATE = 1.2;
 
 /**
+ * The controls that still answer in Photo mode (node #691): leaving it, the
+ * recentre, the Postcard screen and Settings. The world is paused, so every
+ * other control would act on a frozen ship.
+ */
+const PHOTO_MODE_COMMANDS: ReadonlySet<CommandId> = new Set<CommandId>([
+	"view.photo",
+	"view.orbitCentre",
+	"view.toggle",
+	"system.postcard",
+	"system.settings",
+]);
+
+/**
  * Fold an angle back into (-π, π].
  *
  * Local rather than in `units.ts` because that file is a leaf of the unit
@@ -1347,6 +1359,17 @@ const CHASE_ORBIT_RATE = 1.2;
 function wrapAngle(radians: number) {
 	const turn = Math.PI * 2;
 	return ((((radians + Math.PI) % turn) + turn) % turn) - Math.PI;
+}
+
+/**
+ * Keep a Photo-mode button's own activation keys off `window` (sage round 6
+ * on node #691). Only the keydown is stopped: `onKey` would run it as a flight
+ * binding and `preventDefault` it, which cancels the native click for both
+ * `Enter` and `Space`. The keyup still reaches `onKey`, whose release route
+ * clears a held key and prevents nothing.
+ */
+function photoButtonKey(e: KeyboardEvent) {
+	if (e.key === "Enter" || e.key === " ") e.stopPropagation();
 }
 
 /**
@@ -2610,6 +2633,13 @@ class Game {
 	 * zero.
 	 */
 	clockHeld = false;
+	/** Photo holds the world independently of menus, so closing either cannot unpause the other. */
+	photoMode = false;
+	private photoPreviousView: "cockpit" | "chase" = "cockpit";
+	private photoNotice: HTMLDivElement | null = null;
+	get simulationHeld() {
+		return this.clockHeld || this.photoMode;
+	}
 	/**
 	 * A page opened on a postcard recipe (#406): a read-only viewer. It builds
 	 * the recipe's place, never runs the frame loop, takes no input and attaches
@@ -2751,9 +2781,26 @@ class Game {
 	/** #5 made cockpit the default and chase a toggle. The hull is hidden in
 	 *  cockpit, which is what makes the HUD markers load-bearing. */
 	view: "cockpit" | "chase" = "cockpit";
-	/** Chase orbit about the ship's own up axis; zero is directly astern. Held
-	 *  across a view toggle, because a look you set up is a look you meant. */
-	chaseYaw = 0;
+	/** The chase camera's orbit about the ship (node #691), one pose that
+	 *  `chase-orbit.ts` owns: assigned whole, so a reset, a capture and its
+	 *  restore cannot keep one half and lose the other. Held across a view
+	 *  toggle, because a look you set up is a look you meant. */
+	chaseOrbit: ChaseOrbit = ORBIT_ASTERN;
+	/** The orbit's yaw about the ship's own up axis; zero is directly astern.
+	 *  The probes read and write the two halves by name. */
+	get chaseYaw() {
+		return this.chaseOrbit.yawRad;
+	}
+	set chaseYaw(yawRad: number) {
+		this.chaseOrbit = { ...this.chaseOrbit, yawRad };
+	}
+	/** The orbit's height above the ship's horizontal plane, ±π/2 at the poles. */
+	get chaseElevation() {
+		return this.chaseOrbit.elevationRad;
+	}
+	set chaseElevation(elevationRad: number) {
+		this.chaseOrbit = { ...this.chaseOrbit, elevationRad };
+	}
 	/** How fast the ship is turning, radians per second — rotation has momentum,
 	 *  and `sim.ts`'s Hull step owns the dynamics. Saved state since #619:
 	 *  a save taken tumbling resumes tumbling (`flight-model.md` §3.9). */
@@ -4111,7 +4158,13 @@ class Game {
 			this.world.ship.pos = v3(x, y, z);
 			this.world.ship.vel = v3();
 			const [qx, qy, qz, qw] = postcard.orientation;
-			this.orientation.set(qx, qy, qz, qw).normalize();
+			// **As the link spelled it, not renormalised** (node #691): the parse
+			// already holds its norm within 1e-5 of one, which no frame can see,
+			// and a renormalise moves the components by enough to spell back a
+			// different last digit — so `rebuiltFragment` would differ from the
+			// link it was opened on. `postcardRecipe` says why it divides only
+			// past that.
+			this.orientation.set(qx, qy, qz, qw);
 			this.restoredAttitude = true;
 			this.composePostcard(postcard);
 		} else if (save) {
@@ -4814,7 +4867,7 @@ class Game {
 			// A press made where the mouse is suspended is not a pull of the trigger,
 			// and it does not become one when the head comes back with the button
 			// still down (#378, sage round 1): the next press is what fires.
-			if (e.button === 0)
+			if (e.button === 0 && !this.photoMode)
 				this.mouseFiring = mouseFireHeld(
 					true,
 					this.padContext(),
@@ -4903,12 +4956,25 @@ class Game {
 			this.mouseDx += e.movementX;
 			this.mouseDy += e.movementY;
 		});
+		this.renderer.domElement.addEventListener(
+			"wheel",
+			(e) => {
+				if (!this.photoMode || !contextFliesShip(this.readPadContext())) return;
+				e.preventDefault();
+				const pixels =
+					e.deltaY *
+					(e.deltaMode === 1 ? 16 : e.deltaMode === 2 ? window.innerHeight : 1);
+				this.chaseOrbit = zoomOrbit(this.chaseOrbit, pixels);
+			},
+			{ passive: false },
+		);
 
 		// #207's three relief programs per class, compiled before the first frame
 		// and **after the composer**, which is what makes them the variants the
 		// game will actually use (sage, PR #254).
 		this.prewarmReliefPrograms();
 
+		this.updatePhotoNotice();
 		this.animate();
 	}
 
@@ -9527,6 +9593,7 @@ class Game {
 	 * long enough to forget what the first one felt like.
 	 */
 	private command(id: CommandId) {
+		if (this.photoMode && !PHOTO_MODE_COMMANDS.has(id)) return;
 		// #530 D2: while the opening runs, one key answers — the one that skips
 		// a traversal skips the opening too — and every other is ignored, so
 		// nothing a pilot presses can make a watched run differ from a skipped
@@ -9550,6 +9617,9 @@ class Game {
 		if (this.jumpNotice && id !== "fly.jump" && !charging(this.jumpCharge))
 			this.jumpNotice = "";
 		switch (id) {
+			case "view.photo":
+				this.togglePhotoMode();
+				return;
 			// The view guards these three carried are the registry's now: all
 			// three rows are `views: COCKPIT`, so `resolveKey` never hands the
 			// chase view one. `2` was one case with an `else` for the same
@@ -9561,7 +9631,8 @@ class Game {
 				this.setHeadLook("forward");
 				return;
 			case "view.orbitCentre":
-				this.chaseYaw = 0;
+				// The whole pose, not its yaw: astern is level as well (node #691).
+				this.chaseOrbit = ORBIT_ASTERN;
 				return;
 			case "view.headStarboard":
 				this.setHeadLook("right");
@@ -9699,6 +9770,10 @@ class Game {
 				this.assist = !this.assist;
 				return;
 			case "view.toggle":
+				if (this.photoMode) {
+					this.togglePhotoMode();
+					return;
+				}
 				this.view = this.view === "cockpit" ? "chase" : "cockpit";
 				if (this.view === "chase") this.setHeadLook("forward");
 				return;
@@ -12052,7 +12127,7 @@ class Game {
 		this.rates = { pitch: 0, yaw: 0, roll: 0 };
 		this.computerFollower.reset();
 		this.dropPointer();
-		this.chaseYaw = 0;
+		this.chaseOrbit = ORBIT_ASTERN;
 	}
 
 	resetFlightToStart() {
@@ -12389,6 +12464,7 @@ class Game {
 	 */
 	private triggerHeld(): boolean {
 		return (
+			!this.photoMode &&
 			!this.combatRig &&
 			!this.openingActive &&
 			flightLive(this.dock.phase) &&
@@ -13233,7 +13309,7 @@ class Game {
 					C_KMS,
 					this.cruiseParams.vMaxKms,
 				),
-				held: this.clockHeld,
+				held: this.simulationHeld,
 				// The opening is silent (#544), and on #534's `duck` arm the bed is
 				// gone from the cut until the pilot's hands come back.
 				hushed:
@@ -13281,7 +13357,7 @@ class Game {
 			{
 				scene,
 				ready: this.music.ready,
-				held: this.clockHeld || this.openingActive,
+				held: this.simulationHeld || this.openingActive,
 				cruise: this.regime === "cruise",
 				encounter: phase === "over" ? "none" : phase,
 				sinceStruckS: c.sinceStruckS,
@@ -14040,6 +14116,7 @@ class Game {
 	 * exactly what the game runs rather than its own copy of the order.
 	 */
 	step(dt: number) {
+		if (this.photoMode) return;
 		// What the drive and thrusters do this step, set where they fly (#544).
 		// Zero on every path that flies no vent: docked, and a placed attitude.
 		// A cruise turn flies the attitude vents (`turnInCruise`, #647).
@@ -14104,6 +14181,8 @@ class Game {
 			// launch. Docked at the station console is exactly the case this
 			// branch's reversal is about, and the comment there claimed the
 			// delta was consumed. Sage found it.
+			//
+			// Photo composition is stepped by animate while simulation is held.
 			this.dropPointer();
 			// Same reason as the delta above: `stepScan` runs on the flight tail,
 			// so this branch is a way off it. A charge banked before docking would
@@ -14183,6 +14262,8 @@ class Game {
 		// the whole sequence — the same hold, for a different reason.
 		const handsHeld =
 			witchspaceControlHeld(this.witchspace) || this.openingActive;
+		// Normal flight keeps mouse steering in either view; Photo owns the
+		// pointer in animate and holds this simulation step.
 		const yaw = handsHeld
 			? 0
 			: this.axis("fly.yawStarboard", "fly.yawPort") + padYaw;
@@ -14334,9 +14415,7 @@ class Game {
 
 		// Held rather than stepped, for the same reason throttle is: an angle the
 		// player is choosing by eye wants a rate, not a ladder of fixed stops.
-		const orbit = this.view === "chase" ? this.chaseOrbitInput() : 0;
-		if (orbit !== 0)
-			this.chaseYaw = wrapAngle(this.chaseYaw + orbit * CHASE_ORBIT_RATE * dt);
+		if (this.view === "chase") this.stepKeyOrbit(dt);
 
 		// **The lever moves only with the assist on** (#620, `flight-model.md`
 		// §3.6). Off, the same keys and triggers fire the main drive and the
@@ -15073,12 +15152,13 @@ class Game {
 				scale(v3(forward.x, forward.y, forward.z), COCKPIT_FORWARD_KM),
 			);
 		}
-		// Behind and above in the ship's own frame, then swung round its up axis
-		// by the orbit. `cameraRotation` applies the same yaw, so the rig turns
-		// as one piece and the hull stays where it was in frame.
+		// Behind and above in the ship's own frame, turned by the orbit's one
+		// rotation (`chase-orbit.ts`). `cameraRotation` applies the same
+		// rotation, so the rig turns as one piece and the hull stays where it
+		// was in frame from every pose.
+		const local = orbitOffsetKm(this.chaseOrbit);
 		const offset = this.chaseOffset
-			.set(0, CHASE_UP_KM, CHASE_BACK_KM)
-			.applyAxisAngle(HEAD_AXIS, this.chaseYaw)
+			.set(local.x, local.y, local.z)
 			.applyQuaternion(this.orientation);
 		return add(this.world.ship.pos, v3(offset.x, offset.y, offset.z));
 	}
@@ -15803,11 +15883,16 @@ class Game {
 		// After `dt` and before the step: the chart's camera is not flight, and
 		// it must keep turning while §12 has flight suspended.
 		this.stepChartOrbit(dt);
+		// Compose even while the world is held; panels still own their input.
+		if (pointerOwner(this.view, this.photoMode) === "orbit") {
+			this.orbitChase();
+			if (contextFliesShip(this.padContext())) this.stepKeyOrbit(dt);
+		}
 		const updateStartedAt = this.frameAttribution ? performance.now() : 0;
 		// **The clock is held, not the loop** (§11.2): `lastTime` above still
 		// moves, so the frame after Continue carries one frame of time rather than
 		// everything since the page opened.
-		if (dt > 0 && !this.clockHeld) {
+		if (dt > 0 && !this.simulationHeld) {
 			// #535: the opening owns the clock while it runs, and steps the sim
 			// at its own fixed step however long this frame was.
 			const opening = this.opening;
@@ -15822,11 +15907,11 @@ class Game {
 		// Every frame, paused ones too: a paused burn does not keep its drive
 		// (the principal's ruling on #544), which needs the sound to hear the
 		// pause rather than keep the last level it was given.
-		this.stepFlightSound(this.clockHeld ? 0 : dt);
-		this.stepMusicDirector(this.clockHeld ? 0 : dt);
+		this.stepFlightSound(this.simulationHeld ? 0 : dt);
+		this.stepMusicDirector(this.simulationHeld ? 0 : dt);
 		// The combat loops too: a held clock stops the step that would let a
 		// beam or a sizzle go, so the frame loop lets go of them here (#545).
-		this.audio.weapons(this.clockHeld ? SILENT_WEAPONS : this.weaponMix);
+		this.audio.weapons(this.simulationHeld ? SILENT_WEAPONS : this.weaponMix);
 		if (this.frameAttribution)
 			this.frameAttribution.recordCpu(
 				"simulation/step",
@@ -15889,29 +15974,109 @@ class Game {
 	}
 
 	private cameraRotation() {
-		const yaw =
-			this.view === "cockpit"
-				? this.headLook === "left"
+		if (this.view === "chase") {
+			const q = orbitRotation(this.chaseOrbit);
+			this.headRotation.set(q.x, q.y, q.z, q.w);
+		} else {
+			const yaw =
+				this.headLook === "left"
 					? Math.PI / 2.7
 					: this.headLook === "right"
 						? -Math.PI / 2.7
-						: 0
-				: this.chaseYaw;
-		this.headRotation.setFromAxisAngle(HEAD_AXIS, yaw);
+						: 0;
+			this.headRotation.setFromAxisAngle(HEAD_AXIS, yaw);
+		}
 		return this.viewRotation.copy(this.orientation).multiply(this.headRotation);
+	}
+
+	/**
+	 * Spend this frame's pointer delta on the chase orbit (node #691), or drop
+	 * it where the pointer is not the glass's: the same `contextFliesShip`
+	 * that lets it steer in the cockpit, so a console, the Galaxy Map, the
+	 * pause menu or the Postcard screen takes the orbit with the ship.
+	 */
+	private orbitChase() {
+		const { dx, dy } = this.takePointer();
+		if (this.openingActive || !contextFliesShip(this.padContext())) return;
+		this.chaseOrbit = orbitByPointer(this.chaseOrbit, dx, dy);
+	}
+
+	/** The held `1`/`3` swing, one frame of it. Each caller keeps its own gate:
+	 *  `step` in flight, the frame loop while Photo mode holds the world. */
+	private stepKeyOrbit(dt: number) {
+		const orbit = this.chaseOrbitInput();
+		if (orbit !== 0)
+			this.chaseOrbit = {
+				...this.chaseOrbit,
+				yawRad: wrapAngle(this.chaseYaw + orbit * CHASE_ORBIT_RATE * dt),
+			};
+	}
+
+	private togglePhotoMode() {
+		this.releaseHeldKeys();
+		this.mouseFiring = false;
+		this.takePointer();
+		if (this.photoMode) {
+			this.photoMode = false;
+			this.view = this.photoPreviousView;
+		} else {
+			this.photoPreviousView = this.view;
+			this.photoMode = true;
+			this.view = "chase";
+			this.setHeadLook("forward");
+		}
+		this.updatePhotoNotice();
+	}
+
+	private updatePhotoNotice() {
+		if (!this.photoNotice) {
+			this.photoNotice = document.createElement("div");
+			this.photoNotice.dataset.photoControls = "";
+			this.photoNotice.style.cssText =
+				"position:fixed;right:16px;bottom:16px;z-index:15;padding:8px 12px;color:#cce4ee;background:#07121ddd;border:1px solid #537384;border-radius:4px;font:13px system-ui;display:flex;gap:12px;align-items:center";
+			document.body.append(this.photoNotice);
+		}
+		this.photoNotice.replaceChildren();
+		const button = (text: string, action: () => void) => {
+			const b = document.createElement("button");
+			b.type = "button";
+			b.textContent = text;
+			b.addEventListener("click", action);
+			// A focused button's activation keys are the button's, not the
+			// ship's: bubbling to `onKey` ran `Enter` as `dock.launch` and ate
+			// `Space` before its native click (sage round 6).
+			b.addEventListener("keydown", photoButtonKey);
+			this.photoNotice?.append(b);
+		};
+		if (this.photoMode) {
+			const hint = document.createElement("span");
+			hint.textContent =
+				"PHOTO · paused · click view, then move to orbit · scroll to zoom";
+			this.photoNotice.append(hint);
+			button("Centre", () => this.command("view.orbitCentre"));
+			button("Save postcard", () => this.command("system.postcard"));
+			button("Exit Photo mode", () => this.command("view.photo"));
+		} else button("Photo mode", () => this.command("view.photo"));
 	}
 
 	/**
 	 * Stand the camera where a postcard composition puts it (#406). `clear` and
 	 * `cockpit` are the cockpit eye, turned by `head`, with the cabin hidden or
-	 * drawn; `exterior` is the chase camera orbited by `yawRad`. Assigned rather
+	 * drawn; `exterior` is the chase camera orbited by `yawRad` and
+	 * `elevationRad` (node #691). Assigned rather
 	 * than routed through `setHeadLook`, which also moves the pointer lock and
 	 * the consoles — a composition is a camera, not a pilot's action.
 	 */
 	private composePostcard(pose: PostcardPose) {
 		if (pose.mode === "exterior") {
 			this.view = "chase";
-			this.chaseYaw = pose.yawRad ?? 0;
+			this.chaseOrbit = {
+				yawRad: pose.yawRad ?? 0,
+				elevationRad: clampElevation(pose.elevationRad ?? 0),
+				...(pose.zoomScale !== undefined
+					? { zoomScale: clampZoom(pose.zoomScale) }
+					: {}),
+			};
 			this.cabinHidden = false;
 		} else {
 			this.view = "cockpit";
@@ -15945,6 +16110,10 @@ class Game {
 			mode,
 			head: this.view === "cockpit" ? this.headLook : "forward",
 			yawRad: this.view === "chase" ? this.chaseYaw : 0,
+			elevationRad: this.view === "chase" ? this.chaseElevation : 0,
+			...(this.view === "chase" && this.chaseOrbit.zoomScale !== undefined
+				? { zoomScale: this.chaseOrbit.zoomScale }
+				: {}),
 		};
 	}
 
@@ -15999,7 +16168,7 @@ class Game {
 		const kept = {
 			view: this.view,
 			headLook: this.headLook,
-			chaseYaw: this.chaseYaw,
+			chaseOrbit: this.chaseOrbit,
 			cabinHidden: this.cabinHidden,
 		};
 		const out = document.createElement("canvas");
@@ -16031,7 +16200,7 @@ class Game {
 		} finally {
 			this.view = kept.view;
 			this.headLook = kept.headLook;
-			this.chaseYaw = kept.chaseYaw;
+			this.chaseOrbit = kept.chaseOrbit;
 			this.cabinHidden = kept.cabinHidden;
 			this.onResize();
 			// Three renders at the card's size, and any bake faces, are one long

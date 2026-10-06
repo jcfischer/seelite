@@ -20,8 +20,9 @@
  *
  * ## The spelling
  *
- * `postcard=1&gen=9&seed=47&galaxy=0&system=12&t=…&pos=x,y,z&q=x,y,z,w&mode=…`
- * then `head=…` for the two cockpit-eye modes or `yaw=…` for the exterior. It is
+ * `postcard=2&gen=9&seed=47&galaxy=0&system=12&t=…&pos=x,y,z&q=x,y,z,w&mode=…`
+ * then `head=…` for the two cockpit-eye modes or `yaw=…&elev=…` for the
+ * exterior — the chase orbit's two angles (node #691, `chase-orbit.ts`). It is
  * readable on purpose: a person looking at a link can see that it carries a
  * place and a camera and nothing else. It rides the **fragment**, which the
  * browser never sends to a server, so the static host learns nothing either.
@@ -33,6 +34,34 @@
  * aliases, and `encode(parse(s)) === s` for every `s` the parse accepts, spelled
  * without the leading `#` a `location.hash` carries (the parse takes either).
  *
+ * ## Compatible camera schemas
+ *
+ * Schema 1 spelled the exterior by its yaw alone, because the chase camera then
+ * orbited only about the ship's up axis. Node #691 gave it an elevation, and
+ * schema 2 is what carries it: `elev` is required on every schema-2 exterior,
+ * zero included, so a reader can never mistake a level card for one whose
+ * height was dropped.
+ *
+ * **A schema-1 link still opens, at its own framing.** Its exterior is level by
+ * construction — there was no other kind — so it parses with an elevation of
+ * zero, which is exactly the orbit it was taken at (`chase-orbit.ts` holds
+ * that zero elevation is the old yaw-only rig). It keeps `schema: 1`, so it
+ * re-encodes to its own bytes and the round-trip rule holds for it too; a
+ * schema-1 link carrying `elev` is malformed, not a schema-2 one misnumbered.
+ * `encodePostcard` refuses to write a schema-1 recipe with a non-zero
+ * elevation rather than drop it.
+ *
+ * Newly composed cards without a distance multiplier use schema 2, introduced
+ * by node #691 for elevation; this includes clear and cockpit compositions.
+ * They do not preserve the schema-1 spelling written by the previous build.
+ * A composition carrying zoom uses schema 3 and requires `zoom`, including an
+ * explicit multiplier of one. Received schema-1 and schema-2 links keep their
+ * framing. Encoding the decoded recipe preserves its original spelling;
+ * composing a new link from the viewer uses this build's writing schema, so
+ * a schema-1 exterior becomes schema 2 with `elev=0` and the same level view.
+ * Compatibility is backward reading: a build that reads only schema 1 refuses
+ * new schema-2 and schema-3 links, and a schema-2 reader refuses schema 3.
+ *
  * ## Why this is a leaf
  *
  * `entry.ts` validates a fragment **before** it imports the game, because a
@@ -43,8 +72,15 @@
  * `world-state.ts`, which is the repo's rule for one quantity named twice.
  */
 
-/** The recipe schema this build writes and reads. */
-export const POSTCARD_SCHEMA = 1;
+/** The schema used to compose new cards without zoom. */
+export const POSTCARD_SCHEMA = 2;
+/** Newly composed zoomed exterior cards use schema 3. */
+export const POSTCARD_ZOOM_SCHEMA = 3;
+export const POSTCARD_ZOOM_MIN = 0.25;
+export const POSTCARD_ZOOM_MAX = 8;
+
+/** Every schema this build reads: the yaw-only one as well (see above). */
+export const POSTCARD_READ_SCHEMAS: readonly number[] = [1, 2, 3];
 
 /**
  * Generator versions whose scene layout this build can reproduce. Saves can
@@ -84,6 +120,8 @@ export const POSTCARD_KEYS = [
 	"mode",
 	"head",
 	"yaw",
+	"elev",
+	"zoom",
 ] as const;
 
 export const POSTCARD_MODES = ["clear", "cockpit", "exterior"] as const;
@@ -102,9 +140,10 @@ const MAX_POS_KM = 1e10;
  * Decimal places kept, per field. Time to a microsecond, because a station
  * moves ~30 km/s and the eye beside it must not slide off its berth; position
  * to 10 cm; the quaternion to seven places, which moves a direction by well
- * under a pixel at the canonical size; the chase yaw to a microradian.
+ * under a pixel at the canonical size; the chase yaw and elevation to a
+ * microradian.
  */
-const PLACES = { t: 6, pos: 4, q: 7, yaw: 6 } as const;
+const PLACES = { t: 6, pos: 4, q: 7, yaw: 6, elev: 6, zoom: 6 } as const;
 
 /**
  * The largest chase yaw a recipe spells. Not `Math.PI`: a wrapped yaw of π
@@ -112,6 +151,13 @@ const PLACES = { t: 6, pos: 4, q: 7, yaw: 6 } as const;
  * card of a pilot looking straight back at the ship's nose (sage round 1).
  */
 const YAW_LIMIT = 3.141593;
+
+/**
+ * The largest chase elevation a recipe spells: π/2 quantised, which rounds
+ * *down* (1.5707963… to 1.570796), so a camera standing exactly at a pole —
+ * where `chase-orbit.ts` clamps it — spells a link the parse accepts.
+ */
+const ELEV_LIMIT = 1.570796;
 
 interface RecipeBase {
 	schema: number;
@@ -130,12 +176,19 @@ interface RecipeBase {
 /**
  * The composed view. `clear` and `cockpit` stand at the cockpit eye and differ
  * only in whether the cabin is drawn; `head` is which way it is turned.
- * `exterior` is the chase camera, orbited by `yawRad`.
+ * `exterior` is the chase camera, orbited by `yawRad` about the ship's up
+ * axis and raised by `elevationRad` above its horizontal plane — zero on a
+ * schema-1 link, which could not carry one.
  */
 export type PostcardRecipe = RecipeBase &
 	(
 		| { mode: "clear" | "cockpit"; head: PostcardHead }
-		| { mode: "exterior"; yawRad: number }
+		| {
+				mode: "exterior";
+				yawRad: number;
+				elevationRad: number;
+				zoomScale?: number;
+		  }
 	);
 
 /** What the game hands over. Anything else on the object is ignored. */
@@ -149,6 +202,8 @@ export interface PostcardScene {
 	mode: PostcardMode;
 	head?: PostcardHead;
 	yawRad?: number;
+	elevationRad?: number;
+	zoomScale?: number;
 }
 
 export type PostcardRefusal =
@@ -166,6 +221,14 @@ export type PostcardParse =
 // ---------------------------------------------------------------------------
 // Numbers
 // ---------------------------------------------------------------------------
+
+/** How far from one a link's quaternion norm may be: the parse's tolerance. */
+const UNIT_TOLERANCE = 1e-5;
+
+/** Whether a link's quaternion is a rotation: the parse's test, and the one
+ *  `postcardRecipe` asks before it divides. */
+const isRotation = (q: readonly number[]): boolean =>
+	Math.abs(Math.hypot(...q) - 1) <= UNIT_TOLERANCE;
 
 const quantise = (x: number, places: number): number => {
 	const scale = 10 ** places;
@@ -206,12 +269,33 @@ const wrapAngle = (rad: number): number =>
 	Math.atan2(Math.sin(rad), Math.cos(rad));
 
 /**
+ * A yaw the parse would accept is kept as it stands and only one past it is
+ * wrapped. Wrapping every yaw turned a link's accepted `yaw=3.141593` — a hair
+ * past π — into `-3.141592` on rebuild, so a current link of a pilot looking
+ * straight back at the nose spelled back a different fragment (sage round 6).
+ */
+const canonicalYaw = (rad: number): number =>
+	Math.abs(rad) <= YAW_LIMIT ? rad : wrapAngle(rad);
+
+/**
  * A recipe from a scene: the allowlisted fields picked, and every number
  * quantised to what the link will carry, so a recipe and its parse are equal.
  */
 export function postcardRecipe(scene: PostcardScene): PostcardRecipe {
 	const [qx, qy, qz, qw] = [0, 1, 2, 3].map((i) => scene.orientation[i]);
-	const norm = Math.hypot(qx, qy, qz, qw) || 1;
+	// **Divided only when the parse would refuse it undivided.** A quaternion
+	// read back off a link is quantised, so its norm is off one by up to ~2e-7;
+	// a division that moved each component by that fraction crossed a quantum's
+	// half step for about one orientation in three hundred, and the viewer then
+	// spelled back a link one digit away from the one it was opened on (node
+	// #691's probe found it; `tests/postcard.test.ts` sweeps it). So the
+	// components are quantised as they stand, and kept whenever the result is
+	// one `decodePostcard` accepts — the same test on the same numbers — which
+	// makes every accepted link's quaternion its own rebuild, out to the
+	// tolerance's edge (sage round 2 found `0.999991` normalised to `1` by a
+	// tighter slack).
+	const asTaken = [qx, qy, qz, qw].map((c) => quantise(c, PLACES.q));
+	const norm = isRotation(asTaken) ? 1 : Math.hypot(qx, qy, qz, qw) || 1;
 	const base: RecipeBase = {
 		schema: POSTCARD_SCHEMA,
 		generator: POSTCARD_GENERATORS[0],
@@ -234,14 +318,23 @@ export function postcardRecipe(scene: PostcardScene): PostcardRecipe {
 	if (scene.mode === "exterior")
 		return {
 			...base,
+			...(scene.zoomScale !== undefined
+				? {
+						schema: POSTCARD_ZOOM_SCHEMA,
+						zoomScale: quantise(scene.zoomScale, PLACES.zoom),
+					}
+				: {}),
 			mode: "exterior",
-			yawRad: quantise(wrapAngle(scene.yawRad ?? 0), PLACES.yaw),
+			yawRad: quantise(canonicalYaw(scene.yawRad ?? 0), PLACES.yaw),
+			elevationRad: quantise(scene.elevationRad ?? 0, PLACES.elev),
 		};
 	return { ...base, mode: scene.mode, head: scene.head ?? "forward" };
 }
 
 /** A recipe's one spelling, without the leading `#`. */
 export function encodePostcard(recipe: PostcardRecipe): string {
+	if (recipe.schema >= POSTCARD_ZOOM_SCHEMA && recipe.mode !== "exterior")
+		throw new Error("postcard: zoom schema requires an exterior composition");
 	const pairs: [string, string][] = [
 		["postcard", String(recipe.schema)],
 		["gen", String(recipe.generator)],
@@ -253,9 +346,18 @@ export function encodePostcard(recipe: PostcardRecipe): string {
 		["q", recipe.orientation.map((c) => spell(c, PLACES.q)).join(",")],
 		["mode", recipe.mode],
 	];
-	if (recipe.mode === "exterior")
+	if (recipe.mode === "exterior") {
 		pairs.push(["yaw", spell(recipe.yawRad, PLACES.yaw)]);
-	else pairs.push(["head", recipe.head]);
+		if (recipe.schema >= 2)
+			pairs.push(["elev", spell(recipe.elevationRad, PLACES.elev)]);
+		else if (recipe.elevationRad !== 0)
+			// Never a link that quietly flattens the camera it was asked for.
+			throw new Error("postcard: a schema-1 recipe cannot carry an elevation");
+		if (recipe.schema >= POSTCARD_ZOOM_SCHEMA)
+			pairs.push(["zoom", spell(recipe.zoomScale ?? 1, PLACES.zoom)]);
+		else if ((recipe.zoomScale ?? 1) !== 1)
+			throw new Error("postcard: this schema cannot carry zoom");
+	} else pairs.push(["head", recipe.head]);
 	return pairs.map(([name, value]) => `${name}=${value}`).join("&");
 }
 
@@ -294,7 +396,7 @@ export function decodePostcard(fragment: string): PostcardParse {
 
 	const schema = integer(fields.get("postcard") ?? "");
 	if (schema === null || [...fields.keys()][0] !== "postcard") return malformed;
-	if (schema !== POSTCARD_SCHEMA)
+	if (!POSTCARD_READ_SCHEMAS.includes(schema))
 		return { ok: false, reason: "unsupported-schema" };
 	const generator = integer(fields.get("gen") ?? "");
 	if (generator === null) return malformed;
@@ -305,8 +407,14 @@ export function decodePostcard(fragment: string): PostcardParse {
 	if (!(POSTCARD_MODES as readonly string[]).includes(mode ?? ""))
 		return malformed;
 	const exterior = mode === "exterior";
+	if (schema >= POSTCARD_ZOOM_SCHEMA && !exterior) return malformed;
+	// A schema-1 exterior is yaw alone; schema 2 adds the elevation.
 	const expected = POSTCARD_KEYS.filter((key) =>
-		exterior ? key !== "head" : key !== "yaw",
+		exterior
+			? key !== "head" &&
+				(key !== "elev" || schema >= 2) &&
+				(key !== "zoom" || schema >= POSTCARD_ZOOM_SCHEMA)
+			: key !== "yaw" && key !== "elev" && key !== "zoom",
 	);
 	if (
 		fields.size !== expected.length ||
@@ -335,7 +443,7 @@ export function decodePostcard(fragment: string): PostcardParse {
 	if (system >= POSTCARD_SYSTEMS) return outOfRange;
 	if (!(timeS >= 0 && timeS < MAX_TIME_S)) return outOfRange;
 	if (!pos.every((c) => Math.abs(c) < MAX_POS_KM)) return outOfRange;
-	if (Math.abs(Math.hypot(...q) - 1) > 1e-5) return outOfRange;
+	if (!isRotation(q)) return outOfRange;
 
 	const base: RecipeBase = {
 		schema,
@@ -352,7 +460,21 @@ export function decodePostcard(fragment: string): PostcardParse {
 		const yawRad = decimal(fields.get("yaw") as string);
 		if (yawRad === null) return malformed;
 		if (!(Math.abs(yawRad) <= YAW_LIMIT)) return outOfRange;
-		recipe = { ...base, mode: "exterior", yawRad };
+		let elevationRad = 0;
+		if (schema >= 2) {
+			const elev = decimal(fields.get("elev") as string);
+			if (elev === null) return malformed;
+			if (!(Math.abs(elev) <= ELEV_LIMIT)) return outOfRange;
+			elevationRad = elev;
+		}
+		recipe = { ...base, mode: "exterior", yawRad, elevationRad };
+		if (schema >= POSTCARD_ZOOM_SCHEMA) {
+			const zoom = decimal(fields.get("zoom") as string);
+			if (zoom === null) return malformed;
+			if (zoom < POSTCARD_ZOOM_MIN || zoom > POSTCARD_ZOOM_MAX)
+				return outOfRange;
+			recipe.zoomScale = zoom;
+		}
 	} else {
 		const head = fields.get("head") as string;
 		if (!(POSTCARD_HEADS as readonly string[]).includes(head)) return malformed;
@@ -457,11 +579,21 @@ export function postcardRefusalText(reason: PostcardRefusal): {
 }
 
 /** The camera half of a scene: the composition, and the head or the orbit. */
-export type PostcardPose = Pick<PostcardScene, "mode" | "head" | "yawRad">;
+export type PostcardPose = Pick<
+	PostcardScene,
+	"mode" | "head" | "yawRad" | "elevationRad" | "zoomScale"
+>;
 
 /** The camera half of a recipe: what `Game.capturePostcardFrame` is posed by. */
 export function postcardPose(recipe: PostcardRecipe): PostcardPose {
 	return recipe.mode === "exterior"
-		? { mode: recipe.mode, yawRad: recipe.yawRad }
+		? {
+				mode: recipe.mode,
+				yawRad: recipe.yawRad,
+				elevationRad: recipe.elevationRad,
+				...(recipe.zoomScale !== undefined
+					? { zoomScale: recipe.zoomScale }
+					: {}),
+			}
 		: { mode: recipe.mode, head: recipe.head };
 }

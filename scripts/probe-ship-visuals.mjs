@@ -26,6 +26,7 @@ function state() {
 		hullId: ship.userData.hullId,
 		variant: ship.userData.variant,
 		chaseYaw: game.chaseYaw,
+		chaseElevation: game.chaseElevation,
 		// The near camera sits at the origin, so the hull's own position is the
 		// camera-relative one. That makes it the honest observable for an orbit:
 		// a camera swinging round the ship must turn this vector without
@@ -117,12 +118,18 @@ for (const viewport of VIEWPORTS) {
 			Math.abs(length(orbited.shipOffset) - length(chase.shipOffset)) < 1e-6,
 	);
 
-	// `2` zeroes chaseYaw in the key handler; render then restores the astern
-	// offset. Wait for that offset itself so earlier frames cannot satisfy it.
+	// `2` zeroes the whole orbit pose in the key handler — the elevation the
+	// pointer sets as well as the yaw (node #691), so one is raised first; render
+	// then restores the astern offset. Wait for that offset itself so earlier
+	// frames cannot satisfy it.
+	await page.evaluate(() => {
+		window.__seelite.chaseElevation = 0.6;
+	});
 	await page.keyboard.press("2");
 	await page.waitForFunction(
 		(offset) =>
 			window.__seelite.chaseYaw === 0 &&
+			window.__seelite.chaseElevation === 0 &&
 			window.__seelite.shipMesh.position
 				.toArray()
 				.every((n, i) => Math.abs(n - offset[i]) < 1e-6),
@@ -132,6 +139,7 @@ for (const viewport of VIEWPORTS) {
 	check(
 		`${viewport.name}: 2 returns the chase camera astern`,
 		centred.chaseYaw === 0 &&
+			centred.chaseElevation === 0 &&
 			centred.shipOffset.every(
 				(n, i) => Math.abs(n - chase.shipOffset[i]) < 1e-6,
 			),

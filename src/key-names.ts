@@ -25,6 +25,7 @@ const KEY_WORDS: Readonly<Record<string, string>> = {
 	shift: "Shift",
 	control: "Ctrl",
 	f1: "F1",
+	f2: "F2",
 	arrowup: "↑",
 	arrowdown: "↓",
 	arrowleft: "←",
@@ -105,6 +106,8 @@ export function triggerLabel(t: Trigger): string {
 			return t.surface ? `${press} ${SURFACE_WORDS[t.surface]}` : press;
 		}
 		case "mouse-move":
+			if (t.photoMode)
+				return `move the mouse ${way(t.axis, t.half)} (Photo mode)`;
 			return `move the mouse ${way(t.axis, t.half)}`;
 		case "pad-button":
 			return t.hold ? `hold ${padButton(t.button)}` : padButton(t.button);

@@ -34,6 +34,8 @@ import { gameUrl, postcardUrl, publicUrl } from "./lib/game-url.mjs";
 import {
 	PANEL_CARD,
 	VIEWER_CARD,
+	cardPixels,
+	changedCells,
 	keepCard,
 	setPostcardMode,
 	waitViewerCard,
@@ -100,63 +102,14 @@ async function storageBytes() {
 }
 
 /**
- * Luma statistics of a card `<img>`: the lit share above the band, and a grid
- * over the **whole** card — band included, so a rebuilt card that captions
- * another place differs where the caption is (sage round 1).
- */
-const cardPixels = (selector) =>
-	async function read(page) {
-		return page.evaluate(async (sel) => {
-			const img = document.querySelector(sel);
-			await img.decode();
-			const canvas = document.createElement("canvas");
-			canvas.width = img.naturalWidth;
-			canvas.height = img.naturalHeight;
-			const ctx = canvas.getContext("2d");
-			ctx.drawImage(img, 0, 0);
-			const h = canvas.height;
-			const above = Math.round(h * 0.8);
-			const { data } = ctx.getImageData(0, 0, canvas.width, h);
-			const cols = 24;
-			const rows = 16;
-			const grid = new Array(cols * rows).fill(0);
-			let lit = 0;
-			for (let y = 0; y < h; y++)
-				for (let x = 0; x < canvas.width; x++) {
-					const i = (y * canvas.width + x) * 4;
-					const luma =
-						0.2126 * data[i] + 0.7152 * data[i + 1] + 0.0722 * data[i + 2];
-					if (y < above && luma > 24) lit++;
-					grid[
-						Math.floor((y / h) * rows) * cols +
-							Math.floor((x / canvas.width) * cols)
-					] += luma;
-				}
-			const cell = (canvas.width / cols) * (h / rows);
-			return {
-				width: img.naturalWidth,
-				height: img.naturalHeight,
-				lit: lit / (canvas.width * above),
-				grid: grid.map((v) => v / cell),
-			};
-		}, selector);
-	};
-/**
  * Every card and page this probe judges is written under `probe-shots/postcard/`,
  * so a green run can be looked at: a rendered card passing its numbers is not a
  * card anyone has seen.
  */
 const SHOTS = "probe-shots/postcard";
 mkdirSync(SHOTS, { recursive: true });
-const panelCard = cardPixels(PANEL_CARD);
-const viewerCard = cardPixels(VIEWER_CARD);
-/**
- * The share of grid cells whose mean luma moved by more than ten codes.
- * A share rather than a mean, because a subject that covers a few cells — the
- * hull, in the exterior — is diluted to nothing by a mean over all of them.
- */
-const changedCells = (a, b) =>
-	a.grid.filter((v, i) => Math.abs(v - b.grid[i]) > 10).length / a.grid.length;
+const panelCard = (page) => cardPixels(page, PANEL_CARD);
+const viewerCard = (page) => cardPixels(page, VIEWER_CARD);
 
 /** A PNG's own width and height, off its IHDR. */
 function pngSize(path) {

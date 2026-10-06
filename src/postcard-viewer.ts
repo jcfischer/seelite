@@ -63,8 +63,11 @@ export interface PostcardViewState {
 	recipe: PostcardRecipe;
 	/**
 	 * The recipe the rebuilt game spells back: equal to the link's for a link
-	 * of the current generator, or a bug. A legacy generator's link (a relabel,
-	 * #351) spells back with the current one, which is the only difference.
+	 * of the current schema and generator, or a bug. A legacy generator's link
+	 * (a relabel, #351) spells back with the current one, and a schema-1 link
+	 * spells back as schema 2 with `elev=0` on an exterior (node #691) — the
+	 * same framing, in the spelling this build writes; those are the only
+	 * differences.
 	 */
 	rebuiltFragment: string | null;
 	card: { width: number; height: number } | null;
