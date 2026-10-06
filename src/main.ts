@@ -13967,6 +13967,13 @@ class Game {
 			// launch. Docked at the station console is exactly the case this
 			// branch's reversal is about, and the comment there claimed the
 			// delta was consumed. Sage found it.
+			//
+			// **The chase orbit is spent first** (node #691): the camera is not
+			// flight, so docked, arriving or launching it still answers the
+			// pointer — under `orbitChase`'s own guards, so a console or the
+			// opening still takes the delta. Sage round 2 found the orbit dead
+			// here, because this branch returns above the flight tail's call.
+			if (pointerOwner(this.view) === "orbit") this.orbitChase();
 			this.dropPointer();
 			// Same reason as the delta above: `stepScan` runs on the flight tail,
 			// so this branch is a way off it. A charge banked before docking would

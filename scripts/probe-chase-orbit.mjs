@@ -43,12 +43,14 @@ import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import {
 	bootedGame,
 	guardedOrigin,
+	installViewPlacement,
 	launchChromium,
 	PROBE_WINDOW_LOCKABLE,
 	tally,
 	waitForSettingsPanel,
 } from "./probe-guard.mjs";
 import { gameUrl, postcardUrl } from "./lib/game-url.mjs";
+import { installViewFraming, setView } from "./lib/view-placement.mjs";
 import {
 	PANEL_CARD,
 	VIEWER_CARD,
@@ -78,6 +80,9 @@ await context.grantPermissions(["clipboard-read", "clipboard-write"], {
 });
 const page = await context.newPage();
 watch(page);
+// `__parkInBerth`, for the docked row at the end.
+await installViewPlacement(page);
+await installViewFraming(page);
 await page.goto(gameUrl(origin, { seed: 42, raider: "off" }), {
 	waitUntil: "load",
 });
@@ -694,6 +699,42 @@ ${rows}
 <tr><th>astern<br><small>after 2</small></th><td></td><td><img src="astern-card.png"></td><td></td></tr>
 <tr><th>schema-1 link<br><small>yaw only, level</small></th><td></td><td></td><td><img src="legacy-linked.png"></td></tr>
 </table>`,
+);
+
+// ---------------------------------------------------------------------------
+// Docked, the camera still answers (sage round 2). The non-flight branch of
+// `step` returns above the flight tail, and the orbit was spent only there:
+// docked, arriving or launching, chase ignored the mouse.
+// ---------------------------------------------------------------------------
+await page.evaluate(() =>
+	window.__parkInBerth("station-trade", "overhead-near", {}),
+);
+await setView(page, "chase");
+await clickGlass();
+// Astern, so the pull below cannot be eaten by a pole an earlier row left.
+await page.keyboard.press("2");
+await settle();
+const dockedBefore = await pilot();
+const dockedContext = await page.evaluate(() => ({
+	phase: window.__seelite.dockPhase,
+	context: window.__seelite.padContext(),
+}));
+await moveMouse(-18, 10);
+const dockedAfter = await pilot();
+const dockedPhase = await page.evaluate(() => window.__seelite.dockPhase);
+check(
+	"docked in chase, a real mouse move orbits the camera and the ship stays docked",
+	dockedContext.phase === "docked" &&
+		dockedPhase === "docked" &&
+		(await lockHolder()) === "CANVAS" &&
+		Math.abs(dockedAfter.yaw - dockedBefore.yaw) > 0.3 &&
+		Math.abs(dockedAfter.elev - dockedBefore.elev) > 0.15 &&
+		// Not the attitude: a parked ship turns with the spinning station
+		// every frame (§12.6 obligation 9), so only its own rates are quiet.
+		dockedAfter.rates.pitch === 0 &&
+		dockedAfter.rates.yaw === 0 &&
+		dockedAfter.rates.roll === 0,
+	`${JSON.stringify(dockedContext)} → ${dockedPhase}; lock ${await lockHolder()}; yaw ${dockedBefore.yaw.toFixed(3)} → ${dockedAfter.yaw.toFixed(3)}, elevation ${dockedBefore.elev.toFixed(3)} → ${dockedAfter.elev.toFixed(3)}; rates ${JSON.stringify(dockedAfter.rates)}`,
 );
 
 await context.close();

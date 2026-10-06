@@ -28,8 +28,12 @@
  * because a pointer lock taken or a window re-focused can deliver hundreds of
  * pixels in one event.
  *
- * **The poles.** Elevation is clamped to ±π/2 — straight down on the hull from
- * overhead and straight up at it from beneath — and clamped rather than
+ * **The poles.** Elevation is clamped to ±π/2, where the sightline runs along
+ * the ship's up axis — looking straight down from overhead, straight up from
+ * beneath. The camera is not over the hull's centre there: the whole rig is
+ * turned, so the astern offset's 140 m back becomes 140 m above (or below)
+ * and its 40 m up becomes 40 m forward (aft from beneath), and the hull sits
+ * off-centre in the frame exactly where it sits astern. Clamped rather than
  * accumulated, so a pointer pushed past the pole and brought back moves the
  * camera on the first pixel back. The rig is a rotation, not a look-at, so
  * the pole has no singular up vector: there a horizontal push turns the view

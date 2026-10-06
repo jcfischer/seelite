@@ -206,10 +206,10 @@ export type PostcardParse =
 /** How far from one a link's quaternion norm may be: the parse's tolerance. */
 const UNIT_TOLERANCE = 1e-5;
 
-/** How far from one a scene's norm may be and still be quantised as it
- *  stands: well above a quantised rotation's ~2e-7, and half the parse's, so a
- *  quaternion taken undivided still spells a link the parse accepts. */
-const UNIT_SLACK = UNIT_TOLERANCE / 2;
+/** Whether a link's quaternion is a rotation: the parse's test, and the one
+ *  `postcardRecipe` asks before it divides. */
+const isRotation = (q: readonly number[]): boolean =>
+	Math.abs(Math.hypot(...q) - 1) <= UNIT_TOLERANCE;
 
 const quantise = (x: number, places: number): number => {
 	const scale = 10 ** places;
@@ -255,15 +255,19 @@ const wrapAngle = (rad: number): number =>
  */
 export function postcardRecipe(scene: PostcardScene): PostcardRecipe {
 	const [qx, qy, qz, qw] = [0, 1, 2, 3].map((i) => scene.orientation[i]);
-	// **Divided only when it is not already a rotation.** A quaternion read
-	// back off a link is quantised, so its norm is off one by up to ~2e-7; a
-	// division that moved each component by that fraction crossed a quantum's
+	// **Divided only when the parse would refuse it undivided.** A quaternion
+	// read back off a link is quantised, so its norm is off one by up to ~2e-7;
+	// a division that moved each component by that fraction crossed a quantum's
 	// half step for about one orientation in three hundred, and the viewer then
 	// spelled back a link one digit away from the one it was opened on (node
-	// #691's probe found it; `tests/postcard.test.ts` sweeps it). Within
-	// `UNIT_SLACK` the components are quantised as they are.
-	const hypot = Math.hypot(qx, qy, qz, qw);
-	const norm = Math.abs(hypot - 1) <= UNIT_SLACK ? 1 : hypot || 1;
+	// #691's probe found it; `tests/postcard.test.ts` sweeps it). So the
+	// components are quantised as they stand, and kept whenever the result is
+	// one `decodePostcard` accepts — the same test on the same numbers — which
+	// makes every accepted link's quaternion its own rebuild, out to the
+	// tolerance's edge (sage round 2 found `0.999991` normalised to `1` by a
+	// tighter slack).
+	const asTaken = [qx, qy, qz, qw].map((c) => quantise(c, PLACES.q));
+	const norm = isRotation(asTaken) ? 1 : Math.hypot(qx, qy, qz, qw) || 1;
 	const base: RecipeBase = {
 		schema: POSTCARD_SCHEMA,
 		generator: POSTCARD_GENERATORS[0],
@@ -396,7 +400,7 @@ export function decodePostcard(fragment: string): PostcardParse {
 	if (system >= POSTCARD_SYSTEMS) return outOfRange;
 	if (!(timeS >= 0 && timeS < MAX_TIME_S)) return outOfRange;
 	if (!pos.every((c) => Math.abs(c) < MAX_POS_KM)) return outOfRange;
-	if (Math.abs(Math.hypot(...q) - 1) > UNIT_TOLERANCE) return outOfRange;
+	if (!isRotation(q)) return outOfRange;
 
 	const base: RecipeBase = {
 		schema,

@@ -193,6 +193,31 @@ describe("the gesture (C1)", () => {
 		);
 	});
 
+	test("at the poles the sightline is the ship's up axis and the whole offset turns with it", () => {
+		// Not over the hull's centre: the astern offset turned a quarter, so the
+		// 40 m up becomes 40 m forward overhead and 40 m aft beneath.
+		const over = orbitOffsetKm({
+			yawRad: 0,
+			elevationRad: ELEVATION_LIMIT_RAD,
+		});
+		const under = orbitOffsetKm({
+			yawRad: 0,
+			elevationRad: -ELEVATION_LIMIT_RAD,
+		});
+		for (const [got, want] of [
+			[over, v3(0, CHASE_BACK_KM, -CHASE_UP_KM)],
+			[under, v3(0, -CHASE_BACK_KM, CHASE_UP_KM)],
+		] as const) {
+			expect(got.x).toBeCloseTo(want.x, 12);
+			expect(got.y).toBeCloseTo(want.y, 12);
+			expect(got.z).toBeCloseTo(want.z, 12);
+		}
+		const look = (elevationRad: number) =>
+			rotate(v3(0, 0, -1), orbitRotation({ yawRad: 0, elevationRad }));
+		expect(look(ELEVATION_LIMIT_RAD).y).toBeCloseTo(-1, 12);
+		expect(look(-ELEVATION_LIMIT_RAD).y).toBeCloseTo(1, 12);
+	});
+
 	test("at the pole a horizontal push still turns the view, with no flip", () => {
 		let orbit: ChaseOrbit = { yawRad: 0, elevationRad: ELEVATION_LIMIT_RAD };
 		let last = rig(SHIP_POS, SHIPS[2], orbit);

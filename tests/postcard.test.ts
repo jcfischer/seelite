@@ -629,6 +629,20 @@ describe("a rebuilt recipe spells the link it was opened on (node #691)", () => 
 		expect(moved).toBe(0);
 	});
 
+	test("a link's quaternion at the edge of the parse's tolerance rebuilds as it was sent", () => {
+		// Sage round 2: a slack tighter than the parse's normalised this one to
+		// `q=0,0,0,1`, one accepted link the viewer spelled back differently.
+		for (const q of ["0,0,0,0.999991", "0,0,0,1.000009", "0,0,-0.999991,0"]) {
+			const sent = withPair("q", q);
+			const read = decodePostcard(sent);
+			if (!read.ok) throw new Error(read.reason);
+			const rebuilt = encodePostcard(
+				postcardRecipe({ ...scene, orientation: read.recipe.orientation }),
+			);
+			expect(rebuilt).toBe(sent);
+		}
+	});
+
 	test("a scene's quaternion that is not a rotation is still normalised", () => {
 		const doubled = postcardRecipe({
 			...scene,
