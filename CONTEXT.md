@@ -639,6 +639,22 @@ Where one ship parks in a station interior, addressed as **interior face × dept
 _Avoid_: Docking bay, slot, pad, landing pad
 These are aliases for **a berth** and nothing else. **The scope note is the point of the entry, not a footnote to it**, and it has grown once already: the repo has had to correct one alias that read as banning an English word. "Slot" is an aperture kind — `aperture.kind === "slot"` is code. "Pad" now carries **four** senses that are not this one — a berth *family* (open deck pad), the surface a ship settles onto (`berth-pad`), since #165 an aperture kind and the interior presentation that goes with it (**Landing pad** above), and since #283 the **game controller**: `src/gamepad.ts`, `PadFrame`, `padIntents`, `docs/gamepad.md`. That fourth one arrived as a *copy* — the module is byte-identical to seekolous's and says "pad" throughout — so it could not have been renamed here even if the sense were worth renaming, and it is not: a controller is what every player calls a pad. Since #90 "slot" carries a **second** sense of its own: a **save slot** is one named save — `src/save-store.ts`, `CommanderCatalog.slots()`, `exportSlot`, and #89's D6, which ratified the word. It holds two records, `live` and `lastDocked`, and has nothing to do with where a ship parks. The player never sees the word: what a player sees of a save slot is a **Commander** (below). The first version of this sentence claimed the two senses "do not meet in any one file", and the change that introduced it refuted that six lines apart: `releaseBerth` and `saveDirty` sit in the same block of `main.ts`, because releasing a berth is exactly when a save stops describing a parked ship. They meet, and it does not matter — the disambiguation is the word beside it, and `saveSlot`, `exportSlot` and `SaveRecordKind` never read as a place to park. Since #619 "slot" has a **third** sense: a **vent slot** (`VENT_SLOTS`, `VentSlot`) names a thruster's place on a hull, one vocabulary across the roster (`flight-model.md` §3.4.1). It is never a berth and never an aperture. And **Carrier slot** above is a fourth: the row a carrier is filed under — a **Raider slot**, the relay's, one of a station's **Traffic roster** — with `raider-slots.ts` and `relay-slot.ts` named for it; a berth is where a ship parks, a Carrier slot is what its save row is filed under. A reviewer flagging one of those has found the alias rule firing on an English word rather than on a synonym for a berth. <!-- glossary-ignore: slot, pad, landing pad -->
 
+**Eject**:
+The pilot launching the **escape pod**: the held `fly.eject` control (node
+#703), refused docked and on the rails. It is a death, and the cheaper of the
+two — the launch hull and its fittings come back, the hold and the pod do not
+(#660 D2); any other death costs the ship for a stock courier (D6). Manual only:
+a pod never fires itself (D4). `death-cost.ts` owns the cause, the warning's
+threshold and the **Wake**; `commanderAfterDeath` in `holdings.ts` owns what
+each cause takes. `economy-trade.md` §9 is the spec.
+_Avoid_: bail out, respawn (the pilot is not respawned; the launch is restored)
+
+**Wake** (a death's):
+What a death took — the cause, the hull, the tonnes aboard, the fittings lost
+and the jobs failed — left in the pointer store by the death and taken by the
+next boot, which says it once on the docked console's message line and the
+Communications log (`DeathWake`, node #704). A notice, never a record.
+
 **Commander**:
 What the player sees of one **save slot**: a named save, with its galaxy seed and
 its permadeath flag, listed, loaded, exported, imported, renamed and deleted in

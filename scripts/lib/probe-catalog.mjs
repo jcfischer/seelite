@@ -311,8 +311,21 @@ export const PROBE_CATALOG = Object.freeze(
 		),
 		entry(
 			"probe-death.mjs",
-			"Exercises live death handling for saved recovery and permadeath retirement paths.",
-			["ship death", "save recovery", "permadeath", "reload", "world state"],
+			"Exercises live death handling for saved recovery and permadeath retirement paths; a death after a launch restores the launch credits at that station and, without ejecting, loses the ship for a stock courier; a held Backspace with an escape pod ejects and wakes with the hull and fittings kept and the hold and pod gone; the docked console says what the death took; the eject warning paints on the glass below its threshold with a pod and is said once per crossing.",
+			[
+				"ship death",
+				"save recovery",
+				"permadeath",
+				"reload",
+				"world state",
+				"escape pod",
+				"eject",
+				"death cost",
+				"wake notice",
+				"eject warning",
+				"glass notice",
+				"station console message",
+			],
 		),
 		entry(
 			"probe-derived-names.mjs",

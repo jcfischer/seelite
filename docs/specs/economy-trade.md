@@ -1710,8 +1710,16 @@ is **consumed**. A job's entrusted goods are lost with the hold and the job
 fails with no debt. A pilot with a pod fitted is warned on the glass when the
 hull falls below a threshold derived, once and for the whole roster, from the
 most hull damage any hostile's weapon can land in about one second of the
-pilot's reaction — so the warning cannot come after the last hit. #704 measures
-it.
+pilot's reaction — so the warning cannot come after the last hit. #704 derived
+it (`EJECT_WARNING_HULL` in `death-cost.ts`): every hostile today fires the one
+pulse laser at 6 hull points a second with its shields down, over a second of
+reaction, the 0.75 s eject hold and one longest frame, plus the half point the
+kill tolerance rounds away — **11.6 hull points**, the same on every hull,
+because what kills is the gun's rate and not the hull's size. It is written
+against the strongest *weapon*: two hostiles firing at once land twice the rate,
+and the warning can then come late. The glass names the key as bound; the voice
+line names it only for the two default bindings, since a rebound key may be a
+word the voice has none for.
 
 One consequence is recorded because #8 has to reckon with it: **ejecting dumps
 contraband**, which makes the pod a panic-button disposal route ahead of a
@@ -1722,11 +1730,28 @@ this spec's.
 hull, every fitting and the hold. They wake at the station they launched from in
 a stock courier with a full tank, and keep the credits they launched with. The
 intent is that this cannot strand a save: a courier is always left, and #356's
-courier floor entrusts its goods to a pilot with no credits. One case is not yet
-shown: a Wanted pilot keeps their heat through a death (#654), and a station
-that refuses them may leave no work to take. #704 owes that check. A pilot who dies before their first dock wakes
+courier floor entrusts its goods to a pilot with no credits. A Wanted or
+Fugitive pilot keeps their heat through a death (#654), and #704 checked what
+that leaves them (`tests/death-cost.test.ts`). **Work holds**: Courier and
+Procurement read no standing, so the floor is open to them; only a Bounty asks
+for Clean. **A berth holds, with one exception, and the exception is bounded.**
+A launch station that refuses them by law — a shipyard on standing alone, or a
+trade station or refinery that heard the offence — refuses the docked restore's
+clearance too, so they wake in flight beside it rather than in its berth. From
+there a trade station or refinery that did not hear it admits them, and a stock
+courier wakes with a full tank and charge to reach one, in this system or the
+next. The worst case is every station in reach having heard: then the refusal
+lasts until heat decays below Wanted, at most about **100 minutes** of game
+clock from the cap (`HEAT_HALF_LIFE_S × log₂(HEAT_CAP / WANTED_HEAT)`). That is
+the one place the floor bends, and it bends to a wait, never to a stranded
+save. A pilot who dies before their first dock wakes
 docked at the start system's trade station as a new commander (D10). Ladder
 rungs and banked ladder credit are never touched (#183).
+
+The pilot wakes to a notice of what the death took — the hold and the pod, or
+the ship, its fittings and the hold, and how many jobs failed with it — on the
+docked console's message line and the Communications log (#704). The First day
+tab teaches the eject key from the first pod purchase (D9).
 
 An eject is a death with a pod here, and both will leave a **wreck** at that
 point holding a seeded share of what was lost — cargo and fittings after a death

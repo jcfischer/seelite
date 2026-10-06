@@ -413,6 +413,14 @@ pointer naming a slot that no longer exists falls back to `default` and says so 
 it**: that slot is empty because its first save has not been written, not
 because it was deleted.
 
+**A death's wake lives there too** (#660, node #704): what the death took — the
+cause, the hull, the tonnes aboard, the fittings lost, the jobs failed — written
+by `revertToLastDocked` after `live` and taken by the next boot that reads
+storage, whichever Commander it is for (`CommanderCatalog.takeWake`). It is a
+notice and not a record: a wake that will not parse, or one written for another
+Commander, is dropped rather than refused, and a failed write costs the pilot
+the notice and never the save. No envelope field and no schema bump.
+
 **It is a second object store, not a key in `slots`.** `indexedDbSaveBackend`
 files a record under its slot name, a separator and its kind, and `slots()`
 lists the distinct prefixes of every key in that store — so a pointer stored

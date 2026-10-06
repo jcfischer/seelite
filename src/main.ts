@@ -3352,6 +3352,9 @@ class Game {
 	 *  voice line has been said since it last lapsed (`stepEjectWarning`). */
 	ejectWarningDue = false;
 	private ejectWarningSpoken = false;
+	/** How many times the warning's voice line has been asked for, for a
+	 *  probe to count crossings by (`stepEjectWarning`). */
+	ejectWarningsSaid = 0;
 	/** What the warning drew this frame, for a probe to read beside the
 	 *  pixels (`drawEjectNotice`). */
 	ejectWarningRender: { text: string } | null = null;
@@ -12012,6 +12015,7 @@ class Game {
 		this.ejectWarningSpoken = step.spoken;
 		this.ejectWarningDue = due;
 		if (step.speak) {
+			this.ejectWarningsSaid += 1;
 			this.consoleNotify("bad");
 			this.sayComms(ejectWarningLine(spoken(this.bindings, "fly.eject")));
 		}
