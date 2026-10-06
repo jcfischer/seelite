@@ -614,7 +614,8 @@ ship turns.
 and the mark is that. It takes the cool tone of the attitude reference, faint, and
 no other mark on the glass has its shape, so it reads without its hue. Its rank
 is in its label: the label goes through §3's declutter pass last, after the
-selected target and the context labels, so the label gives way on a collision and
+selected target's name (on the glass, or beside its edge arrow when the target
+is off it) and the context labels, so the label gives way on a collision and
 never overprints a name. The brackets and the dot are not decluttered: they are
 painted after the body markers and can cross another mark or its name. Cockpit
 view only, with the horizon line: chase has no glass.
@@ -629,7 +630,10 @@ composition over every shipped system and against the two wrong frames a caller
 could hand it. `scripts/probe-hud.mjs` reads the overlay's pixels in a box
 around the mark with the bearing 15° off the nose, then again at the same pose
 and frame with the mark withheld, as the control. It counts the pixels inked only
-with the mark present, so another marker in the box cannot carry the row. The sky's look is untouched, so this is
+with the mark present, so another marker in the box cannot carry the row. A
+second row stands the selected target astern so its edge label falls on the
+room `CORE` would take, and reads the label refused, against the same pose with
+nothing selected, where it is drawn. The sky's look is untouched, so this is
 not one of #478's look decisions. As a new instrument it still owes a look at a
 rendered frame (#94), and no probe stands in for that.
 

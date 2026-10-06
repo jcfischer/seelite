@@ -1376,6 +1376,17 @@ const CORE_MARK_LABEL = "CORE";
 /** The declutter pass's key for the label; no body id is spelled like it. */
 const CORE_MARK_LABEL_ID = "#core-bearing";
 
+/** Where the overlay frame puts things, as the Core mark needs it: the frame's
+ *  projection and label box, the labels already claimed, and the glass size. */
+interface CoreMarkLayout {
+	place: (dir: Vec3) => { x: number; y: number; on: boolean } | null;
+	labelBounds: (x: number, y: number, text: string) => MarkerLabelBounds;
+	/** Claimed this frame, in rank order; the Core label is admitted last. */
+	occupied: MarkerLabelBounds[];
+	w: number;
+	h: number;
+}
+
 /**
  * §4's spool-up, seconds — reused here for the voluntary case.
  *
@@ -18545,6 +18556,10 @@ class Game {
 		const markOnGlass = selectedAt?.on === true;
 		const targetCondition = markOnGlass ? this.selectedTargetCondition() : null;
 		const divertCue = markOnGlass ? this.selectedDivertCue(camPos) : null;
+		// The selected target's name beside its edge arrow, when it is off the
+		// glass. Reserved for the Core mark alone, after the walk: the context
+		// labels' order against it is unchanged by node #478.
+		let edgeLabel: MarkerLabelBounds | null = null;
 		const selectedLabel = (name: string, km: number) =>
 			`${name}  ${range(km)}${onTarget ? "  ON TARGET" : ""}${
 				divertCue ? `  ${divertCue}` : ""
@@ -18697,23 +18712,23 @@ class Game {
 			ctx.fill();
 			ctx.restore();
 			ctx.fillStyle = "rgba(255, 214, 120, 0.8)";
-			ctx.fillText(
-				`${body.name}  ${((angleOffNose(dir, this.nose()) * 180) / Math.PI).toFixed(0)}° off`,
-				Math.min(w - 120, Math.max(10, p.x - 48)),
-				Math.min(h - 10, Math.max(20, p.y + 22)),
-			);
+			const edgeText = `${body.name}  ${((angleOffNose(dir, this.nose()) * 180) / Math.PI).toFixed(0)}° off`;
+			const edgeX = Math.min(w - 120, Math.max(10, p.x - 48));
+			const edgeY = Math.min(h - 10, Math.max(20, p.y + 22));
+			ctx.fillText(edgeText, edgeX, edgeY);
+			edgeLabel = labelBounds(edgeX, edgeY, edgeText);
 		}
 
-		// The Core mark is the glass's lowest rank, so it goes last (§5.5).
-		this.drawCoreMark(
-			ctx,
-			shipCues ? this.coreDir : null,
+		// The Core mark is the glass's lowest rank, so it goes last (§5.5), and
+		// the selected target's edge label outranks it as its on-glass one does.
+		if (edgeLabel) occupiedLabels.push(edgeLabel);
+		this.drawCoreMark(ctx, shipCues ? this.coreDir : null, {
 			place,
 			labelBounds,
-			occupiedLabels,
+			occupied: occupiedLabels,
 			w,
 			h,
-		);
+		});
 	}
 
 	/**
@@ -18731,12 +18746,9 @@ class Game {
 	private drawCoreMark(
 		ctx: CanvasRenderingContext2D,
 		core: Vec3 | null,
-		place: (dir: Vec3) => { x: number; y: number; on: boolean } | null,
-		labelBounds: (x: number, y: number, text: string) => MarkerLabelBounds,
-		occupiedLabels: MarkerLabelBounds[],
-		w: number,
-		h: number,
+		layout: CoreMarkLayout,
 	) {
+		const { place, labelBounds, occupied, w, h } = layout;
 		const coreAt = core && place(core);
 		if (!coreAt?.on) return;
 		ctx.strokeStyle = CORE_MARK_STROKE;
@@ -18766,7 +18778,7 @@ class Game {
 			this.markerLabels.claim(
 				CORE_MARK_LABEL_ID,
 				bounds,
-				occupiedLabels,
+				occupied,
 				this.world.gameTime,
 			);
 		if (labelled) ctx.fillText(CORE_MARK_LABEL, x, y);

@@ -41,6 +41,9 @@
  *    and the overlay carries ink in a box around it that the same pose and frame
  *    with the mark withheld does not. Deleting the strokes and keeping the record
  *    turns the ink row red, which is the defect a record-only check would pass.
+ * 6. The Core mark's label gives way to the selected target's edge label, at a
+ *    pose built to put the two on one row, against a control at the same pose
+ *    with nothing selected.
  */
 import {
 	bootedGame,
@@ -382,6 +385,163 @@ if (coreMark.noCore) {
 		coreMark.behind
 			? `recorded at (${coreMark.behind.at.x.toFixed(1)}, ${coreMark.behind.at.y.toFixed(1)})`
 			: "none",
+	);
+}
+
+// (6) The Core mark's label yields to the selected target's *edge* label
+// (§5.5, sage on node #478). A target behind the ship is named beside its edge
+// arrow, and that name outranks CORE as surely as the on-glass one does. The
+// pose is built so the two collide: the nose lies in the plane of the core and
+// the target, tilted until the core lands near the top of the glass, and rolled
+// so that plane is the screen's vertical — the core straight above centre and
+// the target astern, so its arrow sits on the top edge and its name on CORE's
+// room. The control is the same pose with nothing selected, where CORE must be
+// labelled; it runs first, because a refused label stays refused for
+// `MARKER_LABEL_REAPPEAR_S` and would carry over into a control taken after.
+/** Where the core is put on the glass: near the top, so its label shares a
+ *  row with an edge label hung under the top edge. */
+const CORE_EDGE_Y_PX = 40;
+const coreEdge = await page.evaluate(
+	async ({ coreYPx }) => {
+		const g = window.__seelite;
+		const core = g.coreBearingDir;
+		if (!core) return { noCore: true };
+		const frames = async () => {
+			await new Promise((r) => requestAnimationFrame(() => r()));
+			await new Promise((r) => requestAnimationFrame(() => r()));
+		};
+		const dot = (a, b) => a.x * b.x + a.y * b.y + a.z * b.z;
+		const norm = (v) => {
+			const l = Math.hypot(v.x, v.y, v.z);
+			return { x: v.x / l, y: v.y / l, z: v.z / l };
+		};
+		const cross = (a, b) => ({
+			x: a.y * b.z - a.z * b.y,
+			y: a.z * b.x - a.x * b.z,
+			z: a.x * b.y - a.y * b.x,
+		});
+		const ship = g.world.ship.pos;
+		// A target 100°–150° round from the core: once the core is tilted above
+		// the nose, that puts the target astern and above, so its arrow takes the
+		// top edge.
+		const candidates = [];
+		for (const body of g.world.system.bodies) {
+			const d = {
+				x: body.pos.x - ship.x,
+				y: body.pos.y - ship.y,
+				z: body.pos.z - ship.z,
+			};
+			if (Math.hypot(d.x, d.y, d.z) < 1) continue;
+			const t = norm(d);
+			const beta =
+				(Math.acos(Math.max(-1, Math.min(1, dot(core, t)))) * 180) / Math.PI;
+			if (beta > 100 && beta < 150) candidates.push({ id: body.id, t, beta });
+		}
+		if (candidates.length === 0) return { noCandidate: true };
+		const { id, t, beta } = candidates[0];
+		// `u` is the target's side of the plane, perpendicular to the core.
+		const c = dot(core, t);
+		const u = norm({
+			x: t.x - core.x * c,
+			y: t.y - core.y * c,
+			z: t.z - core.z * c,
+		});
+		// Three's own classes, reached through objects the game already holds.
+		const V = g.nearCamera.position.constructor;
+		const M = g.nearCamera.matrixWorld.constructor;
+		/** Nose tilted `a` away from the core, rolled so the core is straight up. */
+		const pose = (a) => {
+			const forward = {
+				x: core.x * Math.cos(a) - u.x * Math.sin(a),
+				y: core.y * Math.cos(a) - u.y * Math.sin(a),
+				z: core.z * Math.cos(a) - u.z * Math.sin(a),
+			};
+			const up = {
+				x: core.x * Math.sin(a) + u.x * Math.cos(a),
+				y: core.y * Math.sin(a) + u.y * Math.cos(a),
+				z: core.z * Math.sin(a) + u.z * Math.cos(a),
+			};
+			const right = cross(forward, up);
+			g.orientation.setFromRotationMatrix(
+				new M().makeBasis(
+					new V(right.x, right.y, right.z),
+					new V(up.x, up.y, up.z),
+					new V(-forward.x, -forward.y, -forward.z),
+				),
+			);
+		};
+		const h = window.innerHeight;
+		const wantNdcY = 1 - (2 * coreYPx) / h;
+		let lo = 0;
+		let hi = Math.PI / 3;
+		for (let i = 0; i < 40; i++) {
+			const mid = (lo + hi) / 2;
+			pose(mid);
+			if (g.markerNdc(core).ndcY < wantNdcY) lo = mid;
+			else hi = mid;
+		}
+		const a = (lo + hi) / 2;
+		const original = g.targetId;
+		try {
+			g.targetId = null;
+			pose(a);
+			await frames();
+			const control = g.coreRender;
+			g.targetId = id;
+			pose(a);
+			await frames();
+			const hit = g.coreRender;
+			const target = g.markerNdc(t);
+			const coreNdc = g.markerNdc(core);
+			return {
+				id,
+				beta,
+				control,
+				hit,
+				targetBehind: target.behind,
+				coreNdc,
+			};
+		} finally {
+			g.targetId = original;
+		}
+	},
+	{ coreYPx: CORE_EDGE_Y_PX },
+);
+
+if (coreEdge.noCore) {
+	check(
+		"the live system has a Core bearing to collide with an edge label",
+		false,
+		"coreBearingDir is null",
+	);
+} else if (coreEdge.noCandidate) {
+	check(
+		"a body lies 100°–150° from the core, to put its edge label on CORE's room",
+		false,
+		"no body in that band",
+	);
+} else {
+	const pose =
+		`${coreEdge.id} ${coreEdge.beta.toFixed(0)}° from the core, ` +
+		`${coreEdge.targetBehind ? "astern" : "NOT astern"}; core at ndc ` +
+		`(${coreEdge.coreNdc.ndcX.toFixed(3)}, ${coreEdge.coreNdc.ndcY.toFixed(3)})`;
+	// The control earns the row: at this pose, with nothing selected, CORE has
+	// its room, so a refusal below is the edge label's doing and nothing else's.
+	check(
+		"with nothing selected, CORE is labelled at the edge-collision pose",
+		coreEdge.control?.labelled === true,
+		coreEdge.control
+			? `label ${coreEdge.control.labelled ? "drawn" : "declined"}; ${pose}`
+			: `no Core mark recorded; ${pose}`,
+	);
+	check(
+		"CORE gives way to the selected target's edge label",
+		coreEdge.targetBehind === true &&
+			coreEdge.hit !== null &&
+			coreEdge.hit.labelled === false,
+		coreEdge.hit
+			? `label ${coreEdge.hit.labelled ? "drawn over the edge label" : "declined"}; ${pose}`
+			: `no Core mark recorded; ${pose}`,
 	);
 }
 
