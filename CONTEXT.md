@@ -109,7 +109,7 @@ A **Carrier slot** for a seeded **Wreck**, belonging to a system: one to three
 per system by government. It is empty until its seeded loss, holds a wreck until
 the wreck is stripped or taken by other salvagers, then waits for its next loss.
 `salvage.md` S1, S16 and S21 own it.
-_Avoid_: Wreck spawn
+_Avoid_: Wreck point
 
 **Wreck**:
 In `salvage.md`'s sense, a persistent hull with tethered containers that a

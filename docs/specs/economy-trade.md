@@ -1773,7 +1773,7 @@ tab teaches the eject key from the first pod purchase (D9).
 An eject is a death with a pod here, and both will leave a **wreck** at that
 point holding a seeded share of what was lost — cargo and fittings after a death
 without a pod, cargo only after an eject — never the hull, the pod
-or entrusted goods. Recovering it is salvage's verb, which #466 settled: `salvage.md` owns the wreck, and S10 and S12 are the death wreck's own rules.
+or entrusted goods. Recovering it is salvage's verb, which #466 specified: `salvage.md` owns the wreck, and S1, S10, S11 and S12 carry the death wreck's own rules.
 Permadeath is a separate arm and is #238's.
 
 ---

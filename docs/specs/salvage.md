@@ -35,9 +35,9 @@ the D numbers of the specs this one points at.
 **S1 — Two sources.** A wreck comes from a **derelict slot**, seeded per system
 and enumerated in the carrier set beside traffic and raider slots, or from a
 **death or an eject**, one per commander. A new death replaces that commander's
-earlier wreck. Both are **one row shape** — a condition, the tonnes left per
-container, a fitting index — under two keys: the derelict slot's carrier key,
-and the commander's wreck key. A derelict's contents are derived (S6); a death
+earlier wreck. Both are **one row shape** — a condition and, per container, an id and
+the tonnes left — under two keys: the derelict slot's carrier key,
+and the commander's wreck key. A derelict's contents are drawn at its loss (S6); a death
 wreck's are #660's seeded share, fixed at the death and stored on its row.
 The verb, the drawing and the finding rules are shared. A destroyed carrier row is **not** a source: it draws nothing,
 it is `destroyed` for `RAIDER_WRECK_S` only, and its manifest already dropped as
@@ -53,11 +53,12 @@ amends this for derelict slots only.
 
 **S6 — What a derelict holds.** One to four manifest containers, one per line,
 each holding that line's tonnes, and sometimes one **fitting** container. The
-fitting's catalogue index is drawn **at the loss and stored on the row**, so a
-module added to the catalogue later joins new instances only (S18). The contents are a derived function on their own
-`DOMAIN` tag, keyed on (slot key, `instanceOrdinal`), so a reload or a
-replacement re-derives them. The row stores only condition, the tonnes left per
-container (S20), the fitting's index and the loss schedule's place.
+contents are **drawn at the loss** from their own `DOMAIN` tag, keyed on (slot
+key, `instanceOrdinal`), and **stored on the row**: per container, its good or
+fitting id and the tonnes left (S20). At most five entries, so the bound of one
+row per slot holds. Nothing is re-derived after the loss, so neither a generator
+bump nor a module appended to the catalogue changes a wreck that already exists;
+they reach new instances only (S18).
 
 **S11 — Where it sits.** At rest in a local frame. A death wreck keeps the
 frame the pilot flew in at death (#529's frame) and its offset there; a
@@ -185,10 +186,10 @@ job.
 
 **S18 — The operand.** A wreck reference — slot key, `instanceOrdinal`,
 container index — plus a **snapshot** of the named item: its good or fitting id
-and tonnes. Delivery is checked against the snapshot. The job pays 1.5 × the item's price at the posting station at acceptance, also kept in the snapshot, so the job pays more than selling the same item at the posting station. The fitting list is
-**append-only** and the index is stored on the row at the loss (S6), so a stored
-index names the same module after a catalogue change; the snapshot covers what a
-generator change still moves in the manifest lines.
+and tonnes. Delivery is checked against the snapshot. The job pays 1.5 × the item's price at the posting station at acceptance, also kept in the snapshot, so the job pays more than selling the same item at the posting station. The contents are stored
+on the row at the loss (S6), so the snapshot guards only the job against its own
+record; the fitting list stays **append-only** so an id never names a second
+module.
 
 ## 5. Starting figures
 
@@ -214,6 +215,6 @@ tuned by #705.
 | The derelict row: slots, schedule, contents and the save | S1, S2, S6, S16, S18's draw, S21 — and the amendments it owes `persistent-world-state.md`: §2's carrier namespace gains the derelict slot, §3.2's conditions gain `salvaged` |
 | The wreck in the cockpit: drawn, placed, collidable and scooped | S3, S4, S5, S7, S8, S11, S13, S19, S20, S24, S26 |
 | Finding a wreck: the sweep, the visual floor and the ladder kind | S9, S22, S25 |
-| #705, the death wreck | S10, S12, and the commander-keyed row of the shape above |
+| #705, the death wreck | S10, S12, and the commander-keyed row of the shape above, in world state (a death keeps the world, #654); it owes `persistent-world-state.md` §2 the commander wreck key |
 | The Salvage family | S14, S15, S17, S18's operand, S23 |
 | The broken-hull look | S26's second half |
