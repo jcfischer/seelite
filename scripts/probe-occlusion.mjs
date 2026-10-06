@@ -101,11 +101,18 @@ const TEXEL_CEILING_KM = { exterior: 0.01, cockpit: 0.001 };
  * 6.06, 6.13 and one outlier at **1.37**: the framing flies the docking
  * computer and occasionally stops a little short, so the floor is at 1 rather
  * than snug under six. That is still six times what a shadow that had stopped
- * being drawn would give, which is the 0.00-something the exterior row prints. The sign and the scale-freedom of the bias are pinned
+ * being drawn would give, which is the 0.00-something the exterior row prints.
+ *
+ * **Those readings were #199's rig.** #231's rig B (sun 1.0, hemisphere
+ * 3.425) reads the bay at 74.3% here, and `measure-shadow-enclosure.mjs` read
+ * 74.4–74.5% at sun 1.0 and 2.0 alike: the figure is saturated, because the
+ * shadow covers every bay pixel the sun reaches. So the ceiling moved from 15
+ * to 90. It stays a sanity bound: a shadow over the whole frame, sky
+ * included, is past it. The floor is unchanged. The sign and the scale-freedom of the bias are pinned
  * exactly in `tests/occlusion.test.ts`, where they are arithmetic; this is the
  * arm that says the arithmetic reached the frame.
  */
-const SHADOW_BAND_PCT = { min: 1, max: 15 };
+const SHADOW_BAND_PCT = { min: 1, max: 90 };
 
 /** How much of the near subject the ambient occlusion has to reach before it
  *  counts as present. A bay is a room of corners; measured on a passing run it

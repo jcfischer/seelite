@@ -1061,9 +1061,15 @@ const tenderPx = {
 	moved: movedBetween(tenderShown, tenderHidden),
 	control: movedBetween(tenderShown, tenderShownAgain),
 };
+// The floor is how many pixels hiding the tug must move past 24/255, and it
+// follows the light rig: #199's rig read 217 and 212 here, and #231's rig B
+// (half the hemisphere, five times the sun) reads 117, because a tug lit mostly
+// from one side differs from the frame behind it on fewer pixels. 60 is about
+// half of B's reading. The claim that matters is the control: a same-build
+// repeat moves 0 on both rigs.
 check(
 	"#351: the parked tender is drawn: hiding its mesh moves pixels, and a same-build control moves far fewer",
-	tenderPx.moved > 200 && tenderPx.moved > 5 * tenderPx.control,
+	tenderPx.moved > 60 && tenderPx.moved > 5 * tenderPx.control,
 	JSON.stringify(tenderPx),
 );
 await capture("05-tender-parked");

@@ -28,6 +28,12 @@ export type ChangelogEntry = {
 };
 
 export const CHANGELOG: readonly ChangelogEntry[] = [
+	// Node #728: copy approved by the principal on 2026-10-06 (#231's rig B).
+	{
+		date: "2026-10-06",
+		text: "The star's light is stronger and the fill light softer, so ships and stations cast real shadows and hulls show their shape against the light.",
+		node: 728,
+	},
 	// Node #691: proposed copy; principal approval and the main date are pending.
 	{
 		date: "2026-10-06",
