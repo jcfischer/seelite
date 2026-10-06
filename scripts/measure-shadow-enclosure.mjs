@@ -68,6 +68,7 @@ import {
 	launchChromium,
 } from "./probe-guard.mjs";
 import { gameUrl } from "./lib/game-url.mjs";
+import { resetToFixture } from "./lib/fixture-reset.mjs";
 import { measureHullChase } from "./lib/hull-chase.mjs";
 import { HULL_LUMA_BAND, HULL_LUMA_FLOORS } from "./lib/hull-luma.mjs";
 import {
@@ -107,33 +108,6 @@ const LADDER_RUNGS = [20, 12, 8, 5, 3, 2, 1.5];
  *  canvas, and the last code is not stable between two renders of one frame.
  *  Same threshold as `probe-occlusion.mjs`. */
 const MOVED = 2;
-
-/**
- * The clock back to the fixture, before every placement. The station orbits
- * and spins on game time, and the hull calibration takes as long as its
- * search does: on #723's first two runs the 1.5-radii rung read an enclosure
- * of 0.9102 and 1.2121 rad. With this, a rung is the same framing whatever ran
- * before it.
- *
- * **The ship goes to the boot position first.** `__startClockAt` draws two
- * frames, and a body moves only when a frame steps it, so a reset with the
- * ship still at the last rung draws two frames with the station jumped back
- * beside it. Two frames open #241's gate and thirty close it, so that
- * transient left the gate open at 5 and 3 radii, below its threshold.
- *
- * That holds only while the boot position is not itself enclosed, so the
- * reset refuses a gate it opened: shut before and open after is the defect.
- */
-const resetClock = async (page) => {
-	const gate = () => page.evaluate(() => window.__seelite.occlusionState.open);
-	const before = await gate();
-	await page.evaluate(() => window.__returnToBootPosition());
-	await page.evaluate((t) => window.__startClockAt(t), GAME_TIME_S);
-	if (!before && (await gate()))
-		throw new Error(
-			"measure-shadow-enclosure: the clock reset opened the occlusion gate — the boot position is enclosed",
-		);
-};
 
 /**
  * The rig's lookup, read and write, installed in the page once so the
@@ -552,7 +526,9 @@ try {
 	await setView(page, "chase");
 
 	for (const rung of LADDER_RUNGS) {
-		await resetClock(page);
+		// Ship and clock back to the fixture, so a rung is the same framing
+		// whatever ran before it; `lib/fixture-reset.mjs` says why.
+		await resetToFixture(page, GAME_TIME_S);
 		await page.evaluate(
 			([id, radii]) =>
 				window.__viewAlongAxis(id, window.__radiusOf(id) * radii, {
@@ -581,7 +557,7 @@ try {
 
 	console.log(`\n  bay — ${STATION}, berth-free-look, world-only`);
 
-	await resetClock(page);
+	await resetToFixture(page, GAME_TIME_S);
 	await setView(page, OCCLUSION_FRAMINGS.berth.view);
 	await OCCLUSION_FRAMINGS.berth.place(page);
 	await setView(page, OCCLUSION_FRAMINGS.berth.view);
