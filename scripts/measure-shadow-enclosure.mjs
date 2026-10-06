@@ -444,6 +444,12 @@ try {
 	await setView(page, "chase");
 
 	for (const rung of LADDER_RUNGS) {
+		// The clock back to the fixture before every placement. The station
+		// orbits and spins on game time, and the hull calibration above takes
+		// as long as its search does — on #723's first two runs the 1.5-radii
+		// rung read an enclosure of 0.9102 and 1.2121 rad. Reset here, a rung
+		// is the same framing whatever ran before it.
+		await page.evaluate((t) => window.__startClockAt(t), GAME_TIME_S);
 		await page.evaluate(
 			([id, radii]) =>
 				window.__viewAlongAxis(id, window.__radiusOf(id) * radii, {
@@ -469,6 +475,7 @@ try {
 
 	console.log(`\n  bay — ${STATION}, berth-free-look, world-only`);
 
+	await page.evaluate((t) => window.__startClockAt(t), GAME_TIME_S);
 	await setView(page, OCCLUSION_FRAMINGS.berth.view);
 	await OCCLUSION_FRAMINGS.berth.place(page);
 	await setView(page, OCCLUSION_FRAMINGS.berth.view);
