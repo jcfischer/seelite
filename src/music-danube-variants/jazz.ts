@@ -18,8 +18,8 @@
  * The form keeps the waltz's contract: intro, the waltz looping, and a
  * `resolve` to the cadence on the next bar line.
  */
-import { THEME } from "./music-danube";
-import type { NoteEvent, PartSpec, Song } from "./music-score";
+import { THEME } from "../music-danube";
+import type { NoteEvent, PartSpec, Song } from "../music-score";
 
 export const JAZZ_BPM = 152;
 const RUBATO_BPM = 92;
@@ -364,3 +364,6 @@ export const DANUBE_JAZZ: Song = {
 	resolve: "cadence",
 	space: { reverbS: 2.2 },
 };
+
+/** The loader's name for this version (`music-danube-variants.ts`). */
+export const VARIANT: Song = DANUBE_JAZZ;

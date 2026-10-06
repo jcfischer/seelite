@@ -19,8 +19,8 @@
  * plays the waltz: an intro, a loop (here a groove of eight bars and the
  * theme), and a `resolve` to the cadence on the next bar line.
  */
-import { DANUBE_VOICINGS, HARMONY, THEME } from "./music-danube";
-import type { NoteEvent, PartSpec, Song } from "./music-score";
+import { DANUBE_VOICINGS, HARMONY, THEME } from "../music-danube";
+import type { NoteEvent, PartSpec, Song } from "../music-score";
 
 export const TECHNO_BPM = 128;
 
@@ -351,3 +351,6 @@ export const DANUBE_TECHNO: Song = {
 	resolve: "cadence",
 	space: { reverbS: 4, echoBeats: 0.75, echoFeedback: 0.45 },
 };
+
+/** The loader's name for this version (`music-danube-variants.ts`). */
+export const VARIANT: Song = DANUBE_TECHNO;

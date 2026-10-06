@@ -1,3 +1,5 @@
+import { readdirSync } from "node:fs";
+
 /**
  * Every cue the engine plays, and how to render one offline in the page
  * (#552, after #542's D7). `probe-audio-cues.mjs` bands what these render to;
@@ -642,13 +644,9 @@ export async function renderInPage({
 									m.danubeSongs ? m.danubeSongs() : { danube: m.BLUE_DANUBE },
 								)
 								.catch(() => ({}))),
-							// The dark-techno Danube, where the served tree has it.
-							...(await import("/src/music-danube-techno.ts")
-								.then((m) => ({ "danube-techno": m.DANUBE_TECHNO }))
-								.catch(() => ({}))),
-							// The jazz-waltz Danube, where the served tree has it.
-							...(await import("/src/music-danube-jazz.ts")
-								.then((m) => ({ "danube-jazz": m.DANUBE_JAZZ }))
+							// The waltz's alternative versions, where the served tree has them.
+							...(await import("/src/music-danube-variants.ts")
+								.then((m) => m.danubeVariants())
 								.catch(() => ({}))),
 							// #589's classical set-pieces, where the served tree has them.
 							...(await import("/src/music-classical/index.ts")
@@ -1123,45 +1121,32 @@ export const CLASSICAL_SET = Object.freeze(
 );
 
 /**
- * The dark-techno Danube (`src/music-danube-techno.ts`), a listening spike:
- * `npm run sounds -- --set techno`. No probe bands it. Scripted as the
- * waltz's renders are: two loops and the cadence, and the shortest docking
- * run.
+ * The waltz's alternative versions (`src/music-danube-variants/`), a
+ * listening set: `npm run sounds -- --set danube`, or one version with
+ * `--only music-danube-<name>`. No probe bands them. Each is scripted as the
+ * waltz's renders are: about two loops then the cadence, and the shortest
+ * docking run, its cadence at 62 s.
  */
-export const TECHNO_SET = Object.freeze(
-	/** @type {[string, number, number][]} */ ([
-		["music-danube-techno", 116, 100],
-		["music-danube-techno-run-short", 70, 62],
-	]).map(([name, seconds, resolveS]) => ({
-		name,
-		seconds,
-		music: {
-			songs: { "danube-techno": "danube-techno" },
-			script: [
-				[0, { type: "play", id: "danube-techno", at: "bar" }],
-				[resolveS, { type: "resolve", at: "bar" }],
-			],
-		},
-	})),
-);
-
-/**
- * The jazz-waltz Danube (`src/music-danube-jazz.ts`), a listening spike:
- * `npm run sounds -- --set jazz`. No probe bands it.
- */
-export const JAZZ_SET = Object.freeze(
-	/** @type {[string, number, number][]} */ ([
-		["music-danube-jazz", 104, 92],
-		["music-danube-jazz-run-short", 72, 62],
-	]).map(([name, seconds, resolveS]) => ({
-		name,
-		seconds,
-		music: {
-			songs: { "danube-jazz": "danube-jazz" },
-			script: [
-				[0, { type: "play", id: "danube-jazz", at: "bar" }],
-				[resolveS, { type: "resolve", at: "bar" }],
-			],
-		},
-	})),
+export const DANUBE_VARIANT_SET = Object.freeze(
+	readdirSync(new URL("../../src/music-danube-variants/", import.meta.url))
+		.filter((f) => f.endsWith(".ts"))
+		.sort()
+		.flatMap((f) => {
+			const id = `danube-${f.slice(0, -3)}`;
+			const tune = (name, seconds, resolveS) => ({
+				name,
+				seconds,
+				music: {
+					songs: { [id]: id },
+					script: [
+						[0, { type: "play", id, at: "bar" }],
+						[resolveS, { type: "resolve", at: "bar" }],
+					],
+				},
+			});
+			return [
+				tune(`music-${id}`, 116, 96),
+				tune(`music-${id}-run-short`, 76, 62),
+			];
+		}),
 );

@@ -58,10 +58,9 @@ import { createServer } from "vite";
 import { cueStats, roundStats } from "./lib/audio-stats.mjs";
 import {
 	CLASSICAL_SET,
+	DANUBE_VARIANT_SET,
 	renderInPage,
 	SOUND_SET,
-	JAZZ_SET,
-	TECHNO_SET,
 } from "./lib/sound-set.mjs";
 import { TREE_ENDPOINT } from "./lib/tree-declaration.mjs";
 import { launchChromium } from "./probe-guard.mjs";
@@ -81,14 +80,13 @@ const only = arg("only") ? [...new Set(arg("only").split(","))] : undefined;
 const ref = arg("ref");
 // `--set classical`: #589's set-pieces instead of the cue set. They are a
 // listening pass for the grilling, so no probe bands them.
+// `--set danube`: the waltz's alternative versions, a listening set too.
 const SET =
 	arg("set") === "classical"
 		? CLASSICAL_SET
-		: arg("set") === "techno"
-			? TECHNO_SET
-			: arg("set") === "jazz"
-				? JAZZ_SET
-				: SOUND_SET;
+		: arg("set") === "danube"
+			? DANUBE_VARIANT_SET
+			: SOUND_SET;
 const out = resolve(arg("out") ?? join(HERE, "sound-set"));
 const seed =
 	process.env.SEED === "off" ? null : Number(process.env.SEED ?? 552);
