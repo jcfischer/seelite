@@ -11686,7 +11686,8 @@ class Game {
 				? { ...said, left: Math.max(0, said.left - dt) }
 				: { text: "", left: 0, phase: null };
 		if (this.openingActive || !EJECT_OFFERED) {
-			this.ejectHold = EJECT_IDLE;
+			// Idle, not reset: only a release clears `spent`, here as anywhere.
+			this.ejectHold = idleEjectHold(this.ejectHold, this.ejectDown());
 			return;
 		}
 		const headTurned = this.view === "cockpit" && this.headLook !== "forward";
