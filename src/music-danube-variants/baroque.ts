@@ -148,7 +148,9 @@ const INTRO: NoteEvent[] = [
 				[2, [71, 74]],
 				[2.5, [74, 78]],
 			] as const
-		).flatMap(([beat, ps]) => ps.map((p) => note("harpsi", bar, beat, 0.5, p, 0.6))),
+		).flatMap(([beat, ps]) =>
+			ps.map((p) => note("harpsi", bar, beat, 0.5, p, 0.6)),
+		),
 	),
 	...[74, 78].map((p) => note("harpsi", 6, 0, 2.5, p, 0.6)),
 ];
@@ -163,9 +165,20 @@ const WALTZ: NoteEvent[] = [
 			// The answers an octave down on the second manual, in the loud
 			// terraces, as a lute stop would double them.
 			...(answer && t !== "p"
-				? [note("runner", bar, beat, Math.min(dur, 1), pitch - 12, VEL[t] * 0.7)]
+				? [
+						note(
+							"runner",
+							bar,
+							beat,
+							Math.min(dur, 1),
+							pitch - 12,
+							VEL[t] * 0.7,
+						),
+					]
 				: []),
-			...(t !== "p" ? [note("strings", bar, beat, dur, pitch, VEL[t] * 0.8)] : []),
+			...(t !== "p"
+				? [note("strings", bar, beat, dur, pitch, VEL[t] * 0.8)]
+				: []),
 		];
 	}),
 	...HARMONY.flatMap((h, bar) => {
@@ -177,7 +190,9 @@ const WALTZ: NoteEvent[] = [
 			...(how === "end" ? [] : broken(bar, chord, v * 0.85)),
 			note("organ", bar, 0, 2.9, bass, v),
 			note("organ", bar, 0, 2.9, bass - 12, v * 0.6),
-			...(t === "p" ? [] : pad.map((p) => note("fill", bar, 0, 2.9, p, v * 0.7))),
+			...(t === "p"
+				? []
+				: pad.map((p) => note("fill", bar, 0, 2.9, p, v * 0.7))),
 		];
 	}),
 ];
@@ -224,7 +239,9 @@ const CADENCE: NoteEvent[] = [
 	note("organ", 1, 0, 2.9, 33, 0.5),
 	note("organ", 2, 0, 2.9, 26, 0.5),
 	// The last chord: rolled on the harpsichord, held on organ and strings.
-	...[50, 57, 62, 66, 74].map((p, i) => note("harpsi", 3, i * 0.08, 2.8, p, 0.75)),
+	...[50, 57, 62, 66, 74].map((p, i) =>
+		note("harpsi", 3, i * 0.08, 2.8, p, 0.75),
+	),
 	note("organ", 3, 0, 3, 38, 0.8),
 	note("organ", 3, 0, 3, 26, 0.5),
 	...[62, 66, 69].map((p) => note("fill", 3, 0, 3, p, 0.6)),

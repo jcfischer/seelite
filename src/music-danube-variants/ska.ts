@@ -169,7 +169,10 @@ function kit(bar: number, bars: number): NoteEvent[] {
 			const t = b * 4 + q;
 			if (q % 2 === 0) out.push(at("kick", t, 0.4, KICK, 0.85));
 			else out.push(at("snare", t, 0.2, SNARE, 0.75));
-			out.push(at("hat", t, 0.08, HAT, 0.45), at("hat", t + 0.5, 0.15, HAT, 0.8));
+			out.push(
+				at("hat", t, 0.08, HAT, 0.45),
+				at("hat", t + 0.5, 0.15, HAT, 0.8),
+			);
 		}
 	return out;
 }

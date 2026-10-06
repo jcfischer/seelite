@@ -197,9 +197,13 @@ const STRIKES: readonly (readonly number[])[] = [
 function guitar(t: number, half: number, c: Change, vel: number): NoteEvent[] {
 	const out: NoteEvent[] = [];
 	for (const s of STRIKES[half % 2])
-		for (const p of voicing(c)) out.push(at("guitar", t + s, 0.4, p, vel * 0.7));
+		for (const p of voicing(c))
+			out.push(at("guitar", t + s, 0.4, p, vel * 0.7));
 	const root = bassRoot(c);
-	out.push(at("thumb", t, 1.4, root, vel), at("thumb", t + 1, 0.9, root + 7, vel * 0.8));
+	out.push(
+		at("thumb", t, 1.4, root, vel),
+		at("thumb", t + 1, 0.9, root + 7, vel * 0.8),
+	);
 	return out;
 }
 
@@ -209,7 +213,8 @@ function kit(bar: number, bars: number, kick = true): NoteEvent[] {
 	const out: NoteEvent[] = [];
 	for (let b = bar; b < bar + bars; b++) {
 		const t = b * 4;
-		const clave = (b - bar) % 2 === 0 ? [0, 0.75, 1.5, 2.5, 3.25] : [0.5, 1.5, 2.25, 3];
+		const clave =
+			(b - bar) % 2 === 0 ? [0, 0.75, 1.5, 2.5, 3.25] : [0.5, 1.5, 2.25, 3];
 		for (const c of clave) out.push(at("rim", t + c, 0.05, RIM, 0.75));
 		for (let i = 0; i < 16; i++)
 			out.push(at("shaker", t + i / 4, 0.05, SHAKER, i % 2 === 1 ? 0.7 : 0.4));
