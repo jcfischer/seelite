@@ -14,7 +14,9 @@
  * nothing between the presses, so a pilot cannot tell an armed control from a
  * dead one, and two quick taps are what a pilot fumbling for another key
  * produces. A hold shows its own progress on the glass for every frame it is
- * down (`ejectArmingText`), and letting go is the cancel.
+ * down (`ejectArmingText`), and letting go is the cancel. Where there is no
+ * glass to show it on — the head turned to a side console — the control is
+ * idle rather than armed unseen (`stepEject` in `main.ts`).
  *
  * **A refusal needs no hold.** It is said on the first frame the control is
  * down, because a key that sometimes does nothing is indistinguishable from a

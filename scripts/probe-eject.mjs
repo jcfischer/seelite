@@ -4,7 +4,8 @@
  * `tests/eject.test.ts` holds the law — the binding row, the hold, the refusal
  * table. `main.ts` cannot load headless, so this holds the wiring: a real held
  * Backspace in flight fires the eject event once and no sooner than the hold,
- * a tap fires nothing, and the same key on the rails of an arrival, docked and
+ * a tap fires nothing, a hold with the head turned to a side console fires
+ * nothing, and the same key on the rails of an arrival, docked and
  * on the rails of a launch is refused where a pilot in the cockpit reads it —
  * the glass on the rails, the station console's message line docked.
  *
@@ -42,8 +43,10 @@ await bootedGame(page);
 const law = await page.evaluate(async () => {
 	const eject = await import("/src/eject.ts");
 	const market = await import("/src/market.ts");
+	const units = await import("/src/units.ts");
 	return {
 		holdMs: eject.EJECT_HOLD_S * 1000,
+		maxDtMs: units.MAX_DT * 1000,
 		pod: market.ESCAPE_POD,
 		refused: eject.EJECT_REFUSED_TEXT,
 		dockedSentence: eject.EJECT_DOCKED_SENTENCE,
@@ -169,15 +172,33 @@ check(
 	fired && held.ejects === 1,
 	`fired ${fired}, ejects ${held.ejects}`,
 );
-// **Less one frame**, and that is the hold's arithmetic rather than slack: the
-// first frame after the keydown adds that frame's whole `dt`, part of which
+// **Less one step**, and that is the hold's arithmetic rather than slack: the
+// first step after the keydown adds that frame's whole `dt`, part of which
 // passed before the key went down, so the sim's hold may complete up to one
-// frame of wall time early. A 30 Hz frame bounds it on a loaded machine.
-const FRAME_MS = 1000 / 30;
+// step of wall time early. The frame loop clamps a step at `MAX_DT`, which is
+// therefore the bound — not a frame rate guessed for a loaded machine, which
+// a 20 Hz frame would have exceeded (sage round 2).
 check(
-	"and no sooner than the hold the page itself declares, less one frame",
-	firedAfterMs >= law.holdMs - FRAME_MS,
-	`${Math.round(firedAfterMs)} ms against a ${law.holdMs} ms hold`,
+	"and no sooner than the hold the page itself declares, less one step",
+	firedAfterMs >= law.holdMs - law.maxDtMs,
+	`${Math.round(firedAfterMs)} ms against a ${law.holdMs} ms hold, ${law.maxDtMs} ms step`,
+);
+
+// ---------------------------------------------------------------------------
+// Head turned to a side console: idle, because there is no glass to show the
+// hold filling on, and a hold that cannot be seen is not a confirm (sage
+// round 2). The pod is still fitted, so a fire here would be a second eject.
+// ---------------------------------------------------------------------------
+await page.evaluate(() => window.__seelite.setHeadLook("right"));
+await page.keyboard.down("Backspace");
+await page.waitForTimeout(law.holdMs * 1.5);
+const turned = await read();
+await page.keyboard.up("Backspace");
+await page.evaluate(() => window.__seelite.setHeadLook("forward"));
+check(
+	"with the head turned to a side console a held Backspace arms nothing and fires nothing",
+	turned.phase === "flying" && turned.ejects === 1 && turned.render === null,
+	JSON.stringify(turned),
 );
 
 // ---------------------------------------------------------------------------

@@ -514,7 +514,9 @@ export function padFireHeld(
  * answered only where the ship flies would make the docked refusal (#660 D5)
  * unreachable from a pad: the press would do nothing at all, which is the // glossary-ignore: pad
  * thing a refusal exists to replace. A side console in flight is the same
- * context, and the keyboard's key ejects there too. The two modal contexts
+ * context, and the button reads held there — but `stepEject` idles the
+ * control while the head is turned, the keyboard's key included, because a
+ * turned head has no glass to show the hold filling. The two modal contexts
  * take the whole pad, and the eject is not an exception to that. // glossary-ignore: pad
  */
 export function padEjectHeld(

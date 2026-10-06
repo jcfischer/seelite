@@ -11621,6 +11621,16 @@ class Game {
 	 * **Not during the opening**: #530 D2 rules that nothing a pilot presses
 	 * there makes a watched run differ from a skipped one, so the control is
 	 * idle and says nothing — the same answer `command` gives every other key. // glossary-ignore: Command
+	 *
+	 * **Nor with the head turned to a side console** (sage round 2). The hold's
+	 * fill on the glass *is* the confirm, and a turned head has no glass: the
+	 * console replaces it (`flightGlassShown`) and stacks above the overlay,
+	 * so a hold there would arm and complete unseen. That is why the eject is
+	 * not one of #283's flight keys that stay live under a turned head — it
+	 * does not fly the ship, and its confirm needs a surface to be shown on.
+	 * Docked the same holds: the refusal is said on the forward console, which
+	 * a turned head is not reading. Idle rather than refused, so turning the
+	 * head mid-hold drops the hold, as letting go does.
 	 */
 	private stepEject(dt: number) {
 		// **A refusal is about the phase it was said in**, so it ends with
@@ -11632,7 +11642,8 @@ class Game {
 			said.phase === this.dock.phase
 				? { ...said, left: Math.max(0, said.left - dt) }
 				: { text: "", left: 0, phase: null };
-		if (this.openingActive || !EJECT_OFFERED) {
+		const headTurned = this.view === "cockpit" && this.headLook !== "forward";
+		if (this.openingActive || !EJECT_OFFERED || headTurned) {
 			this.ejectHold = EJECT_IDLE;
 			return;
 		}
