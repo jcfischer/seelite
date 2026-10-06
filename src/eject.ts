@@ -124,6 +124,21 @@ export function stepEjectHold(
 	return { hold: { heldS, spent: false }, event: null };
 }
 
+/**
+ * One frame of the control while it is idled — the head turned to a side
+ * console, where the hold's fill has no glass to be shown on.
+ *
+ * The fill always resets, so a hold that turns back forward starts over and is
+ * seen whole. `spent` survives only while the control stays down: a hold
+ * refused on the rails and kept down through the turn must not arm fresh on
+ * turning forward. Let go, it is idle, exactly as `stepEjectHold`'s release —
+ * a release is a release wherever the head is, so a new press made at the
+ * console arms when the pilot faces forward.
+ */
+export function idleEjectHold(hold: EjectHold, held: boolean): EjectHold {
+	return held && hold.spent ? { heldS: 0, spent: true } : EJECT_IDLE;
+}
+
 /** The share of the hold done, 0..1, or `null` when the control is not arming. */
 export function ejectArming(hold: EjectHold): number | null {
 	if (hold.spent || hold.heldS <= 0) return null;

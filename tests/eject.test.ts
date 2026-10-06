@@ -26,6 +26,7 @@ import {
 	ejectArming,
 	ejectArmingText,
 	ejectRefusal,
+	idleEjectHold,
 	stepEjectHold,
 } from "../src/eject";
 import type { PadFrame } from "../src/gamepad";
@@ -200,6 +201,28 @@ describe("the hold is the confirm", () => {
 		expect(hold(EJECT_HOLD_S * 2, null, 1 / 60, again).events).toEqual([
 			"eject",
 		]);
+	});
+
+	test("a turned head idles the hold: spent survives only while it stays down", () => {
+		// Refused on the rails, kept down through a head turn: still spent
+		// on turning forward, so the completed launch does not eject.
+		const refused = hold(0.1, "launching").state;
+		const turnedDown = idleEjectHold(refused, true);
+		expect(turnedDown).toEqual({ heldS: 0, spent: true });
+		expect(hold(EJECT_HOLD_S * 2, null, 1 / 60, turnedDown).events).toEqual([]);
+		// Let go at the console and pressed again there: the release cleared
+		// it, so the fresh hold arms on turning forward.
+		const released = idleEjectHold(turnedDown, false);
+		expect(released).toEqual(EJECT_IDLE);
+		const pressedAgain = idleEjectHold(released, true);
+		expect(pressedAgain).toEqual(EJECT_IDLE);
+		expect(hold(EJECT_HOLD_S * 2, null, 1 / 60, pressedAgain).events).toEqual([
+			"eject",
+		]);
+		// An arming hold turned away loses its fill and is not spent.
+		const arming = hold(EJECT_HOLD_S / 2).state;
+		expect(ejectArming(arming)).not.toBeNull();
+		expect(idleEjectHold(arming, true)).toEqual(EJECT_IDLE);
 	});
 
 	test("arming is shown for every frame the hold is filling", () => {

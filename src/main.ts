@@ -570,6 +570,7 @@ import {
 	ejectArming,
 	ejectArmingText,
 	ejectRefusal,
+	idleEjectHold,
 	stepEjectHold,
 } from "./eject";
 import {
@@ -11632,9 +11633,12 @@ class Game {
 	 * a turned head is not reading. Idle rather than refused: turning the head
 	 * mid-hold resets the fill, so a hold that turns back forward starts over
 	 * and is seen whole. **The turn does not clear `spent`**, though — only a
-	 * release does (`stepEjectHold`). A hold refused on the launch's rails,
+	 * release does, here as in `stepEjectHold` (`idleEjectHold`), so the
+	 * control is read before the gate. A hold refused on the launch's rails,
 	 * kept down through a head turn while the launch completes, would
-	 * otherwise arm fresh on turning forward and eject a pilot who was told no.
+	 * otherwise arm fresh on turning forward and eject a pilot who was told no;
+	 * and a release made at the console must clear it, or a fresh press made
+	 * there would be dead on turning forward.
 	 */
 	private stepEject(dt: number) {
 		// **A refusal is about the phase it was said in**, so it ends with
@@ -11646,15 +11650,15 @@ class Game {
 			said.phase === this.dock.phase
 				? { ...said, left: Math.max(0, said.left - dt) }
 				: { text: "", left: 0, phase: null };
+		const held =
+			this.held("fly.eject") || padEjectHeld(this.padFrame, this.padContext());
 		const headTurned = this.view === "cockpit" && this.headLook !== "forward";
 		if (this.openingActive || !EJECT_OFFERED || headTurned) {
 			this.ejectHold = headTurned
-				? { ...EJECT_IDLE, spent: this.ejectHold.spent }
+				? idleEjectHold(this.ejectHold, held)
 				: EJECT_IDLE;
 			return;
 		}
-		const held =
-			this.held("fly.eject") || padEjectHeld(this.padFrame, this.padContext());
 		const refusal = ejectRefusal({
 			phase: this.dock.phase,
 			podFitted: this.commander.ownedEquipment.includes(ESCAPE_POD),

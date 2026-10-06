@@ -386,7 +386,6 @@ const clear = await page
 await page.evaluate(() => window.__seelite.setHeadLook("forward"));
 await page.waitForTimeout(law.holdMs * 1.5);
 const turnedThrough = await read();
-await page.keyboard.up("Backspace");
 check(
 	"a refused hold kept down through a head turn and the launch's end fires nothing on turning forward",
 	clear && turnedThrough.phase === "flying" && turnedThrough.ejects === 1,
@@ -397,6 +396,25 @@ check(
 	"and across all three refusals the one eject from flight is still the only one",
 	after.ejects === 1,
 	`ejects ${after.ejects}`,
+);
+// The same spent hold, **let go at a side console** and pressed again there
+// (sage round 3): a release is a release wherever the head is, so the fresh
+// hold arms on turning forward. Keeping `spent` through a turned-head release
+// left it dead until a second release made facing forward.
+await page.evaluate(() => window.__seelite.setHeadLook("right"));
+await page.waitForTimeout(100);
+await page.keyboard.up("Backspace");
+await page.waitForTimeout(100);
+await page.keyboard.down("Backspace");
+await page.waitForTimeout(100);
+await page.evaluate(() => window.__seelite.setHeadLook("forward"));
+await page.waitForTimeout(law.holdMs * 1.5);
+const repressed = await read();
+await page.keyboard.up("Backspace");
+check(
+	"a hold let go and pressed again at a side console fires on turning forward",
+	repressed.phase === "flying" && repressed.ejects === 2,
+	JSON.stringify(repressed),
 );
 
 await browser.close();
