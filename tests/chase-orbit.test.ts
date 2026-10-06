@@ -22,7 +22,7 @@ import {
 	rotate,
 	wrapYaw,
 } from "../src/chase-orbit";
-import { DEFAULT_BINDINGS } from "../src/commands";
+import { DEFAULT_BINDINGS } from "../src/commands"; // glossary-ignore: Command
 import { intoCameraFrame, type Quat } from "../src/hud";
 import { add, length, sub, type Vec3, v3 } from "../src/vec3";
 
@@ -251,6 +251,7 @@ describe("who the pointer belongs to (C2)", () => {
 });
 
 describe("the Controls tab says what the pointer does (C2)", () => {
+	// glossary-ignore: Command — `command` below is a control registry row.
 	// The registry's chase movement rows are a description: `orbitChase` hands
 	// the raw delta to `orbitByPointer` and reads no binding (sage round 1).
 	// So each row is held to the way the orbit actually turns, by pushing the
