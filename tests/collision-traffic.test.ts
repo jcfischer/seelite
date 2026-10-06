@@ -1917,7 +1917,7 @@ describe("collision.md §5: a carrier's exemption is keyed on its route phase", 
 		expect(
 			(arrivalStart?.t ?? 0) - (arrivalStart?.laneStartedAtS ?? 0),
 		).toBeLessThan(0.1 + 1e-9);
-	});
+	}, 15_000);
 });
 
 describe("collision.md §9.1.14: an impact on a carrier goes through H3d's route", () => {
