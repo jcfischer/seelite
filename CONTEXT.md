@@ -104,6 +104,21 @@ parent. Raider hulls stay out of every **Traffic roster**
 `persistent-world-state.md` §2 lists them in the namespace.
 _Avoid_: Pirate spawn, random raider
 
+**Derelict slot**:
+A **Carrier slot** for a seeded **Wreck**, belonging to a system: one to three
+per system by government. It is empty until its seeded loss, holds a wreck until
+the wreck is stripped or taken by other salvagers, then waits for its next loss.
+`salvage.md` S1, S16 and S21 own it.
+_Avoid_: Wreck spawn
+
+**Wreck**:
+In `salvage.md`'s sense, a persistent hull with tethered containers that a
+pilot strips by scooping. It comes from a **Derelict slot** or from a
+commander's death or eject, one per commander. Not the just-destroyed raider or
+relay that `src/raider-wreck.ts` and **Relay tender** call a wreck: those are a
+carrier's `destroyed` condition, and their cargo is **Cargo canister**s.
+_Avoid_: Derelict canister
+
 **Encounter**:
 One hostile approach to the player, by one or more raiders, from its seeded
 draw to its end: inbound, contest, duel, and over — missed, broken, lost,

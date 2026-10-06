@@ -35,7 +35,11 @@ the D numbers of the specs this one points at.
 **S1 — Two sources.** A wreck comes from a **derelict slot**, seeded per system
 and enumerated in the carrier set beside traffic and raider slots, or from a
 **death or an eject**, one per commander. A new death replaces that commander's
-earlier wreck. A destroyed carrier row is **not** a source: it draws nothing,
+earlier wreck. Both are **one row shape** — a condition, the tonnes left per
+container, a fitting index — under two keys: the derelict slot's carrier key,
+and the commander's wreck key. A derelict's contents are derived (S6); a death
+wreck's are #660's seeded share, fixed at the death and stored on its row.
+The verb, the drawing and the finding rules are shared. A destroyed carrier row is **not** a source: it draws nothing,
 it is `destroyed` for `RAIDER_WRECK_S` only, and its manifest already dropped as
 canisters at the kill (#362 H11), so salvaging it would pay the same cargo
 twice. `ordinary-requests.md` D7's "re-derived from its carrier's destroyed row"
@@ -113,9 +117,11 @@ seeded share. An entrusted job item never goes into a wreck (#660 D8), so the
 job fails with a readable reason.
 
 A reload in mid-recovery needs no rule of its own once the derelict-row build
-puts the row in the save: the `live` record is written continuously
-(`src/save-store.ts`'s cadence, #89 D4), so the row's tonnes and the hold are
-restored together.
+puts the row in the save: the `live` record holds the world and the
+commander in one envelope and is rewritten after every change once it settles
+(`src/save-store.ts`'s debounce, #89 D4). A reload restores the row and the
+hold from the same write, so a scoop inside the debounce is lost from both, never
+from one.
 
 ## 3. Finding a wreck
 
@@ -148,7 +154,7 @@ governments, fewer in the lawful.
 **S16 — Where new losses come from.** A slot starts empty. Its losses run on a
 seeded schedule: the first loss is seeded across the future, and after a strip
 the next follows a seeded gap. A derelict left unstripped for the **salvager
-time** is taken by other salvagers: its row reads `salvaged` with no player
+time**, counted from its loss, is taken by other salvagers: its row reads `salvaged` with no player
 provenance, and the slot's next loss follows. A death wreck has no salvager
 time.
 
@@ -159,7 +165,9 @@ highest value. Not every station posts, so boards differ.
 
 **S15 — The offer window.** The offer shows for a seeded window after the loss.
 After it the derelict is free salvage (S4). An accepted job stays valid after
-its window closes.
+its window closes. The offer shows the named container's tonnes, and acceptance
+refuses with a reason when they exceed the pilot's whole hold, since an
+entrusted item goes aboard whole (S20).
 
 **S23 — What the job tells the pilot.** A lead: the region, the posting station
 as its source and the age since the loss (#337 D5). The pilot searches by sweep
@@ -170,8 +178,10 @@ Bounty does (#489), and the difference is deliberate.
 is the mark: "the wreck's recoverable item is gone, once" (`ordinary-requests.md` §4).
 A new instance has a new ordinal and new containers, so a repeat visit cannot
 pay twice. If the named item is gone before the job is accepted, the offer
-withdraws. If other salvagers take an accepted job's wreck, the job fails with
-a readable reason and is cancelled free.
+withdraws. If other salvagers take an accepted job's wreck while the named
+container still holds tonnes, the job fails with a readable reason and is
+cancelled free; once the item is aboard, the wreck's fate does not touch the
+job.
 
 **S18 — The operand.** A wreck reference — slot key, `instanceOrdinal`,
 container index — plus a **snapshot** of the named item: its good or fitting id
@@ -204,6 +214,6 @@ tuned by #705.
 | The derelict row: slots, schedule, contents and the save | S1, S2, S6, S16, S18's draw, S21 — and the amendments it owes `persistent-world-state.md`: §2's carrier namespace gains the derelict slot, §3.2's conditions gain `salvaged` |
 | The wreck in the cockpit: drawn, placed, collidable and scooped | S3, S4, S5, S7, S8, S11, S13, S19, S20, S24, S26 |
 | Finding a wreck: the sweep, the visual floor and the ladder kind | S9, S22, S25 |
-| #705, the death wreck | S10, S12, on the row above |
+| #705, the death wreck | S10, S12, and the commander-keyed row of the shape above |
 | The Salvage family | S14, S15, S17, S18's operand, S23 |
 | The broken-hull look | S26's second half |
