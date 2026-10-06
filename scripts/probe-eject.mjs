@@ -5,7 +5,8 @@
  * table. `main.ts` cannot load headless, so this holds the wiring: a real held
  * Backspace in flight fires the eject event once and no sooner than the hold,
  * a tap fires nothing, a hold with the head turned to a side console fires
- * nothing, and the same key on the rails of an arrival, docked and
+ * nothing, a spent hold kept down through the Settings screen stays spent,
+ * and the same key on the rails of an arrival, docked and
  * on the rails of a launch is refused where a pilot in the cockpit reads it —
  * the glass on the rails, the station console's message line docked.
  *
@@ -22,6 +23,7 @@ import {
 	installViewPlacement,
 	launchChromium,
 	tally,
+	waitForSettingsPanel,
 } from "./probe-guard.mjs";
 import { installViewFraming } from "./lib/view-placement.mjs";
 import { gameUrl } from "./lib/game-url.mjs";
@@ -415,6 +417,50 @@ check(
 	"a hold let go and pressed again at a side console fires on turning forward",
 	repressed.phase === "flying" && repressed.ejects === 2,
 	JSON.stringify(repressed),
+);
+
+// A spent hold **kept down through the Settings screen** (sage round 4): the
+// screen empties the game's held keys as it opens, and that is not a release.
+// The OS repeat puts the key back once the screen has closed — Playwright's
+// second `down` on a held key is that repeat — and the hold must still be
+// spent. The first hold completes an eject in flight, which is the simplest
+// spent hold there is. The wait first: the last row let go of the key, and
+// a release no frame saw is not one.
+await page.waitForTimeout(100);
+await page.keyboard.down("Backspace");
+await page.waitForTimeout(law.holdMs * 1.5);
+const spentByEject = await read();
+// The screen mounts from a deferred import; long since landed by now, but a
+// screen that never arrived is reported as that, not as a key that did nothing.
+const settingsMounted = await waitForSettingsPanel(page);
+await page.keyboard.press("z");
+const settingsOpened = await page
+	.waitForSelector("[data-settings-panel]", { timeout: 5000 })
+	.then(
+		() => true,
+		() => false,
+	);
+const keysWhileOpen = await page.evaluate(() => window.__seelite.heldKeyCount);
+await page.keyboard.press("Escape");
+const settingsClosed = !(await page.$("[data-settings-panel]"));
+await page.keyboard.down("Backspace");
+// The repeat must have landed, or the row below passes on a key the game
+// never saw again and says nothing about a release.
+const repeatLanded = await page.evaluate(() => window.__seelite.heldKeyCount);
+await page.waitForTimeout(law.holdMs * 1.5);
+const throughSettings = await read();
+await page.keyboard.up("Backspace");
+check(
+	"a spent hold kept down through the Settings screen fires nothing when the key repeats after it",
+	spentByEject.ejects === 3 &&
+		settingsMounted &&
+		settingsOpened &&
+		keysWhileOpen === 0 &&
+		settingsClosed &&
+		repeatLanded > 0 &&
+		throughSettings.phase === "flying" &&
+		throughSettings.ejects === 3,
+	`spent ${JSON.stringify(spentByEject)}, mounted ${settingsMounted}, opened ${settingsOpened}, keys while open ${keysWhileOpen}, closed ${settingsClosed}, repeat landed ${repeatLanded}, after ${JSON.stringify(throughSettings)}`,
 );
 
 await browser.close();

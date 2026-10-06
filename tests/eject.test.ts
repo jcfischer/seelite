@@ -27,12 +27,27 @@ import {
 	ejectArmingText,
 	ejectRefusal,
 	idleEjectHold,
+	stepEjectControl,
 	stepEjectHold,
 } from "../src/eject";
 import type { PadFrame } from "../src/gamepad";
 import { ejectPrompt, spoken } from "../src/key-names";
 import { ESCAPE_POD, EQUIPMENT } from "../src/market";
-import { padEjectHeld } from "../src/pad-bindings"; // glossary-ignore: pad
+import type { PadContext } from "../src/pad-bindings"; // glossary-ignore: pad
+import { padEjectDown, padEjectHeld } from "../src/pad-bindings"; // glossary-ignore: pad
+
+/** A connected pad frame with these buttons down. */ // glossary-ignore: pad
+function padFrame(held: string[]): PadFrame {
+	return {
+		connected: true,
+		id: "test",
+		axes: { leftX: 0, leftY: 0, rightX: 0, rightY: 0 },
+		values: {} as PadFrame["values"],
+		held: new Set(held) as PadFrame["held"],
+		pressed: new Set(),
+		released: new Set(),
+	};
+}
 
 /** Hold the control for `seconds` in frames of `dt`, under one refusal. */
 function hold(
@@ -106,15 +121,7 @@ describe("the binding table carries the action", () => {
 
 	test("the pad's Home is live where a press can be refused, and not under a modal", () => {
 		// glossary-ignore: pad
-		const frame = (held: string[]): PadFrame => ({
-			connected: true,
-			id: "test",
-			axes: { leftX: 0, leftY: 0, rightX: 0, rightY: 0 },
-			values: {} as PadFrame["values"],
-			held: new Set(held) as PadFrame["held"],
-			pressed: new Set(),
-			released: new Set(),
-		});
+		const frame = padFrame;
 		expect(padEjectHeld(frame(["home"]), "flight")).toBe(true);
 		expect(padEjectHeld(frame(["home"]), "instrument")).toBe(true);
 		// Docked, the pad's context is `console`: without this the docked // glossary-ignore: pad
@@ -245,5 +252,110 @@ describe("the hold is the confirm", () => {
 		// be most of it; one under a fifth would be a tap.
 		expect(EJECT_HOLD_S).toBeGreaterThan(0.2);
 		expect(EJECT_HOLD_S).toBeLessThan(1);
+	});
+});
+
+describe("only a release lets go of a spent hold (sage round 4)", () => {
+	/** Run `seconds` of frames of `stepEjectControl` from one reading. */
+	function run(
+		from: EjectHold,
+		seconds: number,
+		input: { live: boolean; down: boolean },
+		refusal: EjectRefusal | null,
+	) {
+		let state = from;
+		const events: string[] = [];
+		for (let t = 0; t < seconds - 1e-9; t += 1 / 60) {
+			const step = stepEjectControl(state, input, 1 / 60, refusal);
+			state = step.hold;
+			if (step.event)
+				events.push(
+					step.event.kind === "eject"
+						? "eject"
+						: `refused:${step.event.refusal}`,
+				);
+		}
+		return { state, events };
+	}
+
+	test("Home kept down through a modal is not let go of", () => {
+		// glossary-ignore: pad
+		const home = padFrame(["home"]);
+		const pad = (frame: PadFrame, context: PadContext) => ({
+			// glossary-ignore: pad
+			live: padEjectHeld(frame, context),
+			down: padEjectDown(frame),
+		});
+		// Down on the launch's rails: refused at once.
+		const refused = run(EJECT_IDLE, 0.1, pad(home, "flight"), "launching");
+		expect(refused.events).toEqual(["refused:launching"]);
+		// The Settings screen opens over it, still down, and the launch ends
+		// behind it: the pad reads not live there, and nothing is said. // glossary-ignore: pad
+		const modal = run(refused.state, 1, pad(home, "modal"), null);
+		expect(modal.events).toEqual([]);
+		expect(modal.state.spent).toBe(true);
+		// The screen closes in flight, Home still down: the pilot was told no,
+		// and the hold does not arm.
+		const closed = run(
+			modal.state,
+			EJECT_HOLD_S * 2,
+			pad(home, "flight"),
+			null,
+		);
+		expect(closed.events).toEqual([]);
+		// Let go and pressed again, and it arms.
+		const released = run(
+			closed.state,
+			1 / 60,
+			pad(padFrame([]), "flight"),
+			null,
+		);
+		expect(released.state).toEqual(EJECT_IDLE);
+		expect(
+			run(released.state, EJECT_HOLD_S * 2, pad(home, "flight"), null).events,
+		).toEqual(["eject"]);
+	});
+
+	test("Backspace kept down through the Settings screen emptying the held keys is not let go of", () => {
+		const key = (keys: string[], physically: string[]) => ({
+			live: isHeld(DEFAULT_BINDINGS, "fly.eject", new Set(keys), "cockpit"),
+			down: isHeld(
+				DEFAULT_BINDINGS,
+				"fly.eject",
+				new Set(physically),
+				"cockpit",
+			),
+		});
+		const refused = run(
+			EJECT_IDLE,
+			0.1,
+			key(["backspace"], ["backspace"]),
+			"launching",
+		);
+		expect(refused.events).toEqual(["refused:launching"]);
+		// `releaseHeldKeys` empties the game's set; the key is still down.
+		const cleared = run(refused.state, 1, key([], ["backspace"]), null);
+		expect(cleared.state.spent).toBe(true);
+		// The OS repeat puts it back after the screen closes: still spent.
+		const repeated = run(
+			cleared.state,
+			EJECT_HOLD_S * 2,
+			key(["backspace"], ["backspace"]),
+			null,
+		);
+		expect(repeated.events).toEqual([]);
+	});
+
+	test("down is never what arms: a key the game does not hold fires nothing", () => {
+		// A stale physical entry — a release the window never saw — costs a
+		// dead press while spent, and never an eject.
+		const stale = run(
+			EJECT_IDLE,
+			EJECT_HOLD_S * 3,
+			{ live: false, down: true },
+			null,
+		);
+		expect(stale.events).toEqual([]);
+		expect(stale.state).toEqual(EJECT_IDLE);
 	});
 });

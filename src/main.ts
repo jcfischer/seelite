@@ -253,6 +253,7 @@ import {
 	type PadIntents,
 	contextFliesShip,
 	mouseFireHeld,
+	padEjectDown,
 	padEjectHeld,
 	padFireHeld,
 	padFlightAxes,
@@ -570,8 +571,7 @@ import {
 	ejectArming,
 	ejectArmingText,
 	ejectRefusal,
-	idleEjectHold,
-	stepEjectHold,
+	stepEjectControl,
 } from "./eject";
 import {
 	type Encounter,
@@ -2263,6 +2263,16 @@ class Game {
 	private systemStars!: THREE.Points;
 	private starMaterial!: THREE.ShaderMaterial;
 	private readonly keys = new Set<string>();
+	/**
+	 * The keys physically down, which `keys` is not once a screen has emptied
+	 * it (`releaseHeldKeys`): added beside `keys` on a press and deleted on
+	 * every release, and never cleared, because only a keyup says a key went
+	 * up. Read by one thing — whether the eject control has been let go
+	 * (`stepEjectControl`), which it must not be told by the Settings screen
+	 * opening. It never flies or arms anything, so a release the window never
+	 * saw leaves a stale entry that costs at most one dead eject press.
+	 */
+	private readonly keysPhysicallyDown = new Set<string>();
 	/** Primary mouse fire is held state, matching the keyboard laser control. */
 	private mouseFiring = false;
 	/**
@@ -9339,6 +9349,7 @@ class Game {
 		if (route.kind === "release") {
 			// Releases must clear flight state even when a panel now owns the key.
 			this.keys.delete(route.key);
+			this.keysPhysicallyDown.delete(route.key);
 			return;
 		}
 		// **The rebind modal takes every key that is left, and takes it here**
@@ -9461,6 +9472,7 @@ class Game {
 			return;
 		}
 		this.keys.add(route.key);
+		this.keysPhysicallyDown.add(route.key);
 		// One-shot commands fire on the press, not on the held state: engaging
 		// cruise and stepping a dial are events, and reading them out of `keys`
 		// each frame would repeat them sixty times a second.
@@ -11633,12 +11645,21 @@ class Game {
 	 * a turned head is not reading. Idle rather than refused: turning the head
 	 * mid-hold resets the fill, so a hold that turns back forward starts over
 	 * and is seen whole. **The turn does not clear `spent`**, though — only a
-	 * release does, here as in `stepEjectHold` (`idleEjectHold`), so the
-	 * control is read before the gate. A hold refused on the launch's rails,
+	 * release does (`stepEjectControl`). A hold refused on the launch's rails,
 	 * kept down through a head turn while the launch completes, would
 	 * otherwise arm fresh on turning forward and eject a pilot who was told no;
 	 * and a release made at the console must clear it, or a fresh press made
 	 * there would be dead on turning forward.
+	 *
+	 * **Nor under a modal or the rebind capture** (sage round 4), on the same
+	 * covered-glass rule: the screen is over the glass, and both take the pad // glossary-ignore: pad
+	 * whole. This is not the keyboard suspended over a console, which the
+	 * principal ruled against — a console leaves the glass readable, a modal
+	 * does not. And a modal is not a release either: the Settings screen
+	 * empties `keys` as it opens and the pad's `home` reads not live under it, // glossary-ignore: pad
+	 * so the release is read off what is physically down — `padEjectDown` and
+	 * `keysPhysicallyDown` — or a refused hold kept down through the screen
+	 * would come back unspent when it closed.
 	 */
 	private stepEject(dt: number) {
 		// **A refusal is about the phase it was said in**, so it ends with
@@ -11650,20 +11671,25 @@ class Game {
 			said.phase === this.dock.phase
 				? { ...said, left: Math.max(0, said.left - dt) }
 				: { text: "", left: 0, phase: null };
-		const held =
-			this.held("fly.eject") || padEjectHeld(this.padFrame, this.padContext());
-		const headTurned = this.view === "cockpit" && this.headLook !== "forward";
-		if (this.openingActive || !EJECT_OFFERED || headTurned) {
-			this.ejectHold = headTurned
-				? idleEjectHold(this.ejectHold, held)
-				: EJECT_IDLE;
+		if (this.openingActive || !EJECT_OFFERED) {
+			this.ejectHold = EJECT_IDLE;
 			return;
 		}
+		const context = this.padContext();
+		const headTurned = this.view === "cockpit" && this.headLook !== "forward";
+		const takenWhole = context === "modal" || context === "capture";
+		const live =
+			!headTurned &&
+			!takenWhole &&
+			(this.held("fly.eject") || padEjectHeld(this.padFrame, context));
+		const down =
+			isHeld(this.bindings, "fly.eject", this.keysPhysicallyDown, this.view) ||
+			padEjectDown(this.padFrame);
 		const refusal = ejectRefusal({
 			phase: this.dock.phase,
 			podFitted: this.commander.ownedEquipment.includes(ESCAPE_POD),
 		});
-		const step = stepEjectHold(this.ejectHold, held, dt, refusal);
+		const step = stepEjectControl(this.ejectHold, { live, down }, dt, refusal);
 		this.ejectHold = step.hold;
 		if (step.event?.kind === "eject") this.eject();
 		else if (step.event?.kind === "refused") {

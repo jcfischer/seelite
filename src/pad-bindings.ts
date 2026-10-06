@@ -523,12 +523,19 @@ export function padEjectHeld(
 	frame: PadFrame | null,
 	context: PadContext,
 ): boolean {
-	return (
-		frame?.connected === true &&
-		context !== "modal" &&
-		context !== "capture" &&
-		frame.held.has("home")
-	);
+	return padEjectDown(frame) && context !== "modal" && context !== "capture";
+}
+
+/**
+ * Whether `home` is physically down, whatever context owns the pad — the // glossary-ignore: pad
+ * question a *release* asks, where `padEjectHeld` is the one an arming asks
+ * (sage round 4 on node #703). Under a modal the button is not live, but it
+ * has not been let go either: read as released, a hold refused on the
+ * launch's rails and kept down through the Settings screen came back unspent
+ * when the screen closed, and ejected the pilot it had just told no.
+ */
+export function padEjectDown(frame: PadFrame | null): boolean {
+	return frame?.connected === true && frame.held.has("home");
 }
 
 /**

@@ -23,7 +23,9 @@
  * key that is not bound (the rule `chargeJump` states for the jump). And a hold
  * that began refused stays spent until it is let go: the state clearing under
  * a held key — a launch completing — must not eject a pilot who was being told
- * no a moment ago.
+ * no a moment ago. **Let go means physically released** (`stepEjectControl`):
+ * a modal, a turned head or a cleared key set idles the control, and none of
+ * them is a release.
  *
  * Headless and on the list in `tests/headless.test.ts`.
  */
@@ -137,6 +139,37 @@ export function stepEjectHold(
  */
 export function idleEjectHold(hold: EjectHold, held: boolean): EjectHold {
 	return held && hold.spent ? { heldS: 0, spent: true } : EJECT_IDLE;
+}
+
+/**
+ * One frame of the control, from the two readings a frame has of it.
+ *
+ * - `live`: the control is down *and* in a place that may arm it — the glass
+ *   forward, no modal, the key in the game's held set. This is what arms.
+ * - `down`: the control is physically down, wherever it is. This is only ever
+ *   what keeps a spent hold spent, and never what arms one.
+ *
+ * The two differ where something other than the pilot's hand takes the
+ * control: a modal takes the pad whole and the Settings screen empties the // glossary-ignore: pad
+ * held keys as it opens, so both read released while the button is still
+ * down. Read as a release, that rearmed a hold refused on the launch's rails
+ * and kept down through the screen (sage round 4). Down but not live is
+ * `idleEjectHold`, the turned head's answer, for the same reason: no glass to
+ * show a fill on, and no release to forget a refusal by.
+ *
+ * `down` is a stale `true` at worst — a key whose release the window never
+ * saw — and that costs one dead press while the hold is spent, never an eject,
+ * because it cannot arm.
+ */
+export function stepEjectControl(
+	hold: EjectHold,
+	input: { readonly live: boolean; readonly down: boolean },
+	dtS: number,
+	refusal: EjectRefusal | null,
+): { hold: EjectHold; event: EjectEvent | null } {
+	if (!input.live)
+		return { hold: idleEjectHold(hold, input.down), event: null };
+	return stepEjectHold(hold, true, dtS, refusal);
 }
 
 /** The share of the hold done, 0..1, or `null` when the control is not arming. */
