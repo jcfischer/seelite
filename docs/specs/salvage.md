@@ -169,7 +169,7 @@ a readable reason and is cancelled free.
 
 **S18 — The operand.** A wreck reference — slot key, `instanceOrdinal`,
 container index — plus a **snapshot** of the named item: its good or fitting id
-and tonnes. Delivery is checked against the snapshot. The fitting draw is an
+and tonnes. Delivery is checked against the snapshot. The job pays 1.5 × the item's price at the posting station at acceptance, also kept in the snapshot, so a job beats selling the same item as free salvage. The fitting draw is an
 indexed list to which new modules are **appended only**, so an index drawn today
 names the same module tomorrow; the snapshot covers what a generator change
 still moves.
@@ -189,6 +189,7 @@ tuned by #705.
 | Offer window (S15) | 2 h |
 | Visual floor (S9) | 10 km |
 | Fitting container chance (S6) | 25% of instances |
+| Salvage job pay (S18) | 1.5 × the item's price at the posting station |
 
 ## 6. Builds
 
