@@ -1,87 +1,97 @@
 /**
- * The Blue Danube as minimalism, after Reich's *Piano Phase* and Glass's
- * additive process: a listening spike beside the docking computer's waltz
+ * The Blue Danube as minimalism, after Glass's arpeggios and Reich's
+ * *Piano Phase*: a listening spike beside the docking computer's waltz
  * (`music-danube.ts`), on the same synth.
  *
- * **Strauss's tune, unrolled into cells.** The waltz module's `THEME` is cut
- * into consecutive cells of twelve notes (`CELLS`), and each cell is played
- * as twelve straight sixteenths — one 3/4 bar — over and over, so the tune
- * is still heard in order, a cell at a time, at four times its note rate.
+ * **No held chord anywhere.** The harmony is only what the patterns spell:
  *
- * Three processes run on each cell's six bars:
+ * - **The arpeggio** (`piano`) — Glass's broken chord, each bar's harmony
+ *   from the waltz's `HARMONY` run up and down in steady eighths, accented
+ *   on the downbeat. One part name for the piano-like sound, so a sampled
+ *   piano is a one-line swap.
+ * - **The phase pair** (`phaseA`, `phaseB`) — two woody mallets, one to
+ *   each side, playing *Piano Phase*'s twelve-note cell shape over each
+ *   bar's chord tones in straight sixteenths. Every eight bars `phaseB`
+ *   pulls ahead: over four bars its offset grows continuously from nothing
+ *   to one sixteenth, then for four bars it holds there, locked one note
+ *   ahead (`phaseOf`). Four cycles a loop, four notes out.
+ * - **The pulse** (`pulse`) — the root in eighths, low and soft, swelling
+ *   and falling over four bars, as *Music for 18 Musicians* breathes.
  *
- * - **Additive** — the first keyboard builds the cell up: four notes, then
- *   six, eight, ten, and all twelve, the rest of each bar silent.
- * - **Phasing** — the second keyboard enters on the third bar, in unison,
- *   and pulls ahead by written offsets until it is one sixteenth early;
- *   at the next cell it is rotated by one note and starts again from
- *   there, so each cell is heard against itself one step further out of
- *   phase than the last.
- * - **Held harmony** — the waltz's own pad chords (`HARMONY`) under the
- *   cell, and an eighth-note pulse on the root from the second cell.
+ * **The tune stays a tune.** Strauss's `THEME` is played as written, bar
+ * for bar, on a soft lead over the patterns at a slow waltz's pace, so it is
+ * heard at the rate it was written rather than unrolled into sixteenths.
  *
- * The form keeps the waltz's contract: an intro (the horn's call as an
- * arpeggio cell, built up the same way), the cells of Waltz No. 1 looping,
- * and a `resolve` to the cadence, where the two keyboards fall back into
- * unison on the tonic.
+ * The form keeps the waltz's contract: an intro (the arpeggio alone, then
+ * the pulse and the horn's call), Waltz No. 1 looping, and a `resolve` to
+ * the cadence, where the phase pair falls back into unison and stops.
  */
 import { HARMONY, THEME } from "../music-danube";
 import type { NoteEvent, PartSpec, Song } from "../music-score";
 
-export const MINIMAL_BPM = 132;
-
-/** Bars per cell: the additive build and one sixteenth of phase. */
-const CELL_BARS = 6;
-const CELL_LEN = 12;
+export const MINIMAL_BPM = 120;
 
 const PARTS: Readonly<Record<string, PartSpec>> = {
-	// Two keyboards, each a short struck tone, one to each side.
-	a: {
-		voice: "keys",
-		level: 0.55,
-		attackS: 0.002,
-		decayS: 0.7,
-		sustain: 0,
-		releaseS: 0.15,
-		ratio: 1.0,
-		index: 0.7,
-		pan: -0.5,
-		reverb: 0.25,
+	// The arpeggio: an electric piano, low, its tine soft.
+	piano: {
+		voice: "epiano",
+		level: 0.42,
+		decayS: 2.5,
+		releaseS: 0.25,
+		index: 1.6,
+		pan: -0.1,
+		reverb: 0.3,
 	},
-	b: {
-		voice: "keys",
-		level: 0.5,
+	// A marimba-ish mallet: FM at about the bar's fourth partial, the
+	// brightness gone in a few hundredths of a second.
+	phaseA: {
+		voice: "fm",
+		level: 0.3,
 		attackS: 0.002,
-		decayS: 0.7,
-		sustain: 0,
-		releaseS: 0.15,
-		ratio: 1.002,
-		index: 0.8,
-		pan: 0.5,
-		reverb: 0.25,
-	},
-	// The held harmony: an organ-like pad, slow in, slow out.
-	pad: {
-		voice: "pad",
-		level: 0.225,
-		attackS: 0.8,
-		decayS: 2,
-		sustain: 0.85,
-		releaseS: 1.2,
-		cutoffHz: 1200,
-		reverb: 0.4,
-	},
-	// The pulse: the root in eighths, low and short.
-	pulse: {
-		voice: "keys",
-		level: 0.45,
-		attackS: 0.002,
-		decayS: 0.35,
+		decayS: 0.55,
 		sustain: 0,
 		releaseS: 0.08,
-		ratio: 1.0,
-		index: 0.5,
+		ratio: 3.98,
+		index: 1.1,
+		indexDecayS: 0.04,
+		feedback: 0,
+		pan: -0.55,
+		reverb: 0.25,
+	},
+	phaseB: {
+		voice: "fm",
+		level: 0.3,
+		attackS: 0.002,
+		decayS: 0.55,
+		sustain: 0,
+		releaseS: 0.08,
+		ratio: 4.02,
+		index: 1.1,
+		indexDecayS: 0.04,
+		feedback: 0,
+		pan: 0.55,
+		reverb: 0.25,
+	},
+	pulse: {
+		voice: "keys",
+		level: 0.18,
+		attackS: 0.004,
+		decayS: 0.7,
+		sustain: 0,
+		releaseS: 0.1,
+		index: 0.4,
 		reverb: 0.15,
+	},
+	// The tune: soft saws that mellow as they ring, into the echo.
+	melody: {
+		voice: "softsaw",
+		level: 0.42,
+		attackS: 0.03,
+		decayS: 2.5,
+		sustain: 0.5,
+		releaseS: 0.35,
+		reverb: 0.4,
+		echo: 0.2,
 	},
 };
 
@@ -94,184 +104,185 @@ const note = (
 	vel: number,
 ): NoteEvent => ({ part, bar, beat, dur, pitch, vel });
 
-/** A note at an absolute sixteenth position, `from` sixteenths in. */
-const at16 = (
-	part: string,
-	pos: number,
-	pitch: number,
-	vel: number,
-): NoteEvent => {
-	const beat = Math.max(0, pos) / 4;
-	const bar = Math.floor(beat / 3 + 1e-9);
-	return note(part, bar, Math.max(0, beat - bar * 3), 0.22, pitch, vel);
+/** A chord's three tones, ascending. */
+type Triad = readonly number[];
+const D: Triad = [57, 62, 66];
+const A7: Triad = [55, 61, 64];
+const G: Triad = [55, 59, 62];
+
+/** The chord under waltz bar `bar`: its pad, the upbeat taking bar 1's. */
+const chordOf = (bar: number): Triad => {
+	const h = HARMONY[bar] ?? HARMONY[bar + 1];
+	return h ? [...h[2]].sort((a, b) => a - b) : D;
 };
 
-/** Twelve consecutive notes of the theme, from note `from`. */
-const cellFrom = (from: number): number[] =>
-	Array.from(
-		{ length: CELL_LEN },
-		(_, i) => THEME[Math.min(from + i, THEME.length - 1)][2],
+/** Glass's broken chord over one bar: up and back in six eighths, an
+ *  octave below the chord, the top doubled an octave up. */
+const arpeggio = (bar: number, c: Triad, vel: number): NoteEvent[] =>
+	[0, 1, 2, 3, 2, 1].map((k, i) =>
+		note(
+			"piano",
+			bar,
+			i / 2,
+			0.5,
+			k === 3 ? c[0] : c[k] - 12,
+			vel * (i === 0 ? 1 : 0.72),
+		),
 	);
 
-/** The theme in cells: 0–11, 12–23, … and the last twelve. */
-const CELLS: readonly number[][] = [
-	...Array.from({ length: Math.floor(THEME.length / CELL_LEN) }, (_, c) =>
-		cellFrom(c * CELL_LEN),
-	),
-	cellFrom(THEME.length - CELL_LEN),
-];
+/** *Piano Phase*'s cell, as steps into five chord tones over two octaves:
+ *  E F# B C# D F# E C# B F# D C# is 0 1 2 3 4 1 0 3 2 1 4 3. */
+const CELL = [0, 1, 2, 3, 4, 1, 0, 3, 2, 1, 4, 3];
+const tonesOf = (c: Triad): number[] => [...c, c[0] + 12, c[1] + 12];
 
-/** How many of a cell's notes the additive keyboard plays on repetition
- *  `rep` of a cell. */
-const additive = (rep: number) => Math.min(CELL_LEN, 4 + rep * 2);
+/** The sixteenths in one phase cycle, and in its drift. */
+const CYCLE = 96;
+const DRIFT = 48;
 
-/**
- * One cell over `CELL_BARS` bars from `bar`: the additive keyboard, the
- * phasing keyboard from the third bar with rotation `rot`, its offset
- * growing to one sixteenth by the block's end.
- */
-function block(
-	bar: number,
-	cell: readonly number[],
-	rot: number,
-	vel: number,
-	o: { phase?: boolean; full?: boolean } = {},
+/** Where `phaseB` stands at sixteenth `s` of the loop: how many notes ahead
+ *  it has locked, and how far into the next one it has drifted, in beats. */
+const phaseOf = (s: number): { ahead: number; early: number } => {
+	const cycle = Math.floor(s / CYCLE);
+	const u = s % CYCLE;
+	return u < DRIFT
+		? { ahead: cycle, early: (0.25 * u) / DRIFT }
+		: { ahead: cycle + 1, early: 0 };
+};
+
+/** The phase pair over `bars` bars of `chord`, from loop sixteenth `from`;
+ *  `phased` false keeps both in unison. */
+function phasePair(
+	bars: number,
+	chord: (bar: number) => Triad,
+	vel: (bar: number) => number,
+	phased: boolean,
 ): NoteEvent[] {
 	const out: NoteEvent[] = [];
-	const start = bar * 12;
-	for (let rep = 0; rep < CELL_BARS; rep++) {
-		const n = o.full ? CELL_LEN : additive(rep);
-		for (let k = 0; k < n; k++)
-			out.push(
-				at16(
-					"a",
-					start + rep * 12 + k,
-					cell[k],
-					vel * (k % 3 === 0 ? 1 : 0.78),
-				),
-			);
-	}
-	if (o.phase === false) return out;
-	// The phasing keyboard: from rep 2, its position drifting early.
-	const from = 2 * 12;
-	const span = (CELL_BARS - 2) * 12;
-	for (let i = 0; i < span; i++) {
-		const drift = i / span; // 0 → 1 sixteenth early
+	for (let s = 0; s < bars * 12; s++) {
+		const bar = Math.floor(s / 12);
+		const k = s % 12;
+		const tones = tonesOf(chord(bar));
+		const v = vel(bar) * (k === 0 ? 1 : 0.8);
+		out.push(note("phaseA", bar, k / 4, 0.2, tones[CELL[k]], v));
+		const { ahead, early } = phased ? phaseOf(s) : { ahead: 0, early: 0 };
+		const t = s / 4 - early;
+		if (t < 0) continue;
+		const b = Math.floor(t / 3);
 		out.push(
-			at16(
-				"b",
-				start + from + i - drift,
-				cell[(i + rot) % CELL_LEN],
-				vel * ((i + rot) % 3 === 0 ? 0.95 : 0.72),
+			note(
+				"phaseB",
+				b,
+				t - b * 3,
+				0.2,
+				tones[CELL[(k + ahead) % 12]],
+				v * 0.95,
 			),
 		);
 	}
 	return out;
 }
 
-/** The pad chord held for `bars` bars from `bar`, and the pulse under it. */
-function harmony(
-	bar: number,
-	bars: number,
-	pad: readonly number[],
-	root: number,
-	vel: number,
-	pulse: boolean,
-): NoteEvent[] {
-	return [
-		...pad.map((p) => note("pad", bar, 0, bars * 3 - 0.25, p, vel * 0.8)),
-		...(pulse
-			? Array.from({ length: bars * 6 }, (_, i) =>
-					note(
-						"pulse",
-						bar + Math.floor(i / 6),
-						(i % 6) / 2,
-						0.4,
-						root,
-						vel * (i % 2 === 0 ? 0.85 : 0.6),
-					),
-				)
-			: []),
-	];
-}
-
-/** The waltz's harmony at the theme bar a cell's note falls in. */
-const harmonyAt = (themeIndex: number) => {
-	const bar = THEME[Math.min(themeIndex, THEME.length - 1)][0];
-	return HARMONY[bar] ?? HARMONY[bar + 1] ?? [38, [], [57, 62, 66], "oom"];
+/** The pulse: the chord's root an octave and more down, in eighths,
+ *  swelling over four bars and falling back. */
+const pulse = (bar: number, c: Triad, vel: number): NoteEvent[] => {
+	const swell = 0.55 + 0.45 * Math.sin((Math.PI * (bar % 4)) / 4);
+	const root = c[0] - 24 < 33 ? c[0] - 12 : c[0] - 24;
+	return Array.from({ length: 6 }, (_, i) =>
+		note("pulse", bar, i / 2, 0.4, root, vel * swell * (i % 2 ? 0.7 : 1)),
+	);
 };
 
-// ── Intro: the horn's call as an arpeggio cell, built up and phased ────────
+// ── Intro: the arpeggio alone, the pulse, the horn's call ───────────────────
 
-const CALL_A = [57, 61, 64, 69, 64, 61, 57, 61, 64, 69, 73, 76];
-const CALL_E = [52, 56, 59, 64, 59, 56, 52, 56, 59, 64, 68, 71];
+const INTRO_CHORDS: readonly Triad[] = [D, D, A7, A7];
 
 const INTRO: NoteEvent[] = [
-	...block(0, CALL_A, 0, 0.55, { phase: false }).filter((n) => n.bar < 4),
-	...block(4, CALL_E, 0, 0.6, { phase: false, full: true }).filter(
-		(n) => n.bar < 8,
-	),
-	...harmony(0, 4, [57, 61, 64], 45, 0.5, false),
-	...harmony(4, 4, [56, 59, 64], 40, 0.55, true),
+	...INTRO_CHORDS.flatMap((c, bar) => arpeggio(bar, c, 0.55)),
+	...INTRO_CHORDS.slice(2).flatMap((c, i) => pulse(i + 2, c, 0.5)),
+	...phasePair(
+		1,
+		() => A7,
+		() => 0.45,
+		false,
+	).map((n) => ({ ...n, bar: 3 })),
+	// The call, A–C#–E into the held E.
+	note("melody", 2, 1.5, 0.5, 69, 0.55),
+	note("melody", 2, 2, 0.5, 73, 0.55),
+	note("melody", 2, 2.5, 0.5, 76, 0.6),
+	note("melody", 3, 0, 3, 76, 0.55),
 ];
 
-// ── Waltz No. 1, as cells ──────────────────────────────────────────────────
+// ── Waltz No. 1 ─────────────────────────────────────────────────────────────
 
-const WALTZ_BARS = CELLS.length * CELL_BARS;
+/** Loudness by bar, as the waltz's: p, then f from bar 17, ff at 25. */
+const dyn = (bar: number) =>
+	bar < 16 ? 0.58 : bar < 17 ? 0.64 : bar < 25 ? 0.74 : bar < 29 ? 0.86 : 0.8;
 
-const WALTZ: NoteEvent[] = CELLS.flatMap((cell, c) => {
-	const bar = c * CELL_BARS;
-	const vel = c < 2 ? 0.6 : c < 4 ? 0.72 : 0.82;
-	// The harmony at the cell's start, and at its middle.
-	const first = harmonyAt(Math.min(c * CELL_LEN, THEME.length - CELL_LEN));
-	const mid = harmonyAt(
-		Math.min(c * CELL_LEN, THEME.length - CELL_LEN) + CELL_LEN / 2,
-	);
-	return [
-		...block(bar, cell, c % CELL_LEN, vel),
-		...harmony(bar, CELL_BARS / 2, first[2], first[0], vel, c > 0),
-		...harmony(bar + CELL_BARS / 2, CELL_BARS / 2, mid[2], mid[0], vel, c > 0),
-	];
-});
+const WALTZ: NoteEvent[] = [
+	...THEME.map(([bar, beat, pitch, dur]) =>
+		note("melody", bar, beat, dur, pitch, dyn(bar)),
+	),
+	...Array.from({ length: 32 }, (_, bar) => [
+		...arpeggio(bar, chordOf(bar), 0.5 + dyn(bar) * 0.3),
+		...pulse(bar, chordOf(bar), 0.5),
+	]).flat(),
+	...phasePair(32, chordOf, (bar) => 0.45 + dyn(bar) * 0.2, true),
+];
 
-// ── The cadence: the last three bars as a cell, unison, and the tonic ──────
+// ── The cadence: Strauss's last three bars, the pair back in unison ─────────
 
-const CADENCE_CELL = [78, 76, 83, 81, 74, 74, 78, 76, 83, 81, 74, 74];
+const CADENCE_CHORDS: readonly Triad[] = [G, A7, D, D];
 
 const CADENCE: NoteEvent[] = [
-	...Array.from({ length: 24 }, (_, i) => [
-		at16("a", i, CADENCE_CELL[i % 12], 0.82 * (i % 3 === 0 ? 1 : 0.78)),
-		at16("b", i, CADENCE_CELL[i % 12], 0.78 * (i % 3 === 0 ? 1 : 0.72)),
-	]).flat(),
-	...harmony(0, 1, [55, 59, 62], 43, 0.8, true),
-	...harmony(1, 1, [55, 61, 64], 45, 0.8, true),
-	...[62, 66, 69, 74].map((p) => note("a", 2, 0, 3, p, 0.45)),
-	...[62, 66, 69, 74].map((p) => note("b", 2, 0, 3, p, 0.4)),
-	...harmony(2, 2, [50, 57, 62, 66], 38, 0.75, false),
-	note("pulse", 2, 0, 3, 38, 0.8),
+	...(
+		[
+			[0, 0, 78, 2],
+			[0, 2, 76, 1],
+			[1, 0, 83, 2],
+			[1, 2, 81, 1],
+			[2, 0, 74, 1],
+			[2, 1.5, 74, 0.5],
+			[2, 2, 74, 1],
+			[3, 0, 74, 3],
+		] as const
+	).map(([bar, beat, p, dur]) => note("melody", bar, beat, dur, p, 0.8)),
+	...CADENCE_CHORDS.slice(0, 3).flatMap((c, bar) => [
+		...arpeggio(bar, c, 0.7),
+		...pulse(bar, c, 0.5),
+	]),
+	...phasePair(
+		3,
+		(bar) => CADENCE_CHORDS[bar],
+		() => 0.55,
+		false,
+	),
+	// The last bar: the chord rolled once and left to ring.
+	...[38, 50, 57, 62, 66].map((p, i) =>
+		note("piano", 3, i * 0.15, 2.8 - i * 0.15, p, 0.65),
+	),
 ];
 
 /**
- * Score bars: the intro 0–7, the waltz's cells 8 to 8 + `WALTZ_BARS` − 1,
- * the cadence the last four, slowing over its last two.
+ * Score bars: the intro 0–3, the waltz 4–35, the cadence 36–39, slowing
+ * over its last two bars.
  */
 export const DANUBE_MINIMAL: Song = {
-	name: "An der schönen blauen Donau (minimalism)",
+	name: "An der schönen blauen Donau (minimal)",
 	beatsPerBar: 3,
 	parts: PARTS,
 	sections: [
-		{ name: "intro", bars: 8, events: INTRO },
-		{ name: "waltz", bars: WALTZ_BARS, events: WALTZ },
+		{ name: "intro", bars: 4, events: INTRO },
+		{ name: "waltz", bars: 32, events: WALTZ },
 		{ name: "cadence", bars: 4, events: CADENCE },
 	],
 	tempo: [
 		{ bar: 0, bpm: MINIMAL_BPM },
-		{ bar: 8 + WALTZ_BARS + 1, bpm: MINIMAL_BPM },
-		{ bar: 8 + WALTZ_BARS + 3, bpm: 100, ramp: true },
+		{ bar: 37, bpm: MINIMAL_BPM },
+		{ bar: 39, bpm: 92, ramp: true },
 	],
 	loop: { from: "waltz", to: "waltz" },
 	resolve: "cadence",
-	space: { reverbS: 2.5 },
+	space: { reverbS: 2.8, echoBeats: 1.5, echoFeedback: 0.35 },
 };
 
 /** The loader's name for this version (`music-danube-variants.ts`). */
