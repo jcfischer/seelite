@@ -663,10 +663,17 @@ function pointVelocity(
 	pose: Pose,
 	point: Vec3,
 ): Vec3 {
-	const v = lerp(m.velStart, m.velEnd, s);
-	if (spin.angle === 0) return v;
+	return add(
+		lerp(m.velStart, m.velEnd, s),
+		turnVelocity(spin, dt, pose, point),
+	);
+}
+
+/** What a solid's turn about its origin adds to a point's velocity. */
+function turnVelocity(spin: Spin, dt: number, pose: Pose, point: Vec3): Vec3 {
+	if (spin.angle === 0 || !(dt > 0)) return v3();
 	const omega = scale(spin.axis, spin.angle / dt);
-	return add(v, cross(omega, sub(point, pose.origin)));
+	return cross(omega, sub(point, pose.origin));
 }
 
 /** A solid's bounding sphere across one step: its origin at both ends, and
@@ -1341,11 +1348,32 @@ export function sweepShipPair(
 		result.b.vel = sub(b.velEnd, scale(dv, 1 - shareA));
 		return result;
 	}
-	// B's turn across the step, as its box was swept turning (`sweepShip`).
+	// Each ship's turn across the step, as its box was swept turning
+	// (`sweepShip`).
+	const aSpin = spinBetween(a.start, a.end);
 	const bSpin = spinBetween(b.start, b.end);
 	for (const impact of swept.impacts) {
 		const n = impact.normal;
-		const unBefore = dot(sub(result.a.vel, result.b.vel), n);
+		// Each pose at the meeting, on the arc its box was swept along: a chord
+		// between its two end noses lags a fast turn by tens of degrees.
+		const s = dt > 0 ? impact.timeS / dt : 0;
+		const aAt = poseAt(a, aSpin, s, v3());
+		const bAt = poseAt(b, bSpin, s, v3());
+		// What the two turns add to the points' relative normal velocity. A
+		// swept `closingKms` is measured on the points, turns included, so the
+		// impulse must take the points to it; a resting one keeps both ships'
+		// own-turn exemption (§3.1), and so does this. The impulse is linear
+		// only (§3), so the turns' share is the same after it as before.
+		const turns = impact.resting
+			? 0
+			: dot(
+					sub(
+						turnVelocity(aSpin, dt, aAt, impact.point),
+						turnVelocity(bSpin, dt, bAt, impact.point),
+					),
+					n,
+				);
+		const unBefore = dot(sub(result.a.vel, result.b.vel), n) + turns;
 		const unAfter =
 			impact.resting && impact.closingKms <= V_SCRAPE_KMS
 				? Math.max(unBefore, 0)
@@ -1355,10 +1383,6 @@ export function sweepShipPair(
 			result.a.vel = add(result.a.vel, kick.a);
 			result.b.vel = add(result.b.vel, kick.b);
 		}
-		// B's pose at the meeting, on the arc its box was swept along: a chord
-		// between its two end noses lags a fast turn by tens of degrees.
-		const s = dt > 0 ? impact.timeS / dt : 0;
-		const bAt = poseAt(b, bSpin, s, v3());
 		result.impacts.push({
 			timeS: impact.timeS,
 			point: impact.point,

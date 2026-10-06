@@ -2660,66 +2660,69 @@ function keepPairsApart(
 		const held = m.worldCorrection;
 		return length(held) === 0 || dot(d, held) > 0;
 	};
+	/** A's share of a push along `n` (B takes the rest): a pinned side gives
+	 *  nothing, where only one side is free to give it takes it all, and two
+	 *  free sides split by mass. */
+	const shareOf = (a: Member, b: Member, n: Vec3): number => {
+		if (b.pinned) return 1;
+		if (a.pinned) return 0;
+		const freeA = canGive(a, n);
+		const freeB = canGive(b, scale(n, -1));
+		if (freeA !== freeB) return freeA ? 1 : 0;
+		return b.motion.massT / (a.motion.massT + b.motion.massT);
+	};
+	/** Part one pair left overlapped, and take the closing velocity off it,
+	 *  in `shareOf`'s proportions. Whether it moved anything. */
+	const correctOverlap = (a: Member, b: Member): boolean => {
+		// Overlapped at the start, so never met (§4.3): nothing parted them,
+		// and nothing here may move either for it.
+		if (ghosts.has(pairKey(a.id, b.id))) return false;
+		const boxA = boxOf(a);
+		const boxB = boxOf(b);
+		if (
+			!pairSeparation(boxA, poseOf(a, a.now.pos), boxB, poseOf(b, b.now.pos))
+				.overlap
+		)
+			return false;
+		const parted = pairSeparation(
+			boxA,
+			poseOf(a, a.paired),
+			boxB,
+			poseOf(b, b.paired),
+		);
+		// From B toward A, as every separation's normal is.
+		const n = parted.overlap
+			? normalizeOr(
+					sub(a.paired, b.paired),
+					normalizeOr(sub(a.now.pos, b.now.pos), v3(1, 0, 0)),
+				)
+			: parted.normal;
+		const push = pushOutAlong(
+			boxA,
+			poseOf(a, a.now.pos),
+			boxB,
+			poseOf(b, b.now.pos),
+			n,
+		);
+		if (!(push > 0)) return false;
+		// A moves along n, B against it.
+		const shareA = shareOf(a, b, n);
+		a.now.pos = add(a.now.pos, scale(n, push * shareA));
+		b.now.pos = sub(b.now.pos, scale(n, push * (1 - shareA)));
+		const un = dot(sub(a.now.vel, b.now.vel), n);
+		if (un < 0) {
+			a.now.vel = sub(a.now.vel, scale(n, un * shareA));
+			b.now.vel = add(b.now.vel, scale(n, un * (1 - shareA)));
+		}
+		return true;
+	};
 	// A later correction can reopen an earlier pair in a contact chain.
 	// Recheck geometry without replaying or billing any impact. The bound
 	// keeps an impossible squeeze from monopolising the simulation tick.
 	for (let pass = 0; pass < 8 * members.length; pass++) {
 		let moved = false;
-		for (const [x, y] of pairs) {
-			const a = members[x];
-			const b = members[y];
-			// Overlapped at the start, so never met (§4.3): nothing parted them,
-			// and nothing here may move either for it.
-			if (ghosts.has(pairKey(a.id, b.id))) continue;
-			const boxA = boxOf(a);
-			const boxB = boxOf(b);
-			if (
-				!pairSeparation(boxA, poseOf(a, a.now.pos), boxB, poseOf(b, b.now.pos))
-					.overlap
-			)
-				continue;
-			const parted = pairSeparation(
-				boxA,
-				poseOf(a, a.paired),
-				boxB,
-				poseOf(b, b.paired),
-			);
-			// From B toward A, as every separation's normal is.
-			const n = parted.overlap
-				? normalizeOr(
-						sub(a.paired, b.paired),
-						normalizeOr(sub(a.now.pos, b.now.pos), v3(1, 0, 0)),
-					)
-				: parted.normal;
-			const push = pushOutAlong(
-				boxA,
-				poseOf(a, a.now.pos),
-				boxB,
-				poseOf(b, b.now.pos),
-				n,
-			);
-			if (!(push > 0)) continue;
-			moved = true;
-			// A moves along n, B against it.
-			const freeA = canGive(a, n);
-			const freeB = canGive(b, scale(n, -1));
-			const shareA = b.pinned
-				? 1
-				: a.pinned
-					? 0
-					: freeA === freeB
-						? b.motion.massT / (a.motion.massT + b.motion.massT)
-						: freeA
-							? 1
-							: 0;
-			a.now.pos = add(a.now.pos, scale(n, push * shareA));
-			b.now.pos = sub(b.now.pos, scale(n, push * (1 - shareA)));
-			const un = dot(sub(a.now.vel, b.now.vel), n);
-			if (un < 0) {
-				a.now.vel = sub(a.now.vel, scale(n, un * shareA));
-				b.now.vel = add(b.now.vel, scale(n, un * (1 - shareA)));
-			}
-		}
+		for (const [x, y] of pairs)
+			if (correctOverlap(members[x], members[y])) moved = true;
 		if (!moved) break;
 	}
 }

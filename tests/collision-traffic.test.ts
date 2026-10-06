@@ -98,7 +98,16 @@ import {
 	presentedTrafficStep,
 } from "../src/traffic-presentation";
 import { STATION_GEOMETRY } from "../src/station";
-import { type Vec3, add, dot, length, scale, sub, v3 } from "../src/vec3";
+import {
+	type Vec3,
+	add,
+	cross,
+	dot,
+	length,
+	scale,
+	sub,
+	v3,
+} from "../src/vec3";
 import {
 	applyTransition,
 	effectiveCarrier,
@@ -394,6 +403,51 @@ describe("collision.md §9.1.13: ship against ship (C4b)", () => {
 		expect(dot(chord, hit.point)).toBeLessThan(0);
 		expect(dot(arc, hit.point)).toBeGreaterThan(0);
 		expect(hit.sideB).toBe("fore");
+	});
+
+	test("a turn alone into a still ship leaves the contact points separating at RESTITUTION · v_n", () => {
+		// Sage round 11: a still carrier turning 90° about its up across the
+		// step swings its nose into a still courier. Neither translates, so the
+		// whole closing speed is the turn's, at the point where they meet —
+		// and the impulse must take *those* points apart, not the origins.
+		const dt = 0.1;
+		const up = v3(0, 1, 0);
+		const turnS = Math.PI / 2 / dt;
+		const carrier: ShipMotion = {
+			massT: HULL_SPECS.carrier.massT,
+			primitives: box("carrier"),
+			start: shipPose(v3(), v3(0, 0, 1), up),
+			end: shipPose(v3(), v3(1, 0, 0), up),
+			velStart: v3(),
+			velEnd: v3(),
+		};
+		const courier = flying("courier", v3(0.124, 0, 0.124), v3(), dt);
+		const omega = v3(0, turnS, 0);
+		// The point's velocity on each ship, with each one's turn about its
+		// own (still) origin.
+		const turning = (p: Vec3) => cross(omega, p);
+		for (const carrierIsA of [true, false]) {
+			const [a, b] = carrierIsA ? [carrier, courier] : [courier, carrier];
+			const pair = sweepShipPair(a, b, dt);
+			expect(pair.ghost).toBe(false);
+			expect(pair.impacts).toHaveLength(1);
+			const [hit] = pair.impacts;
+			expect(hit.resting).toBe(false);
+			expect(hit.closingKms).toBeGreaterThan(V_SCRAPE_KMS);
+			const spinA = carrierIsA ? turning(hit.point) : v3();
+			const spinB = carrierIsA ? v3() : turning(hit.point);
+			const pointRel = sub(add(pair.a.vel, spinA), add(pair.b.vel, spinB));
+			expect(dot(pointRel, hit.normal)).toBeCloseTo(
+				RESTITUTION * hit.closingKms,
+				6,
+			);
+			// Momentum kept: the impulse is linear and equal and opposite.
+			const after = add(
+				momentum(a.massT, pair.a.vel),
+				momentum(b.massT, pair.b.vel),
+			);
+			expect(length(after)).toBeLessThan(1e-9 * a.massT);
+		}
 	});
 
 	test("a resting pair thrusting together bills nothing, and is held apart by mass", () => {
