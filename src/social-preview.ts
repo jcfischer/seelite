@@ -37,7 +37,8 @@ export const SITE_ORIGIN = "https://farbetween.ch";
  *
  * 1200 x 630 is the 1.91:1 frame X, LinkedIn, Facebook and Discord show
  * uncropped; the 3:2 postcard card would lose its foot band to their crop.
- * `maxBytes` keeps it well under the smallest crawler limit (X: 5 MB).
+ * `maxBytes` is this file's own budget, not a crawler's limit: a preview is
+ * fetched on every unfurl, so it is kept small, and the test holds it.
  *
  * **It is a frame of the Docking Waltz film, the principal's choice (#714).**
  * Frame 1650 (27.5 s) of the 2560 x 1440 capture, cut to 1.91:1 by dropping
@@ -45,17 +46,22 @@ export const SITE_ORIGIN = "https://farbetween.ch";
  * code — the courier, the terran planet shader, the starfield — but its
  * station is Station-X, the Wheel trade form with the film's detail pass,
  * which the running game does not place yet. So the frame cannot be rebuilt
- * from a postcard recipe; `source` names where it came from instead.
+ * from a postcard recipe. It was made from the film project's
+ * `capture/frames/01650.jpg` with
+ * `ffmpeg -i 01650.jpg -vf "crop=2560:1344:0:48,scale=1200:630:flags=lanczos" -q:v 2`.
  */
 export const SOCIAL_PREVIEW = {
 	file: "social-preview.jpg",
 	width: 1200,
 	height: 630,
 	alt: "A courier approaching a spinning wheel station above a cloud-covered planet.",
-	source:
-		"The Far Between — The Docking Waltz, capture frame 01650 (t = 27.5 s): crop=2560:1344:0:48, scale=1200:630 lanczos, JPEG q2",
 	maxBytes: 400_000,
 } as const;
+
+/** A public page's address on `SITE_ORIGIN`: `/` for the home page, `/<slug>/` else. */
+export function pageUrl(slug: string): string {
+	return `${SITE_ORIGIN}/${slug ? `${slug}/` : ""}`;
+}
 
 /**
  * `html` with the preview block added before `</head>`. Throws on an entry
@@ -73,7 +79,7 @@ export function socialPreviewTags(html: string, entry: string): string {
 		["property", "og:site_name", "The Far Between"],
 		["property", "og:title", title],
 		["property", "og:description", page.dek],
-		["property", "og:url", `${SITE_ORIGIN}/${page.slug && `${page.slug}/`}`],
+		["property", "og:url", pageUrl(page.slug)],
 		["property", "og:image", `${SITE_ORIGIN}/${SOCIAL_PREVIEW.file}`],
 		["property", "og:image:width", String(SOCIAL_PREVIEW.width)],
 		["property", "og:image:height", String(SOCIAL_PREVIEW.height)],

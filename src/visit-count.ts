@@ -16,7 +16,8 @@
  * its recipe in the fragment, which the tracker never reads, so under the page
  * site it would read as a visit to the threshold. It is the link a player posts,
  * and the principal asked for it to be counted on its own: the tracker's
- * referrer column then says which network it came from. The recipe is not
+ * referrer column names the site that sent it when the browser passes a
+ * referrer, and an open without one lands with no source. The recipe is not
  * sent — the tracker reports `pathname` and the UTM tags, never the hash.
  *
  * **Production only.** The tracker skips its report on localhost but still

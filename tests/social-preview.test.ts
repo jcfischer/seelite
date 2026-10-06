@@ -4,6 +4,7 @@ import { PUBLIC_PAGES } from "../src/public-site";
 import {
 	SITE_ORIGIN,
 	SOCIAL_PREVIEW,
+	pageUrl,
 	socialPreviewTags,
 } from "../src/social-preview";
 import { repoPath } from "./lib/source-scan";
@@ -45,13 +46,12 @@ describe("social preview (#714)", () => {
 			const html = socialPreviewTags(source, page.entry);
 			const tags = metaTags(html);
 			const title = /<title>([^<]*)<\/title>/.exec(source)?.[1] as string;
-			const url = `${SITE_ORIGIN}/${page.slug ? `${page.slug}/` : ""}`;
 			expect(Object.fromEntries(tags)).toEqual({
 				"og:type": "website",
 				"og:site_name": "The Far Between",
 				"og:title": title,
 				"og:description": page.dek,
-				"og:url": url,
+				"og:url": pageUrl(page.slug),
 				"og:image": `${SITE_ORIGIN}/${SOCIAL_PREVIEW.file}`,
 				"og:image:width": String(SOCIAL_PREVIEW.width),
 				"og:image:height": String(SOCIAL_PREVIEW.height),
@@ -64,6 +64,8 @@ describe("social preview (#714)", () => {
 
 	test("the image URL is absolute https, which Facebook and LinkedIn require", () => {
 		expect(SITE_ORIGIN).toMatch(/^https:\/\/[^/]+$/);
+		expect(pageUrl("")).toBe(`${SITE_ORIGIN}/`);
+		expect(pageUrl("about")).toBe(`${SITE_ORIGIN}/about/`);
 	});
 
 	test("an unknown entry or a page without a head is refused, not passed through", () => {
@@ -73,7 +75,7 @@ describe("social preview (#714)", () => {
 		).toThrow();
 	});
 
-	test("a title or dek with markup characters is escaped", () => {
+	test("a title with a quote keeps its entities and escapes the quote", () => {
 		const html = socialPreviewTags(
 			'<head><title>a "b" &lt;c&gt;</title></head>',
 			PUBLIC_PAGES[0]?.entry as string,
@@ -81,7 +83,7 @@ describe("social preview (#714)", () => {
 		expect(metaTags(html).get("og:title")).toBe("a &quot;b&quot; &lt;c&gt;");
 	});
 
-	test("the image is a 1200 x 630 JPEG, small enough for every crawler", () => {
+	test("the image is a 1200 x 630 JPEG under its byte budget", () => {
 		const path = repoPath(`public/${SOCIAL_PREVIEW.file}`);
 		const bytes = readFileSync(path);
 		expect(jpegSize(bytes)).toEqual({

@@ -87,7 +87,7 @@ describe("visit count (#569)", () => {
 		expect(boot).toBeGreaterThan(-1);
 		// On the boot branch, not the postcard viewer above it.
 		expect(launch).toBeGreaterThan(boot);
-		expect(entry.match(/countVisit\(/g)).toHaveLength(2);
+		expect(entry.match(/countVisit\("launch"\)/g)).toHaveLength(1);
 	});
 
 	test("an opened postcard link is counted once, as a postcard, accepted or refused (#714)", () => {
