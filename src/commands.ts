@@ -236,11 +236,13 @@ export type Trigger =
 			/**
 			 * The views this movement is live in, when narrower than its
 			 * command's (node #691). The pointer steers the ship in the cockpit // glossary-ignore: Command
-			 * and orbits the camera in chase, so the `fly.*` rows' movement is
-			 * the cockpit's while their keys fly in both — the one trigger kind
-			 * whose meaning changes with the view while the command's does not. // glossary-ignore: Command
+			 * and outside view during flight; Photo mode orbits the camera. The
+			 * fixed mouse rows carry that mode separately from their view. Keys
+			 * keep the scope of the command they are bound to. // glossary-ignore: Command
 			 */
 			readonly views?: readonly ViewMode[];
+			/** The fixed gesture's mode: omitted means normal flight. */
+			readonly photoMode?: true;
 	  }
 	| {
 			readonly kind: "pad-button";
@@ -541,7 +543,7 @@ const AUTHORED = [
 		// the mouse comes back — and `tests/commands.test.ts` reads that
 		// negation out of the source rather than trusting this sentence.
 		more: [
-			{ kind: "mouse-move", axis: "y", half: "+", views: COCKPIT },
+			{ kind: "mouse-move", axis: "y", half: "+" },
 			...stickFor("pitch", -1),
 		],
 	},
@@ -551,7 +553,7 @@ const AUTHORED = [
 		group: "fly",
 		keys: [{ key: "w", hold: true }],
 		more: [
-			{ kind: "mouse-move", axis: "y", half: "-", views: COCKPIT },
+			{ kind: "mouse-move", axis: "y", half: "-" },
 			...stickFor("pitch", 1),
 		],
 	},
@@ -560,10 +562,7 @@ const AUTHORED = [
 		name: "Yaw: nose to port",
 		group: "fly",
 		keys: [{ key: "a", hold: true }],
-		more: [
-			{ kind: "mouse-move", axis: "x", half: "-", views: COCKPIT },
-			...stickFor("yaw", 1),
-		],
+		more: [{ kind: "mouse-move", axis: "x", half: "-" }, ...stickFor("yaw", 1)],
 	},
 	{
 		id: "fly.yawStarboard",
@@ -571,7 +570,7 @@ const AUTHORED = [
 		group: "fly",
 		keys: [{ key: "d", hold: true }],
 		more: [
-			{ kind: "mouse-move", axis: "x", half: "+", views: COCKPIT },
+			{ kind: "mouse-move", axis: "x", half: "+" },
 			...stickFor("yaw", -1),
 		],
 	},
@@ -807,11 +806,11 @@ const AUTHORED = [
 		// Chase only, and held rather than pressed — which is why the same two
 		// digits are not a collision with head-look, twice over.
 		id: "view.orbitPort",
-		name: "Orbit the chase camera to port",
+		name: "Orbit the chase camera to port (mouse in Photo mode)",
 		group: "view",
 		views: CHASE,
 		keys: [{ key: "1", hold: true }],
-		// Node #691: in chase the pointer orbits, and the view goes where it
+		// Node #691: in Photo mode the pointer orbits, and the view goes where it
 		// goes — right swings the camera to port, looking to starboard. These
 		// movement rows *describe* `chase-orbit.ts`'s `orbitByPointer`, which
 		// `main.ts`'s `orbitChase` hands the raw delta without consulting a
@@ -819,35 +818,35 @@ const AUTHORED = [
 		// cannot be rebound (`no-capture-surface`), and
 		// `tests/chase-orbit.test.ts` holds each row's half to the way
 		// `orbitByPointer` actually turns.
-		more: [{ kind: "mouse-move", axis: "x", half: "+" }],
+		more: [{ kind: "mouse-move", axis: "x", half: "+", photoMode: true }],
 	},
 	{
 		id: "view.orbitStarboard",
-		name: "Orbit the chase camera to starboard",
+		name: "Orbit the chase camera to starboard (mouse in Photo mode)",
 		group: "view",
 		views: CHASE,
 		keys: [{ key: "3", hold: true }],
-		more: [{ kind: "mouse-move", axis: "x", half: "-" }],
+		more: [{ kind: "mouse-move", axis: "x", half: "-", photoMode: true }],
 	},
 	{
 		// Node #691's vertical half, the pointer's alone: pushed away the
 		// camera rises over the hull, pulled back it sinks beneath and looks
 		// up, as pulling back brings the nose up in the cockpit.
 		id: "view.orbitUp",
-		name: "Orbit the chase camera up, over the ship",
+		name: "Photo mode: orbit up, over the ship",
 		group: "view",
 		views: CHASE,
 		// A pointer row: movement is its only trigger, and nothing moves it.
 		fixed: "pointer",
-		more: [{ kind: "mouse-move", axis: "y", half: "-" }],
+		more: [{ kind: "mouse-move", axis: "y", half: "-", photoMode: true }],
 	},
 	{
 		id: "view.orbitDown",
-		name: "Orbit the chase camera down, beneath the ship",
+		name: "Photo mode: orbit down, beneath the ship",
 		group: "view",
 		views: CHASE,
 		fixed: "pointer",
-		more: [{ kind: "mouse-move", axis: "y", half: "+" }],
+		more: [{ kind: "mouse-move", axis: "y", half: "+", photoMode: true }],
 	},
 	{
 		id: "view.orbitCentre",
@@ -857,6 +856,12 @@ const AUTHORED = [
 		keys: ["2"],
 	},
 	// system: the player screens ----------------------------------------
+	{
+		id: "view.photo",
+		name: "Photo mode: pause, orbit with the mouse, zoom with the wheel",
+		group: "view",
+		keys: ["f2"],
+	},
 	{ id: "system.settings", name: "Settings", group: "system", keys: ["z"] },
 	{
 		id: "system.commander",
@@ -1512,12 +1517,20 @@ const makeScope = (
 	pad: readonly PadContext[],
 	views: readonly ViewMode[],
 	surface?: Surface,
-): Scope => (surface === undefined ? { pad, views } : { pad, views, surface });
+	photoMode?: boolean,
+): Scope => ({
+	pad,
+	views,
+	...(surface === undefined ? {} : { surface }),
+	...(photoMode === undefined ? {} : { photoMode }),
+});
 
 export interface Scope {
 	readonly pad: readonly PadContext[];
 	readonly views: readonly ViewMode[];
 	readonly surface?: Surface;
+	/** Fixed pointer gestures are active in normal flight or Photo mode. */
+	readonly photoMode?: boolean;
 }
 
 export interface Command {
@@ -1600,7 +1613,12 @@ const scopeOf = (trigger: Trigger, views: readonly ViewMode[]): Scope => {
 	// A movement narrower than its command is live where both are (node #691). // glossary-ignore: Command
 	const only = trigger.kind === "mouse-move" ? trigger.views : undefined;
 	const live = only ? views.filter((v) => only.includes(v)) : views;
-	return makeScope(pad, live, surface); // glossary-ignore: pad
+	return makeScope(
+		pad,
+		live,
+		surface,
+		trigger.kind === "mouse-move" ? trigger.photoMode === true : undefined,
+	); // glossary-ignore: pad
 };
 
 function triggersOf(a: Authored): Trigger[] {
@@ -1900,10 +1918,16 @@ const intersection = <T>(a: readonly T[], b: readonly T[]) =>
  */
 const overlapScope = (a: Scope, b: Scope): Scope | null => {
 	if (a.surface !== b.surface) return null;
+	if (
+		a.photoMode !== undefined &&
+		b.photoMode !== undefined &&
+		a.photoMode !== b.photoMode
+	)
+		return null;
 	const pad = intersection(a.pad, b.pad);
 	const views = intersection(a.views, b.views);
 	if (pad.length === 0 || views.length === 0) return null;
-	return makeScope(pad, views, a.surface);
+	return makeScope(pad, views, a.surface, a.photoMode ?? b.photoMode);
 };
 
 export interface Collision {

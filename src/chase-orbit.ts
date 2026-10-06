@@ -12,7 +12,7 @@
  * At zero elevation it is exactly the yaw-only orbit #607 shipped, which is
  * what keeps a yaw-only postcard link's framing (`postcard.ts`).
  *
- * **The gesture.** In chase the locked pointer orbits the camera and never
+ * **The gesture.** In Photo mode the locked pointer orbits the camera and never
  * reaches the ship: its delta is taken before anything that steers, fires or
  * cancels an autopilot reads it (`pointerOwner`). The sense is the cockpit's
  * own grammar — the view goes where the pointer goes, and pulling the pointer
@@ -40,7 +40,9 @@
  * about its own sightline, which is a continuous motion with no flip and no
  * NaN. Yaw wraps through ±π, so the sweep round the hull is unbroken.
  *
- * No Three.js: rotations are `hud.ts`'s `Quat`.
+ * Photo mode holds the simulation while the wheel scales the rig's distance.
+ * Outside it, pointer deltas steer the ship in either view and cannot manipulate
+ * the camera. No Three.js: rotations are `hud.ts`'s `Quat`.
  */
 import { intoCameraFrame, type Quat } from "./hud";
 import type { View } from "./chase-view";
@@ -63,6 +65,8 @@ export const CHASE_UP_KM = 0.04;
 export interface ChaseOrbit {
 	readonly yawRad: number;
 	readonly elevationRad: number;
+	/** Distance multiplier; omitted on older compositions means the normal rig. */
+	readonly zoomScale?: number;
 }
 
 /** The normal astern composition `2` recentres to. */
@@ -77,11 +81,30 @@ export const ORBIT_RAD_PER_PX = 0.004;
 /** The most one frame's pointer delta may turn either angle, radians. */
 export const ORBIT_MAX_STEP_RAD = 0.5;
 
+export const ORBIT_ZOOM_MIN = 0.25;
+export const ORBIT_ZOOM_MAX = 8;
+export const clampZoom = (scale: number): number =>
+	Number.isFinite(scale)
+		? Math.max(ORBIT_ZOOM_MIN, Math.min(ORBIT_ZOOM_MAX, scale))
+		: 1;
+
+/** Scroll up moves closer. Bound a single wheel event as well as the distance. */
+export function zoomOrbit(orbit: ChaseOrbit, deltaPx: number): ChaseOrbit {
+	if (!Number.isFinite(deltaPx) || deltaPx === 0) return orbit;
+	return {
+		...orbit,
+		zoomScale: clampZoom(
+			(orbit.zoomScale ?? 1) *
+				Math.exp(Math.max(-500, Math.min(500, deltaPx)) * 0.002),
+		),
+	};
+}
+
 /** Who a locked pointer's delta belongs to: the camera in chase, the ship in
  *  the cockpit. Never both — a delta the orbit took is not also a turn. */
 export type PointerOwner = "orbit" | "steer";
-export const pointerOwner = (view: View): PointerOwner =>
-	view === "chase" ? "orbit" : "steer";
+export const pointerOwner = (view: View, photoMode = false): PointerOwner =>
+	view === "chase" && photoMode ? "orbit" : "steer";
 
 const clamp = (v: number, lo: number, hi: number) =>
 	Math.max(lo, Math.min(hi, v));
@@ -115,6 +138,7 @@ export function orbitByPointer(
 			? clamp(px * ORBIT_RAD_PER_PX, -ORBIT_MAX_STEP_RAD, ORBIT_MAX_STEP_RAD)
 			: 0;
 	return {
+		...orbit,
 		yawRad: wrapYaw(orbit.yawRad - step(dxPx)),
 		elevationRad: clampElevation(orbit.elevationRad - step(dyPx)),
 	};
@@ -140,8 +164,9 @@ export const rotate = (v: Vec3, q: Quat): Vec3 =>
 
 /** Where the camera stands relative to the hull, in the ship's own frame, km. */
 export function orbitOffsetKm(orbit: ChaseOrbit): Vec3 {
+	const zoom = clampZoom(orbit.zoomScale ?? 1);
 	return rotate(
-		{ x: 0, y: CHASE_UP_KM, z: CHASE_BACK_KM },
+		{ x: 0, y: CHASE_UP_KM * zoom, z: CHASE_BACK_KM * zoom },
 		orbitRotation(orbit),
 	);
 }

@@ -209,10 +209,13 @@ export const PROBE_CATALOG = Object.freeze(
 		),
 		entry(
 			"probe-chase-orbit.mjs",
-			"Drives a real mouse under a real pointer lock in chase view and checks the full orbit: the camera swings round and over the hull while the ship's attitude, rates, trigger and an engaged docking computer stay untouched; the cockpit, a lost lock and the settings and Postcard screens take the pointer back; an exterior postcard spells the yaw and elevation, its PNG is the shown card, the viewer rebuilds the same link and picture, captures restore the pilot's pose and drawing size on success and failure, and a yaw-only schema-1 link opens level; docked in a berth the mouse still orbits.",
+			"Enables Photo mode with F2 and drives a real mouse under a real pointer lock: the scene freezes, held clicks never fire, the wheel zooms, and mouse movement orbits around and over the hull. Outside Photo mode the mouse cannot manipulate the camera. The cockpit, a lost lock, and Settings and Postcard screens own their input. Zoomed exterior preview, PNG download and schema-3 link retain the camera distance and angles; the viewer rebuilds the same picture. Captures restore the pose on success and failure, and a yaw-only schema-1 link opens level. Docked Photo mode still orbits without advancing the ship.",
 			[
 				"chase view",
 				"camera orbit",
+				"Photo mode",
+				"camera zoom",
+				"frozen simulation",
 				"pointer lock",
 				"mouse input",
 				"docking computer",

@@ -230,6 +230,7 @@ describe("the catalogue is complete against the source", () => {
 			"view.headForward": 'this.setHeadLook("forward")',
 			"view.headStarboard": 'this.setHeadLook("right")',
 			"view.orbitCentre": "this.chaseOrbit = ORBIT_ASTERN",
+			"view.photo": "this.togglePhotoMode()",
 			// #381 S4: the settings screen's open key is the registry's now, not
 			// the panel's own listener.
 			"system.settings": "this.settingsPanel?.open()",

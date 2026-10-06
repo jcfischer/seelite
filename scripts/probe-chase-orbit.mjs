@@ -115,6 +115,11 @@ const pilot = () =>
 			.normalize();
 		return {
 			view: g.view,
+			photo: g.photoMode,
+			time: g.world.gameTime,
+			pos: { ...g.world.ship.pos },
+			zoom: g.chaseOrbit.zoomScale ?? 1,
+			distanceKm: ship.position.length(),
 			yaw: g.chaseYaw,
 			elev: g.chaseElevation,
 			q: g.orientation.toArray(),
@@ -173,7 +178,7 @@ await page.evaluate(async () => {
 	g.faceTarget();
 	await new Promise((r) => requestAnimationFrame(() => r()));
 });
-await page.keyboard.press("v");
+await page.keyboard.press("F2");
 await settle();
 await clickGlass();
 const premise = { view: (await pilot()).view, lock: await lockHolder() };
@@ -182,6 +187,43 @@ check(
 	premise.view === "chase" && premise.lock === "CANVAS",
 	JSON.stringify(premise),
 );
+const frozenStart = await pilot();
+await page.mouse.down();
+await page.waitForTimeout(200);
+const heldClick = await pilot();
+check(
+	"a held mouse click in Photo mode never fires and the simulation is frozen",
+	heldClick.photo &&
+		!heldClick.mouseFiring &&
+		!heldClick.trigger &&
+		heldClick.time === frozenStart.time &&
+		JSON.stringify(heldClick.pos) === JSON.stringify(frozenStart.pos),
+	JSON.stringify(heldClick),
+);
+await page.mouse.up();
+await page.mouse.wheel(0, -120);
+await settle();
+const zoomed = await pilot();
+check(
+	"scroll up zooms the Photo camera closer without moving its angles or the ship",
+	zoomed.zoom < frozenStart.zoom &&
+		Math.abs(
+			zoomed.distanceKm / frozenStart.distanceKm -
+				zoomed.zoom / frozenStart.zoom,
+		) < 1e-5 &&
+		zoomed.yaw === frozenStart.yaw &&
+		zoomed.elev === frozenStart.elev &&
+		zoomed.time === frozenStart.time,
+	`zoom ${frozenStart.zoom} → ${zoomed.zoom}`,
+);
+await page.mouse.wheel(0, 120);
+await settle();
+check(
+	"scroll down returns to the original distance",
+	Math.abs((await pilot()).zoom - frozenStart.zoom) < 1e-12,
+);
+await page.keyboard.press("2");
+await settle();
 if (premise.lock !== "CANVAS") {
 	await browser.close();
 	exit();
@@ -253,6 +295,11 @@ await page.keyboard.press("v");
 await settle();
 await zeroRates();
 const cockpitBefore = await pilot();
+await page.waitForTimeout(200);
+check(
+	"leaving Photo mode resumes the simulation",
+	!cockpitBefore.photo && (await pilot()).time > cockpitBefore.time,
+);
 await moveMouse(14, 5);
 const cockpitAfter = await pilot();
 check(
@@ -279,6 +326,19 @@ check(
 		back.elev === underComputer.elev,
 	`${back.yaw.toFixed(3)}, ${back.elev.toFixed(3)}`,
 );
+await zeroRates();
+const ordinaryBefore = await pilot();
+await moveMouse(10, -5);
+const ordinaryAfter = await pilot();
+check(
+	"outside flight does not manipulate the camera until Photo mode is enabled",
+	!ordinaryAfter.photo &&
+		ordinaryAfter.yaw === ordinaryBefore.yaw &&
+		ordinaryAfter.elev === ordinaryBefore.elev &&
+		Math.abs(ordinaryAfter.rates.yaw) > 1e-4,
+);
+await page.keyboard.press("F2");
+await settle();
 
 // A lost lock moves nothing; the next click takes it back and orbits again.
 await page.evaluate(() => document.exitPointerLock());
@@ -425,6 +485,7 @@ const openViewer = async (fragment, label, shot) => {
 		fragment: window.__seelite.postcardViewState.rebuiltFragment,
 		yaw: window.__seelite.chaseYaw,
 		elev: window.__seelite.chaseElevation,
+		zoom: window.__seelite.chaseOrbit.zoomScale ?? 1,
 		view: window.__seelite.view,
 	}));
 	await keepCard(viewer, VIEWER_CARD, shot);
@@ -504,6 +565,10 @@ const POSES = [
 ];
 const sheet = [];
 let first = null;
+// Keep an actual wheel-composed distance in every exterior preview/export/link.
+await clickGlass();
+await page.mouse.wheel(0, -120);
+await settle();
 for (const pose of POSES) {
 	if (pose.from !== "mouse")
 		await page.evaluate(
@@ -520,7 +585,8 @@ for (const pose of POSES) {
 	check(
 		`${pose.label}: the screen opens on the exterior, and its link spells the pose`,
 		state.mode === "exterior" &&
-			asked.postcard === "2" &&
+			asked.postcard === "3" &&
+			Math.abs(Number(asked.zoom) - before.zoom) <= 5e-7 &&
 			Math.abs(Number(asked.yaw) - before.yaw) <= 5e-7 &&
 			Math.abs(Number(asked.elev) - before.elev) <= 5e-7,
 		`mode ${state.mode}; yaw=${asked.yaw} elev=${asked.elev} against ${before.yaw.toFixed(6)}, ${before.elev.toFixed(6)}`,
@@ -528,6 +594,7 @@ for (const pose of POSES) {
 	check(
 		`${pose.label}: drawing the card puts the pilot's pose and drawing size back`,
 		after.yaw === before.yaw &&
+			after.zoom === before.zoom &&
 			after.elev === before.elev &&
 			after.view === "chase" &&
 			after.drawing.join("x") === before.drawing.join("x"),
@@ -559,7 +626,8 @@ for (const pose of POSES) {
 		rebuilt.fragment === state.fragment &&
 			rebuilt.view === "chase" &&
 			rebuilt.yaw === Number(asked.yaw) &&
-			rebuilt.elev === Number(asked.elev),
+			rebuilt.elev === Number(asked.elev) &&
+			rebuilt.zoom === Number(asked.zoom),
 		`${rebuilt.view} ${rebuilt.yaw}, ${rebuilt.elev}${differing(state.fragment, rebuilt.fragment)}`,
 	);
 	check(
@@ -599,7 +667,8 @@ check(
 {
 	const modern = first.state.fragment;
 	const legacy = modern
-		.replace(/^postcard=2&/, "postcard=1&")
+		.replace(/^postcard=3&/, "postcard=1&")
+		.replace(/&zoom=[^&]+$/, "")
 		.replace(/&elev=[^&]+$/, "");
 	const seen = await openViewer(
 		legacy,
@@ -618,7 +687,7 @@ check(
 	const refusedPage = await context.newPage();
 	watch(refusedPage, "refused");
 	await refusedPage.goto(
-		postcardUrl(origin, modern.replace(/&elev=[^&]+$/, "")),
+		postcardUrl(origin, modern.replace(/&elev=[^&]+/, "")),
 		{ waitUntil: "load" },
 	);
 	await refusedPage.waitForSelector("body[data-postcard-refused]", {
@@ -630,7 +699,7 @@ check(
 	}));
 	await refusedPage.close();
 	check(
-		"a schema-2 exterior with no elevation is refused, and boots no game",
+		"a schema-3 exterior with no elevation is refused, and boots no game",
 		refusal.reason === "malformed" && !refusal.game,
 		JSON.stringify(refusal),
 	);
@@ -708,10 +777,18 @@ ${rows}
 // `step` returns above the flight tail, and the orbit was spent only there:
 // docked, arriving or launching, chase ignored the mouse.
 // ---------------------------------------------------------------------------
-await page.evaluate(() =>
-	window.__parkInBerth("station-trade", "overhead-near", {}),
-);
+// The fixture actually flies the docking computer; let it reach the berth
+// before holding the resulting docked composition.
+await page.evaluate(async () => {
+	const g = window.__seelite;
+	if (g.photoMode) g.command("view.photo");
+	await window.__parkInBerth("station-trade", "overhead-near", {});
+});
 await setView(page, "chase");
+await page.evaluate(() => {
+	const g = window.__seelite;
+	if (!g.photoMode) g.command("view.photo");
+});
 await clickGlass();
 // Astern, so the pull below cannot be eaten by a pole an earlier row left.
 await page.keyboard.press("2");

@@ -154,10 +154,8 @@ describe("what is not a postcard fragment", () => {
 
 describe("version rejection", () => {
 	test("a schema this build does not read", () => {
-		expect(POSTCARD_READ_SCHEMAS).toEqual([1, POSTCARD_SCHEMA]);
-		expect(refused(withPair("postcard", String(POSTCARD_SCHEMA + 1)))).toBe(
-			"unsupported-schema",
-		);
+		expect(POSTCARD_READ_SCHEMAS).toEqual([1, POSTCARD_SCHEMA, 3]);
+		expect(refused(withPair("postcard", "4"))).toBe("unsupported-schema");
 		expect(refused(withPair("postcard", "0"))).toBe("unsupported-schema");
 	});
 
@@ -332,7 +330,7 @@ describe("the allowlist", () => {
 			.map((pair) => pair.split("=")[0]);
 		expect(names).toEqual(
 			POSTCARD_KEYS.filter(
-				(key) => key !== "yaw" && key !== "elev",
+				(key) => key !== "yaw" && key !== "elev" && key !== "zoom",
 			) as unknown as string[],
 		);
 	});

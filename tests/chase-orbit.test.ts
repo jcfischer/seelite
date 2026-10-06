@@ -263,7 +263,8 @@ describe("the gesture (C1)", () => {
 
 describe("who the pointer belongs to (C2)", () => {
 	test("the camera in chase, the ship in the cockpit — never both", () => {
-		expect(pointerOwner("chase")).toBe("orbit");
+		expect(pointerOwner("chase", true)).toBe("orbit");
+		expect(pointerOwner("chase", false)).toBe("steer");
 		expect(pointerOwner("cockpit")).toBe("steer");
 	});
 
@@ -290,7 +291,9 @@ describe("the Controls tab says what the pointer does (C2)", () => {
 
 	test("every chase movement row's half turns the orbit the way its name says", () => {
 		const rows = DEFAULT_BINDINGS.flatMap((b) =>
-			b.trigger.kind === "mouse-move" && b.scope.views.includes("chase")
+			b.trigger.kind === "mouse-move" &&
+			b.trigger.photoMode &&
+			b.scope.views.includes("chase")
 				? [{ command: b.command, axis: b.trigger.axis, half: b.trigger.half }]
 				: [],
 		);

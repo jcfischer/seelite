@@ -1,0 +1,209 @@
+import { expect, test } from "bun:test";
+import { readFileSync } from "node:fs";
+import ts from "typescript";
+import * as orbit from "../src/chase-orbit";
+import { DEFAULT_BINDINGS, collisions, triggerKey } from "../src/commands"; // glossary-ignore: Command
+import {
+	decodePostcard,
+	encodePostcard,
+	postcardPose,
+	postcardRecipe,
+	POSTCARD_ZOOM_MIN,
+	POSTCARD_ZOOM_MAX,
+} from "../src/postcard";
+
+test("wheel zoom scales the whole rig, preserves its angles, and stops at both limits", () => {
+	const zoom = orbit.zoomOrbit;
+	expect(typeof zoom).toBe("function");
+	const start = { yawRad: 0.7, elevationRad: -0.4, zoomScale: 1 };
+	const closer = zoom(start, -120);
+	if (closer.zoomScale === undefined)
+		throw new Error("wheel did not set a distance");
+	expect(closer.zoomScale).toBeLessThan(1);
+	expect(closer.yawRad).toBe(start.yawRad);
+	expect(closer.elevationRad).toBe(start.elevationRad);
+	const a = orbit.orbitOffsetKm(start);
+	const b = orbit.orbitOffsetKm(closer);
+	for (const k of ["x", "y", "z"] as const)
+		expect(b[k]).toBeCloseTo(a[k] * closer.zoomScale, 12);
+	let near: orbit.ChaseOrbit = start,
+		far: orbit.ChaseOrbit = start;
+	for (let i = 0; i < 100; i++) {
+		near = zoom(near, -1000);
+		far = zoom(far, 1000);
+	}
+	expect(near.zoomScale).toBe(orbit.ORBIT_ZOOM_MIN);
+	expect(far.zoomScale).toBe(orbit.ORBIT_ZOOM_MAX);
+	expect(zoom(far, -120).zoomScale).toBeLessThan(orbit.ORBIT_ZOOM_MAX);
+	expect(zoom(start, Number.NaN)).toEqual(start);
+	expect(orbit.orbitByPointer(closer, 10, 20).zoomScale).toBe(closer.zoomScale);
+});
+
+test("outside flight steers, Photo orbits, and the same physical gesture has disjoint mode scopes", () => {
+	expect(orbit.pointerOwner("chase", false)).toBe("steer");
+	expect(orbit.pointerOwner("chase", true)).toBe("orbit");
+	expect(orbit.pointerOwner("cockpit", false)).toBe("steer");
+	const normal = DEFAULT_BINDINGS.find(
+		(b) => b.command === "fly.yawStarboard" && b.trigger.kind === "mouse-move",
+	);
+	const photo = DEFAULT_BINDINGS.find(
+		(b) => b.command === "view.orbitPort" && b.trigger.kind === "mouse-move",
+	);
+	if (!normal || !photo) throw new Error("missing pointer rows");
+	expect(normal.scope.views).toContain("chase");
+	expect(normal.scope.photoMode).toBe(false);
+	expect(photo.scope.photoMode).toBe(true);
+	expect(triggerKey(normal.trigger)).toBe(triggerKey(photo.trigger));
+	expect(collisions([normal, photo])).toEqual([]);
+	expect(
+		collisions([
+			{ ...normal, scope: { ...normal.scope, photoMode: undefined } },
+			photo,
+		]),
+	).toHaveLength(1);
+});
+
+const scene = {
+	seed: 42,
+	galaxy: 0,
+	system: 12,
+	timeS: 12,
+	pos: [1, 2, 3],
+	orientation: [0, 0, 0, 1],
+	mode: "exterior" as const,
+	yawRad: 0.7,
+	elevationRad: -0.4,
+	zoomScale: 0.6,
+};
+test("a zoomed postcard carries its distance through the link and capture pose", () => {
+	const recipe = postcardRecipe(scene);
+	const text = encodePostcard(recipe);
+	expect(text).toContain("&zoom=0.6");
+	const back = decodePostcard(text);
+	expect(back).toEqual({ ok: true, recipe });
+	if (!back.ok) return;
+	expect(postcardPose(back.recipe).zoomScale).toBe(0.6);
+	expect(
+		encodePostcard(postcardRecipe({ ...scene, ...postcardPose(back.recipe) })),
+	).toBe(text);
+	for (const bad of ["0", "9", "NaN"])
+		expect(decodePostcard(text.replace("zoom=0.6", `zoom=${bad}`)).ok).toBe(
+			false,
+		);
+	const normal = encodePostcard(
+		postcardRecipe({ ...scene, zoomScale: undefined }),
+	);
+	expect(normal).not.toContain("zoom=");
+	expect(decodePostcard(normal).ok).toBe(true);
+});
+
+// Run Game's real methods without constructing WebGL, following display-contact.
+const source = ts.createSourceFile(
+	"main.ts",
+	readFileSync("src/main.ts", "utf8"),
+	ts.ScriptTarget.Latest,
+	true,
+);
+const game = source.statements.find(
+	(n): n is ts.ClassDeclaration =>
+		ts.isClassDeclaration(n) && n.name?.text === "Game",
+);
+function methods(names: string[]) {
+	const members = names.map((name) => {
+		const member = game?.members.find(
+			(n) =>
+				(ts.isMethodDeclaration(n) || ts.isGetAccessorDeclaration(n)) &&
+				n.name.getText(source) === name,
+		);
+		if (!member) throw new Error(`Missing Game.${name}`);
+		return member.getText(source);
+	});
+	const js = ts.transpileModule(`class Subject { ${members.join("\n")} }`, {
+		compilerOptions: { target: ts.ScriptTarget.ES2022 },
+	}).outputText;
+	return new Function(
+		"orbitByPointer",
+		"contextFliesShip",
+		`${js}; return Subject.prototype;`,
+	)(orbit.orbitByPointer, () => true);
+}
+test("Photo entry and exit clear held fire and pointer state and preserve the prior view", () => {
+	const proto = methods(["togglePhotoMode", "triggerHeld"]);
+	const g = Object.assign(Object.create(proto), {
+		photoMode: false,
+		view: "cockpit",
+		mouseFiring: true,
+		keys: new Set([" "]),
+		mouseDx: 50,
+		mouseDy: 20,
+		releaseHeldKeys() {
+			this.keys.clear();
+		},
+		setHeadLook() {},
+		updatePhotoNotice() {},
+		takePointer() {
+			this.mouseDx = this.mouseDy = 0;
+		},
+	});
+	g.togglePhotoMode();
+	expect(g.photoMode).toBe(true);
+	expect(g.view).toBe("chase");
+	expect(g.mouseFiring).toBe(false);
+	expect(g.keys.size).toBe(0);
+	expect([g.mouseDx, g.mouseDy]).toEqual([0, 0]);
+	expect(g.triggerHeld()).toBe(false);
+	g.togglePhotoMode();
+	expect(g.photoMode).toBe(false);
+	expect(g.view).toBe("cockpit");
+});
+test("the direct simulation step cannot advance a Photo scene", () => {
+	const proto = methods(["step"]);
+	const g = Object.assign(Object.create(proto), { photoMode: true });
+	expect(() => g.step(0.1)).not.toThrow();
+	expect(Object.keys(g)).toEqual(["photoMode"]);
+});
+
+test("Photo holds independently of a menu hold and leaves that hold untouched", () => {
+	const proto = methods(["togglePhotoMode", "simulationHeld"]);
+	for (const clockHeld of [false, true]) {
+		const g = Object.assign(Object.create(proto), {
+			clockHeld,
+			photoMode: false,
+			view: "chase",
+			mouseFiring: false,
+			releaseHeldKeys() {},
+			takePointer() {},
+			setHeadLook() {},
+			updatePhotoNotice() {},
+		});
+		g.togglePhotoMode();
+		expect(g.simulationHeld).toBe(true);
+		expect(g.clockHeld).toBe(clockHeld);
+		g.togglePhotoMode();
+		expect(g.simulationHeld).toBe(clockHeld);
+	}
+});
+
+test("zoom limits agree with the recipe leaf and every accepted zoom keeps its bytes", () => {
+	expect(POSTCARD_ZOOM_MIN).toBe(orbit.ORBIT_ZOOM_MIN);
+	expect(POSTCARD_ZOOM_MAX).toBe(orbit.ORBIT_ZOOM_MAX);
+	for (const zoomScale of [POSTCARD_ZOOM_MIN, 0.6, 1, POSTCARD_ZOOM_MAX]) {
+		const text = encodePostcard(postcardRecipe({ ...scene, zoomScale }));
+		const back = decodePostcard(text);
+		expect(back.ok).toBe(true);
+		if (back.ok)
+			expect(
+				encodePostcard(
+					postcardRecipe({ ...scene, ...postcardPose(back.recipe) }),
+				),
+			).toBe(text);
+	}
+	const text = encodePostcard(postcardRecipe(scene));
+	expect(decodePostcard(text.replace(/&zoom=[^&]+$/, "")).ok).toBe(false);
+	expect(decodePostcard(text.replace("postcard=3", "postcard=2")).ok).toBe(
+		false,
+	);
+	expect(() =>
+		encodePostcard({ ...postcardRecipe(scene), schema: 2 }),
+	).toThrow();
+});

@@ -101,6 +101,7 @@ const RATIFIED_LAYOUT: readonly string[] = [
 	"key:enter::press → dock.launch @ flight/instrument/console/modal cockpit/chase -",
 	"key:enter::press → panel.activate @ flight/instrument/console/modal cockpit/chase requests",
 	"key:f1::press → view.reference @ flight/instrument/console/modal cockpit/chase -",
+	"key:f2::press → view.photo @ flight/instrument/console/modal cockpit/chase -",
 	"key:f::press → fight.faceTarget @ flight/instrument/console/modal cockpit/chase -",
 	"key:g::press → fight.targetPrevious @ flight/instrument/console/modal cockpit/chase -",
 	"key:h::press → perf.atmosphere @ flight/instrument/console/modal cockpit/chase -",
@@ -193,7 +194,7 @@ describe("the catalogue #369 ratified", () => {
 			const axis =
 				b.trigger.kind === "pad-stick"
 					? `${b.trigger.stick}-stick-${b.trigger.axis}`
-					: `mouse-${b.trigger.axis} in ${b.scope.views.join("/")}`;
+					: `mouse-${b.trigger.axis} in ${b.scope.views.join("/")} ${b.scope.photoMode ? "Photo" : "flight"}`;
 			// **Accumulated, not overwritten.** `set` would hide a second
 			// command claiming one half of an axis, which is the thing this row
 			// exists to see.
@@ -213,10 +214,10 @@ describe("the catalogue #369 ratified", () => {
 		expect(pairs).toEqual([
 			"left-stick-x: fly.rollPort | fly.rollStarboard",
 			"left-stick-y: fly.strafeDorsal | fly.strafeVentral",
-			"mouse-x in chase: view.orbitStarboard | view.orbitPort",
-			"mouse-x in cockpit: fly.yawPort | fly.yawStarboard",
-			"mouse-y in chase: view.orbitUp | view.orbitDown",
-			"mouse-y in cockpit: fly.pitchDown | fly.pitchUp",
+			"mouse-x in chase Photo: view.orbitStarboard | view.orbitPort",
+			"mouse-x in cockpit/chase flight: fly.yawPort | fly.yawStarboard",
+			"mouse-y in chase Photo: view.orbitUp | view.orbitDown",
+			"mouse-y in cockpit/chase flight: fly.pitchDown | fly.pitchUp",
 			"right-stick-x: fly.yawPort | fly.yawStarboard",
 			"right-stick-y: fly.pitchDown | fly.pitchUp",
 		]);

@@ -28,6 +28,12 @@ export type ChangelogEntry = {
 };
 
 export const CHANGELOG: readonly ChangelogEntry[] = [
+	// Node #691: proposed copy; principal approval and the main date are pending.
+	{
+		date: "2026-10-06",
+		text: "Photo mode pauses the world so you can orbit around your ship, zoom with the scroll wheel, and save the view as a postcard image or link.",
+		node: 691,
+	},
 	// Node #491: proposed copy; principal approval and the main date are pending.
 	{
 		date: "2026-10-04",

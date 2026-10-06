@@ -834,10 +834,17 @@ invariant between them is the reason.
 **Chase orbit**:
 The outside view's pose about the hull: a yaw about the ship's up axis and an
 elevation above its horizontal plane, clamped at ±π/2, held across a view toggle
-and recentred astern by `view.orbitCentre`. In chase the locked pointer drives it
-and never the ship; `1` and `3` still swing it held. `src/chase-orbit.ts` owns the
+and recentred astern by `view.orbitCentre`. Photo mode freezes the simulation
+while the locked pointer orbits and the wheel changes distance, from 0.25 to 8
+times the normal rig; neither fires weapons. It is enabled by `view.photo`
+(default F2) or the Photo mode button. Outside Photo mode, the mouse does not
+manipulate the camera and keeps normal ship steering in both views; `1` and `3`
+still swing it held. Fixed pointer gestures carry a Photo-mode scope in the
+Controls registry while keeping their physical trigger identity.
+`src/chase-orbit.ts` owns the
 rig, the gesture and the pole behaviour (node #691); `tests/chase-orbit.test.ts`
-holds them.
+holds them. The principal's ratified Photo-mode revision of #691 is in
+`docs/specs/photo-mode.md` (2026-10-06).
 
 **Postcard**:
 A card the pilot makes of the current view: the frame drawn at one canonical size
@@ -855,7 +862,8 @@ direction's ordinary English for a picture a pilot keeps
 What a **Postcard** link carries in its URL **fragment**: schema and generator
 versions, seed, galaxy, system, game time, viewpoint, orientation and composition —
 for an *exterior* the **chase orbit**'s yaw and elevation — and nothing a
-Commander owns. Schema 2 carries the elevation (node #691); a schema-1 link,
+Commander owns. Schema 3 carries zoom distance when present; cards without zoom
+retain schema 2. Schema 2 carries the elevation (node #691); a schema-1 link,
 yaw alone, still opens at its own level framing. Opening one boots the **postcard viewer**, a
 read-only page that rebuilds the view from the seeded baseline, runs no frame loop
 and attaches no store. It is not a save and not a replay: the sender's stock

@@ -664,10 +664,12 @@ import {
 	type ChaseOrbit,
 	ORBIT_ASTERN,
 	clampElevation,
+	clampZoom,
 	orbitByPointer,
 	orbitOffsetKm,
 	orbitRotation,
 	pointerOwner,
+	zoomOrbit,
 } from "./chase-orbit";
 import { ArrivalRift } from "./arrival-rift";
 import {
@@ -2529,6 +2531,13 @@ class Game {
 	 * zero.
 	 */
 	clockHeld = false;
+	/** Photo holds the world independently of menus, so closing either cannot unpause the other. */
+	photoMode = false;
+	private photoPreviousView: "cockpit" | "chase" = "cockpit";
+	private photoNotice: HTMLDivElement | null = null;
+	get simulationHeld() {
+		return this.clockHeld || this.photoMode;
+	}
 	/**
 	 * A page opened on a postcard recipe (#406): a read-only viewer. It builds
 	 * the recipe's place, never runs the frame loop, takes no input and attaches
@@ -4735,7 +4744,7 @@ class Game {
 			// A press made where the mouse is suspended is not a pull of the trigger,
 			// and it does not become one when the head comes back with the button
 			// still down (#378, sage round 1): the next press is what fires.
-			if (e.button === 0)
+			if (e.button === 0 && !this.photoMode)
 				this.mouseFiring = mouseFireHeld(
 					true,
 					this.padContext(),
@@ -4824,12 +4833,25 @@ class Game {
 			this.mouseDx += e.movementX;
 			this.mouseDy += e.movementY;
 		});
+		this.renderer.domElement.addEventListener(
+			"wheel",
+			(e) => {
+				if (!this.photoMode || !contextFliesShip(this.readPadContext())) return;
+				e.preventDefault();
+				const pixels =
+					e.deltaY *
+					(e.deltaMode === 1 ? 16 : e.deltaMode === 2 ? window.innerHeight : 1);
+				this.chaseOrbit = zoomOrbit(this.chaseOrbit, pixels);
+			},
+			{ passive: false },
+		);
 
 		// #207's three relief programs per class, compiled before the first frame
 		// and **after the composer**, which is what makes them the variants the
 		// game will actually use (sage, PR #254).
 		this.prewarmReliefPrograms();
 
+		this.updatePhotoNotice();
 		this.animate();
 	}
 
@@ -9447,6 +9469,17 @@ class Game {
 	 * long enough to forget what the first one felt like.
 	 */
 	private command(id: CommandId) {
+		if (
+			this.photoMode &&
+			![
+				"view.photo",
+				"view.orbitCentre",
+				"view.toggle",
+				"system.postcard",
+				"system.settings",
+			].includes(id)
+		)
+			return;
 		// #530 D2: while the opening runs, one key answers — the one that skips
 		// a traversal skips the opening too — and every other is ignored, so
 		// nothing a pilot presses can make a watched run differ from a skipped
@@ -9470,6 +9503,9 @@ class Game {
 		if (this.jumpNotice && id !== "fly.jump" && !charging(this.jumpCharge))
 			this.jumpNotice = "";
 		switch (id) {
+			case "view.photo":
+				this.togglePhotoMode();
+				return;
 			// The view guards these three carried are the registry's now: all
 			// three rows are `views: COCKPIT`, so `resolveKey` never hands the
 			// chase view one. `2` was one case with an `else` for the same
@@ -9620,6 +9656,10 @@ class Game {
 				this.assist = !this.assist;
 				return;
 			case "view.toggle":
+				if (this.photoMode) {
+					this.togglePhotoMode();
+					return;
+				}
 				this.view = this.view === "cockpit" ? "chase" : "cockpit";
 				if (this.view === "chase") this.setHeadLook("forward");
 				return;
@@ -12310,6 +12350,7 @@ class Game {
 	 */
 	private triggerHeld(): boolean {
 		return (
+			!this.photoMode &&
 			!this.combatRig &&
 			!this.openingActive &&
 			flightLive(this.dock.phase) &&
@@ -13140,7 +13181,7 @@ class Game {
 					C_KMS,
 					this.cruiseParams.vMaxKms,
 				),
-				held: this.clockHeld,
+				held: this.simulationHeld,
 				// The opening is silent (#544), and on #534's `duck` arm the bed is
 				// gone from the cut until the pilot's hands come back.
 				hushed:
@@ -13186,7 +13227,7 @@ class Game {
 			{
 				scene,
 				ready: this.music.ready,
-				held: this.clockHeld || this.openingActive,
+				held: this.simulationHeld || this.openingActive,
 				cruise: this.regime === "cruise",
 				encounter: phase === "over" ? "none" : phase,
 				sinceStruckS: c.sinceStruckS,
@@ -13945,6 +13986,7 @@ class Game {
 	 * exactly what the game runs rather than its own copy of the order.
 	 */
 	step(dt: number) {
+		if (this.photoMode) return;
 		// What the drive and thrusters do this step, set where they fly (#544).
 		// Zero on every path that flies no vent: docked, and a placed attitude.
 		// A cruise turn flies the attitude vents (`turnInCruise`, #647).
@@ -14010,12 +14052,7 @@ class Game {
 			// branch's reversal is about, and the comment there claimed the
 			// delta was consumed. Sage found it.
 			//
-			// **The chase orbit is spent first** (node #691): the camera is not
-			// flight, so docked, arriving or launching it still answers the
-			// pointer — under `orbitChase`'s own guards, so a console or the
-			// opening still takes the delta. Sage round 2 found the orbit dead
-			// here, because this branch returns above the flight tail's call.
-			if (pointerOwner(this.view) === "orbit") this.orbitChase();
+			// Photo composition is stepped by animate while simulation is held.
 			this.dropPointer();
 			// Same reason as the delta above: `stepScan` runs on the flight tail,
 			// so this branch is a way off it. A charge banked before docking would
@@ -14092,14 +14129,8 @@ class Game {
 		// the whole sequence — the same hold, for a different reason.
 		const handsHeld =
 			witchspaceControlHeld(this.witchspace) || this.openingActive;
-		// **In chase the pointer is the camera's** (node #691), taken here —
-		// before `hasControlInput` reads the raw delta for the computer's and
-		// the detour's cancels, and before the steering below — so an orbit
-		// neither turns the ship nor disengages anything. Where the pointer is
-		// not the glass's, or the opening is flying, the delta is discarded
-		// rather than banked, so a panel closed does not deliver a swing built
-		// up behind it. `takePointer` below then finds nothing to steer by.
-		if (pointerOwner(this.view) === "orbit") this.orbitChase();
+		// Normal flight keeps mouse steering in either view; Photo owns the
+		// pointer in animate and holds this simulation step.
 		const yaw = handsHeld
 			? 0
 			: this.axis("fly.yawStarboard", "fly.yawPort") + padYaw;
@@ -15378,11 +15409,23 @@ class Game {
 		// After `dt` and before the step: the chart's camera is not flight, and
 		// it must keep turning while §12 has flight suspended.
 		this.stepChartOrbit(dt);
+		// Compose even while the world is held; panels still own their input.
+		if (pointerOwner(this.view, this.photoMode) === "orbit") {
+			this.orbitChase();
+			if (contextFliesShip(this.padContext())) {
+				const orbit = this.chaseOrbitInput();
+				if (orbit !== 0)
+					this.chaseOrbit = {
+						...this.chaseOrbit,
+						yawRad: wrapAngle(this.chaseYaw + orbit * CHASE_ORBIT_RATE * dt),
+					};
+			}
+		}
 		const updateStartedAt = this.frameAttribution ? performance.now() : 0;
 		// **The clock is held, not the loop** (§11.2): `lastTime` above still
 		// moves, so the frame after Continue carries one frame of time rather than
 		// everything since the page opened.
-		if (dt > 0 && !this.clockHeld) {
+		if (dt > 0 && !this.simulationHeld) {
 			// #535: the opening owns the clock while it runs, and steps the sim
 			// at its own fixed step however long this frame was.
 			const opening = this.opening;
@@ -15397,11 +15440,11 @@ class Game {
 		// Every frame, paused ones too: a paused burn does not keep its drive
 		// (the principal's ruling on #544), which needs the sound to hear the
 		// pause rather than keep the last level it was given.
-		this.stepFlightSound(this.clockHeld ? 0 : dt);
-		this.stepMusicDirector(this.clockHeld ? 0 : dt);
+		this.stepFlightSound(this.simulationHeld ? 0 : dt);
+		this.stepMusicDirector(this.simulationHeld ? 0 : dt);
 		// The combat loops too: a held clock stops the step that would let a
 		// beam or a sizzle go, so the frame loop lets go of them here (#545).
-		this.audio.weapons(this.clockHeld ? SILENT_WEAPONS : this.weaponMix);
+		this.audio.weapons(this.simulationHeld ? SILENT_WEAPONS : this.weaponMix);
 		if (this.frameAttribution)
 			this.frameAttribution.recordCpu(
 				"simulation/step",
@@ -15487,8 +15530,56 @@ class Game {
 	 */
 	private orbitChase() {
 		const { dx, dy } = this.takePointer();
-		if (this.openingActive || !contextFliesShip(this.padContext())) return;
+		if (
+			!this.photoMode ||
+			this.openingActive ||
+			!contextFliesShip(this.padContext())
+		)
+			return;
 		this.chaseOrbit = orbitByPointer(this.chaseOrbit, dx, dy);
+	}
+
+	private togglePhotoMode() {
+		this.releaseHeldKeys();
+		this.mouseFiring = false;
+		this.takePointer();
+		if (this.photoMode) {
+			this.photoMode = false;
+			this.view = this.photoPreviousView;
+		} else {
+			this.photoPreviousView = this.view;
+			this.photoMode = true;
+			this.view = "chase";
+			this.setHeadLook("forward");
+		}
+		this.updatePhotoNotice();
+	}
+
+	private updatePhotoNotice() {
+		if (!this.photoNotice) {
+			this.photoNotice = document.createElement("div");
+			this.photoNotice.dataset.photoControls = "";
+			this.photoNotice.style.cssText =
+				"position:fixed;right:16px;bottom:16px;z-index:15;padding:8px 12px;color:#cce4ee;background:#07121ddd;border:1px solid #537384;border-radius:4px;font:13px system-ui;display:flex;gap:12px;align-items:center";
+			document.body.append(this.photoNotice);
+		}
+		this.photoNotice.replaceChildren();
+		const button = (text: string, action: () => void) => {
+			const b = document.createElement("button");
+			b.type = "button";
+			b.textContent = text;
+			b.addEventListener("click", action);
+			this.photoNotice?.append(b);
+		};
+		if (this.photoMode) {
+			const hint = document.createElement("span");
+			hint.textContent =
+				"PHOTO · paused · click view, then move to orbit · scroll to zoom";
+			this.photoNotice.append(hint);
+			button("Centre", () => this.command("view.orbitCentre"));
+			button("Save postcard", () => this.command("system.postcard"));
+			button("Exit Photo mode", () => this.command("view.photo"));
+		} else button("Photo mode", () => this.command("view.photo"));
 	}
 
 	/**
@@ -15505,6 +15596,9 @@ class Game {
 			this.chaseOrbit = {
 				yawRad: pose.yawRad ?? 0,
 				elevationRad: clampElevation(pose.elevationRad ?? 0),
+				...(pose.zoomScale !== undefined
+					? { zoomScale: clampZoom(pose.zoomScale) }
+					: {}),
 			};
 			this.cabinHidden = false;
 		} else {
@@ -15540,6 +15634,9 @@ class Game {
 			head: this.view === "cockpit" ? this.headLook : "forward",
 			yawRad: this.view === "chase" ? this.chaseYaw : 0,
 			elevationRad: this.view === "chase" ? this.chaseElevation : 0,
+			...(this.view === "chase" && this.chaseOrbit.zoomScale !== undefined
+				? { zoomScale: this.chaseOrbit.zoomScale }
+				: {}),
 		};
 	}
 
