@@ -240,7 +240,7 @@ import {
 // that module's whole subject is the relation between this plane and the
 // cluster's; the roll below is its consumer, and the one in `hud.ts` reads the
 // vector handed to it.
-import { SYSTEM_PLANE_NORMAL, coreBearing, skyFrame } from "./galaxy-frame";
+import { SYSTEM_PLANE_NORMAL, systemCoreBearing } from "./galaxy-frame";
 import { type Course, courseProgress, setCourse } from "./galaxy-route";
 import { type HullReach, hullReachFrom } from "./hull-reach";
 import { bootHull, deliverHull } from "./flown-hull";
@@ -1373,6 +1373,28 @@ const PROGRADE_MIN_KMS = 0.02;
 
 /** How far inside the viewport the selected target's sky arrow sits. */
 const EDGE_MARGIN = 0.07;
+
+/** The Core mark (`hud-and-scanner.md` §5.5, node #478): §4's cool tone for a
+ *  stable reference, the attitude reference's hue at a brighter alpha because a
+ *  point mark carries less ink than a line across the glass. */
+const CORE_MARK_STROKE = "rgba(120, 190, 235, 0.5)";
+/** The brackets' radius, in CSS pixels — under the unselected body bracket's 7. */
+const CORE_MARK_RADIUS_PX = 6;
+/** What the mark is labelled — the vocabulary's own word for the bearing. */
+const CORE_MARK_LABEL = "CORE";
+/** The declutter pass's key for the label; no body id is spelled like it. */
+const CORE_MARK_LABEL_ID = "#core-bearing";
+
+/** Where the overlay frame puts things, as the Core mark needs it: the frame's
+ *  projection and label box, the labels already claimed, and the glass size. */
+interface CoreMarkLayout {
+	place: (dir: Vec3) => { x: number; y: number; on: boolean } | null;
+	labelBounds: (x: number, y: number, text: string) => MarkerLabelBounds;
+	/** Claimed this frame, in rank order; the Core label is admitted last. */
+	occupied: MarkerLabelBounds[];
+	w: number;
+	h: number;
+}
 
 /**
  * §4's spool-up, seconds — reused here for the voluntary case.
@@ -3168,6 +3190,28 @@ class Game {
 		/** The ring's centre on the overlay, or `null` when the edge arrow is
 		 *  drawn instead — so a probe samples the paint, not this record. */
 		at: { x: number; y: number } | null;
+	} | null = null;
+	/**
+	 * The Core bearing at the live system, in its world frame, or `null` where it
+	 * has none. Set by `buildEnvironment` on every system the ship arrives in, so
+	 * the haze in the bake and the Core mark on the glass read one value (node
+	 * #478). A bearing at infinity, so it moves only on a jump.
+	 */
+	private coreDir: Vec3 | null = null;
+	/** The Core bearing the glass marks, for a probe to aim by. */
+	get coreBearingDir(): Vec3 | null {
+		return this.coreDir;
+	}
+	/**
+	 * The Core mark as painted this frame (`hud-and-scanner.md` §5.5), or `null`
+	 * when it was not drawn — off the glass, behind the camera, or no glass this
+	 * frame. Written by the draw, like `cueRender`, so a probe samples the paint
+	 * at `at` rather than trusting this record.
+	 */
+	coreRender: {
+		at: { x: number; y: number };
+		/** Whether the label won its room from the declutter pass. */
+		labelled: boolean;
 	} | null = null;
 	/**
 	 * The selected target's label as painted this frame, or `null` when none was
@@ -5590,8 +5634,10 @@ class Game {
 	private buildEnvironment() {
 		// Haze: direction toward the galactic core, in world frame.
 		const record = this.world.system.record;
-		const frame = skyFrame(record.seed);
-		const core = coreBearing(frame, record.pos);
+		// Read once per system and kept: the Core mark on the glass draws from
+		// this same value (node #478), so the glow and the mark cannot disagree.
+		const core = systemCoreBearing(record);
+		this.coreDir = core;
 		// Strength: how far from the cluster centre this system is. Systems near
 		// the centre see an almost uniform sky; rim systems see a bright core
 		// direction. Normalised by the galaxy radius so it ranges ~0..1.
@@ -18157,6 +18203,7 @@ class Game {
 		// Written again below only if a raider is selected and drawn this frame.
 		this.cueRender = null;
 		this.selectedRender = null;
+		this.coreRender = null;
 		// Cleared before any early return, so a frame that drew neither does not
 		// leave the last one's readable (sage round 2 on #608).
 		this.boresightRender = null;
@@ -18596,6 +18643,10 @@ class Game {
 		const markOnGlass = selectedAt?.on === true;
 		const targetCondition = markOnGlass ? this.selectedTargetCondition() : null;
 		const divertCue = markOnGlass ? this.selectedDivertCue(camPos) : null;
+		// The selected target's name beside its edge arrow, when it is off the
+		// glass. Reserved for the Core mark alone, after the walk: the context
+		// labels' order against it is unchanged by node #478.
+		let edgeLabel: MarkerLabelBounds | null = null;
 		const selectedLabel = (name: string, km: number) =>
 			`${name}  ${range(km)}${onTarget ? "  ON TARGET" : ""}${
 				divertCue ? `  ${divertCue}` : ""
@@ -18748,12 +18799,79 @@ class Game {
 			ctx.fill();
 			ctx.restore();
 			ctx.fillStyle = "rgba(255, 214, 120, 0.8)";
-			ctx.fillText(
-				`${body.name}  ${((angleOffNose(dir, this.nose()) * 180) / Math.PI).toFixed(0)}° off`,
-				Math.min(w - 120, Math.max(10, p.x - 48)),
-				Math.min(h - 10, Math.max(20, p.y + 22)),
-			);
+			const edgeText = `${body.name}  ${((angleOffNose(dir, this.nose()) * 180) / Math.PI).toFixed(0)}° off`;
+			const edgeX = Math.min(w - 120, Math.max(10, p.x - 48));
+			const edgeY = Math.min(h - 10, Math.max(20, p.y + 22));
+			ctx.fillText(edgeText, edgeX, edgeY);
+			// Reserved against its widest reading, for the condition line's reason:
+			// a box that follows the digits would let CORE in and out as they ran.
+			edgeLabel = labelBounds(edgeX, edgeY, `${body.name}  180° off`);
 		}
+
+		// The Core mark is the glass's lowest rank, so it goes last (§5.5), and
+		// the selected target's edge label outranks it as its on-glass one does.
+		if (edgeLabel) occupiedLabels.push(edgeLabel);
+		this.drawCoreMark(ctx, shipCues ? this.coreDir : null, {
+			place,
+			labelBounds,
+			occupied: occupiedLabels,
+			w,
+			h,
+		});
+	}
+
+	/**
+	 * **The Core mark** (`hud-and-scanner.md` §5.5, node #478): where the
+	 * cluster's centre lies from this system. The sky shows the cluster as points
+	 * and the core cone is under the invented layer's own density everywhere
+	 * (`measure-sky-density.ts core`), so the bearing is given by instrument
+	 * rather than by light. A background fact, so it takes the attitude
+	 * reference's cool tone and the lowest rank: its label is admitted last, only
+	 * where nothing above it has claimed the room. The brackets are not
+	 * decluttered and may cross another mark or name. On the glass only — no edge
+	 * arrow, which would be a second permanent edge cue beside the selected
+	 * target's. `core` is `null` where the frame has no glass for it.
+	 */
+	private drawCoreMark(
+		ctx: CanvasRenderingContext2D,
+		core: Vec3 | null,
+		layout: CoreMarkLayout,
+	) {
+		const { place, labelBounds, occupied, w, h } = layout;
+		const coreAt = core && place(core);
+		if (!coreAt?.on) return;
+		ctx.strokeStyle = CORE_MARK_STROKE;
+		ctx.fillStyle = CORE_MARK_STROKE;
+		ctx.lineWidth = 1;
+		// A dot between two brackets, `( · )`: no other mark on the glass is that
+		// shape, so it reads without its hue (§4).
+		const r = CORE_MARK_RADIUS_PX;
+		ctx.beginPath();
+		ctx.arc(coreAt.x, coreAt.y, r, Math.PI * 0.7, Math.PI * 1.3);
+		ctx.moveTo(
+			coreAt.x + r * Math.cos(-Math.PI * 0.3),
+			coreAt.y + r * Math.sin(-Math.PI * 0.3),
+		);
+		ctx.arc(coreAt.x, coreAt.y, r, -Math.PI * 0.3, Math.PI * 0.3);
+		ctx.stroke();
+		ctx.beginPath();
+		ctx.arc(coreAt.x, coreAt.y, 1.5, 0, Math.PI * 2);
+		ctx.fill();
+		const x = coreAt.x + r + 6;
+		const y = coreAt.y + 4;
+		const bounds = labelBounds(x, y, CORE_MARK_LABEL);
+		const labelled =
+			bounds.right <= w &&
+			bounds.top >= 0 &&
+			bounds.bottom <= h &&
+			this.markerLabels.claim(
+				CORE_MARK_LABEL_ID,
+				bounds,
+				occupied,
+				this.world.gameTime,
+			);
+		if (labelled) ctx.fillText(CORE_MARK_LABEL, x, y);
+		this.coreRender = { at: { x: coreAt.x, y: coreAt.y }, labelled };
 	}
 
 	/** The overlay's backing store, in CSS pixels — not device pixels: the
