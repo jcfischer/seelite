@@ -95,6 +95,8 @@ const start = await read();
 check("the probe starts in flight", start.phase === "flying", start.phase);
 await page.keyboard.down("Backspace");
 const noPodSaid = await glassSays(law.refused["no-pod"]);
+if (process.env.EJECT_EVIDENCE)
+	await page.screenshot({ path: `${process.env.EJECT_EVIDENCE}/refused.png` });
 await page.waitForTimeout(law.holdMs * 1.5);
 await page.keyboard.up("Backspace");
 const noPod = await read();
@@ -131,6 +133,11 @@ const arming = await page
 		() => read(),
 		() => null,
 	);
+// The row's look is the principal's (CLAUDE.md's third tier), so a run can
+// leave a frame of it beside the prompt line for a person to read. Off by
+// default: a screenshot inside the hold would slow the very window it times.
+if (process.env.EJECT_EVIDENCE)
+	await page.screenshot({ path: `${process.env.EJECT_EVIDENCE}/arming.png` });
 const fired = await page
 	.waitForFunction(() => window.__seelite.ejects.length >= 1, null, {
 		timeout: law.holdMs * 6,
@@ -270,6 +277,35 @@ check(
 	dockedHeld.ejects === 1,
 	JSON.stringify(dockedHeld),
 );
+// **What the glass left is under the console, not over it.** No render means
+// no `clearRect` either, so the overlay keeps the last arrival frame — which
+// in this run carried the arrival's refusal, pressed seconds before the dock.
+// That is safe only while the console covers the whole overlay, so the probe
+// asks the page where the overlay is and what is on top of it there.
+const covered = await page.evaluate(() => {
+	const overlay = document.getElementById("overlay")?.getBoundingClientRect();
+	const panel = document
+		.querySelector("[data-live-station-console]")
+		?.getBoundingClientRect();
+	if (!overlay || !panel) return { overlay: !!overlay, panel: !!panel };
+	const spans =
+		panel.left <= overlay.left &&
+		panel.top <= overlay.top &&
+		panel.right >= overlay.right &&
+		panel.bottom >= overlay.bottom;
+	// Below the middle, where the glass's notice rows are, and at the centre.
+	const points = [0.5, 0.6].map((f) =>
+		document
+			.elementFromPoint(overlay.width / 2, overlay.height * f)
+			?.closest("[data-live-station-console]"),
+	);
+	return { spans, onTop: points.every((p) => p != null) };
+});
+check(
+	"and the overlay's last flight frame is under the docked console, which spans it",
+	covered.spans === true && covered.onTop === true,
+	JSON.stringify(covered),
+);
 
 // ---------------------------------------------------------------------------
 // On the rails of a launch: refused on the glass.
@@ -281,6 +317,21 @@ const launching = await page.evaluate(() => {
 	g.setHeadLook("forward");
 	return g.dockPhase;
 });
+// Within the docked refusal's time on the glass, before any press here: the
+// refusal belongs to the phase it was said in, so the rails carry nothing.
+const railsBefore = await page.evaluate(
+	() =>
+		new Promise((done) =>
+			requestAnimationFrame(() =>
+				requestAnimationFrame(() => done(window.__seelite.ejectRender)),
+			),
+		),
+);
+check(
+	"the docked refusal does not follow the ship onto the launch's rails",
+	launching === "launching" && railsBefore === null,
+	JSON.stringify(railsBefore),
+);
 await page.keyboard.down("Backspace");
 const launchSaid = await glassSays(law.refused.launching);
 await page.keyboard.up("Backspace");

@@ -3159,8 +3159,13 @@ class Game {
 	chargedRender: { text: string; alpha: number } | null = null;
 	/** The eject control's progress through the hold it is in (node #703). */
 	ejectHold: EjectHold = EJECT_IDLE;
-	/** The eject's last refusal on the glass, and what is left of its time. */
-	ejectRefused: { text: string; left: number } = { text: "", left: 0 };
+	/** The eject's last refusal on the glass, what is left of its time, and
+	 *  the dock phase it was said in. */
+	ejectRefused: { text: string; left: number; phase: DockPhase | null } = {
+		text: "",
+		left: 0,
+		phase: null,
+	};
 	/** What the eject's row drew this frame — the arming line or a refusal —
 	 *  for a probe to read rather than restate. */
 	ejectRender: { text: string; alpha: number; refused: boolean } | null = null;
@@ -11585,10 +11590,15 @@ class Game {
 	 * idle and says nothing — the same answer `command` gives every other key.
 	 */
 	private stepEject(dt: number) {
-		this.ejectRefused = {
-			text: this.ejectRefused.text,
-			left: Math.max(0, this.ejectRefused.left - dt),
-		};
+		// **A refusal is about the phase it was said in**, so it ends with
+		// that phase rather than outliving it: a docked refusal pressed just
+		// before a launch would otherwise stand on the launch's rails as
+		// `CANNOT EJECT  DOCKED`, the wrong sentence for where the ship is.
+		const said = this.ejectRefused;
+		this.ejectRefused =
+			said.phase === this.dock.phase
+				? { ...said, left: Math.max(0, said.left - dt) }
+				: { text: "", left: 0, phase: null };
 		if (this.openingActive) {
 			this.ejectHold = EJECT_IDLE;
 			return;
@@ -11606,6 +11616,7 @@ class Game {
 			this.ejectRefused = {
 				text: EJECT_REFUSED_TEXT[step.event.refusal],
 				left: EJECT_REFUSED_S,
+				phase: this.dock.phase,
 			};
 			// Docked, the station console fills the canopy and is the glass
 			// a docked cockpit has (`flightGlassShown`), so the refusal is
@@ -12026,7 +12037,7 @@ class Game {
 		// rather than finishing on time banked before it. The event list is a
 		// record and is kept.
 		this.ejectHold = EJECT_IDLE;
-		this.ejectRefused = { text: "", left: 0 };
+		this.ejectRefused = { text: "", left: 0, phase: null };
 		this.ejectRender = null;
 		this.gunAim = null;
 		this.struckFor = 0;
