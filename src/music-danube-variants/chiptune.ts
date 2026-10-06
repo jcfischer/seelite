@@ -10,10 +10,12 @@
  * woodwinds' answers get the chip's echo trick: the same note again half a
  * beat later, an octave down and quieter. The meter stays 3/4.
  *
- * **No pulse voice.** The synth has no square or pulse oscillator, so the
- * `analog` voice stands in with one saw, no detune or drift, its filter wide
- * open — a saw, not a pulse, so it is brighter and buzzier than a SID's
- * square and has no pulse-width sweep.
+ * **On the pulse voice, as a SID voices it.** The lead is a quarter-width
+ * pulse whose width sweeps slowly and whose vibrato arrives only once a
+ * note is held; the arpeggio is a narrow eighth-width pulse, the thin buzz a
+ * chip chord is made of; the bass is a square through a low lowpass, which
+ * is as near a triangle as a pulse gets. Three melodic channels, as on the
+ * chip, plus the echo and the noise kit.
  */
 import { HARMONY, THEME } from "../music-danube";
 import type { NoteEvent, PartSpec, Song } from "../music-score";
@@ -21,57 +23,73 @@ import type { NoteEvent, PartSpec, Song } from "../music-score";
 export const CHIP_BPM = 168;
 const INTRO_BPM = 132;
 
-/** One bare oscillator: no unison spread, no drift, the filter open. */
+/** One chip channel: a pulse, hard-gated. */
 const chip = (o: Partial<PartSpec>): PartSpec => ({
-	voice: "analog",
+	voice: "pulse",
 	level: 0.2,
-	unison: 1,
-	detune: 0,
-	drift: 0,
-	spread: 0,
+	width: 0.5,
 	attackS: 0.002,
 	decayS: 0.2,
 	sustain: 0.8,
 	releaseS: 0.03,
-	cutoffHz: 5000,
-	envAmount: 0,
-	resonance: 0,
 	...o,
 });
 
 const PARTS: Readonly<Record<string, PartSpec>> = {
-	lead: chip({ level: 0.323, vibrato: 0.25, vibratoHz: 6, reverb: 0.12 }),
-	echo: chip({ level: 0.152, cutoffHz: 3000, pan: 0.35, reverb: 0.12 }),
+	// A quarter pulse breathing between thin and hollow over three seconds,
+	// the vibrato in only after a fifth of a second.
+	lead: chip({
+		level: 0.405,
+		width: 0.25,
+		pwmHz: 0.33,
+		pwmDepth: 0.17,
+		decayS: 0.3,
+		sustain: 0.75,
+		releaseS: 0.04,
+		vibrato: 0.25,
+		vibratoHz: 6,
+		vibratoOnsetS: 0.18,
+		vibratoRiseS: 0.15,
+		reverb: 0.12,
+	}),
+	echo: chip({
+		level: 0.203,
+		width: 0.5,
+		cutoffHz: 2500,
+		pan: 0.35,
+		reverb: 0.12,
+	}),
 	arp: chip({
-		level: 0.152,
+		level: 0.203,
+		width: 0.125,
 		decayS: 0.08,
 		sustain: 0.5,
 		releaseS: 0.015,
-		cutoffHz: 4500,
 		pan: -0.25,
 	}),
+	// A square, low-passed: the triangle bass.
 	bass: chip({
-		level: 0.38,
+		level: 0.567,
 		decayS: 0.15,
 		sustain: 0.6,
 		releaseS: 0.03,
-		cutoffHz: 1600,
+		cutoffHz: 700,
 	}),
 	kick: {
 		voice: "tone",
-		level: 0.76,
+		level: 0.836,
 		ratio: 4,
 		decayS: 0.14,
 		releaseS: 0.03,
 	},
 	snare: {
 		voice: "noise",
-		level: 0.266,
+		level: 0.293,
 		decayS: 0.09,
 		releaseS: 0.03,
 		resonance: 0.2,
 	},
-	hat: { voice: "noise", level: 0.095, decayS: 0.025, releaseS: 0.02 },
+	hat: { voice: "noise", level: 0.105, decayS: 0.025, releaseS: 0.02 },
 };
 
 const n = (
