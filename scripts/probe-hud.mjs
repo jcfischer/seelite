@@ -38,9 +38,9 @@
  *    that lets one overlay serve three layers.
  * 5. The Core mark (`hud-and-scanner.md` §5.5, node #478) is painted where the
  *    live system's Core bearing projects: its record agrees with `markerNdc`,
- *    the overlay carries ink in a box around it, and the same box is bare with
- *    the ship turned away. Deleting the strokes and keeping the record turns the
- *    ink row red, which is the defect a record-only check would pass.
+ *    and the overlay carries ink in a box around it that the same pose and frame
+ *    with the mark withheld does not. Deleting the strokes and keeping the record
+ *    turns the ink row red, which is the defect a record-only check would pass.
  */
 import {
 	bootedGame,
@@ -219,11 +219,16 @@ check(
 
 // (5) The Core mark (`hud-and-scanner.md` §5.5, node #478) is painted where the
 // Core bearing lands. The record alone proves nothing was painted (#69, #447),
-// so the overlay's own pixels are read: once with the bearing 15° right of the
-// nose, and once — the control — with the ship turned to face away from it, the
-// *same* box read again. Only the overlay canvas is read, so the sky behind it
-// cannot light the box; what can is another marker, which is why the control is
-// the same pixels rather than a constant.
+// so the overlay's own pixels are read in a box around the mark with the bearing
+// 15° right of the nose. The control is the *same pose and the same box* with the
+// mark withheld — the game's own `coreDir` field nulled for two frames and put
+// back, which is what the draw reads and nothing else does. Turning the ship
+// away would be no control at all: every body marker and label moves with the
+// view, so one near the core bearing would light the hit box and leave the
+// control bare. The row counts the pixels inked *only* with the mark present, per
+// pixel rather than as two totals, so another marker in the box cannot carry it
+// and a frame that lost ink in one place and gained it in another cannot pass.
+// Only the overlay canvas is read, so the sky behind it cannot light the box.
 const CORE_OFF_NOSE_DEG = 15;
 /** Half the side of the box read around the mark: the brackets' radius plus a
  *  stroke's width and antialiasing, and short of the label beside it. */
@@ -233,6 +238,10 @@ const coreMark = await page.evaluate(
 		const g = window.__seelite;
 		const core = g.coreBearingDir;
 		if (!core) return { noCore: true };
+		// The control writes the field the draw reads. A rename would make that
+		// write a new, unread property and leave the mark drawn, so the field's
+		// presence is checked rather than assumed.
+		const fieldPresent = Object.hasOwn(g, "coreDir") && g.coreDir === core;
 		const frames = async () => {
 			await new Promise((r) => requestAnimationFrame(() => r()));
 			await new Promise((r) => requestAnimationFrame(() => r()));
@@ -243,8 +252,9 @@ const coreMark = await page.evaluate(
 		};
 		// `face` looks along a direction with world +y as up, so the camera's right
 		// is `dir × up`. Turning the nose *left* of the core about that right puts
-		// the mark right of centre and level with it — clear of the nose cross and
-		// above the floor strip.
+		// the mark right of centre and level with it — clear of the nose cross, of
+		// the horizon line (which ends at 0.16 of the height from centre) and of
+		// the floor strip.
 		const up = { x: 0, y: 1, z: 0 };
 		const crossUp = (v) => ({ x: -v.z * up.y, y: 0, z: v.x * up.y });
 		const right0 = norm(
@@ -258,14 +268,18 @@ const coreMark = await page.evaluate(
 		});
 		const overlay = document.getElementById("overlay");
 		const ctx = overlay.getContext("2d");
-		const inked = (x, y) => {
-			const left = Math.round(x) - boxPx;
-			const top = Math.round(y) - boxPx;
+		/** The box's alpha channel, one entry per pixel: inked or bare. */
+		const mask = (x, y) => {
 			const side = 2 * boxPx + 1;
-			const data = ctx.getImageData(left, top, side, side).data;
-			let n = 0;
-			for (let i = 3; i < data.length; i += 4) if (data[i] > 0) n++;
-			return n;
+			const data = ctx.getImageData(
+				Math.round(x) - boxPx,
+				Math.round(y) - boxPx,
+				side,
+				side,
+			).data;
+			const out = [];
+			for (let i = 3; i < data.length; i += 4) out.push(data[i] > 0);
+			return out;
 		};
 		g.face(facing);
 		await frames();
@@ -278,18 +292,43 @@ const coreMark = await page.evaluate(
 			y: (1 - (projected.ndcY * 0.5 + 0.5)) * h,
 		};
 		const at = hit?.at ?? expected;
-		const hitInk = inked(at.x, at.y);
+		const hitMask = mask(at.x, at.y);
+		// The control: same pose, mark withheld.
+		let withheld = null;
+		let controlMask = hitMask.map(() => true);
+		if (fieldPresent) {
+			g.coreDir = null;
+			try {
+				g.face(facing);
+				await frames();
+				withheld = { render: g.coreRender };
+				controlMask = mask(at.x, at.y);
+			} finally {
+				g.coreDir = core;
+			}
+		}
+		let hitInk = 0;
+		let controlInk = 0;
+		let markOnly = 0;
+		for (let i = 0; i < hitMask.length; i++) {
+			if (hitMask[i]) hitInk++;
+			if (controlMask[i]) controlInk++;
+			if (hitMask[i] && !controlMask[i]) markOnly++;
+		}
+		// And behind the camera: no mark is recorded at all.
 		g.face({ x: -core.x, y: -core.y, z: -core.z });
 		await frames();
-		const control = g.coreRender;
-		const controlInk = inked(at.x, at.y);
+		const behind = g.coreRender;
 		return {
 			core,
+			fieldPresent,
 			hit,
 			expected,
 			hitInk,
-			control,
 			controlInk,
+			markOnly,
+			withheld,
+			behind,
 			view: g.view,
 		};
 	},
@@ -314,18 +353,33 @@ if (coreMark.noCore) {
 					`label ${coreMark.hit.labelled ? "drawn" : "declined"}, view ${coreMark.view}`
 			: `no mark recorded; projected (${coreMark.expected.x.toFixed(1)}, ${coreMark.expected.y.toFixed(1)}), view ${coreMark.view}`,
 	);
-	// The hit arm needs ink, and a floor so a lone stray pixel cannot carry it:
-	// the two brackets and the dot paint well over this at any antialiasing.
+	// The control is only a control if the mark really was withheld: the field
+	// existed and held the bearing, and the frame drawn without it recorded none.
 	check(
-		"the Core mark puts ink on the glass, and the same box is bare facing away",
-		coreMark.hitInk >= 15 && coreMark.controlInk * 3 < coreMark.hitInk,
-		`${coreMark.hitInk} inked px at the mark, ${coreMark.controlInk} in the same box facing away`,
+		"the control frame withholds the Core mark at the same pose",
+		coreMark.fieldPresent &&
+			coreMark.withheld !== null &&
+			coreMark.withheld.render === null,
+		!coreMark.fieldPresent
+			? "Game has no own coreDir field holding the bearing — the control cannot withhold the mark"
+			: coreMark.withheld?.render
+				? "a Core mark was recorded with coreDir null"
+				: "withheld",
+	);
+	// The pixels the mark alone puts in its box. A floor, so a stray pixel cannot
+	// carry it: the two brackets and the dot paint well over this at any
+	// antialiasing. Deleting the strokes and keeping the record reads 0 here.
+	check(
+		"the Core mark puts ink on the glass that the same frame without it lacks",
+		coreMark.markOnly >= 15,
+		`${coreMark.markOnly} px inked only with the mark ` +
+			`(${coreMark.hitInk} inked with it, ${coreMark.controlInk} without, same box)`,
 	);
 	check(
 		"facing away from the core, no Core mark is recorded",
-		coreMark.control === null,
-		coreMark.control
-			? `recorded at (${coreMark.control.at.x.toFixed(1)}, ${coreMark.control.at.y.toFixed(1)})`
+		coreMark.behind === null,
+		coreMark.behind
+			? `recorded at (${coreMark.behind.at.x.toFixed(1)}, ${coreMark.behind.at.y.toFixed(1)})`
 			: "none",
 	);
 }

@@ -18704,51 +18704,73 @@ class Game {
 			);
 		}
 
-		// **The Core mark** (`hud-and-scanner.md` §5.5, node #478): where the
-		// cluster's centre lies from this system. The sky shows the cluster as
-		// points and the core cone is under the invented layer's own density
-		// everywhere (`measure-sky-density.ts core`), so the bearing is given by
-		// instrument rather than by light. A background fact, so it takes the
-		// attitude reference's cool tone and the lowest rank: drawn last, and its
-		// label is admitted only where nothing above it has claimed the room.
-		// On the glass only — no edge arrow, which would be a second permanent
-		// edge cue beside the selected target's.
-		const core = shipCues ? this.coreDir : null;
+		// The Core mark is the glass's lowest rank, so it goes last (§5.5).
+		this.drawCoreMark(
+			ctx,
+			shipCues ? this.coreDir : null,
+			place,
+			labelBounds,
+			occupiedLabels,
+			w,
+			h,
+		);
+	}
+
+	/**
+	 * **The Core mark** (`hud-and-scanner.md` §5.5, node #478): where the
+	 * cluster's centre lies from this system. The sky shows the cluster as points
+	 * and the core cone is under the invented layer's own density everywhere
+	 * (`measure-sky-density.ts core`), so the bearing is given by instrument
+	 * rather than by light. A background fact, so it takes the attitude
+	 * reference's cool tone and the lowest rank: its label is admitted last, only
+	 * where nothing above it has claimed the room. The brackets are not
+	 * decluttered and may cross another mark or name. On the glass only — no edge
+	 * arrow, which would be a second permanent edge cue beside the selected
+	 * target's. `core` is `null` where the frame has no glass for it.
+	 */
+	private drawCoreMark(
+		ctx: CanvasRenderingContext2D,
+		core: Vec3 | null,
+		place: (dir: Vec3) => { x: number; y: number; on: boolean } | null,
+		labelBounds: (x: number, y: number, text: string) => MarkerLabelBounds,
+		occupiedLabels: MarkerLabelBounds[],
+		w: number,
+		h: number,
+	) {
 		const coreAt = core && place(core);
-		if (coreAt?.on) {
-			ctx.strokeStyle = CORE_MARK_STROKE;
-			ctx.fillStyle = CORE_MARK_STROKE;
-			ctx.lineWidth = 1;
-			// A dot between two brackets, `( · )`: no other mark on the glass is
-			// that shape, so it reads without its hue (§4).
-			const r = CORE_MARK_RADIUS_PX;
-			ctx.beginPath();
-			ctx.arc(coreAt.x, coreAt.y, r, Math.PI * 0.7, Math.PI * 1.3);
-			ctx.moveTo(
-				coreAt.x + r * Math.cos(-Math.PI * 0.3),
-				coreAt.y + r * Math.sin(-Math.PI * 0.3),
+		if (!coreAt?.on) return;
+		ctx.strokeStyle = CORE_MARK_STROKE;
+		ctx.fillStyle = CORE_MARK_STROKE;
+		ctx.lineWidth = 1;
+		// A dot between two brackets, `( · )`: no other mark on the glass is that
+		// shape, so it reads without its hue (§4).
+		const r = CORE_MARK_RADIUS_PX;
+		ctx.beginPath();
+		ctx.arc(coreAt.x, coreAt.y, r, Math.PI * 0.7, Math.PI * 1.3);
+		ctx.moveTo(
+			coreAt.x + r * Math.cos(-Math.PI * 0.3),
+			coreAt.y + r * Math.sin(-Math.PI * 0.3),
+		);
+		ctx.arc(coreAt.x, coreAt.y, r, -Math.PI * 0.3, Math.PI * 0.3);
+		ctx.stroke();
+		ctx.beginPath();
+		ctx.arc(coreAt.x, coreAt.y, 1.5, 0, Math.PI * 2);
+		ctx.fill();
+		const x = coreAt.x + r + 6;
+		const y = coreAt.y + 4;
+		const bounds = labelBounds(x, y, CORE_MARK_LABEL);
+		const labelled =
+			bounds.right <= w &&
+			bounds.top >= 0 &&
+			bounds.bottom <= h &&
+			this.markerLabels.claim(
+				CORE_MARK_LABEL_ID,
+				bounds,
+				occupiedLabels,
+				this.world.gameTime,
 			);
-			ctx.arc(coreAt.x, coreAt.y, r, -Math.PI * 0.3, Math.PI * 0.3);
-			ctx.stroke();
-			ctx.beginPath();
-			ctx.arc(coreAt.x, coreAt.y, 1.5, 0, Math.PI * 2);
-			ctx.fill();
-			const x = coreAt.x + r + 6;
-			const y = coreAt.y + 4;
-			const bounds = labelBounds(x, y, CORE_MARK_LABEL);
-			const labelled =
-				bounds.right <= w &&
-				bounds.top >= 0 &&
-				bounds.bottom <= h &&
-				this.markerLabels.claim(
-					CORE_MARK_LABEL_ID,
-					bounds,
-					occupiedLabels,
-					this.world.gameTime,
-				);
-			if (labelled) ctx.fillText(CORE_MARK_LABEL, x, y);
-			this.coreRender = { at: { x: coreAt.x, y: coreAt.y }, labelled };
-		}
+		if (labelled) ctx.fillText(CORE_MARK_LABEL, x, y);
+		this.coreRender = { at: { x: coreAt.x, y: coreAt.y }, labelled };
 	}
 
 	/** The overlay's backing store, in CSS pixels — not device pixels: the

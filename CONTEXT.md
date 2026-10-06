@@ -779,6 +779,12 @@ what uniform spacing would — reprinted by `scripts/measure-sky-density.ts core
 mark** on the glass does (`hud-and-scanner.md` §5.5, node #478).
 _Avoid_: The way home, galactic down
 
+**Core mark**:
+The cockpit glass's mark for the **Core bearing** at the live system: a dot
+between two brackets, labelled `CORE`, on screen only. An instrument rather than
+a picture, because the sky withholds the core (node #478).
+`hud-and-scanner.md` §5.5 owns it; `drawCoreMark` in `src/main.ts` draws it.
+
 **Derived sky**:
 The points that *are* systems — one for every other system in the galaxy, at its
 true bearing through the observer's **Sky frame**, sized by how far away it is and

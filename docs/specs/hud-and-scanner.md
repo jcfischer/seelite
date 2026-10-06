@@ -612,10 +612,12 @@ ship turns.
 
 **Where it ranks.** §4's attention order puts passive system information last,
 and the mark is that. It takes the cool tone of the attitude reference, faint, and
-no other mark on the glass has its shape, so it reads without its hue. It is drawn
-after every body marker. Its label goes through §3's declutter pass after the
-selected target and the context labels, so it gives way on a collision and never
-overprints a name. Cockpit view only, with the horizon line: chase has no glass.
+no other mark on the glass has its shape, so it reads without its hue. Its rank
+is in its label: the label goes through §3's declutter pass last, after the
+selected target and the context labels, so the label gives way on a collision and
+never overprints a name. The brackets and the dot are not decluttered: they are
+painted after the body markers and can cross another mark or its name. Cockpit
+view only, with the horizon line: chase has no glass.
 
 **On the glass only.** No edge arrow points to a core behind the ship. An edge
 arrow is the selected target's word (§3), and a second arrow that never goes away
@@ -625,8 +627,9 @@ off screen, or a place on the scanner's rim, is open for the principal.
 **Verification.** `tests/galaxy-frame.test.ts` holds the bearing against its
 composition over every shipped system and against the two wrong frames a caller
 could hand it. `scripts/probe-hud.mjs` reads the overlay's pixels in a box
-around the mark with the bearing 15° off the nose. It reads the same box again
-with the ship turned away as the control. The sky's look is untouched, so this is
+around the mark with the bearing 15° off the nose, then again at the same pose
+and frame with the mark withheld, as the control. It counts the pixels inked only
+with the mark present, so another marker in the box cannot carry the row. The sky's look is untouched, so this is
 not one of #478's look decisions. As a new instrument it still owes a look at a
 rendered frame (#94), and no probe stands in for that.
 

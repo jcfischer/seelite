@@ -605,8 +605,8 @@ describe("systemCoreBearing: the one read the haze and the Core mark share", () 
 		// The defect this row can see: a helper that returned the raw galaxy-space
 		// direction to the centre is a perfectly good unit vector and passes the row
 		// above only if `coreBearing` were wrong the same way. Here it is held
-		// against that raw direction, and against the same bearing read through a
-		// *neighbour's* frame — the other wrong frame a caller could hand it.
+		// against that raw direction, and against the same bearing read through
+		// *another system's* sky frame — the other wrong frame a caller could hand it.
 		const rim = galaxy.systems.reduce((best, r) =>
 			length(r.pos) > length(best.pos) ? r : best,
 		);
@@ -626,11 +626,14 @@ describe("systemCoreBearing: the one read the haze and the Core mark share", () 
 		const main = codeOf("src/main.ts");
 		const calls = main.match(/systemCoreBearing\(/g) ?? [];
 		expect(calls.length).toBe(1);
-		expect(main).toMatch(
-			/const core = systemCoreBearing\(record\);\s*this\.coreDir = core;/,
-		);
-		expect(main).toMatch(/coreBearing: \[core\.x, core\.y, core\.z\]/);
-		expect(main).toMatch(/const core = shipCues \? this\.coreDir : null;/);
+		// Loose on spelling, strict on the one value: the local the call returns is
+		// what the field keeps and what the haze is built from, and the draw reads
+		// the field rather than computing a bearing of its own.
+		const local = main.match(/const (\w+) = systemCoreBearing\(/)?.[1];
+		expect(local).toBeDefined();
+		expect(main).toMatch(new RegExp(`this\\.coreDir = ${local}\\b`));
+		expect(main).toMatch(new RegExp(`coreBearing: \\[${local}\\.x`));
+		expect(main).toMatch(/this\.drawCoreMark\([^)]*this\.coreDir/);
 		// And no second spelling of the composition beside it.
 		expect(main).not.toMatch(/\bcoreBearing\(/);
 		expect(main).not.toMatch(/\bskyFrame\(/);
