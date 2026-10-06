@@ -44,7 +44,6 @@ import {
 	stationPose,
 } from "./sim";
 import { STATION_GEOMETRY } from "./station";
-import type { TrafficRoutePhase } from "./station-route";
 import {
 	type Berth,
 	type StationInterior,
@@ -85,57 +84,6 @@ export type DockPhase = "flying" | "arriving" | "docked" | "launching";
  */
 export const collisionExempt = (phase: DockPhase): boolean =>
 	phase !== "flying";
-
-/**
- * How a Traffic carrier stands toward collision in one route phase
- * (`collision.md` §5, §6, §7; node #664).
- *
- * - **`exempt`** — §5's mirror of the three states above, keyed on the route
- *   phase (derived: C4a makes Traffic collide like the player, so it takes the
- *   player's exemption). Parked in a berth (`parked-home`, `launch-queued`,
- *   `docked-away`), the scripted launch (`departing`, which ends twenty metres
- *   past the plane — `beginLaunch`'s release with Traffic's `clearKm` of 0, so
- *   the centre has cleared the plane outward as §12.3 asks) and the scripted
- *   hold-to-plane and traversal (`arriving`, which starts the tick the lane is
- *   granted at the hold). A position law with a known start and end, inside a
- *   lane the clearance protocol keeps clear.
- * - **`cruise`** — `cruise` and `regenerating` are the cruise regime, and C5
- *   evaluates collision in normal flight only (derived for Traffic: the same
- *   two regimes the player has, each with its own guard).
- * - **`absent`** — `abstract-away` and `hyperspace-away` have no place in this
- *   system to collide at.
- * - **`collides`** — every normal-flight phase: the local departure and
- *   approach, the two queues' holds, and a hauler's lane point and wind-up.
- */
-export type TrafficCollision = "exempt" | "cruise" | "absent" | "collides";
-
-const TRAFFIC_COLLISION: Readonly<Record<TrafficRoutePhase, TrafficCollision>> =
-	{
-		"parked-home": "exempt",
-		"launch-queued": "exempt",
-		departing: "exempt",
-		arriving: "exempt",
-		"docked-away": "exempt",
-		cruise: "cruise",
-		regenerating: "cruise",
-		"abstract-away": "absent",
-		"hyperspace-away": "absent",
-		"local-departure": "collides",
-		"local-approach": "collides",
-		"clearance-queued": "collides",
-		"lane-queued": "collides",
-		"lane-point-hold": "collides",
-		"jump-windup": "collides",
-	};
-
-/** A carrier's standing toward collision in `phase` (§5). */
-export const trafficCollisionClass = (
-	phase: TrafficRoutePhase,
-): TrafficCollision => TRAFFIC_COLLISION[phase];
-
-/** Whether a carrier in `phase` is a collidable body now. */
-export const trafficCollides = (phase: TrafficRoutePhase): boolean =>
-	TRAFFIC_COLLISION[phase] === "collides";
 
 /**
  * **E5**: docked means flight is suspended — the throttle, the stick and the

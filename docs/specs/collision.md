@@ -399,7 +399,7 @@ whether launches ever do is measured rather than assumed.
   the plane outward. §4.3 covers the hull that is still in the throat at that
   tick.
 - **As Traffic's route phases** (node #664, `trafficCollisionClass` in
-  `src/dock-session.ts`). Exempt: `parked-home`, `launch-queued` and
+  `src/station-route.ts`). Exempt: `parked-home`, `launch-queued` and
   `docked-away` (parked), `departing` (the launch, which releases twenty
   metres past the plane, so the centre has cleared it) and `arriving` (from
   the tick the lane is granted at the hold, through the traversal). Collidable:

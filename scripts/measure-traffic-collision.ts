@@ -5,9 +5,9 @@
  * another carrier's box?
  *
  * `tests/collision-traffic.test.ts` gates a small corpus in `npm test`; this
- * is the wide half. The sweep, the projection and the classes are the test's
- * own (`tests/helpers/traffic-collision-corpus.ts`), so the two measure the
- * same thing. It prints, per run:
+ * is the wide half. The sweep, the projection and the classes live in
+ * `scripts/lib/traffic-collision-corpus.ts`, which the test imports too, so
+ * the two measure the same thing. It prints, per run:
  *
  * - the N of every bucket: carrier-steps swept per phase, and the systems and
  *   actors behind them;
@@ -33,7 +33,7 @@ import {
 	firstDepartureS,
 	meetingClass,
 	trafficCollisionCorpus,
-} from "../tests/helpers/traffic-collision-corpus";
+} from "./lib/traffic-collision-corpus";
 
 const finite = (label: string, value: number): number => {
 	if (!Number.isFinite(value)) throw new Error(`${label} is ${value}`);

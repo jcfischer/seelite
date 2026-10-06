@@ -39,11 +39,6 @@ import {
 	sweepShip,
 	sweepShipPair,
 } from "../src/collision";
-import {
-	type TrafficCollision,
-	trafficCollisionClass,
-	trafficCollides,
-} from "../src/dock-session";
 import { generateGalaxy } from "../src/galaxy";
 import { HULL_SPECS, type HullId, PLAYER_BASELINE_HULL } from "../src/hull";
 import { carrierKey } from "../src/carrier-key";
@@ -78,8 +73,11 @@ import {
 	worldStarts,
 } from "../src/sim";
 import {
+	type TrafficCollision,
 	type TrafficRoutePhase,
 	projectSystemTrafficActor,
+	trafficCollides,
+	trafficCollisionClass,
 } from "../src/station-route";
 import {
 	nextTrafficDepartureAtS,
@@ -114,7 +112,7 @@ import {
 	firstDepartureS,
 	meetingClass,
 	trafficCollisionCorpus,
-} from "./helpers/traffic-collision-corpus";
+} from "../scripts/lib/traffic-collision-corpus";
 
 const box = (hull: HullId) => [
 	hullBox(HULL_SPECS[hull].env, HULL_SPECS[hull].envCentre),
@@ -785,20 +783,6 @@ describe("stepWorld: a ship met before a world impact owns the tick (§4.2, node
 	/** The gap between the falling ship's box and the heavy ship below it. */
 	const GAP_KM = 0.01;
 
-	/** Seed 47's star, a sphere at rest, and how far a pose is from it. */
-	function starOf(world: ReturnType<typeof makeWorld>) {
-		const star = world.system.bodies.find((b) => b.kind === "star");
-		if (!star) throw new Error("seed 47 has no star");
-		const vel = bodyVelocity(world.system, star.id, world.gameTime);
-		const sphere = bodySphere(star.radiusKm);
-		const at = shipPose(star.pos, v3(0, 0, 1), v3(0, 1, 0));
-		const clearance = (hull: HullId, pose: ReturnType<typeof shipPose>) => {
-			const gap = pairSeparation(box(hull)[0], pose, sphere, at);
-			return gap.overlap ? -1 : gap.distanceKm;
-		};
-		return { star, vel, clearance };
-	}
-
 	/** A miner riding with the star, its box `GAP_KM` below `above`'s along
 	 *  −`dir`, found by probing the gap rather than adding up half-lengths. */
 	function below(
@@ -834,9 +818,8 @@ describe("stepWorld: a ship met before a world impact owns the tick (§4.2, node
 	 *  it and the surface that it meets first. */
 	function fleetFall(blocked: boolean) {
 		const world = makeWorld(47);
-		const { star, vel, clearance } = starOf(world);
 		const dir = v3(1, 0, 0);
-		const nose = scale(dir, -1);
+		const { star, vel, nose, clearance } = starFixture(world, dir);
 		const start = add(star.pos, scale(dir, star.radiusKm + HEIGHT_KM));
 		const fall = add(vel, scale(dir, -FALL_KMS));
 		const raider: FleetShip = {
@@ -864,7 +847,7 @@ describe("stepWorld: a ship met before a world impact owns the tick (§4.2, node
 
 	test("the control: a raider falling onto the star meets it inside the step", () => {
 		const { flown, star, fleet, clearance } = fleetFall(false);
-		expect(clearance("raider", fleet[0].motion.start)).toBeLessThan(
+		expect(clearance("raider", fleet[0].motion.start.origin)).toBeLessThan(
 			FALL_KMS * dt,
 		);
 		expect(flown.fleet[0].impacts.map((i) => i.with)).toEqual([star.id]);
@@ -874,25 +857,24 @@ describe("stepWorld: a ship met before a world impact owns the tick (§4.2, node
 		const { flown, fleet, clearance, vel } = fleetFall(true);
 		// The miner stands clear of the star, so whatever it meets is the
 		// raider's doing.
-		expect(clearance("miner", fleet[1].motion.start)).toBeGreaterThan(0.05);
+		expect(clearance("miner", fleet[1].motion.start.origin)).toBeGreaterThan(
+			0.05,
+		);
 		const [raider, miner] = flown.fleet;
 		expect(raider.impacts.map((i) => i.with)).toEqual(["miner"]);
 		expect(miner.impacts.map((i) => i.with)).toEqual(["raider"]);
 		// Turned back: it leaves the step rising, and outside the star.
 		expect(dot(sub(raider.vel, vel), v3(1, 0, 0))).toBeGreaterThan(0);
-		expect(
-			clearance("raider", { ...fleet[0].motion.end, origin: raider.pos }),
-		).toBeGreaterThan(0);
+		expect(clearance("raider", raider.pos)).toBeGreaterThan(0);
 	});
 
 	/** The player falling onto the star, and, given `blocked`, a miner between
 	 *  it and the surface that it meets first. */
 	function playerFall(blocked: boolean) {
 		const world = makeWorld(47);
-		const { star, vel, clearance } = starOf(world);
 		// `still()` points the nose along −z, so the player falls nose first.
 		const dir = v3(0, 0, 1);
-		const nose = scale(dir, -1);
+		const { star, vel, nose, clearance } = starFixture(world, dir);
 		world.ship.pos = add(star.pos, scale(dir, star.radiusKm + HEIGHT_KM));
 		world.ship.vel = add(vel, scale(dir, -FALL_KMS));
 		const you = shipPose(world.ship.pos, nose, v3(0, 1, 0));
@@ -914,20 +896,20 @@ describe("stepWorld: a ship met before a world impact owns the tick (§4.2, node
 
 	test("the control: the player falling onto the star meets it inside the step", () => {
 		const { flown, star, you, clearance } = playerFall(false);
-		expect(clearance("courier", you)).toBeLessThan(FALL_KMS * dt);
+		expect(clearance("courier", you.origin)).toBeLessThan(FALL_KMS * dt);
 		expect(flown.impacts.map((i) => i.bodyId)).toEqual([star.id]);
 	});
 
 	test("the player meeting a ship first bills the ship and not the star its bounce turned it from", () => {
 		const { flown, you, fleet, clearance, world, dir, vel } = playerFall(true);
-		expect(clearance("miner", fleet[0].motion.start)).toBeGreaterThan(0.05);
+		expect(clearance("miner", fleet[0].motion.start.origin)).toBeGreaterThan(
+			0.05,
+		);
 		expect(flown.impacts).toEqual([]);
 		expect(flown.shipImpacts.map((i) => i.with)).toEqual(["miner"]);
 		expect(flown.fleet[0].impacts.map((i) => i.with)).toEqual([PLAYER_SHIP_ID]);
 		expect(dot(sub(world.ship.vel, vel), dir)).toBeGreaterThan(0);
-		expect(
-			clearance("courier", { ...you, origin: world.ship.pos }),
-		).toBeGreaterThan(0);
+		expect(clearance("courier", world.ship.pos)).toBeGreaterThan(0);
 	});
 });
 
@@ -2083,10 +2065,22 @@ describe("collision.md §9.1.14: §6 item 1's corpus row", () => {
 					trafficCollisionClass(m.phase) === "exempt",
 			),
 		).toBe(true);
-		// And the meetings the green run sees are a subset: the exemption
-		// hides nothing in a collidable phase.
 		expect(met.length).toBeGreaterThan(20);
-	}, 30_000);
+		// And every meeting the green run sees over the same window is one the
+		// red run sees too: sweeping the exempt phases adds meetings, it does
+		// not drop or re-read one in a collidable phase.
+		const green = run(0, 600).meetings;
+		expect(green.length).toBeGreaterThan(0);
+		const same = (a: Meeting, b: Meeting) =>
+			a.key === b.key &&
+			a.met === b.met &&
+			a.phase === b.phase &&
+			a.atS === b.atS;
+		const missing = green.filter(
+			(g) => !result.meetings.some((r) => same(g, r)),
+		);
+		expect(missing).toEqual([]);
+	}, 60_000);
 });
 
 describe("collision.md §3: a kill by impact names the impact, and pays only the player's own ram", () => {

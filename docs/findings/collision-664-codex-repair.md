@@ -26,7 +26,9 @@ claim that an impossible squeeze has a solution.
 hulls, damage, velocity, final separation, a translated impact, and the world
 control. `collision-handoff.test.ts` starts an isolated courier ram and checks
 two/three carriers in both fleet orders, one-time impacts, an unbilled resting
-neighbour retaining its route pose, and an initial-overlap ghost retaining its
-exemption. The failures were reproduced before their respective corrections.
+carrier beside the struck one retaining its route pose, and an initial-overlap
+ghost retaining its exemption. No red run of either file against the code
+before its correction is recorded here, so these rows are evidence that the
+corrected code holds, not that they would have caught the defects.
 These regressions supplement the existing world-clearance and corpus rows;
 they do not replace canonical browser certification or final Sage review.

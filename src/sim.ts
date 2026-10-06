@@ -1823,6 +1823,15 @@ export interface FleetStep {
 	ghosts: string[];
 }
 
+/** A fleet ship where its own step left it, having met nothing. */
+const untouchedStep = (ship: FleetShip): FleetStep => ({
+	id: ship.id,
+	pos: ship.motion.end.origin,
+	vel: ship.motion.velEnd,
+	impacts: [],
+	ghosts: [],
+});
+
 /**
  * Whether a carrier on its projection — at `contact.pos`, moving at
  * `contact.vel` — can be met this step by any of `movers`, each a ship moving
@@ -1979,14 +1988,7 @@ export function stepWorld(
 			};
 	advanceWorldClock(world, dt);
 	const step = stepHull(world.ship, attitude, control, dt, perf);
-	const untouched = (): FleetStep[] =>
-		fleet.map((ship) => ({
-			id: ship.id,
-			pos: ship.motion.end.origin,
-			vel: ship.motion.velEnd,
-			impacts: [],
-			ghosts: [],
-		}));
+	const untouched = (): FleetStep[] => fleet.map(untouchedStep);
 	if (dt <= 0)
 		return {
 			...step,
@@ -2130,14 +2132,7 @@ export function stepFleet(
 ): FleetStep[] {
 	// As `stepWorld`: a step of no time sweeps nothing, and every ship is
 	// where its own step left it.
-	if (clock.dt <= 0)
-		return fleet.map((ship) => ({
-			id: ship.id,
-			pos: ship.motion.end.origin,
-			vel: ship.motion.velEnd,
-			impacts: [],
-			ghosts: [],
-		}));
+	if (clock.dt <= 0) return fleet.map(untouchedStep);
 	const shipS = firstMeetings(null, fleet, clock.dt);
 	const fleetWorld = fleetAgainstWorld(
 		world,
@@ -2400,13 +2395,7 @@ function fleetAgainstWorld(
 	const deferred: boolean[] = [];
 	const normals: Vec3[][] = [];
 	fleet.forEach((ship, index) => {
-		const out: FleetStep = {
-			id: ship.id,
-			pos: ship.motion.end.origin,
-			vel: ship.motion.velEnd,
-			impacts: [],
-			ghosts: [],
-		};
+		const out = untouchedStep(ship);
 		let held = false;
 		const met: Vec3[] = [];
 		if (!ship.projected) {

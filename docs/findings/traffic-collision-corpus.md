@@ -22,7 +22,7 @@ bun scripts/measure-traffic-collision.ts 10 1800          # its control, 57.1 s
 ```
 
 The instrument is `scripts/measure-traffic-collision.ts`. Its sweep,
-projection and classes are `tests/helpers/traffic-collision-corpus.ts`, which
+projection and classes are `scripts/lib/traffic-collision-corpus.ts`, which
 `tests/collision-traffic.test.ts` also reads, so the gated row and the wide run
 measure the same thing:
 

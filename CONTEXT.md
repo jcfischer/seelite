@@ -47,6 +47,11 @@ _Avoid_: hitbox, collision mesh.
 A `FleetSlot` layout position in the query-gated showroom avenue. Its `slot`
 identifier describes the model and its placement; it has no Berth reservation,
 aperture, station or docking semantics. `src/ship-mesh.ts` owns the layout.
+**Scope note, not an _Avoid_ line.** The collision step's `FleetShip`,
+`FleetStep` and `stepFleet` (`src/sim.ts`, node #664) use "fleet" for every
+ship in one step other than the player — a raider, an engaged carrier, a
+projected carrier a ship can meet. That fleet has nothing to do with the
+showroom avenue's.
 
 **Carrier**:
 A named physical asset, actor, or condition in the universe that enables a capability in a bounded consequence area.

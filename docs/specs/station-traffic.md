@@ -185,7 +185,7 @@ Traffic actors added no collision or combat physics in #148. #362 has since
 added combat (`civilian-combat.md`). #75 decided collision and `collision.md`
 specifies it; node #664 built it for Traffic. A carrier collides in every
 normal-flight phase of its route, and is exempt while parked, launching or
-arriving (`collision.md` §5, `trafficCollisionClass` in `src/dock-session.ts`).
+arriving (`collision.md` §5, `trafficCollisionClass` in `src/station-route.ts`).
 A projected carrier is met by the ships that are flown, and a meeting hands it
 to flight; its route is never swept against the world at runtime, which is
 what `collision.md` §6's corpus row measures instead. A materialized

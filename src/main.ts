@@ -606,7 +606,6 @@ import {
 	canSkipTraversal,
 	collisionExempt,
 	enterArrival,
-	trafficCollides,
 	interiorOfStation,
 	flightLive,
 	newDockSession,
@@ -763,6 +762,7 @@ import {
 	type SystemTrafficProjection,
 	type TrafficBerthCache,
 	type TrafficArbitrationEvent,
+	trafficCollides,
 } from "./station-route";
 import {
 	COCKPIT_EMISSIVE_INTENSITIES,
@@ -1986,6 +1986,18 @@ interface FleetPose {
 	nose: Vec3;
 	up: Vec3;
 }
+
+/** A flown ship's pose now, copied off its flight state. */
+const poseOfFlight = (flight: {
+	ship: { pos: Vec3; vel: Vec3 };
+	nose: Vec3;
+	up: Vec3;
+}): FleetPose => ({
+	pos: { ...flight.ship.pos },
+	vel: { ...flight.ship.vel },
+	nose: flight.nose,
+	up: flight.up,
+});
 
 /**
  * How near a projected carrier must be, beyond a step's closing travel, for
@@ -14451,19 +14463,9 @@ class Game {
 		const poses = new Map<string, FleetPose>();
 		const flight = this.duelRaider()?.flight;
 		if (flight && this.encounter)
-			poses.set(this.encounter.slot.key, {
-				pos: { ...flight.ship.pos },
-				vel: { ...flight.ship.vel },
-				nose: flight.nose,
-				up: flight.up,
-			});
+			poses.set(this.encounter.slot.key, poseOfFlight(flight));
 		for (const [key, engagement] of this.trafficEngagements)
-			poses.set(key, {
-				pos: { ...engagement.flight.ship.pos },
-				vel: { ...engagement.flight.ship.vel },
-				nose: engagement.flight.nose,
-				up: engagement.flight.up,
-			});
+			poses.set(key, poseOfFlight(engagement.flight));
 		return poses;
 	}
 
@@ -14515,19 +14517,13 @@ class Game {
 		};
 		const raider = this.duelRaider();
 		if (raider && this.encounter)
-			flown(this.encounter.slot.key, RAIDER_HULL_ID, {
-				pos: raider.flight.ship.pos,
-				vel: raider.flight.ship.vel,
-				nose: raider.flight.nose,
-				up: raider.flight.up,
-			});
+			flown(
+				this.encounter.slot.key,
+				RAIDER_HULL_ID,
+				poseOfFlight(raider.flight),
+			);
 		for (const [key, engagement] of this.trafficEngagements)
-			flown(key, engagement.hullId, {
-				pos: engagement.flight.ship.pos,
-				vel: engagement.flight.ship.vel,
-				nose: engagement.flight.nose,
-				up: engagement.flight.up,
-			});
+			flown(key, engagement.hullId, poseOfFlight(engagement.flight));
 		const player = this.world.ship;
 		// Everything flown this step is what a projection can be met by: the
 		// player, on the velocity it starts the step with — unless it is not

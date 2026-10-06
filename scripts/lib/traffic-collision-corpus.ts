@@ -38,10 +38,6 @@ import {
 	shipPose,
 	sweepShip,
 } from "../../src/collision";
-import {
-	type TrafficCollision,
-	trafficCollisionClass,
-} from "../../src/dock-session";
 import type { Galaxy, SystemRecord } from "../../src/galaxy";
 import { HULL_SPECS, type HullId } from "../../src/hull";
 import {
@@ -62,8 +58,10 @@ import {
 	type TrafficArbitrationEvent,
 	type TrafficCruiseCache,
 	type TrafficLanePointArrivalCache,
+	type TrafficCollision,
 	type TrafficRoutePhase,
 	projectSystemTrafficAuthority,
+	trafficCollisionClass,
 } from "../../src/station-route";
 import {
 	type StationTurn,
