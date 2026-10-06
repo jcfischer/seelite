@@ -438,8 +438,8 @@ function triggerFor(sign: 1 | -1): Trigger[] {
 
 /**
  * The buttons a held-button predicate answers yes to, each with the contexts
- * it answers in — asked of `pad-bindings.ts` rather than restated, as every
- * pad row here is.
+ * it answers in — asked of `pad-bindings.ts` rather than restated, as every // glossary-ignore: pad
+ * pad row here is. // glossary-ignore: pad
  */
 function heldButtons(
 	isHeld: (frame: PadFrame, context: PadContext) => boolean,

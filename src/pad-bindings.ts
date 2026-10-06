@@ -498,24 +498,24 @@ export function padFireHeld(
 }
 
 /**
- * Whether the pad holds the eject control: `home`, held (node #703, on #660
+ * Whether the pad holds the eject control: `home`, held (node #703, on #660 // glossary-ignore: pad
  * D4). The hold itself — how long, and what a refusal says — is `eject.ts`'s.
  *
  * **`home` because it is the one button with no press.** Any other button
- * runs its own command on the press, so a hold there would charge the jump or
+ * runs its own command on the press, so a hold there would charge the jump or // glossary-ignore: Command
  * engage cruise on the way to ejecting. It has two limits, and the keyboard's
  * `Backspace` is the route that has neither: some pads report sixteen buttons
  * and have no `home` at all (`gamepad.ts`), and an operating system or a
  * launcher overlay may take the button for itself before the page sees it.
  *
- * **Live wherever a pad is not taken whole**, which is wider than the
- * trigger's `contextFliesShip`, on purpose. Docked, the pad's context is
+ * **Live wherever a pad is not taken whole**, which is wider than the // glossary-ignore: pad
+ * trigger's `contextFliesShip`, on purpose. Docked, the pad's context is // glossary-ignore: pad
  * `console` — the station console on the forward wall — and a predicate that
  * answered only where the ship flies would make the docked refusal (#660 D5)
- * unreachable from a pad: the press would do nothing at all, which is the
+ * unreachable from a pad: the press would do nothing at all, which is the // glossary-ignore: pad
  * thing a refusal exists to replace. A side console in flight is the same
  * context, and the keyboard's key ejects there too. The two modal contexts
- * take the whole pad, and the eject is not an exception to that.
+ * take the whole pad, and the eject is not an exception to that. // glossary-ignore: pad
  */
 export function padEjectHeld(
 	frame: PadFrame | null,

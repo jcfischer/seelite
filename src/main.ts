@@ -1270,6 +1270,33 @@ const VOICE_ARMS = voiceArms(
 	new URLSearchParams(window.location.search).get("voices"),
 	import.meta.env?.DEV === true,
 );
+/**
+ * Whether the eject control is offered: in a dev build, and nowhere else until
+ * node #704 builds what an eject does (sage round 1 on node #703).
+ *
+ * **A hold that visibly completes must do something, or not be offered.** The
+ * binding, the hold and the refusals are node #703's and complete; the pod
+ * going, the hold lost and the wake at the launch station are #660 D2's, built
+ * by node #704 behind `eject()`. Shipped before that, a pilot who bought the
+ * pod would watch the arming bar fill and then nothing happen — the control
+ * the help names, doing nothing, which is the thing a refusal exists to
+ * replace. So a production build neither steps the control nor prints its
+ * row, and node #704 deletes this gate.
+ *
+ * **The table keeps the row.** `fly.eject` stays in `commands.ts`'s binding
+ * table, so the headless tier holds the binding and the refusals, and a dev
+ * server — which is what every probe and a principal's flight run against —
+ * offers the whole control. What a production build still carries is
+ * Backspace's `preventDefault` (`key-dispatch.ts`), which costs nothing.
+ */
+const EJECT_OFFERED = import.meta.env?.DEV === true;
+
+/** The catalogue a screen prints: the eject's row only where it is offered. */
+const offeredControls = (c: ControlsCatalogue): ControlsCatalogue =>
+	EJECT_OFFERED
+		? c
+		: { ...c, commands: c.commands.filter((row) => row.id !== "fly.eject") };
+
 /** The director's arms: `?music=`'s, with `?voices=`'s say on the numbers. */
 const DIRECTOR_ARMS = { ...MUSIC_ARMS.arms, voice: VOICE_ARMS.music };
 const RAIDERS_OFF =
@@ -3170,14 +3197,18 @@ class Game {
 	 *  for a probe to read rather than restate. */
 	ejectRender: { text: string; alpha: number; refused: boolean } | null = null;
 	/**
-	 * Every eject the control has fired, by the clock it fired at (node #703).
+	 * How many ejects the control has fired, and the last one (node #703): the
+	 * game clock it fired at, and the page's `performance.now()`, which is the
+	 * clock a probe can read a keydown against.
 	 *
 	 * **The event and nothing else yet.** What an eject does — the pod, the
 	 * empty hold, the wake at the launch station — is #660 D2's and node #704
-	 * builds it behind `eject()`. Until then a completed hold is recorded here
-	 * and the glass claims nothing it has not done.
+	 * builds it behind `eject()`. A count and the last one rather than a list,
+	 * because a list kept for a whole session grows with every hold (sage round
+	 * 1), and no reader wants more than these two.
 	 */
-	ejects: { gameTime: number }[] = [];
+	ejectCount = 0;
+	lastEject: { gameTime: number; atMs: number } | null = null;
 	/** The gimballed beam's direction, or `null` before the first step, when it
 	 *  is the boresight (`gimbal.ts`). */
 	gunAim: Vec3 | null = null;
@@ -9755,7 +9786,9 @@ class Game {
 	}
 
 	controlsNow(): ControlsCatalogue {
-		return controlsCatalogue(this.bindings, this.layoutNotices);
+		return offeredControls(
+			controlsCatalogue(this.bindings, this.layoutNotices),
+		);
 	}
 
 	/**
@@ -9860,7 +9893,7 @@ class Game {
 	 */
 	private publishControls() {
 		this.liveCockpit?.setControls(
-			controlsCatalogue(this.bindings, this.layoutNotices),
+			offeredControls(controlsCatalogue(this.bindings, this.layoutNotices)),
 		);
 	}
 
@@ -11580,14 +11613,14 @@ class Game {
 	/**
 	 * One frame of the eject control (node #703, on #660 D4 and D5).
 	 *
-	 * The keyboard's held key or the pad's `home`, through `eject.ts`'s hold:
+	 * The keyboard's held key or the pad's `home`, through `eject.ts`'s hold: // glossary-ignore: pad
 	 * a refusal on the first frame the control is down, an eject on the frame
 	 * the hold completes. **Every phase**, because two of the refusals are
 	 * docked and on the rails, where `step` returns before its flight tail.
 	 *
 	 * **Not during the opening**: #530 D2 rules that nothing a pilot presses
 	 * there makes a watched run differ from a skipped one, so the control is
-	 * idle and says nothing — the same answer `command` gives every other key.
+	 * idle and says nothing — the same answer `command` gives every other key. // glossary-ignore: Command
 	 */
 	private stepEject(dt: number) {
 		// **A refusal is about the phase it was said in**, so it ends with
@@ -11599,7 +11632,7 @@ class Game {
 			said.phase === this.dock.phase
 				? { ...said, left: Math.max(0, said.left - dt) }
 				: { text: "", left: 0, phase: null };
-		if (this.openingActive) {
+		if (this.openingActive || !EJECT_OFFERED) {
 			this.ejectHold = EJECT_IDLE;
 			return;
 		}
@@ -11640,7 +11673,8 @@ class Game {
 	 * made good.
 	 */
 	private eject() {
-		this.ejects.push({ gameTime: this.world.gameTime });
+		this.ejectCount += 1;
+		this.lastEject = { gameTime: this.world.gameTime, atMs: performance.now() };
 	}
 
 	/** The arrival turn the player holds at a station: the turn

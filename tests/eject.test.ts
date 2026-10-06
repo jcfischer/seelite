@@ -31,7 +31,7 @@ import {
 import type { PadFrame } from "../src/gamepad";
 import { ejectPrompt, spoken } from "../src/key-names";
 import { ESCAPE_POD, EQUIPMENT } from "../src/market";
-import { padEjectHeld } from "../src/pad-bindings";
+import { padEjectHeld } from "../src/pad-bindings"; // glossary-ignore: pad
 
 /** Hold the control for `seconds` in frames of `dt`, under one refusal. */
 function hold(
@@ -59,16 +59,18 @@ describe("the binding table carries the action", () => {
 		expect(eject.group).toBe("fly");
 		expect(eject.rebindable).toBe(true);
 		const rows = DEFAULT_BINDINGS.filter((b) => b.command === "fly.eject").map(
+			// glossary-ignore: Command
 			(b) => b.trigger,
 		);
 		expect(rows).toContainEqual({ kind: "key", key: "backspace", hold: true });
-		const pad = rows.find((t) => t.kind === "pad-button");
+		const pad = rows.find((t) => t.kind === "pad-button"); // glossary-ignore: pad
 		expect(pad).toMatchObject({
-			kind: "pad-button",
+			// glossary-ignore: pad
+			kind: "pad-button", // glossary-ignore: pad
 			button: "home",
 			hold: true,
 		});
-		// Every trigger the command has is a hold: a press anywhere would be a
+		// Every trigger the command has is a hold: a press anywhere would be a // glossary-ignore: Command
 		// stray press that costs the hold, which is what the confirm refuses.
 		expect(
 			rows.every((t) => "hold" in t && (t as { hold?: true }).hold === true),
@@ -102,6 +104,7 @@ describe("the binding table carries the action", () => {
 	});
 
 	test("the pad's Home is live where a press can be refused, and not under a modal", () => {
+		// glossary-ignore: pad
 		const frame = (held: string[]): PadFrame => ({
 			connected: true,
 			id: "test",
@@ -113,8 +116,8 @@ describe("the binding table carries the action", () => {
 		});
 		expect(padEjectHeld(frame(["home"]), "flight")).toBe(true);
 		expect(padEjectHeld(frame(["home"]), "instrument")).toBe(true);
-		// Docked, the pad's context is `console`: without this the docked
-		// refusal could not be reached from a pad at all.
+		// Docked, the pad's context is `console`: without this the docked // glossary-ignore: pad
+		// refusal could not be reached from a pad at all. // glossary-ignore: pad
 		expect(padEjectHeld(frame(["home"]), "console")).toBe(true);
 		expect(padEjectHeld(frame(["home"]), "modal")).toBe(false);
 		expect(padEjectHeld(frame(["home"]), "capture")).toBe(false);

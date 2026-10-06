@@ -406,6 +406,7 @@ describe("the catalogue is complete against the source", () => {
 	});
 
 	test("every pad button is printed somewhere", () => {
+		// glossary-ignore: pad
 		const printed = new Set(
 			triggers().flatMap((t) =>
 				t.kind === "pad-button" || t.kind === "pad-intent" ? [t.button] : [],

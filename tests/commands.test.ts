@@ -671,6 +671,7 @@ describe("the pad and the chord are resolved through the layout", () => {
 	});
 
 	test("Square and `home` reach no command by a press: both are held", () => {
+		// glossary-ignore: Command
 		// Both rows were `padIntents(...).keys` being empty, which was that
 		// module answering a question it no longer owns. Square is the pulse
 		// laser's trigger and it is *held* (#324), so it has a row and no
@@ -689,13 +690,13 @@ describe("the pad and the chord are resolved through the layout", () => {
 					`home in ${context}/${view}`,
 				).toEqual([]);
 			}
-		// And each does have a row — held, on the command it holds, and no
+		// And each does have a row — held, on the command it holds, and no // glossary-ignore: Command
 		// press row anywhere — so the empty answers above are a hold rather
 		// than a button nothing reads.
 		const padRows = (button: PadButtonName) =>
 			DEFAULT_BINDINGS.filter(
-				(b) => b.trigger.kind === "pad-button" && b.trigger.button === button,
-			).map((b) => `${b.command} ${"hold" in b.trigger ? "hold" : "press"}`);
+				(b) => b.trigger.kind === "pad-button" && b.trigger.button === button, // glossary-ignore: pad
+			).map((b) => `${b.command} ${"hold" in b.trigger ? "hold" : "press"}`); // glossary-ignore: Command
 		expect(padRows("x")).toEqual(["fight.firePulse hold"]);
 		expect(padRows("home")).toEqual(["fly.eject hold"]);
 	});

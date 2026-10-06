@@ -8,9 +8,10 @@
  * on the rails of a launch is refused where a pilot in the cockpit reads it —
  * the glass on the rails, the station console's message line docked.
  *
- * **The event, not what it costs.** An eject records itself on `ejects`; the
+ * **The event, not what it costs.** An eject counts itself on `ejectCount`; the
  * pod, the empty hold and the wake are node #704's, and nothing here looks for
- * them.
+ * them. The control is offered in a dev build only until then
+ * (`EJECT_OFFERED` in `main.ts`), and a probe runs against a dev server.
  */
 // A default-layout probe (#381 D11): it presses keys by name, as the shipped
 // layout binds them, and a moved default turns it red for that reason.
@@ -54,7 +55,7 @@ const read = () =>
 		const g = window.__seelite;
 		return {
 			phase: g.dockPhase,
-			ejects: g.ejects.length,
+			ejects: g.ejectCount,
 			render: g.ejectRender,
 		};
 	});
@@ -121,8 +122,12 @@ check(
 	`ejects ${tap.ejects}`,
 );
 
-const downAt = Date.now();
 await page.keyboard.down("Backspace");
+// The page's clock, read after the key is down: the eject records the same
+// clock as it fires, so the interval is the page's own and no polling or
+// transport delay can lengthen it — and a start read late can only shorten
+// it, which errs toward red (sage round 1).
+const downAtMs = await page.evaluate(() => performance.now());
 const arming = await page
 	.waitForFunction(
 		() => window.__seelite.ejectRender?.text?.startsWith("HOLD TO EJECT"),
@@ -139,14 +144,17 @@ const arming = await page
 if (process.env.EJECT_EVIDENCE)
 	await page.screenshot({ path: `${process.env.EJECT_EVIDENCE}/arming.png` });
 const fired = await page
-	.waitForFunction(() => window.__seelite.ejects.length >= 1, null, {
+	.waitForFunction(() => window.__seelite.ejectCount >= 1, null, {
 		timeout: law.holdMs * 6,
 	})
 	.then(
 		() => true,
 		() => false,
 	);
-const firedAfterMs = Date.now() - downAt;
+const firedAfterMs = await page.evaluate(
+	(down) => (window.__seelite.lastEject?.atMs ?? Number.NaN) - down,
+	downAtMs,
+);
 // Held on past the eject: a second one would be a held key firing per frame.
 await page.waitForTimeout(law.holdMs * 1.5);
 await page.keyboard.up("Backspace");
@@ -169,7 +177,7 @@ const FRAME_MS = 1000 / 30;
 check(
 	"and no sooner than the hold the page itself declares, less one frame",
 	firedAfterMs >= law.holdMs - FRAME_MS,
-	`${firedAfterMs} ms against a ${law.holdMs} ms hold`,
+	`${Math.round(firedAfterMs)} ms against a ${law.holdMs} ms hold`,
 );
 
 // ---------------------------------------------------------------------------
@@ -189,7 +197,7 @@ const row = await page.evaluate(() => {
 	return text;
 });
 check(
-	"the Controls tab has an eject row naming the held key and the held pad button",
+	"the Controls tab has an eject row naming the held key and the held pad button", // glossary-ignore: pad
 	row !== null && row.includes("hold Backspace") && row.includes("hold Home"),
 	`${row}`,
 );
