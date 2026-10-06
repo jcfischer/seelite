@@ -1762,8 +1762,8 @@ does: the store restores nothing for them (#89 D7), so the pod buys them
 nothing. Whether it should is permadeath's question, and #238's, not this
 section's. Until it is answered nothing in the game urges them to: the eject
 warning is never shown or said to a permadeath commander (`ejectWarningDue`),
-and the First day tab's pod row tells them an eject ends the save instead of
-teaching the key.
+and the First day tab's pod row names the key with what it costs them, the
+save, in place of the ship it keeps for everyone else.
 
 The pilot wakes to a notice of what the death took — the hold and the pod, or
 the ship, its fittings and the hold, and how many jobs failed with it — on the

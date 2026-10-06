@@ -254,8 +254,8 @@ export function firstDayLogsStep(
  * rebound key is the one taught.
  *
  * A permadeath commander is told the truth instead: an eject ends their save
- * as any death does (#89 D7), so the row names the pod and teaches no key —
- * the promise that the ship is kept is not theirs (`economy-trade.md` §9).
+ * as any death does (#89 D7), so the row names the key with what it costs
+ * them — the promise that the ship is kept is not theirs (`economy-trade.md` §9).
  */
 export function firstDayEjectLine(
 	podFitted: boolean,
@@ -264,6 +264,6 @@ export function firstDayEjectLine(
 ): string | null {
 	if (!podFitted) return null;
 	if (permadeath)
-		return "An escape pod is fitted, but this commander has one life: an eject ends the save as any death does.";
+		return `An escape pod is fitted, but this commander has one life: ${prompt}, and the eject ends the save as any death does.`;
 	return `An escape pod is fitted. When the hull is failing, ${prompt}: you lose the hold and the pod and keep the ship. Destroyed without ejecting, you lose the ship.`;
 }

@@ -12000,7 +12000,8 @@ class Game {
 	 * hull below `EJECT_WARNING_HULL`, the glass says to eject and names the
 	 * key (`drawEjectNotice`), and the ship's voice says it once per crossing
 	 * (`stepEjectWarning`). Not during the opening, where nobody is flying;
-	 * `ejectWarningDue` already says not docked, not on the rails, not dead.
+	 * `ejectWarningDue` already says not docked, not on the rails, not dead,
+	 * and never for a permadeath commander, whose save an eject ends (§9).
 	 */
 	private stepEjectWarning() {
 		const due =

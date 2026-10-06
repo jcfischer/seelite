@@ -168,7 +168,8 @@ export interface FirstDayPanel {
 	/** The flight controls as bound, keyboard and controller (#408). */
 	controls: { keyboard: string; controller: string };
 	/** The escape pod's row, while one is fitted (#660 D9): how to eject, in
-	 *  the key as bound (`firstDayEjectLine`). */
+	 *  the key as bound, and what it costs — for a permadeath commander, the
+	 *  save (`firstDayEjectLine`). */
 	eject: string | null;
 }
 

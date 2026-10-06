@@ -343,7 +343,7 @@ describe("#660 D9 — the eject key, taught once a pod is fitted (node #704)", (
 		);
 	});
 
-	test("a permadeath commander is not promised the ship the pod keeps", () => {
+	test("a permadeath commander is taught the key and told it ends the save", () => {
 		// The store restores nothing for them (#89 D7): an eject ends the save.
 		expect(
 			firstDayEjectLine(false, true, "hold Backspace to eject"),
@@ -351,6 +351,6 @@ describe("#660 D9 — the eject key, taught once a pod is fitted (node #704)", (
 		const line = firstDayEjectLine(true, true, "hold Backspace to eject");
 		expect(line).toContain("ends the save");
 		expect(line).not.toContain("keep the ship");
-		expect(line).not.toContain("hold Backspace to eject");
+		expect(line).toContain("hold Backspace to eject");
 	});
 });

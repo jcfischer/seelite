@@ -645,9 +645,10 @@ The pilot launching the **escape pod**: the held `fly.eject` control (node
 #703), refused docked and on the rails. It is a death, and the cheaper of the
 two — the launch hull and its fittings come back, the hold and the pod do not
 (#660 D2); any other death costs the ship for a stock courier (D6). Manual only:
-a pod never fires itself (D4). `death-cost.ts` owns the cause, the warning's
-threshold and the **Wake**; `commanderAfterDeath` in `holdings.ts` owns what
-each cause takes. `economy-trade.md` §9 is the spec.
+a pod never fires itself (D4). A permadeath commander's eject ends the save as
+any death of theirs does, so nothing comes back for them (§9). `death-cost.ts`
+owns the cause, the warning's threshold and the **Wake**; `commanderAfterDeath`
+in `holdings.ts` owns what each cause takes. `economy-trade.md` §9 is the spec.
 _Avoid_: bail out, respawn (the pilot is not respawned; the launch is restored)
 
 **Wake** (a death's):
