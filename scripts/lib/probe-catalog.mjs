@@ -341,7 +341,7 @@ export const PROBE_CATALOG = Object.freeze(
 		),
 		entry(
 			"probe-eject.mjs",
-			"Holds the eject key in flight and sees the eject event fire once and no sooner than the hold, a tap fire nothing, and the same key refused without a pod and on the arrival's rails, docked and on the launch's rails, each said on the glass or the docked station console; the Controls tab names the binding.",
+			"Holds the eject key in flight and sees the eject event fire once and no sooner than the hold, a tap fire nothing, and the same key refused without a pod and on the arrival's rails, docked and on the launch's rails, each said on the glass or the docked station console; a spent hold stays spent through a head turn and through the Settings screen emptying the held keys; the Controls tab names the binding.",
 			[
 				"eject",
 				"escape pod",
@@ -350,6 +350,8 @@ export const PROBE_CATALOG = Object.freeze(
 				"station console message",
 				"glass notice",
 				"controls reference",
+				"settings screen",
+				"released held keys",
 			],
 		),
 		entry(

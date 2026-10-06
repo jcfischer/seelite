@@ -11651,15 +11651,12 @@ class Game {
 	 * and a release made at the console must clear it, or a fresh press made
 	 * there would be dead on turning forward.
 	 *
-	 * **Nor under a modal or the rebind capture** (sage round 4), on the same
-	 * covered-glass rule: the screen is over the glass, and both take the pad // glossary-ignore: pad
-	 * whole. This is not the keyboard suspended over a console, which the
-	 * principal ruled against — a console leaves the glass readable, a modal
-	 * does not. And a modal is not a release either: the Settings screen
-	 * empties `keys` as it opens and the pad's `home` reads not live under it, // glossary-ignore: pad
-	 * so the release is read off what is physically down — `padEjectDown` and
+	 * **A modal is not a release either** (sage round 4). The Settings screen
+	 * empties `keys` as it opens and the pad's `home` reads not live under a // glossary-ignore: pad
+	 * modal, so both read as let go while the control is still down. The
+	 * release is read off what is physically down — `padEjectDown` and
 	 * `keysPhysicallyDown` — or a refused hold kept down through the screen
-	 * would come back unspent when it closed.
+	 * would come back unspent when it closed and eject.
 	 */
 	private stepEject(dt: number) {
 		// **A refusal is about the phase it was said in**, so it ends with
@@ -11675,13 +11672,11 @@ class Game {
 			this.ejectHold = EJECT_IDLE;
 			return;
 		}
-		const context = this.padContext();
 		const headTurned = this.view === "cockpit" && this.headLook !== "forward";
-		const takenWhole = context === "modal" || context === "capture";
 		const live =
 			!headTurned &&
-			!takenWhole &&
-			(this.held("fly.eject") || padEjectHeld(this.padFrame, context));
+			(this.held("fly.eject") ||
+				padEjectHeld(this.padFrame, this.padContext()));
 		const down =
 			isHeld(this.bindings, "fly.eject", this.keysPhysicallyDown, this.view) ||
 			padEjectDown(this.padFrame);
