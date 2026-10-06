@@ -405,7 +405,7 @@ describe("the catalogue is complete against the source", () => {
 		expect(checked).toBe(13);
 	});
 
-	test("every pad button is printed somewhere, except the one nothing claims", () => {
+	test("every pad button is printed somewhere", () => {
 		const printed = new Set(
 			triggers().flatMap((t) =>
 				t.kind === "pad-button" || t.kind === "pad-intent" ? [t.button] : [],
@@ -417,8 +417,10 @@ describe("the catalogue is complete against the source", () => {
 		const missing = STANDARD_BUTTONS.filter(
 			(b) => !printed.has(b) && !sticksAndTriggers.has(b as "l2" | "r2"),
 		);
-		// `pad-bindings.ts`: "Unbound: `home` alone."
-		expect(missing).toEqual(["home"]);
+		// `home` was the one button nothing claimed, and this row excepted it
+		// by name; node #703 made it the eject, held, so there is no exception
+		// left and a button dropped from the catalogue is a red run.
+		expect(missing).toEqual([]);
 	});
 
 	test("the sticks, the triggers and the mouse each have a row", () => {

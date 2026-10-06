@@ -127,7 +127,9 @@ export type PadContext =
  * module still decides *whether* a button reaches the ship, and no longer
  * decides *what* it reaches.
  *
- * **Unbound: `home` alone.** The registry reports it; nothing claims it. The
+ * **No press on `home`.** The registry reports it and no press claims it;
+ * since node #703 it is the eject control *held* (`padEjectHeld`), which is
+ * the reason no press may be put there by default. The
  * tuning dials and the settings key stay on the keyboard — seventeen buttons
  * cannot carry twenty-six letters, and saying which are dropped is better than
  * discovering it in flight.
@@ -492,6 +494,38 @@ export function padFireHeld(
 		frame?.connected === true &&
 		contextFliesShip(context) &&
 		frame.held.has("x")
+	);
+}
+
+/**
+ * Whether the pad holds the eject control: `home`, held (node #703, on #660
+ * D4). The hold itself — how long, and what a refusal says — is `eject.ts`'s.
+ *
+ * **`home` because it is the one button with no press.** Any other button
+ * runs its own command on the press, so a hold there would charge the jump or
+ * engage cruise on the way to ejecting. It has two limits, and the keyboard's
+ * `Backspace` is the route that has neither: some pads report sixteen buttons
+ * and have no `home` at all (`gamepad.ts`), and an operating system or a
+ * launcher overlay may take the button for itself before the page sees it.
+ *
+ * **Live wherever a pad is not taken whole**, which is wider than the
+ * trigger's `contextFliesShip`, on purpose. Docked, the pad's context is
+ * `console` — the station console on the forward wall — and a predicate that
+ * answered only where the ship flies would make the docked refusal (#660 D5)
+ * unreachable from a pad: the press would do nothing at all, which is the
+ * thing a refusal exists to replace. A side console in flight is the same
+ * context, and the keyboard's key ejects there too. The two modal contexts
+ * take the whole pad, and the eject is not an exception to that.
+ */
+export function padEjectHeld(
+	frame: PadFrame | null,
+	context: PadContext,
+): boolean {
+	return (
+		frame?.connected === true &&
+		context !== "modal" &&
+		context !== "capture" &&
+		frame.held.has("home")
 	);
 }
 

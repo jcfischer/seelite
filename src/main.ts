@@ -253,6 +253,7 @@ import {
 	type PadIntents,
 	contextFliesShip,
 	mouseFireHeld,
+	padEjectHeld,
 	padFireHeld,
 	padFlightAxes,
 	padIntents,
@@ -560,6 +561,17 @@ import {
 	chargeLogText,
 	nextChargeNotice,
 } from "./charge-notice";
+import {
+	EJECT_DOCKED_SENTENCE,
+	EJECT_IDLE,
+	EJECT_REFUSED_S,
+	EJECT_REFUSED_TEXT,
+	type EjectHold,
+	ejectArming,
+	ejectArmingText,
+	ejectRefusal,
+	stepEjectHold,
+} from "./eject";
 import {
 	type Encounter,
 	type EncounterContact,
@@ -958,7 +970,7 @@ import {
 	hasHeldSaveFault,
 	heldSaveFault,
 } from "./save-badge";
-import { marketStationOf } from "./market";
+import { ESCAPE_POD, marketStationOf } from "./market";
 import { type HoldBids, holdSummary, pilotGoods } from "./hold";
 
 import { exposeMarketLaw } from "./market-probe-hook";
@@ -3145,6 +3157,22 @@ class Game {
 	/** What the charge notice drew this frame, for a probe to read beside the
 	 *  pixels rather than instead of them (#69, #447). */
 	chargedRender: { text: string; alpha: number } | null = null;
+	/** The eject control's progress through the hold it is in (node #703). */
+	ejectHold: EjectHold = EJECT_IDLE;
+	/** The eject's last refusal on the glass, and what is left of its time. */
+	ejectRefused: { text: string; left: number } = { text: "", left: 0 };
+	/** What the eject's row drew this frame — the arming line or a refusal —
+	 *  for a probe to read rather than restate. */
+	ejectRender: { text: string; alpha: number; refused: boolean } | null = null;
+	/**
+	 * Every eject the control has fired, by the clock it fired at (node #703).
+	 *
+	 * **The event and nothing else yet.** What an eject does — the pod, the
+	 * empty hold, the wake at the launch station — is #660 D2's and node #704
+	 * builds it behind `eject()`. Until then a completed hold is recorded here
+	 * and the glass claims nothing it has not done.
+	 */
+	ejects: { gameTime: number }[] = [];
 	/** The gimballed beam's direction, or `null` before the first step, when it
 	 *  is the boresight (`gimbal.ts`). */
 	gunAim: Vec3 | null = null;
@@ -11544,6 +11572,66 @@ class Game {
 		else this.launch();
 	}
 
+	/**
+	 * One frame of the eject control (node #703, on #660 D4 and D5).
+	 *
+	 * The keyboard's held key or the pad's `home`, through `eject.ts`'s hold:
+	 * a refusal on the first frame the control is down, an eject on the frame
+	 * the hold completes. **Every phase**, because two of the refusals are
+	 * docked and on the rails, where `step` returns before its flight tail.
+	 *
+	 * **Not during the opening**: #530 D2 rules that nothing a pilot presses
+	 * there makes a watched run differ from a skipped one, so the control is
+	 * idle and says nothing — the same answer `command` gives every other key.
+	 */
+	private stepEject(dt: number) {
+		this.ejectRefused = {
+			text: this.ejectRefused.text,
+			left: Math.max(0, this.ejectRefused.left - dt),
+		};
+		if (this.openingActive) {
+			this.ejectHold = EJECT_IDLE;
+			return;
+		}
+		const held =
+			this.held("fly.eject") || padEjectHeld(this.padFrame, this.padContext());
+		const refusal = ejectRefusal({
+			phase: this.dock.phase,
+			podFitted: this.commander.ownedEquipment.includes(ESCAPE_POD),
+		});
+		const step = stepEjectHold(this.ejectHold, held, dt, refusal);
+		this.ejectHold = step.hold;
+		if (step.event?.kind === "eject") this.eject();
+		else if (step.event?.kind === "refused") {
+			this.ejectRefused = {
+				text: EJECT_REFUSED_TEXT[step.event.refusal],
+				left: EJECT_REFUSED_S,
+			};
+			// Docked, the station console fills the canopy and is the glass
+			// a docked cockpit has (`flightGlassShown`), so the refusal is
+			// said on its message line, where the till already says no. No
+			// revision bump: the console's memo key and the cockpit's both read
+			// the message itself, and a bump is an adoption's (`adopt`).
+			if (step.event.refusal === "docked") {
+				this.stationConsoleMessage = EJECT_DOCKED_SENTENCE;
+				this.updateCockpit();
+			}
+		}
+	}
+
+	/**
+	 * The eject, once the hold completes and nothing refuses it.
+	 *
+	 * **Recorded, and nothing more, until node #704** builds what it costs
+	 * (#660 D2: the pod consumed, the hold lost, the pilot woken at the
+	 * launch station). Nothing is said on the glass here, because a line
+	 * announcing a pod that did not go would be a claim the game has not
+	 * made good.
+	 */
+	private eject() {
+		this.ejects.push({ gameTime: this.world.gameTime });
+	}
+
 	/** The arrival turn the player holds at a station: the turn
 	 *  `stepArrivalTurns` registered keeps its first stamp, computer or
 	 *  hand-flown, and only with no turn held is it asked as of now. Read by the
@@ -11933,6 +12021,13 @@ class Game {
 		// Communications log keeps its line, which is what a record is for.
 		this.charged = { text: "", left: 0 };
 		this.chargedRender = null;
+		// And the eject's row and hold (node #703): a refusal about the leg
+		// that was left says nothing here, and a hold starts again from nothing
+		// rather than finishing on time banked before it. The event list is a
+		// record and is kept.
+		this.ejectHold = EJECT_IDLE;
+		this.ejectRefused = { text: "", left: 0 };
+		this.ejectRender = null;
 		this.gunAim = null;
 		this.struckFor = 0;
 		this.lastExit = "";
@@ -13941,6 +14036,10 @@ class Game {
 		// Before the phase branch, so a hold is retried while docked and ended in
 		// every other phase (#314).
 		this.stepHeldLaunch();
+		// Before the phase branch as well, and for the opposite reason: docked
+		// and on the rails are where the eject is *refused* (#660 D5), and a
+		// refusal the branch below returned past would be a key doing nothing.
+		this.stepEject(dt);
 		// Every phase, docked included: energy regenerates and shields recharge
 		// on the sim clock wherever the ship is. The trigger is the pilot's
 		// (`triggerHeld`), and what the gun delivered is this frame's shot.
@@ -18116,6 +18215,45 @@ class Game {
 	}
 
 	/**
+	 * The eject control's row on the glass (node #703): the arming line while a
+	 * hold is filling, else a standing refusal.
+	 *
+	 * **Arming wins**, because it is the state the pilot's hand is in now — a
+	 * refusal is about a press that has already been let go. Amber while
+	 * arming, on §4's grammar for an action the pilot can still stop by letting
+	 * go; red for a refusal. Writes `ejectRender`, which `drawMarkers` clears
+	 * at the top of every frame.
+	 */
+	private drawEjectNotice(
+		ctx: CanvasRenderingContext2D,
+		w: number,
+		h: number,
+		glassBottom: number,
+	) {
+		const arming = ejectArming(this.ejectHold);
+		const refused = this.ejectRefused;
+		const line =
+			arming !== null
+				? { text: ejectArmingText(arming), alpha: 1, refused: false }
+				: refused.left > 0 && refused.text
+					? {
+							text: refused.text,
+							// The scoop's fade: over the last stretch, not a cut.
+							alpha: Math.min(1, refused.left / (EJECT_REFUSED_S * 0.4)),
+							refused: true,
+						}
+					: null;
+		if (!line) return;
+		drawGlassNotice(ctx, w, h, glassBottom, {
+			text: line.text,
+			alpha: line.alpha,
+			fill: line.refused ? FLOOR_TONE_FILL.refused : FLOOR_TONE_FILL.action,
+			row: GLASS_NOTICE_ROW.eject,
+		});
+		this.ejectRender = line;
+	}
+
+	/**
 	 * Evaluate the director once for this frame and write the corridor's world
 	 * lines from it. Runs before the composer, because the lines are in the
 	 * near layer; `drawDockingDirector` reads the same evaluation after it.
@@ -18160,6 +18298,7 @@ class Game {
 		this.boresightRender = null;
 		this.beamRender = null;
 		this.hostileFireRender = { beam: null, rim: 0 };
+		this.ejectRender = null;
 		if (!this.flightGlassShown()) {
 			this.cockpitPrompt.reset();
 			this.combatRig?.clearOverlay();
@@ -18169,6 +18308,20 @@ class Game {
 			this.directorRender = null;
 			this.floorRender = null;
 			this.saturationRender = null;
+			// **The one line drawn on the rails, and only that one** (node #703).
+			// An arrival and a launch are scripted, so their canopy carries no
+			// flight glass — but they are two of #660 D5's three refusals, and a
+			// refusal not said there is a key that does nothing. Head forward
+			// only: a turned head is reading a console, which replaces the glass.
+			// Docked is not here, because the station console is the docked
+			// glass and `stepEject` says it there.
+			if (
+				!this.openingActive &&
+				this.view === "cockpit" &&
+				this.headLook === "forward" &&
+				(this.dock.phase === "arriving" || this.dock.phase === "launching")
+			)
+				this.drawEjectNotice(ctx, w, h, GLASS_BOTTOM_FRACTION);
 			return;
 		}
 		const toPixels = (ndcX: number, ndcY: number) =>
@@ -18383,6 +18536,9 @@ class Game {
 			chargedAlpha === null
 				? null
 				: { text: this.charged.text, alpha: chargedAlpha };
+		// The eject control's row (node #703), in every view for the scoop's
+		// reason: it answers the pilot's own key.
+		this.drawEjectNotice(ctx, w, h, glassBottom);
 		// The gimballed beam's point on the glass (#324): the tracer ends there,
 		// and while the gimbal has turned the beam off the boresight a small pip
 		// shows where it points.

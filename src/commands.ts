@@ -74,6 +74,7 @@ import {
 	isAnalogTrigger,
 	type PadContext,
 	type PadIntents,
+	padEjectHeld,
 	padFireHeld,
 	padFlightAxes,
 	padIntents,
@@ -435,17 +436,29 @@ function triggerFor(sign: 1 | -1): Trigger[] {
 	});
 }
 
-/** The button held for the pulse laser. */
-function fireButtons(): Trigger[] {
+/**
+ * The buttons a held-button predicate answers yes to, each with the contexts
+ * it answers in — asked of `pad-bindings.ts` rather than restated, as every
+ * pad row here is.
+ */
+function heldButtons(
+	isHeld: (frame: PadFrame, context: PadContext) => boolean,
+): Trigger[] {
 	return STANDARD_BUTTONS.flatMap((button) => {
 		const contexts = liveIn((c) =>
-			padFireHeld(frame({ held: new Set([button]) }), c),
+			isHeld(frame({ held: new Set([button]) }), c),
 		);
 		return contexts.length > 0
 			? [{ kind: "pad-button" as const, button, hold: true as const, contexts }]
 			: [];
 	});
 }
+
+/** The button held for the pulse laser. */
+const fireButtons = (): Trigger[] => heldButtons(padFireHeld);
+
+/** The button held to eject (node #703). */
+const ejectButtons = (): Trigger[] => heldButtons(padEjectHeld);
 
 // ---------------------------------------------------------------------------
 // The commands
@@ -646,6 +659,20 @@ const AUTHORED = [
 		keys: ["j"],
 	},
 	{ id: "fly.jump", name: "Wind up the jump", group: "fly", keys: ["`"] },
+	{
+		// Node #703, on #660 D4: the escape pod is manual, so ejecting is a
+		// control. **Held, and the hold is the confirm** — `eject.ts` owns how
+		// long and why a hold rather than a double press. `Backspace` because
+		// every letter is bound and the free digits sit beside head-look, where
+		// a fumbled press is likeliest; a named key also reads the same on
+		// every layout, so it needs no code. Refused docked and on the rails of
+		// an arrival or a launch (D5), and without a pod — `ejectRefusal`.
+		id: "fly.eject",
+		name: "Eject: launch the escape pod",
+		group: "fly",
+		keys: [{ key: "backspace", hold: true }],
+		more: ejectButtons(),
+	},
 	{
 		// #371: a console gives the pointer up, and nothing takes it back but
 		// the next click on the glass.
@@ -1089,9 +1116,11 @@ const keyTrigger = (spec: KeySpec): Trigger => {
  * the pad to the frame instrument and takes it back (`PadIntents.instrument`).
  * `x` (Square) is not either: it is the pulse laser's trigger, *held*, by the
  * principal's ruling (#324), and `fireButtons` derives that row. Flight assist
- * stays on the keyboard's `x`. **`home` is bound to nothing at all**, which is
- * the one free standard button and is said here rather than discovered in
- * flight.
+ * stays on the keyboard's `x`. **`home` is not in the table either**: no press
+ * reaches anything there, and it is the eject control *held* (node #703),
+ * which `ejectButtons` derives the way `fireButtons` derives Square. It was
+ * the one free standard button, which is why the eject took it — said here
+ * rather than discovered in flight.
  */
 export const PAD_FLIGHT_COMMANDS: Partial<
 	Record<PadButtonName, readonly CommandId[]>

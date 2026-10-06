@@ -131,6 +131,7 @@ and triggers are analog.
 | L2 | Throttle down; assist off, fire the retro vents | `hold Ctrl` |
 | Y | Engage or drop cruise | `j` |
 | Select | Wind up the jump | `` ` `` |
+| hold Home | Eject: launch the escape pod | `hold Backspace` |
 | hold X | Fire the pulse laser | `hold Space or left mouse button` |
 | R1 | Next target | `t` |
 | L1 | Previous target | `g` |
@@ -219,7 +220,12 @@ On the settings screen, ← and → change the focused row's value, which is wha
 that screen's own hint line says. The pad adopts its model rather than inventing
 a second one beside it.
 
-**Unbound: `home`.** The module reports it; nothing claims it.
+**`home` is the eject, held** (node #703), and no press reaches it: every other
+button runs a command on its press, which a hold there would fire first. It is
+live in a console as well as in flight, so a docked press is told it is refused
+rather than ignored. Two limits, and the keyboard's `Backspace` has neither:
+some pads report no `home` button at all, and an operating system or launcher
+overlay may take it before the page sees it.
 
 ## What is checked, and where
 

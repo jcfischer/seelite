@@ -340,6 +340,19 @@ export const PROBE_CATALOG = Object.freeze(
 			["duel", "combat HUD", "raider", "target ring", "on target"],
 		),
 		entry(
+			"probe-eject.mjs",
+			"Holds the eject key in flight and sees the eject event fire once and no sooner than the hold, a tap fire nothing, and the same key refused without a pod and on the arrival's rails, docked and on the launch's rails, each said on the glass or the docked station console; the Controls tab names the binding.",
+			[
+				"eject",
+				"escape pod",
+				"held key",
+				"refusal",
+				"station console message",
+				"glass notice",
+				"controls reference",
+			],
+		),
+		entry(
 			"probe-first-day.mjs",
 			"Flies a guided new game's first day: docked boot through clearance and its lastDocked checkpoint, station control's line, the First day tab, the Local run accepted, launched, docked, delivered and reported, the glass prompt and the Communications log; and a free pilot left unpushed.",
 			[

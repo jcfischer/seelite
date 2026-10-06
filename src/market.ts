@@ -1027,13 +1027,21 @@ export const LONG_RANGE_SCANNER = "Long-Range Scanner";
 /** #468's figure, flat. */
 export const LONG_RANGE_SCANNER_PRICE_CR = 1000;
 
+/**
+ * The escape pod, by name (node #703), beside the row it buys for
+ * `SCAN_MODULE`'s reason. Whether one is fitted decides whether the eject
+ * control has anything to send (`ejectRefusal` in `eject.ts`); what an eject
+ * costs is #660 D2's.
+ */
+export const ESCAPE_POD = "Escape Pod";
+
 export const EQUIPMENT: readonly Equipment[] = [
 	{ name: "Missile", priceCr: 30, scope: "universal" },
 	{ name: "Large Cargo Bay", priceCr: 400, scope: "universal" },
 	{ name: "Extra Pulse Laser", priceCr: 400, scope: "universal" },
 	{ name: "E.C.M. System", priceCr: 600, scope: "universal" },
 	{ name: "Extra Beam Laser", priceCr: 1000, scope: "universal" },
-	{ name: "Escape Pod", priceCr: 1000, scope: "universal" },
+	{ name: ESCAPE_POD, priceCr: 1000, scope: "universal" },
 	{ name: "Energy Bomb", priceCr: 900, scope: "universal" },
 	{ name: "Docking Computer", priceCr: 1000, scope: "universal" },
 	{ name: "Galactic Hyperdrive", priceCr: 5000, scope: "universal" },

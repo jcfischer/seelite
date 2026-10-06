@@ -369,6 +369,9 @@ test("a jump or a reset takes the cargo contacts with the canisters", () => {
 					QUIET_WEAPONS: null,
 					SILENT_WEAPONS: null,
 					beginScanHold: () => ({ key: null, chargeS: 0 }),
+					// And the eject's idle hold (node #703), which the teardown
+					// writes back for the same reason and nothing here reads.
+					EJECT_IDLE: null,
 				},
 			),
 		),

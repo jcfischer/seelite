@@ -25,6 +25,7 @@ const KEY_WORDS: Readonly<Record<string, string>> = {
 	shift: "Shift",
 	control: "Ctrl",
 	f1: "F1",
+	backspace: "Backspace",
 	arrowup: "↑",
 	arrowdown: "↓",
 	arrowleft: "←",
@@ -304,6 +305,15 @@ export const targetPrompt = (layout: Layout): string =>
 	`${spoken(layout, "fight.targetNext")} selects a target`;
 export const cruisePrompt = (layout: Layout): string =>
 	`press ${spoken(layout, "fly.cruise")} to cruise`;
+
+/**
+ * The eject control as a sentence names it, for the first-day lesson and the
+ * hull warning (#660 D9 and D12, built by node #704) — from the layout in
+ * force, so a rebound key is the one they name. `triggerLabel` already says
+ * `hold`, because the control is held.
+ */
+export const ejectPrompt = (layout: Layout): string =>
+	`${spoken(layout, "fly.eject")} to eject`;
 
 /**
  * A cruise dial's two keys, for the legacy HUD's dial line: `(-/=)`.
