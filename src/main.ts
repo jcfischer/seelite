@@ -141,9 +141,18 @@ import {
 	COMMS_LINES,
 	type CommsLineId,
 	clearanceLine,
+	ejectWarningLine,
 	numbersPhrase,
 	voiceArms,
 } from "./comms";
+import {
+	type DeathCause,
+	type DeathWake,
+	ejectWarningDue,
+	ejectWarningText,
+	stepEjectWarning,
+	wakeText,
+} from "./death-cost";
 import {
 	prewarmComms,
 	prewarmFirst,
@@ -849,6 +858,7 @@ import {
 	boundNames,
 	cruisePrompt,
 	dialKeys,
+	ejectPrompt,
 	jumpPrompt,
 	onKeyboard,
 	type OwnKey,
@@ -993,6 +1003,7 @@ import {
 	firstDayLogsStep,
 	firstDayPrompt,
 	firstDayStep,
+	firstDayEjectLine,
 	firstDayText,
 } from "./first-day";
 import type { FirstDayPanel } from "./live-cockpit";
@@ -1296,33 +1307,6 @@ const VOICE_ARMS = voiceArms(
 	new URLSearchParams(window.location.search).get("voices"),
 	import.meta.env?.DEV === true,
 );
-/**
- * Whether the eject control is offered: in a dev build, and nowhere else until
- * node #704 builds what an eject does (sage round 1 on node #703).
- *
- * **A hold that visibly completes must do something, or not be offered.** The
- * binding, the hold and the refusals are node #703's and complete; the pod
- * going, the hold lost and the wake at the launch station are #660 D2's, built
- * by node #704 behind `eject()`. Shipped before that, a pilot who bought the
- * pod would watch the arming bar fill and then nothing happen — the control
- * the help names, doing nothing, which is the thing a refusal exists to
- * replace. So a production build neither steps the control nor prints its
- * row, and node #704 deletes this gate.
- *
- * **The table keeps the row.** `fly.eject` stays in `commands.ts`'s binding
- * table, so the headless tier holds the binding and the refusals, and a dev
- * server — which is what every probe and a principal's flight run against —
- * offers the whole control. What a production build still carries is
- * Backspace's `preventDefault` (`key-dispatch.ts`), which costs nothing.
- */
-const EJECT_OFFERED = import.meta.env?.DEV === true;
-
-/** The catalogue a screen prints: the eject's row only where it is offered. */
-const offeredControls = (c: ControlsCatalogue): ControlsCatalogue =>
-	EJECT_OFFERED
-		? c
-		: { ...c, commands: c.commands.filter((row) => row.id !== "fly.eject") };
-
 /** The director's arms: `?music=`'s, with `?voices=`'s say on the numbers. */
 const DIRECTOR_ARMS = { ...MUSIC_ARMS.arms, voice: VOICE_ARMS.music };
 const RAIDERS_OFF =
@@ -2667,6 +2651,11 @@ class Game {
 	 *  Communications log. Session state for the hails' reason: a line of
 	 *  console text is not a saved fact. */
 	private readonly firstDayLog: RaiderLogLine[] = [];
+	/** What the last death took, on the Communications log for this session
+	 *  (node #704): the record the docked console's message line is not. */
+	private wakeLog: RaiderLogLine | null = null;
+	/** The wake this page showed, for a probe to read beside the console. */
+	wakeShown: DeathWake | null = null;
 	/** The step last logged, so a line is written when the step changes. */
 	private firstDayLastStep: FirstDayStepId | null = null;
 	/** The station the day ended at, while the ship is still in its berth. */
@@ -2710,11 +2699,12 @@ class Game {
 	 */
 	private cabinHidden = false;
 	/**
-	 * Called once, on the frame the hull reaches zero (#324). The boot sets it:
-	 * it restores the last dock, or opens the Commander overlay when there is
-	 * nothing to restore.
+	 * Called once, on the frame the hull reaches zero (#324) or the escape pod
+	 * goes (#660, node #704), with which of the two it was. The boot sets it:
+	 * it restores the launch at that cost, or opens the Commander overlay when
+	 * there is nothing to restore.
 	 */
-	onDeath: (() => Promise<void>) | null = null;
+	onDeath: ((cause: DeathCause) => Promise<void>) | null = null;
 	/** Set when the hull reaches zero. The clock holds from then on. */
 	dead = false;
 	/** The Commander overlay, once the boot has mounted it (§11). */
@@ -3350,14 +3340,24 @@ class Game {
 	 * game clock it fired at, and the page's `performance.now()`, which is the
 	 * clock a probe can read a keydown against.
 	 *
-	 * **The event and nothing else yet.** What an eject does — the pod, the
-	 * empty hold, the wake at the launch station — is #660 D2's and node #704
-	 * builds it behind `eject()`. A count and the last one rather than a list,
+	 * What an eject does — the pod, the empty hold, the wake at the launch
+	 * station — is #660 D2's, built by node #704 behind `eject()`, which also
+	 * counts it here. A count and the last one rather than a list,
 	 * because a list kept for a whole session grows with every hold (sage round
 	 * 1), and no reader wants more than these two.
 	 */
 	ejectCount = 0;
 	lastEject: { gameTime: number; atMs: number } | null = null;
+	/** #660 D12: whether the eject warning stands this frame, and whether its
+	 *  voice line has been said since it last lapsed (`stepEjectWarning`). */
+	ejectWarningDue = false;
+	private ejectWarningSpoken = false;
+	/** How many times the warning's voice line has been asked for, for a
+	 *  probe to count crossings by (`stepEjectWarning`). */
+	ejectWarningsSaid = 0;
+	/** What the warning drew this frame, for a probe to read beside the
+	 *  pixels (`drawEjectNotice`). */
+	ejectWarningRender: { text: string } | null = null;
 	/** The gimballed beam's direction, or `null` before the first step, when it
 	 *  is the boresight (`gimbal.ts`). */
 	gunAim: Vec3 | null = null;
@@ -10003,9 +10003,7 @@ class Game {
 	}
 
 	controlsNow(): ControlsCatalogue {
-		return offeredControls(
-			controlsCatalogue(this.bindings, this.layoutNotices),
-		);
+		return controlsCatalogue(this.bindings, this.layoutNotices);
 	}
 
 	/**
@@ -10110,7 +10108,7 @@ class Game {
 	 */
 	private publishControls() {
 		this.liveCockpit?.setControls(
-			offeredControls(controlsCatalogue(this.bindings, this.layoutNotices)),
+			controlsCatalogue(this.bindings, this.layoutNotices),
 		);
 	}
 
@@ -11880,7 +11878,8 @@ class Game {
 			said.phase === this.dock.phase
 				? { ...said, left: Math.max(0, said.left - dt) }
 				: { text: "", left: 0, phase: null };
-		if (this.openingActive || !EJECT_OFFERED) {
+		this.stepEjectWarning();
+		if (this.openingActive) {
 			// Idle, not reset: only a release clears `spent`, here as anywhere.
 			this.ejectHold = idleEjectHold(this.ejectHold, this.ejectDown());
 			return;
@@ -11997,17 +11996,53 @@ class Game {
 	}
 
 	/**
-	 * The eject, once the hold completes and nothing refuses it.
+	 * #660 D12's warning, one frame (node #704): with a pod fitted and the
+	 * hull below `EJECT_WARNING_HULL`, the glass says to eject and names the
+	 * key (`drawEjectNotice`), and the ship's voice says it once per crossing
+	 * (`stepEjectWarning`). Not during the opening, where nobody is flying;
+	 * `ejectWarningDue` already says not docked, not on the rails, not dead,
+	 * and never for a permadeath commander, whose save an eject ends (§9).
+	 */
+	private stepEjectWarning() {
+		const due =
+			!this.openingActive &&
+			ejectWarningDue({
+				podFitted: this.commander.ownedEquipment.includes(ESCAPE_POD),
+				permadeath: this.permadeath,
+				flying: this.dock.phase === "flying",
+				alive: !this.dead && isAlive(this.condition),
+				hull: this.condition.hull,
+			});
+		const step = stepEjectWarning(this.ejectWarningSpoken, due);
+		this.ejectWarningSpoken = step.spoken;
+		this.ejectWarningDue = due;
+		if (step.speak) {
+			this.ejectWarningsSaid += 1;
+			this.consoleNotify("bad");
+			this.sayComms(ejectWarningLine(spoken(this.bindings, "fly.eject")));
+		}
+	}
+
+	/**
+	 * The eject, once the hold completes and nothing refuses it: the escape
+	 * pod goes (#660 D2, node #704).
 	 *
-	 * **Recorded, and nothing more, until node #704** builds what it costs
-	 * (#660 D2: the pod consumed, the hold lost, the pilot woken at the
-	 * launch station). Nothing is said on the glass here, because a line
-	 * announcing a pod that did not go would be a claim the game has not
-	 * made good.
+	 * **A death with a pod, and one death.** The ship is left as a hull at
+	 * zero is — `dead`, the clock held — and `onDeath` is told the cause, so
+	 * the store restores the launch with the hold and the pod taken
+	 * (`commanderAfterDeath`) and the page wakes at the launch station. A hit
+	 * landing in the same frame finds the ship already dead and is no second
+	 * death. Under a boot that writes nothing there is no launch to wake at,
+	 * and the Commander overlay opens, as for any death there.
 	 */
 	private eject() {
+		if (this.dead) return;
 		this.ejectCount += 1;
 		this.lastEject = { gameTime: this.world.gameTime, atMs: performance.now() };
+		this.dead = true;
+		this.clockHeld = true;
+		this.lastExit = "escape pod launched";
+		void this.onDeath?.("eject");
 	}
 
 	/** The arrival turn the player holds at a station: the turn
@@ -12410,6 +12445,7 @@ class Game {
 		this.ejectHold = idleEjectHold(this.ejectHold, this.ejectDown());
 		this.ejectRefused = { text: "", left: 0, phase: null };
 		this.ejectRender = null;
+		this.ejectWarningRender = null;
 		this.gunAim = null;
 		this.struckFor = 0;
 		this.lastExit = "";
@@ -12736,7 +12772,8 @@ class Game {
 			this.dead = true;
 			this.clockHeld = true;
 			this.lastExit = "ship destroyed";
-			void this.onDeath?.();
+			// Not ejected, so the ship is lost, pod fitted or not (#660 D4).
+			void this.onDeath?.("destroyed");
 		}
 		this.cancelJumpCharge(reason);
 		this.cancelSpoolUp(reason);
@@ -16667,6 +16704,8 @@ class Game {
 							...this.charges,
 							// #408: station control's lines to a guided pilot.
 							...this.firstDayLog,
+							// Node #704: what the last death took.
+							...(this.wakeLog ? [this.wakeLog] : []),
 						])
 							.slice(0, 6)
 							.map(formatRaiderLogLine)
@@ -17344,6 +17383,34 @@ class Game {
 	}
 
 	/**
+	 * What the death took, said once where the pilot wakes (#660, node #704):
+	 * the docked console's message line, which the next tab press, launch or
+	 * trade retires, and the Communications log, which keeps it for the
+	 * session. Cockpit-only (#460's Constraint): both are glass the cockpit
+	 * already has. A wake beside a station that refused the docked restore —
+	 * a Wanted pilot whose launch station will not take them — is on the log
+	 * alone, since there is no console to say it on.
+	 */
+	showWake(wake: DeathWake): void {
+		const text = wakeText(wake);
+		this.wakeShown = wake;
+		const station =
+			this.dock.stationId !== null
+				? stationOf(this.world.system, this.dock.stationId)
+				: null;
+		this.wakeLog = {
+			at: this.world.gameTime,
+			key: station ? this.stationKey(station) : ("" as CarrierKey),
+			text,
+		};
+		if (this.dockPhase === "docked") {
+			this.stationConsoleMessage = text;
+			this.updateCockpit();
+		}
+		this.consoleNotify("bad");
+	}
+
+	/**
 	 * Shared docking-protocol sequence used by both `startDockedAtHome` and
 	 * `restoreDockedAt`: place the ship on the aperture axis outside the
 	 * standoff, co-moving, request clearance, engage the docking computer,
@@ -17883,6 +17950,11 @@ class Game {
 					? firstDayConsoleLine(facts, this.firstDayTarget(), keys)
 					: null,
 			controls: flightControls(this.bindings),
+			eject: firstDayEjectLine(
+				this.commander.ownedEquipment.includes(ESCAPE_POD),
+				this.permadeath,
+				ejectPrompt(this.bindings),
+			),
 		};
 	}
 
@@ -19117,7 +19189,23 @@ class Game {
 							refused: true,
 						}
 					: null;
-		if (!line) return;
+		if (!line) {
+			// #660 D12 (node #704): the warning is this row's third state and
+			// its last. The hold it asks for replaces it as soon as the key goes
+			// down, which is the warning answered; a refusal is about a press
+			// already made. Amber, for the scoop's reason: an act the pilot can
+			// still take.
+			if (!this.ejectWarningDue) return;
+			const text = ejectWarningText(ejectPrompt(this.bindings));
+			drawGlassNotice(ctx, w, h, glassBottom, {
+				text,
+				alpha: 1,
+				fill: FLOOR_TONE_FILL.action,
+				row: GLASS_NOTICE_ROW.eject,
+			});
+			this.ejectWarningRender = { text };
+			return;
+		}
 		drawGlassNotice(ctx, w, h, glassBottom, {
 			text: line.text,
 			alpha: line.alpha,
@@ -19174,6 +19262,7 @@ class Game {
 		this.beamRender = null;
 		this.hostileFireRender = { beam: null, rim: 0 };
 		this.ejectRender = null;
+		this.ejectWarningRender = null;
 		if (!this.flightGlassShown()) {
 			this.cockpitPrompt.reset();
 			this.combatRig?.clearOverlay();
@@ -20365,16 +20454,18 @@ if (postcard) {
 	// pilot who never docked, a new commander at the start system's trade
 	// station (D10) — the one-shot continue names the Commander, and the page
 	// reloads into the dock.
+	// What it costs is the cause's (#660, node #704): an eject keeps the
+	// launch ship and loses the hold and the pod, any other death the ship.
 	// Otherwise — permadeath, a boot that writes nothing (`?no-save`,
 	// `?system=`), or a restore that failed — the ship stays destroyed and the
 	// Commander overlay opens.
-	game.onDeath = async () => {
+	game.onDeath = async (cause) => {
 		const store = game.saveStore;
 		const slot = attachedSlot;
 		try {
 			const restored =
 				store && slot
-					? await store.revertToLastDocked(game.commanderRecord())
+					? await store.revertToLastDocked(game.commanderRecord(), cause)
 					: null;
 			if (restored && slot) {
 				await catalog.chooseCommander(slot);
@@ -20408,8 +20499,12 @@ if (postcard) {
 			if (plan.loaded.commander.dockedAt !== null) {
 				if (!game.restoreDockedAt(plan.loaded.commander.dockedAt))
 					console.warn("docked restore failed; resuming in flight");
+				// What the death took, said where the pilot wakes (node #704).
+				// After the restore, so a docked wake is on the console.
+				if (plan.wake) game.showWake(plan.wake);
 				return;
 			}
+			if (plan.wake) game.showWake(plan.wake);
 			const commander = {
 				firstDay: game.firstDay,
 				docked: game.dockPhase === "docked",

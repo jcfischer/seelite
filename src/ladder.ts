@@ -156,7 +156,8 @@ export interface Gate {
  * Every gated hull and item, by the name a shipyard or the Equipment tab sells
  * it under. **Absent means rung 0**: the courier, the Docking Computer and the
  * Long-Range Scanner (#408 and #481 depend on them), the Identity Scanner and
- * the Escape Pod. Rung 8 gates nothing; it counts toward the capstone.
+ * the Escape Pod, which has behaviour since node #704 (#660's manual eject).
+ * Rung 8 gates nothing; it counts toward the capstone.
  *
  * Eleven of these items have no behaviour yet, and are gated anyway (#562 D6):
  * the node that builds an item inherits its gate. `patrol` and `raider` carry a

@@ -172,6 +172,18 @@ is over half the gate speed (`scripts/measure-first-day.ts`). The principal
 ruled it a machine-map fix, not this node's:
 [#529](https://github.com/jcfischer/seelite/issues/529).
 
+### The escape pod (#660 D9, built by node #704)
+
+No new pilot is exempt from what a death costs, and none is given a pod: a
+new pilot in a bare courier loses little to a death without one, and the
+courier floor is open to a pilot with 0 Cr (`economy-trade.md` §9). So the day
+teaches the eject key **from the first pod purchase**: once one is fitted, the
+First day tab carries an escape-pod row naming the control as bound
+(`firstDayEjectLine`) and what an eject keeps and loses. Every commander has
+it, guided or free, as every commander has the tab (D5); it is not pushed. A
+permadeath commander's row names the key too, and says the eject ends the save,
+as any death of theirs does: the pod keeps them no ship (`economy-trade.md` §9).
+
 ## Playtest rulings (2026-09-25)
 
 The principal flew the build and ruled on what the day should say and do. Each

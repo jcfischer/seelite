@@ -15,11 +15,19 @@
  * 2. **Under `?no-save`**, there is nothing to restore: the ship stays
  *    destroyed, the clock holds, and the Commander overlay opens.
  * 3. **A death after a launch** (#660 D1, node #702) restores the commander
- *    as it launched: a purchase made at the dock survives, and the reload
- *    wakes docked at that station.
+ *    as it launched — its credits — and the reload wakes docked at that
+ *    station; since node #704 a death without ejecting costs the ship.
  * 4. **A death before the first dock** (#660 D10) wakes a new commander
  *    docked at the start system's trade station, in the world the death
  *    happened in.
+ * 5. **An eject** (#660 D2, node #704), by the pilot's own held key with a
+ *    pod fitted, wakes at the launch station with the launch hull and the
+ *    other fittings, the hold empty and the pod spent; arm 3's death without
+ *    ejecting, pod fitted, wakes in a stock courier with nothing (D4, D6).
+ *    Both are told on the docked console what the death took.
+ * 6. **The eject warning** (#660 D12) paints on the glass below the derived
+ *    threshold with a pod fitted, names the key, and is said once per
+ *    crossing.
  *
  * Permadeath is not flown here. Its whole difference is that the store returns
  * nothing, which the headless row proves, and the in-game branch it takes is
@@ -28,6 +36,9 @@
  * The kill is started from a timer inside the page so this script's `evaluate`
  * returns before the reload destroys the page it ran in.
  */
+// A default-layout probe (#381 D11): arm 5 holds Backspace by name, as the
+// shipped layout binds the eject, and a moved default turns it red for that
+// reason.
 import {
 	bootedGame,
 	guardedOrigin,
@@ -283,89 +294,101 @@ const openArm = async (label) => {
 };
 
 // ---------------------------------------------------------------------------
-// Arm 3: a death restores the commander as it launched (#660 D1, node #702).
+// Arms 3 and 5: a death restores the commander as it launched (#660 D1, node
+// #702), at the cost of how it ended (#660 D2, D6, node #704).
 // ---------------------------------------------------------------------------
 // The game's own path for every step but the funds: a dock by the protocol,
-// the pod bought at that station's till (`transactStation`, as
-// `probe-save.mjs` reaches it) and carried to `live` by the debounce, a
-// launch by the game's own `launch`, a leg, a death. The funds are a fixture
-// — a new commander's 100 Cr does not buy a pod. The undock flush is what
-// writes the checkpoint the reload boots, so the purchase survives and the
-// ship wakes at that station.
+// the pod, a docking computer and two tonnes of Food bought at that station's
+// till (`transactStation`, as `probe-save.mjs` reaches it) and carried to
+// `live` by the debounce, a launch by the game's own `launch`, a leg, then
+// the death. The funds are a fixture — a new commander's 100 Cr does not buy
+// a pod. The undock flush is what writes the checkpoint the reload boots, so
+// the launch credits come back and the ship wakes at that station; what else
+// comes back is the death's cause's.
 
-const POD_FUNDS = 1777;
-const launchPage = await openArm("launch-death");
-await launchPage.waitForFunction(() => !window.__seelite.clockHeld);
+const POD_FUNDS = 2777;
+const FITTED = ["Docking Computer", "Escape Pod"];
 
-const docked = await launchPage.evaluate(
-	async ({ funds }) => {
-		const g = window.__seelite;
-		if (!g.saveStore) return { store: false };
-		if (!g.startDockedAtHome()) return { store: true, docked: false };
-		await g.saveStore.settled();
-		const arrival = await g.save.backend.read(g.save.defaultSlot, "lastDocked");
-		// The real dock banked its station before the dock flush wrote: the
-		// witness `hasDocked` reads after a reload (`death-checkpoint.ts`).
-		const station = g.stationKey(
-			g.world.system.contents.stations.find((s) => s.id === g.dockedAt),
-		);
-		const galaxy = String(g.world.system.record.galaxy);
-		const visitedAtDock =
-			arrival?.commander?.ladders?.visited?.[galaxy]?.stations?.includes(
-				station,
-			) ?? false;
-		// The purchase, at the till: the till takes the pod's price and fits
-		// it, and the adopt point marks the save dirty for the debounce.
-		g.commander.credits = funds;
-		const bought = g.transactStation({
-			type: "buy-equipment",
-			equipment: "Escape Pod",
-		});
-		const credits = g.commander.credits;
-		await new Promise((resolve) =>
-			setTimeout(resolve, g.save.debounceMs + 200),
-		);
-		await g.saveStore.settled();
-		const live = await g.save.backend.read(g.save.defaultSlot, "live");
-		return {
-			store: true,
-			docked: true,
-			station: g.dockedAt,
-			bought,
-			credits,
-			liveCredits: live?.commander?.state?.credits ?? null,
-			arrivalCredits: arrival?.commander?.state?.credits ?? null,
-			arrivalPod:
-				arrival?.commander?.state?.ownedEquipment?.includes("Escape Pod") ??
-				null,
-			visitedAtDock,
-		};
-	},
-	{ funds: POD_FUNDS },
-);
-check(
-	"arm 3 fixture: docked at the start trade station by the protocol",
-	docked.store && docked.docked && docked.arrivalPod === false,
-	JSON.stringify(docked),
-);
-check(
-	"the real dock banked its station into the record the dock flush wrote",
-	docked.visitedAtDock === true,
-	JSON.stringify(docked),
-);
-check(
-	"the pod is bought at the till and reaches live through the debounce",
-	docked.bought === true &&
-		docked.credits < POD_FUNDS &&
-		docked.liveCredits === docked.credits,
-	JSON.stringify(docked),
-);
-const LAUNCH_CREDITS = docked.credits;
-
-let launched = null;
-if (docked.docked) {
+/** Dock at the start trade station, buy the pod, a computer and Food, and
+ *  launch: the commander a death will restore, at its cost. */
+const dockBuyLaunch = async (p, label) => {
+	await p.waitForFunction(() => !window.__seelite.clockHeld);
+	const docked = await p.evaluate(
+		async ({ funds, fitted }) => {
+			const g = window.__seelite;
+			if (!g.saveStore) return { store: false };
+			if (!g.startDockedAtHome()) return { store: true, docked: false };
+			await g.saveStore.settled();
+			const arrival = await g.save.backend.read(
+				g.save.defaultSlot,
+				"lastDocked",
+			);
+			// The real dock banked its station before the dock flush wrote: the
+			// witness `hasDocked` reads after a reload (`death-checkpoint.ts`).
+			const station = g.stationKey(
+				g.world.system.contents.stations.find((s) => s.id === g.dockedAt),
+			);
+			const galaxy = String(g.world.system.record.galaxy);
+			const visitedAtDock =
+				arrival?.commander?.ladders?.visited?.[galaxy]?.stations?.includes(
+					station,
+				) ?? false;
+			// The purchases, at the till: the till takes each price and fits it,
+			// and the adopt point marks the save dirty for the debounce.
+			g.commander.credits = funds;
+			const bought = [
+				...fitted.map((equipment) =>
+					g.transactStation({ type: "buy-equipment", equipment }),
+				),
+				g.transactStation({
+					type: "buy-commodity",
+					commodity: "Food",
+					quantity: 2,
+				}),
+			];
+			const credits = g.commander.credits;
+			await new Promise((resolve) =>
+				setTimeout(resolve, g.save.debounceMs + 200),
+			);
+			await g.saveStore.settled();
+			const live = await g.save.backend.read(g.save.defaultSlot, "live");
+			return {
+				store: true,
+				docked: true,
+				station: g.dockedAt,
+				bought,
+				credits,
+				food: g.commander.cargo.Food ?? 0,
+				liveCredits: live?.commander?.state?.credits ?? null,
+				arrivalPod:
+					arrival?.commander?.state?.ownedEquipment?.includes("Escape Pod") ??
+					null,
+				visitedAtDock,
+			};
+		},
+		{ funds: POD_FUNDS, fitted: FITTED },
+	);
+	check(
+		`${label} fixture: docked at the start trade station by the protocol`,
+		docked.store && docked.docked && docked.arrivalPod === false,
+		JSON.stringify(docked),
+	);
+	check(
+		`${label}: the real dock banked its station into the record the dock flush wrote`,
+		docked.visitedAtDock === true,
+		JSON.stringify(docked),
+	);
+	check(
+		`${label}: the pod, a computer and Food are bought at the till and reach live`,
+		docked.bought?.every(Boolean) &&
+			docked.food === 2 &&
+			docked.credits < POD_FUNDS &&
+			docked.liveCredits === docked.credits,
+		JSON.stringify(docked),
+	);
+	if (!docked.docked) return null;
 	// A launch the lane holds is retried, as `stepHeldLaunch` retries it.
-	await launchPage.waitForFunction(
+	await p.waitForFunction(
 		() => {
 			const g = window.__seelite;
 			return g.dockPhase !== "docked" || g.launch();
@@ -373,12 +396,10 @@ if (docked.docked) {
 		null,
 		{ timeout: 20000, polling: 250 },
 	);
-	await launchPage.waitForFunction(
-		() => window.__seelite.dockPhase === "flying",
-		null,
-		{ timeout: 30000 },
-	);
-	launched = await launchPage.evaluate(async (leg) => {
+	await p.waitForFunction(() => window.__seelite.dockPhase === "flying", null, {
+		timeout: 30000,
+	});
+	const launched = await p.evaluate(async (leg) => {
 		const g = window.__seelite;
 		await g.saveStore.settled();
 		const record = await g.save.backend.read(g.save.defaultSlot, "lastDocked");
@@ -391,45 +412,132 @@ if (docked.docked) {
 			pod:
 				record?.commander?.state?.ownedEquipment?.includes("Escape Pod") ??
 				false,
+			food: record?.commander?.state?.cargo?.Food ?? 0,
 			dockedAt: record?.commander?.dockedAt ?? null,
 		};
 	}, LEG_CREDITS);
-}
-check(
-	"the undock flush writes lastDocked: the commander as it launched, at that station",
-	launched?.credits === LAUNCH_CREDITS &&
-		launched.pod &&
-		launched.dockedAt !== null,
-	JSON.stringify(launched),
-);
+	check(
+		`${label}: the undock flush writes lastDocked: the commander as it launched, at that station`,
+		launched.credits === docked.credits &&
+			launched.pod &&
+			launched.food === 2 &&
+			launched.dockedAt !== null,
+		JSON.stringify(launched),
+	);
+	return { station: docked.station, credits: docked.credits };
+};
 
-if (launched) {
+/** What the reload woke to: where, with what, and what it was told. */
+const wokeTo = (p) =>
+	p.evaluate(async () => {
+		const g = window.__seelite;
+		const hull = await import("/src/hull.ts");
+		g.updateCockpit();
+		const message = document.querySelector("[data-live-station-message]");
+		return {
+			phase: g.dockPhase,
+			dockedAt: g.dockedAt,
+			credits: g.commander.credits,
+			hull: g.commander.hull,
+			baseline: hull.PLAYER_BASELINE_HULL,
+			fuelFull: g.commander.fuelLy === hull.HULL_SPECS[g.commander.hull].tankLy,
+			equipment: [...g.commander.ownedEquipment].sort(),
+			cargo: Object.keys(g.commander.cargo).length,
+			wake: g.wakeShown,
+			message: message?.textContent ?? null,
+			dead: g.dead,
+		};
+	});
+
+// Arm 3: a death without ejecting, a pod fitted (#660 D4, D6). The ship goes.
+const launchPage = await openArm("launch-death");
+const launchedForDeath = await dockBuyLaunch(launchPage, "arm 3");
+if (launchedForDeath) {
 	const seen = await killAndReload(launchPage);
 	check("a death after the launch reloads the page", seen);
 	if (seen) {
 		await bootedGame(launchPage);
-		const woke = await launchPage.evaluate(() => {
-			const g = window.__seelite;
-			return {
-				phase: g.dockPhase,
-				dockedAt: g.dockedAt,
-				credits: g.commander.credits,
-				pod: g.commander.ownedEquipment.includes("Escape Pod"),
-				dead: g.dead,
-			};
-		});
+		const woke = await wokeTo(launchPage);
 		check(
-			"the reload wakes docked at the launch station with what was bought there",
+			"a death without ejecting wakes docked at the launch station with the launch credits",
 			woke.phase === "docked" &&
-				woke.dockedAt === docked.station &&
-				woke.credits === LAUNCH_CREDITS &&
-				woke.pod &&
+				woke.dockedAt === launchedForDeath.station &&
+				woke.credits === launchedForDeath.credits &&
 				!woke.dead,
-			JSON.stringify({ ...woke, want: docked.station }),
+			JSON.stringify({ ...woke, want: launchedForDeath }),
+		);
+		check(
+			"in a stock courier with a full tank: no pod, no computer, an empty hold",
+			woke.hull === woke.baseline &&
+				woke.fuelFull &&
+				woke.equipment.length === 0 &&
+				woke.cargo === 0,
+			JSON.stringify(woke),
+		);
+		check(
+			"and the console says the ship was lost",
+			woke.wake?.cause === "destroyed" &&
+				woke.message?.startsWith("Your ship was destroyed") === true,
+			JSON.stringify({ wake: woke.wake, message: woke.message }),
 		);
 	}
 }
 await launchPage.close();
+
+// Arm 5: the pod, ejected by the pilot's own held key (#660 D2, node #704).
+// The hold and the pod go; the computer, the hull and the credits stay.
+const ejectPage = await openArm("pod-eject");
+const launchedForEject = await dockBuyLaunch(ejectPage, "arm 5");
+if (launchedForEject) {
+	const law = await ejectPage.evaluate(async () => {
+		const eject = await import("/src/eject.ts");
+		const g = window.__seelite;
+		g.view = "cockpit";
+		g.setHeadLook("forward");
+		return { holdMs: eject.EJECT_HOLD_S * 1000 };
+	});
+	const reloaded = ejectPage.waitForEvent("load", { timeout: 20000 });
+	await ejectPage.keyboard.down("Backspace");
+	let seen = false;
+	try {
+		await reloaded;
+		seen = true;
+	} catch {
+		seen = false;
+	}
+	await ejectPage.keyboard.up("Backspace");
+	check(
+		`a held Backspace with a pod in flight ejects, and the page reloads (hold ${law.holdMs} ms)`,
+		seen,
+	);
+	if (seen) {
+		await bootedGame(ejectPage);
+		const woke = await wokeTo(ejectPage);
+		check(
+			"an eject wakes docked at the launch station with the launch credits",
+			woke.phase === "docked" &&
+				woke.dockedAt === launchedForEject.station &&
+				woke.credits === launchedForEject.credits &&
+				!woke.dead,
+			JSON.stringify({ ...woke, want: launchedForEject }),
+		);
+		check(
+			"with the launch hull and the computer kept, the pod spent and the hold empty",
+			woke.hull === woke.baseline &&
+				woke.equipment.join() === "Docking Computer" &&
+				woke.cargo === 0,
+			JSON.stringify(woke),
+		);
+		check(
+			"and the console says the pod brought them back and what it cost",
+			woke.wake?.cause === "eject" &&
+				woke.wake?.holdT === 2 &&
+				woke.message?.startsWith("Your escape pod brought you back") === true,
+			JSON.stringify({ wake: woke.wake, message: woke.message }),
+		);
+	}
+}
+await ejectPage.close();
 
 // ---------------------------------------------------------------------------
 // Arm 4: a pilot who never docked wakes as a new commander at the start
@@ -480,27 +588,22 @@ if (flown.store && flown.trade) {
 	check("a death before the first dock reloads the page", seen);
 	if (seen) {
 		await bootedGame(firstPage);
-		const woke = await firstPage.evaluate(async (elsewhere) => {
-			const g = window.__seelite;
-			const commerce = await import("/src/station-commerce.ts");
-			const hull = await import("/src/hull.ts");
-			return {
-				phase: g.dockPhase,
-				dockedAt: g.dockedAt,
-				system: g.world.system.record.index,
-				credits: g.commander.credits,
-				startingCredits: commerce.STARTING_CREDITS,
-				hull: g.commander.hull,
-				baseline: hull.PLAYER_BASELINE_HULL,
-				cargo: Object.keys(g.commander.cargo).length,
-				visitedKept:
-					g.commerceWorld.galaxies[
-						g.world.system.record.galaxy
-					].visited.includes(elsewhere),
-				dead: g.dead,
-				overlayOpen: g.commanderOverlay?.isOpen() ?? null,
-			};
-		}, flown.elsewhere);
+		const woke = {
+			...(await wokeTo(firstPage)),
+			...(await firstPage.evaluate(async (elsewhere) => {
+				const g = window.__seelite;
+				const commerce = await import("/src/station-commerce.ts");
+				return {
+					system: g.world.system.record.index,
+					startingCredits: commerce.STARTING_CREDITS,
+					visitedKept:
+						g.commerceWorld.galaxies[
+							g.world.system.record.galaxy
+						].visited.includes(elsewhere),
+					overlayOpen: g.commanderOverlay?.isOpen() ?? null,
+				};
+			}, flown.elsewhere)),
+		};
 		check(
 			"the reload wakes a new commander docked at the start trade station",
 			woke.phase === "docked" &&
@@ -518,9 +621,143 @@ if (flown.store && flown.trade) {
 			woke.visitedKept,
 			JSON.stringify(woke),
 		);
+		check(
+			"and the console says a new commander woke, not that they launched",
+			woke.wake?.firstLife === true &&
+				woke.wake?.holdT === 2 &&
+				woke.message?.includes("new commander") === true &&
+				!woke.message?.includes("where you launched"),
+			JSON.stringify({ wake: woke.wake, message: woke.message }),
+		);
 	}
 }
 await firstPage.close();
+
+// ---------------------------------------------------------------------------
+// Arm 6: the eject warning on the glass (#660 D12, node #704).
+// ---------------------------------------------------------------------------
+// Under `?no-save`, since nothing here dies. The pod and the hull are
+// fixtures; what is read is the page's answer to them: the sentence the draw
+// recorded, the pixels it moved against a same-page control with the hull
+// whole — and a null control, two shots with nothing changed, for what the
+// frame moves on its own — and how many times the voice was asked for.
+
+const warnPage = await browser.newPage({
+	viewport: { width: 1280, height: 760 },
+});
+watch(warnPage, "eject-warning");
+await warnPage.goto(gameUrl(origin, { seed: 42, "no-save": true }));
+await bootedGame(warnPage);
+await warnPage.waitForFunction(() => !window.__seelite.clockHeld);
+const warned = await warnPage.evaluate(async () => {
+	const g = window.__seelite;
+	const cost = await import("/src/death-cost.ts");
+	const names = await import("/src/key-names.ts");
+	const market = await import("/src/market.ts");
+	g.view = "cockpit";
+	g.setHeadLook("forward");
+	const overlay = document.getElementById("overlay");
+	const c2d = overlay.getContext("2d", { willReadFrequently: true });
+	const frames = (n) =>
+		new Promise((resolve) => {
+			let k = 0;
+			const tick = () => (++k >= n ? resolve() : requestAnimationFrame(tick));
+			requestAnimationFrame(tick);
+		});
+	const shot = () => c2d.getImageData(0, 0, overlay.width, overlay.height).data;
+	// Moved pixels, and the mean colour of what moved in the second shot.
+	const diff = (before, after) => {
+		let moved = 0;
+		let r = 0;
+		let gr = 0;
+		let b = 0;
+		for (let i = 0; i < before.length; i += 4) {
+			const d =
+				Math.abs(after[i] - before[i]) +
+				Math.abs(after[i + 1] - before[i + 1]) +
+				Math.abs(after[i + 2] - before[i + 2]) +
+				Math.abs(after[i + 3] - before[i + 3]);
+			if (d < 24) continue;
+			moved += 1;
+			r += after[i];
+			gr += after[i + 1];
+			b += after[i + 2];
+		}
+		return moved === 0
+			? { moved, r: 0, g: 0, b: 0 }
+			: { moved, r: r / moved, g: gr / moved, b: b / moved };
+	};
+	const setHull = (hull) => {
+		g.condition = { ...g.condition, hull };
+	};
+	const fit = (on) => {
+		g.commander = {
+			...g.commander,
+			ownedEquipment: on ? [market.ESCAPE_POD] : [],
+		};
+	};
+	const full = g.condition.hullMax;
+	fit(true);
+	setHull(full);
+	await frames(4);
+	const control = shot();
+	await frames(1);
+	const jitter = diff(control, shot());
+	const saidBefore = g.ejectWarningsSaid;
+	setHull(cost.EJECT_WARNING_HULL - 1);
+	await frames(4);
+	const painted = diff(control, shot());
+	const render = g.ejectWarningRender ? { ...g.ejectWarningRender } : null;
+	const saidOnce = g.ejectWarningsSaid - saidBefore;
+	await frames(10);
+	const saidStill = g.ejectWarningsSaid - saidBefore;
+	fit(false);
+	await frames(4);
+	const noPod = { due: g.ejectWarningDue, render: g.ejectWarningRender };
+	fit(true);
+	await frames(4);
+	const saidAgain = g.ejectWarningsSaid - saidBefore;
+	setHull(full);
+	await frames(4);
+	const healed = { due: g.ejectWarningDue, render: g.ejectWarningRender };
+	return {
+		want: cost.ejectWarningText(names.ejectPrompt(g.layoutInForce())),
+		threshold: cost.EJECT_WARNING_HULL,
+		render,
+		jitter,
+		painted,
+		saidOnce,
+		saidStill,
+		noPod,
+		saidAgain,
+		healed,
+	};
+});
+check(
+	"below the threshold with a pod, the glass says to eject and names the key",
+	warned.render?.text === warned.want && warned.want.includes("BACKSPACE"),
+	JSON.stringify({ render: warned.render, want: warned.want }),
+);
+check(
+	"and the sentence is painted: amber pixels move against the whole-hull control",
+	warned.painted.moved > Math.max(200, warned.jitter.moved * 4) &&
+		warned.painted.r > warned.painted.b + 60,
+	JSON.stringify({ painted: warned.painted, jitter: warned.jitter }),
+);
+check(
+	"the voice says it once per crossing, and again after the warning lapsed",
+	warned.saidOnce === 1 && warned.saidStill === 1 && warned.saidAgain === 2,
+	JSON.stringify(warned),
+);
+check(
+	"no pod, no warning; a whole hull, no warning",
+	warned.noPod.due === false &&
+		warned.noPod.render === null &&
+		warned.healed.due === false &&
+		warned.healed.render === null,
+	JSON.stringify({ noPod: warned.noPod, healed: warned.healed }),
+);
+await warnPage.close();
 
 // ---------------------------------------------------------------------------
 // Arm 2: ?no-save. Nothing to restore: destroyed, held, overlay open.

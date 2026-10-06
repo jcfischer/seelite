@@ -5,8 +5,8 @@
  * #660 D4 makes the pod **manual only**, as in Elite: a pilot destroyed before
  * ejecting has a no-pod death whether a pod is fitted or not. So the control
  * is a binding like any other — `fly.eject` in `commands.ts` — and what an
- * eject *costs* is not here: that is D2 and D6, built by node #704 behind the
- * event this module produces.
+ * eject *costs* is not here: that is D2, built by node #704 behind the event
+ * this module produces (`Game.eject`, `commanderAfterDeath`).
  *
  * **Held, not pressed, and that is the confirm.** An accidental eject costs the
  * leg, the hold and the pod, so a stray press must not be able to cause one. A
@@ -38,9 +38,9 @@ import type { DockPhase } from "./dock-session";
  * enough that a tap — a key brushed on the way to another, a button knocked —
  * is nowhere near it; short enough that it is not most of the reaction a pilot
  * has left. #660 D12's warning threshold is derived from about one second of
- * reaction, and the hold is **inside** that second rather than beside it: the
- * warning's build (node #704) adds this figure to its reaction budget, which
- * is why it is exported rather than written there again.
+ * reaction, and a pilot cannot eject faster than this hold, so the warning's
+ * window adds it to that second (`EJECT_WARNING_WINDOW_S` in `death-cost.ts`,
+ * node #704) — which is why it is exported rather than written there again.
  */
 export const EJECT_HOLD_S = 0.75;
 

@@ -225,11 +225,8 @@ button runs a command on its press, which a hold there would fire first. It is <
 live in a console as well as in flight, so a docked press is told it is refused
 rather than ignored. Two limits, and the keyboard's `Backspace` has neither:
 some pads report no `home` button at all, and an operating system or launcher
-overlay may take it before the page sees it.
-**Offered in a dev build only** until node #704 builds what an eject does:
-a production build neither steps the control nor prints its row
-(`EJECT_OFFERED` in `main.ts`), because a hold that fills and then does
-nothing is a dead key.
+overlay may take it before the page sees it. What a completed hold does — the
+escape pod, and what it costs — is node #704's (`economy-trade.md` §9).
 
 ## What is checked, and where
 

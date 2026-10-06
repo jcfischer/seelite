@@ -10,6 +10,7 @@ import { escapeHtml as esc } from "./escape-html";
 import { aboardForOffer, type HoldSummary } from "./hold";
 import { cargoOf, missingRequirements, offerRequirements } from "./jobs";
 import {
+	acceptableAgain,
 	isAcceptedRequest,
 	nextAction,
 	statusLabel,
@@ -419,7 +420,7 @@ export function requestsBody(view?: RequestsView, flight = false): string {
 				)}${flight ? "" : section("posted", "Posted here", sections.posted, "No jobs posted here.")}${sections.kept.length > 0 ? section("kept", "Kept for later", sections.kept, "") : ""}`;
 	let details =
 		tab === "past"
-			? `<div class="lc-request-details" data-live-request-details><h3>Past jobs</h3><p>Select a job to read how it ended.</p><p>A cancelled job can be accepted again at the station that posted it.</p></div>`
+			? `<div class="lc-request-details" data-live-request-details><h3>Past jobs</h3><p>Select a job to read how it ended.</p><p>A cancelled or failed job can be accepted again at the station that posted it.</p></div>`
 			: `<div class="lc-request-details" data-live-request-details><h3>Jobs</h3><p>Select a job to read its terms. Reading it or keeping it for later does not commit you.</p><p>You can take several jobs at once. Track one to see its next step while you fly.</p></div>`;
 	if (selected) {
 		const o = selected;
@@ -473,7 +474,11 @@ export function requestsBody(view?: RequestsView, flight = false): string {
 		let actions = button("retain", o.id, "Keep for later");
 		// **No Accept while a requirement is missing** (#489's ruling): not
 		// hidden, and not refused on press — the row says why it is locked.
-		if ((!r || r.status === "cancelled") && atRequester && missing.length === 0)
+		if (
+			(!r || acceptableAgain(r.status)) &&
+			atRequester &&
+			missing.length === 0
+		)
 			actions += button("accept", o.id, r ? "Accept again" : "Accept");
 		const atReport =
 			view.docked?.galaxyIndex === o.reportAt.galaxyIndex &&

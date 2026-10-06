@@ -160,6 +160,72 @@ export const isRunning = (status: RequestStatus): boolean =>
 	status === "accepted" || status === "ready-to-report";
 
 /**
+ * Whether a job that has ended can be taken again at the station that posted
+ * it: a cancelled one (§3), and since #660 D3 a failed one. Every other ended
+ * job is settled — paid, or it never was a job — and stays ended.
+ *
+ * One predicate for the till and the board (`requests-view.ts`), so the Accept
+ * the board draws is the accept `requestAction` admits.
+ */
+export const acceptableAgain = (status: RequestStatus): boolean =>
+	status === "cancelled" || status === "failed";
+
+/**
+ * The reason a job fails when its goods go with the ship (#660 D3), as the
+ * Requests board reads it (`nextAction`). It says what the pilot most needs:
+ * that nothing is owed, and that the job is still there to take.
+ */
+export const LOST_WITH_SHIP_REASON =
+	"Lost with your ship. You owe nothing, and you can take this job again where it was posted.";
+
+/**
+ * The journal after the hold is lost (#660 D2, D3, D6): every entrusted lot
+ * goes with it, and a job still running whose goods those were **fails**,
+ * with `LOST_WITH_SHIP_REASON` and no debt. A job that had already ended —
+ * cancelled with its goods not yet returned — keeps its status; it only loses
+ * the lot it was owed back.
+ *
+ * Nothing else moves. A Procurement job is the pilot's own cargo, so losing
+ * the hold sets it back rather than failing it; a Bounty carries nothing.
+ * `settledAt` stays null (§7: only a completed job has one), and the tracked
+ * job is let go when it is one of the failed, because the parser refuses a
+ * tracked job that is not running.
+ *
+ * Pure. Returns the failed job ids beside the state, which is what the wake
+ * notice counts. An empty hold returns the state it was given.
+ */
+export function requestsAfterLostHold(state: RequestsState): {
+	state: RequestsState;
+	failed: string[];
+} {
+	const lots = Object.values(state.entrustedByLotId);
+	if (lots.length === 0) return { state, failed: [] };
+	const byId = { ...state.byId };
+	const failed: string[] = [];
+	for (const lot of lots) {
+		const request = byId[lot.offerId];
+		if (!request || !isRunning(request.status)) continue;
+		byId[lot.offerId] = {
+			...request,
+			status: "failed",
+			outcomeReason: LOST_WITH_SHIP_REASON,
+		};
+		failed.push(lot.offerId);
+	}
+	const tracked = state.trackedRequestId;
+	return {
+		state: {
+			...state,
+			byId,
+			entrustedByLotId: {},
+			trackedRequestId:
+				tracked !== null && failed.includes(tracked) ? null : tracked,
+		},
+		failed: failed.sort(),
+	};
+}
+
+/**
  * How many jobs of each family this requester has settled — the binder's
  * episode counter (`jobs.ts`'s `BindContext.settled`).
  *
@@ -375,7 +441,7 @@ export function requestAction(
 	if (action === "accept") {
 		if (!sameStation(ctx.docked, offer.requester))
 			return refuse("Dock at the station that posted this job to accept it.");
-		if (existing && existing.status !== "cancelled")
+		if (existing && !acceptableAgain(existing.status))
 			return refuse("You have already taken or finished this job.");
 		// Request contract §2's eligibility, read before anything is issued.
 		const missing = missingRequirements(offer, ctx.equipment);

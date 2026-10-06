@@ -331,7 +331,9 @@ describe("#324 O5 — a death reverts live to the last dock", () => {
 		const h = harness();
 		await docked(h);
 		const dock = (await h.store.load("default", "lastDocked")).commander;
-		const restored = await h.store.revertToLastDocked(h.commander);
+		// An eject with nothing aboard and no pod costs nothing past the leg,
+		// so this row holds #324's half alone; the costs are node #704's rows.
+		const restored = await h.store.revertToLastDocked(h.commander, "eject");
 		expect(restored?.commander.state.credits).toBe(100);
 		const live = await h.store.load("default");
 		expect(live.commander.state).toEqual(dock.state);
@@ -343,7 +345,9 @@ describe("#324 O5 — a death reverts live to the last dock", () => {
 		const h = harness({ permadeath: true });
 		await docked(h);
 		const before = h.backend.writes;
-		expect(await h.store.revertToLastDocked(h.commander)).toBeNull();
+		expect(
+			await h.store.revertToLastDocked(h.commander, "destroyed"),
+		).toBeNull();
 		expect(h.backend.writes).toBe(before);
 		expect((await h.store.load("default")).commander.state.credits).toBe(555);
 	});
@@ -354,7 +358,7 @@ describe("#324 O5 — a death reverts live to the last dock", () => {
 		// dock it just restored.
 		const h = harness();
 		await docked(h);
-		await h.store.revertToLastDocked(h.commander);
+		await h.store.revertToLastDocked(h.commander, "destroyed");
 		const after = h.backend.writes;
 		h.store.markDirty();
 		if (h.clock.armed) h.clock.fire();
@@ -369,7 +373,7 @@ describe("#324 O5 — a death reverts live to the last dock", () => {
 		await docked(h);
 		h.set(999);
 		h.store.markDirty();
-		await h.store.revertToLastDocked(h.commander);
+		await h.store.revertToLastDocked(h.commander, "destroyed");
 		if (h.clock.armed) h.clock.fire();
 		await h.store.settled();
 		expect((await h.store.load("default")).commander.state.credits).toBe(100);
@@ -388,9 +392,9 @@ describe("#324 O5 — a death reverts live to the last dock", () => {
 		const h = harness();
 		await unparseableDock(h);
 		const before = h.backend.writes;
-		await expect(h.store.revertToLastDocked(h.commander)).rejects.toThrow(
-			/lastDocked record that will not parse/,
-		);
+		await expect(
+			h.store.revertToLastDocked(h.commander, "destroyed"),
+		).rejects.toThrow(/lastDocked record that will not parse/);
 		expect(h.backend.writes).toBe(before);
 		expect((await h.store.load("default")).commander.state.credits).toBe(100);
 	});
@@ -403,7 +407,7 @@ describe("#324 O5 — a death reverts live to the last dock", () => {
 		const h = harness();
 		await unparseableDock(h);
 		expect(await h.store.hold()).toBe(true);
-		await h.store.revertToLastDocked(h.commander).catch(() => {});
+		await h.store.revertToLastDocked(h.commander, "destroyed").catch(() => {});
 		const before = h.backend.writes;
 		h.set(777);
 		h.store.markDirty();
@@ -422,7 +426,7 @@ describe("#324 O5 — a death reverts live to the last dock", () => {
 		await unparseableDock(h);
 		h.set(888);
 		h.store.markDirty();
-		await h.store.revertToLastDocked(h.commander).catch(() => {});
+		await h.store.revertToLastDocked(h.commander, "destroyed").catch(() => {});
 		await h.store.flush("jump");
 		expect((await h.store.load("default")).commander.state.credits).toBe(888);
 	});
@@ -431,7 +435,7 @@ describe("#324 O5 — a death reverts live to the last dock", () => {
 		const h = harness();
 		await docked(h);
 		expect(await h.store.hold()).toBe(true);
-		await h.store.revertToLastDocked(h.commander);
+		await h.store.revertToLastDocked(h.commander, "destroyed");
 		await h.catalog.chooseCommander("default");
 		expect(await h.catalog.takeOneShot()).toBe("default");
 	});
@@ -458,7 +462,7 @@ describe("#654 — a death keeps the world and reverts only the commander", () =
 		const h = harness();
 		await fatalLeg(h);
 		const dying = h.world;
-		const restored = await h.store.revertToLastDocked(h.commander);
+		const restored = await h.store.revertToLastDocked(h.commander, "destroyed");
 		const live = await h.store.load("default");
 		for (const save of [restored, live]) {
 			expect(save?.world).toEqual(dying);
@@ -476,7 +480,7 @@ describe("#654 — a death keeps the world and reverts only the commander", () =
 		await fatalLeg(h);
 		h.leg(11, 30);
 		const dying = h.world;
-		await h.store.revertToLastDocked(h.commander);
+		await h.store.revertToLastDocked(h.commander, "destroyed");
 		expect((await h.store.load("default")).world).toEqual(dying);
 	});
 
@@ -485,7 +489,7 @@ describe("#654 — a death keeps the world and reverts only the commander", () =
 		await fatalLeg(h);
 		const flown = h.commander.ladders.playedS;
 		expect(flown).toBe(600);
-		const restored = await h.store.revertToLastDocked(h.commander);
+		const restored = await h.store.revertToLastDocked(h.commander, "destroyed");
 		expect(restored?.commander.ladders.playedS).toBe(flown);
 		expect((await h.store.load("default")).commander.ladders.playedS).toBe(
 			flown,
@@ -496,7 +500,7 @@ describe("#654 — a death keeps the world and reverts only the commander", () =
 		const h = harness();
 		await fatalLeg(h);
 		const before = await h.backend.raw("default", "lastDocked");
-		await h.store.revertToLastDocked(h.commander);
+		await h.store.revertToLastDocked(h.commander, "destroyed");
 		expect(await h.backend.raw("default", "lastDocked")).toEqual(before);
 	});
 });
@@ -506,14 +510,20 @@ describe("#654 — a death keeps the world and reverts only the commander", () =
  * launched**, and a pilot who never docked has a checkpoint too.
  */
 describe("#660 D1, D10 — a death restores the launch, and a first death wakes at the start", () => {
-	/** A purchase at the dock: credits spent and the pod fitted. */
+	/** A purchase at the dock: credits spent, a docking computer and the pod
+	 *  fitted. The computer is the witness an eject keeps (#660 D2, node
+	 *  #704): the pod itself is consumed by the eject that would show it. */
 	const buyPod = (h: ReturnType<typeof harness>) =>
 		h.edit((c) => ({
 			...c,
 			state: {
 				...c.state,
 				credits: 40,
-				ownedEquipment: [...c.state.ownedEquipment, "Escape Pod"],
+				ownedEquipment: [
+					...c.state.ownedEquipment,
+					"Docking Computer",
+					"Escape Pod",
+				],
 			},
 		}));
 
@@ -544,12 +554,50 @@ describe("#660 D1, D10 — a death restores the launch, and a first death wakes 
 		h.leg(9, 600);
 		h.store.markDirty();
 		await h.store.flush("jump");
-		const restored = await h.store.revertToLastDocked(h.commander);
+		const restored = await h.store.revertToLastDocked(h.commander, "eject");
 		for (const save of [restored, await h.store.load("default")]) {
 			expect(save?.commander.state.credits).toBe(40);
-			expect(save?.commander.state.ownedEquipment).toContain("Escape Pod");
+			expect(save?.commander.state.ownedEquipment).toEqual([
+				"Docking Computer",
+			]);
 			expect(save?.world.galaxies[0].visited).toContain(9);
 		}
+	});
+
+	test("dock, buy, undock, death without ejecting: the launch credits, a stock courier", async () => {
+		const h = harness();
+		await dockAndBuy(h, { settle: true });
+		await h.store.flush("undock");
+		h.set(9999);
+		h.store.markDirty();
+		await h.store.flush("jump");
+		const restored = await h.store.revertToLastDocked(h.commander, "destroyed");
+		expect(restored?.commander.state).toEqual({
+			...newCommander(PLAYER_BASELINE_HULL),
+			credits: 40,
+		});
+	});
+
+	test("the death leaves its wake for the next boot, taken once", async () => {
+		const h = harness();
+		await dockAndBuy(h, { settle: true });
+		await h.store.flush("undock");
+		await h.store.revertToLastDocked(h.commander, "eject");
+		const wake = await h.catalog.takeWake();
+		expect(wake?.saveSlot).toBe("default");
+		expect(wake?.cause).toBe("eject");
+		expect(wake?.fittingsLost).toBe(1);
+		expect(wake?.firstLife).toBe(false);
+		expect(await h.catalog.takeWake()).toBeNull();
+	});
+
+	test("a refused revert leaves no wake", async () => {
+		const h = harness();
+		h.store.markDirty();
+		await h.store.flush("jump");
+		await h.backend.write("default", "lastDocked", { not: "a save" });
+		await h.store.revertToLastDocked(h.commander, "eject").catch(() => {});
+		expect(await h.catalog.takeWake()).toBeNull();
 	});
 
 	test("a launch checkpoint queued behind a slow write is the launch, not what followed it", async () => {
@@ -584,9 +632,11 @@ describe("#660 D1, D10 — a death restores the launch, and a first death wakes 
 		const live = await h.store.load("default");
 		expect(live.commander.state.credits).toBe(9999);
 		expect(live.world.galaxies[0].visited).toContain(9);
-		const restored = await h.store.revertToLastDocked(h.commander);
+		const restored = await h.store.revertToLastDocked(h.commander, "eject");
 		expect(restored?.commander.state.credits).toBe(40);
-		expect(restored?.commander.state.ownedEquipment).toContain("Escape Pod");
+		expect(restored?.commander.state.ownedEquipment).toEqual([
+			"Docking Computer",
+		]);
 		expect(restored?.world.galaxies[0].visited).toContain(9);
 	});
 
@@ -603,7 +653,7 @@ describe("#660 D1, D10 — a death restores the launch, and a first death wakes 
 	test("dock, death without an undock: the arrival is restored", async () => {
 		const h = harness();
 		await dockAndBuy(h, { settle: true });
-		const restored = await h.store.revertToLastDocked(h.commander);
+		const restored = await h.store.revertToLastDocked(h.commander, "destroyed");
 		expect(restored?.commander.state.credits).toBe(1040);
 		expect(restored?.commander.state.ownedEquipment).not.toContain(
 			"Escape Pod",
@@ -635,7 +685,7 @@ describe("#660 D1, D10 — a death restores the launch, and a first death wakes 
 		await h.store.flush("jump");
 		expect(await h.backend.has("default", "lastDocked")).toBe(false);
 		const dying = h.commander;
-		const restored = await h.store.revertToLastDocked(dying);
+		const restored = await h.store.revertToLastDocked(dying, "destroyed");
 		const live = await h.store.load("default");
 		const galaxy = generateGalaxy(SEED, START_GALAXY);
 		const start = startSystem(galaxy);
@@ -665,6 +715,11 @@ describe("#660 D1, D10 — a death restores the launch, and a first death wakes 
 		}
 		// The record that went to disk is one the parser accepts.
 		expect(parseSave(await h.backend.raw("default", "live"))).toEqual(live);
+		// And the wake reads what the dying commander lost, as a first life.
+		const wake = await h.catalog.takeWake();
+		expect(wake?.firstLife).toBe(true);
+		expect(wake?.hull).toBe("freighter");
+		expect(wake?.holdT).toBe(4);
 	});
 
 	test("an absent lastDocked whose write failed is refused, not derived", async () => {
@@ -675,9 +730,9 @@ describe("#660 D1, D10 — a death restores the launch, and a first death wakes 
 		h.backend.failNextWrite();
 		await expect(h.store.flush("dock")).rejects.toThrow(/backend/);
 		expect(await h.backend.has("default", "lastDocked")).toBe(false);
-		await expect(h.store.revertToLastDocked(h.commander)).rejects.toThrow(
-			/lastDocked/,
-		);
+		await expect(
+			h.store.revertToLastDocked(h.commander, "destroyed"),
+		).rejects.toThrow(/lastDocked/);
 	});
 
 	test("a failed dock write is still refused after a reload, and live is kept", async () => {
@@ -725,7 +780,7 @@ describe("#660 D1, D10 — a death restores the launch, and a first death wakes 
 		after.edit(() => reloaded.commander);
 		expect(after.store.heldFaults.size).toBe(0);
 		await expect(
-			after.store.revertToLastDocked(after.commander),
+			after.store.revertToLastDocked(after.commander, "destroyed"),
 		).rejects.toThrow(/lastDocked/);
 		// The hull, credits and equipment the death interrupted are still there.
 		expect(await after.backend.raw("default", "live")).toEqual(written);

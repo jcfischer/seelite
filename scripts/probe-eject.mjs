@@ -14,9 +14,12 @@
  * the glass on the rails, the station console's message line docked.
  *
  * **The event, not what it costs.** An eject counts itself on `ejectCount`; the
- * pod, the empty hold and the wake are node #704's, and nothing here looks for
- * them. The control is offered in a dev build only until then
- * (`EJECT_OFFERED` in `main.ts`), and a probe runs against a dev server.
+ * pod, the empty hold and the wake are node #704's and `probe-death.mjs` flies
+ * them. Since node #704 an eject is a death — the clock holds and the page
+ * reloads into the launch station — so this probe swaps `onDeath`, the
+ * boot's public hook, for one that stands the ship back up (`fitPod`): every
+ * row here reads the control, and a row after an eject needs a ship to hold
+ * it in.
  */
 // A default-layout probe (#381 D11): it presses keys by name, as the shipped
 // layout binds them, and a moved default turns it red for that reason.
@@ -117,10 +120,18 @@ const waitForEject = async (base, startedAtMs) => {
 	return { fired, elapsedMs };
 };
 
+/** An eject is a death since node #704; this probe reads the control, not
+ *  the death, so the boot's hook is swapped for one that stands the ship back
+ *  up in the frame it went down. Installed by every `fitPod`, after the boot
+ *  has set its own. */
 const fitPod = (fitted) =>
 	page.evaluate(
 		({ pod, fitted }) => {
 			const g = window.__seelite;
+			g.onDeath = async () => {
+				g.dead = false;
+				g.clockHeld = false;
+			};
 			const rest = g.commander.ownedEquipment.filter((n) => n !== pod);
 			g.commander = {
 				...g.commander,

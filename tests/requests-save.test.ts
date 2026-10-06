@@ -145,7 +145,8 @@ test("the one store loads and flushes a journal-bearing record", async () => {
 	// The reverted record carries its journal back too.
 	await backend.write("normal", "lastDocked", serializeSave(save));
 	expect(
-		(await store.revertToLastDocked({ permadeath: false }))?.commander.requests,
+		(await store.revertToLastDocked({ permadeath: false }, "destroyed"))
+			?.commander.requests,
 	).toEqual(save.commander.requests);
 });
 

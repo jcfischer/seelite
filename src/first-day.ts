@@ -242,3 +242,28 @@ export function firstDayLogsStep(
 	if (current === prev) return false;
 	return !(prev === null && current === "trade");
 }
+
+/**
+ * The First day tab's escape-pod row (#660 D9, node #704), or `null` while no
+ * pod is fitted. No new pilot is exempt and none is given a pod, so the day
+ * teaches the eject key **at the first pod purchase** — the moment the key
+ * starts to mean something — and keeps it there while the pod is aboard.
+ * Every commander has the tab, guided or free.
+ *
+ * `prompt` is `ejectPrompt` (`key-names.ts`): the control as bound, so a
+ * rebound key is the one taught.
+ *
+ * A permadeath commander is told the truth instead: an eject ends their save
+ * as any death does (#89 D7), so the row names the key with what it costs
+ * them — the promise that the ship is kept is not theirs (`economy-trade.md` §9).
+ */
+export function firstDayEjectLine(
+	podFitted: boolean,
+	permadeath: boolean,
+	prompt: string,
+): string | null {
+	if (!podFitted) return null;
+	if (permadeath)
+		return `An escape pod is fitted, but this commander has one life: ${prompt}, and the eject ends the save as any death does.`;
+	return `An escape pod is fitted. When the hull is failing, ${prompt}: you lose the hold and the pod and keep the ship. Destroyed without ejecting, you lose the ship.`;
+}
