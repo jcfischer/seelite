@@ -642,6 +642,10 @@ export async function renderInPage({
 									m.danubeSongs ? m.danubeSongs() : { danube: m.BLUE_DANUBE },
 								)
 								.catch(() => ({}))),
+							// The dark-techno Danube, where the served tree has it.
+							...(await import("/src/music-danube-techno.ts")
+								.then((m) => ({ "danube-techno": m.DANUBE_TECHNO }))
+								.catch(() => ({}))),
 							// #589's classical set-pieces, where the served tree has them.
 							...(await import("/src/music-classical/index.ts")
 								.then((m) => m.CLASSICAL_SONGS)
@@ -1110,6 +1114,29 @@ export const CLASSICAL_SET = Object.freeze(
 		music: {
 			songs: { [id]: id },
 			script: [[0, { type: "play", id, at: "bar" }]],
+		},
+	})),
+);
+
+/**
+ * The dark-techno Danube (`src/music-danube-techno.ts`), a listening spike:
+ * `npm run sounds -- --set techno`. No probe bands it. Scripted as the
+ * waltz's renders are: two loops and the cadence, and the shortest docking
+ * run.
+ */
+export const TECHNO_SET = Object.freeze(
+	/** @type {[string, number, number][]} */ ([
+		["music-danube-techno", 116, 100],
+		["music-danube-techno-run-short", 70, 62],
+	]).map(([name, seconds, resolveS]) => ({
+		name,
+		seconds,
+		music: {
+			songs: { "danube-techno": "danube-techno" },
+			script: [
+				[0, { type: "play", id: "danube-techno", at: "bar" }],
+				[resolveS, { type: "resolve", at: "bar" }],
+			],
 		},
 	})),
 );

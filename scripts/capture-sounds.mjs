@@ -56,7 +56,12 @@ import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { createServer } from "vite";
 import { cueStats, roundStats } from "./lib/audio-stats.mjs";
-import { CLASSICAL_SET, renderInPage, SOUND_SET } from "./lib/sound-set.mjs";
+import {
+	CLASSICAL_SET,
+	renderInPage,
+	SOUND_SET,
+	TECHNO_SET,
+} from "./lib/sound-set.mjs";
 import { TREE_ENDPOINT } from "./lib/tree-declaration.mjs";
 import { launchChromium } from "./probe-guard.mjs";
 
@@ -75,7 +80,12 @@ const only = arg("only") ? [...new Set(arg("only").split(","))] : undefined;
 const ref = arg("ref");
 // `--set classical`: #589's set-pieces instead of the cue set. They are a
 // listening pass for the grilling, so no probe bands them.
-const SET = arg("set") === "classical" ? CLASSICAL_SET : SOUND_SET;
+const SET =
+	arg("set") === "classical"
+		? CLASSICAL_SET
+		: arg("set") === "techno"
+			? TECHNO_SET
+			: SOUND_SET;
 const out = resolve(arg("out") ?? join(HERE, "sound-set"));
 const seed =
 	process.env.SEED === "off" ? null : Number(process.env.SEED ?? 552);
