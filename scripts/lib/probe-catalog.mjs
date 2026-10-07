@@ -714,7 +714,7 @@ export const PROBE_CATALOG = Object.freeze(
 		),
 		entry(
 			"probe-derelict.mjs",
-			"Checks dark derelict rendering, body-frame pose, solid hull, persisted partial salvage, full-hold refusal and recovered fitting Equipment actions.",
+			"Checks derelict sweep provenance, passive cue, visual identification and hidden Navigation contacts, plus dark rendering, body-frame pose, solid hull, persisted partial salvage, full-hold refusal and recovered fitting Equipment actions.",
 			[
 				"derelict",
 				"salvage",

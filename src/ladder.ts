@@ -233,6 +233,8 @@ export interface BasisLine {
 export type CargoBasis = Readonly<Record<string, BasisLine>>;
 
 export interface LadderRecord {
+	/** Commander-wide first-time verbs, banked on dock. Absent in older saves. */
+	kinds?: readonly ExplorationKind[];
 	/** Banked credit per ladder. Never falls (#183 D7). Exploration's is not
 	 *  the size of `visited`: seeded places are in the sets and earned nothing. */
 	banked: Record<Ladder, number>;
@@ -303,11 +305,24 @@ export const seededLadderRecord = (
 
 /** Credit earned since the last dock. Session state: never serialised. */
 export interface PendingCredit {
+	kinds?: readonly ExplorationKind[];
 	combat: number;
 	systems: readonly { galaxyIndex: number; systemIndex: number }[];
 }
 
 export const emptyPending = (): PendingCredit => ({ combat: 0, systems: [] });
+
+export const EXPLORATION_KINDS = ["wreck"] as const;
+export type ExplorationKind = (typeof EXPLORATION_KINDS)[number];
+
+export const pendingKind = (
+	record: LadderRecord,
+	pending: PendingCredit,
+	kind: ExplorationKind,
+): PendingCredit =>
+	(record.kinds ?? []).includes(kind) || (pending.kinds ?? []).includes(kind)
+		? pending
+		: { ...pending, kinds: [...(pending.kinds ?? []), kind] };
 
 export const pendingKill = (
 	pending: PendingCredit,
@@ -379,6 +394,12 @@ export const bankOnDock = (
 ): LadderRecord => {
 	let visited = record.visited;
 	let kinds = 0;
+	const firstKinds = [...(record.kinds ?? [])];
+	for (const kind of pending.kinds ?? []) {
+		if (firstKinds.includes(kind)) continue;
+		firstKinds.push(kind);
+		kinds += 1;
+	}
 	for (const { galaxyIndex, systemIndex } of pending.systems) {
 		if (visitedIn(visited, galaxyIndex).systems.includes(systemIndex)) continue;
 		visited = withPlace(visited, galaxyIndex, { system: systemIndex });
@@ -393,7 +414,15 @@ export const bankOnDock = (
 		combat: record.banked.combat + pending.combat,
 		exploration: record.banked.exploration + kinds,
 	};
-	return withCapstone({ ...record, banked, visited }, at.gameTime);
+	return withCapstone(
+		{
+			...record,
+			banked,
+			visited,
+			...(firstKinds.length ? { kinds: firstKinds } : {}),
+		},
+		at.gameTime,
+	);
 };
 
 /**
@@ -547,6 +576,7 @@ export const serializeLadders = (record: LadderRecord): unknown => {
 		basis,
 		playedS: record.playedS,
 		capstoneAt: record.capstoneAt,
+		...(record.kinds?.length ? { kinds: [...record.kinds].sort() } : {}),
 	};
 };
 
@@ -566,6 +596,15 @@ const nonNegative = (raw: unknown, what: string): number => {
  *  value out; never edits what it was handed (#89 D8). */
 export const parseLadders = (raw: unknown): LadderRecord => {
 	const o = obj(raw, "record");
+	if (
+		o.kinds !== undefined &&
+		(!Array.isArray(o.kinds) ||
+			o.kinds.some(
+				(k) => !(EXPLORATION_KINDS as readonly unknown[]).includes(k),
+			) ||
+			new Set(o.kinds).size !== o.kinds.length)
+	)
+		fail("kinds is not a unique list of exploration kinds");
 	const b = obj(o.banked, "banked");
 	const banked = {
 		combat: nonNegative(b.combat, "banked.combat"),
@@ -608,6 +647,9 @@ export const parseLadders = (raw: unknown): LadderRecord => {
 		basis: { ...basis },
 		playedS: nonNegative(o.playedS, "playedS"),
 		capstoneAt,
+		...(o.kinds === undefined
+			? {}
+			: { kinds: [...(o.kinds as ExplorationKind[])] }),
 	};
 };
 

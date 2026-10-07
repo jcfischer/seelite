@@ -31,6 +31,7 @@ const WRITERS = [
 	"advanceTo",
 	"materializeDerelict",
 	"scoopDerelict",
+	"observeDerelict",
 	"applyTransition",
 	"materializeDue",
 	"observe",
@@ -620,6 +621,11 @@ describe("the Game's world writes", () => {
 		const bound = [...HOLDINGS.matchAll(/\bconst (\w+) = (\w+)\(/g)].flatMap(
 			(m) => (WRITERS.includes(m[2]) ? [m[1]] : []),
 		);
+		// A wreck finding outcome carries only observeDerelict's world beside
+		// the identified keys. Accept that field only on a bound invocation.
+		const finding = [
+			...HOLDINGS.matchAll(/\bconst (\w+) = identifyDerelicts\(/g),
+		].map((m) => `${m[1]}.world,`);
 		expect(bound.length).toBeGreaterThanOrEqual(1);
 		// Settlement's mark and the till's deficits: the two writes it makes.
 		// If this drops the regex has drifted and the check below is vacuous.
@@ -628,6 +634,7 @@ describe("the Game's world writes", () => {
 			(v) =>
 				v !== "world," &&
 				!bound.some((b) => v === `${b},`) &&
+				!finding.includes(v) &&
 				// A parameter or field's type, not a value.
 				v !== "WorldState," &&
 				v !== "WorldState;" &&

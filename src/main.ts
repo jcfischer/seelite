@@ -66,7 +66,14 @@
  */
 
 import * as THREE from "three";
-import { derelictSlots } from "./derelict-slots";
+import {
+	derelictReadings,
+	derelictRegion,
+	wreckContact,
+	identifyRangeKm,
+	liveDerelicts,
+} from "./long-range-scanner";
+import type { WreckCue } from "./scanner-view";
 import { derelictPose, tetherPose, tetherOffset } from "./derelict";
 import {
 	buildDerelictMesh,
@@ -74,7 +81,7 @@ import {
 	buildWreckContainer,
 	disposeWreckContainer,
 } from "./derelict-mesh";
-import { effectiveDerelict, materializeDerelict } from "./world-state";
+import { materializeDerelict } from "./world-state";
 import { EQUIPMENT } from "./market";
 import { gateRefusal } from "./ladder";
 import { EffectComposer } from "three/addons/postprocessing/EffectComposer.js";
@@ -2491,6 +2498,7 @@ class Game {
 	 *  it closes it (#370 D3). `null` when there is nothing to restore. */
 	private controlsRestoreTab: RightTab | null = null;
 	private leftTab: LeftTab = "Navigation";
+	private wreckContacts = new Map<CarrierKey, DisplayContact>();
 	/** The forward station console keeps its tab across a head turn while docked. */
 	private stationConsoleTab: StationConsoleTab = "Market";
 	private requests = emptyRequests();
@@ -10671,6 +10679,7 @@ class Game {
 				// comparator, but the map is indexed by the whole `BodyKind`, so a
 				// kind missing here is a build error rather than a silent NaN.
 				cargo: 6,
+				wreck: 7,
 			} as const;
 			this.selectableCache = this.world.system.bodies
 				.filter((b) => b.kind !== "moon")
@@ -12581,6 +12590,9 @@ class Game {
 		for (const drawn of this.derelictMeshes.values())
 			this.disposeDrawnDerelict(drawn);
 		this.derelictMeshes.clear();
+		for (const [key, contact] of this.wreckContacts)
+			this.dropWreckContact(key, contact);
+		this.selectableCache = null;
 		// And their contacts, now, rather than on the next step: `performJump`
 		// refreshes the scanner before any step runs, so the arrival frame would
 		// otherwise carry the old system's canister blips — and a reset while
@@ -13089,31 +13101,76 @@ class Game {
 	 * Live wreck instances at one clock; neither a lead nor a discovery write.
 	 */
 	derelictsAt(at = this.world.gameTime) {
-		return derelictSlots(
-			this.world.system.record.index,
-			this.world.system.record.government,
-		).flatMap(({ key }) => {
-			const row = effectiveDerelict(
-				this.commerceWorld,
-				this.world.galaxy.index,
-				key,
-				at,
-			);
-			return row.condition === "destroyed"
-				? [
-						{
-							key,
-							row,
-							pose: derelictPose(
-								this.world.system,
-								key,
-								row.instanceOrdinal,
-								at,
-							),
-						},
-					]
-				: [];
+		return liveDerelicts(this.commerceWorld, this.world.system, at);
+	}
+	private stepDerelictFinding() {
+		const floor = identifyRangeKm(this.commander.ownedEquipment);
+		if (!this.wreckReadings().some((w) => !w.identified && w.km <= floor))
+			return;
+		const outcome = applyHoldEvent(this.holdings(), this.commerceWorld, {
+			kind: "derelict-identify",
+			system: this.world.system,
+			shipPos: this.world.ship.pos,
+			at: this.world.gameTime,
 		});
+		if (outcome.signals.identifiedWreck) {
+			this.adoptHoldings(outcome);
+			this.lastExit = "derelict identified";
+		}
+	}
+	private wreckReadings() {
+		return derelictReadings(
+			this.commerceWorld,
+			this.world.system,
+			this.world.ship.pos,
+			this.commander.ownedEquipment,
+			this.world.gameTime,
+		);
+	}
+	private syncWreckContacts() {
+		const live = new Set<CarrierKey>();
+		for (const w of this.wreckReadings()) {
+			const fresh = wreckContact(w);
+			if (!fresh) continue;
+			live.add(w.key);
+			const contact = this.wreckContacts.get(w.key);
+			if (contact) Object.assign(contact, fresh);
+			else {
+				this.wreckContacts.set(w.key, fresh);
+				this.registerContact(fresh);
+				this.selectableCache = null;
+			}
+		}
+		for (const [key, contact] of this.wreckContacts) {
+			if (live.has(key)) continue;
+			this.dropWreckContact(key, contact);
+		}
+	}
+	private dropWreckContact(key: CarrierKey, contact: DisplayContact) {
+		this.unregisterContact(contact);
+		this.wreckContacts.delete(key);
+		this.selectableCache = null;
+		if (this.targetId === key) this.targetId = null;
+	}
+	private wreckCue(): WreckCue | null {
+		if (this.dock.phase === "docked") return null;
+		const w = this.wreckReadings()
+			.filter((w) => w.signal)
+			.sort((a, b) => a.km - b.km)[0];
+		if (!w?.signal) return null;
+		const dir = directionTo(this.world.ship.pos, w.pose.pos);
+		return {
+			identified: w.identified,
+			strength: w.signal.strength,
+			offNoseDeg: dir ? (angleOffNose(dir, this.nose()) * 180) / Math.PI : 0,
+			arrowDeg: targetArrowBearingDeg(
+				this.world.ship.pos,
+				w.pose.pos,
+				this.orientation,
+			),
+			region: derelictRegion(this.world.system, w.pose),
+			km: w.identified ? w.km : null,
+		};
 	}
 	private derelictSolids(dt: number) {
 		return this.derelictsAt().map(({ key, row, pose: start }) => {
@@ -13174,6 +13231,7 @@ class Game {
 		for (const mesh of drawn.containers.values()) disposeWreckContainer(mesh);
 	}
 	private updateDerelictPresentation(camPos: Vec3) {
+		this.syncWreckContacts();
 		const live = new Set<string>();
 		for (const { key, row, pose } of this.derelictsAt()) {
 			const id = key + ":" + row.instanceOrdinal;
@@ -14886,6 +14944,7 @@ class Game {
 		this.stepTrafficEngagements(dt, shot, solids);
 		this.stepCargoCanisters(dt);
 		this.stepDerelictScoops();
+		this.stepDerelictFinding();
 		this.syncCargoContacts();
 		// #48 deliberately couples no combat entity to the world yet: this is a
 		// flyable balance rig over the shared flight loop, not production combat.
@@ -17029,6 +17088,7 @@ class Game {
 							.map(formatRaiderLogLine)
 					: [],
 			relay: this.relayCue(),
+			wreck: this.wreckCue(),
 			tuning: this.tuningSummary(),
 			requests,
 			stationConsole: this.stationConsoleState(dockContext),

@@ -136,6 +136,7 @@ export type BodyKind =
 	| "station"
 	| "ship"
 	| "relay"
+	| "wreck"
 	| "cargo";
 
 export interface Body {

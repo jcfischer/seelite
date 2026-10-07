@@ -1429,6 +1429,28 @@ export const readKnowledge = (
 	key: CarrierKey,
 ): KnowledgeRow | undefined => env.knowledge[key];
 
+/** A flown wreck reading uses its own operational condition, never effectiveCarrier's
+ * absent-row operational default. An empty or salvaged carrier writes nothing. */
+export const observeDerelict = (
+	world: WorldState,
+	galaxyIndex: number,
+	key: CarrierKey,
+	at: number,
+	source: string,
+): WorldState => {
+	const wreck = effectiveDerelict(world, galaxyIndex, key, at);
+	if (wreck.condition !== "destroyed") return world;
+	return withEnvelope(world, galaxyIndex, at, (env) =>
+		withKnowledgeRow(env, key, {
+			...env.knowledge[key],
+			observedCondition: "destroyed",
+			observedInstanceOrdinal: wreck.instanceOrdinal,
+			observedAt: at,
+			source,
+		}),
+	);
+};
+
 /**
  * §3.1's revisit, report or relay: the player now knows what is objectively
  * true at `gameTime`.

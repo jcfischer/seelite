@@ -73,7 +73,7 @@ export function ladderView(
 	const pendingOf: Record<Ladder, number> = {
 		combat: pending.combat,
 		trade: 0,
-		exploration: pending.systems.length,
+		exploration: pending.systems.length + (pending.kinds?.length ?? 0),
 	};
 	return {
 		rows: LADDERS.map((ladder) => {
@@ -121,7 +121,7 @@ const THRESHOLD: Record<Ladder, (n: number) => string> = {
 const UNIT: Record<Ladder, string> = {
 	combat: "KILL CREDIT",
 	trade: "REALISED MARGIN",
-	exploration: "FIRST VISITS AND DOCKS",
+	exploration: "FIRST VISITS, DOCKS AND KINDS",
 };
 
 /**
@@ -141,7 +141,7 @@ export const ladderInputKey = (
 	record: LadderRecord,
 	pending: PendingCredit,
 ): string =>
-	`${LADDERS.map((l) => record.banked[l]).join(",")}|${pending.combat}|${pending.systems.length}|${Math.floor(record.playedS / 360)}|${record.capstoneAt}`;
+	`${LADDERS.map((l) => record.banked[l]).join(",")}|${pending.combat}|${pending.systems.length}|${pending.kinds?.length ?? 0}|${Math.floor(record.playedS / 360)}|${record.capstoneAt}`;
 
 export function commanderBody(view: LadderView): string {
 	const rows = view.rows

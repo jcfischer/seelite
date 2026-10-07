@@ -10,6 +10,31 @@ import {
 import { gameUrl } from "./lib/game-url.mjs";
 import { installViewFraming } from "./lib/view-placement.mjs";
 import { placeDerelict } from "./lib/derelict-state.mjs";
+// Controlled range placements exercise the live step; they do not fly an approach.
+async function placeNear(
+	page,
+	fixture,
+	dx,
+	{ step = false, look = null } = {},
+) {
+	return page.evaluate(
+		({ fixture: f, dx, step, look }) => {
+			const g = window.__seelite;
+			const w = g.derelictsAt().find((w) => w.key === f.key);
+			g.world.ship.pos = { ...w.pose.pos, x: w.pose.pos.x + dx };
+			g.world.ship.vel = { ...w.pose.vel };
+			if (step) g.step(1 / 60);
+			g.render(0);
+			if (look) g.setHeadLook(look);
+			return {
+				row: g.commerceWorld.galaxies[g.world.galaxy.index].knowledge[f.key],
+				contact: g.contacts.some((c) => c.id === f.key),
+			};
+		},
+		{ fixture, dx, step, look },
+	);
+}
+
 const origin = await guardedOrigin(
 	process.env.PROBE_ORIGIN ?? process.argv[2] ?? "http://localhost:5173",
 );
@@ -25,6 +50,165 @@ try {
 	await page.goto(gameUrl(origin, { seed: 47 }));
 	await bootedGame(page);
 	const fixture = await placeDerelict(page);
+
+	// Node #733: the fixture has no identification. Opening consoles reads no
+	// objective position; a sweep is a deliberate press and carries only regions.
+	await page.evaluate(() => {
+		const g = window.__seelite;
+		g.commander = { ...g.commander, ownedEquipment: [] };
+	});
+	await placeNear(page, fixture, 3000, { look: "left" });
+	check(
+		"unfitted console has no Sweep tab",
+		(await page.locator('[data-live-left-tab="Sweep"]').count()) === 0,
+	);
+	await page.locator('[data-live-left-tab="Navigation"]').click();
+	const hidden = await page.evaluate(
+		(f) => ({
+			known:
+				window.__seelite.commerceWorld.galaxies[0].knowledge[f.key] !==
+				undefined,
+			contact: window.__seelite.contacts.some((c) => c.id === f.key),
+			cue: !document.querySelector("[data-live-wreck-cue]").hidden,
+		}),
+		fixture,
+	);
+	check(
+		"unfitted outside visual floor has no knowledge, cue or Navigation row",
+		!hidden.known &&
+			!hidden.contact &&
+			!hidden.cue &&
+			(await page
+				.locator('[data-live-nav-target="' + fixture.key + '"]')
+				.count()) === 0,
+	);
+	await page.evaluate(async () => {
+		const g = window.__seelite;
+		const { LONG_RANGE_SCANNER } = await import("/src/market.ts");
+		g.commander = { ...g.commander, ownedEquipment: [LONG_RANGE_SCANNER] };
+		g.updateCockpit();
+	});
+	await page.locator('[data-live-left-tab="Sweep"]').click();
+	await page.locator("[data-live-sweep-action]").click();
+	const partial = await page.evaluate(() => {
+		const g = window.__seelite;
+		for (let i = 0; i < 300; i++) g.step(1 / 60);
+		g.render(0);
+		return {
+			elapsed: g.world.gameTime - g.sweepCharge.startedAt,
+			sweepReadings: g.sweepReadings.length,
+		};
+	});
+	check(
+		"five seconds paints sweep progress without writing leads",
+		partial.elapsed > 4.9 &&
+			partial.sweepReadings === 0 &&
+			(await page.locator("[data-live-sweep-status]").innerText()).includes(
+				"CHARGING",
+			),
+	);
+	await page.evaluate(() => {
+		const g = window.__seelite;
+		for (let i = 0; i < 310; i++) g.step(1 / 60);
+		g.render(0);
+	});
+	const leadText = await page.locator("[data-live-sweep]").innerText();
+	const swept = await page.evaluate(
+		(f) => ({
+			lead: window.__seelite.sweepReadings.find(
+				(r) =>
+					r.kind === "wreck" &&
+					r.systemIndex === window.__seelite.world.system.record.index &&
+					r.id.endsWith(":" + f.key.split(":")[1]),
+			),
+			known: window.__seelite.commerceWorld.galaxies[0].knowledge[f.key],
+		}),
+		fixture,
+	);
+	check(
+		"completed sweep paints a region with source and age, never discovery",
+		leadText.includes("Salvage wreck signal") &&
+			leadText.includes("OWN SENSORS") &&
+			leadText.includes("ago") &&
+			!!swept.lead &&
+			!swept.known &&
+			!("pos" in swept.lead),
+	);
+	mkdirSync("view-set/node-733", { recursive: true });
+	await page.screenshot({ path: "view-set/node-733/scanner-tab.png" });
+	await placeNear(page, fixture, 500, { look: "forward" });
+	const signal = page.locator("[data-live-wreck-cue]");
+	check(
+		"passive cue paints strength and bearing without an exact range",
+		(await signal.isVisible()) &&
+			(await signal.innerText()).includes("SCANNER RETURN") &&
+			(await signal.innerText()).includes("off nose") &&
+			!(await signal.innerText()).includes(" km"),
+	);
+	await page.screenshot({ path: "view-set/node-733/scanner-cue.png" });
+	const scannerFound = await placeNear(page, fixture, 100, { step: true });
+	check(
+		"fitted placement inside identification range makes a selectable wreck through the live step",
+		scannerFound.row?.source === "scanner identification" &&
+			scannerFound.contact,
+	);
+	// Clear this observation only to exercise the independent visual channel
+	// in the same naturally seeded fixture. Production never deletes knowledge.
+	await page.evaluate(async (f) => {
+		const g = window.__seelite;
+		const { emptyPending } = await import("/src/ladder.ts");
+		const galaxies = [...g.commerceWorld.galaxies];
+		const knowledge = { ...galaxies[0].knowledge };
+		delete knowledge[f.key];
+		galaxies[0] = { ...galaxies[0], knowledge };
+		g.commerceWorld = { ...g.commerceWorld, galaxies };
+		g.ladderPending = emptyPending();
+	}, fixture);
+
+	await page.evaluate(() => {
+		const g = window.__seelite;
+		g.commander = { ...g.commander, ownedEquipment: [] };
+	});
+	await placeNear(page, fixture, 9.9, { step: true, look: "left" });
+	await page.locator('[data-live-left-tab="Navigation"]').click();
+	const nav = page.locator('[data-live-nav-target="' + fixture.key + '"]');
+	check(
+		"visual floor writes knowledge and paints selectable Navigation wreck",
+		(await nav.count()) === 1 && (await nav.innerText()).includes("Derelict"),
+	);
+	await nav.click();
+	const found = await page.evaluate((f) => {
+		const g = window.__seelite;
+		return {
+			row: g.commerceWorld.galaxies[0].knowledge[f.key],
+			target: g.targetBody()?.id,
+			kinds: g.ladderPending.kinds,
+			cue: !document.querySelector("[data-live-wreck-cue]").hidden,
+		};
+	}, fixture);
+	check(
+		"identified wreck is the target and earns the single pending kind without a scanner cue",
+		found.row.source === "visual identification" &&
+			found.target === fixture.key &&
+			found.kinds?.join() === "wreck" &&
+			!found.cue,
+	);
+	await page.screenshot({ path: "view-set/node-733/navigation.png" });
+	// Restore the close framing for node #732's hull and scoop rows.
+	await page.evaluate((f) => {
+		const g = window.__seelite;
+		const w = g.derelictsAt().find((w) => w.key === f.key);
+		g.world.ship.pos = {
+			x: w.pose.pos.x + 0.5,
+			y: w.pose.pos.y + 0.15,
+			z: w.pose.pos.z + 0.7,
+		};
+		g.world.ship.vel = { ...w.pose.vel };
+		const forward = { x: -0.5, y: -0.15, z: -0.7 };
+		g.orientation.copy(g.shotRotation({ forward, up: { x: 0, y: 1, z: 0 } }));
+		g.setHeadLook("forward");
+		g.render(0);
+	}, fixture);
 	const draw = await page.evaluate(() => {
 		const g = window.__seelite;
 		const wreck = g.derelictsAt()[0];
