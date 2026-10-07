@@ -1,9 +1,0 @@
-Salamander Grand Piano V3 — a Yamaha C5, recorded by Alexander Holm
-
-Salamander Grand Piano V3 by Alexander Holm, CC BY 3.0 (https://creativecommons.org/licenses/by/3.0/)
-Licence: CC-BY-3.0 — https://creativecommons.org/licenses/by/3.0/
-Source: https://github.com/sfzinstruments/SalamanderGrandPiano/tree/3382bf9496bba2486f5ab0de55a264d1dfc38404
-
-The files here are excerpts of that work: each sample cut from its attack to
-a few seconds, faded, kept in stereo, scaled by -0.14 dB for
-the whole set, and encoded as Ogg Opus at 96 kbit/s.
