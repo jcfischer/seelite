@@ -7,10 +7,15 @@ import {
 	serializeSave,
 	SAVE_SCHEMA_VERSION,
 } from "../src/save-envelope";
-import { applyTransition, newWorld } from "../src/world-state";
+import {
+	applyTransition,
+	newWorld,
+	enumerateCarriers,
+	effectiveCarrier,
+} from "../src/world-state";
 import { generateGalaxy } from "../src/galaxy";
 import { relayActive } from "../src/pirate-relay";
-import { relayPlan, relaySlot } from "../src/relay-slot"; // glossary-ignore: slot
+import { relayPlan, relaySlot, relayTenderSlot } from "../src/relay-slot"; // glossary-ignore: slot
 import { generateContents } from "../src/system";
 import {
 	beginSweep,
@@ -19,6 +24,7 @@ import {
 	sweepSources,
 	parseSweepReadings,
 	SWEEP_CHARGE_S,
+	sweepRemainingS,
 	replaceSystemReadings,
 } from "../src/system-sweep";
 import {
@@ -83,6 +89,10 @@ describe("node #482 system sweep", () => {
 			completed: true,
 		});
 		expect(stepSweep(null, 21, context).completed).toBe(false);
+		expect(sweepRemainingS(null, 21)).toBeNull();
+		expect(sweepRemainingS(begun, 10)).toBe(SWEEP_CHARGE_S);
+		expect(sweepRemainingS(begun, 19.99)).toBe(1);
+		expect(sweepRemainingS(begun, 21)).toBe(0);
 	});
 	test("cruise, docking and loss of the module break the charge", () => {
 		const context = { fitted: true, flying: true, cruise: false };
@@ -100,7 +110,7 @@ describe("node #482 system sweep", () => {
 			});
 		}
 	});
-	test("source reading is pure, finds active wrecks and one pressure region, never carriers", () => {
+	test("source reading is pure and finds active wrecks and one pressure region", () => {
 		const world = { ...newWorld(56), gameTime: 48 * 3600 };
 		const before = JSON.stringify(world);
 		const rows = sweepSources(world, 0, 0);
@@ -114,6 +124,40 @@ describe("node #482 system sweep", () => {
 			expect(row).not.toHaveProperty("targetId");
 		}
 		expect(JSON.stringify(world)).toBe(before);
+	});
+	test("disabled ordinary carriers and the operational repair tender add no sweep sources", () => {
+		let world = { ...newWorld(56), gameTime: 48 * 3600 };
+		const before = sweepSources(world, 0, 0);
+		const ordinary = [...enumerateCarriers(world.seed, 0)].filter(
+			(c) => c.systemIndex === 0 && c.kind === "traffic",
+		);
+		expect(ordinary.length).toBeGreaterThan(0);
+		for (const carrier of ordinary) {
+			world = applyTransition(world, 0, carrier.key, {
+				kind: "disable",
+				occurredAt: world.gameTime,
+				cause: {
+					causeKind: "player-weapons",
+					actorId: "player",
+					playerRole: "direct",
+				},
+			});
+			expect(
+				effectiveCarrier(world.galaxies[0], carrier.key, world.gameTime)
+					.condition,
+			).toBe("disabled");
+		}
+		const tender = relayTenderSlot(0); // glossary-ignore: slot
+		expect(
+			effectiveCarrier(world.galaxies[0], tender.key, world.gameTime).condition,
+		).toBe("operational");
+		const after = sweepSources(world, 0, 0);
+		expect(after).toEqual(before);
+		for (const carrier of [...ordinary, tender]) {
+			expect(
+				after.some((r) => r.id === `sweep:0:0:${carrier.localCarrierId}`),
+			).toBe(false);
+		}
 	});
 	test("saves roundtrip source, region and time; old saves have no rows", () => {
 		const world = { ...newWorld(56), gameTime: 48 * 3600 };
@@ -143,8 +187,12 @@ describe("node #482 system sweep", () => {
 			{ galaxyIndex: 8 },
 			{ systemIndex: 999 },
 			{ id: "other" },
+			{ kind: "wreck" },
 			{ confirmation: "identified" },
 			{ region: { kind: "point", x: 1, y: 2, z: 3 } },
+			{ region: { kind: "system-space", pos: { x: 1, y: 2, z: 3 } } },
+			{ region: { kind: "station-surrounds", stationId: "missing" } },
+			{ region: { kind: "station-surrounds", stationId: 1 } },
 		])
 			expect(() => parseSweepReadings([{ ...row, ...change }], world)).toThrow(
 				"sweep",
@@ -160,7 +208,7 @@ describe("node #482 system sweep", () => {
 		);
 		expect(sweepAge(rows[0], world.gameTime + 60)).toContain("1m");
 	});
-	test("load refuses a relay absent from the generator and a region its subject never reports", () => {
+	test("load refuses a relay absent from the generator", () => {
 		const world = { ...newWorld(56), gameTime: 48 * 3600 };
 		const row = sweepSources(world, 0, 0).find((r) => r.kind === "relay")!;
 		const absent = generateGalaxy(world.seed, 0).systems.find(
@@ -183,6 +231,11 @@ describe("node #482 system sweep", () => {
 				world,
 			),
 		).toThrow("sweep");
+	});
+	test("historical regions survive placement changes without refreshing provenance", () => {
+		const world = { ...newWorld(56), gameTime: 48 * 3600 };
+		const rows = sweepSources(world, 0, 0);
+		const row = rows.find((r) => r.kind === "relay")!;
 		const otherStation = generateContents(
 			generateGalaxy(world.seed, 0).systems[0],
 		).stations.find(
@@ -191,25 +244,24 @@ describe("node #482 system sweep", () => {
 				s.id !== row.region.stationId,
 		)!;
 		expect(otherStation).toBeDefined();
-		expect(() =>
-			parseSweepReadings(
-				[
-					{
-						...row,
-						region: { kind: "station-surrounds", stationId: otherStation.id },
-					},
-				],
-				world,
-			),
-		).toThrow("sweep");
-		for (const reading of sweepSources(world, 0, 0)) {
-			const wrongRegion =
+		const historical = rows.map((reading) => ({
+			...reading,
+			region:
 				reading.region.kind === "station-surrounds"
-					? { kind: "system-space" }
-					: row.region;
-			expect(() =>
-				parseSweepReadings([{ ...reading, region: wrongRegion }], world),
-			).toThrow("sweep");
+					? { kind: "system-space" as const }
+					: { kind: "station-surrounds" as const, stationId: otherStation.id },
+		}));
+		historical.push({
+			...row,
+			region: { kind: "station-surrounds", stationId: otherStation.id },
+		});
+		const commander = newCommanderRecord("courier");
+		// Each alternate region is accepted individually, while duplicate ids still refuse.
+		for (const reading of historical) {
+			commander.sweepReadings = [reading];
+			const saved = serializeSave({ world, commander });
+			world.gameTime += 1;
+			expect(parseSave(saved).commander.sweepReadings).toEqual([reading]);
 		}
 	});
 	test("load preserves dated provenance after the relay disappears", () => {

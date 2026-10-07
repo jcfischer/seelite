@@ -281,7 +281,7 @@ try {
 		};
 	});
 	check(
-		"approach gives a cue before identification; flown close identification makes a contact",
+		"placement inside cue range preserves unknown state; placement inside identify range makes a contact",
 		approach.cue && approach.unknown && approach.identified && approach.contact,
 		JSON.stringify(approach),
 	);

@@ -459,7 +459,7 @@ import { carrierManifest } from "./carrier-manifest";
 import {
 	type SweepReading,
 	type SweepCharge,
-	SWEEP_CHARGE_S,
+	sweepRemainingS,
 	beginSweep,
 	stepSweep,
 	sweepRefusal,
@@ -470,6 +470,7 @@ import {
 	sweepPanel,
 	sweepCompletion,
 	SWEEP_INTERRUPTED,
+	SWEEP_IDLE,
 } from "./system-sweep-view";
 import {
 	type CarrierReading,
@@ -2482,7 +2483,7 @@ class Game {
 	private requests = emptyRequests();
 	private sweepReadings: SweepReading[] = [];
 	private sweepCharge: SweepCharge | null = null;
-	private sweepStatus = "Press Sweep · 10 s charge";
+	private sweepStatus = SWEEP_IDLE;
 	private requestSelectedId: string | null = null;
 	/**
 	 * Current or Past (node #690). Transient, never saved: Requests opens on
@@ -8050,7 +8051,7 @@ class Game {
 	}
 
 	private abortSystemSweep() {
-		if (this.sweepCharge) this.sweepStatus = SWEEP_INTERRUPTED;
+		this.sweepStatus = this.sweepCharge ? SWEEP_INTERRUPTED : SWEEP_IDLE;
 		this.sweepCharge = null;
 	}
 
@@ -8092,12 +8093,7 @@ class Game {
 		const now = this.world.gameTime;
 		const { galaxy, index } = this.world.system.record;
 		const context = this.systemSweepContext();
-		const remaining = this.sweepCharge
-			? Math.max(
-					0,
-					Math.ceil(SWEEP_CHARGE_S - (now - this.sweepCharge.startedAt)),
-				)
-			: null;
+		const remaining = sweepRemainingS(this.sweepCharge, now);
 		const key = `${context.fitted}|${context.flying}|${context.cruise}|${galaxy}|${index}|${this.leftTab}|${Math.floor(now)}|${remaining}|${this.sweepStatus}`;
 		if (
 			this.sweepPanelCache?.key === key &&

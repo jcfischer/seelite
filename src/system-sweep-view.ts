@@ -6,6 +6,7 @@ import type { SweepPanel } from "./live-cockpit";
 import {
 	SWEEP_CHARGE_S,
 	SWEEP_STALE_S,
+	sweepRemainingS,
 	sweepRefusal,
 	type SweepReading,
 	type SweepContext,
@@ -18,6 +19,7 @@ export const SWEEP_KIND_LABEL: Record<SweepReading["kind"], string> = {
 	pressure: "Raider pressure",
 };
 export const SWEEP_INTERRUPTED = "Sweep interrupted · press Sweep to restart";
+export const SWEEP_IDLE = `Press Sweep · ${SWEEP_CHARGE_S} s charge`;
 export const sweepCompletion = (count: number): string =>
 	count === 0
 		? "Sweep complete · no signal regions found"
@@ -40,6 +42,33 @@ export function sweepRegionLabel(row: SweepReading, worldSeed: number): string {
 	return `Surrounds of ${station?.name ?? row.region.stationId}`;
 }
 
+// Readings are replaced on sweep/load. Keep their static region labels separate
+// from the per-second age projection, without retaining obsolete ledgers.
+const regionLabels = new WeakMap<
+	readonly SweepReading[],
+	{
+		worldSeed: number;
+		byId: Map<string, string>;
+	}
+>();
+function cachedRegionLabel(
+	readings: readonly SweepReading[],
+	row: SweepReading,
+	worldSeed: number,
+): string {
+	let cache = regionLabels.get(readings);
+	if (!cache || cache.worldSeed !== worldSeed) {
+		cache = { worldSeed, byId: new Map() };
+		regionLabels.set(readings, cache);
+	}
+	let label = cache.byId.get(row.id);
+	if (label === undefined) {
+		label = sweepRegionLabel(row, worldSeed);
+		cache.byId.set(row.id, label);
+	}
+	return label;
+}
+
 export function sweepPanel(
 	readings: readonly SweepReading[],
 	now: number,
@@ -52,9 +81,7 @@ export function sweepPanel(
 		status: string;
 	},
 ): SweepPanel {
-	const remaining = context.charge
-		? Math.max(0, Math.ceil(SWEEP_CHARGE_S - (now - context.charge.startedAt)))
-		: null;
+	const remaining = sweepRemainingS(context.charge, now);
 	return {
 		fitted: context.fitted,
 		refusal: sweepRefusal(context),
@@ -73,7 +100,7 @@ export function sweepPanel(
 					.map((r) => ({
 						id: r.id,
 						label: SWEEP_KIND_LABEL[r.kind],
-						region: sweepRegionLabel(r, worldSeed),
+						region: cachedRegionLabel(readings, r, worldSeed),
 						age: sweepAge(r, now),
 					}))
 			: [],

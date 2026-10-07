@@ -40,11 +40,12 @@ retain their original integrity check and migrate to an empty ledger. Those
 versions refuse an assembled sweep field; version 10 refuses a missing ledger.
 Older readers refuse version 10 instead of silently dropping readings.
 Nonempty provenance is validated
-against the named galaxy/system, enabled generated subject and that subject's
-region, with finite clock bounds,
+against the named galaxy/system and enabled generated subject, with finite clock bounds,
 unique identities, supported region kinds and a fixed field set. Malformed
 provenance refuses the whole save. Load validation does not read current source
 condition: disappearance after an observation cannot erase a dated reading.
+Region validation checks its shape and any named station, not today's generated
+placement: a historical reading survives later placement changes unchanged.
 Charge and console status are session state. The domain module owns charge,
 sources and parsing; `system-sweep-view.ts` owns the read-only cockpit projection.
 

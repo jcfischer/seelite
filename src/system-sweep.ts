@@ -22,6 +22,13 @@ export interface SweepContext {
 export interface SweepCharge {
 	startedAt: number;
 }
+export const sweepRemainingS = (
+	charge: SweepCharge | null,
+	now: number,
+): number | null =>
+	charge
+		? Math.max(0, Math.ceil(SWEEP_CHARGE_S - (now - charge.startedAt)))
+		: null;
 export const sweepRefusal = (c: SweepContext): string | null =>
 	!c.fitted
 		? "Long-Range Scanner required"
@@ -64,7 +71,7 @@ export interface SweepReading {
 const readingId = (galaxy: number, system: number, subject: string) =>
 	`sweep:${galaxy}:${system}:${subject}`;
 
-/** Generated subjects and the only region each may report.
+/** Generated subjects and the region each reports in this build.
  * Their carrier identities are persistence rows, never docking berths. */
 interface SweepSubject {
 	kind: SweepReading["kind"];
@@ -152,6 +159,23 @@ export const replaceSystemReadings = (
 	),
 	...found,
 ];
+
+/** Historical provenance can predate current placement. Check its area shape
+ * and station reference, never compare it with today's generated region. */
+function validRegion(
+	value: unknown,
+	contents: SystemContents,
+): value is SweepRegion {
+	if (!value || typeof value !== "object" || Array.isArray(value)) return false;
+	const region = value as SweepRegion;
+	if (region.kind === "system-space")
+		return Object.keys(region).join() === "kind";
+	return (
+		region.kind === "station-surrounds" &&
+		Object.keys(region).sort().join() === "kind,stationId" &&
+		contents.stations.some((s) => s.id === region.stationId)
+	);
+}
 /** Pre-sweep saves migrate to an empty ledger. Every nonempty row is
  * validated against its named galaxy/system; it cannot acquire point geometry
  * or an identified reference through a crafted save. */
@@ -203,25 +227,7 @@ export function parseSweepReadings(
 		);
 		if (!generated || r.id !== readingId(r.galaxyIndex, r.systemIndex, subject))
 			return fail();
-		const region = r.region;
-		if (!region || typeof region !== "object" || Array.isArray(region))
-			return fail();
-		if (region.kind === "system-space") {
-			if (Object.keys(region).join() !== "kind") return fail();
-		} else if (region.kind === "station-surrounds") {
-			if (
-				Object.keys(region).sort().join() !== "kind,stationId" ||
-				!contents.stations.some((s) => s.id === region.stationId)
-			)
-				return fail();
-		} else return fail();
-		if (
-			region.kind !== generated.region.kind ||
-			(region.kind === "station-surrounds" &&
-				generated.region.kind === "station-surrounds" &&
-				region.stationId !== generated.region.stationId)
-		)
-			return fail();
+		if (!validRegion(r.region, contents)) return fail();
 		// Validate generated identity, never current condition: dated readings survive
 		// a source's disappearance and loading is not a fresh observation.
 		// The subject is provenance only, not a contact lookup.

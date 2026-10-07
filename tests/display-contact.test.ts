@@ -27,7 +27,7 @@ import {
 	trafficDivertCue,
 } from "../src/display-contact";
 import { trafficPresence } from "../src/traffic-engagement";
-import { SWEEP_INTERRUPTED } from "../src/system-sweep-view";
+import { SWEEP_INTERRUPTED, SWEEP_IDLE } from "../src/system-sweep-view";
 import { range } from "../src/units";
 import {
 	CANISTER_RADIUS_KM,
@@ -47,6 +47,22 @@ import { repoPath } from "./lib/source-scan";
 // Execute the actual Game methods without constructing WebGL or copying their
 // implementation into a fixture. TypeScript's parser keeps nested braces safe.
 // `tests/lib/game-methods.ts` owns the parse and the transpile.
+
+test("flight session teardown clears a completed sweep status and interrupts a running charge", () => {
+	const prototype = methods(["abortSystemSweep"], {
+		SWEEP_IDLE,
+		SWEEP_INTERRUPTED,
+	});
+	for (const charge of [null, { startedAt: 0 }]) {
+		const subject = Object.assign(Object.create(prototype), {
+			sweepCharge: charge,
+			sweepStatus: "Sweep complete · 3 regions recorded",
+		});
+		subject.abortSystemSweep();
+		expect(subject.sweepStatus).toBe(charge ? SWEEP_INTERRUPTED : SWEEP_IDLE);
+		expect(subject.sweepCharge).toBeNull();
+	}
+});
 
 test("Navigation evaluates ETA for a selectable contact absent from the generated world", () => {
 	const world = makeWorld(42);
@@ -366,6 +382,7 @@ function teardownSubject(ejectHold: EjectHold, ejectDown: boolean) {
 					// The teardown recentres the chase orbit (node #691).
 					ORBIT_ASTERN,
 					SWEEP_INTERRUPTED,
+					SWEEP_IDLE,
 				},
 			),
 		),
