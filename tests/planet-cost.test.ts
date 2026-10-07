@@ -23,6 +23,7 @@ import {
 	farColumnVerdict,
 	finite,
 	flagExcursions,
+	narrow,
 	parseFpsReadout,
 	radiiRefusal,
 	vsyncRefusal,
@@ -227,6 +228,20 @@ describe("the vsync refusal", () => {
 });
 
 describe("the sweep's declared columns", () => {
+	test("includes station-altitude columns in descending order without losing a rung", () => {
+		expect(RADII).toEqual([200, 30, 8, 3, 2.5, 2, 1.6, 1.5, 1.2, 1.02]);
+	});
+
+	test("narrows to exactly the requested station-altitude columns in table order", () => {
+		expect(narrow(RADII, [1.5, 1.6], "radii")).toEqual([1.6, 1.5]);
+	});
+
+	test("refuses an unknown radius between the station-altitude columns", () => {
+		expect(() => narrow(RADII, [1.55], "radii")).toThrow(
+			/--radii names 1\.55, which the sweep does not have/,
+		);
+	});
+
 	/**
 	 * The control is the widest column and it is first, because the guard above
 	 * reads the run's spread — a sweep with no cheap column has nothing for its

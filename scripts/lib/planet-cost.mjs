@@ -21,13 +21,15 @@
  * machine's floor is; if even *that* comes back at a display refresh, the run
  * measured the compositor and not the renderer.
  *
- * The other six walk in to 1.02 radii, which on `planet-5` is a **measured**
+ * The remaining columns walk in to 1.02 radii, which on `planet-5` is a **measured**
  * 109 km over a 5,473 km world: low orbit, the surface filling the frame, and
  * the worst case the near layer ever draws.
  *
  * **2 is here because it is where `planet-fill` stands**, so the sweep prices
  * the frame the canonical view set captures and a later node that makes a
  * surface cheaper has one number and one picture about the same placement.
+ * **1.6 and 1.5 price station altitude**, at the close-detail band's outer edge
+ * and the station orbit floor (node #720, D12).
  * **1.2 is here although nothing is framed there**: it was `planet-fill`'s
  * first placement and it captures as a featureless wash, but the *cost* does
  * not care that the picture is unreadable — the expensive readings are at the
@@ -51,7 +53,28 @@
  * the game is never in (sage, PR #256, round 5). 2.5 is inside the band on the
  * larger face and outside the small one, so the column exists at all.
  */
-export const RADII = Object.freeze([200, 30, 8, 3, 2.5, 2, 1.2, 1.02]);
+export const RADII = Object.freeze([
+	200, 30, 8, 3, 2.5, 2, 1.6, 1.5, 1.2, 1.02,
+]);
+
+/**
+ * Select requested columns in table order, refusing unknown values.
+ *
+ * @template T
+ * @param {ReadonlyArray<T>} all
+ * @param {ReadonlyArray<T> | null | undefined} wanted
+ * @param {string} what
+ */
+export function narrow(all, wanted, what) {
+	if (!wanted) return all;
+	const missing = wanted.filter((w) => !all.includes(w));
+	if (missing.length)
+		throw new Error(
+			`--${what} names ${missing.join(", ")}, which the sweep does not have ` +
+				`(${all.join(", ")})`,
+		);
+	return all.filter((a) => wanted.includes(a));
+}
 
 /**
  * `null` if every column stands outside the body, a sentence naming the ones

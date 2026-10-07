@@ -102,6 +102,7 @@ import {
 	farColumnVerdict,
 	finite,
 	flagExcursions,
+	narrow,
 	parseFpsReadout,
 	radiiRefusal,
 	vsyncRefusal,
@@ -199,7 +200,7 @@ const DECOMPOSE = process.argv.includes("--decompose");
 /**
  * Narrow the sweep to named classes or radii.
  *
- * The full table is eight classes by three relief paths by eight radii by two
+ * The full table is eight classes by three relief paths by ten radii by two
  * pixel ratios, three readings a cell — the right shape for pricing the surface
  * and far too long to run twice on one afternoon. A question about **one** term
  * wants two columns and its control, on both builds, on the same machine.
@@ -226,16 +227,6 @@ const listArg = (name) => {
 };
 const ONLY_CLASSES = listArg("classes");
 const ONLY_RADII = listArg("radii")?.map(Number);
-const narrow = (all, wanted, what) => {
-	if (!wanted) return all;
-	const missing = wanted.filter((w) => !all.includes(w));
-	if (missing.length)
-		throw new Error(
-			`--${what} names ${missing.join(", ")}, which the sweep does not have ` +
-				`(${all.join(", ")})`,
-		);
-	return all.filter((a) => wanted.includes(a));
-};
 
 /**
  * The cell the drift control reads, twice.
