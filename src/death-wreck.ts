@@ -16,10 +16,8 @@ import { AVOID_CLEARANCE_KM } from "./combat-enemy";
 import { wreckFramePose, tetherOffset } from "./derelict";
 import { add, sub, scale, dot, length, v3, type Vec3 } from "./vec3";
 import {
-	advanceTo,
 	DEATH_WRECK_ID,
 	DEATH_WRECK_MAX_CONTAINERS,
-	withoutDeathWreck,
 	type WorldState,
 	type DeathWreckRow,
 	type DerelictContainer,
@@ -81,18 +79,21 @@ export function deathWreckContents(
 /** Nearest centre outside a keep-out sphere AND its axial corridor. */
 export function clearStationWreck(
 	pos: Vec3,
-	centre: Vec3,
-	axis: Vec3,
-	fallbackRadial: Vec3,
-	radius: number,
-	corridor: number,
+	keepOut: {
+		centre: Vec3;
+		axis: Vec3;
+		reference: Vec3;
+		radius: number;
+		corridor: number;
+	},
 ): Vec3 {
+	const { centre, axis, reference, radius, corridor } = keepOut;
 	const delta = sub(pos, centre);
 	const z = dot(delta, axis);
 	const radial = sub(delta, scale(axis, z));
 	const r = length(radial);
 	if (r >= corridor && length(delta) >= radius) return pos;
-	const dir = r > 1e-12 ? scale(radial, 1 / r) : fallbackRadial;
+	const dir = r > 1e-12 ? scale(radial, 1 / r) : reference;
 	const candidates: [number, number][] = [];
 	const magnitude = Math.hypot(r, z);
 	if (magnitude > 0) {
@@ -109,16 +110,15 @@ export function clearStationWreck(
 	return add(centre, add(scale(dir, rr), scale(axis, zz)));
 }
 
-export function worldAfterDeath(
+export function deathWreckRow(
 	world: WorldState,
 	dying: CommanderRecord,
 	cause: DeathCause,
 	frameId?: string,
-): WorldState {
+): DeathWreckRow | undefined {
 	const at = world.gameTime;
-	const galaxies = world.galaxies.map(withoutDeathWreck);
 	const containers = deathWreckContents(world.seed, at, dying.state, cause);
-	if (!containers.length) return { ...world, galaxies };
+	if (!containers.length) return undefined;
 	const record = systemAt(world.seed, dying.galaxyIndex, dying.systemIndex);
 	const system = makeSystem(record, at);
 	let bodyId = frameId ?? system.contents.star.id;
@@ -130,14 +130,13 @@ export function worldAfterDeath(
 		const frame = stationApertureFrame(system, station.id, at);
 		const radius = proxyReachKm(stationProxyOf(station)) + margin;
 		if (length(sub(pos, centre)) > radius && bodyId !== station.id) continue;
-		pos = clearStationWreck(
-			pos,
+		pos = clearStationWreck(pos, {
 			centre,
-			frame.axis,
-			frame.reference,
+			axis: frame.axis,
+			reference: frame.reference,
 			radius,
-			corridorRadiusKm(frame.aperture) + margin,
-		);
+			corridor: corridorRadiusKm(frame.aperture) + margin,
+		});
 		bodyId = station.id;
 		break;
 	}
@@ -146,7 +145,7 @@ export function worldAfterDeath(
 	const previous = world.galaxies.flatMap((g) =>
 		g.deathWreck ? [g.deathWreck] : [],
 	)[0];
-	const row: DeathWreckRow = {
+	return {
 		key,
 		instanceOrdinal: (previous?.instanceOrdinal ?? -1) + 1,
 		lostAt: at,
@@ -155,19 +154,4 @@ export function worldAfterDeath(
 		bodyId,
 		offset: sub(pos, frame.pos),
 	};
-	const env = galaxies[dying.galaxyIndex];
-	galaxies[dying.galaxyIndex] = {
-		...env,
-		deathWreck: row,
-		knowledge: {
-			...env.knowledge,
-			[key]: {
-				observedInstanceOrdinal: row.instanceOrdinal,
-				observedCondition: "destroyed",
-				observedAt: at,
-				source: "own loss",
-			},
-		},
-	};
-	return advanceTo({ ...world, galaxies }, at);
 }

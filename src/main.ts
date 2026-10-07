@@ -10946,7 +10946,6 @@ class Game {
 	 * difference into the step it happens on (#529).
 	 */
 	private assistFrameSource(): {
-		kind: "relay" | "body" | "star";
 		frameId: string;
 		label: string;
 		velocityAt: (gameTime: number) => Vec3;
@@ -10961,7 +10960,6 @@ class Game {
 				)
 			)
 				return {
-					kind: "relay",
 					frameId: RELAY_LOCAL_CARRIER_ID,
 					label: "RELAY FRAME",
 					velocityAt: (t) => this.relayVelocityAt(view, t),
@@ -10969,7 +10967,6 @@ class Game {
 		}
 		const body = this.frameBody;
 		return {
-			kind: body ? "body" : "star",
 			frameId: body?.id ?? this.world.system.contents.star.id,
 			label: body ? `${body.kind.toUpperCase()} FRAME` : "STAR FRAME",
 			velocityAt: this.localFrameSource(),

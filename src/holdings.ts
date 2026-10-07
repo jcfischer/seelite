@@ -32,7 +32,7 @@ import type { System } from "./sim";
 import type { Vec3 } from "./vec3";
 import type { CarrierKey } from "./carrier-key";
 import type { DeathCause } from "./death-cost";
-import { worldAfterDeath } from "./death-wreck";
+import { deathWreckRow } from "./death-wreck";
 import type { CommanderRecord, SaveEnvelope } from "./save-envelope";
 import { HULL_SPECS, type HullId, PLAYER_BASELINE_HULL } from "./hull";
 import { killCredit } from "./kill-credit";
@@ -80,6 +80,7 @@ import {
 	effectiveDerelict,
 	scoopDerelict,
 	setDeficits,
+	withDeathWreck,
 	visit,
 } from "./world-state";
 
@@ -150,7 +151,12 @@ export const holdingsAfterDeath = (
 	frameId?: string,
 ): SaveEnvelope => ({
 	commander: commanderAfterDeath(dock, dying.commander, cause),
-	world: worldAfterDeath(dying.world, dying.commander, cause, frameId),
+	world: withDeathWreck(
+		dying.world,
+		dying.commander.galaxyIndex,
+		deathWreckRow(dying.world, dying.commander, cause, frameId),
+		dying.world.gameTime,
+	),
 });
 
 /** Everything a pilot owns that an act at a console or in space can move. */

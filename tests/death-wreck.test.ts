@@ -1,7 +1,7 @@
 import { expect, test } from "bun:test";
 import {
 	deathWreckContents,
-	worldAfterDeath,
+	deathWreckRow,
 	clearStationWreck,
 } from "../src/death-wreck";
 import { deathWreckPose, tetherOffset, wreckFramePose } from "../src/derelict";
@@ -13,7 +13,14 @@ import {
 	parseSave,
 	serializeSave,
 } from "../src/save-envelope";
-import { newWorld } from "../src/world-state";
+import {
+	newWorld,
+	withDeathWreck,
+	advanceTo,
+	type WorldState,
+} from "../src/world-state";
+import type { DeathCause } from "../src/death-cost";
+import type { CommanderRecord } from "../src/save-envelope";
 import {
 	makeWorld,
 	advanceSystem,
@@ -47,6 +54,13 @@ import { emptyPending } from "../src/ladder";
 import { v3, add, sub, scale, dot, length } from "../src/vec3";
 
 const system = makeWorld(47).system;
+const worldAfterDeath = (
+	world: WorldState,
+	dying: CommanderRecord,
+	cause: DeathCause,
+	frameId?: string,
+) =>
+	holdingsAfterDeath(dying, { world, commander: dying }, cause, frameId).world;
 const dying = {
 	...newCommanderRecord("courier", { systemIndex: system.record.index }),
 	state: {
@@ -318,18 +332,43 @@ test("a body-frame death follows that body over time; station deaths clear keep-
 	advanceSystem(system, 100);
 	expect(sub(later.pos, system.byId.get(station.id)!.pos)).toEqual(row.offset);
 	expect(later.vel).toEqual(bodyVelocity(system, station.id, 100));
-	const p = clearStationWreck(
-		v3(0, 0, 10),
-		v3(),
-		v3(0, 0, 1),
-		v3(1, 0, 0),
-		2,
-		1,
-	);
+	const p = clearStationWreck(v3(0, 0, 10), {
+		centre: v3(),
+		axis: v3(0, 0, 1),
+		reference: v3(1, 0, 0),
+		radius: 2,
+		corridor: 1,
+	});
 	expect(p).toEqual(v3(1, 0, 10));
-	const q = clearStationWreck(v3(), v3(), v3(0, 0, 1), v3(1, 0, 0), 2, 1);
+	const q = clearStationWreck(v3(), {
+		centre: v3(),
+		axis: v3(0, 0, 1),
+		reference: v3(1, 0, 0),
+		radius: 2,
+		corridor: 1,
+	});
 	expect(length(q)).toBeCloseTo(2);
 	expect(q.x).toBe(1);
+});
+
+test("the own-loss writer advances the world, refuses stale writes and clears an empty replacement atomically", () => {
+	const before = newWorld(47);
+	const row = deathWreckRow({ ...before, gameTime: 10 }, dying, "destroyed")!;
+	const written = withDeathWreck(before, 0, row, 10);
+	const advanced = advanceTo(before, 10);
+	expect(written.gameTime).toBe(10);
+	expect(written.galaxies[0].objective).toEqual(advanced.galaxies[0].objective);
+	expect(written.galaxies[0].episodes).toEqual(advanced.galaxies[0].episodes);
+	expect(before.galaxies[0].deathWreck).toBeUndefined();
+	expect(before.galaxies[0].knowledge[row.key]).toBeUndefined();
+	expect(() => withDeathWreck(written, 0, row, 9)).toThrow("before the clock");
+	expect(() => withDeathWreck(written, 8, row, 10)).toThrow();
+	const cleared = withDeathWreck(written, 1, undefined, 20);
+	expect(cleared.gameTime).toBe(20);
+	expect(cleared.galaxies.some((g) => g.deathWreck)).toBe(false);
+	expect(cleared.galaxies[0].knowledge[row.key]).toBeUndefined();
+	expect(written.galaxies[0].deathWreck).toEqual(row);
+	parseSave(serializeSave({ world: cleared, commander: dying }));
 });
 
 test("cached wreck frames retain both step endpoints and track the relay orbit", () => {

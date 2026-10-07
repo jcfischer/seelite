@@ -450,6 +450,39 @@ export function withoutDeathWreck(env: GalaxyEnvelope): GalaxyEnvelope {
 	return { ...rest, knowledge };
 }
 
+/** Replace the pilot's one own-loss wreck and its knowledge atomically.
+ * An empty loss still removes the previous wreck, across every galaxy. */
+export function withDeathWreck(
+	world: WorldState,
+	galaxyIndex: number,
+	row: DeathWreckRow | undefined,
+	at: number,
+): WorldState {
+	const written = withEnvelope(world, galaxyIndex, at, (env) => {
+		const cleared = withoutDeathWreck(env);
+		if (!row) return cleared;
+		return {
+			...cleared,
+			deathWreck: row,
+			knowledge: {
+				...cleared.knowledge,
+				[row.key]: {
+					observedInstanceOrdinal: row.instanceOrdinal,
+					observedCondition: "destroyed",
+					observedAt: at,
+					source: "own loss",
+				},
+			},
+		};
+	});
+	return {
+		...written,
+		galaxies: written.galaxies.map((env, i) =>
+			i === galaxyIndex ? env : withoutDeathWreck(env),
+		),
+	};
+}
+
 /**
  * §7's typed per-galaxy envelope: **eight state domains** — objective deltas,
  * causal episodes, knowledge, market deficits, visited flags, legal status and // glossary-ignore: slot, Legal status
@@ -2641,7 +2674,9 @@ const parseDerelictContainer = (
 	const id = str(o, "id", what);
 	const allowed = CONTAINER_IDS[death ? "death" : "derelict"];
 	if (!allowed[kind as DerelictContainerKind].has(id))
-		fail(`${what}: ${id} is not a ${kind} a derelict can hold`);
+		fail(
+			`${what}: ${id} is not a ${kind} a ${death ? "death wreck" : "derelict"} can hold`,
+		);
 	const tonnes = ordinal(o, "tonnes", what);
 	if (tonnes === 0) fail(`${what}: a container drawn with no tonnes`);
 	const left = ordinal(o, "left", what);
@@ -2663,7 +2698,7 @@ const parseDerelictRow = (
 	key: string,
 	death = false,
 ): DerelictRow => {
-	const what = `derelict ${key}`;
+	const what = `${death ? "death wreck" : "derelict"} ${key}`;
 	if (
 		!death &&
 		derelictOrdinalOf(localCarrierIdOfKey(key as CarrierKey)) === null

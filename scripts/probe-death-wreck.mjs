@@ -164,6 +164,7 @@ try {
 		await g.saveStore.settled();
 		return {
 			dead: g.dead,
+			galaxyIndex: g.world.galaxy.index,
 			cargo: g.commander.cargo,
 			fittings: g.commander.recoveredFittings,
 			equipment: g.commander.ownedEquipment,
@@ -192,7 +193,7 @@ try {
 				"Docking Computer" &&
 			scooped.saved.commander.state.recoveredFittings[0].tonnes === 1 &&
 			scooped.saved.commander.state.ownedEquipment.length === 0 &&
-			!scooped.saved.world.galaxies[0].deathWreck,
+			!scooped.saved.world.galaxies[scooped.galaxyIndex].deathWreck,
 	);
 } finally {
 	await browser.close();

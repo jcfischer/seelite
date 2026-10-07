@@ -29,6 +29,7 @@ const MAIN = await Bun.file(new URL("../src/main.ts", import.meta.url)).text();
 /** Every writer `world-state.ts` exports that returns a new `WorldState`. */
 const WRITERS = [
 	"advanceTo",
+	"withDeathWreck",
 	"materializeDerelict",
 	"scoopDerelict",
 	"observeDerelict",
@@ -609,9 +610,7 @@ describe("the Game's world writes", () => {
 		// adopts whatever world the module returns, so the module is where a
 		// hand-built world would come from. Each `world:` property and the
 		// world argument of each `unchanged(…)` call is either the world passed
-		// in or a call to a world writer. The death writer composes the wreck
-		// and its knowledge before advanceTo in death-wreck.ts (node #705).
-		const writers = [...WRITERS, "worldAfterDeath"];
+		// in or a call to a world-state writer.
 		const HOLDINGS = await Bun.file(
 			new URL("../src/holdings.ts", import.meta.url),
 		).text();
@@ -621,7 +620,7 @@ describe("the Game's world writes", () => {
 		// A local bound to a writer's result is that writer's world (#627: a
 		// carrier transition is applied once and returned on both arms).
 		const bound = [...HOLDINGS.matchAll(/\bconst (\w+) = (\w+)\(/g)].flatMap(
-			(m) => (writers.includes(m[2]) ? [m[1]] : []),
+			(m) => (WRITERS.includes(m[2]) ? [m[1]] : []),
 		);
 		// A wreck finding outcome carries only observeDerelict's world beside
 		// the identified keys. Accept that field only on a bound invocation.
@@ -640,7 +639,7 @@ describe("the Game's world writes", () => {
 				// A parameter or field's type, not a value.
 				v !== "WorldState," &&
 				v !== "WorldState;" &&
-				!writers.some((w) => v.startsWith(`${w}(`)),
+				!WRITERS.some((w) => v.startsWith(`${w}(`)),
 		);
 		expect(byHand).toEqual([]);
 		// A refusal's world is `unchanged`'s second argument, which no
