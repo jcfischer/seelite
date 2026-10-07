@@ -20,7 +20,8 @@ import {
 	HULL_SPECS,
 	type HullId,
 } from "../src/hull";
-import { SELECTED_FORM, buildStationForm } from "../src/station-mesh";
+import { buildStationForm } from "../src/station-mesh";
+import { FORMS_IN_PLAY } from "./helpers/forms-in-play";
 import {
 	BERTH_CELL,
 	type Berth,
@@ -220,16 +221,10 @@ describe("the volume holds what it says it holds", () => {
 		// through a hull, and what they draw stands in *front* of the plane,
 		// where `tests/station-mesh.test.ts`'s corridor row measures it over every
 		// form.
-		for (const type of STATION_TYPES) {
+		for (const [type, formId] of FORMS_IN_PLAY) {
 			if (STATION_GEOMETRY[type].aperture.kind !== "slot") continue;
 			const interior = interiorOf(type);
-			const { root } = buildStationForm(
-				type,
-				SELECTED_FORM[type],
-				0x888888,
-				0,
-				0,
-			);
+			const { root } = buildStationForm(type, formId, 0x888888, 0, 0);
 			root.updateMatrixWorld(true);
 			const core = STATION_GEOMETRY[type].coreRadiusKm;
 			// **The `core`, not the whole assembly.** A shipyard's drydock frame
@@ -241,7 +236,7 @@ describe("the volume holds what it says it holds", () => {
 			const body = root.getObjectByName("core");
 			const hull = new THREE.Box3();
 			if (body) hull.setFromObject(body);
-			const label = `${type} ${SELECTED_FORM[type]}`;
+			const label = `${type} ${formId}`;
 			expect([label, hull.isEmpty()]).toEqual([label, false]);
 			expect([label, interior.halfAcrossKm <= hull.max.x * core]).toEqual([
 				label,

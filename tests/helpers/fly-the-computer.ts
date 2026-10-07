@@ -55,6 +55,7 @@ const NO_TURN: Angular = Object.freeze({ pitch: 0, yaw: 0, roll: 0 });
 import {
 	STATION_GEOMETRY,
 	type StationType,
+	formsInPlay,
 	slotPhaseRad,
 } from "../../src/station";
 import { stationInterior } from "../../src/station-interior";
@@ -197,13 +198,14 @@ export interface FlightOptions {
 	trace?: ComputerTraceStep[];
 	/**
 	 * The station the hull meets (`collision.md` §2.2), when it is not the
-	 * selected form's proxy at `stationSeeds` (berth 1, assembly 0 if omitted) — for a row
-	 * that builds a red proxy on purpose.
+	 * proxy of the plan at `stationSeeds` — for a row that builds a red proxy
+	 * on purpose.
 	 */
 	proxy?: StationProxy;
 	/** Explicit plan for seeded collision rows. Historical handling fixtures
-	 * retain berth 1, assembly 0 when omitted. The berth catalogue and proxy
-	 * must read the same pair. */
+	 * retain berth 1, assembly 0 when omitted, in the role's first pooled form
+	 * (node #717) — a row about every form iterates `stationPlansFor`. The
+	 * berth catalogue and proxy must read the same plan. */
 	stationSeeds?: StationSeeds;
 }
 
@@ -242,7 +244,11 @@ export function flyTheComputer(opts: FlightOptions): FlightRun {
 	const dt = opts.dt ?? 0.05;
 	const swing = opts.axisSwingRadPerS ?? 0;
 	const pivot = cross(axis, reference);
-	const seeds = opts.stationSeeds ?? { berthSeed: 1, assemblySeed: 0 };
+	const seeds = opts.stationSeeds ?? {
+		formId: formsInPlay(type)[0],
+		berthSeed: 1,
+		assemblySeed: 0,
+	};
 
 	const interior = stationInterior(
 		type,

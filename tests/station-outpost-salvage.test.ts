@@ -16,7 +16,7 @@
 import { describe, expect, test } from "bun:test";
 import * as THREE from "three";
 import {
-	SELECTED_FORM,
+	OUTPOST_FORM,
 	STATION_FORMS,
 	WORK_LAMP_COLOR,
 	buildStationForm,
@@ -66,7 +66,8 @@ describe("outpost E is the choice, on the principal's yes", () => {
 	});
 
 	test("the game builds the outpost as E since the ranking round of 2026-09-24", () => {
-		expect(SELECTED_FORM.outpost).toBe("e");
+		// Not drawn from a pool (node #717): the outpost is the fiction's form.
+		expect(OUTPOST_FORM).toBe("e");
 	});
 });
 

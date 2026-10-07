@@ -29,8 +29,8 @@ import {
 	surfaceFactsOf,
 } from "../src/occlusion-mesh";
 import { buildShipMesh } from "../src/ship-mesh";
-import { buildStationMesh } from "../src/station-mesh";
-import { STATION_TYPES } from "../src/station";
+import { buildStationForm } from "../src/station-mesh";
+import { FORMS_IN_PLAY } from "./helpers/forms-in-play";
 
 /** Every mesh in a subtree, in one place so a failure can name the offender. */
 const meshesOf = (root: THREE.Object3D) => {
@@ -71,8 +71,8 @@ test("every flag on a hull agrees with the predicate", () => {
 });
 
 test("every station form marks its structure and refuses its lamps", () => {
-	for (const type of STATION_TYPES) {
-		const station = buildStationMesh(type, 0x8899aa, 0, 0).root;
+	for (const [type, formId] of FORMS_IN_PLAY) {
+		const station = buildStationForm(type, formId, 0x8899aa, 0, 0).root;
 		const marked = markOcclusion(station);
 		expect({ type, marked: marked.participating > 0 }).toEqual({
 			type,

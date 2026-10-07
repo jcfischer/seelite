@@ -1941,8 +1941,8 @@ function solidStations(system: System): Station[] {
 	);
 }
 
-/** The proxy a placed station is solid on (§2.2, node #663): its selected
- *  form's. */
+/** The proxy a placed station is solid on (§2.2, node #663): the form its
+ *  system picked for it (node #717). */
 function stationSolid(station: Station) {
 	return selectedStationProxy(station);
 }

@@ -10,8 +10,9 @@
  * **Four roles, three forms each** (#56). #28 gave each role one silhouette;
  * those were reviewed in the live game and rejected on form, and the pool that
  * replaced them is built in the swept-loft language of #35's ship hulls.
- * `SELECTED_FORM` names the one the game builds for each role — one line per
- * role, so a later choice is one edit.
+ * `STATION_FORM_POOL` names the forms a system may build each role in, and the
+ * system's own seed picks one per station (node #717) — one line per role, so
+ * growing a pool is one edit.
  *
  * **Everything is authored in kilometres**, read from `STATION_GEOMETRY` — a
  * slot drawn at a size the docking checks do not use is invisible to every
@@ -71,12 +72,14 @@ import {
 	displayRand,
 } from "./station-surface";
 import {
-	SELECTED_FORM,
+	OUTPOST_FORM,
+	STATION_FORM_POOL,
 	STATION_GEOMETRY,
 	STATION_TYPES,
 	type StationAperture,
 	type StationFormId,
 	type StationType,
+	formsInPlay,
 } from "./station";
 import { type GreebleZone, buildGreebles } from "./station-greebles";
 import {
@@ -143,8 +146,8 @@ import { stationInterior } from "./station-interior";
 import { disposeSubtree, isShared, shared } from "./gpu-teardown";
 
 /**
- * How far the *drawn* object reaches, kilometres — the selected form's own
- * declared reach: an outboard frame, a captured asteroid, a radiator wing.
+ * How far one form's *drawn* object reaches, kilometres — its own declared
+ * reach: an outboard frame, a captured asteroid, a radiator wing.
  *
  * Here rather than in `STATION_GEOMETRY`, and that is the point: `docking.md`
  * §5 says the frame is silhouette and not dockable geometry, and #9's checks
@@ -152,45 +155,32 @@ import { disposeSubtree, isShared, shared } from "./gpu-teardown";
  * struct it forbids is one edit from being false; a separate table that docking
  * never imports cannot be read by accident.
  *
+ * **Per form, and so per station** (node #717). This was `STATION_SILHOUETTE_KM`,
+ * a per-type table memoised on the one form each role flew. Once a system
+ * picks a station's form from a pool, two stations of one type may differ in
+ * reach, and a per-type memo answers for one of them. The renderer reads the
+ * figure off the station's own handle (`StationMesh.silhouetteKm`), which is
+ * this function evaluated once at build.
+ *
  * A **budget, not a description**: `tests/station-mesh.test.ts` asserts no
- * vertex of a built station lies outside it, so a frame or a flare stack cannot
- * quietly grow.
+ * vertex of a built station lies outside it, for every form in every pool, so
+ * a frame or a flare stack cannot quietly grow.
  *
- * **It is now an intention, and it used to be a measurement.** #28 wrote four
+ * **It is an intention, and it used to be a measurement.** #28 wrote four
  * literals here and warned that reading them as design constraints would be
- * reading a measurement as an intention: the shipyard's 1.5 km came from
- * `docking.md` §5 and its test could fail against the spec, but the refinery's
- * 0.9 was a ratchet set from what the mesh happened to measure. That warning
- * does not survive #56 and has been removed rather than left to mislead.
- *
- * Every figure is now a **declared** `reachKm` on a form — a number an author
- * chose before building the shape, which the form is then measured against.
- * That is the direction a budget should run. What the test does *not* do is
- * insist the shape fills its declaration: the floor is 60% of it, which catches
- * a declaration nothing approaches without pretending the fit is tight.
+ * reading a measurement as an intention. Every figure is now a **declared**
+ * `reachKm` on a form — a number an author chose before building the shape,
+ * which the form is then measured against. That is the direction a budget
+ * should run. What the test does *not* do is insist the shape fills its
+ * declaration: the floor is 60% of it, which catches a declaration nothing
+ * approaches without pretending the fit is tight.
  */
-const reachCache: Partial<Record<StationType, number>> = {};
-
-export const STATION_SILHOUETTE_KM: Record<StationType, number> =
-	Object.defineProperties(
-		{} as Record<StationType, number>,
-		Object.fromEntries(
-			STATION_TYPES.map((type) => [
-				type,
-				{
-					enumerable: true,
-					// A memoised getter, not a value: `SELECTED_FORM` is a module
-					// constant so the lookup resolves once, but `STATION_FORMS` and
-					// `formOf` are declared further down the file and evaluating
-					// eagerly here reads them before initialisation. Left as a bare
-					// `find` it ran on every read, and the renderer reads this per
-					// station per frame.
-					get: () =>
-						(reachCache[type] ??= formOf(type, SELECTED_FORM[type]).reachKm),
-				},
-			]),
-		),
-	);
+export function stationSilhouetteKm(
+	type: StationType,
+	formId: StationFormId,
+): number {
+	return formOf(type, formId).reachKm;
+}
 
 /** What the renderer gets back: a root oriented to the aperture axis, and the
  *  part of it that spins. */
@@ -202,9 +192,17 @@ export interface StationMesh {
 	/** Rotated about local Z by the phase from `stationPose`. For the refinery
 	 *  this is an empty group: the pad does not turn. */
 	spinner: THREE.Object3D;
-	/** Which type built it, so `updateStationVisuals` can reach the profile and
-	 *  the silhouette budget without the caller carrying either. */
+	/** Which type built it, so `updateStationVisuals` can reach the profile
+	 *  without the caller carrying it. */
 	type: StationType;
+	/** Which form built it — the station's own `formId` (node #717), never a
+	 *  per-type default. */
+	formId: StationFormId;
+	/** How far this station's drawn object reaches, kilometres:
+	 *  `stationSilhouetteKm` of its own form, read once at build. The detail
+	 *  band measures range in this, so two stations of one role in different
+	 *  forms drop detail at their own apparent size. */
+	silhouetteKm: number;
 	/** The detail level currently drawn. Held on the handle rather than
 	 *  recomputed, because `stationDetailLevel` is directional — the previous
 	 *  level is half of its input (`station-visuals.ts` §3). */
@@ -1181,7 +1179,7 @@ export interface StationForm {
 	readonly thesis: string;
 	/** How far this form's drawn object reaches, kilometres. Per *form*, not per
 	 *  role: a ring station and a drum are not the same size, and
-	 *  `STATION_SILHOUETTE_KM` below is the selected form's row. */
+	 *  `stationSilhouetteKm` reads it for the station's own form. */
 	readonly reachKm: number;
 	/** `berthSeed` is the station's own berth draw (`docking.md` §13.2), which
 	 *  reaches the interior and nothing else. Every builder takes it and most
@@ -1472,8 +1470,8 @@ function strobePair(
 //
 // Three per role. Every one is built from `hullLoft` where it is a hull and
 // from a torus where it is a ring; nothing here is a `BoxGeometry` standing in
-// for a shape. Each declares its own reach, and `STATION_SILHOUETTE_KM` is the
-// selected form's row rather than a number written twice.
+// for a shape. Each declares its own reach, and `stationSilhouetteKm` reads the
+// station's own form's row rather than a number written twice.
 
 /**
  * Trade A — Coriolis. A **cuboctahedron**: eight triangular faces and six
@@ -2251,7 +2249,7 @@ function buildShipyardGantry(color: number, berthSeed: number): BuiltPart {
 	 * drum** (#274, #300).
 	 *
 	 * §5 used to give them to "the Coriolis hull ... the shipyard spins about
-	 * the same axis for the same reason". `SELECTED_FORM.shipyard` is the
+	 * the same axis for the same reason". The shipyard's pool is the
 	 * Gantry — a keel with a drum on a bearing — so there is no shared Coriolis
 	 * hull for one answer to be one answer for, and the pair had been added to
 	 * `group`, the **static keel**, at `z = -SHIPYARD_KEEL_AFT_KM`. What a
@@ -6242,13 +6240,12 @@ export const STATION_FORMS: Record<StationType, StationForm[]> = {
 };
 
 /**
- * `SELECTED_FORM` lives in `station.ts` (node #663), where the Three-free
- * collision proxy can read it without its dependency arrow pointing at the
- * renderer — the sim makes stations solid on the selected form's proxy, and
- * `sim.ts` may not import this module. Re-exported here, so every reader of
- * the renderer's table reads the one table.
+ * The pools live in `station.ts` (node #663 put the selection there, node #717
+ * made it a pool), where the Three-free generator and collision proxy can read
+ * them without a dependency arrow pointing at the renderer. Re-exported here,
+ * so every reader of the renderer's table reads the one table.
  */
-export { SELECTED_FORM };
+export { OUTPOST_FORM, STATION_FORM_POOL, formsInPlay };
 
 const formOf = (type: StationType, id: StationFormId) => {
 	const form = STATION_FORMS[type].find((candidate) => candidate.id === id);
@@ -6357,6 +6354,8 @@ export function buildStationForm(
 		root,
 		spinner,
 		type,
+		formId,
+		silhouetteKm: form.reachKm,
 		detail: "full",
 		fixtures: built.fixtures,
 		accessories,
@@ -6374,19 +6373,27 @@ export function buildStationForm(
 	return mesh;
 }
 
-/** Build one station in the form the game currently uses for its role. */
+/**
+ * Build one generated station: in its own form (`Station.formId`, node #717)
+ * at its own seeds. There is no per-role form to fall back on — a system picks
+ * each station's form from its role's pool — so this takes the station rather
+ * than a type, and the mesh, the reach and the proxy all read the one record.
+ */
 export function buildStationMesh(
-	type: StationType,
+	station: {
+		readonly type: StationType;
+		readonly formId: StationFormId;
+		readonly berthSeed: number;
+		readonly assemblySeed: number;
+	},
 	color: number,
-	berthSeed: number,
-	assemblySeed: number,
 ): StationMesh {
 	return buildStationForm(
-		type,
-		SELECTED_FORM[type],
+		station.type,
+		station.formId,
 		color,
-		berthSeed,
-		assemblySeed,
+		station.berthSeed,
+		station.assemblySeed,
 	);
 }
 
@@ -6439,10 +6446,7 @@ export function updateStationVisuals(
 	 */
 	quality: StationQuality,
 ): void {
-	const level = detailLevel(
-		mesh.detail,
-		distanceKm / STATION_SILHOUETTE_KM[mesh.type],
-	);
+	const level = detailLevel(mesh.detail, distanceKm / mesh.silhouetteKm);
 	if (level !== mesh.detail) setStationDetail(mesh, level);
 
 	const drawGreebles = STATION_QUALITY[quality].greebles;
@@ -6487,7 +6491,8 @@ export function stationVisualSnapshot(mesh: StationMesh) {
 	return {
 		type: mesh.type,
 		detail: mesh.detail,
-		silhouetteKm: STATION_SILHOUETTE_KM[mesh.type],
+		formId: mesh.formId,
+		silhouetteKm: mesh.silhouetteKm,
 		fixtures: mesh.fixtures.map((fixture) => ({
 			kind: fixture.kind,
 			intensity: fixture.material.emissiveIntensity,

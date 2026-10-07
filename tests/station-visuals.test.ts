@@ -23,14 +23,13 @@ import {
 	STATION_GEOMETRY,
 	STATION_TYPES,
 	type StationType,
+	formsInPlay,
 } from "../src/station";
 import {
-	SELECTED_FORM,
 	STATION_FORMS,
-	STATION_SILHOUETTE_KM,
 	type StationFormId,
 	buildStationForm,
-	buildStationMesh,
+	stationSilhouetteKm,
 	setStationDetail,
 	updateStationVisuals,
 } from "../src/station-mesh";
@@ -48,6 +47,7 @@ import {
 	surfaceTexels,
 } from "../src/station-visuals";
 import { PLATE_TEXTURE_SIZE } from "../src/surface";
+import { FORMS_IN_PLAY } from "./helpers/forms-in-play";
 import { HANDOFF_HYSTERESIS, HANDOFF_KM } from "../src/units";
 import { instanceBoxes } from "./helpers/instance-boxes";
 import { PLAN_SEEDS, isSolvedForm } from "./helpers/solved-forms";
@@ -61,8 +61,8 @@ const GREY = 0x9aa6b2;
 
 describe("a detail level may not change the outline", () => {
 	test("reach is identical at every level", () => {
-		for (const type of TYPES) {
-			const built = buildStationMesh(type, GREY, 0, 0);
+		for (const [type, formId] of FORMS_IN_PLAY) {
+			const built = buildStationForm(type, formId, GREY, 0, 0);
 			const measured = LEVELS.map((level) => {
 				setStationDetail(built, level);
 				return reachKm(built.root, type);
@@ -79,12 +79,12 @@ describe("a detail level may not change the outline", () => {
 	test("the budget still holds with the pass applied", () => {
 		// #28's ceiling, re-asserted from this side. `station-mesh.test.ts` proves
 		// it for the mesh as built; this proves the visual pass did not spend it.
-		for (const type of TYPES) {
-			const built = buildStationMesh(type, GREY, 0, 0);
+		for (const [type, formId] of FORMS_IN_PLAY) {
+			const built = buildStationForm(type, formId, GREY, 0, 0);
 			for (const level of LEVELS) {
 				setStationDetail(built, level);
 				expect(reachKm(built.root, type)).toBeLessThanOrEqual(
-					STATION_SILHOUETTE_KM[type] * (1 + 1e-6),
+					stationSilhouetteKm(type, formId) * (1 + 1e-6),
 				);
 			}
 		}
@@ -93,8 +93,8 @@ describe("a detail level may not change the outline", () => {
 	test("the accessories really do switch off, so the levels are not all one level", () => {
 		// The equality above passes trivially if `setStationDetail` does nothing.
 		// This is what stops that reading as a green run.
-		for (const type of TYPES) {
-			const built = buildStationMesh(type, GREY, 0, 0);
+		for (const [type, formId] of FORMS_IN_PLAY) {
+			const built = buildStationForm(type, formId, GREY, 0, 0);
 			const drawn = (level: StationDetailLevel) => {
 				setStationDetail(built, level);
 				let n = 0;
@@ -115,8 +115,8 @@ describe("a detail level may not change the outline", () => {
 		// What is left at `outline` is what the identity and #9's approach rest
 		// on. A level that stripped the aperture would leave a station with
 		// nothing to aim at, at exactly the range you start aiming.
-		for (const type of TYPES) {
-			const built = buildStationMesh(type, GREY, 0, 0);
+		for (const [type, formId] of FORMS_IN_PLAY) {
+			const built = buildStationForm(type, formId, GREY, 0, 0);
 			for (const level of LEVELS) {
 				setStationDetail(built, level);
 				for (const name of ["core", "aperture", "station-interior"]) {
@@ -307,7 +307,11 @@ describe("detail is chosen by apparent size, with the render layer's hysteresis"
 		// Not a rule the two functions share by construction — they are separate
 		// decisions — but they must not fight. The smallest silhouette gives the
 		// largest apparent radii, so checking the largest one is the binding case.
-		const largest = Math.max(...Object.values(STATION_SILHOUETTE_KM));
+		const largest = Math.max(
+			...FORMS_IN_PLAY.map(([type, formId]) =>
+				stationSilhouetteKm(type, formId),
+			),
+		);
 		// `HANDOFF_KM` imported, not restated: retuned downward, a literal 1e4
 		// here would keep asserting the old range and this invariant would stop
 		// being checked while staying green.
@@ -463,11 +467,11 @@ describe("what the renderer drives, at every range", () => {
 		// promises it does not. The flare is a lit throat now and is tagged like
 		// any other accessory, so this asserts the general rule — every fixture is
 		// driven at every level — rather than the one case that forced it.
-		const mesh = buildStationMesh("refinery", GREY, 0, 0);
+		const mesh = buildStationForm("refinery", "d", GREY, 0, 0);
 		const flare = () =>
 			mesh.fixtures.find((f) => f.kind === "flare")?.material
 				.emissiveIntensity ?? Number.NaN;
-		const farKm = STATION_SILHOUETTE_KM.refinery * DETAIL_RADII.reduced * 4;
+		const farKm = mesh.silhouetteKm * DETAIL_RADII.reduced * 4;
 		updateStationVisuals(mesh, 11.3, farKm, "high");
 		expect(mesh.detail).toBe("outline");
 		const a = flare();
@@ -484,8 +488,8 @@ describe("what the renderer drives, at every range", () => {
 		// The wiring between the two modules, which neither one can assert alone:
 		// a fixture driven by the wrong waveform is a light that animates and is
 		// still wrong, and nothing about the shape of the frame says so.
-		const mesh = buildStationMesh("trade", GREY, 0, 0);
-		const closeKm = STATION_SILHOUETTE_KM.trade;
+		const mesh = buildStationForm("trade", "a", GREY, 0, 0);
+		const closeKm = mesh.silhouetteKm;
 		for (const t of [0.03, 1.1, 7.42]) {
 			updateStationVisuals(mesh, t, closeKm, "high");
 			const first = mesh.fixtures.find((f) => f.kind === "strobe-a");
@@ -635,13 +639,14 @@ describe("§5 — no fixture is wholly hidden from the aperture axis", () => {
 		names: readonly string[],
 		{
 			move,
-			formId = SELECTED_FORM[station],
+			formId,
 			assemblySeed = 0,
 		}: {
 			move?: (root: THREE.Object3D) => void;
-			formId?: StationFormId;
+			// Required: there is no per-role form to default to (node #717).
+			formId: StationFormId;
 			assemblySeed?: number;
-		} = {},
+		},
 	) => {
 		const { root, spinner } = buildStationForm(
 			station,
@@ -659,7 +664,7 @@ describe("§5 — no fixture is wholly hidden from the aperture axis", () => {
 		const eye = new THREE.Vector3(
 			0,
 			0,
-			(STATION_SILHOUETTE_KM[station] * CLOSE_RADII) /
+			(stationSilhouetteKm(station, formId) * CLOSE_RADII) /
 				STATION_GEOMETRY[station].coreRadiusKm,
 		);
 		const dead: string[] = [];
@@ -684,18 +689,18 @@ describe("§5 — no fixture is wholly hidden from the aperture axis", () => {
 		return dead;
 	};
 
-	for (const type of TYPES) {
+	for (const [type, formId] of FORMS_IN_PLAY) {
 		const names = SPEC_FIXTURE_NAMES[type];
 		if (!names) continue;
-		test(`the ${type}'s fixtures are all reachable down its own axis, on every plan`, () => {
+		test(`the ${type} ${formId}'s fixtures are all reachable down its own axis, on every plan`, () => {
 			// A solved form is a family of plans (#257), and the check on one
 			// seed is a check on one plan.
-			const seeds = isSolvedForm(type, SELECTED_FORM[type]) ? PLAN_SEEDS : [0];
+			const seeds = isSolvedForm(type, formId) ? PLAN_SEEDS : [0];
 			for (const assemblySeed of seeds)
 				expect([
 					type,
 					assemblySeed,
-					hiddenFixtures(type, names, { assemblySeed }),
+					hiddenFixtures(type, names, { formId, assemblySeed }),
 				]).toEqual([type, assemblySeed, []]);
 		});
 	}
@@ -733,6 +738,7 @@ describe("§5 — no fixture is wholly hidden from the aperture axis", () => {
 	test("the axis row goes red when a strobe is put back on the equator", () => {
 		const face = STATION_GEOMETRY.trade.coreRadiusKm * 0.95 * Math.SQRT1_2;
 		const hidden = hiddenFixtures("trade", ["strobe-a", "strobe-b"], {
+			formId: "a",
 			move: (root) => {
 				for (const [kind, side] of [
 					["strobe-a", -1],
@@ -753,21 +759,22 @@ describe("§5 — no fixture is wholly hidden from the aperture axis", () => {
  */
 describe("the mouth chase and the refinery's beacons", () => {
 	test("every slot role rings its mouth with lamps an equal step of the period apart", () => {
-		for (const type of ["trade", "shipyard"] as const) {
-			const mesh = buildStationMesh(type, GREY, 0, 0);
-			const chase = mesh.fixtures.filter((f) => f.kind === "chase");
-			const { strobePeriodS } = STATION_VISUALS[type].activity;
-			// Enough that the flash reads as running round, not as a few blinks.
-			expect([type, chase.length >= 8]).toEqual([type, true]);
-			const offsets = chase.map((f) => f.offsetS).sort((a, b) => a - b);
-			offsets.forEach((offset, i) =>
-				expect(offset).toBeCloseTo((i / chase.length) * strobePeriodS, 9),
-			);
-		}
+		for (const type of ["trade", "shipyard"] as const)
+			for (const formId of formsInPlay(type)) {
+				const mesh = buildStationForm(type, formId, GREY, 0, 0);
+				const chase = mesh.fixtures.filter((f) => f.kind === "chase");
+				const { strobePeriodS } = STATION_VISUALS[type].activity;
+				// Enough that the flash reads as running round, not as a few blinks.
+				expect([type, chase.length >= 8]).toEqual([type, true]);
+				const offsets = chase.map((f) => f.offsetS).sort((a, b) => a - b);
+				offsets.forEach((offset, i) =>
+					expect(offset).toBeCloseTo((i / chase.length) * strobePeriodS, 9),
+				);
+			}
 	});
 
 	test("the chase runs: at any lit moment one lamp leads and they are not in unison", () => {
-		const mesh = buildStationMesh("trade", GREY, 0, 0);
+		const mesh = buildStationForm("trade", "a", GREY, 0, 0);
 		let sawOne = false;
 		for (let i = 0; i < 80; i++) {
 			updateStationVisuals(mesh, i * 0.025, 1, "high");
@@ -785,12 +792,14 @@ describe("the mouth chase and the refinery's beacons", () => {
 
 	test("a pad role gets no ring, because a pad has no frame round a hole", () => {
 		for (const type of ["refinery", "outpost"] as const)
-			expect([
-				type,
-				buildStationMesh(type, GREY, 0, 0).fixtures.filter(
-					(f) => f.kind === "chase",
-				).length,
-			]).toEqual([type, 0]);
+			for (const formId of formsInPlay(type))
+				expect([
+					type,
+					formId,
+					buildStationForm(type, formId, GREY, 0, 0).fixtures.filter(
+						(f) => f.kind === "chase",
+					).length,
+				]).toEqual([type, formId, 0]);
 	});
 
 	test("the beacon blinks for its duty and is dark on a role that declares none", () => {
@@ -808,13 +817,7 @@ describe("the mouth chase and the refinery's beacons", () => {
 
 	test("every refinery plan carries a beacon on its headframe and one on its flare stack", () => {
 		for (const seed of [0, 1, 2, 3, 4, 5]) {
-			const { root } = buildStationForm(
-				"refinery",
-				SELECTED_FORM.refinery,
-				GREY,
-				0,
-				seed,
-			);
+			const { root } = buildStationForm("refinery", "d", GREY, 0, seed);
 			let beacons = 0;
 			root.traverse((o) => {
 				if (o.name === "obstruction-beacon" && !o.userData.glow) beacons++;

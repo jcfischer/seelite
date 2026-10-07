@@ -72,6 +72,7 @@ import {
 	stepWorld,
 } from "../src/sim";
 import {
+	OUTPOST_FORM,
 	STATION_GEOMETRY,
 	STATION_TYPES,
 	type StationType,
@@ -191,6 +192,7 @@ function turnInto(side: 1 | -1, gapKm: number, rpm = TURN_RPM) {
 	const at = overArm(side, gapKm);
 	const proxy = selectedStationProxy({
 		type: "trade",
+		formId: "a",
 		berthSeed: 0,
 		assemblySeed: 0,
 	});
@@ -244,6 +246,7 @@ describe("collision.md §9.1.2 row 3: a spinning station's surface meets a ship 
 		// boom 0.15 km in that time — the arm below builds exactly that.
 		const proxy = selectedStationProxy({
 			type: "shipyard",
+			formId: "a",
 			berthSeed: 0,
 			assemblySeed: 0,
 		});
@@ -307,6 +310,7 @@ describe("collision.md §9.1.4: a moving surface is billed against a resting shi
 		// has turned to.
 		const proxy = selectedStationProxy({
 			type: "trade",
+			formId: "a",
 			berthSeed: 0,
 			assemblySeed: 0,
 		});
@@ -330,7 +334,12 @@ describe("collision.md §9.1.6: the earliest impact owns the tick (C3)", () => {
 	const frame = frameAt(type, 0, 0);
 	const { up } = slotBasis(frame);
 	const nose = scale(frame.axis, -1);
-	const proxy = selectedStationProxy({ type, berthSeed: 0, assemblySeed: 0 });
+	const proxy = selectedStationProxy({
+		type,
+		formId: "a",
+		berthSeed: 0,
+		assemblySeed: 0,
+	});
 	const solids = stationMotions(proxy, still(frame), still(frame));
 
 	/** One tick from `z0` to `z1` along the axis at lateral `x`, with the
@@ -477,7 +486,12 @@ function worldWith(type: StationType): { world: World; id: string } {
 				s.type === want && (s.spinRpm > 0 || !STATION_GEOMETRY[want].spins),
 		);
 		if (!station || !world.system.byId.has(station.id)) continue;
-		if (type === "outpost") station.type = "outpost";
+		// Re-typed whole: an outpost is built in its own form (node #717), and a
+		// refinery's form kept under the outpost's type has no proxy.
+		if (type === "outpost") {
+			station.type = "outpost";
+			station.formId = OUTPOST_FORM;
+		}
 		return { world, id: station.id };
 	}
 	throw new Error(`no start system with a ${type} in 400 seeds`);
@@ -859,7 +873,7 @@ describe("collision.md §9.1.9: the aperture is a physical fit (P1)", () => {
 					yawDeg: 0,
 					rollDeg: 50,
 				},
-				{ berthSeed: 1, assemblySeed: 0 },
+				{ formId: "a", berthSeed: 1, assemblySeed: 0 },
 			),
 		).toBe(false);
 	});
@@ -1118,6 +1132,7 @@ describe("collision.md §9.1.12: cruise and the station proxies (C5)", () => {
 		const { up } = slotBasis(frame);
 		const proxy = selectedStationProxy({
 			type: "shipyard",
+			formId: "a",
 			berthSeed: 0,
 			assemblySeed: 0,
 		});

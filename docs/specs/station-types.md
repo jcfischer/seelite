@@ -711,7 +711,7 @@ given directional adjacency; `station-plant.ts` is the two pad roles'.
   is barred from the first ring of cells, where the pad deck overhangs.
 
 The Assembly entered the pool for a ranking round on the principal's yes
-(2026-09-06); `SELECTED_FORM.trade` stays A until that round ranks it. **The
+(2026-09-06); the trade pool stays `[a]` until that round ranks it. **The
 Works and the Cluster were taken in that round** — shown at four plans under
 three finishes and four framings on the finish sheet
 (`scripts/shot-finishes.mjs`, which grew a `SEEDS` axis because one plan
@@ -749,8 +749,19 @@ under five finishes and four framings, and taken (2026-09-24). Its macro
 fixtures — a belt, two pipe runs and a tank rack on the core — were added after
 that sheet, because a selected form owes them under the industrial finishes.
 
-`SELECTED_FORM` (`station-mesh.ts`) names the one the game builds for each role,
-and is one line per role so a later choice is one edit. Trade and shipyard are
+`STATION_FORM_POOL` (`station.ts`) names the forms a system may build each role
+in, one line per role, and **each system picks a form for each station it places
+from its own seed** (`DOMAIN.STATION_FORM`, node #717): one draw per fixed type
+slot, uniform within the pool, carried on the station as `Station.formId`. The
+mesh, the display reach and the collision proxy all read that field, so two
+stations of one role may differ and nothing answers per role. It replaced
+`SELECTED_FORM`, one form per role for the whole galaxy. **Each pool holds only
+the form its role already flew** until the principal says yes to a pool on a
+sheet of its candidates; growing one is a one-line edit that then owes a
+collision proxy, macro fixtures like the flown forms carry, the Wheel's hub
+row if trade E joins, and a canonical view set before and after. Whether a pool leans
+toward its familiar form is open on node #717. The outpost is not drawn: it is
+the fiction's form (#490), `OUTPOST_FORM`. Trade and shipyard are
 **A** because round one ranked their slot first. **Refinery and outpost were D
 since 2026-09-06**, on the principal's yes to #257's sheet — the first choice
 either role had, after two rounds in which `a` was a placeholder that said so.

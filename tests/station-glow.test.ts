@@ -16,7 +16,7 @@
 import { describe, expect, test } from "bun:test";
 import * as THREE from "three";
 import { EMISSIVE_CEILING, EXPOSURE } from "../src/light-rig";
-import { STATION_TYPES, type StationType } from "../src/station";
+import { STATION_TYPES, type StationType, formsInPlay } from "../src/station";
 import {
 	GLOW_CLASSES,
 	glowMaterial,
@@ -24,15 +24,14 @@ import {
 	poolMaterial,
 } from "../src/station-glow";
 import {
-	SELECTED_FORM,
 	STATION_FORMS,
 	type StationFormId,
 	buildStationForm,
-	buildStationMesh,
 	setStationDetail,
 	updateStationVisuals,
 } from "../src/station-mesh";
 import { SPEC_FIXTURE_NAMES } from "../src/station-visuals";
+import { FORMS_IN_PLAY } from "./helpers/forms-in-play";
 import { PLAN_SEEDS, isSolvedForm } from "./helpers/solved-forms";
 import { poolOverhang } from "./helpers/structure-rays";
 
@@ -136,8 +135,8 @@ describe("the lights are station fittings, not ship-sized boxes", () => {
 	});
 
 	test("nor does a finish's beacon", () => {
-		for (const type of STATION_TYPES) {
-			const { root } = buildStationMesh(type, GREY, 0, 0);
+		for (const [type, formId] of FORMS_IN_PLAY) {
+			const { root } = buildStationForm(type, formId, GREY, 0, 0);
 			root.traverse((object) => {
 				if (!object.name.startsWith("beacon-") || object.userData.glow) return;
 				expect([type, object.name, fittingKm(object) <= 0.003]).toEqual([
@@ -161,35 +160,30 @@ describe("every §5 fixture carries a glow, wired to its fitting", () => {
 	};
 
 	for (const [type, names] of Object.entries(SPEC_FIXTURE_NAMES))
-		test(`the ${type}'s fittings each have a glow child of the same name`, () => {
-			const station = type as StationType;
-			const { root } = buildStationForm(
-				station,
-				SELECTED_FORM[station],
-				GREY,
-				0,
-				0,
-			);
-			const missing: string[] = [];
-			for (const name of names) {
-				// The heat ring is a lit ring a hundred metres across and reads
-				// at range as itself; it is §5's light and needs no glare.
-				if (name === "heat-glow") continue;
-				const fittings = fittingsNamed(root, name);
-				if (fittings.length === 0) missing.push(`${name} (no fitting)`);
-				for (const fitting of fittings) {
-					const glow = fitting.children.find((c) => c.userData.glow);
-					if (!glow) missing.push(`${name} (no glow)`);
-					else if (glow.name !== name)
-						missing.push(`${name} (glow named ${glow.name})`);
+		for (const formId of formsInPlay(type as StationType))
+			test(`the ${type} ${formId}'s fittings each have a glow child of the same name`, () => {
+				const station = type as StationType;
+				const { root } = buildStationForm(station, formId, GREY, 0, 0);
+				const missing: string[] = [];
+				for (const name of names) {
+					// The heat ring is a lit ring a hundred metres across and reads
+					// at range as itself; it is §5's light and needs no glare.
+					if (name === "heat-glow") continue;
+					const fittings = fittingsNamed(root, name);
+					if (fittings.length === 0) missing.push(`${name} (no fitting)`);
+					for (const fitting of fittings) {
+						const glow = fitting.children.find((c) => c.userData.glow);
+						if (!glow) missing.push(`${name} (no glow)`);
+						else if (glow.name !== name)
+							missing.push(`${name} (glow named ${glow.name})`);
+					}
 				}
-			}
-			expect([type, missing]).toEqual([type, []]);
-		});
+				expect([type, missing]).toEqual([type, []]);
+			});
 
 	test("a glow is hidden wherever its fitting is: at outline range, none draws", () => {
-		for (const type of STATION_TYPES) {
-			const mesh = buildStationMesh(type, GREY, 0, 0);
+		for (const [type, formId] of FORMS_IN_PLAY) {
+			const mesh = buildStationForm(type, formId, GREY, 0, 0);
 			setStationDetail(mesh, "outline");
 			mesh.root.updateMatrixWorld(true);
 			const drawn: string[] = [];
@@ -207,7 +201,7 @@ describe("every §5 fixture carries a glow, wired to its fitting", () => {
 	test("nothing can pick a glow", () => {
 		// `Points` answers within one world unit, and this root is in core radii:
 		// a pickable glow would stand in front of every surface on the station.
-		const { root } = buildStationMesh("trade", GREY, 0, 0);
+		const { root } = buildStationForm("trade", "a", GREY, 0, 0);
 		root.updateMatrixWorld(true);
 		const raycaster = new THREE.Raycaster(
 			new THREE.Vector3(0, 0, 10),
@@ -220,43 +214,45 @@ describe("every §5 fixture carries a glow, wired to its fitting", () => {
 	});
 
 	test("the clock drives a glow at exactly its fitting's own intensity", () => {
-		for (const type of ["trade", "shipyard", "refinery"] as const) {
-			const mesh = buildStationMesh(type, GREY, 0, 0);
-			for (const t of [0.05, 0.75, 1.05, 1.75]) {
-				updateStationVisuals(mesh, t, 1, "high");
-				for (const fixture of mesh.fixtures) {
-					if (!fixture.glow) continue;
-					expect([
-						type,
-						fixture.kind,
-						t,
-						fixture.glow.uniforms.uIntensity.value,
-					]).toEqual([
-						type,
-						fixture.kind,
-						t,
-						fixture.material.emissiveIntensity,
-					]);
+		for (const type of ["trade", "shipyard", "refinery"] as const)
+			for (const formId of formsInPlay(type)) {
+				const mesh = buildStationForm(type, formId, GREY, 0, 0);
+				for (const t of [0.05, 0.75, 1.05, 1.75]) {
+					updateStationVisuals(mesh, t, 1, "high");
+					for (const fixture of mesh.fixtures) {
+						if (!fixture.glow) continue;
+						expect([
+							type,
+							fixture.kind,
+							t,
+							fixture.glow.uniforms.uIntensity.value,
+						]).toEqual([
+							type,
+							fixture.kind,
+							t,
+							fixture.material.emissiveIntensity,
+						]);
+					}
 				}
 			}
-		}
 	});
 
 	test("every driven light that a §5 fixture names has a glow to drive", () => {
 		// strobes, the arc and the flare; the heat ring is a lit structure.
-		for (const type of ["trade", "shipyard", "refinery"] as const) {
-			const mesh = buildStationMesh(type, GREY, 0, 0);
-			const undriven = mesh.fixtures
-				.filter((f) => !f.glow && f.base !== 0)
-				.map((f) => f.kind)
-				.filter((kind) => kind !== "work" || type === "shipyard");
-			expect([type, undriven]).toEqual([type, []]);
-		}
+		for (const type of ["trade", "shipyard", "refinery"] as const)
+			for (const formId of formsInPlay(type)) {
+				const mesh = buildStationForm(type, formId, GREY, 0, 0);
+				const undriven = mesh.fixtures
+					.filter((f) => !f.glow && f.base !== 0)
+					.map((f) => f.kind)
+					.filter((kind) => kind !== "work" || type === "shipyard");
+				expect([type, undriven]).toEqual([type, []]);
+			}
 	});
 
 	test("a glow's drive never exceeds the exposure ceiling", () => {
-		for (const type of STATION_TYPES) {
-			const mesh = buildStationMesh(type, GREY, 0, 0);
+		for (const [type, formId] of FORMS_IN_PLAY) {
+			const mesh = buildStationForm(type, formId, GREY, 0, 0);
 			for (const t of [0, 0.05, 0.75, 1.05, 1.75, 7.42]) {
 				updateStationVisuals(mesh, t, 1, "high");
 				mesh.root.traverse((object) => {
@@ -290,33 +286,36 @@ describe("a blinking point light burns past the bloom threshold; a steady light 
 	const BLINKING = new Set(["strobe-a", "strobe-b", "chase", "beacon"]);
 
 	test("every blinking fixture's glow has a core that crosses the threshold, every other glow has none", () => {
-		for (const type of ["trade", "shipyard", "refinery"] as const) {
-			const mesh = buildStationMesh(type, GREY, 0, 0);
-			const kindOfGlow = new Map<THREE.Material, string>();
-			for (const f of mesh.fixtures) if (f.glow) kindOfGlow.set(f.glow, f.kind);
-			const wrong: string[] = [];
-			mesh.root.traverse((object) => {
-				// A light pool is a decal, not a glow sprite: it has no core.
-				if (!object.userData.glow || object.userData.pool) return;
-				const material = (object as THREE.Points)
-					.material as THREE.ShaderMaterial;
-				const core = Number(material.uniforms.uCore?.value ?? Number.NaN);
-				const kind = kindOfGlow.get(material) ?? "steady";
-				const base = mesh.fixtures.find((f) => f.glow === material)?.base ?? 0;
-				if (BLINKING.has(kind)) {
-					// Peak radiance at the centre: the drive times (1 + core gain).
-					if (!(core > 0 && base * (1 + core) > EXPOSURE.bloom.threshold))
-						wrong.push(`${object.name}/${kind} core=${core} base=${base}`);
-				} else if (core !== 0) {
-					wrong.push(`${object.name}/${kind} steady light with core=${core}`);
-				}
-			});
-			expect([type, wrong]).toEqual([type, []]);
-		}
+		for (const type of ["trade", "shipyard", "refinery"] as const)
+			for (const formId of formsInPlay(type)) {
+				const mesh = buildStationForm(type, formId, GREY, 0, 0);
+				const kindOfGlow = new Map<THREE.Material, string>();
+				for (const f of mesh.fixtures)
+					if (f.glow) kindOfGlow.set(f.glow, f.kind);
+				const wrong: string[] = [];
+				mesh.root.traverse((object) => {
+					// A light pool is a decal, not a glow sprite: it has no core.
+					if (!object.userData.glow || object.userData.pool) return;
+					const material = (object as THREE.Points)
+						.material as THREE.ShaderMaterial;
+					const core = Number(material.uniforms.uCore?.value ?? Number.NaN);
+					const kind = kindOfGlow.get(material) ?? "steady";
+					const base =
+						mesh.fixtures.find((f) => f.glow === material)?.base ?? 0;
+					if (BLINKING.has(kind)) {
+						// Peak radiance at the centre: the drive times (1 + core gain).
+						if (!(core > 0 && base * (1 + core) > EXPOSURE.bloom.threshold))
+							wrong.push(`${object.name}/${kind} core=${core} base=${base}`);
+					} else if (core !== 0) {
+						wrong.push(`${object.name}/${kind} steady light with core=${core}`);
+					}
+				});
+				expect([type, wrong]).toEqual([type, []]);
+			}
 	});
 
 	test("the core gain is in the shader, not only declared", () => {
-		const mesh = buildStationMesh("trade", GREY, 0, 0);
+		const mesh = buildStationForm("trade", "a", GREY, 0, 0);
 		const strobe = mesh.fixtures.find((f) => f.kind === "strobe-a")?.glow;
 		expect(strobe).toBeDefined();
 		const source = (strobe as THREE.ShaderMaterial).fragmentShader;
@@ -358,7 +357,7 @@ describe("glare and light pools", () => {
 	});
 
 	test("the pixel ratio reaches the shader, from the renderer at draw time", () => {
-		const mesh = buildStationMesh("trade", GREY, 0, 0);
+		const mesh = buildStationForm("trade", "a", GREY, 0, 0);
 		const strobe = mesh.fixtures.find((f) => f.kind === "strobe-a")
 			?.glow as THREE.ShaderMaterial;
 		expect(strobe.vertexShader).toContain("uPixelRatio");
@@ -386,29 +385,30 @@ describe("glare and light pools", () => {
 
 	test("a blinking light's glow carries a glare halo and a larger floor; a steady glow carries neither", () => {
 		const blink = new Set(["strobe-a", "strobe-b", "chase", "beacon"]);
-		for (const type of ["trade", "shipyard", "refinery"] as const) {
-			const mesh = buildStationMesh(type, GREY, 0, 0);
-			const kindOf = new Map<THREE.Material, string>();
-			for (const f of mesh.fixtures) if (f.glow) kindOf.set(f.glow, f.kind);
-			const wrong: string[] = [];
-			let steadyFloor = Number.POSITIVE_INFINITY;
-			let blinkFloor = Number.POSITIVE_INFINITY;
-			mesh.root.traverse((o) => {
-				if (!o.userData.glow || o.userData.pool) return;
-				const m = (o as THREE.Points).material as THREE.ShaderMaterial;
-				const halo = Number(m.uniforms.uHalo?.value ?? Number.NaN);
-				if (blink.has(kindOf.get(m) ?? "")) {
-					if (!(halo > 0))
-						wrong.push(`${o.name} blinking without halo (${halo})`);
-					blinkFloor = Math.min(blinkFloor, m.uniforms.uMinPx.value);
-				} else {
-					if (halo !== 0) wrong.push(`${o.name} steady with halo ${halo}`);
-					steadyFloor = Math.min(steadyFloor, m.uniforms.uMinPx.value);
-				}
-			});
-			expect([type, wrong]).toEqual([type, []]);
-			expect([type, blinkFloor > steadyFloor]).toEqual([type, true]);
-		}
+		for (const type of ["trade", "shipyard", "refinery"] as const)
+			for (const formId of formsInPlay(type)) {
+				const mesh = buildStationForm(type, formId, GREY, 0, 0);
+				const kindOf = new Map<THREE.Material, string>();
+				for (const f of mesh.fixtures) if (f.glow) kindOf.set(f.glow, f.kind);
+				const wrong: string[] = [];
+				let steadyFloor = Number.POSITIVE_INFINITY;
+				let blinkFloor = Number.POSITIVE_INFINITY;
+				mesh.root.traverse((o) => {
+					if (!o.userData.glow || o.userData.pool) return;
+					const m = (o as THREE.Points).material as THREE.ShaderMaterial;
+					const halo = Number(m.uniforms.uHalo?.value ?? Number.NaN);
+					if (blink.has(kindOf.get(m) ?? "")) {
+						if (!(halo > 0))
+							wrong.push(`${o.name} blinking without halo (${halo})`);
+						blinkFloor = Math.min(blinkFloor, m.uniforms.uMinPx.value);
+					} else {
+						if (halo !== 0) wrong.push(`${o.name} steady with halo ${halo}`);
+						steadyFloor = Math.min(steadyFloor, m.uniforms.uMinPx.value);
+					}
+				});
+				expect([type, wrong]).toEqual([type, []]);
+				expect([type, blinkFloor > steadyFloor]).toEqual([type, true]);
+			}
 	});
 
 	test("every surface-mounted blinking light lays a pool of light on its surface, on every form", () => {
@@ -476,7 +476,7 @@ describe("glare and light pools", () => {
 	});
 
 	test("the pool row goes red for a lamp lifted off its face", () => {
-		const { root } = buildStationForm("trade", SELECTED_FORM.trade, GREY, 0, 0);
+		const { root } = buildStationForm("trade", "a", GREY, 0, 0);
 		const strobe = root.getObjectByName("strobe-a") as THREE.Object3D;
 		strobe.position.z += 0.01;
 		root.updateMatrixWorld(true);
@@ -486,13 +486,7 @@ describe("glare and light pools", () => {
 
 	test("an obstruction beacon on a tip lays no pool", () => {
 		for (const seed of PLAN_SEEDS) {
-			const { root } = buildStationForm(
-				"refinery",
-				SELECTED_FORM.refinery,
-				GREY,
-				0,
-				seed,
-			);
+			const { root } = buildStationForm("refinery", "d", GREY, 0, seed);
 			let beacons = 0;
 			let pools = 0;
 			root.traverse((o) => {
@@ -505,7 +499,7 @@ describe("glare and light pools", () => {
 	});
 
 	test("a pool is not pickable, and a finish beacon on a mast tip has none", () => {
-		const mesh = buildStationMesh("trade", GREY, 0, 0);
+		const mesh = buildStationForm("trade", "a", GREY, 0, 0);
 		mesh.root.updateMatrixWorld(true);
 		const raycaster = new THREE.Raycaster(
 			new THREE.Vector3(0, 0, 10),
@@ -524,23 +518,24 @@ describe("glare and light pools", () => {
 	});
 
 	test("the clock drives a pool at its fixture's intensity, under the ceiling", () => {
-		for (const type of ["trade", "shipyard", "refinery"] as const) {
-			const mesh = buildStationMesh(type, GREY, 0, 0);
-			for (const t of [0.05, 0.75, 1.05]) {
-				updateStationVisuals(mesh, t, 1, "high");
-				for (const f of mesh.fixtures) {
-					if (!f.pool) continue;
-					const drive = f.pool.uniforms.uIntensity.value;
-					expect([type, f.kind, t, drive]).toEqual([
-						type,
-						f.kind,
-						t,
-						f.material.emissiveIntensity,
-					]);
-					expect(drive <= EMISSIVE_CEILING).toBe(true);
+		for (const type of ["trade", "shipyard", "refinery"] as const)
+			for (const formId of formsInPlay(type)) {
+				const mesh = buildStationForm(type, formId, GREY, 0, 0);
+				for (const t of [0.05, 0.75, 1.05]) {
+					updateStationVisuals(mesh, t, 1, "high");
+					for (const f of mesh.fixtures) {
+						if (!f.pool) continue;
+						const drive = f.pool.uniforms.uIntensity.value;
+						expect([type, f.kind, t, drive]).toEqual([
+							type,
+							f.kind,
+							t,
+							f.material.emissiveIntensity,
+						]);
+						expect(drive <= EMISSIVE_CEILING).toBe(true);
+					}
 				}
 			}
-		}
 	});
 });
 

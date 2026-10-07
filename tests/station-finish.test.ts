@@ -21,7 +21,6 @@ import {
 } from "../src/station";
 import { Pools, SHIP_SCALE, radiatorArray } from "../src/station-fixtures";
 import {
-	SELECTED_FORM,
 	STATION_FORMS,
 	STATION_PANEL_KM,
 	type StationFormId,
@@ -42,6 +41,7 @@ import {
 } from "../src/station-visuals";
 import { PLATE_TEXTURE_SIZE, plateTexels } from "../src/surface";
 import { corridorIntrusions, corridorLine } from "./helpers/aperture-opening";
+import { FORMS_IN_PLAY } from "./helpers/forms-in-play";
 import { instanceBoxes } from "./helpers/instance-boxes";
 import { reachKm } from "./helpers/station-reach";
 
@@ -51,9 +51,9 @@ const LEVELS: StationDetailLevel[] = ["full", "reduced", "outline"];
 // The default, not stock, for `ship-finish.test.ts`'s reason.
 afterEach(() => setStationFinish(DEFAULT_STATION_FINISH));
 
-const formOf = (type: StationType) =>
+const formOf = (type: StationType, formId: StationFormId) =>
 	STATION_FORMS[type].find(
-		(form) => form.id === SELECTED_FORM[type],
+		(form) => form.id === formId,
 	) as (typeof STATION_FORMS)[StationType][number];
 
 describe("stock is the station that shipped", () => {
@@ -101,12 +101,12 @@ describe("stock is the station that shipped", () => {
 	});
 });
 
-describe("every finish builds every selected form", () => {
+describe("every finish builds every form in play", () => {
 	for (const id of STATION_FINISH_IDS) {
 		test(`${id}: inside its declared reach, the corridor clear, the outline the same at every level`, () => {
 			setStationFinish(id);
-			for (const type of STATION_TYPES) {
-				const form = formOf(type);
+			for (const [type, formId] of FORMS_IN_PLAY) {
+				const form = formOf(type, formId);
 				const built = buildStationForm(type, form.id, GREY, 0, 0);
 				const measured = LEVELS.map((level) => {
 					setStationDetail(built, level);
@@ -129,9 +129,13 @@ describe("every finish builds every selected form", () => {
 	}
 
 	test("the fixtures are there under an industrial finish and not under stock", () => {
-		const count = (id: StationFinishId, type: StationType) => {
+		const count = (
+			id: StationFinishId,
+			type: StationType,
+			formId: StationFormId,
+		) => {
 			setStationFinish(id);
-			const built = buildStationForm(type, SELECTED_FORM[type], GREY, 0, 0);
+			const built = buildStationForm(type, formId, GREY, 0, 0);
 			const group = built.root.getObjectByName("macro-fixtures");
 			let instanced = 0;
 			group?.traverse((object) => {
@@ -142,9 +146,9 @@ describe("every finish builds every selected form", () => {
 			).length;
 			return { group: Boolean(group), instanced, beacons };
 		};
-		for (const type of STATION_TYPES) {
-			const stock = count("stock", type);
-			const industrial = count("industrial", type);
+		for (const [type, formId] of FORMS_IN_PLAY) {
+			const stock = count("stock", type, formId);
+			const industrial = count("industrial", type, formId);
 			expect([type, stock.group]).toEqual([type, false]);
 			expect([type, industrial.group]).toEqual([type, true]);
 			expect([type, industrial.instanced > 0]).toEqual([type, true]);
@@ -170,8 +174,8 @@ describe("every finish builds every selected form", () => {
 		 * own thickness and well over float error.
 		 */
 		setStationFinish("industrial");
-		for (const type of STATION_TYPES) {
-			const built = buildStationForm(type, SELECTED_FORM[type], GREY, 0, 0);
+		for (const [type, formId] of FORMS_IN_PLAY) {
+			const built = buildStationForm(type, formId, GREY, 0, 0);
 			const km = built.root.getObjectByName("km") as THREE.Group;
 			km.updateMatrixWorld(true);
 			const group = km.getObjectByName("macro-fixtures") as THREE.Group;
@@ -332,8 +336,8 @@ describe("the fixtures are at ship scale", () => {
 		const rotation = new THREE.Quaternion();
 		const scale = new THREE.Vector3();
 		const builds: [StationType, StationFormId][] = [
-			...STATION_TYPES.map(
-				(type) => [type, SELECTED_FORM[type]] as [StationType, StationFormId],
+			...FORMS_IN_PLAY.map(
+				([type, formId]) => [type, formId] as [StationType, StationFormId],
 			),
 			["trade", "d"],
 			["refinery", "d"],

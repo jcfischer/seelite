@@ -10,13 +10,17 @@
  */
 
 import * as THREE from "three";
-import { STATION_GEOMETRY, type StationType } from "../../src/station";
+import {
+	STATION_GEOMETRY,
+	type StationFormId,
+	type StationType,
+} from "../../src/station";
 import {
 	corridorRadiusKm,
 	interiorAxialSpanKm,
 	stationInterior,
 } from "../../src/station-interior";
-import { STATION_SILHOUETTE_KM } from "../../src/station-mesh";
+import { stationSilhouetteKm } from "../../src/station-mesh";
 import {
 	type ProxyPrimitive,
 	type StationProxy,
@@ -62,10 +66,11 @@ export interface Opening {
 	sweptCylinders: AxialCylinder[];
 }
 
-export function openingOf(type: StationType): Opening {
+export function openingOf(type: StationType, formId: StationFormId): Opening {
 	const g = STATION_GEOMETRY[type];
 	const plane = g.aperturePlaneKm;
-	const reach = STATION_SILHOUETTE_KM[type];
+	// The corridor runs out to this form's own reach (node #717).
+	const reach = stationSilhouetteKm(type, formId);
 	const interior = stationInterior(type, plane, 0);
 	const corridor: AxialCylinder = {
 		radiusKm: corridorRadiusKm(g.aperture),

@@ -18,8 +18,8 @@ It owns: procedural materials, generated surface detail, per-role light and
 activity patterns, and how much of all that is drawn at a given apparent size.
 
 It owns none of the geometry. `STATION_GEOMETRY` (`src/station.ts`) stays the
-dockable contract #9's checks read; `STATION_SILHOUETTE_KM`
-(`src/station-mesh.ts`) stays #28's bounded display reach. **Neither table moves
+dockable contract #9's checks read; `stationSilhouetteKm`
+(`src/station-mesh.ts`, per form since node #717) stays #28's bounded display reach. **Neither table moves
 and neither budget rises for this pass.** A visual pass that grew the silhouette
 would be re-opening #28 under another name, and the two headless budget
 assertions are what stop it.
@@ -107,8 +107,9 @@ Detail is chosen from **apparent size**, not from absolute range. A refinery's
 a rule written in kilometres would give the small one detail nobody can see
 while stripping the large one of detail that is still legible.
 
-The measure is `apparentRadii = distanceKm / STATION_SILHOUETTE_KM[type]` — how
-many of its own radii away the camera is.
+The measure is `apparentRadii = distanceKm / mesh.silhouetteKm` — how many of
+its own radii away the camera is, in the reach of the form that station is
+built in (node #717), not of its role.
 
 | Level | Apparent radii | What is drawn |
 |---|---|---|
@@ -247,7 +248,7 @@ square-section members with diagonals, radiator banks of thin panels on a
 spine, tank racks in saddles, pipe runs with elbows, a mast with a dish, a
 docking collar with approach lamps, and clock-driven beacons on the roles
 that strobe. Each is a primitive; where each goes is a short declaration per
-`SELECTED_FORM` form in the form's own kilometres. Every member of every
+form in a pool, in the form's own kilometres. Every member of every
 fixture on a station is an instance in a per-material pool, so the whole
 structure is a handful of draw calls. They are tagged `reduced`: 2 km
 structure belongs with the aperture frame, not with the 40 m clutter.
