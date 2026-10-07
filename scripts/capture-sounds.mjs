@@ -89,6 +89,14 @@ const SETS = new Map([
 	["danube", DANUBE_VARIANT_SET],
 	["voices", VOICE_DEMO_SET],
 ]);
+// A misspelt set is refused rather than read as no flag, which would render
+// and overwrite the whole cue set.
+if (arg("set") !== undefined && !SETS.has(arg("set"))) {
+	console.error(
+		`no set "${arg("set")}"; sets: ${[...SETS.keys()].join(", ")} (or none, for the cue set)`,
+	);
+	process.exit(2);
+}
 const SET = SETS.get(arg("set")) ?? SOUND_SET;
 const out = resolve(arg("out") ?? join(HERE, "sound-set"));
 const seed =

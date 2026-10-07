@@ -258,15 +258,19 @@ export class SampleLoader {
 		for (const k of wanted) state.asked.add(k);
 		const rate = (this.ctx as Decoder).sampleRate;
 		const gain = 10 ** (m.gainDb / 20);
+		// Each played key's layer and recording, found once rather than by a
+		// search per key.
+		const byKey = new Map(
+			layers.flatMap((l, li) =>
+				l.zones.map((z) => [keyOf(l.name, z.root), { li, s: z }] as const),
+			),
+		);
 		await Promise.all(
 			wanted.map((k) =>
 				this.bounded(async () => {
-					const li = layers.findIndex((l) =>
-						l.zones.some((z) => keyOf(l.name, z.root) === k),
-					);
-					const s = layers[li].zones.find(
-						(z) => keyOf(layers[li].name, z.root) === k,
-					) as SampleManifest["samples"][number];
+					const found = byKey.get(k);
+					if (!found) throw new Error(`${set}: no recording for ${k}`);
+					const { li, s } = found;
 					const zone = await this.decode(
 						`${this.o.base}${set}/`,
 						s.file,

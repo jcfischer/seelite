@@ -216,7 +216,8 @@ export interface PartSpec {
  * as 16-bit integers — `data` the left (or only) channel, `right` a stereo
  * set's right — each step worth `scale`, the recording's own peak over
  * 32767. A render through Int16 and through Float32 storage differs by
- * 89.8 dB below the signal (`voice-piano-grand-rich`, measured), so the
+ * 89.8 dB below the signal (`voice-piano-grand-rich`; measured once on
+ * 2026-10-07 by a comparison not kept in the repository), so the
  * worklet keeps half the memory. `data` is `null` until the recording has
  * arrived: a note that picks it plays the part's `fallback`.
  */

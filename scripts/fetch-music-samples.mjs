@@ -59,8 +59,10 @@ const BITRATE = 64000;
 /** The loudest sample of a set lands here, in dBFS. */
 const SET_PEAK_DB = -1;
 /** A root may be this far from its measured pitch, in cents, where the
- *  measurement holds: from MIDI 27 to 96 it read the upright's samples within
- *  16 cents. Outside it the reading drifts — a piano's lowest strings are
+ *  measurement holds: from MIDI 27 to 96 it read every committed set within
+ *  29 cents — the upright 16, `piano-grand` 21, `piano-grand-rich` 23 and the
+ *  bass 29, as each run prints. The bass's C1 (24) is below the range and is
+ *  held to the outer tolerance. Outside it the reading drifts — a piano's lowest strings are
  *  inharmonic enough to read A0 more than three semitones sharp, and its top
  *  octave is tuned sharp and sits on a coarse lag grid — so there the check
  *  only refuses a sample a third or more off, which still catches a name in

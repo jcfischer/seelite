@@ -6,7 +6,9 @@
  * **Outside the variants folder on purpose**, as `music-danube-remeter.ts`
  * is: the loader globs that folder and loads each module on its own so one
  * that throws hides no other, and a version importing a sibling would undo
- * that (sage, #738 round 2).
+ * that (sage, #738 round 2). The one exception is a re-voicing of a base —
+ * jazz-trio and jazz-upright of jazz, ambient-piano of ambient, minimal-piano
+ * of minimal — which imports its base because it cannot play without it.
  *
  * Imports nothing, so it is data and nothing else.
  */
@@ -32,7 +34,7 @@ export const A = 9;
 export const B = 11;
 
 /** The piano's voicing: every chord tone folded into the octave from
- *  `floor`, rootless — F3–F#4 by default; the bossa comps a semitone lower. */
+ *  `floor`, rootless — F3–E4 by default; the bossa comps a semitone lower. */
 export const voicing = ([root, q]: Change, floor = 53): number[] =>
 	[
 		...new Set(QUALITY[q].map((i) => floor + ((root + i - floor + 120) % 12))),
