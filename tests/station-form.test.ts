@@ -181,8 +181,6 @@ describe("the draw", () => {
 		// which a draw stuck on one member fails by far, and the counts'
 		// chi-square is held under its p = 0.001 critical value, which a draw
 		// leaning on one member fails where every share is still inside ±40%.
-		// The seeds are fixed, so the statistic is too: 1.14, 0.85 and 10.61
-		// for trade, shipyard and refinery on this corpus.
 		for (const type of DRAWN_STATION_TYPES) {
 			const pool = STAND_IN[type];
 			const counts = new Map<StationFormId, number>();
