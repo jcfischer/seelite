@@ -279,9 +279,10 @@ Each role carries one emissive signature and one motion:
 
 Node #745 flies all four refinery forms: Warren, Collar, Spar and Works,
 drawn uniformly per system. Each carries the role's dock-face ports, visible
-vent throats and obstruction beacons. Warren, Collar and Spar keep their
-own macro fixture declarations; every form uses the same aperture and berth
-catalogue. The other roles' pools are handled by their own nodes.
+vent throats and obstruction beacons. Warren retains its macro fixture
+declaration; Collar and Spar gain their own in node #745. Every form uses the
+same aperture and berth catalogue. The other roles' pools are handled by their
+own nodes.
 
 The colours are drawn from `hud-and-scanner.md` §4's grammar rather than a
 second palette: cool for structure and work light, warm for habitation and heat.

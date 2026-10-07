@@ -44,6 +44,8 @@ their prior behavior.
 1/a, 28/b, 2/c and 4/d. Each goes through the live clearance, computer,
 arrival and launch protocols, then flies away. It asserts the drawn form,
 berth, entry, return to flight, outward motion and zero collision impacts.
+The start is staged on the aperture axis, 3.2 km beyond the plane; these
+cases do not exercise an off-axis or manual approach to the repaired meshes.
 
 The first implementation extended the avoidance seeds to restore a majority
 blind control. Review round 1 rejected that repair: it changed the denominator
@@ -64,7 +66,10 @@ Warren hits 6/12, Collar 5/12, Spar 2/12 and Works 12/12; under assist-on and
 cruise every form hits 12/12. The per-form row requires an actual refinery
 impact blind and zero impacts avoiding, with no seed search or rate retuning.
 Its gun-rate and mouth hold-off rows also run for every form, with the same
-bands as the historical fixture. Reprint the blind/avoiding counts with:
+firing and motion bands as the historical fixture. The historical majority
+blind-impact gate is over all three roles; each refinery-only mouth row
+requires an actual impact on that refinery form instead. Reprint the
+blind/avoiding counts with:
 
 ```sh
 SEELITE_MEASURE_AVOIDANCE=1 bun test tests/combat-enemy-avoidance.test.ts \
@@ -198,3 +203,50 @@ launch was blocked before any probe ran; the permitted retry produced these
 results. The generated-refinery docking cases and the station, fixture,
 traffic and collision probes passed. This is partial evidence: 58 probes
 were not run. The supervisor owns the full suite on the reviewed head.
+
+## Sage review round 4
+
+Both important findings are accepted. The pool comment now distinguishes
+node #744's admission ruling and pre-repair viewer inspection from the
+unviewed mesh repairs. Every per-form mouth row now flies the same corpus
+blind and requires an actual refinery impact before checking avoidance.
+
+Applying the historical majority gate to these refinery-only controls
+failed eight of the twelve rows, including Works' patrol and interceptor
+rows. The unchanged four-system, three-bearing corpus measures these mouth
+impacts out of 12 runs (raider / patrol / interceptor): Warren 8 / 4 / 5,
+Collar 9 / 4 / 5, Spar 8 / 5 / 6, Works 9 / 4 / 6. Every avoiding arm has
+zero impacts. The historical 39-run majority controls remain unchanged;
+the receipt's shared-band claim now explicitly names firing and motion.
+Reprint the mouth controls with:
+
+```sh
+SEELITE_MEASURE_AVOIDANCE=1 bun test ./tests/combat-enemy-avoidance.test.ts \
+  --test-name-pattern 'holds off at the mouth'
+```
+
+Gun-run and mouth assertions are shared between the historical and per-form
+rows. The cache key serializes the normalized flight options actually passed
+to the harness, with sorted keys; new flight fields no longer need a second
+hand-maintained list. The fixture prose now records that Collar and Spar gain
+macro declarations here, while Warren retains its declaration.
+
+Optional changes deferred: the changelog schema's approval mechanism remains
+outside this node, with sentence approval and the main date still owned by
+the supervisor before merge. The docking cases intentionally isolate live
+dock, arrival, launch and fly-away protocols from an on-axis start; the
+staging limitation is now explicit above. An additional off-axis/manual
+approach probe would extend coverage rather than repair a failed row. The
+mirrored-box helper is a small proxy refactor, unnecessary for these oracle
+and provenance corrections; the proxy behavior is unchanged.
+
+Round 4 verification: `npm test` **5,503 pass, 0 fail**, 298 files
+(322.37 s). All twelve per-form mouth rows pass. Making the Spar patrol's
+blind arm an open-space arm (no sweep) makes its new witness assertion red:
+zero refinery impacts against a requirement greater than zero. The mutation
+was restored before the full suite. `npm run build`, `npm run format:check`,
+`npm run lint`, `npm run check:wiring` and `git diff --check` pass.
+
+This pass changes headless checks and prose only, including a source comment;
+no browser probe is rerun. Prior browser results above remain evidence for
+their respective heads, and the supervisor owns the full reviewed-head run.

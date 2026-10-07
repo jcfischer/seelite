@@ -360,16 +360,17 @@ function corpus(
 	avoid: boolean,
 	extra: CorpusOptions = {},
 ): Run[] {
-	const { refineryOnly = false, ...flight } = extra;
+	const { refineryOnly = false, ...options } = extra;
+	// Historical controls and their measured bands used Works. Key the
+	// normalized options passed to the flight, including any future fields.
+	const flight = { ...options, refineryForm: options.refineryForm ?? "d" };
 	const key = JSON.stringify([
 		regime,
 		avoid,
-		flight.hull ?? null,
-		flight.open ?? false,
-		flight.atMouth ?? false,
-		flight.armed ?? null,
-		flight.refineryForm ?? "d",
 		refineryOnly,
+		Object.fromEntries(
+			Object.entries(flight).sort(([a], [b]) => a.localeCompare(b)),
+		),
 	]);
 	const cached = corpora.get(key);
 	if (cached) return cached;
@@ -387,8 +388,6 @@ function corpus(
 						regime,
 						avoid,
 						...flight,
-						// Historical controls and their measured bands used Works.
-						refineryForm: flight.refineryForm ?? "d",
 					}),
 				);
 		}
@@ -400,6 +399,19 @@ function corpus(
 const struck = (runs: Run[]) => runs.filter((run) => run.met !== null).length;
 const meanFire = (runs: Run[]) =>
 	runs.reduce((sum, r) => sum + r.fireShare, 0) / runs.length;
+
+function expectGunRunKept(open: Run[], beside: Run[]) {
+	expect(meanFire(beside)).toBeGreaterThan(0.6 * meanFire(open));
+	expect(Math.min(...beside.map((r) => r.fireShare))).toBeGreaterThan(0.05);
+}
+
+function expectMouthHoldOff(open: Run[], beside: Run[]) {
+	expect(struck(beside)).toBe(0);
+	expect(meanFire(beside)).toBeGreaterThan(0.8 * meanFire(open));
+	expect(Math.min(...beside.map((r) => r.fireShare))).toBeGreaterThan(0.15);
+	// Holding off is not hovering: no run sits still for half the fight.
+	expect(Math.max(...beside.map((r) => r.stillShare))).toBeLessThan(0.5);
+}
 
 describe("the figures the avoidance is built from", () => {
 	test("every pooled refinery form is flown on the same four original systems", () => {
@@ -627,10 +639,7 @@ describe("a duel beside a station stays a duel", () => {
 				const extra = { refineryForm: form, refineryOnly: true };
 				const open = corpus(regime, false, { ...extra, open: true });
 				const beside = corpus(regime, true, extra);
-				expect(meanFire(beside)).toBeGreaterThan(0.6 * meanFire(open));
-				expect(Math.min(...beside.map((r) => r.fireShare))).toBeGreaterThan(
-					0.05,
-				);
+				expectGunRunKept(open, beside);
 			});
 		}
 		for (const armed of [undefined, "patrol", "interceptor"] as const) {
@@ -641,14 +650,21 @@ describe("a duel beside a station stays a duel", () => {
 					atMouth: true,
 					armed,
 				};
+				const blind = corpus("assist-on", false, extra);
 				const open = corpus("assist-on", false, { ...extra, open: true });
 				const beside = corpus("assist-on", true, extra);
-				expect(struck(beside)).toBe(0);
-				expect(meanFire(beside)).toBeGreaterThan(0.8 * meanFire(open));
-				expect(Math.min(...beside.map((r) => r.fireShare))).toBeGreaterThan(
-					0.15,
-				);
-				expect(Math.max(...beside.map((r) => r.stillShare))).toBeLessThan(0.5);
+				if (process.env.SEELITE_MEASURE_AVOIDANCE === "1")
+					console.info(
+						`refinery/${form}, ${armed ?? "raider"} mouth: blind ${struck(blind)}/${blind.length}, avoiding ${struck(beside)}/${beside.length}`,
+					);
+				expect(blind).toHaveLength(12);
+				expect(beside).toHaveLength(blind.length);
+				// The historical majority is over all three station roles.
+				// This refinery-only control must actually meet this form.
+				expect(
+					blind.filter((r) => r.met === "station-refinery").length,
+				).toBeGreaterThan(0);
+				expectMouthHoldOff(open, beside);
 			});
 		}
 	}
@@ -660,8 +676,7 @@ describe("a duel beside a station stays a duel", () => {
 			// Measured over the 39 runs: 0.271 open against 0.191 beside with the
 			// pilot's assist on, 0.169 against 0.168 off, and the lowest run
 			// beside fired on 10.3% of frames. The bands are wide of both.
-			expect(meanFire(beside)).toBeGreaterThan(0.6 * meanFire(open));
-			expect(Math.min(...beside.map((r) => r.fireShare))).toBeGreaterThan(0.05);
+			expectGunRunKept(open, beside);
 		});
 	}
 
@@ -683,12 +698,7 @@ describe("a duel beside a station stays a duel", () => {
 			const open = corpus("assist-on", false, { ...extra, open: true });
 			const beside = corpus("assist-on", true, extra);
 			expect(struck(blind)).toBeGreaterThan(blind.length / 2);
-			expect(struck(beside)).toBe(0);
-			expect(meanFire(beside)).toBeGreaterThan(0.8 * meanFire(open));
-			expect(Math.min(...beside.map((r) => r.fireShare))).toBeGreaterThan(0.15);
-			// Holding off is not hovering: no run sits still against the station
-			// for half the fight (the most measured is 0.346).
-			expect(Math.max(...beside.map((r) => r.stillShare))).toBeLessThan(0.5);
+			expectMouthHoldOff(open, beside);
 		});
 	}
 });
