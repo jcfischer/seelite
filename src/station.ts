@@ -172,7 +172,8 @@ export interface StationPlan {
  * - **a collision proxy** for the form (`stationProxy`), which
  *   `tests/station-proxy.test.ts` refuses a pooled form without;
  * - **the display budget and every per-form row**, which iterate
- *   `formsInPlay` and so reach a new member without being told;
+ *   `formsInPlay` and so reach a new member without being told; the rows
+ *   that build one named form do not, and node #717's receipt lists them;
  * - **its macro fixtures** under the finishes that carry them
  *   (`station-fixtures.ts`'s declarations), which the Ring, the Drum and the
  *   Warren have beside the three that fly, and every other form lacks;
@@ -214,7 +215,10 @@ export const STATION_FORM_POOL: Record<
  */
 export type DrawnStationType = Exclude<StationType, "outpost">;
 
-/** The roles a system draws a form for, in fixed slot order. */
+/**
+ * The roles a system draws a form for. The order moves no draw: each role
+ * reads its own sub-stream, keyed by `STATION_FORM_SLOT` in `station-form.ts`.
+ */
 export const DRAWN_STATION_TYPES: readonly DrawnStationType[] = [
 	"trade",
 	"shipyard",

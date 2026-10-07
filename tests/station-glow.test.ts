@@ -40,6 +40,21 @@ const GREY = 0x9aa6b2;
 /** The forms a §5 fixture is drawn on: every form in play but the outpost's. */
 const DRAWN_FORMS = FORMS_IN_PLAY.filter(([type]) => type !== "outpost");
 
+/**
+ * How many objects carrying `flag` a ray down the aperture axis picks. The
+ * root is in core radii, so the ray starts ten radii out.
+ */
+const axisHits = (root: THREE.Object3D, flag: "glow" | "pool") => {
+	root.updateMatrixWorld(true);
+	const raycaster = new THREE.Raycaster(
+		new THREE.Vector3(0, 0, 10),
+		new THREE.Vector3(0, 0, -1),
+	);
+	return raycaster
+		.intersectObject(root, true)
+		.filter((hit) => hit.object.userData[flag]).length;
+};
+
 describe("a glow's size is a floor and a cap round its fitting's projected size", () => {
 	const point = GLOW_CLASSES.point;
 
@@ -209,14 +224,7 @@ describe("every §5 fixture carries a glow, wired to its fitting", () => {
 		// a pickable glow would stand in front of every surface on the station.
 		for (const [type, formId] of FORMS_IN_PLAY) {
 			const { root } = buildStationForm(type, formId, GREY, 0, 0);
-			root.updateMatrixWorld(true);
-			const raycaster = new THREE.Raycaster(
-				new THREE.Vector3(0, 0, 10),
-				new THREE.Vector3(0, 0, -1),
-			);
-			const glowHits = raycaster
-				.intersectObject(root, true)
-				.filter((hit) => hit.object.userData.glow).length;
+			const glowHits = axisHits(root, "glow");
 			const label = formLabel(type, formId);
 			expect([label, glowHits]).toEqual([label, 0]);
 		}
@@ -509,14 +517,7 @@ describe("glare and light pools", () => {
 	test("a pool is not pickable, and a finish beacon on a mast tip has none, on every form in play", () => {
 		for (const [type, formId] of FORMS_IN_PLAY) {
 			const mesh = buildStationForm(type, formId, GREY, 0, 0);
-			mesh.root.updateMatrixWorld(true);
-			const raycaster = new THREE.Raycaster(
-				new THREE.Vector3(0, 0, 10),
-				new THREE.Vector3(0, 0, -1),
-			);
-			const poolHits = raycaster
-				.intersectObject(mesh.root, true)
-				.filter((h) => h.object.userData.pool).length;
+			const poolHits = axisHits(mesh.root, "pool");
 			let beaconPools = 0;
 			mesh.root.traverse((o) => {
 				if (o.name.startsWith("beacon-") && o.userData.pool) beaconPools++; // glossary-ignore: beacon

@@ -15,8 +15,8 @@
 
 import { describe, expect, test } from "bun:test";
 import * as THREE from "three";
+import { OUTPOST_FORM } from "../src/station";
 import {
-	OUTPOST_FORM,
 	STATION_FORMS,
 	WORK_LAMP_COLOR,
 	buildStationForm,

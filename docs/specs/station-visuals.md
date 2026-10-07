@@ -19,8 +19,9 @@ activity patterns, and how much of all that is drawn at a given apparent size.
 
 It owns none of the geometry. `STATION_GEOMETRY` (`src/station.ts`) stays the
 dockable contract #9's checks read; `stationSilhouetteKm`
-(`src/station-mesh.ts`, per form since node #717) stays #28's bounded display reach. **Neither table moves
-and neither budget rises for this pass.** A visual pass that grew the silhouette
+(`src/station-mesh.ts`, per form since node #717) stays #28's bounded display reach. **Neither the geometry
+table nor any form's declared `reachKm` moves, and neither budget rises for
+this pass.** A visual pass that grew the silhouette
 would be re-opening #28 under another name, and the two headless budget
 assertions are what stop it.
 

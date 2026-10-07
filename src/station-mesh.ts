@@ -72,15 +72,12 @@ import {
 	displayRand,
 } from "./station-surface";
 import {
-	OUTPOST_FORM,
-	STATION_FORM_POOL,
 	STATION_GEOMETRY,
 	STATION_TYPES,
 	type StationAperture,
 	type StationFormId,
 	type StationPlan,
 	type StationType,
-	formsInPlay,
 } from "./station";
 import { type GreebleZone, buildGreebles } from "./station-greebles";
 import {
@@ -6239,14 +6236,6 @@ export const STATION_FORMS: Record<StationType, StationForm[]> = {
 		},
 	],
 };
-
-/**
- * The pools live in `station.ts` (node #663 put the selection there, node #717
- * made it a pool), where the Three-free generator and collision proxy can read
- * them without a dependency arrow pointing at the renderer. Re-exported here,
- * so every reader of the renderer's table reads the one table.
- */
-export { OUTPOST_FORM, STATION_FORM_POOL, formsInPlay };
 
 const formOf = (type: StationType, id: StationFormId) => {
 	const form = STATION_FORMS[type].find((candidate) => candidate.id === id);

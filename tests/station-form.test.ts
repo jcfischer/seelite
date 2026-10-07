@@ -5,9 +5,12 @@
  * forms, every member of every pool is reached over a seed spread, and the
  * draw is keyed by the type slot rather than by position in a station list // glossary-ignore: slot
  * whose length varies. The rest of the obligation is carried where it was
- * already measured: every per-form row (reach, proxy, mesh, interior, finish,
- * glow) iterates `FORMS_IN_PLAY`, so a form added to a pool is measured by
- * all of them, and the station-field and orbit baselines
+ * already measured: the per-form rows (reach, proxy, mesh, interior, finish,
+ * glow) iterate `FORMS_IN_PLAY`, so a form added to a pool is measured by
+ * those. Rows that build one named form — the Works' own parts, the
+ * Coriolis and the Gantry in `collision-stations`, the docking computer's
+ * `HISTORICAL_FORM` — do not reach it; node #717's receipt lists every one. The station-field and
+ * orbit baselines
  * (`tests/station.test.ts`, `tests/station-orbits.test.ts`,
  * `tests/cold-rocky-moons.test.ts`) hold that no existing stream moved.
  *
