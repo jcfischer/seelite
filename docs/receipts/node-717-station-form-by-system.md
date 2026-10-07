@@ -215,11 +215,16 @@ The columns:
 - V1: `the <role> <id>'s fixtures are all reachable down its own axis, on every
   plan`.
 
-So no candidate owes only a proxy. The Assembly and the Warren come
-closest, with two rows each besides the proxy; the Wheel and the Spar owe
-the most. The bay and interior rows (M1–M4, I1) were written for the forms
-that fly, and every candidate but the Assembly and the Warren fails at least
-one of them.
+So no candidate owes only a proxy. The Assembly and the Warren fail the
+fewest rows of their own, two each, and the Wheel and the Spar the most,
+seven each. What the rows that throw on the missing proxy would read once a
+proxy exists is not measured, so this does not rank the candidates. Every
+candidate but the Assembly and the Warren fails at least one of the bay and
+interior rows (M1–M4, I1), two of which name what they hold to: `a selected
+form's…` and `the form the game ships…`.
+
+The Assembly is a solved form, so its proxy has to read the plan, as the
+Works' does (`the refinery's proxy reads the assembly seed, cell by cell`).
 
 A pooled form then still owes the canonical view set before and after, and
 the principal's yes on it.

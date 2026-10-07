@@ -36,8 +36,10 @@
  *
  * The thinnest-primitive figure is declared and asserted.
  *
- * A form in any pool with no proxy is red (node #717): every row here runs
- * over `FORMS_IN_PLAY`, so a form added to a pool is measured by all of them.
+ * A form in any pool with no proxy is red (node #717): the budget rows run
+ * over `FORMS_IN_PLAY`, so a form added to a pool is measured by them. The
+ * row on the refinery's assembly seed names the Works and reaches no other
+ * form.
  */
 
 import { describe, expect, test } from "bun:test";
