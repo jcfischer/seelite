@@ -270,6 +270,40 @@ describe("the draw", () => {
 		}
 		expect(() => drawStationForm(() => 0.5, [])).toThrow();
 	});
+
+	test("a pool edit re-draws its role: half the systems on an append, 2/n on a swap of two", () => {
+		// `STATION_FORM_POOL`'s doc states these shares; this is what holds them.
+		// `floor(roll × n)` keeps a system's member through n → n + 1 for a share
+		// of Σ ((i + 1)/(n + 1) − i/n) = ½, and a swap moves exactly the two
+		// members' shares. The bands are wide; the seeds are fixed.
+		const movedShare = (
+			before: readonly StationFormId[],
+			after: readonly StationFormId[],
+		) => {
+			const moved = SYSTEM_SEEDS.filter(
+				(seed) =>
+					stationForms(seed, { ...STAND_IN, trade: before }).trade !==
+					stationForms(seed, { ...STAND_IN, trade: after }).trade,
+			).length;
+			return moved / SYSTEM_SEEDS.length;
+		};
+		const pools: StationFormId[][] = [
+			["a"],
+			["a", "b"],
+			["a", "b", "c"],
+			["a", "b", "c", "d"],
+			["a", "b", "c", "d", "e"],
+		];
+		for (let n = 1; n < pools.length; n++) {
+			const share = movedShare(pools[n - 1], pools[n]);
+			expect([n, share > 0.4 && share < 0.6]).toEqual([n, true]);
+		}
+		const swapped = movedShare(
+			["a", "b", "c", "d", "e"],
+			["b", "a", "c", "d", "e"],
+		);
+		expect(swapped > 0.3 && swapped < 0.5).toBe(true);
+	});
 });
 
 describe("the mesh, the reach and the proxy read the one field", () => {

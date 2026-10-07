@@ -128,13 +128,18 @@ branch and it overstates it.
       (`station-finish`) builds `FORMS_IN_PLAY` plus trade `d`, refinery `d`
       and outpost `d`;
     - `SOLVED_FORMS` (`tests/helpers/solved-forms.ts`) names the forms whose
-      shape is solved from the assembly seed, and three `station-mesh` rows
-      read it: `a solved form stays inside its declared reach at every seed
-      in the spread`, `every plan of a solved form is a single connected
+      shape is solved from the assembly seed. Three `station-mesh` rows
+      iterate it: `a solved form stays inside its declared reach at every
+      seed in the spread`, `every plan of a solved form is a single connected
       assembly, over the seed spread` and `the approach corridor is clear on
-      every plan of a solved form, over the seed spread`. A pooled form that
-      is not solved owes none of them; a new solved form joins the list by
-      hand.
+      every plan of a solved form, over the seed spread`. More read it
+      through `isSolvedForm` or `isSeededForm` to choose a seed spread over
+      seed zero: V1 and a row each in `station-mesh` and `station-glow`, the
+      proxy rows (`station-proxy`), `stationPlansFor`, and
+      `scripts/measure-station-proxy.ts`. A pooled form that is not solved
+      owes none of this. A solved form pooled but left off the list is
+      skipped by the three rows and measured at seed zero only everywhere
+      else, so it joins the list by hand.
 
 ## Existing streams did not move
 
