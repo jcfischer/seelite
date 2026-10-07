@@ -384,6 +384,14 @@ export function systemField(galaxy: Galaxy, observer: SystemRecord): StarField {
 }
 
 /**
+ * Multiplier from a star's stored size to pixels, against the canvas height.
+ * Point sizes are in pixels and a fixed value would read differently on every
+ * display, so it scales with the buffer. Here rather than in `main.ts` since
+ * #719, so the headless tier can test the drawn star against the shipped value.
+ */
+export const STAR_PIXEL_SCALE = 0.35;
+
+/**
  * How a star is drawn: a small sharp point whose brightness is its light
  * (#719, the principal's yes on the view sheet, 2026-10-07).
  *
@@ -394,12 +402,13 @@ export function systemField(galaxy: Galaxy, observer: SystemRecord): StarField {
  * `coreScale` of the canvas height across, and the light the disc delivered,
  * `(size × pixelScale)²`, is the core's intensity at `fluxGain`. Above 1 the
  * core is HDR, capped at `hdrCap`, and the excess goes into a small coloured
- * halo up to four core widths, so the bright layer still reads as brighter
- * than the field (#434) without growing a disc.
+ * halo up to `spreadMax` extra core widths, so the bright layer still reads as
+ * brighter than the field (#434) without growing a disc.
  *
- * The dials were set by eye on the view sheet. `starPoint` is the rule; the
- * star shader in `main.ts` computes the same expression per vertex from these
- * values, because GLSL cannot call it.
+ * The dials were set by eye on the view sheet. The rule is written once, as
+ * GLSL in `STAR_POINT_GLSL`, which the star shader includes;
+ * `tests/backdrop.test.ts` runs that same text as JavaScript against
+ * `starPoint`, so the two cannot drift apart unseen.
  */
 export const STAR_POINT = Object.freeze({
 	coreScale: 0.0012,
@@ -407,30 +416,61 @@ export const STAR_POINT = Object.freeze({
 	fluxGain: 0.35,
 	hdrCap: 6,
 	haloWeight: 0.5,
+	spreadGain: 1.2,
+	spreadMax: 3,
+	marginPx: 2,
 });
+
+/** A number as a GLSL float literal: `6` would be an int there. */
+const glslFloat = (n: number): string =>
+	Number.isInteger(n) ? n.toFixed(1) : String(n);
+
+/**
+ * The star rule as GLSL, built from `STAR_POINT`. It uses only arithmetic,
+ * `min`, `max` and `sqrt`, which is what lets the test run it as JavaScript.
+ */
+export const STAR_POINT_GLSL = `
+const float STAR_MARGIN_PX = ${glslFloat(STAR_POINT.marginPx)};
+float starIntensity(float discPx, float corePx) {
+	return min(${glslFloat(STAR_POINT.hdrCap)}, ${glslFloat(STAR_POINT.fluxGain)} * discPx * discPx / (corePx * corePx));
+}
+float starSpread(float intensity) {
+	return 1.0 + min(${glslFloat(STAR_POINT.spreadMax)}, ${glslFloat(STAR_POINT.spreadGain)} * sqrt(max(0.0, intensity - 1.0)));
+}
+float starHalo(float intensity) {
+	return ${glslFloat(STAR_POINT.haloWeight)} * max(0.0, intensity - 1.0) / ${glslFloat(STAR_POINT.hdrCap)};
+}
+`;
 
 /** The core's diameter in pixels for a canvas this many pixels high. */
 export function starCorePx(canvasHeightPx: number): number {
 	return Math.max(STAR_POINT.coreMinPx, canvasHeightPx * STAR_POINT.coreScale);
 }
 
-/** One star's drawn point: core intensity, halo weight, and sprite size. */
+/**
+ * One star's drawn point. `coreFrac` is the share of the sprite the core's
+ * Gaussian is scaled to, as the fragment shader reads it, so the core's drawn
+ * width is `coreFrac × spritePx − marginPx` whatever the halo does.
+ */
 export function starPoint(
 	size: number,
 	pixelScale: number,
 	corePx: number,
-): { corePx: number; intensity: number; halo: number; spritePx: number } {
+): { intensity: number; halo: number; spritePx: number; coreFrac: number } {
 	const discPx = size * pixelScale;
 	const intensity = Math.min(
 		STAR_POINT.hdrCap,
 		(STAR_POINT.fluxGain * discPx * discPx) / (corePx * corePx),
 	);
 	const excess = Math.max(0, intensity - 1);
-	const spread = 1 + Math.min(3, 1.2 * Math.sqrt(excess));
+	const spread =
+		1 +
+		Math.min(STAR_POINT.spreadMax, STAR_POINT.spreadGain * Math.sqrt(excess));
+	const spritePx = corePx * spread + STAR_POINT.marginPx;
 	return {
-		corePx,
 		intensity,
 		halo: (STAR_POINT.haloWeight * excess) / STAR_POINT.hdrCap,
-		spritePx: corePx * spread + 2,
+		spritePx,
+		coreFrac: (corePx + STAR_POINT.marginPx) / spritePx,
 	};
 }

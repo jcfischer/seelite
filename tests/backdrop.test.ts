@@ -35,7 +35,9 @@ import {
 	BRIGHT_SIZE_MIN,
 	FAINT_SIZE_MAX,
 	FAINT_SIZE_MIN,
+	STAR_PIXEL_SCALE,
 	STAR_POINT,
+	STAR_POINT_GLSL,
 	brightSizeLy,
 	faintField,
 	starCorePx,
@@ -401,44 +403,70 @@ describe("the two layers, beside each other", () => {
 });
 
 describe("a star is a point whose brightness is its light (#719)", () => {
-	const scale = 1800 * 0.35;
+	const scale = 1800 * STAR_PIXEL_SCALE;
 	const core = starCorePx(1800);
+	const sizes = Array.from({ length: 60 }, (_, i) => 0.001 * 1.1 ** i);
 
-	test("the core is a fixed size whatever the star's light", () => {
+	test("the shader's GLSL and starPoint are the same rule", () => {
+		// The shader includes STAR_POINT_GLSL. Run that same text as JavaScript
+		// and compare: a change to either side that the other does not share
+		// goes red here.
+		const js = STAR_POINT_GLSL.replace(/const float (\w+) = /g, "const $1 = ")
+			.replace(
+				/float (\w+)\(float (\w+), float (\w+)\)/g,
+				"function $1($2, $3)",
+			)
+			.replace(/float (\w+)\(float (\w+)\)/g, "function $1($2)")
+			.replace(/(?<![.\w])(min|max|sqrt)\(/g, "Math.$1(");
+		const glsl = new Function(
+			`${js}; return { starIntensity, starSpread, starHalo, STAR_MARGIN_PX };`,
+		)();
+		for (const size of sizes) {
+			const ts = starPoint(size, scale, core);
+			const intensity = glsl.starIntensity(size * scale, core);
+			expect(intensity).toBeCloseTo(ts.intensity, 12);
+			expect(glsl.starHalo(intensity)).toBeCloseTo(ts.halo, 12);
+			expect(
+				core * glsl.starSpread(intensity) + glsl.STAR_MARGIN_PX,
+			).toBeCloseTo(ts.spritePx, 12);
+		}
+	});
+
+	test("the core is drawn the same width whatever the star's light", () => {
 		expect(core).toBeCloseTo(1800 * STAR_POINT.coreScale, 9);
 		expect(starCorePx(600)).toBe(STAR_POINT.coreMinPx);
-		const faint = starPoint(FAINT_SIZE_MIN, scale, core);
-		const bright = starPoint(BRIGHT_SIZE_MAX, scale, core);
-		expect(faint.corePx).toBe(core);
-		expect(bright.corePx).toBe(core);
+		for (const size of sizes) {
+			const star = starPoint(size, scale, core);
+			expect(star.coreFrac * star.spritePx - STAR_POINT.marginPx).toBeCloseTo(
+				core,
+				9,
+			);
+		}
 	});
 
 	test("brightness carries the light the old disc delivered: (size × scale)²", () => {
 		const a = starPoint(0.004, scale, core);
 		const b = starPoint(0.008, scale, core);
 		expect(b.intensity / a.intensity).toBeCloseTo(4, 9);
-		const disc = 0.004 * scale;
-		expect(a.intensity).toBeCloseTo(
-			(STAR_POINT.fluxGain * disc * disc) / (core * core),
-			9,
-		);
 	});
 
-	test("the brightest stars are capped, not grown", () => {
+	test("the brightest stars are capped, not grown past the halo's reach", () => {
 		const top = starPoint(BRIGHT_SIZE_MAX * 10, scale, core);
 		expect(top.intensity).toBe(STAR_POINT.hdrCap);
-		expect(top.spritePx).toBeLessThanOrEqual(core * 4 + 2);
+		expect(top.spritePx).toBeLessThanOrEqual(
+			core * (1 + STAR_POINT.spreadMax) + STAR_POINT.marginPx,
+		);
 	});
 
 	test("only light the core cannot hold becomes a halo", () => {
 		const dim = starPoint(FAINT_SIZE_MIN, scale, core);
 		expect(dim.intensity).toBeLessThanOrEqual(1);
 		expect(dim.halo).toBe(0);
-		expect(dim.spritePx).toBe(core + 2);
+		expect(dim.spritePx).toBe(core + STAR_POINT.marginPx);
 		const bright = starPoint(BRIGHT_SIZE_MIN, scale, core);
 		expect(bright.intensity).toBeGreaterThan(1);
 		expect(bright.halo).toBeGreaterThan(0);
-		expect(bright.spritePx).toBeGreaterThan(core + 2);
+		expect(bright.spritePx).toBeGreaterThan(core + STAR_POINT.marginPx);
 	});
 
 	test("every bright-layer star outshines every faint one", () => {
