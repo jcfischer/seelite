@@ -177,8 +177,15 @@ describe("placement: a Trojan point on a planet's own orbit", () => {
 	});
 
 	test("its tag is the newest, so no existing stream moved to make room", () => {
+		// Appended after every tag before it: 1 to 29 are taken, and nothing it
+		// shares a number with. Later tags (node #731's derelicts) sit above it.
 		const tags: number[] = Object.values(DOMAIN);
-		expect(DOMAIN.RAIDER_OUTPOST as number).toBe(Math.max(...tags));
+		const upTo = tags
+			.filter((t) => t <= DOMAIN.RAIDER_OUTPOST)
+			.sort((a, b) => a - b);
+		expect(upTo).toEqual(
+			Array.from({ length: DOMAIN.RAIDER_OUTPOST }, (_, i) => i + 1),
+		);
 	});
 });
 

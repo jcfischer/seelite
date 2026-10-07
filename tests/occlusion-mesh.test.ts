@@ -29,8 +29,8 @@ import {
 	surfaceFactsOf,
 } from "../src/occlusion-mesh";
 import { buildShipMesh } from "../src/ship-mesh";
-import { buildStationMesh } from "../src/station-mesh";
-import { STATION_TYPES } from "../src/station";
+import { buildStationForm } from "../src/station-mesh";
+import { FORMS_IN_PLAY, formLabel } from "./helpers/forms-in-play";
 
 /** Every mesh in a subtree, in one place so a failure can name the offender. */
 const meshesOf = (root: THREE.Object3D) => {
@@ -71,11 +71,12 @@ test("every flag on a hull agrees with the predicate", () => {
 });
 
 test("every station form marks its structure and refuses its lamps", () => {
-	for (const type of STATION_TYPES) {
-		const station = buildStationMesh(type, 0x8899aa, 0, 0).root;
+	for (const [type, formId] of FORMS_IN_PLAY) {
+		const station = buildStationForm(type, formId, 0x8899aa, 0, 0).root;
 		const marked = markOcclusion(station);
-		expect({ type, marked: marked.participating > 0 }).toEqual({
-			type,
+		const form = formLabel(type, formId);
+		expect({ form, marked: marked.participating > 0 }).toEqual({
+			form,
 			marked: true,
 		});
 		// Every station form carries lit strips, nameplates or an aperture bar in
@@ -83,13 +84,13 @@ test("every station form marks its structure and refuses its lamps", () => {
 		// form where nothing was excluded would mean the predicate had stopped
 		// discriminating — which is how a walk that marks everything passes a
 		// "something was marked" check.
-		expect({ type, excluded: marked.excluded > 0 }).toEqual({
-			type,
+		expect({ form, excluded: marked.excluded > 0 }).toEqual({
+			form,
 			excluded: true,
 		});
 		const disagreeing = meshesOf(station)
 			.filter((m) => m.castShadow !== participatesInShadow(surfaceFactsOf(m)))
-			.map((m) => `${type}/${m.name || "(unnamed)"}`);
+			.map((m) => `${form}/${m.name || "(unnamed)"}`);
 		expect(disagreeing).toEqual([]);
 	}
 });

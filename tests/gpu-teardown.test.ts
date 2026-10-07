@@ -64,8 +64,8 @@ const cubeTargetsOf = (visual: BodyVisual): THREE.WebGLCubeRenderTarget[] => {
 	});
 	return out;
 };
-import { STATION_TYPES } from "../src/station";
-import { buildStationMesh } from "../src/station-mesh";
+import { buildStationForm } from "../src/station-mesh";
+import { FORMS_IN_PLAY, formLabel } from "./helpers/forms-in-play";
 import { generateContents } from "../src/system";
 
 /**
@@ -308,10 +308,11 @@ describe("disposeSubtree reaches every kind of resource a scene holds", () => {
 	test("every station and body actually frees something", () => {
 		// The floor under the two disjointness rows below: they are vacuously
 		// true against a walker that freed nothing at all.
-		for (const type of STATION_TYPES) {
-			const mesh = buildStationMesh(type, 0x9aa6b2, 7, 7);
-			expect([type, disposeSubtree(mesh.root).freed.size > 0]).toEqual([
-				type,
+		for (const [type, formId] of FORMS_IN_PLAY) {
+			const mesh = buildStationForm(type, formId, 0x9aa6b2, 7, 7);
+			const label = formLabel(type, formId);
+			expect([label, disposeSubtree(mesh.root).freed.size > 0]).toEqual([
+				label,
 				true,
 			]);
 		}
@@ -347,9 +348,9 @@ describe("disposeSubtree keeps what the next system needs", () => {
 		// the hull materials one per (type, colour), so a walker that disposed
 		// everything it reached would take the *next* system's trade station's
 		// surface with it. That does not throw. It renders black.
-		for (const type of STATION_TYPES) {
-			const leaving = buildStationMesh(type, 0x9aa6b2, 7, 7);
-			const staying = buildStationMesh(type, 0x9aa6b2, 7, 7);
+		for (const [type, formId] of FORMS_IN_PLAY) {
+			const leaving = buildStationForm(type, formId, 0x9aa6b2, 7, 7);
+			const staying = buildStationForm(type, formId, 0x9aa6b2, 7, 7);
 			const held = resourcesOf(staying.root);
 			const report = disposeSubtree(leaving.root);
 			for (const resource of report.freed)
@@ -455,7 +456,7 @@ describe("disposeSubtree keeps what the next system needs", () => {
 		// Named rather than counted: a count would go green on the wrong set.
 		expect(isShared(surfaceSphere("near"))).toBe(true);
 		expect(isShared(surfaceSphere("far"))).toBe(true);
-		const station = buildStationMesh("trade", 0x9aa6b2, 7, 7);
+		const station = buildStationForm("trade", "a", 0x9aa6b2, 7, 7);
 		const report = disposeSubtree(station.root);
 		for (const resource of report.kept) expect(isShared(resource)).toBe(true);
 		for (const resource of report.freed) expect(isShared(resource)).toBe(false);

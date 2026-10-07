@@ -121,8 +121,17 @@ import {
  * implies, so a save taken tumbling resumes tumbling (`flight-model.md`
  * §3.9). Every older record loads at rest: before #619 a released axis eased
  * to a stop with the assist on, and nothing recorded a spin to resume.
+ *
+ * **9 adds the world's derelict rows (node #731, `salvage.md`)**: per galaxy, // glossary-ignore: slot
+ * one row per derelict slot the pilot has touched, holding the instance and
+ * the tonnes left in each container. The rows live in the world's envelopes,
+ * absent when empty — so `WORLD_SCHEMA_VERSION` does not move and a version 8
+ * world's bytes still match its own hash — and this version is what says a
+ * record may carry them. Every older record loads with every slot unvisited,
+ * on its derived schedule; one that carries a row was assembled rather than
+ * saved, and `parseSave` refuses it.
  */
-export const SAVE_SCHEMA_VERSION = 8;
+export const SAVE_SCHEMA_VERSION = 9;
 /**
  * Versions this parser still reads but no longer writes.
  *
@@ -144,10 +153,12 @@ export const SAVE_SCHEMA_VERSION = 8;
  *
  * **6 is every save written between #408 and #564.**
  *
- * **7 is every save written between #564 and #619**, so it is the population a
- * player most likely holds.
+ * **7 is every save written between #564 and #619.**
+ *
+ * **8 is every save written between #619 and node #731**, so it is the
+ * population a player most likely holds.
  */
-export const LEGACY_SAVE_SCHEMA_VERSIONS = [2, 3, 4, 5, 6, 7] as const;
+export const LEGACY_SAVE_SCHEMA_VERSIONS = [2, 3, 4, 5, 6, 7, 8] as const;
 
 /**
  * What a legacy version may not contain.
@@ -437,6 +448,19 @@ const canonicalCommander = (record: CommanderRecord) => {
 	};
 };
 
+/** A pre-9 world carrying a derelict domain was assembled, not saved. */
+const refuseDerelicts = (world: unknown, version: number): void => {
+	const galaxies = (world as { galaxies?: unknown } | null)?.galaxies;
+	if (!Array.isArray(galaxies)) return;
+	for (const g of galaxies)
+		if (
+			g !== null &&
+			typeof g === "object" &&
+			(g as Record<string, unknown>).derelicts !== undefined
+		)
+			fail(`world: derelicts is not a version ${version} field`);
+};
+
 /**
  * The envelope, ready to hand to a store.
  *
@@ -717,6 +741,11 @@ export function parseSave(raw: unknown): SaveEnvelope {
 				"It was edited, corrupted, or assembled from two saves; the hash " +
 				"cannot say which.",
 		);
+	// **Below 9 a world holds no derelict row.** The world parser reads an
+	// absent domain as empty whatever the version, because that is what keeps an
+	// old world's bytes equal to its hash; this is where the version that may
+	// carry one is enforced, as `flight.rates` is one level down.
+	if ((version as number) < 9) refuseDerelicts(o.world, version as number);
 	const world = parseWorld(o.world);
 	// Schema 2 at 7f1cfd3 is the supported pre-journal envelope. Verify its
 	// original hash above, then migrate a copy; the store retains its original

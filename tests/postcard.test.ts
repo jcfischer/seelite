@@ -75,8 +75,10 @@ describe("the recipe's constants agree with the modules that own them", () => {
 		expect(POSTCARD_SYSTEMS).toBe(SYSTEMS_PER_GALAXY);
 	});
 
-	test("a recipe may name only the current visual generator", () => {
-		expect(POSTCARD_GENERATORS).toEqual([WORLD_GENERATOR_VERSION]);
+	test("a new recipe names the current generator, and 9 is still read", () => {
+		// Node #731's 10 added only undrawn derelict slots, so a version 9 view
+		// rebuilds as taken; the build that draws a wreck removes 9.
+		expect(POSTCARD_GENERATORS).toEqual([WORLD_GENERATOR_VERSION, 9]);
 	});
 });
 
@@ -137,6 +139,11 @@ describe("round trip", () => {
 
 	test("legacy scene recipes are refused when their geometry has changed", () => {
 		for (const gen of LEGACY_WORLD_GENERATOR_VERSIONS)
+			expect(decodePostcard(withPair("gen", String(gen))).ok).toBe(
+				POSTCARD_GENERATORS.includes(gen),
+			);
+		// The geometry did change before 9, so those stay refused.
+		for (const gen of [6, 7, 8])
 			expect(decodePostcard(withPair("gen", String(gen))).ok).toBe(false);
 	});
 });

@@ -37,10 +37,10 @@ const resealed = (
 };
 
 describe("#408 D4 — the saved first-day choice", () => {
-	test("the schema is 8, and 6 is the first version that carries the key", () => {
+	test("the schema is 9, and 6 is the first version that carries the key", () => {
 		// A literal, so the next bump has to come through here.
-		expect(SAVE_SCHEMA_VERSION).toBe(8);
-		expect([...LEGACY_SAVE_SCHEMA_VERSIONS]).toEqual([2, 3, 4, 5, 6, 7]);
+		expect(SAVE_SCHEMA_VERSION).toBe(9);
+		expect([...LEGACY_SAVE_SCHEMA_VERSIONS]).toEqual([2, 3, 4, 5, 6, 7, 8]);
 	});
 
 	test("a version 6 record keeps its choice (#564 made 6 legacy)", () => {

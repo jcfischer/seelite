@@ -61,7 +61,7 @@ import {
 	worldStarts,
 } from "../src/sim";
 import { STATION_GEOMETRY } from "../src/station";
-import { proxyReachKm, selectedStationProxy } from "../src/station-proxy";
+import { proxyReachKm, stationProxyOf } from "../src/station-proxy";
 import { TRAFFIC_HULL_POOLS } from "../src/station-traffic";
 import {
 	ARMED_TRAFFIC_HULLS,
@@ -192,7 +192,7 @@ function flyBesideStation(o: FlyOptions): Run {
 		return body.pos;
 	};
 	const stationVel = (t: number) => bodyVelocity(system, station.id, t);
-	const keep = proxyReachKm(selectedStationProxy(station)) + AVOID_CLEARANCE_KM;
+	const keep = proxyReachKm(stationProxyOf(station)) + AVOID_CLEARANCE_KM;
 	const dir = normalizeOr(
 		v3(Math.cos(o.bearing), 0.4 * Math.sin(3 * o.bearing), Math.sin(o.bearing)),
 		v3(1, 0, 0),
@@ -379,7 +379,7 @@ describe("the figures the avoidance is built from", () => {
 			for (const station of placedStations(makeWorld(seed)))
 				widest = Math.max(
 					widest,
-					proxyReachKm(selectedStationProxy(station)) + AVOID_CLEARANCE_KM,
+					proxyReachKm(stationProxyOf(station)) + AVOID_CLEARANCE_KM,
 				);
 		// The Gantry's keel is the widest reach a station has.
 		expect(widest).toBeGreaterThan(2);
@@ -438,7 +438,7 @@ describe("avoidanceSolids: what the controller is handed", () => {
 				const near = add(body.pos, v3(3, 0, 0));
 				const solids = avoidanceSolids(system, world.gameTime, [near]);
 				const own = solids.find((s) => s.id === station.id);
-				expect(own?.radiusKm).toBe(proxyReachKm(selectedStationProxy(station)));
+				expect(own?.radiusKm).toBe(proxyReachKm(stationProxyOf(station)));
 				expect(own?.vel).toEqual(
 					bodyVelocity(system, station.id, world.gameTime),
 				);

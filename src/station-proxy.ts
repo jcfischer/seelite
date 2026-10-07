@@ -6,9 +6,10 @@
  * and imports nothing from the renderer, for the reason `station.ts`'s header
  * gives — the authoritative world is float64 kilometres outside the scene
  * graph. The renderer never reads it. The sim does (node #663): `stepWorld`
- * sweeps the flown hull against the selected form's proxy of every station in
- * reach, posed by `stationMotions` below, and the docking harness and the
- * collision rows pose it through the same call.
+ * sweeps the flown hull against the proxy of every station in reach, in the
+ * form its system picked for it (node #717), posed by `stationMotions` below,
+ * and the docking harness and the collision rows pose it through the same
+ * call.
  *
  * **Where it lives.** Beside `STATION_GEOMETRY` (`station.ts`) and the
  * interior catalogue (`station-interior.ts`). Each form's solid is written down
@@ -60,8 +61,8 @@
 
 import type { Pose, Primitive, SolidMotion } from "./collision";
 import { type ApertureFrame, frameAtPhase, slotBasis } from "./docking";
-import type { StationFormId, StationType } from "./station";
-import { SELECTED_FORM, STATION_GEOMETRY } from "./station";
+import type { StationFormId, StationPlan, StationType } from "./station";
+import { STATION_GEOMETRY } from "./station";
 import { HULL_SPECS } from "./hull";
 import {
 	admittedHulls,
@@ -697,12 +698,13 @@ function outpostSalvageProxy(): StationProxy {
 /**
  * Build a station's collision proxy for a given form and seed.
  *
- * Returns `null` for a form that has no proxy. Only the selected forms
- * (`SELECTED_FORM`) have one, because only they can be drawn by a running
- * game (§2.2), and the test rows measure only them — an alternate's proxy
- * would be a claim nothing checks. A selected form must never return `null`:
- * the test asserts it, which is how selecting an alternate without building
- * its proxy goes red.
+ * Returns `null` for a form that has no proxy. Only the forms in play
+ * (`formsInPlay`: each role's pool, and the outpost's one form) have one,
+ * because only they can be drawn by a running game (§2.2), and the test rows
+ * measure only them — an alternate's proxy would be a claim nothing checks. A
+ * form in play must never return `null`: the test asserts it for every member
+ * of every pool, which is how pooling a form without building its proxy goes
+ * red (node #717).
  */
 export function stationProxy(
 	type: StationType,
@@ -842,43 +844,40 @@ export function proxyContains(
 // ---------------------------------------------------------------------------
 
 /**
- * The proxy of the form a running game draws for this station: its type's
- * `SELECTED_FORM`, at the station's own seeds. Memoised on the seeds — the
- * refinery's runs the placement solve, and the sim asks every step a station
- * is within reach — so a jump to another system reads new keys rather than
- * stale proxies, and nothing has to be cleared.
+ * The proxy of the form a running game draws for this station: the form its
+ * system picked for it (`Station.formId`, node #717), at the station's own
+ * seeds. Memoised on the form and the seeds — the refinery's runs the
+ * placement solve, and the sim asks every step a station is within reach — so
+ * a jump to another system reads new keys rather than stale proxies, and
+ * nothing has to be cleared. **The form is in the key**: two stations of one
+ * type at one pair of seeds in two forms are two solids, and a key without it
+ * would hand the second the first's.
  *
- * Throws on a selected form with no proxy: the budget row already refuses
- * one, and a station that silently collided as nothing would be the invisible
+ * Throws on a form with no proxy: the budget row already refuses one in any
+ * pool, and a station that silently collided as nothing would be the invisible
  * hole that row exists to prevent.
  */
-export function selectedStationProxy(station: {
-	type: StationType;
-	berthSeed: number;
-	assemblySeed: number;
-}): StationProxy {
-	const key = `${station.type}:${station.berthSeed}:${station.assemblySeed}`;
-	const cached = selectedCache.get(key);
+export function stationProxyOf(station: StationPlan): StationProxy {
+	const key = `${station.type}/${station.formId}:${station.berthSeed}:${station.assemblySeed}`;
+	const cached = placedCache.get(key);
 	if (cached) return cached;
 	const proxy = stationProxy(
 		station.type,
-		SELECTED_FORM[station.type],
+		station.formId,
 		station.berthSeed,
 		station.assemblySeed,
 	);
 	if (!proxy)
-		throw new Error(
-			`selected ${station.type} form ${SELECTED_FORM[station.type]} has no proxy`,
-		);
+		throw new Error(`${station.type} form ${station.formId} has no proxy`);
 	// A handful of stations per system; a long session of jumps is bounded by
 	// dropping the lot rather than tracking recency.
-	if (selectedCache.size >= SELECTED_CACHE_LIMIT) selectedCache.clear();
-	selectedCache.set(key, proxy);
+	if (placedCache.size >= PLACED_CACHE_LIMIT) placedCache.clear();
+	placedCache.set(key, proxy);
 	return proxy;
 }
 
-const SELECTED_CACHE_LIMIT = 64;
-const selectedCache = new Map<string, StationProxy>();
+const PLACED_CACHE_LIMIT = 64;
+const placedCache = new Map<string, StationProxy>();
 
 /** One proxy primitive as the collision resolver's (`collision.ts`). */
 export function resolverPrimitive(p: ProxyPrimitive): Primitive {

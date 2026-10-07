@@ -140,6 +140,25 @@ export const DOMAIN = {
 	 *  the per-station streams, so a system gaining an outpost moves no station
 	 *  it already had — the coupling `drawSpinRpm`'s discard exists to prevent. */
 	RAIDER_OUTPOST: 30,
+	// glossary-ignore: slot
+	/** A derelict slot's loss schedule (`derelict-slots.ts`, node #731): its
+	 *  first loss and the gap after each strip. Split by the slot key and the
+	 *  instance. Its own tag rather than a draw beside the contents, so retuning
+	 *  a gap moves no manifest and a drawn manifest moves no loss. */
+	DERELICT_SCHEDULE: 31,
+	/** A derelict instance's contents (`salvage.md` S6, node #731): its manifest
+	 *  lines and its fitting, stored on the slot's row when the pilot first touches
+	 *  the instance and re-drawn on every read until then. Split by the slot key
+	 *  and the instance, so no two instances share one. */
+	DERELICT_CONTENTS: 32,
+	/** Which form each of a system's stations is built in (`station-form.ts`,
+	 *  node #717): one draw per fixed station-type slot, from that role's pool. // glossary-ignore: slot
+	 *  Its own tag rather than a read of `STATION_ASSEMBLY` or
+	 *  `STATION_BERTHS`, so growing a pool moves no plan and no berth — and
+	 *  split by the type slot rather than consumed in station order, so a // glossary-ignore: slot
+	 *  system without a refinery draws its shipyard's form exactly as one with
+	 *  a refinery does. */
+	STATION_FORM: 33,
 } as const;
 
 export type DomainName = keyof typeof DOMAIN;
