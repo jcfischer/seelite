@@ -160,7 +160,8 @@ export type StationFormId = "a" | "b" | "c" | "d" | "e";
  * - **the display budget and every per-form row**, which iterate
  *   `formsInPlay` and so reach a new member without being told;
  * - **its macro fixtures** under the finishes that carry them
- *   (`station-fixtures.ts`'s declarations), which only the selected forms had;
+ *   (`station-fixtures.ts`'s declarations), which the Ring, the Drum and the
+ *   Warren have beside the three that fly, and every other form lacks;
  * - for **trade E, the Wheel**, the bay rows that measure against `core` —
  *   its slot is cut into `hub` (#334's review), and // glossary-ignore: slot
  *   `tests/station-wheel.test.ts` holds the hub meanwhile;
@@ -196,7 +197,7 @@ export const STATION_FORM_POOL: Record<
 /**
  * The roles a system draws a form for: every role but the outpost.
  *
- * **The outpost is not drawn.** #490 made it a raider's haven and #518 built
+ * **The outpost is not drawn.** #490 made it the raiders' station and #518 built
  * Salvage for that fiction, on the principal's yes to its sheet (2026-09-24);
  * it is what every lawless system draws since node #491. Which outpost a
  * system shows is a question for the fiction map (#460), not a free pick, so

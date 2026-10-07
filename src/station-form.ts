@@ -7,7 +7,7 @@
  * beside `station-name.ts` because it has that module's shape for that
  * module's reason.
  *
- * **One sub-stream per fixed type slot, drawn for every slot.** A draw
+ * **One sub-stream per fixed type slot, drawn for every slot.** A draw // glossary-ignore: slot
  * consumed in station order would hand a beltless system's shipyard the
  * refinery's position in the stream — #109's hazard, which `stationNames`
  * already answers the same way. So each drawn role reads its own
@@ -32,7 +32,7 @@ import {
 	type StationFormId,
 } from "./station";
 
-/** Append-only slot tags. Renumbering one moves that role's form everywhere. */
+/** Append-only slot tags. Renumbering one moves that role's form everywhere. */ // glossary-ignore: slot
 export const STATION_FORM_SLOT: Record<DrawnStationType, number> = {
 	trade: 1,
 	shipyard: 2,
@@ -43,7 +43,7 @@ export const STATION_FORM_SLOT: Record<DrawnStationType, number> = {
  * One form from a pool, uniformly: one draw, whatever the pool's size.
  *
  * Exactly one draw even for a pool of one, so the stream's position never
- * depends on how many forms a pool holds — the sub-stream is per slot and
+ * depends on how many forms a pool holds — the sub-stream is per slot and // glossary-ignore: slot
  * nothing else reads it today, but a second draw added to it later would
  * otherwise move with every pool edit.
  */

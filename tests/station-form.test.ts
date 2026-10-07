@@ -3,7 +3,7 @@
  *
  * The rows here are the node's headless half — the same seed gives the same
  * forms, every member of every pool is reached over a seed spread, and the
- * draw is keyed by the type slot rather than by position in a station list
+ * draw is keyed by the type slot rather than by position in a station list // glossary-ignore: slot
  * whose length varies. The rest of the obligation is carried where it was
  * already measured: every per-form row (reach, proxy, mesh, interior, finish,
  * glow) iterates `FORMS_IN_PLAY`, so a form added to a pool is measured by
@@ -13,7 +13,7 @@
  *
  * Today each pool holds the one form its role already flew, so a row over the
  * shipped pools reaches a pool of one trivially. The rows that must bite —
- * reach, uniformity, independence of the slots — therefore also run on a
+ * reach, uniformity, independence of the slots — therefore also run on a // glossary-ignore: slot
  * stand-in pool of several members through the same draw.
  */
 
@@ -42,6 +42,7 @@ import {
 } from "../src/station-mesh";
 import { selectedStationProxy, stationProxy } from "../src/station-proxy";
 import { generateContents } from "../src/system";
+import { FORMS_IN_PLAY, stationInForm } from "./helpers/forms-in-play";
 import { forEachSystem } from "./helpers/station-rows";
 
 const WORLD_SEED = 1;
@@ -63,6 +64,7 @@ const STAND_IN: Record<DrawnStationType, readonly StationFormId[]> = {
 
 describe("the pools", () => {
 	test("its tag is appended, and every drawn role owns a distinct slot", () => {
+		// glossary-ignore: slot
 		expect(DOMAIN.STATION_FORM).toBe(33);
 		expect(STATION_FORM_SLOT).toEqual({ trade: 1, shipyard: 2, refinery: 3 });
 		expect(new Set(Object.values(STATION_FORM_SLOT)).size).toBe(
@@ -186,7 +188,7 @@ describe("the draw", () => {
 	});
 
 	test("the slots are separate streams: one role's form does not decide another's", () => {
-		// Three pools of three, drawn per slot. If two slots shared a stream
+		// Three pools of three, drawn per slot. If two slots shared a stream // glossary-ignore: slot
 		// they would agree on every seed; independent, they agree about one
 		// time in three.
 		const three: Record<DrawnStationType, readonly StationFormId[]> = {
@@ -212,8 +214,8 @@ describe("the draw", () => {
 
 	test("a system without a refinery draws its shipyard's form as one with a refinery does", () => {
 		// #109's hazard: a draw consumed in station order hands a beltless
-		// system's shipyard the refinery's position. The draw is per slot and
-		// reads no station list, so a beltless shipyard's form is its slot's.
+		// system's shipyard the refinery's position. The draw is per slot and // glossary-ignore: slot
+		// reads no station list, so a beltless shipyard's form is its slot's. // glossary-ignore: slot
 		let checked = 0;
 		forEachSystem(WORLD_SEED, GALAXIES, (record, contents) => {
 			if (contents.belt) return;
@@ -253,13 +255,8 @@ describe("the mesh, the reach and the proxy read the one field", () => {
 	})();
 
 	test("the mesh is built in the station's own form, and carries that form's reach", () => {
-		for (const [type, formId] of STATION_TYPES.flatMap((t) =>
-			formsInPlay(t).map((f) => [t, f] as const),
-		)) {
-			const mesh = buildStationMesh(
-				{ type, formId, berthSeed: 0, assemblySeed: 0 },
-				GREY,
-			);
+		for (const [type, formId] of FORMS_IN_PLAY) {
+			const mesh = buildStationMesh(stationInForm(type, formId), GREY);
 			expect([type, mesh.formId]).toEqual([type, formId]);
 			expect([type, mesh.silhouetteKm]).toEqual([
 				type,

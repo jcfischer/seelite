@@ -752,7 +752,7 @@ that sheet, because a selected form owes them under the industrial finishes.
 `STATION_FORM_POOL` (`station.ts`) names the forms a system may build each role
 in, one line per role, and **each system picks a form for each station it places
 from its own seed** (`DOMAIN.STATION_FORM`, node #717): one draw per fixed type
-slot, uniform within the pool, carried on the station as `Station.formId`. The
+slot, uniform within the pool, carried on the station as `Station.formId`. The <!-- glossary-ignore: slot -->
 mesh, the display reach and the collision proxy all read that field, so two
 stations of one role may differ and nothing answers per role. It replaced
 `SELECTED_FORM`, one form per role for the whole galaxy. **Each pool holds only

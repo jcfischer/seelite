@@ -28,6 +28,7 @@ import {
 	DRAWN_STATION_TYPES,
 	type DrawnStationType,
 	STATION_FORM_POOL,
+	STATION_TYPES,
 	type StationFormId,
 	type StationType,
 } from "../src/station";
@@ -71,11 +72,7 @@ function framedType(shot: Record<string, unknown>): StationType | null {
 	const raw = shot.station ?? body;
 	if (typeof raw !== "string") return null;
 	const type = raw.replace(/^station-/, "");
-	if (
-		!(["trade", "shipyard", "refinery", "outpost"] as const).includes(
-			type as StationType,
-		)
-	)
+	if (!STATION_TYPES.includes(type as StationType))
 		throw new Error(`a view frames an unknown station ${raw}`);
 	return type as StationType;
 }

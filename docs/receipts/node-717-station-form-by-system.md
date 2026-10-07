@@ -1,8 +1,10 @@
 # Node #717 — each system picks its stations' forms
 
 What was built, what is still the principal's, and what a pool owes before it
-grows. Measured on this branch; every figure below is reprinted by
-`bun scripts/measure-station-forms.ts`.
+grows. Measured on this branch. The view counts and the galaxy-wide shares are
+reprinted by `bun scripts/measure-station-forms.ts`; the red-row counts under
+"What each candidate owes" are not — they come from a temporary edit of the
+pools, and repeating that edit is how to reproduce them.
 
 ## Built
 
@@ -11,8 +13,8 @@ grows. Measured on this branch; every figure below is reprinted by
   is deleted rather than kept beside it, so any reader that still asked "the
   role's form" is a compile error rather than a per-type answer.
 - **`DOMAIN.STATION_FORM` (33)**, appended. `stationForms(systemSeed)`
-  (`src/station-form.ts`) draws one form per fixed type slot, one draw per
-  slot, uniform within the pool. It draws every slot whether or not the system
+  (`src/station-form.ts`) draws one form per fixed type slot, one draw per <!-- glossary-ignore: slot -->
+  slot, uniform within the pool. It draws every slot whether or not the system <!-- glossary-ignore: slot -->
   places that station, so a beltless system's shipyard draws exactly what the
   same seed's shipyard draws beside a refinery (#109's hazard).
 - **`Station.formId`**, generated like `type`. The outpost's is `OUTPOST_FORM`
@@ -71,7 +73,7 @@ at their current form, 0 moving. Once pools grow, any view can move, and which
 ones depends on the pools chosen. Run it with the proposed pools to see. As an
 illustration only — not a proposal — pooling every built form moves all 16:
 
-- seed 47's trade becomes the Wheel and its shipyard the Hangar;
+- seed 47's trade becomes the Wheel and its shipyard the Hangar; <!-- glossary-ignore: Hangar -->
 - seed 2's refinery becomes the Spar.
 
 The galaxy-wide shares under that illustration come out within 18.5–22.6% for
@@ -85,8 +87,8 @@ galaxies).
 | trade b Ring | none | declared | — |
 | trade c Drum | none | declared | — |
 | trade d Assembly | none | none | solved form: proxy must read the plan, like the Works |
-| trade e Wheel | none | none | the bay-in-`core` row: its slot is cut into `hub` (#334) |
-| shipyard b Hangar | none | none | — |
+| trade e Wheel | none | none | the bay-in-`core` row: its slot is cut into `hub` (#334) <!-- glossary-ignore: slot --> |
+| shipyard b Hangar | none | none | — <!-- glossary-ignore: Hangar --> |
 | shipyard c Slipway | none | none | — |
 | refinery a Warren | none | declared | never reviewed by the principal |
 | refinery b Collar | none | none | never reviewed by the principal |

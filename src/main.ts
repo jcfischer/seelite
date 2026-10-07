@@ -5342,7 +5342,7 @@ class Game {
 				// and the sim's catalogue have to agree about which side an
 				// outpost's seeded berth is on, and a mesh built at seed 0 while
 				// `interiorOfStation` reads `station.berthSeed` puts the ship on a
-				// berth with no pad under it. **And its own form** (node #717): the
+				// berth with no pad under it. **And its own form** (node #717): the // glossary-ignore: pad
 				// system picked it from the role's pool, and the sim's proxy reads the
 				// same field, so what is drawn is what is solid.
 				const built = buildStationMesh(station, body.color);

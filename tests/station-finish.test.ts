@@ -335,10 +335,8 @@ describe("the fixtures are at ship scale", () => {
 		const position = new THREE.Vector3();
 		const rotation = new THREE.Quaternion();
 		const scale = new THREE.Vector3();
-		const builds: [StationType, StationFormId][] = [
-			...FORMS_IN_PLAY.map(
-				([type, formId]) => [type, formId] as [StationType, StationFormId],
-			),
+		const builds: (readonly [StationType, StationFormId])[] = [
+			...FORMS_IN_PLAY,
 			["trade", "d"],
 			["refinery", "d"],
 			["outpost", "d"],

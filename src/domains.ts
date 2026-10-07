@@ -152,10 +152,10 @@ export const DOMAIN = {
 	 *  and the instance, so no two instances share one. */
 	DERELICT_CONTENTS: 32,
 	/** Which form each of a system's stations is built in (`station-form.ts`,
-	 *  node #717): one draw per fixed station-type slot, from that role's pool.
+	 *  node #717): one draw per fixed station-type slot, from that role's pool. // glossary-ignore: slot
 	 *  Its own tag rather than a read of `STATION_ASSEMBLY` or
 	 *  `STATION_BERTHS`, so growing a pool moves no plan and no berth — and
-	 *  split by the type slot rather than consumed in station order, so a
+	 *  split by the type slot rather than consumed in station order, so a // glossary-ignore: slot
 	 *  system without a refinery draws its shipyard's form exactly as one with
 	 *  a refinery does. */
 	STATION_FORM: 33,

@@ -334,6 +334,11 @@ describe("collision.md §9.1.6: the earliest impact owns the tick (C3)", () => {
 	const frame = frameAt(type, 0, 0);
 	const { up } = slotBasis(frame);
 	const nose = scale(frame.axis, -1);
+	// The Coriolis by name, not `formsInPlay(type)[0]`: the wing below is
+	// placed over this form's coaming, so a row that followed the pool would
+	// fly these offsets past another form's rim the day the pool's first
+	// member changed. Its proxy exists whether or not a pool holds it
+	// (node #717).
 	const proxy = selectedStationProxy({
 		type,
 		formId: "a",

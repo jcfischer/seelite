@@ -826,7 +826,7 @@ function generateStations(
 	const berthRand = stream(record.seed, DOMAIN.STATION_BERTHS);
 	const assemblyRand = stream(record.seed, DOMAIN.STATION_ASSEMBLY);
 	const names = stationNames(record.seed, record.name);
-	// Not a stream above: one sub-stream per type slot, drawn for every slot
+	// Not a stream above: one sub-stream per type slot, drawn for every slot // glossary-ignore: slot
 	// (`station-form.ts`), so it moves no station draw and no station moves it.
 	const forms = stationForms(record.seed);
 	const stations: Station[] = [];
@@ -872,7 +872,7 @@ function generateStations(
 		// Not a draw: the persistence identity is a table lookup
 		// (`station.ts`), so it consumes nothing from either stream.
 		localCarrierId: LOCAL_CARRIER_ID[type],
-		// Drawn above, per slot, from its own tag (node #717).
+		// Drawn above, per slot, from its own tag (node #717). // glossary-ignore: slot
 		formId: forms[type],
 	});
 
