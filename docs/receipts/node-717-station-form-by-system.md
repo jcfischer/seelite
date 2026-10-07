@@ -36,9 +36,8 @@ branch and it overstates it.
     handle;
   - the proxy: `stationProxyOf` reads `station.formId`, and its cache key
     carries the form.
-- **The rows that measure a form iterate `FORMS_IN_PLAY`**
-  (`tests/helpers/forms-in-play.ts`), so a form added to a pool is measured by
-  them without being named:
+- **These rows iterate `FORMS_IN_PLAY`** (`tests/helpers/forms-in-play.ts`),
+  so a form added to a pool is measured by them without being named:
   - the reach budget, the proxy budget and its opening, thinnest-figure and
     berth-seed rows;
   - the aperture size and plane, the bay-in-core row, the spinner;
@@ -53,27 +52,63 @@ branch and it overstates it.
   The thinnest-primitive figure is declared per form, and a pooled form
   without one is red.
 
-  **In the glow, visuals and mesh files, some rows still build one named
-  form, and a newly pooled form gets none of them.** Each is one of three
-  kinds:
+- **Other rows build one named form, and a newly pooled form gets none of
+  them.** They were found with this search over `tests/`, and every hit is
+  listed below:
+
+  ```sh
+  grep -rnE '(buildStationForm|stationProxy|stationProxyOf|stationInForm|stationSilhouetteKm)\(\s*"(trade|shipyard|refinery)",\s*"[a-e]"|formId: "[a-e]"|HISTORICAL_FORM' tests
+  ```
+
+  Each hit is one of four kinds:
   - **A control that breaks a known form on purpose.** It asks whether the
-    check can go red, not whether a form passes: `the pool row goes red for a
-    lamp lifted off its face` (`station-glow`), and `the row goes red for a
-    beacon a hundred metres off its mount` and `and for a strobe six metres
-    off its face` (`station-mesh`).
-  - **A wiring or shader check that does not depend on the form.** These are
-    `the core gain is in the shader` and `the pixel ratio reaches the
-    shader` (`station-glow`); `a fixture's intensity is its base times its
-    own waveform` (`station-visuals`); and `two colours give two different
-    stations`, `this module supplies no pixels` and `each plate has its own
-    material` (`station-mesh`). A new form shares the code they test.
-  - **A row about the Works, refinery `d`, by name:** `an obstruction beacon
-    on a tip lays no pool` (`station-glow`), `the refinery's flare keeps
-    tracking the clock at outline range` and `every refinery plan carries a
-    beacon on its headframe and one on its flare stack` (`station-visuals`).
-    These name parts of the Works. If another refinery form is pooled, these
-    rows do not check it, and that form needs its own rows for whatever
-    beacon and flare it carries.
+    check can go red, not whether a form passes:
+    - `the pool row goes red for a lamp lifted off its face` (`station-glow`);
+    - `the row goes red for a beacon a hundred metres off its mount` and `and
+      for a strobe six metres off its face` (`station-mesh`);
+    - `the axis row goes red when a strobe is put back on the equator`
+      (`station-visuals`);
+    - `the proxy cache is keyed on the form` (`station-form`);
+    - `the fit can go red: a hull flown in off the axis meets the rim`
+      (`collision-stations`).
+  - **A wiring or shader check that does not depend on the form.** A new form
+    shares the code these test:
+    - `the core gain is in the shader` and `the pixel ratio reaches the
+      shader` (`station-glow`);
+    - `a fixture's intensity is its base times its own waveform`
+      (`station-visuals`);
+    - `two colours give two different stations`, `this module supplies no
+      pixels` and `each plate has its own material` (`station-mesh`);
+    - `the shared marks are on the resources every system reuses`
+      (`gpu-teardown`);
+    - `the quality gate is not the detail band wearing another name`
+      (`station-greebles`).
+  - **A row about one form's own parts, by name.** These do not check another
+    form in the same pool, and a form pooled beside them owes its own rows
+    for whatever it carries:
+    - the Works, refinery `d`:
+      - `an obstruction beacon on a tip lays no pool` (`station-glow`);
+      - `the refinery's flare keeps tracking the clock at outline range` and
+        `every refinery plan carries a beacon on its headframe and one on its
+        flare stack` (`station-visuals`);
+      - `the refinery's proxy reads the assembly seed, cell by cell`
+        (`station-proxy`).
+    - the Coriolis, trade `a`, in `collision-stations`:
+      - the rows on `turnInto`;
+      - `a ship touching a station face while it turns in takes §3's damage at
+        ω × r, and ends outside`;
+      - the wing over its coaming.
+    - the Gantry, shipyard `a`, in `collision-stations`:
+      - `the shipyard's keel does not turn with its drum`;
+      - `the crossing count excludes empty space inside a sparse station's
+        reach`.
+    - the Wheel, trade `e`: `tests/station-wheel.test.ts`, which holds the
+      hub its slot is cut into. The Wheel is in no pool. <!-- glossary-ignore: slot -->
+  - **Historical docking fixtures, pinned on purpose.** `flyTheComputer` flies
+    `HISTORICAL_FORM` (`tests/helpers/fly-the-computer.ts`) when a row gives
+    no plan. That is the form each role flew when the docking-handling ceilings
+    were measured. A newly pooled form gets no handling ceiling from these
+    fixtures. A row about every form passes `stationPlansFor` instead.
 
 ## Existing streams did not move
 
