@@ -60,7 +60,11 @@ import {
 	worldSolids,
 	worldStarts,
 } from "../src/sim";
-import { STATION_GEOMETRY } from "../src/station";
+import {
+	STATION_FORM_POOL,
+	STATION_GEOMETRY,
+	type StationFormId,
+} from "../src/station";
 import { proxyReachKm, stationProxyOf } from "../src/station-proxy";
 import { TRAFFIC_HULL_POOLS } from "../src/station-traffic";
 import {
@@ -84,10 +88,8 @@ import {
 import { codeOf, methodBodyOf } from "./lib/source-scan";
 
 const DT = 1 / 30;
-/** Seeds whose start systems carry all three placed station roles between
- *  them: trade everywhere, a refinery at 1, 2, 3 and 9, a shipyard at 2, 3,
- *  9 and 47 — so the Coriolis, the Works and the Gantry's keel are each
- *  in the corpus. */
+/** Node #665's original start-system corpus: all three placed roles. Keep
+ * these seeds fixed; form coverage is a separate axis, not more seeds. */
 const SEEDS = [1, 2, 3, 9, 47];
 /** Approach bearings round each station, in radians. */
 const BEARINGS = [0, 1.7, 3.9];
@@ -108,10 +110,6 @@ function placedStations(world: World) {
 	return world.system.contents.stations.filter((s) =>
 		world.system.byId.has(s.id),
 	);
-}
-
-function stationCount(seed: number): number {
-	return placedStations(makeWorld(seed)).length;
 }
 
 /** The ship's step as a swept motion, between where it stood and where its
@@ -172,6 +170,16 @@ interface FlyOptions {
 	atMouth?: boolean;
 	/** An armed carrier the pilot provoked fights instead of the raider. */
 	armed?: HullId;
+	/** Explicit form axis on the original systems; never selected by outcomes. */
+	refineryForm?: StationFormId;
+}
+
+function worldInRefineryForm(seed: number, form: StationFormId | undefined) {
+	const world = makeWorld(seed);
+	if (form !== undefined)
+		for (const station of world.system.contents.stations)
+			if (station.type === "refinery") station.formId = form;
+	return world;
 }
 
 /**
@@ -182,7 +190,7 @@ interface FlyOptions {
  * with.
  */
 function flyBesideStation(o: FlyOptions): Run {
-	const world = makeWorld(o.seed);
+	const world = worldInRefineryForm(o.seed, o.refineryForm);
 	const system = world.system;
 	const placed = placedStations(world);
 	const station = placed[o.stationIndex % placed.length];
@@ -337,18 +345,40 @@ function flyBesideStation(o: FlyOptions): Run {
 	return { met: null, fireShare: fired / steps, stillShare: still / steps };
 }
 
+type CorpusOptions = Pick<
+	FlyOptions,
+	"hull" | "open" | "atMouth" | "armed" | "refineryForm"
+> & { refineryOnly?: boolean };
+
+/** Reuse identical deterministic flights across assertions. Even an open
+ * fight depends on the form: proxy reach sets the pilot's stand-off. Keep
+ * that axis, and every flight option, in the key. */
+const corpora = new Map<string, Run[]>();
+
 function corpus(
 	regime: Regime,
 	avoid: boolean,
-	extra: Pick<FlyOptions, "hull" | "open" | "atMouth" | "armed"> = {},
+	extra: CorpusOptions = {},
 ): Run[] {
+	const { refineryOnly = false, ...options } = extra;
+	// Historical controls and their measured bands used Works. Key the
+	// normalized options passed to the flight, including any future fields.
+	const flight = { ...options, refineryForm: options.refineryForm ?? "d" };
+	const key = JSON.stringify([
+		regime,
+		avoid,
+		refineryOnly,
+		Object.fromEntries(
+			Object.entries(flight).sort(([a], [b]) => a.localeCompare(b)),
+		),
+	]);
+	const cached = corpora.get(key);
+	if (cached) return cached;
 	const runs: Run[] = [];
-	for (const seed of SEEDS)
-		for (
-			let stationIndex = 0;
-			stationIndex < stationCount(seed);
-			stationIndex++
-		)
+	for (const seed of SEEDS) {
+		const stations = placedStations(makeWorld(seed));
+		for (let stationIndex = 0; stationIndex < stations.length; stationIndex++) {
+			if (refineryOnly && stations[stationIndex].type !== "refinery") continue;
 			for (const bearing of BEARINGS)
 				runs.push(
 					flyBesideStation({
@@ -357,15 +387,62 @@ function corpus(
 						bearing,
 						regime,
 						avoid,
-						...extra,
+						...flight,
 					}),
 				);
+		}
+	}
+	corpora.set(key, runs);
 	return runs;
 }
 
 const struck = (runs: Run[]) => runs.filter((run) => run.met !== null).length;
+const meanFire = (runs: Run[]) =>
+	runs.reduce((sum, r) => sum + r.fireShare, 0) / runs.length;
+
+function expectGunRunKept(open: Run[], beside: Run[]) {
+	expect(meanFire(beside)).toBeGreaterThan(0.6 * meanFire(open));
+	expect(Math.min(...beside.map((r) => r.fireShare))).toBeGreaterThan(0.05);
+}
+
+function expectMouthHoldOff(open: Run[], beside: Run[]) {
+	expect(struck(beside)).toBe(0);
+	expect(meanFire(beside)).toBeGreaterThan(0.8 * meanFire(open));
+	expect(Math.min(...beside.map((r) => r.fireShare))).toBeGreaterThan(0.15);
+	// Holding off is not hovering: no run sits still for half the fight.
+	expect(Math.max(...beside.map((r) => r.stillShare))).toBeLessThan(0.5);
+}
 
 describe("the figures the avoidance is built from", () => {
+	test("every pooled refinery form is flown on the same four original systems", () => {
+		for (const form of STATION_FORM_POOL.refinery) {
+			const refineries = SEEDS.flatMap((seed) =>
+				placedStations(worldInRefineryForm(seed, form)).filter(
+					(s) => s.type === "refinery",
+				),
+			);
+			expect(refineries.map((s) => s.formId)).toEqual(Array(4).fill(form));
+		}
+	});
+	test("assist-off: each form retains its measured blind impacts on the fixed refinery corpus", () => {
+		const impacts = STATION_FORM_POOL.refinery.map((form) => [
+			form,
+			struck(
+				corpus("assist-off", false, {
+					refineryForm: form,
+					refineryOnly: true,
+				}),
+			),
+		]);
+		// Node #745's same four systems and three bearings, not an aggregate
+		// over different populations. Reusing another form's run fails here.
+		expect(impacts).toEqual([
+			["a", 6],
+			["b", 5],
+			["c", 2],
+			["d", 12],
+		]);
+	});
 	test("the clearance covers every hull's own box, so a centre outside the keep-out is a hull outside the solid", () => {
 		for (const [id, spec] of Object.entries(HULL_SPECS)) {
 			const hullReach = reachKm([hullBox(spec.env, spec.envCentre)]);
@@ -498,6 +575,9 @@ describe("avoidanceSolids: what the controller is handed", () => {
 });
 
 describe("a ship fighting beside a station does not fly into it, under all three regimes", () => {
+	// The historical Works corpus keeps its majority control and measured
+	// bands. Other forms change both the solid and the reach-derived pilot
+	// placement; adding seeds until the aggregate is a majority hides that.
 	for (const regime of ["assist-on", "assist-off", "cruise"] as const) {
 		test(`${regime}: blind, the corpus meets the station; avoiding, no run does`, () => {
 			const blind = corpus(regime, false);
@@ -509,6 +589,27 @@ describe("a ship fighting beside a station does not fly into it, under all three
 			);
 		});
 	}
+
+	for (const form of STATION_FORM_POOL.refinery)
+		for (const regime of ["assist-on", "assist-off", "cruise"] as const) {
+			test(`refinery/${form}, ${regime}: the fixed per-form corpus has blind impacts and avoids every one`, () => {
+				const extra = { refineryForm: form, refineryOnly: true };
+				const blind = corpus(regime, false, extra);
+				const avoiding = corpus(regime, true, extra);
+				if (process.env.SEELITE_MEASURE_AVOIDANCE === "1")
+					console.info(
+						`refinery/${form}, ${regime}: blind ${struck(blind)}/${blind.length}, avoiding ${struck(avoiding)}/${avoiding.length}`,
+					);
+				expect(blind).toHaveLength(12);
+				expect(avoiding).toHaveLength(blind.length);
+				// A blind impact is a witness that disabling avoidance fails
+				// this form's row; its proportion is not a design requirement.
+				expect(
+					blind.filter((r) => r.met === "station-refinery").length,
+				).toBeGreaterThan(0);
+				expect(struck(avoiding)).toBe(0);
+			});
+		}
 
 	test("cruise: every civilian roster hull, the slowest-turning included, gets out of a station's way", () => {
 		const civilians = [...new Set(Object.values(TRAFFIC_HULL_POOLS).flat())]
@@ -532,17 +633,50 @@ describe("a ship fighting beside a station does not fly into it, under all three
 });
 
 describe("a duel beside a station stays a duel", () => {
+	for (const form of STATION_FORM_POOL.refinery) {
+		for (const regime of ["assist-on", "assist-off"] as const) {
+			test(`refinery/${form}, ${regime}: the raider keeps its gun run on the fixed form corpus`, () => {
+				const extra = { refineryForm: form, refineryOnly: true };
+				const open = corpus(regime, false, { ...extra, open: true });
+				const beside = corpus(regime, true, extra);
+				expectGunRunKept(open, beside);
+			});
+		}
+		for (const armed of [undefined, "patrol", "interceptor"] as const) {
+			test(`refinery/${form}: ${armed ?? "the raider"} holds off at the mouth and keeps firing`, () => {
+				const extra = {
+					refineryForm: form,
+					refineryOnly: true,
+					atMouth: true,
+					armed,
+				};
+				const blind = corpus("assist-on", false, extra);
+				const open = corpus("assist-on", false, { ...extra, open: true });
+				const beside = corpus("assist-on", true, extra);
+				if (process.env.SEELITE_MEASURE_AVOIDANCE === "1")
+					console.info(
+						`refinery/${form}, ${armed ?? "raider"} mouth: blind ${struck(blind)}/${blind.length}, avoiding ${struck(beside)}/${beside.length}`,
+					);
+				expect(blind).toHaveLength(12);
+				expect(beside).toHaveLength(blind.length);
+				// The historical majority is over all three station roles.
+				// This refinery-only control must actually meet this form.
+				expect(
+					blind.filter((r) => r.met === "station-refinery").length,
+				).toBeGreaterThan(0);
+				expectMouthHoldOff(open, beside);
+			});
+		}
+	}
+
 	for (const regime of ["assist-on", "assist-off"] as const) {
 		test(`${regime}: the raider still fires on a pilot sitting on the station, near its open-space rate`, () => {
 			const open = corpus(regime, false, { open: true });
 			const beside = corpus(regime, true);
-			const mean = (runs: Run[]) =>
-				runs.reduce((sum, r) => sum + r.fireShare, 0) / runs.length;
 			// Measured over the 39 runs: 0.271 open against 0.191 beside with the
 			// pilot's assist on, 0.169 against 0.168 off, and the lowest run
 			// beside fired on 10.3% of frames. The bands are wide of both.
-			expect(mean(beside)).toBeGreaterThan(0.6 * mean(open));
-			expect(Math.min(...beside.map((r) => r.fireShare))).toBeGreaterThan(0.05);
+			expectGunRunKept(open, beside);
 		});
 	}
 
@@ -551,7 +685,7 @@ describe("a duel beside a station stays a duel", () => {
 	 * inside the keep-out, where a pilot about to dock or just launched is.
 	 * No turn clears a run at them, so the raider and an armed carrier the
 	 * pilot provoked hold off at the keep-out with their noses on the run.
-	 * Measured over the 39 runs, the share of frames each fires on against
+	 * Measured on node #665's original 39 runs, the share of frames each fires on against
 	 * the same fight in open space: raider 0.277 against 0.287, patrol 0.298
 	 * against 0.296, interceptor 0.295 against 0.291, the lowest run 0.242;
 	 * blind, 29, 27 and 30 runs met the station. Before the hold-off, bent
@@ -563,17 +697,8 @@ describe("a duel beside a station stays a duel", () => {
 			const blind = corpus("assist-on", false, extra);
 			const open = corpus("assist-on", false, { ...extra, open: true });
 			const beside = corpus("assist-on", true, extra);
-			const mean = (runs: Run[], f: (r: Run) => number) =>
-				runs.reduce((sum, r) => sum + f(r), 0) / runs.length;
 			expect(struck(blind)).toBeGreaterThan(blind.length / 2);
-			expect(struck(beside)).toBe(0);
-			expect(mean(beside, (r) => r.fireShare)).toBeGreaterThan(
-				0.8 * mean(open, (r) => r.fireShare),
-			);
-			expect(Math.min(...beside.map((r) => r.fireShare))).toBeGreaterThan(0.15);
-			// Holding off is not hovering: no run sits still against the station
-			// for half the fight (the most measured is 0.346).
-			expect(Math.max(...beside.map((r) => r.stillShare))).toBeLessThan(0.5);
+			expectMouthHoldOff(open, beside);
 		});
 	}
 });

@@ -1281,8 +1281,10 @@ function shell(
 	 * `scripts/measure-aperture-cut.ts` prints which one that is per form.
 	 */
 	aperture?: ApertureCut,
+	/** An uncapped tube for a vent nozzle; it does not cut the landing deck. */
+	open = false,
 ) {
-	const geometry = panelUVs(hullLoft(controls, { segments, aperture }));
+	const geometry = panelUVs(hullLoft(controls, { segments, aperture, open }));
 	// Cached per source material: the forms ask for flat shading dozens of times
 	// per station, and a clone each time gives one station dozens of distinct
 	// materials that can never batch. One clone per base material instead.
@@ -2987,6 +2989,8 @@ function buildVentBank(
 	 *  there used to be a second `radius` argument and nothing read it, so five
 	 *  call sites were passing a dial that did nothing (#300). */
 	length: number,
+	/** Open, approach-facing nozzles with an obstruction lamp on the first tip. */
+	approachFacing = false,
 ): THREE.Group {
 	const stack = new THREE.Group();
 	// Proportioned from its own length rather than from the old stack's tube
@@ -3040,6 +3044,8 @@ function buildVentBank(
 			"vent",
 			6,
 			true,
+			undefined,
+			approachFacing,
 		);
 		nozzle.position.set(-length * 0.24 + i * length * 0.17, 0, across * 0.7);
 		nozzle.rotation.x = -NOZZLE_TILT;
@@ -3061,11 +3067,21 @@ function buildVentBank(
 		throat.quaternion.copy(nozzle.quaternion);
 		throat.position
 			.copy(nozzle.position)
-			.addScaledVector(bore, length * 0.34 - across * 0.12);
+			.addScaledVector(
+				bore,
+				length * 0.34 - (approachFacing ? throatKm * 0.2 : across * 0.12),
+			);
 		throat.name = "flare";
 		detail(throat, "reduced");
 		glowOnFitting(throat, throatKm, throatGlare);
 		stack.add(throat);
+		if (approachFacing && i === 0)
+			stack.add(
+				obstructionBeacon(
+					fixtures,
+					nozzle.position.clone().addScaledVector(bore, length * 0.34),
+				),
+			);
 	}
 	// One fixture for the bank, kind `flare`: it is the flare system's light,
 	// and it is now the only light it has.
@@ -3165,6 +3181,27 @@ function buildRadiator(spanKm: number, tilt: number): THREE.Group {
 	return group;
 }
 
+/** Copied from `buildRefineryWorks`'s `PAD_PORT_RADIUS_KM`: ports run radially
+ * in the sectors between the cardinal berths and diagonal flood fixtures.
+ * This is a fitting placement; the fixture mount and corridor rows measure
+ * it against every pooled form's own deck. */
+const REFINERY_DECK_PORT_RADIUS_KM = 0.171;
+
+/** Dock-face ports between the landing deck's berths, on the shared aperture plane. */
+function refineryDeckPorts(): THREE.Object3D {
+	const plane = STATION_GEOMETRY.refinery.aperturePlaneKm;
+	return portRun("refinery", 4, (i, count, position, normal, tangent) => {
+		const theta = ((i + 0.5) / count) * Math.PI * 2;
+		normal.set(0, 0, 1);
+		tangent.set(Math.cos(theta), Math.sin(theta), 0);
+		position.set(
+			Math.cos(theta) * REFINERY_DECK_PORT_RADIUS_KM,
+			Math.sin(theta) * REFINERY_DECK_PORT_RADIUS_KM,
+			plane + 0.004,
+		);
+	});
+}
+
 /**
  * Refinery A — Warren. A cut face sliced into the rock, with terraced plant
  * inside it and the pad at the bottom of the cut.
@@ -3217,20 +3254,15 @@ function buildRefineryWarren(color: number, berthSeed: number): BuiltPart {
 		),
 	);
 
-	// **Stacks canted outward, not laid back.** Viewed down the aperture axis —
-	// the one view a docking approach has — a rock with an inlaid cut is still a
-	// rounded lump, and `probe-station.mjs` measured this against the trade
-	// station's drum at 1 − IoU 0.216 on a 0.25 floor. §7 rests identity on
-	// outline, so the machined half has to reach *into that view* rather than
-	// sit flush in it.
-	for (const [x, y, lean] of [
-		[r * 0.86, r * 0.6, 0.55],
-		[-r * 0.72, r * 0.78, -0.7],
+	// Vent throats face the approach so their heat and obstruction lamps are
+	// visible down the aperture axis. The old canted stacks' outline reading
+	// does not measure this geometry.
+	for (const [x, y] of [
+		[r * 0.86, r * 0.6],
+		[-r * 0.72, r * 0.78],
 	]) {
-		const flare = buildVentBank(fixtures, r * 1.05);
+		const flare = buildVentBank(fixtures, r * 1.05, true);
 		flare.position.set(x, y, r * 0.36);
-		flare.rotation.x = -Math.PI / 2.6;
-		flare.rotation.y = lean;
 		group.add(flare);
 	}
 	// **Three wings, not two.** The plume used to lend the outline a spike; with
@@ -3306,6 +3338,7 @@ function buildRefineryWarren(color: number, berthSeed: number): BuiltPart {
 			group,
 		),
 	);
+	group.add(refineryDeckPorts());
 	return { group, fixtures };
 }
 
@@ -3369,7 +3402,12 @@ function buildRefineryCollar(color: number, berthSeed: number): BuiltPart {
 			[
 				{ z: r * 0.5, w: r * 0.5, h: r * 0.5, e: 6 },
 				{ z: r * 0.88, w: r * 0.42, h: r * 0.42, e: 6, hard: true },
-				{ z: r * 1.0, w: r * 0.34, h: r * 0.34, e: 6 },
+				{
+					z: STATION_GEOMETRY.refinery.aperturePlaneKm,
+					w: r * 0.5,
+					h: r * 0.5,
+					e: 6,
+				},
 			],
 			hullMaterial(color, "refinery"),
 			"boss",
@@ -3379,12 +3417,17 @@ function buildRefineryCollar(color: number, berthSeed: number): BuiltPart {
 			undefined,
 		),
 	);
-	group.add(buildAperture("refinery", fixtures, r * 1.0, berthSeed));
+	group.add(
+		buildAperture(
+			"refinery",
+			fixtures,
+			STATION_GEOMETRY.refinery.aperturePlaneKm,
+			berthSeed,
+		),
+	);
 	for (const side of [-1, 1]) {
-		const flare = buildVentBank(fixtures, r * 0.9);
+		const flare = buildVentBank(fixtures, r * 0.9, true);
 		flare.position.set(side * major * 0.82, r * 0.42, 0);
-		flare.rotation.x = -Math.PI / 2.6;
-		flare.rotation.z = side * 0.35;
 		group.add(flare);
 	}
 	for (const tilt of [Math.PI * 0.42, Math.PI * 1.1, Math.PI * 1.62]) {
@@ -3430,6 +3473,7 @@ function buildRefineryCollar(color: number, berthSeed: number): BuiltPart {
 			group,
 		),
 	);
+	group.add(refineryDeckPorts());
 	return { group, fixtures };
 }
 
@@ -3461,7 +3505,12 @@ function buildRefinerySpar(color: number, berthSeed: number): BuiltPart {
 				{ z: -r * 1.7, w: r * 0.2, h: r * 0.2, e: 6 },
 				{ z: -r * 1.3, w: r * 0.3, h: r * 0.3, e: 6, hard: true },
 				{ z: r * 0.9, w: r * 0.3, h: r * 0.3, e: 6, hard: true },
-				{ z: r * 1.22, w: r * 0.4, h: r * 0.4, e: 6 },
+				{
+					z: STATION_GEOMETRY.refinery.aperturePlaneKm,
+					w: r * 0.5,
+					h: r * 0.5,
+					e: 6,
+				},
 			],
 			hullMaterial(color, "refinery"),
 			"core",
@@ -3471,7 +3520,14 @@ function buildRefinerySpar(color: number, berthSeed: number): BuiltPart {
 			undefined,
 		),
 	);
-	group.add(buildAperture("refinery", fixtures, r * 1.22, berthSeed));
+	group.add(
+		buildAperture(
+			"refinery",
+			fixtures,
+			STATION_GEOMETRY.refinery.aperturePlaneKm,
+			berthSeed,
+		),
+	);
 	// Tanks strung along the exposed length, off-axis so the spar does not read
 	// as a smooth rod.
 	for (let i = 0; i < 3; i++) {
@@ -3494,10 +3550,10 @@ function buildRefinerySpar(color: number, berthSeed: number): BuiltPart {
 		group.add(tank);
 	}
 	for (const side of [-1, 1]) {
-		const flare = buildVentBank(fixtures, r * 0.85);
-		flare.position.set(side * r * 0.34, r * 0.3, -r * 1.5);
-		flare.rotation.x = -Math.PI / 2.3;
-		flare.rotation.z = side * 0.3;
+		const flare = buildVentBank(fixtures, r * 0.85, true);
+		// On the forward rock shoulder, where the approach sees the heat and
+		// obstruction lamp; the aft shaft was wholly hidden behind the rock.
+		flare.position.set(side * r * 0.8, r * 0.3, r * 0.6);
 		group.add(flare);
 	}
 	for (const tilt of [0.4, Math.PI - 0.4, Math.PI * 1.5]) {
@@ -3505,7 +3561,14 @@ function buildRefinerySpar(color: number, berthSeed: number): BuiltPart {
 		wing.position.z = -r * 0.75;
 		group.add(wing);
 	}
-	group.add(buildHeatRing(fixtures, r * 0.42, r * 1.2));
+	// Leave the dock-face ports outside the ring rather than behind its tube.
+	group.add(
+		buildHeatRing(
+			fixtures,
+			r * 0.36,
+			STATION_GEOMETRY.refinery.aperturePlaneKm - 0.004,
+		),
+	);
 	group.add(
 		portRun("refinery", 10, (i, count, position, normal) => {
 			const theta = (i / count) * Math.PI * 2;
@@ -3537,6 +3600,7 @@ function buildRefinerySpar(color: number, berthSeed: number): BuiltPart {
 			group,
 		),
 	);
+	group.add(refineryDeckPorts());
 	return { group, fixtures };
 }
 

@@ -82,7 +82,14 @@ import { GTAOPass } from "three/addons/postprocessing/GTAOPass.js";
 import { RenderPass } from "three/addons/postprocessing/RenderPass.js";
 import { UnrealBloomPass } from "three/addons/postprocessing/UnrealBloomPass.js";
 
-import { faintField, systemField, type StarField } from "./backdrop";
+import {
+	faintField,
+	STAR_PIXEL_SCALE,
+	STAR_POINT_GLSL,
+	starCorePx,
+	systemField,
+	type StarField,
+} from "./backdrop";
 import {
 	SeeliteOutputPass,
 	VIGNETTE_MAX,
@@ -1200,16 +1207,6 @@ const {
 	massiveLayerFor,
 	scaleFor,
 } = units;
-
-/** Multiplier from a star's stored size to pixels, against the canvas height.
- *  Point sizes are in *pixels* and a fixed value would read differently on
- *  every display, so it scales with the buffer.
- *
- *  The count that used to sit beside it moved to `backdrop.ts` as `FAINT_COUNT`
- *  with #431: it is a density of the invented population, and the module that
- *  owns that population's size band — the band this one must stay under — is the
- *  one place both halves of the rule can be read together. */
-const STAR_PIXEL_SCALE = 0.35;
 
 /**
  * The raw `?hull=` value, read once at load (#554, #557).
@@ -5199,6 +5196,7 @@ class Game {
 				uPixelScale: {
 					value: this.renderer.domElement.height * STAR_PIXEL_SCALE,
 				},
+				uCorePx: { value: this.canvasStarCorePx() },
 				// #537's cruise light shift: zero is the untouched sky.
 				uBeta: { value: 0 },
 				uHeading: { value: new THREE.Vector3(0, 0, -1) },
@@ -5207,8 +5205,13 @@ class Game {
 				attribute float aSize;
 				attribute vec3 aColor;
 				uniform float uPixelScale;
+				uniform float uCorePx;
 				varying vec3 vColor;
+				varying float vIntensity;
+				varying float vCoreFrac;
+				varying float vHalo;
 				${LIGHT_SHIFT_GLSL}
+				${STAR_POINT_GLSL}
 				void main() {
 					vec3 color = aColor;
 					float size = aSize;
@@ -5224,22 +5227,42 @@ class Game {
 						view = viewMatrix * world;
 					}
 					vColor = color;
+					// #719: the rule is STAR_POINT_GLSL from backdrop.ts, shared with
+					// starPoint there and tested against it. The light the old disc
+					// delivered, (size × scale)², goes into a fixed core, and what
+					// the core cannot hold into a small halo.
+					vIntensity = starIntensity(size * uPixelScale, uCorePx);
 					// No distance attenuation: the sphere is re-centred on the camera
 					// every frame, so every star is exactly BACKDROP_RADIUS away and
-					// attenuating by depth would only add rounding.
-					gl_PointSize = max(1.0, size * uPixelScale);
+					// attenuating by depth would only add rounding. The margin round
+					// the core keeps its falloff from being cut square.
+					float spritePx = starSpritePx(vIntensity, uCorePx);
+					vCoreFrac = starCoreFrac(uCorePx, spritePx);
+					vHalo = starHalo(vIntensity);
+					gl_PointSize = spritePx;
 					gl_Position = projectionMatrix * view;
 				}
 			`,
 			fragmentShader: /* glsl */ `
 				varying vec3 vColor;
+				varying float vIntensity;
+				varying float vCoreFrac;
+				varying float vHalo;
 				void main() {
-					// A soft disc rather than a square. gl_PointCoord runs 0..1 across
-					// the sprite, so this is the distance from its centre.
+					// A tight Gaussian core of fixed pixel size, and for the bright
+					// tail a soft halo across the rest of the sprite. gl_PointCoord
+					// runs 0..1, so r is 0 at the centre and 1 at the edge.
 					float r = length(gl_PointCoord - vec2(0.5)) * 2.0;
-					float a = smoothstep(1.0, 0.0, r);
-					if (a <= 0.004) discard;
-					gl_FragColor = vec4(vColor, a);
+					float rc = r / vCoreFrac;
+					// The halo fades to zero before the sprite's edge: at the cap
+					// exp(-4) alone left it above the discard there, which cut the
+					// brightest halos square.
+					float light = exp(-8.0 * rc * rc) * vIntensity
+						+ vHalo * exp(-4.0 * r * r) * smoothstep(1.0, 0.8, r);
+					if (light <= 0.004) discard;
+					// Alpha 1 under the material's additive blending: the light is
+					// added to what is behind it and never covers it.
+					gl_FragColor = vec4(vColor * light, 1.0);
 				}
 			`,
 			transparent: true,
@@ -20251,6 +20274,12 @@ class Game {
 		this.gtaoPass?.setSize(ao.x, ao.y);
 		this.starMaterial.uniforms.uPixelScale.value =
 			this.renderer.domElement.height * STAR_PIXEL_SCALE;
+		this.starMaterial.uniforms.uCorePx.value = this.canvasStarCorePx();
+	}
+
+	/** #719: the star core's diameter in pixels (`starCorePx` in backdrop.ts). */
+	private canvasStarCorePx(): number {
+		return starCorePx(this.renderer.domElement.height);
 	}
 }
 

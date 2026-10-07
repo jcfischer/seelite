@@ -277,6 +277,13 @@ Each role carries one emissive signature and one motion:
 | shipyard | cool window grid, cold blue-white floodlit bays, the same strobe pair and the same mouth ring | one bay carries a welding arc — a fast, deep flicker; the strobes and the ring run as the trade station's do |
 | refinery | glowing vent throats, a heat ring, lit ports on the dock face, and hazard beacons on its tallest structures | the throats and the ring breathe on a slow shallow flicker; the beacons blink on their own period, holding each flash longer than a strobe does |
 
+Node #745 flies all four refinery forms: Warren, Collar, Spar and Works,
+drawn uniformly per system. Each carries the role's dock-face ports, visible
+vent throats and obstruction beacons. Warren retains its macro fixture
+declaration; Collar and Spar gain their own in node #745. Every form uses the
+same aperture and berth catalogue. The other roles' pools are handled by their
+own nodes.
+
 The colours are drawn from `hud-and-scanner.md` §4's grammar rather than a
 second palette: cool for structure and work light, warm for habitation and heat.
 The aperture keeps #28's amber frame at a fixed intensity.

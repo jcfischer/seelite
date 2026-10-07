@@ -56,7 +56,13 @@ import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { createServer } from "vite";
 import { cueStats, roundStats } from "./lib/audio-stats.mjs";
-import { CLASSICAL_SET, renderInPage, SOUND_SET } from "./lib/sound-set.mjs";
+import {
+	CLASSICAL_SET,
+	DANUBE_VARIANT_SET,
+	renderInPage,
+	SOUND_SET,
+	VOICE_DEMO_SET,
+} from "./lib/sound-set.mjs";
 import { TREE_ENDPOINT } from "./lib/tree-declaration.mjs";
 import { launchChromium } from "./probe-guard.mjs";
 
@@ -75,7 +81,23 @@ const only = arg("only") ? [...new Set(arg("only").split(","))] : undefined;
 const ref = arg("ref");
 // `--set classical`: #589's set-pieces instead of the cue set. They are a
 // listening pass for the grilling, so no probe bands them.
-const SET = arg("set") === "classical" ? CLASSICAL_SET : SOUND_SET;
+// `--set danube`: the waltz's alternative versions, a listening set too;
+// `--set voices`: a demo of each of their voices.
+// A Map, so a name such as `constructor` is not read off an object's prototype.
+const SETS = new Map([
+	["classical", CLASSICAL_SET],
+	["danube", DANUBE_VARIANT_SET],
+	["voices", VOICE_DEMO_SET],
+]);
+// A misspelt set is refused rather than read as no flag, which would render
+// and overwrite the whole cue set.
+if (arg("set") !== undefined && !SETS.has(arg("set"))) {
+	console.error(
+		`no set "${arg("set")}"; sets: ${[...SETS.keys()].join(", ")} (or none, for the cue set)`,
+	);
+	process.exit(2);
+}
+const SET = SETS.get(arg("set")) ?? SOUND_SET;
 const out = resolve(arg("out") ?? join(HERE, "sound-set"));
 const seed =
 	process.env.SEED === "off" ? null : Number(process.env.SEED ?? 552);

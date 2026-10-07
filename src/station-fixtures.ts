@@ -1236,6 +1236,77 @@ const DECLARATIONS: Partial<
 		}
 	},
 
+	/** Collar: pipe mains and tank racks seated on the machined waist band. */
+	"refinery/b": ({ pools, mount }) => {
+		const r = STATION_GEOMETRY.refinery.coreRadiusKm;
+		const S = SHIP_SCALE;
+		const major = r * 1.16 * 1.15 + r * 0.15 * 0.55;
+		for (const z of [-0.025, 0.025]) {
+			const points: THREE.Vector3[] = [];
+			for (let i = 0; i <= 20; i++) {
+				const theta = (i / 20) * Math.PI * 2;
+				const out = V(Math.cos(theta), Math.sin(theta), 0);
+				points.push(
+					mount(
+						out
+							.clone()
+							.multiplyScalar(major + r * 0.15)
+							.setZ(z),
+						out,
+						0.08,
+					).addScaledVector(out, S.pipeKm),
+				);
+			}
+			pipeRun(pools, points, S.pipeKm);
+		}
+		for (const side of [-1, 1]) {
+			const out = V(side, 0, 0);
+			tankRack(pools, {
+				origin: mount(V(side * (major + r * 0.15), 0, 0), out, 0.08),
+				along: V(0, 1, 0),
+				up: out,
+				count: 5,
+				radiusKm: S.tankKm,
+				lengthKm: S.tankLengthKm,
+			});
+		}
+	},
+
+	/** Spar: ring mains on its exposed aft shaft and tanks along its flanks. */
+	"refinery/c": ({ pools, mount }) => {
+		const r = STATION_GEOMETRY.refinery.coreRadiusKm;
+		const S = SHIP_SCALE;
+		for (const z of [-r * 1.1, -r * 0.9]) {
+			const points: THREE.Vector3[] = [];
+			for (let i = 0; i <= 16; i++) {
+				const theta = (i / 16) * Math.PI * 2;
+				const out = V(Math.cos(theta), Math.sin(theta), 0);
+				points.push(
+					mount(
+						out
+							.clone()
+							.multiplyScalar(r * 0.3)
+							.setZ(z),
+						out,
+						r * 0.15,
+					).addScaledVector(out, S.pipeKm),
+				);
+			}
+			pipeRun(pools, points, S.pipeKm);
+		}
+		for (const side of [-1, 1]) {
+			const out = V(0, side, 0);
+			tankRack(pools, {
+				origin: mount(V(0, side * r * 0.3, -r * 0.8), out, r * 0.15),
+				along: V(0, 0, 1),
+				up: out,
+				count: 4,
+				radiusKm: S.tankKm,
+				lengthKm: S.tankLengthKm,
+			});
+		}
+	},
+
 	/**
 	 * Outpost A — Derrick. Four tanks in a cluster below z = −1.1·r, a lattice
 	 * tower up to the pad deck at +Z. Reach 0.42 km on a 0.15 km core. Nothing

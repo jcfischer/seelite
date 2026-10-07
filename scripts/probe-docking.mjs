@@ -1546,5 +1546,113 @@ check(
 		`${pitched.belowSample.hits ? ` — at ${JSON.stringify(pitched.belowSample.where)}` : ""}`,
 );
 
+// Node #745: fly generated refineries in four systems, one page per case.
+// Seeds pin every pooled form; never mutate a station's drawn form in place.
+// The approach, berth reservation and launch all go through Game's protocol.
+for (const [seed, formId] of [
+	[1, "a"],
+	[28, "b"],
+	[2, "c"],
+	[4, "d"],
+]) {
+	const refineryPage = await browser.newPage({
+		viewport: { width: 900, height: 620 },
+	});
+	watch(refineryPage);
+	await refineryPage.goto(gameUrl(ORIGIN, { seed }), { waitUntil: "load" });
+	await bootedGame(refineryPage);
+	const run = await refineryPage.evaluate(() => {
+		const g = window.__seelite;
+		const station = g.world.system.contents.stations.find(
+			(s) => s.type === "refinery",
+		);
+		if (!station) return { missing: true };
+		const id = station.id;
+		const snap = g.dockingSnapshot(id);
+		const body = g.world.system.byId.get(id);
+		const dt = g.units.MAX_DT;
+		g.resetDock();
+		g.regime = "normal";
+		g.rates = { pitch: 0, yaw: 0, roll: 0 };
+		g.setThrottle(0);
+		g.world.ship.pos = {
+			x: body.pos.x + snap.axis.x * (snap.planeKm + 3.2),
+			y: body.pos.y + snap.axis.y * (snap.planeKm + 3.2),
+			z: body.pos.z + snap.axis.z * (snap.planeKm + 3.2),
+		};
+		g.world.ship.vel = { ...g.stationVelocity(id) };
+		g.setAttitude(
+			{ x: -snap.axis.x, y: -snap.axis.y, z: -snap.axis.z },
+			snap.basis.up,
+		);
+		g.targetId = id;
+		g.step(dt);
+		g.render(0);
+		if (!g.hasDockingComputer)
+			g.commander = {
+				...g.commander,
+				ownedEquipment: [...g.commander.ownedEquipment, g.dockingComputerName],
+			};
+		const impacts = g.collisionImpacts;
+		g.requestDockingClearance();
+		g.toggleDockingComputer();
+		for (let t = 0; t < 200; t += dt) {
+			g.step(dt);
+			if (g.dockingSnapshot(id).dockPhase === "docked") break;
+		}
+		const parked = g.dockingSnapshot(id);
+		g.render(0);
+		const docked = parked.dockPhase === "docked";
+		let launched = false;
+		if (docked) {
+			for (let t = 0; t < 200; t += dt) {
+				if (g.dockingSnapshot(id).dockPhase === "docked")
+					launched = g.launch() || launched;
+				g.step(dt);
+				// A held launch can be promoted by Game's retry during the step.
+				launched = g.dockingSnapshot(id).dockPhase === "launching" || launched;
+				if (g.dockingSnapshot(id).dockPhase === "flying") break;
+			}
+		}
+		const outside = g.dockingSnapshot(id);
+		const rangeBefore = outside.axialKm;
+		for (let t = 0; t < 10; t += dt) g.step(dt);
+		g.render(0);
+		const away = g.dockingSnapshot(id);
+		return {
+			formId: station.formId,
+			system: g.world.system.record.index,
+			docked,
+			berth: parked.berthId,
+			entry: parked.lastEntry?.docked,
+			launched,
+			phase: away.dockPhase,
+			planeKm: away.planeKm,
+			axialKm: away.axialKm,
+			distanceGainedKm: away.axialKm - rangeBefore,
+			impacts: g.collisionImpacts - impacts,
+			refusal: parked.computerRefusal,
+		};
+	});
+	check(
+		`seed ${seed} generates refinery ${formId} and docks at a berth`,
+		run.formId === formId &&
+			run.docked &&
+			run.entry === true &&
+			Boolean(run.berth),
+		JSON.stringify(run),
+	);
+	check(
+		`refinery ${formId} launches and flies clear without contact`,
+		run.launched &&
+			run.phase === "flying" &&
+			run.axialKm > run.planeKm &&
+			run.distanceGainedKm > 0 &&
+			run.impacts === 0,
+		JSON.stringify(run),
+	);
+	await refineryPage.close();
+}
+
 await browser.close();
 exit();
