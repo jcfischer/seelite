@@ -419,16 +419,16 @@ describe("a star is a point whose brightness is its light (#719)", () => {
 			.replace(/float (\w+)\(float (\w+)\)/g, "function $1($2)")
 			.replace(/(?<![.\w])(min|max|sqrt)\(/g, "Math.$1(");
 		const glsl = new Function(
-			`${js}; return { starIntensity, starSpread, starHalo, STAR_MARGIN_PX };`,
+			`${js}; return { starIntensity, starHalo, starSpritePx, starCoreFrac };`,
 		)();
 		for (const size of sizes) {
 			const ts = starPoint(size, scale, core);
 			const intensity = glsl.starIntensity(size * scale, core);
+			const spritePx = glsl.starSpritePx(intensity, core);
 			expect(intensity).toBeCloseTo(ts.intensity, 12);
 			expect(glsl.starHalo(intensity)).toBeCloseTo(ts.halo, 12);
-			expect(
-				core * glsl.starSpread(intensity) + glsl.STAR_MARGIN_PX,
-			).toBeCloseTo(ts.spritePx, 12);
+			expect(spritePx).toBeCloseTo(ts.spritePx, 12);
+			expect(glsl.starCoreFrac(core, spritePx)).toBeCloseTo(ts.coreFrac, 12);
 		}
 	});
 
@@ -445,9 +445,16 @@ describe("a star is a point whose brightness is its light (#719)", () => {
 	});
 
 	test("brightness carries the light the old disc delivered: (size × scale)²", () => {
-		const a = starPoint(0.004, scale, core);
-		const b = starPoint(0.008, scale, core);
-		expect(b.intensity / a.intensity).toBeCloseTo(4, 9);
+		// At the shipped canvas, and at a small one where coreMinPx holds the
+		// core: per canvas, brightness still goes as the square of the size.
+		for (const height of [1800, 600]) {
+			const s = height * STAR_PIXEL_SCALE;
+			const c = starCorePx(height);
+			const a = starPoint(0.002, s, c);
+			const b = starPoint(0.004, s, c);
+			expect(b.intensity).toBeLessThan(STAR_POINT.hdrCap);
+			expect(b.intensity / a.intensity).toBeCloseTo(4, 9);
+		}
 	});
 
 	test("the brightest stars are capped, not grown past the halo's reach", () => {

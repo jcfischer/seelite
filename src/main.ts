@@ -5210,8 +5210,8 @@ class Game {
 					// every frame, so every star is exactly BACKDROP_RADIUS away and
 					// attenuating by depth would only add rounding. The margin round
 					// the core keeps its falloff from being cut square.
-					float spritePx = uCorePx * starSpread(vIntensity) + STAR_MARGIN_PX;
-					vCoreFrac = (uCorePx + STAR_MARGIN_PX) / spritePx;
+					float spritePx = starSpritePx(vIntensity, uCorePx);
+					vCoreFrac = starCoreFrac(uCorePx, spritePx);
 					vHalo = starHalo(vIntensity);
 					gl_PointSize = spritePx;
 					gl_Position = projectionMatrix * view;
@@ -5228,8 +5228,11 @@ class Game {
 					// runs 0..1, so r is 0 at the centre and 1 at the edge.
 					float r = length(gl_PointCoord - vec2(0.5)) * 2.0;
 					float rc = r / vCoreFrac;
+					// The halo fades to zero before the sprite's edge: at the cap
+					// exp(-4) alone left it above the discard there, which cut the
+					// brightest halos square.
 					float light = exp(-8.0 * rc * rc) * vIntensity
-						+ vHalo * exp(-4.0 * r * r);
+						+ vHalo * exp(-4.0 * r * r) * smoothstep(1.0, 0.8, r);
 					if (light <= 0.004) discard;
 					// Alpha 1 under the material's additive blending: the light is
 					// added to what is behind it and never covers it.

@@ -401,9 +401,11 @@ export const STAR_PIXEL_SCALE = 0.35;
  * the bright layer read as large orange discs. Now every star is a core
  * `coreScale` of the canvas height across, and the light the disc delivered,
  * `(size × pixelScale)²`, is the core's intensity at `fluxGain`. Above 1 the
- * core is HDR, capped at `hdrCap`, and the excess goes into a small coloured
- * halo up to `spreadMax` extra core widths, so the bright layer still reads as
- * brighter than the field (#434) without growing a disc.
+ * core is HDR, capped at `hdrCap`. Light above 1 also adds a small coloured
+ * halo, up to `spreadMax` extra core widths, so the bright layer still reads as
+ * brighter than the field (#434) without growing a disc. The halo is added
+ * light, not light moved out of the core, and every star above the cap draws
+ * the same: this is a look set by eye, not a photometric model.
  *
  * The dials were set by eye on the view sheet. The rule is written once, as
  * GLSL in `STAR_POINT_GLSL`, which the star shader includes;
@@ -439,6 +441,12 @@ float starSpread(float intensity) {
 }
 float starHalo(float intensity) {
 	return ${glslFloat(STAR_POINT.haloWeight)} * max(0.0, intensity - 1.0) / ${glslFloat(STAR_POINT.hdrCap)};
+}
+float starSpritePx(float intensity, float corePx) {
+	return corePx * starSpread(intensity) + STAR_MARGIN_PX;
+}
+float starCoreFrac(float corePx, float spritePx) {
+	return (corePx + STAR_MARGIN_PX) / spritePx;
 }
 `;
 
