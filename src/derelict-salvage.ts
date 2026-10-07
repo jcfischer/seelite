@@ -3,7 +3,7 @@ import { scoops } from "./raider-wreck";
 import {
 	type CommanderState,
 	commanderHold,
-	scoopCargo,
+	recoverWreckCargo,
 } from "./station-commerce";
 import { type DerelictRow, PLAYER_SALVAGE } from "./world-state";
 import type { Vec3 } from "./vec3";
@@ -35,7 +35,7 @@ export function scoopWreckContainer(
 		);
 	const recovery =
 		item.kind === "good"
-			? scoopCargo(commander, item.id, item.left, entrustedT)
+			? recoverWreckCargo(commander, item.id, item.left, entrustedT)
 			: {
 					tonnes: item.left,
 					commander: {

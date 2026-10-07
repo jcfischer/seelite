@@ -258,10 +258,9 @@ const withCargo = (
 
 /**
  * Take what fits of a scooped canister into the hold (#324 part d), or refuse
- * it when the hold has no room. A raider's canister is a
+ * it when the hold has no room. Tonne goods only. A raider's canister is a
  * tonne; an ordinary carrier's holds a whole manifest line (civilian-combat H11),
  * so this takes whole tonnes up to the room left and returns how many.
- * Native kg/g quantities do not spend hold tonnes, just as at the till.
  */
 export function scoopCargo(
 	commander: CommanderState,
@@ -271,11 +270,32 @@ export function scoopCargo(
 	entrustedT: number,
 ): { accepted: boolean; tonnes: number; commander: CommanderState } {
 	const good = commodity(commodityName);
+	if (good.unit !== "t") return { accepted: false, tonnes: 0, commander };
 	// What fits, in whole tonnes: a canister of a manifest line can hold more
 	// than the hold has room for, and the rest stays in it (civilian-combat H11).
 	const hold = commanderHold(commander, entrustedT);
 	const room = Math.floor(hold.capacityT - hold.usedT);
-	const took = Math.max(0, good.unit === "t" ? Math.min(tonnes, room) : tonnes);
+	const took = Math.max(0, Math.min(tonnes, room));
+	if (took <= 0) return { accepted: false, tonnes: 0, commander };
+	return {
+		accepted: true,
+		tonnes: took,
+		commander: withCargo(commander, good, took),
+	};
+}
+
+/** Wreck cargo retains its native quantity. Kg/g goods spend no tonne space;
+ * ordinary canisters still use the tonne-only `scoopCargo` rule. */
+export function recoverWreckCargo(
+	commander: CommanderState,
+	commodityName: string,
+	amount: number,
+	entrustedT: number,
+): { accepted: boolean; tonnes: number; commander: CommanderState } {
+	const good = commodity(commodityName);
+	if (good.unit === "t")
+		return scoopCargo(commander, commodityName, amount, entrustedT);
+	const took = Math.max(0, amount);
 	if (took <= 0) return { accepted: false, tonnes: 0, commander };
 	return {
 		accepted: true,

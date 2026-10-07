@@ -44,6 +44,7 @@ import { liveDerelicts, derelictReadings } from "../src/long-range-scanner";
 import { applyHoldEvent, holdingsAfterDeath } from "../src/holdings";
 import {
 	scoopCargo,
+	recoverWreckCargo,
 	commanderHold,
 	type CommanderState,
 } from "../src/station-commerce";
@@ -94,18 +95,20 @@ test("Holdings returns the restored commander beside the dying inventory's wreck
 	}
 });
 
-test("scoopCargo takes native kg/g units even with a full hold and Holdings updates their purchase basis", () => {
+test("wreck recovery takes native kg/g units with a full hold and updates basis while ordinary canisters refuse", () => {
 	const full = {
 		...dying.state,
-		cargo: { Food: 20, Gold: 2, "Gem-Stones": 3 },
+		cargo: { Food: 20, Gold: 2, Platinum: 4, "Gem-Stones": 3 },
 	};
-	for (const good of ["Gold", "Gem-Stones"]) {
-		const scooped = scoopCargo(full, good, 12, 0);
+	for (const good of ["Gold", "Platinum", "Gem-Stones"] as const) {
+		const refused = scoopCargo(full, good, 12, 0);
+		expect(refused.accepted).toBe(false);
+		expect(refused.commander).toBe(full);
+		expect(refused.tonnes).toBe(0);
+		const scooped = recoverWreckCargo(full, good, 12, 0);
 		expect(scooped.accepted).toBe(true);
 		expect(scooped.tonnes).toBe(12);
-		expect(scooped.commander.cargo[good]).toBe(
-			full.cargo[good as "Gold" | "Gem-Stones"] + 12,
-		);
+		expect(scooped.commander.cargo[good]).toBe(full.cargo[good] + 12);
 		expect(commanderHold(scooped.commander, 0).usedT).toBe(20);
 		const world = worldAfterDeath(
 			{ ...newWorld(47), gameTime: 10 },
@@ -120,7 +123,7 @@ test("scoopCargo takes native kg/g units even with a full hold and Holdings upda
 			ladders: {
 				...dying.ladders,
 				basis: {
-					[good]: { units: full.cargo[good as "Gold" | "Gem-Stones"], cr: 30 },
+					[good]: { units: full.cargo[good], cr: 30 },
 				},
 			},
 			ladderPending: emptyPending(),

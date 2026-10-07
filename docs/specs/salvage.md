@@ -246,6 +246,8 @@ Gold, Platinum and Gem-Stones recover in their native kg/g quantities and, as
 ordinary trade already does, consume no tonne hold space. The shared row's
 `tonnes` and `left` fields carry native units for those three goods; all other
 goods and all fittings remain tonnes.
+This native-unit recovery belongs to wreck containers only; ordinary drifting
+canisters retain their tonne-only scoop rule.
 
 `tests/death-wreck.test.ts` covers the roll, save, placement and recovery law.
 `scripts/probe-death-wreck.mjs` covers the real death/reload, painted wreck and

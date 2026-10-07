@@ -21,9 +21,12 @@ placement, discovery and fitting policy.
 | `npm run check:wiring` | Pass |
 | `git diff --check` | Pass |
 | `npm run probe:one -- death-wreck` | Pass: real death/reload, death-point row, immediate contact, painted hull pixels and live scoop into the saved hold |
-| Affected `death`, `derelict`, `system-sweep`, `save` probes | All pass through the canonical GPU runner |
+| Round 2 affected `death`, `derelict`, `system-sweep` probes | Pass through the canonical GPU runner |
+| Round 2 selected `save` probe | 36/37; IndexedDB connection-upgrade check failed, cause unestablished |
+| Round 2 solo `save` rerun | Pass with no source changes; does not erase the selected-run failure |
+| Round 3 affected `death-wreck`, `derelict`, `raider-consequence` probes | 3/3 pass through the canonical GPU runner; partial run |
 
-The fifteen death-wreck headless tests cover deterministic item draws, list-order
+The death-wreck headless tests cover deterministic item draws, list-order
 and sibling-inventory invariance, per-item survival counts over 1,000 deaths,
 entrusted-lot exclusion for both death causes, replacement across galaxies,
 no expiry, frame placement and station clearance, partial tonne recovery,
@@ -57,6 +60,23 @@ system-sweep. Its save probe passed 36/37 checks but failed the IndexedDB
 connection-upgrade row at a reported peak load of 63.5. After `npm test`
 finished, `npm run probe:one -- save` passed alone (peak load 22.9), with no
 source changes between runs. The failure's cause was not established.
+
+Round 3 restores the pre-node tonne-only rule for ordinary drifting canisters.
+Native kg/g recovery now uses the explicit `recoverWreckCargo` path from the
+wreck scoop only. Regression checks cover ordinary kg/g refusals with an empty
+or full hold, and full-hold wreck recovery of Gold, Platinum and Gem-Stones
+with the purchase basis preserved. `npm test` passed 5,566 tests in 303 files;
+build, format, lint, launcher wiring and whitespace checks passed.
+
+The round 3 selector again requested the whole catalog because the branch
+changes shared probe infrastructure. The worker contract limits this lane to
+affected probes: the runner received `PROBE_SELECTION=1` and exactly
+`probe-death-wreck.mjs,probe-derelict.mjs,probe-raider-consequence.mjs` in
+`PROBE_FILES`, with `PROBE_CONCURRENCY=1`. The sandboxed launch failed before
+any probe ran; the retry with Chromium launch permissions passed all three
+on ANGLE Metal / Apple M1 Pro, peak load 11.7. The other 92 probes were not run.
+Round 3 does not replace the round 2 save evidence or establish its failed
+check's cause.
 
 The full browser suite, review, principal approval and
 `cp-seelite-death-wreck` remain delivery gates owned by the supervisor and

@@ -480,7 +480,7 @@ describe("a canister scoop", () => {
 	/**
 	 * `Game`'s scoop callback returns what went aboard as the hold's gain in
 	 * that good. That equals `scoopCargo`'s own quantity: whole tonnes up to
-	 * the hold room, or native kg/g units without spending tonne capacity.
+	 * the hold room; ordinary canisters refuse kg/g goods.
 	 */
 	test("what the hold gains is what scoopCargo took", () => {
 		const capacity = holdOf(holdings()).capacityT;
@@ -489,6 +489,9 @@ describe("a canister scoop", () => {
 			[holdings({ cargo: { Food: capacity - 2 } }), "Food", 5],
 			[holdings(), "Gold", 1],
 			[holdings({ cargo: { Food: capacity } }), "Food", 1],
+			[holdings({ cargo: { Food: capacity } }), "Gold", 1],
+			[holdings(), "Gem-Stones", 1],
+			[holdings(), "Platinum", 1],
 		];
 		for (const [start, commodity, tonnes] of cases) {
 			const out = applyHoldEvent(start, newWorld(1), {
@@ -508,10 +511,10 @@ describe("a canister scoop", () => {
 			expect(gained).toBe(took.tonnes);
 			expect(out.holdings === start).toBe(!took.accepted);
 		}
-		// Full and partial tonne takes, a native kilogram take and a full-hold refusal.
+		// Full and partial tonne takes; kg/g goods and a full hold refuse.
 		expect(
 			cases.map(([h, c, t]) => scoopCargo(h.commander, c, t, 0).tonnes),
-		).toEqual([3, 2, 1, 0]);
+		).toEqual([3, 2, 0, 0, 0, 0, 0]);
 	});
 
 	test("a full hold leaves the canister in space and the holdings as they were", () => {
