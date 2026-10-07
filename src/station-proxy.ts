@@ -518,6 +518,185 @@ function shipyardGantryProxy(): StationProxy {
 }
 
 // ---------------------------------------------------------------------------
+// Refinery A–C — rock, plant and radiator wings
+// ---------------------------------------------------------------------------
+
+/** The three flat panels and spine of each authored radiator wing. The
+ * rotation is about Z; these boxes bound each panel separately rather than
+ * turning the gaps between wings into a solid envelope. */
+function refineryRadiators(
+	span: number,
+	wings: readonly (readonly [number, number])[],
+): ProxyBox[] {
+	const boxes: Bounds[] = [];
+	for (const [tilt, z] of wings) {
+		const c = Math.cos(tilt);
+		const s = Math.sin(tilt);
+		const panel = (
+			x: number,
+			hx: number,
+			hy: number,
+			cz: number,
+			hz: number,
+		) => {
+			const dx = Math.abs(c) * hx + Math.abs(s) * hy;
+			const dy = Math.abs(s) * hx + Math.abs(c) * hy;
+			boxes.push({
+				x0: x * c - dx,
+				x1: x * c + dx,
+				y0: x * s - dy,
+				y1: x * s + dy,
+				z0: cz - hz,
+				z1: cz + hz,
+			});
+		};
+		panel(span * 0.225, span * 0.225, span * 0.07, z, span * 0.07);
+		panel(span * 0.46, span * 0.05, span * 0.03, z, span * 0.53);
+		for (const i of [-1, 0, 1])
+			panel(
+				span * 0.82,
+				span * 0.45,
+				span * 0.015,
+				z + i * span * 0.46,
+				span * 0.21,
+			);
+	}
+	return cutAround(boxes, [corridorHole("refinery")]);
+}
+
+/** The Warren's carved rock, terraces, loading arm and two vent banks.
+ * The spherical body ends below the landing well; flank capsules carry the
+ * rock's equatorial lumps. The terraces and deck are cut round the same well
+ * as the Works, without changing the role's aperture or berth catalogue. */
+function refineryWarrenProxy(): StationProxy {
+	const r = STATION_GEOMETRY.refinery.coreRadiusKm;
+	const plane = STATION_GEOMETRY.refinery.aperturePlaneKm;
+	const rock = sphere({ x: 0, y: 0, z: -0.16 }, 0.4);
+	const plant = cutAround(
+		[
+			axial(r * 0.78, r * 0.78 * 0.86, r * 0.5, r * 0.94),
+			axial(0.22, 0.22, plane - 0.045, plane + 0.03),
+			{ x0: -0.16, x1: 0.3, y0: -0.25, y1: -0.15, z0: 0.04, z1: 0.25 },
+			{ x0: 0.18, x1: 0.54, y0: 0.18, y1: 0.32, z0: 0.06, z1: 0.37 },
+			{ x0: -0.46, x1: -0.1, y0: 0.25, y1: 0.4, z0: 0.06, z1: 0.37 },
+		],
+		[corridorHole("refinery")],
+	);
+	const cranes = [-1, 1].flatMap((side) =>
+		[0, -0.064].map((drop) =>
+			capsule(
+				{ x: side * 0.36, y: 0.18 + drop, z: 0.27 },
+				{ x: side * 0.59, y: 0.4 + drop, z: 0.23 },
+				0.02,
+			),
+		),
+	);
+	const masts = [-0.048, 0.048].map((x) =>
+		capsule({ x, y: 0.38, z: -0.08 }, { x, y: 0.57, z: -0.08 }, 0.02),
+	);
+	return proxyOf([
+		rock,
+		...ring(0.38, -0.04, 0.2),
+		...ring(0.36, 0.16, 0.19),
+		...plant,
+		...cranes,
+		...masts,
+		...refineryRadiators(r * 1.45, [
+			[0.5, 0],
+			[Math.PI - 0.45, -r * 0.5],
+			[Math.PI * 1.42, -r * 0.15],
+		]),
+	]);
+}
+
+/** The Collar's waist band and clamps surround a carved rock. Its boss and
+ * vent banks sit forward of the band; the three radiator wings stay separate. */
+function refineryCollarProxy(): StationProxy {
+	const r = STATION_GEOMETRY.refinery.coreRadiusKm;
+	const plane = STATION_GEOMETRY.refinery.aperturePlaneKm;
+	const major = r * 1.16 * 1.15 + r * 0.15 * 0.55;
+	const body = sphere({ x: 0, y: 0, z: -0.12 }, 0.4);
+	const plant = cutAround(
+		[
+			axial(0.22, 0.22, r * 0.5, plane + 0.03),
+			...[-1, 1].map(
+				(side): Bounds => ({
+					x0: side * major * 0.82 - 0.16,
+					x1: side * major * 0.82 + 0.16,
+					y0: 0.1,
+					y1: 0.25,
+					z0: -0.08,
+					z1: 0.21,
+				}),
+			),
+		],
+		[corridorHole("refinery")],
+	);
+	return proxyOf([
+		body,
+		...ring(0.33, 0.13, 0.19),
+		...ring(major, 0, r * 0.15 + 0.015, 20),
+		...plant,
+		...refineryRadiators(r * 1.4, [
+			[Math.PI * 0.42, -r * 0.3],
+			[Math.PI * 1.1, -r * 0.3],
+			[Math.PI * 1.62, -r * 0.3],
+		]),
+	]);
+}
+
+/** The Spar: an axial processing shaft, three tanks at its aft end, and a
+ * carved rock around the shaft. The forward cap carries the same landing deck as the
+ * other refinery forms; separate wing boxes preserve the space between them. */
+function refinerySparProxy(): StationProxy {
+	const r = STATION_GEOMETRY.refinery.coreRadiusKm;
+	const plane = STATION_GEOMETRY.refinery.aperturePlaneKm;
+	const rock = sphere({ x: 0, y: 0, z: -0.12 }, 0.38);
+	const shaft = cutAround(
+		[
+			axial(0.13, 0.13, -r * 1.7, r * 0.9),
+			axial(0.22, 0.22, r * 0.9, plane + 0.03),
+			...[-1, 1].map(
+				(side): Bounds => ({
+					x0: side * r * 0.8 - 0.15,
+					x1: side * r * 0.8 + 0.15,
+					y0: 0.05,
+					y1: 0.2,
+					z0: 0.17,
+					z1: 0.43,
+				}),
+			),
+		],
+		[corridorHole("refinery")],
+	);
+	const tanks = [0, 1, 2].map((i) => {
+		const theta = (i / 3) * Math.PI * 2;
+		const x = Math.cos(theta) * r * 0.42;
+		const y = Math.sin(theta) * r * 0.42;
+		const z = -r * 1.42 + i * r * 0.06;
+		return boxOf({
+			x0: x - r * 0.19,
+			x1: x + r * 0.19,
+			y0: y - r * 0.19,
+			y1: y + r * 0.19,
+			z0: z - r * 0.24,
+			z1: z + r * 0.24,
+		});
+	});
+	return proxyOf([
+		rock,
+		...ring(0.3, 0.08, 0.19),
+		...shaft,
+		...tanks,
+		...refineryRadiators(r * 1.4, [
+			[0.4, -r * 0.75],
+			[Math.PI - 0.4, -r * 0.75],
+			[Math.PI * 1.5, -r * 0.75],
+		]),
+	]);
+}
+
+// ---------------------------------------------------------------------------
 // Refinery D — Works (solved form)
 // ---------------------------------------------------------------------------
 
@@ -718,7 +897,18 @@ export function stationProxy(
 		case "shipyard":
 			return form === "a" ? shipyardGantryProxy() : null;
 		case "refinery":
-			return form === "d" ? refineryWorksProxy(assemblySeed) : null;
+			switch (form) {
+				case "a":
+					return refineryWarrenProxy();
+				case "b":
+					return refineryCollarProxy();
+				case "c":
+					return refinerySparProxy();
+				case "d":
+					return refineryWorksProxy(assemblySeed);
+				default:
+					return null;
+			}
 		case "outpost":
 			return form === "e" ? outpostSalvageProxy() : null;
 		default: {
