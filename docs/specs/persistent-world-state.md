@@ -30,16 +30,16 @@ not make those links compatible.
 - Display names, positions, array order, and raw seeds are not identities.
 
 The reserved `localCarrierId` **`commander-wreck`** (node #705) extends this
-namespace outside the generated carrier-slot roster. Its envelope-relative key
+namespace outside the generated carrier-slot roster. Its envelope-relative key <!-- glossary-ignore: slot -->
 is `systemIndex:commander-wreck`, with the containing galaxy supplying
 `galaxyIndex`. It identifies the commander's one own-loss wreck in that save,
-not a seeded slot, objective delta or destroyed traffic row. Knowledge and
+not a seeded slot, objective delta or destroyed traffic row. Knowledge and <!-- glossary-ignore: slot -->
 system sweeps use the same key. A new death can replace it in another system or
 galaxy; §7 owns the one-row storage bound and `salvage.md` owns its contents
 and placement. Reserving this id changes no generated carrier and needs no
 generator-version bump.
 
-For generated carriers, the key names a **carrier slot**, not one lifetime of an object. The original carrier has `instanceOrdinal = 0`; each completed replacement increments that ordinal. A replacement can later be disabled, destroyed, or repaired without losing the fact that it is a replacement.
+For generated carriers, the key names a **carrier slot**, not one lifetime of an object. The original carrier has `instanceOrdinal = 0`; each completed replacement increments that ordinal. A replacement can later be disabled, destroyed, or repaired without losing the fact that it is a replacement. <!-- glossary-ignore: slot -->
 
 A recovery process gets a deterministic identity from its carrier key, causal-episode ordinal, and process kind. Recovery actors are derived from that descriptor rather than added to an unbounded persistent actor registry.
 
