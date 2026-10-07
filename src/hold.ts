@@ -60,6 +60,7 @@ export interface HoldLine {
 	 * next field on a consignment would have added a seventh.
 	 */
 	job?: HoldJob;
+	kind?: "fitting";
 }
 
 /** Where a consignment has to end up, and which end applies. */
@@ -137,6 +138,14 @@ export function holdSummary(
 			owner: "pilot",
 		});
 	}
+	for (const item of commander.recoveredFittings ?? [])
+		lines.push({
+			goodName: item.id,
+			amount: item.tonnes,
+			unit: "t",
+			owner: "pilot",
+			kind: "fitting",
+		});
 	for (const lot of Object.values(requests.entrustedByLotId)) {
 		const request = requests.byId[lot.offerId];
 		// A journal fault, not a drawable state: the lot map and `byId` are
@@ -210,6 +219,7 @@ export const aboardForOffer = (
 		.filter(
 			(line) =>
 				line.unit === "t" &&
+				line.kind !== "fitting" &&
 				(offer.entrusted
 					? line.owner === "requester" && line.job?.offerId === offer.id
 					: line.owner === "pilot" && line.goodName === offer.goodName),
@@ -229,7 +239,7 @@ export const pilotGoods = (
 ): Readonly<Record<string, number>> =>
 	Object.fromEntries(
 		hold.lines
-			.filter((line) => line.owner === "pilot")
+			.filter((line) => line.owner === "pilot" && line.kind !== "fitting")
 			.map((line) => [line.goodName, line.amount]),
 	);
 

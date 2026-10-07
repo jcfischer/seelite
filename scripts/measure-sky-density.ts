@@ -826,11 +826,11 @@ function modeCore(): void {
  * expressions a reader can check by hand.
  *
  * **The pixel conversion takes its dial as an argument, deliberately.**
- * `STAR_PIXEL_SCALE` lives in `main.ts`, behind a Three.js import this headless
- * tier may not cross; a copy of it in this file would be a fourth copy of a
- * renderer dial and one that goes stale the day the renderer moves. So a px row
- * names the canvas height and the scale it was taken at, and the world-unit rows
- * beside it need neither.
+ * `STAR_PIXEL_SCALE` lived in `main.ts` behind a Three.js import when this was
+ * written; since #719 it is exported from `backdrop.ts`. A copy of it in this
+ * file would still be a second copy of a renderer dial, so a px row names the
+ * canvas height and the scale it was taken at, and the world-unit rows beside
+ * it need neither.
  */
 /** The band the shipped law replaced: `0.006 + 0.05·u⁶`.
  *
@@ -1039,8 +1039,8 @@ function reportSizeLaw(
 	// *written down* is one that goes stale silently: #431's first round quoted
 	// two of them against constants that had already moved. The last row is in
 	// world units rather than pixels on purpose — a px figure would need
-	// `STAR_PIXEL_SCALE` from `main.ts`, and a script reading a renderer dial
-	// across the Three.js boundary is how a documented px figure goes stale.
+	// `STAR_PIXEL_SCALE` (in `backdrop.ts` since #719), and since #719 a px
+	// size is no longer what a star is drawn at: the shader draws a fixed core.
 	const closestLy = fig("closest pair ly", census.minDistance, 3);
 	// What the closest pair would have been drawn as had the ceiling not caught
 	// it: the size law's own arithmetic, with the clamp taken out.

@@ -1,0 +1,9 @@
+A 1958 Otto Rubner double bass, pizzicato, played and mapped by D. Smolken
+
+Double bass (1958 Otto Rubner), pizzicato, by D. Smolken, CC0 1.0
+Licence: CC0-1.0 — https://creativecommons.org/publicdomain/zero/1.0/
+Source: https://github.com/sfzinstruments/dsmolken.double-bass/tree/c2985eb647109d2a8f30a70071e3e163339d7396
+
+The files here are excerpts of that work: each sample cut from its attack to
+a few seconds, faded, summed to mono, scaled by -1.02 dB for
+the whole set, and encoded as Ogg Opus at 64 kbit/s.

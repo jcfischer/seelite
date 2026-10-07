@@ -54,8 +54,9 @@ export function stepSweep(
 	return { charge: completed ? null : charge, completed };
 }
 
-/** Named areas, never point geometry. The system-space fallback is deliberately
- * broad: derelict carrier rows have no generated placement until the wreck build. */
+/** Named areas, never point geometry. A wreck reads as system-space: node
+ * #732 gave a derelict a pose beside a planet or moon (`derelictPose`), but the
+ * sweep does not name that body; it is deliberately broad. */
 export type SweepRegion =
 	| { kind: "station-surrounds"; stationId: string }
 	| { kind: "system-space" };

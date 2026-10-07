@@ -34,6 +34,24 @@ export const CHANGELOG: readonly ChangelogEntry[] = [
 		text: "The Long-Range Scanner can sweep a system from its own console tab, recording regions to search with a sensor source and an age.",
 		node: 482,
 	},
+	// Node #732: proposed copy; principal approval and main date pending.
+	{
+		date: "2026-10-07",
+		text: "Dark derelicts carry tethered salvage: scoop their cargo and recover fittings to sell or fit at a station.",
+		node: 732,
+	},
+	// Node #745: proposed copy; principal approval and the main date are pending.
+	{
+		date: "2026-10-07",
+		text: "Refineries now vary between systems: land on a terraced rock, a collar around an asteroid, a processing spar, or a quarried industrial plant.",
+		node: 745,
+	},
+	// Node #719: copy approved by the principal on 2026-10-07.
+	{
+		date: "2026-10-07",
+		text: "Stars are now small, sharp points of light, and the nearby systems you can fly to glow a little brighter than the rest.",
+		node: 719,
+	},
 	// Node #728: copy approved by the principal on 2026-10-06 (#231's rig B).
 	{
 		date: "2026-10-06",

@@ -66,12 +66,30 @@
  */
 
 import * as THREE from "three";
+import { derelictSlots } from "./derelict-slots";
+import { derelictPose, tetherPose, tetherOffset } from "./derelict";
+import {
+	buildDerelictMesh,
+	disposeDerelict,
+	buildWreckContainer,
+	disposeWreckContainer,
+} from "./derelict-mesh";
+import { effectiveDerelict, materializeDerelict } from "./world-state";
+import { EQUIPMENT } from "./market";
+import { gateRefusal } from "./ladder";
 import { EffectComposer } from "three/addons/postprocessing/EffectComposer.js";
 import { GTAOPass } from "three/addons/postprocessing/GTAOPass.js";
 import { RenderPass } from "three/addons/postprocessing/RenderPass.js";
 import { UnrealBloomPass } from "three/addons/postprocessing/UnrealBloomPass.js";
 
-import { faintField, systemField, type StarField } from "./backdrop";
+import {
+	faintField,
+	STAR_PIXEL_SCALE,
+	STAR_POINT_GLSL,
+	starCorePx,
+	systemField,
+	type StarField,
+} from "./backdrop";
 import {
 	SeeliteOutputPass,
 	VIGNETTE_MAX,
@@ -582,6 +600,7 @@ import {
 import { buildRelayMesh } from "./relay-mesh";
 import type { RelayCue } from "./relay-cue";
 import {
+	scoops,
 	CANISTER_RADIUS_KM,
 	CARGO_CONTACT_COLOUR,
 	CARGO_CONTACT_CSS,
@@ -1205,16 +1224,6 @@ const {
 	massiveLayerFor,
 	scaleFor,
 } = units;
-
-/** Multiplier from a star's stored size to pixels, against the canvas height.
- *  Point sizes are in *pixels* and a fixed value would read differently on
- *  every display, so it scales with the buffer.
- *
- *  The count that used to sit beside it moved to `backdrop.ts` as `FAINT_COUNT`
- *  with #431: it is a density of the invented population, and the module that
- *  owns that population's size band — the band this one must stay under — is the
- *  one place both halves of the rule can be read together. */
-const STAR_PIXEL_SCALE = 0.35;
 
 /**
  * The raw `?hull=` value, read once at load (#554, #557).
@@ -2234,6 +2243,10 @@ class Game {
 	/** The bloom pass, for the perf panel to switch. */
 	get bloom() {
 		return this.bloomPass ?? null;
+	}
+	/** Quality owns the default; the perf panel may override it until reset. */
+	get bloomDefault() {
+		return LIGHT_RIG.quality[this.settings.value.quality].bloom;
 	}
 	/** Near: ships, stations, anything at 1:1 kilometres. */
 	readonly nearScene = new THREE.Scene();
@@ -3288,6 +3301,14 @@ class Game {
 	/** A destroyed raider's cargo canisters in flight (#324 part d). Session
 	 *  state: they expire in five minutes and are not saved. */
 	canisters: Canister[] = [];
+	private derelictMeshes = new Map<
+		string,
+		{
+			root: THREE.Group;
+			containers: Map<number, THREE.Mesh>;
+			layer: "near" | "far";
+		}
+	>();
 	/**
 	 * The canister fade itself, reachable from a measurement.
 	 *
@@ -4473,6 +4494,14 @@ class Game {
 
 		this.buildBackdrop();
 		this.buildBodies();
+		// Construct before buildLights applies the stored quality. The composer
+		// adds it in its original position below; Low is off from frame one.
+		this.bloomPass = new UnrealBloomPass(
+			bloomResolution(),
+			EXPOSURE.bloom.strength,
+			EXPOSURE.bloom.radius,
+			EXPOSURE.bloom.threshold,
+		);
 		this.buildLights();
 		this.buildShip();
 		this.buildCockpit();
@@ -4687,12 +4716,6 @@ class Game {
 		// multi-pass blur at up to 2x device pixel ratio is a fixed cost every
 		// frame whatever is on screen, so it is the first thing to price against
 		// a shader that is only expensive when a body fills the view.
-		this.bloomPass = new UnrealBloomPass(
-			bloomResolution(),
-			EXPOSURE.bloom.strength,
-			EXPOSURE.bloom.radius,
-			EXPOSURE.bloom.threshold,
-		);
 		this.composer.addPass(this.bloomPass);
 		// Kept as a field for the same reason `bloomPass` is: the vignette is set
 		// per frame from the view, and the dither has a control arm a probe
@@ -4823,6 +4846,12 @@ class Game {
 					// tampered press, and it buys nothing.
 					const hull = purchasableHullNamed(name);
 					if (hull) this.consolePress(this.transactStation({ type, hull }));
+					return;
+				}
+				if (type === "fit-recovered" || type === "sell-recovered") {
+					this.consolePress(
+						this.transactStation({ type, index: Number(name) }),
+					);
 					return;
 				}
 				const action: StationAction =
@@ -5199,6 +5228,7 @@ class Game {
 				uPixelScale: {
 					value: this.renderer.domElement.height * STAR_PIXEL_SCALE,
 				},
+				uCorePx: { value: this.canvasStarCorePx() },
 				// #537's cruise light shift: zero is the untouched sky.
 				uBeta: { value: 0 },
 				uHeading: { value: new THREE.Vector3(0, 0, -1) },
@@ -5207,8 +5237,13 @@ class Game {
 				attribute float aSize;
 				attribute vec3 aColor;
 				uniform float uPixelScale;
+				uniform float uCorePx;
 				varying vec3 vColor;
+				varying float vIntensity;
+				varying float vCoreFrac;
+				varying float vHalo;
 				${LIGHT_SHIFT_GLSL}
+				${STAR_POINT_GLSL}
 				void main() {
 					vec3 color = aColor;
 					float size = aSize;
@@ -5224,22 +5259,42 @@ class Game {
 						view = viewMatrix * world;
 					}
 					vColor = color;
+					// #719: the rule is STAR_POINT_GLSL from backdrop.ts, shared with
+					// starPoint there and tested against it. The light the old disc
+					// delivered, (size × scale)², goes into a fixed core, and what
+					// the core cannot hold into a small halo.
+					vIntensity = starIntensity(size * uPixelScale, uCorePx);
 					// No distance attenuation: the sphere is re-centred on the camera
 					// every frame, so every star is exactly BACKDROP_RADIUS away and
-					// attenuating by depth would only add rounding.
-					gl_PointSize = max(1.0, size * uPixelScale);
+					// attenuating by depth would only add rounding. The margin round
+					// the core keeps its falloff from being cut square.
+					float spritePx = starSpritePx(vIntensity, uCorePx);
+					vCoreFrac = starCoreFrac(uCorePx, spritePx);
+					vHalo = starHalo(vIntensity);
+					gl_PointSize = spritePx;
 					gl_Position = projectionMatrix * view;
 				}
 			`,
 			fragmentShader: /* glsl */ `
 				varying vec3 vColor;
+				varying float vIntensity;
+				varying float vCoreFrac;
+				varying float vHalo;
 				void main() {
-					// A soft disc rather than a square. gl_PointCoord runs 0..1 across
-					// the sprite, so this is the distance from its centre.
+					// A tight Gaussian core of fixed pixel size, and for the bright
+					// tail a soft halo across the rest of the sprite. gl_PointCoord
+					// runs 0..1, so r is 0 at the centre and 1 at the edge.
 					float r = length(gl_PointCoord - vec2(0.5)) * 2.0;
-					float a = smoothstep(1.0, 0.0, r);
-					if (a <= 0.004) discard;
-					gl_FragColor = vec4(vColor, a);
+					float rc = r / vCoreFrac;
+					// The halo fades to zero before the sprite's edge: at the cap
+					// exp(-4) alone left it above the discard there, which cut the
+					// brightest halos square.
+					float light = exp(-8.0 * rc * rc) * vIntensity
+						+ vHalo * exp(-4.0 * r * r) * smoothstep(1.0, 0.8, r);
+					if (light <= 0.004) discard;
+					// Alpha 1 under the material's additive blending: the light is
+					// added to what is behind it and never covers it.
+					gl_FragColor = vec4(vColor * light, 1.0);
 				}
 			`,
 			transparent: true,
@@ -5944,7 +5999,7 @@ class Game {
 	}
 
 	/**
-	 * Put the environment on the scenes, or take it off — #98's quality gate.
+	 * Apply the lighting row, including bloom — #98's quality gate.
 	 *
 	 * Assignment rather than a rebuild, so the setting is live: the player sees
 	 * the same frame with and without the term, which is the only way to judge
@@ -5953,6 +6008,7 @@ class Game {
 	 */
 	private applyQuality() {
 		const mode = LIGHT_RIG.quality[this.settings.value.quality];
+		this.bloomPass.enabled = this.bloomDefault;
 		for (const { scene } of this.layerLights)
 			scene.environment = mode.environment ? this.environmentMap : null;
 		this.renderer.toneMappingExposure = mode.exposure;
@@ -12522,6 +12578,9 @@ class Game {
 		this.weaponSoundState = QUIET_WEAPONS;
 		this.weaponMix = SILENT_WEAPONS;
 		this.canisters = [];
+		for (const drawn of this.derelictMeshes.values())
+			this.disposeDrawnDerelict(drawn);
+		this.derelictMeshes.clear();
 		// And their contacts, now, rather than on the next step: `performJump`
 		// refreshes the scanner before any step runs, so the arrival frame would
 		// otherwise carry the old system's canister blips — and a reset while
@@ -13027,9 +13086,155 @@ class Game {
 		this.carrierCondition(key).condition === "operational";
 
 	/**
-	 * Drift the canisters, expire the old ones, and scoop any the ship passes
-	 * close and slow (#324 part d). A full hold leaves the canister in space.
+	 * Live wreck instances at one clock; neither a lead nor a discovery write.
 	 */
+	derelictsAt(at = this.world.gameTime) {
+		return derelictSlots(
+			this.world.system.record.index,
+			this.world.system.record.government,
+		).flatMap(({ key }) => {
+			const row = effectiveDerelict(
+				this.commerceWorld,
+				this.world.galaxy.index,
+				key,
+				at,
+			);
+			return row.condition === "destroyed"
+				? [
+						{
+							key,
+							row,
+							pose: derelictPose(
+								this.world.system,
+								key,
+								row.instanceOrdinal,
+								at,
+							),
+						},
+					]
+				: [];
+		});
+	}
+	private derelictSolids(dt: number) {
+		return this.derelictsAt().map(({ key, row, pose: start }) => {
+			const end = derelictPose(
+				this.world.system,
+				key,
+				row.instanceOrdinal,
+				this.world.gameTime + dt,
+			);
+			return {
+				id: key,
+				motion: {
+					primitives: this.hullSolidOf(start.hull),
+					start: shipPose(start.pos, start.nose, start.up),
+					end: shipPose(end.pos, end.nose, end.up),
+					velStart: start.vel,
+					velEnd: end.vel,
+				},
+			};
+		});
+	}
+	private stepDerelictScoops() {
+		if (this.regime === "cruise" || this.dock.phase !== "flying") return;
+		for (const { key, row, pose } of this.derelictsAt())
+			for (let i = 0; i < row.containers.length; i++) {
+				const container = tetherPose(pose, i);
+				if (!scoops(container, this.world.ship)) continue;
+				const outcome = applyHoldEvent(this.holdings(), this.commerceWorld, {
+					kind: "wreck-scoop",
+					key,
+					galaxyIndex: this.world.galaxy.index,
+					instanceOrdinal: row.instanceOrdinal,
+					containerIndex: i,
+					at: this.world.gameTime,
+					container,
+					ship: this.world.ship,
+				});
+				this.adoptHoldings(outcome);
+				const tried = outcome.signals.wreckScoop;
+				if (!tried) continue;
+				const event = {
+					...tried,
+					// Notice dedupe key only; the wreck stays on its persisted row.
+					canisterId: key + ":" + row.instanceOrdinal + ":" + i,
+					accepted: tried.tonnes > 0,
+				};
+				const next = nextScoopNotice(this.scoop, event);
+				this.scoop = next.notice;
+				this.lastExit = tried.refusal ?? scoopExit(event);
+				if (next.cue) this.play(next.cue);
+			}
+	}
+	private disposeDrawnDerelict(drawn: {
+		root: THREE.Group;
+		containers: Map<number, THREE.Mesh>;
+	}) {
+		disposeDerelict(drawn.root);
+		for (const mesh of drawn.containers.values()) disposeWreckContainer(mesh);
+	}
+	private updateDerelictPresentation(camPos: Vec3) {
+		const live = new Set<string>();
+		for (const { key, row, pose } of this.derelictsAt()) {
+			const id = key + ":" + row.instanceOrdinal;
+			live.add(id);
+			let drawn = this.derelictMeshes.get(id);
+			const distance = length(sub(pose.pos, camPos));
+			if (!drawn) {
+				drawn = {
+					root: buildDerelictMesh(pose.hull),
+					containers: new Map(),
+					layer: "far",
+				};
+				this.derelictMeshes.set(id, drawn);
+			}
+			const layer = layerFor(drawn.layer, distance);
+			drawn.layer = layer;
+			const k = scaleFor(layer);
+			(layer === "near" ? this.nearScene : this.farScene).add(drawn.root);
+			const relative = sub(pose.pos, camPos);
+			drawn.root.position.set(relative.x * k, relative.y * k, relative.z * k);
+			drawn.root.scale.setScalar(k);
+			drawn.root.quaternion.copy(
+				this.shotRotation({ forward: pose.nose, up: pose.up } as ShotCamera),
+			);
+			// Seeing the instance pins its contents, without writing discovery.
+			if (distance < NEAR_FAR_KM && !row.stored)
+				this.adoptWorld(
+					materializeDerelict(
+						this.commerceWorld,
+						this.world.galaxy.index,
+						key,
+						this.world.gameTime,
+					),
+				);
+			for (let i = 0; i < row.containers.length; i++) {
+				const item = row.containers[i];
+				let mesh = drawn.containers.get(i);
+				if (item.left <= 0) {
+					if (mesh) {
+						disposeWreckContainer(mesh);
+						drawn.containers.delete(i);
+					}
+					continue;
+				}
+				if (!mesh) {
+					mesh = buildWreckContainer(tetherOffset(pose.hull, i));
+					drawn.containers.set(i, mesh);
+				}
+				const c = tetherPose(pose, i);
+				const p = sub(c.pos, camPos);
+				mesh.position.set(p.x * k, p.y * k, p.z * k);
+				mesh.scale.setScalar(k);
+				(layer === "near" ? this.nearScene : this.farScene).add(mesh);
+			}
+		}
+		for (const [id, drawn] of this.derelictMeshes)
+			if (!live.has(id)) {
+				this.disposeDrawnDerelict(drawn);
+				this.derelictMeshes.delete(id);
+			}
+	}
 	private stepCargoCanisters(dt: number) {
 		if (this.canisters.length === 0) return;
 		// `stepCanisters` owns the order (scoop, then drift); this owns the hold.
@@ -14680,6 +14885,7 @@ class Game {
 		this.stepRelay(shot, dt);
 		this.stepTrafficEngagements(dt, shot, solids);
 		this.stepCargoCanisters(dt);
+		this.stepDerelictScoops();
 		this.syncCargoContacts();
 		// #48 deliberately couples no combat entity to the world yet: this is a
 		// flyable balance rig over the shared flight loop, not production combat.
@@ -14927,7 +15133,9 @@ class Game {
 			const fleet = this.fleetOf(dt, { player: false });
 			const fromTime = this.world.gameTime;
 			const starts =
-				fleet.length > 0 ? worldStarts(this.world.system, fromTime) : null;
+				fleet.length > 0
+					? worldStarts(this.world.system, fromTime, this.derelictSolids(dt))
+					: null;
 			meterFlick(this.turnInCruise(dt, hands));
 			this.stepCruise(dt, contactTargetAtFrameStart);
 			if (starts)
@@ -14995,6 +15203,7 @@ class Game {
 			this.planesOf(before),
 			// C4b, §6 (node #664): every other ship this step can meet.
 			fleet,
+			this.derelictSolids(dt),
 		);
 		// §3: every surface met lands through the one damage path, so a hull at
 		// zero dies the way a kill by fire does.
@@ -15688,6 +15897,7 @@ class Game {
 		);
 		this.updateEncounterPresentation(camPos);
 		this.updateRelayPresentation(camPos);
+		this.updateDerelictPresentation(camPos);
 		this.updateTenderPresentation(camPos);
 		this.presentDirector(camPos);
 
@@ -17269,6 +17479,15 @@ class Game {
 				.filter((line) => line.owner === "pilot")
 				.map((line) => `${line.goodName} ${line.amount}`),
 			ownedEquipment: this.commander.ownedEquipment,
+			recoveredFittings: (this.commander.recoveredFittings ?? []).map(
+				(item, index) => ({
+					...item,
+					index,
+					priceCr: EQUIPMENT.find((e) => e.name === item.id)!.priceCr,
+					locked: gateRefusal(item.id, this.rungs()),
+					owned: this.commander.ownedEquipment.includes(item.id),
+				}),
+			),
 			fuelLy: this.commander.fuelLy,
 			fuelCapacityLy: this.fuelCapacityLy,
 			revision: this.stationConsoleRevision,
@@ -20174,6 +20393,12 @@ class Game {
 		this.gtaoPass?.setSize(ao.x, ao.y);
 		this.starMaterial.uniforms.uPixelScale.value =
 			this.renderer.domElement.height * STAR_PIXEL_SCALE;
+		this.starMaterial.uniforms.uCorePx.value = this.canvasStarCorePx();
+	}
+
+	/** #719: the star core's diameter in pixels (`starCorePx` in backdrop.ts). */
+	private canvasStarCorePx(): number {
+		return starCorePx(this.renderer.domElement.height);
 	}
 }
 
@@ -20916,6 +21141,7 @@ if (postcard) {
 			const perf = mountPerfPanel({
 				scenes: [game.nearScene, game.approachScene, game.farScene],
 				bloom: game.bloom,
+				bloomDefault: () => game.bloomDefault,
 				attribution,
 				occlusion: () => game.occlusionState,
 				adaptive: () => game.adaptiveDiagnostics(),

@@ -12,9 +12,10 @@ the watched station's surrounds. Active derelict slots produce one salvage
 reading each. Operational raider slots produce **one** pressure region, around
 the outpost where one exists, otherwise in system space. Disabled ordinary
 carriers and repair tenders are never sweep sources. Derelict hull placement and
-capital content are separate builds: until their generated frames exist,
-derelict regions conservatively name unsettled system space, with no invented
-position. The sweep does not author their placement or their close cues.
+capital content are separate builds. Node #732 gives a derelict a pose beside a
+planet or moon (`derelictPose`), but a derelict region still names system
+space, with no body and no position. The sweep does not author their placement
+or their close cues.
 
 `CommanderRecord.sweepReadings` holds **Sweep readings** (`SweepReading`): a stable id
 names the galaxy, system and source; the row records `own-sensors`, observation
@@ -35,10 +36,10 @@ refresh it. A past reading remains even if its source disappears; the next
 completed sweep replaces only this galaxy/system's readings, including
 absences, as `salvage.md` S22 requires.
 
-Save schema 10 adds a required sweep ledger, empty or populated. Versions 2–9
+Save schema 11 adds a required sweep ledger, empty or populated. Versions 2–10
 retain their original integrity check and migrate to an empty ledger. Those
-versions refuse an assembled sweep field; version 10 refuses a missing ledger.
-Older readers refuse version 10 instead of silently dropping readings.
+versions refuse an assembled sweep field; version 11 refuses a missing ledger.
+Older readers refuse version 11 instead of silently dropping readings.
 Nonempty provenance is validated
 against the named galaxy/system and enabled generated subject, with finite clock bounds,
 unique identities, supported region kinds and a fixed field set. Malformed

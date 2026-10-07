@@ -8,8 +8,12 @@ origin (#604, `src/bundle-fetch.ts`): its manifest when the question is asked
 and on each start with the voice on, and its model when the player
 chooses it — once per version where the browser keeps it, at every start in
 a private window — and YouTube's player for the home trailer, loaded only when
-the player presses its poster (click-to-play, 2026-10-03, `src/public-site.ts`).
-The voice is the one trained asset; the map's Constraints carry both rulings.
+the player presses its poster (click-to-play, 2026-10-03, `src/public-site.ts`)
+— and the music's instrument samples, from this site's own origin: a set's
+manifest and only the recordings a loaded song plays, each once a session
+(2026-10-06, `src/music-samples.ts`). The voice is
+the one trained asset and the samples the one recorded one; the map's
+Constraints carry the rulings.
 
 ## Read the map first
 
@@ -747,4 +751,13 @@ Constraints: `node scripts/fetch-voice-model.mjs` puts it in
 gates without it. `public/social-preview.jpg` (#714) is the one tracked image:
 a frame of the Docking Waltz film, which the game's own code drew, served only
 for the link previews a crawler fetches. No page and no game loads it, and
-`src/social-preview.ts` says where it came from.
+`src/social-preview.ts` says where it came from. The music's instrument
+samples are the other exception, by the principal's ruling of 2026-10-06 in
+the map's Constraints — open-licensed (CC0 or CC BY) recordings, chosen by
+ear in blind auditions: `scripts/fetch-music-samples.mjs` prepares them into
+`public/music-samples/` and records each file's source and checksum, and the
+chosen sets are **tracked in Git LFS** (`.gitattributes`). This repository
+sets the LFS filters locally and installs no LFS hooks, because
+`core.hooksPath` here is global, so **run `git lfs push origin <branch>`
+before `git push`** on a branch that adds or changes a sample, or the remote
+holds pointers with no objects. The deploy pulls them only when it publishes.

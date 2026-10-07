@@ -35,7 +35,7 @@ import {
 
 describe("node #482 system sweep", () => {
 	test("the new provenance has its own envelope revision", () => {
-		expect(SAVE_SCHEMA_VERSION).toBe(10);
+		expect(SAVE_SCHEMA_VERSION).toBe(11);
 		const world = newWorld(56);
 		const raw = serializeSave({
 			world,
@@ -43,7 +43,7 @@ describe("node #482 system sweep", () => {
 		}) as { commander: Record<string, unknown> };
 		expect(raw.commander.sweepReadings).toEqual([]);
 	});
-	test("a verified v9 migrates empty without editing its original; a truncated v10 refuses", () => {
+	test("a verified v10 migrates empty without editing its original; a truncated v11 refuses", () => {
 		const current = serializeSave({
 			world: newWorld(56),
 			commander: newCommanderRecord("courier"),
@@ -54,7 +54,7 @@ describe("node #482 system sweep", () => {
 			return { ...body, integrity: fnv1a(JSON.stringify(body)) };
 		};
 		const old = rehash((body) => {
-			body.saveSchemaVersion = 9;
+			body.saveSchemaVersion = 10;
 			delete body.commander.sweepReadings;
 		});
 		const original = JSON.stringify(old);
@@ -70,7 +70,7 @@ describe("node #482 system sweep", () => {
 		expect(() =>
 			parseSave(
 				rehash((body) => {
-					body.saveSchemaVersion = 9;
+					body.saveSchemaVersion = 10;
 				}),
 			),
 		).toThrow("sweepReadings");

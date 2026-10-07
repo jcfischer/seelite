@@ -29,6 +29,8 @@ const MAIN = await Bun.file(new URL("../src/main.ts", import.meta.url)).text();
 /** Every writer `world-state.ts` exports that returns a new `WorldState`. */
 const WRITERS = [
 	"advanceTo",
+	"materializeDerelict",
+	"scoopDerelict",
 	"applyTransition",
 	"materializeDue",
 	"observe",

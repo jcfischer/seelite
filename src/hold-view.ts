@@ -71,6 +71,8 @@ const valueCells = (line: HoldLine, bids: HoldBids): string => {
 
 /** Whose the goods are, and for a consignment, where they have to end up. */
 const ownerCell = (line: HoldLine): string => {
+	if (line.kind === "fitting")
+		return "<small data-live-hold-owner-note>yours · fitting · Equipment tab</small>";
 	if (line.owner === "pilot")
 		return "<small data-live-hold-owner-note>yours · sellable</small>";
 	const note =

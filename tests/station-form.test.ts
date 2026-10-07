@@ -14,10 +14,9 @@
  * (`tests/station.test.ts`, `tests/station-orbits.test.ts`,
  * `tests/cold-rocky-moons.test.ts`) hold that no existing stream moved.
  *
- * Today each pool holds the one form its role already flew, so a row over the
- * shipped pools reaches a pool of one trivially. The rows that must bite —
- * reach, uniformity, independence of the slots — therefore also run on a // glossary-ignore: slot
- * stand-in pool of several members through the same draw.
+ * The refinery ships four forms (node #745); the other roles still hold one.
+ * Reach, uniformity and slot independence also run on stand-in pools of // glossary-ignore: slot
+ * several members through the same draw.
  */
 
 import { describe, expect, test } from "bun:test";
@@ -110,14 +109,14 @@ describe("the pools", () => {
 		);
 	});
 
-	test("the shipped pools are the forms each role already flew (node #717 waits on the principal's sheet)", () => {
+	test("the refinery pool holds every built form in id order (node #745)", () => {
 		// Pinned so that growing a pool is a deliberate edit with a red row
-		// beside it, not a side effect: the node asks for a yes per pool, and
-		// every member then owes a proxy, fixtures and a view-set pass.
+		// beside it, not a side effect. Node #744 ratified every built form,
+		// uniformly drawn; this node grows only the refinery pool.
 		expect(STATION_FORM_POOL).toEqual({
 			trade: ["a"],
 			shipyard: ["a"],
-			refinery: ["d"],
+			refinery: ["a", "b", "c", "d"],
 		});
 	});
 });
@@ -177,10 +176,8 @@ describe("the draw", () => {
 	});
 
 	test("within a pool the draw is uniform", () => {
-		// Equal shares: whether a pool should lean toward its familiar form is
-		// the principal's open question on node #717, and until it is answered
-		// the draw takes no side. 512 draws a role. Two holds, because one
-		// cannot carry the name: a share is held to ±40% of its expectation,
+		// Equal shares, ratified by node #744. 512 draws a role. Two holds,
+		// because one cannot carry the name: a share is held to ±40% of its expectation,
 		// which a draw stuck on one member fails by far, and the counts'
 		// chi-square is held under its p = 0.001 critical value, which a draw
 		// leaning on one member fails where every share is still inside ±40%.
@@ -307,6 +304,21 @@ describe("the draw", () => {
 });
 
 describe("the mesh, the reach and the proxy read the one field", () => {
+	test("a generated refinery with an unsupported form still refuses its proxy", () => {
+		for (const g of GALAXIES) {
+			for (const record of generateGalaxy(WORLD_SEED, g).systems) {
+				const station = generateContents(record).stations.find(
+					(s) => s.type === "refinery",
+				);
+				if (!station) continue;
+				expect(() => stationProxyOf({ ...station, formId: "e" })).toThrow(
+					"refinery form e has no proxy",
+				);
+				return;
+			}
+		}
+		throw new Error("the corpus generates no refinery");
+	});
 	const first = (() => {
 		const contents = generateContents(generateGalaxy(WORLD_SEED, 0).systems[0]);
 		const station = contents.stations[0];

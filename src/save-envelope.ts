@@ -47,7 +47,7 @@ import {
 	seededLadderRecord,
 	serializeLadders,
 } from "./ladder";
-import { COMMODITIES } from "./market";
+import { COMMODITIES, EQUIPMENT } from "./market";
 import { fnv1a } from "./rng";
 import {
 	GALAXY_COUNT,
@@ -131,10 +131,15 @@ import {
  * record may carry them. Every older record loads with every slot unvisited,
  * on its derived schedule; one that carries a row was assembled rather than
  * saved, and `parseSave` refuses it.
+ *
+ * **10 adds unfitted salvage items to the commander hold (node #732).** Each
+ * names a fitting and its carried tonnes; older records load with none.
+ *
+ * **11 adds the commander's own-sensor sweep ledger (node #482).** Older
+ * records migrate empty; older readers must refuse rather than discard
+ * learned rows.
  */
-/** 10 adds the commander's own-sensor sweep ledger (node #482). Older saves
- * migrate empty; older readers must refuse rather than discard learned rows. */
-export const SAVE_SCHEMA_VERSION = 10;
+export const SAVE_SCHEMA_VERSION = 11;
 /**
  * Versions this parser still reads but no longer writes.
  *
@@ -160,8 +165,16 @@ export const SAVE_SCHEMA_VERSION = 10;
  *
  * **8 is every save written between #619 and node #731**, so it is the
  * population a player most likely holds.
+ *
+ * **9 is every save written between nodes #731 and #732.** Its derelict
+ * remainder rows stay intact; it predates recovered fitting hold items.
+ *
+ * **10 is every save written between nodes #732 and #482.** It carries
+ * recovered fittings and predates the sweep ledger.
  */
-export const LEGACY_SAVE_SCHEMA_VERSIONS = [2, 3, 4, 5, 6, 7, 8, 9] as const;
+export const LEGACY_SAVE_SCHEMA_VERSIONS = [
+	2, 3, 4, 5, 6, 7, 8, 9, 10,
+] as const;
 
 /**
  * What a legacy version may not contain.
@@ -188,6 +201,7 @@ export const LEGACY_SCHEMA_FORBIDS: Readonly<
 	7: ["sweepReadings"],
 	8: ["sweepReadings"],
 	9: ["sweepReadings"],
+	10: ["sweepReadings"],
 };
 
 /**
@@ -439,6 +453,13 @@ const canonicalCommander = (record: CommanderRecord) => {
 			credits: record.state.credits,
 			cargo,
 			ownedEquipment: [...record.state.ownedEquipment].sort(),
+			...(record.state.recoveredFittings?.length
+				? {
+						recoveredFittings: record.state.recoveredFittings.map((item) => ({
+							...item,
+						})),
+					}
+				: {}),
 			fuelLy: record.state.fuelLy,
 			hull: record.state.hull,
 		},
@@ -594,6 +615,28 @@ const parseCommander = (
 			fail(`commander.state.cargo: ${name} is not a commodity`);
 		cargo[name] = amount as number;
 	}
+	const recovered = state.recoveredFittings;
+	if (version < 10 && recovered !== undefined)
+		fail(
+			"commander.state: recoveredFittings is not a version " +
+				version +
+				" field",
+		);
+	if (
+		recovered !== undefined &&
+		(!Array.isArray(recovered) ||
+			recovered.some(
+				(item) =>
+					!item ||
+					typeof item !== "object" ||
+					!EQUIPMENT.some((e) => e.name === item.id) ||
+					!Number.isInteger(item.tonnes) ||
+					item.tonnes <= 0,
+			))
+	)
+		fail(
+			"commander.state: recoveredFittings is not a list of fitting items with positive whole tonnes",
+		);
 	const equipment = state.ownedEquipment;
 	if (!Array.isArray(equipment) || equipment.some((e) => typeof e !== "string"))
 		fail("commander.state: ownedEquipment is not a list of names");
@@ -685,6 +728,14 @@ const parseCommander = (
 			credits: num(state, "credits", "commander.state"),
 			cargo,
 			ownedEquipment: [...(equipment as string[])].sort(),
+			...(Array.isArray(recovered) && recovered.length
+				? {
+						recoveredFittings: recovered.map((item) => ({
+							id: item.id as string,
+							tonnes: item.tonnes as number,
+						})),
+					}
+				: {}),
 			// **Clamped to the hull's tank, not refused** (#554). Every save
 			// before it filled to the courier's 7 LY whatever the hull, so a
 			// short-tank commander's record carries more fuel than the hull
@@ -770,8 +821,8 @@ export function parseSave(raw: unknown): SaveEnvelope {
 		Object.fromEntries(world.galaxies.map((g, i) => [i, g.visited])),
 	);
 	const sweepReadings = asObject(o.commander, "commander").sweepReadings;
-	if ((version as number) >= 10 && sweepReadings === undefined)
-		fail("commander.sweepReadings is missing from saveSchemaVersion 10");
+	if ((version as number) >= 11 && sweepReadings === undefined)
+		fail("commander.sweepReadings is missing from saveSchemaVersion 11");
 	commander.sweepReadings = parseSweepReadings(sweepReadings, world);
 	const offers = [
 		...Object.values(commander.requests.byId).map((r) => r.terms),

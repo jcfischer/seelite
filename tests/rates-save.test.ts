@@ -37,8 +37,8 @@ const tumbling = () => {
 
 describe("#619 — the rates in the save", () => {
 	test("rates arrived at 8, which is still read beside 7", () => {
-		// Node #731 took 9 for the world's derelict rows.
-		expect(SAVE_SCHEMA_VERSION).toBe(10);
+		// Node #731 took 9 for the world's derelict rows, #732 10 and #482 11.
+		expect(SAVE_SCHEMA_VERSION).toBe(11);
 		expect(LEGACY_SAVE_SCHEMA_VERSIONS).toContain(7);
 		expect(LEGACY_SAVE_SCHEMA_VERSIONS).toContain(8);
 	});

@@ -482,6 +482,10 @@ _Avoid_: Tutorial (there is no separate mode), onboarding (in the pilot's copy)
 **Opening**:
 A new game's first flight, filmed: the rift forming, the arrival from witchspace, a fly-past and, for a guided game, the planet fly-by, the station approach and the dock into its **First day**. A real flight in the sim, watched or skipped into the same state, with #530 D6's placement as its fallback. `src/opening.ts` owns the script and which shot shows it, `src/opening-camera.ts` how each shot is framed, and #530's resolution the decisions.
 _Avoid_: Intro, cutscene (it is not a film; the flight is the game's)
+A song's first **section** is named `intro` in every score — the waltz and
+each of its **Versions** — which is music's word for it and never this
+flight. A reviewer flagging that has found the alias rule firing on a
+section name.
 
 **Station control**:
 The voice that speaks to a guided pilot on the docked station console and in the Communications log during the first day. `docs/specs/first-useful-day.md` D3 owns where it speaks and when it stops.
@@ -657,7 +661,7 @@ _Avoid_: Touchdown deck, apron, exterior pad
 **Berth**:
 Where one ship parks in a station interior, addressed as **interior face × depth band** — deck, port wall, starboard wall or overhead; near or deep. In a bay the face is the wall the berth is bolted to; on a landing pad there is one surface, so the face is the *side of the landing lane* the berth stands on and every berth is in the `near` band, because a deck has no depth. Its **family** (open deck pad, wall-side berth, recessed service cradle) changes presentation and parked pose and never the docking interaction. It accepts a hull when its declared clear length, beam and height contain that hull's envelope; there is no S/M/L class. `docs/specs/docking.md` §13.2 owns the catalogue, the fit predicate and the allocation.
 _Avoid_: Docking bay, slot, pad, landing pad
-These are aliases for **a berth** and nothing else. **The scope note is the point of the entry, not a footnote to it**, and it has grown once already: the repo has had to correct one alias that read as banning an English word. "Slot" is an aperture kind — `aperture.kind === "slot"` is code. "Pad" now carries **four** senses that are not this one — a berth *family* (open deck pad), the surface a ship settles onto (`berth-pad`), since #165 an aperture kind and the interior presentation that goes with it (**Landing pad** above), and since #283 the **game controller**: `src/gamepad.ts`, `PadFrame`, `padIntents`, `docs/gamepad.md`. That fourth one arrived as a *copy* — the module is byte-identical to seekolous's and says "pad" throughout — so it could not have been renamed here even if the sense were worth renaming, and it is not: a controller is what every player calls a pad. Since #90 "slot" carries a **second** sense of its own: a **save slot** is one named save — `src/save-store.ts`, `CommanderCatalog.slots()`, `exportSlot`, and #89's D6, which ratified the word. It holds two records, `live` and `lastDocked`, and has nothing to do with where a ship parks. The player never sees the word: what a player sees of a save slot is a **Commander** (below). The first version of this sentence claimed the two senses "do not meet in any one file", and the change that introduced it refuted that six lines apart: `releaseBerth` and `saveDirty` sit in the same block of `main.ts`, because releasing a berth is exactly when a save stops describing a parked ship. They meet, and it does not matter — the disambiguation is the word beside it, and `saveSlot`, `exportSlot` and `SaveRecordKind` never read as a place to park. Since #619 "slot" has a **third** sense: a **vent slot** (`VENT_SLOTS`, `VentSlot`) names a thruster's place on a hull, one vocabulary across the roster (`flight-model.md` §3.4.1). It is never a berth and never an aperture. And **Carrier slot** above is a fourth: the row a carrier is filed under — a **Raider slot**, the relay's, one of a station's **Traffic roster** — with `raider-slots.ts` and `relay-slot.ts` named for it; a berth is where a ship parks, a Carrier slot is what its save row is filed under. A reviewer flagging one of those has found the alias rule firing on an English word rather than on a synonym for a berth. <!-- glossary-ignore: slot, pad, landing pad -->
+These are aliases for **a berth** and nothing else. **The scope note is the point of the entry, not a footnote to it**, and it has grown once already: the repo has had to correct one alias that read as banning an English word. "Slot" is an aperture kind — `aperture.kind === "slot"` is code. "Pad" now carries **four** senses that are not this one — a berth *family* (open deck pad), the surface a ship settles onto (`berth-pad`), since #165 an aperture kind and the interior presentation that goes with it (**Landing pad** above), and since #283 the **game controller**: `src/gamepad.ts`, `PadFrame`, `padIntents`, `docs/gamepad.md`. That fourth one arrived as a *copy* — the module is byte-identical to seekolous's and says "pad" throughout — so it could not have been renamed here even if the sense were worth renaming, and it is not: a controller is what every player calls a pad. Since #90 "slot" carries a **second** sense of its own: a **save slot** is one named save — `src/save-store.ts`, `CommanderCatalog.slots()`, `exportSlot`, and #89's D6, which ratified the word. It holds two records, `live` and `lastDocked`, and has nothing to do with where a ship parks. The player never sees the word: what a player sees of a save slot is a **Commander** (below). The first version of this sentence claimed the two senses "do not meet in any one file", and the change that introduced it refuted that six lines apart: `releaseBerth` and `saveDirty` sit in the same block of `main.ts`, because releasing a berth is exactly when a save stops describing a parked ship. They meet, and it does not matter — the disambiguation is the word beside it, and `saveSlot`, `exportSlot` and `SaveRecordKind` never read as a place to park. Since #619 "slot" has a **third** sense: a **vent slot** (`VENT_SLOTS`, `VentSlot`) names a thruster's place on a hull, one vocabulary across the roster (`flight-model.md` §3.4.1). It is never a berth and never an aperture. And **Carrier slot** above is a fourth: the row a carrier is filed under — a **Raider slot**, the relay's, one of a station's **Traffic roster** — with `raider-slots.ts` and `relay-slot.ts` named for it; a berth is where a ship parks, a Carrier slot is what its save row is filed under. The music has its own senses of both: `pad` is a synth voice (`VoiceKind`, #543) and a part of sustained chords in a score, and a **song slot** (`MUSIC_SONG_SLOTS`) is where the synth holds a loaded song. A reviewer flagging one of those has found the alias rule firing on an English word rather than on a synonym for a berth. <!-- glossary-ignore: slot, pad, landing pad -->
 
 **Eject**:
 The pilot launching the **escape pod**: the held `fly.eject` control (node
@@ -950,9 +954,28 @@ own word and stays.
 Music written as note data in TypeScript — a `Song` of named sections of typed
 note events, with a tempo map, a lilt, and loop and resolve points — which the
 music synth plays at runtime (#543 D2–D3, built in #560). Source, not an asset:
-nothing is downloaded or recorded. The types live in `src/music-score.ts`,
-which imports nothing.
+a score itself downloads and records nothing. A `sampler` part plays a
+**Sample set**, the one recorded material the music may use (below). The types
+live in `src/music-score.ts`, which imports nothing.
 _Avoid_: Track, MIDI file, sequence
+
+**Sample set** (music):
+A folder of recorded instrument notes under `public/music-samples/`, played by
+a score's `sampler` part — CC0 or CC BY, chosen by the principal by ear,
+tracked in Git LFS (map #1's Constraints, 2026-10-06; node #737).
+`scripts/fetch-music-samples.mjs` prepares one from its source, and its
+`manifest.json` names every file's root, velocity layer, size and checksum.
+`Music` fetches only the notes a loaded song plays.
+_Avoid_: Soundfont, sample pack, library
+
+**Version** (of the docking waltz):
+The waltz re-arranged in another genre, one file in
+`src/music-danube-variants/` exporting `VARIANT` — Strauss's notes from
+`music-danube.ts`, on the waltz's contract (an intro, a loop, a `resolve` to a
+cadence) so the director could play it where it plays the waltz (node #737).
+Not a **voicing**: a voicing (`DANUBE_VOICINGS`) changes only the instruments;
+a version may change the meter, the key, the harmony and the band.
+_Avoid_: Remix, cover
 
 **Stem**:
 One part of a score, faded on its own while the song plays (`stem` in

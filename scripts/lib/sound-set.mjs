@@ -1,3 +1,5 @@
+import { readdirSync } from "node:fs";
+
 /**
  * Every cue the engine plays, and how to render one offline in the page
  * (#552, after #542's D7). `probe-audio-cues.mjs` bands what these render to;
@@ -642,6 +644,14 @@ export async function renderInPage({
 									m.danubeSongs ? m.danubeSongs() : { danube: m.BLUE_DANUBE },
 								)
 								.catch(() => ({}))),
+							// The Danube voices' demos, where the served tree has them.
+							...(await import("/src/music-voice-demos.ts")
+								.then((m) => ({ ...m.VOICE_DEMOS, ...m.SAMPLE_DEMOS }))
+								.catch(() => ({}))),
+							// The waltz's alternative versions, where the served tree has them.
+							...(await import("/src/music-danube-variants.ts")
+								.then((m) => m.danubeVariants())
+								.catch(() => ({}))),
 							// #589's classical set-pieces, where the served tree has them.
 							...(await import("/src/music-classical/index.ts")
 								.then((m) => m.CLASSICAL_SONGS)
@@ -713,6 +723,9 @@ export async function renderInPage({
 		while (script.length && script[0][0] === "attach")
 			music.send(script.shift()[1]);
 		await ready;
+		// The sample sets its songs name, decoded and sent (map #1's sample
+		// ruling); an older engine has no sampler and nothing to wait for.
+		if (typeof music.samplesReady === "function") await music.samplesReady();
 		// And applied: an offline render starts without reading the port, so a
 		// held command would otherwise wait for a suspend (`Music.sync`).
 		await music.sync();
@@ -1104,12 +1117,80 @@ export const CLASSICAL_SET = Object.freeze(
 		["borodin-steppes", 63],
 		["rachmaninoff-isle-of-the-dead", 60],
 		["saint-saens-aquarium", 55],
+		// The piano works on the piano (`src/music-classical/piano.ts`).
+		["satie-gymnopedie-1-piano", 70],
+		["satie-gnossienne-1-piano", 95],
+		["debussy-clair-de-lune-piano", 66],
+		["debussy-cathedrale-piano", 70],
 	]).map(([id, seconds]) => ({
 		name: `classical-${id}`,
 		seconds,
 		music: {
 			songs: { [id]: id },
 			script: [[0, { type: "play", id, at: "bar" }]],
+		},
+	})),
+);
+
+/**
+ * The waltz's alternative versions (`src/music-danube-variants/`), a
+ * listening set: `npm run sounds -- --set danube`, or one version with
+ * `--only music-danube-<name>`. No probe bands them. Each is scripted as the
+ * waltz's renders are: a resolve at 96 s, then the cadence — two loops of most
+ * versions, but inside the first loop of one whose loop is long (ambient's is
+ * 96 s, so its seam is not heard here) — and the shortest docking run, its
+ * cadence at 62 s.
+ */
+export const DANUBE_VARIANT_SET = Object.freeze(
+	readdirSync(new URL("../../src/music-danube-variants/", import.meta.url))
+		.filter((f) => f.endsWith(".ts"))
+		.sort()
+		.flatMap((f) => {
+			const id = `danube-${f.slice(0, -3)}`;
+			const tune = (name, seconds, resolveS) => ({
+				name,
+				seconds,
+				music: {
+					songs: { [id]: id },
+					script: [
+						[0, { type: "play", id, at: "bar" }],
+						[resolveS, { type: "resolve", at: "bar" }],
+					],
+				},
+			});
+			return [
+				tune(`music-${id}`, 116, 96),
+				tune(`music-${id}-run-short`, 76, 62),
+			];
+		}),
+);
+
+/**
+ * The Danube voices' demos (`src/music-voice-demos.ts`): a scale and a chord
+ * at three velocities per voice, `npm run sounds -- --set voices`. A
+ * listening set; no probe bands it. Lengths are each demo's bars at 100 BPM
+ * and the reverb's tail.
+ */
+export const VOICE_DEMO_SET = Object.freeze(
+	/** @type {[string, number][]} */ ([
+		["pulse", 54],
+		["epiano", 20],
+		["harpsi", 20],
+		["softsaw", 20],
+		// The same Danube phrase on each piano, sampled and synthesised, and on
+		// the harpsichord voice (map #1's sample ruling): heard side by side.
+		["piano-upright", 17],
+		["piano-grand", 17],
+		// Its tails run to 16 s: room for the last chord to ring out.
+		["piano-grand-rich", 30],
+		["piano-epiano", 17],
+		["harpsi-synth", 17],
+	]).map(([voice, seconds]) => ({
+		name: `voice-demo-${voice}`,
+		seconds,
+		music: {
+			songs: { [`voice-${voice}`]: `voice-${voice}` },
+			script: [[0, { type: "play", id: `voice-${voice}`, at: "bar" }]],
 		},
 	})),
 );
