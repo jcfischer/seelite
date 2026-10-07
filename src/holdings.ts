@@ -26,6 +26,8 @@
  * acted-on offer rather than the board.
  */
 
+import { scoopWreckContainer } from "./derelict";
+import type { Vec3 } from "./vec3";
 import type { CarrierKey } from "./carrier-key";
 import type { DeathCause } from "./death-cost";
 import type { CommanderRecord } from "./save-envelope";
@@ -71,6 +73,8 @@ import {
 	type TransitionEvent,
 	type WorldState,
 	applyTransition,
+	effectiveDerelict,
+	scoopDerelict,
 	setDeficits,
 	visit,
 } from "./world-state";
@@ -115,6 +119,7 @@ export const commanderAfterDeath = (
 			state: {
 				...dock.state,
 				cargo: {},
+				recoveredFittings: undefined,
 				ownedEquipment: dock.state.ownedEquipment.filter(
 					(item) => item !== ESCAPE_POD,
 				),
@@ -173,6 +178,16 @@ export type HoldEvent =
 	  }
 	/** A canister the ship passed close and slow. */
 	| { kind: "scoop"; commodity: string; tonnes: number }
+	| {
+			kind: "wreck-scoop";
+			key: CarrierKey;
+			galaxyIndex: number;
+			instanceOrdinal: number;
+			containerIndex: number;
+			at: number;
+			container: { pos: Vec3; vel: Vec3 };
+			ship: { pos: Vec3; vel: Vec3 };
+	  }
 	/** Any carrier transition (#627 D3). A destroy with the player's
 	 *  provenance is a kill: it pays every accepted Bounty naming the carrier
 	 *  and prices the kill on the combat ladder. Anything else is only the
@@ -489,6 +504,56 @@ function applied(
 			return settle(holdings, world, event);
 		case "market":
 			return trade(holdings, world, event);
+		case "wreck-scoop": {
+			const e = effectiveDerelict(
+				world,
+				event.galaxyIndex,
+				event.key,
+				event.at,
+			);
+			if (
+				e.condition !== "destroyed" ||
+				e.instanceOrdinal !== event.instanceOrdinal
+			)
+				return unchanged(holdings, world);
+			const took = scoopWreckContainer(
+				e,
+				event.containerIndex,
+				holdings.commander,
+				entrustedTonnesAboard(holdings.requests),
+				event.container,
+				event.ship,
+				event.at,
+			);
+			if (!took.tonnes) return unchanged(holdings, world);
+			const item = e.containers[event.containerIndex];
+			return {
+				holdings: {
+					...holdings,
+					commander: took.commander,
+					ladders:
+						item.kind === "good"
+							? {
+									...holdings.ladders,
+									basis: basisAfterScoop(
+										holdings.ladders.basis,
+										item.id,
+										took.tonnes,
+									),
+								}
+							: holdings.ladders,
+				},
+				world: scoopDerelict(
+					world,
+					event.galaxyIndex,
+					event.key,
+					event.containerIndex,
+					took.tonnes,
+					event.at,
+				),
+				signals: QUIET,
+			};
+		}
 		case "scoop":
 			return scoop(holdings, world, event);
 		case "carrier":

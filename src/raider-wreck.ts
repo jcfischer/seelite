@@ -431,7 +431,7 @@ export function stepCanisters(
 
 /** Whether a ship scoops the canister now: close, and slow relative to it. */
 export const scoops = (
-	canister: Canister,
+	canister: { pos: Vec3; vel: Vec3 },
 	ship: { pos: Vec3; vel: Vec3 },
 ): boolean =>
 	length(sub(canister.pos, ship.pos)) <= CANISTER_SCOOP_RADIUS_KM &&

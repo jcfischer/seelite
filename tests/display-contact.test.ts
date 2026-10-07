@@ -371,6 +371,7 @@ function teardownSubject(ejectHold: EjectHold, ejectDown: boolean) {
 				{ id: "cargo-a", commodity: "food", pos: v3(1, 0, 0), vel: v3() },
 			],
 			cargoContacts: new Map(),
+			derelictMeshes: new Map(),
 			contacts: [] as DisplayContact[],
 			// The teardown disengages it (#596); a plain field once took the write.
 			dockingComputer: new DockingComputer(),

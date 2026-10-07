@@ -653,6 +653,8 @@ export const ladderAfterMarket = (
 	before: Purse,
 	after: Purse,
 ): LadderRecord => {
+	if (action.type === "sell-recovered")
+		return bankTrade(record, after.credits - before.credits);
 	if (action.type !== "buy-commodity" && action.type !== "sell-commodity")
 		return record;
 	// Brought into line with the hold first. A guard: a job hand-over reconciles

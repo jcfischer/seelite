@@ -694,6 +694,20 @@ export const PROBE_CATALOG = Object.freeze(
 			],
 		),
 		entry(
+			"probe-derelict.mjs",
+			"Checks dark derelict rendering, body-frame pose, solid hull, persisted partial salvage, full-hold refusal and recovered fitting Equipment actions.",
+			[
+				"derelict",
+				"salvage",
+				"cargo scoop",
+				"fitting",
+				"hold",
+				"Equipment",
+				"save",
+				"collision",
+			],
+		),
+		entry(
 			"probe-raider-consequence.mjs",
 			"Checks live persistence and presentation after a raider kill, including operational condition, wreck, scoop, and revisit.",
 			["raider kill", "world state", "wreck", "cargo scoop", "revisit"],

@@ -26,6 +26,7 @@ export interface ScoopEvent {
 	accepted: boolean;
 	/** Tonnes left in the canister after a partial take (civilian-combat H11). */
 	leftT?: number;
+	freeT?: number;
 }
 
 /**
@@ -35,7 +36,8 @@ export interface ScoopEvent {
  */
 export function scoopNotice(input: ScoopEvent): string {
 	const good = input.commodity.toUpperCase();
-	if (!input.accepted) return `HOLD FULL  ${good} LEFT IN SPACE`;
+	if (!input.accepted)
+		return `HOLD FULL${input.freeT === undefined ? "" : "  " + input.freeT + " t FREE"}  ${good} LEFT IN SPACE`;
 	const left = input.leftT ? `  ${input.leftT} t LEFT` : "";
 	return `SCOOPED  ${input.tonnes} t ${good}${left}`;
 }

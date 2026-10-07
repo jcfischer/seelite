@@ -28,6 +28,12 @@ export type ChangelogEntry = {
 };
 
 export const CHANGELOG: readonly ChangelogEntry[] = [
+	// Node #732: proposed copy; principal approval and main date pending.
+	{
+		date: "2026-10-07",
+		text: "Dark derelicts carry tethered salvage: scoop their cargo and recover fittings to sell or fit at a station.",
+		node: 732,
+	},
 	// Node #728: copy approved by the principal on 2026-10-06 (#231's rig B).
 	{
 		date: "2026-10-06",

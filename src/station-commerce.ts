@@ -34,11 +34,23 @@ import {
 	stationEquipmentScreen,
 } from "./station-console";
 
+export interface RecoveredFitting {
+	id: string;
+	tonnes: number;
+}
+export const recoveredTonnes = (commander: CommanderState): number =>
+	(commander.recoveredFittings ?? []).reduce(
+		(sum, item) => sum + item.tonnes,
+		0,
+	);
+
 export interface CommanderState {
 	credits: number;
 	/** Quantities remain in the commodity's native unit. */
 	cargo: Readonly<Record<string, number>>;
 	ownedEquipment: readonly string[];
+	/** Unfitted salvage items; omitted when empty to preserve older save integrity. */
+	recoveredFittings?: readonly RecoveredFitting[];
 	/**
 	 * The hyperspace tank, light years (#187).
 	 *
@@ -80,6 +92,8 @@ export type StationAction =
 	| { type: "buy-commodity"; commodity: string; quantity?: number }
 	| { type: "sell-commodity"; commodity: string; quantity?: number }
 	| { type: "buy-equipment"; equipment: string }
+	| { type: "fit-recovered"; index: number }
+	| { type: "sell-recovered"; index: number }
 	/**
 	 * Fill the hyperspace tank (#187).
 	 *
@@ -259,7 +273,10 @@ export function scoopCargo(
 	// What fits, in whole tonnes: a canister of a manifest line can hold more
 	// than the hold has room for, and the rest stays in it (civilian-combat H11).
 	const room = Math.floor(
-		holdCapacityT(commander) - heldTonnes(commander.cargo) - entrustedT,
+		holdCapacityT(commander) -
+			heldTonnes(commander.cargo) -
+			recoveredTonnes(commander) -
+			entrustedT,
 	);
 	const took = good.unit === "t" ? Math.max(0, Math.min(tonnes, room)) : 0;
 	if (took <= 0) return { accepted: false, tonnes: 0, commander };
@@ -336,6 +353,45 @@ export function transactAtStation(
 			deficits: input.deficits,
 		};
 	}
+	if (action.type === "fit-recovered" || action.type === "sell-recovered") {
+		const item = Number.isInteger(action.index)
+			? input.commander.recoveredFittings?.[action.index]
+			: undefined;
+		const entry = item && EQUIPMENT.find((e) => e.name === item.id);
+		if (!item || !entry) return rejected(input, "equipment-unavailable");
+		if (action.type === "fit-recovered") {
+			if (input.commander.ownedEquipment.includes(item.id))
+				return rejected(input, "equipment-owned");
+			if (gateRefusal(item.id, input.rungs))
+				return rejected(input, "equipment-locked");
+			if (
+				mountsUsed([...input.commander.ownedEquipment, item.id]) >
+				HULL_SPECS[input.commander.hull].hardpoints
+			)
+				return rejected(input, "hull-mounts");
+		}
+		const kept = input.commander.recoveredFittings!.filter(
+			(_, i) => i !== action.index,
+		);
+		const commander = { ...input.commander };
+		if (kept.length) commander.recoveredFittings = kept;
+		else delete commander.recoveredFittings;
+		return {
+			accepted: true,
+			reason: null,
+			commander: {
+				...commander,
+				credits:
+					commander.credits +
+					(action.type === "sell-recovered" ? entry.priceCr : 0),
+				ownedEquipment:
+					action.type === "fit-recovered"
+						? [...commander.ownedEquipment, item.id]
+						: commander.ownedEquipment,
+			},
+			deficits: input.deficits,
+		};
+	}
 	if (action.type === "buy-equipment") {
 		const entry = availableEquipment(input).find(
 			(item) => item.name === action.equipment,
@@ -384,7 +440,10 @@ export function transactAtStation(
 			return rejected(input, "insufficient-credits");
 		if (
 			good.unit === "t" &&
-			heldTonnes(input.commander.cargo) + input.entrustedT + quantity >
+			heldTonnes(input.commander.cargo) +
+				recoveredTonnes(input.commander) +
+				input.entrustedT +
+				quantity >
 				holdCapacityT(input.commander)
 		)
 			return rejected(input, "cargo-full");
@@ -431,7 +490,7 @@ export const commanderHold = (
 	commander: CommanderState,
 	entrustedT: number,
 ) => ({
-	usedT: heldTonnes(commander.cargo) + entrustedT,
+	usedT: heldTonnes(commander.cargo) + recoveredTonnes(commander) + entrustedT,
 	capacityT: holdCapacityT(commander),
 });
 
@@ -553,7 +612,10 @@ export function hullOffer(
 	// D6: what the new hold can take, and what must go to make it fit.
 	const capacityT = holdCapacityT({ ...commander, hull });
 	let overflowT = Math.ceil(
-		heldTonnes(commander.cargo) + input.entrustedT - capacityT,
+		heldTonnes(commander.cargo) +
+			recoveredTonnes(commander) +
+			input.entrustedT -
+			capacityT,
 	);
 	const sellable = Object.entries(commander.cargo)
 		.map(([name, units]) => ({ good: commodity(name), units }))

@@ -252,6 +252,14 @@ export interface LiveCockpitState {
 		message: string | null;
 		cargo: readonly string[];
 		ownedEquipment: readonly string[];
+		recoveredFittings?: readonly {
+			id: string;
+			tonnes: number;
+			index: number;
+			priceCr: number;
+			locked: { ladder: string; rung: number; name: string } | null;
+			owned: boolean;
+		}[];
 		/** The hyperspace tank, light years, and its capacity (#187) — the Fuel
 		 *  row prints the tank where a unit item prints nothing. */
 		fuelLy: number;
@@ -710,6 +718,8 @@ export class LiveCockpit {
 				(action === "buy-commodity" ||
 					action === "sell-commodity" ||
 					action === "buy-equipment" ||
+					action === "fit-recovered" ||
+					action === "sell-recovered" ||
 					action === "buy-fuel" ||
 					action === "buy-hull")
 			)
@@ -1683,6 +1693,7 @@ export class LiveCockpit {
 						: this.equipment(
 								stationConsole.equipment,
 								stationConsole.ownedEquipment,
+								stationConsole.recoveredFittings ?? [],
 								{
 									ly: stationConsole.fuelLy,
 									capacityLy: stationConsole.fuelCapacityLy,
@@ -1808,8 +1819,47 @@ export class LiveCockpit {
 	private equipment(
 		screen: ConsoleEquipmentScreen,
 		owned: readonly string[],
+		recovered: NonNullable<
+			NonNullable<LiveCockpitState["stationConsole"]>["recoveredFittings"]
+		>,
 		fuel: { ly: number; capacityLy: number },
 	) {
+		const salvaged = recovered
+			.map((item) => {
+				const name = escapeHtml(item.id);
+				const index = String(item.index);
+				const reason = item.locked
+					? "LOCKED · " +
+						item.locked.ladder.toUpperCase() +
+						" " +
+						item.locked.rung +
+						" · " +
+						escapeHtml(item.locked.name)
+					: item.owned
+						? "ALREADY FITTED"
+						: "";
+				const fit = reason
+					? '<span class="lc-station-locked">' + reason + "</span>"
+					: '<button class="lc-station-action" data-live-station-action="fit-recovered" data-live-station-name="' +
+						index +
+						'">FIT</button>';
+				return (
+					'<div class="lc-station-row" data-live-recovered-fitting="' +
+					name +
+					'"><span>' +
+					name +
+					"</span><span>" +
+					item.tonnes +
+					" t · " +
+					item.priceCr +
+					" Cr</span><span>" +
+					fit +
+					'</span><button class="lc-station-action" data-live-station-action="sell-recovered" data-live-station-name="' +
+					index +
+					'">SELL</button></div>'
+				);
+			})
+			.join("");
 		const available = screen.available
 			.map((entry) => {
 				const name = escapeHtml(entry.name);
@@ -1859,7 +1909,7 @@ export class LiveCockpit {
 					`<div class="lc-station-row" data-live-equipment="unavailable"><span>${escapeHtml(entry.name)}</span><span class="lc-station-cell">—</span><span class="lc-station-cell">${escapeHtml(entry.reason)}</span></div>`,
 			)
 			.join("");
-		return `<div class="lc-station-equipment" data-live-station-equipment><h3 class="lc-station-section">AVAILABLE</h3>${available}<h3 class="lc-station-section">UNAVAILABLE HERE</h3>${unavailable}</div>`;
+		return `<div class="lc-station-equipment" data-live-station-equipment>${salvaged ? "<h3 class=lc-station-section>RECOVERED · IN HOLD</h3>" + salvaged : ""}<h3 class="lc-station-section">AVAILABLE</h3>${available}<h3 class="lc-station-section">UNAVAILABLE HERE</h3>${unavailable}</div>`;
 	}
 
 	/**

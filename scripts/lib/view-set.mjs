@@ -119,6 +119,7 @@ export const FIXTURE = Object.freeze({
  */
 /** @type {Readonly<Record<number, string>>} */
 export const LEVERS = Object.freeze({
+	732: "dark derelict roster hull and tethered salvage",
 	684: "hauler lane points and hyperspace rings",
 	99: "the light rig",
 	100: "the nebula backdrop",
@@ -258,6 +259,7 @@ export const LEVERS = Object.freeze({
  *   the sim says so; cruise moves the hull, so no translation vent does.
  */
 export const SHOT_KINDS = Object.freeze([
+	"derelict",
 	"npc-jump",
 	"station-axis",
 	"body-offset",
@@ -354,6 +356,12 @@ export const CHART_SPOTS = Object.freeze(["crowded", "isolated"]);
  * the one who notices.
  */
 export const VIEWS = Object.freeze([
+	{
+		name: "derelict",
+		covers: [732],
+		what: "A seeded dark roster hull, lamps off, with containers tethered clear of its envelope, in the cockpit at its first loss.",
+		shot: { kind: "derelict", view: "cockpit" },
+	},
 	{
 		name: "cockpit-arrival",
 		covers: [105, 103, 99, 200, 201, 204, 651],
@@ -1516,6 +1524,7 @@ export const OPENING_SHOT_NAMES = Object.freeze([
 ]);
 
 const SHOT_REQUIREMENTS = {
+	derelict: () => true,
 	"npc-jump": (s) =>
 		(s.event === "arrival" || s.event === "departure") &&
 		(s.framing === undefined ||

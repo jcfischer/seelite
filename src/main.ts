@@ -66,6 +66,22 @@
  */
 
 import * as THREE from "three";
+import { derelictSlots } from "./derelict-slots";
+import {
+	derelictPose,
+	tetherPose,
+	tetherOffset,
+	scoopWreckContainer,
+} from "./derelict";
+import {
+	buildDerelictMesh,
+	disposeDerelict,
+	buildWreckContainer,
+	disposeWreckContainer,
+} from "./derelict-mesh";
+import { effectiveDerelict, materializeDerelict } from "./world-state";
+import { EQUIPMENT } from "./market";
+import { gateRefusal } from "./ladder";
 import { EffectComposer } from "three/addons/postprocessing/EffectComposer.js";
 import { GTAOPass } from "three/addons/postprocessing/GTAOPass.js";
 import { RenderPass } from "three/addons/postprocessing/RenderPass.js";
@@ -3268,6 +3284,14 @@ class Game {
 	/** A destroyed raider's cargo canisters in flight (#324 part d). Session
 	 *  state: they expire in five minutes and are not saved. */
 	canisters: Canister[] = [];
+	private derelictMeshes = new Map<
+		string,
+		{
+			root: THREE.Group;
+			containers: Map<number, THREE.Mesh>;
+			layer: "near" | "far";
+		}
+	>();
 	/**
 	 * The canister fade itself, reachable from a measurement.
 	 *
@@ -4797,6 +4821,12 @@ class Game {
 					// tampered press, and it buys nothing.
 					const hull = purchasableHullNamed(name);
 					if (hull) this.consolePress(this.transactStation({ type, hull }));
+					return;
+				}
+				if (type === "fit-recovered" || type === "sell-recovered") {
+					this.consolePress(
+						this.transactStation({ type, index: Number(name) }),
+					);
 					return;
 				}
 				const action: StationAction =
@@ -12415,6 +12445,11 @@ class Game {
 		this.weaponSoundState = QUIET_WEAPONS;
 		this.weaponMix = SILENT_WEAPONS;
 		this.canisters = [];
+		for (const drawn of this.derelictMeshes.values()) {
+			disposeDerelict(drawn.root);
+			for (const mesh of drawn.containers.values()) disposeWreckContainer(mesh);
+		}
+		this.derelictMeshes.clear();
 		// And their contacts, now, rather than on the next step: `performJump`
 		// refreshes the scanner before any step runs, so the arrival frame would
 		// otherwise carry the old system's canister blips — and a reset while
@@ -12920,9 +12955,172 @@ class Game {
 		this.carrierCondition(key).condition === "operational";
 
 	/**
-	 * Drift the canisters, expire the old ones, and scoop any the ship passes
-	 * close and slow (#324 part d). A full hold leaves the canister in space.
+	 * Live wreck instances at one clock; neither a lead nor a discovery write.
 	 */
+	derelictsAt(at = this.world.gameTime) {
+		return derelictSlots(
+			this.world.system.record.index,
+			this.world.system.record.government,
+		).flatMap(({ key }) => {
+			const row = effectiveDerelict(
+				this.commerceWorld,
+				this.world.galaxy.index,
+				key,
+				at,
+			);
+			return row.condition === "destroyed"
+				? [
+						{
+							key,
+							row,
+							pose: derelictPose(
+								this.world.system,
+								key,
+								row.instanceOrdinal,
+								at,
+							),
+						},
+					]
+				: [];
+		});
+	}
+	private derelictSolids(dt: number) {
+		return this.derelictsAt().map(({ key, row, pose: start }) => {
+			const end = derelictPose(
+				this.world.system,
+				key,
+				row.instanceOrdinal,
+				this.world.gameTime + dt,
+			);
+			return {
+				id: key,
+				motion: {
+					primitives: this.hullSolidOf(start.hull),
+					start: shipPose(start.pos, start.nose, start.up),
+					end: shipPose(end.pos, end.nose, end.up),
+					velStart: start.vel,
+					velEnd: end.vel,
+				},
+			};
+		});
+	}
+	private stepDerelictScoops() {
+		if (this.regime === "cruise" || this.dock.phase !== "flying") return;
+		for (const { key, row, pose } of this.derelictsAt())
+			for (let i = 0; i < row.containers.length; i++) {
+				const container = tetherPose(pose, i);
+				const before = this.holdings();
+				const tried = scoopWreckContainer(
+					row,
+					i,
+					this.commander,
+					entrustedTonnesAboard(this.requests),
+					container,
+					this.world.ship,
+					this.world.gameTime,
+				);
+				if (!tried.tonnes && !tried.refusal) continue;
+				const item = row.containers[i];
+				if (tried.tonnes)
+					this.adoptHoldings(
+						applyHoldEvent(before, this.commerceWorld, {
+							kind: "wreck-scoop",
+							key,
+							galaxyIndex: this.world.galaxy.index,
+							instanceOrdinal: row.instanceOrdinal,
+							containerIndex: i,
+							at: this.world.gameTime,
+							container,
+							ship: this.world.ship,
+						}),
+					);
+				const event = {
+					canisterId: key + ":" + row.instanceOrdinal + ":" + i,
+					commodity: item.id,
+					tonnes: tried.tonnes,
+					accepted: tried.tonnes > 0,
+					leftT: item.left - tried.tonnes,
+					freeT:
+						commanderHold(
+							before.commander,
+							entrustedTonnesAboard(before.requests),
+						).capacityT -
+						commanderHold(
+							before.commander,
+							entrustedTonnesAboard(before.requests),
+						).usedT,
+				};
+				const next = nextScoopNotice(this.scoop, event);
+				this.scoop = next.notice;
+				this.lastExit = tried.refusal ?? scoopExit(event);
+				if (next.cue) this.play(next.cue);
+			}
+	}
+	private updateDerelictPresentation(camPos: Vec3) {
+		const live = new Set<string>();
+		for (const { key, row, pose } of this.derelictsAt()) {
+			const id = key + ":" + row.instanceOrdinal;
+			live.add(id);
+			let drawn = this.derelictMeshes.get(id);
+			const distance = length(sub(pose.pos, camPos));
+			if (!drawn) {
+				drawn = {
+					root: buildDerelictMesh(pose.hull),
+					containers: new Map(),
+					layer: "far",
+				};
+				this.derelictMeshes.set(id, drawn);
+			}
+			const layer = layerFor(drawn.layer, distance);
+			drawn.layer = layer;
+			const k = scaleFor(layer);
+			(layer === "near" ? this.nearScene : this.farScene).add(drawn.root);
+			const relative = sub(pose.pos, camPos);
+			drawn.root.position.set(relative.x * k, relative.y * k, relative.z * k);
+			drawn.root.scale.setScalar(k);
+			drawn.root.quaternion.copy(
+				this.shotRotation({ forward: pose.nose, up: pose.up } as ShotCamera),
+			);
+			// Seeing the instance pins its contents, without writing discovery.
+			if (distance < NEAR_FAR_KM && !row.stored)
+				this.adoptWorld(
+					materializeDerelict(
+						this.commerceWorld,
+						this.world.galaxy.index,
+						key,
+						this.world.gameTime,
+					),
+				);
+			for (let i = 0; i < row.containers.length; i++) {
+				const item = row.containers[i];
+				let mesh = drawn.containers.get(i);
+				if (item.left <= 0) {
+					if (mesh) {
+						disposeWreckContainer(mesh);
+						drawn.containers.delete(i);
+					}
+					continue;
+				}
+				if (!mesh) {
+					mesh = buildWreckContainer(tetherOffset(pose.hull, i));
+					drawn.containers.set(i, mesh);
+				}
+				const c = tetherPose(pose, i);
+				const p = sub(c.pos, camPos);
+				mesh.position.set(p.x * k, p.y * k, p.z * k);
+				mesh.scale.setScalar(k);
+				(layer === "near" ? this.nearScene : this.farScene).add(mesh);
+			}
+		}
+		for (const [id, drawn] of this.derelictMeshes)
+			if (!live.has(id)) {
+				disposeDerelict(drawn.root);
+				for (const mesh of drawn.containers.values()) {
+					disposeWreckContainer(mesh);
+				}
+				this.derelictMeshes.delete(id);
+			}
+	}
 	private stepCargoCanisters(dt: number) {
 		if (this.canisters.length === 0) return;
 		// `stepCanisters` owns the order (scoop, then drift); this owns the hold.
@@ -14571,6 +14769,7 @@ class Game {
 		this.stepRelay(shot, dt);
 		this.stepTrafficEngagements(dt, shot, solids);
 		this.stepCargoCanisters(dt);
+		this.stepDerelictScoops();
 		this.syncCargoContacts();
 		// #48 deliberately couples no combat entity to the world yet: this is a
 		// flyable balance rig over the shared flight loop, not production combat.
@@ -14817,10 +15016,12 @@ class Game {
 			// leg moves the clock.
 			const fleet = this.fleetOf(dt, { player: false });
 			const fromTime = this.world.gameTime;
+			const wreckSolids = this.derelictSolids(dt);
 			const starts =
 				fleet.length > 0 ? worldStarts(this.world.system, fromTime) : null;
 			meterFlick(this.turnInCruise(dt, hands));
 			this.stepCruise(dt, contactTargetAtFrameStart);
+			if (starts) starts.extraSolids = wreckSolids;
 			if (starts)
 				this.landFleet(
 					stepFleet(this.world, fleet, starts, { fromTime, dt }),
@@ -14886,6 +15087,7 @@ class Game {
 			this.planesOf(before),
 			// C4b, §6 (node #664): every other ship this step can meet.
 			fleet,
+			this.derelictSolids(dt),
 		);
 		// §3: every surface met lands through the one damage path, so a hull at
 		// zero dies the way a kill by fire does.
@@ -15578,6 +15780,7 @@ class Game {
 		);
 		this.updateEncounterPresentation(camPos);
 		this.updateRelayPresentation(camPos);
+		this.updateDerelictPresentation(camPos);
 		this.updateTenderPresentation(camPos);
 		this.presentDirector(camPos);
 
@@ -17158,6 +17361,15 @@ class Game {
 				.filter((line) => line.owner === "pilot")
 				.map((line) => `${line.goodName} ${line.amount}`),
 			ownedEquipment: this.commander.ownedEquipment,
+			recoveredFittings: (this.commander.recoveredFittings ?? []).map(
+				(item, index) => ({
+					...item,
+					index,
+					priceCr: EQUIPMENT.find((e) => e.name === item.id)!.priceCr,
+					locked: gateRefusal(item.id, this.rungs()),
+					owned: this.commander.ownedEquipment.includes(item.id),
+				}),
+			),
 			fuelLy: this.commander.fuelLy,
 			fuelCapacityLy: this.fuelCapacityLy,
 			revision: this.stationConsoleRevision,
