@@ -2989,7 +2989,7 @@ function buildVentBank(
 	 *  there used to be a second `radius` argument and nothing read it, so five
 	 *  call sites were passing a dial that did nothing (#300). */
 	length: number,
-	/** Newly pooled forms need an open mouth and a tip obstruction lamp visible on approach. */
+	/** Open, approach-facing nozzles with an obstruction lamp on the first tip. */
 	approachFacing = false,
 ): THREE.Group {
 	const stack = new THREE.Group();
@@ -3181,6 +3181,12 @@ function buildRadiator(spanKm: number, tilt: number): THREE.Group {
 	return group;
 }
 
+/** Copied from `buildRefineryWorks`'s `PAD_PORT_RADIUS_KM`: ports run radially
+ * in the sectors between the cardinal berths and diagonal flood fixtures.
+ * This is a fitting placement; the fixture mount and corridor rows measure
+ * it against every pooled form's own deck. */
+const REFINERY_DECK_PORT_RADIUS_KM = 0.171;
+
 /** Dock-face ports between the landing deck's berths, on the shared aperture plane. */
 function refineryDeckPorts(): THREE.Object3D {
 	const plane = STATION_GEOMETRY.refinery.aperturePlaneKm;
@@ -3189,8 +3195,8 @@ function refineryDeckPorts(): THREE.Object3D {
 		normal.set(0, 0, 1);
 		tangent.set(Math.cos(theta), Math.sin(theta), 0);
 		position.set(
-			Math.cos(theta) * 0.171,
-			Math.sin(theta) * 0.171,
+			Math.cos(theta) * REFINERY_DECK_PORT_RADIUS_KM,
+			Math.sin(theta) * REFINERY_DECK_PORT_RADIUS_KM,
 			plane + 0.004,
 		);
 	});

@@ -345,15 +345,34 @@ function flyBesideStation(o: FlyOptions): Run {
 	return { met: null, fireShare: fired / steps, stillShare: still / steps };
 }
 
+type CorpusOptions = Pick<
+	FlyOptions,
+	"hull" | "open" | "atMouth" | "armed" | "refineryForm"
+> & { refineryOnly?: boolean };
+
+/** Reuse identical deterministic flights across assertions. Even an open
+ * fight depends on the form: proxy reach sets the pilot's stand-off. Keep
+ * that axis, and every flight option, in the key. */
+const corpora = new Map<string, Run[]>();
+
 function corpus(
 	regime: Regime,
 	avoid: boolean,
-	extra: Pick<
-		FlyOptions,
-		"hull" | "open" | "atMouth" | "armed" | "refineryForm"
-	> = {},
-	refineryOnly = false,
+	extra: CorpusOptions = {},
 ): Run[] {
+	const { refineryOnly = false, ...flight } = extra;
+	const key = JSON.stringify([
+		regime,
+		avoid,
+		flight.hull ?? null,
+		flight.open ?? false,
+		flight.atMouth ?? false,
+		flight.armed ?? null,
+		flight.refineryForm ?? "d",
+		refineryOnly,
+	]);
+	const cached = corpora.get(key);
+	if (cached) return cached;
 	const runs: Run[] = [];
 	for (const seed of SEEDS) {
 		const stations = placedStations(makeWorld(seed));
@@ -367,17 +386,20 @@ function corpus(
 						bearing,
 						regime,
 						avoid,
+						...flight,
 						// Historical controls and their measured bands used Works.
-						refineryForm: "d",
-						...extra,
+						refineryForm: flight.refineryForm ?? "d",
 					}),
 				);
 		}
 	}
+	corpora.set(key, runs);
 	return runs;
 }
 
 const struck = (runs: Run[]) => runs.filter((run) => run.met !== null).length;
+const meanFire = (runs: Run[]) =>
+	runs.reduce((sum, r) => sum + r.fireShare, 0) / runs.length;
 
 describe("the figures the avoidance is built from", () => {
 	test("every pooled refinery form is flown on the same four original systems", () => {
@@ -389,6 +411,25 @@ describe("the figures the avoidance is built from", () => {
 			);
 			expect(refineries.map((s) => s.formId)).toEqual(Array(4).fill(form));
 		}
+	});
+	test("assist-off: each form retains its measured blind impacts on the fixed refinery corpus", () => {
+		const impacts = STATION_FORM_POOL.refinery.map((form) => [
+			form,
+			struck(
+				corpus("assist-off", false, {
+					refineryForm: form,
+					refineryOnly: true,
+				}),
+			),
+		]);
+		// Node #745's same four systems and three bearings, not an aggregate
+		// over different populations. Reusing another form's run fails here.
+		expect(impacts).toEqual([
+			["a", 6],
+			["b", 5],
+			["c", 2],
+			["d", 12],
+		]);
 	});
 	test("the clearance covers every hull's own box, so a centre outside the keep-out is a hull outside the solid", () => {
 		for (const [id, spec] of Object.entries(HULL_SPECS)) {
@@ -540,8 +581,9 @@ describe("a ship fighting beside a station does not fly into it, under all three
 	for (const form of STATION_FORM_POOL.refinery)
 		for (const regime of ["assist-on", "assist-off", "cruise"] as const) {
 			test(`refinery/${form}, ${regime}: the fixed per-form corpus has blind impacts and avoids every one`, () => {
-				const blind = corpus(regime, false, { refineryForm: form }, true);
-				const avoiding = corpus(regime, true, { refineryForm: form }, true);
+				const extra = { refineryForm: form, refineryOnly: true };
+				const blind = corpus(regime, false, extra);
+				const avoiding = corpus(regime, true, extra);
 				if (process.env.SEELITE_MEASURE_AVOIDANCE === "1")
 					console.info(
 						`refinery/${form}, ${regime}: blind ${struck(blind)}/${blind.length}, avoiding ${struck(avoiding)}/${avoiding.length}`,
@@ -582,11 +624,9 @@ describe("a duel beside a station stays a duel", () => {
 	for (const form of STATION_FORM_POOL.refinery) {
 		for (const regime of ["assist-on", "assist-off"] as const) {
 			test(`refinery/${form}, ${regime}: the raider keeps its gun run on the fixed form corpus`, () => {
-				const extra = { refineryForm: form };
-				const open = corpus(regime, false, { ...extra, open: true }, true);
-				const beside = corpus(regime, true, extra, true);
-				const meanFire = (runs: Run[]) =>
-					runs.reduce((sum, r) => sum + r.fireShare, 0) / runs.length;
+				const extra = { refineryForm: form, refineryOnly: true };
+				const open = corpus(regime, false, { ...extra, open: true });
+				const beside = corpus(regime, true, extra);
 				expect(meanFire(beside)).toBeGreaterThan(0.6 * meanFire(open));
 				expect(Math.min(...beside.map((r) => r.fireShare))).toBeGreaterThan(
 					0.05,
@@ -595,11 +635,14 @@ describe("a duel beside a station stays a duel", () => {
 		}
 		for (const armed of [undefined, "patrol", "interceptor"] as const) {
 			test(`refinery/${form}: ${armed ?? "the raider"} holds off at the mouth and keeps firing`, () => {
-				const extra = { refineryForm: form, atMouth: true, armed };
-				const open = corpus("assist-on", false, { ...extra, open: true }, true);
-				const beside = corpus("assist-on", true, extra, true);
-				const meanFire = (runs: Run[]) =>
-					runs.reduce((sum, r) => sum + r.fireShare, 0) / runs.length;
+				const extra = {
+					refineryForm: form,
+					refineryOnly: true,
+					atMouth: true,
+					armed,
+				};
+				const open = corpus("assist-on", false, { ...extra, open: true });
+				const beside = corpus("assist-on", true, extra);
 				expect(struck(beside)).toBe(0);
 				expect(meanFire(beside)).toBeGreaterThan(0.8 * meanFire(open));
 				expect(Math.min(...beside.map((r) => r.fireShare))).toBeGreaterThan(
@@ -614,12 +657,10 @@ describe("a duel beside a station stays a duel", () => {
 		test(`${regime}: the raider still fires on a pilot sitting on the station, near its open-space rate`, () => {
 			const open = corpus(regime, false, { open: true });
 			const beside = corpus(regime, true);
-			const mean = (runs: Run[]) =>
-				runs.reduce((sum, r) => sum + r.fireShare, 0) / runs.length;
 			// Measured over the 39 runs: 0.271 open against 0.191 beside with the
 			// pilot's assist on, 0.169 against 0.168 off, and the lowest run
 			// beside fired on 10.3% of frames. The bands are wide of both.
-			expect(mean(beside)).toBeGreaterThan(0.6 * mean(open));
+			expect(meanFire(beside)).toBeGreaterThan(0.6 * meanFire(open));
 			expect(Math.min(...beside.map((r) => r.fireShare))).toBeGreaterThan(0.05);
 		});
 	}
@@ -641,13 +682,9 @@ describe("a duel beside a station stays a duel", () => {
 			const blind = corpus("assist-on", false, extra);
 			const open = corpus("assist-on", false, { ...extra, open: true });
 			const beside = corpus("assist-on", true, extra);
-			const mean = (runs: Run[], f: (r: Run) => number) =>
-				runs.reduce((sum, r) => sum + f(r), 0) / runs.length;
 			expect(struck(blind)).toBeGreaterThan(blind.length / 2);
 			expect(struck(beside)).toBe(0);
-			expect(mean(beside, (r) => r.fireShare)).toBeGreaterThan(
-				0.8 * mean(open, (r) => r.fireShare),
-			);
+			expect(meanFire(beside)).toBeGreaterThan(0.8 * meanFire(open));
 			expect(Math.min(...beside.map((r) => r.fireShare))).toBeGreaterThan(0.15);
 			// Holding off is not hovering: no run sits still against the station
 			// for half the fight (the most measured is 0.346).

@@ -757,13 +757,24 @@ mesh, the display reach and the collision proxy all read that field, so two
 stations of one role may differ and nothing answers per role. It replaced
 `SELECTED_FORM`, one form per role for the whole galaxy. **Node #744's ruling
 (2026-10-07) admits every built form, uniformly drawn in form-id order.** The
-principal has seen them in the station viewer; a candidate sheet and visual
-sign-off are waived. Every added member owes a collision proxy, macro fixtures,
+principal saw the built forms in the station viewer before the pooling work;
+the ruling waives a candidate sheet and visual sign-off for pool admission.
+It does not record a viewing or approval of the subsequent geometry repairs.
+Every added member owes a collision proxy, macro fixtures,
 and its existing per-form budget, interior, corridor and light rows. Report
 which canonical views move with `scripts/measure-station-forms.ts`.
 
 **The refinery pool is [a, b, c, d]** (node #745): Warren, Collar, Spar and
 Works. All use the refinery's unchanged aperture plane and berth catalogue.
+Meeting the existing rows required mesh repairs: Warren's vent banks now face
+the approach; Collar and Spar have decks on the shared plane; Spar's vents move
+to its forward rock shoulder and its heat ring shrinks to clear the ports.
+All three gain dock-face ports and obstruction lamps, and Collar and Spar gain
+macro fixtures. These differ from the geometry the principal saw before
+pooling. No principal viewing of these repaired meshes is recorded; the node's
+explicit waiver remains the delivery instruction, not evidence of visual
+approval of those repairs. Headless and browser checks verify their budgets,
+corridors, fixtures and docking, not their appearance.
 Trade and shipyard still fly **A** while their pool nodes are implemented.
 The outpost is not drawn: it keeps `OUTPOST_FORM` **E**, the fiction's Salvage
 (#490, #518), placed in lawless systems since #491. The Works and Cluster

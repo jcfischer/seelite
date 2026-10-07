@@ -89,7 +89,12 @@ refineries: Warren 210 (27.2%), Collar 166 (21.5%), Spar 180 (23.3%), Works
 
 [Node #744's principal ruling](https://github.com/jcfischer/seelite/issues/744)
 (2026-10-07) admits every built form uniformly and waives the candidate sheet
-and visual sign-off after the principal saw every form in the station viewer.
+and visual sign-off for pool admission. The principal's viewing predates the
+mesh repairs listed above: those repaired decks, vent banks, heat ring, ports,
+lamps and macro fixtures have no recorded principal viewing. The waiver is
+the node's delivery instruction; it is not evidence that the principal has
+seen or approved the repaired geometry. The checks below establish physical
+and protocol properties, not the quality of its appearance.
 This is a player-visible change under `src/changelog.ts`'s definition; its
 entry is proposed copy pending the principal's approval before merge.
 
@@ -147,3 +152,49 @@ semantic mode, no fallback**. Its exact set ran sequentially through
 with the guard verifying `ANGLE Metal Renderer: Apple M1 Pro`. The four generated
 refinery dock/launch/fly-away cases passed again. This is partial evidence;
 64 scripts were not run, and the supervisor still owns the full reviewed-head run.
+
+## Sage review round 3
+
+The important provenance finding is accepted. Section 7.1 of
+`station-types.md` and this receipt now distinguish the pre-pooling viewer
+inspection from the subsequent mesh repairs and explicitly record that no
+principal viewing of those repaired meshes is known. The operating brief
+waives a new candidate sheet and principal visual sign-off, so this pass
+does not invent either a new approval gate or evidence of approval.
+
+The shared vent option now describes the nozzle geometry. The dock-face port
+radius is named and cites the Works layout it was taken from; its value is
+unchanged. `refineryOnly` moves into the corpus options and `meanFire` is
+shared. Identical deterministic corpora are cached with all flight options,
+including the form: even an open baseline derives its pilot stand-off from
+that form's proxy reach. The per-form flights, seed set and bands remain.
+An exact blind-impact row distinguishes the four forms and catches reuse of
+another form's results.
+
+Two optional suggestions are deferred. A new Warren outline measurement is
+not made: the deleted reading measured the old canted geometry, and neither
+that reading nor the historical wing comments prove the current Warren's
+outline distinctness. No current per-form outline figure is claimed here.
+The changelog entry stays proposed under the existing SOP, which requires
+an entry in the same PR for a major change and principal sentence approval
+before merge. This worker has neither that approval nor merge authority;
+the supervisor must obtain approval and set the actual main date. Adding an
+approval mechanism to the changelog schema is outside this node.
+
+Round 3 verification: `npm test` **5,503 pass, 0 fail**, 298 files
+(302.48 s). Omitting the form from the cache key made the new blind-impact
+row fail: Warren's 6 impacts were reused for Collar, Spar and Works instead
+of their measured 5, 2 and 12. Restoring the key passes the full suite.
+`npm run build`, `npm run format:check`, `npm run lint` and
+`npm run check:wiring` pass. The view instrument still reports the same two
+Works → Spar generated-station views.
+
+Before probing, the repository selector evaluated all 91 contracts for this
+pass's four changed paths: **33 selected, semantic mode, no fallback**.
+The exact selection ran sequentially through `probeRunnerEnvironment` and
+the canonical GPU runner: **33/33 gating probes passed in 241 s**, with
+`ANGLE Metal Renderer: Apple M1 Pro` verified. The initial sandboxed browser
+launch was blocked before any probe ran; the permitted retry produced these
+results. The generated-refinery docking cases and the station, fixture,
+traffic and collision probes passed. This is partial evidence: 58 probes
+were not run. The supervisor owns the full suite on the reviewed head.
