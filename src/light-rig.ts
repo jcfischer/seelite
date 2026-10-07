@@ -184,12 +184,14 @@ export const LIGHT_RIG = {
 	quality: {
 		high: {
 			environment: true,
+			bloom: true,
 			hemisphere: true,
 			exposure: 1,
 			shadows: true,
 		},
 		low: {
 			environment: false,
+			bloom: false,
 			hemisphere: true,
 			exposure: 1,
 			shadows: false,

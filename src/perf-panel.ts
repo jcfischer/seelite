@@ -41,6 +41,8 @@ import { escapeHtml } from "./escape-html";
 import type * as THREE from "three";
 import type { AdaptiveDiagnostics } from "./adaptive-resolution";
 import type { FrameAttribution } from "./frame-attribution";
+import { LIGHT_RIG } from "./light-rig";
+import type { Quality } from "./settings";
 
 /** What a switch does to the frame, and the key that flips it. */
 type Switch = {
@@ -543,6 +545,8 @@ export type PerfTargets = {
 	scenes: THREE.Object3D[];
 	/** The bloom pass, so it can be switched without rebuilding the composer. */
 	bloom: { enabled: boolean } | null;
+	/** Read the player's current row when resetting a diagnostic override. */
+	quality: () => Quality;
 	/** Query-gated frame timing and render-shape evidence. */
 	attribution: FrameAttribution;
 	/**
@@ -841,7 +845,8 @@ reason                      ${adaptive ? escapeHtml(adaptive.reason) : "—"}`;
 	const rowCount = () => switches.length + 1;
 
 	const restoreAll = () => {
-		if (targets.bloom) targets.bloom.enabled = true;
+		if (targets.bloom)
+			targets.bloom.enabled = LIGHT_RIG.quality[targets.quality()].bloom;
 		setShells(scenes, { atmosphere: true, clouds: true });
 		setAblate(scenes, 0);
 		// **Set, then un-pin, in that order and only once.** `setSurface` pins
