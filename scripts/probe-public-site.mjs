@@ -142,9 +142,22 @@ for (const [label, viewport] of [
 		const name = `${out}/${route || "home"}-${label}`;
 		if (out) await page.screenshot({ path: `${name}-top.png` });
 		await page.mouse.move(viewport.width / 2, viewport.height / 2);
-		for (let i = 0; i < 6; i++) await page.mouse.wheel(0, 600);
+		// The list grows with each release. A fixed six-wheel budget stopped
+		// reaching its last phone row when node #733 added an entry. Keep using
+		// a player's wheel (never scrollIntoView's overflow-hidden bypass), but
+		// derive enough steps from the page we are actually testing.
+		const height = await page.evaluate(() =>
+			Math.max(
+				document.body.scrollHeight,
+				document.documentElement.scrollHeight,
+			),
+		);
+		const wheelSteps = Math.ceil(height / 600) + 1;
+		for (let i = 0; i < wheelSteps; i++) await page.mouse.wheel(0, 600);
 		await page.waitForTimeout(300);
 		state.lastReachable = await page.evaluate(lastEntryUnderPointer);
+		state.scrollHeight = height;
+		state.wheelBudget = wheelSteps * 600;
 		if (out) await page.screenshot({ path: `${name}-end.png` });
 		await page.close();
 		return state;
@@ -174,7 +187,7 @@ for (const [label, viewport] of [
 		check(
 			`${name}'s last change can be scrolled to (${label})`,
 			state.lastReachable === true,
-			String(state.lastReachable),
+			`${state.lastReachable} · height=${state.scrollHeight} wheel=${state.wheelBudget}`,
 		);
 	}
 	check(

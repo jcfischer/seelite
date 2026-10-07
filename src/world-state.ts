@@ -447,6 +447,16 @@ export interface GalaxyEnvelope {
 	/** Derelict slots the pilot has touched (`salvage.md`, node #731). Empty // glossary-ignore: slot
 	 *  means every slot is on its derived schedule, untouched. */
 	derelicts: Record<CarrierKey, DerelictRow>;
+	/** Past system sweep readings, at most one region per carrier slot. A lead
+	 * is provenance and never supplies a contact position or knowledge. */
+	leads?: Record<CarrierKey, RegionLead>;
+}
+
+export interface RegionLead {
+	kind: "derelict" | "relay";
+	region: string;
+	source: string;
+	observedAt: number;
 }
 
 export interface WorldState {
@@ -472,6 +482,7 @@ const ENVELOPE_DOMAINS = [
 	"visited",
 	"legalStatus",
 	"derelicts",
+	"leads",
 ] as const;
 
 /**
@@ -480,7 +491,10 @@ const ENVELOPE_DOMAINS = [
  * envelope that writes `"derelicts": {}` would move the integrity hash of every
  * save taken before it — the reason `witnesses` is omitted when empty (§7).
  */
-const OPTIONAL_ENVELOPE_DOMAINS: ReadonlySet<string> = new Set(["derelicts"]);
+const OPTIONAL_ENVELOPE_DOMAINS: ReadonlySet<string> = new Set([
+	"derelicts",
+	"leads",
+]);
 
 const WORLD_FIELDS = [
 	"worldSchemaVersion",
@@ -1429,6 +1443,49 @@ export const readKnowledge = (
 	key: CarrierKey,
 ): KnowledgeRow | undefined => env.knowledge[key];
 
+/** Replace this system's past readings, including replacing them with none.
+ * Other systems retain their original source and clock. */
+export const replaceSystemLeads = (
+	world: WorldState,
+	galaxyIndex: number,
+	systemIndex: number,
+	at: number,
+	rows: Record<CarrierKey, RegionLead>,
+): WorldState =>
+	withEnvelope(world, galaxyIndex, at, (env) => ({
+		...env,
+		leads: {
+			...Object.fromEntries(
+				Object.entries(env.leads ?? {}).filter(
+					([key]) => systemIndexOfKey(key as CarrierKey) !== systemIndex,
+				),
+			),
+			...rows,
+		},
+	}));
+
+/** A flown wreck reading uses its own lifecycle, never effectiveCarrier's
+ * absent-row operational default. An empty or salvaged slot writes nothing. */
+export const observeDerelict = (
+	world: WorldState,
+	galaxyIndex: number,
+	key: CarrierKey,
+	at: number,
+	source: string,
+): WorldState => {
+	const wreck = effectiveDerelict(world, galaxyIndex, key, at);
+	if (wreck.condition !== "destroyed") return world;
+	return withEnvelope(world, galaxyIndex, at, (env) =>
+		withKnowledgeRow(env, key, {
+			...env.knowledge[key],
+			observedCondition: "destroyed",
+			observedInstanceOrdinal: wreck.instanceOrdinal,
+			observedAt: at,
+			source,
+		}),
+	);
+};
+
 /**
  * §3.1's revisit, report or relay: the player now knows what is objectively
  * true at `gameTime`.
@@ -2130,6 +2187,16 @@ const canonicalEnvelope = (env: GalaxyEnvelope) => ({
 	...(Object.keys(env.derelicts).length
 		? { derelicts: canonicalMap(env.derelicts, canonicalDerelict) }
 		: {}),
+	...(Object.keys(env.leads ?? {}).length
+		? {
+				leads: canonicalMap(env.leads!, (lead) => ({
+					kind: lead.kind,
+					region: lead.region,
+					source: lead.source,
+					observedAt: lead.observedAt,
+				})),
+			}
+		: {}),
 });
 
 const canonicalBody = (world: WorldState) => ({
@@ -2647,6 +2714,28 @@ const parseLegalKeyList = (
 	});
 };
 
+const parseRegionLead = (raw: unknown, key: string): RegionLead => {
+	const o = asObject(raw, `lead ${key}`);
+	for (const field of Object.keys(o))
+		if (!["kind", "region", "source", "observedAt"].includes(field))
+			fail(`lead ${key}: ${field} is not a lead field`);
+	const kind = str(o, "kind", `lead ${key}`);
+	const id = localCarrierIdOfKey(key as CarrierKey);
+	if (
+		(kind !== "relay" || id !== "relay-00") &&
+		(kind !== "derelict" || derelictOrdinalOf(id) === null)
+	)
+		fail(`lead ${key}: kind does not name its carrier slot`);
+	const observedAt = num(o, "observedAt", `lead ${key}`);
+	if (observedAt < 0) fail(`lead ${key}: negative observation clock`);
+	return {
+		kind: kind as RegionLead["kind"],
+		region: str(o, "region", `lead ${key}`),
+		source: str(o, "source", `lead ${key}`),
+		observedAt,
+	};
+};
+
 /** One envelope: the declared-field check, then six named domain parsers, then
  *  the one invariant that spans two of them. */
 const parseEnvelope = (raw: unknown, slot: number): GalaxyEnvelope => {
@@ -2702,6 +2791,9 @@ const parseEnvelope = (raw: unknown, slot: number): GalaxyEnvelope => {
 			o.derelicts === undefined
 				? {}
 				: parseCarrierMap(o.derelicts, "derelicts", parseDerelictRow),
+		...(o.leads === undefined
+			? {}
+			: { leads: parseCarrierMap(o.leads, "leads", parseRegionLead) }),
 	};
 };
 
@@ -2780,6 +2872,19 @@ export function parseWorld(raw: unknown): WorldState {
 				fail(
 					`derelict ${key}: salvaged at ${row.salvaged.at}, after the clock's ${world.gameTime}`,
 				);
+		}
+	for (const env of world.galaxies)
+		for (const [key, lead] of Object.entries(env.leads ?? {}) as [
+			CarrierKey,
+			RegionLead,
+		][]) {
+			if (lead.observedAt > world.gameTime)
+				fail(`lead ${key}: observation after the world clock`);
+			if (
+				lead.kind === "derelict" &&
+				!heldDerelictSlot(world.seed, env.galaxyIndex, key)
+			)
+				fail(`lead ${key}: no derelict slot in galaxy ${env.galaxyIndex}`);
 		}
 
 	// **Over what arrived, not over what parsing made of it.** Hashing the

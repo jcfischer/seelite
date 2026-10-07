@@ -27,6 +27,8 @@
  */
 
 import { scoopWreckContainer } from "./derelict-salvage";
+import { identifyDerelicts, sweepSystem } from "./long-range-scanner";
+import type { System } from "./sim";
 import type { Vec3 } from "./vec3";
 import type { CarrierKey } from "./carrier-key";
 import type { DeathCause } from "./death-cost";
@@ -45,6 +47,7 @@ import {
 	ladderAfterSettlement,
 	pendingArrival,
 	pendingKill,
+	pendingKind,
 	withCapstone,
 } from "./ladder";
 import { recordTrade } from "./deficits";
@@ -150,6 +153,8 @@ export interface Holdings {
 export type AcceptedTrade = Extract<StationCommerceResult, { accepted: true }>;
 
 export type HoldEvent =
+	| { kind: "system-sweep"; system: System; at: number }
+	| { kind: "derelict-identify"; system: System; shipPos: Vec3; at: number }
 	/** A press on the Requests board other than `details`, which is the
 	 *  board's own state. */
 	| {
@@ -221,6 +226,7 @@ export type HoldEvent =
 
 /** What `Game` has to act on beyond adopting the state. A closed set. */
 export interface HoldSignals {
+	identifiedWreck?: boolean;
 	/** The adopted wreck take or its hold refusal. Absent outside the gate or
 	 * when the named instance no longer exists. */
 	wreckScoop?: {
@@ -509,6 +515,39 @@ function applied(
 	event: HoldEvent,
 ): Applied {
 	switch (event.kind) {
+		case "system-sweep":
+			return {
+				holdings,
+				world: sweepSystem(
+					world,
+					event.system,
+					holdings.commander.ownedEquipment,
+					event.at,
+				),
+				signals: QUIET,
+			};
+		case "derelict-identify": {
+			const found = identifyDerelicts(
+				world,
+				event.system,
+				event.shipPos,
+				holdings.commander.ownedEquipment,
+				event.at,
+			);
+			if (!found.identified.length) return unchanged(holdings, world);
+			return {
+				holdings: {
+					...holdings,
+					ladderPending: pendingKind(
+						holdings.ladders,
+						holdings.ladderPending,
+						"wreck",
+					),
+				},
+				world: found.world,
+				signals: { ...QUIET, identifiedWreck: true },
+			};
+		}
 		case "settlement":
 			return settle(holdings, world, event);
 		case "market":

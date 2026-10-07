@@ -372,6 +372,7 @@ function teardownSubject(ejectHold: EjectHold, ejectDown: boolean) {
 			],
 			cargoContacts: new Map(),
 			derelictMeshes: new Map(),
+			wreckContacts: new Map(),
 			contacts: [] as DisplayContact[],
 			// The teardown disengages it (#596); a plain field once took the write.
 			dockingComputer: new DockingComputer(),
@@ -421,6 +422,20 @@ test("a jump keeps a spent eject hold spent while its key is still down", () => 
 	const released = teardownSubject(spent, false);
 	released.clearFlightSession();
 	expect(released.ejectHold).toEqual(EJECT_IDLE);
+});
+
+test("a jump clears wreck contacts, their target and a charging sweep", () => {
+	const subject = teardownSubject(EJECT_IDLE, false);
+	const contact = { id: "derelict-old" };
+	subject.wreckContacts.set(contact.id, contact);
+	subject.contacts.push(contact);
+	subject.targetId = contact.id;
+	subject.sweepElapsed = 4;
+	subject.clearFlightSession();
+	expect(subject.wreckContacts.size).toBe(0);
+	expect(subject.contacts).toEqual([]);
+	expect(subject.targetId).toBeNull();
+	expect(subject.sweepElapsed).toBeNull();
 });
 
 test("the relative-speed label is a magnitude with no direction word", () => {

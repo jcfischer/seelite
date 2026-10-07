@@ -136,6 +136,10 @@ export function targetDesignation(
 	scan: DesignationScan = {},
 ): string {
 	if (!body) return "";
+	if (body.kind === "wreck")
+		return isDisplayContact(body) && body.shipType
+			? `WRECK · ${body.shipType.toUpperCase()}`
+			: "WRECK";
 	if (body.kind === "station")
 		return body.stationType
 			? `STATION · ${body.stationType.toUpperCase()}`

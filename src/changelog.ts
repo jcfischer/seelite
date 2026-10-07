@@ -28,6 +28,12 @@ export type ChangelogEntry = {
 };
 
 export const CHANGELOG: readonly ChangelogEntry[] = [
+	// Node #733: proposed copy; principal approval and main date pending.
+	{
+		date: "2026-10-07",
+		text: "Sweep for derelict regions with a Long-Range Scanner, follow its return, or identify a wreck by flying close enough to see it.",
+		node: 733,
+	},
 	// Node #732: proposed copy; principal approval and main date pending.
 	{
 		date: "2026-10-07",

@@ -2,6 +2,13 @@
 
 import { range } from "./units";
 import {
+	sweepMarkup,
+	wreckCueMarkup,
+	WRECK_CUE_STYLE,
+	type SweepView,
+	type WreckCue,
+} from "./scanner-view";
+import {
 	REQUESTS_STYLE,
 	requestCue,
 	requestsBody,
@@ -133,6 +140,7 @@ const RIGHT_TABS: readonly RightTab[] = [
  */
 export type LeftTab =
 	| "Navigation"
+	| "Scanner"
 	| "Galaxy Map"
 	| "Communications"
 	| "Requests"
@@ -141,6 +149,7 @@ export type LeftTab =
 	| "First day";
 const LEFT_TABS: readonly LeftTab[] = [
 	"Navigation",
+	"Scanner",
 	"Galaxy Map",
 	"Communications",
 	"Requests",
@@ -174,6 +183,8 @@ export interface FirstDayPanel {
 }
 
 export interface LiveCockpitState {
+	sweep?: SweepView;
+	wreck?: WreckCue | null;
 	requests?: RequestsView;
 	/** #408: the First day tab's content, and station control's line on the
 	 *  docked console. */
@@ -295,6 +306,7 @@ export interface LiveCockpitState {
 const LEFT_READOUT = `<div class="lc-readout"><span><b>SCANNER RANGE</b><em>10,000 km</em></span><span><b>CONTACTS</b><em data-live-contact-count></em></span><span><b>STANDING</b><em data-live-legal-status></em></span></div>`;
 
 export interface LiveCockpitCallbacks {
+	onSweep?: () => void;
 	onRequestAction?: (action: string, id: string) => void;
 	onRightTab: (tab: RightTab) => void;
 	onLeftTab: (tab: LeftTab) => void;
@@ -393,7 +405,7 @@ function navEta(seconds: number | null) {
 	return `${(seconds / 86_400).toFixed(0)}d`;
 }
 
-const STYLE = `${REQUESTS_STYLE}${HOLD_STYLE}${LADDER_STYLE}${RELAY_CUE_STYLE}
+const STYLE = `${REQUESTS_STYLE}${HOLD_STYLE}${LADDER_STYLE}${RELAY_CUE_STYLE}${WRECK_CUE_STYLE}
 #live-cockpit { position: fixed; inset: 0; z-index: 4; pointer-events: none; color: #c8e7f7; font: 12px/1.35 ui-monospace, "SF Mono", Menlo, monospace; text-shadow: 0 0 8px rgba(0, 0, 0, .92); }
 #live-cockpit[data-live-active="false"] { display: none; }
 #live-cockpit * { box-sizing: border-box; }
@@ -572,6 +584,8 @@ export class LiveCockpit {
 	private lastNavKey = "";
 	private lastLogKey: string | null = null;
 	private lastRelayKey = "";
+	private lastSweepKey = "";
+	private lastWreckKey = "";
 	/** #408: the port console's station control line last written; `undefined`
 	 *  after a rebuild, so the rebuilt element is always filled. */
 	private lastConsoleLine: string | null | undefined = undefined;
@@ -699,6 +713,10 @@ export class LiveCockpit {
 	 * is one readable unit the next target has to be placed into deliberately.
 	 */
 	private handleClick(element: HTMLElement) {
+		if (element.closest("[data-live-sweep]")) {
+			this.callbacks.onSweep?.();
+			return;
+		}
 		const request = element.closest<HTMLElement>("[data-live-request-action]");
 		if (request) {
 			const { liveRequestAction, liveRequestId } = request.dataset;
@@ -819,6 +837,7 @@ export class LiveCockpit {
 	 * way of getting to one.
 	 */
 	private static readonly OWN_FOCUSABLE = [
+		"[data-live-sweep]:not([disabled])",
 		"[data-live-request-action]",
 		"[data-live-station-action]",
 		"[data-live-launch]",
@@ -954,6 +973,7 @@ export class LiveCockpit {
 		if (d.liveLaunch !== undefined) return "launch";
 		if (d.liveRightTab !== undefined) return `right-tab:${d.liveRightTab}`;
 		if (d.liveLeftTab !== undefined) return `left-tab:${d.liveLeftTab}`;
+		if (d.liveSweep !== undefined) return "system-sweep";
 		if (d.liveNavKind !== undefined) return `nav-kind:${d.liveNavKind}`;
 		if (d.liveNavTarget !== undefined) return `nav-target:${d.liveNavTarget}`;
 		if (d.liveControlsGroup !== undefined)
@@ -1315,6 +1335,8 @@ export class LiveCockpit {
 			// The rebuilt aside is empty; without this the cue stays empty until
 			// its key moves (sage #350).
 			this.lastRelayKey = "";
+			this.lastSweepKey = "";
+			this.lastWreckKey = "";
 			this.lastConsoleLine = undefined;
 			this.navRowsById.clear();
 			this.releaseChartHost();
@@ -1413,6 +1435,23 @@ export class LiveCockpit {
 					? relayCueMarkup(state.relay)
 					: "";
 			}
+		}
+		const wreckAside = this.root.querySelector<HTMLElement>(
+			"[data-live-wreck-cue]",
+		);
+		const wreckMarkup = state.wreck ? wreckCueMarkup(state.wreck) : "";
+		if (wreckAside && wreckMarkup !== this.lastWreckKey) {
+			this.lastWreckKey = wreckMarkup;
+			wreckAside.hidden = !state.wreck;
+			wreckAside.innerHTML = wreckMarkup;
+		}
+		const scanner = this.root.querySelector<HTMLElement>(
+			"[data-live-sweep-body]",
+		);
+		const scannerMarkup = state.sweep ? sweepMarkup(state.sweep) : "";
+		if (scanner && scannerMarkup !== this.lastSweepKey) {
+			this.lastSweepKey = scannerMarkup;
+			scanner.innerHTML = scannerMarkup;
 		}
 		// #408: station control on the port console, written in place. It changes
 		// when a station is selected, and a rebuild on selection would take the
@@ -1615,7 +1654,7 @@ export class LiveCockpit {
 					(state.rightTab === "Flight"
 						? '<button class="lc-launch" type="button" data-live-launch>LAUNCH</button>'
 						: "");
-		return `<main class="lc-director" data-live-director><i class="lc-target-arrow" data-live-target-arrow aria-label="turn toward selected target">➤</i><strong>${targetName}</strong></main>${this.stationConsole(state)}${requestCue(state.requests)}<aside class="lc-relay-cue" data-live-relay-cue hidden></aside><aside class="lc-panel" data-live-panel="left" data-active="${view.activePanel === "left"}"><header><h2>${state.leftTab.toUpperCase()}</h2><small>LOCAL · 24</small></header><nav class="lc-tabs" aria-label="left console tabs">${leftTabs}</nav><p class="lc-station-control lc-console-control" data-live-console-control hidden><b>STATION CONTROL</b> <span></span></p>${this.leftBody(state)}${launchHoldNotice}</aside><aside class="lc-panel" data-live-panel="right" data-active="${view.activePanel === "right"}"><header><h2>${state.rightTab.toUpperCase()}</h2><small>CMDR · SEELITE</small></header><nav class="lc-tabs" aria-label="right console tabs">${rightTabs}</nav>${this.rightBody(state)}${launch}</aside>`;
+		return `<main class="lc-director" data-live-director><i class="lc-target-arrow" data-live-target-arrow aria-label="turn toward selected target">➤</i><strong>${targetName}</strong></main>${this.stationConsole(state)}${requestCue(state.requests)}<aside class="lc-relay-cue" data-live-relay-cue hidden></aside><aside class="lc-wreck-cue" data-live-wreck-cue hidden></aside><aside class="lc-panel" data-live-panel="left" data-active="${view.activePanel === "left"}"><header><h2>${state.leftTab.toUpperCase()}</h2><small>LOCAL · 24</small></header><nav class="lc-tabs" aria-label="left console tabs">${leftTabs}</nav><p class="lc-station-control lc-console-control" data-live-console-control hidden><b>STATION CONTROL</b> <span></span></p>${this.leftBody(state)}${launchHoldNotice}</aside><aside class="lc-panel" data-live-panel="right" data-active="${view.activePanel === "right"}"><header><h2>${state.rightTab.toUpperCase()}</h2><small>CMDR · SEELITE</small></header><nav class="lc-tabs" aria-label="right console tabs">${rightTabs}</nav>${this.rightBody(state)}${launch}</aside>`;
 	}
 
 	/** A held launch's reason and its way out, for every docked console (#314). */
@@ -1936,6 +1975,8 @@ export class LiveCockpit {
 	}
 
 	private leftBody(state: LiveCockpitState) {
+		if (state.leftTab === "Scanner")
+			return `<div class="lc-panel-body"><div class="lc-rail"><b>SYSTEM</b><span>${escapeHtml(state.systemName.toUpperCase())}</span></div><div class="lc-panel-copy" data-live-sweep-body></div></div>`;
 		if (state.leftTab === "First day") return firstDayBody(state.firstDay);
 		if (state.leftTab === "Requests") return requestsBody(state.requests, true);
 		// The chart is the *reading* surface and the list is the *finding* one
