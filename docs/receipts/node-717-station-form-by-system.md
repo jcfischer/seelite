@@ -108,7 +108,14 @@ the principal's yes on it.
 - the before/after view set.
 
 None of these can move until a pool holds two forms. The browser probes that
-read a station's reach (`probe-station-visuals`, `scripts/lib/view-placement.mjs`)
-read `visualOfStation(id).silhouetteKm`, which is now the station's own
-handle. They were not re-run here: with one form per pool the figure is
-unchanged.
+cover the change were run alone on the GPU lane (ANGLE Metal, M1 Pro) at
+`c550ca0` and pass:
+
+- the five probes named `probe-station*`, among them `probe-station-visuals`,
+  which reads the reach through `visualOfStation(id).silhouetteKm`, now the
+  station's own handle;
+- `probe-traffic-engagement`, which calls `selectedStationProxy` on the page's
+  stations;
+- the two `probe-collision*` probes.
+
+This is a partial run, not the suite.
