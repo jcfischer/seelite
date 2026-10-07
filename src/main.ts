@@ -457,6 +457,18 @@ import {
 import { DOMAIN } from "./domains";
 import { carrierManifest } from "./carrier-manifest";
 import {
+	type SavedLead,
+	type SweepCharge,
+	SWEEP_CHARGE_S,
+	beginSweep,
+	stepSweep,
+	sweepRefusal,
+	sweepSources,
+	replaceSystemLeads,
+	sweepAge,
+	sweepRegionLabel,
+} from "./system-sweep";
+import {
 	type CarrierReading,
 	type ScanConsoleReadout,
 	type ScanHold,
@@ -2464,6 +2476,9 @@ class Game {
 	/** The forward station console keeps its tab across a head turn while docked. */
 	private stationConsoleTab: StationConsoleTab = "Market";
 	private requests = emptyRequests();
+	private sweepLeads: SavedLead[] = [];
+	private sweepCharge: SweepCharge | null = null;
+	private sweepStatus = "Press Sweep · 10 s charge";
 	private requestSelectedId: string | null = null;
 	/**
 	 * Current or Past (node #690). Transient, never saved: Requests opens on
@@ -4269,6 +4284,7 @@ class Game {
 			this.commerceWorld = save.world;
 			this.commander = save.commander.state;
 			this.requests = save.commander.requests;
+			this.sweepLeads = save.commander.sweepLeads;
 			this.chargeAu = save.commander.chargeAu;
 			this.permadeath = save.commander.permadeath;
 			this.firstDay = save.commander.firstDay;
@@ -4749,6 +4765,11 @@ class Game {
 				if (tab === "Requests" && this.leftTab !== "Requests")
 					this.requestTab = "current";
 				this.leftTab = tab;
+				this.consolePress(true);
+				this.updateCockpit();
+			},
+			onSweep: () => {
+				this.startSystemSweep();
 				this.consolePress(true);
 				this.updateCockpit();
 			},
@@ -8004,6 +8025,107 @@ class Game {
 	private scanSubject(target: Body | null): TrafficActor | undefined {
 		if (!target || !isDisplayContact(target)) return undefined;
 		return this.trafficActorByKey(target.id as CarrierKey);
+	}
+
+	private systemSweepContext() {
+		return {
+			fitted: relayScannerFitted(this.commander.ownedEquipment),
+			flying: this.dock.phase === "flying",
+			cruise: this.regime === "cruise" || this.spoolLeftS > 0,
+		};
+	}
+
+	private startSystemSweep() {
+		const context = this.systemSweepContext();
+		this.sweepStatus = sweepRefusal(context) ?? "Charging";
+		this.sweepCharge = beginSweep(
+			this.sweepCharge,
+			this.world.gameTime,
+			context,
+		);
+	}
+
+	private abortSystemSweep() {
+		if (this.sweepCharge)
+			this.sweepStatus = "Sweep interrupted · press Sweep to restart";
+		this.sweepCharge = null;
+	}
+
+	private stepSystemSweep() {
+		const before = this.sweepCharge;
+		if (!before) return;
+		const result = stepSweep(
+			before,
+			this.world.gameTime,
+			this.systemSweepContext(),
+		);
+		this.sweepCharge = result.charge;
+		if (!result.completed) {
+			if (!result.charge)
+				this.sweepStatus = "Sweep interrupted · press Sweep to restart";
+			return;
+		}
+		const { galaxy, index } = this.world.system.record;
+		const found = sweepSources(
+			{ ...this.commerceWorld, gameTime: this.world.gameTime },
+			galaxy,
+			index,
+		);
+		this.sweepLeads = replaceSystemLeads(this.sweepLeads, found, galaxy, index);
+		this.sweepStatus = `Sweep complete · ${found.length} regions recorded`;
+		this.saveDirty();
+	}
+
+	private sweepPanelCache: {
+		key: string;
+		leads: SavedLead[];
+		panel: import("./live-cockpit").SweepPanel;
+	} | null = null;
+	private systemSweepPanel(): import("./live-cockpit").SweepPanel {
+		const now = this.world.gameTime;
+		const { galaxy, index } = this.world.system.record;
+		const context = this.systemSweepContext();
+		const remaining = this.sweepCharge
+			? Math.max(
+					0,
+					Math.ceil(SWEEP_CHARGE_S - (now - this.sweepCharge.startedAt)),
+				)
+			: null;
+		const key = `${context.fitted}|${context.flying}|${context.cruise}|${galaxy}|${index}|${this.leftTab}|${Math.floor(now)}|${remaining}|${this.sweepStatus}`;
+		if (
+			this.sweepPanelCache?.key === key &&
+			this.sweepPanelCache.leads === this.sweepLeads
+		)
+			return this.sweepPanelCache.panel;
+		const panel: import("./live-cockpit").SweepPanel = {
+			fitted: context.fitted,
+			refusal: sweepRefusal(context),
+			charging: remaining !== null,
+			status:
+				remaining !== null
+					? `CHARGING · ${remaining}s remaining · runs without holding`
+					: this.sweepStatus,
+			rows:
+				this.leftTab === "Sweep"
+					? this.sweepLeads
+							.filter(
+								(r) => r.galaxyIndex === galaxy && r.systemIndex === index,
+							)
+							.map((row) => ({
+								id: row.id,
+								label:
+									row.kind === "relay"
+										? "Pirate relay signal"
+										: row.kind === "wreck"
+											? "Salvage wreck signal"
+											: "Raider pressure",
+								region: sweepRegionLabel(row, this.commerceWorld.seed),
+								age: sweepAge(row, now),
+							}))
+					: [],
+		};
+		this.sweepPanelCache = { key, leads: this.sweepLeads, panel };
+		return panel;
 	}
 
 	/**
@@ -12407,6 +12529,7 @@ class Game {
 		// cannot reach because it runs on the flight tail. `tests/leg-reset-coverage`
 		// asked for both fields the moment they were assigned on the flight path.
 		this.scanHold = beginScanHold();
+		this.abortSystemSweep();
 		this.scanFacts = null;
 		this.raiderFiring = false;
 		this.gunFeedback = QUIET_GUN;
@@ -14363,6 +14486,7 @@ class Game {
 		// paid to a ship in front of the canopy; five seconds of it cannot include
 		// a jump leg, and the nose is nowhere during one.
 		this.scanHold = beginScanHold();
+		this.abortSystemSweep();
 		const target = this.targetBody();
 		const targetParentId = this.targetParentId();
 		if (target && targetParentId) {
@@ -14533,6 +14657,7 @@ class Game {
 			// otherwise wait out the whole visit and complete on the first frame
 			// back in the seat, with no attention paid in between.
 			this.scanHold = beginScanHold();
+			this.abortSystemSweep();
 			this.stepDockPhase(dt);
 			return;
 		}
@@ -14947,6 +15072,7 @@ class Game {
 		// target *is* this frame: a carrier that drove out of range mid-charge
 		// breaks it, and reading the old position would hold it forever.
 		this.stepScan(dt);
+		this.stepSystemSweep();
 		// §7: the tank refills passively in normal flight, and that is the
 		// anti-stranding rule rather than a convenience.
 		this.chargeAu = chargeAfterRegen(this.chargeAu, dt, this.chargeCapacityAu);
@@ -16619,6 +16745,7 @@ class Game {
 			dockPhase: this.dock.phase,
 			headLook: this.headLook,
 			leftTab: this.leftTab,
+			sweep: this.systemSweepPanel(),
 			rightTab: this.rightTab,
 			navRows: this.navRows(),
 			navFilter: this.navFilter,
@@ -17226,6 +17353,7 @@ class Game {
 			...base,
 			state: this.commander,
 			requests: this.requests,
+			sweepLeads: this.sweepLeads,
 			galaxyIndex: this.world.system.record.galaxy,
 			systemIndex: this.world.system.record.index,
 			dockedAt: station ? this.stationKey(station) : null,

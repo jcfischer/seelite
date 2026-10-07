@@ -340,6 +340,7 @@ function teardownSubject(ejectHold: EjectHold, ejectDown: boolean) {
 			methods(
 				[
 					"clearFlightSession",
+					"abortSystemSweep",
 					"dropPointer",
 					"syncCargoContacts",
 					"registerContact",
@@ -380,6 +381,9 @@ function teardownSubject(ejectHold: EjectHold, ejectDown: boolean) {
 			targetId: null as string | null,
 			ejectHold,
 			ejectDown: () => ejectDown,
+			sweepCharge: { startedAt: 12 },
+			sweepLeads: [{ id: "retained-provenance" }],
+			sweepStatus: "Charging",
 		},
 	);
 }
@@ -402,6 +406,14 @@ test("a jump or a reset takes the cargo contacts with the canisters", () => {
 	expect(subject.cargoContacts.size).toBe(0);
 	expect(subject.targetId).toBeNull();
 	expect(subject.selectableCache).toBeNull();
+});
+
+test("a jump breaks the system sweep but retains its dated provenance", () => {
+	const subject = teardownSubject(EJECT_IDLE, false);
+	subject.clearFlightSession();
+	expect(subject.sweepCharge).toBeNull();
+	expect(subject.sweepStatus).toContain("interrupted");
+	expect(subject.sweepLeads).toEqual([{ id: "retained-provenance" }]);
 });
 
 test("a jump keeps a spent eject hold spent while its key is still down", () => {

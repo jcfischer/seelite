@@ -38,7 +38,7 @@ const tumbling = () => {
 describe("#619 — the rates in the save", () => {
 	test("rates arrived at 8, which is still read beside 7", () => {
 		// Node #731 took 9 for the world's derelict rows.
-		expect(SAVE_SCHEMA_VERSION).toBe(9);
+		expect(SAVE_SCHEMA_VERSION).toBe(10);
 		expect(LEGACY_SAVE_SCHEMA_VERSIONS).toContain(7);
 		expect(LEGACY_SAVE_SCHEMA_VERSIONS).toContain(8);
 	});
@@ -57,6 +57,7 @@ describe("#619 — the rates in the save", () => {
 	test("a version 7 record loads at rest", () => {
 		const v7 = resealed(serializeSave(tumbling()), (body) => {
 			body.saveSchemaVersion = 7;
+			delete body.commander.sweepLeads;
 			delete body.commander.flight.rates;
 		});
 		expect(parseSave(v7).commander.flight.rates).toEqual([0, 0, 0]);
@@ -65,6 +66,7 @@ describe("#619 — the rates in the save", () => {
 	test("a version 7 record carrying rates was assembled, and is refused", () => {
 		const grafted = resealed(serializeSave(tumbling()), (body) => {
 			body.saveSchemaVersion = 7;
+			delete body.commander.sweepLeads;
 		});
 		expect(() => parseSave(grafted)).toThrow("rates is not a version 7 field");
 	});

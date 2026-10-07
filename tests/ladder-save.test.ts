@@ -45,10 +45,10 @@ const saved = () => {
 };
 
 describe("#183 D9 — the ladders in the save", () => {
-	test("the schema is 9, and carries the ladders since 7", () => {
+	test("the schema is 10, and carries the ladders since 7", () => {
 		// A literal, so the next bump has to come through here.
-		expect(SAVE_SCHEMA_VERSION).toBe(9);
-		expect([...LEGACY_SAVE_SCHEMA_VERSIONS]).toEqual([2, 3, 4, 5, 6, 7, 8]);
+		expect(SAVE_SCHEMA_VERSION).toBe(10);
+		expect([...LEGACY_SAVE_SCHEMA_VERSIONS]).toEqual([2, 3, 4, 5, 6, 7, 8, 9]);
 	});
 
 	test("a new commander starts at zero, seeded with where it starts", () => {
@@ -82,6 +82,7 @@ describe("#183 D9 — the ladders in the save", () => {
 	test("a v6 record migrates at zero, seeded, and keeps what it owns", () => {
 		const v6 = resealed(serializeSave(saved()), (body) => {
 			body.saveSchemaVersion = 6;
+			delete body.commander.sweepLeads;
 			delete body.commander.ladders;
 			delete body.commander.flight.rates;
 		});
@@ -113,6 +114,7 @@ describe("#183 D9 — the ladders in the save", () => {
 		save.world.galaxies[0] = { ...save.world.galaxies[0], visited: [5] };
 		const v6 = resealed(serializeSave(save), (body) => {
 			body.saveSchemaVersion = 6;
+			delete body.commander.sweepLeads;
 			delete body.commander.ladders;
 			delete body.commander.flight.rates;
 		});
@@ -130,6 +132,7 @@ describe("#183 D9 — the ladders in the save", () => {
 	test("an older version carrying the key is refused by name", () => {
 		const grafted = resealed(serializeSave(saved()), (body) => {
 			body.saveSchemaVersion = 6;
+			delete body.commander.sweepLeads;
 		});
 		expect(() => parseSave(grafted)).toThrow(
 			'saveSchemaVersion 6 cannot contain "ladders"',

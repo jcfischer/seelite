@@ -19,6 +19,20 @@ const entry = (file, contract, evidence) =>
 export const PROBE_CATALOG = Object.freeze(
 	[
 		entry(
+			"probe-system-sweep.mjs",
+			"Presses the fitted left-console Sweep, steps its autonomous ten-second charge, checks source/age region rows without discovery or targets, cruise interruption/refusal, save reload, stale age and relay approach identification.",
+			[
+				"long-range scanner",
+				"system sweep",
+				"regions",
+				"provenance",
+				"cruise",
+				"save",
+				"relay identification",
+				"left console",
+			],
+		),
+		entry(
 			"probe-inter-system-traffic.mjs",
 			"Follows one named home-owned hauler from its berth through a painted departure ring and the anchored arrival ring into the destination Traffic queues; identity, contact removal and visitor berth share the live Game.",
 			[

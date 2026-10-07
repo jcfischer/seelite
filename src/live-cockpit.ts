@@ -133,6 +133,7 @@ const RIGHT_TABS: readonly RightTab[] = [
  */
 export type LeftTab =
 	| "Navigation"
+	| "Sweep"
 	| "Galaxy Map"
 	| "Communications"
 	| "Requests"
@@ -141,11 +142,34 @@ export type LeftTab =
 	| "First day";
 const LEFT_TABS: readonly LeftTab[] = [
 	"Navigation",
+	"Sweep",
 	"Galaxy Map",
 	"Communications",
 	"Requests",
 	"First day",
 ];
+
+export interface SweepPanel {
+	fitted: boolean;
+	status: string;
+	refusal: string | null;
+	charging: boolean;
+	rows: { id: string; label: string; region: string; age: string }[];
+}
+
+/** A reading surface, deliberately without a target control or contact markup. */
+export function sweepBody(sweep: SweepPanel | undefined): string {
+	const action = sweep?.fitted
+		? `<button class="lc-station-action" type="button" data-live-sweep-action ${sweep.refusal || sweep.charging ? "disabled" : ""}>SWEEP</button>`
+		: "";
+	const rows = (sweep?.rows ?? [])
+		.map(
+			(row) =>
+				`<li data-live-sweep-region="${escapeHtml(row.id)}"><h3>${escapeHtml(row.label)}</h3><p>${escapeHtml(row.region)}</p><small>OWN SENSORS · ${escapeHtml(row.age)}</small></li>`,
+		)
+		.join("");
+	return `<div class="lc-panel-body" data-live-sweep><div class="lc-rail"><b>REGIONS</b><span>OWN SENSORS</span><span>NO DRIVE COST</span></div><div class="lc-panel-copy">${action}<p data-live-sweep-status>${escapeHtml(sweep?.refusal ?? sweep?.status ?? "Long-Range Scanner required")}</p><p>Regions to search. Fly close to identify a contact.</p><ul class="lc-sweep-list">${rows || "<li>No saved regions in this system.</li>"}</ul></div></div>`;
+}
 
 /** What the First day tab shows (#408), all of it derived by `first-day.ts`. */
 export interface FirstDayPanel {
@@ -182,6 +206,7 @@ export interface LiveCockpitState {
 	dockPhase: DockPhase;
 	headLook: HeadLook;
 	leftTab: LeftTab;
+	sweep?: SweepPanel;
 	rightTab: RightTab;
 	contacts: ScannerContact[];
 	/** The Navigation console's filtered target list, nearest first. */
@@ -287,6 +312,7 @@ export interface LiveCockpitState {
 const LEFT_READOUT = `<div class="lc-readout"><span><b>SCANNER RANGE</b><em>10,000 km</em></span><span><b>CONTACTS</b><em data-live-contact-count></em></span><span><b>STANDING</b><em data-live-legal-status></em></span></div>`;
 
 export interface LiveCockpitCallbacks {
+	onSweep?: () => void;
 	onRequestAction?: (action: string, id: string) => void;
 	onRightTab: (tab: RightTab) => void;
 	onLeftTab: (tab: LeftTab) => void;
@@ -458,6 +484,9 @@ const STYLE = `${REQUESTS_STYLE}${HOLD_STYLE}${LADDER_STYLE}${RELAY_CUE_STYLE}
 .lc-chip[aria-pressed="true"] { border-color: #ffe0a2; background: rgba(223, 122, 20, .26); color: #fff0c9; }
 .lc-nav-query { flex: 1 1 96px; min-width: 84px; border: 1px solid rgba(229, 170, 82, .5); border-radius: 3px; padding: 4px 7px; background: rgba(8, 5, 3, .6); color: #ffe1a9; font: inherit; font-size: 11px; }
 .lc-nav-list { display: grid; gap: 2px; margin: 0; padding: 0; list-style: none; max-height: 234px; overflow: auto; }
+.lc-sweep-list { display: grid; gap: 12px; margin: 0; padding: 0; list-style: none; max-height: 280px; overflow: auto; }
+.lc-sweep-list li { padding: 10px 12px; border-left: 3px solid #c39a60; background: #a0743012; }
+.lc-sweep-list small { color: #bfa57c; }
 .lc-nav-row { display: grid; grid-template-columns: 1fr auto auto; gap: 10px; width: 100%; border: 0; border-bottom: 1px solid rgba(229, 170, 82, .22); padding: 5px 6px; background: transparent; color: #ffdcb0; cursor: pointer; font: inherit; font-size: 11px; text-align: left; }
 .lc-nav-row:hover { background: rgba(223, 122, 20, .14); }
 .lc-nav-row[aria-current="true"] { background: rgba(223, 122, 20, .3); color: #fff0c9; }
@@ -775,6 +804,10 @@ export class LiveCockpit {
 			return;
 		}
 		const chip = element.closest<HTMLElement>("[data-live-nav-kind]");
+		if (element.closest("[data-live-sweep-action]")) {
+			this.callbacks.onSweep?.();
+			return;
+		}
 		if (chip) {
 			this.toggleKind(chip.dataset.liveNavKind as string);
 			return;
@@ -809,6 +842,7 @@ export class LiveCockpit {
 	 * way of getting to one.
 	 */
 	private static readonly OWN_FOCUSABLE = [
+		"[data-live-sweep-action]",
 		"[data-live-request-action]",
 		"[data-live-station-action]",
 		"[data-live-launch]",
@@ -944,6 +978,7 @@ export class LiveCockpit {
 		if (d.liveLaunch !== undefined) return "launch";
 		if (d.liveRightTab !== undefined) return `right-tab:${d.liveRightTab}`;
 		if (d.liveLeftTab !== undefined) return `left-tab:${d.liveLeftTab}`;
+		if (d.liveSweepAction !== undefined) return "sweep-action";
 		if (d.liveNavKind !== undefined) return `nav-kind:${d.liveNavKind}`;
 		if (d.liveNavTarget !== undefined) return `nav-target:${d.liveNavTarget}`;
 		if (d.liveControlsGroup !== undefined)
@@ -1286,7 +1321,7 @@ export class LiveCockpit {
 		// list would become unusable exactly while it was being used.
 		// **The Requests tab is in it** (node #690): docking or launching resets
 		// the tab to Current without a press, so no revision moves with it.
-		const key = `${state.visible}|${state.dockPhase}|${state.headLook}|${state.leftTab}|${state.rightTab}|${state.stationConsole?.label ?? ""}|${state.stationConsole?.tab ?? ""}|${state.stationConsole?.revision ?? 0}|${state.stationConsole?.message ?? ""}|${state.launchHold ? "held" : ""}|${!!state.requests}|${state.requests?.revision ?? 0}|${state.requests?.tab ?? ""}|${state.firstDay?.current ?? ""}|${state.firstDay?.text ?? ""}|${state.firstDay?.stationLine ?? ""}|${state.firstDay?.controls.keyboard ?? ""}|${state.firstDay?.controls.controller ?? ""}|${state.firstDay?.eject ?? ""}|${state.rightTab === "Commander" ? ladderViewKey(state.ladders) : ""}`;
+		const key = `${state.sweep?.fitted}|${state.leftTab === "Sweep" ? JSON.stringify(state.sweep) : ""}|${state.visible}|${state.dockPhase}|${state.headLook}|${state.leftTab}|${state.rightTab}|${state.stationConsole?.label ?? ""}|${state.stationConsole?.tab ?? ""}|${state.stationConsole?.revision ?? 0}|${state.stationConsole?.message ?? ""}|${state.launchHold ? "held" : ""}|${!!state.requests}|${state.requests?.revision ?? 0}|${state.requests?.tab ?? ""}|${state.firstDay?.current ?? ""}|${state.firstDay?.text ?? ""}|${state.firstDay?.stationLine ?? ""}|${state.firstDay?.controls.keyboard ?? ""}|${state.firstDay?.controls.controller ?? ""}|${state.firstDay?.eject ?? ""}|${state.rightTab === "Commander" ? ladderViewKey(state.ladders) : ""}`;
 		this.setVisible(state.visible);
 		this.root.dataset.liveHeadLook = state.headLook;
 		this.root.dataset.liveDocked = String(state.dockPhase === "docked");
@@ -1578,7 +1613,9 @@ export class LiveCockpit {
 		const view = cockpitView(state.headLook);
 		const targetName = escapeHtml(state.targetName ?? "NO TARGET SELECTED");
 		const leftTabs = LEFT_TABS.filter(
-			(tab) => tab !== "Requests" || !!state.requests,
+			(tab) =>
+				(tab !== "Requests" || !!state.requests) &&
+				(tab !== "Sweep" || !!state.sweep?.fitted),
 		)
 			.map(
 				(tab) =>
@@ -1886,6 +1923,7 @@ export class LiveCockpit {
 	}
 
 	private leftBody(state: LiveCockpitState) {
+		if (state.leftTab === "Sweep") return sweepBody(state.sweep);
 		if (state.leftTab === "First day") return firstDayBody(state.firstDay);
 		if (state.leftTab === "Requests") return requestsBody(state.requests, true);
 		// The chart is the *reading* surface and the list is the *finding* one

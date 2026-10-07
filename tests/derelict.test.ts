@@ -483,10 +483,10 @@ describe("the save", () => {
 		expect(parseWorld(serializeWorld(world))).toEqual(world);
 	});
 
-	test("the schema is 9, and 8 is still read", () => {
+	test("the schema is 10, and 8 is still read", () => {
 		// A literal, so the next bump has to come through here.
-		expect(SAVE_SCHEMA_VERSION).toBe(9);
-		expect([...LEGACY_SAVE_SCHEMA_VERSIONS]).toEqual([2, 3, 4, 5, 6, 7, 8]);
+		expect(SAVE_SCHEMA_VERSION).toBe(10);
+		expect([...LEGACY_SAVE_SCHEMA_VERSIONS]).toEqual([2, 3, 4, 5, 6, 7, 8, 9]);
 	});
 
 	test("an untouched world writes no derelict domain, so an older world's bytes still hash", () => {
@@ -500,6 +500,7 @@ describe("the save", () => {
 			serializeSave({ world: newWorld(WORLD), commander }),
 			(body) => {
 				body.saveSchemaVersion = 8;
+				delete body.commander.sweepLeads;
 			},
 		);
 		const loaded = parseSave(v8);
@@ -517,6 +518,7 @@ describe("the save", () => {
 			}),
 			(body) => {
 				body.saveSchemaVersion = 8;
+				delete body.commander.sweepLeads;
 			},
 		);
 		expect(() => parseSave(v8)).toThrow("derelicts is not a version 8 field");
