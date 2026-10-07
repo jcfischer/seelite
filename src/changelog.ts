@@ -28,6 +28,12 @@ export type ChangelogEntry = {
 };
 
 export const CHANGELOG: readonly ChangelogEntry[] = [
+	// Node #719: copy approved by the principal on 2026-10-07.
+	{
+		date: "2026-10-07",
+		text: "Stars are now small, sharp points of light, and the nearby systems you can fly to glow a little brighter than the rest.",
+		node: 719,
+	},
 	// Node #728: copy approved by the principal on 2026-10-06 (#231's rig B).
 	{
 		date: "2026-10-06",
