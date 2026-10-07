@@ -539,10 +539,13 @@ leaves a mark near 63 rather than 18.9, so a 40 t hull trading there next reads
 a ratio of 1.575 rather than 0.47. It is the ratchet above seen from the other
 side — a mark belongs to the market, not to the hull that left it.
 
-**A shelf is whole units, floored.** The decay is exponential, so a mark read
-between trades is almost never whole, and the console printed
-`23.95361409160266 t`. The till reads the same figure, so it is floored rather
-than rounded: a shelf of 0.6 shown as 1 is a unit the till would refuse.
+**A shelf is whole units, shared by the console and till (#316).** The decay
+is exponential, so a mark read between trades is almost never whole. Node
+#777 rounds the signed mark to the nearest unit (half-units away from zero)
+before subtracting it from the generated stock and clamping to 0–63. Flooring
+the stock erased a one-unit sale as soon as its mark fell below one. Rounding
+the mark keeps both directions visible through small clock steps; the till
+honours exactly those whole units. Prices still read the continuous mark.
 
 **What the two changes do to the measurements.** `measure-market.ts` prints
 byte-identical output across them. `measure-hull-pricing.ts` section D — what
@@ -730,8 +733,12 @@ separately — but it is worth naming plainly:
   `Station.id` is only system-local and is not a save key.
 - **Per galaxy**, per the map's constraint that galaxies are a namespace.
 - **Decayed lazily** on read from `updatedAt` and the clock, not by a tick.
-- **Dropped** when `|deficit| < 1` unit, so the save does not grow without bound
-  across a long game.
+- **Dropped** when `|deficit| < 0.5` unit, the shelf's rounding boundary, so the
+  save does not grow without bound across a long game. Node #777 lowers the
+  former one-unit cutoff: it removed a fresh unit trade on the next frame.
+  A unit mark now lasts one 20-minute half-life; larger marks remain bounded
+  and expire one half-life later than under the old cutoff. The row shape and
+  magnitude cap are unchanged, so existing saves need no migration.
 
 **Waiting must almost never beat flying** — and the word changed, because the
 sim §10.3 required has now been run. `MARKET_PERIOD` 30 min and
@@ -2046,13 +2053,13 @@ stations, phase staggers the stations of one system, and two stations in one
 system draw unrelated bytes. §2's persistence-identity table is here too,
 because it is about the key a *generated* station carries.
 
-**The save round-trip tests** — `tests/deficits.test.ts`, 15 tests. §5.5: lazy
-decay on read with nothing written, saturation at ±63, the drop-below-one-unit
+**The save round-trip tests** — `tests/deficits.test.ts`. §5.5: lazy
+decay on read with nothing written, saturation at ±63, the drop-below-half-unit
 rule, a JSON round trip over a 61-row map, and a malformed save that throws
 rather than reading as an untouched healthy carrier. They were in
 `market-state.test.ts` until #67 moved §5.5's map to `src/deficits.ts` and they
-followed it unchanged; the last three of the fifteen are that node's own
-structural checks and belong to it rather than to §5.5.
+followed it unchanged. Node #777 adds advancing-time unit-mark and pruning
+regressions. The final three structural checks belong to #67 rather than §5.5.
 
 **Three of those tests were written, found unfalsifiable, and replaced** — one
 caught here, two in review — which is worth recording because each replacement

@@ -37,6 +37,7 @@ import {
 } from "../src/station-commerce";
 import { priceLabel, stationMarketScreen } from "../src/station-console";
 import { newWorld, parseWorld, serializeWorld } from "../src/world-state";
+import { MAX_DT } from "../src/units";
 // **§5's eight economies, imported from the helper that already owns them.** This file
 // used to declare its own copy; a copy of a domain list is how a widening of the table
 // turns a sweep into a smaller claim that still prints a clean number.
@@ -210,7 +211,10 @@ test("the till stops selling when the shelf it showed is empty, on every hull (#
 				break;
 			}
 			bought++;
-			state = step(result.commander, result.deficits);
+			state = {
+				...step(result.commander, result.deficits),
+				gameTimeMin: (bought * MAX_DT) / 60,
+			};
 		}
 		expect({ hull, bought, reason }).toEqual({
 			hull,
@@ -218,6 +222,90 @@ test("the till stops selling when the shelf it showed is empty, on every hull (#
 			reason: "insufficient-shelf",
 		});
 	}
+});
+
+describe("node #777 unit trades across frame ticks", () => {
+	const goodName = "Gold";
+	const baseShelf = marketRow(commodity(goodName), 3, STATION, 0).quantity;
+	const frameMin = MAX_DT / 60;
+	const shownShelf = (
+		state: CycleState,
+		gameTimeMin: number,
+		name = goodName,
+	) =>
+		stationMarketScreen({
+			economy: 3,
+			station: STATION,
+			deficitOf: (name) => readDeficit(state.deficits, KEY, name, gameTimeMin),
+			gameTimeMin,
+			holdT: HULL_SPECS[state.commander.hull].holdT,
+			cargo: state.commander.cargo,
+			displayTL: 8,
+		}).find((row) => row.commodity.name === name)!.quantity;
+
+	test("advancing-time one-unit buys empty the shown shelf on every hull", () => {
+		expect(baseShelf).toBeGreaterThan(0);
+		for (const hull of Object.keys(HULL_SPECS) as HullId[]) {
+			let state: CycleState = {
+				commander: { ...newCommander(hull), credits: 1e9 },
+				deficits: {},
+			};
+			for (let n = 1; n <= baseShelf; n++) {
+				const out = transactAtStation(
+					input({
+						...state,
+						gameTimeMin: n * frameMin,
+						action: { type: "buy-commodity", commodity: goodName, quantity: 1 },
+					}),
+				);
+				expect(out.accepted).toBe(true);
+				state = out;
+				expect(shownShelf(state, (n + 1) * frameMin)).toBe(baseShelf - n);
+			}
+			const refused = transactAtStation(
+				input({
+					...state,
+					gameTimeMin: (baseShelf + 1) * frameMin,
+					action: { type: "buy-commodity", commodity: goodName, quantity: 1 },
+				}),
+			);
+			expect(refused).toMatchObject({
+				accepted: false,
+				reason: "insufficient-shelf",
+			});
+			expect(refused.commander).toBe(state.commander);
+			expect(refused.deficits).toBe(state.deficits);
+		}
+	});
+
+	test("advancing-time one-unit sells raise the shown shelf and it stays capped", () => {
+		// Food has room above its base shelf; Gold starts at the cap.
+		const sellGood = "Food";
+		const sellBase = marketRow(commodity(sellGood), 3, STATION, 0).quantity;
+		const room = DEFICIT_MAX - sellBase;
+		expect(room).toBeGreaterThan(0);
+		let state: CycleState = {
+			commander: {
+				...newCommander("freighter"),
+				cargo: { [sellGood]: room + 1 },
+			},
+			deficits: {},
+		};
+		for (let n = 1; n <= room + 1; n++) {
+			const out = transactAtStation(
+				input({
+					...state,
+					gameTimeMin: n * frameMin,
+					action: { type: "sell-commodity", commodity: sellGood, quantity: 1 },
+				}),
+			);
+			expect(out.accepted).toBe(true);
+			state = out;
+			expect(shownShelf(state, (n + 1) * frameMin, sellGood)).toBe(
+				Math.min(sellBase + n, DEFICIT_MAX),
+			);
+		}
+	});
 });
 
 test("available equipment is charged once, then becomes owned and unavailable", () => {

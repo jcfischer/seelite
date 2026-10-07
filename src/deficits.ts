@@ -34,9 +34,10 @@
 import { type CarrierKey, isCarrierKey } from "./carrier-key";
 import { addDeficit, decayDeficit } from "./market";
 
-/** §5.5: a row is dropped once its mark has faded below one unit, so the save
- *  does not grow without bound across a long game. */
-export const DEFICIT_DROP_UNITS = 1;
+/** §5.5: drop marks below half a unit, the shelf's rounding boundary.
+ * A fresh one-unit trade must survive advancing game time (node #777).
+ * The positive cutoff still bounds the lifetime of saved market memory. */
+export const DEFICIT_DROP_UNITS = 0.5;
 
 /**
  * One station's memory, as saved.
@@ -64,7 +65,7 @@ export interface DeficitRow {
  */
 export type DeficitMap = Record<CarrierKey, DeficitRow>;
 
-/** A row decayed to `gameTimeMin`, with anything under one unit dropped. */
+/** A row decayed to `gameTimeMin`, with marks below the cutoff dropped. */
 const decayRow = (row: DeficitRow, gameTimeMin: number): DeficitRow => {
 	const elapsed = Math.max(0, gameTimeMin - row.updatedAt);
 	const goods: Record<string, number> = {};

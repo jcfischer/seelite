@@ -372,9 +372,17 @@ describe("§3 the type offset", () => {
 	});
 
 	test("the shelf is whole units under a decayed deficit (#316)", () => {
-		// #316, §5.2: a decayed mark is almost never whole; the shelf is floored.
-		expect(shelfQuantity(40, 10.4)).toBe(29);
+		// Node #777: quantize the signed mark symmetrically, preserving a unit
+		// trade through small clock steps without fractional stock at the till.
+		expect(shelfQuantity(40, 10.4)).toBe(30);
 		expect(shelfQuantity(40, -10.4)).toBe(50);
+		expect(shelfQuantity(40, 10.6)).toBe(29);
+		expect(shelfQuantity(40, -10.6)).toBe(51);
+		for (const sign of [-1, 1]) {
+			expect(shelfQuantity(40, sign * 0.999)).toBe(40 - sign);
+			expect(shelfQuantity(40, sign * 0.5)).toBe(40 - sign);
+			expect(shelfQuantity(40, sign * 0.499)).toBe(40);
+		}
 		for (let minutes = 0; minutes <= 60; minutes += 0.7) {
 			for (const mark of [16, -16, 39.2, -39.2]) {
 				const shelf = shelfQuantity(40, decayDeficit(mark, minutes));

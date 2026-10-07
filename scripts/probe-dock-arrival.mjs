@@ -1439,5 +1439,83 @@ check(
 	JSON.stringify(requestFocusAcrossDecay),
 );
 
+// Node #777: observe the painted shelf after the normal clock/redraw loop,
+// rather than reading the trade frame on which even the broken mark is live.
+const unitShelf = await page.evaluate(async (foodAction) => {
+	const g = window.__seelite;
+	g.setHeadLook("forward");
+	document.querySelector('[data-live-station-tab="Market"]')?.click();
+	const { MARKET_PERIOD_MIN, marketEpoch } = await import("/src/market.ts");
+	const context = g.dockedStationContext();
+	const nextEpoch =
+		marketEpoch(context.market.phaseMin, context.gameTimeMin) + 1;
+	g.world.gameTime =
+		(nextEpoch * MARKET_PERIOD_MIN - context.market.phaseMin) * 60 + 1;
+	// Earlier rows left Food marks. Start this case at an untouched market.
+	delete context.envelope.deficits[context.stationKey];
+	const cargo = { ...g.commander.cargo };
+	delete cargo.Food;
+	g.commander = { ...g.commander, cargo, credits: 100_000 };
+	g.stationConsoleRevision += 1;
+	const tick = () => new Promise((resolve) => requestAnimationFrame(resolve));
+	const settle = async () => {
+		await tick();
+		await tick();
+	};
+	await settle();
+	const shelf = () =>
+		Number(
+			document
+				.querySelector('[data-live-market-row="Food"] [data-live-shelf]')
+				?.firstChild?.textContent?.split(" ")[0],
+		);
+	const held = () =>
+		document.querySelector('[data-live-market-row="Food"] [data-live-held]')
+			?.textContent;
+	const act = (type) =>
+		document.querySelector(foodAction.replace("%s", type))?.click();
+	const before = shelf();
+	const samples = [];
+	for (let n = 1; n <= 3; n++) {
+		act("buy-commodity");
+		g.world.gameTime += 2;
+		await settle();
+		samples.push({ type: "buy", n, shelf: shelf(), held: held() });
+	}
+	for (let n = 1; n <= 3; n++) {
+		act("sell-commodity");
+		g.world.gameTime += 2;
+		await settle();
+		samples.push({ type: "sell", n, shelf: shelf(), held: held() });
+	}
+	// A fresh sale must also leave a negative unit mark, not merely cancel buys.
+	g.commander = { ...g.commander, cargo: { ...g.commander.cargo, Food: 3 } };
+	g.stationConsoleRevision += 1;
+	await settle();
+	for (let n = 1; n <= 3; n++) {
+		act("sell-commodity");
+		g.world.gameTime += 2;
+		await settle();
+		samples.push({ type: "fresh-sell", n, shelf: shelf(), held: held() });
+	}
+	return { before, samples };
+}, FOOD_ACTION);
+check(
+	"one-unit buys and sells keep their shelf changes across live frame ticks",
+	unitShelf.before >= 3 &&
+		unitShelf.before <= 60 &&
+		unitShelf.samples.every(({ type, n, shelf, held }) => {
+			const cargo = type === "buy" ? n : 3 - n;
+			const expected =
+				type === "buy"
+					? unitShelf.before - n
+					: type === "sell"
+						? unitShelf.before - 3 + n
+						: unitShelf.before + n;
+			return shelf === expected && held === (cargo ? `${cargo} t` : "");
+		}),
+	JSON.stringify(unitShelf),
+);
+
 await browser.close();
 exit();
