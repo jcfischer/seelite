@@ -11,6 +11,7 @@
  * leads the band in.
  */
 import { HARMONY, THEME } from "../music-danube";
+import { at, fourBeats, fromWaltz } from "../music-danube-remeter";
 import type { NoteEvent, PartSpec, Song } from "../music-score";
 
 export const SYNTHWAVE_BPM = 108;
@@ -113,43 +114,6 @@ const PARTS: Readonly<Record<string, PartSpec>> = {
 		reverb: 0.45,
 		echo: 0.4,
 	},
-};
-
-/** A waltz position in 4/4 beats: two waltz bars a 4/4 bar, a waltz bar's
- *  beats on the 3-3-2 sixteenth grid. */
-const fourBeats = (waltzBeats: number): number => {
-	const bar = Math.floor(waltzBeats / 3);
-	const w = waltzBeats - bar * 3;
-	return bar * 2 + (w < 2 ? w * 0.75 : 1.5 + (w - 2) * 0.5);
-};
-
-/** One note at an absolute 4/4 beat of its section. */
-const at = (
-	part: string,
-	beat: number,
-	dur: number,
-	pitch: number,
-	vel: number,
-): NoteEvent => ({
-	part,
-	bar: Math.floor(beat / 4),
-	beat: beat - Math.floor(beat / 4) * 4,
-	dur,
-	pitch,
-	vel,
-});
-
-/** A note written in waltz time, re-metred. */
-const fromWaltz = (
-	part: string,
-	bar: number,
-	beat: number,
-	dur: number,
-	pitch: number,
-	vel: number,
-): NoteEvent => {
-	const from = fourBeats(bar * 3 + beat);
-	return at(part, from, fourBeats(bar * 3 + beat + dur) - from, pitch, vel);
 };
 
 /** The kit over `bars` bars from `bar`. */

@@ -20,6 +20,7 @@
  * theme), and a `resolve` to the cadence on the next bar line.
  */
 import { DANUBE_VOICINGS, HARMONY, THEME } from "../music-danube";
+import { at, fourBeats, fromWaltz, minor } from "../music-danube-remeter";
 import type { NoteEvent, PartSpec, Song } from "../music-score";
 
 export const TECHNO_BPM = 128;
@@ -121,49 +122,6 @@ const PARTS: Readonly<Record<string, PartSpec>> = {
 	},
 	// The intro's horn call, on the waltz's own bowed desk, darker and wetter.
 	horn: { ...DANUBE_VOICINGS.orchestra.horn, level: 0.22, reverb: 0.7 },
-};
-
-/** D major's F# and B lowered: D minor, its C# kept as the leading tone. */
-const minor = (p: number): number => {
-	const pc = ((Math.round(p) % 12) + 12) % 12;
-	return pc === 6 || pc === 11 ? p - 1 : p;
-};
-
-/** A waltz position in 4/4 beats from the section's start: two waltz bars a
- *  4/4 bar, a waltz bar's beats on the 3-3-2 sixteenth grid. */
-const fourBeats = (waltzBeats: number): number => {
-	const bar = Math.floor(waltzBeats / 3);
-	const w = waltzBeats - bar * 3;
-	return bar * 2 + (w < 2 ? w * 0.75 : 1.5 + (w - 2) * 0.5);
-};
-
-/** One note at an absolute 4/4 beat of its section. */
-const at = (
-	part: string,
-	beat: number,
-	dur: number,
-	pitch: number,
-	vel: number,
-): NoteEvent => ({
-	part,
-	bar: Math.floor(beat / 4),
-	beat: beat - Math.floor(beat / 4) * 4,
-	dur,
-	pitch,
-	vel,
-});
-
-/** A note written in waltz time, re-metred. */
-const fromWaltz = (
-	part: string,
-	bar: number,
-	beat: number,
-	dur: number,
-	pitch: number,
-	vel: number,
-): NoteEvent => {
-	const from = fourBeats(bar * 3 + beat);
-	return at(part, from, fourBeats(bar * 3 + beat + dur) - from, pitch, vel);
 };
 
 /** The kit over `bars` bars from `bar`: kick on every beat, the open hat on

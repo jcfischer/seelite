@@ -408,10 +408,14 @@ test("the music worklet's modules reach only each other and the score", () => {
 	expect(fromsIn("music-sequencer.ts")).toEqual(["./music-score"]);
 	// The strings' knob table (#547 D15) is the voices' defaults and the lab's
 	// sliders: data, reaching only the score's types.
+	// The sampler's pick rule (O27) is a leaf of its own, so the main
+	// thread's sample loader reads the very rule the voice does.
 	expect(fromsIn("music-voices.ts")).toEqual([
+		"./music-sample-pick",
 		"./music-score",
 		"./strings-params",
 	]);
+	expect(importsIn("music-sample-pick.ts")).toEqual([]);
 	expect(fromsIn("strings-params.ts")).toEqual(["./music-score"]);
 	expect(fromsIn("music-space.ts")).toEqual([]);
 	expect(fromsIn("music-engine.ts")).toEqual([

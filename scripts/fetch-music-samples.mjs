@@ -9,9 +9,11 @@
  *   node scripts/fetch-music-samples.mjs piano-grand harpsi-vcsl
  *
  * Each set is a subset of its source: the source's own roots (about every
- * three semitones), two velocity layers for a piano and one for the
- * harpsichord, each sample started at its attack, cut to a few seconds with a
- * fade, summed to mono, given **one gain for the whole set** (so a soft layer
+ * three semitones), the velocity layers the set names (two for most pianos,
+ * six for `piano-grand-rich`, one for the harpsichord), each sample started
+ * at its attack, cut to a few seconds with a fade, kept in stereo where the
+ * set asks for it (`channels: 2`) and summed to mono otherwise, given **one
+ * gain for the whole set** (so a soft layer
  * stays softer than its loud one), and encoded as Ogg Opus. Opus because every
  * browser the game targets decodes it — caniuse lists it as supported in
  * Chrome, Edge and Firefox and in Safari from 18.4 (https://caniuse.com/opus)
@@ -25,15 +27,19 @@
  * its pitch must be the root the set names it — measured by autocorrelation,
  * within 60 cents — so a file named in another octave convention (VCSL names
  * middle C `C3` for its harpsichord and `C4` for its grand) stops the run
- * instead of shipping a sample an octave off.
+ * instead of shipping a sample an octave off. **The check is one-sided**: the
+ * search reaches periods from 1/2.8 to 1.4 of the root's, so a file that
+ * sounds an octave *above* its name is refused, while one that sounds an
+ * octave *below* it can pass, read at its second harmonic (sage, #738).
  *
  * Downloads are cached outside the repository (`SEELITE_SAMPLE_CACHE`, or the
  * OS cache directory), so a second run fetches nothing. They are data: decoded
  * by ffmpeg, never run. A VCSL file is a 24-bit WAV of up to 11 MB, so only
  * the head of it that the cut keeps is fetched, with an HTTP range.
  *
- * Output is git-ignored, as the voice model's is, and each set gets a
- * `LICENSES.txt` naming its source, licence and credit.
+ * The sets the principal chose are **tracked in Git LFS** (`.gitattributes`,
+ * map #1's Constraints); the others and `index.json` are git-ignored. Each
+ * set gets a `LICENSES.txt` naming its source, licence and credit.
  */
 import { execFileSync } from "node:child_process";
 import { createHash } from "node:crypto";
@@ -101,6 +107,30 @@ const raw = (repo, revision, path) =>
 		.map(encodeURIComponent)
 		.join("/")}`;
 
+/** The Salamander grand's source, shared by its two sets: minor thirds
+ *  from the lowest A to the top C, in whichever layers a set names. */
+const SALAMANDER = {
+	instrument:
+		"Salamander Grand Piano V3 — a Yamaha C5, recorded by Alexander Holm",
+	license: "CC-BY-3.0",
+	licenseUrl: "https://creativecommons.org/licenses/by/3.0/",
+	credit:
+		"Salamander Grand Piano V3 by Alexander Holm, CC BY 3.0 (https://creativecommons.org/licenses/by/3.0/)",
+	repo: "sfzinstruments/SalamanderGrandPiano",
+	revision: "3382bf9496bba2486f5ab0de55a264d1dfc38404",
+	async samples(set) {
+		const out = [];
+		for (let root = 21; root <= 108; root += 3)
+			for (const l of set.layers)
+				out.push({
+					root,
+					layer: l.name,
+					path: `Samples/${nameOf(root)}${l.source}.flac`,
+				});
+		return out;
+	},
+};
+
 /**
  * The sets. `samples()` lists `{ root, layer, path }` from the source's own
  * naming; `range` fetches only the head of a large uncompressed file.
@@ -146,46 +176,20 @@ const SETS = [
 	},
 	{
 		id: "piano-grand",
-		instrument:
-			"Salamander Grand Piano V3 — a Yamaha C5, recorded by Alexander Holm",
-		license: "CC-BY-3.0",
-		licenseUrl: "https://creativecommons.org/licenses/by/3.0/",
-		credit:
-			"Salamander Grand Piano V3 by Alexander Holm, CC BY 3.0 (https://creativecommons.org/licenses/by/3.0/)",
-		repo: "sfzinstruments/SalamanderGrandPiano",
-		revision: "3382bf9496bba2486f5ab0de55a264d1dfc38404",
+		...SALAMANDER,
 		seconds: pianoSeconds,
 		// Sixteen layers in the source; the 6th and the 14th.
 		layers: [
 			{ name: "soft", maxVelocity: 0.55, source: "v6" },
 			{ name: "loud", maxVelocity: 1, source: "v14" },
 		],
-		async samples(set) {
-			const out = [];
-			// Minor thirds from the lowest A to the top C.
-			for (let root = 21; root <= 108; root += 3)
-				for (const l of set.layers)
-					out.push({
-						root,
-						layer: l.name,
-						path: `Samples/${nameOf(root)}${l.source}.flac`,
-					});
-			return out;
-		},
 	},
 	// The same grand with more of it kept, for the principal's second blind
 	// round: six of the sixteen layers, stereo, longer tails. About seven
 	// times the size of `piano-grand`.
 	{
 		id: "piano-grand-rich",
-		instrument:
-			"Salamander Grand Piano V3 — a Yamaha C5, recorded by Alexander Holm",
-		license: "CC-BY-3.0",
-		licenseUrl: "https://creativecommons.org/licenses/by/3.0/",
-		credit:
-			"Salamander Grand Piano V3 by Alexander Holm, CC BY 3.0 (https://creativecommons.org/licenses/by/3.0/)",
-		repo: "sfzinstruments/SalamanderGrandPiano",
-		revision: "3382bf9496bba2486f5ab0de55a264d1dfc38404",
+		...SALAMANDER,
 		seconds: richSeconds,
 		channels: 2,
 		bitrate: 96000,
@@ -197,17 +201,6 @@ const SETS = [
 			{ name: "f", maxVelocity: 0.85, source: "v14" },
 			{ name: "ff", maxVelocity: 1, source: "v16" },
 		],
-		async samples(set) {
-			const out = [];
-			for (let root = 21; root <= 108; root += 3)
-				for (const l of set.layers)
-					out.push({
-						root,
-						layer: l.name,
-						path: `Samples/${nameOf(root)}${l.source}.flac`,
-					});
-			return out;
-		},
 	},
 	// A jazz bass for the piano trio: pizzicato, three dynamics, the first
 	// of each note's round robins. The SFZ's own split: p to 74, m to 120.
@@ -448,6 +441,10 @@ function encode(x, gainDb, fadeS, channels = 1, bitrate = BITRATE) {
 		String(bitrate),
 		"-application",
 		"audio",
+		// Without it the Ogg muxer draws a random stream serial per file, so a
+		// rebuild of the same audio changes every byte and every LFS object.
+		"-fflags",
+		"+bitexact",
 		"-f",
 		"ogg",
 		output,

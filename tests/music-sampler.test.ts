@@ -7,24 +7,23 @@
  */
 import { describe, expect, test } from "bun:test";
 import { MusicEngine } from "../src/music-engine";
+import { pickLayer, pickZone } from "../src/music-sample-pick";
 import type { PartSpec, SampleBank, Song } from "../src/music-score";
-import {
-	pickLayer,
-	pickZone,
-	resolvePart,
-	VoiceBank,
-} from "../src/music-voices";
+import { resolvePart, VoiceBank } from "../src/music-voices";
 import { period, rms } from "./lib/audio-measure";
 
 const SR = 48000;
 const unity = { gain: () => 1 };
 
-/** A sine at MIDI `root`, `seconds` long, recorded at `rate`. */
+/** What one 16-bit step of a test recording is worth: full scale is 1. */
+const SCALE = 1 / 32767;
+
+/** A sine at MIDI `root` and half scale, `seconds` long, recorded at
+ *  `rate`, in 16-bit steps as the worklet holds a recording. */
 const sine = (root: number, seconds: number, rate = SR) => {
 	const hz = 440 * 2 ** ((root - 69) / 12);
-	return Float32Array.from(
-		{ length: Math.round(seconds * rate) },
-		(_, i) => 0.5 * Math.sin((2 * Math.PI * hz * i) / rate),
+	return Int16Array.from({ length: Math.round(seconds * rate) }, (_, i) =>
+		Math.round(0.5 * 32767 * Math.sin((2 * Math.PI * hz * i) / rate)),
 	);
 };
 
@@ -36,6 +35,7 @@ const bank = (seconds = 2, rate = SR): SampleBank => ({
 		maxVelocity,
 		zones: [45, 57, 69].map((root) => ({
 			root,
+			scale: SCALE,
 			data: sine(root, seconds, rate),
 		})),
 	})),
@@ -55,15 +55,13 @@ const render = (b: VoiceBank, frames: number) => {
 describe("which recording a note reads", () => {
 	const set = bank();
 	test("the softest layer that reaches the velocity, the loudest above all", () => {
-		expect(pickLayer(set, 0.3)).toBe(set.layers[0]);
-		expect(pickLayer(set, 0.6)).toBe(set.layers[0]);
-		expect(pickLayer(set, 0.61)).toBe(set.layers[1]);
-		expect(pickLayer({ ...set, layers: [set.layers[0]] }, 0.9)).toBe(
-			set.layers[0],
-		);
+		expect(pickLayer(set.layers, 0.3)).toBe(set.layers[0]);
+		expect(pickLayer(set.layers, 0.6)).toBe(set.layers[0]);
+		expect(pickLayer(set.layers, 0.61)).toBe(set.layers[1]);
+		expect(pickLayer([set.layers[0]], 0.9)).toBe(set.layers[0]);
 	});
 	test("the nearest root, the lower of two equally near", () => {
-		const l = set.layers[0];
+		const l = set.layers[0].zones;
 		expect(pickZone(l, 58)?.root).toBe(57);
 		expect(pickZone(l, 66)?.root).toBe(69);
 		expect(pickZone(l, 63)?.root).toBe(57);
@@ -156,8 +154,9 @@ describe("a stereo set", () => {
 				zones: [
 					{
 						root: 57,
+						scale: SCALE,
 						data: sine(57, 1),
-						right: sine(57, 1).map((v) => v / 4),
+						right: sine(57, 1).map((v) => Math.round(v / 4)),
 					},
 				],
 			},

@@ -14,6 +14,7 @@
  * woodwinds' answers ring on an inharmonic FM bell, which is metal too.
  */
 import { DANUBE_VOICINGS, HARMONY, THEME } from "../music-danube";
+import { minor } from "../music-danube-remeter";
 import type { NoteEvent, PartSpec, Song } from "../music-score";
 
 export const INDUSTRIAL_BPM = 132;
@@ -128,12 +129,6 @@ const PARTS: Readonly<Record<string, PartSpec>> = {
 		rosin: 0.7,
 		reverb: 0.6,
 	},
-};
-
-/** D major's F# and B lowered: D minor, its C# kept. */
-const minor = (p: number): number => {
-	const pc = ((Math.round(p) % 12) + 12) % 12;
-	return pc === 6 || pc === 11 ? p - 1 : p;
 };
 
 const note = (

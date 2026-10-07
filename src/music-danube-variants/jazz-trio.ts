@@ -14,20 +14,14 @@
  * CC BY 3.0), the principal's choice for it. Each sampled part falls back to
  * the synth voice it replaced where the samples cannot be decoded.
  */
+
+import { pianoPart } from "../music-classical/piano";
 import type { NoteEvent, PartSpec, Song } from "../music-score";
 import { DANUBE_JAZZ } from "./jazz";
 
-const PIANO = "piano-grand-rich";
-
-const piano = (level: number, pan: number, releaseS: number): PartSpec => ({
-	voice: "sampler",
-	samples: PIANO,
-	fallback: "keys",
-	level,
-	releaseS,
-	pan,
-	reverb: 0.28,
-});
+/** One hand on the piano: the classical pieces' part, a touch more room. */
+const piano = (level: number, pan: number, releaseS: number): PartSpec =>
+	pianoPart(level, pan, releaseS, 0.28);
 
 /** The waltz bars played ff (`jazz.ts`'s `dyn`): the tune in octaves. */
 const OCTAVES = { from: 25, to: 30 };

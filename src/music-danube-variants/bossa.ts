@@ -16,7 +16,9 @@
  * intro is the electric piano alone, then the horn's call on the lead.
  */
 import { THEME } from "../music-danube";
+import { at, fourBeats, fromWaltz } from "../music-danube-remeter";
 import type { NoteEvent, PartSpec, Song } from "../music-score";
+import { A, B, bassRoot, CHANGES, type Change, D, E, G, voicing } from "./jazz";
 
 export const BOSSA_BPM = 124;
 
@@ -100,106 +102,10 @@ const PARTS: Readonly<Record<string, PartSpec>> = {
 	kick: { voice: "kick", level: 0.33, reverb: 0.05 },
 };
 
-/** A waltz position in 4/4 beats: two waltz bars a 4/4 bar, a waltz bar's
- *  beats on the 3-3-2 sixteenth grid. */
-const fourBeats = (waltzBeats: number): number => {
-	const bar = Math.floor(waltzBeats / 3);
-	const w = waltzBeats - bar * 3;
-	return bar * 2 + (w < 2 ? w * 0.75 : 1.5 + (w - 2) * 0.5);
-};
-
-/** One note at an absolute 4/4 beat of its section. */
-const at = (
-	part: string,
-	beat: number,
-	dur: number,
-	pitch: number,
-	vel: number,
-): NoteEvent => ({
-	part,
-	bar: Math.floor(beat / 4),
-	beat: beat - Math.floor(beat / 4) * 4,
-	dur,
-	pitch,
-	vel,
-});
-
-/** A note written in waltz time, re-metred. */
-const fromWaltz = (
-	part: string,
-	bar: number,
-	beat: number,
-	dur: number,
-	pitch: number,
-	vel: number,
-): NoteEvent => {
-	const from = fourBeats(bar * 3 + beat);
-	return at(part, from, fourBeats(bar * 3 + beat + dur) - from, pitch, vel);
-};
-
-// ── The changes, as the jazz waltz has them ─────────────────────────────────
-
-const QUALITY = {
-	maj9: [4, 7, 11, 14],
-	m9: [3, 7, 10, 14],
-	m7: [3, 7, 10],
-	"13": [4, 10, 14, 21],
-	"9": [4, 10, 14],
-	"7#9": [4, 10, 15],
-	"69": [4, 9, 14],
-} as const;
-type Quality = keyof typeof QUALITY;
-type Change = readonly [number, Quality];
-const D = 2;
-const E = 4;
-const G = 7;
-const A = 9;
-const B = 11;
+// ── The changes: the jazz waltz's own (`jazz.ts`), comped a semitone lower ──
 
 /** The comping's voicing: every chord tone folded into E3–D#4, rootless. */
-const voicing = ([root, q]: Change): number[] =>
-	[...new Set(QUALITY[q].map((i) => 52 + ((root + i - 52 + 120) % 12)))].sort(
-		(a, b) => a - b,
-	);
-
-/** The bass's root, folded into A1–G#2. */
-const bassRoot = ([root]: Change): number => 33 + ((root - 9 + 12) % 12);
-
-/** One chord per waltz bar of `THEME` (bar 0 is the upbeat). */
-const CHANGES: readonly Change[] = [
-	[A, "13"],
-	[D, "maj9"],
-	[D, "maj9"],
-	[B, "m9"],
-	[B, "m9"],
-	[E, "m9"],
-	[E, "m9"],
-	[A, "13"],
-	[A, "13"],
-	[E, "m9"],
-	[E, "m9"],
-	[A, "13"],
-	[A, "13"],
-	[D, "maj9"],
-	[B, "7#9"],
-	[E, "m9"],
-	[A, "13"],
-	[D, "maj9"],
-	[B, "7#9"],
-	[E, "m9"],
-	[A, "13"],
-	[G, "maj9"],
-	[G, "maj9"],
-	[G, "maj9"],
-	[E, "m7"],
-	[A, "9"],
-	[A, "13"],
-	[D, "maj9"],
-	[B, "7#9"],
-	[E, "m9"],
-	[A, "13"],
-	[D, "69"],
-];
+const comping = (c: Change): number[] => voicing(c, 52);
 
 /** Where the comping strikes in a two-beat half bar, alternating:
  *  the bossa's long-short push against the bass. */
@@ -212,7 +118,7 @@ const STRIKES: readonly (readonly number[])[] = [
 function comp(t: number, half: number, c: Change, vel: number): NoteEvent[] {
 	const out: NoteEvent[] = [];
 	for (const s of STRIKES[half % 2])
-		for (const p of voicing(c)) out.push(at("keys", t + s, 0.4, p, vel * 0.7));
+		for (const p of comping(c)) out.push(at("keys", t + s, 0.4, p, vel * 0.7));
 	const root = bassRoot(c);
 	out.push(
 		at("bass", t, 1.4, root, vel),
@@ -314,7 +220,7 @@ const CADENCE: NoteEvent[] = [
 	...comp(2, 1, [A, "13"], 0.75),
 	...comp(4, 0, [D, "69"], 0.7),
 	// The last chord, rolled slowly, with the bass on D.
-	...voicing([D, "69"]).map((p, i) => at("keys", 8 + i * 0.1, 3, p, 0.6)),
+	...comping([D, "69"]).map((p, i) => at("keys", 8 + i * 0.1, 3, p, 0.6)),
 	...[62, 66, 69, 74].map((p, i) => at("answer", 8.4 + i * 0.12, 3, p, 0.45)),
 	at("bass", 8, 4, 38, 0.7),
 	...kit(0, 2),

@@ -21,6 +21,7 @@ export const pianoPart = (
 	level: number,
 	pan: number,
 	releaseS = 0.3,
+	reverb = 0.25,
 ): PartSpec => ({
 	voice: "sampler",
 	samples: PIANO_SET,
@@ -28,7 +29,7 @@ export const pianoPart = (
 	level,
 	releaseS,
 	pan,
-	reverb: 0.25,
+	reverb,
 });
 
 /**

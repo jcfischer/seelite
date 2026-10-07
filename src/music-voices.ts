@@ -19,6 +19,8 @@
  * score draws a seeded stream is #548's to decide; this is noise inside a
  * voice.
  */
+
+import { pickLayer, pickZone } from "./music-sample-pick";
 import type { PartSpec, SampleBank, VoiceKind } from "./music-score";
 import { stringsDefaults } from "./strings-params";
 
@@ -579,32 +581,6 @@ const hermite = (t: number, xm: number, x0: number, x1: number, x2: number) => {
 	return ((c3 * t + c2) * t + c1) * t + x0;
 };
 
-/**
- * The recording a sampler note plays, in two steps that allocate nothing:
- * the softest layer whose `maxVelocity` reaches `vel` (the loudest above
- * them all), and in it the root nearest the pitch — the lower of two equally
- * near, so a note is read faster rather than slower, which keeps its attack
- * short. Exported for tests.
- */
-export function pickLayer(set: SampleBank, vel: number) {
-	const layers = set.layers;
-	for (const l of layers) if (vel <= l.maxVelocity) return l;
-	return layers[layers.length - 1];
-}
-
-export function pickZone(layer: SampleBank["layers"][number], pitch: number) {
-	let best: SampleBank["layers"][number]["zones"][number] | undefined;
-	let bestD = Number.POSITIVE_INFINITY;
-	for (const z of layer.zones) {
-		const d = Math.abs(z.root - pitch);
-		if (d < bestD) {
-			bestD = d;
-			best = z;
-		}
-	}
-	return best;
-}
-
 export class VoiceBank {
 	private readonly stage: Uint8Array;
 	private readonly kind: Uint8Array;
@@ -675,9 +651,11 @@ export class VoiceBank {
 	/** The sample sets that have arrived, by name, and each sampler slot's
 	 *  buffer: a reference into a set, never a copy. */
 	private readonly sets = new Map<string, SampleBank>();
-	private readonly sbuf: (Float32Array | null)[];
+	private readonly sbuf: (Int16Array | null)[];
 	/** A stereo set's right channel, per slot; `null` for a mono set. */
-	private readonly sbufR: (Float32Array | null)[];
+	private readonly sbufR: (Int16Array | null)[];
+	/** What one step of the slot's recording is worth. */
+	private readonly sscale: Float64Array;
 	/** Set by `sampler` when a recording has run out: its slot is free. */
 	private ended = false;
 	/** The bank's own noise, -1..1: the bursts, the drift and the unison
@@ -744,12 +722,33 @@ export class VoiceBank {
 		this.parts = new Array(cap).fill(null);
 		this.sbuf = new Array(cap).fill(null);
 		this.sbufR = new Array(cap).fill(null);
+		this.sscale = f64();
 	}
 
-	/** Hold a sample set for the `sampler` voice; a second one of the same
-	 *  name replaces the first for notes that start after it. */
+	/**
+	 * Hold a sample set for the `sampler` voice, or merge into the one held
+	 * (O27): the zones that carry `data` fill in the held set's, by layer
+	 * index and root, and every other zone is kept — a recording sent once is
+	 * not sent again, as its buffer was transferred. A set whose layers do not
+	 * line up with the held one replaces it. Rebuilt rather than written in
+	 * place, so a note started on the old arrays reads them to its end.
+	 */
 	addSamples(name: string, bank: SampleBank) {
-		this.sets.set(name, bank);
+		const held = this.sets.get(name);
+		if (!held || held.layers.length !== bank.layers.length) {
+			this.sets.set(name, bank);
+			return;
+		}
+		this.sets.set(name, {
+			...held,
+			layers: held.layers.map((l, li) => ({
+				...l,
+				zones: l.zones.map(
+					(z) =>
+						bank.layers[li].zones.find((n) => n.root === z.root && n.data) ?? z,
+				),
+			})),
+		});
 	}
 
 	/** Whether a sample set has arrived. */
@@ -800,13 +799,17 @@ export class VoiceBank {
 		vel: number,
 		durFrames: number,
 	) {
-		let zone: Float32Array | null = null;
-		let zoneR: Float32Array | null = null;
+		let zone: Int16Array | null = null;
+		let zoneR: Int16Array | null = null;
+		let zoneScale = 0;
 		let zoneInc = 0;
 		let zoneAmp = 0;
 		if (part.kind === SAMPLER) {
 			const set = this.sets.get(part.samples);
-			if (!set) {
+			const layer = set && pickLayer(set.layers, vel);
+			const pick = layer && pickZone(layer.zones, pitch);
+			// No set yet, or not this recording yet: the fallback, or nothing.
+			if (!set || !layer || !pick || !pick.data) {
 				if (part.fallback)
 					this.noteOn(
 						frame,
@@ -819,11 +822,9 @@ export class VoiceBank {
 					);
 				return;
 			}
-			const layer = pickLayer(set, vel);
-			const pick = layer && pickZone(layer, pitch);
-			if (!pick) return;
 			zone = pick.data;
 			zoneR = pick.right ?? null;
+			zoneScale = pick.scale;
 			zoneInc = 2 ** ((pitch - pick.root) / 12) * (set.rate / this.sampleRate);
 			// A layer's recording is its loudest note: the velocity within it.
 			const top = layer.maxVelocity > 0 ? layer.maxVelocity : 1;
@@ -1036,6 +1037,7 @@ export class VoiceBank {
 				// A read position into the recording, in its frames.
 				this.sbuf[i] = zone;
 				this.sbufR[i] = zoneR;
+				this.sscale[i] = zoneScale;
 				this.ph1[i] = 0;
 				this.inc1[i] = zoneInc;
 				this.amp[i] = zoneAmp;
@@ -1746,12 +1748,11 @@ export class VoiceBank {
 		return svfStep(this.lp2, this.bp2, i, this.g[i], x, damp, false);
 	}
 
-	/** One step of voice `i`'s Chamberlin state-variable filter: its lowpass
-	 *  output, or with `band` its bandpass. */
 	/** One frame of a recording, read at the note's rate between its samples
-	 *  by a four-point Hermite curve; past its last frame, `ended`. */
+	 *  by a four-point Hermite curve on its 16-bit steps, then scaled; past its
+	 *  last frame, `ended`. */
 	private sampler(i: number) {
-		const d = this.sbuf[i] as Float32Array;
+		const d = this.sbuf[i] as Int16Array;
 		const pos = this.ph1[i];
 		const k = pos | 0;
 		if (k + 2 >= d.length) {
@@ -1759,19 +1760,21 @@ export class VoiceBank {
 			return 0;
 		}
 		const t = pos - k;
-		const xm = k > 0 ? d[k - 1] : d[k];
-		const x0 = d[k];
-		const left = hermite(t, xm, x0, d[k + 1], d[k + 2]);
+		const scale = this.sscale[i];
+		const left =
+			scale * hermite(t, k > 0 ? d[k - 1] : d[k], d[k], d[k + 1], d[k + 2]);
 		// A stereo set's right side, read at the same place; a mono set's is
 		// its left. Either way `pan` weighs the two, as a balance.
 		const r = this.sbufR[i];
 		this.sideR = r
-			? hermite(t, k > 0 ? r[k - 1] : r[k], r[k], r[k + 1], r[k + 2])
+			? scale * hermite(t, k > 0 ? r[k - 1] : r[k], r[k], r[k + 1], r[k + 2])
 			: left;
 		this.ph1[i] = pos + this.inc1[i];
 		return left;
 	}
 
+	/** One step of voice `i`'s Chamberlin state-variable filter: its lowpass
+	 *  output, or with `band` its bandpass. */
 	private svf(i: number, x: number, damp: number, band: boolean): number {
 		return svfStep(this.lp, this.bp, i, this.g[i], x, damp, band);
 	}

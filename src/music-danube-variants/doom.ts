@@ -15,6 +15,7 @@
  * on three in a large room, and a cymbal wash at each phrase.
  */
 import { HARMONY, THEME } from "../music-danube";
+import { minor } from "../music-danube-remeter";
 import type { NoteEvent, PartSpec, Song } from "../music-score";
 
 export const DOOM_BPM = 60;
@@ -106,12 +107,6 @@ const PARTS: Readonly<Record<string, PartSpec>> = {
 		indexDecayS: 2,
 		reverb: 0.8,
 	},
-};
-
-/** D major's F# and B lowered: D minor, its C# kept. */
-const minor = (p: number): number => {
-	const pc = ((Math.round(p) % 12) + 12) % 12;
-	return pc === 6 || pc === 11 ? p - 1 : p;
 };
 
 const note = (

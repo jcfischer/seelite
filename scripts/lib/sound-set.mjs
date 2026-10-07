@@ -644,11 +644,11 @@ export async function renderInPage({
 									m.danubeSongs ? m.danubeSongs() : { danube: m.BLUE_DANUBE },
 								)
 								.catch(() => ({}))),
-							// The waltz's alternative versions, where the served tree has them.
 							// The Danube voices' demos, where the served tree has them.
 							...(await import("/src/music-voice-demos.ts")
 								.then((m) => ({ ...m.VOICE_DEMOS, ...m.SAMPLE_DEMOS }))
 								.catch(() => ({}))),
+							// The waltz's alternative versions, where the served tree has them.
 							...(await import("/src/music-danube-variants.ts")
 								.then((m) => m.danubeVariants())
 								.catch(() => ({}))),
@@ -1176,15 +1176,13 @@ export const VOICE_DEMO_SET = Object.freeze(
 		["harpsi", 20],
 		["softsaw", 20],
 		// The same Danube phrase on each piano, sampled and synthesised, and on
-		// each harpsichord (map #1's sample ruling): heard side by side.
+		// the harpsichord voice (map #1's sample ruling): heard side by side.
 		["piano-upright", 17],
 		["piano-grand", 17],
-		["piano-vcsl", 17],
 		// Its tails run to 16 s: room for the last chord to ring out.
 		["piano-grand-rich", 30],
 		["piano-epiano", 17],
 		["harpsi-synth", 17],
-		["harpsi-vcsl", 17],
 	]).map(([voice, seconds]) => ({
 		name: `voice-demo-${voice}`,
 		seconds,

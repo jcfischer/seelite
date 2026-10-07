@@ -7,8 +7,10 @@
  * commands; the worklet reads both. Neither side reaches the other's module.
  *
  * A score is **source, not an asset** (#543 D2, on the map's Constraints): a
- * public-domain work written here as note data is synthesised at runtime, and
- * nothing is downloaded or recorded.
+ * public-domain work written here as note data and played at runtime. A score
+ * itself downloads and records nothing. A `sampler` part plays a sample set,
+ * the one recorded material the music may use (map #1's Constraints,
+ * 2026-10-06); every other part is synthesised.
  */
 
 /** The synth's voices (#543 D1). `noise` and `tone` are the two percussion
@@ -210,23 +212,38 @@ export interface PartSpec {
 }
 
 /**
- * One sample set as the worklet holds it: decoded on the main thread at the
- * context's rate, one buffer per sampled note — two for a stereo set,
- * `data` the left and `right` the right. `layers` run soft to loud,
- * each taking the notes up to its `maxVelocity`; its `zones` are its
- * sampled roots, ascending. `gain` is the set's one linear gain.
+ * One sampled note of a set (O27, 2026-10-07): its root, and its recording
+ * as 16-bit integers — `data` the left (or only) channel, `right` a stereo
+ * set's right — each step worth `scale`, the recording's own peak over
+ * 32767. A render through Int16 and through Float32 storage differs by
+ * 89.8 dB below the signal (`voice-piano-grand-rich`, measured), so the
+ * worklet keeps half the memory. `data` is `null` until the recording has
+ * arrived: a note that picks it plays the part's `fallback`.
+ */
+export interface SampleZone {
+	readonly root: number;
+	readonly scale: number;
+	readonly data: Int16Array | null;
+	readonly right?: Int16Array | null;
+}
+
+/** A velocity layer: the notes up to `maxVelocity` play its `zones`,
+ *  which are its sampled roots, ascending. */
+export interface SampleLayer {
+	readonly maxVelocity: number;
+	readonly zones: readonly SampleZone[];
+}
+
+/**
+ * One sample set as the worklet holds it: every layer and every root of the
+ * set — the skeleton — with the recordings the songs loaded so far need.
+ * `layers` run soft to loud. `rate` is the recordings' (the context's,
+ * where they were decoded) and `gain` the set's one linear gain.
  */
 export interface SampleBank {
 	readonly rate: number;
 	readonly gain: number;
-	readonly layers: readonly {
-		readonly maxVelocity: number;
-		readonly zones: readonly {
-			readonly root: number;
-			readonly data: Float32Array;
-			readonly right?: Float32Array;
-		}[];
-	}[];
+	readonly layers: readonly SampleLayer[];
 }
 
 /**
@@ -314,8 +331,12 @@ export type Quantum = "bar" | "section";
  *   stems moved at once are a crossfade between parts.
  * - `tempo` — the playing song's tempo map is scaled by `scale`, from the
  *   quantum, reached over `rampBars` bars (0: at the line).
- * - `samples` — moves nothing: a sample set's buffers, for the `sampler`
- *   voice. `Music` sends it, once a set, when a song that names it is loaded.
+ * - `samples` — moves nothing: a sample set for the `sampler` voice. The
+ *   first for a set is its skeleton, every layer and root, `data` `null`
+ *   where nothing is sent yet; each later one **merges**: the zones that
+ *   carry `data` fill in the held set's, by layer index and root, and the
+ *   rest are left as they are. `Music` sends the recordings a loaded song
+ *   plays and no others (O27), so a later song adds only what it lacks.
  * - `sync` — moves nothing; the worklet answers `synced` with the token once
  *   every command before it has been applied. An offline render needs it: a
  *   message sent while the render is suspended is applied only when the

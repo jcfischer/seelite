@@ -1,7 +1,7 @@
 /**
  * The Blue Danube as a jazz waltz: a listening spike beside the docking
  * computer's waltz (`music-danube.ts`) and the dark-techno one
- * (`music-danube-techno.ts`), on the same synth.
+ * (`techno.ts`), on the same synth.
  *
  * **Strauss's tune, a jazz rhythm section's harmony.** The theme is the
  * waltz module's own `THEME`; the harmony under it is re-written as jazz
@@ -133,28 +133,29 @@ const QUALITY = {
 type Quality = keyof typeof QUALITY;
 
 /** A bar's chord: its root as a pitch class (0 = C), and its quality. */
-type Change = readonly [number, Quality];
-const D = 2;
-const E = 4;
-const G = 7;
-const A = 9;
-const B = 11;
+export type Change = readonly [number, Quality];
+export const D = 2;
+export const E = 4;
+export const G = 7;
+export const A = 9;
+export const B = 11;
 
-/** The piano's voicing: every chord tone folded into F3–F#4, rootless. */
-const voicing = ([root, q]: Change): number[] =>
-	[...new Set(QUALITY[q].map((i) => 53 + ((root + i - 53 + 120) % 12)))].sort(
-		(a, b) => a - b,
-	);
+/** The piano's voicing: every chord tone folded into the octave from
+ *  `floor`, rootless — F3–F#4 by default; the bossa comps a semitone lower. */
+export const voicing = ([root, q]: Change, floor = 53): number[] =>
+	[
+		...new Set(QUALITY[q].map((i) => floor + ((root + i - floor + 120) % 12))),
+	].sort((a, b) => a - b);
 
 /** The bass's root, folded into A1–G#2. */
-const bassRoot = ([root]: Change): number => 33 + ((root - 9 + 12) % 12);
+export const bassRoot = ([root]: Change): number => 33 + ((root - 9 + 12) % 12);
 
 /**
  * One chord a bar of Waltz No. 1, by its bar in `THEME` (bar 0 is the
  * upbeat). The tune's long notes sit on chord tones or on the ninth and
  * thirteenth; the original's four-bar blocks of D and A7 become ii–V–I.
  */
-const CHANGES: readonly Change[] = [
+export const CHANGES: readonly Change[] = [
 	[A, "13"], // the upbeat
 	[D, "maj9"],
 	[D, "maj9"],

@@ -5,7 +5,7 @@
  * voice's range and its answer to how hard it is played are heard in one
  * render. Listening material, not a game score.
  *
- * And the pianos and harpsichords side by side (map #1's sample ruling,
+ * And the pianos and the harpsichord side by side (map #1's sample ruling,
  * 2026-10-06): the waltz's first phrase, tune and oom-pah-pah, on each
  * sampled set and on the synth voice that would otherwise play it.
  */
@@ -137,14 +137,13 @@ const sampled = (set: string, level: number): PartSpec => ({
 	reverb: 0.25,
 });
 
-/** The pianos and harpsichords, by the id `renderInPage` loads each under. */
+/** The pianos and the harpsichord, by the id `renderInPage` loads each under. */
 export const SAMPLE_DEMOS: Readonly<Record<string, Song>> = {
 	"voice-piano-upright": phraseSong(
 		"piano-upright",
 		sampled("piano-upright", 0.8),
 	),
 	"voice-piano-grand": phraseSong("piano-grand", sampled("piano-grand", 1)),
-	"voice-piano-vcsl": phraseSong("piano-vcsl", sampled("piano-vcsl", 0.8)),
 	// Salamander again, six layers and stereo, its tails left long.
 	"voice-piano-grand-rich": phraseSong(
 		"piano-grand-rich",
@@ -160,5 +159,4 @@ export const SAMPLE_DEMOS: Readonly<Record<string, Song>> = {
 		level: 0.3,
 		reverb: 0.25,
 	}),
-	"voice-harpsi-vcsl": phraseSong("harpsi-vcsl", sampled("harpsi-vcsl", 0.26)),
 };
