@@ -536,6 +536,19 @@ export const THEME: readonly (readonly [
 	[31, 2, 74, 1],
 ];
 
+/** Strauss's last three bars of Waltz No. 1 — `THEME`'s bars 29–31 — counted
+ *  from bar 0, as `[bar, beat, pitch, dur]`: the tune every version's cadence
+ *  plays (`music-danube-variants/`). Derived, so it cannot drift from the
+ *  theme; `tests/music-danube-cadence.test.ts` holds it to the page. */
+export const CADENCE_THEME: readonly (readonly [
+	number,
+	number,
+	number,
+	number,
+])[] = THEME.filter(([bar]) => bar >= 29).map(
+	([bar, beat, pitch, dur]) => [bar - 29, beat, pitch, dur] as const,
+);
+
 /** Loudness by bar: p to the crescendo, f from bar 17, ff at 25. */
 const dyn = (bar: number) =>
 	bar < 16 ? 0.55 : bar < 17 ? 0.62 : bar < 25 ? 0.75 : bar < 29 ? 0.9 : 0.85;

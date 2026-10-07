@@ -21,7 +21,8 @@
  * Every filter peaks well under 6 kHz: cutoff × envelope × sweep, which the
  * shared state-variable filter holds stable.
  */
-import { HARMONY, THEME } from "../music-danube";
+import { CADENCE_THEME, HARMONY, THEME } from "../music-danube";
+import { note as n } from "../music-danube-remeter";
 import type { NoteEvent, PartSpec, Song } from "../music-score";
 
 export const BERLIN_BPM = 116;
@@ -136,15 +137,6 @@ const PARTS: Readonly<Record<string, PartSpec>> = {
 		echo: 0.3,
 	},
 };
-
-const n = (
-	part: string,
-	bar: number,
-	beat: number,
-	dur: number,
-	pitch: number,
-	vel: number,
-): NoteEvent => ({ part, bar, beat, dur, pitch, vel });
 
 /** `p` moved by octaves into the octave above `floor`. */
 const above = (p: number, floor: number): number =>
@@ -295,18 +287,9 @@ const WALTZ: NoteEvent[] = [
 // ── The cadence: Strauss's last three bars, then the tonic held ────────────
 
 const CADENCE: NoteEvent[] = [
-	...(
-		[
-			[0, 0, 78, 2],
-			[0, 2, 76, 1],
-			[1, 0, 83, 2],
-			[1, 2, 81, 1],
-			[2, 0, 74, 1],
-			[2, 1.5, 74, 0.5],
-			[2, 2, 74, 1],
-			[3, 0, 74, 3],
-		] as const
-	).map(([bar, beat, p, dur]) => n("lead", bar, beat, dur, p, 0.85)),
+	...[...CADENCE_THEME, [3, 0, 74, 3] as const].map(([bar, beat, p, dur]) =>
+		n("lead", bar, beat, dur, p, 0.85),
+	),
 	n("answer", 3, 0, 3, 62, 0.8),
 	...sequence(0, 43, [59, 62, 67], 0.85),
 	...sequence(1, 45, [55, 61, 64], 0.85),

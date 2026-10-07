@@ -1136,8 +1136,10 @@ export const CLASSICAL_SET = Object.freeze(
  * The waltz's alternative versions (`src/music-danube-variants/`), a
  * listening set: `npm run sounds -- --set danube`, or one version with
  * `--only music-danube-<name>`. No probe bands them. Each is scripted as the
- * waltz's renders are: about two loops then the cadence, and the shortest
- * docking run, its cadence at 62 s.
+ * waltz's renders are: a resolve at 96 s, then the cadence — two loops of most
+ * versions, but inside the first loop of one whose loop is long (ambient's is
+ * 96 s, so its seam is not heard here) — and the shortest docking run, its
+ * cadence at 62 s.
  */
 export const DANUBE_VARIANT_SET = Object.freeze(
 	readdirSync(new URL("../../src/music-danube-variants/", import.meta.url))

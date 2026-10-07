@@ -9,8 +9,9 @@ and on each start with the voice on, and its model when the player
 chooses it — once per version where the browser keeps it, at every start in
 a private window — and YouTube's player for the home trailer, loaded only when
 the player presses its poster (click-to-play, 2026-10-03, `src/public-site.ts`)
-— and the music's instrument samples, from this site's own origin, once a set
-when a song that names one is loaded (2026-10-06, `src/music.ts`). The voice is
+— and the music's instrument samples, from this site's own origin: a set's
+manifest and only the recordings a loaded song plays, each once a session
+(2026-10-06, `src/music-samples.ts`). The voice is
 the one trained asset and the samples the one recorded one; the map's
 Constraints carry the rulings.
 

@@ -14,7 +14,8 @@
  * dark — on each bar's root, and the break a two-step: kick on one and the
  * "and" of two, snare on two and four, ghost snares and sixteenth hats.
  */
-import { HARMONY, THEME } from "../music-danube";
+import { CADENCE_THEME, HARMONY, THEME } from "../music-danube";
+import { note } from "../music-danube-remeter";
 import type { NoteEvent, PartSpec, Song } from "../music-score";
 
 export const DNB_BPM = 172;
@@ -116,17 +117,8 @@ const PARTS: Readonly<Record<string, PartSpec>> = {
 /** A waltz beat in this bar's 4/4: the three beats on a 3-3-2 of eighths. */
 const fourBeat = (w: number): number => (w < 2 ? w * 1.5 : 3 + (w - 2));
 
-const note = (
-	part: string,
-	bar: number,
-	beat: number,
-	dur: number,
-	pitch: number,
-	vel: number,
-): NoteEvent => ({ part, bar, beat, dur, pitch, vel });
-
 /** A note written in waltz time, re-metred within its bar (and past it). */
-const fromWaltz = (
+const fromWaltzHalfTime = (
 	part: string,
 	bar: number,
 	beat: number,
@@ -202,10 +194,12 @@ const dyn = (bar: number) =>
 
 const WALTZ: NoteEvent[] = [
 	...THEME.flatMap(([bar, beat, pitch, dur, answer]) => [
-		fromWaltz("lead", bar, beat, dur, pitch, dyn(bar)),
-		...(answer ? [fromWaltz("answer", bar, beat, dur, pitch, dyn(bar))] : []),
+		fromWaltzHalfTime("lead", bar, beat, dur, pitch, dyn(bar)),
+		...(answer
+			? [fromWaltzHalfTime("answer", bar, beat, dur, pitch, dyn(bar))]
+			: []),
 		...(answer && beat === 2
-			? [fromWaltz("lead", bar, 1.9, 0.1, pitch - 1, dyn(bar) * 0.55)]
+			? [fromWaltzHalfTime("lead", bar, 1.9, 0.1, pitch - 1, dyn(bar) * 0.55)]
 			: []),
 	]),
 	...HARMONY.flatMap((h, bar) => {
@@ -233,17 +227,9 @@ const WALTZ: NoteEvent[] = [
 // ── The cadence: Strauss's last three bars, then the pad left to ring ──────
 
 const CADENCE: NoteEvent[] = [
-	...(
-		[
-			[0, 0, 78, 2],
-			[0, 2, 76, 1],
-			[1, 0, 83, 2],
-			[1, 2, 81, 1],
-			[2, 0, 74, 1],
-			[2, 1.5, 74, 0.5],
-			[2, 2, 74, 1],
-		] as const
-	).map(([bar, beat, p, dur]) => fromWaltz("lead", bar, beat, dur, p, 0.85)),
+	...CADENCE_THEME.map(([bar, beat, p, dur]) =>
+		fromWaltzHalfTime("lead", bar, beat, dur, p, 0.85),
+	),
 	note("lead", 3, 0, 4, 74, 0.75),
 	note("answer", 3, 0, 4, 86, 0.7),
 	...breakbeat(0, 0.85),

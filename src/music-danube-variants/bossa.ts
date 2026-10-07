@@ -15,10 +15,19 @@
  * bass on the root and fifth, a rim clave, a shaker and a soft kick. The
  * intro is the electric piano alone, then the horn's call on the lead.
  */
-import { THEME } from "../music-danube";
-import { at, fourBeats, fromWaltz } from "../music-danube-remeter";
+import { CADENCE_THEME, THEME } from "../music-danube";
+import {
+	A,
+	B,
+	bassRoot,
+	CHANGES,
+	type Change,
+	D,
+	E,
+	voicing,
+} from "../music-danube-changes";
+import { at, fromWaltz } from "../music-danube-remeter";
 import type { NoteEvent, PartSpec, Song } from "../music-score";
-import { A, B, bassRoot, CHANGES, type Change, D, E, G, voicing } from "./jazz";
 
 export const BOSSA_BPM = 124;
 
@@ -102,7 +111,7 @@ const PARTS: Readonly<Record<string, PartSpec>> = {
 	kick: { voice: "kick", level: 0.33, reverb: 0.05 },
 };
 
-// ── The changes: the jazz waltz's own (`jazz.ts`), comped a semitone lower ──
+// ── The changes: the jazz waltz's own (`music-danube-changes.ts`), comped a semitone lower ──
 
 /** The comping's voicing: every chord tone folded into E3–D#4, rootless. */
 const comping = (c: Change): number[] => voicing(c, 52);
@@ -204,17 +213,9 @@ const WALTZ: NoteEvent[] = [
 // ── The cadence: Strauss's last three bars, and the keys' last chord ─────────
 
 const CADENCE: NoteEvent[] = [
-	...(
-		[
-			[0, 0, 78, 2],
-			[0, 2, 76, 1],
-			[1, 0, 83, 2],
-			[1, 2, 81, 1],
-			[2, 0, 74, 1],
-			[2, 1.5, 74, 0.5],
-			[2, 2, 74, 1],
-		] as const
-	).map(([bar, beat, p, dur]) => fromWaltz("lead", bar, beat, dur, p, 0.75)),
+	...CADENCE_THEME.map(([bar, beat, p, dur]) =>
+		fromWaltz("lead", bar, beat, dur, p, 0.75),
+	),
 	at("lead", 6, 6, 74, 0.7),
 	...comp(0, 0, [E, "m9"], 0.75),
 	...comp(2, 1, [A, "13"], 0.75),

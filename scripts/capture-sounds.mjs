@@ -83,14 +83,13 @@ const ref = arg("ref");
 // listening pass for the grilling, so no probe bands them.
 // `--set danube`: the waltz's alternative versions, a listening set too;
 // `--set voices`: a demo of each of their voices.
-const SET =
-	arg("set") === "classical"
-		? CLASSICAL_SET
-		: arg("set") === "danube"
-			? DANUBE_VARIANT_SET
-			: arg("set") === "voices"
-				? VOICE_DEMO_SET
-				: SOUND_SET;
+// A Map, so a name such as `constructor` is not read off an object's prototype.
+const SETS = new Map([
+	["classical", CLASSICAL_SET],
+	["danube", DANUBE_VARIANT_SET],
+	["voices", VOICE_DEMO_SET],
+]);
+const SET = SETS.get(arg("set")) ?? SOUND_SET;
 const out = resolve(arg("out") ?? join(HERE, "sound-set"));
 const seed =
 	process.env.SEED === "off" ? null : Number(process.env.SEED ?? 552);

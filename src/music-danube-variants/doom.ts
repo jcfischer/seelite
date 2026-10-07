@@ -14,8 +14,8 @@
  * on a second, smoother desk, a drone under both, a kick on one and a snare
  * on three in a large room, and a cymbal wash at each phrase.
  */
-import { HARMONY, THEME } from "../music-danube";
-import { minor } from "../music-danube-remeter";
+import { CADENCE_THEME, HARMONY, THEME } from "../music-danube";
+import { minor, note } from "../music-danube-remeter";
 import type { NoteEvent, PartSpec, Song } from "../music-score";
 
 export const DOOM_BPM = 60;
@@ -109,15 +109,6 @@ const PARTS: Readonly<Record<string, PartSpec>> = {
 	},
 };
 
-const note = (
-	part: string,
-	bar: number,
-	beat: number,
-	dur: number,
-	pitch: number,
-	vel: number,
-): NoteEvent => ({ part, bar, beat, dur, pitch, vel });
-
 /** A power chord on `root`, held for `dur` beats. */
 const power = (
 	bar: number,
@@ -179,17 +170,7 @@ const WALTZ: NoteEvent[] = [
 // ── The cadence: Strauss's last three bars, the tonic, the bell ─────────────
 
 const CADENCE: NoteEvent[] = [
-	...(
-		[
-			[0, 0, 78, 2],
-			[0, 2, 76, 1],
-			[1, 0, 83, 2],
-			[1, 2, 81, 1],
-			[2, 0, 74, 1],
-			[2, 1.5, 74, 0.5],
-			[2, 2, 74, 1],
-		] as const
-	).map(([bar, beat, p, dur]) =>
+	...CADENCE_THEME.map(([bar, beat, p, dur]) =>
 		note("lead", bar, beat, dur, minor(p) - 12, 0.85),
 	),
 	note("lead", 3, 0, 3, 62, 0.8),

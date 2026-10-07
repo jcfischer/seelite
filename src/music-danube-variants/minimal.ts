@@ -26,7 +26,8 @@
  * the pulse and the horn's call), Waltz No. 1 looping, and a `resolve` to
  * the cadence, where the phase pair falls back into unison and stops.
  */
-import { HARMONY, THEME } from "../music-danube";
+import { CADENCE_THEME, HARMONY, THEME } from "../music-danube";
+import { note } from "../music-danube-remeter";
 import type { NoteEvent, PartSpec, Song } from "../music-score";
 
 export const MINIMAL_BPM = 120;
@@ -97,15 +98,6 @@ const PARTS: Readonly<Record<string, PartSpec>> = {
 		echo: 0.15,
 	},
 };
-
-const note = (
-	part: string,
-	bar: number,
-	beat: number,
-	dur: number,
-	pitch: number,
-	vel: number,
-): NoteEvent => ({ part, bar, beat, dur, pitch, vel });
 
 /** A chord's three tones, ascending. */
 type Triad = readonly number[];
@@ -237,18 +229,9 @@ const WALTZ: NoteEvent[] = [
 const CADENCE_CHORDS: readonly Triad[] = [G, A7, D, D];
 
 const CADENCE: NoteEvent[] = [
-	...(
-		[
-			[0, 0, 78, 2],
-			[0, 2, 76, 1],
-			[1, 0, 83, 2],
-			[1, 2, 81, 1],
-			[2, 0, 74, 1],
-			[2, 1.5, 74, 0.5],
-			[2, 2, 74, 1],
-			[3, 0, 74, 3],
-		] as const
-	).map(([bar, beat, p, dur]) => note("melody", bar, beat, dur, p, 0.8)),
+	...[...CADENCE_THEME, [3, 0, 74, 3] as const].map(([bar, beat, p, dur]) =>
+		note("melody", bar, beat, dur, p, 0.8),
+	),
 	...CADENCE_CHORDS.slice(0, 3).flatMap((c, bar) => [
 		...arpeggio(bar, c, 0.7),
 		...pulse(bar, c, 0.5),

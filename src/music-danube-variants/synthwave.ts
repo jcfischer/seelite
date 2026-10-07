@@ -10,8 +10,8 @@
  * intro is the decade's own progression, I–vi–IV–V, before the horn's call
  * leads the band in.
  */
-import { HARMONY, THEME } from "../music-danube";
-import { at, fourBeats, fromWaltz } from "../music-danube-remeter";
+import { CADENCE_THEME, HARMONY, THEME } from "../music-danube";
+import { at, fromWaltz } from "../music-danube-remeter";
 import type { NoteEvent, PartSpec, Song } from "../music-score";
 
 export const SYNTHWAVE_BPM = 108;
@@ -242,17 +242,7 @@ const WALTZ: NoteEvent[] = [
 // ── The cadence: Strauss's last three bars, then the tonic ringing ────────
 
 const CADENCE: NoteEvent[] = [
-	...(
-		[
-			[0, 0, 78, 2],
-			[0, 2, 76, 1],
-			[1, 0, 83, 2],
-			[1, 2, 81, 1],
-			[2, 0, 74, 1],
-			[2, 1.5, 74, 0.5],
-			[2, 2, 74, 1],
-		] as const
-	).map(([bar, beat, pitch, dur]) =>
+	...CADENCE_THEME.map(([bar, beat, pitch, dur]) =>
 		fromWaltz("lead", bar, beat, dur, pitch, 0.86),
 	),
 	at("lead", 6, 6, 74, 0.8),

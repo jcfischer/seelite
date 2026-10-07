@@ -14,8 +14,8 @@
  * The form keeps the waltz's contract: an intro, the waltz looping, and a
  * `resolve` to the cadence on the next bar line.
  */
-import { HARMONY, THEME } from "../music-danube";
-import { at, fourBeats, fromWaltz, minor } from "../music-danube-remeter";
+import { CADENCE_THEME, HARMONY, THEME } from "../music-danube";
+import { at, fromWaltz, minor } from "../music-danube-remeter";
 import type { NoteEvent, PartSpec, Song } from "../music-score";
 
 export const DUB_BPM = 116;
@@ -151,17 +151,7 @@ const WALTZ: NoteEvent[] = [
 // ── The cadence: Strauss's last three bars, a last stab into the echo ──────
 
 const CADENCE: NoteEvent[] = [
-	...(
-		[
-			[0, 0, 78, 2],
-			[0, 2, 76, 1],
-			[1, 0, 83, 2],
-			[1, 2, 81, 1],
-			[2, 0, 74, 1],
-			[2, 1.5, 74, 0.5],
-			[2, 2, 74, 1],
-		] as const
-	).map(([bar, beat, p, dur]) =>
+	...CADENCE_THEME.map(([bar, beat, p, dur]) =>
 		fromWaltz("lead", bar, beat, dur, minor(p) - 12, 0.8),
 	),
 	at("lead", 6, 6, 62, 0.7),

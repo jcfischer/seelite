@@ -14,7 +14,8 @@
  * The form keeps the waltz's contract: an intro, the waltz looping, and a
  * `resolve` to the cadence on the next bar line.
  */
-import { HARMONY, THEME } from "../music-danube";
+import { CADENCE_THEME, HARMONY, THEME } from "../music-danube";
+import { note as plain } from "../music-danube-remeter";
 import type { NoteEvent, PartSpec, Song } from "../music-score";
 
 export const MUSICBOX_BPM = 132;
@@ -109,16 +110,6 @@ const note = (
 	];
 };
 
-/** A note that always sounds, in tune: the room, not the comb. */
-const plain = (
-	part: string,
-	bar: number,
-	beat: number,
-	dur: number,
-	pitch: number,
-	vel: number,
-): NoteEvent => ({ part, bar, beat, dur, pitch, vel });
-
 // ── Intro: the key wound, then the horn's call on the comb ─────────────────
 
 const INTRO: NoteEvent[] = [
@@ -170,18 +161,7 @@ const WALTZ: NoteEvent[] = [
 // ── The cadence: the spring runs down ──────────────────────────────────────
 
 const CADENCE: NoteEvent[] = [
-	...(
-		[
-			[0, 0, 78, 2],
-			[0, 2, 76, 1],
-			[1, 0, 83, 2],
-			[1, 2, 81, 1],
-			[2, 0, 74, 1],
-			[2, 1.5, 74, 0.5],
-			[2, 2, 74, 1],
-			[3, 0, 74, 3],
-		] as const
-	).flatMap(([bar, beat, p, dur]) =>
+	...[...CADENCE_THEME, [3, 0, 74, 3] as const].flatMap(([bar, beat, p, dur]) =>
 		// The pitch sags as the spring gives out.
 		note("comb", bar, beat, dur, p + 12 - bar * 0.12 - beat * 0.04, 0.7),
 	),

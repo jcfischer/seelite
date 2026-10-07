@@ -1,8 +1,8 @@
 /**
- * The helpers the 4/4 versions of the docking waltz share
- * (`music-danube-variants/`): the re-metre of a waltz position onto a 4/4
- * bar, and the turn from D major to D minor. One copy, so a change to the
- * 3-3-2 grid is one edit (sage, #738 round 1).
+ * The helpers the versions of the docking waltz share
+ * (`music-danube-variants/`): a note as written, the re-metre of a waltz
+ * position onto a 4/4 bar, and the turn from D major to D minor. One copy,
+ * so a change to the 3-3-2 grid is one edit (sage, #738 round 1).
  *
  * **Outside the variants folder on purpose:** the loader
  * (`music-danube-variants.ts`) globs that folder and takes every module in
@@ -25,6 +25,16 @@ export const fourBeats = (waltzBeats: number): number => {
 	const w = waltzBeats - bar * 3;
 	return bar * 2 + (w < 2 ? w * 0.75 : 1.5 + (w - 2) * 0.5);
 };
+
+/** One note at a bar and beat of its section, as written. */
+export const note = (
+	part: string,
+	bar: number,
+	beat: number,
+	dur: number,
+	pitch: number,
+	vel: number,
+): NoteEvent => ({ part, bar, beat, dur, pitch, vel });
 
 /** One note at an absolute 4/4 beat of its section. */
 export const at = (

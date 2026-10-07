@@ -13,8 +13,13 @@
  * C# kept. The theme is an octave down on a hard saw lead, and the
  * woodwinds' answers ring on an inharmonic FM bell, which is metal too.
  */
-import { DANUBE_VOICINGS, HARMONY, THEME } from "../music-danube";
-import { minor } from "../music-danube-remeter";
+import {
+	CADENCE_THEME,
+	DANUBE_VOICINGS,
+	HARMONY,
+	THEME,
+} from "../music-danube";
+import { minor, note } from "../music-danube-remeter";
 import type { NoteEvent, PartSpec, Song } from "../music-score";
 
 export const INDUSTRIAL_BPM = 132;
@@ -131,15 +136,6 @@ const PARTS: Readonly<Record<string, PartSpec>> = {
 	},
 };
 
-const note = (
-	part: string,
-	bar: number,
-	beat: number,
-	dur: number,
-	pitch: number,
-	vel: number,
-): NoteEvent => ({ part, bar, beat, dur, pitch, vel });
-
 /** The factory for one bar: the kick, the two metal "pahs", the steam. */
 function factory(bar: number, vel: number, steam = true): NoteEvent[] {
 	const out = [
@@ -222,17 +218,7 @@ const WALTZ: NoteEvent[] = [
 // ── The cadence: Strauss's last three bars, then one last stamp ────────────
 
 const CADENCE: NoteEvent[] = [
-	...(
-		[
-			[0, 0, 78, 2],
-			[0, 2, 76, 1],
-			[1, 0, 83, 2],
-			[1, 2, 81, 1],
-			[2, 0, 74, 1],
-			[2, 1.5, 74, 0.5],
-			[2, 2, 74, 1],
-		] as const
-	).map(([bar, beat, p, dur]) =>
+	...CADENCE_THEME.map(([bar, beat, p, dur]) =>
 		note("lead", bar, beat, dur, minor(p) - 12, 0.86),
 	),
 	note("lead", 3, 0, 3, 62, 0.8),

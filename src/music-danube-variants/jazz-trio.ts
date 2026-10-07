@@ -23,7 +23,8 @@ import { DANUBE_JAZZ } from "./jazz";
 const piano = (level: number, pan: number, releaseS: number): PartSpec =>
 	pianoPart(level, pan, releaseS, 0.28);
 
-/** The waltz bars played ff (`jazz.ts`'s `dyn`): the tune in octaves. */
+/** The ff bars (`jazz.ts`'s `dyn`, 25–28) and the two after them, through the
+ *  climax's held notes: the tune in octaves. The principal heard it so. */
 const OCTAVES = { from: 25, to: 30 };
 
 /** One section's events moved into the trio's parts. */

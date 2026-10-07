@@ -261,8 +261,9 @@ function site(sets: Readonly<Record<string, SampleManifest | null>>) {
 }
 
 /** A decoder that hands back a sine at the recording's root, in stereo at
- *  half and quarter scale, counting how many it decodes at once. */
-function decoder(fail = false) {
+ *  half and quarter scale, counting how many it decodes at once. `fail`
+ *  refuses every recording, or those whose root it names. */
+function decoder(fail: boolean | ((root: number) => boolean) = false) {
 	const d = {
 		atOnce: 0,
 		most: 0,
@@ -273,9 +274,10 @@ function decoder(fail = false) {
 			d.most = Math.max(d.most, d.atOnce);
 			await new Promise((r) => setTimeout(r, 2));
 			d.atOnce--;
-			if (fail) throw new Error("EncodingError: unable to decode audio data");
-			d.decoded++;
 			const root = Number(new TextDecoder().decode(data).match(/(\d+)-/)?.[1]);
+			if (fail === true || (typeof fail === "function" && fail(root)))
+				throw new Error("EncodingError: unable to decode audio data");
+			d.decoded++;
 			const hz = 440 * 2 ** ((root - 69) / 12);
 			const ch = (amp: number) =>
 				Float32Array.from(
@@ -296,7 +298,7 @@ function decoder(fail = false) {
 /** A loader feeding an engine, as `Music` feeds the worklet. */
 function rig(
 	sets: Readonly<Record<string, SampleManifest | null>>,
-	fail = false,
+	fail: boolean | ((root: number) => boolean) = false,
 ) {
 	const { fetch, fetched } = site(sets);
 	const engine = new MusicEngine(SR, 24);
@@ -456,12 +458,35 @@ describe("the loader", () => {
 		r.loader.load(backed);
 		await r.loader.ready();
 		expect(r.errors).toHaveLength(1);
-		expect(r.errors[0]).toContain("sample set rich did not load");
+		// The recording is named, not the whole set (sage, #738 round 2).
+		expect(r.errors[0]).toContain("sample set rich: 60-p.ogg did not load");
 		expect(r.errors[0]).toContain("unable to decode");
 		expect(play(r.engine, backed)).toBeGreaterThan(0.01);
 		// The control: the same song with no fallback is silence.
 		expect(
 			play(r.engine, { ...songOn("rich", [[60, 0.3]]), name: "bare" }),
+		).toBe(0);
+	});
+
+	test("one recording that fails leaves the rest of its set playing", async () => {
+		const r = rig({ rich: RICH }, (root) => root === 60);
+		r.loader.attach(r.dec);
+		r.loader.load(
+			songOn("rich", [
+				[60, 0.3],
+				[72, 0.3],
+			]),
+		);
+		await r.loader.ready();
+		// Only the failed recording is named, and by its file.
+		expect(r.errors).toHaveLength(1);
+		expect(r.errors[0]).toContain("sample set rich: 60-p.ogg did not load");
+		// The other recording arrived and plays; the failed one is silence.
+		expect(
+			play(r.engine, { ...songOn("rich", [[72, 0.3]]), name: "rest" }),
+		).toBeGreaterThan(0.01);
+		expect(
+			play(r.engine, { ...songOn("rich", [[60, 0.3]]), name: "lost" }),
 		).toBe(0);
 	});
 

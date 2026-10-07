@@ -16,6 +16,7 @@
  * Andantino's own harmonies, with the horn's call on the first.
  */
 import { HARMONY, THEME } from "../music-danube";
+import { note } from "../music-danube-remeter";
 import type { NoteEvent, PartSpec, Song } from "../music-score";
 
 export const BAROQUE_BPM = 126;
@@ -77,15 +78,6 @@ const PARTS: Readonly<Record<string, PartSpec>> = {
 		reverb: 0.4,
 	},
 };
-
-const note = (
-	part: string,
-	bar: number,
-	beat: number,
-	dur: number,
-	pitch: number,
-	vel: number,
-): NoteEvent => ({ part, bar, beat, dur, pitch, vel });
 
 /** Six eighths through a chord: up from its lowest tone to the octave and
  *  back down. */

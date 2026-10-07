@@ -155,7 +155,8 @@ export class SampleLoader {
 	private readonly sets = new Map<string, SetState>();
 	/** Songs loaded before there was a context to decode on. */
 	private readonly waiting: Song[] = [];
-	private readonly jobs: Promise<void>[] = [];
+	/** The loads still running; each leaves as it settles. */
+	private readonly jobs = new Set<Promise<void>>();
 	private running = 0;
 	private readonly queue: (() => void)[] = [];
 
@@ -187,7 +188,11 @@ export class SampleLoader {
 			this.waiting.push(song);
 			return;
 		}
-		for (const set of setsOf(song)) this.jobs.push(this.loadSet(set, song));
+		for (const set of setsOf(song)) {
+			const job = this.loadSet(set, song);
+			this.jobs.add(job);
+			job.finally(() => this.jobs.delete(job));
+		}
 	}
 
 	/**
@@ -196,12 +201,16 @@ export class SampleLoader {
 	 * is in `errors`.
 	 */
 	ready(): Promise<void> {
-		return Promise.all(this.jobs).then(() => undefined);
+		return Promise.all([...this.jobs]).then(() => undefined);
 	}
 
-	private fail(set: string, err: unknown) {
+	/** A set that did not load, or one `file` of it that did not: the other
+	 *  recordings of the set still play. */
+	private fail(set: string, err: unknown, file?: string) {
 		const why = err instanceof Error ? err.message : String(err);
-		const message = `sample set ${set} did not load: ${why}`;
+		const message = file
+			? `sample set ${set}: ${file} did not load: ${why}`
+			: `sample set ${set} did not load: ${why}`;
 		this.o.errors.push(message);
 		this.o.warn?.(message);
 	}
@@ -262,7 +271,11 @@ export class SampleLoader {
 						`${this.o.base}${set}/`,
 						s.file,
 						s.root,
-					);
+					).catch((err: unknown) => {
+						this.fail(set, err, s.file);
+						return null;
+					});
+					if (!zone) return;
 					// One zone, in its layer's place; the other layers empty.
 					const bank: SampleBank = {
 						rate,
@@ -299,6 +312,9 @@ export class SampleLoader {
 		const audio = await (this.ctx as Decoder).decodeAudioData(
 			await res.arrayBuffer(),
 		);
+		// A task of its own: a load in flight then costs a frame a recording's
+		// conversion at most, rather than a batch's.
+		await new Promise<void>((go) => setTimeout(go, 0));
 		const left = audio.getChannelData(0);
 		const right =
 			audio.numberOfChannels > 1 ? audio.getChannelData(1) : undefined;

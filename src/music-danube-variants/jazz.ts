@@ -18,7 +18,18 @@
  * The form keeps the waltz's contract: intro, the waltz looping, and a
  * `resolve` to the cadence on the next bar line.
  */
-import { THEME } from "../music-danube";
+import { CADENCE_THEME, THEME } from "../music-danube";
+import {
+	A,
+	B,
+	bassRoot,
+	CHANGES,
+	type Change,
+	D,
+	E,
+	voicing,
+} from "../music-danube-changes";
+import { note } from "../music-danube-remeter";
 import type { NoteEvent, PartSpec, Song } from "../music-score";
 
 export const JAZZ_BPM = 152;
@@ -109,86 +120,9 @@ const swing = (beat: number): number => {
 	return Math.abs(beat - whole - 0.5) < 1e-9 ? whole + 2 / 3 : beat;
 };
 
-const note = (
-	part: string,
-	bar: number,
-	beat: number,
-	dur: number,
-	pitch: number,
-	vel: number,
-): NoteEvent => ({ part, bar, beat, dur, pitch, vel });
-
 // ── The changes ─────────────────────────────────────────────────────────────
 
-/** Chord tones above the root, in semitones, by quality. */
-const QUALITY = {
-	maj9: [4, 7, 11, 14],
-	m9: [3, 7, 10, 14],
-	m7: [3, 7, 10],
-	"13": [4, 10, 14, 21],
-	"9": [4, 10, 14],
-	"7#9": [4, 10, 15],
-	"69": [4, 9, 14],
-} as const;
-type Quality = keyof typeof QUALITY;
-
-/** A bar's chord: its root as a pitch class (0 = C), and its quality. */
-export type Change = readonly [number, Quality];
-export const D = 2;
-export const E = 4;
-export const G = 7;
-export const A = 9;
-export const B = 11;
-
-/** The piano's voicing: every chord tone folded into the octave from
- *  `floor`, rootless — F3–F#4 by default; the bossa comps a semitone lower. */
-export const voicing = ([root, q]: Change, floor = 53): number[] =>
-	[
-		...new Set(QUALITY[q].map((i) => floor + ((root + i - floor + 120) % 12))),
-	].sort((a, b) => a - b);
-
-/** The bass's root, folded into A1–G#2. */
-export const bassRoot = ([root]: Change): number => 33 + ((root - 9 + 12) % 12);
-
-/**
- * One chord a bar of Waltz No. 1, by its bar in `THEME` (bar 0 is the
- * upbeat). The tune's long notes sit on chord tones or on the ninth and
- * thirteenth; the original's four-bar blocks of D and A7 become ii–V–I.
- */
-export const CHANGES: readonly Change[] = [
-	[A, "13"], // the upbeat
-	[D, "maj9"],
-	[D, "maj9"],
-	[B, "m9"],
-	[B, "m9"],
-	[E, "m9"],
-	[E, "m9"],
-	[A, "13"],
-	[A, "13"],
-	[E, "m9"],
-	[E, "m9"],
-	[A, "13"],
-	[A, "13"],
-	[D, "maj9"],
-	[B, "7#9"],
-	[E, "m9"],
-	[A, "13"],
-	[D, "maj9"],
-	[B, "7#9"],
-	[E, "m9"],
-	[A, "13"],
-	[G, "maj9"],
-	[G, "maj9"],
-	[G, "maj9"],
-	[E, "m7"],
-	[A, "9"],
-	[A, "13"],
-	[D, "maj9"],
-	[B, "7#9"],
-	[E, "m9"],
-	[A, "13"],
-	[D, "69"],
-];
+// `music-danube-changes.ts` holds them, shared with the bossa.
 
 /** The rhythm section for one bar: piano, bass, brushes and ride. */
 function band(
@@ -316,17 +250,7 @@ const WALTZ: NoteEvent[] = [
 // ── The cadence: Strauss's last three bars, a ii–V–I, and the tag ─────────
 
 const CADENCE: NoteEvent[] = [
-	...(
-		[
-			[0, 0, 78, 2],
-			[0, 2, 76, 1],
-			[1, 0, 83, 2],
-			[1, 2, 81, 1],
-			[2, 0, 74, 1],
-			[2, 1.5, 74, 0.5],
-			[2, 2, 74, 1],
-		] as const
-	).map(([bar, beat, p, dur]) =>
+	...CADENCE_THEME.map(([bar, beat, p, dur]) =>
 		note("vibes", bar, swing(beat), swing(beat + dur) - swing(beat), p, 0.8),
 	),
 	note("vibes", 3, 0, 3, 74, 0.75),

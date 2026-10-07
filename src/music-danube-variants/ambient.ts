@@ -12,7 +12,8 @@
  * The form keeps the waltz's contract: an intro, the waltz looping, and a
  * `resolve` to the cadence on the next bar line.
  */
-import { HARMONY, THEME } from "../music-danube";
+import { CADENCE_THEME, HARMONY, THEME } from "../music-danube";
+import { note } from "../music-danube-remeter";
 import type { NoteEvent, PartSpec, Song } from "../music-score";
 
 export const AMBIENT_BPM = 60;
@@ -64,15 +65,6 @@ const PARTS: Readonly<Record<string, PartSpec>> = {
 		reverb: 0.5,
 	},
 };
-
-const note = (
-	part: string,
-	bar: number,
-	beat: number,
-	dur: number,
-	pitch: number,
-	vel: number,
-): NoteEvent => ({ part, bar, beat, dur, pitch, vel });
 
 // ── Intro: the bed swells, the horn's call on the piano, slowly ────────────
 
@@ -130,18 +122,9 @@ const WALTZ: NoteEvent[] = [
 // ── The cadence: Strauss's last three bars, the tonic left to fade ─────────
 
 const CADENCE: NoteEvent[] = [
-	...(
-		[
-			[0, 0, 78, 2],
-			[0, 2, 76, 1],
-			[1, 0, 83, 2],
-			[1, 2, 81, 1],
-			[2, 0, 74, 1],
-			[2, 1.5, 74, 0.5],
-			[2, 2, 74, 1],
-			[3, 0, 74, 3],
-		] as const
-	).map(([bar, beat, p, dur]) => note("piano", bar, beat, dur, p, 0.55)),
+	...[...CADENCE_THEME, [3, 0, 74, 3] as const].map(([bar, beat, p, dur]) =>
+		note("piano", bar, beat, dur, p, 0.55),
+	),
 	note("glass", 3, 0, 3, 86, 0.5),
 	...[55, 59, 62].map((p) => note("bed", 0, 0, 3, p, 0.45)),
 	...[55, 61, 64].map((p) => note("bed", 1, 0, 3, p, 0.45)),

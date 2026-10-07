@@ -26,7 +26,8 @@
  * horn's call on the metallophone, out of time, then the kotekan speeding
  * in), Waltz No. 1 looping, and a `resolve` to the cadence.
  */
-import { HARMONY, THEME } from "../music-danube";
+import { CADENCE_THEME, HARMONY, THEME } from "../music-danube";
+import { note } from "../music-danube-remeter";
 import type { NoteEvent, PartSpec, Song } from "../music-score";
 
 export const GAMELAN_BPM = 132;
@@ -141,15 +142,6 @@ const PARTS: Readonly<Record<string, PartSpec>> = {
 	},
 };
 
-const note = (
-	part: string,
-	bar: number,
-	beat: number,
-	dur: number,
-	pitch: number,
-	vel: number,
-): NoteEvent => ({ part, bar, beat, dur, pitch, vel });
-
 /** The gong at the cycle's end, and the kempur halfway (a fourth up). */
 const gong = (bar: number, vel: number): NoteEvent =>
 	note("gong", bar, 0, 6, pelog(-14), vel);
@@ -263,18 +255,7 @@ const WALTZ: NoteEvent[] = [
 // ── The cadence: Strauss's last three bars, the angsel, the gong ───────────
 
 const CADENCE: NoteEvent[] = [
-	...(
-		[
-			[0, 0, 78, 2],
-			[0, 2, 76, 1],
-			[1, 0, 83, 2],
-			[1, 2, 81, 1],
-			[2, 0, 74, 1],
-			[2, 1.5, 74, 0.5],
-			[2, 2, 74, 1],
-			[3, 0, 74, 3],
-		] as const
-	).map(([bar, beat, p, dur]) =>
+	...[...CADENCE_THEME, [3, 0, 74, 3] as const].map(([bar, beat, p, dur]) =>
 		note("melody", bar, beat, dur, pelog(degreeOf(p) - 7), 0.85),
 	),
 	...Array.from({ length: 6 }, (_, i) => {
