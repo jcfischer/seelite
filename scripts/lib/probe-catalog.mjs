@@ -19,6 +19,11 @@ const entry = (file, contract, evidence) =>
 export const PROBE_CATALOG = Object.freeze(
 	[
 		entry(
+			"probe-quality-bloom.mjs",
+			"Checks bloom on High and Low, live quality switching, saved Low at frame one, and the perf panel's diagnostic override and quality-aware reset.",
+			["quality", "bloom", "cold boot", "perf panel", "diagnostic reset"],
+		),
+		entry(
 			"probe-inter-system-traffic.mjs",
 			"Follows one named home-owned hauler from its berth through a painted departure ring and the anchored arrival ring into the destination Traffic queues; identity, contact removal and visitor berth share the live Game.",
 			[

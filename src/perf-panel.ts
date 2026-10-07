@@ -543,6 +543,8 @@ export type PerfTargets = {
 	scenes: THREE.Object3D[];
 	/** The bloom pass, so it can be switched without rebuilding the composer. */
 	bloom: { enabled: boolean } | null;
+	/** Read the game's current bloom default when resetting a diagnostic override. */
+	bloomDefault: () => boolean;
 	/** Query-gated frame timing and render-shape evidence. */
 	attribution: FrameAttribution;
 	/**
@@ -841,7 +843,7 @@ reason                      ${adaptive ? escapeHtml(adaptive.reason) : "—"}`;
 	const rowCount = () => switches.length + 1;
 
 	const restoreAll = () => {
-		if (targets.bloom) targets.bloom.enabled = true;
+		if (targets.bloom) targets.bloom.enabled = targets.bloomDefault();
 		setShells(scenes, { atmosphere: true, clouds: true });
 		setAblate(scenes, 0);
 		// **Set, then un-pin, in that order and only once.** `setSurface` pins

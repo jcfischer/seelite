@@ -2227,6 +2227,10 @@ class Game {
 	get bloom() {
 		return this.bloomPass ?? null;
 	}
+	/** Quality owns the default; the perf panel may override it until reset. */
+	get bloomDefault() {
+		return LIGHT_RIG.quality[this.settings.value.quality].bloom;
+	}
 	/** Near: ships, stations, anything at 1:1 kilometres. */
 	readonly nearScene = new THREE.Scene();
 	/** The cabin, alone, drawn last over a cleared depth buffer (#651).
@@ -4469,6 +4473,14 @@ class Game {
 
 		this.buildBackdrop();
 		this.buildBodies();
+		// Construct before buildLights applies the stored quality. The composer
+		// adds it in its original position below; Low is off from frame one.
+		this.bloomPass = new UnrealBloomPass(
+			bloomResolution(),
+			EXPOSURE.bloom.strength,
+			EXPOSURE.bloom.radius,
+			EXPOSURE.bloom.threshold,
+		);
 		this.buildLights();
 		this.buildShip();
 		this.buildCockpit();
@@ -4683,12 +4695,6 @@ class Game {
 		// multi-pass blur at up to 2x device pixel ratio is a fixed cost every
 		// frame whatever is on screen, so it is the first thing to price against
 		// a shader that is only expensive when a body fills the view.
-		this.bloomPass = new UnrealBloomPass(
-			bloomResolution(),
-			EXPOSURE.bloom.strength,
-			EXPOSURE.bloom.radius,
-			EXPOSURE.bloom.threshold,
-		);
 		this.composer.addPass(this.bloomPass);
 		// Kept as a field for the same reason `bloomPass` is: the vignette is set
 		// per frame from the view, and the dither has a control arm a probe
@@ -5967,7 +5973,7 @@ class Game {
 	}
 
 	/**
-	 * Put the environment on the scenes, or take it off — #98's quality gate.
+	 * Apply the lighting row, including bloom — #98's quality gate.
 	 *
 	 * Assignment rather than a rebuild, so the setting is live: the player sees
 	 * the same frame with and without the term, which is the only way to judge
@@ -5976,6 +5982,7 @@ class Game {
 	 */
 	private applyQuality() {
 		const mode = LIGHT_RIG.quality[this.settings.value.quality];
+		this.bloomPass.enabled = this.bloomDefault;
 		for (const { scene } of this.layerLights)
 			scene.environment = mode.environment ? this.environmentMap : null;
 		this.renderer.toneMappingExposure = mode.exposure;
@@ -21022,6 +21029,7 @@ if (postcard) {
 			const perf = mountPerfPanel({
 				scenes: [game.nearScene, game.approachScene, game.farScene],
 				bloom: game.bloom,
+				bloomDefault: () => game.bloomDefault,
 				attribution,
 				occlusion: () => game.occlusionState,
 				adaptive: () => game.adaptiveDiagnostics(),
