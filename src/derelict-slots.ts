@@ -43,7 +43,18 @@ const HOUR_S = 3600;
 // flight tunes them, as #660 D8b's share is tuned by #705.
 // ---------------------------------------------------------------------------
 
-/** S21: derelict slots by government — 3 for 0–2, 2 for 3–5, 1 for 6–7. */
+/**
+ * S21: derelict slots by government — 3 for 0–2, 2 for 3–5, 1 for 6–7.
+ *
+ * **§5 lists this as a starting figure, but it is identity, not a dial**, and
+ * it is the one figure in this block the save parse reads, on purpose: a key
+ * past a system's count names no slot, and `parseWorld` refuses it. The
+ * slots were enumerated at `worldGeneratorVersion` 10
+ * (`persistent-world-state.md` §2), so retuning this is a generator change —
+ * a bump, and a lowered count also owes a migration that drops the rows of the
+ * slots it removes. The other figures here move no carrier and the parse reads
+ * none of them.
+ */
 export const DERELICT_SLOTS_BY_GOVERNMENT = [3, 3, 3, 2, 2, 2, 1, 1] as const;
 /** S16: a slot's first loss falls somewhere in this much game time. */
 export const DERELICT_FIRST_LOSS_S = 48 * HOUR_S;

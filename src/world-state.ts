@@ -2495,9 +2495,17 @@ const parseKnowledgeRow = (value: unknown, key: string): KnowledgeRow => {
 	};
 };
 
-/** The ids a container may name: a tonne good a station trades, or a module on
- *  the append-only fitting list. A row naming anything else was not written by
- *  a loss. */
+/**
+ * The ids a container may name: a tonne good a station trades, or a module on
+ * the append-only fitting list. A row naming anything else was not written by
+ * a draw.
+ *
+ * **So a commodity's name is now persisted identity that refuses.** A market
+ * deficit also stores goods by name, but `parseDeficits` keeps an unknown one
+ * and it only stops mattering; a derelict container naming one fails the whole
+ * world parse. Renaming or removing a tonne good therefore owes a save
+ * migration for these rows.
+ */
 const DERELICT_GOOD_IDS: ReadonlySet<string> = new Set(
 	COMMODITIES.filter((c) => c.unit === "t").map((c) => c.name),
 );
