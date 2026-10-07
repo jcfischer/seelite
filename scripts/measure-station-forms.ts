@@ -41,6 +41,7 @@ type Pools = Record<DrawnStationType, readonly StationFormId[]>;
 
 function proposedPools(args: readonly string[]): Pools {
 	const pools: Pools = { ...STATION_FORM_POOL };
+	const named = new Set<DrawnStationType>();
 	for (const arg of args) {
 		const [role, list] = arg.split("=");
 		if (!DRAWN_STATION_TYPES.includes(role as DrawnStationType))
@@ -48,6 +49,8 @@ function proposedPools(args: readonly string[]): Pools {
 				`${arg}: role must be one of ${DRAWN_STATION_TYPES.join(", ")}`,
 			);
 		const type = role as DrawnStationType;
+		if (named.has(type)) throw new Error(`${arg}: ${type} named twice`);
+		named.add(type);
 		const ids = (list ?? "").split(",").filter(Boolean);
 		if (ids.length === 0) throw new Error(`${arg}: a pool cannot be empty`);
 		if (new Set(ids).size !== ids.length)

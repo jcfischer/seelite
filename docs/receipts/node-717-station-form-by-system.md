@@ -45,7 +45,7 @@ branch and it overstates it.
   - the glow wiring rows: a glow per fitting, hidden at outline, unpickable,
     driven at its fitting's intensity, under the ceiling, the blinking core
     and halo;
-  - the pool rows: drive, unpickable, none on a mast beacon;
+  - the pool rows: drive, unpickable, none on a mast beacon; <!-- glossary-ignore: beacon -->
   - the mouth chase: its ring and its run;
   - occlusion, teardown, and the docking plan corpus.
 
@@ -63,7 +63,7 @@ branch and it overstates it.
   Each hit is one of four kinds:
   - **A control that breaks a known form on purpose.** It asks whether the
     check can go red, not whether a form passes:
-    - `the pool row goes red for a lamp lifted off its face` (`station-glow`);
+    - `the pool row goes red for a lamp lifted off its face` (`station-glow`); <!-- glossary-ignore: beacon -->
     - `the row goes red for a beacon a hundred metres off its mount` and `and
       for a strobe six metres off its face` (`station-mesh`);
     - `the axis row goes red when a strobe is put back on the equator`
@@ -87,8 +87,8 @@ branch and it overstates it.
     form in the same pool, and a form pooled beside them owes its own rows
     for whatever it carries:
     - the Works, refinery `d`:
-      - `an obstruction beacon on a tip lays no pool` (`station-glow`);
-      - `the refinery's flare keeps tracking the clock at outline range` and
+      - `an obstruction beacon on a tip lays no pool` (`station-glow`); <!-- glossary-ignore: beacon -->
+      - `the refinery's flare keeps tracking the clock at outline range` and <!-- glossary-ignore: beacon -->
         `every refinery plan carries a beacon on its headframe and one on its
         flare stack` (`station-visuals`);
       - `the refinery's proxy reads the assembly seed, cell by cell`

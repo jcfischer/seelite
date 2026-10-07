@@ -505,6 +505,7 @@ describe("glare and light pools", () => {
 		}
 	});
 
+	// A finish's mast lamp, named `beacon-*`; not a Pirate relay. // glossary-ignore: beacon
 	test("a pool is not pickable, and a finish beacon on a mast tip has none, on every form in play", () => {
 		for (const [type, formId] of FORMS_IN_PLAY) {
 			const mesh = buildStationForm(type, formId, GREY, 0, 0);
@@ -518,7 +519,7 @@ describe("glare and light pools", () => {
 				.filter((h) => h.object.userData.pool).length;
 			let beaconPools = 0;
 			mesh.root.traverse((o) => {
-				if (o.name.startsWith("beacon-") && o.userData.pool) beaconPools++;
+				if (o.name.startsWith("beacon-") && o.userData.pool) beaconPools++; // glossary-ignore: beacon
 			});
 			const label = formLabel(type, formId);
 			expect([label, poolHits, beaconPools]).toEqual([label, 0, 0]);

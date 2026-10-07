@@ -757,41 +757,45 @@ describe("§5 — no fixture is wholly hidden from the aperture axis", () => {
  * #300's second sheet: a ring of strobes that runs round a slot's mouth, and a
  * hazard beacon on the plant that does not spin.
  */
+/** The slot roles' forms in play: the ones with a frame round a hole. */ // glossary-ignore: slot
+const SLOT_FORMS = FORMS_IN_PLAY.filter(
+	([type]) => type === "trade" || type === "shipyard",
+);
+
 describe("the mouth chase and the refinery's beacons", () => {
 	test("every slot role rings its mouth with lamps an equal step of the period apart", () => {
-		for (const type of ["trade", "shipyard"] as const)
-			for (const formId of formsInPlay(type)) {
-				const mesh = buildStationForm(type, formId, GREY, 0, 0);
-				const chase = mesh.fixtures.filter((f) => f.kind === "chase");
-				const { strobePeriodS } = STATION_VISUALS[type].activity;
-				// Enough that the flash reads as running round, not as a few blinks.
-				expect([type, chase.length >= 8]).toEqual([type, true]);
-				const offsets = chase.map((f) => f.offsetS).sort((a, b) => a - b);
-				offsets.forEach((offset, i) =>
-					expect(offset).toBeCloseTo((i / chase.length) * strobePeriodS, 9),
-				);
-			}
+		for (const [type, formId] of SLOT_FORMS) {
+			const mesh = buildStationForm(type, formId, GREY, 0, 0);
+			const chase = mesh.fixtures.filter((f) => f.kind === "chase");
+			const { strobePeriodS } = STATION_VISUALS[type].activity;
+			const label = formLabel(type, formId);
+			// Enough that the flash reads as running round, not as a few blinks.
+			expect([label, chase.length >= 8]).toEqual([label, true]);
+			const offsets = chase.map((f) => f.offsetS).sort((a, b) => a - b);
+			offsets.forEach((offset, i) =>
+				expect(offset).toBeCloseTo((i / chase.length) * strobePeriodS, 9),
+			);
+		}
 	});
 
 	test("the chase runs: at any lit moment one lamp leads and they are not in unison", () => {
-		for (const type of ["trade", "shipyard"] as const)
-			for (const formId of formsInPlay(type)) {
-				const mesh = buildStationForm(type, formId, GREY, 0, 0);
-				const ring = mesh.fixtures.filter((f) => f.kind === "chase").length;
-				let sawOne = false;
-				let unison = 0;
-				for (let i = 0; i < 80; i++) {
-					updateStationVisuals(mesh, i * 0.025, 1, "high");
-					const lit = mesh.fixtures.filter(
-						(f) => f.kind === "chase" && f.material.emissiveIntensity > 0,
-					).length;
-					// Never the whole ring at once — that would be a flash, not a chase.
-					if (lit >= ring) unison++;
-					if (lit >= 1) sawOne = true;
-				}
-				const label = formLabel(type, formId);
-				expect([label, unison, sawOne]).toEqual([label, 0, true]);
+		for (const [type, formId] of SLOT_FORMS) {
+			const mesh = buildStationForm(type, formId, GREY, 0, 0);
+			const ring = mesh.fixtures.filter((f) => f.kind === "chase").length;
+			let sawOne = false;
+			let unison = 0;
+			for (let i = 0; i < 80; i++) {
+				updateStationVisuals(mesh, i * 0.025, 1, "high");
+				const lit = mesh.fixtures.filter(
+					(f) => f.kind === "chase" && f.material.emissiveIntensity > 0,
+				).length;
+				// Never the whole ring at once — that would be a flash, not a chase.
+				if (lit >= ring) unison++;
+				if (lit >= 1) sawOne = true;
 			}
+			const label = formLabel(type, formId);
+			expect([label, unison, sawOne]).toEqual([label, 0, true]);
+		}
 	});
 
 	test("a pad role gets no ring, because a pad has no frame round a hole", () => {

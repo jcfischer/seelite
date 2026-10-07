@@ -62,6 +62,16 @@ const STAND_IN: Record<DrawnStationType, readonly StationFormId[]> = {
 	refinery: ["a", "b", "c", "d"],
 };
 
+/** Chi-square critical values at p = 0.001, by degrees of freedom (index). */
+const CHI_SQUARE_P001: readonly (number | undefined)[] = [
+	undefined,
+	10.828,
+	13.816,
+	16.266,
+	18.467,
+	20.515,
+];
+
 describe("the pools", () => {
 	test("its tag is appended, and every drawn role owns a distinct slot", () => {
 		// glossary-ignore: slot
@@ -166,8 +176,13 @@ describe("the draw", () => {
 	test("within a pool the draw is uniform", () => {
 		// Equal shares: whether a pool should lean toward its familiar form is
 		// the principal's open question on node #717, and until it is answered
-		// the draw takes no side. 512 draws a role; a share is held to ±40% of
-		// its expectation, which a draw stuck on one member fails by far.
+		// the draw takes no side. 512 draws a role. Two holds, because one
+		// cannot carry the name: a share is held to ±40% of its expectation,
+		// which a draw stuck on one member fails by far, and the counts'
+		// chi-square is held under its p = 0.001 critical value, which a draw
+		// leaning on one member fails where every share is still inside ±40%.
+		// The seeds are fixed, so the statistic is too: 1.14, 0.85 and 10.61
+		// for trade, shipyard and refinery on this corpus.
 		for (const type of DRAWN_STATION_TYPES) {
 			const pool = STAND_IN[type];
 			const counts = new Map<StationFormId, number>();
@@ -176,6 +191,16 @@ describe("the draw", () => {
 				counts.set(id, (counts.get(id) ?? 0) + 1);
 			}
 			const expected = SYSTEM_SEEDS.length / pool.length;
+			const chiSquare = pool.reduce(
+				(sum, id) => sum + ((counts.get(id) ?? 0) - expected) ** 2 / expected,
+				0,
+			);
+			const critical = CHI_SQUARE_P001[pool.length - 1];
+			expect([
+				type,
+				critical !== undefined,
+				chiSquare < (critical ?? 0),
+			]).toEqual([type, true, true]);
 			for (const id of pool) {
 				const share = (counts.get(id) ?? 0) / expected;
 				expect([type, id, share > 0.6 && share < 1.4]).toEqual([

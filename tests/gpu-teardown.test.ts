@@ -65,7 +65,7 @@ const cubeTargetsOf = (visual: BodyVisual): THREE.WebGLCubeRenderTarget[] => {
 	return out;
 };
 import { buildStationForm } from "../src/station-mesh";
-import { FORMS_IN_PLAY } from "./helpers/forms-in-play";
+import { FORMS_IN_PLAY, formLabel } from "./helpers/forms-in-play";
 import { generateContents } from "../src/system";
 
 /**
@@ -310,8 +310,9 @@ describe("disposeSubtree reaches every kind of resource a scene holds", () => {
 		// true against a walker that freed nothing at all.
 		for (const [type, formId] of FORMS_IN_PLAY) {
 			const mesh = buildStationForm(type, formId, 0x9aa6b2, 7, 7);
-			expect([type, disposeSubtree(mesh.root).freed.size > 0]).toEqual([
-				type,
+			const label = formLabel(type, formId);
+			expect([label, disposeSubtree(mesh.root).freed.size > 0]).toEqual([
+				label,
 				true,
 			]);
 		}

@@ -1,6 +1,6 @@
 import { makeWorld } from "../../src/sim";
 import {
-	type StationFormId,
+	type StationPlan,
 	type StationType,
 	formsInPlay,
 } from "../../src/station";
@@ -11,11 +11,7 @@ import { ASSEMBLY_SEEDS, isSeededForm } from "./solved-forms";
  * The form is part of the plan since node #717 — a system picks it from the
  * role's pool, and the proxy a harness flies against is that form's.
  */
-export interface StationSeeds {
-	formId: StationFormId;
-	berthSeed: number;
-	assemblySeed: number;
-}
+export type StationSeeds = Omit<StationPlan, "type">;
 
 /** Seed-zero remains the fixed fixture for the non-seeded forms and historical
  * handling ceilings. Pad fits also cover the proxy budget's twelve-plan spread

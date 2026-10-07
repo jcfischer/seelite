@@ -106,6 +106,7 @@ import {
 	sub,
 	v3,
 } from "../src/vec3";
+import { stationInForm } from "./helpers/forms-in-play";
 import { hullSolid } from "./helpers/hull-solid";
 import { clearsAperture } from "./helpers/aperture-physical-fit";
 import {
@@ -190,12 +191,7 @@ const closingBand = (): [number, number] => {
 
 function turnInto(side: 1 | -1, gapKm: number, rpm = TURN_RPM) {
 	const at = overArm(side, gapKm);
-	const proxy = stationProxyOf({
-		type: "trade",
-		formId: "a",
-		berthSeed: 0,
-		assemblySeed: 0,
-	});
+	const proxy = stationProxyOf(stationInForm("trade", "a"));
 	return {
 		at,
 		swept: sweepShip(
@@ -244,12 +240,7 @@ describe("collision.md §9.1.2 row 3: a spinning station's surface meets a ship 
 		// frame. A ship holds beside each of its x faces for two seconds while
 		// the drum turns at 3 rpm. A keel posed in the spinning frame sweeps a
 		// boom 0.15 km in that time — the arm below builds exactly that.
-		const proxy = stationProxyOf({
-			type: "shipyard",
-			formId: "a",
-			berthSeed: 0,
-			assemblySeed: 0,
-		});
+		const proxy = stationProxyOf(stationInForm("shipyard", "a"));
 		const { env, envCentre } = HULL_SPECS[TURN_HULL];
 		const frame = frameAt("shipyard", 0, 0);
 		const { up } = slotBasis(frame);
@@ -308,12 +299,7 @@ describe("collision.md §9.1.4: a moving surface is billed against a resting shi
 		expect(impact.damage).toBe(impactDamage(impact.closingKms));
 		// Outside every primitive at the end of the step, where the station
 		// has turned to.
-		const proxy = stationProxyOf({
-			type: "trade",
-			formId: "a",
-			berthSeed: 0,
-			assemblySeed: 0,
-		});
+		const proxy = stationProxyOf(stationInForm("trade", "a"));
 		const end = proxyPoses(frameAt("trade", TURN_RPM, MAX_DT), v3());
 		const ship = shipPose(swept.pos, at.nose, at.up);
 		for (const primitive of proxySolids(proxy).spinning)
@@ -339,12 +325,7 @@ describe("collision.md §9.1.6: the earliest impact owns the tick (C3)", () => {
 	// fly these offsets past another form's rim the day the pool's first
 	// member changed. Its proxy exists whether or not a pool holds it
 	// (node #717).
-	const proxy = stationProxyOf({
-		type,
-		formId: "a",
-		berthSeed: 0,
-		assemblySeed: 0,
-	});
+	const proxy = stationProxyOf(stationInForm(type, "a"));
 	const solids = stationMotions(proxy, still(frame), still(frame));
 
 	/** One tick from `z0` to `z1` along the axis at lateral `x`, with the
@@ -1134,12 +1115,7 @@ describe("collision.md §9.1.12: cruise and the station proxies (C5)", () => {
 	test("the crossing count excludes empty space inside a sparse station's reach", () => {
 		const frame = frameAt("shipyard", 0, 0);
 		const { up } = slotBasis(frame);
-		const proxy = stationProxyOf({
-			type: "shipyard",
-			formId: "a",
-			berthSeed: 0,
-			assemblySeed: 0,
-		});
+		const proxy = stationProxyOf(stationInForm("shipyard", "a"));
 		const solids = stationMotions(proxy, still(frame), still(frame));
 		const chord = (x: number, y: number): SolidMotion => ({
 			...atRest(
