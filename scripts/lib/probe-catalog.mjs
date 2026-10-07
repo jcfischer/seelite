@@ -19,6 +19,20 @@ const entry = (file, contract, evidence) =>
 export const PROBE_CATALOG = Object.freeze(
 	[
 		entry(
+			"probe-system-sweep.mjs",
+			"Presses the fitted left-console Sweep, steps its autonomous ten-second charge, checks source/age region rows without discovery or targets, cruise interruption/refusal, save reload, stale age and relay cue/identification at placed ranges (not flight-path evidence).",
+			[
+				"long-range scanner",
+				"system sweep",
+				"regions",
+				"provenance",
+				"cruise",
+				"save",
+				"relay identification",
+				"left console",
+			],
+		),
+		entry(
 			"probe-quality-bloom.mjs",
 			"Checks bloom on High and Low, live quality switching, saved Low at frame one, and the perf panel's diagnostic override and quality-aware reset.",
 			["quality", "bloom", "cold boot", "perf panel", "diagnostic reset"],

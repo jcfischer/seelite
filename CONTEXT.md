@@ -469,10 +469,8 @@ Sourced intelligence about an object or search region. `docs/specs/missions-and-
 _Avoid_: Mission, confirmed target (for unconfirmed intelligence)
 
 **Sweep reading**:
-A past Long-Range Scanner return: a region, source and observation clock, never
-a contact position or an identification. `long-range-scanner.ts` writes it;
-`GalaxyEnvelope.sweepReadings` persists it separately from retained job **Leads**.
-A new sweep replaces only the current system's readings.
+A dated system-scale observation from the pilot's own Long-Range Scanner: generated source identity, a general region and observation time. `docs/specs/system-sweep.md` owns its charge, refresh and age rules; `SweepReading` in `system-sweep.ts` is persisted in `CommanderRecord.sweepReadings`. A completed sweep replaces this system's readings, including absences; between sweeps they age unchanged. Separate from a retained **Lead** in Requests: it has no confirmation action, identified carrier reference or condition snapshot. Neither grants discovery or targeting; the per-galaxy knowledge row remains authoritative.
+Scope note: a sweep reading's region is never a **Display contact** or a target; it is never selectable.
 
 **Local run**:
 A courier job that delivers inside the posting system, posted by every station whose system has a second station. Its own post on the board beside the courier floor, so settling one never rerolls the other. `docs/specs/first-useful-day.md` D2 owns why it exists; `docs/specs/ordinary-requests.md` §3 records the second post.

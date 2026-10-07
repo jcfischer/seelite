@@ -2,64 +2,56 @@
 
 Author: Codex, 2026-10-07.
 
-`long-range-scanner.ts` owns the headless sweep and identification seams. This
-checkout had the relay's passive path but no charged sweep or Scanner tab. The
-shared sweep added here reads live derelicts and operational relays in the
-current system. Sweep readings are a separate save domain from retained job
-Leads; no job observation, confirmation or refresh is supplied here. Raider
-concentrations and Salvage job leads remain outside this build.
+Round 2 reconciles the build with node #482, merged on origin/main at
+`08dd507` after this branch's base. The existing `system-sweep.ts`,
+`system-sweep-view.ts`, Sweep console tab and save-schema-11 parser are
+integrated from that reviewed implementation. There is one sweep ledger,
+`CommanderRecord.sweepReadings`, and one glossary entry pointing to
+`docs/specs/system-sweep.md`. The unshipped `GalaxyEnvelope.sweepReadings`
+domain, its parser and the duplicate Scanner tab are removed.
 
-A deliberate Scanner-tab press charges for ten seconds. Completion replaces
-that system's region readings, leaving other systems' readings untouched.
-`GalaxyEnvelope.sweepReadings` holds one source, observation clock and region per
-carrier identity. No position or target action is saved or displayed. Arriving
-at a stripped or taken wreck writes nothing and leaves the old lead intact.
+A deliberate Sweep press charges for ten seconds on the game clock. Completion
+replaces only the current galaxy/system's region readings, with source and
+observation time. No coordinates or target actions are saved or displayed.
+Opening a tab does not charge, refresh or identify anything. Stripping a wreck
+or arriving after other salvagers take it writes no identification and leaves
+the commander's old reading unchanged until a new completed sweep.
 
-The fitted module uses the relay's passive signal and identification ranges.
-Without it, identification requires the 10 km visual floor. The knowledge row
-records the derelict's actual destroyed instance; the ordinary
-carrier's absent-row operational default is not used. A new loss in the same
-carrier identity requires another identification. Drawing and collision still
-happen independently of knowledge.
+`long-range-scanner.ts` owns the flown derelict identification and contact
+builder. A fitted scanner uses the relay's passive signal and identification
+ranges; without it the proximity floor is 10 km. This is a distance test,
+independent of facing, head look or occlusion. The knowledge row records the
+actual destroyed instance, and another loss in that carrier identity requires
+its own identification. Drawing and collision stay independent of knowledge.
 
-Identified live instances alone become `wreck` display contacts, Navigation
-rows and targets. Removing the scanner does not erase a visual or scanner
-identification. A scanner cue offers strength and bearing before identification,
-and range afterward. It is suppressed while docked.
+Only identified live instances become contacts, Navigation rows and targets.
+Removing the scanner preserves identification. Before identification the
+scanner cue offers strength and bearing, with range afterward; docking
+suppresses the cue. Runtime pre-check and knowledge writer share
+`identifyRangeKm`; registered contacts retain their identity while all their
+fields are refreshed from `wreckContact`. World persistence imports no relay
+gameplay rule.
 
-The first wreck identification adds the commander's pending `wreck` exploration
-kind. A dock banks it once; another wreck adds none. The optional ladder `kinds`
-list and optional world `sweepReadings` map read older saves without either
-field and omit empty fields on the wire. Pending credit follows the existing session-only
-exploration banking contract.
+The first wreck identification adds one pending exploration kind, banked on
+dock once commander-wide. Further wrecks add none. Pending credit follows the
+existing session-only banking contract. The optional ladder kinds list reads
+older saves empty. The sweep ledger uses node #482's schema 11: versions 2–10
+migrate empty after their original hash is checked, and version 11 requires
+the ledger. No alternative save domain or version is introduced by this node.
 
-Verification: `tests/derelict-finding.test.ts` covers both finding channels,
-stale leads, system-local replacement, new instances and save round trips.
-`probe-derelict.mjs` checks both identification paths with controlled range
-placements and a live physics step, then reads the painted Scanner tab, cue and
-Navigation row. It deletes fixture knowledge between the two channels; it does
-not verify a flown approach or a continuous range crossing. Screenshots live
-under the ignored `view-set/node-733/`; the principal's visual verdict remains a separate gate.
+`tests/derelict-finding.test.ts` covers both identification channels, stale
+readings after stripping/taking, system-local replacement, changed instances,
+commander-only save ownership and updating a registered contact. The integrated
+`tests/system-sweep.test.ts` covers charge, source and save validation.
+`probe-derelict.mjs` uses controlled range placements and a live physics step,
+then reads the painted Sweep tab, passive cue and Navigation row. It clears
+fixture knowledge between the two channels; it does not prove a continuously
+flown approach. `probe-system-sweep.mjs` covers the canonical ledger and UI.
+Screenshots remain ignored under `view-set/node-733/`. Principal visual and
+changelog approval remain the supervisor's separate gates.
 
-The mandatory selector reports `all` because shared runtime and probe catalog
-files changed. The ranger worker contract limits local execution to affected
-probes; the supervisor owns the full browser run on the final reviewed head.
-
-Round 1 verification: `npm test` passes 5,534 tests across 301 files with zero
-failures. Production build, formatting, lint, typecheck and launcher wiring
-pass. Eight affected hardware browser probes pass on ANGLE Metal (Apple M1
-Pro): derelict, relay, ladders, live cockpit, display contacts, Navigation
-console, boot and save. This is partial browser evidence: 85 of 93 probes were
-not run; the supervisor owns the full-suite gate. The teardown regression
-initially failed because its headless Game-method list omitted the extracted
-cleanup helper; it now executes that real helper and passes. The proposed
-changelog sentence and cockpit screenshots await the principal's approval in
-the supervisor's delivery gate.
-
-Round 1: sweep readings now have their own save domain, relay readings require
-an active relay on load, and wreck contacts are built by the headless scanner
-seam. Shared region and system-reading projections keep cockpit reads aligned
-with the sweep. Finding skips Holdings outside identification range and adopts
-only a successful identification. The optional frame-cache suggestion is
-deferred: mutable ship coordinates, world writes and multiple physics clocks
-need explicit invalidation coverage before sharing those projections.
+Correction to the prior receipt: its round-1 figures (5,534 tests and eight
+affected probes) did not name the measured tree or establish their ordering
+against the round-1 changes. They are historical self-reports, not evidence
+for this repaired implementation. The verification entry below will name the
+implementation commit measured in this pass.

@@ -27,7 +27,7 @@
  */
 
 import { scoopWreckContainer } from "./derelict-salvage";
-import { identifyDerelicts, sweepSystem } from "./long-range-scanner";
+import { identifyDerelicts } from "./long-range-scanner";
 import type { System } from "./sim";
 import type { Vec3 } from "./vec3";
 import type { CarrierKey } from "./carrier-key";
@@ -153,7 +153,6 @@ export interface Holdings {
 export type AcceptedTrade = Extract<StationCommerceResult, { accepted: true }>;
 
 export type HoldEvent =
-	| { kind: "system-sweep"; system: System; at: number }
 	| { kind: "derelict-identify"; system: System; shipPos: Vec3; at: number }
 	/** A press on the Requests board other than `details`, which is the
 	 *  board's own state. */
@@ -515,17 +514,6 @@ function applied(
 	event: HoldEvent,
 ): Applied {
 	switch (event.kind) {
-		case "system-sweep":
-			return {
-				holdings,
-				world: sweepSystem(
-					world,
-					event.system,
-					holdings.commander.ownedEquipment,
-					event.at,
-				),
-				signals: QUIET,
-			};
 		case "derelict-identify": {
 			const found = identifyDerelicts(
 				world,

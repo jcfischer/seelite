@@ -374,9 +374,14 @@ test("fitting items survive reload and legacy or malformed fitting rows refuse",
 			corrupt((r) => (r.commander.state.recoveredFittings[0].tonnes = -1)),
 		),
 	).toThrow("fitting items");
-	expect(() => parseSave(corrupt((r) => (r.saveSchemaVersion = 9)))).toThrow(
-		"not a version 9 field",
-	);
+	expect(() =>
+		parseSave(
+			corrupt((r) => {
+				r.saveSchemaVersion = 9;
+				delete r.commander.sweepReadings;
+			}),
+		),
+	).toThrow("not a version 9 field");
 });
 test("a death loses goods and carried fittings while its world keeps the strip", () => {
 	const at = derelictFirstLossAt(system.record.seed, key) + 1;
@@ -517,7 +522,9 @@ test("a schema 9 save with a partially stripped derelict loads its world remaind
 		world,
 		commander,
 	}) as Record<string, unknown>;
+	delete (body.commander as Record<string, unknown>).sweepReadings;
 	const legacy = { ...body, saveSchemaVersion: 9 };
+
 	const loaded = parseSave({
 		...legacy,
 		integrity: fnv1a(JSON.stringify(legacy)),

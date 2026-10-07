@@ -35,6 +35,7 @@ import { HULL_IDS, HULL_SPECS, type HullId } from "./hull";
 import { generateGalaxy } from "./galaxy";
 import { generateContents } from "./system";
 import { emptyRequests, parseRequests, type RequestsState } from "./requests";
+import { parseSweepReadings, type SweepReading } from "./system-sweep";
 import {
 	type CommanderState,
 	newCommander,
@@ -133,8 +134,12 @@ import {
  *
  * **10 adds unfitted salvage items to the commander hold (node #732).** Each
  * names a fitting and its carried tonnes; older records load with none.
+ *
+ * **11 adds the commander's own-sensor sweep ledger (node #482).** Older
+ * records migrate empty; older readers must refuse rather than discard
+ * learned rows.
  */
-export const SAVE_SCHEMA_VERSION = 10;
+export const SAVE_SCHEMA_VERSION = 11;
 /**
  * Versions this parser still reads but no longer writes.
  *
@@ -163,8 +168,13 @@ export const SAVE_SCHEMA_VERSION = 10;
  *
  * **9 is every save written between nodes #731 and #732.** Its derelict
  * remainder rows stay intact; it predates recovered fitting hold items.
+ *
+ * **10 is every save written between nodes #732 and #482.** It carries
+ * recovered fittings and predates the sweep ledger.
  */
-export const LEGACY_SAVE_SCHEMA_VERSIONS = [2, 3, 4, 5, 6, 7, 8, 9] as const;
+export const LEGACY_SAVE_SCHEMA_VERSIONS = [
+	2, 3, 4, 5, 6, 7, 8, 9, 10,
+] as const;
 
 /**
  * What a legacy version may not contain.
@@ -183,11 +193,15 @@ export const LEGACY_SAVE_SCHEMA_VERSIONS = [2, 3, 4, 5, 6, 7, 8, 9] as const;
 export const LEGACY_SCHEMA_FORBIDS: Readonly<
 	Partial<Record<number, readonly string[]>>
 > = {
-	2: ["requests", "firstDay", "ladders"],
-	3: ["firstDay", "ladders"],
-	4: ["firstDay", "ladders"],
-	5: ["firstDay", "ladders"],
-	6: ["ladders"],
+	2: ["requests", "firstDay", "ladders", "sweepReadings"],
+	3: ["firstDay", "ladders", "sweepReadings"],
+	4: ["firstDay", "ladders", "sweepReadings"],
+	5: ["firstDay", "ladders", "sweepReadings"],
+	6: ["ladders", "sweepReadings"],
+	7: ["sweepReadings"],
+	8: ["sweepReadings"],
+	9: ["sweepReadings"],
+	10: ["sweepReadings"],
 };
 
 /**
@@ -305,6 +319,8 @@ export interface SavedFlight {
 
 /** The player half of a save. */
 export interface CommanderRecord {
+	/** Dated own-sensor regions, never discovery or request commitments. */
+	sweepReadings: SweepReading[];
 	/** The live request journal (#411); stored atomically with credits, so a
 	 *  reward and the commitment it settled cannot come back from different
 	 *  snapshots. */
@@ -369,6 +385,7 @@ export const newCommanderRecord = (
 		chargeAu?: number;
 	} = {},
 ): CommanderRecord => ({
+	sweepReadings: [],
 	requests: emptyRequests(),
 	state: newCommander(hull),
 	galaxyIndex: options.galaxyIndex ?? 0,
@@ -408,6 +425,9 @@ const canonicalCommander = (record: CommanderRecord) => {
 	for (const name of Object.keys(record.state.cargo).sort())
 		cargo[name] = record.state.cargo[name];
 	return {
+		sweepReadings: [...record.sweepReadings].sort((a, b) =>
+			a.id.localeCompare(b.id),
+		),
 		requests: {
 			byId: Object.fromEntries(
 				Object.entries(record.requests.byId).sort(([a], [b]) =>
@@ -690,6 +710,7 @@ const parseCommander = (
 			fail(`commander.ladders.basis: ${good} covers more than is aboard`);
 	}
 	return {
+		sweepReadings: [], // Cross-galaxy provenance validation follows world parsing.
 		requests:
 			version === 2
 				? emptyRequests()
@@ -799,6 +820,10 @@ export function parseSave(raw: unknown): SaveEnvelope {
 		version as number,
 		Object.fromEntries(world.galaxies.map((g, i) => [i, g.visited])),
 	);
+	const sweepReadings = asObject(o.commander, "commander").sweepReadings;
+	if ((version as number) >= 11 && sweepReadings === undefined)
+		fail("commander.sweepReadings is missing from saveSchemaVersion 11");
+	commander.sweepReadings = parseSweepReadings(sweepReadings, world);
 	const offers = [
 		...Object.values(commander.requests.byId).map((r) => r.terms),
 		...Object.values(commander.requests.leadsById),

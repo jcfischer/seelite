@@ -70,10 +70,8 @@ import {
 	derelictReadings,
 	derelictRegion,
 	wreckContact,
-	DERELICT_VISUAL_FLOOR_KM,
+	identifyRangeKm,
 	liveDerelicts,
-	stepSweep,
-	SWEEP_CHARGE_S,
 } from "./long-range-scanner";
 import type { WreckCue } from "./scanner-view";
 import { derelictPose, tetherPose, tetherOffset } from "./derelict";
@@ -484,6 +482,22 @@ import {
 import { DOMAIN } from "./domains";
 import { carrierManifest } from "./carrier-manifest";
 import {
+	type SweepReading,
+	type SweepCharge,
+	sweepRemainingS,
+	beginSweep,
+	stepSweep,
+	sweepRefusal,
+	sweepSources,
+	replaceSystemReadings,
+} from "./system-sweep";
+import {
+	sweepPanel,
+	sweepCompletion,
+	SWEEP_INTERRUPTED,
+	SWEEP_IDLE,
+} from "./system-sweep-view";
+import {
 	type CarrierReading,
 	type ScanConsoleReadout,
 	type ScanHold,
@@ -865,6 +879,7 @@ import {
 	type LeftTab,
 	type LiveCockpitState,
 	type RightTab,
+	type SweepPanel,
 } from "./live-cockpit";
 import { loadLayout, saveLayout } from "./binding-store";
 import {
@@ -1078,7 +1093,6 @@ import {
 	observe,
 	observeSystemRelay,
 	readKnowledge,
-	systemSweepReadings,
 	type OperationalCondition,
 	type Provenance,
 	type TransitionEvent,
@@ -2484,11 +2498,13 @@ class Game {
 	 *  it closes it (#370 D3). `null` when there is nothing to restore. */
 	private controlsRestoreTab: RightTab | null = null;
 	private leftTab: LeftTab = "Navigation";
-	private sweepElapsed: number | null = null;
 	private wreckContacts = new Map<CarrierKey, DisplayContact>();
 	/** The forward station console keeps its tab across a head turn while docked. */
 	private stationConsoleTab: StationConsoleTab = "Market";
 	private requests = emptyRequests();
+	private sweepReadings: SweepReading[] = [];
+	private sweepCharge: SweepCharge | null = null;
+	private sweepStatus = SWEEP_IDLE;
 	private requestSelectedId: string | null = null;
 	/**
 	 * Current or Past (node #690). Transient, never saved: Requests opens on
@@ -4302,6 +4318,7 @@ class Game {
 			this.commerceWorld = save.world;
 			this.commander = save.commander.state;
 			this.requests = save.commander.requests;
+			this.sweepReadings = save.commander.sweepReadings;
 			this.chargeAu = save.commander.chargeAu;
 			this.permadeath = save.commander.permadeath;
 			this.firstDay = save.commander.firstDay;
@@ -4788,12 +4805,7 @@ class Game {
 				this.updateCockpit();
 			},
 			onSweep: () => {
-				if (
-					!relayScannerFitted(this.commander.ownedEquipment) ||
-					this.sweepElapsed !== null
-				)
-					return;
-				this.sweepElapsed = 0;
+				this.startSystemSweep();
 				this.consolePress(true);
 				this.updateCockpit();
 			},
@@ -8082,6 +8094,86 @@ class Game {
 	private scanSubject(target: Body | null): TrafficActor | undefined {
 		if (!target || !isDisplayContact(target)) return undefined;
 		return this.trafficActorByKey(target.id as CarrierKey);
+	}
+
+	private systemSweepContext() {
+		return {
+			fitted: relayScannerFitted(this.commander.ownedEquipment),
+			flying: this.dock.phase === "flying",
+			cruise: this.regime === "cruise" || this.spoolLeftS > 0,
+		};
+	}
+
+	private startSystemSweep() {
+		const context = this.systemSweepContext();
+		this.sweepStatus = sweepRefusal(context) ?? "Charging";
+		this.sweepCharge = beginSweep(
+			this.sweepCharge,
+			this.world.gameTime,
+			context,
+		);
+	}
+
+	private abortSystemSweep() {
+		this.sweepStatus = this.sweepCharge ? SWEEP_INTERRUPTED : SWEEP_IDLE;
+		this.sweepCharge = null;
+	}
+
+	private stepSystemSweep() {
+		const before = this.sweepCharge;
+		if (!before) return;
+		const result = stepSweep(
+			before,
+			this.world.gameTime,
+			this.systemSweepContext(),
+		);
+		this.sweepCharge = result.charge;
+		if (!result.completed) {
+			if (!result.charge) this.sweepStatus = SWEEP_INTERRUPTED;
+			return;
+		}
+		const { galaxy, index } = this.world.system.record;
+		const found = sweepSources(
+			{ ...this.commerceWorld, gameTime: this.world.gameTime },
+			galaxy,
+			index,
+		);
+		this.sweepReadings = replaceSystemReadings(
+			this.sweepReadings,
+			found,
+			galaxy,
+			index,
+		);
+		this.sweepStatus = sweepCompletion(found.length);
+		this.saveDirty();
+	}
+
+	private sweepPanelCache: {
+		key: string;
+		readings: SweepReading[];
+		panel: SweepPanel;
+	} | null = null;
+	private systemSweepPanel(): SweepPanel {
+		const now = this.world.gameTime;
+		const { galaxy, index } = this.world.system.record;
+		const context = this.systemSweepContext();
+		const remaining = sweepRemainingS(this.sweepCharge, now);
+		const key = `${context.fitted}|${context.flying}|${context.cruise}|${galaxy}|${index}|${this.leftTab}|${Math.floor(now)}|${remaining}|${this.sweepStatus}`;
+		if (
+			this.sweepPanelCache?.key === key &&
+			this.sweepPanelCache.readings === this.sweepReadings
+		)
+			return this.sweepPanelCache.panel;
+		const panel = sweepPanel(this.sweepReadings, now, this.commerceWorld.seed, {
+			...context,
+			galaxyIndex: galaxy,
+			systemIndex: index,
+			visible: this.leftTab === "Sweep",
+			charge: this.sweepCharge,
+			status: this.sweepStatus,
+		});
+		this.sweepPanelCache = { key, readings: this.sweepReadings, panel };
+		return panel;
 	}
 
 	/**
@@ -12486,6 +12578,7 @@ class Game {
 		// cannot reach because it runs on the flight tail. `tests/leg-reset-coverage`
 		// asked for both fields the moment they were assigned on the flight path.
 		this.scanHold = beginScanHold();
+		this.abortSystemSweep();
 		this.scanFacts = null;
 		this.raiderFiring = false;
 		this.gunFeedback = QUIET_GUN;
@@ -12497,7 +12590,6 @@ class Game {
 		for (const drawn of this.derelictMeshes.values())
 			this.disposeDrawnDerelict(drawn);
 		this.derelictMeshes.clear();
-		this.sweepElapsed = null;
 		for (const [key, contact] of this.wreckContacts)
 			this.dropWreckContact(key, contact);
 		this.selectableCache = null;
@@ -13011,32 +13103,8 @@ class Game {
 	derelictsAt(at = this.world.gameTime) {
 		return liveDerelicts(this.commerceWorld, this.world.system, at);
 	}
-	private stepSystemSweep(dt: number) {
-		if (this.sweepElapsed === null) return;
-		if (!relayScannerFitted(this.commander.ownedEquipment)) {
-			this.sweepElapsed = null;
-			return;
-		}
-		const charge = stepSweep(
-			this.sweepElapsed,
-			dt,
-			this.commander.ownedEquipment,
-		);
-		this.sweepElapsed = charge.elapsed;
-		if (!charge.complete) return;
-		this.adoptHoldings(
-			applyHoldEvent(this.holdings(), this.commerceWorld, {
-				kind: "system-sweep",
-				system: this.world.system,
-				at: this.world.gameTime,
-			}),
-		);
-		this.sweepElapsed = null;
-	}
 	private stepDerelictFinding() {
-		const floor = relayScannerFitted(this.commander.ownedEquipment)
-			? RELAY_IDENTIFY_RANGE_KM
-			: DERELICT_VISUAL_FLOOR_KM;
+		const floor = identifyRangeKm(this.commander.ownedEquipment);
 		if (!this.wreckReadings().some((w) => !w.identified && w.km <= floor))
 			return;
 		const outcome = applyHoldEvent(this.holdings(), this.commerceWorld, {
@@ -13062,21 +13130,16 @@ class Game {
 	private syncWreckContacts() {
 		const live = new Set<CarrierKey>();
 		for (const w of this.wreckReadings()) {
-			if (!w.identified) continue;
+			const fresh = wreckContact(w);
+			if (!fresh) continue;
 			live.add(w.key);
-			let contact = this.wreckContacts.get(w.key);
-			if (!contact) {
-				contact = wreckContact(w)!;
-				this.wreckContacts.set(w.key, contact);
-				this.registerContact(contact);
+			const contact = this.wreckContacts.get(w.key);
+			if (contact) Object.assign(contact, fresh);
+			else {
+				this.wreckContacts.set(w.key, fresh);
+				this.registerContact(fresh);
 				this.selectableCache = null;
 			}
-			contact.shipType = w.pose.hull;
-			contact.name = `Derelict ${w.pose.hull}`;
-			Object.assign(contact.pos, w.pose.pos);
-			Object.assign(contact.velocity, w.pose.vel);
-			const env = HULL_SPECS[w.pose.hull].env;
-			contact.radiusKm = Math.hypot(env.beamKm, env.heightKm, env.lengthKm) / 2;
 		}
 		for (const [key, contact] of this.wreckContacts) {
 			if (live.has(key)) continue;
@@ -14670,6 +14733,7 @@ class Game {
 		// paid to a ship in front of the canopy; five seconds of it cannot include
 		// a jump leg, and the nose is nowhere during one.
 		this.scanHold = beginScanHold();
+		this.abortSystemSweep();
 		const target = this.targetBody();
 		const targetParentId = this.targetParentId();
 		if (target && targetParentId) {
@@ -14806,9 +14870,6 @@ class Game {
 		// where there is nothing to clear.
 		this.settleIncidentLists();
 		this.stepDockingNoticeRange();
-		// The bought sweep charges while docked too; no flight identification
-		// runs on this path. Opening a tab alone never starts a sweep.
-		this.stepSystemSweep(dt);
 		// **§12's three states come first, and they return.** E5 suspends
 		// flight: the throttle, the stick and the docking computer are all
 		// inert, so none of the input handling below runs — and neither does
@@ -14843,6 +14904,7 @@ class Game {
 			// otherwise wait out the whole visit and complete on the first frame
 			// back in the seat, with no attention paid in between.
 			this.scanHold = beginScanHold();
+			this.abortSystemSweep();
 			this.stepDockPhase(dt);
 			return;
 		}
@@ -15262,6 +15324,7 @@ class Game {
 		// target *is* this frame: a carrier that drove out of range mid-charge
 		// breaks it, and reading the old position would hold it forever.
 		this.stepScan(dt);
+		this.stepSystemSweep();
 		// §7: the tank refills passively in normal flight, and that is the
 		// anti-stranding rule rather than a convenience.
 		this.chargeAu = chargeAfterRegen(this.chargeAu, dt, this.chargeCapacityAu);
@@ -16935,6 +16998,7 @@ class Game {
 			dockPhase: this.dock.phase,
 			headLook: this.headLook,
 			leftTab: this.leftTab,
+			sweep: this.systemSweepPanel(),
 			rightTab: this.rightTab,
 			navRows: this.navRows(),
 			navFilter: this.navFilter,
@@ -17025,18 +17089,6 @@ class Game {
 					: [],
 			relay: this.relayCue(),
 			wreck: this.wreckCue(),
-			sweep: {
-				fitted: relayScannerFitted(this.commander.ownedEquipment),
-				progress:
-					this.sweepElapsed === null
-						? null
-						: this.sweepElapsed / SWEEP_CHARGE_S,
-				sweepReadings: systemSweepReadings(
-					this.commerceWorld.galaxies[this.world.galaxy.index],
-					this.world.system.record.index,
-				),
-				now: this.world.gameTime,
-			},
 			tuning: this.tuningSummary(),
 			requests,
 			stationConsole: this.stationConsoleState(dockContext),
@@ -17564,6 +17616,7 @@ class Game {
 			...base,
 			state: this.commander,
 			requests: this.requests,
+			sweepReadings: this.sweepReadings,
 			galaxyIndex: this.world.system.record.galaxy,
 			systemIndex: this.world.system.record.index,
 			dockedAt: station ? this.stationKey(station) : null,

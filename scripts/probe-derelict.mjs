@@ -58,12 +58,9 @@ try {
 		g.commander = { ...g.commander, ownedEquipment: [] };
 	});
 	await placeNear(page, fixture, 3000, { look: "left" });
-	await page.locator('[data-live-left-tab="Scanner"]').click();
 	check(
-		"unfitted Scanner tab names the module and offers no sweep",
-		(await page.locator("[data-live-sweep-body]").innerText()).includes(
-			"Fit a Long-Range Scanner",
-		) && (await page.locator("[data-live-sweep]").count()) === 0,
+		"unfitted console has no Sweep tab",
+		(await page.locator('[data-live-left-tab="Sweep"]').count()) === 0,
 	);
 	await page.locator('[data-live-left-tab="Navigation"]').click();
 	const hidden = await page.evaluate(
@@ -91,25 +88,23 @@ try {
 		g.commander = { ...g.commander, ownedEquipment: [LONG_RANGE_SCANNER] };
 		g.updateCockpit();
 	});
-	await page.locator('[data-live-left-tab="Scanner"]').click();
-	await page.locator("[data-live-sweep]").click();
+	await page.locator('[data-live-left-tab="Sweep"]').click();
+	await page.locator("[data-live-sweep-action]").click();
 	const partial = await page.evaluate(() => {
 		const g = window.__seelite;
 		for (let i = 0; i < 300; i++) g.step(1 / 60);
 		g.render(0);
 		return {
-			elapsed: g.sweepElapsed,
-			sweepReadings: Object.keys(
-				g.commerceWorld.galaxies[0].sweepReadings ?? {},
-			).length,
+			elapsed: g.world.gameTime - g.sweepCharge.startedAt,
+			sweepReadings: g.sweepReadings.length,
 		};
 	});
 	check(
 		"five seconds paints sweep progress without writing leads",
 		partial.elapsed > 4.9 &&
 			partial.sweepReadings === 0 &&
-			(await page.locator("[data-live-sweep]").innerText()).includes(
-				"SWEEPING",
+			(await page.locator("[data-live-sweep-status]").innerText()).includes(
+				"CHARGING",
 			),
 	);
 	await page.evaluate(() => {
@@ -117,18 +112,23 @@ try {
 		for (let i = 0; i < 310; i++) g.step(1 / 60);
 		g.render(0);
 	});
-	const leadText = await page.locator("[data-live-sweep-body]").innerText();
+	const leadText = await page.locator("[data-live-sweep]").innerText();
 	const swept = await page.evaluate(
 		(f) => ({
-			lead: window.__seelite.commerceWorld.galaxies[0].sweepReadings[f.key],
+			lead: window.__seelite.sweepReadings.find(
+				(r) =>
+					r.kind === "wreck" &&
+					r.systemIndex === window.__seelite.world.system.record.index &&
+					r.id.endsWith(":" + f.key.split(":")[1]),
+			),
 			known: window.__seelite.commerceWorld.galaxies[0].knowledge[f.key],
 		}),
 		fixture,
 	);
 	check(
 		"completed sweep paints a region with source and age, never discovery",
-		leadText.includes("Derelict return") &&
-			leadText.includes("Long-Range Scanner sweep") &&
+		leadText.includes("Salvage wreck signal") &&
+			leadText.includes("OWN SENSORS") &&
 			leadText.includes("ago") &&
 			!!swept.lead &&
 			!swept.known &&
