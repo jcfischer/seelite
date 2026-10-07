@@ -2989,7 +2989,7 @@ function buildVentBank(
 	 *  there used to be a second `radius` argument and nothing read it, so five
 	 *  call sites were passing a dial that did nothing (#300). */
 	length: number,
-	/** Newly pooled forms need an open mouth and a tip beacon visible on approach. */
+	/** Newly pooled forms need an open mouth and a tip obstruction lamp visible on approach. */
 	approachFacing = false,
 ): THREE.Group {
 	const stack = new THREE.Group();
@@ -3181,7 +3181,7 @@ function buildRadiator(spanKm: number, tilt: number): THREE.Group {
 	return group;
 }
 
-/** Dock-face ports between the pad's berths, on the shared aperture plane. */
+/** Dock-face ports between the landing deck's berths, on the shared aperture plane. */
 function refineryDeckPorts(): THREE.Object3D {
 	const plane = STATION_GEOMETRY.refinery.aperturePlaneKm;
 	return portRun("refinery", 4, (i, count, position, normal, tangent) => {
@@ -3248,12 +3248,9 @@ function buildRefineryWarren(color: number, berthSeed: number): BuiltPart {
 		),
 	);
 
-	// **Vent throats face the approach.** Viewed down the aperture axis —
-	// the one view a docking approach has — a rock with an inlaid cut is still a
-	// rounded lump, and `probe-station.mjs` measured this against the trade
-	// station's drum at 1 − IoU 0.216 on a 0.25 floor. §7 rests identity on
-	// outline, so the machined half has to reach *into that view* rather than
-	// sit flush in it.
+	// Vent throats face the approach so their heat and obstruction lamps are
+	// visible down the aperture axis. The old canted stacks' outline reading
+	// does not measure this geometry.
 	for (const [x, y] of [
 		[r * 0.86, r * 0.6],
 		[-r * 0.72, r * 0.78],
@@ -3549,7 +3546,7 @@ function buildRefinerySpar(color: number, berthSeed: number): BuiltPart {
 	for (const side of [-1, 1]) {
 		const flare = buildVentBank(fixtures, r * 0.85, true);
 		// On the forward rock shoulder, where the approach sees the heat and
-		// hazard beacon; the aft shaft was wholly hidden behind the rock.
+		// obstruction lamp; the aft shaft was wholly hidden behind the rock.
 		flare.position.set(side * r * 0.8, r * 0.3, r * 0.6);
 		group.add(flare);
 	}

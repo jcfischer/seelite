@@ -163,7 +163,8 @@ export interface StationPlan {
  * stations of one role may now differ, so a per-type answer about a form's
  * reach, proxy or mesh is wrong the moment a pool holds two.
  *
- * Node #744 ratified every built form, uniformly drawn in form-id order,
+ * Node #744 (https://github.com/jcfischer/seelite/issues/744) ratified every
+ * built form, uniformly drawn in form-id order,
  * after the principal saw them in the station viewer (2026-10-07). Node #745
  * grows the refinery to Warren, Collar, Spar and Works; the other roles grow
  * in their own nodes. The outpost keeps its one fiction-owned form.

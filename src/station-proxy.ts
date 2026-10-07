@@ -646,7 +646,7 @@ function refineryCollarProxy(): StationProxy {
 }
 
 /** The Spar: an axial processing shaft, three tanks at its aft end, and a
- * carved rock around the shaft. The forward cap carries the same pad as the
+ * carved rock around the shaft. The forward cap carries the same landing deck as the
  * other refinery forms; separate wing boxes preserve the space between them. */
 function refinerySparProxy(): StationProxy {
 	const r = STATION_GEOMETRY.refinery.coreRadiusKm;
@@ -897,15 +897,18 @@ export function stationProxy(
 		case "shipyard":
 			return form === "a" ? shipyardGantryProxy() : null;
 		case "refinery":
-			return form === "a"
-				? refineryWarrenProxy()
-				: form === "b"
-					? refineryCollarProxy()
-					: form === "c"
-						? refinerySparProxy()
-						: form === "d"
-							? refineryWorksProxy(assemblySeed)
-							: null;
+			switch (form) {
+				case "a":
+					return refineryWarrenProxy();
+				case "b":
+					return refineryCollarProxy();
+				case "c":
+					return refinerySparProxy();
+				case "d":
+					return refineryWorksProxy(assemblySeed);
+				default:
+					return null;
+			}
 		case "outpost":
 			return form === "e" ? outpostSalvageProxy() : null;
 		default: {

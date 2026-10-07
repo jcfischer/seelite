@@ -768,7 +768,7 @@ Trade and shipyard still fly **A** while their pool nodes are implemented.
 The outpost is not drawn: it keeps `OUTPOST_FORM` **E**, the fiction's Salvage
 (#490, #518), placed in lawless systems since #491. The Works and Cluster
 were originally selected on 2026-09-06; the Salvage replaced the Cluster on
-2026-09-24 when the outpost became a raider's haven.
+2026-09-24 when the outpost became the Raider outpost.
 
 **The letter carried forward and the geometry did not, which is worth being
 plain about.** Round one's trade A was a twelve-sided lofted drum; it has been

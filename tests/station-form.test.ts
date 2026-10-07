@@ -305,16 +305,19 @@ describe("the draw", () => {
 
 describe("the mesh, the reach and the proxy read the one field", () => {
 	test("a generated refinery with an unsupported form still refuses its proxy", () => {
-		let checked = false;
-		forEachSystem(WORLD_SEED, GALAXIES, (_record, contents) => {
-			const station = contents.stations.find((s) => s.type === "refinery");
-			if (!station || checked) return;
-			expect(() => stationProxyOf({ ...station, formId: "e" })).toThrow(
-				"refinery form e has no proxy",
-			);
-			checked = true;
-		});
-		expect(checked).toBe(true);
+		for (const g of GALAXIES) {
+			for (const record of generateGalaxy(WORLD_SEED, g).systems) {
+				const station = generateContents(record).stations.find(
+					(s) => s.type === "refinery",
+				);
+				if (!station) continue;
+				expect(() => stationProxyOf({ ...station, formId: "e" })).toThrow(
+					"refinery form e has no proxy",
+				);
+				return;
+			}
+		}
+		throw new Error("the corpus generates no refinery");
 	});
 	const first = (() => {
 		const contents = generateContents(generateGalaxy(WORLD_SEED, 0).systems[0]);

@@ -269,6 +269,9 @@ describe("station proxy budget (collision.md §9.1.11)", () => {
 		//
 		// Keyed by form, not by role (node #717): two forms of one role are two
 		// solids, and a pooled form with no figure here is red below.
+		// These are measured extents, not minimum safe sizes: collision.ts
+		// uses conservative advancement on each primitive's separation. The containment,
+		// opening and no-tunnelling rows carry the separate safety obligations.
 		const DECLARED: Partial<Record<string, number>> = {
 			"trade/a": 0.032,
 			"shipyard/a": 0.028,

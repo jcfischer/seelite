@@ -60,7 +60,11 @@ import {
 	worldSolids,
 	worldStarts,
 } from "../src/sim";
-import { STATION_FORM_POOL, STATION_GEOMETRY } from "../src/station";
+import {
+	STATION_FORM_POOL,
+	STATION_GEOMETRY,
+	type StationFormId,
+} from "../src/station";
 import { proxyReachKm, stationProxyOf } from "../src/station-proxy";
 import { TRAFFIC_HULL_POOLS } from "../src/station-traffic";
 import {
@@ -84,9 +88,9 @@ import {
 import { codeOf, methodBodyOf } from "./lib/source-scan";
 
 const DT = 1 / 30;
-/** All three placed roles and every refinery form (node #745): 1/a, 28/b,
- *  2/c and 4/d. The original node #665 corpus is retained alongside them. */
-const SEEDS = [1, 2, 3, 4, 9, 28, 47];
+/** Node #665's original start-system corpus: all three placed roles. Keep
+ * these seeds fixed; form coverage is a separate axis, not more seeds. */
+const SEEDS = [1, 2, 3, 9, 47];
 /** Approach bearings round each station, in radians. */
 const BEARINGS = [0, 1.7, 3.9];
 
@@ -106,10 +110,6 @@ function placedStations(world: World) {
 	return world.system.contents.stations.filter((s) =>
 		world.system.byId.has(s.id),
 	);
-}
-
-function stationCount(seed: number): number {
-	return placedStations(makeWorld(seed)).length;
 }
 
 /** The ship's step as a swept motion, between where it stood and where its
@@ -170,6 +170,16 @@ interface FlyOptions {
 	atMouth?: boolean;
 	/** An armed carrier the pilot provoked fights instead of the raider. */
 	armed?: HullId;
+	/** Explicit form axis on the original systems; never selected by outcomes. */
+	refineryForm?: StationFormId;
+}
+
+function worldInRefineryForm(seed: number, form: StationFormId | undefined) {
+	const world = makeWorld(seed);
+	if (form !== undefined)
+		for (const station of world.system.contents.stations)
+			if (station.type === "refinery") station.formId = form;
+	return world;
 }
 
 /**
@@ -180,7 +190,7 @@ interface FlyOptions {
  * with.
  */
 function flyBesideStation(o: FlyOptions): Run {
-	const world = makeWorld(o.seed);
+	const world = worldInRefineryForm(o.seed, o.refineryForm);
 	const system = world.system;
 	const placed = placedStations(world);
 	const station = placed[o.stationIndex % placed.length];
@@ -338,15 +348,17 @@ function flyBesideStation(o: FlyOptions): Run {
 function corpus(
 	regime: Regime,
 	avoid: boolean,
-	extra: Pick<FlyOptions, "hull" | "open" | "atMouth" | "armed"> = {},
+	extra: Pick<
+		FlyOptions,
+		"hull" | "open" | "atMouth" | "armed" | "refineryForm"
+	> = {},
+	refineryOnly = false,
 ): Run[] {
 	const runs: Run[] = [];
-	for (const seed of SEEDS)
-		for (
-			let stationIndex = 0;
-			stationIndex < stationCount(seed);
-			stationIndex++
-		)
+	for (const seed of SEEDS) {
+		const stations = placedStations(makeWorld(seed));
+		for (let stationIndex = 0; stationIndex < stations.length; stationIndex++) {
+			if (refineryOnly && stations[stationIndex].type !== "refinery") continue;
 			for (const bearing of BEARINGS)
 				runs.push(
 					flyBesideStation({
@@ -355,24 +367,28 @@ function corpus(
 						bearing,
 						regime,
 						avoid,
+						// Historical controls and their measured bands used Works.
+						refineryForm: "d",
 						...extra,
 					}),
 				);
+		}
+	}
 	return runs;
 }
 
 const struck = (runs: Run[]) => runs.filter((run) => run.met !== null).length;
 
 describe("the figures the avoidance is built from", () => {
-	test("the corpus reaches every pooled refinery form", () => {
-		const forms = new Set(
-			SEEDS.flatMap((seed) =>
-				placedStations(makeWorld(seed))
-					.filter((s) => s.type === "refinery")
-					.map((s) => s.formId),
-			),
-		);
-		expect([...forms].sort()).toEqual([...STATION_FORM_POOL.refinery]);
+	test("every pooled refinery form is flown on the same four original systems", () => {
+		for (const form of STATION_FORM_POOL.refinery) {
+			const refineries = SEEDS.flatMap((seed) =>
+				placedStations(worldInRefineryForm(seed, form)).filter(
+					(s) => s.type === "refinery",
+				),
+			);
+			expect(refineries.map((s) => s.formId)).toEqual(Array(4).fill(form));
+		}
 	});
 	test("the clearance covers every hull's own box, so a centre outside the keep-out is a hull outside the solid", () => {
 		for (const [id, spec] of Object.entries(HULL_SPECS)) {
@@ -506,6 +522,9 @@ describe("avoidanceSolids: what the controller is handed", () => {
 });
 
 describe("a ship fighting beside a station does not fly into it, under all three regimes", () => {
+	// The historical Works corpus keeps its majority control and measured
+	// bands. Other forms change both the solid and the reach-derived pilot
+	// placement; adding seeds until the aggregate is a majority hides that.
 	for (const regime of ["assist-on", "assist-off", "cruise"] as const) {
 		test(`${regime}: blind, the corpus meets the station; avoiding, no run does`, () => {
 			const blind = corpus(regime, false);
@@ -517,6 +536,26 @@ describe("a ship fighting beside a station does not fly into it, under all three
 			);
 		});
 	}
+
+	for (const form of STATION_FORM_POOL.refinery)
+		for (const regime of ["assist-on", "assist-off", "cruise"] as const) {
+			test(`refinery/${form}, ${regime}: the fixed per-form corpus has blind impacts and avoids every one`, () => {
+				const blind = corpus(regime, false, { refineryForm: form }, true);
+				const avoiding = corpus(regime, true, { refineryForm: form }, true);
+				if (process.env.SEELITE_MEASURE_AVOIDANCE === "1")
+					console.info(
+						`refinery/${form}, ${regime}: blind ${struck(blind)}/${blind.length}, avoiding ${struck(avoiding)}/${avoiding.length}`,
+					);
+				expect(blind).toHaveLength(12);
+				expect(avoiding).toHaveLength(blind.length);
+				// A blind impact is a witness that disabling avoidance fails
+				// this form's row; its proportion is not a design requirement.
+				expect(
+					blind.filter((r) => r.met === "station-refinery").length,
+				).toBeGreaterThan(0);
+				expect(struck(avoiding)).toBe(0);
+			});
+		}
 
 	test("cruise: every civilian roster hull, the slowest-turning included, gets out of a station's way", () => {
 		const civilians = [...new Set(Object.values(TRAFFIC_HULL_POOLS).flat())]
@@ -540,6 +579,37 @@ describe("a ship fighting beside a station does not fly into it, under all three
 });
 
 describe("a duel beside a station stays a duel", () => {
+	for (const form of STATION_FORM_POOL.refinery) {
+		for (const regime of ["assist-on", "assist-off"] as const) {
+			test(`refinery/${form}, ${regime}: the raider keeps its gun run on the fixed form corpus`, () => {
+				const extra = { refineryForm: form };
+				const open = corpus(regime, false, { ...extra, open: true }, true);
+				const beside = corpus(regime, true, extra, true);
+				const meanFire = (runs: Run[]) =>
+					runs.reduce((sum, r) => sum + r.fireShare, 0) / runs.length;
+				expect(meanFire(beside)).toBeGreaterThan(0.6 * meanFire(open));
+				expect(Math.min(...beside.map((r) => r.fireShare))).toBeGreaterThan(
+					0.05,
+				);
+			});
+		}
+		for (const armed of [undefined, "patrol", "interceptor"] as const) {
+			test(`refinery/${form}: ${armed ?? "the raider"} holds off at the mouth and keeps firing`, () => {
+				const extra = { refineryForm: form, atMouth: true, armed };
+				const open = corpus("assist-on", false, { ...extra, open: true }, true);
+				const beside = corpus("assist-on", true, extra, true);
+				const meanFire = (runs: Run[]) =>
+					runs.reduce((sum, r) => sum + r.fireShare, 0) / runs.length;
+				expect(struck(beside)).toBe(0);
+				expect(meanFire(beside)).toBeGreaterThan(0.8 * meanFire(open));
+				expect(Math.min(...beside.map((r) => r.fireShare))).toBeGreaterThan(
+					0.15,
+				);
+				expect(Math.max(...beside.map((r) => r.stillShare))).toBeLessThan(0.5);
+			});
+		}
+	}
+
 	for (const regime of ["assist-on", "assist-off"] as const) {
 		test(`${regime}: the raider still fires on a pilot sitting on the station, near its open-space rate`, () => {
 			const open = corpus(regime, false, { open: true });
