@@ -16,9 +16,10 @@ capital content are separate builds: until their generated frames exist,
 derelict regions conservatively name unsettled system space, with no invented
 position. The sweep does not author their placement or their close cues.
 
-`CommanderRecord.sweepLeads` holds SavedLead-shaped provenance: a stable id
+`CommanderRecord.sweepReadings` holds **Sweep readings** (`SweepReading`): a stable id
 names the galaxy, system and source; the row records `own-sensors`, observation
-time, a named region and `unconfirmed`. No coordinates, identified reference,
+time and a named region. This ledger is distinct from Requests' retained
+`SavedLead`: it has no confirmation action or state. No coordinates, identified reference,
 condition snapshot or target id is saved. Region rows are plain reading blocks,
 visually separate from Navigation's selectable contact rows. They have no
 target control, contact registration or marker path.
@@ -39,9 +40,13 @@ retain their original integrity check and migrate to an empty ledger. Those
 versions refuse an assembled sweep field; version 10 refuses a missing ledger.
 Older readers refuse version 10 instead of silently dropping readings.
 Nonempty provenance is validated
-against the named galaxy/system and generated subject, with finite clock bounds,
+against the named galaxy/system, enabled generated subject and that subject's
+region, with finite clock bounds,
 unique identities, supported region kinds and a fixed field set. Malformed
-provenance refuses the whole save. Charge and console status are session state.
+provenance refuses the whole save. Load validation does not read current source
+condition: disappearance after an observation cannot erase a dated reading.
+Charge and console status are session state. The domain module owns charge,
+sources and parsing; `system-sweep-view.ts` owns the read-only cockpit projection.
 
 Verification: `tests/system-sweep.test.ts` covers charge/refusal, source purity,
 save validation and ages; `scripts/probe-system-sweep.mjs` covers the live

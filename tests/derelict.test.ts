@@ -500,7 +500,7 @@ describe("the save", () => {
 			serializeSave({ world: newWorld(WORLD), commander }),
 			(body) => {
 				body.saveSchemaVersion = 8;
-				delete body.commander.sweepLeads;
+				delete body.commander.sweepReadings;
 			},
 		);
 		const loaded = parseSave(v8);
@@ -518,7 +518,7 @@ describe("the save", () => {
 			}),
 			(body) => {
 				body.saveSchemaVersion = 8;
-				delete body.commander.sweepLeads;
+				delete body.commander.sweepReadings;
 			},
 		);
 		expect(() => parseSave(v8)).toThrow("derelicts is not a version 8 field");

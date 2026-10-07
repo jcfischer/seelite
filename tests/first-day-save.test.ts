@@ -46,7 +46,7 @@ describe("#408 D4 — the saved first-day choice", () => {
 	test("a version 6 record keeps its choice (#564 made 6 legacy)", () => {
 		const v6 = resealed(serializeSave(saveOf("guided")), (body) => {
 			body.saveSchemaVersion = 6;
-			delete body.commander.sweepLeads;
+			delete body.commander.sweepReadings;
 			delete body.commander.ladders;
 			delete body.commander.flight.rates;
 		});
@@ -70,7 +70,7 @@ describe("#408 D4 — the saved first-day choice", () => {
 	test("a version 5 record, which has no choice, loads as free", () => {
 		const v5 = resealed(serializeSave(saveOf("guided")), (body) => {
 			body.saveSchemaVersion = 5;
-			delete body.commander.sweepLeads;
+			delete body.commander.sweepReadings;
 			delete body.commander.firstDay;
 			delete body.commander.ladders;
 			delete body.commander.flight.rates;
@@ -86,7 +86,7 @@ describe("#408 D4 — the saved first-day choice", () => {
 		for (const version of LEGACY_SAVE_SCHEMA_VERSIONS.filter((v) => v < 6)) {
 			const grafted = resealed(serializeSave(saveOf("free")), (body) => {
 				body.saveSchemaVersion = version;
-				delete body.commander.sweepLeads;
+				delete body.commander.sweepReadings;
 				delete body.commander.ladders;
 				delete body.commander.flight.rates;
 				if (version === 2) delete body.commander.requests;

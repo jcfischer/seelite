@@ -35,7 +35,7 @@ import { HULL_IDS, HULL_SPECS, type HullId } from "./hull";
 import { generateGalaxy } from "./galaxy";
 import { generateContents } from "./system";
 import { emptyRequests, parseRequests, type RequestsState } from "./requests";
-import { parseSweepLeads, type SavedLead } from "./system-sweep";
+import { parseSweepReadings, type SweepReading } from "./system-sweep";
 import {
 	type CommanderState,
 	newCommander,
@@ -180,14 +180,14 @@ export const LEGACY_SAVE_SCHEMA_VERSIONS = [2, 3, 4, 5, 6, 7, 8, 9] as const;
 export const LEGACY_SCHEMA_FORBIDS: Readonly<
 	Partial<Record<number, readonly string[]>>
 > = {
-	2: ["requests", "firstDay", "ladders", "sweepLeads"],
-	3: ["firstDay", "ladders", "sweepLeads"],
-	4: ["firstDay", "ladders", "sweepLeads"],
-	5: ["firstDay", "ladders", "sweepLeads"],
-	6: ["ladders", "sweepLeads"],
-	7: ["sweepLeads"],
-	8: ["sweepLeads"],
-	9: ["sweepLeads"],
+	2: ["requests", "firstDay", "ladders", "sweepReadings"],
+	3: ["firstDay", "ladders", "sweepReadings"],
+	4: ["firstDay", "ladders", "sweepReadings"],
+	5: ["firstDay", "ladders", "sweepReadings"],
+	6: ["ladders", "sweepReadings"],
+	7: ["sweepReadings"],
+	8: ["sweepReadings"],
+	9: ["sweepReadings"],
 };
 
 /**
@@ -306,7 +306,7 @@ export interface SavedFlight {
 /** The player half of a save. */
 export interface CommanderRecord {
 	/** Dated own-sensor regions, never discovery or request commitments. */
-	sweepLeads: SavedLead[];
+	sweepReadings: SweepReading[];
 	/** The live request journal (#411); stored atomically with credits, so a
 	 *  reward and the commitment it settled cannot come back from different
 	 *  snapshots. */
@@ -371,7 +371,7 @@ export const newCommanderRecord = (
 		chargeAu?: number;
 	} = {},
 ): CommanderRecord => ({
-	sweepLeads: [],
+	sweepReadings: [],
 	requests: emptyRequests(),
 	state: newCommander(hull),
 	galaxyIndex: options.galaxyIndex ?? 0,
@@ -411,7 +411,9 @@ const canonicalCommander = (record: CommanderRecord) => {
 	for (const name of Object.keys(record.state.cargo).sort())
 		cargo[name] = record.state.cargo[name];
 	return {
-		sweepLeads: [...record.sweepLeads].sort((a, b) => a.id.localeCompare(b.id)),
+		sweepReadings: [...record.sweepReadings].sort((a, b) =>
+			a.id.localeCompare(b.id),
+		),
 		requests: {
 			byId: Object.fromEntries(
 				Object.entries(record.requests.byId).sort(([a], [b]) =>
@@ -665,7 +667,7 @@ const parseCommander = (
 			fail(`commander.ladders.basis: ${good} covers more than is aboard`);
 	}
 	return {
-		sweepLeads: [], // Cross-galaxy provenance validation follows world parsing.
+		sweepReadings: [], // Cross-galaxy provenance validation follows world parsing.
 		requests:
 			version === 2
 				? emptyRequests()
@@ -767,10 +769,10 @@ export function parseSave(raw: unknown): SaveEnvelope {
 		version as number,
 		Object.fromEntries(world.galaxies.map((g, i) => [i, g.visited])),
 	);
-	const sweepLeads = asObject(o.commander, "commander").sweepLeads;
-	if ((version as number) >= 10 && sweepLeads === undefined)
-		fail("commander.sweepLeads is missing from saveSchemaVersion 10");
-	commander.sweepLeads = parseSweepLeads(sweepLeads, world);
+	const sweepReadings = asObject(o.commander, "commander").sweepReadings;
+	if ((version as number) >= 10 && sweepReadings === undefined)
+		fail("commander.sweepReadings is missing from saveSchemaVersion 10");
+	commander.sweepReadings = parseSweepReadings(sweepReadings, world);
 	const offers = [
 		...Object.values(commander.requests.byId).map((r) => r.terms),
 		...Object.values(commander.requests.leadsById),

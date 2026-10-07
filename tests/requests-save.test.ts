@@ -196,7 +196,7 @@ test("verified schema 2 migrates a copy to empty journal; corrupt and unsupporte
 	expect(SAVE_SCHEMA_VERSION).toBe(10);
 	const { integrity, ...body } = current;
 	body.saveSchemaVersion = 2;
-	delete body.commander.sweepLeads;
+	delete body.commander.sweepReadings;
 	delete body.commander.firstDay;
 	delete body.commander.ladders;
 	delete body.commander.flight.rates;
@@ -302,7 +302,7 @@ test("a schema 3 journal migrates when empty and is refused when it is not", () 
 		);
 		const { integrity, ...body } = current;
 		body.saveSchemaVersion = 3;
-		delete body.commander.sweepLeads;
+		delete body.commander.sweepReadings;
 		delete body.commander.firstDay;
 		delete body.commander.ladders;
 		delete body.commander.flight.rates;
@@ -353,7 +353,7 @@ test("a schema 2 record carrying a requests key is refused, empty or not", () =>
 		const raw = JSON.parse(JSON.stringify(serializeSave(save)));
 		const { integrity, ...body } = raw;
 		body.saveSchemaVersion = 2;
-		delete body.commander.sweepLeads;
+		delete body.commander.sweepReadings;
 		const grafted = { ...body, integrity: fnv1a(JSON.stringify(body)) };
 		expect(() => parseSave(grafted)).toThrow(
 			'saveSchemaVersion 2 cannot contain "requests"',
@@ -458,7 +458,7 @@ const asV4 = (
 	const raw = JSON.parse(JSON.stringify(serializeSave(save)));
 	const { integrity: _, ...body } = raw;
 	body.saveSchemaVersion = 4;
-	delete body.commander.sweepLeads;
+	delete body.commander.sweepReadings;
 	delete body.commander.firstDay;
 	delete body.commander.ladders;
 	delete body.commander.flight.rates;

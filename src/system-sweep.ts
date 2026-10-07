@@ -1,12 +1,11 @@
 /** System-scale sensor provenance (node #482). No knowledge writer, position,
  * contact or target is exposed by this module. */
 import { derelictSlots } from "./derelict-slots";
-import { targetAgeLabel } from "./display-contact";
-import { generateGalaxy } from "./galaxy";
+import { type SystemRecord, generateGalaxy } from "./galaxy";
 import { relayActive } from "./pirate-relay";
 import { raiderSlots } from "./raider-slots";
-import { relayPlan, relaySlot } from "./relay-slot";
-import { generateContents } from "./system";
+import { relayPlan, relaySlot } from "./relay-slot"; // glossary-ignore: slot
+import { type SystemContents, generateContents } from "./system";
 import {
 	effectiveCarrier,
 	effectiveDerelict,
@@ -49,11 +48,11 @@ export function stepSweep(
 }
 
 /** Named areas, never point geometry. The system-space fallback is deliberately
- * broad: derelict slots have no generated placement until the wreck build. */
+ * broad: derelict carrier rows have no generated placement until the wreck build. */
 export type SweepRegion =
 	| { kind: "station-surrounds"; stationId: string }
 	| { kind: "system-space" };
-export interface SavedLead {
+export interface SweepReading {
 	id: string;
 	galaxyIndex: number;
 	systemIndex: number;
@@ -61,10 +60,52 @@ export interface SavedLead {
 	source: "own-sensors";
 	observedAt: number;
 	region: SweepRegion;
-	confirmation: "unconfirmed";
 }
-const leadId = (galaxy: number, system: number, subject: string) =>
+const readingId = (galaxy: number, system: number, subject: string) =>
 	`sweep:${galaxy}:${system}:${subject}`;
+
+/** Generated subjects and the only region each may report.
+ * Their carrier identities are persistence rows, never docking berths. */
+interface SweepSubject {
+	kind: SweepReading["kind"];
+	subject: string;
+	region: SweepRegion;
+	carriers: ReturnType<typeof raiderSlots>;
+}
+function sweepSubjects(
+	record: SystemRecord,
+	contents: SystemContents,
+): SweepSubject[] {
+	const subjects: SweepSubject[] = [];
+	const plan = relayActive(record) ? relayPlan(contents, record.seed) : null;
+	if (plan)
+		subjects.push({
+			kind: "relay",
+			subject: "relay-00",
+			region: { kind: "station-surrounds", stationId: plan.watchedStationId },
+			carriers: [relaySlot(record.index)], // glossary-ignore: slot
+		});
+	for (const carrier of derelictSlots(record.index, record.government))
+		subjects.push({
+			kind: "wreck",
+			subject: carrier.localCarrierId,
+			region: { kind: "system-space" },
+			carriers: [carrier],
+		});
+	const raiders = raiderSlots(record.index, record.government);
+	if (raiders.length) {
+		const outpost = contents.stations.find((s) => s.type === "outpost");
+		subjects.push({
+			kind: "pressure",
+			subject: "pressure",
+			carriers: raiders,
+			region: outpost
+				? { kind: "station-surrounds", stationId: outpost.id }
+				: { kind: "system-space" },
+		});
+	}
+	return subjects;
+}
 
 /** Read live sources only after the charge completes. No disabled home-berth
  * carrier is a source. Pressure is one regional reading, never a ship roster. */
@@ -72,94 +113,52 @@ export function sweepSources(
 	world: WorldState,
 	galaxyIndex: number,
 	systemIndex: number,
-): SavedLead[] {
+): SweepReading[] {
 	const record = generateGalaxy(world.seed, galaxyIndex).systems[systemIndex];
 	const contents = generateContents(record);
 	const env = world.galaxies[galaxyIndex];
 	const now = world.gameTime;
-	const rows: SavedLead[] = [];
-	const add = (kind: SavedLead["kind"], subject: string, region: SweepRegion) =>
-		rows.push({
-			id: leadId(galaxyIndex, systemIndex, subject),
+	return sweepSubjects(record, contents)
+		.filter((s) =>
+			s.carriers.some((c) =>
+				s.kind === "wreck"
+					? effectiveDerelict(world, galaxyIndex, c.key, now).condition ===
+						"destroyed"
+					: effectiveCarrier(env, c.key, now).condition === "operational",
+			),
+		)
+		.map((s) => ({
+			id: readingId(galaxyIndex, systemIndex, s.subject),
 			galaxyIndex,
 			systemIndex,
-			kind,
-			source: "own-sensors",
+			kind: s.kind,
+			source: "own-sensors" as const,
 			observedAt: now,
-			region,
-			confirmation: "unconfirmed",
-		});
-	const plan = relayActive(record) ? relayPlan(contents, record.seed) : null;
-	if (
-		plan &&
-		effectiveCarrier(env, relaySlot(systemIndex).key, now).condition ===
-			"operational"
-	)
-		add("relay", "relay-00", {
-			kind: "station-surrounds",
-			stationId: plan.watchedStationId,
-		});
-	for (const slot of derelictSlots(systemIndex, record.government))
-		if (
-			effectiveDerelict(world, galaxyIndex, slot.key, now).condition ===
-			"destroyed"
-		)
-			add("wreck", slot.localCarrierId, { kind: "system-space" });
-	if (
-		raiderSlots(systemIndex, record.government).some(
-			(slot) =>
-				effectiveCarrier(env, slot.key, now).condition === "operational",
-		)
-	) {
-		const outpost = contents.stations.find((s) => s.type === "outpost");
-		add(
-			"pressure",
-			"pressure",
-			outpost
-				? { kind: "station-surrounds", stationId: outpost.id }
-				: { kind: "system-space" },
-		);
-	}
-	return rows.sort((a, b) => a.id.localeCompare(b.id));
+			region: s.region,
+		}))
+		.sort((a, b) => a.id.localeCompare(b.id));
 }
 
 /** A new reading replaces this system's reports, including absences (S22).
  * Between deliberate sweeps old rows remain unchanged, even if a source dies. */
-export const replaceSystemLeads = (
-	old: readonly SavedLead[],
-	found: readonly SavedLead[],
+export const replaceSystemReadings = (
+	old: readonly SweepReading[],
+	found: readonly SweepReading[],
 	galaxyIndex: number,
 	systemIndex: number,
-): SavedLead[] => [
+): SweepReading[] => [
 	...old.filter(
 		(r) => r.galaxyIndex !== galaxyIndex || r.systemIndex !== systemIndex,
 	),
 	...found,
 ];
-export const sweepAge = (row: SavedLead, now: number): string => {
-	const age = Math.max(0, now - row.observedAt);
-	return `${targetAgeLabel(age)} ago${age >= SWEEP_STALE_S ? " · STALE" : ""}`;
-};
-export function sweepRegionLabel(row: SavedLead, worldSeed: number): string {
-	const record = generateGalaxy(worldSeed, row.galaxyIndex).systems[
-		row.systemIndex
-	];
-	if (row.region.kind === "system-space")
-		return `${record.name} · unsettled system space`;
-	const { stationId } = row.region;
-	const station = generateContents(record).stations.find(
-		(s) => s.id === stationId,
-	);
-	return `Surrounds of ${station?.name ?? row.region.stationId}`;
-}
-
 /** Pre-sweep saves migrate to an empty ledger. Every nonempty row is
  * validated against its named galaxy/system; it cannot acquire point geometry
  * or an identified reference through a crafted save. */
-export function parseSweepLeads(
+export function parseSweepReadings(
 	value: unknown,
 	world: WorldState,
-): SavedLead[] {
+): SweepReading[] {
 	if (value === undefined) return [];
 	const fail = (): never => {
 		throw new Error(
@@ -171,10 +170,10 @@ export function parseSweepLeads(
 	const galaxies = new Map<number, ReturnType<typeof generateGalaxy>>();
 	return value.map((v) => {
 		if (!v || typeof v !== "object" || Array.isArray(v)) return fail();
-		const r = v as SavedLead;
+		const r = v as SweepReading;
 		if (
 			Object.keys(r).sort().join() !==
-				"confirmation,galaxyIndex,id,kind,observedAt,region,source,systemIndex" ||
+				"galaxyIndex,id,kind,observedAt,region,source,systemIndex" ||
 			!Number.isInteger(r.galaxyIndex) ||
 			r.galaxyIndex < 0 ||
 			r.galaxyIndex >= world.galaxies.length ||
@@ -185,7 +184,6 @@ export function parseSweepLeads(
 			r.observedAt < 0 ||
 			r.observedAt > world.gameTime ||
 			r.source !== "own-sensors" ||
-			r.confirmation !== "unconfirmed" ||
 			typeof r.id !== "string" ||
 			seen.has(r.id)
 		)
@@ -197,23 +195,13 @@ export function parseSweepLeads(
 		}
 		const record = galaxy.systems[r.systemIndex];
 		const contents = generateContents(record);
-		const subject = r.id.slice(leadId(r.galaxyIndex, r.systemIndex, "").length);
-		const subjects =
-			r.kind === "relay"
-				? relayPlan(contents, record.seed)
-					? ["relay-00"]
-					: []
-				: r.kind === "wreck"
-					? derelictSlots(r.systemIndex, record.government).map(
-							(s) => s.localCarrierId,
-						)
-					: r.kind === "pressure"
-						? ["pressure"]
-						: [];
-		if (
-			!subjects.includes(subject) ||
-			r.id !== leadId(r.galaxyIndex, r.systemIndex, subject)
-		)
+		const subject = r.id.slice(
+			readingId(r.galaxyIndex, r.systemIndex, "").length,
+		);
+		const generated = sweepSubjects(record, contents).find(
+			(s) => s.kind === r.kind && s.subject === subject,
+		);
+		if (!generated || r.id !== readingId(r.galaxyIndex, r.systemIndex, subject))
 			return fail();
 		const region = r.region;
 		if (!region || typeof region !== "object" || Array.isArray(region))
@@ -227,6 +215,15 @@ export function parseSweepLeads(
 			)
 				return fail();
 		} else return fail();
+		if (
+			region.kind !== generated.region.kind ||
+			(region.kind === "station-surrounds" &&
+				generated.region.kind === "station-surrounds" &&
+				region.stationId !== generated.region.stationId)
+		)
+			return fail();
+		// Validate generated identity, never current condition: dated readings survive
+		// a source's disappearance and loading is not a fresh observation.
 		// The subject is provenance only, not a contact lookup.
 		seen.add(r.id);
 		return structuredClone(r);

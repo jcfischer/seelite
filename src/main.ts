@@ -457,17 +457,20 @@ import {
 import { DOMAIN } from "./domains";
 import { carrierManifest } from "./carrier-manifest";
 import {
-	type SavedLead,
+	type SweepReading,
 	type SweepCharge,
 	SWEEP_CHARGE_S,
 	beginSweep,
 	stepSweep,
 	sweepRefusal,
 	sweepSources,
-	replaceSystemLeads,
-	sweepAge,
-	sweepRegionLabel,
+	replaceSystemReadings,
 } from "./system-sweep";
+import {
+	sweepPanel,
+	sweepCompletion,
+	SWEEP_INTERRUPTED,
+} from "./system-sweep-view";
 import {
 	type CarrierReading,
 	type ScanConsoleReadout,
@@ -849,6 +852,7 @@ import {
 	type LeftTab,
 	type LiveCockpitState,
 	type RightTab,
+	type SweepPanel,
 } from "./live-cockpit";
 import { loadLayout, saveLayout } from "./binding-store";
 import {
@@ -2476,7 +2480,7 @@ class Game {
 	/** The forward station console keeps its tab across a head turn while docked. */
 	private stationConsoleTab: StationConsoleTab = "Market";
 	private requests = emptyRequests();
-	private sweepLeads: SavedLead[] = [];
+	private sweepReadings: SweepReading[] = [];
 	private sweepCharge: SweepCharge | null = null;
 	private sweepStatus = "Press Sweep · 10 s charge";
 	private requestSelectedId: string | null = null;
@@ -4284,7 +4288,7 @@ class Game {
 			this.commerceWorld = save.world;
 			this.commander = save.commander.state;
 			this.requests = save.commander.requests;
-			this.sweepLeads = save.commander.sweepLeads;
+			this.sweepReadings = save.commander.sweepReadings;
 			this.chargeAu = save.commander.chargeAu;
 			this.permadeath = save.commander.permadeath;
 			this.firstDay = save.commander.firstDay;
@@ -8046,8 +8050,7 @@ class Game {
 	}
 
 	private abortSystemSweep() {
-		if (this.sweepCharge)
-			this.sweepStatus = "Sweep interrupted · press Sweep to restart";
+		if (this.sweepCharge) this.sweepStatus = SWEEP_INTERRUPTED;
 		this.sweepCharge = null;
 	}
 
@@ -8061,8 +8064,7 @@ class Game {
 		);
 		this.sweepCharge = result.charge;
 		if (!result.completed) {
-			if (!result.charge)
-				this.sweepStatus = "Sweep interrupted · press Sweep to restart";
+			if (!result.charge) this.sweepStatus = SWEEP_INTERRUPTED;
 			return;
 		}
 		const { galaxy, index } = this.world.system.record;
@@ -8071,17 +8073,22 @@ class Game {
 			galaxy,
 			index,
 		);
-		this.sweepLeads = replaceSystemLeads(this.sweepLeads, found, galaxy, index);
-		this.sweepStatus = `Sweep complete · ${found.length} regions recorded`;
+		this.sweepReadings = replaceSystemReadings(
+			this.sweepReadings,
+			found,
+			galaxy,
+			index,
+		);
+		this.sweepStatus = sweepCompletion(found.length);
 		this.saveDirty();
 	}
 
 	private sweepPanelCache: {
 		key: string;
-		leads: SavedLead[];
-		panel: import("./live-cockpit").SweepPanel;
+		readings: SweepReading[];
+		panel: SweepPanel;
 	} | null = null;
-	private systemSweepPanel(): import("./live-cockpit").SweepPanel {
+	private systemSweepPanel(): SweepPanel {
 		const now = this.world.gameTime;
 		const { galaxy, index } = this.world.system.record;
 		const context = this.systemSweepContext();
@@ -8094,37 +8101,18 @@ class Game {
 		const key = `${context.fitted}|${context.flying}|${context.cruise}|${galaxy}|${index}|${this.leftTab}|${Math.floor(now)}|${remaining}|${this.sweepStatus}`;
 		if (
 			this.sweepPanelCache?.key === key &&
-			this.sweepPanelCache.leads === this.sweepLeads
+			this.sweepPanelCache.readings === this.sweepReadings
 		)
 			return this.sweepPanelCache.panel;
-		const panel: import("./live-cockpit").SweepPanel = {
-			fitted: context.fitted,
-			refusal: sweepRefusal(context),
-			charging: remaining !== null,
-			status:
-				remaining !== null
-					? `CHARGING · ${remaining}s remaining · runs without holding`
-					: this.sweepStatus,
-			rows:
-				this.leftTab === "Sweep"
-					? this.sweepLeads
-							.filter(
-								(r) => r.galaxyIndex === galaxy && r.systemIndex === index,
-							)
-							.map((row) => ({
-								id: row.id,
-								label:
-									row.kind === "relay"
-										? "Pirate relay signal"
-										: row.kind === "wreck"
-											? "Salvage wreck signal"
-											: "Raider pressure",
-								region: sweepRegionLabel(row, this.commerceWorld.seed),
-								age: sweepAge(row, now),
-							}))
-					: [],
-		};
-		this.sweepPanelCache = { key, leads: this.sweepLeads, panel };
+		const panel = sweepPanel(this.sweepReadings, now, this.commerceWorld.seed, {
+			...context,
+			galaxyIndex: galaxy,
+			systemIndex: index,
+			visible: this.leftTab === "Sweep",
+			charge: this.sweepCharge,
+			status: this.sweepStatus,
+		});
+		this.sweepPanelCache = { key, readings: this.sweepReadings, panel };
 		return panel;
 	}
 
@@ -17353,7 +17341,7 @@ class Game {
 			...base,
 			state: this.commander,
 			requests: this.requests,
-			sweepLeads: this.sweepLeads,
+			sweepReadings: this.sweepReadings,
 			galaxyIndex: this.world.system.record.galaxy,
 			systemIndex: this.world.system.record.index,
 			dockedAt: station ? this.stationKey(station) : null,

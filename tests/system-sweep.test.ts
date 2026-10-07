@@ -7,17 +7,25 @@ import {
 	serializeSave,
 	SAVE_SCHEMA_VERSION,
 } from "../src/save-envelope";
-import { newWorld } from "../src/world-state";
+import { applyTransition, newWorld } from "../src/world-state";
+import { generateGalaxy } from "../src/galaxy";
+import { relayActive } from "../src/pirate-relay";
+import { relayPlan, relaySlot } from "../src/relay-slot"; // glossary-ignore: slot
+import { generateContents } from "../src/system";
 import {
 	beginSweep,
 	stepSweep,
 	sweepRefusal,
 	sweepSources,
-	sweepAge,
-	parseSweepLeads,
+	parseSweepReadings,
 	SWEEP_CHARGE_S,
-	replaceSystemLeads,
+	replaceSystemReadings,
 } from "../src/system-sweep";
+import {
+	sweepAge,
+	sweepCompletion,
+	sweepPanel,
+} from "../src/system-sweep-view";
 
 describe("node #482 system sweep", () => {
 	test("the new provenance has its own envelope revision", () => {
@@ -27,7 +35,7 @@ describe("node #482 system sweep", () => {
 			world,
 			commander: newCommanderRecord("courier"),
 		}) as { commander: Record<string, unknown> };
-		expect(raw.commander.sweepLeads).toEqual([]);
+		expect(raw.commander.sweepReadings).toEqual([]);
 	});
 	test("a verified v9 migrates empty without editing its original; a truncated v10 refuses", () => {
 		const current = serializeSave({
@@ -41,25 +49,25 @@ describe("node #482 system sweep", () => {
 		};
 		const old = rehash((body) => {
 			body.saveSchemaVersion = 9;
-			delete body.commander.sweepLeads;
+			delete body.commander.sweepReadings;
 		});
 		const original = JSON.stringify(old);
-		expect(parseSave(old).commander.sweepLeads).toEqual([]);
+		expect(parseSave(old).commander.sweepReadings).toEqual([]);
 		expect(JSON.stringify(old)).toBe(original);
 		expect(() =>
 			parseSave(
 				rehash((body) => {
-					delete body.commander.sweepLeads;
+					delete body.commander.sweepReadings;
 				}),
 			),
-		).toThrow("sweepLeads");
+		).toThrow("sweepReadings");
 		expect(() =>
 			parseSave(
 				rehash((body) => {
 					body.saveSchemaVersion = 9;
 				}),
 			),
-		).toThrow("sweepLeads");
+		).toThrow("sweepReadings");
 	});
 	test("one press runs for ten seconds; another press cannot restart it", () => {
 		const context = { fitted: true, flying: true, cruise: false };
@@ -102,7 +110,6 @@ describe("node #482 system sweep", () => {
 		for (const row of rows) {
 			expect(row.source).toBe("own-sensors");
 			expect(row.observedAt).toBe(world.gameTime);
-			expect(row.confirmation).toBe("unconfirmed");
 			expect(row).not.toHaveProperty("pos");
 			expect(row).not.toHaveProperty("targetId");
 		}
@@ -112,19 +119,19 @@ describe("node #482 system sweep", () => {
 		const world = { ...newWorld(56), gameTime: 48 * 3600 };
 		const commander = newCommanderRecord("courier");
 		commander.state.ownedEquipment = [LONG_RANGE_SCANNER];
-		commander.sweepLeads = sweepSources(world, 0, 0);
+		commander.sweepReadings = sweepSources(world, 0, 0);
 		const saved = parseSave(serializeSave({ world, commander }));
-		expect(saved.commander.sweepLeads).toEqual(commander.sweepLeads);
-		expect(sweepAge(commander.sweepLeads[0], world.gameTime + 3600)).toContain(
-			"STALE",
-		);
-		expect(sweepAge(commander.sweepLeads[0], world.gameTime)).not.toContain(
+		expect(saved.commander.sweepReadings).toEqual(commander.sweepReadings);
+		expect(
+			sweepAge(commander.sweepReadings[0], world.gameTime + 3600),
+		).toContain("STALE");
+		expect(sweepAge(commander.sweepReadings[0], world.gameTime)).not.toContain(
 			"STALE",
 		);
 		expect(
 			parseSave(
 				serializeSave({ world, commander: newCommanderRecord("courier") }),
-			).commander.sweepLeads,
+			).commander.sweepReadings,
 		).toEqual([]);
 	});
 	test("bad provenance, clocks, references and point geometry refuse on load", () => {
@@ -139,18 +146,136 @@ describe("node #482 system sweep", () => {
 			{ confirmation: "identified" },
 			{ region: { kind: "point", x: 1, y: 2, z: 3 } },
 		])
-			expect(() => parseSweepLeads([{ ...row, ...change }], world)).toThrow(
+			expect(() => parseSweepReadings([{ ...row, ...change }], world)).toThrow(
 				"sweep",
 			);
-		expect(() => parseSweepLeads([row, row], world)).toThrow("sweep");
+		expect(() => parseSweepReadings([row, row], world)).toThrow("sweep");
 	});
 	test("a fresh sweep replaces this system only; a past reading ages unchanged", () => {
 		const world = { ...newWorld(56), gameTime: 48 * 3600 };
 		const rows = sweepSources(world, 0, 0);
 		const elsewhere = sweepSources(world, 1, 1);
-		expect(replaceSystemLeads([...rows, ...elsewhere], [], 0, 0)).toEqual(
+		expect(replaceSystemReadings([...rows, ...elsewhere], [], 0, 0)).toEqual(
 			elsewhere,
 		);
 		expect(sweepAge(rows[0], world.gameTime + 60)).toContain("1m");
+	});
+	test("load refuses a relay absent from the generator and a region its subject never reports", () => {
+		const world = { ...newWorld(56), gameTime: 48 * 3600 };
+		const row = sweepSources(world, 0, 0).find((r) => r.kind === "relay")!;
+		const absent = generateGalaxy(world.seed, 0).systems.find(
+			(r) => !relayActive(r) && relayPlan(generateContents(r), r.seed),
+		)!;
+		const plan = relayPlan(generateContents(absent), absent.seed)!;
+		expect(() =>
+			parseSweepReadings(
+				[
+					{
+						...row,
+						id: `sweep:0:${absent.index}:relay-00`,
+						systemIndex: absent.index,
+						region: {
+							kind: "station-surrounds",
+							stationId: plan.watchedStationId,
+						},
+					},
+				],
+				world,
+			),
+		).toThrow("sweep");
+		const otherStation = generateContents(
+			generateGalaxy(world.seed, 0).systems[0],
+		).stations.find(
+			(s) =>
+				row.region.kind === "station-surrounds" &&
+				s.id !== row.region.stationId,
+		)!;
+		expect(otherStation).toBeDefined();
+		expect(() =>
+			parseSweepReadings(
+				[
+					{
+						...row,
+						region: { kind: "station-surrounds", stationId: otherStation.id },
+					},
+				],
+				world,
+			),
+		).toThrow("sweep");
+		for (const reading of sweepSources(world, 0, 0)) {
+			const wrongRegion =
+				reading.region.kind === "station-surrounds"
+					? { kind: "system-space" }
+					: row.region;
+			expect(() =>
+				parseSweepReadings([{ ...reading, region: wrongRegion }], world),
+			).toThrow("sweep");
+		}
+	});
+	test("load preserves dated provenance after the relay disappears", () => {
+		const world = { ...newWorld(56), gameTime: 48 * 3600 };
+		const rows = sweepSources(world, 0, 0);
+		const later = applyTransition(world, 0, relaySlot(0).key, {
+			// glossary-ignore: slot
+			kind: "destroy",
+			occurredAt: world.gameTime + 1,
+			cause: {
+				causeKind: "player-weapons",
+				actorId: "player",
+				playerRole: "direct",
+			},
+		});
+		later.gameTime = world.gameTime + 3600;
+		expect(sweepSources(later, 0, 0).some((r) => r.kind === "relay")).toBe(
+			false,
+		);
+		expect(parseSweepReadings(rows, later)).toEqual(rows);
+		expect(sweepAge(rows[0], later.gameTime)).toContain("STALE");
+	});
+	test("generated readings roundtrip across every system, with one pressure region rather than ships", () => {
+		const world = { ...newWorld(56), gameTime: 48 * 3600 };
+		for (let index = 0; index < 256; index++) {
+			const readings = sweepSources(world, 0, index);
+			expect(readings.filter((r) => r.kind === "pressure")).toHaveLength(1);
+			expect(parseSweepReadings(readings, world)).toEqual(readings);
+		}
+	});
+	test("view filters by galaxy and system and derives ages without refreshing provenance", () => {
+		const world = { ...newWorld(56), gameTime: 48 * 3600 };
+		const readings = [
+			...sweepSources(world, 0, 0),
+			...sweepSources(world, 1, 0),
+		];
+		const before = JSON.stringify(readings);
+		const context = {
+			fitted: true,
+			flying: true,
+			cruise: false,
+			galaxyIndex: 0,
+			systemIndex: 0,
+			visible: true,
+			charge: null,
+			status: "Ready",
+		};
+		const panel = sweepPanel(
+			readings,
+			world.gameTime + 3600,
+			world.seed,
+			context,
+		);
+		expect(panel.rows).toHaveLength(
+			readings.filter((r) => r.galaxyIndex === 0).length,
+		);
+		expect(panel.rows.every((r) => r.age.includes("STALE"))).toBe(true);
+		expect(
+			sweepPanel(readings, world.gameTime, world.seed, {
+				...context,
+				visible: false,
+			}).rows,
+		).toEqual([]);
+		expect(JSON.stringify(readings)).toBe(before);
+		expect(sweepCompletion(0)).toContain("no signal regions found");
+		expect(sweepCompletion(1)).toContain("1 region recorded");
+		expect(sweepCompletion(2)).toContain("2 regions recorded");
 	});
 });

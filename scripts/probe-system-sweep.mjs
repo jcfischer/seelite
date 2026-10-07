@@ -37,18 +37,31 @@ try {
 		const g = window.__seelite;
 		const market = await import("/src/market.ts");
 		const sweep = await import("/src/system-sweep.ts");
-		const ws = await import("/src/world-state.ts");
-		const relay = await import("/src/pirate-relay.ts");
+		const cruise = await import("/src/cruise.ts");
 		g.commander.ownedEquipment.push(market.LONG_RANGE_SCANNER);
+		// Leave headroom so passive regeneration cannot conceal a sweep cost.
+		g.chargeAu = g.chargeCapacityAu / 2;
 		// Active derelicts at this clock; no materialisation or discovery write.
 		const derelict = await import("/src/derelict-slots.ts");
 		g.world.gameTime = derelict.DERELICT_FIRST_LOSS_S;
 		window.__sweepProbe = {
 			chargeS: sweep.SWEEP_CHARGE_S,
 			staleS: sweep.SWEEP_STALE_S,
+			maxChargeError: 0,
 			step(seconds) {
 				const n = Math.ceil(seconds / g.units.MAX_DT);
-				for (let i = 0; i < n; i++) g.step(seconds / n);
+				for (let i = 0; i < n; i++) {
+					const expected = cruise.chargeAfterRegen(
+						g.chargeAu,
+						seconds / n,
+						g.chargeCapacityAu,
+					);
+					g.step(seconds / n);
+					this.maxChargeError = Math.max(
+						this.maxChargeError,
+						Math.abs(g.chargeAu - expected),
+					);
+				}
 				g.updateCockpit();
 			},
 			knowledge() {
@@ -56,8 +69,6 @@ try {
 					g.commerceWorld.galaxies[g.world.system.record.galaxy].knowledge,
 				);
 			},
-			ws,
-			relay,
 		};
 		g.updateCockpit();
 	});
@@ -67,6 +78,13 @@ try {
 		knowledge: window.__sweepProbe.knowledge(),
 	}));
 	await page.locator("[data-live-sweep-action]").click();
+	check(
+		"pressing Sweep consumes no drive charge",
+		await page.evaluate(
+			(charge) => window.__seelite.chargeAu === charge,
+			before.charge,
+		),
+	);
 	await page.evaluate(() =>
 		window.__sweepProbe.step(window.__sweepProbe.chargeS / 2),
 	);
@@ -87,8 +105,8 @@ try {
 	const completed = await page.evaluate(() => {
 		const g = window.__seelite;
 		return {
-			rows: g.sweepLeads,
-			charge: g.chargeAu,
+			rows: g.sweepReadings,
+			chargeError: window.__sweepProbe.maxChargeError,
 			knowledge: window.__sweepProbe.knowledge(),
 			targetable: g.selectable().map((c) => c.id),
 		};
@@ -99,7 +117,10 @@ try {
 			completed.rows.some((r) => r.kind === "wreck") &&
 			completed.rows.filter((r) => r.kind === "pressure").length === 1,
 	);
-	check("sweep consumes no drive charge", completed.charge >= before.charge);
+	check(
+		"each sweep step changes drive charge only by passive regen",
+		completed.chargeError <= 1e-12,
+	);
 	check(
 		"sweep grants no knowledge, target or point",
 		completed.knowledge === before.knowledge &&
@@ -131,7 +152,7 @@ try {
 		padAction,
 	);
 	const stamp = await page.evaluate(
-		() => window.__seelite.sweepLeads[0].observedAt,
+		() => window.__seelite.sweepReadings[0].observedAt,
 	);
 	await page.evaluate(() => {
 		window.__sweepProbe.step(2);
@@ -172,7 +193,8 @@ try {
 	check(
 		"interrupted charge does not resume or refresh rows",
 		await page.evaluate(
-			(observedAt) => window.__seelite.sweepLeads[0].observedAt === observedAt,
+			(observedAt) =>
+				window.__seelite.sweepReadings[0].observedAt === observedAt,
 			stamp,
 		),
 	);
@@ -180,7 +202,12 @@ try {
 		const g = window.__seelite;
 		g.saveFlush("quit");
 		await g.saveStore?.settled();
-		return !!g.saveStore;
+		const saved = await g.saveStore.load(g.saveStore.slot); // glossary-ignore: slot
+		return (
+			JSON.stringify(saved.commander.sweepReadings) ===
+				JSON.stringify(g.sweepReadings) &&
+			saved.commander.sweepReadings.length > 0
+		);
 	});
 	check("completed readings reach the live save store", flushed);
 	await page.close();
@@ -192,7 +219,7 @@ try {
 		const g = window.__seelite;
 		cancelAnimationFrame(g.animationFrame);
 		const sweep = await import("/src/system-sweep.ts");
-		const retained = JSON.stringify(g.sweepLeads);
+		const retained = JSON.stringify(g.sweepReadings);
 		g.world.gameTime += sweep.SWEEP_STALE_S;
 		g.headLook = "left";
 		g.leftTab = "Sweep";
@@ -214,10 +241,10 @@ try {
 	const approach = await page.evaluate(async () => {
 		const g = window.__seelite;
 		const relay = await import("/src/pirate-relay.ts");
-		const slot = await import("/src/relay-slot.ts");
+		const relayIdentity = await import("/src/relay-slot.ts"); // glossary-ignore: slot
 		const ws = await import("/src/world-state.ts");
 		const plan = g.currentRelayPlan();
-		const key = slot.relaySlot(g.world.system.record.index).key;
+		const key = relayIdentity.relaySlot(g.world.system.record.index).key;
 		const place = (km) => {
 			const pos = relay.relayPosition(
 				plan,

@@ -57,7 +57,7 @@ describe("#619 — the rates in the save", () => {
 	test("a version 7 record loads at rest", () => {
 		const v7 = resealed(serializeSave(tumbling()), (body) => {
 			body.saveSchemaVersion = 7;
-			delete body.commander.sweepLeads;
+			delete body.commander.sweepReadings;
 			delete body.commander.flight.rates;
 		});
 		expect(parseSave(v7).commander.flight.rates).toEqual([0, 0, 0]);
@@ -66,7 +66,7 @@ describe("#619 — the rates in the save", () => {
 	test("a version 7 record carrying rates was assembled, and is refused", () => {
 		const grafted = resealed(serializeSave(tumbling()), (body) => {
 			body.saveSchemaVersion = 7;
-			delete body.commander.sweepLeads;
+			delete body.commander.sweepReadings;
 		});
 		expect(() => parseSave(grafted)).toThrow("rates is not a version 7 field");
 	});

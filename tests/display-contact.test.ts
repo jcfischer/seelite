@@ -27,6 +27,7 @@ import {
 	trafficDivertCue,
 } from "../src/display-contact";
 import { trafficPresence } from "../src/traffic-engagement";
+import { SWEEP_INTERRUPTED } from "../src/system-sweep-view";
 import { range } from "../src/units";
 import {
 	CANISTER_RADIUS_KM,
@@ -364,6 +365,7 @@ function teardownSubject(ejectHold: EjectHold, ejectDown: boolean) {
 					idleEjectHold,
 					// The teardown recentres the chase orbit (node #691).
 					ORBIT_ASTERN,
+					SWEEP_INTERRUPTED,
 				},
 			),
 		),
@@ -382,7 +384,7 @@ function teardownSubject(ejectHold: EjectHold, ejectDown: boolean) {
 			ejectHold,
 			ejectDown: () => ejectDown,
 			sweepCharge: { startedAt: 12 },
-			sweepLeads: [{ id: "retained-provenance" }],
+			sweepReadings: [{ id: "retained-provenance" }],
 			sweepStatus: "Charging",
 		},
 	);
@@ -413,7 +415,7 @@ test("a jump breaks the system sweep but retains its dated provenance", () => {
 	subject.clearFlightSession();
 	expect(subject.sweepCharge).toBeNull();
 	expect(subject.sweepStatus).toContain("interrupted");
-	expect(subject.sweepLeads).toEqual([{ id: "retained-provenance" }]);
+	expect(subject.sweepReadings).toEqual([{ id: "retained-provenance" }]);
 });
 
 test("a jump keeps a spent eject hold spent while its key is still down", () => {
