@@ -1995,6 +1995,7 @@ export function stepWorld(
 	solid?: readonly Primitive[] | null,
 	planes: readonly PlaneWatch[] = [],
 	fleet: readonly FleetShip[] = [],
+	extraSolids: readonly { id: string; motion: SolidMotion }[] = [],
 ): WorldStep {
 	const from = { ...world.ship.pos };
 	const fromVel = { ...world.ship.vel };
@@ -2003,7 +2004,7 @@ export function stepWorld(
 	// off the bodies, so it has to be read before they move. Without a solid
 	// only the planets are read, for #514's boundary.
 	const starts: WorldStarts = solid
-		? worldStarts(world.system, fromTime)
+		? worldStarts(world.system, fromTime, extraSolids)
 		: {
 				bodies: new Map(
 					world.system.bodies
@@ -2878,13 +2879,20 @@ function holdPlanetBoundary(
 /** The world at the top of a step: every solid body's place, and every
  *  placed station's place and pose. Snapshot before the clock moves. */
 export interface WorldStarts {
+	/** Persisted local hulls, posed at both ends by their owner. */
+	readonly extraSolids?: readonly { id: string; motion: SolidMotion }[];
 	bodies: ReadonlyMap<string, Vec3>;
 	stations: readonly StationStart[];
 }
 
 /** Snapshot `WorldStarts` before the clock moves. */
-export function worldStarts(system: System, gameTime: number): WorldStarts {
+export function worldStarts(
+	system: System,
+	gameTime: number,
+	extraSolids: readonly { id: string; motion: SolidMotion }[] = [],
+): WorldStarts {
 	return {
+		extraSolids,
 		bodies: new Map(
 			solidBodies(system).map((body) => [body.id, { ...body.pos }]),
 		),
@@ -2955,6 +2963,18 @@ export function worldSolids(
 			owner.push(station.id);
 			motions.push(motion);
 		}
+	}
+	for (const { id, motion } of starts.extraSolids ?? []) {
+		if (
+			!mayMeet(ship, {
+				start: motion.start.origin,
+				end: motion.end.origin,
+				reachKm: reachKm(motion.primitives),
+			})
+		)
+			continue;
+		owner.push(id);
+		motions.push(motion);
 	}
 	return { owner, motions };
 }

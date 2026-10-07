@@ -159,6 +159,8 @@ export const DOMAIN = {
 	 *  system without a refinery draws its shipyard's form exactly as one with
 	 *  a refinery does. */
 	STATION_FORM: 33,
+	/** Seeded body frame, roster hull and tumble of a derelict (node #732). */
+	DERELICT_POSE: 34,
 } as const;
 
 export type DomainName = keyof typeof DOMAIN;
