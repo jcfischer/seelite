@@ -11,6 +11,7 @@
 import {
 	STATION_TYPES,
 	type StationFormId,
+	type StationPlan,
 	type StationType,
 	formsInPlay,
 } from "../../src/station";
@@ -26,12 +27,7 @@ export function stationInForm(
 	formId: StationFormId,
 	berthSeed = 0,
 	assemblySeed = 0,
-): {
-	type: StationType;
-	formId: StationFormId;
-	berthSeed: number;
-	assemblySeed: number;
-} {
+): StationPlan {
 	return { type, formId, berthSeed, assemblySeed };
 }
 

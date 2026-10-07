@@ -61,7 +61,7 @@
 
 import type { Pose, Primitive, SolidMotion } from "./collision";
 import { type ApertureFrame, frameAtPhase, slotBasis } from "./docking";
-import type { StationFormId, StationType } from "./station";
+import type { StationFormId, StationPlan, StationType } from "./station";
 import { STATION_GEOMETRY } from "./station";
 import { HULL_SPECS } from "./hull";
 import {
@@ -857,14 +857,9 @@ export function proxyContains(
  * pool, and a station that silently collided as nothing would be the invisible
  * hole that row exists to prevent.
  */
-export function selectedStationProxy(station: {
-	type: StationType;
-	formId: StationFormId;
-	berthSeed: number;
-	assemblySeed: number;
-}): StationProxy {
+export function stationProxyOf(station: StationPlan): StationProxy {
 	const key = `${station.type}/${station.formId}:${station.berthSeed}:${station.assemblySeed}`;
-	const cached = selectedCache.get(key);
+	const cached = placedCache.get(key);
 	if (cached) return cached;
 	const proxy = stationProxy(
 		station.type,
@@ -876,13 +871,13 @@ export function selectedStationProxy(station: {
 		throw new Error(`${station.type} form ${station.formId} has no proxy`);
 	// A handful of stations per system; a long session of jumps is bounded by
 	// dropping the lot rather than tracking recency.
-	if (selectedCache.size >= SELECTED_CACHE_LIMIT) selectedCache.clear();
-	selectedCache.set(key, proxy);
+	if (placedCache.size >= PLACED_CACHE_LIMIT) placedCache.clear();
+	placedCache.set(key, proxy);
 	return proxy;
 }
 
-const SELECTED_CACHE_LIMIT = 64;
-const selectedCache = new Map<string, StationProxy>();
+const PLACED_CACHE_LIMIT = 64;
+const placedCache = new Map<string, StationProxy>();
 
 /** One proxy primitive as the collision resolver's (`collision.ts`). */
 export function resolverPrimitive(p: ProxyPrimitive): Primitive {

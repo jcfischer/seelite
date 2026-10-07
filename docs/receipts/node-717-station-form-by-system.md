@@ -6,9 +6,13 @@ reprinted by `bun scripts/measure-station-forms.ts`; the red-row counts under
 "What each candidate owes" are not — they come from a temporary edit of the
 pools, and repeating that edit is how to reproduce them.
 
-This node ships the per-system draw, not new forms in flight: every pool
-holds the one form its role already flew, and no other form flies until the
-principal grows a pool.
+**The node's title says *fly every built form*, and this branch flies none
+it did not fly before.** It ships the per-system draw: every pool holds the one
+form its role already flew (trade `[a]`, shipyard `[a]`, refinery `[d]`,
+pinned by `tests/station-form.test.ts`), so every system still builds the
+same three stations, and no other form flies until the principal grows a pool.
+The title names where the node is going. Read it as a description of this
+branch and it overstates it.
 
 ## Built
 
@@ -30,19 +34,46 @@ principal grows a pool.
     `stationSilhouetteKm(type, formId)`. This replaces the per-type memo
     `STATION_SILHOUETTE_KM`. The detail band and the visual snapshot read the
     handle;
-  - the proxy: `selectedStationProxy` reads `station.formId`, and its cache key
+  - the proxy: `stationProxyOf` reads `station.formId`, and its cache key
     carries the form.
-- **Every per-form row iterates `FORMS_IN_PLAY`** (`tests/helpers/forms-in-play.ts`),
-  so a form added to a pool is measured by all of them without being named:
+- **The rows that measure a form iterate `FORMS_IN_PLAY`**
+  (`tests/helpers/forms-in-play.ts`), so a form added to a pool is measured by
+  them without being named:
   - the reach budget, the proxy budget and its opening, thinnest-figure and
     berth-seed rows;
   - the aperture size and plane, the bay-in-core row, the spinner;
   - the finish reach, corridor and fixture rows;
-  - the glow, pool and fixture-reach rows;
+  - the glow wiring rows: a glow per fitting, hidden at outline, unpickable,
+    driven at its fitting's intensity, under the ceiling, the blinking core
+    and halo;
+  - the pool rows: drive, unpickable, none on a mast beacon;
+  - the mouth chase: its ring and its run;
   - occlusion, teardown, and the docking plan corpus.
 
   The thinnest-primitive figure is declared per form, and a pooled form
   without one is red.
+
+  **In the glow, visuals and mesh files, some rows still build one named
+  form, and a newly pooled form gets none of them.** Each is one of three
+  kinds:
+  - **A control that breaks a known form on purpose.** It asks whether the
+    check can go red, not whether a form passes: `the pool row goes red for a
+    lamp lifted off its face` (`station-glow`), and `the row goes red for a
+    beacon a hundred metres off its mount` and `and for a strobe six metres
+    off its face` (`station-mesh`).
+  - **A wiring or shader check that does not depend on the form.** These are
+    `the core gain is in the shader` and `the pixel ratio reaches the
+    shader` (`station-glow`); `a fixture's intensity is its base times its
+    own waveform` (`station-visuals`); and `two colours give two different
+    stations`, `this module supplies no pixels` and `each plate has its own
+    material` (`station-mesh`). A new form shares the code they test.
+  - **A row about the Works, refinery `d`, by name:** `an obstruction beacon
+    on a tip lays no pool` (`station-glow`), `the refinery's flare keeps
+    tracking the clock at outline range` and `every refinery plan carries a
+    beacon on its headframe and one on its flare stack` (`station-visuals`).
+    These name parts of the Works. If another refinery form is pooled, these
+    rows do not check it, and that form needs its own rows for whatever
+    beacon and flare it carries.
 
 ## Existing streams did not move
 
@@ -137,8 +168,9 @@ cover the change were run alone on the GPU lane (ANGLE Metal, M1 Pro) at
 - the five probes named `probe-station*`, among them `probe-station-visuals`,
   which reads the reach through `visualOfStation(id).silhouetteKm`, now the
   station's own handle;
-- `probe-traffic-engagement`, which calls `selectedStationProxy` on the page's
-  stations;
+- `probe-traffic-engagement`, which calls the station's proxy on the page's
+  stations (`selectedStationProxy` at `c550ca0`, renamed `stationProxyOf` in
+  sage round 2). Re-run alone after the rename and passing (GPU lane, 1/1);
 - the two `probe-collision*` probes.
 
 Also run alone and passing at `bb5cdb4`: `probe-handoff`, `probe-dock-arrival`,

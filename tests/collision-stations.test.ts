@@ -92,7 +92,7 @@ import {
 	proxyPoses,
 	proxyReachKm,
 	proxySolids,
-	selectedStationProxy,
+	stationProxyOf,
 	stationMotions,
 } from "../src/station-proxy";
 import { MAX_DT } from "../src/units";
@@ -190,7 +190,7 @@ const closingBand = (): [number, number] => {
 
 function turnInto(side: 1 | -1, gapKm: number, rpm = TURN_RPM) {
 	const at = overArm(side, gapKm);
-	const proxy = selectedStationProxy({
+	const proxy = stationProxyOf({
 		type: "trade",
 		formId: "a",
 		berthSeed: 0,
@@ -244,7 +244,7 @@ describe("collision.md §9.1.2 row 3: a spinning station's surface meets a ship 
 		// frame. A ship holds beside each of its x faces for two seconds while
 		// the drum turns at 3 rpm. A keel posed in the spinning frame sweeps a
 		// boom 0.15 km in that time — the arm below builds exactly that.
-		const proxy = selectedStationProxy({
+		const proxy = stationProxyOf({
 			type: "shipyard",
 			formId: "a",
 			berthSeed: 0,
@@ -308,7 +308,7 @@ describe("collision.md §9.1.4: a moving surface is billed against a resting shi
 		expect(impact.damage).toBe(impactDamage(impact.closingKms));
 		// Outside every primitive at the end of the step, where the station
 		// has turned to.
-		const proxy = selectedStationProxy({
+		const proxy = stationProxyOf({
 			type: "trade",
 			formId: "a",
 			berthSeed: 0,
@@ -339,7 +339,7 @@ describe("collision.md §9.1.6: the earliest impact owns the tick (C3)", () => {
 	// fly these offsets past another form's rim the day the pool's first
 	// member changed. Its proxy exists whether or not a pool holds it
 	// (node #717).
-	const proxy = selectedStationProxy({
+	const proxy = stationProxyOf({
 		type,
 		formId: "a",
 		berthSeed: 0,
@@ -763,7 +763,7 @@ describe("collision.md §9.1.7, §9.1.8: arrival, parked and launch on every rol
 			`${type} (${kind}): what removing the exemption does — and its red build`,
 			() => {
 				const { world, id } = worldWith(type);
-				const shipped = selectedStationProxy(stationOf(world.system, id));
+				const shipped = stationProxyOf(stationOf(world.system, id));
 				for (const { hull, berthId } of cases(type)) {
 					const t = traverse(type, hull, berthId);
 					const bare = withoutExemption(t, shipped);
@@ -960,7 +960,7 @@ function overlapsStation(
 	return world.system.contents.stations.some((station) => {
 		const body = world.system.byId.get(station.id);
 		if (!body) return false;
-		const proxy = selectedStationProxy(station);
+		const proxy = stationProxyOf(station);
 		if (
 			length(sub(world.ship.pos, body.pos)) >
 			proxyReachKm(proxy) + reachKm([box])
@@ -1000,8 +1000,7 @@ describe("collision.md §9.1.7: placement paths are counted", () => {
 					const body = world.system.byId.get(station.id);
 					if (!body) throw new Error(`unplaced ${station.id}`);
 					expect(length(sub(world.ship.pos, body.pos))).toBeGreaterThan(
-						proxyReachKm(selectedStationProxy(station)) +
-							reachKm(hullSolid(hull)),
+						proxyReachKm(stationProxyOf(station)) + reachKm(hullSolid(hull)),
 					);
 				}
 			}
@@ -1041,7 +1040,7 @@ describe("collision.md §9.1.7: placement paths are counted", () => {
 			const { world, id } = worldWith(type);
 			const end = stationEndAt(world.system, id, world.gameTime);
 			const solids = stationMotions(
-				selectedStationProxy(stationOf(world.system, id)),
+				stationProxyOf(stationOf(world.system, id)),
 				end,
 				end,
 			);
@@ -1135,7 +1134,7 @@ describe("collision.md §9.1.12: cruise and the station proxies (C5)", () => {
 	test("the crossing count excludes empty space inside a sparse station's reach", () => {
 		const frame = frameAt("shipyard", 0, 0);
 		const { up } = slotBasis(frame);
-		const proxy = selectedStationProxy({
+		const proxy = stationProxyOf({
 			type: "shipyard",
 			formId: "a",
 			berthSeed: 0,
@@ -1223,7 +1222,7 @@ describe("collision.md §9.1.12: cruise and the station proxies (C5)", () => {
 							crossesStation(
 								chord,
 								stationMotions(
-									selectedStationProxy(other),
+									stationProxyOf(other),
 									start,
 									stationEndAt(world.system, other.id, world.gameTime),
 								),

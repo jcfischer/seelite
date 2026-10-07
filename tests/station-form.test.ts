@@ -40,7 +40,7 @@ import {
 	stationSilhouetteKm,
 	updateStationVisuals,
 } from "../src/station-mesh";
-import { selectedStationProxy, stationProxy } from "../src/station-proxy";
+import { stationProxyOf, stationProxy } from "../src/station-proxy";
 import { generateContents } from "../src/system";
 import { FORMS_IN_PLAY, stationInForm } from "./helpers/forms-in-play";
 import { forEachSystem } from "./helpers/station-rows";
@@ -282,7 +282,7 @@ describe("the mesh, the reach and the proxy read the one field", () => {
 	});
 
 	test("the sim's proxy is the station's own form's", () => {
-		const proxy = selectedStationProxy(first);
+		const proxy = stationProxyOf(first);
 		expect(JSON.stringify(proxy)).toBe(
 			JSON.stringify(
 				stationProxy(
@@ -301,14 +301,14 @@ describe("the mesh, the reach and the proxy read the one field", () => {
 		// cached Coriolis — which is what a key without the form would do.
 		const seeds = { berthSeed: 913, assemblySeed: 917 };
 		expect(
-			selectedStationProxy({ type: "trade", formId: "a", ...seeds }),
+			stationProxyOf({ type: "trade", formId: "a", ...seeds }),
 		).toBeDefined();
 		const unpooled = STATION_FORMS.trade.find(
 			(f) => !formsInPlay("trade").includes(f.id),
 		);
 		if (!unpooled) throw new Error("every trade form is pooled");
 		expect(() =>
-			selectedStationProxy({ type: "trade", formId: unpooled.id, ...seeds }),
+			stationProxyOf({ type: "trade", formId: unpooled.id, ...seeds }),
 		).toThrow(/has no proxy/);
 	});
 });

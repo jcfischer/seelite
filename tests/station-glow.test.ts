@@ -31,7 +31,7 @@ import {
 	updateStationVisuals,
 } from "../src/station-mesh";
 import { SPEC_FIXTURE_NAMES } from "../src/station-visuals";
-import { FORMS_IN_PLAY } from "./helpers/forms-in-play";
+import { FORMS_IN_PLAY, formLabel } from "./helpers/forms-in-play";
 import { PLAN_SEEDS, isSolvedForm } from "./helpers/solved-forms";
 import { poolOverhang } from "./helpers/structure-rays";
 
@@ -142,8 +142,9 @@ describe("the lights are station fittings, not ship-sized boxes", () => {
 			const { root } = buildStationForm(type, formId, GREY, 0, 0);
 			root.traverse((object) => {
 				if (!object.name.startsWith("beacon-") || object.userData.glow) return;
-				expect([type, object.name, fittingKm(object) <= 0.003]).toEqual([
-					type,
+				const label = formLabel(type, formId);
+				expect([label, object.name, fittingKm(object) <= 0.003]).toEqual([
+					label,
 					object.name,
 					true,
 				]);
@@ -181,7 +182,8 @@ describe("every §5 fixture carries a glow, wired to its fitting", () => {
 							missing.push(`${name} (glow named ${glow.name})`);
 					}
 				}
-				expect([type, missing]).toEqual([type, []]);
+				const label = formLabel(station, formId);
+				expect([label, missing]).toEqual([label, []]);
 			});
 
 	test("a glow is hidden wherever its fitting is: at outline range, none draws", () => {
@@ -197,23 +199,27 @@ describe("every §5 fixture carries a glow, wired to its fitting", () => {
 					if (!o.visible) shown = false;
 				if (shown) drawn.push(object.name);
 			});
-			expect([type, drawn]).toEqual([type, []]);
+			const label = formLabel(type, formId);
+			expect([label, drawn]).toEqual([label, []]);
 		}
 	});
 
-	test("nothing can pick a glow", () => {
+	test("nothing can pick a glow, on every form in play", () => {
 		// `Points` answers within one world unit, and this root is in core radii:
 		// a pickable glow would stand in front of every surface on the station.
-		const { root } = buildStationForm("trade", "a", GREY, 0, 0);
-		root.updateMatrixWorld(true);
-		const raycaster = new THREE.Raycaster(
-			new THREE.Vector3(0, 0, 10),
-			new THREE.Vector3(0, 0, -1),
-		);
-		const glowHits = raycaster
-			.intersectObject(root, true)
-			.filter((hit) => hit.object.userData.glow);
-		expect(glowHits).toEqual([]);
+		for (const [type, formId] of FORMS_IN_PLAY) {
+			const { root } = buildStationForm(type, formId, GREY, 0, 0);
+			root.updateMatrixWorld(true);
+			const raycaster = new THREE.Raycaster(
+				new THREE.Vector3(0, 0, 10),
+				new THREE.Vector3(0, 0, -1),
+			);
+			const glowHits = raycaster
+				.intersectObject(root, true)
+				.filter((hit) => hit.object.userData.glow).length;
+			const label = formLabel(type, formId);
+			expect([label, glowHits]).toEqual([label, 0]);
+		}
 	});
 
 	test("the clock drives a glow at exactly its fitting's own intensity", () => {
@@ -223,13 +229,14 @@ describe("every §5 fixture carries a glow, wired to its fitting", () => {
 				updateStationVisuals(mesh, t, 1, "high");
 				for (const fixture of mesh.fixtures) {
 					if (!fixture.glow) continue;
+					const label = formLabel(type, formId);
 					expect([
-						type,
+						label,
 						fixture.kind,
 						t,
 						fixture.glow.uniforms.uIntensity.value,
 					]).toEqual([
-						type,
+						label,
 						fixture.kind,
 						t,
 						fixture.material.emissiveIntensity,
@@ -247,7 +254,8 @@ describe("every §5 fixture carries a glow, wired to its fitting", () => {
 				.filter((f) => !f.glow && f.base !== 0)
 				.map((f) => f.kind)
 				.filter((kind) => kind !== "work" || type === "shipyard");
-			expect([type, undriven]).toEqual([type, []]);
+			const label = formLabel(type, formId);
+			expect([label, undriven]).toEqual([label, []]);
 		}
 	});
 
@@ -308,7 +316,8 @@ describe("a blinking point light burns past the bloom threshold; a steady light 
 					wrong.push(`${object.name}/${kind} steady light with core=${core}`);
 				}
 			});
-			expect([type, wrong]).toEqual([type, []]);
+			const label = formLabel(type, formId);
+			expect([label, wrong]).toEqual([label, []]);
 		}
 	});
 
@@ -403,8 +412,9 @@ describe("glare and light pools", () => {
 					steadyFloor = Math.min(steadyFloor, m.uniforms.uMinPx.value);
 				}
 			});
-			expect([type, wrong]).toEqual([type, []]);
-			expect([type, blinkFloor > steadyFloor]).toEqual([type, true]);
+			const label = formLabel(type, formId);
+			expect([label, wrong]).toEqual([label, []]);
+			expect([label, blinkFloor > steadyFloor]).toEqual([label, true]);
 		}
 	});
 
@@ -495,23 +505,24 @@ describe("glare and light pools", () => {
 		}
 	});
 
-	test("a pool is not pickable, and a finish beacon on a mast tip has none", () => {
-		const mesh = buildStationForm("trade", "a", GREY, 0, 0);
-		mesh.root.updateMatrixWorld(true);
-		const raycaster = new THREE.Raycaster(
-			new THREE.Vector3(0, 0, 10),
-			new THREE.Vector3(0, 0, -1),
-		);
-		expect(
-			raycaster
+	test("a pool is not pickable, and a finish beacon on a mast tip has none, on every form in play", () => {
+		for (const [type, formId] of FORMS_IN_PLAY) {
+			const mesh = buildStationForm(type, formId, GREY, 0, 0);
+			mesh.root.updateMatrixWorld(true);
+			const raycaster = new THREE.Raycaster(
+				new THREE.Vector3(0, 0, 10),
+				new THREE.Vector3(0, 0, -1),
+			);
+			const poolHits = raycaster
 				.intersectObject(mesh.root, true)
-				.filter((h) => h.object.userData.pool),
-		).toEqual([]);
-		let beaconPools = 0;
-		mesh.root.traverse((o) => {
-			if (o.name.startsWith("beacon-") && o.userData.pool) beaconPools++;
-		});
-		expect(beaconPools).toBe(0);
+				.filter((h) => h.object.userData.pool).length;
+			let beaconPools = 0;
+			mesh.root.traverse((o) => {
+				if (o.name.startsWith("beacon-") && o.userData.pool) beaconPools++;
+			});
+			const label = formLabel(type, formId);
+			expect([label, poolHits, beaconPools]).toEqual([label, 0, 0]);
+		}
 	});
 
 	test("the clock drives a pool at its fixture's intensity, under the ceiling", () => {
@@ -522,8 +533,9 @@ describe("glare and light pools", () => {
 				for (const f of mesh.fixtures) {
 					if (!f.pool) continue;
 					const drive = f.pool.uniforms.uIntensity.value;
-					expect([type, f.kind, t, drive]).toEqual([
-						type,
+					const label = formLabel(type, formId);
+					expect([label, f.kind, t, drive]).toEqual([
+						label,
 						f.kind,
 						t,
 						f.material.emissiveIntensity,

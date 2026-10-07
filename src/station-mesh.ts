@@ -78,6 +78,7 @@ import {
 	STATION_TYPES,
 	type StationAperture,
 	type StationFormId,
+	type StationPlan,
 	type StationType,
 	formsInPlay,
 } from "./station";
@@ -6355,7 +6356,7 @@ export function buildStationForm(
 		spinner,
 		type,
 		formId,
-		silhouetteKm: form.reachKm,
+		silhouetteKm: stationSilhouetteKm(type, formId),
 		detail: "full",
 		fixtures: built.fixtures,
 		accessories,
@@ -6380,12 +6381,7 @@ export function buildStationForm(
  * than a type, and the mesh, the reach and the proxy all read the one record.
  */
 export function buildStationMesh(
-	station: {
-		readonly type: StationType;
-		readonly formId: StationFormId;
-		readonly berthSeed: number;
-		readonly assemblySeed: number;
-	},
+	station: StationPlan,
 	color: number,
 ): StationMesh {
 	return buildStationForm(

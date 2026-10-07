@@ -41,7 +41,7 @@ import {
 } from "../src/station-visuals";
 import { PLATE_TEXTURE_SIZE, plateTexels } from "../src/surface";
 import { corridorIntrusions, corridorLine } from "./helpers/aperture-opening";
-import { FORMS_IN_PLAY } from "./helpers/forms-in-play";
+import { FORMS_IN_PLAY, formLabel } from "./helpers/forms-in-play";
 import { instanceBoxes } from "./helpers/instance-boxes";
 import { reachKm } from "./helpers/station-reach";
 
@@ -149,13 +149,14 @@ describe("every finish builds every form in play", () => {
 		for (const [type, formId] of FORMS_IN_PLAY) {
 			const stock = count("stock", type, formId);
 			const industrial = count("industrial", type, formId);
-			expect([type, stock.group]).toEqual([type, false]);
-			expect([type, industrial.group]).toEqual([type, true]);
-			expect([type, industrial.instanced > 0]).toEqual([type, true]);
+			const label = formLabel(type, formId);
+			expect([label, stock.group]).toEqual([label, false]);
+			expect([label, industrial.group]).toEqual([label, true]);
+			expect([label, industrial.instanced > 0]).toEqual([label, true]);
 			// Beacons only where the role strobes: a refinery marks no rotation.
 			const strobes = STATION_VISUALS[type].activity.strobePeriodS > 0;
-			expect([type, industrial.beacons > stock.beacons]).toEqual([
-				type,
+			expect([label, industrial.beacons > stock.beacons]).toEqual([
+				label,
 				strobes,
 			]);
 		}
@@ -222,7 +223,8 @@ describe("every finish builds every form in play", () => {
 			}
 			const floating = supported.filter((s) => !s).length;
 			expect(members.length).toBeGreaterThan(20);
-			expect([type, floating]).toEqual([type, 0]);
+			const label = formLabel(type, formId);
+			expect([label, floating]).toEqual([label, 0]);
 		}
 	});
 });

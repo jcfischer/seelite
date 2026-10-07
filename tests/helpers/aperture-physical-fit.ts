@@ -26,7 +26,7 @@ import type { HullId } from "../../src/hull";
 import { hullSolid } from "./hull-solid";
 import type { StationSeeds } from "./station-plan-corpus";
 import type { StationType } from "../../src/station";
-import { selectedStationProxy, stationMotions } from "../../src/station-proxy";
+import { stationProxyOf, stationMotions } from "../../src/station-proxy";
 import { type Vec3, cross, scale, v3 } from "../../src/vec3";
 import {
 	FIXTURE_AXIS,
@@ -79,7 +79,7 @@ export function clearsAperture(
 	seeds: StationSeeds,
 ): boolean {
 	const frame = apertureFrame(type, FIXTURE_AXIS, 0, FIXTURE_REFERENCE);
-	const proxy = selectedStationProxy({ type, ...seeds });
+	const proxy = stationProxyOf({ type, ...seeds });
 	const still = { frame, origin: v3(), vel: v3() };
 	const solids = stationMotions(proxy, still, still);
 	const box = hullSolid(hull);

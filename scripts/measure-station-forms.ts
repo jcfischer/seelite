@@ -47,14 +47,15 @@ function proposedPools(args: readonly string[]): Pools {
 			throw new Error(
 				`${arg}: role must be one of ${DRAWN_STATION_TYPES.join(", ")}`,
 			);
+		const type = role as DrawnStationType;
 		const ids = (list ?? "").split(",").filter(Boolean);
 		if (ids.length === 0) throw new Error(`${arg}: a pool cannot be empty`);
 		if (new Set(ids).size !== ids.length)
 			throw new Error(`${arg}: a form is named twice`);
 		for (const id of ids)
-			if (!STATION_FORMS[role as DrawnStationType].some((f) => f.id === id))
-				throw new Error(`${arg}: ${role} has no form ${id}`);
-		pools[role as DrawnStationType] = ids as StationFormId[];
+			if (!STATION_FORMS[type].some((f) => f.id === id))
+				throw new Error(`${arg}: ${type} has no form ${id}`);
+		pools[type] = ids as StationFormId[];
 	}
 	return pools;
 }

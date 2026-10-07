@@ -47,7 +47,7 @@ import {
 	surfaceTexels,
 } from "../src/station-visuals";
 import { PLATE_TEXTURE_SIZE } from "../src/surface";
-import { FORMS_IN_PLAY } from "./helpers/forms-in-play";
+import { FORMS_IN_PLAY, formLabel } from "./helpers/forms-in-play";
 import { HANDOFF_HYSTERESIS, HANDOFF_KM } from "../src/units";
 import { instanceBoxes } from "./helpers/instance-boxes";
 import { PLAN_SEEDS, isSolvedForm } from "./helpers/solved-forms";
@@ -774,20 +774,24 @@ describe("the mouth chase and the refinery's beacons", () => {
 	});
 
 	test("the chase runs: at any lit moment one lamp leads and they are not in unison", () => {
-		const mesh = buildStationForm("trade", "a", GREY, 0, 0);
-		let sawOne = false;
-		for (let i = 0; i < 80; i++) {
-			updateStationVisuals(mesh, i * 0.025, 1, "high");
-			const lit = mesh.fixtures.filter(
-				(f) => f.kind === "chase" && f.material.emissiveIntensity > 0,
-			).length;
-			// Never the whole ring at once — that would be a flash, not a chase.
-			expect(lit).toBeLessThan(
-				mesh.fixtures.filter((f) => f.kind === "chase").length,
-			);
-			if (lit >= 1) sawOne = true;
-		}
-		expect(sawOne).toBe(true);
+		for (const type of ["trade", "shipyard"] as const)
+			for (const formId of formsInPlay(type)) {
+				const mesh = buildStationForm(type, formId, GREY, 0, 0);
+				const ring = mesh.fixtures.filter((f) => f.kind === "chase").length;
+				let sawOne = false;
+				let unison = 0;
+				for (let i = 0; i < 80; i++) {
+					updateStationVisuals(mesh, i * 0.025, 1, "high");
+					const lit = mesh.fixtures.filter(
+						(f) => f.kind === "chase" && f.material.emissiveIntensity > 0,
+					).length;
+					// Never the whole ring at once — that would be a flash, not a chase.
+					if (lit >= ring) unison++;
+					if (lit >= 1) sawOne = true;
+				}
+				const label = formLabel(type, formId);
+				expect([label, unison, sawOne]).toEqual([label, 0, true]);
+			}
 	});
 
 	test("a pad role gets no ring, because a pad has no frame round a hole", () => {

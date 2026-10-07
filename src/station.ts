@@ -137,6 +137,20 @@ export interface StationGeometry {
 export type StationFormId = "a" | "b" | "c" | "d" | "e";
 
 /**
+ * What a builder or the collision proxy reads off a generated station: its
+ * role, its form and its two seeds (node #717). `Station` (`system.ts`) carries
+ * all four, so a station is passed whole; a test or a workbench names them.
+ * One declaration, so the next per-station field is one edit here rather than
+ * one per signature.
+ */
+export interface StationPlan {
+	readonly type: StationType;
+	readonly formId: StationFormId;
+	readonly berthSeed: number;
+	readonly assemblySeed: number;
+}
+
+/**
  * The forms a station of each role may be built in, and the system's own seed
  * picks among them (node #717). The forms are drawings in `station-mesh.ts`;
  * the pools are here so the Three-free generator (`system.ts`, through
@@ -178,12 +192,6 @@ export type StationFormId = "a" | "b" | "c" | "d" | "e";
  * nothing more — and the Works was built for a ranking round, shown at four
  * plans under three finishes and four framings, and taken. The refinery's
  * other three forms have never been looked at by the principal.
- *
- * **Selecting trade E is not one line yet.** The Wheel's `core` is its
- * finished rim and its slot is cut into `hub`, so the per-form rows that // glossary-ignore: slot
- * measure the bay against `core`'s box would read a rim that ends in front of
- * the bay. A round that pools it owes those rows the part the slot is cut // glossary-ignore: slot
- * into (#334's review).
  */
 export const STATION_FORM_POOL: Record<
 	DrawnStationType,
