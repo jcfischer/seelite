@@ -53,5 +53,35 @@ changelog approval remain the supervisor's separate gates.
 Correction to the prior receipt: its round-1 figures (5,534 tests and eight
 affected probes) did not name the measured tree or establish their ordering
 against the round-1 changes. They are historical self-reports, not evidence
-for this repaired implementation. The verification entry below will name the
+for this repaired implementation. The verification entry below names the
 implementation commit measured in this pass.
+
+## Round 2 verification
+
+Implementation commit: `f0b0fe0af1cec9f9397b277c03682c1a59aaf463`
+(`Address sage review round 2 for node #733`). The headless measurements
+were taken on the working tree committed there; the targeted browser run was
+taken afterward on that clean commit. This receipt follow-up changes only
+this Markdown file, leaving that measured implementation unchanged.
+
+- `npm test`: 5,548 pass, 0 fail across 302 files (351.25 s).
+- Focused scanner/contact tests: 58 pass, 0 fail; subsequent finding/writer
+  checks: 38 pass, 0 fail.
+- `npm run build`, `npx tsc --noEmit`, `npm run format:check`,
+  `npm run lint` and `npm run check:wiring`: exit 0.
+- Mandatory `probe:select` with base `origin/main` and head `HEAD`
+  reported `all` (94 probes), because shared runtime/catalog files changed.
+  Intent: identify live derelicts through scanner approach or the ten kilometre
+  floor, preserve dated commander sweep readings and withhold unknown contacts.
+- The worker contract limits local execution to affected probes. The canonical
+  runner used `PROBE_SELECTION=1`, an explicit ten-file `PROBE_FILES` list
+  and `SEELITE_PROBE_RENDERER=hardware`. All ten passed in 128 s on
+  ANGLE Metal (Apple M1 Pro): boot, derelict, display contacts, ladders, live
+  cockpit, Navigation console, public site, relay, save and system sweep.
+  This is partial evidence: 84 of 94 probes were not run. The supervisor owns
+  the full browser suite on the final reviewed head.
+
+The first hardware launch inside the filesystem sandbox aborted before any
+probe ran; the permitted run outside that sandbox completed green. No probe
+assertion or rendering threshold was weakened. All round-2 findings were
+addressed; no suggestion was skipped.
