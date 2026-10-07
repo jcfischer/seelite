@@ -408,8 +408,10 @@ export const stockResponse = (
  * which is right: the cap is a shelf, not an accumulator. The *price* still
  * falls, because §5's response is what carries the effect.
  *
- * Whole units, floored, because the console and the till read this one figure
- * (#316, `economy-trade.md` §5.2).
+ * Round the signed mark to the nearest unit, with half-units away from zero.
+ * Flooring the shelf erased a one-unit sale as soon as its mark decayed below
+ * one (node #777). The continuous mark still prices the good; this projection
+ * alone turns it into whole stock, shared by the console and till (#316).
  */
 export const shelfQuantity = (
 	generatedQuantity: number,
@@ -417,7 +419,9 @@ export const shelfQuantity = (
 ): number =>
 	Math.floor(
 		clamp(
-			generatedQuantity - clamp(deficit, -DEFICIT_MAX, DEFICIT_MAX),
+			generatedQuantity -
+				Math.sign(deficit) *
+					Math.round(Math.min(Math.abs(deficit), DEFICIT_MAX)),
 			0,
 			QUANTITY_CAP,
 		),
