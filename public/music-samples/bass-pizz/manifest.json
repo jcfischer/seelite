@@ -1,0 +1,397 @@
+{
+	"set": "bass-pizz",
+	"instrument": "A 1958 Otto Rubner double bass, pizzicato, played and mapped by D. Smolken",
+	"license": "CC0-1.0",
+	"licenseUrl": "https://creativecommons.org/publicdomain/zero/1.0/",
+	"credit": "Double bass (1958 Otto Rubner), pizzicato, by D. Smolken, CC0 1.0",
+	"source": "https://github.com/sfzinstruments/dsmolken.double-bass/tree/c2985eb647109d2a8f30a70071e3e163339d7396",
+	"format": {
+		"container": "ogg",
+		"codec": "opus",
+		"sampleRate": 48000,
+		"channels": 1
+	},
+	"bitrate": 64000,
+	"gainDb": -1.02,
+	"layers": [
+		{
+			"name": "p",
+			"maxVelocity": 0.5826771653543307
+		},
+		{
+			"name": "m",
+			"maxVelocity": 0.9448818897637795
+		},
+		{
+			"name": "f",
+			"maxVelocity": 1
+		}
+	],
+	"bytes": 947459,
+	"version": "12ca039dd41c83b3",
+	"samples": [
+		{
+			"root": 24,
+			"layer": "p",
+			"file": "024-p.ogg",
+			"durationS": 4,
+			"bytes": 33762,
+			"sha256": "0666fc97a6dd64ca570eb8b9e86ce551a16e6e64633d85f49aebba3845773206",
+			"measuredCents": null,
+			"source": "pizz/pizz_c1_pa.wav",
+			"sourceSha256": "f9a99517ec217925b9065832b68dbf9b9272ead70f37b1f7625819d6a0a17317"
+		},
+		{
+			"root": 24,
+			"layer": "m",
+			"file": "024-m.ogg",
+			"durationS": 4,
+			"bytes": 32102,
+			"sha256": "dcfce959e78eca9ec987c463f7aca53f8a56d50632fb71a08c4d545d70bd20d6",
+			"measuredCents": null,
+			"source": "pizz/pizz_c1_ma.wav",
+			"sourceSha256": "b01a3f9c514835bbf4786508c098e707049c9568f62ac6c54643d4c285923e05"
+		},
+		{
+			"root": 24,
+			"layer": "f",
+			"file": "024-f.ogg",
+			"durationS": 4,
+			"bytes": 32046,
+			"sha256": "a2777deb65b53035256adc7b823ee51fdaa60c40b9ff1b7336ea976c189009d0",
+			"measuredCents": null,
+			"source": "pizz/pizz_c1_fa.wav",
+			"sourceSha256": "14e6ed9c12d662d4b7c5d01449157cfaf67c92d49d75869a56b0e0b1e5b7b6da"
+		},
+		{
+			"root": 27,
+			"layer": "p",
+			"file": "027-p.ogg",
+			"durationS": 4,
+			"bytes": 35630,
+			"sha256": "06964aaec0619a1ef9081bf66f1c581e5e6b126460caf920f27170c2665efb0b",
+			"measuredCents": -19,
+			"source": "pizz/pizz_eb1_pa.wav",
+			"sourceSha256": "e24a58dda888d9c321244faa9877aed6b640afeb700c404c7403891dca4769e1"
+		},
+		{
+			"root": 27,
+			"layer": "m",
+			"file": "027-m.ogg",
+			"durationS": 4,
+			"bytes": 32753,
+			"sha256": "f3fd4be635f77cca1341b0aa31fe6199edd2b90a6c5fba77fb301ca81aa08d13",
+			"measuredCents": -29,
+			"source": "pizz/pizz_eb1_ma.wav",
+			"sourceSha256": "bc63b964626ed1bb3070b701d54d9db2466a521ef9664db75ebcada77fe8ea0e"
+		},
+		{
+			"root": 27,
+			"layer": "f",
+			"file": "027-f.ogg",
+			"durationS": 4,
+			"bytes": 32914,
+			"sha256": "5e67d7e13d40829c520a697ee1a3865fe301b4c04125314a7e59d01cd0c1834c",
+			"measuredCents": -18,
+			"source": "pizz/pizz_eb1_fa.wav",
+			"sourceSha256": "df4c832f099381d22d758ada759a56dd43cafeb18e65b763e781d9ed3e3ab607"
+		},
+		{
+			"root": 31,
+			"layer": "p",
+			"file": "031-p.ogg",
+			"durationS": 4,
+			"bytes": 31606,
+			"sha256": "576833361c6aaa6cda23f1743c9af18700c52fc9bea8b3b20ca8b792d5d1de19",
+			"measuredCents": 1,
+			"source": "pizz/pizz_g1_pa.wav",
+			"sourceSha256": "07dd817bd3face5773d05bf8c9081bd61558d262a533a0da1943eff13ae4dce0"
+		},
+		{
+			"root": 31,
+			"layer": "m",
+			"file": "031-m.ogg",
+			"durationS": 4,
+			"bytes": 30597,
+			"sha256": "1d2505d6f33c8c0ec208046899cfa0bec2837e4e1fb1acbdbe49cca8e951d9a6",
+			"measuredCents": 7,
+			"source": "pizz/pizz_g1_ma.wav",
+			"sourceSha256": "de29829839835ec59e6e8c05d6e31c61867abd16723f93eef12aa08417d288a7"
+		},
+		{
+			"root": 31,
+			"layer": "f",
+			"file": "031-f.ogg",
+			"durationS": 4,
+			"bytes": 30678,
+			"sha256": "8450add331265889c83228fc6ec7712d0596d87b4d17bf46781ce1a95067da9b",
+			"measuredCents": 23,
+			"source": "pizz/pizz_g1_fa.wav",
+			"sourceSha256": "d60635342017c8700f7ad731ae521190e363b350941431dc1a06e0443ddd20be"
+		},
+		{
+			"root": 34,
+			"layer": "p",
+			"file": "034-p.ogg",
+			"durationS": 4,
+			"bytes": 32513,
+			"sha256": "5d18eabb94a7e543fb679261f36d7a271ee1f4ba2623ae319ff29ba36ccc02f5",
+			"measuredCents": 3,
+			"source": "pizz/pizz_bb1_pa.wav",
+			"sourceSha256": "56a258afffd1b954f2c3af62ddcdc3a5872aac9472f1cc6fee1fa8a0e772a535"
+		},
+		{
+			"root": 34,
+			"layer": "m",
+			"file": "034-m.ogg",
+			"durationS": 2.632,
+			"bytes": 20576,
+			"sha256": "7e6de3df4197078058947dba24089841673230ed67515dc0d92c756133dc0e90",
+			"measuredCents": -12,
+			"source": "pizz/pizz_bb1_ma.wav",
+			"sourceSha256": "f006c85f1ef2b6e4dda69d5e204471995e275e6b008dde61c6067922bc9841f5"
+		},
+		{
+			"root": 34,
+			"layer": "f",
+			"file": "034-f.ogg",
+			"durationS": 4,
+			"bytes": 31242,
+			"sha256": "9e2c6bd3560880f5da86a0bf38cab3172470922c6976b164b8ff20c33086fb0e",
+			"measuredCents": 1,
+			"source": "pizz/pizz_bb1_fa.wav",
+			"sourceSha256": "c7d83d7d44ff7a73cbb4a5f446510428098dcb53ca44af197da9318e2ee15041"
+		},
+		{
+			"root": 38,
+			"layer": "p",
+			"file": "038-p.ogg",
+			"durationS": 4,
+			"bytes": 33098,
+			"sha256": "7e07ffefe4edc953d266aa93b67734c7de0b14557182dedbafbb35666332aef9",
+			"measuredCents": 0,
+			"source": "pizz/pizz_d2_pa.wav",
+			"sourceSha256": "dfac00003a71835f6794795a6fd09a71c5470ac597b35365009c5d9272458adb"
+		},
+		{
+			"root": 38,
+			"layer": "m",
+			"file": "038-m.ogg",
+			"durationS": 4,
+			"bytes": 31420,
+			"sha256": "31aa8280b9434ba34a6595301354ce0b3d1d740025aebbaf1637c920df553b79",
+			"measuredCents": 10,
+			"source": "pizz/pizz_d2_ma.wav",
+			"sourceSha256": "8a0d9e9f0aaef5c5d71606634a893aaaa0f8f9a9cf662466fb9d328b694beabb"
+		},
+		{
+			"root": 38,
+			"layer": "f",
+			"file": "038-f.ogg",
+			"durationS": 4,
+			"bytes": 32339,
+			"sha256": "28895ae45ef2a9216e85530a54e7665f1e8d3e279dcf86292b0c7fa2d00a2abf",
+			"measuredCents": 18,
+			"source": "pizz/pizz_d2_fa.wav",
+			"sourceSha256": "02404501bb3d561b6c67e4f3d993573729fbf0f6db40c8970c8cb0f8ce434704"
+		},
+		{
+			"root": 41,
+			"layer": "p",
+			"file": "041-p.ogg",
+			"durationS": 3.457,
+			"bytes": 27167,
+			"sha256": "c4b9eceb8e84d2dd94179eb9b259946a53e1e69af1f605483a28127ebda37da2",
+			"measuredCents": -1,
+			"source": "pizz/pizz_f2_pa.wav",
+			"sourceSha256": "7e3d799b53fd97a3536f3fc4e642f910c0181b075531c7ab7bde67b46e7ca9a2"
+		},
+		{
+			"root": 41,
+			"layer": "m",
+			"file": "041-m.ogg",
+			"durationS": 4,
+			"bytes": 31510,
+			"sha256": "9eded47130ccf3775b9ace714afbb19d8f159d5f9e9ce8424558fd2da5dd0688",
+			"measuredCents": 10,
+			"source": "pizz/pizz_f2_ma.wav",
+			"sourceSha256": "0e1d996c2d4fd6889ba5fae5b9a8ee4c8d83050665b38e68cf439e1cb9edeb05"
+		},
+		{
+			"root": 41,
+			"layer": "f",
+			"file": "041-f.ogg",
+			"durationS": 4,
+			"bytes": 30928,
+			"sha256": "ae5017a1a1eafc9d1e49ecd638f2b6aafedcec2883d5604dfc5776a01bd321dd",
+			"measuredCents": 10,
+			"source": "pizz/pizz_f2_fa.wav",
+			"sourceSha256": "62836f03273799a6698a3cdd50fd36bfac2d618ee2153e911617244ea637dfbe"
+		},
+		{
+			"root": 45,
+			"layer": "p",
+			"file": "045-p.ogg",
+			"durationS": 4,
+			"bytes": 32501,
+			"sha256": "f2f84f364bc87cebbd15c4777305b9eed0dfba97530fdada688859064fbe1397",
+			"measuredCents": -4,
+			"source": "pizz/pizz_a2_pa.wav",
+			"sourceSha256": "42ed6ec531b48cd1475fb6d010f0a78915832358c2c38b66bf02fb1c411ae234"
+		},
+		{
+			"root": 45,
+			"layer": "m",
+			"file": "045-m.ogg",
+			"durationS": 4,
+			"bytes": 31820,
+			"sha256": "5d0e4504a87c4baa23bef2fb9ef62c07cad3be5c89f4ca901c48990ef70d4a25",
+			"measuredCents": 12,
+			"source": "pizz/pizz_a2_ma.wav",
+			"sourceSha256": "91f3f82d1e4f3f763b0b600b4fe8f8c04363d698ec4f53382991a1c0b1688bdf"
+		},
+		{
+			"root": 45,
+			"layer": "f",
+			"file": "045-f.ogg",
+			"durationS": 4,
+			"bytes": 31729,
+			"sha256": "dfd334768ae633fe3698f55410208b927cbba947b81ec6c2c9b1de80406508f8",
+			"measuredCents": 12,
+			"source": "pizz/pizz_a2_fa.wav",
+			"sourceSha256": "5ebd55859f7829d7d948fe8907bc48d3fb70b7af7fe9ba62870c51cf9e51e29f"
+		},
+		{
+			"root": 48,
+			"layer": "p",
+			"file": "048-p.ogg",
+			"durationS": 4,
+			"bytes": 32278,
+			"sha256": "9d3a9ffa098cee1b5b211e7b546129bcaa58919751eb117a99602eaad89a85dc",
+			"measuredCents": 3,
+			"source": "pizz/pizz_c3_pa.wav",
+			"sourceSha256": "d2d0d21e746ddebb84e1a83945e83dbe3952e664ba6c06bd38fc9c498899cb0f"
+		},
+		{
+			"root": 48,
+			"layer": "m",
+			"file": "048-m.ogg",
+			"durationS": 4,
+			"bytes": 32153,
+			"sha256": "7ed1265996141ecafec4b4077cba5d5e7b75a5dca15d5ffcf9146e0ddd261f9e",
+			"measuredCents": 6,
+			"source": "pizz/pizz_c3_ma.wav",
+			"sourceSha256": "db94ddc047093d13e1568412e03aff3458f42ce08e2c7f3dcb15f2a0a68611b0"
+		},
+		{
+			"root": 48,
+			"layer": "f",
+			"file": "048-f.ogg",
+			"durationS": 4,
+			"bytes": 31733,
+			"sha256": "7b547a726fcb248f4754a76ff8f25f2367abe2bc30c6dabdaa78c67b1ad87c69",
+			"measuredCents": 10,
+			"source": "pizz/pizz_c3_fa.wav",
+			"sourceSha256": "904f0ea1d0f1cb1650f03badac00013cbbc3003a6a0a7adb920742a81eb67566"
+		},
+		{
+			"root": 52,
+			"layer": "p",
+			"file": "052-p.ogg",
+			"durationS": 2.697,
+			"bytes": 21854,
+			"sha256": "e87499c59ef7603ed35e9c4ac4e72fe4955b164507fb2e17151003f346bcd2bb",
+			"measuredCents": -3,
+			"source": "pizz/pizz_e3_pa.wav",
+			"sourceSha256": "d97f12bb89e4d249b70a1df496081454190b5d9cbd550b4ed1571aa48568f5dd"
+		},
+		{
+			"root": 52,
+			"layer": "m",
+			"file": "052-m.ogg",
+			"durationS": 3.583,
+			"bytes": 28065,
+			"sha256": "42dea4c5905dae50abf884660fb9cd25870ba4d6f774a2ffc8c775d3bf218a12",
+			"measuredCents": -1,
+			"source": "pizz/pizz_e3_ma.wav",
+			"sourceSha256": "b44f388b373f5bbcedec063cf3a4de9388248708840ccbb23e1aad0db8e5aeff"
+		},
+		{
+			"root": 52,
+			"layer": "f",
+			"file": "052-f.ogg",
+			"durationS": 3.456,
+			"bytes": 26881,
+			"sha256": "e7d3c97479be545d52f64e78a5d7af356833c3305111fc965d2b79e798f04d05",
+			"measuredCents": 9,
+			"source": "pizz/pizz_e3_fa.wav",
+			"sourceSha256": "79020f59136a991a5d092d5161f9e493fa416735834a4d565a26a7cba525948b"
+		},
+		{
+			"root": 55,
+			"layer": "p",
+			"file": "055-p.ogg",
+			"durationS": 2.473,
+			"bytes": 19793,
+			"sha256": "6bfcc2d92f3961b7f46374e681f27903ecfcc59660e6fb906b611b25bcffd648",
+			"measuredCents": 16,
+			"source": "pizz/pizz_g3_pa.wav",
+			"sourceSha256": "1944b82302c8350005b6bac56fd78d1c2326622897fbb812eae6273312f86ddd"
+		},
+		{
+			"root": 55,
+			"layer": "m",
+			"file": "055-m.ogg",
+			"durationS": 3.436,
+			"bytes": 27487,
+			"sha256": "0f4d0b6155ea01d6ca88d9e7d28f70df727dfc5662fb9f54309e733d06f1e2cc",
+			"measuredCents": 8,
+			"source": "pizz/pizz_g3_ma.wav",
+			"sourceSha256": "59047ddeb62fed10a439ed3bddf7804f3e5b65b84570bffba595992c6c0e8dbb"
+		},
+		{
+			"root": 55,
+			"layer": "f",
+			"file": "055-f.ogg",
+			"durationS": 2.787,
+			"bytes": 21898,
+			"sha256": "1c3e2949b736f7ff44d993d5bb1e305e744c5ee42f1cb9c8e128608803fcf8b1",
+			"measuredCents": 12,
+			"source": "pizz/pizz_g3_fa.wav",
+			"sourceSha256": "613eed33ad6d478710b4db56bf7e795a6cb9c705f7e8f3ba96fd8f64fa322b1a"
+		},
+		{
+			"root": 57,
+			"layer": "p",
+			"file": "057-p.ogg",
+			"durationS": 2.025,
+			"bytes": 16349,
+			"sha256": "c9c7d814e6764b88333c1b79f99eabd6d4c20c45142dc822c3ccfacf3ab82ce9",
+			"measuredCents": 1,
+			"source": "pizz/pizz_a3_pa.wav",
+			"sourceSha256": "a877ab0aa666e7d8f587896576e5a6bf88e57571f337eb6c750dcee1034d8baa"
+		},
+		{
+			"root": 57,
+			"layer": "m",
+			"file": "057-m.ogg",
+			"durationS": 1.83,
+			"bytes": 14510,
+			"sha256": "776b97a50a4670f72815c1f234c8424080291df607e8ba0f68c1fc6cc944d66c",
+			"measuredCents": 2,
+			"source": "pizz/pizz_a3_ma.wav",
+			"sourceSha256": "210d09eed72d91f725222593b6eca055bffd8be2f53c8a7e9d59a4396c2f6d97"
+		},
+		{
+			"root": 57,
+			"layer": "f",
+			"file": "057-f.ogg",
+			"durationS": 1.957,
+			"bytes": 15527,
+			"sha256": "13f43df7365f2ac0997769378504c304b0e40d3e3f4423293637d8c68ee461eb",
+			"measuredCents": 11,
+			"source": "pizz/pizz_a3_fa.wav",
+			"sourceSha256": "ea484259c8b4fbb1fe35e5c2883dbbeb49e7261720029220eec165f1c5bb1ec7"
+		}
+	]
+}

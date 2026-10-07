@@ -1,0 +1,4 @@
+# The music's instrument samples: binary, re-encoded now and then, so in Git
+# LFS rather than in history (map #1's Constraints, 2026-10-06). Their
+# manifests and licence files stay plain text.
+public/music-samples/**/*.ogg filter=lfs diff=lfs merge=lfs -text
