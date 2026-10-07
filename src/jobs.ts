@@ -24,14 +24,15 @@
  *
  * **What a job is *about* is a discriminated `operand`** (#440, built in #453),
  * not three flat fields. `goodName`, `tonnes` and `entrusted` were required of
- * every offer because both shipped families move cargo — and **Bounty and
- * Salvage do not**, so a third family would have had to change the persisted
+ * every offer because the original families move ordinary goods — Bounty
+ * names a target and Salvage names a wreck container — so a third family would
+ * have had to change the persisted
  * shape and migrate every save in the same change that authored its content.
  * The shape moved first and alone, because the migration is the expensive part
  * and an in-flight shape is cheap to change late. **It paid off in #508**: the
  * Bounty family's target carrier is a second member of the union, and the save
- * stayed at version 5 because every v5 journal is still a valid one. A
- * salvage's wreck is not written yet.
+ * stayed at version 5 because every v5 journal is still a valid one.
+ * Salvage adds its wreck-container snapshot in node #734 without another bump.
  *
  * It imports no Three.js and must not: a board is arithmetic, and
  * `tests/headless.test.ts` is where that stays true.
@@ -39,11 +40,18 @@
 
 import { type CarrierKey, carrierKey } from "./carrier-key";
 import { type DeficitMap, readDeficit } from "./deficits";
+import type { DerelictContainer } from "./world-state";
 import { DOMAIN } from "./domains";
 import { type SystemRecord, distanceLy } from "./galaxy";
 import { reachable } from "./galaxy-route";
 import {
 	type Commodity,
+	commodity,
+	EQUIPMENT,
+	marketEpoch,
+	stationFluct,
+	marketQuote,
+	stockResponse,
 	LONG_RANGE_SCANNER,
 	marketRowAt,
 	hasMarket,
@@ -54,7 +62,7 @@ import { mix, seededRand } from "./rng";
 import { STATION_LAWFUL } from "./station";
 import type { Station, SystemContents } from "./system";
 
-export type JobFamily = "courier" | "procurement" | "bounty";
+export type JobFamily = "courier" | "procurement" | "bounty" | "salvage";
 
 /**
  * Which offer on a board a row fills (#408 D2).
@@ -124,6 +132,21 @@ export const LOCAL_RUN_ROW_ID = "courier-local-run";
  * most variety.
  */
 export const JOB_ROWS: readonly JobRow[] = [
+	job({
+		family: "salvage",
+		post: "salvage",
+		rowId: "salvage-recovery",
+		revision: 1,
+		title: "Recover our lost container",
+		purpose: "We lost a ship. Recover the named container and bring it home.",
+		danger: "The wreck is unguarded. Raiders may be nearby.",
+		action:
+			"Search the region, scoop the named container whole, then Deliver it here.",
+		consequence:
+			"The station gets its lost property back. The container stays empty.",
+		tonnes: 0,
+		payment: { baseCr: 0, perTonneCr: 0, perLyCr: 0, basePriceFactor: 0 },
+	}),
 	job({
 		family: "courier",
 		post: "courier",
@@ -324,6 +347,19 @@ export interface BindContext {
 	 * and look exactly like a galaxy with no relays.
 	 */
 	bountyTarget: BountyTarget | null;
+	/** Live losses, not discovery rows. Empty when this system has no eligible loss. */
+	salvageTargets: readonly SalvageTarget[];
+	/** Flown hold, including its bay, for the posting station's deficit price. */
+	holdT: number;
+}
+
+export interface SalvageTarget {
+	slotKey: CarrierKey;
+	instanceOrdinal: number;
+	lostAt: number;
+	homeStationKey: CarrierKey;
+	region: string;
+	containers: readonly DerelictContainer[];
 }
 
 /**
@@ -358,7 +394,21 @@ export interface JobStationRef {
  * inherits the question a family adds, and the compiler will not raise it.
  * #453's own round 1 went red there rather than at the compiler.
  */
-export type JobOperand = CargoOperand | TargetOperand;
+export type JobOperand = CargoOperand | TargetOperand | SalvageOperand;
+
+/** A loss instance and one container, with the acceptance-time item and price. */
+export interface SalvageOperand {
+	kind: "salvage";
+	slotKey: CarrierKey;
+	instanceOrdinal: number;
+	containerIndex: number;
+	item: {
+		kind: "good" | "fitting";
+		id: string;
+		tonnes: number;
+		priceCr: number;
+	};
+}
 
 export interface CargoOperand {
 	kind: "cargo";
@@ -387,7 +437,16 @@ export const isCargoOffer = (offer: JobOffer): offer is CargoOffer =>
 /** The cargo a job moves, or null for a family that moves none. One question
  *  asked in one place, rather than a `kind` test at every hold consumer. */
 export const cargoOf = (offer: { operand: JobOperand }): CargoOperand | null =>
-	offer.operand.kind === "cargo" ? offer.operand : null;
+	offer.operand.kind === "cargo"
+		? offer.operand
+		: offer.operand.kind === "salvage"
+			? {
+					kind: "cargo",
+					goodName: offer.operand.item.id,
+					tonnes: offer.operand.item.tonnes,
+					entrusted: true,
+				}
+			: null;
 
 /**
  * Which operand each family carries — the pairing, as a total record.
@@ -410,6 +469,7 @@ export const FAMILY_OPERAND_KIND: Readonly<
 	courier: "cargo",
 	procurement: "cargo",
 	bounty: "target",
+	salvage: "salvage",
 };
 
 /**
@@ -515,6 +575,8 @@ export interface JobMark {
  * when it happened — so its report writes nothing and this returns null.
  */
 export const jobMark = (offer: JobOffer): JobMark | null => {
+	// Salvage's mark is the container at zero, written by the scoop, never stock.
+	if (offer.operand.kind !== "cargo") return null;
 	const cargo = cargoOf(offer);
 	if (!cargo) return null;
 	return {
@@ -573,6 +635,7 @@ const POST_STREAM: Readonly<Record<JobPost, number>> = {
 	procurement: 2,
 	bounty: 3,
 	"courier-local": 4,
+	salvage: 5,
 };
 
 /** The episode draw. Its own domain tag, so a board moves no station, berth or
@@ -950,5 +1013,122 @@ export function bindJobs(ctx: BindContext): JobOffer[] {
 		bindLocalCourier(ctx),
 		bindProcurement(ctx),
 		bindBounty(ctx),
+		...bindSalvage(ctx),
 	].filter((offer): offer is JobOffer => offer !== null);
+}
+
+/** Principal's ruling, 2026-10-06 (salvage.md S15, S18). */
+export const SALVAGE_OFFER_WINDOW_S = 2 * 60 * 60;
+export const SALVAGE_PAY_FACTOR = 1.5;
+
+/** Price of the entire item at the posting station, on the sale side. A fitting
+ * sells for its catalogue price; goods use the same bid and deficit as the till. */
+export function salvageItemPrice(
+	ctx: Pick<
+		BindContext,
+		"station" | "system" | "deficits" | "gameTimeMin" | "holdT"
+	>,
+	item: { kind: "good" | "fitting"; id: string; tonnes: number },
+): number {
+	if (item.kind === "fitting") {
+		const entry = EQUIPMENT.find((e) => e.name === item.id);
+		if (!entry) throw new Error(`salvage: unknown fitting ${item.id}`);
+		return entry.priceCr;
+	}
+	const station = marketStationOf(ctx.station, ctx.system.seed);
+	// Recovery of the station's own property is not a market listing. Even a
+	// contraband line has a valuation at a station which refuses ordinary sales.
+	const base = marketRowAt(
+		commodity(item.id),
+		ctx.system.economy,
+		stationFluct(station.seed, marketEpoch(station.phaseMin, ctx.gameTimeMin)),
+		station.type,
+	);
+	const deficit = readDeficit(
+		ctx.deficits,
+		stationKeyOf(ctx.system.index, ctx.station),
+		item.id,
+		ctx.gameTimeMin,
+	);
+	return (
+		marketQuote(
+			stockResponse(base.priceCr, deficit, ctx.holdT),
+			ctx.system.displayTL,
+		).sellCr * item.tonnes
+	);
+}
+
+/** One offer per loss, on its home board only. Choose before testing the named
+ * container's remaining tonnes, so stripping it cannot post a second item. */
+export function bindSalvage(ctx: BindContext): JobOffer[] {
+	if (!canPostJobs(ctx.station)) return [];
+	const home = stationKeyOf(ctx.system.index, ctx.station);
+	const now = ctx.gameTimeMin * 60;
+	return ctx.salvageTargets.flatMap((target) => {
+		if (
+			target.homeStationKey !== home ||
+			now < target.lostAt ||
+			now >= target.lostAt + SALVAGE_OFFER_WINDOW_S
+		)
+			return [];
+		let containerIndex = target.containers.findIndex(
+			(c) => c.kind === "fitting",
+		);
+		if (containerIndex < 0) {
+			let value = -Infinity;
+			for (const [i, item] of target.containers.entries()) {
+				// Use the fixed base value to name one line for this loss. A market
+				// epoch or a scoop must not substitute a second named container.
+				const price =
+					basePriceCr(commodity(item.id), ctx.system, ctx.station) *
+					item.tonnes;
+				if (price > value) {
+					value = price;
+					containerIndex = i;
+				}
+			}
+		}
+		const container = target.containers[containerIndex];
+		if (!container || container.left === 0) return [];
+		const item = {
+			kind: container.kind,
+			id: container.id,
+			tonnes: container.left,
+			priceCr: salvageItemPrice(ctx, { ...container, tonnes: container.left }),
+		};
+		const row = pickRow(ctx, "salvage", target.instanceOrdinal);
+		const requester = { galaxyIndex: ctx.galaxyIndex, carrierKey: home };
+		return [
+			{
+				id: `${offerId(ctx, "salvage", target.instanceOrdinal)}/${target.slotKey}`,
+				family: "salvage",
+				rowId: row.rowId,
+				revision: row.revision,
+				stages: ["deliver"],
+				episode: target.instanceOrdinal,
+				requester,
+				requesterName: ctx.station.name,
+				reportAt: requester,
+				reportName: ctx.station.name,
+				reportSystemName: ctx.system.name,
+				distanceLy: 0,
+				operand: {
+					kind: "salvage",
+					slotKey: target.slotKey,
+					instanceOrdinal: target.instanceOrdinal,
+					containerIndex,
+					item,
+				},
+				rewardCr: SALVAGE_PAY_FACTOR * item.priceCr,
+				title: `${row.title}: ${item.id}`,
+				purpose: row.purpose,
+				danger: row.danger,
+				action: row.action,
+				consequence: row.consequence,
+				region: target.region,
+				source: ctx.station.name,
+				observedAt: target.lostAt,
+			} satisfies JobOffer,
+		];
+	});
 }

@@ -124,7 +124,7 @@ describe("#408 D2 — the Local run", () => {
 		expect(postOf(id("courier-7"), "courier")).toBe("courier");
 		expect(postOf(id("procurement-1"), "procurement")).toBe("procurement");
 		// An id naming no post falls back to the family.
-		expect(postOf(id("salvage-1"), "courier")).toBe("courier");
+		expect(postOf(id("unshipped-1"), "courier")).toBe("courier");
 		expect(postOf("not-an-id", "bounty")).toBe("bounty");
 	});
 });

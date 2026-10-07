@@ -199,6 +199,8 @@ const ctxFor = (
 	settled,
 	// This instrument measures the courier, which reads no bounty target.
 	bountyTarget: null,
+	salvageTargets: [],
+	holdT: 20,
 });
 
 /** A courier offer's cargo; a courier always carries one (#508). */

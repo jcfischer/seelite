@@ -66,6 +66,7 @@
  */
 
 import * as THREE from "three";
+import { salvageTargetsOf } from "./salvage-jobs";
 import {
 	derelictReadings,
 	derelictRegion,
@@ -17120,6 +17121,12 @@ class Game {
 		context = this.dockedStationContext(),
 		hold = holdSummary(this.commander, this.requests),
 	): RequestsView {
+		const refreshed = applyHoldEvent(this.holdings(), this.commerceWorld, {
+			kind: "requests-read",
+			at: this.world.gameTime,
+		});
+		if (refreshed.holdings.requests !== this.requests)
+			this.adoptHoldings(refreshed);
 		if (context) {
 			// **Bound once per visit, not per frame.** A binder is pure, so a
 			// board recomputed every frame would be identical and wasted —
@@ -17161,7 +17168,18 @@ class Game {
 				.sort(([a], [b]) => (a < b ? -1 : 1))
 				.map(([post, n]) => `${post}=${n}`)
 				.join(",");
-			const key = `${context.galaxyIndex}:${context.stationKey}:${settledKey}:${relayLive ? relayKey : "-"}:${this.stationConsoleRevision}`;
+			const salvageTargets = salvageTargetsOf(
+				this.commerceWorld,
+				this.world.system,
+				this.world.gameTime,
+			);
+			const salvageKey = salvageTargets
+				.map(
+					(t) =>
+						`${t.slotKey}:${t.instanceOrdinal}:${t.containers.map((c) => c.left).join(",")}`,
+				)
+				.join(";");
+			const key = `${context.galaxyIndex}:${context.stationKey}:${settledKey}:${relayLive ? relayKey : "-"}:${this.stationConsoleRevision}:${salvageKey}`;
 			if (key !== this.requestOffersCacheKey) {
 				const bountyTarget = bountyTargetOf(
 					this.world.system.record,
@@ -17202,6 +17220,8 @@ class Game {
 					gameTimeMin: context.gameTimeMin,
 					settled,
 					bountyTarget,
+					salvageTargets,
+					holdT: hold.capacityT,
 				});
 				this.requestOffersCacheKey = key;
 			}
