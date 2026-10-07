@@ -11,7 +11,7 @@ import { ASSEMBLY_SEEDS, isSeededForm } from "./solved-forms";
  * The form is part of the plan since node #717 — a system picks it from the
  * role's pool, and the proxy a harness flies against is that form's.
  */
-export type StationSeeds = Omit<StationPlan, "type">;
+export type StationPlanOfType = Omit<StationPlan, "type">;
 
 /** Seed-zero remains the fixed fixture for the non-seeded forms and historical
  * handling ceilings. Pad fits also cover the proxy budget's twelve-plan spread
@@ -22,8 +22,8 @@ const generated = Array.from({ length: 12 }, (_, i) =>
 	makeWorld(i + 1),
 ).flatMap((world) => world.system.contents.stations);
 
-export function stationPlansFor(type: StationType): StationSeeds[] {
-	return formsInPlay(type).flatMap((formId): StationSeeds[] => {
+export function stationPlansFor(type: StationType): StationPlanOfType[] {
+	return formsInPlay(type).flatMap((formId): StationPlanOfType[] => {
 		if (!isSeededForm(type, formId))
 			return [{ formId, berthSeed: 1, assemblySeed: 0 }];
 		return [
@@ -43,5 +43,5 @@ export function stationPlansFor(type: StationType): StationSeeds[] {
 	});
 }
 
-export const planLabel = (plan: StationSeeds): string =>
+export const planLabel = (plan: StationPlanOfType): string =>
 	`form ${plan.formId}, assembly ${plan.assemblySeed}, berth ${plan.berthSeed}`;

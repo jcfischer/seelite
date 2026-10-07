@@ -25,7 +25,7 @@
 
 import { type Impact, shipPose, sweepShip } from "../../src/collision";
 import { hullSolid } from "./hull-solid";
-import type { StationSeeds } from "./station-plan-corpus";
+import type { StationPlanOfType } from "./station-plan-corpus";
 import {
 	type ApertureFrame,
 	type ComputerPhase,
@@ -199,7 +199,7 @@ export interface FlightOptions {
 	trace?: ComputerTraceStep[];
 	/**
 	 * The station the hull meets (`collision.md` §2.2), when it is not the
-	 * proxy of the plan at `stationSeeds` — for a row that builds a red proxy
+	 * proxy of the plan at `stationPlan` — for a row that builds a red proxy
 	 * on purpose.
 	 */
 	proxy?: StationProxy;
@@ -208,7 +208,7 @@ export interface FlightOptions {
 	 * each role flew when their ceilings were measured — and a row about every
 	 * form iterates `stationPlansFor`. The berth catalogue and proxy must read
 	 * the same plan. */
-	stationSeeds?: StationSeeds;
+	stationPlan?: StationPlanOfType;
 }
 
 /** The clearance a run starts under: none, queued, or a live grant. Every
@@ -262,7 +262,7 @@ export function flyTheComputer(opts: FlightOptions): FlightRun {
 	const dt = opts.dt ?? 0.05;
 	const swing = opts.axisSwingRadPerS ?? 0;
 	const pivot = cross(axis, reference);
-	const seeds = opts.stationSeeds ?? {
+	const seeds = opts.stationPlan ?? {
 		formId: HISTORICAL_FORM[type],
 		berthSeed: 1,
 		assemblySeed: 0,

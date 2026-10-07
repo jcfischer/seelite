@@ -189,6 +189,15 @@ export interface StationPlan {
  * Whether a pool should lean toward its familiar form is the principal's open
  * question on node #717, and it is not answered by this table.
  *
+ * **A pool's order is part of it, and so is its length.** `drawStationForm`
+ * turns a system's roll into a position, `floor(roll × n)`, so reordering a
+ * pool gives most systems of that role another form. Appending does too,
+ * because the position moves with `n`: unlike `STATION_FORM_SLOT`'s tags, a
+ * pool has no edit that leaves every system where it was. No save carries a
+ * form (`enumerateCarriers` does not read it), so no save breaks; what moves
+ * is which station a pilot finds where. Any edit here re-draws the role
+ * galaxy-wide, and the view set before and after is where that shows.
+ *
  * Trade and shipyard are `a` because round one ranked their slot first.
  * **Refinery `d`, on the principal's yes to #257's sheet (2026-09-06).** Both
  * pad roles were placeholders for two rounds — `a` was first in the list and // glossary-ignore: pad

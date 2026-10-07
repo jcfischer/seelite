@@ -9,8 +9,8 @@
  * glow) iterate `FORMS_IN_PLAY`, so a form added to a pool is measured by
  * those. Rows that build one named form — the Works' own parts, the
  * Coriolis and the Gantry in `collision-stations`, the docking computer's
- * `HISTORICAL_FORM` — do not reach it; node #717's receipt lists every one. The station-field and
- * orbit baselines
+ * `HISTORICAL_FORM` — do not reach it; node #717's receipt lists the ones its
+ * searches find. The station-field and orbit baselines
  * (`tests/station.test.ts`, `tests/station-orbits.test.ts`,
  * `tests/cold-rocky-moons.test.ts`) hold that no existing stream moved.
  *

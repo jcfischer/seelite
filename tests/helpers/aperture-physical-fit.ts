@@ -24,7 +24,7 @@ import { shipPose, type SolidMotion, sweepShip } from "../../src/collision";
 import { apertureFrame, slotBasis } from "../../src/docking";
 import type { HullId } from "../../src/hull";
 import { hullSolid } from "./hull-solid";
-import type { StationSeeds } from "./station-plan-corpus";
+import type { StationPlanOfType } from "./station-plan-corpus";
 import type { StationType } from "../../src/station";
 import { stationProxyOf, stationMotions } from "../../src/station-proxy";
 import { type Vec3, cross, scale, v3 } from "../../src/vec3";
@@ -76,10 +76,10 @@ export function clearsAperture(
 	type: StationType,
 	hull: HullId,
 	angles: EntryAngles,
-	seeds: StationSeeds,
+	plan: StationPlanOfType,
 ): boolean {
 	const frame = apertureFrame(type, FIXTURE_AXIS, 0, FIXTURE_REFERENCE);
-	const proxy = stationProxyOf({ type, ...seeds });
+	const proxy = stationProxyOf({ type, ...plan });
 	const still = { frame, origin: v3(), vel: v3() };
 	const solids = stationMotions(proxy, still, still);
 	const box = hullSolid(hull);
@@ -112,7 +112,7 @@ export function largestClearAngleDeg(
 	axis: "pitch" | "yaw",
 	rollDeg: number,
 	maxDeg: number,
-	seeds: StationSeeds,
+	plan: StationPlanOfType,
 	stepDeg = 0.5,
 ): number | null {
 	let best: number | null = null;
@@ -126,7 +126,7 @@ export function largestClearAngleDeg(
 					yawDeg: axis === "yaw" ? signed : 0,
 					rollDeg,
 				},
-				seeds,
+				plan,
 			),
 		);
 		if (!fits) break;

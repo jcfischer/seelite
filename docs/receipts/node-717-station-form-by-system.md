@@ -53,14 +53,25 @@ branch and it overstates it.
   without one is red.
 
 - **Other rows build one named form, and a newly pooled form gets none of
-  them.** They were found with this search over `tests/`, and every hit is
-  listed below:
+  them.** They were found with these three searches over `tests/`, and every
+  hit of them is listed below:
 
   ```sh
+  # a form-taking call with both literals
   grep -rnE '(buildStationForm|stationProxy|stationProxyOf|stationInForm|stationSilhouetteKm)\(\s*"(trade|shipyard|refinery)",\s*"[a-e]"|formId: "[a-e]"|HISTORICAL_FORM' tests
+  # a role and a form literal on one line: tuples and plans
+  grep -rnE '"(trade|shipyard|refinery)"[^;]{0,40}"[a-e]"' tests
+  # a form literal bound to a name, then passed
+  grep -rnE '(const|let)\s+\w+\s*(:\s*\w+\s*)?=\s*"[a-e]"' tests
   ```
 
-  Each hit is one of four kinds:
+  The first alone missed the plant-cell row below, which binds its form to a
+  name before passing it; the third is what finds it. The searches read
+  lines, so a form that reaches its call any other way — computed, or
+  carried across lines — is not found by them.
+
+  Each hit is one of five kinds:
+
   - **A control that breaks a known form on purpose.** It asks whether the
     check can go red, not whether a form passes:
     - `the pool row goes red for a lamp lifted off its face` (`station-glow`); <!-- glossary-ignore: beacon -->
@@ -91,8 +102,9 @@ branch and it overstates it.
       - `the refinery's flare keeps tracking the clock at outline range` and <!-- glossary-ignore: beacon -->
         `every refinery plan carries a beacon on its headframe and one on its
         flare stack` (`station-visuals`);
-      - `the refinery's proxy reads the assembly seed, cell by cell`
-        (`station-proxy`).
+      - `the refinery's proxy reads the assembly seed, cell by cell` and
+        `the refinery's cells carry its plant: without them the plant is
+        outside` (`station-proxy`).
     - the Coriolis, trade `a`, in `collision-stations`:
       - the rows on `turnInto`;
       - `a ship touching a station face while it turns in takes §3's damage at
@@ -109,6 +121,20 @@ branch and it overstates it.
     no plan. That is the form each role flew when the docking-handling ceilings
     were measured. A newly pooled form gets no handling ceiling from these
     fixtures. A row about every form passes `stationPlansFor` instead.
+  - **Named forms built beside the pools, not instead of them.** These reach
+    a newly pooled form through `FORMS_IN_PLAY` or a property of the form,
+    and the named ones are extras:
+    - `no pooled member on any form exceeds its material's cap`
+      (`station-finish`) builds `FORMS_IN_PLAY` plus trade `d`, refinery `d`
+      and outpost `d`;
+    - `SOLVED_FORMS` (`tests/helpers/solved-forms.ts`) names the forms whose
+      shape is solved from the assembly seed, and three `station-mesh` rows
+      read it: `a solved form stays inside its declared reach at every seed
+      in the spread`, `every plan of a solved form is a single connected
+      assembly, over the seed spread` and `the approach corridor is clear on
+      every plan of a solved form, over the seed spread`. A pooled form that
+      is not solved owes none of them; a new solved form joins the list by
+      hand.
 
 ## Existing streams did not move
 

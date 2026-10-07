@@ -898,7 +898,7 @@ describe("collision.md §9.1.9 and §9.1.15: seeded pad plans", () => {
 						spinRpm: 0,
 						axis: FIXTURE_AXIS,
 						reference: FIXTURE_REFERENCE,
-						stationSeeds: seeds,
+						stationPlan: seeds,
 					});
 					if (
 						!run.docked ||
