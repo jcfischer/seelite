@@ -19,6 +19,20 @@ const entry = (file, contract, evidence) =>
 export const PROBE_CATALOG = Object.freeze(
 	[
 		entry(
+			"probe-death-wreck.mjs",
+			"Kills and reloads the live pilot, checks an immediate own-loss contact and persistent death-point wreck, measures painted hull pixels, and recovers its cargo and unfitted fitting through the existing proximity scoop into one save.",
+			[
+				"death",
+				"save",
+				"wreck",
+				"salvage",
+				"scoop",
+				"fittings",
+				"own loss",
+				"contact",
+			],
+		),
+		entry(
 			"probe-system-sweep.mjs",
 			"Presses the fitted left-console Sweep, steps its autonomous ten-second charge, checks source/age region rows without discovery or targets, cruise interruption/refusal, save reload, stale age and relay cue/identification at placed ranges (not flight-path evidence).",
 			[

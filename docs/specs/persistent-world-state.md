@@ -220,6 +220,29 @@ The domains share the galaxy namespace and authoritative game clock but not a ge
 
 The eventual save system must snapshot `worldSchemaVersion`, `worldGeneratorVersion`, world seed, `gameTime`, current location/player state, and all eight galaxy envelopes atomically. Slots, autosave cadence and permadeath were decided by node #89 and implemented by #90; see §10. **Rollback was decided and is not yet reached**: #89's correction makes a non-permadeath death restore the last dock, `SaveStore.restoreAfterDeath` implements it, and nothing calls it because the game has no death path — #90 wired the flag and the record, not the death. Stated here rather than left to read as shipped, which is the class of false assertion §10 was corrected for. Any later policy may retain, rewind, or delete a whole snapshot, but may not selectively reset carrier consequences while retaining the rest of that timeline.
 
+**The death wreck (node #705) is an eighth typed domain.** Its optional
+`deathWreck` row uses the salvage container shape plus a non-derivable
+placement: the lost hull's drawing id, frame id and offset. Its envelope-relative
+key is `systemIndex:commander-wreck`; the enclosing galaxy supplies the other
+coordinate and the save supplies the commander identity, so a slot rename or
+import cannot orphan it. No generated carrier, objective delta or destroyed
+traffic row is repurposed.
+
+The hard bound is **one death row and its one own-loss knowledge row across all
+eight galaxies**, rather than one per death or per visited system. A new death
+removes the earlier pair; stripping removes it too. Containers are capped at
+512 on load, covering every roster hull's hold (including the cargo-bay bonus),
+one item per tonne, all commodity lots and installed fittings. Each holds a
+fixed initial amount and a remaining amount; no visits reroll it. The known
+`own loss` timestamp is the death time. No timer expires the row.
+
+Save schema 12 admits the optional domain; older versions load empty and
+refuse a grafted row. Empty means omitted, retaining older world integrity
+bytes at world schema 3. Parser checks include the one-row bound, key and frame
+membership, hull id, non-pod fitting and commodity ids, amount bounds, loss on
+the world clock and the matching own-loss knowledge. `salvage.md` owns the
+recovery and placement details.
+
 ## 8. Derived effects
 
 Capabilities and consequences are projections of generated carrier definitions plus effective objective condition at `gameTime`. Route safety, services, traffic, enemy capabilities, prices, and map presentation are never persisted merely because they can be derived from those facts.

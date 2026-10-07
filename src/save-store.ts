@@ -57,6 +57,7 @@ import {
 	deathWake,
 	parseDeathWake,
 } from "./death-cost";
+import { worldAfterDeath } from "./death-wreck";
 import { commanderAfterDeath } from "./holdings";
 import {
 	type CommanderRecord,
@@ -664,6 +665,7 @@ export class SaveStore {
 			permadeath: boolean;
 		},
 		cause: DeathCause,
+		frameId?: string,
 	): Promise<SaveEnvelope | null> {
 		if (commander.permadeath) return null;
 		const wasDirty = this.dirty;
@@ -678,7 +680,7 @@ export class SaveStore {
 			const dying = this.current();
 			const dock = this.checkpointFor(docked, dying);
 			raw = serializeSave({
-				world: dying.world,
+				world: worldAfterDeath(dying.world, dying.commander, cause, frameId),
 				commander: commanderAfterDeath(dock, dying.commander, cause),
 			});
 			restored = parseSave(raw);

@@ -7,6 +7,7 @@ import {
 } from "./station-commerce";
 import { type DerelictRow, PLAYER_SALVAGE } from "./world-state";
 import type { Vec3 } from "./vec3";
+import { commodity } from "./market";
 
 export function scoopWreckContainer(
 	row: DerelictRow,
@@ -29,6 +30,7 @@ export function scoopWreckContainer(
 	const item = row.containers[index];
 	if (row.salvaged || !item || item.left <= 0 || !scoops(container, ship))
 		return unchanged();
+	const smallGood = item.kind === "good" && commodity(item.id).unit !== "t";
 	if (item.kind === "fitting" && freeT < item.left)
 		return unchanged(
 			`Hold full: ${freeT} t free; ${item.left} t ${item.id} must be recovered whole.`,
@@ -37,7 +39,9 @@ export function scoopWreckContainer(
 		0,
 		item.kind === "fitting"
 			? item.left
-			: Math.min(item.left, Math.floor(freeT)),
+			: smallGood
+				? item.left
+				: Math.min(item.left, Math.floor(freeT)),
 	);
 	if (took <= 0)
 		return unchanged(
@@ -45,7 +49,15 @@ export function scoopWreckContainer(
 		);
 	const next =
 		item.kind === "good"
-			? scoopCargo(commander, item.id, took, entrustedT).commander
+			? smallGood
+				? {
+						...commander,
+						cargo: {
+							...commander.cargo,
+							[item.id]: (commander.cargo[item.id] ?? 0) + took,
+						},
+					}
+				: scoopCargo(commander, item.id, took, entrustedT).commander
 			: {
 					...commander,
 					recoveredFittings: [

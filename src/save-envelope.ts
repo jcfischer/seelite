@@ -139,7 +139,8 @@ import {
  * records migrate empty; older readers must refuse rather than discard
  * learned rows.
  */
-export const SAVE_SCHEMA_VERSION = 11;
+/** 12 adds one commander death wreck in world state. Older saves migrate empty. */
+export const SAVE_SCHEMA_VERSION = 12;
 /**
  * Versions this parser still reads but no longer writes.
  *
@@ -173,7 +174,7 @@ export const SAVE_SCHEMA_VERSION = 11;
  * recovered fittings and predates the sweep ledger.
  */
 export const LEGACY_SAVE_SCHEMA_VERSIONS = [
-	2, 3, 4, 5, 6, 7, 8, 9, 10,
+	2, 3, 4, 5, 6, 7, 8, 9, 10, 11,
 ] as const;
 
 /**
@@ -774,6 +775,16 @@ const parseCommander = (
 export function parseSave(raw: unknown): SaveEnvelope {
 	const o = asObject(raw, "envelope");
 	const version = o.saveSchemaVersion;
+	if (typeof version === "number" && version < 12) {
+		const galaxies = (
+			o.world as { galaxies?: Record<string, unknown>[] } | undefined
+		)?.galaxies;
+		if (
+			Array.isArray(galaxies) &&
+			galaxies.some((g) => g?.deathWreck !== undefined)
+		)
+			fail(`world: deathWreck is not a version ${version} field`);
+	}
 	if (
 		typeof version !== "number" ||
 		(version !== SAVE_SCHEMA_VERSION &&

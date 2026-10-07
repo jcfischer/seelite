@@ -51,7 +51,7 @@ import {
 	withCapstone,
 } from "./ladder";
 import { recordTrade } from "./deficits";
-import { ESCAPE_POD } from "./market";
+import { commodity, ESCAPE_POD } from "./market";
 import type { Standing } from "./legal";
 import { PLAYER_KILL } from "./raider-wreck";
 import {
@@ -230,6 +230,7 @@ export interface HoldSignals {
 	 * when the named instance no longer exists. */
 	wreckScoop?: {
 		commodity: string;
+		unit?: "t" | "kg" | "g";
 		tonnes: number;
 		leftT: number;
 		freeT: number;
@@ -567,6 +568,9 @@ function applied(
 				...QUIET,
 				wreckScoop: {
 					commodity: item.id,
+					...(item.kind === "good" && commodity(item.id).unit !== "t"
+						? { unit: commodity(item.id).unit }
+						: {}),
 					tonnes: took.tonnes,
 					leftT: took.row.containers[event.containerIndex].left,
 					freeT: took.freeT,

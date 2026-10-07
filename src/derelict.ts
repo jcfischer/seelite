@@ -9,6 +9,9 @@ import { CANISTER_SCOOP_RADIUS_KM } from "./raider-wreck";
 import { type System, bodyVelocity } from "./sim";
 import { PLANET_APPROACH_RADIUS } from "./planet-approach-boundary";
 import { placeBodies } from "./system";
+import { relayPlan } from "./relay-slot";
+import { relayPosition, relayVelocity } from "./pirate-relay";
+import type { DeathWreckRow } from "./world-state";
 import { type Vec3, add, scale, v3, rotateAbout, length } from "./vec3";
 
 export const DERELICT_TUMBLE_RAD_S = 0.012;
@@ -24,7 +27,9 @@ const hullRadius = (id: HullId) => {
 const PILOT_REACH_KM = Math.max(...PURCHASABLE_HULL_IDS.map(hullRadius));
 /** Entire scoop sphere clear for the largest flyable pilot, even with either hull turned. */
 export function tetherOffset(hull: HullId, index: number): Vec3 {
-	const angle = (index * Math.PI * 2) / 5;
+	const angle =
+		(index * Math.PI * 2) / 5 +
+		Math.floor(index / 5) * Math.PI * (3 - Math.sqrt(5));
 	const reach =
 		hullRadius(hull) + PILOT_REACH_KM + CANISTER_SCOOP_RADIUS_KM + 0.02;
 	return v3(Math.cos(angle) * reach, Math.sin(angle) * reach, 0);
@@ -41,7 +46,7 @@ const poseFrames = new WeakMap<
 		}
 	>
 >();
-interface DerelictPose {
+export interface DerelictPose {
 	bodyId: string;
 	hull: HullId;
 	offset: Vec3;
@@ -49,6 +54,38 @@ interface DerelictPose {
 	vel: Vec3;
 	nose: Vec3;
 	up: Vec3;
+}
+/** The translating frame may be a body, the star, or the relay's own orbit. */
+export function wreckFramePose(system: System, bodyId: string, at: number) {
+	if (bodyId === "relay-00") {
+		const plan = relayPlan(system.contents, system.record.seed);
+		if (!plan) throw Error("death wreck has no relay frame");
+		return {
+			pos: relayPosition(plan, system.contents, at),
+			vel: relayVelocity(plan, system.contents, at),
+		};
+	}
+	const body = placeBodies(system.contents, at).find((b) => b.id === bodyId);
+	if (!body) throw Error("death wreck has no body frame");
+	return { pos: body.pos, vel: bodyVelocity(system, bodyId, at) };
+}
+export function deathWreckPose(
+	system: System,
+	row: DeathWreckRow,
+	at: number,
+): DerelictPose {
+	const frame = wreckFramePose(system, row.bodyId, at);
+	const unit = scale(v3(0.3, 0.8, 0.5), 1 / Math.hypot(0.3, 0.8, 0.5));
+	const phase = (at - row.lostAt) * DERELICT_TUMBLE_RAD_S;
+	return {
+		bodyId: row.bodyId,
+		hull: row.hull,
+		offset: row.offset,
+		pos: add(frame.pos, row.offset),
+		vel: frame.vel,
+		nose: rotateAbout(v3(0, 0, -1), unit, phase),
+		up: rotateAbout(v3(0, 1, 0), unit, phase),
+	};
 }
 export function derelictPose(
 	system: System,

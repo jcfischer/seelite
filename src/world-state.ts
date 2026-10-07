@@ -52,8 +52,9 @@ import {
 	derelictTimeline,
 } from "./derelict-slots";
 import { generateGalaxy, type SystemRecord, systemAt } from "./galaxy";
-import { COMMODITIES } from "./market";
-import type { HullId } from "./hull";
+import { COMMODITIES, EQUIPMENT, ESCAPE_POD } from "./market";
+import { HULL_IDS, type HullId } from "./hull";
+import type { Vec3 } from "./vec3";
 import { fnv1a } from "./rng";
 import { RAIDER_HULL_ID, raiderSlots } from "./raider-slots";
 import {
@@ -397,9 +398,9 @@ export interface DerelictContainer {
 	kind: DerelictContainerKind;
 	/** A commodity name for a good, an `EQUIPMENT` name for a fitting. */
 	id: string;
-	/** The tonnes the draw put in it. */
+	/** Initial quantity: tonnes, or native kg/g for a death wreck's small good. */
 	tonnes: number;
-	/** The tonnes still in it. Zero is a scooped-out container, still listed,
+	/** Remaining quantity in the same unit. Zero is a scooped-out container, still listed,
 	 *  so a container index names one container for the instance's life. */
 	left: number;
 }
@@ -426,16 +427,29 @@ export interface DerelictRow {
 	salvaged?: { at: number; cause: Provenance };
 }
 
+/** One commander-owned wreck across the eight galaxies, never a generated slot.
+ * Shares the salvage row; only its non-derivable placement is extra. */
+export interface DeathWreckRow extends DerelictRow {
+	key: CarrierKey;
+	hull: HullId;
+	bodyId: string;
+	offset: Vec3;
+}
+export const isDeathWreckKey = (key: CarrierKey) =>
+	localCarrierIdOfKey(key) === "commander-wreck";
+export const DEATH_WRECK_MAX_CONTAINERS = 512;
+
 /**
- * §7's typed per-galaxy envelope: **seven state domains** — objective deltas,
+ * §7's typed per-galaxy envelope: **eight state domains** — objective deltas,
  * causal episodes, knowledge, market deficits, visited flags, legal status and // glossary-ignore: slot, Legal status
- * derelict rows.
+ * derelict rows and the commander death wreck.
  *
- * `galaxyIndex` is the container's identity rather than a seventh domain. It
+ * `galaxyIndex` is the container's identity rather than a state domain. It
  * lives here once, and every station-keyed domain stores the envelope-relative
  * `(systemIndex, localCarrierId)` pair and gets its galaxy from the container.
  */
 export interface GalaxyEnvelope {
+	deathWreck?: DeathWreckRow;
 	galaxyIndex: number;
 	objective: Record<CarrierKey, ObjectiveDelta>;
 	episodes: Record<CarrierKey, CausalEpisode>;
@@ -459,7 +473,7 @@ export interface WorldState {
 }
 
 /**
- * The envelope's declared fields: **seven state domains plus the container's
+ * The envelope's declared fields: **eight state domains plus the container's
  * own identity**, `galaxyIndex`, which is not one of them. Anything else in a
  * serialized envelope is rejected (§9.2) — a save is not an open bag.
  */
@@ -472,6 +486,7 @@ const ENVELOPE_DOMAINS = [
 	"visited",
 	"legalStatus",
 	"derelicts",
+	"deathWreck",
 ] as const;
 
 /**
@@ -480,7 +495,10 @@ const ENVELOPE_DOMAINS = [
  * envelope that writes `"derelicts": {}` would move the integrity hash of every
  * save taken before it — the reason `witnesses` is omitted when empty (§7).
  */
-const OPTIONAL_ENVELOPE_DOMAINS: ReadonlySet<string> = new Set(["derelicts"]);
+const OPTIONAL_ENVELOPE_DOMAINS: ReadonlySet<string> = new Set([
+	"derelicts",
+	"deathWreck",
+]);
 
 const WORLD_FIELDS = [
 	"worldSchemaVersion",
@@ -1876,13 +1894,34 @@ export const effectiveDerelict = (
 	galaxyIndex: number,
 	key: CarrierKey,
 	gameTime: number,
-): EffectiveDerelict =>
-	effectiveFrom(
+): EffectiveDerelict => {
+	if (isDeathWreckKey(key)) {
+		const row = world.galaxies[galaxyIndex].deathWreck;
+		if (!row || row.key !== key)
+			return { condition: "empty", firstLossAt: Infinity };
+		if (row.salvaged)
+			return {
+				condition: "salvaged",
+				instanceOrdinal: row.instanceOrdinal,
+				lostAt: row.lostAt,
+				salvagedAt: row.salvaged.at,
+				cause: row.salvaged.cause,
+				nextLossAt: Infinity,
+			};
+		return {
+			...row,
+			condition: "destroyed",
+			salvagerAt: Infinity,
+			stored: true,
+		};
+	}
+	return effectiveFrom(
 		derelictSite(world.seed, galaxyIndex, key),
 		key,
 		world.galaxies[galaxyIndex].derelicts[key],
 		gameTime,
 	);
+};
 
 /** The row an instance adrift writes when it is first touched: its drawn
  *  contents, every container full. */
@@ -1932,6 +1971,32 @@ export const scoopDerelict = (
 	tonnes: number,
 	at: number,
 ): WorldState => {
+	if (isDeathWreckKey(key)) {
+		return withEnvelope(world, galaxyIndex, at, (env) => {
+			const row = env.deathWreck;
+			const item =
+				row?.key === key && Number.isInteger(containerIndex)
+					? row.containers[containerIndex]
+					: undefined;
+			if (
+				!item ||
+				!Number.isInteger(tonnes) ||
+				tonnes <= 0 ||
+				tonnes > item.left
+			)
+				fail("death wreck: invalid scoop");
+			const containers = row!.containers.map((c, i) =>
+				i === containerIndex ? { ...c, left: c.left - tonnes } : c,
+			);
+			if (containers.every((c) => c.left === 0)) {
+				const { deathWreck, ...rest } = env;
+				const knowledge = { ...env.knowledge };
+				delete knowledge[key];
+				return { ...rest, knowledge };
+			}
+			return { ...env, deathWreck: { ...row!, containers } };
+		});
+	}
 	const site = derelictSite(world.seed, galaxyIndex, key);
 	if (!Number.isInteger(tonnes) || tonnes <= 0)
 		fail(`scoopDerelict: ${tonnes} is not a whole number of tonnes`);
@@ -2074,6 +2139,21 @@ const canonicalDerelict = (r: DerelictRow) => ({
 
 const canonicalEnvelope = (env: GalaxyEnvelope) => ({
 	galaxyIndex: env.galaxyIndex,
+	...(env.deathWreck
+		? {
+				deathWreck: {
+					...canonicalDerelict(env.deathWreck),
+					key: env.deathWreck.key,
+					hull: env.deathWreck.hull,
+					bodyId: env.deathWreck.bodyId,
+					offset: {
+						x: env.deathWreck.offset.x,
+						y: env.deathWreck.offset.y,
+						z: env.deathWreck.offset.z,
+					},
+				},
+			}
+		: {}),
 	objective: canonicalMap(env.objective, (d) => ({
 		instanceOrdinal: d.instanceOrdinal,
 		condition: d.condition,
@@ -2532,17 +2612,34 @@ const DERELICT_GOOD_IDS: ReadonlySet<string> = new Set(
 	COMMODITIES.filter((c) => c.unit === "t").map((c) => c.name),
 );
 const DERELICT_FITTING_IDS: ReadonlySet<string> = new Set(DERELICT_FITTINGS);
+const DEATH_GOOD_IDS: ReadonlySet<string> = new Set(
+	COMMODITIES.map((c) => c.name),
+);
+const DEATH_FITTING_IDS: ReadonlySet<string> = new Set(
+	EQUIPMENT.filter((e) => e.name !== ESCAPE_POD).map((e) => e.name),
+);
 
 const parseDerelictContainer = (
 	raw: unknown,
 	what: string,
+	death = false,
 ): DerelictContainer => {
 	const o = asObject(raw, what);
 	const kind = str(o, "kind", what);
 	if (kind !== "good" && kind !== "fitting")
 		fail(`${what}: container kind ${kind} is unknown`);
 	const id = str(o, "id", what);
-	if (!(kind === "good" ? DERELICT_GOOD_IDS : DERELICT_FITTING_IDS).has(id))
+	if (
+		!(
+			death
+				? kind === "good"
+					? DEATH_GOOD_IDS
+					: DEATH_FITTING_IDS
+				: kind === "good"
+					? DERELICT_GOOD_IDS
+					: DERELICT_FITTING_IDS
+		).has(id)
+	)
 		fail(`${what}: ${id} is not a ${kind} a derelict can hold`);
 	const tonnes = ordinal(o, "tonnes", what);
 	if (tonnes === 0) fail(`${what}: a container drawn with no tonnes`);
@@ -2560,18 +2657,24 @@ const parseDerelictContainer = (
  * not hold, more than five containers, tonnes above the drawn line, and a
  * stripped row that is not marked salvaged or the reverse.
  */
-const parseDerelictRow = (value: unknown, key: string): DerelictRow => {
+const parseDerelictRow = (
+	value: unknown,
+	key: string,
+	death = false,
+): DerelictRow => {
 	const what = `derelict ${key}`;
-	if (derelictOrdinalOf(localCarrierIdOfKey(key as CarrierKey)) === null)
+	if (
+		!death &&
+		derelictOrdinalOf(localCarrierIdOfKey(key as CarrierKey)) === null
+	)
 		fail(`derelicts: ${key} is not a derelict slot`);
 	const row = asObject(value, what);
 	const lostAt = num(row, "lostAt", what);
 	const raw = asObject(row.containers, `${what} containers`);
 	const indices = Object.keys(raw);
-	if (indices.length === 0 || indices.length > DERELICT_MAX_CONTAINERS)
-		fail(
-			`${what}: ${indices.length} containers; a row holds 1 to ${DERELICT_MAX_CONTAINERS}`,
-		);
+	const maximum = death ? DEATH_WRECK_MAX_CONTAINERS : DERELICT_MAX_CONTAINERS;
+	if (indices.length === 0 || indices.length > maximum)
+		fail(`${what}: ${indices.length} containers; a row holds 1 to ${maximum}`);
 	const containers: DerelictContainer[] = [];
 	for (const index of indices) {
 		const i = Number(index);
@@ -2580,6 +2683,7 @@ const parseDerelictRow = (value: unknown, key: string): DerelictRow => {
 		containers[i] = parseDerelictContainer(
 			raw[index],
 			`${what} container ${index}`,
+			death,
 		);
 	}
 	let salvaged: DerelictRow["salvaged"];
@@ -2607,6 +2711,32 @@ const parseDerelictRow = (value: unknown, key: string): DerelictRow => {
 		lostAt,
 		containers,
 		...(salvaged ? { salvaged } : {}),
+	};
+};
+
+const parseDeathWreck = (raw: unknown): DeathWreckRow => {
+	const o = asObject(raw, "death wreck");
+	const key = str(o, "key", "death wreck") as CarrierKey;
+	if (
+		!isCarrierKey(key) ||
+		!isSystemIndex(systemIndexOfKey(key)) ||
+		!isDeathWreckKey(key)
+	)
+		fail("death wreck: invalid commander key");
+	const hull = str(o, "hull", "death wreck");
+	if (!(HULL_IDS as readonly string[]).includes(hull))
+		fail("death wreck: unknown hull");
+	const offset = asObject(o.offset, "death wreck offset");
+	return {
+		...parseDerelictRow(raw, key, true),
+		key,
+		hull: hull as HullId,
+		bodyId: str(o, "bodyId", "death wreck"),
+		offset: {
+			x: num(offset, "x", "death wreck"),
+			y: num(offset, "y", "death wreck"),
+			z: num(offset, "z", "death wreck"),
+		},
 	};
 };
 
@@ -2709,6 +2839,9 @@ const parseEnvelope = (raw: unknown, slot: number): GalaxyEnvelope => {
 
 	return {
 		galaxyIndex,
+		...(o.deathWreck === undefined
+			? {}
+			: { deathWreck: parseDeathWreck(o.deathWreck) }),
 		objective,
 		episodes,
 		knowledge,
@@ -2773,6 +2906,44 @@ export function parseWorld(raw: unknown): WorldState {
 		gameTime: num(o, "gameTime", "snapshot"),
 		galaxies: (o.galaxies as unknown[]).map((g, i) => parseEnvelope(g, i)),
 	};
+	if (world.galaxies.filter((g) => g.deathWreck).length > 1)
+		fail("death wreck: more than one commander wreck");
+	for (const env of world.galaxies) {
+		const ownKeys = (Object.keys(env.knowledge) as CarrierKey[]).filter(
+			isDeathWreckKey,
+		);
+		if (ownKeys.some((key) => key !== env.deathWreck?.key))
+			fail("death wreck: orphan own loss knowledge");
+		const row = env.deathWreck;
+		if (!row) continue;
+		if (row.lostAt < 0 || row.lostAt > world.gameTime || row.salvaged)
+			fail("death wreck: invalid loss time or stripped row");
+		const record = systemAt(
+			world.seed,
+			env.galaxyIndex,
+			systemIndexOfKey(row.key),
+		);
+		const contents = generateContents(record);
+		const ids = [
+			contents.star.id,
+			...contents.planets.flatMap((p) => [p.id, ...p.moons.map((m) => m.id)]),
+			...contents.stations.map((s) => s.id),
+		];
+		if (
+			!ids.includes(row.bodyId) &&
+			!(row.bodyId === "relay-00" && relayPlan(contents, record.seed))
+		)
+			fail("death wreck: unknown frame");
+		const known = env.knowledge[row.key];
+		if (
+			!known ||
+			known.observedInstanceOrdinal !== row.instanceOrdinal ||
+			known.source !== "own loss" ||
+			known.observedAt !== row.lostAt ||
+			known.observedCondition !== "destroyed"
+		)
+			fail("death wreck: missing own loss knowledge");
+	}
 	// glossary-ignore: slot
 	// **A derelict key names a slot its system holds**, which needs the seed and
 	// so cannot be checked inside one envelope. `derelict-02` in a lawful system

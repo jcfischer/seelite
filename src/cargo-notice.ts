@@ -21,6 +21,7 @@ export const SCOOP_NOTICE_S = 2.4;
 
 /** One scoop attempt, as both lines below and the call site describe it. */
 export interface ScoopEvent {
+	unit?: "t" | "kg" | "g";
 	commodity: string;
 	tonnes: number;
 	accepted: boolean;
@@ -42,8 +43,8 @@ export function scoopNotice(input: ScoopEvent): string {
 	const good = input.commodity.toUpperCase();
 	if (!input.accepted)
 		return `HOLD FULL${input.freeT === undefined ? "" : "  " + input.freeT + " t FREE"}  ${good} LEFT IN SPACE`;
-	const left = input.leftT ? `  ${input.leftT} t LEFT` : "";
-	return `SCOOPED  ${input.tonnes} t ${good}${left}`;
+	const left = input.leftT ? `  ${input.leftT} ${input.unit ?? "t"} LEFT` : "";
+	return `SCOOPED  ${input.tonnes} ${input.unit ?? "t"} ${good}${left}`;
 }
 
 /**
@@ -55,8 +56,10 @@ export function scoopNotice(input: ScoopEvent): string {
  */
 export function scoopExit(input: ScoopEvent): string {
 	if (!input.accepted) return "hold full: canister left in space";
-	const left = input.leftT ? `, ${input.leftT} t left in the canister` : "";
-	return `scooped ${input.tonnes} t ${input.commodity}${left}`;
+	const left = input.leftT
+		? `, ${input.leftT} ${input.unit ?? "t"} left in the canister`
+		: "";
+	return `scooped ${input.tonnes} ${input.unit ?? "t"} ${input.commodity}${left}`;
 }
 
 /** The notice on the glass: its words, how long it stands, whether it is a

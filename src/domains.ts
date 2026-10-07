@@ -161,6 +161,8 @@ export const DOMAIN = {
 	STATION_FORM: 33,
 	/** Seeded body frame, roster hull and tumble of a derelict (node #732). */
 	DERELICT_POSE: 34,
+	/** Per-death, per-item survival; independent of salvage schedules. */
+	DEATH_WRECK: 35,
 } as const;
 
 export type DomainName = keyof typeof DOMAIN;

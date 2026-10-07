@@ -74,7 +74,12 @@ import {
 	liveDerelicts,
 } from "./long-range-scanner";
 import type { WreckCue } from "./scanner-view";
-import { derelictPose, tetherPose, tetherOffset } from "./derelict";
+import {
+	derelictPose,
+	deathWreckPose,
+	tetherPose,
+	tetherOffset,
+} from "./derelict";
 import {
 	buildDerelictMesh,
 	disposeDerelict,
@@ -13097,9 +13102,13 @@ class Game {
 	private readonly slotOperational = (key: CarrierKey): boolean =>
 		this.carrierCondition(key).condition === "operational";
 
-	/**
-	 * Live wreck instances at one clock; neither a lead nor a discovery write.
-	 */
+	/** The exact translating frame held at death, including relay fights. */
+	deathFrameId(): string {
+		return this.assistFrameSource().label === "RELAY FRAME"
+			? "relay-00"
+			: (this.frameBody?.id ?? this.world.system.contents.star.id);
+	}
+	/** Live wreck instances at one clock; neither a lead nor a discovery write. */
 	derelictsAt(at = this.world.gameTime) {
 		return liveDerelicts(this.commerceWorld, this.world.system, at);
 	}
@@ -13174,12 +13183,17 @@ class Game {
 	}
 	private derelictSolids(dt: number) {
 		return this.derelictsAt().map(({ key, row, pose: start }) => {
-			const end = derelictPose(
-				this.world.system,
-				key,
-				row.instanceOrdinal,
-				this.world.gameTime + dt,
-			);
+			const own =
+				this.commerceWorld.galaxies[this.world.galaxy.index].deathWreck;
+			const end =
+				own?.key === key
+					? deathWreckPose(this.world.system, own, this.world.gameTime + dt)
+					: derelictPose(
+							this.world.system,
+							key,
+							row.instanceOrdinal,
+							this.world.gameTime + dt,
+						);
 			return {
 				id: key,
 				motion: {
@@ -20859,7 +20873,11 @@ if (postcard) {
 		try {
 			const restored =
 				store && slot
-					? await store.revertToLastDocked(game.commanderRecord(), cause)
+					? await store.revertToLastDocked(
+							game.commanderRecord(),
+							cause,
+							game.deathFrameId(),
+						)
 					: null;
 			if (restored && slot) {
 				await catalog.chooseCommander(slot);

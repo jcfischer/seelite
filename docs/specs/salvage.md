@@ -210,6 +210,48 @@ tuned by #705.
 
 ## 6. Builds (S27)
 
+### Death wreck implementation (node #705)
+
+The starting survival share remains **50%**, not a measured balance result.
+`DOMAIN.DEATH_WRECK` gives each owned cargo lot and each fitting its own draw,
+keyed on world seed, exact death time and item identity. Adding or reordering an
+item moves no sibling roll. The dying inventory is the input, so owned salvage
+collected since launch is eligible (S19). Entrusted Requests lots, the hull and
+every Escape Pod are excluded. Eject excludes fitted equipment; unfitted items
+carried in the hold are lost cargo and remain eligible.
+
+One optional `deathWreck` row sits in its galaxy's world envelope. The same
+container row and scoop law serve both sources. Death adds only the lost hull
+as a drawing recipe, a frame id and a translating offset; the hull is never
+recoverable cargo. A death replaces the prior row and its own-loss knowledge
+across all eight galaxies. A complete strip removes both. There is no expiry
+and no other-salvager timer; a roll with no survivors leaves no row. The save
+schema is **12**; versions 2–11 migrate without a death wreck, and a pre-12
+record carrying one refuses. The optional empty domain is omitted, preserving
+older world hashes without a world-schema or generator bump.
+
+The pilot's actual frame is kept, including the relay's own translating frame.
+A station-space death projects to the nearest centre outside both the station
+proxy's keep-out sphere and its corridor cylinder, enlarged to clear the wreck
+and tethers. The nearest-point tie on the axis uses the aperture reference.
+The wreck's slow tumble changes no trajectory.
+
+Own-loss knowledge is written at death with that time as its age. It makes a
+contact immediately anywhere in the same system, without a scanner. The
+scanner's sweep and passive cue also read the row; sweep provenance can remain
+after recovery. Recovered fittings consume hold space and use the existing
+Equipment tab: an incompatible fit refuses with the hull-mount reason, while
+selling remains available. No automatic sale or fitting happens in flight.
+Gold, Platinum and Gem-Stones recover in their native kg/g quantities and, as
+ordinary trade already does, consume no tonne hold space. The shared row's
+`tonnes` and `left` fields carry native units for those three goods; all other
+goods and all fittings remain tonnes.
+
+`tests/death-wreck.test.ts` covers the roll, save, placement and recovery law.
+`scripts/probe-death-wreck.mjs` covers the real death/reload, painted wreck and
+the live proximity scoop; its return is a controlled placement, not proof of
+an approach flown by a person.
+
 | Build | Carries |
 | --- | --- |
 | The derelict row: slots, schedule, contents and the save | S1, S2, S6, S16, S18's draw, S21 — and the amendments it owes `persistent-world-state.md`: §2's carrier namespace gains the derelict slot, §3.2's conditions gain `salvaged` |
