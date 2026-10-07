@@ -102,3 +102,29 @@ runs; 77 of 95 probes were outside the selected run.
 The full browser suite, review, principal approval and
 `cp-seelite-death-wreck` remain delivery gates owned by the supervisor and
 principal. This receipt does not close the graph node.
+
+## Sage round 6 — explicit death-container units
+
+Schema 12 now persists an explicit native `unit` on every death container.
+The parser requires a good's unit to match `commodity(id).unit` and requires
+`t` for fittings. Generated derelict rows retain their tonne-only wire form.
+A red-first regression checks all three units, partial remaining quantities,
+and missing, unknown or mismatched units with valid recomputed checksums.
+The existing sweep test now includes wreck-free, other-system and removed-wreck
+negative controls; the source already filtered those cases correctly.
+
+Verification: `npm test` passed 5,568 tests across 303 files, 0 failures;
+`npm run build`, format, lint, launcher wiring and whitespace checks passed.
+The semantic selector chose boot, death-wreck, death, derelict, hold,
+raider-consequence and traffic-engagement. The canonical GPU runner ran that
+exact seven-probe selection sequentially: 7/7 passed in 104 s, peak load 49.6,
+on ANGLE Metal / Apple M1 Pro. The death-wreck probe now checks that the real
+reload preserves the explicit units before the live scoop recovers the cargo.
+The initial sandboxed browser launch aborted before any probe ran; the
+launch-permitted retry produced the passing result. This is partial evidence:
+88 of 95 probes were not run, and the supervisor owns the full-suite gate.
+
+The optional Holdings/simulation boundary refactor, parser profiles, validation
+extraction, ordinal helper and shared decrement are deferred to avoid broadening
+this schema repair. Notice-unit hoisting and the probe lookup helper are deferred
+as cosmetic cleanup. No graph node or map was edited.

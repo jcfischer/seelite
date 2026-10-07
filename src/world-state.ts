@@ -52,7 +52,13 @@ import {
 	derelictTimeline,
 } from "./derelict-slots";
 import { generateGalaxy, type SystemRecord, systemAt } from "./galaxy";
-import { COMMODITIES, EQUIPMENT, ESCAPE_POD } from "./market";
+import {
+	COMMODITIES,
+	EQUIPMENT,
+	ESCAPE_POD,
+	commodity,
+	type CommodityUnit,
+} from "./market";
 import { HULL_IDS, type HullId } from "./hull";
 import type { Vec3 } from "./vec3";
 import { fnv1a } from "./rng";
@@ -399,7 +405,9 @@ export interface DerelictContainer {
 	kind: DerelictContainerKind;
 	/** A commodity name for a good, an `EQUIPMENT` name for a fitting. */
 	id: string;
-	/** Initial quantity: tonnes, or native kg/g for a death wreck's small good. */
+	/** Explicit native unit on death containers; older derelict rows imply tonnes. */
+	unit?: CommodityUnit;
+	/** Initial quantity in `unit` (tonnes when omitted). */
 	tonnes: number;
 	/** Remaining quantity in the same unit. Zero is a scooped-out container, still listed,
 	 *  so a container index names one container for the instance's life. */
@@ -2166,7 +2174,13 @@ const canonicalDerelict = (r: DerelictRow) => ({
 	containers: Object.fromEntries(
 		r.containers.map((c, i) => [
 			String(i),
-			{ kind: c.kind, id: c.id, tonnes: c.tonnes, left: c.left },
+			{
+				kind: c.kind,
+				id: c.id,
+				tonnes: c.tonnes,
+				left: c.left,
+				...(c.unit === undefined ? {} : { unit: c.unit }),
+			},
 		]),
 	),
 	...(r.salvaged
@@ -2680,14 +2694,24 @@ const parseDerelictContainer = (
 		fail(
 			`${what}: ${id} is not a ${kind} a ${death ? "death wreck" : "derelict"} can hold`,
 		);
+	const unit = death ? str(o, "unit", what) : "t";
+	const expectedUnit = kind === "good" ? commodity(id).unit : "t";
+	if (unit !== expectedUnit)
+		fail(`${what}: unit ${unit} does not match ${id} (${expectedUnit})`);
 	const tonnes = ordinal(o, "tonnes", what);
 	if (tonnes === 0) fail(`${what}: a container drawn with no tonnes`);
 	const left = ordinal(o, "left", what);
 	if (left > tonnes)
 		fail(
-			`${what}: ${left} t left is above the ${tonnes} t line it was drawn with`,
+			`${what}: ${left} ${unit} left is above the ${tonnes} ${unit} line it was drawn with`,
 		);
-	return { kind: kind as DerelictContainerKind, id, tonnes, left };
+	return {
+		kind: kind as DerelictContainerKind,
+		id,
+		tonnes,
+		left,
+		...(death ? { unit: unit as CommodityUnit } : {}),
+	};
 };
 
 /**

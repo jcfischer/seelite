@@ -5,7 +5,7 @@ import { carrierKey } from "./carrier-key";
 import type { DeathCause } from "./death-cost";
 import { DOMAIN } from "./domains";
 import { fnv1a, seededRand } from "./rng";
-import { EQUIPMENT, ESCAPE_POD } from "./market";
+import { EQUIPMENT, ESCAPE_POD, commodity } from "./market";
 import type { CommanderState } from "./station-commerce";
 import type { CommanderRecord } from "./save-envelope";
 import { systemAt } from "./galaxy";
@@ -42,7 +42,13 @@ export function deathWreckContents(
 		token: string,
 	) => {
 		if (tonnes > 0 && survives(token))
-			containers.push({ kind, id, tonnes, left: tonnes });
+			containers.push({
+				kind,
+				id,
+				tonnes,
+				left: tonnes,
+				unit: kind === "good" ? commodity(id).unit : "t",
+			});
 	};
 	for (const [id, amount] of Object.entries(state.cargo).sort(([a], [b]) =>
 		a.localeCompare(b),

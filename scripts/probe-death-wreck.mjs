@@ -92,6 +92,17 @@ try {
 		JSON.stringify(after.row),
 	);
 	check(
+		"death reload preserves explicit units for cargo and fittings",
+		[
+			["Food", "t"],
+			["Gold", "kg"],
+			["Docking Computer", "t"],
+		].every(([id, unit]) =>
+			after.row?.containers.some((c) => c.id === id && c.unit === unit),
+		),
+		JSON.stringify(after.row?.containers),
+	);
+	check(
 		"own loss is already a contact without a scanner and the pilot wakes empty",
 		after.contact?.name.includes("Own wreck") &&
 			after.equipment.length === 0 &&

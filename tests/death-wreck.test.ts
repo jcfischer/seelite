@@ -120,7 +120,15 @@ test("wreck recovery takes native kg/g units with a full hold and updates basis 
 			"destroyed",
 		);
 		const wreck = world.galaxies[0].deathWreck!;
-		wreck.containers = [{ kind: "good", id: good, tonnes: 12, left: 12 }];
+		wreck.containers = [
+			{
+				kind: "good",
+				id: good,
+				tonnes: 12,
+				left: 12,
+				unit: good === "Gem-Stones" ? "g" : "kg",
+			},
+		];
 		const holdings = {
 			commander: full,
 			requests: dying.requests,
@@ -149,6 +157,46 @@ test("wreck recovery takes native kg/g units with a full hold and updates basis 
 			cr: 30,
 		});
 		expect(outcome.world.galaxies[0].deathWreck).toBeUndefined();
+	}
+});
+
+test("schema 12 persists explicit native units and refuses missing or mismatched units", () => {
+	const world = worldAfterDeath(
+		{ ...newWorld(47), gameTime: 10 },
+		dying,
+		"destroyed",
+	);
+	const row = world.galaxies[0].deathWreck!;
+	row.containers = [
+		{ kind: "good", id: "Food", tonnes: 8, left: 3, unit: "t" },
+		{ kind: "good", id: "Gold", tonnes: 12, left: 7, unit: "kg" },
+		{ kind: "good", id: "Platinum", tonnes: 9, left: 4, unit: "kg" },
+		{ kind: "good", id: "Gem-Stones", tonnes: 6, left: 2, unit: "g" },
+		{ kind: "fitting", id: "Docking Computer", tonnes: 1, left: 1, unit: "t" },
+	];
+	const saved = serializeSave({ world, commander: dying }) as any;
+	expect(Object.values(saved.world.galaxies[0].deathWreck.containers)).toEqual(
+		row.containers,
+	);
+	expect(parseSave(saved).world.galaxies[0].deathWreck?.containers).toEqual(
+		row.containers,
+	);
+	for (let index = 0; index < row.containers.length; index++) {
+		for (const unit of [
+			undefined,
+			"lb",
+			...["t", "kg", "g"].filter((u) => u !== row.containers[index].unit),
+		]) {
+			const bad = structuredClone(saved);
+			const item = bad.world.galaxies[0].deathWreck.containers[index];
+			if (unit === undefined) delete item.unit;
+			else item.unit = unit;
+			const { integrity: worldIntegrity, ...worldBody } = bad.world;
+			bad.world.integrity = fnv1a(JSON.stringify(worldBody));
+			const { integrity: saveIntegrity, ...saveBody } = bad;
+			bad.integrity = fnv1a(JSON.stringify(saveBody));
+			expect(() => parseSave(bad)).toThrow("unit");
+		}
 	}
 });
 
@@ -538,8 +586,15 @@ test("sweep provenance names an own wreck but remains valid after it disappears"
 		dying,
 		"destroyed",
 	);
+	const hasOwnWreck = (w: WorldState, systemIndex = dying.systemIndex) =>
+		sweepSources(w, 0, systemIndex).some((r) =>
+			r.id.endsWith(":commander-wreck"),
+		);
+	expect(hasOwnWreck({ ...newWorld(47), gameTime: 10 })).toBe(false);
+	expect(hasOwnWreck(world, (dying.systemIndex + 1) % 256)).toBe(false);
+	expect(hasOwnWreck(withDeathWreck(world, 0, undefined, 10))).toBe(false);
 	const readings = sweepSources(world, 0, dying.systemIndex);
-	expect(readings.some((r) => r.id.endsWith(":commander-wreck"))).toBe(true);
+	expect(hasOwnWreck(world)).toBe(true);
 	expect(
 		parseSweepReadings(readings, { ...newWorld(47), gameTime: 10 }),
 	).toEqual(readings);

@@ -246,8 +246,10 @@ Equipment tab: an incompatible fit refuses with the hull-mount reason, while
 selling remains available. No automatic sale or fitting happens in flight.
 Gold, Platinum and Gem-Stones recover in their native kg/g quantities and, as
 ordinary trade already does, consume no tonne hold space. The shared row's
-`tonnes` and `left` fields carry native units for those three goods; all other
-goods and all fittings remain tonnes.
+`tonnes` and `left` fields carry quantities in the death container's explicit
+`unit` (`t`, `kg` or `g`). The parser requires that unit to match the commodity
+table; fittings require `t`. Older generated derelict containers omit `unit`
+and remain tonne-only.
 This native-unit recovery belongs to wreck containers only; ordinary drifting
 canisters retain their tonne-only scoop rule.
 
