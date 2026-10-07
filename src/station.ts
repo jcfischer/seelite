@@ -177,8 +177,10 @@ export interface StationPlan {
  * - **its macro fixtures** under the finishes that carry them
  *   (`station-fixtures.ts`'s declarations), which the Ring, the Drum and the
  *   Warren have beside the three that fly, and every other form lacks;
- * - for **trade E, the Wheel**, the bay rows that measure against `core` —
- *   its slot is cut into `hub` (#334's review), and // glossary-ignore: slot
+ * - **the per-form rows it fails on its own** — bay and interior, §5
+ *   fixtures, glow. Every candidate but the Assembly and the Warren fails a
+ *   bay or interior row, and node #717's receipt lists each form's. The
+ *   Wheel's slot is cut into `hub` (#334's review), and // glossary-ignore: slot
  *   `tests/station-wheel.test.ts` holds the hub meanwhile;
  * - and the **canonical view set before and after**, because a view's
  *   station can change form on a fixed seed once its pool has two members.

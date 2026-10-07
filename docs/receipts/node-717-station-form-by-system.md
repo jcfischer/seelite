@@ -152,39 +152,77 @@ galaxies).
 
 ## What each candidate owes before it joins a pool
 
-| Form | Proxy | Macro fixtures | Other |
-|---|---|---|---|
-| trade b Ring | none | declared | — |
-| trade c Drum | none | declared | — |
-| trade d Assembly | none | none | solved form: proxy must read the plan, like the Works |
-| trade e Wheel | none | none | the bay-in-`core` row: its slot is cut into `hub` (#334) <!-- glossary-ignore: slot --> |
-| shipyard b Hangar | none | none | — <!-- glossary-ignore: Hangar --> |
-| shipyard c Slipway | none | none | — |
-| refinery a Warren | none | declared | never reviewed by the principal |
-| refinery b Collar | none | none | never reviewed by the principal |
-| refinery c Spar | none | none | never reviewed by the principal |
+Measured over the whole suite (`bun test tests/`), one candidate at a time, at
+`a24c71e`. Each run was a temporary, uncommitted edit that adds the one form to
+its role's pool and leaves the other pools as shipped — for example `trade:
+["a", "b"]` in `src/station.ts` — then restored the file and checked the tree
+was clean. The shipped suite at that head is 5,375 pass, 0 fail.
 
-Each "none" is a red row once the form is pooled:
+One candidate per run, because several rows loop over the forms inside a
+single `test()` and stop at the first form that fails, so a run with two new
+forms would hide the second's reds.
 
-- the proxy rows (`tests/station-proxy.test.ts`);
-- the industrial-finish fixture row (`tests/station-finish.test.ts`);
-- for the Wheel, the bay row (`tests/station-interior.test.ts`).
+| Form | Red | Pool pin | Proxy budget | Throws on the missing proxy | Fails on its own |
+|---|---|---|---|---|---|
+| trade b Ring | 76 | 1 | 5 | 66 | 4 |
+| trade c Drum | 76 | 1 | 5 | 66 | 4 |
+| trade d Assembly | 74 | 1 | 5 | 66 | 2 |
+| trade e Wheel | 79 | 1 | 5 | 66 | 7 |
+| shipyard b Hangar <!-- glossary-ignore: Hangar --> | 29 | 1 | 5 | 18 | 5 |
+| shipyard c Slipway | 30 | 1 | 5 | 18 | 6 |
+| refinery a Warren | 29 | 1 | 5 | 21 | 2 |
+| refinery b Collar | 33 | 1 | 5 | 21 | 6 |
+| refinery c Spar | 34 | 1 | 5 | 21 | 7 |
+
+The columns:
+
+- **Pool pin** is red by design: `the shipped pools are the forms each role
+  already flew` (`station-form`). Growing a pool updates it.
+- **Proxy budget** is the five rows of `station proxy budget`
+  (`station-proxy`). No candidate has a proxy.
+- **Throws on the missing proxy** are rows that build a generated system
+  whose station draws the candidate, then ask for its proxy, and throw
+  `<role> form <id> has no proxy`. Every trade candidate gave the same files:
+  `collision-traffic` 26, `combat-enemy-avoidance` 16, `collision-stations`
+  15, `collision-handoff` 8 and `station-form` 1. Shipyard gave
+  `combat-enemy-avoidance` 15 and `collision-stations` 3. Refinery gave
+  `combat-enemy-avoidance` 15 and `collision-stations` 6. These rows say
+  nothing about the form yet: what each would read once a proxy exists is
+  not measured.
+- **Fails on its own** are rows that name the candidate and fail on it:
+
+| Form | Rows |
+|---|---|
+| trade b Ring | `station-mesh`: M1, M2, M3, M4 |
+| trade c Drum | `station-mesh`: M1, M2, M4; `station-visuals`: V1 |
+| trade d Assembly | `station-finish`: F1, F2 |
+| trade e Wheel | `station-interior`: I1; `station-mesh`: M1, M2, M3, M4; `station-finish`: F1, F2 |
+| shipyard b Hangar <!-- glossary-ignore: Hangar --> | `station-mesh`: M1, M4; `station-finish`: F1, F2; `station-visuals`: V1 |
+| shipyard c Slipway | `station-mesh`: M1, M2, M4; `station-finish`: F1, F2; `station-visuals`: V1 |
+| refinery a Warren | `station-glow`: G1; `station-visuals`: V1 |
+| refinery b Collar | `station-mesh`: M1, M4; `station-finish`: F1, F2; `station-glow`: G1; `station-visuals`: V1 |
+| refinery c Spar | `station-mesh`: M1, M3, M4; `station-finish`: F1, F2; `station-glow`: G1; `station-visuals`: V1 |
+
+- M1: `the drawn interior spans exactly the volume the sim declares`;
+- M2: `a slot form's hull reaches its declared aperture plane`; <!-- glossary-ignore: slot -->
+- M3: `the form the game ships parks every ship inside its own interior`;
+- M4: `a selected form's drawn bay is the sim's catalogue, berth for berth`;
+- I1: `the bay fits inside the hull of the form that holds it`;
+- F1: `the fixtures are there under an industrial finish and not under stock`;
+- F2: `the fixtures are mounted: every member is supported, through others, by
+  structure`;
+- G1: `the <role> <id>'s fittings each have a glow child of the same name`;
+- V1: `the <role> <id>'s fixtures are all reachable down its own axis, on every
+  plan`.
+
+So no candidate owes only a proxy. The Assembly and the Warren come
+closest, with two rows each besides the proxy; the Wheel and the Spar owe
+the most. The bay and interior rows (M1–M4, I1) were written for the forms
+that fly, and every candidate but the Assembly and the Warren fails at least
+one of them.
 
 A pooled form then still owes the canonical view set before and after, and
 the principal's yes on it.
-
-The net was measured rather than assumed. On a temporary, uncommitted edit of
-the pools, against `tests/station-proxy.test.ts`, `tests/station-finish.test.ts`
-and `tests/station-interior.test.ts`:
-
-- **trade `[a, b]`**: 5 rows red, all of them proxy rows. The Ring's fixtures
-  are declared, and the fixture rows pass.
-- **trade `[a, e]`**: 8 rows red — the 5 proxy rows, `the bay fits inside the
-  hull of the form that holds it`, and the two industrial-fixture rows (`the
-  fixtures are there under an industrial finish and not under stock`, `the
-  fixtures are mounted`).
-- **shipyard `[a, b]`**: 7 rows red — the 5 proxy rows and the same two
-  fixture rows.
 
 ## Not done here
 
