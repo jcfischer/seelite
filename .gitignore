@@ -54,3 +54,12 @@ sound-set/
 # runtime binaries).
 public/voice-model/
 .voice-model-cache/
+
+# The music's instrument samples (map #1's Constraints, 2026-10-06) are
+# prepared by scripts/fetch-music-samples.mjs and tracked in Git LFS
+# (.gitattributes). Only the sets the principal chose by ear are committed;
+# the two that lost their blind auditions, and the script's index of whatever
+# it last built, stay local. The download cache is outside the repository.
+public/music-samples/piano-vcsl/
+public/music-samples/harpsi-vcsl/
+public/music-samples/index.json

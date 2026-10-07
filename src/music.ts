@@ -16,9 +16,22 @@
  * level the player sets. Every fade is inside the worklet.
  * `tests/music-controller.test.ts` holds that against this file's source.
  *
+ * **Sample sets load on demand, and only what a song plays** (map #1's
+ * ruling on open-licensed music samples, 2026-10-06; O27). A song with a
+ * `sampler` part makes `load` fetch, from this site's own
+ * `music-samples/<set>/`, the recordings its notes pick and no others,
+ * decode them on the context and send them to the worklet, transferred
+ * (`music-samples.ts` says how). Until a recording arrives its notes play
+ * the part's `fallback`, and a set that fails — a browser that cannot
+ * decode Ogg Opus — stays there; the reason is in `errors`.
+ * `samplesReady` is what an offline render awaits before it plays.
+ *
  * Not headless: the `?worker&url` import is vite's, and bun cannot resolve
  * it. Nothing here is arithmetic; that is all in the worklet's engine.
  */
+
+import { fetchBundled } from "./bundle-fetch";
+import { SampleLoader } from "./music-samples";
 import {
 	MUSIC_PROCESSOR,
 	type MusicCommand,
@@ -30,7 +43,7 @@ import workletUrl from "./music-worklet.ts?worker&url";
 
 export class Music {
 	private node: AudioWorkletNode | null = null;
-	private readonly held: MusicCommand[] = [];
+	private readonly held: [MusicCommand, Transferable[]][] = [];
 	private whenReady: Promise<void> | null = null;
 	private syncs = 0;
 	private readonly waiting = new Map<
@@ -40,6 +53,15 @@ export class Music {
 	/** Every command the worklet refused, in order, with its reason, and a
 	 *  worklet that failed to load. */
 	readonly errors: string[] = [];
+	/** The sample sets' loader (`music-samples.ts`): it decodes on the
+	 *  context `attach` is given, and sends through `send`. */
+	private readonly samples = new SampleLoader({
+		base: `${import.meta.env.BASE_URL}music-samples/`,
+		fetchFile: fetchBundled,
+		send: (cmd, transfer) => this.send(cmd, transfer),
+		errors: this.errors,
+		warn: (message) => console.warn(`music: ${message}`),
+	});
 	/** The last load's failure, until an `attach` succeeds. */
 	private failure: Error | null = null;
 
@@ -56,6 +78,7 @@ export class Music {
 	 * caller that awaits it.
 	 */
 	attach(ctx: BaseAudioContext, out: AudioNode): Promise<void> {
+		this.samples.attach(ctx);
 		this.whenReady ??= this.loadWorklet(ctx, out).catch((err: unknown) => {
 			const e = err instanceof Error ? err : new Error(String(err));
 			this.failure = e;
@@ -89,7 +112,8 @@ export class Music {
 			};
 			node.connect(out);
 			this.node = node;
-			for (const cmd of this.held.splice(0)) node.port.postMessage(cmd);
+			for (const [cmd, transfer] of this.held.splice(0))
+				node.port.postMessage(cmd, transfer);
 		});
 	}
 
@@ -99,9 +123,9 @@ export class Music {
 	}
 
 	/** Send a command, or hold it until the worklet is ready (D8). */
-	send(cmd: MusicCommand) {
-		if (this.node) this.node.port.postMessage(cmd);
-		else this.held.push(cmd);
+	send(cmd: MusicCommand, transfer: Transferable[] = []) {
+		if (this.node) this.node.port.postMessage(cmd, transfer);
+		else this.held.push([cmd, transfer]);
 	}
 
 	/**
@@ -122,6 +146,17 @@ export class Music {
 
 	load(id: string, song: Song) {
 		this.send({ type: "load", id, song });
+		this.samples.load(song);
+	}
+
+	/**
+	 * Resolves once every recording the loaded songs play has been sent to the
+	 * worklet or has failed; a song loaded before `attach` counts once
+	 * `attach` has started it. It never rejects: a failed set plays its
+	 * fallback, and its reason is in `errors`.
+	 */
+	samplesReady(): Promise<void> {
+		return this.samples.ready();
 	}
 
 	play(

@@ -6,8 +6,11 @@
 import { expect, test } from "bun:test";
 import { SOUND_SET as SET } from "../scripts/lib/sound-set.mjs";
 import { CUE_BUS, type CueKind } from "../src/audio-cue";
-import { WEAPON_SOUND_ARMS, DEFAULT_WEAPON_ARMS } from "../src/weapon-sound";
 import { DEFAULT_FLIGHT_ARMS, FLIGHT_SOUND_ARMS } from "../src/flight-sound";
+import { danubeSongs } from "../src/music-danube";
+import type { MusicCommand } from "../src/music-score";
+import { TEST_SONGS } from "../src/music-test-score";
+import { DEFAULT_WEAPON_ARMS, WEAPON_SOUND_ARMS } from "../src/weapon-sound";
 import {
 	arriveWitchspace,
 	beginWitchspace,
@@ -20,9 +23,6 @@ import {
 	WITCHSPACE_SOUND_ARMS,
 	witchspaceSoundArms,
 } from "../src/witchspace-sound";
-import type { MusicCommand } from "../src/music-score";
-import { TEST_SONGS } from "../src/music-test-score";
-import { danubeSongs } from "../src/music-danube";
 
 /** One entry, loosely: the list is a script's, and its inferred union has no
  *  field common to every shape. */
@@ -179,6 +179,7 @@ const MOVES: Record<MusicCommand["type"], true | string> = {
 	stem: true,
 	tempo: true,
 	sync: "moves nothing: the render sends it around every scripted command",
+	samples: "moves nothing: Music sends a set when a song that names it loads",
 };
 
 test("every transport move is rendered for the ear, or says why not (#560)", () => {
