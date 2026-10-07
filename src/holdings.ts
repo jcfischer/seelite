@@ -26,7 +26,7 @@
  * acted-on offer rather than the board.
  */
 
-import { scoopWreckContainer } from "./derelict";
+import { scoopWreckContainer } from "./derelict-salvage";
 import type { Vec3 } from "./vec3";
 import type { CarrierKey } from "./carrier-key";
 import type { DeathCause } from "./death-cost";
@@ -221,6 +221,15 @@ export type HoldEvent =
 
 /** What `Game` has to act on beyond adopting the state. A closed set. */
 export interface HoldSignals {
+	/** The adopted wreck take or its hold refusal. Absent outside the gate or
+	 * when the named instance no longer exists. */
+	wreckScoop?: {
+		commodity: string;
+		tonnes: number;
+		leftT: number;
+		freeT: number;
+		refusal: string | null;
+	};
 	/** The hull a purchase delivered, for the berth and the mesh. */
 	hullChanged: HullId | null;
 	/** The sentence a Requests press prints, accepted or refused. */
@@ -525,8 +534,19 @@ function applied(
 				event.ship,
 				event.at,
 			);
-			if (!took.tonnes) return unchanged(holdings, world);
+			if (!took.tonnes && !took.refusal) return unchanged(holdings, world);
 			const item = e.containers[event.containerIndex];
+			const signals = {
+				...QUIET,
+				wreckScoop: {
+					commodity: item.id,
+					tonnes: took.tonnes,
+					leftT: took.row.containers[event.containerIndex].left,
+					freeT: took.freeT,
+					refusal: took.refusal,
+				},
+			};
+			if (!took.tonnes) return unchanged(holdings, world, signals);
 			return {
 				holdings: {
 					...holdings,
@@ -551,7 +571,7 @@ function applied(
 					took.tonnes,
 					event.at,
 				),
-				signals: QUIET,
+				signals,
 			};
 		}
 		case "scoop":

@@ -175,9 +175,72 @@ try {
 	);
 	check(
 		"a full hold names free tonnes and leaves the item",
-		result.refusal.includes("0 t FREE"),
+		result.refusal.toUpperCase().includes("0 T FREE"),
 	);
 	check("owned salvage adds no heat", result.heatAfter === result.heatBefore);
+	// A multi-tonne fitting fixture exercises the live Holdings adoption and
+	// the cockpit refusal. Ordinary goods above use the naturally seeded row.
+	const fitting = await page.evaluate(async (f) => {
+		const g = window.__seelite;
+		const { tetherPose } = await import("/src/derelict.ts");
+		const { newCommander } = await import("/src/station-commerce.ts");
+		const w = g.derelictsAt().find((w) => w.key === f.key);
+		const galaxy = g.commerceWorld.galaxies[g.world.galaxy.index];
+		const stored = galaxy.derelicts[f.key];
+		const galaxies = [...g.commerceWorld.galaxies];
+		galaxies[g.world.galaxy.index] = {
+			...galaxy,
+			derelicts: {
+				...galaxy.derelicts,
+				[f.key]: {
+					...stored,
+					containers: stored.containers.map((c, i) =>
+						i === 0
+							? { kind: "fitting", id: "Military Laser", tonnes: 3, left: 3 }
+							: c,
+					),
+				},
+			},
+		};
+		g.adoptWorld({ ...g.commerceWorld, galaxies });
+		const c = tetherPose(w.pose, 0);
+		g.world.ship.pos = { ...c.pos };
+		g.world.ship.vel = { ...c.vel };
+		g.commander = { ...newCommander("courier"), cargo: { Food: 18 } };
+		g.scoop = { text: "", left: 0, accepted: true, canisterId: null };
+		g.stepDerelictScoops();
+		const refusedLeft =
+			g.commerceWorld.galaxies[g.world.galaxy.index].derelicts[f.key]
+				.containers[0].left;
+		const refusal = g.scoop.text;
+		const refusedItems = g.commander.recoveredFittings?.length ?? 0;
+		g.commander = { ...g.commander, cargo: { Food: 17 } };
+		g.stepDerelictScoops();
+		g.stepDerelictScoops();
+		return {
+			refusedLeft,
+			refusal,
+			refusedItems,
+			items: g.commander.recoveredFittings,
+			left: g.commerceWorld.galaxies[g.world.galaxy.index].derelicts[f.key]
+				.containers[0].left,
+			notice: g.scoop.text,
+		};
+	}, fixture);
+	check(
+		"a fitting with too little room stays whole and names the free tonnes",
+		fitting.refusedLeft === 3 &&
+			fitting.refusedItems === 0 &&
+			fitting.refusal.toUpperCase().includes("2 T FREE") &&
+			fitting.refusal.toUpperCase().includes("3 T MILITARY LASER"),
+	);
+	check(
+		"room for a fitting recovers one whole item through Holdings",
+		fitting.left === 0 &&
+			fitting.items?.length === 1 &&
+			fitting.items[0].tonnes === 3 &&
+			fitting.notice.includes("SCOOPED"),
+	);
 	const hit = await page.evaluate((f) => {
 		const g = window.__seelite;
 		const w = g.derelictsAt().find((w) => w.key === f.key);

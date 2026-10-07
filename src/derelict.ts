@@ -1,17 +1,11 @@
-/** Derelict pose and owned scoop: the row is persistence, never a canister lifetime.
+/** Derelict pose and tethers: the row is persistence, never a canister lifetime.
  * Finding and the entrusted job item belong to their own builds. */
 import type { CarrierKey } from "./carrier-key";
 import { carrierInstanceSeed } from "./carrier-standing";
 import { DOMAIN } from "./domains";
 import { HULL_SPECS, PURCHASABLE_HULL_IDS, type HullId } from "./hull";
 import { seededRand } from "./rng";
-import { CANISTER_SCOOP_RADIUS_KM, scoops } from "./raider-wreck";
-import {
-	type CommanderState,
-	commanderHold,
-	scoopCargo,
-} from "./station-commerce";
-import { type DerelictRow, PLAYER_SALVAGE } from "./world-state";
+import { CANISTER_SCOOP_RADIUS_KM } from "./raider-wreck";
 import { type System, bodyVelocity } from "./sim";
 import { PLANET_APPROACH_RADIUS } from "./planet-approach-boundary";
 import { placeBodies } from "./system";
@@ -35,18 +29,56 @@ export function tetherOffset(hull: HullId, index: number): Vec3 {
 		hullRadius(hull) + PILOT_REACH_KM + CANISTER_SCOOP_RADIUS_KM + 0.02;
 	return v3(Math.cos(angle) * reach, Math.sin(angle) * reach, 0);
 }
+/** Retain both ends of the current step. Every wreck at a clock shares one
+ * orbital placement, and the post-step scoop and draw reuse the end pose. */
+const poseFrames = new WeakMap<
+	System,
+	Map<
+		number,
+		{
+			bodies: ReturnType<typeof placeBodies>;
+			poses: Map<string, DerelictPose>;
+		}
+	>
+>();
+interface DerelictPose {
+	bodyId: string;
+	hull: HullId;
+	offset: Vec3;
+	pos: Vec3;
+	vel: Vec3;
+	nose: Vec3;
+	up: Vec3;
+}
 export function derelictPose(
 	system: System,
 	key: CarrierKey,
 	ordinal: number,
 	at: number,
-) {
+): DerelictPose {
+	let frames = poseFrames.get(system);
+	if (!frames) {
+		frames = new Map();
+		poseFrames.set(system, frames);
+	}
+	let frame = frames.get(at);
+	if (!frame) {
+		frame = {
+			bodies: placeBodies(system.contents, at).filter(
+				(b) => b.kind === "planet" || b.kind === "moon",
+			),
+			poses: new Map(),
+		};
+		frames.set(at, frame);
+		if (frames.size > 2) frames.delete(frames.keys().next().value!);
+	}
+	const id = key + ":" + ordinal;
+	const cached = frame.poses.get(id);
+	if (cached) return cached;
 	const rand = seededRand(
 		carrierInstanceSeed(system.record.seed, key, ordinal, DOMAIN.DERELICT_POSE),
 	);
-	const bodies = placeBodies(system.contents, at).filter(
-		(b) => b.kind === "planet" || b.kind === "moon",
-	);
+	const bodies = frame.bodies;
 	if (!bodies.length) throw Error("derelict has no local body");
 	const body = bodies[Math.floor(rand() * bodies.length)];
 	const hull =
@@ -63,7 +95,7 @@ export function derelictPose(
 	const phase = rand() * Math.PI * 2 + at * DERELICT_TUMBLE_RAD_S;
 	const axis = v3(0.3, 0.8, 0.5);
 	const unit = scale(axis, 1 / length(axis));
-	return {
+	const pose = {
 		bodyId: body.id,
 		hull,
 		offset,
@@ -72,61 +104,11 @@ export function derelictPose(
 		nose: rotateAbout(v3(0, 0, -1), unit, phase),
 		up: rotateAbout(v3(0, 1, 0), unit, phase),
 	};
+	frame.poses.set(id, pose);
+	return pose;
 }
 /** Tethers stay in the body's translating frame; the hull alone tumbles. */
 export const tetherPose = (
 	wreck: ReturnType<typeof derelictPose>,
 	index: number,
 ) => ({ pos: add(wreck.pos, tetherOffset(wreck.hull, index)), vel: wreck.vel });
-
-export function scoopWreckContainer(
-	row: DerelictRow,
-	index: number,
-	commander: CommanderState,
-	entrustedT: number,
-	container: { pos: Vec3; vel: Vec3 },
-	ship: { pos: Vec3; vel: Vec3 },
-	at: number,
-) {
-	const unchanged = (refusal: string | null = null) => ({
-		row,
-		commander,
-		tonnes: 0,
-		refusal,
-	});
-	const item = row.containers[index];
-	if (row.salvaged || !item || item.left <= 0 || !scoops(container, ship))
-		return unchanged();
-	const hold = commanderHold(commander, entrustedT);
-	const freeT = hold.capacityT - hold.usedT;
-	const took = Math.max(0, Math.min(item.left, Math.floor(freeT)));
-	if (took <= 0)
-		return unchanged(
-			"Hold full: " + freeT + " t free; " + item.id + " left in space.",
-		);
-	const next =
-		item.kind === "good"
-			? scoopCargo(commander, item.id, took, entrustedT).commander
-			: {
-					...commander,
-					recoveredFittings: [
-						...(commander.recoveredFittings ?? []),
-						{ id: item.id, tonnes: took },
-					],
-				};
-	const containers = row.containers.map((c, i) =>
-		i === index ? { ...c, left: c.left - took } : { ...c },
-	);
-	return {
-		row: {
-			...row,
-			containers,
-			...(containers.every((c) => c.left === 0)
-				? { salvaged: { at, cause: PLAYER_SALVAGE } }
-				: {}),
-		},
-		commander: next,
-		tonnes: took,
-		refusal: null,
-	};
-}

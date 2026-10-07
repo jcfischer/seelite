@@ -2004,7 +2004,7 @@ export function stepWorld(
 	// off the bodies, so it has to be read before they move. Without a solid
 	// only the planets are read, for #514's boundary.
 	const starts: WorldStarts = solid
-		? worldStarts(world.system, fromTime)
+		? worldStarts(world.system, fromTime, extraSolids)
 		: {
 				bodies: new Map(
 					world.system.bodies
@@ -2013,7 +2013,6 @@ export function stepWorld(
 				),
 				stations: [],
 			};
-	starts.extraSolids = extraSolids;
 	advanceWorldClock(world, dt);
 	const step = stepHull(world.ship, attitude, control, dt, perf);
 	const untouched = (): FleetStep[] => fleet.map(untouchedStep);
@@ -2881,14 +2880,19 @@ function holdPlanetBoundary(
  *  placed station's place and pose. Snapshot before the clock moves. */
 export interface WorldStarts {
 	/** Persisted local hulls, posed at both ends by their owner. */
-	extraSolids?: readonly { id: string; motion: SolidMotion }[];
+	readonly extraSolids?: readonly { id: string; motion: SolidMotion }[];
 	bodies: ReadonlyMap<string, Vec3>;
 	stations: readonly StationStart[];
 }
 
 /** Snapshot `WorldStarts` before the clock moves. */
-export function worldStarts(system: System, gameTime: number): WorldStarts {
+export function worldStarts(
+	system: System,
+	gameTime: number,
+	extraSolids: readonly { id: string; motion: SolidMotion }[] = [],
+): WorldStarts {
 	return {
+		extraSolids,
 		bodies: new Map(
 			solidBodies(system).map((body) => [body.id, { ...body.pos }]),
 		),

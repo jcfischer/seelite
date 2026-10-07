@@ -272,12 +272,8 @@ export function scoopCargo(
 	const good = commodity(commodityName);
 	// What fits, in whole tonnes: a canister of a manifest line can hold more
 	// than the hold has room for, and the rest stays in it (civilian-combat H11).
-	const room = Math.floor(
-		holdCapacityT(commander) -
-			heldTonnes(commander.cargo) -
-			recoveredTonnes(commander) -
-			entrustedT,
-	);
+	const hold = commanderHold(commander, entrustedT);
+	const room = Math.floor(hold.capacityT - hold.usedT);
 	const took = good.unit === "t" ? Math.max(0, Math.min(tonnes, room)) : 0;
 	if (took <= 0) return { accepted: false, tonnes: 0, commander };
 	return {
@@ -440,10 +436,7 @@ export function transactAtStation(
 			return rejected(input, "insufficient-credits");
 		if (
 			good.unit === "t" &&
-			heldTonnes(input.commander.cargo) +
-				recoveredTonnes(input.commander) +
-				input.entrustedT +
-				quantity >
+			commanderHold(input.commander, input.entrustedT).usedT + quantity >
 				holdCapacityT(input.commander)
 		)
 			return rejected(input, "cargo-full");
@@ -612,10 +605,7 @@ export function hullOffer(
 	// D6: what the new hold can take, and what must go to make it fit.
 	const capacityT = holdCapacityT({ ...commander, hull });
 	let overflowT = Math.ceil(
-		heldTonnes(commander.cargo) +
-			recoveredTonnes(commander) +
-			input.entrustedT -
-			capacityT,
+		commanderHold(commander, input.entrustedT).usedT - capacityT,
 	);
 	const sellable = Object.entries(commander.cargo)
 		.map(([name, units]) => ({ good: commodity(name), units }))

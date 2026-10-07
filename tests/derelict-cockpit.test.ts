@@ -1,9 +1,6 @@
-import { expect, test } from "bun:test";
-import {
-	derelictPose,
-	tetherOffset,
-	scoopWreckContainer,
-} from "../src/derelict";
+import { expect, test, spyOn } from "bun:test";
+import { derelictPose, tetherOffset } from "../src/derelict";
+import { scoopWreckContainer } from "../src/derelict-salvage";
 import { derelictSlots, derelictFirstLossAt } from "../src/derelict-slots";
 import { HULL_SPECS, PURCHASABLE_HULL_IDS } from "../src/hull";
 import { makeWorld, advanceSystem } from "../src/sim";
@@ -12,11 +9,16 @@ import {
 	CANISTER_SCOOP_RADIUS_KM,
 	CANISTER_SCOOP_SPEED_KMS,
 } from "../src/raider-wreck";
-import { length, sub, v3 } from "../src/vec3";
+import { length, sub, v3, rotateAbout } from "../src/vec3";
 import { applyHoldEvent } from "../src/holdings";
 import { emptyRequests } from "../src/requests";
 import { emptyLadderRecord, emptyPending } from "../src/ladder";
-import { newWorld, effectiveDerelict, advanceTo } from "../src/world-state";
+import {
+	newWorld,
+	effectiveDerelict,
+	advanceTo,
+	scoopDerelict,
+} from "../src/world-state";
 import {
 	newCommanderRecord,
 	serializeSave,
@@ -76,32 +78,146 @@ test("a recovered fitting is a hold item rather than fitted equipment", () => {
 	expect(commanderHold(out.commander, 0).usedT).toBe(1);
 	expect(out.row.salvaged?.at).toBe(1);
 });
-test("every hull's tether gate clears both built envelopes in every attitude", () => {
+test("a multi-tonne fitting refuses partial room and recovers exactly one whole item", () => {
+	const fittingRow = {
+		...row,
+		containers: [
+			{ kind: "fitting" as const, id: "Military Laser", tonnes: 3, left: 3 },
+		],
+	};
+	const commander = { ...newCommander("courier"), cargo: { Food: 18 } };
+	const refused = scoopWreckContainer(
+		fittingRow,
+		0,
+		commander,
+		0,
+		pose,
+		pose,
+		1,
+	);
+	expect(refused.tonnes).toBe(0);
+	expect(refused.row).toBe(fittingRow);
+	expect(refused.commander).toBe(commander);
+	expect(refused.refusal).toContain("2 t free");
+	expect(refused.refusal).toContain("3 t");
+	const took = scoopWreckContainer(
+		fittingRow,
+		0,
+		{ ...commander, cargo: { Food: 17 } },
+		0,
+		pose,
+		pose,
+		2,
+	);
+	expect(took.tonnes).toBe(3);
+	expect(took.row.containers[0].left).toBe(0);
+	expect(took.commander.recoveredFittings).toEqual([
+		{ id: "Military Laser", tonnes: 3 },
+	]);
+	expect(
+		scoopWreckContainer(took.row, 0, took.commander, 0, pose, pose, 3).tonnes,
+	).toBe(0);
+	const sale = transactAtStation({
+		...commerce,
+		commander: took.commander,
+		action: { type: "sell-recovered", index: 0 },
+	});
+	expect(sale.accepted).toBe(true);
+	expect(sale.commander.credits - took.commander.credits).toBe(
+		EQUIPMENT.find((e) => e.name === "Military Laser")!.priceCr,
+	);
+	expect(
+		transactAtStation({
+			...commerce,
+			commander: sale.commander,
+			action: { type: "sell-recovered", index: 0 },
+		}).accepted,
+	).toBe(false);
+});
+test("Holdings reports adopted takes and refusals, while a stale wreck event has no scoop signal", () => {
+	const at = derelictFirstLossAt(system.record.seed, key) + 1;
+	const world = advanceTo(newWorld(47), at);
+	const wreck = effectiveDerelict(world, 0, key, at);
+	if (wreck.condition !== "destroyed") throw Error("no wreck");
+	const hold = {
+		commander: { ...newCommander("courier"), cargo: { Food: 19 } },
+		requests: emptyRequests(),
+		ladders: emptyLadderRecord(),
+		ladderPending: emptyPending(),
+	};
+	const event = {
+		kind: "wreck-scoop" as const,
+		key,
+		galaxyIndex: 0,
+		containerIndex: 0,
+		instanceOrdinal: wreck.instanceOrdinal,
+		at,
+		container: pose,
+		ship: pose,
+	};
+	const took = applyHoldEvent(hold, world, event);
+	expect(took.signals.wreckScoop).toEqual({
+		commodity: wreck.containers[0].id,
+		tonnes: 1,
+		freeT: 1,
+		leftT: wreck.containers[0].left - 1,
+		refusal: null,
+	});
+	const refused = applyHoldEvent(took.holdings, took.world, event);
+	expect(refused.holdings).toBe(took.holdings);
+	expect(refused.world).toBe(took.world);
+	expect(refused.signals.wreckScoop?.tonnes).toBe(0);
+	expect(refused.signals.wreckScoop?.freeT).toBe(0);
+	expect(refused.signals.wreckScoop?.refusal).toContain("0 t free");
+	const stale = applyHoldEvent(hold, world, {
+		...event,
+		instanceOrdinal: wreck.instanceOrdinal + 1,
+	});
+	expect(stale.holdings).toBe(hold);
+	expect(stale.world).toBe(world);
+	expect(stale.signals.wreckScoop).toBeUndefined();
+});
+test("each tether gate clears the real hull proxies through sampled turns", () => {
 	for (const hull of PURCHASABLE_HULL_IDS)
 		for (const pilot of PURCHASABLE_HULL_IDS)
 			for (let i = 0; i < 5; i++) {
 				const offset = tetherOffset(hull, i);
-				const radius = (id: typeof hull) => {
-					const s = HULL_SPECS[id];
-					return (
-						Math.hypot(
-							s.env.beamKm / 2,
-							s.env.heightKm / 2,
-							s.env.lengthKm / 2,
-						) +
-						Math.hypot(
-							s.envCentre.rightKm,
-							s.envCentre.upKm,
-							s.envCentre.foreKm,
-						)
+				const spec = HULL_SPECS[hull];
+				const pilotSpec = HULL_SPECS[pilot];
+				const axis = scale(v3(1, 2, 3), 1 / Math.sqrt(14));
+				const atGate = add(
+					offset,
+					scale(offset, -CANISTER_SCOOP_RADIUS_KM / length(offset)),
+				);
+				for (const phase of [0, 0.7, 2.1, 4.6]) {
+					const attitude = (origin: ReturnType<typeof v3>, angle: number) =>
+						shipPose(
+							origin,
+							rotateAbout(v3(0, 0, -1), axis, angle),
+							rotateAbout(v3(0, 1, 0), axis, angle),
+						);
+					const swept = sweepShip(
+						{
+							primitives: [hullBox(pilotSpec.env, pilotSpec.envCentre)],
+							start: attitude(offset, phase + 1),
+							end: attitude(atGate, phase + 1.1),
+							velStart: v3(),
+							velEnd: v3(),
+						},
+						[
+							{
+								primitives: [hullBox(spec.env, spec.envCentre)],
+								start: attitude(v3(), phase),
+								end: attitude(v3(), phase + 0.1),
+								velStart: v3(),
+								velEnd: v3(),
+							},
+						],
+						1,
 					);
-				};
-				expect(
-					length(offset) -
-						CANISTER_SCOOP_RADIUS_KM -
-						radius(hull) -
-						radius(pilot),
-				).toBeGreaterThan(0);
+					expect(swept.impacts).toEqual([]);
+					expect(length(sub(swept.pos, atGate))).toBeLessThan(1e-9);
+				}
 			}
 });
 test("pose follows the seeded body at the requested clock and tumbles slowly", () => {
@@ -362,4 +478,51 @@ test("a seeded wreck and all its gates stand outside a planet's approach boundar
 					CANISTER_SCOOP_RADIUS_KM,
 			);
 	}
+});
+
+import * as orbitalPlacement from "../src/system";
+test("wrecks share one orbital placement per step end and reuse post-step poses", () => {
+	const local = makeWorld(48).system;
+	const keys = derelictSlots(local.record.index, local.record.government).map(
+		(s) => s.key,
+	);
+	const solve = spyOn(orbitalPlacement, "placeBodies");
+	try {
+		const starts = keys.map((k) => derelictPose(local, k, 0, 101));
+		const ends = keys.map((k) => derelictPose(local, k, 0, 102));
+		expect(solve).toHaveBeenCalledTimes(2);
+		keys.forEach((k, i) => {
+			expect(derelictPose(local, k, 0, 101)).toBe(starts[i]);
+			expect(derelictPose(local, k, 0, 102)).toBe(ends[i]);
+		});
+		expect(solve).toHaveBeenCalledTimes(2);
+		derelictPose(local, keys[0], 1, 102);
+		expect(solve).toHaveBeenCalledTimes(2);
+		derelictPose(local, keys[0], 0, 103);
+		expect(solve).toHaveBeenCalledTimes(3);
+		derelictPose(local, keys[0], 0, 101);
+		expect(solve).toHaveBeenCalledTimes(4);
+	} finally {
+		solve.mockRestore();
+	}
+});
+test("a schema 9 save with a partially stripped derelict loads its world remainder", () => {
+	const at = derelictFirstLossAt(system.record.seed, key) + 1;
+	const initial = advanceTo(newWorld(47), at);
+	const world = scoopDerelict(initial, 0, key, 0, 1, at);
+	const commander = newCommanderRecord("courier", {
+		systemIndex: system.record.index,
+	});
+	const { integrity: _, ...body } = serializeSave({
+		world,
+		commander,
+	}) as Record<string, unknown>;
+	const legacy = { ...body, saveSchemaVersion: 9 };
+	const loaded = parseSave({
+		...legacy,
+		integrity: fnv1a(JSON.stringify(legacy)),
+	});
+	const saved = world.galaxies[0].derelicts[key];
+	expect(loaded.world.galaxies[0].derelicts[key]).toEqual(saved);
+	expect(loaded.commander.state.recoveredFittings).toBeUndefined();
 });

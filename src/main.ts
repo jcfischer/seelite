@@ -67,12 +67,7 @@
 
 import * as THREE from "three";
 import { derelictSlots } from "./derelict-slots";
-import {
-	derelictPose,
-	tetherPose,
-	tetherOffset,
-	scoopWreckContainer,
-} from "./derelict";
+import { derelictPose, tetherPose, tetherOffset } from "./derelict";
 import {
 	buildDerelictMesh,
 	disposeDerelict,
@@ -582,6 +577,7 @@ import {
 import { buildRelayMesh } from "./relay-mesh";
 import type { RelayCue } from "./relay-cue";
 import {
+	scoops,
 	CANISTER_RADIUS_KM,
 	CARGO_CONTACT_COLOUR,
 	CARGO_CONTACT_CSS,
@@ -12445,10 +12441,8 @@ class Game {
 		this.weaponSoundState = QUIET_WEAPONS;
 		this.weaponMix = SILENT_WEAPONS;
 		this.canisters = [];
-		for (const drawn of this.derelictMeshes.values()) {
-			disposeDerelict(drawn.root);
-			for (const mesh of drawn.containers.values()) disposeWreckContainer(mesh);
-		}
+		for (const drawn of this.derelictMeshes.values())
+			this.disposeDrawnDerelict(drawn);
 		this.derelictMeshes.clear();
 		// And their contacts, now, rather than on the next step: `performJump`
 		// refreshes the scanner before any step runs, so the arrival frame would
@@ -13009,52 +13003,38 @@ class Game {
 		for (const { key, row, pose } of this.derelictsAt())
 			for (let i = 0; i < row.containers.length; i++) {
 				const container = tetherPose(pose, i);
-				const before = this.holdings();
-				const tried = scoopWreckContainer(
-					row,
-					i,
-					this.commander,
-					entrustedTonnesAboard(this.requests),
+				if (!scoops(container, this.world.ship)) continue;
+				const outcome = applyHoldEvent(this.holdings(), this.commerceWorld, {
+					kind: "wreck-scoop",
+					key,
+					galaxyIndex: this.world.galaxy.index,
+					instanceOrdinal: row.instanceOrdinal,
+					containerIndex: i,
+					at: this.world.gameTime,
 					container,
-					this.world.ship,
-					this.world.gameTime,
-				);
-				if (!tried.tonnes && !tried.refusal) continue;
-				const item = row.containers[i];
-				if (tried.tonnes)
-					this.adoptHoldings(
-						applyHoldEvent(before, this.commerceWorld, {
-							kind: "wreck-scoop",
-							key,
-							galaxyIndex: this.world.galaxy.index,
-							instanceOrdinal: row.instanceOrdinal,
-							containerIndex: i,
-							at: this.world.gameTime,
-							container,
-							ship: this.world.ship,
-						}),
-					);
+					ship: this.world.ship,
+				});
+				this.adoptHoldings(outcome);
+				const tried = outcome.signals.wreckScoop;
+				if (!tried) continue;
 				const event = {
+					...tried,
+					// Notice dedupe key only; the wreck stays on its persisted row.
 					canisterId: key + ":" + row.instanceOrdinal + ":" + i,
-					commodity: item.id,
-					tonnes: tried.tonnes,
 					accepted: tried.tonnes > 0,
-					leftT: item.left - tried.tonnes,
-					freeT:
-						commanderHold(
-							before.commander,
-							entrustedTonnesAboard(before.requests),
-						).capacityT -
-						commanderHold(
-							before.commander,
-							entrustedTonnesAboard(before.requests),
-						).usedT,
 				};
 				const next = nextScoopNotice(this.scoop, event);
 				this.scoop = next.notice;
 				this.lastExit = tried.refusal ?? scoopExit(event);
 				if (next.cue) this.play(next.cue);
 			}
+	}
+	private disposeDrawnDerelict(drawn: {
+		root: THREE.Group;
+		containers: Map<number, THREE.Mesh>;
+	}) {
+		disposeDerelict(drawn.root);
+		for (const mesh of drawn.containers.values()) disposeWreckContainer(mesh);
 	}
 	private updateDerelictPresentation(camPos: Vec3) {
 		const live = new Set<string>();
@@ -13114,10 +13094,7 @@ class Game {
 		}
 		for (const [id, drawn] of this.derelictMeshes)
 			if (!live.has(id)) {
-				disposeDerelict(drawn.root);
-				for (const mesh of drawn.containers.values()) {
-					disposeWreckContainer(mesh);
-				}
+				this.disposeDrawnDerelict(drawn);
 				this.derelictMeshes.delete(id);
 			}
 	}
@@ -15016,12 +14993,12 @@ class Game {
 			// leg moves the clock.
 			const fleet = this.fleetOf(dt, { player: false });
 			const fromTime = this.world.gameTime;
-			const wreckSolids = this.derelictSolids(dt);
 			const starts =
-				fleet.length > 0 ? worldStarts(this.world.system, fromTime) : null;
+				fleet.length > 0
+					? worldStarts(this.world.system, fromTime, this.derelictSolids(dt))
+					: null;
 			meterFlick(this.turnInCruise(dt, hands));
 			this.stepCruise(dt, contactTargetAtFrameStart);
-			if (starts) starts.extraSolids = wreckSolids;
 			if (starts)
 				this.landFleet(
 					stepFleet(this.world, fleet, starts, { fromTime, dt }),

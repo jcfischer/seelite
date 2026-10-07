@@ -27,6 +27,9 @@ export interface ScoopEvent {
 	/** Tonnes left in the canister after a partial take (civilian-combat H11). */
 	leftT?: number;
 	freeT?: number;
+	/** A wreck fitting must be recovered whole; its refusal names the room
+	 * and the item rather than presenting it as a divisible good. */
+	refusal?: string | null;
 }
 
 /**
@@ -35,6 +38,7 @@ export interface ScoopEvent {
  * watches it sit there and reads the scoop as broken.
  */
 export function scoopNotice(input: ScoopEvent): string {
+	if (input.refusal) return input.refusal.toUpperCase();
 	const good = input.commodity.toUpperCase();
 	if (!input.accepted)
 		return `HOLD FULL${input.freeT === undefined ? "" : "  " + input.freeT + " t FREE"}  ${good} LEFT IN SPACE`;
