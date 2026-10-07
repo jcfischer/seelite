@@ -142,8 +142,23 @@ for (const [label, viewport] of [
 		const name = `${out}/${route || "home"}-${label}`;
 		if (out) await page.screenshot({ path: `${name}-top.png` });
 		await page.mouse.move(viewport.width / 2, viewport.height / 2);
-		for (let i = 0; i < 6; i++) await page.mouse.wheel(0, 600);
-		await page.waitForTimeout(300);
+		// Wheel until the page stops moving, not a fixed distance: six turns
+		// of 600 px stopped short of Field Notes on a phone once the list
+		// passed 3600 px of scroll (4336 px at 30 entries), which is the
+		// red a new entry must not cause. The cap only bounds a page that
+		// never settles.
+		const scrolled = () =>
+			page.evaluate(
+				() =>
+					(document.scrollingElement?.scrollTop ?? 0) + document.body.scrollTop,
+			);
+		for (let i = 0, last = -1; i < 40; i++) {
+			await page.mouse.wheel(0, 600);
+			await page.waitForTimeout(150);
+			const now = await scrolled();
+			if (now === last) break;
+			last = now;
+		}
 		state.lastReachable = await page.evaluate(lastEntryUnderPointer);
 		if (out) await page.screenshot({ path: `${name}-end.png` });
 		await page.close();
