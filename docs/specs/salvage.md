@@ -236,7 +236,9 @@ proxy's keep-out sphere and its corridor cylinder, enlarged to clear the wreck
 and tethers. The nearest-point tie on the axis uses the aperture reference.
 The wreck's slow tumble changes no trajectory.
 
-Own-loss knowledge is written at death with that time as its age. It makes a
+Own-loss knowledge is written at death with that time as its age. Later
+observations preserve that source and time; only replacing or stripping the
+wreck changes its knowledge row. It makes a
 contact immediately anywhere in the same system, without a scanner. The
 scanner's sweep and passive cue also read the row; sweep provenance can remain
 after recovery. Recovered fittings consume hold space and use the existing

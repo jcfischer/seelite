@@ -17,6 +17,10 @@ import {
 	newWorld,
 	withDeathWreck,
 	advanceTo,
+	observeDerelict,
+	observe,
+	observeScan,
+	observeSystemRelay,
 	type WorldState,
 } from "../src/world-state";
 import type { DeathCause } from "../src/death-cost";
@@ -222,6 +226,32 @@ test("per-item death draws are deterministic, independent of list order and othe
 		expect(count).toBeLessThan(580);
 	}
 });
+test("re-observing an own-loss wreck preserves its death-time knowledge and save round-trip", () => {
+	const world = worldAfterDeath(
+		{ ...newWorld(47), gameTime: 10 },
+		dying,
+		"destroyed",
+	);
+	const row = world.galaxies[0].deathWreck!;
+	const knowledge = world.galaxies[0].knowledge[row.key];
+	for (const observed of [
+		observeDerelict(world, 0, row.key, 20, "visual identification"),
+		observe(world, 0, row.key, 20, "revisit"),
+		observeScan(world, 0, row.key, 20, {
+			instanceOrdinal: row.instanceOrdinal,
+			voyageOrdinal: 0,
+		}),
+		observeSystemRelay(world, 0, [row.key], 20),
+	]) {
+		expect(observed.galaxies[0].knowledge[row.key]).toEqual(knowledge);
+		const saved = parseSave(
+			serializeSave({ world: observed, commander: dying }),
+		);
+		expect(saved.world.galaxies[0].knowledge[row.key]).toEqual(knowledge);
+		expect(saved.world.galaxies[0].deathWreck).toEqual(row);
+	}
+});
+
 test("one own-loss wreck persists without expiry, follows the death frame and is replaced", () => {
 	const world = worldAfterDeath(
 		{ ...newWorld(47), gameTime: 10 },

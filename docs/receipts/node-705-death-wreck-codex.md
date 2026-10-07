@@ -14,7 +14,7 @@ placement, discovery and fitting policy.
 
 | Check | Result |
 | --- | --- |
-| `npm test` | 5,566 pass, 0 fail, 303 files |
+| `npm test` | Round 4: 5,567 pass, 0 fail, 303 files |
 | `npm run build` | Pass, including TypeScript; existing large-chunk warning |
 | `npm run format:check` | Pass |
 | `npm run lint` | Pass |
@@ -25,6 +25,8 @@ placement, discovery and fitting policy.
 | Round 2 selected `save` probe | 36/37; IndexedDB connection-upgrade check failed, cause unestablished |
 | Round 2 solo `save` rerun | Pass with no source changes; does not erase the selected-run failure |
 | Round 3 affected `death-wreck`, `derelict`, `raider-consequence` probes | 3/3 pass through the canonical GPU runner; partial run |
+| Round 4 semantic selection | 17/18 pass; navigation-console timed out during boot before its assertions |
+| Round 4 solo `navigation-console` rerun | 1/1 pass with no source changes; does not erase the selected-run failure |
 
 The death-wreck headless tests cover deterministic item draws, list-order
 and sibling-inventory invariance, per-item survival counts over 1,000 deaths,
@@ -77,6 +79,25 @@ any probe ran; the retry with Chromium launch permissions passed all three
 on ANGLE Metal / Apple M1 Pro, peak load 11.7. The other 92 probes were not run.
 Round 3 does not replace the round 2 save evidence or establish its failed
 check's cause.
+
+Round 4 reserves `commander-wreck` in the canonical CarrierKey namespace and
+documents its non-generated identity in the CarrierKey and Wreck glossary.
+Generic knowledge writes and bulk relay reports preserve the source and time
+of own-loss knowledge. A red-first headless regression observes the own wreck
+through derelict identification, revisit, scan and relay report, then
+round-trips every result through the save parser. All 16 death-wreck tests pass.
+
+The round 4 selector received the five changed code/spec/test paths and an
+intent written for this repair. It evaluated 95 contracts in semantic mode;
+the canonical `probe:pr` retry selected 18. The sandboxed Chromium launch
+aborted before checks; the launch-permitted retry used ANGLE Metal / Apple
+M1 Pro and ran one probe at a time. Seventeen passed, including death-wreck,
+death, derelict, carrier-scan, relay, save and system-sweep. Navigation-console
+timed out in `bootedGame` (20 s wait), with its probe reporting peak load 99.8;
+the selected run reported peak load 164.6. Once the lock was absent,
+`npm run probe:one -- navigation-console` passed alone in 8.5 s, peak load 99.4,
+without source changes. The timeout's cause is unestablished. These are partial
+runs; 77 of 95 probes were outside the selected run.
 
 The full browser suite, review, principal approval and
 `cp-seelite-death-wreck` remain delivery gates owned by the supervisor and

@@ -1476,15 +1476,16 @@ const carriedForward = (
 		: {}),
 });
 
-/** One row into an envelope. */
+/** One row into an envelope. Own-loss provenance stays fixed at death;
+ * only withDeathWreck may replace that knowledge alongside its wreck. */
 const withKnowledgeRow = (
 	env: GalaxyEnvelope,
 	key: CarrierKey,
 	row: KnowledgeRow,
-): GalaxyEnvelope => ({
-	...env,
-	knowledge: { ...env.knowledge, [key]: row },
-});
+): GalaxyEnvelope =>
+	isDeathWreckKey(key)
+		? env
+		: { ...env, knowledge: { ...env.knowledge, [key]: row } };
 
 export const readKnowledge = (
 	env: GalaxyEnvelope,
@@ -1561,7 +1562,8 @@ export const observeSystemRelay = (
 	// into one object now.
 	return withEnvelope(world, galaxyIndex, gameTime, (env) => {
 		const rows: Record<string, KnowledgeRow> = {};
-		for (const key of keys)
+		for (const key of keys) {
+			if (isDeathWreckKey(key)) continue;
 			rows[key] = knowledgeRowFor(
 				env,
 				key,
@@ -1569,6 +1571,7 @@ export const observeSystemRelay = (
 				gameTime,
 				"system-relay",
 			);
+		}
 		return { ...env, knowledge: { ...env.knowledge, ...rows } };
 	});
 };
