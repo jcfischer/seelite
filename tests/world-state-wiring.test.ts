@@ -32,8 +32,8 @@ const WRITERS = [
 	"materializeDerelict",
 	"scoopDerelict",
 	"observeDerelict",
-	"replaceSystemLeads",
-	// Node #733's sweep composes replaceSystemLeads; it is a writer by
+	"replaceSystemSweepReadings",
+	// Node #733's sweep composes replaceSystemSweepReadings; it is a writer by
 	// composition, as settleIncident is below.
 	"sweepSystem",
 	"applyTransition",

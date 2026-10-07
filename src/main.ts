@@ -68,6 +68,9 @@
 import * as THREE from "three";
 import {
 	derelictReadings,
+	derelictRegion,
+	wreckContact,
+	DERELICT_VISUAL_FLOOR_KM,
 	liveDerelicts,
 	stepSweep,
 	SWEEP_CHARGE_S,
@@ -1075,6 +1078,7 @@ import {
 	observe,
 	observeSystemRelay,
 	readKnowledge,
+	systemSweepReadings,
 	type OperationalCondition,
 	type Provenance,
 	type TransitionEvent,
@@ -12494,11 +12498,8 @@ class Game {
 			this.disposeDrawnDerelict(drawn);
 		this.derelictMeshes.clear();
 		this.sweepElapsed = null;
-		for (const contact of this.wreckContacts.values()) {
-			this.unregisterContact(contact);
-			if (this.targetId === contact.id) this.targetId = null;
-		}
-		this.wreckContacts.clear();
+		for (const [key, contact] of this.wreckContacts)
+			this.dropWreckContact(key, contact);
 		this.selectableCache = null;
 		// And their contacts, now, rather than on the next step: `performJump`
 		// refreshes the scanner before any step runs, so the arrival frame would
@@ -13033,14 +13034,21 @@ class Game {
 		this.sweepElapsed = null;
 	}
 	private stepDerelictFinding() {
+		const floor = relayScannerFitted(this.commander.ownedEquipment)
+			? RELAY_IDENTIFY_RANGE_KM
+			: DERELICT_VISUAL_FLOOR_KM;
+		if (!this.wreckReadings().some((w) => !w.identified && w.km <= floor))
+			return;
 		const outcome = applyHoldEvent(this.holdings(), this.commerceWorld, {
 			kind: "derelict-identify",
 			system: this.world.system,
 			shipPos: this.world.ship.pos,
 			at: this.world.gameTime,
 		});
-		this.adoptHoldings(outcome);
-		if (outcome.signals.identifiedWreck) this.lastExit = "derelict identified";
+		if (outcome.signals.identifiedWreck) {
+			this.adoptHoldings(outcome);
+			this.lastExit = "derelict identified";
+		}
 	}
 	private wreckReadings() {
 		return derelictReadings(
@@ -13058,19 +13066,7 @@ class Game {
 			live.add(w.key);
 			let contact = this.wreckContacts.get(w.key);
 			if (!contact) {
-				contact = {
-					id: w.key,
-					name: `Derelict ${w.pose.hull}`,
-					kind: "wreck",
-					color: 0xbfa77c,
-					pos: { ...w.pose.pos },
-					velocity: { ...w.pose.vel },
-					radiusKm: 0,
-					standing: null,
-					scannerClass: "unknown",
-					condition: "destroyed",
-					shipType: w.pose.hull,
-				};
+				contact = wreckContact(w)!;
 				this.wreckContacts.set(w.key, contact);
 				this.registerContact(contact);
 				this.selectableCache = null;
@@ -13084,11 +13080,14 @@ class Game {
 		}
 		for (const [key, contact] of this.wreckContacts) {
 			if (live.has(key)) continue;
-			this.unregisterContact(contact);
-			this.wreckContacts.delete(key);
-			this.selectableCache = null;
-			if (this.targetId === key) this.targetId = null;
+			this.dropWreckContact(key, contact);
 		}
+	}
+	private dropWreckContact(key: CarrierKey, contact: DisplayContact) {
+		this.unregisterContact(contact);
+		this.wreckContacts.delete(key);
+		this.selectableCache = null;
+		if (this.targetId === key) this.targetId = null;
 	}
 	private wreckCue(): WreckCue | null {
 		if (this.dock.phase === "docked") return null;
@@ -13097,7 +13096,6 @@ class Game {
 			.sort((a, b) => a.km - b.km)[0];
 		if (!w?.signal) return null;
 		const dir = directionTo(this.world.ship.pos, w.pose.pos);
-		const body = this.world.system.bodies.find((b) => b.id === w.pose.bodyId);
 		return {
 			identified: w.identified,
 			strength: w.signal.strength,
@@ -13107,7 +13105,7 @@ class Game {
 				w.pose.pos,
 				this.orientation,
 			),
-			region: `Near ${body?.name ?? "local body"}`,
+			region: derelictRegion(this.world.system, w.pose),
 			km: w.identified ? w.km : null,
 		};
 	}
@@ -17033,15 +17031,10 @@ class Game {
 					this.sweepElapsed === null
 						? null
 						: this.sweepElapsed / SWEEP_CHARGE_S,
-				leads: Object.entries(
-					this.commerceWorld.galaxies[this.world.galaxy.index].leads ?? {},
-				)
-					.filter(
-						([key]) =>
-							systemIndexOfKey(key as CarrierKey) ===
-							this.world.system.record.index,
-					)
-					.map(([, lead]) => lead),
+				sweepReadings: systemSweepReadings(
+					this.commerceWorld.galaxies[this.world.galaxy.index],
+					this.world.system.record.index,
+				),
 				now: this.world.gameTime,
 			},
 			tuning: this.tuningSummary(),

@@ -23,7 +23,8 @@ relay's, so a wreck does not read as a live target);
 contact's display name is a label, with no persistence identity or Carrier slot
 meaning. `ship-visuals.md` §2 owns the review fleet's use of it; the other
 producers include the raider, Traffic actors, the combat rig, the **Pirate
-relay**, its **Relay tender** (a `ship` contact) and the **Cargo canister**.
+relay**, its **Relay tender** (a `ship` contact), the **Cargo canister** and
+identified derelicts (`long-range-scanner.ts` owns their contact builder).
 
 **Impact**:
 One collision event: a ship's hull box meeting a body's sphere, a station's
@@ -466,6 +467,12 @@ _Avoid_: Accepted request (before explicit acceptance)
 **Lead**:
 Sourced intelligence about an object or search region. `docs/specs/missions-and-requests.md` owns observation, confirmation and refresh rules (§1 and §5). Retaining one is the `retain` action, and that is the word in the code and the save; the screen says **Keep for later** and labels the row **kept**. The principal read `Retain lead` and asked what it meant (#459) — one reader, so this is a ruling rather than a finding about players.
 _Avoid_: Mission, confirmed target (for unconfirmed intelligence)
+
+**Sweep reading**:
+A past Long-Range Scanner return: a region, source and observation clock, never
+a contact position or an identification. `long-range-scanner.ts` writes it;
+`GalaxyEnvelope.sweepReadings` persists it separately from retained job **Leads**.
+A new sweep replaces only the current system's readings.
 
 **Local run**:
 A courier job that delivers inside the posting system, posted by every station whose system has a second station. Its own post on the board beside the courier floor, so settling one never rerolls the other. `docs/specs/first-useful-day.md` D2 owns why it exists; `docs/specs/ordinary-requests.md` §3 records the second post.

@@ -9,7 +9,7 @@ import {
 	effectiveDerelict,
 	newWorld,
 	scoopDerelict,
-	replaceSystemLeads,
+	replaceSystemSweepReadings,
 	parseWorld,
 	serializeWorld,
 } from "../src/world-state";
@@ -39,6 +39,12 @@ import {
 	serializeSave,
 } from "../src/save-envelope";
 
+import { generateGalaxy } from "../src/galaxy";
+import { relayActive } from "../src/pirate-relay";
+import { systemSweepReadings } from "../src/world-state";
+import { wreckContact } from "../src/long-range-scanner";
+import { HULL_SPECS } from "../src/hull";
+
 const system = makeWorld(47).system;
 const key = derelictSlots(system.record.index, system.record.government)[0].key;
 const at = derelictFirstLossAt(system.record.seed, key) + 1;
@@ -49,15 +55,20 @@ const pose = derelictPose(system, key, row.instanceOrdinal, at);
 const far = add(pose.pos, v3(3000, 0, 0));
 const modules = [LONG_RANGE_SCANNER];
 
-test("charged sweep requires the module and ten uninterrupted seconds", () => {
+test("charged sweep requires the module and ten seconds; removing it resets progress", () => {
 	expect(stepSweep(0, 20, []).complete).toBe(false);
+	const interrupted = stepSweep(SWEEP_CHARGE_S / 2, 1, []);
+	expect(interrupted).toEqual({ elapsed: 0, complete: false });
+	expect(
+		stepSweep(interrupted.elapsed, SWEEP_CHARGE_S / 2, modules).complete,
+	).toBe(false);
 	expect(stepSweep(0, SWEEP_CHARGE_S - 0.01, modules).complete).toBe(false);
 	expect(stepSweep(SWEEP_CHARGE_S - 0.01, 0.01, modules).complete).toBe(true);
 });
 test("a system sweep writes region source and age but never knowledge", () => {
 	expect(sweepSystem(world, system, [], at)).toBe(world);
 	const swept = sweepSystem(world, system, modules, at);
-	const lead = swept.galaxies[0].leads![key];
+	const lead = swept.galaxies[0].sweepReadings![key];
 	expect(lead.kind).toBe("derelict");
 	expect(lead.observedAt).toBe(at);
 	expect(lead.source).toBe("Long-Range Scanner sweep");
@@ -123,7 +134,7 @@ test("stripped and taken wrecks leave the stale lead intact; sweeping replaces o
 		source: "Long-Range Scanner sweep",
 		observedAt: at - 1,
 	};
-	const withOther = replaceSystemLeads(world, 0, otherIndex, at, {
+	const withOther = replaceSystemSweepReadings(world, 0, otherIndex, at, {
 		[other]: foreign,
 	});
 	const swept = sweepSystem(withOther, system, modules, at);
@@ -133,29 +144,36 @@ test("stripped and taken wrecks leave the stale lead intact; sweeping replaces o
 	});
 	expect(effectiveDerelict(stripped, 0, key, at).condition).toBe("salvaged");
 	expect(
-		sweepSystem(stripped, system, modules, at).galaxies[0].leads![other],
+		sweepSystem(stripped, system, modules, at).galaxies[0].sweepReadings![
+			other
+		],
 	).toEqual(foreign);
 	expect(identifyDerelicts(stripped, system, pose.pos, modules, at).world).toBe(
 		stripped,
 	);
-	expect(stripped.galaxies[0].leads![key]).toEqual(
-		swept.galaxies[0].leads![key],
+	expect(stripped.galaxies[0].sweepReadings![key]).toEqual(
+		swept.galaxies[0].sweepReadings![key],
 	);
 	expect(
-		sweepSystem(stripped, system, modules, at).galaxies[0].leads![key],
+		sweepSystem(stripped, system, modules, at).galaxies[0].sweepReadings![key],
 	).toBeUndefined();
 	const takenAt = row.salvagerAt + 1;
 	const taken = advanceTo(swept, takenAt);
 	expect(
 		identifyDerelicts(taken, system, pose.pos, modules, takenAt).world,
 	).toBe(taken);
-	expect(taken.galaxies[0].leads![key]).toEqual(swept.galaxies[0].leads![key]);
+	expect(taken.galaxies[0].sweepReadings![key]).toEqual(
+		swept.galaxies[0].sweepReadings![key],
+	);
 	expect(
-		sweepSystem(taken, system, modules, takenAt).galaxies[0].leads![key],
+		sweepSystem(taken, system, modules, takenAt).galaxies[0].sweepReadings![
+			key
+		],
 	).toBeUndefined();
 });
 
-test("a later wreck in a known slot requires its own identification", () => {
+// glossary-ignore: slot
+test("a later wreck in a known carrier slot requires its own identification", () => {
 	const found = identifyDerelicts(world, system, pose.pos, modules, at).world;
 	let stripped = found;
 	row.containers.forEach((c, i) => {
@@ -185,7 +203,9 @@ test("leads and identification survive a save, first wreck kind banks once comma
 	const saved = parseSave(
 		serializeSave({ world: found, commander: newCommanderRecord("courier") }),
 	);
-	expect(saved.world.galaxies[0].leads).toEqual(found.galaxies[0].leads);
+	expect(saved.world.galaxies[0].sweepReadings).toEqual(
+		found.galaxies[0].sweepReadings,
+	);
 	expect(saved.world.galaxies[0].knowledge[key]).toEqual(
 		found.galaxies[0].knowledge[key],
 	);
@@ -213,7 +233,7 @@ test("leads and identification survive a save, first wreck kind banks once comma
 	).toBe(2);
 });
 
-test("saved leads refuse exact positions, wrong slots and invalid observation clocks", () => {
+test("saved sweep readings refuse exact positions, wrong carrier identities and invalid observation clocks", () => {
 	const saved = serializeWorld(sweepSystem(world, system, modules, at)) as any;
 	for (const change of [
 		(lead: any) => {
@@ -230,16 +250,16 @@ test("saved leads refuse exact positions, wrong slots and invalid observation cl
 		},
 	]) {
 		const copy = structuredClone(saved);
-		change(copy.galaxies[0].leads[key]);
+		change(copy.galaxies[0].sweepReadings[key]);
 		delete copy.integrity;
 		copy.integrity = fnv1a(JSON.stringify(copy));
-		expect(() => parseWorld(copy)).toThrow("lead");
+		expect(() => parseWorld(copy)).toThrow("sweep reading");
 	}
 	expect(
 		parseLadders(serializeLadders(emptyLadderRecord())).kinds,
 	).toBeUndefined();
 	expect(
-		(serializeWorld(newWorld(47)) as any).galaxies[0].leads,
+		(serializeWorld(newWorld(47)) as any).galaxies[0].sweepReadings,
 	).toBeUndefined();
 });
 
@@ -256,7 +276,7 @@ test("the live hold event adopts knowledge and pending credit together and a ref
 		at,
 	});
 	expect(swept.holdings).toBe(holdings);
-	expect(swept.world.galaxies[0].leads![key]).toBeDefined();
+	expect(swept.world.galaxies[0].sweepReadings![key]).toBeDefined();
 	const refused = applyHoldEvent(holdings, swept.world, {
 		kind: "derelict-identify",
 		system,
@@ -283,4 +303,63 @@ test("the live hold event adopts knowledge and pending credit together and a ref
 	});
 	expect(again.holdings).toBe(found.holdings);
 	expect(again.world).toBe(found.world);
+});
+
+test("sweep readings have their own optional save domain, separate from job leads", () => {
+	const swept = sweepSystem(world, system, modules, at);
+	const wire = serializeWorld(swept) as any;
+	expect(wire.galaxies[0]).toHaveProperty("sweepReadings");
+	expect(wire.galaxies[0]).not.toHaveProperty("leads");
+	expect(systemSweepReadings(swept.galaxies[0], system.record.index)).toEqual(
+		Object.values(swept.galaxies[0].sweepReadings!),
+	);
+	expect(
+		systemSweepReadings(swept.galaxies[0], (system.record.index + 1) % 256),
+	).toEqual([]);
+});
+
+test("saved relay sweep readings require a system with an active relay", () => {
+	const absent = generateGalaxy(47, 0).systems.find((r) => !relayActive(r))!;
+	const relayKey = carrierKey(absent.index, "relay-00");
+	const invalid = replaceSystemSweepReadings(world, 0, absent.index, at, {
+		[relayKey]: {
+			kind: "relay",
+			region: "Approach",
+			source: "Long-Range Scanner sweep",
+			observedAt: at,
+		},
+	});
+	expect(() => parseWorld(serializeWorld(invalid))).toThrow("no active relay");
+	const swept = sweepSystem(world, system, modules, at);
+	expect(parseWorld(serializeWorld(swept)).galaxies[0].sweepReadings).toEqual(
+		swept.galaxies[0].sweepReadings,
+	);
+});
+
+test("wreck contact builder exposes only identified readings and copies authoritative motion", () => {
+	const unknown = derelictReadings(world, system, far, [], at).find(
+		(w) => w.key === key,
+	)!;
+	expect(wreckContact(unknown)).toBeNull();
+	const found = identifyDerelicts(world, system, pose.pos, [], at).world;
+	const reading = derelictReadings(found, system, far, [], at).find(
+		(w) => w.key === key,
+	)!;
+	const contact = wreckContact(reading)!;
+	expect(contact).toMatchObject({
+		id: key,
+		kind: "wreck",
+		condition: "destroyed",
+		shipType: pose.hull,
+		standing: null,
+		scannerClass: "unknown",
+		pos: pose.pos,
+		velocity: pose.vel,
+	});
+	const env = HULL_SPECS[pose.hull].env;
+	expect(contact.radiusKm).toBe(
+		Math.hypot(env.beamKm, env.heightKm, env.lengthKm) / 2,
+	);
+	expect(contact.pos).not.toBe(reading.pose.pos);
+	expect(contact.velocity).not.toBe(reading.pose.vel);
 });

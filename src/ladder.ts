@@ -312,7 +312,8 @@ export interface PendingCredit {
 
 export const emptyPending = (): PendingCredit => ({ combat: 0, systems: [] });
 
-export type ExplorationKind = "wreck";
+export const EXPLORATION_KINDS = ["wreck"] as const;
+export type ExplorationKind = (typeof EXPLORATION_KINDS)[number];
 
 export const pendingKind = (
 	record: LadderRecord,
@@ -598,7 +599,9 @@ export const parseLadders = (raw: unknown): LadderRecord => {
 	if (
 		o.kinds !== undefined &&
 		(!Array.isArray(o.kinds) ||
-			o.kinds.some((k) => k !== "wreck") ||
+			o.kinds.some(
+				(k) => !(EXPLORATION_KINDS as readonly unknown[]).includes(k),
+			) ||
 			new Set(o.kinds).size !== o.kinds.length)
 	)
 		fail("kinds is not a unique list of exploration kinds");

@@ -1,7 +1,9 @@
 /** Node #733: a sweep gives provenance; only a flown identification gives a
  * contact. Headless, in the sim's float64 kilometres and authoritative clock. */
+import type { DisplayContact } from "./display-contact";
+import { HULL_SPECS } from "./hull";
 import type { CarrierKey } from "./carrier-key";
-import { derelictSlots } from "./derelict-slots";
+import { derelictSlots } from "./derelict-slots"; // glossary-ignore: slot
 import { derelictPose } from "./derelict";
 import {
 	relayActive,
@@ -18,8 +20,8 @@ import {
 	effectiveDerelict,
 	observeDerelict,
 	readKnowledge,
-	replaceSystemLeads,
-	type RegionLead,
+	replaceSystemSweepReadings,
+	type SweepReading,
 	type WorldState,
 } from "./world-state";
 
@@ -39,6 +41,7 @@ export function stepSweep(
 
 export function liveDerelicts(world: WorldState, system: System, at: number) {
 	const record = system.record;
+	// glossary-ignore: slot
 	return derelictSlots(record.index, record.government).flatMap(({ key }) => {
 		const row = effectiveDerelict(world, record.galaxy, key, at);
 		return row.condition === "destroyed"
@@ -70,6 +73,36 @@ export function derelictReadings(
 				: null,
 		};
 	});
+}
+
+export type DerelictReading = ReturnType<typeof derelictReadings>[number];
+
+/** Identification alone makes a live wreck a presentation contact. */
+export function wreckContact(reading: DerelictReading): DisplayContact | null {
+	if (!reading.identified) return null;
+	const { key, pose } = reading;
+	const env = HULL_SPECS[pose.hull].env;
+	return {
+		id: key,
+		name: `Derelict ${pose.hull}`,
+		kind: "wreck",
+		color: 0xbfa77c,
+		pos: { ...pose.pos },
+		velocity: { ...pose.vel },
+		radiusKm: Math.hypot(env.beamKm, env.heightKm, env.lengthKm) / 2,
+		standing: null,
+		scannerClass: "unknown",
+		condition: "destroyed",
+		shipType: pose.hull,
+	};
+}
+
+export function derelictRegion(
+	system: System,
+	pose: ReturnType<typeof derelictPose>,
+): string {
+	const body = system.bodies.find((b) => b.id === pose.bodyId);
+	return `Near ${body?.name ?? "local body"}`;
 }
 
 export function identifyDerelicts(
@@ -104,12 +137,11 @@ export function sweepSystem(
 	at: number,
 ): WorldState {
 	if (!relayScannerFitted(modules)) return world;
-	const rows: Record<CarrierKey, RegionLead> = {};
+	const rows: Record<CarrierKey, SweepReading> = {};
 	for (const wreck of liveDerelicts(world, system, at)) {
-		const body = system.bodies.find((b) => b.id === wreck.pose.bodyId);
 		rows[wreck.key] = {
 			kind: "derelict",
-			region: `Near ${body?.name ?? "local body"}`,
+			region: derelictRegion(system, wreck.pose),
 			observedAt: at,
 			source: SWEEP_SOURCE,
 		};
@@ -134,5 +166,11 @@ export function sweepSystem(
 			source: SWEEP_SOURCE,
 		};
 	}
-	return replaceSystemLeads(world, record.galaxy, record.index, at, rows);
+	return replaceSystemSweepReadings(
+		world,
+		record.galaxy,
+		record.index,
+		at,
+		rows,
+	);
 }

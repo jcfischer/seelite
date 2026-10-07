@@ -1,26 +1,27 @@
+import { SWEEP_CHARGE_S } from "./long-range-scanner";
 import { escapeHtml as esc } from "./escape-html";
 import { targetAgeLabel } from "./display-contact";
 import { strengthBars } from "./relay-cue";
-import type { RegionLead } from "./world-state";
+import type { SweepReading } from "./world-state";
 
 export interface SweepView {
 	fitted: boolean;
 	progress: number | null;
-	leads: readonly RegionLead[];
+	sweepReadings: readonly SweepReading[];
 	now: number;
 }
 
-/** Leads have no target action: a region cannot be selected as a contact. */
+/** Sweep readings have no target action: a region cannot be selected as a contact. */
 export function sweepMarkup(view: SweepView): string {
 	if (!view.fitted)
 		return `<h3>LONG-RANGE SCANNER</h3><p>Fit a Long-Range Scanner at a shipyard to sweep this system.</p>`;
-	const rows = view.leads
+	const rows = view.sweepReadings
 		.map(
 			(lead) =>
 				`<li data-live-sweep-lead><strong>${lead.kind === "derelict" ? "Derelict return" : "Relay signal"}</strong><br>${esc(lead.region)}<br><small>${esc(lead.source)} · ${targetAgeLabel(view.now - lead.observedAt)} ago</small></li>`,
 		)
 		.join("");
-	return `<h3>SYSTEM SWEEP</h3><button class="lc-chip" type="button" data-live-sweep ${view.progress === null ? "" : "disabled"}>${view.progress === null ? "SWEEP · 10 s" : `SWEEPING ${Math.floor(view.progress * 100)}%`}</button><p>A past reading of a region. Approach to identify a contact.</p><ul class="lc-nav-list">${rows || "<li>No recorded returns</li>"}</ul>`;
+	return `<h3>SYSTEM SWEEP</h3><button class="lc-chip" type="button" data-live-sweep ${view.progress === null ? "" : "disabled"}>${view.progress === null ? `SWEEP · ${SWEEP_CHARGE_S} s` : `SWEEPING ${Math.floor(view.progress * 100)}%`}</button><p>A past reading of a region. Approach to identify a contact.</p><ul class="lc-nav-list">${rows || "<li>No recorded returns</li>"}</ul>`;
 }
 
 export interface WreckCue {

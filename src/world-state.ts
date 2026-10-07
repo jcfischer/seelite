@@ -52,6 +52,7 @@ import {
 	derelictTimeline,
 } from "./derelict-slots";
 import { generateGalaxy, type SystemRecord, systemAt } from "./galaxy";
+import { relayActive } from "./pirate-relay";
 import { COMMODITIES } from "./market";
 import type { HullId } from "./hull";
 import { fnv1a } from "./rng";
@@ -447,12 +448,12 @@ export interface GalaxyEnvelope {
 	/** Derelict slots the pilot has touched (`salvage.md`, node #731). Empty // glossary-ignore: slot
 	 *  means every slot is on its derived schedule, untouched. */
 	derelicts: Record<CarrierKey, DerelictRow>;
-	/** Past system sweep readings, at most one region per carrier slot. A lead
-	 * is provenance and never supplies a contact position or knowledge. */
-	leads?: Record<CarrierKey, RegionLead>;
+	/** Past system sweep readings, at most one region per carrier identity.
+	 * Provenance only: these are separate from retained job Leads and knowledge. */
+	sweepReadings?: Record<CarrierKey, SweepReading>;
 }
 
-export interface RegionLead {
+export interface SweepReading {
 	kind: "derelict" | "relay";
 	region: string;
 	source: string;
@@ -482,7 +483,7 @@ const ENVELOPE_DOMAINS = [
 	"visited",
 	"legalStatus",
 	"derelicts",
-	"leads",
+	"sweepReadings",
 ] as const;
 
 /**
@@ -493,7 +494,7 @@ const ENVELOPE_DOMAINS = [
  */
 const OPTIONAL_ENVELOPE_DOMAINS: ReadonlySet<string> = new Set([
 	"derelicts",
-	"leads",
+	"sweepReadings",
 ]);
 
 const WORLD_FIELDS = [
@@ -1445,18 +1446,18 @@ export const readKnowledge = (
 
 /** Replace this system's past readings, including replacing them with none.
  * Other systems retain their original source and clock. */
-export const replaceSystemLeads = (
+export const replaceSystemSweepReadings = (
 	world: WorldState,
 	galaxyIndex: number,
 	systemIndex: number,
 	at: number,
-	rows: Record<CarrierKey, RegionLead>,
+	rows: Record<CarrierKey, SweepReading>,
 ): WorldState =>
 	withEnvelope(world, galaxyIndex, at, (env) => ({
 		...env,
-		leads: {
+		sweepReadings: {
 			...Object.fromEntries(
-				Object.entries(env.leads ?? {}).filter(
+				Object.entries(env.sweepReadings ?? {}).filter(
 					([key]) => systemIndexOfKey(key as CarrierKey) !== systemIndex,
 				),
 			),
@@ -1464,8 +1465,17 @@ export const replaceSystemLeads = (
 		},
 	}));
 
-/** A flown wreck reading uses its own lifecycle, never effectiveCarrier's
- * absent-row operational default. An empty or salvaged slot writes nothing. */
+/** Past readings for one system; no objective-state lookup or refresh. */
+export const systemSweepReadings = (
+	env: GalaxyEnvelope,
+	systemIndex: number,
+): SweepReading[] =>
+	Object.entries(env.sweepReadings ?? {})
+		.filter(([key]) => systemIndexOfKey(key as CarrierKey) === systemIndex)
+		.map(([, reading]) => reading);
+
+/** A flown wreck reading uses its own operational condition, never effectiveCarrier's
+ * absent-row operational default. An empty or salvaged carrier writes nothing. */
 export const observeDerelict = (
 	world: WorldState,
 	galaxyIndex: number,
@@ -2187,9 +2197,9 @@ const canonicalEnvelope = (env: GalaxyEnvelope) => ({
 	...(Object.keys(env.derelicts).length
 		? { derelicts: canonicalMap(env.derelicts, canonicalDerelict) }
 		: {}),
-	...(Object.keys(env.leads ?? {}).length
+	...(Object.keys(env.sweepReadings ?? {}).length
 		? {
-				leads: canonicalMap(env.leads!, (lead) => ({
+				sweepReadings: canonicalMap(env.sweepReadings!, (lead) => ({
 					kind: lead.kind,
 					region: lead.region,
 					source: lead.source,
@@ -2714,24 +2724,24 @@ const parseLegalKeyList = (
 	});
 };
 
-const parseRegionLead = (raw: unknown, key: string): RegionLead => {
-	const o = asObject(raw, `lead ${key}`);
+const parseSweepReading = (raw: unknown, key: string): SweepReading => {
+	const o = asObject(raw, `sweep reading ${key}`);
 	for (const field of Object.keys(o))
 		if (!["kind", "region", "source", "observedAt"].includes(field))
-			fail(`lead ${key}: ${field} is not a lead field`);
-	const kind = str(o, "kind", `lead ${key}`);
+			fail(`sweep reading ${key}: ${field} is not a sweep reading field`);
+	const kind = str(o, "kind", `sweep reading ${key}`);
 	const id = localCarrierIdOfKey(key as CarrierKey);
 	if (
 		(kind !== "relay" || id !== "relay-00") &&
 		(kind !== "derelict" || derelictOrdinalOf(id) === null)
 	)
-		fail(`lead ${key}: kind does not name its carrier slot`);
-	const observedAt = num(o, "observedAt", `lead ${key}`);
-	if (observedAt < 0) fail(`lead ${key}: negative observation clock`);
+		fail(`sweep reading ${key}: kind does not name its carrier identity`);
+	const observedAt = num(o, "observedAt", `sweep reading ${key}`);
+	if (observedAt < 0) fail(`sweep reading ${key}: negative observation clock`);
 	return {
-		kind: kind as RegionLead["kind"],
-		region: str(o, "region", `lead ${key}`),
-		source: str(o, "source", `lead ${key}`),
+		kind: kind as SweepReading["kind"],
+		region: str(o, "region", `sweep reading ${key}`),
+		source: str(o, "source", `sweep reading ${key}`),
 		observedAt,
 	};
 };
@@ -2791,9 +2801,15 @@ const parseEnvelope = (raw: unknown, slot: number): GalaxyEnvelope => {
 			o.derelicts === undefined
 				? {}
 				: parseCarrierMap(o.derelicts, "derelicts", parseDerelictRow),
-		...(o.leads === undefined
+		...(o.sweepReadings === undefined
 			? {}
-			: { leads: parseCarrierMap(o.leads, "leads", parseRegionLead) }),
+			: {
+					sweepReadings: parseCarrierMap(
+						o.sweepReadings,
+						"sweepReadings",
+						parseSweepReading,
+					),
+				}),
 	};
 };
 
@@ -2874,17 +2890,28 @@ export function parseWorld(raw: unknown): WorldState {
 				);
 		}
 	for (const env of world.galaxies)
-		for (const [key, lead] of Object.entries(env.leads ?? {}) as [
+		for (const [key, lead] of Object.entries(env.sweepReadings ?? {}) as [
 			CarrierKey,
-			RegionLead,
+			SweepReading,
 		][]) {
+			if (
+				lead.kind === "relay" &&
+				!relayActive(
+					systemAt(world.seed, env.galaxyIndex, systemIndexOfKey(key)),
+				)
+			)
+				fail(
+					`sweep reading ${key}: no active relay in galaxy ${env.galaxyIndex}`,
+				);
 			if (lead.observedAt > world.gameTime)
-				fail(`lead ${key}: observation after the world clock`);
+				fail(`sweep reading ${key}: observation after the world clock`);
 			if (
 				lead.kind === "derelict" &&
 				!heldDerelictSlot(world.seed, env.galaxyIndex, key)
 			)
-				fail(`lead ${key}: no derelict slot in galaxy ${env.galaxyIndex}`);
+				fail(
+					`sweep reading ${key}: no derelict carrier in galaxy ${env.galaxyIndex}`,
+				);
 		}
 
 	// **Over what arrived, not over what parsing made of it.** Hashing the

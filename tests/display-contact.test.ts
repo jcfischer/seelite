@@ -340,6 +340,7 @@ function teardownSubject(ejectHold: EjectHold, ejectDown: boolean) {
 			methods(
 				[
 					"clearFlightSession",
+					"dropWreckContact",
 					"dropPointer",
 					"syncCargoContacts",
 					"registerContact",

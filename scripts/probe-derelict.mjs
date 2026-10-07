@@ -10,6 +10,31 @@ import {
 import { gameUrl } from "./lib/game-url.mjs";
 import { installViewFraming } from "./lib/view-placement.mjs";
 import { placeDerelict } from "./lib/derelict-state.mjs";
+// Controlled range placements exercise the live step; they do not fly an approach.
+async function placeNear(
+	page,
+	fixture,
+	dx,
+	{ step = false, look = null } = {},
+) {
+	return page.evaluate(
+		({ fixture: f, dx, step, look }) => {
+			const g = window.__seelite;
+			const w = g.derelictsAt().find((w) => w.key === f.key);
+			g.world.ship.pos = { ...w.pose.pos, x: w.pose.pos.x + dx };
+			g.world.ship.vel = { ...w.pose.vel };
+			if (step) g.step(1 / 60);
+			g.render(0);
+			if (look) g.setHeadLook(look);
+			return {
+				row: g.commerceWorld.galaxies[g.world.galaxy.index].knowledge[f.key],
+				contact: g.contacts.some((c) => c.id === f.key),
+			};
+		},
+		{ fixture, dx, step, look },
+	);
+}
+
 const origin = await guardedOrigin(
 	process.env.PROBE_ORIGIN ?? process.argv[2] ?? "http://localhost:5173",
 );
@@ -28,14 +53,11 @@ try {
 
 	// Node #733: the fixture has no identification. Opening consoles reads no
 	// objective position; a sweep is a deliberate press and carries only regions.
-	await page.evaluate(async (f) => {
+	await page.evaluate(() => {
 		const g = window.__seelite;
 		g.commander = { ...g.commander, ownedEquipment: [] };
-		const w = g.derelictsAt().find((w) => w.key === f.key);
-		g.world.ship.pos = { ...w.pose.pos, x: w.pose.pos.x + 3000 };
-		g.render(0);
-		g.setHeadLook("left");
-	}, fixture);
+	});
+	await placeNear(page, fixture, 3000, { look: "left" });
 	await page.locator('[data-live-left-tab="Scanner"]').click();
 	check(
 		"unfitted Scanner tab names the module and offers no sweep",
@@ -77,13 +99,15 @@ try {
 		g.render(0);
 		return {
 			elapsed: g.sweepElapsed,
-			leads: Object.keys(g.commerceWorld.galaxies[0].leads ?? {}).length,
+			sweepReadings: Object.keys(
+				g.commerceWorld.galaxies[0].sweepReadings ?? {},
+			).length,
 		};
 	});
 	check(
 		"five seconds paints sweep progress without writing leads",
 		partial.elapsed > 4.9 &&
-			partial.leads === 0 &&
+			partial.sweepReadings === 0 &&
 			(await page.locator("[data-live-sweep]").innerText()).includes(
 				"SWEEPING",
 			),
@@ -96,7 +120,7 @@ try {
 	const leadText = await page.locator("[data-live-sweep-body]").innerText();
 	const swept = await page.evaluate(
 		(f) => ({
-			lead: window.__seelite.commerceWorld.galaxies[0].leads[f.key],
+			lead: window.__seelite.commerceWorld.galaxies[0].sweepReadings[f.key],
 			known: window.__seelite.commerceWorld.galaxies[0].knowledge[f.key],
 		}),
 		fixture,
@@ -112,14 +136,7 @@ try {
 	);
 	mkdirSync("view-set/node-733", { recursive: true });
 	await page.screenshot({ path: "view-set/node-733/scanner-tab.png" });
-	await page.evaluate((f) => {
-		const g = window.__seelite;
-		const w = g.derelictsAt().find((w) => w.key === f.key);
-		g.world.ship.pos = { ...w.pose.pos, x: w.pose.pos.x + 500 };
-		g.world.ship.vel = { ...w.pose.vel };
-		g.setHeadLook("forward");
-		g.render(0);
-	}, fixture);
+	await placeNear(page, fixture, 500, { look: "forward" });
 	const signal = page.locator("[data-live-wreck-cue]");
 	check(
 		"passive cue paints strength and bearing without an exact range",
@@ -129,20 +146,9 @@ try {
 			!(await signal.innerText()).includes(" km"),
 	);
 	await page.screenshot({ path: "view-set/node-733/scanner-cue.png" });
-	const scannerFound = await page.evaluate((f) => {
-		const g = window.__seelite;
-		const w = g.derelictsAt().find((w) => w.key === f.key);
-		g.world.ship.pos = { ...w.pose.pos, x: w.pose.pos.x + 100 };
-		g.world.ship.vel = { ...w.pose.vel };
-		g.step(1 / 60);
-		g.render(0);
-		return {
-			row: g.commerceWorld.galaxies[0].knowledge[f.key],
-			contact: g.contacts.some((c) => c.id === f.key),
-		};
-	}, fixture);
+	const scannerFound = await placeNear(page, fixture, 100, { step: true });
 	check(
-		"fitted approach identifies a selectable wreck through the live step",
+		"fitted placement inside identification range makes a selectable wreck through the live step",
 		scannerFound.row?.source === "scanner identification" &&
 			scannerFound.contact,
 	);
@@ -159,16 +165,11 @@ try {
 		g.ladderPending = emptyPending();
 	}, fixture);
 
-	await page.evaluate((f) => {
+	await page.evaluate(() => {
 		const g = window.__seelite;
-		const w = g.derelictsAt().find((w) => w.key === f.key);
 		g.commander = { ...g.commander, ownedEquipment: [] };
-		g.world.ship.pos = { ...w.pose.pos, x: w.pose.pos.x + 9.9 };
-		g.world.ship.vel = { ...w.pose.vel };
-		g.step(1 / 60);
-		g.render(0);
-		g.setHeadLook("left");
-	}, fixture);
+	});
+	await placeNear(page, fixture, 9.9, { step: true, look: "left" });
 	await page.locator('[data-live-left-tab="Navigation"]').click();
 	const nav = page.locator('[data-live-nav-target="' + fixture.key + '"]');
 	check(
