@@ -25,7 +25,7 @@
 
 import { type Impact, shipPose, sweepShip } from "../../src/collision";
 import { hullSolid } from "./hull-solid";
-import type { StationSeeds } from "./station-plan-corpus";
+import type { StationPlanOfType } from "./station-plan-corpus";
 import {
 	type ApertureFrame,
 	type ComputerPhase,
@@ -53,14 +53,16 @@ import {
 
 const NO_TURN: Angular = Object.freeze({ pitch: 0, yaw: 0, roll: 0 });
 import {
+	OUTPOST_FORM,
 	STATION_GEOMETRY,
+	type StationFormId,
 	type StationType,
 	slotPhaseRad,
 } from "../../src/station";
 import { stationInterior } from "../../src/station-interior";
 import {
 	type StationProxy,
-	selectedStationProxy,
+	stationProxyOf,
 	stationMotions,
 } from "../../src/station-proxy";
 import { type Vec3, add, cross, dot, length, scale, v3 } from "../../src/vec3";
@@ -197,14 +199,16 @@ export interface FlightOptions {
 	trace?: ComputerTraceStep[];
 	/**
 	 * The station the hull meets (`collision.md` §2.2), when it is not the
-	 * selected form's proxy at `stationSeeds` (berth 1, assembly 0 if omitted) — for a row
-	 * that builds a red proxy on purpose.
+	 * proxy of the plan at `stationPlan` — for a row that builds a red proxy
+	 * on purpose.
 	 */
 	proxy?: StationProxy;
 	/** Explicit plan for seeded collision rows. Historical handling fixtures
-	 * retain berth 1, assembly 0 when omitted. The berth catalogue and proxy
-	 * must read the same pair. */
-	stationSeeds?: StationSeeds;
+	 * retain berth 1, assembly 0 when omitted, in `HISTORICAL_FORM` — the form
+	 * each role flew when their ceilings were measured — and a row about every
+	 * form iterates `stationPlansFor`. The berth catalogue and proxy must read
+	 * the same plan. */
+	stationPlan?: StationPlanOfType;
 }
 
 /** The clearance a run starts under: none, queued, or a live grant. Every
@@ -234,6 +238,22 @@ function initialState(
 	};
 }
 
+/**
+ * The form each role flew before node #717, when the historical handling
+ * fixtures' ceilings were measured: trade and shipyard `a`, refinery `d`,
+ * the outpost's own. Named rather than read off the pool (sage, node #717
+ * round 2): a fixture that followed `formsInPlay(type)[0]` would fly its
+ * ceilings against another form the day a pool were reordered, with no row
+ * going red. `collision-stations.test.ts` names its Coriolis for the same
+ * reason.
+ */
+export const HISTORICAL_FORM: Readonly<Record<StationType, StationFormId>> = {
+	trade: "a",
+	shipyard: "a",
+	refinery: "d",
+	outpost: OUTPOST_FORM,
+};
+
 export function flyTheComputer(opts: FlightOptions): FlightRun {
 	const type = opts.type ?? "trade";
 	const { axis, reference } = opts;
@@ -242,7 +262,11 @@ export function flyTheComputer(opts: FlightOptions): FlightRun {
 	const dt = opts.dt ?? 0.05;
 	const swing = opts.axisSwingRadPerS ?? 0;
 	const pivot = cross(axis, reference);
-	const seeds = opts.stationSeeds ?? { berthSeed: 1, assemblySeed: 0 };
+	const seeds = opts.stationPlan ?? {
+		formId: HISTORICAL_FORM[type],
+		berthSeed: 1,
+		assemblySeed: 0,
+	};
 
 	const interior = stationInterior(
 		type,
@@ -272,7 +296,7 @@ export function flyTheComputer(opts: FlightOptions): FlightRun {
 	let ghostSteps = 0;
 	// The station stands at the origin of its own frame, which is the frame
 	// this harness flies in: a proxy at rest, turning with the slot. // glossary-ignore: slot
-	const proxy = opts.proxy ?? selectedStationProxy({ type, ...seeds });
+	const proxy = opts.proxy ?? stationProxyOf({ type, ...seeds });
 	const box = hullSolid(opts.hull);
 	const limitS = opts.limitS ?? GRANT_WINDOW_S;
 	let previousPhase: ComputerPhase = "idle";

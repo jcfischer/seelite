@@ -152,9 +152,7 @@ try {
 			g.world.system.contents.stations.every((station) => {
 				const body = g.world.system.byId.get(station.id);
 				if (!body) return true;
-				const reach = proxyMod.proxyReachKm(
-					proxyMod.selectedStationProxy(station),
-				);
+				const reach = proxyMod.proxyReachKm(proxyMod.stationProxyOf(station));
 				return len(sub(pos, body.pos)) > reach + STATION_CLEARANCE_KM;
 			});
 

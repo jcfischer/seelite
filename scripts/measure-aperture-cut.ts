@@ -37,12 +37,8 @@ import {
 	hasBay,
 	mouthPlane,
 } from "../tests/helpers/aperture-opening";
-import { STATION_GEOMETRY, STATION_TYPES } from "../src/station";
-import {
-	STATION_FORMS,
-	SELECTED_FORM,
-	buildStationForm,
-} from "../src/station-mesh";
+import { STATION_GEOMETRY, STATION_TYPES, formsInPlay } from "../src/station";
+import { STATION_FORMS, buildStationForm } from "../src/station-mesh";
 
 /** Any colour: this is a geometry measurement. */
 const GREY = 0x9aa6b2;
@@ -72,8 +68,9 @@ for (const type of STATION_TYPES) {
 	for (const form of STATION_FORMS[type]) {
 		forms++;
 		const { root } = buildStationForm(type, form.id, GREY, 0, 0);
-		const selected = form.id === SELECTED_FORM[type] ? "*" : " ";
-		const label = `${type.padEnd(9)}${form.id}${selected}`;
+		// `*` marks a form in the role's pool (node #717): one a system can draw.
+		const pooled = formsInPlay(type).includes(form.id) ? "*" : " ";
+		const label = `${type.padEnd(9)}${form.id}${pooled}`;
 
 		// **A pad prints the corridor instead, and it is not the same
 		// measurement wearing a different name** (#165). There is no bay, so

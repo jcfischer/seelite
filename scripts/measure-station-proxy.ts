@@ -8,7 +8,7 @@
  * through — and the outpost's Salvage is one envelope over every plan rather
  * than a proxy that follows one (§2.2), so this spread is all that stands
  * behind it past the twelve. This is the hand-run half: it builds every plan
- * in `[start, start + count)` of each seeded selected form, **with the berth
+ * in `[start, start + count)` of each seeded form in a pool, **with the berth
  * on each side** (berth seeds 0 and 1: the outpost's seeded berth stands port
  * on an even seed and starboard on an odd one), and prints how many plans
  * stand a vertex past the test's tolerance, and the worst overshoot with the
@@ -23,8 +23,12 @@
  *     (default 0); type  refinery | outpost (default both)
  */
 
-import type { StationType } from "../src/station";
-import { SELECTED_FORM, buildStationForm } from "../src/station-mesh";
+import {
+	type StationFormId,
+	type StationType,
+	formsInPlay,
+} from "../src/station";
+import { buildStationForm } from "../src/station-mesh";
 import { PROXY_VERTEX_TOLERANCE_KM, stationProxy } from "../src/station-proxy";
 import { isSeededForm } from "../tests/helpers/solved-forms";
 import {
@@ -43,11 +47,13 @@ function finite(label: string, value: number): number {
 	return value;
 }
 
-function sweep(type: StationType, start: number, count: number): void {
-	const form = SELECTED_FORM[type];
-	if (!isSeededForm(type, form))
-		throw new Error(`${type} ${form} is not a seeded form`);
-	const opening = openingOf(type);
+function sweep(
+	type: StationType,
+	form: StationFormId,
+	start: number,
+	count: number,
+): void {
+	const opening = openingOf(type, form);
 	let over = 0;
 	let worst = -Infinity;
 	let worstAt = "";
@@ -85,5 +91,12 @@ if (!Number.isInteger(start) || start < 0)
 	throw new Error(`start must be a whole number, got ${process.argv[3]}`);
 if (only !== undefined && !SEEDED.includes(only as StationType))
 	throw new Error(`type must be one of ${SEEDED.join(", ")}, got ${only}`);
-for (const type of SEEDED)
-	if (only === undefined || only === type) sweep(type, start, count);
+// Every seeded form in the role's pool (node #717), and a role with none is a
+// fault rather than a silent empty run.
+for (const type of SEEDED) {
+	if (only !== undefined && only !== type) continue;
+	const seeded = formsInPlay(type).filter((form) => isSeededForm(type, form));
+	if (seeded.length === 0)
+		throw new Error(`${type} has no seeded form in play`);
+	for (const form of seeded) sweep(type, form, start, count);
+}

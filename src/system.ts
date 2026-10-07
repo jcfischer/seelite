@@ -57,13 +57,17 @@ import { DOMAIN } from "./domains";
 import { type SystemRecord, stream } from "./galaxy";
 import { type Vec3, dot, lengthSq } from "./vec3";
 import {
+	type DrawnStationType,
 	LOCAL_CARRIER_ID,
+	OUTPOST_FORM,
 	SPIN_RPM_RANGE,
 	STATION_FENCE_ELIGIBLE,
 	STATION_GEOMETRY,
+	type StationFormId,
 	type StationType,
 	fenceProbability,
 } from "./station";
+import { stationForms } from "./station-form";
 import { stationNames } from "./station-name";
 import { RAIDER_SLOT_MAX, raiderSlotCount } from "./raider-slots";
 import { AU_KM } from "./units";
@@ -397,6 +401,19 @@ export interface Station {
 	 * a silhouette decision in the generator.
 	 */
 	assemblySeed: number;
+	/**
+	 * The form this station is built in, from its role's pool
+	 * (`STATION_FORM_POOL`), drawn from the system's own seed
+	 * (`DOMAIN.STATION_FORM`, node #717).
+	 *
+	 * Generated and never changing, like `type`: the mesh, the display reach
+	 * and the collision proxy all read it, so the three cannot disagree about
+	 * which station this is. A form id rather than a seed for `berthSeed`'s
+	 * reason turned round — which form is a choice among drawings the
+	 * principal has taken, and the generator is the one place that may make
+	 * it. An outpost's is `OUTPOST_FORM` and draws nothing.
+	 */
+	formId: StationFormId;
 }
 
 export interface SystemContents {
@@ -809,6 +826,9 @@ function generateStations(
 	const berthRand = stream(record.seed, DOMAIN.STATION_BERTHS);
 	const assemblyRand = stream(record.seed, DOMAIN.STATION_ASSEMBLY);
 	const names = stationNames(record.seed, record.name);
+	// Not a stream above: one sub-stream per type slot, drawn for every slot // glossary-ignore: slot
+	// (`station-form.ts`), so it moves no station draw and no station moves it.
+	const forms = stationForms(record.seed);
 	const stations: Station[] = [];
 	// **No `?? planets[0]` fallback.** It used to be there, and it is what made
 	// the second defect invisible: a system whose primary rung alone was
@@ -829,7 +849,7 @@ function generateStations(
 	 * that does not (`docking.md` §5).
 	 */
 	const fields = (
-		type: StationType,
+		type: DrawnStationType,
 	): Pick<
 		Station,
 		| "name"
@@ -838,6 +858,7 @@ function generateStations(
 		| "localCarrierId"
 		| "berthSeed"
 		| "assemblySeed"
+		| "formId"
 	> => ({
 		name: names[type],
 		blackMarket: drawBlackMarket(flagRand, type, record.government),
@@ -851,6 +872,8 @@ function generateStations(
 		// Not a draw: the persistence identity is a table lookup
 		// (`station.ts`), so it consumes nothing from either stream.
 		localCarrierId: LOCAL_CARRIER_ID[type],
+		// Drawn above, per slot, from its own tag (node #717). // glossary-ignore: slot
+		formId: forms[type],
 	});
 
 	/** Station orbits are low and fast (§7.3): a few hundred to a couple of
@@ -980,6 +1003,9 @@ function raiderOutpost(
 		spinRpm: 0,
 		berthSeed: Math.floor(rand() * 0x100000000),
 		assemblySeed: Math.floor(rand() * 0x100000000),
+		// An answer, not a draw: the outpost is the fiction's form (#490), not
+		// a pick from a pool (`DrawnStationType`).
+		formId: OUTPOST_FORM,
 	};
 }
 

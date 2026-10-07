@@ -137,46 +137,119 @@ export interface StationGeometry {
 export type StationFormId = "a" | "b" | "c" | "d" | "e";
 
 /**
- * Which form each role is currently built with in the game. The forms are
- * drawings in `station-mesh.ts`, which re-exports this; the choice is here so
- * the collision proxy (`station-proxy.ts`) reads the same table (node #663).
- *
- * One line per role, so a ranking round changes three lines.
- *
- * Round one's ranking put `A` first for both trade and shipyard, so those two
- * are choices rather than placeholders. The refinery's is a placeholder and
- * says so: that role was not ranked — it was sent back with an instruction —
- * so its three forms are all round two's and none of them has been looked at
- * yet. Pretending otherwise is how a placeholder becomes the shipped answer.
- *
- * **Selecting trade E is not one line yet.** The Wheel's `core` is its
- * finished rim and its slot is cut into `hub`, so the selected-form rows that // glossary-ignore: slot
- * measure the bay against `core`'s box would read a rim that ends in front of
- * the bay. A round that selects it owes those rows the part the slot is cut // glossary-ignore: slot
- * into (#334's review); `tests/station-wheel.test.ts` holds the hub against
- * the bay meanwhile.
+ * What a builder or the collision proxy reads off a generated station: its
+ * role, its form and its two seeds (node #717). `Station` (`system.ts`) carries
+ * all four, so a station is passed whole; a test or a workbench names them.
+ * One declaration, so the next per-station field is one edit here rather than
+ * one per signature.
  */
-export const SELECTED_FORM: Record<StationType, StationFormId> = {
-	trade: "a",
-	shipyard: "a",
-	// **D, on the principal's yes to #257's sheet (2026-09-06).** Both pad // glossary-ignore: pad
-	// roles were placeholders for two rounds — `a` was first in the list and
-	// nothing more, and the Warren's old justification had outlived the
-	// outline gate it reasoned about. The Works and the Cluster were built
-	// for a ranking round, shown at four plans under three finishes and four
-	// framings, and taken. These are choices now, and the first the two roles
-	// have had.
-	//
-	// The refinery's changes what a running game draws: `system.ts` places
-	// refineries. The outpost's did not until node #491 placed outposts.
-	refinery: "d",
-	// **E, on the principal's yes to #518's sheet (2026-09-24).** The Cluster
-	// was taken above as an industrial machine, and #490 then made the outpost
-	// a raider's haven; E is the form built for that role — salvage welded
-	// round the pad — ranked beside A–D at three plans under five finishes // glossary-ignore: pad
-	// and four framings. What every lawless system draws since node #491.
-	outpost: "e",
+export interface StationPlan {
+	readonly type: StationType;
+	readonly formId: StationFormId;
+	readonly berthSeed: number;
+	readonly assemblySeed: number;
+}
+
+/**
+ * The forms a station of each role may be built in, and the system's own seed
+ * picks among them (node #717). The forms are drawings in `station-mesh.ts`;
+ * the pools are here so the Three-free generator (`system.ts`, through
+ * `station-form.ts`) and the collision proxy (`station-proxy.ts`) read the
+ * same table as the renderer.
+ *
+ * This replaced `SELECTED_FORM`, one form per role for the whole galaxy. With
+ * it gone, every reader asks the station which form it is — `Station.formId` —
+ * and nothing can answer per type, which is the half that matters: two
+ * stations of one role may now differ, so a per-type answer about a form's
+ * reach, proxy or mesh is wrong the moment a pool holds two.
+ *
+ * **Each pool holds only what the principal has taken for flight**, and today
+ * that is the one form each role already flew. Node #717 asks for a sheet of
+ * every candidate and a yes per pool before a pool grows; the records before
+ * it are yeses to *rank* a form (the Assembly, 2026-09-06; the Wheel, #332),
+ * not to fly it. So growing a pool is one edit here, owed:
+ *
+ * - **a collision proxy** for the form (`stationProxy`), which
+ *   `tests/station-proxy.test.ts` refuses a pooled form without;
+ * - **the display budget and every per-form row**, which iterate
+ *   `formsInPlay` and so reach a new member without being told; the rows
+ *   that build one named form do not, and node #717's receipt lists them;
+ * - **its macro fixtures** under the finishes that carry them
+ *   (`station-fixtures.ts`'s declarations), which the Ring, the Drum and the
+ *   Warren have beside the three that fly, and every other form lacks;
+ * - **the per-form rows it fails on its own** — bay and interior, §5
+ *   fixtures, glow. Every candidate but the Assembly and the Warren fails a
+ *   bay or interior row, and node #717's receipt lists each form's. The
+ *   Wheel's slot is cut into `hub` (#334's review), and // glossary-ignore: slot
+ *   `tests/station-wheel.test.ts` holds the hub meanwhile;
+ * - and the **canonical view set before and after**, because a view's
+ *   station can change form on a fixed seed once its pool has two members.
+ *
+ * Uniform within a pool: `drawStationForm` gives each member an equal share.
+ * Whether a pool should lean toward its familiar form is the principal's open
+ * question on node #717, and it is not answered by this table.
+ *
+ * **A pool's order is part of it, and so is its length.** `drawStationForm`
+ * turns a system's roll into a position, `floor(roll × n)`, so the form a
+ * system gets depends on where a member sits and on how many there are.
+ * Appending one member re-draws half of that role's systems whatever `n` is,
+ * and swapping two members re-draws `2/n` of them; `tests/station-form.test.ts`
+ * holds both shares over the seed spread. Unlike `STATION_FORM_SLOT`'s tags,
+ * a pool has no edit that leaves every system where it was.
+ * `enumerateCarriers` does not read the form, so no saved carrier key moves;
+ * what moves is which station a pilot finds where, and the view set before
+ * and after is where that shows.
+ *
+ * Trade and shipyard are `a` because round one ranked their slot first.
+ * **Refinery `d`, on the principal's yes to #257's sheet (2026-09-06).** Both
+ * pad roles were placeholders for two rounds — `a` was first in the list and // glossary-ignore: pad
+ * nothing more — and the Works was built for a ranking round, shown at four
+ * plans under three finishes and four framings, and taken. The refinery's
+ * other three forms have never been looked at by the principal.
+ */
+export const STATION_FORM_POOL: Record<
+	DrawnStationType,
+	readonly StationFormId[]
+> = {
+	trade: ["a"],
+	shipyard: ["a"],
+	refinery: ["d"],
 };
+
+/**
+ * The roles a system draws a form for: every role but the outpost.
+ *
+ * **The outpost is not drawn.** #490 made it the raiders' station and #518 built
+ * Salvage for that fiction, on the principal's yes to its sheet (2026-09-24);
+ * it is what every lawless system draws since node #491. Which outpost a
+ * system shows is a question for the fiction map (#460), not a free pick, so
+ * the type keeps it out of the pool rather than a comment asking nobody to put
+ * it in.
+ */
+export type DrawnStationType = Exclude<StationType, "outpost">;
+
+/**
+ * The roles a system draws a form for. The order moves no draw: each role
+ * reads its own sub-stream, keyed by `STATION_FORM_SLOT` in `station-form.ts`.
+ */
+export const DRAWN_STATION_TYPES: readonly DrawnStationType[] = [
+	"trade",
+	"shipyard",
+	"refinery",
+];
+
+/** The one form an outpost is built in: Salvage (see `DrawnStationType`). */
+export const OUTPOST_FORM: StationFormId = "e";
+
+/**
+ * Every form a station of this role can be built in by a running game — its
+ * pool, or the outpost's one form. What every per-form row iterates: a
+ * form that can be drawn owes a reach, a proxy and a mesh that agree, and a
+ * form that cannot be drawn owes none of them (#663's rule).
+ */
+export function formsInPlay(type: StationType): readonly StationFormId[] {
+	return type === "outpost" ? [OUTPOST_FORM] : STATION_FORM_POOL[type];
+}
 
 /**
  * **The display budget is not here.** How far a station's *drawn* object

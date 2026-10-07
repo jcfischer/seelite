@@ -70,8 +70,10 @@ remembered.
   pool. `V_GATE_KMS = 0.10`.
 - `HULL_SPECS[id].env` (`src/hull.ts`) is the selected variant's measured box,
   rounded **up** to 0.1 m (#181).
-- `SELECTED_FORM` (`src/station-mesh.ts`) picks one form per role. The
-  refinery's is the Works (`d`), a **solved** form: its shape comes from
+- `STATION_FORM_POOL` (`src/station.ts`) names the forms each role may be
+  built in, and each system draws one per station (`Station.formId`, node
+  #717); the proxy is the station's own form's. Each pool holds one form
+  today. The refinery's is the Works (`d`), a **solved** form: its shape comes from
   `Station.assemblySeed` through `placementsOf`, and its berth side from the
   berth seed. The solve (`src/wfc.ts`, `src/station-modular.ts`) imports no
   Three.js. The outpost's is the Salvage (`e`), also a function of the
@@ -134,15 +136,16 @@ capsules and oriented boxes — in the station's own frame, in kilometres.
   This clears a centred hull up to the plane without exempting the approach;
   an off-axis hull can still meet the deck. The change and its measured
   depths are handed to the principal with §9.1.9's table.
-- **Which forms need one.** Only the forms in `SELECTED_FORM`, because only
-  they can be drawn by a running game. A workbench alternate may have no proxy.
-  A row refuses a **selected** form that has none, so #260 (an individual form
-  per station) and #491 (placing outposts) cannot select one by accident.
+- **Which forms need one.** Every form in a pool (`formsInPlay`: each role's
+  pool, and the outpost's one form), because only they can be drawn by a
+  running game. A workbench alternate may have no proxy. A row refuses a
+  **pooled** form that has none, so node #717's pools (a form per station,
+  drawn from the system's seed) cannot grow by accident.
 
 **The budget, declared first and then measured (derived).** A proxy is written
 down before it is checked against the mesh. A proxy generated from the mesh
 would pass any check against that mesh by construction. Two rows hold it, as
-`STATION_SILHOUETTE_KM` holds `reachKm` (#28):
+`stationSilhouetteKm` holds `reachKm` (#28):
 
 1. **No drawn vertex outside the proxy.** Every vertex of the built station
    lies inside the proxy, or within a stated tolerance of its boundary. The
