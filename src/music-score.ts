@@ -7,12 +7,17 @@
  * commands; the worklet reads both. Neither side reaches the other's module.
  *
  * A score is **source, not an asset** (#543 D2, on the map's Constraints): a
- * public-domain work written here as note data is synthesised at runtime, and
- * nothing is downloaded or recorded.
+ * public-domain work written here as note data and played at runtime. A score
+ * itself downloads and records nothing. A `sampler` part plays a sample set,
+ * the one recorded material the music may use (map #1's Constraints,
+ * 2026-10-06); every other part is synthesised.
  */
 
 /** The synth's voices (#543 D1). `noise` and `tone` are the two percussion
- *  voices: a burst of filtered noise, and a sine that drops in pitch. */
+ *  voices: a burst of filtered noise, and a sine that drops in pitch.
+ *  `pulse`, `epiano`, `harpsi` and `softsaw` are the Danube versions':
+ *  a chip's pulse wave, an electric piano, a harpsichord and a soft-edged
+ *  saw lead. */
 export type VoiceKind =
 	| "pad"
 	| "pluck"
@@ -26,7 +31,12 @@ export type VoiceKind =
 	| "kick"
 	| "strings"
 	| "brass"
-	| "flute";
+	| "flute"
+	| "pulse"
+	| "epiano"
+	| "harpsi"
+	| "softsaw"
+	| "sampler";
 
 /**
  * One note (#543 D3).
@@ -123,6 +133,20 @@ export interface TempoPoint {
  *   For noise the band's centre moves.
  * - `cutoffHz` — pad: the lowpass. Pluck: the brightness of the pluck's first
  *   moment. Noise has none: its band is centred on the note's pitch.
+ * - For **pulse**, `width` is the share of the cycle the wave is high,
+ *   0.05..0.5 (0.5 is a square); `pwmHz` and `pwmDepth` sweep it, the
+ *   depth in the same units and the width kept inside its range. `cutoffHz`
+ *   above 0 puts a lowpass after it, and `drive` saturates it.
+ * - For **epiano**, `index` is the body's brightness at full velocity,
+ *   falling over `envDecayS`; `envAmount` is the tine's strike and
+ *   `indexDecayS` how fast it dies; `ratio` is the tine's partial.
+ * - For **harpsi**, `index` is where along the string it is plucked, as a
+ *   share of its length — the harmonics at multiples of its inverse are
+ *   missing; `cutoffHz` the pluck's brightness; `decayS` the string's
+ *   own 60 dB fall at its fundamental. Velocity barely moves its level.
+ * - For **softsaw**, `unison` saws (default 8), each with its edge rounded
+ *   wider as the envelope falls, so a note mellows as it rings;
+ *   `detune` and `spread` as for analog.
  * - `pan` — `-1` left .. `1` right; 0, the centre, is the default.
  * - `reverb`, `echo` — the part's sends into the song's space
  *   (`music-space.ts`), `0`..`1`. **Both default to 0**: a part is dry
@@ -171,6 +195,56 @@ export interface PartSpec {
 	readonly keyTrack?: number;
 	readonly rosin?: number;
 	readonly rosinLow?: number;
+	/** Pulse: the duty cycle, and its sweep's rate and depth. */
+	readonly width?: number;
+	readonly pwmHz?: number;
+	readonly pwmDepth?: number;
+	/**
+	 * Sampler: the sample set it plays, by its folder under
+	 * `public/music-samples/` (map #1's ruling on open-licensed music samples,
+	 * 2026-10-06). `Music` fetches it when a song naming it is loaded; until
+	 * it has arrived, or where it cannot be decoded, the part plays
+	 * `fallback` — a synth voice, given every other field of the part — or
+	 * nothing.
+	 */
+	readonly samples?: string;
+	readonly fallback?: Exclude<VoiceKind, "sampler">;
+}
+
+/**
+ * One sampled note of a set (O27, 2026-10-07): its root, and its recording
+ * as 16-bit integers — `data` the left (or only) channel, `right` a stereo
+ * set's right — each step worth `scale`, the recording's own peak over
+ * 32767. A render through Int16 and through Float32 storage differs by
+ * 89.8 dB below the signal (`voice-piano-grand-rich`; measured once on
+ * 2026-10-07 by a comparison not kept in the repository), so the
+ * worklet keeps half the memory. `data` is `null` until the recording has
+ * arrived: a note that picks it plays the part's `fallback`.
+ */
+export interface SampleZone {
+	readonly root: number;
+	readonly scale: number;
+	readonly data: Int16Array | null;
+	readonly right?: Int16Array | null;
+}
+
+/** A velocity layer: the notes up to `maxVelocity` play its `zones`,
+ *  which are its sampled roots, ascending. */
+export interface SampleLayer {
+	readonly maxVelocity: number;
+	readonly zones: readonly SampleZone[];
+}
+
+/**
+ * One sample set as the worklet holds it: every layer and every root of the
+ * set — the skeleton — with the recordings the songs loaded so far need.
+ * `layers` run soft to loud. `rate` is the recordings' (the context's,
+ * where they were decoded) and `gain` the set's one linear gain.
+ */
+export interface SampleBank {
+	readonly rate: number;
+	readonly gain: number;
+	readonly layers: readonly SampleLayer[];
 }
 
 /**
@@ -258,6 +332,12 @@ export type Quantum = "bar" | "section";
  *   stems moved at once are a crossfade between parts.
  * - `tempo` — the playing song's tempo map is scaled by `scale`, from the
  *   quantum, reached over `rampBars` bars (0: at the line).
+ * - `samples` — moves nothing: a sample set for the `sampler` voice. The
+ *   first for a set is its skeleton, every layer and root, `data` `null`
+ *   where nothing is sent yet; each later one **merges**: the zones that
+ *   carry `data` fill in the held set's, by layer index and root, and the
+ *   rest are left as they are. `Music` sends the recordings a loaded song
+ *   plays and no others (O27), so a later song adds only what it lacks.
  * - `sync` — moves nothing; the worklet answers `synced` with the token once
  *   every command before it has been applied. An offline render needs it: a
  *   message sent while the render is suspended is applied only when the
@@ -306,7 +386,12 @@ export type MusicCommand =
 			readonly at: Quantum;
 			readonly rampBars: number;
 	  }
-	| { readonly type: "sync"; readonly token: number };
+	| { readonly type: "sync"; readonly token: number }
+	| {
+			readonly type: "samples";
+			readonly set: string;
+			readonly bank: SampleBank;
+	  };
 
 /** The processor's registered name: the worklet registers it and the
  *  controller constructs it, from this one copy. */

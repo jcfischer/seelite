@@ -1,0 +1,9 @@
+Upright Piano KW — a Kawai upright, recorded by FreePats
+
+Upright Piano KW by Gonzalo and Roberto (FreePats project), CC0 1.0
+Licence: CC0-1.0 — https://creativecommons.org/publicdomain/zero/1.0/
+Source: https://github.com/freepats/upright-piano-KW/tree/570f6c60ed2eff67accad3b85d5b452e57a3ad28
+
+The files here are excerpts of that work: each sample cut from its attack to
+a few seconds, faded, summed to mono, scaled by -3.93 dB for
+the whole set, and encoded as Ogg Opus at 64 kbit/s.
