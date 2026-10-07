@@ -101,11 +101,28 @@ Each "none" is a red row once the form is pooled:
 A pooled form then still owes the canonical view set before and after, and
 the principal's yes on it.
 
+The net was measured rather than assumed. On a temporary, uncommitted edit of
+the pools, against `tests/station-proxy.test.ts`, `tests/station-finish.test.ts`
+and `tests/station-interior.test.ts`:
+
+- **trade `[a, b]`**: 5 rows red, all of them proxy rows. The Ring's fixtures
+  are declared, and the fixture rows pass.
+- **trade `[a, e]`**: 8 rows red — the 5 proxy rows, `the bay fits inside the
+  hull of the form that holds it`, and the two industrial-fixture rows (`the
+  fixtures are there under an industrial finish and not under stock`, `the
+  fixtures are mounted`).
+- **shipyard `[a, b]`**: 7 rows red — the 5 proxy rows and the same two
+  fixture rows.
+
 ## Not done here
 
 - the sheet of candidates per pool, and the principal's yes;
 - a finish-sheet row per pool;
 - the before/after view set.
+
+The finish sheet already takes a pool's candidates side by side, so it needs no
+change here. For example:
+`FAMILY=station SUBJECTS=trade VARIANTS=a,b,c,d,e SEEDS=0,1,2 node scripts/shot-finishes.mjs`.
 
 None of these can move until a pool holds two forms. The browser probes that
 cover the change were run alone on the GPU lane (ANGLE Metal, M1 Pro) at
@@ -118,4 +135,22 @@ cover the change were run alone on the GPU lane (ANGLE Metal, M1 Pro) at
   stations;
 - the two `probe-collision*` probes.
 
-This is a partial run, not the suite.
+Also run alone and passing at `bb5cdb4`: `probe-handoff`, `probe-dock-arrival`,
+`probe-occlusion` and `probe-boot`, the probes most exposed to `main.ts`'s
+changed station build. **The repository's probe selector was not run.** This
+session's runtime policy refused it, because it sends a credential to an
+outside service, so these probes were chosen by reading the change. This is a
+partial run, not the suite.
+
+## For the principal: map prose this node made stale
+
+The worker may not edit the map. Two citations in #1's Constraints now name
+symbols this node retired:
+
+- #28's display-reach line cites `STATION_SILHOUETTE_KM` (`station-mesh.ts`).
+  The table is now `stationSilhouetteKm(type, formId)`, carried per station
+  on `StationMesh.silhouetteKm`. The rule it states, separate tables in
+  separate modules, still holds.
+- #274's fixture line says `SELECTED_FORM.shipyard` has been the Gantry. The
+  selection is now `STATION_FORM_POOL` and `Station.formId`, and the
+  shipyard's pool is `[a]`, the Gantry.
