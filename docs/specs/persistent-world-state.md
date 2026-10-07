@@ -20,7 +20,7 @@ A generated carrier has a structured identity:
 
 - `galaxyIndex` is in `0..7`.
 - `systemIndex` is in `0..255`.
-- `localCarrierId` is a dedicated stable system-local carrier-slot persistence ID emitted by the generator, separate in contract from display names and incidental lookup keys. Stations use the fixed IDs in `src/system.ts` — `station-trade`, `station-refinery`, and `station-shipyard`; #148's Traffic actors extend their home station with a roster ordinal, for example `station-trade/traffic-00`. #324's raider encounter slots belong to the system rather than to a station — `raider-00` upward, one to four per system by its government (`src/raider-slots.ts`) — and have no parent. The implementation must expose and test the persistence table explicitly. #43's pirate relay is `relay-00`, one per system that has a station, with no parent, and its repair tender is `relay-00/tender`, parented to it; #351 enumerated both at `worldGeneratorVersion` 7 (`src/relay-slot.ts`). A relay's generated placement is its plan — the station it watches, its lead along that orbit and its offset from the plane — and a tender, like a raider, has none. Whether a system's relay is *active* is a runtime roll (`relayActive`, #351), not a generator fact, so re-tuning its chance moves no identity and owes no bump.
+- `localCarrierId` is a dedicated stable system-local carrier-slot persistence ID emitted by the generator, separate in contract from display names and incidental lookup keys. Stations use the fixed IDs in `src/system.ts` — `station-trade`, `station-refinery`, and `station-shipyard`; #148's Traffic actors extend their home station with a roster ordinal, for example `station-trade/traffic-00`. #324's raider encounter slots belong to the system rather than to a station — `raider-00` upward, one to four per system by its government (`src/raider-slots.ts`) — and have no parent. The implementation must expose and test the persistence table explicitly. #43's pirate relay is `relay-00`, one per system that has a station, with no parent, and its repair tender is `relay-00/tender`, parented to it; #351 enumerated both at `worldGeneratorVersion` 7 (`src/relay-slot.ts`). A relay's generated placement is its plan — the station it watches, its lead along that orbit and its offset from the plane — and a tender, like a raider, has none. Whether a system's relay is *active* is a runtime roll (`relayActive`, #351), not a generator fact, so re-tuning its chance moves no identity and owes no bump. `salvage.md`'s **derelict slots** (S1, S21) belong to the system too — `derelict-00` upward, three per system for governments 0–2, two for 3–5 and one for 6–7 (`src/derelict-slots.ts`) — and have no parent and, until a build draws them, no generated placement; node #731 enumerated them at `worldGeneratorVersion` 10, a bump that only adds. A slot's loss schedule and each instance's contents are seeded draws, not generator facts, so the key names the slot and `instanceOrdinal` names one wreck in it. <!-- glossary-ignore: slot -->
 - Renaming a persistence ID requires a save migration. Every snapshot carries `worldSchemaVersion` for the mutable-state schema and `worldGeneratorVersion` for the seeded baseline. Any generator change that can alter a carrier's identity, type, parent, or generated placement must bump the generator version; the save/load decision owns migration policy and rejection of unsupported versions. A bump that only **adds** carriers — every older slot unmoved in identity, type, parent and placement — migrates by relabelling, because an older row still names the carrier it named: 6 → 7 (#351) was such a bump. Version 7 → 8 (#590) moves some shipyards when old outer giants become rocky ice worlds. Their carrier keys and types stay fixed, and persisted overlays contain no generated geometry, so versions 6 and 7 migrate by rebasing those overlays onto the version-8 placements. `LEGACY_WORLD_GENERATOR_VERSIONS` lists supported inputs; `tests/world-state.test.ts` pins their old identity and type fingerprints separately from the current full placement fingerprint. Docked saves retain the station key and resume at arrival under the existing load policy.
 
 Scene recipes have a separate compatibility boundary: a link asks to rebuild its
@@ -91,6 +91,12 @@ A carrier instance has one operational condition:
 - **disabled** — it remains present but its capability is unavailable;
 - **destroyed** — the instance is wreckage and its capability is unavailable;
 - **repairing** — a named recovery process is active and the capability remains unavailable.
+
+A derelict slot (§2, `salvage.md`) has one more: <!-- glossary-ignore: slot -->
+
+- **salvaged** — the wreck has been stripped, by the pilot or by other salvagers, and the slot waits for its next loss.
+
+It is a wreck's condition only, never a station's or a ship's. A derelict instance adrift is **destroyed** — the instance is wreckage — and a slot before its first loss holds no instance at all, which the model reads as `empty` rather than as a condition of anything. The schedule between them is derived from the clock (`salvage.md` S16): an instance unstripped for the salvager time reads `salvaged` with no player provenance and nothing is written, and only the pilot's strip writes `salvaged`, with the pilot's provenance, on the slot's row (§7).
 
 **Replaced** is retained as a player-facing carrier-instance concept and a provenance-bearing transition, but not as an exclusive physical condition. Replacement completion increments `instanceOrdinal`; the new instance is then operational and can enter the other conditions normally.
 
@@ -187,6 +193,28 @@ The list holds a full `CarrierKey` per station — a berth saw the offence, and 
 `Station.id` is not persistent identity — and at most one entry per station per
 galaxy. `measure-save-size.ts` carries that bound through the ceiling tiers, so
 what it costs is reprinted by a run rather than quoted from here.
+
+**A seventh domain, derelict rows, arrived the same way and for the same <!-- glossary-ignore: slot -->
+reason** (`salvage.md` S1, S6; built by node #731). One row per derelict slot
+key the pilot has touched — the instance it records, that instance's loss time,
+each container's id with the tonnes it was drawn with and the tonnes left, and
+`salvaged` with its provenance once the pilot strips it — so §6's bound of one
+row per carrier holds for wrecks too. A slot nobody touched has no row and is
+derived whole from the clock. An absent domain means every slot is untouched,
+so `canonicalEnvelope` omits an empty one and `WORLD_SCHEMA_VERSION` does not
+move; the save envelope's own version (9) is what says a record may carry rows,
+and a version 8 record carrying one is refused as assembled.
+
+**An instance's contents are pinned when the pilot first touches it, not at
+its loss.** `salvage.md` S6 stores them "at the loss", and storing every
+slot's row at its loss would need a tick and thousands of rows in every save;
+node #731 writes the row on first touch instead (`materializeDerelict`, or the
+first scoop). Until then an instance is derived from its slot key and
+`instanceOrdinal`, so a change to the draw or an appended fitting can still
+move an instance nobody has met — and never one somebody has. That puts an
+obligation on every later build that shows a wreck's contents — drawing it,
+finding it, posting a Salvage offer naming a container: it calls
+`materializeDerelict` before the pilot sees anything.
 
 The domains share the galaxy namespace and authoritative game clock but not a generic lowest-common-denominator event schema. Capabilities and UI projections may read multiple domains; they do not save duplicate capability projections.
 
