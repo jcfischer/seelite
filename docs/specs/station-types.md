@@ -716,8 +716,8 @@ Works and the Cluster were taken in that round** — shown at four plans under
 three finishes and four framings on the finish sheet
 (`scripts/shot-finishes.mjs`, which grew a `SEEDS` axis because one plan
 cannot show the variety a solved form is for), and selected for their roles.
-So a solved form is what the game draws for the refinery now, and every
-refinery in the galaxy is its own plant.
+The Works was the refinery's sole flown form until node #745; it is now one
+of four forms a system may draw. Its plant still varies by assembly seed.
 
 Trade carries a fifth form, **E — Wheel** (#332), a close homage to *2001*'s
 Space Station V requested by the principal: two box-section rims on one axis,
@@ -755,21 +755,20 @@ from its own seed** (`DOMAIN.STATION_FORM`, node #717): one draw per fixed type
 slot, uniform within the pool, carried on the station as `Station.formId`. The <!-- glossary-ignore: slot -->
 mesh, the display reach and the collision proxy all read that field, so two
 stations of one role may differ and nothing answers per role. It replaced
-`SELECTED_FORM`, one form per role for the whole galaxy. **Each pool holds only
-the form its role already flew** until the principal says yes to a pool on a
-sheet of its candidates; growing one is a one-line edit that then owes a
-collision proxy, macro fixtures like the flown forms carry, the Wheel's hub
-row if trade E joins, and a canonical view set before and after. Whether a pool leans
-toward its familiar form is open on node #717. The outpost is not drawn: it is
-the fiction's form (#490), `OUTPOST_FORM`. Trade and shipyard are
-**A** because round one ranked their slot first. **Refinery and outpost were D
-since 2026-09-06**, on the principal's yes to #257's sheet — the first choice
-either role had, after two rounds in which `a` was a placeholder that said so.
-**The outpost is E since 2026-09-24**, on the principal's yes to #518's sheet,
-because the role became a raider's haven after the Cluster was taken. The
-refinery's choice changes what a running game draws; the outpost's did not
-until #491 placed the first outposts, so E is now what a lawless system draws
-where before only the workbench drew it.
+`SELECTED_FORM`, one form per role for the whole galaxy. **Node #744's ruling
+(2026-10-07) admits every built form, uniformly drawn in form-id order.** The
+principal has seen them in the station viewer; a candidate sheet and visual
+sign-off are waived. Every added member owes a collision proxy, macro fixtures,
+and its existing per-form budget, interior, corridor and light rows. Report
+which canonical views move with `scripts/measure-station-forms.ts`.
+
+**The refinery pool is [a, b, c, d]** (node #745): Warren, Collar, Spar and
+Works. All use the refinery's unchanged aperture plane and berth catalogue.
+Trade and shipyard still fly **A** while their pool nodes are implemented.
+The outpost is not drawn: it keeps `OUTPOST_FORM` **E**, the fiction's Salvage
+(#490, #518), placed in lawless systems since #491. The Works and Cluster
+were originally selected on 2026-09-06; the Salvage replaced the Cluster on
+2026-09-24 when the outpost became a raider's haven.
 
 **The letter carried forward and the geometry did not, which is worth being
 plain about.** Round one's trade A was a twelve-sided lofted drum; it has been

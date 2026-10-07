@@ -28,6 +28,12 @@ export type ChangelogEntry = {
 };
 
 export const CHANGELOG: readonly ChangelogEntry[] = [
+	// Node #745: proposed copy; principal approval and the main date are pending.
+	{
+		date: "2026-10-07",
+		text: "Refineries now vary between systems: land on a terraced rock, a collar around an asteroid, a processing spar, or a quarried industrial plant.",
+		node: 745,
+	},
 	// Node #728: copy approved by the principal on 2026-10-06 (#231's rig B).
 	{
 		date: "2026-10-06",

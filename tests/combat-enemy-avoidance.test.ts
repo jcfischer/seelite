@@ -60,7 +60,7 @@ import {
 	worldSolids,
 	worldStarts,
 } from "../src/sim";
-import { STATION_GEOMETRY } from "../src/station";
+import { STATION_FORM_POOL, STATION_GEOMETRY } from "../src/station";
 import { proxyReachKm, stationProxyOf } from "../src/station-proxy";
 import { TRAFFIC_HULL_POOLS } from "../src/station-traffic";
 import {
@@ -84,11 +84,9 @@ import {
 import { codeOf, methodBodyOf } from "./lib/source-scan";
 
 const DT = 1 / 30;
-/** Seeds whose start systems carry all three placed station roles between
- *  them: trade everywhere, a refinery at 1, 2, 3 and 9, a shipyard at 2, 3,
- *  9 and 47 — so the Coriolis, the Works and the Gantry's keel are each
- *  in the corpus. */
-const SEEDS = [1, 2, 3, 9, 47];
+/** All three placed roles and every refinery form (node #745): 1/a, 28/b,
+ *  2/c and 4/d. The original node #665 corpus is retained alongside them. */
+const SEEDS = [1, 2, 3, 4, 9, 28, 47];
 /** Approach bearings round each station, in radians. */
 const BEARINGS = [0, 1.7, 3.9];
 
@@ -366,6 +364,16 @@ function corpus(
 const struck = (runs: Run[]) => runs.filter((run) => run.met !== null).length;
 
 describe("the figures the avoidance is built from", () => {
+	test("the corpus reaches every pooled refinery form", () => {
+		const forms = new Set(
+			SEEDS.flatMap((seed) =>
+				placedStations(makeWorld(seed))
+					.filter((s) => s.type === "refinery")
+					.map((s) => s.formId),
+			),
+		);
+		expect([...forms].sort()).toEqual([...STATION_FORM_POOL.refinery]);
+	});
 	test("the clearance covers every hull's own box, so a centre outside the keep-out is a hull outside the solid", () => {
 		for (const [id, spec] of Object.entries(HULL_SPECS)) {
 			const hullReach = reachKm([hullBox(spec.env, spec.envCentre)]);
@@ -551,7 +559,7 @@ describe("a duel beside a station stays a duel", () => {
 	 * inside the keep-out, where a pilot about to dock or just launched is.
 	 * No turn clears a run at them, so the raider and an armed carrier the
 	 * pilot provoked hold off at the keep-out with their noses on the run.
-	 * Measured over the 39 runs, the share of frames each fires on against
+	 * Measured on node #665's original 39 runs, the share of frames each fires on against
 	 * the same fight in open space: raider 0.277 against 0.287, patrol 0.298
 	 * against 0.296, interceptor 0.295 against 0.291, the lowest run 0.242;
 	 * blind, 29, 27 and 30 runs met the station. Before the hold-off, bent

@@ -163,49 +163,23 @@ export interface StationPlan {
  * stations of one role may now differ, so a per-type answer about a form's
  * reach, proxy or mesh is wrong the moment a pool holds two.
  *
- * **Each pool holds only what the principal has taken for flight**, and today
- * that is the one form each role already flew. Node #717 asks for a sheet of
- * every candidate and a yes per pool before a pool grows; the records before
- * it are yeses to *rank* a form (the Assembly, 2026-09-06; the Wheel, #332),
- * not to fly it. So growing a pool is one edit here, owed:
+ * Node #744 ratified every built form, uniformly drawn in form-id order,
+ * after the principal saw them in the station viewer (2026-10-07). Node #745
+ * grows the refinery to Warren, Collar, Spar and Works; the other roles grow
+ * in their own nodes. The outpost keeps its one fiction-owned form.
  *
- * - **a collision proxy** for the form (`stationProxy`), which
- *   `tests/station-proxy.test.ts` refuses a pooled form without;
- * - **the display budget and every per-form row**, which iterate
- *   `formsInPlay` and so reach a new member without being told; the rows
- *   that build one named form do not, and node #717's receipt lists them;
- * - **its macro fixtures** under the finishes that carry them
- *   (`station-fixtures.ts`'s declarations), which the Ring, the Drum and the
- *   Warren have beside the three that fly, and every other form lacks;
- * - **the per-form rows it fails on its own** — bay and interior, §5
- *   fixtures, glow. Every candidate but the Assembly and the Warren fails a
- *   bay or interior row, and node #717's receipt lists each form's. The
- *   Wheel's slot is cut into `hub` (#334's review), and // glossary-ignore: slot
- *   `tests/station-wheel.test.ts` holds the hub meanwhile;
- * - and the **canonical view set before and after**, because a view's
- *   station can change form on a fixed seed once its pool has two members.
- *
- * Uniform within a pool: `drawStationForm` gives each member an equal share.
- * Whether a pool should lean toward its familiar form is the principal's open
- * question on node #717, and it is not answered by this table.
+ * Every added form owes a collision proxy, the display budget, and the
+ * per-form interior, corridor, finish, fixture and glow rows. Those iterate
+ * `formsInPlay`; node #717's receipt lists the named rows alongside them.
+ * The ruling waives a candidate sheet and principal visual sign-off; report
+ * which canonical views move with `scripts/measure-station-forms.ts` instead.
  *
  * **A pool's order is part of it, and so is its length.** `drawStationForm`
- * turns a system's roll into a position, `floor(roll × n)`, so the form a
- * system gets depends on where a member sits and on how many there are.
- * Appending one member re-draws half of that role's systems whatever `n` is,
- * and swapping two members re-draws `2/n` of them; `tests/station-form.test.ts`
- * holds both shares over the seed spread. Unlike `STATION_FORM_SLOT`'s tags,
- * a pool has no edit that leaves every system where it was.
- * `enumerateCarriers` does not read the form, so no saved carrier key moves;
- * what moves is which station a pilot finds where, and the view set before
- * and after is where that shows.
- *
- * Trade and shipyard are `a` because round one ranked their slot first.
- * **Refinery `d`, on the principal's yes to #257's sheet (2026-09-06).** Both
- * pad roles were placeholders for two rounds — `a` was first in the list and // glossary-ignore: pad
- * nothing more — and the Works was built for a ranking round, shown at four
- * plans under three finishes and four framings, and taken. The refinery's
- * other three forms have never been looked at by the principal.
+ * turns a system's roll into a position, `floor(roll × n)`. Appending one
+ * member re-draws half of that role's systems whatever `n` is; swapping two
+ * members re-draws `2/n` of them. `tests/station-form.test.ts` holds those
+ * shares over a seed spread. `enumerateCarriers` does not read the form, so
+ * no saved carrier key moves; only the drawn station and collision proxy do.
  */
 export const STATION_FORM_POOL: Record<
 	DrawnStationType,
@@ -213,7 +187,7 @@ export const STATION_FORM_POOL: Record<
 > = {
 	trade: ["a"],
 	shipyard: ["a"],
-	refinery: ["d"],
+	refinery: ["a", "b", "c", "d"],
 };
 
 /**
