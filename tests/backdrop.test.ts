@@ -34,8 +34,12 @@ import {
 	BRIGHT_SIZE_MID_LY,
 	BRIGHT_SIZE_MIN,
 	FAINT_SIZE_MAX,
+	FAINT_SIZE_MIN,
+	STAR_POINT,
 	brightSizeLy,
 	faintField,
+	starCorePx,
+	starPoint,
 	systemField,
 } from "../src/backdrop";
 import {
@@ -393,5 +397,53 @@ describe("the two layers, beside each other", () => {
 			const record = galaxy.systems[index];
 			expect(systemField(galaxy, record).count).toBe(SYSTEMS_PER_GALAXY - 1);
 		}
+	});
+});
+
+describe("a star is a point whose brightness is its light (#719)", () => {
+	const scale = 1800 * 0.35;
+	const core = starCorePx(1800);
+
+	test("the core is a fixed size whatever the star's light", () => {
+		expect(core).toBeCloseTo(1800 * STAR_POINT.coreScale, 9);
+		expect(starCorePx(600)).toBe(STAR_POINT.coreMinPx);
+		const faint = starPoint(FAINT_SIZE_MIN, scale, core);
+		const bright = starPoint(BRIGHT_SIZE_MAX, scale, core);
+		expect(faint.corePx).toBe(core);
+		expect(bright.corePx).toBe(core);
+	});
+
+	test("brightness carries the light the old disc delivered: (size × scale)²", () => {
+		const a = starPoint(0.004, scale, core);
+		const b = starPoint(0.008, scale, core);
+		expect(b.intensity / a.intensity).toBeCloseTo(4, 9);
+		const disc = 0.004 * scale;
+		expect(a.intensity).toBeCloseTo(
+			(STAR_POINT.fluxGain * disc * disc) / (core * core),
+			9,
+		);
+	});
+
+	test("the brightest stars are capped, not grown", () => {
+		const top = starPoint(BRIGHT_SIZE_MAX * 10, scale, core);
+		expect(top.intensity).toBe(STAR_POINT.hdrCap);
+		expect(top.spritePx).toBeLessThanOrEqual(core * 4 + 2);
+	});
+
+	test("only light the core cannot hold becomes a halo", () => {
+		const dim = starPoint(FAINT_SIZE_MIN, scale, core);
+		expect(dim.intensity).toBeLessThanOrEqual(1);
+		expect(dim.halo).toBe(0);
+		expect(dim.spritePx).toBe(core + 2);
+		const bright = starPoint(BRIGHT_SIZE_MIN, scale, core);
+		expect(bright.intensity).toBeGreaterThan(1);
+		expect(bright.halo).toBeGreaterThan(0);
+		expect(bright.spritePx).toBeGreaterThan(core + 2);
+	});
+
+	test("every bright-layer star outshines every faint one", () => {
+		const faintTop = starPoint(FAINT_SIZE_MAX, scale, core);
+		const brightLow = starPoint(BRIGHT_SIZE_MIN, scale, core);
+		expect(brightLow.intensity).toBeGreaterThan(faintTop.intensity);
 	});
 });

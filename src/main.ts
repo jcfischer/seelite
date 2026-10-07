@@ -71,7 +71,13 @@ import { GTAOPass } from "three/addons/postprocessing/GTAOPass.js";
 import { RenderPass } from "three/addons/postprocessing/RenderPass.js";
 import { UnrealBloomPass } from "three/addons/postprocessing/UnrealBloomPass.js";
 
-import { faintField, systemField, type StarField } from "./backdrop";
+import {
+	faintField,
+	STAR_POINT,
+	starCorePx,
+	systemField,
+	type StarField,
+} from "./backdrop";
 import {
 	SeeliteOutputPass,
 	VIGNETTE_MAX,
@@ -1198,25 +1204,6 @@ const {
  *  owns that population's size band — the band this one must stay under — is the
  *  one place both halves of the rule can be read together. */
 const STAR_PIXEL_SCALE = 0.35;
-
-/**
- * #719 (prototype): a star is drawn as a small sharp point whose brightness is
- * its light, not as a disc whose size is its light.
- *
- * `backdrop.ts`'s law is unchanged: a star's stored size still encodes its
- * flux as `size²`. The shader reads that flux as `(size × uPixelScale)²` — the
- * light the old disc delivered — and puts it into a core `STAR_CORE_SCALE` of
- * the canvas height across, at `STAR_FLUX_GAIN` times the matching intensity.
- * Above 1 the core is HDR and the bloom pass spreads it, which is how a camera
- * shows a bright point source, so no star grows a disc. `STAR_HDR_CAP` stops a
- * single point flaring the frame.
- *
- * The three dials are set by eye on the view set; nothing here is measured.
- */
-const STAR_CORE_SCALE = 0.0012;
-const STAR_CORE_MIN_PX = 1.5;
-const STAR_FLUX_GAIN = 0.35;
-const STAR_HDR_CAP = 6;
 
 /**
  * The raw `?hull=` value, read once at load (#554, #557).
@@ -5193,8 +5180,9 @@ class Game {
 					value: this.renderer.domElement.height * STAR_PIXEL_SCALE,
 				},
 				uCorePx: { value: this.starCorePx() },
-				uFluxGain: { value: STAR_FLUX_GAIN },
-				uHdrCap: { value: STAR_HDR_CAP },
+				uFluxGain: { value: STAR_POINT.fluxGain },
+				uHdrCap: { value: STAR_POINT.hdrCap },
+				uHaloWeight: { value: STAR_POINT.haloWeight },
 				// #537's cruise light shift: zero is the untouched sky.
 				uBeta: { value: 0 },
 				uHeading: { value: new THREE.Vector3(0, 0, -1) },
@@ -5206,6 +5194,7 @@ class Game {
 				uniform float uCorePx;
 				uniform float uFluxGain;
 				uniform float uHdrCap;
+				uniform float uHaloWeight;
 				varying vec3 vColor;
 				varying float vIntensity;
 				varying float vCoreFrac;
@@ -5226,8 +5215,9 @@ class Game {
 						view = viewMatrix * world;
 					}
 					vColor = color;
-					// #719: the light the old disc delivered, (size × scale)², put
-					// into a fixed core rather than spread over a disc of that size.
+					// #719: starPoint in backdrop.ts is the rule; this is the same
+					// expression per vertex. The light the old disc delivered,
+					// (size × scale)², goes into a fixed core, not a disc.
 					float discPx = size * uPixelScale;
 					vIntensity = min(
 						uHdrCap,
@@ -5244,7 +5234,7 @@ class Game {
 					// margin round the core, so its falloff is not cut square.
 					float spritePx = uCorePx * spread + 2.0;
 					vCoreFrac = (uCorePx + 2.0) / spritePx;
-					vHalo = 0.5 * excess / uHdrCap;
+					vHalo = uHaloWeight * excess / uHdrCap;
 					gl_PointSize = spritePx;
 					gl_Position = projectionMatrix * view;
 				}
@@ -20118,12 +20108,9 @@ class Game {
 		this.starMaterial.uniforms.uCorePx.value = this.starCorePx();
 	}
 
-	/** #719: the star core's diameter in pixels, against the canvas height. */
+	/** #719: the star core's diameter in pixels (`starCorePx` in backdrop.ts). */
 	private starCorePx(): number {
-		return Math.max(
-			STAR_CORE_MIN_PX,
-			this.renderer.domElement.height * STAR_CORE_SCALE,
-		);
+		return starCorePx(this.renderer.domElement.height);
 	}
 }
 
