@@ -6,6 +6,10 @@ reprinted by `bun scripts/measure-station-forms.ts`; the red-row counts under
 "What each candidate owes" are not — they come from a temporary edit of the
 pools, and repeating that edit is how to reproduce them.
 
+This node ships the per-system draw, not new forms in flight: every pool
+holds the one form its role already flew, and no other form flies until the
+principal grows a pool.
+
 ## Built
 
 - **`STATION_FORM_POOL`** (`src/station.ts`) replaces `SELECTED_FORM`: the
