@@ -32,7 +32,8 @@ import type { System } from "./sim";
 import type { Vec3 } from "./vec3";
 import type { CarrierKey } from "./carrier-key";
 import type { DeathCause } from "./death-cost";
-import type { CommanderRecord } from "./save-envelope";
+import { worldAfterDeath } from "./death-wreck";
+import type { CommanderRecord, SaveEnvelope } from "./save-envelope";
 import { HULL_SPECS, type HullId, PLAYER_BASELINE_HULL } from "./hull";
 import { killCredit } from "./kill-credit";
 import {
@@ -86,8 +87,8 @@ import {
  * The commander record a death restores (#654, the principal's Q2 ruling on
  * #238): the checkpoint's — the commander as it launched, since #660 D1 —
  * with the ladder record's own exception (`ladderAfterDeath`), and then what
- * the death costs (#660, node #704). The world is not an input: a death keeps
- * it whole, and only the store pairs the two.
+ * the death costs (#660, node #704). `holdingsAfterDeath` pairs this with
+ * the wreck written from the dying inventory (node #705).
  *
  * **Both causes lose the hold** (D2, D6): the pilot's cargo, its purchase
  * basis — the parser refuses a basis covering more than is aboard — and every
@@ -139,6 +140,18 @@ export const commanderAfterDeath = (
 		chargeAu: HULL_SPECS[PLAYER_BASELINE_HULL].chargeAu,
 	};
 };
+
+/** One death outcome: restore the launch commander and leave a share of what
+ * was aboard at death in the live world. The store persists this atomically. */
+export const holdingsAfterDeath = (
+	dock: CommanderRecord,
+	dying: SaveEnvelope,
+	cause: DeathCause,
+	frameId?: string,
+): SaveEnvelope => ({
+	commander: commanderAfterDeath(dock, dying.commander, cause),
+	world: worldAfterDeath(dying.world, dying.commander, cause, frameId),
+});
 
 /** Everything a pilot owns that an act at a console or in space can move. */
 export interface Holdings {

@@ -17,13 +17,15 @@ import { wreckFramePose, tetherOffset } from "./derelict";
 import { add, sub, scale, dot, length, v3, type Vec3 } from "./vec3";
 import {
 	advanceTo,
+	DEATH_WRECK_ID,
+	DEATH_WRECK_MAX_CONTAINERS,
+	withoutDeathWreck,
 	type WorldState,
 	type DeathWreckRow,
 	type DerelictContainer,
 } from "./world-state";
 
 export const DEATH_WRECK_SURVIVAL_SHARE = 0.5;
-export const DEATH_WRECK_ID = "commander-wreck";
 /** One scalar draw per item identity: adding a lot never consumes a sibling's draw. */
 export function deathWreckContents(
 	seed: number,
@@ -69,6 +71,10 @@ export function deathWreckContents(
 		counts.set(token, ordinal + 1);
 		put("fitting", item.id, item.tonnes, `carried:${token}:${ordinal}`);
 	}
+	if (containers.length > DEATH_WRECK_MAX_CONTAINERS)
+		throw Error(
+			`death wreck: ${containers.length} containers exceeds ${DEATH_WRECK_MAX_CONTAINERS}`,
+		);
 	return containers;
 }
 
@@ -110,13 +116,7 @@ export function worldAfterDeath(
 	frameId?: string,
 ): WorldState {
 	const at = world.gameTime;
-	const galaxies = world.galaxies.map((env) => {
-		if (!env.deathWreck) return env;
-		const { deathWreck, ...rest } = env;
-		const knowledge = { ...env.knowledge };
-		delete knowledge[deathWreck.key];
-		return { ...rest, knowledge };
-	});
+	const galaxies = world.galaxies.map(withoutDeathWreck);
 	const containers = deathWreckContents(world.seed, at, dying.state, cause);
 	if (!containers.length) return { ...world, galaxies };
 	const record = systemAt(world.seed, dying.galaxyIndex, dying.systemIndex);

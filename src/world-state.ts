@@ -59,6 +59,7 @@ import { fnv1a } from "./rng";
 import { RAIDER_HULL_ID, raiderSlots } from "./raider-slots";
 import {
 	RELAY_TENDER_HULL_ID,
+	RELAY_LOCAL_CARRIER_ID,
 	relayPlan,
 	relaySlot,
 	relayTenderSlot,
@@ -435,9 +436,19 @@ export interface DeathWreckRow extends DerelictRow {
 	bodyId: string;
 	offset: Vec3;
 }
+export const DEATH_WRECK_ID = "commander-wreck";
 export const isDeathWreckKey = (key: CarrierKey) =>
-	localCarrierIdOfKey(key) === "commander-wreck";
+	localCarrierIdOfKey(key) === DEATH_WRECK_ID;
 export const DEATH_WRECK_MAX_CONTAINERS = 512;
+
+/** The own-loss row and its knowledge always leave together. */
+export function withoutDeathWreck(env: GalaxyEnvelope): GalaxyEnvelope {
+	if (!env.deathWreck) return env;
+	const { deathWreck, ...rest } = env;
+	const knowledge = { ...env.knowledge };
+	delete knowledge[deathWreck.key];
+	return { ...rest, knowledge };
+}
 
 /**
  * §7's typed per-galaxy envelope: **eight state domains** — objective deltas,
@@ -1988,12 +1999,7 @@ export const scoopDerelict = (
 			const containers = row!.containers.map((c, i) =>
 				i === containerIndex ? { ...c, left: c.left - tonnes } : c,
 			);
-			if (containers.every((c) => c.left === 0)) {
-				const { deathWreck, ...rest } = env;
-				const knowledge = { ...env.knowledge };
-				delete knowledge[key];
-				return { ...rest, knowledge };
-			}
+			if (containers.every((c) => c.left === 0)) return withoutDeathWreck(env);
 			return { ...env, deathWreck: { ...row!, containers } };
 		});
 	}
@@ -2618,6 +2624,10 @@ const DEATH_GOOD_IDS: ReadonlySet<string> = new Set(
 const DEATH_FITTING_IDS: ReadonlySet<string> = new Set(
 	EQUIPMENT.filter((e) => e.name !== ESCAPE_POD).map((e) => e.name),
 );
+const CONTAINER_IDS = {
+	derelict: { good: DERELICT_GOOD_IDS, fitting: DERELICT_FITTING_IDS },
+	death: { good: DEATH_GOOD_IDS, fitting: DEATH_FITTING_IDS },
+};
 
 const parseDerelictContainer = (
 	raw: unknown,
@@ -2629,17 +2639,8 @@ const parseDerelictContainer = (
 	if (kind !== "good" && kind !== "fitting")
 		fail(`${what}: container kind ${kind} is unknown`);
 	const id = str(o, "id", what);
-	if (
-		!(
-			death
-				? kind === "good"
-					? DEATH_GOOD_IDS
-					: DEATH_FITTING_IDS
-				: kind === "good"
-					? DERELICT_GOOD_IDS
-					: DERELICT_FITTING_IDS
-		).has(id)
-	)
+	const allowed = CONTAINER_IDS[death ? "death" : "derelict"];
+	if (!allowed[kind as DerelictContainerKind].has(id))
 		fail(`${what}: ${id} is not a ${kind} a derelict can hold`);
 	const tonnes = ordinal(o, "tonnes", what);
 	if (tonnes === 0) fail(`${what}: a container drawn with no tonnes`);
@@ -2931,7 +2932,10 @@ export function parseWorld(raw: unknown): WorldState {
 		];
 		if (
 			!ids.includes(row.bodyId) &&
-			!(row.bodyId === "relay-00" && relayPlan(contents, record.seed))
+			!(
+				row.bodyId === RELAY_LOCAL_CARRIER_ID &&
+				relayPlan(contents, record.seed)
+			)
 		)
 			fail("death wreck: unknown frame");
 		const known = env.knowledge[row.key];

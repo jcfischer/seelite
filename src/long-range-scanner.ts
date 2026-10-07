@@ -18,6 +18,7 @@ import {
 	effectiveDerelict,
 	observeDerelict,
 	readKnowledge,
+	isDeathWreckKey,
 	type WorldState,
 } from "./world-state";
 
@@ -28,22 +29,19 @@ export function liveDerelicts(world: WorldState, system: System, at: number) {
 	const live = derelictSlots(record.index, record.government).flatMap(
 		({ key }) => {
 			const row = effectiveDerelict(world, record.galaxy, key, at);
-			return row.condition === "destroyed"
-				? [
-						{
-							key,
-							row,
-							pose: derelictPose(system, key, row.instanceOrdinal, at),
-						},
-					]
-				: [];
+			if (row.condition !== "destroyed") return [];
+			const poseAt = (t: number) =>
+				derelictPose(system, key, row.instanceOrdinal, t);
+			return [{ key, row, pose: poseAt(at), poseAt }];
 		},
 	);
 	const own = world.galaxies[record.galaxy].deathWreck;
 	if (own && systemIndexOfKey(own.key) === record.index) {
 		const row = effectiveDerelict(world, record.galaxy, own.key, at);
-		if (row.condition === "destroyed")
-			live.push({ key: own.key, row, pose: deathWreckPose(system, own, at) });
+		if (row.condition === "destroyed") {
+			const poseAt = (t: number) => deathWreckPose(system, own, t);
+			live.push({ key: own.key, row, pose: poseAt(at), poseAt });
+		}
 	}
 	return live;
 }
@@ -82,7 +80,7 @@ export function wreckContact(reading: DerelictReading): DisplayContact | null {
 	const env = HULL_SPECS[pose.hull].env;
 	return {
 		id: key,
-		name: `${key.endsWith(":commander-wreck") ? "Own wreck" : "Derelict"} ${pose.hull}`,
+		name: `${isDeathWreckKey(key) ? "Own wreck" : "Derelict"} ${pose.hull}`,
 		kind: "wreck",
 		color: 0xbfa77c,
 		pos: { ...pose.pos },

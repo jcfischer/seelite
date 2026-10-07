@@ -74,12 +74,7 @@ import {
 	liveDerelicts,
 } from "./long-range-scanner";
 import type { WreckCue } from "./scanner-view";
-import {
-	derelictPose,
-	deathWreckPose,
-	tetherPose,
-	tetherOffset,
-} from "./derelict";
+import { tetherPose, tetherOffset } from "./derelict";
 import {
 	buildDerelictMesh,
 	disposeDerelict,
@@ -594,6 +589,7 @@ import {
 } from "./pirate-relay";
 import {
 	RELAY_TENDER_HULL_ID,
+	RELAY_LOCAL_CARRIER_ID,
 	type RelayPlan,
 	relayPlan,
 	relaySlot,
@@ -10950,6 +10946,8 @@ class Game {
 	 * difference into the step it happens on (#529).
 	 */
 	private assistFrameSource(): {
+		kind: "relay" | "body" | "star";
+		frameId: string;
 		label: string;
 		velocityAt: (gameTime: number) => Vec3;
 	} {
@@ -10963,12 +10961,16 @@ class Game {
 				)
 			)
 				return {
+					kind: "relay",
+					frameId: RELAY_LOCAL_CARRIER_ID,
 					label: "RELAY FRAME",
 					velocityAt: (t) => this.relayVelocityAt(view, t),
 				};
 		}
 		const body = this.frameBody;
 		return {
+			kind: body ? "body" : "star",
+			frameId: body?.id ?? this.world.system.contents.star.id,
 			label: body ? `${body.kind.toUpperCase()} FRAME` : "STAR FRAME",
 			velocityAt: this.localFrameSource(),
 		};
@@ -13104,9 +13106,7 @@ class Game {
 
 	/** The exact translating frame held at death, including relay fights. */
 	deathFrameId(): string {
-		return this.assistFrameSource().label === "RELAY FRAME"
-			? "relay-00"
-			: (this.frameBody?.id ?? this.world.system.contents.star.id);
+		return this.assistFrameSource().frameId;
 	}
 	/** Live wreck instances at one clock; neither a lead nor a discovery write. */
 	derelictsAt(at = this.world.gameTime) {
@@ -13182,18 +13182,8 @@ class Game {
 		};
 	}
 	private derelictSolids(dt: number) {
-		return this.derelictsAt().map(({ key, row, pose: start }) => {
-			const own =
-				this.commerceWorld.galaxies[this.world.galaxy.index].deathWreck;
-			const end =
-				own?.key === key
-					? deathWreckPose(this.world.system, own, this.world.gameTime + dt)
-					: derelictPose(
-							this.world.system,
-							key,
-							row.instanceOrdinal,
-							this.world.gameTime + dt,
-						);
+		return this.derelictsAt().map(({ key, pose: start, poseAt }) => {
+			const end = poseAt(this.world.gameTime + dt);
 			return {
 				id: key,
 				motion: {

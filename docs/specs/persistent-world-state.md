@@ -224,22 +224,25 @@ The eventual save system must snapshot `worldSchemaVersion`, `worldGeneratorVers
 `deathWreck` row uses the salvage container shape plus a non-derivable
 placement: the lost hull's drawing id, frame id and offset. Its envelope-relative
 key is `systemIndex:commander-wreck`; the enclosing galaxy supplies the other
-coordinate and the save supplies the commander identity, so a slot rename or
+coordinate and the save supplies the commander identity, so a save-slot rename or <!-- glossary-ignore: slot -->
 import cannot orphan it. No generated carrier, objective delta or destroyed
 traffic row is repurposed.
 
 The hard bound is **one death row and its one own-loss knowledge row across all
 eight galaxies**, rather than one per death or per visited system. A new death
 removes the earlier pair; stripping removes it too. Containers are capped at
-512 on load, covering every roster hull's hold (including the cargo-bay bonus),
-one item per tonne, all commodity lots and installed fittings. Each holds a
+512 at creation and on load. `tests/death-wreck.test.ts` checks every purchasable
+hull with the Large Cargo Bay capability: one carried fitting per hold tonne,
+all native kg/g commodity lots and the full equipment catalogue. Tonne cargo
+lots share that hold capacity with carried fittings. Each container holds a
 fixed initial amount and a remaining amount; no visits reroll it. The known
 `own loss` timestamp is the death time. No timer expires the row.
 
 Save schema 12 admits the optional domain; older versions load empty and
 refuse a grafted row. Empty means omitted, retaining older world integrity
 bytes at world schema 3. Parser checks include the one-row bound, key and frame
-membership, hull id, non-pod fitting and commodity ids, amount bounds, loss on
+membership, hull id, non-pod fitting and commodity ids, positive whole initial
+amounts and remaining amounts between zero and that initial amount, loss on
 the world clock and the matching own-loss knowledge. `salvage.md` owns the
 recovery and placement details.
 

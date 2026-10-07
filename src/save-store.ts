@@ -57,8 +57,7 @@ import {
 	deathWake,
 	parseDeathWake,
 } from "./death-cost";
-import { worldAfterDeath } from "./death-wreck";
-import { commanderAfterDeath } from "./holdings";
+import { holdingsAfterDeath } from "./holdings";
 import {
 	type CommanderRecord,
 	parseSave,
@@ -648,14 +647,14 @@ export class SaveStore {
 	 * **A Commander who died before their first dock** has no `lastDocked`, and
 	 * since #660 D10 that is not a refusal: `firstCheckpoint` derives a new
 	 * commander docked at the start system's trade station, and it goes
-	 * through `commanderAfterDeath` and the same parse beside the dying world
+	 * through `holdingsAfterDeath` and the same parse beside the dying world
 	 * as a written record. The one absence that still refuses is a pilot who
 	 * did dock — a held `lastDocked` fault, or a record that `hasDocked` says
 	 * docked, which is the witness a reload keeps.
 	 *
 	 * **`cause` is what the death costs** (#660, node #704): an `eject` keeps
 	 * the launch ship and loses the hold and the pod, a `destroyed` loses the
-	 * ship for a stock courier (`commanderAfterDeath`). Required, for
+	 * ship for a stock courier (`holdingsAfterDeath`). Required, for
 	 * `FlightPerformance`'s reason: a caller that forgot it would silently
 	 * hand a pilot the cheaper death. The store also leaves the wake — what
 	 * was lost — in the pointer store for the next boot (`takeWake`).
@@ -679,10 +678,7 @@ export class SaveStore {
 			const docked = await this.backend.read(this.slot, "lastDocked");
 			const dying = this.current();
 			const dock = this.checkpointFor(docked, dying);
-			raw = serializeSave({
-				world: worldAfterDeath(dying.world, dying.commander, cause, frameId),
-				commander: commanderAfterDeath(dock, dying.commander, cause),
-			});
+			raw = serializeSave(holdingsAfterDeath(dock, dying, cause, frameId));
 			restored = parseSave(raw);
 			// `checkpointFor` derived a first checkpoint exactly when there was
 			// no record to read, and then the loss is the dying commander's.

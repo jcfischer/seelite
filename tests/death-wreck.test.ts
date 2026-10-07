@@ -4,7 +4,10 @@ import {
 	worldAfterDeath,
 	clearStationWreck,
 } from "../src/death-wreck";
-import { deathWreckPose } from "../src/derelict";
+import { deathWreckPose, tetherOffset, wreckFramePose } from "../src/derelict";
+import { AVOID_CLEARANCE_KM } from "../src/combat-enemy";
+import { RELAY_LOCAL_CARRIER_ID, relayPlan } from "../src/relay-slot"; // glossary-ignore: slot
+import { relayPosition, relayVelocity } from "../src/pirate-relay";
 import {
 	newCommanderRecord,
 	parseSave,
@@ -31,7 +34,15 @@ import { requestAction, entrustedTonnesAboard } from "../src/requests";
 import { generateGalaxy } from "../src/galaxy";
 import { firstOffer } from "./helpers/job-board";
 import { liveDerelicts, derelictReadings } from "../src/long-range-scanner";
-import { applyHoldEvent } from "../src/holdings";
+import { applyHoldEvent, holdingsAfterDeath } from "../src/holdings";
+import {
+	scoopCargo,
+	commanderHold,
+	type CommanderState,
+} from "../src/station-commerce";
+import { EQUIPMENT, COMMODITIES, ESCAPE_POD } from "../src/market";
+import { PURCHASABLE_HULL_IDS } from "../src/hull";
+import { DEATH_WRECK_MAX_CONTAINERS } from "../src/world-state";
 import { emptyPending } from "../src/ladder";
 import { v3, add, sub, scale, dot, length } from "../src/vec3";
 
@@ -48,6 +59,116 @@ const dying = {
 		pos: [1e8, 2e8, 3e8] as const,
 	},
 };
+test("Holdings returns the restored commander beside the dying inventory's wreck for either cause", () => {
+	const dock = { ...dying, state: { ...dying.state, cargo: { Textiles: 7 } } };
+	const world = { ...newWorld(47), gameTime: 10 };
+	for (const cause of ["destroyed", "eject"] as const) {
+		const outcome = holdingsAfterDeath(
+			dock,
+			{ world, commander: dying },
+			cause,
+			system.contents.star.id,
+		);
+		expect(outcome.world.galaxies[0].deathWreck?.containers).toEqual(
+			deathWreckContents(47, 10, dying.state, cause),
+		);
+		expect(outcome.commander.state.cargo).toEqual({});
+		expect(outcome.commander.state.ownedEquipment).toEqual(
+			cause === "eject" ? ["Docking Computer", "Fuel Scoops"] : [],
+		);
+		parseSave(serializeSave(outcome));
+	}
+});
+
+test("scoopCargo takes native kg/g units even with a full hold and Holdings updates their purchase basis", () => {
+	const full = {
+		...dying.state,
+		cargo: { Food: 20, Gold: 2, "Gem-Stones": 3 },
+	};
+	for (const good of ["Gold", "Gem-Stones"]) {
+		const scooped = scoopCargo(full, good, 12, 0);
+		expect(scooped.accepted).toBe(true);
+		expect(scooped.tonnes).toBe(12);
+		expect(scooped.commander.cargo[good]).toBe(
+			full.cargo[good as "Gold" | "Gem-Stones"] + 12,
+		);
+		expect(commanderHold(scooped.commander, 0).usedT).toBe(20);
+		const world = worldAfterDeath(
+			{ ...newWorld(47), gameTime: 10 },
+			dying,
+			"destroyed",
+		);
+		const wreck = world.galaxies[0].deathWreck!;
+		wreck.containers = [{ kind: "good", id: good, tonnes: 12, left: 12 }];
+		const holdings = {
+			commander: full,
+			requests: dying.requests,
+			ladders: {
+				...dying.ladders,
+				basis: {
+					[good]: { units: full.cargo[good as "Gold" | "Gem-Stones"], cr: 30 },
+				},
+			},
+			ladderPending: emptyPending(),
+		};
+		const pose = { pos: v3(), vel: v3() };
+		const outcome = applyHoldEvent(holdings, world, {
+			kind: "wreck-scoop",
+			key: wreck.key,
+			galaxyIndex: 0,
+			instanceOrdinal: wreck.instanceOrdinal,
+			containerIndex: 0,
+			at: 10,
+			container: pose,
+			ship: pose,
+		});
+		expect(outcome.holdings.commander).toEqual(scooped.commander);
+		expect(outcome.holdings.ladders.basis[good]).toEqual({
+			units: scooped.commander.cargo[good],
+			cr: 30,
+		});
+		expect(outcome.world.galaxies[0].deathWreck).toBeUndefined();
+	}
+});
+
+test("every purchasable hull's largest container inventory fits the death row bound", () => {
+	const fittings = EQUIPMENT.filter((e) => e.name !== ESCAPE_POD).map(
+		(e) => e.name,
+	);
+	const cargo = Object.fromEntries(
+		COMMODITIES.filter((c) => c.unit !== "t").map((c) => [c.name, 1000]),
+	);
+	for (const hull of PURCHASABLE_HULL_IDS) {
+		const state: CommanderState = {
+			...newCommanderRecord(hull).state,
+			ownedEquipment: fittings,
+			cargo,
+		};
+		const capacity = commanderHold(state, 0).capacityT;
+		state.recoveredFittings = Array.from({ length: capacity }, () => ({
+			id: "Docking Computer",
+			tonnes: 1,
+		}));
+		expect(commanderHold(state, 0).usedT).toBe(capacity);
+		// One recovered fitting per tonne maximises row count; a cargo lot
+		// using the same tonne cannot add another container.
+		expect(
+			capacity + fittings.length + Object.keys(cargo).length,
+		).toBeLessThanOrEqual(DEATH_WRECK_MAX_CONTAINERS);
+		for (let at = 10; at < 15; at++) {
+			const commander = { ...dying, state };
+			const world = worldAfterDeath(
+				{ ...newWorld(47), gameTime: at },
+				commander,
+				"destroyed",
+			);
+			expect(
+				world.galaxies[0].deathWreck!.containers.length,
+			).toBeLessThanOrEqual(DEATH_WRECK_MAX_CONTAINERS);
+			parseSave(serializeSave({ world, commander }));
+		}
+	}
+});
 test("per-item death draws are deterministic, independent of list order and other inventory", () => {
 	const draw = deathWreckContents(47, 10, dying.state, "destroyed");
 	expect(deathWreckContents(47, 10, dying.state, "destroyed")).toEqual(draw);
@@ -177,10 +298,22 @@ test("a body-frame death follows that body over time; station deaths clear keep-
 	const row = world.galaxies[0].deathWreck!;
 	const frame = stationApertureFrame(system, station.id, 10);
 	const delta = row.offset;
-	expect(length(delta)).toBeGreaterThan(proxyReachKm(stationProxyOf(station)));
+	const margin = length(tetherOffset(row.hull, 0)) + AVOID_CLEARANCE_KM;
+	expect(length(delta)).toBeGreaterThanOrEqual(
+		proxyReachKm(stationProxyOf(station)) + margin - 1e-6,
+	);
 	expect(
 		length(sub(delta, scale(frame.axis, dot(delta, frame.axis)))),
-	).toBeGreaterThan(corridorRadiusKm(frame.aperture));
+	).toBeGreaterThanOrEqual(corridorRadiusKm(frame.aperture) + margin - 1e-6);
+	for (let i = 0; i < row.containers.length; i++) {
+		const tether = add(delta, tetherOffset(row.hull, i));
+		expect(length(tether)).toBeGreaterThan(
+			proxyReachKm(stationProxyOf(station)) + AVOID_CLEARANCE_KM,
+		);
+		expect(
+			length(sub(tether, scale(frame.axis, dot(tether, frame.axis)))),
+		).toBeGreaterThan(corridorRadiusKm(frame.aperture) + AVOID_CLEARANCE_KM);
+	}
 	const later = deathWreckPose(system, row, 100);
 	advanceSystem(system, 100);
 	expect(sub(later.pos, system.byId.get(station.id)!.pos)).toEqual(row.offset);
@@ -197,6 +330,42 @@ test("a body-frame death follows that body over time; station deaths clear keep-
 	const q = clearStationWreck(v3(), v3(), v3(0, 0, 1), v3(1, 0, 0), 2, 1);
 	expect(length(q)).toBeCloseTo(2);
 	expect(q.x).toBe(1);
+});
+
+test("cached wreck frames retain both step endpoints and track the relay orbit", () => {
+	const plan = relayPlan(system.contents, system.record.seed)!;
+	expect(plan).toBeDefined();
+	for (const at of [10, 11, 10]) {
+		const frame = wreckFramePose(system, RELAY_LOCAL_CARRIER_ID, at);
+		expect(wreckFramePose(system, RELAY_LOCAL_CARRIER_ID, at)).toBe(frame);
+		expect(frame.pos).toEqual(relayPosition(plan, system.contents, at));
+		expect(frame.vel).toEqual(relayVelocity(plan, system.contents, at));
+	}
+	const world = worldAfterDeath(
+		{ ...newWorld(47), gameTime: 10 },
+		dying,
+		"destroyed",
+		RELAY_LOCAL_CARRIER_ID,
+	);
+	const own = liveDerelicts(world, system, 10).find(
+		(w) => w.key === world.galaxies[0].deathWreck!.key,
+	)!;
+	expect(own.poseAt(11)).toEqual(
+		deathWreckPose(system, world.galaxies[0].deathWreck!, 11),
+	);
+});
+
+test("creation enforces the container bound before a death outcome can be serialized", () => {
+	const state = {
+		...dying.state,
+		recoveredFittings: Array.from(
+			{ length: DEATH_WRECK_MAX_CONTAINERS * 4 },
+			() => ({ id: "Docking Computer", tonnes: 1 }),
+		),
+	};
+	expect(() => deathWreckContents(47, 10, state, "destroyed")).toThrow(
+		"containers exceeds 512",
+	);
 });
 
 test("death scoop honors speed, partial tonnes, whole fittings and native kg/g without extra hold tonnage", () => {
@@ -263,9 +432,30 @@ test("schema 11 migrates empty and refuses a grafted death wreck; malformed new 
 		(r: any) => {
 			r.world.galaxies[0].deathWreck.lostAt = 11;
 		},
+		(r: any) => {
+			r.world.galaxies[0].deathWreck.containers[0].tonnes = 0;
+		},
+		(r: any) => {
+			const item = r.world.galaxies[0].deathWreck.containers[0];
+			item.left = item.tonnes + 1;
+		},
+		(r: any) => {
+			const row = r.world.galaxies[0].deathWreck;
+			row.containers = Object.fromEntries(
+				Array.from({ length: DEATH_WRECK_MAX_CONTAINERS + 1 }, (_, i) => [
+					i,
+					{ ...row.containers[0] },
+				]),
+			);
+		},
 	]) {
 		const bad = structuredClone(saved);
 		mutate(bad);
+		// Check schema/row refusals, rather than merely a stale checksum.
+		const { integrity: worldIntegrity, ...worldBody } = bad.world;
+		bad.world.integrity = fnv1a(JSON.stringify(worldBody));
+		const { integrity: saveIntegrity, ...saveBody } = bad;
+		bad.integrity = fnv1a(JSON.stringify(saveBody));
 		expect(() => parseSave(bad)).toThrow();
 	}
 });
@@ -302,7 +492,7 @@ test("SaveStore writes the dying leg's owned cargo, not launch cargo or entruste
 		locks: memorySlotLocks(),
 		schedule: () => () => {},
 		backend,
-		slot: "death-test",
+		slot: "death-test", // glossary-ignore: slot
 		current: () => envelope,
 	});
 	const restored = await store.revertToLastDocked(

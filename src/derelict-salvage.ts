@@ -7,7 +7,6 @@ import {
 } from "./station-commerce";
 import { type DerelictRow, PLAYER_SALVAGE } from "./world-state";
 import type { Vec3 } from "./vec3";
-import { commodity } from "./market";
 
 export function scoopWreckContainer(
 	row: DerelictRow,
@@ -30,41 +29,28 @@ export function scoopWreckContainer(
 	const item = row.containers[index];
 	if (row.salvaged || !item || item.left <= 0 || !scoops(container, ship))
 		return unchanged();
-	const smallGood = item.kind === "good" && commodity(item.id).unit !== "t";
 	if (item.kind === "fitting" && freeT < item.left)
 		return unchanged(
 			`Hold full: ${freeT} t free; ${item.left} t ${item.id} must be recovered whole.`,
 		);
-	const took = Math.max(
-		0,
-		item.kind === "fitting"
-			? item.left
-			: smallGood
-				? item.left
-				: Math.min(item.left, Math.floor(freeT)),
-	);
+	const recovery =
+		item.kind === "good"
+			? scoopCargo(commander, item.id, item.left, entrustedT)
+			: {
+					tonnes: item.left,
+					commander: {
+						...commander,
+						recoveredFittings: [
+							...(commander.recoveredFittings ?? []),
+							{ id: item.id, tonnes: item.left },
+						],
+					},
+				};
+	const took = recovery.tonnes;
 	if (took <= 0)
 		return unchanged(
 			"Hold full: " + freeT + " t free; " + item.id + " left in space.",
 		);
-	const next =
-		item.kind === "good"
-			? smallGood
-				? {
-						...commander,
-						cargo: {
-							...commander.cargo,
-							[item.id]: (commander.cargo[item.id] ?? 0) + took,
-						},
-					}
-				: scoopCargo(commander, item.id, took, entrustedT).commander
-			: {
-					...commander,
-					recoveredFittings: [
-						...(commander.recoveredFittings ?? []),
-						{ id: item.id, tonnes: took },
-					],
-				};
 	const containers = row.containers.map((c, i) =>
 		i === index ? { ...c, left: c.left - took } : { ...c },
 	);
@@ -76,7 +62,7 @@ export function scoopWreckContainer(
 				? { salvaged: { at, cause: PLAYER_SALVAGE } }
 				: {}),
 		},
-		commander: next,
+		commander: recovery.commander,
 		tonnes: took,
 		freeT,
 		refusal: null,

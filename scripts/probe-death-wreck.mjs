@@ -187,6 +187,11 @@ try {
 		!scooped.wreck &&
 			!scooped.drawn &&
 			scooped.saved.commander.state.cargo.Food === 8 &&
+			scooped.saved.commander.state.cargo.Gold === 12 &&
+			scooped.saved.commander.state.recoveredFittings?.[0]?.id ===
+				"Docking Computer" &&
+			scooped.saved.commander.state.recoveredFittings[0].tonnes === 1 &&
+			scooped.saved.commander.state.ownedEquipment.length === 0 &&
 			!scooped.saved.world.galaxies[0].deathWreck,
 	);
 } finally {

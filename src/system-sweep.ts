@@ -10,6 +10,7 @@ import { type SystemContents, generateContents } from "./system";
 import {
 	effectiveCarrier,
 	effectiveDerelict,
+	DEATH_WRECK_ID,
 	type WorldState,
 } from "./world-state";
 
@@ -103,12 +104,12 @@ function sweepSubjects(
 		});
 	subjects.push({
 		kind: "wreck",
-		subject: "commander-wreck",
+		subject: DEATH_WRECK_ID,
 		region: { kind: "system-space" },
 		carriers: [
 			{
-				localCarrierId: "commander-wreck",
-				key: carrierKey(record.index, "commander-wreck"),
+				localCarrierId: DEATH_WRECK_ID,
+				key: carrierKey(record.index, DEATH_WRECK_ID),
 			},
 		],
 	});
