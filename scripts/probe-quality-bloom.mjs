@@ -43,7 +43,7 @@ try {
 	}
 
 	// Mount the shipped diagnostic explicitly, without adding its query flag
-	// or sending flight keys. Both the toggle and reset run its real pad action.
+	// or sending flight keys. Both the toggle and reset run its real gamepad action.
 	const reset = await page.evaluate(async () => {
 		const g = window.__seelite;
 		const { mountPerfPanel, PERF_KEYS } = await import("/src/perf-panel.ts");
@@ -51,7 +51,7 @@ try {
 		const panel = mountPerfPanel({
 			scenes: [g.nearScene, g.approachScene, g.farScene],
 			bloom: g.bloom,
-			quality: () => g.settings.value.quality,
+			bloomDefault: () => g.bloomDefault,
 			attribution,
 			occlusion: () => g.occlusionState,
 			adaptive: () => g.adaptiveDiagnostics(),
@@ -83,7 +83,7 @@ try {
 	t.check("Low permits the live diagnostic override", reset.override === true);
 	t.check("reset returns Low bloom to off", reset.low === false);
 	t.check(
-		"High permits the live diagnostic override",
+		"the diagnostic toggle turns High bloom off",
 		reset.highOverride === false,
 	);
 	t.check("reset reads the current High row", reset.high === true);

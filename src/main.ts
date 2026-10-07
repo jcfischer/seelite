@@ -2227,6 +2227,10 @@ class Game {
 	get bloom() {
 		return this.bloomPass ?? null;
 	}
+	/** Quality owns the default; the perf panel may override it until reset. */
+	get bloomDefault() {
+		return LIGHT_RIG.quality[this.settings.value.quality].bloom;
+	}
 	/** Near: ships, stations, anything at 1:1 kilometres. */
 	readonly nearScene = new THREE.Scene();
 	/** The cabin, alone, drawn last over a cleared depth buffer (#651).
@@ -5978,7 +5982,7 @@ class Game {
 	 */
 	private applyQuality() {
 		const mode = LIGHT_RIG.quality[this.settings.value.quality];
-		this.bloomPass.enabled = mode.bloom;
+		this.bloomPass.enabled = this.bloomDefault;
 		for (const { scene } of this.layerLights)
 			scene.environment = mode.environment ? this.environmentMap : null;
 		this.renderer.toneMappingExposure = mode.exposure;
@@ -21025,7 +21029,7 @@ if (postcard) {
 			const perf = mountPerfPanel({
 				scenes: [game.nearScene, game.approachScene, game.farScene],
 				bloom: game.bloom,
-				quality: () => game.settings.value.quality,
+				bloomDefault: () => game.bloomDefault,
 				attribution,
 				occlusion: () => game.occlusionState,
 				adaptive: () => game.adaptiveDiagnostics(),
