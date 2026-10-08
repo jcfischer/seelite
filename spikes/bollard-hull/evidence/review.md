@@ -31,3 +31,5 @@ Final hardware browser: ANGLE Metal / Apple M1 Pro; 1586 × 992, DPR 1. Observed
 Orbit, six presets, target modal, work lights, rotation, PNG export and narrow layout passed; no browser errors. Both exported-geometry tests passed (23 assertions), including watertight outward body/nacelle backing shells. Viewer strict typecheck and production build passed.
 
 The final captures here are live renders, not generated images. The target remains at ../target.png.
+
+Repository browser selection was inspected at implementation commit `6645958`. The standalone selector suggested 3 probes; canonical `probe:pr` re-evaluated semantically and selected only model-viewer. No manual narrowing was applied. That hardware run passed 1/1 checks in 5 seconds. This is selected partial evidence, not the full 96-probe suite. Receipts are in `probe-selection.txt` and `probe-run.txt`.
