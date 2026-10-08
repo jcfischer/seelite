@@ -49,5 +49,20 @@ passed, as did strict standalone viewer TypeScript checking. The repository
 selector's partial browser run passed 8/8; this is not full-suite evidence.
 
 Independent visual verdicts and final screenshots are retained in `evidence/`.
-Principal visual approval remains separate from these scores; node 804 stays
-open at the prototype checkpoint.
+Principal visually approved all four on 2026-10-09. Node 804 stays open for
+the receiving agent to finish delivery. No tests or Sage were run during
+the requested PR wrap-up; the results above are from the implementation session.
+
+## Receiving agent
+
+Preserve the approved four-model direction and O1's absent digger. Visual work
+stopped at the requested 7/10; remaining details are documented in the reviews.
+Inspect current main and the existing authored-model pipeline before deciding
+how to integrate these prototype assets. Production registry/selection,
+asset optimization, runtime loading, collision/berth envelopes and flight
+docking remain outside this implementation and need their own delivery work.
+
+Read `CLAUDE.md` and graph nodes 1, 56 and 804 before continuing. Review the
+branch against current main, establish the next delivery scope, and follow the
+repository probe selector and review gates when verification is authorized.
+The handoff is a draft PR, with no Sage verdict, merge or deployment.

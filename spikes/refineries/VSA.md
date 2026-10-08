@@ -55,6 +55,11 @@ four models with no browser errors; observed viewer cadence 47–59 FPS.
 Production build passed. Selected repository browser run passed 8/8 in 127 seconds,
 partial coverage only.
 
-Principal visual approval remains pending; graph node 804 stays open. Deliberate
+Principal visually approved all four on 2026-10-09: "looks good". Graph node 804
+stays open for the receiving agent to finish delivery. Deliberate
 prototype limitations include simplified machinery, rock treatment and docking
 details, documented in each independent review. No production integration.
+
+2026-10-09 handoff: principal requested a PR for another agent to finish and
+explicitly requested no tests or Sage during wrap-up. Existing verification above
+predates this handoff; no fresh verification or Sage approval is claimed.
