@@ -36,3 +36,20 @@ Round 6 is the principal-requested single refinement pass: wider varied roof uti
 Round 6 judge: silhouette and detail improved; cleaner paint regressed resemblance. Score 6.15/10, below the 8/10 target. The final export additionally seats roof modules and inspection hatches flush against their supports; final hardware captures are in `.dream-loop/round-6-final/`. No further visual pass was started after the requested one.
 
 Principal correction after round 6: restore the previous gritty finish while retaining the new geometry. The active export again uses `industrial-surface.png` on armour, with the original 0.45 metalness and 0.66 roughness. Roof utilities, antennae, side booms and panel-edge hardware remain. The 6.15 judge score describes the cleaner round-6 image, not this restored-material export; no new resemblance score is claimed. Current verification captures: `.dream-loop/round-6-grit/`.
+
+
+## Fly the station
+
+The principal approved the exterior and requested a playable version. Run Vite in this worktree and open:
+
+`/?boot=direct&seed=42&system=0&no-save&coriolis=industrial&coriolis-start=approach&fps`
+
+This starts a temporary flight 1.8 km outside the Coriolis aperture, co-moving and facing it, with the station targeted and a docking computer fitted. Default keys: Shift/Ctrl throttle, WASD pitch/yaw, QE roll, C clearance, U docking computer, Enter launch/skip traversal. Existing Settings bindings still apply. Reload resets the trial; no Commander save store is attached.
+
+Only trade form A uses the new exterior, behind `coriolis=industrial`. Other station forms and unflagged boots use the original builder. The model is loaded once per page and shared across system changes. It follows the simulation's normal station pose, spin and near/far scaling.
+
+The flight GLB removes the viewer's closed display tunnel. A 38m collar joins the authored aperture to the production interior. The front bulkhead, lane lights, shell front and corner rails are recessed 30m behind the mouth to fit the new skin. Berths, traversal coordinates, docking checks and simulation collision proxies remain production values. Added exterior machinery is cosmetic under those existing proxies.
+
+Re-export: `Blender --background --python spikes/coriolis/build_model.py -- --flight` (use your Blender executable path). `capture-flight.mjs` boots hardware Chromium, checks actual Shift-key flight, docks, launches, and confirms an ordinary boot makes zero industrial-asset requests. Its docking traversal is accelerated with simulation steps and the existing skip-traversal control; this is automated evidence, not a claim of a full manual playtest.
+
+Verification: 6 headless tests / 72 assertions; TypeScript and production build pass; hardware browser flight/docking/launch pass without page exceptions or collision impacts. About 60 FPS on the M1 Pro at 1440×1000 during the approach. `flight-evidence/` contains screenshots and the run report. The required probe selector returned all probes because main.ts is shared runtime; the full PR delivery suite and Sage review have not run. This remains a local opt-in spike, not a production release.

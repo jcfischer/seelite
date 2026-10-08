@@ -2,12 +2,14 @@
 Geometry is authored in metres on the game's XYZ axes, +Z is the dock.
 No internet assets. Seeded construction, material batches, physically open slot.
 """
-import bpy, math, random, json, os, struct
+import bpy, math, random, json, os, struct, sys
 from mathutils import Vector
 from pathlib import Path
 ROOT = Path(__file__).resolve().parents[2]
 OUT = ROOT / 'public/spikes/coriolis'
 OUT.mkdir(parents=True, exist_ok=True)
+FLIGHT = "--flight" in sys.argv
+ASSET = "coriolis-industrial-flight" if FLIGHT else "coriolis-industrial"
 random.seed(790)
 bpy.ops.object.select_all(action='SELECT')
 bpy.ops.object.delete(use_global=False)
@@ -291,16 +293,21 @@ for i,a in enumerate(verts):
    for xx in [-8,8]:
     for yy in [-9,9]:box(c+d*xx+v*yy+n*3,(2,2,2),pipe,(d,v,n))
 # Open docking throat: all walls strictly outside the 120 x 70 metre aperture.
-for z in [427,414,398,371,342,307,273]:
- for x in [-66,66]:box((x,0,z),(12,92,5),steel)
- for y in [-41,41]:box((0,y,z),(120,12,5),steel)
-for x in [-63,63]:box((x,0,329),(6,70,198),black)
-for y in [-38,38]:box((0,y,329),(120,6,198),steel)
-box((0,0,228),(120,70,4),black)
-for z in [414,380,342,303,270]:
- for x in [-60.5,60.5]:box((x,22,z),(1,18,2),warm)
- box((0,35.5,z),(95,1,2),white)
- for x in [-40,40]:box((x,-35.25,z),(8,.5,8),warm)
+if not FLIGHT:
+    for z in [427,414,398,371,342,307,273]:
+     for x in [-66,66]:box((x,0,z),(12,92,5),steel)
+     for y in [-41,41]:box((0,y,z),(120,12,5),steel)
+    for x in [-63,63]:box((x,0,329),(6,70,198),black)
+    for y in [-38,38]:box((0,y,329),(120,6,198),steel)
+    box((0,0,228),(120,70,4),black)
+    for z in [414,380,342,303,270]:
+     for x in [-60.5,60.5]:box((x,22,z),(1,18,2),warm)
+     box((0,35.5,z),(95,1,2),white)
+     for x in [-40,40]:box((x,-35.25,z),(8,.5,8),warm)
+# Flight collar joins the aperture plane to the recessed production bulkhead.
+if FLIGHT:
+    for x in [-61.5,61.5]:box((x,0,409),(3,70,38),steel)
+    for y in [-36.5,36.5]:box((0,y,409),(120,3,38),steel)
 # Three bevelled coaming tiers: chamfered outside, rectangular flight clearance.
 def octagon(w,h,k,z):
     return [Vector(q) for q in [(-w+k,-h,z),(w-k,-h,z),(w,-h+k,z),(w,h-k,z),(w-k,h,z),(-w+k,h,z),(-w,h-k,z),(-w,-h+k,z)]]
@@ -425,12 +432,12 @@ for text,loc,size in [('03',(168,26,F+12.1),42),('CORIOLIS',(-104,-125,F+9),12),
  bpy.context.view_layer.objects.active=ob;ob.select_set(True);bpy.ops.object.convert(target='MESH');ob.select_set(False)
 # Retain editable authoring source outside the web-served directory.
 bpy.ops.file.pack_all()
-bpy.ops.wm.save_as_mainfile(filepath=str(ROOT/'spikes/coriolis/coriolis-industrial.blend'))
-bpy.ops.export_scene.gltf(filepath=str(OUT/'coriolis-industrial.glb'),export_format='GLB',export_yup=False,export_apply=True,export_materials='EXPORT',export_extras=True)
+if not FLIGHT:bpy.ops.wm.save_as_mainfile(filepath=str(ROOT/'spikes/coriolis/coriolis-industrial.blend'))
+bpy.ops.export_scene.gltf(filepath=str(OUT/(ASSET+'.glb')),export_format='GLB',export_yup=False,export_apply=True,export_materials='EXPORT',export_extras=True)
 # Blender's glTF exporter keeps the image but drops the constant multiplier
 # on this node graph. Carry that authored linear tint into the standard PBR
 # factor explicitly, so every independent GLB viewer gets the same materials.
-glb=OUT/'coriolis-industrial.glb'
+glb=OUT/(ASSET+'.glb')
 data=glb.read_bytes(); jlen=struct.unpack_from('<I',data,12)[0]
 doc=json.loads(data[20:20+jlen])
 for mat in doc.get('materials',[]):
@@ -439,4 +446,4 @@ for mat in doc.get('materials',[]):
 encoded=json.dumps(doc,separators=(',',':')).encode();encoded+=b' '*((-len(encoded))%4)
 tail=data[20+jlen:]
 glb.write_bytes(struct.pack('<4sII',b'glTF',2,20+len(encoded)+len(tail))+struct.pack('<II',len(encoded),0x4E4F534A)+encoded+tail)
-print('CORIOLIS_EXPORTED',str(OUT/'coriolis-industrial.glb'))
+print('CORIOLIS_EXPORTED',str(OUT/(ASSET+'.glb')))

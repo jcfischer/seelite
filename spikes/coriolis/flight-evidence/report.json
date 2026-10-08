@@ -1,0 +1,213 @@
+{
+  "initial": {
+    "phase": "flying",
+    "station": "station-trade",
+    "snapshot": {
+      "stationId": "station-trade",
+      "rangeKm": 2.22800004157457,
+      "closingKms": 0,
+      "frameBodyId": "station-trade",
+      "throttle": 0,
+      "offAxisKm": 0.003826765122938508,
+      "axialKm": 2.227996755187265,
+      "planeKm": 0.428,
+      "apertureKind": "slot",
+      "apertureWidthKm": 0.12,
+      "apertureHeightKm": 0.07,
+      "phaseRad": 0.3625019064797028,
+      "axis": {
+        "x": -0.40872860435795394,
+        "y": 0.9125735021804673,
+        "z": 0.01226911152756882
+      },
+      "basis": {
+        "across": {
+          "x": 0.8550246364505105,
+          "y": 0.38758551524527873,
+          "z": -0.34454366840028333
+        },
+        "up": {
+          "x": -0.3191767520391666,
+          "y": -0.13033446010218716,
+          "z": -0.9386901136517846
+        }
+      },
+      "reference": {
+        "x": 0.9126435093010907,
+        "y": 0.40861582596170726,
+        "z": 0.010720620514785686
+      },
+      "spinRpm": 0.9802175329998135,
+      "clearance": {
+        "kind": "none"
+      },
+      "grantLive": false,
+      "hostile": false,
+      "computerEngaged": false,
+      "computerRefusal": null,
+      "dockedAt": null,
+      "dockPhase": "flying",
+      "berthId": null,
+      "berthAxialKm": null,
+      "berthUp": null,
+      "stationName": "USQULAVE",
+      "condition": {
+        "fore": 106,
+        "aft": 106,
+        "hull": 100,
+        "hullMax": 100,
+        "energy": 100,
+        "heat": 0,
+        "heatLocked": false,
+        "sinceStruckS": 6.531499999999994
+      },
+      "alive": true,
+      "poolMax": 206,
+      "conditionFull": {
+        "fore": 106,
+        "aft": 106,
+        "hull": 100,
+        "hullMax": 100,
+        "energy": 100,
+        "heat": 0,
+        "heatLocked": false,
+        "sinceStruckS": 3
+      },
+      "lastEntry": null,
+      "notice": null
+    },
+    "bay": true,
+    "renderer": "ANGLE (Apple, ANGLE Metal Renderer: Apple M1 Pro, Unspecified Version)",
+    "storeAttached": false,
+    "frames": 203
+  },
+  "flight": {
+    "axialKm": 2.105996209058433,
+    "frames": 283
+  },
+  "docking": {
+    "phase": "docked",
+    "grant": "granted",
+    "snapshot": {
+      "stationId": "station-trade",
+      "rangeKm": 0.18436106061516436,
+      "closingKms": 0.009751573301876327,
+      "frameBodyId": "station-trade",
+      "throttle": 0,
+      "offAxisKm": 0.09500102126631754,
+      "axialKm": 0.1579993880668688,
+      "planeKm": 0.428,
+      "apertureKind": "slot",
+      "apertureWidthKm": 0.12,
+      "apertureHeightKm": 0.07,
+      "phaseRad": 3.552316808823201,
+      "axis": {
+        "x": -0.4224751664703558,
+        "y": 0.9062936533653679,
+        "z": 0.012105684016183237
+      },
+      "basis": {
+        "across": {
+          "x": -0.8328861060252127,
+          "y": -0.3934547033384052,
+          "z": 0.38922246956084855
+        },
+        "up": {
+          "x": 0.3575128922234879,
+          "y": 0.1543541716007119,
+          "z": 0.9210642331582826
+        }
+      },
+      "reference": {
+        "x": 0.9063619480128542,
+        "y": 0.42236134290195854,
+        "z": 0.010904825372210405
+      },
+      "spinRpm": 0.9802175329998135,
+      "clearance": {
+        "kind": "granted",
+        "expiresAtS": 605.0733999999761
+      },
+      "grantLive": true,
+      "hostile": false,
+      "computerEngaged": false,
+      "computerRefusal": null,
+      "dockedAt": "station-trade",
+      "dockPhase": "docked",
+      "berthId": "overhead-deep",
+      "berthAxialKm": 0.15799999999999997,
+      "berthUp": {
+        "x": -0.35751289222348787,
+        "y": -0.15435417160071188,
+        "z": -0.9210642331582823
+      },
+      "stationName": "USQULAVE",
+      "condition": {
+        "fore": 106,
+        "aft": 106,
+        "hull": 100,
+        "hullMax": 100,
+        "energy": 100,
+        "heat": 0,
+        "heatLocked": false,
+        "sinceStruckS": 37.606733333308654
+      },
+      "alive": true,
+      "poolMax": 206,
+      "conditionFull": {
+        "fore": 106,
+        "aft": 106,
+        "hull": 100,
+        "hullMax": 100,
+        "energy": 100,
+        "heat": 0,
+        "heatLocked": false,
+        "sinceStruckS": 3
+      },
+      "lastEntry": {
+        "docked": true,
+        "evaluation": {
+          "checks": {
+            "notHostile": true,
+            "axisAlignment": true,
+            "inbound": true,
+            "rollMatch": true,
+            "containment": true,
+            "closingSpeed": true
+          },
+          "passed": true,
+          "speedKms": 0.02000000887135162,
+          "positionAngleDeg": 0.048079603562072054,
+          "noseAngleDeg": 0.4134283343554545,
+          "rollAngleDeg": 0.09693202706798902,
+          "offsetAcrossKm": -0.00032977360964441487,
+          "offsetUpKm": 0.00014227367684601906
+        },
+        "state": {
+          "clearance": {
+            "kind": "granted",
+            "expiresAtS": 605.0733999999761
+          },
+          "hostile": false,
+          "hostileUntilS": null,
+          "berthId": "overhead-deep"
+        },
+        "damage": 0,
+        "repelled": null,
+        "barged": false,
+        "laneBlocked": false
+      },
+      "notice": null
+    }
+  },
+  "launch": {
+    "accepted": true,
+    "phase": "flying",
+    "impacts": 0
+  },
+  "errors": [],
+  "ordinary": {
+    "industrialRequests": 0,
+    "hasIndustrial": false
+  }
+}

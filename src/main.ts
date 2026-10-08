@@ -5436,7 +5436,9 @@ class Game {
 				// berth with no pad under it. **And its own form** (node #717): the // glossary-ignore: pad
 				// system picked it from the role's pool, and the sim's proxy reads the
 				// same field, so what is drawn is what is solid.
-				const built = buildStationMesh(station, body.color);
+				const built = industrialStationBuilder
+					? industrialStationBuilder(station, body.color)
+					: buildStationMesh(station, body.color);
 				mesh = built.root;
 				// **E10's other half.** `station-mesh.ts` built the shields as
 				// geometry and supplied no pixels, because that module is
@@ -17739,6 +17741,41 @@ class Game {
 	 * is a free one's start with the clock moved on, not a ship parked beside a
 	 * station under an autopilot the pilot does not own (sage, #528 round 2).
 	 */
+
+	/** Local no-save station study; real flight state and ordinary docking rules. */
+	startIndustrialTrial() {
+		if (this.saveStore || this.dockPhase !== "flying") return;
+		const station = this.world.system.contents.stations.find(
+			(s) => s.type === "trade" && s.formId === "a",
+		);
+		if (station) {
+			const body = this.world.system.byId.get(station.id)!;
+			const snap = this.dockingSnapshot(station.id)!;
+			const distance = snap.planeKm + 1.8;
+			this.world.ship.pos = v3(
+				body.pos.x + snap.axis.x * distance,
+				body.pos.y + snap.axis.y * distance,
+				body.pos.z + snap.axis.z * distance,
+			);
+			this.world.ship.vel = this.stationVelocity(station.id);
+			this.targetId = station.id;
+			// A temporary trial ship can demonstrate both manual and assisted docking.
+			if (!this.hasDockingComputer)
+				this.commander = {
+					...this.commander,
+					ownedEquipment: [
+						...this.commander.ownedEquipment,
+						this.dockingComputerName,
+					],
+				};
+			this.setThrottle(0);
+			this.setAttitude(
+				v3(-snap.axis.x, -snap.axis.y, -snap.axis.z),
+				snap.basis.up,
+			);
+		}
+	}
+
 	startDockedAtHome(): boolean {
 		const id = this.world.system.contents.stations.find(
 			(s) => s.type === "trade",
@@ -20651,6 +20688,11 @@ function querySeed(): number | null {
 // surface was building a fresh `URLSearchParams` three times in as many
 // branches.
 const query = new URLSearchParams(window.location.search);
+// This spike is loaded only by its explicit play link, before Game builds bodies.
+const industrialStationBuilder =
+	query.get("coriolis") === "industrial"
+		? await (await import("./coriolis-flight")).loadIndustrialStationBuilder()
+		: null;
 
 if (query.has("fps")) {
 	const { mountFpsMeter } = await import("./fps-meter");
@@ -20981,6 +21023,13 @@ if (postcard) {
 		// plan's answer rather than re-derive it from one of the two causes.
 		if (!plan.writesNothing && plan.fault === null) await attach(plan.slot);
 		await beginFirstDay(plan.writesNothing ? null : plan.slot);
+		if (
+			industrialStationBuilder &&
+			query.get("coriolis-start") === "approach" &&
+			plan.writesNothing
+		) {
+			game.startIndustrialTrial();
+		}
 		game.clockHeld = false;
 	} else if (plan.mode === "continue") {
 		// §11.3: a one-shot whose Commander another tab took in the meantime is
