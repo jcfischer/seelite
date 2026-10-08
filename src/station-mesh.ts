@@ -2639,7 +2639,14 @@ function buildShipyardHangar(color: number, berthSeed: number): BuiltPart {
 		[
 			{ z: -r * 0.3, w: r * 0.34, h: r * 0.34, e: 8 },
 			{ z: r * 0.24, w: r * 0.42, h: r * 0.42, e: 8, hard: true },
-			{ z: r * 0.6, w: r * 0.32, h: r * 0.32, e: 8 },
+			// The forward face is the declared aperture plane (node #746): at
+			// `r * 0.6` it stood 12 m short of the plane the checks read.
+			{
+				z: STATION_GEOMETRY.shipyard.aperturePlaneKm,
+				w: r * 0.32,
+				h: r * 0.32,
+				e: 8,
+			},
 		],
 		hullMaterial(color, "shipyard"),
 		"core",
@@ -2665,48 +2672,87 @@ function buildShipyardHangar(color: number, berthSeed: number): BuiltPart {
 			true,
 		),
 	);
-	spun.add(buildAperture("shipyard", fixtures, r * 0.6, berthSeed));
+	spun.add(
+		buildAperture(
+			"shipyard",
+			fixtures,
+			STATION_GEOMETRY.shipyard.aperturePlaneKm,
+			berthSeed,
+		),
+	);
 	// The strobe pair on the hub's forward face, above and below the slot
 	// (§5, #300's review): the hub is what turns, and the slab the pair stood
 	// on did not.
 	spun.add(
 		strobePair("shipyard", fixtures, LAMP_POOL_KM.face, (side, position) => {
-			position.set(0, side * r * 0.22, r * 0.6);
+			position.set(
+				0,
+				side * r * 0.22,
+				STATION_GEOMETRY.shipyard.aperturePlaneKm,
+			);
 		}),
 	);
 	group.add(spun);
 
-	// Inside the bay mouth, which is where a bay's floods are.
+	/**
+	 * **On the mouth's two lips, not inside it** (node #746). The floods and
+	 * the arc stood 0.44 km aft, inside the dark recess box whose face is 84 m
+	 * in front of them, so from the aperture axis — the one view an approach
+	 * has — every one of them was hidden, at every phase. The lips are the
+	 * mouth's rim and the nearest structure in front of the bay, so the work
+	 * light is mounted on their forward faces, centred on that face so each is
+	 * half sunk into the lip, and turned 35° inboard so the lit faces aim into
+	 * the mouth, as the Gantry's do on its boom tips. Every fitting stands
+	 * outboard of the hub's square section in that view, which is what hid
+	 * the arc where it was first moved to.
+	 */
+	const LIP_Y = r * 0.26;
+	const LIP_FRONT_Z = r * 0.5 + r * 0.06 - SHIPYARD_KEEL_AFT_KM;
+	const FLOOD_TILT = Math.PI * 0.19;
 	group.add(
 		buildBayLights(
 			fixtures,
 			r,
-			(i, flood) =>
+			(i, flood) => {
+				// Upper lip for the first pair, lower lip for the second; inboard
+				// is −Y on the upper lip and +Y on the lower one.
+				const side = i < 2 ? 1 : -1;
+				flood.quaternion.setFromUnitVectors(
+					new THREE.Vector3(0, 1, 0),
+					new THREE.Vector3(
+						0,
+						-side * Math.sin(FLOOD_TILT),
+						Math.cos(FLOOD_TILT),
+					),
+				);
 				flood.position.set(
-					-span * 0.2 + i * span * 0.13,
-					r * 0.2,
-					r * 0.4 - SHIPYARD_KEEL_AFT_KM,
-				),
-			new THREE.Vector3(span * 0.1, -r * 0.18, r * 0.4 - SHIPYARD_KEEL_AFT_KM),
+					(i % 2 === 0 ? -1 : 1) * span * 0.18,
+					side * LIP_Y,
+					LIP_FRONT_Z,
+				);
+			},
+			new THREE.Vector3(-span * 0.22, -LIP_Y, LIP_FRONT_Z),
 		),
 	);
 	group.add(
 		portRun("shipyard", 16, (i, count, position, normal) => {
-			// On the slab's own back face. The slab is `r * 0.72` half-high and
-			// `r * 0.5` half-wide in the rotated frame, so a run at `r * 0.5` in
-			// z sat clear of the surface it was meant to be set into — the whole
-			// grid came away as one loose island.
+			// On the slab's **forward** face, above and below the mouth (node
+			// #746). On the back face the run faced away from every approach and
+			// sat at `r * 0.46`, 24 m inside a face that stands at `r * 0.5`, so
+			// §5's windows were never seen from the aperture axis. The forward
+			// face is `r * 0.5` ahead of the slab's centre; the panes sit a metre
+			// proud of it, in two rows outboard of the lips (`r * 0.26`) and
+			// outboard of the hub's 0.42·r half-width in the axis view.
 			//
-			// Two rows across the **parallel** part of the back face. The slab's
-			// section is constant from −0.44·span to +0.4·span and chamfers
-			// outside that, so a run reaching 0.46·span put panes on the taper,
-			// where the surface has already fallen away from `r * 0.46`.
+			// Across the **parallel** part of the face. The slab's section is
+			// constant from −0.44·span to +0.4·span and chamfers outside that,
+			// so a run reaching 0.46·span put panes on the taper.
 			const { row, along } = rowsOf(i, count, 2);
-			normal.set(0, 0, -1);
+			normal.set(0, 0, 1);
 			position.set(
 				-span * 0.34 + along * span * 0.68,
-				(row === 0 ? -1 : 1) * r * 0.24,
-				-r * 0.46 - SHIPYARD_KEEL_AFT_KM,
+				(row === 0 ? -1 : 1) * r * 0.5,
+				r * 0.5 + 0.001 - SHIPYARD_KEEL_AFT_KM,
 			);
 		}),
 	);

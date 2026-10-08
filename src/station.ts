@@ -188,7 +188,7 @@ export const STATION_FORM_POOL: Record<
 	readonly StationFormId[]
 > = {
 	trade: ["a"],
-	shipyard: ["a"],
+	shipyard: ["a", "b"],
 	refinery: ["a", "b", "c", "d"],
 };
 

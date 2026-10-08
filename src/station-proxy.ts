@@ -518,6 +518,61 @@ function shipyardGantryProxy(): StationProxy {
 }
 
 // ---------------------------------------------------------------------------
+// Shipyard B — Hangar
+// ---------------------------------------------------------------------------
+
+/**
+ * The Hangar: a compact hub on the spin axis that turns, and a long slab
+ * behind it that does not (node #746).
+ *
+ * **Spinning.** The hub (`core`, square section to ±0.252 km, aft face
+ * −0.18 km, forward face at the 0.372 km plane) as one box cut round the bay
+ * and the prism, standing 28 m proud of the plane as the Gantry's drum does,
+ * and the spindle behind it running back into the slab's bearing.
+ *
+ * **Static.** The slab runs along x behind the hub (centred
+ * `SHIPYARD_KEEL_AFT_KM` aft, forward face at −0.38 km): its parallel section
+ * as one box, and each chamfered end as two smaller boxes stepping in with
+ * the taper, each as large as its corner allows inside the 1.5 km reach. A
+ * band across the forward face carries the bay mouth's two lips and the dark
+ * recess, which stand up to 36 m proud of it, and a box carries the bearing
+ * the spindle turns in. Nothing static reaches forward of −0.335 km, so the
+ * bay's swept cylinder (from −0.033 km) and the corridor are clear by
+ * construction.
+ */
+function shipyardHangarProxy(): StationProxy {
+	const hub = cutAround(
+		[axial(0.26, 0.26, -0.19, 0.4), axial(0.1, 0.1, -0.46, -0.19)],
+		bayHoles("shipyard"),
+	);
+	const SLAB_BACK = -0.98;
+	const SLAB_FRONT = -0.38;
+	const slab: Bounds[] = [
+		{
+			x0: -0.94,
+			x1: 0.86,
+			y0: -0.432,
+			y1: 0.432,
+			z0: SLAB_BACK,
+			z1: SLAB_FRONT,
+		},
+		{ x0: -1.06, x1: -0.94, y0: -0.4, y1: 0.4, z0: -0.95, z1: -0.41 },
+		{ x0: -1.15, x1: -1.06, y0: -0.33, y1: 0.33, z0: -0.89, z1: -0.47 },
+		{ x0: 0.86, x1: 0.98, y0: -0.4, y1: 0.4, z0: -0.95, z1: -0.41 },
+		{ x0: 0.98, x1: 1.1, y0: -0.33, y1: 0.33, z0: -0.9, z1: -0.46 },
+		// The mouth's lips and recess, proud of the forward face.
+		{ x0: -0.54, x1: 0.54, y0: -0.19, y1: 0.19, z0: SLAB_FRONT, z1: -0.344 },
+		// The bearing ring the spindle turns in.
+		axial(0.16, 0.16, SLAB_FRONT, -0.335),
+		// The two masts on the slab's top, dish and beacon included.
+		...[-0.9, 0.81].map(
+			(x): Bounds => ({ x0: x - 0.04, x1: x + 0.04, y0: 0.4, y1: 0.535, z0: -0.72, z1: -0.64 }),
+		),
+	];
+	return proxyOf(hub, slab.map(boxOf));
+}
+
+// ---------------------------------------------------------------------------
 // Refinery A–C — rock, plant and radiator wings
 // ---------------------------------------------------------------------------
 
@@ -895,7 +950,14 @@ export function stationProxy(
 		case "trade":
 			return form === "a" ? tradeCoriolisProxy() : null;
 		case "shipyard":
-			return form === "a" ? shipyardGantryProxy() : null;
+			switch (form) {
+				case "a":
+					return shipyardGantryProxy();
+				case "b":
+					return shipyardHangarProxy();
+				default:
+					return null;
+			}
 		case "refinery":
 			switch (form) {
 				case "a":

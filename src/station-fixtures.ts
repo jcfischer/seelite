@@ -1138,6 +1138,79 @@ const DECLARATIONS: Partial<
 	},
 
 	/**
+	 * Shipyard B — Hangar (node #746). Everything stands on the static slab,
+	 * whose z is read off the slab itself rather than restated, as the
+	 * Gantry's is off its keel. The spun hub carries nothing, and the slab's
+	 * forward face is the mouth's and the windows', so the plant goes on its
+	 * top, its underside and its back. Every base stays inside the slab's
+	 * parallel section (−0.44·span to +0.4·span, about ±1.5·r): the chamfered
+	 * ends are the outline, at 1.497 km against a 1.5 km reach.
+	 */
+	"shipyard/b": ({ site, group, pools, mount, beaconAt }) => {
+		const r = STATION_GEOMETRY.shipyard.coreRadiusKm;
+		const S = SHIP_SCALE;
+		const slab = site.structure.getObjectByName("slab");
+		if (!slab) throw new Error("the Hangar's slab is not named");
+		const aft = -slab.position.z;
+		// The slab is `r * 0.72` half-high and `r * 0.5` deep either side of
+		// its centre; a point declared on a face is cast onto it.
+		const top = (x: number, dz: number) =>
+			mount(V(x, r * 0.72, -aft + dz), V(0, 1, 0), r * 0.3);
+		const under = (x: number, dz: number) =>
+			mount(V(x, -r * 0.72, -aft + dz), V(0, -1, 0), r * 0.3);
+		// A lattice bridge along each long edge of the top face.
+		for (const dz of [-r * 0.36, r * 0.36]) {
+			const a = top(-r * 1.4, dz).add(V(0, S.trussKm * 0.5, 0));
+			const b = top(r * 1.3, dz).add(V(0, S.trussKm * 0.5, 0));
+			truss(pools, a, b, S.trussKm, V(0, 1, 0));
+		}
+		// Radiator banks on the top face between the bridges: two rows of twelve
+		// on each half of the slab.
+		for (const x of [-r * 1.2, r * 0.5])
+			for (const row of [-0.14, 0.14])
+				radiatorArray(pools, {
+					origin: top(x, row * r),
+					along: V(1, 0, 0),
+					up: V(0, 1, 0),
+					count: 12,
+					panelWidthKm: S.panelKm,
+					panelHeightKm: S.panelHeightKm,
+				});
+		// Tank racks under the slab: four racks of six.
+		for (const x of [-r * 0.8, r * 0.6])
+			for (const row of [-0.14, 0.14])
+				tankRack(pools, {
+					origin: under(x, row * r),
+					along: V(1, 0, 0),
+					up: V(0, -1, 0),
+					count: 6,
+					radiusKm: S.tankKm,
+					lengthKm: S.tankLengthKm,
+				});
+		// Pipe runs down the back face, from the top edge to the underside,
+		// every elbow on the surface.
+		for (const x of [-r * 1.0, -r * 0.3, r * 0.4, r * 1.1]) {
+			const back = (y: number) =>
+				mount(V(x, y, -aft - r * 0.5), V(0, 0, -1), r * 0.3).add(
+					V(0, 0, -S.pipeKm * 1.5),
+				);
+			pipeRun(pools, [back(r * 0.6), back(0), back(-r * 0.6)], S.pipeKm);
+		}
+		// Masts on the top face's aft end and its forward shoulder, each with a
+		// beacon on its top.
+		for (const x of [-r * 1.5, r * 1.35]) {
+			const foot = top(x, 0);
+			const tip = mast(pools, group, {
+				base: foot,
+				up: V(0, 1, 0),
+				heightKm: S.mastHeightKm,
+				widthKm: S.mastKm,
+			});
+			beaconAt(tip.clone().add(V(0, S.beaconKm * 0.6, 0)), S.beaconKm);
+		}
+	},
+
+	/**
 	 * Refinery A — Warren. A rock of radius ~0.95·r with terraces cut into its
 	 * +Z face and two flare stacks canted out of it; three radiator wings at
 	 * 1.45·r are the outline and nothing here approaches them. Every base is
