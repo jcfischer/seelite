@@ -128,7 +128,7 @@ Every other row names the section that owns it, for the same reason.
 | Exclusives → §4.1, §5.2 | — | fuel scoops, mining laser; contraband if `blackMarket` | hulls, military laser, energy unit | **none yet**; not a fence until it trades |
 | Law → §5.1, §5.5 | hostile odds ×1.0 | ×2.0 | ×0.5 + scan | Wanted-only berth (D5); witnesses nothing (D10) |
 | Docking → §6 | rotating slot | pad | rotating slot | pad — **closed to every pilot** until it has a market |
-| Silhouette → §7 | three forms, Coriolis selected | three forms on a rock, Warren selected | three forms, Gantry selected | five forms, Salvage (E) selected |
+| Silhouette → §7 | three forms, Coriolis selected | four forms, drawn per system (§7.1) | three forms, drawn per system (§7.1) | five forms, Salvage (E) selected |
 
 <!-- glossary-ignore: slot -->
 <!-- glossary-ignore: pad -->
@@ -775,7 +775,19 @@ pooling. No principal viewing of these repaired meshes is recorded; the node's
 explicit waiver remains the delivery instruction, not evidence of visual
 approval of those repairs. Headless and browser checks verify their budgets,
 corridors, fixtures and docking, not their appearance.
-Trade and shipyard still fly **A** while their pool nodes are implemented.
+**The shipyard pool is [a, b, c]** (node #746): Gantry, Hangar and Slipway. <!-- glossary-ignore: Hangar -->
+All use the shipyard's unchanged aperture plane, slot and berth catalogue. <!-- glossary-ignore: slot -->
+Meeting the existing rows required mesh repairs: the Hangar's and the <!-- glossary-ignore: Hangar -->
+Slipway's hub faces move 12 m onto the shared plane (one stood short of it,
+one proud); the Hangar's floods and arc move out of its dark mouth recess onto <!-- glossary-ignore: Hangar -->
+the lips and the slab's face, and its windows from the slab's back to its
+forward face; the Slipway's cut hub takes the name `core` and the hull colour
+from the arc, its floods move between the struts that hid them, its ports onto
+the arc's inner face, and its welding arc out of the slip onto a slip-head.
+Both gain macro fixtures on their static frames. No principal viewing of these
+repaired meshes is recorded; the checks verify their budgets, corridors,
+fixtures and docking, not their appearance.
+Trade still flies **A** while its pool node is implemented.
 The outpost is not drawn: it keeps `OUTPOST_FORM` **E**, the fiction's Salvage
 (#490, #518), placed in lawless systems since #491. The Works and Cluster
 were originally selected on 2026-09-06; the Salvage replaced the Cluster on

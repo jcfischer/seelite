@@ -72,8 +72,9 @@ remembered.
   rounded **up** to 0.1 m (#181).
 - `STATION_FORM_POOL` (`src/station.ts`) names the forms each role may be
   built in, and each system draws one per station (`Station.formId`, node
-  #717); the proxy is the station's own form's. Each pool holds one form
-  today. The refinery's is the Works (`d`), a **solved** form: its shape comes from
+  #717); the proxy is the station's own form's. The trade pool holds one
+  form, the shipyard's three (node #746) and the refinery's four (node #745).
+  The refinery's Works (`d`) is a **solved** form: its shape comes from
   `Station.assemblySeed` through `placementsOf`, and its berth side from the
   berth seed. The solve (`src/wfc.ts`, `src/station-modular.ts`) imports no
   Three.js. The outpost's is the Salvage (`e`), also a function of the

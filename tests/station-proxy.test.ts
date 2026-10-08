@@ -275,6 +275,8 @@ describe("station proxy budget (collision.md §9.1.11)", () => {
 		const DECLARED: Partial<Record<string, number>> = {
 			"trade/a": 0.032,
 			"shipyard/a": 0.028,
+			"shipyard/b": 0.028,
+			"shipyard/c": 0.028,
 			"refinery/a": 0.04,
 			"refinery/b": 0.046471,
 			"refinery/c": 0.0168,
