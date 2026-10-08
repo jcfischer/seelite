@@ -39,6 +39,12 @@ Author: Claude ranger implement worker, 2026-10-08.
   `derelictTimeline` also throws when a step does not advance and after
   `DERELICT_WALK_LIMIT` instances, so a clock or row no writer made is an
   error and not a loop.
+  `WORLD_SCHEMA_VERSION` is not bumped (sage round 2 suggested it). The
+  row's shape is unchanged; only the range the parse accepts widens, and a
+  version mismatch refuses the whole save (§9.6), so a bump would refuse
+  every existing save to guard a direction no player takes. The cost is
+  stated: a build from before node #775 refuses a save this build wrote if
+  it holds an instance-0 row lost before 0.
 - **The Salvage board.** It posts no job for a wreck lost before 0
   (`offerOpen` in `src/salvage-jobs.ts`). An offer is stamped with its loss,
   and the requests parse refuses an `observedAt` below 0. Without this, a job
@@ -47,10 +53,20 @@ Author: Claude ranger implement worker, 2026-10-08.
 
 ## Measured: `bun run scripts/measure-derelict-pacing.ts`
 
+**What the table measures is a share of systems, not a visit rate.** The Sweep
+reads every slot with no distance gate, so a sweep finds a wreck exactly when
+the system holds one, and the table reads how many of galaxy 0's systems do at
+each game time. That share is the rate per visit only if visits are spread
+evenly over the systems as well as over game time. The node assumes the second
+and says the 20% is a share of systems at a point in time. Nothing here
+measures where pilots go, so a pilot who favours some systems, or a route that
+returns to the same few, can see a different rate. Every "20%" below is the
+share of systems.
+
 ```
 S16: adrift 8 h, gap 6–166 h → one slot adrift 8.5% of the time
 
-Systems in galaxy 0 holding a live derelict (the per-visit sweep rate)
+Share of galaxy 0's systems holding a live derelict (what a sweep finds there)
 seed  expected     0 h    1 h    2 h    4 h    8 h   24 h   48 h  100 h  200 h  300 h   first 2 h
   42     19.7%   19.5%  19.1%  19.1%  19.5%  21.5%  16.8%  25.4%  19.5%  24.2%  19.1%       19.0%
   47     20.1%   16.8%  16.0%  15.6%  14.5%  18.4%  18.4%  23.4%  18.0%  21.9%  19.1%       15.9%
@@ -61,9 +77,9 @@ node #775's criterion, per seed (0, 1, 4, 24, 100, 300 h, 20% ± 5 points): 1 of
 pooled over the seeds (this build's test row, not the criterion): all 6 times inside
 
 How often the per-seed criterion holds, galaxy 0 at seeds 1–120, each read at 0, 1, 4, 24, 100, 300 h
+  cells outside the band:               38 of 720 (5.3%)
   seeds with all 6 cells inside:        91 of 120 (75.8%)
   disjoint seed triples, all 18 inside: 17 of 40 (42.5%)
-  one cell at exactly 20% of 256 systems lands inside 95.8% of the time; 18 independent cells all inside 46.3%
 
 No ramp: slots adrift as the clock starts
   42  51 of 636 slots adrift at 0 h (8.0%), 51 of them lost before the clock started
@@ -93,28 +109,30 @@ seed  visits  with a wreck  cued   of all visits  of visits with a wreck
    **Not met as written.** Read plainly, the criterion is per seed, and
    **seed 47 at 4 h reads 14.5%**, 1 of 18 cells. The pooled reading over the
    three seeds is inside the band at all six times (17.7–23.0%), and that is
-   what this build's test row holds. Seed 47's
-   0–4 h cells (16.8, 16.0, 15.6, 14.5%) share the same wrecks, which is why
-   they move together. A single cell's binomial spread at 256 systems is 2.5
-   points, so ±5 is about two of them. A correctly centred schedule (per-seed
-   expectations 19.7–20.1%) leaves about one cell in eighteen outside on
-   average. **Measured over seeds 1–120**, this schedule meets the criterion
-   at 91 of 120 seeds and at 17 of 40 disjoint seed triples (42.5%), against
-   46.3% for eighteen independent cells drawn at exactly 20%. So at 256
-   systems the criterion as written passes a correctly centred schedule at
-   about two triples in five, and a pass or a miss at 42/47/7 is the draw,
-   not the schedule. I did not swap seeds or retune the gap to move that cell:
-   with a pass rate near one half, either would land a green triple by search. The gate
-   in the test is the pooled reading, and per-seed cells are held only to ±8
-   as a regression guard. If the per-cell reading is the binding one, the
-   principal decides between widening the band, pooling seeds, or a coupled
-   galaxy-wide schedule. Only coupling slots across systems reduces that
-   spread. I expect it to help the early cells most, and less as the drawn
-   gaps (±80 h about a 94 h cycle) spread the phases out again over the first
-   cycles; neither the gain nor how fast it fades was measured. A phase keyed
-   on system index is not a shared generator, but it does tie one system's
-   schedule to its neighbours', which is the coupling the per-system streams
-   exist to avoid. This criterion stays open for that ruling.
+   what this build's test row holds. Seed 47's 0–4 h cells (16.8, 16.0, 15.6,
+   14.5%) share the same wrecks, which is why they move together. The
+   schedule's mean is on target: each seed's expectation from its slot counts
+   is 19.7–20.1%. Its spread is what misses. **Measured over seeds 1–120**, 38
+   of 720 cells (5.3%) fall outside the band, 91 of 120 seeds have all six
+   cells inside, and 17 of 40 disjoint seed triples (42.5%) meet the
+   criterion. So this schedule passes the criterion as written at about two
+   triples in five, and the miss at 42/47/7 is one outcome of that measured
+   rate. The six cells of one seed read the same seeded schedules and are not
+   independent, so no binomial over them is a valid reference; the previous
+   round compared the triple rate with eighteen independent cells, and that
+   comparison is withdrawn. I did not swap seeds or retune the gap to move
+   that cell: with a pass rate near one half, either would land a green triple
+   by search. The gate in the test is the pooled reading, and per-seed cells
+   are held only to ±8 as a regression guard. If the per-cell reading is the
+   binding one, the principal decides between widening the band, pooling
+   seeds, or a coupled galaxy-wide schedule. Only coupling slots across
+   systems reduces that spread. I expect it to help the early cells most, and
+   less as the drawn gaps (±80 h about a 94 h cycle) spread the phases out
+   again over the first cycles; neither the gain nor how fast it fades was
+   measured. A phase keyed on system index is not a shared generator, but it
+   does tie one system's schedule to its neighbours', which is the coupling
+   the per-system streams exist to avoid. This criterion stays open for that
+   ruling.
 3. **Hours adrift, gap set for the share.** Met: 8 h adrift and 8.5% per slot,
    re-derived from the slot mix as described above.
 4. **A saved row loads unchanged.** Met for the row's own content. A touched

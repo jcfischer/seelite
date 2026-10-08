@@ -173,9 +173,10 @@ wreck lost before 0 posts no job (S15) and is free salvage from the start.
 **The rate is the principal's** (2026-10-07): with the Long-Range Scanner a
 pilot finds a wreck on about 20% of system visits, and wrecks are short-lived
 and frequent (O2) rather than one long-lived wreck seen on every return. The
-Sweep reads every slot in the system (S9), so the share of systems holding a
-live derelict at a game time is the per-visit rate, taking visits as spread
-evenly over game time. A slot is adrift for the salvager time out of each cycle,
+Sweep reads every slot in the system (S9), so a sweep finds a wreck exactly when
+the system holds one. The figure tuned and measured is the share of systems
+holding a live derelict at a game time, which is the per-visit rate only for
+visits spread evenly over the systems as well as over game time. A slot is adrift for the salvager time out of each cycle,
 8 of a mean 94 h or 8.5%. A system with `n` slots therefore holds a wreck
 `1 − (1 − 8.5%)^n` of the time. Galaxy 0 is mostly three- and two-slot systems,
 which comes to 20%. `scripts/measure-derelict-pacing.ts` prints the measured

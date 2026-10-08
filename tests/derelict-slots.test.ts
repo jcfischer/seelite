@@ -159,9 +159,9 @@ describe("the clock starts part-way through every slot's cycle", () => {
 		// criterion**, which read plainly is per seed and is not met here: seed 47
 		// at 4 h reads 14.5% (`docs/receipts/node-775-derelict-pacing.md`). A
 		// single seed's cell has a binomial spread of 2.5 points at 256 systems,
-		// and the instrument measures a centred schedule meeting the criterion at
-		// 17 of 40 disjoint seed triples, so a per-seed ±5 row here would be red
-		// or green by the draw. Which reading binds is the principal's ruling. The
+		// and the instrument measures this schedule meeting the criterion at 17
+		// of 40 disjoint seed triples over seeds 1–120, so a per-seed ±5 row here
+		// would fail at most seed triples a test could pin. Which reading binds is the principal's ruling. The
 		// per-seed ±8 below is a regression guard against a ramp or a bias.
 		for (const h of GATED_H) {
 			const shares = SEEDS.map((seed) => systemShare(seed, h * HOUR));

@@ -7,10 +7,12 @@
  *
  * The principal's figure (2026-10-07) is a wreck on about 20% of system visits,
  * from a new commander's first visit on. The Sweep reads every derelict slot
- * with no distance gate (`sweepSources`), so the share of galaxy 0's systems
- * holding at least one `destroyed` derelict at a game time **is** the per-visit
- * sweep rate at that time, on the node's assumption that visits are spread
- * uniformly over game time. The tables:
+ * with no distance gate (`sweepSources`), so a sweep in a system finds a wreck
+ * exactly when that system holds at least one `destroyed` derelict. What this
+ * measures is the share of galaxy 0's systems holding one at a game time. That
+ * is the per-visit rate only if visits are spread evenly over the systems as
+ * well as over game time; the node assumes the second, and nothing here
+ * measures where pilots actually go. The tables:
  *
  * - **The share by game time**, per seed, read through `effectiveDerelict` on
  *   an untouched world, beside the expectation the S16 figures give for that
@@ -19,10 +21,11 @@
  *   sampling spread is about 2.5 points, so a cell is a draw and the
  *   expectation is the figure the tuning aims at.
  * - **How often the criterion holds**: the same six cells read at seeds 1 to
- *   `CRITERION_SEEDS`, and the share of seeds, and of disjoint seed triples,
- *   with every cell inside the band, beside what a binomial draw at exactly
- *   20% gives. This is what says whether a miss at the three seeds above is
- *   the schedule or the draw.
+ *   `CRITERION_SEEDS`: how many of those cells fall outside the band, and the
+ *   share of seeds, and of disjoint seed triples, with every cell inside it.
+ *   The six cells of one seed read the same seeded schedules, so they are not
+ *   independent draws and no binomial over them is printed; the pass rate is
+ *   measured instead.
  * - **The first session**: the share averaged over the first 2 h, every five
  *   minutes — the figure that read 5–7% before this node.
  * - **A return visit**: the share holding a wreck a day or two after a visit
@@ -89,6 +92,15 @@ const liveKeys = (world: WorldState, record: SystemRecord, at: number) =>
 			: [];
 	});
 
+/** The share of `records` holding a live derelict at `at`: the figure every
+ *  share in the tables reads. */
+const shareAt = (world: WorldState, records: SystemRecord[], at: number) =>
+	finite(
+		records.filter((r) => liveKeys(world, r, at).length > 0).length /
+			records.length,
+		`share at ${at}`,
+	);
+
 const segmentKm = (p: Vec3, a: Vec3, b: Vec3): number => {
 	const ab = sub(b, a);
 	const t = Math.max(0, Math.min(1, dot(sub(p, a), ab) / dot(ab, ab)));
@@ -110,11 +122,7 @@ function measure(seed: number): SeedRun {
 	const records = generateGalaxy(seed, G).systems;
 	const has = (record: SystemRecord, at: number) =>
 		liveKeys(world, record, at).length > 0;
-	const share = (at: number) =>
-		finite(
-			records.filter((r) => has(r, at)).length / records.length,
-			`share at ${at}`,
-		);
+	const share = (at: number) => shareAt(world, records, at);
 
 	const expected = finite(
 		records.reduce(
@@ -222,25 +230,7 @@ function measurePassiveCue(
 function gatedShares(seed: number): number[] {
 	const world = newWorld(seed);
 	const records = generateGalaxy(seed, G).systems;
-	return GATED_H.map((h) =>
-		finite(
-			records.filter((r) => liveKeys(world, r, h * HOUR).length > 0).length /
-				records.length,
-			`seed ${seed} at ${h} h`,
-		),
-	);
-}
-
-/** P(k of n inside the band) for a binomial at p: one cell's chance of
- *  reading 20% ± 5 points when the schedule is exactly centred. */
-function binomialInBand(n: number, p: number): number {
-	let pmf = (1 - p) ** n;
-	let inside = 0;
-	for (let k = 0; k <= n; k++) {
-		if (Math.abs(k / n - 0.2) <= 0.05 + 1e-12) inside += pmf;
-		pmf *= ((n - k) / (k + 1)) * (p / (1 - p));
-	}
-	return finite(inside, "binomial");
+	return GATED_H.map((h) => shareAt(world, records, h * HOUR));
 }
 
 function makeSystemOnce(
@@ -262,7 +252,7 @@ console.log(
 );
 console.log("");
 console.log(
-	"Systems in galaxy 0 holding a live derelict (the per-visit sweep rate)",
+	"Share of galaxy 0's systems holding a live derelict (what a sweep finds there)",
 );
 console.log(
 	`seed  expected  ${TIMES_H.map((h) => `${h} h`.padStart(6)).join(" ")}   first 2 h`,
@@ -299,9 +289,11 @@ console.log(
 // How often a schedule centred on 20% meets the criterion as written, read
 // over many seeds rather than the three above, so a pass or a miss at any one
 // triple is read as a draw from that rate and not as the schedule's verdict.
-const criterion = Array.from({ length: CRITERION_SEEDS }, (_, i) =>
-	gatedShares(i + 1).every(band),
+const criterionCells = Array.from({ length: CRITERION_SEEDS }, (_, i) =>
+	gatedShares(i + 1),
 );
+const cellsOutside = criterionCells.flat().filter((x) => !band(x)).length;
+const criterion = criterionCells.map((c) => c.every(band));
 const seedsInside = criterion.filter(Boolean).length;
 let triples = 0;
 let triplesInside = 0;
@@ -309,19 +301,18 @@ for (let i = 0; i + 2 < criterion.length; i += 3) {
 	triples++;
 	if (criterion[i] && criterion[i + 1] && criterion[i + 2]) triplesInside++;
 }
-const cellIn = binomialInBand(256, 0.2);
 console.log("");
 console.log(
 	`How often the per-seed criterion holds, galaxy 0 at seeds 1–${CRITERION_SEEDS}, each read at ${GATED_H.join(", ")} h`,
+);
+console.log(
+	`  cells outside the band:               ${cellsOutside} of ${CRITERION_SEEDS * GATED_H.length} (${pct(cellsOutside / (CRITERION_SEEDS * GATED_H.length))})`,
 );
 console.log(
 	`  seeds with all ${GATED_H.length} cells inside:        ${seedsInside} of ${CRITERION_SEEDS} (${pct(seedsInside / CRITERION_SEEDS)})`,
 );
 console.log(
 	`  disjoint seed triples, all ${3 * GATED_H.length} inside: ${triplesInside} of ${triples} (${pct(triplesInside / triples)})`,
-);
-console.log(
-	`  one cell at exactly 20% of 256 systems lands inside ${pct(cellIn)} of the time; ${3 * GATED_H.length} independent cells all inside ${pct(cellIn ** (3 * GATED_H.length))}`,
 );
 
 console.log("");
