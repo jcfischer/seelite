@@ -164,7 +164,7 @@ Superseded transitions collapse into the latest episode summary. An original car
 
 A recent chronological ship-log ring may provide UI history, but it is non-authoritative and belongs to the later save/UI decision, which must declare a fixed capacity before adopting it. Dropping a log line cannot change mechanics or erase the latest per-carrier attribution.
 
-Existing domains keep their own bounds. Economy §5.5 already makes market deficits decay lazily and drop below one unit. The save/load decision owes fixed bounds for the map's per-galaxy visited and legal-status state. Carrier compaction does not rewrite or duplicate any of those facts.
+Existing domains keep their own bounds. Economy §5.5 already makes market deficits decay lazily and drop below half a unit. The save/load decision owes fixed bounds for the map's per-galaxy visited and legal-status state. Carrier compaction does not rewrite or duplicate any of those facts.
 
 ## 7. Typed per-galaxy persistence envelope
 

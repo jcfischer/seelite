@@ -71,6 +71,23 @@ describe("§5.5 the deficit map is sparse, lazy, and round-trips", () => {
 		expect(readDeficit(sold, KEY, FOOD, 100)).toBeCloseTo(-20, 10);
 	});
 
+	for (const units of [1, -1]) {
+		test(`a ${units} unit mark survives frame ticks, saves and another good's trade`, () => {
+			const frameMin = 0.1 / 60;
+			const map = recordTrade({}, KEY, trade(units, 0));
+			const saved = parseDeficits(
+				JSON.parse(JSON.stringify(pruneDeficits(map, frameMin))),
+			);
+			expect(readDeficit(saved, KEY, FOOD, frameMin)).toBeCloseTo(units, 3);
+			const other = recordTrade(saved, KEY, trade(1, frameMin * 2, "Furs"));
+			expect(readDeficit(other, KEY, FOOD, frameMin * 3)).toBeCloseTo(units, 3);
+			expect(readDeficit(other, KEY, "Furs", frameMin * 3)).toBeCloseTo(1, 3);
+			const faded = DEFICIT_HALF_LIFE_MIN + frameMin;
+			expect(readDeficit(map, KEY, FOOD, faded)).toBe(0);
+			expect(pruneDeficits(map, faded)).toEqual({});
+		});
+	}
+
 	test("the mark halves over one half-life, on read and not on a tick", () => {
 		const map = recordTrade({}, KEY, trade(40, 0));
 		expect(readDeficit(map, KEY, FOOD, DEFICIT_HALF_LIFE_MIN)).toBeCloseTo(
@@ -93,10 +110,9 @@ describe("§5.5 the deficit map is sparse, lazy, and round-trips", () => {
 		expect(readDeficit(map, KEY, FOOD, 0)).toBe(-DEFICIT_MAX);
 	});
 
-	test("a mark under one unit reads as nothing", () => {
+	test("a mark under half a unit reads as nothing", () => {
 		const map = recordTrade({}, KEY, trade(20, 0));
-		// 20 → under 1 unit after log2(20) half-lives.
-		const faded = DEFICIT_HALF_LIFE_MIN * (Math.log2(20) + 0.01);
+		const faded = DEFICIT_HALF_LIFE_MIN * (Math.log2(40) + 0.01);
 		expect(Math.abs(readDeficit(map, KEY, FOOD, faded))).toBe(0);
 	});
 
@@ -203,10 +219,23 @@ describe("§5.5 the deficit map is sparse, lazy, and round-trips", () => {
 		).toThrow();
 	});
 
-	test("the drop rule is one unit, and it is the same one everywhere", () => {
-		expect(DEFICIT_DROP_UNITS).toBe(1);
+	test("the drop rule is half a unit, and it is the same one everywhere", () => {
+		expect(DEFICIT_DROP_UNITS).toBe(0.5);
 		const map = recordTrade({}, KEY, trade(DEFICIT_DROP_UNITS / 2, 0));
 		expect(map[KEY]).toBeUndefined();
+		for (const sign of [-1, 1]) {
+			const boundary = recordTrade(
+				{},
+				KEY,
+				trade(sign * DEFICIT_DROP_UNITS, 0),
+			);
+			expect(readDeficit(boundary, KEY, FOOD, 0)).toBe(
+				sign * DEFICIT_DROP_UNITS,
+			);
+			expect(pruneDeficits(boundary, 0)).toEqual(boundary);
+			expect(readDeficit(boundary, KEY, FOOD, 0.001)).toBe(0);
+			expect(pruneDeficits(boundary, 0.001)).toEqual({});
+		}
 	});
 });
 

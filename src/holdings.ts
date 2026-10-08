@@ -27,6 +27,12 @@
  */
 
 import { scoopWreckContainer } from "./derelict-salvage";
+import {
+	refreshSalvageRequests,
+	repriceSalvageOffer,
+	type SalvagePosting,
+} from "./salvage-jobs";
+import { matchesSalvageItem } from "./jobs";
 import { identifyDerelicts } from "./long-range-scanner";
 import type { System } from "./sim";
 import type { Vec3 } from "./vec3";
@@ -64,6 +70,7 @@ import {
 	recordKill,
 	requestAction,
 	requestsAfterLostHold,
+	salvageLot,
 } from "./requests";
 import {
 	type CommanderState,
@@ -111,7 +118,32 @@ export const commanderAfterDeath = (
 	dying: CommanderRecord,
 	cause: DeathCause,
 ): CommanderRecord => {
-	const requests = requestsAfterLostHold(dock.requests).state;
+	// The scoop happened after launch: only the dying journal knows that lot.
+	// Carry its Salvage obligations into the revert before clearing the lost hold.
+	let byId: RequestsState["byId"] | null = null;
+	for (const r of Object.values(dying.requests.byId))
+		if (r.terms.family === "salvage" && r.status === "accepted") {
+			byId ??= { ...dock.requests.byId };
+			byId[r.offerId] = r;
+		}
+	const requests = requestsAfterLostHold(
+		byId
+			? {
+					...dock.requests,
+					byId,
+					entrustedByLotId: {
+						...dock.requests.entrustedByLotId,
+						...Object.fromEntries(
+							Object.entries(dying.requests.entrustedByLotId).filter(
+								([, lot]) =>
+									byId![lot.offerId]?.terms.family === "salvage" &&
+									byId![lot.offerId]?.status === "accepted",
+							),
+						),
+					},
+				}
+			: dock.requests,
+	).state;
 	const ladders = {
 		...ladderAfterDeath(dock.ladders, dying.ladders),
 		basis: {},
@@ -172,6 +204,7 @@ export interface Holdings {
 export type AcceptedTrade = Extract<StationCommerceResult, { accepted: true }>;
 
 export type HoldEvent =
+	| { kind: "requests-clock"; at: number }
 	| { kind: "derelict-identify"; system: System; shipPos: Vec3; at: number }
 	/** A press on the Requests board other than `details`, which is the
 	 *  board's own state. */
@@ -183,6 +216,8 @@ export type HoldEvent =
 			 *  board does not — an accepted job or a kept lead is read off the
 			 *  journal instead. */
 			offer: RequestOffer | null;
+			/** Live posting context for Salvage acceptance pricing. */
+			salvagePosting?: SalvagePosting;
 			docked: RequestStation | null;
 			standing: Standing;
 			/** The galaxy the ship is in, which is where a mark is filed. */
@@ -311,9 +346,34 @@ function settle(
 	event: Extract<HoldEvent, { kind: "settlement" }>,
 ): Applied {
 	const hold = holdOf(holdings);
+	let offer = event.offer;
+	if (event.action === "accept" && offer?.operand.kind === "salvage") {
+		if (
+			!event.docked ||
+			event.docked.galaxyIndex !== offer.requester.galaxyIndex ||
+			event.docked.carrierKey !== offer.requester.carrierKey
+		)
+			return unchanged(holdings, world, {
+				...QUIET,
+				message: "Dock at the station that posted this job to accept it.",
+			});
+		const priced = repriceSalvageOffer(
+			world,
+			{ ...offer, operand: offer.operand },
+			event.at,
+			hold.capacityT,
+			event.salvagePosting,
+		);
+		if (!priced)
+			return unchanged(holdings, world, {
+				...QUIET,
+				message: "This salvage offer is no longer available.",
+			});
+		offer = priced;
+	}
 	const result = requestAction(
 		holdings.requests,
-		event.offer ? [event.offer] : [],
+		offer ? [offer] : [],
 		event.action,
 		event.id,
 		{
@@ -321,6 +381,7 @@ function settle(
 			docked: event.docked,
 			cargo: holdings.commander.cargo,
 			holdRoomT: Math.max(0, hold.capacityT - hold.usedT),
+			holdCapacityT: hold.capacityT,
 			standing: event.standing,
 			equipment: holdings.commander.ownedEquipment,
 		},
@@ -534,6 +595,16 @@ function applied(
 	event: HoldEvent,
 ): Applied {
 	switch (event.kind) {
+		case "requests-clock": {
+			const requests = refreshSalvageRequests(
+				holdings.requests,
+				world,
+				event.at,
+			);
+			return requests === holdings.requests
+				? unchanged(holdings, world)
+				: { holdings: { ...holdings, requests }, world, signals: QUIET };
+		}
 		case "derelict-identify": {
 			const found = identifyDerelicts(
 				world,
@@ -572,6 +643,27 @@ function applied(
 				e.instanceOrdinal !== event.instanceOrdinal
 			)
 				return unchanged(holdings, world);
+			const item = e.containers[event.containerIndex];
+			const job = Object.values(holdings.requests.byId).find((r) => {
+				const op = r.terms.operand;
+				return (
+					r.status === "accepted" &&
+					event.at >= r.lastAcceptedAt &&
+					op.kind === "salvage" &&
+					r.terms.requester.galaxyIndex === event.galaxyIndex &&
+					op.slotKey === event.key &&
+					op.instanceOrdinal === event.instanceOrdinal &&
+					op.containerIndex === event.containerIndex
+				);
+			});
+			if (job?.terms.operand.kind === "salvage") {
+				const snapshot = job.terms.operand.item;
+				if (
+					!item ||
+					!matchesSalvageItem({ ...item, tonnes: item.left }, snapshot)
+				)
+					return unchanged(holdings, world);
+			}
 			const took = scoopWreckContainer(
 				e,
 				event.containerIndex,
@@ -580,9 +672,9 @@ function applied(
 				event.container,
 				event.ship,
 				event.at,
+				!!job,
 			);
 			if (!took.tonnes && !took.refusal) return unchanged(holdings, world);
-			const item = e.containers[event.containerIndex];
 			const signals = {
 				...QUIET,
 				wreckScoop: {
@@ -601,8 +693,11 @@ function applied(
 				holdings: {
 					...holdings,
 					commander: took.commander,
+					requests: job
+						? salvageLot(holdings.requests, job)
+						: holdings.requests,
 					ladders:
-						item.kind === "good"
+						!job && item.kind === "good"
 							? {
 									...holdings.ladders,
 									basis: basisAfterScoop(

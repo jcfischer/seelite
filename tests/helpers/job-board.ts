@@ -66,6 +66,8 @@ export function boardContext(
 		gameTimeMin: options.gameTimeMin ?? 0,
 		settled: options.settled ?? {},
 		bountyTarget: options.bountyTarget ?? null,
+		salvageTargets: [],
+		holdT: 20,
 	};
 }
 

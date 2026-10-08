@@ -299,7 +299,8 @@ describe("§5.1 the market is independent of draw order elsewhere", () => {
 			DERELICT_CONTENTS: 32,
 			STATION_FORM: 33,
 			DERELICT_POSE: 34,
-			DEATH_WRECK: 35,
+			DERELICT_HOME: 35,
+			DEATH_WRECK: 36,
 		});
 		// And a *new* tag is safe only when it is larger than every existing one,
 		// which is the operation this table was designed for.

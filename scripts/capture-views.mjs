@@ -59,6 +59,7 @@ import {
 import { requireChartSpot } from "./lib/chart-hover-spot.mjs";
 import { assertPlayersRenderer } from "./lib/players-renderer.mjs";
 import { installViewFraming } from "./lib/view-placement.mjs";
+import { assertHorizonFacts } from "./lib/horizon-framing.mjs";
 import { installCruiseLeg } from "./lib/cruise-page.mjs";
 import { installChargeToNearest } from "./lib/witchspace-page.mjs";
 import { holdCruiseTurnState, holdVentState } from "./lib/vent-state.mjs";
@@ -324,11 +325,23 @@ async function assertChartHover(page, where, shot, aimed) {
 
 /** One placer per shot kind. Each returns the subject it framed, for the log. */
 const PLACERS = {
-	derelict: async (page) => {
+	horizon: async (page, shot) => {
+		assertHorizonFacts(
+			await page.evaluate((s) => window.__horizonView(s), shot),
+			shot,
+		);
+		return shot.station ?? shot.body;
+	},
+	derelict: async (page, shot) => {
 		worldWritten = true;
 		const { placeDerelict } = await import("./lib/derelict-state.mjs");
-		const result = await placeDerelict(page);
-		return result.hull + " · " + result.key;
+		const result = await placeDerelict(page, shot);
+		return (
+			result.hull +
+			" · " +
+			result.key +
+			(result.tear ? " · " + result.tear : "")
+		);
 	},
 	"npc-jump": async (page, shot) => {
 		await page.evaluate(installHaulerFixture);
@@ -1349,6 +1362,7 @@ try {
 	await mkdir(join(OUT, LABEL), { recursive: true });
 
 	for (const view of VIEWS) {
+		await page.evaluate(() => window.__restoreHorizon?.());
 		// **Any modal the previous view left up comes down first** (#381 S4).
 		// The rebind modal is a full-screen overlay outside the canvas, and
 		// nothing else in this loop resets the DOM — `ensureFixture` reloads
@@ -1491,13 +1505,20 @@ try {
 		const gameTime = await page.evaluate(
 			() => window.__seelite?.world.gameTime ?? null,
 		);
+		const horizonFacts =
+			view.shot.kind === "horizon"
+				? assertHorizonFacts(
+						await page.evaluate((s) => window.__measureHorizon(s), view.shot),
+						view.shot,
+					)
+				: undefined;
 		await page.screenshot({ path: join(OUT, file) });
 		// And after it: a hover lost between the read above and the shutter would
 		// otherwise ship an unlabelled frame under a green run (sage round 2). The
 		// PNG is on disk by now; the throw stops the manifest and the sheet.
 		if (view.shot.kind === "chart")
 			await assertChartHover(page, "after the shutter", view.shot, chartAimed);
-		captured.push({ name: view.name, file, subject, gameTime });
+		captured.push({ name: view.name, file, subject, gameTime, horizonFacts });
 		// A chart row says how many foreign pointer events the filter dropped, so
 		// a green run shows whether the physical cursor was in play at all. The
 		// log keeps the last sixteen, so the count is a floor.

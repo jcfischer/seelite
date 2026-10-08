@@ -8,7 +8,13 @@
  */
 import { escapeHtml as esc } from "./escape-html";
 import { aboardForOffer, type HoldSummary } from "./hold";
-import { cargoOf, missingRequirements, offerRequirements } from "./jobs";
+import {
+	deliverableOf,
+	missingRequirements,
+	offerRequirements,
+	SALVAGE_OFFER_WINDOW_S,
+} from "./jobs";
+import { DERELICT_SALVAGER_S } from "./derelict-slots";
 import {
 	acceptableAgain,
 	isAcceptedRequest,
@@ -43,15 +49,27 @@ export interface DeliverAction {
  * the cargo again, so the button, the hold line and the till all answer from
  * one projection (#443).
  */
+const settleVerb = (offer: RequestOffer): string =>
+	offer.family === "salvage" ? "Hand over" : "Report";
+
 export function deliverAction(
 	offer: RequestOffer,
 	aboardT: number,
 ): DeliverAction {
-	const operand = cargoOf(offer);
-	// The screen offers Deliver only on a cargo job; a caller that reached this
+	const operand = deliverableOf(offer);
+	// The screen offers Deliver only on a job with an item; a caller that reached this
 	// with a Bounty has drawn a control the request refuses.
-	if (!operand) throw new Error(`deliverAction: ${offer.id} carries no cargo`);
+	if (!operand)
+		throw new Error(`deliverAction: ${offer.id} has no deliverable item`);
 	const short = aboardT < operand.tonnes;
+	if (offer.operand.kind === "salvage")
+		return {
+			label: `Hand over ${operand.tonnes} t of ${operand.goodName}`,
+			hint: short
+				? "Recover the named container whole first."
+				: "Recovered for the requester. Hand over here to get paid.",
+			enabled: !short,
+		};
 	// Only the words differ by family; the enablement is one rule, and it was
 	// written twice.
 	const entrustedHint = (): string => {
@@ -240,6 +258,8 @@ const operandLine = (o: RequestOffer): string => {
 	switch (operand.kind) {
 		case "cargo":
 			return `${operand.tonnes} t of ${operand.goodName}`;
+		case "salvage":
+			return `${operand.item.tonnes} t of ${operand.item.id}`;
 		case "target":
 			return `bounty: ${operand.targetName}`;
 		default: {
@@ -290,7 +310,7 @@ export const aboardFor = (
 	// module stays below `jobs.ts` (its own header's rule), so the operand is
 	// unwrapped on this side of the boundary and the three fields it reads
 	// stay its signature. A job with no cargo has none aboard.
-	const cargo = cargoOf(offer);
+	const cargo = deliverableOf(offer);
 	return cargo
 		? aboardForOffer(view.hold, {
 				id: offer.id,
@@ -373,7 +393,7 @@ export function requestsBody(view?: RequestsView, flight = false): string {
 				: state.leadsById[o.id]
 					? "kept, not accepted"
 					: "not accepted";
-		return `<button type="button" class="lc-request-row" data-live-request-action="details" data-live-request-id="${esc(o.id)}" aria-selected="${selected?.id === o.id}"${missing.length > 0 ? " data-live-request-locked" : ""}><strong>${esc(o.title)}</strong><small>${esc(label)}${state.trackedRequestId === o.id ? " · TRACKED" : ""}</small><small>${o.rewardCr} Cr · ${esc(operandLine(o))} · report at ${esc(o.reportName)}</small></button>`;
+		return `<button type="button" class="lc-request-row" data-live-request-action="details" data-live-request-id="${esc(o.id)}" aria-selected="${selected?.id === o.id}"${missing.length > 0 ? " data-live-request-locked" : ""}><strong>${esc(o.title)}</strong><small>${esc(label)}${state.trackedRequestId === o.id ? " · TRACKED" : ""}</small><small>${o.rewardCr} Cr · ${esc(operandLine(o))} · ${settleVerb(o).toLowerCase()} at ${esc(o.reportName)}</small></button>`;
 	};
 	// **Namespaced by surface**, for `button()`'s reason: the station console
 	// and the flight console can both be in one document.
@@ -428,13 +448,13 @@ export function requestsBody(view?: RequestsView, flight = false): string {
 		const atRequester =
 			view.docked?.galaxyIndex === o.requester.galaxyIndex &&
 			view.docked?.carrierKey === o.requester.carrierKey;
-		const cargo = cargoOf(o);
+		const cargo = deliverableOf(o);
 		const required = offerRequirements(o);
 		const missing = missingEquipment(view, o);
 		const fields: [string, string][] = [
 			["Requester", `${o.requesterName} · posted here`],
 			[
-				"Report at",
+				`${settleVerb(o)} at`,
 				`${o.reportName}, ${o.reportSystemName}${o.distanceLy > 0 ? ` · ${o.distanceLy.toFixed(1)} LY, one jump` : " · this system"}`,
 			],
 			["Purpose", o.purpose],
@@ -466,10 +486,15 @@ export function requestsBody(view?: RequestsView, flight = false): string {
 			],
 			[
 				"Payment",
-				`${o.rewardCr} Cr, paid once when you report at ${o.reportName}`,
+				`${o.rewardCr} Cr${o.family === "salvage" && (!r || acceptableAgain(r.status)) ? ", estimate; payment pinned at acceptance" : ""}, paid once when you ${settleVerb(o).toLowerCase()} at ${o.reportName}`,
 			],
 			["Consequence", o.consequence],
-			["Terms", "No deadline. You can cancel for free."],
+			[
+				"Terms",
+				o.family === "salvage"
+					? `Offer open for ${SALVAGE_OFFER_WINDOW_S / 3600} h after the loss. Recovery possible until salvagers take the wreck at ${DERELICT_SALVAGER_S / 3600} h. You can cancel for free.`
+					: "No deadline. You can cancel for free.",
+			],
 		];
 		let actions = button("retain", o.id, "Keep for later");
 		// **No Accept while a requirement is missing** (#489's ruling): not
@@ -477,6 +502,8 @@ export function requestsBody(view?: RequestsView, flight = false): string {
 		if (
 			(!r || acceptableAgain(r.status)) &&
 			atRequester &&
+			(o.family !== "salvage" ||
+				view.offers.some((offer) => offer.id === o.id)) &&
 			missing.length === 0
 		)
 			actions += button("accept", o.id, r ? "Accept again" : "Accept");

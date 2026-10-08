@@ -78,9 +78,23 @@ const dying = {
 		pos: [1e8, 2e8, 3e8] as const,
 	},
 };
+/** The fixtures' death time: the first clock from 10 at which every owned item
+ * of `dying` survives its destroyed-cause draw and a later eject still leaves
+ * cargo. Found rather than written, so a new DOMAIN tag or a retuned share
+ * moves the fixture instead of emptying it — tag 35 became 36 in a merge, and
+ * at 10 the new draws kept nothing. */
+const DEATH_AT = (() => {
+	for (let at = 10; at < 90; at++)
+		if (
+			deathWreckContents(47, at, dying.state, "destroyed").length === 4 &&
+			deathWreckContents(47, at + 10, dying.state, "eject").length > 0
+		)
+			return at;
+	throw Error("no fixture death time in [10, 90)");
+})();
 test("Holdings returns the restored commander beside the dying inventory's wreck for either cause", () => {
 	const dock = { ...dying, state: { ...dying.state, cargo: { Textiles: 7 } } };
-	const world = { ...newWorld(47), gameTime: 10 };
+	const world = { ...newWorld(47), gameTime: DEATH_AT };
 	for (const cause of ["destroyed", "eject"] as const) {
 		const outcome = holdingsAfterDeath(
 			dock,
@@ -89,7 +103,7 @@ test("Holdings returns the restored commander beside the dying inventory's wreck
 			system.contents.star.id,
 		);
 		expect(outcome.world.galaxies[0].deathWreck?.containers).toEqual(
-			deathWreckContents(47, 10, dying.state, cause),
+			deathWreckContents(47, DEATH_AT, dying.state, cause),
 		);
 		expect(outcome.commander.state.cargo).toEqual({});
 		expect(outcome.commander.state.ownedEquipment).toEqual(
@@ -115,7 +129,7 @@ test("wreck recovery takes native kg/g units with a full hold and updates basis 
 		expect(scooped.commander.cargo[good]).toBe(full.cargo[good] + 12);
 		expect(commanderHold(scooped.commander, 0).usedT).toBe(20);
 		const world = worldAfterDeath(
-			{ ...newWorld(47), gameTime: 10 },
+			{ ...newWorld(47), gameTime: DEATH_AT },
 			dying,
 			"destroyed",
 		);
@@ -147,7 +161,7 @@ test("wreck recovery takes native kg/g units with a full hold and updates basis 
 			galaxyIndex: 0,
 			instanceOrdinal: wreck.instanceOrdinal,
 			containerIndex: 0,
-			at: 10,
+			at: DEATH_AT,
 			container: pose,
 			ship: pose,
 		});
@@ -162,7 +176,7 @@ test("wreck recovery takes native kg/g units with a full hold and updates basis 
 
 test("schema 12 persists explicit native units and refuses missing or mismatched units", () => {
 	const world = worldAfterDeath(
-		{ ...newWorld(47), gameTime: 10 },
+		{ ...newWorld(47), gameTime: DEATH_AT },
 		dying,
 		"destroyed",
 	);
@@ -276,20 +290,20 @@ test("per-item death draws are deterministic, independent of list order and othe
 });
 test("re-observing an own-loss wreck preserves its death-time knowledge and save round-trip", () => {
 	const world = worldAfterDeath(
-		{ ...newWorld(47), gameTime: 10 },
+		{ ...newWorld(47), gameTime: DEATH_AT },
 		dying,
 		"destroyed",
 	);
 	const row = world.galaxies[0].deathWreck!;
 	const knowledge = world.galaxies[0].knowledge[row.key];
 	for (const observed of [
-		observeDerelict(world, 0, row.key, 20, "visual identification"),
-		observe(world, 0, row.key, 20, "revisit"),
-		observeScan(world, 0, row.key, 20, {
+		observeDerelict(world, 0, row.key, DEATH_AT + 10, "visual identification"),
+		observe(world, 0, row.key, DEATH_AT + 10, "revisit"),
+		observeScan(world, 0, row.key, DEATH_AT + 10, {
 			instanceOrdinal: row.instanceOrdinal,
 			voyageOrdinal: 0,
 		}),
-		observeSystemRelay(world, 0, [row.key], 20),
+		observeSystemRelay(world, 0, [row.key], DEATH_AT + 10),
 	]) {
 		expect(observed.galaxies[0].knowledge[row.key]).toEqual(knowledge);
 		const saved = parseSave(
@@ -302,7 +316,7 @@ test("re-observing an own-loss wreck preserves its death-time knowledge and save
 
 test("one own-loss wreck persists without expiry, follows the death frame and is replaced", () => {
 	const world = worldAfterDeath(
-		{ ...newWorld(47), gameTime: 10 },
+		{ ...newWorld(47), gameTime: DEATH_AT },
 		dying,
 		"destroyed",
 		system.contents.star.id,
@@ -310,18 +324,19 @@ test("one own-loss wreck persists without expiry, follows the death frame and is
 	const row = world.galaxies[0].deathWreck!;
 	expect(row).toBeDefined();
 	expect(world.galaxies[0].knowledge[row.key].source).toBe("own loss");
-	expect(deathWreckPose(system, row, 10).pos).toEqual(v3(1e8, 2e8, 3e8));
+	expect(deathWreckPose(system, row, DEATH_AT).pos).toEqual(v3(1e8, 2e8, 3e8));
 	const saved = parseSave(serializeSave({ world, commander: dying }));
 	expect(saved.world.galaxies[0].deathWreck).toEqual(row);
 	expect(liveDerelicts(world, system, 1e7).some((w) => w.key === row.key)).toBe(
 		true,
 	);
 	expect(
-		derelictReadings(world, system, v3(), [], 10).find((w) => w.key === row.key)
-			?.identified,
+		derelictReadings(world, system, v3(), [], DEATH_AT).find(
+			(w) => w.key === row.key,
+		)?.identified,
 	).toBe(true);
 	const next = worldAfterDeath(
-		{ ...world, gameTime: 20 },
+		{ ...world, gameTime: DEATH_AT + 10 },
 		{ ...dying, galaxyIndex: 1, systemIndex: 4 },
 		"eject",
 	);
@@ -330,7 +345,7 @@ test("one own-loss wreck persists without expiry, follows the death frame and is
 });
 test("the Holdings wreck scoop recovers goods and fittings once and removes a stripped death wreck", () => {
 	let world = worldAfterDeath(
-		{ ...newWorld(47), gameTime: 10 },
+		{ ...newWorld(47), gameTime: DEATH_AT },
 		dying,
 		"destroyed",
 		system.contents.star.id,
@@ -350,7 +365,7 @@ test("the Holdings wreck scoop recovers goods and fittings once and removes a st
 			galaxyIndex: 0,
 			instanceOrdinal: wreck.instanceOrdinal,
 			containerIndex: i,
-			at: 10,
+			at: DEATH_AT,
 			container: at,
 			ship: at,
 		};
@@ -378,20 +393,20 @@ test("the Holdings wreck scoop recovers goods and fittings once and removes a st
 
 test("a body-frame death follows that body over time; station deaths clear keep-out and corridor", () => {
 	const station = system.contents.stations[0];
-	advanceSystem(system, 10);
+	advanceSystem(system, DEATH_AT);
 	const centre = system.byId.get(station.id)!.pos;
 	const atStation = {
 		...dying,
 		flight: { ...dying.flight, pos: [centre.x, centre.y, centre.z] as const },
 	};
 	const world = worldAfterDeath(
-		{ ...newWorld(47), gameTime: 10 },
+		{ ...newWorld(47), gameTime: DEATH_AT },
 		atStation,
 		"destroyed",
 		station.id,
 	);
 	const row = world.galaxies[0].deathWreck!;
-	const frame = stationApertureFrame(system, station.id, 10);
+	const frame = stationApertureFrame(system, station.id, DEATH_AT);
 	const delta = row.offset;
 	const margin = length(tetherOffset(row.hull, 0)) + AVOID_CLEARANCE_KM;
 	expect(length(delta)).toBeGreaterThanOrEqual(
@@ -434,18 +449,24 @@ test("a body-frame death follows that body over time; station deaths clear keep-
 
 test("the own-loss writer advances the world, refuses stale writes and clears an empty replacement atomically", () => {
 	const before = newWorld(47);
-	const row = deathWreckRow({ ...before, gameTime: 10 }, dying, "destroyed")!;
-	const written = withDeathWreck(before, 0, row, 10);
-	const advanced = advanceTo(before, 10);
-	expect(written.gameTime).toBe(10);
+	const row = deathWreckRow(
+		{ ...before, gameTime: DEATH_AT },
+		dying,
+		"destroyed",
+	)!;
+	const written = withDeathWreck(before, 0, row, DEATH_AT);
+	const advanced = advanceTo(before, DEATH_AT);
+	expect(written.gameTime).toBe(DEATH_AT);
 	expect(written.galaxies[0].objective).toEqual(advanced.galaxies[0].objective);
 	expect(written.galaxies[0].episodes).toEqual(advanced.galaxies[0].episodes);
 	expect(before.galaxies[0].deathWreck).toBeUndefined();
 	expect(before.galaxies[0].knowledge[row.key]).toBeUndefined();
-	expect(() => withDeathWreck(written, 0, row, 9)).toThrow("before the clock");
-	expect(() => withDeathWreck(written, 8, row, 10)).toThrow();
-	const cleared = withDeathWreck(written, 1, undefined, 20);
-	expect(cleared.gameTime).toBe(20);
+	expect(() => withDeathWreck(written, 0, row, DEATH_AT - 1)).toThrow(
+		"before the clock",
+	);
+	expect(() => withDeathWreck(written, 8, row, DEATH_AT)).toThrow();
+	const cleared = withDeathWreck(written, 1, undefined, DEATH_AT + 10);
+	expect(cleared.gameTime).toBe(DEATH_AT + 10);
 	expect(cleared.galaxies.some((g) => g.deathWreck)).toBe(false);
 	expect(cleared.galaxies[0].knowledge[row.key]).toBeUndefined();
 	expect(written.galaxies[0].deathWreck).toEqual(row);
@@ -462,16 +483,16 @@ test("cached wreck frames retain both step endpoints and track the relay orbit",
 		expect(frame.vel).toEqual(relayVelocity(plan, system.contents, at));
 	}
 	const world = worldAfterDeath(
-		{ ...newWorld(47), gameTime: 10 },
+		{ ...newWorld(47), gameTime: DEATH_AT },
 		dying,
 		"destroyed",
 		RELAY_LOCAL_CARRIER_ID,
 	);
-	const own = liveDerelicts(world, system, 10).find(
+	const own = liveDerelicts(world, system, DEATH_AT).find(
 		(w) => w.key === world.galaxies[0].deathWreck!.key,
 	)!;
-	expect(own.poseAt(11)).toEqual(
-		deathWreckPose(system, world.galaxies[0].deathWreck!, 11),
+	expect(own.poseAt(DEATH_AT + 1)).toEqual(
+		deathWreckPose(system, world.galaxies[0].deathWreck!, DEATH_AT + 1),
 	);
 });
 
@@ -528,7 +549,7 @@ test("schema 11 migrates empty and refuses a grafted death wreck; malformed new 
 	raw.integrity = fnv1a(JSON.stringify(body));
 	expect(parseSave(raw).world.galaxies.every((g) => !g.deathWreck)).toBe(true);
 	const world = worldAfterDeath(
-		{ ...newWorld(47), gameTime: 10 },
+		{ ...newWorld(47), gameTime: DEATH_AT },
 		dying,
 		"destroyed",
 	);
@@ -550,7 +571,7 @@ test("schema 11 migrates empty and refuses a grafted death wreck; malformed new 
 			r.world.galaxies[0].deathWreck.containers[0].kind = "fitting";
 		},
 		(r: any) => {
-			r.world.galaxies[0].deathWreck.lostAt = 11;
+			r.world.galaxies[0].deathWreck.lostAt = DEATH_AT + 1;
 		},
 		(r: any) => {
 			r.world.galaxies[0].deathWreck.containers[0].tonnes = 0;
@@ -582,7 +603,7 @@ test("schema 11 migrates empty and refuses a grafted death wreck; malformed new 
 
 test("sweep provenance names an own wreck but remains valid after it disappears", () => {
 	const world = worldAfterDeath(
-		{ ...newWorld(47), gameTime: 10 },
+		{ ...newWorld(47), gameTime: DEATH_AT },
 		dying,
 		"destroyed",
 	);
@@ -590,13 +611,15 @@ test("sweep provenance names an own wreck but remains valid after it disappears"
 		sweepSources(w, 0, systemIndex).some((r) =>
 			r.id.endsWith(":commander-wreck"),
 		);
-	expect(hasOwnWreck({ ...newWorld(47), gameTime: 10 })).toBe(false);
+	expect(hasOwnWreck({ ...newWorld(47), gameTime: DEATH_AT })).toBe(false);
 	expect(hasOwnWreck(world, (dying.systemIndex + 1) % 256)).toBe(false);
-	expect(hasOwnWreck(withDeathWreck(world, 0, undefined, 10))).toBe(false);
+	expect(hasOwnWreck(withDeathWreck(world, 0, undefined, DEATH_AT))).toBe(
+		false,
+	);
 	const readings = sweepSources(world, 0, dying.systemIndex);
 	expect(hasOwnWreck(world)).toBe(true);
 	expect(
-		parseSweepReadings(readings, { ...newWorld(47), gameTime: 10 }),
+		parseSweepReadings(readings, { ...newWorld(47), gameTime: DEATH_AT }),
 	).toEqual(readings);
 });
 
@@ -612,7 +635,7 @@ test("SaveStore writes the dying leg's owned cargo, not launch cargo or entruste
 		serializeSave({ world: newWorld(47), commander: launch }),
 	);
 	const envelope = {
-		world: { ...newWorld(47), gameTime: 10 },
+		world: { ...newWorld(47), gameTime: DEATH_AT },
 		commander: dying,
 	};
 	const store = new SaveStore({
@@ -628,7 +651,7 @@ test("SaveStore writes the dying leg's owned cargo, not launch cargo or entruste
 		system.contents.star.id,
 	);
 	expect(restored?.world.galaxies[0].deathWreck?.containers).toEqual(
-		deathWreckContents(47, 10, dying.state, "destroyed"),
+		deathWreckContents(47, DEATH_AT, dying.state, "destroyed"),
 	);
 	expect(
 		restored?.world.galaxies[0].deathWreck?.containers.some(

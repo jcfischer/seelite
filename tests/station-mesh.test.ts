@@ -442,9 +442,6 @@ describe("a station is one object, not a scatter of parts", () => {
 			// `station-greebles.test.ts`); a greeble seated on a ring's facet
 			// sits inside the chord, where the ring's proxy below is thinnest.
 			if (object.name.startsWith("greebles")) return;
-			// The Slipway's welding flare hangs in the slip where the work is,
-			// in the ring's gap by construction: a light, not a part.
-			if (object.name === "weld-arc") return;
 			// **A real-size lamp is smaller than this proxy's own tolerance**
 			// (#300). The shrink below takes up to 2.4 m off every face of a
 			// part, and a 2 m strobe seated half in its face shrinks to a 1 m box
@@ -460,7 +457,10 @@ describe("a station is one object, not a scatter of parts", () => {
 				object.name === "strobe-b" ||
 				object.name === "mouth-strobe" ||
 				object.name === "obstruction-beacon" ||
-				object.name === "bay-flood"
+				object.name === "bay-flood" ||
+				// Every form's welding arc is seated on structure since node #746;
+				// the Slipway's used to hang in the slip, a light and not a part.
+				object.name === "weld-arc"
 			)
 				return;
 			// A glow is not a part: it is a point at its fitting's own centre,
@@ -1230,15 +1230,15 @@ describe("§13.5 row 3 — every berth is inside its own drawn interior", () => 
  * that one was mounted: three trade forms carried strobes metres off their
  * hulls and the Slipway's sat inside its own tube. This is that check, by ray
  * against the surfaces themselves (`helpers/structure-rays.ts`). The welding
- * arc is not in it: it hangs in the slip where the work is, by construction.
+ * arc is in it since node #746, which moved the Slipway's out of the slip,
+ * where it hung with nothing under it, onto a slip-head.
  */
 describe("every lamp is seated on the structure it is bolted to", () => {
 	const floating = (root: THREE.Object3D) => {
 		root.updateMatrixWorld(true);
 		const out: string[] = [];
 		root.traverse((o) => {
-			if (!LAMP_NAMES.has(o.name) || o.name === "weld-arc" || o.userData.glow)
-				return;
+			if (!LAMP_NAMES.has(o.name) || o.userData.glow) return;
 			if (!seatedOnStructure(root, o)) {
 				const p = o.position;
 				out.push(

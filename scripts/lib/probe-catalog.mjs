@@ -33,6 +33,18 @@ export const PROBE_CATALOG = Object.freeze(
 			],
 		),
 		entry(
+			"probe-horizon-views.mjs",
+			"Places both canonical terran horizon shots and reads their limb fraction and surface-centre sun elevation from the actual rendered camera; asserts full station containment near its own orbit, the exact 1.2R camera boundary, and no station in that frame, again after settling.",
+			[
+				"canonical view set",
+				"horizon framing",
+				"camera placement",
+				"terran",
+				"station orbit",
+				"flight boundary",
+			],
+		),
+		entry(
 			"probe-system-sweep.mjs",
 			"Presses the fitted left-console Sweep, steps its autonomous ten-second charge, checks source/age region rows without discovery or targets, cruise interruption/refusal, save reload, stale age and relay cue/identification at placed ranges (not flight-path evidence).",
 			[

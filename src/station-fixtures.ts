@@ -606,8 +606,9 @@ const V = (x: number, y: number, z: number) => new THREE.Vector3(x, y, z);
 
 /**
  * Build a form's macro fixtures. A form without a declaration gets an empty
- * group — every trade form and the three other selected forms carry one, and
- * the remaining pool forms are forms nobody has looked at under a finish.
+ * group. Every form in play carries one (nodes #745 and #746 wrote the
+ * refinery's and the shipyard's); the forms without one are the trade and
+ * outpost alternates no pool holds.
  */
 export function buildMacroFixtures(site: FixtureSite): THREE.Group {
 	const group = new THREE.Group();
@@ -1134,6 +1135,164 @@ const DECLARATIONS: Partial<
 				widthKm: S.mastKm,
 			});
 			beaconAt(top.clone().add(V(0, S.beaconKm * 0.6, 0)), S.beaconKm);
+		}
+	},
+
+	/**
+	 * Shipyard B — Hangar (node #746). Everything stands on the static slab, // glossary-ignore: Hangar
+	 * whose z is read off the slab itself rather than restated, as the
+	 * Gantry's is off its keel. The spun hub carries nothing, and the slab's
+	 * forward face is the mouth's and the windows', so the plant goes on its
+	 * top, its underside and its back. Every base stays inside the slab's
+	 * parallel section (−0.44·span to +0.4·span, about ±1.5·r): the chamfered
+	 * ends are the outline, at 1.497 km against a 1.5 km reach.
+	 */
+	"shipyard/b": ({ site, group, pools, mount, beaconAt }) => {
+		const r = STATION_GEOMETRY.shipyard.coreRadiusKm;
+		const S = SHIP_SCALE;
+		const slab = site.structure.getObjectByName("slab");
+		if (!slab) throw new Error("the Hangar's slab is not named"); // glossary-ignore: Hangar
+		const aft = -slab.position.z;
+		// The slab is `r * 0.72` half-high and `r * 0.5` deep either side of
+		// its centre; a point declared on a face is cast onto it.
+		const top = (x: number, dz: number) =>
+			mount(V(x, r * 0.72, -aft + dz), V(0, 1, 0), r * 0.3);
+		const under = (x: number, dz: number) =>
+			mount(V(x, -r * 0.72, -aft + dz), V(0, -1, 0), r * 0.3);
+		// A lattice bridge along each long edge of the top face.
+		for (const dz of [-r * 0.36, r * 0.36]) {
+			const a = top(-r * 1.4, dz).add(V(0, S.trussKm * 0.5, 0));
+			const b = top(r * 1.3, dz).add(V(0, S.trussKm * 0.5, 0));
+			truss(pools, a, b, S.trussKm, V(0, 1, 0));
+		}
+		// Radiator banks on the top face between the bridges: two rows of twelve
+		// on each half of the slab.
+		for (const x of [-r * 1.2, r * 0.5])
+			for (const row of [-0.14, 0.14])
+				radiatorArray(pools, {
+					origin: top(x, row * r),
+					along: V(1, 0, 0),
+					up: V(0, 1, 0),
+					count: 12,
+					panelWidthKm: S.panelKm,
+					panelHeightKm: S.panelHeightKm,
+				});
+		// Tank racks under the slab: four racks of six.
+		for (const x of [-r * 0.8, r * 0.6])
+			for (const row of [-0.14, 0.14])
+				tankRack(pools, {
+					origin: under(x, row * r),
+					along: V(1, 0, 0),
+					up: V(0, -1, 0),
+					count: 6,
+					radiusKm: S.tankKm,
+					lengthKm: S.tankLengthKm,
+				});
+		// Pipe runs down the back face, from the top edge to the underside,
+		// every elbow on the surface.
+		for (const x of [-r * 1.0, -r * 0.3, r * 0.4, r * 1.1]) {
+			const back = (y: number) =>
+				mount(V(x, y, -aft - r * 0.5), V(0, 0, -1), r * 0.3).add(
+					V(0, 0, -S.pipeKm * 1.5),
+				);
+			pipeRun(pools, [back(r * 0.6), back(0), back(-r * 0.6)], S.pipeKm);
+		}
+		// Masts on the top face's aft end and its forward shoulder, each with a
+		// beacon on its top. // glossary-ignore: beacon
+		for (const x of [-r * 1.5, r * 1.35]) {
+			const foot = top(x, 0);
+			const tip = mast(pools, group, {
+				base: foot,
+				up: V(0, 1, 0),
+				heightKm: S.mastHeightKm,
+				widthKm: S.mastKm,
+			});
+			beaconAt(tip.clone().add(V(0, S.beaconKm * 0.6, 0)), S.beaconKm);
+		}
+	},
+
+	/**
+	 * Shipyard C — Slipway (node #746). A broken torus (major 1.24·span·0.5,
+	 * tube 0.2·r) from 0.28π to 1.73π that does not turn, with the slip in its
+	 * gap. Everything sits on the arc's two crowns, where the tube faces ±Z: the
+	 * outer face is the whole outline (1.450 km against a 1.5 km reach) and the
+	 * inner face carries the floods and the ports. The ends of the arc carry
+	 * the slip-heads, so nothing here comes within 0.1π of either.
+	 */
+	"shipyard/c": ({ group, pools, mount, beaconAt }) => {
+		const r = STATION_GEOMETRY.shipyard.coreRadiusKm;
+		const S = SHIP_SCALE;
+		const major = 2.07 * 0.62;
+		const tube = r * 0.2;
+		const FROM = Math.PI * 0.38;
+		const TO = Math.PI * 1.63;
+		const radial = (theta: number) => V(Math.cos(theta), Math.sin(theta), 0);
+		const tangent = (theta: number) => V(-Math.sin(theta), Math.cos(theta), 0);
+		/** A point on the crown facing `side`, cast onto the tube. */
+		const crown = (theta: number, side: number, offset = 0) =>
+			mount(
+				radial(theta)
+					.multiplyScalar(major + offset)
+					.setZ(side * tube),
+				V(0, 0, side),
+				tube * 0.5,
+			);
+		// A lattice bridge along the +Z crown, chord by chord.
+		const STEPS = 16;
+		for (let i = 0; i < STEPS; i++) {
+			const a = FROM + (i / STEPS) * (TO - FROM);
+			const b = FROM + ((i + 1) / STEPS) * (TO - FROM);
+			truss(
+				pools,
+				crown(a, 1).add(V(0, 0, S.trussKm * 0.5)),
+				crown(b, 1).add(V(0, 0, S.trussKm * 0.5)),
+				S.trussKm,
+				V(0, 0, 1),
+			);
+		}
+		// A pipe main along the −Z crown's outer shoulder, every elbow landed.
+		const main: THREE.Vector3[] = [];
+		for (let i = 0; i <= STEPS; i++) {
+			const theta = FROM + (i / STEPS) * (TO - FROM);
+			main.push(crown(theta, -1, tube * 0.4).add(V(0, 0, -S.pipeKm * 1.5)));
+		}
+		pipeRun(pools, main, S.pipeKm);
+		// Radiator banks and tank racks alternating along the −Z crown, fins
+		// and tanks along the arc.
+		// Each starts on one of the arc's 22 rings of vertices, where the
+		// facets meet: between two rings the tube is a chord, and a bank set
+		// down there stood clear of it.
+		const RING = (Math.PI * 1.45) / 22;
+		for (const [k, j] of [2, 6, 9, 13, 16, 19].entries()) {
+			const theta = Math.PI * 0.28 + j * RING;
+			if (k % 2 === 0)
+				radiatorArray(pools, {
+					origin: crown(theta, -1, -tube * 0.2),
+					along: tangent(theta),
+					up: V(0, 0, -1),
+					count: 8,
+					panelWidthKm: S.panelKm,
+					panelHeightKm: S.panelHeightKm,
+				});
+			else
+				tankRack(pools, {
+					origin: crown(theta, -1, -tube * 0.2),
+					along: tangent(theta),
+					up: V(0, 0, -1),
+					count: 5,
+					radiusKm: S.tankKm,
+					lengthKm: S.tankLengthKm,
+				});
+		}
+		// Masts on the +Z crown's inner shoulder, each with a beacon. // glossary-ignore: beacon
+		for (const theta of [Math.PI * 0.6, Math.PI, Math.PI * 1.4]) {
+			const tip = mast(pools, group, {
+				base: crown(theta, 1, -tube * 0.4),
+				up: V(0, 0, 1),
+				heightKm: S.mastHeightKm,
+				widthKm: S.mastKm,
+			});
+			beaconAt(tip.clone().add(V(0, 0, S.beaconKm * 0.6)), S.beaconKm);
 		}
 	},
 

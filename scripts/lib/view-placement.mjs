@@ -1,5 +1,6 @@
 // A default-layout probe (#381 D11): it presses keys by name, as the shipped
 // layout binds them, and a moved default turns it red for that reason.
+import { horizonGeometry, setHorizonOrientation } from "./horizon-framing.mjs";
 
 /**
  * The framing vocabulary the canonical view set is aimed with.
@@ -15,6 +16,10 @@
  * every navigation, and `__sunOffset` calls `__placeShipAt` across the seam.
  */
 export async function installViewFraming(page) {
+	await page.addInitScript({
+		content: `window.__horizonGeometry = (${horizonGeometry.toString()})();
+		window.__setHorizonOrientation = (${setHorizonOrientation.toString()});`,
+	});
 	await page.addInitScript(() => {
 		const frame = () => new Promise((r) => requestAnimationFrame(() => r()));
 		const norm = (v) => {
@@ -318,6 +323,122 @@ export async function installViewFraming(page) {
 			const to = g.nearScene.position.clone().set(d.x, d.y, d.z);
 			g.orientation.setFromUnitVectors(from, to);
 			await frame();
+		};
+
+		/**
+		 * Measure the rendered camera, including the chase rig's offset and roll.
+		 * The requested values never enter this readback. A capture calls it again
+		 * at the shutter, so a placement's facts cannot stand in for later pixels.
+		 */
+		window.__measureHorizon = (shot) => {
+			const g = window.__seelite;
+			const body = window.__bodyById(shot.body);
+			const vector = (x, y, z) =>
+				g.nearScene.position
+					.clone()
+					.set(x, y, z)
+					.applyQuaternion(g.nearCamera.quaternion);
+			const input = {
+				centre: body.pos,
+				radius: body.radiusKm,
+				camera: g.cameraPos(),
+				forward: vector(0, 0, -1),
+				up: vector(0, 1, 0),
+				sun: window.__bodyById("star").pos,
+				fov: g.nearCamera.fov,
+				aspect: g.nearCamera.aspect,
+			};
+			const station = shot.station && window.__bodyById(shot.station);
+			const facts = window.__horizonGeometry.measure({
+				...input,
+				station: station?.pos,
+				stationRadius: station ? window.__radiusOf(station.id) : 0,
+			});
+			facts.shipRadii =
+				Math.hypot(
+					g.world.ship.pos.x - body.pos.x,
+					g.world.ship.pos.y - body.pos.y,
+					g.world.ship.pos.z - body.pos.z,
+				) / body.radiusKm;
+			facts.visibleStations = g.world.system.bodies
+				.filter(
+					(b) =>
+						b.kind === "station" &&
+						window.__horizonGeometry.measure({
+							...input,
+							station: b.pos,
+							stationRadius: window.__radiusOf(b.id),
+						}).stationIntersectsFrame,
+				)
+				.map((b) => b.id);
+			return facts;
+		};
+
+		/**
+		 * Horizon-only still: hold the whole simulation at its current clock, not
+		 * a clock reset under moving objects. Restore before the next shot. This
+		 * keeps the measured eye and ship positions still while bakes settle.
+		 * Reachability is checked separately from this photographic hold.
+		 */
+		window.__horizonView = async (shot) => {
+			window.__restoreHorizon?.();
+			const g = window.__seelite;
+			const body = window.__bodyById(shot.body);
+			const record = g.world.system.contents.stations.find(
+				(s) => s.id === (shot.station ?? "station-trade"),
+			);
+			if (
+				!body ||
+				body.appearance?.surface !== "terran" ||
+				record?.parentId !== body.id ||
+				Math.abs(record.orbit.radiusKm / body.radiusKm - 1.5) > 1e-10
+			)
+				throw new Error(
+					"horizon: fixture drift — expected terran host and trade orbit at 1.500R",
+				);
+			const held = g.clockHeld;
+			const orbit = { ...g.chaseOrbit };
+			g.clockHeld = true;
+			window.__restoreHorizon = () => {
+				g.clockHeld = held;
+				g.chaseOrbit = orbit;
+				window.__restoreHorizon = null;
+			};
+			g.view = shot.view;
+			g.setHeadLook("forward");
+			g.chaseOrbit = { yawRad: 0, elevationRad: 0 };
+			const anchor = window.__bodyById(record.id);
+			const pose = window.__horizonGeometry.plan({
+				centre: body.pos,
+				radius: body.radiusKm,
+				anchor: anchor.pos,
+				sun: window.__bodyById("star").pos,
+				radii: shot.radii,
+				fov: g.nearCamera.fov,
+			});
+			const vec = (v) => g.nearScene.position.clone().set(v.x, v.y, v.z);
+			window.__setHorizonOrientation(
+				g.orientation,
+				g.nearCamera.matrix.clone(),
+				vec(pose.forward),
+				vec(pose.up),
+			);
+			// Compensate the shipped camera rig. The approach rule constrains the
+			// ship (src/planet-approach-boundary.ts), so the boundary shot uses the
+			// cockpit's forward eye: aimed inward, its hull stands outside 1.2R.
+			// The chase rig would put its hull inside that rule for this same eye.
+			const offset = g.cameraPos();
+			const ship = g.world.ship.pos;
+			await window.__placeShipAt(
+				{
+					x: pose.camera.x - offset.x + ship.x,
+					y: pose.camera.y - offset.y + ship.y,
+					z: pose.camera.z - offset.z + ship.z,
+				},
+				g.stationVelocity(record.id),
+			);
+			await frame();
+			return window.__measureHorizon(shot);
 		};
 
 		/**
