@@ -77,5 +77,5 @@ try {
  console.log(JSON.stringify(result,null,2));
  if(errors.length)throw Error('Browser errors');
  if(metrics.reachKm>.62)throw Error('Display reach exceeds 0.62 km');
- if(metrics.rays.some(r=>r.firstZ!==null&&r.firstZ>.34))throw Error('Dock opening or first 88m of throat obstructed');
+ if(metrics.rays.some(r=>r.firstZ!==null&&r.firstZ>.34))throw Error('Dock opening or first 88m of display tunnel obstructed');
 }finally{await browser.close();await server.close();}

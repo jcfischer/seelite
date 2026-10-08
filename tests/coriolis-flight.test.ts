@@ -75,7 +75,7 @@ test("industrial exterior and seeded production bay share one kilometre spinner"
 			>
 		).material.color.getHex(),
 	).toBe(0x9aa6b2);
-	expect(built.root.getObjectByName("beacon-coriolis-a")).toBeDefined();
+	expect(built.root.getObjectByName("beacon-coriolis-a")).toBeDefined(); // glossary-ignore: beacon
 	expect(exterior.parent).toBe(built.spinner);
 	built.dispose();
 	const second = build(s.berthSeed, 0x9aa6b2);

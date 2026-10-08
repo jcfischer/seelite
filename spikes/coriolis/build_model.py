@@ -292,7 +292,7 @@ for i,a in enumerate(verts):
    box(c,(23,36,4),steel,(d,v,n))
    for xx in [-8,8]:
     for yy in [-9,9]:box(c+d*xx+v*yy+n*3,(2,2,2),pipe,(d,v,n))
-# Open docking throat: all walls strictly outside the 120 x 70 metre aperture.
+# Open display tunnel: all walls strictly outside the 120 x 70 metre aperture.
 if not FLIGHT:
     for z in [427,414,398,371,342,307,273]:
      for x in [-66,66]:box((x,0,z),(12,92,5),steel)

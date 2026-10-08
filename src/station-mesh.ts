@@ -1053,7 +1053,7 @@ export function buildCoriolisNavigation(
 			blinkingLamp(
 				fixtures,
 				STATION_VISUALS.trade.strobeColor,
-				side < 0 ? "beacon-coriolis-a" : "beacon-coriolis-b",
+				side < 0 ? "beacon-coriolis-a" : "beacon-coriolis-b", // glossary-ignore: beacon
 				side < 0 ? "strobe-a" : "strobe-b",
 				0,
 				mount(side * 0.18, 0.16),

@@ -23,7 +23,7 @@ describe("Coriolis spike export", () => {
 		expect(max).toBeGreaterThan(0.5);
 		expect(max).toBeLessThanOrEqual(reach);
 	});
-	test("the entire production slot and initial throat are open, from either side of each surface", () => {
+	test("the entire production slot and initial display tunnel are open, from either side of each surface", () => {
 		const { aperture, aperturePlaneKm } = STATION_GEOMETRY.trade;
 		for (const u of [-0.499, 0, 0.499])
 			for (const v of [-0.499, 0, 0.499]) {
