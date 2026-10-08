@@ -17,6 +17,8 @@
  * the map with no view pointed at it would be judged on somebody else's frame.
  */
 import { describe, expect, test } from "bun:test";
+import { Matrix4, Quaternion, Vector3 } from "three";
+import { setHorizonOrientation } from "../scripts/lib/horizon-framing.mjs";
 import type { TreeDeclaration } from "../scripts/lib/tree-declaration.mjs";
 import { makeWorld } from "../src/sim.ts";
 import { STATION_GEOMETRY } from "../src/station.ts";
@@ -534,11 +536,16 @@ describe("node #754 horizon views", () => {
 		const boundary = {
 			...good,
 			cameraRadii: 1.2,
+			shipRadii: 1.200001,
 			stationInFrame: null,
 			stationRangeKm: null,
 			visibleStations: [],
 		};
 		expect(assertHorizonFacts(boundary, {})).toBe(boundary);
+		for (const shipRadii of [undefined, NaN, 1.199999])
+			expect(() =>
+				assertHorizonFacts({ ...boundary, shipRadii }, {}),
+			).toThrow();
 		expect(() =>
 			assertHorizonFacts({ ...boundary, cameraRadii: 1.21 }, {}),
 		).toThrow();
@@ -548,6 +555,26 @@ describe("node #754 horizon views", () => {
 				{},
 			),
 		).toThrow();
+	});
+	test("the horizon basis preserves forward at an antiparallel roll", () => {
+		for (const forward of [
+			new Vector3(1, 2, 3).normalize(),
+			new Vector3(-3, 1, 2).normalize(),
+			new Vector3(0, 0, 1),
+		]) {
+			const orientation = new Quaternion().setFromUnitVectors(
+				new Vector3(0, 0, -1),
+				forward,
+			);
+			const up = new Vector3(0, 1, 0).applyQuaternion(orientation).negate();
+			setHorizonOrientation(orientation, new Matrix4(), forward, up);
+			expect(
+				new Vector3(0, 0, -1).applyQuaternion(orientation).distanceTo(forward),
+			).toBeLessThan(1e-12);
+			expect(
+				new Vector3(0, 1, 0).applyQuaternion(orientation).distanceTo(up),
+			).toBeLessThan(1e-12);
+		}
 	});
 	test("station containment measures the full silhouette rather than only its centre", () => {
 		const w = makeWorld(SEED);
@@ -591,7 +618,7 @@ describe("node #754 horizon views", () => {
 			expect(row?.shot).toEqual({
 				kind: "horizon",
 				body: "planet-4",
-				view: "chase",
+				view: name === "planet-boundary" ? "cockpit" : "chase",
 				...extra,
 			});
 		}

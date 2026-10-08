@@ -16,6 +16,14 @@ const origin = await guardedOrigin(
 );
 const browser = await launchChromium();
 const { check, watch, exit } = tally();
+const passes = (fn) => {
+	try {
+		fn();
+		return true;
+	} catch {
+		return false;
+	}
+};
 try {
 	const page = await browser.newPage({ viewport: VIEWPORT });
 	watch(page);
@@ -40,18 +48,43 @@ try {
 			(s) => window.__measureHorizon(s),
 			view.shot,
 		);
-		let valid = true;
-		try {
+		const valid = passes(() => {
 			assertHorizonFacts(placed, view.shot);
 			assertHorizonFacts(measured, view.shot);
-		} catch {
-			valid = false;
-		}
+		});
 		check(
 			`${view.name}: measured limb 20–45%, sun elevation 0–20°, and subject framing`,
 			valid,
 			JSON.stringify({ placed, measured }),
 		);
+		if (!view.shot.station) {
+			// Keep the eye and attitude fixed, but move only the hull inside the
+			// approach shell. The camera facts alone must not accept this pose.
+			const unreachable = await page.evaluate((s) => {
+				const g = window.__seelite;
+				const body = window.__bodyById(s.body);
+				const pos = { ...g.world.ship.pos };
+				const cameraPos = g.cameraPos;
+				const eye = g.cameraPos();
+				try {
+					g.cameraPos = () => eye;
+					g.world.ship.pos = {
+						x: body.pos.x + (pos.x - body.pos.x) * 0.99,
+						y: body.pos.y + (pos.y - body.pos.y) * 0.99,
+						z: body.pos.z + (pos.z - body.pos.z) * 0.99,
+					};
+					return window.__measureHorizon(s);
+				} finally {
+					g.cameraPos = cameraPos;
+					g.world.ship.pos = pos;
+				}
+			}, view.shot);
+			check(
+				"planet-boundary: an unreachable hull is refused even with a correctly framed eye",
+				!passes(() => assertHorizonFacts(unreachable, view.shot)),
+				JSON.stringify(unreachable),
+			);
+		}
 		// Negative control: aim at the body's centre and ask the same page reader.
 		// A reader echoing the requested 32% would let this broken framing pass.
 		const misAimed = await page.evaluate((s) => {
@@ -69,12 +102,7 @@ try {
 			g.render(0);
 			return window.__measureHorizon(s);
 		}, view.shot);
-		let refused = false;
-		try {
-			assertHorizonFacts(misAimed, view.shot);
-		} catch {
-			refused = true;
-		}
+		const refused = !passes(() => assertHorizonFacts(misAimed, view.shot));
 		check(
 			`${view.name}: a centre aim is refused by the actual camera readback`,
 			refused,

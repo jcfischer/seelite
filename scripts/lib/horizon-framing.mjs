@@ -6,6 +6,14 @@
  * the atmosphere above it is deliberately not treated as the surface radius.
  */
 /** @typedef {{x: number, y: number, z: number}} Point */
+/** Set the complete camera basis, including a half-turn about forward. */
+export function setHorizonOrientation(orientation, matrix, forward, up) {
+	const right = forward.clone().cross(up).normalize();
+	orientation.setFromRotationMatrix(
+		matrix.makeBasis(right, up, forward.clone().negate()),
+	);
+}
+
 export function horizonGeometry() {
 	const add = (a, b) => ({ x: a.x + b.x, y: a.y + b.y, z: a.z + b.z });
 	const scale = (a, s) => ({ x: a.x * s, y: a.y * s, z: a.z * s });
@@ -23,6 +31,27 @@ export function horizonGeometry() {
 		z: a.x * b.y - a.y * b.x,
 	});
 	const rad = Math.PI / 180;
+	const aimDepression = (radius, distance, fov) =>
+		Math.acos(radius / distance) + Math.atan(0.36 * Math.tan((fov * rad) / 2));
+	const lowSunAzimuth = (u, sunUnit, theta, radius, sunDistance) => {
+		// Surface normal dot star-centre direction for a ten-degree elevation,
+		// including the surface's offset toward the finite star.
+		const k = Math.sin(10 * rad);
+		const ratio = radius / sunDistance;
+		const targetDot =
+			ratio * (1 - k * k) + k * Math.sqrt(1 - ratio * ratio * (1 - k * k));
+		const us = dot(u, sunUnit);
+		const azimuthCos =
+			(targetDot - Math.cos(theta) * us) /
+			(Math.sin(theta) * Math.sqrt(1 - us * us));
+		if (Math.abs(azimuthCos) > 1)
+			throw new Error("horizon: low sun cannot be framed from this anchor");
+		const e = norm(sub(sunUnit, scale(u, us)));
+		return add(
+			scale(e, azimuthCos),
+			scale(cross(u, e), Math.sqrt(1 - azimuthCos * azimuthCos)),
+		);
+	};
 	const intersection = (p, f, radius) => {
 		const b = dot(p, f);
 		const disc = b * b - dot(p, p) + radius * radius;
@@ -59,29 +88,11 @@ export function horizonGeometry() {
 			const sunDistance = length(s);
 			const sunUnit = norm(s);
 			// Aim below the tangent by the angle projecting it to 32% from the top.
-			const depression =
-				Math.acos(radius / distance) +
-				Math.atan(0.36 * Math.tan((fov * rad) / 2));
+			const depression = aimDepression(radius, distance, fov);
 			const theta =
 				Math.asin((distance / radius) * Math.cos(depression)) -
 				(Math.PI / 2 - depression);
-			// Surface normal dot star-centre direction for an actual 10-degree
-			// elevation, including the surface's offset toward the finite star.
-			const k = Math.sin(10 * rad);
-			const ratio = radius / sunDistance;
-			const targetDot =
-				ratio * (1 - k * k) + k * Math.sqrt(1 - ratio * ratio * (1 - k * k));
-			const us = dot(u, sunUnit);
-			const e = norm(sub(sunUnit, scale(u, us)));
-			const azimuthCos =
-				(targetDot - Math.cos(theta) * us) /
-				(Math.sin(theta) * Math.sqrt(1 - us * us));
-			if (Math.abs(azimuthCos) > 1)
-				throw new Error("horizon: low sun cannot be framed from this anchor");
-			const t = add(
-				scale(e, azimuthCos),
-				scale(cross(u, e), Math.sqrt(1 - azimuthCos * azimuthCos)),
-			);
+			const t = lowSunAzimuth(u, sunUnit, theta, radius, sunDistance);
 			forward = add(
 				scale(u, -Math.sin(depression)),
 				scale(t, Math.cos(depression)),
@@ -142,14 +153,12 @@ export function horizonGeometry() {
 				y = dot(rel, up);
 			const tx = tan * aspect;
 			// All five perspective half-spaces contain the entire silhouette sphere.
-			stationInFrame =
-				z > stationRadius &&
-				z * tan - Math.abs(y) >= stationRadius * Math.hypot(1, tan) &&
-				z * tx - Math.abs(x) >= stationRadius * Math.hypot(1, tx);
-			stationIntersectsFrame =
-				z > -stationRadius &&
-				z * tan - Math.abs(y) >= -stationRadius * Math.hypot(1, tan) &&
-				z * tx - Math.abs(x) >= -stationRadius * Math.hypot(1, tx);
+			const inFrustum = (r) =>
+				z > r &&
+				z * tan - Math.abs(y) >= r * Math.hypot(1, tan) &&
+				z * tx - Math.abs(x) >= r * Math.hypot(1, tx);
+			stationInFrame = inFrustum(stationRadius);
+			stationIntersectsFrame = inFrustum(-stationRadius);
 			const hostHit = intersection(p, norm(rel), radius);
 			if (hostHit && length(sub(hostHit, p)) < stationRangeKm - stationRadius)
 				stationInFrame = stationIntersectsFrame = false;
@@ -175,6 +184,7 @@ export function assertHorizonFacts(facts, shot) {
 		(shot.station
 			? facts.stationInFrame !== true || !inBand(facts.stationRangeKm, 1, 10)
 			: !inBand(facts.cameraRadii, 1.2 - 1e-8, 1.2 + 1e-8) ||
+				!inBand(facts.shipRadii, 1.2, Number.MAX_VALUE) ||
 				facts.visibleStations?.length !== 0)
 	)
 		throw new Error(`horizon framing refused: ${JSON.stringify(facts)}`);

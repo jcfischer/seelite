@@ -178,11 +178,13 @@ export const LEVERS = Object.freeze({
  *   lit, 180 puts it beyond the subject and the subject a silhouette. #99's
  *   fill exists because the second case rendered the hull as a black cutout,
  *   and the sheet has to contain the case the fix was made for.
- * - `horizon` — planet `body`'s limb at 32% from the top, with the sun ten
- *   degrees above the surface under the frame centre. `station` places near
+ * - `horizon` — targets planet `body`'s limb at 32% from the top, with the sun
+ *   ten degrees above the surface under the frame centre; measured acceptance
+ *   is 20–45% and 0–20° respectively. `station` places near
  *   that station at its real orbit; otherwise `radii` ranges from the planet's
  *   centre. The placer returns measured limb fraction and sun elevation;
- *   capture reads them again at the shutter. No planet-centre aim is involved.
+ *   capture reads them again at the shutter. The boundary uses the cockpit
+ *   eye at 1.2R and measures its ship outside the flight boundary as well.
  * - `deep-sky` — at the arrival point, with the backdrop as the subject rather
  *   than the thing behind one, aimed by `__emptiestDirection`. What that rule is
  *   worth knowing before its heading is trusted: it takes the **maximum of the
@@ -694,7 +696,7 @@ export const VIEWS = Object.freeze([
 		name: "planet-boundary",
 		what: "Terran planet-4's low-sun horizon at the 1.2R flight boundary, with no station; the close ground and clouds across the limb.",
 		covers: [720],
-		shot: { kind: "horizon", body: "planet-4", radii: 1.2, view: "chase" },
+		shot: { kind: "horizon", body: "planet-4", radii: 1.2, view: "cockpit" },
 	},
 	/**
 	 * **The frame the planet-cost table is a price for** (#206).

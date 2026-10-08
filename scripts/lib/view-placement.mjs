@@ -1,6 +1,6 @@
 // A default-layout probe (#381 D11): it presses keys by name, as the shipped
 // layout binds them, and a moved default turns it red for that reason.
-import { horizonGeometry } from "./horizon-framing.mjs";
+import { horizonGeometry, setHorizonOrientation } from "./horizon-framing.mjs";
 
 /**
  * The framing vocabulary the canonical view set is aimed with.
@@ -17,7 +17,8 @@ import { horizonGeometry } from "./horizon-framing.mjs";
  */
 export async function installViewFraming(page) {
 	await page.addInitScript({
-		content: `window.__horizonGeometry = (${horizonGeometry.toString()})();`,
+		content: `window.__horizonGeometry = (${horizonGeometry.toString()})();
+		window.__setHorizonOrientation = (${setHorizonOrientation.toString()});`,
 	});
 	await page.addInitScript(() => {
 		const frame = () => new Promise((r) => requestAnimationFrame(() => r()));
@@ -353,6 +354,12 @@ export async function installViewFraming(page) {
 				station: station?.pos,
 				stationRadius: station ? window.__radiusOf(station.id) : 0,
 			});
+			facts.shipRadii =
+				Math.hypot(
+					g.world.ship.pos.x - body.pos.x,
+					g.world.ship.pos.y - body.pos.y,
+					g.world.ship.pos.z - body.pos.z,
+				) / body.radiusKm;
 			facts.visibleStations = g.world.system.bodies
 				.filter(
 					(b) =>
@@ -370,7 +377,8 @@ export async function installViewFraming(page) {
 		/**
 		 * Horizon-only still: hold the whole simulation at its current clock, not
 		 * a clock reset under moving objects. Restore before the next shot. This
-		 * also keeps a camera exactly on the 1.2R boundary while bakes settle.
+		 * keeps the measured eye and ship positions still while bakes settle.
+		 * Reachability is checked separately from this photographic hold.
 		 */
 		window.__horizonView = async (shot) => {
 			window.__restoreHorizon?.();
@@ -396,7 +404,8 @@ export async function installViewFraming(page) {
 				g.chaseOrbit = orbit;
 				window.__restoreHorizon = null;
 			};
-			g.view = "chase";
+			g.view = shot.view;
+			g.setHeadLook("forward");
 			g.chaseOrbit = { yawRad: 0, elevationRad: 0 };
 			const anchor = window.__bodyById(record.id);
 			const pose = window.__horizonGeometry.plan({
@@ -408,16 +417,16 @@ export async function installViewFraming(page) {
 				fov: g.nearCamera.fov,
 			});
 			const vec = (v) => g.nearScene.position.clone().set(v.x, v.y, v.z);
-			g.orientation.setFromUnitVectors(
-				vec({ x: 0, y: 0, z: -1 }),
+			window.__setHorizonOrientation(
+				g.orientation,
+				g.nearCamera.matrix.clone(),
 				vec(pose.forward),
+				vec(pose.up),
 			);
-			const oldUp = vec({ x: 0, y: 1, z: 0 }).applyQuaternion(g.orientation);
-			g.orientation.premultiply(
-				g.orientation.clone().setFromUnitVectors(oldUp, vec(pose.up)),
-			);
-			// Compensate the shipped chase camera's position, rather than pretending
-			// the ship position is the eye (the boundary is a camera distance).
+			// Compensate the shipped camera rig. The approach rule constrains the
+			// ship (src/planet-approach-boundary.ts), so the boundary shot uses the
+			// cockpit's forward eye: aimed inward, its hull stands outside 1.2R.
+			// The chase rig would put its hull inside that rule for this same eye.
 			const offset = g.cameraPos();
 			const ship = g.world.ship.pos;
 			await window.__placeShipAt(
