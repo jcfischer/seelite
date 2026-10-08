@@ -38,11 +38,11 @@ controls.maxDistance = 240;
 const pmrem = new THREE.PMREMGenerator(renderer),
 	room = new RoomEnvironment();
 scene.environment = pmrem.fromScene(room, 0.04).texture;
-scene.environmentIntensity = 0.26;
+scene.environmentIntensity = 0.32;
 room.dispose();
 pmrem.dispose();
-const key = new THREE.DirectionalLight(0xffd7a4, 4.3);
-key.position.set(-55, 40, -8);
+const key = new THREE.DirectionalLight(0xffead5, 4.0);
+key.position.set(-55, 42, -16);
 key.castShadow = true;
 key.shadow.mapSize.set(4096, 4096);
 Object.assign(key.shadow.camera, {
@@ -56,10 +56,10 @@ Object.assign(key.shadow.camera, {
 key.shadow.bias = -0.0003;
 key.shadow.normalBias = 0.1;
 scene.add(key);
-const fill = new THREE.DirectionalLight(0xb4c8dc, 0.34);
+const fill = new THREE.DirectionalLight(0xb4c8dc, 0.4);
 fill.position.set(25, 12, 45);
 scene.add(fill);
-const rim = new THREE.DirectionalLight(0x9eaeb9, 1.1);
+const rim = new THREE.DirectionalLight(0xc6d4df, 1.3);
 rim.position.set(8, 20, -50);
 scene.add(rim);
 for (const x of [-17, 17])
@@ -71,7 +71,7 @@ for (const x of [-17, 17])
 const inspection = new THREE.HemisphereLight(0xd9e7f3, 0x9b9b88, 1.7);
 inspection.visible = false;
 scene.add(inspection);
-const stars = new Float32Array(1500 * 3);
+const stars = new Float32Array(18000 * 3);
 let seed = 795;
 const rand = () =>
 	(seed = (Math.imul(seed, 1664525) + 1013904223) >>> 0) / 4294967296;
@@ -86,12 +86,39 @@ sg.setAttribute("position", new THREE.BufferAttribute(stars, 3));
 const starfield = new THREE.Points(
 	sg,
 	new THREE.PointsMaterial({
-		color: 0xaab7be,
-		size: 1.5,
-		sizeAttenuation: true,
+		color: 0x85949f,
+		size: 1.1,
+		transparent: true,
+		opacity: 0.75,
+		sizeAttenuation: false,
 	}),
 );
 scene.add(starfield);
+// A sparse brighter tier gives depth without a flat photographic backdrop.
+const brightGeometry = new THREE.BufferGeometry();
+brightGeometry.setAttribute(
+	"position",
+	new THREE.BufferAttribute(stars.slice(0, 900), 3),
+);
+scene.add(
+	new THREE.Points(
+		brightGeometry,
+		new THREE.PointsMaterial({
+			color: 0xdce5ee,
+			size: 1.8,
+			sizeAttenuation: false,
+			transparent: true,
+			opacity: 0.85,
+		}),
+	),
+);
+for (const side of [-1, 1]) {
+	for (const z of [-20, -13.8, -7.7, -1.8]) {
+		const practical = new THREE.PointLight(0xffa04a, 3.0, 3.0, 2);
+		practical.position.set(side * 3.65, 4.0, z);
+		scene.add(practical);
+	}
+}
 const composer = new EffectComposer(renderer);
 composer.addPass(new RenderPass(scene, camera));
 const ao = new SSAOPass(scene, camera, innerWidth, innerHeight);

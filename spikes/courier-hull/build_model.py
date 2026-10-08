@@ -25,11 +25,11 @@ def material(name,color,metal=.55,rough=.5,emission=0,texture=True,alpha=1):
   m.node_tree.links.new(t.outputs['Color'],mix.inputs[1]);m.node_tree.links.new(mix.outputs[0],p.inputs['Base Color'])
  MATS[name]=m;return name
 
-blue=[material('blue-grey-'+str(i),(.14+i*.009,.185+i*.010,.22+i*.010),.55,.36) for i in range(4)]
-ivory=[material('pale-steel-'+str(i),(.32+i*.018,.33+i*.018,.32+i*.018),.50,.44) for i in range(3)]
+blue=[material('blue-grey-'+str(i),(.09+i*.009,.145+i*.010,.20+i*.012),.42,.43+i*.018) for i in range(4)]
+ivory=[material('pale-steel-'+str(i),(.32+i*.018,.345+i*.018,.355+i*.018),.42,.46+i*.02) for i in range(3)]
 steel=material('dark-structure',(.057,.071,.077),.76,.43)
 black=material('recess-black',(.012,.019,.023),.42,.62)
-alloy=material('machined-alloy',(.29,.295,.27),.84,.35)
+alloy=material('machined-alloy',(.34,.37,.39),.82,.30)
 rubber=material('hose-rubber',(.023,.027,.029),.08,.78)
 orange=material('service-ochre',(.55,.29,.10),.37,.58)
 warm=material('amber-lamp',(1,.29,.045),.2,.23,3,False)
@@ -246,6 +246,33 @@ for z,l,w in [(-21,6,4.5),(-14.3,6.3,4.3),(-7.4,6.5,4.0),(-1,5.7,3.6),(3.5,3,2.3
   pts=[deck_point(x+dx,z+dz,.13) for dx,dz in [(-.07,-.24),(.07,-.24),(.07,.24),(-.07,.24)]]
   poly(list(reversed(pts)),warm)
 
+# Dorsal service runs: low segmented ducts mounted to the crowned skin.
+# Keep access lids clear and all brackets seated on the actual panel surface.
+for side in [-1,1]:
+ for za,zb in [(-22,-17.5),(-16.8,-12),(-11.3,-6.8),(-6.1,-1.6)]:
+  x=side*2.85
+  a=Vector((x,body_skin(x,za)+.36,za));b=Vector((x,body_skin(x,zb)+.36,zb))
+  tube(a,b,.34,steel,16)
+  length=(b-a).length;axis=(b-a).normalized()
+  for j in range(int(length/.66)):
+   c=a.lerp(b,(j+.5)/int(length/.66))
+   tube(c-axis*.26,c+axis*.26,.365,alloy,16)
+  for t in [.06,.94]:
+   c=a.lerp(b,t)
+   # Foot overlaps both deck and cylindrical duct: no floating supports.
+   y=body_skin(c.x,c.z)
+   box((c.x,y+.16,c.z),(.92,.35,.26),steel)
+   tube(c-axis*.08,c+axis*.08,.42,steel,16)
+ # Slim guarded amber housings sit on the sloped deck beside the duct runs.
+ for z in [-20,-13.8,-7.7,-1.8]:
+  x=side*3.65;starts={key:len(data[0]) for key,data in BATCH.items()}
+  box((x,.14,z),(.58,.32,1.35),steel)
+  box((x,.325,z),(.31,.055,.92),warm)
+  for dz in [-.52,.52]:box((x,.36,z+dz),(.61,.13,.12),alloy)
+  for key,data in BATCH.items():
+   for i in range(starts.get(key,0),len(data[0])):
+    vx,vy,vz=data[0][i];data[0][i]=(vx,body_skin(vx,vz)+vy-.025,vz)
+
 # Canopy. Four sections form a shallow taper; real interior sits behind tinted panes.
 canopy=[(6.5,2.7,4.75,3.45),(10.5,2.65,5.65,3.45),(15,2.35,4.95,3.08),(19.5,1.85,3.85,2.5),(23,1.03,2.4,2.0)]
 def canopy_ring(row):
@@ -296,6 +323,13 @@ for side in [-1,1]:
  for z in [4,10,16,22,28]:
   w,y,_=sample(z);box((side*(w+.06),y-.48,z),(.32,.45,.18),steel)
  lamp(side*1.0,.24,29.4)
+ for z in [5,11,17,23,28]:
+  w,y,_=sample(z)
+  # Side-facing lamp lens and guard mounted into the upper chine.
+  xx=side*(w+.08)
+  box((xx,y-.64,z),(.32,.42,1.18),steel)
+  box((xx+side*.18,y-.64,z),(.055,.16,.78),warm)
+  for dz in [-.48,.48]:box((xx+side*.21,y-.64,z+dz),(.1,.46,.1),alloy)
  # Stepped canopy coaming follows the glass perimeter into the pressure hull.
  for aa,bb in zip(canopy,canopy[1:]):
   za,wa,_,ba=aa;zb,wb,_,bbottom=bb

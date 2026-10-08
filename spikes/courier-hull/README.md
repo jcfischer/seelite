@@ -31,3 +31,7 @@ node spikes/courier-hull/capture.mjs round-N
 Capture waits for the shared probe lock, checks served-worktree identity and requires a hardware renderer. It records seven preset model views plus level and low rear views, the interface and narrow viewport, exercises orbit, presets, target dialog, work lights, rotation and PNG export, and records browser errors and a short observed frame cadence. This is not a production flight benchmark.
 
 Intermediate images and logs are in ignored `.dream-loop/`. Final visual score, captures and remaining gaps are recorded in `evidence/` at the review checkpoint.
+
+## Latest visual refinement
+
+`evidence/visual-pass-15/` records the follow-up after the real cockpit was accepted: low segmented dorsal service ducts with seated brackets, guarded hull/deck lamps, clearer blue-grey versus pale steel paint, revised neutral lighting and a denser starfield. Hull dimensions, cockpit fit, sloped hatches and grilles are preserved. This pass adds 5,496 model triangles (339,938 total).
