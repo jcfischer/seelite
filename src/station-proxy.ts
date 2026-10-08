@@ -550,8 +550,8 @@ function shipyardHangarProxy(): StationProxy {
 	const slab: Bounds[] = [
 		// The parallel section is an octagon: full depth to its 45° vertices at
 		// ±0.391 km, and 28 m shallower each side to its full height. Two boxes
-		// hold it with 40 m over its top-front edge at most, where one held it
-		// with 88 m.
+		// stand at most 40 m off its drawn surface, at the top-front edge, where
+		// one box stood 51 m off it (measured in the section 0.7 km out).
 		{
 			x0: -0.94,
 			x1: 0.86,

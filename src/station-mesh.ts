@@ -2249,8 +2249,8 @@ function buildShipyardGantry(color: number, berthSeed: number): BuiltPart {
 	 * drum** (#274, #300).
 	 *
 	 * §5 used to give them to "the Coriolis hull ... the shipyard spins about
-	 * the same axis for the same reason". The shipyard's pool is the
-	 * Gantry — a keel with a drum on a bearing — so there is no shared Coriolis
+	 * the same axis for the same reason". The shipyard's pool was then the
+	 * Gantry alone — a keel with a drum on a bearing — so there is no shared Coriolis
 	 * hull for one answer to be one answer for, and the pair had been added to
 	 * `group`, the **static keel**, at `z = -SHIPYARD_KEEL_AFT_KM`. What a
 	 * strobe carries is that the station turns and how fast; bolted to the part
@@ -2762,7 +2762,7 @@ function buildShipyardHangar(color: number, berthSeed: number): BuiltPart {
 		portRun("shipyard", 16, (i, count, position, normal) => {
 			// On the slab's **forward** face, above and below the mouth (node
 			// #746). On the back face the run faced away from every approach and
-			// sat at `r * 0.46`, 24 m inside a face that stands at `r * 0.5`, so
+			// sat at `r * 0.46`, 14 m inside the face (an octagon's chord there), so
 			// §5's windows were never seen from the aperture axis. The forward
 			// face is read off the slab (`slabFront`); the panes sit a metre
 			// proud of it, in two rows outboard of the lips (`r * 0.26`) and
@@ -2930,7 +2930,7 @@ function buildShipyardSlipway(color: number, berthSeed: number): BuiltPart {
 	};
 	/**
 	 * **The welding arc is on the slip-head, at the slip's edge** (node #746).
-	 * It hung in the gap, 0.11 km inside the ring, where the work would be — a
+	 * It hung in the gap at the ring's own radius, where the work would be — a
 	 * light with nothing under it, which the collision proxy can hold only with
 	 * a primitive the size of the light or a wall nobody can see. It now sits
 	 * half sunk in the first head's top face, on the side that faces the slip,
@@ -2975,8 +2975,8 @@ function buildShipyardSlipway(color: number, berthSeed: number): BuiltPart {
 		portRun("shipyard", 12, (i, count, position, normal) => {
 			const theta = Math.PI * 0.28 + ((i + 1) / (count + 1)) * Math.PI * 1.4;
 			// On the ring's inner face, looking into the slip — a metre proud of
-			// it (node #746). At `major * 0.82` the panes hung 110 m inside the
-			// ring with nothing under them.
+			// it (node #746). At `major * 0.82` the panes hung 100–110 m inboard of
+			// that face with nothing under them.
 			normal.set(-Math.cos(theta), -Math.sin(theta), 0);
 			const inner = innerFace(theta) - 0.001;
 			position.set(Math.cos(theta) * inner, Math.sin(theta) * inner, 0);

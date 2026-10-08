@@ -21,12 +21,12 @@ first red.
 | Form | Row | Repair |
 |---|---|---|
 | Hangar b | M1, M4 (bay at 0.360 against 0.372) | The hub's forward ring moves from `r * 0.6` to `r * 0.62`, the Gantry's face and the declared plane; the aperture and the strobe pair go with it. |
-| Hangar b | V1 (floods, arc, windows hidden down the axis) | The floods sat 84 m inside the dark mouth-recess box and are now on the two lips' forward faces, turned 35° inboard. The arc is on the slab's face below the lower lip. The windows were on the slab's back face, 24 m inside it, and are now on its forward face. Both the arc and the windows are seated by a raycast onto the slab, whose octagonal section makes that face two chords rather than a plane. |
+| Hangar b | V1 (floods, arc, windows hidden down the axis) | The floods sat 84 m inside the dark mouth-recess box and are now on the two lips' forward faces, turned 35° inboard. The arc is on the slab's face below the lower lip. The windows were on the slab's back face, 14 m inside it (measured by raycast), and are now on its forward face. Both the arc and the windows are seated by a raycast onto the slab, whose octagonal section makes that face two chords rather than a plane. |
 | Hangar b | F1, F2 (no macro fixtures) | A `shipyard/b` declaration on the static slab: two truss bridges, radiator banks, tank racks, pipe runs down the back, and two masts with beacons. |
 | Slipway c | M1, M2, M4 | `core` named the static arc, so these rows measured a ring 252 m behind the plane while the hub carried the cut. The cut hub is now `core`, takes the hull colour (it was plain grey) and has its face at `r * 0.62` (it was at `r * 0.64`, 12 m proud). The arc is now named `arc`. |
 | Slipway c | V1 (floods hidden) | The floods stood at the struts' own angles, so each strut ran over its flood. They now sit between the struts. |
 | Slipway c | F1, F2 | A `shipyard/c` declaration on the arc's two crowns: a truss bridge, a pipe main, radiator banks and tank racks each set on a facet ring, and three masts with beacons. |
-| Slipway c | proxy vertex row | The ports hung 110 m inside the ring at `major * 0.82`. They are now on the arc's inner face. The welding arc hung in the slip with nothing under it, so a proxy could hold it only with a 1 m primitive or an invisible wall. It now sits on the first slip-head's top face, at the slip's edge. |
+| Slipway c | proxy vertex row | The ports hung 100–110 m inboard of the arc's inner face, at `major * 0.82`. They are now on the arc's inner face. The welding arc hung in the slip, at the ring's radius, with nothing under it, so a proxy could hold it only with a 1 m primitive or an invisible wall. It now sits on the first slip-head's top face, at the slip's edge. |
 
 The hub faces are written at `r * 0.62` in each form's own radius and not
 read off `aperturePlaneKm`. That keeps §128's hull-reaches-the-plane row two
@@ -41,8 +41,9 @@ mesh.
 
 - **Hangar**, spinning: the hub cut round the bay and prism, standing 28 m
   proud of the plane as the Gantry's drum does, plus the spindle. Static: the
-  slab's octagonal parallel section as two boxes (at most 40 m over its
-  top-front edge, against 88 m for one box), its tapered ends as stepped boxes,
+  slab's octagonal parallel section as two boxes (at most 40 m off its drawn
+  surface, at the top-front edge, against 51 m for one box, both measured in
+  the section 0.7 km out), its tapered ends as stepped boxes,
   a band for the mouth's lips and recess, the bearing, and the two masts.
 - **Slipway**, spinning: the hub cut round the bay and prism. Static: one
   capsule per facet ring along the arc's centreline, so the slip stays open;

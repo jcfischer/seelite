@@ -606,8 +606,9 @@ const V = (x: number, y: number, z: number) => new THREE.Vector3(x, y, z);
 
 /**
  * Build a form's macro fixtures. A form without a declaration gets an empty
- * group — every trade form and the three other selected forms carry one, and
- * the remaining pool forms are forms nobody has looked at under a finish.
+ * group. Every form in play carries one (nodes #745 and #746 wrote the
+ * refinery's and the shipyard's); the forms without one are the trade and
+ * outpost alternates no pool holds.
  */
 export function buildMacroFixtures(site: FixtureSite): THREE.Group {
 	const group = new THREE.Group();
