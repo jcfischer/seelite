@@ -2658,10 +2658,12 @@ function buildShipyardHangar(color: number, berthSeed: number): BuiltPart {
 		[
 			{ z: -r * 0.3, w: r * 0.34, h: r * 0.34, e: 8 },
 			{ z: r * 0.24, w: r * 0.42, h: r * 0.42, e: 8, hard: true },
-			// The forward face is the declared aperture plane (node #746): at
-			// `r * 0.6` it stood 12 m short of the plane the checks read.
+			// The forward face at `r * 0.62`, the Gantry's, which is where the
+			// declared aperture plane is (node #746): at `r * 0.6` it stood 12 m
+			// short of it. Written in the form's own radius, not read off the
+			// plane, so §128's hull-reaches-the-plane row compares two paths.
 			{
-				z: STATION_GEOMETRY.shipyard.aperturePlaneKm,
+				z: r * 0.62,
 				w: r * 0.32,
 				h: r * 0.32,
 				e: 8,
@@ -2704,11 +2706,7 @@ function buildShipyardHangar(color: number, berthSeed: number): BuiltPart {
 	// on did not.
 	spun.add(
 		strobePair("shipyard", fixtures, LAMP_POOL_KM.face, (side, position) => {
-			position.set(
-				0,
-				side * r * 0.22,
-				STATION_GEOMETRY.shipyard.aperturePlaneKm,
-			);
+			position.set(0, side * r * 0.22, r * 0.62);
 		}),
 	);
 	group.add(spun);
@@ -2839,10 +2837,12 @@ function buildShipyardSlipway(color: number, berthSeed: number): BuiltPart {
 		[
 			{ z: -r * 0.6, w: r * 0.3, h: r * 0.26, e: 3.4 },
 			{ z: r * 0.24, w: r * 0.4, h: r * 0.34, e: 3.4, hard: true },
-			// The forward face is the declared aperture plane (node #746): at
-			// `r * 0.64` it stood 12 m proud of the plane the checks read.
+			// The forward face at `r * 0.62`, the Gantry's, which is where the
+			// declared aperture plane is (node #746): at `r * 0.64` it stood 12 m
+			// proud of it. Written in the form's own radius, not read off the
+			// plane, so §128's hull-reaches-the-plane row compares two paths.
 			{
-				z: STATION_GEOMETRY.shipyard.aperturePlaneKm,
+				z: r * 0.62,
 				w: r * 0.3,
 				h: r * 0.26,
 				e: 3.4,
@@ -2872,11 +2872,7 @@ function buildShipyardSlipway(color: number, berthSeed: number): BuiltPart {
 	// centreline, inside its own tube.
 	spun.add(
 		strobePair("shipyard", fixtures, LAMP_POOL_KM.face, (side, position) => {
-			position.set(
-				0,
-				side * r * 0.18,
-				STATION_GEOMETRY.shipyard.aperturePlaneKm,
-			);
+			position.set(0, side * r * 0.18, r * 0.62);
 		}),
 	);
 	group.add(spun);
