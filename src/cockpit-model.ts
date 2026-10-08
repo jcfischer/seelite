@@ -1,0 +1,369 @@
+/**
+ * The authored courier cockpit (#792), as the cabin pass draws it.
+ *
+ * The model is a Blender export (`spikes/courier-cockpit/build_model.py`) in
+ * pilot-local metres, fitted against the courier A hull at true size. The
+ * cabin is drawn `CABIN_SCALE` times life size (`cabin-pass.ts`), so one model
+ * metre is a tenth of a cabin kilometre, and every camera sits at the origin:
+ * the model is moved so the spike's pilot eye lands there.
+ *
+ * The spike's approved pilot frame looked `COCKPIT_MODEL_PITCH_RAD` below the
+ * model's forward. The game camera looks along the nose, so the model is
+ * pitched up about the eye by the same angle — the frame the principal saw,
+ * with the reticle on the flight direction.
+ *
+ * The four `screen-*` quads are where the live instruments go. They are not
+ * retextured: `main.ts` mounts its own scanner, hologram and readout faces on
+ * the frame `screenFrame` derives from each quad, so their names, aspect and
+ * hologram alignment stay theirs. `screen-systems` has no live source and is
+ * left unpowered.
+ */
+import * as THREE from "three";
+import { MeshoptDecoder } from "three/addons/libs/meshopt_decoder.module.js";
+import { GLTFLoader } from "three/addons/loaders/GLTFLoader.js";
+import { CABIN_SCALE, cabinLight } from "./cabin-pass";
+import { shared } from "./gpu-teardown";
+import { EMISSIVE_CEILING } from "./light-rig";
+
+/** Cabin kilometres per model metre. */
+export const COCKPIT_MODEL_KM_PER_M = CABIN_SCALE / 1000;
+
+/** The spike's pilot eye, model metres (its README: 1.15 m aft of origin). */
+export const COCKPIT_MODEL_EYE_M = [0, 0, 1.15] as const;
+
+/** How far below the model's forward the approved pilot frame looked. */
+export const COCKPIT_MODEL_PITCH_RAD = 0.242;
+
+/**
+ * The live faces as the procedural cabin sized them, in its units: the
+ * scanner's 2:1 plane and each readout's. `main.ts` builds its faces, hologram
+ * and throttle at these figures on a `screenMount` and scales the mount, so
+ * one number per screen carries all of them onto the model.
+ */
+export const SCANNER_FACE_KM = [0.027, 0.0135] as const;
+export const INSTRUMENT_FACE_KM = [0.0118, 0.0059] as const;
+
+export const COCKPIT_SCREENS = [
+	"radar",
+	"flight",
+	"systems",
+	"target",
+] as const;
+export type CockpitScreen = (typeof COCKPIT_SCREENS)[number];
+
+/**
+ * The spike's under-console lamps, model metres and the viewer's figures.
+ * `main.ts` carries them into the cabin's frame by `cabinLight`, at
+ * `COCKPIT_MODEL_KM_PER_M`. Names are the procedural cabin's, which probes and
+ * the quality gate address them by; `gated` lamps go dark at low quality.
+ */
+export const COCKPIT_MODEL_LAMPS = [
+	{
+		name: "cockpit-light",
+		gated: false,
+		color: 0x39c2e8,
+		intensity: 5,
+		rangeM: 4,
+		positionM: [-1.6, -1.65, -1.65],
+	},
+	{
+		name: "cockpit-key-light",
+		gated: true,
+		color: 0xffae54,
+		intensity: 4,
+		rangeM: 4,
+		positionM: [1.6, -1.65, -1.65],
+	},
+	{
+		name: "cockpit-centre-light",
+		gated: true,
+		color: 0xffb050,
+		intensity: 1.5,
+		rangeM: 4,
+		positionM: [0, -1.65, -1.65],
+	},
+] as const;
+
+/**
+ * The exporter drops the multiply node's tint, so the named palette is restored
+ * here (`spikes/courier-cockpit/assets.md`). Only mapped materials carry it.
+ */
+export const COCKPIT_TINTS: Readonly<Record<string, number>> = {
+	"weathered-blue-steel": 0x405868,
+	"graphite-housings": 0x283842,
+	"exposed-machined-edges": 0x8d9395,
+	"service-ochre": 0xbc7923,
+	"guarded-red": 0x992c20,
+};
+
+/** A screen quad's frame in the cabin: where a face of a given aspect goes. */
+export interface ScreenFrame {
+	/** Centre, cabin kilometres. */
+	center: THREE.Vector3;
+	/** Unit vectors: across the screen, up it, and out of it toward the eye. */
+	right: THREE.Vector3;
+	up: THREE.Vector3;
+	normal: THREE.Vector3;
+	widthKm: number;
+	heightKm: number;
+}
+
+/**
+ * Derive a quad's frame from its vertices and texture coordinates.
+ *
+ * Keyed on the UVs rather than on vertex order, because the encoder reorders
+ * vertices: `(0, 0)` is the top-left corner, `(1, 0)` top-right and `(0, 1)`
+ * bottom-left, as the spike's canvases were drawn onto them.
+ */
+export function screenFrame(
+	positions: readonly THREE.Vector3[],
+	uvs: readonly THREE.Vector2[],
+): ScreenFrame {
+	const corner = (u: number, v: number) => {
+		const i = uvs.findIndex(
+			(uv) => Math.abs(uv.x - u) < 1e-3 && Math.abs(uv.y - v) < 1e-3,
+		);
+		if (i < 0) throw new Error(`screenFrame: no corner at uv (${u}, ${v})`);
+		return positions[i];
+	};
+	const topLeft = corner(0, 0);
+	const topRight = corner(1, 0);
+	const bottomLeft = corner(0, 1);
+	const across = topRight.clone().sub(topLeft);
+	const upward = topLeft.clone().sub(bottomLeft);
+	const center = topRight.clone().add(bottomLeft).multiplyScalar(0.5);
+	const right = across.clone().normalize();
+	const up = upward.clone().normalize();
+	return {
+		center,
+		right,
+		up,
+		normal: right.clone().cross(up).normalize(),
+		widthKm: across.length(),
+		heightKm: upward.length(),
+	};
+}
+
+/** The largest face of `aspect` (width / height) the frame contains. */
+export function containedFace(
+	frame: Pick<ScreenFrame, "widthKm" | "heightKm">,
+	aspect: number,
+): { widthKm: number; heightKm: number } {
+	const widthKm = Math.min(frame.widthKm, frame.heightKm * aspect);
+	return { widthKm, heightKm: widthKm / aspect };
+}
+
+/**
+ * A group whose local frame is the screen's: +x across, +y out toward the eye
+ * and +z down the screen. That is the procedural cabin's `scanner-mount`
+ * frame, so its faces and hologram keep their own placement on it.
+ */
+export function screenMount(frame: ScreenFrame): THREE.Group {
+	const mount = new THREE.Group();
+	const down = frame.up.clone().negate();
+	mount.quaternion.setFromRotationMatrix(
+		new THREE.Matrix4().makeBasis(frame.right, frame.normal, down),
+	);
+	mount.position.copy(frame.center);
+	return mount;
+}
+
+const LABELS: Readonly<Record<string, string>> = {
+	"label-radar": "SCOPE  /  RANGE SELECT",
+	"label-flight": "FLIGHT  /  RELATIVE",
+	"label-systems": "POWER DISTRIBUTION",
+	"label-target": "NAVIGATION COMPUTER",
+};
+const KEYS = [
+	"1",
+	"2",
+	"3",
+	"NAV",
+	"ENT",
+	"4",
+	"5",
+	"6",
+	"DCK",
+	"CLR",
+	"7",
+	"8",
+	"9",
+	"COM",
+	"0",
+];
+
+/** What a `label-*` or `key-*` mesh says. Static text, never a reading. */
+export const cockpitLabelText = (name: string): string =>
+	name.startsWith("key-")
+		? (KEYS[Number(name.slice(4))] ?? "")
+		: (LABELS[name] ?? "");
+
+/** A painted equipment label or key cap. Static text, never a reading. */
+function labelMaterial(name: string): THREE.MeshBasicMaterial {
+	const key = name.startsWith("key-");
+	const canvas = document.createElement("canvas");
+	canvas.width = key ? 256 : 768;
+	canvas.height = key ? 96 : 80;
+	const ctx = canvas.getContext("2d") as CanvasRenderingContext2D;
+	ctx.fillStyle = "#111719";
+	ctx.fillRect(0, 0, canvas.width, canvas.height);
+	ctx.fillStyle = key ? "#e4c896" : "#aebdc0";
+	ctx.font = `${key ? 52 : 46}px monospace`;
+	ctx.textAlign = "center";
+	ctx.textBaseline = "middle";
+	ctx.fillText(cockpitLabelText(name), canvas.width / 2, canvas.height / 2);
+	const map = new THREE.CanvasTexture(canvas);
+	map.colorSpace = THREE.SRGBColorSpace;
+	// glTF texture coordinates are not flipped.
+	map.flipY = false;
+	return new THREE.MeshBasicMaterial({ map, toneMapped: false });
+}
+
+export interface AuthoredCabin {
+	/** The model, already placed so the pilot eye is at the origin. */
+	root: THREE.Group;
+	/** Each screen quad's frame, in `root`'s parent frame. */
+	screens: Record<CockpitScreen, ScreenFrame>;
+	/** Model-metre placement, for lamps given in model metres. */
+	modelSpace: THREE.Group;
+}
+
+let template: THREE.Group | null = null;
+
+/**
+ * The tuning a mapped model material gets: the exporter-dropped tint, its
+ * finish and the albedo as a faint bump. One function so the review viewer
+ * shows the materials the game ships. Unmapped materials are left alone.
+ */
+export function adoptCockpitMaterial(m: THREE.MeshStandardMaterial): void {
+	if (!m.map) return;
+	m.color.setHex(COCKPIT_TINTS[m.name] ?? 0xffffff);
+	m.envMapIntensity = 1.15;
+	if (m.name !== "exposed-machined-edges") {
+		m.metalness = 0.65;
+		m.roughness = m.name === "graphite-housings" ? 0.42 : 0.34;
+	}
+	m.map.anisotropy = 8;
+	m.bumpMap = m.map;
+	m.bumpScale = 0.004;
+	m.needsUpdate = true;
+}
+
+/** A lamp of `COCKPIT_MODEL_LAMPS` carried into the cabin's frame. */
+export const carriedLamp = (lamp: (typeof COCKPIT_MODEL_LAMPS)[number]) =>
+	cabinLight(
+		{
+			positionKm: lamp.positionM,
+			distanceKm: lamp.rangeM,
+			intensity: lamp.intensity,
+			decay: 2,
+		},
+		COCKPIT_MODEL_KM_PER_M,
+	);
+
+/** Normalise and share a loaded model once, so every cabin clones it. */
+export function adoptCockpitTemplate(scene: THREE.Group): void {
+	const materials = new Set<THREE.MeshStandardMaterial>();
+	scene.traverse((o) => {
+		if (!(o instanceof THREE.Mesh)) return;
+		o.castShadow = true;
+		o.receiveShadow = true;
+		for (const m of Array.isArray(o.material) ? o.material : [o.material])
+			if (m instanceof THREE.MeshStandardMaterial) materials.add(m);
+	});
+	// The export's lamps are brighter than the game's exposure contract allows.
+	const divisor = Math.max(
+		1,
+		...[...materials].map((m) => m.emissiveIntensity / EMISSIVE_CEILING),
+	);
+	for (const m of materials) {
+		m.emissiveIntensity /= divisor;
+		adoptCockpitMaterial(m);
+	}
+	scene.name = "authored-cockpit";
+	scene.traverse((o) => {
+		if (!(o instanceof THREE.Mesh)) return;
+		shared(o.geometry);
+		for (const m of Array.isArray(o.material) ? o.material : [o.material]) {
+			shared(m);
+			for (const value of Object.values(m))
+				if (value instanceof THREE.Texture) shared(value);
+		}
+	});
+	template = scene;
+}
+
+/** Whether `prepareCockpitModel` has finished on this page. */
+export const cockpitModelReady = (): boolean => template !== null;
+
+/**
+ * One cabin's copy of the model, placed in the cabin's frame.
+ *
+ * Screens and labels get materials of their own, which the cabin's teardown
+ * frees; everything cloned from the template is shared and survives it.
+ */
+export function buildAuthoredCabin(): AuthoredCabin {
+	if (!template)
+		throw new Error("buildAuthoredCabin: await prepareCockpitModel() first");
+	const model = template.clone(true);
+	const modelSpace = new THREE.Group();
+	modelSpace.name = "cockpit-model-space";
+	modelSpace.scale.setScalar(COCKPIT_MODEL_KM_PER_M);
+	modelSpace.position.set(
+		-COCKPIT_MODEL_EYE_M[0] * COCKPIT_MODEL_KM_PER_M,
+		-COCKPIT_MODEL_EYE_M[1] * COCKPIT_MODEL_KM_PER_M,
+		-COCKPIT_MODEL_EYE_M[2] * COCKPIT_MODEL_KM_PER_M,
+	);
+	modelSpace.add(model);
+	const root = new THREE.Group();
+	root.name = "cockpit-model";
+	root.rotation.x = COCKPIT_MODEL_PITCH_RAD;
+	root.add(modelSpace);
+	root.updateMatrixWorld(true);
+	const unpowered = new THREE.MeshBasicMaterial({ color: 0x01090b });
+	const screens = {} as Record<CockpitScreen, ScreenFrame>;
+	model.traverse((o) => {
+		if (!(o instanceof THREE.Mesh)) return;
+		if (o.name.startsWith("label-") || o.name.startsWith("key-")) {
+			o.material = labelMaterial(o.name);
+			o.castShadow = false;
+			return;
+		}
+		if (!o.name.startsWith("screen-")) return;
+		const name = o.name.slice(7) as CockpitScreen;
+		if (!COCKPIT_SCREENS.includes(name)) return;
+		o.material = unpowered;
+		o.castShadow = false;
+		const position = o.geometry.getAttribute("position");
+		const uv = o.geometry.getAttribute("uv");
+		const positions: THREE.Vector3[] = [];
+		const uvs: THREE.Vector2[] = [];
+		for (let i = 0; i < position.count; i++) {
+			positions.push(
+				new THREE.Vector3()
+					.fromBufferAttribute(position, i)
+					.applyMatrix4(o.matrixWorld),
+			);
+			uvs.push(new THREE.Vector2().fromBufferAttribute(uv, i));
+		}
+		screens[name] = screenFrame(positions, uvs);
+	});
+	for (const name of COCKPIT_SCREENS)
+		if (!screens[name])
+			throw new Error(`buildAuthoredCabin: the model has no screen-${name}`);
+	return { root, screens, modelSpace };
+}
+
+let ready: Promise<void> | undefined;
+
+/** Await before any Game constructs its cabin. */
+export function prepareCockpitModel(): Promise<void> {
+	return (ready ??= new GLTFLoader()
+		.setMeshoptDecoder(MeshoptDecoder)
+		.loadAsync("/models/courier-cockpit.glb")
+		.then((gltf) => adoptCockpitTemplate(gltf.scene))
+		.catch((error) => {
+			ready = undefined;
+			throw error;
+		}));
+}

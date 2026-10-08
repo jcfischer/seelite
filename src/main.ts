@@ -850,29 +850,29 @@ import {
 } from "./station-route";
 import {
 	COCKPIT_EMISSIVE_INTENSITIES,
-	COCKPIT_KEY_LIGHT,
 	applyCockpitQuality,
 	cockpitForm,
 	cockpitMaterial,
-	plateCockpitUVs,
-	railLampPools,
-	railLamps,
 	registerKeyLight,
 } from "./cockpit-surface";
+import {
+	buildAuthoredCabin,
+	COCKPIT_MODEL_LAMPS,
+	carriedLamp,
+	type CockpitScreen,
+	containedFace,
+	INSTRUMENT_FACE_KM,
+	SCANNER_FACE_KM,
+	screenMount,
+} from "./cockpit-model";
 import {
 	CABIN_FAR_KM,
 	CABIN_NEAR_KM,
 	type CabinLightState,
+	cabinLight,
 	cabinLightInto,
 	newCabinLightState,
 } from "./cabin-pass";
-import {
-	CANOPY_FRAME,
-	CANOPY_RAIL_RADIUS_KM,
-	CANOPY_SIDE_RAILS,
-	canopyGlassMaterial,
-	canopyPaneGeometry,
-} from "./cockpit-canopy";
 import { applyHullQuality, hullFinishId } from "./ship-surface";
 import type { StationInterior } from "./station-interior";
 import { type Station, generateContents } from "./system";
@@ -2371,9 +2371,6 @@ class Game {
 	private shipMesh!: THREE.Group;
 	/** Cockpit structure follows the ship, while the camera pans within it. */
 	private cockpit!: CockpitHardware;
-	/** #204's canopy glass, held so the quality gate and the star rotation can
-	 *  reach its explicit environment. Null until `buildCockpit`. */
-	private canopyGlass: THREE.MeshBasicMaterial | null = null;
 	private tuningKey = "";
 	private tuningText = "";
 	/** Exposed for the browser probe; sourced fresh from simulation every frame. */
@@ -6037,8 +6034,6 @@ class Game {
 		// answer for every plated surface in the game rather than one per
 		// surface. `cockpit-surface.ts` owns what a cabin surface costs.
 		applyCockpitQuality(this.settings.value.quality);
-		// And the canopy's reflection, which follows the scenes' environment.
-		this.applyCanopyEnvironment();
 		// #532's pass draws on both sides; `low` takes fewer streak samples.
 		// Optional because this runs from `buildEnvironment`, before the
 		// composer exists; the constructor reads the setting itself.
@@ -8576,271 +8571,88 @@ class Game {
 		this.nearScene.add(group);
 	}
 
-	/** The physical cockpit and its one, deck-mounted scanner. */
+	/** The physical cockpit: the authored courier cabin and its live instruments. */
 	private buildCockpit() {
 		this.cockpit = {} as CockpitHardware;
-		// The cabin's finishes, and why they are not declared here:
-		// `COCKPIT_FINISHES`. The short of it is that a finish named at this call
-		// site is one the calibration pass cannot see, and the cabin's roughest
-		// turned out not to be expressible over the wear curve without it.
-		const metal = cockpitMaterial("metal");
-		const trim = cockpitMaterial("trim");
-		const inset = cockpitMaterial("inset");
-		// #204's mid-tone, on the two console tops: large faces the cabin's own
-		// light falls on, and behind no readout. Not on the scanner deck:
-		// `COCKPIT_FINISHES.face` says why.
-		const face = cockpitMaterial("face");
-		// #204's glass: a basic material, so no light in the scene reaches it, with
-		// the environment handed to it explicitly — `cockpit-canopy.ts` has why.
-		const canopyGlass = canopyGlassMaterial();
-		this.canopyGlass = canopyGlass;
-		this.applyCanopyEnvironment();
+		// #792's authored cabin replaces the procedural one. `cockpit-model.ts`
+		// owns its placement — the pilot eye at the origin, at `CABIN_SCALE`
+		// times life size — and where each screen is; what is mounted on the
+		// screens is still this class's, so the instruments keep their names.
+		const cabin = buildAuthoredCabin();
 		const cockpit = new THREE.Group();
 		cockpit.name = "cockpit";
-		// Space remains black, but the pilot's own instruments should not. This
-		// lamp is parented to the cockpit, so it illuminates the cabin alone as
-		// the ship turns rather than behaving like a second sun in the scene.
-		const interiorLight = new THREE.PointLight(0x9bc5dc, 0.35, 0.065, 2);
-		interiorLight.name = "cockpit-light";
-		interiorLight.position.set(0, 0.004, -0.029);
-		cockpit.add(interiorLight);
-		// #105's one added light. The lamp above lifts the cabin evenly; what it
-		// does not give is a *gradient*, and a gradient is what the deck and the
-		// console tops were missing — both cockpit views render the same flat
-		// tone whether the star is ahead of the ship or 175° behind it. Warm
-		// against the lamp's cool, which is the contrast the reference cabins
-		// have. It must not light the glass the player sees space through, and
-		// what holds that is the glass's class, not this light's range —
-		// `COCKPIT_KEY_LIGHT.rangeKm` has the distances.
-		const keyLight = new THREE.PointLight(
-			COCKPIT_KEY_LIGHT.color,
-			COCKPIT_KEY_LIGHT.intensity,
-			COCKPIT_KEY_LIGHT.rangeKm,
-			2,
-		);
-		keyLight.name = "cockpit-key-light";
-		keyLight.position.set(...COCKPIT_KEY_LIGHT.position);
-		cockpit.add(keyLight);
-		// **Gated, and this is the term #105 added.** A point light is evaluated
-		// for every standard material in its scene; until #651 that was
-		// `nearScene` and every hull and station fragment paid for a cabin
-		// gradient. Since #651 only the cabin's fittings do. `cockpit-surface.ts`
-		// owns which side of `quality` it is on and puts it in the state the
-		// current setting asks for.
-		registerKeyLight(keyLight);
-		const addBox = (
-			size: [number, number, number],
-			position: [number, number, number],
-			rotation: [number, number, number] = [0, 0, 0],
-			material: THREE.Material = metal,
+		cockpit.add(cabin.root);
+		// The spike's under-console lamps, carried from model metres into the
+		// cabin's frame the way a world lamp is (`cabinLight`). Parented to the
+		// cockpit, so they light the cabin alone as the ship turns.
+		const gated: THREE.PointLight[] = [];
+		for (const lamp of COCKPIT_MODEL_LAMPS) {
+			const carried = carriedLamp(lamp);
+			const light = new THREE.PointLight(
+				lamp.color,
+				carried.intensity,
+				carried.distanceKm,
+				carried.decay,
+			);
+			light.name = lamp.name;
+			// Placed in model space, so it pitches and scales with the model;
+			// a point light's range and intensity ignore its parent's scale,
+			// which is why they were carried above.
+			const [x, y, z] = lamp.positionM;
+			light.position.set(x, y, z);
+			cabin.modelSpace.add(light);
+			if (lamp.gated) gated.push(light);
+		}
+		// **Gated** (#651): `cockpit-surface.ts` decides which side of `quality`
+		// these are on. A point light costs every lit cabin fragment, so low
+		// keeps the cool fill alone, as the procedural cabin did.
+		registerKeyLight(...gated);
+		const inset = cockpitMaterial("inset");
+		// Each live face fills its screen's width or height, whichever binds,
+		// and keeps its own aspect. The procedural mount's figures stay its
+		// own: one uniform scale per screen carries them onto the model.
+		const mountOn = (
+			screen: CockpitScreen,
+			faceWidthKm: number,
+			faceHeightKm: number,
+			name: string,
 		) => {
-			// **A chamfered form, not a box.** The rim on every cut edge is what
-			// gives a moulding its scale — `chamfer-box.ts` has the argument, and
-			// it is what replaced the panel grid the principal rejected against
-			// the reference frames.
-			//
-			// `plateCockpitUVs` still runs: it is already non-indexed, so the call
-			// only writes the kilometre projection. It returns the geometry to use
-			// either way, and dropping that return value would leave a fitting
-			// unplated in a way that looks exactly like the map failing to load.
-			const mesh = new THREE.Mesh(cockpitForm(...size), material);
-			mesh.position.set(...position);
-			mesh.rotation.set(...rotation);
-			cockpit.add(mesh);
-			return mesh;
+			const frame = cabin.screens[screen];
+			const fit = containedFace(frame, faceWidthKm / faceHeightKm);
+			const mount = screenMount(frame);
+			mount.name = name;
+			mount.scale.setScalar(fit.widthKm / faceWidthKm);
+			cockpit.add(mount);
+			return mount;
 		};
-		const addStrut = (
-			from: [number, number, number],
-			to: [number, number, number],
-			radius = 0.00045,
-			name?: string,
-		) => {
-			const start = new THREE.Vector3(...from);
-			const end = new THREE.Vector3(...to);
-			const direction = end.clone().sub(start);
-			// Plated like everything else on `metal`, and `plateCockpitUVs`
-			// directly rather than `cockpitForm`: a rail is a cylinder, and
-			// chamfering one is meaningless. A normalised cylinder unwrap would
-			// tile the whole 72 m map onto a rail a metre across, which reads as
-			// noise rather than as a surface.
-			const mesh = new THREE.Mesh(
-				plateCockpitUVs(
-					new THREE.CylinderGeometry(
-						radius * 0.82,
-						radius,
-						direction.length(),
-						8,
-					),
-				),
-				metal,
-			);
-			mesh.position.copy(start.add(end).multiplyScalar(0.5));
-			mesh.quaternion.setFromUnitVectors(HEAD_AXIS, direction.normalize());
-			if (name) mesh.name = name;
-			cockpit.add(mesh);
-		};
-		// These are kilometres at about a hundred times life size, which is how
-		// the cabin cleared the near layer's 10 m near plane while it was drawn
-		// there. Since #651 it has its own scene and camera and the scale stays —
-		// `cabin-pass.ts` says why.
-		// A real windscreen frame: the former rails did not meet a sill or header,
-		// so they read as objects floating in space. The glass stays subtle, while
-		// the connected trapezoid gives the player a stable cockpit boundary.
-		// The pane has thickness now (#204), and its outline, rails, sill and
-		// header are one set of figures in `cockpit-canopy.ts` rather than four
-		// sets of literals that happened to agree.
-		const canopyPane = new THREE.Mesh(canopyPaneGeometry(), canopyGlass);
-		canopyPane.name = "canopy-glass";
-		cockpit.add(canopyPane);
-		for (const rail of CANOPY_SIDE_RAILS)
-			addStrut(
-				rail.from,
-				rail.to,
-				CANOPY_RAIL_RADIUS_KM,
-				`canopy-side-rail-${rail.side}`,
-			);
-		// Three lamps on each, and nowhere else. The first pass ran continuous
-		// lit bars under the header, under the sill and along each console; none
-		// of that is in the reference, where the canopy frame carries a few small
-		// lamps and everything else that glows is an instrument.
-		for (const rail of CANOPY_SIDE_RAILS) {
-			for (const lamp of railLamps(rail.from, rail.to)) cockpit.add(lamp);
-			// And the light each one leaves on the rail below it (#204).
-			for (const pool of railLampPools(
-				rail.from,
-				rail.to,
-				CANOPY_RAIL_RADIUS_KM,
-			))
-				cockpit.add(pool);
-		}
-		addBox(
-			CANOPY_FRAME.header.size,
-			CANOPY_FRAME.header.position,
-			[0, 0, 0],
-			trim,
-		).name = "canopy-header";
-		addBox(
-			CANOPY_FRAME.sill.size,
-			CANOPY_FRAME.sill.position,
-			[0, 0, 0],
-			trim,
-		).name = "canopy-sill";
-		// Header braces close the upper corners into the nearer cockpit frame. The
-		// former side rails only framed the pane itself, leaving the windscreen
-		// visually detached from the overhead cockpit boundary.
-		addStrut(
-			[-0.05, 0.018, -0.065],
-			[-0.042, 0.028, -0.032],
-			0.0011,
-			"canopy-header-brace-port",
+		const scannerMount = mountOn(
+			"radar",
+			SCANNER_FACE_KM[0],
+			SCANNER_FACE_KM[1],
+			"scanner-mount",
 		);
-		addStrut(
-			[0.05, 0.018, -0.065],
-			[0.042, 0.028, -0.032],
-			0.0011,
-			"canopy-header-brace-starboard",
+		const flightMount = mountOn(
+			"flight",
+			INSTRUMENT_FACE_KM[0],
+			INSTRUMENT_FACE_KM[1],
+			"flight-mount",
 		);
-		// The canopy runs into light A-pillars, not opaque corner blocks. The
-		// cockpit boundary should give scale and framing while preserving a broad
-		// flight view.
-		for (const side of [-1, 1]) {
-			addStrut(
-				[side * 0.043, -0.013, -0.065],
-				[side * 0.032, -0.015, -0.034],
-				0.0009,
-			);
-		}
-		// Layered side consoles, structural seams, and a raised centre deck give
-		// the cabin a constructed spacecraft language without closing the pilot's
-		// forward sightline.
-		addBox(
-			[0.01, 0.0022, 0.022],
-			[-0.038, -0.019, -0.047],
-			[0.24, 0, 0.06],
-			face,
-		).name = "console-top-port";
-		addBox(
-			[0.01, 0.0022, 0.022],
-			[0.038, -0.019, -0.047],
-			[0.24, 0, -0.06],
-			face,
-		).name = "console-top-starboard";
-		addBox(
-			[0.006, 0.0008, 0.014],
-			[-0.038, -0.0179, -0.047],
-			[0.24, 0, 0.06],
-			inset,
+		const targetMount = mountOn(
+			"target",
+			INSTRUMENT_FACE_KM[0],
+			INSTRUMENT_FACE_KM[1],
+			"target-mount",
 		);
-		addBox(
-			[0.006, 0.0008, 0.014],
-			[0.038, -0.0179, -0.047],
-			[0.24, 0, -0.06],
-			inset,
-		);
-		for (const side of [-1, 1]) {
-			const x = side * 0.038;
-			const roll = side * -0.06;
-			for (const z of [-0.05, -0.045])
-				addBox(
-					[0.005, 0.00035, 0.0006],
-					[x, -0.0171, z],
-					[0.24, 0, roll],
-					trim,
-				);
-		}
-		for (const side of [-1, 1]) {
-			addBox(
-				[0.001, 0.0028, 0.019],
-				[side * 0.038, -0.0184, -0.047],
-				[0.24, 0, side * -0.06],
-				trim,
-			);
-			addBox(
-				[0.003, 0.0032, 0.019],
-				[side * 0.012, -0.015, -0.052],
-				[0.24, 0, 0],
-				trim,
-			);
-		}
-		const dashboardPitch = 0.58;
-		const scannerMount = new THREE.Group();
-		scannerMount.name = "scanner-mount";
-		scannerMount.position.set(0, -0.014, -0.038);
-		scannerMount.rotation.x = dashboardPitch;
-		cockpit.add(scannerMount);
-		this.buildScannerAssembly(scannerMount, metal, trim, inset);
-
+		this.buildScannerAssembly(scannerMount, flightMount, targetMount, inset);
 		this.buildHologramSystem(scannerMount);
 		this.cockpit.mesh = cockpit;
-		// #201, and the cabin is the frame the node was opened over: both cockpit
-		// views rendered the same tone with the star ahead and 175° behind, which
-		// `cockpit-surface.ts` records as an open weakness. The lamps and the
-		// canopy glass fall out of the walk by the rule — they are
-		// `MeshBasicMaterial` — so what is left casting is the fittings.
+		// #201: the walk marks every standard material for the occlusion
+		// passes; the screens and labels are `MeshBasicMaterial` and fall out.
 		this.markedOcclusion.push(["cockpit", markOcclusion(cockpit)]);
 		// Into its own scene (#651), and `cabin-pass.ts` has why. The tunnel
 		// lines are not the cabin's and stay in the near layer.
 		this.cabinScene.add(cockpit);
 		this.nearScene.add(this.tunnelLines.root);
-	}
-
-	/**
-	 * Give the canopy glass the scenes' environment, or take it away (#204).
-	 *
-	 * The same gate as `scene.environment`: at `low` the scenes carry none, so
-	 * a pane reflecting one would be the only surface in the frame that did.
-	 * Called from `applyQuality` and from `buildCockpit`, because the boot-time
-	 * quality pass runs before the cabin exists.
-	 */
-	private applyCanopyEnvironment() {
-		const glass = this.canopyGlass;
-		if (!glass) return;
-		const mode = LIGHT_RIG.quality[this.settings.value.quality];
-		const next = mode.environment ? this.environmentMap : null;
-		if (glass.envMap === next) return;
-		glass.envMap = next;
-		// Gaining or losing a map changes three's defines, so relink.
-		glass.needsUpdate = true;
 	}
 
 	/** What each occlusion walk marked, kept for `probe-occlusion.mjs` to read
@@ -8852,35 +8664,13 @@ class Game {
 		{ participating: number; excluded: number },
 	][] = [];
 
-	/** Build the fitted scanner plate, instrument canvases, and throttle hardware. */
+	/** Build the scanner face, the two readout faces and the throttle hardware. */
 	private buildScannerAssembly(
 		scannerMount: THREE.Group,
-		metal: THREE.MeshStandardMaterial,
-		trim: THREE.MeshStandardMaterial,
+		flightMount: THREE.Group,
+		targetMount: THREE.Group,
 		inset: THREE.MeshStandardMaterial,
 	) {
-		// **`metal`, not #204's `face`** — `COCKPIT_FINISHES.face` says why.
-		const deck = new THREE.Mesh(cockpitForm(0.032, 0.0016, 0.022), metal);
-		deck.name = "scanner-deck";
-		scannerMount.add(deck);
-		const scannerWell = new THREE.Mesh(
-			cockpitForm(0.029, 0.00025, 0.0155),
-			inset,
-		);
-		scannerWell.name = "scanner-well";
-		scannerWell.position.y = 0.00093;
-		scannerMount.add(scannerWell);
-		for (const [x, z, sx, sz] of [
-			[0, -0.0083, 0.0308, 0.0008],
-			[0, 0.0083, 0.0308, 0.0008],
-			[-0.015, 0, 0.0008, 0.0168],
-			[0.015, 0, 0.0008, 0.0168],
-		] as const) {
-			const bezel = new THREE.Mesh(cockpitForm(sx, 0.00075, sz), trim);
-			bezel.name = "scanner-bezel";
-			bezel.position.set(x, 0.00145, z);
-			scannerMount.add(bezel);
-		}
 		const scannerCanvas = document.createElement("canvas");
 		scannerCanvas.width = 800;
 		scannerCanvas.height = 400;
@@ -8891,7 +8681,7 @@ class Game {
 		this.cockpit.scannerTexture.colorSpace = THREE.SRGBColorSpace;
 		this.paintScannerBackground();
 		const scanner = new THREE.Mesh(
-			new THREE.PlaneGeometry(0.027, 0.0135),
+			new THREE.PlaneGeometry(...SCANNER_FACE_KM),
 			new THREE.MeshBasicMaterial({
 				map: this.cockpit.scannerTexture,
 				polygonOffset: true,
@@ -8903,10 +8693,7 @@ class Game {
 		scanner.position.y = 0.00108;
 		scanner.rotation.x = -Math.PI / 2;
 		scannerMount.add(scanner);
-		const makeInstrument = (name: string, x: number) => {
-			const backing = new THREE.Mesh(cockpitForm(0.014, 0.0014, 0.011), trim);
-			backing.position.set(x, 0.0002, 0);
-			scannerMount.add(backing);
+		const makeInstrument = (name: string, mount: THREE.Group) => {
 			const canvas = document.createElement("canvas");
 			canvas.width = 512;
 			canvas.height = 256;
@@ -8914,7 +8701,7 @@ class Game {
 			const texture = new THREE.CanvasTexture(canvas);
 			texture.colorSpace = THREE.SRGBColorSpace;
 			const face = new THREE.Mesh(
-				new THREE.PlaneGeometry(0.0118, 0.0059),
+				new THREE.PlaneGeometry(...INSTRUMENT_FACE_KM),
 				new THREE.MeshBasicMaterial({
 					map: texture,
 					transparent: true,
@@ -8922,13 +8709,19 @@ class Game {
 				}),
 			);
 			face.name = name;
-			face.position.set(x, 0.001, 0);
+			face.position.y = 0.001;
 			face.rotation.x = -Math.PI / 2;
-			scannerMount.add(face);
+			mount.add(face);
 			return { ctx, texture, primaryText: "", secondaryText: new TextRaster() };
 		};
-		this.cockpit.flightInstrument = makeInstrument("flight-instrument", -0.025);
-		this.cockpit.targetInstrument = makeInstrument("target-instrument", 0.025);
+		this.cockpit.flightInstrument = makeInstrument(
+			"flight-instrument",
+			flightMount,
+		);
+		this.cockpit.targetInstrument = makeInstrument(
+			"target-instrument",
+			targetMount,
+		);
 		const throttleTrack = new THREE.Mesh(
 			cockpitForm(0.0022, 0.0014, 0.014),
 			inset,
@@ -20702,7 +20495,10 @@ if (postcard) {
 		throw new Error(
 			`postcard: entry accepted a refused recipe (${postcard.reason})`,
 		);
-	await (await import("./coriolis-flight")).prepareCoriolisPage();
+	const { prepareCockpitModel } = await import("./cockpit-model");
+	await (await import("./coriolis-flight")).prepareCoriolisPage([
+		prepareCockpitModel,
+	]);
 	const game = new Game(postcard.recipe.seed, null, null, postcard.recipe);
 	game.clockHeld = true;
 	(window as unknown as { __seelite: Game }).__seelite = game;
@@ -20770,8 +20566,11 @@ if (postcard) {
 	// direct boot sets the Commander aside. Without direct the overlay asks
 	// which world is wanted, and the seed only pre-fills New game (§11.6).
 	// Fetch in parallel with the Commander catalog; wait only at world construction.
-	const stationModel = import("./coriolis-flight").then((m) =>
-		m.prepareCoriolisPage(),
+	const stationModel = Promise.all([
+		import("./coriolis-flight"),
+		import("./cockpit-model"),
+	]).then(([m, cockpit]) =>
+		m.prepareCoriolisPage([cockpit.prepareCockpitModel]),
 	);
 	// Keep a fast rejection handled while IndexedDB is still opening.
 	void stationModel.catch(() => {});

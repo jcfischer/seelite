@@ -130,7 +130,6 @@ function measureLiveCockpit() {
 	};
 	const game = window.__seelite;
 	const scanner = game.cabinScene.getObjectByName("scanner");
-	const deck = game.cabinScene.getObjectByName("scanner-deck");
 	const scannerReferenceLine = game.cabinScene.getObjectByName(
 		"scanner-reference-line",
 	);
@@ -139,13 +138,98 @@ function measureLiveCockpit() {
 	const overlayCanvas = document.querySelector("#overlay");
 	const referenceLinePoints =
 		scannerReferenceLine?.geometry?.getAttribute("position");
-	const pitch = deck?.rotation.x ?? 0;
-	const deckNormal = { y: Math.cos(pitch), z: Math.sin(pitch) };
-	const scannerOffset =
-		scanner && deck
-			? (scanner.position.y - deck.position.y) * deckNormal.y +
-				(scanner.position.z - deck.position.z) * deckNormal.z
-			: 0;
+	/**
+	 * How a drawn live face sits on the authored screen it belongs on (#792),
+	 * read off the face's own vertices in the screen's plane. The centre
+	 * offset is close to construction — the face sits at its mount's origin,
+	 * and the mount is placed at the quad's centre — so it guards only a face
+	 * moved inside its mount. `inside` and `fill` are the independent part:
+	 * every face corner within the quad, and the binding side filled, which a
+	 * mis-scaled or mis-oriented face fails.
+	 */
+	const faceFit = (screenName, faceName) => {
+		const quad = game.cabinScene.getObjectByName(`screen-${screenName}`);
+		const face = game.cabinScene.getObjectByName(faceName);
+		if (!quad || !face) return null;
+		const worldCorners = (object) => {
+			object.updateWorldMatrix(true, false);
+			const e = object.matrixWorld.elements;
+			const position = object.geometry.getAttribute("position");
+			const out = [];
+			for (let i = 0; i < position.count; i++) {
+				const [x, y, z] = [
+					position.getX(i),
+					position.getY(i),
+					position.getZ(i),
+				];
+				out.push([
+					e[0] * x + e[4] * y + e[8] * z + e[12],
+					e[1] * x + e[5] * y + e[9] * z + e[13],
+					e[2] * x + e[6] * y + e[10] * z + e[14],
+				]);
+			}
+			return out;
+		};
+		const sub = (a, b) => [a[0] - b[0], a[1] - b[1], a[2] - b[2]];
+		const dot = (a, b) => a[0] * b[0] + a[1] * b[1] + a[2] * b[2];
+		const len = (a) => Math.hypot(...a);
+		const q = worldCorners(quad);
+		const uv = quad.geometry.getAttribute("uv");
+		const at = (u, v) => {
+			for (let i = 0; i < uv.count; i++)
+				if (Math.abs(uv.getX(i) - u) < 1e-3 && Math.abs(uv.getY(i) - v) < 1e-3)
+					return q[i];
+			return null;
+		};
+		const topLeft = at(0, 0);
+		const topRight = at(1, 0);
+		const bottomLeft = at(0, 1);
+		// A re-exported quad with shifted texture coordinates reads as a
+		// missing fit, not as a crash of the whole measurement.
+		if (!topLeft || !topRight || !bottomLeft) return null;
+		const across = sub(topRight, topLeft);
+		const upward = sub(topLeft, bottomLeft);
+		const width = len(across);
+		const height = len(upward);
+		const right = across.map((c) => c / width);
+		const up = upward.map((c) => c / height);
+		const centre = [0, 1, 2].map(
+			(k) => q.reduce((s, c) => s + c[k], 0) / q.length,
+		);
+		const inPlane = (p) => {
+			const d = sub(p, centre);
+			return [dot(d, right), dot(d, up)];
+		};
+		const f = worldCorners(face).map(inPlane);
+		const fx = f.map((c) => c[0]);
+		const fy = f.map((c) => c[1]);
+		const faceCentre = [
+			(Math.max(...fx) + Math.min(...fx)) / 2,
+			(Math.max(...fy) + Math.min(...fy)) / 2,
+		];
+		return {
+			visible: face.visible && face.parent?.visible !== false,
+			offset: Math.hypot(...faceCentre) / Math.hypot(width, height),
+			inside: f.every(
+				// Relative: the vertices are float32, so a face that binds a side
+				// meets its edge to about 1e-7 of the screen, not to 1e-9 km.
+				([x, y]) =>
+					Math.abs(x) <= (width / 2) * (1 + 1e-6) &&
+					Math.abs(y) <= (height / 2) * (1 + 1e-6),
+			),
+			fill: Math.max(
+				(Math.max(...fx) - Math.min(...fx)) / width,
+				(Math.max(...fy) - Math.min(...fy)) / height,
+			),
+		};
+	};
+	const fitted = (fit) =>
+		fit
+			? {
+					...fit,
+					ok: fit.visible && fit.offset < 1e-3 && fit.inside && fit.fill > 0.99,
+				}
+			: null;
 	const inScannerRange = (contact) =>
 		Math.hypot(
 			contact.pos.x - game.world.ship.pos.x,
@@ -212,10 +296,11 @@ function measureLiveCockpit() {
 		cruisePromptReadout: game.cockpitPrompt.text,
 		scannerMounted:
 			Boolean(scanner?.visible) &&
-			scanner?.parent === deck?.parent &&
+			scanner?.parent?.name === "scanner-mount" &&
 			Math.abs(scanner.position.x) < 1e-6 &&
-			scannerOffset > 0 &&
-			Math.abs(scanner.rotation.x + Math.PI / 2 - pitch) < 1e-6,
+			scanner.position.y > 0 &&
+			Math.abs(scanner.rotation.x + Math.PI / 2) < 1e-6 &&
+			Boolean(fitted(faceFit("radar", "scanner"))?.ok),
 		physicalInstruments: [
 			"flight-instrument",
 			"throttle-track",
@@ -233,13 +318,14 @@ function measureLiveCockpit() {
 			game.cabinScene.getObjectByName("throttle-fill")?.scale.z ?? 0,
 		throttleFillZ:
 			game.cabinScene.getObjectByName("throttle-fill")?.position.z ?? 0,
-		canopyHeaderBraces: [
-			"canopy-header-brace-port",
-			"canopy-header-brace-starboard",
-		].filter((name) => Boolean(game.cabinScene.getObjectByName(name))).length,
-		scannerWell: Boolean(game.cabinScene.getObjectByName("scanner-well")),
-		scannerBezels: game.cabinScene.getObjectsByProperty("name", "scanner-bezel")
-			.length,
+		authoredCockpit: Boolean(
+			game.cabinScene.getObjectByName("authored-cockpit"),
+		),
+		faceFits: [
+			fitted(faceFit("radar", "scanner")),
+			fitted(faceFit("flight", "flight-instrument")),
+			fitted(faceFit("target", "target-instrument")),
+		],
 		hologramRings:
 			game.cabinScene.getObjectByName("scanner-hologram")?.children.length ?? 0,
 		hologramContacts:
@@ -359,7 +445,7 @@ for (const viewport of VIEWPORTS) {
 		`renderer is sole visible canvas: ${forward.rendererIsOnlyVisibleCanvas}; cockpit mesh: ${forward.cockpitMesh}`,
 	);
 	check(
-		`${viewport.name}: the one scanner is physically mounted to its lower-centre deck and mirrors registered live contacts`,
+		`${viewport.name}: the one scanner is mounted on the authored scope screen and mirrors registered live contacts`,
 		forward.scannerMounted &&
 			forward.contacts === forward.expectedContacts &&
 			forward.contacts > 0 &&
@@ -405,15 +491,14 @@ for (const viewport of VIEWPORTS) {
 		JSON.stringify(forward.scannerReferenceLine),
 	);
 	check(
-		`${viewport.name}: canopy braces, inset scanner well, and full-height throttle read as fitted hardware`,
-		forward.canopyHeaderBraces === 2 &&
-			forward.scannerWell &&
-			forward.scannerBezels === 4 &&
+		`${viewport.name}: the scope, flight and navigation screens carry their live faces, and the throttle reads as fitted hardware`,
+		forward.authoredCockpit &&
+			forward.faceFits.every((fit) => fit?.ok) &&
 			throttleClosed.throttleFill >= 0.08 &&
 			throttleClosed.throttleFill < 0.1 &&
 			throttleClosed.throttleFillZ > throttleOpen.throttleFillZ &&
 			throttleOpen.throttleFill > 0.99,
-		`${forward.canopyHeaderBraces} braces; well: ${forward.scannerWell}; bezels: ${forward.scannerBezels}; throttle z ${throttleClosed.throttleFillZ} → ${throttleOpen.throttleFillZ}`,
+		`authored cabin: ${forward.authoredCockpit}; faces ${forward.faceFits.map((f) => (f ? `off ${f.offset.toExponential(1)} of a diagonal, inside ${f.inside}, fill ${f.fill.toFixed(3)}, visible ${f.visible}` : "missing")).join("; ")}; throttle z ${throttleClosed.throttleFillZ} → ${throttleOpen.throttleFillZ}`,
 	);
 
 	await placeShipAtLocalOffset(page, { x: 0, y: 0, z: 2_500 });

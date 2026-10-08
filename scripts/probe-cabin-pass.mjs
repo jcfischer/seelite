@@ -91,11 +91,12 @@ await stopLoop(page);
 const r = await page.evaluate(
 	([erode, moved]) => {
 		const game = window.__seelite;
-		// No three on the page; the canopy glass is a `MeshBasicMaterial`, and
+		// No three on the page; the scanner face is a `MeshBasicMaterial`, and
 		// its class is the one wanted. The cabin lamp's class is a point light.
-		const Basic = game.canopyGlass.constructor;
+		const Basic =
+			game.cockpit.mesh.getObjectByName("scanner").material.constructor;
 		if (Basic.name !== "MeshBasicMaterial")
-			throw new Error(`canopy glass is a ${Basic.name}`);
+			throw new Error(`scanner face is a ${Basic.name}`);
 		const PointLight =
 			game.cockpit.mesh.getObjectByName("cockpit-light").constructor;
 		const canvas = game.renderer.domElement;
@@ -129,8 +130,7 @@ const r = await page.evaluate(
 		const materialOf = (o) =>
 			Array.isArray(o.material) ? o.material[0] : o.material;
 		/** A fitting the world cannot be seen through. */
-		const opaque = (o) =>
-			o.isMesh && o.name !== "canopy-glass" && !materialOf(o)?.transparent;
+		const opaque = (o) => o.isMesh && !materialOf(o)?.transparent;
 
 		/** Bloom, dither and the occlusion passes off, restorable. */
 		const quiet = () => {

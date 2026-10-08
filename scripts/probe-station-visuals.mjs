@@ -488,6 +488,10 @@ for (const viewport of VIEWPORTS) {
 	await bootedGame(page);
 	await page.evaluate(() => {
 		const game = window.__seelite;
+		// The stations are the subject, not the cabin: #792's dashboard rises
+		// into the lower part of the frame and covered fixtures low on a form.
+		// `cabinHidden` is how the placement tools clear it.
+		game.cabinHidden = true;
 		game.clearTrafficPresentation();
 		game.trafficSystemIndex = game.world.system.record.index;
 		game.trafficActors = [];
@@ -755,6 +759,10 @@ for (const viewport of VIEWPORTS) {
 	await bootedGame(page);
 	await page.evaluate(() => {
 		const game = window.__seelite;
+		// The stations are the subject, not the cabin: #792's dashboard rises
+		// into the lower part of the frame and covered fixtures low on a form.
+		// `cabinHidden` is how the placement tools clear it.
+		game.cabinHidden = true;
 		game.clearTrafficPresentation();
 		game.trafficSystemIndex = game.world.system.record.index;
 		game.trafficActors = [];

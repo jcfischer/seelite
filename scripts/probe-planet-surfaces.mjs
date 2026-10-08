@@ -2404,6 +2404,11 @@ if (airless) {
 	if (subject) {
 		const result = await halfPage.evaluate(async (id) => {
 			const game = window.__seelite;
+			// The limb is the subject, not the cabin: #792's dashboard rises into
+			// the lower rows this reads, where a row crossing it measured the
+			// dash's edge as a limb step. `cabinHidden` is how the placement
+			// tools clear it (`probe-witchspace`, `probe-cruise-light`).
+			game.cabinHidden = true;
 			game.settings.set("quality", "high");
 			await window.__sunOffset(id, 2.5, 60);
 			const fullSize = [
