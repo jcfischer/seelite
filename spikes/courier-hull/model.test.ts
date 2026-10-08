@@ -111,6 +111,22 @@ test("export is a textured, bounded 3D courier with real depth and two engine ba
 	expect(names).toContain("canopy-glass");
 	expect(names).toContain("engine-port");
 	expect(names).toContain("engine-starboard");
+	expect(names).toContain("pilot-suit");
+	expect(names).toContain("pilot-helmet");
+	expect(names).toContain("pilot-visor");
+	for (const mesh of json.meshes.filter((m: { name: string }) =>
+		m.name.startsWith("pilot-"),
+	)) {
+		for (const p of mesh.primitives) {
+			const a = json.accessors[p.attributes.POSITION];
+			expect(a.min[0]).toBeGreaterThan(-2);
+			expect(a.max[0]).toBeLessThan(2);
+			expect(a.min[1]).toBeGreaterThan(1.9);
+			expect(a.max[1]).toBeLessThan(5.4);
+			expect(a.min[2]).toBeGreaterThan(6.5);
+			expect(a.max[2]).toBeLessThan(23);
+		}
+	}
 	expect(json.images.length).toBeGreaterThan(0);
 	expect(
 		json.materials.some(

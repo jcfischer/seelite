@@ -33,6 +33,11 @@ orange=material('service-ochre',(.55,.29,.10),.37,.58)
 warm=material('amber-lamp',(1,.29,.045),.2,.23,3,False)
 cyan=material('cyan-display',(.025,.55,.66),.15,.32,1.7,False)
 glass=material('canopy-glass',(.027,.085,.105),.16,.13,0,False,.38)
+pilot_suit=material('pilot-suit',(.27,.32,.32),.04,.82,texture=False)
+pilot_helmet=material('pilot-helmet',(.66,.64,.57),.18,.36,texture=False)
+pilot_visor=material('pilot-visor',(.07,.10,.11),.45,.15,texture=False)
+pilot_trim=material('pilot-harness',(.55,.24,.065),.04,.75,texture=False)
+pilot_gloves=material('pilot-gloves-boots',(.045,.055,.06),.02,.84,texture=False)
 
 def poly(points,mat,group=None,uv=None):
  key=group or mat
@@ -67,6 +72,17 @@ def tube(a,b,r,mat,sides=8,group=None):
 def cable(points,r=.12,mat=alloy):
  for a,b in zip(points,points[1:]):tube(a,b,r,mat,10)
 
+def ellipsoid(c,r,mat):
+ c=Vector(c);sides=20;latitudes=12
+ rings=[[c+Vector((r[0]*math.sin(j*math.pi/latitudes)*math.cos(i*math.tau/sides),r[1]*math.cos(j*math.pi/latitudes),r[2]*math.sin(j*math.pi/latitudes)*math.sin(i*math.tau/sides))) for i in range(sides)] for j in range(1,latitudes)]
+ for a,b in zip(rings,rings[1:]):
+  for i in range(sides):
+   k=(i+1)%sides;poly([a[i],a[k],b[k],b[i]],mat)
+ for i in range(sides):
+  k=(i+1)%sides
+  poly([c+Vector((0,r[1],0)),rings[0][k],rings[0][i]],mat)
+  poly([c-Vector((0,r[1],0)),rings[-1][i],rings[-1][k]],mat)
+
 def plate(points,mat,n=(0,1,0),depth=.09,bolts=True):
  pts=[Vector(p) for p in points];n=Vector(n).normalized();c=sum(pts,Vector())/len(pts)
  pts=[c+(p-c)*.982 for p in pts];prism(pts,n,depth,mat)
@@ -94,17 +110,23 @@ def hatch(x,y,z,w=2.2,d=2.8,*,surface,seat_group):
   for dz in [-d*.36,d*.36]:box((x+dx,y+.24,z+dz),(.13,.13,.3),alloy)
  cable([(x-.3,y+.22,z),(x-.3,y+.35,z),(x+.3,y+.35,z),(x+.3,y+.22,z)],.055)
  # Seat the entire fitting, including its lid and latch, on the local skin.
- # Its base is inset; only the thin lid and handle stand proud. Mapping each
+ # Its base is inset; the lid and handle remain visibly raised. Mapping each
  # vertex follows both deck pitch and cross-slope rather than a centre height.
  for key,data in BATCH.items():
   for i in range(starts.get(key,0),len(data[0])):
-   vx,vy,vz=data[0][i];data[0][i]=(vx,surface(vx,vz)-.035+(vy-y)*.3,vz)
+   vx,vy,vz=data[0][i];data[0][i]=(vx,surface(vx,vz)-.02+(vy-y)*.8,vz)
 
-def radiator(x,y,z,w,d):
+def radiator(x,y,z,w,d,surface=None):
+ starts={key:len(data[0]) for key,data in BATCH.items()}
  box((x,y,z),(w,.23,d),steel);box((x,y+.14,z),(w-.22,.07,d-.22),black)
  for i in range(int(d/.23)):
   zz=z-d/2+.18+i*.23;box((x,y+.23,zz),(w-.34,.1,.065),alloy)
  for xx in [x-w/2+.06,x+w/2-.06]:box((xx,y+.24,z),(.09,.14,d),steel)
+ if surface:
+  # Keep the grille's depth while seating its underside into the local skin.
+  for key,data in BATCH.items():
+   for i in range(starts.get(key,0),len(data[0])):
+    vx,vy,vz=data[0][i];data[0][i]=(vx,surface(vx,vz)+.095+vy-y,vz)
 
 def lamp(x,y,z,orient='front'):
  if orient=='top':
@@ -191,7 +213,7 @@ for side in [-1,1]:
     return y+(1-y)*f+.09
   raise ValueError('Hatch outside shoulder')
  for z,x in [(-17,12.0),(-7,10.5)]:hatch(side*x,2.13,z,2.0,2.8,surface=shoulder_skin,seat_group='shoulder-hatch-seats')
- radiator(side*12.8,1.52,-21,2.2,2.1)
+ radiator(side*12.8,1.52,-21,2.2,2.1,surface=shoulder_skin)
 
 # Flush dorsal access covers follow both the deck pitch and transverse crown.
 # No raised box housings or mounting pedestals: their skins overlap the existing
@@ -238,6 +260,31 @@ poly([cr[0][3],cr[0][2],cr[0][1],cr[0][0]],blue[1])
 poly(cr[-1],glass,'canopy-glass')
 box((0,1.95,14.5),(3.5,.2,15.0),black)
 box((0,2.45,10),(1.25,.75,1.5),steel);box((0,3.25,9.6),(1.3,1.4,.4),steel)
+# Seated courier pilot, facing +Z, with hands on paired control grips.
+ellipsoid((0,3.0,10.2),(.35,.22,.26),pilot_suit)
+ellipsoid((0,3.52,10.1),(.39,.55,.235),pilot_suit)
+tube((0,3.96,10.13),(0,4.12,10.14),.14,pilot_gloves,16)
+ellipsoid((0,4.3,10.16),(.29,.34,.28),pilot_helmet)
+visor=[]
+for j in range(7):
+ latitude=-.38+j*.74/6
+ visor.append([Vector((.295*math.sin(-1.12+i*2.24/16)*math.cos(latitude),4.3+.346*math.sin(latitude),10.16+.286*math.cos(-1.12+i*2.24/16)*math.cos(latitude))) for i in range(17)])
+for a,b in zip(visor,visor[1:]):
+ for i in range(16):poly([a[i],a[i+1],b[i+1],b[i]],pilot_visor)
+for side in [-1,1]:
+ hip=(side*.22,3.0,10.22);knee=(side*.24,2.73,11.10);ankle=(side*.24,2.16,11.28)
+ tube(hip,knee,.16,pilot_suit,16);ellipsoid(knee,(.17,.17,.18),pilot_suit)
+ tube(knee,ankle,.125,pilot_suit,16);ellipsoid((side*.24,2.09,11.39),(.17,.13,.32),pilot_gloves)
+ shoulder=(side*.37,3.8,10.13);elbow=(side*.56,3.36,10.70);hand=(side*.47,3.13,11.32)
+ ellipsoid(shoulder,(.17,.2,.19),pilot_suit);tube(shoulder,elbow,.13,pilot_suit,16)
+ ellipsoid(elbow,(.135,.145,.14),pilot_suit);tube(elbow,hand,.105,pilot_suit,16)
+ ellipsoid(hand,(.11,.105,.15),pilot_gloves)
+ box((side*.19,3.52,10.335),(.075,.64,.045),pilot_trim)
+ box((side*.47,2.99,11.43),(.32,.15,.50),steel)
+ tube((side*.47,3.04,11.40),(side*.47,3.18,11.30),.045,pilot_gloves,12)
+box((0,3.15,10.40),(.50,.08,.045),pilot_trim)
+box((0,3.15,10.435),(.12,.10,.025),alloy)
+box((-.12,3.72,10.355),(.10,.13,.035),pilot_helmet)
 box((0,2.58,17.8),(2.8,.34,1.35),steel)
 for x in [-.9,0,.9]:
  box((x,2.77,17.7),(.68,.08,.68),black);box((x,2.815,17.7),(.5,.018,.44),warm if x==0 else cyan)
@@ -260,7 +307,7 @@ for side in [-1,1]:
   plate([(side*wa,ba,za),(side*(wa+.48),ba+.13,za),(side*(wb+.48),bbottom+.13,zb),(side*wb,bbottom,zb)],steel,depth=.10)
   plate([(side*(wa+.48),ba+.13,za),(side*min(ha*.81,wa+1.35),ya+.12,za),(side*min(hb*.81,wb+1.35),yb+.12,zb),(side*(wb+.48),bbottom+.13,zb)],blue[2],depth=.10)
  for z in [8,13,18]:
-  w,y,_=sample(z);radiator(side*w*.58,y+.22,z,1.05,1.5)
+  w,y,_=sample(z);radiator(side*w*.58,y+.22,z,1.05,1.5,surface=body_skin)
  # Layered upper and lower side armour with an inset mechanical service belt.
  for za,zb in [(0,4),(4,8),(8,12),(12,16),(16,20),(20,24),(24,28)]:
   wa,ya,ba=sample(za);wb,yb,bb=sample(zb)
@@ -428,6 +475,8 @@ for name,(verts,faces,uvs) in BATCH.items():
  # Weld each solid's coincident face corners before beveling; isolated face
  # islands cannot form the rounded machined edges the authored solids need.
  bm=bmesh.new();bm.from_mesh(mesh);bmesh.ops.remove_doubles(bm,verts=list(bm.verts),dist=.00001);bmesh.ops.recalc_face_normals(bm,faces=list(bm.faces));bm.to_mesh(mesh);bm.free();mesh.update()
+ if name.startswith('pilot-') and name!='pilot-harness':
+  for face in mesh.polygons:face.use_smooth=True
  ob=bpy.data.objects.new(name,mesh);bpy.context.collection.objects.link(ob);objects.append(ob)
  if GROUP_MAT[name] in blue+ivory:
   bevel=ob.modifiers.new('machined-edge-radius','BEVEL');bevel.width=.075;bevel.segments=2

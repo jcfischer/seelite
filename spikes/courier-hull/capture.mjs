@@ -37,6 +37,9 @@ try {
 		["rear-low", [-60, -24, -93], [0, 0, -7]],
 		["hatch-close", [28, 22, 25], [4, 2, -7]],
 		["hatch-profile", [25, 8, -10], [4, 3, -10]],
+		["cockpit-grilles", [25, 17, 38], [3, 2, 14]],
+		["rear-grilles", [30, 20, -42], [9, 2, -20]],
+		["pilot-close", [2, 7.2, 18], [0, 3.5, 10.7]],
 	]) {
 		await page.evaluate(
 			({ position, target }) => {
