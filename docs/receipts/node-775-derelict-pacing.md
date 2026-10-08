@@ -108,10 +108,13 @@ seed  visits  with a wreck  cued   of all visits  of visits with a wreck
    in the test is the pooled reading, and per-seed cells are held only to ±8
    as a regression guard. If the per-cell reading is the binding one, the
    principal decides between widening the band, pooling seeds, or a coupled
-   galaxy-wide schedule. Only coupling slots across systems reduces that spread,
-   and only for the early cells: by 100 h the gaps have decorrelated the
-   phases again, and it breaks the per-system streams this repo keeps. This
-   criterion stays open for that ruling.
+   galaxy-wide schedule. Only coupling slots across systems reduces that
+   spread. I expect it to help the early cells most, and less as the drawn
+   gaps (±80 h about a 94 h cycle) spread the phases out again over the first
+   cycles; neither the gain nor how fast it fades was measured. A phase keyed
+   on system index is not a shared generator, but it does tie one system's
+   schedule to its neighbours', which is the coupling the per-system streams
+   exist to avoid. This criterion stays open for that ruling.
 3. **Hours adrift, gap set for the share.** Met: 8 h adrift and 8.5% per slot,
    re-derived from the slot mix as described above.
 4. **A saved row loads unchanged.** Met for the row's own content. A touched
