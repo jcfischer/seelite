@@ -27,4 +27,6 @@ See [constraints.md](constraints.md) for the map audit and scoped asset exceptio
 
 Measured on Apple M1 Pro / ANGLE Metal at 1280×1280: approximately 60 FPS (display-vsync limited). No extrapolation to slower GPUs or whole-game performance. Current export has 14 material/text meshes; `.dream-loop/round-*/metrics.json` records actual triangles and pass-inclusive draw counts.
 
-Dream Loop progression: 3.3 → 5.5 → 6.0 / 10 through round 4. The target is a generated rendering, not a screenshot of implemented game content. Visual acceptance and any production rollout remain open.
+Dream Loop progression: 3.3 → 5.5 → 6.0 → 6.25 / 10 through round 5. The target is a generated rendering, not a screenshot of implemented game content. Visual acceptance and any production rollout remain open.
+
+Latest export: 126,180 triangles, 14 meshes, maximum actual vertex reach 0.58037 km. TypeScript and three geometric tests (28 assertions) pass. Four hardware-rendered views, model comparison, camera presets and mouse orbit pass with no browser exceptions. The target threshold of 8/10 has not been met; this is an inspectable visual spike. See `evidence/` for the current screenshot, metrics and independent critique.
