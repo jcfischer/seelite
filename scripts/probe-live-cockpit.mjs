@@ -130,7 +130,6 @@ function measureLiveCockpit() {
 	};
 	const game = window.__seelite;
 	const scanner = game.cabinScene.getObjectByName("scanner");
-	const deck = game.cabinScene.getObjectByName("scanner-deck");
 	const scannerReferenceLine = game.cabinScene.getObjectByName(
 		"scanner-reference-line",
 	);
@@ -139,13 +138,44 @@ function measureLiveCockpit() {
 	const overlayCanvas = document.querySelector("#overlay");
 	const referenceLinePoints =
 		scannerReferenceLine?.geometry?.getAttribute("position");
-	const pitch = deck?.rotation.x ?? 0;
-	const deckNormal = { y: Math.cos(pitch), z: Math.sin(pitch) };
-	const scannerOffset =
-		scanner && deck
-			? (scanner.position.y - deck.position.y) * deckNormal.y +
-				(scanner.position.z - deck.position.z) * deckNormal.z
-			: 0;
+	/**
+	 * How far a live face's mount stands from the centre of the authored
+	 * screen it belongs on (#792), as a fraction of that screen's width.
+	 * `cockpit-model.ts` derives each mount from its `screen-*` quad, so a
+	 * mount that drifted off its screen — or a quad renamed out from under it —
+	 * reads here rather than as a face floating over the dash.
+	 */
+	const offScreen = (screenName, mountName) => {
+		const quad = game.cabinScene.getObjectByName(`screen-${screenName}`);
+		const mount = game.cabinScene.getObjectByName(mountName);
+		if (!quad || !mount) return Number.POSITIVE_INFINITY;
+		quad.updateWorldMatrix(true, false);
+		mount.updateWorldMatrix(true, false);
+		const e = quad.matrixWorld.elements;
+		const position = quad.geometry.getAttribute("position");
+		const corners = [];
+		for (let i = 0; i < position.count; i++) {
+			const [x, y, z] = [position.getX(i), position.getY(i), position.getZ(i)];
+			corners.push([
+				e[0] * x + e[4] * y + e[8] * z + e[12],
+				e[1] * x + e[5] * y + e[9] * z + e[13],
+				e[2] * x + e[6] * y + e[10] * z + e[14],
+			]);
+		}
+		const centre = [0, 1, 2].map(
+			(k) => corners.reduce((sum, c) => sum + c[k], 0) / corners.length,
+		);
+		const width = Math.max(
+			...corners.flatMap((a) =>
+				corners.map((b) => Math.hypot(a[0] - b[0], a[1] - b[1], a[2] - b[2])),
+			),
+		);
+		const m = mount.matrixWorld.elements;
+		return (
+			Math.hypot(m[12] - centre[0], m[13] - centre[1], m[14] - centre[2]) /
+			width
+		);
+	};
 	const inScannerRange = (contact) =>
 		Math.hypot(
 			contact.pos.x - game.world.ship.pos.x,
@@ -212,10 +242,11 @@ function measureLiveCockpit() {
 		cruisePromptReadout: game.cockpitPrompt.text,
 		scannerMounted:
 			Boolean(scanner?.visible) &&
-			scanner?.parent === deck?.parent &&
+			scanner?.parent?.name === "scanner-mount" &&
 			Math.abs(scanner.position.x) < 1e-6 &&
-			scannerOffset > 0 &&
-			Math.abs(scanner.rotation.x + Math.PI / 2 - pitch) < 1e-6,
+			scanner.position.y > 0 &&
+			Math.abs(scanner.rotation.x + Math.PI / 2) < 1e-6 &&
+			offScreen("radar", "scanner-mount") < 1e-3,
 		physicalInstruments: [
 			"flight-instrument",
 			"throttle-track",
@@ -233,13 +264,14 @@ function measureLiveCockpit() {
 			game.cabinScene.getObjectByName("throttle-fill")?.scale.z ?? 0,
 		throttleFillZ:
 			game.cabinScene.getObjectByName("throttle-fill")?.position.z ?? 0,
-		canopyHeaderBraces: [
-			"canopy-header-brace-port",
-			"canopy-header-brace-starboard",
-		].filter((name) => Boolean(game.cabinScene.getObjectByName(name))).length,
-		scannerWell: Boolean(game.cabinScene.getObjectByName("scanner-well")),
-		scannerBezels: game.cabinScene.getObjectsByProperty("name", "scanner-bezel")
-			.length,
+		authoredCockpit: Boolean(
+			game.cabinScene.getObjectByName("authored-cockpit"),
+		),
+		facesOffScreen: [
+			offScreen("radar", "scanner-mount"),
+			offScreen("flight", "flight-mount"),
+			offScreen("target", "target-mount"),
+		],
 		hologramRings:
 			game.cabinScene.getObjectByName("scanner-hologram")?.children.length ?? 0,
 		hologramContacts:
@@ -359,7 +391,7 @@ for (const viewport of VIEWPORTS) {
 		`renderer is sole visible canvas: ${forward.rendererIsOnlyVisibleCanvas}; cockpit mesh: ${forward.cockpitMesh}`,
 	);
 	check(
-		`${viewport.name}: the one scanner is physically mounted to its lower-centre deck and mirrors registered live contacts`,
+		`${viewport.name}: the one scanner is mounted on the authored scope screen and mirrors registered live contacts`,
 		forward.scannerMounted &&
 			forward.contacts === forward.expectedContacts &&
 			forward.contacts > 0 &&
@@ -405,15 +437,14 @@ for (const viewport of VIEWPORTS) {
 		JSON.stringify(forward.scannerReferenceLine),
 	);
 	check(
-		`${viewport.name}: canopy braces, inset scanner well, and full-height throttle read as fitted hardware`,
-		forward.canopyHeaderBraces === 2 &&
-			forward.scannerWell &&
-			forward.scannerBezels === 4 &&
+		`${viewport.name}: the scope, flight and navigation screens carry their live faces, and the throttle reads as fitted hardware`,
+		forward.authoredCockpit &&
+			forward.facesOffScreen.every((off) => off < 1e-3) &&
 			throttleClosed.throttleFill >= 0.08 &&
 			throttleClosed.throttleFill < 0.1 &&
 			throttleClosed.throttleFillZ > throttleOpen.throttleFillZ &&
 			throttleOpen.throttleFill > 0.99,
-		`${forward.canopyHeaderBraces} braces; well: ${forward.scannerWell}; bezels: ${forward.scannerBezels}; throttle z ${throttleClosed.throttleFillZ} → ${throttleOpen.throttleFillZ}`,
+		`authored cabin: ${forward.authoredCockpit}; faces off their screens by ${forward.facesOffScreen.map((off) => off.toExponential(1)).join(", ")} of a width; throttle z ${throttleClosed.throttleFillZ} → ${throttleOpen.throttleFillZ}`,
 	);
 
 	await placeShipAtLocalOffset(page, { x: 0, y: 0, z: 2_500 });
