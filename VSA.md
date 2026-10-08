@@ -63,3 +63,6 @@ C6: branch spike/shipyard-models-800, isolated .worktrees/seelite-800. Only spik
 C7/C8: editable Blender scenes, GLBs, generated albedo, authored tooling rig and provenance present. Final seven-view captures, exact independent reviews, geometry/control metrics and artifact hashes are in spikes/shipyards/evidence.
 
 Principal visual acceptance remains separate from the independent score. Node 800 remains open for the review checkpoint.
+
+## Follow-up: capital ship scale
+Principal replaced the enlarged illustrative Porter with a current capital ship. The viewer now builds Carrier A from the unchanged current game source at 100 view units/km, consistently across all three stations. Browser-measured dimensions are 379.6 m long, 176.4 m wide and 144.915 m high, matching its catalogue envelope within 0.1 m. Round `carrier-scale` passed all three dimension checks, docking geometry, tooling motion/pause and viewer controls; no browser errors. Strict TypeScript passed. The earlier visual scores remain the station-design checkpoint before this explicit vessel substitution.

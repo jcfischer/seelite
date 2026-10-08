@@ -8,4 +8,4 @@ Round 1 reused the Bollard generated paint texture. Independent review found the
 
 This generated material and authored model exception is scoped to the visual study, as recorded in node 800. Production asset adoption remains separate.
 
-`reference-porter.glb` is copied from the contemporaneous approved Porter O2 study in `seelite-797/spikes/porter-hull/porter-hull.glb` (node 797). It is used only as an illustrative serviced vessel in the viewer, at different presentation scales in the three yards; its authoring source remains in that study. It is not merged into the shipyard geometry and is not a change to the in-game Porter.
+The initial illustrative Porter reference has been removed following the principal's scale correction. The viewer now builds the current Carrier A directly from `src/ship-mesh.ts` and reads its envelope from `src/hull.ts`. Game mesh coordinates are kilometres; multiplying by 100 gives the same 0.1 view-units/metre scale as the station models. There is no yard-specific size adjustment. Current source matches the primary checkout at this correction.

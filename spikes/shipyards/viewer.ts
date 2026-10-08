@@ -1,5 +1,7 @@
 /** Isolated metre-scale authored hull viewer. Does not construct a Game. */
 import * as THREE from "three";
+import { buildShipMesh } from "../../src/ship-mesh";
+import { HULL_SPECS } from "../../src/hull";
 import { OrbitControls } from "three/addons/controls/OrbitControls.js";
 import { GLTFLoader } from "three/addons/loaders/GLTFLoader.js";
 import { RoomEnvironment } from "three/addons/environments/RoomEnvironment.js";
@@ -240,7 +242,7 @@ const stats = {
 	view: selectedView,
 };
 const cache = new Map<string, THREE.Group>();
-const vesselPromise = new GLTFLoader().loadAsync("./reference-porter.glb");
+const referenceCarrier = buildShipMesh("carrier", "a").root;
 let generation = 0;
 async function selectModel(id: string) {
 	if (!names[id]) return;
@@ -285,12 +287,16 @@ async function selectModel(id: string) {
 	ship.clear();
 	ship.add(object);
 	modelId = id;
-	const vessel = (await vesselPromise).scene.clone(true);
+	const vessel = referenceCarrier.clone(true);
 	if (token !== generation) return;
 	vessel.name = "work-vessel";
-	vessel.scale.setScalar(id === "o1" ? 0.53 : id === "o2" ? 0.34 : 0.32);
+	// Game hulls are kilometres; station GLBs are metres at 0.1 display scale.
+	// 100 view units/km keeps the same physical size in every yard.
+	vessel.scale.setScalar(100);
+	vessel.rotation.y = Math.PI;
+	vessel.userData.referenceEnvelopeKm = HULL_SPECS.carrier.env;
 	vessel.position.fromArray(
-		id === "o1" ? [0, 5, -8] : id === "o2" ? [-23.5, 3, 21] : [25, 1, 66],
+		id === "o1" ? [0, 6, -8] : id === "o2" ? [-23.5, 2, 12] : [24, 7, 66],
 	);
 	vessel.traverse((o) => {
 		if (o instanceof THREE.Mesh) {

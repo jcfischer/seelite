@@ -87,6 +87,30 @@ try {
 			.evaluate(async () => {
 				const THREE = await import("/node_modules/three/build/three.module.js");
 				const { ship, capsule } = window.__shipyards;
+				const vessel = ship.getObjectByName("work-vessel");
+				if (
+					vessel.userData.hullId !== "carrier" ||
+					vessel.userData.variant !== "a"
+				)
+					throw Error("Expected current Carrier A");
+				const carrierSize = new THREE.Box3()
+					.setFromObject(vessel)
+					.getSize(new THREE.Vector3())
+					.multiplyScalar(10);
+				const envelope = vessel.userData.referenceEnvelopeKm;
+				for (const [actual, expected] of [
+					[carrierSize.x, envelope.beamKm * 1000],
+					[carrierSize.y, envelope.heightKm * 1000],
+					[carrierSize.z, envelope.lengthKm * 1000],
+				]) {
+					if (Math.abs(actual - expected) > 1)
+						throw Error(
+							"Capital ship scale mismatch: " +
+								actual +
+								" expected " +
+								expected,
+						);
+				}
 				const port = ship.getObjectByName("docking-centre");
 				const bearing = ship.getObjectByName("bearing-centre");
 				ship.updateMatrixWorld(true);
@@ -208,6 +232,7 @@ try {
 					maxDrift,
 					clearanceViolations,
 					minThroatDepth: Math.min(...throatDepths),
+					carrierMetres: carrierSize.toArray(),
 					sweepRadius,
 					zMin,
 					zMax,
