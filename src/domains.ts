@@ -163,6 +163,8 @@ export const DOMAIN = {
 	DERELICT_POSE: 34,
 	/** Losing station of each derelict instance (node #734). */
 	DERELICT_HOME: 35,
+	/** Per-death, per-item survival; independent of salvage schedules. */
+	DEATH_WRECK: 36,
 } as const;
 
 export type DomainName = keyof typeof DOMAIN;

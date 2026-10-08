@@ -73,7 +73,7 @@ may switch to it.
 _Avoid_: using this term for the persistence identity.
 
 **CarrierKey**:
-The canonical persisted identity of a carrier slot; a galaxy envelope may store its system-local pair and supplies the galaxy component. `docs/specs/persistent-world-state.md` §2 and §7 own the structure.
+The canonical persisted identity of a carrier slot; a galaxy envelope may store its system-local pair and supplies the galaxy component. The reserved `systemIndex:commander-wreck` identity also uses this key shape for the commander's one death **Wreck**, outside the generated **Carrier slot** roster. `docs/specs/persistent-world-state.md` §2 and §7 own the structure. <!-- glossary-ignore: slot -->
 
 **Carrier instance**:
 The original or a numbered replacement occupying a carrier slot.
@@ -115,7 +115,9 @@ _Avoid_: Wreck point
 **Wreck**:
 In `salvage.md`'s sense, a persistent hull with tethered containers that a
 pilot strips by scooping. It comes from a **Derelict slot** or from a
-commander's death or eject, one per commander. Not the just-destroyed raider or
+commander's death or eject, one per commander. The latter uses the reserved
+**CarrierKey** `systemIndex:commander-wreck`, not a generated **Carrier slot**. <!-- glossary-ignore: slot -->
+Not the just-destroyed raider or
 relay that `src/raider-wreck.ts` and **Relay tender** call a wreck: those are a
 carrier's `destroyed` condition, and their cargo is **Cargo canister**s.
 _Avoid_: Derelict canister
@@ -236,8 +238,9 @@ purchase basis, and the pending ladder credit. `src/holdings.ts` owns what a
 pilot's act does to them and to the world it writes — a Request settlement, a
 market trade (hull sale included) and a canister scoop since #626, and a
 carrier transition, a jump arrival and a dock since #627, and what a death
-takes, by cause, since node #704 (`commanderAfterDeath`) — so the rule that the
-purchase basis follows the cargo has one copy, and so does a settlement's mark
+takes, by cause, since node #704 (`commanderAfterDeath`), paired with the
+dying inventory's wreck in the world by node #705 (`holdingsAfterDeath`) — so the
+rule that the purchase basis follows the cargo has one copy, and so does a settlement's mark
 with the flown hull's **Hold** (the till's own mark is
 `transactAtStation`'s). A player's kill pays its Bounty and its combat ladder
 credit in that one carrier event, and the carrier event is the one write

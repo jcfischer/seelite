@@ -3,7 +3,7 @@ import { scoops } from "./raider-wreck";
 import {
 	type CommanderState,
 	commanderHold,
-	scoopCargo,
+	recoverWreckCargo,
 } from "./station-commerce";
 import { type DerelictRow, PLAYER_SALVAGE } from "./world-state";
 import type { Vec3 } from "./vec3";
@@ -35,27 +35,25 @@ export function scoopWreckContainer(
 		return unchanged(
 			`Hold full: ${freeT} t free; ${item.left} t ${item.id} must be recovered whole.`,
 		);
-	const took = Math.max(
-		0,
-		entrusted || item.kind === "fitting"
-			? item.left
-			: Math.min(item.left, Math.floor(freeT)),
-	);
+	const recovery = entrusted
+		? { tonnes: item.left, commander }
+		: item.kind === "good"
+			? recoverWreckCargo(commander, item.id, item.left, entrustedT)
+			: {
+					tonnes: item.left,
+					commander: {
+						...commander,
+						recoveredFittings: [
+							...(commander.recoveredFittings ?? []),
+							{ id: item.id, tonnes: item.left },
+						],
+					},
+				};
+	const took = recovery.tonnes;
 	if (took <= 0)
 		return unchanged(
 			"Hold full: " + freeT + " t free; " + item.id + " left in space.",
 		);
-	const next = entrusted
-		? commander
-		: item.kind === "good"
-			? scoopCargo(commander, item.id, took, entrustedT).commander
-			: {
-					...commander,
-					recoveredFittings: [
-						...(commander.recoveredFittings ?? []),
-						{ id: item.id, tonnes: took },
-					],
-				};
 	const containers = row.containers.map((c, i) =>
 		i === index ? { ...c, left: c.left - took } : { ...c },
 	);
@@ -67,7 +65,7 @@ export function scoopWreckContainer(
 				? { salvaged: { at, cause: PLAYER_SALVAGE } }
 				: {}),
 		},
-		commander: next,
+		commander: recovery.commander,
 		tonnes: took,
 		freeT,
 		refusal: null,

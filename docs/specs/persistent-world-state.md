@@ -14,7 +14,7 @@ Untouched systems have no carrier or knowledge rows. An absent objective row mea
 
 ## 2. Identity and namespace
 
-A generated carrier has a structured identity:
+A carrier has a structured identity:
 
 `CarrierKey = (galaxyIndex, systemIndex, localCarrierId)`
 
@@ -29,7 +29,17 @@ links whose layouts this version-8 build cannot reproduce. Save migration does
 not make those links compatible.
 - Display names, positions, array order, and raw seeds are not identities.
 
-The key names a **carrier slot**, not one lifetime of an object. The original carrier has `instanceOrdinal = 0`; each completed replacement increments that ordinal. A replacement can later be disabled, destroyed, or repaired without losing the fact that it is a replacement.
+The reserved `localCarrierId` **`commander-wreck`** (node #705) extends this
+namespace outside the generated carrier-slot roster. Its envelope-relative key <!-- glossary-ignore: slot -->
+is `systemIndex:commander-wreck`, with the containing galaxy supplying
+`galaxyIndex`. It identifies the commander's one own-loss wreck in that save,
+not a seeded slot, objective delta or destroyed traffic row. Knowledge and <!-- glossary-ignore: slot -->
+system sweeps use the same key. A new death can replace it in another system or
+galaxy; §7 owns the one-row storage bound and `salvage.md` owns its contents
+and placement. Reserving this id changes no generated carrier and needs no
+generator-version bump.
+
+For generated carriers, the key names a **carrier slot**, not one lifetime of an object. The original carrier has `instanceOrdinal = 0`; each completed replacement increments that ordinal. A replacement can later be disabled, destroyed, or repaired without losing the fact that it is a replacement. <!-- glossary-ignore: slot -->
 
 A recovery process gets a deterministic identity from its carrier key, causal-episode ordinal, and process kind. Recovery actors are derived from that descriptor rather than added to an unbounded persistent actor registry.
 
@@ -218,7 +228,33 @@ finding it, posting a Salvage offer naming a container: it calls
 
 The domains share the galaxy namespace and authoritative game clock but not a generic lowest-common-denominator event schema. Capabilities and UI projections may read multiple domains; they do not save duplicate capability projections.
 
-The eventual save system must snapshot `worldSchemaVersion`, `worldGeneratorVersion`, world seed, `gameTime`, current location/player state, and all eight galaxy envelopes atomically. Slots, autosave cadence and permadeath were decided by node #89 and implemented by #90; see §10. **Rollback was decided and is not yet reached**: #89's correction makes a non-permadeath death restore the last dock, `SaveStore.restoreAfterDeath` implements it, and nothing calls it because the game has no death path — #90 wired the flag and the record, not the death. Stated here rather than left to read as shipped, which is the class of false assertion §10 was corrected for. Any later policy may retain, rewind, or delete a whole snapshot, but may not selectively reset carrier consequences while retaining the rest of that timeline.
+The eventual save system must snapshot `worldSchemaVersion`, `worldGeneratorVersion`, world seed, `gameTime`, current location/player state, and all eight galaxy envelopes atomically. Slots, autosave cadence and permadeath were decided by node #89 and implemented by #90; see §10. **Rollback is reached.** #89's correction makes a non-permadeath death restore the last dock: `main.ts` calls `SaveStore.revertToLastDocked` at a death, #702 gave a never-docked pilot a checkpoint to restore, and `restoreAfterDeath` still only reads. That write is also where a death leaves its wreck (below). Any later policy may retain, rewind, or delete a whole snapshot, but may not selectively reset carrier consequences while retaining the rest of that timeline.
+
+**The death wreck (node #705) is an eighth typed domain.** Its optional
+`deathWreck` row uses the salvage container shape plus a non-derivable
+placement: the lost hull's drawing id, frame id and offset. Its envelope-relative
+key is `systemIndex:commander-wreck`; the enclosing galaxy supplies the other
+coordinate and the save supplies the commander identity, so a save-slot rename or <!-- glossary-ignore: slot -->
+import cannot orphan it. No generated carrier, objective delta or destroyed
+traffic row is repurposed.
+
+The hard bound is **one death row and its one own-loss knowledge row across all
+eight galaxies**, rather than one per death or per visited system. A new death
+removes the earlier pair; stripping removes it too. Containers are capped at
+512 at creation and on load. `tests/death-wreck.test.ts` checks every purchasable
+hull with the Large Cargo Bay capability: one carried fitting per hold tonne,
+all native kg/g commodity lots and the full equipment catalogue. Tonne cargo
+lots share that hold capacity with carried fittings. Each container holds a
+fixed initial amount and a remaining amount; no visits reroll it. The known
+`own loss` timestamp is the death time. No timer expires the row.
+
+Save schema 12 admits the optional domain; older versions load empty and
+refuse a grafted row. Empty means omitted, retaining older world integrity
+bytes at world schema 3. Parser checks include the one-row bound, key and frame
+membership, hull id, non-pod fitting and commodity ids, positive whole initial
+amounts and remaining amounts between zero and that initial amount, loss on
+the world clock and the matching own-loss knowledge. `salvage.md` owns the
+recovery and placement details.
 
 ## 8. Derived effects
 

@@ -19,6 +19,20 @@ const entry = (file, contract, evidence) =>
 export const PROBE_CATALOG = Object.freeze(
 	[
 		entry(
+			"probe-death-wreck.mjs",
+			"Kills and reloads the live pilot, checks an immediate own-loss contact and persistent death-point wreck, measures painted wreck pixels (hull and tethers together), and recovers its cargo and unfitted fitting through the existing proximity scoop into one save.",
+			[
+				"death",
+				"save",
+				"wreck",
+				"salvage",
+				"scoop",
+				"fittings",
+				"own loss",
+				"contact",
+			],
+		),
+		entry(
 			"probe-horizon-views.mjs",
 			"Places both canonical terran horizon shots and reads their limb fraction and surface-centre sun elevation from the actual rendered camera; asserts full station containment near its own orbit, the exact 1.2R camera boundary, and no station in that frame, again after settling.",
 			[

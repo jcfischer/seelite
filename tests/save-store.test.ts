@@ -40,7 +40,8 @@ import {
 } from "../src/save-store";
 import { heldSaveFault } from "../src/save-badge";
 import { LOCAL_CARRIER_ID } from "../src/station";
-import { newWorld, visit } from "../src/world-state";
+import { newWorld, visit, withoutDeathWreck } from "../src/world-state";
+import { deathWreckRow } from "../src/death-wreck";
 
 const SEED = 0x5ee11e;
 const KEY = carrierKey(3, LOCAL_CARRIER_ID.trade);
@@ -710,8 +711,16 @@ describe("#660 D1, D10 — a death restores the launch, and a first death wakes 
 			expect(c?.ladders.banked).toEqual(dying.ladders.banked);
 			expect(c?.ladders.playedS).toBe(600);
 			expect(c?.ladders.basis).toEqual({});
-			// And the world is the one the death happened in (#654).
-			expect(save?.world).toEqual(h.world);
+			// And the world is the one the death happened in (#654), less only
+			// the own-loss wreck that death may leave (#705): whether it does is
+			// the death draw's, which a DOMAIN tag change moves.
+			expect({
+				...save?.world,
+				galaxies: save?.world.galaxies.map(withoutDeathWreck),
+			}).toEqual(h.world);
+			expect(save?.world.galaxies[dying.galaxyIndex].deathWreck).toEqual(
+				deathWreckRow(h.world, dying, "destroyed"),
+			);
 		}
 		// The record that went to disk is one the parser accepts.
 		expect(parseSave(await h.backend.raw("default", "live"))).toEqual(live);

@@ -270,11 +270,32 @@ export function scoopCargo(
 	entrustedT: number,
 ): { accepted: boolean; tonnes: number; commander: CommanderState } {
 	const good = commodity(commodityName);
+	if (good.unit !== "t") return { accepted: false, tonnes: 0, commander };
 	// What fits, in whole tonnes: a canister of a manifest line can hold more
 	// than the hold has room for, and the rest stays in it (civilian-combat H11).
 	const hold = commanderHold(commander, entrustedT);
 	const room = Math.floor(hold.capacityT - hold.usedT);
-	const took = good.unit === "t" ? Math.max(0, Math.min(tonnes, room)) : 0;
+	const took = Math.max(0, Math.min(tonnes, room));
+	if (took <= 0) return { accepted: false, tonnes: 0, commander };
+	return {
+		accepted: true,
+		tonnes: took,
+		commander: withCargo(commander, good, took),
+	};
+}
+
+/** Wreck cargo retains its native quantity. Kg/g goods spend no tonne space;
+ * ordinary canisters still use the tonne-only `scoopCargo` rule. */
+export function recoverWreckCargo(
+	commander: CommanderState,
+	commodityName: string,
+	amount: number,
+	entrustedT: number,
+): { accepted: boolean; tonnes: number; commander: CommanderState } {
+	const good = commodity(commodityName);
+	if (good.unit === "t")
+		return scoopCargo(commander, commodityName, amount, entrustedT);
+	const took = Math.max(0, amount);
 	if (took <= 0) return { accepted: false, tonnes: 0, commander };
 	return {
 		accepted: true,

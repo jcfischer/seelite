@@ -29,6 +29,7 @@ const MAIN = await Bun.file(new URL("../src/main.ts", import.meta.url)).text();
 /** Every writer `world-state.ts` exports that returns a new `WorldState`. */
 const WRITERS = [
 	"advanceTo",
+	"withDeathWreck",
 	"materializeDerelict",
 	"scoopDerelict",
 	"observeDerelict",
@@ -609,7 +610,7 @@ describe("the Game's world writes", () => {
 		// adopts whatever world the module returns, so the module is where a
 		// hand-built world would come from. Each `world:` property and the
 		// world argument of each `unchanged(…)` call is either the world passed
-		// in or a call to one of `world-state.ts`'s writers.
+		// in or a call to a world-state writer.
 		const HOLDINGS = await Bun.file(
 			new URL("../src/holdings.ts", import.meta.url),
 		).text();

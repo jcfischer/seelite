@@ -1,5 +1,6 @@
 /** System-scale sensor provenance (node #482). No knowledge writer, position,
  * contact or target is exposed by this module. */
+import { carrierKey } from "./carrier-key";
 import { derelictSlots } from "./derelict-slots";
 import { type SystemRecord, generateGalaxy } from "./galaxy";
 import { relayActive } from "./pirate-relay";
@@ -9,6 +10,7 @@ import { type SystemContents, generateContents } from "./system";
 import {
 	effectiveCarrier,
 	effectiveDerelict,
+	DEATH_WRECK_ID,
 	type WorldState,
 } from "./world-state";
 
@@ -100,6 +102,17 @@ function sweepSubjects(
 			region: { kind: "system-space" },
 			carriers: [carrier],
 		});
+	subjects.push({
+		kind: "wreck",
+		subject: DEATH_WRECK_ID,
+		region: { kind: "system-space" },
+		carriers: [
+			{
+				localCarrierId: DEATH_WRECK_ID,
+				key: carrierKey(record.index, DEATH_WRECK_ID),
+			},
+		],
+	});
 	const raiders = raiderSlots(record.index, record.government);
 	if (raiders.length) {
 		const outpost = contents.stations.find((s) => s.type === "outpost");
@@ -190,7 +203,7 @@ export function parseSweepReadings(
 			"save: invalid system sweep provenance, region, identity or clock",
 		);
 	};
-	if (!Array.isArray(value) || value.length > 8 * 256 * 5) return fail();
+	if (!Array.isArray(value) || value.length > 8 * 256 * 6) return fail();
 	const seen = new Set<string>();
 	const galaxies = new Map<number, ReturnType<typeof generateGalaxy>>();
 	return value.map((v) => {

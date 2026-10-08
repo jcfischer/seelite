@@ -9,6 +9,9 @@ import { CANISTER_SCOOP_RADIUS_KM } from "./raider-wreck";
 import { type System, bodyVelocity } from "./sim";
 import { PLANET_APPROACH_RADIUS } from "./planet-approach-boundary";
 import { placeBodies } from "./system";
+import { relayPlan, RELAY_LOCAL_CARRIER_ID } from "./relay-slot"; // glossary-ignore: slot
+import { relayPosition, relayVelocity } from "./pirate-relay";
+import type { DeathWreckRow } from "./world-state";
 import { type Vec3, add, scale, v3, rotateAbout, length } from "./vec3";
 
 export const DERELICT_TUMBLE_RAD_S = 0.012;
@@ -22,9 +25,12 @@ const hullRadius = (id: HullId) => {
 	);
 };
 const PILOT_REACH_KM = Math.max(...PURCHASABLE_HULL_IDS.map(hullRadius));
-/** Entire scoop sphere clear for the largest flyable pilot, even with either hull turned. */
+/** The scoop sphere clears the wreck for the largest flyable pilot, even with
+ * either hull turned. Containers share approach space; they are not solids. */
 export function tetherOffset(hull: HullId, index: number): Vec3 {
-	const angle = (index * Math.PI * 2) / 5;
+	const angle =
+		(index * Math.PI * 2) / 5 +
+		Math.floor(index / 5) * Math.PI * (3 - Math.sqrt(5));
 	const reach =
 		hullRadius(hull) + PILOT_REACH_KM + CANISTER_SCOOP_RADIUS_KM + 0.02;
 	return v3(Math.cos(angle) * reach, Math.sin(angle) * reach, 0);
@@ -37,11 +43,35 @@ const poseFrames = new WeakMap<
 		number,
 		{
 			bodies: ReturnType<typeof placeBodies>;
+			byId: Map<string, ReturnType<typeof placeBodies>[number]>;
+			framePoses: Map<string, { pos: Vec3; vel: Vec3 }>;
 			poses: Map<string, DerelictPose>;
 		}
 	>
 >();
-interface DerelictPose {
+const relayPlans = new WeakMap<System, ReturnType<typeof relayPlan>>();
+
+function posesAt(system: System, at: number) {
+	let frames = poseFrames.get(system);
+	if (!frames) {
+		frames = new Map();
+		poseFrames.set(system, frames);
+	}
+	let frame = frames.get(at);
+	if (!frame) {
+		const bodies = placeBodies(system.contents, at);
+		frame = {
+			bodies: bodies.filter((b) => b.kind === "planet" || b.kind === "moon"),
+			byId: new Map(bodies.map((b) => [b.id, b])),
+			framePoses: new Map(),
+			poses: new Map(),
+		};
+		frames.set(at, frame);
+		if (frames.size > 2) frames.delete(frames.keys().next().value!);
+	}
+	return frame;
+}
+export interface DerelictPose {
 	bodyId: string;
 	hull: HullId;
 	offset: Vec3;
@@ -50,28 +80,54 @@ interface DerelictPose {
 	nose: Vec3;
 	up: Vec3;
 }
+/** The translating frame may be a body, the star, or the relay's own orbit. */
+export function wreckFramePose(system: System, bodyId: string, at: number) {
+	const frame = posesAt(system, at);
+	const cached = frame.framePoses.get(bodyId);
+	if (cached) return cached;
+	if (bodyId === RELAY_LOCAL_CARRIER_ID) {
+		if (!relayPlans.has(system))
+			relayPlans.set(system, relayPlan(system.contents, system.record.seed));
+		const plan = relayPlans.get(system);
+		if (!plan) throw Error("death wreck has no relay frame");
+		const pose = {
+			pos: relayPosition(plan, system.contents, at),
+			vel: relayVelocity(plan, system.contents, at),
+		};
+		frame.framePoses.set(bodyId, pose);
+		return pose;
+	}
+	const body = frame.byId.get(bodyId);
+	if (!body) throw Error("death wreck has no body frame");
+	const pose = { pos: body.pos, vel: bodyVelocity(system, bodyId, at) };
+	frame.framePoses.set(bodyId, pose);
+	return pose;
+}
+export function deathWreckPose(
+	system: System,
+	row: DeathWreckRow,
+	at: number,
+): DerelictPose {
+	const frame = wreckFramePose(system, row.bodyId, at);
+	const unit = scale(v3(0.3, 0.8, 0.5), 1 / Math.hypot(0.3, 0.8, 0.5));
+	const phase = (at - row.lostAt) * DERELICT_TUMBLE_RAD_S;
+	return {
+		bodyId: row.bodyId,
+		hull: row.hull,
+		offset: row.offset,
+		pos: add(frame.pos, row.offset),
+		vel: frame.vel,
+		nose: rotateAbout(v3(0, 0, -1), unit, phase),
+		up: rotateAbout(v3(0, 1, 0), unit, phase),
+	};
+}
 export function derelictPose(
 	system: System,
 	key: CarrierKey,
 	ordinal: number,
 	at: number,
 ): DerelictPose {
-	let frames = poseFrames.get(system);
-	if (!frames) {
-		frames = new Map();
-		poseFrames.set(system, frames);
-	}
-	let frame = frames.get(at);
-	if (!frame) {
-		frame = {
-			bodies: placeBodies(system.contents, at).filter(
-				(b) => b.kind === "planet" || b.kind === "moon",
-			),
-			poses: new Map(),
-		};
-		frames.set(at, frame);
-		if (frames.size > 2) frames.delete(frames.keys().next().value!);
-	}
+	const frame = posesAt(system, at);
 	const id = key + ":" + ordinal;
 	const cached = frame.poses.get(id);
 	if (cached) return cached;
