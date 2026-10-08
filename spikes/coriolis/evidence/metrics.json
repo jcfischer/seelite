@@ -2,7 +2,7 @@
   "renderer": "ANGLE (Apple, ANGLE Metal Renderer: Apple M1 Pro, Unspecified Version)",
   "errors": [],
   "reachKm": 0.5803686666788237,
-  "triangles": 126180,
+  "triangles": 140596,
   "meshes": 14,
   "rays": [
     {
@@ -52,8 +52,8 @@
     }
   ],
   "stats": {
-    "fps": 60.016004267804774,
-    "triangles": 504740,
+    "fps": 59.98800239952009,
+    "triangles": 562404,
     "calls": 77,
     "loaded": true,
     "selected": "industrial"

@@ -26,7 +26,7 @@ def material(name, color, metal=0.5, rough=0.55, emission=0):
     if emission:
         p.inputs['Emission Color'].default_value = (*color, 1)
         p.inputs['Emission Strength'].default_value = emission
-    texture = OUT / 'industrial-surface.png'
+    texture = OUT / ('paint-surface-v2.png' if name.startswith('ceramic-steel') else 'industrial-surface.png')
     if texture.exists() and not emission:
         t = m.node_tree.nodes.new('ShaderNodeTexImage')
         t.image = bpy.data.images.load(str(texture), check_existing=True)
@@ -40,7 +40,7 @@ def material(name, color, metal=0.5, rough=0.55, emission=0):
     BATCH[name] = [[], [], []]
     return name
 
-armor = [material('ceramic-steel-'+str(i),(0.42+i*.055,0.43+i*.05,0.40+i*.045),.45,.66) for i in range(4)]
+armor = [material('ceramic-steel-'+str(i),(0.42+i*.055,0.43+i*.05,0.40+i*.045),.35,.44) for i in range(4)]
 steel = material('structural-graphite',(.10,.12,.125),.75,.43)
 black = material('recess-and-radiator',(.023,.032,.035),.65,.52)
 pipe = material('worn-alloy',(.25,.28,.27),.83,.36)
@@ -57,7 +57,7 @@ def add_poly(points, mat, uv=None):
     verts.extend([tuple(p) for p in points])
     faces.append(tuple(range(offset, offset+len(points))))
     if uv is None:
-        # Per-face planar mapping, with a 45m material tile.
+        # Per-face planar mapping at a 145m material repeat.
         n = (Vector(points[1])-Vector(points[0])).cross(Vector(points[2])-Vector(points[0]))
         axis=max(range(3),key=lambda i:abs(n[i]))
         ij=[i for i in range(3) if i!=axis]
@@ -150,14 +150,24 @@ def square_face(n,u,v,front=False):
                 if poly:poly=clip(poly,aa,bb,F-17)
             if len(poly)<3:continue
             m=random.choice(armor)
-            prism([p(x,y,2) for x,y in poly],n,random.choice([3,4,5]),m)
-            for x,y in poly:
-                q=p(x*.98,y*.98,8)
-                box(q,(1.6,1.6,1.4),steel,basis)
+            depth=random.choice([3,4,5])
+            prism([p(x,y,2) for x,y in poly],n,depth,m)
+            # Wear belongs to panel edges and fixings, not the entire paint field.
+            pcx=sum(q[0] for q in poly)/len(poly);pcy=sum(q[1] for q in poly)/len(poly)
+            for i,(x,y) in enumerate(poly):
+                bx=x*.95+pcx*.05;by=y*.95+pcy*.05
+                box(p(bx,by,depth+2.6),(2.4,2.4,1.2),steel,basis)
+                nx,ny=poly[(i+1)%len(poly)]
+                for t in [.10,.34,.71,.89]:
+                    xx=x+(nx-x)*t;yy=y+(ny-y)*t
+                    tt=min(1,t+random.uniform(.02,.09))
+                    ex=x+(nx-x)*tt;ey=y+(ny-y)*tt
+                    midx=(xx+ex)/2;midy=(yy+ey)/2
+                    add_poly([p(xx,yy,depth+2.03),p(ex,ey,depth+2.03),p(midx*.97+pcx*.03,midy*.97+pcy*.03,depth+2.03)],pipe if t<.5 else steel)
             if len(poly)==4 and random.random()<.28:
                 # Inspection hatch rather than another full plate grid.
-                box(p(cx,cy,8),(19,14,2),steel,basis)
-                box(p(cx,cy,9.5),(15,10,1),random.choice(armor),basis)
+                box(p(cx,cy,depth+3),(19,14,2),steel,basis)
+                box(p(cx,cy,depth+4.5),(15,10,1),random.choice(armor),basis)
     # Trunk pipe runs, collars and tie brackets physically on the face.
     segments=[(-330,-88),(88,330)] if front else [(-330,330)]
     for start,end in segments:
@@ -342,20 +352,54 @@ for x in [-76,76]:
  for y in [-43,43]:
   box((x,y,431),(7,9,3),black)
   box((x,y,433),(2,5,1),white)
-# Roof switchgear, restrained aerials; all roots intersect the hull.
-for x,h in [(-98,55),(-35,65),(39,58),(106,41)]:
- box((x,F+4,0),(62,8,62),steel)
- box((x,F+h/2,0),(51,h,52),armor[2])
- box((x,F+h+1,0),(56,4,56),pipe)
- for dx in [-20,0,20]:box((x+dx,F+h/2,27),(2,h-5,3),steel)
- for z in [-26,26]:
-  for dx in [-21,21]:tube((x+dx,F+h+3,z),(x+dx,F+h+12,z),.7,pipe,6)
-  beam((x-23,F+h+12,z),(x+23,F+h+12,z),.7,.7,pipe,(0,1,0))
- for dx in [-12,0,12]:box((x+dx,F+h+4,0),(5,3,25),pipe)
-for x in [-90,90]:
- tube((x,F-9,15),(x,F+52,15),1.0,pipe,8)
- for y in [F+10,F+24,F+37]:tube((x-9,y,15),(x+9,y,15),.5,pipe,6)
- box((x,F+53,15),(2,2,2),red)
+# Roof utility district: several scales of machinery, walking decks and masts.
+box((0,F+3,0),(590,6,145),steel)
+for x,w,h,z,d in [(-235,56,23,2,54),(-156,74,45,-14,70),(-62,83,59,-8,70),(43,94,54,-20,75),(143,62,30,12,58),(228,64,19,-8,67)]:
+ box((x,F+6+h/2,z),(w,h,d),armor[2])
+ box((x,F+7.5+h,z),(w+3,3,d+3),steel)
+ for xx in [-w/2+4,0,w/2-4]:box((x+xx,F+6+h/2,z+d/2+1),(2,h,2),steel)
+ box((x+w*.20,F+17,z+d/2+2),(10,19,3),steel)
+ for dz in [-d*.25,d*.25]:
+  box((x,F+h+12,z+dz),(w*.7,5,9),pipe)
+ for dx in [-w*.3,0,w*.3]:
+  box((x+dx,F+7+h*.68,z+d/2+2),(w*.19,9,3),black)
+  for dy in [-2,1,4]:box((x+dx,F+7+h*.68+dy,z+d/2+4),(w*.16,.7,1),pipe)
+# Supported access gallery along the front roof edge.
+box((0,F+13,61),(580,4,21),pipe)
+for z in [51,71]:
+ tube((-288,F+25,z),(288,F+25,z),.7,pipe)
+ tube((-288,F+20,z),(288,F+20,z),.5,pipe)
+ for x in range(-280,281,20):tube((x,F+15,z),(x,F+25,z),.6,pipe)
+for x in range(-280,281,32):
+ box((x,F+8,61),(4,10,19),steel)
+ for dz in [-5,0,5]:box((x,F+15.3,61+dz),(28,.6,1),black)
+for x in [-181,-16,174]:
+ tube((x-11,F+10,-60),(x+11,F+10,-60),8,pipe,12)
+ tube((x,F+10,-60),(x,F+10,40),2,pipe)
+ for z in [-48,-15,20]:box((x,F+5,z),(8,10,5),steel)
+for x,z,h in [(-203,38,79),(-122,-20,115),(109,34,86),(247,8,57)]:
+ box((x,F+11,z),(13,20,13),steel)
+ tube((x,F+15,z),(x,F+h,z),1,pipe)
+ for yy in [h*.45,h*.70,h*.89]:
+  tube((x-8,F+yy,z),(x+8,F+yy,z),.55,pipe)
+  tube((x-8,F+yy,z),(x-8,F+yy+10,z),.4,pipe)
+ box((x,F+h+1,z),(1.8,2,1.8),red)
+# Side service booms: deck, truss supports and safety rails rooted in side hull.
+for side,y,z,length in [(1,-38,165,116),(1,122,135,53),(-1,17,188,63)]:
+ start=side*(F-6);end=side*(F+length)
+ box(((start+end)/2,y,z),(abs(end-start),5,31),steel)
+ for zz in [z-15,z+15]:
+  beam((start,y-26,zz),(end,y-3,zz),2,2,pipe,(0,1,0))
+  tube((start,y+12,zz),(end,y+12,zz),.7,pipe)
+  tube((start,y+7,zz),(end,y+7,zz),.5,pipe)
+  for j in range(7):
+   xx=start+(end-start)*j/6
+   tube((xx,y+2,zz),(xx,y+12,zz),.7,pipe)
+   if j<6:beam((xx,y-20*(1-j/6),zz),(xx+(end-start)/6,y-2,zz),1,1,steel,(0,1,0))
+ for j in range(12):box((start+(end-start)*(j+.5)/12,y+2.7,z),(1,.6,28),pipe)
+ box((end,y+6,z),(7,18,35),steel)
+ for zz in [z-12,z+12]:box((end+side*4,y+8,zz),(1,8,3),white)
+ box((start,y-8,z),(8,41,40),steel)
 # Station district plate, seated on the front armour before batching.
 box((194,46,F+7),(68,56,10),armor[2])
 for x in [165,223]:
@@ -365,7 +409,7 @@ objects=[]
 for mat,(vertices,faces,uvs) in BATCH.items():
  if not faces:continue
  mesh=bpy.data.meshes.new(mat);mesh.from_pydata(vertices,[],faces);mesh.materials.append(MATS[mat]);mesh.update()
- uv=mesh.uv_layers.new(name='surface-45m')
+ uv=mesh.uv_layers.new(name='surface-145m')
  for face,coords in zip(mesh.polygons,uvs):
   for index,xy in zip(face.loop_indices,coords):uv.data[index].uv=xy
  ob=bpy.data.objects.new(mat,mesh);bpy.context.collection.objects.link(ob);objects.append(ob)
