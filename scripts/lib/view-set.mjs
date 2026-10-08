@@ -1691,7 +1691,7 @@ const esc = (s) =>
  * only ever be exercised against the one real set is a rule nothing has watched
  * fail. It defaults to `VIEWS`, so every caller but a test passes one argument.
  *
- * @param {Array<{label: string, gitRef: string, capturedAt: string, renderer: string, seed: number, served?: import("./tree-declaration.mjs").TreeDeclaration, views: Array<{name: string, file: string, gameTime?: number}>}>} runs
+ * @param {Array<{label: string, gitRef: string, capturedAt: string, renderer: string, seed: number, levelsFile?: string, served?: import("./tree-declaration.mjs").TreeDeclaration, views: Array<{name: string, file: string, gameTime?: number}>}>} runs
  * @param {ReadonlyArray<{name: string, what: string, covers: number[]}>} [views]
  * @returns {string} a standalone HTML page
  */
@@ -1778,7 +1778,11 @@ export function contactSheet(runs, views = VIEWS) {
 		.map(
 			(r) =>
 				`<th><b>${esc(r.label)}</b><span>${esc(r.gitRef)} · ${esc(r.renderer)}${esc(clockSpan(r))}</span>` +
-				`<span>${esc(servedBy(r))}</span></th>`,
+				`<span>${esc(servedBy(r))}</span>` +
+				(r.levelsFile
+					? `<span><a href="${esc(r.levelsFile)}">Tone levels</a></span>`
+					: "") +
+				"</th>",
 		)
 		.join("");
 	const rows = views
