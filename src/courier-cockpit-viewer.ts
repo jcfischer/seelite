@@ -267,6 +267,53 @@ function makeDisplay(kind: string) {
 	texture.flipY = false;
 	return new THREE.MeshBasicMaterial({ map: texture, toneMapped: false });
 }
+
+function makeEquipmentLabel(name: string) {
+	const canvas = document.createElement("canvas");
+	canvas.width = 768;
+	canvas.height = name.startsWith("key-") ? 256 : 80;
+	const ctx = canvas.getContext("2d")!;
+	ctx.fillStyle = "#111719";
+	ctx.fillRect(0, 0, canvas.width, canvas.height);
+	const labels: Record<string, string> = {
+		"label-radar": "SCOPE  /  RANGE SELECT",
+		"label-flight": "FLIGHT  /  RELATIVE",
+		"label-systems": "POWER DISTRIBUTION",
+		"label-target": "NAVIGATION COMPUTER",
+	};
+	const keys = [
+		"1",
+		"2",
+		"3",
+		"NAV",
+		"ENT",
+		"4",
+		"5",
+		"6",
+		"DCK",
+		"CLR",
+		"7",
+		"8",
+		"9",
+		"COM",
+		"0",
+	];
+	const key = name.startsWith("key-");
+	ctx.fillStyle = key ? "#e4c896" : "#aebdc0";
+	ctx.font = `${key ? 120 : 46}px monospace`;
+	ctx.textAlign = "center";
+	ctx.textBaseline = "middle";
+	ctx.fillText(
+		key ? (keys[Number(name.slice(4))] ?? "") : (labels[name] ?? ""),
+		canvas.width / 2,
+		canvas.height / 2,
+	);
+	const map = new THREE.CanvasTexture(canvas);
+	map.colorSpace = THREE.SRGBColorSpace;
+	map.flipY = false;
+	map.anisotropy = 8;
+	return new THREE.MeshBasicMaterial({ map, toneMapped: false });
+}
 const loader = new GLTFLoader();
 let cockpit: THREE.Group, station: THREE.Group;
 let fit = false,
@@ -439,6 +486,11 @@ try {
 				o.castShadow = false;
 				return;
 			}
+			if (o.name.startsWith("label-") || o.name.startsWith("key-")) {
+				o.material = makeEquipmentLabel(o.name);
+				o.castShadow = false;
+				return;
+			}
 			for (const m of Array.isArray(o.material) ? o.material : [o.material])
 				if (m instanceof THREE.MeshStandardMaterial && m.map) {
 					const tints: Record<string, number> = {
@@ -449,6 +501,11 @@ try {
 						"guarded-red": 0x992c20,
 					};
 					m.color.setHex(tints[m.name] ?? 0xffffff);
+					m.envMapIntensity = 0.6;
+					if (m.name !== "exposed-machined-edges") {
+						m.metalness = Math.min(m.metalness, 0.48);
+						m.roughness = Math.max(m.roughness, 0.5);
+					}
 					m.map.anisotropy = 8;
 					m.bumpMap = m.map;
 					m.bumpScale = 0.001;
