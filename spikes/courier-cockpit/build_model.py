@@ -72,6 +72,40 @@ def tube(a,b,r,mat,sides=10):
 def path(points,r,mat):
     for a,b in zip(points,points[1:]):tube(a,b,r,mat)
 
+def curve_path(points,r,mat,sides=12,steps=8):
+    """Continuous swept section, with no overlapping cylinder end caps at joins."""
+    p=[Vector(points[0])]+[Vector(v) for v in points]+[Vector(points[-1])]
+    samples=[]
+    for i in range(1,len(p)-2):
+        a,b,c,d=p[i-1:i+3]
+        for j in range(steps):
+            t=j/steps
+            samples.append(.5*((2*b)+(-a+c)*t+(2*a-5*b+4*c-d)*t*t+(-a+3*b-3*c+d)*t*t*t))
+    samples.append(Vector(points[-1]))
+    rings=[]
+    for i,c in enumerate(samples):
+        n=(samples[min(i+1,len(samples)-1)]-samples[max(0,i-1)]).normalized()
+        ref=Vector((0,0,1)) if abs(n.z)<.9 else Vector((0,1,0))
+        u=n.cross(ref).normalized();v=n.cross(u).normalized()
+        rings.append([c+r*(u*math.cos(k*math.tau/sides)+v*math.sin(k*math.tau/sides)) for k in range(sides)])
+    for a,b in zip(rings,rings[1:]):
+        for i in range(sides):
+            j=(i+1)%sides;poly([a[i],a[j],b[j],b[i]],mat)
+    poly(list(reversed(rings[0])),mat);poly(rings[-1],mat)
+
+def bezel(c,w,h,thickness,mat,a):
+    """Eight-sided raised lip; the centre stays open for a separate screen."""
+    c=Vector(c);u,v,n=basis(a)
+    def ring(w,h):
+        cut=.055
+        return [c+u*x+v*y for x,y in [(-w/2+cut,-h/2),(w/2-cut,-h/2),(w/2,-h/2+cut),(w/2,h/2-cut),(w/2-cut,h/2),(-w/2+cut,h/2),(-w/2,h/2-cut),(-w/2,-h/2+cut)]]
+    outer=ring(w,h);inner=ring(w-2*thickness,h-2*thickness)
+    for i in range(8):
+        j=(i+1)%8
+        poly([outer[i],outer[j],inner[j],inner[i]],mat)
+        poly([outer[i]-n*.035,outer[j]-n*.035,outer[j],outer[i]],mat)
+        poly([inner[i],inner[j],inner[j]-n*.035,inner[i]-n*.035],mat)
+
 def plane(name,c,w,h,a):
     u,v,n=basis(a);c=Vector(c)
     pts=[c-u*w/2-v*h/2,c+u*w/2-v*h/2,c+u*w/2+v*h/2,c-u*w/2+v*h/2]
@@ -87,12 +121,17 @@ def panel(name,c,w,h):
     c=Vector(c);u,v,n=basis(A)
     def p(x,y,z=0):return c+u*x+v*y+n*z
     box(c,(w,h,.22),dark,A)
-    box(p(0,0,.12),(w-.045,h-.045,.035),alloy,A)
+    box(p(0,0,.12),(w-.045,h-.045,.035),dark,A)
     box(p(0,0,.146),(w-.085,h-.085,.03),steel,A)
     # Recessed functional screen with bolted raised bezel.
     sw,sh=w-.26,h-.24
     box(p(0,0,.167),(sw+.045,sh+.045,.035),black,A)
     plane('screen-'+name,p(0,0,.19),sw,sh,A)
+    bezel(p(0,0,.205),sw+.085,sh+.085,.034,black,A)
+    for x in [-w/2+.035,w/2-.035]:
+        box(p(x,0,.185),(.026,h-.18,.036),alloy,A)
+        for y in [-h/2+.10,h/2-.10]:
+            box(p(x,y,.206),(.09,.13,.055),dark,A)
     for x in [-w/2+.06,w/2-.06]:
         for y in [-h/2+.06,h/2-.06,0]:
             tube(p(x,y,.15),p(x,y,.182),.024,alloy,8)
@@ -104,6 +143,8 @@ radar=panel('radar',(0,-.87,-2.35),1.80,1.20)
 flight=panel('flight',(-1.53,-.81,-2.42),1.32,.72)
 systems=panel('systems',(-1.53,-1.37,-2.15),1.32,.47)
 target=panel('target',(1.53,-.91,-2.4),1.35,.96)
+for name,p,w,h in [('radar',radar,1.8,1.2),('flight',flight,1.32,.72),('systems',systems,1.32,.47),('target',target,1.35,.96)]:
+    plane('label-'+name,p(0,-h/2+.065,.182),min(w-.4,.9),.047,A)
 
 # Recessed tray below the instrument faces and support rails behind them.
 box((0,-1.47,-2.50),(4.7,.30,1.05),dark)
@@ -121,6 +162,7 @@ for row in range(3):
     for col in range(5):
         c=kp+u*(-.43+col*.18)+v*(-.13+row*.13)+n*.11
         box(c,(.135,.088,.045),alloy if col==4 else black,A)
+        plane('key-'+str(row*5+col),c+n*.028,.11,.056,A)
         if row==2 and col in [0,4]:box(c+n*.026,(.085,.04,.007),warm,A)
 for x in [-.91,.91,-2.32,2.32]:
     for i in range(5):
@@ -137,7 +179,7 @@ box((-.7,-1.5,-1.55),(.14,.23,.07),red,A)
 for name,(vs,fs,uvs) in BATCH.items():
     BATCH[name][0]=[(x,y-.91,z) for x,y,z in vs]
 for obj in bpy.data.objects:
-    if obj.name.startswith('screen-'):obj.location.z-=.91
+    if obj.name.startswith(('screen-','label-','key-')):obj.location.z-=.91
 
 # Enclosed service cowling: no stars through gaps between equipment pods.
 box((0,-2.18,-2.63),(5.15,1.6,.16),dark,A)
@@ -150,14 +192,27 @@ for s in [-1,1]:
         box((s*2.57,-1.30,z),(.5,.045,.45),steel)
         for k in range(6):box((s*(2.38+k*.065),-1.27,z),(.025,.018,.25),black)
     # A narrower longitudinal structural hoop follows the upper blister.
-    support=[(s*3.05,-1.0,-4.2),(s*2.5,-.78,-3.4),(s*2.4,.18,-1.8),(s*1.7,.72,-.3),(s*.95,.82,.7)]
-    path(support,.105,dark)
-    path([(x-s*.04,y+.02,z+.045) for x,y,z in support],.023,alloy)
+    support=[(s*2.5,-1.4,-3.4),(s*2.5,-1.02,-3.02),(s*2.4,.18,-1.8),(s*1.7,.72,-.3),(s*.95,.82,.7)]
+    curve_path(support,.12,steel)
+    curve_path([(x-s*.065,y+.015,z+.065) for x,y,z in support],.035,black)
+    curve_path([(x-s*.028,y+.04,z+.075) for x,y,z in support],.016,alloy)
     for i in range(5):
         p=Vector(support[1]).lerp(Vector(support[2]),i/4)
         tube(p+Vector((0,0,.07)),p+Vector((0,0,.1)),.025,alloy,8)
     p=Vector(support[1]).lerp(Vector(support[2]),.42)
     box(p+Vector((0,0,.09)),(.075,.2,.025),warm)
+
+# Joined front coaming follows the low curved windshield edge, below the view.
+coaming=[(-2.5,-1.4,-3.4),(-2,-1.62,-3.75),(-1,-1.83,-4.1),(0,-1.87,-4.2),(1,-1.83,-4.1),(2,-1.62,-3.75),(2.5,-1.4,-3.4)]
+curve_path(coaming,.095,dark)
+curve_path([(x,y+.045,z+.055) for x,y,z in coaming],.032,black)
+curve_path([(x,y+.07,z+.025) for x,y,z in coaming],.014,alloy)
+for a,b in zip(coaming,coaming[1:]):
+    # Sloped pressure-shell lip rather than free rods hanging over the foredeck.
+    poly([a,b,(b[0],b[1]-.34,b[2]+.19),(a[0],a[1]-.34,a[2]+.19)],steel)
+    for t in [.2,.8]:
+        p=Vector(a).lerp(Vector(b),t)
+        tube(p+Vector((0,-.13,.05)),p+Vector((0,-.13,.082)),.022,alloy,8)
 
 # Sidewall structure within the courier canopy footprint, with ribbed ducts.
 for s in [-1,1]:
@@ -171,24 +226,36 @@ for s in [-1,1]:
         for j in range(32):
             z=.9-j*.10;tube((x,-1.34,z),(x,-1.34,z+.035),.05,alloy if j%8==0 else dark)
     # Low sloping perimeter: drawn along the courier A glass edge, not a flat bridge.
-    edge=[(s*3.55,-.72,.8),(s*3.4,-.72,-1),(s*3.0,-.95,-3),(s*2.25,-1.8,-5.5)]
-    path(edge,.095,dark)
-    path([(x,y+.08,z) for x,y,z in edge],.022,alloy)
-    path([(x-s*.08,y+.03,z) for x,y,z in edge],.035,black)
+    edge=[(s*3.55,-.72,.8),(s*3.4,-.9,-1),(s*3.0,-1.3,-2.8),(s*2.5,-1.4,-3.4)]
+    curve_path(edge,.085,dark)
+    curve_path([(x,y+.06,z) for x,y,z in edge],.016,alloy)
+    curve_path([(x-s*.06,y+.03,z) for x,y,z in edge],.028,black)
     # Oblique supports sweep overhead toward the rear of the blister.
-    rib=[(s*2.65,-1.08,-3.8),(s*3.05,-.55,-2.55),(s*3.27,.05,-1.1),(s*3.15,.45,.4),(s*2.7,.64,1.6)]
-    path(rib,.095,steel)
-    path([(x-s*.06,y+.035,z) for x,y,z in rib],.028,alloy)
+    rib=[(s*2.5,-1.4,-3.4),(s*3.05,-.55,-2.55),(s*3.27,.05,-1.1),(s*3.15,.45,.4),(s*2.7,.64,1.6)]
+    curve_path(rib,.075,dark)
+    curve_path([(x-s*.06,y+.035,z) for x,y,z in rib],.015,alloy)
     for t in [.15,.4,.65,.9]:
         p=Vector(rib[0]).lerp(Vector(rib[2]),t)
         tube(p+Vector((0,0,.06)),p+Vector((0,0,.10)),.032,alloy,8)
     # Warm service lights below window, never a huge roof bar.
-    box((s*2.4,-.86,-3.2),(.31,.11,.15),black)
-    box((s*2.4,-.82,-3.10),(.22,.047,.013),warm)
+    box((s*2.5,-1.39,-3.24),(.31,.11,.15),black)
+    box((s*2.5,-1.35,-3.14),(.22,.047,.013),warm)
     box((s*.92,-2.78,-1.5),(.46,.12,.16),black)
     box((s*.92,-2.72,-1.40),(.32,.035,.014),warm)
 
 # Access plates and visible fixings break up the lower service enclosure.
+for s in [-1,1]:
+    for j in range(3):
+        c=Vector((s*(.32+j*.5),-1.26,-3.19))
+        box(c,(.44,.07,.30),dark)
+        box(c+Vector((0,.042,0)),(.39,.014,.25),steel)
+        for x in [-.16,.16]:
+            for z in [-.085,.085]:tube(c+Vector((x,.047,z)),c+Vector((x,.062,z)),.015,alloy,8)
+    for j in range(5):
+        z=-2.9+j*.55
+        box((s*2.67,-1.28,z),(.38,.035,.43),dark)
+        box((s*2.67,-1.253,z),(.33,.018,.38),steel)
+        box((s*2.67,-1.237,z),(.20,.014,.10),black)
 for s in [-1,1]:
     for i in range(4):
         x=s*(.36+i*.49)

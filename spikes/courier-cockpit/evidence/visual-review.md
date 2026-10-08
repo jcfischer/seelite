@@ -7,11 +7,12 @@ Target: selected O9 architecture with O8 equipment. Principal requested stopping
 | 1 | 1.5 | 1.2 | 1.3 | 0.5 | 4.5 |
 | 2 | 2.0 | 1.4 | 1.5 | 0.6 | 5.5 |
 | 3b | 2.1 | 1.7 | 1.6 | 0.7 | 6.1 |
-| 4 | 2.3 | 1.9 | 1.6 | 0.7 | **6.5** |
+| 4 | 2.3 | 1.9 | 1.6 | 0.7 | 6.5 |
+| 5 | 2.3 | 1.9 | 1.6 | 0.8 | **6.6** |
 
 Each judge was an independent fresh-context subagent given the target, latest pilot screenshot, and preceding score/image for consistency. Agents were told not to inflate the score to meet the stop point. These are subjective visual assessments, not principal acceptance.
 
-Final verdict:
+Round 4 verdict:
 
 > 6.5/10 — stop at the requested checkpoint.
 >
@@ -25,4 +26,12 @@ Final verdict:
 >
 > Remaining gaps: overly broad, shallow nose; skeletal canopy framing; limited cockpit surface detail and ambient light. These are polish beyond this checkpoint.
 
-Visual iteration stopped after this result, as requested. See metrics.json for the independently exercised viewer interactions and hardware identity; frame cadence is not an unlocked GPU throughput claim.
+Visual iteration initially stopped after round 4. The principal subsequently requested one additional refinement round.
+
+Round 5 verdict:
+
+> 6.6/10 — small improvement over 6.5. Chamfered screen surrounds, panel labels, keypad legends, and dashboard fasteners make the cockpit more convincingly assembled. The revised canopy pillars simplify the previous extra horizontal framing.
+>
+> Main gaps: flat, angular surfaces versus worn reflective metal; limited light spill and blue rim lighting; sparse background nebula; screens and dashboard positioned higher than the target. The repeated blocks above the screens are conspicuous compared with the target’s continuous dashboard.
+
+The one additional round is complete; no further refinement was undertaken. Current evidence images and metrics are from round 5. See metrics.json for the independently exercised viewer interactions and hardware identity; frame cadence is not an unlocked GPU throughput claim.

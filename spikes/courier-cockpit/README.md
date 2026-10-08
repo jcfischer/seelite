@@ -2,7 +2,7 @@
 
 Refs jcfischer/seelite#792. Isolated interactive model study, not a production cockpit replacement.
 
-The principal selected O9's low tapered canopy and dashboard with O8's stacked cyan displays, keypad, physical controls and worn equipment. The subsequent instruction was to build a viewer like the Coriolis viewer and stop at approximately 6.5/10. Independent visual judging reached **6.5/10 in round 4**, and visual work stopped there.
+The principal selected O9's low tapered canopy and dashboard with O8's stacked cyan displays, keypad, physical controls and worn equipment. The subsequent instruction was to build a viewer like the Coriolis viewer and stop at approximately 6.5/10. Independent visual judging reached **6.5/10 in round 4**, and visual work stopped there. The principal then requested one additional refinement round; round 5 reached **6.6/10** and is the current checkpoint.
 
 ## View
 
@@ -39,13 +39,15 @@ This is a visual fit study, not a proven pressure vessel or certified collision-
 ```sh
 /Applications/Blender.app/Contents/MacOS/Blender --background --python spikes/courier-cockpit/build_model.py
 npx tsc --noEmit
-node spikes/courier-cockpit/capture.mjs round-4
+node spikes/courier-cockpit/capture.mjs round-5
 ```
 
 Capture expects the local server above, verifies the served worktree and requires a hardware renderer. It captures pilot/orbit/instrument/side/hull-fit/narrow views, tests orbit and pilot look, target opening/closing, pilot reset and work lights, and records actual frame timing and browser errors. It does not establish production flight correctness or a throughput benchmark: the FPS is vsync-on observed cadence at 1586×992, DPR 1, on the named machine.
 
 `evidence/` preserves the final pilot and viewer captures, metrics and judge verdict. Full intermediate captures and original target live under `.dream-loop/` and are intentionally ignored. No production PR, full production browser-suite result, merge or principal acceptance is claimed by this checkpoint.
 
-## Remaining visual gaps at the requested stop
+## Current refinement checkpoint
 
-The nose reads broader and shallower than the target, canopy framing is skeletal, cockpit surfaces are flatter/more angular, and fine surface detail/ambient light remain limited. Text and scanner graphics are simpler. Stop was intentional at 6.5, not a claim of target parity.
+Round 5 adds continuous curved canopy joins and gaskets, chamfered instrument surrounds, physical panel and keypad labels, and fastened service covers. The independent judge scored 6.6/10, up from 6.5 through equipment detail. Hardware capture measured approximately 52 FPS with no browser errors; the added geometry increases cost from the prior approximately 58 FPS. Typecheck and viewer interaction checks passed.
+
+Remaining gaps: cockpit surfaces remain flat and angular, reflected light and surface wear are limited, dashboard/screens sit higher than the target, and repeated service covers look too uniform. The current courier foredeck remains broader than the generated target. This ends the one additional round requested by the principal; it is not target parity or visual acceptance.
