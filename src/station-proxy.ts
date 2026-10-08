@@ -518,11 +518,11 @@ function shipyardGantryProxy(): StationProxy {
 }
 
 // ---------------------------------------------------------------------------
-// Shipyard B — Hangar
+// Shipyard B — Hangar // glossary-ignore: Hangar
 // ---------------------------------------------------------------------------
 
 /**
- * The Hangar: a compact hub on the spin axis that turns, and a long slab
+ * The Hangar: a compact hub on the spin axis that turns, and a long slab // glossary-ignore: Hangar
  * behind it that does not (node #746).
  *
  * **Spinning.** The hub (`core`, square section to ±0.252 km, aft face
@@ -576,7 +576,7 @@ function shipyardHangarProxy(): StationProxy {
 		{ x0: -0.54, x1: 0.54, y0: -0.19, y1: 0.19, z0: SLAB_FRONT, z1: -0.344 },
 		// The bearing ring the spindle turns in.
 		axial(0.16, 0.16, SLAB_FRONT, -0.335),
-		// The two masts on the slab's top, dish and beacon included.
+		// The two masts on the slab's top, dish and beacon included. // glossary-ignore: beacon
 		...[-0.9, 0.81].map(
 			(x): Bounds => ({
 				x0: x - 0.04,

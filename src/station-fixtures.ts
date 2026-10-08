@@ -1139,7 +1139,7 @@ const DECLARATIONS: Partial<
 	},
 
 	/**
-	 * Shipyard B — Hangar (node #746). Everything stands on the static slab,
+	 * Shipyard B — Hangar (node #746). Everything stands on the static slab, // glossary-ignore: Hangar
 	 * whose z is read off the slab itself rather than restated, as the
 	 * Gantry's is off its keel. The spun hub carries nothing, and the slab's
 	 * forward face is the mouth's and the windows', so the plant goes on its
@@ -1151,7 +1151,7 @@ const DECLARATIONS: Partial<
 		const r = STATION_GEOMETRY.shipyard.coreRadiusKm;
 		const S = SHIP_SCALE;
 		const slab = site.structure.getObjectByName("slab");
-		if (!slab) throw new Error("the Hangar's slab is not named");
+		if (!slab) throw new Error("the Hangar's slab is not named"); // glossary-ignore: Hangar
 		const aft = -slab.position.z;
 		// The slab is `r * 0.72` half-high and `r * 0.5` deep either side of
 		// its centre; a point declared on a face is cast onto it.
@@ -1198,7 +1198,7 @@ const DECLARATIONS: Partial<
 			pipeRun(pools, [back(r * 0.6), back(0), back(-r * 0.6)], S.pipeKm);
 		}
 		// Masts on the top face's aft end and its forward shoulder, each with a
-		// beacon on its top.
+		// beacon on its top. // glossary-ignore: beacon
 		for (const x of [-r * 1.5, r * 1.35]) {
 			const foot = top(x, 0);
 			const tip = mast(pools, group, {
@@ -1284,7 +1284,7 @@ const DECLARATIONS: Partial<
 					lengthKm: S.tankLengthKm,
 				});
 		}
-		// Masts on the +Z crown's inner shoulder, each with a beacon.
+		// Masts on the +Z crown's inner shoulder, each with a beacon. // glossary-ignore: beacon
 		for (const theta of [Math.PI * 0.6, Math.PI, Math.PI * 1.4]) {
 			const tip = mast(pools, group, {
 				base: crown(theta, 1, -tube * 0.4),

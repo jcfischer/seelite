@@ -467,7 +467,7 @@ describe("collision.md §9.1.6: the earliest impact owns the tick (C3)", () => {
  *  own. */
 /**
  * The first start system with a station of this role, and that station's id.
- * `formId` re-forms it (node #746): a slot role's forms share its geometry,
+ * `formId` re-forms it (node #746): a slot role's forms share its geometry, // glossary-ignore: slot
  * aperture and berth catalogue, so one generated station flown in each form
  * is the traversal of each, where the generator would give one form a seed.
  */
@@ -710,6 +710,37 @@ function berthOvershootKm(hull: HullId, type: StationType): number {
 	);
 }
 
+/**
+ * The open bay and its red build, one policy for every row that flies a bay
+ * (sage round 1 on node #746). Unexempt, a traversal meets nothing in the open
+ * bay — except a hull whose box overhangs its berth cell, which parks with its
+ * box through the wall the cell stands on (the row further down pins which
+ * hulls those are). Close the bay and the same traversal meets it.
+ */
+function expectOpenBayAndRedBuild(
+	t: Traversal,
+	type: StationType,
+	hull: HullId,
+	shipped: StationProxy,
+): void {
+	const bare = withoutExemption(t, shipped);
+	if (berthOvershootKm(hull, type) > 0) {
+		expect({ hull, met: bare.impacts + bare.ghosts > 0 }).toEqual({
+			hull,
+			met: true,
+		});
+	} else {
+		expect({ hull, ...bare }).toEqual({
+			hull,
+			impacts: 0,
+			ghosts: 0,
+			impactPhases: [],
+		});
+	}
+	const red = withoutExemption(t, closedBay(type, shipped));
+	expect({ hull, met: red.impacts > 0 }).toEqual({ hull, met: true });
+}
+
 describe("collision.md §9.1.7, §9.1.8: arrival, parked and launch on every role", () => {
 	for (const type of STATION_TYPES) {
 		const kind = STATION_GEOMETRY[type].aperture.kind;
@@ -764,12 +795,12 @@ describe("collision.md §9.1.7, §9.1.8: arrival, parked and launch on every rol
 				const shipped = stationProxyOf(stationOf(world.system, id));
 				for (const { hull, berthId } of cases(type)) {
 					const t = traverse(type, hull, berthId);
-					const bare = withoutExemption(t, shipped);
 					if (kind === "pad") {
 						// glossary-ignore: pad
 						// The deck and its berths are solid: unexempt, the settle
 						// onto the berth and the lift off it meet them — swept
 						// impacts, not only a parked ship's overlap.
+						const bare = withoutExemption(t, shipped);
 						expect({ hull, met: bare.impacts > 0 }).toEqual({
 							hull,
 							met: true,
@@ -780,29 +811,7 @@ describe("collision.md §9.1.7, §9.1.8: arrival, parked and launch on every rol
 					// box stays inside the open volume: nothing met, nothing
 					// overlapped. Not a pass of the exemption — a check that the
 					// exemption is defence in depth here, as check 5 is.
-					//
-					// **Except a hull whose box overhangs its berth cell**, which
-					// parks with its box through the wall the cell stands on — the
-					// row below pins which hulls those are.
-					if (berthOvershootKm(hull, type) > 0) {
-						expect({ hull, met: bare.impacts + bare.ghosts > 0 }).toEqual({
-							hull,
-							met: true,
-						});
-					} else {
-						expect({ hull, ...bare }).toEqual({
-							hull,
-							impacts: 0,
-							ghosts: 0,
-							impactPhases: [],
-						});
-					}
-					// The red build: close the bay, and the same traversal meets it.
-					const red = withoutExemption(t, closedBay(type, shipped));
-					expect({ hull, met: red.impacts > 0 }).toEqual({
-						hull,
-						met: true,
-					});
+					expectOpenBayAndRedBuild(t, type, hull, shipped);
 				}
 			},
 			TRAVERSAL_MS,
@@ -812,15 +821,16 @@ describe("collision.md §9.1.7, §9.1.8: arrival, parked and launch on every rol
 
 /**
  * The rows above fly one generated station per role, in whichever form its
- * system drew. A slot role's pool holds forms with their own proxies (node
- * #746: the shipyard's Gantry, Hangar and Slipway), so each is flown here:
+ * system drew. A slot role's pool holds forms with their own proxies (node // glossary-ignore: slot
+ * #746: the shipyard's Gantry, Hangar and Slipway), so each is flown here: // glossary-ignore: Hangar
  * the same traversal, exempt throughout, a launch that meets nothing, and the
  * open bay meeting nothing unexempt — with the closed-bay red build beside it,
  * so a form whose proxy closed its own bay is a red row and not a pass.
  */
+// glossary-ignore: slot
 describe("collision.md §9.1.7, §9.1.8: arrival, parked and launch in every pooled slot form", () => {
 	for (const type of STATION_TYPES) {
-		if (STATION_GEOMETRY[type].aperture.kind !== "slot") continue;
+		if (STATION_GEOMETRY[type].aperture.kind !== "slot") continue; // glossary-ignore: slot
 		for (const formId of formsInPlay(type)) {
 			test(
 				`${type}/${formId}: exempt throughout, a launch meets nothing, and the open bay is open`,
@@ -843,24 +853,7 @@ describe("collision.md §9.1.7, §9.1.8: arrival, parked and launch in every poo
 							impacts: t.afterRelease.impacts,
 							ghostSteps: t.afterRelease.ghostSteps,
 						}).toEqual({ hull, impacts: 0, ghostSteps: 0 });
-						const bare = withoutExemption(t, shipped);
-						if (berthOvershootKm(hull, type) > 0)
-							expect({ hull, met: bare.impacts + bare.ghosts > 0 }).toEqual({
-								hull,
-								met: true,
-							});
-						else
-							expect({ hull, ...bare }).toEqual({
-								hull,
-								impacts: 0,
-								ghosts: 0,
-								impactPhases: [],
-							});
-						const red = withoutExemption(t, closedBay(type, shipped));
-						expect({ hull, met: red.impacts > 0 }).toEqual({
-							hull,
-							met: true,
-						});
+						expectOpenBayAndRedBuild(t, type, hull, shipped);
 					}
 				},
 				TRAVERSAL_MS,

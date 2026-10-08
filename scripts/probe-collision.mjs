@@ -263,13 +263,13 @@ function stopped(what, r) {
 }
 
 // §9.2.2 — a ship stops at a pad berth, and at each shipyard form's static // glossary-ignore: pad
-// frame (node #746: the Gantry's dorsal boom, the Hangar's slab, the
+// frame (node #746: the Gantry's dorsal boom, the Hangar's slab, the // glossary-ignore: Hangar
 // Slipway's arc). Seed 42's systems 7, 8 and 1 build the shipyard in forms
 // a, b and c, and each row checks the form it met. Every perch is 0.35 km
 // above what it comes down onto, inside `coast`'s 0.6 km of travel:
 // - the Gantry's boom stands 0.37–0.58 km out along the static `up` and runs
 //   forward to 1.15 km; come down onto its front end;
-// - the Hangar's slab runs ±1.2 km along `across` and its forward face is at
+// - the Hangar's slab runs ±1.2 km along `across` and its forward face is at // glossary-ignore: Hangar
 //   −0.38 km on the centreline; 0.7 km across clears the hub's swept corners
 //   (0.37 km) and the bay mouth's band (0.54 km);
 // - the Slipway's arc is a 1.283 km ring whose +Z crown is at 0.12 km, and
@@ -287,7 +287,7 @@ for (const [type, where, what, system, perch, formId] of [
 	[
 		"shipyard",
 		"static",
-		"a Hangar's slab",
+		"a Hangar's slab", // glossary-ignore: Hangar
 		8,
 		{
 			axialKm: -0.03,

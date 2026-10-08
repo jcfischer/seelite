@@ -168,7 +168,7 @@ export interface StationPlan {
  * That ruling followed viewing the pre-repair forms in the station viewer;
  * no principal viewing of the repaired meshes of node #745 or node #746 is
  * recorded. Node #745 grows the refinery to Warren, Collar, Spar and Works,
- * and node #746 the shipyard to Gantry, Hangar and Slipway; the trade role
+ * and node #746 the shipyard to Gantry, Hangar and Slipway; the trade role // glossary-ignore: Hangar
  * grows in its own node. The outpost keeps its one fiction-owned form.
  *
  * Every added form owes a collision proxy, the display budget, and the
@@ -296,7 +296,7 @@ export const STATION_GEOMETRY: Record<StationType, StationGeometry> = {
 		// nothing about what you fly into.
 		coreRadiusKm: 0.6,
 		// Every shipyard form's hub face, 372 m: the Gantry's, and since node
-		// #746 the Hangar's and the Slipway's, which were built 12 m either side.
+		// #746 the Hangar's and the Slipway's, which were built 12 m either side. // glossary-ignore: Hangar
 		aperturePlaneKm: 0.372,
 		aperture: { kind: "slot", widthKm: 0.12, heightKm: 0.07 },
 		axis: "parent",
