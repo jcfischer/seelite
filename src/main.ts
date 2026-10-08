@@ -5436,9 +5436,7 @@ class Game {
 				// berth with no pad under it. **And its own form** (node #717): the // glossary-ignore: pad
 				// system picked it from the role's pool, and the sim's proxy reads the
 				// same field, so what is drawn is what is solid.
-				const built = industrialStationBuilder
-					? industrialStationBuilder(station, body.color)
-					: buildStationMesh(station, body.color);
+				const built = buildStationMesh(station, body.color);
 				mesh = built.root;
 				// **E10's other half.** `station-mesh.ts` built the shields as
 				// geometry and supplied no pixels, because that module is
@@ -17712,6 +17710,31 @@ class Game {
 		this.saveDirty();
 	}
 
+	/** Local no-save station study; real flight state and ordinary docking rules. */
+	startIndustrialTrial() {
+		if (this.saveStore || this.dockPhase !== "flying") return;
+		const station = this.world.system.contents.stations.find(
+			(s) => s.type === "trade" && s.formId === "a",
+		);
+		if (station) {
+			const body = this.world.system.byId.get(station.id)!;
+			const snap = this.dockingSnapshot(station.id)!;
+			const distance = snap.planeKm + 1.8;
+			this.world.ship.pos = v3(
+				body.pos.x + snap.axis.x * distance,
+				body.pos.y + snap.axis.y * distance,
+				body.pos.z + snap.axis.z * distance,
+			);
+			this.world.ship.vel = this.stationVelocity(station.id);
+			this.targetId = station.id;
+			this.setThrottle(0);
+			this.setAttitude(
+				v3(-snap.axis.x, -snap.axis.y, -snap.axis.z),
+				snap.basis.up,
+			);
+		}
+	}
+
 	/**
 	 * #408 D1: a guided new game starts in a berth at its start system's trade
 	 * station. **Since #535 this placement is #530 D6's fallback**: the guided
@@ -17741,40 +17764,6 @@ class Game {
 	 * is a free one's start with the clock moved on, not a ship parked beside a
 	 * station under an autopilot the pilot does not own (sage, #528 round 2).
 	 */
-
-	/** Local no-save station study; real flight state and ordinary docking rules. */
-	startIndustrialTrial() {
-		if (this.saveStore || this.dockPhase !== "flying") return;
-		const station = this.world.system.contents.stations.find(
-			(s) => s.type === "trade" && s.formId === "a",
-		);
-		if (station) {
-			const body = this.world.system.byId.get(station.id)!;
-			const snap = this.dockingSnapshot(station.id)!;
-			const distance = snap.planeKm + 1.8;
-			this.world.ship.pos = v3(
-				body.pos.x + snap.axis.x * distance,
-				body.pos.y + snap.axis.y * distance,
-				body.pos.z + snap.axis.z * distance,
-			);
-			this.world.ship.vel = this.stationVelocity(station.id);
-			this.targetId = station.id;
-			// A temporary trial ship can demonstrate both manual and assisted docking.
-			if (!this.hasDockingComputer)
-				this.commander = {
-					...this.commander,
-					ownedEquipment: [
-						...this.commander.ownedEquipment,
-						this.dockingComputerName,
-					],
-				};
-			this.setThrottle(0);
-			this.setAttitude(
-				v3(-snap.axis.x, -snap.axis.y, -snap.axis.z),
-				snap.basis.up,
-			);
-		}
-	}
 
 	startDockedAtHome(): boolean {
 		const id = this.world.system.contents.stations.find(
@@ -20688,11 +20677,6 @@ function querySeed(): number | null {
 // surface was building a fresh `URLSearchParams` three times in as many
 // branches.
 const query = new URLSearchParams(window.location.search);
-// This spike is loaded only by its explicit play link, before Game builds bodies.
-const industrialStationBuilder =
-	query.get("coriolis") === "industrial"
-		? await (await import("./coriolis-flight")).loadIndustrialStationBuilder()
-		: null;
 
 if (query.has("fps")) {
 	const { mountFpsMeter } = await import("./fps-meter");
@@ -20718,12 +20702,14 @@ if (postcard) {
 		throw new Error(
 			`postcard: entry accepted a refused recipe (${postcard.reason})`,
 		);
+	await (await import("./coriolis-flight")).prepareCoriolisModel();
 	const game = new Game(postcard.recipe.seed, null, null, postcard.recipe);
 	game.clockHeld = true;
 	(window as unknown as { __seelite: Game }).__seelite = game;
 	const { mountPostcardViewer } = await import("./postcard-viewer");
 	mountPostcardViewer(game, postcard.recipe);
 } else if (query.has("model-viewer")) {
+	await (await import("./coriolis-flight")).prepareCoriolisModel();
 	const { mountModelViewer } = await import("./model-viewer");
 	mountModelViewer();
 	// The workbench owns an isolated render loop, so no live simulation is built
@@ -20782,6 +20768,7 @@ if (postcard) {
 	// `?seed=N` visit booted somebody else's galaxy with nothing said, so a
 	// direct boot sets the Commander aside. Without direct the overlay asks
 	// which world is wanted, and the seed only pre-fills New game (§11.6).
+	await (await import("./coriolis-flight")).prepareCoriolisModel();
 	const boot = bootMode(query);
 	// **A pinned system writes nothing, and the plan is what says so** (§11.6,
 	// #432). Where the permission is computed and why it is the boot's rather than
@@ -21023,11 +21010,7 @@ if (postcard) {
 		// plan's answer rather than re-derive it from one of the two causes.
 		if (!plan.writesNothing && plan.fault === null) await attach(plan.slot);
 		await beginFirstDay(plan.writesNothing ? null : plan.slot);
-		if (
-			industrialStationBuilder &&
-			query.get("coriolis-start") === "approach" &&
-			plan.writesNothing
-		) {
+		if (query.get("coriolis-start") === "approach" && plan.writesNothing) {
 			game.startIndustrialTrial();
 		}
 		game.clockHeld = false;

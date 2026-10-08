@@ -9,7 +9,7 @@ const browser=await launchChromium({headless:false});
 try{
  const page=await browser.newPage({viewport:{width:1440,height:1000},deviceScaleFactor:1});
  const errors=[];page.on('pageerror',e=>errors.push(e.message));
- await page.goto(gameUrl(origin,{seed:42,system:0,'no-save':true,coriolis:'industrial','coriolis-start':'approach',fps:true}));
+ await page.goto(gameUrl(origin,{seed:42,system:0,'no-save':true,'coriolis-start':'approach',fps:true}));
  await bootedGame(page,90000);await page.waitForTimeout(3500);
  const initial=await page.evaluate(()=>{
   const g=window.__seelite;const scenes=[g.nearScene,g.approachScene,g.farScene];
@@ -49,7 +49,7 @@ try{
  const industrialRequests=[];ordinary.on('request',r=>{if(r.url().includes('coriolis-industrial'))industrialRequests.push(r.url());});
  await ordinary.goto(gameUrl(origin,{seed:42,system:0,'no-save':true}));await bootedGame(ordinary,90000);
  const normalHasIndustrial=await ordinary.evaluate(()=>{const g=window.__seelite;return [g.nearScene,g.approachScene,g.farScene].some(s=>!!s.getObjectByName('industrial-coriolis-exterior'));});
- if(industrialRequests.length||normalHasIndustrial)throw Error('ordinary game loaded opt-in asset');
+ if(industrialRequests.length !== 1 || !normalHasIndustrial)throw Error('ordinary game did not load the default Coriolis');
  await ordinary.close();
  const report={initial,flight,docking,launch,errors,ordinary:{industrialRequests:industrialRequests.length,hasIndustrial:normalHasIndustrial}};
  await writeFile('.dream-loop/flight/report.json',JSON.stringify(report,null,2));

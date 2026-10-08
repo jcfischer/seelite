@@ -1,18 +1,20 @@
-/** Opt-in #790 flight spike: authored exterior, production berths and recessed bay mouth. */
+/** Default Coriolis: authored exterior with production berths and navigation fittings. */
 import * as THREE from "three";
 import { GLTFLoader } from "three/addons/loaders/GLTFLoader.js";
 import {
-	buildStationMesh,
+	buildCoriolisNavigation,
+	installCoriolisBuilder,
+	type StationFixture,
 	stationSilhouetteKm,
 	type StationMesh,
 } from "./station-mesh";
-import { STATION_GEOMETRY, type StationPlan } from "./station";
+import { STATION_GEOMETRY } from "./station";
 import { stationInterior } from "./station-interior";
 import { buildStationInterior, NAMEPLATE_NAME } from "./station-interior-mesh";
 import { shared, disposeSubtree } from "./gpu-teardown";
 
-export function createIndustrialStationBuilder(template: THREE.Group) {
-	// One loaded asset for this opt-in page, retained across system changes.
+export function createIndustrialCoriolisBuilder(template: THREE.Group) {
+	// One loaded asset for this page, retained across system changes.
 	template.name = "industrial-coriolis-exterior";
 	template.traverse((o) => {
 		if (o instanceof THREE.Mesh) {
@@ -24,9 +26,7 @@ export function createIndustrialStationBuilder(template: THREE.Group) {
 			}
 		}
 	});
-	return (station: StationPlan, color: number): StationMesh => {
-		if (station.type !== "trade" || station.formId !== "a")
-			return buildStationMesh(station, color);
+	return (berthSeed: number): StationMesh => {
 		const exterior = template.clone(true);
 		exterior.scale.setScalar(0.001);
 		const spinner = new THREE.Group();
@@ -35,7 +35,7 @@ export function createIndustrialStationBuilder(template: THREE.Group) {
 		const interior = stationInterior(
 			"trade",
 			geometry.aperturePlaneKm,
-			station.berthSeed,
+			berthSeed,
 		);
 		const bay = buildStationInterior("trade", interior);
 		// The authored hull skin is 24.5m behind the aperture plane. Recess
@@ -50,7 +50,14 @@ export function createIndustrialStationBuilder(template: THREE.Group) {
 				o.position.z -= recess / 2;
 			}
 		});
-		spinner.add(exterior, bay);
+		const fixtures: StationFixture[] = [];
+		spinner.add(exterior, buildCoriolisNavigation(fixtures), bay);
+		exterior.traverse((o) => {
+			if (o.name === "habitation-amber") {
+				o.name = "windows";
+				o.userData.minDetail = "reduced";
+			}
+		});
 		const km = new THREE.Group();
 		km.name = "km";
 		km.scale.setScalar(1 / geometry.coreRadiusKm);
@@ -58,7 +65,9 @@ export function createIndustrialStationBuilder(template: THREE.Group) {
 		const root = new THREE.Group();
 		root.add(km);
 		const nameplates: THREE.Mesh[] = [];
+		const accessories: THREE.Object3D[] = [];
 		root.traverse((o) => {
+			if (o.userData.minDetail) accessories.push(o);
 			if (o.name === NAMEPLATE_NAME && o instanceof THREE.Mesh)
 				nameplates.push(o);
 		});
@@ -69,8 +78,8 @@ export function createIndustrialStationBuilder(template: THREE.Group) {
 			formId: "a",
 			silhouetteKm: stationSilhouetteKm("trade", "a"),
 			detail: "full",
-			fixtures: [],
-			accessories: [],
+			fixtures,
+			accessories,
 			nameplates,
 			greebles: [],
 			dispose: () => disposeSubtree(root),
@@ -78,7 +87,7 @@ export function createIndustrialStationBuilder(template: THREE.Group) {
 	};
 }
 
-export async function loadIndustrialStationBuilder() {
+async function loadIndustrialStationBuilder() {
 	const gltf = await new GLTFLoader().loadAsync(
 		"/spikes/coriolis/coriolis-industrial-flight.glb",
 	);
@@ -88,5 +97,13 @@ export async function loadIndustrialStationBuilder() {
 			o.receiveShadow = true;
 		}
 	});
-	return createIndustrialStationBuilder(gltf.scene);
+	return createIndustrialCoriolisBuilder(gltf.scene);
+}
+
+let ready: Promise<void> | undefined;
+/** Await before any game, postcard or station workbench constructs station geometry. */
+export function prepareCoriolisModel(): Promise<void> {
+	return (ready ??= loadIndustrialStationBuilder().then(
+		installCoriolisBuilder,
+	));
 }

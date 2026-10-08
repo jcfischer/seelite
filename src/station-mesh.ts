@@ -1000,6 +1000,39 @@ function mouthStrobes(
 	return group;
 }
 
+/** Navigation fittings for the authored Coriolis, in kilometres. */
+export function buildCoriolisNavigation(fixtures: StationFixture[]) {
+	const group = new THREE.Group();
+	const { aperture, aperturePlaneKm } = STATION_GEOMETRY.trade;
+	const w = aperture.widthKm;
+	const h = aperture.heightKm;
+	const bar = 0.006;
+	for (const [bw, bh, x, y] of [
+		[w + bar * 2, bar, 0, (h + bar) / 2],
+		[w + bar * 2, bar, 0, -(h + bar) / 2],
+		[bar, h, (w + bar) / 2, 0],
+		[bar, h, -(w + bar) / 2, 0],
+	]) {
+		const lamp = new THREE.Mesh(
+			new THREE.BoxGeometry(bw, bh, bar),
+			APERTURE_LIGHT_MATERIAL,
+		);
+		lamp.name = "aperture-light";
+		lamp.position.set(x, y, aperturePlaneKm - bar / 2);
+		group.add(lamp);
+	}
+	group.add(
+		mouthStrobes("trade", fixtures, w, h, bar, aperturePlaneKm - bar / 2),
+	);
+	group.add(buildMouthNameplate(aperture, 0.4035));
+	group.add(
+		strobePair("trade", fixtures, LAMP_POOL_KM.face, (side, position) => {
+			position.set(side * 0.25, 0, 0.409);
+		}),
+	);
+	return group;
+}
+
 function buildAperture(
 	type: StationType,
 	fixtures: StationFixture[],
@@ -6461,6 +6494,15 @@ function normalise(type: StationType, parts: THREE.Object3D[]): THREE.Group {
  * renderer as `body.color` — §7's secondary cue, and the reason this takes an
  * argument at all.
  */
+let coriolisBuilder: ((berthSeed: number) => StationMesh) | null = null;
+
+/** Installed once by the browser asset bootstrap, shared by game and workbench. */
+export function installCoriolisBuilder(
+	builder: ((berthSeed: number) => StationMesh) | null,
+) {
+	coriolisBuilder = builder;
+}
+
 export function buildStationForm(
 	type: StationType,
 	formId: StationFormId,
@@ -6476,6 +6518,8 @@ export function buildStationForm(
 	// point is that two stations differ.
 	assemblySeed: number,
 ): StationMesh {
+	if (type === "trade" && formId === "a" && coriolisBuilder)
+		return coriolisBuilder(berthSeed);
 	const form = formOf(type, formId);
 	// The builder returns its own fixtures rather than filling an array handed
 	// to it: with an out-parameter the return type said a builder produced no

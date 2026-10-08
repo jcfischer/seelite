@@ -1,7 +1,8 @@
 import { test, expect } from "bun:test";
 import * as THREE from "three";
 import { makeWorldAtSystem } from "../src/sim";
-import { createIndustrialStationBuilder } from "../src/coriolis-flight";
+import { createIndustrialCoriolisBuilder } from "../src/coriolis-flight";
+import { buildStationMesh, installCoriolisBuilder } from "../src/station-mesh";
 import { STATION_GEOMETRY } from "../src/station";
 
 test("industrial exterior and seeded production bay share one kilometre spinner", () => {
@@ -12,11 +13,11 @@ test("industrial exterior and seeded production bay share one kilometre spinner"
 		new THREE.MeshStandardMaterial(),
 	);
 	template.add(cube);
-	const build = createIndustrialStationBuilder(template);
+	const build = createIndustrialCoriolisBuilder(template);
 	const s = makeWorldAtSystem(42, 0).system.contents.stations.find(
 		(s) => s.type === "trade",
 	)!;
-	const built = build(s, 0xffffff);
+	const built = build(s.berthSeed);
 	const exterior = built.spinner.getObjectByName(
 		"industrial-coriolis-exterior",
 	)!;
@@ -37,21 +38,26 @@ test("industrial exterior and seeded production bay share one kilometre spinner"
 	expect(built.root.getObjectByName("km")!.scale.x).toBe(
 		1 / STATION_GEOMETRY.trade.coreRadiusKm,
 	);
-	expect(built.nameplates.length).toBeGreaterThan(0);
+	expect(built.nameplates.length).toBe(2);
+	expect(built.fixtures.some((f) => f.kind === "strobe-a")).toBe(true);
+	expect(built.fixtures.some((f) => f.kind === "strobe-b")).toBe(true);
+	expect(built.fixtures.filter((f) => f.kind === "chase")).toHaveLength(10);
 	built.spinner.rotation.z = 1.2;
 	built.root.updateMatrixWorld(true);
 	expect(bay.parent).toBe(built.spinner);
 	expect(exterior.parent).toBe(built.spinner);
 	built.dispose();
-	const second = build(s, 0xffffff);
-	expect(second.spinner.children.length).toBe(2);
+	const second = build(s.berthSeed);
+	expect(
+		second.spinner.getObjectByName("industrial-coriolis-exterior"),
+	).toBeDefined();
 	second.dispose();
 });
 test("other station forms retain their existing builder", () => {
 	const s = makeWorldAtSystem(42, 0).system.contents.stations.find(
 		(s) => s.type === "refinery",
 	)!;
-	const built = createIndustrialStationBuilder(new THREE.Group())(s, 0xffffff);
+	const built = buildStationMesh(s, 0xffffff);
 	expect(built.type).toBe("refinery");
 	expect(
 		built.root.getObjectByName("industrial-coriolis-exterior"),
@@ -71,4 +77,21 @@ test("flight export removes the display tunnel and its end cap across the whole 
 			expect(hit).toBeDefined();
 			expect(hit.point.z).toBeLessThan(-0.35);
 		}
+});
+
+test("installed Coriolis is the canonical station builder without a URL flag", () => {
+	const s = makeWorldAtSystem(42, 0).system.contents.stations.find(
+		(s) => s.type === "trade" && s.formId === "a",
+	)!;
+	const build = createIndustrialCoriolisBuilder(new THREE.Group());
+	installCoriolisBuilder(build);
+	try {
+		const station = buildStationMesh(s, 0xffffff);
+		expect(
+			station.root.getObjectByName("industrial-coriolis-exterior"),
+		).toBeDefined();
+		station.dispose();
+	} finally {
+		installCoriolisBuilder(null);
+	}
 });

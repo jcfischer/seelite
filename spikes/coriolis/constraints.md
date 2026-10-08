@@ -12,3 +12,5 @@ Authority: live machine map jcfischer/seelite#1, read 2026-10-08. Prototype trac
 Baseline: view-set/finishes/coriolis-baseline, recorded with ANGLE Metal / Apple M1 Pro.
 
 Principal clarification, 2026-10-08: "Yes—allow model and texture files for this spike." This authorizes the local Blender GLB and generated image material maps for #790; it does not amend the production map's asset policy.
+
+Principal scope expansion, 2026-10-08: "actually - I want a PR where the new model replaces the current coriolis model". This authorizes the reviewed authored model and embedded texture as the default trade-A Coriolis in the proposed PR, including game, postcards and model viewer. It supersedes the earlier spike-only boundary for this asset; other station forms and the general procedural policy remain as before. Merge remains a separate decision.
