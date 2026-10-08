@@ -2781,10 +2781,14 @@ export function parseWorld(raw: unknown): WorldState {
 	//
 	// **And a row's times are on the clock**, which is also only here. Every
 	// writer advances the clock to the time it writes, so no written loss or
-	// strip is after `gameTime`, and a first loss is never before zero. A row
-	// outside that was not written: one stamped in the future throws on its
-	// first read, and one stamped far in the past sends the schedule's walk
-	// through every instance since.
+	// strip is after `gameTime`. Only a slot's first instance can be lost before
+	// zero — the clock starts part-way through its cycle (S16, node #775), so it
+	// may already be adrift — and every later one follows a strip made on the
+	// clock. The bound for instance 0 is a tuned figure and the parse reads
+	// none, so its loss is not bounded below. A row outside that was not
+	// written: one stamped in the future throws on its first read, and one
+	// stamped far in the past sends the schedule's walk through every instance
+	// since.
 	for (const env of world.galaxies)
 		for (const [key, row] of Object.entries(env.derelicts) as [
 			CarrierKey,
@@ -2794,7 +2798,10 @@ export function parseWorld(raw: unknown): WorldState {
 				fail(
 					`derelicts: ${key} is not a derelict slot in galaxy ${env.galaxyIndex}`,
 				);
-			if (row.lostAt < 0 || row.lostAt > world.gameTime)
+			if (
+				(row.lostAt < 0 && row.instanceOrdinal !== 0) ||
+				row.lostAt > world.gameTime
+			)
 				fail(
 					`derelict ${key}: lost at ${row.lostAt}, outside the clock's 0 to ${world.gameTime}`,
 				);

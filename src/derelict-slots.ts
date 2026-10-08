@@ -8,13 +8,17 @@
  * carrier set beside the stations, Traffic, raiders and the relay, so §6's
  * bound — one row per carrier key — bounds the wrecks too.
  *
- * **The schedule is derived from the clock, never ticked** (S16). A slot is
- * empty until its first loss, seeded over the first `DERELICT_FIRST_LOSS_S`.
- * An instance lost at `L` is taken by other salvagers at `L +
- * DERELICT_SALVAGER_S` unless the pilot strips it first, and the next loss
- * follows the strip, whoever made it, by a seeded gap. A saved row anchors
- * the walk at the instance it records (`derelictTimeline`); without one the
- * walk starts at the slot's first loss.
+ * **The schedule is derived from the clock, never ticked** (S16). A slot's
+ * life is a cycle — a seeded gap with nothing adrift, then an instance adrift
+ * — and **the clock starts at a seeded point of that cycle**, never at its
+ * beginning (node #775): at game time 0 a slot is already as likely to hold a
+ * wreck as at any later time, so a new commander's first session sees what
+ * every later one does. An instance lost at `L` is taken by other salvagers at
+ * `L + DERELICT_SALVAGER_S` unless the pilot strips it first, and the next
+ * loss follows the strip, whoever made it, by a seeded gap. The first instance
+ * can be lost **before** the clock started, so its `lostAt` may be negative;
+ * no later one can. A saved row anchors the walk at the instance it records
+ * (`derelictTimeline`); without one the walk starts at the slot's first loss.
  *
  * **The contents are pinned on first touch** (S6). `derelictContents` is the
  * draw, keyed on (slot key, `instanceOrdinal`) under its own `DOMAIN` tag; the
@@ -56,13 +60,31 @@ const HOUR_S = 3600;
  * none of them.
  */
 export const DERELICT_SLOTS_BY_GOVERNMENT = [3, 3, 3, 2, 2, 2, 1, 1] as const;
-/** S16: a slot's first loss falls somewhere in this much game time. */
-export const DERELICT_FIRST_LOSS_S = 48 * HOUR_S;
-/** S16: the seeded gap from a strip to the next loss. */
-export const DERELICT_GAP_S = [6 * HOUR_S, 24 * HOUR_S] as const;
-/** S16: how long an unstripped derelict lasts before other salvagers take it,
- *  counted from its loss. */
-export const DERELICT_SALVAGER_S = 72 * HOUR_S;
+/**
+ * S16: how long an unstripped derelict lasts before other salvagers take it,
+ * counted from its loss. Hours, not days (node #775, the principal's O2 on
+ * 2026-10-07): a wreck is short-lived and frequent, so a return visit is
+ * close to a fresh roll rather than the same wreck seen again.
+ */
+export const DERELICT_SALVAGER_S = 8 * HOUR_S;
+/**
+ * S16: the seeded gap from a strip to the next loss, uniform over this range.
+ *
+ * **Set by the share it gives, not chosen.** A slot nobody strips is adrift
+ * for `DERELICT_SALVAGER_S` of every `DERELICT_SALVAGER_S` + mean gap, 8 of
+ * 94 h or 8.5%, and a system with `n` slots holds a wreck in `1 − (1 −
+ * 8.5%)^n` of the time. Galaxy 0 is mostly three- and two-slot systems, which
+ * puts that at the principal's 20% of systems. `scripts/measure-derelict-pacing.ts`
+ * prints the expectation beside a measured table; retune both figures there.
+ *
+ * **The range is wide on purpose**, ±80 h about that mean. A gap that is never
+ * short locks a slot out for days after each wreck, so a return visit a day
+ * after finding one finds far less than a first visit does: 62–110 h, the
+ * same mean, read 11–14% a day later against 20% at all. Down to the 6 h floor
+ * the gap had before, a slot can lose another ship soon after, and a return
+ * visit is closer to the fresh roll O2 asks for.
+ */
+export const DERELICT_GAP_S = [6 * HOUR_S, 166 * HOUR_S] as const;
 /** S6: the share of instances that carry one fitting container. */
 export const DERELICT_FITTING_CHANCE = 0.25;
 /** S6: one to four manifest lines. */
@@ -172,11 +194,66 @@ const scheduleUnit = (
 		),
 	)();
 
-/** When a slot's first instance is lost: somewhere in the first 48 h. */
+/**
+ * When a slot's first instance is lost: somewhere in `(−DERELICT_SALVAGER_S,
+ * DERELICT_GAP_S[1]]`, so it may be adrift as the clock starts or still to
+ * come.
+ *
+ * **The clock starts at a seeded point of the slot's cycle, and that cycle is
+ * drawn by its length** (node #775). The cycle running at game time 0 is a gap
+ * then the first instance's life, and 0 falls at a uniform point of it. A
+ * cycle drawn as every later one is — gap uniform over `DERELICT_GAP_S` —
+ * would be too short here: a random instant lands in a long cycle more often
+ * than in a short one, in proportion to its length, so a uniform draw would
+ * over-weight the short cycles, whose wreck is a larger share of them, and
+ * read a slightly higher share at 0 than ever after. Drawing its length with
+ * density proportional to that length is what makes 0 an ordinary instant.
+ * Both draws are instance 0's own unit stream; the gap after instance `k` reads
+ * instance `k + 1`'s.
+ */
 export const derelictFirstLossAt = (
 	systemSeed: number,
 	key: CarrierKey,
-): number => scheduleUnit(systemSeed, key, 0) * DERELICT_FIRST_LOSS_S;
+): number => {
+	const rand = seededRand(
+		carrierInstanceSeed(systemSeed, key, 0, DOMAIN.DERELICT_SCHEDULE),
+	);
+	const shortest = DERELICT_GAP_S[0] + DERELICT_SALVAGER_S;
+	const longest = DERELICT_GAP_S[1] + DERELICT_SALVAGER_S;
+	// Inverse of the CDF of a density proportional to c over [shortest, longest].
+	const cycle = Math.sqrt(
+		shortest * shortest + rand() * (longest * longest - shortest * shortest),
+	);
+	const gap = cycle - DERELICT_SALVAGER_S;
+	return gap - rand() * cycle;
+};
+
+/**
+ * The next loss in an untouched slot at or after `from`: a time at which a
+ * fresh instance is adrift with its whole `DERELICT_SALVAGER_S` ahead of it.
+ * The one answer to "when is there a wreck here", so a caller that needs one
+ * does not walk the schedule itself.
+ */
+export function derelictNextLossAt(
+	systemSeed: number,
+	key: CarrierKey,
+	from = 0,
+): number {
+	const phase = derelictTimeline(systemSeed, key, from);
+	switch (phase.condition) {
+		case "empty":
+			return phase.firstLossAt;
+		case "salvaged":
+			return phase.nextLossAt;
+		case "destroyed": {
+			if (phase.lostAt === from) return from;
+			const after = derelictTimeline(systemSeed, key, phase.salvagerAt);
+			if (after.condition !== "salvaged")
+				throw new Error(`derelict ${key}: no gap after ${phase.salvagerAt}`);
+			return after.nextLossAt;
+		}
+	}
+}
 
 /** The seeded gap after instance `instanceOrdinal` is stripped, by anyone,
  *  before the next one is lost. */
@@ -205,7 +282,7 @@ export interface DerelictAnchor {
 
 /** The slot's state at one game time. */
 export type DerelictPhase =
-	/** Before the first loss: the slot holds no instance. */
+	/** Before the first loss: the gap of the cycle the clock started in. */
 	| { condition: "empty"; firstLossAt: number }
 	/** An instance is adrift: §3.2's `destroyed`, the instance is wreckage. */
 	| {
@@ -228,8 +305,9 @@ export type DerelictPhase =
 /**
  * A slot's phase at `gameTime`, derived from the clock and at most one anchor.
  *
- * Each step of the walk is one instance's life — 72 h adrift at most and a gap
- * of at least 6 h after it — so a walk over any length of play is finite and a
+ * Each step of the walk is one instance's life — `DERELICT_SALVAGER_S` adrift
+ * at most and a gap of at least `DERELICT_GAP_S[0]` after it — so a walk over
+ * any length of play is finite and a
  * saved row shortens it to the instances since that row's. Short is not free:
  * a caller showing every slot in a system reads it when the game time it cares
  * about changes, not once per frame.

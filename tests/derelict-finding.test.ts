@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test";
-import { derelictFirstLossAt, derelictSlots } from "../src/derelict-slots";
+import { derelictNextLossAt, derelictSlots } from "../src/derelict-slots";
 import { derelictPose } from "../src/derelict";
 import { makeWorld } from "../src/sim";
 import { LONG_RANGE_SCANNER } from "../src/market";
@@ -43,7 +43,7 @@ import { gameMethods } from "./lib/game-methods";
 
 const system = makeWorld(47).system;
 const key = derelictSlots(system.record.index, system.record.government)[0].key;
-const at = derelictFirstLossAt(system.record.seed, key) + 1;
+const at = derelictNextLossAt(system.record.seed, key) + 1;
 const world = advanceTo(newWorld(47), at);
 const row = effectiveDerelict(world, 0, key, at);
 if (row.condition !== "destroyed") throw Error("fixture has no wreck");

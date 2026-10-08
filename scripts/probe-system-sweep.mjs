@@ -41,9 +41,17 @@ try {
 		g.commander.ownedEquipment.push(market.LONG_RANGE_SCANNER);
 		// Leave headroom so passive regeneration cannot conceal a sweep cost.
 		g.chargeAu = g.chargeCapacityAu / 2;
-		// Active derelicts at this clock; no materialisation or discovery write.
+		// An active derelict at this clock; no materialisation or discovery
+		// write. A system holds one about a fifth of the time (node #775), so
+		// the clock goes to this system's next loss rather than a fixed hour.
 		const derelict = await import("/src/derelict-slots.ts");
-		g.world.gameTime = derelict.DERELICT_FIRST_LOSS_S;
+		const { record } = g.world.system;
+		g.world.gameTime =
+			Math.min(
+				...derelict
+					.derelictSlots(record.index, record.government)
+					.map(({ key }) => derelict.derelictNextLossAt(record.seed, key)),
+			) + 1;
 		window.__sweepProbe = {
 			chargeS: sweep.SWEEP_CHARGE_S,
 			staleS: sweep.SWEEP_STALE_S,

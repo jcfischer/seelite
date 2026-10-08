@@ -32,6 +32,21 @@ import {
 	sweepCompletion,
 	sweepPanel,
 } from "../src/system-sweep-view";
+import { derelictNextLossAt, derelictSlots } from "../src/derelict-slots"; // glossary-ignore: slot
+
+/** A clock at which seed 56's system 0 has a wreck adrift: its next loss. A
+ *  system holds one about a fifth of the time (node #775), so a fixed hour
+ *  would find one or not by luck. */
+const WRECK_AT = (() => {
+	const record = generateGalaxy(56, 0).systems[0];
+	return (
+		Math.min(
+			...derelictSlots(record.index, record.government).map(({ key }) =>
+				derelictNextLossAt(record.seed, key),
+			),
+		) + 1
+	);
+})();
 
 describe("node #482 system sweep", () => {
 	test("the new provenance has its own envelope revision", () => {
@@ -111,7 +126,7 @@ describe("node #482 system sweep", () => {
 		}
 	});
 	test("source reading is pure and finds active wrecks and one pressure region", () => {
-		const world = { ...newWorld(56), gameTime: 48 * 3600 };
+		const world = { ...newWorld(56), gameTime: WRECK_AT };
 		const before = JSON.stringify(world);
 		const rows = sweepSources(world, 0, 0);
 		expect(rows.some((r) => r.kind === "relay")).toBe(true);
@@ -126,7 +141,7 @@ describe("node #482 system sweep", () => {
 		expect(JSON.stringify(world)).toBe(before);
 	});
 	test("disabled ordinary carriers and the operational repair tender add no sweep sources", () => {
-		let world = { ...newWorld(56), gameTime: 48 * 3600 };
+		let world = { ...newWorld(56), gameTime: WRECK_AT };
 		const before = sweepSources(world, 0, 0);
 		const ordinary = [...enumerateCarriers(world.seed, 0)].filter(
 			(c) => c.systemIndex === 0 && c.kind === "traffic",
@@ -160,7 +175,7 @@ describe("node #482 system sweep", () => {
 		}
 	});
 	test("saves roundtrip source, region and time; old saves have no rows", () => {
-		const world = { ...newWorld(56), gameTime: 48 * 3600 };
+		const world = { ...newWorld(56), gameTime: WRECK_AT };
 		const commander = newCommanderRecord("courier");
 		commander.state.ownedEquipment = [LONG_RANGE_SCANNER];
 		commander.sweepReadings = sweepSources(world, 0, 0);
@@ -179,7 +194,7 @@ describe("node #482 system sweep", () => {
 		).toEqual([]);
 	});
 	test("bad provenance, clocks, references and point geometry refuse on load", () => {
-		const world = { ...newWorld(56), gameTime: 48 * 3600 };
+		const world = { ...newWorld(56), gameTime: WRECK_AT };
 		const row = sweepSources(world, 0, 0).find((r) => r.kind === "relay")!;
 		for (const change of [
 			{ source: "broker" },
@@ -200,7 +215,7 @@ describe("node #482 system sweep", () => {
 		expect(() => parseSweepReadings([row, row], world)).toThrow("sweep");
 	});
 	test("a fresh sweep replaces this system only; a past reading ages unchanged", () => {
-		const world = { ...newWorld(56), gameTime: 48 * 3600 };
+		const world = { ...newWorld(56), gameTime: WRECK_AT };
 		const rows = sweepSources(world, 0, 0);
 		const elsewhere = sweepSources(world, 1, 1);
 		expect(replaceSystemReadings([...rows, ...elsewhere], [], 0, 0)).toEqual(
@@ -209,7 +224,7 @@ describe("node #482 system sweep", () => {
 		expect(sweepAge(rows[0], world.gameTime + 60)).toContain("1m");
 	});
 	test("load refuses a relay absent from the generator", () => {
-		const world = { ...newWorld(56), gameTime: 48 * 3600 };
+		const world = { ...newWorld(56), gameTime: WRECK_AT };
 		const row = sweepSources(world, 0, 0).find((r) => r.kind === "relay")!;
 		const absent = generateGalaxy(world.seed, 0).systems.find(
 			(r) => !relayActive(r) && relayPlan(generateContents(r), r.seed),
@@ -233,7 +248,7 @@ describe("node #482 system sweep", () => {
 		).toThrow("sweep");
 	});
 	test("historical regions survive placement changes without refreshing provenance", () => {
-		const world = { ...newWorld(56), gameTime: 48 * 3600 };
+		const world = { ...newWorld(56), gameTime: WRECK_AT };
 		const rows = sweepSources(world, 0, 0);
 		const row = rows.find((r) => r.kind === "relay")!;
 		const otherStation = generateContents(
@@ -265,7 +280,7 @@ describe("node #482 system sweep", () => {
 		}
 	});
 	test("load preserves dated provenance after the relay disappears", () => {
-		const world = { ...newWorld(56), gameTime: 48 * 3600 };
+		const world = { ...newWorld(56), gameTime: WRECK_AT };
 		const rows = sweepSources(world, 0, 0);
 		const later = applyTransition(world, 0, relaySlot(0).key, {
 			// glossary-ignore: slot
@@ -285,7 +300,7 @@ describe("node #482 system sweep", () => {
 		expect(sweepAge(rows[0], later.gameTime)).toContain("STALE");
 	});
 	test("generated readings roundtrip across every system, with one pressure region rather than ships", () => {
-		const world = { ...newWorld(56), gameTime: 48 * 3600 };
+		const world = { ...newWorld(56), gameTime: WRECK_AT };
 		for (let index = 0; index < 256; index++) {
 			const readings = sweepSources(world, 0, index);
 			expect(readings.filter((r) => r.kind === "pressure")).toHaveLength(1);
@@ -293,7 +308,7 @@ describe("node #482 system sweep", () => {
 		}
 	});
 	test("view filters by galaxy and system and derives ages without refreshing provenance", () => {
-		const world = { ...newWorld(56), gameTime: 48 * 3600 };
+		const world = { ...newWorld(56), gameTime: WRECK_AT };
 		const readings = [
 			...sweepSources(world, 0, 0),
 			...sweepSources(world, 1, 0),
