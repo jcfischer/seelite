@@ -1,6 +1,6 @@
 # Dream Loop review — Codex
 
-Target: `../target.png`, principal-selected O4. User requested independent visual fidelity of 7/10. Scores compare actual GPU browser captures to the generated image; they are not principal visual acceptance.
+Target: `../target.png`, principal-selected O4. User requested independent visual fidelity of 7/10. Scores compare actual GPU browser captures to the generated image; principal approval is recorded below.
 
 | Round | Composition /3 | Lighting /3 | Materials /3 | Details /1 | Total /10 |
 |---|---:|---:|---:|---:|---:|
@@ -22,7 +22,7 @@ Round 4 fresh independent judge: 6.9, not certified at 7. Rounded-rectangle pods
 
 ## Final checkpoint
 
-Fresh independent judge: **7.1/10**, meeting the requested 7 threshold narrowly. Warm local illumination and darker cable improved depth. Top and rear views showed coherent geometry without obvious clipping or missing surfaces. Human visual acceptance remains pending.
+Fresh independent judge: **7.1/10**, meeting the requested 7 threshold narrowly. Warm local illumination and darker cable improved depth. Top and rear views showed coherent geometry without obvious clipping or missing surfaces. Principal visual approval given on 2026-10-08: “visual approval given! Commit any open things then leave PR for another agent to finish”. Approval covers this isolated Bollard O4 visual prototype.
 
 Remaining gaps: broad/repetitive armour, less complex pipework and recessed hardware than the target, somewhat uniform weathering, simplified cockpit equipment, bright winch hotspots, sparse starfield and smooth exhaust rims. These remain visual limitations at this stopping point.
 

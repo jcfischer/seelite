@@ -1,6 +1,6 @@
 # Bollard O4 hull study — Codex
 
-Refs jcfischer/seelite#798. Editable exterior prototype of the selected O4: O2's open-frame salvage tug with O3's reinforced collar and selective armour. Dream Loop stopping point: independent visual fidelity of 7/10. Reached **7.1/10** after five reviewed rounds; final screenshots and limitations are in `evidence/review.md`. Human visual acceptance remains with the principal.
+Refs jcfischer/seelite#798. Editable exterior prototype of the selected O4: O2's open-frame salvage tug with O3's reinforced collar and selective armour. Dream Loop stopping point: independent visual fidelity of 7/10. Reached **7.1/10** after five reviewed rounds; final screenshots and limitations are in `evidence/review.md`. Principal visual approval given on 2026-10-08: “visual approval given! Commit any open things then leave PR for another agent to finish”. Approval covers this isolated Bollard O4 visual prototype.
 
 ## View
 
