@@ -7,10 +7,17 @@ import {
 	SALVAGE_OFFER_WINDOW_S,
 	SALVAGE_PAY_FACTOR,
 	bindSalvage,
+	cargoOf,
+	jobMark,
 	salvageItemPrice,
 	type SalvageTarget,
 } from "../src/jobs";
-import { salvageTargetsOf, refreshSalvageRequests } from "../src/salvage-jobs";
+import {
+	salvageTargetsOf,
+	salvageBoardKey,
+	refreshSalvageRequests,
+} from "../src/salvage-jobs";
+import { recordTrade } from "../src/deficits";
 import {
 	emptyRequests,
 	parseRequests,
@@ -210,16 +217,39 @@ describe("home station Salvage offers", () => {
 	});
 });
 
-describe("entrusted recovery lifecycle", () => {
+describe("entrusted recovery Operational condition", () => {
+	test("Salvage is not a cargo operand or a market mark", () => {
+		expect(cargoOf(offer())).toBeNull();
+		expect(jobMark(offer())).toBeNull();
+	});
+	test("board facts stay stable across frames and change when stripped or the offer window closes", () => {
+		const initial = salvageBoardKey(world, system, at);
+		expect(initial).not.toBe("");
+		expect(salvageBoardKey(world, system, at + 1)).toBe(initial);
+		expect(
+			salvageBoardKey(scoopDerelict(world, 0, key, 2, 1, at), system, at),
+		).not.toBe(initial);
+		expect(
+			salvageBoardKey(world, system, lostAt + SALVAGE_OFFER_WINDOW_S),
+		).not.toBe(initial);
+	});
 	test("a goods job scoops whole and cannot be sold; the accepted price stays pinned", () => {
 		const w = structuredClone(world);
 		w.galaxies[0].derelicts[key].containers.pop();
 		const t = salvageTargetsOf(w, system, at);
 		const o = bindSalvage(context(t))[0];
+		// The board read precedes a market movement and an epoch change.
+		w.galaxies[0].deficits = recordTrade({}, o.requester.carrierKey, {
+			goodName: "Computers",
+			units: 200,
+			gameTimeMin: at / 60,
+			holdT: 20,
+		});
 		const start = { ...holdings(), requests: emptyRequests() };
 		const accepted = applyHoldEvent(start, w, {
 			kind: "settlement",
 			action: "accept",
+			salvagePosting: { system: record, station },
 			id: o.id,
 			offer: o,
 			docked: o.requester,
@@ -231,9 +261,19 @@ describe("entrusted recovery lifecycle", () => {
 		if (op.kind !== "salvage") throw Error("not Salvage");
 		expect(op.item.priceCr).toBe(
 			salvageItemPrice(
-				{ ...context(t), gameTimeMin: (at + 1900) / 60 },
+				{
+					...context(t),
+					deficits: w.galaxies[0].deficits,
+					gameTimeMin: (at + 1900) / 60,
+				},
 				op.item,
 			),
+		);
+		expect(accepted.holdings.requests.byId[o.id].terms.rewardCr).not.toBe(
+			o.rewardCr,
+		);
+		expect(accepted.signals.message).toContain(
+			`Payment: ${SALVAGE_PAY_FACTOR * op.item.priceCr} Cr`,
 		);
 		// Two tonnes fit, but the three-tonne container cannot be split for a job.
 		const cramped = {
@@ -289,6 +329,7 @@ describe("entrusted recovery lifecycle", () => {
 		const result = applyHoldEvent(h, stripped, {
 			kind: "settlement",
 			action: "accept",
+			salvagePosting: { system: record, station },
 			id: o.id,
 			offer: o,
 			docked: o.requester,
@@ -385,6 +426,19 @@ describe("entrusted recovery lifecycle", () => {
 			outcomeReason: expect.stringContaining("Wreck taken by salvagers"),
 			settledAt: null,
 		});
+		const h = holdings();
+		const tick = applyHoldEvent(h, world, {
+			kind: "requests-clock",
+			at: lostAt + DERELICT_SALVAGER_S,
+		});
+		expect(tick.holdings.requests.byId[offer().id].status).toBe("failed");
+		expect(tick.world).toBe(world);
+		expect(
+			applyHoldEvent(tick.holdings, tick.world, {
+				kind: "requests-clock",
+				at: lostAt + DERELICT_SALVAGER_S + 1,
+			}).holdings,
+		).toBe(tick.holdings);
 		const took = scoop();
 		expect(
 			refreshSalvageRequests(
@@ -404,6 +458,19 @@ describe("entrusted recovery lifecycle", () => {
 		});
 		expect(restored.requests.entrustedByLotId).toEqual({});
 		expect(restored.state.recoveredFittings).toBeUndefined();
+	});
+	test("death before recovery fails the job without claiming an item was lost", () => {
+		const dock = { ...newCommanderRecord("courier"), requests: accept() };
+		for (const cause of ["destroyed", "eject"] as const) {
+			const restored = commanderAfterDeath(dock, dock, cause);
+			expect(restored.requests.byId[offer().id]).toMatchObject({
+				status: "failed",
+				outcomeReason:
+					"Recovery interrupted by your emergency return. Cancelled free; you owe nothing.",
+			});
+			expect(restored.requests.entrustedByLotId).toEqual({});
+			expect(parseRequests(restored.requests, at)).toEqual(restored.requests);
+		}
 	});
 	test("journal and current schema save round-trip fitting and good lots; reject malformed snapshots", () => {
 		const took = scoop();

@@ -27,11 +27,12 @@
  */
 
 import { scoopWreckContainer } from "./derelict-salvage";
-import { refreshSalvageRequests } from "./salvage-jobs";
-import { salvageItemPrice, SALVAGE_PAY_FACTOR } from "./jobs";
-import { generateGalaxy } from "./galaxy";
-import { generateContents } from "./system";
-import { systemIndexOfKey } from "./carrier-key";
+import {
+	refreshSalvageRequests,
+	repriceSalvageOffer,
+	matchesSalvageItem,
+	type SalvagePosting,
+} from "./salvage-jobs";
 import { identifyDerelicts } from "./long-range-scanner";
 import type { System } from "./sim";
 import type { Vec3 } from "./vec3";
@@ -124,7 +125,22 @@ export const commanderAfterDeath = (
 			byId[r.offerId] = r;
 		}
 	const requests = requestsAfterLostHold(
-		byId ? { ...dock.requests, byId } : dock.requests,
+		byId
+			? {
+					...dock.requests,
+					byId,
+					entrustedByLotId: {
+						...dock.requests.entrustedByLotId,
+						...Object.fromEntries(
+							Object.entries(dying.requests.entrustedByLotId).filter(
+								([, lot]) =>
+									byId![lot.offerId]?.terms.family === "salvage" &&
+									byId![lot.offerId]?.status === "accepted",
+							),
+						),
+					},
+				}
+			: dock.requests,
 	).state;
 	const ladders = {
 		...ladderAfterDeath(dock.ladders, dying.ladders),
@@ -169,7 +185,7 @@ export interface Holdings {
 export type AcceptedTrade = Extract<StationCommerceResult, { accepted: true }>;
 
 export type HoldEvent =
-	| { kind: "requests-read"; at: number }
+	| { kind: "requests-clock"; at: number }
 	| { kind: "derelict-identify"; system: System; shipPos: Vec3; at: number }
 	/** A press on the Requests board other than `details`, which is the
 	 *  board's own state. */
@@ -181,6 +197,8 @@ export type HoldEvent =
 			 *  board does not — an accepted job or a kept lead is read off the
 			 *  journal instead. */
 			offer: RequestOffer | null;
+			/** Live posting context for Salvage acceptance pricing. */
+			salvagePosting?: SalvagePosting;
 			docked: RequestStation | null;
 			standing: Standing;
 			/** The galaxy the ship is in, which is where a mark is filed. */
@@ -310,52 +328,19 @@ function settle(
 	const hold = holdOf(holdings);
 	let offer = event.offer;
 	if (event.action === "accept" && offer?.operand.kind === "salvage") {
-		const op = offer.operand;
-		const wreck = effectiveDerelict(
+		const priced = repriceSalvageOffer(
 			world,
-			offer.requester.galaxyIndex,
-			op.slotKey,
+			{ ...offer, operand: offer.operand },
 			event.at,
+			hold.capacityT,
+			event.salvagePosting,
 		);
-		const container =
-			wreck.condition === "destroyed"
-				? wreck.containers[op.containerIndex]
-				: null;
-		if (
-			wreck.condition !== "destroyed" ||
-			wreck.instanceOrdinal !== op.instanceOrdinal ||
-			!container ||
-			container.left !== op.item.tonnes ||
-			container.id !== op.item.id ||
-			container.kind !== op.item.kind
-		)
+		if (!priced)
 			return unchanged(holdings, world, {
 				...QUIET,
 				message: "This salvage offer is no longer available.",
 			});
-		// Reprice at the act, not the earlier board read. Terms then stay pinned.
-		const system = generateGalaxy(world.seed, offer.requester.galaxyIndex)
-			.systems[systemIndexOfKey(offer.requester.carrierKey)];
-		const station = generateContents(system).stations.find(
-			(s) =>
-				`${system.index}:${s.localCarrierId}` === offer!.requester.carrierKey,
-		);
-		if (!station) throw new Error("salvage: missing posting station");
-		const priceCr = salvageItemPrice(
-			{
-				system,
-				station,
-				deficits: world.galaxies[offer.requester.galaxyIndex].deficits,
-				gameTimeMin: event.at / 60,
-				holdT: hold.capacityT,
-			},
-			offer.operand.item,
-		);
-		offer = {
-			...offer,
-			operand: { ...offer.operand, item: { ...offer.operand.item, priceCr } },
-			rewardCr: SALVAGE_PAY_FACTOR * priceCr,
-		};
+		offer = priced;
 	}
 	const result = requestAction(
 		holdings.requests,
@@ -581,7 +566,7 @@ function applied(
 	event: HoldEvent,
 ): Applied {
 	switch (event.kind) {
-		case "requests-read": {
+		case "requests-clock": {
 			const requests = refreshSalvageRequests(
 				holdings.requests,
 				world,
@@ -646,9 +631,7 @@ function applied(
 				const snapshot = job.terms.operand.item;
 				if (
 					!item ||
-					item.id !== snapshot.id ||
-					item.kind !== snapshot.kind ||
-					item.left !== snapshot.tonnes
+					!matchesSalvageItem({ ...item, tonnes: item.left }, snapshot)
 				)
 					return unchanged(holdings, world);
 			}

@@ -1253,10 +1253,13 @@ try {
 	const salvageDetails = salvagePage.locator(
 		"[data-live-station-console] [data-live-request-details]",
 	);
+	const salvageText = await salvageDetails.innerText();
 	check(
 		"Salvage details paint its named fitting, source, age and Deliver payment",
-		(await salvageDetails.innerText()).includes("1 t of Docking Computer") &&
-			(await salvageDetails.innerText()).includes("Deliver"),
+		salvageText.includes("1 t of Docking Computer") &&
+			salvageText.includes(salvageOffer.source) &&
+			/\d+s old/.test(salvageText) &&
+			salvageText.includes("Deliver"),
 	);
 	await salvagePage
 		.locator('[data-live-station-console] [data-live-request-action="accept"]')
@@ -1268,6 +1271,15 @@ try {
 			return (
 				s.byId[id]?.status === "accepted" &&
 				Object.values(s.entrustedByLotId).length === 0
+			);
+		}, salvageOffer.id),
+	);
+	check(
+		"acceptance states the payment pinned in the Salvage journal",
+		await salvagePage.evaluate((id) => {
+			const g = window.__seelite;
+			return g.requestMessage.includes(
+				`Payment: ${g.requests.byId[id].terms.rewardCr} Cr`,
 			);
 		}, salvageOffer.id),
 	);
@@ -1325,6 +1337,32 @@ try {
 			.count()) === 0,
 	);
 	await salvagePage.screenshot({ path: `${out}/09-salvage-delivered.png` });
+	check(
+		"Requests reads preserve the journal; the game clock fails an unscooped Salvage job",
+		await salvagePage.evaluate(async (id) => {
+			const g = window.__seelite;
+			const { DERELICT_SALVAGER_S } = await import("/src/derelict-slots.ts");
+			const ended = g.requests.byId[id];
+			// An unscooped acceptance of the fixture's loss, after the prior delivery proof.
+			g.requests = {
+				...g.requests,
+				byId: {
+					...g.requests.byId,
+					[id]: { ...ended, status: "accepted", evidence: [], settledAt: null },
+				},
+			};
+			g.world.gameTime = ended.terms.observedAt + DERELICT_SALVAGER_S;
+			const before = g.requests;
+			g.requestsView();
+			const pure = g.requests === before;
+			g.step(0);
+			return (
+				pure &&
+				g.requests.byId[id].status === "failed" &&
+				g.requests.byId[id].outcomeReason.includes("taken by salvagers")
+			);
+		}, salvageOffer.id),
+	);
 	await salvagePage.close();
 	check("Salvage shaders also compiled", t.failures === 0);
 	writeFileSync(

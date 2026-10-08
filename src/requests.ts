@@ -23,7 +23,11 @@ import { type CarrierKey, isCarrierKey } from "./carrier-key";
 import type { JobFamily, JobMark, JobOffer, JobOperand, JobPost } from "./jobs";
 import {
 	FAMILY_OPERAND_KIND,
+	SALVAGE_PAY_FACTOR,
+	SALVAGE_OFFER_WINDOW_S,
 	cargoOf,
+	deliverableOf,
+	entrustedItemOf,
 	jobMark,
 	missingRequirements,
 	postOf,
@@ -36,7 +40,7 @@ import {
 	derelictOrdinalOf,
 } from "./derelict-slots";
 import { localCarrierIdOfKey, systemIndexOfKey } from "./carrier-key";
-import { SALVAGE_PAY_FACTOR, SALVAGE_OFFER_WINDOW_S } from "./jobs";
+import { matchesSalvageItem } from "./salvage-jobs";
 
 export interface RequestStation {
 	galaxyIndex: number;
@@ -196,20 +200,23 @@ export const LOST_WITH_SHIP_REASON =
  * cancelled with its goods not yet returned — keeps its status; it only loses
  * the lot it was owed back.
  *
- * Nothing else moves. A Procurement job is the pilot's own cargo, so losing
+ * Node #734 also fails a running Salvage recovery before its item was scooped,
+ * with a distinct reason: an emergency return ended the flight before recovery.
+ * A Procurement job is the pilot's own cargo, so losing
  * the hold sets it back rather than failing it; a Bounty carries nothing.
  * `settledAt` stays null (§7: only a completed job has one), and the tracked
  * job is let go when it is one of the failed, because the parser refuses a
  * tracked job that is not running.
  *
  * Pure. Returns the failed job ids beside the state, which is what the wake
- * notice counts. An empty hold returns the state it was given.
+ * notice counts. With no lost lots or running Salvage jobs, the state is unchanged.
  */
 export function requestsAfterLostHold(state: RequestsState): {
 	state: RequestsState;
 	failed: string[];
 } {
 	const lots = Object.values(state.entrustedByLotId);
+	const lostIds = new Set(lots.map((lot) => lot.offerId));
 	const salvage = Object.values(state.byId).filter(
 		(r) => r.terms.family === "salvage" && isRunning(r.status),
 	);
@@ -227,7 +234,9 @@ export function requestsAfterLostHold(state: RequestsState): {
 			status: "failed",
 			outcomeReason:
 				request.terms.family === "salvage"
-					? "Lost with your ship before delivery. Cancelled free; you owe nothing."
+					? lostIds.has(id)
+						? "Lost with your ship before delivery. Cancelled free; you owe nothing."
+						: "Recovery interrupted by your emergency return. Cancelled free; you owe nothing."
 					: LOST_WITH_SHIP_REASON,
 		};
 		failed.push(id);
@@ -333,6 +342,22 @@ export const statusLabel = (status: RequestStatus): string => {
 		}
 	}
 };
+
+function acceptedMessage(offer: JobOffer, request: AcceptedRequest): string {
+	const op = offer.operand;
+	switch (op.kind) {
+		case "salvage":
+			return `Accepted. Recover ${op.item.tonnes} t of ${op.item.id} in ${offer.region}, then Deliver here. It belongs to the requester. Payment: ${offer.rewardCr} Cr, pinned at acceptance.`;
+		case "target":
+			return request.status === "ready-to-report"
+				? "Accepted again. Your earlier kill still counts, so you can report now."
+				: "Accepted. Only a kill made after this counts.";
+		case "cargo":
+			return op.entrusted
+				? `Accepted. ${op.tonnes} t of ${op.goodName} is loaded. It belongs to the requester, so you cannot sell it.`
+				: `Accepted. Buy ${op.tonnes} t of ${op.goodName} and bring it here.`;
+	}
+}
 
 export function nextAction(r: AcceptedRequest): string {
 	if (r.status === "ready-to-report")
@@ -541,11 +566,7 @@ export function requestAction(
 			);
 		// §4: a hull/equipment state that would leave insufficient capacity is
 		// refused atomically rather than silently discarding goods.
-		if (
-			offer.operand.kind === "cargo" &&
-			cargo?.entrusted &&
-			ctx.holdRoomT < cargo.tonnes
-		)
+		if (cargo?.entrusted && ctx.holdRoomT < cargo.tonnes)
 			return refuse(
 				`This job needs ${cargo.tonnes} t of free hold. You have ${Math.max(0, Math.floor(ctx.holdRoomT))} t free.`,
 			);
@@ -557,7 +578,7 @@ export function requestAction(
 		// replacement relay to resume it". Nothing recorded while cancelled
 		// exists to keep, because `recordKill` listens only to accepted rows.
 		const evidence: RequestEvidence[] =
-			existing && !cargo ? [...existing.evidence] : [];
+			existing && offer.operand.kind === "target" ? [...existing.evidence] : [];
 		const stages = stagesFor(offer);
 		const request: AcceptedRequest = {
 			offerId: id,
@@ -573,7 +594,7 @@ export function requestAction(
 			outcomeReason: null,
 		};
 		const entrustedByLotId = { ...state.entrustedByLotId };
-		if (offer.operand.kind === "cargo" && cargo?.entrusted) {
+		if (cargo?.entrusted) {
 			const lotId = lotIdFor(id, ordinal);
 			entrustedByLotId[lotId] = {
 				lotId,
@@ -586,15 +607,7 @@ export function requestAction(
 		}
 		return done(
 			{ ...state, byId: { ...state.byId, [id]: request }, entrustedByLotId },
-			offer.operand.kind === "salvage"
-				? `Accepted. Recover ${offer.operand.item.tonnes} t of ${offer.operand.item.id} in ${offer.region}, then Deliver here. It belongs to the requester.`
-				: !cargo
-					? request.status === "ready-to-report"
-						? "Accepted again. Your earlier kill still counts, so you can report now."
-						: "Accepted. Only a kill made after this counts."
-					: cargo.entrusted
-						? `Accepted. ${cargo.tonnes} t of ${cargo.goodName} is loaded. It belongs to the requester, so you cannot sell it.`
-						: `Accepted. Buy ${cargo.tonnes} t of ${cargo.goodName} and bring it here.`,
+			acceptedMessage(offer, request),
 		);
 	}
 
@@ -645,7 +658,7 @@ export function requestAction(
 				trackedRequestId:
 					state.trackedRequestId === id ? null : state.trackedRequestId,
 			},
-			cargoOf(terms)?.entrusted &&
+			entrustedItemOf(terms) &&
 				Object.values(state.entrustedByLotId).some((l) => l.offerId === id)
 				? "Cancelled. The goods still belong to the requester, so take them back."
 				: "Cancelled, no fee. You can take the job again at the station that posted it.",
@@ -653,7 +666,7 @@ export function requestAction(
 	}
 
 	if (action === "deliver") {
-		const cargo = cargoOf(terms);
+		const cargo = deliverableOf(terms);
 		if (!cargo) return refuse("This job has nothing to deliver.");
 		if (request.status !== "accepted")
 			return refuse("This job is already done. Report to get paid.");
@@ -675,9 +688,14 @@ export function requestAction(
 				return refuse("The goods for this job are not in your hold.");
 			if (
 				terms.operand.kind === "salvage" &&
-				(lot.goodName !== terms.operand.item.id ||
-					lot.aboardT !== terms.operand.item.tonnes ||
-					(lot.itemKind ?? "good") !== terms.operand.item.kind)
+				!matchesSalvageItem(
+					{
+						id: lot.goodName,
+						kind: lot.itemKind ?? "good",
+						tonnes: lot.aboardT,
+					},
+					terms.operand.item,
+				)
 			)
 				return refuse(
 					"The recovered item does not match this job's container.",
@@ -1132,7 +1150,7 @@ export function parseRequests(raw: unknown, now: number): RequestsState {
 		if (typeof l.offerId !== "string" || !Object.hasOwn(out.byId, l.offerId))
 			bad();
 		const request = out.byId[l.offerId];
-		const cargo = request ? cargoOf(request.terms) : null;
+		const cargo = request ? entrustedItemOf(request.terms) : null;
 		if (
 			l.lotId !== lotId ||
 			!request ||

@@ -66,7 +66,7 @@
  */
 
 import * as THREE from "three";
-import { salvageTargetsOf } from "./salvage-jobs";
+import { salvageTargetsOf, salvageBoardKey } from "./salvage-jobs";
 import {
 	derelictReadings,
 	derelictRegion,
@@ -14845,6 +14845,18 @@ class Game {
 			this.world.gameTime,
 		);
 		this.updateTrafficAuthority();
+		// Deadline changes are world-clock events, not side effects of drawing Requests.
+		if (
+			Object.values(this.requests.byId).some(
+				(r) => r.status === "accepted" && r.terms.family === "salvage",
+			)
+		)
+			this.adoptHoldings(
+				applyHoldEvent(this.holdings(), this.commerceWorld, {
+					kind: "requests-clock",
+					at: this.world.gameTime,
+				}),
+			);
 		// Before the phase branch, so a hold is retried while docked and ended in
 		// every other phase (#314).
 		this.stepHeldLaunch();
@@ -17121,12 +17133,6 @@ class Game {
 		context = this.dockedStationContext(),
 		hold = holdSummary(this.commander, this.requests),
 	): RequestsView {
-		const refreshed = applyHoldEvent(this.holdings(), this.commerceWorld, {
-			kind: "requests-read",
-			at: this.world.gameTime,
-		});
-		if (refreshed.holdings.requests !== this.requests)
-			this.adoptHoldings(refreshed);
 		if (context) {
 			// **Bound once per visit, not per frame.** A binder is pure, so a
 			// board recomputed every frame would be identical and wasted —
@@ -17168,19 +17174,18 @@ class Game {
 				.sort(([a], [b]) => (a < b ? -1 : 1))
 				.map(([post, n]) => `${post}=${n}`)
 				.join(",");
-			const salvageTargets = salvageTargetsOf(
+			const salvageKey = salvageBoardKey(
 				this.commerceWorld,
 				this.world.system,
 				this.world.gameTime,
 			);
-			const salvageKey = salvageTargets
-				.map(
-					(t) =>
-						`${t.slotKey}:${t.instanceOrdinal}:${t.containers.map((c) => c.left).join(",")}`,
-				)
-				.join(";");
 			const key = `${context.galaxyIndex}:${context.stationKey}:${settledKey}:${relayLive ? relayKey : "-"}:${this.stationConsoleRevision}:${salvageKey}`;
 			if (key !== this.requestOffersCacheKey) {
+				const salvageTargets = salvageTargetsOf(
+					this.commerceWorld,
+					this.world.system,
+					this.world.gameTime,
+				);
 				const bountyTarget = bountyTargetOf(
 					this.world.system.record,
 					this.world.system.contents,
@@ -17322,7 +17327,8 @@ class Game {
 
 	/** Whether the board did what was asked: the press's sound reads it (#546). */
 	private actOnRequest(action: string, id: string): boolean {
-		const view = this.requestsView();
+		const context = this.dockedStationContext();
+		const view = this.requestsView(context);
 		if (action === "tab") {
 			// The board's own state, like `details`: switching halves of the
 			// list changes no request, tracking, cargo or credit, so it is not a
@@ -17361,6 +17367,9 @@ class Game {
 			action,
 			id,
 			offer: view.offers.find((o) => o.id === id) ?? null,
+			salvagePosting: context
+				? { system: this.world.system.record, station: context.station }
+				: undefined,
 			docked: view.docked,
 			standing: this.legalStanding(),
 			galaxyIndex: this.world.system.record.galaxy,

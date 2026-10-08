@@ -437,16 +437,25 @@ export const isCargoOffer = (offer: JobOffer): offer is CargoOffer =>
 /** The cargo a job moves, or null for a family that moves none. One question
  *  asked in one place, rather than a `kind` test at every hold consumer. */
 export const cargoOf = (offer: { operand: JobOperand }): CargoOperand | null =>
-	offer.operand.kind === "cargo"
-		? offer.operand
-		: offer.operand.kind === "salvage"
-			? {
-					kind: "cargo",
-					goodName: offer.operand.item.id,
-					tonnes: offer.operand.item.tonnes,
-					entrusted: true,
-				}
-			: null;
+	offer.operand.kind === "cargo" ? offer.operand : null;
+
+/** The item owned by a requester, whether issued at acceptance or recovered. */
+export const entrustedItemOf = (offer: {
+	operand: JobOperand;
+}): { goodName: string; tonnes: number; entrusted: true } | null => {
+	const op = offer.operand;
+	if (op.kind === "salvage")
+		return { goodName: op.item.id, tonnes: op.item.tonnes, entrusted: true };
+	if (op.kind === "cargo" && op.entrusted)
+		return { goodName: op.goodName, tonnes: op.tonnes, entrusted: true };
+	return null;
+};
+
+/** Fields shared by Deliver and the hold projection; this is not an operand. */
+export const deliverableOf = (offer: {
+	operand: JobOperand;
+}): { goodName: string; tonnes: number; entrusted: boolean } | null =>
+	entrustedItemOf(offer) ?? cargoOf(offer);
 
 /**
  * Which operand each family carries — the pairing, as a total record.
@@ -576,7 +585,6 @@ export interface JobMark {
  */
 export const jobMark = (offer: JobOffer): JobMark | null => {
 	// Salvage's mark is the container at zero, written by the scoop, never stock.
-	if (offer.operand.kind !== "cargo") return null;
 	const cargo = cargoOf(offer);
 	if (!cargo) return null;
 	return {
