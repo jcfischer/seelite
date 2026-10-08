@@ -2,7 +2,7 @@
 
 Refs jcfischer/seelite#792. Isolated interactive model study, not a production cockpit replacement.
 
-The principal selected O9's low tapered canopy and dashboard with O8's stacked cyan displays, keypad, physical controls and worn equipment. The subsequent instruction was to build a viewer like the Coriolis viewer and stop at approximately 6.5/10. Independent visual judging reached **6.5/10 in round 4**, and visual work stopped there. The principal then requested one additional refinement round; round 5 reached **6.6/10**. Another requested round produced the current round 6 checkpoint.
+The principal selected O9's low tapered canopy and dashboard with O8's stacked cyan displays, keypad, physical controls and worn equipment. The subsequent instruction was to build a viewer like the Coriolis viewer and stop at approximately 6.5/10. Independent visual judging reached **6.5/10 in round 4**, and visual work stopped there. The principal then requested one additional refinement round; round 5 reached **6.6/10**. Another requested round produced the round 6 checkpoint. The principal then requested the current round 7 geometry refinement.
 
 ## View
 
@@ -39,7 +39,7 @@ This is a visual fit study, not a proven pressure vessel or certified collision-
 ```sh
 /Applications/Blender.app/Contents/MacOS/Blender --background --python spikes/courier-cockpit/build_model.py
 npx tsc --noEmit
-node spikes/courier-cockpit/capture.mjs round-6
+node spikes/courier-cockpit/capture.mjs round-7
 ```
 
 Capture expects the local server above, verifies the served worktree and requires a hardware renderer. It captures pilot/orbit/instrument/side/hull-fit/narrow views, tests orbit and pilot look, target opening/closing, pilot reset and work lights, and records actual frame timing and browser errors. It does not establish production flight correctness or a throughput benchmark: the FPS is vsync-on observed cadence at 1586×992, DPR 1, on the named machine.
@@ -48,8 +48,8 @@ Capture expects the local server above, verifies the served worktree and require
 
 ## Current refinement checkpoint
 
-Round 6 replaces the six raised dashboard covers with one formed shell, recessed demister vents and an offset inspection hatch. Cyan and amber instrument lights now sit closer to the equipment. Darker blue-grey metal, lower roughness and stronger reflections bring more depth to the surfaces.
+Round 7 widens the equipment layout by 12%, lowers it 0.25 m and moves it 0.20 m toward the pilot. Instrument mounting tilt increases from 0.62 to 0.82 radians. Canopy surrounds gain thicker curved sections and extended lower returns; the exposed ducts now terminate at the equipment instead of protruding into the forward sightline. Switches and rotary controls were repositioned after capture exposed overlap with the lowered displays.
 
-Hardware capture measured approximately 55 FPS with no browser errors. Typecheck, formatting and viewer interaction checks passed. This is local prototype evidence, not a production suite result. The previous round measured approximately 52 FPS; these short samples are observed cadence, not a comparative benchmark.
+Hardware capture measured approximately 52 FPS with no browser errors. Viewer interaction checks and diff whitespace checks passed. This round changes only Blender geometry and its exports, with no TypeScript changes; it retains the prior passing typecheck. This is local prototype evidence, not a production suite result.
 
-The model remains angular, the dashboard sits higher than the target, and the current courier foredeck is broader than the generated target. The independent round 6 assessment is **6.7/10**, up from 6.6 through lighting. See evidence/visual-review.md. This ends the additional round requested by the principal; it is not target parity or visual acceptance.
+The model remains visibly faceted and lacks the target’s material wear. Controls near the pilot now sit lower in the default frame; use the Instruments or Orbit view for inspection. The existing courier foredeck remains broader than the generated target. Independent score: **6.8/10** (composition improves, lighting slightly regresses). See evidence/visual-review.md. This ends the requested additional round; it is not target parity or visual acceptance.
