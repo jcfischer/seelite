@@ -29,3 +29,7 @@ Remaining gaps: cutter teeth and joint shells are too uniformly matte; wear is b
 Branch spike/longwall-mining-803, separate worktree .worktrees/seelite-803, node jcfischer/seelite#803. Authored assets stay under spikes/longwall-miner and outside production entry points. The user requested an approximately 84 m hull and smaller human-scale cockpit after measuring the design. No merge, deployment or production integration is part of this checkpoint.
 
 Principal visual approval: 2026-10-08, “approved. Prepare PR for final implementation by another agent”. See HANDOFF.md (parent directory from evidence) for binding decisions and outstanding integration work.
+
+## Selected repository browser checks
+
+At implementation/handoff head `8a796a1`, the mandatory selector plus canonical `probe:pr` runner passed 5/5 selected GPU probes: controls-reference, handoff, model-viewer, pointer-lock and station-visuals, in 63 seconds. This was explicitly partial: 91/96 repository probes were not run. The next implementation agent owes selection against their final diff and the full merge gates. No Sage review or full production-suite claim is made for this design handoff. Raw selector and runner output is in `pr-probes.log`.
