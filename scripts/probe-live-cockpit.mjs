@@ -139,43 +139,91 @@ function measureLiveCockpit() {
 	const referenceLinePoints =
 		scannerReferenceLine?.geometry?.getAttribute("position");
 	/**
-	 * How far a live face's mount stands from the centre of the authored
-	 * screen it belongs on (#792), as a fraction of that screen's width.
-	 * `cockpit-model.ts` derives each mount from its `screen-*` quad, so a
-	 * mount that drifted off its screen — or a quad renamed out from under it —
-	 * reads here rather than as a face floating over the dash.
+	 * How a drawn live face sits on the authored screen it belongs on (#792),
+	 * read off the face's own vertices rather than its mount — the mount is
+	 * built from the same quad, so comparing the two would only restate the
+	 * construction. Measured in the screen's plane: the face's centre against
+	 * the quad's, as a fraction of the quad's diagonal; whether every face
+	 * corner lies inside the quad; and how much of the binding side it fills.
 	 */
-	const offScreen = (screenName, mountName) => {
+	const faceFit = (screenName, faceName) => {
 		const quad = game.cabinScene.getObjectByName(`screen-${screenName}`);
-		const mount = game.cabinScene.getObjectByName(mountName);
-		if (!quad || !mount) return Number.POSITIVE_INFINITY;
-		quad.updateWorldMatrix(true, false);
-		mount.updateWorldMatrix(true, false);
-		const e = quad.matrixWorld.elements;
-		const position = quad.geometry.getAttribute("position");
-		const corners = [];
-		for (let i = 0; i < position.count; i++) {
-			const [x, y, z] = [position.getX(i), position.getY(i), position.getZ(i)];
-			corners.push([
-				e[0] * x + e[4] * y + e[8] * z + e[12],
-				e[1] * x + e[5] * y + e[9] * z + e[13],
-				e[2] * x + e[6] * y + e[10] * z + e[14],
-			]);
-		}
+		const face = game.cabinScene.getObjectByName(faceName);
+		if (!quad || !face) return null;
+		const worldCorners = (object) => {
+			object.updateWorldMatrix(true, false);
+			const e = object.matrixWorld.elements;
+			const position = object.geometry.getAttribute("position");
+			const out = [];
+			for (let i = 0; i < position.count; i++) {
+				const [x, y, z] = [
+					position.getX(i),
+					position.getY(i),
+					position.getZ(i),
+				];
+				out.push([
+					e[0] * x + e[4] * y + e[8] * z + e[12],
+					e[1] * x + e[5] * y + e[9] * z + e[13],
+					e[2] * x + e[6] * y + e[10] * z + e[14],
+				]);
+			}
+			return out;
+		};
+		const sub = (a, b) => [a[0] - b[0], a[1] - b[1], a[2] - b[2]];
+		const dot = (a, b) => a[0] * b[0] + a[1] * b[1] + a[2] * b[2];
+		const len = (a) => Math.hypot(...a);
+		const q = worldCorners(quad);
+		const uv = quad.geometry.getAttribute("uv");
+		const at = (u, v) => {
+			for (let i = 0; i < uv.count; i++)
+				if (Math.abs(uv.getX(i) - u) < 1e-3 && Math.abs(uv.getY(i) - v) < 1e-3)
+					return q[i];
+			return null;
+		};
+		const topLeft = at(0, 0);
+		const across = sub(at(1, 0), topLeft);
+		const upward = sub(topLeft, at(0, 1));
+		const width = len(across);
+		const height = len(upward);
+		const right = across.map((c) => c / width);
+		const up = upward.map((c) => c / height);
 		const centre = [0, 1, 2].map(
-			(k) => corners.reduce((sum, c) => sum + c[k], 0) / corners.length,
+			(k) => q.reduce((s, c) => s + c[k], 0) / q.length,
 		);
-		const width = Math.max(
-			...corners.flatMap((a) =>
-				corners.map((b) => Math.hypot(a[0] - b[0], a[1] - b[1], a[2] - b[2])),
+		const inPlane = (p) => {
+			const d = sub(p, centre);
+			return [dot(d, right), dot(d, up)];
+		};
+		const f = worldCorners(face).map(inPlane);
+		const fx = f.map((c) => c[0]);
+		const fy = f.map((c) => c[1]);
+		const faceCentre = [
+			(Math.max(...fx) + Math.min(...fx)) / 2,
+			(Math.max(...fy) + Math.min(...fy)) / 2,
+		];
+		return {
+			visible: face.visible && face.parent?.visible !== false,
+			offset: Math.hypot(...faceCentre) / Math.hypot(width, height),
+			inside: f.every(
+				// Relative: the vertices are float32, so a face that binds a side
+				// meets its edge to about 1e-7 of the screen, not to 1e-9 km.
+				([x, y]) =>
+					Math.abs(x) <= (width / 2) * (1 + 1e-6) &&
+					Math.abs(y) <= (height / 2) * (1 + 1e-6),
 			),
-		);
-		const m = mount.matrixWorld.elements;
-		return (
-			Math.hypot(m[12] - centre[0], m[13] - centre[1], m[14] - centre[2]) /
-			width
-		);
+			fill: Math.max(
+				(Math.max(...fx) - Math.min(...fx)) / width,
+				(Math.max(...fy) - Math.min(...fy)) / height,
+			),
+		};
 	};
+	const fitted = (fit) =>
+		fit
+			? {
+					...fit,
+					ok: fit.visible && fit.offset < 1e-3 && fit.inside && fit.fill > 0.99,
+				}
+			: null;
 	const inScannerRange = (contact) =>
 		Math.hypot(
 			contact.pos.x - game.world.ship.pos.x,
@@ -246,7 +294,7 @@ function measureLiveCockpit() {
 			Math.abs(scanner.position.x) < 1e-6 &&
 			scanner.position.y > 0 &&
 			Math.abs(scanner.rotation.x + Math.PI / 2) < 1e-6 &&
-			offScreen("radar", "scanner-mount") < 1e-3,
+			Boolean(fitted(faceFit("radar", "scanner"))?.ok),
 		physicalInstruments: [
 			"flight-instrument",
 			"throttle-track",
@@ -267,10 +315,10 @@ function measureLiveCockpit() {
 		authoredCockpit: Boolean(
 			game.cabinScene.getObjectByName("authored-cockpit"),
 		),
-		facesOffScreen: [
-			offScreen("radar", "scanner-mount"),
-			offScreen("flight", "flight-mount"),
-			offScreen("target", "target-mount"),
+		faceFits: [
+			fitted(faceFit("radar", "scanner")),
+			fitted(faceFit("flight", "flight-instrument")),
+			fitted(faceFit("target", "target-instrument")),
 		],
 		hologramRings:
 			game.cabinScene.getObjectByName("scanner-hologram")?.children.length ?? 0,
@@ -439,12 +487,12 @@ for (const viewport of VIEWPORTS) {
 	check(
 		`${viewport.name}: the scope, flight and navigation screens carry their live faces, and the throttle reads as fitted hardware`,
 		forward.authoredCockpit &&
-			forward.facesOffScreen.every((off) => off < 1e-3) &&
+			forward.faceFits.every((fit) => fit?.ok) &&
 			throttleClosed.throttleFill >= 0.08 &&
 			throttleClosed.throttleFill < 0.1 &&
 			throttleClosed.throttleFillZ > throttleOpen.throttleFillZ &&
 			throttleOpen.throttleFill > 0.99,
-		`authored cabin: ${forward.authoredCockpit}; faces off their screens by ${forward.facesOffScreen.map((off) => off.toExponential(1)).join(", ")} of a width; throttle z ${throttleClosed.throttleFillZ} → ${throttleOpen.throttleFillZ}`,
+		`authored cabin: ${forward.authoredCockpit}; faces ${forward.faceFits.map((f) => (f ? `off ${f.offset.toExponential(1)} of a diagonal, inside ${f.inside}, fill ${f.fill.toFixed(3)}, visible ${f.visible}` : "missing")).join("; ")}; throttle z ${throttleClosed.throttleFillZ} → ${throttleOpen.throttleFillZ}`,
 	);
 
 	await placeShipAtLocalOffset(page, { x: 0, y: 0, z: 2_500 });

@@ -41,6 +41,17 @@ let template: THREE.Group;
 let cabin: AuthoredCabin;
 beforeAll(async () => {
 	template = await decodeShippedGlb("models/courier-cockpit.glb");
+	// Bun has no image decoder, so the helper strips the model's maps. One is
+	// put back on the steel as a stand-in, so adoption's map branch runs and
+	// the teardown row has a template texture to guard.
+	template.traverse((o) => {
+		if (
+			o instanceof THREE.Mesh &&
+			o.material instanceof THREE.MeshStandardMaterial &&
+			o.material.name === "weathered-blue-steel"
+		)
+			o.material.map = new THREE.DataTexture(new Uint8Array(4), 1, 1);
+	});
 	adoptCockpitTemplate(template);
 	cabin = withCanvasStub(buildAuthoredCabin);
 	cabin.root.updateMatrixWorld(true);
@@ -125,10 +136,13 @@ describe("the shipped cockpit model in the cabin pass", () => {
 		});
 	});
 
-	test("the lamps stand inside the cabin and reach the dash", () => {
-		const dash = cabin.screens.radar.center.length();
-		for (const lamp of COCKPIT_MODEL_LAMPS) {
-			const carried = cabinLight(
+	test("every live screen is within half a lamp's range of a lamp, as placed", () => {
+		// Placed as `main.ts` places them: in model space, so through the eye
+		// offset, the scale and the pitch. Range and intensity are carried by
+		// `cabinLight`, since a point light ignores its parent's scale.
+		const lamps = COCKPIT_MODEL_LAMPS.map((lamp) => ({
+			at: cabin.modelSpace.localToWorld(new THREE.Vector3(...lamp.positionM)),
+			rangeKm: cabinLight(
 				{
 					positionKm: lamp.positionM,
 					distanceKm: lamp.rangeM,
@@ -136,9 +150,16 @@ describe("the shipped cockpit model in the cabin pass", () => {
 					decay: 2,
 				},
 				COCKPIT_MODEL_KM_PER_M,
+			).distanceKm,
+		}));
+		for (const lamp of lamps)
+			expect(lamp.at.length()).toBeLessThan(CABIN_FAR_KM);
+		for (const name of ["radar", "flight", "target"] as const) {
+			const centre = cabin.screens[name].center;
+			const nearest = Math.min(
+				...lamps.map((l) => l.at.distanceTo(centre) / l.rangeKm),
 			);
-			expect(Math.hypot(...carried.positionKm)).toBeLessThan(CABIN_FAR_KM);
-			expect(carried.distanceKm).toBeGreaterThan(dash / 2);
+			expect(nearest).toBeLessThan(0.5);
 		}
 	});
 
@@ -147,9 +168,14 @@ describe("the shipped cockpit model in the cabin pass", () => {
 		template.traverse((o) => {
 			if (o instanceof THREE.Mesh) {
 				shared.add(o.geometry);
-				for (const m of [o.material].flat()) shared.add(m);
+				for (const m of [o.material].flat()) {
+					shared.add(m);
+					for (const value of Object.values(m))
+						if (value instanceof THREE.Texture) shared.add(value);
+				}
 			}
 		});
+		expect([...shared].some((r) => r instanceof THREE.Texture)).toBe(true);
 		const second = withCanvasStub(buildAuthoredCabin);
 		const report = disposeSubtree(second.root);
 		expect(report.freed.size).toBeGreaterThan(0);

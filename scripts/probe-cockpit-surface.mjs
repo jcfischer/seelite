@@ -142,19 +142,21 @@ for (const viewport of VIEWPORTS) {
 	await page.evaluate(() => window.__seelite.settings.set("quality", "low"));
 	const low = await page.evaluate(state);
 	check(
-		// #105's key light is gated because a point light costs every standard
-		// material in its scene; the cabin's other lamps are its own lighting and
-		// stay, which is what `settings.ts` promises the player.
-		`${viewport.name}: low drops the key light and keeps the cabin's other lamps`,
+		// A point light costs every lit cabin fragment, so low keeps the cool
+		// fill alone, as the procedural cabin did: the warm key and the centre
+		// lamp go dark (`registerKeyLight`).
+		`${viewport.name}: low drops the key and centre lamps and keeps the fill`,
 		low.lights.some((l) => l.name === "cockpit-key-light" && !l.visible) &&
-			low.lights.some((l) => l.name === "cockpit-light" && l.visible) &&
-			low.lights.some((l) => l.name === "cockpit-centre-light" && l.visible),
+			low.lights.some((l) => l.name === "cockpit-centre-light" && !l.visible) &&
+			low.lights.some((l) => l.name === "cockpit-light" && l.visible),
 	);
 	await page.evaluate(() => window.__seelite.settings.set("quality", "high"));
 	const restored = await page.evaluate(state);
 	check(
-		`${viewport.name}: high puts the key light back`,
-		restored.lights.some((l) => l.name === "cockpit-key-light" && l.visible),
+		`${viewport.name}: high puts the key and centre lamps back`,
+		["cockpit-key-light", "cockpit-centre-light"].every((name) =>
+			restored.lights.some((l) => l.name === name && l.visible),
+		),
 	);
 
 	await page.close();

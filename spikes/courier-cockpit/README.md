@@ -1,6 +1,6 @@
 # Courier cockpit study — Codex
 
-Refs jcfischer/seelite#792. Isolated interactive model study, not a production cockpit replacement.
+Refs jcfischer/seelite#792. The interactive model study behind the game's cockpit. It began as an isolated study; the principal then asked for it in the game, accepted it visually on 2026-10-08 after flying it, and #794 makes it the cabin. **In the game**, below, says how.
 
 The principal selected O9's low tapered canopy and dashboard with O8's stacked cyan displays, keypad, physical controls and worn equipment. The subsequent instruction was to build a viewer like the Coriolis viewer and stop at approximately 6.5/10. Independent visual judging reached **6.5/10 in round 4**, and visual work stopped there. The principal then requested one additional refinement round; round 5 reached **6.6/10**. Another requested round produced the round 6 checkpoint. The principal then requested the current round 7 geometry refinement.
 
@@ -44,7 +44,7 @@ node spikes/courier-cockpit/capture.mjs round-7
 
 Capture expects the local server above, verifies the served worktree and requires a hardware renderer. It captures pilot/orbit/instrument/side/hull-fit/narrow views, tests orbit and pilot look, target opening/closing, pilot reset and work lights, and records actual frame timing and browser errors. It does not establish production flight correctness or a throughput benchmark: the FPS is vsync-on observed cadence at 1586×992, DPR 1, on the named machine.
 
-`evidence/` preserves the final pilot and viewer captures, metrics and judge verdict. Full intermediate captures and original target live under `.dream-loop/` and are intentionally ignored. No production PR, full production browser-suite result, merge or principal acceptance is claimed by this checkpoint.
+`evidence/` preserves the final pilot and viewer captures, metrics and judge verdict. Full intermediate captures and original target live under `.dream-loop/` and are intentionally ignored. The viewer evidence here is the round 7 study. The game's own frame is `evidence/game-approach.png`, captured by `capture-game.mjs` on the integration branch; the game has no foredeck and no inspection lights, so it is the frame to judge the shipped cabin by.
 
 ## Current refinement checkpoint
 

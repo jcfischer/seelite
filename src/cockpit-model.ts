@@ -55,11 +55,12 @@ export type CockpitScreen = (typeof COCKPIT_SCREENS)[number];
  * The spike's under-console lamps, model metres and the viewer's figures.
  * `main.ts` carries them into the cabin's frame by `cabinLight`, at
  * `COCKPIT_MODEL_KM_PER_M`. Names are the procedural cabin's, which probes and
- * the quality gate address them by.
+ * the quality gate address them by; `gated` lamps go dark at low quality.
  */
 export const COCKPIT_MODEL_LAMPS = [
 	{
 		name: "cockpit-light",
+		gated: false,
 		color: 0x39c2e8,
 		intensity: 5,
 		rangeM: 4,
@@ -67,6 +68,7 @@ export const COCKPIT_MODEL_LAMPS = [
 	},
 	{
 		name: "cockpit-key-light",
+		gated: true,
 		color: 0xffae54,
 		intensity: 4,
 		rangeM: 4,
@@ -74,6 +76,7 @@ export const COCKPIT_MODEL_LAMPS = [
 	},
 	{
 		name: "cockpit-centre-light",
+		gated: true,
 		color: 0xffb050,
 		intensity: 1.5,
 		rangeM: 4,
@@ -85,7 +88,7 @@ export const COCKPIT_MODEL_LAMPS = [
  * The exporter drops the multiply node's tint, so the named palette is restored
  * here (`spikes/courier-cockpit/assets.md`). Only mapped materials carry it.
  */
-const COCKPIT_TINTS: Record<string, number> = {
+export const COCKPIT_TINTS: Readonly<Record<string, number>> = {
 	"weathered-blue-steel": 0x405868,
 	"graphite-housings": 0x283842,
 	"exposed-machined-edges": 0x8d9395,

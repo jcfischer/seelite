@@ -8585,6 +8585,7 @@ class Game {
 		// The spike's under-console lamps, carried from model metres into the
 		// cabin's frame the way a world lamp is (`cabinLight`). Parented to the
 		// cockpit, so they light the cabin alone as the ship turns.
+		const gated: THREE.PointLight[] = [];
 		for (const lamp of COCKPIT_MODEL_LAMPS) {
 			const carried = cabinLight(
 				{
@@ -8608,10 +8609,12 @@ class Game {
 			const [x, y, z] = lamp.positionM;
 			light.position.set(x, y, z);
 			cabin.modelSpace.add(light);
-			// **Gated** (#651): `cockpit-surface.ts` decides which side of
-			// `quality` the cabin's key light is on.
-			if (lamp.name === "cockpit-key-light") registerKeyLight(light);
+			if (lamp.gated) gated.push(light);
 		}
+		// **Gated** (#651): `cockpit-surface.ts` decides which side of `quality`
+		// these are on. A point light costs every lit cabin fragment, so low
+		// keeps the cool fill alone, as the procedural cabin did.
+		registerKeyLight(...gated);
 		const inset = cockpitMaterial("inset");
 		// Each live face fills its screen's width or height, whichever binds,
 		// and keeps its own aspect. The procedural mount's figures stay its

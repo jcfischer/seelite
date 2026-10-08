@@ -10,6 +10,7 @@ import { EffectComposer } from "three/addons/postprocessing/EffectComposer.js";
 import { RenderPass } from "three/addons/postprocessing/RenderPass.js";
 import { UnrealBloomPass } from "three/addons/postprocessing/UnrealBloomPass.js";
 import { OutputPass } from "three/addons/postprocessing/OutputPass.js";
+import { COCKPIT_TINTS } from "./cockpit-model";
 import { buildShipMesh } from "./ship-mesh";
 
 const assets = "/spikes/courier-cockpit/";
@@ -497,14 +498,9 @@ try {
 			}
 			for (const m of Array.isArray(o.material) ? o.material : [o.material])
 				if (m instanceof THREE.MeshStandardMaterial && m.map) {
-					const tints: Record<string, number> = {
-						"weathered-blue-steel": 0x405868,
-						"graphite-housings": 0x283842,
-						"exposed-machined-edges": 0x8d9395,
-						"service-ochre": 0xbc7923,
-						"guarded-red": 0x992c20,
-					};
-					m.color.setHex(tints[m.name] ?? 0xffffff);
+					// The game's palette (`cockpit-model.ts`), so the viewer shows
+					// the colours that ship.
+					m.color.setHex(COCKPIT_TINTS[m.name] ?? 0xffffff);
 					m.envMapIntensity = 1.15;
 					if (m.name !== "exposed-machined-edges") {
 						m.metalness = 0.65;
