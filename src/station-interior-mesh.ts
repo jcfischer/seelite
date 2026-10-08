@@ -342,9 +342,12 @@ const atFullDetail = <T extends THREE.Object3D>(object: T): T => {
  * geometry here and `main.ts` fills its `map`, exactly as it already does for
  * the exterior plate and the cockpit's text.
  */
+// A recessed hull may end the rendered mouth behind the sim plane; this trims
+// only its enclosure and corner rails, leaving berths and fittings in place.
 export function buildStationInterior(
 	type: StationType,
 	interior: StationInterior,
+	mouthRecessKm = 0,
 ): THREE.Group {
 	// **Two presentations, and the sim already decided which** (#165). A pad
 	// role has no enclosure to draw: no shell, no mouth bulkhead, no end wall.
@@ -356,8 +359,9 @@ export function buildStationInterior(
 	group.name = INTERIOR_GROUP_NAME;
 	const visuals = STATION_VISUALS[type];
 	const structure = structureMaterial(type);
-	const depth = interior.mouthAxialKm - interior.endAxialKm;
-	const centreZ = (interior.mouthAxialKm + interior.endAxialKm) / 2;
+	const mouth = interior.mouthAxialKm - mouthRecessKm;
+	const depth = mouth - interior.endAxialKm;
+	const centreZ = (mouth + interior.endAxialKm) / 2;
 	const plate =
 		Math.min(interior.halfAcrossKm, interior.halfUpKm) * PLATE_FACTOR;
 
@@ -455,7 +459,7 @@ export function buildStationInterior(
 		// front faces apart in z left the *inner side* faces exactly on the lane,
 		// which is where the flicker actually was; `RIM_SEPARATION_KM` above is
 		// the other half.
-		panel.position.set(x, y, interior.mouthAxialKm - plate * 0.6);
+		panel.position.set(x, y, mouth - plate * 0.6);
 		group.add(panel);
 	}
 
@@ -490,7 +494,7 @@ export function buildStationInterior(
 		laneEdgeInner,
 	)) {
 		const strip = box(w, h, plate * 1.2, laneGlow, "interior-lane-edge");
-		strip.position.set(x, y, interior.mouthAxialKm - plate * 1.3);
+		strip.position.set(x, y, mouth - plate * 1.3);
 		group.add(strip);
 	}
 
@@ -540,7 +544,11 @@ export function buildStationInterior(
 	for (const berth of interior.berths)
 		group.add(atFullDetail(buildBerth(berth, plate, structure, guide, accent)));
 
-	group.add(atFullDetail(buildRoleFittings(type, interior, plate, structure)));
+	group.add(
+		atFullDetail(
+			buildRoleFittings(type, interior, plate, structure, mouthRecessKm),
+		),
+	);
 	return group;
 }
 
@@ -795,6 +803,7 @@ function buildBayFrame(
 	interior: StationInterior,
 	plate: number,
 	structure: THREE.Material,
+	mouthRecessKm: number,
 ): void {
 	const depth = interior.mouthAxialKm - interior.endAxialKm;
 	const centreZ = (interior.mouthAxialKm + interior.endAxialKm) / 2;
@@ -807,11 +816,11 @@ function buildBayFrame(
 			const rail = box(
 				plate * 1.4,
 				plate * 1.4,
-				depth * 0.98,
+				depth * 0.98 - mouthRecessKm,
 				structure,
 				"interior-rail",
 			);
-			rail.position.set(sx * x, sy * y, centreZ);
+			rail.position.set(sx * x, sy * y, centreZ - mouthRecessKm / 2);
 			group.add(rail);
 		}
 
@@ -1004,11 +1013,12 @@ function buildRoleFittings(
 	interior: StationInterior,
 	plate: number,
 	structure: THREE.Material,
+	mouthRecessKm: number,
 ): THREE.Group {
 	const group = new THREE.Group();
 	group.name = "interior-fittings";
 	const depth = interior.mouthAxialKm - interior.endAxialKm;
-	buildBayFrame(group, interior, plate, structure);
+	buildBayFrame(group, interior, plate, structure, mouthRecessKm);
 	ROLE_FITTINGS[type]({
 		group,
 		interior,

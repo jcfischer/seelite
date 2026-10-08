@@ -80,19 +80,8 @@ export function createIndustrialCoriolisBuilder(template: THREE.Group) {
 			geometry.aperturePlaneKm,
 			berthSeed,
 		);
-		const bay = buildStationInterior("trade", interior);
-		// The authored hull skin is 24.5m behind the aperture plane. Recess
-		// only the bay mouth and trim its side walls; berths stay at sim coordinates.
-		const recess = 0.03;
-		bay.traverse((o) => {
-			if (o.name === "interior-bulkhead" || o.name === "interior-lane-edge")
-				o.position.z -= recess;
-			if (o.name === "interior-shell" || o.name === "interior-rail") {
-				// These boxes use a shared unit cube; scale.z is their actual depth.
-				o.scale.z -= recess;
-				o.position.z -= recess / 2;
-			}
-		});
+		// Recess only the rendered mouth; berth coordinates remain the sim's.
+		const bay = buildStationInterior("trade", interior, 0.03);
 		const fixtures: StationFixture[] = [];
 		const aperture = buildCoriolisNavigation(fixtures, exterior);
 		aperture.add(bay);

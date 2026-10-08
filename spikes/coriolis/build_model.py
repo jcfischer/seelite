@@ -435,11 +435,11 @@ bpy.ops.file.pack_all()
 if not FLIGHT:bpy.ops.wm.save_as_mainfile(filepath=str(ROOT/'spikes/coriolis/coriolis-industrial.blend'))
 FLIGHT_OUT = ROOT / '.dream-loop'
 FLIGHT_OUT.mkdir(exist_ok=True)
-bpy.ops.export_scene.gltf(filepath=str((FLIGHT_OUT if FLIGHT else OUT)/(ASSET+'.glb')),export_format='GLB',export_yup=False,export_apply=True,export_materials='EXPORT',export_extras=True)
+glb=(FLIGHT_OUT if FLIGHT else OUT)/(ASSET+'.glb')
+bpy.ops.export_scene.gltf(filepath=str(glb),export_format='GLB',export_yup=False,export_apply=True,export_materials='EXPORT',export_extras=True)
 # Blender's glTF exporter keeps the image but drops the constant multiplier
 # on this node graph. Carry that authored linear tint into the standard PBR
 # factor explicitly, so every independent GLB viewer gets the same materials.
-glb=OUT/(ASSET+'.glb')
 data=glb.read_bytes(); jlen=struct.unpack_from('<I',data,12)[0]
 doc=json.loads(data[20:20+jlen])
 for mat in doc.get('materials',[]):
@@ -448,4 +448,4 @@ for mat in doc.get('materials',[]):
 encoded=json.dumps(doc,separators=(',',':')).encode();encoded+=b' '*((-len(encoded))%4)
 tail=data[20+jlen:]
 glb.write_bytes(struct.pack('<4sII',b'glTF',2,20+len(encoded)+len(tail))+struct.pack('<II',len(encoded),0x4E4F534A)+encoded+tail)
-print('CORIOLIS_EXPORTED',str(OUT/(ASSET+'.glb')))
+print('CORIOLIS_EXPORTED',str(glb))
