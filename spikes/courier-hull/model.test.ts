@@ -65,10 +65,11 @@ test("pressure body and both nacelles are closed, outward-wound shells", () => {
 	const hull = doc.meshes.find(
 		(m: { name: string }) => m.name === "pressure-hull",
 	);
-	const covers = doc.meshes.find(
-		(m: { name: string }) => m.name === "dorsal-access-covers",
-	);
-	expect(covers).toBeDefined();
+	const covers = ["dorsal-access-covers", "body-hatch-seats"].map((name) => {
+		const mesh = doc.meshes.find((m: { name: string }) => m.name === name);
+		expect(mesh, name).toBeDefined();
+		return mesh;
+	});
 	const triangles: Vector3[][] = [];
 	for (const p of hull.primitives) {
 		const vertices = accessor(p.attributes.POSITION, 3).map(
@@ -79,7 +80,7 @@ test("pressure body and both nacelles are closed, outward-wound shells", () => {
 			triangles.push(indices.slice(i, i + 3).map((id) => vertices[id]));
 	}
 	let maximumClearance = -Infinity;
-	for (const p of covers.primitives)
+	for (const p of covers.flatMap((mesh) => mesh.primitives))
 		for (const v of accessor(p.attributes.POSITION, 3)) {
 			const origin = new Vector3(v[0], v[1] + 1, v[2]);
 			const ray = new Ray(origin, new Vector3(0, -1, 0));

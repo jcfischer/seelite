@@ -32,16 +32,21 @@ try {
 		await page.waitForTimeout(700);
 		await page.screenshot({ path: `${out}/${view}.png` });
 	}
-	for (const [name, position] of [
-		["rear-level", [0, 0, -115]],
-		["rear-low", [-60, -24, -93]],
+	for (const [name, position, target] of [
+		["rear-level", [0, 0, -115], [0, 0, -7]],
+		["rear-low", [-60, -24, -93], [0, 0, -7]],
+		["hatch-close", [28, 22, 25], [4, 2, -7]],
+		["hatch-profile", [25, 8, -10], [4, 3, -10]],
 	]) {
-		await page.evaluate((position) => {
-			const { camera, controls } = window.__courier;
-			camera.position.fromArray(position);
-			controls.target.set(0, 0, -7);
-			controls.update();
-		}, position);
+		await page.evaluate(
+			({ position, target }) => {
+				const { camera, controls } = window.__courier;
+				camera.position.fromArray(position);
+				controls.target.fromArray(target);
+				controls.update();
+			},
+			{ position, target },
+		);
 		await page.waitForTimeout(700);
 		await page.screenshot({ path: `${out}/${name}.png` });
 	}

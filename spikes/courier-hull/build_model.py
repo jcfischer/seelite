@@ -86,12 +86,19 @@ def plate(points,mat,n=(0,1,0),depth=.09,bolts=True):
     length=random.uniform(.16,.55);width=random.uniform(.025,.07)
     poly([a-along*width,a+along*width,a+inward*length+along*width*.3],steel)
 
-def hatch(x,y,z,w=2.2,d=2.8):
- box((x,y+.07,z),(w,.14,d),steel)
+def hatch(x,y,z,w=2.2,d=2.8,*,surface,seat_group):
+ starts={key:len(data[0]) for key,data in BATCH.items()}
+ box((x,y+.07,z),(w,.14,d),steel,group=seat_group)
  box((x,y+.16,z),(w-.16,.09,d-.16),blue[1])
  for dx in [-w*.38,w*.38]:
   for dz in [-d*.36,d*.36]:box((x+dx,y+.24,z+dz),(.13,.13,.3),alloy)
  cable([(x-.3,y+.22,z),(x-.3,y+.35,z),(x+.3,y+.35,z),(x+.3,y+.22,z)],.055)
+ # Seat the entire fitting, including its lid and latch, on the local skin.
+ # Its base is inset; only the thin lid and handle stand proud. Mapping each
+ # vertex follows both deck pitch and cross-slope rather than a centre height.
+ for key,data in BATCH.items():
+  for i in range(starts.get(key,0),len(data[0])):
+   vx,vy,vz=data[0][i];data[0][i]=(vx,surface(vx,vz)-.035+(vy-y)*.3,vz)
 
 def radiator(x,y,z,w,d):
  box((x,y,z),(w,.23,d),steel);box((x,y+.14,z),(w-.22,.07,d-.22),black)
@@ -117,6 +124,13 @@ def ring(z,w,top,bottom):
  return [Vector((x,y,z)) for x,y in [(-w*.82,top),(w*.82,top),(w,upper),(w,lower),(w*.76,bottom),(-w*.76,bottom),(-w,lower),(-w,upper)]]
 rs=[ring(*s) for s in stations]
 def deck_y(y,f):return y+.72*(1-(abs(f)/.82)**2)
+def body_skin(x,z):
+ w,y,_=sample(z)
+ # Match the actual faceted plate strips, not the ideal curved crown.
+ fractions=[-.82,-.45,-.17,.17,.45,.82];f=x/w
+ for a,b in zip(fractions,fractions[1:]):
+  if a<=f<=b:return deck_y(y,a)+(deck_y(y,b)-deck_y(y,a))*(f-a)/(b-a)+.09
+ return deck_y(y,f)+.09
 for a,b in zip(rs,rs[1:]):
  for j in range(1,8):
   k=(j+1)%8;pts=[a[j],a[k],b[k],b[j]];n=(pts[1]-pts[0]).cross(pts[2]-pts[0]).normalized();c=sum(pts,Vector())/4
@@ -169,7 +183,14 @@ for side in [-1,1]:
    pts=[(side*(ia+(oa-ia)*fa),ya+(1.0-ya)*fa,za),(side*(ia+(oa-ia)*fb),ya+(1.0-ya)*fb,za),(side*(ib+(ob-ib)*fb),yb+(1.0-yb)*fb,zb),(side*(ib+(ob-ib)*fa),yb+(1.0-yb)*fa,zb)]
    prism(pts,(0,-1,0),2.25,steel);plate(pts,ivory[1] if fa>.4 else blue[1])
   plate([(side*oa,.72,za),(side*ob,.72,zb),(side*ob,-1.3,zb),(side*oa,-1.3,za)],blue[0],(side,0,0),.08)
- for z,x in [(-17,12.0),(-7,10.5)]:hatch(side*x,2.13,z,2.0,2.8)
+ def shoulder_skin(x,z):
+  for (za,ia,oa),(zb,ib,ob) in zip(rows,rows[1:]):
+   if za<=z<=zb:
+    t=(z-za)/(zb-za);inner=ia+(ib-ia)*t;outer=oa+(ob-oa)*t
+    y=sample(z)[1]-.55;f=(abs(x)-inner)/(outer-inner)
+    return y+(1-y)*f+.09
+  raise ValueError('Hatch outside shoulder')
+ for z,x in [(-17,12.0),(-7,10.5)]:hatch(side*x,2.13,z,2.0,2.8,surface=shoulder_skin,seat_group='shoulder-hatch-seats')
  radiator(side*12.8,1.52,-21,2.2,2.1)
 
 # Flush dorsal access covers follow both the deck pitch and transverse crown.
@@ -308,7 +329,7 @@ for side in [-1,1]:
     q=a.lerp(b,t);box(q,(.20,.20,.47),alloy)
  for z in [-19,-3.4]:
   radiator(x,3.68,z,3.5,3.0)
-  for dx in [-3.0,3.0]:hatch(x+dx,3.56,z,1.0,2.1)
+  for dx in [-3.0,3.0]:hatch(x+dx,3.56,z,1.0,2.1,surface=lambda x,z:3.64,seat_group='nacelle-hatch-seats')
  # Joint-ring cover straps, smaller service boxes, longitudinal edge ribs.
  for dx in [-3.4,3.4]:
   cable([(x+dx,3.46,-22),(x+dx,3.55,-14),(x+dx,3.18,-11),(x+dx,3.55,-7),(x+dx,3.45,1)],.065,alloy)
@@ -382,7 +403,7 @@ for side in [-1,1]:
 for side in [-1,1]:
  for z in [-20,-12,-4,3,25]:
   w,y,_=sample(z);xx=side*w*.63
-  if z<6:hatch(xx,deck_y(y,.63)+.14,z,1.5,2.2)
+  if z<6:hatch(xx,deck_y(y,.63)+.14,z,1.5,2.2,surface=body_skin,seat_group='body-hatch-seats')
  for z in [24,27,30]:
   w,y,_=sample(z);x=side*w*.48
   poly([(x-.18,y+.13,z-.8),(x+.18,y+.13,z-.8),(x+.16,y+.13,z+.8),(x-.16,y+.13,z+.8)],orange)
