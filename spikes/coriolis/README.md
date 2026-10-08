@@ -10,7 +10,7 @@ Run `bun run dev -- --host 127.0.0.1`. Ordinary play loads the new Coriolis with
 
 This places a normal ship 1.8 km outside the aperture, facing and targeting the station. It grants no equipment and attaches no save store. Shift/Ctrl control throttle, WASD pitch/yaw, QE roll, C clearance and Enter launch/skip traversal; configured bindings still apply. Automatic docking requires buying a docking computer in normal play.
 
-The standalone `/spikes/coriolis/` workbench retains the closed display model and the original procedural comparison. The canonical `/?model-viewer=station` uses the replacement.
+The standalone `/spikes/coriolis/` workbench retains the closed display model and the original procedural comparison. It is dev-only: its model and images sit beside this README, which the dev server serves at the same path and the production build omits. The canonical `/?model-viewer=station` uses the replacement.
 
 ## Integration
 

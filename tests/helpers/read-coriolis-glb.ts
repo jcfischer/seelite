@@ -9,7 +9,7 @@ import { MeshoptDecoder } from "three/addons/libs/meshopt_decoder.module.js";
 export async function readCoriolisGlb(name: string) {
 	const scene = await decodeShippedGlb(
 		name === "coriolis-industrial-flight.glb"
-			? "models/coriolis.glb"
+			? "public/models/coriolis.glb"
 			: "spikes/coriolis/" + name,
 	);
 	scene.scale.setScalar(0.001);
@@ -17,11 +17,11 @@ export async function readCoriolisGlb(name: string) {
 	return scene;
 }
 
-/** Decode a GLB under `public/` at its authored scale, as `readCoriolisGlb` does. */
-export async function decodeShippedGlb(publicPath: string) {
-	const file = readFileSync(
-		new URL("../../public/" + publicPath, import.meta.url),
-	);
+/** Decode a GLB at its authored scale, as `readCoriolisGlb` does. The path is
+ *  from the repository root: shipped models sit under `public/`, and the
+ *  review-only study files beside their spike's README. */
+export async function decodeShippedGlb(repoPath: string) {
+	const file = readFileSync(new URL("../../" + repoPath, import.meta.url));
 	if (file.readUInt32LE(0) !== 0x46546c67 || file.readUInt32LE(4) !== 2)
 		throw new Error("Expected a glTF 2 binary");
 	const jsonLength = file.readUInt32LE(12);
