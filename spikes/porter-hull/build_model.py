@@ -18,13 +18,13 @@ def material(name,color,metal=.55,rough=.5,emission=0,texture=True,alpha=1):
  if emission:
   p.inputs['Emission Color'].default_value=(*color,1);p.inputs['Emission Strength'].default_value=emission
  if texture and not emission:
-  t=m.node_tree.nodes.new('ShaderNodeTexImage');t.image=bpy.data.images.load(str(OUT/'steel-wear.png'),check_existing=True)
+  t=m.node_tree.nodes.new('ShaderNodeTexImage');t.image=bpy.data.images.load(str(OUT/('steel-wear-coarse.png' if name in ['blue-grey-0','pale-steel-0'] else 'steel-wear.png')),check_existing=True)
   mix=m.node_tree.nodes.new('ShaderNodeMixRGB');mix.blend_type='MULTIPLY';mix.inputs[0].default_value=1;mix.inputs[2].default_value=(*color,1)
   m.node_tree.links.new(t.outputs['Color'],mix.inputs[1]);m.node_tree.links.new(mix.outputs[0],p.inputs['Base Color'])
  MATS[name]=m;return name
 
-blue=[material('blue-grey-'+str(i),(.14+i*.009,.185+i*.010,.22+i*.010),.55,.36) for i in range(4)]
-ivory=[material('pale-steel-'+str(i),(.32+i*.018,.33+i*.018,.32+i*.018),.50,.44) for i in range(3)]
+blue=[material('blue-grey-'+str(i),(.14+i*.009,.185+i*.010,.22+i*.010),.45,.49) for i in range(4)]
+ivory=[material('pale-steel-'+str(i),(.32+i*.018,.33+i*.018,.32+i*.018),.40,.57) for i in range(3)]
 steel=material('dark-structure',(.057,.071,.077),.76,.43)
 black=material('recess-black',(.012,.019,.023),.42,.62)
 alloy=material('machined-alloy',(.29,.295,.27),.84,.35)
@@ -32,7 +32,7 @@ rubber=material('hose-rubber',(.023,.027,.029),.08,.78)
 orange=material('service-ochre',(.55,.29,.10),.37,.58)
 warm=material('amber-lamp',(1,.29,.045),.2,.23,3,False)
 cyan=material('cyan-display',(.025,.55,.66),.15,.32,1.7,False)
-glass=material('canopy-glass',(.027,.085,.105),.16,.13,0,False,.38)
+glass=material('canopy-glass',(.012,.033,.041),.28,.16,0,False,.90)
 
 def poly(points,mat,group=None,uv=None):
  key=group or mat
@@ -41,7 +41,8 @@ def poly(points,mat,group=None,uv=None):
  verts.extend([tuple(p) for p in pts]);faces.append(tuple(range(offset,offset+len(pts))))
  if uv is None:
   n=(pts[1]-pts[0]).cross(pts[2]-pts[0]);axis=max(range(3),key=lambda i:abs(n[i]));ij=[i for i in range(3) if i!=axis]
-  uv=[(p[ij[0]]/5.0,p[ij[1]]/5.0) for p in pts]
+  scale=3.0 if mat in ["blue-grey-0","pale-steel-0"] else 5.0
+  uv=[(p[ij[0]]/scale,p[ij[1]]/scale) for p in pts]
  uvs.append(uv)
 
 def prism(points,n,depth,mat,group=None):
@@ -89,6 +90,11 @@ def plate(points,mat,n=(0,1,0),depth=.09,bolts=True):
 def hatch(x,y,z,w=2.2,d=2.8):
  box((x,y+.07,z),(w,.14,d),steel)
  box((x,y+.16,z),(w-.16,.09,d-.16),blue[1])
+ for dx in [-w/2+.10,w/2-.10]:box((x+dx,y+.25,z),(.16,.22,d-.1),alloy)
+ for dz in [-d/2+.10,d/2-.10]:box((x,y+.25,z+dz),(w-.1,.22,.16),steel)
+ for dx in [-w*.3,w*.3]:box((x+dx,y+.30,z-d/2+.12),(.42,.18,.4),alloy)
+ for zz in [z-d*.31,z+d*.31]:
+  cable([(x-w*.28,y+.23,zz),(x-w*.28,y+.38,zz),(x+w*.28,y+.38,zz),(x+w*.28,y+.23,zz)],.065,alloy)
  for dx in [-w*.38,w*.38]:
   for dz in [-d*.36,d*.36]:box((x+dx,y+.24,z+dz),(.13,.13,.3),alloy)
  cable([(x-.3,y+.22,z),(x-.3,y+.35,z),(x+.3,y+.35,z),(x+.3,y+.22,z)],.055)
@@ -118,28 +124,38 @@ def hull(name,x,rows,mat,roof=None):
    n=(a[k]-a[j]).cross(b[j]-a[j]).normalized()
    c=(a[j]+a[k]+b[k]+b[j])/4
    if n.dot(Vector((c.x-x,c.y,0)))<0:n=-n
-   subdivisions=max(1,int((a[k]-a[j]).length/3.7))
+   subdivisions=max(1,int((a[k]-a[j]).length/4.4))
    for q in range(subdivisions):
     f,g=q/subdivisions,(q+1)/subdivisions
     pts=[a[j].lerp(a[k],f),a[j].lerp(a[k],g),b[j].lerp(b[k],g),b[j].lerp(b[k],f)]
-    plate(pts,random.choice(roof if roof and j==0 else mat),n,.10)
+    plate(pts,(blue[1] if name.startswith("cargo") and random.random()<.16 else random.choice(roof if roof and j==0 else mat)),n,.10)
  poly(rings[0],black,name);poly(list(reversed(rings[-1])),black,name)
  for rr,n in [(rings[0],(0,0,-1)),(rings[-1],(0,0,1))]:
   plate(rr,mat[0],n,.10)
  return rings
 
 def seam_clamp(x,z):
- # A transverse high-strength spine, dark top beam and ochre lock towers.
- box((x,1,z),(23,2.2,1.65),steel)
- for xx in [x-9.8,x+9.8]:
-  box((xx,5.5,z),(1.6,4.9,2.3),steel)
-  plate([(xx-.9,7.95,z-1.2),(xx+.9,7.95,z-1.2),(xx+.9,7.95,z+1.2),(xx-.9,7.95,z+1.2)],orange)
-  for zz in [z-.96,z+.96]:tube((xx-.68,7.6,zz),(xx+.68,7.6,zz),.14,alloy)
-  box((xx,5.8,z+1.22),(.8,1.15,.16),black)
-  box((xx,5.8,z+1.33),(.36,.6,.06),alloy)
-  box((xx,3.4,z+1.26),(.7,1.1,.12),warm)
- for xx in [x-7,x+7]:
-  cable([(xx,3,z-.6),(xx,5.8,z-.6),(xx,6.9,z),(xx,5.8,z+.6),(xx,3,z+.6)],.35,alloy)
+ # A low crossbeam joins two wrapped, angular locking arms at pod corners.
+ box((x,.8,z),(22,2.0,1.65),steel)
+ for side in [-1,1]:
+  xx=x+side*8.9
+  # Chamfered bracket silhouette rather than a square post.
+  outline=[(xx-1.2,2.4,z-.92),(xx+1.2,2.4,z-.92),(xx+1.2,6.3,z-.92),(xx+.5,7.65,z-.92),(xx-1.1,7.65,z-.92),(xx-1.7,6.5,z-.92)]
+  prism(outline,(0,0,1),1.84,steel)
+  for zz,n in [(z-.94,(0,0,-1)),(z+.94,(0,0,1))]:
+   plate([(px,py,zz) for px,py,_ in outline],orange,n,.11)
+  box((xx,4.6,z+1.10),(.82,2.7,.14),black)
+  box((xx,4.7,z+1.2),(.45,2.1,.1),alloy)
+  for yy in [3.1,6.45]:
+   tube((xx,yy,z+1.10),(xx,yy,z+1.32),.3,steel,10)
+   tube((xx,yy,z+1.32),(xx,yy,z+1.39),.16,alloy,6)
+  cable([(xx-side*.8,2.9,z+.7),(xx-side*1.8,4.2,z+.7),(xx-side*1.8,6.1,z+.7)],.33,alloy)
+  box((xx+side*.9,3.25,z+1.15),(.4,1.5,.22),steel)
+  box((xx+side*.9,3.25,z+1.29),(.16,1.15,.035),warm)
+ # Frame-top connections remain below the roof line.
+ for zz in [z-.62,z+.62]:
+  tube((x-7.4,6.7,zz),(x+7.4,6.7,zz),.25,steel,12)
+ for xx in [x-6,x,x+6]:box((xx,6.75,z),(1.2,.65,1.7),steel)
 
 def nozzle(x,y,z,r):
  rings=[[(x+rr*math.cos(j*math.tau/48),y+rr*math.sin(j*math.tau/48),zz) for j in range(48)] for zz,rr in [(z+2,r*.94),(z,r),(z-.6,r*.92),(z-.6,r*.79),(z+1.8,r*.64)]]
@@ -196,14 +212,14 @@ for i,cz in enumerate([-19,1,21]):
  for xx in [x-4.7,x+4.7]:box((xx,-6.65,cz),(7.8,.25,10.7),steel);box((xx,-6.85,cz),(7.2,.15,10),ivory[0])
 
 # Narrow port command hull, widening behind the compact bridge.
-kx=-14
-hull("command-shell",kx,[(-29.5,4.5,2.8,-3.7),(-26,5.3,3.7,-4.4),(-21,5.4,3.8,-4.5),(-16,5.4,3.8,-4.5),(-11,5.4,3.8,-4.5),(-6,5.4,3.8,-4.5),(-1,5.4,3.8,-4.5),(4,5.4,3.8,-4.5),(9,5.4,3.8,-4.5),(14,5.1,3.8,-4.3),(19,4.7,3.65,-4.1),(24,4.3,2.7,-3.7),(28,3.8,1.6,-3.1),(31.5,3.4,1.25,-2.8)],blue,blue)
+kx=-14.7
+hull("command-shell",kx,[(-29.5,5.1,3.4,-4.1),(-26,5.9,4.05,-4.7),(-21,6.0,4.15,-4.8),(-16,6.0,4.15,-4.8),(-11,6.0,4.15,-4.8),(-6,6.0,4.15,-4.8),(-1,6.0,4.15,-4.8),(4,6.0,4.15,-4.8),(9,6.0,4.15,-4.8),(14,5.1,3.8,-4.3),(19,4.7,3.65,-4.1),(24,4.3,2.7,-3.7),(28,3.8,1.6,-3.1),(31.5,3.4,1.25,-2.8)],blue,blue)
 # Layered flank access equipment and foredeck lamp housings.
 for z in [-22,-15,-8,-1,6]:
- hatch(kx,3.98,z,4.8,4.1)
- radiator(kx-3.85,3.98,z,1.6,2.8)
+ hatch(kx,4.33,z,4.8,4.1)
+ radiator(kx-4.55,4.33,z,1.6,2.8)
  for side in [-1,1]:
-  xx=kx+side*5.55
+  xx=kx+side*6.15
   box((xx,-.3,z),(.3,4.5,3.8),steel)
   for yy in [-1.65,-.4,.85]:
    box((xx+side*.17,yy,z),(.18,.95,3.45),blue[1])
@@ -215,7 +231,7 @@ for z,w,y,b in canopy:cr.append([Vector((kx-w,b,z)),Vector((kx-w*.79,y,z)),Vecto
 for idx,(a,b) in enumerate(zip(cr,cr[1:])):
  for j in range(3):
   pts=[a[j],b[j],b[j+1],a[j+1]]
-  if idx==0:plate(pts,blue[1],(0,1,0) if j==1 else (-1 if j==0 else 1,0,0),.10)
+  if idx==0 or (idx==1 and j==1):plate(pts,blue[1],(0,1,0) if j==1 else (-1 if j==0 else 1,0,0),.10)
   else:poly(pts,glass,"canopy-glass")
  for j in range(4):tube(a[j],b[j],.17,steel,10);tube(a[j]+Vector((0,.035,0)),b[j]+Vector((0,.035,0)),.06,alloy,8)
 for rr in cr:
@@ -265,6 +281,91 @@ for x,z in [(kx-5.5,-22),(kx-4.9,17),(20,-23),(20,25)]:
  sign=-1 if x<0 else 1
  tube((x,-2,z),(x+sign*.45,-2,z),.43,steel,12)
  tube((x+sign*.46,-2,z),(x+sign*.47,-2,z),.28,black,12)
+
+# Armoured thrust housing: a complete barrel, with segmented cladding.
+for j in range(20):
+ a=j*math.tau/20;b=(j+1)*math.tau/20
+ for za,zb in [(-33.1,-31),(-31,-28.4)]:
+  pts=[(kx+5.0*math.cos(ang),-.3+5.0*math.sin(ang),zz) for ang,zz in [(a,za),(b,za),(b,zb),(a,zb)]]
+  plate(pts,ivory[0] if j%4 else blue[1],(math.cos((a+b)/2),math.sin((a+b)/2),0),.10)
+# Small protruding service modules break the regular command-hull flank.
+for z in [-19,-7,5]:
+ xx=kx-6.22
+ box((xx,-.2,z),(.7,3.8,2.8),steel)
+ for yy in [-1.45,1.05]:
+  box((xx-.43,yy,z),(.24,.32,2.55),orange)
+ for zz in [z-.9,z+.9]:
+  cable([(xx-.45,-1.3,zz),(xx-.65,-1.1,zz),(xx-.65,.75,zz),(xx-.45,1.0,zz)],.11,alloy)
+ for j in range(10):box((xx-.42,-1+j*.21,z),(.22,.08,1.55),alloy)
+ box((xx-.56,.0,z+1.65),(.13,1.3,.4),warm)
+for z in [-24,-12,0,8]:
+ for side in [-1,1]:
+  xx=kx+side*4.85
+  box((xx,4.22,z),(.45,.18,1.65),steel)
+  box((xx,4.33,z),(.21,.03,1.25),warm)
+# Tiny ochre access markings and inset designation plates on each cassette.
+for cz in [-19,1,21]:
+ for xx in [2.0,16.0]:
+  box((xx,7.15,cz+4),(.9,.045,1.5),orange)
+  box((xx,7.18,cz+4),(.66,.02,1.25),blue[0])
+  for dz in [-.35,0,.35]:box((xx,7.21,cz+4+dz),(.4,.018,.055),alloy)
+
+# Coupled pump barrels and ribbed jumpers fill the cassette-to-cassette seams.
+for z in [-28.2,-8.2,11.8]:
+ for yy,dz,r in [(4.75,-.25,.5),(3.5,.7,.34),(5.8,.55,.23)]:
+  tube((-.5,yy,z+dz),(18.3,yy,z+dz),r,alloy,16)
+  for xx in [1.0,4.5,8,11.5,15,17.5]:
+   tube((xx-.15,yy,z+dz),(xx+.15,yy,z+dz),r*1.24,steel,12)
+ for x in [2.5,9,15.5]:
+  cable([(x,2.0,z-.7),(x,4.1,z-.7),(x+.6,5.25,z),(x+.6,4.1,z+.7),(x+.6,2,z+.7)],.36,rubber)
+  box((x+.3,5.3,z),(1.6,1.05,1.2),steel)
+  box((x+.3,5.9,z),(1.35,.2,.95),alloy)
+# Paired machinery cylinders fill the service trench without hiding its void.
+for z in [-23,-14,-3,7,18]:
+ tube((-5.25,3.25,z-1.7),(-5.25,3.25,z+1.7),.80,alloy,16)
+ for dz in [-1.25,1.25]:tube((-5.25,3.25,z+dz-.15),(-5.25,3.25,z+dz+.15),.97,steel,16)
+ cable([(-7.9,2.2,z),(-7,3.25,z),(-5.5,3.25,z),(-3.8,4.4,z),(-1.2,4.4,z)],.32,orange)
+# Broad armoured coaming reduces exposed glass area and steps down to the prow.
+for aa,bb in zip(canopy[1:],canopy[2:]):
+ za,wa,ya,ba=aa;zb,wb,yb,bb_=bb
+ for side in [-1,1]:
+  plate([(kx+side*wa,ba,za),(kx+side*(wa*.79),ya*.45+ba*.55,za),(kx+side*(wb*.79),yb*.45+bb_*.55,zb),(kx+side*wb,bb_,zb)],blue[1],(side,.1,0),.13)
+for side in [-1,1]:
+ pts=[(kx+side*2.8,2.55,25),(kx+side*3.5,2.15,25),(kx+side*3.1,1.45,30),(kx+side*2.45,1.45,30)]
+ plate(pts,ivory[0],(0,1,0),.13)
+for zz,yy in [(26,2.15),(28,1.65)]:radiator(kx,yy,zz,3,1.0)
+
+# Raised but compact roof service housings give the command spine a working skyline.
+for z in [-18,-7,4]:
+ pts=[(kx-1.4,4.35,z-1.4),(kx+1.4,4.35,z-1.4),(kx+1.4,4.95,z-.8),(kx+1.2,5.25,z+.8),(kx-1.2,5.25,z+.8),(kx-1.4,4.95,z-.8)]
+ prism(pts,(0,0,1),.22,blue[2])
+ box((kx,4.65,z),(2.2,.6,2),steel)
+ box((kx,5.05,z),(2.15,.17,1.8),blue[1])
+ box((kx,4.8,z+1.12),(1.4,.33,.1),black)
+ for dx in [-.4,.4]:box((kx+dx,4.8,z+1.19),(.3,.15,.02),warm)
+# Raised ribs guard deep dark roof radiator assemblies.
+for cz in [-19,1,21]:
+ for xx,zz in [(14.9,cz-2.5),(3.1,cz+2)]:
+  box((xx,7.15,zz),(2.7,.2,4.6),black)
+  for dx in [-1.35,1.35]:
+   box((xx+dx,7.45,zz),(.23,.6,4.9),blue[1])
+  for dz in [-2.4,2.4]:box((xx,7.45,zz+dz),(2.9,.6,.24),alloy)
+  for k in range(18):box((xx,7.40,zz-2.05+k*.24),(2.1,.22,.09),alloy)
+# Upper canopy panels and heavy sill frame reduce the glazing to compact windows.
+for aa,bb in zip(canopy[1:],canopy[2:]):
+ za,wa,ya,ba=aa;zb,wb,yb,bb_=bb
+ for side in [-1,1]:
+  plate([(kx+side*wa*.79,ya,za),(kx+side*wa*.51,ya,za),(kx+side*wb*.51,yb,zb),(kx+side*wb*.79,yb,zb)],blue[1],(0,1,0),.16)
+for z,w,y,b in canopy[1:]:
+ tube((kx-w*.79,y+.07,z),(kx+w*.79,y+.07,z),.18,alloy,12)
+
+# Inset forward windshield: thick armored sill and mullions, smaller glass area.
+a,b=cr[2],cr[3]
+left=a[1].lerp(b[1],.76);right=a[2].lerp(b[2],.76)
+plate([left,right,b[2],b[1]],blue[1],(0,.6,.8),.16)
+tube(left+Vector((0,.10,.10)),right+Vector((0,.10,.10)),.22,alloy,12)
+for edge in [1,2]:tube(a[edge]+Vector((0,.07,.07)),b[edge]+Vector((0,.07,.07)),.24,steel,12)
+hatch(kx,7.05,17.0,3.0,2.6)
 objects=[]
 for name,(verts,faces,uvs) in BATCH.items():
  mesh=bpy.data.meshes.new(name);mesh.from_pydata(verts,[],faces);mesh.materials.append(MATS[GROUP_MAT[name]]);mesh.update()
@@ -274,10 +375,14 @@ for name,(verts,faces,uvs) in BATCH.items():
  # Weld each solid's coincident face corners before beveling; isolated face
  # islands cannot form the rounded machined edges the authored solids need.
  bm=bmesh.new();bm.from_mesh(mesh);bmesh.ops.remove_doubles(bm,verts=list(bm.verts),dist=.00001);bmesh.ops.recalc_face_normals(bm,faces=list(bm.faces));bm.to_mesh(mesh);bm.free();mesh.update()
+ 
+ for face in mesh.polygons:face.use_smooth=True
  ob=bpy.data.objects.new(name,mesh);bpy.context.collection.objects.link(ob);objects.append(ob)
  if GROUP_MAT[name] in blue+ivory:
-  bevel=ob.modifiers.new('machined-edge-radius','BEVEL');bevel.width=.075;bevel.segments=2
+  bevel=ob.modifiers.new('machined-edge-radius','BEVEL');bevel.width=.17;bevel.segments=3
   normal=ob.modifiers.new('weighted-panel-normals','WEIGHTED_NORMAL');normal.keep_sharp=True
+ else:
+  normal=ob.modifiers.new('weighted-surface-normals','WEIGHTED_NORMAL');normal.keep_sharp=True
 bpy.ops.file.pack_all()
 bpy.ops.wm.save_as_mainfile(filepath=str(OUT/'porter-hull.blend'))
 glb=OUT/'porter-hull.glb'

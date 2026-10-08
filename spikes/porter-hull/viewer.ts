@@ -37,11 +37,11 @@ controls.maxDistance = 240;
 const pmrem = new THREE.PMREMGenerator(renderer),
 	room = new RoomEnvironment();
 scene.environment = pmrem.fromScene(room, 0.04).texture;
-scene.environmentIntensity = 0.26;
+scene.environmentIntensity = 0.32;
 room.dispose();
 pmrem.dispose();
-const key = new THREE.DirectionalLight(0xffead4, 4.3);
-key.position.set(-55, 40, -8);
+const key = new THREE.DirectionalLight(0xffd6aa, 4.4);
+key.position.set(-60, 40, -55);
 key.castShadow = true;
 key.shadow.mapSize.set(4096, 4096);
 Object.assign(key.shadow.camera, {
@@ -55,22 +55,22 @@ Object.assign(key.shadow.camera, {
 key.shadow.bias = -0.0003;
 key.shadow.normalBias = 0.1;
 scene.add(key);
-const fill = new THREE.DirectionalLight(0xb4c8dc, 0.34);
+const fill = new THREE.DirectionalLight(0xb4c8dc, 0.22);
 fill.position.set(25, 12, 45);
 scene.add(fill);
-const rim = new THREE.DirectionalLight(0x9eaeb9, 1.1);
-rim.position.set(8, 20, -50);
+const rim = new THREE.DirectionalLight(0xffe4c6, 0.8);
+rim.position.set(60, 65, -75);
 scene.add(rim);
-for (const x of [-17, 17])
-	for (const z of [-11, 1]) {
-		const service = new THREE.PointLight(0xff8c28, 25, 8, 2);
-		service.position.set(x, 2, z);
+for (const x of [-5.5])
+	for (const z of [-20, 0, 20]) {
+		const service = new THREE.PointLight(0xff8c28, 90, 12, 2);
+		service.position.set(x, 4.6, z);
 		scene.add(service);
 	}
 const inspection = new THREE.HemisphereLight(0xd9e7f3, 0x9b9b88, 1.7);
 inspection.visible = false;
 scene.add(inspection);
-const stars = new Float32Array(1500 * 3);
+const stars = new Float32Array(42000 * 3);
 let seed = 795;
 const rand = () =>
 	(seed = (Math.imul(seed, 1664525) + 1013904223) >>> 0) / 4294967296;
@@ -82,26 +82,33 @@ for (let i = 0; i < stars.length; i += 3) {
 }
 const sg = new THREE.BufferGeometry();
 sg.setAttribute("position", new THREE.BufferAttribute(stars, 3));
+const brightness = new Float32Array(stars.length / 3);
+for (let i = 0; i < brightness.length; i++) brightness[i] = Math.pow(rand(), 5);
+sg.setAttribute("brightness", new THREE.BufferAttribute(brightness, 1));
 const starfield = new THREE.Points(
 	sg,
-	new THREE.PointsMaterial({
-		color: 0xaab7be,
-		size: 1.5,
-		sizeAttenuation: true,
+	new THREE.ShaderMaterial({
+		transparent: true,
+		depthWrite: false,
+		blending: THREE.AdditiveBlending,
+		vertexShader: `attribute float brightness; varying float vBrightness;
+ void main(){vBrightness=brightness;gl_Position=projectionMatrix*modelViewMatrix*vec4(position,1.0);gl_PointSize=1.0+brightness*5.0;}`,
+		fragmentShader: `varying float vBrightness; void main(){vec2 q=gl_PointCoord-.5;float r=length(q);float core=exp(-r*r*80.0);float halo=exp(-r*r*14.0)*.14;float light=(core+halo)*(.15+vBrightness*1.7);gl_FragColor=vec4(mix(vec3(.65,.77,.9),vec3(1.0,.90,.75),vBrightness),light);}`,
 	}),
 );
 scene.add(starfield);
 const composer = new EffectComposer(renderer);
 composer.addPass(new RenderPass(scene, camera));
 const ao = new SSAOPass(scene, camera, innerWidth, innerHeight);
-ao.kernelRadius = 1.5;
+ao.kernelRadius = 2.1;
 ao.minDistance = 0.001;
 ao.maxDistance = 0.025;
+ao.enabled = true;
 composer.addPass(ao);
 composer.addPass(
 	new UnrealBloomPass(
 		new THREE.Vector2(innerWidth, innerHeight),
-		0.15,
+		0.22,
 		0.32,
 		1.7,
 	),
@@ -111,7 +118,7 @@ composer.addPass(new SMAAPass(innerWidth, innerHeight));
 const ship = new THREE.Group();
 scene.add(ship);
 const views: Record<string, { position: number[]; target: number[] }> = {
-	hero: { position: [-83, 67, 103], target: [0, 0, 0] },
+	hero: { position: [-75, 51, 77], target: [0, -1, 0] },
 	front: { position: [0, 8, 128], target: [0, 0, 0] },
 	top: { position: [0, 128, 0.01], target: [0, 0, 1] },
 	rear: { position: [70, 43, -108], target: [0, 0, -3] },
@@ -147,20 +154,26 @@ const stats = {
 new GLTFLoader().load(
 	"./porter-hull.glb",
 	(gltf) => {
-		gltf.scene.traverse((o) => {
-			if (o instanceof THREE.Mesh) {
+		gltf.scene.traverse((object) => {
+			const o = object as THREE.Mesh;
+			if (o.isMesh) {
 				o.castShadow = true;
 				o.receiveShadow = true;
 				stats.meshCount++;
 				stats.modelTriangles +=
 					(o.geometry.index?.count ?? o.geometry.attributes.position.count) / 3;
-				for (const m of Array.isArray(o.material) ? o.material : [o.material])
-					if (m instanceof THREE.MeshStandardMaterial && m.map) {
+				for (const item of Array.isArray(o.material)
+					? o.material
+					: [o.material]) {
+					const m = item as THREE.MeshStandardMaterial;
+					if (m.isMeshStandardMaterial && m.map) {
 						m.map.anisotropy = renderer.capabilities.getMaxAnisotropy();
 						m.bumpMap = m.map;
-						m.bumpScale = 0.012;
+						m.bumpScale = 0.022;
+
 						m.needsUpdate = true;
 					}
+				}
 			}
 		});
 		ship.add(gltf.scene);
@@ -223,6 +236,10 @@ addEventListener("resize", () => {
 Object.assign(window, {
 	__porter: {
 		scene,
+		composer,
+		key,
+		fill,
+		rim,
 		camera,
 		renderer,
 		ship,

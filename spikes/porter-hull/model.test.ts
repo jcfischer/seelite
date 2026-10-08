@@ -1,7 +1,6 @@
 import { expect, test } from "bun:test";
 import { readFileSync } from "node:fs";
 
-
 test("command hull and three cargo cassettes are closed, outward-wound shells", () => {
 	const bytes = readFileSync(new URL("./porter-hull.glb", import.meta.url));
 	const length = bytes.readUInt32LE(12);
@@ -62,4 +61,34 @@ test("command hull and three cargo cassettes are closed, outward-wound shells", 
 		).toEqual([]);
 		expect(volume6, `${name} faces outward`).toBeGreaterThan(0);
 	}
+	const limits = (name: string) => {
+		const mesh = doc.meshes.find((m: { name: string }) => m.name === name);
+		const points: number[][] = mesh.primitives.flatMap(
+			(p: { attributes: { POSITION: number } }) =>
+				accessor(p.attributes.POSITION, 3),
+		);
+		return {
+			min: [0, 1, 2].map((i) => Math.min(...points.map((v) => v[i]))),
+			max: [0, 1, 2].map((i) => Math.max(...points.map((v) => v[i]))),
+		};
+	};
+	const command = limits("command-shell");
+	const pods = [1, 2, 3].map((i) => limits(`cargo-${i}`));
+	for (const pod of pods) {
+		expect(pod.min[0], "cargo remains beside the command keel").toBeGreaterThan(
+			command.max[0],
+		);
+		expect(
+			pod.max[1] - pod.min[1],
+			"cargo has physical height",
+		).toBeGreaterThan(10);
+	}
+	expect(
+		pods[1].min[2],
+		"aft cassette has a visible separation",
+	).toBeGreaterThan(pods[0].max[2] + 2);
+	expect(
+		pods[2].min[2],
+		"forward cassette has a visible separation",
+	).toBeGreaterThan(pods[1].max[2] + 2);
 });
