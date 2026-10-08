@@ -573,6 +573,51 @@ describe("entrusted recovery Operational condition", () => {
 		(bad.byId[offer().id].terms.operand as any).item.priceCr = -1;
 		expect(() => parseRequests(bad, at)).toThrow("invalid Requests");
 	});
+	test("saved Salvage rewards survive payout retuning and pay their pinned amount once", () => {
+		const took = scoop();
+		for (const rewardCr of [0, 1250]) {
+			const requests = structuredClone(took.holdings.requests);
+			// Terms accepted under an older payout factor must remain authoritative.
+			requests.byId[offer().id].terms.rewardCr = rewardCr;
+			const saved = serializeSave({
+				world: advanceTo(took.world, at),
+				commander: {
+					...newCommanderRecord("courier"),
+					state: took.holdings.commander,
+					requests,
+				},
+			});
+			const restored = parseSave(saved).commander.requests;
+			expect(restored).toEqual(requests);
+			const delivered = requestAction(
+				restored,
+				[],
+				"deliver",
+				offer().id,
+				ctx(),
+			);
+			expect(delivered.rewardCr).toBe(rewardCr);
+			expect(delivered.state.byId[offer().id].status).toBe("completed");
+			expect(
+				requestAction(delivered.state, [], "deliver", offer().id, ctx())
+					.rewardCr,
+			).toBe(0);
+		}
+	});
+	test("saved Salvage rewards must remain finite non-negative numbers", () => {
+		const took = scoop();
+		for (const rewardCr of [
+			-1,
+			Number.NaN,
+			Number.POSITIVE_INFINITY,
+			"1500",
+			null,
+		]) {
+			const requests = structuredClone(took.holdings.requests);
+			(requests.byId[offer().id].terms as any).rewardCr = rewardCr;
+			expect(() => parseRequests(requests, at)).toThrow("invalid Requests");
+		}
+	});
 	test("Requests shows named tonnes and unlocked recovery instructions", () => {
 		const o = offer();
 		const html = requestsBody({

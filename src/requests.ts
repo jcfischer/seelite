@@ -23,7 +23,6 @@ import { type CarrierKey, isCarrierKey } from "./carrier-key";
 import type { JobFamily, JobMark, JobOffer, JobOperand, JobPost } from "./jobs";
 import {
 	FAMILY_OPERAND_KIND,
-	SALVAGE_PAY_FACTOR,
 	SALVAGE_OFFER_WINDOW_S,
 	cargoOf,
 	deliverableOf,
@@ -1031,8 +1030,7 @@ export function parseRequests(raw: unknown, now: number): RequestsState {
 			bad();
 		if (
 			o.operand.kind === "salvage" &&
-			(o.rewardCr !== SALVAGE_PAY_FACTOR * o.operand.item.priceCr ||
-				reportAt.galaxyIndex !== requester.galaxyIndex ||
+			(reportAt.galaxyIndex !== requester.galaxyIndex ||
 				reportAt.carrierKey !== requester.carrierKey ||
 				o.stages.length !== 1 ||
 				o.stages[0] !== "deliver")
