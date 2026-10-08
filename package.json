@@ -21,6 +21,7 @@
 		"probe:pr": "node scripts/select-probes.mjs --run",
 		"views": "node scripts/capture-views.mjs",
 		"views:diff": "node scripts/diff-view-set.mjs",
+		"views:levels": "node scripts/levels-view-set.mjs",
 		"sounds": "node scripts/capture-sounds.mjs",
 		"probe:browser": "playwright install chromium"
 	},
