@@ -96,9 +96,12 @@ const coast = async ({ type, where, gates, system = SYSTEM, perch = null }) => {
 					label = `over berth ${berth.id}`;
 				} else {
 					// Over a member of a shipyard's static frame, at a perch the
-					// row names per form (node #746): `axialKm` out along the axis
-					// and `upKm` out along the static `up`.
-					rel = add(scale(axis, perch.axialKm), scale(up0, perch.upKm));
+					// row names per form (node #746): `axialKm` out along the axis,
+					// `acrossKm` along the static `across` and `upKm` along its `up`.
+					rel = add(
+						add(scale(axis, perch.axialKm), scale(across0, perch.acrossKm)),
+						scale(up0, perch.upKm),
+					);
 					label = perch.label;
 				}
 				return { rel, label };
@@ -266,8 +269,9 @@ function stopped(what, r) {
 // above what it comes down onto, inside `coast`'s 0.6 km of travel:
 // - the Gantry's boom stands 0.37–0.58 km out along the static `up` and runs
 //   forward to 1.15 km; come down onto its front end;
-// - the Hangar's slab stands to 0.432 km along `up` and its forward face is
-//   at −0.38 km; 0.40 km out clears the hub's swept corners (0.37 km);
+// - the Hangar's slab runs ±1.2 km along `across` and its forward face is at
+//   −0.38 km on the centreline; 0.7 km across clears the hub's swept corners
+//   (0.37 km) and the bay mouth's band (0.54 km);
 // - the Slipway's arc is a 1.283 km ring whose +Z crown is at 0.12 km, and
 //   `up` at phase zero points at 0.5π, inside its 0.28π–1.73π sweep.
 for (const [type, where, what, system, perch, formId] of [
@@ -277,7 +281,7 @@ for (const [type, where, what, system, perch, formId] of [
 		"static",
 		"a Gantry's boom",
 		7,
-		{ axialKm: 1.5, upKm: 0.475, label: "over the dorsal boom" },
+		{ axialKm: 1.5, acrossKm: 0, upKm: 0.475, label: "over the dorsal boom" },
 		"a",
 	],
 	[
@@ -285,7 +289,12 @@ for (const [type, where, what, system, perch, formId] of [
 		"static",
 		"a Hangar's slab",
 		8,
-		{ axialKm: -0.03, upKm: 0.4, label: "over the slab's forward face" },
+		{
+			axialKm: -0.03,
+			acrossKm: 0.7,
+			upKm: 0,
+			label: "over the slab's forward face",
+		},
 		"b",
 	],
 	[
@@ -293,7 +302,7 @@ for (const [type, where, what, system, perch, formId] of [
 		"static",
 		"a Slipway's arc",
 		1,
-		{ axialKm: 0.47, upKm: 1.283, label: "over the arc's crown" },
+		{ axialKm: 0.47, acrossKm: 0, upKm: 1.283, label: "over the arc's crown" },
 		"c",
 	],
 ]) {

@@ -531,8 +531,8 @@ function shipyardGantryProxy(): StationProxy {
  * and the spindle behind it running back into the slab's bearing.
  *
  * **Static.** The slab runs along x behind the hub (centred
- * `SHIPYARD_KEEL_AFT_KM` aft, forward face at −0.38 km): its parallel section
- * as one box, and each chamfered end as two smaller boxes stepping in with
+ * `SHIPYARD_KEEL_AFT_KM` aft, forward face at −0.38 km): its octagonal parallel
+ * section as two boxes, and each chamfered end as two smaller boxes stepping in with
  * the taper, each as large as its corner allows inside the 1.5 km reach. A
  * band across the forward face carries the bay mouth's two lips and the dark
  * recess, which stand up to 36 m proud of it, and a box carries the bearing
@@ -548,13 +548,25 @@ function shipyardHangarProxy(): StationProxy {
 	const SLAB_BACK = -0.98;
 	const SLAB_FRONT = -0.38;
 	const slab: Bounds[] = [
+		// The parallel section is an octagon: full depth to its 45° vertices at
+		// ±0.391 km, and 28 m shallower each side to its full height. Two boxes
+		// hold it with 40 m over its top-front edge at most, where one held it
+		// with 88 m.
+		{
+			x0: -0.94,
+			x1: 0.86,
+			y0: -0.391,
+			y1: 0.391,
+			z0: SLAB_BACK,
+			z1: SLAB_FRONT,
+		},
 		{
 			x0: -0.94,
 			x1: 0.86,
 			y0: -0.432,
 			y1: 0.432,
-			z0: SLAB_BACK,
-			z1: SLAB_FRONT,
+			z0: SLAB_BACK + 0.028,
+			z1: SLAB_FRONT - 0.028,
 		},
 		{ x0: -1.06, x1: -0.94, y0: -0.4, y1: 0.4, z0: -0.95, z1: -0.41 },
 		{ x0: -1.15, x1: -1.06, y0: -0.33, y1: 0.33, z0: -0.89, z1: -0.47 },
