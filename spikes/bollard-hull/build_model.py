@@ -1,3 +1,4 @@
+# glossary-ignore: wound, tow — physical cable winding and towing hardware, not the carrier Diversion state.
 """O4 Bollard exterior study. Blender --background --python this_file.py.
 Metres, Y up, +Z forward. Material-batched authored geometry; seeded detail.
 """
