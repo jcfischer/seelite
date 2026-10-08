@@ -14,7 +14,8 @@
  * (`tests/station.test.ts`, `tests/station-orbits.test.ts`,
  * `tests/cold-rocky-moons.test.ts`) hold that no existing stream moved.
  *
- * The refinery ships four forms (node #745); the other roles still hold one.
+ * The refinery ships four forms (node #745) and the shipyard three (node
+ * #746); the trade role still holds one.
  * Reach, uniformity and slot independence also run on stand-in pools of // glossary-ignore: slot
  * several members through the same draw.
  */
@@ -109,13 +110,14 @@ describe("the pools", () => {
 		);
 	});
 
-	test("the refinery pool holds every built form in id order (node #745)", () => {
+	test("the refinery and shipyard pools hold every built form in id order (nodes #745, #746)", () => {
 		// Pinned so that growing a pool is a deliberate edit with a red row
 		// beside it, not a side effect. Node #744 ratified every built form,
-		// uniformly drawn; this node grows only the refinery pool.
+		// uniformly drawn; node #745 grew the refinery pool and node #746 the
+		// shipyard's.
 		expect(STATION_FORM_POOL).toEqual({
 			trade: ["a"],
-			shipyard: ["a"],
+			shipyard: ["a", "b", "c"],
 			refinery: ["a", "b", "c", "d"],
 		});
 	});
@@ -318,6 +320,24 @@ describe("the mesh, the reach and the proxy read the one field", () => {
 			}
 		}
 		throw new Error("the corpus generates no refinery");
+	});
+	test("a generated shipyard with an unsupported form still refuses its proxy", () => {
+		// The guard is kept, not loosened (node #746): every built shipyard form
+		// is pooled, so the form here is one the role does not build.
+		expect(STATION_FORMS.shipyard.map((f) => f.id)).not.toContain("d");
+		for (const g of GALAXIES) {
+			for (const record of generateGalaxy(WORLD_SEED, g).systems) {
+				const station = generateContents(record).stations.find(
+					(s) => s.type === "shipyard",
+				);
+				if (!station) continue;
+				expect(() => stationProxyOf({ ...station, formId: "d" })).toThrow(
+					"shipyard form d has no proxy",
+				);
+				return;
+			}
+		}
+		throw new Error("the corpus generates no shipyard");
 	});
 	const first = (() => {
 		const contents = generateContents(generateGalaxy(WORLD_SEED, 0).systems[0]);

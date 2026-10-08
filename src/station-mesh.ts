@@ -2579,6 +2579,25 @@ function buildShipyardHangar(color: number, berthSeed: number): BuiltPart {
 	bearing.name = "bearing";
 	frame.add(bearing);
 	frame.add(slab);
+	frame.updateMatrixWorld(true);
+	/**
+	 * Where the slab's forward face is at `(x, y)`, and which way it faces.
+	 * Read off the slab itself rather than written down: its section is an
+	 * eight-sided superellipse, so the "face" is two chords meeting at
+	 * `y = 0`, 28 m further aft at `±0.39 km` than on the centreline, and a
+	 * fitting placed at `r * 0.5` stood proud of it by up to that much.
+	 */
+	const slabRay = new THREE.Raycaster();
+	const slabFront = (x: number, y: number) => {
+		slabRay.set(new THREE.Vector3(x, y, 1), new THREE.Vector3(0, 0, -1));
+		const hit = slabRay.intersectObject(slab)[0];
+		if (!hit?.face)
+			throw new Error(`the Hangar's slab has no forward face at (, )`);
+		return {
+			z: hit.point.z,
+			normal: hit.face.normal.clone().transformDirection(slab.matrixWorld),
+		};
+	};
 
 	// The bay mouth: a recess cut into the flank, floodlit from inside. Its own
 	// size is the ruler — it is obviously a hole a ship goes through.
@@ -2702,9 +2721,10 @@ function buildShipyardHangar(color: number, berthSeed: number): BuiltPart {
 	 * mouth's rim and the nearest structure in front of the bay, so the work
 	 * light is mounted on their forward faces, centred on that face so each is
 	 * half sunk into the lip, and turned 35° inboard so the lit faces aim into
-	 * the mouth, as the Gantry's do on its boom tips. Every fitting stands
-	 * outboard of the hub's square section in that view, which is what hid
-	 * the arc where it was first moved to.
+	 * the mouth, as the Gantry's do on its boom tips; the arc is on the slab's
+	 * face below the lower lip. Every fitting stands outboard of the hub's
+	 * square section in that view, which is what hid the arc where it was
+	 * first moved to.
 	 */
 	const LIP_Y = r * 0.26;
 	const LIP_FRONT_Z = r * 0.5 + r * 0.06 - SHIPYARD_KEEL_AFT_KM;
@@ -2731,7 +2751,13 @@ function buildShipyardHangar(color: number, berthSeed: number): BuiltPart {
 					LIP_FRONT_Z,
 				);
 			},
-			new THREE.Vector3(-span * 0.22, -LIP_Y, LIP_FRONT_Z),
+			// The arc on the slab's own forward face below the lower lip, centred on
+			// that face: a 1 m fitting cannot be seated on the lip's faceted front.
+			new THREE.Vector3(
+				-span * 0.22,
+				-r * 0.4,
+				slabFront(-span * 0.22, -r * 0.4).z,
+			),
 		),
 	);
 	group.add(
@@ -2740,7 +2766,7 @@ function buildShipyardHangar(color: number, berthSeed: number): BuiltPart {
 			// #746). On the back face the run faced away from every approach and
 			// sat at `r * 0.46`, 24 m inside a face that stands at `r * 0.5`, so
 			// §5's windows were never seen from the aperture axis. The forward
-			// face is `r * 0.5` ahead of the slab's centre; the panes sit a metre
+			// face is read off the slab (`slabFront`); the panes sit a metre
 			// proud of it, in two rows outboard of the lips (`r * 0.26`) and
 			// outboard of the hub's 0.42·r half-width in the axis view.
 			//
@@ -2748,12 +2774,11 @@ function buildShipyardHangar(color: number, berthSeed: number): BuiltPart {
 			// constant from −0.44·span to +0.4·span and chamfers outside that,
 			// so a run reaching 0.46·span put panes on the taper.
 			const { row, along } = rowsOf(i, count, 2);
-			normal.set(0, 0, 1);
-			position.set(
-				-span * 0.34 + along * span * 0.68,
-				(row === 0 ? -1 : 1) * r * 0.5,
-				r * 0.5 + 0.001 - SHIPYARD_KEEL_AFT_KM,
-			);
+			const x = -span * 0.34 + along * span * 0.68;
+			const y = (row === 0 ? -1 : 1) * r * 0.5;
+			const face = slabFront(x, y);
+			normal.copy(face.normal);
+			position.set(x, y, face.z).addScaledVector(face.normal, 0.001);
 		}),
 	);
 	// On the slab's back face, beside the port run and set into the same
@@ -2800,7 +2825,11 @@ function buildShipyardSlipway(color: number, berthSeed: number): BuiltPart {
 		new THREE.TorusGeometry(major, r * 0.2, 8, 22, Math.PI * 1.45),
 		hullMaterial(color, "shipyard"),
 	);
-	arc.name = "core";
+	// **`arc`, not `core`** (node #746). `core` names the body the aperture is
+	// cut into, which every row that measures the bay or the plane reads, and
+	// on this form that is the hub: the arc carried the name while the hub
+	// carried the cut, so those rows measured a ring 252 m behind the plane.
+	arc.name = "arc";
 	arc.rotation.z = Math.PI * 0.28;
 	const frame = new THREE.Group();
 	frame.name = "frame";
@@ -2810,10 +2839,19 @@ function buildShipyardSlipway(color: number, berthSeed: number): BuiltPart {
 		[
 			{ z: -r * 0.6, w: r * 0.3, h: r * 0.26, e: 3.4 },
 			{ z: r * 0.24, w: r * 0.4, h: r * 0.34, e: 3.4, hard: true },
-			{ z: r * 0.64, w: r * 0.3, h: r * 0.26, e: 3.4 },
+			// The forward face is the declared aperture plane (node #746): at
+			// `r * 0.64` it stood 12 m proud of the plane the checks read.
+			{
+				z: STATION_GEOMETRY.shipyard.aperturePlaneKm,
+				w: r * 0.3,
+				h: r * 0.26,
+				e: 3.4,
+			},
 		],
-		plainMaterial(0x8b95a0, 0.62, 0.48),
-		"hub",
+		// The station's own hull, as the other two hubs are: §7's colour cue is
+		// read off `core`, and this was a plain grey.
+		hullMaterial(color, "shipyard"),
+		"core",
 		12,
 		false,
 		apertureCut("shipyard"),
@@ -2821,13 +2859,24 @@ function buildShipyardSlipway(color: number, berthSeed: number): BuiltPart {
 	const spun = new THREE.Group();
 	spun.name = "spun";
 	spun.add(spine);
-	spun.add(buildAperture("shipyard", fixtures, r * 0.64, berthSeed));
+	spun.add(
+		buildAperture(
+			"shipyard",
+			fixtures,
+			STATION_GEOMETRY.shipyard.aperturePlaneKm,
+			berthSeed,
+		),
+	);
 	// The strobe pair on the hub's forward face, above and below the slot
 	// (§5, #300's review): the arc does not turn, and the pair stood on its
 	// centreline, inside its own tube.
 	spun.add(
 		strobePair("shipyard", fixtures, LAMP_POOL_KM.face, (side, position) => {
-			position.set(0, side * r * 0.18, r * 0.64);
+			position.set(
+				0,
+				side * r * 0.18,
+				STATION_GEOMETRY.shipyard.aperturePlaneKm,
+			);
 		}),
 	);
 	group.add(spun);
@@ -2855,6 +2904,7 @@ function buildShipyardSlipway(color: number, berthSeed: number): BuiltPart {
 	// The two ends of the slip, capped and built up. An arc that simply stops is
 	// a tube with a hole in it: these are the working faces the slip opens
 	// between, so they carry the heaviest structure on the station.
+	const heads: THREE.Mesh[] = [];
 	for (const [index, end] of [Math.PI * 0.28, Math.PI * 1.73].entries()) {
 		const head = shell(
 			[
@@ -2868,42 +2918,72 @@ function buildShipyardSlipway(color: number, berthSeed: number): BuiltPart {
 			true,
 		);
 		radialArm(frame, end, `slip-head-${index}`, head);
+		heads.push(head);
 	}
+	frame.updateMatrixWorld(true);
+	/**
+	 * The arc's inner *surface* at `theta`, as a distance from the axis,
+	 * derived from its tube radius. The tube is flat-shaded, so its inner face
+	 * between two ring vertices is a chord, up to 6 m inboard of the circle
+	 * through them; what sits on that face sits on the chord.
+	 */
+	const innerFace = (theta: number) => {
+		const seg = (Math.PI * 1.45) / 22;
+		const local = ((((theta - Math.PI * 0.28) % seg) + seg) % seg) - seg / 2;
+		return ((major - r * 0.2) * Math.cos(seg / 2)) / Math.cos(local);
+	};
+	/**
+	 * **The welding arc is on the slip-head, at the slip's edge** (node #746).
+	 * It hung in the gap, 0.11 km inside the ring, where the work would be — a
+	 * light with nothing under it, which the collision proxy can hold only with
+	 * a primitive the size of the light or a wall nobody can see. It now sits
+	 * half sunk in the first head's top face, on the side that faces the slip,
+	 * at the head's widest ring. The head is six-sided, so that face is a
+	 * facet sloping away from a ridge, and the height is read off it.
+	 */
+	const HEAD_THETA = Math.PI * 0.28;
+	const HEAD_RADIAL = major + r * 0.05;
+	const HEAD_ACROSS = -r * 0.25;
+	const weldAt = new THREE.Vector3(
+		HEAD_RADIAL * Math.cos(HEAD_THETA) - HEAD_ACROSS * Math.sin(HEAD_THETA),
+		HEAD_RADIAL * Math.sin(HEAD_THETA) + HEAD_ACROSS * Math.cos(HEAD_THETA),
+		1,
+	);
+	const headTop = new THREE.Raycaster(
+		weldAt.clone(),
+		new THREE.Vector3(0, 0, -1),
+	).intersectObject(heads[0])[0];
+	if (!headTop)
+		throw new Error("the Slipway's first slip-head has no top face");
+	weldAt.z = headTop.point.z;
 	// On the arc's inner face, looking into the slip.
 	group.add(
 		buildBayLights(
 			fixtures,
 			r,
 			(i, flood) => {
-				const theta = Math.PI * 0.3 + (i / 3) * Math.PI * 1.35;
-				// On the arc's inner *surface*, derived from its tube radius. At
-				// `major * 0.86` they hung 60 m inside the slip — invisible to the
-				// island check, whose boxes overlap because the arc's box spans the
-				// whole ring, and plainly floating on screen.
-				// **On** that surface, not 12 m into the tube (#300's review):
-				// `r * 0.18` half-sank a 156 m flood and buried a real 4 m one.
-				// The tube is flat-shaded, so its inner face between two ring
-				// vertices is a chord, up to 6 m inboard of the circle through
-				// them; the flood sits on the chord.
-				const seg = (Math.PI * 1.45) / 22;
-				const local =
-					((((theta - Math.PI * 0.28) % seg) + seg) % seg) - seg / 2;
-				const inner = ((major - r * 0.2) * Math.cos(seg / 2)) / Math.cos(local);
+				// Between the struts, not on them (node #746): at the struts' own
+				// angles each strut ran over its flood, and from the aperture axis
+				// all four were hidden at every phase.
+				const theta = Math.PI * 0.3 + ((i + 0.5) / 4) * Math.PI * 1.35;
+				// **On** the inner surface: at `major * 0.86` the floods hung 60 m
+				// inside the slip, and at `r * 0.18` into the tube (#300's review)
+				// a real 4 m flood was buried.
+				const inner = innerFace(theta);
 				flood.position.set(Math.cos(theta) * inner, Math.sin(theta) * inner, 0);
 			},
-			new THREE.Vector3(major - r * 0.18, 0, 0),
+			weldAt,
 		),
 	);
 	group.add(
 		portRun("shipyard", 12, (i, count, position, normal) => {
 			const theta = Math.PI * 0.28 + ((i + 1) / (count + 1)) * Math.PI * 1.4;
-			// On the ring's inner face, looking into the slip.
+			// On the ring's inner face, looking into the slip — a metre proud of
+			// it (node #746). At `major * 0.82` the panes hung 110 m inside the
+			// ring with nothing under them.
 			normal.set(-Math.cos(theta), -Math.sin(theta), 0);
-			position.set(
-				Math.cos(theta) * major * 0.82,
-				Math.sin(theta) * major * 0.82,
-				0,
-			);
+			const inner = innerFace(theta) - 0.001;
+			position.set(Math.cos(theta) * inner, Math.sin(theta) * inner, 0);
 		}),
 	);
 	// On the broken ring's two flat sides, along the arc the ports look out of.

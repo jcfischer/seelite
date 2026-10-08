@@ -1211,6 +1211,91 @@ const DECLARATIONS: Partial<
 	},
 
 	/**
+	 * Shipyard C — Slipway (node #746). A broken torus (major 1.24·span·0.5,
+	 * tube 0.2·r) from 0.28π to 1.73π that does not turn, with the slip in its
+	 * gap. Everything sits on the arc's two crowns, where the tube faces ±Z: the
+	 * outer face is the whole outline (1.450 km against a 1.5 km reach) and the
+	 * inner face carries the floods and the ports. The ends of the arc carry
+	 * the slip-heads, so nothing here comes within 0.1π of either.
+	 */
+	"shipyard/c": ({ group, pools, mount, beaconAt }) => {
+		const r = STATION_GEOMETRY.shipyard.coreRadiusKm;
+		const S = SHIP_SCALE;
+		const major = 2.07 * 0.62;
+		const tube = r * 0.2;
+		const FROM = Math.PI * 0.38;
+		const TO = Math.PI * 1.63;
+		const radial = (theta: number) => V(Math.cos(theta), Math.sin(theta), 0);
+		const tangent = (theta: number) => V(-Math.sin(theta), Math.cos(theta), 0);
+		/** A point on the crown facing `side`, cast onto the tube. */
+		const crown = (theta: number, side: number, offset = 0) =>
+			mount(
+				radial(theta)
+					.multiplyScalar(major + offset)
+					.setZ(side * tube),
+				V(0, 0, side),
+				tube * 0.5,
+			);
+		// A lattice bridge along the +Z crown, chord by chord.
+		const STEPS = 16;
+		for (let i = 0; i < STEPS; i++) {
+			const a = FROM + (i / STEPS) * (TO - FROM);
+			const b = FROM + ((i + 1) / STEPS) * (TO - FROM);
+			truss(
+				pools,
+				crown(a, 1).add(V(0, 0, S.trussKm * 0.5)),
+				crown(b, 1).add(V(0, 0, S.trussKm * 0.5)),
+				S.trussKm,
+				V(0, 0, 1),
+			);
+		}
+		// A pipe main along the −Z crown's outer shoulder, every elbow landed.
+		const main: THREE.Vector3[] = [];
+		for (let i = 0; i <= STEPS; i++) {
+			const theta = FROM + (i / STEPS) * (TO - FROM);
+			main.push(crown(theta, -1, tube * 0.4).add(V(0, 0, -S.pipeKm * 1.5)));
+		}
+		pipeRun(pools, main, S.pipeKm);
+		// Radiator banks and tank racks alternating along the −Z crown, fins
+		// and tanks along the arc.
+		// Each starts on one of the arc's 22 rings of vertices, where the
+		// facets meet: between two rings the tube is a chord, and a bank set
+		// down there stood clear of it.
+		const RING = (Math.PI * 1.45) / 22;
+		for (const [k, j] of [2, 6, 9, 13, 16, 19].entries()) {
+			const theta = Math.PI * 0.28 + j * RING;
+			if (k % 2 === 0)
+				radiatorArray(pools, {
+					origin: crown(theta, -1, -tube * 0.2),
+					along: tangent(theta),
+					up: V(0, 0, -1),
+					count: 8,
+					panelWidthKm: S.panelKm,
+					panelHeightKm: S.panelHeightKm,
+				});
+			else
+				tankRack(pools, {
+					origin: crown(theta, -1, -tube * 0.2),
+					along: tangent(theta),
+					up: V(0, 0, -1),
+					count: 5,
+					radiusKm: S.tankKm,
+					lengthKm: S.tankLengthKm,
+				});
+		}
+		// Masts on the +Z crown's inner shoulder, each with a beacon.
+		for (const theta of [Math.PI * 0.6, Math.PI, Math.PI * 1.4]) {
+			const tip = mast(pools, group, {
+				base: crown(theta, 1, -tube * 0.4),
+				up: V(0, 0, 1),
+				heightKm: S.mastHeightKm,
+				widthKm: S.mastKm,
+			});
+			beaconAt(tip.clone().add(V(0, 0, S.beaconKm * 0.6)), S.beaconKm);
+		}
+	},
+
+	/**
 	 * Refinery A — Warren. A rock of radius ~0.95·r with terraces cut into its
 	 * +Z face and two flare stacks canted out of it; three radiator wings at
 	 * 1.45·r are the outline and nothing here approaches them. Every base is
