@@ -2592,7 +2592,7 @@ function buildShipyardHangar(color: number, berthSeed: number): BuiltPart {
 		slabRay.set(new THREE.Vector3(x, y, 1), new THREE.Vector3(0, 0, -1));
 		const hit = slabRay.intersectObject(slab)[0];
 		if (!hit?.face)
-			throw new Error(`the Hangar's slab has no forward face at (, )`); // glossary-ignore: Hangar
+			throw new Error(`the Hangar's slab has no forward face at (${x}, ${y})`); // glossary-ignore: Hangar
 		return {
 			z: hit.point.z,
 			normal: hit.face.normal.clone().transformDirection(slab.matrixWorld),
