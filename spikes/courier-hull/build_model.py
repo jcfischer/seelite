@@ -113,7 +113,8 @@ def sample(z):
    t=(z-a[0])/(b[0]-a[0]);return tuple(a[i]+(b[i]-a[i])*t for i in range(1,4))
  return stations[-1][1:]
 def ring(z,w,top,bottom):
- return [Vector((x,y,z)) for x,y in [(-w*.82,top),(w*.82,top),(w,top-1.4),(w,bottom+1.1),(w*.76,bottom),(-w*.76,bottom),(-w,bottom+1.1),(-w,top-1.4)]]
+ height=top-bottom;upper=top-min(1.4,height*.28);lower=bottom+min(1.1,height*.22)
+ return [Vector((x,y,z)) for x,y in [(-w*.82,top),(w*.82,top),(w,upper),(w,lower),(w*.76,bottom),(-w*.76,bottom),(-w,lower),(-w,upper)]]
 rs=[ring(*s) for s in stations]
 def deck_y(y,f):return y+.72*(1-(abs(f)/.82)**2)
 for a,b in zip(rs,rs[1:]):
