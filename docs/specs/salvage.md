@@ -161,7 +161,8 @@ death wreck has no salvager time.
 
 **The clock starts part-way through every slot's cycle** (node #775). There is
 no ramp. At game time 0 a slot is as likely to hold a wreck as at any later
-time, so a new commander's first visit finds what every later one does. The
+time, so a new commander's first visit has the same chance of a wreck as a
+later one. The
 cycle running at 0 is drawn with weight proportional to its length, because a
 random instant falls in a long cycle more often than a short one, and 0 falls at
 a uniform point in it. So a slot's first instance may be adrift as the clock

@@ -40,11 +40,12 @@ Author: Claude ranger implement worker, 2026-10-08.
   `DERELICT_WALK_LIMIT` instances, so a clock or row no writer made is an
   error and not a loop.
   `WORLD_SCHEMA_VERSION` is not bumped (sage round 2 suggested it). The
-  row's shape is unchanged; only the range the parse accepts widens, and a
-  version mismatch refuses the whole save (§9.6), so a bump would refuse
-  every existing save to guard a direction no player takes. The cost is
-  stated: a build from before node #775 refuses a save this build wrote if
-  it holds an instance-0 row lost before 0.
+  row's shape is unchanged; only the range the parse accepts widens. A build
+  from before node #775 already refuses a save holding an instance-0 row
+  lost before 0, because its parse rejects any `lostAt` below 0, so a bump
+  would change only that refusal's message. Going forward a bump refuses the
+  whole save on a mismatch (§9.6), so it would need a v3 to v4 migration or
+  it refuses every existing save.
 - **The Salvage board.** It posts no job for a wreck lost before 0
   (`offerOpen` in `src/salvage-jobs.ts`). An offer is stamped with its loss,
   and the requests parse refuses an `observedAt` below 0. Without this, a job
