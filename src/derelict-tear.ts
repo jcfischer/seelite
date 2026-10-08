@@ -151,44 +151,65 @@ function tearableParts(root: THREE.Object3D, hull: HullId): Loft[] {
 	return out;
 }
 
-/** The box of what a mesh draws: referenced vertices, per instance, in world space. */
-export function drawnBoxes(object: THREE.Object3D, out: THREE.Box3[] = []) {
+/**
+ * The box of what a mesh draws — its referenced vertices, one box per
+ * instance — in the frame `toFrame` maps world space into (world space by
+ * default). Vertices are transformed one by one rather than a local box being
+ * carried across, because a box turned through a rotation and boxed again
+ * grows: a tumbling wreck's would read metres larger than its hull.
+ */
+export function drawnBoxes(
+	object: THREE.Object3D,
+	out: THREE.Box3[] = [],
+	toFrame: THREE.Matrix4 = new THREE.Matrix4(),
+) {
 	object.updateWorldMatrix(true, false);
 	if (!(object instanceof THREE.Mesh) || !object.visible) return out;
 	const geometry = object.geometry as THREE.BufferGeometry;
 	const position = geometry.getAttribute("position");
 	if (!position) return out;
-	const local = new THREE.Box3();
-	const v = new THREE.Vector3();
 	const index = geometry.index;
 	const count = index ? index.count : position.count;
-	for (let k = 0; k < count; k += 1) {
-		v.fromBufferAttribute(position, index ? index.getX(k) : k);
-		local.expandByPoint(v);
+	const base = toFrame.clone().multiply(object.matrixWorld);
+	const instances =
+		object instanceof THREE.InstancedMesh
+			? Array.from({ length: object.count }, (_, i) => {
+					const m = new THREE.Matrix4();
+					object.getMatrixAt(i, m);
+					return base.clone().multiply(m);
+				})
+			: [base];
+	const v = new THREE.Vector3();
+	for (const matrix of instances) {
+		const box = new THREE.Box3();
+		for (let k = 0; k < count; k += 1)
+			box.expandByPoint(
+				v
+					.fromBufferAttribute(position, index ? index.getX(k) : k)
+					.applyMatrix4(matrix),
+			);
+		if (!box.isEmpty()) out.push(box);
 	}
-	if (local.isEmpty()) return out;
-	if (object instanceof THREE.InstancedMesh) {
-		const m = new THREE.Matrix4();
-		for (let i = 0; i < object.count; i += 1) {
-			object.getMatrixAt(i, m);
-			out.push(local.clone().applyMatrix4(m).applyMatrix4(object.matrixWorld));
-		}
-	} else out.push(local.clone().applyMatrix4(object.matrixWorld));
 	return out;
 }
 
 /**
  * The hull's drawn box: every visible mesh's referenced vertices, in the
- * root's frame. Nav lights are `Points` and are not counted.
+ * root's own frame, wherever the root is placed and however it is turned.
+ * Nav lights are `Points` and are not counted.
  */
 export function drawnHullBox(root: THREE.Object3D) {
 	const box = new THREE.Box3();
 	root.updateWorldMatrix(true, true);
-	const inverse = root.matrixWorld.clone().invert();
+	const toRoot = root.matrixWorld.clone().invert();
 	root.traverse((object) => {
-		for (let o: THREE.Object3D | null = object; o; o = o.parent)
+		for (
+			let o: THREE.Object3D | null = object;
+			o && o !== root.parent;
+			o = o.parent
+		)
 			if (!o.visible) return;
-		for (const b of drawnBoxes(object)) box.union(b.applyMatrix4(inverse));
+		for (const b of drawnBoxes(object, [], toRoot)) box.union(b);
 	});
 	return box;
 }

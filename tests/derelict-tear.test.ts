@@ -124,6 +124,24 @@ describe("a derelict's envelope is the intact hull's", () => {
 		expect(drawnHullBox(root).min.z).toBeGreaterThan(before.min.z);
 	});
 
+	test("the measure is the hull's own frame, however the wreck is placed and turned", () => {
+		// A wreck in the scene is moved, scaled by its layer and tumbling. Boxing
+		// a rotated box again would read it metres large; the probe caught that.
+		const wreck = buildDerelictMesh("miner");
+		const still = drawnHullBox(wreck);
+		const scene = new THREE.Scene();
+		scene.add(wreck);
+		wreck.position.set(3, -2, 7);
+		wreck.scale.setScalar(0.25);
+		wreck.quaternion.setFromEuler(new THREE.Euler(0.7, -1.3, 2.1));
+		const turned = drawnHullBox(wreck);
+		for (const axis of ["x", "y", "z"] as const) {
+			expect(turned.min[axis]).toBeCloseTo(still.min[axis], 7);
+			expect(turned.max[axis]).toBeCloseTo(still.max[axis], 7);
+		}
+		disposeDerelict(wreck);
+	});
+
 	test("the hull proxy the sim collides with is the intact hull's", () => {
 		// D13: the wreck collides through `hullBox(spec.env, spec.envCentre)`,
 		// and the drawn torn hull fills the same box the live hull does.
