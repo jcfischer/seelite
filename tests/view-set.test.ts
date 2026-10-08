@@ -21,6 +21,10 @@ import type { TreeDeclaration } from "../scripts/lib/tree-declaration.mjs";
 import { makeWorld } from "../src/sim.ts";
 import { STATION_GEOMETRY } from "../src/station.ts";
 import {
+	assertHorizonFacts,
+	horizonGeometry,
+} from "../scripts/lib/horizon-framing.mjs";
+import {
 	FIXTURE,
 	GAME_TIME_S,
 	LEVERS,
@@ -178,7 +182,8 @@ describe("the view set itself", () => {
 		// not `VIEWS.length`, which is the whole point: a view deleted by accident
 		// has to be a red run, and a check derived from its own subject cannot be
 		// one.
-		expect(VIEWS.length).toBe(69);
+		// Node #754 adds two to the 69 rows at its base (including #732's derelict).
+		expect(VIEWS.length).toBe(71);
 		const names = VIEWS.map((v) => v.name);
 		expect(new Set(names).size).toBe(names.length);
 		for (const name of names) expect(name).toMatch(/^[a-z]+(-[a-z]+)*$/);
@@ -503,6 +508,156 @@ describe("the pinned seed's world", () => {
 	});
 });
 
+describe("node #754 horizon views", () => {
+	test("readback refuses missing, non-finite, out-of-band and clipped facts", () => {
+		const station = { station: "station-trade" };
+		const good = {
+			limbFraction: 0.32,
+			sunElevationDeg: 10,
+			cameraRadii: 1.5,
+			stationInFrame: true,
+			stationRangeKm: 4.8,
+			visibleStations: ["station-trade"],
+		};
+		expect(assertHorizonFacts(good, station)).toBe(good);
+		for (const bad of [
+			{ limbFraction: null },
+			{ limbFraction: NaN },
+			{ limbFraction: 0.5 },
+			{ sunElevationDeg: Infinity },
+			{ sunElevationDeg: -1 },
+			{ sunElevationDeg: 21 },
+			{ stationInFrame: false },
+			{ stationRangeKm: 100 },
+		])
+			expect(() => assertHorizonFacts({ ...good, ...bad }, station)).toThrow();
+		const boundary = {
+			...good,
+			cameraRadii: 1.2,
+			stationInFrame: null,
+			stationRangeKm: null,
+			visibleStations: [],
+		};
+		expect(assertHorizonFacts(boundary, {})).toBe(boundary);
+		expect(() =>
+			assertHorizonFacts({ ...boundary, cameraRadii: 1.21 }, {}),
+		).toThrow();
+		expect(() =>
+			assertHorizonFacts(
+				{ ...boundary, visibleStations: ["station-trade"] },
+				{},
+			),
+		).toThrow();
+	});
+	test("station containment measures the full silhouette rather than only its centre", () => {
+		const w = makeWorld(SEED);
+		const p = w.system.bodies.find((b) => b.id === "planet-4")!;
+		const station = w.system.bodies.find((b) => b.id === "station-trade")!;
+		const math = horizonGeometry();
+		const pose = math.plan({
+			centre: p.pos,
+			radius: p.radiusKm,
+			anchor: station.pos,
+			sun: { x: 0, y: 0, z: 0 },
+			radii: undefined,
+			fov: 60,
+		});
+		const input = {
+			...pose,
+			centre: p.pos,
+			radius: p.radiusKm,
+			sun: { x: 0, y: 0, z: 0 },
+			fov: 60,
+			aspect: 1.6,
+			station: station.pos,
+			stationRadius: 0.9,
+		};
+		const facts = math.measure(input);
+		expect(facts.stationInFrame).toBe(true);
+		expect(facts.stationRangeKm).toBeCloseTo(4.8, 6);
+		expect(facts.limbFraction).toBeCloseTo(0.32, 8);
+		expect(facts.sunElevationDeg).toBeCloseTo(10, 6);
+		expect(math.measure({ ...input, stationRadius: 10 }).stationInFrame).toBe(
+			false,
+		);
+	});
+	test("both views cover 720, with a station only at its own orbit", () => {
+		for (const [name, extra] of [
+			["station-horizon", { station: "station-trade" }],
+			["planet-boundary", { radii: 1.2 }],
+		] as const) {
+			const row = VIEWS.find((v) => v.name === name);
+			expect(row?.covers).toContain(720);
+			expect(row?.shot).toEqual({
+				kind: "horizon",
+				body: "planet-4",
+				view: "chase",
+				...extra,
+			});
+		}
+	});
+	test("the fixture assumption remains terran planet-4 with trade at 1.500R", () => {
+		const w = makeWorld(SEED);
+		const p = w.system.bodies.find((b) => b.id === "planet-4")!;
+		const s = w.system.contents.stations.find((b) => b.id === "station-trade")!;
+		expect(p.appearance?.surface).toBe("terran");
+		expect(s.parentId).toBe(p.id);
+		expect(s.orbit.radiusKm / p.radiusKm).toBeCloseTo(1.5, 12);
+	});
+	test("invalid horizon payloads refuse rather than making a false sheet", () => {
+		const shots = [
+			{ kind: "horizon", body: "planet-4" },
+			{ kind: "horizon", body: "planet-4", radii: 1 },
+			{
+				kind: "horizon",
+				body: "planet-4",
+				radii: 1.2,
+				station: "station-trade",
+			},
+		];
+		expect(
+			malformedShots(shots.map((shot, i) => ({ name: `bad-${i}`, shot }))),
+		).toHaveLength(3);
+	});
+	test("the measured limb moves with the camera attitude, independently of the request", () => {
+		const math = horizonGeometry();
+		const centre = { x: 0, y: 0, z: 0 };
+		const sun = { x: 100000, y: 0, z: 0 };
+		for (const radii of [1.2, 1.5]) {
+			const pose = math.plan({
+				centre,
+				radius: 1000,
+				anchor: { x: 200, y: Math.sqrt(960000), z: 0 },
+				sun,
+				radii,
+				fov: 60,
+			});
+			const input = {
+				centre,
+				radius: 1000,
+				sun,
+				fov: 60,
+				aspect: 1.6,
+				...pose,
+			};
+			const facts = math.measure(input);
+			expect(facts.limbFraction).toBeCloseTo(0.32, 8);
+			expect(facts.sunElevationDeg).toBeCloseTo(10, 1);
+			expect(facts.cameraRadii).toBeCloseTo(radii, 12);
+			// An aim at the centre loses the limb. A readback of the requested
+			// 0.32 would pass here; a measurement must refuse this pose.
+			const inward = {
+				x: -pose.camera.x / (1000 * radii),
+				y: -pose.camera.y / (1000 * radii),
+				z: -pose.camera.z / (1000 * radii),
+			};
+			expect(
+				math.measure({ ...input, forward: inward }).limbFraction,
+			).not.toBeCloseTo(0.32, 2);
+		}
+	});
+});
+
 describe("the contact sheet", () => {
 	test("renders every declared view of every run", () => {
 		const html = contactSheet([fullRun("before"), fullRun("after")]);
@@ -531,7 +686,7 @@ describe("the contact sheet", () => {
 		// The fixture spaces its frames 0.4 s apart, so the span is fixed by how
 		// many views the set declares — which is the count row's business, not this
 		// one's, and this literal moves with it.
-		expect(html).toContain("· clock 0.6–27.8s");
+		expect(html).toContain("· clock 0.6–28.6s");
 		expect(html).not.toContain("pinned");
 	});
 

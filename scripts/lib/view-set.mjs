@@ -119,6 +119,7 @@ export const FIXTURE = Object.freeze({
  */
 /** @type {Readonly<Record<number, string>>} */
 export const LEVERS = Object.freeze({
+	720: "the terran ground and clouds across the horizon at station altitude and the flight boundary",
 	732: "dark derelict roster hull and tethered salvage",
 	684: "hauler lane points and hyperspace rings",
 	99: "the light rig",
@@ -177,6 +178,11 @@ export const LEVERS = Object.freeze({
  *   lit, 180 puts it beyond the subject and the subject a silhouette. #99's
  *   fill exists because the second case rendered the hull as a black cutout,
  *   and the sheet has to contain the case the fix was made for.
+ * - `horizon` — planet `body`'s limb at 32% from the top, with the sun ten
+ *   degrees above the surface under the frame centre. `station` places near
+ *   that station at its real orbit; otherwise `radii` ranges from the planet's
+ *   centre. The placer returns measured limb fraction and sun elevation;
+ *   capture reads them again at the shutter. No planet-centre aim is involved.
  * - `deep-sky` — at the arrival point, with the backdrop as the subject rather
  *   than the thing behind one, aimed by `__emptiestDirection`. What that rule is
  *   worth knowing before its heading is trusted: it takes the **maximum of the
@@ -263,6 +269,7 @@ export const SHOT_KINDS = Object.freeze([
 	"npc-jump",
 	"station-axis",
 	"body-offset",
+	"horizon",
 	"deep-sky",
 	"berth",
 	"workbench-interior",
@@ -671,6 +678,23 @@ export const VIEWS = Object.freeze([
 			sunAngleDeg: 70,
 			view: "cockpit",
 		},
+	},
+	{
+		name: "station-horizon",
+		what: "The trade station at its own 1.500R orbit, against terran planet-4's low-sun horizon; the close ground and clouds across the limb.",
+		covers: [720],
+		shot: {
+			kind: "horizon",
+			body: "planet-4",
+			station: "station-trade",
+			view: "chase",
+		},
+	},
+	{
+		name: "planet-boundary",
+		what: "Terran planet-4's low-sun horizon at the 1.2R flight boundary, with no station; the close ground and clouds across the limb.",
+		covers: [720],
+		shot: { kind: "horizon", body: "planet-4", radii: 1.2, view: "chase" },
 	},
 	/**
 	 * **The frame the planet-cost table is a price for** (#206).
@@ -1533,6 +1557,10 @@ const SHOT_REQUIREMENTS = {
 	"station-axis": (s) => typeof s.station === "string" && finite(s.radii),
 	"body-offset": (s) =>
 		typeof s.body === "string" && finite(s.radii) && finite(s.sunAngleDeg),
+	horizon: (s) =>
+		typeof s.body === "string" &&
+		((typeof s.station === "string" && s.radii === undefined) ||
+			(s.station === undefined && finite(s.radii) && s.radii > 1)),
 	"deep-sky": () => true,
 	// The berth is named for the reason `SHOT_KINDS` gives: an unnamed one is a
 	// different room each run. `at`, `headLook` and `launch` are optional and a
