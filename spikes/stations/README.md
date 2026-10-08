@@ -26,4 +26,24 @@ node spikes/stations/capture.mjs round1
 
 Append station names after Blender's `--` or after the capture label to work on a subset. Intermediate evidence stays under ignored `.dream-loop/`; final reviewed evidence is copied to `evidence/`.
 
-Independent review scores are pending the first capture. No achieved fidelity or production readiness is claimed here yet.
+## Review status — 2026-10-09
+
+Six models meet the requested independent 7/10 threshold. Three remain below it. Dream Loop stopped for principal input after a larger Drum rebuild regressed and Buoy remained unchanged. Drum is restored to its better round-six form. Salvage has improved to 6.90 but has not passed.
+
+| Station | Fidelity /10 | Status |
+|---|---:|---|
+| Ring | 7.10 | Threshold met |
+| Drum | 6.90 | Input needed |
+| Assembly | 7.00 | Threshold met |
+| Wheel | 7.00 | Threshold met |
+| Derrick | 7.00 | Threshold met |
+| Buoy | 6.90 | Input needed |
+| Rig | 7.05 | Threshold met |
+| Cluster | 7.05 | Threshold met |
+| Salvage | 6.90 | Input needed |
+
+Open `review.html` for target/model comparisons. `evidence/results.json` binds scores to reports and asset hashes; each `*-judged.png` is the exact reviewed image. Final hardware captures include six angles and the viewer controls for every model. `metrics.json` records approximately 60 FPS on ANGLE Metal / Apple M1 Pro, with no page errors. This is desktop viewer evidence, not a game performance claim.
+
+Validation: 18 asset/approach tests pass; strict standalone viewer typecheck passes; all nine browser loads, orbit, zoom, six presets, target dialog, lights and PNG export pass. The canonical selected/full PR browser suite has not been run. These are local model studies, not a runtime integration PR.
+
+`final_shapes.py` contains the structural revisions layered on the shared authoring helpers in `build_model.py`. Rebuild from the main authoring script. All Blender files pack their texture; all GLBs embed it.

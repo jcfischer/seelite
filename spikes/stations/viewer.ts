@@ -26,7 +26,7 @@ const renderer = new THREE.WebGLRenderer({
 renderer.setPixelRatio(Math.min(devicePixelRatio, 1.5));
 renderer.setSize(innerWidth, innerHeight);
 renderer.toneMapping = THREE.ACESFilmicToneMapping;
-renderer.toneMappingExposure = 1.05;
+renderer.toneMappingExposure = 1.12;
 renderer.shadowMap.enabled = true;
 renderer.shadowMap.type = THREE.PCFSoftShadowMap;
 renderer.shadowMap.autoUpdate = false;
@@ -46,7 +46,7 @@ controls.maxDistance = 1300;
 const pmrem = new THREE.PMREMGenerator(renderer),
 	room = new RoomEnvironment();
 scene.environment = pmrem.fromScene(room, 0.04).texture;
-scene.environmentIntensity = 0.22;
+scene.environmentIntensity = 0.36;
 room.dispose();
 pmrem.dispose();
 const key = new THREE.DirectionalLight(0xfff1da, 4.5);
@@ -64,7 +64,7 @@ Object.assign(key.shadow.camera, {
 key.shadow.bias = -0.00015;
 key.shadow.normalBias = 0.08;
 scene.add(key);
-const fill = new THREE.DirectionalLight(0xd6e0e6, 0.65);
+const fill = new THREE.DirectionalLight(0xffe5bf, 1.1);
 fill.position.set(180, 60, 150);
 scene.add(fill);
 const rim = new THREE.DirectionalLight(0xa6bbca, 1.0);
@@ -76,7 +76,7 @@ scene.add(inspection);
 let seed = 810;
 const rand = () =>
 	(seed = (Math.imul(seed, 1664525) + 1013904223) >>> 0) / 4294967296;
-const stars = new Float32Array(6000);
+const stars = new Float32Array(36000);
 for (let i = 0; i < stars.length; i += 3) {
 	const y = rand() * 2 - 1,
 		a = rand() * Math.PI * 2,
@@ -89,8 +89,8 @@ scene.add(
 	new THREE.Points(
 		sg,
 		new THREE.PointsMaterial({
-			color: 0x8e9da5,
-			size: 0.7,
+			color: 0xc8c4ba,
+			size: 1.15,
 			sizeAttenuation: false,
 		}),
 	),
@@ -132,7 +132,7 @@ let radius = 70;
 let dock = new THREE.Vector3();
 const angles: Record<string, number[]> = {
 	ring: [0.42, 0.23, 1],
-	drum: [0.8, 0.36, 1],
+	drum: [1.15, 0.18, 1],
 	assembly: [0.45, 0.26, 1],
 	wheel: [0.39, 0.22, 1],
 	derrick: [0.9, 0.75, 1],
@@ -162,7 +162,33 @@ function setView(name: string) {
 		);
 		distance = 38 / Math.sin(THREE.MathUtils.degToRad(camera.fov / 2));
 	}
-	distance *= Math.max(1, 1 / camera.aspect);
+	if (name !== "detail") {
+		dir.normalize();
+		const right = new THREE.Vector3().crossVectors(camera.up, dir).normalize();
+		const up = new THREE.Vector3().crossVectors(dir, right).normalize();
+		const tangent = Math.tan(THREE.MathUtils.degToRad(camera.fov / 2));
+		distance = 0;
+		const q = new THREE.Vector3();
+		station.updateMatrixWorld(true);
+		station.traverse((o) => {
+			if (!(o instanceof THREE.Mesh)) return;
+			const position = o.geometry.attributes.position;
+			for (let i = 0; i < position.count; i += 1) {
+				q.fromBufferAttribute(position, i)
+					.applyMatrix4(o.matrixWorld)
+					.sub(center);
+				distance = Math.max(
+					distance,
+					q.dot(dir) +
+						1.12 *
+							Math.max(
+								Math.abs(q.dot(right)) / (tangent * camera.aspect),
+								Math.abs(q.dot(up)) / tangent,
+							),
+				);
+			}
+		});
+	} else distance *= Math.max(1, 1 / camera.aspect);
 	camera.position.copy(target).add(dir.normalize().multiplyScalar(distance));
 	controls.target.copy(target);
 	controls.update();
@@ -218,9 +244,44 @@ async function selectModel(id: string) {
 					(o.geometry.index?.count ?? o.geometry.attributes.position.count) / 3;
 			}
 		});
-		const lamp = new THREE.PointLight(0xffba65, 140, 25, 2);
-		lamp.position.copy(dock).add(new THREE.Vector3(0, 0, -2));
+		const lamp = new THREE.PointLight(
+			0xffba65,
+			names.indexOf(id) < 4 ? 480 : 0,
+			25,
+			2,
+		);
+		lamp.position.copy(dock).add(new THREE.Vector3(0, 0, -1));
 		station.add(lamp);
+		if (["drum", "assembly", "wheel"].includes(id)) {
+			const interior = new THREE.PointLight(0xffb657, 1300, 30, 2);
+			interior.position.copy(dock).add(new THREE.Vector3(0, 1.5, -7));
+			station.add(interior);
+		}
+		const warmFixtures: Record<string, number[][]> = {
+			buoy: [
+				[0, 1, 22, 160, 24],
+				[12, 8, 16, 65, 12],
+			],
+			rig: [
+				[14, -29, -1, 130, 18],
+				[-7, 1, 12, 70, 14],
+			],
+			cluster: [
+				[-10, -8, 18, 95, 18],
+				[14, -10, 17, 70, 14],
+			],
+			salvage: [
+				[-10, 10, 11, 90, 14],
+				[10, -10, 11, 90, 14],
+				[1, 17, 1, 70, 12],
+			],
+		};
+		for (const [x, y, z, intensity, range] of warmFixtures[id] ?? []) {
+			const fixture = new THREE.PointLight(0xffb35c, intensity, range, 2);
+			fixture.position.set(x, y, z);
+			station.add(fixture);
+		}
+
 		document.getElementById("model-name")!.textContent =
 			id[0].toUpperCase() + id.slice(1);
 		document

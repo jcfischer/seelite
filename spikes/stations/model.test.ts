@@ -73,9 +73,14 @@ describe("approach clearance in exported geometry", () => {
 							origin,
 							axis.clone().negate(),
 							0,
-							500,
+							names.indexOf(name) < 4 ? 600 : 500,
 						).intersectObject(root, true);
-						expect(hits.filter((h) => h.distance < 495).length).toBe(0);
+						// Slot entry stays clear 100 m into the model, not only up to the lip.
+						expect(
+							hits.filter(
+								(h) => h.distance < (names.indexOf(name) < 4 ? 599 : 495),
+							).length,
+						).toBe(0);
 					}
 			},
 		);

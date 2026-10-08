@@ -1,0 +1,112 @@
+{
+  "author": "Codex",
+  "captured": "2026-10-08T22:43:23.077432+00:00",
+  "status": "awaiting-principal-input-after-stall",
+  "threshold": 7,
+  "renderer": "ANGLE (Apple, ANGLE Metal Renderer: Apple M1 Pro, Unspecified Version)",
+  "models": [
+    {
+      "name": "ring",
+      "score": 7.1,
+      "thresholdMet": true,
+      "round": 4,
+      "report": "judge-trade-round4.md",
+      "fps": 60.130718954248366,
+      "modelTriangles": 370712,
+      "glbSHA256": "125b8014b5673313e0515813f3fa5d98a5164dfea86d84e5ec56286cb7ceab71",
+      "blendSHA256": "5a54c18aa8187fd1cb12da7dcdc82a6fbd91d2767545eae5a80a787e079aa432"
+    },
+    {
+      "name": "drum",
+      "score": 6.9,
+      "thresholdMet": false,
+      "round": 6,
+      "report": "judge-trade-round6.md",
+      "fps": 59.99739141776439,
+      "modelTriangles": 183728,
+      "glbSHA256": "85185ecd47a3fb254caab2b1f5effb6ce6e0ec049025ff2faccb3686eb4bd160",
+      "blendSHA256": "7b8f8b0947810cba9af56ae487aaae3f6cb8d263deac0d89a9613f8ab651ce55"
+    },
+    {
+      "name": "assembly",
+      "score": 7,
+      "thresholdMet": true,
+      "round": 7,
+      "report": "judge-trade-round7.md",
+      "fps": 59.99200106652458,
+      "modelTriangles": 221920,
+      "glbSHA256": "73b730fc653c1357c3b8838796abe53c038a38b32762cf86608dc4b53b4c33fc",
+      "blendSHA256": "83dab5197a237434566c621b901d98d056bb5b18b6609751312fd226d8f66cbd"
+    },
+    {
+      "name": "wheel",
+      "score": 7,
+      "thresholdMet": true,
+      "round": 6,
+      "report": "judge-middle-round6.md",
+      "fps": 59.99739141776439,
+      "modelTriangles": 398500,
+      "glbSHA256": "d4b596fd0889ce8f7cc3cd8e148c93e42ab5edffeb2ef5bcdd8b3e0e5b842409",
+      "blendSHA256": "74f5f791ddb93492df332eea7c23946c5da1405840107ccc309f83e64be8c755"
+    },
+    {
+      "name": "derrick",
+      "score": 7,
+      "thresholdMet": true,
+      "round": 5,
+      "report": "judge-middle-round5.md",
+      "fps": 60.154308879298725,
+      "modelTriangles": 192106,
+      "glbSHA256": "9345dcc0dd1d0c83b28b18e9b191792fc296435f6fa017d18f2f609ea126ad7e",
+      "blendSHA256": "c11d69e177035729ac2e3c284b04c91dbbc435097fcd73b206f7ca7b882c456a"
+    },
+    {
+      "name": "buoy",
+      "score": 6.9,
+      "thresholdMet": false,
+      "round": 7,
+      "report": "judge-buoy-round7.md",
+      "fps": 59.984004265528846,
+      "modelTriangles": 130090,
+      "glbSHA256": "1685c16a2ba203d30ad9d7ef8ec72dbf73c4f7a40ce6f4117b89ff635ef13068",
+      "blendSHA256": "43547f0f8794e7e1044e3a5626c74c4f42bb143904fba59fad37eaa96432f357"
+    },
+    {
+      "name": "rig",
+      "score": 7.05,
+      "thresholdMet": true,
+      "round": 7,
+      "report": "judge-outposts-round7.md",
+      "fps": 60.00521784503012,
+      "modelTriangles": 206486,
+      "glbSHA256": "556a72ca86771d4b004c648d5ec1ee61da6104cbabf6dba86aa7334d97c9851f",
+      "blendSHA256": "4039cbe851dc4326d97d74808fb60283ff5aa97f8a46f174ecdcec1a297675e2"
+    },
+    {
+      "name": "cluster",
+      "score": 7.05,
+      "thresholdMet": true,
+      "round": 6,
+      "report": "judge-outposts-round6.md",
+      "fps": 60.00521784503012,
+      "modelTriangles": 195418,
+      "glbSHA256": "8bcd56210f2d84afa6a8ce8ee4704d7537ffcab7a9db8fc5ffff5bd5f3f21da6",
+      "blendSHA256": "ab298bfbbce5f6e5822d177405d54b50bea45a561a06fd93718bb3cefe33d5e4"
+    },
+    {
+      "name": "salvage",
+      "score": 6.9,
+      "thresholdMet": false,
+      "round": 7,
+      "report": "judge-outposts-round7.md",
+      "fps": 59.976009596161305,
+      "modelTriangles": 126388,
+      "glbSHA256": "73ef3771de0aa8a2ffaf686334104031d7464b4af795bf47cf7a871d666a5bbe",
+      "blendSHA256": "1734aed4dcc9bc0adea4f90e5ea2f144b2514b7345cd2295fb9fe6b11d626c47"
+    }
+  ],
+  "notes": [
+    "Six models meet threshold. Drum restored to round6 after round7 regression. Buoy structural revision stalled. Salvage remains6.9.",
+    "No runtime integration or production readiness claimed. Local model-study viewer checks only; canonical PR browser selection was not executed."
+  ]
+}
