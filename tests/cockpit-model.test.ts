@@ -40,7 +40,7 @@ const NARROW_ASPECT = 4 / 3;
 let template: THREE.Group;
 let cabin: AuthoredCabin;
 beforeAll(async () => {
-	template = await decodeShippedGlb("models/courier-cockpit.glb");
+	template = await decodeShippedGlb("public/models/courier-cockpit.glb");
 	// Bun has no image decoder, so the helper strips the model's maps. One is
 	// put back on the steel as a stand-in, so adoption's map branch runs and
 	// the teardown row has a template texture to guard.
