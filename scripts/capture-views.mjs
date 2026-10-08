@@ -71,7 +71,7 @@ import {
 } from "./probe-guard.mjs";
 import { gameUrl, workbenchUrl } from "./lib/game-url.mjs";
 import { holdProbeLockOrExit } from "./lib/probe-lock.mjs";
-import { writeRunLevels } from "./levels-view-set.mjs";
+import { levelsFile, writeRunLevels } from "./lib/levels-report.mjs";
 
 const ORIGIN = process.env.PROBE_ORIGIN ?? "http://localhost:5173";
 
@@ -1569,7 +1569,7 @@ const manifest = {
 	renderer,
 	seed: SEED,
 	quality: QUALITY ?? "default",
-	levelsFile: `${LABEL}/levels.txt`,
+	levelsFile: levelsFile(LABEL),
 	views: captured,
 };
 // A failed tone reading must not leave an older complete-looking sheet.

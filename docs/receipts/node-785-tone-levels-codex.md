@@ -13,7 +13,7 @@ npm run views:levels -- before after
 node scripts/levels-view-set.mjs before after --out view-set
 ```
 
-Capture writes `view-set/<label>/levels.txt` before publishing its manifest and links it from the existing `view-set/index.html`. Historical manifests without a recorded levels file remain readable without a broken link. The standalone command also regenerates each report. Missing, corrupt, duplicate or undeclared frames refuse; stale reports are removed before rereading.
+Capture writes `view-set/<label>/levels.txt` before publishing its manifest and links it from the existing `view-set/index.html`. Historical manifests without a recorded levels file remain readable without a broken link. The standalone tool also regenerates each report. Missing, corrupt, duplicate or undeclared frames refuse; stale reports are removed before rereading.
 
 Statistics use decoded 8-bit RGB, rounded Rec. 709 display luma (0.2126 R + 0.7152 G + 0.0722 B), with no linear-light conversion. Alpha is ignored for these opaque composed frames. Nearest-rank percentiles are ceil(q N), with integer stride 4 on both axes from (0, 0): 81,000 sampled pixels per 1440×900 frame. The percentages include quantised codes ≥250 and ≤7. The average row gives each view equal weight, including its percentiles; it is not a pooled-image percentile. Paired deltas are second minus first, with percentage-point deltas for the two tails. Percentages printed as 0.00 can contain smaller nonzero fractions.
 
@@ -120,3 +120,11 @@ average                               31.99     3.51    26.25   149.82     0.02 
 - This is internal measurement tooling under the changelog definition, so no player-facing changelog entry is due.
 
 Checkpoint: `cp-seelite-view-set-levels` is for the supervisor; this worker did not claim, close, edit or comment on graph nodes.
+
+## Sage round 1
+
+All eight findings addressed. Report generation now lives in `scripts/lib/levels-report.mjs`; the CLI and capture share its report path helper. One column descriptor owns headers, scaling and delta membership. The sheet and instrument share `validateRunViews`, including duplicate refusal, without rendering discarded HTML.
+
+The new CLI and duplicate-sheet regressions failed before the repair and passed after it. The capture check is explicitly static wiring evidence: it now checks invalidation before table generation, table before manifest, manifest before sheet rebuild, and invalidation before writing the rebuilt sheet. It does not claim to execute a browser capture. CLI wording is kept distinct from the consequence model's Intervention vocabulary.
+
+Focused levels and view-set tests: 56 passed. Typecheck, format, lint, wiring and build passed. The sole full `npm test` run in this repair pass passed: 5,660 tests, 0 failures across 308 files, 7,479,889 assertions (385.54 seconds). Recomputing the existing 72-view baseline produced a byte-identical `levels.txt`; the baseline table above remains unchanged. No game rendering changed, and no browser probes were run in this repair pass; the supervisor retains the final browser suite.

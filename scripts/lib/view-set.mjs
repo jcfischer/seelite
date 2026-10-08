@@ -1673,6 +1673,29 @@ const esc = (s) =>
 		.replace(/>/g, "&gt;")
 		.replace(/"/g, "&quot;");
 
+/** Shared completeness contract for sheets and instruments.
+ * @param {Parameters<typeof contactSheet>[0][number]} run
+ * @param {ReadonlyArray<{name: string}>} [views]
+ */
+export function validateRunViews(run, views = VIEWS) {
+	const declared = new Set(views.map((v) => v.name));
+	const present = new Set(run.views.map((v) => v.name));
+	if (present.size !== run.views.length)
+		throw new Error(`view-set: run "${run.label}" carries duplicate views`);
+	const missing = [...declared].filter((n) => !present.has(n));
+	if (missing.length)
+		throw new Error(
+			`view-set: run "${run.label}" is missing ${missing.join(", ")} — ` +
+				`a sheet with a hole in it reads as a complete one, so it is not built`,
+		);
+	const extra = [...present].filter((n) => !declared.has(n));
+	if (extra.length)
+		throw new Error(
+			`view-set: run "${run.label}" carries ${extra.join(", ")}, ` +
+				`which the view set does not declare — add it to VIEWS or drop it`,
+		);
+}
+
 /**
  * Every declared view of every run, side by side, or an error.
  *
@@ -1699,22 +1722,7 @@ export function contactSheet(runs, views = VIEWS) {
 	if (!runs.length)
 		throw new Error("contactSheet: no runs — there is nothing to look at");
 
-	const declared = new Set(views.map((v) => v.name));
-	for (const run of runs) {
-		const present = new Set(run.views.map((v) => v.name));
-		const missing = [...declared].filter((n) => !present.has(n));
-		if (missing.length)
-			throw new Error(
-				`contactSheet: run "${run.label}" is missing ${missing.join(", ")} — ` +
-					`a sheet with a hole in it reads as a complete one, so it is not built`,
-			);
-		const extra = [...present].filter((n) => !declared.has(n));
-		if (extra.length)
-			throw new Error(
-				`contactSheet: run "${run.label}" carries ${extra.join(", ")}, ` +
-					`which the view set does not declare — add it to VIEWS or drop it`,
-			);
-	}
+	for (const run of runs) validateRunViews(run, views);
 
 	const fileIn = (run, name) => run.views.find((v) => v.name === name).file;
 	/**

@@ -12,7 +12,7 @@ import { spawnSync } from "node:child_process";
 // @ts-expect-error pngjs ships no declarations; it is the existing PNG dependency.
 import { PNG } from "pngjs";
 import { levels } from "../scripts/lib/levels.mjs";
-import { writeRunLevels } from "../scripts/levels-view-set.mjs";
+import { writeRunLevels } from "../scripts/lib/levels-report.mjs";
 import { contactSheet, VIEWS } from "../scripts/lib/view-set.mjs";
 
 const frame = (codes: number[]) => ({
@@ -193,14 +193,62 @@ test("corrupt PNG and duplicate or extra views fail without a report", async () 
 	}
 });
 
-test("capture publishes the table before the manifest and contact sheet", () => {
+test("CLI refuses missing or flag-shaped --out values before reading a run", () => {
+	for (const suffix of [[], ["--out"], ["-x"]]) {
+		const result = spawnSync("node", [cli, "before", "--out", ...suffix], {
+			encoding: "utf8",
+		});
+		expect(result.status).not.toBe(0);
+		expect(result.stderr).toContain("--out requires a directory");
+	}
+});
+
+test("sheet refuses duplicate views as the tone report does", () => {
+	const run = {
+		label: "duplicate",
+		gitRef: "fixture",
+		renderer: "fixture",
+		seed: 47,
+		capturedAt: "2026-10-08T00:00:00Z",
+		views: VIEWS.map((v) => ({
+			name: v.name,
+			file: `duplicate/${v.name}.png`,
+		})),
+	};
+	expect(() =>
+		contactSheet([{ ...run, views: [...run.views, run.views[0]] }]),
+	).toThrow("duplicate");
+});
+
+test("capture source wires sheet invalidation, table, manifest, then sheet rebuild", () => {
 	const capture = readFileSync(
 		join(import.meta.dir, "../scripts/capture-views.mjs"),
 		"utf8",
 	);
-	expect(capture).toContain('from "./levels-view-set.mjs"');
-	const tableAt = capture.indexOf("await writeRunLevels(manifest, OUT)");
+	const publication = capture.slice(capture.indexOf("const manifest = {"));
+	const tableAt = publication.indexOf("await writeRunLevels(manifest, OUT)");
+	const invalidationAt = publication.indexOf(
+		'await rm(join(OUT, "index.html"), { force: true })',
+	);
+	const manifestAt = publication.indexOf('join(dir, "manifest.json")');
+	const sheetAt = publication.indexOf("await rebuildSheet(OUT)");
+	expect(invalidationAt).toBeGreaterThan(0);
 	expect(tableAt).toBeGreaterThan(0);
-	expect(tableAt).toBeLessThan(capture.indexOf('join(dir, "manifest.json")'));
-	expect(capture).toContain("levelsFile: `${LABEL}/levels.txt`");
+	expect(manifestAt).toBeGreaterThan(0);
+	expect(sheetAt).toBeGreaterThan(0);
+	expect(invalidationAt).toBeLessThan(tableAt);
+	expect(tableAt).toBeLessThan(manifestAt);
+	expect(manifestAt).toBeLessThan(sheetAt);
+	const rebuild = capture.slice(
+		capture.indexOf("async function rebuildSheet(out)"),
+		capture.indexOf("async function rebuildSheet(out)") + 1000,
+	);
+	const rebuildInvalidation = rebuild.indexOf(
+		'await rm(join(out, "index.html"), { force: true })',
+	);
+	const rebuildWrite = rebuild.indexOf(
+		'await writeFile(join(out, "index.html"), contactSheet(runs))',
+	);
+	expect(rebuildInvalidation).toBeGreaterThan(0);
+	expect(rebuildWrite).toBeGreaterThan(rebuildInvalidation);
 });
