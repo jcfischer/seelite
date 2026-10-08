@@ -172,20 +172,34 @@ for side in [-1,1]:
  for z,x in [(-17,12.0),(-7,10.5)]:hatch(side*x,2.13,z,2.0,2.8)
  radiator(side*12.8,1.52,-21,2.2,2.1)
 
-# A dorsal spine, articulated into broad service housings.
-for z,l,w in [(-21,6,4.5),(-14.3,6.3,4.3),(-7.4,6.5,4.0),(-1,5.7,3.6)]:
- y=sample(z)[1]+.6
- box((0,y+.25,z),(w,.65,l),steel);box((0,y+.68,z),(w-.25,.24,l-.23),blue[2])
+# Flush dorsal access covers follow both the deck pitch and transverse crown.
+# No raised box housings or mounting pedestals: their skins overlap the existing
+# armour by a few centimetres and retain only seams, fasteners and inset lamps.
+def deck_point(x,z,offset=0):
+ w,y,_=sample(z);return Vector((x,deck_y(y,x/w)+offset,z))
+for z,l,w in [(-21,6,4.5),(-14.3,6.3,4.3),(-7.4,6.5,4.0),(-1,5.7,3.6),(3.5,3,2.3)]:
+ za,zb=z-l/2,z+l/2
+ cuts=sorted(set([za,zb]+[s[0] for s in stations if za<s[0]<zb]))
+ for aa,bb in zip(cuts,cuts[1:]):
+  for xa,xb in [(-w/2,0),(0,w/2)]:
+   pts=[deck_point(xa,aa,.055),deck_point(xb,aa,.055),deck_point(xb,bb,.055),deck_point(xa,bb,.055)]
+   n=(pts[3]-pts[0]).cross(pts[1]-pts[0]).normalized()
+   prism(pts,n,.055,blue[2],"dorsal-access-covers")
+ # Border rails and latch bars follow the skin instead of sitting horizontally.
  for x in [-w/2,w/2]:
-  box((x,y+.27,z),(.19,.58,l-.3),ivory[0])
-  for dz in [-l*.36,l*.36]:lamp(x,y+.3,z+dz)
- for x in [-w*.34,w*.34]:
-  for dz in [-l*.39,l*.39]:tube((x,y+.82,z+dz),(x,y+.89,z+dz),.09,alloy,6)
-for z in [-23,-18,-11,-4]:hatch(0,sample(z)[1]+1.4,z,1.9,1.2)
-# Low trapezoid navigation blister aft of the canopy, not a tall bridge.
-prism([(-1.25,3.9,2),(1.25,3.9,2),(1.0,3.9,5),(-1,3.9,5)],(0,1,0),.9,steel)
-plate([(-1.22,4.83,2),(1.22,4.83,2),(1.0,4.83,4.8),(-1,4.83,4.8)],blue[1],depth=.06)
-box((0,4.56,5.02),(1.4,.4,.08),black)
+  cable([deck_point(x,zz,.12) for zz in cuts],.035,steel)
+  for dz in [-l*.35,l*.35]:
+   p=deck_point(x,z+dz,.12);n=Vector((0,1,0))
+   tube(p,p+n*.055,.075,alloy,8)
+ for zz in [za,zb]:
+  cable([deck_point(x,zz,.12) for x in [-w/2,0,w/2]],.035,steel)
+ for zz in [z-.3,z+.3]:
+  cable([deck_point(x,zz,.16) for x in [-.25,.25]],.055,alloy)
+ # Small service lamps are embedded into the same pitched surface.
+ for side in [-1,1]:
+  x=side*(w/2-.22)
+  pts=[deck_point(x+dx,z+dz,.13) for dx,dz in [(-.07,-.24),(.07,-.24),(.07,.24),(-.07,.24)]]
+  poly(list(reversed(pts)),warm)
 
 # Canopy. Four sections form a shallow taper; real interior sits behind tinted panes.
 canopy=[(6.5,2.7,4.75,3.45),(10.5,2.65,5.65,3.45),(15,2.35,4.95,3.08),(19.5,1.85,3.85,2.5),(23,1.03,2.4,2.0)]

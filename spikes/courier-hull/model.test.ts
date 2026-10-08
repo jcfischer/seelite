@@ -1,5 +1,6 @@
 import { expect, test } from "bun:test";
 import { readFileSync } from "node:fs";
+import { Ray, Vector3 } from "three";
 
 test("pressure body and both nacelles are closed, outward-wound shells", () => {
 	const bytes = readFileSync(new URL("./courier-hull.glb", import.meta.url));
@@ -61,6 +62,42 @@ test("pressure body and both nacelles are closed, outward-wound shells", () => {
 		).toEqual([]);
 		expect(volume6, `${name} faces outward`).toBeGreaterThan(0);
 	}
+	const hull = doc.meshes.find(
+		(m: { name: string }) => m.name === "pressure-hull",
+	);
+	const covers = doc.meshes.find(
+		(m: { name: string }) => m.name === "dorsal-access-covers",
+	);
+	expect(covers).toBeDefined();
+	const triangles: Vector3[][] = [];
+	for (const p of hull.primitives) {
+		const vertices = accessor(p.attributes.POSITION, 3).map(
+			(v) => new Vector3(...v),
+		);
+		const indices = accessor(p.indices, 1).flat();
+		for (let i = 0; i < indices.length; i += 3)
+			triangles.push(indices.slice(i, i + 3).map((id) => vertices[id]));
+	}
+	let maximumClearance = -Infinity;
+	for (const p of covers.primitives)
+		for (const v of accessor(p.attributes.POSITION, 3)) {
+			const origin = new Vector3(v[0], v[1] + 1, v[2]);
+			const ray = new Ray(origin, new Vector3(0, -1, 0));
+			let highest = -Infinity;
+			for (const [a, b, c] of triangles) {
+				const hit = ray.intersectTriangle(a, b, c, true, new Vector3());
+				if (hit) highest = Math.max(highest, hit.y);
+			}
+			expect(
+				Number.isFinite(highest),
+				"every cover vertex has hull directly beneath it",
+			).toBe(true);
+			maximumClearance = Math.max(maximumClearance, v[1] - highest);
+		}
+	expect(
+		maximumClearance,
+		"dorsal covers follow the hull, with no tall floating housings",
+	).toBeLessThan(0.25);
 });
 
 test("export is a textured, bounded 3D courier with real depth and two engine bays", () => {
