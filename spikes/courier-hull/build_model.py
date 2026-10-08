@@ -1,7 +1,7 @@
 """O4 courier exterior study. Blender --background --python this_file.py.
 Metres, Y up, +Z forward. Material-batched authored geometry; seeded detail.
 """
-import bpy, math, random, json, struct
+import bpy, bmesh, math, random, json, struct
 from pathlib import Path
 from mathutils import Vector
 OUT=Path(__file__).resolve().parent
@@ -23,16 +23,16 @@ def material(name,color,metal=.55,rough=.5,emission=0,texture=True,alpha=1):
   m.node_tree.links.new(t.outputs['Color'],mix.inputs[1]);m.node_tree.links.new(mix.outputs[0],p.inputs['Base Color'])
  MATS[name]=m;return name
 
-blue=[material('blue-grey-'+str(i),(.19+i*.025,.235+i*.027,.27+i*.028),.5,.48) for i in range(4)]
-ivory=[material('pale-steel-'+str(i),(.49+i*.035,.48+i*.036,.435+i*.035),.43,.59) for i in range(3)]
+blue=[material('blue-grey-'+str(i),(.14+i*.009,.185+i*.010,.22+i*.010),.55,.36) for i in range(4)]
+ivory=[material('pale-steel-'+str(i),(.32+i*.018,.33+i*.018,.32+i*.018),.50,.44) for i in range(3)]
 steel=material('dark-structure',(.057,.071,.077),.76,.43)
 black=material('recess-black',(.012,.019,.023),.42,.62)
 alloy=material('machined-alloy',(.29,.295,.27),.84,.35)
 rubber=material('hose-rubber',(.023,.027,.029),.08,.78)
 orange=material('service-ochre',(.55,.29,.10),.37,.58)
-warm=material('amber-lamp',(1,.49,.14),.2,.23,4,False)
+warm=material('amber-lamp',(1,.29,.045),.2,.23,3,False)
 cyan=material('cyan-display',(.025,.55,.66),.15,.32,1.7,False)
-glass=material('canopy-glass',(.027,.085,.105),.5,.18,0,False,.76)
+glass=material('canopy-glass',(.027,.085,.105),.16,.13,0,False,.38)
 
 def poly(points,mat,group=None,uv=None):
  key=group or mat
@@ -41,7 +41,7 @@ def poly(points,mat,group=None,uv=None):
  verts.extend([tuple(p) for p in pts]);faces.append(tuple(range(offset,offset+len(pts))))
  if uv is None:
   n=(pts[1]-pts[0]).cross(pts[2]-pts[0]);axis=max(range(3),key=lambda i:abs(n[i]));ij=[i for i in range(3) if i!=axis]
-  uv=[(p[ij[0]]/6.7,p[ij[1]]/6.7) for p in pts]
+  uv=[(p[ij[0]]/5.0,p[ij[1]]/5.0) for p in pts]
  uvs.append(uv)
 
 def prism(points,n,depth,mat,group=None):
@@ -75,10 +75,16 @@ def plate(points,mat,n=(0,1,0),depth=.09,bolts=True):
    q=pts[(i+1)%len(pts)];length=(q-p).length;count=max(1,int(length/1.65))
    for j in range(count+1):
     a=p.lerp(q,j/count)*.975+c*.025+n*(depth+.025)
-    tube(a,a+n*.055,.057,alloy,6)
-   for t in [.13,.49,.83]:
+    tube(a-n*.005,a+n*.025,.115,steel,8)
+    tube(a+n*.025,a+n*.083,.075,alloy,6)
+   for t in [.08,.19,.36,.49,.67,.83,.92]:
     a=p.lerp(q,t)+n*(depth+.004);b=p.lerp(q,min(.97,t+random.uniform(.03,.13)))+n*(depth+.004)
-    mid=(a+b)/2;poly([a,b,mid*.986+c*.014+n*.012],steel)
+    mid=(a+b)/2;poly([a,b,mid*.975+c*.025+n*.012],steel if t<.7 else alloy)
+   # Local abrasion trails below a few seam fasteners, physically on each plate.
+   for t in [.27,.73]:
+    a=p.lerp(q,t)+n*(depth+.006);inward=(c-a).normalized();along=(q-p).normalized()
+    length=random.uniform(.16,.55);width=random.uniform(.025,.07)
+    poly([a-along*width,a+along*width,a+inward*length+along*width*.3],steel)
 
 def hatch(x,y,z,w=2.2,d=2.8):
  box((x,y+.07,z),(w,.14,d),steel)
@@ -100,58 +106,88 @@ def lamp(x,y,z,orient='front'):
   box((x,y,z),(.75,.43,.21),steel);box((x,y,z+.13),(.5,.19,.05),warm)
 
 # Central pressure hull: a broad low body tapering all the way to the needle prow.
-stations=[(-25,8.8,1.0,-2.7),(-21,10.4,1.45,-3.3),(-14,10.6,1.7,-3.5),(-7,9.3,1.85,-3.4),(0,7.6,1.85,-3.1),(7,6.5,1.65,-2.7),(14,4.8,1.3,-2.2),(21,3.4,.9,-1.6),(28,1.75,.42,-.95),(33,.32,-.06,-.35)]
+stations=[(-25,8.8,1.7,-3.0),(-21,10.4,2.65,-3.8),(-14,10.6,3.1,-4.1),(-7,9.3,3.2,-4.0),(0,8.5,3.3,-3.8),(7,7.6,3.25,-3.6),(14,6.5,2.75,-3.2),(21,4.95,1.9,-2.6),(28,2.7,1.05,-1.7),(33,.68,.25,-.65)]
 def sample(z):
  for a,b in zip(stations,stations[1:]):
   if a[0]<=z<=b[0]:
    t=(z-a[0])/(b[0]-a[0]);return tuple(a[i]+(b[i]-a[i])*t for i in range(1,4))
  return stations[-1][1:]
 def ring(z,w,top,bottom):
- return [Vector((x,y,z)) for x,y in [(-w*.82,top),(w*.82,top),(w,top-.7),(w,bottom+.7),(w*.76,bottom),(-w*.76,bottom),(-w,bottom+.7),(-w,top-.7)]]
+ return [Vector((x,y,z)) for x,y in [(-w*.82,top),(w*.82,top),(w,top-1.4),(w,bottom+1.1),(w*.76,bottom),(-w*.76,bottom),(-w,bottom+1.1),(-w,top-1.4)]]
 rs=[ring(*s) for s in stations]
+def deck_y(y,f):return y+.72*(1-(abs(f)/.82)**2)
 for a,b in zip(rs,rs[1:]):
  for j in range(1,8):
   k=(j+1)%8;pts=[a[j],a[k],b[k],b[j]];n=(pts[1]-pts[0]).cross(pts[2]-pts[0]).normalized();c=sum(pts,Vector())/4
   # Ring order is clockwise viewed from bow: reverse lateral patches to face outward.
   if n.dot(Vector((c.x,c.y,0)))<0:pts.reverse();n=-n
   plate(pts,random.choice(blue),n,.09)
-poly(list(reversed(rs[0])),steel);poly(rs[-1],blue[1])
+ # The decorative plates are separated by seams; a continuous pressure shell
+ # beneath them must close the body independently of all surface equipment.
+shell=[]
+for z in sorted(set([s[0] for s in stations]+[6.49,6.5,23,23.01])):
+ w,top,bottom=sample(z)
+ outline=ring(z,w,top,bottom)
+ crown=[]
+ for f in [-.82,-.45,-.17,.17,.45,.82]:
+  y=1.82 if 6.5<=z<=23 and abs(f)<=.45 else deck_y(top,f)-.025
+  crown.append(Vector((w*f,y,z)))
+ shell.append(crown+outline[2:])
+for a,b in zip(shell,shell[1:]):
+ for j in range(len(a)):
+  k=(j+1)%len(a);poly([a[j],a[k],b[k],b[j]],steel,'pressure-hull')
+poly(shell[0],steel,'pressure-hull');poly(list(reversed(shell[-1])),steel,'pressure-hull')
+# The stern is an armoured bulkhead with recessed access panels and heat vents.
+plate(shell[0],blue[1],(0,0,-1),.15)
+for side in [-1,1]:
+ box((side*4.9,-.45,-25.22),(4.3,2.75,.22),steel)
+ box((side*4.9,-.45,-25.36),(3.95,2.4,.12),blue[2])
+ for y in [-1.35,.45]:
+  for dx in [-1.6,1.6]:tube((side*4.9+dx,y,-25.44),(side*4.9+dx,y,-25.57),.1,alloy,8)
+ box((side*2.15,.12,-25.45),(.35,2.0,.36),steel)
+ box((side*2.15,.12,-25.65),(.16,1.55,.05),warm)
+ for x in [side*7.6,side*6.9]:
+  cable([(x,-1.9,-25.28),(x,-1.9,-25.58),(x,1.05,-25.58),(x,1.05,-25.28)],.1,alloy)
+box((0,-.45,-25.24),(2.8,3.2,.3),black)
+for y in [-1.75,-1.4,-1.05,-.7,-.35,0,.35,.7]:
+ box((0,y,-25.49),(2.45,.1,.2),alloy)
 # Deck plating in individual strips, with a central opening under the canopy.
 for za,zb in zip([-25,-21,-17,-13,-9,-5,-1,3,7,11,15,19,23,26,29,33],[-21,-17,-13,-9,-5,-1,3,7,11,15,19,23,26,29,33]):
  wa,ya,_=sample(za);wb,yb,_=sample(zb)
  for fa,fb in [(-.82,-.45),(-.45,-.17),(-.17,.17),(.17,.45),(.45,.82)]:
   if za>=7 and zb<=23 and abs((fa+fb)/2)<.4:continue
-  pts=[(wa*fa,ya,za),(wa*fb,ya,za),(wb*fb,yb,zb),(wb*fa,yb,zb)]
-  mat=random.choice(ivory) if random.random()<.24 else random.choice(blue)
+  pts=[(wa*fa,deck_y(ya,fa),za),(wa*fb,deck_y(ya,fb),za),(wb*fb,deck_y(yb,fb),zb),(wb*fa,deck_y(yb,fa),zb)]
+  mat=ivory[1] if (fa<-.4 and -22<za<-1) or (fa>.4 and -25<za<-13) else blue[random.choice([1,1,2,2,3])]
   plate(pts,mat)
 # Swept outer cargo shoulders with individual quadrilateral plates.
 for side in [-1,1]:
  rows=[(-24,8.8,15.0),(-20,10.3,16.2),(-16,10.6,15.6),(-12,10.3,14.8),(-8,9.6,13.8),(-4,8.6,12.0),(0,7.6,10.1),(4,7.0,8.0)]
  for (za,ia,oa),(zb,ib,ob) in zip(rows,rows[1:]):
   for fa,fb in [(0,.5),(.5,1)]:
-   pts=[(side*(ia+(oa-ia)*f),1.13-(.36*f),z) for z,ia,oa in [(za,ia,oa),(zb,ib,ob)] for f in []]
-   pts=[(side*(ia+(oa-ia)*fa),1.13-.36*fa,za),(side*(ia+(oa-ia)*fb),1.13-.36*fb,za),(side*(ib+(ob-ib)*fb),1.13-.36*fb,zb),(side*(ib+(ob-ib)*fa),1.13-.36*fa,zb)]
-   prism(pts,(0,-1,0),2.25,steel);plate(pts,random.choice(ivory) if random.random()<.52 else blue[1])
+   ya=sample(za)[1]-.55;yb=sample(zb)[1]-.55
+   pts=[(side*(ia+(oa-ia)*fa),ya+(1.0-ya)*fa,za),(side*(ia+(oa-ia)*fb),ya+(1.0-ya)*fb,za),(side*(ib+(ob-ib)*fb),yb+(1.0-yb)*fb,zb),(side*(ib+(ob-ib)*fa),yb+(1.0-yb)*fa,zb)]
+   prism(pts,(0,-1,0),2.25,steel);plate(pts,ivory[1] if fa>.4 else blue[1])
   plate([(side*oa,.72,za),(side*ob,.72,zb),(side*ob,-1.3,zb),(side*oa,-1.3,za)],blue[0],(side,0,0),.08)
- for z,x in [(-17,12.0),(-7,10.5)]:hatch(side*x,1.25,z,2.0,2.8)
- radiator(side*12.8,1.18,-21,2.2,2.1)
+ for z,x in [(-17,12.0),(-7,10.5)]:hatch(side*x,2.13,z,2.0,2.8)
+ radiator(side*12.8,1.52,-21,2.2,2.1)
 
 # A dorsal spine, articulated into broad service housings.
 for z,l,w in [(-21,6,4.5),(-14.3,6.3,4.3),(-7.4,6.5,4.0),(-1,5.7,3.6)]:
- box((0,2.05,z),(w,.7,l),steel);box((0,2.48,z),(w-.25,.24,l-.23),blue[2])
+ y=sample(z)[1]+.6
+ box((0,y+.25,z),(w,.65,l),steel);box((0,y+.68,z),(w-.25,.24,l-.23),blue[2])
  for x in [-w/2,w/2]:
-  box((x,2.07,z),(.19,.58,l-.3),ivory[0])
-  for dz in [-l*.36,l*.36]:lamp(x,2.1,z+dz)
+  box((x,y+.27,z),(.19,.58,l-.3),ivory[0])
+  for dz in [-l*.36,l*.36]:lamp(x,y+.3,z+dz)
  for x in [-w*.34,w*.34]:
-  for dz in [-l*.39,l*.39]:tube((x,2.62,z+dz),(x,2.69,z+dz),.09,alloy,6)
-for z in [-23,-18,-11,-4]:hatch(0,2.62,z,1.9,1.2)
+  for dz in [-l*.39,l*.39]:tube((x,y+.82,z+dz),(x,y+.89,z+dz),.09,alloy,6)
+for z in [-23,-18,-11,-4]:hatch(0,sample(z)[1]+1.4,z,1.9,1.2)
 # Low trapezoid navigation blister aft of the canopy, not a tall bridge.
-prism([(-1.25,2.2,2),(1.25,2.2,2),(1.0,2.2,5),(-1,2.2,5)],(0,1,0),.9,steel)
-plate([(-1.22,3.13,2),(1.22,3.13,2),(1.0,3.13,4.8),(-1,3.13,4.8)],blue[1],depth=.06)
-box((0,2.86,5.02),(1.4,.4,.08),black)
+prism([(-1.25,3.9,2),(1.25,3.9,2),(1.0,3.9,5),(-1,3.9,5)],(0,1,0),.9,steel)
+plate([(-1.22,4.83,2),(1.22,4.83,2),(1.0,4.83,4.8),(-1,4.83,4.8)],blue[1],depth=.06)
+box((0,4.56,5.02),(1.4,.4,.08),black)
 
 # Canopy. Four sections form a shallow taper; real interior sits behind tinted panes.
-canopy=[(6.5,2.25,3.6,1.8),(10.5,2.25,4.5,1.7),(15,1.92,3.85,1.45),(19.5,1.48,2.7,1.2),(23,0.72,1.35,.82)]
+canopy=[(6.5,2.7,4.75,3.45),(10.5,2.65,5.65,3.45),(15,2.35,4.95,3.08),(19.5,1.85,3.85,2.5),(23,1.03,2.4,2.0)]
 def canopy_ring(row):
  z,w,y,b=row;return [Vector((-w,b,z)),Vector((-w*.78,y-.15,z)),Vector((w*.78,y-.15,z)),Vector((w,b,z))]
 cr=[canopy_ring(r) for r in canopy]
@@ -164,15 +200,15 @@ for row in cr:
  for a,b in zip(row,row[1:]):tube(a,b,.10,alloy,10)
 poly([cr[0][3],cr[0][2],cr[0][1],cr[0][0]],blue[1])
 poly(cr[-1],glass,'canopy-glass')
-box((0,.55,14.5),(3.5,.2,15.0),black)
-box((0,1.05,10),(1.25,.75,1.5),steel);box((0,1.85,9.6),(1.3,1.4,.4),steel)
-box((0,1.18,17.8),(2.8,.34,1.35),steel)
+box((0,1.95,14.5),(3.5,.2,15.0),black)
+box((0,2.45,10),(1.25,.75,1.5),steel);box((0,3.25,9.6),(1.3,1.4,.4),steel)
+box((0,2.58,17.8),(2.8,.34,1.35),steel)
 for x in [-.9,0,.9]:
- box((x,1.37,17.7),(.68,.08,.68),black);box((x,1.415,17.7),(.5,.018,.44),warm if x==0 else cyan)
+ box((x,2.77,17.7),(.68,.08,.68),black);box((x,2.815,17.7),(.5,.018,.44),warm if x==0 else cyan)
 for side in [-1,1]:
- box((side*1.3,1.2,13),(.6,.7,5.4),steel)
+ box((side*1.3,2.6,13),(.6,.7,5.4),steel)
  for z in [11.3,12.3,13.3,14.3,15.3]:
-  box((side*1.3,1.57,z),(.3,.035,.16),cyan)
+  box((side*1.3,2.97,z),(.3,.035,.16),cyan)
  # Nose side service conduit follows the taper, hugging the upper chine.
  path=[]
  for z in [2,8,14,20,26,30]:
@@ -181,50 +217,94 @@ for side in [-1,1]:
  for z in [4,10,16,22,28]:
   w,y,_=sample(z);box((side*(w+.06),y-.48,z),(.32,.45,.18),steel)
  lamp(side*1.0,.24,29.4)
+ # Stepped canopy coaming follows the glass perimeter into the pressure hull.
+ for aa,bb in zip(canopy,canopy[1:]):
+  za,wa,_,ba=aa;zb,wb,_,bbottom=bb
+  ha,ya,_=sample(za);hb,yb,_=sample(zb)
+  plate([(side*wa,ba,za),(side*(wa+.48),ba+.13,za),(side*(wb+.48),bbottom+.13,zb),(side*wb,bbottom,zb)],steel,depth=.10)
+  plate([(side*(wa+.48),ba+.13,za),(side*min(ha*.81,wa+1.35),ya+.12,za),(side*min(hb*.81,wb+1.35),yb+.12,zb),(side*(wb+.48),bbottom+.13,zb)],blue[2],depth=.10)
+ for z in [8,13,18]:
+  w,y,_=sample(z);radiator(side*w*.58,y+.22,z,1.05,1.5)
+ # Layered upper and lower side armour with an inset mechanical service belt.
+ for za,zb in [(0,4),(4,8),(8,12),(12,16),(16,20),(20,24),(24,28)]:
+  wa,ya,ba=sample(za);wb,yb,bb=sample(zb)
+  n=Vector((side,0,side*(wa-wb)/(zb-za))).normalized()
+  plate([(side*(wa+.09),ya-.88,za),(side*(wb+.09),yb-.88,zb),(side*(wb+.09),yb-1.5,zb),(side*(wa+.09),ya-1.5,za)],blue[1],n,.09)
+  plate([(side*(wa+.07),ba+.48,za),(side*(wb+.07),bb+.48,zb),(side*(wb+.07),bb+1.08,zb),(side*(wa+.07),ba+1.08,za)],ivory[0] if za%8==0 else blue[0],n,.07)
+  for f in [.18,.7]:
+   z=za+(zb-za)*f;w,y,_=sample(z)
+   box((side*(w+.25),y-1.75,z),(.24,.46,.8),steel)
+   for dz in [-.27,.27]:box((side*(w+.39),y-1.75,z+dz),(.045,.32,.055),alloy)
 
 # Twin nacelles: long octagonal section with chamfered nose and recessed grilles.
 def engine_ring(x,z,w,top,bottom):
- return [Vector((x+dx,y,z)) for dx,y in [(-w*.68,top),(w*.68,top),(w,top-1.0),(w,bottom+1.0),(w*.68,bottom),(-w*.68,bottom),(-w,bottom+1.0),(-w,top-1.0)]]
+ return [Vector((x+dx,y,z)) for dx,y in [(-w*.68,top),(w*.68,top),(w*.90,top-.24),(w*.98,top-.66),(w,top-1.24),(w,bottom+1.24),(w*.98,bottom+.66),(w*.90,bottom+.24),(w*.68,bottom),(-w*.68,bottom),(-w*.90,bottom+.24),(-w*.98,bottom+.66),(-w,bottom+1.24),(-w,top-1.24),(-w*.98,top-.66),(-w*.90,top-.24)]]
 for side in [-1,1]:
  x=side*21.9;name='engine-port' if side<0 else 'engine-starboard'
- sections=[(-25.5,4.05,2.65,-3.7),(-23.8,5.05,3.45,-4.25),(-20,5.25,3.55,-4.3),(-15,5.25,3.55,-4.3),(-12,5.15,3.4,-4.2),(-9,5.25,3.55,-4.3),(-4,5.25,3.55,-4.3),(1.5,5.05,3.3,-4.15),(5.5,4.85,2.75,-3.95),(8.1,3.7,1.7,-3.15)]
+ sections=[(-25.5,4.05,2.65,-3.7),(-23.8,5.05,3.45,-4.25),(-20,5.25,3.55,-4.3),(-15,5.25,3.55,-4.3),(-12,5.15,3.4,-4.2),(-11.4,4.55,2.8,-3.6),(-10.2,4.55,2.8,-3.6),(-9.6,5.25,3.55,-4.3),(-4,5.25,3.55,-4.3),(1.5,5.05,3.3,-4.15),(5.5,4.85,2.75,-3.95),(8.1,3.7,1.7,-3.15)]
  er=[engine_ring(x,*r) for r in sections]
  # The backing is named per pod for export assertions and independent selection.
  for a,b in zip(er,er[1:]):
-  for j in range(8):
-   k=(j+1)%8;pts=[a[j],b[j],b[k],a[k]]
+  for j in range(len(a)):
+   k=(j+1)%len(a);pts=[a[j],b[j],b[k],a[k]]
    poly(pts,black,name)
-   for fa,fb in [(0,.5),(.5,1)]:
+   if -11.5<a[j].z<-10:continue
+   for fa,fb in ([(0,.5),(.5,1)] if j in [0,4,8,12] else [(0,1)]):
     quad=[a[j].lerp(a[k],fa),b[j].lerp(b[k],fa),b[j].lerp(b[k],fb),a[j].lerp(a[k],fb)]
     c=sum(quad,Vector())/4;n=(quad[1]-quad[0]).cross(quad[2]-quad[0]).normalized()
     if n.dot(Vector((c.x-x,c.y,0)))<0:n=-n
-    material_=random.choice(ivory) if random.random()<.55 else random.choice(blue)
+    material_=ivory[1] if (j in [0,1,2,7,8,9,14,15] and a[j].z<1) else blue[1]
     plate(quad,material_,n,.09)
  # True front aperture: deep black end wall with 13 vertical fins, thick surround.
  front=er[-1]
- poly(list(reversed([p-Vector((0,0,.4)) for p in front])),black,name)
- for j in range(8):tube(front[j],front[(j+1)%8],.18,alloy,8)
+ poly(list(reversed(front)),black,name)
+ poly(er[0],black,name)
+ # Solid aft firewall fills the corners outside the circular thrust chamber.
+ plate(er[0],blue[1],(0,0,-1),.12)
+ for j in range(len(er[0])):
+  a=er[0][j]+Vector((0,0,-.17));b=er[0][(j+1)%len(er[0])]+Vector((0,0,-.17))
+  tube(a,b,.11,alloy,8)
+ for j in range(len(front)):tube(front[j],front[(j+1)%len(front)],.18,alloy,8)
  for dx in [-2.8,-2.33,-1.86,-1.4,-.93,-.47,0,.47,.93,1.4,1.86,2.33,2.8]:
   box((x+dx,-.73,8.05),(.12,3.8,.36),steel)
   box((x+dx,-.73,8.25),(.033,3.8,.05),alloy)
  # Aft circular thrust chamber set into the octagonal engine body.
- tube((x,-.38,-25.3),(x,-.38,-27.4),3.68,steel,32)
- tube((x,-.38,-27.41),(x,-.38,-27.7),3.4,alloy,32)
- tube((x,-.38,-27.72),(x,-.38,-27.78),2.94,black,32)
- tube((x,-.38,-27.79),(x,-.38,-27.83),2.03,steel,32)
+ # Annular nozzle rolls over a machined lip into a recessed, closed throat.
+ # Capped cylinders here used to read as flat discs when seen from astern.
+ nozzle=[[(x+r*math.cos(j*math.tau/48),-.38+r*math.sin(j*math.tau/48),z) for j in range(48)]
+         for z,r in [(-25.3,3.68),(-27.1,3.65),(-27.7,3.4),(-27.7,2.94),(-25.8,2.34)]]
+ for band,(a,b) in enumerate(zip(nozzle,nozzle[1:])):
+  for j in range(48):
+   k=(j+1)%48;poly([a[j],a[k],b[k],b[j]],alloy if band==2 else steel)
+ poly(nozzle[-1],black)
+ tube((x,-.38,-25.82),(x,-.38,-26.02),.72,steel,32)
+ for j in range(24):
+  a=j*math.tau/24
+  cable([(x+2.88*math.cos(a),-.38+2.88*math.sin(a),-27.55),(x+2.30*math.cos(a),-.38+2.30*math.sin(a),-25.88)],.055,alloy)
  for j in range(20):
   a=j*math.tau/20
   cable([(x+3.1*math.cos(a),-.38+3.1*math.sin(a),-27.85),(x+3.65*math.cos(a),-.38+3.65*math.sin(a),-27.1)],.085,alloy)
  # Armoured clamp bands around the segment joint and thrust chamber.
  for z in [-23.5,-11.1,-10.3]:
   rr=engine_ring(x,z,5.28,3.59,-4.32)
-  for j in range(8):
-   a=rr[j];b=rr[(j+1)%8];tube(a,b,.16,steel,8)
+  for j in range(len(rr)):
+   a=rr[j];b=rr[(j+1)%len(rr)];tube(a,b,.16,steel,8)
    for t in [.2,.8]:
     q=a.lerp(b,t);box(q,(.20,.20,.47),alloy)
  for z in [-19,-3.4]:
   radiator(x,3.68,z,3.5,3.0)
   for dx in [-3.0,3.0]:hatch(x+dx,3.56,z,1.0,2.1)
+ # Joint-ring cover straps, smaller service boxes, longitudinal edge ribs.
+ for dx in [-3.4,3.4]:
+  cable([(x+dx,3.46,-22),(x+dx,3.55,-14),(x+dx,3.18,-11),(x+dx,3.55,-7),(x+dx,3.45,1)],.065,alloy)
+ for z in [-21,-16,-7,-1,4]:
+  for dx in [-4.6,4.6]:
+   box((x+dx,2.7,z),(.5,.20,.85),steel)
+   for dz in [-.28,.28]:tube((x+dx,2.81,z+dz),(x+dx,2.89,z+dz),.06,alloy,6)
+ for z in [-22,-18,-14,-7,-2,3]:
+  for dx in [-2.5,2.5]:
+   box((x+dx,3.7,z),(.5,.16,.4),steel)
+   box((x+dx,3.80,z),(.27,.045,.22),alloy)
  # Attached side vent stacks and warm service lamps.
  for z in [-18,-5,2]:
   xx=x+side*5.35
@@ -232,6 +312,18 @@ for side in [-1,1]:
   for k in range(12):box((xx+side*.16,-1.35+k*.18,z),(.2,.055,2.25),alloy)
   box((xx+side*.15,1.0,z+1.4),(.25,.5,.6),steel)
   box((xx+side*.30,1.0,z+1.4),(.035,.3,.32),warm)
+  for yy in [-1.55,.96]:
+   cable([(xx+side*.2,yy,z-1.3),(xx+side*.38,yy,z-1.3),(xx+side*.38,yy,z+1.3),(xx+side*.2,yy,z+1.3)],.07)
+ # Outer wall equipment boxes and short lateral service lines break up the slab.
+ for z in [-21,-13,-8,-1,5]:
+  xx=x+side*5.36
+  box((xx,-.25,z),(.28,1.20,.84),steel)
+  box((xx+side*.18,-.25,z),(.12,.94,.60),blue[1])
+  tube((xx+side*.29,-.25,z),(xx+side*.48,-.25,z),.26,alloy,12)
+  tube((xx+side*.49,-.25,z),(xx+side*.50,-.25,z),.17,black,12)
+ for yy in [-2.3,1.65]:
+  cable([(x+side*5.22,yy,-22),(x+side*5.40,yy,-18),(x+side*5.40,yy,-13)],.105)
+  cable([(x+side*5.40,yy,-8),(x+side*5.40,yy,-2),(x+side*5.20,yy,3)],.105)
  lamp(x-2.7,.4,7.8);lamp(x+2.7,.4,7.8)
  # Structural necks and dense contained machinery across the open engine roots.
  for z in [-20,-12,-3.8]:
@@ -243,6 +335,24 @@ for side in [-1,1]:
   tube((side*inner,.08,z),(side*17,.08,z),r,alloy,12)
   for xx in [inner+.5,inner+1.4,16.3]:tube((side*(xx-.12),.08,z),(side*(xx+.12),.08,z),r*1.26,steel,12)
   cable([(side*inner,.08,z),(side*(inner-.4),.35,z+.65),(side*(inner-.4),.65,z+1.4)],r*.72)
+ # Upper tier is visible above the shoulder edge: ribbed hoses and coupled pumps.
+ for z in [-19.5,-16.5,-8.5,-5.8,-2]:
+  inner=12.6 if z<-10 else 10.6
+  cable([(side*inner,1.0,z-1),(side*(inner+.7),1.55,z),(side*16.1,1.55,z),(side*17.2,1.0,z+.7)],.23,rubber)
+  for k in range(12):
+   xx=inner+.8+(15.9-inner-.8)*k/11
+   tube((side*(xx-.038),1.55,z),(side*(xx+.038),1.55,z),.28,alloy,10)
+  box((side*(inner+.2),1.15,z-1),(1.0,.8,1.2),steel)
+  box((side*(inner+.2),1.61,z-1),(.75,.16,.9),alloy)
+ # Long visible flank trunks are supported by the engine-root bridges.
+ for xx,yy in [(13.7,2.35),(14.35,2.05),(15.05,1.85)]:
+  tube((side*xx,yy,-21),(side*xx,yy,-3),.23,alloy,12)
+  for zz in [-20,-17,-14,-11,-8,-5]:
+   tube((side*xx,yy,zz-.15),(side*xx,yy,zz+.15),.30,steel,12)
+   box((side*xx,yy-.55,zz),(.65,.75,.22),steel)
+ for z in [-13,-4]:
+  box((side*14.5,.8,z),(1.3,.6,2.4),black)
+  for zz in [-.85,-.55,-.25,.05,.35,.65,.95]:box((side*14.5,1.14,z+zz),(1.1,.13,.08),alloy)
  for z in [-18,-7]:
   box((side*15.5,.3,z),(1.65,1.1,2.1),steel)
   tube((side*15.5,.85,z-.9),(side*15.5,.85,z+.9),.62,alloy,12)
@@ -257,7 +367,7 @@ for side in [-1,1]:
 for side in [-1,1]:
  for z in [-20,-12,-4,3,25]:
   w,y,_=sample(z);xx=side*w*.63
-  if z<6:hatch(xx,y+.14,z,1.5,2.2)
+  if z<6:hatch(xx,deck_y(y,.63)+.14,z,1.5,2.2)
  for z in [24,27,30]:
   w,y,_=sample(z);x=side*w*.48
   poly([(x-.18,y+.13,z-.8),(x+.18,y+.13,z-.8),(x+.16,y+.13,z+.8),(x-.16,y+.13,z+.8)],orange)
@@ -279,9 +389,12 @@ for name,(verts,faces,uvs) in BATCH.items():
  uv=mesh.uv_layers.new(name='surface-metres')
  for face,coords in zip(mesh.polygons,uvs):
   for index,xy in zip(face.loop_indices,coords):uv.data[index].uv=xy
+ # Weld each solid's coincident face corners before beveling; isolated face
+ # islands cannot form the rounded machined edges the authored solids need.
+ bm=bmesh.new();bm.from_mesh(mesh);bmesh.ops.remove_doubles(bm,verts=list(bm.verts),dist=.00001);bmesh.ops.recalc_face_normals(bm,faces=list(bm.faces));bm.to_mesh(mesh);bm.free();mesh.update()
  ob=bpy.data.objects.new(name,mesh);bpy.context.collection.objects.link(ob);objects.append(ob)
- if GROUP_MAT[name] not in [glass,warm,cyan]:
-  bevel=ob.modifiers.new('machined-edge-radius','BEVEL');bevel.width=.027;bevel.segments=1
+ if GROUP_MAT[name] in blue+ivory:
+  bevel=ob.modifiers.new('machined-edge-radius','BEVEL');bevel.width=.075;bevel.segments=2
   normal=ob.modifiers.new('weighted-panel-normals','WEIGHTED_NORMAL');normal.keep_sharp=True
 bpy.ops.file.pack_all()
 bpy.ops.wm.save_as_mainfile(filepath=str(OUT/'courier-hull.blend'))
