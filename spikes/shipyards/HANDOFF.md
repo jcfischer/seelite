@@ -55,3 +55,7 @@ This prototype has no shipped player behavior and no public changelog entry. The
 - `the-algorithm` / `VSA`: define and verify the integration contract without treating this visual prototype as finished flight behavior.
 - `dream-loop`: only for visual regressions or necessary flight-adaptation review; preserve the already-approved style and stopping point.
 - `handoff`: carry forward verified progress and remaining integration work if another session is needed.
+
+## PR handoff status
+
+Draft PR: https://github.com/jcfischer/seelite/pull/811. The principal explicitly stopped Sage review and assigned it to the next agent. No Sage approval exists: the configured Claude executable was missing, and the Codex retry was terminated on request. Resume review only in the next agent's task. The PR body carries the latest check status.
