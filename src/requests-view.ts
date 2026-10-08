@@ -50,7 +50,7 @@ export interface DeliverAction {
  * one projection (#443).
  */
 const settleVerb = (offer: RequestOffer): string =>
-	offer.family === "salvage" ? "Deliver" : "Report";
+	offer.family === "salvage" ? "Hand over" : "Report";
 
 export function deliverAction(
 	offer: RequestOffer,
@@ -64,10 +64,10 @@ export function deliverAction(
 	const short = aboardT < operand.tonnes;
 	if (offer.operand.kind === "salvage")
 		return {
-			label: `Deliver ${operand.tonnes} t of ${operand.goodName}`,
+			label: `Hand over ${operand.tonnes} t of ${operand.goodName}`,
 			hint: short
 				? "Recover the named container whole first."
-				: "Recovered for the requester. Deliver here to get paid.",
+				: "Recovered for the requester. Hand over here to get paid.",
 			enabled: !short,
 		};
 	// Only the words differ by family; the enablement is one rule, and it was

@@ -141,7 +141,7 @@ export const JOB_ROWS: readonly JobRow[] = [
 		purpose: "We lost a ship. Recover the named container and bring it home.",
 		danger: "The wreck is unguarded. Raiders may be nearby.",
 		action:
-			"Search the region, scoop the named container whole, then Deliver it here.",
+			"Search the region, scoop the named container whole, then hand it over here.",
 		consequence:
 			"The station gets its lost property back. The container stays empty.",
 		tonnes: 0,
@@ -409,6 +409,15 @@ export interface SalvageOperand {
 		priceCr: number;
 	};
 }
+
+/** Compare the item's identity and whole amount, independent of its valuation. */
+export const matchesSalvageItem = (
+	item: { kind: "good" | "fitting"; id: string; tonnes: number },
+	snapshot: SalvageOperand["item"],
+): boolean =>
+	item.kind === snapshot.kind &&
+	item.id === snapshot.id &&
+	item.tonnes === snapshot.tonnes;
 
 export interface CargoOperand {
 	kind: "cargo";

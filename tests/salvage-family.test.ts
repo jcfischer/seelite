@@ -241,7 +241,58 @@ describe("home station Salvage offers", () => {
 			ctx(o, { holdRoomT: 0 }),
 		);
 		expect(a.ok).toBe(true);
+		expect(a.message).toContain("hand over here");
+		expect(a.message).not.toMatch(/deliver/i);
 		expect(a.state.entrustedByLotId).toEqual({});
+	});
+	test("undocked Salvage acceptance refuses before it needs posting context", () => {
+		const o = offer();
+		const h = { ...holdings(), requests: emptyRequests() };
+		for (const docked of [
+			null,
+			{ ...o.requester, carrierKey: "0:0:trade" as typeof key },
+		]) {
+			const result = applyHoldEvent(h, world, {
+				kind: "settlement",
+				action: "accept",
+				id: o.id,
+				offer: o,
+				docked,
+				standing: "clean",
+				galaxyIndex: 0,
+				at,
+			});
+			expect(result.holdings).toBe(h);
+			expect(result.world).toBe(world);
+			expect(result.signals.message).toBe(
+				"Dock at the station that posted this job to accept it.",
+			);
+		}
+	});
+	test("absent or mismatched posting context refuses Salvage acceptance without mutation", () => {
+		const o = offer();
+		const h = { ...holdings(), requests: emptyRequests() };
+		for (const salvagePosting of [
+			undefined,
+			{ system: { ...record, galaxy: 1 }, station },
+		]) {
+			const result = applyHoldEvent(h, world, {
+				kind: "settlement",
+				action: "accept",
+				id: o.id,
+				offer: o,
+				docked: o.requester,
+				salvagePosting,
+				standing: "clean",
+				galaxyIndex: 0,
+				at,
+			});
+			expect(result.holdings).toBe(h);
+			expect(result.world).toBe(world);
+			expect(result.signals.message).toBe(
+				"This salvage offer is no longer available.",
+			);
+		}
 	});
 });
 
@@ -427,6 +478,8 @@ describe("entrusted recovery Operational condition", () => {
 		).toBe(o.rewardCr);
 		expect(delivered.holdings.requests.byId[o.id].status).toBe("completed");
 		expect(delivered.holdings.requests.entrustedByLotId).toEqual({});
+		expect(delivered.signals.message).toContain("handed over");
+		expect(delivered.signals.message).not.toMatch(/deliver/i);
 		expect(delivered.world.galaxies[0].deficits).toEqual({});
 		for (const action of ["deliver", "report"])
 			expect(
@@ -537,6 +590,6 @@ describe("entrusted recovery Operational condition", () => {
 		expect(html).toContain("1 t of Docking Computer");
 		expect(html).toContain('data-live-request-action="accept"');
 		expect(html).toContain("60s old");
-		expect(html).toContain("Deliver at");
+		expect(html).toContain("Hand over at");
 	});
 });

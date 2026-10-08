@@ -27,6 +27,7 @@ import {
 	SALVAGE_OFFER_WINDOW_S,
 	cargoOf,
 	deliverableOf,
+	matchesSalvageItem,
 	entrustedItemOf,
 	jobMark,
 	missingRequirements,
@@ -40,7 +41,6 @@ import {
 	derelictOrdinalOf,
 } from "./derelict-slots";
 import { localCarrierIdOfKey, systemIndexOfKey } from "./carrier-key";
-import { matchesSalvageItem } from "./salvage-jobs";
 
 export interface RequestStation {
 	galaxyIndex: number;
@@ -223,10 +223,7 @@ export function requestsAfterLostHold(state: RequestsState): {
 	if (lots.length === 0 && salvage.length === 0) return { state, failed: [] };
 	const byId = { ...state.byId };
 	const failed: string[] = [];
-	for (const id of new Set([
-		...lots.map((l) => l.offerId),
-		...salvage.map((r) => r.offerId),
-	])) {
+	for (const id of new Set([...lostIds, ...salvage.map((r) => r.offerId)])) {
 		const request = byId[id];
 		if (!request || !isRunning(request.status)) continue;
 		byId[id] = {
@@ -347,7 +344,7 @@ function acceptedMessage(offer: JobOffer, request: AcceptedRequest): string {
 	const op = offer.operand;
 	switch (op.kind) {
 		case "salvage":
-			return `Accepted. Recover ${op.item.tonnes} t of ${op.item.id} in ${offer.region}, then Deliver here. It belongs to the requester. Payment: ${offer.rewardCr} Cr, pinned at acceptance.`;
+			return `Accepted. Recover ${op.item.tonnes} t of ${op.item.id} in ${offer.region}, then hand over here. It belongs to the requester. Payment: ${offer.rewardCr} Cr, pinned at acceptance.`;
 		case "target":
 			return request.status === "ready-to-report"
 				? "Accepted again. Your earlier kill still counts, so you can report now."
@@ -377,7 +374,7 @@ export function nextAction(r: AcceptedRequest): string {
 		// clause; spliced into the sentence it read "in The approach to" (#508).
 		return `Destroy the ${operand.targetName}. Search area: ${r.terms.region}. Collect at ${r.terms.reportName}.`;
 	if (operand.kind === "salvage")
-		return `Recover ${operand.item.tonnes} t of ${operand.item.id}. Search area: ${r.terms.region}. Deliver at ${r.terms.reportName}.`;
+		return `Recover ${operand.item.tonnes} t of ${operand.item.id}. Search area: ${r.terms.region}. Hand over at ${r.terms.reportName}.`;
 	// **Carried, or sourced — and the first says the goods are already
 	// aboard** (#446). "Carry 8 t Food to ARLAON" and "Source 8 t Food" read
 	// as the same errand at a glance, and a pilot who read the first as the
@@ -726,7 +723,7 @@ export function requestAction(
 					trackedRequestId:
 						state.trackedRequestId === id ? null : state.trackedRequestId,
 				},
-				`${tonnes} t of ${goodName} delivered to ${terms.reportName}. Paid ${terms.rewardCr} Cr.`,
+				`${tonnes} t of ${goodName} handed over at ${terms.reportName}. Paid ${terms.rewardCr} Cr.`,
 				{ rewardCr: terms.rewardCr },
 			);
 		}

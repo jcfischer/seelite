@@ -30,9 +30,9 @@ import { scoopWreckContainer } from "./derelict-salvage";
 import {
 	refreshSalvageRequests,
 	repriceSalvageOffer,
-	matchesSalvageItem,
 	type SalvagePosting,
 } from "./salvage-jobs";
+import { matchesSalvageItem } from "./jobs";
 import { identifyDerelicts } from "./long-range-scanner";
 import type { System } from "./sim";
 import type { Vec3 } from "./vec3";
@@ -328,6 +328,15 @@ function settle(
 	const hold = holdOf(holdings);
 	let offer = event.offer;
 	if (event.action === "accept" && offer?.operand.kind === "salvage") {
+		if (
+			!event.docked ||
+			event.docked.galaxyIndex !== offer.requester.galaxyIndex ||
+			event.docked.carrierKey !== offer.requester.carrierKey
+		)
+			return unchanged(holdings, world, {
+				...QUIET,
+				message: "Dock at the station that posted this job to accept it.",
+			});
 		const priced = repriceSalvageOffer(
 			world,
 			{ ...offer, operand: offer.operand },

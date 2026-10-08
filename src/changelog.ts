@@ -31,7 +31,7 @@ export const CHANGELOG: readonly ChangelogEntry[] = [
 	// Node #734: proposed copy; principal approval and main date pending.
 	{
 		date: "2026-10-08",
-		text: "A station that loses a ship can post a Salvage job: recover its named container and Deliver it home for more than its sale price.",
+		text: "A station that loses a ship can post a Salvage job: recover its named container and hand it over at home for 1.5 times its value there when you accept.",
 		node: 734,
 	},
 	// Node #733: proposed copy; principal approval and main date pending.

@@ -1243,7 +1243,12 @@ try {
 	check(
 		"the home board lists an unlocked Salvage operand with named tonnes",
 		salvageOffer?.operand.kind === "salvage" &&
-			salvageOffer.operand.item.tonnes === 1,
+			salvageOffer.operand.item.tonnes === 1 &&
+			!(await salvagePage
+				.locator(
+					`[data-live-station-console] [data-live-request-action="details"][data-live-request-id="${salvageOffer.id}"]`,
+				)
+				.evaluate((row) => row.hasAttribute("data-live-request-locked"))),
 	);
 	await salvagePage
 		.locator(
@@ -1255,11 +1260,12 @@ try {
 	);
 	const salvageText = await salvageDetails.innerText();
 	check(
-		"Salvage details paint its named fitting, source, age and Deliver payment",
+		"Salvage details paint its named fitting, source, age and hand-over payment",
 		salvageText.includes("1 t of Docking Computer") &&
 			salvageText.includes(salvageOffer.source) &&
 			/\d+s old/.test(salvageText) &&
-			salvageText.includes("Deliver"),
+			/hand over/i.test(salvageText),
+		salvageText,
 	);
 	await salvagePage
 		.locator('[data-live-station-console] [data-live-request-action="accept"]')
@@ -1305,8 +1311,10 @@ try {
 		'[data-live-station-console] [data-live-request-action="deliver"]',
 	);
 	check(
-		"the recovered fitting enables Deliver on the real board",
-		await salvageDeliver.isEnabled(),
+		"the recovered fitting enables a hand-over labelled for requester cargo",
+		(await salvageDeliver.isEnabled()) &&
+			(await salvageDeliver.innerText()) ===
+				"Hand over 1 t of Docking Computer",
 	);
 	const salvageCredits = await salvagePage.evaluate(
 		() => window.__seelite.commander.credits,

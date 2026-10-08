@@ -8,6 +8,7 @@ import {
 	SALVAGE_OFFER_WINDOW_S,
 	SALVAGE_PAY_FACTOR,
 	canPostJobs,
+	matchesSalvageItem,
 	salvageItemPrice,
 	type BindContext,
 	type JobOffer,
@@ -19,15 +20,6 @@ import type { RequestsState } from "./requests";
 import { seededRand } from "./rng";
 import type { System } from "./sim";
 import { effectiveDerelict, type WorldState } from "./world-state";
-
-/** Compare the item's identity and whole amount, independent of its valuation. */
-export const matchesSalvageItem = (
-	item: { kind: "good" | "fitting"; id: string; tonnes: number },
-	snapshot: SalvageOperand["item"],
-): boolean =>
-	item.kind === snapshot.kind &&
-	item.id === snapshot.id &&
-	item.tonnes === snapshot.tonnes;
 
 export type SalvagePosting = Pick<BindContext, "system" | "station">;
 
@@ -64,7 +56,7 @@ export function repriceSalvageOffer(
 		carrierKey(posting.system.index, posting.station.localCarrierId) !==
 			offer.requester.carrierKey
 	)
-		throw new Error("salvage: missing or mismatched posting context");
+		return null;
 	const priceCr = salvageItemPrice(
 		{
 			...posting,
