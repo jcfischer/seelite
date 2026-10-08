@@ -1546,25 +1546,29 @@ check(
 		`${pitched.belowSample.hits ? ` — at ${JSON.stringify(pitched.belowSample.where)}` : ""}`,
 );
 
-// Node #745: fly generated refineries in four systems, one page per case.
+// Node #745: fly generated refineries in four systems, one page per case;
+// node #746 adds the shipyard's three forms, each in its own start system.
 // Seeds pin every pooled form; never mutate a station's drawn form in place.
 // The approach, berth reservation and launch all go through Game's protocol.
-for (const [seed, formId] of [
-	[1, "a"],
-	[28, "b"],
-	[2, "c"],
-	[4, "d"],
+for (const [type, seed, formId] of [
+	["refinery", 1, "a"],
+	["refinery", 28, "b"],
+	["refinery", 2, "c"],
+	["refinery", 4, "d"],
+	["shipyard", 3, "a"],
+	["shipyard", 2, "b"],
+	["shipyard", 8, "c"],
 ]) {
-	const refineryPage = await browser.newPage({
+	const stationPage = await browser.newPage({
 		viewport: { width: 900, height: 620 },
 	});
-	watch(refineryPage);
-	await refineryPage.goto(gameUrl(ORIGIN, { seed }), { waitUntil: "load" });
-	await bootedGame(refineryPage);
-	const run = await refineryPage.evaluate(() => {
+	watch(stationPage);
+	await stationPage.goto(gameUrl(ORIGIN, { seed }), { waitUntil: "load" });
+	await bootedGame(stationPage);
+	const run = await stationPage.evaluate((type) => {
 		const g = window.__seelite;
 		const station = g.world.system.contents.stations.find(
-			(s) => s.type === "refinery",
+			(s) => s.type === type,
 		);
 		if (!station) return { missing: true };
 		const id = station.id;
@@ -1633,9 +1637,9 @@ for (const [seed, formId] of [
 			impacts: g.collisionImpacts - impacts,
 			refusal: parked.computerRefusal,
 		};
-	});
+	}, type);
 	check(
-		`seed ${seed} generates refinery ${formId} and docks at a berth`,
+		`seed ${seed} generates ${type} ${formId} and docks at a berth`,
 		run.formId === formId &&
 			run.docked &&
 			run.entry === true &&
@@ -1643,7 +1647,7 @@ for (const [seed, formId] of [
 		JSON.stringify(run),
 	);
 	check(
-		`refinery ${formId} launches and flies clear without contact`,
+		`${type} ${formId} launches and flies clear without contact`,
 		run.launched &&
 			run.phase === "flying" &&
 			run.axialKm > run.planeKm &&
@@ -1651,7 +1655,7 @@ for (const [seed, formId] of [
 			run.impacts === 0,
 		JSON.stringify(run),
 	);
-	await refineryPage.close();
+	await stationPage.close();
 }
 
 await browser.close();

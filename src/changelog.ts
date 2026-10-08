@@ -28,6 +28,12 @@ export type ChangelogEntry = {
 };
 
 export const CHANGELOG: readonly ChangelogEntry[] = [
+	// Node #746: proposed copy; principal approval and main date pending.
+	{
+		date: "2026-10-08",
+		text: "Shipyards now vary between systems: dock at a gantry with booms, a hangar slab with a floodlit bay, or a broken ring around its slip.", // glossary-ignore: Hangar
+		node: 746,
+	},
 	// Node #734: proposed copy; principal approval and main date pending.
 	{
 		date: "2026-10-08",

@@ -209,19 +209,43 @@ try {
 		g.setHeadLook("forward");
 		g.render(0);
 	}, fixture);
-	const draw = await page.evaluate(() => {
+	const draw = await page.evaluate(async () => {
 		const g = window.__seelite;
 		const wreck = g.derelictsAt()[0];
 		const drawn = [...g.derelictMeshes.values()][0];
 		let lamps = 0,
-			emissive = 0;
+			emissive = 0,
+			frame = 0,
+			liners = 0;
 		drawn.root.traverse((o) => {
 			if (o.name === "nav-lights" && o.visible) lamps++;
 			if (o.material?.emissiveIntensity > 0) emissive++;
+			if (o.userData.derelictFrame && o.visible) frame++;
+			if (o.name.endsWith("-liner") && o.visible) liners++;
 		});
+		// Node #735: the wreck in the scene is the torn one, and what it draws
+		// fills the box the intact hull of its kind draws.
+		const { drawnHullBox } = await import("/src/derelict-tear.ts");
+		const { buildShipMesh } = await import("/src/ship-mesh.ts");
+		const { HULL_SPECS } = await import("/src/hull.ts");
+		const hull = wreck.pose.hull;
+		const intact = drawnHullBox(
+			buildShipMesh(hull, HULL_SPECS[hull].variant).root,
+		);
+		const torn = drawnHullBox(drawn.root);
+		const envelopeError = Math.max(
+			...["x", "y", "z"].flatMap((a) => [
+				Math.abs(torn.min[a] - intact.min[a]),
+				Math.abs(torn.max[a] - intact.max[a]),
+			]),
+		);
 		return {
 			lamps,
 			emissive,
+			frame,
+			liners,
+			sites: drawn.root.userData.torn?.sites.length ?? 0,
+			envelopeError,
 			finish: drawn.root.userData.finish,
 			containers: drawn.containers.size,
 			rowStored: wreck.row.stored,
@@ -231,6 +255,14 @@ try {
 	check(
 		"dark worn roster hull has lamps off",
 		draw.lamps === 0 && draw.emissive === 0 && draw.finish === "worn",
+	);
+	check(
+		"the drawn wreck is torn: an exposed frame and a liner per tear, inside the intact envelope",
+		draw.frame > 0 &&
+			draw.sites > 0 &&
+			draw.liners === draw.sites &&
+			draw.envelopeError < 5e-5,
+		`frame ${draw.frame}, tears ${draw.sites}, liners ${draw.liners}, envelope off by ${(draw.envelopeError * 1e3).toFixed(4)} m`,
 	);
 	check(
 		"seen containers are pinned on the world row",

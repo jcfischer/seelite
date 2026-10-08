@@ -518,6 +518,148 @@ function shipyardGantryProxy(): StationProxy {
 }
 
 // ---------------------------------------------------------------------------
+// Shipyard B — Hangar // glossary-ignore: Hangar
+// ---------------------------------------------------------------------------
+
+/**
+ * The Hangar: a compact hub on the spin axis that turns, and a long slab // glossary-ignore: Hangar
+ * behind it that does not (node #746).
+ *
+ * **Spinning.** The hub (`core`, square section to ±0.252 km, aft face
+ * −0.18 km, forward face at the 0.372 km plane) as one box cut round the bay
+ * and the prism, standing 28 m proud of the plane as the Gantry's drum does,
+ * and the spindle behind it running back into the slab's bearing.
+ *
+ * **Static.** The slab runs along x behind the hub (centred
+ * `SHIPYARD_KEEL_AFT_KM` aft, forward face at −0.38 km): its octagonal parallel
+ * section as two boxes, and each chamfered end as two smaller boxes stepping in with
+ * the taper, each as large as its corner allows inside the 1.5 km reach. A
+ * band across the forward face carries the bay mouth's two lips and the dark
+ * recess, which stand up to 36 m proud of it, and a box carries the bearing
+ * the spindle turns in. Nothing static reaches forward of −0.335 km, so the
+ * bay's swept cylinder (from −0.033 km) and the corridor are clear by
+ * construction.
+ */
+function shipyardHangarProxy(): StationProxy {
+	const hub = cutAround(
+		[axial(0.26, 0.26, -0.19, 0.4), axial(0.1, 0.1, -0.46, -0.19)],
+		bayHoles("shipyard"),
+	);
+	const SLAB_BACK = -0.98;
+	const SLAB_FRONT = -0.38;
+	const slab: Bounds[] = [
+		// The parallel section is an octagon: full depth to its 45° vertices at
+		// ±0.391 km, and 28 m shallower each side to its full height. Two boxes
+		// stand at most 40 m off its drawn surface, at the top-front edge, where
+		// one box stood 51 m off it (measured in the section 0.7 km out).
+		{
+			x0: -0.94,
+			x1: 0.86,
+			y0: -0.391,
+			y1: 0.391,
+			z0: SLAB_BACK,
+			z1: SLAB_FRONT,
+		},
+		{
+			x0: -0.94,
+			x1: 0.86,
+			y0: -0.432,
+			y1: 0.432,
+			z0: SLAB_BACK + 0.028,
+			z1: SLAB_FRONT - 0.028,
+		},
+		{ x0: -1.06, x1: -0.94, y0: -0.4, y1: 0.4, z0: -0.95, z1: -0.41 },
+		{ x0: -1.15, x1: -1.06, y0: -0.33, y1: 0.33, z0: -0.89, z1: -0.47 },
+		{ x0: 0.86, x1: 0.98, y0: -0.4, y1: 0.4, z0: -0.95, z1: -0.41 },
+		{ x0: 0.98, x1: 1.1, y0: -0.33, y1: 0.33, z0: -0.9, z1: -0.46 },
+		// The mouth's lips and recess, proud of the forward face.
+		{ x0: -0.54, x1: 0.54, y0: -0.19, y1: 0.19, z0: SLAB_FRONT, z1: -0.344 },
+		// The bearing ring the spindle turns in.
+		axial(0.16, 0.16, SLAB_FRONT, -0.335),
+		// The two masts on the slab's top, dish and beacon included. // glossary-ignore: beacon
+		...[-0.9, 0.81].map(
+			(x): Bounds => ({
+				x0: x - 0.04,
+				x1: x + 0.04,
+				y0: 0.4,
+				y1: 0.535,
+				z0: -0.72,
+				z1: -0.64,
+			}),
+		),
+	];
+	return proxyOf(hub, slab.map(boxOf));
+}
+
+// ---------------------------------------------------------------------------
+// Shipyard C — Slipway
+// ---------------------------------------------------------------------------
+
+/** The Slipway's arc: its major radius and tube, `buildShipyardSlipway`'s. */
+const SLIPWAY_MAJOR_KM = 2.07 * 0.62;
+const SLIPWAY_TUBE_KM = 0.12;
+/** Where the arc starts, and how far round it runs. */
+const SLIPWAY_FROM = Math.PI * 0.28;
+const SLIPWAY_SWEEP = Math.PI * 1.45;
+
+/**
+ * The Slipway: a compact hub on the spin axis that turns, and a broken ring
+ * round it that does not (node #746).
+ *
+ * **Spinning.** The hub (`core`, a rounded section to 0.24 × 0.204 km, aft
+ * face −0.36 km, forward face at the 0.372 km plane) as one box cut round the
+ * bay and the prism, 28 m proud of the plane as the Gantry's drum is.
+ *
+ * **Static.** The arc as a chain of capsules along its centreline, one per
+ * facet ring of the drawn torus, so the gap between its ends — the slip — is
+ * open, as it is on screen. Each slip-head as four capsules along its radial
+ * arm, a pair either side of the centreline in both the tangent and Z, which
+ * holds its square section where one fat capsule would carry the corners
+ * past the 1.5 km reach. Each strut as a capsule from just outside the bay's
+ * swept cylinder out to the arc. The masts the fixtures stand on the +Z
+ * crown are covered by a capsule each.
+ */
+function shipyardSlipwayProxy(): StationProxy {
+	const hub = cutAround([axial(0.24, 0.205, -0.37, 0.4)], bayHoles("shipyard"));
+	const at = (theta: number, radius: number, z = 0, across = 0): Point => ({
+		x: radius * Math.cos(theta) - across * Math.sin(theta),
+		y: radius * Math.sin(theta) + across * Math.cos(theta),
+		z,
+	});
+	const RINGS = 22;
+	const arc = Array.from({ length: RINGS }, (_, i) =>
+		capsule(
+			at(SLIPWAY_FROM + (i / RINGS) * SLIPWAY_SWEEP, SLIPWAY_MAJOR_KM),
+			at(SLIPWAY_FROM + ((i + 1) / RINGS) * SLIPWAY_SWEEP, SLIPWAY_MAJOR_KM),
+			SLIPWAY_TUBE_KM,
+		),
+	);
+	const heads = [SLIPWAY_FROM, SLIPWAY_FROM + SLIPWAY_SWEEP].flatMap((theta) =>
+		[-1, 1].flatMap((t) =>
+			[-1, 1].map((s) =>
+				capsule(
+					at(theta, SLIPWAY_MAJOR_KM - 0.12, s * 0.09, t * 0.1),
+					at(theta, SLIPWAY_MAJOR_KM + 0.05, s * 0.09, t * 0.1),
+					0.12,
+				),
+			),
+		),
+	);
+	const struts = [0, 1, 2, 3].map((i) => {
+		const theta = Math.PI * 0.3 + (i / 3) * Math.PI * 1.35;
+		return capsule(at(theta, 0.23), at(theta, SLIPWAY_MAJOR_KM), 0.045);
+	});
+	const masts = [0.6, 1, 1.4].map((turns) =>
+		capsule(
+			at(Math.PI * turns, SLIPWAY_MAJOR_KM - 0.05, SLIPWAY_TUBE_KM),
+			at(Math.PI * turns, SLIPWAY_MAJOR_KM - 0.05, SLIPWAY_TUBE_KM + 0.1),
+			0.04,
+		),
+	);
+	return proxyOf(hub, [...arc, ...heads, ...struts, ...masts]);
+}
+
+// ---------------------------------------------------------------------------
 // Refinery A–C — rock, plant and radiator wings
 // ---------------------------------------------------------------------------
 
@@ -895,7 +1037,16 @@ export function stationProxy(
 		case "trade":
 			return form === "a" ? tradeCoriolisProxy() : null;
 		case "shipyard":
-			return form === "a" ? shipyardGantryProxy() : null;
+			switch (form) {
+				case "a":
+					return shipyardGantryProxy();
+				case "b":
+					return shipyardHangarProxy();
+				case "c":
+					return shipyardSlipwayProxy();
+				default:
+					return null;
+			}
 		case "refinery":
 			switch (form) {
 				case "a":
