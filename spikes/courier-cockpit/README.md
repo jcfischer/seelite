@@ -2,7 +2,7 @@
 
 Refs jcfischer/seelite#792. Isolated interactive model study, not a production cockpit replacement.
 
-The principal selected O9's low tapered canopy and dashboard with O8's stacked cyan displays, keypad, physical controls and worn equipment. The subsequent instruction was to build a viewer like the Coriolis viewer and stop at approximately 6.5/10. Independent visual judging reached **6.5/10 in round 4**, and visual work stopped there. The principal then requested one additional refinement round; round 5 reached **6.6/10** and is the current checkpoint.
+The principal selected O9's low tapered canopy and dashboard with O8's stacked cyan displays, keypad, physical controls and worn equipment. The subsequent instruction was to build a viewer like the Coriolis viewer and stop at approximately 6.5/10. Independent visual judging reached **6.5/10 in round 4**, and visual work stopped there. The principal then requested one additional refinement round; round 5 reached **6.6/10**. Another requested round produced the current round 6 checkpoint.
 
 ## View
 
@@ -39,7 +39,7 @@ This is a visual fit study, not a proven pressure vessel or certified collision-
 ```sh
 /Applications/Blender.app/Contents/MacOS/Blender --background --python spikes/courier-cockpit/build_model.py
 npx tsc --noEmit
-node spikes/courier-cockpit/capture.mjs round-5
+node spikes/courier-cockpit/capture.mjs round-6
 ```
 
 Capture expects the local server above, verifies the served worktree and requires a hardware renderer. It captures pilot/orbit/instrument/side/hull-fit/narrow views, tests orbit and pilot look, target opening/closing, pilot reset and work lights, and records actual frame timing and browser errors. It does not establish production flight correctness or a throughput benchmark: the FPS is vsync-on observed cadence at 1586×992, DPR 1, on the named machine.
@@ -48,6 +48,8 @@ Capture expects the local server above, verifies the served worktree and require
 
 ## Current refinement checkpoint
 
-Round 5 adds continuous curved canopy joins and gaskets, chamfered instrument surrounds, physical panel and keypad labels, and fastened service covers. The independent judge scored 6.6/10, up from 6.5 through equipment detail. Hardware capture measured approximately 52 FPS with no browser errors; the added geometry increases cost from the prior approximately 58 FPS. Typecheck and viewer interaction checks passed.
+Round 6 replaces the six raised dashboard covers with one formed shell, recessed demister vents and an offset inspection hatch. Cyan and amber instrument lights now sit closer to the equipment. Darker blue-grey metal, lower roughness and stronger reflections bring more depth to the surfaces.
 
-Remaining gaps: cockpit surfaces remain flat and angular, reflected light and surface wear are limited, dashboard/screens sit higher than the target, and repeated service covers look too uniform. The current courier foredeck remains broader than the generated target. This ends the one additional round requested by the principal; it is not target parity or visual acceptance.
+Hardware capture measured approximately 55 FPS with no browser errors. Typecheck, formatting and viewer interaction checks passed. This is local prototype evidence, not a production suite result. The previous round measured approximately 52 FPS; these short samples are observed cadence, not a comparative benchmark.
+
+The model remains angular, the dashboard sits higher than the target, and the current courier foredeck is broader than the generated target. The independent round 6 assessment is **6.7/10**, up from 6.6 through lighting. See evidence/visual-review.md. This ends the additional round requested by the principal; it is not target parity or visual acceptance.
