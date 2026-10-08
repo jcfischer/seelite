@@ -608,6 +608,56 @@ describe("node #754 horizon views", () => {
 			false,
 		);
 	});
+	test("a station whose centre is behind the limb still counts while an edge shows", () => {
+		const math = horizonGeometry();
+		const centre = { x: 0, y: 0, z: 0 };
+		const camera = { x: 0, y: 1200, z: 0 };
+		const stationRadius = 0.9;
+		// A station at 1.5R on a sightline just inside the host's limb.
+		const at = (beta: number) => {
+			const dir = { x: Math.sin(beta), y: -Math.cos(beta), z: 0 };
+			const along = 1200 * Math.cos(beta);
+			const range = along + Math.sqrt(along * along - 1200 ** 2 + 1500 ** 2);
+			return {
+				station: {
+					x: camera.x + dir.x * range,
+					y: camera.y + dir.y * range,
+					z: 0,
+				},
+				forward: dir,
+				range,
+			};
+		};
+		const limb = Math.asin(1000 / 1200);
+		const measure = (beta: number) => {
+			const { station, forward } = at(beta);
+			return math.measure({
+				centre,
+				radius: 1000,
+				camera,
+				forward,
+				up: { x: 0, y: 0, z: 1 },
+				sun: { x: 100000, y: 0, z: 0 },
+				fov: 60,
+				aspect: 1.6,
+				station,
+				stationRadius,
+			});
+		};
+		const half = stationRadius / at(limb).range / 2;
+		// Centre occluded, upper edge clear: present, but not wholly in frame.
+		const grazing = measure(limb - half);
+		expect(grazing.stationIntersectsFrame).toBe(true);
+		expect(grazing.stationInFrame).toBe(false);
+		// Wholly behind the limb: absent.
+		const hidden = measure(limb - 4 * half);
+		expect(hidden.stationIntersectsFrame).toBe(false);
+		expect(hidden.stationInFrame).toBe(false);
+		// Wholly clear of the limb: in frame.
+		const clear = measure(limb + 4 * half);
+		expect(clear.stationIntersectsFrame).toBe(true);
+		expect(clear.stationInFrame).toBe(true);
+	});
 	test("both views cover 720, with a station only at its own orbit", () => {
 		for (const [name, extra] of [
 			["station-horizon", { station: "station-trade" }],

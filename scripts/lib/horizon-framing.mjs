@@ -157,11 +157,32 @@ export function horizonGeometry() {
 				z > r &&
 				z * tan - Math.abs(y) >= r * Math.hypot(1, tan) &&
 				z * tx - Math.abs(x) >= r * Math.hypot(1, tx);
-			stationInFrame = inFrustum(stationRadius);
-			stationIntersectsFrame = inFrustum(-stationRadius);
-			const hostHit = intersection(p, norm(rel), radius);
-			if (hostHit && length(sub(hostHit, p)) < stationRangeKm - stationRadius)
-				stationInFrame = stationIntersectsFrame = false;
+			// The host occludes the silhouette sphere, not its centre ray: a
+			// centre behind the limb can leave an edge in view. Each flag takes
+			// the conservative side for the claim it carries — in frame only
+			// when no point can be hidden, absent only when every point is.
+			const hostDistance = length(p);
+			const hostAngle = Math.asin(Math.min(1, radius / hostDistance));
+			const stationAngle = Math.asin(
+				Math.min(1, stationRadius / stationRangeKm),
+			);
+			const toHost = scale(p, -1);
+			const separation = Math.atan2(
+				length(cross(toHost, rel)),
+				dot(toHost, rel),
+			);
+			// Every ray inside the host's cone meets the surface no farther than
+			// the tangent length, and none nearer than the near pole.
+			const fullyHidden =
+				stationRadius < stationRangeKm &&
+				separation + stationAngle <= hostAngle &&
+				stationRangeKm - stationRadius >=
+					Math.sqrt(hostDistance * hostDistance - radius * radius);
+			const unoccluded =
+				separation - stationAngle >= hostAngle ||
+				stationRangeKm + stationRadius <= hostDistance - radius;
+			stationInFrame = inFrustum(stationRadius) && unoccluded;
+			stationIntersectsFrame = inFrustum(-stationRadius) && !fullyHidden;
 		}
 		return {
 			limbFraction,
