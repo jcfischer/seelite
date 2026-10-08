@@ -282,6 +282,33 @@ describe("every torn part is attached to the structure", () => {
 		});
 });
 
+describe("the roster's own mounting rule holds on a wreck", () => {
+	test("every nacelle still intersects a named structural mount", () => {
+		// `ship-mesh.test.ts`'s rule, run over the torn hull and measured from
+		// what each part draws: a torn nacelle is the case that could fail it.
+		for (const id of PURCHASABLE_HULL_IDS) {
+			const wreck = buildDerelictMesh(id);
+			const named = (test: (name: string) => boolean) =>
+				wreck.children.filter(
+					(child) => child instanceof THREE.Mesh && test(child.name),
+				);
+			const mounts = named((name) => name.includes("-mount-")).flatMap(
+				(mount) => drawnBoxes(mount),
+			);
+			const nacelles = named(
+				(name) => name.endsWith("-nacelle") && !name.includes("-mount-"),
+			);
+			expect(nacelles.length).toBeGreaterThanOrEqual(2);
+			for (const nacelle of nacelles)
+				for (const box of drawnBoxes(nacelle))
+					expect(
+						`${nacelle.name}: ${mounts.some((mount) => mount.intersectsBox(box))}`,
+					).toBe(`${nacelle.name}: true`);
+			disposeDerelict(wreck);
+		}
+	});
+});
+
 describe("the live ship is untouched", () => {
 	test("building a derelict leaves every live hull's geometry as it was", () => {
 		for (const id of PURCHASABLE_HULL_IDS) {
@@ -313,7 +340,7 @@ describe("the live ship is untouched", () => {
 		for (const g of shared) expect(disposed.has(g)).toBe(false);
 	});
 
-	test("a hull tears the same way every time", () => {
+	test("two wrecks of one hull draw the same torn geometry", () => {
 		for (const id of PURCHASABLE_HULL_IDS) {
 			const a = buildDerelictMesh(id);
 			const b = buildDerelictMesh(id);
