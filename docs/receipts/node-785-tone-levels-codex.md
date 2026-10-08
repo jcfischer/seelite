@@ -13,7 +13,7 @@ npm run views:levels -- before after
 node scripts/levels-view-set.mjs before after --out view-set
 ```
 
-Capture writes `view-set/<label>/levels.txt` before publishing its manifest and links it from the existing `view-set/index.html`. Historical manifests without a recorded levels file remain readable without a broken link. The standalone tool also regenerates each report. Missing, corrupt, duplicate or undeclared frames refuse; stale reports are removed before rereading.
+Capture writes `view-set/<label>/levels.txt` before publishing its manifest and links it from the existing `view-set/index.html`. Historical manifests without a recorded levels file remain readable without a tone-report link. The standalone tool also regenerates each report. Missing, corrupt, duplicate or undeclared frames refuse; stale reports are removed before rereading. If standalone regeneration fails, it removes `index.html` too, so the old sheet cannot link a deleted report; successful regeneration preserves the sheet.
 
 Statistics use decoded 8-bit RGB, rounded Rec. 709 display luma (0.2126 R + 0.7152 G + 0.0722 B), with no linear-light conversion. Alpha is ignored for these opaque composed frames. Nearest-rank percentiles are ceil(q N), with integer stride 4 on both axes from (0, 0): 81,000 sampled pixels per 1440×900 frame. The percentages include quantised codes ≥250 and ≤7. The average row gives each view equal weight, including its percentiles; it is not a pooled-image percentile. Paired deltas are second minus first, with percentage-point deltas for the two tails. Percentages printed as 0.00 can contain smaller nonzero fractions.
 
@@ -109,11 +109,11 @@ npc-arrival-at-player-lane-point      52.07     0.00    40.00   179.00     0.00 
 average                               31.99     3.51    26.25   149.82     0.02    16.16
 ```
 
-## Verification
+## Initial implementation verification (before review repairs)
 
 - Test-first synthetic histogram: every column, RGB weights, quantisation, inclusive tails and two-axis stride; malformed frames and strides refuse.
 - Node CLI fixtures: one/two labels, written tables, signed deltas, equal-view averages across unequal sizes, old/new sheet links, missing/corrupt PNGs and duplicate/extra views.
-- Capture integration: full canonical hardware run above; generated sheet link checked against the file on disk.
+- Initial capture integration: full canonical hardware run above; generated sheet link checked against the file on disk. This run predates the review repairs and does not verify their capture publication path. The repaired path has static wiring evidence only; no new browser capture was run during either repair pass.
 - Focused tests: 78 passed across levels, view-set and capture; final levels-only rerun: 9 passed. Typecheck, format, lint, wiring and build passed.
 - The sole full `npm test` run passed: 5,658 tests, 0 failures across 308 files, 7,479,877 assertions (537.01 seconds).
 - Probe selector inspected before capture: mode `all`, because `package.json` is shared infrastructure (96 probes). Per the implement-worker contract the full browser suite is reserved for the supervisor; it was not run here.
@@ -128,3 +128,17 @@ All eight findings addressed. Report generation now lives in `scripts/lib/levels
 The new CLI and duplicate-sheet regressions failed before the repair and passed after it. The capture check is explicitly static wiring evidence: it now checks invalidation before table generation, table before manifest, manifest before sheet rebuild, and invalidation before writing the rebuilt sheet. It does not claim to execute a browser capture. CLI wording is kept distinct from the consequence model's Intervention vocabulary.
 
 Focused levels and view-set tests: 56 passed. Typecheck, format, lint, wiring and build passed. The sole full `npm test` run in this repair pass passed: 5,660 tests, 0 failures across 308 files, 7,479,889 assertions (385.54 seconds). Recomputing the existing 72-view baseline produced a byte-identical `levels.txt`; the baseline table above remains unchanged. No game rendering changed, and no browser probes were run in this repair pass; the supervisor retains the final browser suite.
+
+## Sage round 2
+
+Corrected the important evidence finding in the original Verification section: it is now explicitly initial-implementation evidence. Its hardware capture predates both repair passes. Neither repair pass ran a browser capture, and the repaired capture publication path is covered by a static source-order check only. The baseline table remains evidence for the captured game frames, not a live test of the current capture code.
+
+Addressed both broken-link suggestions through the review's failure-path alternative: a failed standalone report regeneration removes `index.html`, as capture does. The missing-PNG regression first failed because the old sheet survived; after the repair it passes. An unreadable-manifest case also asserts removal of both report and sheet; the successful paired CLI case asserts that the sheet survives unchanged.
+
+Shared `withRoot` and `runFor` helpers remove repeated fixture setup. Static capture wiring searches now tolerate whitespace and variable argument names, and the rebuild slice ends at the next top-level function or end of file instead of an arbitrary 1,000-character window. This remains static evidence.
+
+Deferred buffered-read concurrency: the existing twenty-frame measurement is already 1.184 seconds, meeting this node's seconds-scale requirement. No new throughput figure is claimed; decoding and reading remain sequential.
+
+Round-2 focused tests: 81 passed across levels, view-set and capture. Typecheck/build, format, lint and wiring passed. The current CLI regenerated the existing 72-frame baseline byte-identically and preserved the sheet. No new browser capture or probe was run; the supervisor retains the final browser suite.
+
+The sole full `npm test` run in round 2 passed: 5,661 tests, 0 failures across 308 files, 7,479,896 assertions (397.44 seconds).

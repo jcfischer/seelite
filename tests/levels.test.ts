@@ -74,35 +74,46 @@ describe("display luma levels", () => {
 });
 
 const cli = join(import.meta.dir, "../scripts/levels-view-set.mjs");
+const withRoot = async (check: (root: string) => unknown) => {
+	const root = mkdtempSync(join(tmpdir(), "seelite-levels-"));
+	try {
+		await check(root);
+	} finally {
+		rmSync(root, { recursive: true, force: true });
+	}
+};
+const runFor = (label: string) => ({
+	label,
+	gitRef: "fixture",
+	renderer: "fixture",
+	seed: 47,
+	capturedAt: "2026-10-08T00:00:00Z",
+	levelsFile: `${label}/levels.txt`,
+	views: VIEWS.map((v) => ({ name: v.name, file: `${label}/${v.name}.png` })),
+});
 const fixture = (root: string, label: string, code: number) => {
 	mkdirSync(join(root, label));
 	const png = PNG.sync.write({
 		...frame([code]),
 		data: Buffer.from(frame([code]).data),
 	});
-	const run = {
-		label,
-		gitRef: "fixture",
-		renderer: "fixture",
-		seed: 47,
-		capturedAt: "2026-10-08T00:00:00Z",
-		levelsFile: `${label}/levels.txt`,
-		views: VIEWS.map((v) => ({ name: v.name, file: `${label}/${v.name}.png` })),
-	};
+	const run = runFor(label);
 	for (const v of run.views) writeFileSync(join(root, v.file), png);
 	writeFileSync(join(root, label, "manifest.json"), JSON.stringify(run));
 	return run;
 };
 
-test("CLI writes both complete tables and signed deltas", () => {
-	const root = mkdtempSync(join(tmpdir(), "seelite-levels-"));
-	try {
+test("CLI writes both complete tables and signed deltas", async () => {
+	await withRoot(async (root) => {
 		const before = fixture(root, "before", 7);
 		fixture(root, "after", 250);
+		const sheet = contactSheet([before]);
+		writeFileSync(join(root, "index.html"), sheet);
 		const result = spawnSync("node", [cli, "--out", root, "before", "after"], {
 			encoding: "utf8",
 		});
 		expect(result.status).toBe(0);
+		expect(readFileSync(join(root, "index.html"), "utf8")).toBe(sheet);
 		expect(result.stdout).toContain("Δp99");
 		expect(result.stdout).toContain("+243.00");
 		expect(result.stdout).toContain("+100.00");
@@ -125,14 +136,11 @@ test("CLI writes both complete tables and signed deltas", () => {
 		expect(single.stdout).toMatch(
 			/average\s+7\.00\s+7\.00\s+7\.00\s+7\.00\s+0\.00\s+100\.00/,
 		);
-	} finally {
-		rmSync(root, { recursive: true, force: true });
-	}
+	});
 });
 
 test("average weights views equally rather than pooling unequal frame sizes", async () => {
-	const root = mkdtempSync(join(tmpdir(), "seelite-levels-"));
-	try {
+	await withRoot(async (root) => {
 		const run = fixture(root, "mixed", 0);
 		const large = frame(Array(32).fill(250));
 		writeFileSync(
@@ -147,16 +155,14 @@ test("average weights views equally rather than pooling unequal frame sizes", as
 		expect(report.average.p99).toBe(250 / VIEWS.length);
 		expect(report.average.clip).toBe(1 / VIEWS.length);
 		expect(report.average.black).toBe((VIEWS.length - 1) / VIEWS.length);
-	} finally {
-		rmSync(root, { recursive: true, force: true });
-	}
+	});
 });
 
-test("missing PNG or manifest view refuses and removes stale levels", async () => {
-	const root = mkdtempSync(join(tmpdir(), "seelite-levels-"));
-	try {
+test("missing PNG refuses and removes stale levels and sheet", async () => {
+	await withRoot(async (root) => {
 		const run = fixture(root, "broken", 100);
 		await writeRunLevels(run, root);
+		writeFileSync(join(root, "index.html"), contactSheet([run]));
 		rmSync(join(root, run.views[0].file));
 		const result = spawnSync("node", [cli, "--out", root, "broken"], {
 			encoding: "utf8",
@@ -164,17 +170,31 @@ test("missing PNG or manifest view refuses and removes stale levels", async () =
 		expect(result.status).not.toBe(0);
 		expect(result.stderr).toContain(run.views[0].name);
 		expect(() => readFileSync(join(root, "broken/levels.txt"))).toThrow();
+		expect(() => readFileSync(join(root, "index.html"))).toThrow();
 		await expect(
 			writeRunLevels({ ...run, views: run.views.slice(1) }, root),
 		).rejects.toThrow("missing");
-	} finally {
-		rmSync(root, { recursive: true, force: true });
-	}
+	});
+});
+
+test("unreadable manifest removes stale report and linked sheet", async () => {
+	await withRoot(async (root) => {
+		const run = fixture(root, "broken", 100);
+		await writeRunLevels(run, root);
+		writeFileSync(join(root, "index.html"), contactSheet([run]));
+		writeFileSync(join(root, "broken/manifest.json"), "not JSON");
+		const result = spawnSync("node", [cli, "--out", root, "broken"], {
+			encoding: "utf8",
+		});
+		expect(result.status).not.toBe(0);
+		expect(result.stderr.length).toBeGreaterThan(0);
+		expect(() => readFileSync(join(root, "broken/levels.txt"))).toThrow();
+		expect(() => readFileSync(join(root, "index.html"))).toThrow();
+	});
 });
 
 test("corrupt PNG and duplicate or extra views fail without a report", async () => {
-	const root = mkdtempSync(join(tmpdir(), "seelite-levels-"));
-	try {
+	await withRoot(async (root) => {
 		const run = fixture(root, "invalid", 100);
 		await expect(
 			writeRunLevels({ ...run, views: [...run.views, run.views[0]] }, root),
@@ -188,9 +208,7 @@ test("corrupt PNG and duplicate or extra views fail without a report", async () 
 		writeFileSync(join(root, run.views[0].file), "not a PNG");
 		await expect(writeRunLevels(run, root)).rejects.toThrow(run.views[0].name);
 		expect(() => readFileSync(join(root, "invalid/levels.txt"))).toThrow();
-	} finally {
-		rmSync(root, { recursive: true, force: true });
-	}
+	});
 });
 
 test("CLI refuses missing or flag-shaped --out values before reading a run", () => {
@@ -204,17 +222,7 @@ test("CLI refuses missing or flag-shaped --out values before reading a run", () 
 });
 
 test("sheet refuses duplicate views as the tone report does", () => {
-	const run = {
-		label: "duplicate",
-		gitRef: "fixture",
-		renderer: "fixture",
-		seed: 47,
-		capturedAt: "2026-10-08T00:00:00Z",
-		views: VIEWS.map((v) => ({
-			name: v.name,
-			file: `duplicate/${v.name}.png`,
-		})),
-	};
+	const run = runFor("duplicate");
 	expect(() =>
 		contactSheet([{ ...run, views: [...run.views, run.views[0]] }]),
 	).toThrow("duplicate");
@@ -225,13 +233,17 @@ test("capture source wires sheet invalidation, table, manifest, then sheet rebui
 		join(import.meta.dir, "../scripts/capture-views.mjs"),
 		"utf8",
 	);
-	const publication = capture.slice(capture.indexOf("const manifest = {"));
-	const tableAt = publication.indexOf("await writeRunLevels(manifest, OUT)");
-	const invalidationAt = publication.indexOf(
-		'await rm(join(OUT, "index.html"), { force: true })',
+	const publication = capture.slice(
+		capture.search(/const\s+manifest\s*=\s*\{/),
 	);
-	const manifestAt = publication.indexOf('join(dir, "manifest.json")');
-	const sheetAt = publication.indexOf("await rebuildSheet(OUT)");
+	const invalidation =
+		/await\s+rm\s*\(\s*join\s*\(\s*\w+\s*,\s*"index\.html"\s*\)\s*,\s*\{\s*force\s*:\s*true\s*\}\s*\)/;
+	const tableAt = publication.search(/await\s+writeRunLevels\s*\(/);
+	const invalidationAt = publication.search(invalidation);
+	const manifestAt = publication.search(
+		/join\s*\(\s*\w+\s*,\s*"manifest\.json"\s*\)/,
+	);
+	const sheetAt = publication.search(/await\s+rebuildSheet\s*\(/);
 	expect(invalidationAt).toBeGreaterThan(0);
 	expect(tableAt).toBeGreaterThan(0);
 	expect(manifestAt).toBeGreaterThan(0);
@@ -239,15 +251,14 @@ test("capture source wires sheet invalidation, table, manifest, then sheet rebui
 	expect(invalidationAt).toBeLessThan(tableAt);
 	expect(tableAt).toBeLessThan(manifestAt);
 	expect(manifestAt).toBeLessThan(sheetAt);
-	const rebuild = capture.slice(
-		capture.indexOf("async function rebuildSheet(out)"),
-		capture.indexOf("async function rebuildSheet(out)") + 1000,
-	);
-	const rebuildInvalidation = rebuild.indexOf(
-		'await rm(join(out, "index.html"), { force: true })',
-	);
-	const rebuildWrite = rebuild.indexOf(
-		'await writeFile(join(out, "index.html"), contactSheet(runs))',
+	const rebuildStart = capture.search(/^async\s+function\s+rebuildSheet\s*\(/m);
+	expect(rebuildStart).toBeGreaterThan(0);
+	const rest = capture.slice(rebuildStart);
+	const nextFunction = rest.slice(1).search(/^(?:async\s+)?function\s+/m);
+	const rebuild = nextFunction < 0 ? rest : rest.slice(0, nextFunction + 1);
+	const rebuildInvalidation = rebuild.search(invalidation);
+	const rebuildWrite = rebuild.search(
+		/await\s+writeFile\s*\(\s*join\s*\(\s*\w+\s*,\s*"index\.html"\s*\)\s*,\s*contactSheet\s*\(/,
 	);
 	expect(rebuildInvalidation).toBeGreaterThan(0);
 	expect(rebuildWrite).toBeGreaterThan(rebuildInvalidation);
