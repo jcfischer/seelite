@@ -75,7 +75,7 @@ seed  expected     0 h    1 h    2 h    4 h    8 h   24 h   48 h  100 h  200 h  
 pooled     19.9%   19.5%  19.1%  19.3%  17.7%  20.3%  18.8%  22.4%  20.6%  23.0%  20.1%       19.1%
 one cell's sampling spread at 20%: 2.5 points per seed, 1.4 pooled over 3
 node #775's criterion, per seed (0, 1, 4, 24, 100, 300 h, 20% ± 5 points): 1 of 18 cells OUTSIDE — seed 47 at 4 h reads 14.5%
-pooled over the seeds (this build's test row, not the criterion): all 6 times inside
+pooled over the seeds (the test's regression guard, not the criterion): all 6 times inside
 
 How often the per-seed criterion holds, galaxy 0 at seeds 1–120, each read at 0, 1, 4, 24, 100, 300 h
   cells outside the band:               38 of 720 (5.3%)
@@ -110,7 +110,7 @@ seed  visits  with a wreck  cued   of all visits  of visits with a wreck
    **Not met as written.** Read plainly, the criterion is per seed, and
    **seed 47 at 4 h reads 14.5%**, 1 of 18 cells. The pooled reading over the
    three seeds is inside the band at all six times (17.7–23.0%), and that is
-   what this build's test row holds. Seed 47's 0–4 h cells (16.8, 16.0, 15.6,
+   what the test's pooled guard holds. Seed 47's 0–4 h cells (16.8, 16.0, 15.6,
    14.5%) share the same wrecks, which is why they move together. The
    schedule's mean is on target: each seed's expectation from its slot counts
    is 19.7–20.1%. Its spread is what misses. **Measured over seeds 1–120**, 38
@@ -123,8 +123,10 @@ seed  visits  with a wreck  cued   of all visits  of visits with a wreck
    round compared the triple rate with eighteen independent cells, and that
    comparison is withdrawn. I did not swap seeds or retune the gap to move
    that cell: with a pass rate near one half, either would land a green triple
-   by search. The gate in the test is the pooled reading, and per-seed cells
-   are held only to ±8 as a regression guard. If the per-cell reading is the
+   by search. The test carries the criterion verbatim, per seed at ±5, as a row marked
+   `failing`: the suite reports the miss and goes red if the cells at these
+   seeds all come inside, which is when to promote it. The pooled reading is
+   a regression guard beside it, not the criterion. If the per-cell reading is the
    binding one, the principal decides between widening the band, pooling
    seeds, or a coupled galaxy-wide schedule. Only coupling slots across
    systems reduces that spread. I expect it to help the early cells most, and

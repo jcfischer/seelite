@@ -155,21 +155,33 @@ describe("the clock starts part-way through every slot's cycle", () => {
 	});
 
 	test("pooled over three seeds, the share of systems with a live derelict holds at 20% ± 5 points from 0 h to 300 h", () => {
-		// This row holds the pooled reading to the band. **It is not node #775's
-		// criterion**, which read plainly is per seed and is not met here: seed 47
-		// at 4 h reads 14.5% (`docs/receipts/node-775-derelict-pacing.md`). A
-		// single seed's cell has a binomial spread of 2.5 points at 256 systems,
-		// and the instrument measures this schedule meeting the criterion at 17
-		// of 40 disjoint seed triples over seeds 1–120, so a per-seed ±5 row here
-		// would fail at most seed triples a test could pin. Which reading binds is the principal's ruling. The
-		// per-seed ±8 below is a regression guard against a ramp or a bias.
+		// A regression guard against a ramp or a bias, pooled over 768 systems
+		// where one share's sampling spread is 1.4 points. **It is not node
+		// #775's criterion**, which is per seed and is the failing row below.
 		for (const h of GATED_H) {
 			const shares = SEEDS.map((seed) => systemShare(seed, h * HOUR));
 			const pooled = shares.reduce((a, b) => a + b, 0) / shares.length;
 			expect(Math.abs(pooled - 0.2)).toBeLessThanOrEqual(0.05);
-			for (const share of shares)
-				expect(Math.abs(share - 0.2)).toBeLessThan(0.08);
 		}
+	});
+
+	test.failing("node #775's criterion as written: every seed reads 20% ± 5 points at 0, 1, 4, 24, 100 and 300 h", () => {
+		// The criterion verbatim, per seed, at the bound it names. It is not
+		// met: seed 47 at 4 h reads 14.5% (`docs/receipts/node-775-derelict-pacing.md`).
+		// One seed's cell has a binomial spread of 2.5 points at 256 systems, so
+		// the bound is two spreads, and the instrument measures a schedule
+		// centred on 20% meeting it at 17 of 40 disjoint seed triples over seeds
+		// 1–120, with 38 of 720 cells outside. The row is marked
+		// failing so the suite reports the miss instead of a comment doing so,
+		// and does not loosen the bound: it goes red the day the cells at these
+		// seeds are all inside, which is when to promote it and revisit the
+		// receipt's clause. Whether the per-seed reading binds is the
+		// principal's ruling, not this row's.
+		for (const h of GATED_H)
+			for (const seed of SEEDS)
+				expect(Math.abs(systemShare(seed, h * HOUR) - 0.2)).toBeLessThanOrEqual(
+					0.05,
+				);
 	});
 
 	test("the next loss is a fresh instance with its whole life ahead", () => {

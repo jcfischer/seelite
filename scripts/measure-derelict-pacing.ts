@@ -283,7 +283,7 @@ console.log(
 );
 const pooledOutside = GATED_H.filter((h) => !band(pooled[TIMES_H.indexOf(h)]));
 console.log(
-	`pooled over the seeds (this build's test row, not the criterion): ${pooledOutside.length === 0 ? `all ${GATED_H.length} times inside` : `OUTSIDE at ${pooledOutside.map((h) => `${h} h`).join(", ")}`}`,
+	`pooled over the seeds (the test's regression guard, not the criterion): ${pooledOutside.length === 0 ? `all ${GATED_H.length} times inside` : `OUTSIDE at ${pooledOutside.map((h) => `${h} h`).join(", ")}`}`,
 );
 
 // How often a schedule centred on 20% meets the criterion as written, read

@@ -182,7 +182,7 @@ visits spread evenly over the systems as well as over game time. A slot is adrif
 `1 − (1 − 8.5%)^n` of the time. Galaxy 0 is mostly three- and two-slot systems,
 which comes to 20%. `scripts/measure-derelict-pacing.ts` prints the measured
 table beside that expectation. Measured over galaxy 0 at seeds 42, 47 and 7,
-pooled, it reads 17.7–23.0% at every time from 0 h to 300 h. A single seed's cell
+pooled, it reads 17.7–23.0% at each of the ten times the instrument reads between 0 h and 300 h; the times between them are not read. A single seed's cell
 spreads by 2.5 points. A visit a day after one that found a wreck finds one
 17.7–19.2% of the time, against 20% at all. The gap's range runs down to 6 h so
 that a slot is not locked out for days after each wreck.
