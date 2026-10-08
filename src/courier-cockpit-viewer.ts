@@ -1,6 +1,9 @@
-/** Isolated geometry study. Fixture instruments, no Game, save or flight simulation. */
+/** Isolated geometry study. Fixture instruments, no Game, save or flight simulation.
+ * Dev-only: its images and source model live under `spikes/courier-cockpit/`,
+ * which the dev server serves at the same path and the production build omits. */
 import * as THREE from "three";
 import { GLTFLoader } from "three/addons/loaders/GLTFLoader.js";
+import { MeshoptDecoder } from "three/addons/libs/meshopt_decoder.module.js";
 import { OrbitControls } from "three/addons/controls/OrbitControls.js";
 import { RoomEnvironment } from "three/addons/environments/RoomEnvironment.js";
 import { EffectComposer } from "three/addons/postprocessing/EffectComposer.js";
@@ -314,7 +317,7 @@ function makeEquipmentLabel(name: string) {
 	map.anisotropy = 8;
 	return new THREE.MeshBasicMaterial({ map, toneMapped: false });
 }
-const loader = new GLTFLoader();
+const loader = new GLTFLoader().setMeshoptDecoder(MeshoptDecoder);
 let cockpit: THREE.Group, station: THREE.Group;
 let fit = false,
 	view = "pilot",
@@ -473,8 +476,8 @@ Object.assign(window, {
 try {
 	const [interior, exterior] = await Promise.all([
 		loader.loadAsync(assets + "courier-cockpit.glb"),
-		// The same bytes as the Coriolis study ships; one copy in the build.
-		loader.loadAsync("/spikes/coriolis/coriolis-industrial.glb"),
+		// The game's own default Coriolis (#791), so the viewer ships no copy.
+		loader.loadAsync("/models/coriolis.glb"),
 	]);
 	cockpit = interior.scene;
 	scene.add(cockpit);

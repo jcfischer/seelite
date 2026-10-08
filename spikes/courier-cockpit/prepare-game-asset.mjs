@@ -17,7 +17,7 @@ const io = new NodeIO()
 		"meshopt.decoder": MeshoptDecoder,
 	});
 const document = await io.read(
-	"public/spikes/courier-cockpit/courier-cockpit.glb",
+	"spikes/courier-cockpit/courier-cockpit.glb",
 );
 const pixels = async (doc) =>
 	Promise.all(

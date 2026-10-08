@@ -28,7 +28,7 @@ Instrument values are a fixed visual fixture. The viewer constructs no Game, fli
 - `build_model.py` authors the original cockpit in Blender and exports the GLB.
 - `courier-cockpit.blend` is editable source with the generated material packed.
 - `../../src/courier-cockpit-viewer.ts` supplies lighting, instruments and inspection controls.
-- `../../public/spikes/courier-cockpit/` contains the runtime model and images.
+- `courier-cockpit.glb`, `steel-wear.png`, `starfield.png` and `target.png` beside this README are review-only. The dev server serves them at `/spikes/courier-cockpit/`; nothing under `spikes/` reaches the production build.
 
 Geometry uses pilot-local metres. Its origin corresponds to `(0, 4.7, -12.5)` metres in the current courier A hull; the pilot camera is another 1.15 m aft. The hull overlay and forward hull geometry come directly from `buildShipMesh('courier', 'a')`, scaled from kilometres to metres. The viewer cuts away the portion of that hull around the cockpit and changes its presentation material; production geometry is untouched.
 
@@ -53,3 +53,11 @@ Round 7 widens the equipment layout by 12%, lowers it 0.25 m and moves it 0.20 m
 Hardware capture measured approximately 52 FPS with no browser errors. Viewer interaction checks and diff whitespace checks passed. This round changes only Blender geometry and its exports, with no TypeScript changes; it retains the prior passing typecheck. This is local prototype evidence, not a production suite result.
 
 The model remains visibly faceted and lacks the target’s material wear. Controls near the pilot now sit lower in the default frame; use the Instruments or Orbit view for inspection. The existing courier foredeck remains broader than the generated target. Independent score: **6.8/10** (composition improves, lighting slightly regresses). See evidence/visual-review.md. This ends the requested additional round; it is not target parity or visual acceptance.
+
+## In the game
+
+The cockpit is the game's cabin. `node spikes/courier-cockpit/prepare-game-asset.mjs` encodes `courier-cockpit.glb` losslessly (Meshopt geometry, WebP texture) into `public/models/courier-cockpit.glb`, the one cockpit file the game ships. Run it after every Blender export.
+
+`src/cockpit-model.ts` loads it behind the same Retry panel as the Coriolis, before any Game is built, and places it in the cabin pass: one model metre is 0.1 cabin km (`CABIN_SCALE`), the pilot eye is at the origin, and the model is pitched up 0.242 rad so the game's level camera sees the viewer's pilot frame. The live scanner, hologram, flight and target faces from `main.ts` are mounted on the model's `screen-radar`, `screen-flight` and `screen-target` quads at their own aspect. `screen-systems` has no live source and is left unpowered. The viewer's three under-console lamps are carried into the cabin frame by `cabinLight`.
+
+Known limits: the game hides the player hull in cockpit view, so the courier foredeck the viewer shows is absent. The canopy has no glass pane. `node spikes/courier-cockpit/capture-game.mjs <label>` captures approach and head-look frames from a no-save game on a hardware renderer.
