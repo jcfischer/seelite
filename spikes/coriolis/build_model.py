@@ -26,7 +26,7 @@ def material(name, color, metal=0.5, rough=0.55, emission=0):
     if emission:
         p.inputs['Emission Color'].default_value = (*color, 1)
         p.inputs['Emission Strength'].default_value = emission
-    texture = OUT / ('paint-surface-v2.png' if name.startswith('ceramic-steel') else 'industrial-surface.png')
+    texture = OUT / 'industrial-surface.png'
     if texture.exists() and not emission:
         t = m.node_tree.nodes.new('ShaderNodeTexImage')
         t.image = bpy.data.images.load(str(texture), check_existing=True)
@@ -40,7 +40,7 @@ def material(name, color, metal=0.5, rough=0.55, emission=0):
     BATCH[name] = [[], [], []]
     return name
 
-armor = [material('ceramic-steel-'+str(i),(0.42+i*.055,0.43+i*.05,0.40+i*.045),.35,.44) for i in range(4)]
+armor = [material('ceramic-steel-'+str(i),(0.42+i*.055,0.43+i*.05,0.40+i*.045),.45,.66) for i in range(4)]
 steel = material('structural-graphite',(.10,.12,.125),.75,.43)
 black = material('recess-and-radiator',(.023,.032,.035),.65,.52)
 pipe = material('worn-alloy',(.25,.28,.27),.83,.36)
