@@ -97,17 +97,14 @@ here.
 
 ## Verified
 
-- `npm test`: 5615 pass, 0 fail, before the Hangar slab's second box. After
-  it, the proxy, collision, avoidance, traffic, handoff and form files: 191
-  pass, 0 fail.
+- `npm test` on the final code: 5615 pass, 0 fail.
 - `npx tsc --noEmit`, biome format and lint, the wiring check and
   `npm run build` are all clean.
-- Browser, GPU lane (ANGLE Metal, Apple M1 Pro), `PROBE_SELECTION` partial
-  run: probe-arrival, -collision, -dock-arrival, -docking, -shipyard,
-  -station-mouth, -station-visuals and -station, 8/8. After the last proxy
-  change, probe-collision (28/28) and probe-docking (63/63) were run again
-  directly. The selector picked 40 probes. The full suite is the
-  supervisor's.
+- Browser: `npm run probe:pr` against `origin/main`, semantic selection of
+  39 probes, GPU lane (ANGLE Metal, Apple M1 Pro): 39/39 passed in 728 s.
+  It is a partial run (55 of 94 probes not run); the full suite is the
+  supervisor's. Run directly, probe-collision read 28/28 and probe-docking
+  63/63.
 
 ## Not done here
 
