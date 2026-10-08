@@ -309,8 +309,39 @@ describe("the folded rim is lit as the shape it was folded into", () => {
 				const index = after.geometry.index as THREE.BufferAttribute;
 				const a = new THREE.Vector3();
 				const b = new THREE.Vector3();
+				// The control arm: a vertex none of whose intact faces the tear
+				// removed or moved keeps the intact normal. Without it a recompute
+				// that relit the whole part would pass both rows above.
+				const position = after.geometry.getAttribute(
+					"position",
+				) as THREE.BufferAttribute;
+				const intactPosition = before.geometry.getAttribute(
+					"position",
+				) as THREE.BufferAttribute;
+				const intactIndex = before.geometry.index as THREE.BufferAttribute;
+				const faceKey = (x: number, y: number, z: number) => `${x},${y},${z}`;
+				const keptFaces = new Set<string>();
+				for (let k = 0; k < index.count; k += 3)
+					keptFaces.add(
+						faceKey(index.getX(k), index.getX(k + 1), index.getX(k + 2)),
+					);
+				const touched = new Set<number>();
+				for (let k = 0; k < intactIndex.count; k += 3) {
+					const face = [0, 1, 2].map((n) => intactIndex.getX(k + n));
+					const changed =
+						!keptFaces.has(faceKey(face[0], face[1], face[2])) ||
+						face.some(
+							(i) =>
+								a
+									.fromBufferAttribute(position, i)
+									.distanceTo(b.fromBufferAttribute(intactPosition, i)) > 0,
+						);
+					if (changed) for (const i of face) touched.add(i);
+				}
 				let worst = 0;
 				let moved = 0;
+				let kept = 0;
+				let drift = 0;
 				for (let k = 0; k < index.count; k += 1) {
 					const i = index.getX(k);
 					a.fromBufferAttribute(normal, i);
@@ -318,13 +349,20 @@ describe("the folded rim is lit as the shape it was folded into", () => {
 						worst,
 						a.distanceTo(b.fromBufferAttribute(expected, i)),
 					);
-					if (a.distanceTo(b.fromBufferAttribute(was, i)) > 1e-3) moved += 1;
+					const d = a.distanceTo(b.fromBufferAttribute(was, i));
+					if (d > 1e-3) moved += 1;
+					if (!touched.has(i)) {
+						kept += 1;
+						drift = Math.max(drift, d);
+					}
 				}
-				expect([patch.part, worst < 1e-6, moved > 0]).toEqual([
+				expect([
 					patch.part,
-					true,
-					true,
-				]);
+					worst < 1e-6,
+					moved > 0,
+					kept > 0,
+					drift < 1e-6,
+				]).toEqual([patch.part, true, true, true, true]);
 			}
 		});
 });
