@@ -1,0 +1,61 @@
+{
+  "renderer": "ANGLE (Apple, ANGLE Metal Renderer: Apple M1 Pro, Unspecified Version)",
+  "errors": [],
+  "reachKm": 0.5803686666788237,
+  "triangles": 140596,
+  "meshes": 14,
+  "rays": [
+    {
+      "x": -0.059,
+      "y": -0.034,
+      "firstZ": 0.23
+    },
+    {
+      "x": -0.059,
+      "y": 0,
+      "firstZ": 0.23
+    },
+    {
+      "x": -0.059,
+      "y": 0.034,
+      "firstZ": 0.23
+    },
+    {
+      "x": 0,
+      "y": -0.034,
+      "firstZ": 0.23
+    },
+    {
+      "x": 0,
+      "y": 0,
+      "firstZ": 0.23
+    },
+    {
+      "x": 0,
+      "y": 0.034,
+      "firstZ": 0.23
+    },
+    {
+      "x": 0.059,
+      "y": -0.034,
+      "firstZ": 0.23
+    },
+    {
+      "x": 0.059,
+      "y": 0,
+      "firstZ": 0.23
+    },
+    {
+      "x": 0.059,
+      "y": 0.034,
+      "firstZ": 0.23
+    }
+  ],
+  "stats": {
+    "fps": 59.99800006666443,
+    "triangles": 562404,
+    "calls": 77,
+    "loaded": true,
+    "selected": "industrial"
+  }
+}

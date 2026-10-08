@@ -114,9 +114,11 @@ try {
 			});
 			g.nearScene.add(ship);
 
-			const W = 720;
-			const H = 450;
 			const source = g.renderer.domElement;
+			// Measure at native resolution: halving the image undersamples the new
+			// 6 m collar lights. Keep the minimum overlap and leakage gates unchanged.
+			const W = source.width;
+			const H = source.height;
 			const scratch = document.createElement("canvas");
 			scratch.width = W;
 			scratch.height = H;

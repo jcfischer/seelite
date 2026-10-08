@@ -79,7 +79,11 @@ import {
 	type StationPlan,
 	type StationType,
 } from "./station";
-import { type GreebleZone, buildGreebles } from "./station-greebles";
+import {
+	type GreebleZone,
+	buildGreebles,
+	castOntoStructure,
+} from "./station-greebles";
 import {
 	Pools,
 	SHIP_SCALE,
@@ -997,6 +1001,68 @@ function mouthStrobes(
 			),
 		),
 	);
+	return group;
+}
+
+/** Navigation fittings for the authored Coriolis, in kilometres. */
+export function buildCoriolisNavigation(
+	fixtures: StationFixture[],
+	structure: THREE.Object3D,
+) {
+	const group = new THREE.Group();
+	group.name = "aperture";
+	const cast = castOntoStructure(structure, "trade");
+	const mount = (x: number, y: number) => {
+		const hit = cast(new THREE.Vector3(x, y, 0.4035), PLUS_Z, 0.15);
+		if (!hit)
+			throw new Error("Coriolis navigation fitting has no mounting surface");
+		return hit.point;
+	};
+	const { aperture, aperturePlaneKm } = STATION_GEOMETRY.trade;
+	// The authored collar owns the inner 120 x 70 m walls. Step the
+	// lamps out by 1 m and let their fronts stand proud of the metal collar,
+	// so neither their inner faces nor their end caps share a depth plane.
+	const w = aperture.widthKm + 0.002;
+	const h = aperture.heightKm + 0.002;
+	const bar = 0.006;
+	for (const [bw, bh, x, y] of [
+		[w + bar * 2, bar, 0, (h + bar) / 2],
+		[w + bar * 2, bar, 0, -(h + bar) / 2],
+		[bar, h, (w + bar) / 2, 0],
+		[bar, h, -(w + bar) / 2, 0],
+	]) {
+		const lamp = new THREE.Mesh(
+			new THREE.BoxGeometry(bw, bh, bar),
+			APERTURE_LIGHT_MATERIAL,
+		);
+		lamp.name = "aperture-light";
+		lamp.position.set(x, y, aperturePlaneKm);
+		group.add(lamp);
+	}
+	group.add(
+		mouthStrobes("trade", fixtures, w, h, bar, aperturePlaneKm - bar / 2),
+	);
+	group.add(buildMouthNameplate(aperture, 0.4035));
+	group.add(
+		strobePair("trade", fixtures, LAMP_POOL_KM.face, (side, position) => {
+			position.copy(mount(side * 0.25, 0));
+		}),
+	);
+	for (const side of [-1, 1]) {
+		group.add(
+			blinkingLamp(
+				fixtures,
+				STATION_VISUALS.trade.strobeColor,
+				side < 0 ? "beacon-coriolis-a" : "beacon-coriolis-b", // glossary-ignore: beacon
+				side < 0 ? "strobe-a" : "strobe-b",
+				0,
+				mount(side * 0.18, 0.16),
+				PLUS_Z,
+				null,
+				0.6,
+			),
+		);
+	}
 	return group;
 }
 
@@ -6449,6 +6515,17 @@ function normalise(type: StationType, parts: THREE.Object3D[]): THREE.Group {
 	return root;
 }
 
+let coriolisBuilder:
+	| ((berthSeed: number, color: number) => StationMesh)
+	| null = null;
+
+/** Installed once by the browser asset bootstrap, shared by game and workbench. */
+export function installCoriolisBuilder(
+	builder: ((berthSeed: number, color: number) => StationMesh) | null,
+) {
+	coriolisBuilder = builder;
+}
+
 /**
  * Build one station in a named form.
  *
@@ -6476,6 +6553,8 @@ export function buildStationForm(
 	// point is that two stations differ.
 	assemblySeed: number,
 ): StationMesh {
+	if (type === "trade" && formId === "a" && coriolisBuilder)
+		return coriolisBuilder(berthSeed, color);
 	const form = formOf(type, formId);
 	// The builder returns its own fixtures rather than filling an array handed
 	// to it: with an out-parameter the return type said a builder produced no

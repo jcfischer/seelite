@@ -106,7 +106,12 @@ const ORIGIN =
  * §4's range sampled near both ends without the probe writing a spin itself,
  * which is the second thing this fixture is for. (Seed 1's were 0.91 and 2.95.)
  *
- * ## The 5 km control flaked, and the ceiling was the wrong number
+ * #790 correction: the historical noise readings below came from a control
+ * that restored the game clock before its second capture. They cannot be
+ * attributed solely to rasterisation. Both pairs now retain the pinned clock,
+ * and a separate assertion reads their actual timestamps. Thresholds are unchanged.
+ *
+ * ## Historical 5 km control and its ceiling
  *
  * Trade measured twice against a `1 − IoU ≤ 0.05` ceiling landed red often — on
  * `main` before #118 as well as here, and on every fixture tried. This section
@@ -353,7 +358,9 @@ async function silhouette(id, repeat = false) {
 
 			/** Luminance only: §7's claim is about outline, so colour must not be
 			 *  able to carry a pass. */
+			const measuredClocks = [];
 			const luma = () => {
+				measuredClocks.push(g.world.gameTime);
 				// Render and read in the same task — a WebGL canvas without
 				// `preserveDrawingBuffer` is cleared at the next composite.
 				g.render(0);
@@ -381,112 +388,124 @@ async function silhouette(id, repeat = false) {
 			 */
 			const savedClock = g.world.gameTime;
 			g.world.gameTime = 0;
-			const withIt = luma();
-			mesh.visible = false;
-			const without = luma();
-			mesh.visible = true;
-			g.world.gameTime = savedClock;
-			g.render(0);
+			try {
+				const withIt = luma();
+				mesh.visible = false;
+				const without = luma();
+				mesh.visible = true;
 
-			/**
-			 * The changed pixels, and the box around them.
-			 *
-			 * Anything that moved by more than a nudge between the two frames is
-			 * the station: the threshold is on a difference of two renders of the
-			 * same scene, so it is not a lighting guess.
-			 */
-			const maskAndBox = (a, b) => {
-				const mask = new Uint8Array(W * H);
-				let count = 0;
-				let minX = W;
-				let maxX = -1;
-				let minY = H;
-				let maxY = -1;
-				for (let i = 0; i < W * H; i++) {
-					if (Math.abs(a[i] - b[i]) <= 6) continue;
-					mask[i] = 1;
-					count++;
-					const x = i % W;
-					const y = (i / W) | 0;
-					if (x < minX) minX = x;
-					if (x > maxX) maxX = x;
-					if (y < minY) minY = y;
-					if (y > maxY) maxY = y;
-				}
-				return {
-					mask,
-					count,
-					minX,
-					minY,
-					w: maxX - minX + 1,
-					h: maxY - minY + 1,
-				};
-			};
-
-			/**
-			 * Crop to the box and resample, so shapes are compared and apparent
-			 * sizes are not.
-			 *
-			 * Its own function because the index arithmetic here already produced
-			 * one silent bug: both cell edges are computed **relative to the box**
-			 * and offset once. The first version added `minX` to a value that had
-			 * already carried it, sampled a strip well off the station, and scored
-			 * every pair at zero — which is also what an empty mask scores, so it
-			 * read as a claim about shape rather than as a defect.
-			 */
-			const resample = (box, grid) => {
-				const edge = (i, span) => Math.floor((i * span) / grid);
-				const cells = [];
-				for (let gy = 0; gy < grid; gy++) {
-					for (let gx = 0; gx < grid; gx++) {
-						const x0 = edge(gx, box.w);
-						const x1 = Math.max(x0 + 1, edge(gx + 1, box.w));
-						const y0 = edge(gy, box.h);
-						const y1 = Math.max(y0 + 1, edge(gy + 1, box.h));
-						let hits = 0;
-						let seen = 0;
-						for (let y = box.minY + y0; y < Math.min(box.minY + y1, H); y++)
-							for (let x = box.minX + x0; x < Math.min(box.minX + x1, W); x++) {
-								seen++;
-								hits += box.mask[y * W + x];
-							}
-						cells.push(seen > 0 && hits / seen > 0.5 ? 1 : 0);
+				/**
+				 * The changed pixels, and the box around them.
+				 *
+				 * Anything that moved by more than a nudge between the two frames is
+				 * the station: the threshold is on a difference of two renders of the
+				 * same scene, so it is not a lighting guess.
+				 */
+				const maskAndBox = (a, b) => {
+					const mask = new Uint8Array(W * H);
+					let count = 0;
+					let minX = W;
+					let maxX = -1;
+					let minY = H;
+					let maxY = -1;
+					for (let i = 0; i < W * H; i++) {
+						if (Math.abs(a[i] - b[i]) <= 6) continue;
+						mask[i] = 1;
+						count++;
+						const x = i % W;
+						const y = (i / W) | 0;
+						if (x < minX) minX = x;
+						if (x > maxX) maxX = x;
+						if (y < minY) minY = y;
+						if (y > maxY) maxY = y;
 					}
-				}
-				return cells;
-			};
-
-			const shapeOf = (a, b) => {
-				const box = maskAndBox(a, b);
-				if (box.count === 0) return { empty: true, W, H };
-				return {
-					cells: resample(box, grid),
-					pixels: box.count,
-					box: { w: box.w, h: box.h },
-					coverage: box.count / (box.w * box.h),
+					return {
+						mask,
+						count,
+						minX,
+						minY,
+						w: maxX - minX + 1,
+						h: maxY - minY + 1,
+					};
 				};
-			};
-			const shape = shapeOf(withIt, without);
-			if (!twice) return shape;
-			// **A second pair of renders, not a second call on the same buffers.**
-			//
-			// The control is supposed to measure what this metric does when
-			// nothing has changed — rasteriser, read-back, threshold and
-			// resampling, all of it. Differencing the *same two frames* twice
-			// measures a pure function against itself and is identically zero, so
-			// the gate could not fail. It was written that way while fixing the
-			// opposite problem — two evaluates let real frames run between the
-			// captures, which moved the station along its orbit — and the fix
-			// overshot into a check that asserts nothing.
-			//
-			// Rendering again inside one evaluate is the honest middle: the clock
-			// is still pinned and no frame lands between, so nothing about the
-			// scene changes, but every stage that could be unstable runs twice.
-			const withItAgain = luma();
-			mesh.visible = false;
-			const withoutAgain = luma();
-			mesh.visible = true;
-			return { shape, again: shapeOf(withItAgain, withoutAgain) };
+
+				/**
+				 * Crop to the box and resample, so shapes are compared and apparent
+				 * sizes are not.
+				 *
+				 * Its own function because the index arithmetic here already produced
+				 * one silent bug: both cell edges are computed **relative to the box**
+				 * and offset once. The first version added `minX` to a value that had
+				 * already carried it, sampled a strip well off the station, and scored
+				 * every pair at zero — which is also what an empty mask scores, so it
+				 * read as a claim about shape rather than as a defect.
+				 */
+				const resample = (box, grid) => {
+					const edge = (i, span) => Math.floor((i * span) / grid);
+					const cells = [];
+					for (let gy = 0; gy < grid; gy++) {
+						for (let gx = 0; gx < grid; gx++) {
+							const x0 = edge(gx, box.w);
+							const x1 = Math.max(x0 + 1, edge(gx + 1, box.w));
+							const y0 = edge(gy, box.h);
+							const y1 = Math.max(y0 + 1, edge(gy + 1, box.h));
+							let hits = 0;
+							let seen = 0;
+							for (let y = box.minY + y0; y < Math.min(box.minY + y1, H); y++)
+								for (
+									let x = box.minX + x0;
+									x < Math.min(box.minX + x1, W);
+									x++
+								) {
+									seen++;
+									hits += box.mask[y * W + x];
+								}
+							cells.push(seen > 0 && hits / seen > 0.5 ? 1 : 0);
+						}
+					}
+					return cells;
+				};
+
+				const shapeOf = (a, b) => {
+					const box = maskAndBox(a, b);
+					if (box.count === 0) return { empty: true, W, H };
+					return {
+						cells: resample(box, grid),
+						pixels: box.count,
+						box: { w: box.w, h: box.h },
+						coverage: box.count / (box.w * box.h),
+					};
+				};
+				const shape = shapeOf(withIt, without);
+				if (!twice) return shape;
+				// **A second pair of renders, not a second call on the same buffers.**
+				//
+				// The control is supposed to measure what this metric does when
+				// nothing has changed — rasteriser, read-back, threshold and
+				// resampling, all of it. Differencing the *same two frames* twice
+				// measures a pure function against itself and is identically zero, so
+				// the gate could not fail. It was written that way while fixing the
+				// opposite problem — two evaluates let real frames run between the
+				// captures, which moved the station along its orbit — and the fix
+				// overshot into a check that asserts nothing.
+				//
+				// Rendering again inside one evaluate is the honest middle: the clock
+				// is still pinned and no frame lands between, so nothing about the
+				// scene changes, but every stage that could be unstable runs twice.
+				const withItAgain = luma();
+				mesh.visible = false;
+				const withoutAgain = luma();
+				mesh.visible = true;
+				return {
+					shape,
+					again: shapeOf(withItAgain, withoutAgain),
+					measuredClocks,
+				};
+			} finally {
+				mesh.visible = true;
+				g.world.gameTime = savedClock;
+				g.render(0);
+			}
 		},
 		[id, GRID, repeat],
 	);
@@ -538,7 +557,15 @@ async function silhouettesAt(rangeKm, floor, gate) {
 		// crop-and-resample absorbs it least.
 		const captured = await silhouette(station.id, station.type === "trade");
 		const shape = captured.again ? captured.shape : captured;
-		if (captured.again) control = captured.again;
+		if (captured.again) {
+			control = captured.again;
+			check(
+				rangeKm + " km — both control captures use the same pinned clock",
+				captured.measuredClocks.length === 4 &&
+					captured.measuredClocks.every((t) => t === 0),
+				JSON.stringify(captured.measuredClocks),
+			);
+		}
 		check(
 			`${rangeKm} km — ${station.type}: the station is drawn and has a silhouette`,
 			!shape.missing && !shape.empty && shape.pixels > 20,
@@ -596,16 +623,10 @@ async function silhouettesAt(rangeKm, floor, gate) {
 		// is printed on the line above, and this file has already carried one
 		// copy of it into staleness.
 		//
-		// **What it is not** is the resample losing a small subject. #290 named
-		// that as the candidate and then measured it: at 60 km the two control
-		// captures agree exactly on lit pixels (32 and 32), on bounding box
-		// (8x8 and 8x8) and on filled grid cells (288 and 288), and still
-		// disagree by 0.400 of IoU. The clock is pinned and no frame lands
-		// between them, so the scene is identical — what differs is *which*
-		// pixels, not how many. That is the rasteriser and the threshold on a
-		// 32-pixel subject, which is what this control was built to see. `#120`
-		// owns the metric and `MAX_CONTROL_DIFFERENCE` names its finer-grid
-		// alternative.
+		// #790 found that the old "identical scene" claim was false: the clock
+		// was restored before the second pair. Those historic far-range readings
+		// do not isolate rasteriser noise. The capture now pins all four renders
+		// and reports their timestamps, without relaxing the existing gates.
 		if (gate.control)
 			check(
 				`${rangeKm} km — re-measuring one station reproduces its silhouette`,

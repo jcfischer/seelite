@@ -28,6 +28,12 @@ export type ChangelogEntry = {
 };
 
 export const CHANGELOG: readonly ChangelogEntry[] = [
+	// Node #790: proposed copy; principal approval and main date pending.
+	{
+		date: "2026-10-08",
+		text: "Coriolis stations now have weathered industrial hulls, crowded machinery and illuminated approach collars around their docking bays.",
+		node: 790,
+	},
 	// Node #705: approved by the principal on 2026-10-08.
 	{
 		date: "2026-10-08",

@@ -17710,6 +17710,31 @@ class Game {
 		this.saveDirty();
 	}
 
+	/** Local no-save station study; real flight state and ordinary docking rules. */
+	startIndustrialTrial() {
+		if (this.saveStore || this.dockPhase !== "flying") return;
+		const station = this.world.system.contents.stations.find(
+			(s) => s.type === "trade" && s.formId === "a",
+		);
+		if (station) {
+			const body = this.world.system.byId.get(station.id)!;
+			const snap = this.dockingSnapshot(station.id)!;
+			const distance = snap.planeKm + 1.8;
+			this.world.ship.pos = v3(
+				body.pos.x + snap.axis.x * distance,
+				body.pos.y + snap.axis.y * distance,
+				body.pos.z + snap.axis.z * distance,
+			);
+			this.world.ship.vel = this.stationVelocity(station.id);
+			this.targetId = station.id;
+			this.setThrottle(0);
+			this.setAttitude(
+				v3(-snap.axis.x, -snap.axis.y, -snap.axis.z),
+				snap.basis.up,
+			);
+		}
+	}
+
 	/**
 	 * #408 D1: a guided new game starts in a berth at its start system's trade
 	 * station. **Since #535 this placement is #530 D6's fallback**: the guided
@@ -17739,6 +17764,7 @@ class Game {
 	 * is a free one's start with the clock moved on, not a ship parked beside a
 	 * station under an autopilot the pilot does not own (sage, #528 round 2).
 	 */
+
 	startDockedAtHome(): boolean {
 		const id = this.world.system.contents.stations.find(
 			(s) => s.type === "trade",
@@ -20676,12 +20702,15 @@ if (postcard) {
 		throw new Error(
 			`postcard: entry accepted a refused recipe (${postcard.reason})`,
 		);
+	await (await import("./coriolis-flight")).prepareCoriolisPage();
 	const game = new Game(postcard.recipe.seed, null, null, postcard.recipe);
 	game.clockHeld = true;
 	(window as unknown as { __seelite: Game }).__seelite = game;
 	const { mountPostcardViewer } = await import("./postcard-viewer");
 	mountPostcardViewer(game, postcard.recipe);
 } else if (query.has("model-viewer")) {
+	if (query.get("model-viewer") === "station")
+		await (await import("./coriolis-flight")).prepareCoriolisPage();
 	const { mountModelViewer } = await import("./model-viewer");
 	mountModelViewer();
 	// The workbench owns an isolated render loop, so no live simulation is built
@@ -20740,6 +20769,12 @@ if (postcard) {
 	// `?seed=N` visit booted somebody else's galaxy with nothing said, so a
 	// direct boot sets the Commander aside. Without direct the overlay asks
 	// which world is wanted, and the seed only pre-fills New game (§11.6).
+	// Fetch in parallel with the Commander catalog; wait only at world construction.
+	const stationModel = import("./coriolis-flight").then((m) =>
+		m.prepareCoriolisPage(),
+	);
+	// Keep a fast rejection handled while IndexedDB is still opening.
+	void stationModel.catch(() => {});
 	const boot = bootMode(query);
 	// **A pinned system writes nothing, and the plan is what says so** (§11.6,
 	// #432). Where the permission is computed and why it is the boot's rather than
@@ -20779,6 +20814,7 @@ if (postcard) {
 	// sat outside the guard: a record that parsed and then would not restore
 	// threw at module scope and the page did not boot at all. The bounds in
 	// `parseCommander` close the known route in; this closes the class.
+	await stationModel;
 	const worldSeed = plan.pending?.seed ?? askedSeed ?? randomSeed();
 	let game: Game;
 	try {
@@ -20981,6 +21017,9 @@ if (postcard) {
 		// plan's answer rather than re-derive it from one of the two causes.
 		if (!plan.writesNothing && plan.fault === null) await attach(plan.slot);
 		await beginFirstDay(plan.writesNothing ? null : plan.slot);
+		if (query.get("coriolis-start") === "approach" && plan.writesNothing) {
+			game.startIndustrialTrial();
+		}
 		game.clockHeld = false;
 	} else if (plan.mode === "continue") {
 		// §11.3: a one-shot whose Commander another tab took in the meantime is
