@@ -1,6 +1,6 @@
 # Porter O2 modular freighter — Codex
 
-Refs jcfischer/seelite#797. Editable exterior prototype of the principal-selected O2 Modular Carrier. Dream Loop stopped at an independent **7.1/10**, meeting the requested 7/10 threshold. This is a visual checkpoint, not production integration or principal visual acceptance.
+Refs jcfischer/seelite#797. Editable exterior prototype of the principal-selected O2 Modular Carrier. Dream Loop stopped at an independent **7.1/10**, meeting the requested 7/10 threshold. Jens-Christian approved this visual checkpoint on 2026-10-08 and requested a PR. Production integration remains outside this prototype.
 
 ## View
 
@@ -31,3 +31,9 @@ Capture checks served-worktree identity, waits for the shared probe lock, requir
 The exported command hull and all three cargo cassettes pass closed-manifold and outward-winding checks. Cargo cassettes have real depth, remain beside the command keel, and preserve open separations. The final capture reported no browser errors and 58.7 FPS on ANGLE Metal / Apple M1 Pro at 1586 × 992. This is an observed inspection-view cadence, not a flight benchmark. The model has 363,646 triangles across 19 material-batched meshes, about 67.1 × 42.3 × 14.7 metres.
 
 All assets are under `spikes/`, outside the production build entries. No production game module was changed. Flight integration, collision/docking envelope, production LOD, cockpit integration and production performance remain unverified. No merge or deployment performed.
+
+## Implementation handoff
+
+The principal approved this prototype and requested commit/PR only, so another agent can implement the production Porter. Preserve O2’s three separate starboard cargo cassettes, port command keel, wrapped clamps, industrial palette and service lights. Treat `target.png`, the approved live `evidence/hero.png`, and the editable Blender source as design references. The 7.1/10 checkpoint intentionally retains the gaps recorded in `evidence/review.md`.
+
+Production work must establish the asset/pipeline decision under the map’s current constraints, then address runtime size/LOD, geometry/envelope/collision compatibility, cockpit fit, station traffic rendering, materials and relevant verification. This PR does not switch `freighter/b` to the authored asset. Run implementation checks in that follow-up. Broad testing and Sage review were not requested for this handoff; the principal explicitly stopped the PR-preparation checks.
