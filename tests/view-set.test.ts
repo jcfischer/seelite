@@ -17,9 +17,15 @@
  * the map with no view pointed at it would be judged on somebody else's frame.
  */
 import { describe, expect, test } from "bun:test";
+import { Matrix4, Quaternion, Vector3 } from "three";
+import { setHorizonOrientation } from "../scripts/lib/horizon-framing.mjs";
 import type { TreeDeclaration } from "../scripts/lib/tree-declaration.mjs";
 import { makeWorld } from "../src/sim.ts";
 import { STATION_GEOMETRY } from "../src/station.ts";
+import {
+	assertHorizonFacts,
+	horizonGeometry,
+} from "../scripts/lib/horizon-framing.mjs";
 import {
 	FIXTURE,
 	GAME_TIME_S,
@@ -178,7 +184,8 @@ describe("the view set itself", () => {
 		// not `VIEWS.length`, which is the whole point: a view deleted by accident
 		// has to be a red run, and a check derived from its own subject cannot be
 		// one.
-		expect(VIEWS.length).toBe(70);
+		// Node #754 adds two to the 70 rows at its base (including #735's derelict-tear).
+		expect(VIEWS.length).toBe(72);
 		const names = VIEWS.map((v) => v.name);
 		expect(new Set(names).size).toBe(names.length);
 		for (const name of names) expect(name).toMatch(/^[a-z]+(-[a-z]+)*$/);
@@ -503,6 +510,231 @@ describe("the pinned seed's world", () => {
 	});
 });
 
+describe("node #754 horizon views", () => {
+	test("readback refuses missing, non-finite, out-of-band and clipped facts", () => {
+		const station = { station: "station-trade" };
+		const good = {
+			limbFraction: 0.32,
+			sunElevationDeg: 10,
+			cameraRadii: 1.5,
+			stationInFrame: true,
+			stationRangeKm: 4.8,
+			visibleStations: ["station-trade"],
+		};
+		expect(assertHorizonFacts(good, station)).toBe(good);
+		for (const bad of [
+			{ limbFraction: null },
+			{ limbFraction: NaN },
+			{ limbFraction: 0.5 },
+			{ sunElevationDeg: Infinity },
+			{ sunElevationDeg: -1 },
+			{ sunElevationDeg: 21 },
+			{ stationInFrame: false },
+			{ stationRangeKm: 100 },
+		])
+			expect(() => assertHorizonFacts({ ...good, ...bad }, station)).toThrow();
+		const boundary = {
+			...good,
+			cameraRadii: 1.2,
+			shipRadii: 1.200001,
+			stationInFrame: null,
+			stationRangeKm: null,
+			visibleStations: [],
+		};
+		expect(assertHorizonFacts(boundary, {})).toBe(boundary);
+		for (const shipRadii of [undefined, NaN, 1.199999])
+			expect(() =>
+				assertHorizonFacts({ ...boundary, shipRadii }, {}),
+			).toThrow();
+		expect(() =>
+			assertHorizonFacts({ ...boundary, cameraRadii: 1.21 }, {}),
+		).toThrow();
+		expect(() =>
+			assertHorizonFacts(
+				{ ...boundary, visibleStations: ["station-trade"] },
+				{},
+			),
+		).toThrow();
+	});
+	test("the horizon basis preserves forward at an antiparallel roll", () => {
+		for (const forward of [
+			new Vector3(1, 2, 3).normalize(),
+			new Vector3(-3, 1, 2).normalize(),
+			new Vector3(0, 0, 1),
+		]) {
+			const orientation = new Quaternion().setFromUnitVectors(
+				new Vector3(0, 0, -1),
+				forward,
+			);
+			const up = new Vector3(0, 1, 0).applyQuaternion(orientation).negate();
+			setHorizonOrientation(orientation, new Matrix4(), forward, up);
+			expect(
+				new Vector3(0, 0, -1).applyQuaternion(orientation).distanceTo(forward),
+			).toBeLessThan(1e-12);
+			expect(
+				new Vector3(0, 1, 0).applyQuaternion(orientation).distanceTo(up),
+			).toBeLessThan(1e-12);
+		}
+	});
+	test("station containment measures the full silhouette rather than only its centre", () => {
+		const w = makeWorld(SEED);
+		const p = w.system.bodies.find((b) => b.id === "planet-4")!;
+		const station = w.system.bodies.find((b) => b.id === "station-trade")!;
+		const math = horizonGeometry();
+		const pose = math.plan({
+			centre: p.pos,
+			radius: p.radiusKm,
+			anchor: station.pos,
+			sun: { x: 0, y: 0, z: 0 },
+			radii: undefined,
+			fov: 60,
+		});
+		const input = {
+			...pose,
+			centre: p.pos,
+			radius: p.radiusKm,
+			sun: { x: 0, y: 0, z: 0 },
+			fov: 60,
+			aspect: 1.6,
+			station: station.pos,
+			stationRadius: 0.9,
+		};
+		const facts = math.measure(input);
+		expect(facts.stationInFrame).toBe(true);
+		expect(facts.stationRangeKm).toBeCloseTo(4.8, 6);
+		expect(facts.limbFraction).toBeCloseTo(0.32, 8);
+		expect(facts.sunElevationDeg).toBeCloseTo(10, 6);
+		expect(math.measure({ ...input, stationRadius: 10 }).stationInFrame).toBe(
+			false,
+		);
+	});
+	test("a station whose centre is behind the limb still counts while an edge shows", () => {
+		const math = horizonGeometry();
+		const centre = { x: 0, y: 0, z: 0 };
+		const camera = { x: 0, y: 1200, z: 0 };
+		const stationRadius = 0.9;
+		// A station at 1.5R on a sightline just inside the host's limb.
+		const at = (beta: number) => {
+			const dir = { x: Math.sin(beta), y: -Math.cos(beta), z: 0 };
+			const along = 1200 * Math.cos(beta);
+			const range = along + Math.sqrt(along * along - 1200 ** 2 + 1500 ** 2);
+			return {
+				station: {
+					x: camera.x + dir.x * range,
+					y: camera.y + dir.y * range,
+					z: 0,
+				},
+				forward: dir,
+				range,
+			};
+		};
+		const limb = Math.asin(1000 / 1200);
+		const measure = (beta: number) => {
+			const { station, forward } = at(beta);
+			return math.measure({
+				centre,
+				radius: 1000,
+				camera,
+				forward,
+				up: { x: 0, y: 0, z: 1 },
+				sun: { x: 100000, y: 0, z: 0 },
+				fov: 60,
+				aspect: 1.6,
+				station,
+				stationRadius,
+			});
+		};
+		const half = stationRadius / at(limb).range / 2;
+		// Centre occluded, upper edge clear: present, but not wholly in frame.
+		const grazing = measure(limb - half);
+		expect(grazing.stationIntersectsFrame).toBe(true);
+		expect(grazing.stationInFrame).toBe(false);
+		// Wholly behind the limb: absent.
+		const hidden = measure(limb - 4 * half);
+		expect(hidden.stationIntersectsFrame).toBe(false);
+		expect(hidden.stationInFrame).toBe(false);
+		// Wholly clear of the limb: in frame.
+		const clear = measure(limb + 4 * half);
+		expect(clear.stationIntersectsFrame).toBe(true);
+		expect(clear.stationInFrame).toBe(true);
+	});
+	test("both views cover 720, with a station only at its own orbit", () => {
+		for (const [name, extra] of [
+			["station-horizon", { station: "station-trade" }],
+			["planet-boundary", { radii: 1.2 }],
+		] as const) {
+			const row = VIEWS.find((v) => v.name === name);
+			expect(row?.covers).toContain(720);
+			expect(row?.shot).toEqual({
+				kind: "horizon",
+				body: "planet-4",
+				view: name === "planet-boundary" ? "cockpit" : "chase",
+				...extra,
+			});
+		}
+	});
+	test("the fixture assumption remains terran planet-4 with trade at 1.500R", () => {
+		const w = makeWorld(SEED);
+		const p = w.system.bodies.find((b) => b.id === "planet-4")!;
+		const s = w.system.contents.stations.find((b) => b.id === "station-trade")!;
+		expect(p.appearance?.surface).toBe("terran");
+		expect(s.parentId).toBe(p.id);
+		expect(s.orbit.radiusKm / p.radiusKm).toBeCloseTo(1.5, 12);
+	});
+	test("invalid horizon payloads refuse rather than making a false sheet", () => {
+		const shots = [
+			{ kind: "horizon", body: "planet-4" },
+			{ kind: "horizon", body: "planet-4", radii: 1 },
+			{
+				kind: "horizon",
+				body: "planet-4",
+				radii: 1.2,
+				station: "station-trade",
+			},
+		];
+		expect(
+			malformedShots(shots.map((shot, i) => ({ name: `bad-${i}`, shot }))),
+		).toHaveLength(3);
+	});
+	test("the measured limb moves with the camera attitude, independently of the request", () => {
+		const math = horizonGeometry();
+		const centre = { x: 0, y: 0, z: 0 };
+		const sun = { x: 100000, y: 0, z: 0 };
+		for (const radii of [1.2, 1.5]) {
+			const pose = math.plan({
+				centre,
+				radius: 1000,
+				anchor: { x: 200, y: Math.sqrt(960000), z: 0 },
+				sun,
+				radii,
+				fov: 60,
+			});
+			const input = {
+				centre,
+				radius: 1000,
+				sun,
+				fov: 60,
+				aspect: 1.6,
+				...pose,
+			};
+			const facts = math.measure(input);
+			expect(facts.limbFraction).toBeCloseTo(0.32, 8);
+			expect(facts.sunElevationDeg).toBeCloseTo(10, 1);
+			expect(facts.cameraRadii).toBeCloseTo(radii, 12);
+			// An aim at the centre loses the limb. A readback of the requested
+			// 0.32 would pass here; a measurement must refuse this pose.
+			const inward = {
+				x: -pose.camera.x / (1000 * radii),
+				y: -pose.camera.y / (1000 * radii),
+				z: -pose.camera.z / (1000 * radii),
+			};
+			expect(
+				math.measure({ ...input, forward: inward }).limbFraction,
+			).not.toBeCloseTo(0.32, 2);
+		}
+	});
+});
+
 describe("the contact sheet", () => {
 	test("renders every declared view of every run", () => {
 		const html = contactSheet([fullRun("before"), fullRun("after")]);
@@ -531,7 +763,7 @@ describe("the contact sheet", () => {
 		// The fixture spaces its frames 0.4 s apart, so the span is fixed by how
 		// many views the set declares — which is the count row's business, not this
 		// one's, and this literal moves with it.
-		expect(html).toContain("· clock 0.6–28.2s");
+		expect(html).toContain("· clock 0.6–29.0s");
 		expect(html).not.toContain("pinned");
 	});
 
