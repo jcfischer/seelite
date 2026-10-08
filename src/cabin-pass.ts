@@ -24,26 +24,29 @@
  */
 
 /**
- * How many times life size the cabin is authored at. A real canopy pane is
- * about a metre across and sits under a metre from the eye; `CANOPY_OUTLINE`
- * is 100 m across and `CANOPY_Z_KM` is 65 m out. Read only by `cabinLight`:
- * nothing in the cabin is drawn from it.
+ * How many times life size the cabin is drawn at. #792's authored cabin is
+ * modelled in real metres against the courier hull, and
+ * `COCKPIT_MODEL_KM_PER_M` places it at this scale. Read by `cabinLight` and
+ * by that placement.
  */
 export const CABIN_SCALE = 100;
 
 /**
- * The cabin camera's near plane, kilometres. One cabin metre — a centimetre
- * of the real cabin — so no head turn can slice a fitting open. The near
- * layer's own near plane is untouched; #15's depth ratio is why it is 10 m.
+ * The cabin camera's near plane, kilometres. Three cabin metres — three
+ * centimetres of the real cabin. #792's authored cabin puts its nearest vertex
+ * about 40 cabin metres from the eye in any direction a head can turn
+ * (`tests/cockpit-model.test.ts` measures it), so no head turn can slice a
+ * fitting open. The near layer's own near plane is untouched; #15's depth
+ * ratio is why it is 10 m.
  */
-export const CABIN_NEAR_KM = 0.001;
+export const CABIN_NEAR_KM = 0.003;
 
 /**
- * The cabin camera's far plane, kilometres. The farthest cabin vertex is the
- * canopy header's corner, about 84 m from the eye; 200 m brackets it, and a
- * far plane only as far as the cabin keeps its depth ratio at 200.
+ * The cabin camera's far plane, kilometres. The authored cabin's farthest
+ * vertex is about 576 m from the eye (5.76 real metres); 600 m brackets it,
+ * and a far plane only as far as the cabin keeps its depth ratio at 200.
  */
-export const CABIN_FAR_KM = 0.2;
+export const CABIN_FAR_KM = 0.6;
 
 /** A point light as the cabin pass needs it, in a form a caller can write. */
 export type CabinLightState = {

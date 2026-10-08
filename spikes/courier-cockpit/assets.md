@@ -2,7 +2,7 @@
 
 All cockpit geometry was authored locally with Blender by `build_model.py`. No downloaded third-party model was used. FAL credentials were absent; Blender was explicitly permitted. The principal waived prior procedural-only asset constraints for this study.
 
-The current courier A hull is built from the repository's `src/ship-mesh.ts`; it was inspected from hero/top views before target selection. `station-reference.glb` is copied from the parallel local Coriolis study, `.worktrees/seelite-790/public/spikes/coriolis/coriolis-industrial.glb` at observed branch head `675d0dd`. It embeds the station's original generated surface material and supplies context only. That study's accompanying Blender source remains in its own worktree.
+The current courier A hull is built from the repository's `src/ship-mesh.ts`; it was inspected from hero/top views before target selection. The station reference was copied from the parallel Coriolis study, `public/spikes/coriolis/coriolis-industrial.glb` at observed branch head `675d0dd`. Since this branch is based on that study's branch (#791), the viewer loads that file directly; the copy, byte-identical, was removed. It embeds the station's original generated surface material and supplies context only. That study's accompanying Blender source remains in its own worktree.
 
 All images below were produced with the built-in imagegen tool in this conversation. Film/game names informed industrial materials and atmosphere, not extracted assets.
 

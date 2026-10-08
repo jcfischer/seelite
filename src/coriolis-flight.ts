@@ -146,8 +146,12 @@ export function prepareCoriolisModel(): Promise<void> {
 }
 
 /** The asset is required for the world, so an interrupted download gets a
- * visible retry before any Game (or save-store attachment) is constructed. */
-export async function prepareCoriolisPage(): Promise<void> {
+ * visible retry before any Game (or save-store attachment) is constructed.
+ * `also` names the page's other required assets — a Game's cockpit model
+ * (`cockpit-model.ts`) — so one panel and one Retry cover them all. */
+export async function prepareCoriolisPage(
+	also: readonly (() => Promise<void>)[] = [],
+): Promise<void> {
 	const panel = document.createElement("section");
 	panel.setAttribute("aria-label", "Loading game");
 	panel.style.cssText =
@@ -158,14 +162,13 @@ export async function prepareCoriolisPage(): Promise<void> {
 	document.body.append(panel);
 	try {
 		for (;;) {
-			status.textContent = "Loading station…";
+			status.textContent = also.length ? "Loading game…" : "Loading station…";
 			try {
-				await prepareCoriolisModel();
+				await Promise.all([prepareCoriolisModel(), ...also.map((f) => f())]);
 				return;
 			} catch (error) {
-				console.warn("Station download failed", error);
-				status.textContent =
-					"The station could not be loaded. Check your connection and try again.";
+				console.warn("Model download failed", error);
+				status.textContent = `The ${also.length ? "game" : "station"} could not be loaded. Check your connection and try again.`;
 				const retry = document.createElement("button");
 				retry.textContent = "Retry";
 				panel.append(retry);

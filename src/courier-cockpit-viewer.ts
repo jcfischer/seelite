@@ -473,7 +473,8 @@ Object.assign(window, {
 try {
 	const [interior, exterior] = await Promise.all([
 		loader.loadAsync(assets + "courier-cockpit.glb"),
-		loader.loadAsync(assets + "station-reference.glb"),
+		// The same bytes as the Coriolis study ships; one copy in the build.
+		loader.loadAsync("/spikes/coriolis/coriolis-industrial.glb"),
 	]);
 	cockpit = interior.scene;
 	scene.add(cockpit);

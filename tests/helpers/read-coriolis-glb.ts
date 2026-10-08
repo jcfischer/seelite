@@ -7,11 +7,21 @@ import { MeshoptDecoder } from "three/addons/libs/meshopt_decoder.module.js";
  * compressed vertex buffers and node transforms are retained, including normals.
  */
 export async function readCoriolisGlb(name: string) {
-	const path =
+	const scene = await decodeShippedGlb(
 		name === "coriolis-industrial-flight.glb"
-			? "../../public/models/coriolis.glb"
-			: "../../public/spikes/coriolis/" + name;
-	const file = readFileSync(new URL(path, import.meta.url));
+			? "models/coriolis.glb"
+			: "spikes/coriolis/" + name,
+	);
+	scene.scale.setScalar(0.001);
+	scene.updateMatrixWorld(true);
+	return scene;
+}
+
+/** Decode a GLB under `public/` at its authored scale, as `readCoriolisGlb` does. */
+export async function decodeShippedGlb(publicPath: string) {
+	const file = readFileSync(
+		new URL("../../public/" + publicPath, import.meta.url),
+	);
 	if (file.readUInt32LE(0) !== 0x46546c67 || file.readUInt32LE(4) !== 2)
 		throw new Error("Expected a glTF 2 binary");
 	const jsonLength = file.readUInt32LE(12);
@@ -45,7 +55,5 @@ export async function readCoriolisGlb(name: string) {
 	const { scene } = await new GLTFLoader()
 		.setMeshoptDecoder(MeshoptDecoder)
 		.parseAsync(data, "");
-	scene.scale.setScalar(0.001);
-	scene.updateMatrixWorld(true);
 	return scene;
 }
