@@ -16,6 +16,8 @@ export function scoopWreckContainer(
 	container: { pos: Vec3; vel: Vec3 },
 	ship: { pos: Vec3; vel: Vec3 },
 	at: number,
+	/** A named job item stays separate from every owned-cargo path. */
+	entrusted = false,
 ) {
 	const hold = commanderHold(commander, entrustedT);
 	const freeT = hold.capacityT - hold.usedT;
@@ -29,13 +31,13 @@ export function scoopWreckContainer(
 	const item = row.containers[index];
 	if (row.salvaged || !item || item.left <= 0 || !scoops(container, ship))
 		return unchanged();
-	if (item.kind === "fitting" && freeT < item.left)
+	if ((entrusted || item.kind === "fitting") && freeT < item.left)
 		return unchanged(
 			`Hold full: ${freeT} t free; ${item.left} t ${item.id} must be recovered whole.`,
 		);
 	const took = Math.max(
 		0,
-		item.kind === "fitting"
+		entrusted || item.kind === "fitting"
 			? item.left
 			: Math.min(item.left, Math.floor(freeT)),
 	);
@@ -43,8 +45,9 @@ export function scoopWreckContainer(
 		return unchanged(
 			"Hold full: " + freeT + " t free; " + item.id + " left in space.",
 		);
-	const next =
-		item.kind === "good"
+	const next = entrusted
+		? commander
+		: item.kind === "good"
 			? scoopCargo(commander, item.id, took, entrustedT).commander
 			: {
 					...commander,

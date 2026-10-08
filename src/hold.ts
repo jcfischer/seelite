@@ -171,7 +171,8 @@ export function holdSummary(
 		// which is the mismatch `amount`'s own doc argues the field exists to
 		// prevent. It is an invariant of the binder rather than of the type, so
 		// it is checked where the two meet.
-		const unit = commodity(lot.goodName).unit;
+		const unit =
+			lot.itemKind === "fitting" ? "t" : commodity(lot.goodName).unit;
 		if (unit !== "t")
 			throw new Error(
 				`hold: entrusted lot ${lot.lotId} is ${lot.goodName}, which is ${unit} and not tonnes (#443)`,
@@ -181,6 +182,7 @@ export function holdSummary(
 			amount: lot.aboardT,
 			unit,
 			owner: "requester",
+			...(lot.itemKind === "fitting" ? { kind: "fitting" as const } : {}),
 			job: {
 				offerId: lot.offerId,
 				title: request.terms.title,
@@ -219,10 +221,11 @@ export const aboardForOffer = (
 		.filter(
 			(line) =>
 				line.unit === "t" &&
-				line.kind !== "fitting" &&
 				(offer.entrusted
 					? line.owner === "requester" && line.job?.offerId === offer.id
-					: line.owner === "pilot" && line.goodName === offer.goodName),
+					: line.owner === "pilot" &&
+						line.kind !== "fitting" &&
+						line.goodName === offer.goodName),
 		)
 		.reduce((sum, line) => sum + line.amount, 0);
 

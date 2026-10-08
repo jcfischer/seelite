@@ -1199,6 +1199,180 @@ try {
 		await tabShown(LEFT),
 	);
 	check("no shader failed to compile or link", t.failures === 0);
+
+	// Node #734: a non-cargo operand on the real board. Seed one persisted
+	// loss; acceptance, proximity scoop and Deliver all use the shipped verbs.
+	const salvagePage = await browser.newPage({
+		viewport: { width: 1440, height: 900 },
+	});
+	t.watchShaders(salvagePage, "salvage requests");
+	await installViewPlacement(salvagePage);
+	await installViewFraming(salvagePage);
+	await salvagePage.goto(gameUrl(origin, { seed: 42 }), { waitUntil: "load" });
+	await bootedGame(salvagePage);
+	const salvageFixture = await salvagePage.evaluate(async () => {
+		const g = window.__seelite;
+		const { derelictSlots } = await import("/src/derelict-slots.ts");
+		const { salvageTargetsOf } = await import("/src/salvage-jobs.ts");
+		const record = g.world.system.record;
+		const key = derelictSlots(record.index, record.government)[0].key;
+		g.commerceWorld.galaxies[record.galaxy].derelicts[key] = {
+			instanceOrdinal: 1,
+			lostAt: g.world.gameTime,
+			containers: [
+				{ kind: "good", id: "Food", tonnes: 4, left: 4 },
+				{ kind: "fitting", id: "Docking Computer", tonnes: 1, left: 1 },
+			],
+		};
+		g.commander.ownedEquipment = [];
+		const target = salvageTargetsOf(
+			g.commerceWorld,
+			g.world.system,
+			g.world.gameTime,
+		).find((t) => t.slotKey === key);
+		const station = g.world.system.contents.stations.find(
+			(s) => `${record.index}:${s.localCarrierId}` === target.homeStationKey,
+		);
+		return { key, stationId: station.id };
+	});
+	await dockAt(salvagePage, salvageFixture.stationId);
+	await salvagePage.locator('[data-live-station-tab="Requests"]').click();
+	const salvageOffer = await salvagePage.evaluate(() =>
+		window.__seelite.requestsView().offers.find((o) => o.family === "salvage"),
+	);
+	check(
+		"the home board lists an unlocked Salvage operand with named tonnes",
+		salvageOffer?.operand.kind === "salvage" &&
+			salvageOffer.operand.item.tonnes === 1 &&
+			!(await salvagePage
+				.locator(
+					`[data-live-station-console] [data-live-request-action="details"][data-live-request-id="${salvageOffer.id}"]`,
+				)
+				.evaluate((row) => row.hasAttribute("data-live-request-locked"))),
+	);
+	await salvagePage
+		.locator(
+			`[data-live-station-console] [data-live-request-action="details"][data-live-request-id="${salvageOffer.id}"]`,
+		)
+		.click();
+	const salvageDetails = salvagePage.locator(
+		"[data-live-station-console] [data-live-request-details]",
+	);
+	const salvageText = await salvageDetails.innerText();
+	check(
+		"Salvage details paint its named fitting, source, age and hand-over payment",
+		salvageText.includes("1 t of Docking Computer") &&
+			salvageText.includes(salvageOffer.source) &&
+			/\d+s old/.test(salvageText) &&
+			/hand over/i.test(salvageText),
+		salvageText,
+	);
+	await salvagePage
+		.locator('[data-live-station-console] [data-live-request-action="accept"]')
+		.click();
+	check(
+		"no scanner locks Salvage and acceptance loads no phantom cargo",
+		await salvagePage.evaluate((id) => {
+			const s = window.__seelite.commanderRecord().requests;
+			return (
+				s.byId[id]?.status === "accepted" &&
+				Object.values(s.entrustedByLotId).length === 0
+			);
+		}, salvageOffer.id),
+	);
+	check(
+		"acceptance states the payment pinned in the Salvage journal",
+		await salvagePage.evaluate((id) => {
+			const g = window.__seelite;
+			return g.requestMessage.includes(
+				`Payment: ${g.requests.byId[id].terms.rewardCr} Cr`,
+			);
+		}, salvageOffer.id),
+	);
+	await salvagePage.screenshot({ path: `${out}/08-salvage-accepted.png` });
+	await launchToForwardFlight(salvagePage);
+	await salvagePage.evaluate(async (key) => {
+		const g = window.__seelite;
+		const { tetherPose } = await import("/src/derelict.ts");
+		const wreck = g.derelictsAt().find((w) => w.key === key);
+		const tether = tetherPose(wreck.pose, 1);
+		g.world.ship.pos = { ...tether.pos };
+		g.world.ship.vel = { ...tether.vel };
+		g.stepDerelictScoops();
+	}, salvageFixture.key);
+	await dockAt(salvagePage, salvageFixture.stationId);
+	await salvagePage.locator('[data-live-station-tab="Requests"]').click();
+	await salvagePage
+		.locator(
+			`[data-live-station-console] [data-live-request-action="details"][data-live-request-id="${salvageOffer.id}"]`,
+		)
+		.click();
+	const salvageDeliver = salvagePage.locator(
+		'[data-live-station-console] [data-live-request-action="deliver"]',
+	);
+	check(
+		"the recovered fitting enables a hand-over labelled for requester cargo",
+		(await salvageDeliver.isEnabled()) &&
+			(await salvageDeliver.innerText()) ===
+				"Hand over 1 t of Docking Computer",
+	);
+	const salvageCredits = await salvagePage.evaluate(
+		() => window.__seelite.commander.credits,
+	);
+	await salvageDeliver.click();
+	check(
+		"Deliver pays the accepted snapshot once and moves Salvage to Past",
+		await salvagePage.evaluate(
+			({ id, credits }) => {
+				const g = window.__seelite,
+					r = g.requests.byId[id];
+				return (
+					r.status === "completed" &&
+					g.commander.credits === credits + r.terms.rewardCr &&
+					Object.values(g.requests.entrustedByLotId).length === 0 &&
+					g.requestTab === "past"
+				);
+			},
+			{ id: salvageOffer.id, credits: salvageCredits },
+		),
+	);
+	check(
+		"completed Salvage draws no second Deliver or Report",
+		(await salvagePage
+			.locator(
+				'[data-live-station-console] [data-live-request-action="deliver"], [data-live-station-console] [data-live-request-action="report"]',
+			)
+			.count()) === 0,
+	);
+	await salvagePage.screenshot({ path: `${out}/09-salvage-delivered.png` });
+	check(
+		"Requests reads preserve the journal; the game clock fails an unscooped Salvage job",
+		await salvagePage.evaluate(async (id) => {
+			const g = window.__seelite;
+			const { DERELICT_SALVAGER_S } = await import("/src/derelict-slots.ts");
+			const ended = g.requests.byId[id];
+			// An unscooped acceptance of the fixture's loss, after the prior delivery proof.
+			g.requests = {
+				...g.requests,
+				byId: {
+					...g.requests.byId,
+					[id]: { ...ended, status: "accepted", evidence: [], settledAt: null },
+				},
+			};
+			g.world.gameTime = ended.terms.observedAt + DERELICT_SALVAGER_S;
+			const before = g.requests;
+			g.requestsView();
+			const pure = g.requests === before;
+			g.step(0);
+			return (
+				pure &&
+				g.requests.byId[id].status === "failed" &&
+				g.requests.byId[id].outcomeReason.includes("taken by salvagers")
+			);
+		}, salvageOffer.id),
+	);
+	await salvagePage.close();
+	check("Salvage shaders also compiled", t.failures === 0);
 	writeFileSync(
 		`${out}/checks.json`,
 		JSON.stringify(

@@ -14,6 +14,8 @@
  */
 import { describe, expect, test } from "bun:test";
 import { generateGalaxy } from "../src/galaxy";
+import { bindSalvage } from "../src/jobs";
+import { derelictSlots } from "../src/derelict-slots";
 import {
 	aboardFor,
 	deliverAction,
@@ -23,7 +25,12 @@ import {
 import { nextAction } from "../src/requests";
 import type { CarrierKey } from "../src/carrier-key";
 import type { HoldSummary } from "../src/hold";
-import { firstOffer, firstProcurementOffer } from "./helpers/job-board";
+import {
+	boardContext,
+	firstOffer,
+	firstProcurementOffer,
+	stationKeyOf,
+} from "./helpers/job-board";
 
 const SYSTEMS = generateGalaxy(0x5ee11e, 0).systems;
 const COURIER = firstOffer(SYSTEMS, "courier").offer;
@@ -38,6 +45,23 @@ const COURIER = firstOffer(SYSTEMS, "courier").offer;
  * station, so the helper plants one, and the fixture is then the thing itself.
  */
 const PROCUREMENT = firstProcurementOffer(SYSTEMS).offer;
+const posting = firstOffer(SYSTEMS, "courier");
+const SALVAGE = bindSalvage({
+	...boardContext(SYSTEMS, posting.record, posting.station),
+	salvageTargets: [
+		{
+			slotKey: derelictSlots(posting.record.index, posting.record.government)[0]
+				.key,
+			instanceOrdinal: 1,
+			lostAt: 0,
+			homeStationKey: stationKeyOf(posting.record, posting.station),
+			region: "the outer region",
+			containers: [
+				{ kind: "fitting", id: "Docking Computer", tonnes: 1, left: 1 },
+			],
+		},
+	],
+})[0];
 
 describe("the action says whose goods it moves", () => {
 	test("an entrusted consignment is handed over, never supplied", () => {
@@ -60,6 +84,18 @@ describe("the action says whose goods it moves", () => {
 		);
 		expect(action.enabled).toBe(true);
 		expect(action.hint).toMatch(/your own/);
+	});
+
+	test("recovered Salvage belongs to the requester and is handed over", () => {
+		const action = deliverAction(SALVAGE, 1);
+		expect(action.label).toBe("Hand over 1 t of Docking Computer");
+		expect(action.label).not.toMatch(/deliver/i);
+		expect(action.hint).toMatch(/requester/);
+		expect(action.hint).not.toMatch(/deliver/i);
+		expect(action.enabled).toBe(true);
+		const empty = deliverAction(SALVAGE, 0);
+		expect(empty.enabled).toBe(false);
+		expect(empty.hint).toMatch(/recover.*whole/i);
 	});
 
 	test("the two families' labels differ, which is the whole node", () => {
