@@ -283,9 +283,9 @@ vent throats and obstruction beacons. Warren retains its macro fixture
 declaration; Collar and Spar gain their own in node #745. Every form uses the
 same aperture and berth catalogue.
 
-Node #746 flies all three shipyard forms: Gantry, Hangar and Slipway, drawn
+Node #746 flies all three shipyard forms: Gantry, Hangar and Slipway, drawn <!-- glossary-ignore: Hangar -->
 uniformly per system, each with the role's window grid, floods, welding arc,
-hub strobes and mouth ring where the aperture axis sees them. The Hangar's
+hub strobes and mouth ring where the aperture axis sees them. The Hangar's <!-- glossary-ignore: Hangar -->
 floods sit on the lips of its bay mouth and its arc on the slab's face below
 the mouth; the Slipway's floods sit on the arc's inner face between its struts
 and its arc on a slip-head, at the slip's edge. Both gain macro fixtures on
