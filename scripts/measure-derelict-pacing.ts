@@ -18,6 +18,11 @@
  *   on 20% ± 5 points; the other columns are context. At 256 systems one cell's
  *   sampling spread is about 2.5 points, so a cell is a draw and the
  *   expectation is the figure the tuning aims at.
+ * - **How often the criterion holds**: the same six cells read at seeds 1 to
+ *   `CRITERION_SEEDS`, and the share of seeds, and of disjoint seed triples,
+ *   with every cell inside the band, beside what a binomial draw at exactly
+ *   20% gives. This is what says whether a miss at the three seeds above is
+ *   the schedule or the draw.
  * - **The first session**: the share averaged over the first 2 h, every five
  *   minutes — the figure that read 5–7% before this node.
  * - **A return visit**: the share holding a wreck a day or two after a visit
@@ -56,6 +61,8 @@ const G = 0;
 const GATED_H = [0, 1, 4, 24, 100, 300];
 const TIMES_H = [0, 1, 2, 4, 8, 24, 48, 100, 200, 300];
 const RETURN_H = [24, 48];
+/** The seeds the criterion's pass rate is read over: 1 to this, galaxy 0. */
+const CRITERION_SEEDS = 120;
 
 const finite = (n: number, what: string): number => {
 	if (!Number.isFinite(n)) throw new Error(`${what} is ${n}`);
@@ -141,6 +148,40 @@ function measure(seed: number): SeedRun {
 			});
 		}
 
+	const cue = measurePassiveCue(world, records);
+
+	const adriftAtZero = { slots: 0, adrift: 0, lostBeforeZero: 0 };
+	for (const r of records)
+		for (const { key } of derelictSlots(r.index, r.government)) {
+			adriftAtZero.slots++;
+			const e = effectiveDerelict(world, G, key, 0);
+			if (e.condition !== "destroyed") continue;
+			adriftAtZero.adrift++;
+			if (e.lostAt < 0) adriftAtZero.lostBeforeZero++;
+		}
+
+	return {
+		seed,
+		expected,
+		byTime,
+		firstSession: finite(firstSession, "first session"),
+		returning: {
+			base: finite(found / visits, "base"),
+			again: again.map((n, i) => finite(n / found, `again ${RETURN_H[i]}`)),
+		},
+		cue,
+		adriftAtZero,
+	};
+}
+
+/** The passive cue on an arrive-and-dock visit to every system at every one of
+ *  `TIMES_H`: how many visits find a wreck, and on how many of those the
+ *  straight run from the arrival point to the trade station passes within
+ *  `RELAY_SIGNAL_RANGE_KM` of it. */
+function measurePassiveCue(
+	world: WorldState,
+	records: SystemRecord[],
+): SeedRun["cue"] {
 	const cue = { visits: 0, withWreck: 0, cued: 0 };
 	const systems = new Map<number, System>();
 	for (const h of TIMES_H)
@@ -173,29 +214,33 @@ function measure(seed: number): SeedRun {
 			)
 				cue.cued++;
 		}
+	return cue;
+}
 
-	const adriftAtZero = { slots: 0, adrift: 0, lostBeforeZero: 0 };
-	for (const r of records)
-		for (const { key } of derelictSlots(r.index, r.government)) {
-			adriftAtZero.slots++;
-			const e = effectiveDerelict(world, G, key, 0);
-			if (e.condition !== "destroyed") continue;
-			adriftAtZero.adrift++;
-			if (e.lostAt < 0) adriftAtZero.lostBeforeZero++;
-		}
+/** One seed's share at each of `GATED_H`: the cells node #775's criterion
+ *  reads. */
+function gatedShares(seed: number): number[] {
+	const world = newWorld(seed);
+	const records = generateGalaxy(seed, G).systems;
+	return GATED_H.map((h) =>
+		finite(
+			records.filter((r) => liveKeys(world, r, h * HOUR).length > 0).length /
+				records.length,
+			`seed ${seed} at ${h} h`,
+		),
+	);
+}
 
-	return {
-		seed,
-		expected,
-		byTime,
-		firstSession: finite(firstSession, "first session"),
-		returning: {
-			base: finite(found / visits, "base"),
-			again: again.map((n, i) => finite(n / found, `again ${RETURN_H[i]}`)),
-		},
-		cue,
-		adriftAtZero,
-	};
+/** P(k of n inside the band) for a binomial at p: one cell's chance of
+ *  reading 20% ± 5 points when the schedule is exactly centred. */
+function binomialInBand(n: number, p: number): number {
+	let pmf = (1 - p) ** n;
+	let inside = 0;
+	for (let k = 0; k <= n; k++) {
+		if (Math.abs(k / n - 0.2) <= 0.05 + 1e-12) inside += pmf;
+		pmf *= ((n - k) / (k + 1)) * (p / (1 - p));
+	}
+	return finite(inside, "binomial");
 }
 
 function makeSystemOnce(
@@ -249,6 +294,34 @@ console.log(
 const pooledOutside = GATED_H.filter((h) => !band(pooled[TIMES_H.indexOf(h)]));
 console.log(
 	`pooled over the seeds (this build's test row, not the criterion): ${pooledOutside.length === 0 ? `all ${GATED_H.length} times inside` : `OUTSIDE at ${pooledOutside.map((h) => `${h} h`).join(", ")}`}`,
+);
+
+// How often a schedule centred on 20% meets the criterion as written, read
+// over many seeds rather than the three above, so a pass or a miss at any one
+// triple is read as a draw from that rate and not as the schedule's verdict.
+const criterion = Array.from({ length: CRITERION_SEEDS }, (_, i) =>
+	gatedShares(i + 1).every(band),
+);
+const seedsInside = criterion.filter(Boolean).length;
+let triples = 0;
+let triplesInside = 0;
+for (let i = 0; i + 2 < criterion.length; i += 3) {
+	triples++;
+	if (criterion[i] && criterion[i + 1] && criterion[i + 2]) triplesInside++;
+}
+const cellIn = binomialInBand(256, 0.2);
+console.log("");
+console.log(
+	`How often the per-seed criterion holds, galaxy 0 at seeds 1–${CRITERION_SEEDS}, each read at ${GATED_H.join(", ")} h`,
+);
+console.log(
+	`  seeds with all ${GATED_H.length} cells inside:        ${seedsInside} of ${CRITERION_SEEDS} (${pct(seedsInside / CRITERION_SEEDS)})`,
+);
+console.log(
+	`  disjoint seed triples, all ${3 * GATED_H.length} inside: ${triplesInside} of ${triples} (${pct(triplesInside / triples)})`,
+);
+console.log(
+	`  one cell at exactly 20% of 256 systems lands inside ${pct(cellIn)} of the time; ${3 * GATED_H.length} independent cells all inside ${pct(cellIn ** (3 * GATED_H.length))}`,
 );
 
 console.log("");

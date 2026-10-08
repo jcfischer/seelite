@@ -32,8 +32,13 @@ Author: Claude ranger implement worker, 2026-10-08.
   `DERELICT_FIRST_LOSS_S` to its system's next loss.
 - **The save parse.** It accepts a negative `lostAt` on `instanceOrdinal` 0
   only. Every later instance follows a strip made on the clock and is still
-  refused below 0. The parse reads no tuned figure, so instance 0's loss has
-  no lower bound.
+  refused below 0. Instance 0 is refused below `DERELICT_EARLIEST_LOSS_S`,
+  a week before the clock: a fixed save-format bound, not the tuned life, so
+  a retune that shortens the life refuses no saved row (sage round 1 found
+  the first version unbounded, and a row at −1e300 froze its first read).
+  `derelictTimeline` also throws when a step does not advance and after
+  `DERELICT_WALK_LIMIT` instances, so a clock or row no writer made is an
+  error and not a loop.
 - **The Salvage board.** It posts no job for a wreck lost before 0
   (`offerOpen` in `src/salvage-jobs.ts`). An offer is stamped with its loss,
   and the requests parse refuses an `observedAt` below 0. Without this, a job
@@ -54,6 +59,11 @@ pooled     19.9%   19.5%  19.1%  19.3%  17.7%  20.3%  18.8%  22.4%  20.6%  23.0%
 one cell's sampling spread at 20%: 2.5 points per seed, 1.4 pooled over 3
 node #775's criterion, per seed (0, 1, 4, 24, 100, 300 h, 20% ± 5 points): 1 of 18 cells OUTSIDE — seed 47 at 4 h reads 14.5%
 pooled over the seeds (this build's test row, not the criterion): all 6 times inside
+
+How often the per-seed criterion holds, galaxy 0 at seeds 1–120, each read at 0, 1, 4, 24, 100, 300 h
+  seeds with all 6 cells inside:        91 of 120 (75.8%)
+  disjoint seed triples, all 18 inside: 17 of 40 (42.5%)
+  one cell at exactly 20% of 256 systems lands inside 95.8% of the time; 18 independent cells all inside 46.3%
 
 No ramp: slots adrift as the clock starts
   42  51 of 636 slots adrift at 0 h (8.0%), 51 of them lost before the clock started
@@ -88,11 +98,20 @@ seed  visits  with a wreck  cued   of all visits  of visits with a wreck
    they move together. A single cell's binomial spread at 256 systems is 2.5
    points, so ±5 is about two of them. A correctly centred schedule (per-seed
    expectations 19.7–20.1%) leaves about one cell in eighteen outside on
-   average. I did not swap seeds or retune the gap to move that cell. The gate
+   average. **Measured over seeds 1–120**, this schedule meets the criterion
+   at 91 of 120 seeds and at 17 of 40 disjoint seed triples (42.5%), against
+   46.3% for eighteen independent cells drawn at exactly 20%. So at 256
+   systems the criterion as written passes a correctly centred schedule at
+   about two triples in five, and a pass or a miss at 42/47/7 is the draw,
+   not the schedule. I did not swap seeds or retune the gap to move that cell:
+   with a pass rate near one half, either would land a green triple by search. The gate
    in the test is the pooled reading, and per-seed cells are held only to ±8
    as a regression guard. If the per-cell reading is the binding one, the
    principal decides between widening the band, pooling seeds, or a coupled
-   galaxy-wide schedule. Only coupling slots across systems reduces that spread.
+   galaxy-wide schedule. Only coupling slots across systems reduces that spread,
+   and only for the early cells: by 100 h the gaps have decorrelated the
+   phases again, and it breaks the per-system streams this repo keeps. This
+   criterion stays open for that ruling.
 3. **Hours adrift, gap set for the share.** Met: 8 h adrift and 8.5% per slot,
    re-derived from the slot mix as described above.
 4. **A saved row loads unchanged.** Met for the row's own content. A touched

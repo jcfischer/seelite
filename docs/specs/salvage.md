@@ -166,7 +166,8 @@ cycle running at 0 is drawn with weight proportional to its length, because a
 random instant falls in a long cycle more often than a short one, and 0 falls at
 a uniform point in it. So a slot's first instance may be adrift as the clock
 starts, lost before 0; that one instance may carry a negative loss time on its
-row, and no later instance can. A Salvage offer is stamped with its loss, so a
+row, no earlier than a week before the clock (`DERELICT_EARLIEST_LOSS_S`, a
+save-format bound the parse reads), and no later instance can. A Salvage offer is stamped with its loss, so a
 wreck lost before 0 posts no job (S15) and is free salvage from the start.
 
 **The rate is the principal's** (2026-10-07): with the Long-Range Scanner a

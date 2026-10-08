@@ -154,14 +154,15 @@ describe("the clock starts part-way through every slot's cycle", () => {
 		}
 	});
 
-	test("the share of systems with a live derelict holds at 20% ± 5 points from 0 h to 300 h", () => {
-		// This row holds the pooled reading to the band. The node's criterion,
-		// read plainly, is per seed, and it is not met: seed 47 at 4 h reads 14.5%
-		// (`docs/receipts/node-775-derelict-pacing.md`). A single seed's cell has
-		// a binomial spread of 2.5 points at 256 systems, so ±5 is two of them and
-		// a correct schedule puts about one cell in eighteen outside; the per-seed
-		// band below is a regression guard against a ramp or a bias, not that
-		// criterion.
+	test("pooled over three seeds, the share of systems with a live derelict holds at 20% ± 5 points from 0 h to 300 h", () => {
+		// This row holds the pooled reading to the band. **It is not node #775's
+		// criterion**, which read plainly is per seed and is not met here: seed 47
+		// at 4 h reads 14.5% (`docs/receipts/node-775-derelict-pacing.md`). A
+		// single seed's cell has a binomial spread of 2.5 points at 256 systems,
+		// and the instrument measures a centred schedule meeting the criterion at
+		// 17 of 40 disjoint seed triples, so a per-seed ±5 row here would be red
+		// or green by the draw. Which reading binds is the principal's ruling. The
+		// per-seed ±8 below is a regression guard against a ramp or a bias.
 		for (const h of GATED_H) {
 			const shares = SEEDS.map((seed) => systemShare(seed, h * HOUR));
 			const pooled = shares.reduce((a, b) => a + b, 0) / shares.length;
@@ -239,9 +240,9 @@ describe("the save under the new schedule", () => {
 		const atFloor = resealedWorld(world, (body) => {
 			body.galaxies[G].derelicts[key].lostAt = DERELICT_EARLIEST_LOSS_S;
 		});
-		expect(
-			parseWorld(atFloor).galaxies[G].derelicts[key].lostAt,
-		).toBe(DERELICT_EARLIEST_LOSS_S);
+		expect(parseWorld(atFloor).galaxies[G].derelicts[key].lostAt).toBe(
+			DERELICT_EARLIEST_LOSS_S,
+		);
 	});
 
 	test("a walk that cannot reach its time throws rather than spinning", () => {

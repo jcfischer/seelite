@@ -2800,8 +2800,7 @@ export function parseWorld(raw: unknown): WorldState {
 				fail(
 					`derelicts: ${key} is not a derelict slot in galaxy ${env.galaxyIndex}`,
 				);
-			const earliest =
-				row.instanceOrdinal === 0 ? DERELICT_EARLIEST_LOSS_S : 0;
+			const earliest = row.instanceOrdinal === 0 ? DERELICT_EARLIEST_LOSS_S : 0;
 			if (row.lostAt < earliest || row.lostAt > world.gameTime)
 				fail(
 					`derelict ${key}: lost at ${row.lostAt}, outside the clock's ${earliest} to ${world.gameTime}`,
