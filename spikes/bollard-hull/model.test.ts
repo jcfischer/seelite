@@ -1,3 +1,4 @@
+// glossary-ignore: wound — geometric face winding, not the carrier Diversion state.
 import { expect, test } from "bun:test";
 import { readFileSync } from "node:fs";
 
