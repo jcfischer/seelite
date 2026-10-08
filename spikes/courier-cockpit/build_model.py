@@ -243,14 +243,22 @@ for s in [-1,1]:
     box((s*.92,-2.78,-1.5),(.46,.12,.16),black)
     box((s*.92,-2.72,-1.40),(.32,.035,.014),warm)
 
-# Access plates and visible fixings break up the lower service enclosure.
+# Continuous formed dashboard brow: a single supported shell, with recessed demisters.
+# Replaces the six disconnected covers that read as floating blocks in pilot view.
+sections=[(-2.35,-1.56,-2.98),(-1.75,-1.50,-3.18),(-.9,-1.45,-3.29),(0,-1.43,-3.32),(.9,-1.45,-3.29),(1.75,-1.50,-3.18),(2.35,-1.56,-2.98)]
+for a,b in zip(sections,sections[1:]):
+    poly([a,b,(b[0],b[1]-.24,b[2]+.36),(a[0],a[1]-.24,a[2]+.36)],dark)
+    poly([(a[0],a[1]-.24,a[2]+.36),(b[0],b[1]-.24,b[2]+.36),(b[0],b[1]-.39,b[2]+.33),(a[0],a[1]-.39,a[2]+.33)],steel)
+curve_path(sections,.065,black)
+curve_path([(x,y-.24,z+.36) for x,y,z in sections],.028,alloy)
+for x in [-1.65,1.65]:
+    box((x,-1.55,-3.12),(.78,.025,.19),black)
+    for k in range(13):box((x-.34+k*.056,-1.534,-3.12),(.012,.013,.16),dark)
+# One offset inspection hatch and a cable coupling avoid repeated ornamental blocks.
+box((.61,-1.52,-3.01),(.48,.025,.23),steel)
+for x in [.43,.79]:
+    for z in [-3.08,-2.94]:tube((x,-1.506,z),(x,-1.49,z),.014,alloy,8)
 for s in [-1,1]:
-    for j in range(3):
-        c=Vector((s*(.32+j*.5),-1.26,-3.19))
-        box(c,(.44,.07,.30),dark)
-        box(c+Vector((0,.042,0)),(.39,.014,.25),steel)
-        for x in [-.16,.16]:
-            for z in [-.085,.085]:tube(c+Vector((x,.047,z)),c+Vector((x,.062,z)),.015,alloy,8)
     for j in range(5):
         z=-2.9+j*.55
         box((s*2.67,-1.28,z),(.38,.035,.43),dark)

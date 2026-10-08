@@ -58,19 +58,19 @@ Object.assign(key.shadow.camera, {
 key.shadow.bias = -0.00015;
 key.shadow.normalBias = 0.012;
 scene.add(key);
-const fill = new THREE.DirectionalLight(0x6c9db6, 0.4);
+const fill = new THREE.DirectionalLight(0x6c9db6, 0.65);
 fill.position.set(2, 2, 1);
 scene.add(fill);
 const inspection = new THREE.DirectionalLight(0xd4ecff, 0);
 inspection.position.set(0, 4, 4);
 scene.add(inspection);
 for (const [x, color, power] of [
-	[-1.6, 0x39c2e8, 3],
-	[1.6, 0xffae54, 3],
+	[-1.6, 0x39c2e8, 5],
+	[1.6, 0xffae54, 4],
 	[0, 0xffb050, 1.5],
 ]) {
 	const lamp = new THREE.PointLight(color, power, 4, 2);
-	lamp.position.set(x, -0.75, -1.4);
+	lamp.position.set(x, -1.65, -1.65);
 	scene.add(lamp);
 }
 const composer = new EffectComposer(renderer);
@@ -494,21 +494,21 @@ try {
 			for (const m of Array.isArray(o.material) ? o.material : [o.material])
 				if (m instanceof THREE.MeshStandardMaterial && m.map) {
 					const tints: Record<string, number> = {
-						"weathered-blue-steel": 0x536575,
-						"graphite-housings": 0x414f5b,
+						"weathered-blue-steel": 0x405868,
+						"graphite-housings": 0x283842,
 						"exposed-machined-edges": 0x8d9395,
 						"service-ochre": 0xbc7923,
 						"guarded-red": 0x992c20,
 					};
 					m.color.setHex(tints[m.name] ?? 0xffffff);
-					m.envMapIntensity = 0.6;
+					m.envMapIntensity = 1.15;
 					if (m.name !== "exposed-machined-edges") {
-						m.metalness = Math.min(m.metalness, 0.48);
-						m.roughness = Math.max(m.roughness, 0.5);
+						m.metalness = 0.65;
+						m.roughness = m.name === "graphite-housings" ? 0.42 : 0.34;
 					}
 					m.map.anisotropy = 8;
 					m.bumpMap = m.map;
-					m.bumpScale = 0.001;
+					m.bumpScale = 0.004;
 					m.needsUpdate = true;
 				}
 		}
