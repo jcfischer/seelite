@@ -189,12 +189,26 @@ test("schema 12 persists explicit native units and refuses missing or mismatched
 		{ kind: "fitting", id: "Docking Computer", tonnes: 1, left: 1, unit: "t" },
 	];
 	const saved = serializeSave({ world, commander: dying }) as any;
+	// On the wire a death container's quantity is `amount`, because it is in
+	// `unit`. A derelict row keeps `tonnes`: it is tonnes, and schema 9 shipped it.
 	expect(Object.values(saved.world.galaxies[0].deathWreck.containers)).toEqual(
-		row.containers,
+		row.containers.map(({ tonnes, ...c }) => ({ ...c, amount: tonnes })),
 	);
 	expect(parseSave(saved).world.galaxies[0].deathWreck?.containers).toEqual(
 		row.containers,
 	);
+	const misnamed = structuredClone(saved);
+	for (const c of Object.values(
+		misnamed.world.galaxies[0].deathWreck.containers,
+	) as { amount?: number; tonnes?: number }[]) {
+		c.tonnes = c.amount;
+		delete c.amount;
+	}
+	const { integrity: misnamedWorld, ...misnamedWorldBody } = misnamed.world;
+	misnamed.world.integrity = fnv1a(JSON.stringify(misnamedWorldBody));
+	const { integrity: misnamedSave, ...misnamedSaveBody } = misnamed;
+	misnamed.integrity = fnv1a(JSON.stringify(misnamedSaveBody));
+	expect(() => parseSave(misnamed)).toThrow("amount");
 	for (let index = 0; index < row.containers.length; index++) {
 		for (const unit of [
 			undefined,
@@ -574,11 +588,11 @@ test("schema 11 migrates empty and refuses a grafted death wreck; malformed new 
 			r.world.galaxies[0].deathWreck.lostAt = DEATH_AT + 1;
 		},
 		(r: any) => {
-			r.world.galaxies[0].deathWreck.containers[0].tonnes = 0;
+			r.world.galaxies[0].deathWreck.containers[0].amount = 0;
 		},
 		(r: any) => {
 			const item = r.world.galaxies[0].deathWreck.containers[0];
-			item.left = item.tonnes + 1;
+			item.left = item.amount + 1;
 		},
 		(r: any) => {
 			const row = r.world.galaxies[0].deathWreck;

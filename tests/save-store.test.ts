@@ -41,6 +41,7 @@ import {
 import { heldSaveFault } from "../src/save-badge";
 import { LOCAL_CARRIER_ID } from "../src/station";
 import { newWorld, visit, withoutDeathWreck } from "../src/world-state";
+import { deathWreckRow } from "../src/death-wreck";
 
 const SEED = 0x5ee11e;
 const KEY = carrierKey(3, LOCAL_CARRIER_ID.trade);
@@ -717,6 +718,9 @@ describe("#660 D1, D10 — a death restores the launch, and a first death wakes 
 				...save?.world,
 				galaxies: save?.world.galaxies.map(withoutDeathWreck),
 			}).toEqual(h.world);
+			expect(save?.world.galaxies[dying.galaxyIndex].deathWreck).toEqual(
+				deathWreckRow(h.world, dying, "destroyed"),
+			);
 		}
 		// The record that went to disk is one the parser accepts.
 		expect(parseSave(await h.backend.raw("default", "live"))).toEqual(live);

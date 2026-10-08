@@ -407,7 +407,9 @@ export interface DerelictContainer {
 	id: string;
 	/** Explicit native unit on death containers; older derelict rows imply tonnes. */
 	unit?: CommodityUnit;
-	/** Initial quantity in `unit` (tonnes when omitted). */
+	/** Initial quantity in `unit` (tonnes when omitted). Persisted as `tonnes` on
+	 *  a derelict row and as `amount` on a death row, whose unit may be kg or g;
+	 *  the in-memory name is not on the wire and can change without a bump. */
 	tonnes: number;
 	/** Remaining quantity in the same unit. Zero is a scooped-out container, still listed,
 	 *  so a container index names one container for the instance's life. */
@@ -2167,8 +2169,15 @@ const canonicalFact = (f: TransitionFact) => ({
 
 /** A derelict row's wire form. Containers are keyed by their index, which is
  *  the identity a Salvage job's operand names (S18), so the parse can refuse
- *  an index the instance does not have by name. */
-const canonicalDerelict = (r: DerelictRow) => ({
+ *  an index the instance does not have by name.
+ *
+ *  `quantity` names the drawn line on the wire. A derelict row's is `tonnes`,
+ *  which it is, and schema 9 shipped it; a death row's is `amount`, because a
+ *  death container holds kg and g goods in their own `unit` (node #705). */
+const canonicalDerelict = (
+	r: DerelictRow,
+	quantity: "tonnes" | "amount" = "tonnes",
+) => ({
 	instanceOrdinal: r.instanceOrdinal,
 	lostAt: r.lostAt,
 	containers: Object.fromEntries(
@@ -2177,7 +2186,7 @@ const canonicalDerelict = (r: DerelictRow) => ({
 			{
 				kind: c.kind,
 				id: c.id,
-				tonnes: c.tonnes,
+				[quantity]: c.tonnes,
 				left: c.left,
 				...(c.unit === undefined ? {} : { unit: c.unit }),
 			},
@@ -2198,7 +2207,7 @@ const canonicalEnvelope = (env: GalaxyEnvelope) => ({
 	...(env.deathWreck
 		? {
 				deathWreck: {
-					...canonicalDerelict(env.deathWreck),
+					...canonicalDerelict(env.deathWreck, "amount"),
 					key: env.deathWreck.key,
 					hull: env.deathWreck.hull,
 					bodyId: env.deathWreck.bodyId,
@@ -2698,8 +2707,10 @@ const parseDerelictContainer = (
 	const expectedUnit = kind === "good" ? commodity(id).unit : "t";
 	if (unit !== expectedUnit)
 		fail(`${what}: unit ${unit} does not match ${id} (${expectedUnit})`);
-	const tonnes = ordinal(o, "tonnes", what);
-	if (tonnes === 0) fail(`${what}: a container drawn with no tonnes`);
+	// A death container's line is `amount`, in `unit`; a derelict's is `tonnes`.
+	const quantity = death ? "amount" : "tonnes";
+	const tonnes = ordinal(o, quantity, what);
+	if (tonnes === 0) fail(`${what}: a container drawn with no ${quantity}`);
 	const left = ordinal(o, "left", what);
 	if (left > tonnes)
 		fail(
