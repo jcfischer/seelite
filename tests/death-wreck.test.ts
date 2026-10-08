@@ -17,6 +17,7 @@ import { relayPosition, relayVelocity } from "../src/pirate-relay";
 import {
 	newCommanderRecord,
 	parseSave,
+	SAVE_SCHEMA_VERSION,
 	serializeSave,
 } from "../src/save-envelope";
 import {
@@ -649,7 +650,11 @@ test("sweep provenance names an own wreck but remains valid after it disappears"
 	const readings = sweepSources(world, 0, dying.systemIndex);
 	expect(hasOwnWreck(world)).toBe(true);
 	expect(
-		parseSweepReadings(readings, { ...newWorld(47), gameTime: DEATH_AT }),
+		parseSweepReadings(
+			readings,
+			{ ...newWorld(47), gameTime: DEATH_AT },
+			SAVE_SCHEMA_VERSION,
+		),
 	).toEqual(readings);
 });
 

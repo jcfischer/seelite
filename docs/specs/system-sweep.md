@@ -10,7 +10,9 @@ from zero. Cruise and docked actions refuse with a readable reason.
 Completion reads the current system once. Operational active pirate relays name
 the watched station's surrounds. Active derelict slots produce one salvage
 reading each. Operational raider slots produce **one** pressure region, around
-the outpost where one exists, otherwise in system space. Disabled ordinary
+the outpost where one exists, otherwise along the system's **cruise lanes**
+(node #769): raiders have no standing position, and a cruise leg is the only
+place the leg law brings one. Disabled ordinary
 carriers and repair tenders are never sweep sources. Derelict hull placement and
 capital content are separate builds. Node #732 gives a derelict a pose beside a
 planet or moon (`derelictPose`), but a derelict region still names system
@@ -36,6 +38,42 @@ refresh it. A past reading remains even if its source disappears; the next
 completed sweep replaces only this galaxy/system's readings, including
 absences, as `salvage.md` S22 requires.
 
+## Raider pressure strength — node #769
+
+A pressure row reads a **strength**, light, moderate or heavy, and never a
+count (#468 D5: a region of pressure, not a roster of ships). The strength
+buckets `raiderLegMeetChance` in `raider-slots.ts`: the leg law's chance for the
+system's government, times the share of its raider slots that are operational.
+That product is what a law leg delivers, because `scheduleEncounter` does not
+move a draw from a down slot to another. The edges are
+`PRESSURE_HEAVY_CHANCE` and `PRESSURE_MODERATE_CHANCE` in `system-sweep.ts`;
+at full strength they read governments 0–2 heavy, 3–5 moderate and 6–7 light,
+and every reachable product sits clear of both edges.
+
+Rulings taken at the build, open to the principal:
+
+- **Three levels.** Two would leave a downed raider invisible everywhere but
+  at one edge.
+- **Destroyed or repairing raider slots lower the strength until their
+  replacement is operational**, because the leg law is lower by exactly that
+  share. An anarchy that lost three of four raiders reads light.
+- **An outpost keeps its station name** as the region; the strength is on the
+  row's label in both cases. The outpost is the haven the pressure comes from
+  (#490).
+- **The strength is recorded at observation, like the region**, so a stale row
+  keeps the strength it was read at. Deriving it on read would make a row show
+  today's slot conditions, which is a refresh by looking.
+
+Save schema 15 adds the strength to pressure rows and the `cruise-lanes` region
+kind, which only a pressure row may name. A version 11–14 pressure row keeps
+its region exactly as observed and loads with a `null` strength, labelled
+*strength not recorded*; today's slots cannot say what it was, and the next
+sweep replaces it. Those versions refuse a row carrying either new field;
+version 15 refuses a pressure row without the strength key, a strength on any
+other row, and a `null` strength beside the cruise lanes.
+
+## Save
+
 Save schema 11 adds a required sweep ledger, empty or populated. Versions 2–10
 retain their original integrity check and migrate to an empty ledger. Those
 versions refuse an assembled sweep field; version 11 refuses a missing ledger.
@@ -50,8 +88,11 @@ placement: a historical reading survives later placement changes unchanged.
 Charge and console status are session state. The domain module owns charge,
 sources and parsing; `system-sweep-view.ts` owns the read-only cockpit projection.
 
-Verification: `tests/system-sweep.test.ts` covers charge/refusal, source purity,
-save validation and ages; `scripts/probe-system-sweep.mjs` covers the live
+## Verification
+
+`tests/system-sweep.test.ts` covers charge/refusal, source purity,
+save validation and ages, and node #769's buckets, the leg law's delivered
+rate, downed slots and the schema 11–14 migrations; `scripts/probe-system-sweep.mjs` covers the live
 console press, interruption, target isolation, save reload and relay proximity
 identification. This is scoped worker evidence; principal visual approval and
 the checkpoint gate remain the supervisor's delivery steps.

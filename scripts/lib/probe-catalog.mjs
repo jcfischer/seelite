@@ -88,7 +88,7 @@ export const PROBE_CATALOG = Object.freeze(
 		),
 		entry(
 			"probe-system-sweep.mjs",
-			"Presses the fitted left-console Sweep, steps its autonomous ten-second charge, checks source/age region rows without discovery or targets, cruise interruption/refusal, save reload, stale age and relay cue/identification at placed ranges (not flight-path evidence).",
+			"Presses the fitted left-console Sweep, steps its autonomous ten-second charge, checks source/age region rows without discovery or targets, cruise interruption/refusal, save reload, stale age, the pressure strength in an anarchy against a lawful system with its cruise-lanes region (node #769), and relay cue/identification at placed ranges (not flight-path evidence).",
 			[
 				"long-range scanner",
 				"system sweep",
