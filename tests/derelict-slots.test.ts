@@ -153,11 +153,13 @@ describe("the clock starts part-way through every slot's cycle", () => {
 	});
 
 	test("the share of systems with a live derelict holds at 20% ± 5 points from 0 h to 300 h", () => {
-		// The node's gate is on the pooled reading. A single seed's cell has a
-		// binomial spread of 2.5 points at 256 systems, so ±5 is two of them and
+		// This row holds the pooled reading to the band. The node's criterion,
+		// read plainly, is per seed, and it is not met: seed 47 at 4 h reads 14.5%
+		// (`docs/receipts/node-775-derelict-pacing.md`). A single seed's cell has
+		// a binomial spread of 2.5 points at 256 systems, so ±5 is two of them and
 		// a correct schedule puts about one cell in eighteen outside; the per-seed
-		// band below is a regression guard, not the gate. The receipt carries the
-		// per-seed table.
+		// band below is a regression guard against a ramp or a bias, not that
+		// criterion.
 		for (const h of GATED_H) {
 			const shares = SEEDS.map((seed) => systemShare(seed, h * HOUR));
 			const pooled = shares.reduce((a, b) => a + b, 0) / shares.length;

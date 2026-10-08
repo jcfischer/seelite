@@ -52,8 +52,8 @@ seed  expected     0 h    1 h    2 h    4 h    8 h   24 h   48 h  100 h  200 h  
    7     19.9%   22.3%  22.3%  23.0%  19.1%  21.1%  21.1%  18.4%  24.2%  23.0%  21.9%       22.4%
 pooled     19.9%   19.5%  19.1%  19.3%  17.7%  20.3%  18.8%  22.4%  20.6%  23.0%  20.1%       19.1%
 one cell's sampling spread at 20%: 2.5 points per seed, 1.4 pooled over 3
-gate per seed (0, 1, 4, 24, 100, 300 h, 20% ± 5 points): 1 of 18 cells OUTSIDE — seed 47 at 4 h reads 14.5%
-gate pooled: all 6 times inside
+node #775's criterion, per seed (0, 1, 4, 24, 100, 300 h, 20% ± 5 points): 1 of 18 cells OUTSIDE — seed 47 at 4 h reads 14.5%
+pooled over the seeds (this build's test row, not the criterion): all 6 times inside
 
 No ramp: slots adrift as the clock starts
   42  51 of 636 slots adrift at 0 h (8.0%), 51 of them lost before the clock started
@@ -80,8 +80,10 @@ seed  visits  with a wreck  cued   of all visits  of visits with a wreck
    `tests/derelict-slots.test.ts` holds the pooled slot share within ±2.5
    points of 8.5% at 0 h, 1 h and 300 h.
 2. **20% ± 5 points at 0, 1, 4, 24, 100 and 300 h, on three or more seeds.**
-   Met on the pooled reading: all six times fall within 17.7–23.0%. Not met
-   cell by cell: **seed 47 at 4 h reads 14.5%**, 1 of 18 cells. Seed 47's
+   **Not met as written.** Read plainly, the criterion is per seed, and
+   **seed 47 at 4 h reads 14.5%**, 1 of 18 cells. The pooled reading over the
+   three seeds is inside the band at all six times (17.7–23.0%), and that is
+   what this build's test row holds. Seed 47's
    0–4 h cells (16.8, 16.0, 15.6, 14.5%) share the same wrecks, which is why
    they move together. A single cell's binomial spread at 256 systems is 2.5
    points, so ±5 is about two of them. A correctly centred schedule (per-seed
@@ -119,6 +121,18 @@ seed  visits  with a wreck  cued   of all visits  of visits with a wreck
 
 - `bun test tests/derelict-slots.test.ts tests/derelict.test.ts tests/derelict-cockpit.test.ts tests/derelict-finding.test.ts tests/salvage-family.test.ts`: green.
 - `npm run probe:one` for `probe-system-sweep`, `probe-derelict` and `probe-requests`, on the GPU lane: each green.
+- **Wrecks at boot.** About 20% of systems now hold a wreck at game time 0,
+  against about 6% over the old first two hours. A wreck sits at a planet's
+  approach radius plus altitude, which is where the approach, handoff and
+  cinematic probes fly. I checked headlessly every world seed a probe pins
+  (1, 2, 5, 6, 8, 15, 19, 42, 47–51, 54 and 56), plus 481. Their start systems
+  are all lawful (governments 5–7, one or two slots), and **none holds a wreck
+  adrift at any point in 0–2 h**. That is why the other probes were not run
+  here. Probes that boot without a seed get a random world, as before, and
+  only see a wreck more often. `?system=` probes that pin another system
+  were not enumerated. The selector widened to all 95 probes because
+  `scripts/lib/derelict-state.mjs` is shared harness; the full suite is the
+  supervisor's run.
 - The view set's derelict views (`capture-views` via `placeDerelict`) now
   frame a different game time, the slot's next loss rather than its old first
   loss. A before/after reading on those rows therefore compares two clocks. I

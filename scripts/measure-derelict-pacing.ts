@@ -244,11 +244,11 @@ const cells = runs.flatMap((r) =>
 );
 const outside = cells.filter(({ x }) => !band(x));
 console.log(
-	`gate per seed (${GATED_H.join(", ")} h, 20% ± 5 points): ${outside.length === 0 ? `all ${cells.length} cells inside` : `${outside.length} of ${cells.length} cells OUTSIDE — ${outside.map(({ seed, h, x }) => `seed ${seed} at ${h} h reads ${pct(x)}`).join("; ")}`}`,
+	`node #775's criterion, per seed (${GATED_H.join(", ")} h, 20% ± 5 points): ${outside.length === 0 ? `all ${cells.length} cells inside` : `${outside.length} of ${cells.length} cells OUTSIDE — ${outside.map(({ seed, h, x }) => `seed ${seed} at ${h} h reads ${pct(x)}`).join("; ")}`}`,
 );
 const pooledOutside = GATED_H.filter((h) => !band(pooled[TIMES_H.indexOf(h)]));
 console.log(
-	`gate pooled: ${pooledOutside.length === 0 ? `all ${GATED_H.length} times inside` : `OUTSIDE at ${pooledOutside.map((h) => `${h} h`).join(", ")}`}`,
+	`pooled over the seeds (this build's test row, not the criterion): ${pooledOutside.length === 0 ? `all ${GATED_H.length} times inside` : `OUTSIDE at ${pooledOutside.map((h) => `${h} h`).join(", ")}`}`,
 );
 
 console.log("");
