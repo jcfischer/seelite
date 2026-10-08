@@ -1,61 +1,51 @@
 import { readFileSync } from "node:fs";
-import * as THREE from "three";
-export function readCoriolisGlb(name: string) {
-	// Read the shipped GLB vertex buffers, including node transforms. These tests
-	// measure the exported mesh, not a second description of the generator.
-	const file = readFileSync(
-		new URL("../../public/spikes/coriolis/" + name, import.meta.url),
-	);
+import { GLTFLoader } from "three/addons/loaders/GLTFLoader.js";
+import { MeshoptDecoder } from "three/addons/libs/meshopt_decoder.module.js";
+
+/** Decode the shipped geometry through the same loader as the browser.
+ * Remove only texture references: Bun has no image decoder. Materials, names,
+ * compressed vertex buffers and node transforms are retained, including normals.
+ */
+export async function readCoriolisGlb(name: string) {
+	const path =
+		name === "coriolis-industrial-flight.glb"
+			? "../../public/models/coriolis.glb"
+			: "../../public/spikes/coriolis/" + name;
+	const file = readFileSync(new URL(path, import.meta.url));
+	if (file.readUInt32LE(0) !== 0x46546c67 || file.readUInt32LE(4) !== 2)
+		throw new Error("Expected a glTF 2 binary");
 	const jsonLength = file.readUInt32LE(12);
 	const gltf = JSON.parse(file.subarray(20, 20 + jsonLength).toString());
-	const binaryStart = 20 + jsonLength + 8;
-	function attribute(index: number): Float32Array | Uint32Array | Uint16Array {
-		const a = gltf.accessors[index];
-		const view = gltf.bufferViews[a.bufferView];
-		const offset = binaryStart + (view.byteOffset ?? 0) + (a.byteOffset ?? 0);
-		const count = a.count * (a.type === "VEC3" ? 3 : 1);
-		const data = file.buffer.slice(
-			file.byteOffset + offset,
-			file.byteOffset + offset + count * (a.componentType === 5123 ? 2 : 4),
-		);
-		return a.componentType === 5126
-			? new Float32Array(data)
-			: a.componentType === 5123
-				? new Uint16Array(data)
-				: new Uint32Array(data);
-	}
-	const root = new THREE.Group();
-	function node(index: number, parent: THREE.Object3D) {
-		const n = gltf.nodes[index];
-		const group = new THREE.Group();
-		if (n.matrix) group.applyMatrix4(new THREE.Matrix4().fromArray(n.matrix));
-		else {
-			if (n.translation) group.position.fromArray(n.translation);
-			if (n.rotation) group.quaternion.fromArray(n.rotation);
-			if (n.scale) group.scale.fromArray(n.scale);
+	function stripTextures(value: Record<string, unknown>) {
+		for (const [key, child] of Object.entries(value)) {
+			if (key.endsWith("Texture")) delete value[key];
+			else if (child && typeof child === "object")
+				stripTextures(child as Record<string, unknown>);
 		}
-		parent.add(group);
-		if (n.mesh !== undefined)
-			for (const p of gltf.meshes[n.mesh].primitives) {
-				const geometry = new THREE.BufferGeometry();
-				geometry.setAttribute(
-					"position",
-					new THREE.BufferAttribute(attribute(p.attributes.POSITION), 3),
-				);
-				if (p.indices !== undefined)
-					geometry.setIndex(new THREE.BufferAttribute(attribute(p.indices), 1));
-				group.add(
-					new THREE.Mesh(
-						geometry,
-						new THREE.MeshBasicMaterial({ side: THREE.DoubleSide }),
-					),
-				);
-			}
-		for (const child of n.children ?? []) node(child, group);
 	}
-	for (const n of gltf.scenes[gltf.scene ?? 0].nodes) node(n, root);
-	root.scale.setScalar(0.001);
-	root.updateMatrixWorld(true);
-
-	return root;
+	for (const material of gltf.materials ?? []) stripTextures(material);
+	delete gltf.textures;
+	delete gltf.images;
+	for (const key of ["extensionsUsed", "extensionsRequired"])
+		if (gltf[key])
+			gltf[key] = gltf[key].filter((s: string) => s !== "EXT_texture_webp");
+	const json = Buffer.from(JSON.stringify(gltf));
+	const padded = Math.ceil(json.length / 4) * 4;
+	const binary = file.subarray(20 + jsonLength);
+	const output = Buffer.alloc(20 + padded + binary.length, 0x20);
+	file.copy(output, 0, 0, 20);
+	output.writeUInt32LE(output.length, 8);
+	output.writeUInt32LE(padded, 12);
+	json.copy(output, 20);
+	binary.copy(output, 20 + padded);
+	const data = output.buffer.slice(
+		output.byteOffset,
+		output.byteOffset + output.byteLength,
+	);
+	const { scene } = await new GLTFLoader()
+		.setMeshoptDecoder(MeshoptDecoder)
+		.parseAsync(data, "");
+	scene.scale.setScalar(0.001);
+	scene.updateMatrixWorld(true);
+	return scene;
 }

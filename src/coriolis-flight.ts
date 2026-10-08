@@ -1,5 +1,6 @@
 /** Default Coriolis: authored exterior with production berths and navigation fittings. */
 import * as THREE from "three";
+import { MeshoptDecoder } from "three/addons/libs/meshopt_decoder.module.js";
 import { GLTFLoader } from "three/addons/loaders/GLTFLoader.js";
 import {
 	buildCoriolisNavigation,
@@ -132,9 +133,9 @@ export function createIndustrialCoriolisBuilder(template: THREE.Group) {
 }
 
 async function loadIndustrialStationBuilder() {
-	const gltf = await new GLTFLoader().loadAsync(
-		"/spikes/coriolis/coriolis-industrial-flight.glb",
-	);
+	const gltf = await new GLTFLoader()
+		.setMeshoptDecoder(MeshoptDecoder)
+		.loadAsync("/models/coriolis.glb");
 	gltf.scene.traverse((o) => {
 		if (o instanceof THREE.Mesh) {
 			o.castShadow = true;
@@ -147,7 +148,45 @@ async function loadIndustrialStationBuilder() {
 let ready: Promise<void> | undefined;
 /** Await before any game, postcard or station workbench constructs station geometry. */
 export function prepareCoriolisModel(): Promise<void> {
-	return (ready ??= loadIndustrialStationBuilder().then(
-		installCoriolisBuilder,
-	));
+	return (ready ??= loadIndustrialStationBuilder()
+		.then(installCoriolisBuilder)
+		.catch((error) => {
+			ready = undefined;
+			throw error;
+		}));
+}
+
+/** The asset is required for the world, so an interrupted download gets a
+ * visible retry before any Game (or save-store attachment) is constructed. */
+export async function prepareCoriolisPage(): Promise<void> {
+	const panel = document.createElement("section");
+	panel.setAttribute("aria-label", "Loading game");
+	panel.style.cssText =
+		"position:fixed;inset:0;z-index:1000;display:grid;place-content:center;gap:1rem;background:#080c12;color:#dae1e8;font:16px system-ui;text-align:center";
+	const status = document.createElement("p");
+	status.setAttribute("role", "status");
+	panel.append(status);
+	document.body.append(panel);
+	try {
+		for (;;) {
+			status.textContent = "Loading station…";
+			try {
+				await prepareCoriolisModel();
+				return;
+			} catch (error) {
+				console.warn("Station download failed", error);
+				status.textContent =
+					"The station could not be loaded. Check your connection and try again.";
+				const retry = document.createElement("button");
+				retry.textContent = "Retry";
+				panel.append(retry);
+				await new Promise<void>((resolve) =>
+					retry.addEventListener("click", () => resolve(), { once: true }),
+				);
+				retry.remove();
+			}
+		}
+	} finally {
+		panel.remove();
+	}
 }

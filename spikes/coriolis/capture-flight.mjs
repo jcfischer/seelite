@@ -46,12 +46,25 @@ try{
  if(!launch.accepted||launch.phase!=='flying')throw Error('real launch failed');
  if(errors.length)throw Error(errors.join('\n'));
  const ordinary=await browser.newPage({viewport:{width:900,height:620}});
- const industrialRequests=[];ordinary.on('request',r=>{if(r.url().includes('coriolis-industrial'))industrialRequests.push(r.url());});
+ const industrialRequests=[];ordinary.on('request',r=>{if(r.url().endsWith('/models/coriolis.glb'))industrialRequests.push(r.url());});
  await ordinary.goto(gameUrl(origin,{seed:42,system:0,'no-save':true}));await bootedGame(ordinary,90000);
  const normalHasIndustrial=await ordinary.evaluate(()=>{const g=window.__seelite;return [g.nearScene,g.approachScene,g.farScene].some(s=>!!s.getObjectByName('industrial-coriolis-exterior'));});
  if(industrialRequests.length !== 1 || !normalHasIndustrial)throw Error('ordinary game did not load the default Coriolis');
  await ordinary.close();
- const report={initial,flight,docking,launch,errors,ordinary:{industrialRequests:industrialRequests.length,hasIndustrial:normalHasIndustrial}};
+ // Simulate one interrupted transfer, then use the player's retry control.
+ const recovery=await browser.newPage();let attempts=0;
+ await recovery.route('**/models/coriolis.glb',route=>++attempts===1?route.abort():route.continue());
+ await recovery.goto(gameUrl(origin,{seed:42,system:0,'no-save':true}));
+ await recovery.getByRole('button',{name:'Retry',exact:true}).click({timeout:90000});
+ await bootedGame(recovery,90000);
+ if(attempts!==2)throw Error('asset retry did not make exactly one fresh request');
+ await recovery.close();
+ const shipViewer=await browser.newPage();let shipAssetRequests=0;
+ shipViewer.on('request',r=>{if(r.url().endsWith('/models/coriolis.glb'))shipAssetRequests++;});
+ await shipViewer.goto(origin+'/?model-viewer=ship');await shipViewer.waitForTimeout(3000);
+ if(shipAssetRequests)throw Error('ship workbench downloaded the station asset');
+ await shipViewer.close();
+ const report={initial,flight,docking,launch,errors,retry:{attempts},shipViewer:{stationAssetRequests:shipAssetRequests},ordinary:{industrialRequests:industrialRequests.length,hasIndustrial:normalHasIndustrial}};
  await writeFile('.dream-loop/flight/report.json',JSON.stringify(report,null,2));
  console.log(JSON.stringify(report,null,2));
 }finally{await browser.close();await server.close();}

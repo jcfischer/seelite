@@ -20702,14 +20702,15 @@ if (postcard) {
 		throw new Error(
 			`postcard: entry accepted a refused recipe (${postcard.reason})`,
 		);
-	await (await import("./coriolis-flight")).prepareCoriolisModel();
+	await (await import("./coriolis-flight")).prepareCoriolisPage();
 	const game = new Game(postcard.recipe.seed, null, null, postcard.recipe);
 	game.clockHeld = true;
 	(window as unknown as { __seelite: Game }).__seelite = game;
 	const { mountPostcardViewer } = await import("./postcard-viewer");
 	mountPostcardViewer(game, postcard.recipe);
 } else if (query.has("model-viewer")) {
-	await (await import("./coriolis-flight")).prepareCoriolisModel();
+	if (query.get("model-viewer") === "station")
+		await (await import("./coriolis-flight")).prepareCoriolisPage();
 	const { mountModelViewer } = await import("./model-viewer");
 	mountModelViewer();
 	// The workbench owns an isolated render loop, so no live simulation is built
@@ -20768,7 +20769,12 @@ if (postcard) {
 	// `?seed=N` visit booted somebody else's galaxy with nothing said, so a
 	// direct boot sets the Commander aside. Without direct the overlay asks
 	// which world is wanted, and the seed only pre-fills New game (§11.6).
-	await (await import("./coriolis-flight")).prepareCoriolisModel();
+	// Fetch in parallel with the Commander catalog; wait only at world construction.
+	const stationModel = import("./coriolis-flight").then((m) =>
+		m.prepareCoriolisPage(),
+	);
+	// Keep a fast rejection handled while IndexedDB is still opening.
+	void stationModel.catch(() => {});
 	const boot = bootMode(query);
 	// **A pinned system writes nothing, and the plan is what says so** (§11.6,
 	// #432). Where the permission is computed and why it is the boot's rather than
@@ -20808,6 +20814,7 @@ if (postcard) {
 	// sat outside the guard: a record that parsed and then would not restore
 	// threw at module scope and the page did not boot at all. The bounds in
 	// `parseCommander` close the known route in; this closes the class.
+	await stationModel;
 	const worldSeed = plan.pending?.seed ?? askedSeed ?? randomSeed();
 	let game: Game;
 	try {

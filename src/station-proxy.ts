@@ -416,6 +416,9 @@ function tradeCoriolisProxy(): StationProxy {
 		axial(JACK_HALF, JACK_HALF, -f, f),
 		axial(ARM_REACH, ARM_HALF, -ARM_HALF, ARM_HALF),
 		axial(COLLAR_HALF, COLLAR_HALF, f, COLLAR_FRONT),
+		// Authored roof machinery and masts: the flight asset reaches 520.5 m
+		// on +Y, outside the original jack. This arm turns with the hull.
+		{ x0: -0.245, x1: 0.245, y0: f, y1: 0.523, z0: -0.065, z1: 0.065 },
 	];
 
 	const VERTEX_RADIUS = 0.05;

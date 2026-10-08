@@ -433,7 +433,9 @@ for text,loc,size in [('03',(168,26,F+12.1),42),('CORIOLIS',(-104,-125,F+9),12),
 # Retain editable authoring source outside the web-served directory.
 bpy.ops.file.pack_all()
 if not FLIGHT:bpy.ops.wm.save_as_mainfile(filepath=str(ROOT/'spikes/coriolis/coriolis-industrial.blend'))
-bpy.ops.export_scene.gltf(filepath=str(OUT/(ASSET+'.glb')),export_format='GLB',export_yup=False,export_apply=True,export_materials='EXPORT',export_extras=True)
+FLIGHT_OUT = ROOT / '.dream-loop'
+FLIGHT_OUT.mkdir(exist_ok=True)
+bpy.ops.export_scene.gltf(filepath=str((FLIGHT_OUT if FLIGHT else OUT)/(ASSET+'.glb')),export_format='GLB',export_yup=False,export_apply=True,export_materials='EXPORT',export_extras=True)
 # Blender's glTF exporter keeps the image but drops the constant multiplier
 # on this node graph. Carry that authored linear tint into the standard PBR
 # factor explicitly, so every independent GLB viewer gets the same materials.

@@ -97,8 +97,8 @@ test("other station forms retain their existing builder", () => {
 });
 
 import { readCoriolisGlb } from "./helpers/read-coriolis-glb";
-test("flight export removes the display tunnel and its end cap across the whole slot", () => {
-	const root = readCoriolisGlb("coriolis-industrial-flight.glb");
+test("flight export removes the display tunnel and its end cap across the whole slot", async () => {
+	const root = await readCoriolisGlb("coriolis-industrial-flight.glb");
 	for (const x of [-0.0599, 0, 0.0599])
 		for (const y of [-0.0349, 0, 0.0349]) {
 			const hit = new THREE.Raycaster(
@@ -110,17 +110,11 @@ test("flight export removes the display tunnel and its end cap across the whole 
 		}
 });
 
-test("installed Coriolis is the canonical station builder without a URL flag", () => {
+test("installed Coriolis is the canonical station builder without a URL flag", async () => {
 	const s = makeWorldAtSystem(42, 0).system.contents.stations.find(
 		(s) => s.type === "trade" && s.formId === "a",
 	)!;
-	const template = new THREE.Group();
-	template.add(
-		new THREE.Mesh(
-			new THREE.BoxGeometry(800, 800, 800),
-			new THREE.MeshStandardMaterial(),
-		),
-	);
+	const template = await readCoriolisGlb("coriolis-industrial-flight.glb");
 	const build = createIndustrialCoriolisBuilder(template);
 	installCoriolisBuilder(build);
 	try {
@@ -152,3 +146,80 @@ test("imported lights obey the live emissive ceiling while retaining their relat
 	expect(warm.emissiveIntensity).toBe(0.8);
 	station.dispose();
 });
+
+import { setStationDetail, stationSilhouetteKm } from "../src/station-mesh";
+import { resourcesOf, isShared, type Disposable } from "../src/gpu-teardown";
+import {
+	stationProxy,
+	proxyReachKm,
+	proxyContains,
+	PROXY_VERTEX_TOLERANCE_KM,
+} from "../src/station-proxy";
+import {
+	verticesOutsideProxy,
+	openingOf,
+	spinningOpeningPoints,
+	extractVertices,
+} from "./helpers/station-proxy-measure";
+
+test("shipped flight asset and production bay obey collision, reach, detail and shared-resource contracts", async () => {
+	const template = await readCoriolisGlb("coriolis-industrial-flight.glb");
+	const build = createIndustrialCoriolisBuilder(template);
+	const proxy = stationProxy("trade", "a", 0, 0)!;
+	const opening = openingOf("trade", "a");
+	expect(proxyReachKm(proxy)).toBeLessThanOrEqual(
+		stationSilhouetteKm("trade", "a"),
+	);
+	expect(
+		spinningOpeningPoints(opening).some((p) =>
+			proxyContains(proxy.spinning, p.x, p.y, p.z, -1e-9),
+		),
+	).toBe(false);
+	for (const seed of [0, 1, 7]) {
+		const mesh = build(seed, 0x9aa6b2);
+		const other = build(seed + 1, 0x9aa6b2);
+		expect(
+			verticesOutsideProxy(
+				mesh,
+				"trade",
+				proxy,
+				opening,
+				PROXY_VERTEX_TOLERANCE_KM,
+			),
+		).toEqual([]);
+		const vertices = extractVertices(mesh, "trade");
+		expect(vertices.length).toBeGreaterThan(100_000);
+		expect(
+			vertices.reduce((max, { v }) => Math.max(max, v.length()), 0),
+		).toBeLessThanOrEqual(stationSilhouetteKm("trade", "a"));
+		const core = mesh.root.getObjectByName("core") as THREE.Mesh<
+			THREE.BufferGeometry,
+			THREE.MeshStandardMaterial
+		>;
+		expect(core).toBeDefined();
+		expect(core.material.color.getHex()).toBe(0x9aa6b2);
+		expect(mesh.fixtures.filter((f) => f.kind === "chase")).toHaveLength(10);
+		expect(mesh.nameplates).toHaveLength(2);
+		expect(mesh.accessories.length).toBeGreaterThan(0);
+		for (const level of ["outline", "reduced", "full"] as const) {
+			setStationDetail(mesh, level);
+			expect(core.visible).toBe(true);
+			for (const accessory of mesh.accessories)
+				expect(accessory.visible).toBe(
+					accessory.userData.minDetail === "full"
+						? level === "full"
+						: level !== "outline",
+				);
+		}
+		const stillLive = resourcesOf(other.root);
+		const resources = resourcesOf(mesh.root);
+		const freed = new Set<Disposable>();
+		for (const resource of resources)
+			resource.addEventListener("dispose", () => freed.add(resource));
+		mesh.dispose();
+		expect(freed.size).toBeGreaterThan(0);
+		expect([...resources].filter(isShared).length).toBeGreaterThan(0);
+		expect([...freed].some((r) => stillLive.has(r))).toBe(false);
+		other.dispose();
+	}
+}, 30_000);

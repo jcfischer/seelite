@@ -4,7 +4,7 @@ import * as THREE from "three";
 import { STATION_GEOMETRY } from "../src/station";
 import { STATION_FORMS } from "../src/station-mesh";
 
-const root = readCoriolisGlb("coriolis-industrial.glb");
+const root = await readCoriolisGlb("coriolis-industrial.glb");
 
 describe("Coriolis spike export", () => {
 	test("all actual vertices remain within the declared Coriolis display reach", () => {
