@@ -1,7 +1,8 @@
 import { mkdir, writeFile } from "node:fs/promises";
-import { launchChromium, guardedOrigin } from "../../scripts/probe-guard.mjs";
 import { assertBrowserRenderer } from "../../scripts/lib/players-renderer.mjs";
 import { holdProbeLockOrExit } from "../../scripts/lib/probe-lock.mjs";
+import { guardedOrigin, launchChromium } from "../../scripts/probe-guard.mjs";
+
 const origin = "http://127.0.0.1:5197";
 const label = process.argv[2] ?? "round-1";
 if (!/^[a-zA-Z0-9_-]+$/.test(label)) throw Error("Invalid capture label");
@@ -27,7 +28,15 @@ try {
 	const gpu = await assertBrowserRenderer(page, "courier hull capture");
 	await page.waitForTimeout(1500);
 	await page.evaluate(() => window.__courier.capture());
-	for (const view of ["hero", "front", "top", "rear", "detail", "under"]) {
+	for (const view of [
+		"hero",
+		"front",
+		"top",
+		"rear",
+		"detail",
+		"interior",
+		"under",
+	]) {
 		await page.evaluate((v) => window.__courier.setView(v), view);
 		await page.waitForTimeout(700);
 		await page.screenshot({ path: `${out}/${view}.png` });

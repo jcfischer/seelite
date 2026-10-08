@@ -1,14 +1,15 @@
 /** Isolated metre-scale authored hull viewer. Does not construct a Game. */
 import * as THREE from "three";
 import { OrbitControls } from "three/addons/controls/OrbitControls.js";
-import { GLTFLoader } from "three/addons/loaders/GLTFLoader.js";
 import { RoomEnvironment } from "three/addons/environments/RoomEnvironment.js";
+import { GLTFLoader } from "three/addons/loaders/GLTFLoader.js";
 import { EffectComposer } from "three/addons/postprocessing/EffectComposer.js";
-import { RenderPass } from "three/addons/postprocessing/RenderPass.js";
-import { UnrealBloomPass } from "three/addons/postprocessing/UnrealBloomPass.js";
 import { OutputPass } from "three/addons/postprocessing/OutputPass.js";
+import { RenderPass } from "three/addons/postprocessing/RenderPass.js";
 import { SMAAPass } from "three/addons/postprocessing/SMAAPass.js";
 import { SSAOPass } from "three/addons/postprocessing/SSAOPass.js";
+import { UnrealBloomPass } from "three/addons/postprocessing/UnrealBloomPass.js";
+import { makeDisplay } from "./cockpit-instruments";
 
 const renderer = new THREE.WebGLRenderer({
 	antialias: true,
@@ -110,12 +111,16 @@ composer.addPass(new OutputPass());
 composer.addPass(new SMAAPass(innerWidth, innerHeight));
 const ship = new THREE.Group();
 scene.add(ship);
-const views: Record<string, { position: number[]; target: number[] }> = {
+const views: Record<
+	string,
+	{ position: number[]; target: number[]; fov?: number }
+> = {
 	hero: { position: [-57, 44, 69], target: [-3, 0, 1] },
 	front: { position: [0, 8, 128], target: [0, 0, 0] },
 	top: { position: [0, 128, 0.01], target: [0, 0, 1] },
 	rear: { position: [70, 43, -108], target: [0, 0, -3] },
 	detail: { position: [-16, 19, 37], target: [0, 2, 12] },
+	interior: { position: [0, 4.4, 10.75], target: [0, 3.15, 13], fov: 64 },
 	under: { position: [-64, -70, 84], target: [0, 0, 0] },
 };
 let rotating = false;
@@ -125,11 +130,14 @@ function setView(name: string) {
 	if (!v) return;
 	selectedView = name;
 	ship.rotation.set(0, 0, 0);
+	camera.fov = v.fov ?? 26;
+	camera.updateProjectionMatrix();
+	controls.minDistance = name === "interior" ? 0.2 : 5;
 	camera.position.fromArray(v.position);
 	controls.target.fromArray(v.target);
 	camera.position
 		.sub(controls.target)
-		.multiplyScalar(Math.max(1, 1.6 / camera.aspect))
+		.multiplyScalar(name === "interior" ? 1 : Math.max(1, 1.6 / camera.aspect))
 		.add(controls.target);
 	controls.update();
 }
@@ -149,6 +157,8 @@ new GLTFLoader().load(
 	(gltf) => {
 		gltf.scene.traverse((o) => {
 			if (o instanceof THREE.Mesh) {
+				if (o.name.startsWith("interior-screen-"))
+					o.material = makeDisplay(o.name.slice("interior-screen-".length));
 				o.castShadow = true;
 				o.receiveShadow = true;
 				stats.meshCount++;
@@ -214,7 +224,11 @@ addEventListener("resize", () => {
 	camera.aspect = innerWidth / innerHeight;
 	camera.position
 		.sub(controls.target)
-		.multiplyScalar(Math.max(1, 1.6 / camera.aspect) / oldFit)
+		.multiplyScalar(
+			selectedView === "interior"
+				? 1
+				: Math.max(1, 1.6 / camera.aspect) / oldFit,
+		)
 		.add(controls.target);
 	camera.updateProjectionMatrix();
 	renderer.setSize(innerWidth, innerHeight);

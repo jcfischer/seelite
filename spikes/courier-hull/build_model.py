@@ -1,10 +1,12 @@
 """O4 courier exterior study. Blender --background --python this_file.py.
 Metres, Y up, +Z forward. Material-batched authored geometry; seeded detail.
 """
-import bpy, bmesh, math, random, json, struct
+import bpy, bmesh, math, random, json, struct, sys
 from pathlib import Path
 from mathutils import Vector
 OUT=Path(__file__).resolve().parent
+sys.path.insert(0,str(OUT))
+from adapt_cockpit import append_adapted_cockpit
 random.seed(795)
 bpy.ops.object.select_all(action='SELECT'); bpy.ops.object.delete(use_global=False)
 MATS={}; BATCH={}; GROUP_MAT={}
@@ -259,7 +261,6 @@ for row in cr:
 poly([cr[0][3],cr[0][2],cr[0][1],cr[0][0]],blue[1])
 poly(cr[-1],glass,'canopy-glass')
 box((0,1.95,14.5),(3.5,.2,15.0),black)
-box((0,2.45,10),(1.25,.75,1.5),steel);box((0,3.25,9.6),(1.3,1.4,.4),steel)
 # Seated courier pilot, facing +Z, with hands on paired control grips.
 ellipsoid((0,3.0,10.2),(.35,.22,.26),pilot_suit)
 ellipsoid((0,3.52,10.1),(.39,.55,.235),pilot_suit)
@@ -282,16 +283,11 @@ for side in [-1,1]:
  box((side*.19,3.52,10.335),(.075,.64,.045),pilot_trim)
  box((side*.47,2.99,11.43),(.32,.15,.50),steel)
  tube((side*.47,3.04,11.40),(side*.47,3.18,11.30),.045,pilot_gloves,12)
+ tube((side*.47,2.93,10.35),(side*.47,2.93,11.45),.07,steel,12)
 box((0,3.15,10.40),(.50,.08,.045),pilot_trim)
 box((0,3.15,10.435),(.12,.10,.025),alloy)
 box((-.12,3.72,10.355),(.10,.13,.035),pilot_helmet)
-box((0,2.58,17.8),(2.8,.34,1.35),steel)
-for x in [-.9,0,.9]:
- box((x,2.77,17.7),(.68,.08,.68),black);box((x,2.815,17.7),(.5,.018,.44),warm if x==0 else cyan)
 for side in [-1,1]:
- box((side*1.3,2.6,13),(.6,.7,5.4),steel)
- for z in [11.3,12.3,13.3,14.3,15.3]:
-  box((side*1.3,2.97,z),(.3,.035,.16),cyan)
  # Nose side service conduit follows the taper, hugging the upper chine.
  path=[]
  for z in [2,8,14,20,26,30]:
@@ -481,6 +477,7 @@ for name,(verts,faces,uvs) in BATCH.items():
  if GROUP_MAT[name] in blue+ivory:
   bevel=ob.modifiers.new('machined-edge-radius','BEVEL');bevel.width=.075;bevel.segments=2
   normal=ob.modifiers.new('weighted-panel-normals','WEIGHTED_NORMAL');normal.keep_sharp=True
+append_adapted_cockpit(OUT,MATS)
 bpy.ops.file.pack_all()
 bpy.ops.wm.save_as_mainfile(filepath=str(OUT/'courier-hull.blend'))
 glb=OUT/'courier-hull.glb'

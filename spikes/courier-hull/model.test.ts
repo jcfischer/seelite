@@ -99,6 +99,46 @@ test("pressure body and both nacelles are closed, outward-wound shells", () => {
 		maximumClearance,
 		"dorsal covers follow the hull, with no tall floating housings",
 	).toBeLessThan(0.25);
+	const cabin = doc.nodes.filter((n: { name: string }) =>
+		n.name?.startsWith("interior-"),
+	);
+	expect(cabin.length).toBeGreaterThanOrEqual(8);
+	const canopy = [
+		[6.5, 2.7, 4.6, 3.45],
+		[10.5, 2.65, 5.5, 3.45],
+		[15, 2.35, 4.8, 3.08],
+		[19.5, 1.85, 3.7, 2.5],
+		[23, 1.03, 2.25, 2.0],
+	];
+	const outside: string[] = [];
+	for (const node of cabin)
+		for (const p of doc.meshes[node.mesh].primitives) {
+			for (const [x, y, z] of accessor(p.attributes.POSITION, 3)) {
+				const index = canopy.findIndex(
+					(a, i) => i < canopy.length - 1 && a[0] <= z && z <= canopy[i + 1][0],
+				);
+				if (index < 0 || y < 1.82) {
+					outside.push(`${node.name}: outside cabin length/floor`);
+					break;
+				}
+				const a = canopy[index],
+					b = canopy[index + 1],
+					t = (z - a[0]) / (b[0] - a[0]);
+				const width = a[1] + (b[1] - a[1]) * t,
+					roof = a[2] + (b[2] - a[2]) * t,
+					sill = a[3] + (b[3] - a[3]) * t;
+				const clearWidth =
+					width * (1 - 0.22 * Math.max(0, (y - sill) / (roof - sill)));
+				if (y > roof || Math.abs(x) > clearWidth) {
+					outside.push(`${node.name}: crosses canopy at ${[x, y, z]}`);
+					break;
+				}
+			}
+		}
+	expect(
+		outside,
+		"adapted real cockpit stays inside the tapered canopy and above the floor",
+	).toEqual([]);
 });
 
 test("export is a textured, bounded 3D courier with real depth and two engine bays", () => {
@@ -114,6 +154,8 @@ test("export is a textured, bounded 3D courier with real depth and two engine ba
 	expect(names).toContain("pilot-suit");
 	expect(names).toContain("pilot-helmet");
 	expect(names).toContain("pilot-visor");
+	for (const name of ["radar", "flight", "systems", "target"])
+		expect(names).toContain(`screen-${name}`);
 	for (const mesh of json.meshes.filter((m: { name: string }) =>
 		m.name.startsWith("pilot-"),
 	)) {
