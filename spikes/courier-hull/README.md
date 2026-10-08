@@ -2,6 +2,8 @@
 
 Refs jcfischer/seelite#795. Isolated exterior model study of the principal-selected O4 image: O3's long tapered hull with O2's industrial construction. Requested stopping point: approximately 6.5/10 in an independent Dream Loop visual comparison.
 
+Principal approved the flagship study on 2026-10-08. See [INTEGRATION.md](INTEGRATION.md) for the receiving agent’s integration and deployment handoff.
+
 ## View
 
 From this worktree, run `npm run dev -- --host 127.0.0.1 --port 5197 --strictPort`, then open http://127.0.0.1:5197/spikes/courier-hull/.
