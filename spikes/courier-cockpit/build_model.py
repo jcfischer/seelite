@@ -116,7 +116,7 @@ def plane(name,c,w,h,a):
     obj=bpy.data.objects.new(name,mesh);bpy.context.collection.objects.link(obj)
     obj.data.materials.append(MATS[black]);return obj
 
-A=-.62
+A=-.82
 def panel(name,c,w,h):
     c=Vector(c);u,v,n=basis(A)
     def p(x,y,z=0):return c+u*x+v*y+n*z
@@ -177,9 +177,11 @@ box((-.7,-1.5,-1.55),(.14,.23,.07),red,A)
 
 # Lower equipment under the glass sill. Screen meshes share that exact transform.
 for name,(vs,fs,uvs) in BATCH.items():
-    BATCH[name][0]=[(x,y-.91,z) for x,y,z in vs]
+    BATCH[name][0]=[(x*1.12,y-1.16,z+.20) for x,y,z in vs]
 for obj in bpy.data.objects:
-    if obj.name.startswith(('screen-','label-','key-')):obj.location.z-=.91
+    if obj.name.startswith(('screen-','label-','key-')):
+        for v in obj.data.vertices:
+            v.co.x*=1.12;v.co.y-=.20;v.co.z-=1.16
 
 # Enclosed service cowling: no stars through gaps between equipment pods.
 box((0,-2.18,-2.63),(5.15,1.6,.16),dark,A)
@@ -192,14 +194,14 @@ for s in [-1,1]:
         box((s*2.57,-1.30,z),(.5,.045,.45),steel)
         for k in range(6):box((s*(2.38+k*.065),-1.27,z),(.025,.018,.25),black)
     # A narrower longitudinal structural hoop follows the upper blister.
-    support=[(s*2.5,-1.4,-3.4),(s*2.5,-1.02,-3.02),(s*2.4,.18,-1.8),(s*1.7,.72,-.3),(s*.95,.82,.7)]
-    curve_path(support,.12,steel)
-    curve_path([(x-s*.065,y+.015,z+.065) for x,y,z in support],.035,black)
-    curve_path([(x-s*.028,y+.04,z+.075) for x,y,z in support],.016,alloy)
+    support=[(s*1.95,-1.68,-3.78),(s*2.5,-1.4,-3.4),(s*2.5,-1.02,-3.02),(s*2.4,.18,-1.8),(s*1.7,.72,-.3),(s*.95,.82,.7)]
+    curve_path(support,.17,steel,sides=20)
+    curve_path([(x-s*.085,y+.015,z+.11) for x,y,z in support],.055,black,sides=16)
+    curve_path([(x-s*.035,y+.04,z+.14) for x,y,z in support],.022,alloy)
     for i in range(5):
-        p=Vector(support[1]).lerp(Vector(support[2]),i/4)
+        p=Vector(support[2]).lerp(Vector(support[3]),i/4)
         tube(p+Vector((0,0,.07)),p+Vector((0,0,.1)),.025,alloy,8)
-    p=Vector(support[1]).lerp(Vector(support[2]),.42)
+    p=Vector(support[2]).lerp(Vector(support[3]),.42)
     box(p+Vector((0,0,.09)),(.075,.2,.025),warm)
 
 # Joined front coaming follows the low curved windshield edge, below the view.
@@ -222,7 +224,7 @@ for s in [-1,1]:
         for x in [s*2.46,s*2.88]:tube((x,-1.33,z-.16),(x,-1.31,z-.16),.025,alloy,8)
     for k in range(2):
         x=s*(2.45+k*.12)
-        path([(x,-1.35,1),(x,-1.32,-1.1),(x,-1.12,-2.3),(s*1.7,-1.1,-4.2)],.042,black)
+        path([(x,-1.35,1),(x,-1.32,-1.1),(x,-1.62,-2.3),(s*1.9,-1.78,-3.22)],.042,black)
         for j in range(32):
             z=.9-j*.10;tube((x,-1.34,z),(x,-1.34,z+.035),.05,alloy if j%8==0 else dark)
     # Low sloping perimeter: drawn along the courier A glass edge, not a flat bridge.
@@ -272,13 +274,13 @@ for s in [-1,1]:
         for dx in [-.17,.17]:tube((x+dx,-2.205,-1.19),(x+dx,-2.18,-1.19),.018,alloy,8)
     # Reachable rotary selectors with concentric machined collars.
     for j in range(2):
-        c=Vector((s*(1.25+j*.42),-2.12,-1.18))
+        c=Vector((s*(1.25+j*.42),-2.50,-.85))
         tube(c,c+Vector((0,.10,.10)),.095,alloy,20)
         tube(c+Vector((0,.08,.08)),c+Vector((0,.19,.19)),.071,black,16)
         box(c+Vector((0,.2,.2)),(.012,.017,.033),ochre)
     for z in [-2.8,-2.4,-2.0,-1.6]:
-        box((s*2.12,-1.86,z),(.13,.09,.19),dark)
-        box((s*2.12,-1.8,z),(.075,.018,.1),warm if z==-2.4 else black)
+        box((s*2.98,-1.86,z),(.13,.09,.19),dark)
+        box((s*2.98,-1.8,z),(.075,.018,.1),warm if z==-2.4 else black)
 
 # Floor and seat give orbit inspection a complete, compact occupied volume.
 box((0,-3.02,.25),(4.2,.15,5.1),dark)
@@ -297,7 +299,9 @@ for center,w,h in [((0,-.87,-2.35),1.62,1.20),((-1.53,-.81,-2.42),1.32,.72),((1.
     for i in range(75):
         x=random.uniform(-w/2+.04,w/2-.04)
         y=random.choice([-1,1])*(h/2-random.uniform(.025,.09))
-        box(c+u*x+v*y+n*.167,(random.uniform(.005,.024),.003,.002),alloy,A)
+        q=c+u*x+v*y+n*.167
+        q.x*=1.12;q.y-=.25;q.z+=.20
+        box(q,(random.uniform(.005,.024),.003,.002),alloy,A)
 
 for name,(verts,faces,uvs) in BATCH.items():
     if not faces:continue
