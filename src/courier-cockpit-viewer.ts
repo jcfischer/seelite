@@ -10,7 +10,11 @@ import { EffectComposer } from "three/addons/postprocessing/EffectComposer.js";
 import { RenderPass } from "three/addons/postprocessing/RenderPass.js";
 import { UnrealBloomPass } from "three/addons/postprocessing/UnrealBloomPass.js";
 import { OutputPass } from "three/addons/postprocessing/OutputPass.js";
-import { COCKPIT_TINTS } from "./cockpit-model";
+import {
+	adoptCockpitMaterial,
+	COCKPIT_MODEL_LAMPS,
+	cockpitLabelText,
+} from "./cockpit-model";
 import { buildShipMesh } from "./ship-mesh";
 
 const assets = "/spikes/courier-cockpit/";
@@ -68,13 +72,11 @@ scene.add(fill);
 const inspection = new THREE.DirectionalLight(0xd4ecff, 0);
 inspection.position.set(0, 4, 4);
 scene.add(inspection);
-for (const [x, color, power] of [
-	[-1.6, 0x39c2e8, 5],
-	[1.6, 0xffae54, 4],
-	[0, 0xffb050, 1.5],
-]) {
-	const lamp = new THREE.PointLight(color, power, 4, 2);
-	lamp.position.set(x, -1.65, -1.65);
+// The game's console lamps (`cockpit-model.ts`), at their model-metre figures.
+for (const l of COCKPIT_MODEL_LAMPS) {
+	const lamp = new THREE.PointLight(l.color, l.intensity, l.rangeM, 2);
+	const [x, y, z] = l.positionM;
+	lamp.position.set(x, y, z);
 	scene.add(lamp);
 }
 const composer = new EffectComposer(renderer);
@@ -279,39 +281,12 @@ function makeEquipmentLabel(name: string) {
 	const ctx = canvas.getContext("2d")!;
 	ctx.fillStyle = "#111719";
 	ctx.fillRect(0, 0, canvas.width, canvas.height);
-	const labels: Record<string, string> = {
-		"label-radar": "SCOPE  /  RANGE SELECT",
-		"label-flight": "FLIGHT  /  RELATIVE",
-		"label-systems": "POWER DISTRIBUTION",
-		"label-target": "NAVIGATION COMPUTER",
-	};
-	const keys = [
-		"1",
-		"2",
-		"3",
-		"NAV",
-		"ENT",
-		"4",
-		"5",
-		"6",
-		"DCK",
-		"CLR",
-		"7",
-		"8",
-		"9",
-		"COM",
-		"0",
-	];
 	const key = name.startsWith("key-");
 	ctx.fillStyle = key ? "#e4c896" : "#aebdc0";
 	ctx.font = `${key ? 120 : 46}px monospace`;
 	ctx.textAlign = "center";
 	ctx.textBaseline = "middle";
-	ctx.fillText(
-		key ? (keys[Number(name.slice(4))] ?? "") : (labels[name] ?? ""),
-		canvas.width / 2,
-		canvas.height / 2,
-	);
+	ctx.fillText(cockpitLabelText(name), canvas.width / 2, canvas.height / 2);
 	const map = new THREE.CanvasTexture(canvas);
 	map.colorSpace = THREE.SRGBColorSpace;
 	map.flipY = false;
@@ -373,7 +348,6 @@ function setView(name: string) {
 	if (station) station.visible = name === "pilot";
 	stars.visible = name === "pilot";
 	hull.visible = name === "pilot" || fit;
-	if (name !== "pilot" && !fit) hull.visible = false;
 	skyBackdrop.visible = name === "pilot";
 	scene.background = new THREE.Color(0x030609);
 	stats.view = view;
@@ -498,18 +472,9 @@ try {
 			}
 			for (const m of Array.isArray(o.material) ? o.material : [o.material])
 				if (m instanceof THREE.MeshStandardMaterial && m.map) {
-					// The game's palette (`cockpit-model.ts`), so the viewer shows
-					// the colours that ship.
-					m.color.setHex(COCKPIT_TINTS[m.name] ?? 0xffffff);
-					m.envMapIntensity = 1.15;
-					if (m.name !== "exposed-machined-edges") {
-						m.metalness = 0.65;
-						m.roughness = m.name === "graphite-housings" ? 0.42 : 0.34;
-					}
-					m.map.anisotropy = 8;
-					m.bumpMap = m.map;
-					m.bumpScale = 0.004;
-					m.needsUpdate = true;
+					// The game's tuning (`cockpit-model.ts`), so the viewer shows
+					// the materials that ship.
+					adoptCockpitMaterial(m);
 				}
 		}
 	});

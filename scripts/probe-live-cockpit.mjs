@@ -140,11 +140,12 @@ function measureLiveCockpit() {
 		scannerReferenceLine?.geometry?.getAttribute("position");
 	/**
 	 * How a drawn live face sits on the authored screen it belongs on (#792),
-	 * read off the face's own vertices rather than its mount — the mount is
-	 * built from the same quad, so comparing the two would only restate the
-	 * construction. Measured in the screen's plane: the face's centre against
-	 * the quad's, as a fraction of the quad's diagonal; whether every face
-	 * corner lies inside the quad; and how much of the binding side it fills.
+	 * read off the face's own vertices in the screen's plane. The centre
+	 * offset is close to construction — the face sits at its mount's origin,
+	 * and the mount is placed at the quad's centre — so it guards only a face
+	 * moved inside its mount. `inside` and `fill` are the independent part:
+	 * every face corner within the quad, and the binding side filled, which a
+	 * mis-scaled or mis-oriented face fails.
 	 */
 	const faceFit = (screenName, faceName) => {
 		const quad = game.cabinScene.getObjectByName(`screen-${screenName}`);
@@ -181,8 +182,13 @@ function measureLiveCockpit() {
 			return null;
 		};
 		const topLeft = at(0, 0);
-		const across = sub(at(1, 0), topLeft);
-		const upward = sub(topLeft, at(0, 1));
+		const topRight = at(1, 0);
+		const bottomLeft = at(0, 1);
+		// A re-exported quad with shifted texture coordinates reads as a
+		// missing fit, not as a crash of the whole measurement.
+		if (!topLeft || !topRight || !bottomLeft) return null;
+		const across = sub(topRight, topLeft);
+		const upward = sub(topLeft, bottomLeft);
 		const width = len(across);
 		const height = len(upward);
 		const right = across.map((c) => c / width);

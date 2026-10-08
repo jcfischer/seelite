@@ -21,7 +21,7 @@
 import * as THREE from "three";
 import { MeshoptDecoder } from "three/addons/libs/meshopt_decoder.module.js";
 import { GLTFLoader } from "three/addons/loaders/GLTFLoader.js";
-import { CABIN_SCALE } from "./cabin-pass";
+import { CABIN_SCALE, cabinLight } from "./cabin-pass";
 import { shared } from "./gpu-teardown";
 import { EMISSIVE_CEILING } from "./light-rig";
 
@@ -168,7 +168,7 @@ export function screenMount(frame: ScreenFrame): THREE.Group {
 	return mount;
 }
 
-const LABELS: Record<string, string> = {
+const LABELS: Readonly<Record<string, string>> = {
 	"label-radar": "SCOPE  /  RANGE SELECT",
 	"label-flight": "FLIGHT  /  RELATIVE",
 	"label-systems": "POWER DISTRIBUTION",
@@ -192,6 +192,12 @@ const KEYS = [
 	"0",
 ];
 
+/** What a `label-*` or `key-*` mesh says. Static text, never a reading. */
+export const cockpitLabelText = (name: string): string =>
+	name.startsWith("key-")
+		? (KEYS[Number(name.slice(4))] ?? "")
+		: (LABELS[name] ?? "");
+
 /** A painted equipment label or key cap. Static text, never a reading. */
 function labelMaterial(name: string): THREE.MeshBasicMaterial {
 	const key = name.startsWith("key-");
@@ -205,11 +211,7 @@ function labelMaterial(name: string): THREE.MeshBasicMaterial {
 	ctx.font = `${key ? 52 : 46}px monospace`;
 	ctx.textAlign = "center";
 	ctx.textBaseline = "middle";
-	ctx.fillText(
-		key ? (KEYS[Number(name.slice(4))] ?? "") : (LABELS[name] ?? ""),
-		canvas.width / 2,
-		canvas.height / 2,
-	);
+	ctx.fillText(cockpitLabelText(name), canvas.width / 2, canvas.height / 2);
 	const map = new THREE.CanvasTexture(canvas);
 	map.colorSpace = THREE.SRGBColorSpace;
 	// glTF texture coordinates are not flipped.
@@ -228,6 +230,37 @@ export interface AuthoredCabin {
 
 let template: THREE.Group | null = null;
 
+/**
+ * The tuning a mapped model material gets: the exporter-dropped tint, its
+ * finish and the albedo as a faint bump. One function so the review viewer
+ * shows the materials the game ships. Unmapped materials are left alone.
+ */
+export function adoptCockpitMaterial(m: THREE.MeshStandardMaterial): void {
+	if (!m.map) return;
+	m.color.setHex(COCKPIT_TINTS[m.name] ?? 0xffffff);
+	m.envMapIntensity = 1.15;
+	if (m.name !== "exposed-machined-edges") {
+		m.metalness = 0.65;
+		m.roughness = m.name === "graphite-housings" ? 0.42 : 0.34;
+	}
+	m.map.anisotropy = 8;
+	m.bumpMap = m.map;
+	m.bumpScale = 0.004;
+	m.needsUpdate = true;
+}
+
+/** A lamp of `COCKPIT_MODEL_LAMPS` carried into the cabin's frame. */
+export const carriedLamp = (lamp: (typeof COCKPIT_MODEL_LAMPS)[number]) =>
+	cabinLight(
+		{
+			positionKm: lamp.positionM,
+			distanceKm: lamp.rangeM,
+			intensity: lamp.intensity,
+			decay: 2,
+		},
+		COCKPIT_MODEL_KM_PER_M,
+	);
+
 /** Normalise and share a loaded model once, so every cabin clones it. */
 export function adoptCockpitTemplate(scene: THREE.Group): void {
 	const materials = new Set<THREE.MeshStandardMaterial>();
@@ -245,17 +278,7 @@ export function adoptCockpitTemplate(scene: THREE.Group): void {
 	);
 	for (const m of materials) {
 		m.emissiveIntensity /= divisor;
-		if (!m.map) continue;
-		m.color.setHex(COCKPIT_TINTS[m.name] ?? 0xffffff);
-		m.envMapIntensity = 1.15;
-		if (m.name !== "exposed-machined-edges") {
-			m.metalness = 0.65;
-			m.roughness = m.name === "graphite-housings" ? 0.42 : 0.34;
-		}
-		m.map.anisotropy = 8;
-		m.bumpMap = m.map;
-		m.bumpScale = 0.004;
-		m.needsUpdate = true;
+		adoptCockpitMaterial(m);
 	}
 	scene.name = "authored-cockpit";
 	scene.traverse((o) => {

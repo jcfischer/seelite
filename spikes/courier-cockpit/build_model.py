@@ -26,7 +26,8 @@ def material(name, color, metal=.6, rough=.48, emit=0, textured=True):
     elif textured:
         t=m.node_tree.nodes.new('ShaderNodeTexImage')
         t.image=bpy.data.images.load(str(OUT/'steel-wear.png'),check_existing=True)
-        # Keep tint in glTF baseColorFactor; material export supports image * constant.
+        # The multiply node's tint does not survive glTF export (assets.md);
+        # src/cockpit-model.ts restores it from COCKPIT_TINTS.
         mix=m.node_tree.nodes.new('ShaderNodeMixRGB');mix.blend_type='MULTIPLY'
         mix.inputs[0].default_value=1;mix.inputs[2].default_value=(*color,1)
         m.node_tree.links.new(t.outputs['Color'],mix.inputs[1])
@@ -313,6 +314,7 @@ for name,(verts,faces,uvs) in BATCH.items():
     obj=bpy.data.objects.new(name,mesh);bpy.context.collection.objects.link(obj)
     obj.data.materials.append(MATS[name])
     if name not in [warm,cyan,black]:
+        # glossary-ignore: Modifier — Blender's object modifiers, not game vocabulary.
         mod=obj.modifiers.new('Machined edge bevels','BEVEL');mod.width=.009;mod.segments=2
         mod.affect='EDGES'
         bpy.context.view_layer.objects.active=obj

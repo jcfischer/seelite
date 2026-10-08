@@ -857,8 +857,8 @@ import {
 } from "./cockpit-surface";
 import {
 	buildAuthoredCabin,
-	COCKPIT_MODEL_KM_PER_M,
 	COCKPIT_MODEL_LAMPS,
+	carriedLamp,
 	type CockpitScreen,
 	containedFace,
 	INSTRUMENT_FACE_KM,
@@ -8587,15 +8587,7 @@ class Game {
 		// cockpit, so they light the cabin alone as the ship turns.
 		const gated: THREE.PointLight[] = [];
 		for (const lamp of COCKPIT_MODEL_LAMPS) {
-			const carried = cabinLight(
-				{
-					positionKm: lamp.positionM,
-					distanceKm: lamp.rangeM,
-					intensity: lamp.intensity,
-					decay: 2,
-				},
-				COCKPIT_MODEL_KM_PER_M,
-			);
+			const carried = carriedLamp(lamp);
 			const light = new THREE.PointLight(
 				lamp.color,
 				carried.intensity,

@@ -1,6 +1,6 @@
 // In-game evidence for the authored cockpit (#792): boots a no-save game on a
-// hardware renderer, frames the cockpit on approach, with each head look and
-// docked, and fails on page errors. Usage: node spikes/courier-cockpit/capture-game.mjs [label]
+// hardware renderer, frames the cockpit on approach and with each head look,
+// and fails on page errors. It does not dock. Usage: node spikes/courier-cockpit/capture-game.mjs [label]
 import { mkdir, writeFile } from "node:fs/promises";
 import { createServer } from "vite";
 import { gameUrl } from "../../scripts/lib/game-url.mjs";

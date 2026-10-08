@@ -1,13 +1,13 @@
 import { beforeAll, describe, expect, test } from "bun:test";
 import * as THREE from "three";
-import { CABIN_FAR_KM, CABIN_NEAR_KM, cabinLight } from "../src/cabin-pass";
+import { CABIN_FAR_KM, CABIN_NEAR_KM } from "../src/cabin-pass";
 import {
 	type AuthoredCabin,
 	adoptCockpitTemplate,
 	buildAuthoredCabin,
-	COCKPIT_MODEL_KM_PER_M,
 	COCKPIT_MODEL_LAMPS,
 	COCKPIT_SCREENS,
+	carriedLamp,
 	containedFace,
 	INSTRUMENT_FACE_KM,
 	SCANNER_FACE_KM,
@@ -142,15 +142,7 @@ describe("the shipped cockpit model in the cabin pass", () => {
 		// `cabinLight`, since a point light ignores its parent's scale.
 		const lamps = COCKPIT_MODEL_LAMPS.map((lamp) => ({
 			at: cabin.modelSpace.localToWorld(new THREE.Vector3(...lamp.positionM)),
-			rangeKm: cabinLight(
-				{
-					positionKm: lamp.positionM,
-					distanceKm: lamp.rangeM,
-					intensity: lamp.intensity,
-					decay: 2,
-				},
-				COCKPIT_MODEL_KM_PER_M,
-			).distanceKm,
+			rangeKm: carriedLamp(lamp).distanceKm,
 		}));
 		for (const lamp of lamps)
 			expect(lamp.at.length()).toBeLessThan(CABIN_FAR_KM);
