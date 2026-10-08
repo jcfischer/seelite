@@ -25,18 +25,20 @@ def material(name,color,metal=.55,rough=.5,emission=0,texture=True,alpha=1):
   m.node_tree.links.new(t.outputs['Color'],mix.inputs[1]);m.node_tree.links.new(mix.outputs[0],p.inputs['Base Color'])
  MATS[name]=m;return name
 
-blue=[material('blue-grey-'+str(i),(.09+i*.009,.145+i*.010,.20+i*.012),.42,.43+i*.018) for i in range(4)]
-ivory=[material('pale-steel-'+str(i),(.32+i*.018,.345+i*.018,.355+i*.018),.42,.46+i*.02) for i in range(3)]
+blue=[material('blue-grey-'+str(i),(.09+i*.009,.145+i*.010,.20+i*.012),.55,.38+i*.018) for i in range(4)]
+ivory=[material('pale-steel-'+str(i),(.32+i*.018,.345+i*.018,.355+i*.018),.52,.39+i*.02) for i in range(3)]
 steel=material('dark-structure',(.057,.071,.077),.76,.43)
 black=material('recess-black',(.012,.019,.023),.42,.62)
-alloy=material('machined-alloy',(.34,.37,.39),.82,.30)
+alloy=material('machined-alloy',(.39,.42,.45),.86,.28)
+rail=material('brushed-rail',(.17,.205,.23),.72,.50)
 rubber=material('hose-rubber',(.023,.027,.029),.08,.78)
 orange=material('service-ochre',(.55,.29,.10),.37,.58)
-warm=material('amber-lamp',(1,.29,.045),.2,.23,3,False)
+warm=material('amber-lamp',(1,.17,.018),.2,.23,2.4,False)
 cyan=material('cyan-display',(.025,.55,.66),.15,.32,1.7,False)
-glass=material('canopy-glass',(.027,.085,.105),.16,.13,0,False,.38)
+glass=material('canopy-glass',(.027,.085,.105),.015,.28,0,False,.38)
+MATS[glass].node_tree.nodes.get('Principled BSDF').inputs['Specular IOR Level'].default_value=.08
 pilot_suit=material('pilot-suit',(.27,.32,.32),.04,.82,texture=False)
-pilot_helmet=material('pilot-helmet',(.66,.64,.57),.18,.36,texture=False)
+pilot_helmet=material('pilot-helmet',(.34,.37,.36),.18,.36,texture=False)
 pilot_visor=material('pilot-visor',(.07,.10,.11),.45,.15,texture=False)
 pilot_trim=material('pilot-harness',(.55,.24,.065),.04,.75,texture=False)
 pilot_gloves=material('pilot-gloves-boots',(.045,.055,.06),.02,.84,texture=False)
@@ -246,23 +248,39 @@ for z,l,w in [(-21,6,4.5),(-14.3,6.3,4.3),(-7.4,6.5,4.0),(-1,5.7,3.6),(3.5,3,2.3
   pts=[deck_point(x+dx,z+dz,.13) for dx,dz in [(-.07,-.24),(.07,-.24),(.07,.24),(-.07,.24)]]
   poly(list(reversed(pts)),warm)
 
-# Dorsal service runs: low segmented ducts mounted to the crowned skin.
-# Keep access lids clear and all brackets seated on the actual panel surface.
+# Dorsal service assemblies: dark deck-seated beds, linked jacketed pipes,
+# elbow returns and shielded valves keep a functional hierarchy around the lids.
 for side in [-1,1]:
- for za,zb in [(-22,-17.5),(-16.8,-12),(-11.3,-6.8),(-6.1,-1.6)]:
+ for bay,(za,zb) in enumerate([(-22,-17.5),(-16.8,-12),(-11.3,-6.8),(-6.1,-1.6)]):
   x=side*2.85
+  # Chamfered mounting tray follows every local deck slope, inset into its skin.
+  outline=[(-.57,za-.22),(.57,za-.22),(.68,za+.12),(.68,zb-.12),(.45,zb+.22),(-.45,zb+.22),(-.68,zb-.12),(-.68,za+.12)]
+  pts=[(x+dx,body_skin(x+dx,z)-.015,z) for dx,z in outline]
+  prism(pts,(0,1,0),.045,black)
+  for dx in [-.60,.60]:
+   cable([(x+dx,body_skin(x+dx,z)+.055,z) for z in [za+.1,(za+zb)/2,zb-.1]],.035,rail)
   a=Vector((x,body_skin(x,za)+.36,za));b=Vector((x,body_skin(x,zb)+.36,zb))
-  tube(a,b,.34,steel,16)
+  tube(a,b,.31,steel,20)
   length=(b-a).length;axis=(b-a).normalized()
-  for j in range(int(length/.66)):
-   c=a.lerp(b,(j+.5)/int(length/.66))
-   tube(c-axis*.26,c+axis*.26,.365,alloy,16)
+  for j in range(int(length/.78)):
+   c=a.lerp(b,(j+.5)/int(length/.78))
+   tube(c-axis*.30,c+axis*.30,.345,alloy if (j+bay)%3 else rail,20)
   for t in [.06,.94]:
-   c=a.lerp(b,t)
-   # Foot overlaps both deck and cylindrical duct: no floating supports.
-   y=body_skin(c.x,c.z)
+   c=a.lerp(b,t);y=body_skin(c.x,c.z)
    box((c.x,y+.16,c.z),(.92,.35,.26),steel)
-   tube(c-axis*.08,c+axis*.08,.42,steel,16)
+   tube(c-axis*.08,c+axis*.08,.405,steel,20)
+  # Rounded ends and smaller elbow pipes visibly return into sealed deck sockets.
+  for c,direction in [(a,-1),(b,1)]:
+   ellipsoid(c,(.31,.31,.20),alloy)
+   z=c.z+direction*.37
+   cable([c,c+Vector((0,0,direction*.22)),Vector((x,body_skin(x,z)+.18,z)),Vector((x,body_skin(x,z),z))],.12,rail)
+   tube((x,body_skin(x,z)-.03,z),(x,body_skin(x,z)+.12,z),.24,steel,16)
+  if bay in [0,2]:
+   z=(za+zb)/2;yy=body_skin(x,z)+.36
+   tube((x,yy,z),(x,yy+.42,z),.12,alloy,16)
+   tube((x,yy+.40,z),(x,yy+.49,z),.22,orange,16)
+   for dx in [-.38,.38]:
+    cable([(x+dx,body_skin(x+dx,z),z-.36),(x+dx,yy+.58,z-.36),(x+dx,yy+.58,z+.36),(x+dx,body_skin(x+dx,z),z+.36)],.04,steel)
  # Slim guarded amber housings sit on the sloped deck beside the duct runs.
  for z in [-20,-13.8,-7.7,-1.8]:
   x=side*3.65;starts={key:len(data[0]) for key,data in BATCH.items()}
@@ -319,7 +337,7 @@ for side in [-1,1]:
  path=[]
  for z in [2,8,14,20,26,30]:
   w,y,_=sample(z);path.append((side*(w+.05),y-.5,z))
- cable(path,.15)
+ cable(path,.15,rail)
  for z in [4,10,16,22,28]:
   w,y,_=sample(z);box((side*(w+.06),y-.48,z),(.32,.45,.18),steel)
  lamp(side*1.0,.24,29.4)
@@ -406,6 +424,9 @@ for side in [-1,1]:
     q=a.lerp(b,t);box(q,(.20,.20,.47),alloy)
  for z in [-19,-3.4]:
   radiator(x,3.68,z,3.5,3.0)
+  for dx in [-1.91,1.91]:
+   cable([(x+dx,3.63,z-1.56),(x+dx,4.15,z-1.56),(x+dx,4.15,z+1.56),(x+dx,3.63,z+1.56)],.07,alloy)
+   for dz in [-1.56,1.56]:box((x+dx,3.73,z+dz),(.34,.2,.34),steel)
   for dx in [-3.0,3.0]:hatch(x+dx,3.56,z,1.0,2.1,surface=lambda x,z:3.64,seat_group='nacelle-hatch-seats')
  # Joint-ring cover straps, smaller service boxes, longitudinal edge ribs.
  for dx in [-3.4,3.4]:

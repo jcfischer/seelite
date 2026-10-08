@@ -35,3 +35,7 @@ Intermediate images and logs are in ignored `.dream-loop/`. Final visual score, 
 ## Latest visual refinement
 
 `evidence/visual-pass-15/` records the follow-up after the real cockpit was accepted: low segmented dorsal service ducts with seated brackets, guarded hull/deck lamps, clearer blue-grey versus pale steel paint, revised neutral lighting and a denser starfield. Hull dimensions, cockpit fit, sloped hatches and grilles are preserved. This pass adds 5,496 model triangles (339,938 total).
+
+## Flagship refinement
+
+`evidence/flagship-pass-19/` records the next bounded pass: deck-seated service trays, rounded pipe ends with elbow returns and guarded valves, nacelle vent guards, brushed nose rails, warmer lamps, improved metal response under a broad warm area light, subtle cockpit illumination and controlled glass specular response. Model geometry is 353,954 triangles across 36 meshes; hull dimensions and cockpit fit remain unchanged.

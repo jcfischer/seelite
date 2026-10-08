@@ -2,6 +2,7 @@
 import * as THREE from "three";
 import { OrbitControls } from "three/addons/controls/OrbitControls.js";
 import { RoomEnvironment } from "three/addons/environments/RoomEnvironment.js";
+import { RectAreaLightUniformsLib } from "three/addons/lights/RectAreaLightUniformsLib.js";
 import { GLTFLoader } from "three/addons/loaders/GLTFLoader.js";
 import { EffectComposer } from "three/addons/postprocessing/EffectComposer.js";
 import { OutputPass } from "three/addons/postprocessing/OutputPass.js";
@@ -38,10 +39,10 @@ controls.maxDistance = 240;
 const pmrem = new THREE.PMREMGenerator(renderer),
 	room = new RoomEnvironment();
 scene.environment = pmrem.fromScene(room, 0.04).texture;
-scene.environmentIntensity = 0.32;
+scene.environmentIntensity = 0.24;
 room.dispose();
 pmrem.dispose();
-const key = new THREE.DirectionalLight(0xffead5, 4.0);
+const key = new THREE.DirectionalLight(0xffead5, 3.2);
 key.position.set(-55, 42, -16);
 key.castShadow = true;
 key.shadow.mapSize.set(4096, 4096);
@@ -56,12 +57,23 @@ Object.assign(key.shadow.camera, {
 key.shadow.bias = -0.0003;
 key.shadow.normalBias = 0.1;
 scene.add(key);
-const fill = new THREE.DirectionalLight(0xb4c8dc, 0.4);
+const fill = new THREE.DirectionalLight(0xb4c8dc, 0.24);
 fill.position.set(25, 12, 45);
 scene.add(fill);
 const rim = new THREE.DirectionalLight(0xc6d4df, 1.3);
 rim.position.set(8, 20, -50);
 scene.add(rim);
+const metalBounce = new THREE.DirectionalLight(0xd4e1ed, 0.48);
+metalBounce.position.set(-35, 16, 28);
+scene.add(metalBounce);
+RectAreaLightUniformsLib.init();
+const softbox = new THREE.RectAreaLight(0xffdfb5, 4.5, 70, 28);
+softbox.position.set(28, 48, -46);
+softbox.lookAt(0, 0, -6);
+scene.add(softbox);
+const cockpitGlow = new THREE.PointLight(0x36c3d0, 0.65, 3.2, 2);
+cockpitGlow.position.set(0, 3.4, 12.2);
+scene.add(cockpitGlow);
 for (const x of [-17, 17])
 	for (const z of [-11, 1]) {
 		const service = new THREE.PointLight(0xff8c28, 25, 8, 2);
@@ -94,21 +106,35 @@ const starfield = new THREE.Points(
 	}),
 );
 scene.add(starfield);
-// A sparse brighter tier gives depth without a flat photographic backdrop.
+// Sparse soft stellar highlights behind the small sharp field stars.
+const starCanvas = document.createElement("canvas");
+starCanvas.width = starCanvas.height = 32;
+const starContext = starCanvas.getContext("2d")!;
+const starGradient = starContext.createRadialGradient(16, 16, 0, 16, 16, 16);
+starGradient.addColorStop(0, "rgba(235,245,255,1)");
+starGradient.addColorStop(0.12, "rgba(210,228,255,.85)");
+starGradient.addColorStop(0.35, "rgba(170,195,235,.18)");
+starGradient.addColorStop(1, "rgba(150,180,225,0)");
+starContext.fillStyle = starGradient;
+starContext.fillRect(0, 0, 32, 32);
+const starTexture = new THREE.CanvasTexture(starCanvas);
+starTexture.colorSpace = THREE.SRGBColorSpace;
 const brightGeometry = new THREE.BufferGeometry();
 brightGeometry.setAttribute(
 	"position",
-	new THREE.BufferAttribute(stars.slice(0, 900), 3),
+	new THREE.BufferAttribute(stars.slice(0, 1200), 3),
 );
 scene.add(
 	new THREE.Points(
 		brightGeometry,
 		new THREE.PointsMaterial({
+			map: starTexture,
 			color: 0xdce5ee,
-			size: 1.8,
+			size: 6,
 			sizeAttenuation: false,
 			transparent: true,
-			opacity: 0.85,
+			depthWrite: false,
+			blending: THREE.AdditiveBlending,
 		}),
 	),
 );
