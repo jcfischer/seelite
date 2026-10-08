@@ -43,7 +43,7 @@ scene.environment = pmrem.fromScene(room, 0.04).texture;
 scene.environmentIntensity = 0.22;
 room.dispose();
 pmrem.dispose();
-const key = new THREE.DirectionalLight(0xffe9cc, 4.8);
+const key = new THREE.DirectionalLight(0xfff3df, 5.0);
 key.position.set(-300, 350, 200);
 key.castShadow = true;
 key.shadow.mapSize.set(4096, 4096);
@@ -58,15 +58,15 @@ Object.assign(key.shadow.camera, {
 key.shadow.bias = -0.0003;
 key.shadow.normalBias = 0.1;
 scene.add(key);
-const fill = new THREE.DirectionalLight(0x92b3d1, 0.45);
+const fill = new THREE.DirectionalLight(0xf5d7b0, 0.28);
 fill.position.set(160, 65, 180);
 scene.add(fill);
-const rim = new THREE.DirectionalLight(0x9eaeb9, 1.7);
+const rim = new THREE.DirectionalLight(0x9eb6c1, 1.3);
 rim.position.set(70, 100, -240);
 scene.add(rim);
 for (const x of [-20, 20])
 	for (const z of [-20, 20]) {
-		const service = new THREE.PointLight(0xbddfff, 500, 70, 2);
+		const service = new THREE.PointLight(0xffe3b9, 400, 70, 2);
 		service.position.set(x, 16, z);
 		scene.add(service);
 	}
@@ -261,22 +261,7 @@ async function selectModel(id: string) {
 					if (m instanceof THREE.MeshStandardMaterial && m.map) {
 						m.map.anisotropy = renderer.capabilities.getMaxAnisotropy();
 						m.bumpMap = m.map;
-						m.bumpScale = 0.012;
-						if (m.name === "machined-alloy") {
-							m.metalness = 0.94;
-							m.roughness = 0.19;
-							m.envMapIntensity = 2.4;
-							m.bumpMap = null;
-						}
-						if (m.name === "dark-structure") {
-							m.metalness = 0.82;
-							m.roughness = 0.3;
-							m.envMapIntensity = 1.6;
-						}
-						if (m.name.startsWith("pale-steel")) {
-							m.metalness = 0.38;
-							m.roughness = 0.39;
-						}
+						m.bumpScale = 0.006;
 						m.needsUpdate = true;
 					}
 			}
@@ -316,7 +301,7 @@ async function selectModel(id: string) {
 					[23.5, 18, 16],
 				]
 			: [[25, 17, 66]]) {
-		const work = new THREE.PointLight(0xc9dcf4, 1800, 45, 2);
+		const work = new THREE.PointLight(0xffdfad, 1500, 45, 2);
 		work.position.fromArray(pos);
 		ship.add(work);
 	}
@@ -359,7 +344,7 @@ async function selectModel(id: string) {
 		.toArray();
 	document.querySelector("#model-name")!.textContent = names[id];
 	document.querySelector<HTMLImageElement>("#target-dialog img")!.src =
-		"./target-" + id + ".png";
+		"./references/coriolis-hero.png";
 	for (const b of document.querySelectorAll<HTMLElement>("[data-model]"))
 		b.setAttribute("aria-pressed", String(b.dataset.model === id));
 	stats.loaded = true;

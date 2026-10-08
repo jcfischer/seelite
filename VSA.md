@@ -62,7 +62,10 @@ C6: branch spike/shipyard-models-800, isolated .worktrees/seelite-800. Only spik
 
 C7/C8: editable Blender scenes, GLBs, generated albedo, authored tooling rig and provenance present. Final seven-view captures, exact independent reviews, geometry/control metrics and artifact hashes are in spikes/shipyards/evidence.
 
-Principal visual acceptance remains separate from the independent score. Node 800 remains open for the review checkpoint.
+Principal visual acceptance remains separate from the independent score. On 2026-10-08 the principal approved the final Coriolis-style models and requested a committed PR with an integration handoff; see spikes/shipyards/HANDOFF.md. Production integration remains outside this prototype.
 
 ## Follow-up: capital ship scale
 Principal replaced the enlarged illustrative Porter with a current capital ship. The viewer now builds Carrier A from the unchanged current game source at 100 view units/km, consistently across all three stations. Browser-measured dimensions are 379.6 m long, 176.4 m wide and 144.915 m high, matching its catalogue envelope within 0.1 m. Round `carrier-scale` passed all three dimension checks, docking geometry, tooling motion/pause and viewer controls; no browser errors. Strict TypeScript passed. The earlier visual scores remain the station-design checkpoint before this explicit vessel substitution.
+
+## Follow-up: Coriolis visual family
+Principal requested Coriolis textures and shape language. Reused its approved original gritty albedo and material parameters from 30781f3, made larger flatter armor districts within dark edges, added service channels and three-tier docking surrounds, and changed cold fixtures to restrained warm lights. Layouts, actual Carrier A dimensions, axial hubs, enclosed routes and articulated tools remain. Independent review scored O1 8.2, O2 8.1, O3 8.0 and explicitly recommended stopping; no further visual changes. All 150 model assertions, hardware geometry/scale/animation/control checks and strict viewer TypeScript pass. The new Style reference control opens the actual Coriolis hero image. Evidence is in spikes/shipyards/evidence/coriolis-style; reference images and provenance are in references/.

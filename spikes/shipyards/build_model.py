@@ -18,19 +18,19 @@ def material(name,color,metal=.55,rough=.5,emission=0,texture=True,alpha=1):
  if emission:
   p.inputs['Emission Color'].default_value=(*color,1);p.inputs['Emission Strength'].default_value=emission
  if texture and not emission:
-  t=m.node_tree.nodes.new('ShaderNodeTexImage');t.image=bpy.data.images.load(str(OUT/'paint-clean.png'),check_existing=True)
+  t=m.node_tree.nodes.new('ShaderNodeTexImage');t.image=bpy.data.images.load(str(OUT/'coriolis-industrial-surface.png'),check_existing=True)
   mix=m.node_tree.nodes.new('ShaderNodeMixRGB');mix.blend_type='MULTIPLY';mix.inputs[0].default_value=1;mix.inputs[2].default_value=(*color,1)
   m.node_tree.links.new(t.outputs['Color'],mix.inputs[1]);m.node_tree.links.new(mix.outputs[0],p.inputs['Base Color'])
  MATS[name]=m;return name
 
-blue=[material('blue-grey-'+str(i),(.14+i*.009,.185+i*.010,.22+i*.010),.55,.36) for i in range(4)]
-ivory=[material('pale-steel-'+str(i),(.32+i*.018,.33+i*.018,.32+i*.018),.50,.44) for i in range(3)]
-steel=material('dark-structure',(.057,.071,.077),.76,.43)
-black=material('recess-black',(.012,.019,.023),.42,.62)
-alloy=material('machined-alloy',(.38,.39,.36),.8,.23)
+blue=[material('blue-grey-'+str(i),(.10+i*.012,.12+i*.012,.125+i*.012),.75,.43) for i in range(4)]
+ivory=[material('pale-steel-'+str(i),(.42+i*.055,.43+i*.05,.40+i*.045),.45,.66) for i in range(3)]
+steel=material('dark-structure',(.10,.12,.125),.75,.43)
+black=material('recess-black',(.023,.032,.035),.65,.52)
+alloy=material('machined-alloy',(.25,.28,.27),.83,.36)
 rubber=material('hose-rubber',(.023,.027,.029),.08,.78)
-orange=material('service-ochre',(.55,.29,.10),.37,.58)
-warm=material('amber-lamp',(1,.29,.045),.2,.23,3,False)
+orange=material('service-ochre',(.68,.38,.07),.25,.65)
+warm=material('amber-lamp',(1,.43,.105),.15,.32,4,False)
 cyan=material('cyan-display',(.025,.55,.66),.15,.32,1.7,False)
 glass=material('canopy-glass',(.010,.028,.034),.28,.18,0,False,.91)
 
@@ -41,7 +41,7 @@ def poly(points,mat,group=None,uv=None):
  verts.extend([tuple(p) for p in pts]);faces.append(tuple(range(offset,offset+len(pts))))
  if uv is None:
   n=(pts[1]-pts[0]).cross(pts[2]-pts[0]);axis=max(range(3),key=lambda i:abs(n[i]));ij=[i for i in range(3) if i!=axis]
-  uv=[(p[ij[0]]/13.0,p[ij[1]]/13.0) for p in pts]
+  uv=[(p[ij[0]]/14.5,p[ij[1]]/14.5) for p in pts]
  uvs.append(uv)
 
 def prism(points,n,depth,mat,group=None):
@@ -107,11 +107,8 @@ def lamp(x,y,z,orient='front'):
 
 # Shipyard authoring units: 10 metres, exported as metres. Y up, +Z docking approach.
 # Separate material batches for static structure and rotating life capsule.
-white=material("work-flood",(.72,.86,1),.1,.3,2.3,False)
-for i,k in enumerate(ivory):
- MATS[k].diffuse_color=(.60+i*.025,.595+i*.025,.555+i*.025,1)
- for nd in MATS[k].node_tree.nodes:
-  if nd.type=="MIX_RGB":nd.inputs[2].default_value=MATS[k].diffuse_color
+white=material("work-flood",(1,.83,.53),.1,.3,3,False)
+
 
 X=Vector((1,0,0));Y=Vector((0,1,0));Z=Vector((0,0,1))
 def beam(a,b,width=.5,mat=steel):tube(a,b,width,mat,4)
@@ -197,8 +194,8 @@ def industrial_pods(x,y,z,count=5):
 
 # Round 2: chamfered manufactured housings, layered plates, denser machinery.
 def plated_box(c,size,mat=None,step=5):
- c=Vector(c);sx,sy,sz=size;half=[s/2 for s in size];bevel=min(size)*.16
- if mat in ivory and random.random()<.22:mat=random.choice(blue)
+ c=Vector(c);sx,sy,sz=size;half=[s/2 for s in size];bevel=min(size)*.065;step=max(step,7.5)
+ if mat in ivory and random.random()<.13:mat=random.choice(blue)
  # Six inset flat faces and their independently seated plates.
  for u,v,n,wu,wv,dist in [(X,Z,Y,sx,sz,sy/2),(X,Z,-Y,sx,sz,sy/2),(X,Y,Z,sx,sy,sz/2),(X,Y,-Z,sx,sy,sz/2),(Z,Y,X,sz,sy,sx/2),(Z,Y,-X,sz,sy,sx/2)]:
   wu-=2*bevel;wv-=2*bevel;ctr=c+n*dist
@@ -220,13 +217,13 @@ def plated_box(c,size,mat=None,step=5):
      points=[]
      for aa,bb,kk in [(half[a],half[b]-bevel,lo),(half[a]-bevel,half[b],lo),(half[a]-bevel,half[b],hi),(half[a],half[b]-bevel,hi)]:
       p=Vector(c);p[a]+=aa*sa;p[b]+=bb*sb;p[k]+=kk;points.append(p)
-     plate(points,mat or ivory[1],nn,.08,False)
+     plate(points,steel,nn,.08,False)
  for xx in [-1,1]:
   for yy in [-1,1]:
    for zz in [-1,1]:
     corner=Vector((half[0]*xx,half[1]*yy,half[2]*zz))
     points=[c+corner-Vector((bevel*xx,bevel*yy,0)),c+corner-Vector((bevel*xx,0,bevel*zz)),c+corner-Vector((0,bevel*yy,bevel*zz))]
-    poly(points,mat or ivory[0])
+    poly(points,steel)
 
 def microship(c,length=12,carrier=False):
  c=Vector(c);w=length*.13
@@ -286,7 +283,7 @@ def capsule(origin):
    for ix in range(3):
     pts=[ra[j].lerp(ra[k],ix/3),ra[j].lerp(ra[k],(ix+1)/3),rb[j].lerp(rb[k],(ix+1)/3),rb[j].lerp(rb[k],ix/3)]
     nn=(pts[0]+pts[1])/2;nn.z=0
-    plate(pts,random.choice(ivory),nn,.12)
+    plate(pts,ivory[(j+ix)%3],nn,.12)
  for zz,rr in [(-7.2,22.25),(6.5,22.25)]:annulus((0,0),zz,rr-.42,rr,.55,steel,8,phase)
  # End-cap is a genuine ring around a rectangular aperture. No filled disk.
  outer=ring(zf,19.8)
@@ -395,7 +392,7 @@ def hangar():
   for side in [-1,1]:
    xx=x+side*20.8
    plated_box((xx,10,36),(3.3,31,4.6),ivory[1],4)
-   box((xx-side*1.8,10,38.5),(.28,22,.2),white)
+   for yy in [-1,7,15,23]:box((xx-side*1.8,yy,38.5),(.28,1.8,.2),white)
   for y in [-5.8,27]:plated_box((x,y,36),(40,3,5),steel,5)
   for z in [-40,-17,7,28]:
    for xx in [x-15,x+15]:
@@ -509,7 +506,7 @@ def capsule(origin):
   tube(p-Y*.45,p+Y*.45,.18,alloy)
  annulus((0,0),9.25,19.35,20.4,.6,steel,8,phase)
  annulus((0,0),9.87,19.7,20.2,.14,alloy,8,phase)
- front_frame(0,0,10.03,14.3,10.7,1.5)
+ front_frame(0,0,10.03,14.3,10.7,1.5,steel)
  for x in [-5.6,5.6]:
   box((x,0,10.6),(.26,6.6,.19),warm)
  for y in [-3.77,3.77]:
@@ -572,7 +569,7 @@ _base_hangar=hangar
 def hangar():
  info=_base_hangar()
  for x in [-23.5,23.5]:
-  front_frame(x,10.5,39,46,38,5)
+  front_frame(x,10.5,39,46,38,5,steel)
   front_frame(x,10.5,38.1,42.5,34.7,4)
   front_frame(x,10.5,37.4,39.5,31.7,3.3,steel)
   # Bright yellow travelling cranes seated in the front half of the hall.
@@ -942,6 +939,80 @@ def slipway():
   pipeline(header(d0),header(d1),.65)
  for side in [-1,1]:
   robot_arm((side*41.5,10,67),(side*33,16,67),(side*25,10,67))
+ return info
+
+
+# Coriolis family: pale armour districts on dark strapped frames, recessed plant,
+# broad three-tier docking coamings and small warm service fixtures.
+def service_trunk(a,b,normal=Y):
+ a,b=Vector(a),Vector(b);n=Vector(normal).normalized();d=(b-a).normalized();t=d.cross(n).normalized()
+ box((a+b)/2,(3.8,(b-a).length,.7),black,(t,d,n))
+ for offset in [-1,0,1]:
+  pipeline(a+t*offset+n*.55,b+t*offset+n*.55,.26 if offset else .38)
+ for i in range(1,max(2,int((b-a).length/7))):
+  c=a.lerp(b,i/max(2,int((b-a).length/7)))
+  box(c+n*.7,(4.4,.45,1.1),steel,(t,d,n))
+  box(c+t*1.45+n*1.05,(.45,1.15,.25),warm,(t,d,n))
+
+def docking_coaming():
+ def outline(w,h,k,z):
+  return [Vector(p) for p in [(-w+k,-h,z),(w-k,-h,z),(w,-h+k,z),(w,h-k,z),(w-k,h,z),(-w+k,h,z),(-w,h-k,z),(-w,-h+k,z)]]
+ for a,b,mat in [((10,7.3,1.8,9.7),(8.7,6.1,1.2,10.3),steel),((8.7,6.1,1.2,10.3),(7.2,4.8,.8,10.9),alloy),((7.2,4.8,.8,10.9),(5.15,3.35,0,11.2),steel)]:
+  aa=outline(*a);bb=outline(*b)
+  for i in range(8):
+   j=(i+1)%8;pts=[aa[i],aa[j],bb[j],bb[i]]
+   clean=[]
+   for p in pts:
+    if not clean or (p-clean[-1]).length>.0001:clean.append(p)
+   if len(clean)>2:poly(clean,mat,group="coriolis-dock-coaming-"+mat)
+ for x in [-8.9,8.9]:
+  for y in [-3.7,3.7]:
+   box((x,y,10.95),(.8,1.1,.3),black)
+   box((x,y,11.14),(.18,.65,.15),white)
+ for x in range(-5,5):
+  poly([(x,-5.65,10.86),(x+.4,-5.65,10.86),(x+.8,-4.95,11.1),(x+.4,-4.95,11.1)],orange,group="dock-hazard-sill")
+ for x in [-13,13]:
+  service_trunk((x,-11,9.62),(x,11,9.62),Z)
+ for y in [-12.5,12.5]:service_trunk((-11,y,9.62),(11,y,9.62),Z)
+
+_coriolis_capsule=capsule
+def capsule(origin):
+ global OWNER
+ info=_coriolis_capsule(origin);OWNER="capsule"
+ docking_coaming()
+ # Broad radial structural ribs divide face armour into Coriolis-like districts.
+ for j in range(8):
+  a=math.pi/8+j*math.tau/8
+  aa=Vector((13.5*math.cos(a),13.5*math.sin(a),9.7));bb=Vector((20*math.cos(a),20*math.sin(a),9.7))
+  beam(aa,bb,.8,steel)
+ OWNER="static"
+ return info
+
+_coriolis_gantry=gantry
+def gantry():
+ info=_coriolis_gantry()
+ for x in [-38,38]:
+  service_trunk((x,10.3,-64),(x,10.3,58))
+  for z in [-50,-20,10,40]:
+   box((x,10.5,z),(11,.7,1.4),steel)
+ return info
+
+_coriolis_hangar=hangar
+def hangar():
+ info=_coriolis_hangar()
+ for x in [-23.5,23.5]:
+  service_trunk((x,34.1,-43),(x,34.1,31))
+  for side in [-1,1]:
+   service_trunk((x+side*19,-2,40),(x+side*19,24,40),Z)
+ return info
+
+_coriolis_slipway=slipway
+def slipway():
+ info=_coriolis_slipway()
+ for i in range(18):
+  a=math.radians(42+276*i/18);b=math.radians(42+276*(i+1)/18)
+  aa=Vector((math.sin(a)*62,11.3,math.cos(a)*62));bb=Vector((math.sin(b)*62,11.3,math.cos(b)*62))
+  service_trunk(aa,bb)
  return info
 
 
