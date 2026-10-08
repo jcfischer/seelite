@@ -72,7 +72,7 @@ test("pressure body and both nacelles are closed, outward-wound shells", () => {
 	const triangles: Vector3[][] = [];
 	for (const p of hull.primitives) {
 		const vertices = accessor(p.attributes.POSITION, 3).map(
-			(v) => new Vector3(...v),
+			(v) => new Vector3(v[0], v[1], v[2]),
 		);
 		const indices = accessor(p.indices, 1).flat();
 		for (let i = 0; i < indices.length; i += 3)
