@@ -7,11 +7,6 @@ import {
 	cabinLight,
 	cabinLightInto,
 } from "../src/cabin-pass";
-import {
-	CANOPY_FRAME,
-	CANOPY_OUTLINE,
-	CANOPY_Z_KM,
-} from "../src/cockpit-canopy";
 
 /**
  * Three's punctual-light attenuation, `getDistanceAttenuation` — with its
@@ -38,15 +33,8 @@ const received = (
 };
 
 describe("the cabin camera brackets the cabin", () => {
-	test("the farthest canopy corner is inside the far plane", () => {
-		const header = CANOPY_FRAME.header;
-		const corners = [
-			...CANOPY_OUTLINE.map(([x, y]) => Math.hypot(x, y, CANOPY_Z_KM)),
-			Math.hypot(header.size[0] / 2, header.position[1], header.position[2]),
-		];
-		expect(Math.max(...corners)).toBeLessThan(CABIN_FAR_KM);
-	});
-
+	// Every vertex of #792's authored cabin against both planes is
+	// `tests/cockpit-model.test.ts`'s row, read off the shipped model.
 	// What the near plane must clear is the nearest *built* vertex, and the
 	// cabin is built in `main.ts`, which a bun test cannot load — so
 	// `probe-cabin-pass` measures it on the live cabin. This row holds the

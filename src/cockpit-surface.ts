@@ -589,19 +589,22 @@ function cleanPlate(wear: Uint8Array<ArrayBuffer>): Record<WearKey, number> {
 }
 
 /**
- * The cabin's key light, held so the quality gate can reach it.
+ * The cabin's gated lamps, held so the quality gate can reach them.
  *
- * One, and registered by `buildCockpit` rather than made here: the light's
- * position is a fact about the cabin's geometry and belongs beside it, while
- * *whether it is on* is this module's gate.
+ * Registered by `buildCockpit` rather than made here: a lamp's position is a
+ * fact about the cabin's geometry and belongs beside it, while *whether it is
+ * on* is this module's gate. #792's cabin gates two — the warm key and the
+ * centre lamp — so low keeps one point light in the cabin's scene, as the
+ * procedural cabin did.
  */
-let keyLight: { visible: boolean } | null = null;
+let keyLights: readonly { visible: boolean }[] = [];
 
-/** Hand the cabin's key light to the quality gate, and put it in the state the
- *  current setting asks for. */
-export function registerKeyLight(light: { visible: boolean }) {
-	keyLight = light;
-	light.visible = COCKPIT_QUALITY[cockpitQuality].keyLight;
+/** Hand the cabin's gated lamps to the quality gate, replacing any earlier
+ *  cabin's, and put them in the state the current setting asks for. */
+export function registerKeyLight(...lights: { visible: boolean }[]) {
+	keyLights = lights;
+	for (const light of lights)
+		light.visible = COCKPIT_QUALITY[cockpitQuality].keyLight;
 }
 
 /** The clean-plate factors, for the test that checks the four finishes
@@ -1008,7 +1011,8 @@ export function applyCockpitQuality(quality: CockpitQuality) {
 	// removal: three skips an invisible light entirely when it gathers the
 	// scene's lights, so the per-fragment term goes with it, and the setting
 	// stays live — #99's finding is that a reload puts the ship somewhere else.
-	if (keyLight) keyLight.visible = COCKPIT_QUALITY[quality].keyLight;
+	for (const light of keyLights)
+		light.visible = COCKPIT_QUALITY[quality].keyLight;
 	// **Before `cockpitMaps`**, so a boot-time quality pass that runs ahead of
 	// `buildCockpit` does not pay for three buffers nothing is using yet.
 	if (plated.size === 0) return;

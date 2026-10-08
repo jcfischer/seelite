@@ -6,7 +6,7 @@ import bpy, math, random, json, os, struct, sys
 from mathutils import Vector
 from pathlib import Path
 ROOT = Path(__file__).resolve().parents[2]
-OUT = ROOT / 'public/spikes/coriolis'
+OUT = ROOT / 'spikes/coriolis'  # review-only; never under public/
 OUT.mkdir(parents=True, exist_ok=True)
 FLIGHT = "--flight" in sys.argv
 ASSET = "coriolis-industrial-flight" if FLIGHT else "coriolis-industrial"

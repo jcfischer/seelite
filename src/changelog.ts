@@ -28,6 +28,12 @@ export type ChangelogEntry = {
 };
 
 export const CHANGELOG: readonly ChangelogEntry[] = [
+	// Node #792: approved by the principal on 2026-10-08.
+	{
+		date: "2026-10-08",
+		text: "The cockpit is rebuilt: a low industrial dashboard under a tapered canopy, with the scanner, flight and navigation readouts on worn instrument screens.",
+		node: 792,
+	},
 	// Node #790: proposed copy; principal approval and main date pending.
 	{
 		date: "2026-10-08",
