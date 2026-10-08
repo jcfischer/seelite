@@ -32,4 +32,4 @@ Principal visual approval: 2026-10-08, “approved. Prepare PR for final impleme
 
 ## Selected repository browser checks
 
-At implementation/handoff head `8a796a1`, the mandatory selector plus canonical `probe:pr` runner passed 5/5 selected GPU probes: controls-reference, handoff, model-viewer, pointer-lock and station-visuals, in 63 seconds. This was explicitly partial: 91/96 repository probes were not run. The next implementation agent owes selection against their final diff and the full merge gates. No Sage review or full production-suite claim is made for this design handoff. Raw selector and runner output is in `pr-probes.log`.
+At implementation/handoff head `8a796a1`, the mandatory selector plus canonical `probe:pr` runner passed 5/5 selected GPU probes: controls-reference, handoff, model-viewer, pointer-lock and station-visuals, in 63 seconds. This was explicitly partial: 91/96 repository probes were not run. The next implementation agent owes selection against their final diff and the full merge gates. No Sage review or full production-suite claim is made for this design handoff. Raw selector and runner output is in `pr-probes.txt`.
