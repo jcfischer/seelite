@@ -282,6 +282,53 @@ describe("every torn part is attached to the structure", () => {
 		});
 });
 
+describe("the folded rim is lit as the shape it was folded into", () => {
+	// The loft's normals are `computeVertexNormals` over its own index, seam
+	// twins unmatched, so the torn skin is held to that same rule recomputed
+	// over what it now draws — and a rim still carrying the intact hull's
+	// normals is a fold the light cannot see.
+	for (const id of PURCHASABLE_HULL_IDS)
+		test(`${id}: every torn part's normals are its own surface's`, () => {
+			const intact = live(id);
+			const root = live(id);
+			const torn = tearHull(root, id);
+			expect(torn).not.toBeNull();
+			if (!torn) return;
+			for (const patch of torn.patches) {
+				const after = root.getObjectByName(patch.part) as THREE.Mesh;
+				const before = intact.getObjectByName(patch.part) as THREE.Mesh;
+				const normal = after.geometry.getAttribute(
+					"normal",
+				) as THREE.BufferAttribute;
+				const fresh = after.geometry.clone();
+				fresh.computeVertexNormals();
+				const expected = fresh.getAttribute("normal") as THREE.BufferAttribute;
+				const was = before.geometry.getAttribute(
+					"normal",
+				) as THREE.BufferAttribute;
+				const index = after.geometry.index as THREE.BufferAttribute;
+				const a = new THREE.Vector3();
+				const b = new THREE.Vector3();
+				let worst = 0;
+				let moved = 0;
+				for (let k = 0; k < index.count; k += 1) {
+					const i = index.getX(k);
+					a.fromBufferAttribute(normal, i);
+					worst = Math.max(
+						worst,
+						a.distanceTo(b.fromBufferAttribute(expected, i)),
+					);
+					if (a.distanceTo(b.fromBufferAttribute(was, i)) > 1e-3) moved += 1;
+				}
+				expect([patch.part, worst < 1e-6, moved > 0]).toEqual([
+					patch.part,
+					true,
+					true,
+				]);
+			}
+		});
+});
+
 describe("the roster's own mounting rule holds on a wreck", () => {
 	test("every nacelle still intersects a named structural mount", () => {
 		// `ship-mesh.test.ts`'s rule, run over the torn hull and measured from

@@ -340,6 +340,17 @@ interface Plan {
 
 const plans = new Map<HullId, Plan>();
 
+/** A point on a face of the envelope: a tear may neither remove nor move it. */
+function onEnvelope(v: THREE.Vector3, envelope: THREE.Box3) {
+	return [0, 1, 2].some(
+		(k) =>
+			Math.abs(v.getComponent(k) - envelope.min.getComponent(k)) <
+				ENVELOPE_EPS_KM ||
+			Math.abs(v.getComponent(k) - envelope.max.getComponent(k)) <
+				ENVELOPE_EPS_KM,
+	);
+}
+
 /**
  * Where a hull tears: up to three patches on different parts, each as large as
  * fits, touching no vertex on the envelope and no other part. A nacelle pair
@@ -350,14 +361,6 @@ function planTears(root: THREE.Group, hull: HullId, lofts: Loft[]): Plan {
 	const cached = plans.get(hull);
 	if (cached) return cached;
 	const envelope = drawnHullBox(root);
-	const onEnvelope = (v: THREE.Vector3) =>
-		[0, 1, 2].some(
-			(k) =>
-				Math.abs(v.getComponent(k) - envelope.min.getComponent(k)) <
-					ENVELOPE_EPS_KM ||
-				Math.abs(v.getComponent(k) - envelope.max.getComponent(k)) <
-					ENVELOPE_EPS_KM,
-		);
 	const candidates: { patch: TearPatch; tris: number[]; score: number }[] = [];
 	for (const loft of lofts) {
 		const position = loft.geometry.getAttribute(
@@ -375,7 +378,7 @@ function planTears(root: THREE.Group, hull: HullId, lofts: Loft[]): Plan {
 			const corners = [triangle.a, triangle.b, triangle.c];
 			for (let k = 0; k < 3; k += 1) {
 				corners[k].fromBufferAttribute(position, index.getX(t * 3 + k));
-				if (onEnvelope(corners[k])) return false;
+				if (onEnvelope(corners[k], envelope)) return false;
 			}
 			area.set(t, triangle.getArea());
 			triBox.setFromPoints(corners);
@@ -438,36 +441,42 @@ function planTears(root: THREE.Group, hull: HullId, lofts: Loft[]): Plan {
 	return plan;
 }
 
+/**
+ * One point of a member's path: the skin point it is laid under, the skin's
+ * outward direction there, and the direction its width runs across.
+ */
+interface FrameSample {
+	point: THREE.Vector3;
+	outward: THREE.Vector3;
+	across: THREE.Vector3;
+}
+
 /** A member's cross-section swept along a polyline: a closed box section. */
 function section(
-	points: readonly THREE.Vector3[],
-	outward: readonly THREE.Vector3[],
-	across: readonly THREE.Vector3[],
+	samples: readonly FrameSample[],
 	size: { depthKm: number; widthKm: number },
 ): THREE.BufferGeometry {
 	const vertices: number[] = [];
 	const indices: number[] = [];
-	for (let k = 0; k < points.length; k += 1) {
-		const outer = points[k]
-			.clone()
-			.addScaledVector(outward[k], -FRAME_INSET_KM);
-		const inner = outer.clone().addScaledVector(outward[k], -size.depthKm);
+	for (const { point, outward, across } of samples) {
+		const outer = point.clone().addScaledVector(outward, -FRAME_INSET_KM);
+		const inner = outer.clone().addScaledVector(outward, -size.depthKm);
 		for (const c of [
-			outer.clone().addScaledVector(across[k], size.widthKm / 2),
-			inner.clone().addScaledVector(across[k], size.widthKm / 2),
-			inner.clone().addScaledVector(across[k], -size.widthKm / 2),
-			outer.clone().addScaledVector(across[k], -size.widthKm / 2),
+			outer.clone().addScaledVector(across, size.widthKm / 2),
+			inner.clone().addScaledVector(across, size.widthKm / 2),
+			inner.clone().addScaledVector(across, -size.widthKm / 2),
+			outer.clone().addScaledVector(across, -size.widthKm / 2),
 		])
 			vertices.push(c.x, c.y, c.z);
 	}
-	for (let k = 0; k < points.length - 1; k += 1)
+	for (let k = 0; k < samples.length - 1; k += 1)
 		for (let n = 0; n < 4; n += 1) {
 			const a = k * 4 + n;
 			const b = k * 4 + ((n + 1) % 4);
 			indices.push(a, b, b + 4, a, b + 4, a + 4);
 		}
 	// End caps, so a snapped member shows a section and not a hollow.
-	const last = (points.length - 1) * 4;
+	const last = (samples.length - 1) * 4;
 	indices.push(
 		0,
 		2,
@@ -636,14 +645,6 @@ function cutSkin(
 	};
 	const colours = new Float32Array(position.count * 3).fill(1);
 	const p = new THREE.Vector3();
-	const onEnvelope = (q: THREE.Vector3) =>
-		[0, 1, 2].some(
-			(k) =>
-				Math.abs(q.getComponent(k) - envelope.min.getComponent(k)) <
-					ENVELOPE_EPS_KM ||
-				Math.abs(q.getComponent(k) - envelope.max.getComponent(k)) <
-					ENVELOPE_EPS_KM,
-		);
 	for (let i = 0; i < position.count; i += 1) {
 		const d = distance(i);
 		if (d < SCORCH.length) {
@@ -656,8 +657,8 @@ function cutSkin(
 		if (d !== 0) continue;
 		const g = gridOf(i) as { ring: number; segment: number };
 		p.fromBufferAttribute(position, i);
-		if (onEnvelope(p)) continue;
-		// Drag it part of the way toward one grid neighbour first, so the edge
+		if (onEnvelope(p, envelope)) continue;
+		// Drag it part of the way toward an adjacent grid point first, so the edge
 		// does not run along the cell lines. A step toward another point of
 		// the skin, like the fold toward the axis, stays inside the box.
 		const pick = hash01(hull, g.ring, g.segment, 11);
@@ -687,6 +688,10 @@ function cutSkin(
 	}
 	geometry.setAttribute("color", new THREE.Float32BufferAttribute(colours, 3));
 	position.needsUpdate = true;
+	// Relit by the loft's own rule — `computeVertexNormals` over the index —
+	// so the fold and the hole's edge are shaded as the shape they now are,
+	// and skin no removed or moved triangle touched keeps its normal exactly.
+	geometry.computeVertexNormals();
 	geometry.computeBoundingBox();
 	geometry.computeBoundingSphere();
 	return geometry;
@@ -772,14 +777,12 @@ function exposeFrame(
 	const members: THREE.Mesh[] = [];
 	const add = (
 		name: string,
-		points: THREE.Vector3[],
-		outward: THREE.Vector3[],
-		across: THREE.Vector3[],
+		samples: FrameSample[],
 		size: { depthKm: number; widthKm: number },
 		anchors: "both" | "fore" | "aft",
 	) => {
-		if (points.length < 2) return;
-		const geometry = section(points, outward, across, size);
+		if (samples.length < 2) return;
+		const geometry = section(samples, size);
 		// Inside the envelope by construction (an inset toward the axis); the
 		// clamp holds the fraction of a section's width a corner can add.
 		const at = geometry.getAttribute("position") as THREE.BufferAttribute;
@@ -796,46 +799,38 @@ function exposeFrame(
 		// check: an anchored one is intact skin the member reaches.
 		mesh.userData.derelictFrame = {
 			anchors,
-			ends: [points[0].toArray(), points[points.length - 1].toArray()],
+			ends: [
+				samples[0].point.toArray(),
+				samples[samples.length - 1].point.toArray(),
+			],
 		};
 		members.push(mesh);
 	};
 	/** Lay a member along `points`, snapping it in the middle when asked. */
 	const lay = (
 		name: string,
-		points: THREE.Vector3[],
-		outward: THREE.Vector3[],
-		across: THREE.Vector3[],
+		samples: FrameSample[],
 		size: { depthKm: number; widthKm: number },
 		snap: boolean,
 	) => {
-		if (!snap || points.length < 5) {
-			add(name, points, outward, across, size, "both");
+		if (!snap || samples.length < 5) {
+			add(name, samples, size, "both");
 			return;
 		}
-		const cut = Math.floor(points.length / 2);
-		const sag = (k: number, depth: number) =>
-			points[k].clone().addScaledVector(outward[k], -depth);
-		const head = points.slice(0, cut);
+		const cut = Math.floor(samples.length / 2);
+		/** The sample at `k`, its broken end sagged `depth` inward. */
+		const sag = (k: number, depth: number): FrameSample => ({
+			...samples[k],
+			point: samples[k].point
+				.clone()
+				.addScaledVector(samples[k].outward, -depth),
+		});
+		const head = samples.slice(0, cut);
 		head[cut - 1] = sag(cut - 1, FOLD_MAX_KM);
-		const tail = points.slice(cut + 1);
+		const tail = samples.slice(cut + 1);
 		tail[0] = sag(cut + 1, FOLD_MAX_KM * 0.6);
-		add(
-			`${name}-a`,
-			head,
-			outward.slice(0, cut),
-			across.slice(0, cut),
-			size,
-			"fore",
-		);
-		add(
-			`${name}-b`,
-			tail,
-			outward.slice(cut + 1),
-			across.slice(cut + 1),
-			size,
-			"aft",
-		);
+		add(`${name}-a`, head, size, "fore");
+		add(`${name}-b`, tail, size, "aft");
 	};
 
 	const ribs: number[] = [];
@@ -845,26 +840,18 @@ function exposeFrame(
 	for (const ring of ribs) {
 		const spans = [...(rows.get(ring) ?? []), ...(rows.get(ring - 1) ?? [])];
 		if (spans.length === 0) continue;
-		const points: THREE.Vector3[] = [];
-		const outward: THREE.Vector3[] = [];
-		const across: THREE.Vector3[] = [];
+		const samples: FrameSample[] = [];
 		const at = (n: number) => intact(ring, n);
 		const half = loft.segments / 2;
 		const from = runOn(Math.min(...spans), -1, at, half);
 		const to = runOn(Math.max(...spans) + 1, 1, at, half);
-		for (let s = from; s <= to; s += 1) {
-			points.push(vertexAt(ring, s));
-			outward.push(outwardAt(ring, s));
-			across.push(alongAt(ring));
-		}
-		lay(
-			`${loft.mesh.name}-rib-${ring}`,
-			points,
-			outward,
-			across,
-			RIB,
-			ring === snappedRib,
-		);
+		for (let s = from; s <= to; s += 1)
+			samples.push({
+				point: vertexAt(ring, s),
+				outward: outwardAt(ring, s),
+				across: alongAt(ring),
+			});
+		lay(`${loft.mesh.name}-rib-${ring}`, samples, RIB, ring === snappedRib);
 	}
 
 	// Two stringers: the segment line nearest the hole's middle, snapped, and
@@ -878,29 +865,19 @@ function exposeFrame(
 	] as const) {
 		const along = [...(columns.get(s) ?? []), ...(columns.get(s - 1) ?? [])];
 		if (along.length === 0) continue;
-		const points: THREE.Vector3[] = [];
-		const outward: THREE.Vector3[] = [];
-		const across: THREE.Vector3[] = [];
+		const samples: FrameSample[] = [];
 		const at = (n: number) => n <= 1 || n >= loft.rings - 2 || intact(n, s);
 		const from = runOn(Math.min(...along), -1, at, loft.rings);
 		const to = runOn(Math.max(...along) + 1, 1, at, loft.rings);
-		for (let ring = from; ring <= to; ring += 1) {
-			points.push(vertexAt(ring, s));
-			outward.push(outwardAt(ring, s));
-			across.push(
-				vertexAt(ring, s + 1)
+		for (let ring = from; ring <= to; ring += 1)
+			samples.push({
+				point: vertexAt(ring, s),
+				outward: outwardAt(ring, s),
+				across: vertexAt(ring, s + 1)
 					.sub(vertexAt(ring, s - 1))
 					.normalize(),
-			);
-		}
-		lay(
-			`${loft.mesh.name}-stringer-${wrap(loft, s)}`,
-			points,
-			outward,
-			across,
-			STRINGER,
-			snap,
-		);
+			});
+		lay(`${loft.mesh.name}-stringer-${wrap(loft, s)}`, samples, STRINGER, snap);
 	}
 	return members;
 }
