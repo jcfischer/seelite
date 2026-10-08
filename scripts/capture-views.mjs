@@ -324,11 +324,16 @@ async function assertChartHover(page, where, shot, aimed) {
 
 /** One placer per shot kind. Each returns the subject it framed, for the log. */
 const PLACERS = {
-	derelict: async (page) => {
+	derelict: async (page, shot) => {
 		worldWritten = true;
 		const { placeDerelict } = await import("./lib/derelict-state.mjs");
-		const result = await placeDerelict(page);
-		return result.hull + " · " + result.key;
+		const result = await placeDerelict(page, shot);
+		return (
+			result.hull +
+			" · " +
+			result.key +
+			(result.tear ? " · " + result.tear : "")
+		);
 	},
 	"npc-jump": async (page, shot) => {
 		await page.evaluate(installHaulerFixture);

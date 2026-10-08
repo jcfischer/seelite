@@ -119,6 +119,7 @@ export const FIXTURE = Object.freeze({
  */
 /** @type {Readonly<Record<number, string>>} */
 export const LEVERS = Object.freeze({
+	735: "a derelict's torn sections and exposed frame",
 	732: "dark derelict roster hull and tethered salvage",
 	684: "hauler lane points and hyperspace rings",
 	99: "the light rig",
@@ -358,9 +359,19 @@ export const CHART_SPOTS = Object.freeze(["crowded", "isolated"]);
 export const VIEWS = Object.freeze([
 	{
 		name: "derelict",
-		covers: [732],
+		covers: [732, 735],
 		what: "A seeded dark roster hull, lamps off, with containers tethered clear of its envelope, in the cockpit at its first loss.",
 		shot: { kind: "derelict", view: "cockpit" },
+	},
+	{
+		// Node #735. The view above stands 0.87 km off a hull 60 m long, where a
+		// frame member is under a pixel; this one stands 50 m off the tear that
+		// faces the star most. New with #735, so it has no "before" at an
+		// earlier ref: the derelict view above is the pair.
+		name: "derelict-tear",
+		covers: [735],
+		what: "The same wreck from 50 m off its most sunlit tear: skin torn and folded in, the frame behind it exposed, one member snapped.",
+		shot: { kind: "derelict", framing: "tear", view: "cockpit" },
 	},
 	{
 		name: "cockpit-arrival",
@@ -1524,7 +1535,7 @@ export const OPENING_SHOT_NAMES = Object.freeze([
 ]);
 
 const SHOT_REQUIREMENTS = {
-	derelict: () => true,
+	derelict: (s) => s.framing === undefined || s.framing === "tear",
 	"npc-jump": (s) =>
 		(s.event === "arrival" || s.event === "departure") &&
 		(s.framing === undefined ||
