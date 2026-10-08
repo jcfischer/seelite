@@ -34,3 +34,5 @@ node spikes/longwall-miner/capture.mjs round-N
 Capture guards served-worktree identity, observes the shared probe lock and requires a hardware renderer. It exercises independent anchor/feed control, cutter rotation, stow, mining pose, orbit, target modal and PNG export; captures six travel views plus deployed, anchored, UI and narrow views; records browser errors and observed frame cadence. Timing applies only to this viewer. Vite can miss ignored-worktree source changes; restart this viewer server before collecting evidence after source edits.
 
 Visual review evidence and remaining limitations belong in `evidence/review.md`. The requested stopping threshold is **7/10 independent visual fidelity**, reached at **7.1/10**, with principal visual acceptance distinct from that score. No merge or deployment is authorized by this design checkpoint.
+
+Principal visual approval: 2026-10-08, “approved. Prepare PR for final implementation by another agent”. See HANDOFF.md (parent directory from evidence) for binding decisions and outstanding integration work.

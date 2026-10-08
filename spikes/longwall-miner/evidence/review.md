@@ -1,6 +1,6 @@
 # Dream Loop review — Longwall B (Codex)
 
-Stopped at principal-requested prototype fidelity threshold of 7/10. Independent final verdict: **7.1/10**. This is a visual-design score, not principal acceptance or production integration approval.
+Stopped at principal-requested prototype fidelity threshold of 7/10. Independent final verdict: **7.1/10**. Principal visual approval was given on 2026-10-08 with a request for a PR handoff to another implementation agent. Production integration remains outstanding.
 
 | Round | Score | Main response |
 |---|---:|---|
@@ -27,3 +27,5 @@ Remaining gaps: cutter teeth and joint shells are too uniformly matte; wear is b
 ## Scope
 
 Branch spike/longwall-mining-803, separate worktree .worktrees/seelite-803, node jcfischer/seelite#803. Authored assets stay under spikes/longwall-miner and outside production entry points. The user requested an approximately 84 m hull and smaller human-scale cockpit after measuring the design. No merge, deployment or production integration is part of this checkpoint.
+
+Principal visual approval: 2026-10-08, “approved. Prepare PR for final implementation by another agent”. See HANDOFF.md (parent directory from evidence) for binding decisions and outstanding integration work.
