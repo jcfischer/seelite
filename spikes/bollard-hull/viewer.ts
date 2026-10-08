@@ -25,7 +25,7 @@ document.body.prepend(renderer.domElement);
 const scene = new THREE.Scene();
 scene.background = new THREE.Color(0x010203);
 const camera = new THREE.PerspectiveCamera(
-	26,
+	24,
 	innerWidth / innerHeight,
 	0.2,
 	3000,
@@ -37,11 +37,11 @@ controls.maxDistance = 240;
 const pmrem = new THREE.PMREMGenerator(renderer),
 	room = new RoomEnvironment();
 scene.environment = pmrem.fromScene(room, 0.04).texture;
-scene.environmentIntensity = 0.26;
+scene.environmentIntensity = 0.17;
 room.dispose();
 pmrem.dispose();
-const key = new THREE.DirectionalLight(0xffd7a4, 4.3);
-key.position.set(-55, 40, -8);
+const key = new THREE.DirectionalLight(0xffd6a0, 4.4);
+key.position.set(-65, 45, 0);
 key.castShadow = true;
 key.shadow.mapSize.set(4096, 4096);
 Object.assign(key.shadow.camera, {
@@ -55,10 +55,10 @@ Object.assign(key.shadow.camera, {
 key.shadow.bias = -0.0003;
 key.shadow.normalBias = 0.1;
 scene.add(key);
-const fill = new THREE.DirectionalLight(0xb4c8dc, 0.34);
+const fill = new THREE.DirectionalLight(0x92b3d1, 0.28);
 fill.position.set(25, 12, 45);
 scene.add(fill);
-const rim = new THREE.DirectionalLight(0x9eaeb9, 1.1);
+const rim = new THREE.DirectionalLight(0x9eaeb9, 1.7);
 rim.position.set(8, 20, -50);
 scene.add(rim);
 for (const x of [-17, 17])
@@ -67,10 +67,22 @@ for (const x of [-17, 17])
 		service.position.set(x, 2, z);
 		scene.add(service);
 	}
+for (const [x, y, z] of [
+	[-3, 6, -8],
+	[3, 6, -8],
+	[-6, 2, 14],
+	[6, 2, 14],
+	[-7, 1, 24],
+	[7, 1, 24],
+]) {
+	const lamp = new THREE.PointLight(0xff8b23, z < 0 ? 18 : 35, 6, 2);
+	lamp.position.set(x, y, z);
+	scene.add(lamp);
+}
 const inspection = new THREE.HemisphereLight(0xd9e7f3, 0x9b9b88, 1.7);
 inspection.visible = false;
 scene.add(inspection);
-const stars = new Float32Array(1500 * 3);
+const stars = new Float32Array(36000 * 3);
 let seed = 795;
 const rand = () =>
 	(seed = (Math.imul(seed, 1664525) + 1013904223) >>> 0) / 4294967296;
@@ -86,11 +98,26 @@ const starfield = new THREE.Points(
 	sg,
 	new THREE.PointsMaterial({
 		color: 0xaab7be,
-		size: 1.5,
-		sizeAttenuation: true,
+		size: 0.75,
+		sizeAttenuation: false,
 	}),
 );
 scene.add(starfield);
+const brightGeo = new THREE.BufferGeometry();
+brightGeo.setAttribute(
+	"position",
+	new THREE.BufferAttribute(stars.slice(0, 4500), 3),
+);
+scene.add(
+	new THREE.Points(
+		brightGeo,
+		new THREE.PointsMaterial({
+			color: 0xcdd9e5,
+			size: 1.7,
+			sizeAttenuation: false,
+		}),
+	),
+);
 const composer = new EffectComposer(renderer);
 composer.addPass(new RenderPass(scene, camera));
 const ao = new SSAOPass(scene, camera, innerWidth, innerHeight);
@@ -101,9 +128,9 @@ composer.addPass(ao);
 composer.addPass(
 	new UnrealBloomPass(
 		new THREE.Vector2(innerWidth, innerHeight),
-		0.15,
-		0.32,
-		1.7,
+		0.28,
+		0.26,
+		0.85,
 	),
 );
 composer.addPass(new OutputPass());
@@ -111,9 +138,9 @@ composer.addPass(new SMAAPass(innerWidth, innerHeight));
 const ship = new THREE.Group();
 scene.add(ship);
 const views: Record<string, { position: number[]; target: number[] }> = {
-	hero: { position: [-73, 54, 88], target: [0, 0, 1] },
+	hero: { position: [-55, 44, 78], target: [0, -3, 0] },
 	front: { position: [0, 8, 128], target: [0, 0, 0] },
-	top: { position: [0, 128, 0.01], target: [0, 0, 1] },
+	top: { position: [0, 158, 0.01], target: [0, 0, 1] },
 	rear: { position: [70, 43, -108], target: [0, 0, -3] },
 	detail: { position: [-22, 23, 42], target: [0, 3, 8] },
 	under: { position: [-64, -70, 84], target: [0, 0, 0] },
