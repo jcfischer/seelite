@@ -75,7 +75,9 @@ import {
 	OUTPOST_FORM,
 	STATION_GEOMETRY,
 	STATION_TYPES,
+	type StationFormId,
 	type StationType,
+	formsInPlay,
 	slotPhaseRad,
 } from "../src/station";
 import {
@@ -463,7 +465,16 @@ describe("collision.md §9.1.6: the earliest impact owns the tick (C3)", () => {
  *  `station-types.md` §5.5), so it is a refinery re-typed: the two share their
  *  axis rule (`outward`) and neither spins, so the traversal is the outpost's
  *  own. */
-function worldWith(type: StationType): { world: World; id: string } {
+/**
+ * The first start system with a station of this role, and that station's id.
+ * `formId` re-forms it (node #746): a slot role's forms share its geometry,
+ * aperture and berth catalogue, so one generated station flown in each form
+ * is the traversal of each, where the generator would give one form a seed.
+ */
+function worldWith(
+	type: StationType,
+	formId?: StationFormId,
+): { world: World; id: string } {
 	const want = type === "outpost" ? "refinery" : type;
 	for (let seed = 1; seed < 400; seed++) {
 		const world = makeWorld(seed);
@@ -478,6 +489,7 @@ function worldWith(type: StationType): { world: World; id: string } {
 			station.type = "outpost";
 			station.formId = OUTPOST_FORM;
 		}
+		if (formId !== undefined) station.formId = formId;
 		return { world, id: station.id };
 	}
 	throw new Error(`no start system with a ${type} in 400 seeds`);
@@ -523,8 +535,13 @@ interface Traversal {
  * after the release `stepWorld` with the hull's solid — the path a launch
  * hands back to.
  */
-function traverse(type: StationType, hull: HullId, berthId: string): Traversal {
-	const { world, id } = worldWith(type);
+function traverse(
+	type: StationType,
+	hull: HullId,
+	berthId: string,
+	formId?: StationFormId,
+): Traversal {
+	const { world, id } = worldWith(type, formId);
 	const station = stationOf(world.system, id);
 	const interior: StationInterior = interiorOfStation(station);
 	const berth = berthOf(interior, berthId);
@@ -790,6 +807,65 @@ describe("collision.md §9.1.7, §9.1.8: arrival, parked and launch on every rol
 			},
 			TRAVERSAL_MS,
 		);
+	}
+});
+
+/**
+ * The rows above fly one generated station per role, in whichever form its
+ * system drew. A slot role's pool holds forms with their own proxies (node
+ * #746: the shipyard's Gantry, Hangar and Slipway), so each is flown here:
+ * the same traversal, exempt throughout, a launch that meets nothing, and the
+ * open bay meeting nothing unexempt — with the closed-bay red build beside it,
+ * so a form whose proxy closed its own bay is a red row and not a pass.
+ */
+describe("collision.md §9.1.7, §9.1.8: arrival, parked and launch in every pooled slot form", () => {
+	for (const type of STATION_TYPES) {
+		if (STATION_GEOMETRY[type].aperture.kind !== "slot") continue;
+		for (const formId of formsInPlay(type)) {
+			test(
+				`${type}/${formId}: exempt throughout, a launch meets nothing, and the open bay is open`,
+				() => {
+					const { world, id } = worldWith(type, formId);
+					const station = stationOf(world.system, id);
+					expect(station.formId).toBe(formId);
+					const shipped = stationProxyOf(station);
+					for (const { hull, berthId } of cases(type)) {
+						const t = traverse(type, hull, berthId, formId);
+						expect({ hull, released: t.released }).toEqual({
+							hull,
+							released: true,
+						});
+						expect(
+							t.ticks.filter((tick) => !collisionExempt(tick.phase)),
+						).toEqual([]);
+						expect({
+							hull,
+							impacts: t.afterRelease.impacts,
+							ghostSteps: t.afterRelease.ghostSteps,
+						}).toEqual({ hull, impacts: 0, ghostSteps: 0 });
+						const bare = withoutExemption(t, shipped);
+						if (berthOvershootKm(hull, type) > 0)
+							expect({ hull, met: bare.impacts + bare.ghosts > 0 }).toEqual({
+								hull,
+								met: true,
+							});
+						else
+							expect({ hull, ...bare }).toEqual({
+								hull,
+								impacts: 0,
+								ghosts: 0,
+								impactPhases: [],
+							});
+						const red = withoutExemption(t, closedBay(type, shipped));
+						expect({ hull, met: red.impacts > 0 }).toEqual({
+							hull,
+							met: true,
+						});
+					}
+				},
+				TRAVERSAL_MS,
+			);
+		}
 	}
 });
 

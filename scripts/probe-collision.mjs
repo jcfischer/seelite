@@ -46,15 +46,17 @@ const { check, watch, exit } = tally();
  * Coast at a station of `type` from a station-relative start, nose down the
  * docking axis, and step until the ship has met it and a second has passed.
  * `where` names the start: `face` (§9.2.1), `berth` (a pad's first berth) or // glossary-ignore: pad
- * `boom` (the Gantry's dorsal boom, in the static frame).
+ * `static` (a member of a shipyard's static frame, at `perch`). `system`
+ * defaults to the one system above; a shipyard row names the system whose
+ * shipyard is built in the form it is about (node #746).
  */
-const coast = async ({ type, where, gates }) => {
+const coast = async ({ type, where, gates, system = SYSTEM, perch = null }) => {
 	const page = await browser.newPage({ viewport: { width: 900, height: 620 } });
 	watch(page);
-	await page.goto(gameUrl(origin, { seed: SEED, system: SYSTEM }));
+	await page.goto(gameUrl(origin, { seed: SEED, system }));
 	await bootedGame(page);
 	const r = await page.evaluate(
-		async ({ type, where, gates }) => {
+		async ({ type, where, gates, perch }) => {
 			const g = window.__seelite;
 			const THREE = await import("/node_modules/.vite/deps/three.js");
 			const station = g.world.system.contents.stations.find(
@@ -68,7 +70,7 @@ const coast = async ({ type, where, gates }) => {
 			const unit = (a) => scale(a, 1 / length(a));
 			const snap = g.dockingSnapshot(id);
 			if (!snap) return { error: `no snapshot of ${id}` };
-			function startOf(where, snap, g) {
+			function startOf(where, snap, g, perch) {
 				const axis = snap.axis;
 				// The phase-zero basis: the static frame, and a pad's only one. // glossary-ignore: pad
 				const across0 = unit(
@@ -93,14 +95,15 @@ const coast = async ({ type, where, gates }) => {
 					);
 					label = `over berth ${berth.id}`;
 				} else {
-					// The dorsal boom stands 0.37–0.58 km out along the static `up`
-					// and runs forward to 1.15 km; come down onto its front end.
-					rel = add(scale(axis, 1.5), scale(up0, 0.475));
-					label = "over the dorsal boom";
+					// Over a member of a shipyard's static frame, at a perch the
+					// row names per form (node #746): `axialKm` out along the axis
+					// and `upKm` out along the static `up`.
+					rel = add(scale(axis, perch.axialKm), scale(up0, perch.upKm));
+					label = perch.label;
 				}
 				return { rel, label };
 			}
-			const { rel, label } = startOf(where, snap, g);
+			const { rel, label } = startOf(where, snap, g, perch);
 			const axis = snap.axis;
 			const gate = g.dockingTolerances.V_GATE_KMS;
 			function foreFaceGapKm(g, id) {
@@ -178,6 +181,7 @@ const coast = async ({ type, where, gates }) => {
 			const impact = g.lastCollisionImpact;
 			return {
 				id,
+				formId: station.formId,
 				label,
 				metAtS: metAt,
 				impacts: g.collisionImpacts - impactsBefore,
@@ -198,7 +202,7 @@ const coast = async ({ type, where, gates }) => {
 				closingAskedKms: gates * gate,
 			};
 		},
-		{ type, where, gates },
+		{ type, where, gates, perch },
 	);
 	await page.close();
 	return r;
@@ -255,14 +259,53 @@ function stopped(what, r) {
 	);
 }
 
-// §9.2.2 — a ship stops at a pad berth, and at a shipyard boom. // glossary-ignore: pad
-for (const [type, where, what] of [
-	["refinery", "berth", "a pad berth"], // glossary-ignore: pad
-	["shipyard", "boom", "a shipyard boom"],
+// §9.2.2 — a ship stops at a pad berth, and at each shipyard form's static // glossary-ignore: pad
+// frame (node #746: the Gantry's dorsal boom, the Hangar's slab, the
+// Slipway's arc). Seed 42's systems 7, 8 and 1 build the shipyard in forms
+// a, b and c, and each row checks the form it met. Every perch is 0.35 km
+// above what it comes down onto, inside `coast`'s 0.6 km of travel:
+// - the Gantry's boom stands 0.37–0.58 km out along the static `up` and runs
+//   forward to 1.15 km; come down onto its front end;
+// - the Hangar's slab stands to 0.432 km along `up` and its forward face is
+//   at −0.38 km; 0.40 km out clears the hub's swept corners (0.37 km);
+// - the Slipway's arc is a 1.283 km ring whose +Z crown is at 0.12 km, and
+//   `up` at phase zero points at 0.5π, inside its 0.28π–1.73π sweep.
+for (const [type, where, what, system, perch, formId] of [
+	["refinery", "berth", "a pad berth", SYSTEM, null, null], // glossary-ignore: pad
+	[
+		"shipyard",
+		"static",
+		"a Gantry's boom",
+		7,
+		{ axialKm: 1.5, upKm: 0.475, label: "over the dorsal boom" },
+		"a",
+	],
+	[
+		"shipyard",
+		"static",
+		"a Hangar's slab",
+		8,
+		{ axialKm: -0.03, upKm: 0.4, label: "over the slab's forward face" },
+		"b",
+	],
+	[
+		"shipyard",
+		"static",
+		"a Slipway's arc",
+		1,
+		{ axialKm: 0.47, upKm: 1.283, label: "over the arc's crown" },
+		"c",
+	],
 ]) {
 	console.log(`\n§9.2.2 a ship stops at ${what}:`);
-	const r = await coast({ type, where, gates: 1 });
+	const r = await coast({ type, where, gates: 1, system, perch });
 	console.log(`  ${r.id} ${r.label}: ${JSON.stringify(r)}`);
+	if (formId !== null)
+		check(
+			`${what}: the system builds its shipyard in form ${formId}`,
+			r.formId === formId,
+			JSON.stringify(r.formId),
+		);
 	stopped(what, r);
 	// The figure §11's joint 5 is about: how far above the drawn station the
 	// proxy stopped it. Printed, not gated — it is the principal's to judge.
