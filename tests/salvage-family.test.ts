@@ -170,29 +170,57 @@ describe("home station Salvage offers", () => {
 			),
 		).toEqual([]);
 	});
-	test("window excludes the exact 2 h boundary and a kept offer cannot bypass it", () => {
+	test("window excludes the exact 2 h boundary", () => {
 		expect(
 			bindSalvage(context([target], lostAt + SALVAGE_OFFER_WINDOW_S - 1)),
 		).toHaveLength(1);
 		expect(
 			bindSalvage(context([target], lostAt + SALVAGE_OFFER_WINDOW_S)),
 		).toEqual([]);
+	});
+	test("a kept offer supplied by a stale board cannot bypass the acceptance window", () => {
+		const o = offer();
+		const deadline = lostAt + SALVAGE_OFFER_WINDOW_S;
 		const kept = requestAction(
 			emptyRequests(),
-			[offer()],
+			[o],
 			"retain",
-			offer().id,
-			ctx(),
+			o.id,
+			ctx(o),
 		).state;
-		expect(
-			requestAction(
-				kept,
-				[],
-				"accept",
-				offer().id,
-				ctx(offer(), { now: lostAt + SALVAGE_OFFER_WINDOW_S }),
-			).ok,
-		).toBe(false);
+		expect(kept.leadsById[o.id]).toEqual(o);
+		const before = requestAction(
+			kept,
+			[o],
+			"accept",
+			o.id,
+			ctx(o, {
+				now: deadline - 1,
+			}),
+		);
+		expect(before.ok).toBe(true);
+		expect(before.state.byId[o.id].status).toBe("accepted");
+		// Keep the offer present so only the time guard can refuse acceptance.
+		for (const now of [deadline, deadline + 1]) {
+			const expired = requestAction(kept, [o], "accept", o.id, ctx(o, { now }));
+			expect(expired.ok).toBe(false);
+			expect(expired.message).toBe(
+				"This salvage offer is no longer available.",
+			);
+			expect(expired.state).toBe(kept);
+			expect(expired.rewardCr).toBe(0);
+		}
+	});
+	test("a kept offer cannot be accepted without its live home-board offer", () => {
+		const o = offer();
+		const kept = requestAction(
+			emptyRequests(),
+			[o],
+			"retain",
+			o.id,
+			ctx(o),
+		).state;
+		expect(requestAction(kept, [], "accept", o.id, ctx(o)).ok).toBe(false);
 	});
 	test("whole hold gate is separate from free room; no scanner gate and no issuance at accept", () => {
 		const o = offer();
