@@ -12,8 +12,10 @@
 import { describe, expect, test } from "bun:test";
 import type { CarrierKey } from "../src/carrier-key";
 import {
+	DERELICT_EARLIEST_LOSS_S,
 	DERELICT_GAP_S,
 	DERELICT_SALVAGER_S,
+	DERELICT_WALK_LIMIT,
 	derelictFirstLossAt,
 	derelictNextLossAt,
 	derelictSlots,
@@ -217,6 +219,44 @@ describe("the save under the new schedule", () => {
 			body.galaxies[G].derelicts[key].instanceOrdinal = 1;
 		});
 		expect(() => parseWorld(raw)).toThrow("outside the clock's 0 to");
+	});
+
+	test("a first instance lost further back than the save format allows is refused, and a tuned life stays inside it", () => {
+		// The tuned first loss is at most one life before zero; the format's
+		// floor is fixed, so a retune that shortens the life refuses no row.
+		expect(-DERELICT_SALVAGER_S).toBeGreaterThan(DERELICT_EARLIEST_LOSS_S);
+		const seed = 42;
+		const { key } = adriftAtZero(seed);
+		const world = materializeDerelict(newWorld(seed), G, key, 0);
+		for (const lostAt of [DERELICT_EARLIEST_LOSS_S - 1, -1e15, -1e300]) {
+			const raw = resealedWorld(world, (body) => {
+				body.galaxies[G].derelicts[key].lostAt = lostAt;
+			});
+			expect(() => parseWorld(raw)).toThrow(
+				`outside the clock's ${DERELICT_EARLIEST_LOSS_S} to`,
+			);
+		}
+		const atFloor = resealedWorld(world, (body) => {
+			body.galaxies[G].derelicts[key].lostAt = DERELICT_EARLIEST_LOSS_S;
+		});
+		expect(
+			parseWorld(atFloor).galaxies[G].derelicts[key].lostAt,
+		).toBe(DERELICT_EARLIEST_LOSS_S);
+	});
+
+	test("a walk that cannot reach its time throws rather than spinning", () => {
+		const { record, key } = slotsOf(42)[0];
+		// A loss a gap cannot move: the walk would never advance.
+		expect(() =>
+			derelictTimeline(record.seed, key, 0, {
+				instanceOrdinal: 0,
+				lostAt: -1e300,
+			}),
+		).toThrow("does not advance");
+		// A clock further out than the walk's limit of instances.
+		expect(() => derelictTimeline(record.seed, key, 1e15)).toThrow(
+			`${DERELICT_WALK_LIMIT} instances`,
+		);
 	});
 
 	test("a row the pilot touched under the old schedule keeps its instance, its loss and its contents", () => {

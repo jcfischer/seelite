@@ -41,6 +41,7 @@ import {
 } from "./carrier-key";
 import { type DeficitMap, parseDeficits } from "./deficits";
 import {
+	DERELICT_EARLIEST_LOSS_S,
 	DERELICT_FITTINGS,
 	DERELICT_MAX_CONTAINERS,
 	type DerelictContainerKind,
@@ -2784,11 +2785,12 @@ export function parseWorld(raw: unknown): WorldState {
 	// strip is after `gameTime`. Only a slot's first instance can be lost before
 	// zero — the clock starts part-way through its cycle (S16, node #775), so it
 	// may already be adrift — and every later one follows a strip made on the
-	// clock. The bound for instance 0 is a tuned figure and the parse reads
-	// none, so its loss is not bounded below. A row outside that was not
-	// written: one stamped in the future throws on its first read, and one
-	// stamped far in the past sends the schedule's walk through every instance
-	// since.
+	// clock. Instance 0 is bounded below by a fixed save-format figure,
+	// `DERELICT_EARLIEST_LOSS_S`, and not by the tuned life, which a retune may
+	// shorten under a saved row. A row outside that was not written: one
+	// stamped in the future throws on its first read, and one stamped far in
+	// the past sends the schedule's walk through every instance since — at
+	// −1e300 a gap no longer moves the loss, and the walk never returned.
 	for (const env of world.galaxies)
 		for (const [key, row] of Object.entries(env.derelicts) as [
 			CarrierKey,
@@ -2798,12 +2800,11 @@ export function parseWorld(raw: unknown): WorldState {
 				fail(
 					`derelicts: ${key} is not a derelict slot in galaxy ${env.galaxyIndex}`,
 				);
-			if (
-				(row.lostAt < 0 && row.instanceOrdinal !== 0) ||
-				row.lostAt > world.gameTime
-			)
+			const earliest =
+				row.instanceOrdinal === 0 ? DERELICT_EARLIEST_LOSS_S : 0;
+			if (row.lostAt < earliest || row.lostAt > world.gameTime)
 				fail(
-					`derelict ${key}: lost at ${row.lostAt}, outside the clock's 0 to ${world.gameTime}`,
+					`derelict ${key}: lost at ${row.lostAt}, outside the clock's ${earliest} to ${world.gameTime}`,
 				);
 			if (row.salvaged && row.salvaged.at > world.gameTime)
 				fail(

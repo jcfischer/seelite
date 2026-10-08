@@ -648,7 +648,7 @@ describe("a malformed row is refused by name", () => {
 		const ahead = resealedWorld(base(), (body) => {
 			body.galaxies[G].derelicts[KEY].lostAt = body.gameTime + 1;
 		});
-		expect(() => parseWorld(ahead)).toThrow("outside the clock's 0 to");
+		expect(() => parseWorld(ahead)).toThrow("outside the clock's");
 	});
 
 	test("a strip after the clock", () => {

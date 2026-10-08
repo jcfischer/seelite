@@ -85,6 +85,30 @@ export const DERELICT_SALVAGER_S = 8 * HOUR_S;
  * visit is closer to the fresh roll O2 asks for.
  */
 export const DERELICT_GAP_S = [6 * HOUR_S, 166 * HOUR_S] as const;
+/**
+ * The earliest loss a saved row may record: a week before the clock started.
+ *
+ * **A save-format bound, not a dial**, and like `DERELICT_SLOTS_BY_GOVERNMENT`
+ * the parse reads it on purpose. Only a slot's first instance can be lost
+ * before zero, and never by more than one life (`derelictFirstLossAt`), so
+ * the tuned figures sit well inside it and `tests/derelict-slots.test.ts`
+ * holds them there. It is a fixed figure rather than `−DERELICT_SALVAGER_S`
+ * because a parse that read the tuned life would refuse every row lost early
+ * in a long life the day the life was shortened. Widening it refuses nothing;
+ * narrowing it owes a migration.
+ *
+ * Without it a row stamped at −1e300 loaded, and its first read never
+ * returned: adding a life to that loss leaves it where it was.
+ */
+export const DERELICT_EARLIEST_LOSS_S = -7 * 24 * HOUR_S;
+/**
+ * The most instances one walk of the schedule steps through before it is
+ * refused. Every step is a life and a gap of at least `DERELICT_GAP_S[0]`, so
+ * this is decades of game time at the shortest gap; a walk this long is a
+ * clock or a row no writer produced, and an error says so where a loop would
+ * freeze the page.
+ */
+export const DERELICT_WALK_LIMIT = 100_000;
 /** S6: the share of instances that carry one fitting container. */
 export const DERELICT_FITTING_CHANCE = 0.25;
 /** S6: one to four manifest lines. */
@@ -340,12 +364,22 @@ export function derelictTimeline(
 		lostAt = firstLossAt;
 		stripped = undefined;
 	}
-	for (;;) {
+	for (let steps = 0; ; steps++) {
+		if (steps === DERELICT_WALK_LIMIT)
+			throw new Error(
+				`derelict ${key}: ${DERELICT_WALK_LIMIT} instances from the loss at ${lostAt} do not reach ${gameTime}`,
+			);
 		const salvagerAt = lostAt + DERELICT_SALVAGER_S;
 		const end = stripped ?? { at: salvagerAt, byPlayer: false };
 		if (gameTime < end.at)
 			return { condition: "destroyed", instanceOrdinal, lostAt, salvagerAt };
 		const nextLossAt = end.at + derelictGapS(systemSeed, key, instanceOrdinal);
+		// A loss so far from zero that a gap no longer moves it is a row no
+		// writer produced; walking on from it would never end.
+		if (!(nextLossAt > lostAt))
+			throw new Error(
+				`derelict ${key}: the schedule does not advance past the loss at ${lostAt}`,
+			);
 		if (gameTime < nextLossAt)
 			return {
 				condition: "salvaged",
