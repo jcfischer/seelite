@@ -1,0 +1,27 @@
+{
+	"gpu": "ANGLE (Apple, ANGLE Metal Renderer: Apple M1 Pro, Unspecified Version)",
+	"errors": [],
+	"models": [
+		{
+			"id": "o2",
+			"loaded": true,
+			"fps": 55.956229793583695,
+			"triangles": 3522672,
+			"calls": 234,
+			"modelTriangles": 1761308,
+			"meshCount": 105,
+			"bounds": [1585.9318237304688, 1223.749984741211, 1082.9918212890625],
+			"view": "hero",
+			"geometry": {
+				"axialError": 0,
+				"maxDrift": 0,
+				"clearanceViolations": 0,
+				"minThroatDepth": 12.175000000000011,
+				"sweepRadius": 23.578391694215842,
+				"zMin": -9.649999999999999,
+				"zMax": 11.980000305175778
+			}
+		}
+	],
+	"controls": "selection, full orbit, zoom, seven presets, tooling motion and pause on every captured station, work lights, capsule rotation, target dialog and PNG export passed"
+}
