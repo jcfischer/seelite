@@ -63,3 +63,7 @@ public/voice-model/
 public/music-samples/piano-vcsl/
 public/music-samples/harpsi-vcsl/
 public/music-samples/index.json
+
+# Dream Loop visual references and iteration captures
+.dream-loop/
+spikes/coriolis/*.blend1
