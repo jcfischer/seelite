@@ -20,7 +20,7 @@ placement, discovery and fitting policy.
 | `npm run lint` | Pass |
 | `npm run check:wiring` | Pass |
 | `git diff --check` | Pass |
-| `npm run probe:one -- death-wreck` | Pass: real death/reload, death-point row, immediate contact, painted hull pixels and live scoop into the saved hold |
+| `npm run probe:one -- death-wreck` | Pass: real death/reload, death-point row, immediate contact, painted wreck pixels (hull, tethers and containers together; the check cannot isolate the hull) and live scoop into the saved hold |
 | Round 2 affected `death`, `derelict`, `system-sweep` probes | Pass through the canonical GPU runner |
 | Round 2 selected `save` probe | 36/37; IndexedDB connection-upgrade check failed, cause unestablished |
 | Round 2 solo `save` rerun | Pass with no source changes; does not erase the selected-run failure |
@@ -128,3 +128,22 @@ The optional Holdings/simulation boundary refactor, parser profiles, validation
 extraction, ordinal helper and shared decrement are deferred to avoid broadening
 this schema repair. Notice-unit hoisting and the probe lookup helper are deferred
 as cosmetic cleanup. No graph node or map was edited.
+
+## Principal session — merge with main and sage round 7
+
+Author: Ivy / Claude. Date: 2026-10-08.
+
+`origin/main` was merged in. Main took `DOMAIN` tag 35 for `DERELICT_HOME`
+(#734), so `DEATH_WRECK` is 36. The new tag changes every death draw. At
+`gameTime` 10 the destroyed draw for the test fixture kept nothing, so twelve
+death-wreck rows and one save-store row failed. The fixtures now search for
+their death time (`DEATH_AT`). Round 7's two taken findings: a death container
+persists `amount` beside its `unit` (a derelict row keeps `tonnes`), and §7 no
+longer says the game has no death path. The pixel check above is named for
+what it measures: the whole wreck, not the hull alone.
+
+Verification on the merged tree: `npm test` 5,640 pass, 0 fail, 305 files;
+`npx tsc --noEmit`, format, lint, launcher wiring and build pass. The full GPU
+browser suite, `npm run probe`, passed 96/96 gating probes in 1,848 s, peak
+load 66.7, on ANGLE Metal / Apple M1 Pro. That run was before the label change
+above, which only renames a check; `probe-death-wreck` was rerun alone after it.

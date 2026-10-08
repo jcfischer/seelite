@@ -149,7 +149,7 @@ try {
 		)
 			changed++;
 	check(
-		"death hull paints visible pixels through the shared wreck drawing",
+		"death wreck (hull, tethers and containers together) paints visible pixels through the shared wreck drawing",
 		changed > 50,
 		String(changed),
 	);
