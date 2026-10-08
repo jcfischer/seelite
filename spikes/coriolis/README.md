@@ -16,7 +16,7 @@ The standalone `/spikes/coriolis/` workbench retains the closed display model an
 
 The flight GLB removes the display tunnel and end cap, preserving the complete 120 × 70 m opening. A collar joins the hull to the production bay. The bay mouth is recessed 30 m while berth coordinates, spin, docking checks and save data retain their existing values. A spinning proxy arm covers the added roof machinery; the complete flight asset is checked against the proxy.
 
-A single same-origin GLB is loaded before station construction and shared across system changes. Imported emissive strengths are normalized to the live exposure ceiling; the armour uses the trade role tint while retaining its textured wear and panel contrast. Runtime navigation fittings supply clock-driven hull strobes, mouth chase lamps, aperture lights and both station-name plaques. The core is authored in metres and converted to kilometres; scene scaling follows the normal station path. Asset load failure rejects boot rather than quietly substituting a different station.
+A single same-origin GLB is loaded before station construction and shared across system changes. Imported emissive strengths are normalized to the live exposure ceiling; the armour uses the trade role tint while retaining its textured wear and panel contrast. Runtime navigation fittings supply clock-driven hull strobes, mouth chase lamps, aperture lights and both station-name plaques. The core is authored in metres and converted to kilometres; scene scaling follows the normal station path. An interrupted asset download shows a Retry button before a Game or save store is constructed; retry performs a fresh request.
 
 ## Authoring and provenance
 

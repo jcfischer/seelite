@@ -4,38 +4,38 @@
     "station": "station-trade",
     "snapshot": {
       "stationId": "station-trade",
-      "rangeKm": 2.2279999643622252,
+      "rangeKm": 2.227999972352792,
       "closingKms": 0,
       "frameBodyId": "station-trade",
       "throttle": 0,
-      "offAxisKm": 0.003836147705696573,
-      "axialKm": 2.227996661839703,
+      "offAxisKm": 0.0038297089075763125,
+      "axialKm": 2.227996680907251,
       "planeKm": 0.428,
       "apertureKind": "slot",
       "apertureWidthKm": 0.12,
       "apertureHeightKm": 0.07,
-      "phaseRad": 0.36338468047408334,
+      "phaseRad": 0.3627790564626508,
       "axis": {
-        "x": -0.4087324217486602,
-        "y": 0.9125717930191276,
-        "z": 0.012269066685376293
+        "x": -0.4087298028422889,
+        "y": 0.9125729655848266,
+        "z": 0.012269097449235777
       },
       "basis": {
         "across": {
-          "x": 0.8547409444022338,
-          "y": 0.3874738762056052,
-          "z": -0.3453721372962516
+          "x": 0.8549356419727752,
+          "y": 0.3875504985608171,
+          "z": -0.344803798050226
         },
         "up": {
-          "x": -0.31993081341729634,
-          "y": -0.13067791643601512,
-          "z": -0.9383856119858665
+          "x": -0.3194135193649489,
+          "y": -0.1304422996921523,
+          "z": -0.9385945930474565
         }
       },
       "reference": {
-        "x": 0.9126417996680221,
-        "y": 0.4086196430595895,
-        "z": 0.010720671833783871
+        "x": 0.9126429725573492,
+        "y": 0.40861702435410874,
+        "z": 0.010720636626590245
       },
       "spinRpm": 0.9802175329998135,
       "clearance": {
@@ -59,7 +59,7 @@
         "energy": 100,
         "heat": 0,
         "heatLocked": false,
-        "sinceStruckS": 6.540099999904629
+        "sinceStruckS": 6.534200000047678
       },
       "alive": true,
       "poolMax": 206,
@@ -82,51 +82,51 @@
     "frames": 204
   },
   "flight": {
-    "axialKm": 2.106841039387011,
-    "frames": 280
+    "axialKm": 2.10559283425483,
+    "frames": 281
   },
   "docking": {
     "phase": "docked",
     "grant": "granted",
     "snapshot": {
       "stationId": "station-trade",
-      "rangeKm": 0.18436105791418558,
-      "closingKms": 0.0097515733018767,
+      "rangeKm": 0.18436105815969148,
+      "closingKms": 0.009751573301875925,
       "frameBodyId": "station-trade",
       "throttle": 0,
-      "offAxisKm": 0.09500099465897206,
-      "axialKm": 0.15799940091355935,
+      "offAxisKm": 0.09500098962692956,
+      "axialKm": 0.15799940422566527,
       "planeKm": 0.428,
       "apertureKind": "slot",
       "apertureWidthKm": 0.12,
       "apertureHeightKm": 0.07,
-      "phaseRad": 3.539256543798234,
+      "phaseRad": 3.5375081038328093,
       "axis": {
-        "x": -0.4224190776559199,
-        "y": 0.9063197884348806,
-        "z": 0.012106358811610965
+        "x": -0.4224115686557611,
+        "y": 0.9063232869979952,
+        "z": 0.012106449146172737
       },
       "basis": {
         "across": {
-          "x": -0.8375082567078289,
-          "y": -0.39538528880163826,
-          "z": 0.37716096476896815
+          "x": -0.8381162407800884,
+          "y": -0.39563859039569493,
+          "z": 0.3755413062904806
         },
         "up": {
-          "x": 0.3466151219703717,
-          "y": 0.14918081140213263,
-          "z": 0.9260685950462126
+          "x": 0.3451516095955982,
+          "y": 0.14848638063760994,
+          "z": 0.9267265838200125
         }
       },
       "reference": {
-        "x": 0.906388090125931,
-        "y": 0.42230525831398885,
-        "z": 0.0109040762205079
+        "x": 0.9063915896319812,
+        "y": 0.42229774987968033,
+        "z": 0.010903975924823417
       },
       "spinRpm": 0.9802175329998135,
       "clearance": {
         "kind": "granted",
-        "expiresAtS": 604.9294999998808
+        "expiresAtS": 604.9458000000715
       },
       "grantLive": true,
       "hostile": false,
@@ -137,9 +137,9 @@
       "berthId": "overhead-deep",
       "berthAxialKm": 0.15799999999999997,
       "berthUp": {
-        "x": -0.34661512197037164,
-        "y": -0.1491808114021326,
-        "z": -0.9260685950462124
+        "x": -0.34515160959559826,
+        "y": -0.14848638063760997,
+        "z": -0.9267265838200127
       },
       "stationName": "USQULAVE",
       "condition": {
@@ -150,7 +150,7 @@
         "energy": 100,
         "heat": 0,
         "heatLocked": false,
-        "sinceStruckS": 37.47949999987996
+        "sinceStruckS": 37.46246666673736
       },
       "alive": true,
       "poolMax": 206,
@@ -176,17 +176,17 @@
             "closingSpeed": true
           },
           "passed": true,
-          "speedKms": 0.020000008866162967,
-          "positionAngleDeg": 0.04812498360323867,
-          "noseAngleDeg": 0.4135492554309587,
-          "rollAngleDeg": 0.09695844047006705,
-          "offsetAcrossKm": -0.00033191655455156604,
-          "offsetUpKm": 0.000138084931180316
+          "speedKms": 0.020000008879996287,
+          "positionAngleDeg": 0.0478185447639024,
+          "noseAngleDeg": 0.41256662798524263,
+          "rollAngleDeg": 0.09696714966696394,
+          "offsetAcrossKm": -0.00033004259567384327,
+          "offsetUpKm": 0.00013662845370407598
         },
         "state": {
           "clearance": {
             "kind": "granted",
-            "expiresAtS": 604.9294999998808
+            "expiresAtS": 604.9458000000715
           },
           "hostile": false,
           "hostileUntilS": null,
@@ -206,8 +206,16 @@
     "impacts": 0
   },
   "errors": [],
+  "retry": {
+    "attempts": 2
+  },
+  "shipViewer": {
+    "stationAssetRequests": 0
+  },
   "ordinary": {
     "industrialRequests": 1,
     "hasIndustrial": true
-  }
+  },
+  "testedCommit": "48154d9a22388f0b0bd11ef99a6c001dd5343fcb",
+  "scope": "Hardware Chromium, pinned no-save flight, accelerated docking and launch, asset retry, and ship workbench asset exclusion. No FPS headroom measurement."
 }
