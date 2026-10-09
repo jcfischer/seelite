@@ -20653,9 +20653,9 @@ if (postcard) {
 	// which world is wanted, and the seed only pre-fills New game (§11.6).
 	// Fetch in parallel with the Commander catalog; wait only at world construction.
 	// The miner is not in map #1's boot set (cockpit and home exterior only):
-	// awaiting it here is outside the boot set until node #838 gives
-	// `miner/b` a stand-in; the ruling on that is in
-	// `spikes/longwall-miner/HANDOFF.md`.
+	// awaiting it here is an interim breach the principal waived on node #838
+	// (2026-10-09, issuecomment-6080935296) until #838 moves it out of boot and
+	// gives `miner/b` a stand-in.
 	const stationModel = Promise.all([
 		import("./coriolis-flight"),
 		import("./cockpit-model"),

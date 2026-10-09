@@ -55,8 +55,8 @@ node spikes/longwall-miner/capture-game.mjs round-N   # flown, chase view, 4 sid
 - **Loading.** `src/longwall-model.ts` fetches it behind the Retry panel on
   every page that builds a ship (the game, the postcard viewer, the ship
   workbench); `tests/setup/longwall-model.ts` installs it under bun. In the
-  game that puts it in the boot set, which map #1's Constraint does not allow
-  (`HANDOFF.md`, the ruling the merge waits on).
+  game that puts it in the boot set, which map #1's Constraint does not allow;
+  the principal waived that on node #838 until #838 lands (`HANDOFF.md`).
   `buildShipMesh("miner", "b")` throws until it is installed, because the
   envelope, collision box, vents and muzzles are measured off the drawn mesh.
 - **Frame.** Turned half a turn about Y to the game's nose-at-minus-Z,

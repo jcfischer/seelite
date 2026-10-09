@@ -77,9 +77,15 @@ interface VisualState {
 	greebles: THREE.InstancedMesh[];
 	/** An authored hull's own machinery (node #815), gated by the band alone. */
 	mechanism: readonly AuthoredPart[];
-	/** What an authored hull draws instead of its metal at `outline`, built the
-	 *  first time the band gets there (node #815, sage round 4). */
-	outline?: { readonly build: () => THREE.Object3D; built?: THREE.Object3D };
+	/** What an authored hull draws in its metal's place at a band, each built
+	 *  the first time the band gets there (node #815, sage rounds 4 and 5). */
+	standIns: StandIn[];
+	/** The band the mechanism was last gated at, so an unchanged band walks
+	 *  none of it (sage round 5). */
+	appliedBand?: DetailLevel;
+	/** Each mechanism mesh's `castShadow` as the occlusion marking left it,
+	 *  held while the band is past `full` and put back on return. */
+	castKept?: Map<THREE.Object3D, boolean>;
 }
 
 /**
@@ -89,7 +95,18 @@ interface VisualState {
  */
 export interface AuthoredPart {
 	readonly mesh: THREE.Object3D;
-	readonly hiddenFrom: Exclude<DetailLevel, "full">;
+	readonly hiddenFrom: FarBand;
+}
+
+type FarBand = Exclude<DetailLevel, "full">;
+
+/** Builders for what an authored hull draws in its metal's place, per band. */
+export type StandInBuilders = Partial<Record<FarBand, () => THREE.Object3D>>;
+
+interface StandIn {
+	readonly band: FarBand;
+	readonly build: () => THREE.Object3D;
+	built?: THREE.Object3D;
 }
 
 const BAND_RANK: Readonly<Record<DetailLevel, number>> = {
@@ -304,6 +321,7 @@ export function buildShipDetails(
 		quality: "high",
 		greebles,
 		mechanism: [],
+		standIns: [],
 	} satisfies VisualState;
 	root.userData.shipSilhouetteKm = reachKm;
 }
@@ -313,21 +331,24 @@ export function buildShipDetails(
  * machinery and lamps: no generated greebles and no strip. The band sheds
  * `mechanism` with distance — the builder names which meshes and from which
  * band, and every lamp stays out of it, as every emissive stays out of the
- * greeble gate. At `outline` the hull's own metal can go too, and `outline`
- * builds what draws in its place.
+ * greeble gate. Past `full` the hull's own metal can go too, and
+ * `standIns` builds what draws in its place at each band.
  */
 export function markAuthoredShip(
 	root: THREE.Group,
 	reachKm: number,
 	mechanism: readonly AuthoredPart[],
-	outline?: () => THREE.Object3D,
+	standIns: StandInBuilders = {},
 ): void {
 	root.userData.shipVisual = {
 		detail: "full",
 		quality: "high",
 		greebles: [],
 		mechanism,
-		outline: outline && { build: outline },
+		standIns: (Object.keys(standIns) as FarBand[]).map((band) => ({
+			band,
+			build: standIns[band] as () => THREE.Object3D,
+		})),
 	} satisfies VisualState;
 	root.userData.shipSilhouetteKm = reachKm;
 }
@@ -335,20 +356,36 @@ export function markAuthoredShip(
 function applyVisibility(root: THREE.Object3D, state: VisualState) {
 	const draw = state.detail === "full" && SHIP_QUALITY[state.quality].greebles;
 	for (const mesh of state.greebles) mesh.visible = draw;
+	if (state.appliedBand === state.detail) return;
+	state.appliedBand = state.detail;
 	const band = BAND_RANK[state.detail];
 	for (const part of state.mechanism)
 		part.mesh.visible = band < BAND_RANK[part.hiddenFrom];
-	const outline = state.outline;
-	if (!outline) return;
-	const far = state.detail === "outline";
-	// Built on first use rather than with the hull, so a freshly built mesh —
-	// the one muzzles, vent throats, the envelope and the vent placement are
-	// measured off — never carries it.
-	if (far && !outline.built) {
-		outline.built = outline.build();
-		root.add(outline.built);
+	// Past `full` an authored hull's metal leaves the shadow pass, and with it
+	// the ambient-occlusion pass, which draws only what casts
+	// (`hideNonOccluders`): the hull's ~250k triangles still draw once there,
+	// but not two or three times over (sage round 5). Every lamp is untouched.
+	if (band > 0 && !state.castKept) {
+		state.castKept = new Map();
+		for (const { mesh } of state.mechanism) {
+			state.castKept.set(mesh, mesh.castShadow);
+			mesh.castShadow = false;
+		}
+	} else if (band === 0 && state.castKept) {
+		for (const [mesh, cast] of state.castKept) mesh.castShadow = cast;
+		state.castKept = undefined;
 	}
-	if (outline.built) outline.built.visible = far;
+	for (const standIn of state.standIns) {
+		const drawn = state.detail === standIn.band;
+		// Built on first use rather than with the hull, so a freshly built mesh
+		// — the one muzzles, vent throats, the envelope and the vent placement
+		// are measured off — never carries one.
+		if (drawn && !standIn.built) {
+			standIn.built = standIn.build();
+			root.add(standIn.built);
+		}
+		if (standIn.built) standIn.built.visible = drawn;
+	}
 }
 
 export function setShipDetail(root: THREE.Object3D, level: DetailLevel): void {

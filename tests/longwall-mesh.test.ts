@@ -18,9 +18,11 @@ import { HULL_SPECS } from "../src/hull";
 import { buildDerelictMesh } from "../src/derelict-mesh";
 import { disposeSubtree } from "../src/gpu-teardown";
 import { EMISSIVE_CEILING } from "../src/light-rig";
+import { markOcclusion } from "../src/occlusion-mesh";
 import {
 	HULL_REACH_KM,
 	LONGWALL_NOZZLES_M,
+	LONGWALL_REDUCED_ERROR_M,
 	buildShipMesh,
 	installLongwallModel,
 	isAuthoredHull,
@@ -301,18 +303,62 @@ describe("the detail band sheds the mechanism at range (node #815)", () => {
 		expect(triangles(meshesOf(root))).toBe(283_576);
 	});
 
-	test("reduced hides the anchors' metal and keeps every lamp, the hull and the cutter", () => {
+	test("reduced draws the hull simplified, hides the anchors' metal, and keeps every lamp and the cutter", () => {
 		const root = buildShipMesh("miner", "b").root;
+		// A fresh build carries no simplified hull either.
+		expect(root.getObjectByName("longwall-reduced")).toBeUndefined();
 		setShipDetail(root, "reduced");
+		const reduced = root.getObjectByName("longwall-reduced") as THREE.Object3D;
+		const stands = meshesOf(reduced);
+		const paint = (m: THREE.Mesh) =>
+			!isLamp(m) && !(m.material as THREE.Material).transparent;
 		for (const mesh of meshesOf(root)) {
-			const hidden = !isLamp(mesh) && under(mesh, ANCHOR);
+			if (stands.includes(mesh)) continue;
+			const hidden =
+				!isLamp(mesh) &&
+				(under(mesh, ANCHOR) || (under(mesh, /^hull$/) && paint(mesh)));
 			expect({ name: mesh.name, visible: mesh.visible }).toEqual({
 				name: mesh.name,
 				visible: !hidden,
 			});
 		}
-		expect(drawn(root)).toHaveLength(24);
-		expect(triangles(drawn(root))).toBe(261_768);
+		// One simplified mesh per opaque hull mesh, but the hoses: thinner than
+		// the bound, they simplify to nothing and draw nothing.
+		const hull = root.getObjectByName("hull") as THREE.Object3D;
+		const sources = meshesOf(hull).filter(paint);
+		expect(sources).toHaveLength(7);
+		expect(stands).toHaveLength(6);
+		for (const stand of stands) {
+			const source = sources.find((m) => `${m.name}-reduced` === stand.name);
+			if (!source) throw new Error(`${stand.name} has no source`);
+			// The source's own paint and vertex buffers; only the index is new.
+			expect(stand.material).toBe(source.material);
+			for (const [name, attribute] of Object.entries(
+				source.geometry.attributes,
+			))
+				expect(stand.geometry.getAttribute(name)).toBe(attribute);
+			expect(triangles([stand])).toBeLessThan(triangles([source]));
+			expect(stand.castShadow).toBe(false);
+		}
+		expect(triangles(sources)).toBe(252_810);
+		expect(triangles(stands)).toBe(5_756);
+		expect(LONGWALL_REDUCED_ERROR_M).toBe(0.4);
+		// In the hull's place: its box inside the hull's, within the bound.
+		root.updateMatrixWorld(true);
+		const drawnBox = new THREE.Box3().setFromObject(reduced, true);
+		const hullBox = new THREE.Box3().setFromObject(hull, true);
+		const slack = LONGWALL_REDUCED_ERROR_M * 0.001;
+		for (const axis of ["x", "y", "z"] as const) {
+			expect(drawnBox.min[axis]).toBeGreaterThanOrEqual(
+				hullBox.min[axis] - slack,
+			);
+			expect(drawnBox.max[axis]).toBeLessThanOrEqual(hullBox.max[axis] + slack);
+			expect(drawnBox.max[axis] - drawnBox.min[axis]).toBeGreaterThan(
+				hullBox.max[axis] - hullBox.min[axis] - 2 * slack,
+			);
+		}
+		expect(drawn(root)).toHaveLength(23);
+		expect(triangles(drawn(root))).toBe(14_714);
 		expect(root.getObjectByName("nav-lights")?.visible).toBe(true);
 	});
 
@@ -369,6 +415,11 @@ describe("the detail band sheds the mechanism at range (node #815)", () => {
 		const paint = (wreck.getObjectByName("hull-dark-structure") as THREE.Mesh)
 			.material;
 		expect(stand.material).toBe(paint);
+		setShipDetail(wreck, "reduced");
+		expect(
+			(wreck.getObjectByName("hull-dark-structure-reduced") as THREE.Mesh)
+				.material,
+		).toBe(paint);
 		const live = buildShipMesh("miner", "b").root;
 		expect(paint).not.toBe(
 			(live.getObjectByName("hull-dark-structure") as THREE.Mesh).material,
@@ -383,14 +434,45 @@ describe("the detail band sheds the mechanism at range (node #815)", () => {
 		updateShipVisuals(root, reach * 10, "low");
 		expect(drawn(root)).toHaveLength(100);
 		updateShipVisuals(root, reach * 200, "high");
-		expect(drawn(root)).toHaveLength(24);
+		expect(drawn(root)).toHaveLength(23);
 		updateShipVisuals(root, reach * 1000, "high");
 		expect(drawn(root)).toHaveLength(10);
-		// Back inside the band the stand-in is kept, hidden, and the hull draws.
+		expect(root.getObjectByName("longwall-reduced")?.visible).toBe(false);
+		// Back inside the band both stand-ins are kept, hidden, and the hull
+		// draws.
 		updateShipVisuals(root, reach * 10, "high");
-		expect(meshesOf(root)).toHaveLength(101);
+		expect(meshesOf(root)).toHaveLength(107);
 		expect(drawn(root)).toHaveLength(100);
+		expect(root.getObjectByName("longwall-reduced")?.visible).toBe(false);
 		expect(root.getObjectByName("longwall-outline")?.visible).toBe(false);
+	});
+
+	test("past full the metal casts no shadow, and casts again back inside (sage round 5)", () => {
+		const root = buildShipMesh("miner", "b").root;
+		// As the game marks a built hull, once, at full detail.
+		markOcclusion(root);
+		const casting = meshesOf(root).filter((m) => m.castShadow);
+		const hullMetal = root.getObjectByName("hull-dark-structure") as THREE.Mesh;
+		expect(casting).toContain(hullMetal);
+		const cutter = meshesOf(root).find(
+			(m) => !isLamp(m) && under(m, CUTTER),
+		) as THREE.Mesh;
+		expect(casting).toContain(cutter);
+		const metal = (m: THREE.Mesh) => !isLamp(m);
+		updateShipVisuals(root, HULL_REACH_KM.miner * 200, "high");
+		// The cutter still draws at reduced, out of the shadow and AO passes.
+		expect(cutter.visible).toBe(true);
+		for (const mesh of meshesOf(root).filter(metal))
+			expect({ name: mesh.name, cast: mesh.castShadow }).toEqual({
+				name: mesh.name,
+				cast: false,
+			});
+		updateShipVisuals(root, HULL_REACH_KM.miner * 1000, "high");
+		for (const mesh of meshesOf(root).filter(metal))
+			expect(mesh.castShadow).toBe(false);
+		// Back at full, exactly what the marking set, and nothing more.
+		updateShipVisuals(root, HULL_REACH_KM.miner * 10, "high");
+		expect(meshesOf(root).filter((m) => m.castShadow)).toEqual(casting);
 	});
 
 	test("a clone's gate hides its own meshes, never the template's", () => {

@@ -48,24 +48,19 @@ Built on this branch: `miner/b` is Longwall B in the game, flown and drawn
 from `public/models/longwall-miner.glb` (`README.md`, "In the game"). Refs
 #803; design PR #807 is superseded by node #815's.
 
-**Before merge, a ruling only you can give: as built, this branch breaches
-map #1's boot-set Constraint.** That Constraint (#830, #835, 2026-10-09)
-lets only the cockpit and the home station's exterior load before a `Game`
-is built; every other model installs after boot behind a procedural
-stand-in. This branch also loads the miner model on every path that builds
-a `Game` except the postcard, whose wait the Constraint allows, as node
+**The boot-set breach is waived until #838 lands.** Map #1's Constraint
+(#830, #835, 2026-10-09) lets only the cockpit and the home station's
+exterior load before a `Game` is built; this branch also loads the miner
+model on every path that builds a `Game` except the postcard, as node
 #815's body prescribed before the Constraint was amended, so every game boot
-waits on about 11.13 MiB more (D4). The stand-in and the after-boot install
-are node #838's mechanism (open, blocked by #831), and `miner/b` has none
-today. There are two ways out, and neither is this branch's to take:
+waits on about 11.13 MiB more (D4). The principal waived that on node #838
+(2026-10-09,
+[comment](https://github.com/jcfischer/seelite/issues/838#issuecomment-6080935296)):
+the miner may block boot until #838 lands, and #838 inherits moving it out
+of the boot set and giving `miner/b` a stand-in.
 
-1. **Waive the Constraint for the miner until #838 lands**, recorded on node
-   #815 or #838, and #838 takes `miner/b`'s stand-in into its queue; or
-2. **Hold this merge until #838 has landed**, and rebase this branch onto
-   its queue so the miner installs after boot.
-
-**The merge also waits on your yes after flying it (third tier, below);
-nothing here claims either has been given.**
+**The merge still waits on your yes after flying it (third tier, below);
+nothing here claims it has been given.**
 
 What moved, and what is yours to decide:
 
@@ -85,8 +80,9 @@ What moved, and what is yours to decide:
   are re-solved to it against the new arms; the longer hull turns slower.
   Before → after: angular authority 1.103 → 1.021; pitch/yaw cap
   19.0 → 17.5 °/s; roll cap 29.5 → 27.3 °/s; damping 0.76 → 0.82 s; NPC
-  avoidance horizon 22.3 → 23.1 s (the 3,000 km scan still covers it at
-  130 km/s). Linear acceleration is unchanged. The docking computer's first
+  avoidance horizon 22.3 → 23.1 s (the 3,000 km scan covers it at up to
+  129 km/s; `tests/combat-enemy-avoidance.test.ts` holds it at 100 km/s,
+  against a fastest body of 86.7). Linear acceleration is unchanged. The docking computer's first
   roll-tracking failure is 7.0 rpm (was 5.5); the miner is still the worst
   hull, now 2.17x the fastest station. Three Traffic launch-aperture touches,
   all miners, are gone from system 0's pinned corpus row. Those last two are
@@ -94,14 +90,14 @@ What moved, and what is yours to decide:
   under them at once: nothing here attributes either to one of the three.
 - **D3, wrecks.** A derelict miner is dark and untorn: #735's tear cuts a
   loft's grid and this model has none.
-- **D4, cost, a detail band and a hull batch but no LOD.** Every game boot
+- **D4, cost, a detail band, a hull batch and two distance LODs.** Every game boot
   downloads 11.13 MiB more: the three required models are about 20.5 MiB
   before play, up from about 9.4: **until node #838 lands, the miner model
   blocks boot.** Map #1's Constraint (#830, #835, 2026-10-09) puts only the
   cockpit and the home station's exterior in the boot set and installs every
   other model after boot behind a procedural stand-in; that mechanism is
-  #838's (open, blocked by #831), so sage rounds 2 to 4's background-load
-  finding is escalated to you rather than fixed here (the ruling above). The gap #838 inherits: `miner/b` has no
+  #838's (open, blocked by #831), and you waived the breach until it lands
+  (above). The gap #838 inherits: `miner/b` has no
   procedural stand-in today — `buildShipMesh` throws without the model,
   because the envelope, vents and muzzles are measured off it. Round 4's
   far-range boxes are measured off the model too, so they cannot stand in
@@ -113,19 +109,33 @@ What moved, and what is yours to decide:
   The template now merges the static hull's opaque, unlit meshes into one
   per material (19 hull meshes to 10), so a miner is 100 meshes where it was
   109; the anchors are 80 of those and keep their separate parts. The shared
-  detail band sheds the mechanism by distance, never by quality: past 40
-  radii (about 1.7 km) the anchors' metal, leaving 24 meshes and 261,768
-  triangles; past 400 (about 17 km, where the hull is 3.9 px) the cutter's
-  too, and the hull's metal gives way to one mesh of 17 boxes, one per part
-  it drew, built the first time a miner gets that far (sage round 4),
-  leaving 10 meshes and 780 triangles. Every lamp stays
-  (`tests/longwall-mesh.test.ts` holds each figure). Those are mesh counts:
-  draw calls also count shadow and other passes, and no draw figure was
-  measured with the band or the batch. Inside 400 radii the hull's own ~250k
-  triangles still draw; a real LOD between the bands is what a shared LOD
-  node owes, as is a lighter boot download. The anchors going at
-  40 radii is a visible change, 9.4 x 3.3 px on a 39 px hull at the band's
-  edge, and yours to judge with the rest. So is the swap at 400 radii: the
+  detail band sheds the mechanism by distance, never by quality, in three
+  levels (`tests/longwall-mesh.test.ts` holds each figure):
+
+  | Level | Range | Meshes | Triangles |
+  |---|---|---:|---:|
+  | full | inside 40 radii (about 1.7 km) | 100 | 283,576 |
+  | LOD1, `reduced` | 40 to 400 radii | 23 | 14,714 |
+  | LOD2, `outline` | past 400 radii (about 17 km) | 10 | 780 |
+
+  At LOD1 the anchors' metal goes, and the hull's seven opaque meshes
+  (252,810 triangles) give way to a copy simplified at install by
+  meshoptimizer to within 0.4 m (5,756 triangles, -97.7%; the hoses, thinner
+  than that, simplify away), each in its own mesh's paint and on its own
+  vertex buffers (sage round 5). At LOD2 the cutter goes too, and the hull
+  is one mesh of 17 boxes, one per part it drew (sage round 4). Both are
+  built the first time a miner reaches the band, so the mesh the envelope,
+  vents and muzzles are measured off never carries either; past `full` no
+  metal casts a shadow, so none takes part in the shadow or ambient-occlusion
+  passes either (Traffic miners never did: only the flown hull and the fleet
+  review are marked). Every lamp stays at every level. Those are mesh counts:
+  draw calls also count other passes, and no draw figure was measured with
+  the band or the batch. The anchors going at 40 radii is a visible change,
+  9.4 x 3.3 px on a 39 px hull at the band's edge, and yours to judge with
+  the rest. So is the simplified hull there: nothing moves more than 0.4 m,
+  under a fifth of a pixel at 40 radii, but a kept vertex keeps one side's
+  normal across a hard edge, and no frame was captured in the band. And so
+  is the swap at 400 radii: the
   hull there is flat-faced boxes in one paint (`dark-structure`, the metal
   on most of it) where it was the model's own shape in all its paints, on a
   hull about 4 px long. No frame was captured at that range, so nobody has

@@ -177,7 +177,6 @@ rows=[ring(13,4.7,3.6,-3),ring(17,5.2,3.8,-3),ring(23,5.0,3.8,-3),ring(29,3.6,1.
 plated_hull(rows,[orange,ivory[0],orange],'forebody-machinery')
 # Each bridge facet is a closed backing polygon. Window facets substitute glass
 # in the same plane: no empty holes or offset floating windshield assembly.
-bridge_rows=[ring(16.2,2.2,6.5,3.65),ring(19.2,2.2,6.5,3.65),ring(22,2.0,6.2,3.65),ring(24.2,1.8,4.8,3.65)]
 # Ring helper uses large chamfers appropriate for hulls; bridge gets gentler ones.
 bridge_rows=[]
 for z,w,top in [(16.2,2.2,6.5),(19.2,2.2,6.5),(22,2.0,6.2),(24.2,1.8,4.8)]:

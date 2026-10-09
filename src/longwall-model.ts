@@ -8,6 +8,7 @@
  * `prepareCoriolisPage`, so one panel and one Retry cover it with the
  * station and the cockpit.
  */
+import { MeshoptSimplifier } from "meshoptimizer/simplifier";
 import { MeshoptDecoder } from "three/addons/libs/meshopt_decoder.module.js";
 import { GLTFLoader } from "three/addons/loaders/GLTFLoader.js";
 import { installLongwallModel } from "./ship-mesh";
@@ -22,7 +23,11 @@ export function prepareLongwallModel(): Promise<void> {
 	return (ready ??= new GLTFLoader()
 		.setMeshoptDecoder(MeshoptDecoder)
 		.loadAsync(LONGWALL_MODEL_URL)
-		.then((gltf) => installLongwallModel(gltf.scene))
+		.then(async (gltf) => {
+			// The install simplifies the `reduced` hull (`ship-mesh.ts`).
+			await MeshoptSimplifier.ready;
+			installLongwallModel(gltf.scene);
+		})
 		.catch((error) => {
 			ready = undefined;
 			throw error;

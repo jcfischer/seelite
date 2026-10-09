@@ -18,6 +18,7 @@
 import * as THREE from "three";
 import { EMISSIVE_CEILING } from "./light-rig";
 import { mergeGeometries } from "three/addons/utils/BufferGeometryUtils.js";
+import { MeshoptSimplifier } from "meshoptimizer/simplifier";
 import { mutePaint } from "./surface";
 
 // Re-exported, not merely imported: `Ring` and `hullLoft` were this module's
@@ -61,6 +62,7 @@ export {
 } from "./ship-detail";
 import {
 	type AuthoredPart,
+	type StandInBuilders,
 	type ShipDetailPlan,
 	type ShipSurface,
 	buildShipDetails,
@@ -2504,8 +2506,8 @@ function buildMinerA(root: THREE.Group, p: Palette) {
  * the model loads before a `Game` is built — and that is **not** what the
  * same Constraint allows: it puts only the cockpit and the home station in
  * the boot set. Installing the rest after boot, with a procedural stand-in,
- * is node #838's; until it lands this hull is outside the boot set, and the
- * ruling on that is in `spikes/longwall-miner/HANDOFF.md`.
+ * is node #838's; until it lands this hull blocks boot, an interim breach
+ * the principal waived on node #838 (2026-10-09).
  *
  * The export is model metres, +Z forward and Y up; this frame is kilometres
  * with the nose at -Z, so the exterior is turned half a turn about Y — a
@@ -2520,6 +2522,20 @@ let longwallTemplate: THREE.Group | null = null;
 /** What a far miner draws in place of its hull (`longwallOutline`), in the
  *  template's frame; its mesh's material is the clone's, set per clone. */
 let longwallOutlineTemplate: THREE.Group | null = null;
+/** Each of the hull's opaque meshes, by geometry, to the simplified geometry
+ *  a miner draws in its place at `reduced` (`longwallReduced`). */
+const longwallReducedGeometry = new Map<
+	THREE.BufferGeometry,
+	THREE.BufferGeometry
+>();
+
+/**
+ * How far Longwall B's `reduced` hull may move a surface, in model metres
+ * (node #815, sage round 5). The band begins at 40 radii, where the 84.5 m
+ * hull is 39 px long in a 900 px frame over a 60° field, so a pixel there is
+ * 2.2 m and 0.4 m is under a fifth of one; further out it is less.
+ */
+export const LONGWALL_REDUCED_ERROR_M = 0.4;
 
 /**
  * The drive nozzles, model metres in the export's frame: the two aft drive
@@ -2570,8 +2586,13 @@ function longwallGlowDisc() {
 	return disc.scale(0.001, 0.001, 0.001);
 }
 
-/** Install the decoded Longwall B scene (metres, as exported), or remove it. */
+/**
+ * Install the decoded Longwall B scene (metres, as exported), or remove it.
+ * Await `MeshoptSimplifier.ready` first: the `reduced` hull is simplified
+ * here, once, rather than per miner.
+ */
 export function installLongwallModel(scene: THREE.Group | null): void {
+	longwallReducedGeometry.clear();
 	longwallTemplate = scene ? prepareLongwall(scene) : null;
 	if (!scene) longwallOutlineTemplate = null;
 }
@@ -2580,6 +2601,7 @@ function prepareLongwall(scene: THREE.Group): THREE.Group {
 	// Before the batch: one box per part the export drew, not per material.
 	const outline = longwallOutlineGeometry(scene);
 	batchLongwallHull(scene);
+	simplifyLongwallHull(scene);
 	// The export's lamps are brighter than the game's exposure contract, as
 	// the Coriolis's were: normalise once, keeping their relative strengths.
 	const materials = new Set<THREE.MeshStandardMaterial>();
@@ -2667,6 +2689,18 @@ export function isLampMaterial(material: THREE.Material): boolean {
 const materialsOf = (mesh: THREE.Mesh): THREE.Material[] =>
 	Array.isArray(mesh.material) ? mesh.material : [mesh.material];
 
+/** The hull's paint: an opaque material that is no lamp. The batch, the
+ *  `reduced` hull and the outline's paint all read this one rule. */
+const isHullPaint = (material: THREE.Material): boolean =>
+	!isLampMaterial(material) && !material.transparent;
+
+/** The export's static `hull` group, which every hull rule reads. */
+function longwallHullGroup(scene: THREE.Object3D): THREE.Object3D {
+	const hull = scene.getObjectByName("hull");
+	if (!hull) throw new Error("Longwall B: the export has no hull group");
+	return hull;
+}
+
 /**
  * Merge the static hull's opaque, unlit meshes into one mesh per material
  * (node #815, sage round 2): the export splits the `hull` group into 19
@@ -2678,8 +2712,7 @@ const materialsOf = (mesh: THREE.Mesh): THREE.Material[] =>
  * triangles are the same triangles in the same place.
  */
 function batchLongwallHull(scene: THREE.Group): void {
-	const hull = scene.getObjectByName("hull");
-	if (!hull) throw new Error("Longwall B: the export has no hull group");
+	const hull = longwallHullGroup(scene);
 	scene.updateMatrixWorld(true);
 	const toHull = hull.matrixWorld.clone().invert();
 	const byMaterial = new Map<THREE.Material, THREE.Mesh[]>();
@@ -2689,7 +2722,7 @@ function batchLongwallHull(scene: THREE.Group): void {
 		const materials = materialsOf(mesh);
 		if (materials.length !== 1) return;
 		const [material] = materials;
-		if (isLampMaterial(material) || material.transparent) return;
+		if (!isHullPaint(material)) return;
 		byMaterial.set(material, [...(byMaterial.get(material) ?? []), mesh]);
 	});
 	for (const [material, meshes] of byMaterial) {
@@ -2715,6 +2748,89 @@ function batchLongwallHull(scene: THREE.Group): void {
 }
 
 /**
+ * Longwall B between 40 and 400 radii (node #815, sage round 5): each of the
+ * hull's seven opaque meshes simplified to within `LONGWALL_REDUCED_ERROR_M`,
+ * from 252,810 triangles to 5,756 (`tests/longwall-mesh.test.ts`). The hull
+ * is 39 px long at the band's near edge, so it was drawing more triangles than
+ * it covers pixels. Permissive: the export's flat-shaded parts split a vertex
+ * at every hard edge, and a simplifier that keeps those seams removed 48 of
+ * the hull group's 253,256 triangles when tried, so a kept vertex keeps one
+ * side's normal. The index is the only new buffer: every attribute is the
+ * batch's own. Simplified once at install, about 150 ms headless.
+ */
+function simplifyLongwallHull(scene: THREE.Group): void {
+	const hull = longwallHullGroup(scene);
+	scene.updateMatrixWorld(true);
+	const toHull = hull.matrixWorld.clone().invert();
+	const meshes: THREE.Mesh[] = [];
+	hull.traverse((o) => {
+		const mesh = o as THREE.Mesh;
+		if (!mesh.isMesh) return;
+		const materials = materialsOf(mesh);
+		if (materials.length === 1 && isHullPaint(materials[0])) meshes.push(mesh);
+	});
+	for (const mesh of meshes) {
+		const source = mesh.geometry;
+		const index = source.index;
+		if (!index) throw new Error(`Longwall B: ${mesh.name} is not indexed`);
+		const position = source.getAttribute("position");
+		const positions = new Float32Array(position.count * 3);
+		for (let i = 0; i < position.count; i++) {
+			positions[i * 3] = position.getX(i);
+			positions[i * 3 + 1] = position.getY(i);
+			positions[i * 3 + 2] = position.getZ(i);
+		}
+		// The bound is in hull metres; a mesh scaled below `hull` reads it in
+		// its own units.
+		const scale = new THREE.Matrix4()
+			.multiplyMatrices(toHull, mesh.matrixWorld)
+			.getMaxScaleOnAxis();
+		const [kept] = MeshoptSimplifier.simplify(
+			Uint32Array.from(index.array),
+			positions,
+			3,
+			0,
+			LONGWALL_REDUCED_ERROR_M / scale,
+			["ErrorAbsolute", "Permissive"],
+		);
+		const reduced = new THREE.BufferGeometry();
+		for (const [name, attribute] of Object.entries(source.attributes))
+			reduced.setAttribute(name, attribute);
+		reduced.setIndex(new THREE.BufferAttribute(kept, 1));
+		longwallReducedGeometry.set(source, shared(reduced));
+	}
+}
+
+/**
+ * What a built miner draws in its hull's opaque metal's place at `reduced`,
+ * built the first time it gets there (`ship-detail.ts`): one mesh per hull
+ * mesh, with that mesh's own material — so a wreck's is the wreck's paint —
+ * and its place relative to the root.
+ */
+function longwallReduced(root: THREE.Object3D): () => THREE.Object3D {
+	return () => {
+		const group = new THREE.Group();
+		group.name = "longwall-reduced";
+		root.updateMatrixWorld(true);
+		const fromRoot = root.matrixWorld.clone().invert();
+		longwallHullGroup(root).traverse((o) => {
+			const mesh = o as THREE.Mesh;
+			if (!mesh.isMesh) return;
+			const reduced = longwallReducedGeometry.get(mesh.geometry);
+			// A part thinner than the bound, the hoses, simplifies to nothing.
+			if (!reduced?.index?.count) return;
+			const stand = new THREE.Mesh(reduced, mesh.material);
+			stand.name = `${mesh.name}-reduced`;
+			stand.matrixAutoUpdate = false;
+			stand.matrix.multiplyMatrices(fromRoot, mesh.matrixWorld);
+			stand.castShadow = false;
+			group.add(stand);
+		});
+		return group;
+	};
+}
+
+/**
  * Longwall B past 400 radii (node #815, sage round 4): one box per mesh the
  * export's `hull` group drew, each measured off its own vertices, merged into
  * one mesh of 12 triangles a box. The hull is about 4 px long there, and its
@@ -2723,8 +2839,7 @@ function batchLongwallHull(scene: THREE.Group): void {
  * union is the hull's own box and nothing reaches past it.
  */
 function longwallOutlineGeometry(scene: THREE.Group): THREE.BufferGeometry {
-	const hull = scene.getObjectByName("hull");
-	if (!hull) throw new Error("Longwall B: the export has no hull group");
+	const hull = longwallHullGroup(scene);
 	scene.updateMatrixWorld(true);
 	const boxes: THREE.BufferGeometry[] = [];
 	hull.traverse((o) => {
@@ -2759,11 +2874,11 @@ function longwallOutline(root: THREE.Object3D): () => THREE.Object3D {
 			throw new Error("Longwall B: the outline was built uninstalled");
 		let paint: THREE.Material | undefined;
 		let most = 0;
-		root.getObjectByName("hull")?.traverse((o) => {
+		longwallHullGroup(root).traverse((o) => {
 			const mesh = o as THREE.Mesh;
 			if (!mesh.isMesh) return;
 			const [material] = materialsOf(mesh);
-			if (isLampMaterial(material) || material.transparent) return;
+			if (!isHullPaint(material)) return;
 			const g = mesh.geometry;
 			const count = (g.index ?? g.getAttribute("position")).count;
 			if (count > most) [most, paint] = [count, material];
@@ -2793,17 +2908,17 @@ function buildLongwall(root: THREE.Group) {
 /**
  * What the detail band sheds from a built Longwall B (node #815): the four
  * stowed anchors' metal from `reduced` and the cutter's (`feed`, with `rotor`
- * inside it) from `outline`. Every lamp stays. The hull's metal goes only at
- * `outline`, and all of it at once, for `longwallOutline`'s boxes: it is the
- * silhouette, and the bridge's shell and glazing are small enough that a
- * size rule would open a hole in it.
+ * inside it) from `outline`. Every lamp stays. The hull's opaque metal goes
+ * at `reduced` for `longwallReduced`'s simplified copy, and the glazing at
+ * `outline` with the rest of the hull, for `longwallOutline`'s boxes: it is
+ * the silhouette, and the bridge's shell and glazing are small enough that a
+ * size rule would open a hole in it. Past `full` none of it casts a shadow
+ * (`ship-detail.ts`).
  *
  * Measured in a 900 px frame over a 60° field: at the band's 40 radii the
  * hull is 39 px long and a stowed anchor, 20.5 x 7 m, is 9.4 x 3.3 px; at
- * 400 radii the hull is 3.9 px and the cutter's 31.4 m feed is 1.5 px. Inside
- * 400 radii the hull's own 254k triangles still draw — a real LOD between the
- * two bands is the one the integration result owes its own node. Collected
- * from the clone, so a far miner hides its own meshes and never the
+ * 400 radii the hull is 3.9 px and the cutter's 31.4 m feed is 1.5 px.
+ * Collected from the clone, so a far miner hides its own meshes and never the
  * template's.
  */
 function longwallMechanism(root: THREE.Object3D): AuthoredPart[] {
@@ -2820,7 +2935,13 @@ function longwallMechanism(root: THREE.Object3D): AuthoredPart[] {
 				return void parts.push({ mesh, hiddenFrom: "outline" });
 			if (up.name === "hull") hull = true;
 		}
-		if (hull) parts.push({ mesh, hiddenFrom: "outline" });
+		if (hull)
+			parts.push({
+				mesh,
+				hiddenFrom: longwallReducedGeometry.has(mesh.geometry)
+					? "reduced"
+					: "outline",
+			});
 	});
 	return parts;
 }
@@ -6412,8 +6533,8 @@ interface AuthoredPlan extends ShipDetailPlan {
 	readonly authored: true;
 	/** Its machinery, as the detail band sheds it. */
 	readonly mechanism: (root: THREE.Object3D) => AuthoredPart[];
-	/** What it draws in its metal's place at `outline`, if anything. */
-	readonly outline?: (root: THREE.Object3D) => () => THREE.Object3D;
+	/** What it draws in its metal's place at each band past `full`. */
+	readonly standIns?: (root: THREE.Object3D) => StandInBuilders;
 }
 type BuilderPlan = LoftPlan | AuthoredPlan;
 
@@ -6505,7 +6626,10 @@ export const SHIP_DETAIL_PLANS: Record<
 			zones: [],
 			authored: true,
 			mechanism: longwallMechanism,
-			outline: longwallOutline,
+			standIns: (root) => ({
+				reduced: longwallReduced(root),
+				outline: longwallOutline(root),
+			}),
 		},
 		c: planned(buildMinerC, "miner-fuselage", "refinery-spine", "dorsal", 22),
 	},
@@ -7026,7 +7150,7 @@ export function buildShipMesh(
 			root,
 			HULL_REACH_KM[id],
 			plan.mechanism(root),
-			plan.outline?.(root),
+			plan.standIns?.(root),
 		);
 		return { root };
 	}

@@ -21,10 +21,11 @@ const server = await createServer({
 });
 await server.listen();
 const origin = `http://127.0.0.1:${port}`;
-await guardedOrigin(origin);
-await mkdir(out, { recursive: true });
-const browser = await launchChromium({ headless: false });
+let browser;
 try {
+	await guardedOrigin(origin);
+	await mkdir(out, { recursive: true });
+	browser = await launchChromium({ headless: false });
 	const page = await browser.newPage({
 		viewport: { width: 1440, height: 900 },
 		deviceScaleFactor: 1,
@@ -55,7 +56,8 @@ try {
 			if (!o.isMesh) return;
 			meshes += 1;
 			const geometry = o.geometry;
-			triangles += (geometry.index?.count ?? geometry.attributes.position.count) / 3;
+			triangles +=
+				(geometry.index?.count ?? geometry.attributes.position.count) / 3;
 		});
 		return {
 			renderer: gl.getParameter(ext.UNMASKED_RENDERER_WEBGL),
@@ -71,7 +73,11 @@ try {
 	});
 	if (/swiftshader|llvmpipe|software/i.test(facts.renderer))
 		throw Error("hardware renderer required");
-	if (facts.hull !== "miner" || !facts.authored || facts.mechanisms.length !== 4)
+	if (
+		facts.hull !== "miner" ||
+		!facts.authored ||
+		facts.mechanisms.length !== 4
+	)
 		throw Error(`Longwall B not flown: ${JSON.stringify(facts)}`);
 	const shot = async (name, yawRad, elevationRad) => {
 		await page.evaluate(
@@ -125,6 +131,6 @@ try {
 	if (errors.length) throw Error(errors.join("\n"));
 	console.log(JSON.stringify(report));
 } finally {
-	await browser.close();
+	await browser?.close();
 	await server.close();
 }

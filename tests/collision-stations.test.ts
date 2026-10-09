@@ -915,20 +915,18 @@ describe("collision.md §9.1.9: the aperture is a physical fit (P1)", () => {
 		// Pitched past what the miner clears at the roll limit, its box meets
 		// the coaming. The table (`scripts/measure-aperture-fit.ts`) is where
 		// each hull's margin is printed for the principal. Longwall B (node #815)
-		// is slimmer than the loft it replaced and first meets it at 40°, not
-		// under 35°, so the control is pitched to 45°.
-		expect(
+		// is slimmer than the loft it replaced: it still clears at 35°, where
+		// the loft met the rim, and meets it by 45°, so the control is pitched
+		// there and both sides of the bound are held.
+		const pitched = (pitchDeg: number) =>
 			clearsAperture(
 				"trade",
 				"miner",
-				{
-					pitchDeg: 45,
-					yawDeg: 0,
-					rollDeg: 50,
-				},
+				{ pitchDeg, yawDeg: 0, rollDeg: 50 },
 				{ formId: "a", berthSeed: 1, assemblySeed: 0 },
-			),
-		).toBe(false);
+			);
+		expect(pitched(35)).toBe(true);
+		expect(pitched(45)).toBe(false);
 	});
 });
 
