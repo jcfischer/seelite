@@ -458,12 +458,16 @@ try {
 	]);
 	cockpit = interior.scene;
 	scene.add(cockpit);
+	const smoothed = new Set<THREE.BufferGeometry>();
 	cockpit.traverse((o) => {
 		if (o instanceof THREE.Mesh) {
 			o.castShadow = true;
 			o.receiveShadow = true;
 			// The game's normals too (node #839), so the struts read smooth here.
-			smoothCockpitNormals(o.geometry);
+			if (!smoothed.has(o.geometry)) {
+				smoothed.add(o.geometry);
+				smoothCockpitNormals(o.geometry);
+			}
 			if (o.name.startsWith("screen-")) {
 				o.material = makeDisplay(o.name.slice(7));
 				o.castShadow = false;

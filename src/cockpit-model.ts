@@ -302,8 +302,10 @@ export const COCKPIT_CREASE_DEG = 43.5;
  * bevels and 5 mm chips are closer than any grid would allow — and each copy
  * takes the area-weighted mean of every copy within the crease of its own
  * exported normal. A copy with no such neighbour keeps its normal exactly, so
- * hard edges and the exporter's own weighted normals stay as written. Returns
- * how many vertices moved.
+ * a join at or past the crease stays hard. Every join under it is shaded as
+ * one surface, across the whole model and not only the struts: the tubes and
+ * ducts, the shallow steps of a chamfer beside its face, and copies the
+ * exporter had already weighted. Returns how many vertices moved.
  */
 export function smoothCockpitNormals(
 	geometry: THREE.BufferGeometry,

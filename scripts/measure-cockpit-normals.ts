@@ -213,3 +213,61 @@ console.log(
 console.log(
 	`positions whose faces all lie inside the crease: ${before.smooth}; still split, exported ${before.stillSplit}, adopted ${after.stillSplit}`,
 );
+
+/**
+ * Where the moved vertices are. A position is *inside* when every exported
+ * pair of its copies lies within the crease — a tube or a gently curved
+ * surface — and *mixed* when at least one pair is at or past it: an edge,
+ * where the copies inside the crease of each other (a chamfer's outer step
+ * beside its face) are joined and the hard side is kept. The largest move is
+ * how far one normal turned.
+ */
+function movedReading() {
+	const rows: string[] = [];
+	const exportedByName = new Map<string, THREE.Mesh>();
+	exported.traverse((o) => {
+		if (o instanceof THREE.Mesh) exportedByName.set(o.name, o);
+	});
+	adopted.traverse((o) => {
+		if (!(o instanceof THREE.Mesh)) return;
+		const raw = exportedByName.get(o.name);
+		if (!raw) throw new Error(`no exported mesh ${o.name}`);
+		const position = o.geometry.getAttribute("position");
+		const was = raw.geometry.getAttribute("normal");
+		const now = o.geometry.getAttribute("normal");
+		const groups = new Map<string, number[]>();
+		for (let i = 0; i < position.count; i++) {
+			const key = `${position.getX(i)},${position.getY(i)},${position.getZ(i)}`;
+			const group = groups.get(key);
+			if (group) group.push(i);
+			else groups.set(key, [i]);
+		}
+		const count = { inside: 0, mixed: 0 };
+		const largest = { inside: 0, mixed: 0 };
+		for (const ids of groups.values()) {
+			const before = ids.map((i) =>
+				new THREE.Vector3().fromBufferAttribute(was, i),
+			);
+			const mixed = before.some((a) =>
+				before.some((b) => deg(a, b) >= COCKPIT_CREASE_DEG),
+			);
+			const kind = mixed ? "mixed" : "inside";
+			ids.forEach((i, n) => {
+				const turned = deg(
+					new THREE.Vector3().fromBufferAttribute(now, i),
+					before[n],
+				);
+				if (turned <= 1e-3) return;
+				count[kind]++;
+				largest[kind] = Math.max(largest[kind], finite("turn", turned));
+			});
+		}
+		if (count.inside + count.mixed === 0) return;
+		rows.push(
+			`  ${o.name}: ${count.inside} inside (largest turn ${largest.inside.toFixed(1)}°), ${count.mixed} at edges (largest turn ${largest.mixed.toFixed(1)}°)`,
+		);
+	});
+	return rows;
+}
+console.log("vertices moved, by mesh:");
+for (const row of movedReading()) console.log(row);
