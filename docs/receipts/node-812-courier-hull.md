@@ -197,6 +197,21 @@ without your say.
 review page) still draws the procedural courier around the cabin, because it
 does not load the hull.
 
+**Q6. Three views no longer show the levers they claim.** Each one frames the
+player's courier, which now carries none of the procedural hull's terms:
+
+| view | levers it claims |
+| --- | --- |
+| `hull-chase` | 101, 102, 203 |
+| `berth-free-look` | 102, 203 |
+| `berth-launch-chase` | 101 |
+
+The levers are #101's hull surface, #102's greebles and #203's hull finish.
+`tests/view-set.test.ts` stays green, because every lever still has a view,
+but those frames are no longer evidence for these levers. Move them to a
+procedural hull, or add a view? The views were not changed here, because that
+changes the sheet.
+
 ### Proposed Field Notes copy (not in `src/changelog.ts` until approved)
 
 > The courier has a new hull: a long tapered body between twin drive nacelles,
