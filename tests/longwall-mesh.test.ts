@@ -365,7 +365,7 @@ describe("the detail band sheds the mechanism at range (node #815)", () => {
 		expect(root.getObjectByName("nav-lights")?.visible).toBe(true);
 	});
 
-	test("reduced keeps the hull's surface within 0.5 m and every point of it within 1.33 m", () => {
+	test("reduced moves the hull's surface by at most 1.83 m, sampled, and its hoses are the worst", () => {
 		// Measured in space, point to nearest triangle in hull metres, because
 		// `LONGWALL_REDUCED_ERROR_M` is a target in meshoptimizer's own metric
 		// and promises no distance (sage round 6). Each figure is pinned: the
@@ -408,22 +408,30 @@ describe("the detail band sheds the mechanism at range (node #815)", () => {
 		};
 		const model = inHull(sources);
 		const drawnHull = inHull(stands);
+		// Both directions are sampled, never exhaustive: a triangle's corners
+		// and points a quarter (drawn) or a half (model) of the way along it.
 		// The drawn surface lies within half a metre of the model's: a quarter
 		// of a pixel at the band's near edge (2.2 m a pixel at 40 radii).
 		expect(
 			furthestFrom(surfaceGrid(model, 0.5), trianglePoints(drawnHull, 4), 0.6),
 		).toBeCloseTo(0.5, 3);
-		// Every point of the model lies within 1.33 m of the drawn surface, 0.6
-		// of a pixel there; 3,784 of its 482,918 vertices lie further than
-		// 0.4 m, and 236 further than a metre.
-		const modelPoints = usedVertices(model);
+		// The model's furthest sampled point lies 1.83 m from the drawn surface,
+		// 0.83 of a pixel there and 4.6 times the target, and it is on the
+		// hoses, which the reduced hull does not draw (the worst drawn paint,
+		// the machined alloy, reads 1.37 m). Its vertices alone read 1.32 m:
+		// 3,784 of the 482,918 lie further than 0.4 m, and 236 further than a
+		// metre. Halving the step moves the sampled figure to 1.834.
 		const drawnGrid = surfaceGrid(drawnHull, 1);
+		expect(furthestFrom(drawnGrid, trianglePoints(model, 2), 2)).toBeCloseTo(
+			1.8262,
+			4,
+		);
+		const modelPoints = usedVertices(model);
 		expect(modelPoints.length / 3).toBe(482_918);
-		expect(furthestFrom(drawnGrid, modelPoints, 1.4)).toBeCloseTo(1.323, 3);
+		expect(furthestFrom(drawnGrid, modelPoints, 1.4)).toBeCloseTo(1.3235, 4);
 		expect(countBeyond(drawnGrid, modelPoints, 0.4)).toBe(3_784);
 		expect(countBeyond(drawnGrid, modelPoints, 1)).toBe(236);
-		// Paint by paint the change is larger, because a detail that goes is
-		// drawn over by the paint beneath it: of each paint's vertices, how
+		// Paint by paint the change is larger: of each paint's vertices, how
 		// many lie further than 0.4 m from that paint's own reduced copy. Most
 		// of the machined alloy is not drawn in its own paint past 40 radii,
 		// and the hoses not at all.
@@ -441,7 +449,7 @@ describe("the detail band sheds the mechanism at range (node #815)", () => {
 			}),
 		);
 		expect(byPaint).toEqual(BEYOND_BY_PAINT);
-	});
+	}, 30_000);
 
 	test("outline draws the hull as boxes, and keeps every lamp", () => {
 		const root = buildShipMesh("miner", "b").root;

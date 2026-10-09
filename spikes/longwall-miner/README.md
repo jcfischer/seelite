@@ -94,9 +94,10 @@ node spikes/longwall-miner/capture-game.mjs round-N   # flown, chase view, 4 sid
   leaving 23 meshes and 14,714 triangles; from 400 radii (about 17 km) the
   cutter's goes too, and the hull's metal gives way to one mesh of 17 boxes,
   one per part it drew (`longwallOutline`), leaving 10 meshes and 780
-  triangles. The simplified hull's surface lies within 0.50 m of the model's
-  and every point of the model within 1.33 m of it, measured and pinned in
-  `tests/longwall-mesh.test.ts`; HANDOFF.md says what that changes. Those
+  triangles. The simplified hull's surface lies within 0.50 m of the model's,
+  and the model's furthest point from it is 1.83 m, on the hoses it no
+  longer draws (sampled, and pinned in `tests/longwall-mesh.test.ts`; the
+  0.4 m is meshoptimizer's target); HANDOFF.md says what that changes. Those
   are mesh counts, not measured draws. Every lamp stays, and quality does not
   gate it.
 - **Wrecks.** A derelict miner is dark and untorn: the tear cuts a loft's

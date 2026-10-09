@@ -2532,12 +2532,13 @@ const longwallReducedGeometry = new Map<
 /**
  * The target error Longwall B's `reduced` hull is simplified to, in model
  * metres (node #815, sage round 5). It is a target in meshoptimizer's own
- * metric and **not** a bound on distance: measured in space, the drawn
- * surface lies within 0.5 m of the model's and every point of the model
- * within 1.33 m of the drawn surface (`tests/longwall-mesh.test.ts`, sage
- * round 6). The band begins at 40 radii, where the 84.5 m hull is 39 px long
- * in a 900 px frame over a 60° field, so a pixel there is 2.2 m and 1.33 m is
- * 0.6 of one; further out it is less.
+ * metric and **not** a bound on distance: measured in space and sampled,
+ * the drawn surface lies within 0.5 m of the model's, and the model's
+ * furthest point from the drawn surface is 1.83 m, on the hoses it no longer
+ * draws (`tests/longwall-mesh.test.ts`, sage round 6). The band begins at
+ * 40 radii, where the 84.5 m hull is 39 px long in a 900 px frame over a 60°
+ * field, so a pixel there is 2.2 m and 1.83 m is 0.83 of one; further out it
+ * is less.
  */
 export const LONGWALL_REDUCED_ERROR_M = 0.4;
 

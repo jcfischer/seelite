@@ -148,11 +148,15 @@ What moved, and what is yours to decide:
   the rest. So is the simplified hull there. Round 5's text said nothing
   moved more than 0.4 m; that read meshoptimizer's target as a distance, and
   it was not one. Measured in space instead (sage round 6, each figure pinned
-  in `tests/longwall-mesh.test.ts`): the drawn surface lies within 0.50 m of
-  the model's, a quarter of a pixel at 40 radii, and every point of the model
-  lies within 1.33 m of the drawn surface, 0.6 of a pixel; 3,784 of the
-  model's 482,918 vertices lie further than 0.4 m, and 236 further than a
-  metre. Paint by paint the change is larger: 136,283 of the machined
+  in `tests/longwall-mesh.test.ts`, points sampled on every triangle rather
+  than exhaustive): the drawn surface lies within 0.50 m of the model's
+  (worst mesh: dark-structure), a quarter of a pixel at 40 radii. The other
+  way, the model's furthest point from the drawn surface is **1.83 m**, 4.6
+  times the 0.4 m target and 0.83 of a pixel at 40 radii, and it is on the
+  hoses, which the reduced hull does not draw; the worst paint it does draw,
+  the machined alloy, reads 1.37 m. Counting vertices only, 3,784 of the
+  model's 482,918 lie further than 0.4 m, and 236 further than a metre.
+  The target is unchanged: retuning it is yours. Paint by paint the change is larger: 136,283 of the machined
   alloy's 144,744 vertices lie further than 0.4 m from any reduced alloy
   triangle, so past 40 radii most of the alloy-painted detail is not drawn
   in its own paint, and the hoses are not drawn at all. A kept vertex also
