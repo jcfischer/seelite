@@ -37,6 +37,16 @@ browser rows are red pending that decision (Q1).
   builds a Game (the main boot and the postcard viewer) and on
   `?model-viewer=ship`. The first courier is built inside the loader, so no
   Traffic courier pays the nav-light raycast mid-flight.
+- **The courier hull blocks boot until node #838 lands.** It is one of
+  `prepareCoriolisPage`'s `also` loaders, so no Game starts before it
+  arrives. Map #1's Constraints were amended on 2026-10-09 (#830, #835): only
+  the cockpit and the home station's exterior block a start, and every other
+  model, this one included, installs after boot behind a procedural stand-in.
+  That mechanism is node #838's, not this node's, so review findings asking
+  to take this file off the boot path, or to move its level and nav-light
+  work out of the loader, are left to #838. The gap #838 inherits: the
+  Kestrel cannot be the courier's stand-in as it stands, because it is built
+  11.65 m tall against the O4's declared 9.6 m envelope.
 - Traffic flies the selected variant, so every Traffic courier is the O4.
 - Since sage round 2 the detail band switches the model (below,
   "Reduced levels").

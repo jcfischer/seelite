@@ -19,8 +19,11 @@
  * however the cells are cut, so the grid can only skip a triangle the line
  * misses. `tests/vent-placement.test.ts` holds every procedural hull's
  * stored placement, measured through three, equal to this, and
- * `tests/axis-line-hits.test.ts` holds the courier's model line for line
- * against three's own raycast. Like the raycaster's default, only meshes on
+ * `tests/axis-line-hits.test.ts` compares it with three's own raycast on
+ * the courier's model: a 9 x 9 lattice of lines along each of the six axis
+ * directions, plus lines stepped across every gap where three's answer flips
+ * between neighbours. That is a sample, not the lines that set the stored
+ * placement. Like the raycaster's default, only meshes on
  * layer 0 are tested.
  */
 import * as THREE from "three";
