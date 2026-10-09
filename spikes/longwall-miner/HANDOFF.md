@@ -100,10 +100,12 @@ What moved, and what is yours to decide:
   blocks boot.** Map #1's Constraint (#830, #835, 2026-10-09) puts only the
   cockpit and the home station's exterior in the boot set and installs every
   other model after boot behind a procedural stand-in; that mechanism is
-  #838's (open, blocked by #831), so sage rounds 2 and 3's background-load
+  #838's (open, blocked by #831), so sage rounds 2 to 4's background-load
   finding is escalated to you rather than fixed here (the ruling above). The gap #838 inherits: `miner/b` has no
   procedural stand-in today — `buildShipMesh` throws without the model,
-  because the envelope, vents and muzzles are measured off it.
+  because the envelope, vents and muzzles are measured off it. Round 4's
+  far-range boxes are measured off the model too, so they cannot stand in
+  before it loads.
   `evidence/game-report.json` measured one miner at 111 draw calls and
   283,590 triangles a frame up close, against 38 meshes and about 12k
   triangles for the loft; that capture predates the batch below and was not
@@ -153,8 +155,13 @@ What moved, and what is yours to decide:
   boot, traffic-continuity and derelict were run alone on the GPU lane and
   passed; `evidence/integration-probes.txt` is that transcript. None of the
   five asserts the miner's band (`probe-ship-visuals` does not name the
-  miner); `tests/longwall-mesh.test.ts` does, headless. The full run is the
-  supervisor's.
+  miner); `tests/longwall-mesh.test.ts` does, headless. Round 2's hull batch
+  had no browser run of its own until sage round 4: after round 4's outline
+  stand-in (head 2825677, the batch under it) the same five were run alone
+  again on the GPU lane and passed, under a peak load of 41–64 on 10 cores
+  from outside work; `evidence/integration-probes-round4.txt` is that
+  transcript. None of the five frames a miner past 400 radii either, so the
+  stand-in is held headless too. The full run is the supervisor's.
 
 **Field Notes, proposed copy (major: a rebuilt ship a returning player
 sees), for your approval before it lands in `src/changelog.ts`:**
