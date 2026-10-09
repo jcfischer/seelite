@@ -66,9 +66,9 @@ const attributes = (doc) =>
 // draws the study's triangles, normals and texture coordinates is
 // `tests/courier-hull.test.ts`'s row, against the study export itself.
 const beforeEncoding = attributes(document);
-await mkdir("public/models", { recursive: true });
-await io.write("public/models/courier-hull.glb", document);
-const decoded = await io.read("public/models/courier-hull.glb");
+await mkdir("src/models", { recursive: true });
+await io.write("src/models/courier-hull.glb", document);
+const decoded = await io.read("src/models/courier-hull.glb");
 assert.deepEqual(
 	attributes(decoded),
 	beforeEncoding,

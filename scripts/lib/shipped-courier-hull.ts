@@ -9,7 +9,7 @@ let builder: AuthoredHullBuilder | undefined;
 
 /**
  * Install the shipped courier exterior (node #812) the way the game does,
- * from `public/models/courier-hull.glb` through the browser's loader. Every
+ * from `src/models/courier-hull.glb` through the browser's loader. Every
  * test file runs with it installed (`tests/setup-courier-hull.ts`, the bun
  * preload), so a row that reads a figure measured off the courier's mesh —
  * its envelope, its vent placement, its muzzle — measures the hull the
@@ -21,7 +21,7 @@ let builder: AuthoredHullBuilder | undefined;
  */
 export async function installShippedCourierHull(): Promise<void> {
 	builder ??= await createCourierHullBuilder(
-		await decodeShippedGlb("public/models/courier-hull.glb"),
+		await decodeShippedGlb("src/models/courier-hull.glb"),
 	);
 	installAuthoredCourier(builder);
 }

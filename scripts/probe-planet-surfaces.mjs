@@ -2404,11 +2404,12 @@ if (airless) {
 	if (subject) {
 		const result = await halfPage.evaluate(async (id) => {
 			const game = window.__seelite;
-			// The limb is the subject, not the cabin: #792's dashboard rises into
-			// the lower rows this reads, where a row crossing it measured the
-			// dash's edge as a limb step. `cabinHidden` is how the placement
-			// tools clear it (`probe-witchspace`, `probe-cruise-light`).
-			game.cabinHidden = true;
+			// **The cabin stays in the frame (node #806).** #794 hid it here
+			// because the spike's dash rose into the lowest row this reads: at that
+			// placement the row at y=518 found its edge at x=451, on the dash,
+			// where the limb is at 117. With the cabin lowered it finds 117 with
+			// the cabin drawn, so a cabin raised back over the view turns this
+			// red.
 			game.settings.set("quality", "high");
 			await window.__sunOffset(id, 2.5, 60);
 			const fullSize = [

@@ -51,6 +51,7 @@ import {
 import { MeshoptSimplifier } from "meshoptimizer/simplifier";
 import { DETAIL_RADII } from "./detail-level";
 import { disposeSubtree, shared } from "./gpu-teardown";
+import { COURIER_HULL_GLB_URL } from "./model-urls";
 import { HULL_SPECS } from "./hull";
 import { EMISSIVE_CEILING } from "./light-rig";
 import { LEVEL_STAND_IN } from "./ship-detail";
@@ -236,9 +237,6 @@ export function reducedLevel(
 	level.userData[LEVEL_REACHED_ERROR_KM] = reachedKm;
 	return level;
 }
-
-/** Where the shipped asset is served from (`spikes/courier-hull/prepare-game-asset.mjs`). */
-export const COURIER_HULL_URL = "/models/courier-hull.glb";
 
 /**
  * How far inside the declared length the model is drawn, kilometres. The
@@ -437,7 +435,7 @@ let ready: Promise<void> | undefined;
 export function prepareCourierHullModel(): Promise<void> {
 	return (ready ??= new GLTFLoader()
 		.setMeshoptDecoder(MeshoptDecoder)
-		.loadAsync(COURIER_HULL_URL)
+		.loadAsync(COURIER_HULL_GLB_URL)
 		.then(async (gltf) => {
 			installAuthoredCourier(await createCourierHullBuilder(gltf.scene));
 			// One courier built now, behind the loading panel: the first build

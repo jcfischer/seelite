@@ -33,8 +33,9 @@ export const CABIN_SCALE = 100;
 
 /**
  * The cabin camera's near plane, kilometres. Three cabin metres — three
- * centimetres of the real cabin. #792's authored cabin puts its nearest vertex
- * about 40 cabin metres from the eye in any direction a head can turn
+ * centimetres of the real cabin. #792's authored cabin, placed as node #806
+ * lowered it, puts its nearest vertex 64 cabin metres from the eye in any
+ * direction a head can turn
  * (`tests/cockpit-model.test.ts` measures it), so no head turn can slice a
  * fitting open. The near layer's own near plane is untouched; #15's depth
  * ratio is why it is 10 m.
@@ -43,8 +44,9 @@ export const CABIN_NEAR_KM = 0.003;
 
 /**
  * The cabin camera's far plane, kilometres. The authored cabin's farthest
- * vertex is about 576 m from the eye (5.76 real metres); 600 m brackets it,
- * and a far plane only as far as the cabin keeps its depth ratio at 200.
+ * vertex is 587 m from the eye (5.87 real metres) as node #806 placed it; 600 m
+ * brackets it, and a far plane only as far as the cabin keeps its depth ratio
+ * at 200.
  */
 export const CABIN_FAR_KM = 0.6;
 

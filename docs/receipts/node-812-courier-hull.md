@@ -10,7 +10,7 @@ browser rows are red pending that decision (Q1).
 
 ## What ships
 
-- `public/models/courier-hull.glb`: the study export re-encoded by
+- `src/models/courier-hull.glb`: the study export re-encoded by
   `spikes/courier-hull/prepare-game-asset.mjs` with dedup, reorder, Meshopt
   and lossless WebP. There is no simplification and no quantisation. The
   script asserts that the Meshopt encoding round-trips every vertex attribute

@@ -14,6 +14,7 @@ import { stationInterior } from "./station-interior";
 import { buildStationInterior, NAMEPLATE_NAME } from "./station-interior-mesh";
 import { EMISSIVE_CEILING } from "./light-rig";
 import { shared, disposeSubtree } from "./gpu-teardown";
+import { CORIOLIS_GLB_URL } from "./model-urls";
 
 export function createIndustrialCoriolisBuilder(template: THREE.Group) {
 	// The display export has brighter lamps than the game's exposure contract.
@@ -124,7 +125,7 @@ export function createIndustrialCoriolisBuilder(template: THREE.Group) {
 async function loadIndustrialStationBuilder() {
 	const gltf = await new GLTFLoader()
 		.setMeshoptDecoder(MeshoptDecoder)
-		.loadAsync("/models/coriolis.glb");
+		.loadAsync(CORIOLIS_GLB_URL);
 	gltf.scene.traverse((o) => {
 		if (o instanceof THREE.Mesh) {
 			o.castShadow = true;

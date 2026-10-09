@@ -195,7 +195,7 @@ what it is replacing when it arrives to own the choice properly.
 
 **Since node #812 the courier's selected variant draws an authored model**, the
 O4 hull the principal approved on #795 (`src/courier-hull.ts`, loaded from
-`public/models/courier-hull.glb` before any `Game` is built). It is the one
+`src/models/courier-hull.glb` before any `Game` is built). It is the one
 hull here that is not lofted: it carries its own textures and machinery, so the
 finishes, the plating and the greeble zones above do not reach it, and only
 its drive glows follow the finish. Its scale is set by the courier's declared

@@ -21,6 +21,7 @@ import {
 	launchChromium,
 	tally,
 } from "./probe-guard.mjs";
+import { installCompositeFrame } from "./lib/composite-frame.mjs";
 import { gameUrl } from "./lib/game-url.mjs";
 
 const ORIGIN =
@@ -58,24 +59,47 @@ const installHelpers = () => {
 		}
 		return { red, amber };
 	};
-	/** Pixels in a rectangle that pass `keep(r, g, b, a)`. */
-	const countIn = (x, y, width, height, keep) => {
-		const overlay = document.getElementById("overlay");
-		const ctx = overlay.getContext("2d", { willReadFrequently: true });
-		const data = ctx.getImageData(
-			Math.floor(x),
-			Math.floor(y),
-			Math.ceil(width),
-			Math.ceil(height),
-		).data;
+	/** Pixels in `data` that pass `keep(r, g, b, a)`. */
+	const countPixels = (data, keep) => {
 		let n = 0;
 		for (let i = 0; i < data.length; i += 4)
 			if (keep(data[i], data[i + 1], data[i + 2], data[i + 3])) n++;
 		return n;
 	};
-	/** The raider's warm beam colour: strong red, middling green, weak blue. */
+	/** Pixels in a rectangle of the overlay that pass `keep`. */
+	const countIn = (x, y, width, height, keep) => {
+		const overlay = document.getElementById("overlay");
+		const ctx = overlay.getContext("2d", { willReadFrequently: true });
+		return countPixels(
+			ctx.getImageData(
+				Math.floor(x),
+				Math.floor(y),
+				Math.ceil(width),
+				Math.ceil(height),
+			).data,
+			keep,
+		);
+	};
+	/** The same, off the frame the player sees (`lib/composite-frame.mjs`),
+	 *  rendered in the task that reads it. */
+	const countInFrame = (x, y, width, height, keep) => {
+		const overlay = document.getElementById("overlay");
+		return countPixels(
+			window.__compositeFrame(overlay.width, overlay.height, {
+				x,
+				y,
+				width,
+				height,
+			}).data,
+			keep,
+		);
+	};
+	/** The raider's warm beam colour: strong red, middling green, weak blue.
+	 *  Green under 160, not 180: the beam reads (254, 137, 88) in the frame,
+	 *  and an amber mark at (207, 175, 101) crossed the cockpit's sample
+	 *  square at the narrow viewport (node #806). */
 	const warm = (r, gr, b, a) =>
-		a > 120 && r > 200 && gr > 100 && gr < 180 && b < 130;
+		a > 120 && r > 200 && gr > 100 && gr < 160 && b < 130;
 	/** The rim's red, at any alpha it is drawn with. */
 	const rimRed = (r, gr, b, a) => a > 12 && r > 200 && gr < 120 && b < 100;
 	/** The passive tone's cyan-white, and nothing else drawn near the label: the
@@ -94,11 +118,26 @@ const installHelpers = () => {
 		dt,
 		tonesAround,
 		aimAt,
-		/** Warm beam pixels in a small square at the beam's midpoint. */
+		/**
+		 * Warm beam pixels in a small square on the beam, read off the frame the
+		 * player sees: the WebGL canvas with the overlay over it, in the task
+		 * that rendered them.
+		 *
+		 * **In the cockpit the beam is in the frame and ends below it** (node
+		 * #806): it runs to the pilot and the dash hides its lower part, so the
+		 * square sits 28 px from the raider's end — past its marker ring, whose
+		 * amber reads as warm, and above the dash with the raider aimed at —
+		 * rather than at the midpoint. Chase keeps its beam on the
+		 * overlay, ending on the hull, and is sampled at the midpoint as before.
+		 */
 		beamPaint(beam) {
-			const x = (beam.from.x + beam.to.x) / 2;
-			const y = (beam.from.y + beam.to.y) / 2;
-			return countIn(x - 6, y - 6, 12, 12, warm);
+			const dx = beam.to.x - beam.from.x;
+			const dy = beam.to.y - beam.from.y;
+			const len = Math.hypot(dx, dy) || 1;
+			const along = g.view === "cockpit" ? Math.min(28, len / 2) : len / 2;
+			const x = beam.from.x + (dx / len) * along;
+			const y = beam.from.y + (dy / len) * along;
+			return countInFrame(x - 6, y - 6, 12, 12, warm);
 		},
 		/** Rim-red pixels in the glass's top-left corner. */
 		rimPaint() {
@@ -193,6 +232,7 @@ for (const viewport of VIEWPORTS) {
 		viewport: { width: viewport.width, height: viewport.height },
 	});
 	watch(page);
+	await installCompositeFrame(page);
 	await page.goto(gameUrl(origin, { seed: 42 }));
 	await bootedGame(page);
 	await page.evaluate(installHelpers);

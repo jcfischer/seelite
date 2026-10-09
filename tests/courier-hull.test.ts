@@ -73,7 +73,7 @@ describe("the shipped file is the approved study", () => {
 		const study = await decodeShippedGlb(
 			"spikes/courier-hull/courier-hull.glb",
 		);
-		const shipped = await decodeShippedGlb("public/models/courier-hull.glb");
+		const shipped = await decodeShippedGlb("src/models/courier-hull.glb");
 		const shape = (scene: THREE.Object3D) =>
 			meshesOf(scene)
 				.map((m) => {

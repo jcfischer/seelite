@@ -5,7 +5,7 @@ import { MeshoptDecoder } from "three/addons/libs/meshopt_decoder.module.js";
 /**
  * Decode a GLB at its authored scale, through the same loader as the
  * browser. The path is from the repository root: shipped models sit under
- * `public/`, and the review-only study files beside their spike's README.
+ * `src/models/`, and the review-only study files beside their spike's README.
  * Only texture references are removed, because Bun has no image decoder;
  * materials, names, compressed vertex buffers and node transforms are kept,
  * normals and texture coordinates included. In `scripts/lib` rather than the

@@ -7,7 +7,7 @@ import { decodeShippedGlb } from "../../scripts/lib/shipped-glb";
 export async function readCoriolisGlb(name: string) {
 	const scene = await decodeShippedGlb(
 		name === "coriolis-industrial-flight.glb"
-			? "public/models/coriolis.glb"
+			? "src/models/coriolis.glb"
 			: "spikes/coriolis/" + name,
 	);
 	scene.scale.setScalar(0.001);

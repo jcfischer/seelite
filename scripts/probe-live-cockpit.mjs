@@ -11,6 +11,7 @@ import {
 	PROBE_WINDOW_VISIBLE,
 	tally,
 } from "./probe-guard.mjs";
+import { installCompositeFrame } from "./lib/composite-frame.mjs";
 import { gameUrl } from "./lib/game-url.mjs";
 
 const ORIGIN =
@@ -1164,6 +1165,7 @@ const combatPage = await browser.newPage({
 	viewport: { width: 1280, height: 760 },
 });
 watch(combatPage, "prototype combat");
+await installCompositeFrame(combatPage);
 await combatPage.goto(gameUrl(ORIGIN, { seed: 42, combat: 1 }), {
 	waitUntil: "load",
 });
@@ -1247,12 +1249,14 @@ const freezeProof = await combatPage.evaluate(async () => {
 	return stayedFrozen;
 });
 check("prototype: frame loop halts while frozen", freezeProof);
+// Off the frame the player sees, not the overlay: the rig's tracer is drawn
+// into the WebGL frame behind the cabin since node #806, as the gun's is.
+// `__compositeFrame` renders before it reads, so each arm is its own render.
 const laserTracerPixels = await combatPage.evaluate(() => {
 	const game = window.__seelite;
 	const overlay = document.querySelector("#overlay");
-	const context = overlay.getContext("2d");
 	const count = () => {
-		const data = context.getImageData(0, 0, overlay.width, overlay.height).data;
+		const data = window.__compositeFrame(overlay.width, overlay.height).data;
 		let bright = 0;
 		for (let i = 0; i < data.length; i += 4)
 			if (data[i] > 100 && data[i + 1] > 180 && data[i + 2] > 200) bright++;
@@ -1260,7 +1264,6 @@ const laserTracerPixels = await combatPage.evaluate(() => {
 	};
 	const shown = count();
 	game.combatRig.forceLaserHidden = true;
-	game.render(0);
 	const hidden = count();
 	game.combatRig.forceLaserHidden = false;
 	game.render(0);
