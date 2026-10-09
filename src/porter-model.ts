@@ -42,23 +42,26 @@ export const PORTER_BUMP_SCALE = 0.022;
 /**
  * The model's drive nozzles, model metres, read off `build_model.py`'s
  * `nozzle(x, y, z, r)` calls: the aft drive pod on the keel and the five
- * nozzles under the cassettes. Each nozzle's recess ends in a dark wall
- * `1.8` m inside its mouth at `0.64 r`; the glow sits just aft of that
- * wall, facing out of the nozzle.
+ * nozzles under the cassettes. `wall` is how far inside the mouth the first
+ * surface that closes the throat stands: the drive pod's dark back wall
+ * (`1.8` m in), and for the five, the aft face of the 0.3 m mounting plate
+ * each one is set through (`box((x, -1.4, -31), (3.3, 3.6, 0.3))`), which
+ * hides anything deeper. The glow sits just aft of that surface.
  */
 export const PORTER_NOZZLES_M = [
-	{ name: "porter-drive", x: -14.7, y: -0.3, z: -34.6, r: 4.9 },
+	{ name: "porter-drive", x: -14.7, y: -0.3, z: -34.6, r: 4.9, wall: 1.8 },
 	...[-5, 1, 7, 13, 19].map((x, i) => ({
 		name: `porter-drive-${i + 1}`,
 		x,
 		y: -1.4,
 		z: -31.5,
 		r: 1.3,
+		wall: 0.35,
 	})),
 ] as const;
 
-/** How far the glow stands off the nozzle's back wall, metres. */
-const GLOW_STANDOFF_M = 0.05;
+/** How far the glow stands off the surface that closes its throat, metres. */
+const GLOW_STANDOFF_M = 0.1;
 
 /**
  * The drive glow every hull carries (`isDriveBell`), seated in the model's
@@ -68,7 +71,7 @@ const GLOW_STANDOFF_M = 0.05;
 function addDriveGlows(scene: THREE.Object3D): void {
 	for (const n of PORTER_NOZZLES_M) {
 		const glow = authoredDriveGlow(n.name, n.r * 0.55);
-		glow.position.set(n.x, n.y, n.z + 1.8 - GLOW_STANDOFF_M);
+		glow.position.set(n.x, n.y, n.z + n.wall - GLOW_STANDOFF_M);
 		// A circle faces +Z; the model's aft is −Z.
 		glow.rotation.y = Math.PI;
 		scene.add(glow);
