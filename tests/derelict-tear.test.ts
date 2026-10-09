@@ -102,7 +102,7 @@ describe("a derelict's envelope is the intact hull's", () => {
 	});
 
 	for (const id of PURCHASABLE_HULL_IDS)
-		test(`${id}: the drawn box is equal, and it is torn`, () => {
+		test(`${id}: the drawn box is equal, and it tears only if lofted`, () => {
 			const intact = drawnHullBox(live(id));
 			const wreck = buildDerelictMesh(id);
 			const torn = drawnHullBox(wreck);

@@ -205,9 +205,9 @@ What moved, and what is yours to decide:
   suite, because the round moved two helpers into `scripts/lib/`. The full
   run is the supervisor's.
 
-**Field Notes, proposed copy (major: a rebuilt ship a returning player
-sees), for your approval before it lands in `src/changelog.ts`:**
+**Field Notes (major: a rebuilt ship a returning player sees), approved by
+the principal on 2026-10-09 with the flight, and in `src/changelog.ts`:**
 
-> Mining ships are rebuilt: a long ore hauler with three sealed cassettes on
-> its spine, a compact two-seat bridge, folded asteroid anchors and a rotary
-> cutter under the bow.
+> The miner has a new hull: the Longwall, an 84-metre mining ship with three
+> sealed ore cassettes, a two-seat bridge, four folded asteroid anchors and a
+> cutter on an extending boom.
