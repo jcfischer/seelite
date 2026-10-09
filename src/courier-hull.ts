@@ -51,6 +51,7 @@ import {
 import { MeshoptSimplifier } from "meshoptimizer/simplifier";
 import { DETAIL_RADII } from "./detail-level";
 import { disposeSubtree, shared } from "./gpu-teardown";
+import type { ModelProgressListener } from "./model-progress";
 import { COURIER_HULL_GLB_URL } from "./model-urls";
 import { HULL_SPECS } from "./hull";
 import { EMISSIVE_CEILING } from "./light-rig";
@@ -439,11 +440,16 @@ export async function createCourierHullBuilder(
 
 let ready: Promise<void> | undefined;
 
-/** Await before any Game, postcard or ship workbench builds a courier. */
-export function prepareCourierHullModel(): Promise<void> {
+/** Await before any Game, postcard or ship workbench builds a courier.
+ *  `onProgress` hears the download this call starts (#833), as
+ *  `prepareCoriolisModel`'s does: without it the boot's tracker has no total
+ *  for this model and draws its bar without a value until it resolves. */
+export function prepareCourierHullModel(
+	onProgress?: ModelProgressListener,
+): Promise<void> {
 	return (ready ??= new GLTFLoader()
 		.setMeshoptDecoder(MeshoptDecoder)
-		.loadAsync(COURIER_HULL_GLB_URL)
+		.loadAsync(COURIER_HULL_GLB_URL, onProgress)
 		.then(async (gltf) => {
 			installAuthoredCourier(await createCourierHullBuilder(gltf.scene));
 			// One courier built now, behind the loading panel: the first build
