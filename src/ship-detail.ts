@@ -75,7 +75,25 @@ interface VisualState {
 	detail: DetailLevel;
 	quality: ShipQuality;
 	greebles: THREE.InstancedMesh[];
+	/** An authored hull's own machinery (node #815), gated by the band alone. */
+	mechanism: readonly AuthoredPart[];
 }
+
+/**
+ * One mesh of an authored hull's machinery and the band it stops drawing at.
+ * Distance alone hides it, never quality: it is the approved design rather
+ * than generated clutter, and close up it is what the hull is for.
+ */
+export interface AuthoredPart {
+	readonly mesh: THREE.Object3D;
+	readonly hiddenFrom: Exclude<DetailLevel, "full">;
+}
+
+const BAND_RANK: Readonly<Record<DetailLevel, number>> = {
+	full: 0,
+	reduced: 1,
+	outline: 2,
+};
 
 const stateOf = (root: THREE.Object3D): VisualState => {
 	const state = root.userData.shipVisual as VisualState | undefined;
@@ -282,20 +300,28 @@ export function buildShipDetails(
 		detail: "full",
 		quality: "high",
 		greebles,
+		mechanism: [],
 	} satisfies VisualState;
 	root.userData.shipSilhouetteKm = reachKm;
 }
 
 /**
  * The visual state of an authored hull (node #815), which carries its own
- * machinery and lamps: no generated greebles and no strip, so the detail and
- * quality gates have nothing of ours to hide, but the root answers them.
+ * machinery and lamps: no generated greebles and no strip. The band sheds
+ * `mechanism` with distance — the builder names which meshes and from which
+ * band, and every lamp stays out of it, as every emissive stays out of the
+ * greeble gate.
  */
-export function markAuthoredShip(root: THREE.Group, reachKm: number): void {
+export function markAuthoredShip(
+	root: THREE.Group,
+	reachKm: number,
+	mechanism: readonly AuthoredPart[],
+): void {
 	root.userData.shipVisual = {
 		detail: "full",
 		quality: "high",
 		greebles: [],
+		mechanism,
 	} satisfies VisualState;
 	root.userData.shipSilhouetteKm = reachKm;
 }
@@ -303,6 +329,9 @@ export function markAuthoredShip(root: THREE.Group, reachKm: number): void {
 function applyVisibility(state: VisualState) {
 	const draw = state.detail === "full" && SHIP_QUALITY[state.quality].greebles;
 	for (const mesh of state.greebles) mesh.visible = draw;
+	const band = BAND_RANK[state.detail];
+	for (const part of state.mechanism)
+		part.mesh.visible = band < BAND_RANK[part.hiddenFrom];
 }
 
 export function setShipDetail(root: THREE.Object3D, level: DetailLevel): void {

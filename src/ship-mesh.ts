@@ -59,6 +59,7 @@ export {
 	updateShipVisuals,
 } from "./ship-detail";
 import {
+	type AuthoredPart,
 	type ShipDetailPlan,
 	type ShipSurface,
 	buildShipDetails,
@@ -2485,13 +2486,17 @@ function buildMinerA(root: THREE.Group, p: Palette) {
 /**
  * Longwall B, the authored miner (#803, approved 2026-10-08; node #815).
  *
- * The principal approved a Blender model rather than a loft, so `miner/b` is
- * that model: `public/models/longwall-miner.glb`, prepared by
+ * Node #815 asks for the approved model in the game the way #794 put the
+ * cockpit there, so `miner/b` is that model rather than a loft:
+ * `public/models/longwall-miner.glb`, prepared by
  * `spikes/longwall-miner/prepare-flight-asset.mjs` from the study's stowed
  * export. It is installed once (`longwall-model.ts` in the browser,
  * `tests/setup/longwall-model.ts` under bun) and every `buildShipMesh` clones
  * it, so a Traffic miner shares the template's buffers rather than decoding
- * its own.
+ * its own. That instruction is not a ruling on the asset policy: map #1's
+ * "procedural everything" Constraint names no authored hull, and #763 asked
+ * for one before a shipped model merges. The integration result
+ * (`spikes/longwall-miner/HANDOFF.md`, D6) puts it to the principal.
  *
  * **There is no procedural fallback.** The envelope, the collision box, the
  * vent placement and the muzzles are all measured off the built mesh
@@ -2525,8 +2530,8 @@ export const LONGWALL_NOZZLES_M = {
 } as const;
 
 let longwallGlow: THREE.MeshStandardMaterial | undefined;
-/** The drive glow: the gradient's hot throat at the centre of the bore and
- *  the drive's blue at its rim, at the exhaust's one emissive dial. */
+/** The drive glow: the gradient's white-hot core at the centre of the bore
+ *  and the drive's blue at its rim, at the exhaust's one emissive dial. */
 function longwallGlowMaterial() {
 	longwallGlow ??= shared(
 		new THREE.MeshStandardMaterial({
@@ -2643,6 +2648,45 @@ function buildLongwall(root: THREE.Group) {
 		if (child.name === "nav-lights") copy.onBeforeRender = child.onBeforeRender;
 		root.add(copy);
 	}
+}
+
+/**
+ * What the detail band sheds from a built Longwall B (node #815): the four
+ * stowed anchors' metal from `reduced` and the cutter's (`feed`, with `rotor`
+ * inside it) from `outline`. Every lamp stays, and nothing of `hull` goes,
+ * because the hull is the silhouette and the bridge's shell and glazing are
+ * small enough that a size rule would open a hole in it.
+ *
+ * Measured in a 900 px frame over a 60° field: at the band's 40 radii the
+ * hull is 39 px long and a stowed anchor, 20.5 x 7 m, is 9.4 x 3.3 px; at
+ * 400 radii the hull is 3.9 px and the cutter's 31.4 m feed is 1.5 px. The
+ * hull's own 254k triangles still draw at any range — that is the LOD the
+ * integration result owes its own node. Collected from the clone, so a far
+ * miner hides its own meshes and never the template's.
+ */
+function longwallMechanism(root: THREE.Object3D): AuthoredPart[] {
+	const parts: AuthoredPart[] = [];
+	root.traverse((o) => {
+		const mesh = o as THREE.Mesh;
+		if (!mesh.isMesh) return;
+		const materials = Array.isArray(mesh.material)
+			? mesh.material
+			: [mesh.material];
+		const lamp = materials.some(
+			(m) =>
+				m instanceof THREE.MeshStandardMaterial &&
+				m.emissive.getHex() !== 0 &&
+				m.emissiveIntensity > 0,
+		);
+		if (lamp) return;
+		for (let up = mesh.parent; up && up !== root; up = up.parent) {
+			if (/^anchor-\d/.test(up.name))
+				return void parts.push({ mesh, hiddenFrom: "reduced" });
+			if (up.name === "feed" || up.name === "rotor")
+				return void parts.push({ mesh, hiddenFrom: "outline" });
+		}
+	});
+	return parts;
 }
 
 function buildMinerC(root: THREE.Group, p: Palette) {
@@ -6225,6 +6269,8 @@ interface BuilderPlan extends ShipDetailPlan {
 	/** An authored model (node #815) carries its own machinery and lamps, so
 	 *  it declares no zones and gets no generated detail. */
 	readonly authored?: true;
+	/** An authored model's machinery, as the detail band sheds it. */
+	readonly mechanism?: (root: THREE.Object3D) => AuthoredPart[];
 }
 
 /** One authored machinery patch beside each builder, never a hull-wide scatter. */
@@ -6310,7 +6356,12 @@ export const SHIP_DETAIL_PLANS: Record<
 	},
 	miner: {
 		a: planned(buildMinerA, "miner-fuselage", "ore-service", "dorsal", 22),
-		b: { build: buildLongwall, zones: [], authored: true },
+		b: {
+			build: buildLongwall,
+			zones: [],
+			authored: true,
+			mechanism: longwallMechanism,
+		},
 		c: planned(buildMinerC, "miner-fuselage", "refinery-spine", "dorsal", 22),
 	},
 	patrol: {
@@ -6826,7 +6877,7 @@ export function buildShipMesh(
 	if (plan.authored) {
 		// Nav lights come with the template, placed once (`prepareLongwall`).
 		plan.build(root, makePalette(id));
-		markAuthoredShip(root, HULL_REACH_KM[id]);
+		markAuthoredShip(root, HULL_REACH_KM[id], plan.mechanism?.(root) ?? []);
 		return { root };
 	}
 	plan.build(root, makePalette(id));

@@ -2062,16 +2062,24 @@ describe("distinctMeetings: a meeting's severity is its worst step (sage round 7
 describe("collision.md §9.1.14: §6 item 1's corpus row", () => {
 	const galaxy = generateGalaxy(47, 0);
 	const contentsFor = contentsCache(galaxy);
+	// A run is a pure function of its arguments, and the pinned row and the
+	// red build both read system 0's 1,800 s green run: fly it once.
+	const runs = new Map<string, CorpusResult>();
 	const run = (index: number, windowS: number, includeExempt = false) => {
+		const key = `${index}:${windowS}:${includeExempt}`;
+		const cached = runs.get(key);
+		if (cached) return cached;
 		const record = galaxy.systems.find((r) => r.index === index);
 		if (!record) throw new Error(`no system ${index}`);
 		const fromS = Math.floor(firstDepartureS(galaxy, record, contentsFor));
-		return trafficCollisionCorpus(galaxy, record, contentsFor, {
+		const result = trafficCollisionCorpus(galaxy, record, contentsFor, {
 			stepS: 0.5,
 			fromS,
 			toS: fromS + windowS,
 			includeExempt,
 		});
+		runs.set(key, result);
+		return result;
 	};
 	const classes = (result: CorpusResult) => {
 		const out: Record<string, number> = {};
@@ -2100,8 +2108,9 @@ describe("collision.md §9.1.14: §6 item 1's corpus row", () => {
 		expect(result.pairSteps).toBeGreaterThan(0);
 		// Three launch-aperture touches stood here too until node #815: all three
 		// were miners (0:station-refinery/traffic-00 twice, 95:station-trade/
-		// traffic-05), and Longwall B's box is 34.1 x 18.8 m in section where the
-		// loft's was 51.9 x 33.2; the same launches no longer meet the bay.
+		// traffic-05), and they went with the loft miner. Longwall B is narrower
+		// in section (34.1 x 18.8 m against 51.9 x 33.2) and also turns and damps
+		// differently (HANDOFF.md D2); nothing here separates which removed them.
 		expect(classes(result)).toEqual({ "release-point": 1 });
 		// Both classes are touches: they cost nothing and divert nothing.
 		for (const m of distinctMeetings(result.meetings))

@@ -1,6 +1,6 @@
 # Longwall B — articulated mining study (Codex)
 
-Refs jcfischer/seelite#803. Isolated Dream Loop design prototype of the selected Quarry Spine O4 and anchored mining O5. The principal selected an approximately 84 m hull with a smaller human-scale cockpit. This study does not change the production miner, ship statistics, flight, saves or traffic. Authored assets are scoped to this study, following Courier, Porter and Bollard prototypes.
+Refs jcfischer/seelite#803. Isolated Dream Loop design prototype of the selected Quarry Spine O4 and anchored mining O5. The principal selected an approximately 84 m hull with a smaller human-scale cockpit. It began as an isolated study that changed no production code. Node #815 then made it the game's `miner/b`, as #794 did with the courier cockpit: **In the game (node #815)**, below, says how, and `HANDOFF.md`'s integration result says what moved and what is the principal's to decide. Everything here except `public/models/longwall-miner.glb` stays review-only.
 
 ## Inspect
 
@@ -60,10 +60,15 @@ node spikes/longwall-miner/capture-game.mjs round-N   # flown, chase view, 4 sid
   would have parked 2.1 m into a slot berth's end wall).
 - **Fit.** The envelope is the measured 84.5 x 34.1 x 18.8 m (rounded up to
   0.1 m); it fits every berth of trade, shipyard and refinery and none at an
-  outpost, exactly as the loft did. Vent
-  placement is re-measured and the shares re-solved to #181's law, so the
-  hull turns 7.5% slower than the loft did (84.5 m against 78.2) and nothing
-  else about its handling moved.
+  outpost, exactly as the loft did. The
+  vent placement is re-measured on this mesh and every attitude share is
+  re-solved against it to #181's law (roll 0.00674 → 0.00390, pitch
+  0.00850 → 0.00793, yaw 0.01038 → 0.00838), so the composed turn rates
+  follow the length: 7.5% slower than the loft (84.5 m against 78.2).
+  Linear acceleration is unchanged. The docking computer's first
+  roll-tracking failure moved from 5.5 to 7.0 rpm (`docs/specs/docking.md`
+  §4); that is measured, and nothing here separates the length, the box and
+  the moved vents as its cause.
 - **Not changed.** Mass, thrust, hold (40 t), integrity and price. The 215 t
   now reads 3.97 t per 1000 m³ against the roster's 1.2–2.4 band; the miner
   is a pinned exemption in `tests/hull.test.ts` until the principal rules.
@@ -73,5 +78,11 @@ node spikes/longwall-miner/capture-game.mjs round-N   # flown, chase view, 4 sid
   (`evidence/game-report.json`), against 66 calls for the rest of that frame;
   the loft it replaced was 38 meshes and about 12k triangles. Every Traffic
   miner clones the one template, so buffers are shared but draws are not.
+  The detail band sheds the mechanism with range (`longwallMechanism` in
+  `src/ship-mesh.ts`): from 40 radii (about 1.7 km) the anchors' metal goes,
+  leaving 33 of 109 meshes and 261,768 of 283,576 triangles; from 400 radii
+  (about 17 km) the cutter's goes too, leaving 26 and 253,400. Every lamp and
+  the whole hull stay, and quality does not gate it. The hull's own triangles
+  draw at any range; a real LOD is owed its own node.
 - **Wrecks.** A derelict miner is dark and untorn: the tear cuts a loft's
   grid, and this model has none.

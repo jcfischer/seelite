@@ -12,7 +12,7 @@
  * puts it back.
  */
 
-import { afterEach, describe, expect, test } from "bun:test";
+import { describe, expect, test } from "bun:test";
 import * as THREE from "three";
 import { HULL_SPECS } from "../src/hull";
 import { disposeSubtree } from "../src/gpu-teardown";
@@ -33,11 +33,6 @@ import { decodeShippedGlb } from "./helpers/read-coriolis-glb";
 
 const SHIPPED = "public/models/longwall-miner.glb";
 
-afterEach(async () => {
-	// Whatever a row did to the install, the next file gets the shipped model.
-	await installShippedLongwall();
-});
-
 const meshesOf = (root: THREE.Object3D) => {
 	const meshes: THREE.Mesh[] = [];
 	root.traverse((o) => {
@@ -55,11 +50,19 @@ describe("miner/b is the shipped model, and only the shipped model", () => {
 		expect(isAuthoredHull("courier", "a")).toBe(false);
 	});
 
-	test("building it uninstalled throws rather than drawing a loft", () => {
+	test("building it uninstalled throws rather than drawing a loft", async () => {
 		installLongwallModel(null);
-		expect(() => buildShipMesh("miner", "b")).toThrow(/prepareLongwallModel/);
-		// The lofts do not depend on it.
-		expect(() => buildShipMesh("miner", "a")).not.toThrow();
+		try {
+			expect(() => buildShipMesh("miner", "b")).toThrow(
+				/prepareLongwallModel/,
+			);
+			// The lofts do not depend on it.
+			expect(() => buildShipMesh("miner", "a")).not.toThrow();
+		} finally {
+			// The only row that changes the install puts the shipped model back,
+			// so the next row and the next file build what the game draws.
+			await installShippedLongwall();
+		}
 	});
 
 	test("it carries the approved model's mechanisms, stowed", async () => {
@@ -192,7 +195,9 @@ describe("one template, shared by every miner", () => {
 		const second = buildShipMesh("miner", "b").root;
 		const geometries = (root: THREE.Object3D) =>
 			meshesOf(root).map((m) => m.geometry);
-		expect(geometries(first)).toEqual(geometries(second));
+		const shared = geometries(second);
+		expect(geometries(first)).toHaveLength(shared.length);
+		geometries(first).forEach((g, i) => expect(g).toBe(shared[i]));
 		const report = disposeSubtree(first);
 		expect(report.freed.size).toBe(0);
 		// The second still draws, and a third still builds.
@@ -227,5 +232,96 @@ describe("one template, shared by every miner", () => {
 		expect(lights.onBeforeRender).not.toBe(
 			THREE.Object3D.prototype.onBeforeRender,
 		);
+	});
+});
+
+/** Is a mesh under a group whose name matches? */
+const under = (mesh: THREE.Object3D, name: RegExp) => {
+	for (let o = mesh.parent; o; o = o.parent) if (name.test(o.name)) return true;
+	return false;
+};
+const isLamp = (mesh: THREE.Mesh) => {
+	const material = mesh.material as THREE.MeshStandardMaterial;
+	return (
+		!!material.emissive &&
+		material.emissive.getHex() !== 0 &&
+		material.emissiveIntensity > 0
+	);
+};
+const ANCHOR = /^anchor-\d/;
+const CUTTER = /^(feed|rotor)$/;
+const drawn = (root: THREE.Object3D) => meshesOf(root).filter((m) => m.visible);
+const triangles = (meshes: readonly THREE.Mesh[]) =>
+	meshes.reduce((sum, m) => {
+		const g = m.geometry;
+		return sum + (g.index ?? g.getAttribute("position")).count / 3;
+	}, 0);
+
+describe("the detail band sheds the mechanism at range (node #815)", () => {
+	test("at full detail every mesh draws", () => {
+		const root = buildShipMesh("miner", "b").root;
+		updateShipVisuals(root, 0.5, "high");
+		expect(drawn(root)).toHaveLength(meshesOf(root).length);
+		expect(meshesOf(root)).toHaveLength(109);
+		expect(triangles(meshesOf(root))).toBe(283_576);
+	});
+
+	test("reduced hides the anchors' metal and keeps every lamp, the hull and the cutter", () => {
+		const root = buildShipMesh("miner", "b").root;
+		setShipDetail(root, "reduced");
+		for (const mesh of meshesOf(root)) {
+			const hidden = !isLamp(mesh) && under(mesh, ANCHOR);
+			expect({ name: mesh.name, visible: mesh.visible }).toEqual({
+				name: mesh.name,
+				visible: !hidden,
+			});
+		}
+		expect(drawn(root)).toHaveLength(33);
+		expect(triangles(drawn(root))).toBe(261_768);
+		expect(root.getObjectByName("nav-lights")?.visible).toBe(true);
+	});
+
+	test("outline also hides the cutter's metal, and nothing of the hull", () => {
+		const root = buildShipMesh("miner", "b").root;
+		setShipDetail(root, "outline");
+		for (const mesh of meshesOf(root)) {
+			const hidden =
+				!isLamp(mesh) && (under(mesh, ANCHOR) || under(mesh, CUTTER));
+			expect({ name: mesh.name, visible: mesh.visible }).toEqual({
+				name: mesh.name,
+				visible: !hidden,
+			});
+		}
+		expect(drawn(root)).toHaveLength(26);
+		expect(triangles(drawn(root))).toBe(253_400);
+		// Both drive glows are lamps, and the hull is the silhouette.
+		for (const side of ["port", "starboard"])
+			expect(root.getObjectByName(`longwall-${side}-exhaust`)?.visible).toBe(
+				true,
+			);
+		const hull = root.getObjectByName("hull");
+		expect(hull && meshesOf(hull).every((m) => m.visible)).toBe(true);
+	});
+
+	test("the band is distance, not quality, and it comes back", () => {
+		const root = buildShipMesh("miner", "b").root;
+		const reach = HULL_REACH_KM.miner;
+		// Low quality at close range draws the whole model: the anchors and the
+		// cutter are the approved design, not generated clutter.
+		updateShipVisuals(root, reach * 10, "low");
+		expect(drawn(root)).toHaveLength(109);
+		updateShipVisuals(root, reach * 200, "high");
+		expect(drawn(root)).toHaveLength(33);
+		updateShipVisuals(root, reach * 1000, "high");
+		expect(drawn(root)).toHaveLength(26);
+		updateShipVisuals(root, reach * 10, "high");
+		expect(drawn(root)).toHaveLength(109);
+	});
+
+	test("a clone's gate hides its own meshes, never the template's", () => {
+		const far = buildShipMesh("miner", "b").root;
+		setShipDetail(far, "outline");
+		const near = buildShipMesh("miner", "b").root;
+		expect(drawn(near)).toHaveLength(109);
 	});
 });

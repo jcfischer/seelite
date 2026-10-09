@@ -34,7 +34,7 @@ Adopt the approved design into the shared ship builder/loader convention, preser
 
 Add headless tests for arithmetic/state changes and browser checks for rendered/animated behavior. Run the mandatory probe selector against the real integration diff before browser probes, use the canonical runner, and satisfy the full delivery gates before merge. Current study controls, topology and capture evidence do not verify flight gameplay or production performance. Run Sage against the final implementation head. Seek any additional principal decision required by changed behavior or policy, then verify exact-head CI/review before merge.
 
-Keep graph lifecycle through `soma graph`; PR references use `Refs #803`. The principal's visual approval covers this design study, not an unknown future implementation.
+Make every node transition through `soma graph`; PR references use `Refs #803`. The principal's visual approval covers this design study, not an unknown future implementation.
 
 ## Integration result (node #815): for the principal
 
@@ -59,16 +59,34 @@ yours to decide:
   all miners, are gone from system 0's pinned corpus row.
 - **D3, wrecks.** A derelict miner is dark and untorn: #735's tear cuts a
   loft's grid and this model has none.
-- **D4, cost, no LOD.** Every game boot downloads 11.13 MiB more: the three
-  required models are about 20.5 MiB before play, up from about 9.4. One miner
-  draws 111 calls and 283,590 triangles a frame, against 38 meshes and about
-  12k triangles for the loft; Traffic miners share one template's buffers but
-  not its draws. A shared LOD or batching pass is owed its own node; the named
-  mechanism groups are kept for articulation, which is what stops a cheap
-  merge.
+- **D4, cost, a detail band but no LOD.** Every game boot downloads 11.13 MiB
+  more: the three required models are about 20.5 MiB before play, up from
+  about 9.4. One miner draws 111 calls and 283,590 triangles a frame up
+  close, against 38 meshes and about 12k triangles for the loft; Traffic
+  miners share one template's buffers but not its draws. The shared detail
+  band now sheds the mechanism by distance, never by quality: past 40 radii
+  (about 1.7 km) the anchors' metal, leaving 33 of 109 meshes and 261,768
+  triangles; past 400 (about 17 km) the cutter's too, leaving 26 and 253,400.
+  Every lamp and the whole hull stay (`tests/longwall-mesh.test.ts` holds
+  each figure). So the draws fall by three quarters at range and the
+  triangles by a tenth: the hull's own ~250k triangles at any range are what
+  a shared LOD node owes, as is a lighter boot download. The anchors going at
+  40 radii is a visible change, 9.4 x 3.3 px on a 39 px hull at the band's
+  edge, and yours to judge with the rest.
 - **D5, owed their own nodes:** mining state and behaviour, the deployed
   envelope, articulating the anchors and the cutter (the game draws the
   stowed export, static), and D1–D4's follow-ups.
+- **D6, the asset policy, not ruled and owed a ruling before merge.** Map
+  #1's Constraint still reads "Procedural everything: no downloaded assets",
+  with exceptions for the voice, the music samples and the social preview
+  image and none for an authored model. #763 Q1 said a shipped model file
+  cannot merge to `main` without a ruling, and #763 closed on "bevels and
+  CSG belong in the TS loft pipeline". Against that, #790 (the Coriolis) and
+  #794 (the cockpit) shipped authored `.glb` files, and node #815's own body
+  prescribes `public/models/*.glb` as #794 did. That is an instruction to
+  this node, not an amendment of the Constraint, and the visual approval of
+  #803 says it does not amend the policy either. Nothing here claims you
+  ruled. The ruling, and the line on map #1 if it is yes, are yours.
 - **Stale text outside this branch:** map #1's Constraints still read
   "(5.5, the miner, since #619 …)"; `docs/specs/docking.md` §4 is updated.
 - **Fit.** The ship's origin is now the box's centre (the export's was 4.8 m
@@ -81,7 +99,10 @@ yours to decide:
   infrastructure). Twelve were run alone on the GPU lane and passed: boot,
   model-viewer, ship-visuals, postcard, derelict, shipyard, vent-display,
   station-route-traffic, traffic-continuity, docking-traffic, carrier-scan,
-  state-gallery. The full run is the supervisor's.
+  state-gallery. Those twelve runs left no committed transcript;
+  `evidence/pr-probes.txt` is the design head's and does not cover this
+  branch. Sage round 1's detail band was checked by the probes in
+  `evidence/integration-probes.txt`. The full run is the supervisor's.
 
 **Field Notes, proposed copy (major: a rebuilt ship a returning player
 sees), for your approval before it lands in `src/changelog.ts`:**
