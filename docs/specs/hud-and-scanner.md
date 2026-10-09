@@ -822,9 +822,10 @@ before the cabin pass, and the cabin's own fittings hide them
 the dash, and that is open.** They are on the overlay and clipped at
 `GLASS_BOTTOM_FRACTION`, 0.66 of the height, while the authored dash top on
 the centre line is at 0.600 as node #806 placed it
-(`tests/cockpit-model.test.ts` pins it). Between the two, anything they draw
-lands on the dash, and the strip, whose bottom sits on the line, is in that
-band whenever it shows. Node #806 moved only the beams; the line was the old
+(`tests/cockpit-model.test.ts` pins it, on that line only). So on the centre
+line, a glass mark drawn between 0.600 and 0.66 overpaints the dash; how far the
+band reaches across the width has not been measured. Node #806 moved only the
+beams; the line was the old
 procedural cabin's and no longer describes the authored one. `probe-docking`'s
 clip row checks the director against the line, so it stays green across this.
 
