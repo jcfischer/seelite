@@ -80,19 +80,24 @@ node spikes/longwall-miner/capture-game.mjs round-N   # flown, chase view, 4 sid
 - **Stowed, static.** Nothing articulates the anchors or the cutter in the
   game; their named groups survive for whatever mining node poses them.
 - **Cost.** One flown miner was 111 draw calls and 283,590 triangles a frame
-  (`evidence/game-report.json`), against 66 calls for the rest of that frame;
-  the loft it replaced was 38 meshes and about 12k triangles. That capture
-  predates the hull batch and was not retaken. Every Traffic miner clones the
-  one template, so buffers are shared but draws are not. The template merges
-  the static hull's opaque, unlit meshes into one per material
-  (`batchLongwallHull`), 19 hull meshes to 10 and 109 to 100 a miner.
-  The detail band sheds the mechanism with range (`longwallMechanism` in
-  `src/ship-mesh.ts`): from 40 radii (about 1.7 km) the anchors' metal goes,
-  leaving 24 meshes and 261,768 of 283,576 triangles; from 400 radii
-  (about 17 km) the cutter's goes too, and the hull's metal gives way to
-  one mesh of 17 boxes, one per part it drew (`longwallOutline`), leaving 10
-  meshes and 780 triangles. Those are mesh counts, not measured draws. Every
-  lamp stays, and quality does not gate it. Inside 400 radii the hull's own
-  triangles still draw; a real LOD between the bands is owed its own node.
+  (`evidence/game-report.json`, captured at 644bb13), against 66 calls for
+  the rest of that frame. Counted as meshes, it was 109 then and is 100 now,
+  against the loft's 38 meshes and 12,028 triangles (`miner/b` at main
+  bd09ae5, `evidence/loft-baseline.txt`); no draw figure was taken for the
+  loft, and the capture was not retaken after the hull batch. Every Traffic
+  miner clones the one template, so buffers are shared but draws are not.
+  The template merges the static hull's opaque, unlit meshes into one per
+  material (`batchLongwallHull`), 19 hull meshes to 10 and 109 to 100 a
+  miner. The detail band sheds the mechanism with range (`longwallMechanism`
+  in `src/ship-mesh.ts`): from 40 radii (about 1.7 km) the anchors' metal
+  goes and the hull's opaque metal is drawn simplified (`longwallReduced`),
+  leaving 23 meshes and 14,714 triangles; from 400 radii (about 17 km) the
+  cutter's goes too, and the hull's metal gives way to one mesh of 17 boxes,
+  one per part it drew (`longwallOutline`), leaving 10 meshes and 780
+  triangles. The simplified hull's surface lies within 0.50 m of the model's
+  and every point of the model within 1.33 m of it, measured and pinned in
+  `tests/longwall-mesh.test.ts`; HANDOFF.md says what that changes. Those
+  are mesh counts, not measured draws. Every lamp stays, and quality does not
+  gate it.
 - **Wrecks.** A derelict miner is dark and untorn: the tear cuts a loft's
   grid, and this model has none.

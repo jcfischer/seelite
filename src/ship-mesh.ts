@@ -2530,10 +2530,14 @@ const longwallReducedGeometry = new Map<
 >();
 
 /**
- * How far Longwall B's `reduced` hull may move a surface, in model metres
- * (node #815, sage round 5). The band begins at 40 radii, where the 84.5 m
- * hull is 39 px long in a 900 px frame over a 60° field, so a pixel there is
- * 2.2 m and 0.4 m is under a fifth of one; further out it is less.
+ * The target error Longwall B's `reduced` hull is simplified to, in model
+ * metres (node #815, sage round 5). It is a target in meshoptimizer's own
+ * metric and **not** a bound on distance: measured in space, the drawn
+ * surface lies within 0.5 m of the model's and every point of the model
+ * within 1.33 m of the drawn surface (`tests/longwall-mesh.test.ts`, sage
+ * round 6). The band begins at 40 radii, where the 84.5 m hull is 39 px long
+ * in a 900 px frame over a 60° field, so a pixel there is 2.2 m and 1.33 m is
+ * 0.6 of one; further out it is less.
  */
 export const LONGWALL_REDUCED_ERROR_M = 0.4;
 
@@ -2749,8 +2753,9 @@ function batchLongwallHull(scene: THREE.Group): void {
 
 /**
  * Longwall B between 40 and 400 radii (node #815, sage round 5): each of the
- * hull's seven opaque meshes simplified to within `LONGWALL_REDUCED_ERROR_M`,
- * from 252,810 triangles to 5,756 (`tests/longwall-mesh.test.ts`). The hull
+ * hull's seven opaque meshes simplified to `LONGWALL_REDUCED_ERROR_M`'s
+ * target, from 252,810 triangles to 5,756 (`tests/longwall-mesh.test.ts`,
+ * which measures how far the surface moved; the target is no bound). The hull
  * is 39 px long at the band's near edge, so it was drawing more triangles than
  * it covers pixels. Permissive: the export's flat-shaded parts split a vertex
  * at every hard edge, and a simplifier that keeps those seams removed 48 of
@@ -2780,7 +2785,7 @@ function simplifyLongwallHull(scene: THREE.Group): void {
 			positions[i * 3 + 1] = position.getY(i);
 			positions[i * 3 + 2] = position.getZ(i);
 		}
-		// The bound is in hull metres; a mesh scaled below `hull` reads it in
+		// The target is in hull metres; a mesh scaled below `hull` reads it in
 		// its own units.
 		const scale = new THREE.Matrix4()
 			.multiplyMatrices(toHull, mesh.matrixWorld)
@@ -2817,7 +2822,7 @@ function longwallReduced(root: THREE.Object3D): () => THREE.Object3D {
 			const mesh = o as THREE.Mesh;
 			if (!mesh.isMesh) return;
 			const reduced = longwallReducedGeometry.get(mesh.geometry);
-			// A part thinner than the bound, the hoses, simplifies to nothing.
+			// The hoses simplify to nothing at this target.
 			if (!reduced?.index?.count) return;
 			const stand = new THREE.Mesh(reduced, mesh.material);
 			stand.name = `${mesh.name}-reduced`;

@@ -104,9 +104,12 @@ What moved, and what is yours to decide:
   far-range boxes are measured off the model too, so they cannot stand in
   before it loads.
   `evidence/game-report.json` measured one miner at 111 draw calls and
-  283,590 triangles a frame up close, against 38 meshes and about 12k
-  triangles for the loft; that capture predates the batch below and was not
-  retaken. Traffic miners share one template's buffers but not its draws.
+  283,590 triangles a frame up close; it was captured at 644bb13, before the
+  batch below, and not retaken. Counted as meshes rather than draws, the
+  miner was 109 then and is 100 now, against the loft's 38 meshes and 12,028
+  triangles (`miner/b` at main bd09ae5, `evidence/loft-baseline.txt`); no
+  draw figure was taken for the loft. The batch moved no triangle: the
+  report's 283,576 mesh triangles are today's `full`. Traffic miners share one template's buffers but not its draws.
   The template now merges the static hull's opaque, unlit meshes into one
   per material (19 hull meshes to 10), so a miner is 100 meshes where it was
   109; the anchors are 80 of those and keep their separate parts. The shared
@@ -121,8 +124,8 @@ What moved, and what is yours to decide:
 
   At LOD1 the anchors' metal goes, and the hull's seven opaque meshes
   (252,810 triangles) give way to a copy simplified at install by
-  meshoptimizer to within 0.4 m (5,756 triangles, -97.7%; the hoses, thinner
-  than that, simplify away), each in its own mesh's paint and on its own
+  meshoptimizer to a 0.4 m target (5,756 triangles, -97.7%; the hoses
+  simplify away), each in its own mesh's paint and on its own
   vertex buffers (sage round 5). At LOD2 the cutter goes too, and the hull
   is one mesh of 17 boxes, one per part it drew (sage round 4). Both are
   built the first time a miner reaches the band, so the mesh the envelope,
@@ -142,9 +145,19 @@ What moved, and what is yours to decide:
   draw calls also count other passes, and no draw figure was measured with
   the band or the batch. The anchors going at 40 radii is a visible change,
   9.4 x 3.3 px on a 39 px hull at the band's edge, and yours to judge with
-  the rest. So is the simplified hull there: nothing moves more than 0.4 m,
-  under a fifth of a pixel at 40 radii, but a kept vertex keeps one side's
-  normal across a hard edge, and no frame was captured in the band. And so
+  the rest. So is the simplified hull there. Round 5's text said nothing
+  moved more than 0.4 m; that read meshoptimizer's target as a distance, and
+  it was not one. Measured in space instead (sage round 6, each figure pinned
+  in `tests/longwall-mesh.test.ts`): the drawn surface lies within 0.50 m of
+  the model's, a quarter of a pixel at 40 radii, and every point of the model
+  lies within 1.33 m of the drawn surface, 0.6 of a pixel; 3,784 of the
+  model's 482,918 vertices lie further than 0.4 m, and 236 further than a
+  metre. Paint by paint the change is larger: 136,283 of the machined
+  alloy's 144,744 vertices lie further than 0.4 m from any reduced alloy
+  triangle, so past 40 radii most of the alloy-painted detail is not drawn
+  in its own paint, and the hoses are not drawn at all. A kept vertex also
+  keeps one side's normal across a hard edge. No frame was captured in the
+  band. And so
   is the swap at 400 radii: the
   hull there is flat-faced boxes in one paint (`dark-structure`, the metal
   on most of it) where it was the model's own shape in all its paints, on a
@@ -169,7 +182,11 @@ What moved, and what is yours to decide:
   no outpost berth. The miner no longer overhangs a slot berth cell.
 - **Third tier.** No canonical view frames a miner, so the sheet cannot judge
   this hull. `evidence/game-astern.png`, `-quarter`, `-beam` and `-bow` are
-  the frames to review before flying it; the yes is yours.
+  the frames to review before flying it; the yes is yours. They were
+  captured at 644bb13, before sage round 1, with `game-report.json` beside
+  them; later rounds changed the template, the batch among them, and none
+  was retaken. All four are close range, at `full`: no frame shows a miner
+  in either far band.
 - **Probes.** The selector chose all 97 (a measurement script counts as shared
   infrastructure). Twelve were run alone on the GPU lane and passed: boot,
   model-viewer, ship-visuals, postcard, derelict, shipyard, vent-display,

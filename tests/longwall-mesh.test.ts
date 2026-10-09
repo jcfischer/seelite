@@ -22,7 +22,6 @@ import { markOcclusion } from "../src/occlusion-mesh";
 import {
 	HULL_REACH_KM,
 	LONGWALL_NOZZLES_M,
-	LONGWALL_REDUCED_ERROR_M,
 	buildShipMesh,
 	installLongwallModel,
 	isAuthoredHull,
@@ -34,6 +33,14 @@ import {
 import { ventThroats } from "../src/vent-plumes";
 import { installShippedLongwall } from "./helpers/install-longwall";
 import { decodeShippedGlb } from "./helpers/read-coriolis-glb";
+import {
+	type Surface,
+	countBeyond,
+	furthestFrom,
+	surfaceGrid,
+	trianglePoints,
+	usedVertices,
+} from "./helpers/surface-distance";
 
 const SHIPPED = "public/models/longwall-miner.glb";
 /** The shipped file as exported, decoded once: the rows only read it. */
@@ -244,6 +251,17 @@ const isLamp = (mesh: THREE.Mesh) =>
 	isLampMaterial(mesh.material as THREE.Material);
 const ANCHOR = /^anchor-\d/;
 const CUTTER = /^(feed|rotor)$/;
+/** Each hull paint's vertices further than 0.4 m from its own `reduced`
+ *  copy, of all its vertices (`tests/helpers/surface-distance.ts`). */
+const BEYOND_BY_PAINT = {
+	"blue-grey-1": [0, 120],
+	"dark-structure": [12_581, 178_148],
+	"hose-rubber": [1_800, 1_800],
+	"machined-alloy": [136_283, 144_744],
+	"pale-steel-0": [769, 77_104],
+	"recess-black": [720, 1_680],
+	"service-ochre": [6_698, 79_322],
+};
 /** Drawn: visible, and so is every group above it up to the root. */
 const drawn = (root: THREE.Object3D) =>
 	meshesOf(root).filter((m) => {
@@ -322,8 +340,8 @@ describe("the detail band sheds the mechanism at range (node #815)", () => {
 				visible: !hidden,
 			});
 		}
-		// One simplified mesh per opaque hull mesh, but the hoses: thinner than
-		// the bound, they simplify to nothing and draw nothing.
+		// One simplified mesh per opaque hull mesh, but the hoses: they simplify
+		// to nothing at the target and draw nothing.
 		const hull = root.getObjectByName("hull") as THREE.Object3D;
 		const sources = meshesOf(hull).filter(paint);
 		expect(sources).toHaveLength(7);
@@ -342,24 +360,87 @@ describe("the detail band sheds the mechanism at range (node #815)", () => {
 		}
 		expect(triangles(sources)).toBe(252_810);
 		expect(triangles(stands)).toBe(5_756);
-		expect(LONGWALL_REDUCED_ERROR_M).toBe(0.4);
-		// In the hull's place: its box inside the hull's, within the bound.
-		root.updateMatrixWorld(true);
-		const drawnBox = new THREE.Box3().setFromObject(reduced, true);
-		const hullBox = new THREE.Box3().setFromObject(hull, true);
-		const slack = LONGWALL_REDUCED_ERROR_M * 0.001;
-		for (const axis of ["x", "y", "z"] as const) {
-			expect(drawnBox.min[axis]).toBeGreaterThanOrEqual(
-				hullBox.min[axis] - slack,
-			);
-			expect(drawnBox.max[axis]).toBeLessThanOrEqual(hullBox.max[axis] + slack);
-			expect(drawnBox.max[axis] - drawnBox.min[axis]).toBeGreaterThan(
-				hullBox.max[axis] - hullBox.min[axis] - 2 * slack,
-			);
-		}
 		expect(drawn(root)).toHaveLength(23);
 		expect(triangles(drawn(root))).toBe(14_714);
 		expect(root.getObjectByName("nav-lights")?.visible).toBe(true);
+	});
+
+	test("reduced keeps the hull's surface within 0.5 m and every point of it within 1.33 m", () => {
+		// Measured in space, point to nearest triangle in hull metres, because
+		// `LONGWALL_REDUCED_ERROR_M` is a target in meshoptimizer's own metric
+		// and promises no distance (sage round 6). Each figure is pinned: the
+		// simplifier is a pinned version and deterministic, as the triangle
+		// count above already relies on.
+		const root = buildShipMesh("miner", "b").root;
+		setShipDetail(root, "reduced");
+		root.updateMatrixWorld(true);
+		const hull = root.getObjectByName("hull") as THREE.Object3D;
+		const toHull = hull.matrixWorld.clone().invert();
+		const sources = meshesOf(hull).filter(
+			(m) => !isLamp(m) && !(m.material as THREE.Material).transparent,
+		);
+		const stands = meshesOf(
+			root.getObjectByName("longwall-reduced") as THREE.Object3D,
+		);
+		/** The meshes' triangles in hull metres, as one soup. A stand shares
+		 *  its source's vertex buffer and stands where it does. */
+		const inHull = (meshes: readonly THREE.Mesh[]): Surface => {
+			const positions: number[] = [];
+			const index: number[] = [];
+			const v = new THREE.Vector3();
+			for (const mesh of meshes) {
+				const toFrame = new THREE.Matrix4().multiplyMatrices(
+					toHull,
+					mesh.matrixWorld,
+				);
+				const position = mesh.geometry.getAttribute("position");
+				const base = positions.length / 3;
+				for (let i = 0; i < position.count; i++) {
+					v.fromBufferAttribute(position, i).applyMatrix4(toFrame);
+					positions.push(v.x, v.y, v.z);
+				}
+				for (const i of mesh.geometry.index?.array ?? []) index.push(base + i);
+			}
+			return {
+				positions: Float32Array.from(positions),
+				index: Uint32Array.from(index),
+			};
+		};
+		const model = inHull(sources);
+		const drawnHull = inHull(stands);
+		// The drawn surface lies within half a metre of the model's: a quarter
+		// of a pixel at the band's near edge (2.2 m a pixel at 40 radii).
+		expect(
+			furthestFrom(surfaceGrid(model, 0.5), trianglePoints(drawnHull, 4), 0.6),
+		).toBeCloseTo(0.5, 3);
+		// Every point of the model lies within 1.33 m of the drawn surface, 0.6
+		// of a pixel there; 3,784 of its 482,918 vertices lie further than
+		// 0.4 m, and 236 further than a metre.
+		const modelPoints = usedVertices(model);
+		const drawnGrid = surfaceGrid(drawnHull, 1);
+		expect(modelPoints.length / 3).toBe(482_918);
+		expect(furthestFrom(drawnGrid, modelPoints, 1.4)).toBeCloseTo(1.323, 3);
+		expect(countBeyond(drawnGrid, modelPoints, 0.4)).toBe(3_784);
+		expect(countBeyond(drawnGrid, modelPoints, 1)).toBe(236);
+		// Paint by paint the change is larger, because a detail that goes is
+		// drawn over by the paint beneath it: of each paint's vertices, how
+		// many lie further than 0.4 m from that paint's own reduced copy. Most
+		// of the machined alloy is not drawn in its own paint past 40 radii,
+		// and the hoses not at all.
+		const byPaint = Object.fromEntries(
+			sources.map((source) => {
+				const points = usedVertices(inHull([source]));
+				const stand = stands.find((m) => m.name === `${source.name}-reduced`);
+				const beyond = stand
+					? countBeyond(surfaceGrid(inHull([stand]), 1), points, 0.4)
+					: points.length / 3;
+				return [
+					(source.material as THREE.Material).name,
+					[beyond, points.length / 3],
+				];
+			}),
+		);
+		expect(byPaint).toEqual(BEYOND_BY_PAINT);
 	});
 
 	test("outline draws the hull as boxes, and keeps every lamp", () => {

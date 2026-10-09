@@ -1,0 +1,17 @@
+The loft Longwall B replaced: miner/b as main builds it, counted headless (node #815, sage round 6).
+main at bd09ae5; detail level: as built (full). Meshes counted once each; an InstancedMesh's triangles times its count.
+These are meshes, not draw calls: game-report.json's 111 is a draw-call count.
+
+$ mkdir .loft-main && git archive main src | tar -x -C .loft-main
+$ bun .loft-main/count.ts
+
+count.ts:
+    import * as THREE from "three";
+    import { buildShipMesh } from "./src/ship-mesh";
+    const root = buildShipMesh("miner", "b").root;
+    let meshes = 0, tris = 0;
+    root.traverse((o) => { const m = o as THREE.Mesh; if (!m.isMesh) return; meshes++; const g = m.geometry; const n = g.index ? g.index.count / 3 : g.getAttribute("position").count / 3; tris += n * ((m as THREE.InstancedMesh).isInstancedMesh ? (m as THREE.InstancedMesh).count : 1); });
+    console.log(JSON.stringify({ meshes, tris }));
+
+output:
+{"meshes":38,"tris":12028}
