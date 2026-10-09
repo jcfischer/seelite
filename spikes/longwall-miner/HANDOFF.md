@@ -126,7 +126,16 @@ What moved, and what is yours to decide:
   vertex buffers (sage round 5). At LOD2 the cutter goes too, and the hull
   is one mesh of 17 boxes, one per part it drew (sage round 4). Both are
   built the first time a miner reaches the band, so the mesh the envelope,
-  vents and muzzles are measured off never carries either; past `full` no
+  vents and muzzles are measured off never carries either. LOD1 is simplified
+  in the browser rather than shipped as LOD GLBs (#829's way) so the boot
+  download does not grow again; the price is CPU at every boot, inside
+  `installLongwallModel`: about 150 ms under bun, never measured in a
+  browser. `meshoptimizer` (MIT) now ships in the game bundle in its own
+  right; the Credits page names no library licence but onnxruntime-web's,
+  so whether it should is yours. Node #812's open PR #828 adds a parallel
+  band mechanism for the courier (`levels`, built up front and flagged so
+  measurement skips them) in the same `applyVisibility`: whichever of the two
+  lands second unifies them. Past `full` no
   metal casts a shadow, so none takes part in the shadow or ambient-occlusion
   passes either (Traffic miners never did: only the flown hull and the fleet
   review are marked). Every lamp stays at every level. Those are mesh counts:
