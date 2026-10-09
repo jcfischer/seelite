@@ -1662,8 +1662,11 @@ interface Instrument {
 }
 
 /**
- * Where the flying glass ends and the physical cockpit begins, as a fraction of
- * the frame height.
+ * Where the flying glass ended and the physical cockpit began, as a fraction
+ * of the frame height, for the procedural cabin. The authored cabin (#794)
+ * reaches above it — its dash top on the centre line is at 0.600 as node #806
+ * placed it — so what is clipped here can still draw on the dash; that is open
+ * (`hud-and-scanner.md` §7.1).
  *
  * The docking director, the flight strip and the glass notices are anchored to
  * it. The laser tracer shared it until node #806, which drew the cockpit's
@@ -1673,6 +1676,9 @@ interface Instrument {
  * of this number would have let happen again.
  */
 const GLASS_BOTTOM_FRACTION = 0.66;
+
+/** No beam this frame (node #806's frame pass). */
+const NO_BEAM_STROKES: readonly BeamStroke[] = [];
 
 /**
  * The band §5's mode/throttle/assist/charge strip occupies, measured up from
@@ -2276,6 +2282,8 @@ class Game {
 	/** The raider's beam as `drawCockpitBeams` placed it this frame, in
 	 *  fractions of the frame, for the overlay's record of it. */
 	private cockpitRaiderBeam: { from: FramePoint; to: FramePoint } | null = null;
+	/** This frame's cockpit beams, reused so a firing frame allocates no list. */
+	private readonly cockpitStrokes: BeamStroke[] = [];
 
 	readonly backdropCamera: THREE.PerspectiveCamera;
 	readonly farCamera: THREE.PerspectiveCamera;
@@ -19243,10 +19251,11 @@ class Game {
 			return;
 		}
 		ctx.save();
-		// **Clipped to the canopy.** The lower
-		// third of the frame is physical cockpit hardware — the dash deck, the
-		// scanner well, the console housings — and the director is glass. The
-		// first build had no clip and drew its rings straight down over the radar.
+		// **Clipped at the old glass line.** The director is glass, and the first
+		// build had no clip and drew its rings straight down over the radar. The
+		// authored dash reaches above this line (0.600 of the height on the
+		// centre line, against 0.66), so the director can still draw on the dash
+		// between the two; `hud-and-scanner.md` §7.1 records it as open.
 		// Chase has no cockpit, and no clip (#607).
 		const gauge = shipCuesShown(this.view);
 		ctx.beginPath();
@@ -19429,30 +19438,34 @@ class Game {
 	 * Chase keeps its beams on the overlay, where nothing can be in front.
 	 */
 	private drawCockpitBeams(camPos: Vec3) {
-		const strokes: BeamStroke[] = [];
 		this.cockpitRaiderBeam = null;
-		if (this.view === "cockpit" && this.flightGlassShown()) {
-			const onFrame = (dir: Vec3 | null): FramePoint | null => {
-				if (!dir) return null;
-				const m = this.markerNdc(dir);
-				return m.behind || !m.onScreen ? null : ndcToPx(m, 1, 1);
-			};
-			if (this.gunFeedback.tracerLeftS > 0)
-				strokes.push(
-					...tracerStrokes(
-						tracerPorts(HULL_SPECS[this.flownHull].hardpoints),
-						onFrame(this.beamAim()) ?? TRACER_AIM,
-					),
-				);
-			if (this.raiderFiring && this.raiderListed) {
-				const from = onFrame(directionTo(camPos, this.raiderContact.pos));
-				if (from) {
-					const stroke = raiderBeamStroke(from);
-					strokes.push(stroke);
-					this.cockpitRaiderBeam = { from: stroke.from, to: stroke.to };
-				}
+		const raider = this.raiderFiring && this.raiderListed;
+		const rig = this.combatRig?.tracerStrokes(this.view) ?? NO_BEAM_STROKES;
+		const any = this.gunFeedback.tracerLeftS > 0 || raider || rig.length > 0;
+		if (!(this.view === "cockpit" && any && this.flightGlassShown())) {
+			// Nothing to draw: one call to disable the pass if it drew last
+			// frame, and no allocation on the frames between shots.
+			if (this.beamLayer.vertexCount > 0)
+				this.beamLayer.draw(NO_BEAM_STROKES, 1, 1, 1);
+			return;
+		}
+		const strokes = this.cockpitStrokes;
+		strokes.length = 0;
+		if (this.gunFeedback.tracerLeftS > 0)
+			for (const stroke of tracerStrokes(
+				tracerPorts(HULL_SPECS[this.flownHull].hardpoints),
+				this.onFrame(this.beamAim()) ?? TRACER_AIM,
+			))
+				strokes.push(stroke);
+		if (raider) {
+			const from = this.onFrame(directionTo(camPos, this.raiderContact.pos));
+			if (from) {
+				const stroke = raiderBeamStroke(from);
+				strokes.push(stroke);
+				this.cockpitRaiderBeam = { from: stroke.from, to: stroke.to };
 			}
 		}
+		for (const stroke of rig) strokes.push(stroke);
 		const canvas = this.renderer.domElement;
 		this.beamLayer.draw(
 			strokes,
@@ -19460,6 +19473,14 @@ class Game {
 			canvas.height,
 			canvas.width / Math.max(1, this.overlay.width),
 		);
+	}
+
+	/** Where a direction from the camera lands on the frame, as fractions of
+	 *  it, or null when it is behind the camera or off the frame. */
+	private onFrame(dir: Vec3 | null): FramePoint | null {
+		if (!dir) return null;
+		const m = this.markerNdc(dir);
+		return m.behind || !m.onScreen ? null : ndcToPx(m, 1, 1);
 	}
 
 	/**
@@ -19726,8 +19747,8 @@ class Game {
 				const shipAt = shipDir && place(shipDir);
 				const to = shipAt?.on
 					? { x: shipAt.x, y: shipAt.y }
-					: { x: w / 2, y: h * glassBottom };
-				drawEnemyBeam(ctx, w, h, glassBottom, raiderAt, to);
+					: { x: w / 2, y: h };
+				drawEnemyBeam(ctx, raiderAt, to);
 				this.hostileFireRender.beam = {
 					from: { x: raiderAt.x, y: raiderAt.y },
 					to,
@@ -19833,13 +19854,11 @@ class Game {
 			// sees it (#607 D3). Not the cockpit's ports on a glass chase does
 			// not have.
 			const segments = this.chaseBeamPx(w, h);
-			// `glassBottom` is a fraction of the height: 1 is the whole canvas,
-			// since chase has no glass.
-			drawTracerSegments(ctx, w, h, 1, segments);
+			drawTracerSegments(ctx, segments);
 			this.beamRender = segments;
 		}
-		this.combatRig?.drawTracer(ctx, w, h, this.view, GLASS_BOTTOM_FRACTION);
-		// Not folded into the call above: outgoing fire is gated on the trigger
+		// The rig's tracer is in the frame too (`drawCockpitBeams`, node #806).
+		// Its struck rim stays here, separate from its tracer: outgoing fire is gated on the trigger
 		// being held and incoming fire is not, and a player being shot while not
 		// shooting back is the case that needs telling about most.
 		this.combatRig?.drawStruck(ctx, w, h, this.view, GLASS_BOTTOM_FRACTION);

@@ -50,6 +50,20 @@ const SPIKE_EYE_M = [0, 0, 1.15] as const;
 const SPIKE_PITCH_RAD = 0.242;
 /** How much lower, as a share of the frame's height, the dash must start. */
 const MIN_LOWERING = 0.04;
+/** Rays down the centre line for the dash top: one per 0.25% of the height. */
+const DASH_ROWS = 400;
+/** The coverage grid over a 4:3 frame. Coarse on purpose: an unaccelerated
+ *  raycast against the model costs milliseconds a ray, and 32 x 24 took nine
+ *  seconds. It moved the shares by under two points against this grid. */
+const SHARE_COLS = 16;
+const SHARE_ROWS = 12;
+/** What the row below reads (node #806): the dash top on the centre line, as
+ *  a fraction of the height down from the top, and the cabin's share of a
+ *  4:3 frame — 96 and 88 of the grid's 192 rays. */
+const SPIKE_DASH_TOP = 0.5475;
+const DASH_TOP = 0.6;
+const SPIKE_CABIN_SHARE = 96 / 192;
+const CABIN_SHARE = 88 / 192;
 
 let template: THREE.Group;
 let cabin: AuthoredCabin;
@@ -125,24 +139,46 @@ describe("the shipped cockpit model in the cabin pass", () => {
 		}
 	});
 
-	test("the dash sits lower than the spike's frame put it, and leaves more of the view", () => {
+	test("the dash top drops on the centre line, and the cabin covers less of a 4:3 frame", () => {
 		// Node #806: the principal flew the spike's frame (#794) and found the
-		// cabin too high. The forward view is measured on the frame's centre
-		// line, where the reticle is: how far down it the first fitting starts.
+		// cabin too high. Two readings of the same rays, both against the spike's
+		// frame: how far down the centre line, where the reticle is, the first
+		// fitting starts; and what share of a 4:3 frame any fitting covers, on a
+		// grid of rays. `cockpit-model.ts` and `beam-glass.ts` quote both
+		// figures, so both are pinned here and not only their direction.
+		const halfY = Math.tan((FOV_Y_DEG * Math.PI) / 360);
+		const ray = new THREE.Raycaster();
+		const origin = new THREE.Vector3();
+		const hits = (root: THREE.Object3D, ndcX: number, ndcY: number) => {
+			ray.set(
+				origin,
+				new THREE.Vector3(
+					ndcX * halfY * NARROW_ASPECT,
+					ndcY * halfY,
+					-1,
+				).normalize(),
+			);
+			return ray.intersectObject(root, true).length > 0;
+		};
 		const dashTop = (root: THREE.Object3D) => {
-			root.updateMatrixWorld(true);
-			const ray = new THREE.Raycaster();
-			const halfY = Math.tan((FOV_Y_DEG * Math.PI) / 360);
-			const ROWS = 400;
-			for (let row = ROWS / 2; row < ROWS; row++) {
-				const ndcY = 1 - (2 * (row + 0.5)) / ROWS;
-				ray.set(
-					new THREE.Vector3(),
-					new THREE.Vector3(0, ndcY * halfY, -1).normalize(),
-				);
-				if (ray.intersectObject(root, true).length > 0) return row / ROWS;
-			}
+			for (let row = DASH_ROWS / 2; row < DASH_ROWS; row++)
+				if (hits(root, 0, 1 - (2 * (row + 0.5)) / DASH_ROWS))
+					return row / DASH_ROWS;
 			return 1;
+		};
+		const coverage = (root: THREE.Object3D) => {
+			let n = 0;
+			for (let row = 0; row < SHARE_ROWS; row++)
+				for (let col = 0; col < SHARE_COLS; col++)
+					if (
+						hits(
+							root,
+							(2 * (col + 0.5)) / SHARE_COLS - 1,
+							1 - (2 * (row + 0.5)) / SHARE_ROWS,
+						)
+					)
+						n++;
+			return n / (SHARE_ROWS * SHARE_COLS);
 		};
 		const spike = withCanvasStub(buildAuthoredCabin);
 		spike.root.rotation.x = SPIKE_PITCH_RAD;
@@ -153,12 +189,19 @@ describe("the shipped cockpit model in the cabin pass", () => {
 				number,
 			]),
 		);
-		const was = dashTop(spike.root);
-		const now = dashTop(cabin.root);
-		// The spike's frame put the dash top just past the centre line.
-		expect(was).toBeGreaterThan(0.5);
-		expect(now - was).toBeGreaterThan(MIN_LOWERING);
+		spike.root.updateMatrixWorld(true);
+		cabin.root.updateMatrixWorld(true);
+		const was = { top: dashTop(spike.root), share: coverage(spike.root) };
+		const now = { top: dashTop(cabin.root), share: coverage(cabin.root) };
 		disposeSubtree(spike.root);
+		// The figures the prose quotes, to the grid's resolution.
+		expect(was.top).toBeCloseTo(SPIKE_DASH_TOP, 2);
+		expect(now.top).toBeCloseTo(DASH_TOP, 2);
+		expect(was.share).toBeCloseTo(SPIKE_CABIN_SHARE, 2);
+		expect(now.share).toBeCloseTo(CABIN_SHARE, 2);
+		// And the direction, with a floor: the lowering is the node.
+		expect(now.top - was.top).toBeGreaterThan(MIN_LOWERING);
+		expect(now.share).toBeLessThan(was.share);
 	});
 
 	test("every screen faces the eye, up the screen is up the view", () => {

@@ -21,6 +21,7 @@ import {
 	launchChromium,
 	tally,
 } from "./probe-guard.mjs";
+import { installCompositeFrame } from "./lib/composite-frame.mjs";
 import { gameUrl } from "./lib/game-url.mjs";
 
 const ORIGIN =
@@ -34,6 +35,7 @@ const H = 620;
 const page = await browser.newPage({ viewport: { width: W, height: H } });
 watch(page);
 await page.addInitScript(installFakePad);
+await installCompositeFrame(page);
 // This file used to carry `HTMLElement.prototype.requestPointerLock = () =>
 // Promise.resolve()` here, on the stated ground that headless Chromium refuses
 // the lock and the refusal reached the run as a page error. That was true, and it
@@ -120,17 +122,14 @@ const sample = () =>
 			const g = window.__seelite;
 			const [port] = g.gunTracer.ports;
 			const aim = g.gunTracer.aim;
-			g.render(0);
-			const canvas = g.renderer.domElement;
-			const scratch = document.createElement("canvas");
-			scratch.width = w;
-			scratch.height = h;
-			const ctx = scratch.getContext("2d", { willReadFrequently: true });
-			ctx.drawImage(canvas, 0, 0, w, h);
-			ctx.drawImage(document.getElementById("overlay"), 0, 0, w, h);
 			const x = Math.round(w * (port.x + (aim.x - port.x) * 0.75));
 			const y = Math.round(h * (port.y + (aim.y - port.y) * 0.75));
-			const data = ctx.getImageData(x - 6, y - 6, 12, 12).data;
+			const data = window.__compositeFrame(w, h, {
+				x: x - 6,
+				y: y - 6,
+				width: 12,
+				height: 12,
+			}).data;
 			let cyan = 0;
 			for (let i = 0; i < data.length; i += 4)
 				if (

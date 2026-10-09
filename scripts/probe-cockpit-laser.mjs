@@ -5,15 +5,16 @@
  * **What the player reported.** Flying the authored cockpit (#794), the
  * principal saw a fired laser drawn in front of the cabin's fittings. The
  * beam was never in the WebGL frame at all: `drawGunTracer` and
- * `drawEnemyBeam` stroked it on `#overlay`, the 2D canvas the page stacks
+ * `drawEnemyBeam` (as they were then) stroked it on `#overlay`, the 2D canvas the page stacks
  * *over* the WebGL canvas, clipped only at `GLASS_BOTTOM_FRACTION` — the old
  * procedural cabin's glass line. #651's cabin pass, drawn after every world
  * layer over a cleared depth buffer, could not hide what was drawn on another
  * canvas, and the authored dash and canopy struts reach well above that line.
  *
  * **What this reads is what the player sees**: the WebGL canvas with the
- * overlay drawn on top of it, in the same task as `render(0)` and with the
- * loop stopped, so every arm is one pose. Reading the WebGL canvas alone would
+ * overlay drawn on top of it, in the same task as `render(0)`
+ * (`lib/composite-frame.mjs`) and with the loop stopped, so every arm is one
+ * pose. Reading the WebGL canvas alone would
  * pass on the build with the defect, because that build's beam is not in it.
  *
  * **By difference, not by colour.** Each beam is drawn on one frame and not on
@@ -26,6 +27,14 @@
  * does, eroded so a sampled edge cannot count. Inside it the beam must change
  * nothing. Outside it the beam must change something, or a build that drew no
  * beam at all would pass.
+ *
+ * **What it does not cover.** Transparent fittings — the canopy pane — are
+ * left out of the footprint on purpose: a beam is outside the canopy and is
+ * meant to be seen through it, so a pixel there counts as outside. It reads
+ * one seed, one viewport and one raider pose (`forceRaider("ahead")`), so
+ * "every fitting" means every opaque fitting in front of these two beams in
+ * this frame; the cabin pass's own occlusion is what generalises it, and
+ * `probe-cabin-pass` holds that.
  *
  * Two beams, two rows: the player's tracer, and the raider's beam while it
  * fires (`raiderFiring`), which is drawn toward the pilot below the glass and
@@ -42,6 +51,7 @@ import {
 	launchChromium,
 	tally,
 } from "./probe-guard.mjs";
+import { installCompositeFrame } from "./lib/composite-frame.mjs";
 import { gameUrl } from "./lib/game-url.mjs";
 import { stopLoop } from "./lib/view-placement.mjs";
 
@@ -59,6 +69,7 @@ const browser = await launchChromium();
 const page = await browser.newPage({ viewport: { width: 1280, height: 800 } });
 const { check, watch, exit } = tally();
 watch(page);
+await installCompositeFrame(page);
 await page.goto(gameUrl(origin, { seed: 42, weaponsound: "crack" }));
 await bootedGame(page);
 
@@ -107,22 +118,11 @@ const r = await page.evaluate(
 		if (Basic.name !== "MeshBasicMaterial")
 			throw new Error(`scanner face is a ${Basic.name}`);
 		const canvas = g.renderer.domElement;
-		const overlay = document.getElementById("overlay");
 		const W = canvas.width;
 		const H = canvas.height;
-		const scratch = document.createElement("canvas");
-		scratch.width = W;
-		scratch.height = H;
-		const ctx = scratch.getContext("2d", { willReadFrequently: true });
 		/** Render and read in one task: the WebGL canvas, then the overlay over
 		 *  it, as the page stacks them. */
-		const frame = () => {
-			g.render(0);
-			ctx.clearRect(0, 0, W, H);
-			ctx.drawImage(canvas, 0, 0, W, H);
-			ctx.drawImage(overlay, 0, 0, W, H);
-			return ctx.getImageData(0, 0, W, H).data;
-		};
+		const frame = () => window.__compositeFrame(W, H).data;
 
 		// ---- the footprint: opaque cabin fittings green, the world drawing
 		// nothing ----
@@ -220,12 +220,20 @@ const r = await page.evaluate(
 		const quiet = frame();
 		g.gunFeedback = { ...gunWas, tracerLeftS: 1 };
 		const tracer = frame();
+		const tracerVertices = g.beamLayer.vertexCount;
 		g.gunFeedback = { ...gunWas, tracerLeftS: 0 };
 		const quietAgain = frame();
 		// ---- the raider's beam ----
 		g.raiderFiring = true;
 		const raider = frame();
-		const raiderDrawn = g.hostileFireRender?.beam !== null;
+		// Drawn means the frame pass drew it — the tracer is off in this arm, so
+		// any vertex is the raider's — and the overlay recorded where. Either
+		// alone can read true on a build that drew nothing: a record is not a
+		// pixel (#69), and `undefined !== null`.
+		const raiderDrawn =
+			g.beamLayer.vertexCount > 0 &&
+			g.hostileFireRender != null &&
+			g.hostileFireRender.beam != null;
 		g.raiderFiring = firingWas;
 		g.gunFeedback = gunWas;
 		g.render(0);
@@ -237,6 +245,7 @@ const r = await page.evaluate(
 			tracer: diff(quiet, tracer),
 			raider: diff(quietAgain, raider),
 			raiderDrawn,
+			tracerVertices,
 		};
 	},
 	[ERODE_PX, MOVED],
@@ -257,8 +266,10 @@ check(
 );
 check(
 	"a fired laser is hidden by every cabin fitting in front of it",
-	r.tracer.inCabin === 0 && r.tracer.outside >= SEEN_FLOOR_PX,
-	fmt(r.tracer),
+	r.tracerVertices > 0 &&
+		r.tracer.inCabin === 0 &&
+		r.tracer.outside >= SEEN_FLOOR_PX,
+	`${r.tracerVertices} vertices drawn; ${fmt(r.tracer)}`,
 );
 check(
 	"the raider's beam is hidden by the cabin on its way to the pilot",

@@ -37,11 +37,12 @@ export const COCKPIT_MODEL_KM_PER_M = CABIN_SCALE / 1000;
  * to hide the cabin to see what they measure. Raising the eye moves the whole
  * cabin down the frame without turning the view onto it, so the dash is seen
  * at the angle the spike was approved at. On the centre line the dash top goes
- * from 0.546 of the frame height to 0.600, and the cabin's share of a 4:3
- * frame from 50.8% to 45.6% (a coverage raster of the shipped model, node
- * #806's receipt). What binds is the scanner screen's bottom edge, which this
- * puts at 0.959 of the height; `tests/cockpit-model.test.ts` holds the three
- * live screens inside the frame with a margin and the dash below the spike's.
+ * from 0.548 of the frame height to 0.600, and the cabin's share of a 4:3
+ * frame from 50.0% to 45.8% on a 16 x 12 grid of rays;
+ * `tests/cockpit-model.test.ts` pins all four figures. What binds is the
+ * scanner screen's bottom edge, which this puts at 0.959 of the height; the
+ * same file holds the three live screens inside the frame with a 2% margin,
+ * so under 0.98.
  * The unpowered POWER DISTRIBUTION screen reaches the frame's bottom edge.
  */
 export const COCKPIT_MODEL_EYE_M = [0, 0.3, 1.15] as const;

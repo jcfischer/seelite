@@ -21,6 +21,7 @@ import {
 	launchChromium,
 	tally,
 } from "./probe-guard.mjs";
+import { installCompositeFrame } from "./lib/composite-frame.mjs";
 import { gameUrl } from "./lib/game-url.mjs";
 
 const ORIGIN =
@@ -58,20 +59,40 @@ const installHelpers = () => {
 		}
 		return { red, amber };
 	};
-	/** Pixels in a rectangle that pass `keep(r, g, b, a)`. */
-	const countIn = (x, y, width, height, keep) => {
-		const overlay = document.getElementById("overlay");
-		const ctx = overlay.getContext("2d", { willReadFrequently: true });
-		const data = ctx.getImageData(
-			Math.floor(x),
-			Math.floor(y),
-			Math.ceil(width),
-			Math.ceil(height),
-		).data;
+	/** Pixels in `data` that pass `keep(r, g, b, a)`. */
+	const countPixels = (data, keep) => {
 		let n = 0;
 		for (let i = 0; i < data.length; i += 4)
 			if (keep(data[i], data[i + 1], data[i + 2], data[i + 3])) n++;
 		return n;
+	};
+	/** Pixels in a rectangle of the overlay that pass `keep`. */
+	const countIn = (x, y, width, height, keep) => {
+		const overlay = document.getElementById("overlay");
+		const ctx = overlay.getContext("2d", { willReadFrequently: true });
+		return countPixels(
+			ctx.getImageData(
+				Math.floor(x),
+				Math.floor(y),
+				Math.ceil(width),
+				Math.ceil(height),
+			).data,
+			keep,
+		);
+	};
+	/** The same, off the frame the player sees (`lib/composite-frame.mjs`),
+	 *  rendered in the task that reads it. */
+	const countInFrame = (x, y, width, height, keep) => {
+		const overlay = document.getElementById("overlay");
+		return countPixels(
+			window.__compositeFrame(overlay.width, overlay.height, {
+				x,
+				y,
+				width,
+				height,
+			}).data,
+			keep,
+		);
 	};
 	/** The raider's warm beam colour: strong red, middling green, weak blue.
 	 *  Green under 160, not 180: the beam reads (254, 137, 88) in the frame,
@@ -116,23 +137,7 @@ const installHelpers = () => {
 			const along = g.view === "cockpit" ? Math.min(28, len / 2) : len / 2;
 			const x = beam.from.x + (dx / len) * along;
 			const y = beam.from.y + (dy / len) * along;
-			const overlay = document.getElementById("overlay");
-			const scratch = document.createElement("canvas");
-			scratch.width = overlay.width;
-			scratch.height = overlay.height;
-			const ctx = scratch.getContext("2d", { willReadFrequently: true });
-			ctx.drawImage(g.renderer.domElement, 0, 0, overlay.width, overlay.height);
-			ctx.drawImage(overlay, 0, 0);
-			const data = ctx.getImageData(
-				Math.floor(x - 6),
-				Math.floor(y - 6),
-				12,
-				12,
-			).data;
-			let n = 0;
-			for (let i = 0; i < data.length; i += 4)
-				if (warm(data[i], data[i + 1], data[i + 2], data[i + 3])) n++;
-			return n;
+			return countInFrame(x - 6, y - 6, 12, 12, warm);
 		},
 		/** Rim-red pixels in the glass's top-left corner. */
 		rimPaint() {
@@ -227,6 +232,7 @@ for (const viewport of VIEWPORTS) {
 		viewport: { width: viewport.width, height: viewport.height },
 	});
 	watch(page);
+	await installCompositeFrame(page);
 	await page.goto(gameUrl(origin, { seed: 42 }));
 	await bootedGame(page);
 	await page.evaluate(installHelpers);

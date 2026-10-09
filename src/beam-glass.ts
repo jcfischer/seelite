@@ -5,8 +5,9 @@
  * **Why the beams left the overlay.** In cockpit view the player's tracer and
  * the raider's beam were stroked on `#overlay`, the 2D canvas the page stacks
  * over the WebGL canvas, clipped at the old procedural cabin's glass line. The
- * authored cabin (#794) reaches above that line — its dash top is about 0.55 of
- * the frame height at the centre — and nothing on another canvas can be hidden
+ * authored cabin (#794) reaches above that line — its dash top on the centre
+ * line is at 0.600 of the frame height as node #806 placed it, against a line
+ * at 0.66 (`tests/cockpit-model.test.ts`) — and nothing on another canvas can be hidden
  * by #651's cabin pass, so a fired laser was drawn over the dash and the canopy
  * struts. The strokes are now drawn into the frame by a pass of their own
  * between the near layer and the cabin (`beam-layer.ts`), so the cabin pass

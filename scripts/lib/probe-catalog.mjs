@@ -285,7 +285,7 @@ export const PROBE_CATALOG = Object.freeze(
 		),
 		entry(
 			"probe-cockpit-laser.mjs",
-			"Fires the player's laser and the raider's beam in cockpit view and checks, on the composited frame, that no cabin fitting is drawn over by either beam.",
+			"Fires the player's laser and the raider's beam in cockpit view, on one seed and one raider pose, and checks on the composited frame that neither beam changes a pixel inside the opaque cabin fittings' footprint.",
 			[
 				"cockpit",
 				"laser",

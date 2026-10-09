@@ -816,8 +816,17 @@ had no clip and drew over the dash deck, the scanner well and both console
 housings. The laser tracer shared that line until node #806. The authored cabin
 (#794) reaches above it, so the cockpit's beams are drawn into the frame now,
 before the cabin pass, and the cabin's own fittings hide them
-(`src/beam-glass.ts`). The director is still on the overlay and still clipped
-at the line.
+(`src/beam-glass.ts`).
+
+**The director, the flight-floor strip and the glass notices still overpaint
+the dash, and that is open.** They are on the overlay and clipped at
+`GLASS_BOTTOM_FRACTION`, 0.66 of the height, while the authored dash top on
+the centre line is at 0.600 as node #806 placed it
+(`tests/cockpit-model.test.ts` pins it). Between the two, anything they draw
+lands on the dash, and the strip, whose bottom sits on the line, is in that
+band whenever it shows. Node #806 moved only the beams; the line was the old
+procedural cabin's and no longer describes the authored one. `probe-docking`'s
+clip row checks the director against the line, so it stays green across this.
 
 | Where | What it holds |
 |---|---|
