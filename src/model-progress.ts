@@ -1,3 +1,11 @@
+/** `GLTFLoader`'s `onProgress`: bytes received of a model, and its total (0
+ *  when the response has no length). */
+export type ModelProgressListener = (event: ProgressEvent) => void;
+
+/** One required model's download, memoised by its module
+ *  (`prepareCoriolisModel`, `prepareCockpitModel`). */
+export type ModelLoader = (onProgress?: ModelProgressListener) => Promise<void>;
+
 /**
  * The boot's model download as one share (#833): received bytes over total
  * bytes across every model the boot needs, from `GLTFLoader`'s `onProgress`.
@@ -14,8 +22,13 @@
  * no byte count to add, so it leaves the sum rather than holding it at null.
  *
  * **Below 100% until every model has resolved**, and never lower than it has
- * read within one attempt. A body larger than its `Content-Length` (one the
- * browser decompressed) counts as its total. A retry starts a new instance.
+ * read within one attempt. A body larger than its `Content-Length` counts as
+ * its total: three reads the total from that header and counts the body as
+ * the browser hands it over, so a content-encoded response would read high
+ * and stall at the clamp. The deploy sends neither model encoded (checked
+ * against the production `/assets/*.glb` responses on 2026-10-09: a
+ * `Content-Length` and no `Content-Encoding`), so this is a guard and not
+ * the expected case. A retry starts a new instance.
  */
 export class ModelProgress {
 	private readonly parts = new Map<

@@ -20756,8 +20756,9 @@ if (postcard) {
 						catalog,
 						store: () => gate.current?.saveStore ?? null,
 						// #833: a switch chosen during the download reloads once the
-						// models are in, so the reload finds them in the cache rather
-						// than starting them again; the overlay stays busy until then.
+						// models are in. A reload mid-download would start them over;
+						// a finished one is cached under `public/_headers`' immutable
+						// rule for `/assets/*` (#834). The overlay stays busy until then.
 						reload: () => gate.ready().then(() => window.location.reload()),
 					}),
 			boot: overlayBoot(),

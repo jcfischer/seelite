@@ -85,18 +85,19 @@ const holdModels = async (page) => {
 			held.push(route);
 		},
 	);
+	const letRest = async () => {
+		for (const r of held.splice(0)) await r.continue();
+	};
 	return {
 		count: () => held.length,
 		release: async () => {
 			passing = true;
-			for (const r of held.splice(0)) await r.continue();
+			await letRest();
 		},
 		refuseOne: async () => {
 			await held.shift()?.abort("failed");
 		},
-		letRest: async () => {
-			for (const r of held.splice(0)) await r.continue();
-		},
+		letRest,
 	};
 };
 

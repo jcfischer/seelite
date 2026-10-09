@@ -273,12 +273,6 @@ export async function planBoot(input: BootInput): Promise<BootPlan> {
 }
 
 /**
- * Whether the overlay mounts before the models are in (#833): a player boot
- * that opens it, so a Commander is chosen during the download. A direct or
- * one-shot boot builds the `Game` first, as before, and opens the overlay only
- * on a fault the build or the attach finds.
- */
-/**
  * D9 for a Continue chosen before the `Game` was built (#833): the overlay
  * offered it on the plan as read, and the build may have refaulted that plan
  * (`withRestoreFault`). A plan that no longer offers Continue refuses it with
@@ -289,6 +283,12 @@ export const queuedContinueRefusal = (
 ): string | null =>
 	plan.canContinue ? null : (plan.fault ?? "Continue is no longer offered");
 
+/**
+ * Whether the overlay mounts before the models are in (#833): a player boot
+ * that opens it, so a Commander is chosen during the download. A direct or
+ * one-shot boot builds the `Game` first, as before, and opens the overlay only
+ * on a fault the build or the attach finds.
+ */
 export const overlayBeforeModels = (plan: Pick<BootPlan, "mode">): boolean =>
 	plan.mode === "overlay";
 

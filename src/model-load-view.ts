@@ -9,15 +9,7 @@
  * the overlay once the boot plan says it opens.
  */
 
-import { ModelProgress } from "./model-progress";
-
-/** `GLTFLoader`'s `onProgress`: bytes received of a model, and its total (0
- *  when the response has no length). */
-export type ModelProgressListener = (event: ProgressEvent) => void;
-
-/** One required model's download, memoised by its module
- *  (`prepareCoriolisModel`, `prepareCockpitModel`). */
-export type ModelLoader = (onProgress?: ModelProgressListener) => Promise<void>;
+import { type ModelLoader, ModelProgress } from "./model-progress";
 
 /** A download's state as a surface draws it. `fraction` is `null` while the
  *  share cannot be known (`model-progress.ts`). */
@@ -29,7 +21,7 @@ export type ModelLoadState =
 export type ModelLoadView = (state: ModelLoadState) => void;
 
 /** The share as the loading line prints it. */
-export const loadPercent = (fraction: number | null): string =>
+const loadPercent = (fraction: number | null): string =>
 	fraction === null ? "" : ` ${Math.floor(fraction * 100)}%`;
 
 /** The loading line, for the panel and the overlay alike. */

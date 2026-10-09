@@ -2,12 +2,8 @@
 import * as THREE from "three";
 import { MeshoptDecoder } from "three/addons/libs/meshopt_decoder.module.js";
 import { GLTFLoader } from "three/addons/loaders/GLTFLoader.js";
-import {
-	loadingPanel,
-	loadRequiredModels,
-	type ModelLoader,
-	type ModelProgressListener,
-} from "./model-load-view";
+import { loadingPanel, loadRequiredModels } from "./model-load-view";
+import type { ModelLoader, ModelProgressListener } from "./model-progress";
 import {
 	buildCoriolisNavigation,
 	installCoriolisBuilder,
