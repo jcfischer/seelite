@@ -85,7 +85,9 @@ What moved, and what is yours to decide:
   against a fastest body of 86.7). Linear acceleration is unchanged. The docking computer's first
   roll-tracking failure is 7.0 rpm (was 5.5); the miner is still the worst
   hull, now 2.17x the fastest station
-  (`evidence/hull-docking-round5.txt` is the run that prints both). Three Traffic launch-aperture touches,
+  (`evidence/hull-docking-round8.txt` is the run that prints both, at a
+  clean committed head; `-round5.txt` was taken on an uncommitted tree and
+  every row of it reprints unchanged). Three Traffic launch-aperture touches,
   all miners, are gone from system 0's pinned corpus row. Those last two are
   flown figures, and the length, the box and the moved vents all changed
   under them at once: nothing here attributes either to one of the three.
@@ -212,7 +214,12 @@ What moved, and what is yours to decide:
   shadow shedding (head 72e9dcf) the same five and `probe-occlusion` were
   run alone on the GPU lane and passed (`evidence/integration-probes-round5.txt`);
   none frames a miner between 40 and 400 radii, so the reduced hull is held
-  headless as well. The full run is the supervisor's.
+  headless as well. After sage round 8's anchor batch and atomic install
+  (head a670cad) the same six were run alone on the GPU lane and passed, under a
+  peak load of 45–89 on 10 cores from outside work
+  (`evidence/integration-probes-round8.txt`); the selector chose the whole
+  suite, because the round moved two helpers into `scripts/lib/`. The full
+  run is the supervisor's.
 
 **Field Notes, proposed copy (major: a rebuilt ship a returning player
 sees), for your approval before it lands in `src/changelog.ts`:**
