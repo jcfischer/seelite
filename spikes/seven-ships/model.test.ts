@@ -1,6 +1,13 @@
 import { test, expect } from 'bun:test';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
+import { minimumTriangleRadius } from './geometry-checks';
+test('radial clearance includes edges, interiors and degenerate projections',()=>{
+ expect(minimumTriangleRadius([80,-10],[80,10],[90,0])-80.1).toBeCloseTo(-.1,8);
+ expect(minimumTriangleRadius([-1,-1],[1,-1],[0,1])).toBe(0);
+ expect(minimumTriangleRadius([2,0],[3,0],[4,0])).toBe(2);
+ expect(minimumTriangleRadius([-2,0],[2,0],[4,0])).toBe(0);
+});
 const roles=['interceptor','patrol','explorer','raider','carrier','prospector','dreadnought'];
 for(const role of roles) test(`${role}: exported geometry, textures and measured bounds`,()=>{
  const b=readFileSync(join(import.meta.dir,role,'model.glb'));
@@ -19,7 +26,7 @@ for(const role of roles) test(`${role}: exported geometry, textures and measured
   expect(report.floorRadiusMetres).toBe(90);
   expect(report.rotationRPM).toBe(2.5);
   expect(report.gravityG).toBeCloseTo(0.629012,5);
-  expect(report.rotorClearanceMetres).toBeGreaterThan(0.5);
+  expect(report.authoredVertexGapMetres).toBeGreaterThan(0.5);
   // Independent check on exported triangles: a radial envelope proves clearance
   // for every rotor angle, including fixed faces spanning the axial interval.
   const binaryStart=28+b.readUInt32LE(12);
@@ -37,7 +44,12 @@ for(const role of roles) test(`${role}: exported geometry, textures and measured
   let radialMin=Infinity,zMin=Infinity,zMax=-Infinity;
   for(const id of rotorMeshes as Set<number>)for(const primitive of doc.meshes[id].primitives){
    const a=doc.accessors[primitive.attributes.POSITION],pos=accessor(primitive.attributes.POSITION);
-   for(let i=0;i<a.count;i++){radialMin=Math.min(radialMin,Math.hypot(pos(i,0),pos(i,1)));zMin=Math.min(zMin,pos(i,2));zMax=Math.max(zMax,pos(i,2));}
+   for(let i=0;i<a.count;i++){zMin=Math.min(zMin,pos(i,2));zMax=Math.max(zMax,pos(i,2));}
+   const indices=accessor(primitive.indices),count=doc.accessors[primitive.indices].count;
+   for(let i=0;i<count;i+=3){
+    const points=[indices(i),indices(i+1),indices(i+2)].map(j=>[pos(j,0),pos(j,1)]);
+    radialMin=Math.min(radialMin,minimumTriangleRadius(points[0],points[1],points[2]));
+   }
   }
   let fixedRadius=0;
   doc.meshes.forEach((mesh:any,id:number)=>{if(rotorMeshes.has(id))return;
@@ -52,6 +64,7 @@ for(const role of roles) test(`${role}: exported geometry, textures and measured
   });
   expect(Number.isFinite(radialMin)).toBe(true);
   expect(radialMin-fixedRadius).toBeGreaterThan(0.5);
+  console.log(role+' exported triangle radial clearance: '+(radialMin-fixedRadius).toFixed(6)+' m');
   expect(doc.nodes.some((n:any)=>n.name==='habitat-rotor')).toBe(true);
  }
  if(role==='explorer'){

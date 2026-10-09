@@ -22,5 +22,5 @@
   "floorRadiusMetres": 90,
   "rotationRPM": 2.5,
   "gravityG": 0.6290122264668208,
-  "rotorClearanceMetres": 1.5999933310152699
+  "authoredVertexGapMetres": 1.5999933310152699
 }

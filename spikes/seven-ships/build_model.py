@@ -719,12 +719,13 @@ triangles=sum(doc['accessors'][p['indices']]['count']//3 for m in doc['meshes'] 
 report=dict(role=ROLE,author='Codex',boundsMetres=[b-a for a,b in zip(lo,hi)],min=lo,max=hi,triangles=triangles,meshes=len(doc['meshes']),bytes=glb.stat().st_size)
 if rotor:report.update(floorRadiusMetres=rotor['floorRadiusMetres'],rotationRPM=rotor['rotationRPM'],gravityG=rotor['gravityG'])
 if ROLE in ['carrier','dreadnought']:
- # Conservative radial-envelope clearance for all orientations, over rotor axial span.
+ # Authored vertex gap diagnostic only. Exported triangle surfaces are
+ # independently checked by model.test.ts, including inward chord distance.
  rotating=[v for name,(vs,_,_) in BATCH.items() if name.startswith('rotor:') for v in vs]
  zlo=min(v[2] for v in rotating);zhi=max(v[2] for v in rotating)
  static=[vs[i] for name,(vs,faces,_) in BATCH.items() if not name.startswith('rotor:') for face in faces if min(vs[i][2] for i in face)<=zhi and max(vs[i][2] for i in face)>=zlo for i in face]
  clearance=(min(math.hypot(v[0],v[1]) for v in rotating)-max(math.hypot(v[0],v[1]) for v in static))*SCALE
- report['rotorClearanceMetres']=clearance
- assert clearance>.5, f'Habitat rotation clearance {clearance} m insufficient'
+ report['authoredVertexGapMetres']=clearance
+ assert clearance>.5, f'Habitat authored vertex gap {clearance} m insufficient'
 (DEST/'model-report.json').write_text(json.dumps(report,indent=2)+'\n')
 print('SHIP_EXPORTED',json.dumps(report))
