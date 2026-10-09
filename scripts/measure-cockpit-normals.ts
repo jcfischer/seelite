@@ -19,7 +19,12 @@
  *   bun scripts/measure-cockpit-normals.ts
  */
 import * as THREE from "three";
-import { COCKPIT_CREASE_DEG, smoothCockpitNormals } from "../src/cockpit-model";
+import { COCKPIT_CREASE_DEG, smoothCockpitScene } from "../src/cockpit-model";
+import {
+	degBetween as deg,
+	type PositionCopies,
+	pairCopies,
+} from "./lib/cockpit-normals";
 import { decodeShippedGlb } from "./lib/shipped-glb";
 
 const MODEL = "src/models/courier-cockpit.glb";
@@ -29,9 +34,6 @@ function finite(label: string, value: number): number {
 	if (!Number.isFinite(value)) throw new Error(`${label} is ${value}`);
 	return value;
 }
-
-const deg = (a: THREE.Vector3, b: THREE.Vector3) =>
-	(Math.atan2(a.clone().cross(b).length(), a.dot(b)) * 180) / Math.PI;
 
 /** `build_model.py`'s `curve_path` centre line: Catmull-Rom, 8 steps a span. */
 function centreLine(points: number[][], steps = 8): THREE.Vector3[] {
@@ -141,40 +143,29 @@ function strutReading(scene: THREE.Group, strut: (typeof STRUTS)[number]) {
 	};
 }
 
-function splitReading(scene: THREE.Group) {
+/** A rewrite smaller than this is a normal left where it was. */
+const TURNED_DEG = 1e-3;
+
+function splitReading(copies: PositionCopies[], side: "before" | "after") {
 	let below = 0;
 	let above = 180;
 	let smooth = 0;
 	let stillSplit = 0;
-	scene.traverse((o) => {
-		if (!(o instanceof THREE.Mesh)) return;
-		const position = o.geometry.getAttribute("position");
-		const normal = o.geometry.getAttribute("normal");
-		const groups = new Map<string, number[]>();
-		for (let i = 0; i < position.count; i++) {
-			const key = `${position.getX(i)},${position.getY(i)},${position.getZ(i)}`;
-			const group = groups.get(key);
-			if (group) group.push(i);
-			else groups.set(key, [i]);
-		}
-		for (const ids of groups.values()) {
-			if (ids.length < 2) continue;
-			const normals = ids.map((i) =>
-				new THREE.Vector3().fromBufferAttribute(normal, i),
-			);
-			let widest = 0;
-			for (let a = 0; a < normals.length; a++)
-				for (let b = a + 1; b < normals.length; b++) {
-					const d = deg(normals[a], normals[b]);
-					widest = Math.max(widest, d);
-					if (d < COCKPIT_CREASE_DEG) below = Math.max(below, d);
-					else above = Math.min(above, d);
-				}
-			if (widest >= COCKPIT_CREASE_DEG) continue;
-			smooth++;
-			if (widest > 1e-3) stillSplit++;
-		}
-	});
+	for (const p of copies) {
+		const normals = p[side];
+		if (normals.length < 2) continue;
+		let widest = 0;
+		for (let a = 0; a < normals.length; a++)
+			for (let b = a + 1; b < normals.length; b++) {
+				const d = deg(normals[a], normals[b]);
+				widest = Math.max(widest, d);
+				if (d < COCKPIT_CREASE_DEG) below = Math.max(below, d);
+				else above = Math.min(above, d);
+			}
+		if (widest >= COCKPIT_CREASE_DEG) continue;
+		smooth++;
+		if (widest > TURNED_DEG) stillSplit++;
+	}
 	return {
 		below: finite("below", below),
 		above: finite("above", above),
@@ -185,15 +176,13 @@ function splitReading(scene: THREE.Group) {
 
 const exported = await decodeShippedGlb(MODEL);
 const adopted = await decodeShippedGlb(MODEL);
-const touched = new Set<THREE.BufferGeometry>();
-adopted.traverse((o) => {
-	if (o instanceof THREE.Mesh) touched.add(o.geometry);
-});
-let moved = 0;
-for (const geometry of touched) moved += smoothCockpitNormals(geometry);
+const started = performance.now();
+const rewritten = smoothCockpitScene(adopted);
+const tookMs = performance.now() - started;
+const copies = pairCopies(exported, adopted);
 
 console.log(
-	`crease ${COCKPIT_CREASE_DEG}°, ${moved} vertices moved by the adoption`,
+	`crease ${COCKPIT_CREASE_DEG}°, ${rewritten} vertices rewritten by the adoption in ${tookMs.toFixed(1)} ms`,
 );
 for (const strut of STRUTS)
 	for (const [label, scene] of [
@@ -205,8 +194,8 @@ for (const strut of STRUTS)
 			`${strut.name} (${strut.sides} sides), ${label}: normal vs true radial, median ${r.median.toFixed(2)}°, p90 ${r.p90.toFixed(2)}° over ${r.vertices} vertices`,
 		);
 	}
-const before = splitReading(exported);
-const after = splitReading(adopted);
+const before = splitReading(copies, "before");
+const after = splitReading(copies, "after");
 console.log(
 	`exported split angles: largest below the crease ${before.below.toFixed(2)}°, smallest above ${before.above.toFixed(2)}°`,
 );
@@ -219,55 +208,47 @@ console.log(
  * pair of its copies lies within the crease — a tube or a gently curved
  * surface — and *mixed* when at least one pair is at or past it: an edge,
  * where the copies inside the crease of each other (a chamfer's outer step
- * beside its face) are joined and the hard side is kept. The largest move is
- * how far one normal turned.
+ * beside its face) are joined and the hard side is kept. A vertex counts as
+ * moved when its normal turned by more than `TURNED_DEG`, so the rows sum to
+ * fewer than the rewritten total: a rewrite of copies that already agreed
+ * moves nothing. The largest move is how far one normal turned.
  */
 function movedReading() {
-	const rows: string[] = [];
-	const exportedByName = new Map<string, THREE.Mesh>();
-	exported.traverse((o) => {
-		if (o instanceof THREE.Mesh) exportedByName.set(o.name, o);
-	});
-	adopted.traverse((o) => {
-		if (!(o instanceof THREE.Mesh)) return;
-		const raw = exportedByName.get(o.name);
-		if (!raw) throw new Error(`no exported mesh ${o.name}`);
-		const position = o.geometry.getAttribute("position");
-		const was = raw.geometry.getAttribute("normal");
-		const now = o.geometry.getAttribute("normal");
-		const groups = new Map<string, number[]>();
-		for (let i = 0; i < position.count; i++) {
-			const key = `${position.getX(i)},${position.getY(i)},${position.getZ(i)}`;
-			const group = groups.get(key);
-			if (group) group.push(i);
-			else groups.set(key, [i]);
-		}
-		const count = { inside: 0, mixed: 0 };
-		const largest = { inside: 0, mixed: 0 };
-		for (const ids of groups.values()) {
-			const before = ids.map((i) =>
-				new THREE.Vector3().fromBufferAttribute(was, i),
-			);
-			const mixed = before.some((a) =>
-				before.some((b) => deg(a, b) >= COCKPIT_CREASE_DEG),
-			);
-			const kind = mixed ? "mixed" : "inside";
-			ids.forEach((i, n) => {
-				const turned = deg(
-					new THREE.Vector3().fromBufferAttribute(now, i),
-					before[n],
-				);
-				if (turned <= 1e-3) return;
-				count[kind]++;
-				largest[kind] = Math.max(largest[kind], finite("turn", turned));
-			});
-		}
-		if (count.inside + count.mixed === 0) return;
-		rows.push(
-			`  ${o.name}: ${count.inside} inside (largest turn ${largest.inside.toFixed(1)}°), ${count.mixed} at edges (largest turn ${largest.mixed.toFixed(1)}°)`,
+	type Tally = { inside: number; mixed: number };
+	const byMesh = new Map<string, { count: Tally; largest: Tally }>();
+	const count: Tally = { inside: 0, mixed: 0 };
+	for (const p of copies) {
+		const mixed = p.before.some((a) =>
+			p.before.some((b) => deg(a, b) >= COCKPIT_CREASE_DEG),
 		);
-	});
-	return rows;
+		const kind = mixed ? "mixed" : "inside";
+		let row = byMesh.get(p.mesh);
+		if (!row) {
+			row = {
+				count: { inside: 0, mixed: 0 },
+				largest: { inside: 0, mixed: 0 },
+			};
+			byMesh.set(p.mesh, row);
+		}
+		p.after.forEach((now, n) => {
+			const turned = deg(now, p.before[n]);
+			if (turned <= TURNED_DEG) return;
+			row.count[kind]++;
+			count[kind]++;
+			row.largest[kind] = Math.max(row.largest[kind], finite("turn", turned));
+		});
+	}
+	const rows: string[] = [];
+	for (const [mesh, row] of byMesh) {
+		if (row.count.inside + row.count.mixed === 0) continue;
+		rows.push(
+			`  ${mesh}: ${row.count.inside} inside (largest turn ${row.largest.inside.toFixed(1)}°), ${row.count.mixed} at edges (largest turn ${row.largest.mixed.toFixed(1)}°)`,
+		);
+	}
+	return { rows, total: count.inside + count.mixed };
 }
-console.log("vertices moved, by mesh:");
-for (const row of movedReading()) console.log(row);
+const moved = movedReading();
+console.log(
+	`vertices moved (turned by more than ${TURNED_DEG}°): ${moved.total} of ${rewritten} rewritten, by mesh:`,
+);
+for (const row of moved.rows) console.log(row);

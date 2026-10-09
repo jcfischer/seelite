@@ -15,9 +15,15 @@ import {
 	SCANNER_FACE_KM,
 	screenFrame,
 	screenMount,
+	smoothCockpitNormals,
 } from "../src/cockpit-model";
 import { disposeSubtree } from "../src/gpu-teardown";
 import { EMISSIVE_CEILING } from "../src/light-rig";
+import {
+	degBetween,
+	type PositionCopies,
+	pairCopies,
+} from "../scripts/lib/cockpit-normals";
 import { decodeShippedGlb } from "../scripts/lib/shipped-glb";
 
 /** The label canvases need a 2D surface; no assertion reads a pixel. */
@@ -283,50 +289,6 @@ describe("the shipped cockpit model in the cabin pass", () => {
 	});
 });
 
-/**
- * Every mesh's vertices grouped by exact position, with the exported and the
- * adopted normal of each copy. Blender's `poly()` writes fresh vertices for
- * every face, so a position shared by several faces holds one copy per face.
- */
-function splitPositions() {
-	const exportedByName = new Map<string, THREE.Mesh>();
-	exported.traverse((o) => {
-		if (o instanceof THREE.Mesh) exportedByName.set(o.name, o);
-	});
-	const out: {
-		mesh: string;
-		before: THREE.Vector3[];
-		after: THREE.Vector3[];
-	}[] = [];
-	template.traverse((o) => {
-		if (!(o instanceof THREE.Mesh)) return;
-		const raw = exportedByName.get(o.name);
-		if (!raw) throw new Error(`no exported mesh ${o.name}`);
-		const position = o.geometry.getAttribute("position");
-		const was = raw.geometry.getAttribute("normal");
-		const now = o.geometry.getAttribute("normal");
-		const groups = new Map<string, number[]>();
-		for (let i = 0; i < position.count; i++) {
-			const key = `${position.getX(i)},${position.getY(i)},${position.getZ(i)}`;
-			const group = groups.get(key);
-			if (group) group.push(i);
-			else groups.set(key, [i]);
-		}
-		for (const ids of groups.values())
-			out.push({
-				mesh: o.name,
-				before: ids.map((i) => new THREE.Vector3().fromBufferAttribute(was, i)),
-				after: ids.map((i) => new THREE.Vector3().fromBufferAttribute(now, i)),
-			});
-	});
-	return out;
-}
-
-/** Degrees between two normals. `atan2` and not `acos`: at a dot product
- *  within float32 rounding of 1, `acos` reads an identical pair 0.02° apart. */
-const degBetween = (a: THREE.Vector3, b: THREE.Vector3) =>
-	(Math.atan2(a.clone().cross(b).length(), a.dot(b)) * 180) / Math.PI;
-
 describe("the cockpit's normals (node #839)", () => {
 	// The canopy struts are `curve_path` tubes, 12 to 20 sides, and every quad
 	// of them was exported with its own face normal: the support hoop's vertex
@@ -335,21 +297,28 @@ describe("the cockpit's normals (node #839)", () => {
 	// 0.65-metal finish, each quad caught the highlight whole or not at all,
 	// and bloom drew the bright ones as rectangles.
 
-	test("the crease sits in an empty band of the exported split angles", () => {
+	/** Every position's copies, exported against adopted; read once. */
+	let copies: PositionCopies[];
+	beforeAll(() => {
+		copies = pairCopies(exported, template);
+	});
+
+	test("the crease sits in the empty band of the exported split angles", () => {
 		// Tube facet steps (18°, 22.5°, 30°, 36°) are below it and the chamfers,
-		// eight-sided studs (45°) and box edges (90°) above, so no exported pair
-		// of normals is within a degree of it either way: 42.46° below, 44.81° above.
-		let near = 0;
-		for (const p of splitPositions())
+		// eight-sided studs (45°) and box edges (90°) above. The band is the one
+		// `COCKPIT_CREASE_DEG`'s comment states, held at both ends: a re-export
+		// that puts a join anywhere inside 42.46°–44.81° goes red here.
+		let below = 0;
+		let above = 180;
+		for (const p of copies)
 			for (let i = 0; i < p.before.length; i++)
-				for (let j = i + 1; j < p.before.length; j++)
-					if (
-						Math.abs(
-							degBetween(p.before[i], p.before[j]) - COCKPIT_CREASE_DEG,
-						) < 1
-					)
-						near++;
-		expect(near).toBe(0);
+				for (let j = i + 1; j < p.before.length; j++) {
+					const d = degBetween(p.before[i], p.before[j]);
+					if (d < COCKPIT_CREASE_DEG) below = Math.max(below, d);
+					else above = Math.min(above, d);
+				}
+		expect(below).toBeLessThan(42.465);
+		expect(above).toBeGreaterThan(44.805);
 	});
 
 	test("where every face at a position is inside the crease, all its copies share one normal", () => {
@@ -357,7 +326,7 @@ describe("the cockpit's normals (node #839)", () => {
 		// vertex with four different normals.
 		let smoothPositions = 0;
 		let split = 0;
-		for (const p of splitPositions()) {
+		for (const p of copies) {
 			if (p.before.length < 2) continue;
 			const inside = p.before.every((a) =>
 				p.before.every((b) => degBetween(a, b) < COCKPIT_CREASE_DEG),
@@ -373,24 +342,68 @@ describe("the cockpit's normals (node #839)", () => {
 	test("a copy with no other face inside the crease keeps its exported normal", () => {
 		// Box edges, chamfer steps and the studs' 45° facets stay hard.
 		let alone = 0;
-		for (const p of splitPositions())
+		let worst = 0;
+		for (const p of copies)
 			for (let i = 0; i < p.before.length; i++) {
-				const neighbours = p.before.filter(
+				const joins = p.before.some(
 					(b, j) => j !== i && degBetween(p.before[i], b) < COCKPIT_CREASE_DEG,
 				);
-				if (neighbours.length > 0) continue;
+				if (joins) continue;
 				alone++;
-				expect(degBetween(p.after[i], p.before[i])).toBeLessThan(1e-4);
+				worst = Math.max(worst, degBetween(p.after[i], p.before[i]));
 			}
 		expect(alone).toBeGreaterThan(10000);
+		expect(worst).toBeLessThan(1e-4);
 	});
 
 	test("no normal moves by more than the crease", () => {
-		for (const p of splitPositions())
+		let worst = 0;
+		for (const p of copies)
 			for (let i = 0; i < p.before.length; i++)
-				expect(degBetween(p.after[i], p.before[i])).toBeLessThan(
-					COCKPIT_CREASE_DEG,
-				);
+				worst = Math.max(worst, degBetween(p.after[i], p.before[i]));
+		expect(worst).toBeGreaterThan(0);
+		expect(worst).toBeLessThan(COCKPIT_CREASE_DEG);
+	});
+
+	test("a quad's corner weighs the same whichever diagonal splits it", () => {
+		// A flat quad in the xz plane meets a triangle tilted 30° at the
+		// origin. Weighted by area, the quad's corner there counts the quad's
+		// whole area when the diagonal runs through it and half when it does
+		// not, and the joined normal moves with the split. Weighted by the
+		// corner's angle, both splits give the quad 90°.
+		const tilt = (30 * Math.PI) / 180;
+		const quad = [
+			[0, 0, 0],
+			[1, 0, 0],
+			[1, 0, -1],
+			[0, 0, -1],
+		];
+		const side = [
+			[0, 0, 0],
+			[1, -Math.sin(tilt), Math.cos(tilt)],
+			[1, 0, 0],
+		];
+		const joined = (through: boolean) => {
+			const tris = through
+				? [quad[0], quad[1], quad[2], quad[0], quad[2], quad[3]]
+				: [quad[0], quad[1], quad[3], quad[1], quad[2], quad[3]];
+			const geometry = new THREE.BufferGeometry();
+			geometry.setAttribute(
+				"position",
+				new THREE.Float32BufferAttribute([...tris, ...side].flat(), 3),
+			);
+			geometry.computeVertexNormals();
+			expect(smoothCockpitNormals(geometry)).toBeGreaterThan(0);
+			return new THREE.Vector3().fromBufferAttribute(
+				geometry.getAttribute("normal"),
+				0,
+			);
+		};
+		const through = joined(true);
+		const across = joined(false);
+		// The join is real: the quad's corner leaned toward the side face.
+		expect(degBetween(through, new THREE.Vector3(0, 1, 0))).toBeGreaterThan(1);
+		expect(degBetween(through, across)).toBeLessThan(1e-4);
 	});
 
 	test("screens, labels and keys keep their exported vertices and normals", () => {

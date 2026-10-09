@@ -284,28 +284,47 @@ export const carriedLamp = (lamp: (typeof COCKPIT_MODEL_LAMPS)[number]) =>
  * (node #839), degrees.
  *
  * The export's `poly()` writes fresh vertices for every face, so every quad of
- * a swept tube is its own island and the weighted-normal modifier had no
- * neighbour to average with: the canopy struts were exported flat-shaded, and
- * each quad caught the sun's highlight whole or not at all. Exported, the
+ * a swept tube is its own island and Blender's weighted-normal step had no
+ * adjacent face to average with: the canopy struts were exported flat-shaded,
+ * and each quad caught the sun's highlight whole or not at all. Exported, the
  * angles between split normals cluster at the tubes' facet steps — 18°, 22.5°,
  * 30° and 36° for 20-, 16-, 12- and 10-sided sections — and at 45° (chamfer
  * steps and eight-sided studs) and 90° (box edges). Nothing lies between
  * 42.46° and 44.81°, and the crease sits in that gap;
- * `tests/cockpit-model.test.ts` holds the gap.
+ * `tests/cockpit-model.test.ts` holds both ends of it.
  */
 export const COCKPIT_CREASE_DEG = 43.5;
 
 /**
+ * The vertex indices of `position` grouped by exact coordinates: one group per
+ * point in space, holding every copy the exporter wrote for it. Exact, because
+ * the model's 9 mm bevels and 5 mm chips are closer than any grid would allow.
+ */
+export function groupCopiesByPosition(
+	position: THREE.BufferAttribute | THREE.InterleavedBufferAttribute,
+): Map<string, number[]> {
+	const groups = new Map<string, number[]>();
+	for (let i = 0; i < position.count; i++) {
+		const key = `${position.getX(i)},${position.getY(i)},${position.getZ(i)}`;
+		const group = groups.get(key);
+		if (group) group.push(i);
+		else groups.set(key, [i]);
+	}
+	return groups;
+}
+
+/**
  * Join the split normals of faces that meet inside the crease, in place.
  *
- * Copies of one position are found by exact coordinates — the model's 9 mm
- * bevels and 5 mm chips are closer than any grid would allow — and each copy
- * takes the area-weighted mean of every copy within the crease of its own
- * exported normal. A copy with no such neighbour keeps its normal exactly, so
- * a join at or past the crease stays hard. Every join under it is shaded as
- * one surface, across the whole model and not only the struts: the tubes and
- * ducts, the shallow steps of a chamfer beside its face, and copies the
- * exporter had already weighted. Returns how many vertices moved.
+ * Each copy of a position takes the mean of every copy within the crease of
+ * its own exported normal, weighted by the face's corner angle there — the
+ * sum of its triangles' angles at that copy, which a quad's diagonal does not
+ * change. A copy with no other copy inside the crease keeps its normal
+ * exactly, so a join at or past the crease stays hard. Every join under it is
+ * shaded as one surface, across the whole model and not only the struts: the
+ * tubes and ducts, the shallow steps of a chamfer beside its face, and copies
+ * the exporter had already weighted. Returns how many vertices it rewrote; a
+ * rewrite whose copies already agreed leaves the normal where it was.
  */
 export function smoothCockpitNormals(
 	geometry: THREE.BufferGeometry,
@@ -317,62 +336,78 @@ export function smoothCockpitNormals(
 	const index = geometry.index;
 	const corner = (k: number) => (index ? index.getX(k) : k);
 	const weight = new Float64Array(position.count);
-	const a = new THREE.Vector3();
-	const b = new THREE.Vector3();
-	const c = new THREE.Vector3();
+	const p = [new THREE.Vector3(), new THREE.Vector3(), new THREE.Vector3()];
+	const u = new THREE.Vector3();
+	const v = new THREE.Vector3();
+	const cross = new THREE.Vector3();
 	const corners = index ? index.count : position.count;
 	for (let k = 0; k < corners; k += 3) {
-		const [i, j, l] = [corner(k), corner(k + 1), corner(k + 2)];
-		a.fromBufferAttribute(position, i);
-		b.fromBufferAttribute(position, j).sub(a);
-		c.fromBufferAttribute(position, l).sub(a);
-		const area = b.cross(c).length() / 2;
-		weight[i] += area;
-		weight[j] += area;
-		weight[l] += area;
+		const ids = [corner(k), corner(k + 1), corner(k + 2)];
+		for (let n = 0; n < 3; n++) p[n].fromBufferAttribute(position, ids[n]);
+		for (let n = 0; n < 3; n++) {
+			u.subVectors(p[(n + 1) % 3], p[n]);
+			v.subVectors(p[(n + 2) % 3], p[n]);
+			weight[ids[n]] += Math.atan2(cross.crossVectors(u, v).length(), u.dot(v));
+		}
 	}
-	const groups = new Map<string, number[]>();
-	for (let i = 0; i < position.count; i++) {
-		const key = `${position.getX(i)},${position.getY(i)},${position.getZ(i)}`;
-		const group = groups.get(key);
-		if (group) group.push(i);
-		else groups.set(key, [i]);
-	}
-	const exported = (i: number) =>
-		new THREE.Vector3().fromBufferAttribute(normal, i);
 	const cos = Math.cos((creaseDeg * Math.PI) / 180);
-	let moved = 0;
-	for (const ids of groups.values()) {
+	// Read once: the attribute may be quantised, and each read denormalises.
+	const exported = new Float64Array(normal.count * 3);
+	for (let i = 0; i < normal.count; i++)
+		for (let a = 0; a < 3; a++) exported[i * 3 + a] = normal.getComponent(i, a);
+	const component = (i: number, axis: number) => exported[i * 3 + axis];
+	let rewritten = 0;
+	for (const ids of groupCopiesByPosition(position).values()) {
 		if (ids.length < 2) continue;
-		const normals = ids.map(exported);
-		const sums = normals.map((own) => {
-			const sum = new THREE.Vector3();
-			let neighbours = 0;
-			normals.forEach((other, n) => {
-				if (own.dot(other) <= cos) return;
+		const sums = new Float64Array(ids.length * 3);
+		const joined: boolean[] = [];
+		ids.forEach((own, m) => {
+			let faces = 0;
+			for (const other of ids) {
+				let dot = 0;
+				for (let a = 0; a < 3; a++)
+					dot += component(own, a) * component(other, a);
+				if (dot <= cos) continue;
 				// A degenerate face still carries its direction.
-				sum.addScaledVector(other, weight[ids[n]] + 1e-12);
-				neighbours++;
-			});
-			return neighbours > 1 ? sum.normalize() : null;
+				const w = weight[other] + 1e-12;
+				for (let a = 0; a < 3; a++) sums[m * 3 + a] += w * component(other, a);
+				faces++;
+			}
+			joined[m] = faces > 1;
 		});
-		sums.forEach((sum, n) => {
-			if (!sum) return;
-			normal.setXYZ(ids[n], sum.x, sum.y, sum.z);
-			moved++;
+		ids.forEach((i, m) => {
+			if (!joined[m]) return;
+			const [x, y, z] = sums.subarray(m * 3, m * 3 + 3);
+			const length = Math.hypot(x, y, z);
+			normal.setXYZ(i, x / length, y / length, z / length);
+			rewritten++;
 		});
 	}
 	normal.needsUpdate = true;
-	return moved;
+	return rewritten;
+}
+
+/**
+ * Smooth every distinct geometry under `root` once, as adoption does; the
+ * review viewer and the instrument go through here too, so all three shade
+ * the same normals. Returns how many vertices were rewritten.
+ */
+export function smoothCockpitScene(root: THREE.Object3D): number {
+	const geometries = new Set<THREE.BufferGeometry>();
+	root.traverse((o) => {
+		if (o instanceof THREE.Mesh) geometries.add(o.geometry);
+	});
+	let rewritten = 0;
+	for (const geometry of geometries)
+		rewritten += smoothCockpitNormals(geometry);
+	return rewritten;
 }
 
 /** Normalise and share a loaded model once, so every cabin clones it. */
 export function adoptCockpitTemplate(scene: THREE.Group): void {
 	const materials = new Set<THREE.MeshStandardMaterial>();
-	const geometries = new Set<THREE.BufferGeometry>();
 	scene.traverse((o) => {
 		if (!(o instanceof THREE.Mesh)) return;
-		geometries.add(o.geometry);
 		o.castShadow = true;
 		o.receiveShadow = true;
 		for (const m of Array.isArray(o.material) ? o.material : [o.material])
@@ -387,7 +422,7 @@ export function adoptCockpitTemplate(scene: THREE.Group): void {
 		m.emissiveIntensity /= divisor;
 		adoptCockpitMaterial(m);
 	}
-	for (const geometry of geometries) smoothCockpitNormals(geometry);
+	smoothCockpitScene(scene);
 	scene.name = "authored-cockpit";
 	scene.traverse((o) => {
 		if (!(o instanceof THREE.Mesh)) return;

@@ -14,7 +14,7 @@ import {
 	adoptCockpitMaterial,
 	COCKPIT_MODEL_LAMPS,
 	cockpitLabelText,
-	smoothCockpitNormals,
+	smoothCockpitScene,
 } from "./cockpit-model";
 import { buildShipMesh } from "./ship-mesh";
 import { CORIOLIS_GLB_URL } from "./model-urls";
@@ -458,16 +458,12 @@ try {
 	]);
 	cockpit = interior.scene;
 	scene.add(cockpit);
-	const smoothed = new Set<THREE.BufferGeometry>();
+	// The game's normals too (node #839), so the struts read smooth here.
+	smoothCockpitScene(cockpit);
 	cockpit.traverse((o) => {
 		if (o instanceof THREE.Mesh) {
 			o.castShadow = true;
 			o.receiveShadow = true;
-			// The game's normals too (node #839), so the struts read smooth here.
-			if (!smoothed.has(o.geometry)) {
-				smoothed.add(o.geometry);
-				smoothCockpitNormals(o.geometry);
-			}
 			if (o.name.startsWith("screen-")) {
 				o.material = makeDisplay(o.name.slice(7));
 				o.castShadow = false;
