@@ -54,6 +54,9 @@ import {
 	surfaceTexels,
 } from "../src/station-visuals";
 import { STATION_TYPES } from "../src/station";
+import { useProceduralCourier } from "./helpers/procedural-courier";
+
+useProceduralCourier();
 
 /** FNV-1a over a buffer. The same hash the module uses for its own texels,
  *  reimplemented here on purpose: a test that imports the function it is

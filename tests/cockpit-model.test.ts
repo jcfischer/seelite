@@ -17,7 +17,7 @@ import {
 } from "../src/cockpit-model";
 import { disposeSubtree } from "../src/gpu-teardown";
 import { EMISSIVE_CEILING } from "../src/light-rig";
-import { decodeShippedGlb } from "./helpers/read-coriolis-glb";
+import { decodeShippedGlb } from "../scripts/lib/shipped-glb";
 
 /** The label canvases need a 2D surface; no assertion reads a pixel. */
 function withCanvasStub<T>(body: () => T): T {

@@ -21,6 +21,9 @@ import {
 	setShipDetail,
 	updateShipVisuals,
 } from "../src/ship-mesh";
+import { useProceduralCourier } from "./helpers/procedural-courier";
+
+useProceduralCourier();
 
 const variants = HULL_IDS.flatMap((id) =>
 	HULL_VARIANT_IDS.map((variant) => ({ id, variant })),

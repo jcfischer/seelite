@@ -3,6 +3,9 @@
  *
  *   bun scripts/measure-vent-placement.ts
  *
+ * It installs the shipped courier model first (node #812), so the courier's
+ * row is measured on the hull the game draws.
+ *
  * The table put every vent on its envelope's box, and no attitude vent's line
  * of action met the hull on any hull: the roll pairs passed 9 to 28 m clear of
  * the five larger ones. A pair may move in any direction that leaves it pure
@@ -36,6 +39,8 @@ import {
 	coupleArms,
 } from "../src/hull";
 import { buildShipMesh } from "../src/ship-mesh";
+import { installShippedCourierHull } from "./lib/shipped-courier-hull";
+import { axisLineTester, hullMetal } from "./lib/axis-line-hits";
 
 /** Steps per half-extent: a reach is found to a quarter of a percent. */
 const STEPS = 400;
@@ -54,25 +59,19 @@ function lineTester(root: THREE.Object3D) {
 	const box = new THREE.Box3().setFromObject(root);
 	const centre = box.getCenter(new THREE.Vector3());
 	const reach = box.getSize(new THREE.Vector3()).length();
-	const metal: THREE.Object3D[] = [];
-	root.traverse((o) => {
-		const mesh = o as THREE.Mesh;
-		if (
-			mesh.isMesh &&
-			!(mesh as THREE.InstancedMesh).isInstancedMesh &&
-			!mesh.name.endsWith("-exhaust")
-		)
-			metal.push(mesh);
-	});
-	const caster = new THREE.Raycaster();
+	const metal = hullMetal(root);
+	// Three's raycast, answered from a grid: every line here runs along an
+	// axis, and the authored courier's 354k triangles made the plain
+	// raycast an hour's work (node #812, `lib/axis-line-hits.ts`).
+	const meets = axisLineTester(metal);
 	return (p: Vec, dir: Vec): boolean => {
 		const d = new THREE.Vector3(...dir);
-		caster.set(
+		return meets(
 			new THREE.Vector3(...p).add(centre).addScaledVector(d, -2 * reach),
 			d,
+			0,
+			4 * reach,
 		);
-		caster.far = 4 * reach;
-		return caster.intersectObjects(metal, false).some((h) => h.face);
 	};
 }
 
@@ -157,6 +156,8 @@ export function measureVentPlacement(
 }
 
 if (import.meta.main) {
+	// The courier the game flies is the authored model (node #812).
+	await installShippedCourierHull();
 	const pct = (x: number) => `${(100 * x).toFixed(1)}%`;
 	const rows = HULL_IDS.map((id) => {
 		const spec = HULL_SPECS[id];

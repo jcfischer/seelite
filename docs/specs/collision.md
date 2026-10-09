@@ -294,7 +294,11 @@ handed to §4.3's ghost rule. Two things differ for it (derived):
 - **Its closing speed is read at the start of the step**, before this step's
   own acceleration — thrust and the frame's — is applied. A ship that the last
   step stopped at the surface starts this step with no inward speed, so thrust
-  pressing it in costs nothing at any dt. A surface that is itself moving in
+  pressing it in costs nothing at any dt. "No inward speed" is read to a
+  rounding floor, `RESTING_CLOSING_FLOOR_KMS` (1 nm/s): the pair solver
+  leaves a resolved pair's relative velocity with residues of order 1e-17
+  km/s, and an exact `> 0` billed one as a resting impact of zero damage
+  once node #812 changed the courier's box. A surface that is itself moving in
   is still billed: a Coriolis corner turning into a ship that already touches
   a face meets it at `ω × r` at the start of the step, and §3's law charges
   that.

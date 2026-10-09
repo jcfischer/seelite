@@ -20584,8 +20584,10 @@ if (postcard) {
 			`postcard: entry accepted a refused recipe (${postcard.reason})`,
 		);
 	const { prepareCockpitModel } = await import("./cockpit-model");
+	const { prepareCourierHullModel } = await import("./courier-hull");
 	await (await import("./coriolis-flight")).prepareCoriolisPage([
 		prepareCockpitModel,
+		prepareCourierHullModel,
 	]);
 	const game = new Game(postcard.recipe.seed, null, null, postcard.recipe);
 	game.clockHeld = true;
@@ -20595,6 +20597,13 @@ if (postcard) {
 } else if (query.has("model-viewer")) {
 	if (query.get("model-viewer") === "station")
 		await (await import("./coriolis-flight")).prepareCoriolisPage();
+	// The ship workbench draws the courier the game flies (node #812).
+	else if (query.get("model-viewer") === "ship") {
+		const { prepareCourierHullModel } = await import("./courier-hull");
+		await (await import("./coriolis-flight")).prepareCoriolisPage([
+			prepareCourierHullModel,
+		]);
+	}
 	const { mountModelViewer } = await import("./model-viewer");
 	mountModelViewer();
 	// The workbench owns an isolated render loop, so no live simulation is built
@@ -20661,9 +20670,14 @@ if (postcard) {
 	const stationModel = Promise.all([
 		import("./coriolis-flight"),
 		import("./cockpit-model"),
-	]).then(([m, cockpit]) =>
+		import("./courier-hull"),
+	]).then(([m, cockpit, courier]) =>
 		loadRequiredModels(
-			[m.prepareCoriolisModel, cockpit.prepareCockpitModel],
+			[
+				m.prepareCoriolisModel,
+				cockpit.prepareCockpitModel,
+				courier.prepareCourierHullModel,
+			],
 			loading.view,
 			{ then: "building" },
 		),

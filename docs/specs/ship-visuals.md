@@ -193,6 +193,45 @@ The player hull is the courier `Kestrel`, named in `main.ts` as an explicit
 what this spec forbids a roster to take; naming both halves means #26 can see
 what it is replacing when it arrives to own the choice properly.
 
+**Since node #812 the courier's selected variant draws an authored model**, the
+O4 hull the principal approved on #795 (`src/courier-hull.ts`, loaded from
+`src/models/courier-hull.glb` before any `Game` is built). It is the one
+hull here that is not lofted: it carries its own textures and machinery, so the
+finishes, the plating and the greeble zones above do not reach it, and only
+its drive glows follow the finish. Its scale is set by the courier's declared
+57.5 m length, which every hull's turn rate is solved against; its beam and
+height are measured off it, and the courier's envelope and vent placement
+are now the O4's.
+
+**So the procedural Kestrel is no longer a courier a game may draw.** Built,
+it is 57.49 × 51.20 × 11.65 m against the declared 57.5 × 52.4 × 9.6 m — two
+metres taller than the collision box — and the courier's vents were measured
+on the O4. No page that builds a `Game` can draw it: every one awaits
+`prepareCourierHullModel` behind the Retry panel first, and a failed load
+builds no `Game`; the ship workbench loads the model too. What still draws
+the Kestrel is outside flight, wherever the model is not installed: the
+headless rows that hold the hull generator
+(`tests/helpers/procedural-courier.ts`), the cost instrument's comparison arm
+(`scripts/measure-courier-hull-cost.mjs`), and the cockpit spike's review
+page (`src/courier-cockpit-viewer.ts`), which does not load the hull.
+
+**The detail band switches the model.** Every Traffic courier is the O4, so
+past `DETAIL_RADII.full` a courier draws a reduced copy of it and past
+`DETAIL_RADII.reduced` a coarser one, each made by meshoptimizer's simplifier
+to a **target error** of half a device pixel at its band edge **in
+`COURIER_LEVEL_FRAME`** — the near camera's 60° field of view on a frame 1800
+device pixels tall, the player's retina panel and the frame the cost
+instruments measure on (`courierLevelErrorKm`). It is a target and not a
+bound. The error is the simplifier's own metric, which it reports reaching
+and `tests/courier-hull.test.ts` holds inside the target; nothing measures
+how far a level actually lies from the model. The band's hysteresis draws
+`reduced` somewhat nearer than `DETAIL_RADII.full` on the way back in, and a
+taller frame sees the same error at more than half a pixel, in proportion to
+its height. How visible the switch is, is judged by eye in flight. The cabin and the pilot are left out of both levels, and
+neither level takes a ray, so everything placed on the hull is placed on the
+approved model. Inside the first edge — the
+player's own courier in chase among them — the model is drawn as approved.
+
 The player hull is a near-scene object. It is hidden in cockpit view because the
 cockpit HUD, attitude floor, target director, and scanner remain the primary
 flight references. Chase view makes that same hull visible as an external
