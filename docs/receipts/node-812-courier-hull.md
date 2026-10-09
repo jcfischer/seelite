@@ -138,18 +138,23 @@ draws `reduced`, and past `DETAIL_RADII.reduced` (400, 14.4 km) it draws
 
 - **How a level is made.** At load, from the loaded model (`courier-hull.ts`),
   by meshoptimizer's simplifier: each mesh welded on position, edges collapsed
-  under an absolute error, normals recomputed with a 30° crease. A collapse
+  under an absolute error, normals recomputed with a 30° crease, and the
+  corners welded again where they agree (sage round 5), so a level is indexed
+  rather than three corners a triangle; the triangle counts did not move. A collapse
   moves a corner onto an existing vertex, so a level never reaches past the
   model; the envelope rows still read the full model's box. The cabin and the
   pilot are left out of both levels.
-- **The target error is a pixel quantity.** Half a device pixel where the
-  level is first drawn, at the near camera's 60° on a 1800-pixel frame (900 CSS pixels
+- **The error is a target, in pixels.** Half a device pixel at the level's
+  band edge, at the near camera's 60° on a 1800-pixel frame (900 CSS pixels
   at device scale 2): 0.46 m for `reduced`, 4.6 m for `outline`
   (`courierLevelErrorKm`, asserted in `tests/courier-hull.test.ts`). That
-  is what the simplifier is asked to keep the geometry within. What it
-  reports reaching, the largest over a level's meshes, is recorded on the
-  level (`LEVEL_REACHED_ERROR_KM`) and held at or under the target by its
-  own row: 0.460 m against 0.462 for `reduced`, 4.532 m against 4.619 for
+  is what the simplifier is asked for, against its own error metric; it is
+  not a measured or guaranteed bound on how far a level lies from the model.
+  The band's hysteresis draws `reduced` somewhat nearer than its edge on the
+  way back in, and a frame taller than 1800 pixels sees the same error at
+  more than half a pixel. What the simplifier reports reaching, the largest
+  over a level's meshes, is recorded on the level (`LEVEL_REACHED_ERROR_KM`)
+  and held at or under the target by its own row: 0.460 m against 0.462 for `reduced`, 4.532 m against 4.619 for
   `outline`. With the target tripled the row goes red, reading 1.372 m. It does not
   hold the recomputed normals or the welded texture coordinates, so what the
   switch does on screen is measured separately (Q7).
@@ -214,7 +219,7 @@ build had placed the nav lights.
 
 ## Verification
 
-- `npm test`: 5685 pass, 0 fail (349.3 s) after sage round 1; 5691 pass, 0 fail (355.6 s) on round 2's final tree. One earlier round-2 run timed out two `tests/station-proxy.test.ts` rows (43.6 s and 41.0 s against a 30 s limit) under a load average of 28–45 from other sessions; the file passed alone in 20.0 s and the next full run was green.
+- `npm test`: 5685 pass, 0 fail (349.3 s) after sage round 1; 5691 pass, 0 fail (355.6 s) on round 2's final tree. On sage round 5's tree, which carries round 4's child re-parenting and its row: 5694 pass, 0 fail (423.8 s), under a load average of 22–28 from other sessions. One earlier round-2 run timed out two `tests/station-proxy.test.ts` rows (43.6 s and 41.0 s against a 30 s limit) under a load average of 28–45 from other sessions; the file passed alone in 20.0 s and the next full run was green.
 - Round 2's browser probes, singly on the GPU lane: ship-visuals, boot,
   derelict, vent-display, station-route-traffic, shipyard, chase-orbit,
   traffic-mouth, docking-traffic, traffic-engagement, collision (both),
@@ -333,11 +338,13 @@ changes the sheet.
 
 **Q7. The reduced levels are a lossy change to the approved hull.** Like Q4,
 they are not the study's geometry. Each is made to a target error of half a
-device pixel where it is first drawn (in the 1800-pixel frame above), but
+device pixel at its band edge (in the 1800-pixel frame above; a target, not a bound), but
 its normals are recomputed and its texture coordinates welded, and the
 switch is visible in pixels.
 `scripts/measure-courier-level-pop.mjs` puts a courier on the chase camera's
-axis at 1,469 m (1.02 × the band's first edge), clock held, and draws it at
+axis at 1,469 m (1.02 × the band's first edge, inside its hysteresis, where a
+courier coming in still draws `reduced`; the band draws it nearer still, down
+to the edge itself), clock held, and draws it at
 `full` and at `reduced`. The footprint is the pixels the full hull moves past
 24/255 against the empty frame. The control is the full hull drawn twice.
 GPU lane, M1 Pro, 1440×900 at device scale 2:

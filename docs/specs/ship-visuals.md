@@ -217,15 +217,17 @@ page (`src/courier-cockpit-viewer.ts`), which does not load the hull.
 
 **The detail band switches the model.** Every Traffic courier is the O4, so
 past `DETAIL_RADII.full` a courier draws a reduced copy of it and past
-`DETAIL_RADII.reduced` a coarser one, each simplified to a geometric error of
-at most half a device pixel where it is first drawn **in `COURIER_LEVEL_FRAME`**
-— the near camera's 60° field of view on a frame 1800 device pixels tall,
-the player's retina panel and the frame the cost instruments measure on. The
-bound is a pixel quantity in that frame and not in any other: a taller frame
-sees the same error at more than half a pixel, in proportion to its height
-(`courierLevelErrorKm` is the target; each level records the error the
-simplifier reports it reached, and `tests/courier-hull.test.ts` holds that
-inside the target). The cabin and the pilot are left out of both, and
+`DETAIL_RADII.reduced` a coarser one, each made by meshoptimizer's simplifier
+to a **target error** of half a device pixel at its band edge **in
+`COURIER_LEVEL_FRAME`** — the near camera's 60° field of view on a frame 1800
+device pixels tall, the player's retina panel and the frame the cost
+instruments measure on (`courierLevelErrorKm`). It is a target and not a
+bound. The error is the simplifier's own metric, which it reports reaching
+and `tests/courier-hull.test.ts` holds inside the target; nothing measures
+how far a level actually lies from the model. The band's hysteresis draws
+`reduced` somewhat nearer than `DETAIL_RADII.full` on the way back in, and a
+taller frame sees the same error at more than half a pixel, in proportion to
+its height. How visible the switch is, is judged by eye in flight. The cabin and the pilot are left out of both, and
 neither takes a ray, so everything placed on the hull is placed on the
 approved model. Inside the first edge — the
 player's own courier in chase among them — the model is drawn as approved.

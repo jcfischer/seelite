@@ -42,7 +42,7 @@ import {
 } from "../src/ship-surface";
 import { ventThroats } from "../src/vent-plumes";
 import { meshStats } from "../scripts/lib/mesh-stats.mjs";
-import { decodeShippedGlb } from "./helpers/read-coriolis-glb";
+import { decodeShippedGlb } from "../scripts/lib/shipped-glb";
 
 const courier = () => {
 	const root = buildShipMesh("courier", HULL_SPECS.courier.variant).root;
@@ -514,7 +514,7 @@ describe("every Traffic courier is the model, so the detail band switches it (sa
 		}
 	});
 
-	test("the target is half a device pixel where each level is first drawn", () => {
+	test("the target is half a device pixel at each level's band edge", () => {
 		// 60° on a 1800-pixel frame: one pixel at d is 2 d tan 30° / 1800.
 		const pixelAt = (radii: number) =>
 			(2 * radii * reachKm * Math.tan(Math.PI / 6)) / 1800;
@@ -531,11 +531,12 @@ describe("every Traffic courier is the model, so the detail band switches it (sa
 		expect(courierLevelErrorKm("outline") * 1000).toBeCloseTo(4.619, 3);
 	});
 
-	test("each level's reached error is inside its target, and not trivially", () => {
+	test("each level's reported error is inside its target, and not trivially", () => {
 		// The row above checks the target; this one reads what the simplifier
 		// reports it reached on every mesh of the level, carried into
-		// kilometres of hull. A simplifier that overshot its target, or a
-		// target passed in the wrong units, is red here.
+		// kilometres of hull. The simplifier's own metric, so this row catches
+		// a target passed in the wrong units; it does not measure how far a
+		// level lies from the model, and is no bound on that (sage round 5).
 		const { reduced, outline } = levelsOf(courier());
 		const reachedKm = (o: THREE.Object3D) =>
 			o.userData[LEVEL_REACHED_ERROR_KM] as number;

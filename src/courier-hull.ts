@@ -31,10 +31,11 @@
  *
  * **Every Traffic courier is this model, so the detail band switches it.**
  * Inside the band's first edge (`DETAIL_RADII.full`) a courier is the
- * approved model, triangle for triangle; beyond it, a reduced copy whose
- * geometric error is half a device pixel where it is first drawn, in
+ * approved model, triangle for triangle; beyond it, a reduced copy made to a
+ * **target** error of half a device pixel at that edge, in
  * `COURIER_LEVEL_FRAME` (`courierLevelErrorKm`), and beyond the second edge
- * a coarser one held to the same rule. Both copies are made here, once,
+ * a coarser one made to the same target. A target and not a bound: the error
+ * is the simplifier's own metric, and how the switch looks is judged by eye. Both copies are made here, once,
  * from the loaded model, and share its materials and textures; the cabin and
  * the pilot behind the canopy are left out of both. A reduced level is drawn
  * and never measured: its meshes take no ray (`CourierLevelMesh`), so the nav lights, the muzzles
@@ -43,7 +44,10 @@
 import * as THREE from "three";
 import { MeshoptDecoder } from "three/addons/libs/meshopt_decoder.module.js";
 import { GLTFLoader } from "three/addons/loaders/GLTFLoader.js";
-import { toCreasedNormals } from "three/addons/utils/BufferGeometryUtils.js";
+import {
+	mergeVertices,
+	toCreasedNormals,
+} from "three/addons/utils/BufferGeometryUtils.js";
 import { MeshoptSimplifier } from "meshoptimizer/simplifier";
 import { DETAIL_RADII } from "./detail-level";
 import { disposeSubtree, shared } from "./gpu-teardown";
@@ -76,7 +80,7 @@ export const FIXTURE_SCREEN_PREFIX = "interior-screen-";
 const BEHIND_THE_CANOPY = /^(interior-|pilot-)/;
 
 /**
- * The frame a reduced level is held to: the near camera's 60° field of view
+ * The frame a reduced level's target error is set in: the near camera's 60° field of view
  * (`main.ts`) on the player's retina panel, 900 CSS pixels tall at device
  * scale 2 — the frame the cost instruments here measure on. A taller frame
  * would see a reduced level's error at more than half a pixel.
@@ -88,12 +92,16 @@ export const COURIER_LEVEL_FRAME = { fovDeg: 60, heightPx: 1800 } as const;
 const COURIER_LEVEL_CREASE_RAD = Math.PI / 6;
 
 /**
- * The geometric error a reduced level may carry, kilometres: half a device
- * pixel in `COURIER_LEVEL_FRAME` at the nearest the band draws that level,
- * which is the band edge it is entered at from nearer —
+ * The target error a reduced level is made to, kilometres: half a device
+ * pixel in `COURIER_LEVEL_FRAME` at the level's band edge —
  * `DETAIL_RADII.full` silhouette radii for `reduced` and
- * `DETAIL_RADII.reduced` for `outline`. A pixel quantity, so the band's
- * edges in radii decide where it applies and the frame decides how much.
+ * `DETAIL_RADII.reduced` for `outline`. It is what the simplifier is asked
+ * for, against its own error metric, and not a measured bound on how far the
+ * level lies from the model. `detailLevel`'s hysteresis also draws a level
+ * somewhat nearer than its edge on the way back in, and a frame taller than
+ * `COURIER_LEVEL_FRAME` sees the same error at more than half a pixel. A
+ * pixel quantity, so the band's edges in radii decide where it applies and
+ * the frame decides how much.
  */
 export function courierLevelErrorKm(level: "reduced" | "outline"): number {
 	const radii = level === "reduced" ? DETAIL_RADII.full : DETAIL_RADII.reduced;
@@ -152,15 +160,20 @@ function reducedGeometry(
 	if (uv) reduced.setAttribute("uv", uv);
 	reduced.setIndex(new THREE.BufferAttribute(kept, 1));
 	return {
-		geometry: toCreasedNormals(reduced, COURIER_LEVEL_CREASE_RAD),
+		// Creasing splits every corner; welding again restores the index, so
+		// a far courier shares a corner across the faces that agree on it.
+		geometry: mergeVertices(
+			toCreasedNormals(reduced, COURIER_LEVEL_CREASE_RAD),
+		),
 		errorM: reached,
 	};
 }
 
 /** Where a reduced level records the largest error its meshes reached, in
  *  kilometres of hull: what the simplifier reported, carried through each
- *  mesh's scale, so the claim that a level is held to
- *  `courierLevelErrorKm` is read off the level rather than off the target. */
+ *  mesh's scale. The simplifier's own metric, so a record of what the level
+ *  was made to against `courierLevelErrorKm`, not a measurement of how far
+ *  it lies from the model. */
 export const LEVEL_REACHED_ERROR_KM = "levelReachedErrorKm";
 
 /** The model reduced to `errorM` (study metres), as a template like the
