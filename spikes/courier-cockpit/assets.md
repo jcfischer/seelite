@@ -2,7 +2,7 @@
 
 All cockpit geometry was authored locally with Blender by `build_model.py`. No downloaded third-party model was used. FAL credentials were absent; Blender was explicitly permitted. The principal waived prior procedural-only asset constraints for this study.
 
-The current courier A hull is built from the repository's `src/ship-mesh.ts`; it was inspected from hero/top views before target selection. The viewer's station is the game's own default Coriolis, `public/models/coriolis.glb` from #791. It supplies context only; the viewer ships no copy of it.
+The current courier A hull is built from the repository's `src/ship-mesh.ts`; it was inspected from hero/top views before target selection. The viewer's station is the game's own default Coriolis, `src/models/coriolis.glb`, served under a content-hashed name (#834) from #791. It supplies context only; the viewer ships no copy of it.
 
 All images below were produced with the built-in imagegen tool in this conversation. Film/game names informed industrial materials and atmosphere, not extracted assets.
 

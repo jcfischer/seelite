@@ -51,6 +51,11 @@ export default defineConfig({
 	 */
 	plugins: [treeDeclaration(), socialPreview()],
 	/**
+	 * The game's models are referenced by URL (`src/model-urls.ts`), so vite
+	 * emits each under `assets/` with a content hash in its name (#834).
+	 */
+	assetsInclude: ["**/*.glb"],
+	/**
 	 * The neural voice's runtime resolves its files by its own module's URL,
 	 * and the dependency pre-bundler moved the module away from them: the
 	 * #604 prototype's worker could not load it pre-bundled. The worker hands

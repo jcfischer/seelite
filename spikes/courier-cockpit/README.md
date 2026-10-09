@@ -56,7 +56,7 @@ The model remains visibly faceted and lacks the target’s material wear. Contro
 
 ## In the game
 
-The cockpit is the game's cabin. `node spikes/courier-cockpit/prepare-game-asset.mjs` encodes `courier-cockpit.glb` losslessly (Meshopt geometry, WebP texture) into `public/models/courier-cockpit.glb`, the one cockpit file the game ships. Run it after every Blender export.
+The cockpit is the game's cabin. `node spikes/courier-cockpit/prepare-game-asset.mjs` encodes `courier-cockpit.glb` losslessly (Meshopt geometry, WebP texture) into `src/models/courier-cockpit.glb`, the one cockpit file the game ships. Run it after every Blender export.
 
 `src/cockpit-model.ts` loads it behind the same Retry panel as the Coriolis, before any Game is built, and places it in the cabin pass: one model metre is 0.1 cabin km (`CABIN_SCALE`), the pilot eye is at the origin, and the model is pitched up 0.242 rad so the game's level camera sees the viewer's pilot frame. Node #806 raised that eye 0.3 m above the viewer's, because the principal found the cabin too high in game; the game's frame now sits lower than the viewer's. The live scanner, hologram, flight and target faces from `main.ts` are mounted on the model's `screen-radar`, `screen-flight` and `screen-target` quads at their own aspect. `screen-systems` has no live source and is left unpowered. The viewer's three under-console lamps are carried into the cabin frame by `cabinLight`.
 
