@@ -1,0 +1,29 @@
+{
+  "renderer": "ANGLE (Apple, ANGLE Metal Renderer: Apple M1 Pro, Unspecified Version)",
+  "hull": "miner",
+  "variant": "b",
+  "authored": true,
+  "mechanisms": [
+    "feed",
+    "rotor",
+    "anchor-0-foot",
+    "anchor-3-foot"
+  ],
+  "meshes": 109,
+  "triangles": 283576,
+  "calls": {
+    "shown": {
+      "calls": 177,
+      "triangles": 343152
+    },
+    "hidden": {
+      "calls": 66,
+      "triangles": 59562
+    },
+    "miner": {
+      "calls": 111,
+      "triangles": 283590
+    }
+  },
+  "errors": []
+}

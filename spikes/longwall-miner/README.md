@@ -36,3 +36,42 @@ Capture guards served-worktree identity, observes the shared probe lock and requ
 Visual review evidence and remaining limitations belong in `evidence/review.md`. The requested stopping threshold is **7/10 independent visual fidelity**, reached at **7.1/10**, with principal visual acceptance distinct from that score. No merge or deployment is authorized by this design checkpoint.
 
 Principal visual approval: 2026-10-08, “approved. Prepare PR for final implementation by another agent”. See HANDOFF.md (parent directory from evidence) for binding decisions and outstanding integration work.
+
+## In the game (node #815)
+
+`miner/b` is this model. `prepare-flight-asset.mjs` writes the stowed export to
+`public/models/longwall-miner.glb` (Meshopt, lossless WebP, every vertex
+attribute, node transform to 10 µm and texture pixel verified after a decode;
+11.13 MiB). Only that file ships; everything else here stays review-only.
+
+```sh
+node spikes/longwall-miner/prepare-flight-asset.mjs
+node spikes/longwall-miner/capture-game.mjs round-N   # flown, chase view, 4 sides
+```
+
+- **Loading.** `src/longwall-model.ts` fetches it behind the Retry panel on
+  every page that builds a ship (the game, the postcard viewer, the ship
+  workbench); `tests/setup/longwall-model.ts` installs it under bun.
+  `buildShipMesh("miner", "b")` throws until it is installed, because the
+  envelope, collision box, vents and muzzles are measured off the drawn mesh.
+- **Frame.** Turned half a turn about Y to the game's nose-at-minus-Z,
+  kilometres, and centred on its own box, so a berth that places the ship's
+  origin places the box (the export's origin was 4.8 m forward of it and
+  would have parked 2.1 m into a slot berth's end wall).
+- **Fit.** The envelope is the measured 84.5 x 34.1 x 18.8 m (rounded up to
+  0.1 m); it fits every berth of trade, shipyard and refinery and none at an
+  outpost, exactly as the loft did. Vent
+  placement is re-measured and the shares re-solved to #181's law, so the
+  hull turns 7.5% slower than the loft did (84.5 m against 78.2) and nothing
+  else about its handling moved.
+- **Not changed.** Mass, thrust, hold (40 t), integrity and price. The 215 t
+  now reads 3.97 t per 1000 m³ against the roster's 1.2–2.4 band; the miner
+  is a pinned exemption in `tests/hull.test.ts` until the principal rules.
+- **Stowed, static.** Nothing articulates the anchors or the cutter in the
+  game; their named groups survive for whatever mining node poses them.
+- **Cost.** One flown miner is 111 draw calls and 283,590 triangles a frame
+  (`evidence/game-report.json`), against 66 calls for the rest of that frame;
+  the loft it replaced was 38 meshes and about 12k triangles. Every Traffic
+  miner clones the one template, so buffers are shared but draws are not.
+- **Wrecks.** A derelict miner is dark and untorn: the tear cuts a loft's
+  grid, and this model has none.
