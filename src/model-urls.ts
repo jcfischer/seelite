@@ -17,6 +17,11 @@ export const COURIER_COCKPIT_GLB_URL = new URL(
 	"./models/courier-cockpit.glb",
 	import.meta.url,
 ).href;
+/** Prepared by `spikes/courier-hull/prepare-game-asset.mjs` (node #812). */
+export const COURIER_HULL_GLB_URL = new URL(
+	"./models/courier-hull.glb",
+	import.meta.url,
+).href;
 export const LONGWALL_MINER_GLB_URL = new URL(
 	"./models/longwall-miner.glb",
 	import.meta.url,

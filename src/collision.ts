@@ -86,6 +86,27 @@ export const SEPARATION_KM = 1e-4;
  */
 export const RESTING_KM = 1.5 * SEPARATION_KM;
 
+/**
+ * A resting pair closing slower than this is not met: 1 nm/s, the residue a
+ * resolved pair's relative velocity is left with by rounding. Node #812's
+ * courier box left a ship pair at 2e-17 km/s after the pair solver had stopped
+ * it, and an exact `> 0` billed that as a resting impact of zero damage.
+ * `tests/collision-traffic.test.ts`'s pair-solver row reads "no longer
+ * closing" against this constant.
+ *
+ * The figure is set between two bounds rather than at the residue seen.
+ * Below it is rounding: a ship flies at frame velocities of tens of km/s
+ * (#104's ~30 km/s orbits), where one unit in the last place of a float64
+ * is 7.1e-15 km/s at 40 km/s, and a relative velocity is a difference of
+ * such figures — so the floor sits about a hundred and forty of those units
+ * up, and the 2e-17 seen is far under it. Above it is anything a
+ * contact could mean: 1 nm/s moves a pair 0.1 nm in a `MAX_DT` step,
+ * against a `SEPARATION_KM` of 10 cm, and the slowest speed a contact law
+ * names, `V_SCRAPE_KMS`, is 0.05 km/s. The value is a choice inside that
+ * gap, not a measurement.
+ */
+export const RESTING_CLOSING_FLOOR_KMS = 1e-12;
+
 /** The sweep declares an impact at or under this gap. */
 const CONTACT_KM = 0.5 * SEPARATION_KM;
 
@@ -987,7 +1008,7 @@ function classifyPairs(
 					);
 			const closing = closingSpeed(sub(ship.velStart, surfaceVel), gap.normal);
 			touching.push({ pair, normal: gap.normal, closingKms: closing });
-			if (closing > 0)
+			if (closing > RESTING_CLOSING_FLOOR_KMS)
 				result.impacts.push({
 					solid: index,
 					timeS: 0,

@@ -28,6 +28,12 @@ export type ChangelogEntry = {
 };
 
 export const CHANGELOG: readonly ChangelogEntry[] = [
+	// Node #812: approved by the principal on 2026-10-09; main date pending.
+	{
+		date: "2026-10-09",
+		text: "The courier has a new hull: a long tapered body between twin drive nacelles, with seated hatches, slope-aligned grilles and a pilot visible under the canopy.",
+		node: 812,
+	},
 	// Node #792: approved by the principal on 2026-10-08.
 	{
 		date: "2026-10-08",

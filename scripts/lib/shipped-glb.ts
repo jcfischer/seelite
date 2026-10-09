@@ -1,15 +1,17 @@
 import { readFileSync } from "node:fs";
-import { MeshoptDecoder } from "three/addons/libs/meshopt_decoder.module.js";
 import { GLTFLoader } from "three/addons/loaders/GLTFLoader.js";
+import { MeshoptDecoder } from "three/addons/libs/meshopt_decoder.module.js";
 
-/** Decode a shipped GLB through the same loader as the browser, for the
- *  headless tier and the measurement scripts alike (moved out of `tests/`
- *  in node #815, sage round 8). Remove only texture references: Bun has no
- *  image decoder. Materials, names, compressed vertex buffers and node
- *  transforms are retained, including normals. */
-/** Decode a GLB at its authored scale, as `readCoriolisGlb` does. The path is
- *  from the repository root: shipped models sit under `src/models/`, and the
- *  review-only study files beside their spike's README. */
+/**
+ * Decode a GLB at its authored scale, through the same loader as the
+ * browser. The path is from the repository root: shipped models sit under
+ * `src/models/`, and the review-only study files beside their spike's README.
+ * Only texture references are removed, because Bun has no image decoder;
+ * materials, names, compressed vertex buffers and node transforms are kept,
+ * normals and texture coordinates included. In `scripts/lib` rather than the
+ * test tree because a shipped instrument (`scripts/measure-vent-placement.ts`)
+ * decodes with it too.
+ */
 export async function decodeShippedGlb(repoPath: string) {
 	const file = readFileSync(new URL("../../" + repoPath, import.meta.url));
 	if (file.readUInt32LE(0) !== 0x46546c67 || file.readUInt32LE(4) !== 2)

@@ -26,6 +26,7 @@ import { describe, expect, test } from "bun:test";
 import * as THREE from "three";
 import {
 	type ShipMotion,
+	RESTING_CLOSING_FLOOR_KMS,
 	RESTITUTION,
 	V_SCRAPE_KMS,
 	hullBox,
@@ -489,8 +490,9 @@ describe("collision.md §9.1.13: ship against ship (C4b)", () => {
 			momentum(b.massT, pair.b.vel),
 		);
 		expect(length(sub(after, before))).toBeLessThan(1e-9);
+		// "No longer closing" to the resting rule's own floor.
 		expect(dot(sub(pair.a.vel, pair.b.vel), v3(0, 0, -1))).toBeGreaterThan(
-			-1e-12,
+			-RESTING_CLOSING_FLOOR_KMS,
 		);
 		// The next step starts touching, not inside: no ghost, nothing billed.
 		const next = sweepShipPair(

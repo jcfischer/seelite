@@ -1,0 +1,16 @@
+
+> seelite@0.1.0 probe:select
+> node scripts/select-probes.mjs --base origin/main --head HEAD --intent Preserve an approved courier hull GLB, Blender sources and isolated spikes viewer for handoff; production Game, ship renderer, cabin, save and build entries are unchanged.
+
+probe selection: semantic
+reason: TypeSafe evaluated 96 independent probe contracts; only probabilities at or below 0.25 were excluded.
+selected: 7
+  probe-cabin-pass.mjs (p=0.310)
+  probe-chase-orbit.mjs (p=0.460)
+  probe-chase-view.mjs (p=0.270)
+  probe-cockpit-surface.mjs (p=0.630)
+  probe-model-viewer.mjs (p=0.670)
+  probe-pointer-lock.mjs (p=0.430)
+  probe-ship-visuals.mjs (p=0.330)
+TypeSafe: jev-1.13.0, 23542 input + 1835 output tokens
+decision latency: 578 ms

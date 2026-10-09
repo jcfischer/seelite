@@ -33,7 +33,7 @@ import {
 } from "../src/ship-mesh";
 import { ventThroats } from "../src/vent-plumes";
 import { installShippedLongwall } from "../scripts/lib/install-longwall";
-import { decodeShippedGlb } from "../scripts/lib/decode-glb";
+import { decodeShippedGlb } from "../scripts/lib/shipped-glb";
 import {
 	type Surface,
 	countBeyond,

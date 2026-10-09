@@ -1,0 +1,20 @@
+{
+  "source_sha256": "3e588c7d62395f6c1e84287a81379af7346c0b9a8faa0b32ac34608a5d410a7a",
+  "source": "source/courier-cockpit.blend",
+  "original_triangles": 36876,
+  "adapted_triangles": 13690,
+  "kept_components": 518,
+  "removed_components": 363,
+  "objects": [
+    "interior-weathered-blue-steel",
+    "interior-screen-target",
+    "interior-screen-systems",
+    "interior-screen-radar",
+    "interior-screen-flight",
+    "interior-rubber-and-recess",
+    "interior-guarded-red",
+    "interior-graphite-housings",
+    "interior-exposed-machined-edges",
+    "interior-amber-work-lights"
+  ]
+}

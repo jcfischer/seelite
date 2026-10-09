@@ -1,0 +1,12 @@
+
+> seelite@0.1.0 probe:select
+> node scripts/select-probes.mjs --base origin/main --head HEAD --intent Refine an isolated courier hull inspection viewer with sealed rear hulls and flush deck covers without changing the production game
+
+probe selection: semantic
+reason: TypeSafe evaluated 96 independent probe contracts; only probabilities at or below 0.25 were excluded.
+selected: 3
+  probe-chase-orbit.mjs (p=0.330)
+  probe-model-viewer.mjs (p=0.680)
+  probe-pointer-lock.mjs (p=0.360)
+TypeSafe: jev-1.13.0, 22657 input + 1835 output tokens
+decision latency: 545 ms

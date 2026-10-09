@@ -104,14 +104,16 @@
 // into `lib/hull-chase.mjs` (#723), which carries #381 D11's label now.
 
 import { gameUrl } from "./lib/game-url.mjs";
-import { measureHullChase } from "./lib/hull-chase.mjs";
+import { measureHullChase, readHullSubject } from "./lib/hull-chase.mjs";
 // The painted-hull band and floors are derived in `lib/hull-luma.mjs`, from readings recorded
-// against a named finish. That module owns every figure and the reason for it;
+// against a named subject. That module owns every figure and the reason for it;
 // nothing about the calibration is restated in this file.
 import {
+	describeHullSubject,
 	HULL_LUMA_BAND,
 	HULL_LUMA_CALIBRATION,
 	HULL_LUMA_FLOORS,
+	isCalibratedHullSubject,
 } from "./lib/hull-luma.mjs";
 import { installViewFraming } from "./lib/view-placement.mjs";
 /**
@@ -487,6 +489,7 @@ const down = framings
 	: missing;
 const arms = [up, down];
 const hull = await measureHullChase(page, HULL_SAMPLES);
+const hullSubject = await readHullSubject(page);
 
 const livePeak = Math.max(...liveEmissives.materials.map((m) => m.intensity));
 t.check(
@@ -583,25 +586,26 @@ if (!hull.missing) {
 	const lowerQuartileMin = Math.min(...hull.lowerQuartiles);
 	const medianMin = Math.min(...hull.medians);
 	// Before either band row is read: the calibration is a property of the
-	// finish, so a page carrying a different one makes both rows meaningless
-	// rather than red. This says so by name instead of leaving a later reader to
-	// bisect two numeric failures back to a finish commit, which is what #294
+	// subject — the hull, and since node #812 its authored model — so a page
+	// drawing a different one makes both rows meaningless rather than red. This
+	// says so by name instead of leaving a later reader to bisect two numeric
+	// failures back to the commit that changed the subject, which is what #294
 	// had to do.
 	const hullFinish = hull.finishes?.hull ?? "no finish reported";
 	const stationFinish = hull.finishes?.station ?? "no finish reported";
-	const onCalibratedFinish = hullFinish === HULL_LUMA_CALIBRATION.finish;
+	const onCalibratedSubject = isCalibratedHullSubject(hullSubject);
 	t.check(
-		"the hull on screen is the finish the band was calibrated against",
-		onCalibratedFinish,
-		`measured ${hullFinish}, ` +
-			`calibrated ${HULL_LUMA_CALIBRATION.finish} at ${HULL_LUMA_CALIBRATION.ref}`,
+		"the hull on screen is the subject the band was calibrated against",
+		onCalibratedSubject,
+		`measured ${describeHullSubject(hullSubject)}, ` +
+			`calibrated ${describeHullSubject(HULL_LUMA_CALIBRATION.subject)} at ${HULL_LUMA_CALIBRATION.ref}`,
 	);
 	// Both numeric rows are **gated on that**, rather than reported beside it.
-	// They compare display codes against a floor derived for one named finish, so
-	// on any other finish a pass is not evidence of anything — and a green row is
+	// They compare display codes against a floor derived for one named subject,
+	// so on any other a pass is not evidence of anything — and a green row is
 	// read as one. The readings are still printed below, where a figure is a note
 	// rather than a check.
-	if (onCalibratedFinish) {
+	if (onCalibratedSubject) {
 		t.check(
 			"the brightest painted hull pixel stays inside the post-tone-map band",
 			min >= HULL_LUMA_BAND.min && max <= HULL_LUMA_BAND.max,
@@ -625,7 +629,7 @@ if (!hull.missing) {
 	);
 	console.log(
 		`  finish     hull ${hullFinish}, station ${stationFinish} ` +
-			`(band calibrated on ${HULL_LUMA_CALIBRATION.finish} at ${HULL_LUMA_CALIBRATION.ref})`,
+			`(not part of the key: the presets reach only the authored courier's glows)`,
 	);
 	console.log(
 		`  exposure   bloom strength ${hull.exposure.bloom.strength}  ` +

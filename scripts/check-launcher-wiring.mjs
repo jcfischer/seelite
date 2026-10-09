@@ -175,6 +175,14 @@ const EXEMPT = new Map([
 		"#201's headed occlusion-cost instrument; a sibling of #99's and exempt for the same reason — #98 settled that there is no frame-time floor in this game, so it prints four arms and a separation count for a receipt and gates on nothing. What it does refuse is a software rasteriser, which throws out of the run rather than counting a failed check",
 	],
 	[
+		"measure-courier-hull-cost.mjs",
+		"node #812's headed instrument pricing the authored courier against the procedural Kestrel on one page; like #201's it prints medians and a separation count for a receipt and gates on nothing — #98 settled that there is no frame-time floor — and a software rasteriser or a page whose courier is not the authored model throws out of the run",
+	],
+	[
+		"measure-courier-level-pop.mjs",
+		"node #812's headed instrument reading what the courier's reduced level changes on screen where the detail band first draws it; it prints a footprint, a control and a moved count per heading for the receipt's Q7 and gates on nothing — the principal judges the switch — and a software rasteriser, a page whose courier is not the authored model, a hull with no footprint or a control that moved throws out of the run",
+	],
+	[
 		"measure-cruise-guard-cost.mjs",
 		"#229's headed simulation-step CPU instrument; it proves once-per-body preparation and reports timings without imposing a machine-independent threshold",
 	],

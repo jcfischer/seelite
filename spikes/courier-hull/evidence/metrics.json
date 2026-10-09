@@ -1,0 +1,17 @@
+{
+  "gpu": "ANGLE (Apple, ANGLE Metal Renderer: Apple M1 Pro, Unspecified Version)",
+  "errors": [],
+  "loaded": true,
+  "fps": 59.65598382659995,
+  "triangles": 1257214,
+  "calls": 94,
+  "modelTriangles": 314292,
+  "meshCount": 18,
+  "bounds": [
+    55.52000045776367,
+    10.110041618347168,
+    60.952959060668945
+  ],
+  "view": "hero",
+  "controls": "orbit, target, lights, rotation, presets and PNG export passed"
+}

@@ -462,9 +462,14 @@ test("dark roster materials are isolated and the built envelope is unchanged", (
 		}
 	});
 	expect(darkMaterials).toBeGreaterThan(0);
-	const liveMaterial = (
-		live.children.find((o) => o instanceof THREE.Mesh) as THREE.Mesh
-	).material;
+	// The first mesh anywhere under the root: the authored courier (node
+	// #812) keeps its meshes in a frame group rather than as the root's own
+	// children.
+	let firstMesh: THREE.Mesh | undefined;
+	live.traverse((o) => {
+		if (!firstMesh && o instanceof THREE.Mesh) firstMesh = o;
+	});
+	const liveMaterial = (firstMesh as THREE.Mesh).material;
 	dark.traverse((o) => {
 		if (o instanceof THREE.Mesh) expect(o.material).not.toBe(liveMaterial);
 	});

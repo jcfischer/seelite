@@ -1,6 +1,6 @@
 import { MeshoptSimplifier } from "meshoptimizer/simplifier";
 import { installLongwallModel } from "../../src/ship-mesh";
-import { decodeShippedGlb } from "./decode-glb";
+import { decodeShippedGlb } from "./shipped-glb";
 
 /** Install the shipped Longwall B (node #815) as the browser does, through the
  *  same loader with textures stripped: `buildShipMesh("miner", "b")` refuses

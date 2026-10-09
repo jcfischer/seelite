@@ -20584,9 +20584,11 @@ if (postcard) {
 			`postcard: entry accepted a refused recipe (${postcard.reason})`,
 		);
 	const { prepareCockpitModel } = await import("./cockpit-model");
+	const { prepareCourierHullModel } = await import("./courier-hull");
 	const { prepareLongwallModel } = await import("./longwall-model");
 	await (await import("./coriolis-flight")).prepareCoriolisPage([
 		prepareCockpitModel,
+		prepareCourierHullModel,
 		prepareLongwallModel,
 	]);
 	const game = new Game(postcard.recipe.seed, null, null, postcard.recipe);
@@ -20597,11 +20599,16 @@ if (postcard) {
 } else if (query.has("model-viewer")) {
 	if (query.get("model-viewer") === "station")
 		await (await import("./coriolis-flight")).prepareCoriolisPage();
-	else if (query.get("model-viewer") === "ship")
-		// The ship family draws every variant, and `miner/b` is authored (node #815).
+	// The ship workbench draws every variant: the courier the game flies
+	// (node #812) and the authored `miner/b` (node #815).
+	else if (query.get("model-viewer") === "ship") {
+		const { prepareCourierHullModel } = await import("./courier-hull");
+		const { prepareLongwallModel } = await import("./longwall-model");
 		await (await import("./coriolis-flight")).prepareCoriolisPage([
-			(await import("./longwall-model")).prepareLongwallModel,
+			prepareCourierHullModel,
+			prepareLongwallModel,
 		]);
+	}
 	const { mountModelViewer } = await import("./model-viewer");
 	mountModelViewer();
 	// The workbench owns an isolated render loop, so no live simulation is built
@@ -20665,20 +20672,23 @@ if (postcard) {
 	// since nothing yet says whether the overlay opens, and moves into the
 	// overlay once the plan says it does.
 	//
-	// The miner is not in map #1's boot set (cockpit and home exterior only):
-	// awaiting it here is an interim breach the principal waived on node #838
-	// (2026-10-09, issuecomment-6080935296) until #838 moves it out of boot and
-	// gives `miner/b` a stand-in.
+	// The courier hull (node #812) and the miner (node #815) are not in map
+	// #1's boot set (cockpit and home exterior only): awaiting them here is an
+	// interim breach the principal waived on node #838 (2026-10-09,
+	// issuecomment-6080935296) until #838 moves them out of boot and gives
+	// each a stand-in.
 	const loading = loadRelay(loadingPanel("game"));
 	const stationModel = Promise.all([
 		import("./coriolis-flight"),
 		import("./cockpit-model"),
+		import("./courier-hull"),
 		import("./longwall-model"),
-	]).then(([m, cockpit, longwall]) =>
+	]).then(([m, cockpit, courier, longwall]) =>
 		loadRequiredModels(
 			[
 				m.prepareCoriolisModel,
 				cockpit.prepareCockpitModel,
+				courier.prepareCourierHullModel,
 				longwall.prepareLongwallModel,
 			],
 			loading.view,

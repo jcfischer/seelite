@@ -21,10 +21,21 @@ import * as THREE from "three";
 import { buildDerelictMesh, disposeDerelict } from "../src/derelict-mesh";
 import { drawnBoxes, drawnHullBox, tearHull } from "../src/derelict-tear";
 import { HULL_SPECS, type HullId, PURCHASABLE_HULL_IDS } from "../src/hull";
-import { buildShipMesh, isAuthoredHull } from "../src/ship-mesh";
+import { buildShipMesh } from "../src/ship-mesh";
 
 /** The hulls a derelict is drawn from (`derelict.ts`), at their flown variant. */
 const live = (id: HullId) => buildShipMesh(id, HULL_SPECS[id].variant).root;
+
+/**
+ * The purchasable hulls the tear can cut: the lofted, procedural ones. The
+ * courier (node #812) and the miner (Longwall B, node #815) draw authored
+ * models, which have no lofted part for `tearHull` to open, so their wrecks
+ * are the whole hull gone dark — held as that below rather than left out
+ * unsaid.
+ */
+const TEARABLE = PURCHASABLE_HULL_IDS.filter(
+	(id) => !live(id).userData.authored,
+);
 
 /** FNV-1a over every mesh's positions and index, in traversal order. */
 function geometryHash(root: THREE.Object3D) {
@@ -74,13 +85,22 @@ const drawnTriangles = (mesh: THREE.Mesh) => {
 	return out;
 };
 
-// The hulls a tear can cut: every lofted one. The authored Longwall B (node
-// #815) has no loft grid, and the envelope row below says what its wreck is.
-const TORN_HULL_IDS = PURCHASABLE_HULL_IDS.filter(
-	(id) => !isAuthoredHull(id, HULL_SPECS[id].variant),
-);
-
 describe("a derelict's envelope is the intact hull's", () => {
+	test("the authored courier's wreck is whole: dark, inside its envelope, untorn", () => {
+		// Node #812's gap, stated: a courier wreck shows no torn section or
+		// exposed frame until the authored model carries parts a tear can cut.
+		expect(TEARABLE).not.toContain("courier");
+		const intact = drawnHullBox(live("courier"));
+		const wreck = buildDerelictMesh("courier");
+		expect(wreck.userData.torn).toBeNull();
+		const drawn = drawnHullBox(wreck);
+		for (const axis of ["x", "y", "z"] as const) {
+			expect(drawn.min[axis]).toBeCloseTo(intact.min[axis], 4);
+			expect(drawn.max[axis]).toBeCloseTo(intact.max[axis], 4);
+		}
+		disposeDerelict(wreck);
+	});
+
 	for (const id of PURCHASABLE_HULL_IDS)
 		test(`${id}: the drawn box is equal, and it is torn`, () => {
 			const intact = drawnHullBox(live(id));
@@ -108,7 +128,7 @@ describe("a derelict's envelope is the intact hull's", () => {
 			// wreck is the dark hull S26 shipped first. Stated here rather than
 			// skipped, so the day it tears this row says so.
 			const sites = wreck.userData.torn?.sites ?? [];
-			const tears = !isAuthoredHull(id, HULL_SPECS[id].variant);
+			const tears = TEARABLE.includes(id);
 			expect([id, sites.length > 0]).toEqual([id, tears]);
 			expect([id, (wreck.userData.torn?.frame ?? 0) > 0]).toEqual([id, tears]);
 			disposeDerelict(wreck);
@@ -118,8 +138,8 @@ describe("a derelict's envelope is the intact hull's", () => {
 		// The instrument's own control: delete every fuselage triangle touching
 		// the nose's plane — which is the hull's foremost — and `drawnHullBox`
 		// moves while `Box3.setFromObject` does not.
-		const root = live("courier");
-		const fuselage = root.getObjectByName("courier-fuselage") as THREE.Mesh;
+		const root = live("interceptor");
+		const fuselage = root.getObjectByName("interceptor-fuselage") as THREE.Mesh;
 		const before = drawnHullBox(root);
 		const cut = fuselage.geometry.clone();
 		const position = cut.getAttribute("position");
@@ -170,7 +190,7 @@ describe("a derelict's envelope is the intact hull's", () => {
 });
 
 describe("every torn part is attached to the structure", () => {
-	for (const id of TORN_HULL_IDS)
+	for (const id of TEARABLE)
 		test(`${id}: no tear under another part, one skin, every member carried`, () => {
 			const intact = live(id);
 			const root = live(id);
@@ -299,7 +319,7 @@ describe("the folded rim is lit as the shape it was folded into", () => {
 	// twins unmatched, so the torn skin is held to that same rule recomputed
 	// over what it now draws — and a rim still carrying the intact hull's
 	// normals is a fold the light cannot see.
-	for (const id of TORN_HULL_IDS)
+	for (const id of TEARABLE)
 		test(`${id}: every torn part's normals are its own surface's`, () => {
 			const intact = live(id);
 			const root = live(id);
@@ -383,7 +403,7 @@ describe("the roster's own mounting rule holds on a wreck", () => {
 	test("every nacelle still intersects a named structural mount", () => {
 		// `ship-mesh.test.ts`'s rule, run over the torn hull and measured from
 		// what each part draws: a torn nacelle is the case that could fail it.
-		for (const id of TORN_HULL_IDS) {
+		for (const id of TEARABLE) {
 			const wreck = buildDerelictMesh(id);
 			const named = (test: (name: string) => boolean) =>
 				wreck.children.filter(

@@ -1,4 +1,4 @@
-import { decodeShippedGlb } from "../../scripts/lib/decode-glb";
+import { decodeShippedGlb } from "../../scripts/lib/shipped-glb";
 
 /** Decode the shipped geometry through the same loader as the browser.
  * Remove only texture references: Bun has no image decoder. Materials, names,

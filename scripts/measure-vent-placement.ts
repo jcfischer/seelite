@@ -3,6 +3,9 @@
  *
  *   bun scripts/measure-vent-placement.ts
  *
+ * It installs the shipped courier model first (node #812), so the courier's
+ * row is measured on the hull the game draws.
+ *
  * The table put every vent on its envelope's box, and no attitude vent's line
  * of action met the hull on any hull: the roll pairs passed 9 to 28 m clear of
  * the five larger ones. A pair may move in any direction that leaves it pure
@@ -36,6 +39,9 @@ import {
 	coupleArms,
 } from "../src/hull";
 import { buildShipMesh } from "../src/ship-mesh";
+import { installShippedLongwall } from "./lib/install-longwall";
+import { installShippedCourierHull } from "./lib/shipped-courier-hull";
+import { axisLineTester, hullMetal } from "./lib/axis-line-hits";
 
 /** Steps per half-extent: a reach is found to a quarter of a percent. */
 const STEPS = 400;
@@ -48,206 +54,25 @@ type Vec = readonly [number, number, number];
  *  along `dir` meet metal? `p` in kilometres from the envelope's centre,
  *  which is the whole root's box centre: the frame `ventThroats` draws in,
  *  and the box `tests/hull.test.ts` holds `env` to. The metal set is smaller
- *  than that box on purpose; the origin is not.
- *
- *  **Three's own raycast, bucketed (node #815).** Every line here runs along
- *  an axis, so a triangle can only be met where its box, projected across
- *  that axis, covers the line. Each triangle is filed in a grid over the two
- *  other axes once, and a query runs `Mesh.raycast`'s own tests — the world
- *  sphere, the local box, `checkIntersection`'s sides and range — on the
- *  triangles of its cell alone. The filter is padded, so it only ever drops a
- *  triangle the raycast would also miss, and the answer is the raycaster's:
- *  every other hull's stored placement is unchanged. Without it Longwall B's
- *  283k triangles took the search past ten minutes. */
+ *  than that box on purpose; the origin is not. */
 function lineTester(root: THREE.Object3D) {
 	root.updateMatrixWorld(true);
 	const box = new THREE.Box3().setFromObject(root);
 	const centre = box.getCenter(new THREE.Vector3());
-	const size = box.getSize(new THREE.Vector3());
-	const reach = size.length();
-	const metal: THREE.Mesh[] = [];
-	root.traverse((o) => {
-		const mesh = o as THREE.Mesh;
-		if (
-			mesh.isMesh &&
-			!(mesh as THREE.InstancedMesh).isInstancedMesh &&
-			!mesh.name.endsWith("-exhaust")
-		)
-			metal.push(mesh);
-	});
-	interface Tri {
-		mesh: THREE.Mesh;
-		material: THREE.Material;
-		a: number;
-		b: number;
-		c: number;
-		min: THREE.Vector3;
-		max: THREE.Vector3;
-	}
-	const tris: Tri[] = [];
-	const v = new THREE.Vector3();
-	for (const mesh of metal) {
-		const { geometry } = mesh;
-		const material = mesh.material;
-		const index = geometry.index;
-		const position = geometry.getAttribute("position");
-		if (!position) continue;
-		const range = geometry.drawRange;
-		const count = index ? index.count : position.count;
-		const spans: { material: THREE.Material; start: number; end: number }[] =
-			Array.isArray(material)
-				? geometry.groups.map((g) => ({
-						material: material[g.materialIndex ?? 0],
-						start: Math.max(g.start, range.start),
-						end: Math.min(count, g.start + g.count, range.start + range.count),
-					}))
-				: [
-						{
-							material,
-							start: Math.max(0, range.start),
-							end: Math.min(count, range.start + range.count),
-						},
-					];
-		for (const span of spans) {
-			if (!span.material) continue;
-			for (let i = span.start; i < span.end; i += 3) {
-				const ids = index
-					? [index.getX(i), index.getX(i + 1), index.getX(i + 2)]
-					: [i, i + 1, i + 2];
-				const min = new THREE.Vector3(Infinity, Infinity, Infinity);
-				const max = new THREE.Vector3(-Infinity, -Infinity, -Infinity);
-				for (const id of ids) {
-					mesh.getVertexPosition(id, v).applyMatrix4(mesh.matrixWorld);
-					min.min(v);
-					max.max(v);
-				}
-				tris.push({
-					mesh,
-					material: span.material,
-					a: ids[0],
-					b: ids[1],
-					c: ids[2],
-					min,
-					max,
-				});
-			}
-		}
-	}
-	// A grid per axis over the other two, and a pad far above float error.
-	const CELLS = 64;
-	const pad = reach * 1e-6;
-	const AXES = [
-		[1, 2],
-		[0, 2],
-		[0, 1],
-	] as const;
-	const cellOf = (value: number, axis: number) => {
-		const t = (value - box.min.getComponent(axis)) / size.getComponent(axis);
-		return Math.min(CELLS - 1, Math.max(0, Math.floor(t * CELLS)));
-	};
-	const grids = AXES.map(([u, w]) => {
-		const grid: Tri[][] = Array.from({ length: CELLS * CELLS }, () => []);
-		for (const tri of tris)
-			for (
-				let i = cellOf(tri.min.getComponent(u) - pad, u);
-				i <= cellOf(tri.max.getComponent(u) + pad, u);
-				i++
-			)
-				for (
-					let j = cellOf(tri.min.getComponent(w) - pad, w);
-					j <= cellOf(tri.max.getComponent(w) + pad, w);
-					j++
-				)
-					grid[i * CELLS + j].push(tri);
-		return grid;
-	});
-
-	const caster = new THREE.Raycaster();
-	const sphere = new THREE.Sphere();
-	const recast = new THREE.Ray();
-	const sphereHit = new THREE.Vector3();
-	const inverse = new THREE.Matrix4();
-	const local = new THREE.Ray();
-	const pA = new THREE.Vector3();
-	const pB = new THREE.Vector3();
-	const pC = new THREE.Vector3();
-	const point = new THREE.Vector3();
-	/** `Mesh.raycast`'s culls, as three runs them before any triangle. */
-	const meshPasses = (mesh: THREE.Mesh): boolean => {
-		const geometry = mesh.geometry;
-		if (geometry.boundingSphere === null) geometry.computeBoundingSphere();
-		sphere
-			.copy(geometry.boundingSphere as THREE.Sphere)
-			.applyMatrix4(mesh.matrixWorld);
-		recast.copy(caster.ray).recast(caster.near);
-		if (!sphere.containsPoint(recast.origin)) {
-			if (recast.intersectSphere(sphere, sphereHit) === null) return false;
-			if (
-				recast.origin.distanceToSquared(sphereHit) >
-				(caster.far - caster.near) ** 2
-			)
-				return false;
-		}
-		inverse.copy(mesh.matrixWorld).invert();
-		local.copy(caster.ray).applyMatrix4(inverse);
-		return !(
-			geometry.boundingBox !== null &&
-			!local.intersectsBox(geometry.boundingBox)
-		);
-	};
+	const reach = box.getSize(new THREE.Vector3()).length();
+	const metal = hullMetal(root);
+	// Three's raycast, answered from a grid: every line here runs along an
+	// axis, and the authored courier's 354k triangles made the plain
+	// raycast an hour's work (node #812, `lib/axis-line-hits.ts`).
+	const meets = axisLineTester(metal);
 	return (p: Vec, dir: Vec): boolean => {
-		const axis = dir.findIndex((c) => c !== 0);
-		if (axis < 0 || dir.filter((c) => c !== 0).length !== 1)
-			throw new Error("lineTester: lines run along an axis");
 		const d = new THREE.Vector3(...dir);
-		const through = new THREE.Vector3(...p).add(centre);
-		caster.set(through.clone().addScaledVector(d, -2 * reach), d);
-		caster.far = 4 * reach;
-		const [u, w] = AXES[axis];
-		const pu = through.getComponent(u);
-		const pw = through.getComponent(w);
-		const cell = grids[axis][cellOf(pu, u) * CELLS + cellOf(pw, w)];
-		const passed = new Map<THREE.Mesh, boolean>();
-		for (const tri of cell) {
-			if (
-				pu < tri.min.getComponent(u) - pad ||
-				pu > tri.max.getComponent(u) + pad ||
-				pw < tri.min.getComponent(w) - pad ||
-				pw > tri.max.getComponent(w) + pad
-			)
-				continue;
-			let ok = passed.get(tri.mesh);
-			if (ok === undefined) {
-				ok = meshPasses(tri.mesh);
-				passed.set(tri.mesh, ok);
-			}
-			if (!ok) continue;
-			// `meshPasses` left this mesh's local ray in `local`; recompute it, as
-			// another mesh's may have replaced it since.
-			inverse.copy(tri.mesh.matrixWorld).invert();
-			local.copy(caster.ray).applyMatrix4(inverse);
-			tri.mesh.getVertexPosition(tri.a, pA);
-			tri.mesh.getVertexPosition(tri.b, pB);
-			tri.mesh.getVertexPosition(tri.c, pC);
-			// `checkIntersection`, sides and range as three has them.
-			const hit =
-				tri.material.side === THREE.BackSide
-					? local.intersectTriangle(pC, pB, pA, true, point)
-					: local.intersectTriangle(
-							pA,
-							pB,
-							pC,
-							tri.material.side === THREE.FrontSide,
-							point,
-						);
-			if (hit === null) continue;
-			const distance = caster.ray.origin.distanceTo(
-				point.applyMatrix4(tri.mesh.matrixWorld),
-			);
-			if (distance < caster.near || distance > caster.far) continue;
-			return true;
-		}
-		return false;
+		return meets(
+			new THREE.Vector3(...p).add(centre).addScaledVector(d, -2 * reach),
+			d,
+			0,
+			4 * reach,
+		);
 	};
 }
 
@@ -332,8 +157,11 @@ export function measureVentPlacement(
 }
 
 if (import.meta.main) {
-	// `miner/b` is the authored Longwall B, built only once it is installed.
-	await (await import("./lib/install-longwall")).installShippedLongwall();
+	// The courier the game flies is the authored model (node #812), and
+	// `miner/b` is the authored Longwall B (node #815), built only once it is
+	// installed.
+	await installShippedCourierHull();
+	await installShippedLongwall();
 	const pct = (x: number) => `${(100 * x).toFixed(1)}%`;
 	const rows = HULL_IDS.map((id) => {
 		const spec = HULL_SPECS[id];

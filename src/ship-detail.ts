@@ -86,7 +86,23 @@ interface VisualState {
 	/** Each mechanism mesh's `castShadow` as the occlusion marking left it,
 	 *  held while the band is past `full` and put back on return. */
 	castKept?: Map<THREE.Object3D, boolean>;
+	/** An authored hull's own levels (node #812), one drawn at a time. */
+	levels?: ShipLevels;
 }
+
+/**
+ * An authored hull's stand-ins for the detail band (node #812): the model at
+ * `full`, and reduced copies of it for the two farther levels. Only the one
+ * the band names is drawn.
+ */
+export type ShipLevels = Readonly<Record<DetailLevel, THREE.Object3D>>;
+
+/** The `userData` key a reduced level's mesh carries: drawn, never measured.
+ *  Anything that measures a hull's metal skips what carries it. */
+export const LEVEL_STAND_IN = "levelStandIn";
+
+export const isLevelStandIn = (object: THREE.Object3D): boolean =>
+	object.userData[LEVEL_STAND_IN] === true;
 
 /**
  * One mesh of an authored hull's machinery and the band it stops drawing at.
@@ -327,6 +343,33 @@ export function buildShipDetails(
 }
 
 /**
+ * The visual state of a hull that carries no generated detail: an authored
+ * model (node #812's courier) brings its own machinery, so there is no
+ * clutter for the quality gate to switch. What the band switches instead is
+ * the model itself, when the hull carries `levels`: the full model inside
+ * the band's first edge and a reduced copy beyond it, because every Traffic
+ * courier is this model. The state exists either way, because every caller
+ * of `updateShipVisuals` holds one per hull root.
+ */
+export function adoptUndetailedShip(
+	root: THREE.Group,
+	reachKm: number,
+	levels?: ShipLevels,
+): void {
+	const state: VisualState = {
+		detail: "full",
+		quality: "high",
+		greebles: [],
+		mechanism: [],
+		standIns: [],
+		levels,
+	};
+	root.userData.shipVisual = state;
+	root.userData.shipSilhouetteKm = reachKm;
+	applyVisibility(root, state);
+}
+
+/**
  * The visual state of an authored hull (node #815), which carries its own
  * machinery and lamps: no generated greebles and no strip. The band sheds
  * `mechanism` with distance — the builder names which meshes and from which
@@ -356,6 +399,11 @@ export function markAuthoredShip(
 function applyVisibility(root: THREE.Object3D, state: VisualState) {
 	const draw = state.detail === "full" && SHIP_QUALITY[state.quality].greebles;
 	for (const mesh of state.greebles) mesh.visible = draw;
+	// Distance alone picks an authored level: the quality row gates generated
+	// clutter, and the model is the hull rather than clutter on it.
+	if (state.levels)
+		for (const [level, object] of Object.entries(state.levels))
+			object.visible = level === state.detail;
 	if (state.appliedBand === state.detail) return;
 	state.appliedBand = state.detail;
 	const band = BAND_RANK[state.detail];

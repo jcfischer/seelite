@@ -64,7 +64,9 @@ import {
 	type AuthoredPart,
 	type StandInBuilders,
 	type ShipDetailPlan,
+	type ShipLevels,
 	type ShipSurface,
+	adoptUndetailedShip,
 	buildShipDetails,
 	markAuthoredShip,
 } from "./ship-detail";
@@ -7209,6 +7211,85 @@ function raycastMuzzles(
 	return found as Vec3[];
 }
 
+/**
+ * Draws an authored hull into `root`: the model, in the mesh's frame
+ * (kilometres, nose `-z`), plus its drive glows named `…-exhaust` and drawn
+ * in `exhaust`, the hull's own palette material, so the throttle dial and the
+ * vent plumes (`isDriveBell`) find them as they find a procedural bell's.
+ * Returns the model's levels for the detail band; the glows sit outside them,
+ * so there is one drive bell per nozzle at every level.
+ */
+export type AuthoredHullBuilder = (
+	root: THREE.Group,
+	exhaust: THREE.MeshStandardMaterial,
+) => ShipLevels;
+
+/** The courier variant the authored model draws (node #812): the selected
+ *  one, read off `HULL_SPECS` so the model follows the selection and every
+ *  reader of `HULL_SPECS.courier.variant` sees it. */
+export const AUTHORED_COURIER_VARIANT: HullVariantId =
+	HULL_SPECS.courier.variant;
+
+let authoredCourier: AuthoredHullBuilder | undefined;
+/** The authored courier's nav lights, placed once. `addNavLights` finds the
+ *  metal by raycast, and against the model's 354k triangles that is a third
+ *  of a second — paid by every Traffic courier drawn, were they not kept.
+ *  The points' geometry is shared by every copy. Keyed on the model they
+ *  were placed on, so removing it and putting it back — as an instrument
+ *  drawing a Kestrel beside it does — keeps them. */
+const authoredCourierNavLights = new WeakMap<
+	AuthoredHullBuilder,
+	THREE.Points
+>();
+
+/**
+ * Install (or, with `undefined`, remove) the authored courier exterior
+ * (node #812, `courier-hull.ts`). Until it is installed `buildShipMesh`
+ * draws the procedural Kestrel, as `buildStationForm` draws the procedural
+ * Coriolis until `installCoriolisBuilder` runs: every page that builds a
+ * `Game` awaits `prepareCourierHullModel` first, and the headless rows that
+ * read the courier's measured figures install the shipped file themselves.
+ */
+export function installAuthoredCourier(
+	builder: AuthoredHullBuilder | undefined,
+): void {
+	if (builder === authoredCourier) return;
+	authoredCourier = builder;
+	// The muzzles were measured off whichever courier was drawn before.
+	for (const key of muzzleCache.keys())
+		if (key.startsWith("courier/")) muzzleCache.delete(key);
+}
+
+/** The installed authored courier builder, if any: what an instrument
+ *  (`scripts/measure-courier-hull-cost.mjs`) puts back after drawing the
+ *  procedural Kestrel beside it on the same page. */
+export const authoredCourierBuilder = (): AuthoredHullBuilder | undefined =>
+	authoredCourier;
+
+/** The authored courier into `root`: the model, its nav lights (placed once
+ *  and cloned after) and the undetailed ship's adoption. */
+function buildAuthoredCourier(
+	root: THREE.Group,
+	builder: AuthoredHullBuilder,
+): void {
+	root.userData.authored = true;
+	const levels = builder(root, makePalette("courier").exhaust);
+	// After the model, for the reason the procedural branch gives: the
+	// lights are placed from the built hull's own box.
+	const known = authoredCourierNavLights.get(builder);
+	if (known) {
+		const lights = known.clone();
+		lights.onBeforeRender = known.onBeforeRender;
+		root.add(lights);
+	} else {
+		addNavLights(root);
+		const placed = root.getObjectByName("nav-lights") as THREE.Points;
+		shared(placed.geometry);
+		authoredCourierNavLights.set(builder, placed);
+	}
+	adoptUndetailedShip(root, HULL_REACH_KM.courier, levels);
+}
+
 export function buildShipMesh(
 	id: HullId,
 	variant: HullVariantId = "a",
@@ -7219,8 +7300,17 @@ export function buildShipMesh(
 	root.userData.role = HULL_SPECS[id].role;
 	root.userData.variant = variant;
 	root.userData.designRound = SHIP_DESIGN_ROUND;
+	if (
+		id === "courier" &&
+		variant === AUTHORED_COURIER_VARIANT &&
+		authoredCourier
+	) {
+		buildAuthoredCourier(root, authoredCourier);
+		return { root };
+	}
 	const plan = SHIP_DETAIL_PLANS[id][variant];
 	if (plan.authored) {
+		root.userData.authored = true;
 		// Nav lights come with the template, placed once (`prepareLongwall`).
 		plan.build(root);
 		markAuthoredShip(

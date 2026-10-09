@@ -22,6 +22,9 @@ import {
 	setShipDetail,
 	updateShipVisuals,
 } from "../src/ship-mesh";
+import { useProceduralCourier } from "./helpers/procedural-courier";
+
+useProceduralCourier();
 
 // Generated detail only: the authored Longwall B (node #815) carries its own
 // machinery and lamps, and `tests/longwall-mesh.test.ts` holds what it owes.

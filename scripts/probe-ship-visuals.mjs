@@ -16,7 +16,8 @@ await guardedOrigin(ORIGIN);
 const browser = await launchChromium();
 const { check, watch, exit } = tally();
 
-function state() {
+async function state() {
+	const { COURIER_FRAME_NAME } = await import("/src/courier-hull.ts");
 	const game = window.__seelite;
 	const ship = game.shipMesh;
 	const cockpit = document.querySelector("[data-live-cockpit]");
@@ -32,9 +33,19 @@ function state() {
 		// a camera swinging round the ship must turn this vector without
 		// changing its length.
 		shipOffset: ship.position.toArray(),
-		courierCore: Boolean(ship.getObjectByName("courier-dorsal-hull")),
-		exhausts: ship.children.filter((child) => child.name.includes("exhaust"))
-			.length,
+		// The authored O4 model (node #812), not the procedural Kestrel's
+		// named parts, and its two drive glows wherever the frame holds them.
+		courierCore:
+			ship.userData.authored === true &&
+			Boolean(ship.getObjectByName(COURIER_FRAME_NAME)) &&
+			Boolean(ship.getObjectByName("canopy-glass")),
+		exhausts: (() => {
+			let found = 0;
+			ship.traverse((child) => {
+				if (child.name.endsWith("-exhaust")) found += 1;
+			});
+			return found;
+		})(),
 		// Chase shows the player's hull and nothing else. The count is asserted
 		// rather than the absence of two old names, so a future extra hull
 		// parented here has to be a deliberate change to this line.
@@ -246,7 +257,12 @@ for (const viewport of VIEWPORTS.slice(0, 1)) {
 {
 	const page = await browser.newPage({ viewport: VIEWPORTS[0] });
 	watch(page, "hull surface");
-	await page.goto(gameUrl(ORIGIN, { seed: 42 }), { waitUntil: "load" });
+	// On a procedural hull: the courier draws its authored model since node
+	// #812, which carries its own textures and none of #101's plating, so the
+	// plating is checked where it still ships — a fresh game's `?hull=`.
+	await page.goto(gameUrl(ORIGIN, { seed: 42, hull: "interceptor" }), {
+		waitUntil: "load",
+	});
 	await page.waitForFunction(() => window.__seelite?.frames > 1);
 	// Chase, so the hull is in front of the camera and fills enough of the frame
 	// for a plate to be more than one pixel across.
