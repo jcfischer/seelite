@@ -48,9 +48,23 @@ Built on this branch: `miner/b` is Longwall B in the game, flown and drawn
 from `public/models/longwall-miner.glb` (`README.md`, "In the game"). Refs
 #803; design PR #807 is superseded by node #815's.
 
-**The merge waits on the principal's yes after flying it (third tier,
-below); nothing here claims it has been given.** The asset policy is settled
-(D6), so the model ships as the file node #815's body prescribes.
+**Before merge, a ruling only you can give: as built, this branch breaches
+map #1's boot-set Constraint.** That Constraint (#830, #835, 2026-10-09)
+lets only the cockpit and the home station's exterior load before a `Game`
+is built; every other model installs after boot behind a procedural
+stand-in. This branch loads the miner model before every `Game` too, as
+node #815's body prescribed before the Constraint was amended, so every boot
+waits on about 11.13 MiB more (D4). The stand-in and the after-boot install
+are node #838's mechanism (open, blocked by #831), and `miner/b` has none
+today. There are two ways out, and neither is this branch's to take:
+
+1. **Waive the Constraint for the miner until #838 lands**, recorded on node
+   #815 or #838, and #838 takes `miner/b`'s stand-in into its queue; or
+2. **Hold this merge until #838 has landed**, and rebase this branch onto
+   its queue so the miner installs after boot.
+
+**The merge also waits on your yes after flying it (third tier, below);
+nothing here claims either has been given.**
 
 What moved, and what is yours to decide:
 
@@ -85,8 +99,8 @@ What moved, and what is yours to decide:
   blocks boot.** Map #1's Constraint (#830, #835, 2026-10-09) puts only the
   cockpit and the home station's exterior in the boot set and installs every
   other model after boot behind a procedural stand-in; that mechanism is
-  #838's (open, blocked by #831), so sage round 2's background-load finding
-  is declined here as #838's. The gap #838 inherits: `miner/b` has no
+  #838's (open, blocked by #831), so sage rounds 2 and 3's background-load
+  finding is escalated to you rather than fixed here (the ruling above). The gap #838 inherits: `miner/b` has no
   procedural stand-in today — `buildShipMesh` throws without the model,
   because the envelope, vents and muzzles are measured off it.
   `evidence/game-report.json` measured one miner at 111 draw calls and
@@ -109,12 +123,14 @@ What moved, and what is yours to decide:
 - **D5, owed their own nodes:** mining state and behaviour, the deployed
   envelope, articulating the anchors and the cutter (the game draws the
   stowed export, static), and D1–D4's follow-ups.
-- **D6, the asset policy, ruled.** Map #1's Constraints were amended on
-  2026-10-09 (#830, #835): authored models are same-origin bundle files, and
-  only the boot set blocks a start. Earlier rounds of this handoff quoted
-  "Procedural everything: no downloaded assets" as standing; it no longer
-  is, and `public/models/longwall-miner.glb` is within the Constraint. What
-  it leaves open for this hull is the boot cost (D4) and #838's stand-in.
+- **D6, the asset policy: the file is allowed, its place in the boot set is
+  not.** Map #1's Constraints were amended on 2026-10-09 (#830, #835), and
+  the amendment says two things. Authored models are same-origin bundle
+  files, so shipping `public/models/longwall-miner.glb` is within it;
+  earlier rounds of this handoff quoted "Procedural everything: no
+  downloaded assets" as standing, and it no longer is. And only the boot set
+  blocks a start, which this branch does not meet: the miner is awaited
+  before every `Game` (D4, and the ruling at the top of this section).
 - **Stale text outside this branch:** map #1's Constraints still read
   "(5.5, the miner, since #619 …)"; `docs/specs/docking.md` §4 is updated.
 - **Fit.** The ship's origin is now the box's centre (the export's was 4.8 m

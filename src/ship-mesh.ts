@@ -2494,17 +2494,18 @@ function buildMinerA(root: THREE.Group, p: Palette) {
  * export. It is installed once (`longwall-model.ts` in the browser,
  * `tests/setup/longwall-model.ts` under bun) and every `buildShipMesh` clones
  * it, so a Traffic miner shares the template's buffers rather than decoding
- * its own. Map #1's Constraint allows it: authored models are same-origin
- * bundle files (#830, #835, principal 2026-10-09).
+ * its own. Map #1's Constraint allows the file: authored models are
+ * same-origin bundle files (#830, #835, principal 2026-10-09).
  *
  * **There is no procedural fallback yet.** The envelope, the collision box,
  * the vent placement and the muzzles are all measured off the built mesh
  * (`hull.ts`), so a build that quietly drew the old loft would measure a hull
  * the game no longer draws. Building `miner/b` before the install throws, so
- * the model loads before a `Game` is built. The same Constraint puts only the
- * cockpit and the home station in the boot set; installing the rest after
- * boot, with a procedural stand-in, is node #838's, and this hull will owe
- * that stand-in there.
+ * the model loads before a `Game` is built — and that is **not** what the
+ * same Constraint allows: it puts only the cockpit and the home station in
+ * the boot set. Installing the rest after boot, with a procedural stand-in,
+ * is node #838's; until it lands this hull breaches the boot set, and the
+ * merge waits on the principal's ruling (`spikes/longwall-miner/HANDOFF.md`).
  *
  * The export is model metres, +Z forward and Y up; this frame is kilometres
  * with the nose at -Z, so the exterior is turned half a turn about Y — a
@@ -2580,9 +2581,7 @@ function prepareLongwall(scene: THREE.Group): THREE.Group {
 		const mesh = o as THREE.Mesh;
 		if (!mesh.isMesh) return;
 		shared(mesh.geometry);
-		for (const m of Array.isArray(mesh.material)
-			? mesh.material
-			: [mesh.material]) {
+		for (const m of materialsOf(mesh)) {
 			if (m instanceof THREE.MeshStandardMaterial) materials.add(m);
 			shared(m);
 			for (const value of Object.values(m))

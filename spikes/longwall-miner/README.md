@@ -42,7 +42,10 @@ Principal visual approval: 2026-10-08, “approved. Prepare PR for final impleme
 `miner/b` is this model. `prepare-flight-asset.mjs` writes the stowed export to
 `public/models/longwall-miner.glb` (Meshopt, lossless WebP, every vertex
 attribute, node transform to 10 µm and texture pixel verified after a decode;
-11.13 MiB). Only that file ships; everything else here stays review-only.
+11.13 MiB). Only that file ships; everything else here stays review-only,
+except that this one script and the source export it reads are the
+production asset's build step, as `spikes/coriolis/prepare-flight-asset.mjs`
+is the station's: removing either orphans the shipped file.
 
 ```sh
 node spikes/longwall-miner/prepare-flight-asset.mjs
@@ -51,7 +54,9 @@ node spikes/longwall-miner/capture-game.mjs round-N   # flown, chase view, 4 sid
 
 - **Loading.** `src/longwall-model.ts` fetches it behind the Retry panel on
   every page that builds a ship (the game, the postcard viewer, the ship
-  workbench); `tests/setup/longwall-model.ts` installs it under bun.
+  workbench); `tests/setup/longwall-model.ts` installs it under bun. In the
+  game that puts it in the boot set, which map #1's Constraint does not allow
+  (`HANDOFF.md`, the ruling the merge waits on).
   `buildShipMesh("miner", "b")` throws until it is installed, because the
   envelope, collision box, vents and muzzles are measured off the drawn mesh.
 - **Frame.** Turned half a turn about Y to the game's nose-at-minus-Z,

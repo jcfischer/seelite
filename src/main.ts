@@ -20652,6 +20652,10 @@ if (postcard) {
 	// direct boot sets the Commander aside. Without direct the overlay asks
 	// which world is wanted, and the seed only pre-fills New game (§11.6).
 	// Fetch in parallel with the Commander catalog; wait only at world construction.
+	// The miner is not in map #1's boot set (cockpit and home exterior only):
+	// awaiting it here breaches that Constraint until node #838's after-boot
+	// install gives `miner/b` a stand-in, and the merge waits on the
+	// principal's ruling (`spikes/longwall-miner/HANDOFF.md`).
 	const stationModel = Promise.all([
 		import("./coriolis-flight"),
 		import("./cockpit-model"),

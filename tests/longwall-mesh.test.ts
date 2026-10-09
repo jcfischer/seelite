@@ -33,6 +33,8 @@ import { installShippedLongwall } from "./helpers/install-longwall";
 import { decodeShippedGlb } from "./helpers/read-coriolis-glb";
 
 const SHIPPED = "public/models/longwall-miner.glb";
+/** The shipped file as exported, decoded once: the rows only read it. */
+const EXPORTED = await decodeShippedGlb(SHIPPED);
 
 const meshesOf = (root: THREE.Object3D) => {
 	const meshes: THREE.Mesh[] = [];
@@ -80,7 +82,7 @@ describe("miner/b is the shipped model, and only the shipped model", () => {
 		expect(feed.getObjectByName("rotor")).toBeDefined();
 		// Stowed: the export's own pose, which is the study's stowed cutter
 		// (`spikes/longwall-miner/kinematics.ts`, `MINING.stowedCutterZ`).
-		const exported = await decodeShippedGlb(SHIPPED);
+		const exported = EXPORTED;
 		const stowed = exported.getObjectByName("feed") as THREE.Object3D;
 		expect(stowed.position.z).toBeCloseTo(36, 6);
 		expect(feed.position.toArray()).toEqual(stowed.position.toArray());
@@ -101,7 +103,7 @@ describe("miner/b is the shipped model, and only the shipped model", () => {
 		const size = box.getSize(new THREE.Vector3()).multiplyScalar(1000);
 		const centre = box.getCenter(new THREE.Vector3()).multiplyScalar(1000);
 		// The export's own box, metres: 34 across, 18.8 up, 84.4 long.
-		const exported = await decodeShippedGlb(SHIPPED);
+		const exported = EXPORTED;
 		const source = new THREE.Box3()
 			.setFromObject(exported)
 			.getSize(new THREE.Vector3());
@@ -135,7 +137,7 @@ describe("the drives glow inside their own rings", () => {
 		// Measured off the export, model metres: the ring material near each
 		// drive's aft face stands at least `boreRadius` from the drive's axis,
 		// and the glow fits inside that bore.
-		const exported = await decodeShippedGlb(SHIPPED);
+		const exported = EXPORTED;
 		exported.updateMatrixWorld(true);
 		const v = new THREE.Vector3();
 		for (const side of [-1, 1]) {
@@ -208,16 +210,12 @@ describe("one template, shared by every miner", () => {
 
 	test("its lamps sit at or under the exposure ceiling", () => {
 		const root = buildShipMesh("miner", "b").root;
-		let lamps = 0;
-		for (const mesh of meshesOf(root)) {
-			const material = mesh.material as THREE.MeshStandardMaterial;
-			if (!material.emissive || material.emissive.getHex() === 0) continue;
-			lamps += 1;
-			expect(material.emissiveIntensity).toBeLessThanOrEqual(
-				EMISSIVE_CEILING * 1.000001,
-			);
-		}
-		expect(lamps).toBeGreaterThan(0);
+		const lamps = meshesOf(root).filter(isLamp);
+		for (const mesh of lamps)
+			expect(
+				(mesh.material as THREE.MeshStandardMaterial).emissiveIntensity,
+			).toBeLessThanOrEqual(EMISSIVE_CEILING * 1.000001);
+		expect(lamps.length).toBeGreaterThan(0);
 	});
 
 	test("the detail and quality gates answer it without generated detail", () => {
@@ -267,7 +265,7 @@ describe("the static hull draws one mesh per material (node #815)", () => {
 		expect(root.getObjectByName("hullbridge-glazing")).toBeDefined();
 		expect(meshes.filter(isLamp)).toHaveLength(2);
 		// The same triangles as the export's hull group, nothing dropped.
-		const exported = await decodeShippedGlb(SHIPPED);
+		const exported = EXPORTED;
 		const source = exported.getObjectByName("hull") as THREE.Object3D;
 		expect(meshesOf(source)).toHaveLength(19);
 		expect(triangles(meshes)).toBe(triangles(meshesOf(source)));

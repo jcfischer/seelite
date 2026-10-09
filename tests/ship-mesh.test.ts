@@ -319,7 +319,7 @@ describe("procedural ship visual language", () => {
 		for (const { id, variant } of LOFTED) {
 			const root = buildShipMesh(id, variant).root;
 			// Small hulls fair their glass into a cockpit blister, big ones into
-			// a bridge tower. `canopy()` and `bridge()` each emit their pair,
+			// a raised bridge. `canopy()` and `bridge()` each emit their pair,
 			// so which of the two names exists is a contract rather than the
 			// coincidence this fallback used to rest on.
 			const fairing = (root.getObjectByName(id + "-cockpit-fairing") ??

@@ -42,4 +42,4 @@ const decoded = await io.read(target);
 assert.deepEqual(attributes(decoded), beforeEncoding, 'Meshopt changed vertex attributes');
 assert.deepEqual(nodes(decoded), beforeNodes, 'Encoding changed the mechanism hierarchy');
 assert.deepEqual(await pixels(decoded), originalPixels, 'WebP changed texture pixels');
-console.log(`Verified exact vertex attributes, nodes and texture pixels; ${target} is ${((await stat(target)).size / 2 ** 20).toFixed(2)} MiB.`);
+console.log(`Verified exact vertex attributes and texture pixels, node transforms to 10 µm; ${target} is ${((await stat(target)).size / 2 ** 20).toFixed(2)} MiB.`);
