@@ -1,59 +1,65 @@
-# Accepted designs and distance LODs
+# Integration handoff — seven accepted ships
 
-Principal on 2026-10-09: "backside of bastion iss open. Close it, then leave bastion as is. Others are ok too." This is visual acceptance of the current designs with one bounded stern repair; historical judge scores remain historical and are not revised upward. Further Dream Loop redesign is stopped.
+Author: Codex. Updated 2026-10-09. Design [PR #829](https://github.com/jcfischer/seelite/pull/829), branch `design/seven-ships-codex`, study [node #827](https://github.com/jcfischer/seelite/issues/827). Verified implementation checkpoint: `e96d393`.
 
-Bastion now has an enclosed aft bulkhead; its forward bay remains open. The other six full-detail models are unchanged. Each of all seven ships now has separately exported `model-reduced.glb` and `model-outline.glb`, generated with the Node 812 / PR 828 method. See [LOD.md](LOD.md) for measurements, provenance, commands and integration notes, and [the comparison gallery](review/lods.html).
+## Start here
 
-The isolated viewer supports Full, LOD 1, LOD 2 and automatic apparent-size switching, with Medium range / Far range controls. Habitat rotation stays synchronized across levels. All full models and LODs remain isolated study artifacts; production integration and merge are separate.
+The principal accepted all seven designs, requested only that Bastion's open stern be closed, and asked for two distance LODs per ship. Those changes are complete. The latest instruction is to hand this PR to another agent for game integration. **Do not resume aesthetic redesign.** Bastion's forward bay intentionally remains open; its aft bulkhead is now closed.
 
-Verification: 15 model tests / 1,565 assertions and strict viewer typecheck pass. All seven hardware LOD captures pass with no browser errors; automatic switching and all three habitat phases are verified. Four repository-selected browser probes pass (partial coverage; 92 not run). All seven outline renders and Bastion's closed rear were visually inspected. LOD 1 removes 81–87% of full triangles; LOD 2 removes 86–90%, retaining painted armor components. Distant transitions change pixels; measurements and integration limits are in LOD.md.
+These are isolated studies, not production replacements. Start an integration branch/worktree against current main and bring this design branch into it so the editable artifacts follow. Use a separate integration PR referencing this draft; if it supersedes the draft, say so explicitly and avoid merging the studies twice. Follow the repository's squash-merge convention and obtain approval before merging.
 
-Full capital triangle-surface clearance independently measures 1.558017 m; the older 1.60 m authoring figure is a vertex-gap diagnostic. Sage dispositions are in REVIEW-codex.md.
+Read `CLAUDE.md`, machine map #1, the integration node and live loader contracts first. Previous ship/station integrations provide the production pattern. The requested courier LOD example is [node #812](https://github.com/jcfischer/seelite/issues/812) / [PR #828](https://github.com/jcfischer/seelite/pull/828), inspected at `74f21128f0d5cfdf56a85edace8ade7844cc9e13`. [Node #838](https://github.com/jcfischer/seelite/issues/838) is the separate background model queue, not a PR; on 2026-10-09 it was open and blocked by #831. Re-read its state before adopting loading behavior.
 
----
+## Assets and inspection
 
-# Latest continuation
+| Code | Role directory | Ship |
+| --- | --- | --- |
+| F1 | interceptor | Lance |
+| F2 | patrol | Warden |
+| F3 | explorer | Pilgrim |
+| F4 | raider | Shiv |
+| F5 | carrier | Bastion |
+| F6 | prospector | Sluice |
+| F7 | dreadnought | Rampart |
 
-## Round 8 — Bastion assembly rebuild
+Every role contains packed editable `model.blend`, full `model.glb`, `model-reduced.glb`, `model-outline.glb`, approved `target.png`, and measured `model-report.json` / `lod-report.json`. The LOD report fingerprints its full source. Keep source assets and evidence under this spike; put only game-loaded shipping assets under `public/models/`, following the current asset preparation pipeline.
 
-Principal requested another round after the stall report. Rebuilt Bastion with separately housed pressure bays, recessed assembly joints, inclined shoulder exchangers, a deep stepped bow collar, and a low elongated glazed bridge. Replaced the rear grille grid with a central segmented pressure door, vertical pump plant, control cabinets and a rear service gallery. Adjusted carrier lighting and pulled back its bay camera. Other six models were not rebuilt in this round.
+- [README.md](README.md): viewer and Blender authoring commands.
+- [LOD.md](LOD.md): generation commands, triangle/file budgets, reference method and transition measurements.
+- [LOD gallery](review/lods.html): all three levels, including Bastion's rear.
+- [Target comparison gallery](review/index.html): targets and actual renders.
+- [REVIEW-codex.md](REVIEW-codex.md): Sage findings and dispositions.
+- [STATUS.md](STATUS.md): historical iterations and independent scores.
 
-Independent score: **5.65/10**, versus 5.20 in round 7 (+0.45). Review: `review/seven-bastion-round8-review.md`. Improvement is real but the 8/10 criterion remains open. Stall approaching persists: ring inner architecture, repeated side equipment, dark hero bay and sparse deck remain the priorities. The equal-or-worse stop condition was not triggered. This completes the principal's requested additional round; it does not assert visual acceptance.
+Run the root Vite dev server and open `/spikes/seven-ships/?ship=carrier`. The viewer supports forced Full / Reduced / Outline, Auto, medium/far distances and habitat rotation. Its normalized inspection scale is not the exported physical scale.
 
-Verified: seven model tests / 75 assertions, strict standalone viewer typecheck, hardware browser capture with all controls and no browser errors. Bastion measured 63.55 FPS, 2.441 RPM (nominal 2.5), 1,350,362 model triangles and 60.11 MB GLB. Approved 180 m floor diameter and 0.629012 g remain unchanged; clearance test passes. Capture evidence `.dream-loop/round-8/carrier/`; refreshed review gallery includes hero and interior. Previous hero preserved as `review/carrier-round7.png`.
+## Settled constraints
 
----
+- Exports use **metres, Y up, +Z forward**. Apply one consistent transform to full and both LODs, their origins and rotor pivots. The game uses kilometres and -Z forward: verify the current loader before applying 0.001 scaling and a Y half-turn, so neither happens twice. Centre all levels using the full model's centre.
+- Warden and Shiv weapons/grilles now have hull supports. Preserve them. Bastion's command glazing belongs on its bridge; do not restore deck cockpit fairings. Preserve its articulated bay and closed stern.
+- Pilgrim has an **80 m walking-floor diameter at 3 RPM**, giving **0.40257 g**. Bastion and Rampart each have a **180 m floor diameter at 2.5 RPM**, giving **0.629012 g**. Capital outer envelopes are approximately 189.492 m across. Keep rotating assemblies separate from stationary structure.
+- Preserve those ring dimensions and rates. Shrinking a capital to old roster bounds changes its gravity; reconcile any roster/berth conflict explicitly. Visual dimensions do not authorize changes to mass, handling, cargo capacity or economy.
+- Advance one habitat phase per ship and apply it to every level. Switching must not reset rotation. Full capital meshes have **1.558017 m** conservative triangle-surface radial clearance. `authoredVertexGapMetres` is only a vertex diagnostic; simplified geometry is not physical-clearance evidence.
+- Full geometry remains authoritative for bounds, collision and mounting-point raycasts. LODs are display-only. Preserve painted components: aggressive pruning previously removed visible hull/ring skins.
 
-> Visual work was reopened. See STATUS.md for current evidence and scores. Both capitals now have approved 180 m floor-diameter habitats at 2.5 RPM (0.629 g); latest models are not a visual quality pass. Historical measurements below are superseded by the live per-role model-report.json files and review/*-metrics.json.
+## Remaining integration work
 
-# Seven approved exterior ship studies — Codex handoff
+1. Inspect current `src/ship-mesh.ts`, `src/courier-hull.ts`, ship definitions and station fit contracts. Adopt the current ship/station installation and shipping-asset preparation pattern. Resolve dimensions against the approved habitats before changing envelopes.
+2. Prepare compressed shipping assets for seven full models and fourteen LODs using the established Meshopt/texture pipeline. Record checksums, output bytes and decoded geometry budgets. Reuse the supplied LODs unless production measurements justify a change.
+3. Install through the current loader/cache and background queue contract. Node #838 calls for cockpit/home-station-only blocking boot, background Traffic hulls, immediate jump arrivals with stand-ins, warning-once failures and session-retained decoded models. Do not add a competing queue or make all these large assets block boot. Coordinate with that node if it has not landed. Preserve postcard and probe readiness behavior.
+4. Connect applicable consumers: player/chase and inspection views, Traffic, wrecks and postcards. Verify cockpit compatibility, nav lights, exhaust and weapon origins against the full hull. Share geometry/material/texture resources safely across instances and levels; disposing one ship must not break another.
+5. Integrate apparent-size selection and hysteresis. The study uses 40/400 reference reaches at 60-degree vertical FOV and 1800 device-pixel height, adjusted for actual projection. Inspect transitions under the game camera and lighting before settling production bands. Render only one level and preserve ring phase.
+6. Verify collision, docking/berth fit and moving ring envelopes. Measure actual multi-ship frame time, draw calls, memory and network/decoding cost. Isolated viewer FPS does not establish production performance.
+7. Run required headless checks, repository probe selection against the integration diff, canonical browser verification and before/after view sets under the shared probe lock. Follow the live map's review requirements. Obtain principal in-game visual/flight approval before merge; study acceptance is already settled.
 
-Refs #827. Principal approved all target images, then accepted the generated models with one correction: remove the four cockpit-like assemblies from Bastion's deck; command glazing belongs on its bridge. That correction is built and captured. Final instruction: "looks good, continue".
+## Existing verification and limits
 
-## Deliverables
+At the implementation checkpoint, **15 tests / 1,565 assertions** and strict standalone viewer TypeScript passed. Checks cover source fingerprints, finite geometry, reductions, aligned bounds, painted surface retention, rotor metadata, full capital triangle clearance and outward-facing stern coverage at all three levels.
 
-Each role directory contains the approved target, editable packed Blender scene, self-contained textured GLB and measured model report. `build_model.py` and `geometry.py` regenerate them. `index.html` / `viewer.ts` inspect every ship; `review/index.html` compares approved targets with actual browser screenshots. Launch instructions are in README.md. Source dimensions are metres, Y up, +Z forward. Viewer scales each model to a common inspection size; it does not change exported dimensions.
+All seven final hardware captures passed without browser errors: forced levels, exactly one visible level, both automatic transitions and return to full, plus synchronized habitat phases. All 21 close views and three Bastion rear views were captured; every final outline and Bastion's reduced/rear views were visually inspected. LOD 1 removes 81–87% of triangles; LOD 2 removes 86–90%. Shading and pixels change at transitions; LOD.md records measured limits.
 
-| Role | Bounds X × Y × Z (m) | Triangles | GLB MB |
-|---|---|---:|---:|
-| interceptor | 24.01 × 24.02 × 62.31 | 253298 | 16.5 |
-| patrol | 33.82 × 12.11 × 55.31 | 446924 | 26.7 |
-| explorer | 84.54 × 84.51 × 73.81 | 513704 | 29.0 |
-| raider | 33.82 × 11.59 × 56.31 | 463464 | 27.6 |
-| carrier | 122.60 × 129.59 × 402.05 | 605268 | 36.1 |
-| prospector | 20.01 × 15.00 × 66.40 | 214448 | 14.5 |
-| dreadnought | 106.60 × 135.19 × 432.00 | 1106876 | 65.9 |
+Four repository-selected browser probes passed at `969c8e5` (chase-orbit, handoff, model-viewer, pointer-lock); 92 were not run. Later armor-retention changes have final study tests/captures. This is partial browser coverage, not a full-suite or production-integration pass.
 
-## Verification and acceptance
+Sage's last raw verdict at `a9d5e87` was **changes-requested**. Its genuine vertex-only clearance-test defect was fixed at `e96d393`; post-fix tests passed. Remaining glossary matches and optional suggestions are dispositioned in REVIEW-codex.md. There was no post-fix Sage rerun and no Sage approval is claimed.
 
-Seven GLB tests passed (61 assertions), strict standalone viewer typecheck passed, and all seven hardware browser captures passed orbit, target dialog, inspection lights, rotation, presets and PNG export without browser errors. Initial round-3 capture ran about 120 FPS on Apple M1 Pro. The corrected Bastion capture ran 72.22 FPS; no production performance claim follows from either isolated inspection run.
-
-Pilgrim has an 80 m walking-floor diameter, nominal 3 RPM and 0.40257 g at its floor. Exported outer envelope is approximately 84.54 m wide; longitudinal length 73.81 m. Its rotor is a separate named GLB assembly. The browser measured 2.966 RPM. No walkable interior or crew simulation is implemented.
-
-Independent target-similarity scores ended at 3.95–4.90/10; see review/round-3-*.md. These did not reach the nominal 8/10 gate. The principal accepted the appearance after inspecting the results and requesting the Bastion correction. Preserve both facts. Known visual limitations include repetitive panel/assembly treatment, target proportion differences, and small surface artifacts on Lance's lower pod.
-
-## Production implementation remains
-
-These are isolated prototypes; no game hull builder, collision, roster, economy or deployment was changed. Integrating requires a deliberate asset/LOD strategy (current models have 214k–1.1m triangles), metre-to-kilometre conversion, collision and docking envelopes, cockpit/weapon/thruster transforms, disposal and instancing, and live-flight performance checks. Pilgrim's ring changes its envelope substantially: preserve the 40 m floor radius while resolving station fit. Keep its rotating ring distinct from the stationary keel. Bastion command windows belong only on the bridge; do not restore the removed deck fairings.
-
-Use src/ship-mesh.ts and the current ship definitions as integration entry points, verify their live contracts first, and reuse the approved Porter/Longwall pipeline decisions. Do not infer production handling, hold capacity or mass from visual dimensions. Run repository probe selection against the final integration diff, then the required canonical checks and principal visual review before merge. No production acceptance or merge is asserted by this study handoff.
+Historical independent visual scores did not reach the nominal 8/10 target. The principal subsequently accepted the designs and completed stern/LOD work. Preserve both facts; historical scores are not a request for another redesign.
