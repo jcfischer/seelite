@@ -21,7 +21,10 @@ try{
   await page.waitForTimeout(3500);
   await page.evaluate(()=>window.__fleet.capture());
   for(const view of ['hero','front','top','rear','detail','under']){
-   await page.evaluate(v=>window.__fleet.setView(v),view);await page.waitForTimeout(500);
+   await page.evaluate(()=>document.body.classList.remove('capture'));
+   await page.locator(`[data-view="${view}"]`).click();await page.waitForTimeout(500);
+   if(await page.evaluate(()=>window.__fleet.stats.view)!==view)throw Error('Preset button failed: '+view);
+   await page.evaluate(()=>window.__fleet.capture());
    await page.screenshot({path:`${out}/${view}.png`});
   }
   await page.evaluate(()=>{window.__fleet.setView('hero');document.body.classList.remove('capture');});

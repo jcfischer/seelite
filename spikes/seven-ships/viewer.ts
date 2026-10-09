@@ -13,7 +13,7 @@ import { SSAOPass } from "three/addons/postprocessing/SSAOPass.js";
 const catalog = {interceptor:['F1','Lance'],patrol:['F2','Warden'],explorer:['F3','Pilgrim'],raider:['F4','Shiv'],carrier:['F5','Bastion'],prospector:['F6','Sluice'],dreadnought:['F7','Rampart']} as const;
 type Role=keyof typeof catalog;
 const query=new URLSearchParams(location.search).get('ship')??'interceptor';
-const role:Role=query in catalog ? query as Role : 'interceptor';
+const role:Role=Object.hasOwn(catalog, query) ? query as Role : 'interceptor';
 const [code,name]=catalog[role];
 document.title=name+' — Exterior study';
 document.querySelector('h1')!.textContent=name.toUpperCase();
@@ -153,6 +153,25 @@ function setView(name: string) {
 		.multiplyScalar(Math.max(1, 1.6 / camera.aspect))
 		.add(controls.target);
 	controls.update();
+ // Fit full-hull inspection presets without changing the approved hero/detail view.
+ if (ship.children.length && name !== "hero" && name !== "detail") {
+  const bounds = new THREE.Box3().setFromObject(ship);
+  const centre = bounds.getCenter(new THREE.Vector3());
+  const back = camera.position.clone().sub(controls.target).normalize();
+  const right = new THREE.Vector3().setFromMatrixColumn(camera.matrixWorld, 0);
+  const up = new THREE.Vector3().setFromMatrixColumn(camera.matrixWorld, 1);
+  const tanY = Math.tan(THREE.MathUtils.degToRad(camera.fov / 2));
+  let distance = 0;
+  for (const x of [bounds.min.x, bounds.max.x])
+   for (const y of [bounds.min.y, bounds.max.y])
+    for (const z of [bounds.min.z, bounds.max.z]) {
+     const point = new THREE.Vector3(x, y, z).sub(centre);
+     distance = Math.max(distance, point.dot(back) + 1.1 * Math.max(Math.abs(point.dot(up)) / tanY, Math.abs(point.dot(right)) / (tanY * camera.aspect)));
+    }
+  controls.target.copy(centre);
+  camera.position.copy(centre).addScaledVector(back, distance);
+  controls.update();
+ }
 }
 setView("hero");
 const stats = {
