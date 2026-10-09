@@ -286,6 +286,21 @@ export function buildShipDetails(
 	root.userData.shipSilhouetteKm = reachKm;
 }
 
+/**
+ * The visual state of a hull that carries no generated detail: an authored
+ * model (node #812's courier) brings its own machinery, so there is nothing
+ * for the detail band or the quality gate to switch. The state still exists,
+ * because every caller of `updateShipVisuals` holds one per hull root.
+ */
+export function adoptUndetailedShip(root: THREE.Group, reachKm: number): void {
+	root.userData.shipVisual = {
+		detail: "full",
+		quality: "high",
+		greebles: [],
+	} satisfies VisualState;
+	root.userData.shipSilhouetteKm = reachKm;
+}
+
 function applyVisibility(state: VisualState) {
 	const draw = state.detail === "full" && SHIP_QUALITY[state.quality].greebles;
 	for (const mesh of state.greebles) mesh.visible = draw;

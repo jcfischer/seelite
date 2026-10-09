@@ -333,13 +333,29 @@ describe("disposeSubtree reaches every kind of resource a scene holds", () => {
 
 describe("disposeSubtree keeps what the next system needs", () => {
 	test("tearing down a Traffic hull frees its owned buffers and keeps shared finishes", () => {
-		const leaving = buildShipMesh("courier", "a").root;
-		const staying = buildShipMesh("courier", "a").root;
+		// A procedural Traffic hull: it owns buffers of its own. The courier's
+		// authored model owns none, which the next row holds.
+		const leaving = buildShipMesh("freighter", "a").root;
+		const staying = buildShipMesh("freighter", "a").root;
 		const held = resourcesOf(staying);
 		const report = disposeSubtree(leaving);
 		expect(report.freed.size).toBeGreaterThan(0);
 		expect(report.kept.size).toBeGreaterThan(0);
 		for (const resource of report.freed) expect(held.has(resource)).toBe(false);
+		for (const resource of report.kept) expect(held.has(resource)).toBe(true);
+	});
+
+	test("tearing down an authored courier frees nothing the next courier draws", () => {
+		// Node #812: every courier draws the one loaded model, so a Traffic
+		// courier's teardown must free none of it — that would turn every
+		// other courier in the system black, which does not throw.
+		const leaving = buildShipMesh("courier", "a").root;
+		const staying = buildShipMesh("courier", "a").root;
+		expect(leaving.userData.authored).toBe(true);
+		const held = resourcesOf(staying);
+		const report = disposeSubtree(leaving);
+		for (const resource of report.freed) expect(held.has(resource)).toBe(false);
+		expect(report.kept.size).toBeGreaterThan(0);
 		for (const resource of report.kept) expect(held.has(resource)).toBe(true);
 	});
 

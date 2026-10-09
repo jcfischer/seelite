@@ -86,6 +86,15 @@ export const SEPARATION_KM = 1e-4;
  */
 export const RESTING_KM = 1.5 * SEPARATION_KM;
 
+/**
+ * A resting pair closing slower than this is not met: 1 nm/s, the residue a
+ * resolved pair's relative velocity is left with by rounding. Node #812's
+ * courier box left a ship pair at 2e-17 km/s after the pair solver had stopped
+ * it, and an exact `> 0` billed that as a resting impact of zero damage.
+ * The tests already read "no longer closing" against the same floor.
+ */
+export const RESTING_CLOSING_FLOOR_KMS = 1e-12;
+
 /** The sweep declares an impact at or under this gap. */
 const CONTACT_KM = 0.5 * SEPARATION_KM;
 
@@ -987,7 +996,7 @@ function classifyPairs(
 					);
 			const closing = closingSpeed(sub(ship.velStart, surfaceVel), gap.normal);
 			touching.push({ pair, normal: gap.normal, closingKms: closing });
-			if (closing > 0)
+			if (closing > RESTING_CLOSING_FLOOR_KMS)
 				result.impacts.push({
 					solid: index,
 					timeS: 0,

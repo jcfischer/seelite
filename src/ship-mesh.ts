@@ -62,6 +62,7 @@ export {
 import {
 	type ShipDetailPlan,
 	type ShipSurface,
+	adoptUndetailedShip,
 	buildShipDetails,
 } from "./ship-detail";
 
@@ -6746,6 +6747,50 @@ function raycastMuzzles(
 	return found as Vec3[];
 }
 
+/**
+ * Draws an authored hull into `root`: the model, in the mesh's frame
+ * (kilometres, nose `-z`), plus its drive glows named `…-exhaust` and drawn
+ * in `exhaust`, the hull's own palette material, so the throttle dial and the
+ * vent plumes (`isDriveBell`) find them as they find a procedural bell's.
+ */
+export type AuthoredHullBuilder = (
+	root: THREE.Group,
+	exhaust: THREE.MeshStandardMaterial,
+) => void;
+
+/** The courier variant the authored model draws (node #812): the selected
+ *  one, so every reader of `HULL_SPECS.courier.variant` sees the model. */
+export const AUTHORED_COURIER_VARIANT: HullVariantId = "a";
+
+let authoredCourier: AuthoredHullBuilder | undefined;
+/** The authored courier's nav lights, placed once. `addNavLights` finds the
+ *  metal by raycast, and against the model's 354k triangles that is a third
+ *  of a second — paid by every Traffic courier that spawned, were it not
+ *  kept. The points' geometry is shared by every copy. */
+let authoredCourierNavLights: THREE.Points | undefined;
+
+/**
+ * Install (or, with `undefined`, remove) the authored courier exterior
+ * (node #812, `courier-hull.ts`). Until it is installed `buildShipMesh`
+ * draws the procedural Kestrel, as `buildStationForm` draws the procedural
+ * Coriolis until `installCoriolisBuilder` runs: every page that builds a
+ * `Game` awaits `prepareCourierHullModel` first, and the headless rows that
+ * read the courier's measured figures install the shipped file themselves.
+ */
+export function installAuthoredCourier(
+	builder: AuthoredHullBuilder | undefined,
+): void {
+	authoredCourier = builder;
+	authoredCourierNavLights = undefined;
+	// The muzzles were measured off whichever courier was drawn before.
+	for (const key of muzzleCache.keys())
+		if (key.startsWith("courier/")) muzzleCache.delete(key);
+}
+
+/** Whether `buildShipMesh` draws the authored courier on this page. */
+export const authoredCourierInstalled = (): boolean =>
+	authoredCourier !== undefined;
+
 export function buildShipMesh(
 	id: HullId,
 	variant: HullVariantId = "a",
@@ -6756,6 +6801,29 @@ export function buildShipMesh(
 	root.userData.role = HULL_SPECS[id].role;
 	root.userData.variant = variant;
 	root.userData.designRound = SHIP_DESIGN_ROUND;
+	if (
+		id === "courier" &&
+		variant === AUTHORED_COURIER_VARIANT &&
+		authoredCourier
+	) {
+		root.userData.authored = true;
+		authoredCourier(root, makePalette(id).exhaust);
+		// After the model, for the reason the procedural branch gives: the
+		// lights are placed from the built hull's own box.
+		if (authoredCourierNavLights) {
+			const known = authoredCourierNavLights;
+			const lights = known.clone();
+			lights.onBeforeRender = known.onBeforeRender;
+			root.add(lights);
+		} else {
+			addNavLights(root);
+			const placed = root.getObjectByName("nav-lights") as THREE.Points;
+			shared(placed.geometry);
+			authoredCourierNavLights = placed;
+		}
+		adoptUndetailedShip(root, HULL_REACH_KM[id]);
+		return { root };
+	}
 	const plan = SHIP_DETAIL_PLANS[id][variant];
 	plan.build(root, makePalette(id));
 	// Last, and it has to be: the lights are placed from the built hull's own

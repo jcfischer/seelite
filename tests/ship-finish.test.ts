@@ -44,6 +44,12 @@ import {
 	setHullFinish,
 } from "../src/ship-surface";
 import { hullLoft, uvUnitsOf } from "../src/loft";
+import { useProceduralCourier } from "./helpers/install-courier-hull";
+
+// These rows hold the procedural hull language over every hull and variant,
+// so the courier is the procedural Kestrel here; the authored courier the
+// game draws (node #812) is `courier-hull.test.ts`'s.
+useProceduralCourier();
 
 // Restore the **default**, not stock: bun runs every test file in one
 // process, and a file that left `stock` behind would hand the next file a

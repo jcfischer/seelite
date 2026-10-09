@@ -22,6 +22,12 @@ import {
 	ENEMY_VISUAL_SCALE,
 	STRIKER_HULL_ID,
 } from "../src/combat-enemy";
+import { useProceduralCourier } from "./helpers/install-courier-hull";
+
+// These rows hold the procedural hull language over every hull and variant,
+// so the courier is the procedural Kestrel here; the authored courier the
+// game draws (node #812) is `courier-hull.test.ts`'s.
+useProceduralCourier();
 
 function bounds(id: (typeof HULL_IDS)[number], variant: HullVariantId = "a") {
 	const root = buildShipMesh(id, variant).root;

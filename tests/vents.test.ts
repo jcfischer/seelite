@@ -485,7 +485,15 @@ describe("§3.5 and §3.7: a single vent, and a vent's health", () => {
 		);
 		expect(near(whole.linearKms2)).toBe(true);
 		expect(Math.abs(dead.linearKms2.x)).toBeGreaterThan(0);
-		expect(dead.rates.yaw).toBeCloseTo(whole.rates.yaw / 2, 12);
+		// The fore vent is left, so the couple keeps the fore arm's share of
+		// it: half on a hull whose two yaw arms are equal, and the courier's
+		// are not since its arms were measured on the authored model (node
+		// #812: 0.995 fore against 0.9975 aft).
+		const { fore, aft } = HULL_SPECS.courier.ventPlacement.yaw;
+		expect(dead.rates.yaw).toBeCloseTo(
+			(whole.rates.yaw * fore) / (fore + aft),
+			12,
+		);
 		// The assist's authority is read off a whole hull: the dead vent is a
 		// demand it cannot meet, not a smaller one.
 		expect(hurt.angularAuthority).toEqual(COURIER.angularAuthority);
