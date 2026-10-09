@@ -219,3 +219,31 @@ export async function measureHullChase(
 		[samples, bodyId, mask, !mask && (keepMask || keepLuma), keepLuma],
 	);
 }
+
+/**
+ * Which hull the page is drawing, as `hull-luma.mjs` names a calibration's
+ * subject (node #812): the player hull's id, whether it is the authored model,
+ * and the sha256 of the courier model file the page's own `model-urls.ts`
+ * points at.
+ *
+ * The hash is of the file the dev server serves at that URL, which is the one
+ * the loader fetched; it is not read back out of the meshes on screen. The id
+ * and the authored flag are, off the root `buildShipMesh` returns. The hash is
+ * taken whatever the hull, so a procedural courier reports the file it is not
+ * drawing — which is why `authored` is a separate leg of the comparison.
+ */
+export async function readHullSubject(page) {
+	return page.evaluate(async () => {
+		const ship = window.__seelite.shipMesh;
+		const { COURIER_HULL_GLB_URL } = await import("/src/model-urls.ts");
+		const bytes = await (await fetch(COURIER_HULL_GLB_URL)).arrayBuffer();
+		const digest = new Uint8Array(await crypto.subtle.digest("SHA-256", bytes));
+		return {
+			hull: ship?.userData.hullId ?? null,
+			authored: ship?.userData.authored === true,
+			modelSha256: Array.from(digest, (b) =>
+				b.toString(16).padStart(2, "0"),
+			).join(""),
+		};
+	});
+}

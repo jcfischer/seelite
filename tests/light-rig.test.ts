@@ -28,6 +28,9 @@
  * on no environment at all.
  */
 import { describe, expect, test } from "bun:test";
+import { createHash } from "node:crypto";
+import { readFileSync } from "node:fs";
+import * as THREE from "three";
 import {
 	FLOOR_FRACTION_OF_READING,
 	floorUnder,
@@ -36,6 +39,7 @@ import {
 	HULL_LUMA_FLOOR_OF,
 	HULL_LUMA_FLOORS,
 	HULL_LUMA_MARGINS,
+	isCalibratedHullSubject,
 	SHIPPED_FLOORS,
 	SUBJECT_CHANGE_OTHER_ROWS,
 	SUBJECT_CHANGE_QUARTILE_DROP,
@@ -58,8 +62,13 @@ import {
 	type SkyBakeParams,
 } from "../src/light-rig";
 import { DEFAULT_SETTINGS, settingSpec } from "../src/settings";
-import { SHIP_EMISSIVE_INTENSITIES } from "../src/ship-mesh";
-import { DEFAULT_HULL_FINISH } from "../src/ship-surface";
+import { HULL_SPECS, PLAYER_BASELINE_HULL } from "../src/hull";
+import { buildShipMesh, SHIP_EMISSIVE_INTENSITIES } from "../src/ship-mesh";
+import {
+	DEFAULT_HULL_FINISH,
+	HULL_FINISH_IDS,
+	setHullFinish,
+} from "../src/ship-surface";
 import { STATION_INTERIOR_EMISSIVE_INTENSITIES } from "../src/station-interior-mesh";
 import { STATION_EMISSIVE_INTENSITIES } from "../src/station-mesh";
 
@@ -329,9 +338,10 @@ describe("the rig's constants", () => {
  *
  * What is checked here is the part of it that can be executed:
  *
- * - **The calibration names the finish the game ships.** When the default moves,
- *   this goes red naming it, instead of three browser rows going red and reading
- *   as a lighting regression.
+ * - **The calibration names the subject the game ships** — the hull a fresh
+ *   game flies and the sha256 of its model file (node #812). When either moves,
+ *   this goes red naming it, instead of three browser rows going red and
+ *   reading as a lighting regression.
  * - **The floors are the module's own derivation**, not literals re-typed beside
  *   it — which is how the old constants came to sit 37% under a reading their
  *   docstring described as 10% under.
@@ -347,12 +357,89 @@ describe("the painted-hull luma calibration", () => {
 		keyof typeof HULL_LUMA_MARGINS
 	>;
 
-	test("is recorded against the finish the game actually ships", () => {
-		// The limit of this, said plainly: it matches a *name*. A change to what
-		// `worn` renders leaves this green and lands as two numeric reds, exactly
-		// as in #294 — that case is what the quartile margin's upper bound is
-		// for, and no assertion on an id can cover it.
-		expect<string>(HULL_LUMA_CALIBRATION.finish).toBe(DEFAULT_HULL_FINISH);
+	test("is recorded against the hull and the model the game actually ships", () => {
+		// The model by its bytes, so a re-encoded or replaced file goes red here
+		// by name. The limit, said plainly: a change to how the game *draws* the
+		// same file — a material override, the light rig — leaves this green and
+		// lands as numeric reds in the probe, which is what the quartile margin's
+		// upper bound is for.
+		const { subject } = HULL_LUMA_CALIBRATION;
+		expect<string>(subject.hull).toBe(PLAYER_BASELINE_HULL);
+		expect(
+			createHash("sha256")
+				.update(readFileSync("src/models/courier-hull.glb"))
+				.digest("hex"),
+		).toBe(subject.modelSha256);
+		const root = buildShipMesh(
+			PLAYER_BASELINE_HULL,
+			HULL_SPECS[PLAYER_BASELINE_HULL].variant,
+		).root;
+		expect(root.userData.authored === true).toBe(subject.authored);
+	});
+
+	test("no finish preset paints the authored courier, which is why the finish is not in the key", () => {
+		// Every material `hull-chase` counts as paint — standard, with no
+		// emissive — compared across the presets by what decides its pixels. The
+		// presets reach the two drive glows, which are emissive and left out of
+		// the mask; if a preset ever reaches the paint, the finish belongs back
+		// in the key and this goes red first.
+		const paint = (finish: (typeof HULL_FINISH_IDS)[number]) => {
+			setHullFinish(finish);
+			const root = buildShipMesh("courier", HULL_SPECS.courier.variant).root;
+			const out: string[] = [];
+			root.traverse((o) => {
+				const mesh = o as THREE.Mesh;
+				if (!mesh.isMesh) return;
+				const materials = Array.isArray(mesh.material)
+					? mesh.material
+					: [mesh.material];
+				for (const m of materials as THREE.MeshStandardMaterial[]) {
+					const painted =
+						m.isMeshStandardMaterial &&
+						((m.emissive?.getHex() ?? 0) === 0 ||
+							(m.emissiveIntensity ?? 0) === 0);
+					if (!painted) continue;
+					out.push(
+						[
+							mesh.name,
+							mesh.geometry.uuid,
+							m.color.getHexString(),
+							m.roughness,
+							m.metalness,
+							m.envMapIntensity,
+							m.map?.uuid,
+							m.roughnessMap?.uuid,
+							m.metalnessMap?.uuid,
+							m.normalMap?.uuid,
+							m.aoMap?.uuid,
+						].join("|"),
+					);
+				}
+			});
+			return out;
+		};
+		try {
+			const shipped = paint(DEFAULT_HULL_FINISH);
+			expect(shipped.length).toBeGreaterThan(0);
+			for (const finish of HULL_FINISH_IDS)
+				expect([finish, paint(finish)]).toEqual([finish, shipped]);
+		} finally {
+			setHullFinish(DEFAULT_HULL_FINISH);
+		}
+	});
+
+	test("a page drawing any other subject is not the calibrated one", () => {
+		// The comparison the probe's subject row makes, each leg broken alone.
+		const { subject } = HULL_LUMA_CALIBRATION;
+		expect(isCalibratedHullSubject({ ...subject })).toBe(true);
+		expect(isCalibratedHullSubject({ ...subject, hull: "miner" })).toBe(false);
+		expect(isCalibratedHullSubject({ ...subject, authored: false })).toBe(
+			false,
+		);
+		expect(
+			isCalibratedHullSubject({ ...subject, modelSha256: "0".repeat(64) }),
+		).toBe(false);
+		expect(isCalibratedHullSubject(null)).toBe(false);
 	});
 
 	test("every floor is the module's own derivation from its reading", () => {
@@ -376,12 +463,13 @@ describe("the painted-hull luma calibration", () => {
 		expect(HULL_LUMA_CALIBRATION.peak).toBeLessThan(HULL_LUMA_BAND.max);
 	});
 
-	test("the ceiling is the principal's 215, with room above the calibrated peak", () => {
-		// Authored, not derived: #231 D2 raised it from #199's 200 when the
-		// principal chose rig B by eye. Held as a literal because it is a ruling,
-		// and the headroom row is what a later re-calibration has to keep.
-		expect(HULL_LUMA_BAND.max).toBe(215);
-		expect(HULL_LUMA_BAND.max - HULL_LUMA_CALIBRATION.peak).toBeGreaterThan(5);
+	test("the ceiling is the principal's 255: no ceiling", () => {
+		// Authored, not derived: #231 D2 raised it from #199's 200 to 215, and
+		// the principal removed it on node #812 (2026-10-09) when the O4's look
+		// was accepted. Held as a literal because it is a ruling. The top of the
+		// readback is the top of the band, so the calibrated peak is inside it.
+		expect(HULL_LUMA_BAND.max).toBe(255);
+		expect(HULL_LUMA_CALIBRATION.peak).toBeLessThanOrEqual(HULL_LUMA_BAND.max);
 	});
 
 	test("no margin is small enough to be decided by which rasteriser ran", () => {
