@@ -42,9 +42,9 @@ Production work must establish the asset/pipeline decision under the map’s cur
 
 Node #813 makes O2 the game's Porter, `freighter/b`, which is the variant the freighter flies.
 
-- **Asset.** `node spikes/porter-hull/prepare-game-asset.mjs` encodes `porter-hull.glb` losslessly (Meshopt geometry, WebP textures) into `public/models/porter.glb`, 14.4 MB, the one Porter file the game ships, and checks every vertex attribute and texture pixel survives. Run it after every Blender export. Everything else here stays review-only.
+- **Asset.** `node spikes/porter-hull/prepare-game-asset.mjs` encodes `porter-hull.glb` losslessly (Meshopt geometry, WebP textures) into `public/models/porter.glb`, 14.4 MB, the one Porter file the game ships, and checks every vertex attribute and texture pixel survives. Run it after every Blender export. Everything else here stays review-only. Every game boot now waits on about 23.8 MB of required models before any Game is built, against about 9.4 MB before (the Coriolis and the cockpit).
 - **Loading.** `src/porter-model.ts` loads it behind the Coriolis's Retry panel on every page that builds ships: the game, the postcard viewer and `?model-viewer=ship`. `buildShipMesh("freighter", "b")` clones the template and throws if it is not installed, rather than drawing a stand-in. A bun preload (`bunfig.toml`, `tests/setup/authored-hulls.ts`) installs the shipped file for the headless tier, so every envelope, collision, vent and muzzle row measures this model.
-- **Frame.** One model metre is 0.001 hull km. The model is turned half a turn about Y into the game's nose −Z frame. **Turned, not mirrored, so the three cassettes are to port.** This README and `build_model.py` call +X starboard, but with the nose at +Z glTF's +X is the ship's left. `evidence/hero.png` and `target.png` both show the cassettes on the pilot's left. The approved geometry ships as approved; a mirror is a one-line change if the principal prefers starboard.
+- **Frame.** One model metre is 0.001 hull km. The model is turned half a turn about Y into the game's nose −Z frame. **Turned, not mirrored, so the three cassettes are to port.** This README and `build_model.py` call +X starboard, but with the nose at +Z glTF's +X is the ship's left. `evidence/hero.png` and `target.png` both show the cassettes on the pilot's left. The approved geometry ships as approved. If the principal prefers starboard, a mirror is a small change, but not a free one: it inverts the side rows in `tests/porter-model.test.ts`, flips the box centre's x, and re-measures the vent placement and shares, which are asymmetric on this hull.
 - **Hull row.** The box is 67.2 × 42.4 × 14.7 m, a third smaller by volume than the procedural Porter's 69.7 × 46.3 × 19.7 m, and it still fits every berth role. So the freighter's row is re-derived, not retuned:
   - mass at the role's 2.20 t per 1,000 m³: 140 → 92 t;
   - thrust scaled to keep the acceleration: 168 → 110.4 MN;
@@ -58,6 +58,11 @@ Node #813 makes O2 the game's Porter, `freighter/b`, which is the variant the fr
   - The hull finishes (the model has its own materials).
   - Generated machinery, rails and windows (the model has its own).
   - The derelict tear: a freighter wreck is darkened but whole, because the tear cuts procedural lofts and the model has none. The derelict rows hold that gap explicitly.
+- **For the principal's flight.**
+  - The one hardpoint's muzzle is found by the procedural ray rule, at the box's centreline: (0.5, 0.4, −29.4) m. That is the forward cassette's bow face, not the keel's nose, so the chase beam starts there.
+  - The main drive's plume is drawn at all six glows at full reach, including the five 1.3 m nozzles.
+  - Neither was judged; both are the frame's to say.
+- **Derelict views.** The canonical sheet's first-loss wreck (seed 47) is a freighter, so `derelict` now shows the Porter's whole wreck. `derelict-tear` stands at the system's first slot whose wreck the tear can cut (a courier), through `placeDerelict`. Both were placed and rendered on the hardware lane; the full sheet was not captured.
 - **Cockpit fit.** The game hides the player's hull in cockpit view and draws the shared courier cabin, so the Porter's own bridge is never seen from inside.
 - **Performance, no LOD.** `node spikes/porter-hull/capture-game.mjs <label>` boots a no-save game flying the Porter on a hardware renderer, captures chase frames and prices four Porters in view against four procedural Derricks (`freighter/a`) on the same frame.
   - On ANGLE Metal / Apple M1 Pro, at a machine load average of 10 to 15 from other sessions, three runs read four Porters at +0.28 to +0.70 ms over the bare frame and four Derricks at +0.43 to +0.54 ms.

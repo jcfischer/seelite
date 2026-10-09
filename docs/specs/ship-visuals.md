@@ -436,7 +436,9 @@ geometry the principal approved is what ships.
 
 Headless tests assert every candidate has stable hull and variant identity,
 deterministic bounds, declared reach, distinct design theses, compact exhausts,
-intersecting canopy fairings and structurally mounted nacelles. The mount
+intersecting canopy fairings and structurally mounted nacelles — every
+procedural candidate, for the part-name rows: the authored Porter (§3.3) has no
+named fairing, loft or nacelle, and those rows say so where they skip it. The mount
 assertion names no side: it was written as port and starboard, which outlawed
 any drive layout that is not laterally paired, and the rankings kept choosing
 the layouts it forbade. It now says what it always meant — every nacelle

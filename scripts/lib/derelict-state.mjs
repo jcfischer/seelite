@@ -4,6 +4,12 @@
  * `framing: "tear"` (node #735) then moves the camera to stand off the wreck's
  * most sunlit tear, read off the drawn hull's own `userData.torn`, so the
  * broken look is judged at a range where a frame member is more than a pixel.
+ *
+ * The tear cuts procedural lofts, and the authored Porter (node #813) has
+ * none, so its wreck is whole. `"tear"` therefore stands at the first of the
+ * system's derelict slots whose wreck the tear can cut, read off
+ * `derelictPose` before anything moves; the plain framing keeps the first
+ * slot, whatever it holds.
  */
 export async function placeDerelict(page, shot = {}) {
 	return page.evaluate(async (framing) => {
@@ -13,15 +19,25 @@ export async function placeDerelict(page, shot = {}) {
 		);
 		const { advanceTo } = await import("/src/world-state.ts");
 		const { advanceSystem } = await import("/src/sim.ts");
-		const { tetherPose } = await import("/src/derelict.ts");
+		const { derelictPose, tetherPose } = await import("/src/derelict.ts");
+		const { isAuthoredHull } = await import("/src/ship-mesh.ts");
+		const { HULL_SPECS } = await import("/src/hull.ts");
 		g.resetFlightToStart();
 		g.clockHeld = true;
 		g.photoMode = false;
 		g.keys.clear();
 		const system = g.world.system;
-		const key = derelictSlots(system.record.index, system.record.government)[0]
-			.key;
-		const at = derelictFirstLossAt(system.record.seed, key) + 1;
+		const slots = derelictSlots(system.record.index, system.record.government);
+		const lossAt = (slot) =>
+			derelictFirstLossAt(system.record.seed, slot.key) + 1;
+		const tearable = (slot) => {
+			const { hull } = derelictPose(system, slot.key, 0, lossAt(slot));
+			return !isAuthoredHull(hull, HULL_SPECS[hull].variant);
+		};
+		const slot = framing === "tear" ? slots.find(tearable) : slots[0];
+		if (!slot) throw Error("no derelict slot whose wreck the tear can cut");
+		const key = slot.key;
+		const at = lossAt(slot);
 		g.world.gameTime = at;
 		advanceSystem(system, at);
 		g.commerceWorld = advanceTo(g.commerceWorld, at);

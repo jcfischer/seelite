@@ -377,9 +377,13 @@ export const VIEWS = Object.freeze([
 		// frame member is under a pixel; this one stands 50 m off the tear that
 		// faces the star most. New with #735, so it has no "before" at an
 		// earlier ref: the derelict view above is the pair.
+		//
+		// Node #813: the view above's wreck is now the authored Porter, which
+		// the tear cannot cut, so this one stands at the first of the system's
+		// derelict slots whose wreck it can (`placeDerelict`).
 		name: "derelict-tear",
 		covers: [735],
-		what: "The same wreck from 50 m off its most sunlit tear: skin torn and folded in, the frame behind it exposed, one member snapped.",
+		what: "The system's first wreck the tear can cut, from 50 m off its most sunlit tear: skin torn and folded in, the frame behind it exposed, one member snapped.",
 		shot: { kind: "derelict", framing: "tear", view: "cockpit" },
 	},
 	{
