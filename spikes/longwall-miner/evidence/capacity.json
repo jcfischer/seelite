@@ -1,0 +1,28 @@
+{
+  "source": "exported closed skip backing meshes; metres",
+  "externalSkipVolumesM3": [
+    1047.2199004937472,
+    1047.2199004937472,
+    1047.2199004937472
+  ],
+  "totalExternalM3": 3141.6597014812414,
+  "assumptions": {
+    "usableVolumeFraction": [
+      0.6,
+      0.7
+    ],
+    "brokenOreBulkDensityTonnesPerM3": [
+      1.5,
+      2
+    ]
+  },
+  "usableVolumeM3": [
+    1884.9958208887447,
+    2199.1617910368686
+  ],
+  "cargoTonnes": [
+    2827.493731333117,
+    4398.323582073737
+  ],
+  "limitation": "Volume-only estimate; structure, mass, thrust, economics and production hold unverified"
+}

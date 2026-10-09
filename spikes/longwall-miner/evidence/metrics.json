@@ -1,0 +1,17 @@
+{
+  "gpu": "ANGLE (Apple, ANGLE Metal Renderer: Apple M1 Pro, Unspecified Version)",
+  "errors": [],
+  "loaded": true,
+  "fps": 56.264066016504124,
+  "triangles": 1239746,
+  "calls": 455,
+  "modelTriangles": 283528,
+  "meshCount": 107,
+  "bounds": [
+    34,
+    18.7858304977417,
+    84.40000009536743
+  ],
+  "view": "mining",
+  "controls": "anchors, independent feed, cutter rotation, stow, mining pose, orbit, target and PNG export passed"
+}
