@@ -84,7 +84,8 @@ What moved, and what is yours to decide:
   129 km/s; `tests/combat-enemy-avoidance.test.ts` holds it at 100 km/s,
   against a fastest body of 86.7). Linear acceleration is unchanged. The docking computer's first
   roll-tracking failure is 7.0 rpm (was 5.5); the miner is still the worst
-  hull, now 2.17x the fastest station. Three Traffic launch-aperture touches,
+  hull, now 2.17x the fastest station
+  (`evidence/hull-docking-round5.txt` is the run that prints both). Three Traffic launch-aperture touches,
   all miners, are gone from system 0's pinned corpus row. Those last two are
   flown figures, and the length, the box and the moved vents all changed
   under them at once: nothing here attributes either to one of the three.
@@ -175,7 +176,11 @@ What moved, and what is yours to decide:
   again on the GPU lane and passed, under a peak load of 41–64 on 10 cores
   from outside work; `evidence/integration-probes-round4.txt` is that
   transcript. None of the five frames a miner past 400 radii either, so the
-  stand-in is held headless too. The full run is the supervisor's.
+  stand-in is held headless too. After sage round 5's simplified hull and
+  shadow shedding (head 72e9dcf) the same five and `probe-occlusion` were
+  run alone on the GPU lane and passed (`evidence/integration-probes-round5.txt`);
+  none frames a miner between 40 and 400 radii, so the reduced hull is held
+  headless as well. The full run is the supervisor's.
 
 **Field Notes, proposed copy (major: a rebuilt ship a returning player
 sees), for your approval before it lands in `src/changelog.ts`:**
