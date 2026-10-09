@@ -8,7 +8,10 @@
  * rasteriser (#98), and measures **one page, one camera, one clock**: the
  * player's hull group in chase view holds, block by block, nothing, the
  * authored O4, or the procedural Kestrel — and, for Traffic, the same hull
- * with four more of it parked in frame ahead. Both hulls are built on this
+ * with four more of it parked in frame ahead: close (`+4`, inside the
+ * detail band's first edge, so the full model) and far (`+4far`, past it,
+ * so the reduced level the band switches a courier to there, and the
+ * Kestrel's reduced band without its clutter). Both hulls are built on this
  * page by the game's own `ship-mesh.ts` (vite serves the one module instance),
  * the Kestrel by uninstalling the authored builder for one build and putting
  * it back. So the arms differ by the hull drawn and nothing else.
@@ -39,7 +42,15 @@ const ORDER_SEED = Number(process.env.ORDER_SEED ?? 20261009);
 const VIEWPORT = { width: 1440, height: 900 };
 const port = Number(process.env.PORT ?? 5196);
 
-const ARMS = ["none", "authored", "kestrel", "authored+4", "kestrel+4"];
+const ARMS = [
+	"none",
+	"authored",
+	"kestrel",
+	"authored+4",
+	"kestrel+4",
+	"authored+4far",
+	"kestrel+4far",
+];
 
 const server = await createServer({
 	server: { host: "127.0.0.1", port, strictPort: true },
@@ -103,39 +114,88 @@ try {
 			[-0.05, -0.03, -0.32],
 			[0.05, -0.03, -0.32],
 		];
-		const fleet = (authored) => {
+		// Past the band's first edge: four hulls on the camera's own axis at
+		// 60 and 80 courier reaches from it, against `DETAIL_RADII.full`'s 40,
+		// spread across the frame. Placed from the chase camera's pose, because
+		// "ahead of the ship" is out of frame at this yaw that far out.
+		const { DETAIL_RADII } = await import("/src/detail-level.ts");
+		const reach = mesh.HULL_REACH_KM.courier;
+		g.render(0);
+		const camera = g.nearCamera;
+		camera.updateMatrixWorld(true);
+		const eye = camera.getWorldPosition(new ship.position.constructor());
+		const basis = (x, y, z) =>
+			new ship.position.constructor(x, y, z).transformDirection(
+				camera.matrixWorld,
+			);
+		const forward = basis(0, 0, -1);
+		const right = basis(1, 0, 0);
+		const up = basis(0, 1, 0);
+		const FAR = [
+			[-0.25, 0.1, 60],
+			[0.25, 0.1, 60],
+			[-0.15, -0.1, 80],
+			[0.15, -0.1, 80],
+		];
+		const placedFar = (root, [across, high, radii]) => {
+			const range = radii * reach;
+			const at = eye
+				.clone()
+				.addScaledVector(forward, range)
+				.addScaledVector(right, across * range)
+				.addScaledVector(up, high * range);
+			const distance = at.distanceTo(eye);
+			root.position.copy(ship.worldToLocal(at));
+			return distance;
+		};
+		const fleet = (authored, far) => {
 			const group = new ship.constructor();
-			for (const [x, y, z] of SLOTS) {
+			for (let i = 0; i < 4; i++) {
 				const root = build(authored);
-				root.position.set(x, y, z);
+				let distance;
+				if (far) distance = placedFar(root, FAR[i]);
+				else {
+					root.position.set(...SLOTS[i]);
+					distance = root.position.length();
+				}
+				// Stepped once, as the game steps every hull it draws: the
+				// clock is held, so the range does not change.
+				mesh.updateShipVisuals(root, distance, "high");
 				group.add(root);
 			}
 			return group;
 		};
-		const fleets = { authored: fleet(true), kestrel: fleet(false) };
+		const fleets = {
+			"authored+4": fleet(true, false),
+			"kestrel+4": fleet(false, false),
+			"authored+4far": fleet(true, true),
+			"kestrel+4far": fleet(false, true),
+		};
+		const levelOf = (root) =>
+			["courier-hull-model", "courier-hull-reduced", "courier-hull-outline"]
+				.map((name) => root.getObjectByName(name))
+				.find((o) => o?.visible)?.name;
+		for (const [arm, levels] of [
+			["authored+4", "courier-hull-model"],
+			["authored+4far", "courier-hull-reduced"],
+		])
+			for (const root of fleets[arm].children)
+				if (levelOf(root) !== levels)
+					throw new Error(`${arm}: a courier draws ${levelOf(root)}`);
+		if (FAR.some(([, , radii]) => radii <= DETAIL_RADII.full))
+			throw new Error("a far slot is inside the band's first edge");
 		window.__courierArm = (arm) => {
 			for (const child of [...ship.children]) ship.remove(child);
 			if (arm === "none") return;
 			const hull = arm.startsWith("authored") ? "authored" : "kestrel";
 			for (const child of kids[hull]) ship.add(child);
-			if (arm.endsWith("+4")) ship.add(fleets[hull]);
+			if (fleets[arm]) ship.add(fleets[arm]);
 		};
-		const count = (children) => {
-			let meshes = 0;
-			let triangles = 0;
-			for (const child of children)
-				child.traverse((o) => {
-					if (!o.isMesh) return;
-					meshes++;
-					const geo = o.geometry;
-					triangles +=
-						(geo.index ? geo.index.count : geo.attributes.position.count) / 3;
-				});
-			return { meshes, triangles };
-		};
+		const { meshStats } = await import("/scripts/lib/mesh-stats.mjs");
+		const full = (o) => o.userData.levelStandIn === true;
 		return {
-			authored: count(kids.authored),
-			kestrel: count(kids.kestrel),
+			authored: meshStats(kids.authored, full),
+			kestrel: meshStats(kids.kestrel),
 		};
 	});
 
@@ -202,10 +262,10 @@ try {
 		console.log(
 			`\n  occlusion ${occlusion ? "on (shadow + AO, pinned)" : "off (pinned)"}`,
 		);
-		console.log("  arm         ms/frame  calls  triangles");
+		console.log("  arm            ms/frame  calls  triangles");
 		for (const arm of ARMS)
 			console.log(
-				`  ${arm.padEnd(11)} ${median(blocks[arm]).toFixed(3).padStart(8)}  ${String(counts[arm].calls).padStart(5)}  ${String(counts[arm].triangles).padStart(9)}`,
+				`  ${arm.padEnd(14)} ${median(blocks[arm]).toFixed(3).padStart(8)}  ${String(counts[arm].calls).padStart(5)}  ${String(counts[arm].triangles).padStart(9)}`,
 			);
 		const delta = (a, b) =>
 			`${(median(blocks[a]) - median(blocks[b])).toFixed(3)} ms, ${a} slower in ${separation(blocks[a], blocks[b])}`;
@@ -214,6 +274,12 @@ try {
 		console.log(`  authored − kestrel:     ${delta("authored", "kestrel")}`);
 		console.log(
 			`  authored+4 − kestrel+4: ${delta("authored+4", "kestrel+4")}`,
+		);
+		console.log(
+			`  authored+4far − kestrel+4far: ${delta("authored+4far", "kestrel+4far")}`,
+		);
+		console.log(
+			`  authored+4 − authored+4far: ${delta("authored+4", "authored+4far")}`,
 		);
 	}
 	await page.evaluate(() => window.__courierArm("authored"));

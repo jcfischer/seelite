@@ -61,6 +61,10 @@ const attributes = (doc) =>
 				),
 			),
 		}));
+// Taken after dedup and reorder, so this asserts the Meshopt round trip:
+// what is written decodes to exactly what was encoded. That the shipped file
+// draws the study's triangles, normals and texture coordinates is
+// `tests/courier-hull.test.ts`'s row, against the study export itself.
 const beforeEncoding = attributes(document);
 await mkdir("public/models", { recursive: true });
 await io.write("public/models/courier-hull.glb", document);
@@ -76,5 +80,5 @@ assert.deepEqual(
 	"WebP changed texture pixels",
 );
 console.log(
-	"Verified exact vertex attributes and texture pixels after encoding/decoding.",
+	"Verified the Meshopt round trip of every vertex attribute, and exact texture pixels.",
 );

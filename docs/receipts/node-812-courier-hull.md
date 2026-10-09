@@ -13,9 +13,13 @@ browser rows are red pending that decision (Q1).
 - `public/models/courier-hull.glb`: the study export re-encoded by
   `spikes/courier-hull/prepare-game-asset.mjs` with dedup, reorder, Meshopt
   and lossless WebP. There is no simplification and no quantisation. The
-  script asserts exact vertex attributes and texture pixels after decoding.
-  `tests/courier-hull.test.ts` holds every mesh's triangles equal to the
-  study's. **15,940,136 bytes** (the study is 30,766,660), with 353,954
+  script asserts that the Meshopt encoding round-trips every vertex attribute
+  exactly (its baseline is taken after dedup and reorder) and that the WebP
+  pixels are exact. `tests/courier-hull.test.ts` holds the shipped file
+  against the study export itself: every mesh's triangles, with each corner's
+  position, normal and texture coordinate. (Corrected in sage round 2: this
+  line said the script asserted exact vertex attributes, and until round 2 the
+  test compared positions only.) **15,940,136 bytes** (the study is 30,766,660), with 353,954
   triangles, 36 meshes and two 1254² WebP textures (2.03 MB and 1.81 MB). The
   boot now downloads the Coriolis (6.70 MB), the cockpit (3.14 MB) and this
   file.
@@ -34,6 +38,8 @@ browser rows are red pending that decision (Q1).
   `?model-viewer=ship`. The first courier is built inside the loader, so no
   Traffic courier pays the nav-light raycast mid-flight.
 - Traffic flies the selected variant, so every Traffic courier is the O4.
+- Since sage round 2 the detail band switches the model (below,
+  "Reduced levels").
 
 ## D1. The size: the length is held, and why
 
@@ -106,8 +112,71 @@ Differences between arms:
 | O4 − Kestrel | +0.251 ms (144/144) | +0.239 ms (144/144) |
 | five O4s − five Kestrels | +0.481 ms (144/144) | +0.842 ms (144/144) |
 
-No LOD was built. A far LOD for Traffic is the lever if a busier station
-shows more than these figures.
+No LOD was built in round 1; the rows above are that build's. Round 2 built
+one.
+
+### Reduced levels (sage round 2)
+
+Every courier now carries the model and two reduced copies, and the existing
+ship detail band (`detail-level.ts`, stepped every frame for every hull
+`main.ts` draws) picks one. `full` is the approved model, triangle for
+triangle. Past `DETAIL_RADII.full` (40 courier reaches, 1.44 km) a courier
+draws `reduced`, and past `DETAIL_RADII.reduced` (400, 14.4 km) it draws
+`outline`.
+
+- **How a level is made.** At load, from the loaded model (`courier-hull.ts`),
+  by meshoptimizer's simplifier: each mesh welded on position, edges collapsed
+  under an absolute error, normals recomputed with a 30° crease. A collapse
+  moves a corner onto an existing vertex, so a level never reaches past the
+  model; the envelope rows still read the full model's box. The cabin and the
+  pilot are left out of both levels.
+- **The error is a pixel quantity.** Half a device pixel where the level is
+  first drawn, at the near camera's 60° on a 1800-pixel frame (900 CSS pixels
+  at device scale 2): 0.46 m for `reduced`, 4.6 m for `outline`
+  (`courierLevelErrorKm`, asserted in `tests/courier-hull.test.ts`).
+- **Triangles.** `full` 353,954; `reduced` 92,540 (20 meshes); `outline`
+  6,472 (11 meshes), pinned in the test. Two meshes, `blue-grey-1` (35,518)
+  and `pale-steel-1` (17,928), barely reduce at 0.46 m and are most of what
+  `reduced` still draws.
+- **Nothing is measured on a level.** Its meshes are `CourierLevelMesh`,
+  whose `raycast` is empty, and carry `userData.levelStandIn`, which the vent
+  throats and `scripts/measure-vent-placement.ts` skip. Nav lights, muzzles
+  and throats are placed on the approved metal. A wreck darkens every level.
+- **What it costs at load.** `createCourierHullBuilder` took 231–251 ms in
+  bun over three runs, most of it the two levels. It runs inside the loader,
+  behind the Retry panel, like the nav-light raycast. `meshoptimizer` moves
+  from `devDependencies` to `dependencies`, since `src/` imports its
+  simplifier.
+
+`scripts/measure-courier-hull-cost.mjs` now has two more arms: the same four
+extra couriers, or Kestrels, placed on the camera's axis at 60 and 80 courier
+reaches, where the band draws `reduced`. The instrument checks that the
+level drawn is the one named. Same machine and lane as above, run 2026-10-09
+under a load average of 6–12 from other sessions, so the milliseconds
+separate weakly. The draw counts are exact.
+
+| arm | occlusion off: ms | calls | triangles | occlusion on: ms | calls | triangles |
+| --- | --- | --- | --- | --- | --- | --- |
+| no hull | 4.253 | 194 | 255,970 | 6.505 | 490 | 904,794 |
+| O4 | 5.232 | 234 | 610,718 | 7.250 | 563 | 1,614,230 |
+| Kestrel | 4.091 | 224 | 265,950 | 6.640 | 549 | 924,754 |
+| O4 + 4 near | 5.518 | 375 | 2,008,616 | 8.297 | 823 | 4,409,846 |
+| Kestrel + 4 near | 4.574 | 327 | 301,086 | 6.757 | 751 | 995,026 |
+| O4 + 4 far | 4.954 | 330 | 984,054 | 7.530 | 743 | 2,360,694 |
+| Kestrel + 4 far | 4.425 | 332 | 304,526 | 6.643 | 761 | 1,001,906 |
+
+| comparison | occlusion off | occlusion on |
+| --- | --- | --- |
+| four near O4s − four near Kestrels | +0.944 ms (125/144) | +1.540 ms (144/144) |
+| four far O4s − four far Kestrels | +0.529 ms (106/144) | +0.888 ms (117/144) |
+| four near O4s − four far O4s | +0.564 ms (99/144) | +0.767 ms (128/144) |
+
+The scene behind the arms differs from round 1's (the no-hull arm draws
+255,970 triangles here against 517,372 then), so the two tables compare
+within themselves and not across. Four far couriers add 373,336 triangles
+over the O4 alone, 93,334 each, which is the `reduced` level and its nav
+lights. Inside 1.44 km a Traffic courier is still the full model, and the
+near row is what a busy berth costs.
 
 Headless timings (bun) on the model:
 
@@ -126,9 +195,15 @@ build had placed the nav lights.
 
 ## Verification
 
-- `npm test`: 5685 pass, 0 fail (349.3 s) on the final tree (after sage round 1).
+- `npm test`: 5685 pass, 0 fail (349.3 s) after sage round 1; 5691 pass, 0 fail (397.3 s) after sage round 2.
+- Round 2's browser probes, singly on the GPU lane: ship-visuals, boot,
+  derelict, vent-display, station-route-traffic, shipyard and chase-orbit
+  pass. probe-postcard is red on the same row as before (Q1, 0.5% of cells).
 - Bun preload: `tests/setup-courier-hull.ts` installs the shipped model for
-  every file, so headless rows measure the courier the player flies.
+  every file, so headless rows measure the courier the player flies. Its
+  installer and the GLB decoder moved to `scripts/lib/` in round 2
+  (`shipped-courier-hull.ts`, `shipped-glb.ts`), because
+  `scripts/measure-vent-placement.ts` uses them too.
 - Procedural generator rows: the four files that hold the procedural hull
   language (`ship-mesh`, `ship-finish`, `surface`, `ship-details`) run on the
   procedural Kestrel through `useProceduralCourier()`. Their courier rows
@@ -217,6 +292,12 @@ The levers are #101's hull surface, #102's greebles and #203's hull finish.
 but those frames are no longer evidence for these levers. Move them to a
 procedural hull, or add a view? The views were not changed here, because that
 changes the sheet.
+
+**Q7. The reduced levels are a lossy change to the approved hull.** Like Q4,
+they are not the study's geometry, though each is held to half a device pixel
+where it is first drawn. The views that would show them are any frame with a
+Traffic courier past 1.44 km. Keep them, move the band edge for the courier,
+or drop them and accept the near-row cost for every courier in view?
 
 ### Proposed Field Notes copy (not in `src/changelog.ts` until approved)
 

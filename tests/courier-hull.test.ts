@@ -12,7 +12,14 @@
 
 import { afterEach, describe, expect, test } from "bun:test";
 import * as THREE from "three";
-import { COURIER_LENGTH_INSET_KM } from "../src/courier-hull";
+import { buildDerelictMesh } from "../src/derelict-mesh";
+import { DETAIL_RADII } from "../src/detail-level";
+import {
+	COURIER_LENGTH_INSET_KM,
+	CourierLevelMesh,
+	FIXTURE_SCREEN_PREFIX,
+	courierLevelErrorKm,
+} from "../src/courier-hull";
 import { HULL_SPECS } from "../src/hull";
 import { EMISSIVE_CEILING } from "../src/light-rig";
 import {
@@ -22,7 +29,9 @@ import {
 	installAuthoredCourier,
 	isDriveBell,
 	shipMuzzlesKm,
+	updateShipVisuals,
 } from "../src/ship-mesh";
+import { isLevelStandIn } from "../src/ship-detail";
 import {
 	DEFAULT_HULL_FINISH,
 	HULL_FINISH_IDS,
@@ -37,21 +46,34 @@ const courier = () => {
 	return root;
 };
 
+/** The approved model's meshes and the glows: a reduced level is drawn,
+ *  never measured, and its own rows are below. */
 const meshesOf = (root: THREE.Object3D) => {
 	const out: THREE.Mesh[] = [];
 	root.traverse((o) => {
-		if (o instanceof THREE.Mesh) out.push(o);
+		if (o instanceof THREE.Mesh && !isLevelStandIn(o)) out.push(o);
 	});
 	return out;
+};
+
+const triangles = (object: THREE.Object3D) => {
+	let n = 0;
+	object.traverse((o) => {
+		if (!(o instanceof THREE.Mesh)) return;
+		const g = o.geometry;
+		n += (g.index ? g.index.count : g.getAttribute("position").count) / 3;
+	});
+	return n;
 };
 
 afterEach(() => setHullFinish(DEFAULT_HULL_FINISH));
 
 describe("the shipped file is the approved study", () => {
-	test("every mesh, its positions and its triangles, exactly", async () => {
+	test("every mesh, its triangles and their corners' attributes, exactly", async () => {
 		// The prepare script (`spikes/courier-hull/prepare-game-asset.mjs`)
 		// only re-encodes: no simplification, no quantisation. Held against the
-		// study export the principal approved, decoded through the same loader.
+		// study export the principal approved, decoded through the same loader:
+		// every corner's position, normal and texture coordinate.
 		const study = await decodeShippedGlb(
 			"spikes/courier-hull/courier-hull.glb",
 		);
@@ -60,6 +82,8 @@ describe("the shipped file is the approved study", () => {
 			meshesOf(scene)
 				.map((m) => {
 					const position = m.geometry.getAttribute("position");
+					const normal = m.geometry.getAttribute("normal");
+					const uv = m.geometry.getAttribute("uv");
 					const index = m.geometry.getIndex();
 					// One triangle list per mesh, as positions: a reorder of the
 					// vertex buffer moves indices but never what is drawn.
@@ -68,7 +92,16 @@ describe("the shipped file is the approved study", () => {
 					for (let i = 0; i < count; i += 3) {
 						const corner = (k: number) => {
 							const v = index ? index.getX(i + k) : i + k;
-							return `${position.getX(v)},${position.getY(v)},${position.getZ(v)}`;
+							return [
+								position.getX(v),
+								position.getY(v),
+								position.getZ(v),
+								normal.getX(v),
+								normal.getY(v),
+								normal.getZ(v),
+								uv.getX(v),
+								uv.getY(v),
+							].join(",");
 						};
 						// Started at its least corner: re-encoding may rotate a
 						// triangle's corners, which keeps its winding and its face.
@@ -234,7 +267,7 @@ describe("what the game needs that the study did not carry", () => {
 	test("the study's fixture screens are unpowered, and no lamp is over white", () => {
 		const root = courier();
 		const screens = meshesOf(root).filter((m) =>
-			m.name.startsWith("interior-screen-"),
+			m.name.startsWith(FIXTURE_SCREEN_PREFIX),
 		);
 		expect(screens.map((s) => s.name).sort()).toEqual([
 			"interior-screen-flight",
@@ -381,5 +414,126 @@ describe("the courier's throats are measured once (node #812, sage round 1)", ()
 		} finally {
 			installAuthoredCourier(installed);
 		}
+	});
+});
+
+describe("every Traffic courier is the model, so the detail band switches it (sage round 2)", () => {
+	const levelsOf = (root: THREE.Object3D) => {
+		const frame = root.getObjectByName("courier-hull-frame") as THREE.Object3D;
+		const named = (name: string) =>
+			frame.children.find((c) => c.name === name) as THREE.Object3D;
+		return {
+			full: named("courier-hull-model"),
+			reduced: named("courier-hull-reduced"),
+			outline: named("courier-hull-outline"),
+		};
+	};
+	const reachKm = HULL_REACH_KM.courier;
+	const drawn = (root: THREE.Object3D) =>
+		Object.entries(levelsOf(root))
+			.filter(([, o]) => o.visible)
+			.map(([k]) => k);
+
+	test("one level is drawn at a time, picked by the band and held through its hysteresis", () => {
+		const root = courier();
+		expect(drawn(root)).toEqual(["full"]);
+		const at = (radii: number) => {
+			updateShipVisuals(root, radii * reachKm, "high");
+			return drawn(root);
+		};
+		expect(at(DETAIL_RADII.full * 1.02)).toEqual(["full"]);
+		expect(at(DETAIL_RADII.full * 1.1)).toEqual(["reduced"]);
+		expect(at(DETAIL_RADII.full * 1.02)).toEqual(["reduced"]);
+		expect(at(DETAIL_RADII.reduced * 1.1)).toEqual(["outline"]);
+		expect(at(DETAIL_RADII.full * 0.9)).toEqual(["full"]);
+		// The quality row gates generated clutter; it does not pick a level.
+		updateShipVisuals(root, DETAIL_RADII.full * 0.5 * reachKm, "low");
+		expect(drawn(root)).toEqual(["full"]);
+	});
+
+	test("each reduced level is lighter, keeps the hull outside the canopy, and never reaches past the model", () => {
+		const root = courier();
+		const { full, reduced, outline } = levelsOf(root);
+		const study = triangles(full);
+		expect(study).toBe(353_954);
+		// Pinned, because the receipt quotes them and the simplifier is
+		// deterministic: a change to the reduction is a red row rather than a
+		// silent re-weighting of every courier in the game.
+		expect(triangles(reduced)).toBe(92_540);
+		expect(triangles(outline)).toBe(6_472);
+		for (const level of [reduced, outline]) {
+			const names: string[] = [];
+			level.traverse((o) => {
+				if (!(o instanceof THREE.Mesh)) return;
+				names.push(o.name);
+				expect(o).toBeInstanceOf(CourierLevelMesh);
+				expect(isLevelStandIn(o)).toBe(true);
+			});
+			expect(names.some((n) => /^(interior-|pilot-)/.test(n))).toBe(false);
+			expect(names).toContain("canopy-glass");
+			const box = new THREE.Box3().setFromObject(level);
+			const model = new THREE.Box3().setFromObject(full);
+			expect(model.containsBox(box)).toBe(true);
+		}
+	});
+
+	test("its geometric error is half a device pixel where it is first drawn", () => {
+		// 60° on a 1800-pixel frame: one pixel at d is 2 d tan 30° / 1800.
+		const pixelAt = (radii: number) =>
+			(2 * radii * reachKm * Math.tan(Math.PI / 6)) / 1800;
+		expect(courierLevelErrorKm("reduced")).toBeCloseTo(
+			pixelAt(DETAIL_RADII.full) / 2,
+			15,
+		);
+		expect(courierLevelErrorKm("outline")).toBeCloseTo(
+			pixelAt(DETAIL_RADII.reduced) / 2,
+			15,
+		);
+		// About 0.46 m and 4.6 m of hull.
+		expect(courierLevelErrorKm("reduced") * 1000).toBeCloseTo(0.462, 3);
+		expect(courierLevelErrorKm("outline") * 1000).toBeCloseTo(4.619, 3);
+	});
+
+	test("a reduced level takes no ray, so the lights, guns and throats are placed on the model", () => {
+		const root = courier();
+		const { reduced, outline } = levelsOf(root);
+		const caster = new THREE.Raycaster(
+			new THREE.Vector3(0, 0.001, -1),
+			new THREE.Vector3(0, 0, 1),
+		);
+		expect(caster.intersectObject(reduced, true)).toEqual([]);
+		expect(caster.intersectObject(outline, true)).toEqual([]);
+		expect(caster.intersectObject(root, true).length).toBeGreaterThan(0);
+	});
+
+	test("every courier shares the levels' geometry, and the glows stay outside them", () => {
+		const a = levelsOf(courier());
+		const b = levelsOf(courier());
+		const geometries = (o: THREE.Object3D) => {
+			const out: THREE.BufferGeometry[] = [];
+			o.traverse((m) => {
+				if (m instanceof THREE.Mesh) out.push(m.geometry);
+			});
+			return out;
+		};
+		expect(geometries(b.reduced)).toEqual(geometries(a.reduced));
+		expect(geometries(b.outline)).toEqual(geometries(a.outline));
+		for (const level of Object.values(a))
+			level.traverse((o) => {
+				if (o instanceof THREE.Mesh) expect(isDriveBell(o)).toBe(false);
+			});
+	});
+
+	test("a wreck darkens every level", () => {
+		const wreck = buildDerelictMesh("courier");
+		const { full, reduced } = levelsOf(wreck);
+		const darkened = new Set<THREE.Material>();
+		full.traverse((o) => {
+			if (o instanceof THREE.Mesh) darkened.add(o.material as THREE.Material);
+		});
+		reduced.traverse((o) => {
+			if (o instanceof THREE.Mesh)
+				expect(darkened.has(o.material as THREE.Material)).toBe(true);
+		});
 	});
 });

@@ -28,20 +28,149 @@
  * cabin is never the one a pilot reads (the cabin pass draws that), so here
  * they are unpowered — the cockpit model's own convention for a screen with
  * no live source.
+ *
+ * **Every Traffic courier is this model, so the detail band switches it.**
+ * Inside the band's first edge (`DETAIL_RADII.full`) a courier is the
+ * approved model, triangle for triangle; beyond it, a reduced copy whose
+ * geometric error is half a device pixel where it is first drawn
+ * (`courierLevelErrorKm`), and beyond the second edge a coarser one held to
+ * the same rule. Both copies are made here, once, from the loaded model, and
+ * share its materials and textures; the cabin and the pilot behind the canopy
+ * are left out of both. A reduced level is drawn and never measured: its
+ * meshes take no ray (`CourierLevelMesh`), so the nav lights, the muzzles
+ * and the vent throats are placed on the approved metal.
  */
 import * as THREE from "three";
 import { MeshoptDecoder } from "three/addons/libs/meshopt_decoder.module.js";
 import { GLTFLoader } from "three/addons/loaders/GLTFLoader.js";
+import { toCreasedNormals } from "three/addons/utils/BufferGeometryUtils.js";
+import { MeshoptSimplifier } from "meshoptimizer/simplifier";
+import { DETAIL_RADII } from "./detail-level";
 import { disposeSubtree, shared } from "./gpu-teardown";
 import { HULL_SPECS } from "./hull";
 import { EMISSIVE_CEILING } from "./light-rig";
+import { LEVEL_STAND_IN } from "./ship-detail";
 import {
 	AUTHORED_COURIER_VARIANT,
 	type AuthoredHullBuilder,
+	HULL_REACH_KM,
 	buildShipMesh,
 	installAuthoredCourier,
 } from "./ship-mesh";
 import { ventThroats } from "./vent-plumes";
+
+/** The study's four fixture screens: unpowered in the game (see above). */
+export const FIXTURE_SCREEN_PREFIX = "interior-screen-";
+
+/** The cabin and the pilot, seen only through the canopy: left out of the
+ *  reduced levels, where the canopy is a few pixels across. */
+const BEHIND_THE_CANOPY = /^(interior-|pilot-)/;
+
+/**
+ * The frame a reduced level is held to: the near camera's 60° field of view
+ * (`main.ts`) on the player's retina panel, 900 CSS pixels tall at device
+ * scale 2 — the frame the cost instruments here measure on. A taller frame
+ * would see a reduced level's error at more than half a pixel.
+ */
+export const COURIER_LEVEL_FRAME = { fovDeg: 60, heightPx: 1800 } as const;
+
+/** The crease a reduced level's normals are split at: their faces are new,
+ *  so their normals are computed, smooth across anything flatter than this. */
+const COURIER_LEVEL_CREASE_RAD = Math.PI / 6;
+
+/**
+ * The geometric error a reduced level may carry, kilometres: half a device
+ * pixel in `COURIER_LEVEL_FRAME` at the nearest the band draws that level,
+ * which is the band edge it is entered at from nearer —
+ * `DETAIL_RADII.full` silhouette radii for `reduced` and
+ * `DETAIL_RADII.reduced` for `outline`. A pixel quantity, so the band's
+ * edges in radii decide where it applies and the frame decides how much.
+ */
+export function courierLevelErrorKm(level: "reduced" | "outline"): number {
+	const radii = level === "reduced" ? DETAIL_RADII.full : DETAIL_RADII.reduced;
+	const distanceKm = radii * HULL_REACH_KM.courier;
+	const halfAngle = (COURIER_LEVEL_FRAME.fovDeg * Math.PI) / 360;
+	const pixelKm =
+		(2 * distanceKm * Math.tan(halfAngle)) / COURIER_LEVEL_FRAME.heightPx;
+	return pixelKm / 2;
+}
+
+/** A reduced level's mesh: drawn, never measured. Every ray this repo casts
+ *  at a hull asks where its metal is, and the approved model is the answer. */
+export class CourierLevelMesh extends THREE.Mesh {
+	override raycast(): void {}
+}
+
+/**
+ * One mesh's geometry with edges collapsed while the error stays under
+ * `errorM` (study metres). Welded on position first: the study's faces do
+ * not share vertices across a hard edge, and an unwelded mesh has nothing
+ * to collapse. A collapse moves a corner onto an existing vertex, so the
+ * reduced mesh never reaches past the approved one. The welded corners keep
+ * one of their texture coordinates, which a few pixels of hull cannot show.
+ * `null` when nothing of the mesh survives the error.
+ */
+function reducedGeometry(
+	source: THREE.BufferGeometry,
+	errorM: number,
+): THREE.BufferGeometry | null {
+	const position = source.getAttribute("position");
+	const positions = new Float32Array(position.count * 3);
+	for (let i = 0; i < position.count; i++) {
+		positions[3 * i] = position.getX(i);
+		positions[3 * i + 1] = position.getY(i);
+		positions[3 * i + 2] = position.getZ(i);
+	}
+	const index = source.getIndex();
+	const remap = MeshoptSimplifier.generatePositionRemap(positions, 3);
+	const count = index ? index.count : position.count;
+	const welded = new Uint32Array(count);
+	for (let i = 0; i < count; i++) welded[i] = remap[index ? index.getX(i) : i];
+	const [kept] = MeshoptSimplifier.simplify(welded, positions, 3, 0, errorM, [
+		"ErrorAbsolute",
+		"Prune",
+	]);
+	if (kept.length === 0) return null;
+	const reduced = new THREE.BufferGeometry();
+	reduced.setAttribute("position", position);
+	const uv = source.getAttribute("uv");
+	if (uv) reduced.setAttribute("uv", uv);
+	reduced.setIndex(new THREE.BufferAttribute(kept, 1));
+	return toCreasedNormals(reduced, COURIER_LEVEL_CREASE_RAD);
+}
+
+/** The model reduced to `errorM`, as a template like the model's own. */
+function reducedLevel(
+	template: THREE.Object3D,
+	errorM: number,
+	name: string,
+): THREE.Object3D {
+	const level = template.clone(true);
+	level.name = name;
+	const meshes: THREE.Mesh[] = [];
+	level.traverse((o) => {
+		if (o instanceof THREE.Mesh) meshes.push(o);
+	});
+	for (const mesh of meshes) {
+		const geometry = BEHIND_THE_CANOPY.test(mesh.name)
+			? null
+			: reducedGeometry(mesh.geometry, errorM);
+		if (geometry) {
+			const stand = new CourierLevelMesh(shared(geometry), mesh.material);
+			stand.name = mesh.name;
+			stand.position.copy(mesh.position);
+			stand.quaternion.copy(mesh.quaternion);
+			stand.scale.copy(mesh.scale);
+			stand.castShadow = mesh.castShadow;
+			stand.receiveShadow = mesh.receiveShadow;
+			stand.userData[LEVEL_STAND_IN] = true;
+			for (const child of [...mesh.children]) stand.add(child);
+			mesh.parent?.add(stand);
+		}
+		mesh.removeFromParent();
+	}
+	return level;
+}
 
 /** Where the shipped asset is served from (`spikes/courier-hull/prepare-game-asset.mjs`). */
 export const COURIER_HULL_URL = "/models/courier-hull.glb";
@@ -140,11 +269,13 @@ function discGeometry(): THREE.BufferGeometry {
 /**
  * Prepare a loaded study scene once and return the builder `buildShipMesh`
  * calls for every courier: the template's geometry, materials and textures
- * are shared by every copy and survive any one ship's teardown.
+ * are shared by every copy and survive any one ship's teardown, and so are
+ * its two reduced levels, made here.
  */
-export function createCourierHullBuilder(
+export async function createCourierHullBuilder(
 	template: THREE.Object3D,
-): AuthoredHullBuilder {
+): Promise<AuthoredHullBuilder> {
+	await MeshoptSimplifier.ready;
 	// The study's lamps were set for its own viewer; the game's exposure
 	// contract caps an authoring dial at white. Normalise once, keeping the
 	// relative strengths, as the Coriolis and the cockpit models do.
@@ -164,8 +295,9 @@ export function createCourierHullBuilder(
 	template.name = "courier-hull-model";
 	template.traverse((o) => {
 		if (!(o instanceof THREE.Mesh)) return;
-		if (o.name.startsWith("interior-screen-")) o.material = unpowered;
-		o.castShadow = !o.name.startsWith("interior-screen-");
+		const screen = o.name.startsWith(FIXTURE_SCREEN_PREFIX);
+		if (screen) o.material = unpowered;
+		o.castShadow = !screen;
 		o.receiveShadow = true;
 		shared(o.geometry);
 		for (const m of Array.isArray(o.material) ? o.material : [o.material]) {
@@ -190,6 +322,18 @@ export function createCourierHullBuilder(
 	);
 	const bowl = shared(bowlGeometry());
 	const disc = shared(discGeometry());
+	const levels = {
+		reduced: reducedLevel(
+			template,
+			courierLevelErrorKm("reduced") / kmPerM,
+			"courier-hull-reduced",
+		),
+		outline: reducedLevel(
+			template,
+			courierLevelErrorKm("outline") / kmPerM,
+			"courier-hull-outline",
+		),
+	};
 
 	return (root, exhaust) => {
 		const frame = new THREE.Group();
@@ -197,7 +341,10 @@ export function createCourierHullBuilder(
 		frame.rotation.y = Math.PI;
 		frame.scale.setScalar(kmPerM);
 		frame.position.copy(offset);
-		frame.add(template.clone(true));
+		const full = template.clone(true);
+		const reduced = levels.reduced.clone(true);
+		const outline = levels.outline.clone(true);
+		frame.add(full, reduced, outline);
 		// The bowl when the finish's glow is a bowl, the disc when it is not:
 		// a back-sided material on a disc draws nothing from astern.
 		const glow = exhaust.side === THREE.BackSide ? bowl : disc;
@@ -213,6 +360,7 @@ export function createCourierHullBuilder(
 			frame.add(mesh);
 		}
 		root.add(frame);
+		return { full, reduced, outline };
 	};
 }
 
@@ -223,8 +371,8 @@ export function prepareCourierHullModel(): Promise<void> {
 	return (ready ??= new GLTFLoader()
 		.setMeshoptDecoder(MeshoptDecoder)
 		.loadAsync(COURIER_HULL_URL)
-		.then((gltf) => {
-			installAuthoredCourier(createCourierHullBuilder(gltf.scene));
+		.then(async (gltf) => {
+			installAuthoredCourier(await createCourierHullBuilder(gltf.scene));
 			// One courier built now, behind the loading panel: the first build
 			// places the nav lights by raycast against the model, about 0.3 s,
 			// and without this the first Traffic courier drawn mid-flight

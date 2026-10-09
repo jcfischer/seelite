@@ -3,7 +3,7 @@ import {
 	type AuthoredHullBuilder,
 	installAuthoredCourier,
 } from "../../src/ship-mesh";
-import { decodeShippedGlb } from "./read-coriolis-glb";
+import { decodeShippedGlb } from "./shipped-glb";
 
 let builder: AuthoredHullBuilder | undefined;
 
@@ -16,11 +16,11 @@ let builder: AuthoredHullBuilder | undefined;
  * player flies. Textures are stripped (bun decodes no images); geometry,
  * names and materials are the shipped ones.
  *
- * No `bun:test` import here: `scripts/measure-vent-placement.ts` calls this
- * outside the test runner. The test-only half is `procedural-courier.ts`.
+ * Here rather than in the test tree because `scripts/measure-vent-placement.ts`
+ * calls it too; the test-only half is `tests/helpers/procedural-courier.ts`.
  */
 export async function installShippedCourierHull(): Promise<void> {
-	builder ??= createCourierHullBuilder(
+	builder ??= await createCourierHullBuilder(
 		await decodeShippedGlb("public/models/courier-hull.glb"),
 	);
 	installAuthoredCourier(builder);

@@ -61,6 +61,7 @@ export {
 } from "./ship-detail";
 import {
 	type ShipDetailPlan,
+	type ShipLevels,
 	type ShipSurface,
 	adoptUndetailedShip,
 	buildShipDetails,
@@ -6752,11 +6753,13 @@ function raycastMuzzles(
  * (kilometres, nose `-z`), plus its drive glows named `…-exhaust` and drawn
  * in `exhaust`, the hull's own palette material, so the throttle dial and the
  * vent plumes (`isDriveBell`) find them as they find a procedural bell's.
+ * Returns the model's levels for the detail band; the glows sit outside them,
+ * so there is one drive bell per nozzle at every level.
  */
 export type AuthoredHullBuilder = (
 	root: THREE.Group,
 	exhaust: THREE.MeshStandardMaterial,
-) => void;
+) => ShipLevels;
 
 /** The courier variant the authored model draws (node #812): the selected
  *  one, so every reader of `HULL_SPECS.courier.variant` sees the model. */
@@ -6800,7 +6803,7 @@ function buildAuthoredCourier(
 	builder: AuthoredHullBuilder,
 ): void {
 	root.userData.authored = true;
-	builder(root, makePalette("courier").exhaust);
+	const levels = builder(root, makePalette("courier").exhaust);
 	// After the model, for the reason the procedural branch gives: the
 	// lights are placed from the built hull's own box.
 	if (authoredCourierNavLights) {
@@ -6814,7 +6817,7 @@ function buildAuthoredCourier(
 		shared(placed.geometry);
 		authoredCourierNavLights = placed;
 	}
-	adoptUndetailedShip(root, HULL_REACH_KM.courier);
+	adoptUndetailedShip(root, HULL_REACH_KM.courier, levels);
 }
 
 export function buildShipMesh(

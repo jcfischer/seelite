@@ -91,7 +91,8 @@ export const RESTING_KM = 1.5 * SEPARATION_KM;
  * resolved pair's relative velocity is left with by rounding. Node #812's
  * courier box left a ship pair at 2e-17 km/s after the pair solver had stopped
  * it, and an exact `> 0` billed that as a resting impact of zero damage.
- * The tests already read "no longer closing" against the same floor.
+ * `tests/collision-traffic.test.ts`'s pair-solver row reads "no longer
+ * closing" against this constant.
  */
 export const RESTING_CLOSING_FLOOR_KMS = 1e-12;
 

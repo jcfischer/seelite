@@ -38,8 +38,9 @@ import {
 	type VentPlacement,
 	coupleArms,
 } from "../src/hull";
+import { isLevelStandIn } from "../src/ship-detail";
 import { buildShipMesh } from "../src/ship-mesh";
-import { installShippedCourierHull } from "../tests/helpers/install-courier-hull";
+import { installShippedCourierHull } from "./lib/shipped-courier-hull";
 import { axisLineTester } from "./lib/axis-line-hits";
 
 /** Steps per half-extent: a reach is found to a quarter of a percent. */
@@ -65,7 +66,8 @@ function lineTester(root: THREE.Object3D) {
 		if (
 			mesh.isMesh &&
 			!(mesh as THREE.InstancedMesh).isInstancedMesh &&
-			!mesh.name.endsWith("-exhaust")
+			!mesh.name.endsWith("-exhaust") &&
+			!isLevelStandIn(mesh)
 		)
 			metal.push(mesh);
 	});

@@ -44,20 +44,19 @@ try {
 	);
 	await bootedGame(page, 90000);
 	await page.waitForTimeout(2000);
-	const facts = await page.evaluate(() => {
+	const facts = await page.evaluate(async () => {
 		const g = window.__seelite;
 		g.clockHeld = true;
 		const gl = g.renderer.getContext();
 		const ext = gl.getExtension("WEBGL_debug_renderer_info");
 		const ship = g.shipMesh;
-		let meshes = 0;
-		let triangles = 0;
-		ship.traverse((o) => {
-			if (!o.isMesh) return;
-			meshes++;
-			const geo = o.geometry;
-			triangles += (geo.index ? geo.index.count : geo.attributes.position.count) / 3;
-		});
+		const { meshStats } = await import("/scripts/lib/mesh-stats.mjs");
+		// The approved model and its glows; the reduced levels are counted by
+		// `tests/courier-hull.test.ts`.
+		const { meshes, triangles } = meshStats(
+			[ship],
+			(o) => o.userData.levelStandIn === true,
+		);
 		return {
 			view: g.view,
 			renderer: gl.getParameter(ext.UNMASKED_RENDERER_WEBGL),

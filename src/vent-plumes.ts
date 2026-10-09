@@ -40,6 +40,7 @@ import {
 	exhaustRamp,
 	isDriveBell,
 } from "./ship-mesh";
+import { isLevelStandIn } from "./ship-detail";
 import { type HullFinishId, hullFinishId } from "./ship-surface";
 import type { VentLevels } from "./sim";
 
@@ -194,7 +195,8 @@ function measureThroats(root: THREE.Object3D, id: HullId): Throat[] {
 	const bells: THREE.Mesh[] = [];
 	root.traverse((o) => {
 		const mesh = o as THREE.Mesh;
-		if (!mesh.isMesh) return;
+		// A reduced level is drawn, never measured (node #812).
+		if (!mesh.isMesh || isLevelStandIn(mesh)) return;
 		meshes.push(mesh);
 		if (isDriveBell(mesh)) bells.push(mesh);
 	});
