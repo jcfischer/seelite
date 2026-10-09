@@ -654,6 +654,21 @@ export const PROBE_CATALOG = Object.freeze(
 			],
 		),
 		entry(
+			"probe-model-download.mjs",
+			"Holds every model response back and checks that a player boot draws the Commander overlay and its progress bar before the models are in; a Continue chosen then waits, survives a refused download through the overlay's Retry, and is carried out once the models arrive; the bar reads 100% before it goes; New game chosen during the download reloads only after it; and a direct boot keeps the full-screen loading panel with its bar.",
+			[
+				"model loading",
+				"GLB models",
+				"progress bar",
+				"loading panel",
+				"Retry",
+				"Commander overlay",
+				"Continue",
+				"New game",
+				"application boot",
+			],
+		),
+		entry(
 			"probe-model-viewer.mjs",
 			"Checks that the procedural model workbench renders models while remaining isolated from Game.",
 			["model viewer", "workbench", "procedural models", "Game isolation"],
