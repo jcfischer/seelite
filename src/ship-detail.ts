@@ -363,8 +363,9 @@ function applyVisibility(root: THREE.Object3D, state: VisualState) {
 		part.mesh.visible = band < BAND_RANK[part.hiddenFrom];
 	// Past `full` an authored hull's metal leaves the shadow pass, and with it
 	// the ambient-occlusion pass, which draws only what casts
-	// (`hideNonOccluders`): the hull's ~250k triangles still draw once there,
-	// but not two or three times over (sage round 5). Every lamp is untouched.
+	// (`hideNonOccluders`): what still draws there draws once, not two or
+	// three times over (sage round 5). Every lamp is untouched, and the
+	// stand-ins are built not casting.
 	if (band > 0 && !state.castKept) {
 		state.castKept = new Map();
 		for (const { mesh } of state.mechanism) {
