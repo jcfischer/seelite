@@ -219,7 +219,7 @@ page (`src/courier-cockpit-viewer.ts`), which does not load the hull.
 past `DETAIL_RADII.full` a courier draws a reduced copy of it and past
 `DETAIL_RADII.reduced` a coarser one, each made by meshoptimizer's simplifier
 to a **target error** of half a device pixel at its band edge **in
-`COURIER_LEVEL_FRAME`** — the near camera's 60° field of view on a frame 1800
+`LEVEL_FRAME`** — the near camera's 60° field of view on a frame 1800
 device pixels tall, the player's retina panel and the frame the cost
 instruments measure on (`courierLevelErrorKm`). It is a target and not a
 bound. The error is the simplifier's own metric, which it reports reaching
@@ -231,6 +231,17 @@ its height. How visible the switch is, is judged by eye in flight. The cabin and
 neither level takes a ray, so everything placed on the hull is placed on the
 approved model. Inside the first edge — the
 player's own courier in chase among them — the model is drawn as approved.
+
+**Since node #815 the miner's selected variant is an authored model too**,
+Longwall B (`miner/b`, `src/models/longwall-miner.glb`), and its levels are
+made by the same module (`src/authored-levels.ts`), with two differences.
+Its medium level is made to half a device pixel at 10 miner reaches
+(`LONGWALL_MEDIUM_RADII`) rather than at the band's first edge, and **a
+miner other than the player's own draws it however near** — a berth beside
+the player included — by the principal's ruling of 2026-10-09: the band
+holds it at `nearest` unless `updateShipVisuals` is told the hull is the
+player's own. And its levels keep every lamp whole and collapse edges
+across seams. The figures are `tests/longwall-mesh.test.ts`'s.
 
 The player hull is a near-scene object. It is hidden in cockpit view because the
 cockpit HUD, attitude floor, target director, and scanner remain the primary

@@ -103,9 +103,8 @@ What moved, and what is yours to decide:
   #838's (open, blocked by #831), and you waived the breach until it lands
   (above). The gap #838 inherits: `miner/b` has no
   procedural stand-in today — `buildShipMesh` throws without the model,
-  because the envelope, vents and muzzles are measured off it. Round 4's
-  far-range boxes are measured off the model too, so they cannot stand in
-  before it loads.
+  because the envelope, vents and muzzles are measured off it. The levels
+  are made from the model too, so they cannot stand in before it loads.
   `evidence/game-report.json` measured one miner at 111 draw calls and
   283,590 triangles a frame up close; it was captured at 644bb13, before the
   batch below, and not retaken. Counted as meshes rather than draws, the
@@ -117,61 +116,45 @@ What moved, and what is yours to decide:
   per material (19 hull meshes to 10), and each stowed anchor's 19 painted
   meshes into one per paint (sage round 8: 20 meshes an anchor to 6, its lamp
   kept, its six part groups still named for a node that poses them), so a
-  miner is 44 meshes where it was 109. The shared
-  detail band sheds the mechanism by distance, never by quality, in three
-  levels (`tests/longwall-mesh.test.ts` holds each figure):
+  miner is 44 meshes where it was 109. The detail band switches the model
+  the way it switches node #812's courier: `src/authored-levels.ts` makes two
+  reduced copies at install with meshoptimizer, and the band draws one level
+  at a time. Since #828 merged, one band mechanism serves both hulls; the
+  miner's own mechanism shedding, its box outline and its hull-only
+  simplifier are gone. `tests/longwall-mesh.test.ts` holds each figure:
 
-  | Level | Range | Meshes | Triangles |
+  | Level | Drawn for | Meshes | Triangles |
   |---|---|---:|---:|
-  | full | inside 40 radii (about 1.7 km) | 44 | 283,576 |
-  | LOD1, `reduced` | 40 to 400 radii | 23 | 14,714 |
-  | LOD2, `outline` | past 400 radii (about 17 km) | 10 | 780 |
+  | full | your own miner inside 40 radii (about 1.7 km) | 44 | 283,576 |
+  | `reduced`, medium | every other miner inside 400 radii, however near; your own from 40 | 44 | 22,778 |
+  | `outline` | every miner past 400 radii (about 17 km) | 10 | 592 |
 
-  At LOD1 the anchors' metal goes, and the hull's seven opaque meshes
-  (252,810 triangles) give way to a copy simplified at install by
-  meshoptimizer to a 0.4 m target (5,756 triangles, -97.7%; the hoses
-  simplify away), each in its own mesh's paint and on its own
-  vertex buffers (sage round 5). At LOD2 the cutter goes too, and the hull
-  is one mesh of 17 boxes, one per part it drew (sage round 4). Both are
-  built the first time a miner reaches the band, so the mesh the envelope,
-  vents and muzzles are measured off never carries either. LOD1 is simplified
-  in the browser rather than shipped as LOD GLBs (#829's way) so the boot
-  download does not grow again; the price is CPU at every boot, inside
-  `installLongwallModel`: about 150 ms under bun, never measured in a
-  browser. `meshoptimizer` (MIT) now ships in the game bundle in its own
-  right; the Credits page names no library licence but onnxruntime-web's,
-  so whether it should is yours. Node #812's open PR #828 adds a parallel
-  band mechanism for the courier (`levels`, built up front and flagged so
-  measurement skips them) in the same `applyVisibility`: whichever of the two
-  lands second unifies them. Past `full` no
-  metal casts a shadow, so none takes part in the shadow or ambient-occlusion
-  passes either (Traffic miners never did: only the flown hull and the fleet
-  review are marked). Every lamp stays at every level. Those are mesh counts:
-  draw calls also count other passes, and no draw figure was measured with
-  the band or the batch. The anchors going at 40 radii is a visible change,
-  9.4 x 3.3 px on a 39 px hull at the band's edge, and yours to judge with
-  the rest. So is the simplified hull there. Round 5's text said nothing
-  moved more than 0.4 m; that read meshoptimizer's target as a distance, and
-  it was not one. Measured in space instead (sage round 6, each figure pinned
-  in `tests/longwall-mesh.test.ts`, points sampled on every triangle rather
-  than exhaustive): the drawn surface lies within 0.50 m of the model's
-  (worst mesh: dark-structure), a quarter of a pixel at 40 radii. The other
-  way, the model's furthest point from the drawn surface is **1.83 m**, 4.6
-  times the 0.4 m target and 0.83 of a pixel at 40 radii, and it is on the
-  hoses, which the reduced hull does not draw; the worst paint it does draw,
-  the machined alloy, reads 1.37 m. Counting vertices only, 3,784 of the
-  model's 482,918 lie further than 0.4 m, and 236 further than a metre.
-  The target is unchanged: retuning it is yours. Paint by paint the change is larger: 136,283 of the machined
-  alloy's 144,744 vertices lie further than 0.4 m from any reduced alloy
-  triangle, so past 40 radii most of the alloy-painted detail is not drawn
-  in its own paint, and the hoses are not drawn at all. A kept vertex also
-  keeps one side's normal across a hard edge. No frame was captured in the
-  band. And so
-  is the swap at 400 radii: the
-  hull there is flat-faced boxes in one paint (`dark-structure`, the metal
-  on most of it) where it was the model's own shape in all its paints, on a
-  hull about 4 px long. No frame was captured at that range, so nobody has
-  looked at it.
+  Each row counts the two drive glows; those are mesh counts, not measured
+  draws. **A Traffic miner is the medium level even beside a berth**, by your
+  ruling of 2026-10-09: sage round 9 found every Traffic miner at a berth
+  drew the full model. Your own hull passes `own` to `updateShipVisuals` and
+  draws the model near. The medium level is made to half a device pixel at
+  10 miner reaches (0.135 m, `LONGWALL_MEDIUM_RADII`), the outline to half a
+  pixel at 400 radii (5.4 m). That is meshoptimizer's own metric, not a
+  bound, so it was measured in space (sampled on every triangle, pinned):
+  the medium surface lies within 0.23 m of the model's, and the model's
+  furthest point from it is **0.99 m**, 7.3 times the target. 83,855 of the
+  model's 482,918 vertices lie further than 0.135 m. For a bay neighbour
+  100 m off, 2.4 reaches, the target is about 1.2 px and that worst point
+  about 9 px; how it reads there is yours to judge in flight. Every lamp is
+  kept whole in every level (528 triangles), because an emissive reads far
+  beyond its size. The miner's levels collapse edges across seams
+  (`permissive`): without it the painted hull barely reduced (`pale-steel-0`
+  kept all 32,860 triangles). A level takes no ray and every measurement
+  skips it, so the envelope, vents and muzzles are measured on the model.
+  Levels are made in the browser rather than shipped as LOD GLBs (#829's
+  way), so the download does not grow; the price is CPU at every boot,
+  inside `installLongwallModel`. The whole install, decode included, took
+  613 ms under bun, never measured in a browser. `meshoptimizer` (MIT) ships
+  in the game bundle since #828. A level casts a shadow only where the
+  occlusion marking sets it, as the courier's do; only the flown hull and
+  the fleet review are marked, so a Traffic miner casts none. No frame was
+  captured at the medium or outline level, so nobody has looked at either.
 - **D5, owed their own nodes:** mining state and behaviour, the deployed
   envelope, articulating the anchors and the cutter (the game draws the
   stowed export, static), and D1–D4's follow-ups.
