@@ -9,6 +9,7 @@ import {
 	COCKPIT_MODEL_LAMPS,
 	COCKPIT_SCREENS,
 	carriedLamp,
+	COCKPIT_CREASE_DEG,
 	containedFace,
 	INSTRUMENT_FACE_KM,
 	SCANNER_FACE_KM,
@@ -67,7 +68,10 @@ const CABIN_SHARE = 88 / 192;
 
 let template: THREE.Group;
 let cabin: AuthoredCabin;
+/** The same model as exported, never adopted: the normals Blender wrote. */
+let exported: THREE.Group;
 beforeAll(async () => {
+	exported = await decodeShippedGlb("src/models/courier-cockpit.glb");
 	template = await decodeShippedGlb("src/models/courier-cockpit.glb");
 	// Bun has no image decoder, so the helper strips the model's maps. One is
 	// put back on the steel as a stand-in, so adoption's map branch runs and
@@ -276,6 +280,136 @@ describe("the shipped cockpit model in the cabin pass", () => {
 		const report = disposeSubtree(second.root);
 		expect(report.freed.size).toBeGreaterThan(0);
 		for (const r of report.freed) expect(shared.has(r)).toBe(false);
+	});
+});
+
+/**
+ * Every mesh's vertices grouped by exact position, with the exported and the
+ * adopted normal of each copy. Blender's `poly()` writes fresh vertices for
+ * every face, so a position shared by several faces holds one copy per face.
+ */
+function splitPositions() {
+	const exportedByName = new Map<string, THREE.Mesh>();
+	exported.traverse((o) => {
+		if (o instanceof THREE.Mesh) exportedByName.set(o.name, o);
+	});
+	const out: {
+		mesh: string;
+		before: THREE.Vector3[];
+		after: THREE.Vector3[];
+	}[] = [];
+	template.traverse((o) => {
+		if (!(o instanceof THREE.Mesh)) return;
+		const raw = exportedByName.get(o.name);
+		if (!raw) throw new Error(`no exported mesh ${o.name}`);
+		const position = o.geometry.getAttribute("position");
+		const was = raw.geometry.getAttribute("normal");
+		const now = o.geometry.getAttribute("normal");
+		const groups = new Map<string, number[]>();
+		for (let i = 0; i < position.count; i++) {
+			const key = `${position.getX(i)},${position.getY(i)},${position.getZ(i)}`;
+			const group = groups.get(key);
+			if (group) group.push(i);
+			else groups.set(key, [i]);
+		}
+		for (const ids of groups.values())
+			out.push({
+				mesh: o.name,
+				before: ids.map((i) => new THREE.Vector3().fromBufferAttribute(was, i)),
+				after: ids.map((i) => new THREE.Vector3().fromBufferAttribute(now, i)),
+			});
+	});
+	return out;
+}
+
+/** Degrees between two normals. `atan2` and not `acos`: at a dot product
+ *  within float32 rounding of 1, `acos` reads an identical pair 0.02° apart. */
+const degBetween = (a: THREE.Vector3, b: THREE.Vector3) =>
+	(Math.atan2(a.clone().cross(b).length(), a.dot(b)) * 180) / Math.PI;
+
+describe("the cockpit's normals (node #839)", () => {
+	// The canopy struts are `curve_path` tubes, 12 to 20 sides, and every quad
+	// of them was exported with its own face normal: the support hoop's vertex
+	// normals sat a median 9.09° off the tube's true radial and the rib's
+	// 15.03°, which is half a facet each — flat shading. Lit by the sun on a
+	// 0.65-metal finish, each quad caught the highlight whole or not at all,
+	// and bloom drew the bright ones as rectangles.
+
+	test("the crease sits in an empty band of the exported split angles", () => {
+		// Tube facet steps (18°, 22.5°, 30°, 36°) are below it and the chamfers,
+		// eight-sided studs (45°) and box edges (90°) above, so no exported pair
+		// of normals is within a degree of it either way: 42.46° below, 44.81° above.
+		let near = 0;
+		for (const p of splitPositions())
+			for (let i = 0; i < p.before.length; i++)
+				for (let j = i + 1; j < p.before.length; j++)
+					if (
+						Math.abs(
+							degBetween(p.before[i], p.before[j]) - COCKPIT_CREASE_DEG,
+						) < 1
+					)
+						near++;
+		expect(near).toBe(0);
+	});
+
+	test("where every face at a position is inside the crease, all its copies share one normal", () => {
+		// Red on the exported model: a tube's four quads meet at each grid
+		// vertex with four different normals.
+		let smoothPositions = 0;
+		let split = 0;
+		for (const p of splitPositions()) {
+			if (p.before.length < 2) continue;
+			const inside = p.before.every((a) =>
+				p.before.every((b) => degBetween(a, b) < COCKPIT_CREASE_DEG),
+			);
+			if (!inside) continue;
+			smoothPositions++;
+			if (p.after.some((n) => degBetween(n, p.after[0]) > 1e-3)) split++;
+		}
+		expect(smoothPositions).toBeGreaterThan(5000);
+		expect(split).toBe(0);
+	});
+
+	test("a copy with no other face inside the crease keeps its exported normal", () => {
+		// Box edges, chamfer steps and the studs' 45° facets stay hard.
+		let alone = 0;
+		for (const p of splitPositions())
+			for (let i = 0; i < p.before.length; i++) {
+				const neighbours = p.before.filter(
+					(b, j) => j !== i && degBetween(p.before[i], b) < COCKPIT_CREASE_DEG,
+				);
+				if (neighbours.length > 0) continue;
+				alone++;
+				expect(degBetween(p.after[i], p.before[i])).toBeLessThan(1e-4);
+			}
+		expect(alone).toBeGreaterThan(10000);
+	});
+
+	test("no normal moves by more than the crease", () => {
+		for (const p of splitPositions())
+			for (let i = 0; i < p.before.length; i++)
+				expect(degBetween(p.after[i], p.before[i])).toBeLessThan(
+					COCKPIT_CREASE_DEG,
+				);
+	});
+
+	test("screens, labels and keys keep their exported vertices and normals", () => {
+		const raw = new Map<string, THREE.BufferGeometry>();
+		exported.traverse((o) => {
+			if (o instanceof THREE.Mesh) raw.set(o.name, o.geometry);
+		});
+		let quads = 0;
+		template.traverse((o) => {
+			if (!(o instanceof THREE.Mesh) || !/^(screen|label|key)-/.test(o.name))
+				return;
+			quads++;
+			const was = raw.get(o.name) as THREE.BufferGeometry;
+			for (const name of ["position", "normal", "uv"])
+				expect(Array.from(o.geometry.getAttribute(name).array)).toEqual(
+					Array.from(was.getAttribute(name).array),
+				);
+		});
+		expect(quads).toBe(4 + 4 + 15);
 	});
 });
 

@@ -279,11 +279,98 @@ export const carriedLamp = (lamp: (typeof COCKPIT_MODEL_LAMPS)[number]) =>
 		COCKPIT_MODEL_KM_PER_M,
 	);
 
+/**
+ * The angle below which two faces meeting at a vertex are one smooth surface
+ * (node #839), degrees.
+ *
+ * The export's `poly()` writes fresh vertices for every face, so every quad of
+ * a swept tube is its own island and the weighted-normal modifier had no
+ * neighbour to average with: the canopy struts were exported flat-shaded, and
+ * each quad caught the sun's highlight whole or not at all. Exported, the
+ * angles between split normals cluster at the tubes' facet steps — 18°, 22.5°,
+ * 30° and 36° for 20-, 16-, 12- and 10-sided sections — and at 45° (chamfer
+ * steps and eight-sided studs) and 90° (box edges). Nothing lies between
+ * 42.46° and 44.81°, and the crease sits in that gap;
+ * `tests/cockpit-model.test.ts` holds the gap.
+ */
+export const COCKPIT_CREASE_DEG = 43.5;
+
+/**
+ * Join the split normals of faces that meet inside the crease, in place.
+ *
+ * Copies of one position are found by exact coordinates — the model's 9 mm
+ * bevels and 5 mm chips are closer than any grid would allow — and each copy
+ * takes the area-weighted mean of every copy within the crease of its own
+ * exported normal. A copy with no such neighbour keeps its normal exactly, so
+ * hard edges and the exporter's own weighted normals stay as written. Returns
+ * how many vertices moved.
+ */
+export function smoothCockpitNormals(
+	geometry: THREE.BufferGeometry,
+	creaseDeg = COCKPIT_CREASE_DEG,
+): number {
+	const position = geometry.getAttribute("position");
+	const normal = geometry.getAttribute("normal");
+	if (!normal) return 0;
+	const index = geometry.index;
+	const corner = (k: number) => (index ? index.getX(k) : k);
+	const weight = new Float64Array(position.count);
+	const a = new THREE.Vector3();
+	const b = new THREE.Vector3();
+	const c = new THREE.Vector3();
+	const corners = index ? index.count : position.count;
+	for (let k = 0; k < corners; k += 3) {
+		const [i, j, l] = [corner(k), corner(k + 1), corner(k + 2)];
+		a.fromBufferAttribute(position, i);
+		b.fromBufferAttribute(position, j).sub(a);
+		c.fromBufferAttribute(position, l).sub(a);
+		const area = b.cross(c).length() / 2;
+		weight[i] += area;
+		weight[j] += area;
+		weight[l] += area;
+	}
+	const groups = new Map<string, number[]>();
+	for (let i = 0; i < position.count; i++) {
+		const key = `${position.getX(i)},${position.getY(i)},${position.getZ(i)}`;
+		const group = groups.get(key);
+		if (group) group.push(i);
+		else groups.set(key, [i]);
+	}
+	const exported = (i: number) =>
+		new THREE.Vector3().fromBufferAttribute(normal, i);
+	const cos = Math.cos((creaseDeg * Math.PI) / 180);
+	let moved = 0;
+	for (const ids of groups.values()) {
+		if (ids.length < 2) continue;
+		const normals = ids.map(exported);
+		const sums = normals.map((own) => {
+			const sum = new THREE.Vector3();
+			let neighbours = 0;
+			normals.forEach((other, n) => {
+				if (own.dot(other) <= cos) return;
+				// A degenerate face still carries its direction.
+				sum.addScaledVector(other, weight[ids[n]] + 1e-12);
+				neighbours++;
+			});
+			return neighbours > 1 ? sum.normalize() : null;
+		});
+		sums.forEach((sum, n) => {
+			if (!sum) return;
+			normal.setXYZ(ids[n], sum.x, sum.y, sum.z);
+			moved++;
+		});
+	}
+	normal.needsUpdate = true;
+	return moved;
+}
+
 /** Normalise and share a loaded model once, so every cabin clones it. */
 export function adoptCockpitTemplate(scene: THREE.Group): void {
 	const materials = new Set<THREE.MeshStandardMaterial>();
+	const geometries = new Set<THREE.BufferGeometry>();
 	scene.traverse((o) => {
 		if (!(o instanceof THREE.Mesh)) return;
+		geometries.add(o.geometry);
 		o.castShadow = true;
 		o.receiveShadow = true;
 		for (const m of Array.isArray(o.material) ? o.material : [o.material])
@@ -298,6 +385,7 @@ export function adoptCockpitTemplate(scene: THREE.Group): void {
 		m.emissiveIntensity /= divisor;
 		adoptCockpitMaterial(m);
 	}
+	for (const geometry of geometries) smoothCockpitNormals(geometry);
 	scene.name = "authored-cockpit";
 	scene.traverse((o) => {
 		if (!(o instanceof THREE.Mesh)) return;
