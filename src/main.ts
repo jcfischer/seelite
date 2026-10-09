@@ -1665,8 +1665,10 @@ interface Instrument {
  * Where the flying glass ends and the physical cockpit begins, as a fraction of
  * the frame height.
  *
- * Shared by the laser tracer and the docking director rather than spelled twice:
- * the director shipped without a clip and drew its rings down over the dash
+ * The docking director, the flight strip and the glass notices are anchored to
+ * it. The laser tracer shared it until node #806, which drew the cockpit's
+ * beams into the frame behind the cabin instead (`beam-glass.ts`). The
+ * director shipped without a clip and drew its rings down over the dash
  * deck, the scanner well and both console housings, which is what a second copy
  * of this number would have let happen again.
  */
@@ -19241,7 +19243,7 @@ class Game {
 			return;
 		}
 		ctx.save();
-		// **Clipped to the canopy, for the reason the laser tracer is.** The lower
+		// **Clipped to the canopy.** The lower
 		// third of the frame is physical cockpit hardware — the dash deck, the
 		// scanner well, the console housings — and the director is glass. The
 		// first build had no clip and drew its rings straight down over the radar.
@@ -19697,13 +19699,14 @@ class Game {
 					: `×${mark.goods.length}`;
 			ctx.fillText(`CARGO ${what}  ${range(mark.km)}`, mark.x + 10, mark.y + 4);
 		}
-		// The production gun's tracer: on the glass in the cockpit, and over the
-		// whole frame in chase, where there is no glass (sage #328 — a chase view
+		// The production gun's tracer: in the cockpit it is in the frame, behind
+		// the cabin (`drawCockpitBeams`, node #806), and over the whole frame in
+		// chase, where there is no glass (sage #328 — a chase view
 		// with no tracer is the dead-key defect again). The rig draws its own
 		// below, and with the rig on the trigger never reaches this gun.
 		// The raider's fire and its hits on the player (#324, found missing in
-		// the second playtest): its beam from its point on the glass while it
-		// fires, and a canopy rim for a moment after a hit lands.
+		// the second playtest): its beam while it fires — in the frame behind the
+		// cabin in the cockpit, here in chase — and a canopy rim for a moment after a hit lands.
 		const glassBottom = this.view === "cockpit" ? GLASS_BOTTOM_FRACTION : 1;
 		// In the cockpit the beam is in the frame, behind the cabin (node #806);
 		// the overlay keeps only its record, in its own pixels.

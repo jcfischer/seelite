@@ -61,8 +61,9 @@ export function stepGunFeedback(
 	};
 }
 
-/** The two gun ports low on the canopy and the sightline they meet at, as
- *  fractions of the canvas. The sightline is the nose cross at the centre. */
+/** The two gun ports and the sightline they meet at, as fractions of the
+ *  canvas. The sightline is the nose cross at the centre. In the cockpit the
+ *  ports sit behind the dash, which hides the start of each beam (node #806). */
 export const TRACER_PORTS = [
 	{ x: 0.24, y: 0.64 },
 	{ x: 0.76, y: 0.64 },
@@ -188,9 +189,9 @@ export const ENEMY_BEAM_COLOUR = "rgba(255, 140, 90, 0.95)";
 /**
  * The raider's shot, while it fires (#324, found missing in the second
  * playtest: "his lasers aren't showing up"). A line from the raider's point on
- * the glass to `to`, where the player sits: the bottom of the glass in the
- * cockpit, the hull in chase. Clipped above `glassBottom` like the player's
- * tracer.
+ * the frame to `to`, the hull. Chase only: in the cockpit the beam is drawn
+ * into the frame behind the cabin (`beam-glass.ts`, node #806). Clipped above
+ * `glassBottom`, which chase passes as the whole frame.
  */
 export function drawEnemyBeam(
 	ctx: CanvasRenderingContext2D,
