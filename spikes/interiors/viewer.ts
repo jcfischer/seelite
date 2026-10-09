@@ -1,5 +1,7 @@
-const BUILD_ID = "interiors-r6-depth-fix-20261009";
+const BUILD_ID = "interiors-r7-fitting-lod-20261009";
 import * as THREE from "three";
+import { InteriorLods, type LodRecord } from "./instanced-lod";
+import type { LodMode } from "./lod";
 import { OrbitControls } from "three/addons/controls/OrbitControls.js";
 import { GLTFLoader } from "three/addons/loaders/GLTFLoader.js";
 import { RoomEnvironment } from "three/addons/environments/RoomEnvironment.js";
@@ -83,6 +85,8 @@ scene.add(assembly, kit);
 kit.visible = false;
 THREE.Cache.enabled = true;
 const assets = new Map<string, THREE.Group>();
+let lods: InteriorLods;
+let lodRecords: Record<string, LodRecord>;
 const loader = new GLTFLoader();
 let sharedPaint: THREE.Texture;
 const params = new URLSearchParams(location.search);
@@ -170,7 +174,7 @@ scene.add(
 	),
 );
 function material(source: THREE.Material) {
-	const key = theme + "/" + source.uuid;
+	const key = theme + "/" + source.name;
 	if (materials.has(key)) return materials.get(key)!;
 	const m = source.clone() as THREE.MeshStandardMaterial;
 	m.name = m.name.replace(/\.\d+$/, "");
@@ -239,14 +243,6 @@ function material(source: THREE.Material) {
 	materials.set(key, m);
 	return m;
 }
-type Batch = {
-	geometry: THREE.BufferGeometry;
-	material: THREE.Material;
-	matrices: THREE.Matrix4[];
-	parent: THREE.Group;
-	castShadow: boolean;
-};
-let batches = new Map<string, Batch>();
 function place(
 	name: string,
 	pos: V3,
@@ -255,49 +251,25 @@ function place(
 	parent = assembly,
 	extra?: THREE.Quaternion,
 ) {
-	const asset = assets.get(name)!;
-	asset.updateMatrixWorld(true);
 	const q = new THREE.Quaternion().setFromAxisAngle(
 		new THREE.Vector3(0, 0, 1),
 		roll,
 	);
 	if (extra) q.multiply(extra);
-	const transform = new THREE.Matrix4().compose(
-		new THREE.Vector3(...pos),
-		q,
-		new THREE.Vector3(...scale),
+	lods.add(
+		name,
+		new THREE.Matrix4().compose(
+			new THREE.Vector3(...pos),
+			q,
+			new THREE.Vector3(...scale),
+		),
+		parent,
 	);
-	asset.traverse((o) => {
-		if (!(o instanceof THREE.Mesh)) return;
-		const m = material(o.material as THREE.Material),
-			key = o.geometry.uuid + "/" + m.uuid + "/" + parent.uuid;
-		if (!batches.has(key))
-			batches.set(key, {
-				geometry: o.geometry,
-				material: m,
-				matrices: [],
-				parent,
-				castShadow: name !== "panel",
-			});
-		batches.get(key)!.matrices.push(transform.clone().multiply(o.matrixWorld));
-	});
 }
 function flush() {
-	for (const b of batches.values()) {
-		const mesh = new THREE.InstancedMesh(
-			b.geometry,
-			b.material,
-			b.matrices.length,
-		);
-		b.matrices.forEach((m, i) => mesh.setMatrixAt(i, m));
-		mesh.computeBoundingSphere();
-		mesh.name = "authored-module-batch";
-		mesh.castShadow = b.castShadow;
-		mesh.receiveShadow = true;
-		b.parent.add(mesh);
-	}
-	batches.clear();
+	lods.flush();
 }
+
 function solid(c: V3, size: V3, color = 0x303b3d) {
 	const mesh = new THREE.Mesh(
 		new THREE.BoxGeometry(...size),
@@ -373,6 +345,7 @@ function clearGroup(group: THREE.Group) {
 const shipAsset = buildShipMesh("courier", HULL_SPECS.courier.variant).root;
 function build() {
 	stats.loaded = false;
+	lods.clear();
 	plan = planInterior(theme, role, seed);
 	history.replaceState(null, "", `?theme=${theme}&role=${role}&seed=${seed}`);
 	$<HTMLSelectElement>("role").value = role;
@@ -952,6 +925,7 @@ $("target").onclick = () => {
 };
 $("close").onclick = () => $<HTMLDialogElement>("target-dialog").close();
 $("save").onclick = () => {
+	updateLods();
 	composer.render();
 	const a = document.createElement("a");
 	a.href = renderer.domElement.toDataURL();
@@ -973,9 +947,17 @@ addEventListener("resize", () => {
 });
 let frames = 0,
 	last = performance.now();
+const drawSize = new THREE.Vector2();
+function updateLods() {
+	if (lods && lods.update(camera, renderer.getDrawingBufferSize(drawSize).y))
+		renderer.shadowMap.needsUpdate = true;
+}
+$<HTMLSelectElement>("lod").onchange = () =>
+	lods.setMode($<HTMLSelectElement>("lod").value as LodMode);
 function render() {
 	requestAnimationFrame(render);
 	controls.update();
+	updateLods();
 	renderer.info.reset();
 	composer.render();
 	frames++;
@@ -984,10 +966,11 @@ function render() {
 		stats.fps = Math.round((frames * 1000) / (now - last));
 		stats.triangles = renderer.info.render.triangles;
 		stats.calls = renderer.info.render.calls;
+		Object.assign(stats, { lod: lods?.stats() });
 		frames = 0;
 		last = now;
 		$("readout").innerHTML =
-			`${stats.fps} FPS · ${plan.berths.length} berths · ${plan.fittings.length} fittings<br>${plan.hx * 2} × ${plan.hy * 2} × ${Math.round(plan.depth)} m · station ${seed}`;
+			`${stats.fps} FPS · ${plan.berths.length} berths · ${plan.fittings.length} fittings<br>${lods?.stats().levels.join(" / ")} modules at LOD 0 / 1 / 2<br>${plan.hx * 2} × ${plan.hy * 2} × ${Math.round(plan.depth)} m · station ${seed}`;
 	}
 }
 render();
@@ -997,6 +980,12 @@ render();
 	camera,
 	controls,
 	diagnostics: { scene, composer, ao },
+	lod: () => lods.stats(),
+	setLod: (mode: LodMode) => {
+		lods.setMode(mode);
+		$<HTMLSelectElement>("lod").value = mode;
+		updateLods();
+	},
 	setView,
 	select: (id: Theme) => {
 		theme = id;
@@ -1009,12 +998,25 @@ render();
 	plan: () => plan,
 	capture: () => document.body.classList.add("capture"),
 };
-let loadedFiles = 0;
+let loadedFiles = 0,
+	totalFiles = 1;
 const loaded = () => {
 	$("loading").textContent =
-		`LOADING INTERIOR KIT · ${++loadedFiles} / ${moduleNames.length + 1}`;
+		`LOADING INTERIOR KIT · ${++loadedFiles} / ${totalFiles}`;
 };
 try {
+	const response = await fetch("./lod-report.json");
+	if (!response.ok) throw Error("Missing LOD manifest");
+	lodRecords = (await response.json()).modules;
+	const files = [
+		...new Set(
+			moduleNames.flatMap((name) => [
+				`${name}.glb`,
+				...lodRecords[name].levels.map((l) => l.file),
+			]),
+		),
+	];
+	totalFiles = files.length + 1;
 	await Promise.all([
 		new THREE.TextureLoader()
 			.loadAsync("./modules/shared-paint.png")
@@ -1025,12 +1027,13 @@ try {
 				t.flipY = false;
 				loaded();
 			}),
-		...moduleNames.map(async (name) => {
-			assets.set(name, (await loader.loadAsync(`./modules/${name}.glb`)).scene);
+		...files.map(async (file) => {
+			assets.set(file, (await loader.loadAsync(`./modules/${file}`)).scene);
 			loaded();
 		}),
 	]);
 	$("loading").textContent = "ASSEMBLING STATION";
+	lods = new InteriorLods(assets, lodRecords, material);
 	build();
 	$("loading").remove();
 } catch (error) {

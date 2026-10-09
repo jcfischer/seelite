@@ -47,3 +47,7 @@ SEELITE_PROBE_RENDERER=hardware node spikes/interiors/capture.mjs round1
 ```
 
 The capture checks the served tree and uses the shared Seelite browser lock. Generated captures and loop evidence live under `.dream-loop/` during iteration. Scores and final measured performance must be read from the evidence, not inferred from these instructions.
+
+## Distance detail
+
+The Detail selector now offers Automatic, Full, Reduced and Distant. Each module switches independently; close inspection retains full geometry. See [LOD.md](LOD.md) for triangle counts, exact-attribute preservation, regeneration and hardware comparisons. Original Blender scenes and full GLBs remain unchanged.
