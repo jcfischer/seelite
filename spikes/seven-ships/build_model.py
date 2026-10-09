@@ -48,10 +48,13 @@ def engine(x,y,z,length=15,r=3.5,colors=ivory):
  rows=[]
  for t,f in [(-.5,.78),(-.42,.98),(-.30,1),(-.12,1),(.10,1),(.28,.98),(.40,.90),(.5,.70)]:
   rows.append((z+t*length,r*f,y+r*f,y-r*f,r*f*.45))
- hull('profiled-drive',x,rows,[colors[0]])
+ hull('profiled-drive',x,rows,[colors[0]],roof=[colors[0]])
  nozzle(x,y,z-length/2-1,r*1.04)
+ hull('armoured-drive-cap',x,[(z+length*.38,r*.93,y+r*.93,y-r*.93,r*.40),(z+length*.48,r*.82,y+r*.82,y-r*.82,r*.36),(z+length*.56,r*.64,y+r*.64,y-r*.64,r*.28)],[steel])
+ for offset in [-.37,.26]:
+  ring(z+length*offset,r*1.04,.38,steel,r*.88,x,y,8)
  # Dark intake/exchanger face with a thick frame, matching the approved target.
- zz=z+length/2+.15
+ zz=z+length*.56+.15
  box((x,y,zz),(r*1.05,r*1.15,.28),black)
  for j in range(12):box((x-r*.44+j*r*.08,y,zz+.18),(.10,r*.93,.12),steel)
  for side in [-1,1]:
@@ -82,23 +85,26 @@ def cabin(z,length=14,w=4.2,h=3.5,colors=ivory,x=0,y=0):
  rows=[(z-length/2,w*.9,y+h*.68,y-h,.8),(z-length*.25,w,y+h,y-h,1),(z+length*.15,w*.95,y+h*.82,y-h,1),(z+length/2,w*.57,y+h*.02,y-h*.7,.6)]
  hull('command-pressure-shell',x,rows,colors)
  # Fully sealed cockpit: dark glazing lies on an enclosed roof, framed by metal.
- za=z-length*.12;zb=z+length*.23;ya=y+h+.9;yb=y+h*.65+.6
- pts=[(x-w*.62,ya,za),(x+w*.62,ya,za),(x+w*.46,yb,zb),(x-w*.46,yb,zb)]
+ za=z+length*.13;zb=z+length*.39;ya=y+h*.84+.45;yb=y+h*.28+.45
+ pts=[(x-w*.32,ya,za),(x+w*.32,ya,za),(x+w*.24,yb,zb),(x-w*.24,yb,zb)]
  prism(pts,(0,.8,.3),.10,glass)
  for a,b in zip(pts,pts[1:]+pts[:1]):tube(a,b,.19,steel,10)
  tube((x,ya+.06,za),(x,yb+.06,zb),.12,alloy,10)
  l=Vector(pts[0]).lerp(Vector(pts[3]),.58);r_=Vector(pts[1]).lerp(Vector(pts[2]),.58)
  tube(l,r_,.11,steel,10)
- poly([(x-w*.62,ya,za),(x+w*.62,ya,za),(x+w*.84,y+h*.5,za),(x-w*.84,y+h*.5,za)],colors[0])
+ poly([(x-w*.32,ya,za),(x+w*.32,ya,za),(x+w*.40,ya-.55,za),(x-w*.40,ya-.55,za)],colors[0])
  # Rear enclosure and narrow side windows.
  for side in [-1,1]:
-  a=(x+side*w*.62,ya,za);b=(x+side*w*.46,yb,zb);c=(x+side*w*.72,y+h*.58,zb);d=(x+side*w*.84,y+h*.65,za)
+  a=(x+side*w*.32,ya,za);b=(x+side*w*.24,yb,zb);c=(x+side*w*.31,yb-.35,zb);d=(x+side*w*.40,ya-.55,za)
   prism([a,b,c,d],(side,.3,0),.06,glass)
   for aa,bb in [(a,d),(d,c),(c,b)]:tube(aa,bb,.14,steel,8)
   box((x+side*w*.77,y-h*.2,z+length*.37),(.35,.7,.3),steel)
   box((x+side*w*.77,y-h*.2,z+length*.39),(.15,.35,.08),warm)
  hatch(x,y+h*.74+.2,z-length*.36,w*.8,2)
- radiator(x,y+h*.10+.15,z+length*.43,w*.53,1.2)
+ nose_z=z+length*.43
+ nose_y=y+h*.18
+ box((x,nose_y+.10,nose_z),(w*.56,.42,1.4),steel)
+ radiator(x,nose_y+.28,nose_z,w*.53,1.2)
  # Raised cheek housings, layered sills and recessed service bays.
  for side in [-1,1]:
   xx=x+side*w*.94
@@ -113,36 +119,53 @@ def cabin(z,length=14,w=4.2,h=3.5,colors=ivory,x=0,y=0):
   # Human-scale forward lamps, armored eyebrows and layered forehead.
   lamp(x+side*w*.43,y-h*.36,z+length*.50)
  for dz in [-.39,-.25]:
-  hatch(x,y+h+.18,z+length*dz,w*.72,1.0)
+  box((x,y+h*.87,z+length*dz),(w*.78,h*.44,1.2),steel)
+  hatch(x,y+h*1.07,z+length*dz,w*.72,1.0)
 
-def spine(a,b,r=2.6):
- tube((0,0,a),(0,0,b),r,steel,16)
- # Pressure conduit has panelled armour sections and independent service trenches.
- for zz in range(round(a)+2,round(b)-1,6):
-  for sector in range(8):
-   ta=sector*math.tau/8+.025;tb=(sector+1)*math.tau/8-.025
-   if sector in [0,4]:continue
-   pts=[(r*math.cos(ta),r*math.sin(ta),zz-1.8),(r*math.cos(tb),r*math.sin(tb),zz-1.8),(r*math.cos(tb),r*math.sin(tb),min(zz+2.9,b)),(r*math.cos(ta),r*math.sin(ta),min(zz+2.9,b))]
-   plate(pts,ivory[sector%3],(math.cos((ta+tb)/2),math.sin((ta+tb)/2),0),.12)
+def spine(a,b,r=3.8):
+ # Three substantial pressure modules with recessed mechanical gaps and broad bearings.
+ tube((0,0,a),(0,0,b),r*.86,steel,32)
+ pitch=(b-a)/3
+ for i in range(3):
+  start=a+i*pitch+.9;end=a+(i+1)*pitch-1.0
+  for sector in range(12):
+   ta=sector*math.tau/12+.018;tb=(sector+1)*math.tau/12-.018
+   if sector in [0,5,6,11]:continue
+   for zz,ze in [(start,(start+end)/2),((start+end)/2,end)]:
+    pts=[(r*math.cos(ta),r*math.sin(ta),zz),(r*math.cos(tb),r*math.sin(tb),zz),(r*math.cos(tb),r*math.sin(tb),ze),(r*math.cos(ta),r*math.sin(ta),ze)]
+    plate(pts,ivory[i%3],(math.cos((ta+tb)/2),math.sin((ta+tb)/2),0),.14)
+  for z in [start-.4,end+.35]:
+   ring(z,r+.6,.8,steel,r-.15,segments=48)
+   for dz in [-.43,.43]:ring(z+dz,r+.64,.12,alloy,r+.35,segments=48)
+   for j in range(8):
+    t=j*math.tau/8
+    box(((r+.62)*math.cos(t),(r+.62)*math.sin(t),z),(.55,.55,.75),steel)
   for side in [-1,1]:
-   x=side*(r+.55)
-   box((x,0,zz),(.85,2.6,3.7),steel)
-   box((x+side*.48,0,zz),(.16,2.05,2.8),steel)
-   for yy in [-.65,.65]:tube((x+side*.7,yy,zz-1.5),(x+side*.7,yy,zz+1.5),.24,alloy,12)
-   for dz in [-1.1,1.1]:tube((x+side*.7,-.9,zz+dz),(x+side*.7,.9,zz+dz),.13,orange,10)
-   for yy in [-1.4,1.4]:
-    tube((x,yy,zz-2),(x,yy,zz+2),.20,alloy,12)
-   box((x+side*.7,.7,zz+1),(.12,.2,.7),warm)
- for z in range(round(a)+2,round(b)-1,5):
-  ring(z,r+.45,.75,alloy,inner=r-.1,segments=32)
-  for angle in [math.pi*.25,math.pi*.75,math.pi*1.25,math.pi*1.75]:
-   x,y=math.cos(angle)*(r+.7),math.sin(angle)*(r+.7)
-   tube((x,y,z-2),(x,y,min(z+3,b)),.23,orange if angle<1 else alloy,12)
-  if z%2:
-   box((0,r+.35,z),(2.3,.6,2),steel);radiator(0,r+.7,z,1.8,1.3)
-  else:
-   tube((-.8,r+.25,z-1),(.8,r+.25,z-1),.35,alloy,12)
-  for side in [-1,1]:lamp(side*(r+.5),0,z)
+   for yy in [-r*.48,r*.48]:
+    xx=side*r*.9
+    tube((xx,yy,start),(xx,yy,end),.30,alloy,16)
+    for zz in [start+.8,end-.8]:
+     tube((xx,yy,zz-.18),(xx,yy,zz+.18),.40,steel,16)
+   mid=(start+end)/2
+   box((side*(r+.05),0,mid),(1.0,2.25,2.3),steel)
+   box((side*(r+.63),0,mid),(.22,1.95,1.9),ivory[1])
+   for yy in [-.8,.8]:box((side*(r+.78),yy,mid),(.09,.13,1.4),alloy)
+   box((side*(r+.82),-.45,mid+.15),(.10,.23,.85),warm)
+   for yy in [-r*.68,r*.68]:
+    cable([(side*r*.67,yy,start),(side*r*.8,yy,start+.5),(side*r*.8,yy,end-.5)],.19,orange)
+  # Axial actuator rails and irregular equipment packages above each pressure segment.
+  for side in [-1,1]:
+   xx=side*r*.55;yy=r*.90
+   tube((xx,yy,start+.3),(xx,yy,end-.3),.24,alloy,16)
+   for zz in [start+1,end-1]:
+    box((xx,yy+.15,zz),(.9,.65,1.5),steel)
+    box((xx,yy+.52,zz),(.7,.13,1.2),ivory[1])
+   for off in [-2,2]:
+    zz=(start+end)/2+off
+    box((side*(r+.12),.15,zz),(.5,1.9,1.4),steel)
+    for yy in [-.45,0,.45]:
+     tube((side*(r+.45),yy,zz-.5),(side*(r+.45),yy,zz+.5),.14,alloy,12)
+  hatch(0,r+.2,(start+end)/2,2.0,1.9)
 
 def mount(a,b,r=.8):
  tube(a,b,r,steel,8)
@@ -154,8 +177,8 @@ def gun(x,y,z,s=1):
  box((x,y,z),(1.5*s,1.3*s,3.4*s),steel)
  box((x,y+.45*s,z-.3*s),(1.6*s,1*s,2.6*s),grey[2])
  for dx in [-.38,.38]:
-  tube((x+dx*s,y,z+.8*s),(x+dx*s,y,z+4*s),.20*s,alloy,12)
-  ring(z+3.9*s,.28*s,.35*s,steel,.14*s,x+dx*s,y,24)
+  tube((x+dx*s,y+.30*s,z+.8*s),(x+dx*s,y+.30*s,z+5.6*s),.20*s,alloy,12)
+  ring(z+5.5*s,.28*s,.35*s,steel,.14*s,x+dx*s,y+.30*s,24)
  box((x,y+.8*s,z),(1.25*s,.12*s,1.2*s),ivory[0])
  for side in [-1,1]:
   tube((x+side*.5*s,y+.3*s,z-s),(x+side*.5*s,y+.3*s,z+1.6*s),.27*s,alloy,12)
@@ -178,10 +201,10 @@ def dish(x,y,z,r=4):
 
 def small_ship(role):
  if role=='interceptor':
-  spine(-18,16,3.1);cabin(23,16,5.0,4.0)
+  spine(-17,13,4.0);cabin(22,18,5.3,4.5)
   for x,y in [(8,0),(-8,0),(0,8),(0,-8)]:
-   mount((0,0,-18),(x,y,-18),1.5);engine(x,y,-21,17,3.6)
-  for side in [-1,1]:gun(side*4.3,.2,17,.65)
+   mount((0,0,-18),(x,y,-18),1.5);engine(x,y,-20,19,4.1)
+  for side in [-1,1]:gun(side*5.5,1.2,21,1.0)
  elif role in ['patrol','raider']:
   pirate=role=='raider';c=grey+red+[ivory[0]] if pirate else ivory
   hull('armoured-central-hull',0,[(-26,5.5,2.2,-2,1.4),(-20,7.2,3.2,-3.2,1.7),(-12,7.4,3.5,-3.4,1.7),(-4,7,3.8,-3.4,1.7),(4,6.5,3.4,-3.2,1.6),(12,5.7,3.4,-3.2,1.5),(22,4.2,1.8,-2.8,1.2),(28,2.8,.8,-2.3,1.0)],c)
@@ -190,7 +213,11 @@ def small_ship(role):
   for side in [-1,1]:
    mount((side*6,0,-10),(side*12.5,0,-12),1.2)
    engine(side*12.5,0,-14,23,4,red+grey if pirate else [ivory[0],ivory[1],blue[1]])
-   gun(side*5.8,6.0,3,1.45 if pirate else 1.10)
+   # Bearing pedestal penetrates the shoulder roof; the gun base sits on it.
+   gs=1.45 if pirate else 1.10
+   box((side*5.8,4.65,3),(2.8,1.1,5.8),steel)
+   box((side*5.8,5.16,3),(2.55,.28,5.35),c[0])
+   gun(side*5.8,5.15+.65*gs,3,gs)
    hull('shoulder-fairing',side*6,[(-10,1.4,4.3,1.0,.6),(-4,1.7,4.8,1.0,.7),(3,1.65,4.8,.8,.7),(10,1.3,3.8,.8,.6)],c)
    for zz in [-17,-9,-1]:
     tube((side*9,1.7,zz-2),(side*9,1.7,zz+2),.65,alloy,16)
@@ -204,13 +231,25 @@ def small_ship(role):
     for k in range(6):box((side*7.77,-.45+k*.3,zz),(.18,.12,1.5),alloy)
    lamp(side*3.2,-1.1,27.4)
   cabin(15,15,3.8,3.2,c,x=.45 if pirate else 0,y=1.1)
-  for z in [-18,-10,-2]:hatch(0,5.3,z,3.4,3.3)
+  for z in [-18,-10,-2]:
+   box((0,4.85,z),(3.55,1.0,3.5),steel)
+   hatch(0,5.30,z,3.4,3.3)
+  for side in [-1,1]:
+   box((side*2.6,5.32,-10),(1.35,.16,18),black)
+   for xx in [-.32,.32]:
+    tube((side*2.6+xx,5.6,-18),(side*2.6+xx,5.6,-2),.18,alloy,12)
+   for zz in [-16,-8,0]:
+    box((side*2.6,5.75,zz),(1.15,.55,1.35),steel)
+    box((side*2.6,6.06,zz),(.85,.12,1.10),c[0])
+
   if pirate:
    # Offset ram is a single substantial armoured prow rather than decorative spikes.
    hull('offset-ram',-1.4,[(15,1.5,1.3,-2.8,.5),(23,1.4,.7,-2.6,.5),(28,1.4,.5,-2.4,.4),(29,1.2,.2,-2.2,.4)],red)
   else:
-   for zz in [-10,-2]:
-    for side in [-1,1]:radiator(side*5,4.9,zz,1.7,3)
+   for zz in [-5,0]:
+    for side in [-1,1]:
+     box((side*6,4.65,zz),(1.85,.55,2.7),steel)
+     radiator(side*6,4.90,zz,1.7,2.5)
    for side in [-1,1]:
     # Deliberate blue identity stripe across shoulder plates, not random recolor.
     for zz in [-5,-2,1]:box((side*6.6,4.83,zz),(1.6,.09,2.5),blue[1])
@@ -220,7 +259,7 @@ def small_ship(role):
    sphere('sensor', (0,6.4,-7), (2.3,1.5,2.3),alloy)
    ring_axis_y((0,6.15,-7),2.3,.18,cyan)
  elif role=='prospector':
-  spine(-20,17,2.9);cabin(22,15,4.4,3.6,[gold[1],ivory[0]])
+  spine(-20,17,3.8);cabin(22,15,5.1,4.0,[ivory[1],gold[0]])
   for side in [-1,1]:
    engine(side*6.2,0,-23,15,3.4,[ivory[0],gold[0],gold[1]])
    mount((0,0,-4),(side*6,0,-4),.9)
@@ -262,7 +301,7 @@ def ring_axis_y(c,r,width,mat):
 
 def explorer():
  global PREFIX
- spine(-23,21,2.5);cabin(29,14,4.1,3.5,ivory+gold)
+ spine(-23,21,3.7);cabin(29,14,5.0,4.2,[ivory[0],ivory[1],gold[0]])
  for side in [-1,1]:
   engine(side*7,0,-28,16,3.6,[ivory[0],ivory[1],gold[0]])
   mount((0,0,-25),(side*7,0,-25),1.1)
@@ -271,7 +310,7 @@ def explorer():
  PREFIX='rotor:'
  # The floor is at radius 40 m. Shell extends 36..42 m, with a faceted 6 m tube.
  # Geometry is exactly concentric about the longitudinal Z axis.
- N=96;cross=[(39+3*math.cos(k*math.tau/16),3*math.sin(k*math.tau/16)) for k in range(16)]
+ N=96;cross=[(39+3*math.cos(k*math.tau/16),4.3*math.sin(k*math.tau/16)) for k in range(16)]
  for j in range(N):
   a=j*math.tau/N;b=(j+1)*math.tau/N
   for k in range(len(cross)):
@@ -285,29 +324,32 @@ def explorer():
    plate(pts,gold[(j//8)%3] if j%24 in range(3,7) else ivory[j%3],norm,.08,bolts=j%2==0)
   # Window and luminaire on forward outer face, at human scale.
   t=(a+b)/2;u=Vector((-math.sin(t),math.cos(t),0));v=Vector((math.cos(t),math.sin(t),0));n=Vector((0,0,1))
-  c=Vector((39.8*math.cos(t),39.8*math.sin(t),2.99))
+  c=Vector((39.8*math.cos(t),39.8*math.sin(t),4.28))
   if j%2==0:
    box(c,(.85,.55,.12),steel,(u,v,n));box(c+n*.09,(.65,.35,.07),glass,(u,v,n))
   if j%4==0:box(c-v*1.6,(.7,.18,.10),warm,(u,v,n))
   if j%12==0:
-   for r in [36.1,41.9]:tube((r*math.cos(t),r*math.sin(t),-2),(r*math.cos(t),r*math.sin(t),2),.22,steel,10)
+   for r in [36.1,41.9]:tube((r*math.cos(t),r*math.sin(t),-3.3),(r*math.cos(t),r*math.sin(t),3.3),.22,steel,10)
    # Circumferential mechanical clamps create eight distinct sectors.
    for k in range(len(cross)):
     r,z=cross[k];rr,zz=cross[(k+1)%len(cross)]
     tube((r*math.cos(t),r*math.sin(t),z),(rr*math.cos(t),rr*math.sin(t),zz),.30,steel,10)
     for dt in [-.018,.018]:tube((r*math.cos(t+dt),r*math.sin(t+dt),z),(rr*math.cos(t+dt),rr*math.sin(t+dt),zz),.15,alloy,8)
   if j%12 in [2,3,4]:
-   c=Vector((39*math.cos(t),39*math.sin(t),3.03))
+   c=Vector((39*math.cos(t),39*math.sin(t),4.33))
    box(c,(2.2,2.9,.16),steel,(u,v,n))
    for l in range(10):box(c+v*(-1.2+l*.26)+n*.12,(1.9,.10,.10),alloy,(u,v,n))
- ring(0,4.1,4,alloy,3.1);ring(2.2,4.45,.5,steel,3.5)
+ ring(0,5.2,5,steel,3.7);ring(2.8,5.5,.65,alloy,4.1);ring(3.4,5.3,.5,gold[0],4.3)
  for i in range(16):
   t=i*math.tau/16
   x,y=4*math.cos(t),4*math.sin(t)
   box((x,y,2.7),(.45,.45,.35),alloy);box((x,y,2.91),(.18,.18,.07),warm)
  for i in range(4):
   t=math.pi/4+i*math.pi/2;u=Vector((math.cos(t),math.sin(t),0));v=Vector((-math.sin(t),math.cos(t),0))
-  mount(u*4,u*36,1.1)
+  mount(u*4,u*36,1.3)
+  for r in [5,11,17,23,29,34]:
+   box(u*r,(3.1,1.2,3.3),steel,(v,u,Vector((0,0,1))))
+   box(u*r+Vector((0,0,1.8)),(2.6,1.0,.35),ivory[1],(v,u,Vector((0,0,1))))
   for s in [-1,1]:
    tube(u*4+v*s*.9+Vector((0,0,1.2)),u*36+v*s*.9+Vector((0,0,1.2)),.24,alloy,10)
   for r in [7,12,17,22,27,32]:
@@ -327,6 +369,52 @@ def naval_bridge(x,z,y,palette):
   mount((x+dx,y+5,z-1),(x+dx,y+10,z-1),.16)
   mount((x+dx-1,y+8,z-1),(x+dx+1,y+8,z-1),.10)
  dish(x,y+7,z-3,1.5)
+
+def capital_habitat(iscarrier):
+ global PREFIX
+ z0=-27
+ # Fixed bearing housing outside all rectangular hull corners.
+ ring(z0,19.2,2.0,steel,18.7,segments=96)
+ for side in [-1,1]:
+  for sy in [-1,1]:
+   mount((side*13,sy*8,z0),(side*15.7,sy*10.7,z0),.55)
+ PREFIX='rotor:'
+ # Inner radius 78.4 m, outside fixed bearing radius 76.8 m: 1.6 m gap.
+ ring(z0,20.1,1.4,alloy,19.6,segments=96)
+ ring(z0+.8,20.2,.25,steel,19.6,segments=96)
+ N=96
+ cross=[(21.8+1.8*math.cos(k*math.tau/16),z0+2.8*math.sin(k*math.tau/16)) for k in range(16)]
+ palette=ivory if iscarrier else grey
+ accent=gold[0] if iscarrier else red[1]
+ for j in range(N):
+  a=j*math.tau/N;b=(j+1)*math.tau/N;t=(a+b)/2
+  for k in range(16):
+   r,z=cross[k];rr,zz=cross[(k+1)%16]
+   pts=[(r*math.cos(a),r*math.sin(a),z),(r*math.cos(b),r*math.sin(b),z),(rr*math.cos(b),rr*math.sin(b),zz),(rr*math.cos(a),rr*math.sin(a),zz)]
+   mid=sum((Vector(p) for p in pts),Vector())/4
+   n=mid-Vector((21.8*math.cos(t),21.8*math.sin(t),z0));n.normalize()
+   mat=steel if j%12 in [0,1] else accent if j%24 in [4,5,6] else palette[(j//12)%len(palette)]
+   plate(pts,mat,n,.025,bolts=False)
+  u=Vector((-math.sin(t),math.cos(t),0));v=Vector((math.cos(t),math.sin(t),0));n=Vector((0,0,1))
+  if j%2==0:
+   c=Vector((22.5*math.cos(t),22.5*math.sin(t),z0+2.67))
+   box(c,(.40,.23,.09),steel,(u,v,n));box(c+n*.06,(.29,.13,.035),glass,(u,v,n))
+   box(c-v*.45,(.27,.10,.06),warm,(u,v,n))
+  if j%12==0:
+   for k in range(16):
+    r,z=cross[k];rr,zz=cross[(k+1)%16]
+    tube((r*math.cos(t),r*math.sin(t),z),(rr*math.cos(t),rr*math.sin(t),zz),.10,alloy,8)
+  if j%12 in [3,4,5,6,7,8]:
+   c=Vector((22.0*math.cos(t),22.0*math.sin(t),z0+2.86))
+   box(c,(1.3,.7,.10),steel,(u,v,n))
+   for q in range(6):box(c+v*(-.28+q*.11)+n*.08,(1.15,.045,.045),alloy,(u,v,n))
+ for j in range(8):
+  a=j*math.tau/8;u=Vector((math.cos(a),math.sin(a),0));v=Vector((-math.sin(a),math.cos(a),0));o=Vector((0,0,z0))
+  for dz in [-.6,.6]:
+   for side in [-1,1]:tube(o+u*20+v*side*.30+Vector((0,0,dz)),o+u*21.2+v*side*.30+Vector((0,0,dz)),.13,steel,8)
+  box(o+u*20.75,(.95,1.0,1.6),steel,(v,u,Vector((0,0,1))))
+  box(o+u*20.75+Vector((0,0,.85)),(.45,.65,.16),accent,(v,u,Vector((0,0,1))))
+ PREFIX=''
 
 def capital(role):
  # Author at 1/4 full size for shared detail primitives, then scale to metres.
@@ -371,6 +459,16 @@ def capital(role):
   naval_bridge(5,2,12,ivory)
   for x in [3.8,5,6.2]:mount((x,13,5),(x,19-(x-4)*.6,5),.08)
   # Keep the working deck clear; command glazing belongs on the bridge.
+  for zz in [-28,-14,0,14,28]:
+   for xx in [-5,5]:
+    for dx in [-2.0,2.0]:box((xx+dx,11.08,zz),(.06,.025,4.4),gold[0])
+    for dz in [-2.2,2.2]:box((xx,11.08,zz+dz),(4,.025,.06),gold[0])
+  for side in [-1,1]:
+   xx=side*10.7
+   tube((xx,11.8,-36),(xx,11.8,35),.055,alloy,8)
+   for zz in range(-36,36,3):tube((xx,11.0,zz),(xx,11.8,zz),.055,alloy,8)
+  for zz in [-20,18,31]:
+   box((6,11.6,zz),(1.8,1.15,2.4),gold[0]);box((6,12.22,zz),(1.65,.12,2.2),steel)
   # Lower island terraces and flight-deck service equipment.
   hull('island-base',5,[(-2,4.3,13.1,10.9,.8),(2,4.3,13.1,10.9,.8),(9,3.8,12.7,10.9,.8),(13,2.4,11.8,10.9,.5)],ivory)
   for zz in range(-32,35,11):
@@ -390,17 +488,70 @@ def capital(role):
    for xx in range(-9,10,3):mount((xx,6.2,zz),(xx+2,7.2,zz),.10)
   for zz in [27,37]:
    for xx in [-7,0,7]:box((xx,-6.7,zz),(2.2,.35,3),grey[2])
-  box((2,4.6,35),(12,.55,.6),gold[0]);mount((7,4.5,35),(7,2,35),.14)
+  # Shipyard-derived internal work frame: rails, braced arches and rooted booms.
+  for zz in [22,28,34,40]:
+   for side in [-1,1]:
+    xx=side*10.9
+    box((xx,0,zz),(1.2,14.4,1.0),steel)
+    box((xx-side*.7,2.0,zz),(.65,5.1,.75),gold[0])
+    mount((xx,-5.8,zz),(xx-side*2.2,-1.2,zz),.22)
+    mount((xx,6.5,zz),(xx-side*2.0,4.7,zz),.22)
+   box((0,6.45,zz),(22,.8,1.1),steel)
+   for xx in range(-9,9,3):
+    mount((xx,5.95,zz),(xx+3,6.9,zz),.10)
+  for xx in [-8,-4,0,4,8]:
+   box((xx,0,19.55),(3.6,12.7,.7),steel)
+   for yy in [-4,0,4]:
+    box((xx,yy,20.05),(3.15,3.25,.5),ivory[1])
+    box((xx,yy,20.36),(2.6,2.5,.16),black)
+    for k in range(7):box((xx,yy-.95+k*.3,20.52),(2.3,.09,.10),alloy)
+    box((xx,yy+1.25,20.60),(1.9,.12,.08),warm)
+  # Two raised service galleries with safety rails and grated deck strips.
+  for side in [-1,1]:
+   xx=side*9.25
+   box((xx,-.95,31),(3.3,.55,25),steel)
+   for z in range(20,44):
+    box((xx,-.63,z),(2.95,.08,.30),alloy)
+   for yy in [.0,.8]:tube((side*7.8,yy,19),(side*7.8,yy,43),.075,gold[0],8)
+   for z in range(19,44,2):tube((side*7.8,-.8,z),(side*7.8,1.0,z),.075,gold[0],8)
+   # Fixed ladder and wall-mounted servicing manipulators.
+   for z in [24,36]:
+    for dx in [-.48,.48]:tube((xx+dx,-6.8,z),(xx+dx,-.6,z),.085,alloy,8)
+    for y in [-6,-5,-4,-3,-2,-1]:tube((xx-.48,y,z),(xx+.48,y,z),.065,alloy,8)
+   for z in [26,38]:
+    root=(side*10.4,2.5,z);elbow=(side*8.6,2.8,z-1);tip=(side*6.4,1.8,z+1)
+    mount(root,elbow,.30);mount(elbow,tip,.23)
+    for point in [root,elbow,tip]:sphere('service-joint',point,(.43,.43,.43),steel)
+    tube((side*9.8,2.65,z),(side*8.3,3,z-.6),.13,alloy,12)
+    box(tip,(.6,.75,.65),gold[0])
+  # Traveling bridge crane is carried by the ceiling's longitudinal rails.
+  for xx in [-8.5,8.5]:box((xx,5.4,31),(.7,.7,25),gold[0])
+  for z in [31.5,33]:
+   box((0,4.8,z),(18,.55,.45),gold[0])
+   for xx in range(-8,8,2):mount((xx,4.55,z),(xx+2,5.4,z),.11)
+  box((3,4.55,32.2),(2,.65,2.5),steel)
+  tube((3,4.2,32.2),(3,1.5,32.2),.10,alloy,12);box((3,1.45,32.2),(.7,.5,.8),gold[0])
+  # Equipment racks and visible floor service channels behind the clear lane.
+  for xx in [-8.2,8.2]:
+   for z in [22,29,38]:
+    box((xx,-5.2,z),(2.3,3,2.8),steel)
+    box((xx,-5.2,z+1.45),(1.9,2.5,.18),gold[0])
+    for yy in [-5.9,-5.1,-4.3]:box((xx,yy,z+1.59),(1.45,.4,.12),alloy)
+  for z in range(21,44,3):
+   for xx in [-4,0,4]:plate([(xx-1.8,-6.87,z),(xx+1.8,-6.87,z),(xx+1.8,-6.87,z+2.8),(xx-1.8,-6.87,z+2.8)],deck,(0,1,0),.035,False)
+  for xx in [-5.8,5.8]:box((xx,-6.75,32),(.10,.07,23),gold[0])
+
  else:
   rows=[]
   for i in range(19):
    z=zmin+i*length/18;f=.8 if i==0 else .65 if i==18 else .85 if i==17 else 1
    rows.append((z,w*f,h*f,-h*f,2.4))
   # Separate citadel sections with deep mechanical seams.
-  for start,end in [(-47,-34),(-32,-20),(-18,-6),(-4,8),(10,22),(24,35),(37,47)]:
+  for start,end in [(-47,-34),(-32,-20),(-18,-6),(-4,8),(10,22),(24,35)]:
    f=.72 if start==37 else 1
-   hull('citadel-section',0,[(start,w*f*.94,h*f*.94,-h*f*.94,2.4),(start+1.2,w*f,h*f,-h*f,2.4),(end-1.2,w*f,h*f,-h*f,2.4),(end,w*f*.94,h*f*.94,-h*f*.94,2.4)],[grey[0]])
-  body('citadel-core',0,0,80,9,8,[steel])
+   hull('citadel-section',0,[(start,w*f*.94,h*f*.94,-h*f*.94,2.4),(start+1.2,w*f,h*f,-h*f,2.4),(end-1.2,w*f,h*f,-h*f,2.4),(end,w*f*.94,h*f*.94,-h*f*.94,2.4)],[grey[1]],roof=[steel])
+  body('citadel-core',0,0,72,9,8,[steel])
+  hull('integrated-bow',0,[(34,12,10.4,-10.4,2.4),(39,11.6,9.7,-9.7,2.8),(44,10,8,-8,2.6),(47,8.2,6.8,-6.8,2.3)],[grey[0],grey[1]])
   # Spinal weapon muzzle: nested rings and a deep bore along the ship axis.
   for z,r in [(zmax+.2,4.2),(zmax+.9,3.7),(zmax+1.6,3.0)]:ring(z,r,1,alloy if r==3.7 else steel,r-.6)
   tube((0,0,zmax-6),(0,0,zmax-5.9),2.3,black,48)
@@ -414,7 +565,7 @@ def capital(role):
   for zz in [-30,-18,-6,8,20]:
    for side in [-1,1]:
     box((side*6.8,11,zz),(5.4,1.4,5.8),steel)
-    gun(side*6.8,12,zz,1.5)
+    gun(side*6.8,12,zz,1.9)
   # Raised segmented armour arches, with sunken turret wells between them.
   for zz in [-36,-24,-12,0,12,24]:
    for side in [-1,1]:
@@ -430,6 +581,25 @@ def capital(role):
    centre=u*4.9+Vector((0,0,zmax+.4));box(centre,(1.7,1.5,4),grey[1],(u,v,Vector((0,0,1))))
    tube(u*4.0+Vector((0,0,zmax-5)),u*4.0+Vector((0,0,zmax+1)),.25,alloy,12)
   for xx in [-1,1]:mount((xx,12,-7),(xx,16,-7),.10)
+ # Thick continuous structural hoops connect roof, shoulder, side and belly.
+ for zz in range(-34,35,9):
+  outline=section(0,zz,w+.7,h+.45,-h-.45,2.8)
+  for j in range(8):
+   k=(j+1)%8;aa=outline[j];bb=outline[k]
+   pts=[aa+Vector((0,0,-.7)),bb+Vector((0,0,-.7)),bb+Vector((0,0,.7)),aa+Vector((0,0,.7))]
+   norm=Vector(((aa.x+bb.x)/2,(aa.y+bb.y)/2,0)).normalized()
+   plate(pts,steel,norm,.40)
+   for dz in [-.74,.74]:tube(aa+Vector((0,0,dz)),bb+Vector((0,0,dz)),.09,alloy,8)
+ # Long side utility channel with layered pressure pipes and connector junctions.
+ for side in [-1,1]:
+  for yy in [-2.6,-1.5,0]:
+   xx=side*(w+.75)
+   tube((xx,yy,-34),(xx,yy,33),.28,alloy if yy else orange,12)
+   for zz in range(-30,33,9):
+    tube((xx,yy,zz-.35),(xx,yy,zz+.35),.40,steel,12)
+  for zz in [-29,-11,7,25]:
+   box((side*(w+1.1),-1,zz),(1.1,3.2,2.2),steel)
+   box((side*(w+1.72),-1,zz),(.22,2.6,1.8),gold[0] if iscarrier else grey[1])
  # Both capitals have large transverse armour ribs and deep service trenches.
  for zz in range(-34,35,9):
   for side in [-1,1]:
@@ -458,14 +628,17 @@ def capital(role):
 
 if ROLE in ['interceptor','patrol','raider','prospector']:small_ship(ROLE)
 elif ROLE=='explorer':explorer()
-elif ROLE in ['carrier','dreadnought']:capital(ROLE)
+elif ROLE in ['carrier','dreadnought']:
+ capital(ROLE);capital_habitat(ROLE=='carrier')
 else:raise ValueError(ROLE)
 
 SCALE=4 if ROLE in ['carrier','dreadnought'] else 1
 objects=[];rotor=None
-if ROLE=='explorer':
+if ROLE in ['explorer','carrier','dreadnought']:
  rotor=bpy.data.objects.new('habitat-rotor',None);bpy.context.collection.objects.link(rotor)
- rotor['floorRadiusMetres']=40;rotor['rotationRPM']=3;rotor['gravityG']=(math.tau*3/60)**2*40/9.80665
+ rotor['floorRadiusMetres']=40 if ROLE=='explorer' else 90
+ rotor['rotationRPM']=3 if ROLE=='explorer' else 2.5
+ rotor['gravityG']=(math.tau*rotor['rotationRPM']/60)**2*rotor['floorRadiusMetres']/9.80665
 for name,(verts,faces,uvs) in BATCH.items():
  mesh=bpy.data.meshes.new(name);mesh.from_pydata([tuple(c*SCALE for c in v) for v in verts],[],faces);mesh.materials.append(MATS[GROUP_MAT[name]]);mesh.update()
  uv=mesh.uv_layers.new(name='surface-metres')
@@ -475,8 +648,8 @@ for name,(verts,faces,uvs) in BATCH.items():
  for face in mesh.polygons:face.use_smooth=True
  ob=bpy.data.objects.new(name,mesh);bpy.context.collection.objects.link(ob);objects.append(ob)
  if name.startswith('rotor:'):ob.parent=rotor
- if GROUP_MAT[name] in PAINT:
-  bevel=ob.modifiers.new('machined-panel-edges','BEVEL');bevel.width=.10*SCALE;bevel.segments=2
+ if GROUP_MAT[name] in PAINT+[steel]:
+  bevel=ob.modifiers.new('machined-panel-edges','BEVEL');bevel.width=(.07 if GROUP_MAT[name] in PAINT else .035)*SCALE;bevel.segments=2 if GROUP_MAT[name] in PAINT else 1;bevel.limit_method='ANGLE';bevel.angle_limit=.70
  normal=ob.modifiers.new('weighted-normals','WEIGHTED_NORMAL');normal.keep_sharp=True
 bpy.context.scene['author']='Codex';bpy.context.scene['shipRole']=ROLE
 bpy.context.scene['units']='metres; Y up; +Z forward';bpy.context.scene.unit_settings.system='METRIC'
@@ -492,6 +665,14 @@ positions=[doc['accessors'][p['attributes']['POSITION']] for m in doc['meshes'] 
 lo=[min(a['min'][i] for a in positions) for i in range(3)];hi=[max(a['max'][i] for a in positions) for i in range(3)]
 triangles=sum(doc['accessors'][p['indices']]['count']//3 for m in doc['meshes'] for p in m['primitives'])
 report=dict(role=ROLE,author='Codex',boundsMetres=[b-a for a,b in zip(lo,hi)],min=lo,max=hi,triangles=triangles,meshes=len(doc['meshes']),bytes=glb.stat().st_size)
-if rotor:report.update(floorRadiusMetres=40,rotationRPM=3,gravityG=rotor['gravityG'])
+if rotor:report.update(floorRadiusMetres=rotor['floorRadiusMetres'],rotationRPM=rotor['rotationRPM'],gravityG=rotor['gravityG'])
+if ROLE in ['carrier','dreadnought']:
+ # Conservative radial-envelope clearance for all orientations, over rotor axial span.
+ rotating=[v for name,(vs,_,_) in BATCH.items() if name.startswith('rotor:') for v in vs]
+ zlo=min(v[2] for v in rotating);zhi=max(v[2] for v in rotating)
+ static=[vs[i] for name,(vs,faces,_) in BATCH.items() if not name.startswith('rotor:') for face in faces if min(vs[i][2] for i in face)<=zhi and max(vs[i][2] for i in face)>=zlo for i in face]
+ clearance=(min(math.hypot(v[0],v[1]) for v in rotating)-max(math.hypot(v[0],v[1]) for v in static))*SCALE
+ report['rotorClearanceMetres']=clearance
+ assert clearance>.5, f'Habitat rotation clearance {clearance} m insufficient'
 (DEST/'model-report.json').write_text(json.dumps(report,indent=2)+'\n')
 print('SHIP_EXPORTED',json.dumps(report))

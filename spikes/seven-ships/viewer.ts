@@ -17,7 +17,7 @@ const role:Role=Object.hasOwn(catalog, query) ? query as Role : 'interceptor';
 const [code,name]=catalog[role];
 document.title=name+' — Exterior study';
 document.querySelector('h1')!.textContent=name.toUpperCase();
-document.querySelector('.sub')!.textContent=role==='explorer'?'80 m floor diameter · 3 RPM · 0.40 g':role+' · Approved exterior study';
+document.querySelector('.sub')!.textContent=role==='explorer'?'80 m floor diameter · 3 RPM · 0.40 g':(role==='carrier'||role==='dreadnought')?'180 m floor diameter · 2.5 RPM · 0.63 g':role+' · Approved exterior study';
 (document.querySelector('#target-dialog img') as HTMLImageElement).src='./'+role+'/target.png';
 const selector=document.querySelector<HTMLSelectElement>('#ship')!;
 selector.value=role;selector.onchange=()=>{location.search='?ship='+selector.value;};
@@ -28,7 +28,7 @@ const renderer = new THREE.WebGLRenderer({
 renderer.setPixelRatio(Math.min(devicePixelRatio, 1.5));
 renderer.setSize(innerWidth, innerHeight);
 renderer.toneMapping = THREE.ACESFilmicToneMapping;
-renderer.toneMappingExposure = 1.1;
+renderer.toneMappingExposure = 1.0;
 renderer.shadowMap.enabled = true;
 renderer.shadowMap.type = THREE.PCFSoftShadowMap;
 renderer.info.autoReset = false;
@@ -48,11 +48,11 @@ controls.maxDistance = 400;
 const pmrem = new THREE.PMREMGenerator(renderer),
 	room = new RoomEnvironment();
 scene.environment = pmrem.fromScene(room, 0.04).texture;
-scene.environmentIntensity = 0.28;
+scene.environmentIntensity = 0.16;
 room.dispose();
 pmrem.dispose();
-const key = new THREE.DirectionalLight(0xffebd2, 3.7);
-key.position.set(-60, 65, 50);
+const key = new THREE.DirectionalLight(0xffeedb, 4.5);
+key.position.set(-45, 85, -30);
 key.castShadow = true;
 key.shadow.mapSize.set(4096, 4096);
 Object.assign(key.shadow.camera, {
@@ -66,10 +66,10 @@ Object.assign(key.shadow.camera, {
 key.shadow.bias = -0.0003;
 key.shadow.normalBias = 0.1;
 scene.add(key);
-const fill = new THREE.DirectionalLight(0xb4c8dc, 0.65);
+const fill = new THREE.DirectionalLight(0xb4c8dc, 0.70);
 fill.position.set(25, 12, 45);
 scene.add(fill);
-const rim = new THREE.DirectionalLight(0xffe4c6, 0.8);
+const rim = new THREE.DirectionalLight(0xc1d7ee, 1.2);
 rim.position.set(60, 65, -75);
 scene.add(rim);
 for (const x of [] as number[])
@@ -139,14 +139,16 @@ const views: Record<string, { position: number[]; target: number[] }> = {
 let rotating = false;
 let rotor: THREE.Object3D | undefined;
 let habitatRunning=false;
+let habitatRPM=3;
 let selectedView = "hero";
+if(role==="carrier")document.querySelector('[data-view="detail"]')!.textContent="Bay interior";
 function setView(name: string) {
-	const v = views[name];
+	const v = role==="carrier" && name==="detail" ? {position:[1,1,38],target:[0,-1,25]} : views[name];
 	if (!v) return;
 	selectedView = name;
 	ship.rotation.set(0, 0, 0);
 	camera.position.fromArray(v.position);
-    if(name==="hero")camera.position.multiplyScalar(role==="explorer"?1.15:(role==="carrier"||role==="dreadnought"?0.91:0.80));
+    if(name==="hero")camera.position.multiplyScalar(role==="explorer"?1.15:(role==="carrier"||role==="dreadnought"?0.84:0.77));
 	controls.target.fromArray(v.target);
 	camera.position
 		.sub(controls.target)
@@ -216,8 +218,15 @@ new GLTFLoader().load(
 			.toArray();
 		const bounds=new THREE.Box3().setFromObject(gltf.scene);const centre=bounds.getCenter(new THREE.Vector3());
         gltf.scene.position.sub(centre);const scale=70/Math.max(...stats.bounds);ship.scale.setScalar(scale);
+        if(role==='carrier') {
+         for(const x of [-30,30])for(const z of [100,156]) {
+          const bayLight=new THREE.PointLight(0xffc88b,16,12,2);
+          bayLight.position.set(x,18,z);gltf.scene.add(bayLight);
+         }
+        }
         rotor=gltf.scene.getObjectByName('habitat-rotor');
         document.querySelector<HTMLButtonElement>('#habitat')!.hidden=!rotor;
+        if(rotor){habitatRPM=Number(rotor.userData.rotationRPM);document.querySelector('#habitat')!.textContent='Habitat · '+habitatRPM+' RPM';}
         stats.loaded = true;
 		document.querySelector("#loading")?.remove();
 	},
@@ -297,7 +306,7 @@ function frame(now: number) {
 	times.push(delta);
 	if (times.length > 180) times.shift();
 	if (rotating) ship.rotation.y += delta * 0.00015;
-	if(rotor&&habitatRunning)rotor.rotation.z+=Math.min(delta,100)/1000*Math.PI*2*3/60;
+	if(rotor&&habitatRunning)rotor.rotation.z+=Math.min(delta,100)/1000*Math.PI*2*habitatRPM/60;
 	controls.update();
 	renderer.info.reset();
 	composer.render();

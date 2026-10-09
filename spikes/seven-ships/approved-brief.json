@@ -1,7 +1,7 @@
 {
   "author": "codex",
   "date": "2026-10-09",
-  "status": "Principal accepted the seven model studies and revised Bastion: looks good, continue.",
+  "status": "Visual improvement reopened; current model quality gate unmet. Capital ring revised targets approved.",
   "baseline": "main 53be4f75310b224ca43a087d29acdcb1bf2a694e",
   "pipeline": "seeded Blender authoring -> packed blend -> textured GLB -> standalone Three.js viewer -> hardware capture -> independent Pro judge",
   "references": [
@@ -56,7 +56,14 @@
       "direction": "A massive industrial fleet carrier. Preserve baseline's long ribbed hull, full-length dorsal flight/service deck, bow bay mouth and aft engine cluster. Replace the closed bulbous bow with a clear deeply recessed rectangular chamfered hangar aperture large enough for small craft, structural ribs, docking lights and visible inner service gantries. Tiny bridge windows and tiny docked shuttles establish capital scale. Weathered ivory panels, graphite ribs, ochre safety edges. Low command island, no giant cockpit. Strongly distinguish from a gunship.",
       "target": "carrier/target.png",
       "source": "exec-42958cb3-158d-46a4-8f13-e18046c8c75f.png",
-      "principalRevision": "Remove small cockpit-like deck assemblies; command windows belong on bridge."
+      "principalRevision": "Remove small cockpit-like deck assemblies; command windows belong on bridge.",
+      "habitat": {
+        "floorDiameterMetres": 180,
+        "rotationRPM": 2.5,
+        "gravityG": 0.6290122264668208,
+        "target": "target-ring-v2.png",
+        "approval": "Approve both designs"
+      }
     },
     {
       "code": "F6",
@@ -72,7 +79,14 @@
       "name": "Rampart",
       "direction": "A massive armoured dreadnought. Preserve baseline's long heavily ribbed fortress hull, broadside turret pairs, rear clustered drives, and axial bow aperture, but make that aperture visibly the muzzle of an immense spinal weapon recessed within armoured longitudinal rails, never a hangar. Heavy overlapping graphite and slate-grey armour belts, sparse ivory identification patches, muted red service markings, recessed tiny bridge and paired turret batteries integrated into ribs. Tiny windows and service hatches convey capital scale. No aircraft carrier deck, no oversized cockpit.",
       "target": "dreadnought/target.png",
-      "source": "exec-feefab81-29d0-41ab-b5ac-6c946514a417.png"
+      "source": "exec-feefab81-29d0-41ab-b5ac-6c946514a417.png",
+      "habitat": {
+        "floorDiameterMetres": 180,
+        "rotationRPM": 2.5,
+        "gravityG": 0.6290122264668208,
+        "target": "target-ring-v2.png",
+        "approval": "Approve both designs"
+      }
     }
   ]
 }

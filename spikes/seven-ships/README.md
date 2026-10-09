@@ -8,7 +8,8 @@ Run `npm run dev -- --host 127.0.0.1 --port 5227 --strictPort` in this worktree.
 Open `/spikes/seven-ships/` and select a ship. Drag to orbit, wheel to zoom,
 right-drag to pan. Presets, inspection lights, model rotation, target comparison
 and PNG export use the approved Porter study's viewer pipeline. Pilgrim has a
-separate **Habitat · 3 RPM** control. H hides controls.
+**Habitat · 3 RPM** control; both capitals use **Habitat · 2.5 RPM**. Bastion offers
+a **Bay interior** preset. H hides controls.
 
 | Code | Role | Name |
 |---|---|---|
@@ -63,7 +64,7 @@ changes its envelope; no production hull numbers have been modified here.
 Other study dimensions also differ from the current game. Capture FPS measures
 an isolated inspection scene and is not a production flight benchmark.
 
-Principal accepted the built studies after reviewing the corrected Bastion deck
-("looks good, continue"). Independent similarity scores remain below the nominal
-8/10 gate; acceptance is the principal decision, not a changed judge score.
+Visual improvement was reopened by the principal. Current independent scores
+are 4.25–5.50/10, below the 8/10 gate. The new capital ring targets were approved,
+but no current built-model quality acceptance is asserted. See STATUS.md.
 See HANDOFF-codex.md for production work and review evidence.

@@ -1,3 +1,20 @@
+# Current outcome — Dream Loop visual improvement reopened
+
+The principal rejected treating prior prototype approval as a quality pass, requested Dream Loop improvement, identified floating gun/grille fixtures on Warden and Shiv, requested shipyard-inspired Bastion bay articulation, and approved new capital habitat-ring images. Those bounded changes are built. The latest models are not accepted as meeting the visual target.
+
+Capital habitats: 180 m floor diameter, 2.5 RPM, 0.629012 g; approximately 189.49 m outer envelope. Authored rotor-to-bearing radial clearance 1.60 m; an independent test of exported triangles verifies greater than 0.5 m conservative clearance through every angle. Browser measured 2.470 RPM on Bastion and 2.440 RPM on Rampart. Pilgrim remains 80 m / 3 RPM / 0.40257 g.
+
+Current round 7 scores: Lance 5.50, Warden 5.10, Pilgrim 5.10, Shiv 5.00, Bastion 5.20, Sluice 5.25, Rampart 4.25. The 8/10 gate is not met. Independent review reports unchanged or regressed small-ship scores after structural attempts; Dream Loop Pro stalled condition requires principal input. Main gaps remain hull/assembly specificity, purposeful machinery layout, materials, dreadnought nose and turret architecture. Do not infer quality acceptance from technical checks.
+
+Verification: seven asset tests / 75 assertions, strict standalone viewer typecheck and seven hardware browser control captures passed. Isolated scenes measured 49.6–76.3 FPS on Apple M1 Pro; no production benchmark. Bastion Bay interior preset now exposes internal galleries, braced structural frames, crane, manipulators, ladders and equipment wall. Grille/weapon supports visually checked by independent judge.
+
+Review: http://127.0.0.1:5227/spikes/seven-ships/review/
+Viewer: http://127.0.0.1:5227/spikes/seven-ships/
+Source and assets remain isolated studies. PR #829 is a draft; no production integration or merge.
+
+---
+## Historical record (superseded by current outcome above)
+
 # Current outcome
 
 Principal accepted the models after the Bastion correction: "looks good, continue". Packaging as an isolated study PR. Historical review scores and limitations below are retained; numerical 8/10 criterion was not achieved. Production integration remains separate.

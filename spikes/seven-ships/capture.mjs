@@ -39,12 +39,13 @@ try{
   await page.locator('#lights').click();if(await page.locator('#lights').getAttribute('aria-pressed')!=='true')throw Error('Lights failed');await page.locator('#lights').click();
   await page.locator('#spin').click();const rot=await page.evaluate(()=>window.__fleet.ship.rotation.y);await page.waitForTimeout(250);
   if(await page.evaluate(r=>window.__fleet.ship.rotation.y===r,rot))throw Error('Spin failed');await page.locator('#spin').click();
-  if(role==='explorer'){
+  if(['explorer','carrier','dreadnought'].includes(role)){
    const start=await page.evaluate(()=>({angle:window.__fleet.rotor.rotation.z,time:performance.now()}));
    await page.locator('#habitat').click();await page.waitForTimeout(2000);await page.locator('#habitat').click();
    const end=await page.evaluate(()=>({angle:window.__fleet.rotor.rotation.z,time:performance.now()}));
    const rpm=(end.angle-start.angle)/(end.time-start.time)*60000/(2*Math.PI);metrics.measuredRotorRPM=rpm;
-   if(rpm<2.7||rpm>3.3)throw Error('Habitat rotation rate wrong: '+rpm);
+   const expected=role==='explorer'?3:2.5;
+   if(Math.abs(rpm-expected)>.3)throw Error('Habitat rotation rate wrong: '+rpm);
   }
   const downloadPromise=page.waitForEvent('download');await page.locator('#save').click();const download=await downloadPromise;if(!download.suggestedFilename().endsWith('.png'))throw Error('Export failed');await download.delete();
   const report={gpu,errors,...metrics,controls:'orbit, target, lights, rotation, presets, PNG export passed'};
