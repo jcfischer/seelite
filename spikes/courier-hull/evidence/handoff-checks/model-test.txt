@@ -1,0 +1,10 @@
+bun test v1.4.2 (744846f84)
+
+spikes/courier-hull/model.test.ts:
+(pass) pressure body and both nacelles are closed, outward-wound shells [147.95ms]
+(pass) export is a textured, bounded 3D courier with real depth and two engine bays [8.70ms]
+
+ 2 pass
+ 0 fail
+ 3705 expect() calls
+Ran 2 tests across 1 file. [211.00ms]
