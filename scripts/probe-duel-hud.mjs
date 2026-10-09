@@ -94,11 +94,42 @@ const installHelpers = () => {
 		dt,
 		tonesAround,
 		aimAt,
-		/** Warm beam pixels in a small square at the beam's midpoint. */
+		/**
+		 * Warm beam pixels in a small square on the beam, read off the frame the
+		 * player sees: the WebGL canvas with the overlay over it, in the task
+		 * that rendered them.
+		 *
+		 * **In the cockpit the beam is in the frame and ends below it** (node
+		 * #806): it runs to the pilot and the dash hides its lower part, so the
+		 * square sits 28 px from the raider's end — past its marker ring, whose
+		 * amber reads as warm, and above the dash with the raider aimed at —
+		 * rather than at the midpoint. Chase keeps its beam on the
+		 * overlay, ending on the hull, and is sampled at the midpoint as before.
+		 */
 		beamPaint(beam) {
-			const x = (beam.from.x + beam.to.x) / 2;
-			const y = (beam.from.y + beam.to.y) / 2;
-			return countIn(x - 6, y - 6, 12, 12, warm);
+			const dx = beam.to.x - beam.from.x;
+			const dy = beam.to.y - beam.from.y;
+			const len = Math.hypot(dx, dy) || 1;
+			const along = g.view === "cockpit" ? Math.min(28, len / 2) : len / 2;
+			const x = beam.from.x + (dx / len) * along;
+			const y = beam.from.y + (dy / len) * along;
+			const overlay = document.getElementById("overlay");
+			const scratch = document.createElement("canvas");
+			scratch.width = overlay.width;
+			scratch.height = overlay.height;
+			const ctx = scratch.getContext("2d", { willReadFrequently: true });
+			ctx.drawImage(g.renderer.domElement, 0, 0, overlay.width, overlay.height);
+			ctx.drawImage(overlay, 0, 0);
+			const data = ctx.getImageData(
+				Math.floor(x - 6),
+				Math.floor(y - 6),
+				12,
+				12,
+			).data;
+			let n = 0;
+			for (let i = 0; i < data.length; i += 4)
+				if (warm(data[i], data[i + 1], data[i + 2], data[i + 3])) n++;
+			return n;
 		},
 		/** Rim-red pixels in the glass's top-left corner. */
 		rimPaint() {

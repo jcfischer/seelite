@@ -551,7 +551,6 @@ import {
 	drawStruckRim,
 	TRACER_AIM,
 	TRACER_HOLD_S,
-	drawGunTracer,
 	drawTracerSegments,
 	stepGunFeedback,
 	type TracerSegment,
@@ -1076,6 +1075,13 @@ import {
 } from "./carrier-key";
 import { NO_KNOWLEDGE } from "./knowledge-labels";
 import { disposeSubtree } from "./gpu-teardown";
+import {
+	type BeamStroke,
+	type FramePoint,
+	raiderBeamStroke,
+	tracerStrokes,
+} from "./beam-glass";
+import { BeamLayer } from "./beam-layer";
 import {
 	commanderHold,
 	newCommander,
@@ -2262,6 +2268,12 @@ class Game {
 	/** The cabin, alone, drawn last over a cleared depth buffer (#651).
 	 *  `cabin-pass.ts` has why it is a scene of its own. */
 	readonly cabinScene = new THREE.Scene();
+	/** The cockpit's laser beams, drawn into the frame just before the cabin
+	 *  so its fittings hide them (node #806). `beam-glass.ts` has why. */
+	readonly beamLayer = new BeamLayer();
+	/** The raider's beam as `drawCockpitBeams` placed it this frame, in
+	 *  fractions of the frame, for the overlay's record of it. */
+	private cockpitRaiderBeam: { from: FramePoint; to: FramePoint } | null = null;
 
 	readonly backdropCamera: THREE.PerspectiveCamera;
 	readonly farCamera: THREE.PerspectiveCamera;
@@ -4612,6 +4624,12 @@ class Game {
 		this.witchspacePass = new WitchspacePass(this.settings.value.quality);
 		this.composer.addPass(this.witchspacePass);
 		this.composer.addPass(nearPass);
+		// **Node #806: the cockpit's laser beams, after the world and before the
+		// cabin.** The cabin pass draws over every pixel a fitting covers and
+		// leaves the rest, so a beam drawn here is hidden by the dash and the
+		// canopy struts and seen through the canopy. On the overlay it was drawn
+		// over them. Disabled on any frame with no beam.
+		this.composer.addPass(this.beamLayer.pass);
 		// **#651's pass: the cabin, after every world layer, over cleared depth.**
 		// The cabin is authored at about a hundred times life size and a berth
 		// cell is 58 m across, so drawn in the near layer the bay's structure
@@ -16158,6 +16176,10 @@ class Game {
 				: 0,
 		);
 
+		// After the cameras are aimed and the raider placed, so the beams land
+		// where this frame's overlay puts its marks.
+		this.drawCockpitBeams(camPos);
+
 		const attribution = this.frameAttribution;
 		if (attribution?.snapshotMode === "full") this.renderer.info.reset();
 		const renderStartedAt = attribution ? performance.now() : 0;
@@ -19398,6 +19420,47 @@ class Game {
 	}
 
 	/**
+	 * The cockpit's laser beams, into the frame before the cabin is drawn over
+	 * them (node #806): the player's tracer while it is held, and the raider's
+	 * beam while it fires. Gated as the overlay gated them — cockpit view with
+	 * the flight glass up — so no beam shows while the head is at a console.
+	 * Chase keeps its beams on the overlay, where nothing can be in front.
+	 */
+	private drawCockpitBeams(camPos: Vec3) {
+		const strokes: BeamStroke[] = [];
+		this.cockpitRaiderBeam = null;
+		if (this.view === "cockpit" && this.flightGlassShown()) {
+			const onFrame = (dir: Vec3 | null): FramePoint | null => {
+				if (!dir) return null;
+				const m = this.markerNdc(dir);
+				return m.behind || !m.onScreen ? null : ndcToPx(m, 1, 1);
+			};
+			if (this.gunFeedback.tracerLeftS > 0)
+				strokes.push(
+					...tracerStrokes(
+						tracerPorts(HULL_SPECS[this.flownHull].hardpoints),
+						onFrame(this.beamAim()) ?? TRACER_AIM,
+					),
+				);
+			if (this.raiderFiring && this.raiderListed) {
+				const from = onFrame(directionTo(camPos, this.raiderContact.pos));
+				if (from) {
+					const stroke = raiderBeamStroke(from);
+					strokes.push(stroke);
+					this.cockpitRaiderBeam = { from: stroke.from, to: stroke.to };
+				}
+			}
+		}
+		const canvas = this.renderer.domElement;
+		this.beamLayer.draw(
+			strokes,
+			canvas.width,
+			canvas.height,
+			canvas.width / Math.max(1, this.overlay.width),
+		);
+	}
+
+	/**
 	 * The eject control's row on the glass (node #703): the arming line while a
 	 * hold is filling, else a standing refusal.
 	 *
@@ -19642,16 +19705,21 @@ class Game {
 		// the second playtest): its beam from its point on the glass while it
 		// fires, and a canopy rim for a moment after a hit lands.
 		const glassBottom = this.view === "cockpit" ? GLASS_BOTTOM_FRACTION : 1;
-		if (this.raiderFiring && this.raiderListed) {
+		// In the cockpit the beam is in the frame, behind the cabin (node #806);
+		// the overlay keeps only its record, in its own pixels.
+		const cockpitBeam = this.cockpitRaiderBeam;
+		if (this.view === "cockpit") {
+			if (cockpitBeam)
+				this.hostileFireRender.beam = {
+					from: { x: cockpitBeam.from.x * w, y: cockpitBeam.from.y * h },
+					to: { x: cockpitBeam.to.x * w, y: cockpitBeam.to.y * h },
+				};
+		} else if (this.raiderFiring && this.raiderListed) {
 			const toRaider = directionTo(camPos, this.raiderContact.pos);
 			const raiderAt = toRaider && place(toRaider);
 			if (raiderAt?.on) {
-				// In the cockpit the player sits below the glass; in chase the hull
-				// is on screen, and the beam ends on it (sage #330).
-				const shipDir =
-					this.view === "cockpit"
-						? null
-						: directionTo(camPos, this.world.ship.pos);
+				// In chase the hull is on screen, and the beam ends on it (sage #330).
+				const shipDir = directionTo(camPos, this.world.ship.pos);
 				const shipAt = shipDir && place(shipDir);
 				const to = shipAt?.on
 					? { x: shipAt.x, y: shipAt.y }
@@ -19745,9 +19813,6 @@ class Game {
 		// shows where it points.
 		const beam = this.beamAim();
 		const beamAt = place(beam);
-		const beamOnGlass = beamAt?.on
-			? { x: beamAt.x / w, y: beamAt.y / h }
-			: null;
 		if (
 			beamAt?.on &&
 			angleBetween(beam, this.weaponAim()) > 0.2 * (Math.PI / 180)
@@ -19758,25 +19823,17 @@ class Game {
 			ctx.arc(beamAt.x, beamAt.y, 5, 0, Math.PI * 2);
 			ctx.stroke();
 		}
-		if (this.gunFeedback.tracerLeftS > 0) {
-			if (this.view === "chase") {
-				// From the hull's muzzles, its range along the beam, as the
-				// camera sees it (#607 D3). Not the cockpit's ports on a glass
-				// chase does not have.
-				const segments = this.chaseBeamPx(w, h);
-				// `glassBottom` is a fraction of the height: 1 is the whole
-				// canvas, since chase has no glass.
-				drawTracerSegments(ctx, w, h, 1, segments);
-				this.beamRender = segments;
-			} else
-				drawGunTracer(
-					ctx,
-					w,
-					h,
-					glassBottom,
-					beamOnGlass ?? undefined,
-					tracerPorts(HULL_SPECS[this.flownHull].hardpoints),
-				);
+		// The cockpit's tracer is in the frame, behind the cabin
+		// (`drawCockpitBeams`, node #806); chase has no cabin and keeps its own.
+		if (this.gunFeedback.tracerLeftS > 0 && this.view === "chase") {
+			// From the hull's muzzles, its range along the beam, as the camera
+			// sees it (#607 D3). Not the cockpit's ports on a glass chase does
+			// not have.
+			const segments = this.chaseBeamPx(w, h);
+			// `glassBottom` is a fraction of the height: 1 is the whole canvas,
+			// since chase has no glass.
+			drawTracerSegments(ctx, w, h, 1, segments);
+			this.beamRender = segments;
 		}
 		this.combatRig?.drawTracer(ctx, w, h, this.view, GLASS_BOTTOM_FRACTION);
 		// Not folded into the call above: outgoing fire is gated on the trigger

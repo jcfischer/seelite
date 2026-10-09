@@ -102,9 +102,17 @@ check(
 );
 
 /**
- * Tracer pixels, sampled on the tracer's own line halfway from the left port to
- * the sightline — both read off the page's `gunTracer`, not restated — and the
- * state that drew them.
+ * Tracer pixels, sampled on the tracer's own line three quarters of the way
+ * from the left port to the sightline — both read off the page's `gunTracer`,
+ * not restated — and the state that drew them.
+ *
+ * **Off the composited frame, not the overlay** (node #806). The cockpit's
+ * tracer is drawn into the WebGL frame behind the cabin now, and chase's stays
+ * on the overlay, so the sample is the WebGL canvas with the overlay over it,
+ * rendered and read in one task. Three quarters along rather than halfway,
+ * because the port is behind the dash and the half nearest it is hidden by
+ * design. The cyan band admits the frame's tone-mapped beam as well as the
+ * overlay's: ACES desaturates the red channel up to about 170.
  */
 const sample = () =>
 	page.evaluate(
@@ -112,18 +120,23 @@ const sample = () =>
 			const g = window.__seelite;
 			const [port] = g.gunTracer.ports;
 			const aim = g.gunTracer.aim;
-			const overlay = document.getElementById("overlay");
-			const ctx = overlay.getContext("2d", { willReadFrequently: true });
-			const x = Math.round(w * ((port.x + aim.x) / 2));
-			const y = Math.round(h * ((port.y + aim.y) / 2));
+			g.render(0);
+			const canvas = g.renderer.domElement;
+			const scratch = document.createElement("canvas");
+			scratch.width = w;
+			scratch.height = h;
+			const ctx = scratch.getContext("2d", { willReadFrequently: true });
+			ctx.drawImage(canvas, 0, 0, w, h);
+			ctx.drawImage(document.getElementById("overlay"), 0, 0, w, h);
+			const x = Math.round(w * (port.x + (aim.x - port.x) * 0.75));
+			const y = Math.round(h * (port.y + (aim.y - port.y) * 0.75));
 			const data = ctx.getImageData(x - 6, y - 6, 12, 12).data;
 			let cyan = 0;
 			for (let i = 0; i < data.length; i += 4)
 				if (
-					data[i + 3] > 40 &&
-					data[i] < 170 &&
-					data[i + 1] > 215 &&
-					data[i + 2] > 235
+					data[i + 1] > 200 &&
+					data[i + 2] > 215 &&
+					data[i] < data[i + 1] - 40
 				)
 					cyan++;
 			return {

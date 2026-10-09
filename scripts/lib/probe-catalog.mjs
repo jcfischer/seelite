@@ -284,6 +284,19 @@ export const PROBE_CATALOG = Object.freeze(
 			],
 		),
 		entry(
+			"probe-cockpit-laser.mjs",
+			"Fires the player's laser and the raider's beam in cockpit view and checks, on the composited frame, that no cabin fitting is drawn over by either beam.",
+			[
+				"cockpit",
+				"laser",
+				"beam",
+				"cabin pass",
+				"tracer",
+				"raider fire",
+				"occlusion",
+			],
+		),
+		entry(
 			"probe-cockpit-surface.mjs",
 			"Verifies live cockpit surface geometry, plating materials, and reversible renderer controls.",
 			["cockpit", "surface", "plating", "materials", "scene graph"],
