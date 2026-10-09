@@ -39,7 +39,7 @@ The generator accepts optional role arguments. Rebuild Bastion with the existing
 
 ## Verified results — 2026-10-09
 
-- 14 model tests / 1,561 assertions pass; standalone viewer TypeScript check passes. Armor surface coverage is now checked too, guarding against removing the visible skin and exposing dark backing meshes.
+- 15 model tests / 1,565 assertions pass; standalone viewer TypeScript check passes. Armor surface coverage is now checked too, guarding against removing the visible skin and exposing dark backing meshes.
 - All seven hardware captures pass: three manually selected levels, one visible level at a time, both automatic range transitions and return to full, synchronized three-level habitat rotation where present, and no browser errors. ANGLE Metal / Apple M1 Pro. Captured all 21 close inspection views and three Bastion stern views; visually inspected every final outline, plus Bastion reduced and rear.
 - Canonical repository selector and runner: 4/4 selected probes pass at 969c8e5 (chase-orbit, handoff, model-viewer, pointer-lock); 92 probes were not run. This is partial coverage, not a full-suite pass. Subsequent armor-retention changes are covered by the final model tests and study captures.
 - Six non-Bastion full GLBs match the accepted f1c512a source byte-for-byte. Bastion's full model adds only the aft closure.
@@ -57,3 +57,5 @@ Same camera at 44 / 440 reference reaches, full twice as a control, then the LOD
 | carrier | 908 | 392 | 10 | 8 |
 | prospector | 485 | 319 | 8 | 4 |
 | dreadnought | 472 | 272 | 3 | 1 |
+
+Sage review correction: full capital clearance is now measured over triangle surfaces, not just vertices. Both exports have 1.558017 m conservative radial clearance. `authoredVertexGapMetres` is separately labeled as a vertex-only authoring diagnostic. See REVIEW-codex.md for findings and dispositions.

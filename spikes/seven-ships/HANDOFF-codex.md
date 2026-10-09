@@ -6,7 +6,9 @@ Bastion now has an enclosed aft bulkhead; its forward bay remains open. The othe
 
 The isolated viewer supports Full, LOD 1, LOD 2 and automatic apparent-size switching, with Medium range / Far range controls. Habitat rotation stays synchronized across levels. All full models and LODs remain isolated study artifacts; production integration and merge are separate.
 
-Verification: 14 model tests / 1,561 assertions and strict viewer typecheck pass. All seven hardware LOD captures pass with no browser errors; automatic switching and all three habitat phases are verified. Four repository-selected browser probes pass (partial coverage; 92 not run). All seven outline renders and Bastion's closed rear were visually inspected. LOD 1 removes 81–87% of full triangles; LOD 2 removes 86–90%, retaining painted armor components. Distant transitions change pixels; measurements and integration limits are in LOD.md.
+Verification: 15 model tests / 1,565 assertions and strict viewer typecheck pass. All seven hardware LOD captures pass with no browser errors; automatic switching and all three habitat phases are verified. Four repository-selected browser probes pass (partial coverage; 92 not run). All seven outline renders and Bastion's closed rear were visually inspected. LOD 1 removes 81–87% of full triangles; LOD 2 removes 86–90%, retaining painted armor components. Distant transitions change pixels; measurements and integration limits are in LOD.md.
+
+Full capital triangle-surface clearance independently measures 1.558017 m; the older 1.60 m authoring figure is a vertex-gap diagnostic. Sage dispositions are in REVIEW-codex.md.
 
 ---
 
