@@ -149,8 +149,8 @@ try {
 			throw new Error(
 				`heading ${row.heading}: the control moved ${row.control} px; the frame is not still`,
 			);
+		// Finite: the footprint was refused at zero above.
 		const share = (row.popped / row.footprint) * 100;
-		if (!Number.isFinite(share)) throw new Error("non-finite share");
 		console.log(
 			`  ${String(row.heading).padStart(5)}°  ${String(row.footprint).padStart(12)}  ${String(row.control).padStart(13)}  ${String(row.popped).padStart(6)} (${share.toFixed(1)}%)`,
 		);

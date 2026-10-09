@@ -192,9 +192,9 @@ try {
 			if (fleets[arm]) ship.add(fleets[arm]);
 		};
 		const { meshStats } = await import("/scripts/lib/mesh-stats.mjs");
-		const full = (o) => o.userData.levelStandIn === true;
+		const isStandIn = (o) => o.userData.levelStandIn === true;
 		return {
-			authored: meshStats(kids.authored, full),
+			authored: meshStats(kids.authored, isStandIn),
 			kestrel: meshStats(kids.kestrel),
 		};
 	});

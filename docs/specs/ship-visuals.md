@@ -217,8 +217,10 @@ page (`src/courier-cockpit-viewer.ts`), which does not load the hull.
 
 **The detail band switches the model.** Every Traffic courier is the O4, so
 past `DETAIL_RADII.full` a courier draws a reduced copy of it and past
-`DETAIL_RADII.reduced` a coarser one, each with a geometric error of half a
-device pixel where it is first drawn (`courierLevelErrorKm`). The cabin and
+`DETAIL_RADII.reduced` a coarser one, each simplified to a geometric error of
+at most half a device pixel where it is first drawn (`courierLevelErrorKm` is
+the target; each level records the error the simplifier reports it reached,
+and `tests/courier-hull.test.ts` holds that inside the target). The cabin and
 the pilot are left out of both, and neither takes a ray, so everything placed
 on the hull is placed on the approved model. Inside the first edge — the
 player's own courier in chase among them — the model is drawn as approved.

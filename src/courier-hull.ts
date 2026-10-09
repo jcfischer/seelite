@@ -59,6 +59,15 @@ import {
 } from "./ship-mesh";
 import { ventThroats } from "./vent-plumes";
 
+/** The three levels' object names under `courier-hull-frame`: the model
+ *  and its two reduced copies. One copy of the names, for the instruments
+ *  and rows that pick a level out of a built courier. */
+export const COURIER_LEVEL_NAMES = {
+	full: "courier-hull-model",
+	reduced: "courier-hull-reduced",
+	outline: "courier-hull-outline",
+} as const;
+
 /** The study's four fixture screens: unpowered in the game (see above). */
 export const FIXTURE_SCREEN_PREFIX = "interior-screen-";
 
@@ -108,12 +117,14 @@ export class CourierLevelMesh extends THREE.Mesh {
  * to collapse. A collapse moves a corner onto an existing vertex, so the
  * reduced mesh never reaches past the approved one. The welded corners keep
  * one of their texture coordinates, which a few pixels of hull cannot show.
- * `null` when nothing of the mesh survives the error.
+ * `geometry` is `null` when nothing of the mesh survives the error;
+ * `errorM` is the error the simplifier reports it reached, in the same
+ * units, which is what the level's own record is built from.
  */
 function reducedGeometry(
 	source: THREE.BufferGeometry,
 	errorM: number,
-): THREE.BufferGeometry | null {
+): { geometry: THREE.BufferGeometry | null; errorM: number } {
 	const position = source.getAttribute("position");
 	const positions = new Float32Array(position.count * 3);
 	for (let i = 0; i < position.count; i++) {
@@ -126,35 +137,68 @@ function reducedGeometry(
 	const count = index ? index.count : position.count;
 	const welded = new Uint32Array(count);
 	for (let i = 0; i < count; i++) welded[i] = remap[index ? index.getX(i) : i];
-	const [kept] = MeshoptSimplifier.simplify(welded, positions, 3, 0, errorM, [
-		"ErrorAbsolute",
-		"Prune",
-	]);
-	if (kept.length === 0) return null;
+	const [kept, reached] = MeshoptSimplifier.simplify(
+		welded,
+		positions,
+		3,
+		0,
+		errorM,
+		["ErrorAbsolute", "Prune"],
+	);
+	if (kept.length === 0) return { geometry: null, errorM: reached };
 	const reduced = new THREE.BufferGeometry();
 	reduced.setAttribute("position", position);
 	const uv = source.getAttribute("uv");
 	if (uv) reduced.setAttribute("uv", uv);
 	reduced.setIndex(new THREE.BufferAttribute(kept, 1));
-	return toCreasedNormals(reduced, COURIER_LEVEL_CREASE_RAD);
+	return {
+		geometry: toCreasedNormals(reduced, COURIER_LEVEL_CREASE_RAD),
+		errorM: reached,
+	};
 }
 
-/** The model reduced to `errorM`, as a template like the model's own. */
+/** Where a reduced level records the largest error its meshes reached, in
+ *  kilometres of hull: what the simplifier reported, carried through each
+ *  mesh's scale, so the claim that a level is held to
+ *  `courierLevelErrorKm` is read off the level rather than off the target. */
+export const LEVEL_REACHED_ERROR_KM = "levelReachedErrorKm";
+
+/** The model reduced to `errorM` (study metres), as a template like the
+ *  model's own. `kmPerM` carries the reached error into kilometres. */
 function reducedLevel(
 	template: THREE.Object3D,
 	errorM: number,
+	kmPerM: number,
 	name: string,
 ): THREE.Object3D {
 	const level = template.clone(true);
 	level.name = name;
+	level.updateMatrixWorld(true);
+	const toLevel = level.matrixWorld.clone().invert();
 	const meshes: THREE.Mesh[] = [];
 	level.traverse((o) => {
 		if (o instanceof THREE.Mesh) meshes.push(o);
 	});
+	let reachedKm = 0;
+	const scale = new THREE.Vector3();
 	for (const mesh of meshes) {
-		const geometry = BEHIND_THE_CANOPY.test(mesh.name)
-			? null
-			: reducedGeometry(mesh.geometry, errorM);
+		let geometry: THREE.BufferGeometry | null = null;
+		if (!BEHIND_THE_CANOPY.test(mesh.name)) {
+			// The simplifier works in the mesh's own units; its error is a
+			// distance there, and the largest axis scale is the most it can
+			// stretch to in the study's metres.
+			new THREE.Matrix4()
+				.multiplyMatrices(toLevel, mesh.matrixWorld)
+				.decompose(new THREE.Vector3(), new THREE.Quaternion(), scale);
+			const stretch = Math.max(
+				Math.abs(scale.x),
+				Math.abs(scale.y),
+				Math.abs(scale.z),
+			);
+			const reduced = reducedGeometry(mesh.geometry, errorM / stretch);
+			geometry = reduced.geometry;
+			reachedKm = Math.max(reachedKm, reduced.errorM * stretch * kmPerM);
+		}
 		if (geometry) {
 			const stand = new CourierLevelMesh(shared(geometry), mesh.material);
 			stand.name = mesh.name;
@@ -169,6 +213,7 @@ function reducedLevel(
 		}
 		mesh.removeFromParent();
 	}
+	level.userData[LEVEL_REACHED_ERROR_KM] = reachedKm;
 	return level;
 }
 
@@ -292,7 +337,7 @@ export async function createCourierHullBuilder(
 	for (const m of materials) m.emissiveIntensity /= divisor;
 	const unpowered = shared(new THREE.MeshBasicMaterial({ color: 0x01090b }));
 	unpowered.name = "interior-screen-unpowered";
-	template.name = "courier-hull-model";
+	template.name = COURIER_LEVEL_NAMES.full;
 	template.traverse((o) => {
 		if (!(o instanceof THREE.Mesh)) return;
 		const screen = o.name.startsWith(FIXTURE_SCREEN_PREFIX);
@@ -326,12 +371,14 @@ export async function createCourierHullBuilder(
 		reduced: reducedLevel(
 			template,
 			courierLevelErrorKm("reduced") / kmPerM,
-			"courier-hull-reduced",
+			kmPerM,
+			COURIER_LEVEL_NAMES.reduced,
 		),
 		outline: reducedLevel(
 			template,
 			courierLevelErrorKm("outline") / kmPerM,
-			"courier-hull-outline",
+			kmPerM,
+			COURIER_LEVEL_NAMES.outline,
 		),
 	};
 

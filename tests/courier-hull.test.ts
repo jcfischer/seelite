@@ -16,8 +16,10 @@ import { buildDerelictMesh } from "../src/derelict-mesh";
 import { DETAIL_RADII } from "../src/detail-level";
 import {
 	COURIER_LENGTH_INSET_KM,
+	COURIER_LEVEL_NAMES,
 	CourierLevelMesh,
 	FIXTURE_SCREEN_PREFIX,
+	LEVEL_REACHED_ERROR_KM,
 	courierLevelErrorKm,
 } from "../src/courier-hull";
 import { HULL_SPECS } from "../src/hull";
@@ -38,6 +40,7 @@ import {
 	setHullFinish,
 } from "../src/ship-surface";
 import { ventThroats } from "../src/vent-plumes";
+import { meshStats } from "../scripts/lib/mesh-stats.mjs";
 import { decodeShippedGlb } from "./helpers/read-coriolis-glb";
 
 const courier = () => {
@@ -56,15 +59,7 @@ const meshesOf = (root: THREE.Object3D) => {
 	return out;
 };
 
-const triangles = (object: THREE.Object3D) => {
-	let n = 0;
-	object.traverse((o) => {
-		if (!(o instanceof THREE.Mesh)) return;
-		const g = o.geometry;
-		n += (g.index ? g.index.count : g.getAttribute("position").count) / 3;
-	});
-	return n;
-};
+const triangles = (object: THREE.Object3D) => meshStats([object]).triangles;
 
 afterEach(() => setHullFinish(DEFAULT_HULL_FINISH));
 
@@ -425,9 +420,9 @@ describe("every Traffic courier is the model, so the detail band switches it (sa
 		const named = (name: string) =>
 			frame.children.find((c) => c.name === name) as THREE.Object3D;
 		return {
-			full: named("courier-hull-model"),
-			reduced: named("courier-hull-reduced"),
-			outline: named("courier-hull-outline"),
+			full: named(COURIER_LEVEL_NAMES.full),
+			reduced: named(COURIER_LEVEL_NAMES.reduced),
+			outline: named(COURIER_LEVEL_NAMES.outline),
 		};
 	};
 	const reachKm = HULL_REACH_KM.courier;
@@ -479,7 +474,7 @@ describe("every Traffic courier is the model, so the detail band switches it (sa
 		}
 	});
 
-	test("its geometric error is half a device pixel where it is first drawn", () => {
+	test("the target is half a device pixel where each level is first drawn", () => {
 		// 60° on a 1800-pixel frame: one pixel at d is 2 d tan 30° / 1800.
 		const pixelAt = (radii: number) =>
 			(2 * radii * reachKm * Math.tan(Math.PI / 6)) / 1800;
@@ -494,6 +489,30 @@ describe("every Traffic courier is the model, so the detail band switches it (sa
 		// About 0.46 m and 4.6 m of hull.
 		expect(courierLevelErrorKm("reduced") * 1000).toBeCloseTo(0.462, 3);
 		expect(courierLevelErrorKm("outline") * 1000).toBeCloseTo(4.619, 3);
+	});
+
+	test("each level's reached error is inside its target, and not trivially", () => {
+		// The row above checks the target; this one reads what the simplifier
+		// reports it reached on every mesh of the level, carried into
+		// kilometres of hull. A simplifier that overshot its target, or a
+		// target passed in the wrong units, is red here.
+		const { reduced, outline } = levelsOf(courier());
+		const reachedKm = (o: THREE.Object3D) =>
+			o.userData[LEVEL_REACHED_ERROR_KM] as number;
+		for (const [level, object] of [
+			["reduced", reduced],
+			["outline", outline],
+		] as const) {
+			const reached = reachedKm(object);
+			const target = courierLevelErrorKm(level);
+			expect([level, Number.isFinite(reached)]).toEqual([level, true]);
+			expect([level, reached <= target]).toEqual([level, true]);
+			// A record of zero would pass the bound by being empty: the level
+			// did collapse edges, so it reached a real fraction of the target.
+			expect([level, reached > target / 10]).toEqual([level, true]);
+		}
+		// The coarser level is coarser in the error it actually carries.
+		expect(reachedKm(outline)).toBeGreaterThan(reachedKm(reduced));
 	});
 
 	test("a reduced level takes no ray, so the lights, guns and throats are placed on the model", () => {

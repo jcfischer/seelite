@@ -17,8 +17,11 @@
  * `checkIntersection` does, and the distance held to the ray's near and far.
  * A triangle whose projection holds the line's point is in that point's cell
  * however the cells are cut, so the grid can only skip a triangle the line
- * misses — and `tests/vent-placement.test.ts` holds every procedural hull's
- * stored placement, measured through three, equal to this.
+ * misses. `tests/vent-placement.test.ts` holds every procedural hull's
+ * stored placement, measured through three, equal to this, and
+ * `tests/axis-line-hits.test.ts` holds the courier's model line for line
+ * against three's own raycast. Like the raycaster's default, only meshes on
+ * layer 0 are tested.
  */
 import * as THREE from "three";
 
@@ -150,7 +153,10 @@ function index(mesh: THREE.Mesh): Indexed {
  * the raycaster's `near` and `far`, and says whether any triangle meets it.
  */
 export function axisLineTester(meshes: readonly THREE.Mesh[]) {
-	const indexed = meshes.map(index);
+	// `Raycaster.layers` defaults to layer 0, and `intersectObjects` skips a
+	// mesh whose layers miss it; so does this.
+	const layers = new THREE.Layers();
+	const indexed = meshes.filter((m) => m.layers.test(layers)).map(index);
 	const local = new THREE.Ray();
 	const world = new THREE.Ray();
 	const a = new THREE.Vector3();

@@ -69,8 +69,10 @@ read `matches`.
 Berth fit is unchanged. These are the berths that admit the courier on seed 1,
 before and after: trade 8/8 and 8/8, shipyard 6/6 and 6/6, refinery 4/4 and
 4/4, outpost 2/2 and 2/2. `tests/aperture-fit.test.ts` and
-`tests/hull-docking.test.ts` pass, and the courier still docks to 13.0 rpm,
-first failing at 13.5.
+`tests/hull-docking.test.ts` pass. Its spin-ceiling row prints each hull's
+first failure; on this branch it reads `courier first fails at 13.5 rpm after
+25 unbroken rungs; 13 coincidental crossings above it`, so the courier docks
+to 13.0 rpm.
 
 Vent placement was re-measured on the model (`scripts/measure-vent-placement.ts`):
 
@@ -134,7 +136,11 @@ draws `reduced`, and past `DETAIL_RADII.reduced` (400, 14.4 km) it draws
   level is first drawn, at the near camera's 60° on a 1800-pixel frame (900 CSS pixels
   at device scale 2): 0.46 m for `reduced`, 4.6 m for `outline`
   (`courierLevelErrorKm`, asserted in `tests/courier-hull.test.ts`). That
-  is what the simplifier is asked to keep the geometry within. It does not
+  is what the simplifier is asked to keep the geometry within. What it
+  reports reaching, the largest over a level's meshes, is recorded on the
+  level (`LEVEL_REACHED_ERROR_KM`) and held at or under the target by its
+  own row: 0.460 m against 0.462 for `reduced`, 4.532 m against 4.619 for
+  `outline`. With the target tripled the row goes red, reading 1.372 m. It does not
   hold the recomputed normals or the welded texture coordinates, so what the
   switch does on screen is measured separately (Q7).
 - **Triangles.** `full` 353,954; `reduced` 92,540 (20 meshes); `outline`
@@ -248,20 +254,24 @@ trim also catches the sun near white.
 | lower quartile | 10.16 | ≥ 19.33 | 22.80 |
 | median | 37.88 | ≥ 68.40 | 79.53 |
 
-- Hiding `machined-alloy` alone drops the peak to 223.9, so the peak is real
-  hull metal, not the canopy, the pilot or the interior.
+- Hiding `machined-alloy` alone drops the peak to 223.9. So that trim sets
+  most of the peak, and it is hull metal. The rest, 223.9 against the 215
+  ceiling, was not attributed: no arm hid the canopy, the pilot or the
+  interior, so none of them is ruled out.
 - No single albedo scale meets both ends: the band allows a peak-to-median
   ratio of about 3.2, and the O4 reads 6.6.
 - `probe-postcard`'s "the exterior composition is a different camera" row reads
-  0.5% of cells changed against a 2% floor. The row is really measuring how
-  far the hull stands out from the sky.
+  0.5% of cells changed against a 2% floor. Why it reads low was not
+  measured. One untested reading is that a dark hull changes few cells
+  against a dark sky whichever camera frames it.
 - Neither threshold was moved.
 
 Options:
 
 - **O1. Accept the in-game look.** The band is re-derived for this subject
-  under #294's rule, which needs a ruling on the 215 ceiling, and the postcard
-  row is rewritten to test the camera rather than the hull's brightness.
+  under #294's rule, which needs a ruling on the 215 ceiling. The postcard row
+  is looked at first, to find out why it reads low, before anything about it
+  changes.
 - **O2. Light the hull for the game.** For example, a per-hull exposure trim
   or material response tuned under rig B, judged on the sheet.
 - **O3. Reconsider rig B for authored hulls.** This is the larger question.
