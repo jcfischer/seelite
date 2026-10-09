@@ -52,7 +52,8 @@ scene.environmentIntensity = 0.16;
 room.dispose();
 pmrem.dispose();
 const key = new THREE.DirectionalLight(0xffeedb, 4.5);
-key.position.set(-45, 85, -30);
+if (role === "carrier") key.position.set(-60, 65, 50);
+else key.position.set(-45, 85, -30);
 key.castShadow = true;
 key.shadow.mapSize.set(4096, 4096);
 Object.assign(key.shadow.camera, {
@@ -143,7 +144,7 @@ let habitatRPM=3;
 let selectedView = "hero";
 if(role==="carrier")document.querySelector('[data-view="detail"]')!.textContent="Bay interior";
 function setView(name: string) {
-	const v = role==="carrier" && name==="detail" ? {position:[1,1,38],target:[0,-1,25]} : views[name];
+	const v = role==="carrier" && name==="detail" ? {position:[-2,1,47],target:[0,-1,25]} : views[name];
 	if (!v) return;
 	selectedView = name;
 	ship.rotation.set(0, 0, 0);

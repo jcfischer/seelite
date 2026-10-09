@@ -65,6 +65,6 @@ Other study dimensions also differ from the current game. Capture FPS measures
 an isolated inspection scene and is not a production flight benchmark.
 
 Visual improvement was reopened by the principal. Current independent scores
-are 4.25–5.50/10, below the 8/10 gate. The new capital ring targets were approved,
+are 4.25–5.65/10, below the 8/10 gate. The new capital ring targets were approved,
 but no current built-model quality acceptance is asserted. See STATUS.md.
 See HANDOFF-codex.md for production work and review evidence.

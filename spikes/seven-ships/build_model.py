@@ -423,16 +423,28 @@ def capital(role):
  zmin=-length/2;zmax=length/2
  # Lofted armour sides leave the carrier mouth open; its interior is real geometry.
  if iscarrier:
-  rows=[(zmin,11,8,-8,2),(-36,w,h,-h,2.7),(34,w,h,-h,2.7),(zmax,12.2,8.4,-8.4,2.3)]
-  # Subdivide longitudinally for panelwork.
-  for zz in range(-30,34,5):rows.append((zz,w,h,-h,2.7))
-  rows.sort()
-  rings=[section(0,*r) for r in rows]
-  for a,b in zip(rings,rings[1:]):
-   for j in range(8):
-    k=(j+1)%8;pts=[a[j],a[k],b[k],b[j]];n=(Vector(a[k])-Vector(a[j])).cross(Vector(b[j])-Vector(a[j])).normalized();mid=sum(pts,Vector())/4
-    if n.dot(Vector((mid.x,mid.y,0)))<0:n=-n
-    for q in range(4):plate([a[j].lerp(a[k],q/4),a[j].lerp(a[k],(q+1)/4),b[j].lerp(b[k],(q+1)/4),b[j].lerp(b[k],q/4)],c[0],n,.10)
+  # Individually housed pressure bays with recessed structural expansion joints.
+  # Each shell has a broad shoulder, inset side field and stepped end collars.
+  for start,end in [(-44,-35.2),(-32.8,-26.2),(-23.8,-17.2),(-14.8,-8.2),(-5.8,.8),(3.2,9.8),(12.2,18.8),(21.2,27.8),(30.2,36.5),(38,44)]:
+   rows=[(start,13.3,9.5,-9.5,2.7),(start+.65,14,10,-10,2.7),(end-.65,14,10,-10,2.7),(end,13.3,9.5,-9.5,2.7)]
+   rings=[section(0,*r) for r in rows]
+   for a,b in zip(rings,rings[1:]):
+    for j in range(8):
+     k=(j+1)%8;normal=Vector(((a[j].x+a[k].x)/2,(a[j].y+a[k].y)/2,0)).normalized()
+     parts=2 if j in [1,3,5,7] else 3
+     for q in range(parts):
+      plate([a[j].lerp(a[k],q/parts),a[j].lerp(a[k],(q+1)/parts),b[j].lerp(b[k],(q+1)/parts),b[j].lerp(b[k],q/parts)],ivory[0],normal,.10)
+   # Flush shoulder exchanger, embedded in a canted armoured housing.
+   zz=(start+end)/2
+   for side in [-1,1]:
+    u=Vector((side*.707,-.707,0));v=Vector((0,0,1));n=Vector((side*.707,.707,0))
+    center=Vector((side*12.7,8.7,zz))
+    box(center,(2.3,end-start-1.4,.35),gold[0],(u,v,n))
+    box(center+n*.24,(1.95,end-start-1.8,.18),steel,(u,v,n))
+    for k in range(10):box(center+n*.37+v*((k-4.5)*(end-start-2)/10),(1.7,.07,.09),alloy,(u,v,n))
+  # Dark continuous pressure liner is exposed only in the assembly joints.
+  rings=[section(0,z,13.15,9.2,-9.2,2.7) for z in [-44,44]]
+  for j in range(8):poly([rings[0][j],rings[0][(j+1)%8],rings[1][(j+1)%8],rings[1][j]],steel)
   # Deep bow hangar: floor, ceiling, side walls and rear wall, no fake flat black aperture.
   for y in [-7.3,7.3]:box((0,y,32),(23,.6,25),steel)
   for x in [-11.5,11.5]:box((x,0,32),(.7,14.6,25),grey[0])
@@ -446,18 +458,40 @@ def capital(role):
    tube((xx,1.3,21),(xx,1.3,43),.09,orange)
   for x in [-6,6]:
    box((x,-6.85,34),(.13,.05,18),warm)
-  # Structural mouth coaming.
-  a=section(0,zmax+.15,12.6,8.8,-8.8,2.4)
-  for p,q in zip(a,a[1:]+a[:1]):tube(p,q,.60,steel,8)
-  for p,q in zip(a,a[1:]+a[:1]):tube(p+Vector((0,0,.5)),q+Vector((0,0,.5)),.24,gold[0],8)
+  # Deep, stepped bow collar: inner sill, armoured outer flange and corner guards.
+  for z,ww,hh,ch,depth in [(43.5,14.35,10.3,2.9,1.2),(44.5,13.9,9.8,2.8,.75),(45.2,12.6,8.6,2.3,.45)]:
+   outer=section(0,z,ww,hh,-hh,ch);inner=section(0,z,11.1,7.1,-7.1,1.8)
+   for j in range(8):
+    k=(j+1)%8
+    plate([outer[j],outer[k],inner[k],inner[j]],gold[0] if j in [1,3,5,7] and z==43.5 else ivory[0] if z==43.5 else steel,(0,0,1),depth)
+  for side in [-1,1]:
+   for yy in [-4.6,4.6]:
+    box((side*11.7,yy,45.8),(.6,2.1,.45),steel)
+    box((side*11.7,yy,46.05),(.18,1.5,.08),warm)
+  for xx in [-7,0,7]:
+   box((xx,8.9,45),(3.3,.65,.5),black)
+   for j in range(9):box((xx-1.3+j*.32,8.9,45.3),(.10,.43,.13),alloy)
   # Continuous full length deck and low command island.
   box((0,10.5,-2),(23,.8,76),steel)
   for zz in range(-36,36,4):
    for xx in [-8,-4,0,4,8]:plate([(xx-1.96,10.94,zz),(xx+1.96,10.94,zz),(xx+1.96,10.94,zz+3.92),(xx-1.96,10.94,zz+3.92)],deck,(0,1,0),.03,False)
   for xx in [-9,9]:box((xx,11.02,-2),(.10,.04,73),gold[0])
   for zz in range(-32,33,8):box((0,11.04,zz),(.18,.05,2.5),ivory[0])
-  naval_bridge(5,2,12,ivory)
-  for x in [3.8,5,6.2]:mount((x,13,5),(x,19-(x-4)*.6,5),.08)
+  # Low elongated bridge pressure house with recessed continuous glazing.
+  hull('bastion-bridge-base',5,[(-7,3.5,12.3,10.9,.7),(-5,3.7,12.6,10.9,.7),(8,3.4,12.6,10.9,.7),(13,2.3,11.7,10.9,.6)],ivory)
+  hull('bastion-bridge-house',5,[(-4,2.9,14.6,12.1,.5),(2,2.9,14.6,12.1,.5),(7,2.5,14.0,12.1,.5),(9,1.9,12.6,12.1,.4)],ivory)
+  for side in [-1,1]:
+   pts=[(5+side*3.08,13.4,-2),(5+side*3.08,14.05,-2),(5+side*2.80,13.65,6),(5+side*2.80,13.05,6)]
+   prism(pts,(side,0,0),.07,glass)
+   for aa,bb in zip(pts,pts[1:]+pts[:1]):tube(aa,bb,.10,steel)
+   for zz in [0,2,4]:tube((5+side*(3.08-(zz+2)*.035),13.2,zz),(5+side*(3.08-(zz+2)*.035),14.0,zz),.07,steel)
+  pts=[(2.8,14.29,6),(7.2,14.29,6),(6.6,13.32,8.15),(3.4,13.32,8.15)]
+  prism(pts,(0,.7,.7),.10,glass)
+  for aa,bb in zip(pts,pts[1:]+pts[:1]):tube(aa,bb,.10,steel)
+  for xx in [4,5,6]:tube((xx,14.34,6),(xx,13.37,8.15),.065,steel)
+  radiator(5,14.75,-2,3.8,2.4)
+  sphere('bridge-radome',(3.4,15,-3.4),(.5,.55,.5),ivory[0])
+  for xx,hh in [(5.8,17),(6.6,16.4)]:mount((xx,14.3,-3),(xx,hh,-3),.055)
   # Keep the working deck clear; command glazing belongs on the bridge.
   for zz in [-28,-14,0,14,28]:
    for xx in [-5,5]:
@@ -469,8 +503,7 @@ def capital(role):
    for zz in range(-36,36,3):tube((xx,11.0,zz),(xx,11.8,zz),.055,alloy,8)
   for zz in [-20,18,31]:
    box((6,11.6,zz),(1.8,1.15,2.4),gold[0]);box((6,12.22,zz),(1.65,.12,2.2),steel)
-  # Lower island terraces and flight-deck service equipment.
-  hull('island-base',5,[(-2,4.3,13.1,10.9,.8),(2,4.3,13.1,10.9,.8),(9,3.8,12.7,10.9,.8),(13,2.4,11.8,10.9,.5)],ivory)
+  # Deck service equipment.
   for zz in range(-32,35,11):
    for side in [-1,1]:
     xx=side*10.9
@@ -499,13 +532,29 @@ def capital(role):
    box((0,6.45,zz),(22,.8,1.1),steel)
    for xx in range(-9,9,3):
     mount((xx,5.95,zz),(xx+3,6.9,zz),.10)
-  for xx in [-8,-4,0,4,8]:
-   box((xx,0,19.55),(3.6,12.7,.7),steel)
-   for yy in [-4,0,4]:
-    box((xx,yy,20.05),(3.15,3.25,.5),ivory[1])
-    box((xx,yy,20.36),(2.6,2.5,.16),black)
-    for k in range(7):box((xx,yy-.95+k*.3,20.52),(2.3,.09,.10),alloy)
-    box((xx,yy+1.25,20.60),(1.9,.12,.08),warm)
+  # Purpose-built rear bulkhead: segmented central pressure door, asymmetric
+  # pump plant and a mezzanine service gallery instead of repeated HVAC squares.
+  box((0,-1,19.9),(8.2,11.8,.8),steel)
+  for side in [-1,1]:
+   for yy in [-4,-1,2]:
+    box((side*1.9,yy,20.5),(3.65,2.8,.5),ivory[0])
+    box((side*1.9,yy+1.15,20.8),(3.3,.16,.12),alloy)
+   box((side*4.25,-1,20.6),(.5,12,.65),gold[0])
+   box((side*4.25,3.5,21),(.16,1.1,.12),warm)
+  box((0,5.2,20.5),(9.5,.75,1),steel)
+  for xx in [-6.3,-8.3]:
+   tube((xx,-5.9,21),(xx,3.5,21),.64,alloy,16)
+   for yy in [-5.4,-1,3]:tube((xx,yy-.17,21),(xx,yy+.17,21),.76,steel,16)
+   cable([(xx,3.5,21),(xx,4.3,21),(xx+1.1,4.3,21),(xx+1.1,4.3,23)],.20,gold[0])
+  for yy in [-4.6,-1.4,2.1]:
+   box((7,yy,20.6),(4,2.5,1.3),grey[2])
+   for xx in [5.6,6.8,8]:
+    box((xx,yy,21.35),(.9,1.9,.2),steel)
+    box((xx,yy+.5,21.49),(.5,.3,.06),cyan)
+    for dy in [-.5,-.2]:box((xx,yy+dy,21.5),(.6,.08,.08),alloy)
+  box((0,4.5,22),(19,.4,2),steel)
+  for xx in range(-9,10,2):tube((xx,4.7,23),(xx,5.7,23),.065,gold[0])
+  tube((-9,5.6,23),(9,5.6,23),.065,gold[0])
   # Two raised service galleries with safety rails and grated deck strips.
   for side in [-1,1]:
    xx=side*9.25
@@ -582,7 +631,7 @@ def capital(role):
    tube(u*4.0+Vector((0,0,zmax-5)),u*4.0+Vector((0,0,zmax+1)),.25,alloy,12)
   for xx in [-1,1]:mount((xx,12,-7),(xx,16,-7),.10)
  # Thick continuous structural hoops connect roof, shoulder, side and belly.
- for zz in range(-34,35,9):
+ for zz in ([-34,-25,-16,-7,2,11,20,29,37] if iscarrier else range(-34,35,9)):
   outline=section(0,zz,w+.7,h+.45,-h-.45,2.8)
   for j in range(8):
    k=(j+1)%8;aa=outline[j];bb=outline[k]
