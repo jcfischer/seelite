@@ -26,13 +26,14 @@ import {
 	installLongwallModel,
 	isAuthoredHull,
 	isDriveBell,
+	isHullPaint,
 	isLampMaterial,
 	setShipDetail,
 	updateShipVisuals,
 } from "../src/ship-mesh";
 import { ventThroats } from "../src/vent-plumes";
-import { installShippedLongwall } from "./helpers/install-longwall";
-import { decodeShippedGlb } from "./helpers/read-coriolis-glb";
+import { installShippedLongwall } from "../scripts/lib/install-longwall";
+import { decodeShippedGlb } from "../scripts/lib/decode-glb";
 import {
 	type Surface,
 	countBeyond,
@@ -74,6 +75,18 @@ describe("miner/b is the shipped model, and only the shipped model", () => {
 			// so the next row and the next file build what the game draws.
 			await installShippedLongwall();
 		}
+	});
+
+	test("an install that throws leaves the previous one whole (sage round 8)", () => {
+		// A scene with no `hull` group fails the prepare partway.
+		expect(() => installLongwallModel(new THREE.Group())).toThrow(/hull group/);
+		const root = buildShipMesh("miner", "b").root;
+		setShipDetail(root, "reduced");
+		expect(
+			meshesOf(root.getObjectByName("longwall-reduced") as THREE.Object3D),
+		).toHaveLength(6);
+		setShipDetail(root, "outline");
+		expect(root.getObjectByName("longwall-outline-hull")).toBeDefined();
 	});
 
 	test("it carries the approved model's mechanisms, stowed", async () => {
@@ -274,6 +287,32 @@ const triangles = (meshes: readonly THREE.Mesh[]) =>
 		const g = m.geometry;
 		return sum + (g.index ?? g.getAttribute("position")).count / 3;
 	}, 0);
+const painted = (m: THREE.Mesh) => isHullPaint(m.material as THREE.Material);
+/** The meshes' vertices' box in `frame`'s own coordinates, vertex by vertex
+ *  rather than through each geometry's box, so a rotation cannot pad it. */
+const boxIn = (frame: THREE.Object3D, meshes: readonly THREE.Mesh[]) => {
+	const toFrame = frame.matrixWorld.clone().invert();
+	const box = new THREE.Box3();
+	const v = new THREE.Vector3();
+	for (const mesh of meshes) {
+		const matrix = new THREE.Matrix4().multiplyMatrices(
+			toFrame,
+			mesh.matrixWorld,
+		);
+		const position = mesh.geometry.getAttribute("position");
+		for (let i = 0; i < position.count; i++)
+			box.expandByPoint(
+				v.fromBufferAttribute(position, i).applyMatrix4(matrix),
+			);
+	}
+	return box;
+};
+const expectSameBox = (built: THREE.Box3, before: THREE.Box3) => {
+	for (const axis of ["x", "y", "z"] as const) {
+		expect(built.min[axis]).toBeCloseTo(before.min[axis], 4);
+		expect(built.max[axis]).toBeCloseTo(before.max[axis], 4);
+	}
+};
 
 describe("the static hull draws one mesh per material (node #815)", () => {
 	test("the export's 19 hull meshes become 10, and the triangles do not move", async () => {
@@ -282,9 +321,7 @@ describe("the static hull draws one mesh per material (node #815)", () => {
 		const meshes = meshesOf(hull);
 		expect(meshes).toHaveLength(10);
 		// Every opaque, unlit material is drawn once.
-		const unlit = meshes.filter(
-			(m) => !isLamp(m) && !(m.material as THREE.Material).transparent,
-		);
+		const unlit = meshes.filter(painted);
 		const materials = unlit.map((m) => m.material as THREE.Material);
 		expect(new Set(materials).size).toBe(unlit.length);
 		expect(unlit).toHaveLength(7);
@@ -296,19 +333,48 @@ describe("the static hull draws one mesh per material (node #815)", () => {
 		const source = exported.getObjectByName("hull") as THREE.Object3D;
 		expect(meshesOf(source)).toHaveLength(19);
 		expect(triangles(meshes)).toBe(triangles(meshesOf(source)));
-		// And in the same place: the batched hull's box is the export's, turned
-		// and scaled into the game's frame.
+		// And in the same place: each side's box in its own `hull` group's
+		// frame, which is the export's metres on both, corner for corner —
+		// a batch that baked a wrong translation moves a corner (sage round 8).
 		root.updateMatrixWorld(true);
 		exported.updateMatrixWorld(true);
-		const built = new THREE.Box3()
-			.setFromObject(hull)
-			.getSize(new THREE.Vector3())
-			.multiplyScalar(1000);
-		const before = new THREE.Box3()
-			.setFromObject(source)
-			.getSize(new THREE.Vector3());
-		for (const axis of ["x", "y", "z"] as const)
-			expect(built[axis]).toBeCloseTo(before[axis], 4);
+		expectSameBox(boxIn(hull, meshes), boxIn(source, meshesOf(source)));
+	});
+});
+
+describe("each stowed anchor draws one mesh per material (node #815)", () => {
+	test("an anchor's 20 meshes become 6, its parts stay named, and its triangles do not move", () => {
+		const root = buildShipMesh("miner", "b").root;
+		const exported = EXPORTED;
+		root.updateMatrixWorld(true);
+		exported.updateMatrixWorld(true);
+		const parts = ["body", "sleeve", "elbow", "lower", "lower-rod", "foot"];
+		for (let i = 0; i < 4; i++) {
+			const anchor = root.getObjectByName(`anchor-${i}`) as THREE.Object3D;
+			const batches = meshesOf(anchor);
+			// One mesh per paint, each drawn once.
+			expect(batches).toHaveLength(5);
+			expect(batches.every(painted)).toBe(true);
+			expect(new Set(batches.map((m) => m.material)).size).toBe(5);
+			// The six part groups stay, named, holding the foot's lamp alone.
+			const left = parts.flatMap((part) =>
+				meshesOf(root.getObjectByName(`anchor-${i}-${part}`) as THREE.Object3D),
+			);
+			expect(left.map((m) => m.name)).toEqual([`anchor-${i}-footamber-lamp`]);
+			// The same painted triangles as the export's six parts, in the same
+			// place in the frame both sides' anchors hang from.
+			const source = parts.flatMap((part) =>
+				meshesOf(
+					exported.getObjectByName(`anchor-${i}-${part}`) as THREE.Object3D,
+				).filter(painted),
+			);
+			expect(source).toHaveLength(19);
+			expect(triangles(batches)).toBe(triangles(source));
+			expectSameBox(
+				boxIn(anchor.parent as THREE.Object3D, batches),
+				boxIn(source[0].parent?.parent as THREE.Object3D, source),
+			);
+		}
 	});
 });
 
@@ -317,7 +383,7 @@ describe("the detail band sheds the mechanism at range (node #815)", () => {
 		const root = buildShipMesh("miner", "b").root;
 		updateShipVisuals(root, 0.5, "high");
 		expect(drawn(root)).toHaveLength(meshesOf(root).length);
-		expect(meshesOf(root)).toHaveLength(100);
+		expect(meshesOf(root)).toHaveLength(44);
 		expect(triangles(meshesOf(root))).toBe(283_576);
 	});
 
@@ -328,13 +394,11 @@ describe("the detail band sheds the mechanism at range (node #815)", () => {
 		setShipDetail(root, "reduced");
 		const reduced = root.getObjectByName("longwall-reduced") as THREE.Object3D;
 		const stands = meshesOf(reduced);
-		const paint = (m: THREE.Mesh) =>
-			!isLamp(m) && !(m.material as THREE.Material).transparent;
 		for (const mesh of meshesOf(root)) {
 			if (stands.includes(mesh)) continue;
 			const hidden =
 				!isLamp(mesh) &&
-				(under(mesh, ANCHOR) || (under(mesh, /^hull$/) && paint(mesh)));
+				(under(mesh, ANCHOR) || (under(mesh, /^hull$/) && painted(mesh)));
 			expect({ name: mesh.name, visible: mesh.visible }).toEqual({
 				name: mesh.name,
 				visible: !hidden,
@@ -343,7 +407,7 @@ describe("the detail band sheds the mechanism at range (node #815)", () => {
 		// One simplified mesh per opaque hull mesh, but the hoses: they simplify
 		// to nothing at the target and draw nothing.
 		const hull = root.getObjectByName("hull") as THREE.Object3D;
-		const sources = meshesOf(hull).filter(paint);
+		const sources = meshesOf(hull).filter(painted);
 		expect(sources).toHaveLength(7);
 		expect(stands).toHaveLength(6);
 		for (const stand of stands) {
@@ -376,9 +440,7 @@ describe("the detail band sheds the mechanism at range (node #815)", () => {
 		root.updateMatrixWorld(true);
 		const hull = root.getObjectByName("hull") as THREE.Object3D;
 		const toHull = hull.matrixWorld.clone().invert();
-		const sources = meshesOf(hull).filter(
-			(m) => !isLamp(m) && !(m.material as THREE.Material).transparent,
-		);
+		const sources = meshesOf(hull).filter(painted);
 		const stands = meshesOf(
 			root.getObjectByName("longwall-reduced") as THREE.Object3D,
 		);
@@ -521,7 +583,7 @@ describe("the detail band sheds the mechanism at range (node #815)", () => {
 		// Low quality at close range draws the whole model: the anchors and the
 		// cutter are the approved design, not generated clutter.
 		updateShipVisuals(root, reach * 10, "low");
-		expect(drawn(root)).toHaveLength(100);
+		expect(drawn(root)).toHaveLength(44);
 		updateShipVisuals(root, reach * 200, "high");
 		expect(drawn(root)).toHaveLength(23);
 		updateShipVisuals(root, reach * 1000, "high");
@@ -530,8 +592,8 @@ describe("the detail band sheds the mechanism at range (node #815)", () => {
 		// Back inside the band both stand-ins are kept, hidden, and the hull
 		// draws.
 		updateShipVisuals(root, reach * 10, "high");
-		expect(meshesOf(root)).toHaveLength(107);
-		expect(drawn(root)).toHaveLength(100);
+		expect(meshesOf(root)).toHaveLength(51);
+		expect(drawn(root)).toHaveLength(44);
 		expect(root.getObjectByName("longwall-reduced")?.visible).toBe(false);
 		expect(root.getObjectByName("longwall-outline")?.visible).toBe(false);
 	});
@@ -568,7 +630,7 @@ describe("the detail band sheds the mechanism at range (node #815)", () => {
 		const far = buildShipMesh("miner", "b").root;
 		setShipDetail(far, "outline");
 		const near = buildShipMesh("miner", "b").root;
-		expect(drawn(near)).toHaveLength(100);
+		expect(drawn(near)).toHaveLength(44);
 		expect(near.getObjectByName("longwall-outline")).toBeUndefined();
 	});
 });

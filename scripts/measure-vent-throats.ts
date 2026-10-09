@@ -15,7 +15,7 @@
 import { HULL_IDS, HULL_SPECS } from "../src/hull";
 import { buildShipMesh } from "../src/ship-mesh";
 import { ventThroats } from "../src/vent-plumes";
-import { installShippedLongwall } from "../tests/helpers/install-longwall";
+import { installShippedLongwall } from "./lib/install-longwall";
 
 // `miner/b` is the authored Longwall B, built only once it is installed.
 await installShippedLongwall();

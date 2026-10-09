@@ -333,9 +333,7 @@ export function measureVentPlacement(
 
 if (import.meta.main) {
 	// `miner/b` is the authored Longwall B, built only once it is installed.
-	await (
-		await import("../tests/helpers/install-longwall")
-	).installShippedLongwall();
+	await (await import("./lib/install-longwall")).installShippedLongwall();
 	const pct = (x: number) => `${(100 * x).toFixed(1)}%`;
 	const rows = HULL_IDS.map((id) => {
 		const spec = HULL_SPECS[id];

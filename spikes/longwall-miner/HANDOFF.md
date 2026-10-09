@@ -65,7 +65,7 @@ nothing here claims it has been given.**
 What moved, and what is yours to decide:
 
 - **D1, mass, not changed and owed a ruling.** 215 t in the new 84.5 x 34.1
-  x 18.8 m box is 3.97 t per 1000 m³ against the roster's 1.2–2.4 band (about
+  x 18.8 m envelope (the 84.4 x 34.0 x 18.8 m model, rounded up) is 3.97 t per 1000 m³ against the roster's 1.2–2.4 band (about
   65–130 t for this box). `tests/hull.test.ts` holds the miner as a pinned
   exemption, red the day either figure moves. Thrust, hold (40 t), integrity,
   price, tank and charge are untouched, so is the 2.8–4.4 kt cargo question.
@@ -106,19 +106,21 @@ What moved, and what is yours to decide:
   `evidence/game-report.json` measured one miner at 111 draw calls and
   283,590 triangles a frame up close; it was captured at 644bb13, before the
   batch below, and not retaken. Counted as meshes rather than draws, the
-  miner was 109 then and is 100 now, against the loft's 38 meshes and 12,028
+  miner was 109 then and is 44 now, against the loft's 38 meshes and 12,028
   triangles (`miner/b` at main bd09ae5, `evidence/loft-baseline.txt`); no
   draw figure was taken for the loft. The batch moved no triangle: the
   report's 283,576 mesh triangles are today's `full`. Traffic miners share one template's buffers but not its draws.
   The template now merges the static hull's opaque, unlit meshes into one
-  per material (19 hull meshes to 10), so a miner is 100 meshes where it was
-  109; the anchors are 80 of those and keep their separate parts. The shared
+  per material (19 hull meshes to 10), and each stowed anchor's 19 painted
+  meshes into one per paint (sage round 8: 20 meshes an anchor to 6, its lamp
+  kept, its six part groups still named for a node that poses them), so a
+  miner is 44 meshes where it was 109. The shared
   detail band sheds the mechanism by distance, never by quality, in three
   levels (`tests/longwall-mesh.test.ts` holds each figure):
 
   | Level | Range | Meshes | Triangles |
   |---|---|---:|---:|
-  | full | inside 40 radii (about 1.7 km) | 100 | 283,576 |
+  | full | inside 40 radii (about 1.7 km) | 44 | 283,576 |
   | LOD1, `reduced` | 40 to 400 radii | 23 | 14,714 |
   | LOD2, `outline` | past 400 radii (about 17 km) | 10 | 780 |
 

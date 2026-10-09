@@ -16,8 +16,6 @@ import { LONGWALL_MINER_GLB_URL } from "./model-urls";
 import type { ModelProgressListener } from "./model-progress";
 import { installLongwallModel } from "./ship-mesh";
 
-export const LONGWALL_MODEL_URL = LONGWALL_MINER_GLB_URL;
-
 let ready: Promise<void> | undefined;
 
 /** Await before anything builds `miner/b`. A failure clears the promise, so
@@ -28,7 +26,7 @@ export function prepareLongwallModel(
 ): Promise<void> {
 	return (ready ??= new GLTFLoader()
 		.setMeshoptDecoder(MeshoptDecoder)
-		.loadAsync(LONGWALL_MODEL_URL, onProgress)
+		.loadAsync(LONGWALL_MINER_GLB_URL, onProgress)
 		.then(async (gltf) => {
 			// The install simplifies the `reduced` hull (`ship-mesh.ts`).
 			await MeshoptSimplifier.ready;

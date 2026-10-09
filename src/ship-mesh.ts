@@ -2514,8 +2514,9 @@ function buildMinerA(root: THREE.Group, p: Palette) {
  * rotation, not a mirror, so its winding survives — scaled by 0.001, and
  * moved so its box is centred on the ship's origin (`prepareLongwall`).
  *
- * It is drawn **stowed** and nothing articulates it. The anchors and the
- * cutter keep their named groups so a later node can pose them; what mining
+ * It is drawn **stowed** and nothing articulates it. The cutter keeps its
+ * named groups, and each anchor's part groups stay named while its metal is
+ * merged (`batchLongwallAnchors`), so a later node can pose them; what mining
  * is, and the deployed envelope it would need, are not this node's.
  */
 let longwallTemplate: THREE.Group | null = null;
@@ -2524,7 +2525,7 @@ let longwallTemplate: THREE.Group | null = null;
 let longwallOutlineTemplate: THREE.Group | null = null;
 /** Each of the hull's opaque meshes, by geometry, to the simplified geometry
  *  a miner draws in its place at `reduced` (`longwallReduced`). */
-const longwallReducedGeometry = new Map<
+let longwallReducedGeometry = new Map<
 	THREE.BufferGeometry,
 	THREE.BufferGeometry
 >();
@@ -2536,7 +2537,7 @@ const longwallReducedGeometry = new Map<
  * the drawn surface lies within 0.5 m of the model's, and the model's
  * furthest point from the drawn surface is 1.83 m, on the hoses it no longer
  * draws (`tests/longwall-mesh.test.ts`, sage round 6). The band begins at
- * 40 radii, where the 84.5 m hull is 39 px long in a 900 px frame over a 60°
+ * 40 radii, where the 84.4 m hull is 39 px long in a 900 px frame over a 60°
  * field, so a pixel there is 2.2 m and 1.83 m is 0.83 of one; further out it
  * is less.
  */
@@ -2597,16 +2598,24 @@ function longwallGlowDisc() {
  * here, once, rather than per miner.
  */
 export function installLongwallModel(scene: THREE.Group | null): void {
-	longwallReducedGeometry.clear();
-	longwallTemplate = scene ? prepareLongwall(scene) : null;
-	if (!scene) longwallOutlineTemplate = null;
+	// All three swap together, and only once the prepare has returned: a
+	// prepare that throws leaves the previous install whole (sage round 8).
+	const prepared = scene ? prepareLongwall(scene) : null;
+	longwallTemplate = prepared?.template ?? null;
+	longwallOutlineTemplate = prepared?.outline ?? null;
+	longwallReducedGeometry = prepared?.reduced ?? new Map();
 }
 
-function prepareLongwall(scene: THREE.Group): THREE.Group {
+function prepareLongwall(scene: THREE.Group): {
+	template: THREE.Group;
+	outline: THREE.Group;
+	reduced: Map<THREE.BufferGeometry, THREE.BufferGeometry>;
+} {
 	// Before the batch: one box per part the export drew, not per material.
 	const outline = longwallOutlineGeometry(scene);
 	batchLongwallHull(scene);
-	simplifyLongwallHull(scene);
+	batchLongwallAnchors(scene);
+	const reduced = simplifyLongwallHull(scene);
 	// The export's lamps are brighter than the game's exposure contract, as
 	// the Coriolis's were: normalise once, keeping their relative strengths.
 	const materials = new Set<THREE.MeshStandardMaterial>();
@@ -2645,15 +2654,15 @@ function prepareLongwall(scene: THREE.Group): THREE.Group {
 		.getCenter(new THREE.Vector3())
 		.negate();
 	exterior.position.copy(offset);
-	longwallOutlineTemplate = new THREE.Group();
-	longwallOutlineTemplate.name = "longwall-outline";
-	longwallOutlineTemplate.rotation.copy(exterior.rotation);
-	longwallOutlineTemplate.scale.copy(exterior.scale);
-	longwallOutlineTemplate.position.copy(offset);
+	const outlineTemplate = new THREE.Group();
+	outlineTemplate.name = "longwall-outline";
+	outlineTemplate.rotation.copy(exterior.rotation);
+	outlineTemplate.scale.copy(exterior.scale);
+	outlineTemplate.position.copy(offset);
 	const stand = new THREE.Mesh(outline);
 	stand.name = "longwall-outline-hull";
 	stand.castShadow = false;
-	longwallOutlineTemplate.add(stand);
+	outlineTemplate.add(stand);
 	// Production frame: the export's +X is port once turned about Y.
 	const disc = shared(longwallGlowDisc());
 	for (const [side, x] of [
@@ -2678,7 +2687,7 @@ function prepareLongwall(scene: THREE.Group): THREE.Group {
 		if (o.name === "nav-lights") shared((o as THREE.Points).geometry);
 	});
 	template.updateMatrixWorld(true);
-	return template;
+	return { template, outline: outlineTemplate, reduced };
 }
 
 /** Is this a lamp — an emissive the detail band and the hull batch leave
@@ -2694,10 +2703,19 @@ export function isLampMaterial(material: THREE.Material): boolean {
 const materialsOf = (mesh: THREE.Mesh): THREE.Material[] =>
 	Array.isArray(mesh.material) ? mesh.material : [mesh.material];
 
-/** The hull's paint: an opaque material that is no lamp. The batch, the
- *  `reduced` hull and the outline's paint all read this one rule. */
-const isHullPaint = (material: THREE.Material): boolean =>
+/** The hull's paint: an opaque material that is no lamp. The batches, the
+ *  `reduced` hull and the outline's paint all read this one rule, and so does
+ *  `tests/longwall-mesh.test.ts`. */
+export const isHullPaint = (material: THREE.Material): boolean =>
 	!isLampMaterial(material) && !material.transparent;
+
+/** A mesh drawn in one material, and that material the hull's paint. */
+const paintedMesh = (o: THREE.Object3D): o is THREE.Mesh => {
+	const mesh = o as THREE.Mesh;
+	if (!mesh.isMesh) return false;
+	const materials = materialsOf(mesh);
+	return materials.length === 1 && isHullPaint(materials[0]);
+};
 
 /** The export's static `hull` group, which every hull rule reads. */
 function longwallHullGroup(scene: THREE.Object3D): THREE.Object3D {
@@ -2706,49 +2724,110 @@ function longwallHullGroup(scene: THREE.Object3D): THREE.Object3D {
 	return hull;
 }
 
+/** The `hull` group under `root` — the export or a built clone — its
+ *  painted meshes, and the transform into its frame. One collection, read by
+ *  the batch, the `reduced` hull and the outline's paint (sage round 8). */
+function hullPaintMeshes(root: THREE.Object3D): {
+	hull: THREE.Object3D;
+	toHull: THREE.Matrix4;
+	meshes: THREE.Mesh[];
+} {
+	const hull = longwallHullGroup(root);
+	root.updateMatrixWorld(true);
+	const meshes: THREE.Mesh[] = [];
+	hull.traverse((o) => {
+		if (paintedMesh(o)) meshes.push(o);
+	});
+	return { hull, toHull: hull.matrixWorld.clone().invert(), meshes };
+}
+
+/**
+ * Merge `meshes` into one mesh per material that two or more of them share,
+ * each source's transform baked into its vertices against `toFrame`, so the
+ * triangles are the same triangles in the same place. The sources leave their
+ * parents; the batches, named `${prefix}-${material}`, are returned for the
+ * caller to place in that frame. A material only one source draws is left
+ * where it was.
+ */
+function mergeByMaterial(
+	meshes: readonly THREE.Mesh[],
+	toFrame: THREE.Matrix4,
+	prefix: string,
+): THREE.Mesh[] {
+	const byMaterial = new Map<THREE.Material, THREE.Mesh[]>();
+	for (const mesh of meshes) {
+		const material = mesh.material as THREE.Material;
+		byMaterial.set(material, [...(byMaterial.get(material) ?? []), mesh]);
+	}
+	const batches: THREE.Mesh[] = [];
+	for (const [material, sources] of byMaterial) {
+		if (sources.length < 2) continue;
+		const merged = mergeGeometries(
+			sources.map((mesh) =>
+				mesh.geometry
+					.clone()
+					.applyMatrix4(
+						new THREE.Matrix4().multiplyMatrices(toFrame, mesh.matrixWorld),
+					),
+			),
+		);
+		if (!merged)
+			throw new Error(`Longwall B: cannot merge ${prefix}'s ${material.name}`);
+		const batch = new THREE.Mesh(merged, material);
+		batch.name = `${prefix}-${material.name}`;
+		batch.castShadow = sources.some((m) => m.castShadow);
+		batch.receiveShadow = sources.some((m) => m.receiveShadow);
+		for (const mesh of sources) mesh.removeFromParent();
+		batches.push(batch);
+	}
+	return batches;
+}
+
 /**
  * Merge the static hull's opaque, unlit meshes into one mesh per material
  * (node #815, sage round 2): the export splits the `hull` group into 19
  * meshes over 10 materials, nine of them `dark-structure`, and nothing moves
  * any of them. Lamps and the transparent glazing keep their own meshes, and
- * nothing outside `hull` is touched — the anchors and the cutter keep their
- * named, separately posable parts, and they are 80 of the 100 meshes left.
- * Each source's transform below `hull` is baked into its vertices, so the
- * triangles are the same triangles in the same place.
+ * nothing outside `hull` is touched here; the anchors are
+ * `batchLongwallAnchors`'s. Each source's transform below `hull` is baked
+ * into its vertices, so the triangles are the same triangles in the same
+ * place.
  */
 function batchLongwallHull(scene: THREE.Group): void {
-	const hull = longwallHullGroup(scene);
+	const { hull, toHull, meshes } = hullPaintMeshes(scene);
+	for (const batch of mergeByMaterial(meshes, toHull, "hull")) hull.add(batch);
+}
+
+/**
+ * Merge each stowed anchor's painted meshes into one mesh per material (node
+ * #815, sage round 8). The export draws an anchor as six part groups —
+ * `anchor-N-body`, `-sleeve`, `-elbow`, `-lower`, `-lower-rod` and
+ * `-foot` — and 19 meshes, and nothing in the game poses any of them, so an
+ * anchor near a station was 72 draws in the colour pass for four static
+ * shapes, and again in the shadow and AO passes. Each anchor's batches go in
+ * a new group `anchor-N` at the scene's own frame, which the detail band's
+ * `/^anchor-\d/` still hides at `reduced`; the six part groups stay, named
+ * and in place, holding only the foot's lamp, so a node that poses the
+ * anchors can split them again from the export.
+ */
+function batchLongwallAnchors(scene: THREE.Group): void {
 	scene.updateMatrixWorld(true);
-	const toHull = hull.matrixWorld.clone().invert();
-	const byMaterial = new Map<THREE.Material, THREE.Mesh[]>();
-	hull.traverse((o) => {
-		const mesh = o as THREE.Mesh;
-		if (!mesh.isMesh) return;
-		const materials = materialsOf(mesh);
-		if (materials.length !== 1) return;
-		const [material] = materials;
-		if (!isHullPaint(material)) return;
-		byMaterial.set(material, [...(byMaterial.get(material) ?? []), mesh]);
-	});
-	for (const [material, meshes] of byMaterial) {
-		if (meshes.length < 2) continue;
-		const merged = mergeGeometries(
-			meshes.map((mesh) =>
-				mesh.geometry
-					.clone()
-					.applyMatrix4(
-						new THREE.Matrix4().multiplyMatrices(toHull, mesh.matrixWorld),
-					),
-			),
-		);
-		if (!merged)
-			throw new Error(`Longwall B: cannot merge the hull's ${material.name}`);
-		const batch = new THREE.Mesh(merged, material);
-		batch.name = `hull-${material.name}`;
-		batch.castShadow = meshes.some((m) => m.castShadow);
-		batch.receiveShadow = meshes.some((m) => m.receiveShadow);
-		for (const mesh of meshes) mesh.removeFromParent();
-		hull.add(batch);
+	const toScene = scene.matrixWorld.clone().invert();
+	const byAnchor = new Map<string, THREE.Mesh[]>();
+	for (const part of scene.children) {
+		const anchor = /^(anchor-\d+)-/.exec(part.name)?.[1];
+		if (!anchor) continue;
+		part.traverse((o) => {
+			if (paintedMesh(o))
+				byAnchor.set(anchor, [...(byAnchor.get(anchor) ?? []), o]);
+		});
+	}
+	for (const [name, meshes] of byAnchor) {
+		const anchor = new THREE.Group();
+		anchor.name = name;
+		for (const batch of mergeByMaterial(meshes, toScene, name))
+			anchor.add(batch);
+		scene.add(anchor);
 	}
 }
 
@@ -2764,17 +2843,11 @@ function batchLongwallHull(scene: THREE.Group): void {
  * side's normal. The index is the only new buffer: every attribute is the
  * batch's own. Simplified once at install, about 150 ms headless.
  */
-function simplifyLongwallHull(scene: THREE.Group): void {
-	const hull = longwallHullGroup(scene);
-	scene.updateMatrixWorld(true);
-	const toHull = hull.matrixWorld.clone().invert();
-	const meshes: THREE.Mesh[] = [];
-	hull.traverse((o) => {
-		const mesh = o as THREE.Mesh;
-		if (!mesh.isMesh) return;
-		const materials = materialsOf(mesh);
-		if (materials.length === 1 && isHullPaint(materials[0])) meshes.push(mesh);
-	});
+function simplifyLongwallHull(
+	scene: THREE.Group,
+): Map<THREE.BufferGeometry, THREE.BufferGeometry> {
+	const { toHull, meshes } = hullPaintMeshes(scene);
+	const simplified = new Map<THREE.BufferGeometry, THREE.BufferGeometry>();
 	for (const mesh of meshes) {
 		const source = mesh.geometry;
 		const index = source.index;
@@ -2803,8 +2876,9 @@ function simplifyLongwallHull(scene: THREE.Group): void {
 		for (const [name, attribute] of Object.entries(source.attributes))
 			reduced.setAttribute(name, attribute);
 		reduced.setIndex(new THREE.BufferAttribute(kept, 1));
-		longwallReducedGeometry.set(source, shared(reduced));
+		simplified.set(source, shared(reduced));
 	}
+	return simplified;
 }
 
 /**
@@ -2880,15 +2954,12 @@ function longwallOutline(root: THREE.Object3D): () => THREE.Object3D {
 			throw new Error("Longwall B: the outline was built uninstalled");
 		let paint: THREE.Material | undefined;
 		let most = 0;
-		longwallHullGroup(root).traverse((o) => {
-			const mesh = o as THREE.Mesh;
-			if (!mesh.isMesh) return;
-			const [material] = materialsOf(mesh);
-			if (!isHullPaint(material)) return;
+		for (const mesh of hullPaintMeshes(root).meshes) {
 			const g = mesh.geometry;
 			const count = (g.index ?? g.getAttribute("position")).count;
-			if (count > most) [most, paint] = [count, material];
-		});
+			if (count > most)
+				[most, paint] = [count, mesh.material as THREE.Material];
+		}
 		if (!paint) throw new Error("Longwall B: the hull has no paint");
 		const outline = longwallOutlineTemplate.clone(true);
 		(outline.getObjectByName("longwall-outline-hull") as THREE.Mesh).material =

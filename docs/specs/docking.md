@@ -372,8 +372,10 @@ against 6.6), the tug (11.0 against 9.2) and, since node #815, the miner (6.5
 against 4.5) dock above theirs, inside check 4's ±50°. The miner was 7.0 against a 4.9 cap and was 5.0 after #619, so the worst
 hull moved from the freighter to the miner and the margin fell from 2.0x to
 1.67x. The bound it is asserted against is 1.5x. Node #815 made the miner Longwall
-B, 84.5 m long against the loft's 78.2, which turns 7.5% slower by #181's law
-— a 4.5 rpm roll cap — and it holds 6.5: still the worst hull, at 2.17x. `tests/hull-docking.test.ts`
+B, an 84.4 m model whose envelope is 84.5 m — #181 rounds the measured box **up**
+to 0.1 m, and the export's length overruns 84.4 by 1e-7 m — against the loft's
+78.2. Read off that envelope, it turns 7.5% slower by #181's law — a 4.5 rpm
+roll cap — and it holds 6.5: still the worst hull, at 2.17x. `tests/hull-docking.test.ts`
 prints every row.
 
 *First* failure, because the curve is not monotone: flown out to 24 rpm the
