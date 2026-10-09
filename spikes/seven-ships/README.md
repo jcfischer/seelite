@@ -64,7 +64,6 @@ changes its envelope; no production hull numbers have been modified here.
 Other study dimensions also differ from the current game. Capture FPS measures
 an isolated inspection scene and is not a production flight benchmark.
 
-Visual improvement was reopened by the principal. Current independent scores
-are 4.25–5.65/10, below the 8/10 gate. The new capital ring targets were approved,
-but no current built-model quality acceptance is asserted. See STATUS.md.
-See HANDOFF-codex.md for production work and review evidence.
+The principal accepted the designs and requested Bastion's stern be closed, then two distance LODs for each ship. That bounded repair and the fourteen reduced assets are built. Historical scores are preserved in STATUS.md; acceptance does not claim an 8/10 numerical result.
+
+See [LOD.md](LOD.md) for LOD generation, counts and verification, and [the LOD gallery](review/lods.html) to compare all levels. The viewer defaults to Auto LOD and also allows each level to be forced. See HANDOFF-codex.md for production work and review evidence.

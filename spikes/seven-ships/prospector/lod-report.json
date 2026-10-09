@@ -1,0 +1,69 @@
+{
+  "role": "prospector",
+  "sourceSha256": "15bda93f96c2cf725ca17fce1aef6211fab466ab7dc6859ce112b5b77f3256a8",
+  "method": "PR 828 / node 812: position weld, Meshopt ErrorAbsolute + Prune, 30 degree normals",
+  "frame": {
+    "fovDeg": 60,
+    "heightPx": 1800,
+    "errorPixels": 0.5
+  },
+  "reachMetres": 34.52435252032913,
+  "centreMetres": [
+    0,
+    0.5,
+    1.1000003814697266
+  ],
+  "full": {
+    "triangles": 428524,
+    "meshes": 19,
+    "min": [
+      -10.003999710083008,
+      -7,
+      -32.099998474121094
+    ],
+    "max": [
+      10.003999710083008,
+      8,
+      34.29999923706055
+    ],
+    "bytes": 21118592
+  },
+  "levels": {
+    "reduced": {
+      "triangles": 72687,
+      "meshes": 19,
+      "min": [
+        -10.003999710083008,
+        -7,
+        -32.099998474121094
+      ],
+      "max": [
+        10.003999710083008,
+        8,
+        34
+      ],
+      "bytes": 6936756,
+      "distanceRadii": 40,
+      "distanceMetres": 1380.9741008131653,
+      "errorMetres": 0.44294764936021236
+    },
+    "outline": {
+      "triangles": 7056,
+      "meshes": 8,
+      "min": [
+        -9.600000381469727,
+        -6.734870910644531,
+        -30.5
+      ],
+      "max": [
+        9.600000381469727,
+        4.440000057220459,
+        30
+      ],
+      "bytes": 3256748,
+      "distanceRadii": 400,
+      "distanceMetres": 13809.741008131652,
+      "errorMetres": 4.429476493602124
+    }
+  }
+}

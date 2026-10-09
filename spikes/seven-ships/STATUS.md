@@ -1,3 +1,13 @@
+# Accepted designs and distance LODs
+
+Principal on 2026-10-09: "backside of bastion iss open. Close it, then leave bastion as is. Others are ok too." This is visual acceptance of the current designs with one bounded stern repair; historical judge scores remain historical and are not revised upward. Further Dream Loop redesign is stopped.
+
+Bastion now has an enclosed aft bulkhead; its forward bay remains open. The other six full-detail models are unchanged. Each of all seven ships now has separately exported `model-reduced.glb` and `model-outline.glb`, generated with the Node 812 / PR 828 method. See [LOD.md](LOD.md) for measurements, provenance, commands and integration notes, and [the comparison gallery](review/lods.html).
+
+The isolated viewer supports Full, LOD 1, LOD 2 and automatic apparent-size switching, with Medium range / Far range controls. Habitat rotation stays synchronized across levels. All full models and LODs remain isolated study artifacts; production integration and merge are separate.
+
+---
+
 # Latest outcome
 
 ## Round 8 — Bastion assembly rebuild
