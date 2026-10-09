@@ -120,7 +120,7 @@ Headless timings (bun) on the model:
 
 ## Verification
 
-- `npm test`: see the final commit.
+- `npm test`: 5681 pass, 0 fail (340.6 s) on the final tree.
 - Bun preload: `tests/setup-courier-hull.ts` installs the shipped model for
   every file, so headless rows measure the courier the player flies.
 - Procedural generator rows: the four files that hold the procedural hull
