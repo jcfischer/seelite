@@ -1,2 +1,5 @@
 [test]
-preload = ["./tests/setup-courier-hull.ts"]
+# The game draws authored models for `courier` (node #812) and `miner/b`
+# (node #815); every headless row sees the hulls the player flies, and
+# `buildShipMesh` refuses `miner/b` uninstalled.
+preload = ["./tests/setup-courier-hull.ts", "./tests/setup/longwall-model.ts"]

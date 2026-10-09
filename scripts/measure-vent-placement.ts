@@ -39,6 +39,7 @@ import {
 	coupleArms,
 } from "../src/hull";
 import { buildShipMesh } from "../src/ship-mesh";
+import { installShippedLongwall } from "./lib/install-longwall";
 import { installShippedCourierHull } from "./lib/shipped-courier-hull";
 import { axisLineTester, hullMetal } from "./lib/axis-line-hits";
 
@@ -156,8 +157,11 @@ export function measureVentPlacement(
 }
 
 if (import.meta.main) {
-	// The courier the game flies is the authored model (node #812).
+	// The courier the game flies is the authored model (node #812), and
+	// `miner/b` is the authored Longwall B (node #815), built only once it is
+	// installed.
 	await installShippedCourierHull();
+	await installShippedLongwall();
 	const pct = (x: number) => `${(100 * x).toFixed(1)}%`;
 	const rows = HULL_IDS.map((id) => {
 		const spec = HULL_SPECS[id];

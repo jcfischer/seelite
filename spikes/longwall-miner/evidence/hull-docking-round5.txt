@@ -1,0 +1,32 @@
+# bun test tests/hull-docking.test.ts at 7961aa3 plus the round-5 working tree (node #815, sage round 5)
+# The rows docking.md §4 reads: each hull's first roll-tracking failure per turning role.
+
+bun test v1.3.14 (0d9b296a)
+
+tests/hull-docking.test.ts:
+courier      docks to 13.0 rpm (worst role trade, roll cap 13.4 rpm)
+interceptor  docks to 22.0 rpm (worst role trade, roll cap 17.2 rpm)
+freighter    docks to 10.0 rpm (worst role trade, roll cap 6.6 rpm)
+miner        docks to 6.5 rpm (worst role trade, roll cap 4.5 rpm)
+patrol       docks to 18.0 rpm (worst role trade, roll cap 18.0 rpm)
+explorer     docks to 7.5 rpm (worst role trade, roll cap 7.8 rpm)
+raider       docks to 16.0 rpm (worst role trade, roll cap 16.3 rpm)
+tug          docks to 11.0 rpm (worst role trade, roll cap 9.2 rpm)
+prospector   docks to 11.0 rpm (worst role trade, roll cap 11.0 rpm)
+worst miner at 6.5 rpm against a fastest station of 3 rpm
+margin 2.17x
+courier      first fails at 13.5 rpm after 25 unbroken rungs; 13 coincidental crossings above it
+interceptor  first fails at 22.5 rpm after 43 unbroken rungs; 3 coincidental crossings above it
+freighter    first fails at 10.5 rpm after 19 unbroken rungs; 16 coincidental crossings above it
+miner        first fails at 7 rpm after 12 unbroken rungs; 18 coincidental crossings above it
+patrol       first fails at 18.5 rpm after 35 unbroken rungs; 8 coincidental crossings above it
+explorer     first fails at 8 rpm after 14 unbroken rungs; 17 coincidental crossings above it
+raider       first fails at 16.5 rpm after 31 unbroken rungs; 11 coincidental crossings above it
+tug          first fails at 11.5 rpm after 21 unbroken rungs; 17 coincidental crossings above it
+prospector   first fails at 11.5 rpm after 21 unbroken rungs; 11 coincidental crossings above it
+ceiling spread: 15.5 rpm live against 0.0 rpm at one hull's handling
+
+ 48 pass
+ 0 fail
+ 113 expect() calls
+Ran 48 tests across 1 file. [25.09s]

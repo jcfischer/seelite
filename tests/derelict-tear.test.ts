@@ -28,9 +28,10 @@ const live = (id: HullId) => buildShipMesh(id, HULL_SPECS[id].variant).root;
 
 /**
  * The purchasable hulls the tear can cut: the lofted, procedural ones. The
- * courier draws its authored model since node #812, which has no lofted part
- * for `tearHull` to open, so its wreck is the whole hull gone dark — held as
- * that below rather than left out unsaid.
+ * courier (node #812) and the miner (Longwall B, node #815) draw authored
+ * models, which have no lofted part for `tearHull` to open, so their wrecks
+ * are the whole hull gone dark — held as that below rather than left out
+ * unsaid.
  */
 const TEARABLE = PURCHASABLE_HULL_IDS.filter(
 	(id) => !live(id).userData.authored,
@@ -100,8 +101,8 @@ describe("a derelict's envelope is the intact hull's", () => {
 		disposeDerelict(wreck);
 	});
 
-	for (const id of TEARABLE)
-		test(`${id}: the drawn box is equal, and it is torn`, () => {
+	for (const id of PURCHASABLE_HULL_IDS)
+		test(`${id}: the drawn box is equal, and it tears only if lofted`, () => {
 			const intact = drawnHullBox(live(id));
 			const wreck = buildDerelictMesh(id);
 			const torn = drawnHullBox(wreck);
@@ -120,10 +121,16 @@ describe("a derelict's envelope is the intact hull's", () => {
 				]);
 			}
 			// The rows above pass for a hull nothing was done to; this one does
-			// not. Every roster hull tears, and shows its frame.
+			// not. Every lofted hull tears, and shows its frame.
+			//
+			// **The authored Longwall B does not (node #815)**: a tear cuts a
+			// loft's ring-and-segment grid, and an authored model has none, so its
+			// wreck is the dark hull S26 shipped first. Stated here rather than
+			// skipped, so the day it tears this row says so.
 			const sites = wreck.userData.torn?.sites ?? [];
-			expect([id, sites.length > 0]).toEqual([id, true]);
-			expect([id, wreck.userData.torn.frame > 0]).toEqual([id, true]);
+			const tears = TEARABLE.includes(id);
+			expect([id, sites.length > 0]).toEqual([id, tears]);
+			expect([id, (wreck.userData.torn?.frame ?? 0) > 0]).toEqual([id, tears]);
 			disposeDerelict(wreck);
 		});
 

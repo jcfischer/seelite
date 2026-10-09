@@ -698,24 +698,31 @@ const HULL_ROWS: Readonly<Record<HullId, Omit<HullSpec, "vents">>> = {
 	miner: {
 		role: "industrial",
 		variant: "b",
-		env: { lengthKm: 0.0782, beamKm: 0.0519, heightKm: 0.0332 },
-		envCentre: { rightKm: 0, upKm: -0.0062, foreKm: -0.0017 },
+		// **The envelope is Longwall B's (node #815); the mass is not re-derived.**
+		// The approved model is 84.4 x 34.0 x 18.8 m against the loft's 78.2 x
+		// 51.9 x 33.2, so 215 t now reads 3.97 t per 1000 m³ against a band of 1.2
+		// to 2.4. Mass is a hull stat and moves acceleration, so re-deriving it
+		// is the principal's decision and not this node's (#803's handoff, node
+		// #815's body); `tests/hull.test.ts` pins the miner's exemption so it
+		// goes red the day either figure moves.
+		env: { lengthKm: 0.0845, beamKm: 0.0341, heightKm: 0.0188 },
+		envCentre: { rightKm: 0, upKm: 0, foreKm: 0 },
 		massT: 215,
 		thrustMN: 215,
 		ventShares: {
 			main: 1,
 			retro: 0.5,
 			strafe: 0.416667,
-			pitch: 0.00850427,
-			yaw: 0.0103794,
-			roll: 0.00673907,
+			pitch: 0.00792986,
+			yaw: 0.00837895,
+			roll: 0.00389911,
 		},
 		ventPlacement: {
-			retroX: 0.4225,
-			strafeZ: 0.22,
-			yaw: { y: 0.125, fore: 0.9975, aft: 0.9975 },
-			pitch: { x: 0, fore: 0.9975, aft: 0.9975 },
-			roll: { z: 0.75, port: 0.9975, starboard: 0.9975 },
+			retroX: 0.5,
+			strafeZ: 0.25,
+			yaw: { y: 0, fore: 0.9975, aft: 0.9975 },
+			pitch: { x: 0, fore: 0.9975, aft: 0.905 },
+			roll: { z: 0.925, port: 0.97, starboard: 0.97 },
 		},
 		holdT: 40,
 		hardpoints: 1,

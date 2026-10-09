@@ -77,6 +77,10 @@ interface VisualState {
 	greebles: THREE.InstancedMesh[];
 	/** An authored hull's own levels (node #812), one drawn at a time. */
 	levels?: ShipLevels;
+	/** The least detail anything but the player's own hull draws this hull
+	 *  at, however near (node #815): `reduced` holds a Traffic Longwall B at
+	 *  its medium level beside a berth. */
+	nearest: DetailLevel;
 }
 
 /**
@@ -92,6 +96,12 @@ export const LEVEL_STAND_IN = "levelStandIn";
 
 export const isLevelStandIn = (object: THREE.Object3D): boolean =>
 	object.userData[LEVEL_STAND_IN] === true;
+
+const BAND_RANK: Readonly<Record<DetailLevel, number>> = {
+	full: 0,
+	reduced: 1,
+	outline: 2,
+};
 
 const stateOf = (root: THREE.Object3D): VisualState => {
 	const state = root.userData.shipVisual as VisualState | undefined;
@@ -298,29 +308,34 @@ export function buildShipDetails(
 		detail: "full",
 		quality: "high",
 		greebles,
+		nearest: "full",
 	} satisfies VisualState;
 	root.userData.shipSilhouetteKm = reachKm;
 }
 
 /**
  * The visual state of a hull that carries no generated detail: an authored
- * model (node #812's courier) brings its own machinery, so there is no
- * clutter for the quality gate to switch. What the band switches instead is
- * the model itself, when the hull carries `levels`: the full model inside
- * the band's first edge and a reduced copy beyond it, because every Traffic
- * courier is this model. The state exists either way, because every caller
- * of `updateShipVisuals` holds one per hull root.
+ * model (node #812's courier, node #815's miner) brings its own machinery,
+ * so there is no clutter for the quality gate to switch. What the band
+ * switches instead is the model itself, when the hull carries `levels`: the
+ * full model inside the band's first edge and a reduced copy beyond it,
+ * because every Traffic courier and miner is the model. The state exists
+ * either way, because every caller of `updateShipVisuals` holds one per hull
+ * root. `nearest` is the most detail any hull but the player's own draws it
+ * at (node #815).
  */
 export function adoptUndetailedShip(
 	root: THREE.Group,
 	reachKm: number,
 	levels?: ShipLevels,
+	nearest: DetailLevel = "full",
 ): void {
 	const state: VisualState = {
 		detail: "full",
 		quality: "high",
 		greebles: [],
 		levels,
+		nearest,
 	};
 	root.userData.shipVisual = state;
 	root.userData.shipSilhouetteKm = reachKm;
@@ -343,15 +358,24 @@ export function setShipDetail(root: THREE.Object3D, level: DetailLevel): void {
 	applyVisibility(state);
 }
 
-/** Update detail and the quality gate; emissives intentionally stay untouched. */
+/**
+ * Update detail and the quality gate; emissives intentionally stay untouched.
+ * `own` is the player's hull, which draws every level the band names; any
+ * other hull draws no more detail than its `nearest` (node #815: a Traffic
+ * Longwall B is its medium level beside a berth, the principal's ruling of
+ * 2026-10-09).
+ */
 export function updateShipVisuals(
 	root: THREE.Object3D,
 	distanceKm: number,
 	quality: ShipQuality,
+	own = false,
 ): void {
 	const state = stateOf(root);
 	const reachKm = root.userData.shipSilhouetteKm as number;
-	state.detail = detailLevel(state.detail, distanceKm / reachKm);
+	const level = detailLevel(state.detail, distanceKm / reachKm);
+	state.detail =
+		own || BAND_RANK[level] >= BAND_RANK[state.nearest] ? level : state.nearest;
 	state.quality = quality;
 	applyVisibility(state);
 }

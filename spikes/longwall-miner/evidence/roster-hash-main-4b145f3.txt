@@ -1,0 +1,61 @@
+# node #815, sage round 4: the roster hash with miner/b skipped, read on main
+# git worktree add --detach <dir> 4b145f3; symlink node_modules; then this edit to tests/ship-finish.test.ts:
+tests/ship-finish.test.ts | 1 +
+ 1 file changed, 1 insertion(+)
+
+--- Changes ---
+
+tests/ship-finish.test.ts
+  @@ -62,6 +62,7 @@ function rosterHash(ids: readonly HullId[] = HULL_IDS) {
+  +			if (id === "miner" && variant === "b") continue;
+   			buildShipMesh(id, variant).root.traverse((object) => {
+   				// #130's generated detail is a finish layered onto the hull, not a
+   				// change to the stock hull this pin protects. It has its own deterministic
+  +1 -0
+
+# bun test tests/ship-finish.test.ts -t 'hash to the pin'
+# (both rows go red against main's own pins, which still count miner/b;
+#  the Received figures are the lofts-only hash the branch pins)
+bun test v1.3.14 (0d9b296a)
+tests/ship-finish.test.ts:
+167 | 		// **Re-pinned for #331's voyager**, which a hash over every hull moves
+168 | 		// by construction: 36 hulls, 211,160 vertices. The row below keeps the
+169 | 		// old pin, so the claim that the new hulls are the whole of the change
+170 | 		// is something a run checks rather than a comment.
+171 | 		setHullFinish("stock");
+172 | 		expect(rosterHash()).toEqual({ hash: "f5d052c8", vertices: 211160 });
+                             ^
+error: expect(received).toEqual(expected)
+  {
+-   "hash": "f5d052c8",
+-   "vertices": 211160,
++   "hash": "d40badcf",
++   "vertices": 205315,
+  }
+- Expected  - 2
++ Received  + 2
+      at <anonymous> (/private/tmp/seelite-main-4b145f3/tests/ship-finish.test.ts:172:24)
+(fail) stock is the hull that shipped > every hull's geometry and UVs hash to the pin taken on main [342.67ms]
+174 | 
+175 | 	test("the original eleven archetypes still hash to the pin taken on main", () => {
+176 | 		// `cbf3f0f`'s pin over the ids that existed then. Adding a hull may move
+177 | 		// the whole-roster hash; it may not move any of these (#335's review).
+178 | 		setHullFinish("stock");
+179 | 		expect(rosterHash(HULL_IDS.filter((id) => id !== "voyager"))).toEqual({
+                                                                      ^
+error: expect(received).toEqual(expected)
+  {
+-   "hash": "89b8e0f6",
+-   "vertices": 192257,
++   "hash": "757911cd",
++   "vertices": 186412,
+  }
+- Expected  - 2
++ Received  + 2
+      at <anonymous> (/private/tmp/seelite-main-4b145f3/tests/ship-finish.test.ts:179:65)
+(fail) stock is the hull that shipped > the original eleven archetypes still hash to the pin taken on main [272.33ms]
+ 0 pass
+ 15 filtered out
+ 2 fail
+ 2 expect() calls
+Ran 2 tests across 1 file. [657.00ms]

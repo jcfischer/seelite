@@ -28,6 +28,12 @@ export type ChangelogEntry = {
 };
 
 export const CHANGELOG: readonly ChangelogEntry[] = [
+	// Node #815: approved by the principal on 2026-10-09; main date pending.
+	{
+		date: "2026-10-09",
+		text: "The miner has a new hull: the Longwall, an 84-metre mining ship with three sealed ore cassettes, a two-seat bridge, four folded asteroid anchors and a cutter on an extending boom.",
+		node: 815,
+	},
 	// Node #812: approved by the principal on 2026-10-09; main date pending.
 	{
 		date: "2026-10-09",

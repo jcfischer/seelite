@@ -142,9 +142,16 @@ without it. The gated test holds one pad-role case of this (system 0, 600 s). <!
 change that moves a route, mends a class or opens a new one turns it red.
 
 - **System 9, 1,800 s:** one `approach-through` at more than 8.9 km/s.
-- **System 0, 1,800 s:** three `launch-aperture` and one `release-point`, both
-  under `V_SCRAPE`, and nothing in cruise.
-- **The red build, system 0, 600 s:** an exempt phase meets the refinery.
+- **System 0, 1,800 s:** one `release-point`, under `V_SCRAPE`, and nothing in
+  cruise. Three `launch-aperture` touches stood here too until node #815: all
+  three were miners, and they went with the loft miner. Longwall B is narrower
+  in section (34.1 x 18.8 m against the loft's 51.9 x 33.2 m) and also turns
+  and damps differently, with its vents moved (`spikes/longwall-miner/HANDOFF.md`
+  D2); nothing here separates which of those removed them. The tables above are the
+  run as this finding took it and were not re-measured for that change.
+- **The red build, system 0, 1,800 s:** an exempt phase meets the refinery.
+  It ran over 600 s until node #815, after which the green run it is compared
+  against met nothing in that window.
 
 ## Owed, and not built here
 

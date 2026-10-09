@@ -1,0 +1,122 @@
+# Node #815, sage round 4: probes run alone on the GPU lane after the outline stand-in
+# head 2825677 (the stand-in's commit; the hull batch 8600b09 is under it), 2026-10-09T12:00Z
+## probe-boot
+
+> seelite@0.1.0 probe:one
+> npm run probe:gpu -- --only probe-boot
+
+
+> seelite@0.1.0 probe:gpu
+> npm run check:wiring && SEELITE_PROBE_RENDERER=hardware node scripts/probe-all.mjs --only probe-boot
+
+
+> seelite@0.1.0 check:wiring
+> node scripts/check-launcher-wiring.mjs
+
+ok   125 scripts call launchChromium, every one imports it from probe-guard.mjs, and none resolves Playwright itself
+checking hardware renderer for GPU probe lane
+[probe] hardware renderer: ANGLE (Apple, ANGLE Metal Renderer: Apple M1 Pro, Unspecified Version)
+probing http://127.0.0.1:64208 (dev server) — 1 probes, 1 at a time
+     filtered by --only probe-boot: 96 of 97 probes were not run.
+
+ok   probe-boot.mjs (22.5s)
+
+1/1 gating probes passed in 22s · peak load 57.1 on 10 cores — PARTIAL RUN, --only probe-boot: 96 of 97 probes were not run.
+     This is not a pass for the suite. Run `npm run probe` for that.
+exit 0
+## probe-model-viewer
+
+> seelite@0.1.0 probe:one
+> npm run probe:gpu -- --only probe-model-viewer
+
+
+> seelite@0.1.0 probe:gpu
+> npm run check:wiring && SEELITE_PROBE_RENDERER=hardware node scripts/probe-all.mjs --only probe-model-viewer
+
+
+> seelite@0.1.0 check:wiring
+> node scripts/check-launcher-wiring.mjs
+
+ok   125 scripts call launchChromium, every one imports it from probe-guard.mjs, and none resolves Playwright itself
+checking hardware renderer for GPU probe lane
+[probe] hardware renderer: ANGLE (Apple, ANGLE Metal Renderer: Apple M1 Pro, Unspecified Version)
+probing http://127.0.0.1:64435 (dev server) — 1 probes, 1 at a time
+     filtered by --only probe-model-viewer: 96 of 97 probes were not run.
+
+ok   probe-model-viewer.mjs (6.1s)
+
+1/1 gating probes passed in 6s · peak load 55.5 on 10 cores — PARTIAL RUN, --only probe-model-viewer: 96 of 97 probes were not run.
+     This is not a pass for the suite. Run `npm run probe` for that.
+exit 0
+## probe-ship-visuals
+
+> seelite@0.1.0 probe:one
+> npm run probe:gpu -- --only probe-ship-visuals
+
+
+> seelite@0.1.0 probe:gpu
+> npm run check:wiring && SEELITE_PROBE_RENDERER=hardware node scripts/probe-all.mjs --only probe-ship-visuals
+
+
+> seelite@0.1.0 check:wiring
+> node scripts/check-launcher-wiring.mjs
+
+ok   125 scripts call launchChromium, every one imports it from probe-guard.mjs, and none resolves Playwright itself
+checking hardware renderer for GPU probe lane
+[probe] hardware renderer: ANGLE (Apple, ANGLE Metal Renderer: Apple M1 Pro, Unspecified Version)
+probing http://127.0.0.1:64506 (dev server) — 1 probes, 1 at a time
+     filtered by --only probe-ship-visuals: 96 of 97 probes were not run.
+
+ok   probe-ship-visuals.mjs (16.2s)
+
+1/1 gating probes passed in 16s · peak load 63.7 on 10 cores — PARTIAL RUN, --only probe-ship-visuals: 96 of 97 probes were not run.
+     This is not a pass for the suite. Run `npm run probe` for that.
+exit 0
+## probe-traffic-continuity
+
+> seelite@0.1.0 probe:one
+> npm run probe:gpu -- --only probe-traffic-continuity
+
+
+> seelite@0.1.0 probe:gpu
+> npm run check:wiring && SEELITE_PROBE_RENDERER=hardware node scripts/probe-all.mjs --only probe-traffic-continuity
+
+
+> seelite@0.1.0 check:wiring
+> node scripts/check-launcher-wiring.mjs
+
+ok   125 scripts call launchChromium, every one imports it from probe-guard.mjs, and none resolves Playwright itself
+checking hardware renderer for GPU probe lane
+[probe] hardware renderer: ANGLE (Apple, ANGLE Metal Renderer: Apple M1 Pro, Unspecified Version)
+probing http://127.0.0.1:64607 (dev server) — 1 probes, 1 at a time
+     filtered by --only probe-traffic-continuity: 96 of 97 probes were not run.
+
+ok   probe-traffic-continuity.mjs (90.7s)
+
+1/1 gating probes passed in 91s · peak load 55.9 on 10 cores — PARTIAL RUN, --only probe-traffic-continuity: 96 of 97 probes were not run.
+     This is not a pass for the suite. Run `npm run probe` for that.
+exit 0
+## probe-derelict
+
+> seelite@0.1.0 probe:one
+> npm run probe:gpu -- --only probe-derelict
+
+
+> seelite@0.1.0 probe:gpu
+> npm run check:wiring && SEELITE_PROBE_RENDERER=hardware node scripts/probe-all.mjs --only probe-derelict
+
+
+> seelite@0.1.0 check:wiring
+> node scripts/check-launcher-wiring.mjs
+
+ok   125 scripts call launchChromium, every one imports it from probe-guard.mjs, and none resolves Playwright itself
+checking hardware renderer for GPU probe lane
+[probe] hardware renderer: ANGLE (Apple, ANGLE Metal Renderer: Apple M1 Pro, Unspecified Version)
+probing http://127.0.0.1:64871 (dev server) — 1 probes, 1 at a time
+     filtered by --only probe-derelict: 96 of 97 probes were not run.
+
+ok   probe-derelict.mjs (17.3s)
+
+1/1 gating probes passed in 17s · peak load 40.6 on 10 cores — PARTIAL RUN, --only probe-derelict: 96 of 97 probes were not run.
+     This is not a pass for the suite. Run `npm run probe` for that.
+exit 0

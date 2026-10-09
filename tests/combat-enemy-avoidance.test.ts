@@ -497,7 +497,7 @@ describe("the figures the avoidance is built from", () => {
 		const longest = Math.max(
 			...[...flown].map((id) => avoidanceHorizonS(flightPerformance(id), 1e9)),
 		);
-		expect(longest).toBeCloseTo(22.3, 1);
+		expect(longest).toBeCloseTo(23.1, 1);
 		// And it is the miner's, as that comment says.
 		expect(longest).toBe(avoidanceHorizonS(flightPerformance("miner"), 1e9));
 		expect(AVOID_SCAN_KM).toBeGreaterThan(longest * 100);
