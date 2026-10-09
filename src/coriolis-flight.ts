@@ -148,7 +148,8 @@ export function prepareCoriolisModel(): Promise<void> {
 /** The asset is required for the world, so an interrupted download gets a
  * visible retry before any Game (or save-store attachment) is constructed.
  * `also` names the page's other required assets — a Game's cockpit model
- * (`cockpit-model.ts`) — so one panel and one Retry cover them all. */
+ * (`cockpit-model.ts`) and the authored Porter (`porter-model.ts`) — so one
+ * panel and one Retry cover them all. */
 export async function prepareCoriolisPage(
 	also: readonly (() => Promise<void>)[] = [],
 ): Promise<void> {

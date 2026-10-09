@@ -6591,6 +6591,32 @@ export function installAuthoredPorter(model: THREE.Object3D | null): void {
 	muzzleCache.delete("freighter/b");
 }
 
+let authoredExhaust: THREE.MeshStandardMaterial | undefined;
+
+/**
+ * A drive glow for an authored model's nozzle: the procedural disc's material
+ * and its `-exhaust` name, which the main drive's plumes are drawn at
+ * (`isDriveBell`). The disc faces +Z of the geometry it is given; the caller
+ * places and turns it in the model's own frame.
+ */
+export function authoredDriveGlow(name: string, radius: number): THREE.Mesh {
+	authoredExhaust ??= shared(
+		new THREE.MeshStandardMaterial({
+			color: 0x7fc4df,
+			emissive: 0x4a9fca,
+			emissiveIntensity: SHIP_EMISSIVE_INTENSITIES.exhaust,
+			roughness: 0.36,
+			metalness: 0.08,
+		}),
+	);
+	const glow = new THREE.Mesh(
+		shared(new THREE.CircleGeometry(radius, 24)),
+		authoredExhaust,
+	);
+	glow.name = name + EXHAUST_SUFFIX;
+	return glow;
+}
+
 /** Whether `installAuthoredPorter` has run on this page. */
 export const authoredPorterReady = (): boolean => authoredPorter !== null;
 

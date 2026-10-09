@@ -155,8 +155,10 @@ describe("H2: the shared condition model", () => {
 		expect(seconds).toBeLessThan(secondsOnTarget("courier") + 1);
 	});
 
-	test("a Porter is about 45 s on target, a miner 54, a courier 34, a patrol 32", () => {
-		expect(Math.round(secondsOnTarget("freighter"))).toBe(45);
+	test("a Porter is about 39 s on target, a miner 54, a courier 34, a patrol 32", () => {
+		// 45 s until node #813: the authored Porter's box is a third smaller, so
+		// its mass and, by the integrity law, its hull came down (166 to 129).
+		expect(Math.round(secondsOnTarget("freighter"))).toBe(39);
 		expect(Math.round(secondsOnTarget("miner"))).toBe(54);
 		expect(Math.round(secondsOnTarget("courier"))).toBe(34);
 		expect(Math.round(secondsOnTarget("patrol"))).toBe(32);

@@ -21,10 +21,20 @@ import * as THREE from "three";
 import { buildDerelictMesh, disposeDerelict } from "../src/derelict-mesh";
 import { drawnBoxes, drawnHullBox, tearHull } from "../src/derelict-tear";
 import { HULL_SPECS, type HullId, PURCHASABLE_HULL_IDS } from "../src/hull";
-import { buildShipMesh } from "../src/ship-mesh";
+import { buildShipMesh, isAuthoredHull } from "../src/ship-mesh";
 
 /** The hulls a derelict is drawn from (`derelict.ts`), at their flown variant. */
 const live = (id: HullId) => buildShipMesh(id, HULL_SPECS[id].variant).root;
+
+/**
+ * The hulls the tear can cut: those whose skin is a procedural loft. The
+ * authored O2 Porter (node #813) is material-batched Blender geometry with no
+ * loft for `tearableParts` to find, so its wreck is darkened but whole — a
+ * gap the first row below holds explicitly rather than skipping.
+ */
+const TORN_HULLS = PURCHASABLE_HULL_IDS.filter(
+	(id) => !isAuthoredHull(id, HULL_SPECS[id].variant),
+);
 
 /** FNV-1a over every mesh's positions and index, in traversal order. */
 function geometryHash(root: THREE.Object3D) {
@@ -95,7 +105,13 @@ describe("a derelict's envelope is the intact hull's", () => {
 				]);
 			}
 			// The rows above pass for a hull nothing was done to; this one does
-			// not. Every roster hull tears, and shows its frame.
+			// not. Every procedural roster hull tears, and shows its frame; the
+			// authored Porter does not tear yet (`TORN_HULLS`).
+			if (!TORN_HULLS.includes(id)) {
+				expect([id, wreck.userData.torn]).toEqual([id, null]);
+				disposeDerelict(wreck);
+				return;
+			}
 			const sites = wreck.userData.torn?.sites ?? [];
 			expect([id, sites.length > 0]).toEqual([id, true]);
 			expect([id, wreck.userData.torn.frame > 0]).toEqual([id, true]);
@@ -158,7 +174,7 @@ describe("a derelict's envelope is the intact hull's", () => {
 });
 
 describe("every torn part is attached to the structure", () => {
-	for (const id of PURCHASABLE_HULL_IDS)
+	for (const id of TORN_HULLS)
 		test(`${id}: no tear under another part, one skin, every member carried`, () => {
 			const intact = live(id);
 			const root = live(id);
@@ -287,7 +303,7 @@ describe("the folded rim is lit as the shape it was folded into", () => {
 	// twins unmatched, so the torn skin is held to that same rule recomputed
 	// over what it now draws — and a rim still carrying the intact hull's
 	// normals is a fold the light cannot see.
-	for (const id of PURCHASABLE_HULL_IDS)
+	for (const id of TORN_HULLS)
 		test(`${id}: every torn part's normals are its own surface's`, () => {
 			const intact = live(id);
 			const root = live(id);
@@ -371,7 +387,7 @@ describe("the roster's own mounting rule holds on a wreck", () => {
 	test("every nacelle still intersects a named structural mount", () => {
 		// `ship-mesh.test.ts`'s rule, run over the torn hull and measured from
 		// what each part draws: a torn nacelle is the case that could fail it.
-		for (const id of PURCHASABLE_HULL_IDS) {
+		for (const id of TORN_HULLS) {
 			const wreck = buildDerelictMesh(id);
 			const named = (test: (name: string) => boolean) =>
 				wreck.children.filter(
@@ -409,7 +425,7 @@ describe("the live ship is untouched", () => {
 	});
 
 	test("a wreck disposes the tear's geometry and not the roster's", () => {
-		const wreck = buildDerelictMesh("freighter");
+		const wreck = buildDerelictMesh(TORN_HULLS[0]);
 		const owned = new Set<THREE.BufferGeometry>();
 		const shared = new Set<THREE.BufferGeometry>();
 		wreck.traverse((o) => {

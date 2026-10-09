@@ -18,12 +18,24 @@ import {
 	SHIP_DETAIL_PLANS,
 	SHIP_QUALITY,
 	buildShipMesh,
+	isAuthoredHull,
 	setShipDetail,
 	updateShipVisuals,
 } from "../src/ship-mesh";
 
 const variants = HULL_IDS.flatMap((id) =>
 	HULL_VARIANT_IDS.map((variant) => ({ id, variant })),
+);
+
+/**
+ * The variants this file's generator fills. An authored model (node #813's O2
+ * Porter) carries its own machinery, lamps and windows from Blender, so it has
+ * no zone, no clutter and no generated strip or window to count — only the nav
+ * lights, which every drawn hull wears and `tests/porter-model.test.ts` and
+ * `tests/ship-mesh.test.ts` hold on it.
+ */
+const generated = variants.filter(
+	({ id, variant }) => !isAuthoredHull(id, variant),
 );
 
 const meshesNamed = (root: THREE.Object3D, prefix: string) => {
@@ -47,7 +59,8 @@ const reach = (objects: readonly THREE.Object3D[]) => {
 describe("authored ship machinery regions", () => {
 	test("every current variant declares named zones on plated parts", () => {
 		expect(variants).toHaveLength(36);
-		for (const { id, variant } of variants) {
+		expect(generated).toHaveLength(35);
+		for (const { id, variant } of generated) {
 			const plan = SHIP_DETAIL_PLANS[id][variant];
 			expect(plan.zones.length).toBeGreaterThan(0);
 			expect(new Set(plan.zones.map((zone) => zone.name)).size).toBe(
@@ -73,7 +86,7 @@ describe("authored ship machinery regions", () => {
 		expect(new Set(Object.values(DOMAIN)).size).toBe(
 			Object.keys(DOMAIN).length,
 		);
-		for (const { id, variant } of variants) {
+		for (const { id, variant } of generated) {
 			const matrices = () => {
 				const root = buildShipMesh(id, variant).root;
 				return meshesNamed(root, "ship-greebles-").flatMap((object) => {
@@ -90,7 +103,7 @@ describe("authored ship machinery regions", () => {
 	});
 
 	test("generated clutter is smaller than the base hull's maximum reach", () => {
-		for (const { id, variant } of variants) {
+		for (const { id, variant } of generated) {
 			const root = buildShipMesh(id, variant).root;
 			const clutter = meshesNamed(root, "ship-greebles-");
 			const structure = root.children.filter(
@@ -166,6 +179,8 @@ describe("ship emissive inventory", () => {
 		expect([...inhabited]).toEqual(["freighter", "carrier", "dreadnought"]);
 		for (const { id, variant } of variants) {
 			const root = buildShipMesh(id, variant).root;
+			expect(root.getObjectByName("nav-lights")).toBeDefined();
+			if (isAuthoredHull(id, variant)) continue;
 			expect([id, variant, meshesNamed(root, "ship-strip").length]).toEqual([
 				id,
 				variant,
@@ -185,7 +200,7 @@ describe("ship emissive inventory", () => {
 			high: { greebles: true },
 			low: { greebles: false },
 		});
-		for (const { id, variant } of variants) {
+		for (const { id, variant } of generated) {
 			const root = buildShipMesh(id, variant).root;
 			setShipDetail(root, "full");
 			updateShipVisuals(root, 0, "low");

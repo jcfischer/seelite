@@ -20575,8 +20575,10 @@ if (postcard) {
 			`postcard: entry accepted a refused recipe (${postcard.reason})`,
 		);
 	const { prepareCockpitModel } = await import("./cockpit-model");
+	const { preparePorterModel } = await import("./porter-model");
 	await (await import("./coriolis-flight")).prepareCoriolisPage([
 		prepareCockpitModel,
+		preparePorterModel,
 	]);
 	const game = new Game(postcard.recipe.seed, null, null, postcard.recipe);
 	game.clockHeld = true;
@@ -20586,6 +20588,14 @@ if (postcard) {
 } else if (query.has("model-viewer")) {
 	if (query.get("model-viewer") === "station")
 		await (await import("./coriolis-flight")).prepareCoriolisPage();
+	// The ship family builds every variant, and `freighter/b` is the authored
+	// Porter (node #813), which needs its model before the first build.
+	else if (query.get("model-viewer") === "ship") {
+		const { preparePorterModel } = await import("./porter-model");
+		await (await import("./coriolis-flight")).prepareCoriolisPage([
+			preparePorterModel,
+		]);
+	}
 	const { mountModelViewer } = await import("./model-viewer");
 	mountModelViewer();
 	// The workbench owns an isolated render loop, so no live simulation is built
@@ -20648,8 +20658,12 @@ if (postcard) {
 	const stationModel = Promise.all([
 		import("./coriolis-flight"),
 		import("./cockpit-model"),
-	]).then(([m, cockpit]) =>
-		m.prepareCoriolisPage([cockpit.prepareCockpitModel]),
+		import("./porter-model"),
+	]).then(([m, cockpit, porter]) =>
+		m.prepareCoriolisPage([
+			cockpit.prepareCockpitModel,
+			porter.preparePorterModel,
+		]),
 	);
 	// Keep a fast rejection handled while IndexedDB is still opening.
 	void stationModel.catch(() => {});

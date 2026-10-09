@@ -30,7 +30,7 @@ import {
 	type HullId,
 	type HullVariantId,
 } from "../src/hull";
-import { HULL_REACH_KM, buildShipMesh } from "../src/ship-mesh";
+import { HULL_REACH_KM, buildShipMesh, isAuthoredHull } from "../src/ship-mesh";
 import {
 	DEFAULT_HULL_FINISH,
 	HULL_FINISHES,
@@ -50,7 +50,9 @@ import { hullLoft, uvUnitsOf } from "../src/loft";
 // hull the game no longer ships.
 afterEach(() => setHullFinish(DEFAULT_HULL_FINISH));
 
-/** FNV-1a over the given hulls' positions and UVs, in roster order. */
+/** FNV-1a over the given hulls' positions and UVs, in roster order.
+ *  Procedural hulls only: an authored model (node #813's O2 Porter) is not
+ *  built by the finishes this pin protects, and is held by its own file. */
 function rosterHash(ids: readonly HullId[] = HULL_IDS) {
 	let h = 0x811c9dc5;
 	let vertices = 0;
@@ -62,6 +64,7 @@ function rosterHash(ids: readonly HullId[] = HULL_IDS) {
 	};
 	for (const id of ids)
 		for (const variant of HULL_VARIANT_IDS) {
+			if (isAuthoredHull(id, variant)) continue;
 			buildShipMesh(id, variant).root.traverse((object) => {
 				// #130's generated detail is a finish layered onto the hull, not a
 				// change to the stock hull this pin protects. It has its own deterministic
@@ -127,6 +130,9 @@ describe("stock is the hull that shipped", () => {
 		// 5 cm (`closeTo` at four places, in kilometres), which is under the
 		// 0.1 m `hull.test.ts` rounds a declaration up by and over the
 		// millimetres two polygons on the same rays differ by.
+		//
+		// 216 builds across five finishes ran 5.3 s alone at `4b145f3`, over
+		// bun's 5 s default, so the row states its own budget (node #813).
 		const boxOf = (id: HullId, variant: HullVariantId) => {
 			const root = buildShipMesh(id, variant).root;
 			root.updateMatrixWorld(true);
@@ -157,7 +163,7 @@ describe("stock is the hull that shipped", () => {
 					}
 				}
 			}
-	});
+	}, 30_000);
 
 	test("every hull's geometry and UVs hash to the pin taken on main", () => {
 		// Taken at `cbf3f0f`: 33 hulls, 192,257 vertices. Under `stock` by
@@ -167,17 +173,25 @@ describe("stock is the hull that shipped", () => {
 		// by construction: 36 hulls, 211,160 vertices. The row below keeps the
 		// old pin, so the claim that the new hulls are the whole of the change
 		// is something a run checks rather than a comment.
+		//
+		// **Re-pinned for node #813**, which replaced the procedural Porter
+		// (`freighter/b`) with an authored model the hash leaves out: 35
+		// procedural hulls, 205,905 vertices. The same hash over `4b145f3`'s
+		// roster with `freighter/b` left out reads the same pair, so the
+		// Porter is the whole of the change.
 		setHullFinish("stock");
-		expect(rosterHash()).toEqual({ hash: "f5d052c8", vertices: 211160 });
+		expect(rosterHash()).toEqual({ hash: "e00963f3", vertices: 205905 });
 	});
 
 	test("the original eleven archetypes still hash to the pin taken on main", () => {
 		// `cbf3f0f`'s pin over the ids that existed then. Adding a hull may move
 		// the whole-roster hash; it may not move any of these (#335's review).
+		// Re-pinned for node #813 as the row above is, and checked the same way
+		// against `4b145f3` without `freighter/b`.
 		setHullFinish("stock");
 		expect(rosterHash(HULL_IDS.filter((id) => id !== "voyager"))).toEqual({
-			hash: "89b8e0f6",
-			vertices: 192257,
+			hash: "f18aff79",
+			vertices: 187002,
 		});
 	});
 });
@@ -203,6 +217,9 @@ describe("every finish builds the whole roster", () => {
 								.getSize(new THREE.Vector3())
 								.toArray(),
 						);
+					// An authored model has no named nacelle and bell; its glow
+					// is held in `tests/porter-model.test.ts`.
+					if (isAuthoredHull(id, variant)) continue;
 					let pairs = 0;
 					for (const drive of root.children) {
 						if (!drive.name.endsWith("-nacelle")) continue;

@@ -12,6 +12,7 @@ import {
 	HULL_REACH_KM,
 	HULL_VARIANTS,
 	NAV_LIGHTS,
+	isAuthoredHull,
 	NAV_LIGHT_PROUD,
 	SHIP_DESIGN_ROUND,
 	buildShipMesh,
@@ -29,6 +30,13 @@ function bounds(id: (typeof HULL_IDS)[number], variant: HullVariantId = "a") {
 	return new THREE.Box3().setFromObject(root);
 }
 
+/**
+ * Rows that skip `isAuthoredHull` read the procedural builder's own vocabulary —
+ * named lofts, fairings, nacelles and mounts — which an authored model does not
+ * have: the O2 Porter (node #813) is material-batched Blender geometry, judged
+ * on the principal's yes and held by `tests/porter-model.test.ts`. The rows
+ * that bind every drawn hull (bounds, reach, exhaust, nav lights) still read it.
+ */
 describe("procedural ship visual language", () => {
 	test("each explicit visual archetype is deterministic and bounded", () => {
 		for (const id of HULL_IDS) {
@@ -127,9 +135,17 @@ describe("procedural ship visual language", () => {
 				expect(root.userData.role).toBe(HULL_SPECS[id].role);
 				expect(root.userData.variant).toBe(variant);
 				expect(root.userData.designRound).toBe(SHIP_DESIGN_ROUND);
-				expect(
-					root.children.some((child) => child.name.includes("exhaust")),
-				).toBe(true);
+				// An authored model (node #813) carries its glows inside the model
+				// rather than as the root's own parts.
+				let exhaust = false;
+				root.traverse((child) => {
+					if (child.name.includes("exhaust")) exhaust = true;
+				});
+				expect([id, variant, exhaust]).toEqual([id, variant, true]);
+				if (!isAuthoredHull(id, variant))
+					expect(
+						root.children.some((child) => child.name.includes("exhaust")),
+					).toBe(true);
 			}
 		}
 	});
@@ -137,6 +153,7 @@ describe("procedural ship visual language", () => {
 	test("lofted volumes are capped and every triangle faces outward", () => {
 		for (const id of HULL_IDS) {
 			for (const variant of HULL_VARIANT_IDS) {
+				if (isAuthoredHull(id, variant)) continue;
 				const root = buildShipMesh(id, variant).root;
 				let inspected = 0;
 				root.traverse((object) => {
@@ -225,6 +242,7 @@ describe("procedural ship visual language", () => {
 	test("hulls carry visible mass before their compact exhaust cues", () => {
 		for (const id of HULL_IDS) {
 			for (const variant of HULL_VARIANT_IDS) {
+				if (isAuthoredHull(id, variant)) continue;
 				const root = buildShipMesh(id, variant).root;
 				const fuselage = root.children.find((child) =>
 					child.name.includes("fuselage"),
@@ -276,6 +294,7 @@ describe("procedural ship visual language", () => {
 		const silhouettes = new Set<string>();
 		for (const id of HULL_IDS) {
 			for (const variant of HULL_VARIANT_IDS) {
+				if (isAuthoredHull(id, variant)) continue;
 				const fuselage = buildShipMesh(id, variant).root.getObjectByName(
 					id + "-fuselage",
 				) as THREE.Mesh;
@@ -305,6 +324,7 @@ describe("procedural ship visual language", () => {
 		// of distinct surface normals around the beam; a slab has four.
 		for (const id of HULL_IDS) {
 			for (const variant of HULL_VARIANT_IDS) {
+				if (isAuthoredHull(id, variant)) continue;
 				const fuselage = buildShipMesh(id, variant).root.getObjectByName(
 					id + "-fuselage",
 				) as THREE.Mesh;
@@ -322,6 +342,7 @@ describe("procedural ship visual language", () => {
 	test("canopies intersect painted fairings instead of floating above them", () => {
 		for (const id of HULL_IDS) {
 			for (const variant of HULL_VARIANT_IDS) {
+				if (isAuthoredHull(id, variant)) continue;
 				const root = buildShipMesh(id, variant).root;
 				// Small hulls fair their glass into a cockpit blister, big ones into
 				// a bridge tower. `canopy()` and `bridge()` each emit their pair,
@@ -363,6 +384,7 @@ describe("procedural ship visual language", () => {
 		const OWN_HULL = /fuselage|cockpit|bridge|dorsal-hull/;
 		for (const id of HULL_IDS) {
 			for (const variant of HULL_VARIANT_IDS) {
+				if (isAuthoredHull(id, variant)) continue;
 				const root = buildShipMesh(id, variant).root;
 				root.updateMatrixWorld(true);
 				const canopy = root.getObjectByName(id + "-cockpit") as THREE.Mesh;
@@ -460,6 +482,7 @@ describe("procedural ship visual language", () => {
 		// hangs off structure rather than floating beside the hull.
 		for (const id of HULL_IDS) {
 			for (const variant of HULL_VARIANT_IDS) {
+				if (isAuthoredHull(id, variant)) continue;
 				const root = buildShipMesh(id, variant).root;
 				const named = (test: (name: string) => boolean) =>
 					root.children.filter(
