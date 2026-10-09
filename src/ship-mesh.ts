@@ -2494,15 +2494,17 @@ function buildMinerA(root: THREE.Group, p: Palette) {
  * export. It is installed once (`longwall-model.ts` in the browser,
  * `tests/setup/longwall-model.ts` under bun) and every `buildShipMesh` clones
  * it, so a Traffic miner shares the template's buffers rather than decoding
- * its own. That instruction is not a ruling on the asset policy: map #1's
- * "procedural everything" Constraint names no authored hull, and #763 asked
- * for one before a shipped model merges. The integration result
- * (`spikes/longwall-miner/HANDOFF.md`, D6) puts it to the principal.
+ * its own. Map #1's Constraint allows it: authored models are same-origin
+ * bundle files (#830, #835, principal 2026-10-09).
  *
- * **There is no procedural fallback.** The envelope, the collision box, the
- * vent placement and the muzzles are all measured off the built mesh
+ * **There is no procedural fallback yet.** The envelope, the collision box,
+ * the vent placement and the muzzles are all measured off the built mesh
  * (`hull.ts`), so a build that quietly drew the old loft would measure a hull
- * the game no longer draws. Building `miner/b` before the install throws.
+ * the game no longer draws. Building `miner/b` before the install throws, so
+ * the model loads before a `Game` is built. The same Constraint puts only the
+ * cockpit and the home station in the boot set; installing the rest after
+ * boot, with a procedural stand-in, is node #838's, and this hull will owe
+ * that stand-in there.
  *
  * The export is model metres, +Z forward and Y up; this frame is kilometres
  * with the nose at -Z, so the exterior is turned half a turn about Y — a

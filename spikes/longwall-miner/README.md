@@ -33,7 +33,7 @@ node spikes/longwall-miner/capture.mjs round-N
 
 Capture guards served-worktree identity, observes the shared probe lock and requires a hardware renderer. It exercises independent anchor/feed control, cutter rotation, stow, mining pose, orbit, target modal and PNG export; captures six travel views plus deployed, anchored, UI and narrow views; records browser errors and observed frame cadence. Timing applies only to this viewer. Vite can miss ignored-worktree source changes; restart this viewer server before collecting evidence after source edits.
 
-Visual review evidence and remaining limitations belong in `evidence/review.md`. The requested stopping threshold is **7/10 independent visual fidelity**, reached at **7.1/10**, with principal visual acceptance distinct from that score. No merge or deployment is authorized by this design checkpoint.
+Visual review evidence and remaining limitations belong in `evidence/review.md`. The requested stopping threshold is **7/10 independent visual fidelity**, reached at **7.1/10**, with principal visual acceptance distinct from that score. No merge or deployment is authorized by this design checkpoint. (Design head only: node #815 has since integrated it, and its merge waits on the principal's flight, `HANDOFF.md`.)
 
 Principal visual approval: 2026-10-08, “approved. Prepare PR for final implementation by another agent”. See HANDOFF.md (parent directory from evidence) for binding decisions and outstanding integration work.
 
@@ -74,14 +74,18 @@ node spikes/longwall-miner/capture-game.mjs round-N   # flown, chase view, 4 sid
   is a pinned exemption in `tests/hull.test.ts` until the principal rules.
 - **Stowed, static.** Nothing articulates the anchors or the cutter in the
   game; their named groups survive for whatever mining node poses them.
-- **Cost.** One flown miner is 111 draw calls and 283,590 triangles a frame
+- **Cost.** One flown miner was 111 draw calls and 283,590 triangles a frame
   (`evidence/game-report.json`), against 66 calls for the rest of that frame;
-  the loft it replaced was 38 meshes and about 12k triangles. Every Traffic
-  miner clones the one template, so buffers are shared but draws are not.
+  the loft it replaced was 38 meshes and about 12k triangles. That capture
+  predates the hull batch and was not retaken. Every Traffic miner clones the
+  one template, so buffers are shared but draws are not. The template merges
+  the static hull's opaque, unlit meshes into one per material
+  (`batchLongwallHull`), 19 hull meshes to 10 and 109 to 100 a miner.
   The detail band sheds the mechanism with range (`longwallMechanism` in
   `src/ship-mesh.ts`): from 40 radii (about 1.7 km) the anchors' metal goes,
-  leaving 33 of 109 meshes and 261,768 of 283,576 triangles; from 400 radii
-  (about 17 km) the cutter's goes too, leaving 26 and 253,400. Every lamp and
+  leaving 24 meshes and 261,768 of 283,576 triangles; from 400 radii
+  (about 17 km) the cutter's goes too, leaving 17 and 253,400. Those are mesh
+  counts, not measured draws. Every lamp and
   the whole hull stay, and quality does not gate it. The hull's own triangles
   draw at any range; a real LOD is owed its own node.
 - **Wrecks.** A derelict miner is dark and untorn: the tear cuts a loft's

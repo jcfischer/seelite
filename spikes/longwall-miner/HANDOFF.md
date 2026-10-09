@@ -1,5 +1,11 @@
 # Longwall B implementation handoff — Codex
 
+> **Design head only, down to "Required integration work and gates";
+> superseded for production by node #815.** Those sections are the design
+> PR's (#807) handoff as written, kept as the record of what was asked. What
+> was built, and what still waits on the principal before merge, is
+> **Integration result (node #815)** at the end of this file.
+
 ## Approved design
 
 On 2026-10-08 the principal approved the visual prototype and requested: “Prepare PR for final implementation by another agent.” Earlier corrections are binding: sealed ore cassettes (no open lorries), articulated asteroid anchors and extending rotating cutter, approximately **84 m hull retained**, compact human-scale **closed** cockpit. Independent Dream Loop score reached **7.1/10 overall prototype fidelity** and the loop stopped as requested. Exact pixel/reference reproduction was separately judged about 6.1/10.
@@ -40,53 +46,75 @@ Make every node transition through `soma graph`; PR references use `Refs #803`. 
 
 Built on this branch: `miner/b` is Longwall B in the game, flown and drawn
 from `public/models/longwall-miner.glb` (`README.md`, "In the game"). Refs
-#803; design PR #807 is superseded by node #815's. What moved, and what is
-yours to decide:
+#803; design PR #807 is superseded by node #815's.
+
+**The merge waits on the principal's yes after flying it (third tier,
+below); nothing here claims it has been given.** The asset policy is settled
+(D6), so the model ships as the file node #815's body prescribes.
+
+What moved, and what is yours to decide:
 
 - **D1, mass, not changed and owed a ruling.** 215 t in the new 84.5 x 34.1
   x 18.8 m box is 3.97 t per 1000 m³ against the roster's 1.2–2.4 band (about
   65–130 t for this box). `tests/hull.test.ts` holds the miner as a pinned
   exemption, red the day either figure moves. Thrust, hold (40 t), integrity,
   price, tank and charge are untouched, so is the 2.8–4.4 kt cargo question.
-- **D2, handling moved, by #181's length law and nothing else.** Re-deriving
-  vents off a new mesh is the repo's rule (#619, #636); the longer hull turns
-  slower. Before → after: angular authority 1.103 → 1.021; pitch/yaw cap
+- **D2, handling moved; the rates by #181's length law, the flown figures
+  by three inputs nothing separates.** Re-deriving vents off a new mesh is
+  the repo's rule (#619, #636), and it changed two things: the length and
+  box the law reads, and the vent placement measured on the new mesh (every
+  family's row moved in `src/hull.ts`: the roll pair z 0.75 → 0.925 and
+  port/starboard 0.9975 → 0.97, pitch aft 0.9975 → 0.905, yaw y 0.125 → 0,
+  retro x 0.4225 → 0.5, strafe z 0.22 → 0.25, as fractions of the box). The
+  composed rates below follow the law by construction, because the shares
+  are re-solved to it against the new arms; the longer hull turns slower.
+  Before → after: angular authority 1.103 → 1.021; pitch/yaw cap
   19.0 → 17.5 °/s; roll cap 29.5 → 27.3 °/s; damping 0.76 → 0.82 s; NPC
   avoidance horizon 22.3 → 23.1 s (the 3,000 km scan still covers it at
   130 km/s). Linear acceleration is unchanged. The docking computer's first
   roll-tracking failure is 7.0 rpm (was 5.5); the miner is still the worst
   hull, now 2.17x the fastest station. Three Traffic launch-aperture touches,
-  all miners, are gone from system 0's pinned corpus row.
+  all miners, are gone from system 0's pinned corpus row. Those last two are
+  flown figures, and the length, the box and the moved vents all changed
+  under them at once: nothing here attributes either to one of the three.
 - **D3, wrecks.** A derelict miner is dark and untorn: #735's tear cuts a
   loft's grid and this model has none.
-- **D4, cost, a detail band but no LOD.** Every game boot downloads 11.13 MiB
-  more: the three required models are about 20.5 MiB before play, up from
-  about 9.4. One miner draws 111 calls and 283,590 triangles a frame up
-  close, against 38 meshes and about 12k triangles for the loft; Traffic
-  miners share one template's buffers but not its draws. The shared detail
-  band now sheds the mechanism by distance, never by quality: past 40 radii
-  (about 1.7 km) the anchors' metal, leaving 33 of 109 meshes and 261,768
-  triangles; past 400 (about 17 km) the cutter's too, leaving 26 and 253,400.
-  Every lamp and the whole hull stay (`tests/longwall-mesh.test.ts` holds
-  each figure). So the draws fall by three quarters at range and the
-  triangles by a tenth: the hull's own ~250k triangles at any range are what
-  a shared LOD node owes, as is a lighter boot download. The anchors going at
+- **D4, cost, a detail band and a hull batch but no LOD.** Every game boot
+  downloads 11.13 MiB more: the three required models are about 20.5 MiB
+  before play, up from about 9.4: **until node #838 lands, the miner model
+  blocks boot.** Map #1's Constraint (#830, #835, 2026-10-09) puts only the
+  cockpit and the home station's exterior in the boot set and installs every
+  other model after boot behind a procedural stand-in; that mechanism is
+  #838's (open, blocked by #831), so sage round 2's background-load finding
+  is declined here as #838's. The gap #838 inherits: `miner/b` has no
+  procedural stand-in today — `buildShipMesh` throws without the model,
+  because the envelope, vents and muzzles are measured off it.
+  `evidence/game-report.json` measured one miner at 111 draw calls and
+  283,590 triangles a frame up close, against 38 meshes and about 12k
+  triangles for the loft; that capture predates the batch below and was not
+  retaken. Traffic miners share one template's buffers but not its draws.
+  The template now merges the static hull's opaque, unlit meshes into one
+  per material (19 hull meshes to 10), so a miner is 100 meshes where it was
+  109; the anchors are 80 of those and keep their separate parts. The shared
+  detail band sheds the mechanism by distance, never by quality: past 40
+  radii (about 1.7 km) the anchors' metal, leaving 24 meshes and 261,768
+  triangles; past 400 (about 17 km) the cutter's too, leaving 17 and
+  253,400. Every lamp and the whole hull stay (`tests/longwall-mesh.test.ts`
+  holds each figure). Those are mesh counts: draw calls also count shadow and
+  other passes, and no draw figure was measured with the band or the batch.
+  The triangles fall by a tenth at range; the hull's own ~250k triangles at
+  any range are what a shared LOD node owes, as is a lighter boot download. The anchors going at
   40 radii is a visible change, 9.4 x 3.3 px on a 39 px hull at the band's
   edge, and yours to judge with the rest.
 - **D5, owed their own nodes:** mining state and behaviour, the deployed
   envelope, articulating the anchors and the cutter (the game draws the
   stowed export, static), and D1–D4's follow-ups.
-- **D6, the asset policy, not ruled and owed a ruling before merge.** Map
-  #1's Constraint still reads "Procedural everything: no downloaded assets",
-  with exceptions for the voice, the music samples and the social preview
-  image and none for an authored model. #763 Q1 said a shipped model file
-  cannot merge to `main` without a ruling, and #763 closed on "bevels and
-  CSG belong in the TS loft pipeline". Against that, #790 (the Coriolis) and
-  #794 (the cockpit) shipped authored `.glb` files, and node #815's own body
-  prescribes `public/models/*.glb` as #794 did. That is an instruction to
-  this node, not an amendment of the Constraint, and the visual approval of
-  #803 says it does not amend the policy either. Nothing here claims you
-  ruled. The ruling, and the line on map #1 if it is yes, are yours.
+- **D6, the asset policy, ruled.** Map #1's Constraints were amended on
+  2026-10-09 (#830, #835): authored models are same-origin bundle files, and
+  only the boot set blocks a start. Earlier rounds of this handoff quoted
+  "Procedural everything: no downloaded assets" as standing; it no longer
+  is, and `public/models/longwall-miner.glb` is within the Constraint. What
+  it leaves open for this hull is the boot cost (D4) and #838's stand-in.
 - **Stale text outside this branch:** map #1's Constraints still read
   "(5.5, the miner, since #619 …)"; `docs/specs/docking.md` §4 is updated.
 - **Fit.** The ship's origin is now the box's centre (the export's was 4.8 m
