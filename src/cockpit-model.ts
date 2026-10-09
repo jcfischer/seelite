@@ -373,11 +373,14 @@ export function buildAuthoredCabin(): AuthoredCabin {
 
 let ready: Promise<void> | undefined;
 
-/** Await before any Game constructs its cabin. */
-export function prepareCockpitModel(): Promise<void> {
+/** Await before any Game constructs its cabin. `onProgress` hears the
+ *  download this call starts (#833), as `prepareCoriolisModel`'s does. */
+export function prepareCockpitModel(
+	onProgress?: (event: ProgressEvent) => void,
+): Promise<void> {
 	return (ready ??= new GLTFLoader()
 		.setMeshoptDecoder(MeshoptDecoder)
-		.loadAsync(COURIER_COCKPIT_GLB_URL)
+		.loadAsync(COURIER_COCKPIT_GLB_URL, onProgress)
 		.then((gltf) => adoptCockpitTemplate(gltf.scene))
 		.catch((error) => {
 			ready = undefined;

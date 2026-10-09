@@ -15,6 +15,8 @@ import {
 	attachCommander,
 	CommanderSwitch,
 	flushFault,
+	GameGate,
+	overlayBeforeModels,
 	loadFault,
 	lockHeldFault,
 	lockRequestFault,
@@ -973,5 +975,68 @@ describe("an attach reads the record again once it holds the lock (§11.3)", () 
 		expect(attached.length).toBe(0);
 		expect(await o.backend.read("New", "live")).toEqual(before);
 		expect(await o.store("New").hold()).toBe(true);
+	});
+});
+
+describe("#833: the overlay opens while the models download", () => {
+	test("only a boot that opens the overlay mounts it before the models", () => {
+		const plan = (mode: "overlay" | "continue" | "direct") =>
+			({ mode }) as Parameters<typeof overlayBeforeModels>[0];
+		expect(overlayBeforeModels(plan("overlay"))).toBe(true);
+		expect(overlayBeforeModels(plan("continue"))).toBe(false);
+		expect(overlayBeforeModels(plan("direct"))).toBe(false);
+	});
+
+	test("a choice made before the Game exists is carried out once it does", async () => {
+		const gate = new GameGate<{ id: number }>();
+		const ran: number[] = [];
+		const choice = gate.ready().then((g) => ran.push(g.id));
+		await Promise.resolve();
+		expect(ran).toEqual([]);
+		expect(gate.current).toBeNull();
+		gate.open({ id: 1 });
+		await choice;
+		expect(ran).toEqual([1]);
+		expect(gate.current).toEqual({ id: 1 });
+	});
+
+	test("a choice made after the Game exists runs at once, on the same Game", async () => {
+		const gate = new GameGate<{ id: number }>();
+		const game = { id: 1 };
+		gate.open(game);
+		expect(await gate.ready()).toBe(game);
+	});
+
+	test("a second Game is refused", () => {
+		const gate = new GameGate<{ id: number }>();
+		gate.open({ id: 1 });
+		expect(() => gate.open({ id: 2 })).toThrow();
+	});
+
+	test("a switch waits for its reload, so the overlay stays busy until the page goes", async () => {
+		const o = origin();
+		await o.save("A");
+		let release = () => {};
+		const reloaded = new Promise<void>((r) => {
+			release = r;
+		});
+		let reloads = 0;
+		const sw = new CommanderSwitch({
+			catalog: o.catalog,
+			store: () => null,
+			reload: () =>
+				reloaded.then(() => {
+					reloads += 1;
+				}),
+		});
+		let settled = false;
+		const load = sw.load("A").then(() => {
+			settled = true;
+		});
+		await new Promise((r) => setTimeout(r, 0));
+		expect([settled, reloads]).toEqual([false, 0]);
+		release();
+		await load;
+		expect([settled, reloads]).toEqual([true, 1]);
 	});
 });

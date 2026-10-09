@@ -1028,6 +1028,8 @@ import {
 	CommanderSwitch,
 	firstDayAtBoot,
 	flushFault,
+	GameGate,
+	overlayBeforeModels,
 	messageOf,
 	pendingFor,
 	permadeathAtAttach,
@@ -1056,6 +1058,7 @@ import {
 	type CommanderOverlayHandle,
 	mountCommanderOverlay,
 } from "./commander-overlay";
+import { loadingPanel, loadRelay } from "./model-load-view";
 import {
 	mountSaveBadge,
 	type SaveBadgeHandle,
@@ -20645,11 +20648,15 @@ if (postcard) {
 	// direct boot sets the Commander aside. Without direct the overlay asks
 	// which world is wanted, and the seed only pre-fills New game (§11.6).
 	// Fetch in parallel with the Commander catalog; wait only at world construction.
+	// **One relay for the download (#833)**: it starts on the full-screen panel,
+	// since nothing yet says whether the overlay opens, and moves into the
+	// overlay once the plan says it does.
+	const loading = loadRelay(loadingPanel("game"));
 	const stationModel = Promise.all([
 		import("./coriolis-flight"),
 		import("./cockpit-model"),
 	]).then(([m, cockpit]) =>
-		m.prepareCoriolisPage([cockpit.prepareCockpitModel]),
+		m.loadRequiredModels([cockpit.prepareCockpitModel], loading.view),
 	);
 	// Keep a fast rejection handled while IndexedDB is still opening.
 	void stationModel.catch(() => {});
@@ -20692,6 +20699,120 @@ if (postcard) {
 	// sat outside the guard: a record that parsed and then would not restore
 	// threw at module scope and the page did not boot at all. The bounds in
 	// `parseCommander` close the known route in; this closes the class.
+	// **#833: a player boot opens the overlay during the download.** Its options
+	// reach the `Game` only through `gate`, which opens once the build is done:
+	// a choice made before then waits there, and the overlay draws the download
+	// meanwhile (`loading`). A direct or one-shot boot mounts it after the
+	// build, as it always did.
+	const gate = new GameGate<Game>();
+	/** The Commander this tab's store writes, once one is attached. */
+	let attachedSlot: string | null = null;
+	let openAtBoot = plan.mode === "overlay";
+	/** The loaded record would not build a game, so the plan was refaulted. */
+	let restoreFaulted = false;
+	let askVoice = false;
+	// Before the `Game`, the voice question reads and writes a store over the
+	// same `localStorage`; the `Game`'s own store reads the answer when it is
+	// built, and starts the voice itself if it was Download (`applied.voice`).
+	let earlySettings: SettingsStore | undefined;
+	let earlyNeural: NeuralVoice | undefined;
+	const settingsNow = () =>
+		gate.current?.settings ?? (earlySettings ??= new SettingsStore());
+	// The overlay's footer, its close and the save-fault badge name one key.
+	// It reads the layout in force each time, through the `Game` once it is
+	// built; before that the overlay is not running, so nothing closes it and
+	// its footer names no key.
+	const commanderKey: OwnKey = {
+		names: () => gate.current?.ownKey("system.commander").names() ?? [],
+		reaches: (e) =>
+			gate.current?.ownKey("system.commander").reaches(e) ?? false,
+	};
+	const overlayBoot = () => ({
+		slot: plan.slot,
+		canContinue: plan.canContinue,
+		pendingName: plan.pending?.name ?? null,
+		fault: plan.fault,
+		faultSlot: plan.faultSlot,
+		notice: plan.notice,
+		seedPrefill: plan.seedPrefill,
+	});
+	const mountOverlay = (): CommanderOverlayHandle => {
+		// #604: whether to download the natural voice, asked on the Commander
+		// screen at boot while the row says Ask — and under `?voices=ask` on a
+		// direct boot as well, which is how a probe reaches the question.
+		askVoice =
+			VOICE_ARMS.engine === "setting" &&
+			settingsNow().value.voice === "ask" &&
+			(openAtBoot || VOICE_ARMS.ask);
+		return mountCommanderOverlay({
+			catalog: plan.writesNothing ? null : catalog,
+			switcher: plan.writesNothing
+				? null
+				: new CommanderSwitch({
+						catalog,
+						store: () => gate.current?.saveStore ?? null,
+						// #833: a switch chosen during the download reloads once the
+						// models are in, so the reload finds them in the cache rather
+						// than starting them again; the overlay stays busy until then.
+						reload: () => gate.ready().then(() => window.location.reload()),
+					}),
+			boot: overlayBoot(),
+			openAtBoot,
+			inPlay: () => attachedSlot,
+			// The badge's own reader, so the two cannot disagree.
+			fault: () => gate.current?.saveFaultText() ?? null,
+			onContinue: async (slot) => {
+				// #833: a Continue chosen during the download waits for the `Game`,
+				// and the overlay shows the download meanwhile.
+				const game = await gate.ready();
+				// **D9 holds for a Continue chosen before the build.** A record that
+				// would not restore was set aside there, and attaching a store to it
+				// would write over the only copy; the overlay has been replanned.
+				if (restoreFaulted) return plan.fault;
+				// **A dead page never resumes** (#324, sage round 1). After a death
+				// with nothing to restore, Continue reloads and the boot loads the
+				// Commander from its save — unholding the clock here would fly a hull
+				// at zero that can never die again. The store's own lock goes back
+				// first, or the one-shot below is refused by this very tab.
+				if (game.dead) {
+					if (!plan.writesNothing) {
+						game.saveStore?.release();
+						try {
+							await catalog.chooseCommander(slot);
+						} catch (error) {
+							return messageOf(error);
+						}
+					}
+					window.location.reload();
+					return null;
+				}
+				const fault = plan.writesNothing ? null : await attach(slot);
+				if (fault === null) {
+					await beginFirstDay(plan.writesNothing ? null : slot);
+					game.clockHeld = false;
+				}
+				return fault;
+			},
+			releaseHeldKeys: () => gate.current?.releaseHeldKeys(),
+			ownKey: commanderKey,
+			voiceQuestion: askVoice
+				? {
+						bytes: () =>
+							(
+								gate.current?.neural ?? (earlyNeural ??= new NeuralVoice())
+							).downloadBytes(),
+						// The answer is the row's: the settings subscription starts or
+						// clears the voice. "Not now" leaves Ask, so it is asked again.
+						answer: (a) => {
+							if (a === "download") settingsNow().set("voice", "neural");
+							else if (a === "no") settingsNow().set("voice", "formant");
+						},
+					}
+				: null,
+		});
+	};
+	const overlay = overlayBeforeModels(plan) ? mountOverlay() : null;
+	if (overlay) loading.moveTo(overlay.loading);
 	await stationModel;
 	const worldSeed = plan.pending?.seed ?? askedSeed ?? randomSeed();
 	let game: Game;
@@ -20712,13 +20833,12 @@ if (postcard) {
 		}
 		console.error("save: the loaded save would not restore", error);
 		plan = withRestoreFault(plan, error);
+		restoreFaulted = true;
 		game = new Game(worldSeed, null, askedSystem);
 	}
 	// Held until a store is attached or the player chooses (§11.2 step 4).
 	game.clockHeld = true;
 	game.saveFault = plan.fault;
-	/** The Commander this tab's store writes, once one is attached. */
-	let attachedSlot: string | null = null;
 	// **D9's one promise: the bad record is never overwritten**, and §11.2
 	// step 5 extends it to every boot: no store is attached to a Commander
 	// nobody chose. A store attached to a record that refused would write over
@@ -20820,7 +20940,6 @@ if (postcard) {
 		}
 		game.commanderOverlay?.open();
 	};
-	let openAtBoot = plan.mode === "overlay";
 	// #408 D1 and D4: a guided new game is docked at its home station before the
 	// clock runs — since #535 by the opening's flight, watched or skipped. **After the attach**, so that dock's flush writes the new
 	// Commander's `lastDocked`. Once per page: Continue on the overlay also
@@ -20911,78 +21030,13 @@ if (postcard) {
 			openAtBoot = true;
 		}
 	}
-	// One `OwnKey` for the two surfaces that must name the same key — the
-	// overlay's footer and close, and the save-fault badge. It reads the layout
-	// each time it is asked, so one built here follows every rebind.
-	const commanderKey = game.ownKey("system.commander");
-	// #604: whether to download the natural voice, asked on the Commander
-	// screen at boot while the row says Ask — and under `?voices=ask` on a
-	// direct boot as well, which is how a probe reaches the question.
-	const askVoice =
-		VOICE_ARMS.engine === "setting" &&
-		game.settings.value.voice === "ask" &&
-		(openAtBoot || VOICE_ARMS.ask);
-	game.commanderOverlay = mountCommanderOverlay({
-		catalog: plan.writesNothing ? null : catalog,
-		switcher: plan.writesNothing
-			? null
-			: new CommanderSwitch({
-					catalog,
-					store: () => game.saveStore,
-					reload: () => window.location.reload(),
-				}),
-		boot: {
-			slot: plan.slot,
-			canContinue: plan.canContinue,
-			pendingName: plan.pending?.name ?? null,
-			fault: plan.fault,
-			faultSlot: plan.faultSlot,
-			notice: plan.notice,
-			seedPrefill: plan.seedPrefill,
-		},
-		openAtBoot,
-		inPlay: () => attachedSlot,
-		// The badge's own reader, so the two cannot disagree.
-		fault: () => game.saveFaultText(),
-		onContinue: async (slot) => {
-			// **A dead page never resumes** (#324, sage round 1). After a death
-			// with nothing to restore, Continue reloads and the boot loads the
-			// Commander from its save — unholding the clock here would fly a hull
-			// at zero that can never die again. The store's own lock goes back
-			// first, or the one-shot below is refused by this very tab.
-			if (game.dead) {
-				if (!plan.writesNothing) {
-					game.saveStore?.release();
-					try {
-						await catalog.chooseCommander(slot);
-					} catch (error) {
-						return messageOf(error);
-					}
-				}
-				window.location.reload();
-				return null;
-			}
-			const fault = plan.writesNothing ? null : await attach(slot);
-			if (fault === null) {
-				await beginFirstDay(plan.writesNothing ? null : slot);
-				game.clockHeld = false;
-			}
-			return fault;
-		},
-		releaseHeldKeys: () => game.releaseHeldKeys(),
-		ownKey: commanderKey,
-		voiceQuestion: askVoice
-			? {
-					bytes: () => game.neural.downloadBytes(),
-					// The answer is the row's: the settings subscription starts or
-					// clears the voice. "Not now" leaves Ask, so it is asked again.
-					answer: (a) => {
-						if (a === "download") game.settings.set("voice", "neural");
-						else if (a === "no") game.settings.set("voice", "formant");
-					},
-				}
-			: null,
-	});
+	// **Opened here, after every closure it reaches is declared** (#833): a
+	// choice the early overlay queued runs on this `Game` once this block
+	// yields, after the replan. Before the late mount, so a late overlay's
+	// voice answer reaches the `Game`'s own settings store.
+	gate.open(game);
+	game.commanderOverlay = overlay ?? mountOverlay();
+	if (overlay && restoreFaulted) overlay.replan(overlayBoot());
 	if (askVoice && !openAtBoot) game.commanderOverlay.open();
 	game.saveBadge = mountSaveBadge(
 		() => game.commanderOverlay?.open(),

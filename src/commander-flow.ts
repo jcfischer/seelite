@@ -273,6 +273,42 @@ export async function planBoot(input: BootInput): Promise<BootPlan> {
 }
 
 /**
+ * Whether the overlay mounts before the models are in (#833): a player boot
+ * that opens it, so a Commander is chosen during the download. A direct or
+ * one-shot boot builds the `Game` first, as before, and opens the overlay only
+ * on a fault the build or the attach finds.
+ */
+export const overlayBeforeModels = (plan: Pick<BootPlan, "mode">): boolean =>
+	plan.mode === "overlay";
+
+/**
+ * The page's one `Game`, for the choices an early overlay takes before it
+ * exists (#833). `ready` resolves once `open` is called, at once after it;
+ * a second `open` throws, because two `Game`s on one page would be two worlds
+ * behind one overlay.
+ */
+export class GameGate<G> {
+	private game: G | null = null;
+	private readonly waiting: ((game: G) => void)[] = [];
+
+	get current(): G | null {
+		return this.game;
+	}
+
+	open(game: G): void {
+		if (this.game !== null) throw new Error("GameGate: a second Game");
+		this.game = game;
+		for (const resolve of this.waiting.splice(0)) resolve(game);
+	}
+
+	ready(): Promise<G> {
+		const game = this.game;
+		if (game !== null) return Promise.resolve(game);
+		return new Promise((resolve) => this.waiting.push(resolve));
+	}
+}
+
+/**
  * A record that parsed and then would not build a game (D9).
  *
  * **A one-shot into it opens the overlay.** A `continue` plan attaches a store,
@@ -469,7 +505,12 @@ export interface SwitchInput {
 	catalog: CommanderCatalog;
 	/** The store this tab has attached, or `null` before the player chose. */
 	store: () => SaveStore | null;
-	reload: () => void;
+	/**
+	 * Awaited, so a reload that waits — for the models a boot is still
+	 * downloading (#833) — keeps the overlay busy until the page goes, rather
+	 * than handing it back to a player whose choice is already written.
+	 */
+	reload: () => unknown;
 }
 
 /**
@@ -483,7 +524,7 @@ export interface SwitchInput {
 export class CommanderSwitch {
 	private readonly catalog: CommanderCatalog;
 	private readonly store: () => SaveStore | null;
-	private readonly reload: () => void;
+	private readonly reload: () => unknown;
 
 	constructor(input: SwitchInput) {
 		this.catalog = input.catalog;
@@ -494,20 +535,20 @@ export class CommanderSwitch {
 	async newGame(choice: PendingNewGame): Promise<void> {
 		await this.flushOut();
 		await this.catalog.beginNewGame(choice);
-		this.reload();
+		await this.reload();
 	}
 
 	async load(slot: string): Promise<void> {
 		await this.flushOut();
 		await this.catalog.chooseCommander(slot);
-		this.reload();
+		await this.reload();
 	}
 
 	async importCommander(name: string, text: string): Promise<void> {
 		await this.flushOut();
 		await this.catalog.importSlot(name, text);
 		await this.catalog.chooseCommander(name);
-		this.reload();
+		await this.reload();
 	}
 
 	exportCommander(slot: string): Promise<string> {

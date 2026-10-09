@@ -2,6 +2,8 @@
 import * as THREE from "three";
 import { MeshoptDecoder } from "three/addons/libs/meshopt_decoder.module.js";
 import { GLTFLoader } from "three/addons/loaders/GLTFLoader.js";
+import { loadingPanel, type ModelLoadView } from "./model-load-view";
+import { ModelProgress } from "./model-progress";
 import {
 	buildCoriolisNavigation,
 	installCoriolisBuilder,
@@ -122,10 +124,12 @@ export function createIndustrialCoriolisBuilder(template: THREE.Group) {
 	};
 }
 
-async function loadIndustrialStationBuilder() {
+async function loadIndustrialStationBuilder(
+	onProgress?: ModelProgressListener,
+) {
 	const gltf = await new GLTFLoader()
 		.setMeshoptDecoder(MeshoptDecoder)
-		.loadAsync(CORIOLIS_GLB_URL);
+		.loadAsync(CORIOLIS_GLB_URL, onProgress);
 	gltf.scene.traverse((o) => {
 		if (o instanceof THREE.Mesh) {
 			o.castShadow = true;
@@ -135,10 +139,19 @@ async function loadIndustrialStationBuilder() {
 	return createIndustrialCoriolisBuilder(gltf.scene);
 }
 
+/** `GLTFLoader`'s `onProgress`: bytes received of a model, and its total (0
+ *  when the response has no length). */
+export type ModelProgressListener = (event: ProgressEvent) => void;
+
 let ready: Promise<void> | undefined;
-/** Await before any game, postcard or station workbench constructs station geometry. */
-export function prepareCoriolisModel(): Promise<void> {
-	return (ready ??= loadIndustrialStationBuilder()
+/** Await before any game, postcard or station workbench constructs station
+ * geometry. `onProgress` hears the download this call starts; a call that
+ * finds one already started or done hears nothing, and the boot's tracker
+ * counts it on resolve (`model-progress.ts`). */
+export function prepareCoriolisModel(
+	onProgress?: ModelProgressListener,
+): Promise<void> {
+	return (ready ??= loadIndustrialStationBuilder(onProgress)
 		.then(installCoriolisBuilder)
 		.catch((error) => {
 			ready = undefined;
@@ -146,40 +159,58 @@ export function prepareCoriolisModel(): Promise<void> {
 		}));
 }
 
+/**
+ * Every model a page needs before it builds its world, downloaded behind a
+ * visible Retry (#833 split it from the panel that draws it). `also` names
+ * the page's other required models — a Game's cockpit (`cockpit-model.ts`).
+ * `view` draws the state: the loading panel, or the Commander overlay that
+ * opens during the download. A failure waits on the view's Retry and tries
+ * again; it never throws, so the boot cannot proceed without the models.
+ */
+export async function loadRequiredModels(
+	also: readonly ((onProgress?: ModelProgressListener) => Promise<void>)[],
+	view: ModelLoadView,
+): Promise<void> {
+	const loads = [prepareCoriolisModel, ...also];
+	const ids = loads.map((_, i) => String(i));
+	for (;;) {
+		const progress = new ModelProgress(ids);
+		const show = () => view({ kind: "loading", fraction: progress.fraction() });
+		show();
+		try {
+			await Promise.all(
+				loads.map((load, i) =>
+					load((e) => {
+						progress.report(
+							ids[i] as string,
+							e.loaded,
+							e.lengthComputable ? e.total : 0,
+						);
+						show();
+					}).then(() => {
+						progress.complete(ids[i] as string);
+						show();
+					}),
+				),
+			);
+			view({ kind: "done" });
+			return;
+		} catch (error) {
+			console.warn("Model download failed", error);
+			await new Promise<void>((retry) => view({ kind: "failed", retry }));
+		}
+	}
+}
+
 /** The asset is required for the world, so an interrupted download gets a
  * visible retry before any Game (or save-store attachment) is constructed.
- * `also` names the page's other required assets — a Game's cockpit model
- * (`cockpit-model.ts`) — so one panel and one Retry cover them all. */
-export async function prepareCoriolisPage(
-	also: readonly (() => Promise<void>)[] = [],
+ * The full-screen panel's form of `loadRequiredModels`, for every page whose
+ * world waits on nothing else. */
+export function prepareCoriolisPage(
+	also: readonly ((onProgress?: ModelProgressListener) => Promise<void>)[] = [],
 ): Promise<void> {
-	const panel = document.createElement("section");
-	panel.setAttribute("aria-label", "Loading game");
-	panel.style.cssText =
-		"position:fixed;inset:0;z-index:1000;display:grid;place-content:center;gap:1rem;background:#080c12;color:#dae1e8;font:16px system-ui;text-align:center";
-	const status = document.createElement("p");
-	status.setAttribute("role", "status");
-	panel.append(status);
-	document.body.append(panel);
-	try {
-		for (;;) {
-			status.textContent = also.length ? "Loading game…" : "Loading station…";
-			try {
-				await Promise.all([prepareCoriolisModel(), ...also.map((f) => f())]);
-				return;
-			} catch (error) {
-				console.warn("Model download failed", error);
-				status.textContent = `The ${also.length ? "game" : "station"} could not be loaded. Check your connection and try again.`;
-				const retry = document.createElement("button");
-				retry.textContent = "Retry";
-				panel.append(retry);
-				await new Promise<void>((resolve) =>
-					retry.addEventListener("click", () => resolve(), { once: true }),
-				);
-				retry.remove();
-			}
-		}
-	} finally {
-		panel.remove();
-	}
+	return loadRequiredModels(
+		also,
+		loadingPanel(also.length ? "game" : "station"),
+	);
 }
