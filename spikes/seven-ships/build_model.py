@@ -445,6 +445,9 @@ def capital(role):
   # Dark continuous pressure liner is exposed only in the assembly joints.
   rings=[section(0,z,13.15,9.2,-9.2,2.7) for z in [-44,44]]
   for j in range(8):poly([rings[0][j],rings[0][(j+1)%8],rings[1][(j+1)%8],rings[1][j]],steel)
+  # Seal the aft pressure shell behind the drive mounts. The forward bay stays
+  # open; this closed prism spans the complete chamfered stern cross-section.
+  prism(section(0,zmin,13.35,9.55,-9.55,2.7),(0,0,-1),.55,ivory[0],'bastion-aft-bulkhead')
   # Deep bow hangar: floor, ceiling, side walls and rear wall, no fake flat black aperture.
   for y in [-7.3,7.3]:box((0,y,32),(23,.6,25),steel)
   for x in [-11.5,11.5]:box((x,0,32),(.7,14.6,25),grey[0])

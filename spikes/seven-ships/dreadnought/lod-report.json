@@ -1,0 +1,69 @@
+{
+  "role": "dreadnought",
+  "sourceSha256": "4a27d3f4b08b28c36dfd4ce3b967f18d83fc1e0cc5d8453fff90ff32d365c7ea",
+  "method": "PR 828 / node 812: position weld, Meshopt ErrorAbsolute + Prune, 30 degree normals",
+  "frame": {
+    "fovDeg": 60,
+    "heightPx": 1800,
+    "errorPixels": 0.5
+  },
+  "reachMetres": 221.69338347157964,
+  "centreMetres": [
+    0,
+    0,
+    -18.399993896484375
+  ],
+  "full": {
+    "triangles": 2282852,
+    "meshes": 32,
+    "min": [
+      -94.74623107910156,
+      -94.74623107910156,
+      -234.39999389648438
+    ],
+    "max": [
+      94.74623107910156,
+      94.74623107910156,
+      197.60000610351562
+    ],
+    "bytes": 99665244
+  },
+  "levels": {
+    "reduced": {
+      "triangles": 302561,
+      "meshes": 27,
+      "min": [
+        -94.47726440429688,
+        -94.47726440429688,
+        -234.39999389648438
+      ],
+      "max": [
+        94.47726440429688,
+        94.47726440429688,
+        197.5414276123047
+      ],
+      "bytes": 21800312,
+      "distanceRadii": 40,
+      "distanceMetres": 8867.735338863185,
+      "errorMetres": 2.8443274361083426
+    },
+    "outline": {
+      "triangles": 10396,
+      "meshes": 12,
+      "min": [
+        -80.75399780273438,
+        -80.75399780273438,
+        -228
+      ],
+      "max": [
+        80.80000305175781,
+        80.80000305175781,
+        188.34141540527344
+      ],
+      "bytes": 3510096,
+      "distanceRadii": 400,
+      "distanceMetres": 88677.35338863186,
+      "errorMetres": 28.44327436108343
+    }
+  }
+}
