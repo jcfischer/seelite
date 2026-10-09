@@ -73,9 +73,12 @@ const installHelpers = () => {
 			if (keep(data[i], data[i + 1], data[i + 2], data[i + 3])) n++;
 		return n;
 	};
-	/** The raider's warm beam colour: strong red, middling green, weak blue. */
+	/** The raider's warm beam colour: strong red, middling green, weak blue.
+	 *  Green under 160, not 180: the beam reads (254, 137, 88) in the frame,
+	 *  and an amber mark at (207, 175, 101) crossed the cockpit's sample
+	 *  square at the narrow viewport (node #806). */
 	const warm = (r, gr, b, a) =>
-		a > 120 && r > 200 && gr > 100 && gr < 180 && b < 130;
+		a > 120 && r > 200 && gr > 100 && gr < 160 && b < 130;
 	/** The rim's red, at any alpha it is drawn with. */
 	const rimRed = (r, gr, b, a) => a > 12 && r > 200 && gr < 120 && b < 100;
 	/** The passive tone's cyan-white, and nothing else drawn near the label: the

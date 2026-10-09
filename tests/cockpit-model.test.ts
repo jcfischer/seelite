@@ -5,6 +5,7 @@ import {
 	type AuthoredCabin,
 	adoptCockpitTemplate,
 	buildAuthoredCabin,
+	COCKPIT_MODEL_KM_PER_M,
 	COCKPIT_MODEL_LAMPS,
 	COCKPIT_SCREENS,
 	carriedLamp,
@@ -36,6 +37,19 @@ function withCanvasStub<T>(body: () => T): T {
 const FOV_Y_DEG = 60;
 /** The narrowest window the cabin is checked against. */
 const NARROW_ASPECT = 4 / 3;
+/** A common laptop window, the wide case the node names. */
+const WIDE_ASPECT = 16 / 10;
+/** The screens with a live face on them; `systems` is unpowered. */
+const LIVE_SCREENS = ["radar", "flight", "target"] as const;
+/** How much of the frame's height a live screen keeps clear of its edge, at
+ *  each end: 2% is 16 px of an 800 px window. */
+const SCREEN_MARGIN = 0.02;
+/** The spike's approved pilot frame, which #794 shipped and node #806 lowers:
+ *  its README's eye, and the pitch its viewer looked down at. */
+const SPIKE_EYE_M = [0, 0, 1.15] as const;
+const SPIKE_PITCH_RAD = 0.242;
+/** How much lower, as a share of the frame's height, the dash must start. */
+const MIN_LOWERING = 0.04;
 
 let template: THREE.Group;
 let cabin: AuthoredCabin;
@@ -82,22 +96,69 @@ describe("the shipped cockpit model in the cabin pass", () => {
 		expect(farthest).toBeLessThan(CABIN_FAR_KM);
 	});
 
-	test("every screen is wholly inside the forward frame of a 4:3 window", () => {
+	test("every live screen is wholly inside the forward frame, at 4:3 and at 16:10", () => {
+		// The live three only (node #806): the unpowered POWER DISTRIBUTION
+		// screen has nothing on it, and the principal asked for the cabin to sit
+		// lower, which takes that screen to the frame's bottom edge. The height
+		// is the binding direction and both windows share it; the width binds
+		// at the narrow one.
 		const halfY = Math.tan((FOV_Y_DEG * Math.PI) / 360);
-		const halfX = halfY * NARROW_ASPECT;
-		for (const name of COCKPIT_SCREENS) {
-			const f = cabin.screens[name];
-			for (const sx of [-0.5, 0.5])
-				for (const sy of [-0.5, 0.5]) {
-					const p = f.center
-						.clone()
-						.addScaledVector(f.right, sx * f.widthKm)
-						.addScaledVector(f.up, sy * f.heightKm);
-					expect(p.z).toBeLessThan(0);
-					expect(Math.abs(p.x / -p.z)).toBeLessThan(halfX);
-					expect(Math.abs(p.y / -p.z)).toBeLessThan(halfY);
-				}
+		for (const aspect of [NARROW_ASPECT, WIDE_ASPECT]) {
+			const halfX = halfY * aspect;
+			for (const name of LIVE_SCREENS) {
+				const f = cabin.screens[name];
+				for (const sx of [-0.5, 0.5])
+					for (const sy of [-0.5, 0.5]) {
+						const p = f.center
+							.clone()
+							.addScaledVector(f.right, sx * f.widthKm)
+							.addScaledVector(f.up, sy * f.heightKm);
+						expect(p.z).toBeLessThan(0);
+						expect(Math.abs(p.x / -p.z)).toBeLessThan(halfX);
+						// With a margin: a screen whose edge grazes the frame's
+						// bottom reads as cut off, not as framed.
+						expect(Math.abs(p.y / -p.z)).toBeLessThan(
+							halfY * (1 - 2 * SCREEN_MARGIN),
+						);
+					}
+			}
 		}
+	});
+
+	test("the dash sits lower than the spike's frame put it, and leaves more of the view", () => {
+		// Node #806: the principal flew the spike's frame (#794) and found the
+		// cabin too high. The forward view is measured on the frame's centre
+		// line, where the reticle is: how far down it the first fitting starts.
+		const dashTop = (root: THREE.Object3D) => {
+			root.updateMatrixWorld(true);
+			const ray = new THREE.Raycaster();
+			const halfY = Math.tan((FOV_Y_DEG * Math.PI) / 360);
+			const ROWS = 400;
+			for (let row = ROWS / 2; row < ROWS; row++) {
+				const ndcY = 1 - (2 * (row + 0.5)) / ROWS;
+				ray.set(
+					new THREE.Vector3(),
+					new THREE.Vector3(0, ndcY * halfY, -1).normalize(),
+				);
+				if (ray.intersectObject(root, true).length > 0) return row / ROWS;
+			}
+			return 1;
+		};
+		const spike = withCanvasStub(buildAuthoredCabin);
+		spike.root.rotation.x = SPIKE_PITCH_RAD;
+		spike.modelSpace.position.set(
+			...(SPIKE_EYE_M.map((m) => -m * COCKPIT_MODEL_KM_PER_M) as [
+				number,
+				number,
+				number,
+			]),
+		);
+		const was = dashTop(spike.root);
+		const now = dashTop(cabin.root);
+		// The spike's frame put the dash top just past the centre line.
+		expect(was).toBeGreaterThan(0.5);
+		expect(now - was).toBeGreaterThan(MIN_LOWERING);
+		disposeSubtree(spike.root);
 	});
 
 	test("every screen faces the eye, up the screen is up the view", () => {

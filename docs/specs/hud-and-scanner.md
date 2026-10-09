@@ -811,9 +811,13 @@ requesting clearance is what turns the instrument on; and a refusal or a hostile
 station keeps it, because §3's blocking state is the one thing a pilot must not
 lose by looking away.
 
-**And it is clipped to the canopy**, sharing `GLASS_BOTTOM_FRACTION` with the
-laser tracer rather than restating it. The first build had no clip and drew over
-the dash deck, the scanner well and both console housings.
+**And it is clipped to the canopy** at `GLASS_BOTTOM_FRACTION`. The first build
+had no clip and drew over the dash deck, the scanner well and both console
+housings. The laser tracer shared that line until node #806. The authored cabin
+(#794) reaches above it, so the cockpit's beams are drawn into the frame now,
+before the cabin pass, and the cabin's own fittings hide them
+(`src/beam-glass.ts`). The director is still on the overlay and still clipped
+at the line.
 
 | Where | What it holds |
 |---|---|

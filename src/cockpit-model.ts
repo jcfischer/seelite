@@ -5,7 +5,7 @@
  * pilot-local metres, fitted against the courier A hull at true size. The
  * cabin is drawn `CABIN_SCALE` times life size (`cabin-pass.ts`), so one model
  * metre is a tenth of a cabin kilometre, and every camera sits at the origin:
- * the model is moved so the spike's pilot eye lands there.
+ * the model is moved so the pilot eye (`COCKPIT_MODEL_EYE_M`) lands there.
  *
  * The spike's approved pilot frame looked `COCKPIT_MODEL_PITCH_RAD` below the
  * model's forward. The game camera looks along the nose, so the model is
@@ -28,8 +28,23 @@ import { EMISSIVE_CEILING } from "./light-rig";
 /** Cabin kilometres per model metre. */
 export const COCKPIT_MODEL_KM_PER_M = CABIN_SCALE / 1000;
 
-/** The spike's pilot eye, model metres (its README: 1.15 m aft of origin). */
-export const COCKPIT_MODEL_EYE_M = [0, 0, 1.15] as const;
+/**
+ * The pilot eye, model metres: the spike's 1.15 m aft of origin (its README),
+ * raised 0.3 m (node #806).
+ *
+ * **Raised because the principal flew the spike's frame and found the cabin
+ * too high**: the dash covered the lower part of the view, and two probes had
+ * to hide the cabin to see what they measure. Raising the eye moves the whole
+ * cabin down the frame without turning the view onto it, so the dash is seen
+ * at the angle the spike was approved at. On the centre line the dash top goes
+ * from 0.546 of the frame height to 0.600, and the cabin's share of a 4:3
+ * frame from 50.8% to 45.6% (a coverage raster of the shipped model, node
+ * #806's receipt). What binds is the scanner screen's bottom edge, which this
+ * puts at 0.959 of the height; `tests/cockpit-model.test.ts` holds the three
+ * live screens inside the frame with a margin and the dash below the spike's.
+ * The unpowered POWER DISTRIBUTION screen reaches the frame's bottom edge.
+ */
+export const COCKPIT_MODEL_EYE_M = [0, 0.3, 1.15] as const;
 
 /** How far below the model's forward the approved pilot frame looked. */
 export const COCKPIT_MODEL_PITCH_RAD = 0.242;
