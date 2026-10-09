@@ -1,7 +1,7 @@
 {
   "role": "raider",
   "sourceSha256": "155c894decfec9bf4de3eaac649a983439ccf9d44b3c3c03644c9594d1e361fc",
-  "method": "PR 828 / node 812: position weld, Meshopt ErrorAbsolute + Prune, 30 degree normals",
+  "method": "PR 828 / node 812: position weld, Meshopt ErrorAbsolute, machinery Prune, armor topology retained, 30 degree normals",
   "frame": {
     "fovDeg": 60,
     "heightPx": 1800,
@@ -48,19 +48,19 @@
       "errorMetres": 0.41824535238854754
     },
     "outline": {
-      "triangles": 1884,
-      "meshes": 12,
+      "triangles": 92148,
+      "meshes": 21,
       "min": [
         -16.910001754760742,
-        -4,
+        -4.085355281829834,
         -27.100000381469727
       ],
       "max": [
         16.910001754760742,
-        5.779999732971191,
-        29
+        7.455355167388916,
+        29.085357666015625
       ],
-      "bytes": 3065028,
+      "bytes": 8303132,
       "distanceRadii": 400,
       "distanceMetres": 13039.599606597241,
       "errorMetres": 4.182453523885475

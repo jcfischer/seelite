@@ -1,7 +1,7 @@
 {
   "role": "interceptor",
   "sourceSha256": "989fa11e97cc9740e56f7f776d523140c1aa43457e61990cb82bbb9a68a9025b",
-  "method": "PR 828 / node 812: position weld, Meshopt ErrorAbsolute + Prune, 30 degree normals",
+  "method": "PR 828 / node 812: position weld, Meshopt ErrorAbsolute, machinery Prune, armor topology retained, 30 degree normals",
   "frame": {
     "fovDeg": 60,
     "heightPx": 1800,
@@ -48,19 +48,19 @@
       "errorMetres": 0.4289073843964028
     },
     "outline": {
-      "triangles": 9410,
-      "meshes": 6,
+      "triangles": 67654,
+      "meshes": 12,
       "min": [
         -12.51099967956543,
-        -12.100000381469727,
+        -12.185357093811035,
         -31.100000381469727
       ],
       "max": [
         12.51099967956543,
-        12.100000381469727,
-        31
+        12.461819648742676,
+        31.085357666015625
       ],
-      "bytes": 3353608,
+      "bytes": 6909076,
       "distanceRadii": 400,
       "distanceMetres": 13372.008867288801,
       "errorMetres": 4.289073843964029

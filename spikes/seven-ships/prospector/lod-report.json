@@ -1,7 +1,7 @@
 {
   "role": "prospector",
   "sourceSha256": "15bda93f96c2cf725ca17fce1aef6211fab466ab7dc6859ce112b5b77f3256a8",
-  "method": "PR 828 / node 812: position weld, Meshopt ErrorAbsolute + Prune, 30 degree normals",
+  "method": "PR 828 / node 812: position weld, Meshopt ErrorAbsolute, machinery Prune, armor topology retained, 30 degree normals",
   "frame": {
     "fovDeg": 60,
     "heightPx": 1800,
@@ -48,19 +48,19 @@
       "errorMetres": 0.44294764936021236
     },
     "outline": {
-      "triangles": 7056,
-      "meshes": 8,
+      "triangles": 47160,
+      "meshes": 14,
       "min": [
-        -9.600000381469727,
+        -9.859356880187988,
         -6.734870910644531,
-        -30.5
+        -30.585357666015625
       ],
       "max": [
-        9.600000381469727,
-        4.440000057220459,
-        30
+        9.859356880187988,
+        4.4718194007873535,
+        32.07206344604492
       ],
-      "bytes": 3256748,
+      "bytes": 5488328,
       "distanceRadii": 400,
       "distanceMetres": 13809.741008131652,
       "errorMetres": 4.429476493602124

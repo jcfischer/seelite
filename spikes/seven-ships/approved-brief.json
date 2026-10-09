@@ -1,7 +1,7 @@
 {
   "author": "codex",
   "date": "2026-10-09",
-  "status": "Visual improvement reopened; current model quality gate unmet. Capital ring revised targets approved.",
+  "status": "Principal accepted current designs; Bastion stern closure and two distance LODs per ship requested and built. Historical numeric scores unchanged.",
   "baseline": "main 53be4f75310b224ca43a087d29acdcb1bf2a694e",
   "pipeline": "seeded Blender authoring -> packed blend -> textured GLB -> standalone Three.js viewer -> hardware capture -> independent Pro judge",
   "references": [
@@ -88,5 +88,6 @@
         "approval": "Approve both designs"
       }
     }
-  ]
+  ],
+  "principalAcceptance": "backside of bastion iss open. Close it, then leave bastion as is. Others are ok too."
 }
