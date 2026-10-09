@@ -58,8 +58,8 @@ Rulings taken at the build, open to the principal:
   replacement is operational**, because the leg law is lower by exactly that
   share. An anarchy that lost three of four raiders reads light.
 - **An outpost keeps its station name** as the region; the strength is on the
-  row's label in both cases. The outpost is the haven the pressure comes from
-  (#490).
+  row's label in both cases. The raider outpost is where the pressure comes
+  from (#490).
 - **The strength is recorded at observation, like the region**, so a stale row
   keeps the strength it was read at. Deriving it on read would make a row show
   today's slot conditions, which is a refresh by looking.
@@ -70,7 +70,8 @@ its region exactly as observed and loads with a `null` strength, labelled
 *strength not recorded*; today's slots cannot say what it was, and the next
 sweep replaces it. Those versions refuse a row carrying either new field;
 version 15 refuses a pressure row without the strength key, a strength on any
-other row, and a `null` strength beside the cruise lanes.
+other row, a `null` strength beside the cruise lanes, and a recorded strength
+beside system space.
 
 ## Save
 

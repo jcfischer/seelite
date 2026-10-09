@@ -36,6 +36,7 @@ import {
 	PRESSURE_MODERATE_CHANCE,
 	PRESSURE_STRENGTHS,
 	pressureStrength,
+	type SweepReading,
 } from "../src/system-sweep";
 import {
 	PRESSURE_UNRECORDED,
@@ -293,12 +294,17 @@ describe("node #482 system sweep", () => {
 				s.id !== row.region.stationId,
 		)!;
 		expect(otherStation).toBeDefined();
-		const historical = rows.map((reading) => ({
+		// A pressure row with a recorded strength never names system space: the
+		// build that recorded it names the cruise lanes instead (node #769).
+		const historical: SweepReading[] = rows.map((reading) => ({
 			...reading,
 			region:
 				reading.region.kind === "station-surrounds"
-					? { kind: "system-space" as const }
-					: { kind: "station-surrounds" as const, stationId: otherStation.id },
+					? {
+							kind:
+								reading.kind === "pressure" ? "cruise-lanes" : "system-space",
+						}
+					: { kind: "station-surrounds", stationId: otherStation.id },
 		}));
 		historical.push({
 			...row,
@@ -517,6 +523,9 @@ describe("node #769 raider pressure strength and cruise lanes", () => {
 			{ ...wreck, strength: "light" },
 			{ ...wreck, region: { kind: "cruise-lanes" } },
 			{ ...pressure, region: { kind: "cruise-lanes", pos: { x: 1 } } },
+			// A recorded strength was read by a build that names the cruise
+			// lanes, never system space.
+			{ ...pressure, region: { kind: "system-space" } },
 		])
 			expect(() =>
 				parseSweepReadings([row], world, SAVE_SCHEMA_VERSION),

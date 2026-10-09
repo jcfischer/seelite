@@ -216,6 +216,28 @@ export const replaceSystemReadings = (
 	...found,
 ];
 
+const READING_KEYS = [
+	"galaxyIndex",
+	"id",
+	"kind",
+	"observedAt",
+	"region",
+	"source",
+	"systemIndex",
+];
+
+/** A saved pressure row's strength agrees with the build that recorded it. A
+ * recorded strength was read by a build that names the cruise lanes, so it
+ * never stands beside system space; a `null` one is a migrated row, which
+ * predates the cruise lanes and so never names them. */
+function validStrength(r: SweepReading): boolean {
+	if (r.strength === null) return r.region?.kind !== "cruise-lanes";
+	return (
+		PRESSURE_STRENGTHS.includes(r.strength as PressureStrength) &&
+		r.region?.kind !== "system-space"
+	);
+}
+
 /** Historical provenance can predate current placement. Check its area shape
  * and station reference, never compare it with today's generated region. */
 function validRegion(
@@ -265,16 +287,8 @@ export function parseSweepReadings(
 		const strengthKey = strengthRecorded && r.kind === "pressure";
 		if (
 			Object.keys(r).sort().join() !==
-				(strengthKey
-					? "galaxyIndex,id,kind,observedAt,region,source,strength,systemIndex"
-					: "galaxyIndex,id,kind,observedAt,region,source,systemIndex") ||
-			(strengthKey &&
-				!(
-					PRESSURE_STRENGTHS.includes(r.strength as PressureStrength) ||
-					// Only a migrated row lacks a strength, and it predates the
-					// cruise lanes.
-					(r.strength === null && r.region?.kind !== "cruise-lanes")
-				)) ||
+				[...READING_KEYS, ...(strengthKey ? ["strength"] : [])].sort().join() ||
+			(strengthKey && !validStrength(r)) ||
 			!Number.isInteger(r.galaxyIndex) ||
 			r.galaxyIndex < 0 ||
 			r.galaxyIndex >= world.galaxies.length ||
