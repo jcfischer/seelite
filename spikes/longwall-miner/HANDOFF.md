@@ -113,12 +113,15 @@ What moved, and what is yours to decide:
   109; the anchors are 80 of those and keep their separate parts. The shared
   detail band sheds the mechanism by distance, never by quality: past 40
   radii (about 1.7 km) the anchors' metal, leaving 24 meshes and 261,768
-  triangles; past 400 (about 17 km) the cutter's too, leaving 17 and
-  253,400. Every lamp and the whole hull stay (`tests/longwall-mesh.test.ts`
-  holds each figure). Those are mesh counts: draw calls also count shadow and
-  other passes, and no draw figure was measured with the band or the batch.
-  The triangles fall by a tenth at range; the hull's own ~250k triangles at
-  any range are what a shared LOD node owes, as is a lighter boot download. The anchors going at
+  triangles; past 400 (about 17 km, where the hull is 3.9 px) the cutter's
+  too, and the hull's metal gives way to one mesh of 17 boxes, one per part
+  it drew, built the first time a miner gets that far (sage round 4),
+  leaving 10 meshes and 780 triangles. Every lamp stays
+  (`tests/longwall-mesh.test.ts` holds each figure). Those are mesh counts:
+  draw calls also count shadow and other passes, and no draw figure was
+  measured with the band or the batch. Inside 400 radii the hull's own ~250k
+  triangles still draw; a real LOD between the bands is what a shared LOD
+  node owes, as is a lighter boot download. The anchors going at
   40 radii is a visible change, 9.4 x 3.3 px on a 39 px hull at the band's
   edge, and yours to judge with the rest.
 - **D5, owed their own nodes:** mining state and behaviour, the deployed

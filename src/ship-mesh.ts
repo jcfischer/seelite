@@ -2517,6 +2517,9 @@ function buildMinerA(root: THREE.Group, p: Palette) {
  * is, and the deployed envelope it would need, are not this node's.
  */
 let longwallTemplate: THREE.Group | null = null;
+/** What a far miner draws in place of its hull (`longwallOutline`), in the
+ *  template's frame; its mesh's material is the clone's, set per clone. */
+let longwallOutlineTemplate: THREE.Group | null = null;
 
 /**
  * The drive nozzles, model metres in the export's frame: the two aft drive
@@ -2570,9 +2573,12 @@ function longwallGlowDisc() {
 /** Install the decoded Longwall B scene (metres, as exported), or remove it. */
 export function installLongwallModel(scene: THREE.Group | null): void {
 	longwallTemplate = scene ? prepareLongwall(scene) : null;
+	if (!scene) longwallOutlineTemplate = null;
 }
 
 function prepareLongwall(scene: THREE.Group): THREE.Group {
+	// Before the batch: one box per part the export drew, not per material.
+	const outline = longwallOutlineGeometry(scene);
 	batchLongwallHull(scene);
 	// The export's lamps are brighter than the game's exposure contract, as
 	// the Coriolis's were: normalise once, keeping their relative strengths.
@@ -2612,6 +2618,15 @@ function prepareLongwall(scene: THREE.Group): THREE.Group {
 		.getCenter(new THREE.Vector3())
 		.negate();
 	exterior.position.copy(offset);
+	longwallOutlineTemplate = new THREE.Group();
+	longwallOutlineTemplate.name = "longwall-outline";
+	longwallOutlineTemplate.rotation.copy(exterior.rotation);
+	longwallOutlineTemplate.scale.copy(exterior.scale);
+	longwallOutlineTemplate.position.copy(offset);
+	const stand = new THREE.Mesh(outline);
+	stand.name = "longwall-outline-hull";
+	stand.castShadow = false;
+	longwallOutlineTemplate.add(stand);
 	// Production frame: the export's +X is port once turned about Y.
 	const disc = shared(longwallGlowDisc());
 	for (const [side, x] of [
@@ -2699,6 +2714,68 @@ function batchLongwallHull(scene: THREE.Group): void {
 	}
 }
 
+/**
+ * Longwall B past 400 radii (node #815, sage round 4): one box per mesh the
+ * export's `hull` group drew, each measured off its own vertices, merged into
+ * one mesh of 12 triangles a box. The hull is about 4 px long there, and its
+ * own 250k triangles were what every far miner still drew. Lamps are left
+ * out — they stay drawn, as at every band. Each box bounds its part, so the
+ * union is the hull's own box and nothing reaches past it.
+ */
+function longwallOutlineGeometry(scene: THREE.Group): THREE.BufferGeometry {
+	const hull = scene.getObjectByName("hull");
+	if (!hull) throw new Error("Longwall B: the export has no hull group");
+	scene.updateMatrixWorld(true);
+	const boxes: THREE.BufferGeometry[] = [];
+	hull.traverse((o) => {
+		const mesh = o as THREE.Mesh;
+		if (!mesh.isMesh || materialsOf(mesh).some(isLampMaterial)) return;
+		const box = new THREE.Box3().setFromObject(mesh, true);
+		const size = box.getSize(new THREE.Vector3());
+		const centre = box.getCenter(new THREE.Vector3());
+		boxes.push(
+			new THREE.BoxGeometry(size.x, size.y, size.z).translate(
+				centre.x,
+				centre.y,
+				centre.z,
+			),
+		);
+	});
+	const merged = mergeGeometries(boxes);
+	if (!merged) throw new Error("Longwall B: cannot merge the outline");
+	for (const box of boxes) box.dispose();
+	return shared(merged);
+}
+
+/**
+ * What a built miner draws in its hull's place at `outline`, built the first
+ * time it gets there (`ship-detail.ts`). It takes the clone's own hull paint
+ * — the material on most of its triangles — when it is built, so a wreck's
+ * outline is the wreck's dark paint and never the live ship's.
+ */
+function longwallOutline(root: THREE.Object3D): () => THREE.Object3D {
+	return () => {
+		if (!longwallOutlineTemplate)
+			throw new Error("Longwall B: the outline was built uninstalled");
+		let paint: THREE.Material | undefined;
+		let most = 0;
+		root.getObjectByName("hull")?.traverse((o) => {
+			const mesh = o as THREE.Mesh;
+			if (!mesh.isMesh) return;
+			const [material] = materialsOf(mesh);
+			if (isLampMaterial(material) || material.transparent) return;
+			const g = mesh.geometry;
+			const count = (g.index ?? g.getAttribute("position")).count;
+			if (count > most) [most, paint] = [count, material];
+		});
+		if (!paint) throw new Error("Longwall B: the hull has no paint");
+		const outline = longwallOutlineTemplate.clone(true);
+		(outline.getObjectByName("longwall-outline-hull") as THREE.Mesh).material =
+			paint;
+		return outline;
+	};
+}
+
 function buildLongwall(root: THREE.Group) {
 	if (!longwallTemplate)
 		throw new Error(
@@ -2716,16 +2793,18 @@ function buildLongwall(root: THREE.Group) {
 /**
  * What the detail band sheds from a built Longwall B (node #815): the four
  * stowed anchors' metal from `reduced` and the cutter's (`feed`, with `rotor`
- * inside it) from `outline`. Every lamp stays, and nothing of `hull` goes,
- * because the hull is the silhouette and the bridge's shell and glazing are
- * small enough that a size rule would open a hole in it.
+ * inside it) from `outline`. Every lamp stays. The hull's metal goes only at
+ * `outline`, and all of it at once, for `longwallOutline`'s boxes: it is the
+ * silhouette, and the bridge's shell and glazing are small enough that a
+ * size rule would open a hole in it.
  *
  * Measured in a 900 px frame over a 60° field: at the band's 40 radii the
  * hull is 39 px long and a stowed anchor, 20.5 x 7 m, is 9.4 x 3.3 px; at
- * 400 radii the hull is 3.9 px and the cutter's 31.4 m feed is 1.5 px. The
- * hull's own 254k triangles still draw at any range — that is the LOD the
- * integration result owes its own node. Collected from the clone, so a far
- * miner hides its own meshes and never the template's.
+ * 400 radii the hull is 3.9 px and the cutter's 31.4 m feed is 1.5 px. Inside
+ * 400 radii the hull's own 254k triangles still draw — a real LOD between the
+ * two bands is the one the integration result owes its own node. Collected
+ * from the clone, so a far miner hides its own meshes and never the
+ * template's.
  */
 function longwallMechanism(root: THREE.Object3D): AuthoredPart[] {
 	const parts: AuthoredPart[] = [];
@@ -2733,12 +2812,15 @@ function longwallMechanism(root: THREE.Object3D): AuthoredPart[] {
 		const mesh = o as THREE.Mesh;
 		if (!mesh.isMesh) return;
 		if (materialsOf(mesh).some(isLampMaterial)) return;
+		let hull = false;
 		for (let up = mesh.parent; up && up !== root; up = up.parent) {
 			if (/^anchor-\d/.test(up.name))
 				return void parts.push({ mesh, hiddenFrom: "reduced" });
 			if (up.name === "feed" || up.name === "rotor")
 				return void parts.push({ mesh, hiddenFrom: "outline" });
+			if (up.name === "hull") hull = true;
 		}
+		if (hull) parts.push({ mesh, hiddenFrom: "outline" });
 	});
 	return parts;
 }
@@ -6330,6 +6412,8 @@ interface AuthoredPlan extends ShipDetailPlan {
 	readonly authored: true;
 	/** Its machinery, as the detail band sheds it. */
 	readonly mechanism: (root: THREE.Object3D) => AuthoredPart[];
+	/** What it draws in its metal's place at `outline`, if anything. */
+	readonly outline?: (root: THREE.Object3D) => () => THREE.Object3D;
 }
 type BuilderPlan = LoftPlan | AuthoredPlan;
 
@@ -6421,6 +6505,7 @@ export const SHIP_DETAIL_PLANS: Record<
 			zones: [],
 			authored: true,
 			mechanism: longwallMechanism,
+			outline: longwallOutline,
 		},
 		c: planned(buildMinerC, "miner-fuselage", "refinery-spine", "dorsal", 22),
 	},
@@ -6937,7 +7022,12 @@ export function buildShipMesh(
 	if (plan.authored) {
 		// Nav lights come with the template, placed once (`prepareLongwall`).
 		plan.build(root);
-		markAuthoredShip(root, HULL_REACH_KM[id], plan.mechanism(root));
+		markAuthoredShip(
+			root,
+			HULL_REACH_KM[id],
+			plan.mechanism(root),
+			plan.outline?.(root),
+		);
 		return { root };
 	}
 	plan.build(root, makePalette(id));

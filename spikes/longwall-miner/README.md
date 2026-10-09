@@ -89,9 +89,10 @@ node spikes/longwall-miner/capture-game.mjs round-N   # flown, chase view, 4 sid
   The detail band sheds the mechanism with range (`longwallMechanism` in
   `src/ship-mesh.ts`): from 40 radii (about 1.7 km) the anchors' metal goes,
   leaving 24 meshes and 261,768 of 283,576 triangles; from 400 radii
-  (about 17 km) the cutter's goes too, leaving 17 and 253,400. Those are mesh
-  counts, not measured draws. Every lamp and
-  the whole hull stay, and quality does not gate it. The hull's own triangles
-  draw at any range; a real LOD is owed its own node.
+  (about 17 km) the cutter's goes too, and the hull's metal gives way to
+  one mesh of 17 boxes, one per part it drew (`longwallOutline`), leaving 10
+  meshes and 780 triangles. Those are mesh counts, not measured draws. Every
+  lamp stays, and quality does not gate it. Inside 400 radii the hull's own
+  triangles still draw; a real LOD between the bands is owed its own node.
 - **Wrecks.** A derelict miner is dark and untorn: the tear cuts a loft's
   grid, and this model has none.

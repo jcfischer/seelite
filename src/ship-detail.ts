@@ -77,6 +77,9 @@ interface VisualState {
 	greebles: THREE.InstancedMesh[];
 	/** An authored hull's own machinery (node #815), gated by the band alone. */
 	mechanism: readonly AuthoredPart[];
+	/** What an authored hull draws instead of its metal at `outline`, built the
+	 *  first time the band gets there (node #815, sage round 4). */
+	outline?: { readonly build: () => THREE.Object3D; built?: THREE.Object3D };
 }
 
 /**
@@ -310,34 +313,48 @@ export function buildShipDetails(
  * machinery and lamps: no generated greebles and no strip. The band sheds
  * `mechanism` with distance — the builder names which meshes and from which
  * band, and every lamp stays out of it, as every emissive stays out of the
- * greeble gate.
+ * greeble gate. At `outline` the hull's own metal can go too, and `outline`
+ * builds what draws in its place.
  */
 export function markAuthoredShip(
 	root: THREE.Group,
 	reachKm: number,
 	mechanism: readonly AuthoredPart[],
+	outline?: () => THREE.Object3D,
 ): void {
 	root.userData.shipVisual = {
 		detail: "full",
 		quality: "high",
 		greebles: [],
 		mechanism,
+		outline: outline && { build: outline },
 	} satisfies VisualState;
 	root.userData.shipSilhouetteKm = reachKm;
 }
 
-function applyVisibility(state: VisualState) {
+function applyVisibility(root: THREE.Object3D, state: VisualState) {
 	const draw = state.detail === "full" && SHIP_QUALITY[state.quality].greebles;
 	for (const mesh of state.greebles) mesh.visible = draw;
 	const band = BAND_RANK[state.detail];
 	for (const part of state.mechanism)
 		part.mesh.visible = band < BAND_RANK[part.hiddenFrom];
+	const outline = state.outline;
+	if (!outline) return;
+	const far = state.detail === "outline";
+	// Built on first use rather than with the hull, so a freshly built mesh —
+	// the one muzzles, vent throats, the envelope and the vent placement are
+	// measured off — never carries it.
+	if (far && !outline.built) {
+		outline.built = outline.build();
+		root.add(outline.built);
+	}
+	if (outline.built) outline.built.visible = far;
 }
 
 export function setShipDetail(root: THREE.Object3D, level: DetailLevel): void {
 	const state = stateOf(root);
 	state.detail = level;
-	applyVisibility(state);
+	applyVisibility(root, state);
 }
 
 /** Update detail and the quality gate; emissives intentionally stay untouched. */
@@ -350,5 +367,5 @@ export function updateShipVisuals(
 	const reachKm = root.userData.shipSilhouetteKm as number;
 	state.detail = detailLevel(state.detail, distanceKm / reachKm);
 	state.quality = quality;
-	applyVisibility(state);
+	applyVisibility(root, state);
 }

@@ -15,6 +15,7 @@
 import { describe, expect, test } from "bun:test";
 import * as THREE from "three";
 import { HULL_SPECS } from "../src/hull";
+import { buildDerelictMesh } from "../src/derelict-mesh";
 import { disposeSubtree } from "../src/gpu-teardown";
 import { EMISSIVE_CEILING } from "../src/light-rig";
 import {
@@ -241,7 +242,13 @@ const isLamp = (mesh: THREE.Mesh) =>
 	isLampMaterial(mesh.material as THREE.Material);
 const ANCHOR = /^anchor-\d/;
 const CUTTER = /^(feed|rotor)$/;
-const drawn = (root: THREE.Object3D) => meshesOf(root).filter((m) => m.visible);
+/** Drawn: visible, and so is every group above it up to the root. */
+const drawn = (root: THREE.Object3D) =>
+	meshesOf(root).filter((m) => {
+		for (let o: THREE.Object3D | null = m; o && o !== root; o = o.parent)
+			if (!o.visible) return false;
+		return true;
+	});
 const triangles = (meshes: readonly THREE.Mesh[]) =>
 	meshes.reduce((sum, m) => {
 		const g = m.geometry;
@@ -309,26 +316,63 @@ describe("the detail band sheds the mechanism at range (node #815)", () => {
 		expect(root.getObjectByName("nav-lights")?.visible).toBe(true);
 	});
 
-	test("outline also hides the cutter's metal, and nothing of the hull", () => {
+	test("outline draws the hull as boxes, and keeps every lamp", () => {
 		const root = buildShipMesh("miner", "b").root;
+		// A fresh build carries no stand-in: muzzles, vent throats, the envelope
+		// and the vent placement are all measured off one.
+		expect(root.getObjectByName("longwall-outline")).toBeUndefined();
 		setShipDetail(root, "outline");
+		const outline = root.getObjectByName("longwall-outline") as THREE.Object3D;
+		const stand = root.getObjectByName("longwall-outline-hull") as THREE.Mesh;
 		for (const mesh of meshesOf(root)) {
+			if (mesh === stand) continue;
 			const hidden =
-				!isLamp(mesh) && (under(mesh, ANCHOR) || under(mesh, CUTTER));
+				!isLamp(mesh) &&
+				(under(mesh, ANCHOR) || under(mesh, CUTTER) || under(mesh, /^hull$/));
 			expect({ name: mesh.name, visible: mesh.visible }).toEqual({
 				name: mesh.name,
 				visible: !hidden,
 			});
 		}
-		expect(drawn(root)).toHaveLength(17);
-		expect(triangles(drawn(root))).toBe(253_400);
-		// Both drive glows are lamps, and the hull is the silhouette.
+		expect(outline.visible).toBe(true);
+		// One box for each of the 17 unlit parts the export's hull drew.
+		expect(triangles([stand])).toBe(17 * 12);
+		expect(drawn(root)).toHaveLength(10);
+		expect(triangles(drawn(root))).toBe(780);
 		for (const side of ["port", "starboard"])
 			expect(root.getObjectByName(`longwall-${side}-exhaust`)?.visible).toBe(
 				true,
 			);
-		const hull = root.getObjectByName("hull");
-		expect(hull && meshesOf(hull).every((m) => m.visible)).toBe(true);
+		expect(root.getObjectByName("nav-lights")?.visible).toBe(true);
+		// The boxes bound the parts, so they reach no further than the hull.
+		root.updateMatrixWorld(true);
+		const boxes = new THREE.Box3().setFromObject(stand);
+		const hull = new THREE.Box3().setFromObject(
+			root.getObjectByName("hull") as THREE.Object3D,
+			true,
+		);
+		for (const axis of ["x", "y", "z"] as const) {
+			expect(boxes.min[axis]).toBeGreaterThanOrEqual(hull.min[axis] - 1e-9);
+			expect(boxes.max[axis]).toBeLessThanOrEqual(hull.max[axis] + 1e-9);
+		}
+		// Painted with the clone's own hull metal, the material on most of it.
+		expect(stand.material).toBe(
+			(root.getObjectByName("hull-dark-structure") as THREE.Mesh).material,
+		);
+		expect(stand.castShadow).toBe(false);
+	});
+
+	test("a wreck's outline takes the wreck's dark paint", () => {
+		const wreck = buildDerelictMesh("miner");
+		setShipDetail(wreck, "outline");
+		const stand = wreck.getObjectByName("longwall-outline-hull") as THREE.Mesh;
+		const paint = (wreck.getObjectByName("hull-dark-structure") as THREE.Mesh)
+			.material;
+		expect(stand.material).toBe(paint);
+		const live = buildShipMesh("miner", "b").root;
+		expect(paint).not.toBe(
+			(live.getObjectByName("hull-dark-structure") as THREE.Mesh).material,
+		);
 	});
 
 	test("the band is distance, not quality, and it comes back", () => {
@@ -341,9 +385,12 @@ describe("the detail band sheds the mechanism at range (node #815)", () => {
 		updateShipVisuals(root, reach * 200, "high");
 		expect(drawn(root)).toHaveLength(24);
 		updateShipVisuals(root, reach * 1000, "high");
-		expect(drawn(root)).toHaveLength(17);
+		expect(drawn(root)).toHaveLength(10);
+		// Back inside the band the stand-in is kept, hidden, and the hull draws.
 		updateShipVisuals(root, reach * 10, "high");
+		expect(meshesOf(root)).toHaveLength(101);
 		expect(drawn(root)).toHaveLength(100);
+		expect(root.getObjectByName("longwall-outline")?.visible).toBe(false);
 	});
 
 	test("a clone's gate hides its own meshes, never the template's", () => {
@@ -351,5 +398,6 @@ describe("the detail band sheds the mechanism at range (node #815)", () => {
 		setShipDetail(far, "outline");
 		const near = buildShipMesh("miner", "b").root;
 		expect(drawn(near)).toHaveLength(100);
+		expect(near.getObjectByName("longwall-outline")).toBeUndefined();
 	});
 });

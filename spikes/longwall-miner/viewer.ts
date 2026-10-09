@@ -206,18 +206,6 @@ asteroid.castShadow = true;
 asteroid.receiveShadow = true;
 asteroid.visible = false;
 scene.add(asteroid);
-const rockColors = [];
-for (let i = 0; i < positions.count; i++) {
-	const x = positions.getX(i),
-		y = positions.getY(i),
-		v = 0.48 + 0.22 * Math.sin(x * 1.3 + y * 0.8) * Math.cos(x * 0.9 - y * 1.7);
-	rockColors.push(v * 1.1, v * 1.04, v);
-}
-rockGeometry.setAttribute(
-	"color",
-	new THREE.Float32BufferAttribute(rockColors, 3),
-);
-rockMat.vertexColors = false;
 function applyPose() {
 	if (!stats.loaded) return;
 	ship

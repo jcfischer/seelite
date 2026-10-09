@@ -175,6 +175,8 @@ describe("stock is the hull that shipped", () => {
 		// Longwall B and left the hash: the 35 lofts are 205,315 vertices, and
 		// the same hash with `miner/b` skipped reads d40badcf on `main` at
 		// `4b145f3` — so no loft moved, only the one that is no longer a loft.
+		// The run that read it, and the one-line edit it took, are
+		// `spikes/longwall-miner/evidence/roster-hash-main-4b145f3.txt`.
 		setHullFinish("stock");
 		expect(rosterHash()).toEqual({ hash: "d40badcf", vertices: 205315 });
 	});
@@ -183,8 +185,8 @@ describe("stock is the hull that shipped", () => {
 		// `cbf3f0f`'s pin over the ids that existed then. Adding a hull may move
 		// the whole-roster hash; it may not move any of these (#335's review).
 		// Re-pinned for node #815 as the row above was, and read the same way
-		// on `main` at `4b145f3`: those ids' 32 lofts, every variant but
-		// `miner/b`, are 186,412 vertices.
+		// on `main` at `4b145f3` (the same transcript): those ids' 32 lofts,
+		// every variant but `miner/b`, are 186,412 vertices.
 		setHullFinish("stock");
 		expect(rosterHash(HULL_IDS.filter((id) => id !== "voyager"))).toEqual({
 			hash: "757911cd",

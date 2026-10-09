@@ -2112,7 +2112,7 @@ describe("collision.md §9.1.14: §6 item 1's corpus row", () => {
 		// in section (34.1 x 18.8 m against 51.9 x 33.2) and also turns and damps
 		// differently (HANDOFF.md D2); nothing here separates which removed them.
 		expect(classes(result)).toEqual({ "release-point": 1 });
-		// Both classes are touches: they cost nothing and divert nothing.
+		// The one class is a touch: it costs nothing and diverts nothing.
 		for (const m of distinctMeetings(result.meetings))
 			expect(m.closingKms).toBeLessThan(V_SCRAPE_KMS);
 		// Cruise is counted apart under C5, and here met nothing.
