@@ -1520,10 +1520,13 @@ check(
 );
 
 check(
-	// **The defect the first build shipped with.** The laser tracer clips to the
-	// glass because the lower third of the frame is physical cockpit hardware;
-	// the director had no clip and drew its rings straight down over the dash
-	// deck, the scanner well and both console housings. The control is the frame
+	// **The defect the first build shipped with.** The director is glass; it had
+	// no clip and drew its rings straight down over the dash deck, the scanner
+	// well and both console housings. This row checks the clip at
+	// `GLASS_BOTTOM_FRACTION` and nothing above it: the authored dash top is at
+	// 0.600 of the height on the centre line, above that 0.66 line, so the
+	// director can still draw on the dash between the two
+	// (`hud-and-scanner.md` §7.1 says so). The control is the frame
 	// with no director, so this measures the director's ink and not the
 	// cockpit's own.
 	"the director stays inside the canopy and paints nothing on the physical cockpit",

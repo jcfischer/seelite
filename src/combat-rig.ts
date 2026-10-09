@@ -55,6 +55,7 @@
  * than merely intended.
  */
 import * as THREE from "three";
+import { type BeamStroke, tracerStrokes } from "./beam-glass";
 import {
 	type CombatEnemyState,
 	ENEMY_COLLISION_RADIUS_KM,
@@ -376,6 +377,16 @@ const RIG_NOSE = new THREE.Vector3();
 const RIG_UP = new THREE.Vector3();
 const RIG_ORIGIN = new THREE.Vector3();
 const RIG_ATTITUDE = new THREE.Matrix4();
+
+/** The rig's tracer: its two fixed ports to the sightline above centre. */
+const RIG_TRACER = tracerStrokes(
+	[
+		{ x: 0.24, y: 0.64 },
+		{ x: 0.76, y: 0.64 },
+	],
+	{ x: 0.5, y: 0.46 },
+);
+const NO_STROKES: readonly BeamStroke[] = [];
 
 export class CombatPrototypeRig {
 	/** Throwaway #48 balance state: it is not world or persistent combat state. */
@@ -866,38 +877,17 @@ export class CombatPrototypeRig {
 	}
 
 	/**
-	 * The readable weapon feedback, on the glass.
+	 * The readable weapon feedback, as strokes the game draws into the frame
+	 * behind the cabin (node #806), as it draws its own gun's.
 	 *
 	 * The Three line `render` places is spatial reference; this is what makes a
 	 * shot legible at every viewport, and it shares the cockpit-view gate of the
-	 * 3D beam it represents. `glassBottom` is passed rather than imported: the
-	 * lower third of the frame is physical cockpit hardware, that fraction is
-	 * the renderer's to own, and a second copy of it here is exactly the kind
-	 * that let the docking director draw its rings over the dash deck.
+	 * 3D beam it represents. It was stroked on the overlay, clipped at the old
+	 * glass line, which the authored cabin's dash reaches above; in the frame,
+	 * the cabin's own fittings hide it.
 	 */
-	drawTracer(
-		ctx: CanvasRenderingContext2D,
-		w: number,
-		h: number,
-		view: CombatView,
-		glassBottom: number,
-	): void {
-		if (!this.beamShown(view)) return;
-		ctx.save();
-		// Clip the glass effect to the windscreen rather than drawing a laser over
-		// an instrument panel.
-		ctx.beginPath();
-		ctx.rect(0, 0, w, h * glassBottom);
-		ctx.clip();
-		ctx.strokeStyle = "rgba(116, 234, 255, 0.98)";
-		ctx.lineWidth = 3;
-		ctx.beginPath();
-		ctx.moveTo(w * 0.24, h * 0.64);
-		ctx.lineTo(w / 2, h * 0.46);
-		ctx.moveTo(w * 0.76, h * 0.64);
-		ctx.lineTo(w / 2, h * 0.46);
-		ctx.stroke();
-		ctx.restore();
+	tracerStrokes(view: CombatView): readonly BeamStroke[] {
+		return this.beamShown(view) ? RIG_TRACER : NO_STROKES;
 	}
 
 	/**

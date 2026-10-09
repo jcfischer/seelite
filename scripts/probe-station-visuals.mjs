@@ -488,10 +488,12 @@ for (const viewport of VIEWPORTS) {
 	await bootedGame(page);
 	await page.evaluate(() => {
 		const game = window.__seelite;
-		// The stations are the subject, not the cabin: #792's dashboard rises
-		// into the lower part of the frame and covered fixtures low on a form.
-		// `cabinHidden` is how the placement tools clear it.
-		game.cabinHidden = true;
+		// **The cabin stays in the frame (node #806).** #794 hid it here because
+		// the spike's dash covered fixtures low on a form; with the cabin lowered
+		// this probe reads 47/47 with it drawn, and 43/47 at the spike's placement
+		// (the trade's strobe-a and the shipyard's weld arc at 0 px). So a cabin
+		// raised back over the view turns it red. The dash still takes some of the
+		// trade's windows: 93 px drawn against 125 hidden, desktop.
 		game.clearTrafficPresentation();
 		game.trafficSystemIndex = game.world.system.record.index;
 		game.trafficActors = [];
@@ -759,10 +761,12 @@ for (const viewport of VIEWPORTS) {
 	await bootedGame(page);
 	await page.evaluate(() => {
 		const game = window.__seelite;
-		// The stations are the subject, not the cabin: #792's dashboard rises
-		// into the lower part of the frame and covered fixtures low on a form.
-		// `cabinHidden` is how the placement tools clear it.
-		game.cabinHidden = true;
+		// **The cabin stays in the frame (node #806).** #794 hid it here because
+		// the spike's dash covered fixtures low on a form; with the cabin lowered
+		// this probe reads 47/47 with it drawn, and 43/47 at the spike's placement
+		// (the trade's strobe-a and the shipyard's weld arc at 0 px). So a cabin
+		// raised back over the view turns it red. The dash still takes some of the
+		// trade's windows: 93 px drawn against 125 hidden, desktop.
 		game.clearTrafficPresentation();
 		game.trafficSystemIndex = game.world.system.record.index;
 		game.trafficActors = [];

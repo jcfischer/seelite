@@ -21,6 +21,7 @@ import {
 	launchChromium,
 	tally,
 } from "./probe-guard.mjs";
+import { installCompositeFrame } from "./lib/composite-frame.mjs";
 import { gameUrl } from "./lib/game-url.mjs";
 
 const ORIGIN =
@@ -34,6 +35,7 @@ const H = 620;
 const page = await browser.newPage({ viewport: { width: W, height: H } });
 watch(page);
 await page.addInitScript(installFakePad);
+await installCompositeFrame(page);
 // This file used to carry `HTMLElement.prototype.requestPointerLock = () =>
 // Promise.resolve()` here, on the stated ground that headless Chromium refuses
 // the lock and the refusal reached the run as a page error. That was true, and it
@@ -102,9 +104,17 @@ check(
 );
 
 /**
- * Tracer pixels, sampled on the tracer's own line halfway from the left port to
- * the sightline — both read off the page's `gunTracer`, not restated — and the
- * state that drew them.
+ * Tracer pixels, sampled on the tracer's own line three quarters of the way
+ * from the left port to the sightline — both read off the page's `gunTracer`,
+ * not restated — and the state that drew them.
+ *
+ * **Off the composited frame, not the overlay** (node #806). The cockpit's
+ * tracer is drawn into the WebGL frame behind the cabin now, and chase's stays
+ * on the overlay, so the sample is the WebGL canvas with the overlay over it,
+ * rendered and read in one task. Three quarters along rather than halfway,
+ * because the port is behind the dash and the half nearest it is hidden by
+ * design. The cyan band admits the frame's tone-mapped beam as well as the
+ * overlay's: ACES desaturates the red channel up to about 170.
  */
 const sample = () =>
 	page.evaluate(
@@ -112,18 +122,20 @@ const sample = () =>
 			const g = window.__seelite;
 			const [port] = g.gunTracer.ports;
 			const aim = g.gunTracer.aim;
-			const overlay = document.getElementById("overlay");
-			const ctx = overlay.getContext("2d", { willReadFrequently: true });
-			const x = Math.round(w * ((port.x + aim.x) / 2));
-			const y = Math.round(h * ((port.y + aim.y) / 2));
-			const data = ctx.getImageData(x - 6, y - 6, 12, 12).data;
+			const x = Math.round(w * (port.x + (aim.x - port.x) * 0.75));
+			const y = Math.round(h * (port.y + (aim.y - port.y) * 0.75));
+			const data = window.__compositeFrame(w, h, {
+				x: x - 6,
+				y: y - 6,
+				width: 12,
+				height: 12,
+			}).data;
 			let cyan = 0;
 			for (let i = 0; i < data.length; i += 4)
 				if (
-					data[i + 3] > 40 &&
-					data[i] < 170 &&
-					data[i + 1] > 215 &&
-					data[i + 2] > 235
+					data[i + 1] > 200 &&
+					data[i + 2] > 215 &&
+					data[i] < data[i + 1] - 40
 				)
 					cyan++;
 			return {

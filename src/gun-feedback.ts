@@ -61,8 +61,9 @@ export function stepGunFeedback(
 	};
 }
 
-/** The two gun ports low on the canopy and the sightline they meet at, as
- *  fractions of the canvas. The sightline is the nose cross at the centre. */
+/** The two gun ports and the sightline they meet at, as fractions of the
+ *  canvas. The sightline is the nose cross at the centre. In the cockpit the
+ *  ports sit behind the dash, which hides the start of each beam (node #806). */
 export const TRACER_PORTS = [
 	{ x: 0.24, y: 0.64 },
 	{ x: 0.76, y: 0.64 },
@@ -90,51 +91,22 @@ export function tracerPorts(
 export const TRACER_AIM = { x: 0.5, y: 0.5 } as const;
 export const TRACER_COLOUR = "rgba(116, 234, 255, 0.98)";
 
-/** Draw the tracer, clipped above `glassBottom` (a fraction of the height).
- *  The cockpit passes the glass's bottom, so the tracer never crosses the
- *  panel. Chase has no glass and passes 1, the whole frame. `aim` is where the
- *  beam meets the glass, as fractions of the canvas: the sightline, or the
- *  gimbal's turned beam (#324). */
-export function drawGunTracer(
-	ctx: CanvasRenderingContext2D,
-	w: number,
-	h: number,
-	glassBottom: number,
-	aim: { readonly x: number; readonly y: number } = TRACER_AIM,
-	ports: readonly { readonly x: number; readonly y: number }[] = TRACER_PORTS,
-): void {
-	drawTracerSegments(
-		ctx,
-		w,
-		h,
-		glassBottom,
-		ports.map((port) => ({
-			from: { x: w * port.x, y: h * port.y },
-			to: { x: w * aim.x, y: h * aim.y },
-		})),
-	);
-}
-
 /** One beam on the canvas, in pixels. */
 export interface TracerSegment {
 	readonly from: { readonly x: number; readonly y: number };
 	readonly to: { readonly x: number; readonly y: number };
 }
 
-/** Draw tracer segments in canvas pixels, clipped above `glassBottom`: the
- *  chase view's beams, one from each muzzle (#607 D3). In the tracer's own
- *  colour and weight, so a chase shot reads as the same gun. */
+/** Draw tracer segments in canvas pixels: the chase view's beams, one from
+ *  each muzzle (#607 D3), over the whole frame, since chase has no cabin. In
+ *  the tracer's own colour and weight, so a chase shot reads as the same gun.
+ *  The cockpit's are drawn into the frame behind the cabin (`beam-glass.ts`,
+ *  node #806), so nothing on the overlay clips a beam any more. */
 export function drawTracerSegments(
 	ctx: CanvasRenderingContext2D,
-	w: number,
-	h: number,
-	glassBottom: number,
 	segments: readonly TracerSegment[],
 ): void {
 	ctx.save();
-	ctx.beginPath();
-	ctx.rect(0, 0, w, h * glassBottom);
-	ctx.clip();
 	ctx.strokeStyle = TRACER_COLOUR;
 	ctx.lineWidth = 3;
 	ctx.beginPath();
@@ -213,22 +185,16 @@ export const ENEMY_BEAM_COLOUR = "rgba(255, 140, 90, 0.95)";
 /**
  * The raider's shot, while it fires (#324, found missing in the second
  * playtest: "his lasers aren't showing up"). A line from the raider's point on
- * the glass to `to`, where the player sits: the bottom of the glass in the
- * cockpit, the hull in chase. Clipped above `glassBottom` like the player's
- * tracer.
+ * the frame to `to`, the hull. Chase only: in the cockpit the beam is drawn
+ * into the frame behind the cabin (`beam-glass.ts`, node #806). Unclipped:
+ * chase has no cabin for it to cross.
  */
 export function drawEnemyBeam(
 	ctx: CanvasRenderingContext2D,
-	w: number,
-	h: number,
-	glassBottom: number,
 	from: { readonly x: number; readonly y: number },
 	to: { readonly x: number; readonly y: number },
 ): void {
 	ctx.save();
-	ctx.beginPath();
-	ctx.rect(0, 0, w, h * glassBottom);
-	ctx.clip();
 	ctx.strokeStyle = ENEMY_BEAM_COLOUR;
 	ctx.lineWidth = 2.5;
 	ctx.beginPath();
