@@ -1,5 +1,5 @@
 // The game's Longwall B (node #815): the approved stowed export, Meshopt and
-// lossless WebP, written to public/models/. No simplification, quantization or
+// lossless WebP, written to src/models/ (served hashed, #834). No simplification, quantization or
 // resize, so the shipped hull is the one the principal approved (#803).
 //
 //   node spikes/longwall-miner/prepare-flight-asset.mjs
@@ -15,7 +15,7 @@ const io = new NodeIO().registerExtensions(ALL_EXTENSIONS).registerDependencies(
  'meshopt.encoder': MeshoptEncoder, 'meshopt.decoder': MeshoptDecoder,
 });
 const source = 'spikes/longwall-miner/longwall-miner.glb';
-const target = 'public/models/longwall-miner.glb';
+const target = 'src/models/longwall-miner.glb';
 const document = await io.read(source);
 const pixels = async doc => Promise.all(doc.getRoot().listTextures().map(async texture => [
  texture.getName(), await sharp(texture.getImage()).ensureAlpha().raw().toBuffer(),
@@ -36,7 +36,7 @@ const round = values => values.map(v => Math.round(v * 1e5) / 1e5 + 0);
 const nodes = doc => doc.getRoot().listNodes().map(node => [node.getName(), round(node.getTranslation()), round(node.getRotation()), round(node.getScale())]);
 const beforeEncoding = attributes(document);
 const beforeNodes = nodes(document);
-await mkdir('public/models', {recursive: true});
+await mkdir('src/models', {recursive: true});
 await io.write(target, document);
 const decoded = await io.read(target);
 assert.deepEqual(attributes(decoded), beforeEncoding, 'Meshopt changed vertex attributes');

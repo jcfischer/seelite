@@ -42,7 +42,7 @@ import {
 	usedVertices,
 } from "./helpers/surface-distance";
 
-const SHIPPED = "public/models/longwall-miner.glb";
+const SHIPPED = "src/models/longwall-miner.glb";
 /** The shipped file as exported, decoded once: the rows only read it. */
 const EXPORTED = await decodeShippedGlb(SHIPPED);
 

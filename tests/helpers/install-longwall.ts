@@ -9,7 +9,7 @@ import { decodeShippedGlb } from "./read-coriolis-glb";
  *  the game draws. `tests/setup/longwall-model.ts` runs it before every test
  *  file; a script that builds ships awaits it itself. */
 export async function installShippedLongwall(): Promise<void> {
-	const scene = await decodeShippedGlb("public/models/longwall-miner.glb");
+	const scene = await decodeShippedGlb("src/models/longwall-miner.glb");
 	await MeshoptSimplifier.ready;
 	installLongwallModel(scene);
 }

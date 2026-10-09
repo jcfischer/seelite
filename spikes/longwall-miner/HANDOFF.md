@@ -45,7 +45,7 @@ Make every node transition through `soma graph`; PR references use `Refs #803`. 
 ## Integration result (node #815): for the principal
 
 Built on this branch: `miner/b` is Longwall B in the game, flown and drawn
-from `public/models/longwall-miner.glb` (`README.md`, "In the game"). Refs
+from `src/models/longwall-miner.glb` (`README.md`, "In the game"). Refs
 #803; design PR #807 is superseded by node #815's.
 
 **The boot-set breach is waived until #838 lands.** Map #1's Constraint
@@ -173,7 +173,7 @@ What moved, and what is yours to decide:
 - **D6, the asset policy: the file is allowed, its place in the boot set is
   not.** Map #1's Constraints were amended on 2026-10-09 (#830, #835), and
   the amendment says two things. Authored models are same-origin bundle
-  files, so shipping `public/models/longwall-miner.glb` is within it;
+  files, so shipping `src/models/longwall-miner.glb` is within it;
   earlier rounds of this handoff quoted "Procedural everything: no
   downloaded assets" as standing, and it no longer is. And only the boot set
   blocks a start, which this branch does not meet: the miner is awaited on

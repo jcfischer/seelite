@@ -25,6 +25,14 @@ import {
 	randomSeed,
 } from "./commander-flow";
 import type { OwnKey } from "./key-names";
+import {
+	BUILDING_TEXT,
+	loadFailedText,
+	loadingText,
+	type ModelLoadState,
+	type ModelLoadView,
+	paintProgress,
+} from "./model-load-view";
 import { isEditable } from "./editable-target";
 import type { CommanderCatalog } from "./save-store";
 
@@ -184,6 +192,19 @@ export interface CommanderOverlayHandle {
 	readonly stepValue: (delta: number) => void;
 	readonly activate: () => void;
 	readonly unmount: () => void;
+	/**
+	 * #833: the boot's model download, drawn under the heading while the
+	 * overlay is open before the `Game` exists — the progress bar, or a
+	 * failure's Retry, which a click or `R` reaches even while a choice
+	 * waits for the game. `done` removes it.
+	 */
+	readonly loading: ModelLoadView;
+	/**
+	 * #833: the plan as the `Game`'s build left it. An overlay mounted before
+	 * the build shows the plan as read; a record that then would not restore
+	 * changes it (`withRestoreFault`), and the menu must stop offering it.
+	 */
+	readonly replan: (boot: CommanderOverlayOptions["boot"]) => void;
 }
 
 export interface CommanderOverlayOptions {
@@ -277,6 +298,16 @@ const STYLE = `
 #seelite-commander h2 {
   margin: 0 0 14px; font-size: 13px; letter-spacing: .18em;
   text-transform: uppercase; color: #ffd479; font-weight: 600;
+}
+#seelite-commander [data-model-load] {
+  display: flex; align-items: center; gap: 10px; margin: 0 10px 12px;
+  color: #7f97b8;
+}
+#seelite-commander [data-model-load] progress { flex: 1; height: 8px; }
+#seelite-commander [data-model-load] button {
+  font: inherit; color: #ffd479; background: rgba(0, 0, 0, .35);
+  border: 1px solid rgba(255, 212, 121, .55); border-radius: 3px;
+  padding: 2px 10px; cursor: pointer;
 }
 #seelite-commander .row {
   display: flex; align-items: baseline; gap: 12px; padding: 7px 10px;
@@ -424,12 +455,26 @@ export function mountCommanderOverlay(
 	/** The chosen action on each Commander row, by name. */
 	const chosenAction = new Map<string, CommanderAction>();
 	let slots: string[] = [];
-	let active = options.boot.slot;
-	let canContinue = options.boot.canContinue;
-	let pendingName = options.boot.pendingName;
+	let active!: string;
+	let canContinue!: boolean;
+	let pendingName!: string | null;
+	let faultSlot!: string | null;
 	/** The boot's fault, then any later refusal; `null` once cleared. */
-	let refusal: string | null = options.boot.fault;
-	let info: string | null = options.boot.notice;
+	let refusal!: string | null;
+	let info!: string | null;
+	/** The plan's fields, at mount and again on a replan (#833), in one place
+	 *  so a field added to the boot cannot reach one and not the other. */
+	const adopt = (boot: CommanderOverlayOptions["boot"]) => {
+		active = boot.slot;
+		canContinue = boot.canContinue;
+		pendingName = boot.pendingName;
+		faultSlot = boot.faultSlot;
+		refusal = boot.fault;
+		info = boot.notice;
+	};
+	adopt(options.boot);
+	/** #833: the model download while the boot waits on it; `null` once in. */
+	let load: Exclude<ModelLoadState, { kind: "done" }> | null = null;
 	/** The clock runs, so the overlay may close. */
 	let running = !options.openAtBoot;
 	/** #604: the voice question has had its answer this page. */
@@ -448,7 +493,7 @@ export function mountCommanderOverlay(
 			inPlay: options.inPlay(),
 			canContinue: running || canContinue,
 			pendingName: running ? null : pendingName,
-			faultSlot: running ? null : options.boot.faultSlot,
+			faultSlot: running ? null : faultSlot,
 			saving: catalog !== null,
 		});
 
@@ -729,6 +774,7 @@ export function mountCommanderOverlay(
 		);
 		root.innerHTML = `<div class="box" role="dialog" aria-label="Commander" aria-busy="${busy}">
   <h2>Commander</h2>
+  ${loadHtml()}
   ${refusal ? faultHtml(refusal) : ""}
   ${info ? `<div class="info" data-commander-info>${escapeHtml(info)}</div>` : ""}
   <div role="listbox">${body}</div>
@@ -738,8 +784,56 @@ export function mountCommanderOverlay(
 		wire();
 	};
 
+	/** #833's line under the heading: the bar while the models download, the
+	 *  failure and its Retry when one did not. */
+	const loadHtml = () => {
+		if (load === null) return "";
+		if (load.kind === "failed")
+			return `<div data-model-load="failed" role="status"><span>${loadFailedText("game")}</span><button type="button" data-model-retry>Retry (R)</button></div>`;
+		if (load.kind === "building")
+			return `<div data-model-load="building" role="status"><span data-model-load-text>${BUILDING_TEXT}</span><progress max="1" value="1"></progress></div>`;
+		const value = load.fraction === null ? "" : ` value="${load.fraction}"`;
+		return `<div data-model-load="loading" role="status"><span data-model-load-text>${loadingText("game", load.fraction)}</span><progress max="1"${value}></progress></div>`;
+	};
+
+	const retryLoad = () => {
+		if (load?.kind !== "failed") return;
+		const { retry } = load;
+		load = { kind: "loading", fraction: null };
+		retry();
+		draw();
+	};
+
+	/** A progress event updates the bar in place: a redraw would rebuild the
+	 *  rows on every chunk and take the caret out of a field being typed in. */
+	const loading: ModelLoadView = (state) => {
+		const before = load?.kind ?? "done";
+		load = state.kind === "done" ? null : state;
+		if (!root) return;
+		const el = root.querySelector<HTMLElement>("[data-model-load]");
+		if (state.kind === "loading" && before === "loading" && el) {
+			const bar = el.querySelector("progress");
+			const text = el.querySelector("[data-model-load-text]");
+			if (bar) paintProgress(bar, state.fraction);
+			if (text) text.textContent = loadingText("game", state.fraction);
+			return;
+		}
+		draw();
+	};
+
+	const replan = (boot: CommanderOverlayOptions["boot"]) => {
+		adopt(boot);
+		if (view.kind === "menu") cursor = initialCursor(menuRows());
+		draw();
+	};
+
 	const wire = () => {
 		if (!root) return;
+		// Not behind `busy`: a Continue waiting for the game is busy, and the
+		// download it waits on is what this retries.
+		root
+			.querySelector("[data-model-retry]")
+			?.addEventListener("click", () => retryLoad());
 		for (const el of root.querySelectorAll<HTMLElement>(".row"))
 			el.addEventListener("click", (event) => {
 				if (busy) return;
@@ -919,6 +1013,10 @@ export function mountCommanderOverlay(
 		// with are taken from it.
 		e.stopPropagation();
 		const typing = isEditable(e.target);
+		if (!typing && load?.kind === "failed" && e.key.toLowerCase() === "r") {
+			e.preventDefault();
+			return retryLoad();
+		}
 		if (typing && !["ArrowUp", "ArrowDown", "Enter", "Escape"].includes(e.key))
 			return;
 		e.preventDefault();
@@ -940,6 +1038,8 @@ export function mountCommanderOverlay(
 		moveCursor,
 		stepValue,
 		activate,
+		loading,
+		replan,
 		unmount: () => {
 			window.removeEventListener("keydown", onKey, true);
 			close();

@@ -2491,7 +2491,7 @@ function buildMinerA(root: THREE.Group, p: Palette) {
  *
  * Node #815 asks for the approved model in the game the way #794 put the
  * cockpit there, so `miner/b` is that model rather than a loft:
- * `public/models/longwall-miner.glb`, prepared by
+ * `src/models/longwall-miner.glb`, prepared by
  * `spikes/longwall-miner/prepare-flight-asset.mjs` from the study's stowed
  * export. It is installed once (`longwall-model.ts` in the browser,
  * `tests/setup/longwall-model.ts` under bun) and every `buildShipMesh` clones

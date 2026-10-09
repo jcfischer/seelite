@@ -3,7 +3,7 @@
 > **Design head only; superseded for production by node #815.** This review and
 > `pr-probes.txt` record the study as it stood on `spike/longwall-mining-803`,
 > where nothing reached a production entry point. Node #815 has since shipped
-> `public/models/longwall-miner.glb` as the game's `miner/b`; see the README's
+> `src/models/longwall-miner.glb` as the game's `miner/b`; see the README's
 > **In the game (node #815)** and `HANDOFF.md`'s integration result. The
 > statements below about production scope are true of that design head, not
 > of this branch.

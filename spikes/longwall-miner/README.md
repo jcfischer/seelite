@@ -1,6 +1,6 @@
 # Longwall B — articulated mining study (Codex)
 
-Refs jcfischer/seelite#803. Isolated Dream Loop design prototype of the selected Quarry Spine O4 and anchored mining O5. The principal selected an approximately 84 m hull with a smaller human-scale cockpit. It began as an isolated study that changed no production code. Node #815 then made it the game's `miner/b`, as #794 did with the courier cockpit: **In the game (node #815)**, below, says how, and `HANDOFF.md`'s integration result says what moved and what is the principal's to decide. Everything here stays review-only except `public/models/longwall-miner.glb`, which ships, and the script and source export that build it (`prepare-flight-asset.mjs`, below).
+Refs jcfischer/seelite#803. Isolated Dream Loop design prototype of the selected Quarry Spine O4 and anchored mining O5. The principal selected an approximately 84 m hull with a smaller human-scale cockpit. It began as an isolated study that changed no production code. Node #815 then made it the game's `miner/b`, as #794 did with the courier cockpit: **In the game (node #815)**, below, says how, and `HANDOFF.md`'s integration result says what moved and what is the principal's to decide. Everything here stays review-only except `src/models/longwall-miner.glb`, which ships, and the script and source export that build it (`prepare-flight-asset.mjs`, below).
 
 ## Inspect
 
@@ -40,7 +40,7 @@ Principal visual approval: 2026-10-08, “approved. Prepare PR for final impleme
 ## In the game (node #815)
 
 `miner/b` is this model. `prepare-flight-asset.mjs` writes the stowed export to
-`public/models/longwall-miner.glb` (Meshopt, lossless WebP, every vertex
+`src/models/longwall-miner.glb` (Meshopt, lossless WebP, every vertex
 attribute, node transform to 10 µm and texture pixel verified after a decode;
 11.13 MiB). Only that file ships; everything else here stays review-only,
 except that this one script and the source export it reads are the

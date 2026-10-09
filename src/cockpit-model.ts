@@ -21,9 +21,11 @@
 import * as THREE from "three";
 import { MeshoptDecoder } from "three/addons/libs/meshopt_decoder.module.js";
 import { GLTFLoader } from "three/addons/loaders/GLTFLoader.js";
+import type { ModelProgressListener } from "./model-progress";
 import { CABIN_SCALE, cabinLight } from "./cabin-pass";
 import { shared } from "./gpu-teardown";
 import { EMISSIVE_CEILING } from "./light-rig";
+import { COURIER_COCKPIT_GLB_URL } from "./model-urls";
 
 /** Cabin kilometres per model metre. */
 export const COCKPIT_MODEL_KM_PER_M = CABIN_SCALE / 1000;
@@ -372,11 +374,14 @@ export function buildAuthoredCabin(): AuthoredCabin {
 
 let ready: Promise<void> | undefined;
 
-/** Await before any Game constructs its cabin. */
-export function prepareCockpitModel(): Promise<void> {
+/** Await before any Game constructs its cabin. `onProgress` hears the
+ *  download this call starts (#833), as `prepareCoriolisModel`'s does. */
+export function prepareCockpitModel(
+	onProgress?: ModelProgressListener,
+): Promise<void> {
 	return (ready ??= new GLTFLoader()
 		.setMeshoptDecoder(MeshoptDecoder)
-		.loadAsync("/models/courier-cockpit.glb")
+		.loadAsync(COURIER_COCKPIT_GLB_URL, onProgress)
 		.then((gltf) => adoptCockpitTemplate(gltf.scene))
 		.catch((error) => {
 			ready = undefined;
