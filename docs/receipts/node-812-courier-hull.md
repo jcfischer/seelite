@@ -4,9 +4,10 @@ Author: Claude / ivy-agent (ranger implement lane). Measured 2026-10-09 on an
 Apple M1 Pro, ANGLE Metal unless a row says otherwise.
 
 The principal approved the O4 study on #795 (visual commit `720c928`). This
-receipt records how it was integrated, what was measured, and what is left for
-the principal. **The principal's flight and yes are still outstanding**, and two
-browser rows are red pending that decision (Q1).
+receipt records how it was integrated, what was measured, and what the
+principal ruled. **The principal flew `c21419c` and approved the visuals on
+2026-10-09**, and ruled on Q1 and Q7 and the Field Notes copy in a PR comment
+the same day (below). Both browser rows that were red on Q1 are green.
 
 ## What ships
 
@@ -228,12 +229,20 @@ build had placed the nav lights.
 
 ## Verification
 
+- **Sage round 9, on the code tree being pushed (`077d890`; the commit after
+  it changes this receipt only):** `npm test` 5728 pass, 0 fail (398.6 s,
+  load average 18–26 from other sessions). Browser probes singly on the GPU
+  lane: light-rig 12/12, postcard 43/43, ship-visuals, vent-display,
+  chase-orbit and boot pass; light-rig and postcard also pass on
+  SwiftShader. Those six were chosen as the probes this round's and round 7's
+  changes reach (the glow-keyed throats and the builder-keyed nav lights are
+  vent-display's and ship-visuals'); the full suite was not run here.
 - `npm test`: 5685 pass, 0 fail (349.3 s) after sage round 1; 5691 pass, 0 fail (355.6 s) on round 2's final tree. On sage round 5's tree, which carries round 4's child re-parenting and its row: 5694 pass, 0 fail (423.8 s), under a load average of 22–28 from other sessions. One earlier round-2 run timed out two `tests/station-proxy.test.ts` rows (43.6 s and 41.0 s against a 30 s limit) under a load average of 28–45 from other sessions; the file passed alone in 20.0 s and the next full run was green.
 - Round 2's browser probes, singly on the GPU lane: ship-visuals, boot,
   derelict, vent-display, station-route-traffic, shipyard, chase-orbit,
   traffic-mouth, docking-traffic, traffic-engagement, collision (both),
   docking, and dock-arrival pass. probe-light-rig is red on Q1's figures,
-  unchanged (peak 252.21, lower quartile 10.16, median 37.88). probe-postcard is red on the same row as before (Q1, 0.5% of cells).
+  unchanged (peak 252.21, lower quartile 10.16, median 37.88). probe-postcard is red on the same row as before (Q1, 0.5% of cells). Both are green since sage round 9.
 - Bun preload: `tests/setup-courier-hull.ts` installs the shipped model for
   every file, so headless rows measure the courier the player flies. Its
   installer and the GLB decoder moved to `scripts/lib/` in round 2
@@ -248,7 +257,7 @@ build had placed the nav lights.
   ship-visuals, boot, vent-display, derelict, cabin-pass, live-cockpit,
   chase-orbit, occlusion, shipyard, dock-arrival, station-route-traffic,
   traffic-engagement, docking, collision, docking-traffic and traffic-mouth
-  all pass. **probe-light-rig** and **probe-postcard** are red (Q1). The full suite was not run here; the
+  all pass. **probe-light-rig** and **probe-postcard** are red (Q1), green since sage round 9. The full suite was not run here; the
   supervisor runs it.
 - Sage round 4, on its own tree, which carries the reduced levels and their
   switching: ship-visuals, cabin-pass, live-cockpit and occlusion, singly on
@@ -295,9 +304,55 @@ trim also catches the sun near white.
   0.5% of cells changed against a 2% floor. Why it reads low was not
   measured. One untested reading is that a dark hull changes few cells
   against a dark sky whichever camera frames it.
-- Neither threshold was moved.
+- Neither threshold was moved before the ruling.
 
-Options:
+**Ruled 2026-10-09: O1, accept the in-game look; the band follows it.** What
+was done, each figure measured in sage round 9:
+
+- `scripts/lib/hull-luma.mjs` re-calibrated at `9f8d533`, rig B,
+  `hull-chase`, five samples per lane, same-build noise 0.00: ANGLE Metal
+  252.21 / 10.16 / 37.88, SwiftShader 252.21 / 10.16 / 38.80. The lower is
+  recorded; `laneSpread` is 0 / 0 / 0.92.
+- **Keyed on the subject, not the finish.** Built under every finish preset,
+  the authored courier differs only in its two drive glows, which are
+  emissive and outside `hull-chase`'s mask; a headless row holds every
+  painted material equal across the presets. The key is the hull, that it is
+  the authored model, and the shipped GLB's sha256 (`65879357cb7d…`). A
+  headless row hashes `src/models/courier-hull.glb` against it, and the
+  probe hashes the file the page's `model-urls.ts` serves and gates both
+  band rows on the match.
+- **Ceiling 255, no ceiling**, by the principal's ruling of 2026-10-09
+  (relayed with the rulings above): the machined-alloy trim reads near white
+  by design. Nothing in these rows now rejects a hull gone too bright.
+- Floors under the module's rules: peak margin 0.32 → 0.45, the smallest the
+  shipped 140 allows being 44.5%, deriving **138.716**; quartile 0.152
+  (inside half of #294's 31.1% drop) deriving **8.616**; median 0.14 deriving
+  **32.577**. Each is above half its reading and its margin exceeds the lane
+  spread; `tests/light-rig.test.ts` asserts all of them.
+- `probe-light-rig`: 12/12 on ANGLE Metal and on SwiftShader.
+- `probe-postcard`, measured cause: on `main` at `bd09ae5` (the
+  procedural courier) the cell row read 3.1%, and all 12 of its cells past
+  ten codes were the hull's, moving 14–44 codes; the station's own shift
+  moved its cells 7–8 codes on both builds and never cleared the threshold.
+  On the O4 the same hull cells move 5–7 codes (sky 16.1), and only the two
+  drive-glow cells clear it: 2 of 384. So the row measured whether a bright
+  hull appeared, not the camera, which is #294's class. It now reads the
+  share of pixels above the band moved past 24/255:
+
+  | arm | pixels moved past 24/255 |
+  | --- | --- |
+  | clear composed again (same camera) | 0.000% |
+  | exterior, hull's meshes hidden (camera alone) | 2.75–2.78% |
+  | exterior, O4 | 2.91–2.95% |
+  | exterior, procedural courier on `main` | 4.54% |
+
+  The floor is 1%, between the null arm and the camera alone, and the same
+  camera arm is its own row. Ranges are three runs over both lanes; the
+  `main` arm is one GPU run. `changedCells` is unchanged, since the cockpit
+  row and `probe-chase-orbit` share it. `probe-postcard`: 43/43 on both
+  lanes.
+
+Options, as they were put:
 
 - **O1. Accept the in-game look.** The band is re-derived for this subject
   under #294's rule, which needs a ruling on the 215 ceiling. The postcard row
@@ -354,22 +409,37 @@ switch is visible in pixels.
 axis at 1,469 m (1.02 × the band's first edge, inside its hysteresis, where a
 courier coming in still draws `reduced`; the band draws it nearer still, down
 to the edge itself), clock held, and draws it at
-`full` and at `reduced`. The footprint is the pixels the full hull moves past
-24/255 against the empty frame. The control is the full hull drawn twice.
-GPU lane, M1 Pro, 1440×900 at device scale 2:
+`full` and at `reduced`. Since sage round 9 the footprint is every pixel
+**either** level moves past 24/255 against the empty frame, so a reduced
+level drawn beyond the full silhouette is counted; round 2's table counted
+the full hull's footprint only, which made its share a lower bound. The
+control is the full hull drawn twice. GPU lane, M1 Pro, 1440×900 at device
+scale 2, on `9f8d533`'s tree:
 
-| heading | footprint px | control moved | reduced moved |
-| --- | --- | --- | --- |
-| 0° | 306 | 0 | 8 (2.6%) |
-| 90° | 277 | 0 | 20 (7.2%) |
-| 180° | 296 | 0 | 17 (5.7%) |
-| 270° | 347 | 0 | 35 (10.1%) |
+| heading | footprint px | control moved | reduced moved | reduced only | of them moved |
+| --- | --- | --- | --- | --- | --- |
+| 0° | 344 | 0 | 27 (7.8%) | 38 | 19 |
+| 90° | 333 | 0 | 23 (6.9%) | 56 | 3 |
+| 180° | 334 | 0 | 22 (6.6%) | 38 | 5 |
+| 270° | 438 | 0 | 48 (11.0%) | 91 | 13 |
 
-So a Traffic courier crossing 1.44 km changes up to a tenth of its few
-hundred pixels in one frame. Keep the levels, move the band edge for the
-courier, or drop them and accept the near-row cost for every courier in view?
+"Reduced only" is the pixels the reduced level moves past 24/255 against the
+empty frame and the full level does not. On a dark hull against a dark sky
+that mixes two things: silhouette the reduced level draws beyond the full
+one, and pixels where the full hull sat within 24 codes of the sky and the
+reduced level's recomputed normals pushed it past. So it is an upper bound
+on overreach, not a measure of it, and "of them moved" — the ones the switch
+itself moves past 24/255 — is the same kind of bound.
 
-### Proposed Field Notes copy (not in `src/changelog.ts` until approved)
+So a Traffic courier crossing 1.44 km changes up to about a ninth of its few
+hundred pixels in one frame.
+
+**Ruled 2026-10-09: accepted.** The principal flew the switch and approved
+it, quoting a real maximum deviation of about 1.2 m (about 1.3 px at the
+band edge). That figure is the principal's; no instrument on this branch
+produced it, and nothing here measures how far a level lies from the model.
+
+### Field Notes copy (approved by the principal 2026-10-09, in `src/changelog.ts`)
 
 > The courier has a new hull: a long tapered body between twin drive nacelles,
 > with seated hatches, slope-aligned grilles and a pilot visible under the
