@@ -65,8 +65,10 @@ import {
 	stationInterior,
 } from "../src/station-interior";
 import {
+	CEILING_REFERENCE,
 	derivedCeiling,
-	m3PerTonneOfHold,
+	hullBoxM3,
+	rosterCeiling,
 	stretchedToHold,
 } from "./helpers/hull-math";
 
@@ -649,15 +651,40 @@ describe("what a hull costs (#182, #26's D4 and D7)", () => {
 		const derived = derivedCeiling();
 		expect(HULL_CEILING_HOLD_T).toBe(derived.holdT);
 		// …and the derivation reached the rows it is supposed to: the largest
-		// berth in the game and the roster's densest hold, named rather than
-		// assumed, so a retune that moved either shows up here as a changed name
-		// rather than only as a changed number.
+		// berth in the game, named rather than assumed, so a retune that moved it
+		// shows up here as a changed name rather than only as a changed number.
+		// The density is `CEILING_REFERENCE`'s, the hold #182 ratified the
+		// ceiling against; the row below says what the live roster would make
+		// of it.
 		expect(derived.largestType).toBe("trade");
-		expect(derived.densestHull).toBe("freighter");
+		expect(CEILING_REFERENCE.hull).toBe("freighter");
 		// …and it really is a ceiling: every hull a berth admits is under it, and
 		// the two that no berth admits are over it.
 		for (const id of DOCKABLE_HULL_IDS)
 			expect(HULL_SPECS[id].holdT).toBeLessThanOrEqual(HULL_CEILING_HOLD_T);
+	});
+
+	test("the live roster's densest hold would derive another ceiling, and that is the principal's call", () => {
+		// **A tripwire, not a gate (node #813).** The authored O2 Porter carries
+		// the reference's 60 t in a box a third smaller, so the same derivation on
+		// the shipped roster gives a higher ceiling — one under which two
+		// capitals would take a price. Held exactly, so the divergence is on
+		// record: a change to the Porter's box or hold, or a decision to adopt the
+		// live figure, moves this row and has to say so.
+		const live = rosterCeiling();
+		expect(live.densestHull).toBe("freighter");
+		expect(Math.round(live.m3PerT)).toBe(698);
+		expect(live.holdT).toBe(299);
+		expect(live.holdT).toBeGreaterThan(HULL_CEILING_HOLD_T);
+		const priced = HULL_IDS.filter(
+			(id) =>
+				HULL_SPECS[id].priceCr === null && HULL_SPECS[id].holdT <= live.holdT,
+		);
+		expect(priced).toEqual(["dreadnought", "voyager"]);
+		console.log(
+			`ceiling: ${HULL_CEILING_HOLD_T} t on the reference, ${live.holdT} t on the live ` +
+				`roster (${live.densestHull} ${live.m3PerT.toFixed(0)} m³/t); adopting it prices ${priced.join(", ")}`,
+		);
 	});
 
 	test("the ceiling is the last hold a berth can admit, and one tonne more is not", () => {
@@ -668,9 +695,10 @@ describe("what a hull costs (#182, #26's D4 and D7)", () => {
 		//
 		// The hull is the cargo role stretched along the axis #26 leaves free —
 		// beam and height are nearly spent — so its hold grows with its length at
-		// the freighter's own measured density, which is the density the ceiling
-		// is derived from.
-		const freighter = HULL_SPECS.freighter;
+		// the reference's density, which is the density the ceiling is derived
+		// from (`CEILING_REFERENCE`).
+		const referenceM3PerT =
+			hullBoxM3(CEILING_REFERENCE.env) / CEILING_REFERENCE.holdT;
 		const berths = stationInterior(
 			"trade",
 			STATION_GEOMETRY.trade.aperturePlaneKm,
@@ -680,7 +708,7 @@ describe("what a hull costs (#182, #26's D4 and D7)", () => {
 			berths.some((berth) =>
 				berthFits(
 					berth,
-					stretchedToHold(holdT, m3PerTonneOfHold(freighter), BERTH_CELL.trade),
+					stretchedToHold(holdT, referenceM3PerT, BERTH_CELL.trade),
 				),
 			);
 		expect(fits(HULL_CEILING_HOLD_T)).toBe(true);

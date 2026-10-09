@@ -36,6 +36,8 @@ import {
 	coupleArms,
 } from "../src/hull";
 import { buildShipMesh } from "../src/ship-mesh";
+// The authored Porter is `freighter/b` (node #813): measure the shipped model.
+import "../tests/setup/authored-hulls";
 
 /** Steps per half-extent: a reach is found to a quarter of a percent. */
 const STEPS = 400;
@@ -48,13 +50,21 @@ type Vec = readonly [number, number, number];
  *  along `dir` meet metal? `p` in kilometres from the envelope's centre,
  *  which is the whole root's box centre: the frame `ventThroats` draws in,
  *  and the box `tests/hull.test.ts` holds `env` to. The metal set is smaller
- *  than that box on purpose; the origin is not. */
+ *  than that box on purpose; the origin is not.
+ *
+ *  Every line this instrument asks about runs along a hull axis, so the
+ *  question is two-dimensional: the line meets a triangle exactly when its
+ *  point lies inside the triangle's projection across that axis, and the
+ *  triangle faces the line's start the way `Raycaster` requires of a
+ *  `FrontSide` material. That is the ray cast it replaces — from far outside,
+ *  through the whole hull, any face — answered from a grid of projected
+ *  triangles, because the authored Porter (node #813) is 363k triangles and a
+ *  ray tested against every one of them made this a run of hours. */
 function lineTester(root: THREE.Object3D) {
 	root.updateMatrixWorld(true);
 	const box = new THREE.Box3().setFromObject(root);
 	const centre = box.getCenter(new THREE.Vector3());
-	const reach = box.getSize(new THREE.Vector3()).length();
-	const metal: THREE.Object3D[] = [];
+	const metal: THREE.Mesh[] = [];
 	root.traverse((o) => {
 		const mesh = o as THREE.Mesh;
 		if (
@@ -64,15 +74,127 @@ function lineTester(root: THREE.Object3D) {
 		)
 			metal.push(mesh);
 	});
-	const caster = new THREE.Raycaster();
+	const grids = ([0, 1, 2] as const).map((axis) => axisGrid(metal, axis));
 	return (p: Vec, dir: Vec): boolean => {
-		const d = new THREE.Vector3(...dir);
-		caster.set(
-			new THREE.Vector3(...p).add(centre).addScaledVector(d, -2 * reach),
-			d,
-		);
-		caster.far = 4 * reach;
-		return caster.intersectObjects(metal, false).some((h) => h.face);
+		const axis = dir.findIndex((c) => c !== 0);
+		if (
+			axis < 0 ||
+			dir[axis] !== 1 ||
+			dir.some((c, i) => i !== axis && c !== 0)
+		)
+			throw new Error(`lineTester: ${dir} is not a positive hull axis`);
+		return grids[axis](p[0] + centre.x, p[1] + centre.y, p[2] + centre.z);
+	};
+}
+
+/** Cells per side of an axis grid. */
+const GRID = 256;
+
+/**
+ * Every metal triangle a line along +`axis` can meet, projected across it
+ * and filed in a grid, and the exact test of one line against them.
+ *
+ * Kept: a triangle whose world normal faces back along the line (a
+ * `FrontSide` material culls the rest, as `Raycaster` does) or any triangle
+ * of a two-sided one; dropped: a triangle edge-on to the line, which a ray
+ * never meets either. Inside is inclusive of the edges, as three's
+ * `intersectTriangle` is.
+ */
+function axisGrid(metal: readonly THREE.Mesh[], axis: 0 | 1 | 2) {
+	const [ua, va] = [(axis + 1) % 3, (axis + 2) % 3];
+	const tris: number[] = [];
+	const a = new THREE.Vector3();
+	const b = new THREE.Vector3();
+	const c = new THREE.Vector3();
+	const n = new THREE.Vector3();
+	for (const mesh of metal) {
+		const geometry = mesh.geometry;
+		const position = geometry.getAttribute("position");
+		const index = geometry.index;
+		const count = index ? index.count : position.count;
+		const flip = mesh.matrixWorld.determinant() < 0 ? -1 : 1;
+		const materials = Array.isArray(mesh.material)
+			? mesh.material
+			: [mesh.material];
+		const groups =
+			geometry.groups.length > 0
+				? geometry.groups
+				: [{ start: 0, count, materialIndex: 0 }];
+		for (const group of groups) {
+			const material = materials[group.materialIndex ?? 0];
+			if (!material) continue;
+			const twoSided = material.side === THREE.DoubleSide;
+			const backOnly = material.side === THREE.BackSide;
+			const stop = Math.min(count, group.start + group.count);
+			for (let i = group.start; i + 2 < stop; i += 3) {
+				const at = (k: number) => (index ? index.getX(k) : k);
+				a.fromBufferAttribute(position, at(i)).applyMatrix4(mesh.matrixWorld);
+				b.fromBufferAttribute(position, at(i + 1)).applyMatrix4(
+					mesh.matrixWorld,
+				);
+				c.fromBufferAttribute(position, at(i + 2)).applyMatrix4(
+					mesh.matrixWorld,
+				);
+				n.subVectors(c, b).cross(a.clone().sub(b));
+				const facing = -flip * n.getComponent(axis);
+				if (facing === 0) continue;
+				if (!twoSided && (backOnly ? facing > 0 : facing < 0)) continue;
+				tris.push(
+					a.getComponent(ua),
+					a.getComponent(va),
+					b.getComponent(ua),
+					b.getComponent(va),
+					c.getComponent(ua),
+					c.getComponent(va),
+				);
+			}
+		}
+	}
+	let minU = Infinity;
+	let minV = Infinity;
+	let maxU = -Infinity;
+	let maxV = -Infinity;
+	for (let t = 0; t < tris.length; t += 2) {
+		minU = Math.min(minU, tris[t]);
+		maxU = Math.max(maxU, tris[t]);
+		minV = Math.min(minV, tris[t + 1]);
+		maxV = Math.max(maxV, tris[t + 1]);
+	}
+	const du = (maxU - minU) / GRID || 1;
+	const dv = (maxV - minV) / GRID || 1;
+	const cell = (x: number, min: number, d: number) =>
+		Math.min(GRID - 1, Math.max(0, Math.floor((x - min) / d)));
+	const cells: number[][] = Array.from({ length: GRID * GRID }, () => []);
+	for (let t = 0; t < tris.length; t += 6) {
+		const u0 = cell(Math.min(tris[t], tris[t + 2], tris[t + 4]), minU, du);
+		const u1 = cell(Math.max(tris[t], tris[t + 2], tris[t + 4]), minU, du);
+		const v0 = cell(Math.min(tris[t + 1], tris[t + 3], tris[t + 5]), minV, dv);
+		const v1 = cell(Math.max(tris[t + 1], tris[t + 3], tris[t + 5]), minV, dv);
+		for (let u = u0; u <= u1; u++)
+			for (let v = v0; v <= v1; v++) cells[u * GRID + v].push(t);
+	}
+	const point = [0, 0, 0];
+	return (x: number, y: number, z: number): boolean => {
+		point[0] = x;
+		point[1] = y;
+		point[2] = z;
+		const pu = point[ua];
+		const pv = point[va];
+		if (pu < minU || pu > maxU || pv < minV || pv > maxV) return false;
+		for (const t of cells[cell(pu, minU, du) * GRID + cell(pv, minV, dv)]) {
+			const d1 =
+				(tris[t + 2] - tris[t]) * (pv - tris[t + 1]) -
+				(tris[t + 3] - tris[t + 1]) * (pu - tris[t]);
+			const d2 =
+				(tris[t + 4] - tris[t + 2]) * (pv - tris[t + 3]) -
+				(tris[t + 5] - tris[t + 3]) * (pu - tris[t + 2]);
+			const d3 =
+				(tris[t] - tris[t + 4]) * (pv - tris[t + 5]) -
+				(tris[t + 1] - tris[t + 5]) * (pu - tris[t + 4]);
+			if ((d1 >= 0 && d2 >= 0 && d3 >= 0) || (d1 <= 0 && d2 <= 0 && d3 <= 0))
+				return true;
+		}
+		return false;
 	};
 }
 

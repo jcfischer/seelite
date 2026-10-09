@@ -1954,225 +1954,6 @@ function buildFreighterA(root: THREE.Group, p: Palette) {
 	);
 	blister(root, "freighter-sensor", 0.0014, [0.003, deck + 0.0042, -0.0075], p);
 }
-function buildFreighterB(root: THREE.Group, p: Palette) {
-	const keel = -0.0075;
-	add(
-		root,
-		"freighter-fuselage",
-		hullLoft([
-			{ z: -0.0335, w: 0.0014, h: 0.0014, b: 0.0014, x: keel, e: 2.4 },
-			{ z: -0.0295, w: 0.004, h: 0.0038, b: 0.0036, x: keel, e: 3 },
-			{
-				z: -0.027,
-				w: 0.005,
-				h: 0.0046,
-				b: 0.0044,
-				x: keel,
-				e: 3.4,
-				hard: true,
-			},
-			{
-				z: -0.0205,
-				w: 0.005,
-				h: 0.0046,
-				b: 0.0044,
-				x: keel,
-				e: 3.4,
-				hard: true,
-			},
-			{
-				z: -0.0185,
-				w: 0.0038,
-				h: 0.0035,
-				b: 0.0035,
-				x: keel,
-				e: 3.2,
-				hard: true,
-			},
-			{
-				z: 0.016,
-				w: 0.0038,
-				h: 0.0035,
-				b: 0.0035,
-				x: keel,
-				e: 3.2,
-				hard: true,
-			},
-			{
-				z: 0.0195,
-				w: 0.0072,
-				h: 0.006,
-				b: 0.0058,
-				x: keel,
-				e: 4.2,
-				hard: true,
-			},
-			{
-				z: 0.0315,
-				w: 0.0072,
-				h: 0.006,
-				b: 0.0058,
-				x: keel,
-				e: 4.2,
-				hard: true,
-			},
-			{ z: 0.0335, w: 0.0062, h: 0.0052, b: 0.005, x: keel, e: 3.4 },
-		]),
-		p.hull,
-	);
-	bridge(
-		root,
-		"freighter",
-		[
-			{ z: -0.0315, w: 0.004, h: 0.0018, b: 0.002, x: keel, y: 0.0038, e: 3 },
-			{
-				z: -0.0265,
-				w: 0.0065,
-				h: 0.0033,
-				b: 0.0026,
-				x: keel,
-				y: 0.0049,
-				e: 3.4,
-			},
-			{
-				z: -0.0205,
-				w: 0.0061,
-				h: 0.0029,
-				b: 0.0026,
-				x: keel,
-				y: 0.0053,
-				e: 3.4,
-			},
-			{ z: -0.0165, w: 0.0043, h: 0.0018, b: 0.002, x: keel, y: 0.0049, e: 3 },
-		],
-		[
-			{
-				z: -0.0305,
-				w: 0.0027,
-				h: 0.0013,
-				b: 0.0014,
-				x: keel,
-				y: 0.0051,
-				e: 2.7,
-			},
-			{ z: -0.0265, w: 0.0046, h: 0.0026, b: 0.0018, x: keel, y: 0.006, e: 3 },
-			{ z: -0.0215, w: 0.0043, h: 0.0022, b: 0.0017, x: keel, y: 0.0064, e: 3 },
-			{ z: -0.0185, w: 0.003, h: 0.0013, b: 0.0014, x: keel, y: 0.006, e: 2.7 },
-		],
-		p,
-	);
-	// The cargo outrigger is the ship; the keel beside it is the crew's corner.
-	add(
-		root,
-		"freighter-cargo-bank",
-		blade([
-			{ z: -0.0018, w: 0.0086, h: 0.0168, b: 0.0166, y: -0.0025, e: 4.4 },
-			{ z: 0.006, w: 0.0084, h: 0.0166, b: 0.0164, y: -0.0015, e: 4.6 },
-			{ z: 0.0132, w: 0.0072, h: 0.0142, b: 0.014, y: 0.0015, e: 4.2 },
-		]),
-		p.hull,
-	);
-	for (const [name, cz] of [
-		["fore", -0.0135],
-		["aft", 0.0085],
-	] as const) {
-		add(
-			root,
-			`freighter-drum-${name}`,
-			revolve(drumProfile(0.0112, 0.0062)),
-			p.panel,
-			[0.0192, 0.0042, cz],
-		);
-		for (const band of [-0.005, 0.005])
-			add(
-				root,
-				`freighter-drum-band-${name}-${band}`,
-				hoop(0.0063, 0.0006),
-				p.accent,
-				[0.0192, 0.0042, cz + band],
-			);
-	}
-	add(
-		root,
-		"freighter-nacelle-mount-starboard",
-		blade([
-			{ z: 0.0088, w: 0.0032, h: 0.0072, b: 0.007, y: 0.0175, e: 3.4 },
-			{ z: 0.0148, w: 0.0028, h: 0.0064, b: 0.0062, y: 0.0215, e: 3.2 },
-		]),
-		p.trim,
-	);
-	add(
-		root,
-		"freighter-starboard-nacelle",
-		hullLoft(pod(0.011, 0.0315, 0.005, { x: 0.0178 })),
-		p.panel,
-	);
-	add(
-		root,
-		"freighter-collar-starboard",
-		hoop(0.0053, 0.0005),
-		p.accent,
-		[0.0178, 0, 0.027],
-	);
-	engineBell(
-		root,
-		"freighter-starboard",
-		[0.0178, 0, 0.0355],
-		0.0042,
-		0.0044,
-		p,
-	);
-	// Port keeps an exposed service rail instead of a second cargo bank.
-	add(
-		root,
-		"freighter-nacelle-mount-port",
-		mirrorX(
-			blade([
-				{ z: 0.0112, w: 0.0016, h: 0.0044, b: 0.0042, y: 0.019, e: 2.8 },
-				{ z: 0.0158, w: 0.0014, h: 0.0038, b: 0.0036, y: 0.0225, e: 2.8 },
-			]),
-		),
-		p.trim,
-	);
-	add(
-		root,
-		"freighter-port-nacelle",
-		hullLoft(pod(0.015, 0.0305, 0.0032, { x: -0.017 })),
-		p.panel,
-	);
-	engineBell(root, "freighter-port", [-0.017, 0, 0.0345], 0.0028, 0.003, p);
-	greebleStrip(
-		root,
-		"freighter-service-rail",
-		[
-			{ z: -0.019, w: 0.0009, h: 0.0009, x: -0.0138, e: 2.4 },
-			{ z: 0.0, w: 0.001, h: 0.001, x: -0.0146, e: 2.4 },
-			{ z: 0.016, w: 0.0009, h: 0.0009, x: -0.0142, e: 2.4 },
-		],
-		{ ...p, panel: p.trim },
-	);
-	for (const cz of [-0.014, 0.004])
-		add(
-			root,
-			`freighter-rail-stay-${cz}`,
-			mirrorX(
-				blade([
-					{ z: 0.0042, w: 0.0011, h: 0.0016, b: 0.0016, e: 2.4 },
-					{ z: 0.0138, w: 0.0009, h: 0.0014, b: 0.0014, e: 2.4 },
-				]),
-			),
-			p.trim,
-			[0, 0, cz],
-		);
-	engineBell(root, "freighter-core", [keel, 0, 0.0355], 0.0048, 0.005, p);
-	blister(
-		root,
-		"freighter-sensor",
-		0.0014,
-		[keel + 0.0028, 0.0044, -0.0105],
-		p,
-	);
-}
 function buildFreighterC(root: THREE.Group, p: Palette) {
 	add(
 		root,
@@ -6177,6 +5958,23 @@ const planned = (
 });
 
 /**
+ * A model authored outside this file and loaded at boot (node #813).
+ *
+ * It carries its own machinery, lamps and wear, so no zone is filled and no
+ * procedural emissive is added; only the nav lights, which are a readout at
+ * range rather than decoration, are placed on it as on every other hull.
+ */
+interface AuthoredPlan {
+	readonly authored: true;
+	readonly zones: readonly [];
+}
+const AUTHORED: AuthoredPlan = { authored: true, zones: [] };
+
+/** Is this hull drawn from an authored model rather than built here? */
+export const isAuthoredHull = (id: HullId, variant: HullVariantId): boolean =>
+	"authored" in SHIP_DETAIL_PLANS[id][variant];
+
+/**
  * One entry per model.
  *
  * The chain of `if (variant === "a")` this replaces was already hard to read at
@@ -6186,7 +5984,7 @@ const planned = (
  */
 export const SHIP_DETAIL_PLANS: Record<
 	HullId,
-	Record<HullVariantId, BuilderPlan>
+	Record<HullVariantId, BuilderPlan | AuthoredPlan>
 > = {
 	courier: {
 		a: planned(
@@ -6226,14 +6024,8 @@ export const SHIP_DETAIL_PLANS: Record<
 			"dorsal",
 			24,
 		),
-		b: planned(
-			buildFreighterB,
-			"freighter-fuselage",
-			"bridge-flank",
-			"starboard",
-			24,
-			{ seed: 140222523 },
-		),
+		// The authored O2 (node #813), drawn from `porter-model.ts`'s template.
+		b: AUTHORED,
 		c: planned(
 			buildFreighterC,
 			"freighter-fuselage",
@@ -6528,10 +6320,38 @@ function navLightsMaterial(): THREE.ShaderMaterial {
 }
 
 /** Place the four lights on a built hull's own surface. */
-function addNavLights(root: THREE.Group) {
+function addNavLights(
+	root: THREE.Group,
+	positions: Float32Array | null = navLightPositions(root),
+) {
+	if (!positions) return;
+	const colors = new Float32Array(NAV_LIGHTS.length * 3);
+	const color = new THREE.Color();
+	NAV_LIGHTS.forEach((light, i) => {
+		// The shader is raw, so its colours are linear. `setHex` decodes the
+		// sRGB hex into three's linear working space, and that is the only
+		// decode: a second `convertSRGBToLinear` here crushed every channel that
+		// is not 0 or 255 (#300's review).
+		color.setHex(light.color);
+		colors.set([color.r, color.g, color.b], i * 3);
+	});
+	const geometry = new THREE.BufferGeometry();
+	geometry.setAttribute("position", new THREE.BufferAttribute(positions, 3));
+	geometry.setAttribute("lightColor", new THREE.BufferAttribute(colors, 3));
+	const points = new THREE.Points(geometry, navLightsMaterial());
+	points.name = "nav-lights";
+	points.userData.navLightRoles = NAV_LIGHTS.map((l) => l.role);
+	points.onBeforeRender = (renderer) => {
+		navLightsMaterial().uniforms.uPixelRatio.value = renderer.getPixelRatio();
+	};
+	root.add(points);
+}
+
+/** Where the four lights go on a built hull, `NAV_LIGHTS` order, kilometres. */
+function navLightPositions(root: THREE.Group): Float32Array | null {
 	root.updateMatrixWorld(true);
 	const box = new THREE.Box3().setFromObject(root);
-	if (box.isEmpty()) return;
+	if (box.isEmpty()) return null;
 	const size = new THREE.Vector3();
 	const centre = new THREE.Vector3();
 	box.getSize(size);
@@ -6596,28 +6416,11 @@ function addNavLights(root: THREE.Group) {
 		),
 	};
 	const positions = new Float32Array(NAV_LIGHTS.length * 3);
-	const colors = new Float32Array(NAV_LIGHTS.length * 3);
-	const color = new THREE.Color();
 	NAV_LIGHTS.forEach((light, i) => {
 		const p = at[light.role];
 		positions.set([p.x, p.y, p.z], i * 3);
-		// The shader is raw, so its colours are linear. `setHex` decodes the
-		// sRGB hex into three's linear working space, and that is the only
-		// decode: a second `convertSRGBToLinear` here crushed every channel that
-		// is not 0 or 255 (#300's review).
-		color.setHex(light.color);
-		colors.set([color.r, color.g, color.b], i * 3);
 	});
-	const geometry = new THREE.BufferGeometry();
-	geometry.setAttribute("position", new THREE.BufferAttribute(positions, 3));
-	geometry.setAttribute("lightColor", new THREE.BufferAttribute(colors, 3));
-	const points = new THREE.Points(geometry, navLightsMaterial());
-	points.name = "nav-lights";
-	points.userData.navLightRoles = NAV_LIGHTS.map((l) => l.role);
-	points.onBeforeRender = (renderer) => {
-		navLightsMaterial().uniforms.uPixelRatio.value = renderer.getPixelRatio();
-	};
-	root.add(points);
+	return positions;
 }
 
 /** A part this hull draws as a gun: a pod or a muzzle ring. */
@@ -6757,10 +6560,56 @@ export function buildShipMesh(
 	root.userData.variant = variant;
 	root.userData.designRound = SHIP_DESIGN_ROUND;
 	const plan = SHIP_DETAIL_PLANS[id][variant];
+	if ("authored" in plan) {
+		buildAuthoredHull(root, id, variant);
+		return { root };
+	}
 	plan.build(root, makePalette(id));
 	// Last, and it has to be: the lights are placed from the built hull's own
 	// bounding box, so they cannot be added before there is a hull to measure.
 	addNavLights(root);
 	buildShipDetails(root, id, variant, plan, HULL_REACH_KM[id]);
 	return { root };
+}
+
+/**
+ * The authored Porter's template (node #813), kilometres with the nose at −Z,
+ * installed by `porter-model.ts` once its file has loaded. `null` until then,
+ * and building `freighter/b` before it is installed throws rather than drawing
+ * some other Porter: the berth's fit predicate and the collision box are
+ * measured on this model, so a stand-in would be a ship nothing measured.
+ */
+let authoredPorter: THREE.Object3D | null = null;
+/** Its nav lights, measured once: the model is 363k triangles and every Traffic
+ *  Porter is built mid-frame, so four rays per build would be paid per ship. */
+let authoredPorterLights: Float32Array | null = null;
+
+/** Installed once by the page's asset bootstrap, and by the headless preload. */
+export function installAuthoredPorter(model: THREE.Object3D | null): void {
+	authoredPorter = model;
+	authoredPorterLights = null;
+	muzzleCache.delete("freighter/b");
+}
+
+/** Whether `installAuthoredPorter` has run on this page. */
+export const authoredPorterReady = (): boolean => authoredPorter !== null;
+
+function buildAuthoredHull(
+	root: THREE.Group,
+	id: HullId,
+	variant: HullVariantId,
+): void {
+	if (id !== "freighter" || variant !== "b")
+		throw new Error(`${id}/${variant}: no authored model is wired`);
+	if (!authoredPorter)
+		throw new Error(
+			"freighter/b: await preparePorterModel() before building a Porter",
+		);
+	root.add(authoredPorter.clone(true));
+	authoredPorterLights ??= navLightPositions(root);
+	addNavLights(root, authoredPorterLights?.slice() ?? null);
+	// No procedural greebles: the model carries its own machinery. The detail
+	// band still has a state to read, with nothing in it to hide.
+	root.userData.shipVisual = { detail: "full", quality: "high", greebles: [] };
+	root.userData.shipSilhouetteKm = HULL_REACH_KM[id];
 }

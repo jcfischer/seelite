@@ -667,30 +667,34 @@ const HULL_ROWS: Readonly<Record<HullId, Omit<HullSpec, "vents">>> = {
 	freighter: {
 		role: "cargo",
 		variant: "b",
-		env: { lengthKm: 0.0697, beamKm: 0.0463, heightKm: 0.0197 },
-		envCentre: { rightKm: 0.003, upKm: 0.0012, foreKm: -0.0013 },
-		massT: 140,
-		thrustMN: 168,
+		// The authored O2 Porter's box (node #813). It is a third smaller by
+		// volume than the procedural Porter it replaced, so the mass is
+		// re-derived at the role's 2.20 t per 1,000 m³ and the thrust scaled
+		// with it: the acceleration a freighter flies at is unchanged.
+		env: { lengthKm: 0.0672, beamKm: 0.0424, heightKm: 0.0147 },
+		envCentre: { rightKm: 0.0005, upKm: 0.0004, foreKm: -0.0016 },
+		massT: 92,
+		thrustMN: 110.4,
 		ventShares: {
 			main: 1,
 			retro: 0.5,
 			strafe: 0.416667,
-			pitch: 0.00778113,
-			yaw: 0.010385,
-			roll: 0.00573199,
+			pitch: 0.00755031,
+			yaw: 0.010074,
+			roll: 0.00513139,
 		},
 		ventPlacement: {
 			retroX: 0.5,
 			strafeZ: 0.25,
-			yaw: { y: 0, fore: 0.9975, aft: 0.9975 },
-			pitch: { x: -0.4, fore: 0.9975, aft: 0.9975 },
-			roll: { z: 0.45, port: 0.995, starboard: 0.9725 },
+			yaw: { y: -0.2, fore: 0.9975, aft: 0.9975 },
+			pitch: { x: 0.575, fore: 0.9975, aft: 0.9975 },
+			roll: { z: -0.225, port: 0.9825, starboard: 0.9975 },
 		},
 		// Three times the reference, which is the case #26's D6 names by number:
 		// a 60 t hold leans three times as hard on a market that remembers it.
 		holdT: 60,
 		hardpoints: 1,
-		integrity: 166,
+		integrity: 129,
 		tankLy: 7,
 		chargeAu: 12,
 		priceCr: 69_000,

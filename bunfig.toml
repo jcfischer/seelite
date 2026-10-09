@@ -1,0 +1,3 @@
+[test]
+# The authored Porter is the shipped `freighter/b` (node #813).
+preload = ["./tests/setup/authored-hulls.ts"]
