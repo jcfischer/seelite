@@ -71,26 +71,28 @@ function traceLoadBar() {
 		document
 			.querySelector("[data-model-load]")
 			?.getAttribute("data-model-load") ?? "absent";
+	const pushChanged = (list, v) => {
+		if (list.at(-1) !== v) list.push(v);
+	};
 	const frame = () => {
-		const k = window.__paintedKinds;
-		const kind = kindNow();
-		if (k[k.length - 1] !== kind) k.push(kind);
+		pushChanged(window.__paintedKinds, kindNow());
 		requestAnimationFrame(frame);
 	};
 	requestAnimationFrame(frame);
+	// The bar's value under the line's state: `loading:1` is the download's
+	// own 100%, which the building line's full bar (`building:1`) cannot
+	// stand in for (sage round 3 on #840).
 	const read = () => {
 		const bar = document.querySelector("[data-model-load] progress");
 		if (!bar) return "absent";
-		if (!bar.hasAttribute("value")) return "indeterminate";
-		return Number(bar.getAttribute("value"));
+		const value = bar.hasAttribute("value")
+			? Number(bar.getAttribute("value"))
+			: "indeterminate";
+		return `${kindNow()}:${value}`;
 	};
 	new MutationObserver(() => {
-		const v = read();
-		const t = window.__loadTrace;
-		if (t[t.length - 1] !== v) t.push(v);
-		const kind = kindNow();
-		const k = window.__loadKinds;
-		if (k[k.length - 1] !== kind) k.push(kind);
+		pushChanged(window.__loadTrace, read());
+		pushChanged(window.__loadKinds, kindNow());
 	}).observe(document, { subtree: true, childList: true, attributes: true });
 }
 
@@ -258,12 +260,14 @@ try {
 			JSON.stringify({ retried, heldAgain, continued }),
 		);
 		const trace = await page.evaluate(() => window.__loadTrace);
-		const numbers = trace.filter((v) => typeof v === "number");
+		const full = trace.lastIndexOf("loading:1");
+		const building = trace.indexOf("building:1");
 		check(
-			"the bar reads 100% before it is removed",
-			trace[trace.length - 1] === "absent" &&
-				trace[trace.length - 2] === 1 &&
-				numbers.includes(1),
+			"the download's own bar reads 100% before the building line, and both go",
+			full >= 0 &&
+				building > full &&
+				trace.at(-1) === "absent" &&
+				!trace.slice(full + 1, building).some((v) => v.startsWith("loading:")),
 			JSON.stringify(trace),
 		);
 		const kinds = await page.evaluate(() => ({

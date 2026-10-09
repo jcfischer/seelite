@@ -455,15 +455,26 @@ export function mountCommanderOverlay(
 	/** The chosen action on each Commander row, by name. */
 	const chosenAction = new Map<string, CommanderAction>();
 	let slots: string[] = [];
-	let active = options.boot.slot;
-	let canContinue = options.boot.canContinue;
-	let pendingName = options.boot.pendingName;
-	let faultSlot = options.boot.faultSlot;
+	let active!: string;
+	let canContinue!: boolean;
+	let pendingName!: string | null;
+	let faultSlot!: string | null;
+	/** The boot's fault, then any later refusal; `null` once cleared. */
+	let refusal!: string | null;
+	let info!: string | null;
+	/** The plan's fields, at mount and again on a replan (#833), in one place
+	 *  so a field added to the boot cannot reach one and not the other. */
+	const adopt = (boot: CommanderOverlayOptions["boot"]) => {
+		active = boot.slot;
+		canContinue = boot.canContinue;
+		pendingName = boot.pendingName;
+		faultSlot = boot.faultSlot;
+		refusal = boot.fault;
+		info = boot.notice;
+	};
+	adopt(options.boot);
 	/** #833: the model download while the boot waits on it; `null` once in. */
 	let load: Exclude<ModelLoadState, { kind: "done" }> | null = null;
-	/** The boot's fault, then any later refusal; `null` once cleared. */
-	let refusal: string | null = options.boot.fault;
-	let info: string | null = options.boot.notice;
 	/** The clock runs, so the overlay may close. */
 	let running = !options.openAtBoot;
 	/** #604: the voice question has had its answer this page. */
@@ -811,12 +822,7 @@ export function mountCommanderOverlay(
 	};
 
 	const replan = (boot: CommanderOverlayOptions["boot"]) => {
-		active = boot.slot;
-		canContinue = boot.canContinue;
-		pendingName = boot.pendingName;
-		faultSlot = boot.faultSlot;
-		refusal = boot.fault;
-		info = boot.notice;
+		adopt(boot);
 		if (view.kind === "menu") cursor = initialCursor(menuRows());
 		draw();
 	};

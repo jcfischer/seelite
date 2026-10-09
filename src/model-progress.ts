@@ -25,10 +25,10 @@ export type ModelLoader = (onProgress?: ModelProgressListener) => Promise<void>;
  * read within one attempt. A body larger than its `Content-Length` counts as
  * its total: three reads the total from that header and counts the body as
  * the browser hands it over, so a content-encoded response would read high
- * and stall at the clamp. The deploy sends neither model encoded (checked
- * against the production `/assets/*.glb` responses on 2026-10-09: a
- * `Content-Length` and no `Content-Encoding`), so this is a guard and not
- * the expected case. A retry starts a new instance.
+ * and stall at the clamp. Neither production model was sent encoded when
+ * #840 was reviewed (the headers are quoted in its round 2 response), so the
+ * clamp is a guard there; a host that compresses `model/gltf-binary` would
+ * make it the case. A retry starts a new instance.
  */
 export class ModelProgress {
 	private readonly parts = new Map<

@@ -32,9 +32,9 @@ export const loadingText = (label: string, fraction: number | null): string =>
 
 /**
  * The line while the world is built after the download (#833). Building the
- * `Game` blocks the page for seconds — 7.7 s on the dev server, measured on
- * 2026-10-09 — and a bar left at its last download frame read 99% for all of
- * it, which the principal flagged.
+ * `Game` blocks the page for seconds — about 8 s in four dev-server runs on
+ * #840, none on a production build — and a bar left at its last download
+ * frame read 99% for all of it, which the principal flagged.
  */
 export const BUILDING_TEXT = "Building the world…";
 
