@@ -24,7 +24,7 @@ def material(name,color,metal=.55,rough=.5,emission=0,texture=True,alpha=1):
  MATS[name]=m;return name
 
 blue=[material('blue-grey-'+str(i),(.12+i*.012,.18+i*.012,.225+i*.012),.45,.49) for i in range(4)]
-ivory=[material('pale-steel-'+str(i),(.52+i*.022,.51+i*.022,.46+i*.022),.40,.57) for i in range(3)]
+ivory=[material('pale-steel-'+str(i),(.62+i*.018,.60+i*.018,.55+i*.018),.48,.47) for i in range(3)]
 steel=material('dark-structure',(.057,.071,.077),.76,.43)
 black=material('recess-black',(.012,.019,.023),.42,.62)
 alloy=material('machined-alloy',(.29,.295,.27),.84,.35)
@@ -32,7 +32,7 @@ rubber=material('hose-rubber',(.023,.027,.029),.08,.78)
 orange=material('service-ochre',(.55,.29,.10),.37,.58)
 warm=material('amber-lamp',(1,.29,.045),.2,.23,3,False)
 cyan=material('cyan-display',(.025,.55,.66),.15,.32,1.7,False)
-glass=material('canopy-glass',(.012,.033,.041),.28,.16,0,False,.90)
+glass=material('canopy-glass',(.012,.055,.070),.62,.18,0,False,1)
 
 def poly(points,mat,group=None,uv=None):
  key=PREFIX+(group or mat)
@@ -41,7 +41,7 @@ def poly(points,mat,group=None,uv=None):
  verts.extend([tuple(p) for p in pts]);faces.append(tuple(range(offset,offset+len(pts))))
  if uv is None:
   n=(pts[1]-pts[0]).cross(pts[2]-pts[0]);axis=max(range(3),key=lambda i:abs(n[i]));ij=[i for i in range(3) if i!=axis]
-  scale=3.0
+  scale=7.0
   uv=[(p[ij[0]]/scale,p[ij[1]]/scale) for p in pts]
  uvs.append(uv)
 
@@ -70,22 +70,14 @@ def cable(points,r=.12,mat=alloy):
 
 def plate(points,mat,n=(0,1,0),depth=.09,bolts=True):
  pts=[Vector(p) for p in points];n=Vector(n).normalized();c=sum(pts,Vector())/len(pts)
- pts=[c+(p-c)*.990 for p in pts];prism(pts,n,depth,mat)
+ pts=[c+(p-c)*.994 for p in pts];prism(pts,n,depth,mat)
  if bolts:
   for i,p in enumerate(pts):
-   q=pts[(i+1)%len(pts)];length=(q-p).length;count=max(1,int(length/1.65))
+   q=pts[(i+1)%len(pts)];length=(q-p).length;count=max(1,int(length/2.2))
    for j in range(count+1):
-    a=p.lerp(q,j/count)*.975+c*.025+n*(depth+.025)
-    tube(a-n*.005,a+n*.025,.115,steel,8)
-    tube(a+n*.025,a+n*.083,.075,alloy,6)
-   for t in [.08,.49,.83]:
-    a=p.lerp(q,t)+n*(depth+.004);b=p.lerp(q,min(.97,t+random.uniform(.03,.13)))+n*(depth+.004)
-    mid=(a+b)/2;poly([a,b,mid*.991+c*.009+n*.012],steel if t<.7 else alloy)
-   # Local abrasion trails below a few seam fasteners, physically on each plate.
-   for t in [.27,.73]:
-    a=p.lerp(q,t)+n*(depth+.006);inward=(c-a).normalized();along=(q-p).normalized()
-    length=random.uniform(.16,.55);width=random.uniform(.025,.07)
-    poly([a-along*width,a+along*width,a+inward*length+along*width*.3],steel)
+    a=p.lerp(q,j/count)*.955+c*.045+n*(depth+.025)
+    tube(a-n*.005,a+n*.025,.06,steel,8)
+    tube(a+n*.025,a+n*.083,.04,alloy,6)
 
 def hatch(x,y,z,w=2.2,d=2.8):
  box((x,y+.07,z),(w,.14,d),steel)
@@ -123,7 +115,8 @@ def hull(name,x,rows,mat,roof=None):
    k=(j+1)%8;poly([a[j],a[k],b[k],b[j]],black,name)
    n=(a[k]-a[j]).cross(b[j]-a[j]).normalized()
    c=(a[j]+a[k]+b[k]+b[j])/4
-   if n.dot(Vector((c.x-x,c.y,0)))<0:n=-n
+   centre_y=sum(p.y for p in a+b)/16
+   if n.dot(Vector((c.x-x,c.y-centre_y,0)))<0:n=-n
    subdivisions=max(1,math.ceil((a[k]-a[j]).length/2.3))
    for q in range(subdivisions):
     f,g=q/subdivisions,(q+1)/subdivisions

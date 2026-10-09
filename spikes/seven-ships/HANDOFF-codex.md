@@ -1,3 +1,5 @@
+> Visual work was reopened. See STATUS.md for current evidence and scores. Both capitals now have approved 180 m floor-diameter habitats at 2.5 RPM (0.629 g); latest models are not a visual quality pass. Historical measurements below are superseded by the live per-role model-report.json files and review/*-metrics.json.
+
 # Seven approved exterior ship studies — Codex handoff
 
 Refs #827. Principal approved all target images, then accepted the generated models with one correction: remove the four cockpit-like assemblies from Bastion's deck; command glazing belongs on its bridge. That correction is built and captured. Final instruction: "looks good, continue".
