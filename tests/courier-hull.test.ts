@@ -17,7 +17,9 @@ import { HULL_SPECS } from "../src/hull";
 import { EMISSIVE_CEILING } from "../src/light-rig";
 import {
 	HULL_REACH_KM,
+	authoredCourierBuilder,
 	buildShipMesh,
+	installAuthoredCourier,
 	isDriveBell,
 	shipMuzzlesKm,
 } from "../src/ship-mesh";
@@ -192,11 +194,11 @@ describe("what the game needs that the study did not carry", () => {
 				(t) => t.family === "main",
 			);
 			expect(main.length).toBe(2);
-			for (const throat of main) expect(throat.placed).toBe("bell");
+			for (const drive of main) expect(drive.placed).toBe("bell");
 		}
 	});
 
-	test("a bowl glow is wound outward, so the back-sided finish draws its far wall", () => {
+	test("a bowl glow's faces wind outward, so the back-sided finish draws its far wall", () => {
 		setHullFinish(DEFAULT_HULL_FINISH);
 		const bell = meshesOf(courier()).find(isDriveBell) as THREE.Mesh;
 		expect((bell.material as THREE.Material).side).toBe(THREE.BackSide);
@@ -269,12 +271,115 @@ describe("what the game needs that the study did not carry", () => {
 	test("the one gun is on the nose, on metal", () => {
 		const root = courier();
 		const box = new THREE.Box3().setFromObject(root);
+		const size = box.getSize(new THREE.Vector3());
 		const muzzles = shipMuzzlesKm("courier", HULL_SPECS.courier.variant);
 		expect(muzzles.length).toBe(HULL_SPECS.courier.hardpoints);
+		const caster = new THREE.Raycaster();
 		for (const m of muzzles) {
 			// Forward of the box's centre, inside the box.
 			expect(m.z).toBeLessThan(box.getCenter(new THREE.Vector3()).z);
 			expect(box.containsPoint(new THREE.Vector3(m.x, m.y, m.z))).toBe(true);
+			// On metal: a ray from ahead along the gun's own line meets the
+			// hull first where the muzzle is, not in the open channel beside it.
+			caster.set(
+				new THREE.Vector3(m.x, m.y, box.min.z - size.z),
+				new THREE.Vector3(0, 0, 1),
+			);
+			const hit = caster.intersectObject(root, true).find((h) => h.face);
+			expect(hit).toBeDefined();
+			expect(Math.abs((hit as THREE.Intersection).point.z - m.z)).toBeLessThan(
+				1e-6,
+			);
+		}
+	});
+});
+
+describe("the courier's throats are measured once (node #812, sage round 1)", () => {
+	/** Count the raycasts `ventThroats` makes while `run` runs. */
+	const raycasts = (run: () => void): number => {
+		const original = THREE.Raycaster.prototype.intersectObjects;
+		let n = 0;
+		THREE.Raycaster.prototype.intersectObjects = function (
+			this: THREE.Raycaster,
+			...args: Parameters<typeof original>
+		) {
+			n++;
+			return original.apply(this, args);
+		} as typeof original;
+		try {
+			run();
+		} finally {
+			THREE.Raycaster.prototype.intersectObjects = original;
+		}
+		return n;
+	};
+	/** The throats measured afresh: the same build, not marked authored. */
+	const measured = () => {
+		const root = courier();
+		root.userData.authored = false;
+		return ventThroats(root, "courier");
+	};
+
+	test("a second courier reads them without a raycast, and they are the measured ones", () => {
+		// Each finish measures afresh once, about half a second on the model.
+		for (const finish of HULL_FINISH_IDS) {
+			setHullFinish(finish);
+			ventThroats(courier(), "courier");
+			let cached: ReturnType<typeof ventThroats> = [];
+			expect([
+				finish,
+				raycasts(() => {
+					cached = ventThroats(courier(), "courier");
+				}),
+			]).toEqual([finish, 0]);
+			const fresh = measured();
+			expect(cached.length).toBe(fresh.length);
+			for (let i = 0; i < fresh.length; i++) {
+				expect(cached[i].slot).toBe(fresh[i].slot);
+				expect(cached[i].at.distanceTo(fresh[i].at)).toBeLessThan(1e-12);
+				expect(cached[i].exhaust.distanceTo(fresh[i].exhaust)).toBeLessThan(
+					1e-12,
+				);
+			}
+		}
+	}, 60_000);
+
+	test("a finish's main throats are its own glow's", () => {
+		// The bowl and the disc have different centres, so a cache that kept
+		// one finish's answer for another would move the main drive.
+		const mains = HULL_FINISH_IDS.map((finish) => {
+			setHullFinish(finish);
+			return ventThroats(courier(), "courier")
+				.filter((t) => t.family === "main")
+				.map((t) => t.at.z);
+		});
+		const fresh = HULL_FINISH_IDS.map((finish) => {
+			setHullFinish(finish);
+			return measured()
+				.filter((t) => t.family === "main")
+				.map((t) => t.at.z);
+		});
+		expect(mains).toEqual(fresh);
+	}, 60_000);
+
+	test("what one caller does to its throats does not reach the next", () => {
+		const first = ventThroats(courier(), "courier");
+		const before = first[0].at.clone();
+		first[0].at.x += 1;
+		first[0].exhaust.negate();
+		const second = ventThroats(courier(), "courier");
+		expect(second[0].at.distanceTo(before)).toBe(0);
+		expect(second[0].exhaust.distanceTo(first[0].exhaust)).toBeGreaterThan(1);
+	});
+
+	test("the procedural courier is measured, not handed the model's throats", () => {
+		const installed = authoredCourierBuilder();
+		installAuthoredCourier(undefined);
+		try {
+			const root = buildShipMesh("courier", HULL_SPECS.courier.variant).root;
+			expect(raycasts(() => ventThroats(root, "courier"))).toBeGreaterThan(0);
+		} finally {
+			installAuthoredCourier(installed);
 		}
 	});
 });

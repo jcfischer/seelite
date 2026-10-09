@@ -163,15 +163,10 @@ export function axisLineTester(meshes: readonly THREE.Mesh[]) {
 		near: number,
 		far: number,
 	): boolean => {
-		const axis = [direction.x, direction.y, direction.z].findIndex(
-			(d) => d !== 0,
-		) as 0 | 1 | 2;
-		if (
-			axis < 0 ||
-			[direction.x, direction.y, direction.z].filter((d) => d !== 0).length !==
-				1
-		)
+		const components = direction.toArray();
+		if (components.filter((d) => d !== 0).length !== 1)
 			throw new Error("axisLineTester: the line is not along an axis");
+		const axis = components.findIndex((d) => d !== 0) as 0 | 1 | 2;
 		world.set(origin, direction);
 		const [u, v] = PLANE[axis];
 		const pu = origin.getComponent(u);

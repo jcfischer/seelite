@@ -34,7 +34,13 @@ import {
 	type VentSlot,
 } from "./hull";
 import { EMISSIVE_CEILING } from "./light-rig";
-import { exhaustRamp, isDriveBell } from "./ship-mesh";
+import {
+	type AuthoredHullBuilder,
+	authoredCourierBuilder,
+	exhaustRamp,
+	isDriveBell,
+} from "./ship-mesh";
+import { type HullFinishId, hullFinishId } from "./ship-surface";
 import type { VentLevels } from "./sim";
 
 /**
@@ -139,6 +145,42 @@ export function plumeParticle(
  * origin is not that centre on every hull.
  */
 export function ventThroats(root: THREE.Object3D, id: HullId): Throat[] {
+	const builder = authoredCourierBuilder();
+	if (id !== "courier" || root.userData.authored !== true || !builder)
+		return measureThroats(root, id);
+	let byFinish = authoredThroats.get(builder);
+	if (!byFinish) {
+		byFinish = new Map();
+		authoredThroats.set(builder, byFinish);
+	}
+	const finish = hullFinishId();
+	let known = byFinish.get(finish);
+	if (!known) {
+		known = measureThroats(root, id);
+		byFinish.set(finish, known);
+	}
+	return known.map((t) => ({
+		...t,
+		at: t.at.clone(),
+		exhaust: t.exhaust.clone(),
+	}));
+}
+
+/**
+ * The authored courier's throats (node #812), measured once per installed
+ * model and finish. Every authored courier is the one model, so its throats
+ * are one answer — and measuring it raycasts against 354k triangles, about
+ * half a second, which a shipyard swap to a courier would otherwise pay on
+ * the frame. Keyed on the builder, so installing another model (or none)
+ * leaves the old answer unreachable; and on the finish, because a finish
+ * picks the drive glow (a bowl or a disc) the main drive's plume starts at.
+ */
+const authoredThroats = new WeakMap<
+	AuthoredHullBuilder,
+	Map<HullFinishId, readonly Throat[]>
+>();
+
+function measureThroats(root: THREE.Object3D, id: HullId): Throat[] {
 	const spec = HULL_SPECS[id];
 	root.updateMatrixWorld(true);
 	const box = new THREE.Box3().setFromObject(root);

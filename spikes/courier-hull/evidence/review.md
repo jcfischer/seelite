@@ -6,7 +6,7 @@ The principal liked the direction and requested one more round, specifically rep
 
 The nacelles had no aft caps. The main body's decorative plates were separated by seams without a continuous backing; its isolated rear cap did not form a closed, consistently oriented volume. The body and both nacelles now have independent closed backing meshes. The body backing includes a depressed well below the canopy so the closure does not cover the cockpit equipment.
 
-The stern now has armoured access panels, a central louvred heat outlet, amber service lamps and pipework. Each engine nozzle has a machined annular lip, recessed throat, radial ribs and an opaque back. The nose chamfer is bounded by local hull depth to prevent crossed faces at the narrow tip. Panel bevels, the more consistent slate finish and softer reflections continue the selected O4 direction.
+The stern now has armoured access panels, a central louvred heat outlet, amber service lamps and pipework. Each engine nozzle has a machined annular lip, recessed throat, radial ribs and an opaque back. The nose chamfer is bounded by local hull depth to prevent crossed faces at the narrow tip. Panel bevels, the more consistent slate finish and softer reflections continue the selected O4 direction. <!-- glossary-ignore: throat -->
 
 During this round the principal identified floating dorsal housings and clarified that they should lie flush, angled with the hull. The four raised blocks and navigation blister were replaced by shallow access covers sampled along the deck's longitudinal pitch and transverse crown. Seams, latch bars, fasteners and small service lamps remain; no mounting pedestals were retained.
 

@@ -4,7 +4,9 @@
 
 On 2026-10-08 the principal approved the final flagship study: “Approved. Commit and prepare PR for handoff to agent that will actually integrate and deploy”. The approved visual checkpoint is commit `720c928`, with captures and the 7.3/10 independent comparison in [flagship-pass-19](evidence/flagship-pass-19/review.md). Subsequent handoff commits do not change the model. This is principal visual acceptance of the study, not evidence that gameplay integration or deployment has passed.
 
-This PR preserves the approved assets and review tools under `spikes/courier-hull/`. It changes no production rendering entry, save data, hull gameplay specification or deployment configuration. It has no player-visible changelog entry. Integration and deployment belong to the receiving agent; do not infer merge readiness from this approval. Track lifecycle through [node 795](https://github.com/jcfischer/seelite/issues/795) and the repository SOP.
+> **Superseded by node #812.** This handoff was written for the design PR (#805), which preserved the approved assets and review tools under `spikes/courier-hull/` and changed nothing in production. Node #812's integration merges that branch and does change production: the courier's hull (`src/courier-hull.ts`, `src/ship-mesh.ts`), its declared envelope, vent placement and vent shares (`src/hull.ts`), and every boot path that builds a Game (`src/main.ts`). What it did, and what it measured, is [the node #812 receipt](../../docs/receipts/node-812-courier-hull.md). The text below is the handoff as written.
+
+The design PR preserved the approved assets and review tools under `spikes/courier-hull/`. It changed no production rendering entry, save data, hull gameplay specification or deployment configuration, and had no player-visible changelog entry. Integration and deployment belonged to the receiving agent; merge readiness was not to be inferred from this approval. Track progress through [node 795](https://github.com/jcfischer/seelite/issues/795) and the repository SOP.
 
 ## Start here
 

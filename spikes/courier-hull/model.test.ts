@@ -2,7 +2,7 @@ import { expect, test } from "bun:test";
 import { readFileSync } from "node:fs";
 import { Ray, Vector3 } from "three";
 
-test("pressure body and both nacelles are closed, outward-wound shells", () => {
+test("pressure body and both nacelles are closed, outward-wound shells", () => { // glossary-ignore: wound
 	const bytes = readFileSync(new URL("./courier-hull.glb", import.meta.url));
 	const length = bytes.readUInt32LE(12);
 	const doc = JSON.parse(bytes.toString("utf8", 20, 20 + length));

@@ -54,11 +54,8 @@ import {
 	surfaceTexels,
 } from "../src/station-visuals";
 import { STATION_TYPES } from "../src/station";
-import { useProceduralCourier } from "./helpers/install-courier-hull";
+import { useProceduralCourier } from "./helpers/procedural-courier";
 
-// These rows hold the procedural hull language over every hull and variant,
-// so the courier is the procedural Kestrel here; the authored courier the
-// game draws (node #812) is `courier-hull.test.ts`'s.
 useProceduralCourier();
 
 /** FNV-1a over a buffer. The same hash the module uses for its own texels,

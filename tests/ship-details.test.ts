@@ -21,11 +21,8 @@ import {
 	setShipDetail,
 	updateShipVisuals,
 } from "../src/ship-mesh";
-import { useProceduralCourier } from "./helpers/install-courier-hull";
+import { useProceduralCourier } from "./helpers/procedural-courier";
 
-// These rows hold the procedural hull language over every hull and variant,
-// so the courier is the procedural Kestrel here; the authored courier the
-// game draws (node #812) is `courier-hull.test.ts`'s.
 useProceduralCourier();
 
 const variants = HULL_IDS.flatMap((id) =>

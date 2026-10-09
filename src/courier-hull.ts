@@ -16,7 +16,8 @@
  * own 61.0 m would retune the angular figures of all twelve hulls. The model
  * is scaled to land inside the declared 57.5 m instead; its beam and height
  * are then what the mesh measures, and `HULL_SPECS.courier.env` carries them
- * (`tests/courier-hull.test.ts` holds the two equal).
+ * (`tests/hull.test.ts` holds every declared box to its built one, and the
+ * test preload installs this model, so the courier's row measures it).
  *
  * **Its box sits where the old one did**: centred on `envCentre`, so the
  * collision box, the station proxies' reach and a wreck's box keep the frame
@@ -40,6 +41,7 @@ import {
 	buildShipMesh,
 	installAuthoredCourier,
 } from "./ship-mesh";
+import { ventThroats } from "./vent-plumes";
 
 /** Where the shipped asset is served from (`spikes/courier-hull/prepare-game-asset.mjs`). */
 export const COURIER_HULL_URL = "/models/courier-hull.glb";
@@ -52,9 +54,9 @@ export const COURIER_HULL_URL = "/models/courier-hull.glb";
 export const COURIER_LENGTH_INSET_KM = 0.00005;
 
 /**
- * The two drive nozzles, study metres: the throat's centre on each nacelle,
- * the closed throat plate's plane, the bowl's lip plane and radii. Read off
- * `build_model.py` (its "aft circular thrust chamber"): the throat plate is
+ * The two drive nozzles, study metres: the throat's centre on each nacelle, // glossary-ignore: throat
+ * the closed throat plate's plane, the bowl's lip plane and radii. Read off // glossary-ignore: throat
+ * `build_model.py` (its "aft circular thrust chamber"): the throat plate is // glossary-ignore: throat
  * the 2.34 m ring at z −25.8 and the inner wall runs out to the 2.94 m ring
  * at z −27.7. The glow sits a few centimetres inside that wall.
  */
@@ -67,8 +69,8 @@ export const COURIER_NOZZLES_M = {
 	lipRadius: 2.85,
 } as const;
 
-/** The drive glow's profile, study metres, (radius, z), throat to lip: `v`
- *  runs 0 at the throat's centre to 1 at the lip, the axis the shared
+/** The drive glow's profile, study metres, (radius, z), throat to lip: `v` // glossary-ignore: throat
+ *  runs 0 at the throat's centre to 1 at the lip, the axis the shared // glossary-ignore: throat
  *  exhaust ramp grades along. */
 function bowlProfile(): THREE.Vector2[] {
 	const n = COURIER_NOZZLES_M;
@@ -85,10 +87,11 @@ function bowlProfile(): THREE.Vector2[] {
 }
 
 /**
- * The glow bowl about the study's Z axis, opening aft (−Z), wound and lit
- * outward. The shipped finishes draw a drive glow `BackSide` — its far wall is
- * what a viewer looking into the nozzle sees — so outward is the winding that
- * draws; `tests/courier-hull.test.ts` checks it.
+ * The glow bowl about the study's Z axis, opening aft (−Z), its faces
+ * winding and lit outward. The shipped finishes draw a drive glow
+ * `BackSide` — its far wall is what a viewer looking into the nozzle sees —
+ * so outward is the winding that draws; `tests/courier-hull.test.ts` checks
+ * it.
  */
 function bowlGeometry(): THREE.BufferGeometry {
 	const lathe = new THREE.LatheGeometry(bowlProfile(), 48);
@@ -124,7 +127,7 @@ function bowlGeometry(): THREE.BufferGeometry {
 	return lathe;
 }
 
-/** The glow as a flat disc on the throat plate, facing aft: the drive the
+/** The glow as a flat disc on the throat plate, facing aft: the drive the // glossary-ignore: throat
  *  `stock` finish draws, whose exhaust material is front-sided and unmapped. */
 function discGeometry(): THREE.BufferGeometry {
 	const n = COURIER_NOZZLES_M;
@@ -224,9 +227,14 @@ export function prepareCourierHullModel(): Promise<void> {
 			installAuthoredCourier(createCourierHullBuilder(gltf.scene));
 			// One courier built now, behind the loading panel: the first build
 			// places the nav lights by raycast against the model, about 0.3 s,
-			// and without this the first Traffic courier to spawn mid-flight
-			// would pay it. Every later build reuses them.
-			disposeSubtree(buildShipMesh("courier", AUTHORED_COURIER_VARIANT).root);
+			// and without this the first Traffic courier drawn mid-flight
+			// would pay it. Every later build reuses them. Its throats are
+			// measured off the same build for the same reason (`ventThroats`
+			// keeps them): a pilot flying a courier pays it at boot otherwise,
+			// and a shipyard swap to one pays it on the frame.
+			const { root } = buildShipMesh("courier", AUTHORED_COURIER_VARIANT);
+			ventThroats(root, "courier");
+			disposeSubtree(root);
 		})
 		.catch((error) => {
 			ready = undefined;

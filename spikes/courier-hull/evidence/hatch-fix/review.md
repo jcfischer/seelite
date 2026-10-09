@@ -6,7 +6,7 @@ All `hatch()` fittings now have their entire geometry mapped to the local skin: 
 
 Verification:
 
-- Export regression: 2 tests, 3666 assertions pass. Small body-hatch seats now participate in the hull-under-every-vertex check alongside the centerline covers. The three closed backing meshes remain consistently outward-wound.
+- Export regression: 2 tests, 3666 assertions pass. Small body-hatch seats now participate in the hull-under-every-vertex check alongside the centerline covers. The three closed backing meshes remain consistently outward-wound. <!-- glossary-ignore: wound -->
 - Live `hatch-close.png` and `hatch-profile.png`: both the deck row and the shoulder hatch are seated and angled with their surfaces.
 - Independent visual review: no visible floating bases or remaining alignment blocker; only thin rims, hinges and handles stand proud.
 - Hardware capture on ANGLE Metal / Apple M1 Pro: zero browser errors, all viewer controls pass; short cadence sample 52.16 FPS. This is not a production benchmark or a new overall fidelity score.

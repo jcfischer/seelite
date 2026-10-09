@@ -115,8 +115,14 @@ Headless timings (bun) on the model:
 | --- | --- | --- |
 | first build (nav-light raycast) | 293 ms | once, inside the loader |
 | later builds | 0.5 ms | |
-| `ventThroats` | 530 ms | the player's hull only, at boot and on a shipyard hull change |
+| `ventThroats`, first | 486–499 ms | once per model and finish: the game's finish inside the loader, another only on the workbench's switch |
+| `ventThroats`, later | 0.03 ms or less | every courier the player flies, at boot or on a shipyard hull change |
 | muzzles | 35 ms | |
+
+The two `ventThroats` rows are sage round 1's: the throats were measured
+afresh for every courier (530 ms each) until `vent-plumes.ts` kept them per
+installed model and finish. Two runs of six builds each, after the first
+build had placed the nav lights.
 
 ## Verification
 

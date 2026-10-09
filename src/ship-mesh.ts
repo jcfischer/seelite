@@ -6765,8 +6765,8 @@ export const AUTHORED_COURIER_VARIANT: HullVariantId = "a";
 let authoredCourier: AuthoredHullBuilder | undefined;
 /** The authored courier's nav lights, placed once. `addNavLights` finds the
  *  metal by raycast, and against the model's 354k triangles that is a third
- *  of a second — paid by every Traffic courier that spawned, were it not
- *  kept. The points' geometry is shared by every copy. */
+ *  of a second — paid by every Traffic courier drawn, were they not kept.
+ *  The points' geometry is shared by every copy. */
 let authoredCourierNavLights: THREE.Points | undefined;
 
 /**
@@ -6793,6 +6793,30 @@ export function installAuthoredCourier(
 export const authoredCourierBuilder = (): AuthoredHullBuilder | undefined =>
 	authoredCourier;
 
+/** The authored courier into `root`: the model, its nav lights (placed once
+ *  and cloned after) and the undetailed ship's adoption. */
+function buildAuthoredCourier(
+	root: THREE.Group,
+	builder: AuthoredHullBuilder,
+): void {
+	root.userData.authored = true;
+	builder(root, makePalette("courier").exhaust);
+	// After the model, for the reason the procedural branch gives: the
+	// lights are placed from the built hull's own box.
+	if (authoredCourierNavLights) {
+		const known = authoredCourierNavLights;
+		const lights = known.clone();
+		lights.onBeforeRender = known.onBeforeRender;
+		root.add(lights);
+	} else {
+		addNavLights(root);
+		const placed = root.getObjectByName("nav-lights") as THREE.Points;
+		shared(placed.geometry);
+		authoredCourierNavLights = placed;
+	}
+	adoptUndetailedShip(root, HULL_REACH_KM.courier);
+}
+
 export function buildShipMesh(
 	id: HullId,
 	variant: HullVariantId = "a",
@@ -6808,22 +6832,7 @@ export function buildShipMesh(
 		variant === AUTHORED_COURIER_VARIANT &&
 		authoredCourier
 	) {
-		root.userData.authored = true;
-		authoredCourier(root, makePalette(id).exhaust);
-		// After the model, for the reason the procedural branch gives: the
-		// lights are placed from the built hull's own box.
-		if (authoredCourierNavLights) {
-			const known = authoredCourierNavLights;
-			const lights = known.clone();
-			lights.onBeforeRender = known.onBeforeRender;
-			root.add(lights);
-		} else {
-			addNavLights(root);
-			const placed = root.getObjectByName("nav-lights") as THREE.Points;
-			shared(placed.geometry);
-			authoredCourierNavLights = placed;
-		}
-		adoptUndetailedShip(root, HULL_REACH_KM[id]);
+		buildAuthoredCourier(root, authoredCourier);
 		return { root };
 	}
 	const plan = SHIP_DETAIL_PLANS[id][variant];

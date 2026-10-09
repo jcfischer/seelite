@@ -400,7 +400,7 @@ for side in [-1,1]:
   box((x+dx,-.73,8.05),(.12,3.8,.36),steel)
   box((x+dx,-.73,8.25),(.033,3.8,.05),alloy)
  # Aft circular thrust chamber set into the octagonal engine body.
- # Annular nozzle rolls over a machined lip into a recessed, closed throat.
+ # Annular nozzle rolls over a machined lip into a recessed, closed throat.  # glossary-ignore: throat
  # Capped cylinders here used to read as flat discs when seen from astern.
  nozzle=[[(x+r*math.cos(j*math.tau/48),-.38+r*math.sin(j*math.tau/48),z) for j in range(48)]
          for z,r in [(-25.3,3.68),(-27.1,3.65),(-27.7,3.4),(-27.7,2.94),(-25.8,2.34)]]
