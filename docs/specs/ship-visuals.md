@@ -193,6 +193,16 @@ The player hull is the courier `Kestrel`, named in `main.ts` as an explicit
 what this spec forbids a roster to take; naming both halves means #26 can see
 what it is replacing when it arrives to own the choice properly.
 
+**Since node #812 the courier's selected variant draws an authored model**, the
+O4 hull the principal approved on #795 (`src/courier-hull.ts`, loaded from
+`public/models/courier-hull.glb` before any `Game` is built). It is the one
+hull here that is not lofted: it carries its own textures and machinery, so the
+finishes, the plating and the greeble zones above do not reach it, and only
+its drive glows follow the finish. The procedural Kestrel remains the
+workbench's other form and the fallback a page that has not loaded the model
+draws. Its scale is set by the courier's declared 57.5 m length, which every
+hull's turn rate is solved against; its beam and height are measured off it.
+
 The player hull is a near-scene object. It is hidden in cockpit view because the
 cockpit HUD, attitude floor, target director, and scanner remain the primary
 flight references. Chase view makes that same hull visible as an external

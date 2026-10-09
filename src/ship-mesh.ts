@@ -6787,9 +6787,11 @@ export function installAuthoredCourier(
 		if (key.startsWith("courier/")) muzzleCache.delete(key);
 }
 
-/** Whether `buildShipMesh` draws the authored courier on this page. */
-export const authoredCourierInstalled = (): boolean =>
-	authoredCourier !== undefined;
+/** The installed authored courier builder, if any: what an instrument
+ *  (`scripts/measure-courier-hull-cost.mjs`) puts back after drawing the
+ *  procedural Kestrel beside it on the same page. */
+export const authoredCourierBuilder = (): AuthoredHullBuilder | undefined =>
+	authoredCourier;
 
 export function buildShipMesh(
 	id: HullId,

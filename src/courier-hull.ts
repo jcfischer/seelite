@@ -31,10 +31,15 @@
 import * as THREE from "three";
 import { MeshoptDecoder } from "three/addons/libs/meshopt_decoder.module.js";
 import { GLTFLoader } from "three/addons/loaders/GLTFLoader.js";
-import { shared } from "./gpu-teardown";
+import { disposeSubtree, shared } from "./gpu-teardown";
 import { HULL_SPECS } from "./hull";
 import { EMISSIVE_CEILING } from "./light-rig";
-import { type AuthoredHullBuilder, installAuthoredCourier } from "./ship-mesh";
+import {
+	AUTHORED_COURIER_VARIANT,
+	type AuthoredHullBuilder,
+	buildShipMesh,
+	installAuthoredCourier,
+} from "./ship-mesh";
 
 /** Where the shipped asset is served from (`spikes/courier-hull/prepare-game-asset.mjs`). */
 export const COURIER_HULL_URL = "/models/courier-hull.glb";
@@ -215,9 +220,14 @@ export function prepareCourierHullModel(): Promise<void> {
 	return (ready ??= new GLTFLoader()
 		.setMeshoptDecoder(MeshoptDecoder)
 		.loadAsync(COURIER_HULL_URL)
-		.then((gltf) =>
-			installAuthoredCourier(createCourierHullBuilder(gltf.scene)),
-		)
+		.then((gltf) => {
+			installAuthoredCourier(createCourierHullBuilder(gltf.scene));
+			// One courier built now, behind the loading panel: the first build
+			// places the nav lights by raycast against the model, about 0.3 s,
+			// and without this the first Traffic courier to spawn mid-flight
+			// would pay it. Every later build reuses them.
+			disposeSubtree(buildShipMesh("courier", AUTHORED_COURIER_VARIANT).root);
+		})
 		.catch((error) => {
 			ready = undefined;
 			throw error;
