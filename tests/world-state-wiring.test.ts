@@ -321,7 +321,11 @@ describe("the Game's world writes", () => {
 		expect(shown.slice(0, 120)).toContain(
 			"return hasHeldSaveFault(this.saveStore, this.saveFault);",
 		);
-		expect(MAIN).toContain("fault: () => game.saveFaultText(),");
+		// Through the gate since #833: the overlay can mount before the `Game`,
+		// and it reads a fault only once the game runs.
+		expect(MAIN).toContain(
+			"fault: () => gate.current?.saveFaultText() ?? null,",
+		);
 	});
 
 	test("the jump flush runs after the arrival finishes", () => {
