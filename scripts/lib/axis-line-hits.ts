@@ -42,7 +42,8 @@ interface Triangle {
 interface Grid {
 	readonly min: [number, number];
 	readonly size: [number, number];
-	readonly cells: Triangle[][];
+	/** Sparse: a cell no triangle touches holds nothing, not an empty list. */
+	readonly cells: (Triangle[] | undefined)[];
 }
 
 interface Indexed {
@@ -99,25 +100,28 @@ function trianglesOf(mesh: THREE.Mesh): Triangle[] {
 
 function index(mesh: THREE.Mesh): Indexed {
 	const triangles = trianglesOf(mesh);
-	const corners = triangles.map((t) =>
-		[t.a, t.b, t.c].map((v) =>
+	// Every corner in the root frame, nine numbers a triangle: one flat array
+	// rather than a Vector3 per corner, which on the courier is a million.
+	const corners = new Float64Array(triangles.length * 9);
+	const p = new THREE.Vector3();
+	triangles.forEach((t, i) => {
+		for (const [k, v] of [t.a, t.b, t.c].entries())
 			mesh
-				.getVertexPosition(v, new THREE.Vector3())
-				.applyMatrix4(mesh.matrixWorld),
-		),
-	);
+				.getVertexPosition(v, p)
+				.applyMatrix4(mesh.matrixWorld)
+				.toArray(corners, 9 * i + 3 * k);
+	});
 	const grid = (axis: 0 | 1 | 2): Grid => {
 		const [u, v] = PLANE[axis];
 		const min: [number, number] = [Infinity, Infinity];
 		const max: [number, number] = [-Infinity, -Infinity];
-		for (const tri of corners)
-			for (const p of tri) {
-				const q = [p.getComponent(u), p.getComponent(v)];
-				for (const k of [0, 1]) {
-					min[k] = Math.min(min[k], q[k]);
-					max[k] = Math.max(max[k], q[k]);
-				}
+		for (let o = 0; o < corners.length; o += 3) {
+			const q = [corners[o + u], corners[o + v]];
+			for (const k of [0, 1]) {
+				min[k] = Math.min(min[k], q[k]);
+				max[k] = Math.max(max[k], q[k]);
 			}
+		}
 		// A margin over float error between the root frame the cells are cut
 		// in and the local frame the test runs in: a triangle is filed in
 		// every cell its slightly grown box touches.
@@ -128,18 +132,22 @@ function index(mesh: THREE.Mesh): Indexed {
 		];
 		min[0] -= pad;
 		min[1] -= pad;
-		const cells: Triangle[][] = Array.from({ length: CELLS * CELLS }, () => []);
+		// Filled as triangles land: most cells of a hull's projection are
+		// empty, and an empty list per cell per axis per mesh is millions.
+		const cells: (Triangle[] | undefined)[] = new Array(CELLS * CELLS);
 		const cell = (x: number, k: 0 | 1) =>
 			Math.min(CELLS - 1, Math.max(0, Math.floor((x - min[k]) / size[k])));
 		triangles.forEach((triangle, t) => {
-			const us = corners[t].map((p) => p.getComponent(u));
-			const vs = corners[t].map((p) => p.getComponent(v));
+			const o = 9 * t;
+			const us = [corners[o + u], corners[o + 3 + u], corners[o + 6 + u]];
+			const vs = [corners[o + v], corners[o + 3 + v], corners[o + 6 + v]];
 			const i0 = cell(Math.min(...us) - pad, 0);
 			const i1 = cell(Math.max(...us) + pad, 0);
 			const j0 = cell(Math.min(...vs) - pad, 1);
 			const j1 = cell(Math.max(...vs) + pad, 1);
 			for (let i = i0; i <= i1; i++)
-				for (let j = j0; j <= j1; j++) cells[i * CELLS + j].push(triangle);
+				for (let j = j0; j <= j1; j++)
+					(cells[i * CELLS + j] ??= []).push(triangle);
 		});
 		return { min, size, cells };
 	};
@@ -187,7 +195,7 @@ export function axisLineTester(meshes: readonly THREE.Mesh[]) {
 			const j = Math.floor((pv - grid.min[1]) / grid.size[1]);
 			if (i < 0 || j < 0 || i >= CELLS || j >= CELLS) continue;
 			const candidates = grid.cells[i * CELLS + j];
-			if (candidates.length === 0) continue;
+			if (!candidates) continue;
 			local.copy(world).applyMatrix4(inverse);
 			for (const t of candidates) {
 				mesh.getVertexPosition(t.a, a);

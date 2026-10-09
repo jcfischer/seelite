@@ -63,6 +63,30 @@ const meshesOf = (root: THREE.Object3D) => {
 
 const triangles = (object: THREE.Object3D) => meshStats([object]).triangles;
 
+/** How many times `run` calls the raycaster's `method`. */
+const countCalls = (
+	method: "intersectObject" | "intersectObjects",
+	run: () => void,
+): number => {
+	// Either method, so one loose type over the two signatures.
+	const proto = THREE.Raycaster.prototype as unknown as Record<
+		typeof method,
+		(...args: unknown[]) => unknown
+	>;
+	const original = proto[method];
+	let n = 0;
+	proto[method] = function (this: THREE.Raycaster, ...args: unknown[]) {
+		n++;
+		return original.apply(this, args);
+	};
+	try {
+		run();
+	} finally {
+		proto[method] = original;
+	}
+	return n;
+};
+
 afterEach(() => setHullFinish(DEFAULT_HULL_FINISH));
 
 describe("the shipped file is the approved study", () => {
@@ -328,23 +352,7 @@ describe("what the game needs that the study did not carry", () => {
 
 describe("the courier's throats are measured once (node #812, sage round 1)", () => {
 	/** Count the raycasts `ventThroats` makes while `run` runs. */
-	const raycasts = (run: () => void): number => {
-		const original = THREE.Raycaster.prototype.intersectObjects;
-		let n = 0;
-		THREE.Raycaster.prototype.intersectObjects = function (
-			this: THREE.Raycaster,
-			...args: Parameters<typeof original>
-		) {
-			n++;
-			return original.apply(this, args);
-		} as typeof original;
-		try {
-			run();
-		} finally {
-			THREE.Raycaster.prototype.intersectObjects = original;
-		}
-		return n;
-	};
+	const raycasts = (run: () => void) => countCalls("intersectObjects", run);
 	/** The throats measured afresh: the same build, not marked authored. */
 	const measured = () => {
 		const root = courier();
@@ -431,23 +439,7 @@ describe("the courier's throats are measured once (node #812, sage round 1)", ()
 	test("taking the model out and putting it back keeps its nav lights (sage round 7)", () => {
 		// What the cost instrument does around every Kestrel arm.
 		// `addNavLights` casts one ray per light through `intersectObject`.
-		const placements = (run: () => void): number => {
-			const original = THREE.Raycaster.prototype.intersectObject;
-			let n = 0;
-			THREE.Raycaster.prototype.intersectObject = function (
-				this: THREE.Raycaster,
-				...args: Parameters<typeof original>
-			) {
-				n++;
-				return original.apply(this, args);
-			} as typeof original;
-			try {
-				run();
-			} finally {
-				THREE.Raycaster.prototype.intersectObject = original;
-			}
-			return n;
-		};
+		const placements = (run: () => void) => countCalls("intersectObject", run);
 		courier();
 		const installed = authoredCourierBuilder();
 		installAuthoredCourier(undefined);
@@ -545,7 +537,7 @@ describe("every Traffic courier is the model, so the detail band switches it (sa
 		expect(drawn(root)).toEqual(["full"]);
 	});
 
-	test("each reduced level is lighter, keeps the hull outside the canopy, and never reaches past the model", () => {
+	test("each reduced level is lighter, keeps the hull outside the canopy, and stays inside the model's box", () => {
 		const root = courier();
 		const { full, reduced, outline } = levelsOf(root);
 		const study = triangles(full);

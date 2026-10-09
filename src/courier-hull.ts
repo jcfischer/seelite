@@ -127,8 +127,11 @@ export class CourierLevelMesh extends THREE.Mesh {
  * One mesh's geometry with edges collapsed while the error stays under
  * `errorM` (study metres). Welded on position first: the study's faces do
  * not share vertices across a hard edge, and an unwelded mesh has nothing
- * to collapse. A collapse moves a corner onto an existing vertex, so the
- * reduced mesh never reaches past the approved one. The welded corners keep
+ * to collapse. A collapse moves a corner onto an existing vertex, so every
+ * vertex of the reduced mesh is one of the approved one's and its box lies
+ * inside the model's. That is all it shows: a triangle between existing
+ * vertices can bridge a concavity, so the reduced surface may stand outside
+ * the approved one inside that box. The welded corners keep
  * one of their texture coordinates, which a few pixels of hull cannot show.
  * `geometry` is `null` when nothing of the mesh survives the error;
  * `errorM` is the error the simplifier reports it reached, in the same

@@ -144,8 +144,10 @@ draws `reduced`, and past `DETAIL_RADII.reduced` (400, 14.4 km) it draws
   under an absolute error, normals recomputed with a 30° crease, and the
   corners welded again where they agree (sage round 5), so a level is indexed
   rather than three corners a triangle; the triangle counts did not move. A collapse
-  moves a corner onto an existing vertex, so a level never reaches past the
-  model; the envelope rows still read the full model's box. The cabin and the
+  moves a corner onto an existing vertex, so every vertex of a level is one
+  of the model's and the level's box lies inside the model's; a triangle
+  between existing vertices can still bridge a concavity, so the surface is
+  not shown to stay on or inside the model. The envelope rows still read the full model's box. The cabin and the
   pilot are left out of both levels.
 - **The error is a target, in pixels.** Half a device pixel at the level's
   band edge, at the near camera's 60° on a 1800-pixel frame (900 CSS pixels

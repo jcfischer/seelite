@@ -227,8 +227,8 @@ and `tests/courier-hull.test.ts` holds inside the target; nothing measures
 how far a level actually lies from the model. The band's hysteresis draws
 `reduced` somewhat nearer than `DETAIL_RADII.full` on the way back in, and a
 taller frame sees the same error at more than half a pixel, in proportion to
-its height. How visible the switch is, is judged by eye in flight. The cabin and the pilot are left out of both, and
-neither takes a ray, so everything placed on the hull is placed on the
+its height. How visible the switch is, is judged by eye in flight. The cabin and the pilot are left out of both levels, and
+neither level takes a ray, so everything placed on the hull is placed on the
 approved model. Inside the first edge — the
 player's own courier in chase among them — the model is drawn as approved.
 

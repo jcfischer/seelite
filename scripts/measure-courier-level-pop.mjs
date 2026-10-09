@@ -11,10 +11,13 @@
  * just past `DETAIL_RADII.full`, drawn at `full` and at `reduced` by
  * `setShipDetail`, on one page with the clock held, at four headings.
  *
- * The footprint is every pixel the full hull moves past 24/255 against the
- * same frame without it; the figure is the share of that footprint the reduced
- * level moves past 24/255 against the full one. The control is the full hull
- * drawn twice. It is a diagnosis that asserts no threshold, and refuses a run
+ * The footprint is every pixel either level moves past 24/255 against the
+ * same frame without the hull, so a reduced level drawn beyond the full
+ * silhouette is counted (sage round 9); the figure is the share of that
+ * footprint the reduced level moves past 24/255 against the full one, and the
+ * pixels only the reduced level reaches past 24/255 are printed on their own,
+ * with how many of them the switch itself moves past 24/255. The control
+ * is the full hull drawn twice. It is a diagnosis that asserts no threshold, and refuses a run
  * whose hull has no footprint or whose control is not still.
  */
 // A default-layout probe (#381 D11): it presses keys by name, as the shipped
@@ -26,7 +29,7 @@ import { bootedGame, guardedOrigin, launchChromium } from "./probe-guard.mjs";
 
 const VIEWPORT = { width: 1440, height: 900 };
 const port = Number(process.env.PORT ?? 5197);
-/** Courier reaches from the camera: just past the band's first edge. */
+/** Multiple of `DETAIL_RADII.full`: just past the band's first edge. */
 const RADII_PAST_EDGE = 1.02;
 const HEADINGS_DEG = [0, 90, 180, 270];
 
@@ -115,19 +118,33 @@ try {
 				const again = frame();
 				mesh.setShipDetail(root, "reduced");
 				const reduced = frame();
-				const footprint = moved(empty, full);
+				const fullPrint = moved(empty, full);
+				const reducedPrint = moved(empty, reduced);
 				const control = moved(full, again);
 				const popped = moved(full, reduced);
 				let n = 0;
 				let c = 0;
 				let r = 0;
-				for (let p = 0; p < footprint.length; p++) {
-					if (!footprint[p]) continue;
+				let beyond = 0;
+				let beyondMoved = 0;
+				for (let p = 0; p < fullPrint.length; p++) {
+					if (!fullPrint[p] && !reducedPrint[p]) continue;
 					n++;
 					c += control[p];
 					r += popped[p];
+					if (!fullPrint[p]) {
+						beyond++;
+						beyondMoved += popped[p];
+					}
 				}
-				out.push({ heading, footprint: n, control: c, popped: r });
+				out.push({
+					heading,
+					footprint: n,
+					control: c,
+					popped: r,
+					beyond,
+					beyondMoved,
+				});
 			}
 			root.removeFromParent();
 			return { rows: out, rangeKm: range, box: side };
@@ -141,7 +158,9 @@ try {
 	console.log(
 		`  courier on the camera axis at ${(rows.rangeKm * 1000).toFixed(0)} m (${RADII_PAST_EDGE} x the band's first edge), read in a ${rows.box}px box`,
 	);
-	console.log("  heading  footprint px  control moved  reduced moved");
+	console.log(
+		"  heading  footprint px  control moved  reduced moved  reduced only  of them moved",
+	);
 	for (const row of rows.rows) {
 		if (row.footprint === 0)
 			throw new Error(`heading ${row.heading}: the hull has no footprint`);
@@ -152,7 +171,7 @@ try {
 		// Finite: the footprint was refused at zero above.
 		const share = (row.popped / row.footprint) * 100;
 		console.log(
-			`  ${String(row.heading).padStart(5)}°  ${String(row.footprint).padStart(12)}  ${String(row.control).padStart(13)}  ${String(row.popped).padStart(6)} (${share.toFixed(1)}%)`,
+			`  ${String(row.heading).padStart(5)}°  ${String(row.footprint).padStart(12)}  ${String(row.control).padStart(13)}  ${String(row.popped).padStart(6)} (${share.toFixed(1)}%)  ${String(row.beyond).padStart(12)}  ${String(row.beyondMoved).padStart(13)}`,
 		);
 	}
 } finally {
