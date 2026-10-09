@@ -18,7 +18,6 @@
 import * as THREE from "three";
 import { EMISSIVE_CEILING } from "./light-rig";
 import { mergeGeometries } from "three/addons/utils/BufferGeometryUtils.js";
-import { MeshoptSimplifier } from "meshoptimizer/simplifier";
 import { mutePaint } from "./surface";
 
 // Re-exported, not merely imported: `Ring` and `hullLoft` were this module's
@@ -61,15 +60,14 @@ export {
 	updateShipVisuals,
 } from "./ship-detail";
 import {
-	type AuthoredPart,
-	type StandInBuilders,
 	type ShipDetailPlan,
 	type ShipLevels,
 	type ShipSurface,
 	adoptUndetailedShip,
 	buildShipDetails,
-	markAuthoredShip,
 } from "./ship-detail";
+import { halfPixelKm, levelErrorKm, reducedLevel } from "./authored-levels";
+import type { DetailLevel } from "./detail-level";
 
 export const SHIP_DESIGN_ROUND = 11;
 
@@ -2520,31 +2518,40 @@ function buildMinerA(root: THREE.Group, p: Palette) {
  * named groups, and each anchor's part groups stay named while its metal is
  * merged (`batchLongwallAnchors`), so a later node can pose them; what mining
  * is, and the deployed envelope it would need, are not this node's.
+ *
+ * **Every Traffic miner is this model, so the detail band switches it**, as
+ * it switches node #812's courier (`authored-levels.ts`): the model at
+ * `full`, a medium copy at `reduced` and a coarse one at `outline`, all
+ * three made here at install and cloned with the template. Only the player's
+ * own miner draws the model: any other draws the medium copy however near it
+ * is, a berth beside the player's included (`LONGWALL_NEAREST_LEVEL`).
  */
 let longwallTemplate: THREE.Group | null = null;
-/** What a far miner draws in place of its hull (`longwallOutline`), in the
- *  template's frame; its mesh's material is the clone's, set per clone. */
-let longwallOutlineTemplate: THREE.Group | null = null;
-/** Each of the hull's opaque meshes, by geometry, to the simplified geometry
- *  a miner draws in its place at `reduced` (`longwallReduced`). */
-let longwallReducedGeometry = new Map<
-	THREE.BufferGeometry,
-	THREE.BufferGeometry
->();
+
+/** The three levels' object names in a built miner: the model and its two
+ *  reduced copies. One copy of the names, for the rows and instruments that
+ *  pick a level out of a built miner. */
+export const LONGWALL_LEVEL_NAMES = {
+	full: "longwall-exterior",
+	reduced: "longwall-reduced",
+	outline: "longwall-outline",
+} as const;
 
 /**
- * The target error Longwall B's `reduced` hull is simplified to, in model
- * metres (node #815, sage round 5). It is a target in meshoptimizer's own
- * metric and **not** a bound on distance: measured in space and sampled,
- * the drawn surface lies within 0.5 m of the model's, and the model's
- * furthest point from the drawn surface is 1.83 m, on the hoses it no longer
- * draws (`tests/longwall-mesh.test.ts`, sage round 6). The band begins at
- * 40 radii, where the 84.4 m hull is 39 px long in a 900 px frame over a 60°
- * field, so a pixel there is 2.2 m and 1.83 m is 0.83 of one; further out it
- * is less.
+ * The distance, in miner reaches, the medium level is made for: its target
+ * error is half a device pixel there (`halfPixelKm`), about 0.14 m. The band
+ * draws it from the player's nearest neighbour in a bay out to
+ * `DETAIL_RADII.reduced`, because the principal ruled on 2026-10-09 that a
+ * Traffic miner may be the medium level even inside a station; at 100 m,
+ * 2.4 reaches, the same error is about 1.2 px. The model inside 40 radii was
+ * 283,576 triangles per miner, every Traffic miner at a berth included (sage
+ * round 9); the medium level is `tests/longwall-mesh.test.ts`'s figure.
  */
-export const LONGWALL_REDUCED_ERROR_M = 0.4;
+export const LONGWALL_MEDIUM_RADII = 10;
 
+/** The most detail a miner other than the player's own is drawn at
+ *  (`updateShipVisuals`'s `own`): the medium level, however near. */
+export const LONGWALL_NEAREST_LEVEL = "reduced" as const;
 /**
  * The drive nozzles, model metres in the export's frame: the two aft drive
  * rings stand at x = ±12.5 on the centre line's height, their lip reaches
@@ -2596,28 +2603,18 @@ function longwallGlowDisc() {
 
 /**
  * Install the decoded Longwall B scene (metres, as exported), or remove it.
- * Await `MeshoptSimplifier.ready` first: the `reduced` hull is simplified
+ * Await `MeshoptSimplifier.ready` first: the two reduced levels are made
  * here, once, rather than per miner.
  */
 export function installLongwallModel(scene: THREE.Group | null): void {
-	// All three swap together, and only once the prepare has returned: a
-	// prepare that throws leaves the previous install whole (sage round 8).
-	const prepared = scene ? prepareLongwall(scene) : null;
-	longwallTemplate = prepared?.template ?? null;
-	longwallOutlineTemplate = prepared?.outline ?? null;
-	longwallReducedGeometry = prepared?.reduced ?? new Map();
+	// Swapped only once the prepare has returned: a prepare that throws leaves
+	// the previous install whole (sage round 8).
+	longwallTemplate = scene ? prepareLongwall(scene) : null;
 }
 
-function prepareLongwall(scene: THREE.Group): {
-	template: THREE.Group;
-	outline: THREE.Group;
-	reduced: Map<THREE.BufferGeometry, THREE.BufferGeometry>;
-} {
-	// Before the batch: one box per part the export drew, not per material.
-	const outline = longwallOutlineGeometry(scene);
+function prepareLongwall(scene: THREE.Group): THREE.Group {
 	batchLongwallHull(scene);
 	batchLongwallAnchors(scene);
-	const reduced = simplifyLongwallHull(scene);
 	// The export's lamps are brighter than the game's exposure contract, as
 	// the Coriolis's were: normalise once, keeping their relative strengths.
 	const materials = new Set<THREE.MeshStandardMaterial>();
@@ -2641,7 +2638,7 @@ function prepareLongwall(scene: THREE.Group): {
 	const template = new THREE.Group();
 	template.name = "longwall-template";
 	const exterior = new THREE.Group();
-	exterior.name = "longwall-exterior";
+	exterior.name = LONGWALL_LEVEL_NAMES.full;
 	exterior.rotation.y = Math.PI;
 	exterior.scale.setScalar(0.001);
 	exterior.add(scene);
@@ -2656,15 +2653,30 @@ function prepareLongwall(scene: THREE.Group): {
 		.getCenter(new THREE.Vector3())
 		.negate();
 	exterior.position.copy(offset);
-	const outlineTemplate = new THREE.Group();
-	outlineTemplate.name = "longwall-outline";
-	outlineTemplate.rotation.copy(exterior.rotation);
-	outlineTemplate.scale.copy(exterior.scale);
-	outlineTemplate.position.copy(offset);
-	const stand = new THREE.Mesh(outline);
-	stand.name = "longwall-outline-hull";
-	stand.castShadow = false;
-	outlineTemplate.add(stand);
+	// The levels stand where the model does, in its frame (metres), and
+	// keep every lamp whole: an emissive reads at range far beyond its size.
+	template.updateMatrixWorld(true);
+	const rules = {
+		keep: (mesh: THREE.Mesh) => materialsOf(mesh).some(isLampMaterial),
+		permissive: true,
+	};
+	const kmPerM = 0.001;
+	template.add(
+		reducedLevel(
+			exterior,
+			halfPixelKm(LONGWALL_MEDIUM_RADII, HULL_REACH_KM.miner) / kmPerM,
+			kmPerM,
+			LONGWALL_LEVEL_NAMES.reduced,
+			rules,
+		),
+		reducedLevel(
+			exterior,
+			levelErrorKm("outline", HULL_REACH_KM.miner) / kmPerM,
+			kmPerM,
+			LONGWALL_LEVEL_NAMES.outline,
+			rules,
+		),
+	);
 	// Production frame: the export's +X is port once turned about Y.
 	const disc = shared(longwallGlowDisc());
 	for (const [side, x] of [
@@ -2689,7 +2701,7 @@ function prepareLongwall(scene: THREE.Group): {
 		if (o.name === "nav-lights") shared((o as THREE.Points).geometry);
 	});
 	template.updateMatrixWorld(true);
-	return { template, outline: outlineTemplate, reduced };
+	return template;
 }
 
 /** Is this a lamp — an emissive the detail band and the hull batch leave
@@ -2705,9 +2717,8 @@ export function isLampMaterial(material: THREE.Material): boolean {
 const materialsOf = (mesh: THREE.Mesh): THREE.Material[] =>
 	Array.isArray(mesh.material) ? mesh.material : [mesh.material];
 
-/** The hull's paint: an opaque material that is no lamp. The batches, the
- *  `reduced` hull and the outline's paint all read this one rule, and so does
- *  `tests/longwall-mesh.test.ts`. */
+/** The hull's paint: an opaque material that is no lamp. The batches read
+ *  this one rule, and so does `tests/longwall-mesh.test.ts`. */
 export const isHullPaint = (material: THREE.Material): boolean =>
 	!isLampMaterial(material) && !material.transparent;
 
@@ -2727,8 +2738,7 @@ function longwallHullGroup(scene: THREE.Object3D): THREE.Object3D {
 }
 
 /** The `hull` group under `root` — the export or a built clone — its
- *  painted meshes, and the transform into its frame. One collection, read by
- *  the batch, the `reduced` hull and the outline's paint (sage round 8). */
+ *  painted meshes, and the transform into its frame (sage round 8). */
 function hullPaintMeshes(root: THREE.Object3D): {
 	hull: THREE.Object3D;
 	toHull: THREE.Matrix4;
@@ -2833,144 +2843,7 @@ function batchLongwallAnchors(scene: THREE.Group): void {
 	}
 }
 
-/**
- * Longwall B between 40 and 400 radii (node #815, sage round 5): each of the
- * hull's seven opaque meshes simplified to `LONGWALL_REDUCED_ERROR_M`'s
- * target, from 252,810 triangles to 5,756 (`tests/longwall-mesh.test.ts`,
- * which measures how far the surface moved; the target is no bound). The hull
- * is 39 px long at the band's near edge, so it was drawing more triangles than
- * it covers pixels. Permissive: the export's flat-shaded parts split a vertex
- * at every hard edge, and a simplifier that keeps those seams removed 48 of
- * the hull group's 253,256 triangles when tried, so a kept vertex keeps one
- * side's normal. The index is the only new buffer: every attribute is the
- * batch's own. Simplified once at install, about 150 ms headless.
- */
-function simplifyLongwallHull(
-	scene: THREE.Group,
-): Map<THREE.BufferGeometry, THREE.BufferGeometry> {
-	const { toHull, meshes } = hullPaintMeshes(scene);
-	const simplified = new Map<THREE.BufferGeometry, THREE.BufferGeometry>();
-	for (const mesh of meshes) {
-		const source = mesh.geometry;
-		const index = source.index;
-		if (!index) throw new Error(`Longwall B: ${mesh.name} is not indexed`);
-		const position = source.getAttribute("position");
-		const positions = new Float32Array(position.count * 3);
-		for (let i = 0; i < position.count; i++) {
-			positions[i * 3] = position.getX(i);
-			positions[i * 3 + 1] = position.getY(i);
-			positions[i * 3 + 2] = position.getZ(i);
-		}
-		// The target is in hull metres; a mesh scaled below `hull` reads it in
-		// its own units.
-		const scale = new THREE.Matrix4()
-			.multiplyMatrices(toHull, mesh.matrixWorld)
-			.getMaxScaleOnAxis();
-		const [kept] = MeshoptSimplifier.simplify(
-			Uint32Array.from(index.array),
-			positions,
-			3,
-			0,
-			LONGWALL_REDUCED_ERROR_M / scale,
-			["ErrorAbsolute", "Permissive"],
-		);
-		const reduced = new THREE.BufferGeometry();
-		for (const [name, attribute] of Object.entries(source.attributes))
-			reduced.setAttribute(name, attribute);
-		reduced.setIndex(new THREE.BufferAttribute(kept, 1));
-		simplified.set(source, shared(reduced));
-	}
-	return simplified;
-}
-
-/**
- * What a built miner draws in its hull's opaque metal's place at `reduced`,
- * built the first time it gets there (`ship-detail.ts`): one mesh per hull
- * mesh, with that mesh's own material — so a wreck's is the wreck's paint —
- * and its place relative to the root.
- */
-function longwallReduced(root: THREE.Object3D): () => THREE.Object3D {
-	return () => {
-		const group = new THREE.Group();
-		group.name = "longwall-reduced";
-		root.updateMatrixWorld(true);
-		const fromRoot = root.matrixWorld.clone().invert();
-		longwallHullGroup(root).traverse((o) => {
-			const mesh = o as THREE.Mesh;
-			if (!mesh.isMesh) return;
-			const reduced = longwallReducedGeometry.get(mesh.geometry);
-			// The hoses simplify to nothing at this target.
-			if (!reduced?.index?.count) return;
-			const stand = new THREE.Mesh(reduced, mesh.material);
-			stand.name = `${mesh.name}-reduced`;
-			stand.matrixAutoUpdate = false;
-			stand.matrix.multiplyMatrices(fromRoot, mesh.matrixWorld);
-			stand.castShadow = false;
-			group.add(stand);
-		});
-		return group;
-	};
-}
-
-/**
- * Longwall B past 400 radii (node #815, sage round 4): one box per mesh the
- * export's `hull` group drew, each measured off its own vertices, merged into
- * one mesh of 12 triangles a box. The hull is about 4 px long there, and its
- * own 250k triangles were what every far miner still drew. Lamps are left
- * out — they stay drawn, as at every band. Each box bounds its part, so the
- * union is the hull's own box and nothing reaches past it.
- */
-function longwallOutlineGeometry(scene: THREE.Group): THREE.BufferGeometry {
-	const hull = longwallHullGroup(scene);
-	scene.updateMatrixWorld(true);
-	const boxes: THREE.BufferGeometry[] = [];
-	hull.traverse((o) => {
-		const mesh = o as THREE.Mesh;
-		if (!mesh.isMesh || materialsOf(mesh).some(isLampMaterial)) return;
-		const box = new THREE.Box3().setFromObject(mesh, true);
-		const size = box.getSize(new THREE.Vector3());
-		const centre = box.getCenter(new THREE.Vector3());
-		boxes.push(
-			new THREE.BoxGeometry(size.x, size.y, size.z).translate(
-				centre.x,
-				centre.y,
-				centre.z,
-			),
-		);
-	});
-	const merged = mergeGeometries(boxes);
-	if (!merged) throw new Error("Longwall B: cannot merge the outline");
-	for (const box of boxes) box.dispose();
-	return shared(merged);
-}
-
-/**
- * What a built miner draws in its hull's place at `outline`, built the first
- * time it gets there (`ship-detail.ts`). It takes the clone's own hull paint
- * — the material on most of its triangles — when it is built, so a wreck's
- * outline is the wreck's dark paint and never the live ship's.
- */
-function longwallOutline(root: THREE.Object3D): () => THREE.Object3D {
-	return () => {
-		if (!longwallOutlineTemplate)
-			throw new Error("Longwall B: the outline was built uninstalled");
-		let paint: THREE.Material | undefined;
-		let most = 0;
-		for (const mesh of hullPaintMeshes(root).meshes) {
-			const g = mesh.geometry;
-			const count = (g.index ?? g.getAttribute("position")).count;
-			if (count > most)
-				[most, paint] = [count, mesh.material as THREE.Material];
-		}
-		if (!paint) throw new Error("Longwall B: the hull has no paint");
-		const outline = longwallOutlineTemplate.clone(true);
-		(outline.getObjectByName("longwall-outline-hull") as THREE.Mesh).material =
-			paint;
-		return outline;
-	};
-}
-
-function buildLongwall(root: THREE.Group) {
+function buildLongwall(root: THREE.Group): ShipLevels {
 	if (!longwallTemplate)
 		throw new Error(
 			"miner/b is the authored Longwall B: await prepareLongwallModel() " +
@@ -2982,47 +2855,13 @@ function buildLongwall(root: THREE.Group) {
 		if (child.name === "nav-lights") copy.onBeforeRender = child.onBeforeRender;
 		root.add(copy);
 	}
-}
-
-/**
- * What the detail band sheds from a built Longwall B (node #815): the four
- * stowed anchors' metal from `reduced` and the cutter's (`feed`, with `rotor`
- * inside it) from `outline`. Every lamp stays. The hull's opaque metal goes
- * at `reduced` for `longwallReduced`'s simplified copy, and the glazing at
- * `outline` with the rest of the hull, for `longwallOutline`'s boxes: it is
- * the silhouette, and the bridge's shell and glazing are small enough that a
- * size rule would open a hole in it. Past `full` none of it casts a shadow
- * (`ship-detail.ts`).
- *
- * Measured in a 900 px frame over a 60° field: at the band's 40 radii the
- * hull is 39 px long and a stowed anchor, 20.5 x 7 m, is 9.4 x 3.3 px; at
- * 400 radii the hull is 3.9 px and the cutter's 31.4 m feed is 1.5 px.
- * Collected from the clone, so a far miner hides its own meshes and never the
- * template's.
- */
-function longwallMechanism(root: THREE.Object3D): AuthoredPart[] {
-	const parts: AuthoredPart[] = [];
-	root.traverse((o) => {
-		const mesh = o as THREE.Mesh;
-		if (!mesh.isMesh) return;
-		if (materialsOf(mesh).some(isLampMaterial)) return;
-		let hull = false;
-		for (let up = mesh.parent; up && up !== root; up = up.parent) {
-			if (/^anchor-\d/.test(up.name))
-				return void parts.push({ mesh, hiddenFrom: "reduced" });
-			if (up.name === "feed" || up.name === "rotor")
-				return void parts.push({ mesh, hiddenFrom: "outline" });
-			if (up.name === "hull") hull = true;
-		}
-		if (hull)
-			parts.push({
-				mesh,
-				hiddenFrom: longwallReducedGeometry.has(mesh.geometry)
-					? "reduced"
-					: "outline",
-			});
-	});
-	return parts;
+	const level = (name: string) =>
+		root.children.find((c) => c.name === name) as THREE.Object3D;
+	return {
+		full: level(LONGWALL_LEVEL_NAMES.full),
+		reduced: level(LONGWALL_LEVEL_NAMES.reduced),
+		outline: level(LONGWALL_LEVEL_NAMES.outline),
+	};
 }
 
 function buildMinerC(root: THREE.Group, p: Palette) {
@@ -6608,12 +6447,11 @@ interface LoftPlan extends ShipDetailPlan {
  *  so it declares no zones, gets no generated detail and takes no palette:
  *  every hull finish draws it the same (`tests/ship-finish.test.ts`). */
 interface AuthoredPlan extends ShipDetailPlan {
-	readonly build: (root: THREE.Group) => void;
+	/** Draws the model into the root and returns its levels for the band. */
+	readonly build: (root: THREE.Group) => ShipLevels;
 	readonly authored: true;
-	/** Its machinery, as the detail band sheds it. */
-	readonly mechanism: (root: THREE.Object3D) => AuthoredPart[];
-	/** What it draws in its metal's place at each band past `full`. */
-	readonly standIns?: (root: THREE.Object3D) => StandInBuilders;
+	/** The most detail any hull but the player's own draws it at. */
+	readonly nearest: DetailLevel;
 }
 type BuilderPlan = LoftPlan | AuthoredPlan;
 
@@ -6704,11 +6542,7 @@ export const SHIP_DETAIL_PLANS: Record<
 			build: buildLongwall,
 			zones: [],
 			authored: true,
-			mechanism: longwallMechanism,
-			standIns: (root) => ({
-				reduced: longwallReduced(root),
-				outline: longwallOutline(root),
-			}),
+			nearest: LONGWALL_NEAREST_LEVEL,
 		},
 		c: planned(buildMinerC, "miner-fuselage", "refinery-spine", "dorsal", 22),
 	},
@@ -7312,12 +7146,11 @@ export function buildShipMesh(
 	if (plan.authored) {
 		root.userData.authored = true;
 		// Nav lights come with the template, placed once (`prepareLongwall`).
-		plan.build(root);
-		markAuthoredShip(
+		adoptUndetailedShip(
 			root,
 			HULL_REACH_KM[id],
-			plan.mechanism(root),
-			plan.standIns?.(root),
+			plan.build(root),
+			plan.nearest,
 		);
 		return { root };
 	}

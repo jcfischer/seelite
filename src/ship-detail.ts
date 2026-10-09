@@ -75,19 +75,12 @@ interface VisualState {
 	detail: DetailLevel;
 	quality: ShipQuality;
 	greebles: THREE.InstancedMesh[];
-	/** An authored hull's own machinery (node #815), gated by the band alone. */
-	mechanism: readonly AuthoredPart[];
-	/** What an authored hull draws in its metal's place at a band, each built
-	 *  the first time the band gets there (node #815, sage rounds 4 and 5). */
-	standIns: StandIn[];
-	/** The band the mechanism was last gated at, so an unchanged band walks
-	 *  none of it (sage round 5). */
-	appliedBand?: DetailLevel;
-	/** Each mechanism mesh's `castShadow` as the occlusion marking left it,
-	 *  held while the band is past `full` and put back on return. */
-	castKept?: Map<THREE.Object3D, boolean>;
 	/** An authored hull's own levels (node #812), one drawn at a time. */
 	levels?: ShipLevels;
+	/** The least detail anything but the player's own hull draws this hull
+	 *  at, however near (node #815): `reduced` holds a Traffic Longwall B at
+	 *  its medium level beside a berth. */
+	nearest: DetailLevel;
 }
 
 /**
@@ -103,27 +96,6 @@ export const LEVEL_STAND_IN = "levelStandIn";
 
 export const isLevelStandIn = (object: THREE.Object3D): boolean =>
 	object.userData[LEVEL_STAND_IN] === true;
-
-/**
- * One mesh of an authored hull's machinery and the band it stops drawing at.
- * Distance alone hides it, never quality: it is the approved design rather
- * than generated clutter, and close up it is what the hull is for.
- */
-export interface AuthoredPart {
-	readonly mesh: THREE.Object3D;
-	readonly hiddenFrom: FarBand;
-}
-
-type FarBand = Exclude<DetailLevel, "full">;
-
-/** Builders for what an authored hull draws in its metal's place, per band. */
-export type StandInBuilders = Partial<Record<FarBand, () => THREE.Object3D>>;
-
-interface StandIn {
-	readonly band: FarBand;
-	readonly build: () => THREE.Object3D;
-	built?: THREE.Object3D;
-}
 
 const BAND_RANK: Readonly<Record<DetailLevel, number>> = {
 	full: 0,
@@ -336,67 +308,41 @@ export function buildShipDetails(
 		detail: "full",
 		quality: "high",
 		greebles,
-		mechanism: [],
-		standIns: [],
+		nearest: "full",
 	} satisfies VisualState;
 	root.userData.shipSilhouetteKm = reachKm;
 }
 
 /**
  * The visual state of a hull that carries no generated detail: an authored
- * model (node #812's courier) brings its own machinery, so there is no
- * clutter for the quality gate to switch. What the band switches instead is
- * the model itself, when the hull carries `levels`: the full model inside
- * the band's first edge and a reduced copy beyond it, because every Traffic
- * courier is this model. The state exists either way, because every caller
- * of `updateShipVisuals` holds one per hull root.
+ * model (node #812's courier, node #815's miner) brings its own machinery,
+ * so there is no clutter for the quality gate to switch. What the band
+ * switches instead is the model itself, when the hull carries `levels`: the
+ * full model inside the band's first edge and a reduced copy beyond it,
+ * because every Traffic courier and miner is the model. The state exists
+ * either way, because every caller of `updateShipVisuals` holds one per hull
+ * root. `nearest` is the most detail any hull but the player's own draws it
+ * at (node #815).
  */
 export function adoptUndetailedShip(
 	root: THREE.Group,
 	reachKm: number,
 	levels?: ShipLevels,
+	nearest: DetailLevel = "full",
 ): void {
 	const state: VisualState = {
 		detail: "full",
 		quality: "high",
 		greebles: [],
-		mechanism: [],
-		standIns: [],
 		levels,
+		nearest,
 	};
 	root.userData.shipVisual = state;
 	root.userData.shipSilhouetteKm = reachKm;
-	applyVisibility(root, state);
+	applyVisibility(state);
 }
 
-/**
- * The visual state of an authored hull (node #815), which carries its own
- * machinery and lamps: no generated greebles and no strip. The band sheds
- * `mechanism` with distance — the builder names which meshes and from which
- * band, and every lamp stays out of it, as every emissive stays out of the
- * greeble gate. Past `full` the hull's own metal can go too, and
- * `standIns` builds what draws in its place at each band.
- */
-export function markAuthoredShip(
-	root: THREE.Group,
-	reachKm: number,
-	mechanism: readonly AuthoredPart[],
-	standIns: StandInBuilders = {},
-): void {
-	root.userData.shipVisual = {
-		detail: "full",
-		quality: "high",
-		greebles: [],
-		mechanism,
-		standIns: (Object.keys(standIns) as FarBand[]).map((band) => ({
-			band,
-			build: standIns[band] as () => THREE.Object3D,
-		})),
-	} satisfies VisualState;
-	root.userData.shipSilhouetteKm = reachKm;
-}
-
-function applyVisibility(root: THREE.Object3D, state: VisualState) {
+function applyVisibility(state: VisualState) {
 	const draw = state.detail === "full" && SHIP_QUALITY[state.quality].greebles;
 	for (const mesh of state.greebles) mesh.visible = draw;
 	// Distance alone picks an authored level: the quality row gates generated
@@ -404,54 +350,32 @@ function applyVisibility(root: THREE.Object3D, state: VisualState) {
 	if (state.levels)
 		for (const [level, object] of Object.entries(state.levels))
 			object.visible = level === state.detail;
-	if (state.appliedBand === state.detail) return;
-	state.appliedBand = state.detail;
-	const band = BAND_RANK[state.detail];
-	for (const part of state.mechanism)
-		part.mesh.visible = band < BAND_RANK[part.hiddenFrom];
-	// Past `full` an authored hull's metal leaves the shadow pass, and with it
-	// the ambient-occlusion pass, which draws only what casts
-	// (`hideNonOccluders`): what still draws there draws once, not two or
-	// three times over (sage round 5). Every lamp is untouched, and the
-	// stand-ins are built not casting.
-	if (band > 0 && !state.castKept) {
-		state.castKept = new Map();
-		for (const { mesh } of state.mechanism) {
-			state.castKept.set(mesh, mesh.castShadow);
-			mesh.castShadow = false;
-		}
-	} else if (band === 0 && state.castKept) {
-		for (const [mesh, cast] of state.castKept) mesh.castShadow = cast;
-		state.castKept = undefined;
-	}
-	for (const standIn of state.standIns) {
-		const drawn = state.detail === standIn.band;
-		// Built on first use rather than with the hull, so a freshly built mesh
-		// — the one muzzles, vent throats, the envelope and the vent placement
-		// are measured off — never carries one.
-		if (drawn && !standIn.built) {
-			standIn.built = standIn.build();
-			root.add(standIn.built);
-		}
-		if (standIn.built) standIn.built.visible = drawn;
-	}
 }
 
 export function setShipDetail(root: THREE.Object3D, level: DetailLevel): void {
 	const state = stateOf(root);
 	state.detail = level;
-	applyVisibility(root, state);
+	applyVisibility(state);
 }
 
-/** Update detail and the quality gate; emissives intentionally stay untouched. */
+/**
+ * Update detail and the quality gate; emissives intentionally stay untouched.
+ * `own` is the player's hull, which draws every level the band names; any
+ * other hull draws no more detail than its `nearest` (node #815: a Traffic
+ * Longwall B is its medium level beside a berth, the principal's ruling of
+ * 2026-10-09).
+ */
 export function updateShipVisuals(
 	root: THREE.Object3D,
 	distanceKm: number,
 	quality: ShipQuality,
+	own = false,
 ): void {
 	const state = stateOf(root);
 	const reachKm = root.userData.shipSilhouetteKm as number;
-	state.detail = detailLevel(state.detail, distanceKm / reachKm);
+	const level = detailLevel(state.detail, distanceKm / reachKm);
+	state.detail =
+		own || BAND_RANK[level] >= BAND_RANK[state.nearest] ? level : state.nearest;
 	state.quality = quality;
-	applyVisibility(root, state);
+	applyVisibility(state);
 }

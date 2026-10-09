@@ -15,14 +15,16 @@ import * as THREE from "three";
 import { buildDerelictMesh } from "../src/derelict-mesh";
 import { DETAIL_RADII } from "../src/detail-level";
 import {
+	AuthoredLevelMesh,
+	LEVEL_REACHED_ERROR_KM,
+	reducedLevel,
+} from "../src/authored-levels";
+import {
 	COURIER_LENGTH_INSET_KM,
 	COURIER_FRAME_NAME,
 	COURIER_LEVEL_NAMES,
-	CourierLevelMesh,
 	FIXTURE_SCREEN_PREFIX,
-	LEVEL_REACHED_ERROR_KM,
 	courierLevelErrorKm,
-	reducedLevel,
 } from "../src/courier-hull";
 import { HULL_SPECS } from "../src/hull";
 import { EMISSIVE_CEILING } from "../src/light-rig";
@@ -502,11 +504,14 @@ describe("every Traffic courier is the model, so the detail band switches it (sa
 			template.add(parent);
 		}
 		template.updateMatrixWorld(true);
-		const level = reducedLevel(template, 1e-3, 1, "level");
+		// The courier's own rule: the cabin is skipped (`courier-hull.ts`).
+		const level = reducedLevel(template, 1e-3, 1, "level", {
+			skip: (mesh) => /^interior-/.test(mesh.name),
+		});
 		level.updateMatrixWorld(true);
 		for (const [name] of parents) {
 			const kept = level.getObjectByName(`plate-on-${name}`);
-			expect(kept).toBeInstanceOf(CourierLevelMesh);
+			expect(kept).toBeInstanceOf(AuthoredLevelMesh);
 			const was = template.getObjectByName(
 				`plate-on-${name}`,
 			) as THREE.Object3D;
@@ -552,7 +557,7 @@ describe("every Traffic courier is the model, so the detail band switches it (sa
 			level.traverse((o) => {
 				if (!(o instanceof THREE.Mesh)) return;
 				names.push(o.name);
-				expect(o).toBeInstanceOf(CourierLevelMesh);
+				expect(o).toBeInstanceOf(AuthoredLevelMesh);
 				expect(isLevelStandIn(o)).toBe(true);
 			});
 			expect(names.some((n) => /^(interior-|pilot-)/.test(n))).toBe(false);

@@ -33,29 +33,25 @@
  * Inside the band's first edge (`DETAIL_RADII.full`) a courier is the
  * approved model, triangle for triangle; beyond it, a reduced copy made to a
  * **target** error of half a device pixel at that edge, in
- * `COURIER_LEVEL_FRAME` (`courierLevelErrorKm`), and beyond the second edge
+ * `LEVEL_FRAME` (`courierLevelErrorKm`), and beyond the second edge
  * a coarser one made to the same target. A target and not a bound: the error
  * is the simplifier's own metric, and how the switch looks is judged by eye. Both copies are made here, once,
  * from the loaded model, and share its materials and textures; the cabin and
- * the pilot behind the canopy are left out of both. A reduced level is drawn
- * and never measured: its meshes take no ray (`CourierLevelMesh`), so the nav lights, the muzzles
+ * the pilot behind the canopy are left out of both (`authored-levels.ts`
+ * makes them, as it makes the miner's). A reduced level is drawn
+ * and never measured: its meshes take no ray (`AuthoredLevelMesh`), so the nav lights, the muzzles
  * and the vent throats are placed on the approved metal.
  */
 import * as THREE from "three";
 import { MeshoptDecoder } from "three/addons/libs/meshopt_decoder.module.js";
 import { GLTFLoader } from "three/addons/loaders/GLTFLoader.js";
-import {
-	mergeVertices,
-	toCreasedNormals,
-} from "three/addons/utils/BufferGeometryUtils.js";
 import { MeshoptSimplifier } from "meshoptimizer/simplifier";
-import { DETAIL_RADII } from "./detail-level";
+import { levelErrorKm, reducedLevel } from "./authored-levels";
 import { disposeSubtree, shared } from "./gpu-teardown";
 import type { ModelProgressListener } from "./model-progress";
 import { COURIER_HULL_GLB_URL } from "./model-urls";
 import { HULL_SPECS } from "./hull";
 import { EMISSIVE_CEILING } from "./light-rig";
-import { LEVEL_STAND_IN } from "./ship-detail";
 import {
 	AUTHORED_COURIER_VARIANT,
 	type AuthoredHullBuilder,
@@ -85,165 +81,12 @@ export const FIXTURE_SCREEN_PREFIX = "interior-screen-";
 const BEHIND_THE_CANOPY = /^(interior-|pilot-)/;
 
 /**
- * The frame a reduced level's target error is set in: the near camera's 60° field of view
- * (`main.ts`) on the player's retina panel, 900 CSS pixels tall at device
- * scale 2 — the frame the cost instruments here measure on. A taller frame
- * would see a reduced level's error at more than half a pixel.
+ * The target error the courier's reduced levels are made to, kilometres:
+ * half a device pixel in `LEVEL_FRAME` at each level's band edge, in courier
+ * reaches (`levelErrorKm`, `authored-levels.ts`).
  */
-export const COURIER_LEVEL_FRAME = { fovDeg: 60, heightPx: 1800 } as const;
-
-/** The crease a reduced level's normals are split at: their faces are new,
- *  so their normals are computed, smooth across anything flatter than this. */
-const COURIER_LEVEL_CREASE_RAD = Math.PI / 6;
-
-/**
- * The target error a reduced level is made to, kilometres: half a device
- * pixel in `COURIER_LEVEL_FRAME` at the level's band edge —
- * `DETAIL_RADII.full` silhouette radii for `reduced` and
- * `DETAIL_RADII.reduced` for `outline`. It is what the simplifier is asked
- * for, against its own error metric, and not a measured bound on how far the
- * level lies from the model. `detailLevel`'s hysteresis also draws a level
- * somewhat nearer than its edge on the way back in, and a frame taller than
- * `COURIER_LEVEL_FRAME` sees the same error at more than half a pixel. A
- * pixel quantity, so the band's edges in radii decide where it applies and
- * the frame decides how much.
- */
-export function courierLevelErrorKm(level: "reduced" | "outline"): number {
-	const radii = level === "reduced" ? DETAIL_RADII.full : DETAIL_RADII.reduced;
-	const distanceKm = radii * HULL_REACH_KM.courier;
-	const halfAngle = (COURIER_LEVEL_FRAME.fovDeg * Math.PI) / 360;
-	const pixelKm =
-		(2 * distanceKm * Math.tan(halfAngle)) / COURIER_LEVEL_FRAME.heightPx;
-	return pixelKm / 2;
-}
-
-/** A reduced level's mesh: drawn, never measured. Every ray this repo casts
- *  at a hull asks where its metal is, and the approved model is the answer. */
-export class CourierLevelMesh extends THREE.Mesh {
-	override raycast(): void {}
-}
-
-/**
- * One mesh's geometry with edges collapsed while the error stays under
- * `errorM` (study metres). Welded on position first: the study's faces do
- * not share vertices across a hard edge, and an unwelded mesh has nothing
- * to collapse. A collapse moves a corner onto an existing vertex, so every
- * vertex of the reduced mesh is one of the approved one's and its box lies
- * inside the model's. That is all it shows: a triangle between existing
- * vertices can bridge a concavity, so the reduced surface may stand outside
- * the approved one inside that box. The welded corners keep
- * one of their texture coordinates, which a few pixels of hull cannot show.
- * `geometry` is `null` when nothing of the mesh survives the error;
- * `errorM` is the error the simplifier reports it reached, in the same
- * units, which is what the level's own record is built from.
- */
-function reducedGeometry(
-	source: THREE.BufferGeometry,
-	errorM: number,
-): { geometry: THREE.BufferGeometry | null; errorM: number } {
-	const position = source.getAttribute("position");
-	const positions = new Float32Array(position.count * 3);
-	for (let i = 0; i < position.count; i++) {
-		positions[3 * i] = position.getX(i);
-		positions[3 * i + 1] = position.getY(i);
-		positions[3 * i + 2] = position.getZ(i);
-	}
-	const index = source.getIndex();
-	const remap = MeshoptSimplifier.generatePositionRemap(positions, 3);
-	const count = index ? index.count : position.count;
-	const welded = new Uint32Array(count);
-	for (let i = 0; i < count; i++) welded[i] = remap[index ? index.getX(i) : i];
-	const [kept, reached] = MeshoptSimplifier.simplify(
-		welded,
-		positions,
-		3,
-		0,
-		errorM,
-		["ErrorAbsolute", "Prune"],
-	);
-	if (kept.length === 0) return { geometry: null, errorM: reached };
-	const reduced = new THREE.BufferGeometry();
-	reduced.setAttribute("position", position);
-	const uv = source.getAttribute("uv");
-	if (uv) reduced.setAttribute("uv", uv);
-	reduced.setIndex(new THREE.BufferAttribute(kept, 1));
-	return {
-		// Creasing splits every corner; welding again restores the index, so
-		// a far courier shares a corner across the faces that agree on it.
-		geometry: mergeVertices(
-			toCreasedNormals(reduced, COURIER_LEVEL_CREASE_RAD),
-		),
-		errorM: reached,
-	};
-}
-
-/** Where a reduced level records the largest error its meshes reached, in
- *  kilometres of hull: what the simplifier reported, carried through each
- *  mesh's scale. The simplifier's own metric, so a record of what the level
- *  was made to against `courierLevelErrorKm`, not a measurement of how far
- *  it lies from the model. */
-export const LEVEL_REACHED_ERROR_KM = "levelReachedErrorKm";
-
-/** The model reduced to `errorM` (study metres), as a template like the
- *  model's own. `kmPerM` carries the reached error into kilometres.
- *  Exported for `tests/courier-hull.test.ts`. */
-export function reducedLevel(
-	template: THREE.Object3D,
-	errorM: number,
-	kmPerM: number,
-	name: string,
-): THREE.Object3D {
-	const level = template.clone(true);
-	level.name = name;
-	level.updateMatrixWorld(true);
-	const toLevel = level.matrixWorld.clone().invert();
-	const meshes: THREE.Mesh[] = [];
-	level.traverse((o) => {
-		if (o instanceof THREE.Mesh) meshes.push(o);
-	});
-	let reachedKm = 0;
-	const scale = new THREE.Vector3();
-	for (const mesh of meshes) {
-		let geometry: THREE.BufferGeometry | null = null;
-		if (!BEHIND_THE_CANOPY.test(mesh.name)) {
-			// The simplifier works in the mesh's own units; its error is a
-			// distance there, and the largest axis scale is the most it can
-			// stretch to in the study's metres.
-			new THREE.Matrix4()
-				.multiplyMatrices(toLevel, mesh.matrixWorld)
-				.decompose(new THREE.Vector3(), new THREE.Quaternion(), scale);
-			const stretch = Math.max(
-				Math.abs(scale.x),
-				Math.abs(scale.y),
-				Math.abs(scale.z),
-			);
-			const reduced = reducedGeometry(mesh.geometry, errorM / stretch);
-			geometry = reduced.geometry;
-			reachedKm = Math.max(reachedKm, reduced.errorM * stretch * kmPerM);
-		}
-		// A mesh with no reduced geometry still carries its children: they
-		// move to a bare node in its place, or they would leave with it.
-		let stand: THREE.Object3D | null = null;
-		if (geometry) {
-			const drawn = new CourierLevelMesh(shared(geometry), mesh.material);
-			drawn.castShadow = mesh.castShadow;
-			drawn.receiveShadow = mesh.receiveShadow;
-			drawn.userData[LEVEL_STAND_IN] = true;
-			stand = drawn;
-		} else if (mesh.children.length > 0) stand = new THREE.Object3D();
-		if (stand) {
-			stand.name = mesh.name;
-			stand.position.copy(mesh.position);
-			stand.quaternion.copy(mesh.quaternion);
-			stand.scale.copy(mesh.scale);
-			for (const child of [...mesh.children]) stand.add(child);
-			mesh.parent?.add(stand);
-		}
-		mesh.removeFromParent();
-	}
-	level.userData[LEVEL_REACHED_ERROR_KM] = reachedKm;
-	return level;
-}
+export const courierLevelErrorKm = (level: "reduced" | "outline"): number =>
+	levelErrorKm(level, HULL_REACH_KM.courier);
 
 /**
  * How far inside the declared length the model is drawn, kilometres. The
@@ -394,18 +237,23 @@ export async function createCourierHullBuilder(
 	);
 	const bowl = shared(bowlGeometry());
 	const disc = shared(discGeometry());
+	const behindTheCanopy = {
+		skip: (mesh: THREE.Mesh) => BEHIND_THE_CANOPY.test(mesh.name),
+	};
 	const levels = {
 		reduced: reducedLevel(
 			template,
 			courierLevelErrorKm("reduced") / kmPerM,
 			kmPerM,
 			COURIER_LEVEL_NAMES.reduced,
+			behindTheCanopy,
 		),
 		outline: reducedLevel(
 			template,
 			courierLevelErrorKm("outline") / kmPerM,
 			kmPerM,
 			COURIER_LEVEL_NAMES.outline,
+			behindTheCanopy,
 		),
 	};
 

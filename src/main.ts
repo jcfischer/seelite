@@ -16124,10 +16124,13 @@ class Game {
 		// emissive. All near-layer positions are camera-relative, so their length
 		// is the exact distance the band asks for.
 		const shipQuality = this.settings.value.quality;
+		// The player's own hull draws every level the band names; any other
+		// hull no more detail than its `nearest` (node #815).
 		updateShipVisuals(
 			this.shipMesh,
 			this.shipMesh.position.length(),
 			shipQuality,
+			true,
 		);
 		if (this.raiderMesh.parent)
 			updateShipVisuals(
