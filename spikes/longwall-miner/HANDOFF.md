@@ -35,3 +35,57 @@ Adopt the approved design into the shared ship builder/loader convention, preser
 Add headless tests for arithmetic/state changes and browser checks for rendered/animated behavior. Run the mandatory probe selector against the real integration diff before browser probes, use the canonical runner, and satisfy the full delivery gates before merge. Current study controls, topology and capture evidence do not verify flight gameplay or production performance. Run Sage against the final implementation head. Seek any additional principal decision required by changed behavior or policy, then verify exact-head CI/review before merge.
 
 Keep graph lifecycle through `soma graph`; PR references use `Refs #803`. The principal's visual approval covers this design study, not an unknown future implementation.
+
+## Integration result (node #815): for the principal
+
+Built on this branch: `miner/b` is Longwall B in the game, flown and drawn
+from `public/models/longwall-miner.glb` (`README.md`, "In the game"). Refs
+#803; design PR #807 is superseded by node #815's. What moved, and what is
+yours to decide:
+
+- **D1, mass, not changed and owed a ruling.** 215 t in the new 84.5 x 34.1
+  x 18.8 m box is 3.97 t per 1000 m³ against the roster's 1.2–2.4 band (about
+  65–130 t for this box). `tests/hull.test.ts` holds the miner as a pinned
+  exemption, red the day either figure moves. Thrust, hold (40 t), integrity,
+  price, tank and charge are untouched, so is the 2.8–4.4 kt cargo question.
+- **D2, handling moved, by #181's length law and nothing else.** Re-deriving
+  vents off a new mesh is the repo's rule (#619, #636); the longer hull turns
+  slower. Before → after: angular authority 1.103 → 1.021; pitch/yaw cap
+  19.0 → 17.5 °/s; roll cap 29.5 → 27.3 °/s; damping 0.76 → 0.82 s; NPC
+  avoidance horizon 22.3 → 23.1 s (the 3,000 km scan still covers it at
+  130 km/s). Linear acceleration is unchanged. The docking computer's first
+  roll-tracking failure is 7.0 rpm (was 5.5); the miner is still the worst
+  hull, now 2.17x the fastest station. Three Traffic launch-aperture touches,
+  all miners, are gone from system 0's pinned corpus row.
+- **D3, wrecks.** A derelict miner is dark and untorn: #735's tear cuts a
+  loft's grid and this model has none.
+- **D4, cost, no LOD.** Every game boot downloads 11.13 MiB more: the three
+  required models are about 20.5 MiB before play, up from about 9.4. One miner
+  draws 111 calls and 283,590 triangles a frame, against 38 meshes and about
+  12k triangles for the loft; Traffic miners share one template's buffers but
+  not its draws. A shared LOD or batching pass is owed its own node; the named
+  mechanism groups are kept for articulation, which is what stops a cheap
+  merge.
+- **D5, owed their own nodes:** mining state and behaviour, the deployed
+  envelope, articulating the anchors and the cutter (the game draws the
+  stowed export, static), and D1–D4's follow-ups.
+- **Stale text outside this branch:** map #1's Constraints still read
+  "(5.5, the miner, since #619 …)"; `docs/specs/docking.md` §4 is updated.
+- **Fit.** The ship's origin is now the box's centre (the export's was 4.8 m
+  forward). Berth fit is the loft's: every trade, shipyard and refinery berth,
+  no outpost berth. The miner no longer overhangs a slot berth cell.
+- **Third tier.** No canonical view frames a miner, so the sheet cannot judge
+  this hull. `evidence/game-astern.png`, `-quarter`, `-beam` and `-bow` are
+  the frames to review before flying it; the yes is yours.
+- **Probes.** The selector chose all 97 (a measurement script counts as shared
+  infrastructure). Twelve were run alone on the GPU lane and passed: boot,
+  model-viewer, ship-visuals, postcard, derelict, shipyard, vent-display,
+  station-route-traffic, traffic-continuity, docking-traffic, carrier-scan,
+  state-gallery. The full run is the supervisor's.
+
+**Field Notes, proposed copy (major: a rebuilt ship a returning player
+sees), for your approval before it lands in `src/changelog.ts`:**
+
+> Mining ships are rebuilt: a long ore hauler with three sealed cassettes on
+> its spine, a compact two-seat bridge, folded asteroid anchors and a rotary
+> cutter under the bow.
