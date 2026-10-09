@@ -130,4 +130,19 @@ describe("loadRequiredModels", () => {
 			states.map((s) => (s.kind === "loading" ? s.fraction : s.kind)),
 		).toEqual([null, 0.5, 1, "done"]);
 	});
+
+	test("a boot that builds its world next ends on building, and leaves done to the boot", async () => {
+		const a = manual();
+		const states: ModelLoadState[] = [];
+		const done = loadRequiredModels([a.load], (s) => states.push(s), {
+			then: "building",
+		});
+		a.resolve();
+		await done;
+		expect(states.map((s) => s.kind)).toEqual([
+			"loading",
+			"loading",
+			"building",
+		]);
+	});
 });

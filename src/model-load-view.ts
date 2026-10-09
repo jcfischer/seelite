@@ -16,6 +16,8 @@ import { type ModelLoader, ModelProgress } from "./model-progress";
 export type ModelLoadState =
 	| { kind: "loading"; fraction: number | null }
 	| { kind: "failed"; retry: () => void }
+	/** The models are in and the page builds its world: the bar is full. */
+	| { kind: "building" }
 	| { kind: "done" };
 
 export type ModelLoadView = (state: ModelLoadState) => void;
@@ -27,6 +29,25 @@ const loadPercent = (fraction: number | null): string =>
 /** The loading line, for the panel and the overlay alike. */
 export const loadingText = (label: string, fraction: number | null): string =>
 	`Loading ${label}…${loadPercent(fraction)}`;
+
+/**
+ * The line while the world is built after the download (#833). Building the
+ * `Game` blocks the page for seconds — 7.7 s on the dev server, measured on
+ * 2026-10-09 — and a bar left at its last download frame read 99% for all of
+ * it, which the principal flagged.
+ */
+export const BUILDING_TEXT = "Building the world…";
+
+/**
+ * Resolves after the browser has painted what is on the page now: a
+ * `setTimeout` from inside a frame callback runs after that frame's paint.
+ * A hidden tab runs no frames, and has nothing to paint, so a timer stands in.
+ */
+export const nextPaint = (): Promise<void> =>
+	new Promise((resolve) => {
+		requestAnimationFrame(() => setTimeout(resolve, 0));
+		setTimeout(resolve, 100);
+	});
 
 /** The failure line, for the panel and the overlay alike. */
 export const loadFailedText = (label: string): string =>
@@ -53,10 +74,14 @@ export function paintProgress(
  * would draw `loading` over `failed` — removing the Retry the loop is waiting
  * on (sage round 1 on #840). A model still in flight at the retry is the same
  * memoised download, so the new attempt hears it only when it resolves.
+ *
+ * `then` is the state it ends on: `done`, or `building` for a boot that
+ * builds its world next and sends `done` itself once it has (`main.ts`).
  */
 export async function loadRequiredModels(
 	loads: readonly ModelLoader[],
 	view: ModelLoadView,
+	{ then = "done" }: { then?: "done" | "building" } = {},
 ): Promise<void> {
 	const ids = loads.map((_, i) => String(i));
 	for (;;) {
@@ -79,7 +104,7 @@ export async function loadRequiredModels(
 					});
 				}),
 			);
-			view({ kind: "done" });
+			view({ kind: then });
 			return;
 		} catch (error) {
 			live = false;
@@ -121,6 +146,7 @@ export function loadingPanel(label: string): ModelLoadView {
 		}
 		retry?.remove();
 		retry = null;
+		panel.dataset.modelLoad = state.kind;
 		if (!status || !bar) return;
 		if (state.kind === "failed") {
 			status.textContent = loadFailedText(label);
@@ -131,8 +157,13 @@ export function loadingPanel(label: string): ModelLoadView {
 			panel.append(retry);
 			return;
 		}
-		status.textContent = loadingText(label, state.fraction);
 		bar.hidden = false;
+		if (state.kind === "building") {
+			status.textContent = BUILDING_TEXT;
+			bar.value = 1;
+			return;
+		}
+		status.textContent = loadingText(label, state.fraction);
 		paintProgress(bar, state.fraction);
 	};
 }

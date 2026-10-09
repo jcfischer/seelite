@@ -1059,7 +1059,12 @@ import {
 	type CommanderOverlayHandle,
 	mountCommanderOverlay,
 } from "./commander-overlay";
-import { loadingPanel, loadRelay, loadRequiredModels } from "./model-load-view";
+import {
+	loadingPanel,
+	loadRelay,
+	loadRequiredModels,
+	nextPaint,
+} from "./model-load-view";
 import {
 	mountSaveBadge,
 	type SaveBadgeHandle,
@@ -20660,6 +20665,7 @@ if (postcard) {
 		loadRequiredModels(
 			[m.prepareCoriolisModel, cockpit.prepareCockpitModel],
 			loading.view,
+			{ then: "building" },
 		),
 	);
 	// Keep a fast rejection handled while IndexedDB is still opening.
@@ -20823,6 +20829,9 @@ if (postcard) {
 	const overlay = overlayBeforeModels(plan) ? mountOverlay() : null;
 	if (overlay) loading.moveTo(overlay.loading);
 	await stationModel;
+	// The `Game` build blocks the page for seconds, so the "Building the
+	// world" line has to be on screen before it starts, not queued behind it.
+	await nextPaint();
 	const worldSeed = plan.pending?.seed ?? askedSeed ?? randomSeed();
 	let game: Game;
 	try {
@@ -20845,6 +20854,8 @@ if (postcard) {
 		restoreFaulted = true;
 		game = new Game(worldSeed, null, askedSystem);
 	}
+	// The world is built: the loading panel or the overlay's line goes.
+	loading.view({ kind: "done" });
 	// Held until a store is attached or the player chooses (§11.2 step 4).
 	game.clockHeld = true;
 	game.saveFault = plan.fault;

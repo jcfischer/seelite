@@ -26,6 +26,7 @@ import {
 } from "./commander-flow";
 import type { OwnKey } from "./key-names";
 import {
+	BUILDING_TEXT,
 	loadFailedText,
 	loadingText,
 	type ModelLoadState,
@@ -778,6 +779,8 @@ export function mountCommanderOverlay(
 		if (load === null) return "";
 		if (load.kind === "failed")
 			return `<div data-model-load="failed" role="status"><span>${loadFailedText("game")}</span><button type="button" data-model-retry>Retry (R)</button></div>`;
+		if (load.kind === "building")
+			return `<div data-model-load="building" role="status"><span data-model-load-text>${BUILDING_TEXT}</span><progress max="1" value="1"></progress></div>`;
 		const value = load.fraction === null ? "" : ` value="${load.fraction}"`;
 		return `<div data-model-load="loading" role="status"><span data-model-load-text>${loadingText("game", load.fraction)}</span><progress max="1"${value}></progress></div>`;
 	};

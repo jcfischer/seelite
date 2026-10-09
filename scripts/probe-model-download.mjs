@@ -19,7 +19,9 @@
  *    #840: its progress once drew over the Retry and the boot hung). The
  *    overlay keeps offering Retry, `R` retries, and the Continue is carried
  *    out on the one `Game` once the models arrive.
- * 3. **The bar reads 100% before it is removed.**
+ * 3. **The bar reads 100% before it is removed**, and the line says "Building
+ *    the world" — painted, read by a frame callback — before the `Game`
+ *    build blocks the page; a direct boot paints it on the panel too.
  * 4. **New game chosen during the download reloads only once the models are
  *    in**, and boots into the new Commander.
  * 5. **A direct boot keeps the full-screen panel**, with the progress bar in
@@ -53,9 +55,29 @@ const DIRECT_URL = gameUrl(ORIGIN, {
 const browser = await launchChromium();
 const { check, watch, exit } = tally();
 
-/** The bar's value on every change: a number, "indeterminate" or "absent". */
+/**
+ * The bar's value on every change: a number, "indeterminate" or "absent";
+ * the loading line's state (`data-model-load`) on every change; and that
+ * state as each frame callback finds it. A frame callback runs before its
+ * frame is painted, so a state in `__paintedKinds` reached the screen — the
+ * "Building the world" line is set and then the `Game` build blocks the
+ * page, and only a paint between the two shows it (#833).
+ */
 function traceLoadBar() {
 	window.__loadTrace = [];
+	window.__loadKinds = [];
+	window.__paintedKinds = [];
+	const kindNow = () =>
+		document
+			.querySelector("[data-model-load]")
+			?.getAttribute("data-model-load") ?? "absent";
+	const frame = () => {
+		const k = window.__paintedKinds;
+		const kind = kindNow();
+		if (k[k.length - 1] !== kind) k.push(kind);
+		requestAnimationFrame(frame);
+	};
+	requestAnimationFrame(frame);
 	const read = () => {
 		const bar = document.querySelector("[data-model-load] progress");
 		if (!bar) return "absent";
@@ -66,6 +88,9 @@ function traceLoadBar() {
 		const v = read();
 		const t = window.__loadTrace;
 		if (t[t.length - 1] !== v) t.push(v);
+		const kind = kindNow();
+		const k = window.__loadKinds;
+		if (k[k.length - 1] !== kind) k.push(kind);
 	}).observe(document, { subtree: true, childList: true, attributes: true });
 }
 
@@ -241,6 +266,17 @@ try {
 				numbers.includes(1),
 			JSON.stringify(trace),
 		);
+		const kinds = await page.evaluate(() => ({
+			set: window.__loadKinds,
+			painted: window.__paintedKinds,
+		}));
+		check(
+			"after the download the overlay shows Building the world, painted before the build",
+			kinds.set.at(-2) === "building" &&
+				kinds.set.at(-1) === "absent" &&
+				kinds.painted.includes("building"),
+			JSON.stringify(kinds),
+		);
 		await page.close();
 	}
 
@@ -291,6 +327,7 @@ try {
 	{
 		const page = await context.newPage();
 		watch(page);
+		await page.addInitScript(traceLoadBar);
 		const models = await holdModels(page);
 		await page.goto(DIRECT_URL);
 		const panel = await waitFor(page, () =>
@@ -307,6 +344,12 @@ try {
 		check(
 			"and boots once the models are in, the panel removed",
 			(await page.$('section[aria-label="Loading game"]')) === null,
+		);
+		const painted = await page.evaluate(() => window.__paintedKinds);
+		check(
+			"the panel shows Building the world, painted before the build",
+			painted.includes("building"),
+			JSON.stringify(painted),
 		);
 		await page.close();
 	}
