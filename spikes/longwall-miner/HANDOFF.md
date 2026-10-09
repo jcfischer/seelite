@@ -125,7 +125,11 @@ What moved, and what is yours to decide:
   triangles still draw; a real LOD between the bands is what a shared LOD
   node owes, as is a lighter boot download. The anchors going at
   40 radii is a visible change, 9.4 x 3.3 px on a 39 px hull at the band's
-  edge, and yours to judge with the rest.
+  edge, and yours to judge with the rest. So is the swap at 400 radii: the
+  hull there is flat-faced boxes in one paint (`dark-structure`, the metal
+  on most of it) where it was the model's own shape in all its paints, on a
+  hull about 4 px long. No frame was captured at that range, so nobody has
+  looked at it.
 - **D5, owed their own nodes:** mining state and behaviour, the deployed
   envelope, articulating the anchors and the cutter (the game draws the
   stowed export, static), and D1–D4's follow-ups.
