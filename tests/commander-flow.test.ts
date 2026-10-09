@@ -17,6 +17,7 @@ import {
 	flushFault,
 	GameGate,
 	overlayBeforeModels,
+	queuedContinueRefusal,
 	loadFault,
 	lockHeldFault,
 	lockRequestFault,
@@ -252,7 +253,9 @@ describe("the one-shot continue (§11.3)", () => {
 		const sw = new CommanderSwitch({
 			catalog: o.catalog,
 			store: () => null,
-			reload: () => reloads.push(1),
+			reload: () => {
+				reloads.push(1);
+			},
 		});
 		await sw.importCommander("Imported", text);
 		expect(reloads.length).toBe(1);
@@ -1005,6 +1008,20 @@ describe("#833: the overlay opens while the models download", () => {
 		const game = { id: 1 };
 		gate.open(game);
 		expect(await gate.ready()).toBe(game);
+	});
+
+	test("a Continue queued before the build is refused once a restore fault took it away (D9)", () => {
+		const plan = {
+			mode: "overlay",
+			slot: "Broken",
+			canContinue: true,
+			fault: null,
+		} as unknown as Parameters<typeof withRestoreFault>[0];
+		expect(queuedContinueRefusal(plan)).toBeNull();
+		const refaulted = withRestoreFault(plan, new Error("bad hull"));
+		const refusal = queuedContinueRefusal(refaulted);
+		expect(refusal).not.toBeNull();
+		expect(refusal).toBe(refaulted.fault);
 	});
 
 	test("a second Game is refused", () => {

@@ -13,15 +13,20 @@
  *
  * 1. **A player boot opens the overlay before the models are in** — the menu
  *    and its progress bar are drawn while no `Game` exists.
- * 2. **A Continue chosen then waits, and survives a failed download.** The
- *    held models are refused; the overlay offers Retry, `R` retries, and the
- *    Continue is carried out on the one `Game` once they arrive.
+ * 2. **A Continue chosen then waits, and survives a failed download.** One
+ *    held model is refused and the other is let through after it, so a model
+ *    still downloading when another failed is in the run (sage round 1 on
+ *    #840: its progress once drew over the Retry and the boot hung). The
+ *    overlay keeps offering Retry, `R` retries, and the Continue is carried
+ *    out on the one `Game` once the models arrive.
  * 3. **The bar reads 100% before it is removed.**
  * 4. **New game chosen during the download reloads only once the models are
  *    in**, and boots into the new Commander.
  * 5. **A direct boot keeps the full-screen panel**, with the progress bar in
  *    place of its static text, and no overlay.
  */
+// A default-layout probe (#381 D11): it presses keys by name, as the shipped
+// layout binds them, and a moved default turns it red for that reason.
 import { gameUrl } from "./lib/game-url.mjs";
 import {
 	bootedGame,
@@ -65,9 +70,10 @@ function traceLoadBar() {
 }
 
 /**
- * Holds every model response until `release` or `refuse`. After `release`
- * models pass at once; `refuse` aborts what is held and holds what comes
- * next, so a retry is held again until released.
+ * Holds every model response until `release`, after which models pass at
+ * once. `refuseOne` aborts the first held response and `letRest` lets the
+ * others through while still holding what comes next, so a retry is held
+ * again until released.
  */
 const holdModels = async (page) => {
 	const held = [];
@@ -85,8 +91,11 @@ const holdModels = async (page) => {
 			passing = true;
 			for (const r of held.splice(0)) await r.continue();
 		},
-		refuse: async () => {
-			for (const r of held.splice(0)) await r.abort("failed");
+		refuseOne: async () => {
+			await held.shift()?.abort("failed");
+		},
+		letRest: async () => {
+			for (const r of held.splice(0)) await r.continue();
 		},
 	};
 };
@@ -185,15 +194,19 @@ try {
 			s.overlay && s.busy === "true" && s.bar && !s.game,
 			JSON.stringify(s),
 		);
-		await models.refuse();
+		const heldFirst = models.count();
+		await models.refuseOne();
 		const failed = await waitFor(page, () =>
 			document.querySelector("[data-model-retry]"),
 		);
+		// The other model arrives after the failure, with its progress events.
+		await models.letRest();
+		await page.waitForTimeout(1500);
 		s = await overlayState(page);
 		check(
-			"a failed download offers Retry in the overlay, and the Continue still waits",
-			failed && s.retry && s.busy === "true" && !s.game,
-			JSON.stringify(s),
+			"one model refused while another arrives: Retry stays in the overlay, and the Continue still waits",
+			heldFirst >= 2 && failed && s.retry && s.busy === "true" && !s.game,
+			JSON.stringify({ ...s, heldFirst }),
 		);
 		await page.keyboard.press("r");
 		const retried = await waitFor(page, () =>

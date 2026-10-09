@@ -1030,6 +1030,7 @@ import {
 	flushFault,
 	GameGate,
 	overlayBeforeModels,
+	queuedContinueRefusal,
 	messageOf,
 	pendingFor,
 	permadeathAtAttach,
@@ -1058,7 +1059,7 @@ import {
 	type CommanderOverlayHandle,
 	mountCommanderOverlay,
 } from "./commander-overlay";
-import { loadingPanel, loadRelay } from "./model-load-view";
+import { loadingPanel, loadRelay, loadRequiredModels } from "./model-load-view";
 import {
 	mountSaveBadge,
 	type SaveBadgeHandle,
@@ -20656,7 +20657,10 @@ if (postcard) {
 		import("./coriolis-flight"),
 		import("./cockpit-model"),
 	]).then(([m, cockpit]) =>
-		m.loadRequiredModels([cockpit.prepareCockpitModel], loading.view),
+		loadRequiredModels(
+			[m.prepareCoriolisModel, cockpit.prepareCockpitModel],
+			loading.view,
+		),
 	);
 	// Keep a fast rejection handled while IndexedDB is still opening.
 	void stationModel.catch(() => {});
@@ -20707,7 +20711,7 @@ if (postcard) {
 	const gate = new GameGate<Game>();
 	/** The Commander this tab's store writes, once one is attached. */
 	let attachedSlot: string | null = null;
-	let openAtBoot = plan.mode === "overlay";
+	let openAtBoot = overlayBeforeModels(plan);
 	/** The loaded record would not build a game, so the plan was refaulted. */
 	let restoreFaulted = false;
 	let askVoice = false;
@@ -20764,11 +20768,15 @@ if (postcard) {
 			onContinue: async (slot) => {
 				// #833: a Continue chosen during the download waits for the `Game`,
 				// and the overlay shows the download meanwhile.
+				const queued = gate.current === null;
 				const game = await gate.ready();
 				// **D9 holds for a Continue chosen before the build.** A record that
 				// would not restore was set aside there, and attaching a store to it
 				// would write over the only copy; the overlay has been replanned.
-				if (restoreFaulted) return plan.fault;
+				if (queued) {
+					const refusal = queuedContinueRefusal(plan);
+					if (refusal !== null) return refusal;
+				}
 				// **A dead page never resumes** (#324, sage round 1). After a death
 				// with nothing to restore, Continue reloads and the boot loads the
 				// Commander from its save — unholding the clock here would fly a hull

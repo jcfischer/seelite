@@ -2,8 +2,12 @@
 import * as THREE from "three";
 import { MeshoptDecoder } from "three/addons/libs/meshopt_decoder.module.js";
 import { GLTFLoader } from "three/addons/loaders/GLTFLoader.js";
-import { loadingPanel, type ModelLoadView } from "./model-load-view";
-import { ModelProgress } from "./model-progress";
+import {
+	loadingPanel,
+	loadRequiredModels,
+	type ModelLoader,
+	type ModelProgressListener,
+} from "./model-load-view";
 import {
 	buildCoriolisNavigation,
 	installCoriolisBuilder,
@@ -139,10 +143,6 @@ async function loadIndustrialStationBuilder(
 	return createIndustrialCoriolisBuilder(gltf.scene);
 }
 
-/** `GLTFLoader`'s `onProgress`: bytes received of a model, and its total (0
- *  when the response has no length). */
-export type ModelProgressListener = (event: ProgressEvent) => void;
-
 let ready: Promise<void> | undefined;
 /** Await before any game, postcard or station workbench constructs station
  * geometry. `onProgress` hears the download this call starts; a call that
@@ -159,58 +159,16 @@ export function prepareCoriolisModel(
 		}));
 }
 
-/**
- * Every model a page needs before it builds its world, downloaded behind a
- * visible Retry (#833 split it from the panel that draws it). `also` names
- * the page's other required models — a Game's cockpit (`cockpit-model.ts`).
- * `view` draws the state: the loading panel, or the Commander overlay that
- * opens during the download. A failure waits on the view's Retry and tries
- * again; it never throws, so the boot cannot proceed without the models.
- */
-export async function loadRequiredModels(
-	also: readonly ((onProgress?: ModelProgressListener) => Promise<void>)[],
-	view: ModelLoadView,
-): Promise<void> {
-	const loads = [prepareCoriolisModel, ...also];
-	const ids = loads.map((_, i) => String(i));
-	for (;;) {
-		const progress = new ModelProgress(ids);
-		const show = () => view({ kind: "loading", fraction: progress.fraction() });
-		show();
-		try {
-			await Promise.all(
-				loads.map((load, i) =>
-					load((e) => {
-						progress.report(
-							ids[i] as string,
-							e.loaded,
-							e.lengthComputable ? e.total : 0,
-						);
-						show();
-					}).then(() => {
-						progress.complete(ids[i] as string);
-						show();
-					}),
-				),
-			);
-			view({ kind: "done" });
-			return;
-		} catch (error) {
-			console.warn("Model download failed", error);
-			await new Promise<void>((retry) => view({ kind: "failed", retry }));
-		}
-	}
-}
-
 /** The asset is required for the world, so an interrupted download gets a
  * visible retry before any Game (or save-store attachment) is constructed.
- * The full-screen panel's form of `loadRequiredModels`, for every page whose
- * world waits on nothing else. */
+ * `also` names the page's other required models — a Game's cockpit
+ * (`cockpit-model.ts`). The full-screen panel's form of `loadRequiredModels`,
+ * for every page whose world waits on nothing else. */
 export function prepareCoriolisPage(
-	also: readonly ((onProgress?: ModelProgressListener) => Promise<void>)[] = [],
+	also: readonly ModelLoader[] = [],
 ): Promise<void> {
 	return loadRequiredModels(
-		also,
+		[prepareCoriolisModel, ...also],
 		loadingPanel(also.length ? "game" : "station"),
 	);
 }

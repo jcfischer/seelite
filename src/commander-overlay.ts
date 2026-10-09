@@ -26,9 +26,11 @@ import {
 } from "./commander-flow";
 import type { OwnKey } from "./key-names";
 import {
-	loadPercent,
+	loadFailedText,
+	loadingText,
 	type ModelLoadState,
 	type ModelLoadView,
+	paintProgress,
 } from "./model-load-view";
 import { isEditable } from "./editable-target";
 import type { CommanderCatalog } from "./save-store";
@@ -775,9 +777,9 @@ export function mountCommanderOverlay(
 	const loadHtml = () => {
 		if (load === null) return "";
 		if (load.kind === "failed")
-			return `<div data-model-load="failed" role="status"><span>The game could not be loaded. Check your connection and try again.</span><button type="button" data-model-retry>Retry (R)</button></div>`;
+			return `<div data-model-load="failed" role="status"><span>${loadFailedText("game")}</span><button type="button" data-model-retry>Retry (R)</button></div>`;
 		const value = load.fraction === null ? "" : ` value="${load.fraction}"`;
-		return `<div data-model-load="loading" role="status"><span data-model-load-text>Loading game…${loadPercent(load.fraction)}</span><progress max="1"${value}></progress></div>`;
+		return `<div data-model-load="loading" role="status"><span data-model-load-text>${loadingText("game", load.fraction)}</span><progress max="1"${value}></progress></div>`;
 	};
 
 	const retryLoad = () => {
@@ -798,12 +800,8 @@ export function mountCommanderOverlay(
 		if (state.kind === "loading" && before === "loading" && el) {
 			const bar = el.querySelector("progress");
 			const text = el.querySelector("[data-model-load-text]");
-			if (bar) {
-				if (state.fraction === null) bar.removeAttribute("value");
-				else bar.value = state.fraction;
-			}
-			if (text)
-				text.textContent = `Loading game…${loadPercent(state.fraction)}`;
+			if (bar) paintProgress(bar, state.fraction);
+			if (text) text.textContent = loadingText("game", state.fraction);
 			return;
 		}
 		draw();

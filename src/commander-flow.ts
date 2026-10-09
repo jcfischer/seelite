@@ -278,6 +278,17 @@ export async function planBoot(input: BootInput): Promise<BootPlan> {
  * one-shot boot builds the `Game` first, as before, and opens the overlay only
  * on a fault the build or the attach finds.
  */
+/**
+ * D9 for a Continue chosen before the `Game` was built (#833): the overlay
+ * offered it on the plan as read, and the build may have refaulted that plan
+ * (`withRestoreFault`). A plan that no longer offers Continue refuses it with
+ * its fault, so no store is attached to a record that would not restore.
+ */
+export const queuedContinueRefusal = (
+	plan: Pick<BootPlan, "canContinue" | "fault">,
+): string | null =>
+	plan.canContinue ? null : (plan.fault ?? "Continue is no longer offered");
+
 export const overlayBeforeModels = (plan: Pick<BootPlan, "mode">): boolean =>
 	plan.mode === "overlay";
 
@@ -510,7 +521,7 @@ export interface SwitchInput {
 	 * downloading (#833) — keeps the overlay busy until the page goes, rather
 	 * than handing it back to a player whose choice is already written.
 	 */
-	reload: () => unknown;
+	reload: () => void | Promise<void>;
 }
 
 /**
@@ -524,7 +535,7 @@ export interface SwitchInput {
 export class CommanderSwitch {
 	private readonly catalog: CommanderCatalog;
 	private readonly store: () => SaveStore | null;
-	private readonly reload: () => unknown;
+	private readonly reload: () => void | Promise<void>;
 
 	constructor(input: SwitchInput) {
 		this.catalog = input.catalog;

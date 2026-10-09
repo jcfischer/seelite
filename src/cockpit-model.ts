@@ -21,6 +21,7 @@
 import * as THREE from "three";
 import { MeshoptDecoder } from "three/addons/libs/meshopt_decoder.module.js";
 import { GLTFLoader } from "three/addons/loaders/GLTFLoader.js";
+import type { ModelProgressListener } from "./model-load-view";
 import { CABIN_SCALE, cabinLight } from "./cabin-pass";
 import { shared } from "./gpu-teardown";
 import { EMISSIVE_CEILING } from "./light-rig";
@@ -376,7 +377,7 @@ let ready: Promise<void> | undefined;
 /** Await before any Game constructs its cabin. `onProgress` hears the
  *  download this call starts (#833), as `prepareCoriolisModel`'s does. */
 export function prepareCockpitModel(
-	onProgress?: (event: ProgressEvent) => void,
+	onProgress?: ModelProgressListener,
 ): Promise<void> {
 	return (ready ??= new GLTFLoader()
 		.setMeshoptDecoder(MeshoptDecoder)

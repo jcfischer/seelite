@@ -5,6 +5,10 @@
  */
 
 import { describe, expect, test } from "bun:test";
+import {
+	loadRequiredModels,
+	type ModelLoadState,
+} from "../src/model-load-view";
 import { ModelProgress } from "../src/model-progress";
 
 describe("ModelProgress", () => {
@@ -64,5 +68,66 @@ describe("ModelProgress", () => {
 	test("an unknown model is refused", () => {
 		const p = new ModelProgress(["a"]);
 		expect(() => p.report("b", 1, 2)).toThrow();
+	});
+});
+
+describe("loadRequiredModels", () => {
+	/** A model whose download the test drives by hand, memoised as
+	 *  `prepareCoriolisModel` is: a failure clears it, a success is kept. */
+	const manual = () => {
+		let listener: ((e: ProgressEvent) => void) | undefined;
+		let settle: { resolve: () => void; reject: (e: Error) => void } | undefined;
+		let ready: Promise<void> | undefined;
+		const load = (onProgress?: (e: ProgressEvent) => void) =>
+			(ready ??= new Promise<void>((resolve, reject) => {
+				listener = onProgress;
+				settle = { resolve, reject };
+			}).catch((error) => {
+				ready = undefined;
+				throw error;
+			}));
+		return {
+			load,
+			progress: (loaded: number, total: number) =>
+				listener?.({ loaded, total, lengthComputable: true } as ProgressEvent),
+			resolve: () => settle?.resolve(),
+			reject: () => settle?.reject(new Error("refused")),
+		};
+	};
+	const tick = () => new Promise((r) => setTimeout(r, 0));
+
+	test("a model still downloading after another failed does not draw over the Retry", async () => {
+		const a = manual();
+		const b = manual();
+		const states: ModelLoadState[] = [];
+		const done = loadRequiredModels([a.load, b.load], (s) => states.push(s));
+		a.progress(10, 100);
+		b.progress(10, 100);
+		a.reject();
+		await tick();
+		expect(states.at(-1)?.kind).toBe("failed");
+		b.progress(90, 100);
+		b.resolve();
+		await tick();
+		const last = states.at(-1);
+		expect(last?.kind).toBe("failed");
+		// The retry starts a new attempt, which runs to the end.
+		if (last?.kind === "failed") last.retry();
+		await tick();
+		a.resolve();
+		await done;
+		expect(states.at(-1)?.kind).toBe("done");
+	});
+
+	test("every model in reads 100% and then done", async () => {
+		const a = manual();
+		const states: ModelLoadState[] = [];
+		const done = loadRequiredModels([a.load], (s) => states.push(s));
+		a.progress(50, 100);
+		a.resolve();
+		await done;
+		expect(
+			states.map((s) => (s.kind === "loading" ? s.fraction : s.kind)),
+		).toEqual([null, 0.5, 1, "done"]);
 	});
 });
