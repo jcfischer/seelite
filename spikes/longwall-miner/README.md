@@ -46,7 +46,8 @@ attribute, node transform to 10 µm and texture pixel verified after a decode;
 script also compares the written file's triangles with the export as read —
 order-free, every attribute of every corner, by node — and
 `verify-flight-asset.mjs` runs that comparison on its own without writing
-(sage round 8; 283,528 triangles in 107 primitives, all exact). It reads
+(sage round 8; 283,528 triangles in 107 primitives, all exact — the game's
+283,576 adds its two 24-triangle drive-glow discs). It reads
 `dedup`'s two folds as the same drawing: the four anchors' identical parts
 share meshes, and `pale-steel-1` is folded into the identical
 `pale-steel-0`. Only that file ships; everything else here stays review-only,
@@ -72,9 +73,13 @@ node spikes/longwall-miner/capture-game.mjs round-N   # flown, chase view, 4 sid
   origin places the box (the export's origin was 4.8 m forward of it and
   would have parked 2.1 m into a slot berth's end wall).
 - **Fit.** The model measures 84.4 x 34.0 x 18.8 m and its envelope is
-  84.5 x 34.1 x 18.8 m: #181 rounds the box **up** to 0.1 m because a fit
-  predicate reads it, and the length and beam overrun their round figures by
-  float noise (84.40000010 m in the export), so each gains a whole 0.1 m. It
+  84.5 x 34.1 x 18.8 m. #181 rounds the box **up** to 0.1 m because a fit
+  predicate reads it, and the length overruns 84.4 by float noise
+  (84.40000010 m in the export), so it gains a whole 0.1 m. The beam does not
+  overrun: built, it is 0.034000000000000002 km, which `hull.test.ts`'s
+  rounding takes to 34.0 m, so the declared 34.1 m is 0.1 m generous, inside
+  that test's 0.1 m allowance (measured in sage round 8; left as declared,
+  because it is a hull stat this node does not move). It
   fits every berth of trade, shipyard and refinery and none at an
   outpost, exactly as the loft did. The
   vent placement is re-measured on this mesh and every attitude share is

@@ -65,7 +65,8 @@ nothing here claims it has been given.**
 What moved, and what is yours to decide:
 
 - **D1, mass, not changed and owed a ruling.** 215 t in the new 84.5 x 34.1
-  x 18.8 m envelope (the 84.4 x 34.0 x 18.8 m model, rounded up) is 3.97 t per 1000 m³ against the roster's 1.2–2.4 band (about
+  x 18.8 m envelope (declared over the 84.4 x 34.0 x 18.8 m model; README's
+  Fit line says where each 0.1 m comes from) is 3.97 t per 1000 m³ against the roster's 1.2–2.4 band (about
   65–130 t for this box). `tests/hull.test.ts` holds the miner as a pinned
   exemption, red the day either figure moves. Thrust, hold (40 t), integrity,
   price, tank and charge are untouched, so is the 2.8–4.4 kt cargo question.
