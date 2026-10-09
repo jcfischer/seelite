@@ -14,6 +14,7 @@ import {
 	adoptCockpitMaterial,
 	COCKPIT_MODEL_LAMPS,
 	cockpitLabelText,
+	smoothCockpitScene,
 } from "./cockpit-model";
 import { buildShipMesh } from "./ship-mesh";
 import { CORIOLIS_GLB_URL } from "./model-urls";
@@ -457,6 +458,8 @@ try {
 	]);
 	cockpit = interior.scene;
 	scene.add(cockpit);
+	// The game's normals too (node #839), so the struts read smooth here.
+	smoothCockpitScene(cockpit);
 	cockpit.traverse((o) => {
 		if (o instanceof THREE.Mesh) {
 			o.castShadow = true;
