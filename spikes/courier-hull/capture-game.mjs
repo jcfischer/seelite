@@ -51,12 +51,10 @@ try {
 		const ext = gl.getExtension("WEBGL_debug_renderer_info");
 		const ship = g.shipMesh;
 		const { meshStats } = await import("/scripts/lib/mesh-stats.mjs");
+		const { isLevelStandIn } = await import("/src/ship-detail.ts");
 		// The approved model and its glows; the reduced levels are counted by
 		// `tests/courier-hull.test.ts`.
-		const { meshes, triangles } = meshStats(
-			[ship],
-			(o) => o.userData.levelStandIn === true,
-		);
+		const { meshes, triangles } = meshStats([ship], isLevelStandIn);
 		return {
 			view: g.view,
 			renderer: gl.getParameter(ext.UNMASKED_RENDERER_WEBGL),
@@ -74,7 +72,8 @@ try {
 	await page.screenshot({ path: `${out}/cockpit.png` });
 	await page.keyboard.press("v");
 	await page.waitForFunction(
-		() => window.__seelite.view === "chase" && window.__seelite.shipMesh.visible,
+		() =>
+			window.__seelite.view === "chase" && window.__seelite.shipMesh.visible,
 	);
 	const shot = async (name, yaw, elevation) => {
 		await page.evaluate(

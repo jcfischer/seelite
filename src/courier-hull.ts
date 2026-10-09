@@ -64,7 +64,10 @@ import {
 } from "./ship-mesh";
 import { ventThroats } from "./vent-plumes";
 
-/** The three levels' object names under `courier-hull-frame`: the model
+/** The frame every authored courier's levels and glows hang under. */
+export const COURIER_FRAME_NAME = "courier-hull-frame";
+
+/** The three levels' object names under `COURIER_FRAME_NAME`: the model
  *  and its two reduced copies. One copy of the names, for the instruments
  *  and rows that pick a level out of a built courier. */
 export const COURIER_LEVEL_NAMES = {
@@ -360,7 +363,9 @@ export async function createCourierHullBuilder(
 		if (!(o instanceof THREE.Mesh)) return;
 		const screen = o.name.startsWith(FIXTURE_SCREEN_PREFIX);
 		if (screen) o.material = unpowered;
-		o.castShadow = !screen;
+		// The cabin and the pilot sit inside the closed hull: nothing they
+		// would shade is lit through it, so they stay out of the shadow pass.
+		o.castShadow = !screen && !BEHIND_THE_CANOPY.test(o.name);
 		o.receiveShadow = true;
 		shared(o.geometry);
 		for (const m of Array.isArray(o.material) ? o.material : [o.material]) {
@@ -402,7 +407,7 @@ export async function createCourierHullBuilder(
 
 	return (root, exhaust) => {
 		const frame = new THREE.Group();
-		frame.name = "courier-hull-frame";
+		frame.name = COURIER_FRAME_NAME;
 		frame.rotation.y = Math.PI;
 		frame.scale.setScalar(kmPerM);
 		frame.position.copy(offset);
@@ -413,6 +418,9 @@ export async function createCourierHullBuilder(
 		// The bowl when the finish's glow is a bowl, the disc when it is not:
 		// a back-sided material on a disc draws nothing from astern.
 		const glow = exhaust.side === THREE.BackSide ? bowl : disc;
+		// What this root carries, for `ventThroats`: the finish in force when
+		// it is asked need not be the one it was built under.
+		root.userData.courierGlow = glow === bowl ? "bowl" : "disc";
 		// Named by the ship's sides, starboard being the mesh's +x: the
 		// half-turn puts the study's +x nozzle there on the port side.
 		for (const [side, x] of [

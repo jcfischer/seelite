@@ -6771,8 +6771,13 @@ let authoredCourier: AuthoredHullBuilder | undefined;
 /** The authored courier's nav lights, placed once. `addNavLights` finds the
  *  metal by raycast, and against the model's 354k triangles that is a third
  *  of a second — paid by every Traffic courier drawn, were they not kept.
- *  The points' geometry is shared by every copy. */
-let authoredCourierNavLights: THREE.Points | undefined;
+ *  The points' geometry is shared by every copy. Keyed on the model they
+ *  were placed on, so removing it and putting it back — as an instrument
+ *  drawing a Kestrel beside it does — keeps them. */
+const authoredCourierNavLights = new WeakMap<
+	AuthoredHullBuilder,
+	THREE.Points
+>();
 
 /**
  * Install (or, with `undefined`, remove) the authored courier exterior
@@ -6785,8 +6790,8 @@ let authoredCourierNavLights: THREE.Points | undefined;
 export function installAuthoredCourier(
 	builder: AuthoredHullBuilder | undefined,
 ): void {
+	if (builder === authoredCourier) return;
 	authoredCourier = builder;
-	authoredCourierNavLights = undefined;
 	// The muzzles were measured off whichever courier was drawn before.
 	for (const key of muzzleCache.keys())
 		if (key.startsWith("courier/")) muzzleCache.delete(key);
@@ -6808,8 +6813,8 @@ function buildAuthoredCourier(
 	const levels = builder(root, makePalette("courier").exhaust);
 	// After the model, for the reason the procedural branch gives: the
 	// lights are placed from the built hull's own box.
-	if (authoredCourierNavLights) {
-		const known = authoredCourierNavLights;
+	const known = authoredCourierNavLights.get(builder);
+	if (known) {
 		const lights = known.clone();
 		lights.onBeforeRender = known.onBeforeRender;
 		root.add(lights);
@@ -6817,7 +6822,7 @@ function buildAuthoredCourier(
 		addNavLights(root);
 		const placed = root.getObjectByName("nav-lights") as THREE.Points;
 		shared(placed.geometry);
-		authoredCourierNavLights = placed;
+		authoredCourierNavLights.set(builder, placed);
 	}
 	adoptUndetailedShip(root, HULL_REACH_KM.courier, levels);
 }

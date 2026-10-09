@@ -16,7 +16,8 @@ await guardedOrigin(ORIGIN);
 const browser = await launchChromium();
 const { check, watch, exit } = tally();
 
-function state() {
+async function state() {
+	const { COURIER_FRAME_NAME } = await import("/src/courier-hull.ts");
 	const game = window.__seelite;
 	const ship = game.shipMesh;
 	const cockpit = document.querySelector("[data-live-cockpit]");
@@ -36,7 +37,7 @@ function state() {
 		// named parts, and its two drive glows wherever the frame holds them.
 		courierCore:
 			ship.userData.authored === true &&
-			Boolean(ship.getObjectByName("courier-hull-frame")) &&
+			Boolean(ship.getObjectByName(COURIER_FRAME_NAME)) &&
 			Boolean(ship.getObjectByName("canopy-glass")),
 		exhausts: (() => {
 			let found = 0;

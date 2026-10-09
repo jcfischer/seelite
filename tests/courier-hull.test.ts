@@ -16,6 +16,7 @@ import { buildDerelictMesh } from "../src/derelict-mesh";
 import { DETAIL_RADII } from "../src/detail-level";
 import {
 	COURIER_LENGTH_INSET_KM,
+	COURIER_FRAME_NAME,
 	COURIER_LEVEL_NAMES,
 	CourierLevelMesh,
 	FIXTURE_SCREEN_PREFIX,
@@ -122,7 +123,7 @@ describe("the shipped file is the approved study", () => {
 
 describe("the study's frame carried into the hull's", () => {
 	test("one uniform scale, so the approved silhouette is kept", () => {
-		const frame = courier().getObjectByName("courier-hull-frame");
+		const frame = courier().getObjectByName(COURIER_FRAME_NAME);
 		expect(frame).toBeDefined();
 		const { x, y, z } = (frame as THREE.Object3D).scale;
 		expect(y).toBe(x);
@@ -393,6 +394,30 @@ describe("the courier's throats are measured once (node #812, sage round 1)", ()
 		expect(mains).toEqual(fresh);
 	}, 60_000);
 
+	test("a root built under one finish keeps its own glow's throats after a switch (sage round 7)", () => {
+		// The glow is chosen at build; the finish in force at the query is
+		// not what the root carries. Every ordered pair whose glows differ.
+		const mainsOf = (root: THREE.Object3D) =>
+			ventThroats(root, "courier")
+				.filter((t) => t.family === "main")
+				.map((t) => t.at.z);
+		let pairs = 0;
+		for (const built of HULL_FINISH_IDS)
+			for (const asked of HULL_FINISH_IDS) {
+				setHullFinish(built);
+				const root = courier();
+				const own = courier();
+				own.userData.authored = false;
+				const fresh = mainsOf(own);
+				setHullFinish(asked);
+				if (courier().userData.courierGlow === root.userData.courierGlow)
+					continue;
+				pairs++;
+				expect([built, asked, mainsOf(root)]).toEqual([built, asked, fresh]);
+			}
+		expect(pairs).toBeGreaterThan(0);
+	}, 120_000);
+
 	test("what one caller does to its throats does not reach the next", () => {
 		const first = ventThroats(courier(), "courier");
 		const before = first[0].at.clone();
@@ -401,6 +426,38 @@ describe("the courier's throats are measured once (node #812, sage round 1)", ()
 		const second = ventThroats(courier(), "courier");
 		expect(second[0].at.distanceTo(before)).toBe(0);
 		expect(second[0].exhaust.distanceTo(first[0].exhaust)).toBeGreaterThan(1);
+	});
+
+	test("taking the model out and putting it back keeps its nav lights (sage round 7)", () => {
+		// What the cost instrument does around every Kestrel arm.
+		// `addNavLights` casts one ray per light through `intersectObject`.
+		const placements = (run: () => void): number => {
+			const original = THREE.Raycaster.prototype.intersectObject;
+			let n = 0;
+			THREE.Raycaster.prototype.intersectObject = function (
+				this: THREE.Raycaster,
+				...args: Parameters<typeof original>
+			) {
+				n++;
+				return original.apply(this, args);
+			} as typeof original;
+			try {
+				run();
+			} finally {
+				THREE.Raycaster.prototype.intersectObject = original;
+			}
+			return n;
+		};
+		courier();
+		const installed = authoredCourierBuilder();
+		installAuthoredCourier(undefined);
+		try {
+			// The Kestrel places its own lights; that is not what is counted.
+			buildShipMesh("courier", HULL_SPECS.courier.variant);
+		} finally {
+			installAuthoredCourier(installed);
+		}
+		expect(placements(() => courier())).toBe(0);
 	});
 
 	test("the procedural courier is measured, not handed the model's throats", () => {
@@ -417,7 +474,7 @@ describe("the courier's throats are measured once (node #812, sage round 1)", ()
 
 describe("every Traffic courier is the model, so the detail band switches it (sage round 2)", () => {
 	const levelsOf = (root: THREE.Object3D) => {
-		const frame = root.getObjectByName("courier-hull-frame") as THREE.Object3D;
+		const frame = root.getObjectByName(COURIER_FRAME_NAME) as THREE.Object3D;
 		const named = (name: string) =>
 			frame.children.find((c) => c.name === name) as THREE.Object3D;
 		return {

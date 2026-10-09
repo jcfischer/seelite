@@ -41,7 +41,6 @@ import {
 	isDriveBell,
 } from "./ship-mesh";
 import { isLevelStandIn } from "./ship-detail";
-import { type HullFinishId, hullFinishId } from "./ship-surface";
 import type { VentLevels } from "./sim";
 
 /**
@@ -149,16 +148,17 @@ export function ventThroats(root: THREE.Object3D, id: HullId): Throat[] {
 	const builder = authoredCourierBuilder();
 	if (id !== "courier" || root.userData.authored !== true || !builder)
 		return measureThroats(root, id);
-	let byFinish = authoredThroats.get(builder);
-	if (!byFinish) {
-		byFinish = new Map();
-		authoredThroats.set(builder, byFinish);
+	let byGlow = authoredThroats.get(builder);
+	if (!byGlow) {
+		byGlow = new Map();
+		authoredThroats.set(builder, byGlow);
 	}
-	const finish = hullFinishId();
-	let known = byFinish.get(finish);
+	// The glow the root was built with, not the finish in force now.
+	const glow = String(root.userData.courierGlow);
+	let known = byGlow.get(glow);
 	if (!known) {
 		known = measureThroats(root, id);
-		byFinish.set(finish, known);
+		byGlow.set(glow, known);
 	}
 	return known.map((t) => ({
 		...t,
@@ -169,16 +169,18 @@ export function ventThroats(root: THREE.Object3D, id: HullId): Throat[] {
 
 /**
  * The authored courier's throats (node #812), measured once per installed
- * model and finish. Every authored courier is the one model, so its throats
+ * model and drive glow. Every authored courier is the one model, so its throats
  * are one answer — and measuring it raycasts against 354k triangles, about
  * half a second, which a shipyard swap to a courier would otherwise pay on
  * the frame. Keyed on the builder, so installing another model (or none)
- * leaves the old answer unreachable; and on the finish, because a finish
- * picks the drive glow (a bowl or a disc) the main drive's plume starts at.
+ * leaves the old answer unreachable; and on the glow the root was built
+ * with (a bowl or a disc, picked by the finish in force at its build), which
+ * the main drive's plume starts at — keyed on the finish in force when it
+ * is asked, a root built under another finish got the wrong glow's throats.
  */
 const authoredThroats = new WeakMap<
 	AuthoredHullBuilder,
-	Map<HullFinishId, readonly Throat[]> // glossary-ignore: throat
+	Map<string, readonly Throat[]> // glossary-ignore: throat
 >();
 
 // glossary-ignore: throat

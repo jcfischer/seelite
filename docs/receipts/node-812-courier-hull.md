@@ -76,13 +76,16 @@ read `matches`.
 | density (60 t) | 1.74 t/1000 m³ | 2.07 t/1000 m³, inside the 1.2–2.4 band |
 | farthest vertex | — | 35.8 m, inside `HULL_REACH_KM` 36 m |
 
-Berth fit is unchanged. These are the berths that admit the courier on seed 1,
-before and after: trade 8/8 and 8/8, shipyard 6/6 and 6/6, refinery 4/4 and
-4/4, outpost 2/2 and 2/2. `tests/aperture-fit.test.ts` and
-`tests/hull-docking.test.ts` pass. Its spin-ceiling row prints each hull's
-first failure; on this branch it reads `courier first fails at 13.5 rpm after
-25 unbroken rungs; 13 coincidental crossings above it`, so the courier docks
-to 13.0 rpm.
+Berth fit and the spin ceiling are unchanged. These are the berths that
+admit the courier on seed 1, before and after: trade 8/8 and 8/8, shipyard
+6/6 and 6/6, refinery 4/4 and 4/4, outpost 2/2 and 2/2.
+`tests/aperture-fit.test.ts` and `tests/hull-docking.test.ts` pass. The
+spin-ceiling row prints each hull's first failure, and the courier's reads
+the same at the merge base (`8c865d2`,
+the Kestrel's 11.7 m box) and on this branch (the O4's 9.6 m): `courier first
+fails at 13.5 rpm after 25 unbroken rungs; 13 coincidental crossings above
+it`, so the courier docks to 13.0 rpm either way. Every other hull's row is
+identical too.
 
 Vent placement was re-measured on the model (`scripts/measure-vent-placement.ts`):
 
@@ -198,9 +201,13 @@ separate weakly. The draw counts are exact.
 The scene behind the arms differs from round 1's (the no-hull arm draws
 255,970 triangles here against 517,372 then), so the two tables compare
 within themselves and not across. Four far couriers add 373,336 triangles
-over the O4 alone, 93,334 each, which is the `reduced` level and its nav
-lights. Inside 1.44 km a Traffic courier is still the full model, and the
-near row is what a busy berth costs.
+over the O4 alone, 93,334 each. The `reduced` level is 92,540 of them and the
+two drive glows 768 (384 each, the bowl the default finish draws, counted
+headless on a built courier); the last 26 are not attributed. The nav lights
+are points and add none. Inside 1.44 km a Traffic courier is still the full
+model. The near row prices four couriers 0.16–0.32 km ahead of the player in
+the seed-42 approach scene: a stand-in for ships close by, not a measured
+berth, and how many couriers a berth draws at once was not counted.
 
 Headless timings (bun) on the model:
 
