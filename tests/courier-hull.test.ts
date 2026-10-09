@@ -229,7 +229,9 @@ describe("what the game needs that the study did not carry", () => {
 			expect(main.length).toBe(2);
 			for (const drive of main) expect(drive.placed).toBe("bell");
 		}
-	});
+		// Each finish measures its throats once, about half a second on the
+		// model, which a loaded machine stretches past bun's 5 s default.
+	}, 60_000);
 
 	test("a bowl glow's faces wind outward, so the back-sided finish draws its far wall", () => {
 		setHullFinish(DEFAULT_HULL_FINISH);
@@ -516,8 +518,12 @@ describe("every Traffic courier is the model, so the detail band switches it (sa
 			});
 			return out;
 		};
-		expect(geometries(b.reduced)).toEqual(geometries(a.reduced));
-		expect(geometries(b.outline)).toEqual(geometries(a.outline));
+		for (const level of ["reduced", "outline"] as const) {
+			const mine = geometries(a[level]);
+			const theirs = geometries(b[level]);
+			expect(theirs.length).toBe(mine.length);
+			for (let i = 0; i < mine.length; i++) expect(theirs[i]).toBe(mine[i]);
+		}
 		for (const level of Object.values(a))
 			level.traverse((o) => {
 				if (o instanceof THREE.Mesh) expect(isDriveBell(o)).toBe(false);
@@ -526,14 +532,21 @@ describe("every Traffic courier is the model, so the detail band switches it (sa
 
 	test("a wreck darkens every level", () => {
 		const wreck = buildDerelictMesh("courier");
-		const { full, reduced } = levelsOf(wreck);
+		const { full, reduced, outline } = levelsOf(wreck);
 		const darkened = new Set<THREE.Material>();
 		full.traverse((o) => {
 			if (o instanceof THREE.Mesh) darkened.add(o.material as THREE.Material);
 		});
-		reduced.traverse((o) => {
-			if (o instanceof THREE.Mesh)
-				expect(darkened.has(o.material as THREE.Material)).toBe(true);
+		const live = new Set<THREE.Material>();
+		levelsOf(courier()).full.traverse((o) => {
+			if (o instanceof THREE.Mesh) live.add(o.material as THREE.Material);
 		});
+		for (const level of [reduced, outline])
+			level.traverse((o) => {
+				if (!(o instanceof THREE.Mesh)) return;
+				const material = o.material as THREE.Material;
+				expect(darkened.has(material)).toBe(true);
+				expect(live.has(material)).toBe(false);
+			});
 	});
 });

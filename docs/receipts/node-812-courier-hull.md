@@ -130,10 +130,13 @@ draws `reduced`, and past `DETAIL_RADII.reduced` (400, 14.4 km) it draws
   moves a corner onto an existing vertex, so a level never reaches past the
   model; the envelope rows still read the full model's box. The cabin and the
   pilot are left out of both levels.
-- **The error is a pixel quantity.** Half a device pixel where the level is
-  first drawn, at the near camera's 60° on a 1800-pixel frame (900 CSS pixels
+- **The target error is a pixel quantity.** Half a device pixel where the
+  level is first drawn, at the near camera's 60° on a 1800-pixel frame (900 CSS pixels
   at device scale 2): 0.46 m for `reduced`, 4.6 m for `outline`
-  (`courierLevelErrorKm`, asserted in `tests/courier-hull.test.ts`).
+  (`courierLevelErrorKm`, asserted in `tests/courier-hull.test.ts`). That
+  is what the simplifier is asked to keep the geometry within. It does not
+  hold the recomputed normals or the welded texture coordinates, so what the
+  switch does on screen is measured separately (Q7).
 - **Triangles.** `full` 353,954; `reduced` 92,540 (20 meshes); `outline`
   6,472 (11 meshes), pinned in the test. Two meshes, `blue-grey-1` (35,518)
   and `pale-steel-1` (17,928), barely reduce at 0.46 m and are most of what
@@ -195,10 +198,12 @@ build had placed the nav lights.
 
 ## Verification
 
-- `npm test`: 5685 pass, 0 fail (349.3 s) after sage round 1; 5691 pass, 0 fail (397.3 s) after sage round 2.
+- `npm test`: 5685 pass, 0 fail (349.3 s) after sage round 1; 5691 pass, 0 fail (355.6 s) on round 2's final tree. One earlier round-2 run timed out two `tests/station-proxy.test.ts` rows (43.6 s and 41.0 s against a 30 s limit) under a load average of 28–45 from other sessions; the file passed alone in 20.0 s and the next full run was green.
 - Round 2's browser probes, singly on the GPU lane: ship-visuals, boot,
-  derelict, vent-display, station-route-traffic, shipyard and chase-orbit
-  pass. probe-postcard is red on the same row as before (Q1, 0.5% of cells).
+  derelict, vent-display, station-route-traffic, shipyard, chase-orbit,
+  traffic-mouth, docking-traffic, traffic-engagement, collision (both),
+  docking, and dock-arrival pass. probe-light-rig is red on Q1's figures,
+  unchanged (peak 252.21, lower quartile 10.16, median 37.88). probe-postcard is red on the same row as before (Q1, 0.5% of cells).
 - Bun preload: `tests/setup-courier-hull.ts` installs the shipped model for
   every file, so headless rows measure the courier the player flies. Its
   installer and the GLB decoder moved to `scripts/lib/` in round 2
@@ -294,10 +299,25 @@ procedural hull, or add a view? The views were not changed here, because that
 changes the sheet.
 
 **Q7. The reduced levels are a lossy change to the approved hull.** Like Q4,
-they are not the study's geometry, though each is held to half a device pixel
-where it is first drawn. The views that would show them are any frame with a
-Traffic courier past 1.44 km. Keep them, move the band edge for the courier,
-or drop them and accept the near-row cost for every courier in view?
+they are not the study's geometry. Each is made to a target error of half a
+device pixel where it is first drawn, but its normals are recomputed and its
+texture coordinates welded, and the switch is visible in pixels.
+`scripts/measure-courier-level-pop.mjs` puts a courier on the chase camera's
+axis at 1,469 m (1.02 × the band's first edge), clock held, and draws it at
+`full` and at `reduced`. The footprint is the pixels the full hull moves past
+24/255 against the empty frame. The control is the full hull drawn twice.
+GPU lane, M1 Pro, 1440×900 at device scale 2:
+
+| heading | footprint px | control moved | reduced moved |
+| --- | --- | --- | --- |
+| 0° | 306 | 0 | 8 (2.6%) |
+| 90° | 277 | 0 | 20 (7.2%) |
+| 180° | 296 | 0 | 17 (5.7%) |
+| 270° | 347 | 0 | 35 (10.1%) |
+
+So a Traffic courier crossing 1.44 km changes up to a tenth of its few
+hundred pixels in one frame. Keep the levels, move the band edge for the
+courier, or drop them and accept the near-row cost for every courier in view?
 
 ### Proposed Field Notes copy (not in `src/changelog.ts` until approved)
 
