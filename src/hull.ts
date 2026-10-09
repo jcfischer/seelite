@@ -98,7 +98,7 @@ export interface HullEnvelope {
  *
  * `collision.md` §2.3 (P1) puts the box on the ship, and a selected mesh is not
  * built about its origin: the carrier's box sits 13.5 m above the ship's sim
- * position and the freighter's 3 m to starboard. A box centred on the origin
+ * position and the freighter's 1.6 m aft. A box centred on the origin
  * would leave that much hull outside it, so the box carries the offset
  * (§9.1.10). Measured off the selected variant's built mesh, as `env` is, and
  * rounded to the nearest 0.1 m; `tests/collision.test.ts` rebuilds every mesh

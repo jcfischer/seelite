@@ -413,6 +413,25 @@ ordinary traffic and fleet-review hulls all receive the gate from their actual
 camera-relative range each frame, including ships materialised after a setting
 change.
 
+### 3.3 An authored hull: the O2 Porter (node #813)
+
+`freighter/b` is no longer built here. It is the O2 Modular Carrier the
+principal approved on #797, authored in Blender (`spikes/porter-hull/`) and
+shipped as `public/models/porter.glb`; `src/porter-model.ts` loads it behind
+the game's Retry panel and `buildShipMesh` clones it. Three of this spec's
+promises do not reach it, and each is said where it is checked rather than
+skipped quietly: it has no machinery zone, generated clutter or service rails
+(§3.2) because the model carries its own; its surface is its own materials and
+ignores the hull finishes (§3.1); and a freighter wreck is darkened but not
+torn, because the tear cuts lofts and the model has none. It keeps the nav
+lights, the drive glow (seated in its six nozzles) and every rule the berth and
+collision box read.
+
+It is turned half a turn into the game's frame, not mirrored, so its three
+cassettes are to **port** of the command keel. The spike's prose and the
+procedural Porter both said starboard; the approved frames show port, and the
+geometry the principal approved is what ships.
+
 ## 4. Verification contract
 
 Headless tests assert every candidate has stable hull and variant identity,

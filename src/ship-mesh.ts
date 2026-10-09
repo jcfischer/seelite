@@ -120,8 +120,10 @@ export const HULL_VARIANTS: Record<HullId, readonly HullVariant[]> = {
 		{
 			id: "b",
 			name: "Porter",
+			// The authored O2 (node #813): its approved geometry carries the
+			// cassettes to port, where the procedural Porter had them starboard.
 			thesis:
-				"dominant starboard cargo bank against a compact port command keel",
+				"three freight cassettes to port of a compact starboard command keel",
 		},
 		{
 			id: "c",

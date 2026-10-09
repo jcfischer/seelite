@@ -366,10 +366,11 @@ builds.
 **Since #619 the computer turns the hull through its attitude vents**
 (`flight-model.md` §3.6, `attitude-hold.ts`), asking on top for the slot's
 own spin. It used to place the attitude, slewing it at the hull's peak rate
-with no acceleration. Six of the nine ceilings now sit within 0.4 rpm of the
-hull's roll cap; the interceptor (22.0 against 17.2), the freighter (10.0
-against 6.6) and the tug (11.0 against 9.2) dock above theirs, inside check
-4's ±50°. The miner was 7.0 against a 4.9 cap and is 5.0 now, so the worst
+with no acceleration. Seven of the nine ceilings now sit within 0.4 rpm of
+the hull's roll cap; the interceptor (22.0 against 17.2) and the tug (11.0
+against 9.2) dock above theirs, inside check 4's ±50°. The freighter did too
+(10.0 against 6.6) until node #813 gave it the authored Porter's smaller box:
+it docks to 6.5 against a 6.9 cap now. The miner was 7.0 against a 4.9 cap and is 5.0 now, so the worst
 hull moved from the freighter to the miner and the margin fell from 2.0x to
 1.67x. The bound it is asserted against is 1.5x. `tests/hull-docking.test.ts`
 prints every row.
