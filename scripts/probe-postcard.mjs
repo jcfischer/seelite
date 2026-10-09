@@ -36,6 +36,7 @@ import {
 	VIEWER_CARD,
 	cardPixels,
 	changedCells,
+	movedPixels,
 	keepCard,
 	setPostcardMode,
 	waitViewerCard,
@@ -224,6 +225,24 @@ for (const mode of ["clear", "cockpit", "exterior"]) {
 		`${(cards[mode].lit * 100).toFixed(2)}% lit above the band`,
 	);
 }
+// Two more cards for the exterior row (node #812): the clear camera composed
+// again, and the exterior with the hull's meshes hidden — their children,
+// because `render` rewrites the root's own flag from the view.
+await setPostcardMode(game, "cockpit");
+await setPostcardMode(game, "clear");
+await keepCard(game, PANEL_CARD, `${SHOTS}/card-clear-again.png`);
+await game.evaluate(() => {
+	const ship = window.__seelite.shipMesh;
+	window.__postcardHidden = ship.children.map((c) => [c, c.visible]);
+	for (const child of ship.children) child.visible = false;
+});
+await setPostcardMode(game, "exterior");
+await keepCard(game, PANEL_CARD, `${SHOTS}/card-exterior-hull-hidden.png`);
+await game.evaluate(() => {
+	for (const [child, visible] of window.__postcardHidden)
+		child.visible = visible;
+	delete window.__postcardHidden;
+});
 const clearVsCockpit = changedCells(cards.clear, cards.cockpit);
 const clearVsExterior = changedCells(cards.clear, cards.exterior);
 check(
@@ -231,10 +250,29 @@ check(
 	clearVsCockpit > 0.1,
 	`${(clearVsCockpit * 100).toFixed(1)}% of cells changed`,
 );
+// Per pixel, not per cell (node #812). The cell row read a bright hull, not
+// the camera: on the procedural courier every cell past ten codes was the
+// hull's, and the station's own shift moved its cells seven or eight codes on
+// either hull, so the O4's dark hull on a dark sky read 0.5% against 2%. Past
+// 24 codes per pixel above the band the camera alone, hull hidden, reads
+// 2.75–2.78% at seed 47 on the O4 over three runs and both lanes; re-composing the same camera reads 0.000%; the
+// O4's exterior 2.93% and the procedural courier's 4.54% (the receipt has the
+// arms). The floor sits between the null arm and the camera alone.
+const EXTERIOR_MOVED_FLOOR = 0.01;
+const card = (name) => `${SHOTS}/card-${name}.png`;
+const sameCamera = movedPixels(card("clear"), card("clear-again"));
+const cameraAlone = movedPixels(card("clear"), card("exterior-hull-hidden"));
+const exteriorMoved = movedPixels(card("clear"), card("exterior"));
 check(
-	"the exterior composition is a different camera",
-	clearVsExterior > 0.02,
-	`${(clearVsExterior * 100).toFixed(1)}% of cells changed`,
+	"re-composing the same camera moves no pixel past the floor",
+	sameCamera < EXTERIOR_MOVED_FLOOR,
+	`${(sameCamera * 100).toFixed(3)}% of pixels moved past 24/255`,
+);
+check(
+	"the exterior composition is a different camera, with or without the hull",
+	cameraAlone > EXTERIOR_MOVED_FLOOR && exteriorMoved > EXTERIOR_MOVED_FLOOR,
+	`${(cameraAlone * 100).toFixed(2)}% hull hidden, ${(exteriorMoved * 100).toFixed(2)}% drawn, of pixels moved past 24/255; ` +
+		`${(clearVsExterior * 100).toFixed(1)}% of cells, reported`,
 );
 
 // The link, as the screen offers it.
