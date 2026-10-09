@@ -100,9 +100,12 @@ yours to decide:
   model-viewer, ship-visuals, postcard, derelict, shipyard, vent-display,
   station-route-traffic, traffic-continuity, docking-traffic, carrier-scan,
   state-gallery. Those twelve runs left no committed transcript;
-  `evidence/pr-probes.txt` is the design head's and does not cover this
-  branch. Sage round 1's detail band was checked by the probes in
-  `evidence/integration-probes.txt`. The full run is the supervisor's.
+  `evidence/pr-probes.txt` is the design head's run, not this branch's. After sage round 1's detail band, ship-visuals, model-viewer,
+  boot, traffic-continuity and derelict were run alone on the GPU lane and
+  passed; `evidence/integration-probes.txt` is that transcript. None of the
+  five asserts the miner's band (`probe-ship-visuals` does not name the
+  miner); `tests/longwall-mesh.test.ts` does, headless. The full run is the
+  supervisor's.
 
 **Field Notes, proposed copy (major: a rebuilt ship a returning player
 sees), for your approval before it lands in `src/changelog.ts`:**

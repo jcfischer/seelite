@@ -53,9 +53,7 @@ describe("miner/b is the shipped model, and only the shipped model", () => {
 	test("building it uninstalled throws rather than drawing a loft", async () => {
 		installLongwallModel(null);
 		try {
-			expect(() => buildShipMesh("miner", "b")).toThrow(
-				/prepareLongwallModel/,
-			);
+			expect(() => buildShipMesh("miner", "b")).toThrow(/prepareLongwallModel/);
 			// The lofts do not depend on it.
 			expect(() => buildShipMesh("miner", "a")).not.toThrow();
 		} finally {
