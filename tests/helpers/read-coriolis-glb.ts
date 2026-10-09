@@ -9,7 +9,7 @@ import { MeshoptDecoder } from "three/addons/libs/meshopt_decoder.module.js";
 export async function readCoriolisGlb(name: string) {
 	const scene = await decodeShippedGlb(
 		name === "coriolis-industrial-flight.glb"
-			? "public/models/coriolis.glb"
+			? "src/models/coriolis.glb"
 			: "spikes/coriolis/" + name,
 	);
 	scene.scale.setScalar(0.001);
@@ -18,7 +18,7 @@ export async function readCoriolisGlb(name: string) {
 }
 
 /** Decode a GLB at its authored scale, as `readCoriolisGlb` does. The path is
- *  from the repository root: shipped models sit under `public/`, and the
+ *  from the repository root: shipped models sit under `src/models/`, and the
  *  review-only study files beside their spike's README. */
 export async function decodeShippedGlb(repoPath: string) {
 	const file = readFileSync(new URL("../../" + repoPath, import.meta.url));

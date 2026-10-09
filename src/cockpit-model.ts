@@ -24,6 +24,7 @@ import { GLTFLoader } from "three/addons/loaders/GLTFLoader.js";
 import { CABIN_SCALE, cabinLight } from "./cabin-pass";
 import { shared } from "./gpu-teardown";
 import { EMISSIVE_CEILING } from "./light-rig";
+import { COURIER_COCKPIT_GLB_URL } from "./model-urls";
 
 /** Cabin kilometres per model metre. */
 export const COCKPIT_MODEL_KM_PER_M = CABIN_SCALE / 1000;
@@ -376,7 +377,7 @@ let ready: Promise<void> | undefined;
 export function prepareCockpitModel(): Promise<void> {
 	return (ready ??= new GLTFLoader()
 		.setMeshoptDecoder(MeshoptDecoder)
-		.loadAsync("/models/courier-cockpit.glb")
+		.loadAsync(COURIER_COCKPIT_GLB_URL)
 		.then((gltf) => adoptCockpitTemplate(gltf.scene))
 		.catch((error) => {
 			ready = undefined;

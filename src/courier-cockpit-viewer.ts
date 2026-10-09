@@ -16,6 +16,7 @@ import {
 	cockpitLabelText,
 } from "./cockpit-model";
 import { buildShipMesh } from "./ship-mesh";
+import { CORIOLIS_GLB_URL } from "./model-urls";
 
 const assets = "/spikes/courier-cockpit/";
 const renderer = new THREE.WebGLRenderer({
@@ -452,7 +453,7 @@ try {
 	const [interior, exterior] = await Promise.all([
 		loader.loadAsync(assets + "courier-cockpit.glb"),
 		// The game's own default Coriolis (#791), so the viewer ships no copy.
-		loader.loadAsync("/models/coriolis.glb"),
+		loader.loadAsync(CORIOLIS_GLB_URL),
 	]);
 	cockpit = interior.scene;
 	scene.add(cockpit);
