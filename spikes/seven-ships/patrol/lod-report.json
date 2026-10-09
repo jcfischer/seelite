@@ -1,7 +1,7 @@
 {
   "role": "patrol",
   "sourceSha256": "1adfac1a45eb1a7220e2e8123522da5fb55035a1eed16361f48b7ee30b1f2833",
-  "method": "PR 828 / node 812: position weld, Meshopt ErrorAbsolute + Prune, 30 degree normals",
+  "method": "PR 828 / node 812: position weld, Meshopt ErrorAbsolute, machinery Prune, armor topology retained, 30 degree normals",
   "frame": {
     "fovDeg": 60,
     "heightPx": 1800,
@@ -48,8 +48,8 @@
       "errorMetres": 0.41290960504303564
     },
     "outline": {
-      "triangles": 2254,
-      "meshes": 11,
+      "triangles": 88610,
+      "meshes": 17,
       "min": [
         -16.910001754760742,
         -4.143764495849609,
@@ -57,10 +57,10 @@
       ],
       "max": [
         16.910001754760742,
-        5.779999732971191,
-        28
+        6.889497756958008,
+        28.085357666015625
       ],
-      "bytes": 3085840,
+      "bytes": 8089272,
       "distanceRadii": 400,
       "distanceMetres": 12873.24746761925,
       "errorMetres": 4.129096050430356

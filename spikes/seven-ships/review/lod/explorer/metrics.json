@@ -1,0 +1,107 @@
+{
+  "role": "explorer",
+  "gpu": "ANGLE (Apple, ANGLE Metal Renderer: Apple M1 Pro, Unspecified Version)",
+  "errors": [],
+  "levels": {
+    "full": {
+      "loaded": true,
+      "fps": 74.90636703872117,
+      "triangles": 3516164,
+      "calls": 113,
+      "modelTriangles": 879036,
+      "meshCount": 23,
+      "bounds": [
+        84.54521179199219,
+        84.51612854003906,
+        73.80799865722656
+      ],
+      "view": "hero",
+      "lod": "full",
+      "lodMode": "full",
+      "distanceRadii": 3.3382795636937983
+    },
+    "reduced": {
+      "loaded": true,
+      "fps": 79.08371966013499,
+      "triangles": 681120,
+      "calls": 113,
+      "modelTriangles": 170275,
+      "meshCount": 23,
+      "bounds": [
+        84.54521179199219,
+        84.51612854003906,
+        73.80799865722656
+      ],
+      "view": "hero",
+      "lod": "reduced",
+      "lodMode": "reduced",
+      "distanceRadii": 3.3382795636937983
+    },
+    "outline": {
+      "loaded": true,
+      "fps": 87.77918657953771,
+      "triangles": 506620,
+      "calls": 97,
+      "modelTriangles": 126650,
+      "meshCount": 19,
+      "bounds": [
+        84.54521179199219,
+        84.51612854003906,
+        73.80799865722656
+      ],
+      "view": "hero",
+      "lod": "outline",
+      "lodMode": "outline",
+      "distanceRadii": 3.3382795636937983
+    }
+  },
+  "transitions": [
+    {
+      "loaded": true,
+      "fps": 86.41797493878727,
+      "triangles": 681120,
+      "calls": 113,
+      "modelTriangles": 170275,
+      "meshCount": 23,
+      "bounds": [
+        84.54521179199219,
+        84.51612854003906,
+        73.80799865722656
+      ],
+      "view": "hero",
+      "lod": "reduced",
+      "lodMode": "auto",
+      "distanceRadii": 43.99999999999999
+    },
+    {
+      "loaded": true,
+      "fps": 97.28152191536508,
+      "triangles": 506620,
+      "calls": 97,
+      "modelTriangles": 126650,
+      "meshCount": 19,
+      "bounds": [
+        84.54521179199219,
+        84.51612854003906,
+        73.80799865722656
+      ],
+      "view": "hero",
+      "lod": "outline",
+      "lodMode": "auto",
+      "distanceRadii": 440.0000000000001
+    }
+  ],
+  "pop": {
+    "reduced": {
+      "fullFootprintPixels": 1316,
+      "controlChangedPixels": 0,
+      "lodChangedPixels": 617
+    },
+    "outline": {
+      "fullFootprintPixels": 15,
+      "controlChangedPixels": 0,
+      "lodChangedPixels": 15
+    }
+  },
+  "rotors": "three synchronized habitat rotors"
+}

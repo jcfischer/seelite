@@ -48,7 +48,7 @@ for (const role of requested.length ? requested : roles) {
     for(let i=0;i<pos.length;i+=3) reachMetres=Math.max(reachMetres,Math.hypot(pos[i]-centre[0],pos[i+1]-centre[1],pos[i+2]-centre[2]));
   }
   const report = { role, sourceSha256: createHash('sha256').update(source).digest('hex'),
-    method: 'PR 828 / node 812: position weld, Meshopt ErrorAbsolute + Prune, 30 degree normals',
+    method: 'PR 828 / node 812: position weld, Meshopt ErrorAbsolute, machinery Prune, armor topology retained, 30 degree normals',
     frame, reachMetres, centreMetres: centre, full: {...full, bytes: source.length}, levels: {} };
   for (const [level,radii] of [['reduced',40],['outline',400]]) {
     const distanceMetres = radii * reachMetres;
@@ -62,7 +62,12 @@ for (const role of requested.length ? requested : roles) {
         const indices = primitive.getIndices()?.getArray() ?? Uint32Array.from({length:pos.length/3},(_,i)=>i);
         const remap = MeshoptSimplifier.generatePositionRemap(pos,3);
         const welded = Uint32Array.from(indices,i=>remap[i]);
-        const [kept] = MeshoptSimplifier.simplify(welded,pos,3,0,errorMetres,['ErrorAbsolute','Prune']);
+        // Small disconnected armor plates carry the ship's color and silhouette.
+        // Pruning all of them exposes the dark backing shell at outline level.
+        // Retain their topology during edge collapse; prune machinery normally.
+        const armor=/^(pale-steel|blue-grey|salvage-red|armour|ochre|flight-deck|canopy-glass)/.test(primitive.getMaterial()?.getName()??'');
+        const flags=armor?['ErrorAbsolute']:['ErrorAbsolute','Prune'];
+        const [kept] = MeshoptSimplifier.simplify(welded,pos,3,0,errorMetres,flags);
         if(!kept.length) {mesh.removePrimitive(primitive);primitive.dispose();continue;}
         const geom = new THREE.BufferGeometry();
         geom.setAttribute('position',new THREE.BufferAttribute(pos,3));

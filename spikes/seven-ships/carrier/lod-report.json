@@ -1,7 +1,7 @@
 {
   "role": "carrier",
   "sourceSha256": "128e164ac2eec392aeefa562a43ceb91c68127566fcb5a8fe5e696df684556cf",
-  "method": "PR 828 / node 812: position weld, Meshopt ErrorAbsolute + Prune, 30 degree normals",
+  "method": "PR 828 / node 812: position weld, Meshopt ErrorAbsolute, machinery Prune, armor topology retained, 30 degree normals",
   "frame": {
     "fovDeg": 60,
     "heightPx": 1800,
@@ -30,8 +30,8 @@
   },
   "levels": {
     "reduced": {
-      "triangles": 226192,
-      "meshes": 25,
+      "triangles": 228744,
+      "meshes": 26,
       "min": [
         -94.47726440429688,
         -94.47726440429688,
@@ -42,25 +42,25 @@
         94.47726440429688,
         184.36000061035156
       ],
-      "bytes": 16658832,
+      "bytes": 16800556,
       "distanceRadii": 40,
       "distanceMetres": 8396.765582987711,
       "errorMetres": 2.6932638164778555
     },
     "outline": {
-      "triangles": 12094,
-      "meshes": 13,
+      "triangles": 175040,
+      "meshes": 24,
       "min": [
-        -80.75399780273438,
-        -80.75399780273438,
-        -216
+        -94.47726440429688,
+        -94.47726440429688,
+        -216.3708953857422
       ],
       "max": [
-        80.80000305175781,
-        80.80000305175781,
+        94.47726440429688,
+        94.47726440429688,
         182.55429077148438
       ],
-      "bytes": 3619916,
+      "bytes": 13401616,
       "distanceRadii": 400,
       "distanceMetres": 83967.65582987711,
       "errorMetres": 26.932638164778552

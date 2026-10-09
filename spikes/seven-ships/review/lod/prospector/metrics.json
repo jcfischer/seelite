@@ -1,0 +1,106 @@
+{
+  "role": "prospector",
+  "gpu": "ANGLE (Apple, ANGLE Metal Renderer: Apple M1 Pro, Unspecified Version)",
+  "errors": [],
+  "levels": {
+    "full": {
+      "loaded": true,
+      "fps": 81.47512864993787,
+      "triangles": 1714116,
+      "calls": 97,
+      "modelTriangles": 428524,
+      "meshCount": 19,
+      "bounds": [
+        20.007999420166016,
+        15,
+        66.39999771118164
+      ],
+      "view": "hero",
+      "lod": "full",
+      "lodMode": "full",
+      "distanceRadii": 2.151233202182421
+    },
+    "reduced": {
+      "loaded": true,
+      "fps": 87.38621586801058,
+      "triangles": 290768,
+      "calls": 97,
+      "modelTriangles": 72687,
+      "meshCount": 19,
+      "bounds": [
+        20.007999420166016,
+        15,
+        66.39999771118164
+      ],
+      "view": "hero",
+      "lod": "reduced",
+      "lodMode": "reduced",
+      "distanceRadii": 2.151233202182421
+    },
+    "outline": {
+      "loaded": true,
+      "fps": 95.93859929645028,
+      "triangles": 188660,
+      "calls": 77,
+      "modelTriangles": 47160,
+      "meshCount": 14,
+      "bounds": [
+        20.007999420166016,
+        15,
+        66.39999771118164
+      ],
+      "view": "hero",
+      "lod": "outline",
+      "lodMode": "outline",
+      "distanceRadii": 2.151233202182421
+    }
+  },
+  "transitions": [
+    {
+      "loaded": true,
+      "fps": 96.36490176133627,
+      "triangles": 1714116,
+      "calls": 97,
+      "modelTriangles": 72687,
+      "meshCount": 19,
+      "bounds": [
+        20.007999420166016,
+        15,
+        66.39999771118164
+      ],
+      "view": "hero",
+      "lod": "reduced",
+      "lodMode": "auto",
+      "distanceRadii": 44
+    },
+    {
+      "loaded": true,
+      "fps": 104.8462255358807,
+      "triangles": 290768,
+      "calls": 97,
+      "modelTriangles": 47160,
+      "meshCount": 14,
+      "bounds": [
+        20.007999420166016,
+        15,
+        66.39999771118164
+      ],
+      "view": "hero",
+      "lod": "outline",
+      "lodMode": "auto",
+      "distanceRadii": 440
+    }
+  ],
+  "pop": {
+    "reduced": {
+      "fullFootprintPixels": 485,
+      "controlChangedPixels": 0,
+      "lodChangedPixels": 319
+    },
+    "outline": {
+      "fullFootprintPixels": 8,
+      "controlChangedPixels": 0,
+      "lodChangedPixels": 4
+    }
+  }
+}
