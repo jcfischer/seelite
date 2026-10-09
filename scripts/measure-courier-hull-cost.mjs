@@ -171,13 +171,14 @@ try {
 			"authored+4far": fleet(true, true),
 			"kestrel+4far": fleet(false, true),
 		};
+		const { COURIER_LEVEL_NAMES } = await import("/src/courier-hull.ts");
 		const levelOf = (root) =>
-			["courier-hull-model", "courier-hull-reduced", "courier-hull-outline"]
+			Object.values(COURIER_LEVEL_NAMES)
 				.map((name) => root.getObjectByName(name))
 				.find((o) => o?.visible)?.name;
 		for (const [arm, levels] of [
-			["authored+4", "courier-hull-model"],
-			["authored+4far", "courier-hull-reduced"],
+			["authored+4", COURIER_LEVEL_NAMES.full],
+			["authored+4far", COURIER_LEVEL_NAMES.reduced],
 		])
 			for (const root of fleets[arm].children)
 				if (levelOf(root) !== levels)
@@ -192,9 +193,9 @@ try {
 			if (fleets[arm]) ship.add(fleets[arm]);
 		};
 		const { meshStats } = await import("/scripts/lib/mesh-stats.mjs");
-		const isStandIn = (o) => o.userData.levelStandIn === true;
+		const { isLevelStandIn } = await import("/src/ship-detail.ts");
 		return {
-			authored: meshStats(kids.authored, isStandIn),
+			authored: meshStats(kids.authored, isLevelStandIn),
 			kestrel: meshStats(kids.kestrel),
 		};
 	});

@@ -218,11 +218,16 @@ page (`src/courier-cockpit-viewer.ts`), which does not load the hull.
 **The detail band switches the model.** Every Traffic courier is the O4, so
 past `DETAIL_RADII.full` a courier draws a reduced copy of it and past
 `DETAIL_RADII.reduced` a coarser one, each simplified to a geometric error of
-at most half a device pixel where it is first drawn (`courierLevelErrorKm` is
-the target; each level records the error the simplifier reports it reached,
-and `tests/courier-hull.test.ts` holds that inside the target). The cabin and
-the pilot are left out of both, and neither takes a ray, so everything placed
-on the hull is placed on the approved model. Inside the first edge — the
+at most half a device pixel where it is first drawn **in `COURIER_LEVEL_FRAME`**
+— the near camera's 60° field of view on a frame 1800 device pixels tall,
+the player's retina panel and the frame the cost instruments measure on. The
+bound is a pixel quantity in that frame and not in any other: a taller frame
+sees the same error at more than half a pixel, in proportion to its height
+(`courierLevelErrorKm` is the target; each level records the error the
+simplifier reports it reached, and `tests/courier-hull.test.ts` holds that
+inside the target). The cabin and the pilot are left out of both, and
+neither takes a ray, so everything placed on the hull is placed on the
+approved model. Inside the first edge — the
 player's own courier in chase among them — the model is drawn as approved.
 
 The player hull is a near-scene object. It is hidden in cockpit view because the

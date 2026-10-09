@@ -32,12 +32,12 @@
  * **Every Traffic courier is this model, so the detail band switches it.**
  * Inside the band's first edge (`DETAIL_RADII.full`) a courier is the
  * approved model, triangle for triangle; beyond it, a reduced copy whose
- * geometric error is half a device pixel where it is first drawn
- * (`courierLevelErrorKm`), and beyond the second edge a coarser one held to
- * the same rule. Both copies are made here, once, from the loaded model, and
- * share its materials and textures; the cabin and the pilot behind the canopy
- * are left out of both. A reduced level is drawn and never measured: its
- * meshes take no ray (`CourierLevelMesh`), so the nav lights, the muzzles
+ * geometric error is half a device pixel where it is first drawn, in
+ * `COURIER_LEVEL_FRAME` (`courierLevelErrorKm`), and beyond the second edge
+ * a coarser one held to the same rule. Both copies are made here, once,
+ * from the loaded model, and share its materials and textures; the cabin and
+ * the pilot behind the canopy are left out of both. A reduced level is drawn
+ * and never measured: its meshes take no ray (`CourierLevelMesh`), so the nav lights, the muzzles
  * and the vent throats are placed on the approved metal.
  */
 import * as THREE from "three";
@@ -164,8 +164,9 @@ function reducedGeometry(
 export const LEVEL_REACHED_ERROR_KM = "levelReachedErrorKm";
 
 /** The model reduced to `errorM` (study metres), as a template like the
- *  model's own. `kmPerM` carries the reached error into kilometres. */
-function reducedLevel(
+ *  model's own. `kmPerM` carries the reached error into kilometres.
+ *  Exported for `tests/courier-hull.test.ts`. */
+export function reducedLevel(
 	template: THREE.Object3D,
 	errorM: number,
 	kmPerM: number,
@@ -199,15 +200,21 @@ function reducedLevel(
 			geometry = reduced.geometry;
 			reachedKm = Math.max(reachedKm, reduced.errorM * stretch * kmPerM);
 		}
+		// A mesh with no reduced geometry still carries its children: they
+		// move to a bare node in its place, or they would leave with it.
+		let stand: THREE.Object3D | null = null;
 		if (geometry) {
-			const stand = new CourierLevelMesh(shared(geometry), mesh.material);
+			const drawn = new CourierLevelMesh(shared(geometry), mesh.material);
+			drawn.castShadow = mesh.castShadow;
+			drawn.receiveShadow = mesh.receiveShadow;
+			drawn.userData[LEVEL_STAND_IN] = true;
+			stand = drawn;
+		} else if (mesh.children.length > 0) stand = new THREE.Object3D();
+		if (stand) {
 			stand.name = mesh.name;
 			stand.position.copy(mesh.position);
 			stand.quaternion.copy(mesh.quaternion);
 			stand.scale.copy(mesh.scale);
-			stand.castShadow = mesh.castShadow;
-			stand.receiveShadow = mesh.receiveShadow;
-			stand.userData[LEVEL_STAND_IN] = true;
 			for (const child of [...mesh.children]) stand.add(child);
 			mesh.parent?.add(stand);
 		}

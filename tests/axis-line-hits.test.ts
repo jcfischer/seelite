@@ -15,9 +15,8 @@
 
 import { expect, test } from "bun:test";
 import * as THREE from "three";
-import { axisLineTester } from "../scripts/lib/axis-line-hits";
+import { axisLineTester, hullMetal } from "../scripts/lib/axis-line-hits";
 import { HULL_SPECS } from "../src/hull";
-import { isLevelStandIn } from "../src/ship-detail";
 import { buildShipMesh } from "../src/ship-mesh";
 
 /** Lattice cells per side of each axis's sample. */
@@ -29,17 +28,7 @@ test("the courier's lattice lines and its metal edges meet the model exactly whe
 	const root = buildShipMesh("courier", HULL_SPECS.courier.variant).root;
 	root.updateMatrixWorld(true);
 	// The metal `measure-vent-placement.ts` asks about: no glows, no levels.
-	const metal: THREE.Mesh[] = [];
-	root.traverse((o) => {
-		const mesh = o as THREE.Mesh;
-		if (
-			mesh.isMesh &&
-			!(mesh as THREE.InstancedMesh).isInstancedMesh &&
-			!mesh.name.endsWith("-exhaust") &&
-			!isLevelStandIn(mesh)
-		)
-			metal.push(mesh);
-	});
+	const metal = hullMetal(root);
 	const meets = axisLineTester(metal);
 	const box = new THREE.Box3().setFromObject(root);
 	const size = box.getSize(new THREE.Vector3());

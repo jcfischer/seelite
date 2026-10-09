@@ -229,12 +229,19 @@ build had placed the nav lights.
   language (`ship-mesh`, `ship-finish`, `surface`, `ship-details`) run on the
   procedural Kestrel through `useProceduralCourier()`. Their courier rows
   describe the generator, not this hull.
-- Browser probes run on the GPU lane, singly (`probe:one`): ship-visuals,
-  boot, vent-display, derelict, cabin-pass, live-cockpit, chase-orbit,
-  occlusion, shipyard, dock-arrival, station-route-traffic,
+- Browser probes run on the GPU lane, singly (`probe:one`), for the node's
+  first record (`e6fc8e4`), before sage round 2 added the reduced levels:
+  ship-visuals, boot, vent-display, derelict, cabin-pass, live-cockpit,
+  chase-orbit, occlusion, shipyard, dock-arrival, station-route-traffic,
   traffic-engagement, docking, collision, docking-traffic and traffic-mouth
-  all pass. **probe-light-rig** and **probe-postcard** are red (Q1). The full
-  suite was not run here; the supervisor runs it.
+  all pass. **probe-light-rig** and **probe-postcard** are red (Q1). The full suite was not run here; the
+  supervisor runs it.
+- Sage round 4, on its own tree, which carries the reduced levels and their
+  switching: ship-visuals, cabin-pass, live-cockpit and occlusion, singly on
+  the GPU lane, all pass. These are the three round 2's list left out, plus
+  ship-visuals. `scripts/measure-courier-hull-cost.mjs` ran to the end with
+  its level check reading the shared names; its figures were taken under a
+  load average of 20–33 from other sessions and are not transcribed.
 - `probe-ship-visuals` changes:
   - Its identity row now checks the authored model.
   - Its #101 plating section boots `?hull=interceptor`, because the courier
@@ -295,8 +302,14 @@ wreck, is the whole hull gone dark, inside its envelope. That is held by
 variant `a` "Kestrel" (`Kestrel TR-01`). Keep it, or give the O4 its own
 name?
 
-**Q4. Download size.** 15.9 MB, lossless. Quantising the vertex streams
-(lossy, millimetre-scale at 16 bits) would roughly halve it. That is not done
+**Q4. Download size.** 15.9 MB (15,940,136 bytes), lossless. Quantising the
+vertex streams is lossy and saves less than first estimated here. Measured in
+sage round 4: the prepare script with glTF Transform's `quantize()` added
+before `reorder`, at 16-bit positions and the library's default 10-bit normals
+and 12-bit texture coordinates, wrote 12,203,964 bytes, 23% smaller. It
+skipped the texture coordinates of 32 primitives, whose values lie outside
+[0, 1]. That encode was written to `/tmp` and not shipped; the earlier
+"roughly halve it" was an estimate and is withdrawn. Quantising is not done
 without your say.
 
 **Q5. Not converted.** `src/courier-cockpit-viewer.ts` (the cockpit spike's
@@ -320,8 +333,9 @@ changes the sheet.
 
 **Q7. The reduced levels are a lossy change to the approved hull.** Like Q4,
 they are not the study's geometry. Each is made to a target error of half a
-device pixel where it is first drawn, but its normals are recomputed and its
-texture coordinates welded, and the switch is visible in pixels.
+device pixel where it is first drawn (in the 1800-pixel frame above), but
+its normals are recomputed and its texture coordinates welded, and the
+switch is visible in pixels.
 `scripts/measure-courier-level-pop.mjs` puts a courier on the chase camera's
 axis at 1,469 m (1.02 × the band's first edge), clock held, and draws it at
 `full` and at `reduced`. The footprint is the pixels the full hull moves past

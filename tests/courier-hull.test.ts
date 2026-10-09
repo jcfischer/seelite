@@ -21,6 +21,7 @@ import {
 	FIXTURE_SCREEN_PREFIX,
 	LEVEL_REACHED_ERROR_KM,
 	courierLevelErrorKm,
+	reducedLevel,
 } from "../src/courier-hull";
 import { HULL_SPECS } from "../src/hull";
 import { EMISSIVE_CEILING } from "../src/light-rig";
@@ -430,6 +431,45 @@ describe("every Traffic courier is the model, so the detail band switches it (sa
 		Object.entries(levelsOf(root))
 			.filter(([, o]) => o.visible)
 			.map(([k]) => k);
+
+	test("a mesh's children survive its level, whether or not it is reduced (sage round 4)", () => {
+		// The shipped model nests no mesh in another; this holds the rule for
+		// one that would. A cabin mesh gets no reduced geometry, and a hull
+		// mesh does: a child of either keeps its place on the hull.
+		const template = new THREE.Group();
+		const parents = [
+			["interior-seat", new THREE.Vector3(1, 2, 3)],
+			["hull-spine", new THREE.Vector3(-2, 0, 1)],
+		] as const;
+		for (const [name, at] of parents) {
+			const parent = new THREE.Mesh(new THREE.BoxGeometry(1, 1, 1));
+			parent.name = name;
+			parent.position.copy(at);
+			parent.scale.setScalar(2);
+			const child = new THREE.Mesh(new THREE.BoxGeometry(1, 1, 1));
+			child.name = `plate-on-${name}`;
+			child.position.set(0.5, 0, 0);
+			parent.add(child);
+			template.add(parent);
+		}
+		template.updateMatrixWorld(true);
+		const level = reducedLevel(template, 1e-3, 1, "level");
+		level.updateMatrixWorld(true);
+		for (const [name] of parents) {
+			const kept = level.getObjectByName(`plate-on-${name}`);
+			expect(kept).toBeInstanceOf(CourierLevelMesh);
+			const was = template.getObjectByName(
+				`plate-on-${name}`,
+			) as THREE.Object3D;
+			const at = (o: THREE.Object3D) =>
+				new THREE.Vector3().setFromMatrixPosition(o.matrixWorld);
+			expect(at(kept as THREE.Object3D).distanceTo(at(was))).toBeLessThan(1e-9);
+		}
+		// The cabin mesh itself is not drawn at the level.
+		const cabin = level.getObjectByName("interior-seat");
+		expect(cabin).toBeDefined();
+		expect((cabin as THREE.Mesh).isMesh).toBeUndefined();
+	});
 
 	test("one level is drawn at a time, picked by the band and held through its hysteresis", () => {
 		const root = courier();

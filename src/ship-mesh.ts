@@ -6762,8 +6762,10 @@ export type AuthoredHullBuilder = (
 ) => ShipLevels;
 
 /** The courier variant the authored model draws (node #812): the selected
- *  one, so every reader of `HULL_SPECS.courier.variant` sees the model. */
-export const AUTHORED_COURIER_VARIANT: HullVariantId = "a";
+ *  one, read off `HULL_SPECS` so the model follows the selection and every
+ *  reader of `HULL_SPECS.courier.variant` sees it. */
+export const AUTHORED_COURIER_VARIANT: HullVariantId =
+	HULL_SPECS.courier.variant;
 
 let authoredCourier: AuthoredHullBuilder | undefined;
 /** The authored courier's nav lights, placed once. `addNavLights` finds the

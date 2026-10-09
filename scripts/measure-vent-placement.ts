@@ -38,10 +38,9 @@ import {
 	type VentPlacement,
 	coupleArms,
 } from "../src/hull";
-import { isLevelStandIn } from "../src/ship-detail";
 import { buildShipMesh } from "../src/ship-mesh";
 import { installShippedCourierHull } from "./lib/shipped-courier-hull";
-import { axisLineTester } from "./lib/axis-line-hits";
+import { axisLineTester, hullMetal } from "./lib/axis-line-hits";
 
 /** Steps per half-extent: a reach is found to a quarter of a percent. */
 const STEPS = 400;
@@ -60,17 +59,7 @@ function lineTester(root: THREE.Object3D) {
 	const box = new THREE.Box3().setFromObject(root);
 	const centre = box.getCenter(new THREE.Vector3());
 	const reach = box.getSize(new THREE.Vector3()).length();
-	const metal: THREE.Mesh[] = [];
-	root.traverse((o) => {
-		const mesh = o as THREE.Mesh;
-		if (
-			mesh.isMesh &&
-			!(mesh as THREE.InstancedMesh).isInstancedMesh &&
-			!mesh.name.endsWith("-exhaust") &&
-			!isLevelStandIn(mesh)
-		)
-			metal.push(mesh);
-	});
+	const metal = hullMetal(root);
 	// Three's raycast, answered from a grid: every line here runs along an
 	// axis, and the authored courier's 354k triangles made the plain
 	// raycast an hour's work (node #812, `lib/axis-line-hits.ts`).

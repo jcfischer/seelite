@@ -93,6 +93,17 @@ export const RESTING_KM = 1.5 * SEPARATION_KM;
  * it, and an exact `> 0` billed that as a resting impact of zero damage.
  * `tests/collision-traffic.test.ts`'s pair-solver row reads "no longer
  * closing" against this constant.
+ *
+ * The figure is set between two bounds rather than at the residue seen.
+ * Below it is rounding: a ship flies at frame velocities of tens of km/s
+ * (#104's ~30 km/s orbits), where one unit in the last place of a float64
+ * is 7.1e-15 km/s at 40 km/s, and a relative velocity is a difference of
+ * such figures — so the floor sits about a hundred and forty of those units
+ * up, and the 2e-17 seen is far under it. Above it is anything a
+ * contact could mean: 1 nm/s moves a pair 0.1 nm in a `MAX_DT` step,
+ * against a `SEPARATION_KM` of 10 cm, and the slowest speed a contact law
+ * names, `V_SCRAPE_KMS`, is 0.05 km/s. The value is a choice inside that
+ * gap, not a measurement.
  */
 export const RESTING_CLOSING_FLOOR_KMS = 1e-12;
 

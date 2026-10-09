@@ -27,6 +27,7 @@
  * layer 0 are tested.
  */
 import * as THREE from "three";
+import { isLevelStandIn } from "../../src/ship-detail";
 
 /** Cells per side of each projection's grid. */
 const CELLS = 128;
@@ -213,4 +214,25 @@ export function axisLineTester(meshes: readonly THREE.Mesh[]) {
 		}
 		return false;
 	};
+}
+
+/**
+ * The hull's metal under `root`: every plain mesh, less the drive glows
+ * (`-exhaust`) and the reduced levels' stand-ins, which are drawn and never
+ * measured. One copy of the set `measure-vent-placement.ts` places the vents
+ * on and `tests/axis-line-hits.test.ts` checks this tester against.
+ */
+export function hullMetal(root: THREE.Object3D): THREE.Mesh[] {
+	const metal: THREE.Mesh[] = [];
+	root.traverse((o) => {
+		const mesh = o as THREE.Mesh;
+		if (
+			mesh.isMesh &&
+			!(mesh as THREE.InstancedMesh).isInstancedMesh &&
+			!mesh.name.endsWith("-exhaust") &&
+			!isLevelStandIn(mesh)
+		)
+			metal.push(mesh);
+	});
+	return metal;
 }
