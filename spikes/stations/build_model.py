@@ -442,7 +442,18 @@ def dock_hub(w=32,h=28,length=32,z=0):
   q=mid*.78+Z*(front+.5)
   if i%2==0:machinery(q,max(2,min(w,h)*.22),3.2,Z,u,i)
   else:window_band(q,2.5,.35,Z,u)
- # Actual inside passage walls, no cap.
+ # Continuous rear pressure skin beneath segmented armor; front remains open.
+ if name in ['ring','wheel']:
+  prism([(x,y,back+.15) for x,y in rim],-Z,.55,steel)
+  center=Vector((0,0,back-.4))
+  for i,(x,y) in enumerate(rim):
+   xx,yy=rim[(i+1)%8]
+   plate([center,(x,y,back-.4),(xx,yy,back-.4)],ivory[i%4],-Z,.22)
+   tube((x,y,back-.7),(xx,yy,back-.7),.38,alloy,8)
+  box((0,0,back-.8),(8,9,.5),steel)
+  plate([(-3.6,-4,back-1.06),(3.6,-4,back-1.06),(3.6,4,back-1.06),(-3.6,4,back-1.06)],ivory[1],-Z,.16)
+  for x in [-w*.31,w*.31]:machinery((x,0,back-.8),5,8,-Z,X,2)
+ # Inside passage walls meet the rear bulkhead on Ring and Wheel.
  for side in [-1,1]:
   box((side*9.3,0,z),(.6,11.1,length),steel)
   box((0,side*5.55,z),(18,.6,length),steel)

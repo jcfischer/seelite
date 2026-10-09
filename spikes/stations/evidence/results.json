@@ -1,7 +1,7 @@
 {
   "author": "Codex",
   "captured": "2026-10-08T22:43:23.077432+00:00",
-  "status": "awaiting-principal-input-after-stall",
+  "status": "principal-visually-approved-integration-handoff",
   "threshold": 7,
   "renderer": "ANGLE (Apple, ANGLE Metal Renderer: Apple M1 Pro, Unspecified Version)",
   "models": [
@@ -13,8 +13,11 @@
       "report": "judge-trade-round4.md",
       "fps": 60.130718954248366,
       "modelTriangles": 370712,
-      "glbSHA256": "125b8014b5673313e0515813f3fa5d98a5164dfea86d84e5ec56286cb7ceab71",
-      "blendSHA256": "5a54c18aa8187fd1cb12da7dcdc82a6fbd91d2767545eae5a80a787e079aa432"
+      "glbSHA256": "11f408fdc40343ca3a94e30682bc62c75c09495fed16e88827238d27473ba09a",
+      "blendSHA256": "f1ad99ab4a4dd9262893d3ae20ed61c37e51519c2f763ca8f909d4d703813fad",
+      "preCorrectionGLBSHA256": "125b8014b5673313e0515813f3fa5d98a5164dfea86d84e5ec56286cb7ceab71",
+      "preCorrectionBlendSHA256": "5a54c18aa8187fd1cb12da7dcdc82a6fbd91d2767545eae5a80a787e079aa432",
+      "scorePredatesHullClosureCorrection": true
     },
     {
       "name": "drum",
@@ -46,8 +49,11 @@
       "report": "judge-middle-round6.md",
       "fps": 59.99739141776439,
       "modelTriangles": 398500,
-      "glbSHA256": "d4b596fd0889ce8f7cc3cd8e148c93e42ab5edffeb2ef5bcdd8b3e0e5b842409",
-      "blendSHA256": "74f5f791ddb93492df332eea7c23946c5da1405840107ccc309f83e64be8c755"
+      "glbSHA256": "259f46699d50a891706d25869730ab1ca851e84ea98492a6698229080d434d0c",
+      "blendSHA256": "1efd975131c4fb0fa4cd5429ea52c2f081bdfc8dd6b87f428e32e35b6cbd77ca",
+      "preCorrectionGLBSHA256": "d4b596fd0889ce8f7cc3cd8e148c93e42ab5edffeb2ef5bcdd8b3e0e5b842409",
+      "preCorrectionBlendSHA256": "74f5f791ddb93492df332eea7c23946c5da1405840107ccc309f83e64be8c755",
+      "scorePredatesHullClosureCorrection": true
     },
     {
       "name": "derrick",
@@ -101,12 +107,21 @@
       "report": "judge-outposts-round7.md",
       "fps": 59.976009596161305,
       "modelTriangles": 126388,
-      "glbSHA256": "73ef3771de0aa8a2ffaf686334104031d7464b4af795bf47cf7a871d666a5bbe",
-      "blendSHA256": "1734aed4dcc9bc0adea4f90e5ea2f144b2514b7345cd2295fb9fe6b11d626c47"
+      "glbSHA256": "b95abb91d1b1b569b625da2d8b2b975e04b0d1d3fba10c39f52695af953a486e",
+      "blendSHA256": "8d6d45fca53bb4ab9a25d987066326ab45e936e207081f7405e1cce2cf3ea5a1",
+      "preCorrectionGLBSHA256": "73ef3771de0aa8a2ffaf686334104031d7464b4af795bf47cf7a871d666a5bbe",
+      "preCorrectionBlendSHA256": "1734aed4dcc9bc0adea4f90e5ea2f144b2514b7345cd2295fb9fe6b11d626c47",
+      "scorePredatesHullClosureCorrection": true
     }
   ],
   "notes": [
     "Six models meet threshold. Drum restored to round6 after round7 regression. Buoy structural revision stalled. Salvage remains6.9.",
-    "No runtime integration or production readiness claimed. Local model-study viewer checks only; canonical PR browser selection was not executed."
-  ]
+    "No runtime integration or production readiness claimed. Local model-study viewer checks only; canonical PR browser selection was not executed.",
+    "Ring, Wheel and Salvage received principal-requested end closures. Their scores and judge reports predate this correction.",
+    "Closure capture stopped at principal request while waiting for another browser suite; retained screenshots predate closures. No fresh visual scores or hardware metrics for corrected exports."
+  ],
+  "principalApproval": {
+    "date": "2026-10-09",
+    "instruction": "visual approved. prepare PR and have another agent do the final integration.stop tests and probe"
+  }
 }

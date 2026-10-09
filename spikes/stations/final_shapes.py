@@ -196,12 +196,20 @@ def salvage():
     for j in range(3):
      p0=aa[i].lerp(aa[(i+1)%8],.43);p1=aa[i].lerp(aa[(i+1)%8],.59);q0=bb[i].lerp(bb[(i+1)%8],.43);q1=bb[i].lerp(bb[(i+1)%8],.59)
      plate([p0,q0,q1,p1],rust,n,.18,False)
+ # Seal both ends of the salvaged bow loft, including its exposed nose.
+ for loop,n in [(loops[0],-X),(loops[-1],X)]:
+  prism(loop,n,.18,steel)
+  plate([q+n*.18 for q in loop],ivory[1],n,.14)
  # Tapered asymmetric keel rather than rectangular bottom block.
  for c,size in [((0,-23,-7),(15,10,15)),((2,-31,-7),(11,9,12)),((5,-38,-6),(6,7,8))]:
   plated_box(c,size,ivory[1]);machinery(Vector(c)+Z*(size[2]/2+.2),size[0]*.65,size[1]*.7,Z,X,2)
  for x in [-7,7]:pipe((x,-19,2),(x*.7,-35,1),.45)
  cylinder((12,-27,-6),(12,-18,-6),3,12,2)
- # Open tower: radial wall strips and narrow annular rims, never capped.
+ # Recessed tower end skins retain the raised annular rim without a through-hole.
+ tube((-1,18,-7),(-1,18.35,-7),6,steel,20)
+ tube((-1,28.6,-7),(-1,29,-7),6,steel,20)
+ plate([(-1+5.8*math.cos(i*math.tau/20),29.02,-7+5.8*math.sin(i*math.tau/20)) for i in range(20)],ivory[1],Y,.15)
+ # Radial wall strips and narrow annular rims.
  for i in range(20):
   a=i*math.tau/20;b=(i+1)*math.tau/20;n=Vector((math.cos((a+b)/2),0,math.sin((a+b)/2)))
   for y in [18,24]:

@@ -28,22 +28,34 @@ Append station names after Blender's `--` or after the capture label to work on 
 
 ## Review status — 2026-10-09
 
-Six models meet the requested independent 7/10 threshold. Three remain below it. Dream Loop stopped for principal input after a larger Drum rebuild regressed and Buoy remained unchanged. Drum is restored to its better round-six form. Salvage has improved to 6.90 but has not passed.
+The principal approved the visuals on 2026-10-09 and requested a PR plus final integration by another agent. That approval supersedes the earlier request for input; historical independent scores remain unchanged below. Ring, Wheel and Salvage received the requested hull closures after those scores. No further visual refinement is requested. Tests and probes were explicitly stopped during PR preparation.
 
 | Station | Fidelity /10 | Status |
 |---|---:|---|
 | Ring | 7.10 | Threshold met |
-| Drum | 6.90 | Input needed |
+| Drum | 6.90 | Principal approved |
 | Assembly | 7.00 | Threshold met |
 | Wheel | 7.00 | Threshold met |
 | Derrick | 7.00 | Threshold met |
-| Buoy | 6.90 | Input needed |
+| Buoy | 6.90 | Principal approved |
 | Rig | 7.05 | Threshold met |
 | Cluster | 7.05 | Threshold met |
-| Salvage | 6.90 | Input needed |
+| Salvage | 6.90 | Principal approved |
 
 Open `review.html` for target/model comparisons. `evidence/results.json` binds scores to reports and asset hashes; each `*-judged.png` is the exact reviewed image. Final hardware captures include six angles and the viewer controls for every model. `metrics.json` records approximately 60 FPS on ANGLE Metal / Apple M1 Pro, with no page errors. This is desktop viewer evidence, not a game performance claim.
 
-Validation: 18 asset/approach tests pass; strict standalone viewer typecheck passes; all nine browser loads, orbit, zoom, six presets, target dialog, lights and PNG export pass. The canonical selected/full PR browser suite has not been run. These are local model studies, not a runtime integration PR.
+Validation before the stop instruction: 21 asset/approach/closure tests pass; strict standalone viewer typecheck passes; all nine browser loads, orbit, zoom, six presets, target dialog, lights and PNG export pass. The canonical selected/full PR browser suite has not been run. These are local model studies, not a runtime integration PR.
 
 `final_shapes.py` contains the structural revisions layered on the shared authoring helpers in `build_model.py`. Rebuild from the main authoring script. All Blender files pack their texture; all GLBs embed it.
+
+## Principal hull-closure correction — 2026-10-09
+
+Ring and Wheel now have solid rear pressure bulkheads with segmented armor and service panels. Salvage's bow loft has closed end skins; its tower has recessed caps beneath the raised rim. Front docking approaches remain clear. The three new exported-geometry regression tests failed before rebuilding and passed afterward (21 tests, 497 assertions total). Previous independent fidelity scores predate this correction and have not been reassessed.
+
+## Receiving integration agent
+
+The model delivery branch is `design/remaining-stations-codex`; worktree `.worktrees/station-designs-codex`. Read `CLAUDE.md`, graph #1 and #810, then current Coriolis authored-model integration before selecting the production path. Preserve the approved silhouettes and materials. Ring/Drum/Assembly/Wheel map to remaining trade forms; Derrick/Buoy/Rig/Cluster/Salvage map to outposts. Verify the actual runtime registry mappings; do not infer index order from viewer O1–O9 labels. Coriolis is already done. Shipyard and refinery work is in PRs #811 and #817; reuse those designs.
+
+Production work still needs optimized assets/LOD and loading, scale and berth-envelope agreement, docking transforms and clearance, collision proxies, spin ownership, shared game lighting and lifecycle disposal. The study viewer's 0.1 scale and turntable are display choices, not game contracts. Source GLBs are intentionally detailed studies and must not be dropped into runtime without addressing performance.
+
+The principal explicitly said **stop tests and probes**. Do not restart them without fresh authorization. The pending closure capture was terminated while waiting for another worktree's GPU lock, so closure screenshots were not taken. Historical screenshots and scores are retained; the current exported closure geometry passed its regression checks before the stop instruction. No fresh Sage approval, full PR verification, merge or deployment is claimed.

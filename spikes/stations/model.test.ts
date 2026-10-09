@@ -85,3 +85,50 @@ describe("approach clearance in exported geometry", () => {
 			},
 		);
 });
+
+// Short rays at the intended outer skin catch missing end faces without
+// accidentally accepting a wall on the opposite side of the module.
+describe("pressure hull end closures", () => {
+	for (const [name, rear] of [
+		["ring", -155],
+		["wheel", -185],
+	] as const)
+		test(name + " has a continuous rear bulkhead", async () => {
+			const root = await decodeShippedGlb("spikes/stations/" + name + ".glb");
+			root.updateMatrixWorld(true);
+			for (const x of [-120, -60, 0, 60, 120])
+				for (const y of [-100, -50, 0, 50, 100]) {
+					const hits = new Raycaster(
+						new Vector3(x, y, rear - 20),
+						new Vector3(0, 0, 1),
+						0,
+						30,
+					).intersectObject(root, true);
+					expect(hits.length).toBeGreaterThan(0);
+				}
+		});
+	test("salvage nose and tower have end skins", async () => {
+		const root = await decodeShippedGlb("spikes/stations/salvage.glb");
+		root.updateMatrixWorld(true);
+		for (const y of [54, 60, 66])
+			for (const z of [-36, -30, -24])
+				expect(
+					new Raycaster(
+						new Vector3(390, y, z),
+						new Vector3(-1, 0, 0),
+						0,
+						25,
+					).intersectObject(root, true).length,
+				).toBeGreaterThan(0);
+		for (const x of [-35, -10, 15])
+			for (const z of [-95, -70, -45])
+				expect(
+					new Raycaster(
+						new Vector3(x, 320, z),
+						new Vector3(0, -1, 0),
+						0,
+						50,
+					).intersectObject(root, true).length,
+				).toBeGreaterThan(0);
+	});
+});
