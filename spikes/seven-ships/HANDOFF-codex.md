@@ -1,3 +1,15 @@
+# Latest continuation
+
+## Round 8 — Bastion assembly rebuild
+
+Principal requested another round after the stall report. Rebuilt Bastion with separately housed pressure bays, recessed assembly joints, inclined shoulder exchangers, a deep stepped bow collar, and a low elongated glazed bridge. Replaced the rear grille grid with a central segmented pressure door, vertical pump plant, control cabinets and a rear service gallery. Adjusted carrier lighting and pulled back its bay camera. Other six models were not rebuilt in this round.
+
+Independent score: **5.65/10**, versus 5.20 in round 7 (+0.45). Review: `review/seven-bastion-round8-review.md`. Improvement is real but the 8/10 criterion remains open. Stall approaching persists: ring inner architecture, repeated side equipment, dark hero bay and sparse deck remain the priorities. The equal-or-worse stop condition was not triggered. This completes the principal's requested additional round; it does not assert visual acceptance.
+
+Verified: seven model tests / 75 assertions, strict standalone viewer typecheck, hardware browser capture with all controls and no browser errors. Bastion measured 63.55 FPS, 2.441 RPM (nominal 2.5), 1,350,362 model triangles and 60.11 MB GLB. Approved 180 m floor diameter and 0.629012 g remain unchanged; clearance test passes. Capture evidence `.dream-loop/round-8/carrier/`; refreshed review gallery includes hero and interior. Previous hero preserved as `review/carrier-round7.png`.
+
+---
+
 > Visual work was reopened. See STATUS.md for current evidence and scores. Both capitals now have approved 180 m floor-diameter habitats at 2.5 RPM (0.629 g); latest models are not a visual quality pass. Historical measurements below are superseded by the live per-role model-report.json files and review/*-metrics.json.
 
 # Seven approved exterior ship studies — Codex handoff
