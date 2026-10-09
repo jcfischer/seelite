@@ -177,9 +177,10 @@ export function ventThroats(root: THREE.Object3D, id: HullId): Throat[] {
  */
 const authoredThroats = new WeakMap<
 	AuthoredHullBuilder,
-	Map<HullFinishId, readonly Throat[]>
+	Map<HullFinishId, readonly Throat[]> // glossary-ignore: throat
 >();
 
+// glossary-ignore: throat
 function measureThroats(root: THREE.Object3D, id: HullId): Throat[] {
 	const spec = HULL_SPECS[id];
 	root.updateMatrixWorld(true);

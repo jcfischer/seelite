@@ -8,4 +8,5 @@ spikes/courier-hull/model.test.ts:
  0 fail
  3705 expect() calls
 Ran 2 tests across 1 file. [211.00ms]
-# glossary-ignore: wound — face winding, in a test title quoted from model.test.ts
+# "wound" above is face winding, in a test title quoted from model.test.ts.
+# glossary-ignore: wound
