@@ -286,6 +286,20 @@ export function buildShipDetails(
 	root.userData.shipSilhouetteKm = reachKm;
 }
 
+/**
+ * The visual state of an authored hull (node #815), which carries its own
+ * machinery and lamps: no generated greebles and no strip, so the detail and
+ * quality gates have nothing of ours to hide, but the root answers them.
+ */
+export function markAuthoredShip(root: THREE.Group, reachKm: number): void {
+	root.userData.shipVisual = {
+		detail: "full",
+		quality: "high",
+		greebles: [],
+	} satisfies VisualState;
+	root.userData.shipSilhouetteKm = reachKm;
+}
+
 function applyVisibility(state: VisualState) {
 	const draw = state.detail === "full" && SHIP_QUALITY[state.quality].greebles;
 	for (const mesh of state.greebles) mesh.visible = draw;

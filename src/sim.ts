@@ -2999,7 +2999,7 @@ export interface AvoidSphere {
 /**
  * How far from a ship a solid's surface may be and still be handed to its
  * controller. The longest horizon a hull under a controller reads
- * (`avoidanceHorizonS`, its braking term capped) is 22.3 s, on the miner —
+ * (`avoidanceHorizonS`, its braking term capped) is 23.1 s, on the miner —
  * the capitals fly under none; the fastest body in 200 start systems moves
  * 86.7 km/s, a station round an inner planet, and a ship held in the star's
  * frame closes on it at that. 3,000 km is that horizon at over 100 km/s,

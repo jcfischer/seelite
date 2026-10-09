@@ -863,14 +863,15 @@ describe("collision.md §9.1.7, §9.1.8: arrival, parked and launch in every poo
 });
 
 describe("collision.md §9.1.8: what the open bay does not cover — a box that overhangs its berth", () => {
-	test("two hulls' boxes overhang a slot's berth cell: the miner by 2.8 m, the explorer by 0.6 m", () => {
+	test("one hull's box overhangs a slot's berth cell: the explorer by 0.6 m", () => {
 		// glossary-ignore: slot
 		// A finding, handed on (`collision.md` §11): the berth places the
-		// ship's origin, not its box, so the miner — 33.2 m tall about a centre
-		// 6.2 m below its origin, in a 40 m cell — parks 2.8 m into the wall its
-		// berth stands on, and the explorer, 39.7 m tall about a centre 0.8 m
-		// off, 0.6 m. Arrival, parking and launch are exempt, so nothing is met;
-		// unexempt, the traversal above meets the wall. The fix is the berth
+		// ship's origin, not its box, so the explorer — 39.7 m tall about a
+		// centre 0.8 m off, in a 40 m cell — parks 0.6 m into the wall its berth
+		// stands on. The miner did too, by 2.8 m, until node #815 replaced its
+		// loft with Longwall B, whose box is centred on its origin and fits.
+		// Arrival, parking and launch are exempt, so nothing is met; unexempt,
+		// the traversal above meets the wall. The fix is the berth
 		// placement's (carry `envCentre`), not the proxy's. This row is the
 		// tripwire: another hull, or the fix, changes it.
 		const over: string[] = [];
@@ -882,12 +883,7 @@ describe("collision.md §9.1.8: what the open bay does not cover — a box that 
 			}
 		}
 		console.log(`overhanging a slot's berth cell: ${over.join(", ")}`); // glossary-ignore: slot
-		expect(over).toEqual([
-			"trade:miner:2.8 m",
-			"trade:explorer:0.6 m",
-			"shipyard:miner:2.8 m",
-			"shipyard:explorer:0.6 m",
-		]);
+		expect(over).toEqual(["trade:explorer:0.6 m", "shipyard:explorer:0.6 m"]);
 	});
 });
 
@@ -918,13 +914,15 @@ describe("collision.md §9.1.9: the aperture is a physical fit (P1)", () => {
 	test("the fit can go red: a hull flown in off the axis meets the rim", () => {
 		// Pitched past what the miner clears at the roll limit, its box meets
 		// the coaming. The table (`scripts/measure-aperture-fit.ts`) is where
-		// each hull's margin is printed for the principal.
+		// each hull's margin is printed for the principal. Longwall B (node #815)
+		// is slimmer than the loft it replaced and first meets it at 40°, not
+		// under 35°, so the control is pitched to 45°.
 		expect(
 			clearsAperture(
 				"trade",
 				"miner",
 				{
-					pitchDeg: 35,
+					pitchDeg: 45,
 					yawDeg: 0,
 					rollDeg: 50,
 				},

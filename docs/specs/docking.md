@@ -354,13 +354,13 @@ rotation momentum, so holding a matched rate is a control problem rather than a
 reflex one.
 
 **Roll rate is a hull property since #181**, so "four times the fastest spinner"
-is the baseline hull's margin and not the roster's. The miner peaks at 29.5°/s,
-1.6× a 3 rpm spinner; the interceptor at 103°/s, 5.8×. `tests/hull-docking.test.ts`
+is the baseline hull's margin and not the roster's. The miner peaks at 27.3°/s,
+1.5× a 3 rpm spinner (29.5°/s until node #815's longer Longwall B); the interceptor at 103°/s, 5.8×. `tests/hull-docking.test.ts`
 flies every hull at every role across the whole 0.6–3.0 rpm range, and then — at
 **both** turning roles, because a trade station and a shipyard cut their
 apertures at different planes into different interiors — finds the spin at which each hull
-**first** fails. The worst is the miner, which first fails at 5.5 rpm at a
-trade station and so holds 5.0 — 1.67 times the fastest station the generator
+**first** fails. The worst is the miner, which first fails at 7.0 rpm at a
+trade station and so holds 6.5 — 2.17 times the fastest station the generator
 builds.
 
 **Since #619 the computer turns the hull through its attitude vents**
@@ -371,7 +371,9 @@ hull's roll cap; the interceptor (22.0 against 17.2), the freighter (10.0
 against 6.6) and the tug (11.0 against 9.2) dock above theirs, inside check
 4's ±50°. The miner was 7.0 against a 4.9 cap and is 5.0 now, so the worst
 hull moved from the freighter to the miner and the margin fell from 2.0x to
-1.67x. The bound it is asserted against is 1.5x. `tests/hull-docking.test.ts`
+1.67x. The bound it is asserted against is 1.5x. Node #815 made the miner Longwall
+B, 84.5 m long against the loft's 78.2, which turns 7.5% slower by #181's law
+— a 4.5 rpm roll cap — and it holds 6.5: still the worst hull, at 2.17x. `tests/hull-docking.test.ts`
 prints every row.
 
 *First* failure, because the curve is not monotone: flown out to 24 rpm the

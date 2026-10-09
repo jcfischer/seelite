@@ -30,7 +30,6 @@ export {
 	SUBDIVISIONS,
 } from "./loft";
 import {
-	RING_SEGMENTS,
 	type Ring,
 	hullLoft,
 	revolve,
@@ -63,6 +62,7 @@ import {
 	type ShipDetailPlan,
 	type ShipSurface,
 	buildShipDetails,
+	markAuthoredShip,
 } from "./ship-detail";
 
 export const SHIP_DESIGN_ROUND = 11;
@@ -310,7 +310,7 @@ export const HULL_REACH_KM: Readonly<Record<HullId, number>> = {
 	courier: 0.036,
 	interceptor: 0.036,
 	freighter: 0.04,
-	miner: 0.042,
+	miner: 0.0422,
 	patrol: 0.034,
 	explorer: 0.044,
 	raider: 0.038,
@@ -2482,104 +2482,167 @@ function buildMinerA(root: THREE.Group, p: Palette) {
 	blister(root, "miner-sensor", 0.0016, [0.0048, 0.0088, -0.0055], p);
 }
 
-function buildMinerB(root: THREE.Group, p: Palette) {
-	add(
-		root,
-		"miner-fuselage",
-		hullLoft([
-			{ z: -0.0265, w: 0.0046, h: 0.0044, b: 0.0042, e: 3 },
-			{ z: -0.0215, w: 0.0068, h: 0.0062, b: 0.006, e: 3.4, hard: true },
-			{ z: -0.0155, w: 0.0068, h: 0.0062, b: 0.006, e: 3.4, hard: true },
-			{ z: -0.0135, w: 0.0042, h: 0.004, b: 0.004, e: 3.2, hard: true },
-			{ z: 0.0225, w: 0.0042, h: 0.004, b: 0.004, e: 3.2, hard: true },
-			{ z: 0.026, w: 0.0094, h: 0.008, b: 0.0076, e: 4.2, hard: true },
-			{ z: 0.036, w: 0.0094, h: 0.008, b: 0.0076, e: 4.2, hard: true },
-			{ z: 0.038, w: 0.0082, h: 0.007, b: 0.0066, e: 3.4 },
-		]),
-		p.hull,
+/**
+ * Longwall B, the authored miner (#803, approved 2026-10-08; node #815).
+ *
+ * The principal approved a Blender model rather than a loft, so `miner/b` is
+ * that model: `public/models/longwall-miner.glb`, prepared by
+ * `spikes/longwall-miner/prepare-flight-asset.mjs` from the study's stowed
+ * export. It is installed once (`longwall-model.ts` in the browser,
+ * `tests/setup/longwall-model.ts` under bun) and every `buildShipMesh` clones
+ * it, so a Traffic miner shares the template's buffers rather than decoding
+ * its own.
+ *
+ * **There is no procedural fallback.** The envelope, the collision box, the
+ * vent placement and the muzzles are all measured off the built mesh
+ * (`hull.ts`), so a build that quietly drew the old loft would measure a hull
+ * the game no longer draws. Building `miner/b` before the install throws.
+ *
+ * The export is model metres, +Z forward and Y up; this frame is kilometres
+ * with the nose at -Z, so the exterior is turned half a turn about Y — a
+ * rotation, not a mirror, so its winding survives — scaled by 0.001, and
+ * moved so its box is centred on the ship's origin (`prepareLongwall`).
+ *
+ * It is drawn **stowed** and nothing articulates it. The anchors and the
+ * cutter keep their named groups so a later node can pose them; what mining
+ * is, and the deployed envelope it would need, are not this node's.
+ */
+let longwallTemplate: THREE.Group | null = null;
+
+/**
+ * The drive nozzles, model metres in the export's frame: the two aft drive
+ * rings stand at x = ±12.5 on the centre line's height, their lip reaches
+ * z = -47 and their bore is 2.10 m in radius from the nacelle's cap at
+ * z = -46.0 outward. The glow sits 0.3 m behind the cap, inside the bore.
+ * `tests/longwall-mesh.test.ts` measures all of it off the shipped model.
+ */
+export const LONGWALL_NOZZLES_M = {
+	x: 12.5,
+	y: 0,
+	z: -46.3,
+	boreRadius: 2.1,
+	glowRadius: 1.9,
+} as const;
+
+let longwallGlow: THREE.MeshStandardMaterial | undefined;
+/** The drive glow: the gradient's hot throat at the centre of the bore and
+ *  the drive's blue at its rim, at the exhaust's one emissive dial. */
+function longwallGlowMaterial() {
+	longwallGlow ??= shared(
+		new THREE.MeshStandardMaterial({
+			name: "longwall-exhaust",
+			color: 0x1b2f3a,
+			emissive: 0xffffff,
+			emissiveMap: exhaustGradientMap(),
+			emissiveIntensity: SHIP_EMISSIVE_INTENSITIES.exhaust,
+			roughness: 0.5,
+			metalness: 0.1,
+		}),
 	);
-	bridge(
-		root,
-		"miner",
-		[
-			{ z: -0.0245, w: 0.0044, h: 0.0022, b: 0.0024, y: 0.0044, e: 3 },
-			{ z: -0.0195, w: 0.0072, h: 0.0038, b: 0.003, y: 0.0058, e: 3.4 },
-			{ z: -0.0135, w: 0.0068, h: 0.0034, b: 0.003, y: 0.0064, e: 3.4 },
-			{ z: -0.0095, w: 0.0048, h: 0.0022, b: 0.0024, y: 0.0058, e: 3 },
-		],
-		[
-			{ z: -0.0235, w: 0.003, h: 0.0016, b: 0.0016, y: 0.0058, e: 2.7 },
-			{ z: -0.0195, w: 0.0051, h: 0.003, b: 0.0021, y: 0.007, e: 3 },
-			{ z: -0.0145, w: 0.0047, h: 0.0026, b: 0.002, y: 0.0076, e: 3 },
-			{ z: -0.0115, w: 0.0033, h: 0.0016, b: 0.0016, y: 0.007, e: 2.7 },
-		],
-		p,
+	return longwallGlow;
+}
+
+function longwallGlowDisc() {
+	const disc = new THREE.CircleGeometry(LONGWALL_NOZZLES_M.glowRadius, 24);
+	// Radial: `v` is 0 at the centre and 1 at the rim, the axis the exhaust
+	// gradient grades along.
+	const position = disc.getAttribute("position") as THREE.BufferAttribute;
+	const uv = disc.getAttribute("uv") as THREE.BufferAttribute;
+	for (let i = 0; i < uv.count; i++)
+		uv.setXY(
+			i,
+			0.5,
+			Math.hypot(position.getX(i), position.getY(i)) /
+				LONGWALL_NOZZLES_M.glowRadius,
+		);
+	return disc.scale(0.001, 0.001, 0.001);
+}
+
+/** Install the decoded Longwall B scene (metres, as exported), or remove it. */
+export function installLongwallModel(scene: THREE.Group | null): void {
+	longwallTemplate = scene ? prepareLongwall(scene) : null;
+}
+
+function prepareLongwall(scene: THREE.Group): THREE.Group {
+	// The export's lamps are brighter than the game's exposure contract, as
+	// the Coriolis's were: normalise once, keeping their relative strengths.
+	const materials = new Set<THREE.MeshStandardMaterial>();
+	scene.traverse((o) => {
+		const mesh = o as THREE.Mesh;
+		if (!mesh.isMesh) return;
+		shared(mesh.geometry);
+		for (const m of Array.isArray(mesh.material)
+			? mesh.material
+			: [mesh.material]) {
+			if (m instanceof THREE.MeshStandardMaterial) materials.add(m);
+			shared(m);
+			for (const value of Object.values(m))
+				if (value instanceof THREE.Texture) shared(value);
+		}
+	});
+	const divisor = Math.max(
+		1,
+		...[...materials].map((m) => m.emissiveIntensity / EMISSIVE_CEILING),
 	);
-	// The cutter works below the bow so the bridge keeps a clear forward cone.
-	cutterHead(root, "miner-cutter", 0.0104, -0.0325, p, -0.0108);
-	add(
-		root,
-		"miner-cutter-arm",
-		strut([0, -0.0026, -0.0245], [0, -0.0108, -0.0315], 0.0034, 0.0026),
-		p.trim,
-	);
-	// Ore rides the spine in line, one segment per pass, like a train of skips.
-	for (const [tag, cz] of [
-		["one", -0.0072],
-		["two", 0.0055],
-		["three", 0.018],
+	for (const m of materials) m.emissiveIntensity /= divisor;
+
+	const template = new THREE.Group();
+	template.name = "longwall-template";
+	const exterior = new THREE.Group();
+	exterior.name = "longwall-exterior";
+	exterior.rotation.y = Math.PI;
+	exterior.scale.setScalar(0.001);
+	exterior.add(scene);
+	template.add(exterior);
+	// **The ship's origin is the box's centre**, measured here rather than
+	// declared. The export's own origin stands 4.8 m forward of it, and a
+	// berth places a ship's origin: kept, the hull would park 2.1 m into the
+	// end wall of a slot role's 90 m cell (`tests/collision-stations.test.ts`).
+	template.updateMatrixWorld(true);
+	const offset = new THREE.Box3()
+		.setFromObject(exterior)
+		.getCenter(new THREE.Vector3())
+		.negate();
+	exterior.position.copy(offset);
+	// Production frame: the export's +X is port once turned about Y.
+	const disc = shared(longwallGlowDisc());
+	for (const [side, x] of [
+		["port", -LONGWALL_NOZZLES_M.x],
+		["starboard", LONGWALL_NOZZLES_M.x],
 	] as const) {
-		add(
-			root,
-			`miner-skip-${tag}`,
-			revolve(drumProfile(0.0058, 0.0092)),
-			p.panel,
-			[0, 0, cz],
-		);
-		add(root, `miner-skip-band-${tag}`, hoop(0.0094, 0.0008), p.accent, [
-			0,
-			0,
-			cz,
-		]);
+		const glow = new THREE.Mesh(disc, longwallGlowMaterial());
+		glow.name = `longwall-${side}${EXHAUST_SUFFIX}`;
+		glow.position
+			.set(
+				x * 0.001,
+				LONGWALL_NOZZLES_M.y * 0.001,
+				-LONGWALL_NOZZLES_M.z * 0.001,
+			)
+			.add(offset);
+		template.add(glow);
 	}
-	for (const [side, sign] of [
-		["starboard", 1],
-		["port", -1],
-	] as const) {
-		add(
-			root,
-			"miner-nacelle-mount-" + side,
-			mirroredBlade(
-				[
-					{ z: 0.0068, w: 0.0028, h: 0.0068, b: 0.0064, y: 0.0265, e: 3.2 },
-					{ z: 0.019, w: 0.0024, h: 0.006, b: 0.0056, y: 0.0305, e: 3 },
-				],
-				sign,
-			),
-			p.trim,
+	// Placed by rays against 283k triangles, so once here rather than per
+	// clone: a Traffic miner arriving mid-flight must not pay for them.
+	addNavLights(template);
+	template.traverse((o) => {
+		if (o.name === "nav-lights") shared((o as THREE.Points).geometry);
+	});
+	template.updateMatrixWorld(true);
+	return template;
+}
+
+function buildLongwall(root: THREE.Group) {
+	if (!longwallTemplate)
+		throw new Error(
+			"miner/b is the authored Longwall B: await prepareLongwallModel() " +
+				"(src/longwall-model.ts) before building it",
 		);
-		add(
-			root,
-			"miner-" + side + "-nacelle",
-			hullLoft(pod(0.018, 0.0355, 0.0048, { x: sign * 0.0202 })),
-			p.panel,
-		);
-		add(root, "miner-collar-" + side, hoop(0.0051, 0.0006), p.accent, [
-			sign * 0.0202,
-			0,
-			0.031,
-		]);
-		engineBell(
-			root,
-			"miner-" + side,
-			[sign * 0.0202, 0, 0.0395],
-			0.0042,
-			0.0044,
-			p,
-		);
+	for (const child of longwallTemplate.children) {
+		const copy = child.clone(true);
+		// `clone` copies no callbacks, and the nav lights' pixel ratio is one.
+		if (child.name === "nav-lights") copy.onBeforeRender = child.onBeforeRender;
+		root.add(copy);
 	}
-	engineBell(root, "miner-core", [0, 0, 0.04], 0.0058, 0.006, p);
-	blister(root, "miner-sensor", 0.0016, [0.0032, 0.0052, -0.008], p);
 }
 
 function buildMinerC(root: THREE.Group, p: Palette) {
@@ -6159,6 +6222,9 @@ export function fleetLayout(): FleetSlot[] {
 type Builder = (root: THREE.Group, palette: Palette) => void;
 interface BuilderPlan extends ShipDetailPlan {
 	readonly build: Builder;
+	/** An authored model (node #815) carries its own machinery and lamps, so
+	 *  it declares no zones and gets no generated detail. */
+	readonly authored?: true;
 }
 
 /** One authored machinery patch beside each builder, never a hull-wide scatter. */
@@ -6244,7 +6310,7 @@ export const SHIP_DETAIL_PLANS: Record<
 	},
 	miner: {
 		a: planned(buildMinerA, "miner-fuselage", "ore-service", "dorsal", 22),
-		b: planned(buildMinerB, "miner-fuselage", "skip-flank", "starboard", 22),
+		b: { build: buildLongwall, zones: [], authored: true },
 		c: planned(buildMinerC, "miner-fuselage", "refinery-spine", "dorsal", 22),
 	},
 	patrol: {
@@ -6757,6 +6823,12 @@ export function buildShipMesh(
 	root.userData.variant = variant;
 	root.userData.designRound = SHIP_DESIGN_ROUND;
 	const plan = SHIP_DETAIL_PLANS[id][variant];
+	if (plan.authored) {
+		// Nav lights come with the template, placed once (`prepareLongwall`).
+		plan.build(root, makePalette(id));
+		markAuthoredShip(root, HULL_REACH_KM[id]);
+		return { root };
+	}
 	plan.build(root, makePalette(id));
 	// Last, and it has to be: the lights are placed from the built hull's own
 	// bounding box, so they cannot be added before there is a hull to measure.
@@ -6764,3 +6836,14 @@ export function buildShipMesh(
 	buildShipDetails(root, id, variant, plan, HULL_REACH_KM[id]);
 	return { root };
 }
+
+/**
+ * Is this variant an authored model rather than a loft (node #815)? The
+ * procedural visual language — lofted, capped, swept, a named fuselage and
+ * canopy, generated machinery zones — is a set of rules about how this module
+ * builds a hull, and an authored model was approved as it is; the rows that
+ * state those rules skip it by this, and `tests/longwall-mesh.test.ts` holds
+ * what the authored model owes instead.
+ */
+export const isAuthoredHull = (id: HullId, variant: HullVariantId): boolean =>
+	SHIP_DETAIL_PLANS[id][variant].authored === true;

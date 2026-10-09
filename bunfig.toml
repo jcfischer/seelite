@@ -1,0 +1,3 @@
+[test]
+# `miner/b` is an authored model and `buildShipMesh` refuses it uninstalled.
+preload = ["./tests/setup/longwall-model.ts"]

@@ -18,13 +18,16 @@ import {
 	SHIP_DETAIL_PLANS,
 	SHIP_QUALITY,
 	buildShipMesh,
+	isAuthoredHull,
 	setShipDetail,
 	updateShipVisuals,
 } from "../src/ship-mesh";
 
+// Generated detail only: the authored Longwall B (node #815) carries its own
+// machinery and lamps, and `tests/longwall-mesh.test.ts` holds what it owes.
 const variants = HULL_IDS.flatMap((id) =>
 	HULL_VARIANT_IDS.map((variant) => ({ id, variant })),
-);
+).filter(({ id, variant }) => !isAuthoredHull(id, variant));
 
 const meshesNamed = (root: THREE.Object3D, prefix: string) => {
 	const found: THREE.Object3D[] = [];
@@ -46,7 +49,7 @@ const reach = (objects: readonly THREE.Object3D[]) => {
 
 describe("authored ship machinery regions", () => {
 	test("every current variant declares named zones on plated parts", () => {
-		expect(variants).toHaveLength(36);
+		expect(variants).toHaveLength(35);
 		for (const { id, variant } of variants) {
 			const plan = SHIP_DETAIL_PLANS[id][variant];
 			expect(plan.zones.length).toBeGreaterThan(0);

@@ -2093,15 +2093,16 @@ describe("collision.md §9.1.14: §6 item 1's corpus row", () => {
 		expect(through.closingKms).toBeGreaterThan(V_SCRAPE_KMS);
 	}, 30_000);
 
-	test("RED, pinned: system 0's launches touch at the aperture and at the release point, under V_SCRAPE", () => {
+	test("RED, pinned: system 0's launches touch at the release point, under V_SCRAPE", () => {
 		const result = run(0, 1800);
 		expect(result.steps["local-departure"]).toBeGreaterThan(4000);
 		expect(result.steps["lane-queued"]).toBeGreaterThan(1000);
 		expect(result.pairSteps).toBeGreaterThan(0);
-		expect(classes(result)).toEqual({
-			"launch-aperture": 3,
-			"release-point": 1,
-		});
+		// Three launch-aperture touches stood here too until node #815: all three
+		// were miners (0:station-refinery/traffic-00 twice, 95:station-trade/
+		// traffic-05), and Longwall B's box is 34.1 x 18.8 m in section where the
+		// loft's was 51.9 x 33.2; the same launches no longer meet the bay.
+		expect(classes(result)).toEqual({ "release-point": 1 });
 		// Both classes are touches: they cost nothing and divert nothing.
 		for (const m of distinctMeetings(result.meetings))
 			expect(m.closingKms).toBeLessThan(V_SCRAPE_KMS);
@@ -2111,7 +2112,11 @@ describe("collision.md §9.1.14: §6 item 1's corpus row", () => {
 
 	// glossary-ignore: pad
 	test("the red build: sweeping the exempt phases meets the pad role's deck and berths", () => {
-		const result = run(0, 600, true);
+		// 1,800 s, the pinned row's window: its one collidable meeting, the
+		// release-point touch, is at 1,519.5 s, and the subset check below is
+		// vacuous over a green run that met nothing (node #815 took 600 s's three
+		// launch-aperture touches away with the loft miner).
+		const result = run(0, 1800, true);
 		const met = distinctMeetings(result.meetings);
 		// §9.1.8's split: a pad role's deck and berths are solid, so a // glossary-ignore: pad
 		// parked, launching or arriving carrier meets them without §5.
@@ -2126,7 +2131,7 @@ describe("collision.md §9.1.14: §6 item 1's corpus row", () => {
 		// And every meeting the green run sees over the same window is one the
 		// red run sees too: sweeping the exempt phases adds meetings, it does
 		// not drop or re-read one in a collidable phase.
-		const green = run(0, 600).meetings;
+		const green = run(0, 1800).meetings;
 		expect(green.length).toBeGreaterThan(0);
 		const same = (a: Meeting, b: Meeting) =>
 			a.key === b.key &&
@@ -2137,7 +2142,7 @@ describe("collision.md §9.1.14: §6 item 1's corpus row", () => {
 			(g) => !result.meetings.some((r) => same(g, r)),
 		);
 		expect(missing).toEqual([]);
-	}, 60_000);
+	}, 120_000);
 });
 
 describe("collision.md §3: a kill by impact names the impact, and pays only the player's own ram", () => {

@@ -30,7 +30,7 @@ import {
 	type HullId,
 	type HullVariantId,
 } from "../src/hull";
-import { HULL_REACH_KM, buildShipMesh } from "../src/ship-mesh";
+import { HULL_REACH_KM, buildShipMesh, isAuthoredHull } from "../src/ship-mesh";
 import {
 	DEFAULT_HULL_FINISH,
 	HULL_FINISHES,
@@ -62,6 +62,9 @@ function rosterHash(ids: readonly HullId[] = HULL_IDS) {
 	};
 	for (const id of ids)
 		for (const variant of HULL_VARIANT_IDS) {
+			// The lofts only: the authored Longwall B (node #815) is the shipped
+			// model's, pinned by `tests/longwall-mesh.test.ts`.
+			if (isAuthoredHull(id, variant)) continue;
 			buildShipMesh(id, variant).root.traverse((object) => {
 				// #130's generated detail is a finish layered onto the hull, not a
 				// change to the stock hull this pin protects. It has its own deterministic
@@ -167,17 +170,25 @@ describe("stock is the hull that shipped", () => {
 		// by construction: 36 hulls, 211,160 vertices. The row below keeps the
 		// old pin, so the claim that the new hulls are the whole of the change
 		// is something a run checks rather than a comment.
+		//
+		// **Re-pinned for node #815**, where `miner/b` became the authored
+		// Longwall B and left the hash: the 35 lofts are 205,315 vertices, and
+		// the same hash with `miner/b` skipped reads d40badcf on `main` at
+		// `4b145f3` — so no loft moved, only the one that is no longer a loft.
 		setHullFinish("stock");
-		expect(rosterHash()).toEqual({ hash: "f5d052c8", vertices: 211160 });
+		expect(rosterHash()).toEqual({ hash: "d40badcf", vertices: 205315 });
 	});
 
 	test("the original eleven archetypes still hash to the pin taken on main", () => {
 		// `cbf3f0f`'s pin over the ids that existed then. Adding a hull may move
 		// the whole-roster hash; it may not move any of these (#335's review).
+		// Re-pinned for node #815 as the row above was, and read the same way
+		// on `main` at `4b145f3`: those ids' 32 lofts, every variant but
+		// `miner/b`, are 186,412 vertices.
 		setHullFinish("stock");
 		expect(rosterHash(HULL_IDS.filter((id) => id !== "voyager"))).toEqual({
-			hash: "89b8e0f6",
-			vertices: 192257,
+			hash: "757911cd",
+			vertices: 186412,
 		});
 	});
 });
@@ -203,6 +214,18 @@ describe("every finish builds the whole roster", () => {
 								.getSize(new THREE.Vector3())
 								.toArray(),
 						);
+					if (isAuthoredHull(id, variant)) {
+						// Node #815: the authored hull has no lofted nacelle or bell, and
+						// its drives are its two rings, each with a glow inside its bore
+						// (`tests/longwall-mesh.test.ts` measures where).
+						expect(
+							root.children
+								.filter((child) => child.name.endsWith("-exhaust"))
+								.map((child) => child.name)
+								.sort(),
+						).toEqual(["longwall-port-exhaust", "longwall-starboard-exhaust"]);
+						continue;
+					}
 					let pairs = 0;
 					for (const drive of root.children) {
 						if (!drive.name.endsWith("-nacelle")) continue;
