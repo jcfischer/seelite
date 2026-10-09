@@ -1,6 +1,6 @@
 # Longwall B — articulated mining study (Codex)
 
-Refs jcfischer/seelite#803. Isolated Dream Loop design prototype of the selected Quarry Spine O4 and anchored mining O5. The principal selected an approximately 84 m hull with a smaller human-scale cockpit. It began as an isolated study that changed no production code. Node #815 then made it the game's `miner/b`, as #794 did with the courier cockpit: **In the game (node #815)**, below, says how, and `HANDOFF.md`'s integration result says what moved and what is the principal's to decide. Everything here except `public/models/longwall-miner.glb` stays review-only.
+Refs jcfischer/seelite#803. Isolated Dream Loop design prototype of the selected Quarry Spine O4 and anchored mining O5. The principal selected an approximately 84 m hull with a smaller human-scale cockpit. It began as an isolated study that changed no production code. Node #815 then made it the game's `miner/b`, as #794 did with the courier cockpit: **In the game (node #815)**, below, says how, and `HANDOFF.md`'s integration result says what moved and what is the principal's to decide. Everything here stays review-only except `public/models/longwall-miner.glb`, which ships, and the script and source export that build it (`prepare-flight-asset.mjs`, below).
 
 ## Inspect
 

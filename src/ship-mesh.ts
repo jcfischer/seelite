@@ -2504,8 +2504,8 @@ function buildMinerA(root: THREE.Group, p: Palette) {
  * the model loads before a `Game` is built — and that is **not** what the
  * same Constraint allows: it puts only the cockpit and the home station in
  * the boot set. Installing the rest after boot, with a procedural stand-in,
- * is node #838's; until it lands this hull breaches the boot set, and the
- * merge waits on the principal's ruling (`spikes/longwall-miner/HANDOFF.md`).
+ * is node #838's; until it lands this hull is outside the boot set, and the
+ * ruling on that is in `spikes/longwall-miner/HANDOFF.md`.
  *
  * The export is model metres, +Z forward and Y up; this frame is kilometres
  * with the nose at -Z, so the exterior is turned half a turn about Y — a

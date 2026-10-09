@@ -52,8 +52,9 @@ from `public/models/longwall-miner.glb` (`README.md`, "In the game"). Refs
 map #1's boot-set Constraint.** That Constraint (#830, #835, 2026-10-09)
 lets only the cockpit and the home station's exterior load before a `Game`
 is built; every other model installs after boot behind a procedural
-stand-in. This branch loads the miner model before every `Game` too, as
-node #815's body prescribed before the Constraint was amended, so every boot
+stand-in. This branch also loads the miner model on every path that builds
+a `Game` except the postcard, whose wait the Constraint allows, as node
+#815's body prescribed before the Constraint was amended, so every game boot
 waits on about 11.13 MiB more (D4). The stand-in and the after-boot install
 are node #838's mechanism (open, blocked by #831), and `miner/b` has none
 today. There are two ways out, and neither is this branch's to take:
@@ -129,8 +130,9 @@ What moved, and what is yours to decide:
   files, so shipping `public/models/longwall-miner.glb` is within it;
   earlier rounds of this handoff quoted "Procedural everything: no
   downloaded assets" as standing, and it no longer is. And only the boot set
-  blocks a start, which this branch does not meet: the miner is awaited
-  before every `Game` (D4, and the ruling at the top of this section).
+  blocks a start, which this branch does not meet: the miner is awaited on
+  every path that builds a `Game` except the postcard, whose wait the
+  Constraint allows (D4, and the ruling at the top of this section).
 - **Stale text outside this branch:** map #1's Constraints still read
   "(5.5, the miner, since #619 …)"; `docs/specs/docking.md` §4 is updated.
 - **Fit.** The ship's origin is now the box's centre (the export's was 4.8 m
