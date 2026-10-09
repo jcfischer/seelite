@@ -24,6 +24,7 @@ import {
 	installLongwallModel,
 	isAuthoredHull,
 	isDriveBell,
+	isLampMaterial,
 	setShipDetail,
 	updateShipVisuals,
 } from "../src/ship-mesh";
@@ -238,14 +239,8 @@ const under = (mesh: THREE.Object3D, name: RegExp) => {
 	for (let o = mesh.parent; o; o = o.parent) if (name.test(o.name)) return true;
 	return false;
 };
-const isLamp = (mesh: THREE.Mesh) => {
-	const material = mesh.material as THREE.MeshStandardMaterial;
-	return (
-		!!material.emissive &&
-		material.emissive.getHex() !== 0 &&
-		material.emissiveIntensity > 0
-	);
-};
+const isLamp = (mesh: THREE.Mesh) =>
+	isLampMaterial(mesh.material as THREE.Material);
 const ANCHOR = /^anchor-\d/;
 const CUTTER = /^(feed|rotor)$/;
 const drawn = (root: THREE.Object3D) => meshesOf(root).filter((m) => m.visible);
@@ -255,12 +250,49 @@ const triangles = (meshes: readonly THREE.Mesh[]) =>
 		return sum + (g.index ?? g.getAttribute("position")).count / 3;
 	}, 0);
 
+describe("the static hull draws one mesh per material (node #815)", () => {
+	test("the export's 19 hull meshes become 10, and the triangles do not move", async () => {
+		const root = buildShipMesh("miner", "b").root;
+		const hull = root.getObjectByName("hull") as THREE.Object3D;
+		const meshes = meshesOf(hull);
+		expect(meshes).toHaveLength(10);
+		// Every opaque, unlit material is drawn once.
+		const unlit = meshes.filter(
+			(m) => !isLamp(m) && !(m.material as THREE.Material).transparent,
+		);
+		const materials = unlit.map((m) => m.material as THREE.Material);
+		expect(new Set(materials).size).toBe(unlit.length);
+		expect(unlit).toHaveLength(7);
+		// The glazing and the lamps keep their own meshes.
+		expect(root.getObjectByName("hullbridge-glazing")).toBeDefined();
+		expect(meshes.filter(isLamp)).toHaveLength(2);
+		// The same triangles as the export's hull group, nothing dropped.
+		const exported = await decodeShippedGlb(SHIPPED);
+		const source = exported.getObjectByName("hull") as THREE.Object3D;
+		expect(meshesOf(source)).toHaveLength(19);
+		expect(triangles(meshes)).toBe(triangles(meshesOf(source)));
+		// And in the same place: the batched hull's box is the export's, turned
+		// and scaled into the game's frame.
+		root.updateMatrixWorld(true);
+		exported.updateMatrixWorld(true);
+		const built = new THREE.Box3()
+			.setFromObject(hull)
+			.getSize(new THREE.Vector3())
+			.multiplyScalar(1000);
+		const before = new THREE.Box3()
+			.setFromObject(source)
+			.getSize(new THREE.Vector3());
+		for (const axis of ["x", "y", "z"] as const)
+			expect(built[axis]).toBeCloseTo(before[axis], 4);
+	});
+});
+
 describe("the detail band sheds the mechanism at range (node #815)", () => {
 	test("at full detail every mesh draws", () => {
 		const root = buildShipMesh("miner", "b").root;
 		updateShipVisuals(root, 0.5, "high");
 		expect(drawn(root)).toHaveLength(meshesOf(root).length);
-		expect(meshesOf(root)).toHaveLength(109);
+		expect(meshesOf(root)).toHaveLength(100);
 		expect(triangles(meshesOf(root))).toBe(283_576);
 	});
 
@@ -274,7 +306,7 @@ describe("the detail band sheds the mechanism at range (node #815)", () => {
 				visible: !hidden,
 			});
 		}
-		expect(drawn(root)).toHaveLength(33);
+		expect(drawn(root)).toHaveLength(24);
 		expect(triangles(drawn(root))).toBe(261_768);
 		expect(root.getObjectByName("nav-lights")?.visible).toBe(true);
 	});
@@ -290,7 +322,7 @@ describe("the detail band sheds the mechanism at range (node #815)", () => {
 				visible: !hidden,
 			});
 		}
-		expect(drawn(root)).toHaveLength(26);
+		expect(drawn(root)).toHaveLength(17);
 		expect(triangles(drawn(root))).toBe(253_400);
 		// Both drive glows are lamps, and the hull is the silhouette.
 		for (const side of ["port", "starboard"])
@@ -307,19 +339,19 @@ describe("the detail band sheds the mechanism at range (node #815)", () => {
 		// Low quality at close range draws the whole model: the anchors and the
 		// cutter are the approved design, not generated clutter.
 		updateShipVisuals(root, reach * 10, "low");
-		expect(drawn(root)).toHaveLength(109);
+		expect(drawn(root)).toHaveLength(100);
 		updateShipVisuals(root, reach * 200, "high");
-		expect(drawn(root)).toHaveLength(33);
+		expect(drawn(root)).toHaveLength(24);
 		updateShipVisuals(root, reach * 1000, "high");
-		expect(drawn(root)).toHaveLength(26);
+		expect(drawn(root)).toHaveLength(17);
 		updateShipVisuals(root, reach * 10, "high");
-		expect(drawn(root)).toHaveLength(109);
+		expect(drawn(root)).toHaveLength(100);
 	});
 
 	test("a clone's gate hides its own meshes, never the template's", () => {
 		const far = buildShipMesh("miner", "b").root;
 		setShipDetail(far, "outline");
 		const near = buildShipMesh("miner", "b").root;
-		expect(drawn(near)).toHaveLength(109);
+		expect(drawn(near)).toHaveLength(100);
 	});
 });

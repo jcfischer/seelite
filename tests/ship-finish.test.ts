@@ -466,3 +466,28 @@ describe("the maps are the plating's, not the finish's", () => {
 		expect(mapOf("worn")).not.toBe(plated);
 	});
 });
+
+describe("the authored miner is finish-invariant (node #815)", () => {
+	test("every finish draws miner/b with the template's own geometry and paint", () => {
+		// It takes no palette (`AuthoredPlan`): its paint is the approved
+		// model's, so a finish must not reach it — held here rather than left a
+		// no-op nobody stated.
+		const drawnWith = () => {
+			const parts: string[] = [];
+			buildShipMesh("miner", "b").root.traverse((object) => {
+				const mesh = object as THREE.Mesh;
+				if (!mesh.isMesh) return;
+				const material = mesh.material as THREE.Material;
+				parts.push(`${mesh.name}:${mesh.geometry.uuid}:${material.uuid}`);
+			});
+			return parts;
+		};
+		setHullFinish("stock");
+		const stock = drawnWith();
+		expect(stock.length).toBeGreaterThan(0);
+		for (const finish of HULL_FINISH_IDS) {
+			setHullFinish(finish);
+			expect(drawnWith()).toEqual(stock);
+		}
+	});
+});

@@ -17,6 +17,7 @@
  */
 import * as THREE from "three";
 import { EMISSIVE_CEILING } from "./light-rig";
+import { mergeGeometries } from "three/addons/utils/BufferGeometryUtils.js";
 import { mutePaint } from "./surface";
 
 // Re-exported, not merely imported: `Ring` and `hullLoft` were this module's
@@ -2569,6 +2570,7 @@ export function installLongwallModel(scene: THREE.Group | null): void {
 }
 
 function prepareLongwall(scene: THREE.Group): THREE.Group {
+	batchLongwallHull(scene);
 	// The export's lamps are brighter than the game's exposure contract, as
 	// the Coriolis's were: normalise once, keeping their relative strengths.
 	const materials = new Set<THREE.MeshStandardMaterial>();
@@ -2636,6 +2638,66 @@ function prepareLongwall(scene: THREE.Group): THREE.Group {
 	return template;
 }
 
+/** Is this a lamp — an emissive the detail band and the hull batch leave
+ *  alone? One definition, read by both and by `tests/longwall-mesh.test.ts`. */
+export function isLampMaterial(material: THREE.Material): boolean {
+	return (
+		material instanceof THREE.MeshStandardMaterial &&
+		material.emissive.getHex() !== 0 &&
+		material.emissiveIntensity > 0
+	);
+}
+
+const materialsOf = (mesh: THREE.Mesh): THREE.Material[] =>
+	Array.isArray(mesh.material) ? mesh.material : [mesh.material];
+
+/**
+ * Merge the static hull's opaque, unlit meshes into one mesh per material
+ * (node #815, sage round 2): the export splits the `hull` group into 19
+ * meshes over 10 materials, nine of them `dark-structure`, and nothing moves
+ * any of them. Lamps and the transparent glazing keep their own meshes, and
+ * nothing outside `hull` is touched — the anchors and the cutter keep their
+ * named, separately posable parts, and they are 80 of the 100 meshes left.
+ * Each source's transform below `hull` is baked into its vertices, so the
+ * triangles are the same triangles in the same place.
+ */
+function batchLongwallHull(scene: THREE.Group): void {
+	const hull = scene.getObjectByName("hull");
+	if (!hull) throw new Error("Longwall B: the export has no hull group");
+	scene.updateMatrixWorld(true);
+	const toHull = hull.matrixWorld.clone().invert();
+	const byMaterial = new Map<THREE.Material, THREE.Mesh[]>();
+	hull.traverse((o) => {
+		const mesh = o as THREE.Mesh;
+		if (!mesh.isMesh) return;
+		const materials = materialsOf(mesh);
+		if (materials.length !== 1) return;
+		const [material] = materials;
+		if (isLampMaterial(material) || material.transparent) return;
+		byMaterial.set(material, [...(byMaterial.get(material) ?? []), mesh]);
+	});
+	for (const [material, meshes] of byMaterial) {
+		if (meshes.length < 2) continue;
+		const merged = mergeGeometries(
+			meshes.map((mesh) =>
+				mesh.geometry
+					.clone()
+					.applyMatrix4(
+						new THREE.Matrix4().multiplyMatrices(toHull, mesh.matrixWorld),
+					),
+			),
+		);
+		if (!merged)
+			throw new Error(`Longwall B: cannot merge the hull's ${material.name}`);
+		const batch = new THREE.Mesh(merged, material);
+		batch.name = `hull-${material.name}`;
+		batch.castShadow = meshes.some((m) => m.castShadow);
+		batch.receiveShadow = meshes.some((m) => m.receiveShadow);
+		for (const mesh of meshes) mesh.removeFromParent();
+		hull.add(batch);
+	}
+}
+
 function buildLongwall(root: THREE.Group) {
 	if (!longwallTemplate)
 		throw new Error(
@@ -2669,16 +2731,7 @@ function longwallMechanism(root: THREE.Object3D): AuthoredPart[] {
 	root.traverse((o) => {
 		const mesh = o as THREE.Mesh;
 		if (!mesh.isMesh) return;
-		const materials = Array.isArray(mesh.material)
-			? mesh.material
-			: [mesh.material];
-		const lamp = materials.some(
-			(m) =>
-				m instanceof THREE.MeshStandardMaterial &&
-				m.emissive.getHex() !== 0 &&
-				m.emissiveIntensity > 0,
-		);
-		if (lamp) return;
+		if (materialsOf(mesh).some(isLampMaterial)) return;
 		for (let up = mesh.parent; up && up !== root; up = up.parent) {
 			if (/^anchor-\d/.test(up.name))
 				return void parts.push({ mesh, hiddenFrom: "reduced" });
@@ -6264,14 +6317,20 @@ export function fleetLayout(): FleetSlot[] {
 }
 
 type Builder = (root: THREE.Group, palette: Palette) => void;
-interface BuilderPlan extends ShipDetailPlan {
+interface LoftPlan extends ShipDetailPlan {
 	readonly build: Builder;
-	/** An authored model (node #815) carries its own machinery and lamps, so
-	 *  it declares no zones and gets no generated detail. */
-	readonly authored?: true;
-	/** An authored model's machinery, as the detail band sheds it. */
-	readonly mechanism?: (root: THREE.Object3D) => AuthoredPart[];
+	readonly authored?: undefined;
 }
+/** An authored model (node #815) carries its own machinery, lamps and paint,
+ *  so it declares no zones, gets no generated detail and takes no palette:
+ *  every hull finish draws it the same (`tests/ship-finish.test.ts`). */
+interface AuthoredPlan extends ShipDetailPlan {
+	readonly build: (root: THREE.Group) => void;
+	readonly authored: true;
+	/** Its machinery, as the detail band sheds it. */
+	readonly mechanism: (root: THREE.Object3D) => AuthoredPart[];
+}
+type BuilderPlan = LoftPlan | AuthoredPlan;
 
 /** One authored machinery patch beside each builder, never a hull-wide scatter. */
 const planned = (
@@ -6876,8 +6935,8 @@ export function buildShipMesh(
 	const plan = SHIP_DETAIL_PLANS[id][variant];
 	if (plan.authored) {
 		// Nav lights come with the template, placed once (`prepareLongwall`).
-		plan.build(root, makePalette(id));
-		markAuthoredShip(root, HULL_REACH_KM[id], plan.mechanism?.(root) ?? []);
+		plan.build(root);
+		markAuthoredShip(root, HULL_REACH_KM[id], plan.mechanism(root));
 		return { root };
 	}
 	plan.build(root, makePalette(id));
