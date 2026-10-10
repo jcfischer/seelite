@@ -11,6 +11,7 @@ import {
 	fittingValue,
 	LEGACY_MODULES,
 	transferLoadout,
+	repeatableEquipment,
 } from "./loadout";
 /**
  * The atomic boundary between a docked commander and a station market.
@@ -430,7 +431,10 @@ export function transactAtStation(
 		if (action.type === "fit-recovered") {
 			if (!item.module && !LEGACY_MODULES[item.id])
 				return rejected(input, "equipment-unavailable");
-			if (fitted(input.commander.loadout, item.id))
+			if (
+				!repeatableEquipment(item.id) &&
+				fitted(input.commander.loadout, item.id)
+			)
 				return rejected(input, "equipment-owned");
 			if (gateRefusal(item.id, input.rungs))
 				return rejected(input, "equipment-locked");
@@ -473,7 +477,10 @@ export function transactAtStation(
 			return rejected(input, "equipment-unavailable");
 		// Owned before locked: a gate blocks only new purchases (#183 D9), so an
 		// item a v6 commander already fitted is "already fitted", not locked.
-		if (fitted(input.commander.loadout, entry.name))
+		if (
+			!repeatableEquipment(entry.name) &&
+			fitted(input.commander.loadout, entry.name)
+		)
 			return rejected(input, "equipment-owned");
 		if (entry.locked) return rejected(input, "equipment-locked");
 		const module = legacyModule(input.commander.hull, entry.name);
@@ -770,18 +777,20 @@ export function hullOffer(
 	const offer = { ...reached, sold: lots, saleCr };
 	if (commander.credits + saleCr < offer.netCr)
 		return { ...rejected(input, "insufficient-credits"), ...offer };
+	const nextCommander = {
+		...state.commander,
+		loadout: moved.loadout,
+		recoveredFittings: transferred.recoveredFittings,
+		hull,
+		credits: state.commander.credits - offer.netCr,
+		fuelLy: Math.min(state.commander.fuelLy, HULL_SPECS[hull].tankLy),
+	};
+	if (!nextCommander.recoveredFittings?.length)
+		delete nextCommander.recoveredFittings;
 	return {
 		accepted: true,
 		reason: null,
-		commander: {
-			...state.commander,
-			loadout: moved.loadout,
-			recoveredFittings: transferred.recoveredFittings,
-			hull,
-			credits: state.commander.credits - offer.netCr,
-			// As #554's load clamp does: the tank is the hull's, never topped up.
-			fuelLy: Math.min(state.commander.fuelLy, HULL_SPECS[hull].tankLy),
-		},
+		commander: nextCommander,
 		deficits: state.deficits,
 		...offer,
 	};

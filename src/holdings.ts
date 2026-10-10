@@ -1,4 +1,4 @@
-import { fitted, equipmentNames, withoutModule, fittingValue } from "./loadout";
+import { equipmentNames, withoutModule } from "./loadout";
 /**
  * What a pilot's act does to their **Holdings** (#626, #627): the commander,
  * the Requests journal, the ladder record and its pending credit — and the

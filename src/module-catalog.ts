@@ -124,7 +124,7 @@ export const DEFINITIONS: readonly Definition[] = [
 		massWeight: 0.5,
 		output: { rangeKm: SCAN_RANGE_KM },
 	},
-	// Metrics chosen by the principal on 2026-10-10; values remain proposed.
+	// Metrics chosen by the principal on 2026-10-10; values approved in the pricing instrument receipt (#868).
 	// A size-3 computer remains within the existing 10,000 km clearance range.
 	{
 		kind: "docking-computer",

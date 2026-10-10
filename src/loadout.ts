@@ -60,6 +60,11 @@ export const fitted = (loadout: Loadout, name: string): boolean =>
 	Object.values(loadout).some(
 		(m) => m.module === (LEGACY_MODULES[name] ?? name),
 	);
+/** The legacy console permits another weapon when a hardpoint can take it. */
+export function repeatableEquipment(name: string): boolean {
+	const kind = LEGACY_MODULES[name];
+	return !!kind && moduleRow(makeModule(kind, 1)).slotKind === "hardpoint";
+}
 /** Compatibility projection for existing consoles and scanner APIs, never saved. */
 export const equipmentNames = (loadout: Loadout): string[] =>
 	Object.keys(LEGACY_MODULES).filter((name) => fitted(loadout, name));

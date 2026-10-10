@@ -69,9 +69,20 @@ test("migration preserves every old item's list value on every hull, alone and t
 				0,
 			);
 			const migrated = migrateEquipment(hull, items);
+			const stock = stockLoadout(hull);
+			const freeStockValue =
+				moduleRow(stock.plant).priceCr +
+				(items.some((name) =>
+					["Military Laser", "Extra Beam Laser", "Extra Pulse Laser"].includes(
+						name,
+					),
+				)
+					? 0
+					: moduleRow(stock.h1).priceCr);
 			expect(
 				migrated.refundCr +
-					loadoutValue(migrated.loadout) +
+					loadoutValue(migrated.loadout) -
+					freeStockValue +
 					migrated.recoveredFittings.reduce((n, f) => n + fittingValue(f), 0),
 			).toBeGreaterThanOrEqual(before);
 			expect(parseLoadout(migrated.loadout, hull)).toEqual(migrated.loadout);
@@ -156,6 +167,7 @@ test("invalid slots, grades, missing plants and impossible ammunition are refuse
 	for (const mutate of [
 		(s: any) => delete s.loadout.plant,
 		(s: any) => (s.loadout.h1.grade = "B"),
+		(s: any) => (s.loadout.h1.size = "1"),
 		(s: any) => (s.loadout.h1.module = "missing"),
 		(s: any) => (s.loadout.h1.ammo = 1),
 		(s: any) => (s.loadout.h99 = s.loadout.h1),

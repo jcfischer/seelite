@@ -1,5 +1,12 @@
-import type { HullId } from "./hull";
-import { legacyModule, moduleRow, LEGACY_MODULES } from "./loadout";
+import { HULL_SPECS, type HullId } from "./hull";
+import {
+	legacyModule,
+	moduleRow,
+	LEGACY_MODULES,
+	repeatableEquipment,
+	type Loadout,
+	moduleFits,
+} from "./loadout";
 /**
  * `hud-and-scanner.md` §8 — the station console's two screens, as data.
  *
@@ -416,6 +423,8 @@ export const signedDelta = (value: number, digits: number): string => {
  * actually stand in.
  */
 export interface ConsoleEquipmentEntry {
+	/** Another hardpoint can carry another copy. */
+	repeatable?: boolean;
 	name: string;
 	priceCr: number;
 	per: UniversalItem["per"];
@@ -502,6 +511,7 @@ const scopeReason = (
 
 export function stationEquipmentScreen(input: {
 	hull?: HullId;
+	loadout?: Loadout;
 	type: StationTypeKey;
 	displayTL: number;
 	/**
@@ -553,6 +563,14 @@ export function stationEquipmentScreen(input: {
 							? {
 									...e,
 									priceCr: moduleRow(legacyModule(input.hull!, e.name)).priceCr,
+									repeatable:
+										repeatableEquipment(e.name) &&
+										(!input.loadout ||
+											HULL_SPECS[input.hull!].slots.some(
+												(slot) =>
+													!input.loadout![slot.key] &&
+													moduleFits(legacyModule(input.hull!, e.name), slot),
+											)),
 								}
 							: e,
 					)

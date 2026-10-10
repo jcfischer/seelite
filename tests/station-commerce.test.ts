@@ -1206,3 +1206,27 @@ describe("entrusted tonnes are hold, not cargo", () => {
 		expect(scoopCargo(commander, "Food", 1, capacity).accepted).toBe(false);
 	});
 });
+
+test("a stock pulse does not block a second pulse purchase or recovered hardpoint fit", () => {
+	const commander = { ...newCommander("interceptor"), credits: 100000 };
+	const bought = transactAtStation(
+		input({
+			commander,
+			action: { type: "buy-equipment", equipment: "Extra Pulse Laser" },
+		}),
+	);
+	expect(bought.accepted).toBe(true);
+	expect(bought.commander.loadout.h2.module).toBe("pulse-laser");
+	const recovered = transactAtStation(
+		input({
+			commander: {
+				...commander,
+				recoveredFittings: [{ id: "Extra Pulse Laser", tonnes: 1 }],
+			},
+			action: { type: "fit-recovered", index: 0 },
+		}),
+	);
+	expect(recovered.accepted).toBe(true);
+	expect(recovered.commander.loadout.h2.module).toBe("pulse-laser");
+	expect(recovered.commander.recoveredFittings).toBeUndefined();
+});

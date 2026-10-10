@@ -151,7 +151,7 @@ try {
 		JSON.stringify(after.row?.containers),
 	);
 	check(
-		"own loss is already a contact without a scanner and the pilot wakes empty",
+		"own loss is already a contact without a scanner and the pilot wakes with an empty hold and stock fit",
 		after.contact?.name.includes("Own wreck") &&
 			after.equipment.length === 1 &&
 			after.equipment[0] === "Extra Pulse Laser" &&

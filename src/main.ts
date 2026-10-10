@@ -1,4 +1,9 @@
-import { fitted, equipmentNames, withoutModule, fittingValue } from "./loadout";
+import {
+	fitted,
+	equipmentNames,
+	fittingValue,
+	repeatableEquipment,
+} from "./loadout";
 /**
  * The renderer: three layers, one camera orientation, camera always at the
  * origin.
@@ -17448,6 +17453,7 @@ class Game {
 			market: freshMarket ?? readMarket(),
 			equipment: stationEquipmentScreen({
 				hull: this.commander.hull,
+				loadout: this.commander.loadout,
 				type: market.type,
 				displayTL: this.world.system.record.displayTL,
 				rungs: this.rungs(),
@@ -17477,7 +17483,9 @@ class Game {
 					index,
 					priceCr: fittingValue(item) * 0.9,
 					locked: gateRefusal(item.id, this.rungs()),
-					owned: fitted(this.commander.loadout, item.id),
+					owned:
+						!repeatableEquipment(item.id) &&
+						fitted(this.commander.loadout, item.id),
 				}),
 			),
 			fuelLy: this.commander.fuelLy,

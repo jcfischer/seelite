@@ -59,3 +59,10 @@ footprint. Cargo racks contribute their catalogue capacity. Existing consoles
 and scanners use a derived legacy-name projection or the central `fitted`
 query. That projection is never persisted. Slot-oriented UI and graded device
 behaviours belong to the following outfitting nodes.
+
+The compatibility console permits repeated hardpoint modules, subject to free
+compatible slots and existing ladder gates. Its legacy name projection describes
+installed module kinds, so the stock pulse projects as Extra Pulse Laser; it is
+not purchase history. Kill credit still ignores equipment until weapon behaviours
+are implemented. Recovered fittings sell at 90% of list value, as ratified by
+Ship outfitting D10; the displayed quote and till use the same fraction.
