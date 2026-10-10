@@ -73,6 +73,35 @@ test("shipping scenes match the full and reduced triangle records", () => {
 		}
 });
 afterEach(() => installInteriorKitBuilder(null));
+test("review metre and game kilometre assemblies have the same bounds at every detail level", () => {
+	const interior = stationInterior(
+		"trade",
+		STATION_GEOMETRY.trade.aperturePlaneKm,
+		47,
+	);
+	const game = buildInteriorKit(interior, 47, "civic", assets, records);
+	const review = buildInteriorKit(interior, 47, "civic", assets, records, 0, 1);
+	for (const mode of ["0", "1", "2"] as const) {
+		for (const group of [game, review]) {
+			const lod = group.userData.interiorLods as InteriorLods;
+			lod.setMode(mode);
+			lod.update(new THREE.PerspectiveCamera(), 900);
+		}
+		const gameBounds = new THREE.Box3().setFromObject(game);
+		const reviewBounds = new THREE.Box3().setFromObject(review);
+		for (const edge of ["min", "max"] as const)
+			gameBounds[edge]
+				.toArray()
+				.forEach((v, i) =>
+					expect(v).toBeCloseTo(reviewBounds[edge].toArray()[i] * 0.001, 7),
+				);
+		expect(game.userData.interiorLods.stats().levels).toEqual(
+			review.userData.interiorLods.stats().levels,
+		);
+	}
+	disposeSubtree(game);
+	disposeSubtree(review);
+});
 test("berth identities follow real instanced pad transforms, without one draw per berth", () => {
 	const interior = stationInterior(
 		"trade",

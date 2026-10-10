@@ -6459,6 +6459,7 @@ class Game {
 	>();
 	private registerInteriorPresentation(id: string, station: StationMesh): void {
 		this.interiorPresentations.get(id)?.release.forEach((undo) => undo());
+		this.interiorPresentations.delete(id);
 		const group = station.root.getObjectByName("authored-interior");
 		if (!group) return;
 		const lamps: THREE.PointLight[] = [];

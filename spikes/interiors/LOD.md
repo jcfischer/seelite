@@ -1,6 +1,6 @@
 # Interior fitting LODs — Codex
 
-The station interior workbench now selects each module's geometry independently. Original full-detail GLBs and editable Blender files are unchanged. This is a study viewer and asset delivery; production integration remains #205's separate work.
+The station interior workbench now selects each module's geometry independently. Original full-detail GLBs and editable Blender files are unchanged. This records the accepted study's asset delivery. Node #843 integrates it into production; the viewer now shares its assembly and themed material factory with `src/interior-kit.ts`. The hardware measurements below describe the original study checkpoint, not a fresh capture of this shared-builder viewer.
 
 ## Geometry
 

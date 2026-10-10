@@ -8,7 +8,7 @@ The principal accepted the implemented appearance and stopped the visual loop on
 
 ## Scope
 
-An editable Blender module library and interactive assembly workbench. It imports the current game berth catalogue and uses metres throughout. It constructs no Game, changes no save and is not a production renderer replacement. Integration remains subject to the visual result and the repository delivery gates; node #205 remains open.
+An editable Blender module library and interactive assembly workbench. It imports the current game berth catalogue and uses metres throughout. It constructs no Game and changes no save. Node #843 now supplies the production integration. This viewer imports its `src/interior-kit.ts` assembly and material factory, at metre scale with zero mouth recess; stage lighting, labels and ships remain review controls. Integration remains subject to the principal flying it and the repository delivery gates; node #205 remains open.
 
 Run `npm run dev -- --host 127.0.0.1 --port 5205 --strictPort`; open `/spikes/interiors/`. Theme buttons retain the camera; station seed rearranges fittings. Trade and shipyard select their real eight- and six-berth catalogues. Orbit, zoom, pan, axial/arrival views, fitting closeups, module library, clearance overlays, target comparison and PNG export are provided.
 
@@ -16,7 +16,7 @@ Run `npm run dev -- --host 127.0.0.1 --port 5205 --strictPort`; open `/spikes/in
 
 `layout.ts` reads `stationInterior()` rather than copying its bay dimensions. Current trade/shipyard bays measure 280 × 230 × 405 m; the permanent axial corridor is 120 × 70 m. Every bay ship points toward the aperture. Its local up follows the berth inward normal. Modules use local +Y away from their mounting surface and +Z along the bay axis. Floor/port/overhead/starboard instances rotate the complete fitting about Z. No new berth or capacity is introduced.
 
-Role and style are independent: any of the four finishes can assemble over either enclosed layout. The existing refinery/outpost presentations remain open decks. An enclosed hangar theme does not turn those into enclosed bays; their deck adaptation is separate work.
+Role and style are independent: any of the four finishes can assemble over either enclosed layout. The existing refinery/outpost presentations remain open decks. An enclosed bay theme does not turn those into enclosed bays; their deck adaptation is separate work.
 
 ## Fitting library
 

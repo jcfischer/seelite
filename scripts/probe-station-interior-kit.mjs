@@ -1,5 +1,5 @@
 /** Node #843: non-boot install, failure stand-in, capture wait, live LODs.
- * Optional SEELITE_INTERIOR_MEASURE=1 records shuffled Full/Auto drained frame
+ * Optional SEELITE_INTERIOR_MEASURE=1 records shuffled Procedural/Full/Auto drained frame
  * costs under the production camera and 1440x900 drawing buffer. These serial
  * render+readPixels costs are not rAF cadence or timer-query GPU milliseconds.
  */
@@ -108,6 +108,25 @@ try {
 		before ===
 			(await held.evaluate(() => window.__seelite.interiorPresentations.size)),
 	);
+	check(
+		"registration without a kit releases and forgets the old presentation once",
+		await held.evaluate(() => {
+			const g = window.__seelite;
+			const [id, handle] = g.interiorPresentations.entries().next().value;
+			let releases = 0;
+			const count = handle.release.length;
+			handle.release = handle.release.map((undo) => () => {
+				releases++;
+				undo();
+			});
+			const withoutKit = { root: { getObjectByName: () => undefined } };
+			g.registerInteriorPresentation(id, withoutKit);
+			g.registerInteriorPresentation(id, withoutKit);
+			const forgotten = !g.interiorPresentations.has(id);
+			g.registerInteriorPresentation(id, g.stationVisuals.get(id));
+			return forgotten && count > 0 && releases === count;
+		}),
+	);
 	await held.close();
 	const failed = await livePage();
 	let warnings = 0;
@@ -156,6 +175,35 @@ try {
 		await hasKit(full),
 	);
 	await full.close();
+	// Independent pages boot once each. The failed optional load draws the exact
+	// pre-kit procedural builder; both arms reset before the same scripted docking.
+	const placeFixture = async (page) => {
+		await page.evaluate(() => {
+			const g = window.__seelite;
+			cancelAnimationFrame(g.animationFrame);
+			g.skipOpening();
+			g.resetFlightToStart();
+		});
+		await page.evaluate(() =>
+			window.__parkInBerth("station-trade", "port-deep"),
+		);
+		await setView(page, "chase");
+		return page.evaluate(() => {
+			const g = window.__seelite;
+			g.clockHeld = true;
+			g.render(0);
+			return {
+				gameTime: g.world.gameTime,
+				ship: g.world.ship.pos,
+				position: g.nearCamera.position.toArray(),
+				quaternion: g.nearCamera.quaternion.toArray(),
+				projection: g.nearCamera.projectionMatrix.elements,
+				quality: g.settings.value.quality,
+				width: g.renderer.domElement.width,
+				height: g.renderer.domElement.height,
+			};
+		});
+	};
 	const rows = [];
 	const shuffle = seededShuffler(843);
 	for (const fixture of [
@@ -180,11 +228,7 @@ try {
 			process.env.SEELITE_PROBE_RENDERER === "hardware"
 				? await assertPlayersRenderer(page, "measure production interiors")
 				: "SwiftShader CPU lane";
-		await page.evaluate(() => window.__seelite.skipOpening());
-		await page.evaluate(() =>
-			window.__parkInBerth("station-trade", "port-deep"),
-		);
-		await setView(page, "chase");
+		const fixtureState = await placeFixture(page);
 		const actual = await page.evaluate(() => {
 			const g = window.__seelite;
 			cancelAnimationFrame(g.animationFrame);
@@ -280,34 +324,85 @@ try {
 				child.visible = visible;
 			window.__seelite.render(0);
 		});
-		const timings = { 0: [], auto: [] };
+		let procedural;
+		let proceduralState;
+		if (process.env.SEELITE_INTERIOR_MEASURE === "1") {
+			procedural = await livePage();
+			await installViewPlacement(procedural);
+			await installViewFraming(procedural);
+			await procedural.route("**/*station-interiors*.glb*", (route) =>
+				route.abort(),
+			);
+			await procedural.goto(gameUrl(origin, { ...params, seed: fixture.seed }));
+			await bootedGame(procedural);
+			await procedural.waitForFunction(
+				() => window.__seelite.interiorModelsSettled,
+			);
+			await assertPlayersRenderer(procedural, "measure procedural baseline");
+			proceduralState = await placeFixture(procedural);
+			const matching =
+				JSON.stringify(proceduralState) === JSON.stringify(fixtureState);
+			check(
+				fixture.theme +
+					" procedural arm has no kit and matches camera, clock and quality",
+				!(await hasKit(procedural)) && matching,
+				JSON.stringify({ fixtureState, proceduralState }),
+			);
+			if (!matching || (await hasKit(procedural)))
+				throw Error("Invalid procedural comparison");
+			counts.procedural = await procedural.evaluate(() => {
+				const g = window.__seelite;
+				g.renderer.info.autoReset = false;
+				g.renderer.info.reset();
+				g.render(0);
+				return { ...g.renderer.info.render };
+			});
+			await procedural.screenshot({
+				path: output + "/" + fixture.theme + "-procedural.png",
+			});
+		}
+		const timings = { procedural: [], 0: [], auto: [] };
 		if (process.env.SEELITE_INTERIOR_MEASURE === "1")
 			for (let block = 0; block < 8; block++)
-				for (const mode of shuffle(["0", "auto"]))
+				for (const mode of shuffle(["procedural", "0", "auto"]))
 					timings[mode].push(
-						await page.evaluate((mode) => {
-							const g = window.__seelite,
-								gl = g.renderer.getContext(),
-								pixel = new Uint8Array(4);
-							for (const h of g.interiorPresentations.values())
-								h.lods.setMode(mode);
-							g.render(0);
-							gl.readPixels(0, 0, 1, 1, gl.RGBA, gl.UNSIGNED_BYTE, pixel);
-							const t = performance.now();
-							for (let i = 0; i < 8; i++) {
+						await (mode === "procedural" ? procedural : page).evaluate(
+							(mode) => {
+								const g = window.__seelite,
+									gl = g.renderer.getContext(),
+									pixel = new Uint8Array(4);
+								for (const h of g.interiorPresentations.values())
+									h.lods.setMode(mode);
 								g.render(0);
 								gl.readPixels(0, 0, 1, 1, gl.RGBA, gl.UNSIGNED_BYTE, pixel);
-							}
-							return (performance.now() - t) / 8;
-						}, mode),
+								const t = performance.now();
+								for (let i = 0; i < 8; i++) {
+									g.render(0);
+									gl.readPixels(0, 0, 1, 1, gl.RGBA, gl.UNSIGNED_BYTE, pixel);
+								}
+								return (performance.now() - t) / 8;
+							},
+							mode,
+						),
 					);
 		const row = {
 			...fixture,
 			renderer,
 			camera: actual,
 			counts,
+			fixtureState,
+			proceduralState,
 			timings,
 			paintedPixels,
+			medianProceduralMs: timings.procedural.length
+				? median(timings.procedural)
+				: null,
+			fullVsProcedural: timings.procedural.length
+				? separation(timings["0"], timings.procedural)
+				: null,
+			autoVsProcedural: timings.procedural.length
+				? separation(timings.auto, timings.procedural)
+				: null,
 			medianFullMs: timings["0"].length ? median(timings["0"]) : null,
 			medianAutoMs: timings.auto.length ? median(timings.auto) : null,
 			separation: timings.auto.length
@@ -316,6 +411,7 @@ try {
 		};
 		rows.push(row);
 		console.log(JSON.stringify(row));
+		await procedural?.close();
 		await page.close();
 	}
 	await writeFile(

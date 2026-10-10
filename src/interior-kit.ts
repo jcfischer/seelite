@@ -16,9 +16,14 @@ import type { InteriorFace, StationInterior } from "./station-interior";
 import { shared } from "./gpu-teardown";
 import { EMISSIVE_CEILING } from "./light-rig";
 const materials = new Map<string, THREE.Material>();
-function material(source: THREE.Material, theme: Theme) {
-	const key = theme + "/" + source.name;
-	if (materials.has(key)) return materials.get(key)!;
+export function interiorMaterial(
+	source: THREE.Material,
+	theme: Theme,
+	unitsPerMetre = 0.001,
+) {
+	const key = theme + "/" + source.name + "/" + unitsPerMetre;
+	if (materials.has(key))
+		return materials.get(key)! as THREE.MeshStandardMaterial;
 	const m = source.clone() as THREE.MeshStandardMaterial;
 	m.name = m.name.replace(/\.\d+$/, "");
 	const t = THEMES.find((t) => t.id === theme)!;
@@ -83,7 +88,7 @@ function material(source: THREE.Material, theme: Theme) {
 		m.transparent = true;
 		m.depthWrite = false;
 	}
-	m.bumpScale *= 0.001;
+	m.bumpScale *= unitsPerMetre;
 	shared(m);
 	materials.set(key, m);
 	return m;
@@ -96,6 +101,7 @@ export function buildInteriorKit(
 	assets: Map<string, THREE.Group>,
 	records: Record<string, LodRecord>,
 	mouthRecessKm = 0,
+	unitsPerMetre = 0.001,
 ) {
 	if (interior.presentation !== "bay")
 		throw Error("Kit requires an enclosed bay");
@@ -109,15 +115,17 @@ export function buildInteriorKit(
 	assembly.name = "authored-interior";
 	assembly.userData.theme = theme;
 	assembly.userData.minDetail = "reduced";
-	assembly.scale.setScalar(0.001);
-	assembly.position.z = interior.mouthAxialKm;
+	assembly.scale.setScalar(unitsPerMetre);
+	assembly.position.z = interior.mouthAxialKm * (unitsPerMetre / 0.001);
 	const shellGroup = new THREE.Group();
 	shellGroup.name = "interior-shell";
 	assembly.add(shellGroup);
 	const fitGroup = new THREE.Group();
 	fitGroup.name = "interior-fittings";
 	assembly.add(fitGroup);
-	const lods = new InteriorLods(assets, records, (m) => material(m, theme));
+	const lods = new InteriorLods(assets, records, (m) =>
+		interiorMaterial(m, theme, unitsPerMetre),
+	);
 	assembly.userData.interiorLods = lods;
 	function place(
 		name: string,
@@ -561,8 +569,8 @@ export function buildInteriorKit(
 	for (const face of faces) {
 		const light = new THREE.PointLight(
 			THEMES.find((t) => t.id === theme)!.light,
-			50000 * 0.001 ** 2,
-			380 * 0.001,
+			50000 * unitsPerMetre ** 2,
+			380 * unitsPerMetre,
 			2,
 		);
 		light.position.fromArray(worldPoint(face, 0, 24, -325, hx, hy));

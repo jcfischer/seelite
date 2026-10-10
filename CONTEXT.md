@@ -650,7 +650,7 @@ this — so only words that are canonical nowhere belong here. `Clearance queue`
 matching note about its own four senses of "pad".
 
 **Station interior**:
-What lies at a station's aperture, in one of two **presentations** decided by `aperture.kind` (#165). Computed in exactly one place, `src/station-interior.ts`, and drawn in exactly one, `src/station-interior-mesh.ts`; `docs/specs/docking.md` §13.1 owns the topology of both.
+What lies at a station's aperture, in one of two **presentations** decided by `aperture.kind` (#165). Computed in exactly one place, `src/station-interior.ts`. `src/station-interior-mesh.ts` draws the procedural stand-in and open decks, and installs the authored bay presentation through its builder seam: `src/interior-kit.ts` assembles it from `src/interior-layout.ts` placement; `docs/specs/docking.md` §13.1 owns the topology of both.
 _Avoid_: Hangar, throat, docking bay corridor
 
 **Bay**:

@@ -144,6 +144,22 @@ try {
 	)
 		throw Error("Role rebuild failed");
 	await page.selectOption("#lod", "auto");
+	await page.click("#fittings");
+	const fittingsVisible = () =>
+		page.evaluate(
+			() =>
+				window.__interiors.diagnostics.scene.getObjectByName(
+					"interior-fittings",
+				).visible,
+		);
+	if (await fittingsVisible())
+		throw Error("Fitting toggle missed the shared assembly");
+	await page.click("#next");
+	if (await fittingsVisible())
+		throw Error("Rebuild lost the fitting visibility choice");
+	await page.click("#fittings");
+	if (!(await fittingsVisible()))
+		throw Error("Fitting toggle missed the replacement assembly");
 	await page.click("#next");
 	await page.waitForTimeout(100);
 	const report = { renderer, results, transitions: { far, near }, errors };
