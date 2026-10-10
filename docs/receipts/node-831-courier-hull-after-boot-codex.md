@@ -142,3 +142,25 @@ passed 94 tests. Build/typecheck, format, lint and launcher wiring passed.
 The single final `npm test` run passed **5,758 tests, 0 failures** across 316
 files in 391.12 s. Browser coverage is partial; the supervisor owns the full
 browser run and the principal's chase-view approval.
+
+## Sage round 2: incomplete review
+
+Round 2 reviewed `6755492387384e12d9de18c82336fb357f6aa4c0`. Its five
+important findings are review infrastructure failures: CodeQuality,
+Architecture, ContextDrift, Maintainability and HonestOracle each failed their
+JSON extraction after a request timeout. The extension dependency warning
+appears in each output; this review does not establish that warning as the
+timeout's cause. No code defect, location or corrective change was reported.
+
+This pass preserves the implementation and the round-1 optional-suggestion
+dispositions. Modifying the external Pi extension or review infrastructure is
+outside node #831. Review coverage remains incomplete; the supervisor must
+rerun Sage before merge. This receipt is not review approval.
+
+No browser probes or visual captures were repeated for this prose-only pass;
+the earlier results above remain historical evidence. The supervisor still
+owns the full browser gate and the principal's chase-view approval.
+
+Round-2 validation: the single final `npm test` run exited 0 with **5,758
+passed, 0 failed**, across 316 files in 431.29 s. `git diff --check` passed.
+Only this receipt changed in the round-2 pass.
