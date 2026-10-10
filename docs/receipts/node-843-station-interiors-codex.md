@@ -52,7 +52,7 @@ Decode the shipped GLB, then measure its actual triangles against the authoritat
 bay and clearance laws. Sweep both enclosed roles, all four themes and three LOD
 levels. Test station-parent movement, kilometre scale and drawing resolution.
 Hold/abort browser downloads to verify the loading boundaries. Compare shuffled
-Procedural/Full/Auto frames on the built bundle and the player's renderer.
+Procedural/Full/Auto/LOD2 frames on the built bundle and the player's renderer.
 
 ## Features
 
@@ -72,8 +72,9 @@ Procedural/Full/Auto frames on the built bundle and the player's renderer.
 - C3: Layout, policy and bucket code now live in `src/`; spike imports share them.
   Buckets include station-parent transforms, near/far scale and drawing height.
   Entry is one device pixel; hysteresis retains a coarse level until 1.2 pixels.
-  Production defaults to Full after round 2's cost review; Auto remains available
-  in the study viewer and diagnostic controls, without a claimed FPS benefit.
+  Production defaults to uniform LOD2 after round 3's cost review; Full and Auto
+  remain available in the study viewer and diagnostic controls. Automatic selection
+  retains the same pixel policy; the forced production default bypasses that selection.
   Four inset floods use the existing cabin-mirror seam, on High at full station
   detail; teardown releases the mirrors and per-station instance resources.
 - C1/C4: The decoded bundle stays in memory. Every live bay installs once;
@@ -293,3 +294,72 @@ Round-2 final verification (2026-10-10):
 - C3/C4: tested — `npm test` ran once: 5,779 pass, 0 fail, 9,054,236 assertions across 320 files, 429.57 seconds. No source changed after this run.
 - C4: tested — production build (including game typecheck), format, script lint, launcher wiring and diff whitespace checks passed.
 - C3/C4: tested — the production Metal focused gate passed 1/1 in 69 seconds; all four default/Full count checks, Auto controls and matching procedural-state checks passed. This remains partial browser coverage.
+
+### Sage round 3 repair
+
+The performance finding is taken. Round 2 removed mixed-level draw calls but
+kept all full fitting triangles. Production now selects the accepted LOD2
+uniformly before its first render. This removes small fasteners up to 0.24 m,
+retaining the study's cladding, glazing, lights and major structure. Modules
+without reduced geometry retain their sole full bucket. Each fitting family
+still uses one populated bucket by default; no geometry is regenerated.
+Full geometry remains the measurement authority. Full and per-fitting Auto,
+including drawing-buffer scaling, instancing and hysteresis, remain review
+controls. The shared viewer still applies its own Auto selection. No gameplay
+dimension, layout, camera near plane, loading or save changes.
+
+The packed-asset regression was changed first and failed on the previous Full
+default. It now checks all four themes for LOD2, zero LOD1 population and at
+least 40% fewer fitting triangles, then verifies that Full and Auto preserve
+the fitting population. The focused kit/LOD run passed 15 tests, 0 failures,
+25,023 assertions, including actual full/reduced geometry clearance and unit
+conversion checks. The browser row independently requires untouched default
+counts to equal forced LOD2, submit at least 35% fewer total frame triangles
+than Full, and use no additional calls. Those floors cover fitting-only and
+whole-frame counts respectively; they are regression guards, not timing claims.
+
+Production evidence: `spikes/interiors/evidence/production-review3-codex.json`.
+Vite production bundle; Apple M1 Pro / ANGLE Metal; High; 1440×900; real 0.01 km
+near plane; trade `port-deep` chase camera. Eight shuffled blocks of eight serial
+render-plus-readPixels frames per arm, including the new LOD2 arm. All four
+procedural comparisons matched camera, world clock, quality and drawing buffer.
+
+| Theme | Procedural calls | Default / Full calls | Full triangles | Default triangles | Reduction | Procedural ms | Full ms | Default ms | Default vs Full separation |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | --- |
+| civic | 569 | 907 | 11,665,026 | 6,997,890 | 40.0% | 8.750 | 16.625 | 15.988 | 7/64 (11%) |
+| works | 607 | 1163 | 10,023,870 | 6,123,198 | 38.9% | 9.081 | 16.700 | 16.237 | 12/64 (19%) |
+| frontier | 609 | 1032 | 10,939,472 | 6,685,520 | 38.9% | 8.725 | 16.725 | 16.394 | 13/64 (20%) |
+| survey | 614 | 958 | 10,932,722 | 6,581,234 | 39.8% | 9.137 | 16.719 | 16.031 | 5/64 (8%) |
+
+Separation counts Default block costs higher than Full over all pairings.
+The reduced triangle submission is substantial; the measured frame-cost
+improvement is only 0.33–0.69 ms in these fixtures. All four default medians
+are below 16.7 ms in this run, but these are drained frame costs, not delivered
+FPS, and this does not establish a universal 60 fps budget. The kit remains
+more expensive than procedural: 338–556 extra calls, Default/procedural
+separation 64/64 in every theme. This run's elapsed costs differ from round 2
+on the same device; compare arms within this run, not across runs.
+
+Mandatory probe selection returned `all` because earlier integration changes
+touch shared capture infrastructure. The worker SOP restricts this fix pass to
+affected probes; the supervisor owes the full suite. The focused production
+Metal gate passed 1/1 in 64 seconds, peak load 11.1 on 10 cores; 98/99 probes
+were not run. All default-level, count, Auto, loading and matching-state rows
+passed. Four LOD2 frames were opened and inspected by the worker, with stable
+repeat frames and a nonempty fitting pixel contribution required by the probe.
+Principal production flight approval remains pending. The sandboxed Chromium
+launch was refused before measurement; the successful run used the authorized
+outside-sandbox GPU lane.
+
+The draw-count duplication nit is taken: both arms call one installed
+`__countFrame` helper. Optional shell/collar/light extraction, paint-predicate
+consolidation and redundant capture-flag cleanup are deferred to avoid widening
+this performance repair. Glossary nits remain declined for the scoped technical
+names and historical study provenance explained in round 2. No Field Notes
+copy is published by this pass.
+
+Round-3 final verification (2026-10-10):
+
+- C3/C4: tested — `npm test` ran once: 5,779 pass, 0 fail, 9,054,256 assertions across 320 files, 406.75 seconds. No source changed after this run.
+- C4: tested — production build (including game typecheck), format, script lint, launcher wiring and diff whitespace checks passed.
+- C3/C4: tested — the production Metal focused gate passed 1/1 in 64 seconds, including all four untouched default/LOD2 count checks and matching procedural-state comparisons. This remains partial browser coverage.

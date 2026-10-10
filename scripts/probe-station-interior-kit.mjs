@@ -1,5 +1,5 @@
 /** Node #843: non-boot install, failure stand-in, capture wait, live LODs.
- * Optional SEELITE_INTERIOR_MEASURE=1 records shuffled Procedural/Full/Auto drained frame
+ * Optional SEELITE_INTERIOR_MEASURE=1 records shuffled Procedural/Full/Auto/LOD2 drained frame
  * costs under the production camera and 1440x900 drawing buffer. These serial
  * render+readPixels costs are not rAF cadence or timer-query GPU milliseconds.
  */
@@ -37,6 +37,15 @@ const options = {
 const livePage = async () => {
 	const page = await browser.newPage(options);
 	watch(page);
+	await page.addInitScript(() => {
+		window.__countFrame = () => {
+			const g = window.__seelite;
+			g.renderer.info.autoReset = false;
+			g.renderer.info.reset();
+			g.render(0);
+			return { ...g.renderer.info.render };
+		};
+	});
 	// Built-bundle measurements stay offline too; satisfy the analytics script
 	// locally before any request can leave the probe's origin.
 	await page.route(
@@ -259,10 +268,7 @@ try {
 				if (mode !== "default")
 					for (const h of g.interiorPresentations.values())
 						h.lods.setMode(mode);
-				g.renderer.info.autoReset = false;
-				g.renderer.info.reset();
-				g.render(0);
-				const stat = { ...g.renderer.info.render };
+				const stat = window.__countFrame();
 				return {
 					...stat,
 					modes: [...g.interiorPresentations.values()].map((h) => h.lods.mode),
@@ -272,13 +278,15 @@ try {
 			}, mode);
 		}
 		check(
-			`${fixture.theme} defaults to Full with the same calls and triangles as forced Full`,
+			`${fixture.theme} defaults to uniform LOD2 with fewer triangles than Full`,
 			counts.default.modes.length > 0 &&
-				counts.default.modes.every((mode) => mode === "0") &&
-				counts.default.levels[0] > 0 &&
-				counts.default.levels.slice(1).every((n) => n === 0) &&
-				counts.default.calls === counts["0"].calls &&
-				counts.default.triangles === counts["0"].triangles,
+				counts.default.modes.every((mode) => mode === "2") &&
+				counts.default.levels[1] === 0 &&
+				counts.default.levels[2] > 0 &&
+				counts.default.calls === counts["2"].calls &&
+				counts.default.triangles === counts["2"].triangles &&
+				counts.default.triangles < counts["0"].triangles * 0.65 &&
+				counts.default.calls <= counts["0"].calls,
 		);
 		check(
 			`${fixture.theme} reduced buckets submit fewer triangles without changing instance population`,
@@ -292,7 +300,7 @@ try {
 		);
 		await page.evaluate(() => {
 			const g = window.__seelite;
-			for (const h of g.interiorPresentations.values()) h.lods.setMode("0");
+			for (const h of g.interiorPresentations.values()) h.lods.setMode("2");
 			g.render(0);
 		});
 		await page.screenshot({ path: `${output}/${fixture.theme}.png` });
@@ -362,21 +370,17 @@ try {
 			);
 			if (!matching || (await hasKit(procedural)))
 				throw Error("Invalid procedural comparison");
-			counts.procedural = await procedural.evaluate(() => {
-				const g = window.__seelite;
-				g.renderer.info.autoReset = false;
-				g.renderer.info.reset();
-				g.render(0);
-				return { ...g.renderer.info.render };
-			});
+			counts.procedural = await procedural.evaluate(() =>
+				window.__countFrame(),
+			);
 			await procedural.screenshot({
 				path: output + "/" + fixture.theme + "-procedural.png",
 			});
 		}
-		const timings = { procedural: [], 0: [], auto: [] };
+		const timings = { procedural: [], 0: [], auto: [], 2: [] };
 		if (process.env.SEELITE_INTERIOR_MEASURE === "1")
 			for (let block = 0; block < 8; block++)
-				for (const mode of shuffle(["procedural", "0", "auto"]))
+				for (const mode of shuffle(["procedural", "0", "auto", "2"]))
 					timings[mode].push(
 						await (mode === "procedural" ? procedural : page).evaluate(
 							(mode) => {
@@ -416,6 +420,13 @@ try {
 				? separation(timings.auto, timings.procedural)
 				: null,
 			medianFullMs: timings["0"].length ? median(timings["0"]) : null,
+			medianDefaultMs: timings["2"].length ? median(timings["2"]) : null,
+			defaultVsFull: timings["2"].length
+				? separation(timings["2"], timings["0"])
+				: null,
+			defaultVsProcedural: timings.procedural.length
+				? separation(timings["2"], timings.procedural)
+				: null,
 			medianAutoMs: timings.auto.length ? median(timings.auto) : null,
 			separation: timings.auto.length
 				? separation(timings.auto, timings["0"])

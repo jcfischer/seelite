@@ -73,7 +73,7 @@ test("shipping scenes match the full and reduced triangle records", () => {
 		}
 });
 afterEach(() => installInteriorKitBuilder(null));
-test("station kits default to one full-detail bucket while Auto remains available", () => {
+test("station kits default to uniform LOD2 while Full and per-fitting Auto remain available", () => {
 	const interior = stationInterior(
 		"trade",
 		STATION_GEOMETRY.trade.aperturePlaneKm,
@@ -85,11 +85,22 @@ test("station kits default to one full-detail bucket while Auto remains availabl
 		const kit = buildInteriorKit(interior, 47, id, assets, records);
 		const lod = kit.userData.interiorLods as InteriorLods;
 		lod.update(camera, 900);
+		const coarse = lod.stats();
+		expect(coarse.mode).toBe("2");
+		expect(coarse.levels[1]).toBe(0);
+		expect(coarse.levels[2]).toBeGreaterThan(0);
+		// Only unchanged shell modules remain at level 0. Verify the submitted
+		// packed fitting cost, not a claim based on the selector's mode string.
+		expect(coarse.triangles).toBeLessThan(coarse.fullTriangles * 0.6);
+		const population = coarse.levels.reduce((sum, n) => sum + n, 0);
+		lod.setMode("0");
+		lod.update(camera, 900);
 		const full = lod.stats();
 		expect(full.mode).toBe("0");
 		expect(full.levels[0]).toBeGreaterThan(0);
 		expect(full.levels.slice(1)).toEqual([0, 0]);
 		expect(full.triangles).toBe(full.fullTriangles);
+		expect(full.levels[0]).toBe(population);
 		lod.setMode("auto");
 		lod.update(camera, 900);
 		const auto = lod.stats();

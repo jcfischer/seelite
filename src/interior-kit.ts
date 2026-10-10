@@ -126,10 +126,10 @@ export function buildInteriorKit(
 	const lods = new InteriorLods(assets, records, (m) =>
 		interiorMaterial(m, theme, unitsPerMetre),
 	);
-	// Production measurements show mixed Auto buckets add calls without an
-	// established frame-time gain. Full keeps each fitting family in one batch;
-	// the study viewer and diagnostic probes can still select Auto explicitly.
-	lods.setMode("0");
+	// Full exceeded the production docked frame budget. Use the accepted LOD2
+	// fittings uniformly: fewer triangles, one populated bucket per family.
+	// Full geometry still owns measurements; review controls retain Full/Auto.
+	lods.setMode("2");
 	assembly.userData.interiorLods = lods;
 	function place(
 		name: string,
