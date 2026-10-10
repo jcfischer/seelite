@@ -1,3 +1,4 @@
+import { parseModule, carriedModule, type FittedModule } from "./loadout";
 /**
  * The persistent world state model — `docs/specs/persistent-world-state.md`.
  *
@@ -402,6 +403,7 @@ export interface LegalStatus {
  * touch, not at the loss (`persistent-world-state.md` §7).
  */
 export interface DerelictContainer {
+	fitting?: FittedModule;
 	kind: DerelictContainerKind;
 	/** A commodity name for a good, an `EQUIPMENT` name for a fitting. */
 	id: string;
@@ -2189,6 +2191,7 @@ const canonicalDerelict = (
 				[quantity]: c.tonnes,
 				left: c.left,
 				...(c.unit === undefined ? {} : { unit: c.unit }),
+				...(c.fitting ? { fitting: parseModule(c.fitting) } : {}),
 			},
 		]),
 	),
@@ -2699,7 +2702,15 @@ const parseDerelictContainer = (
 		fail(`${what}: container kind ${kind} is unknown`);
 	const id = str(o, "id", what);
 	const allowed = CONTAINER_IDS[death ? "death" : "derelict"];
-	if (!allowed[kind as DerelictContainerKind].has(id))
+	const fitting = o.fitting === undefined ? undefined : parseModule(o.fitting);
+	if (
+		fitting &&
+		(kind !== "fitting" ||
+			carriedModule(fitting).id !== id ||
+			fitting.module === "escape-pod")
+	)
+		fail("invalid container fitting");
+	if (!fitting && !allowed[kind as DerelictContainerKind].has(id))
 		fail(
 			`${what}: ${id} is not a ${kind} a ${death ? "death wreck" : "derelict"} can hold`,
 		);
@@ -2711,6 +2722,8 @@ const parseDerelictContainer = (
 	const quantity = death ? "amount" : "tonnes";
 	const tonnes = ordinal(o, quantity, what);
 	if (tonnes === 0) fail(`${what}: a container drawn with no ${quantity}`);
+	if (fitting && tonnes !== 1)
+		fail(`${what}: a module fitting occupies one tonne`);
 	const left = ordinal(o, "left", what);
 	if (left > tonnes)
 		fail(
@@ -2718,6 +2731,7 @@ const parseDerelictContainer = (
 		);
 	return {
 		kind: kind as DerelictContainerKind,
+		...(fitting ? { fitting } : {}),
 		id,
 		tonnes,
 		left,

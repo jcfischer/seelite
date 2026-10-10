@@ -34,11 +34,18 @@ try {
 			.count()) === 0,
 	);
 	await page.evaluate(async () => {
+		const { migrateEquipment, equipmentNames } = await import(
+			"/src/loadout.ts"
+		);
+
 		const g = window.__seelite;
 		const market = await import("/src/market.ts");
 		const sweep = await import("/src/system-sweep.ts");
 		const cruise = await import("/src/cruise.ts");
-		g.commander.ownedEquipment.push(market.LONG_RANGE_SCANNER);
+		g.commander.loadout = migrateEquipment(g.commander.hull, [
+			...equipmentNames(g.commander.loadout),
+			market.LONG_RANGE_SCANNER,
+		]).loadout;
 		// Leave headroom so passive regeneration cannot conceal a sweep cost.
 		g.chargeAu = g.chargeCapacityAu / 2;
 		// Active derelicts at this clock; no materialisation or discovery write.

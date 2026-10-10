@@ -15,6 +15,33 @@ const origin = await guardedOrigin(
 );
 const browser = await launchChromium();
 const { check, watch, exit } = tally();
+const inventory = (items) =>
+	JSON.stringify(
+		items.map((c) => [
+			c.kind,
+			c.id,
+			c.tonnes,
+			c.left,
+			c.unit,
+			c.fitting?.module,
+			c.fitting?.size,
+			c.fitting?.grade,
+			c.fitting?.variant,
+			c.fitting?.ammo,
+		]),
+	);
+const fittingInventory = (items) =>
+	JSON.stringify(
+		items.map((c) => [
+			c.id,
+			c.tonnes,
+			c.module,
+			c.size,
+			c.grade,
+			c.variant,
+			c.ammo,
+		]),
+	);
 try {
 	const page = await browser.newPage({
 		viewport: { width: 1440, height: 900 },
@@ -23,6 +50,10 @@ try {
 	await page.goto(gameUrl(origin, { seed: 47 }));
 	await bootedGame(page);
 	const fixture = await page.evaluate(async () => {
+		const { migrateEquipment, equipmentNames } = await import(
+			"/src/loadout.ts"
+		);
+
 		const g = window.__seelite;
 		g.clockHeld = true;
 		g.resetFlightToStart();
@@ -34,7 +65,10 @@ try {
 		g.commander = {
 			...g.commander,
 			cargo: { Food: 8, Gold: 12 },
-			ownedEquipment: ["Escape Pod", "Docking Computer"],
+			loadout: migrateEquipment(g.commander.hull, [
+				"Escape Pod",
+				"Docking Computer",
+			]).loadout,
 		};
 		let at = Math.ceil(g.world.gameTime);
 		for (; at < 10000; at++) {
@@ -56,7 +90,17 @@ try {
 		g.commerceWorld = advanceTo(g.commerceWorld, at);
 		g.world.ship.pos.x += 200;
 		g.updateLocalFrameBody();
-		return { pos: { ...g.world.ship.pos }, at, frame: g.deathFrameId() };
+		return {
+			pos: { ...g.world.ship.pos },
+			at,
+			frame: g.deathFrameId(),
+			expected: deathWreckContents(
+				g.commerceWorld.seed,
+				at,
+				g.commander,
+				"destroyed",
+			),
+		};
 	});
 	const reloaded = page.waitForEvent("load", { timeout: 20000 });
 	await page.evaluate(() => {
@@ -67,7 +111,11 @@ try {
 	});
 	await reloaded;
 	await bootedGame(page);
-	const after = await page.evaluate(() => {
+	const after = await page.evaluate(async () => {
+		const { migrateEquipment, equipmentNames } = await import(
+			"/src/loadout.ts"
+		);
+
 		const g = window.__seelite;
 		g.clockHeld = true;
 		g.render(0);
@@ -77,7 +125,7 @@ try {
 			row,
 			pos: wreck?.pose.pos,
 			contact: g.contacts.find((c) => c.id === row?.key),
-			equipment: g.commander.ownedEquipment,
+			equipment: equipmentNames(g.commander.loadout ?? {}),
 			cargo: g.commander.cargo,
 		};
 	});
@@ -88,7 +136,7 @@ try {
 				0.01 &&
 			after.row.bodyId === fixture.frame &&
 			after.row.lostAt === fixture.at &&
-			after.row.containers.length === 3,
+			inventory(after.row.containers) === inventory(fixture.expected),
 		JSON.stringify(after.row),
 	);
 	check(
@@ -103,9 +151,10 @@ try {
 		JSON.stringify(after.row?.containers),
 	);
 	check(
-		"own loss is already a contact without a scanner and the pilot wakes empty",
+		"own loss is already a contact without a scanner and the pilot wakes with an empty hold and stock fit",
 		after.contact?.name.includes("Own wreck") &&
-			after.equipment.length === 0 &&
+			after.equipment.length === 1 &&
+			after.equipment[0] === "Extra Pulse Laser" &&
 			Object.keys(after.cargo).length === 0,
 	);
 	await page.evaluate(() => {
@@ -154,6 +203,10 @@ try {
 		String(changed),
 	);
 	const scooped = await page.evaluate(async () => {
+		const { migrateEquipment, equipmentNames } = await import(
+			"/src/loadout.ts"
+		);
+
 		const g = window.__seelite;
 		const { tetherPose } = await import("/src/derelict.ts");
 		const row = g.commerceWorld.galaxies[g.world.galaxy.index].deathWreck;
@@ -178,20 +231,25 @@ try {
 			galaxyIndex: g.world.galaxy.index,
 			cargo: g.commander.cargo,
 			fittings: g.commander.recoveredFittings,
-			equipment: g.commander.ownedEquipment,
+			equipment: equipmentNames(g.commander.loadout ?? {}),
 			wreck: g.commerceWorld.galaxies[g.world.galaxy.index].deathWreck,
 			drawn: g.derelictMeshes.has(row.key + ":" + row.instanceOrdinal),
 			saved: await g.save.backend.read(g.save.defaultSlot, "live"),
 			notice: g.scoop.text,
 		};
 	});
+	const expectedFittings = fixture.expected
+		.filter((c) => c.kind === "fitting")
+		.map((c) => ({ id: c.id, tonnes: c.tonnes, ...c.fitting }));
 	check(
 		"the live proximity scoop recovers cargo and carries the fitting without fitting it",
 		!scooped.dead &&
 			scooped.cargo.Food === 8 &&
 			scooped.cargo.Gold === 12 &&
-			scooped.fittings?.[0]?.id === "Docking Computer" &&
-			scooped.equipment.length === 0,
+			fittingInventory(scooped.fittings ?? []) ===
+				fittingInventory(expectedFittings) &&
+			scooped.equipment.length === 1 &&
+			scooped.equipment[0] === "Extra Pulse Laser",
 		JSON.stringify(scooped.fittings),
 	);
 	check(
@@ -200,10 +258,10 @@ try {
 			!scooped.drawn &&
 			scooped.saved.commander.state.cargo.Food === 8 &&
 			scooped.saved.commander.state.cargo.Gold === 12 &&
-			scooped.saved.commander.state.recoveredFittings?.[0]?.id ===
-				"Docking Computer" &&
-			scooped.saved.commander.state.recoveredFittings[0].tonnes === 1 &&
-			scooped.saved.commander.state.ownedEquipment.length === 0 &&
+			fittingInventory(
+				scooped.saved.commander.state.recoveredFittings ?? [],
+			) === fittingInventory(expectedFittings) &&
+			Object.keys(scooped.saved.commander.state.loadout).length === 2 &&
 			!scooped.saved.world.galaxies[scooped.galaxyIndex].deathWreck,
 	);
 } finally {

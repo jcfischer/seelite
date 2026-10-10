@@ -1,3 +1,9 @@
+import {
+	migrateEquipment,
+	equipmentNames,
+	stockLoadout,
+	moduleRow,
+} from "../src/loadout";
 /**
  * #626: the law that applies a pilot's act to their **Holdings**, at the
  * module's interface.
@@ -553,7 +559,9 @@ const BOUNTY = bindBounty(
 		),
 	}),
 ) as JobOffer;
-const FITTED = { ownedEquipment: [LONG_RANGE_SCANNER] };
+const FITTED = {
+	loadout: migrateEquipment("courier", [LONG_RANGE_SCANNER]).loadout,
+};
 const KILL_AT = 100;
 
 const bountyPress = (
@@ -637,7 +645,7 @@ describe("a carrier transition", () => {
 			killCredit(
 				{
 					hull: start.commander.hull,
-					equipment: start.commander.ownedEquipment,
+					equipment: equipmentNames(start.commander.loadout),
 				},
 				RAIDER_HULL_ID,
 			),

@@ -143,7 +143,11 @@ try {
 		// The launch half, on the same page and the same Traffic: dock with the
 		// computer, then wait for a carrier to hold the lane and press LAUNCH.
 		const launch = arrival.found
-			? await page.evaluate(() => {
+			? await page.evaluate(async () => {
+					const { migrateEquipment, equipmentNames } = await import(
+						"/src/loadout.ts"
+					);
+
 					const g = window.__seelite;
 					const id = "station-trade";
 					if (!g.dockingComputer.engaged) {
@@ -151,10 +155,10 @@ try {
 						if (!g.hasDockingComputer)
 							g.commander = {
 								...g.commander,
-								ownedEquipment: [
-									...g.commander.ownedEquipment,
+								loadout: migrateEquipment(g.commander.hull, [
+									...equipmentNames(g.commander.loadout ?? {}),
 									g.dockingComputerName,
-								],
+								]).loadout,
 							};
 						g.toggleDockingComputer();
 					}

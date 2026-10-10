@@ -1,3 +1,9 @@
+import {
+	migrateEquipment,
+	equipmentNames,
+	stockLoadout,
+	moduleRow,
+} from "../src/loadout";
 /**
  * #583 — the shipyard's hull sale, built from #556's ten rulings.
  *
@@ -25,7 +31,6 @@ import {
 	ladderAfterMarket,
 } from "../src/ladder";
 import {
-	EQUIPMENT,
 	commodity,
 	marketQuote,
 	marketRow,
@@ -35,8 +40,6 @@ import {
 import {
 	type CommanderState,
 	HULL_TRADE_IN_FRACTION,
-	MOUNTED_EQUIPMENT,
-	UNMOUNTED_EQUIPMENT,
 	type StationCommerceInput,
 	hullOffer,
 	newCommander,
@@ -138,9 +141,14 @@ describe("#556 — what a purchase does to the rest of the commander", () => {
 	});
 
 	test("fittings transfer to the new hull (D4)", () => {
-		const fitted = rich({ ownedEquipment: ["Docking Computer", "Escape Pod"] });
+		const fitted = rich({
+			loadout: migrateEquipment("courier", ["Docking Computer", "Escape Pod"])
+				.loadout,
+		});
 		const offer = hullOffer(input({ commander: fitted }), "freighter");
-		expect(offer.commander.ownedEquipment).toEqual(fitted.ownedEquipment);
+		expect(equipmentNames(offer.commander.loadout)).toEqual(
+			equipmentNames(fitted.loadout),
+		);
 	});
 
 	test("the flown hull is refused, not re-sold", () => {
@@ -155,40 +163,28 @@ describe("#556 — what a purchase does to the rest of the commander", () => {
 	});
 });
 
-describe("#556 D4 — which fittings take a mount", () => {
-	test("the list is a test, not a comment", () => {
-		expect([...MOUNTED_EQUIPMENT].sort() as string[]).toEqual(
-			[
-				"Extra Beam Laser",
-				"Extra Pulse Laser",
-				"Military Laser",
-				"Mining Laser",
-			].sort(),
-		);
-	});
-
-	test("every fitting is classified, one way or the other", () => {
-		const classified = new Set<string>([
-			...MOUNTED_EQUIPMENT,
-			...UNMOUNTED_EQUIPMENT,
-		]);
-		for (const item of EQUIPMENT)
-			expect(classified.has(item.name), item.name).toBe(true);
-		expect(classified.size).toBe(EQUIPMENT.length);
-	});
-
-	test("weapons over the new hull's hardpoints refuse the sale", () => {
+describe("slot transfer on hull purchase", () => {
+	test("weapons over the new hull's hardpoints become carried fittings", () => {
 		const two = rich({
 			hull: "interceptor",
-			ownedEquipment: ["Extra Pulse Laser", "Military Laser"],
+			loadout: migrateEquipment("interceptor", [
+				"Extra Pulse Laser",
+				"Military Laser",
+			]).loadout,
 		});
 		expect(HULL_SPECS.freighter.hardpoints).toBe(1);
-		expect(hullOffer(input({ commander: two }), "freighter").reason).toBe(
-			"hull-mounts",
-		);
+		const moved = hullOffer(input({ commander: two }), "freighter");
+		expect(moved.accepted).toBe(true);
+		expect(moved.commander.recoveredFittings).toMatchObject([
+			{ module: "pulse-laser", tonnes: 1 },
+		]);
 		// Unmounted fittings never count.
 		const kit = rich({
-			ownedEquipment: ["Extra Pulse Laser", "Missile", "E.C.M. System"],
+			loadout: migrateEquipment("courier", [
+				"Extra Pulse Laser",
+				"Missile",
+				"E.C.M. System",
+			]).loadout,
 		});
 		expect(hullOffer(input({ commander: kit }), "freighter").accepted).toBe(
 			true,
@@ -245,13 +241,16 @@ describe("#556 D6 — cargo over the new hold", () => {
 		expect(offer.commander.cargo.Food).toBe(8);
 	});
 
-	test("the Large Cargo Bay's 15 t count in the new hold", () => {
+	test("a cargo rack that does not fit is carried and occupies one tonne", () => {
 		const commander = rich({
 			cargo: { Food: 30 },
-			ownedEquipment: ["Large Cargo Bay"],
+			loadout: migrateEquipment("courier", ["Large Cargo Bay"]).loadout,
 		});
 		const offer = hullOffer(input({ commander }), "interceptor");
-		expect(offer.commander.cargo.Food).toBe(8 + 15);
+		expect(offer.commander.cargo.Food).toBe(7);
+		expect(offer.commander.recoveredFittings).toMatchObject([
+			{ module: "cargo-rack", tonnes: 1 },
+		]);
 	});
 
 	test("the entrusted lot is never sold, and over the hold it refuses", () => {
@@ -320,14 +319,17 @@ describe("#556 D9 — one reason per row, first match wins", () => {
 		entrustedT: 70,
 		commander: rich({
 			credits: 0,
-			ownedEquipment: ["Extra Pulse Laser", "Military Laser"],
+			loadout: migrateEquipment("courier", [
+				"Extra Pulse Laser",
+				"Military Laser",
+			]).loadout,
 		}),
 	});
-	test("lock → reach → mounts → hold → credits", () => {
+	test("lock → reach → hold → credits", () => {
 		const ladder: [Partial<StationCommerceInput>, string][] = [
 			[{}, "hull-locked"],
 			[{ rungs: TOP_RUNGS }, "no-reach"],
-			[{ rungs: TOP_RUNGS, hullReach: REACHES }, "hull-mounts"],
+			[{ rungs: TOP_RUNGS, hullReach: REACHES }, "hull-hold"],
 			[
 				{
 					rungs: TOP_RUNGS,

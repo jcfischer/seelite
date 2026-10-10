@@ -1,3 +1,9 @@
+import {
+	migrateEquipment,
+	equipmentNames,
+	stockLoadout,
+	moduleRow,
+} from "../src/loadout";
 /**
  * #89's D4, D6, D7, D8 and D9 as a state machine, driven by hand.
  *
@@ -466,7 +472,7 @@ describe("#654 — a death keeps the world and reverts only the commander", () =
 		const restored = await h.store.revertToLastDocked(h.commander, "destroyed");
 		const live = await h.store.load("default");
 		for (const save of [restored, live]) {
-			expect(save?.world).toEqual(dying);
+			expect(save!.world).toEqual(dying);
 			expect(save?.world.galaxies[0].visited).toContain(9);
 		}
 		expect(
@@ -482,7 +488,8 @@ describe("#654 — a death keeps the world and reverts only the commander", () =
 		h.leg(11, 30);
 		const dying = h.world;
 		await h.store.revertToLastDocked(h.commander, "destroyed");
-		expect((await h.store.load("default")).world).toEqual(dying);
+		const savedWorld = (await h.store.load("default")).world;
+		expect(savedWorld).toEqual(dying);
 	});
 
 	test("the time flown before the death stays in the play log (#581)", async () => {
@@ -520,11 +527,11 @@ describe("#660 D1, D10 — a death restores the launch, and a first death wakes 
 			state: {
 				...c.state,
 				credits: 40,
-				ownedEquipment: [
-					...c.state.ownedEquipment,
+				loadout: migrateEquipment("courier", [
+					...equipmentNames(c.state.loadout),
 					"Docking Computer",
 					"Escape Pod",
-				],
+				]).loadout,
 			},
 		}));
 
@@ -558,7 +565,8 @@ describe("#660 D1, D10 — a death restores the launch, and a first death wakes 
 		const restored = await h.store.revertToLastDocked(h.commander, "eject");
 		for (const save of [restored, await h.store.load("default")]) {
 			expect(save?.commander.state.credits).toBe(40);
-			expect(save?.commander.state.ownedEquipment).toEqual([
+			expect(equipmentNames(save?.commander.state.loadout ?? {})).toEqual([
+				"Extra Pulse Laser",
 				"Docking Computer",
 			]);
 			expect(save?.world.galaxies[0].visited).toContain(9);
@@ -622,7 +630,9 @@ describe("#660 D1, D10 — a death restores the launch, and a first death wakes 
 		await h.store.settled();
 		const checkpoint = await h.store.load("default", "lastDocked");
 		expect(checkpoint.commander.state.credits).toBe(40);
-		expect(checkpoint.commander.state.ownedEquipment).toContain("Escape Pod");
+		expect(equipmentNames(checkpoint.commander.state.loadout)).toContain(
+			"Escape Pod",
+		);
 		expect(checkpoint.world.galaxies[0].visited).not.toContain(9);
 		// `live` landed behind the world, so the save stays dirty and the
 		// debounce is armed to catch it up.
@@ -635,7 +645,8 @@ describe("#660 D1, D10 — a death restores the launch, and a first death wakes 
 		expect(live.world.galaxies[0].visited).toContain(9);
 		const restored = await h.store.revertToLastDocked(h.commander, "eject");
 		expect(restored?.commander.state.credits).toBe(40);
-		expect(restored?.commander.state.ownedEquipment).toEqual([
+		expect(equipmentNames(restored?.commander.state.loadout ?? {})).toEqual([
+			"Extra Pulse Laser",
 			"Docking Computer",
 		]);
 		expect(restored?.world.galaxies[0].visited).toContain(9);
@@ -656,9 +667,9 @@ describe("#660 D1, D10 — a death restores the launch, and a first death wakes 
 		await dockAndBuy(h, { settle: true });
 		const restored = await h.store.revertToLastDocked(h.commander, "destroyed");
 		expect(restored?.commander.state.credits).toBe(1040);
-		expect(restored?.commander.state.ownedEquipment).not.toContain(
-			"Escape Pod",
-		);
+		expect(
+			equipmentNames(restored?.commander.state.loadout ?? {}),
+		).not.toContain("Escape Pod");
 	});
 
 	test("a never-docked death wakes a new commander at the start system's trade station", async () => {
@@ -673,7 +684,7 @@ describe("#660 D1, D10 — a death restores the launch, and a first death wakes 
 				hull: "freighter",
 				credits: 5000,
 				cargo: { Food: 4 },
-				ownedEquipment: ["Escape Pod"],
+				loadout: migrateEquipment("freighter", ["Escape Pod"]).loadout,
 			},
 			ladders: {
 				...c.ladders,
@@ -767,7 +778,11 @@ describe("#660 D1, D10 — a death restores the launch, and a first death wakes 
 			return {
 				...c,
 				dockedAt: station,
-				state: { ...c.state, credits: 4321, ownedEquipment: ["Escape Pod"] },
+				state: {
+					...c.state,
+					credits: 4321,
+					loadout: migrateEquipment("courier", ["Escape Pod"]).loadout,
+				},
 				ladders: banked,
 			};
 		});

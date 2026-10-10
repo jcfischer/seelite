@@ -1,3 +1,9 @@
+import {
+	migrateEquipment,
+	equipmentNames,
+	stockLoadout,
+	moduleRow,
+} from "../src/loadout";
 import { expect, test } from "bun:test";
 import { derelictFirstLossAt, derelictSlots } from "../src/derelict-slots";
 import { derelictPose } from "../src/derelict";
@@ -242,7 +248,10 @@ test("sweep ledger is saved only on the commander, and world parser refuses a se
 
 test("the live hold event adopts knowledge and pending credit together and a refusal changes neither", () => {
 	const holdings = {
-		commander: { ...newCommander("courier"), ownedEquipment: modules },
+		commander: {
+			...newCommander("courier"),
+			loadout: migrateEquipment("courier", modules).loadout,
+		},
 		requests: emptyRequests(),
 		ladders: emptyLadderRecord(),
 		ladderPending: emptyPending(),

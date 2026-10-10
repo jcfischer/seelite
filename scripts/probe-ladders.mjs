@@ -228,15 +228,50 @@ try {
 	const buy = laserRow.locator('[data-live-station-action="buy-equipment"]');
 	check("the rung unlocks it: a BUY is drawn", (await buy.count()) === 1);
 	await buy.click();
-	const owned = await page.evaluate(() =>
-		window.__seelite.commander.ownedEquipment.includes("Military Laser"),
-	);
+	const owned = await page.evaluate(async () => {
+		const { migrateEquipment, equipmentNames } = await import(
+			"/src/loadout.ts"
+		);
+		return equipmentNames(window.__seelite.commander.loadout ?? {}).includes(
+			"Military Laser",
+		);
+	});
 	check(
 		"and the till sells it",
 		owned && /OWNED/.test(await laserRow.innerText()),
 	);
 	await page.screenshot({ path: `${out}/03-shipyard-unlocked.png` });
 
+	// A stock primary is a physical pulse, but does not occupy a free h2.
+	await page.evaluate(async () => {
+		const { stockLoadout } = await import("/src/loadout.ts");
+		const g = window.__seelite;
+		g.commander = {
+			...g.commander,
+			hull: "interceptor",
+			loadout: stockLoadout("interceptor"),
+			credits: 100000,
+		};
+		g.stationConsoleRevision += 1;
+		g.updateCockpit();
+	});
+	const pulseRow = page.locator('[data-live-equipment="available"]', {
+		hasText: "Extra Pulse Laser",
+	});
+	const extraPulse = pulseRow.locator(
+		'[data-live-station-action="buy-equipment"]',
+	);
+	check(
+		"stock pulse leaves BUY available for a free second hardpoint",
+		(await extraPulse.count()) === 1,
+	);
+	await extraPulse.click();
+	check(
+		"the extra pulse is fitted to h2 by the live console",
+		await page.evaluate(
+			() => window.__seelite.commander.loadout.h2?.module === "pulse-laser",
+		),
+	);
 	await page.close();
 } finally {
 	await browser.close();

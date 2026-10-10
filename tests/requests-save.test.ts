@@ -193,9 +193,11 @@ test("verified schema 2 migrates a copy to empty journal; corrupt and unsupporte
 	// version 2 body out of a current one; if the two ever met, it would be
 	// asserting the migration path against no migration at all. It went red on
 	// #453's bump, which is the tripwire working.
-	expect(SAVE_SCHEMA_VERSION).toBe(12);
+	expect(SAVE_SCHEMA_VERSION).toBe(13);
 	const { integrity, ...body } = current;
 	body.saveSchemaVersion = 2;
+	body.commander.state.ownedEquipment = [];
+	delete body.commander.state.loadout;
 	delete body.commander.sweepReadings;
 	delete body.commander.firstDay;
 	delete body.commander.ladders;
@@ -302,6 +304,8 @@ test("a schema 3 journal migrates when empty and is refused when it is not", () 
 		);
 		const { integrity, ...body } = current;
 		body.saveSchemaVersion = 3;
+		body.commander.state.ownedEquipment = [];
+		delete body.commander.state.loadout;
 		delete body.commander.sweepReadings;
 		delete body.commander.firstDay;
 		delete body.commander.ladders;
@@ -353,6 +357,8 @@ test("a schema 2 record carrying a requests key is refused, empty or not", () =>
 		const raw = JSON.parse(JSON.stringify(serializeSave(save)));
 		const { integrity, ...body } = raw;
 		body.saveSchemaVersion = 2;
+		body.commander.state.ownedEquipment = [];
+		delete body.commander.state.loadout;
 		delete body.commander.sweepReadings;
 		const grafted = { ...body, integrity: fnv1a(JSON.stringify(body)) };
 		expect(() => parseSave(grafted)).toThrow(
@@ -458,6 +464,8 @@ const asV4 = (
 	const raw = JSON.parse(JSON.stringify(serializeSave(save)));
 	const { integrity: _, ...body } = raw;
 	body.saveSchemaVersion = 4;
+	body.commander.state.ownedEquipment = [];
+	delete body.commander.state.loadout;
 	delete body.commander.sweepReadings;
 	delete body.commander.firstDay;
 	delete body.commander.ladders;

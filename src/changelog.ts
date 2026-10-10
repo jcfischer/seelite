@@ -28,6 +28,12 @@ export type ChangelogEntry = {
 };
 
 export const CHANGELOG: readonly ChangelogEntry[] = [
+	// Node #876: sentence approved by the principal, 2026-10-10.
+	{
+		date: "2026-10-10",
+		text: "Equipment has weight: fitted modules affect handling, and changing ships keeps spare fittings in the hold.",
+		node: 876,
+	},
 	// Node #865: approved by the principal on 2026-10-10; main date pending.
 	{
 		date: "2026-10-10",

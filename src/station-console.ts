@@ -1,3 +1,12 @@
+import { type HullId } from "./hull";
+import {
+	legacyModule,
+	moduleRow,
+	LEGACY_MODULES,
+	repeatableEquipment,
+	type Loadout,
+	freeSlot,
+} from "./loadout";
 /**
  * `hud-and-scanner.md` §8 — the station console's two screens, as data.
  *
@@ -414,6 +423,8 @@ export const signedDelta = (value: number, digits: number): string => {
  * actually stand in.
  */
 export interface ConsoleEquipmentEntry {
+	/** Another hardpoint can carry another copy. */
+	repeatable?: boolean;
 	name: string;
 	priceCr: number;
 	per: UniversalItem["per"];
@@ -499,6 +510,8 @@ const scopeReason = (
 };
 
 export function stationEquipmentScreen(input: {
+	hull?: HullId;
+	loadout?: Loadout;
 	type: StationTypeKey;
 	displayTL: number;
 	/**
@@ -541,7 +554,29 @@ export function stationEquipmentScreen(input: {
 
 	// No hull heading: hulls are sold on the Shipyard tab (#556 D1), which
 	// amends §8.3 M8's heading here.
-	return { available, unavailable };
+	return {
+		available: input.hull
+			? available
+					.filter((e) => e.per !== "unit" || LEGACY_MODULES[e.name])
+					.map((e) =>
+						e.per === "unit"
+							? {
+									...e,
+									priceCr: moduleRow(legacyModule(input.hull!, e.name)).priceCr,
+									repeatable:
+										repeatableEquipment(e.name) &&
+										(!input.loadout ||
+											!!freeSlot(
+												input.loadout,
+												input.hull!,
+												legacyModule(input.hull!, e.name),
+											)),
+								}
+							: e,
+					)
+			: available,
+		unavailable,
+	};
 }
 
 // ---------------------------------------------------------------------------

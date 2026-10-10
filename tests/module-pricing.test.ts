@@ -2,6 +2,7 @@ import { describe, expect, test } from "bun:test";
 import { HULL_IDS, HULL_SPECS, POWER_PLANT_OUTPUT } from "../src/hull";
 import { flightPerformance } from "../src/sim";
 import {
+	type ModuleKind,
 	deriveProposal,
 	dominates,
 	fits,
@@ -16,25 +17,27 @@ describe("module pricing proposal", () => {
 		const rows = deriveProposal().rows;
 		expect(new Set(rows.map((r) => r.kind)).size).toBe(17);
 		expect([...new Set(rows.map((r) => r.kind))].sort()).toEqual(
-			[
-				"pulse-laser",
-				"beam-laser",
-				"military-laser",
-				"mining-laser",
-				"missile-rack",
-				"ecm",
-				"docking-computer",
-				"identity-scanner",
-				"fuel-scoop",
-				"long-range-scanner",
-				"escape-pod",
-				"extra-energy-unit",
-				"cargo-rack",
-				"shield-booster",
-				"armour-plating",
-				"fuel-tank",
-				"power-plant",
-			].sort(),
+			(
+				[
+					"pulse-laser",
+					"beam-laser",
+					"military-laser",
+					"mining-laser",
+					"missile-rack",
+					"ecm",
+					"docking-computer",
+					"identity-scanner",
+					"fuel-scoop",
+					"long-range-scanner",
+					"escape-pod",
+					"extra-energy-unit",
+					"cargo-rack",
+					"shield-booster",
+					"armour-plating",
+					"fuel-tank",
+					"power-plant",
+				] satisfies ModuleKind[]
+			).sort(),
 		);
 		expect(rows.length).toBe(17 * 3 * 3);
 		expect(

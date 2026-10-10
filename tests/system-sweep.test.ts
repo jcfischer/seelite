@@ -1,3 +1,9 @@
+import {
+	migrateEquipment,
+	equipmentNames,
+	stockLoadout,
+	moduleRow,
+} from "../src/loadout";
 import { describe, expect, test } from "bun:test";
 import { LONG_RANGE_SCANNER } from "../src/market";
 import { fnv1a } from "../src/rng";
@@ -35,7 +41,7 @@ import {
 
 describe("node #482 system sweep", () => {
 	test("the new provenance has its own envelope revision", () => {
-		expect(SAVE_SCHEMA_VERSION).toBe(12);
+		expect(SAVE_SCHEMA_VERSION).toBe(13);
 		const world = newWorld(56);
 		const raw = serializeSave({
 			world,
@@ -55,6 +61,8 @@ describe("node #482 system sweep", () => {
 		};
 		const old = rehash((body) => {
 			body.saveSchemaVersion = 10;
+			body.commander.state.ownedEquipment = [];
+			delete body.commander.state.loadout;
 			delete body.commander.sweepReadings;
 		});
 		const original = JSON.stringify(old);
@@ -71,6 +79,8 @@ describe("node #482 system sweep", () => {
 			parseSave(
 				rehash((body) => {
 					body.saveSchemaVersion = 10;
+					body.commander.state.ownedEquipment = [];
+					delete body.commander.state.loadout;
 				}),
 			),
 		).toThrow("sweepReadings");
@@ -162,7 +172,9 @@ describe("node #482 system sweep", () => {
 	test("saves roundtrip source, region and time; old saves have no rows", () => {
 		const world = { ...newWorld(56), gameTime: 48 * 3600 };
 		const commander = newCommanderRecord("courier");
-		commander.state.ownedEquipment = [LONG_RANGE_SCANNER];
+		commander.state.loadout = migrateEquipment(commander.state.hull, [
+			LONG_RANGE_SCANNER,
+		]).loadout;
 		commander.sweepReadings = sweepSources(world, 0, 0);
 		const saved = parseSave(serializeSave({ world, commander }));
 		expect(saved.commander.sweepReadings).toEqual(commander.sweepReadings);

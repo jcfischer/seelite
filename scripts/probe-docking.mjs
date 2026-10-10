@@ -163,6 +163,10 @@ await page.evaluate(() => {
 async function fly(setup) {
 	return page.evaluate(
 		async ([dt, limitS, setup]) => {
+			const { migrateEquipment, equipmentNames } = await import(
+				"/src/loadout.ts"
+			);
+
 			const g = window.__seelite;
 			const D = window.__dock;
 			const station = D.spinner();
@@ -220,10 +224,10 @@ async function fly(setup) {
 					if (!g.hasDockingComputer)
 						g.commander = {
 							...g.commander,
-							ownedEquipment: [
-								...g.commander.ownedEquipment,
+							loadout: migrateEquipment(g.commander.hull, [
+								...equipmentNames(g.commander.loadout ?? {}),
 								g.dockingComputerName,
-							],
+							]).loadout,
 						};
 					g.toggleDockingComputer();
 				}
@@ -418,6 +422,10 @@ if (!good.docked)
 const undock = good.docked
 	? await page.evaluate(
 			async ([dt]) => {
+				const { migrateEquipment, equipmentNames } = await import(
+					"/src/loadout.ts"
+				);
+
 				const g = window.__seelite;
 				const D = window.__dock;
 				const id = D.spinner().id;
@@ -503,10 +511,10 @@ const undock = good.docked
 					if (!g.hasDockingComputer)
 						g.commander = {
 							...g.commander,
-							ownedEquipment: [
-								...g.commander.ownedEquipment,
+							loadout: migrateEquipment(g.commander.hull, [
+								...equipmentNames(g.commander.loadout ?? {}),
 								g.dockingComputerName,
-							],
+							]).loadout,
 						};
 					g.toggleDockingComputer();
 				}
@@ -738,7 +746,9 @@ check(
 // #597: the computer letting go is on the glass too. Engaged with no grant, it
 // refuses on its first step — the case §11.7 reaches when a grant expires
 // mid-approach — and the refusal is red, because §4 keeps red for refusal.
-const letGo = await page.evaluate(() => {
+const letGo = await page.evaluate(async () => {
+	const { migrateEquipment, equipmentNames } = await import("/src/loadout.ts");
+
 	const g = window.__seelite;
 	const D = window.__dock;
 	const id = D.spinner().id;
@@ -752,7 +762,10 @@ const letGo = await page.evaluate(() => {
 	if (!g.hasDockingComputer)
 		g.commander = {
 			...g.commander,
-			ownedEquipment: [...g.commander.ownedEquipment, g.dockingComputerName],
+			loadout: migrateEquipment(g.commander.hull, [
+				...equipmentNames(g.commander.loadout ?? {}),
+				g.dockingComputerName,
+			]).loadout,
 		};
 	g.toggleDockingComputer();
 	g.step(1 / 60);
@@ -1568,7 +1581,11 @@ for (const [type, seed, formId] of [
 	watch(stationPage);
 	await stationPage.goto(gameUrl(ORIGIN, { seed }), { waitUntil: "load" });
 	await bootedGame(stationPage);
-	const run = await stationPage.evaluate((type) => {
+	const run = await stationPage.evaluate(async (type) => {
+		const { migrateEquipment, equipmentNames } = await import(
+			"/src/loadout.ts"
+		);
+
 		const g = window.__seelite;
 		const station = g.world.system.contents.stations.find(
 			(s) => s.type === type,
@@ -1598,7 +1615,10 @@ for (const [type, seed, formId] of [
 		if (!g.hasDockingComputer)
 			g.commander = {
 				...g.commander,
-				ownedEquipment: [...g.commander.ownedEquipment, g.dockingComputerName],
+				loadout: migrateEquipment(g.commander.hull, [
+					...equipmentNames(g.commander.loadout ?? {}),
+					g.dockingComputerName,
+				]).loadout,
 			};
 		const impacts = g.collisionImpacts;
 		g.requestDockingClearance();

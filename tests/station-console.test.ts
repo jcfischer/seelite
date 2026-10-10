@@ -1,3 +1,9 @@
+import {
+	migrateEquipment,
+	equipmentNames,
+	stockLoadout,
+	moduleRow,
+} from "../src/loadout";
 /**
  * `hud-and-scanner.md` §8.6's four headless obligations — 3, 4, 6 and 8.
  *
@@ -541,7 +547,7 @@ test("#182: the screen's prices follow the flown hold, bay included", () => {
 	const bare = newCommander(PLAYER_BASELINE_HULL);
 	const withBay = {
 		...bare,
-		ownedEquipment: ["Large Cargo Bay"],
+		loadout: migrateEquipment("courier", ["Large Cargo Bay"]).loadout,
 	};
 	expect(commanderHold(bare, 0).capacityT).toBe(HOLD_REFERENCE_T);
 	expect(commanderHold(withBay, 0).capacityT).toBe(

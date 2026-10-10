@@ -865,6 +865,10 @@ try {
 		});
 		const engage = async () =>
 			game.evaluate(async () => {
+				const { migrateEquipment, equipmentNames } = await import(
+					"/src/loadout.ts"
+				);
+
 				const g = window.__seelite;
 				const id = g.world.system.bodies.find((b) => b.kind === "station")?.id;
 				if (!id) throw Error("no station");
@@ -888,10 +892,10 @@ try {
 				if (!g.hasDockingComputer)
 					g.commander = {
 						...g.commander,
-						ownedEquipment: [
-							...g.commander.ownedEquipment,
+						loadout: migrateEquipment(g.commander.hull, [
+							...equipmentNames(g.commander.loadout ?? {}),
 							g.dockingComputerName,
-						],
+						]).loadout,
 					};
 				const before = g.audio.buses.ship.gain.value;
 				const from = window.__sent.length;

@@ -126,16 +126,25 @@ const waitForEject = async (base, startedAtMs) => {
  *  has set its own. */
 const fitPod = (fitted) =>
 	page.evaluate(
-		({ pod, fitted }) => {
+		async ({ pod, fitted }) => {
+			const { migrateEquipment, equipmentNames } = await import(
+				"/src/loadout.ts"
+			);
+
 			const g = window.__seelite;
 			g.onDeath = async () => {
 				g.dead = false;
 				g.clockHeld = false;
 			};
-			const rest = g.commander.ownedEquipment.filter((n) => n !== pod);
+			const rest = equipmentNames(g.commander.loadout ?? {}).filter(
+				(n) => n !== pod,
+			);
 			g.commander = {
 				...g.commander,
-				ownedEquipment: fitted ? [...rest, pod] : rest,
+				loadout: migrateEquipment(
+					g.commander.hull,
+					fitted ? [...rest, pod] : rest,
+				).loadout,
 			};
 			g.view = "cockpit";
 			g.setHeadLook("forward");

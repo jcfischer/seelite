@@ -456,7 +456,11 @@ const PLACERS = {
 			[id, 3],
 		);
 		const text = await page.evaluate(
-			([stationId, notice]) => {
+			async ([stationId, notice]) => {
+				const { migrateEquipment, equipmentNames } = await import(
+					"/src/loadout.ts"
+				);
+
 				const g = window.__seelite;
 				const dt = g.units.MAX_DT;
 				const add = (a, b) => ({ x: a.x + b.x, y: a.y + b.y, z: a.z + b.z });
@@ -492,10 +496,10 @@ const PLACERS = {
 					if (!g.hasDockingComputer)
 						g.commander = {
 							...g.commander,
-							ownedEquipment: [
-								...g.commander.ownedEquipment,
+							loadout: migrateEquipment(g.commander.hull, [
+								...equipmentNames(g.commander.loadout ?? {}),
 								g.dockingComputerName,
-							],
+							]).loadout,
 						};
 					g.toggleDockingComputer();
 					g.step(dt);

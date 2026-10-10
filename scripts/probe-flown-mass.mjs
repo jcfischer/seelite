@@ -40,6 +40,11 @@ const reading = (page) =>
 		const g = window.__seelite;
 		const H = await import("/src/hull.ts");
 		const S = await import("/src/sim.ts");
+		const { moduleRow } = await import("/src/loadout.ts");
+		const fittedT = Object.values(g.commander.loadout).reduce(
+			(sum, m) => sum + moduleRow(m).massT,
+			0,
+		);
 		const id = g.playerHull.id;
 		const hullT = H.HULL_SPECS[id].massT;
 		const flown = g.playerHull.performance;
@@ -47,12 +52,13 @@ const reading = (page) =>
 		return {
 			id,
 			hullT,
+			fittedT,
 			holdT: H.HULL_SPECS[id].holdT,
 			massT: g.playerHull.massT,
 			flownMassT: flown.massT,
 			thrustKms2: flown.thrustKms2,
 			yawAuthority: flown.angularAuthority.yaw,
-			emptyThrustKms2: S.flightPerformance(id).thrustKms2,
+			emptyThrustKms2: S.flightPerformance(id, {}, hullT + fittedT).thrustKms2,
 			matches: JSON.stringify(flown) === JSON.stringify(expected),
 		};
 	});
@@ -71,9 +77,9 @@ try {
 
 	const empty = await reading(page);
 	check(
-		"a fresh ship weighs its hull and flies the empty handling",
-		empty.massT === empty.hullT &&
-			empty.flownMassT === empty.hullT &&
+		"a fresh ship weighs its hull and stock fit and flies that handling",
+		empty.massT === empty.hullT + empty.fittedT &&
+			empty.flownMassT === empty.massT &&
 			empty.thrustKms2 === empty.emptyThrustKms2 &&
 			empty.matches,
 		`${empty.id} ${empty.massT} t, ${empty.thrustKms2.toFixed(4)} km/s²`,
@@ -89,10 +95,10 @@ try {
 	});
 	const full = await reading(page);
 	const ratio = full.thrustKms2 / empty.thrustKms2;
-	const law = full.hullT / (full.hullT + full.holdT);
+	const law = empty.massT / (empty.massT + full.holdT);
 	check(
-		"a full hold weighs hull plus hold, and the frame loop flies that mass",
-		full.massT === full.hullT + full.holdT &&
+		"a full hold weighs hull plus fit plus hold, and the frame loop flies that mass",
+		full.massT === empty.massT + full.holdT &&
 			full.flownMassT === full.massT &&
 			full.matches,
 		`${full.massT} t`,
@@ -117,6 +123,27 @@ try {
 			emptied.yawAuthority === empty.yawAuthority &&
 			emptied.matches,
 		`${emptied.thrustKms2.toFixed(4)} km/s²`,
+	);
+	await page.evaluate(() => {
+		const g = window.__seelite;
+		g.commander = {
+			...g.commander,
+			loadout: {
+				...g.commander.loadout,
+				h1: { ...g.commander.loadout.h1, grade: "A" },
+			},
+		};
+	});
+	const refitted = await reading(page);
+	check(
+		"a refit changes cached flight handling without changing hull or cargo",
+		refitted.fittedT !== empty.fittedT &&
+			refitted.massT === refitted.hullT + refitted.fittedT &&
+			refitted.matches &&
+			Math.abs(
+				refitted.thrustKms2 / empty.thrustKms2 - empty.massT / refitted.massT,
+			) < 1e-12,
+		JSON.stringify({ before: empty.massT, after: refitted.massT }),
 	);
 } finally {
 	await context.close();

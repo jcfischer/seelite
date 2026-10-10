@@ -94,7 +94,9 @@ const { check, watch, exit } = tally();
  * exist there. Playwright runs every registered init script, so two calls is
  * the composition.
  */
-const installPlaceOnAxis = () => {
+const installPlaceOnAxis = async () => {
+	const { migrateEquipment, equipmentNames } = await import("/src/loadout.ts");
+
 	/**
 	 * Place the ship on a station's aperture axis, cleared and with §7's
 	 * computer flying.
@@ -127,10 +129,10 @@ const installPlaceOnAxis = () => {
 			if (!g.hasDockingComputer)
 				g.commander = {
 					...g.commander,
-					ownedEquipment: [
-						...g.commander.ownedEquipment,
+					loadout: migrateEquipment(g.commander.hull, [
+						...equipmentNames(g.commander.loadout ?? {}),
 						g.dockingComputerName,
-					],
+					]).loadout,
 				};
 			g.toggleDockingComputer();
 		}
@@ -145,9 +147,9 @@ try {
 	});
 	watch(page);
 	await page.addInitScript(installFakePad);
-	await page.addInitScript(installPlaceOnAxis);
 	await page.goto(gameUrl(ORIGIN, { seed: 42 }), { waitUntil: "load" });
 	await bootedGame(page);
+	await page.evaluate(installPlaceOnAxis);
 
 	const frames = (n) => page.evaluate((count) => window.__frames(count), n);
 	const tap = async (index) => {

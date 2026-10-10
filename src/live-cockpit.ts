@@ -1923,7 +1923,7 @@ export class LiveCockpit {
 				const row =
 					entry.per === "ly"
 						? ({ kind: "fill" } as const)
-						: owned.includes(entry.name)
+						: owned.includes(entry.name) && !entry.repeatable
 							? ({ kind: "owned" } as const)
 							: entry.locked
 								? ({ kind: "locked", locked: entry.locked } as const)

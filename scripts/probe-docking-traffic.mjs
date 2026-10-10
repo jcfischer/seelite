@@ -21,6 +21,10 @@ try {
 		await page.goto(gameUrl(origin, { seed: 54 }), { waitUntil: "load" });
 		await bootedGame(page);
 		const result = await page.evaluate(async (startAtS) => {
+			const { migrateEquipment, equipmentNames } = await import(
+				"/src/loadout.ts"
+			);
+
 			const g = window.__seelite;
 			cancelAnimationFrame(g.animationFrame);
 			const sim = await import("/src/sim.ts");
@@ -70,10 +74,10 @@ try {
 				if (!g.hasDockingComputer)
 					g.commander = {
 						...g.commander,
-						ownedEquipment: [
-							...g.commander.ownedEquipment,
+						loadout: migrateEquipment(g.commander.hull, [
+							...equipmentNames(g.commander.loadout ?? {}),
 							g.dockingComputerName,
-						],
+						]).loadout,
 					};
 				g.toggleDockingComputer();
 			}

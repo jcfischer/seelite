@@ -1,3 +1,10 @@
+import {
+	fitted,
+	equipmentNames,
+	fittingSaleValue,
+	freeSlot,
+	repeatableEquipment,
+} from "./loadout";
 import { refreshStationInteriorKitAsync } from "./station-interior-mesh";
 import { INTERIOR_SLICE_MS, nextInteriorFrame } from "./interior-install";
 import type { InteriorLods } from "./interior-lod";
@@ -1103,6 +1110,7 @@ import {
 	transactAtStation,
 	type StationAction,
 	type ConsoleInput,
+	recoveredModule,
 } from "./station-commerce";
 import {
 	newWorld as newPersistentWorld,
@@ -4115,7 +4123,7 @@ class Game {
 	 * so it is bought, and a new pilot docks by hand.
 	 */
 	get hasDockingComputer(): boolean {
-		return this.commander.ownedEquipment.includes(DOCKING_COMPUTER);
+		return fitted(this.commander.loadout, DOCKING_COMPUTER);
 	}
 
 	/**
@@ -8360,7 +8368,7 @@ class Game {
 
 	private systemSweepContext() {
 		return {
-			fitted: relayScannerFitted(this.commander.ownedEquipment),
+			fitted: relayScannerFitted(equipmentNames(this.commander.loadout)),
 			flying: this.dock.phase === "flying",
 			cruise: this.regime === "cruise" || this.spoolLeftS > 0,
 		};
@@ -8450,7 +8458,7 @@ class Game {
 	private stepScan(dt: number) {
 		const target = this.targetBody();
 		const actor = this.scanSubject(target);
-		const fitted = scanFitted(this.commander.ownedEquipment);
+		const fitted = scanFitted(equipmentNames(this.commander.loadout));
 		// **A subject, not a boolean.** Five seconds spent with the nose swinging
 		// across three carriers is five seconds on none of them, and a charge that
 		// does not record whose it is cannot say when to start over — the blocker
@@ -8542,7 +8550,7 @@ class Game {
 	 */
 	private scanReadout(target: Body | null): ScanFacts {
 		const stamp = this.scanStamp(target);
-		const fitted = scanFitted(this.commander.ownedEquipment);
+		const fitted = scanFitted(equipmentNames(this.commander.loadout));
 		// Computed before the memo is consulted, and part of its key: the cue is
 		// the one input that moves with the ship rather than with the clock, so a
 		// frame that turned the sight off a carrier without the clock moving must
@@ -8605,7 +8613,7 @@ class Game {
 		const reading = actor ? this.recordedReading(actor) : null;
 		const scannable = actor !== undefined;
 		const refusal = scanRefusal(
-			scanFitted(this.commander.ownedEquipment),
+			scanFitted(equipmentNames(this.commander.loadout)),
 			scannable,
 		);
 		// A completed charge sits at the ceiling, so the progress is only a
@@ -12124,7 +12132,7 @@ class Game {
 		const down = this.ejectDown();
 		const refusal = ejectRefusal({
 			phase: this.dock.phase,
-			podFitted: this.commander.ownedEquipment.includes(ESCAPE_POD),
+			podFitted: fitted(this.commander.loadout, ESCAPE_POD),
 		});
 		const step = stepEjectControl(this.ejectHold, { live, down }, dt, refusal);
 		this.ejectHold = step.hold;
@@ -12238,7 +12246,7 @@ class Game {
 		const due =
 			!this.openingActive &&
 			ejectWarningDue({
-				podFitted: this.commander.ownedEquipment.includes(ESCAPE_POD),
+				podFitted: fitted(this.commander.loadout, ESCAPE_POD),
 				permadeath: this.permadeath,
 				flying: this.dock.phase === "flying",
 				alive: !this.dead && isAlive(this.condition),
@@ -13169,7 +13177,7 @@ class Game {
 		return liveDerelicts(this.commerceWorld, this.world.system, at);
 	}
 	private stepDerelictFinding() {
-		const floor = identifyRangeKm(this.commander.ownedEquipment);
+		const floor = identifyRangeKm(equipmentNames(this.commander.loadout));
 		if (!this.wreckReadings().some((w) => !w.identified && w.km <= floor))
 			return;
 		const outcome = applyHoldEvent(this.holdings(), this.commerceWorld, {
@@ -13188,7 +13196,7 @@ class Game {
 			this.commerceWorld,
 			this.world.system,
 			this.world.ship.pos,
-			this.commander.ownedEquipment,
+			equipmentNames(this.commander.loadout),
 			this.world.gameTime,
 		);
 	}
@@ -13606,7 +13614,7 @@ class Game {
 		// What stays ungated is everything the relay *does*: its mesh, the shot
 		// that can destroy it, and `relayDetectionNow`'s dial on the watched
 		// route.
-		const owned = this.commander.ownedEquipment;
+		const owned = equipmentNames(this.commander.loadout);
 		const signal = relayScannerFitted(owned)
 			? relaySignal(this.world.ship.pos, pos)
 			: null;
@@ -17381,7 +17389,7 @@ class Game {
 			docked: context
 				? { galaxyIndex: context.galaxyIndex, carrierKey: context.stationKey }
 				: null,
-			equipment: this.commander.ownedEquipment,
+			equipment: equipmentNames(this.commander.loadout),
 		};
 	}
 
@@ -17677,6 +17685,8 @@ class Game {
 					: this.stationConsoleTab,
 			market: freshMarket ?? readMarket(),
 			equipment: stationEquipmentScreen({
+				hull: this.commander.hull,
+				loadout: this.commander.loadout,
 				type: market.type,
 				displayTL: this.world.system.record.displayTL,
 				rungs: this.rungs(),
@@ -17699,14 +17709,21 @@ class Game {
 			cargo: hold.lines
 				.filter((line) => line.owner === "pilot")
 				.map((line) => `${line.goodName} ${line.amount}`),
-			ownedEquipment: this.commander.ownedEquipment,
+			ownedEquipment: equipmentNames(this.commander.loadout),
 			recoveredFittings: (this.commander.recoveredFittings ?? []).map(
 				(item, index) => ({
 					...item,
 					index,
-					priceCr: EQUIPMENT.find((e) => e.name === item.id)!.priceCr,
+					priceCr: fittingSaleValue(item),
 					locked: gateRefusal(item.id, this.rungs()),
-					owned: this.commander.ownedEquipment.includes(item.id),
+					owned:
+						fitted(this.commander.loadout, item.id) &&
+						(!repeatableEquipment(item.id) ||
+							!freeSlot(
+								this.commander.loadout,
+								this.commander.hull,
+								recoveredModule(item, this.commander.hull),
+							)),
 				}),
 			),
 			fuelLy: this.commander.fuelLy,
@@ -18526,7 +18543,7 @@ class Game {
 					: null,
 			controls: flightControls(this.bindings),
 			eject: firstDayEjectLine(
-				this.commander.ownedEquipment.includes(ESCAPE_POD),
+				fitted(this.commander.loadout, ESCAPE_POD),
 				this.permadeath,
 				ejectPrompt(this.bindings),
 			),

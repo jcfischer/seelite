@@ -1,3 +1,4 @@
+import { equipmentNames, withoutModule } from "./loadout";
 /**
  * What a pilot's act does to their **Holdings** (#626, #627): the commander,
  * the Requests journal, the ladder record and its pending credit — and the
@@ -157,9 +158,7 @@ export const commanderAfterDeath = (
 				...dock.state,
 				cargo: {},
 				recoveredFittings: undefined,
-				ownedEquipment: dock.state.ownedEquipment.filter(
-					(item) => item !== ESCAPE_POD,
-				),
+				loadout: withoutModule(dock.state.loadout, ESCAPE_POD),
 			},
 		};
 	return {
@@ -383,7 +382,7 @@ function settle(
 			holdRoomT: Math.max(0, hold.capacityT - hold.usedT),
 			holdCapacityT: hold.capacityT,
 			standing: event.standing,
-			equipment: holdings.commander.ownedEquipment,
+			equipment: equipmentNames(holdings.commander.loadout),
 		},
 	);
 	const signals = { ...QUIET, message: result.message };
@@ -529,7 +528,7 @@ function transition(
 					killCredit(
 						{
 							hull: holdings.commander.hull,
-							equipment: holdings.commander.ownedEquipment,
+							equipment: equipmentNames(holdings.commander.loadout),
 						},
 						event.hull,
 					),
@@ -610,7 +609,7 @@ function applied(
 				world,
 				event.system,
 				event.shipPos,
-				holdings.commander.ownedEquipment,
+				equipmentNames(holdings.commander.loadout),
 				event.at,
 			);
 			if (!found.identified.length) return unchanged(holdings, world);
