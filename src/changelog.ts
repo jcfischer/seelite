@@ -28,7 +28,7 @@ export type ChangelogEntry = {
 };
 
 export const CHANGELOG: readonly ChangelogEntry[] = [
-	// Node #865: sentence pending the principal's approval; main date pending.
+	// Node #865: approved by the principal on 2026-10-10; main date pending.
 	{
 		date: "2026-10-10",
 		text: "Cargo has weight: a full hold makes a ship slower to accelerate and to turn, and an empty one flies as before.",
